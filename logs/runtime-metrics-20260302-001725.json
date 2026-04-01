@@ -1,0 +1,16 @@
+{
+  "tool": "runtime-metrics-collector",
+  "version": 1,
+  "timestamp": "2026-03-01T16:17:26Z",
+  "target": "local",
+  "dry_run": 0,
+  "seed": 909,
+  "summary": {
+    "samples": 2,
+    "interval_ms": 10
+  },
+  "metrics": [
+    {"sample":1,"timestamp":"2026-03-01T16:17:25Z","load_1m":9.176,"load_5m":7.297,"load_15m":5.598,"mem_total_bytes":17179869184,"mem_free_bytes":206749696,"disk_used_percent":26,"process_count":827,"uptime_sec":112998}
+    ,{"sample":2,"timestamp":"2026-03-01T16:17:25Z","load_1m":9.001,"load_5m":7.292,"load_15m":5.606,"mem_total_bytes":17179869184,"mem_free_bytes":211959808,"disk_used_percent":26,"process_count":823,"uptime_sec":112998}
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "tool": "session-orphan-cleaner",
+  "version": 1,
+  "timestamp": "2026-03-01T16:26:56Z",
+  "target_dir": "logs/workers",
+  "max_age_min": 1,
+  "dry_run": 1,
+  "summary": {
+    "scanned": 6,
+    "candidates": 6,
+    "deleted": 0,
+    "retained": 0
+  },
+  "items": [
+    {"path":"logs/workers/m5-t003-heidi.log","age_min":136,"orphan":1,"action":"candidate"}
+    ,{"path":"logs/workers/m4-t002-dave.log","age_min":136,"orphan":1,"action":"candidate"}
+    ,{"path":"logs/workers/m3-t007-bob.log","age_min":136,"orphan":1,"action":"candidate"}
+    ,{"path":"logs/workers/m5-t004-ivan.log","age_min":136,"orphan":1,"action":"candidate"}
+    ,{"path":"logs/workers/m3-t001-alice.log","age_min":136,"orphan":1,"action":"candidate"}
+    ,{"path":"logs/workers/m4-t001-carol.log","age_min":136,"orphan":1,"action":"candidate"}
+  ]
+}

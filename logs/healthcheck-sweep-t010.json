@@ -1,0 +1,19 @@
+{
+  "tool": "healthcheck-sweep",
+  "version": 1,
+  "timestamp": "2026-03-01T16:14:02Z",
+  "target": "local",
+  "seed": 210,
+  "dry_run": 0,
+  "overall_status": "pass",
+  "summary": {
+    "total": 3,
+    "pass": 3,
+    "fail": 0
+  },
+  "checks": [
+    {"name":"node-version","status":"pass","exit_code":0,"synthetic_latency_ms":744}
+    ,{"name":"npm-version","status":"pass","exit_code":0,"synthetic_latency_ms":271}
+    ,{"name":"logs-directory-writable","status":"pass","exit_code":0,"synthetic_latency_ms":597}
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "tool": "collect-runtime-metrics",
+  "version": 1,
+  "timestamp": "2026-03-01T16:16:42Z",
+  "target": "local",
+  "interval_sec": 1,
+  "samples_requested": 2,
+  "dry_run": 1,
+  "samples": [
+    {"index":1,"timestamp":"2026-03-01T16:16:41Z","cpu_pct":28,"mem_pct":40,"load_1m":0.6,"disk_used_pct":72}
+    ,{"index":2,"timestamp":"2026-03-01T16:16:42Z","cpu_pct":35,"mem_pct":45,"load_1m":0.9,"disk_used_pct":74}
+  ]
+}

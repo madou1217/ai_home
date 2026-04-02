@@ -5,6 +5,13 @@ const fsBase = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { createPtyRuntime } = require('../lib/cli/services/pty/runtime');
+const {
+  shouldEnableShellDrawer,
+  isShellDrawerToggleSequence,
+  resolveShellDrawerLaunch,
+  getShellDrawerPtyRows,
+  getShellDrawerTotalHeight
+} = require('../lib/cli/services/pty/shell-drawer');
 
 function createMockProcess(env = {}, platform = 'linux') {
   const proc = new EventEmitter();
@@ -59,10 +66,17 @@ function createRuntimeHarness(env = {}, overrides = {}) {
   const pty = {
     spawn(command, args, options) {
       const spawnedProc = {
+        writes: [],
+        resizeCalls: [],
         onData(cb) { this._onData = cb; },
         onExit(cb) { this._onExit = cb; },
-        write(chunk) { ptyWrites.push(chunk); },
-        resize() {},
+        write(chunk) {
+          this.writes.push(chunk);
+          ptyWrites.push(chunk);
+        },
+        resize(cols, rows) {
+          this.resizeCalls.push({ cols, rows });
+        },
         kill() {}
       };
       spawns.push({ command, args, options, proc: spawnedProc });
@@ -105,6 +119,11 @@ function createRuntimeHarness(env = {}, overrides = {}) {
     resolveCliPath: () => '/usr/bin/codex',
     buildPtyLaunch: (command, args) => ({ command, args }),
     resolveWindowsBatchLaunch: (_cliName, cliBin) => ({ launchBin: cliBin, envPatch: {} }),
+    shouldEnableShellDrawer,
+    isShellDrawerToggleSequence,
+    resolveShellDrawerLaunch,
+    getShellDrawerPtyRows,
+    getShellDrawerTotalHeight,
     readUsageConfig: () => ({}),
     cliConfigs: { codex: { pkg: '@openai/codex', loginArgs: ['login'] } },
     aiHomeDir: overrides.aiHomeDir || lockRoot,
@@ -198,6 +217,95 @@ test('runtime starts usage refresh scheduler only when explicitly enabled', () =
   });
   runtime.runCliPtyTracked('codex', '10086', ['--version'], false);
   assert.equal(getSchedulerCalls(), 1);
+  assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
+});
+
+test('runtime toggles shell drawer with ctrl+alt+j and routes stdin to shell while open', () => {
+  const { runtime, proc, spawns, rawModeCalls } = createRuntimeHarness({
+    AIH_RUNTIME_SHOW_USAGE: '0'
+  });
+
+  runtime.runCliPtyTracked('codex', '10086', [], false);
+  assert.equal(spawns.length, 1);
+
+  proc.stdin.emit('data', Buffer.from('\x1b\n'));
+  assert.equal(spawns.length, 2);
+  assert.equal(spawns[1].options.cwd, '/tmp');
+  assert.deepEqual(spawns[1].args, []);
+  assert.equal(rawModeCalls[0], true);
+
+  proc.stdin.emit('data', Buffer.from('pwd'));
+  assert.deepEqual(spawns[1].proc.writes.map((item) => String(item)), ['pwd']);
+  assert.deepEqual(spawns[0].proc.writes, []);
+
+  proc.stdin.emit('data', Buffer.from('\x1b\n'));
+  proc.stdin.emit('data', Buffer.from('ls'));
+  assert.deepEqual(spawns[1].proc.writes.map((item) => String(item)), ['pwd']);
+  assert.deepEqual(spawns[0].proc.writes.map((item) => String(item)), ['ls']);
+
+  assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
+  assert.deepEqual(rawModeCalls, [true, false]);
+});
+
+test('runtime resizes shell drawer pty to panel height when terminal size changes', () => {
+  const { runtime, proc, spawns } = createRuntimeHarness({
+    AIH_RUNTIME_SHOW_USAGE: '0',
+    AIH_SHELL_DRAWER_HEIGHT: '6'
+  });
+
+  runtime.runCliPtyTracked('codex', '10086', [], false);
+  proc.stdin.emit('data', Buffer.from('\x1b\n'));
+
+  assert.equal(spawns.length, 2);
+  assert.equal(spawns[1].options.rows, 3);
+
+  proc.stdout.columns = 100;
+  proc.stdout.rows = 30;
+  proc.stdout.emit('resize');
+
+  assert.deepEqual(spawns[1].proc.resizeCalls, [
+    { cols: 80, rows: 3 },
+    { cols: 100, rows: 3 }
+  ]);
+
+  assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
+});
+
+test('runtime renders drawer borders when shell drawer opens', () => {
+  const { runtime, proc, spawns, writes } = createRuntimeHarness({
+    AIH_RUNTIME_SHOW_USAGE: '0'
+  });
+
+  runtime.runCliPtyTracked('codex', '10086', [], false);
+  proc.stdin.emit('data', Buffer.from('\x1b\n'));
+  assert.equal(spawns.length, 2);
+  assert.equal(writes.some((line) => line.includes('┌')), true);
+  assert.equal(writes.some((line) => line.includes('└')), true);
+
+  assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
+});
+
+test('runtime redraws drawer frame after shell output and keeps usage summary above drawer', () => {
+  const now = Date.now();
+  const { runtime, proc, spawns, writes } = createRuntimeHarness({}, {
+    readUsageCache: () => ({
+      capturedAt: now,
+      entries: [{ remainingPct: 64.2 }]
+    }),
+    getUsageRemainingPercentValues: (snapshot) => {
+      if (!snapshot || !Array.isArray(snapshot.entries)) return [];
+      return snapshot.entries.map((x) => Number(x.remainingPct)).filter((n) => Number.isFinite(n));
+    }
+  });
+
+  runtime.runCliPtyTracked('codex', '10086', [], false);
+  proc.stdin.emit('data', Buffer.from('\x1b\n'));
+  spawns[1].proc._onData('ls\r\nREADME.md\r\nlib\r\n');
+
+  assert.equal(writes.some((line) => line.includes('account 10086 usage remaining')), true);
+  assert.equal(writes.some((line) => line.includes('README.md')), true);
+  assert.equal(writes.filter((line) => line.includes('└')).length >= 2, true);
+
   assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
 });
 

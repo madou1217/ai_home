@@ -3,7 +3,8 @@ const assert = require('node:assert/strict');
 const {
   createCodexImportWiring,
   createCodexPolicyWiring,
-  createCliHelpWiring
+  createCliHelpWiring,
+  createDesktopClientRestartWiring
 } = require('../lib/cli/bootstrap/cli-feature-wiring');
 
 test('createCodexImportWiring maps codex import dependencies', () => {
@@ -72,4 +73,32 @@ test('createCliHelpWiring maps help dependencies', () => {
   assert.equal(out.showHelp, showHelp);
   assert.equal(out.showCliUsage, showCliUsage);
   assert.equal(typeof receivedArg.log, 'function');
+});
+
+test('createDesktopClientRestartWiring maps desktop restart dependencies', () => {
+  let receivedArg = null;
+  const restartDetectedDesktopClient = () => ({ restarted: false });
+
+  const out = createDesktopClientRestartWiring({
+    fs: {},
+    aiHomeDir: '/tmp/aih',
+    hostHomeDir: '/tmp/home',
+    path: {},
+    spawn: () => {},
+    spawnSync: () => ({}),
+    processObj: { platform: 'win32' },
+    cliConfigs: { codex: {} }
+  }, {
+    createDesktopClientRestartService: (arg) => {
+      receivedArg = arg;
+      return { restartDetectedDesktopClient };
+    }
+  });
+
+  assert.equal(out.restartDetectedDesktopClient, restartDetectedDesktopClient);
+  assert.equal(receivedArg.processObj.platform, 'win32');
+  assert.equal(receivedArg.aiHomeDir, '/tmp/aih');
+  assert.equal(receivedArg.hostHomeDir, '/tmp/home');
+  assert.equal(typeof receivedArg.spawn, 'function');
+  assert.equal(typeof receivedArg.spawnSync, 'function');
 });

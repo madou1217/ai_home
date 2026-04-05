@@ -168,6 +168,194 @@ test('`aih codex login --no-browser` forwards flag to login PTY flow', () => {
   }]);
 });
 
+test('`aih codex set-default` does not touch desktop client without explicit flag', () => {
+  const exits = [];
+  const logs = [];
+  const writes = [];
+  const restartCalls = [];
+  const originalLog = console.log;
+  console.log = (msg) => logs.push(String(msg));
+  try {
+    runAiCliCommandRouter('codex', ['codex', 'set-default', '12'], {
+      processImpl: { exit: (code) => exits.push(code) },
+      fs: {
+        existsSync: (target) => String(target).endsWith('/codex/12'),
+        writeFileSync: (target, value) => writes.push({ target, value })
+      },
+      PROFILES_DIR: '/tmp/aih-test-profiles',
+      syncGlobalConfigToHost: () => ({ ok: true }),
+      restartDetectedDesktopClient: (cliName) => {
+        restartCalls.push(cliName);
+        return { detected: true, restarted: true, clientName: 'Codex' };
+      }
+    });
+  } finally {
+    console.log = originalLog;
+  }
+
+  assert.deepEqual(restartCalls, []);
+  assert.deepEqual(writes, [{
+    target: '/tmp/aih-test-profiles/codex/.aih_default',
+    value: '12'
+  }]);
+  assert.deepEqual(exits, [0]);
+  assert.equal(logs.some((line) => line.includes('Set Account ID 12 as default for codex')), true);
+  assert.equal(logs.some((line) => line.includes('desktop client')), false);
+});
+
+test('`aih codex set-default --restart-client` restarts desktop client as best effort after sync', () => {
+  const exits = [];
+  const logs = [];
+  const restartCalls = [];
+  const originalLog = console.log;
+  console.log = (msg) => logs.push(String(msg));
+  try {
+    runAiCliCommandRouter('codex', ['codex', 'set-default', '12', '--restart-client'], {
+      processImpl: { exit: (code) => exits.push(code) },
+      fs: {
+        existsSync: (target) => String(target).endsWith('/codex/12'),
+        writeFileSync: () => {}
+      },
+      PROFILES_DIR: '/tmp/aih-test-profiles',
+      syncGlobalConfigToHost: () => ({ ok: true }),
+      restartDetectedDesktopClient: (cliName) => {
+        restartCalls.push(cliName);
+        return { detected: true, restarted: true, clientName: 'Codex' };
+      }
+    });
+  } finally {
+    console.log = originalLog;
+  }
+
+  assert.deepEqual(restartCalls, ['codex']);
+  assert.deepEqual(exits, [0]);
+  assert.equal(logs.some((line) => line.includes('Restarted local Codex desktop client')), true);
+});
+
+test('`aih codex set-default --restart-client` reports force-quit restart when graceful stop timed out', () => {
+  const exits = [];
+  const logs = [];
+  const originalLog = console.log;
+  console.log = (msg) => logs.push(String(msg));
+  try {
+    runAiCliCommandRouter('codex', ['codex', 'set-default', '12', '--restart-client'], {
+      processImpl: { exit: (code) => exits.push(code) },
+      fs: {
+        existsSync: (target) => String(target).endsWith('/codex/12'),
+        writeFileSync: () => {}
+      },
+      PROFILES_DIR: '/tmp/aih-test-profiles',
+      syncGlobalConfigToHost: () => ({ ok: true }),
+      restartDetectedDesktopClient: () => ({
+        detected: true,
+        restarted: true,
+        forceQuit: true,
+        clientName: 'Codex'
+      })
+    });
+  } finally {
+    console.log = originalLog;
+  }
+
+  assert.deepEqual(exits, [0]);
+  assert.equal(logs.some((line) => line.includes('Force-quit and restarted local Codex desktop client')), true);
+});
+
+test('`aih codex set-default --force-quit-client` requests force quit when restarting desktop client', () => {
+  const exits = [];
+  const logs = [];
+  const restartCalls = [];
+  const originalLog = console.log;
+  console.log = (msg) => logs.push(String(msg));
+  try {
+    runAiCliCommandRouter('codex', ['codex', 'set-default', '12', '--force-quit-client'], {
+      processImpl: { exit: (code) => exits.push(code) },
+      fs: {
+        existsSync: (target) => String(target).endsWith('/codex/12'),
+        writeFileSync: () => {}
+      },
+      PROFILES_DIR: '/tmp/aih-test-profiles',
+      syncGlobalConfigToHost: () => ({ ok: true }),
+      restartDetectedDesktopClient: (cliName, options) => {
+        restartCalls.push({ cliName, options });
+        return {
+          detected: true,
+          restarted: true,
+          forceQuit: true,
+          clientName: 'Codex'
+        };
+      }
+    });
+  } finally {
+    console.log = originalLog;
+  }
+
+  assert.deepEqual(restartCalls, [{
+    cliName: 'codex',
+    options: { forceQuit: true }
+  }]);
+  assert.deepEqual(exits, [0]);
+  assert.equal(logs.some((line) => line.includes('Force-quit and restarted local Codex desktop client')), true);
+});
+
+test('`aih codex set-default --restart-client` reminds user to open desktop app first when no learned path exists', () => {
+  const exits = [];
+  const logs = [];
+  const originalLog = console.log;
+  console.log = (msg) => logs.push(String(msg));
+  try {
+    runAiCliCommandRouter('codex', ['codex', 'set-default', '12', '--restart-client'], {
+      processImpl: { exit: (code) => exits.push(code) },
+      fs: {
+        existsSync: (target) => String(target).endsWith('/codex/12'),
+        writeFileSync: () => {}
+      },
+      PROFILES_DIR: '/tmp/aih-test-profiles',
+      syncGlobalConfigToHost: () => ({ ok: true }),
+      restartDetectedDesktopClient: () => ({
+        detected: false,
+        restarted: false,
+        clientName: 'Codex',
+        reason: 'no_saved_path'
+      })
+    });
+  } finally {
+    console.log = originalLog;
+  }
+
+  assert.deepEqual(exits, [0]);
+  assert.equal(logs.some((line) => line.includes('Open Codex desktop app once manually first')), true);
+});
+
+test('`aih codex set-default --restart-client` reports direct launch when desktop client was not running', () => {
+  const exits = [];
+  const logs = [];
+  const originalLog = console.log;
+  console.log = (msg) => logs.push(String(msg));
+  try {
+    runAiCliCommandRouter('codex', ['codex', 'set-default', '12', '--restart-client'], {
+      processImpl: { exit: (code) => exits.push(code) },
+      fs: {
+        existsSync: (target) => String(target).endsWith('/codex/12'),
+        writeFileSync: () => {}
+      },
+      PROFILES_DIR: '/tmp/aih-test-profiles',
+      syncGlobalConfigToHost: () => ({ ok: true }),
+      restartDetectedDesktopClient: () => ({
+        detected: false,
+        restarted: false,
+        launched: true,
+        clientName: 'Codex'
+      })
+    });
+  } finally {
+    console.log = originalLog;
+  }
+
+  assert.deepEqual(exits, [0]);
+  assert.equal(logs.some((line) => line.includes('was not running; launched local Codex desktop client')), true);
+});
+
 test('`aih codex <id> --no-browser` logs in the same account when unconfigured', () => {
   const calls = [];
   runAiCliCommandRouter('codex', ['codex', '12', '--no-browser'], {

@@ -144,15 +144,32 @@ aih 服务器 (代理)
 
 ### Q1: Codex 上游 WebSocket 端点是什么?
 
-**需要确认**: Codex 的 WebSocket 端点URL。可能的选项:
-- `wss://api.codex.com/v1/responses`
-- `wss://codex.anthropic.com/v1/responses`
-- 其他?
+**已确认**:
 
-**如何确定**:
-1. 查看 Codex CLI 源码
-2. 抓包分析 Codex 的网络请求
-3. 查看 Codex 官方文档
+1. **OAuth 模式**: `wss://chatgpt.com/backend-api/codex/responses`
+2. **API Key 模式**: 使用账号配置的 `openai_base_url` (中转服务器)
+
+**实现方式**:
+```javascript
+// 从账号配置读取 openaiBaseUrl
+const envPath = path.join(profileDir, '.aih_env.json');
+const envData = parseJsonFileSafe(envPath, fs);
+const openaiBaseUrl = envData && envData.OPENAI_BASE_URL ? String(envData.OPENAI_BASE_URL).trim() : '';
+
+// 账号对象包含 openaiBaseUrl 字段
+account = {
+  id: '10',
+  accessToken: '...',
+  openaiBaseUrl: 'http://localhost:8317/v1'  // API Key 模式
+};
+
+// WebSocket 代理选择上游端点
+let upstreamBaseUrl = options.codexBaseUrl;  // 默认: 官方 ChatGPT API
+if (account.openaiBaseUrl) {
+  upstreamBaseUrl = account.openaiBaseUrl;   // API Key 模式: 使用中转服务器
+}
+const upstreamUrl = upstreamBaseUrl.replace(/^https?:/, 'wss:') + '/responses';
+```
 
 ### Q2: 是否需要会话保持?
 

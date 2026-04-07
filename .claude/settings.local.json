@@ -19,7 +19,18 @@
       "Read(//Users/model/.ai_home/profiles/codex/10/**)",
       "Bash(npm install:*)",
       "WebFetch(domain:github.com)",
-      "WebFetch(domain:raw.githubusercontent.com)"
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Read(//Users/model/.ai_home/profiles/claude/1/.ai_home/**)",
+      "Bash(xargs cat:*)",
+      "Bash(test:*)",
+      "Read(//Users/model/.ai_home/profiles/claude/1/**)",
+      "Bash(echo:*)",
+      "Bash(find:*)",
+      "Bash(REAL_HOME=\"/Users/model\")",
+      "Bash(if [ -f \"$REAL_HOME/.codex/config.toml\" ])",
+      "Bash(then)",
+      "Bash(else)",
+      "Bash(fi)"
     ]
   },
   "enableAllProjectMcpServers": false

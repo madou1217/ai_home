@@ -30,7 +30,8 @@
       "Bash(if [ -f \"$REAL_HOME/.codex/config.toml\" ])",
       "Bash(then)",
       "Bash(else)",
-      "Bash(fi)"
+      "Bash(fi)",
+      "Bash(git push)"
     ]
   },
   "enableAllProjectMcpServers": false

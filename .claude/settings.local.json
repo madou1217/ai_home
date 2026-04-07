@@ -17,7 +17,9 @@
       "Bash(env OPENAI_API_KEY=dummy OPENAI_BASE_URL=http://localhost:8317/v1 codex:*)",
       "Read(//private/tmp/**)",
       "Read(//Users/model/.ai_home/profiles/codex/10/**)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)"
     ]
   },
   "enableAllProjectMcpServers": false

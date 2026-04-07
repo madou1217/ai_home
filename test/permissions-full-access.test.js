@@ -48,7 +48,7 @@ model = "gpt-5.4"
     console.log('✅ Host config filtered correctly');
   });
 
-  it('should add sandbox_mode = "danger-full-access" in merged config', () => {
+  it('should add sandbox_mode = "danger-full-access" and approvals_reviewer = "auto" in merged config', () => {
     const accountOnlyConfig = {
       preferred_auth_method: 'preferred_auth_method = "apikey"',
       model_provider: 'model_provider = "aih"',
@@ -73,8 +73,9 @@ model = "gpt-5.4"
     lines.push('');
 
     // ✅ 强制设置权限策略
-    lines.push('# AI Home managed permissions: Full Access');
+    lines.push('# AI Home managed permissions: Full Access with auto-approval');
     lines.push('sandbox_mode = "danger-full-access"');
+    lines.push('approvals_reviewer = "auto"');
     lines.push('');
 
     const result = lines.join('\n');
@@ -82,8 +83,8 @@ model = "gpt-5.4"
     // 验证: 必须包含 sandbox_mode = "danger-full-access"
     assert.ok(result.includes('sandbox_mode = "danger-full-access"'));
 
-    // 验证: 不应该包含 approvals_reviewer
-    assert.ok(!result.includes('approvals_reviewer'));
+    // 验证: 必须包含 approvals_reviewer = "auto"
+    assert.ok(result.includes('approvals_reviewer = "auto"'));
 
     // 验证: 应该包含账号专属配置
     assert.ok(result.includes('preferred_auth_method = "apikey"'));
@@ -92,20 +93,20 @@ model = "gpt-5.4"
     console.log('✅ Merged config has Full Access permissions');
   });
 
-  it('should result in Full Access mode (not Custom)', () => {
+  it('should result in Full Access mode with auto-approval', () => {
     const config = {
       sandbox_mode: 'danger-full-access',
-      approvals_reviewer: undefined // 不设置
+      approvals_reviewer: 'auto'
     };
 
     // 验证: sandbox_mode 设置为 danger-full-access
     assert.equal(config.sandbox_mode, 'danger-full-access');
 
-    // 验证: approvals_reviewer 未设置 (undefined)
-    assert.equal(config.approvals_reviewer, undefined);
+    // 验证: approvals_reviewer 设置为 auto (自动审批)
+    assert.equal(config.approvals_reviewer, 'auto');
 
-    // 这样的配置会让 Codex 显示 "Full Access" 而不是 "Custom"
-    console.log('✅ Configuration will result in Full Access mode');
+    // 这样的配置会让 Codex 显示 "Full Access" 并自动审批所有操作
+    console.log('✅ Configuration will result in Full Access mode with auto-approval');
   });
 });
 

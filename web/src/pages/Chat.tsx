@@ -87,6 +87,30 @@ const Chat = () => {
     };
 
     loadMessages();
+
+    // SSE 实时监听会话文件变更（Claude 支持）
+    if (selectedSession.provider === 'claude' && selectedSession.projectDirName) {
+      const params = new URLSearchParams({
+        sessionId: selectedSession.id,
+        provider: selectedSession.provider,
+        projectDirName: selectedSession.projectDirName
+      });
+      const es = new EventSource(`/v0/webui/sessions/watch?${params}`);
+      es.onmessage = (evt) => {
+        try {
+          const data = JSON.parse(evt.data);
+          if (data.type === 'update') {
+            // 会话文件有更新，重新加载消息
+            sessionsAPI.getSessionMessages(
+              selectedSession.provider,
+              selectedSession.id,
+              selectedSession.projectDirName
+            ).then(setMessages).catch(() => {});
+          }
+        } catch {}
+      };
+      return () => es.close();
+    }
   }, [selectedSession]);
 
   // 发送消息

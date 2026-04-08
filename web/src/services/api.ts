@@ -31,6 +31,23 @@ export const accountsAPI = {
   delete: async (provider: string, accountId: string) => {
     const response = await api.delete(`/webui/accounts/${provider}/${accountId}`);
     return response.data;
+  },
+
+  // 导出账号
+  export: async () => {
+    const response = await api.get('/webui/accounts/export', { responseType: 'blob' });
+    const url = URL.createObjectURL(new Blob([JSON.stringify(response.data, null, 2)], { type: 'application/json' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'ai-home-accounts.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  },
+
+  // 导入账号
+  import: async (data: any) => {
+    const response = await api.post('/webui/accounts/import', data);
+    return response.data;
   }
 };
 

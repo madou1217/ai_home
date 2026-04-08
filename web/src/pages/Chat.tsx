@@ -26,6 +26,7 @@ const Chat = () => {
   const [loadingProjects, setLoadingProjects] = useState(false);
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [selectedModel, setSelectedModel] = useState<string>('');
+  const [images, setImages] = useState<string[]>([]);
 
   const INITIAL_MSG_COUNT = 30; // 初始加载条数
   const LOAD_MORE_COUNT = 20; // 每次加载更多
@@ -150,6 +151,7 @@ const Chat = () => {
     const newMessages = [...messages, userMsg];
     setMessages(newMessages);
     setInput('');
+    setImages([]);
     setLoading(true);
 
     try {
@@ -212,11 +214,13 @@ const Chat = () => {
           input={input}
           loading={loading}
           hasMoreHistory={hasMoreHistory}
+          images={images}
           onLoadMore={loadMoreHistory}
           onInputChange={setInput}
           onSend={handleSend}
           onAccountChange={setSelectedAccount}
           onModelChange={setSelectedModel}
+          onImagesChange={setImages}
         />
       </Content>
     </Layout>

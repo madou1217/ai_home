@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Table,
   Button,
@@ -26,7 +26,9 @@ import {
   ReloadOutlined,
   FilterOutlined,
   MoreOutlined,
-  SyncOutlined
+  SyncOutlined,
+  ExportOutlined,
+  ImportOutlined
 } from '@ant-design/icons';
 import { accountsAPI, managementAPI } from '@/services/api';
 import type { Account } from '@/types';
@@ -45,6 +47,27 @@ const Accounts = () => {
   const [form] = Form.useForm();
   const [activeProvider, setActiveProvider] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const importInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleExport = async () => {
+    try {
+      await accountsAPI.export();
+      message.success('导出成功');
+    } catch { message.error('导出失败'); }
+  };
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      const result = await accountsAPI.import(data);
+      message.success(`导入成功，共 ${result.imported} 个账号`);
+      loadAccounts();
+    } catch { message.error('导入失败，请检查文件格式'); }
+    e.target.value = '';
+  };
 
   const loadAccounts = async () => {
     setLoading(true);
@@ -331,20 +354,11 @@ const Accounts = () => {
       <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h1 style={{ margin: 0 }}>账号管理</h1>
         <Space>
-          <Button
-            icon={<ReloadOutlined />}
-            onClick={loadAccounts}
-            loading={loading}
-          >
-            刷新
-          </Button>
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={() => setModalVisible(true)}
-          >
-            添加账号
-          </Button>
+          <Button icon={<ExportOutlined />} onClick={handleExport}>导出</Button>
+          <Button icon={<ImportOutlined />} onClick={() => importInputRef.current?.click()}>导入</Button>
+          <input ref={importInputRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleImport} />
+          <Button icon={<ReloadOutlined />} onClick={loadAccounts} loading={loading}>刷新</Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalVisible(true)}>添加账号</Button>
         </Space>
       </div>
 

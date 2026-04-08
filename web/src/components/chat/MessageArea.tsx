@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { Select, Empty, Spin } from 'antd';
-import { ArrowDownOutlined, PlusOutlined } from '@ant-design/icons';
+import { ArrowDownOutlined, PlusOutlined, CloseOutlined } from '@ant-design/icons';
 import type { ChatMessage, Account, Session } from '@/types';
 import { modelsAPI } from '@/services/api';
 import MessageBubble from './MessageBubble';
@@ -19,22 +19,67 @@ interface Props {
   input: string;
   loading: boolean;
   hasMoreHistory?: boolean;
+  images?: string[]; // base64 图片列表
   onLoadMore?: () => void;
   onInputChange: (val: string) => void;
   onSend: () => void;
   onAccountChange: (account: Account) => void;
   onModelChange: (model: string) => void;
+  onImagesChange?: (images: string[]) => void;
 }
 
 const MessageArea = ({
   session, messages, accounts, selectedAccount, selectedModel,
-  input, loading, hasMoreHistory, onLoadMore, onInputChange, onSend, onAccountChange, onModelChange
+  input, loading, hasMoreHistory, images = [], onLoadMore, onInputChange,
+  onSend, onAccountChange, onModelChange, onImagesChange
 }: Props) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [showScrollBottom, setShowScrollBottom] = useState(false);
   const [modelsByProvider, setModelsByProvider] = useState<Record<string, string[]>>({});
+
+  // 处理粘贴图片
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of Array.from(items)) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (!file) continue;
+        const reader = new FileReader();
+        reader.onload = () => {
+          const base64 = reader.result as string;
+          onImagesChange?.([...images, base64]);
+        };
+        reader.readAsDataURL(file);
+        break;
+      }
+    }
+  }, [images, onImagesChange]);
+
+  // 处理文件选择
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+    for (const file of Array.from(files)) {
+      if (file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const base64 = reader.result as string;
+          onImagesChange?.([...images, base64]);
+        };
+        reader.readAsDataURL(file);
+      }
+    }
+    e.target.value = ''; // reset
+  };
+
+  const removeImage = (idx: number) => {
+    onImagesChange?.(images.filter((_, i) => i !== idx));
+  };
 
   // 加载按 provider 分组的模型列表
   useEffect(() => {
@@ -156,20 +201,47 @@ const MessageArea = ({
       {/* ChatGPT 风格输入区域 */}
       <div className={styles.inputArea}>
         <div className={styles.inputBox}>
+          {/* 图片预览 */}
+          {images.length > 0 && (
+            <div className={styles.imagePreviewRow}>
+              {images.map((img, idx) => (
+                <div key={idx} className={styles.imagePreviewItem}>
+                  <img src={img} alt="" className={styles.imagePreviewImg} />
+                  <button className={styles.imageRemoveBtn} onClick={() => removeImage(idx)}>
+                    <CloseOutlined style={{ fontSize: 10 }} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           <textarea
             ref={textareaRef}
             className={styles.inputTextarea}
             value={input}
             onChange={e => onInputChange(e.target.value)}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             placeholder="输入消息..."
             disabled={loading}
             rows={1}
           />
+          {/* 隐藏文件输入 */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            style={{ display: 'none' }}
+            onChange={handleFileSelect}
+          />
           {/* 底部工具栏 */}
           <div className={styles.inputToolbar}>
             <div className={styles.inputToolbarLeft}>
-              <button className={styles.inputToolbarBtn} title="附件">
+              <button
+                className={styles.inputToolbarBtn}
+                title="上传图片"
+                onClick={() => fileInputRef.current?.click()}
+              >
                 <PlusOutlined style={{ fontSize: 16 }} />
               </button>
               <Select

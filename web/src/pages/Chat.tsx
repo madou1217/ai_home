@@ -23,6 +23,7 @@ const Chat = () => {
   const [loading, setLoading] = useState(false);
   const [loadingProjects, setLoadingProjects] = useState(false);
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
+  const [selectedModel, setSelectedModel] = useState<string>('');
 
   // 加载账号
   const loadAccounts = async () => {
@@ -108,6 +109,7 @@ const Chat = () => {
         messages: newMessages,
         provider: selectedAccount.provider,
         accountId: selectedAccount.accountId,
+        model: selectedModel || undefined,
         stream: false
       });
       if (res.ok && res.content) {
@@ -158,11 +160,13 @@ const Chat = () => {
           messages={messages}
           accounts={accounts}
           selectedAccount={selectedAccount}
+          selectedModel={selectedModel}
           input={input}
           loading={loading}
           onInputChange={setInput}
           onSend={handleSend}
           onAccountChange={setSelectedAccount}
+          onModelChange={setSelectedModel}
         />
       </Content>
     </Layout>

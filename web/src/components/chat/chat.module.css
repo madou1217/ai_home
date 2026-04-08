@@ -98,6 +98,26 @@
   color: #999;
 }
 
+/* 归档按钮 */
+.archiveBtn {
+  display: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #bbb;
+  font-size: 12px;
+  padding: 2px;
+  flex-shrink: 0;
+}
+
+.archiveBtn:hover {
+  color: #ff4d4f;
+}
+
+.sessionItem:hover .archiveBtn {
+  display: inline-flex;
+}
+
 .sessionMore {
   padding: 4px 12px;
   font-size: 11px;

@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Button, Spin, Empty } from 'antd';
-import { ReloadOutlined } from '@ant-design/icons';
+import { Button, Spin, Empty, Popconfirm, message } from 'antd';
+import { ReloadOutlined, InboxOutlined } from '@ant-design/icons';
 import type { AggregatedProject, Session } from '@/types';
+import { sessionsAPI } from '@/services/api';
 import ProviderIcon from './ProviderIcon';
 import folderIcon from '@/assets/icons/folder.svg';
 import expandIcon from '@/assets/icons/expand.svg';
@@ -97,6 +98,29 @@ const ProjectList = ({
                         <div className={styles.sessionHeader}>
                           <ProviderIcon provider={session.provider} size={14} />
                           <span className={styles.sessionTitle}>{session.title}</span>
+                          {/* 归档按钮 - hover 显示 */}
+                          <Popconfirm
+                            title="归档此会话？"
+                            onConfirm={async (e) => {
+                              e?.stopPropagation();
+                              try {
+                                await sessionsAPI.archiveSession(session.provider, session.id, session.projectDirName);
+                                message.success('已归档');
+                                onRefresh();
+                              } catch { message.error('归档失败'); }
+                            }}
+                            onCancel={(e) => e?.stopPropagation()}
+                            okText="确定"
+                            cancelText="取消"
+                          >
+                            <button
+                              className={styles.archiveBtn}
+                              onClick={(e) => e.stopPropagation()}
+                              title="归档"
+                            >
+                              <InboxOutlined />
+                            </button>
+                          </Popconfirm>
                         </div>
                         <span className={styles.sessionTime}>
                           {dayjs(session.updatedAt).fromNow()}

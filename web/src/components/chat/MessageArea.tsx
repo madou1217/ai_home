@@ -8,21 +8,43 @@ import styles from './chat.module.css';
 
 const { TextArea } = Input;
 
+// Provider 默认模型列表
+const PROVIDER_MODELS: Record<string, Array<{ label: string; value: string }>> = {
+  codex: [
+    { label: 'GPT-4o', value: 'gpt-4o' },
+    { label: 'GPT-4o Mini', value: 'gpt-4o-mini' },
+    { label: 'o3', value: 'o3' },
+    { label: 'o4-mini', value: 'o4-mini' },
+  ],
+  claude: [
+    { label: 'Sonnet 4', value: 'claude-sonnet-4-20250514' },
+    { label: 'Opus 4', value: 'claude-opus-4-20250514' },
+    { label: 'Haiku 3.5', value: 'claude-haiku-4-5-20251001' },
+  ],
+  gemini: [
+    { label: 'Gemini 2.5 Pro', value: 'gemini-2.5-pro' },
+    { label: 'Gemini 2.5 Flash', value: 'gemini-2.5-flash' },
+    { label: 'Gemini 2.0 Flash', value: 'gemini-2.0-flash' },
+  ]
+};
+
 interface Props {
   session: Session | null;
   messages: ChatMessage[];
   accounts: Account[];
   selectedAccount: Account | null;
+  selectedModel: string;
   input: string;
   loading: boolean;
   onInputChange: (val: string) => void;
   onSend: () => void;
   onAccountChange: (account: Account) => void;
+  onModelChange: (model: string) => void;
 }
 
 const MessageArea = ({
-  session, messages, accounts, selectedAccount,
-  input, loading, onInputChange, onSend, onAccountChange
+  session, messages, accounts, selectedAccount, selectedModel,
+  input, loading, onInputChange, onSend, onAccountChange, onModelChange
 }: Props) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -126,24 +148,6 @@ const MessageArea = ({
 
       {/* 输入区域 */}
       <div className={styles.inputArea}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-          <ProviderIcon provider={session.provider} size={16} />
-          <Select
-            style={{ minWidth: 140 }}
-            size="small"
-            placeholder="选择账号"
-            value={selectedAccount ? `${selectedAccount.provider}-${selectedAccount.accountId}` : undefined}
-            onChange={(value) => {
-              const [provider, accountId] = value.split('-');
-              const account = accounts.find(a => a.provider === provider && a.accountId === accountId);
-              if (account) onAccountChange(account);
-            }}
-            options={filteredAccounts.map(acc => ({
-              label: formatLabel(acc),
-              value: `${acc.provider}-${acc.accountId}`
-            }))}
-          />
-        </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <TextArea
             value={input}
@@ -161,6 +165,39 @@ const MessageArea = ({
             loading={loading}
             disabled={!input.trim() && !loading}
             style={{ height: 'auto', borderRadius: 8, alignSelf: 'flex-end' }}
+          />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+          <ProviderIcon provider={session.provider} size={14} />
+          <Select
+            style={{ minWidth: 120 }}
+            size="small"
+            variant="borderless"
+            placeholder="模型"
+            value={selectedModel || undefined}
+            onChange={onModelChange}
+            options={(PROVIDER_MODELS[session.provider] || []).map(m => ({
+              label: m.label,
+              value: m.value
+            }))}
+            allowClear
+          />
+          <span style={{ color: '#d9d9d9' }}>|</span>
+          <Select
+            style={{ minWidth: 100 }}
+            size="small"
+            variant="borderless"
+            placeholder="账号"
+            value={selectedAccount ? `${selectedAccount.provider}-${selectedAccount.accountId}` : undefined}
+            onChange={(value) => {
+              const [provider, accountId] = value.split('-');
+              const account = accounts.find(a => a.provider === provider && a.accountId === accountId);
+              if (account) onAccountChange(account);
+            }}
+            options={filteredAccounts.map(acc => ({
+              label: formatLabel(acc),
+              value: `${acc.provider}-${acc.accountId}`
+            }))}
           />
         </div>
       </div>

@@ -33,6 +33,7 @@ export interface ChatRequest {
   messages: ChatMessage[];
   provider: Provider;
   accountId: string;
+  model?: string;
   stream?: boolean;
 }
 

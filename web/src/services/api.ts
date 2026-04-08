@@ -57,6 +57,14 @@ export const sessionsAPI = {
     return response.data.projects;
   },
 
+  // 归档会话
+  archiveSession: async (provider: string, sessionId: string, projectDirName?: string) => {
+    const response = await api.post('/webui/sessions/archive', {
+      provider, sessionId, projectDirName
+    });
+    return response.data;
+  },
+
   // 获取 session 的消息内容
   getSessionMessages: async (provider: string, sessionId: string, projectDirName?: string): Promise<ChatMessage[]> => {
     let url = `/webui/sessions/${provider}/${sessionId}/messages`;

@@ -202,9 +202,9 @@ const MessageBubble = ({ message, provider }: Props) => {
   if (isUser) {
     return (
       <div className={`${styles.messageRow} ${styles.messageRowUser}`}>
-        <div>
+        <div className={styles.messageWrapper}>
           <div className={styles.bubbleUser}>{message.content}</div>
-          <div className={styles.messageActions} style={{ justifyContent: 'flex-end' }}>
+          <div className={styles.messageActions}>
             <CopyButton text={message.content} />
           </div>
         </div>
@@ -231,7 +231,7 @@ const MessageBubble = ({ message, provider }: Props) => {
       <Avatar size={32} className={styles.avatarAi}>
         <ProviderIcon provider={provider} size={18} />
       </Avatar>
-      <div>
+      <div className={styles.messageWrapper}>
         <div className={styles.bubbleAssistant}>
           {blocks.map((block, idx) => {
             if (block.type === 'tool_use') {

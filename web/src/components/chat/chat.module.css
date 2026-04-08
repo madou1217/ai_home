@@ -238,12 +238,13 @@
 /* Bash 代码块 */
 .codeBlock {
   margin: 0;
-  padding: 8px;
-  background: #1e1e1e;
-  color: #d4d4d4;
+  padding: 10px 12px;
+  background: #1a1a2e;
+  color: #e0e0e0;
   border-radius: 4px;
   font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
-  font-size: 12px;
+  font-size: 13px;
+  line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-all;
   overflow-x: auto;
@@ -261,26 +262,42 @@
   word-break: break-word;
 }
 
-/* 消息操作栏 */
-.messageActions {
-  display: none;
-  gap: 4px;
-  margin-top: 4px;
+/* 消息操作栏 - 绝对定位不占空间 */
+.messageWrapper {
+  position: relative;
 }
 
-.messageRow:hover .messageActions {
+.messageActions {
+  position: absolute;
+  bottom: -20px;
+  right: 0;
   display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.15s;
+  pointer-events: none;
+}
+
+.messageWrapper:hover .messageActions {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .actionBtn {
-  background: none;
-  border: 1px solid #e8e8e8;
+  background: #fff;
+  border: 1px solid #e0e0e0;
   border-radius: 4px;
-  padding: 2px 6px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 11px;
   color: #999;
   transition: all 0.15s;
+  padding: 0;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.06);
 }
 
 .actionBtn:hover {

@@ -9,6 +9,7 @@ import {
 } from '@ant-design/icons';
 import { accountsAPI, managementAPI } from '@/services/api';
 import type { Account } from '@/types';
+import ProviderIcon from '@/components/chat/ProviderIcon';
 import dayjs from 'dayjs';
 
 const Dashboard = () => {
@@ -56,8 +57,8 @@ const Dashboard = () => {
       render: (text: string, record: Account) => (
         <div>
           <div style={{ fontWeight: 'bold' }}>{text}</div>
-          <div style={{ fontSize: '12px', color: '#999' }}>
-            {record.provider} - {record.accountId}
+          <div style={{ fontSize: '12px', color: '#999', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <ProviderIcon provider={record.provider} size={14} /> {record.accountId}
           </div>
         </div>
       )

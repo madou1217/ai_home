@@ -76,14 +76,11 @@ export const sessionsAPI = {
   }
 };
 
-// 模型列表 API
+// 模型列表 API（按 provider 分组）
 export const modelsAPI = {
-  list: async (): Promise<Array<{ id: string; owned_by: string }>> => {
-    const response = await api.get<{ data: Array<{ id: string; owned_by: string }> }>('/models', {
-      baseURL: '/v1',
-      headers: { Authorization: 'Bearer webui' }
-    });
-    return response.data.data || [];
+  listByProvider: async (): Promise<Record<string, string[]>> => {
+    const response = await api.get<{ ok: boolean; models: Record<string, string[]> }>('/webui/models');
+    return response.data.models || {};
   }
 };
 

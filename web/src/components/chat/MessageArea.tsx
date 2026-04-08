@@ -34,11 +34,11 @@ const MessageArea = ({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [showScrollBottom, setShowScrollBottom] = useState(false);
-  const [availableModels, setAvailableModels] = useState<Array<{ id: string; owned_by: string }>>([]);
+  const [modelsByProvider, setModelsByProvider] = useState<Record<string, string[]>>({});
 
-  // 加载可用模型列表
+  // 加载按 provider 分组的模型列表
   useEffect(() => {
-    modelsAPI.list().then(setAvailableModels).catch(() => {});
+    modelsAPI.listByProvider().then(setModelsByProvider).catch(() => {});
   }, []);
 
   const isInitialLoad = useRef(true);
@@ -106,8 +106,9 @@ const MessageArea = ({
   }
 
   const canSend = input.trim().length > 0 && !loading;
-  // 模型列表从 API 获取
-  const models = availableModels.map(m => ({ label: m.id, value: m.id }));
+  // 按当前 provider 过滤模型
+  const providerModels = (modelsByProvider[session.provider] || []);
+  const models = providerModels.map(m => ({ label: m, value: m }));
 
   return (
     <>

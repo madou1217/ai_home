@@ -15,7 +15,8 @@ interface Props {
 
 type Block =
   | { type: 'text'; value: string }
-  | { type: 'tool_use'; name: string; body: string; result?: string };
+  | { type: 'tool_use'; name: string; body: string; result?: string }
+  | { type: 'thinking'; value: string };
 
 /** 解析 :::tool{name="xxx"} 和 :::tool-result 格式 */
 function parseContent(content: string): Block[] {
@@ -56,6 +57,17 @@ function parseContent(content: string): Block[] {
       blocks.push({ type: 'tool_use', name, body: bodyLines.join('\n').trim(), result });
       continue;
     }
+    // :::thinking
+    if (line === ':::thinking') {
+      flushText();
+      const thinkLines: string[] = [];
+      i++;
+      while (i < lines.length && lines[i] !== ':::') { thinkLines.push(lines[i]); i++; }
+      i++;
+      blocks.push({ type: 'thinking', value: thinkLines.join('\n').trim() });
+      continue;
+    }
+
     // 兼容旧格式
     const old = line.match(/^\[Tool: ([^\]]+)\]$/);
     if (old) { flushText(); blocks.push({ type: 'tool_use', name: old[1], body: '' }); i++; continue; }
@@ -100,6 +112,22 @@ function parseTodos(body: string): Array<{ content: string; status: string }> | 
   } catch { /* not json */ }
   return null;
 }
+
+/** Thinking 折叠块 */
+const ThinkingBlock = ({ value }: { value: string }) => {
+  const [expanded, setExpanded] = useState(false);
+  const lastLine = value.split('\n').filter(l => l.trim()).pop() || '';
+  return (
+    <div className={styles.thinkingBlock} onClick={() => setExpanded(!expanded)}>
+      <div className={styles.thinkingHeader}>
+        <span style={{ fontSize: 12 }}>{expanded ? '▼' : '▶'}</span>
+        <span>Thinking</span>
+        {!expanded && <span className={styles.thinkingPreview}>{lastLine.slice(0, 60)}</span>}
+      </div>
+      {expanded && <div className={styles.thinkingBody}>{value}</div>}
+    </div>
+  );
+};
 
 /** 工具图标映射 */
 const toolIcons: Record<string, string> = {
@@ -234,9 +262,8 @@ const MessageBubble = ({ message, provider }: Props) => {
       <div className={`${styles.messageWrapper} ${styles.messageWrapperAssistant}`}>
         <div className={styles.bubbleAssistant}>
           {blocks.map((block, idx) => {
-            if (block.type === 'tool_use') {
-              return <ToolBlock key={idx} name={block.name} body={block.body} result={block.result} />;
-            }
+            if (block.type === 'thinking') return <ThinkingBlock key={idx} value={block.value} />;
+            if (block.type === 'tool_use') return <ToolBlock key={idx} name={block.name} body={block.body} result={block.result} />;
             return <ReactMarkdown key={idx} remarkPlugins={[remarkGfm]}>{block.value}</ReactMarkdown>;
           })}
         </div>

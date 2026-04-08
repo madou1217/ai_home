@@ -256,16 +256,52 @@
   background: #fafafa;
 }
 
+/* Thinking 折叠块 */
+.thinkingBlock {
+  margin: 6px 0;
+  cursor: pointer;
+  border-left: 3px solid #d9d9d9;
+  padding-left: 10px;
+}
+
+.thinkingHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #999;
+  user-select: none;
+}
+
+.thinkingPreview {
+  color: #bbb;
+  font-style: italic;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.thinkingBody {
+  margin-top: 6px;
+  font-size: 13px;
+  color: #666;
+  white-space: pre-wrap;
+  line-height: 1.5;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
 /* Bash 代码块 */
 .codeBlock {
   margin: 0;
   padding: 10px 12px;
-  background: #1a1a2e;
-  color: #e0e0e0;
-  border-radius: 4px;
+  background: #0d1117;
+  color: #c9d1d9;
+  border-radius: 6px;
   font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
   font-size: 13px;
-  line-height: 1.5;
+  line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-all;
   overflow-x: auto;
@@ -464,22 +500,23 @@
   height: 32px;
   border-radius: 50%;
   border: none;
-  background: #e0e0e0;
+  background: transparent;
   cursor: not-allowed;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.2s;
+  transition: opacity 0.2s;
   padding: 0;
+  opacity: 0.4;
 }
 
 .sendBtnActive {
-  background: #1a1a1a;
   cursor: pointer;
+  opacity: 1;
 }
 
 .sendBtnActive:hover {
-  background: #333;
+  opacity: 0.8;
 }
 
 .emptyCenter {

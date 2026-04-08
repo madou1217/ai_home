@@ -6,7 +6,11 @@
   "scripts": {
     "test": "node --test test/*.test.js",
     "postinstall": "node scripts/postinstall.js",
-    "cleanup:codex": "node scripts/cleanup-codex-free-accounts.js"
+    "cleanup:codex": "node scripts/cleanup-codex-free-accounts.js",
+    "web:install": "cd web && npm install",
+    "web:build": "cd web && npm run build",
+    "web:dev": "cd web && npm run dev",
+    "build": "npm run web:build"
   },
   "keywords": [],
   "author": "",

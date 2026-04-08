@@ -1,0 +1,313 @@
+/* ===== 项目列表侧边栏 ===== */
+.sidebar {
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.refreshBar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 8px 0 0;
+  background: #f5f5f5;
+}
+
+.refreshBtn {
+  width: 24px !important;
+  height: 24px !important;
+  min-width: 24px !important;
+  padding: 0 !important;
+  color: #999 !important;
+  font-size: 12px !important;
+}
+
+.projectItem {
+  padding: 6px 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 0.2s ease;
+  user-select: none;
+}
+
+.projectItem:hover {
+  background: #ebebeb;
+}
+
+.projectIcon {
+  width: 12px;
+  height: 12px;
+  transition: transform 0.2s ease;
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+.projectName {
+  font-size: 13px;
+  color: #333;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sessionList {
+  padding-left: 12px;
+}
+
+.sessionItem {
+  padding: 6px 12px;
+  cursor: pointer;
+  border-left: 2px solid transparent;
+  margin-bottom: 2px;
+  border-radius: 4px;
+  transition: background 0.15s ease;
+}
+
+.sessionItem:hover {
+  background: #f0f0f0;
+}
+
+.sessionItemActive {
+  background: #e3f2fd !important;
+  border-left-color: #1890ff;
+}
+
+.sessionHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.sessionTitle {
+  font-size: 12px;
+  color: #333;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.sessionTime {
+  font-size: 10px;
+  color: #999;
+}
+
+.sessionMore {
+  padding: 4px 12px;
+  font-size: 11px;
+  color: #999;
+  text-align: center;
+}
+
+/* ===== 消息气泡 ===== */
+.messageRow {
+  margin-bottom: 24px;
+  display: flex;
+  gap: 12px;
+}
+
+.messageRowUser {
+  justify-content: flex-end;
+}
+
+.messageRowAssistant {
+  justify-content: flex-start;
+}
+
+.avatarAi {
+  flex-shrink: 0;
+  background: #fff !important;
+  border: 1px solid #f0f0f0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.avatarUser {
+  flex-shrink: 0;
+  background: #1890ff !important;
+}
+
+.bubbleUser {
+  max-width: 70%;
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: #f0f2f5;
+  color: #333;
+  white-space: pre-wrap;
+  word-break: break-word;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+}
+
+.bubbleAssistant {
+  max-width: 80%;
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: #fff;
+  color: #333;
+  word-break: break-word;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+  line-height: 1.6;
+}
+
+/* Markdown 渲染样式 */
+.bubbleAssistant pre {
+  background: #f6f8fa;
+  border-radius: 6px;
+  padding: 12px;
+  overflow-x: auto;
+  font-size: 13px;
+  margin: 8px 0;
+}
+
+.bubbleAssistant code {
+  background: #f0f0f0;
+  padding: 2px 5px;
+  border-radius: 3px;
+  font-size: 13px;
+}
+
+.bubbleAssistant pre code {
+  background: none;
+  padding: 0;
+}
+
+.bubbleAssistant p {
+  margin: 4px 0;
+}
+
+.bubbleAssistant ul, .bubbleAssistant ol {
+  padding-left: 20px;
+  margin: 4px 0;
+}
+
+.bubbleAssistant h1, .bubbleAssistant h2, .bubbleAssistant h3 {
+  margin: 12px 0 4px 0;
+}
+
+.bubbleAssistant table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 8px 0;
+}
+
+.bubbleAssistant th, .bubbleAssistant td {
+  border: 1px solid #ddd;
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.bubbleAssistant th {
+  background: #f6f8fa;
+}
+
+/* Tool 块样式 */
+.toolBlock {
+  margin: 8px 0;
+  border: 1px solid #e8e8e8;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.toolHeader {
+  padding: 6px 12px;
+  background: #f6f8fa;
+  font-size: 12px;
+  font-weight: 500;
+  color: #666;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-bottom: 1px solid #e8e8e8;
+}
+
+.toolBody {
+  padding: 8px 12px;
+  font-size: 13px;
+  max-height: 200px;
+  overflow-y: auto;
+  background: #fafafa;
+}
+
+/* Bash 代码块 */
+.codeBlock {
+  margin: 0;
+  padding: 8px;
+  background: #1e1e1e;
+  color: #d4d4d4;
+  border-radius: 4px;
+  font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  overflow-x: auto;
+}
+
+/* 错误消息 */
+.bubbleError {
+  max-width: 80%;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: #fff2f0;
+  border: 1px solid #ffccc7;
+  color: #cf1322;
+  font-size: 13px;
+  word-break: break-word;
+}
+
+/* 消息操作栏 */
+.messageActions {
+  display: none;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.messageRow:hover .messageActions {
+  display: flex;
+}
+
+.actionBtn {
+  background: none;
+  border: 1px solid #e8e8e8;
+  border-radius: 4px;
+  padding: 2px 6px;
+  cursor: pointer;
+  font-size: 12px;
+  color: #999;
+  transition: all 0.15s;
+}
+
+.actionBtn:hover {
+  color: #1890ff;
+  border-color: #1890ff;
+}
+
+/* ===== 消息区域 ===== */
+.messageArea {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 24px;
+  background: #fafafa;
+  min-height: 0;
+}
+
+.inputArea {
+  padding: 16px 24px;
+  border-top: 1px solid #f0f0f0;
+  background: #fff;
+  flex-shrink: 0;
+}
+
+.emptyCenter {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

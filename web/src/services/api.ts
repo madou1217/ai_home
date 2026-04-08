@@ -76,6 +76,17 @@ export const sessionsAPI = {
   }
 };
 
+// 模型列表 API
+export const modelsAPI = {
+  list: async (): Promise<Array<{ id: string; owned_by: string }>> => {
+    const response = await api.get<{ data: Array<{ id: string; owned_by: string }> }>('/models', {
+      baseURL: '/v1',
+      headers: { Authorization: 'Bearer webui' }
+    });
+    return response.data.data || [];
+  }
+};
+
 // 聊天 API
 export const chatAPI = {
   // 发送聊天消息

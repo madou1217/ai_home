@@ -2,32 +2,13 @@ import { useRef, useEffect, useState, useCallback } from 'react';
 import { Select, Empty, Spin } from 'antd';
 import { ArrowDownOutlined, PlusOutlined } from '@ant-design/icons';
 import type { ChatMessage, Account, Session } from '@/types';
+import { modelsAPI } from '@/services/api';
 import MessageBubble from './MessageBubble';
 import ProviderIcon from './ProviderIcon';
 import sendIcon from '@/assets/icons/send.svg';
 import disabledSendIcon from '@/assets/icons/disabled-send.svg';
 import stopIcon from '@/assets/icons/stop.svg';
 import styles from './chat.module.css';
-
-// Provider 默认模型列表
-const PROVIDER_MODELS: Record<string, Array<{ label: string; value: string }>> = {
-  codex: [
-    { label: 'GPT-4o', value: 'gpt-4o' },
-    { label: 'GPT-4o Mini', value: 'gpt-4o-mini' },
-    { label: 'o3', value: 'o3' },
-    { label: 'o4-mini', value: 'o4-mini' },
-  ],
-  claude: [
-    { label: 'Sonnet 4', value: 'claude-sonnet-4-20250514' },
-    { label: 'Opus 4', value: 'claude-opus-4-20250514' },
-    { label: 'Haiku 3.5', value: 'claude-haiku-4-5-20251001' },
-  ],
-  gemini: [
-    { label: 'Gemini 2.5 Pro', value: 'gemini-2.5-pro' },
-    { label: 'Gemini 2.5 Flash', value: 'gemini-2.5-flash' },
-    { label: 'Gemini 2.0 Flash', value: 'gemini-2.0-flash' },
-  ]
-};
 
 interface Props {
   session: Session | null;
@@ -37,6 +18,8 @@ interface Props {
   selectedModel: string;
   input: string;
   loading: boolean;
+  hasMoreHistory?: boolean;
+  onLoadMore?: () => void;
   onInputChange: (val: string) => void;
   onSend: () => void;
   onAccountChange: (account: Account) => void;
@@ -45,16 +28,38 @@ interface Props {
 
 const MessageArea = ({
   session, messages, accounts, selectedAccount, selectedModel,
-  input, loading, onInputChange, onSend, onAccountChange, onModelChange
+  input, loading, hasMoreHistory, onLoadMore, onInputChange, onSend, onAccountChange, onModelChange
 }: Props) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [showScrollBottom, setShowScrollBottom] = useState(false);
+  const [availableModels, setAvailableModels] = useState<Array<{ id: string; owned_by: string }>>([]);
+
+  // 加载可用模型列表
+  useEffect(() => {
+    modelsAPI.list().then(setAvailableModels).catch(() => {});
+  }, []);
+
+  const isInitialLoad = useRef(true);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    if (isInitialLoad.current) {
+      // 首次加载：立即跳到底部（无动画）
+      el.scrollTop = el.scrollHeight;
+      isInitialLoad.current = false;
+    } else {
+      // 后续更新：平滑滚动
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [messages]);
+
+  // 切换会话时重置
+  useEffect(() => {
+    isInitialLoad.current = true;
+  }, [session?.id]);
 
   const handleScroll = () => {
     const el = scrollContainerRef.current;
@@ -101,7 +106,8 @@ const MessageArea = ({
   }
 
   const canSend = input.trim().length > 0 && !loading;
-  const models = PROVIDER_MODELS[session.provider] || [];
+  // 模型列表从 API 获取
+  const models = availableModels.map(m => ({ label: m.id, value: m.id }));
 
   return (
     <>
@@ -113,6 +119,20 @@ const MessageArea = ({
           </div>
         ) : (
           <div style={{ paddingBottom: 24 }}>
+            {/* 加载更多历史 */}
+            {hasMoreHistory && (
+              <div style={{ textAlign: 'center', padding: '8px 0 16px' }}>
+                <button
+                  onClick={onLoadMore}
+                  style={{
+                    background: '#fff', border: '1px solid #d9d9d9', borderRadius: 16,
+                    padding: '4px 16px', cursor: 'pointer', fontSize: 12, color: '#666'
+                  }}
+                >
+                  加载更早的消息
+                </button>
+              </div>
+            )}
             {messages.map((msg, i) => (
               <MessageBubble key={i} message={msg} provider={session.provider} />
             ))}

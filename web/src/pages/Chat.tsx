@@ -18,12 +18,28 @@ const Chat = () => {
   const [projects, setProjects] = useState<AggregatedProject[]>([]);
   const [selectedSession, setSelectedSession] = useState<Session | null>(null);
   const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [allMessages, setAllMessages] = useState<ChatMessage[]>([]); // 完整消息列表
+  const [messages, setMessages] = useState<ChatMessage[]>([]); // 当前显示的消息
+  const [hasMoreHistory, setHasMoreHistory] = useState(false);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [loadingProjects, setLoadingProjects] = useState(false);
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [selectedModel, setSelectedModel] = useState<string>('');
+
+  const INITIAL_MSG_COUNT = 30; // 初始加载条数
+  const LOAD_MORE_COUNT = 20; // 每次加载更多
+
+  // 加载更多历史消息
+  const loadMoreHistory = () => {
+    const currentLen = messages.length;
+    const totalLen = allMessages.length;
+    if (currentLen >= totalLen) return;
+    const moreCount = Math.min(LOAD_MORE_COUNT, totalLen - currentLen);
+    const startIdx = totalLen - currentLen - moreCount;
+    setMessages(allMessages.slice(Math.max(0, startIdx)));
+    setHasMoreHistory(startIdx > 0);
+  };
 
   // 加载账号
   const loadAccounts = async () => {
@@ -65,6 +81,8 @@ const Chat = () => {
 
     const loadMessages = async () => {
       setMessages([]);
+      setAllMessages([]);
+      setHasMoreHistory(false);
       setLoading(true);
       try {
         const history = await sessionsAPI.getSessionMessages(
@@ -72,9 +90,15 @@ const Chat = () => {
           selectedSession.id,
           selectedSession.projectDirName
         );
-        setMessages(history);
+        setAllMessages(history);
+        // 只显示最后 N 条，其余需要"加载更多"
+        if (history.length > INITIAL_MSG_COUNT) {
+          setMessages(history.slice(-INITIAL_MSG_COUNT));
+          setHasMoreHistory(true);
+        } else {
+          setMessages(history);
+        }
 
-        // 自动选择匹配的账号
         if (!selectedAccount || selectedAccount.provider !== selectedSession.provider) {
           const match = accounts.find(a => a.provider === selectedSession.provider);
           if (match) setSelectedAccount(match);
@@ -187,6 +211,8 @@ const Chat = () => {
           selectedModel={selectedModel}
           input={input}
           loading={loading}
+          hasMoreHistory={hasMoreHistory}
+          onLoadMore={loadMoreHistory}
           onInputChange={setInput}
           onSend={handleSend}
           onAccountChange={setSelectedAccount}

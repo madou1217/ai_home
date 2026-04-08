@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Avatar } from 'antd';
-import { UserOutlined, WarningOutlined, CheckOutlined } from '@ant-design/icons';
+import { WarningOutlined, CheckOutlined } from '@ant-design/icons';
 import copyIcon from '@/assets/icons/copy.svg';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -203,13 +203,12 @@ const MessageBubble = ({ message, provider }: Props) => {
   if (isUser) {
     return (
       <div className={`${styles.messageRow} ${styles.messageRowUser}`}>
-        <div className={styles.messageWrapper}>
+        <div className={`${styles.messageWrapper} ${styles.messageWrapperUser}`}>
           <div className={styles.bubbleUser}>{message.content}</div>
           <div className={styles.messageActions}>
             <CopyButton text={message.content} />
           </div>
         </div>
-        <Avatar size={32} icon={<UserOutlined />} className={styles.avatarUser} />
       </div>
     );
   }
@@ -232,7 +231,7 @@ const MessageBubble = ({ message, provider }: Props) => {
       <Avatar size={32} className={styles.avatarAi}>
         <ProviderIcon provider={provider} size={18} />
       </Avatar>
-      <div className={styles.messageWrapper}>
+      <div className={`${styles.messageWrapper} ${styles.messageWrapperAssistant}`}>
         <div className={styles.bubbleAssistant}>
           {blocks.map((block, idx) => {
             if (block.type === 'tool_use') {

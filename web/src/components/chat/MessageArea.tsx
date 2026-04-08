@@ -1,12 +1,13 @@
-import { useRef, useEffect, useState } from 'react';
-import { Input, Button, Select, Empty, Spin } from 'antd';
-import { SendOutlined, ArrowDownOutlined } from '@ant-design/icons';
+import { useRef, useEffect, useState, useCallback } from 'react';
+import { Select, Empty, Spin } from 'antd';
+import { ArrowDownOutlined, PlusOutlined } from '@ant-design/icons';
 import type { ChatMessage, Account, Session } from '@/types';
 import MessageBubble from './MessageBubble';
 import ProviderIcon from './ProviderIcon';
+import sendIcon from '@/assets/icons/send.svg';
+import disabledSendIcon from '@/assets/icons/disabled-send.svg';
+import stopIcon from '@/assets/icons/stop.svg';
 import styles from './chat.module.css';
-
-const { TextArea } = Input;
 
 // Provider 默认模型列表
 const PROVIDER_MODELS: Record<string, Array<{ label: string; value: string }>> = {
@@ -48,30 +49,37 @@ const MessageArea = ({
 }: Props) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [showScrollBottom, setShowScrollBottom] = useState(false);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // 监听滚动位置，决定是否显示"回到底部"
   const handleScroll = () => {
     const el = scrollContainerRef.current;
     if (!el) return;
-    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    setShowScrollBottom(distanceFromBottom > 200);
+    setShowScrollBottom(el.scrollHeight - el.scrollTop - el.clientHeight > 200);
   };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      if (input.trim()) onSend();
+      if (input.trim() && !loading) onSend();
     }
-  };
+  }, [input, loading, onSend]);
+
+  // 自动调整 textarea 高度
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 200) + 'px';
+  }, [input]);
 
   const filteredAccounts = session
     ? accounts.filter(a => a.provider === session.provider)
@@ -92,14 +100,13 @@ const MessageArea = ({
     );
   }
 
+  const canSend = input.trim().length > 0 && !loading;
+  const models = PROVIDER_MODELS[session.provider] || [];
+
   return (
     <>
       {/* 消息列表 */}
-      <div
-        className={styles.messageArea}
-        ref={scrollContainerRef}
-        onScroll={handleScroll}
-      >
+      <div className={styles.messageArea} ref={scrollContainerRef} onScroll={handleScroll}>
         {messages.length === 0 ? (
           <div className={styles.emptyCenter}>
             <Empty description="暂无消息记录" />
@@ -118,87 +125,77 @@ const MessageArea = ({
           </div>
         )}
 
-        {/* 回到底部按钮 */}
         {showScrollBottom && (
-          <button
-            onClick={scrollToBottom}
-            style={{
-              position: 'sticky',
-              bottom: 16,
-              left: '50%',
-              transform: 'translateX(-50%)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4,
-              padding: '6px 16px',
-              background: '#fff',
-              border: '1px solid #d9d9d9',
-              borderRadius: 20,
-              boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-              cursor: 'pointer',
-              fontSize: 12,
-              color: '#666',
-              zIndex: 5
-            }}
-          >
-            <ArrowDownOutlined /> 回到底部
+          <button onClick={scrollToBottom} className={styles.scrollBottomBtn}>
+            <ArrowDownOutlined />
           </button>
         )}
       </div>
 
-      {/* 输入区域 */}
+      {/* ChatGPT 风格输入区域 */}
       <div className={styles.inputArea}>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <TextArea
+        <div className={styles.inputBox}>
+          <textarea
+            ref={textareaRef}
+            className={styles.inputTextarea}
             value={input}
             onChange={e => onInputChange(e.target.value)}
-            onKeyPress={handleKeyPress}
-            placeholder="输入消息... (Enter 发送，Shift+Enter 换行)"
-            autoSize={{ minRows: 1, maxRows: 6 }}
+            onKeyDown={handleKeyDown}
+            placeholder="输入消息..."
             disabled={loading}
-            style={{ flex: 1, borderRadius: 8 }}
+            rows={1}
           />
-          <Button
-            type="primary"
-            icon={<SendOutlined />}
-            onClick={onSend}
-            loading={loading}
-            disabled={!input.trim() && !loading}
-            style={{ height: 'auto', borderRadius: 8, alignSelf: 'flex-end' }}
-          />
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
-          <ProviderIcon provider={session.provider} size={14} />
-          <Select
-            style={{ minWidth: 120 }}
-            size="small"
-            variant="borderless"
-            placeholder="模型"
-            value={selectedModel || undefined}
-            onChange={onModelChange}
-            options={(PROVIDER_MODELS[session.provider] || []).map(m => ({
-              label: m.label,
-              value: m.value
-            }))}
-            allowClear
-          />
-          <span style={{ color: '#d9d9d9' }}>|</span>
-          <Select
-            style={{ minWidth: 100 }}
-            size="small"
-            variant="borderless"
-            placeholder="账号"
-            value={selectedAccount ? `${selectedAccount.provider}-${selectedAccount.accountId}` : undefined}
-            onChange={(value) => {
-              const [provider, accountId] = value.split('-');
-              const account = accounts.find(a => a.provider === provider && a.accountId === accountId);
-              if (account) onAccountChange(account);
-            }}
-            options={filteredAccounts.map(acc => ({
-              label: formatLabel(acc),
-              value: `${acc.provider}-${acc.accountId}`
-            }))}
-          />
+          {/* 底部工具栏 */}
+          <div className={styles.inputToolbar}>
+            <div className={styles.inputToolbarLeft}>
+              <button className={styles.inputToolbarBtn} title="附件">
+                <PlusOutlined style={{ fontSize: 16 }} />
+              </button>
+              <Select
+                size="small"
+                variant="borderless"
+                value={selectedModel || models[0]?.value}
+                onChange={onModelChange}
+                options={models}
+                style={{ fontSize: 13 }}
+                popupMatchSelectWidth={false}
+              />
+            </div>
+            <div className={styles.inputToolbarRight}>
+              {/* 账号选择 */}
+              <Select
+                size="small"
+                variant="borderless"
+                placeholder="账号"
+                value={selectedAccount ? `${selectedAccount.provider}-${selectedAccount.accountId}` : undefined}
+                onChange={(value) => {
+                  const [provider, accountId] = value.split('-');
+                  const account = accounts.find(a => a.provider === provider && a.accountId === accountId);
+                  if (account) onAccountChange(account);
+                }}
+                options={filteredAccounts.map(acc => ({
+                  label: <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <ProviderIcon provider={acc.provider} size={12} /> {formatLabel(acc)}
+                  </span>,
+                  value: `${acc.provider}-${acc.accountId}`
+                }))}
+                popupMatchSelectWidth={false}
+                style={{ fontSize: 13 }}
+              />
+              {/* 发送/停止按钮 */}
+              <button
+                className={`${styles.sendBtn} ${canSend ? styles.sendBtnActive : ''}`}
+                onClick={() => { if (canSend) onSend(); }}
+                disabled={!canSend && !loading}
+              >
+                {loading ? (
+                  <img src={stopIcon} alt="stop" style={{ width: 20, height: 20 }} />
+                ) : (
+                  <img src={canSend ? sendIcon : disabledSendIcon} alt="send" style={{ width: 20, height: 20 }} />
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </>

@@ -333,13 +333,134 @@
   padding: 24px;
   background: #fafafa;
   min-height: 0;
+  position: relative;
 }
 
-.inputArea {
-  padding: 16px 24px;
-  border-top: 1px solid #f0f0f0;
+/* 回到底部 */
+.scrollBottomBtn {
+  position: sticky;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
   background: #fff;
+  border: 1px solid #d9d9d9;
+  border-radius: 50%;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  cursor: pointer;
+  color: #666;
+  z-index: 5;
+  margin: 0 auto;
+}
+
+.scrollBottomBtn:hover {
+  border-color: #1890ff;
+  color: #1890ff;
+}
+
+/* ChatGPT 风格输入区域 */
+.inputArea {
+  padding: 12px 24px 16px;
+  background: #fafafa;
   flex-shrink: 0;
+}
+
+.inputBox {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 16px;
+  overflow: hidden;
+  transition: border-color 0.2s;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.inputBox:focus-within {
+  border-color: #999;
+}
+
+.inputTextarea {
+  width: 100%;
+  border: none;
+  outline: none;
+  resize: none;
+  padding: 14px 16px 4px;
+  font-size: 14px;
+  line-height: 1.5;
+  background: transparent;
+  font-family: inherit;
+  min-height: 24px;
+  max-height: 200px;
+}
+
+.inputTextarea::placeholder {
+  color: #bbb;
+}
+
+.inputToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px 8px;
+}
+
+.inputToolbarLeft {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.inputToolbarRight {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.inputToolbarBtn {
+  background: none;
+  border: 1px solid #e0e0e0;
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #666;
+  transition: all 0.15s;
+}
+
+.inputToolbarBtn:hover {
+  border-color: #999;
+  color: #333;
+}
+
+/* 发送按钮 */
+.sendBtn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: #e0e0e0;
+  cursor: not-allowed;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+  padding: 0;
+}
+
+.sendBtnActive {
+  background: #1a1a1a;
+  cursor: pointer;
+}
+
+.sendBtnActive:hover {
+  background: #333;
 }
 
 .emptyCenter {

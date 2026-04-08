@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Avatar } from 'antd';
-import { UserOutlined, WarningOutlined, CopyOutlined, CheckOutlined } from '@ant-design/icons';
+import { UserOutlined, WarningOutlined, CheckOutlined } from '@ant-design/icons';
+import copyIcon from '@/assets/icons/copy.svg';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { ChatMessage, Provider } from '@/types';
@@ -191,7 +192,7 @@ const CopyButton = ({ text }: { text: string }) => {
   };
   return (
     <button className={styles.actionBtn} onClick={handleCopy} title="复制">
-      {copied ? <CheckOutlined style={{ color: '#52c41a' }} /> : <CopyOutlined />}
+      {copied ? <CheckOutlined style={{ color: '#52c41a' }} /> : <img src={copyIcon} alt="copy" style={{ width: 14, height: 14 }} />}
     </button>
   );
 };

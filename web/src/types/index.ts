@@ -9,6 +9,8 @@ export interface Account {
   exhausted: boolean;
   remainingPct: number;
   updatedAt: number;
+  planType: string; // free/plus/team/business/api-key/oauth
+  email: string;
   configDir: string;
   profileDir: string;
 }

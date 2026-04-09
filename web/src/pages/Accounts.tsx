@@ -181,12 +181,20 @@ const Accounts = () => {
       width: 250,
       render: (text: string, record: Account) => (
         <div>
-          <div style={{ fontWeight: 'bold', marginBottom: 4 }}>{text}</div>
+          <div style={{ fontWeight: 'bold', marginBottom: 4 }}>
+            {record.email || text}
+          </div>
           <Space size="small" align="center">
-            <ProviderIcon provider={record.provider} size={16} />
-            <span style={{ fontSize: '12px', color: '#999' }}>
-              ID: {record.accountId}
-            </span>
+            <ProviderIcon provider={record.provider} size={14} />
+            <Tag color={
+              record.planType === 'team' ? 'blue' :
+              record.planType === 'plus' ? 'green' :
+              record.planType === 'business' ? 'gold' :
+              record.planType === 'api-key' ? 'cyan' :
+              'default'
+            } style={{ fontSize: 11, lineHeight: '18px', padding: '0 4px' }}>
+              {record.planType || 'free'}
+            </Tag>
           </Space>
         </div>
       )

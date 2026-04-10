@@ -8,6 +8,8 @@ import {
   Form,
   Input,
   Select,
+  Radio,
+  Alert,
   message,
   Progress,
   Card,
@@ -15,7 +17,8 @@ import {
   Statistic,
   Row,
   Col,
-  Dropdown
+  Dropdown,
+  Typography
 } from 'antd';
 import type { MenuProps } from 'antd';
 import {
@@ -31,7 +34,7 @@ import {
   ImportOutlined
 } from '@ant-design/icons';
 import { accountsAPI, managementAPI } from '@/services/api';
-import type { Account } from '@/types';
+import type { Account, AccountAddJob, AccountAuthMode, Provider } from '@/types';
 import ProviderIcon from '@/components/chat/ProviderIcon';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
@@ -40,14 +43,115 @@ import 'dayjs/locale/zh-cn';
 dayjs.extend(relativeTime);
 dayjs.locale('zh-cn');
 
+const PROVIDER_AUTH_OPTIONS: Record<Provider, Array<{
+  value: AccountAuthMode;
+  label: string;
+  description: string;
+}>> = {
+  codex: [
+    {
+      value: 'oauth-browser',
+      label: 'ChatGPT / OpenAI 登录',
+      description: '使用 Codex 原生浏览器登录流程，适合本机交互授权。'
+    },
+    {
+      value: 'oauth-device',
+      label: '设备码登录',
+      description: '适合远程环境，通过 device auth 完成 Codex 登录。'
+    },
+    {
+      value: 'api-key',
+      label: 'OpenAI API Key',
+      description: '绑定 OPENAI_API_KEY / OPENAI_BASE_URL。'
+    }
+  ],
+  claude: [
+    {
+      value: 'oauth-browser',
+      label: 'Claude 登录',
+      description: '使用 Claude Code 原生 login 流程（Claude.ai 凭据）。'
+    },
+    {
+      value: 'api-key',
+      label: 'Anthropic API Key',
+      description: '绑定 ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL。'
+    }
+  ],
+  gemini: [
+    {
+      value: 'oauth-browser',
+      label: 'Google 登录',
+      description: '使用 Gemini CLI 原生 Google 登录流程。'
+    },
+    {
+      value: 'api-key',
+      label: 'Gemini API Key',
+      description: '绑定 GEMINI_API_KEY 或 GOOGLE_API_KEY。'
+    }
+  ]
+};
+
+const PROVIDER_UNAVAILABLE_AUTH_OPTIONS: Partial<Record<Provider, Array<{
+  label: string;
+  description: string;
+}>>> = {
+  claude: [
+    {
+      label: 'Claude Bedrock',
+      description: '官方生态里存在该接入方向，但本项目当前还未完成账号导入、运行时读取和服务路由闭环。'
+    },
+    {
+      label: 'Claude Vertex',
+      description: '官方生态里存在该接入方向，但本项目当前还未完成账号导入、运行时读取和服务路由闭环。'
+    },
+    {
+      label: 'Claude Foundry',
+      description: '官方生态里存在该接入方向，但本项目当前还未完成账号导入、运行时读取和服务路由闭环。'
+    }
+  ],
+  gemini: [
+    {
+      label: 'Gemini Vertex AI',
+      description: '官方生态里存在该接入方向，但本项目当前还未完成账号导入、运行时读取和服务路由闭环。'
+    }
+  ]
+};
+
+const PROVIDER_CAPABILITY_HINTS: Record<Provider, string> = {
+  codex: 'Codex 当前已接通浏览器登录、设备码登录和 API Key。',
+  claude: 'Claude 当前已接通 Claude 登录与 Anthropic API Key。Bedrock / Vertex / Foundry 需要单独补齐后端接入链路。',
+  gemini: 'Gemini 当前已接通 Google 登录与 Gemini API Key。Vertex AI 需要单独补齐后端接入链路。'
+};
+
 const Accounts = () => {
+  const { Paragraph, Text } = Typography;
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [addJobId, setAddJobId] = useState<string | null>(null);
+  const [addJob, setAddJob] = useState<AccountAddJob | null>(null);
+  const [authProgressVisible, setAuthProgressVisible] = useState(false);
   const [form] = Form.useForm();
   const [activeProvider, setActiveProvider] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const importInputRef = React.useRef<HTMLInputElement>(null);
+  const successAutoCloseTimerRef = React.useRef<number | null>(null);
+  const selectedProvider = Form.useWatch('provider', form) as Provider | undefined;
+  const selectedAuthMode = (Form.useWatch('authMode', form) as AccountAuthMode | undefined) || 'oauth-browser';
+  const providerAuthOptions = selectedProvider ? PROVIDER_AUTH_OPTIONS[selectedProvider] : [];
+  const unavailableAuthOptions = selectedProvider ? (PROVIDER_UNAVAILABLE_AUTH_OPTIONS[selectedProvider] || []) : [];
+  const providerCapabilityHint = selectedProvider ? PROVIDER_CAPABILITY_HINTS[selectedProvider] : '';
+
+  const closeAuthProgressPanel = React.useCallback(() => {
+    if (successAutoCloseTimerRef.current !== null) {
+      window.clearTimeout(successAutoCloseTimerRef.current);
+      successAutoCloseTimerRef.current = null;
+    }
+    setAddJobId(null);
+    setAddJob(null);
+    setAuthProgressVisible(false);
+  }, []);
 
   const handleExport = async () => {
     try {
@@ -87,20 +191,171 @@ const Accounts = () => {
     return () => clearInterval(interval);
   }, []);
 
-  const handleAdd = async (values: any) => {
-    try {
-      const config = values.apiKey ? {
-        apiKey: values.apiKey,
-        baseUrl: values.baseUrl
-      } : undefined;
+  useEffect(() => {
+    return () => {
+      if (successAutoCloseTimerRef.current !== null) {
+        window.clearTimeout(successAutoCloseTimerRef.current);
+        successAutoCloseTimerRef.current = null;
+      }
+    };
+  }, []);
 
-      await accountsAPI.add(values.provider, values.accountId, config);
-      message.success('添加账号成功');
+  useEffect(() => {
+    if (!addJobId) return;
+    let cancelled = false;
+
+    const poll = async () => {
+      try {
+        const job = await accountsAPI.getAddJob(addJobId);
+        if (cancelled) return;
+        setAddJob(job);
+        if (job.status === 'succeeded') {
+          loadAccounts();
+          setAddJobId(null);
+          message.success(`OAuth 账号 ${job.provider}-${job.accountId} 添加成功`);
+          if (successAutoCloseTimerRef.current !== null) {
+            window.clearTimeout(successAutoCloseTimerRef.current);
+          }
+          successAutoCloseTimerRef.current = window.setTimeout(() => {
+            closeAuthProgressPanel();
+          }, 800);
+        } else if (job.status === 'failed' || job.status === 'cancelled' || job.status === 'expired') {
+          setAddJobId(null);
+        }
+      } catch (_error) {
+        if (!cancelled) {
+          setAddJobId(null);
+        }
+      }
+    };
+
+    poll();
+    const timer = setInterval(poll, 1000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [addJobId, closeAuthProgressPanel]);
+
+  useEffect(() => {
+    if (!selectedProvider) return;
+    const allowedModes = PROVIDER_AUTH_OPTIONS[selectedProvider].map((item) => item.value);
+    if (!allowedModes.includes(selectedAuthMode)) {
+      form.setFieldValue('authMode', allowedModes[0]);
+    }
+  }, [form, selectedAuthMode, selectedProvider]);
+
+  const closeAuthProgress = async (forceCancel = false) => {
+    if (addJob && addJob.status === 'running') {
+      if (!forceCancel) {
+        Modal.confirm({
+          title: '取消当前授权流程？',
+          content: `当前 ${addJob.provider}-${addJob.accountId} 仍在等待授权，取消后会释放占用并删除这次未完成的账号槽位。`,
+          okText: '取消授权',
+          cancelText: '继续等待',
+          okButtonProps: { danger: true },
+          onOk: async () => {
+            await closeAuthProgress(true);
+          }
+        });
+        return;
+      }
+
+      try {
+        await accountsAPI.cancelAddJob(addJob.id);
+        message.success('已取消当前授权流程');
+        await loadAccounts();
+      } catch (error: any) {
+        message.error(error?.response?.data?.message || '取消授权失败');
+        return;
+      }
+    }
+
+    closeAuthProgressPanel();
+  };
+
+  const handleAdd = async (values: any) => {
+    setSubmitting(true);
+    const requestPayload = {
+      provider: values.provider as Provider,
+      authMode: values.authMode as AccountAuthMode,
+      config: values.authMode === 'api-key'
+        ? {
+            apiKey: values.apiKey,
+            baseUrl: values.baseUrl
+          }
+        : undefined
+    };
+    try {
+      const result = await accountsAPI.add(requestPayload);
+
       setModalVisible(false);
       form.resetFields();
-      loadAccounts();
+
+      if (result.jobId) {
+        setAddJob({
+          id: result.jobId,
+          provider: result.provider,
+          accountId: result.accountId,
+          authMode: result.authMode,
+          status: 'running',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          exitCode: null,
+          logs: ''
+        });
+        setAddJobId(result.jobId);
+        setAuthProgressVisible(true);
+        message.info(`已创建 ${result.provider}-${result.accountId}，请完成授权`);
+      } else {
+        message.success('添加账号成功');
+        loadAccounts();
+      }
     } catch (error: any) {
+      const code = error?.response?.data?.code;
+      const existingJobId = error?.response?.data?.jobId;
+      if (code === 'oauth_job_already_running' && existingJobId) {
+        try {
+          const retry = await accountsAPI.add({
+            ...requestPayload,
+            replaceExisting: true
+          });
+          setModalVisible(false);
+          form.resetFields();
+          if (retry.jobId) {
+            setAddJob({
+              id: retry.jobId,
+              provider: retry.provider,
+              accountId: retry.accountId,
+              authMode: retry.authMode,
+              status: 'running',
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+              exitCode: null,
+              logs: ''
+            });
+            setAddJobId(retry.jobId);
+            setAuthProgressVisible(true);
+          }
+          message.warning('检测到上一次未完成授权，已自动替换旧作业并重新开始');
+          return;
+        } catch (_retryError) {
+          try {
+            const job = await accountsAPI.getAddJob(existingJobId);
+            setAddJob(job);
+            setAddJobId(job.status === 'running' ? existingJobId : null);
+            setAuthProgressVisible(true);
+            setModalVisible(false);
+            message.warning(`检测到 ${job.provider}-${job.accountId} 仍在授权中，已为你打开当前进度`);
+            return;
+          } catch (_innerError) {
+            // fall through
+          }
+        }
+      }
       message.error(error?.response?.data?.message || '添加账号失败');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -366,7 +621,19 @@ const Accounts = () => {
           <Button icon={<ImportOutlined />} onClick={() => importInputRef.current?.click()}>导入</Button>
           <input ref={importInputRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleImport} />
           <Button icon={<ReloadOutlined />} onClick={loadAccounts} loading={loading}>刷新</Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalVisible(true)}>添加账号</Button>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => {
+              form.setFieldsValue({
+                provider: 'codex',
+                authMode: 'oauth-browser'
+              });
+              setModalVisible(true);
+            }}
+          >
+            添加账号
+          </Button>
         </Space>
       </div>
 
@@ -472,6 +739,7 @@ const Accounts = () => {
           setModalVisible(false);
           form.resetFields();
         }}
+        confirmLoading={submitting}
         okText="确定"
         cancelText="取消"
         width={600}
@@ -509,32 +777,188 @@ const Accounts = () => {
           </Form.Item>
 
           <Form.Item
-            name="accountId"
-            label="账号 ID"
-            rules={[
-              { required: true, message: '请输入账号 ID' },
-              { pattern: /^\d+$/, message: '账号 ID 必须是数字' }
-            ]}
+            name="authMode"
+            label="认证方式"
+            rules={[{ required: true, message: '请选择认证方式' }]}
           >
-            <Input placeholder="例如: 1, 2, 3..." size="large" />
+            <Radio.Group size="large">
+              <Space direction="vertical">
+                {providerAuthOptions.map((option) => (
+                  <Radio key={option.value} value={option.value}>
+                    <Space direction="vertical" size={0}>
+                      <span>{option.label}</span>
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        {option.description}
+                      </Text>
+                    </Space>
+                  </Radio>
+                ))}
+              </Space>
+            </Radio.Group>
           </Form.Item>
 
-          <Form.Item
-            name="apiKey"
-            label="API Key (可选)"
-            help="如果使用 OAuth 登录，请留空此字段"
-          >
-            <Input.Password placeholder="留空表示使用 OAuth 登录" size="large" />
-          </Form.Item>
+          {providerCapabilityHint ? (
+            <Alert
+              type="info"
+              showIcon
+              message="当前可接入范围"
+              description={providerCapabilityHint}
+              style={{ marginBottom: 16 }}
+            />
+          ) : null}
 
-          <Form.Item
-            name="baseUrl"
-            label="Base URL (可选)"
-            help="仅在使用 API Key 时需要填写"
-          >
-            <Input placeholder="https://api.example.com" size="large" />
-          </Form.Item>
+          {unavailableAuthOptions.length > 0 ? (
+            <Alert
+              type="warning"
+              showIcon
+              message="以下认证方式暂不提供入口"
+              description={
+                <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                  {unavailableAuthOptions.map((option) => (
+                    <div key={option.label}>
+                      <Text strong>{option.label}</Text>
+                      <br />
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        {option.description}
+                      </Text>
+                    </div>
+                  ))}
+                </Space>
+              }
+              style={{ marginBottom: 16 }}
+            />
+          ) : null}
+
+          {selectedAuthMode !== 'api-key' ? (
+            <Alert
+              type="info"
+              showIcon
+              message="系统会自动分配账号编号"
+              description={
+                selectedAuthMode === 'oauth-browser'
+                  ? '将直接启动 Provider 原生 OAuth 浏览器授权流程。'
+                  : '将启动更适合远程环境的设备码授权流程，你可以在下面的进度弹窗里看到验证码和链接。'
+              }
+            />
+          ) : (
+            <>
+              <Form.Item
+                name="apiKey"
+                label="API Key"
+                rules={[{ required: true, message: '请输入 API Key' }]}
+              >
+                <Input.Password placeholder="请输入 API Key" size="large" />
+              </Form.Item>
+
+              {selectedProvider !== 'gemini' && (
+                <Form.Item
+                  name="baseUrl"
+                  label="Base URL（可选）"
+                  help="用于中转服务或自定义网关"
+                >
+                  <Input placeholder="https://api.example.com" size="large" />
+                </Form.Item>
+              )}
+            </>
+          )}
         </Form>
+      </Modal>
+
+      <Modal
+        title="OAuth 授权进度"
+        open={authProgressVisible}
+        footer={[
+          <Button
+            key="close"
+            onClick={() => closeAuthProgress(false)}
+          >
+            {addJob?.status === 'running' ? '关闭 / 取消' : '关闭'}
+          </Button>
+        ]}
+        onCancel={() => closeAuthProgress(false)}
+        width={760}
+      >
+        {addJob ? (
+          <Space direction="vertical" style={{ width: '100%' }} size="middle">
+            <Alert
+              type={
+                addJob.status === 'failed'
+                  ? 'error'
+                  : addJob.status === 'succeeded'
+                    ? 'success'
+                    : addJob.status === 'expired'
+                      ? 'warning'
+                    : addJob.status === 'cancelled'
+                      ? 'warning'
+                      : 'info'
+              }
+              showIcon
+              message={`${addJob.provider}-${addJob.accountId}`}
+              description={
+                addJob.status === 'running'
+                  ? '正在等待授权完成...'
+                  : addJob.status === 'succeeded'
+                    ? '授权已完成，账号已经可用。'
+                    : addJob.status === 'expired'
+                      ? (addJob.error || '授权已过期，请重新发起。')
+                    : addJob.status === 'cancelled'
+                      ? (addJob.error || '授权流程已取消。')
+                      : (addJob.error || '授权失败，请查看下方日志。')
+              }
+            />
+
+            {(addJob.expiresAt || addJob.pollIntervalMs) && (
+              <Card size="small" title="授权状态">
+                {addJob.expiresAt ? (
+                  <Paragraph>
+                    <Text strong>过期时间：</Text> {dayjs(addJob.expiresAt).format('YYYY-MM-DD HH:mm:ss')}
+                  </Paragraph>
+                ) : null}
+                {addJob.pollIntervalMs ? (
+                  <Paragraph>
+                    <Text strong>建议轮询间隔：</Text> {Math.round(addJob.pollIntervalMs / 1000)} 秒
+                  </Paragraph>
+                ) : null}
+              </Card>
+            )}
+
+            {(addJob.userCode || addJob.verificationUri || addJob.verificationUriComplete) && (
+              <Card size="small" title="设备码信息">
+                {addJob.userCode && (
+                  <Paragraph copyable={{ text: addJob.userCode }}>
+                    <Text strong>验证码：</Text> {addJob.userCode}
+                  </Paragraph>
+                )}
+                {addJob.verificationUri && (
+                  <Paragraph copyable={{ text: addJob.verificationUri }}>
+                    <Text strong>验证地址：</Text> {addJob.verificationUri}
+                  </Paragraph>
+                )}
+                {addJob.verificationUriComplete && addJob.verificationUriComplete !== addJob.verificationUri && (
+                  <Paragraph copyable={{ text: addJob.verificationUriComplete }}>
+                    <Text strong>完整链接：</Text> {addJob.verificationUriComplete}
+                  </Paragraph>
+                )}
+              </Card>
+            )}
+
+            <Card size="small" title="授权日志">
+              <pre
+                style={{
+                  margin: 0,
+                  maxHeight: 320,
+                  overflow: 'auto',
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                  fontSize: 12,
+                  lineHeight: 1.5
+                }}
+              >
+                {addJob.logs || '等待 Provider 返回授权输出...'}
+              </pre>
+            </Card>
+          </Space>
+        ) : null}
       </Modal>
     </div>
   );

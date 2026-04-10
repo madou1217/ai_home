@@ -20,6 +20,46 @@ export interface AccountConfig {
   baseUrl?: string;
 }
 
+export type AccountAuthMode = 'api-key' | 'oauth-browser' | 'oauth-device';
+
+export interface AddAccountRequest {
+  provider: Provider;
+  authMode: AccountAuthMode;
+  config?: AccountConfig;
+  replaceExisting?: boolean;
+}
+
+export interface AddAccountResponse {
+  ok: boolean;
+  provider: Provider;
+  accountId: string;
+  authMode: AccountAuthMode;
+  status: 'configured' | 'pending';
+  jobId?: string;
+  expiresAt?: number | null;
+  pollIntervalMs?: number | null;
+}
+
+export interface AccountAddJob {
+  id: string;
+  provider: Provider;
+  accountId: string;
+  authMode: AccountAuthMode;
+  status: 'running' | 'succeeded' | 'failed' | 'cancelled' | 'expired';
+  createdAt: number;
+  updatedAt: number;
+  lastOutputAt?: number;
+  expiresAt?: number | null;
+  pollIntervalMs?: number | null;
+  pid?: number | null;
+  exitCode: number | null;
+  verificationUri?: string;
+  verificationUriComplete?: string;
+  userCode?: string;
+  logs: string;
+  error?: string;
+}
+
 export interface UsageConfig {
   active_refresh_interval: string;
   background_refresh_interval: string;

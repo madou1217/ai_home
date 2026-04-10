@@ -1,5 +1,18 @@
 import axios from 'axios';
-import type { Account, AccountConfig, UsageConfig, ChatMessage, ChatRequest, ChatResponse, ServerStatus, ServerMetrics, AggregatedProject, ArchivedSession } from '@/types';
+import type {
+  Account,
+  AddAccountRequest,
+  AddAccountResponse,
+  AccountAddJob,
+  UsageConfig,
+  ChatMessage,
+  ChatRequest,
+  ChatResponse,
+  ServerStatus,
+  ServerMetrics,
+  AggregatedProject,
+  ArchivedSession
+} from '@/types';
 
 const api = axios.create({
   baseURL: '/v0',
@@ -18,12 +31,18 @@ export const accountsAPI = {
   },
 
   // 添加新账号
-  add: async (provider: string, accountId: string, config?: AccountConfig) => {
-    const response = await api.post('/webui/accounts/add', {
-      provider,
-      accountId,
-      config
-    });
+  add: async (payload: AddAccountRequest): Promise<AddAccountResponse> => {
+    const response = await api.post<AddAccountResponse>('/webui/accounts/add', payload);
+    return response.data;
+  },
+
+  getAddJob: async (jobId: string): Promise<AccountAddJob> => {
+    const response = await api.get<{ ok: boolean; job: AccountAddJob }>(`/webui/accounts/add/jobs/${jobId}`);
+    return response.data.job;
+  },
+
+  cancelAddJob: async (jobId: string) => {
+    const response = await api.post(`/webui/accounts/add/jobs/${jobId}/cancel`);
     return response.data;
   },
 

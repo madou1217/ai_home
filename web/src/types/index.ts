@@ -81,3 +81,11 @@ export interface AggregatedProject {
   providers: Provider[]; // 简化为 provider 数组
   sessions: Session[]; // 聚合所有会话
 }
+
+export interface ArchivedSession {
+  id: string;
+  title: string;
+  provider: Provider;
+  projectDirName?: string;
+  archivedAt: number;
+}

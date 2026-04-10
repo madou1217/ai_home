@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Account, AccountConfig, UsageConfig, ChatMessage, ChatRequest, ChatResponse, ServerStatus, ServerMetrics, AggregatedProject } from '@/types';
+import type { Account, AccountConfig, UsageConfig, ChatMessage, ChatRequest, ChatResponse, ServerStatus, ServerMetrics, AggregatedProject, ArchivedSession } from '@/types';
 
 const api = axios.create({
   baseURL: '/v0',
@@ -90,6 +90,20 @@ export const sessionsAPI = {
     }
     const response = await api.get<{ ok: boolean; messages: ChatMessage[] }>(url);
     return response.data.messages;
+  },
+
+  // 获取所有已归档的会话
+  getArchivedSessions: async (): Promise<ArchivedSession[]> => {
+    const response = await api.get<{ ok: boolean; archived: ArchivedSession[] }>('/webui/sessions/archived');
+    return response.data.archived;
+  },
+
+  // 还原归档会话
+  unarchiveSession: async (provider: string, sessionId: string, projectDirName?: string) => {
+    const response = await api.post('/webui/sessions/unarchive', {
+      provider, sessionId, projectDirName
+    });
+    return response.data;
   }
 };
 

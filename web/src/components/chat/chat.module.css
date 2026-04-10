@@ -125,6 +125,15 @@
   text-align: center;
 }
 
+/* 归档入口 */
+.archivedEntry {
+  position: sticky;
+  bottom: 0;
+  padding: 8px 12px;
+  background: #f5f5f5;
+  border-top: 1px solid #e8e8e8;
+}
+
 /* ===== 消息气泡 ===== */
 .messageRow {
   margin-bottom: 24px;

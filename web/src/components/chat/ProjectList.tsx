@@ -4,6 +4,7 @@ import { ReloadOutlined, InboxOutlined } from '@ant-design/icons';
 import type { AggregatedProject, Session } from '@/types';
 import { sessionsAPI } from '@/services/api';
 import ProviderIcon from './ProviderIcon';
+import ArchivedDrawer from './ArchivedDrawer';
 import folderIcon from '@/assets/icons/folder.svg';
 import expandIcon from '@/assets/icons/expand.svg';
 import dayjs from 'dayjs';
@@ -25,6 +26,7 @@ const ProjectList = ({
 }: Props) => {
   const [hoveredProject, setHoveredProject] = useState<string | null>(null);
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set()); // 展开显示15条的项目
+  const [archivedOpen, setArchivedOpen] = useState(false);
 
   return (
     <div className={styles.sidebar}>
@@ -160,6 +162,25 @@ const ProjectList = ({
           })}
         </div>
       )}
+
+      {/* 归档入口 */}
+      <div className={styles.archivedEntry}>
+        <Button
+          type="text"
+          icon={<InboxOutlined />}
+          onClick={() => setArchivedOpen(true)}
+          block
+          style={{ color: '#999', fontSize: 12 }}
+        >
+          已归档的会话
+        </Button>
+      </div>
+
+      <ArchivedDrawer
+        open={archivedOpen}
+        onClose={() => setArchivedOpen(false)}
+        onRestored={onRefresh}
+      />
     </div>
   );
 };

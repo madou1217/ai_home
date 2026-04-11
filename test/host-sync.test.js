@@ -10,7 +10,7 @@ function mkTmpDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'aih-host-sync-'));
 }
 
-test('syncGlobalConfigToHost syncs only codex auth and removes sandbox-owned shared entries when host source is absent', () => {
+test('syncGlobalConfigToHost syncs only codex auth and keeps account-owned config isolated', () => {
   const root = mkTmpDir();
   const hostHomeDir = path.join(root, 'home');
   const profilesDir = path.join(root, 'profiles');
@@ -35,7 +35,8 @@ test('syncGlobalConfigToHost syncs only codex auth and removes sandbox-owned sha
   assert.equal(result.ok, true);
   assert.equal(fs.readFileSync(path.join(hostCodexDir, 'auth.json'), 'utf8'), '{"token":"sandbox"}\n');
   assert.equal(fs.existsSync(path.join(hostCodexDir, 'config.toml')), false);
-  assert.equal(fs.existsSync(path.join(accountGlobalDir, 'config.toml')), false);
+  assert.equal(fs.existsSync(path.join(accountGlobalDir, 'config.toml')), true);
+  assert.equal(fs.readFileSync(path.join(accountGlobalDir, 'config.toml'), 'utf8'), 'model = "gpt-5"\n');
   assert.equal(fs.lstatSync(path.join(accountGlobalDir, 'auth.json')).isSymbolicLink(), false);
 
   fs.rmSync(root, { recursive: true, force: true });

@@ -397,7 +397,10 @@ test('runtime fixed status bar works when stdin is TTY even if stdout.isTTY is a
   runtime.runCliPtyTracked('codex', '10086', [], false);
   await new Promise((resolve) => setTimeout(resolve, 100));
 
-  assert.equal(writes.some((line) => line.includes('\x1b[s\x1b[999;1H\x1b[2K')), true);
+  assert.equal(
+    writes.some((line) => /\x1b\[s\x1b\[\d+;1H\x1b\[2K/.test(line)),
+    true
+  );
   assert.equal(writes.some((line) => line.startsWith('\r\n')), false);
 
   assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);

@@ -17,6 +17,7 @@ test('doctor detects required-config, broken-link, and shared-topology anomalies
   const hostCodexDir = path.join(homeDir, '.codex');
   fs.mkdirSync(hostCodexDir, { recursive: true });
   fs.writeFileSync(path.join(hostCodexDir, 'config.toml'), 'model = "gpt-5"\n');
+  fs.writeFileSync(path.join(hostCodexDir, 'models_cache.json'), '{}\n');
 
   const profilesDir = path.join(homeDir, '.ai_home', 'profiles', 'codex');
   fs.mkdirSync(path.join(profilesDir, '1'), { recursive: true });
@@ -25,6 +26,7 @@ test('doctor detects required-config, broken-link, and shared-topology anomalies
   fs.mkdirSync(configDir2, { recursive: true });
   fs.symlinkSync('missing-target', path.join(configDir2, 'sessions'));
   fs.writeFileSync(path.join(configDir2, 'config.toml'), 'model = "local"\n');
+  fs.writeFileSync(path.join(configDir2, 'models_cache.json'), '{}\n');
 
   const report = runDoctorChecks({
     hostHomeDir: homeDir,

@@ -4,6 +4,7 @@ accounts/
 .spec-workflow/
 *.log
 tmp/
+.aih/
 
 # Rust / Tauri / TUI build artifacts
 **/target/

@@ -35,7 +35,7 @@ test('`aih ls` is read-only and does not create profile directories', (t) => {
   assert.equal(fs.existsSync(aiHomeDir), false, 'read-only list command should not create ~/.ai_home');
 });
 
-test('`set-default` updates default pointer, syncs host auth, and drops profile-owned shared codex entries', (t) => {
+test('`set-default` updates default pointer, syncs host auth, and keeps account-owned codex config isolated', (t) => {
   const homeDir = mkTmpDir();
   t.after(() => fs.rmSync(homeDir, { recursive: true, force: true }));
 
@@ -87,9 +87,10 @@ test('`set-default` updates default pointer, syncs host auth, and drops profile-
   );
   assert.equal(
     fs.existsSync(sandboxConfigPath),
-    false,
-    'set-default should drop sandbox-owned shared codex entries when host source is absent'
+    true,
+    'set-default should preserve account-owned codex config instead of deleting it as shared state'
   );
+  assert.equal(fs.readFileSync(sandboxConfigPath, 'utf8'), 'model = "gpt-5"\n');
 });
 
 test('`aih ls` ignores lock-like non-numeric entries under tool profile dir', (t) => {

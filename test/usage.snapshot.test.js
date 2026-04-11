@@ -460,6 +460,7 @@ test('codex usage snapshot async tolerates app-server stdin EPIPE and returns ca
     const spawnMock = () => {
       spawnCalls += 1;
       const child = new EventEmitter();
+      child.pid = 12345;
       child.stdout = new EventEmitter();
       child.stderr = new EventEmitter();
       child.stdout.setEncoding = () => {};

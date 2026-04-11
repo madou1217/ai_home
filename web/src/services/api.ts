@@ -5,11 +5,16 @@ import type {
   AddAccountResponse,
   AccountAddJob,
   UsageConfig,
+  ServerConfig,
   ChatMessage,
   ChatRequest,
   ChatResponse,
-  ServerStatus,
-  ServerMetrics,
+  ChatStreamEvent,
+  NativeSlashCommand,
+  SlashCommandsResponse,
+  ManagementStatus,
+  ManagementMetrics,
+  ManagementAccountsResponse,
   AggregatedProject,
   ArchivedSession
 } from '@/types';
@@ -55,7 +60,8 @@ export const accountsAPI = {
   // 导出账号
   export: async () => {
     const response = await api.get('/webui/accounts/export', { responseType: 'blob' });
-    const url = URL.createObjectURL(new Blob([JSON.stringify(response.data, null, 2)], { type: 'application/json' }));
+    const contentType = response.headers['content-type'] || 'application/json';
+    const url = URL.createObjectURL(new Blob([response.data], { type: contentType }));
     const a = document.createElement('a');
     a.href = url;
     a.download = 'ai-home-accounts.json';
@@ -81,6 +87,16 @@ export const configAPI = {
   // 更新配置
   update: async (config: UsageConfig) => {
     const response = await api.post('/webui/config', { config });
+    return response.data;
+  },
+
+  getServer: async (): Promise<ServerConfig> => {
+    const response = await api.get<{ ok: boolean; config: ServerConfig }>('/webui/server-config');
+    return response.data.config;
+  },
+
+  updateServer: async (config: ServerConfig) => {
+    const response = await api.post('/webui/server-config', { config });
     return response.data;
   }
 };
@@ -123,6 +139,29 @@ export const sessionsAPI = {
       provider, sessionId, projectDirName
     });
     return response.data;
+  },
+
+  openProject: async (projectPath: string, name?: string) => {
+    const response = await api.post<{ ok: boolean; project: AggregatedProject }>('/webui/projects/open', {
+      projectPath,
+      name
+    });
+    return response.data.project;
+  },
+
+  removeProject: async (projectPath: string) => {
+    const response = await api.post('/webui/projects/remove', {
+      projectPath
+    });
+    return response.data;
+  },
+
+  pickProjectDirectory: async (): Promise<{ cancelled: boolean; project?: { path: string; name: string } }> => {
+    const response = await api.post<{ ok: boolean; cancelled: boolean; project?: { path: string; name: string } }>('/webui/projects/pick');
+    return {
+      cancelled: Boolean(response.data.cancelled),
+      project: response.data.project
+    };
   }
 };
 
@@ -140,20 +179,129 @@ export const chatAPI = {
   send: async (request: ChatRequest): Promise<ChatResponse> => {
     const response = await api.post<ChatResponse>('/webui/chat', request);
     return response.data;
+  },
+
+  sendStream: async (
+    request: ChatRequest,
+    options: {
+      signal?: AbortSignal;
+      onEvent?: (event: ChatStreamEvent) => void;
+    } = {}
+  ): Promise<void> => {
+    const response = await fetch('/v0/webui/chat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(request),
+      signal: options.signal
+    });
+
+    if (!response.ok) {
+      let errorMessage = `HTTP ${response.status}`;
+      try {
+        const data = await response.json();
+        errorMessage = data?.message || data?.error || errorMessage;
+      } catch (_error) {
+        const text = await response.text().catch(() => '');
+        if (text) errorMessage = text;
+      }
+      throw new Error(errorMessage);
+    }
+
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('text/event-stream')) {
+      const data = await response.json();
+      options.onEvent?.({
+        type: 'done',
+        content: data?.content || '',
+        provider: data?.provider,
+        accountId: data?.accountId,
+        sessionId: data?.sessionId,
+        mode: data?.mode
+      });
+      return;
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error('stream_reader_unavailable');
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    const emitEvent = (rawBlock: string) => {
+      const dataLines = rawBlock
+        .split('\n')
+        .filter((line) => line.startsWith('data:'))
+        .map((line) => line.slice(5).trim());
+      if (dataLines.length === 0) return;
+      const payload = dataLines.join('\n');
+      if (!payload || payload === '[DONE]') return;
+      const parsed = JSON.parse(payload) as ChatStreamEvent;
+      options.onEvent?.(parsed);
+      if (parsed.type === 'error') {
+        throw new Error(parsed.message || parsed.code || 'chat_stream_failed');
+      }
+    };
+
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+
+      let boundary = buffer.indexOf('\n\n');
+      while (boundary >= 0) {
+        const block = buffer.slice(0, boundary).trim();
+        buffer = buffer.slice(boundary + 2);
+        if (block) emitEvent(block);
+        boundary = buffer.indexOf('\n\n');
+      }
+
+      if (done) break;
+    }
+
+    if (buffer.trim()) {
+      emitEvent(buffer.trim());
+    }
+  },
+
+  sendRunInput: async (runId: string, input: string, appendNewline = true) => {
+    const response = await api.post(`/webui/chat/runs/${encodeURIComponent(runId)}/input`, {
+      input,
+      appendNewline
+    });
+    return response.data;
+  },
+
+  resizeRunTerminal: async (runId: string, cols: number, rows: number) => {
+    const response = await api.post(`/webui/chat/runs/${encodeURIComponent(runId)}/resize`, {
+      cols,
+      rows
+    });
+    return response.data;
+  },
+
+  getSlashCommands: async (provider: string): Promise<NativeSlashCommand[]> => {
+    const response = await api.get<SlashCommandsResponse>(`/webui/slash-commands?provider=${encodeURIComponent(provider)}`);
+    return response.data.commands || [];
   }
 };
 
 // 管理 API
 export const managementAPI = {
   // 获取服务器状态
-  status: async (): Promise<ServerStatus> => {
-    const response = await api.get<ServerStatus>('/management/status');
+  status: async (): Promise<ManagementStatus> => {
+    const response = await api.get<ManagementStatus>('/management/status');
     return response.data;
   },
 
   // 获取服务器指标
-  metrics: async (): Promise<ServerMetrics> => {
-    const response = await api.get<ServerMetrics>('/management/metrics');
+  metrics: async (): Promise<ManagementMetrics> => {
+    const response = await api.get<ManagementMetrics>('/management/metrics');
+    return response.data;
+  },
+
+  accounts: async (): Promise<ManagementAccountsResponse> => {
+    const response = await api.get<ManagementAccountsResponse>('/management/accounts');
     return response.data;
   },
 
@@ -166,6 +314,11 @@ export const managementAPI = {
   // 清除冷却时间
   clearCooldown: async () => {
     const response = await api.post('/management/cooldown/clear');
+    return response.data;
+  },
+
+  restart: async () => {
+    const response = await api.post('/webui/server/restart');
     return response.data;
   }
 };

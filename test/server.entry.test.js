@@ -5,6 +5,8 @@ const { runServerEntry } = require('../lib/server/entry');
 test('runServerEntry wires start/sync delegates into runServerCommand', async () => {
   let seenStart = false;
   let seenSync = false;
+  const spawnImpl = () => ({});
+  const processObj = { cwd: () => '/', execPath: '/node/custom' };
   const fakeRunProxyCommand = async (_args, deps) => {
     assert.equal(typeof deps.startLocalServer, 'function');
     assert.equal(typeof deps.syncCodexAccountsToServer, 'function');
@@ -24,14 +26,21 @@ test('runServerEntry wires start/sync delegates into runServerCommand', async ()
     fs: {},
     fetchImpl: async () => ({ ok: true }),
     http: {},
-    processObj: { cwd: () => '/' },
+    processObj,
+    spawn: spawnImpl,
+    entryFilePath: '/tmp/aih.js',
     logFile: '/tmp/x.log',
     getToolAccountIds: () => [],
     getToolConfigDir: () => '',
     getProfileDir: () => '',
     checkStatus: () => ({ configured: false }),
     syncCodexAccountsToServer: async () => ({ ok: true }),
-    startLocalServerModule: async () => ({ ok: true }),
+    startLocalServerModule: async (_options, deps) => {
+      assert.equal(deps.spawn, spawnImpl);
+      assert.equal(deps.entryFilePath, '/tmp/aih.js');
+      assert.equal(deps.nodeExecPath, '/node/custom');
+      return { ok: true };
+    },
     runServerCommand: fakeRunProxyCommand,
     showServerUsage: () => {},
     serverDaemon: {},

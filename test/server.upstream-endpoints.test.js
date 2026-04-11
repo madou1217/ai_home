@@ -91,6 +91,138 @@ test('upstream passthrough strips hop-by-hop headers before fetch', async () => 
   assert.equal(Object.hasOwn(seenHeaders, 'content-length'), false);
 });
 
+test('upstream passthrough honors explicit x-provider and x-account-id headers over model inference', async () => {
+  const res = createResCapture();
+  let seenAuthorization = '';
+  const state = {
+    accounts: {
+      codex: [{ id: '10000', email: 'codex@example.com', accessToken: 'codex-token' }],
+      claude: [
+        { id: '3', email: 'claude-3@example.com', accessToken: 'claude-token-3', baseUrl: 'https://claude.example.com' },
+        { id: '4', email: 'claude-4@example.com', accessToken: 'claude-token-4', baseUrl: 'https://claude.example.com' }
+      ]
+    },
+    cursors: { codex: 0, claude: 0 },
+    metrics: { totalFailures: 0, totalSuccess: 0, totalTimeouts: 0, providerCounts: {}, providerSuccess: {}, providerFailures: {} }
+  };
+
+  await handleUpstreamPassthrough({
+    options: {
+      provider: 'auto',
+      codexBaseUrl: 'https://codex.example.com',
+      claudeBaseUrl: 'https://claude.example.com',
+      upstreamTimeoutMs: 3000,
+      maxAttempts: 2,
+      failureThreshold: 1,
+      logRequests: false
+    },
+    state,
+    req: {
+      url: '/v1/chat/completions',
+      headers: {
+        'content-type': 'application/json',
+        'x-provider': 'claude',
+        'x-account-id': '3'
+      }
+    },
+    res,
+    method: 'POST',
+    bodyBuffer: Buffer.from(JSON.stringify({ model: 'qwen3.6-plus', messages: [{ role: 'user', content: '你好' }] })),
+    requestJson: { model: 'qwen3.6-plus', messages: [{ role: 'user', content: '你好' }] },
+    routeKey: 'POST /v1/chat/completions',
+    requestStartedAt: Date.now(),
+    cooldownMs: 1000,
+    deps: {
+      chooseServerAccount: (pool) => pool[0],
+      resolveRequestProvider: (options, requestJson, headers) => require('../lib/server/router').resolveRequestProvider(options, requestJson, headers),
+      pushMetricError: () => {},
+      writeJson: (r, code, payload) => {
+        r.statusCode = code;
+        r.setHeader('content-type', 'application/json');
+        r.end(JSON.stringify(payload));
+      },
+      fetchWithTimeout: async (_url, init) => {
+        seenAuthorization = String(init && init.headers && init.headers.authorization || '');
+        return {
+          status: 200,
+          headers: new Map([['content-type', 'application/json']]),
+          arrayBuffer: async () => Buffer.from('{"ok":true}')
+        };
+      },
+      markProxyAccountFailure: () => {},
+      markProxyAccountSuccess: () => {},
+      appendProxyRequestLog: () => {}
+    }
+  });
+
+  assert.equal(res.statusCode, 200);
+  assert.match(seenAuthorization, /claude-token-3/);
+  assert.equal(state.metrics.providerCounts.claude, 1);
+  assert.equal(state.metrics.providerCounts.codex, undefined);
+});
+
+test('upstream passthrough returns clear invalid_request when claude account uses anthropic-compatible endpoint with chat completions path', async () => {
+  const res = createResCapture();
+  const state = {
+    accounts: {
+      claude: [{ id: '3', email: 'claude-3@example.com', accessToken: 'claude-token-3', baseUrl: 'https://dashscope.aliyuncs.com/apps/anthropic' }]
+    },
+    cursors: { claude: 0 },
+    metrics: { totalFailures: 0, totalSuccess: 0, totalTimeouts: 0, providerCounts: {}, providerSuccess: {}, providerFailures: {} }
+  };
+  let fetchCalled = false;
+
+  await handleUpstreamPassthrough({
+    options: {
+      provider: 'auto',
+      claudeBaseUrl: 'https://claude.example.com',
+      upstreamTimeoutMs: 3000,
+      maxAttempts: 1,
+      failureThreshold: 1,
+      logRequests: false
+    },
+    state,
+    req: {
+      url: '/v1/chat/completions',
+      headers: {
+        'content-type': 'application/json',
+        'x-provider': 'claude',
+        'x-account-id': '3'
+      }
+    },
+    res,
+    method: 'POST',
+    bodyBuffer: Buffer.from(JSON.stringify({ model: 'qwen3.6-plus', messages: [{ role: 'user', content: '你好' }] })),
+    requestJson: { model: 'qwen3.6-plus', messages: [{ role: 'user', content: '你好' }] },
+    routeKey: 'POST /v1/chat/completions',
+    requestStartedAt: Date.now(),
+    cooldownMs: 1000,
+    deps: {
+      chooseServerAccount: (pool) => pool[0],
+      resolveRequestProvider: (options, requestJson, headers) => require('../lib/server/router').resolveRequestProvider(options, requestJson, headers),
+      pushMetricError: () => {},
+      writeJson: (r, code, payload) => {
+        r.statusCode = code;
+        r.setHeader('content-type', 'application/json');
+        r.end(JSON.stringify(payload));
+      },
+      fetchWithTimeout: async () => {
+        fetchCalled = true;
+        throw new Error('should not fetch upstream');
+      },
+      markProxyAccountFailure: () => {},
+      markProxyAccountSuccess: () => {},
+      appendProxyRequestLog: () => {}
+    }
+  });
+
+  assert.equal(fetchCalled, false);
+  assert.equal(res.statusCode, 400);
+  const body = JSON.parse(String(res.body));
+  assert.equal(body.error, 'invalid_request');
+  assert.match(String(body.detail || ''), /Anthropic 兼容端点/);
+});
+
 test('upstream passthrough fast-fails on global network errors and surfaces error code', async () => {
   const res = createResCapture();
   const state = {
@@ -139,6 +271,137 @@ test('upstream passthrough fast-fails on global network errors and surfaces erro
   const body = JSON.parse(String(res.body));
   assert.equal(body.error, 'upstream_failed');
   assert.match(String(body.detail || ''), /ECONNRESET/);
+});
+
+test('upstream passthrough 404 does not mark account success and returns raw upstream body', async () => {
+  const res = createResCapture();
+  const state = {
+    accounts: { claude: [{ id: '1', email: 'a@example.com', accessToken: 'tok', cooldownUntil: 0 }] },
+    cursors: { claude: 0 },
+    metrics: { totalFailures: 0, totalSuccess: 0, totalTimeouts: 0, providerFailures: {}, providerSuccess: {} }
+  };
+  let successCalls = 0;
+  let failureCalls = 0;
+
+  await handleUpstreamPassthrough({
+    options: {
+      provider: 'claude',
+      claudeBaseUrl: 'https://example.com',
+      upstreamTimeoutMs: 3000,
+      maxAttempts: 1,
+      failureThreshold: 2,
+      logRequests: false
+    },
+    state,
+    req: { url: '/v1/messages', headers: { 'content-type': 'application/json' } },
+    res,
+    method: 'POST',
+    bodyBuffer: Buffer.from('{"x":"y"}'),
+    routeKey: 'POST /v1/messages',
+    requestStartedAt: Date.now(),
+    cooldownMs: 1000,
+    deps: {
+      chooseServerAccount: (pool) => pool[0],
+      pushMetricError: () => {},
+      writeJson: (r, code, payload) => {
+        r.statusCode = code;
+        r.setHeader('content-type', 'application/json');
+        r.end(JSON.stringify(payload));
+      },
+      fetchWithTimeout: async () => ({
+        status: 404,
+        headers: new Map([['content-type', 'application/json']]),
+        arrayBuffer: async () => Buffer.from('{"error":"not found"}')
+      }),
+      markProxyAccountFailure: () => { failureCalls += 1; },
+      markProxyAccountSuccess: () => { successCalls += 1; },
+      appendProxyRequestLog: () => {}
+    }
+  });
+
+  assert.equal(res.statusCode, 404);
+  assert.equal(String(res.body), '{"error":"not found"}');
+  assert.equal(successCalls, 0);
+  assert.equal(failureCalls, 0);
+  assert.equal(state.metrics.totalSuccess, 0);
+  assert.equal(state.metrics.totalFailures, 1);
+});
+
+test('upstream passthrough 429 applies cooldown and retries another account before any downstream bytes are sent', async () => {
+  const res = createResCapture();
+  const accounts = [
+    { id: '1', email: 'a@example.com', accessToken: 'tok-1', cooldownUntil: 0 },
+    { id: '2', email: 'b@example.com', accessToken: 'tok-2', cooldownUntil: 0 }
+  ];
+  const state = {
+    accounts: { claude: accounts },
+    cursors: { claude: 0 },
+    metrics: { totalFailures: 0, totalSuccess: 0, totalTimeouts: 0, providerFailures: {}, providerSuccess: {} }
+  };
+  const seen = [];
+
+  await handleUpstreamPassthrough({
+    options: {
+      provider: 'claude',
+      claudeBaseUrl: 'https://example.com',
+      upstreamTimeoutMs: 3000,
+      maxAttempts: 2,
+      failureThreshold: 2,
+      logRequests: false
+    },
+    state,
+    req: { url: '/v1/messages', headers: { 'content-type': 'application/json' } },
+    res,
+    method: 'POST',
+    bodyBuffer: Buffer.from('{"x":"y"}'),
+    routeKey: 'POST /v1/messages',
+    requestStartedAt: Date.now(),
+    cooldownMs: 1000,
+    deps: {
+      chooseServerAccount: (pool, _state, _cursorKey, options = {}) => {
+        const excluded = options.excludeIds || new Set();
+        const next = pool.find((account) => !excluded.has(String(account.id)));
+        if (next) seen.push(String(next.id));
+        return next || null;
+      },
+      pushMetricError: () => {},
+      writeJson: (r, code, payload) => {
+        r.statusCode = code;
+        r.setHeader('content-type', 'application/json');
+        r.end(JSON.stringify(payload));
+      },
+      fetchWithTimeout: async (_url, init) => {
+        if (String(init.headers.authorization).includes('tok-1')) {
+          return {
+            status: 429,
+            headers: new Map([['content-type', 'application/json'], ['retry-after', '120']]),
+            arrayBuffer: async () => Buffer.from('{"error":"rate limited"}')
+          };
+        }
+        return {
+          status: 200,
+          headers: new Map([['content-type', 'application/json']]),
+          arrayBuffer: async () => Buffer.from('{"ok":true}')
+        };
+      },
+      markProxyAccountFailure: (account, _reason, cooldownMs, threshold) => {
+        account.consecutiveFailures = Number(account.consecutiveFailures || 0) + 1;
+        if (account.consecutiveFailures >= threshold) {
+          account.cooldownUntil = Date.now() + cooldownMs;
+        }
+      },
+      markProxyAccountSuccess: (account) => {
+        account.consecutiveFailures = 0;
+      },
+      appendProxyRequestLog: () => {}
+    }
+  });
+
+  assert.deepEqual(seen, ['1', '2']);
+  assert.equal(res.statusCode, 200);
+  assert.equal(String(res.body), '{"ok":true}');
+  assert.equal(accounts[0].cooldownUntil > Date.now(), true);
+  assert.equal(state.metrics.totalSuccess, 1);
 });
 
 test('upstream passthrough skips invalid token and retries with another account in same request', async () => {
@@ -812,7 +1075,7 @@ test('Gemini Code Assist 404 does not trigger cooldown and returns 404 upstream_
   assert.equal(Number(state.accounts.gemini[0].cooldownUntil || 0), 0);
 });
 
-test('Gemini Code Assist 429 does not trigger cooldown and returns 429 upstream_failed', async () => {
+test('Gemini Code Assist 429 triggers immediate cooldown and returns 429 upstream_failed', async () => {
   const res = createResCapture();
   const account = { id: 'g1', email: 'g@example.com', accessToken: 'tok', authType: 'oauth-personal', cooldownUntil: 0 };
   const state = {
@@ -855,8 +1118,11 @@ test('Gemini Code Assist 429 does not trigger cooldown and returns 429 upstream_
         err.code = 'HTTP_429';
         throw err;
       },
-      markProxyAccountFailure: () => {
-        throw new Error('should_not_mark_failure_for_429');
+      markProxyAccountFailure: (target, _reason, nextCooldownMs, threshold) => {
+        target.consecutiveFailures = Number(target.consecutiveFailures || 0) + 1;
+        if (target.consecutiveFailures >= threshold) {
+          target.cooldownUntil = Date.now() + nextCooldownMs;
+        }
       },
       markProxyAccountSuccess: () => {},
       appendProxyRequestLog: () => {}
@@ -867,10 +1133,10 @@ test('Gemini Code Assist 429 does not trigger cooldown and returns 429 upstream_
   const body = JSON.parse(String(res.body));
   assert.equal(body.error, 'upstream_failed');
   assert.match(String(body.detail || ''), /quota exhausted/);
-  assert.equal(Number(account.cooldownUntil || 0), 0);
+  assert.equal(Number(account.cooldownUntil || 0) > Date.now(), true);
 });
 
-test('Gemini Code Assist 401 does not trigger cooldown and returns 401 upstream_failed', async () => {
+test('Gemini Code Assist 401 triggers immediate cooldown and returns 401 upstream_failed', async () => {
   const res = createResCapture();
   const account = { id: 'g1', email: 'g@example.com', accessToken: 'tok', authType: 'oauth-personal', cooldownUntil: 0 };
   const state = {
@@ -913,8 +1179,11 @@ test('Gemini Code Assist 401 does not trigger cooldown and returns 401 upstream_
         err.code = 'HTTP_401';
         throw err;
       },
-      markProxyAccountFailure: () => {
-        throw new Error('should_not_mark_failure_for_401');
+      markProxyAccountFailure: (target, _reason, nextCooldownMs, threshold) => {
+        target.consecutiveFailures = Number(target.consecutiveFailures || 0) + 1;
+        if (target.consecutiveFailures >= threshold) {
+          target.cooldownUntil = Date.now() + nextCooldownMs;
+        }
       },
       markProxyAccountSuccess: () => {},
       appendProxyRequestLog: () => {}
@@ -925,5 +1194,5 @@ test('Gemini Code Assist 401 does not trigger cooldown and returns 401 upstream_
   const body = JSON.parse(String(res.body));
   assert.equal(body.error, 'upstream_failed');
   assert.match(String(body.detail || ''), /invalid auth/);
-  assert.equal(Number(account.cooldownUntil || 0), 0);
+  assert.equal(Number(account.cooldownUntil || 0) > Date.now(), true);
 });

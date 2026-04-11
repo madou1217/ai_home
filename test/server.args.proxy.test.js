@@ -58,3 +58,14 @@ test('parseServerServeArgs allows CLI proxy overrides', () => {
     assert.equal(parsed.noProxy, 'api.openai.com');
   });
 });
+
+test('parseServerServeArgs supports equals syntax for host, port and api key', () => {
+  const parsed = parseServerServeArgs([
+    '--host=0.0.0.0',
+    '--port=11435',
+    '--api-key=local-key'
+  ]);
+  assert.equal(parsed.host, '0.0.0.0');
+  assert.equal(parsed.port, 11435);
+  assert.equal(parsed.clientKey, 'local-key');
+});

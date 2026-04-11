@@ -9,6 +9,7 @@ import {
   Input,
   Select,
   Radio,
+  Segmented,
   Alert,
   message,
   Progress,
@@ -36,6 +37,7 @@ import {
 import { accountsAPI, managementAPI } from '@/services/api';
 import type { Account, AccountAddJob, AccountAuthMode, Provider } from '@/types';
 import ProviderIcon from '@/components/chat/ProviderIcon';
+import RuntimeStatusTag from '@/components/runtime/RuntimeStatusTag';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import 'dayjs/locale/zh-cn';
@@ -135,6 +137,10 @@ const Accounts = () => {
   const [form] = Form.useForm();
   const [activeProvider, setActiveProvider] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [importModalVisible, setImportModalVisible] = useState(false);
+  const [importMode, setImportMode] = useState<'file' | 'path' | 'text'>('file');
+  const [importPath, setImportPath] = useState('');
+  const [importText, setImportText] = useState('');
   const importInputRef = React.useRef<HTMLInputElement>(null);
   const successAutoCloseTimerRef = React.useRef<number | null>(null);
   const selectedProvider = Form.useWatch('provider', form) as Provider | undefined;
@@ -165,12 +171,27 @@ const Accounts = () => {
     if (!file) return;
     try {
       const text = await file.text();
-      const data = JSON.parse(text);
-      const result = await accountsAPI.import(data);
+      const result = await accountsAPI.import({ content: text });
       message.success(`导入成功，共 ${result.imported} 个账号`);
       loadAccounts();
     } catch { message.error('导入失败，请检查文件格式'); }
     e.target.value = '';
+  };
+
+  const handleImportSubmit = async () => {
+    try {
+      const payload = importMode === 'path'
+        ? { mode: 'path', path: importPath.trim() }
+        : { content: importText };
+      const result = await accountsAPI.import(payload);
+      message.success(`导入成功，共 ${result.imported || 0} 个账号`);
+      setImportModalVisible(false);
+      setImportPath('');
+      setImportText('');
+      loadAccounts();
+    } catch (error: any) {
+      message.error(error?.response?.data?.message || error?.message || '导入失败');
+    }
   };
 
   const loadAccounts = async () => {
@@ -439,6 +460,9 @@ const Accounts = () => {
           <div style={{ fontWeight: 'bold', marginBottom: 4 }}>
             {record.email || text}
           </div>
+          <div style={{ fontSize: 11, color: '#8c8c8c', marginBottom: 4 }}>
+            ID: {record.accountId}
+          </div>
           <Space size="small" align="center">
             <ProviderIcon provider={record.provider} size={14} />
             <Tag color={
@@ -483,9 +507,13 @@ const Accounts = () => {
       title: '运行状态',
       dataIndex: 'exhausted',
       key: 'exhausted',
-      width: 100,
+      width: 140,
       render: (exhausted: boolean, record: Account) => {
         if (!record.configured) return <Tag color="default">未配置</Tag>;
+        const runtimeStatus = String(record.runtimeStatus || '').trim();
+        if (runtimeStatus && runtimeStatus !== 'healthy') {
+          return <RuntimeStatusTag status={runtimeStatus} />;
+        }
         return (
           <Tag
             icon={exhausted ? <CloseCircleOutlined /> : <CheckCircleOutlined />}
@@ -618,8 +646,8 @@ const Accounts = () => {
         <h1 style={{ margin: 0 }}>账号管理</h1>
         <Space>
           <Button icon={<ExportOutlined />} onClick={handleExport}>导出</Button>
-          <Button icon={<ImportOutlined />} onClick={() => importInputRef.current?.click()}>导入</Button>
-          <input ref={importInputRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleImport} />
+          <Button icon={<ImportOutlined />} onClick={() => setImportModalVisible(true)}>导入</Button>
+          <input ref={importInputRef} type="file" accept=".json,.jsonl" style={{ display: 'none' }} onChange={handleImport} />
           <Button icon={<ReloadOutlined />} onClick={loadAccounts} loading={loading}>刷新</Button>
           <Button
             type="primary"
@@ -686,6 +714,50 @@ const Accounts = () => {
           </Card>
         </Col>
       </Row>
+
+      <Modal
+        title="导入账号"
+        open={importModalVisible}
+        onOk={handleImportSubmit}
+        onCancel={() => setImportModalVisible(false)}
+        okText="导入"
+        cancelText="取消"
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <Segmented
+            value={importMode}
+            onChange={(value) => setImportMode(value as 'file' | 'path' | 'text')}
+            options={[
+              { label: 'JSON 文件', value: 'file' },
+              { label: '本地路径', value: 'path' },
+              { label: '手动粘贴', value: 'text' }
+            ]}
+          />
+          {importMode === 'file' ? (
+            <Alert
+              type="info"
+              showIcon
+              message="支持上传 JSON / JSONL。zip 或目录请改用“本地路径”方式。"
+              action={<Button size="small" onClick={() => importInputRef.current?.click()}>选择文件</Button>}
+            />
+          ) : null}
+          {importMode === 'path' ? (
+            <Input
+              placeholder="/absolute/path/to/folder-or-zip-or-json"
+              value={importPath}
+              onChange={(e) => setImportPath(e.target.value)}
+            />
+          ) : null}
+          {importMode === 'text' ? (
+            <Input.TextArea
+              rows={10}
+              placeholder="粘贴单账号 JSON、bundle JSON，或多行 JSONL"
+              value={importText}
+              onChange={(e) => setImportText(e.target.value)}
+            />
+          ) : null}
+        </div>
+      </Modal>
 
       <Card>
         <Tabs

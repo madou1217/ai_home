@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Button, Spin, Empty, Popconfirm, message } from 'antd';
-import { ReloadOutlined, InboxOutlined } from '@ant-design/icons';
+import { ReloadOutlined, InboxOutlined, PlusOutlined, FolderOpenOutlined, MinusOutlined } from '@ant-design/icons';
 import type { AggregatedProject, Session } from '@/types';
 import { sessionsAPI } from '@/services/api';
 import ProviderIcon from './ProviderIcon';
@@ -14,15 +14,21 @@ interface Props {
   projects: AggregatedProject[];
   loading: boolean;
   selectedSession: Session | null;
+  selectedProject: AggregatedProject | null;
   expandedProjects: Set<string>;
   onRefresh: () => void;
   onToggleProject: (id: string) => void;
+  onSelectProject: (project: AggregatedProject) => void;
   onSelectSession: (session: Session) => void;
+  onOpenProject: () => void;
+  onCreateSession: () => void;
+  onProjectRemoved?: (project: AggregatedProject) => void;
 }
 
 const ProjectList = ({
-  projects, loading, selectedSession,
-  expandedProjects, onRefresh, onToggleProject, onSelectSession
+  projects, loading, selectedSession, selectedProject,
+  expandedProjects, onRefresh, onToggleProject, onSelectProject, onSelectSession, onOpenProject, onCreateSession,
+  onProjectRemoved
 }: Props) => {
   const [hoveredProject, setHoveredProject] = useState<string | null>(null);
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set()); // 展开显示15条的项目
@@ -31,6 +37,21 @@ const ProjectList = ({
   return (
     <div className={styles.sidebar}>
       <div className={styles.refreshBar}>
+        <Button
+          type="text"
+          icon={<FolderOpenOutlined />}
+          onClick={onOpenProject}
+          className={styles.refreshBtn}
+          title="打开项目"
+        />
+        <Button
+          type="text"
+          icon={<PlusOutlined />}
+          onClick={onCreateSession}
+          className={styles.refreshBtn}
+          title="新建会话"
+          disabled={!selectedProject}
+        />
         <Button
           type="text"
           icon={<ReloadOutlined />}
@@ -52,16 +73,25 @@ const ProjectList = ({
             const isExpanded = expandedProjects.has(project.id);
             const isHovered = hoveredProject === project.id;
             const isSessionsExpanded = expandedSessions.has(project.id);
-            const maxShow = isSessionsExpanded ? 15 : 10;
-            const displaySessions = isExpanded ? project.sessions.slice(0, maxShow) : [];
-            const hasMore = project.sessions.length > maxShow;
+            const collapsedLimit = 10;
+            const expandedLimit = 15;
+            const maxShow = isSessionsExpanded ? expandedLimit : collapsedLimit;
+            const displaySessions = isExpanded
+              ? project.sessions.slice(0, maxShow)
+              : [];
+            const canExpandMore = project.sessions.length > collapsedLimit;
 
             return (
               <div key={project.id}>
                 {/* 项目行 */}
                 <div
-                  className={styles.projectItem}
-                  onClick={() => onToggleProject(project.id)}
+                  className={`${styles.projectItem} ${
+                    selectedProject?.path === project.path ? styles.projectItemActive : ''
+                  }`}
+                  onClick={() => {
+                    onSelectProject(project);
+                    onToggleProject(project.id);
+                  }}
                   onMouseEnter={() => setHoveredProject(project.id)}
                   onMouseLeave={() => setHoveredProject(null)}
                 >
@@ -84,11 +114,40 @@ const ProjectList = ({
                       <ProviderIcon key={p} provider={p} size={12} />
                     ))}
                   </span>
+                  <Popconfirm
+                    title="移除此项目？"
+                    description="仅从 Web UI 项目列表中隐藏，不会删除磁盘文件。"
+                    onConfirm={async (e) => {
+                      e?.stopPropagation();
+                      try {
+                        await sessionsAPI.removeProject(project.path);
+                        message.success('项目已移除');
+                        onProjectRemoved?.(project);
+                        onRefresh();
+                      } catch {
+                        message.error('移除项目失败');
+                      }
+                    }}
+                    onCancel={(e) => e?.stopPropagation()}
+                    okText="确定"
+                    cancelText="取消"
+                  >
+                    <button
+                      className={styles.archiveBtn}
+                      onClick={(e) => e.stopPropagation()}
+                      title="移除项目"
+                    >
+                      <MinusOutlined />
+                    </button>
+                  </Popconfirm>
                 </div>
 
                 {/* 会话列表 */}
                 {isExpanded && (
                   <div className={styles.sessionList}>
+                    {displaySessions.length === 0 && (
+                      <div className={styles.sessionMore}>暂无会话，点击上方 + 新建</div>
+                    )}
                     {displaySessions.map(session => (
                       <div
                         key={session.id}
@@ -129,20 +188,20 @@ const ProjectList = ({
                         </span>
                       </div>
                     ))}
-                    {hasMore && (
+                    {canExpandMore && !isSessionsExpanded && (
                       <div
                         className={styles.sessionMore}
                         style={{ cursor: 'pointer', color: '#1890ff' }}
                         onClick={() => {
                           const next = new Set(expandedSessions);
-                          next.has(project.id) ? next.delete(project.id) : next.add(project.id);
+                          next.add(project.id);
                           setExpandedSessions(next);
                         }}
                       >
-                        {isSessionsExpanded ? '收起' : `展开更多 (${project.sessions.length})`}
+                        展开更多
                       </div>
                     )}
-                    {!hasMore && project.sessions.length > 10 && isSessionsExpanded && (
+                    {canExpandMore && isSessionsExpanded && (
                       <div
                         className={styles.sessionMore}
                         style={{ cursor: 'pointer', color: '#1890ff' }}

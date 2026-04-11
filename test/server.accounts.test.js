@@ -61,3 +61,36 @@ test('loadCodexServerAccounts skips low-remaining usage accounts by threshold co
   assert.equal(accounts.length, 1);
   assert.equal(accounts[0].id, '2');
 });
+
+test('loadCodexServerAccounts includes api key mode accounts in runtime pool', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-server-accounts-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const aiHomeDir = path.join(root, '.ai_home');
+  const profilesRoot = path.join(aiHomeDir, 'profiles', 'codex');
+  fs.mkdirSync(profilesRoot, { recursive: true });
+
+  writeJson(path.join(profilesRoot, '10000', '.codex', 'auth.json'), {
+    OPENAI_API_KEY: 'sk-test-runtime'
+  });
+  writeJson(path.join(profilesRoot, '10000', '.aih_env.json'), {
+    OPENAI_API_KEY: 'sk-test-runtime',
+    OPENAI_BASE_URL: 'https://sub.devbin.de'
+  });
+
+  const accounts = loadCodexServerAccounts({
+    fs,
+    aiHomeDir,
+    getToolAccountIds: () => ['10000'],
+    getToolConfigDir: (_cli, id) => path.join(profilesRoot, String(id), '.codex'),
+    getProfileDir: (_cli, id) => path.join(profilesRoot, String(id)),
+    checkStatus: () => ({ configured: true })
+  });
+
+  assert.equal(accounts.length, 1);
+  assert.equal(accounts[0].id, '10000');
+  assert.equal(accounts[0].apiKeyMode, true);
+  assert.equal(accounts[0].authType, 'api-key');
+  assert.equal(accounts[0].accessToken, 'sk-test-runtime');
+  assert.equal(accounts[0].openaiBaseUrl, 'https://sub.devbin.de');
+});

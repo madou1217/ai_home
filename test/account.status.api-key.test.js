@@ -150,4 +150,157 @@ describe('Account Status - API Key Mode', () => {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
   });
+
+  it('should return configured=false for codex oauth residue without usable tokens', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-test-status-'));
+
+    try {
+      const profileDir = path.join(tmpDir, 'codex', '13');
+      const codexDir = path.join(profileDir, '.codex');
+      fs.mkdirSync(codexDir, { recursive: true });
+      fs.writeFileSync(path.join(codexDir, 'settings.json'), JSON.stringify({ theme: 'dark' }, null, 2));
+      fs.writeFileSync(path.join(codexDir, 'auth.json'), JSON.stringify({ auth_mode: 'chatgpt', tokens: {} }, null, 2));
+
+      const checkStatus = createAccountStatusChecker({
+        fs,
+        path,
+        BufferImpl: Buffer,
+        cliConfigs: {
+          codex: { globalDir: '.codex' }
+        }
+      });
+
+      const status = checkStatus('codex', profileDir);
+      assert.equal(status.configured, false);
+      assert.equal(status.accountName, 'Unknown');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('should return configured=false for codex oauth residue with refresh token only', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-test-status-'));
+
+    try {
+      const profileDir = path.join(tmpDir, 'codex', '14');
+      const codexDir = path.join(profileDir, '.codex');
+      fs.mkdirSync(codexDir, { recursive: true });
+      fs.writeFileSync(path.join(codexDir, 'auth.json'), JSON.stringify({
+        auth_mode: 'chatgpt',
+        tokens: {
+          refresh_token: 'rt_only'
+        }
+      }, null, 2));
+
+      const checkStatus = createAccountStatusChecker({
+        fs,
+        path,
+        BufferImpl: Buffer,
+        cliConfigs: {
+          codex: { globalDir: '.codex' }
+        }
+      });
+
+      const status = checkStatus('codex', profileDir);
+      assert.equal(status.configured, false);
+      assert.equal(status.accountName, 'Unknown');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('should read codex email from access token profile claim when id token is absent', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-test-status-'));
+
+    try {
+      const profileDir = path.join(tmpDir, 'codex', '15');
+      const codexDir = path.join(profileDir, '.codex');
+      fs.mkdirSync(codexDir, { recursive: true });
+      const payload = Buffer.from(JSON.stringify({
+        'https://api.openai.com/profile': {
+          email: 'access-only@example.com'
+        }
+      })).toString('base64url');
+      const accessToken = `aaa.${payload}.bbb`;
+      fs.writeFileSync(path.join(codexDir, 'auth.json'), JSON.stringify({
+        auth_mode: 'chatgpt',
+        tokens: {
+          access_token: accessToken
+        }
+      }, null, 2));
+
+      const checkStatus = createAccountStatusChecker({
+        fs,
+        path,
+        BufferImpl: Buffer,
+        cliConfigs: {
+          codex: { globalDir: '.codex' }
+        }
+      });
+
+      const status = checkStatus('codex', profileDir);
+      assert.equal(status.configured, true);
+      assert.equal(status.accountName, 'access-only@example.com');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('should return configured=false for claude oauth residue with refresh token only', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-test-status-'));
+
+    try {
+      const profileDir = path.join(tmpDir, 'claude', '1');
+      const claudeDir = path.join(profileDir, '.claude');
+      fs.mkdirSync(claudeDir, { recursive: true });
+      fs.writeFileSync(path.join(claudeDir, '.credentials.json'), JSON.stringify({
+        claudeAiOauth: {
+          refreshToken: 'refresh_only'
+        }
+      }, null, 2));
+
+      const checkStatus = createAccountStatusChecker({
+        fs,
+        path,
+        BufferImpl: Buffer,
+        cliConfigs: {
+          claude: { globalDir: '.claude' }
+        }
+      });
+
+      const status = checkStatus('claude', profileDir);
+      assert.equal(status.configured, false);
+      assert.equal(status.accountName, 'Unknown');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('should recognize gemini oauth only when oauth_creds has usable tokens', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-test-status-'));
+
+    try {
+      const profileDir = path.join(tmpDir, 'gemini', '1');
+      const geminiDir = path.join(profileDir, '.gemini');
+      fs.mkdirSync(geminiDir, { recursive: true });
+      fs.writeFileSync(path.join(geminiDir, 'oauth_creds.json'), JSON.stringify({
+        access_token: 'gem_access_token',
+        refresh_token: 'gem_refresh_token'
+      }, null, 2));
+
+      const checkStatus = createAccountStatusChecker({
+        fs,
+        path,
+        BufferImpl: Buffer,
+        cliConfigs: {
+          gemini: { globalDir: '.gemini' }
+        }
+      });
+
+      const status = checkStatus('gemini', profileDir);
+      assert.equal(status.configured, true);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
 });

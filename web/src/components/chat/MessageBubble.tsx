@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Avatar } from 'antd';
+import { Avatar, Image } from 'antd';
 import { WarningOutlined, CheckOutlined } from '@ant-design/icons';
 import copyIcon from '@/assets/icons/copy.svg';
 import ReactMarkdown from 'react-markdown';
@@ -112,6 +112,68 @@ function parseTodos(body: string): Array<{ content: string; status: string }> | 
   } catch { /* not json */ }
   return null;
 }
+
+function parseAttachedImageBlock(content: string) {
+  const text = String(content || '');
+  const lines = text.split('\n');
+  if (lines.length < 3 || lines[0].trim() !== 'Attached image files:') {
+    return {
+      text,
+      imagePaths: [] as string[]
+    };
+  }
+
+  const imagePaths: string[] = [];
+  let index = 1;
+  while (index < lines.length && lines[index].trim().startsWith('- ')) {
+    imagePaths.push(lines[index].trim().slice(2).trim());
+    index += 1;
+  }
+  if (index < lines.length && lines[index].trim() === 'Please inspect these local image files directly when answering.') {
+    index += 1;
+  }
+  while (index < lines.length && lines[index].trim() === '') index += 1;
+
+  return {
+    text: lines.slice(index).join('\n').trim(),
+    imagePaths
+  };
+}
+
+function toServedImageUrl(filePath: string) {
+  return `/v0/webui/chat/attachments?path=${encodeURIComponent(filePath)}`;
+}
+
+const ImageGallery = ({ images }: { images: string[] }) => {
+  if (!Array.isArray(images) || images.length === 0) return null;
+  return (
+    <Image.PreviewGroup items={images}>
+      <div style={{
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: 8,
+        marginBottom: 10
+      }}>
+        {images.map((src, index) => (
+          <Image
+            key={`${src}-${index}`}
+            src={src}
+            alt={`chat-image-${index + 1}`}
+            width={180}
+            style={{
+              maxWidth: '100%',
+              height: 180,
+              borderRadius: 12,
+              border: '1px solid #e5e7eb',
+              background: '#fff',
+              objectFit: 'cover'
+            }}
+          />
+        ))}
+      </div>
+    </Image.PreviewGroup>
+  );
+};
 
 /** Thinking 折叠块 */
 const ThinkingBlock = ({ value }: { value: string }) => {
@@ -227,14 +289,22 @@ const CopyButton = ({ text }: { text: string }) => {
 
 const MessageBubble = ({ message, provider }: Props) => {
   const isUser = message.role === 'user';
+  const parsedAttachmentBlock = parseAttachedImageBlock(message.content);
+  const inlineImages = Array.isArray(message.images) ? message.images : [];
+  const persistedImages = parsedAttachmentBlock.imagePaths.map(toServedImageUrl);
+  const renderedImages = inlineImages.length > 0 ? inlineImages : persistedImages;
+  const messageText = renderedImages.length > 0 ? parsedAttachmentBlock.text : message.content;
 
   if (isUser) {
     return (
       <div className={`${styles.messageRow} ${styles.messageRowUser}`}>
         <div className={`${styles.messageWrapper} ${styles.messageWrapperUser}`}>
-          <div className={styles.bubbleUser}>{message.content}</div>
+          <div className={styles.bubbleUser}>
+            <ImageGallery images={renderedImages} />
+            {messageText || (renderedImages.length > 0 ? '已附加图片' : '')}
+          </div>
           <div className={styles.messageActions}>
-            <CopyButton text={message.content} />
+            <CopyButton text={messageText || message.content} />
           </div>
         </div>
       </div>
@@ -252,26 +322,47 @@ const MessageBubble = ({ message, provider }: Props) => {
     );
   }
 
-  const blocks = parseContent(message.content);
+  if (message.pending) {
+    return (
+      <div className={`${styles.messageRow} ${styles.messageRowAssistant}`}>
+        <Avatar size={32} className={styles.avatarAi}>
+          <ProviderIcon provider={provider} size={18} />
+        </Avatar>
+        <div className={`${styles.messageWrapper} ${styles.messageWrapperAssistant}`}>
+          <div className={`${styles.bubbleAssistant} ${styles.bubbleAssistantPending}`}>
+            <div className={styles.typingLabel}>AI 正在回复...</div>
+            <div className={styles.typingDots} aria-label="AI 正在输入">
+              <span />
+              <span />
+              <span />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const blocks = parseContent(messageText || message.content);
 
   return (
     <div className={`${styles.messageRow} ${styles.messageRowAssistant}`}>
       <Avatar size={32} className={styles.avatarAi}>
         <ProviderIcon provider={provider} size={18} />
       </Avatar>
-      <div className={`${styles.messageWrapper} ${styles.messageWrapperAssistant}`}>
-        <div className={styles.bubbleAssistant}>
-          {blocks.map((block, idx) => {
-            if (block.type === 'thinking') return <ThinkingBlock key={idx} value={block.value} />;
-            if (block.type === 'tool_use') return <ToolBlock key={idx} name={block.name} body={block.body} result={block.result} />;
-            return <ReactMarkdown key={idx} remarkPlugins={[remarkGfm]}>{block.value}</ReactMarkdown>;
-          })}
-        </div>
-        <div className={styles.messageActions}>
-          <CopyButton text={message.content} />
+        <div className={`${styles.messageWrapper} ${styles.messageWrapperAssistant}`}>
+          <div className={styles.bubbleAssistant}>
+            <ImageGallery images={renderedImages} />
+            {blocks.map((block, idx) => {
+              if (block.type === 'thinking') return <ThinkingBlock key={idx} value={block.value} />;
+              if (block.type === 'tool_use') return <ToolBlock key={idx} name={block.name} body={block.body} result={block.result} />;
+              return <ReactMarkdown key={idx} remarkPlugins={[remarkGfm]}>{block.value}</ReactMarkdown>;
+            })}
+          </div>
+          <div className={styles.messageActions}>
+            <CopyButton text={messageText || message.content} />
+          </div>
         </div>
       </div>
-    </div>
   );
 };
 

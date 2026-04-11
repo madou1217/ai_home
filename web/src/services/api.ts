@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { AxiosError } from 'axios';
 import type {
   Account,
   AddAccountRequest,
@@ -17,6 +17,10 @@ import type {
   ManagementAccountsResponse,
   AggregatedProject,
   ArchivedSession
+  ,
+  SessionMessageBundle,
+  SessionEventsResponse,
+  SessionEventItem
 } from '@/types';
 
 const api = axios.create({
@@ -26,6 +30,109 @@ const api = axios.create({
     'Content-Type': 'application/json'
   }
 });
+
+const SESSION_REQUEST_SCOPE = 'session-message-stream';
+const sessionAbortControllers = new Map<string, AbortController>();
+const inflightSessionRequests = new Map<string, Promise<any>>();
+
+function normalizeRequestUrl(config: { baseURL?: string; url?: string }) {
+  const baseUrl = String(config.baseURL || '').replace(/\/+$/, '');
+  const url = String(config.url || '');
+  if (!url) return '';
+  if (/^https?:\/\//i.test(url)) return url;
+  return `${baseUrl}${url.startsWith('/') ? url : `/${url}`}`;
+}
+
+function buildSessionRequestKey(url: string) {
+  try {
+    const parsed = new URL(url, 'http://local.ai-home');
+    const pathname = parsed.pathname || '';
+    if (!/^\/v0\/webui\/sessions\/[^/]+\/[^/]+\/(messages|events)$/.test(pathname)) {
+      return '';
+    }
+    const [provider, sessionId, kind] = pathname.split('/').slice(-3);
+    const projectDirName = parsed.searchParams.get('projectDirName') || '';
+    const cursor = kind === 'events' ? (parsed.searchParams.get('cursor') || '0') : '';
+    return `${SESSION_REQUEST_SCOPE}:${provider}:${sessionId}:${projectDirName}:${kind}:${cursor}`;
+  } catch (_error) {
+    return '';
+  }
+}
+
+function buildSessionSupersedeKey(url: string) {
+  try {
+    const parsed = new URL(url, 'http://local.ai-home');
+    const pathname = parsed.pathname || '';
+    if (!/^\/v0\/webui\/sessions\/[^/]+\/[^/]+\/(messages|events)$/.test(pathname)) {
+      return '';
+    }
+    const [provider, sessionId, kind] = pathname.split('/').slice(-3);
+    const projectDirName = parsed.searchParams.get('projectDirName') || '';
+    return `${SESSION_REQUEST_SCOPE}:${provider}:${sessionId}:${projectDirName}:${kind}`;
+  } catch (_error) {
+    return '';
+  }
+}
+
+api.interceptors.request.use((config) => {
+  const fullUrl = normalizeRequestUrl(config);
+  const requestKey = buildSessionRequestKey(fullUrl);
+  const supersedeKey = buildSessionSupersedeKey(fullUrl);
+  if (!requestKey || !supersedeKey) {
+    return config;
+  }
+
+  for (const [key, controller] of sessionAbortControllers.entries()) {
+    if (key === requestKey) continue;
+    if (!key.startsWith(`${supersedeKey}:`) && key !== supersedeKey) continue;
+    controller.abort('session_request_superseded');
+    sessionAbortControllers.delete(key);
+  }
+
+  const controller = new AbortController();
+  sessionAbortControllers.set(requestKey, controller);
+  config.signal = controller.signal;
+  (config as any).__sessionRequestKey = requestKey;
+  return config;
+});
+
+api.interceptors.response.use(
+  (response) => {
+    const requestKey = (response.config as any).__sessionRequestKey;
+    if (requestKey) {
+      sessionAbortControllers.delete(requestKey);
+    }
+    return response;
+  },
+  (error: AxiosError) => {
+    const requestKey = (error.config as any)?.__sessionRequestKey;
+    if (requestKey) {
+      sessionAbortControllers.delete(requestKey);
+    }
+    return Promise.reject(error);
+  }
+);
+
+function withSessionRequestDedup<T>(key: string, loader: () => Promise<T>): Promise<T> {
+  if (!key) return loader();
+  const inflight = inflightSessionRequests.get(key);
+  if (inflight) {
+    return inflight as Promise<T>;
+  }
+  const promise = loader().finally(() => {
+    inflightSessionRequests.delete(key);
+  });
+  inflightSessionRequests.set(key, promise);
+  return promise;
+}
+
+export function isSessionRequestCancelled(error: unknown) {
+  if (axios.isCancel(error)) return true;
+  const maybeError = error as { code?: string; message?: string };
+  return maybeError?.code === 'ERR_CANCELED'
+    || maybeError?.message === 'canceled'
+    || maybeError?.message === 'session_request_superseded';
+}
 
 // 账号管理 API
 export const accountsAPI = {
@@ -119,12 +226,50 @@ export const sessionsAPI = {
 
   // 获取 session 的消息内容
   getSessionMessages: async (provider: string, sessionId: string, projectDirName?: string): Promise<ChatMessage[]> => {
+    const bundle = await sessionsAPI.getSessionMessagesBundle(provider, sessionId, projectDirName);
+    return bundle.messages;
+  },
+
+  getSessionMessagesBundle: async (provider: string, sessionId: string, projectDirName?: string): Promise<SessionMessageBundle> => {
     let url = `/webui/sessions/${provider}/${sessionId}/messages`;
     if (projectDirName) {
       url += `?projectDirName=${encodeURIComponent(projectDirName)}`;
     }
-    const response = await api.get<{ ok: boolean; messages: ChatMessage[] }>(url);
-    return response.data.messages;
+    return withSessionRequestDedup(
+      buildSessionRequestKey(`/v0${url}`),
+      async () => {
+        const response = await api.get<{ ok: boolean; messages: ChatMessage[]; cursor?: number }>(url);
+        return {
+          messages: response.data.messages || [],
+          cursor: Number(response.data.cursor) || 0
+        };
+      }
+    );
+  },
+
+  getSessionEvents: async (
+    provider: string,
+    sessionId: string,
+    cursor: number,
+    projectDirName?: string
+  ): Promise<{ events: SessionEventItem[]; cursor: number; requiresSnapshot?: boolean }> => {
+    const params = new URLSearchParams();
+    params.set('cursor', String(Math.max(0, Number(cursor) || 0)));
+    if (projectDirName) {
+      params.set('projectDirName', projectDirName);
+    }
+    const url = `/webui/sessions/${provider}/${sessionId}/events?${params.toString()}`;
+    return withSessionRequestDedup(
+      buildSessionRequestKey(`/v0${url}`),
+      async () => {
+        const response = await api.get<SessionEventsResponse>(url);
+        return {
+          events: response.data.events || [],
+          cursor: Number(response.data.cursor) || 0,
+          requiresSnapshot: Boolean(response.data.requiresSnapshot)
+        };
+      }
+    );
   },
 
   // 获取所有已归档的会话

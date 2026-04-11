@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button, Spin, Empty, Popconfirm, message } from 'antd';
+import { Button, Spin, Empty, Popconfirm, message, Modal } from 'antd';
 import { ReloadOutlined, InboxOutlined, PlusOutlined, FolderOpenOutlined, MinusOutlined } from '@ant-design/icons';
 import type { AggregatedProject, Session } from '@/types';
 import { sessionsAPI } from '@/services/api';
@@ -11,6 +11,7 @@ import dayjs from 'dayjs';
 import styles from './chat.module.css';
 
 interface Props {
+  mobile?: boolean;
   projects: AggregatedProject[];
   loading: boolean;
   selectedSession: Session | null;
@@ -26,6 +27,7 @@ interface Props {
 }
 
 const ProjectList = ({
+  mobile = false,
   projects, loading, selectedSession, selectedProject,
   expandedProjects, onRefresh, onToggleProject, onSelectProject, onSelectSession, onOpenProject, onCreateSession,
   onProjectRemoved
@@ -34,30 +36,51 @@ const ProjectList = ({
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set()); // 展开显示15条的项目
   const [archivedOpen, setArchivedOpen] = useState(false);
 
+  const handleRemoveProject = async (project: AggregatedProject) => {
+    try {
+      await sessionsAPI.removeProject(project.path);
+      message.success('项目已移除');
+      onProjectRemoved?.(project);
+      onRefresh();
+    } catch {
+      message.error('移除项目失败');
+    }
+  };
+
+  const handleArchiveSession = async (session: Session) => {
+    try {
+      await sessionsAPI.archiveSession(session.provider, session.id, session.projectDirName);
+      message.success('已归档');
+      onRefresh();
+    } catch {
+      message.error('归档失败');
+    }
+  };
+
   return (
     <div className={styles.sidebar}>
-      <div className={styles.refreshBar}>
+      <div className={`${styles.refreshBar} ${mobile ? styles.refreshBarMobile : ''}`}>
         <Button
-          type="text"
+          type={mobile ? 'default' : 'text'}
           icon={<FolderOpenOutlined />}
           onClick={onOpenProject}
-          className={styles.refreshBtn}
+          className={`${styles.refreshBtn} ${mobile ? styles.refreshBtnMobile : ''}`}
           title="打开项目"
         />
         <Button
-          type="text"
+          type={mobile ? 'default' : 'text'}
           icon={<PlusOutlined />}
           onClick={onCreateSession}
-          className={styles.refreshBtn}
+          className={`${styles.refreshBtn} ${mobile ? styles.refreshBtnMobile : ''}`}
           title="新建会话"
           disabled={!selectedProject}
         />
         <Button
-          type="text"
+          type={mobile ? 'default' : 'text'}
           icon={<ReloadOutlined />}
           onClick={onRefresh}
           loading={loading}
-          className={styles.refreshBtn}
+          className={`${styles.refreshBtn} ${mobile ? styles.refreshBtnMobile : ''}`}
         />
       </div>
 
@@ -100,7 +123,7 @@ const ProjectList = ({
                     alt=""
                     className={styles.projectIcon}
                     style={{
-                      transform: isHovered
+                      transform: (isHovered || mobile)
                         ? (isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)')
                         : 'none'
                     }}
@@ -114,32 +137,44 @@ const ProjectList = ({
                       <ProviderIcon key={p} provider={p} size={12} />
                     ))}
                   </span>
-                  <Popconfirm
-                    title="移除此项目？"
-                    description="仅从 Web UI 项目列表中隐藏，不会删除磁盘文件。"
-                    onConfirm={async (e) => {
-                      e?.stopPropagation();
-                      try {
-                        await sessionsAPI.removeProject(project.path);
-                        message.success('项目已移除');
-                        onProjectRemoved?.(project);
-                        onRefresh();
-                      } catch {
-                        message.error('移除项目失败');
-                      }
-                    }}
-                    onCancel={(e) => e?.stopPropagation()}
-                    okText="确定"
-                    cancelText="取消"
-                  >
+                  {mobile ? (
                     <button
                       className={styles.archiveBtn}
-                      onClick={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        Modal.confirm({
+                          title: '移除此项目？',
+                          content: '仅从 Web UI 项目列表中隐藏，不会删除磁盘文件。',
+                          okText: '确定',
+                          cancelText: '取消',
+                          onOk: () => handleRemoveProject(project)
+                        });
+                      }}
                       title="移除项目"
                     >
                       <MinusOutlined />
                     </button>
-                  </Popconfirm>
+                  ) : (
+                    <Popconfirm
+                      title="移除此项目？"
+                      description="仅从 Web UI 项目列表中隐藏，不会删除磁盘文件。"
+                      onConfirm={async (e) => {
+                        e?.stopPropagation();
+                        await handleRemoveProject(project);
+                      }}
+                      onCancel={(e) => e?.stopPropagation()}
+                      okText="确定"
+                      cancelText="取消"
+                    >
+                      <button
+                        className={styles.archiveBtn}
+                        onClick={(e) => e.stopPropagation()}
+                        title="移除项目"
+                      >
+                        <MinusOutlined />
+                      </button>
+                    </Popconfirm>
+                  )}
                 </div>
 
                 {/* 会话列表 */}
@@ -160,28 +195,42 @@ const ProjectList = ({
                           <ProviderIcon provider={session.provider} size={14} />
                           <span className={styles.sessionTitle}>{session.title}</span>
                           {/* 归档按钮 - hover 显示 */}
-                          <Popconfirm
-                            title="归档此会话？"
-                            onConfirm={async (e) => {
-                              e?.stopPropagation();
-                              try {
-                                await sessionsAPI.archiveSession(session.provider, session.id, session.projectDirName);
-                                message.success('已归档');
-                                onRefresh();
-                              } catch { message.error('归档失败'); }
-                            }}
-                            onCancel={(e) => e?.stopPropagation()}
-                            okText="确定"
-                            cancelText="取消"
-                          >
+                          {mobile ? (
                             <button
                               className={styles.archiveBtn}
-                              onClick={(e) => e.stopPropagation()}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                Modal.confirm({
+                                  title: '归档此会话？',
+                                  okText: '确定',
+                                  cancelText: '取消',
+                                  onOk: () => handleArchiveSession(session)
+                                });
+                              }}
                               title="归档"
                             >
                               <InboxOutlined />
                             </button>
-                          </Popconfirm>
+                          ) : (
+                            <Popconfirm
+                              title="归档此会话？"
+                              onConfirm={async (e) => {
+                                e?.stopPropagation();
+                                await handleArchiveSession(session);
+                              }}
+                              onCancel={(e) => e?.stopPropagation()}
+                              okText="确定"
+                              cancelText="取消"
+                            >
+                              <button
+                                className={styles.archiveBtn}
+                                onClick={(e) => e.stopPropagation()}
+                                title="归档"
+                              >
+                                <InboxOutlined />
+                              </button>
+                            </Popconfirm>
+                          )}
                         </div>
                         <span className={styles.sessionTime}>
                           {dayjs(session.updatedAt).fromNow()}
@@ -223,7 +272,7 @@ const ProjectList = ({
       )}
 
       {/* 归档入口 */}
-      <div className={styles.archivedEntry}>
+      <div className={`${styles.archivedEntry} ${mobile ? styles.archivedEntryMobile : ''}`}>
         <Button
           type="text"
           icon={<InboxOutlined />}

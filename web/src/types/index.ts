@@ -1,5 +1,33 @@
 export type Provider = 'codex' | 'gemini' | 'claude';
 
+export interface CodexUsageEntry {
+  bucket: string;
+  windowMinutes: number;
+  window: string;
+  remainingPct: number | null;
+  resetIn: string;
+  resetAtMs: number;
+}
+
+export interface GeminiUsageModel {
+  model: string;
+  remainingPct: number | null;
+  resetIn: string;
+  resetAtMs: number;
+}
+
+export type AccountUsageSnapshot =
+  | {
+      kind: 'codex_oauth_status';
+      capturedAt: number;
+      entries: CodexUsageEntry[];
+    }
+  | {
+      kind: 'gemini_oauth_stats';
+      capturedAt: number;
+      models: GeminiUsageModel[];
+    };
+
 export interface Account {
   provider: Provider;
   accountId: string;
@@ -16,6 +44,7 @@ export interface Account {
   runtimeStatus?: string;
   runtimeUntil?: number;
   runtimeReason?: string;
+  usageSnapshot?: AccountUsageSnapshot | null;
 }
 
 export interface AccountConfig {
@@ -82,6 +111,29 @@ export interface ChatMessage {
   content: string;
   images?: string[];
   pending?: boolean;
+  statusText?: string;
+  timestamp?: string | number;
+}
+
+export interface SessionMessageBundle {
+  messages: ChatMessage[];
+  cursor: number;
+}
+
+export interface SessionEventItem {
+  type: 'user_message' | 'assistant_text' | 'assistant_reasoning' | 'assistant_tool_call' | 'assistant_tool_result';
+  timestamp?: string;
+  content?: string;
+  text?: string;
+  images?: string[];
+  callId?: string;
+}
+
+export interface SessionEventsResponse {
+  ok: boolean;
+  events: SessionEventItem[];
+  cursor: number;
+  requiresSnapshot?: boolean;
 }
 
 export interface ChatRequest {
@@ -111,8 +163,9 @@ export interface ChatResponse {
 }
 
 export interface ChatStreamEvent {
-  type: 'ready' | 'session-created' | 'delta' | 'result' | 'done' | 'error' | 'terminal-output';
+  type: 'ready' | 'session-created' | 'delta' | 'thinking' | 'result' | 'done' | 'error' | 'terminal-output';
   delta?: string;
+  thinking?: string;
   content?: string;
   text?: string;
   message?: string;
@@ -203,7 +256,11 @@ export interface ManagementAccount {
   provider: Provider;
   email?: string;
   accountId?: string;
+  planType?: string;
   remainingPct: number | null;
+  configured?: boolean;
+  apiKeyMode?: boolean;
+  usageSnapshot?: AccountUsageSnapshot | null;
   hasAccessToken: boolean;
   hasRefreshToken: boolean;
   cooldownUntil: number;

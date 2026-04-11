@@ -58,6 +58,57 @@ test('management payloads expose runtime status breakdown', () => {
   assert.equal(accounts.accounts.find((item) => item.id === 'g1').runtimeStatus, 'auth_invalid');
 });
 
+test('management accounts payload includes normalized usage snapshots', () => {
+  const state = {
+    accounts: {
+      codex: [
+        { id: '8', provider: 'codex', email: 'c@example.com', remainingPct: null, cooldownUntil: 0 }
+      ],
+      gemini: [],
+      claude: []
+    }
+  };
+
+  const accounts = buildManagementAccountsPayload(state, {
+    fs: {
+      existsSync(filePath) {
+        return String(filePath).endsWith('/.aih_usage.json') || String(filePath).endsWith('/auth.json');
+      },
+      readFileSync(filePath) {
+        if (String(filePath).endsWith('/auth.json')) {
+          return JSON.stringify({
+            tokens: {
+              access_token: 'eyJhbGciOiJIUzI1NiJ9.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9wbGFuX3R5cGUiOiJwbHVzIn19.signature'
+            }
+          });
+        }
+        if (String(filePath).endsWith('/.aih_usage.json')) {
+          return JSON.stringify({
+            schemaVersion: 2,
+            kind: 'codex_oauth_status',
+            source: 'codex_app_server',
+            capturedAt: Date.now(),
+            entries: [
+              { bucket: 'primary', windowMinutes: 300, window: '5h', remainingPct: 61, resetIn: '3h', resetAtMs: Date.now() + 10800000 },
+              { bucket: 'secondary', windowMinutes: 10080, window: '7days', remainingPct: 88, resetIn: '6d', resetAtMs: Date.now() + 518400000 }
+            ]
+          });
+        }
+        throw new Error(`unexpected_read:${filePath}`);
+      }
+    },
+    getProfileDir: (_provider, id) => `/tmp/${id}`,
+    getToolConfigDir: (_provider, id) => `/tmp/${id}/.codex`
+  });
+
+  assert.equal(accounts.accounts[0].remainingPct, 61);
+  assert.equal(accounts.accounts[0].configured, true);
+  assert.equal(accounts.accounts[0].apiKeyMode, false);
+  assert.equal(accounts.accounts[0].planType, 'plus');
+  assert.equal(accounts.accounts[0].usageSnapshot.kind, 'codex_oauth_status');
+  assert.equal(accounts.accounts[0].usageSnapshot.entries.length, 2);
+});
+
 test('applyReloadState invalidates web ui models cache when accounts change', () => {
   const state = {
     accounts: { codex: [{ id: 'old' }], gemini: [], claude: [] },

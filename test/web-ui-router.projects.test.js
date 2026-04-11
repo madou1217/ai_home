@@ -202,6 +202,70 @@ test('web ui remove project deletes manual project from stored list', async () =
   }
 });
 
+test('web ui projects are sorted by last session update time and sessions are sorted descending', async () => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-projects-sorted-'));
+
+  try {
+    const state = {};
+    const deps = createBaseDeps(aiHomeDir);
+    const originalLoad = require.cache[require.resolve('../lib/sessions/session-reader')];
+    const sessionReader = require('../lib/sessions/session-reader');
+    const originalReadAllProjectsFromHost = sessionReader.readAllProjectsFromHost;
+    sessionReader.readAllProjectsFromHost = () => ([
+      {
+        id: 'p-old',
+        name: 'old-project',
+        path: '/tmp/old-project',
+        provider: 'codex',
+        sessions: [
+          { id: 's-1', title: 'older', updatedAt: 100, provider: 'codex' },
+          { id: 's-2', title: 'newer', updatedAt: 300, provider: 'codex' }
+        ]
+      },
+      {
+        id: 'p-new',
+        name: 'new-project',
+        path: '/tmp/new-project',
+        provider: 'gemini',
+        sessions: [
+          { id: 's-3', title: 'latest', updatedAt: 500, provider: 'gemini', projectDirName: 'new-project' }
+        ]
+      }
+    ]);
+
+    try {
+      const res = createResCapture();
+      const handled = await handleWebUIRequest({
+        method: 'GET',
+        pathname: '/v0/webui/projects',
+        url: new URL('http://localhost/v0/webui/projects?refresh=1'),
+        req: { headers: {} },
+        res,
+        options: {},
+        state,
+        deps
+      });
+
+      assert.equal(handled, true);
+      assert.equal(res.statusCode, 200);
+      const body = JSON.parse(res.body);
+      assert.equal(body.projects[0].path, '/tmp/new-project');
+      assert.equal(body.projects[1].path, '/tmp/old-project');
+      assert.deepEqual(
+        body.projects[1].sessions.map((item) => item.id),
+        ['s-2', 's-1']
+      );
+    } finally {
+      sessionReader.readAllProjectsFromHost = originalReadAllProjectsFromHost;
+      if (originalLoad) {
+        require.cache[require.resolve('../lib/sessions/session-reader')] = originalLoad;
+      }
+    }
+  } finally {
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+  }
+});
+
 test('web ui models uses cache until provider/account signature changes', async () => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-models-'));
 

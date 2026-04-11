@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Drawer, List, Button, Tag, Empty, Spin, Popconfirm, message } from 'antd';
+import { Drawer, List, Button, Tag, Empty, Spin, Popconfirm, message, Grid } from 'antd';
 import { UndoOutlined } from '@ant-design/icons';
 import type { ArchivedSession } from '@/types';
 import { sessionsAPI } from '@/services/api';
@@ -19,6 +19,8 @@ const PROVIDER_LABELS: Record<string, string> = {
 };
 
 const ArchivedDrawer = ({ open, onClose, onRestored }: Props) => {
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const [sessions, setSessions] = useState<ArchivedSession[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -55,7 +57,7 @@ const ArchivedDrawer = ({ open, onClose, onRestored }: Props) => {
       placement="right"
       onClose={onClose}
       open={open}
-      width={420}
+      width={isMobile ? '100vw' : 420}
       styles={{
         body: { padding: '8px 16px' }
       }}

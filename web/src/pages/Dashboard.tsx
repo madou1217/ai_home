@@ -13,7 +13,9 @@ import {
   Statistic,
   Table,
   Typography,
-  message
+  message,
+  Tag,
+  Grid
 } from 'antd';
 import {
   CheckCircleOutlined,
@@ -26,13 +28,24 @@ import { managementAPI } from '@/services/api';
 import type { ManagementAccount, ManagementMetrics, ManagementStatus, Provider } from '@/types';
 import ProviderIcon, { providerNames } from '@/components/chat/ProviderIcon';
 import RuntimeStatusTag, { formatRuntimeUntil, getRuntimeStatusMeta } from '@/components/runtime/RuntimeStatusTag';
+import UsageSnapshotCell from '@/components/account/UsageSnapshotCell';
 
 const { Text } = Typography;
 const PROVIDERS: Provider[] = ['codex', 'gemini', 'claude'];
 
 const formatPercent = (value?: number) => `${(Number(value || 0) * 100).toFixed(1)}%`;
+const getDashboardAccountPrimaryLabel = (record: Pick<ManagementAccount, 'email' | 'accountId' | 'provider' | 'id'>) => (
+  record.email || record.accountId || `${record.provider || 'account'}-${record.id || ''}`
+);
+const getDashboardAccountTypeLabel = (record: Pick<ManagementAccount, 'planType' | 'apiKeyMode'>) => {
+  if (record.planType) return record.planType;
+  if (record.apiKeyMode) return 'api-key';
+  return '';
+};
 
 const Dashboard = () => {
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const [status, setStatus] = useState<ManagementStatus | null>(null);
   const [metrics, setMetrics] = useState<ManagementMetrics | null>(null);
   const [accounts, setAccounts] = useState<ManagementAccount[]>([]);
@@ -128,6 +141,55 @@ const Dashboard = () => {
 
   const degradedCount = Math.max(0, Number(status?.totalAccounts || 0) - Number(status?.activeAccounts || 0));
   const recentErrors = metrics?.lastErrors || [];
+
+  if (isMobile) {
+    return (
+      <div>
+        <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h1 style={{ margin: 0, fontSize: 24 }}>统计</h1>
+            <Text type="secondary">手机版只保留最核心的账号数量。</Text>
+          </div>
+          <Button
+            type="primary"
+            icon={<ReloadOutlined />}
+            onClick={() => loadDashboard({ showLoading: true })}
+            loading={loading}
+          >
+            刷新
+          </Button>
+        </div>
+
+        <Card loading={loading} style={{ borderRadius: 18 }}>
+          <Statistic
+            title="可用账号总数"
+            value={status?.activeAccounts || 0}
+            prefix={<DashboardOutlined />}
+            valueStyle={{ color: '#1677ff', fontSize: 36 }}
+          />
+          <Space wrap size={[8, 8]} style={{ marginTop: 14 }}>
+            {PROVIDERS.map((provider) => (
+              <Tag key={provider} color="blue">
+                <Space size={4}>
+                  <ProviderIcon provider={provider} size={12} />
+                  {providerNames[provider]}
+                  <span>{status?.providers?.[provider]?.active || 0}</span>
+                </Space>
+              </Tag>
+            ))}
+          </Space>
+          {degradedCount > 0 ? (
+            <Alert
+              type="warning"
+              showIcon
+              style={{ marginTop: 16 }}
+              message={`当前还有 ${degradedCount} 个账号处于异常或冷却状态`}
+            />
+          ) : null}
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -378,9 +440,11 @@ const Dashboard = () => {
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600 }}>
                     <ProviderIcon provider={record.provider} size={14} />
-                    {providerNames[record.provider]} #{record.id}
+                    {getDashboardAccountPrimaryLabel(record)}
                   </div>
-                  <div style={{ fontSize: 12, color: '#8c8c8c' }}>{record.email || record.accountId || '-'}</div>
+                  <div style={{ fontSize: 12, color: '#8c8c8c' }}>
+                    {getDashboardAccountTypeLabel(record) || '-'}
+                  </div>
                 </div>
               )
             },
@@ -400,7 +464,10 @@ const Dashboard = () => {
               title: '剩余额度',
               dataIndex: 'remainingPct',
               key: 'remainingPct',
-              render: (remainingPct: number | null) => remainingPct == null ? '-' : `${remainingPct}%`
+              width: 260,
+              render: (_remainingPct: number | null, record: ManagementAccount) => (
+                <UsageSnapshotCell record={record} />
+              )
             },
             {
               title: '成功 / 失败',

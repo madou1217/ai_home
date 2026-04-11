@@ -3,6 +3,9 @@
   height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
 }
 
 .refreshBar {
@@ -16,6 +19,14 @@
   background: #f5f5f5;
 }
 
+.refreshBarMobile {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 12px 16px 8px;
+  background: linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
+}
+
 .refreshBtn {
   width: 24px !important;
   height: 24px !important;
@@ -23,6 +34,29 @@
   padding: 0 !important;
   color: #999 !important;
   font-size: 12px !important;
+}
+
+.refreshBtnMobile {
+  width: 100% !important;
+  height: 40px !important;
+  min-width: 0 !important;
+  padding: 0 !important;
+  border-radius: 999px !important;
+  font-size: 13px !important;
+  color: #1f2937 !important;
+  border-color: #e2e8f0 !important;
+  background: #fff !important;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.refreshBtnMobile .ant-btn-icon {
+  margin-inline-end: 0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
 }
 
 .projectItem {
@@ -143,6 +177,11 @@
   border-top: 1px solid #e8e8e8;
 }
 
+.archivedEntryMobile {
+  background: #fff;
+  padding-bottom: calc(8px + env(safe-area-inset-bottom));
+}
+
 /* ===== 消息气泡 ===== */
 .messageRow {
   margin-bottom: 24px;
@@ -196,26 +235,201 @@
 }
 
 .bubbleAssistantPending {
+  position: relative;
   min-width: 180px;
+  overflow: hidden;
   border: 1px solid #e8f1ff;
-  box-shadow: 0 6px 18px rgba(24, 144, 255, 0.08);
+  box-shadow: 0 10px 30px rgba(24, 144, 255, 0.1);
+  background:
+    radial-gradient(circle at top left, rgba(110, 168, 255, 0.12), transparent 42%),
+    linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
 }
 
-.typingLabel {
-  margin-bottom: 8px;
-  color: #7a7a7a;
-  font-size: 13px;
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.pendingShell {
+  position: relative;
+  z-index: 1;
+}
+
+.pendingHeroRow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.pendingBadge {
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #e0f2fe 0%, #dbeafe 100%);
+  border: 1px solid rgba(96, 165, 250, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 10px 20px rgba(59, 130, 246, 0.12);
+}
+
+.pendingBadgeSpinner {
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  border: 2px solid rgba(37, 99, 235, 0.18);
+  border-top-color: #2563eb;
+  animation: pendingSpinner 0.85s linear infinite;
+}
+
+.pendingStatusStack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.pendingStatusLabel {
+  color: #244a86;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.pendingSubLabel {
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.pendingPulseBar {
+  position: relative;
+  height: 6px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(191, 219, 254, 0.45);
+  margin-bottom: 14px;
+}
+
+.pendingPulseBar span {
+  position: absolute;
+  inset: 0;
+  width: 45%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(37, 99, 235, 0) 0%, rgba(37, 99, 235, 0.95) 50%, rgba(125, 211, 252, 0) 100%);
+  animation: pendingBarSweep 1.35s ease-in-out infinite;
+}
+
+.pendingTopRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.pendingOrb {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+}
+
+.pendingOrbCore,
+.pendingOrbRing {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+}
+
+.pendingOrbCore {
+  background: linear-gradient(135deg, #2f80ff 0%, #6dd3ff 100%);
+  box-shadow: 0 0 24px rgba(47, 128, 255, 0.45);
+  animation: pendingOrbPulse 1.35s infinite ease-in-out;
+}
+
+.pendingOrbRing {
+  border: 1px solid rgba(47, 128, 255, 0.4);
+  animation: pendingOrbRing 1.5s infinite ease-out;
+}
+
+.pendingWave {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 6px;
+  min-height: 20px;
+}
+
+.pendingWave span {
+  width: 5px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #9cc8ff 0%, #2f80ff 100%);
+  animation: pendingWaveRise 0.95s infinite ease-in-out;
+}
+
+.pendingWave span:nth-child(1) { height: 9px; animation-delay: 0s; }
+.pendingWave span:nth-child(2) { height: 18px; animation-delay: 0.08s; }
+.pendingWave span:nth-child(3) { height: 12px; animation-delay: 0.16s; }
+.pendingWave span:nth-child(4) { height: 17px; animation-delay: 0.24s; }
+.pendingWave span:nth-child(5) { height: 10px; animation-delay: 0.32s; }
+
+.pendingLines {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pendingThinkingPreview {
+  margin-top: 12px;
+  color: #4b5563;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(191, 219, 254, 0.8);
+}
+
+.pendingLine {
+  display: block;
+  height: 11px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(209, 228, 255, 0.72) 0%, rgba(104, 171, 255, 1) 50%, rgba(209, 228, 255, 0.72) 100%);
+  background-size: 220% 100%;
+  animation: pendingShimmer 1.8s infinite linear;
+}
+
+.pendingLineShort {
+  width: 78%;
+}
+
+.pendingLineTiny {
+  width: 54%;
 }
 
 .typingDots {
+  position: relative;
+  z-index: 1;
+  margin-top: 14px;
   display: inline-flex;
   align-items: center;
   gap: 6px;
 }
 
 .typingDots span {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: #6aa8ff;
   animation: typingPulse 1.2s infinite ease-in-out;
@@ -229,6 +443,44 @@
   animation-delay: 0.3s;
 }
 
+.typingDots span:nth-child(4) {
+  animation-delay: 0.45s;
+}
+
+.pendingGlow {
+  position: absolute;
+  inset: auto -10% -20% auto;
+  width: 120px;
+  height: 120px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(90, 163, 255, 0.18) 0%, rgba(90, 163, 255, 0) 72%);
+  animation: pendingGlowFloat 3s infinite ease-in-out;
+}
+
+.pendingGrid {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  display: inline-flex;
+  gap: 4px;
+}
+
+.pendingGrid span {
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(88, 148, 255, 0.45);
+  animation: pendingGridBlink 1.4s infinite ease-in-out;
+}
+
+.pendingGrid span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.pendingGrid span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
 @keyframes typingPulse {
   0%, 80%, 100% {
     opacity: 0.35;
@@ -237,6 +489,86 @@
   40% {
     opacity: 1;
     transform: translateY(-2px);
+  }
+}
+
+@keyframes pendingOrbPulse {
+  0%, 100% {
+    transform: scale(0.92);
+    opacity: 0.85;
+  }
+  50% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes pendingSpinner {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes pendingBarSweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(260%);
+  }
+}
+
+@keyframes pendingOrbRing {
+  0% {
+    transform: scale(0.8);
+    opacity: 0.45;
+  }
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+@keyframes pendingWaveRise {
+  0%, 100% {
+    transform: scaleY(0.75);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scaleY(1.15);
+    opacity: 1;
+  }
+}
+
+@keyframes pendingShimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+@keyframes pendingGlowFloat {
+  0%, 100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(-8px, -4px, 0);
+  }
+}
+
+@keyframes pendingGridBlink {
+  0%, 100% {
+    opacity: 0.3;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
   }
 }
 
@@ -299,6 +631,106 @@
   overflow: hidden;
 }
 
+.shellBlock {
+  border-radius: 14px;
+  background: #f5f6f8;
+  border-color: #eceef2;
+}
+
+.shellCollapseHeader {
+  width: 100%;
+  border: none;
+  background: transparent;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.shellCollapseTitle {
+  color: #6b7280;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.shellCollapseCommand {
+  color: #9ca3af;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shellCollapseChevron {
+  color: #9ca3af;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.toolGroupBlock {
+  margin: 8px 0;
+  border-radius: 10px;
+  background: #fafafa;
+  border: 1px solid #f0f0f0;
+}
+
+.toolGroupHeader {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: none;
+  background: transparent;
+  padding: 10px 12px;
+  color: #8c8c8c;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.toolGroupChevron {
+  color: #b0b0b0;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.toolGroupList {
+  padding: 0 12px 10px;
+}
+
+.toolGroupItem {
+  padding-top: 2px;
+}
+
+.toolGroupItemLabel {
+  color: #7a7a7a;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.toolGroupItemResult {
+  margin-top: 6px;
+  border-radius: 8px;
+  background: #f3f4f6;
+  overflow: hidden;
+}
+
+.toolGroupItemResult pre {
+  margin: 0;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #4b5563;
+  max-height: 220px;
+  overflow: auto;
+}
+
 .toolHeader {
   padding: 6px 12px;
   background: #f6f8fa;
@@ -311,12 +743,65 @@
   border-bottom: 1px solid #e8e8e8;
 }
 
+.shellBlock .toolHeader {
+  background: transparent;
+  border-bottom: none;
+  color: #6b7280;
+  font-size: 13px;
+  padding: 12px 14px 8px;
+}
+
+.shellCommandBlock {
+  padding: 0 14px 10px;
+}
+
+.shellCommandCode {
+  margin: 0;
+  font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #111827;
+}
+
+.shellOutputBlock {
+  position: relative;
+  margin: 0 10px 10px;
+  padding: 14px 14px 28px;
+  border-radius: 12px;
+  background: #eef0f3;
+  overflow: hidden;
+}
+
+.shellOutputCode {
+  margin: 0;
+  max-height: 220px;
+  overflow: auto;
+  font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #374151;
+}
+
+.shellStatus {
+  position: absolute;
+  right: 12px;
+  bottom: 8px;
+  color: #8b909a;
+  font-size: 12px;
+}
+
 .toolBody {
   padding: 8px 12px;
   font-size: 13px;
   max-height: 200px;
   overflow-y: auto;
   background: #fafafa;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
 }
 
 /* Thinking 折叠块 */
@@ -353,6 +838,8 @@
   line-height: 1.5;
   max-height: 300px;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
 }
 
 /* Bash 代码块 */
@@ -382,7 +869,6 @@
   word-break: break-word;
 }
 
-/* 消息操作栏 - 绝对定位不占空间 */
 .messageWrapper {
   position: relative;
   max-width: 70%;
@@ -396,37 +882,51 @@
   max-width: 80%;
 }
 
-.messageActions {
-  position: absolute;
-  bottom: -18px;
+.messageMetaRow {
   display: flex;
-  gap: 2px;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  margin-top: 8px;
+  color: #8c8c8c;
+  font-size: 12px;
   opacity: 0;
-  transition: opacity 0.15s;
   pointer-events: none;
+  transform: translateY(-2px);
+  transition: opacity 0.18s ease, transform 0.18s ease;
 }
 
-/* 用户消息：复制在右下角 */
-.messageRowUser .messageActions {
-  right: 0;
+.messageMetaRowUser {
+  justify-content: flex-end;
 }
 
-/* AI 消息：复制在左下角 */
-.messageRowAssistant .messageActions {
-  left: 0;
+.messageMetaRowAssistant {
+  justify-content: flex-start;
 }
 
-.messageWrapper:hover .messageActions {
+.messageTime {
+  font-variant-numeric: tabular-nums;
+  color: #8c8c8c;
+}
+
+.messageMetaRowVisible {
   opacity: 1;
   pointer-events: auto;
+  transform: translateY(0);
+}
+
+.messageWrapper:hover .messageMetaRow {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
 }
 
 .actionBtn {
-  background: #fff;
-  border: 1px solid #e0e0e0;
+  background: transparent;
+  border: none;
   border-radius: 4px;
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -435,12 +935,10 @@
   color: #999;
   transition: all 0.15s;
   padding: 0;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.06);
 }
 
 .actionBtn:hover {
   color: #1890ff;
-  border-color: #1890ff;
 }
 
 /* ===== 消息区域 ===== */
@@ -452,6 +950,13 @@
   background: #fafafa;
   min-height: 0;
   position: relative;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+}
+
+.messageAreaMobile {
+  padding: 14px 12px 8px;
 }
 
 /* 回到底部 */
@@ -487,6 +992,12 @@
   flex-shrink: 0;
 }
 
+.inputAreaMobile {
+  padding: 8px 12px calc(10px + env(safe-area-inset-bottom));
+  background: #fff;
+  border-top: 1px solid #f2f2f2;
+}
+
 .inputBox {
   background: #fff;
   border: 1px solid #e0e0e0;
@@ -495,6 +1006,12 @@
   transition: border-color 0.2s;
   max-width: 800px;
   margin: 0 auto;
+}
+
+.inputBoxMobile {
+  max-width: none;
+  border-radius: 24px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
 }
 
 .inputBox:focus-within {
@@ -553,6 +1070,7 @@
   font-family: inherit;
   min-height: 24px;
   max-height: 200px;
+  touch-action: manipulation;
 }
 
 .inputTextarea::placeholder {
@@ -570,12 +1088,78 @@
   display: flex;
   align-items: center;
   gap: 4px;
+  min-width: 0;
 }
 
 .inputToolbarRight {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+
+.mobileComposerMeta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mobileControlsDrawer :global(.ant-drawer-header-title) {
+  justify-content: center;
+}
+
+.mobileSheetHandle {
+  width: 42px;
+  height: 5px;
+  border-radius: 999px;
+  background: #d8dee8;
+  margin: 0 auto 10px;
+}
+
+.mobileControlsSection {
+  margin-bottom: 16px;
+}
+
+.mobileControlsLabel {
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #475569;
+}
+
+.mobileVoiceHint {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.mobileMetaBtn {
+  border: none;
+  background: transparent;
+  padding: 0;
+  min-width: 0;
+  text-align: left;
+}
+
+.mobileComposerMeta span:first-child {
+  font-size: 12px;
+  font-weight: 600;
+  color: #1f2937;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobileComposerMeta span:last-child {
+  font-size: 11px;
+  color: #6b7280;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .inputToolbarBtn {
@@ -627,4 +1211,153 @@
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.welcomeState {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 24px;
+}
+
+.welcomeTitle {
+  font-size: 40px;
+  line-height: 1.2;
+  font-weight: 700;
+  color: #111827;
+  letter-spacing: -0.03em;
+}
+
+.welcomeHint {
+  margin-top: 14px;
+  max-width: 420px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: #6b7280;
+}
+
+@media (max-width: 768px) {
+  .refreshBar {
+    padding: 8px 12px 0 0;
+    gap: 8px;
+    background: #fff;
+  }
+
+  .refreshBtn {
+    width: 34px !important;
+    height: 34px !important;
+    min-width: 34px !important;
+    font-size: 14px !important;
+  }
+
+  .projectItem {
+    padding: 10px 16px;
+    gap: 10px;
+  }
+
+  .projectName {
+    font-size: 14px;
+  }
+
+  .archiveBtn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+  }
+
+  .sessionList {
+    padding-left: 8px;
+  }
+
+  .sessionItem {
+    padding: 10px 12px;
+    margin-bottom: 4px;
+  }
+
+  .sessionTitle {
+    font-size: 13px;
+  }
+
+  .sessionTime {
+    font-size: 11px;
+  }
+
+  .messageWrapper,
+  .messageWrapperUser,
+  .messageWrapperAssistant,
+  .bubbleError {
+    max-width: 100%;
+  }
+
+  .messageMetaRow {
+    font-size: 11px;
+  }
+
+  .bubbleUser,
+  .bubbleAssistant {
+    font-size: 15px;
+    line-height: 1.7;
+  }
+
+  .messageAreaMobile {
+    background:
+      radial-gradient(circle at top, rgba(96, 165, 250, 0.12), transparent 34%),
+      linear-gradient(180deg, #f8fbff 0%, #f8fafc 24%, #ffffff 100%);
+  }
+
+  .inputAreaMobile {
+    background: linear-gradient(180deg, rgba(255,255,255,0.85) 0%, #ffffff 100%);
+    backdrop-filter: blur(18px);
+  }
+
+  .inputBoxMobile {
+    border: 1px solid rgba(203, 213, 225, 0.8);
+    box-shadow:
+      0 16px 40px rgba(15, 23, 42, 0.08),
+      inset 0 1px 0 rgba(255,255,255,0.7);
+  }
+
+  .inputToolbar {
+    padding: 6px 10px 10px;
+    gap: 8px;
+  }
+
+  .welcomeTitle {
+    font-size: 26px;
+  }
+
+  .welcomeHint {
+    font-size: 13px;
+    max-width: 280px;
+  }
+
+  .inputToolbarBtn {
+    width: 36px;
+    height: 36px;
+  }
+
+  .mobileMetaBtn {
+    max-width: 46vw;
+    padding: 4px 0;
+  }
+
+  .inputTextarea {
+    padding-top: 16px;
+    font-size: 16px;
+  }
+
+  .sendBtn {
+    width: 38px;
+    height: 38px;
+  }
+
+  .welcomeState {
+    justify-content: flex-end;
+    padding: 24px 20px 10vh;
+  }
 }

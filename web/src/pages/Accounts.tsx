@@ -12,14 +12,16 @@ import {
   Segmented,
   Alert,
   message,
-  Progress,
   Card,
   Tabs,
   Statistic,
   Row,
   Col,
   Dropdown,
-  Typography
+  Typography,
+  Grid,
+  List,
+  Empty
 } from 'antd';
 import type { MenuProps } from 'antd';
 import {
@@ -35,9 +37,15 @@ import {
   ImportOutlined
 } from '@ant-design/icons';
 import { accountsAPI, managementAPI } from '@/services/api';
-import type { Account, AccountAddJob, AccountAuthMode, Provider } from '@/types';
+import type {
+  Account,
+  AccountAddJob,
+  AccountAuthMode,
+  Provider
+} from '@/types';
 import ProviderIcon from '@/components/chat/ProviderIcon';
 import RuntimeStatusTag from '@/components/runtime/RuntimeStatusTag';
+import UsageSnapshotCell from '@/components/account/UsageSnapshotCell';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import 'dayjs/locale/zh-cn';
@@ -125,8 +133,18 @@ const PROVIDER_CAPABILITY_HINTS: Record<Provider, string> = {
   gemini: 'Gemini 当前已接通 Google 登录与 Gemini API Key。Vertex AI 需要单独补齐后端接入链路。'
 };
 
+function getAccountPrimaryLabel(record: Pick<Account, 'email' | 'displayName' | 'provider' | 'accountId'>) {
+  return record.email || record.displayName || `${record.provider}-${record.accountId}`;
+}
+
+function getAccountMetaLabel(record: Pick<Account, 'apiKeyMode' | 'planType'>) {
+  return `${record.apiKeyMode ? 'API Key' : 'OAuth'} · ${record.planType || 'free'}`;
+}
+
 const Accounts = () => {
   const { Paragraph, Text } = Typography;
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
@@ -455,13 +473,10 @@ const Accounts = () => {
       dataIndex: 'displayName',
       key: 'displayName',
       width: 250,
-      render: (text: string, record: Account) => (
+      render: (_text: string, record: Account) => (
         <div>
           <div style={{ fontWeight: 'bold', marginBottom: 4 }}>
-            {record.email || text}
-          </div>
-          <div style={{ fontSize: 11, color: '#8c8c8c', marginBottom: 4 }}>
-            ID: {record.accountId}
+            {getAccountPrimaryLabel(record)}
           </div>
           <Space size="small" align="center">
             <ProviderIcon provider={record.provider} size={14} />
@@ -474,6 +489,9 @@ const Accounts = () => {
             } style={{ fontSize: 11, lineHeight: '18px', padding: '0 4px' }}>
               {record.planType || 'free'}
             </Tag>
+            <span style={{ fontSize: 11, color: '#8c8c8c' }}>
+              {record.apiKeyMode ? 'API Key' : 'OAuth'}
+            </span>
           </Space>
         </div>
       )
@@ -528,25 +546,9 @@ const Accounts = () => {
       title: '剩余额度',
       dataIndex: 'remainingPct',
       key: 'remainingPct',
-      width: 180,
+      width: 260,
       sorter: (a: Account, b: Account) => (a.remainingPct || 0) - (b.remainingPct || 0),
-      render: (pct: number, record: Account) => {
-        if (!record.configured) return '-';
-        const percent = Math.round(pct || 0);
-        let status: 'success' | 'normal' | 'exception' = 'success';
-        if (percent < 20) status = 'exception';
-        else if (percent < 50) status = 'normal';
-        return (
-          <div style={{ width: 150 }}>
-            <Progress
-              percent={percent}
-              size="small"
-              status={status}
-              format={(p) => `${p}%`}
-            />
-          </div>
-        );
-      }
+      render: (_pct: number | null, record: Account) => <UsageSnapshotCell record={record} />
     },
     {
       title: '更新时间',
@@ -639,6 +641,83 @@ const Accounts = () => {
       )
     }
   ];
+
+  const mobileAccounts = useMemo(() => {
+    const healthyConfigured = accounts.filter((account) =>
+      account.configured
+      && !account.exhausted
+      && (!account.runtimeStatus || account.runtimeStatus === 'healthy')
+    );
+    return healthyConfigured.length > 0
+      ? healthyConfigured
+      : accounts.filter((account) => account.configured && !account.exhausted);
+  }, [accounts]);
+
+  if (isMobile) {
+    return (
+      <div>
+        <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h1 style={{ margin: 0, fontSize: 24 }}>账号</h1>
+            <Text type="secondary">这里只保留可用账号，方便手机快速查看。</Text>
+          </div>
+          <Button icon={<ReloadOutlined />} onClick={loadAccounts} loading={loading}>
+            刷新
+          </Button>
+        </div>
+
+        <Card style={{ marginBottom: 12, borderRadius: 18 }}>
+          <Statistic
+            title="可用账号"
+            value={mobileAccounts.length}
+            prefix={<CheckCircleOutlined />}
+            valueStyle={{ color: '#1677ff' }}
+          />
+          <Space wrap size={[8, 8]} style={{ marginTop: 12 }}>
+            {(['codex', 'gemini', 'claude'] as Provider[]).map((provider) => (
+              <Tag key={provider} color="blue">
+                <Space size={4}>
+                  <ProviderIcon provider={provider} size={12} />
+                  {provider}
+                  <span>{mobileAccounts.filter((account) => account.provider === provider).length}</span>
+                </Space>
+              </Tag>
+            ))}
+          </Space>
+        </Card>
+
+        <Card title="OK 列表" style={{ borderRadius: 18 }}>
+          {mobileAccounts.length === 0 ? (
+            <Empty description="暂无可用账号" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+          ) : (
+            <List
+              dataSource={mobileAccounts}
+              renderItem={(record) => (
+                <List.Item style={{ padding: '12px 0' }}>
+                  <div style={{ width: '100%' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                          <ProviderIcon provider={record.provider} size={16} />
+                          <Text strong>{getAccountPrimaryLabel(record)}</Text>
+                        </div>
+                        <div style={{ fontSize: 12, color: '#8c8c8c' }}>
+                          {getAccountMetaLabel(record)}
+                        </div>
+                      </div>
+                      <div style={{ flexShrink: 0 }}>
+                        <RuntimeStatusTag status={record.runtimeStatus || 'healthy'} fallback="OK" />
+                      </div>
+                    </div>
+                  </div>
+                </List.Item>
+              )}
+            />
+          )}
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div>

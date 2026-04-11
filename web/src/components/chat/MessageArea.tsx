@@ -1,5 +1,5 @@
-import { useRef, useEffect, useState, useCallback } from 'react';
-import { Select, Empty, Spin } from 'antd';
+import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
+import { Select, Empty, Button, Drawer } from 'antd';
 import { ArrowDownOutlined, PlusOutlined, CloseOutlined } from '@ant-design/icons';
 import type { ChatMessage, Account, Session, NativeSlashCommand } from '@/types';
 import { chatAPI, modelsAPI } from '@/services/api';
@@ -11,6 +11,7 @@ import stopIcon from '@/assets/icons/stop.svg';
 import styles from './chat.module.css';
 
 interface Props {
+  mobile?: boolean;
   session: Session | null;
   messages: ChatMessage[];
   accounts: Account[];
@@ -18,6 +19,8 @@ interface Props {
   selectedModel: string;
   input: string;
   loading: boolean;
+  externalPending?: boolean;
+  externalPendingStatusText?: string;
   hasMoreHistory?: boolean;
   images?: string[]; // base64 图片列表
   onLoadMore?: () => void;
@@ -30,18 +33,21 @@ interface Props {
 }
 
 const MessageArea = ({
+  mobile = false,
   session, messages, accounts, selectedAccount, selectedModel,
-  input, loading, hasMoreHistory, images = [], onLoadMore, onInputChange,
+  input, loading, externalPending = false, externalPendingStatusText, hasMoreHistory, images = [], onLoadMore, onInputChange,
   onSend, onStop, onAccountChange, onModelChange, onImagesChange
 }: Props) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const pendingVisualTsRef = useRef<number>(Date.now());
   const [showScrollBottom, setShowScrollBottom] = useState(false);
   const [modelsByProvider, setModelsByProvider] = useState<Record<string, string[]>>({});
   const [slashCommands, setSlashCommands] = useState<NativeSlashCommand[]>([]);
   const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
+  const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
   const activeProvider = session
     ? (session.draft ? (selectedAccount?.provider || session.provider) : session.provider)
     : '';
@@ -162,10 +168,14 @@ const MessageArea = ({
 
   const formatLabel = (acc: Account) => {
     const base = `${acc.accountId}`;
-    return !acc.apiKeyMode && acc.remainingPct !== undefined
+    return !acc.apiKeyMode && acc.remainingPct != null
       ? `${base} (${Math.round(acc.remainingPct)}%)`
       : base;
   };
+
+  const mobileAccountSummary = selectedAccount
+    ? `${selectedAccount.provider.toUpperCase()} #${formatLabel(selectedAccount)}`
+    : '未选择账号';
 
   if (!session) {
     return (
@@ -203,6 +213,37 @@ const MessageArea = ({
   // 按当前 provider 过滤模型
   const providerModels = (activeProvider && modelsByProvider[activeProvider]) || [];
   const models = providerModels.map(m => ({ label: m, value: m }));
+
+  const displayMessages = useMemo(() => {
+    const hasPendingAssistant = messages.some((msg) => msg.role === 'assistant' && msg.pending);
+    const shouldShowSyntheticPending = (loading || externalPending) && !hasPendingAssistant;
+    if (shouldShowSyntheticPending) {
+      pendingVisualTsRef.current = Date.now();
+    }
+    return shouldShowSyntheticPending
+      ? [
+          ...messages,
+          {
+            role: 'assistant' as const,
+            content: '',
+            pending: true,
+            statusText: externalPendingStatusText || (activeProvider === 'codex' ? 'Codex 正在思考...' : '正在思考...'),
+            timestamp: pendingVisualTsRef.current
+          }
+        ]
+      : messages;
+  }, [activeProvider, externalPending, externalPendingStatusText, loading, messages]);
+
+  const renderedMessageNodes = useMemo(() => (
+    displayMessages.map((msg, i) => (
+      <MessageBubble
+        key={`${msg.role}-${i}-${msg.pending ? 'pending' : 'done'}`}
+        message={msg}
+        provider={session.provider}
+        mobile={mobile}
+      />
+    ))
+  ), [displayMessages, mobile, session.provider]);
 
   useEffect(() => {
     if (!session) return;
@@ -283,10 +324,13 @@ const MessageArea = ({
   return (
     <>
       {/* 消息列表 */}
-      <div className={styles.messageArea} ref={scrollContainerRef} onScroll={handleScroll}>
-        {messages.length === 0 ? (
-          <div className={styles.emptyCenter}>
-            <Empty description="暂无消息记录" />
+      <div className={`${styles.messageArea} ${mobile ? styles.messageAreaMobile : ''}`} ref={scrollContainerRef} onScroll={handleScroll}>
+        {displayMessages.length === 0 ? (
+          <div className={styles.welcomeState}>
+            <div className={styles.welcomeTitle}>你今天想聊些什么？</div>
+            <div className={styles.welcomeHint}>
+              选择项目后直接开始对话，图片和系统输入法语音输入都可以使用。
+            </div>
           </div>
         ) : (
           <div style={{ paddingBottom: 24 }}>
@@ -304,14 +348,7 @@ const MessageArea = ({
                 </button>
               </div>
             )}
-            {messages.map((msg, i) => (
-              <MessageBubble key={i} message={msg} provider={session.provider} />
-            ))}
-            {loading && messages.length === 0 && (
-              <div style={{ textAlign: 'center', padding: 16 }}>
-                <Spin tip="AI 正在思考..." />
-              </div>
-            )}
+            {renderedMessageNodes}
             <div ref={messagesEndRef} />
           </div>
         )}
@@ -324,8 +361,8 @@ const MessageArea = ({
       </div>
 
       {/* ChatGPT 风格输入区域 */}
-      <div className={styles.inputArea}>
-        <div className={styles.inputBox}>
+      <div className={`${styles.inputArea} ${mobile ? styles.inputAreaMobile : ''}`}>
+        <div className={`${styles.inputBox} ${mobile ? styles.inputBoxMobile : ''}`}>
           {/* 图片预览 */}
           {images.length > 0 && (
             <div className={styles.imagePreviewRow}>
@@ -346,7 +383,7 @@ const MessageArea = ({
             onChange={e => onInputChange(e.target.value)}
             onKeyDown={handleComposerKeyDown}
             onPaste={handlePaste}
-            placeholder="输入消息..."
+            placeholder={mobile ? '输入消息，系统输入法可直接语音输入' : '输入消息...'}
             disabled={loading}
             rows={1}
           />
@@ -439,37 +476,51 @@ const MessageArea = ({
               >
                 <PlusOutlined style={{ fontSize: 16 }} />
               </button>
-              <Select
-                size="small"
-                variant="borderless"
-                value={selectedModel || models[0]?.value}
-                onChange={onModelChange}
-                options={models}
-                style={{ fontSize: 13 }}
-                popupMatchSelectWidth={false}
-              />
+              {mobile ? (
+                <button
+                  type="button"
+                  className={styles.mobileMetaBtn}
+                  onClick={() => setMobileControlsOpen(true)}
+                >
+                  <div className={styles.mobileComposerMeta}>
+                    <span>{mobileAccountSummary}</span>
+                    <span>{selectedModel || activeProvider || '默认模型'}</span>
+                  </div>
+                </button>
+              ) : (
+                <Select
+                  size="small"
+                  variant="borderless"
+                  value={selectedModel || models[0]?.value}
+                  onChange={onModelChange}
+                  options={models}
+                  style={{ fontSize: 13 }}
+                  popupMatchSelectWidth={false}
+                />
+              )}
             </div>
             <div className={styles.inputToolbarRight}>
-              {/* 账号选择 */}
-              <Select
-                size="small"
-                variant="borderless"
-                placeholder="账号"
-                value={selectedAccount ? `${selectedAccount.provider}-${selectedAccount.accountId}` : undefined}
-                onChange={(value) => {
-                  const [provider, accountId] = value.split('-');
-                  const account = accounts.find(a => a.provider === provider && a.accountId === accountId);
-                  if (account) onAccountChange(account);
-                }}
-                options={filteredAccounts.map(acc => ({
-                  label: <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <ProviderIcon provider={acc.provider} size={12} /> {formatLabel(acc)}
-                  </span>,
-                  value: `${acc.provider}-${acc.accountId}`
-                }))}
-                popupMatchSelectWidth={false}
-                style={{ fontSize: 13 }}
-              />
+              {!mobile ? (
+                <Select
+                  size="small"
+                  variant="borderless"
+                  placeholder="账号"
+                  value={selectedAccount ? `${selectedAccount.provider}-${selectedAccount.accountId}` : undefined}
+                  onChange={(value) => {
+                    const [provider, accountId] = value.split('-');
+                    const account = accounts.find(a => a.provider === provider && a.accountId === accountId);
+                    if (account) onAccountChange(account);
+                  }}
+                  options={filteredAccounts.map(acc => ({
+                    label: <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <ProviderIcon provider={acc.provider} size={12} /> {formatLabel(acc)}
+                    </span>,
+                    value: `${acc.provider}-${acc.accountId}`
+                  }))}
+                  popupMatchSelectWidth={false}
+                  style={{ fontSize: 13 }}
+                />
+              ) : null}
               {/* 发送/停止按钮 */}
               <button
                 className={`${styles.sendBtn} ${canSend ? styles.sendBtnActive : ''}`}
@@ -492,6 +543,58 @@ const MessageArea = ({
           </div>
         </div>
       </div>
+      {mobile ? (
+        <Drawer
+          placement="bottom"
+          height="auto"
+          open={mobileControlsOpen}
+          onClose={() => setMobileControlsOpen(false)}
+          title="聊天设置"
+          className={styles.mobileControlsDrawer}
+          styles={{
+            header: { padding: '14px 16px 10px', borderBottom: 'none' },
+            body: { padding: '0 16px calc(16px + env(safe-area-inset-bottom))' },
+            content: { borderRadius: '24px 24px 0 0', overflow: 'hidden' }
+          }}
+        >
+          <div className={styles.mobileSheetHandle} />
+          <div className={styles.mobileControlsSection}>
+            <div className={styles.mobileControlsLabel}>账号</div>
+            <Select
+              value={selectedAccount ? `${selectedAccount.provider}-${selectedAccount.accountId}` : undefined}
+              onChange={(value) => {
+                const [provider, accountId] = value.split('-');
+                const account = accounts.find(a => a.provider === provider && a.accountId === accountId);
+                if (account) onAccountChange(account);
+              }}
+              options={filteredAccounts.map(acc => ({
+                label: <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <ProviderIcon provider={acc.provider} size={14} /> {formatLabel(acc)}
+                </span>,
+                value: `${acc.provider}-${acc.accountId}`
+              }))}
+              style={{ width: '100%' }}
+              size="large"
+            />
+          </div>
+          <div className={styles.mobileControlsSection}>
+            <div className={styles.mobileControlsLabel}>模型</div>
+            <Select
+              value={selectedModel || models[0]?.value}
+              onChange={onModelChange}
+              options={models}
+              style={{ width: '100%' }}
+              size="large"
+            />
+          </div>
+          <div className={styles.mobileVoiceHint}>
+            语音输入直接使用系统输入法麦克风即可，这里不单独接管录音。
+          </div>
+          <Button type="primary" block size="large" onClick={() => setMobileControlsOpen(false)}>
+            完成
+          </Button>
+        </Drawer>
+      ) : null}
     </>
   );
 };

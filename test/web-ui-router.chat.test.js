@@ -982,3 +982,69 @@ test('web ui chat routes codex api key sessions through api proxy stream instead
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('web ui chat emits thinking events for codex reasoning deltas in api proxy stream', async () => {
+  const originalFetchWithTimeout = httpUtils.fetchWithTimeout;
+  httpUtils.fetchWithTimeout = async () => ({
+    ok: true,
+    status: 200,
+    body: new ReadableStream({
+      start(controller) {
+        controller.enqueue(Buffer.from(
+          'data: {"choices":[{"delta":{"reasoning_content":"先分析问题"}}]}\n\n' +
+          'data: {"choices":[{"delta":{"content":"给出答案"},"finish_reason":"stop"}]}\n\n' +
+          'data: [DONE]\n\n'
+        ));
+        controller.close();
+      }
+    }),
+    headers: new Headers()
+  });
+
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-chat-thinking-'));
+  try {
+    const profileDir = path.join(root, 'profiles', 'codex', '1');
+    const configDir = path.join(profileDir, '.codex');
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.writeFileSync(path.join(profileDir, '.aih_env.json'), JSON.stringify({
+      OPENAI_API_KEY: 'sk-test-thinking'
+    }, null, 2));
+    fs.writeFileSync(path.join(configDir, 'auth.json'), JSON.stringify({
+      OPENAI_API_KEY: 'sk-test-thinking'
+    }, null, 2));
+
+    const res = createStreamResCapture();
+    const handled = await handleWebUIRequest({
+      method: 'POST',
+      pathname: '/v0/webui/chat',
+      url: new URL('http://localhost/v0/webui/chat'),
+      req: {
+        headers: {},
+        on() {}
+      },
+      res,
+      options: { port: 8317, clientKey: 'dummy' },
+      state: {},
+      deps: {
+        ...createBaseDeps(),
+        fs: require('fs-extra'),
+        readRequestBody: async () => Buffer.from(JSON.stringify({
+          provider: 'codex',
+          accountId: '1',
+          stream: true,
+          sessionId: 'existing-session',
+          messages: [{ role: 'user', content: '你好' }]
+        }), 'utf8'),
+        getProfileDir: () => profileDir,
+        getToolConfigDir: () => configDir
+      }
+    });
+
+    assert.equal(handled, true);
+    assert.match(res.body, /"type":"thinking","thinking":"先分析问题"/);
+    assert.match(res.body, /"type":"delta","delta":"给出答案"/);
+  } finally {
+    httpUtils.fetchWithTimeout = originalFetchWithTimeout;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

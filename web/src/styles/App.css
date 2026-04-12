@@ -36,7 +36,7 @@ body {
   .ant-modal-body,
   .ant-layout-content {
     -webkit-overflow-scrolling: touch;
-    overscroll-behavior-y: contain;
-    touch-action: pan-y;
+    overscroll-behavior-y: auto;
+    touch-action: auto;
   }
 }

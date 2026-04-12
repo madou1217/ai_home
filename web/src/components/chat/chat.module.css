@@ -20,10 +20,11 @@
 }
 
 .refreshBarMobile {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-  padding: 12px 16px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 12px 18px 10px;
   background: linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
 }
 
@@ -37,9 +38,10 @@
 }
 
 .refreshBtnMobile {
-  width: 100% !important;
+  width: 40px !important;
   height: 40px !important;
-  min-width: 0 !important;
+  min-width: 40px !important;
+  flex: 0 0 40px !important;
   padding: 0 !important;
   border-radius: 999px !important;
   font-size: 13px !important;
@@ -243,6 +245,29 @@
   background:
     radial-gradient(circle at top left, rgba(110, 168, 255, 0.12), transparent 42%),
     linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
+}
+
+.pendingInline {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 4px 0;
+}
+
+.pendingInlineStatus {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  color: #6b7280;
+  font-size: 14px;
+  line-height: 1.6;
+  letter-spacing: 0.01em;
+}
+
+.pendingInlineChar {
+  display: inline-block;
+  color: #9ca3af;
+  animation: pendingTextSweep 1.35s ease-in-out infinite;
 }
 
 .srOnly {
@@ -489,6 +514,21 @@
   40% {
     opacity: 1;
     transform: translateY(-2px);
+  }
+}
+
+@keyframes pendingTextSweep {
+  0%, 100% {
+    color: #9ca3af;
+    opacity: 0.72;
+  }
+  45% {
+    color: #1d4ed8;
+    opacity: 1;
+  }
+  70% {
+    color: #60a5fa;
+    opacity: 0.94;
   }
 }
 
@@ -951,8 +991,8 @@
   min-height: 0;
   position: relative;
   -webkit-overflow-scrolling: touch;
-  overscroll-behavior-y: contain;
-  touch-action: pan-y;
+  overscroll-behavior-y: auto;
+  touch-action: auto;
 }
 
 .messageAreaMobile {
@@ -1246,11 +1286,25 @@
     background: #fff;
   }
 
+  .refreshBarMobile {
+    justify-content: center;
+    gap: 14px;
+    padding: 12px 18px 10px;
+    background: linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
+  }
+
   .refreshBtn {
     width: 34px !important;
     height: 34px !important;
     min-width: 34px !important;
     font-size: 14px !important;
+  }
+
+  .refreshBtnMobile {
+    width: 40px !important;
+    height: 40px !important;
+    min-width: 40px !important;
+    flex: 0 0 40px !important;
   }
 
   .projectItem {

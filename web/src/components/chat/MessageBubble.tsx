@@ -514,6 +514,32 @@ const formatMessageTime = (timestamp?: string | number) => {
   return date.format('HH:mm');
 };
 
+const normalizePendingStatusText = (text: string, provider: Provider) => {
+  const raw = String(text || '').trim();
+  if (provider === 'codex') return '正在思考中';
+  if (!raw) return '正在思考中';
+  if (raw.includes('正在思考')) return '正在思考中';
+  return raw.replace(/\.{3,}$/g, '').trim();
+};
+
+const PendingStatusLine = ({ text }: { text: string }) => {
+  const chars = Array.from(text || '');
+  return (
+    <div className={styles.pendingInlineStatus} aria-live="polite" aria-label={text}>
+      {chars.map((char, index) => (
+        <span
+          key={`${char}-${index}`}
+          className={styles.pendingInlineChar}
+          style={{ animationDelay: `${index * 0.08}s` }}
+          aria-hidden="true"
+        >
+          {char === ' ' ? '\u00A0' : char}
+        </span>
+      ))}
+    </div>
+  );
+};
+
 const MessageBubble = ({ message, provider, mobile = false }: Props) => {
   const isUser = message.role === 'user';
   const timeLabel = formatMessageTime(message.timestamp);
@@ -566,14 +592,7 @@ const MessageBubble = ({ message, provider, mobile = false }: Props) => {
   }
 
   if (message.pending) {
-    const thinkingPreview = (() => {
-      const raw = String(message.content || '');
-      const match = raw.match(/:::thinking\n([\s\S]*?)\n:::/);
-      if (!match || !match[1]) return '';
-      const lines = match[1].split('\n').map((line) => line.trim()).filter(Boolean);
-      const lastLine = lines[lines.length - 1] || '';
-      return lastLine.length > 72 ? `${lastLine.slice(0, 72)}...` : lastLine;
-    })();
+    const pendingStatusText = normalizePendingStatusText(message.statusText || '正在思考中', provider);
 
     return (
       <div className={`${styles.messageRow} ${styles.messageRowAssistant}`}>
@@ -581,55 +600,9 @@ const MessageBubble = ({ message, provider, mobile = false }: Props) => {
           <ProviderIcon provider={provider} size={18} />
         </Avatar>
         <div className={`${styles.messageWrapper} ${styles.messageWrapperAssistant}`} onClick={handleMessageTap}>
-          <div className={`${styles.bubbleAssistant} ${styles.bubbleAssistantPending}`}>
-            <span className={styles.srOnly}>{message.statusText || 'AI 正在回复'}</span>
-            <div className={styles.pendingShell} aria-hidden="true">
-              <div className={styles.pendingHeroRow}>
-                <div className={styles.pendingBadge}>
-                  <span className={styles.pendingBadgeSpinner} />
-                </div>
-                <div className={styles.pendingStatusStack}>
-                  <div className={styles.pendingStatusLabel}>{message.statusText || 'AI 正在回复'}</div>
-                  <div className={styles.pendingSubLabel}>思考中，正在组织上下文和工具结果</div>
-                </div>
-              </div>
-              <div className={styles.pendingPulseBar} aria-hidden="true">
-                <span />
-              </div>
-              <div className={styles.pendingTopRow}>
-                <div className={styles.pendingOrb}>
-                  <span className={styles.pendingOrbCore} />
-                  <span className={styles.pendingOrbRing} />
-                </div>
-                <div className={styles.pendingWave}>
-                  <span />
-                  <span />
-                  <span />
-                  <span />
-                  <span />
-                </div>
-              </div>
-              <div className={styles.pendingLines}>
-                <span className={styles.pendingLine} />
-                <span className={`${styles.pendingLine} ${styles.pendingLineShort}`} />
-                <span className={`${styles.pendingLine} ${styles.pendingLineTiny}`} />
-              </div>
-              {thinkingPreview ? (
-                <div className={styles.pendingThinkingPreview}>{thinkingPreview}</div>
-              ) : null}
-            </div>
-            <div className={styles.typingDots} aria-hidden="true">
-              <span />
-              <span />
-              <span />
-              <span />
-            </div>
-            <div className={styles.pendingGlow} aria-hidden="true" />
-            <div className={styles.pendingGrid} aria-hidden="true">
-              <span />
-              <span />
-              <span />
-            </div>
+          <div className={styles.pendingInline}>
+            <span className={styles.srOnly}>{pendingStatusText}</span>
+            <PendingStatusLine text={pendingStatusText} />
           </div>
           <div className={metaRowClassName}>
             <CopyButton text={message.content || ''} />

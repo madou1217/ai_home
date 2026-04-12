@@ -704,6 +704,9 @@ const Accounts = () => {
                         <div style={{ fontSize: 12, color: '#8c8c8c' }}>
                           {getAccountMetaLabel(record)}
                         </div>
+                        <div style={{ marginTop: 10, maxWidth: 220 }}>
+                          <UsageSnapshotCell record={record} />
+                        </div>
                       </div>
                       <div style={{ flexShrink: 0 }}>
                         <RuntimeStatusTag status={record.runtimeStatus || 'healthy'} fallback="OK" />

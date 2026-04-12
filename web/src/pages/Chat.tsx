@@ -32,6 +32,8 @@ const sortProjectsByLastActivityDesc = (items: AggregatedProject[]) =>
 
 const normalizeMessageText = (value?: string) => String(value || '').trim();
 
+const CHAT_SELECTION_STORAGE_KEY = 'web-chat-selection-v1';
+
 const normalizeMessageImages = (images?: string[]) => {
   const seen = new Set<string>();
   return (Array.isArray(images) ? images : [])
@@ -50,6 +52,67 @@ const toMessageTimeMs = (timestamp?: string | number) => {
     return Number.isFinite(parsed) ? parsed : 0;
   }
   return 0;
+};
+
+type PersistedChatSelection = {
+  projectPath?: string;
+  sessionId?: string;
+  provider?: string;
+  projectDirName?: string;
+};
+
+const readSelectionFromUrl = (): PersistedChatSelection => {
+  if (typeof window === 'undefined') return {};
+  const params = new URLSearchParams(window.location.search);
+  return {
+    projectPath: params.get('projectPath') || undefined,
+    sessionId: params.get('sessionId') || undefined,
+    provider: params.get('provider') || undefined,
+    projectDirName: params.get('projectDirName') || undefined
+  };
+};
+
+const readPersistedSelection = (): PersistedChatSelection => {
+  if (typeof window === 'undefined') return {};
+  const fromUrl = readSelectionFromUrl();
+  if (fromUrl.projectPath || fromUrl.sessionId) return fromUrl;
+  try {
+    const raw = window.localStorage.getItem(CHAT_SELECTION_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
+const writePersistedSelection = (selection: PersistedChatSelection) => {
+  if (typeof window === 'undefined') return;
+  const next: PersistedChatSelection = {
+    projectPath: selection.projectPath || undefined,
+    sessionId: selection.sessionId || undefined,
+    provider: selection.provider || undefined,
+    projectDirName: selection.projectDirName || undefined
+  };
+  const params = new URLSearchParams(window.location.search);
+  if (next.projectPath) params.set('projectPath', next.projectPath);
+  else params.delete('projectPath');
+  if (next.sessionId) params.set('sessionId', next.sessionId);
+  else params.delete('sessionId');
+  if (next.provider) params.set('provider', next.provider);
+  else params.delete('provider');
+  if (next.projectDirName) params.set('projectDirName', next.projectDirName);
+  else params.delete('projectDirName');
+  const query = params.toString();
+  const nextUrl = `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash || ''}`;
+  window.history.replaceState(null, '', nextUrl);
+  try {
+    if (next.projectPath || next.sessionId) {
+      window.localStorage.setItem(CHAT_SELECTION_STORAGE_KEY, JSON.stringify(next));
+    } else {
+      window.localStorage.removeItem(CHAT_SELECTION_STORAGE_KEY);
+    }
+  } catch {}
 };
 
 const areDuplicateUserMessages = (left?: ChatMessage, right?: ChatMessage) => {
@@ -167,6 +230,7 @@ const Chat = () => {
   const [projectDrawerOpen, setProjectDrawerOpen] = useState(false);
   const [mobileProjectPickerOpen, setMobileProjectPickerOpen] = useState(false);
   const selectedSessionRef = useRef<Session | null>(null);
+  const initialSelectionRef = useRef<PersistedChatSelection>(readPersistedSelection());
   const streamAbortRef = useRef<AbortController | null>(null);
   const sessionMessagesCacheRef = useRef<Map<string, ChatMessage[]>>(new Map());
   const sessionCursorCacheRef = useRef<Map<string, number>>(new Map());
@@ -248,14 +312,20 @@ const Chat = () => {
     setHasMoreHistory(startIdx > 0);
   };
 
-  const findProjectBySessionId = (items: AggregatedProject[], sessionId: string) => {
-    for (const project of items) {
-      const matched = project.sessions.find((session) => session.id === sessionId);
-      if (matched) {
-        return { project, session: matched };
-      }
+const findProjectBySessionId = (items: AggregatedProject[], selection: PersistedChatSelection) => {
+  const sessionId = selection.sessionId;
+  if (!sessionId) return null;
+  for (const project of items) {
+    const matched = project.sessions.find((session) => (
+      session.id === sessionId
+      && (!selection.provider || session.provider === selection.provider)
+      && (!selection.projectDirName || session.projectDirName === selection.projectDirName)
+    ));
+    if (matched) {
+      return { project, session: matched };
     }
-    return null;
+  }
+  return null;
   };
 
   const fetchProjects = async () => {
@@ -571,8 +641,10 @@ const Chat = () => {
     try {
       await reloadSessionHistory(session);
       await loadProjects({
-        selectSessionId: session.id,
-        selectProjectPath: session.projectPath
+        sessionId: session.id,
+        projectPath: session.projectPath,
+        provider: session.provider,
+        projectDirName: session.projectDirName
       });
     } catch {}
   }, [connectSessionWatch, reloadSessionHistory]);
@@ -594,24 +666,25 @@ const Chat = () => {
     }
   };
 
-  const loadProjects = async (options: { selectSessionId?: string; selectProjectPath?: string } = {}) => {
+  const loadProjects = async (options: PersistedChatSelection = {}) => {
     setLoadingProjects(true);
     try {
       const filtered = await fetchProjects();
       setProjects(filtered);
-      if (filtered.length > 0 && expandedProjects.size === 0) {
-        setExpandedProjects(new Set([filtered[0].id]));
-      }
-      if (options.selectSessionId) {
-        const matched = findProjectBySessionId(filtered, options.selectSessionId);
+      if (options.sessionId) {
+        const matched = findProjectBySessionId(filtered, options);
         if (matched) {
+          setExpandedProjects((current) => new Set([...current, matched.project.id]));
           setSelectedProject(matched.project);
           setSelectedSession(matched.session);
           return;
         }
       }
-      if (options.selectProjectPath) {
-        const project = filtered.find((item) => item.path === options.selectProjectPath) || null;
+      if (options.projectPath) {
+        const project = filtered.find((item) => item.path === options.projectPath) || null;
+        if (project) {
+          setExpandedProjects((current) => new Set([...current, project.id]));
+        }
         setSelectedProject(project);
       }
     } catch {
@@ -623,7 +696,13 @@ const Chat = () => {
 
   useEffect(() => {
     loadAccounts();
-    loadProjects();
+    const initialSelection = initialSelectionRef.current;
+    loadProjects({
+      sessionId: initialSelection.sessionId,
+      projectPath: initialSelection.projectPath,
+      provider: initialSelection.provider,
+      projectDirName: initialSelection.projectDirName
+    });
   }, []);
 
   useEffect(() => {
@@ -636,6 +715,21 @@ const Chat = () => {
   useEffect(() => {
     selectedSessionRef.current = selectedSession;
   }, [selectedSession]);
+
+  useEffect(() => {
+    writePersistedSelection({
+      projectPath: selectedProject?.path,
+      sessionId: selectedSession?.draft ? undefined : selectedSession?.id,
+      provider: selectedSession?.draft ? undefined : selectedSession?.provider,
+      projectDirName: selectedSession?.draft ? undefined : selectedSession?.projectDirName
+    });
+  }, [
+    selectedProject?.path,
+    selectedSession?.draft,
+    selectedSession?.id,
+    selectedSession?.projectDirName,
+    selectedSession?.provider
+  ]);
 
   useEffect(() => {
     loadingRef.current = loading;
@@ -768,7 +862,10 @@ const Chat = () => {
   const handleSelectSession = (session: Session) => {
     setSelectedSession(session);
     const ownerProject = projects.find((project) => project.path === session.projectPath) || null;
-    if (ownerProject) setSelectedProject(ownerProject);
+    if (ownerProject) {
+      setSelectedProject(ownerProject);
+      setExpandedProjects((current) => new Set([...current, ownerProject.id]));
+    }
     if (isMobile) setProjectDrawerOpen(false);
   };
 
@@ -832,7 +929,7 @@ const Chat = () => {
       setMobileProjectPickerOpen(false);
       setOpenProjectPath('');
       setOpenProjectName('');
-      await loadProjects({ selectProjectPath: project.path });
+      await loadProjects({ projectPath: project.path });
       setExpandedProjects((current) => new Set([...current, project.id]));
       setSelectedSession(null);
       if (isMobile) setProjectDrawerOpen(true);
@@ -1024,12 +1121,13 @@ const Chat = () => {
       if (requestSession.draft) {
         if (createdSessionId) {
           await loadProjects({
-            selectSessionId: createdSessionId,
-            selectProjectPath: requestProjectPath
+            sessionId: createdSessionId,
+            projectPath: requestProjectPath,
+            provider: selectedAccount.provider
           });
         } else if (usedNativeSession) {
           await loadProjects({
-            selectProjectPath: requestProjectPath
+            projectPath: requestProjectPath
           });
         }
       } else {
@@ -1050,7 +1148,7 @@ const Chat = () => {
         message.error(err?.response?.data?.error || err?.response?.data?.message || err?.message || '发送失败');
       }
       await (requestSession.draft
-        ? loadProjects({ selectProjectPath: requestProjectPath })
+        ? loadProjects({ projectPath: requestProjectPath })
         : reloadSessionHistory(requestSession)
       ).catch(() => {});
     } finally {

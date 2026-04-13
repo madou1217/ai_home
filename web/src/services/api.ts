@@ -14,6 +14,7 @@ import type {
   SlashCommandsResponse,
   ManagementStatus,
   ManagementMetrics,
+  ManagementAccount,
   ManagementAccountsResponse,
   AggregatedProject,
   ArchivedSession
@@ -195,6 +196,16 @@ export const accountsAPI = {
   cancelAddJob: async (jobId: string) => {
     const response = await api.post(`/webui/accounts/add/jobs/${jobId}/cancel`);
     return response.data;
+  },
+
+  reauth: async (provider: string, accountId: string): Promise<AddAccountResponse> => {
+    const response = await api.post<AddAccountResponse>(`/webui/accounts/${provider}/${accountId}/reauth`);
+    return response.data;
+  },
+
+  refreshUsage: async (provider: string, accountId: string): Promise<Account> => {
+    const response = await api.post<{ ok: boolean; account: Account }>(`/webui/accounts/${provider}/${accountId}/refresh-usage`);
+    return response.data.account;
   },
 
   // 删除账号
@@ -487,6 +498,35 @@ export const managementAPI = {
   accounts: async (): Promise<ManagementAccountsResponse> => {
     const response = await api.get<ManagementAccountsResponse>('/management/accounts');
     return response.data;
+  },
+
+  watch: (handlers: {
+    onSnapshot?: (payload: {
+      status: ManagementStatus;
+      metrics: ManagementMetrics;
+      accounts: ManagementAccount[];
+    }) => void;
+    onError?: () => void;
+  }) => {
+    const eventSource = new EventSource('/v0/management/watch');
+    eventSource.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(String(event.data || '{}'));
+        if (payload.type === 'snapshot') {
+          handlers.onSnapshot?.({
+            status: payload.status as ManagementStatus,
+            metrics: payload.metrics as ManagementMetrics,
+            accounts: Array.isArray(payload.accounts) ? payload.accounts as ManagementAccount[] : []
+          });
+        }
+      } catch (_error) {
+        // Ignore malformed frames.
+      }
+    };
+    eventSource.onerror = () => {
+      handlers.onError?.();
+    };
+    return eventSource;
   },
 
   // 重新加载账号

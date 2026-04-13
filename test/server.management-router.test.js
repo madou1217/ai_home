@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { EventEmitter } = require('node:events');
 const { handleManagementRequest } = require('../lib/server/management-router');
 
 function createResCapture() {
@@ -9,6 +10,28 @@ function createResCapture() {
     body: '',
     setHeader(k, v) { this.headers[k] = v; },
     end(chunk = '') { this.body = String(chunk); }
+  };
+}
+
+function createStreamResCapture() {
+  return {
+    statusCode: 0,
+    headers: {},
+    body: '',
+    writeHead(code, headers = {}) {
+      this.statusCode = code;
+      this.headers = { ...this.headers, ...headers };
+    },
+    setHeader(key, value) {
+      this.headers[key] = value;
+    },
+    write(chunk = '') {
+      this.body += String(chunk);
+      return true;
+    },
+    end(chunk = '') {
+      this.body += String(chunk);
+    }
   };
 }
 
@@ -120,6 +143,188 @@ test('management router returns stable not_found payload for unknown management 
   assert.equal(res.statusCode, 404);
   const body = JSON.parse(res.body);
   assert.equal(body.error, 'management_not_found');
+});
+
+test('management watch streams snapshot immediately and pushes updates after cooldown clear', async () => {
+  const state = {
+    startedAt: Date.now() - 5_000,
+    strategy: 'round-robin',
+    accounts: {
+      codex: [{
+        id: '1',
+        provider: 'codex',
+        cooldownUntil: 123,
+        consecutiveFailures: 2,
+        successCount: 1,
+        failCount: 2,
+        lastRefresh: 0,
+        remainingPct: 50
+      }],
+      gemini: [],
+      claude: []
+    },
+    metrics: {
+      totalRequests: 0,
+      totalSuccess: 0,
+      totalFailures: 0,
+      totalTimeouts: 0,
+      routeCounts: {},
+      providerCounts: {},
+      providerSuccess: {},
+      providerFailures: {},
+      lastErrors: []
+    },
+    sessionAffinity: {
+      codex: new Map(),
+      gemini: new Map(),
+      claude: new Map()
+    },
+    executors: {},
+    modelsCache: { ids: [], updatedAt: 0, byAccount: {}, sourceCount: 0 },
+    modelRegistry: { updatedAt: 0 }
+  };
+  const req = new EventEmitter();
+  req.headers = {};
+  const res = createStreamResCapture();
+  const jsonWriter = (response, code, payload) => {
+    response.statusCode = code;
+    response.end(JSON.stringify(payload));
+  };
+
+  const watchHandled = await handleManagementRequest({
+    method: 'GET',
+    pathname: '/v0/management/watch',
+    url: new URL('http://localhost/v0/management/watch'),
+    req,
+    res,
+    options: {
+      backend: 'local',
+      host: '127.0.0.1',
+      port: 8317,
+      provider: 'codex',
+      clientKey: ''
+    },
+    state,
+    requiredManagementKey: '',
+    deps: {
+      parseAuthorizationBearer: () => '',
+      writeJson: jsonWriter,
+      buildManagementStatusPayload: (currentState) => ({
+        ok: true,
+        totalAccounts: currentState.accounts.codex.length,
+        activeAccounts: currentState.accounts.codex.filter((item) => !item.cooldownUntil).length,
+        totalRequests: currentState.metrics.totalRequests,
+        uptimeSec: 5
+      }),
+      buildManagementMetricsPayload: () => ({
+        ok: true,
+        totalRequests: 0,
+        totalSuccess: 0,
+        totalFailures: 0,
+        totalTimeouts: 0,
+        successRate: 0,
+        timeoutRate: 0,
+        routeCounts: {},
+        providerCounts: {},
+        providerSuccess: {},
+        providerFailures: {},
+        queue: {},
+        lastErrors: []
+      }),
+      buildManagementAccountsPayload: (currentState) => ({
+        ok: true,
+        accounts: currentState.accounts.codex.map((item) => ({
+          id: item.id,
+          provider: 'codex',
+          cooldownUntil: item.cooldownUntil,
+          consecutiveFailures: item.consecutiveFailures,
+          remainingPct: item.remainingPct,
+          hasAccessToken: false,
+          hasRefreshToken: false,
+          lastRefresh: 0,
+          successCount: item.successCount,
+          failCount: item.failCount,
+          lastError: ''
+        }))
+      }),
+      fs: {},
+      getProfileDir: () => '',
+      getToolConfigDir: () => ''
+    }
+  });
+
+  assert.equal(watchHandled, true);
+  assert.equal(res.statusCode, 200);
+  assert.match(res.body, /"type":"snapshot"/);
+  assert.match(res.body, /"cooldownUntil":123/);
+
+  const clearRes = createResCapture();
+  const clearHandled = await handleManagementRequest({
+    method: 'POST',
+    pathname: '/v0/management/cooldown/clear',
+    url: new URL('http://localhost/v0/management/cooldown/clear'),
+    req: { headers: {} },
+    res: clearRes,
+    options: {
+      backend: 'local',
+      host: '127.0.0.1',
+      port: 8317,
+      provider: 'codex',
+      clientKey: ''
+    },
+    state,
+    requiredManagementKey: '',
+    deps: {
+      parseAuthorizationBearer: () => '',
+      writeJson: jsonWriter,
+      buildManagementStatusPayload: (currentState) => ({
+        ok: true,
+        totalAccounts: currentState.accounts.codex.length,
+        activeAccounts: currentState.accounts.codex.filter((item) => !item.cooldownUntil).length,
+        totalRequests: currentState.metrics.totalRequests,
+        uptimeSec: 5
+      }),
+      buildManagementMetricsPayload: () => ({
+        ok: true,
+        totalRequests: 0,
+        totalSuccess: 0,
+        totalFailures: 0,
+        totalTimeouts: 0,
+        successRate: 0,
+        timeoutRate: 0,
+        routeCounts: {},
+        providerCounts: {},
+        providerSuccess: {},
+        providerFailures: {},
+        queue: {},
+        lastErrors: []
+      }),
+      buildManagementAccountsPayload: (currentState) => ({
+        ok: true,
+        accounts: currentState.accounts.codex.map((item) => ({
+          id: item.id,
+          provider: 'codex',
+          cooldownUntil: item.cooldownUntil,
+          consecutiveFailures: item.consecutiveFailures,
+          remainingPct: item.remainingPct,
+          hasAccessToken: false,
+          hasRefreshToken: false,
+          lastRefresh: 0,
+          successCount: item.successCount,
+          failCount: item.failCount,
+          lastError: ''
+        }))
+      }),
+      fs: {},
+      getProfileDir: () => '',
+      getToolConfigDir: () => ''
+    }
+  });
+
+  assert.equal(clearHandled, true);
+  assert.equal(clearRes.statusCode, 200);
+  assert.match(res.body, /"cooldownUntil":0/);
+  req.emit('close');
 });
 
 test('management router supports reload and cooldown clear contracts', async () => {

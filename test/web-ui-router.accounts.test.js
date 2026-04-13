@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const fs = require('fs-extra');
 const { handleWebUIRequest } = require('../lib/server/web-ui-router');
+const { handleReauthAccountRequest } = require('../lib/server/webui-account-routes');
 
 function createResCapture() {
   return {
@@ -506,6 +507,379 @@ test('web ui accounts list keeps api key accounts out of usage percentage render
   assert.equal(body.accounts.length, 1);
   assert.equal(body.accounts[0].apiKeyMode, true);
   assert.equal(body.accounts[0].remainingPct, null);
+  assert.equal(body.accounts[0].runtimeStatus, undefined);
+  assert.equal(body.accounts[0].runtimeUntil, undefined);
+  assert.equal(body.accounts[0].runtimeReason, undefined);
+});
+
+test('web ui accounts list prefers usage snapshot capturedAt for updatedAt', async () => {
+  const capturedAt = Date.now() - 15_000;
+  const res = createResCapture();
+  const handled = await handleWebUIRequest({
+    method: 'GET',
+    pathname: '/v0/webui/accounts',
+    url: new URL('http://localhost/v0/webui/accounts'),
+    req: { headers: {} },
+    res,
+    options: {},
+    state: {
+      accounts: {
+        codex: [],
+        gemini: [],
+        claude: []
+      }
+    },
+    deps: {
+      fs: {
+        existsSync(filePath) {
+          return String(filePath).endsWith('/.aih_usage.json');
+        },
+        readFileSync(filePath) {
+          if (String(filePath).endsWith('/.aih_usage.json')) {
+            return JSON.stringify({
+              schemaVersion: 2,
+              kind: 'codex_oauth_status',
+              source: 'codex_app_server',
+              capturedAt,
+              entries: [
+                { window: '5h', remainingPct: 64 },
+                { window: '7days', remainingPct: 83 }
+              ]
+            });
+          }
+          throw new Error(`unexpected_read:${filePath}`);
+        }
+      },
+      writeJson: (response, code, payload) => {
+        response.statusCode = code;
+        response.end(JSON.stringify(payload));
+      },
+      readRequestBody: async () => null,
+      accountStateIndex: {
+        getAccountState(provider, accountId) {
+          if (provider === 'codex' && accountId === '52') {
+            return {
+              configured: true,
+              api_key_mode: false,
+              exhausted: false,
+              remaining_pct: 64,
+              display_name: 'updated@example.com',
+              updated_at: 123
+            };
+          }
+          return null;
+        }
+      },
+      getToolAccountIds(provider) {
+        return provider === 'codex' ? ['52'] : [];
+      },
+      getToolConfigDir: () => '/tmp/codex/52/.codex',
+      getProfileDir: () => '/tmp/codex/52',
+      loadServerRuntimeAccounts: () => ({ codex: [], gemini: [], claude: [] }),
+      applyReloadState: () => {},
+      checkStatus() {
+        return { configured: true, accountName: 'updated@example.com' };
+      }
+    }
+  });
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 200);
+  const body = JSON.parse(res.body);
+  assert.equal(body.ok, true);
+  assert.equal(body.accounts.length, 1);
+  assert.equal(body.accounts[0].updatedAt, capturedAt);
+});
+
+test('web ui accounts list falls back to latest probe checkedAt for updatedAt when snapshot is missing', async () => {
+  const probeCheckedAt = Date.now() - 8_000;
+  const res = createResCapture();
+  const handled = await handleWebUIRequest({
+    method: 'GET',
+    pathname: '/v0/webui/accounts',
+    url: new URL('http://localhost/v0/webui/accounts'),
+    req: { headers: {} },
+    res,
+    options: {},
+    state: {
+      accounts: {
+        codex: [],
+        gemini: [],
+        claude: []
+      }
+    },
+    deps: {
+      fs: {
+        existsSync(filePath) {
+          return String(filePath).endsWith('/auth.json');
+        },
+        readFileSync() {
+          return JSON.stringify({ tokens: {} });
+        }
+      },
+      writeJson: (response, code, payload) => {
+        response.statusCode = code;
+        response.end(JSON.stringify(payload));
+      },
+      readRequestBody: async () => null,
+      accountStateIndex: {
+        getAccountState(provider, accountId) {
+          if (provider === 'codex' && accountId === '77') {
+            return {
+              configured: true,
+              api_key_mode: false,
+              exhausted: false,
+              remaining_pct: null,
+              display_name: 'probe-time@example.com',
+              updated_at: 123
+            };
+          }
+          return null;
+        }
+      },
+      getToolAccountIds(provider) {
+        return provider === 'codex' ? ['77'] : [];
+      },
+      getToolConfigDir: () => '/tmp/codex/77/.codex',
+      getProfileDir: () => '/tmp/codex/77',
+      loadServerRuntimeAccounts: () => ({ codex: [], gemini: [], claude: [] }),
+      applyReloadState: () => {},
+      checkStatus() {
+        return { configured: true, accountName: 'probe-time@example.com' };
+      },
+      getLastUsageProbeState(provider, accountId) {
+        if (provider === 'codex' && accountId === '77') {
+          return {
+            error: 'timeout',
+            checkedAt: probeCheckedAt
+          };
+        }
+        return null;
+      }
+    }
+  });
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 200);
+  const body = JSON.parse(res.body);
+  assert.equal(body.ok, true);
+  assert.equal(body.accounts.length, 1);
+  assert.equal(body.accounts[0].updatedAt, probeCheckedAt);
+  assert.equal(body.accounts[0].usageStatus, 'probe_failed');
+});
+
+test('web ui accounts list exposes probe_failed usage status when latest usage probe failed', async () => {
+  const res = createResCapture();
+  const handled = await handleWebUIRequest({
+    method: 'GET',
+    pathname: '/v0/webui/accounts',
+    url: new URL('http://localhost/v0/webui/accounts'),
+    req: { headers: {} },
+    res,
+    options: {},
+    state: {
+      accounts: {
+        codex: [],
+        gemini: [],
+        claude: []
+      }
+    },
+    deps: {
+      fs: {
+        existsSync(filePath) {
+          return String(filePath).endsWith('/auth.json');
+        },
+        readFileSync() {
+          throw new Error('unexpected_read');
+        }
+      },
+      writeJson: (response, code, payload) => {
+        response.statusCode = code;
+        response.end(JSON.stringify(payload));
+      },
+      readRequestBody: async () => null,
+      accountStateIndex: {
+        getAccountState(provider, accountId) {
+          if (provider === 'codex' && accountId === '77') {
+            return {
+              configured: true,
+              api_key_mode: false,
+              exhausted: false,
+              remaining_pct: null,
+              display_name: 'probe@example.com',
+              updated_at: 0
+            };
+          }
+          return null;
+        }
+      },
+      getToolAccountIds(provider) {
+        return provider === 'codex' ? ['77'] : [];
+      },
+      getToolConfigDir: () => '/tmp/codex/77/.codex',
+      getProfileDir: () => '/tmp/codex/77',
+      loadServerRuntimeAccounts: () => ({ codex: [], gemini: [], claude: [] }),
+      applyReloadState: () => {},
+      checkStatus() {
+        return { configured: true, accountName: 'probe@example.com' };
+      },
+      getLastUsageProbeError(provider, accountId) {
+        if (provider === 'codex' && accountId === '77') {
+          return 'direct_http_status_401';
+        }
+        return '';
+      }
+    }
+  });
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 200);
+  const body = JSON.parse(res.body);
+  assert.equal(body.ok, true);
+  assert.equal(body.accounts.length, 1);
+  assert.equal(body.accounts[0].usageStatus, 'probe_failed');
+  assert.equal(body.accounts[0].usageReason, 'direct_http_status_401');
+});
+
+test('web ui refresh usage returns latest account record and probe timestamp for oauth account', async () => {
+  let probeState = null;
+  const res = createResCapture();
+  const handled = await handleWebUIRequest({
+    method: 'POST',
+    pathname: '/v0/webui/accounts/codex/9/refresh-usage',
+    url: new URL('http://localhost/v0/webui/accounts/codex/9/refresh-usage'),
+    req: { headers: {} },
+    res,
+    options: {},
+    state: {
+      accounts: { codex: [], gemini: [], claude: [] }
+    },
+    deps: {
+      aiHomeDir: '/tmp/aih',
+      fs: {
+        existsSync(filePath) {
+          return String(filePath).endsWith('/auth.json');
+        },
+        readFileSync() {
+          return JSON.stringify({ tokens: {} });
+        },
+        mkdirSync() {},
+        writeFileSync() {}
+      },
+      writeJson: (response, code, payload) => {
+        response.statusCode = code;
+        response.end(JSON.stringify(payload));
+      },
+      readRequestBody: async () => null,
+      accountStateIndex: {
+        getAccountState(provider, accountId) {
+          if (provider === 'codex' && accountId === '9') {
+            return {
+              configured: true,
+              api_key_mode: false,
+              exhausted: false,
+              remaining_pct: null,
+              display_name: 'refresh@example.com',
+              updated_at: 111
+            };
+          }
+          return null;
+        }
+      },
+      getToolAccountIds(provider) {
+        return provider === 'codex' ? ['9'] : [];
+      },
+      getToolConfigDir: () => '/tmp/codex/9/.codex',
+      getProfileDir: () => '/tmp/codex/9',
+      ensureUsageSnapshotAsync: async () => {
+        probeState = {
+          error: 'timeout',
+          checkedAt: Date.now()
+        };
+        return null;
+      },
+      getLastUsageProbeState() {
+        return probeState;
+      },
+      loadServerRuntimeAccounts: () => ({
+        codex: [{ id: '9', email: 'refresh@example.com', apiKeyMode: false }],
+        gemini: [],
+        claude: []
+      }),
+      applyReloadState(state, runtimeAccounts) {
+        state.accounts = runtimeAccounts;
+      },
+      checkStatus() {
+        return { configured: true, accountName: 'refresh@example.com' };
+      }
+    }
+  });
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 200);
+  const body = JSON.parse(res.body);
+  assert.equal(body.ok, true);
+  assert.equal(body.account.provider, 'codex');
+  assert.equal(body.account.accountId, '9');
+  assert.equal(body.account.updatedAt, probeState.checkedAt);
+  assert.equal(body.account.usageStatus, 'probe_failed');
+});
+
+test('web ui refresh usage rejects api key accounts', async () => {
+  const res = createResCapture();
+  const handled = await handleWebUIRequest({
+    method: 'POST',
+    pathname: '/v0/webui/accounts/codex/12/refresh-usage',
+    url: new URL('http://localhost/v0/webui/accounts/codex/12/refresh-usage'),
+    req: { headers: {} },
+    res,
+    options: {},
+    state: {
+      accounts: { codex: [], gemini: [], claude: [] }
+    },
+    deps: {
+      fs: {
+        existsSync(filePath) {
+          return String(filePath).endsWith('/.aih_env.json');
+        },
+        readFileSync() {
+          return JSON.stringify({ OPENAI_API_KEY: 'dummy' });
+        }
+      },
+      writeJson: (response, code, payload) => {
+        response.statusCode = code;
+        response.end(JSON.stringify(payload));
+      },
+      readRequestBody: async () => null,
+      accountStateIndex: {
+        getAccountState(provider, accountId) {
+          if (provider === 'codex' && accountId === '12') {
+            return {
+              configured: true,
+              api_key_mode: true,
+              display_name: 'codex-12',
+              updated_at: 123
+            };
+          }
+          return null;
+        }
+      },
+      getToolAccountIds(provider) {
+        return provider === 'codex' ? ['12'] : [];
+      },
+      getToolConfigDir: () => '/tmp/codex/12/.codex',
+      getProfileDir: () => '/tmp/codex/12',
+      checkStatus() {
+        return { configured: true, accountName: 'API Key' };
+      }
+    }
+  });
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 400);
+  const body = JSON.parse(res.body);
+  assert.equal(body.ok, false);
+  assert.equal(body.code, 'api_key_usage_refresh_unsupported');
 });
 
 test('web ui accounts list reads codex usage snapshot cache when state index and runtime are missing usage', async () => {
@@ -587,6 +961,86 @@ test('web ui accounts list reads codex usage snapshot cache when state index and
   assert.equal(body.accounts[0].usageSnapshot.kind, 'codex_oauth_status');
   assert.equal(body.accounts[0].usageSnapshot.entries.length, 2);
   assert.equal(body.accounts[0].usageSnapshot.entries[0].window, '5h');
+});
+
+test('web ui accounts list does not keep stale exhausted state when codex snapshot has no numeric remaining', async () => {
+  const res = createResCapture();
+  const handled = await handleWebUIRequest({
+    method: 'GET',
+    pathname: '/v0/webui/accounts',
+    url: new URL('http://localhost/v0/webui/accounts'),
+    req: { headers: {} },
+    res,
+    options: {},
+    state: {
+      accounts: {
+        codex: [],
+        gemini: [],
+        claude: []
+      }
+    },
+    deps: {
+      fs: {
+        existsSync(filePath) {
+          return String(filePath).endsWith('/.aih_usage.json');
+        },
+        readFileSync(filePath) {
+          if (String(filePath).endsWith('/.aih_usage.json')) {
+            return JSON.stringify({
+              schemaVersion: 2,
+              kind: 'codex_oauth_status',
+              source: 'codex_app_server',
+              capturedAt: Date.now(),
+              entries: [
+                { bucket: 'account', window: 'plan:plus user@example.com', remainingPct: null, resetIn: 'unknown' }
+              ]
+            });
+          }
+          throw new Error(`unexpected_read:${filePath}`);
+        }
+      },
+      writeJson: (response, code, payload) => {
+        response.statusCode = code;
+        response.end(JSON.stringify(payload));
+      },
+      readRequestBody: async () => null,
+      accountStateIndex: {
+        getAccountState(provider, accountId) {
+          if (provider === 'codex' && accountId === '81') {
+            return {
+              configured: true,
+              api_key_mode: false,
+              exhausted: true,
+              remaining_pct: 0,
+              display_name: 'user@example.com',
+              updated_at: 999
+            };
+          }
+          return null;
+        }
+      },
+      getToolAccountIds(provider) {
+        return provider === 'codex' ? ['81'] : [];
+      },
+      getToolConfigDir: () => '/tmp/codex/81/.codex',
+      getProfileDir: () => '/tmp/codex/81',
+      loadServerRuntimeAccounts: () => ({ codex: [], gemini: [], claude: [] }),
+      applyReloadState: () => {},
+      checkStatus() {
+        return { configured: true, accountName: 'user@example.com' };
+      }
+    }
+  });
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 200);
+  const body = JSON.parse(res.body);
+  assert.equal(body.ok, true);
+  assert.equal(body.accounts.length, 1);
+  assert.equal(body.accounts[0].remainingPct, null);
+  assert.equal(body.accounts[0].exhausted, false);
+  assert.equal(body.accounts[0].usageStatus, 'provider_unavailable');
+  assert.equal(body.accounts[0].usageReason, 'provider_returned_no_numeric_usage');
 });
 
 test('web ui accounts list reads gemini usage snapshot models for account details', async () => {
@@ -739,4 +1193,154 @@ test('web ui accounts watch streams snapshot immediately and completes hydration
   req.emit('close');
 
   assert.match(res.body, /"type":"hydrated"/);
+});
+
+test('web ui reauth reuses original account id and stored auth mode for oauth accounts', async () => {
+  const res = createResCapture();
+  const startedCalls = [];
+  const upserts = [];
+
+  const handled = await handleReauthAccountRequest({
+    pathname: '/v0/webui/accounts/codex/42/reauth',
+    req: { headers: {} },
+    res,
+    fs: {
+      existsSync(filePath) {
+        return String(filePath) === '/tmp/codex/42' || String(filePath).endsWith('/auth.json');
+      },
+      readFileSync(filePath) {
+        if (String(filePath).endsWith('/auth.json')) {
+          return JSON.stringify({ tokens: { access_token: 'oauth-token' } });
+        }
+        throw new Error(`unexpected_read:${filePath}`);
+      }
+    },
+    accountStateIndex: {
+      getAccountState() {
+        return {
+          display_name: 'codex-user',
+          api_key_mode: false,
+          auth_mode: 'oauth-device'
+        };
+      },
+      upsertAccountState(provider, accountId, state) {
+        upserts.push({ provider, accountId, state });
+        return true;
+      }
+    },
+    getToolAccountIds() {
+      return ['42'];
+    },
+    getProfileDir() {
+      return '/tmp/codex/42';
+    },
+    getToolConfigDir() {
+      return '/tmp/codex/42/.codex';
+    },
+    getAuthJobManager() {
+      return {
+        startOauthJob(provider, authMode, options) {
+          startedCalls.push({ provider, authMode, options });
+          return {
+            jobId: 'job-42',
+            provider,
+            accountId: options.accountId,
+            expiresAt: null,
+            pollIntervalMs: 5000
+          };
+        }
+      };
+    },
+    deps: {},
+    state: {},
+    writeJson(response, code, payload) {
+      response.statusCode = code;
+      response.end(JSON.stringify(payload));
+    }
+  });
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 200);
+  const body = JSON.parse(res.body);
+  assert.equal(body.ok, true);
+  assert.equal(body.provider, 'codex');
+  assert.equal(body.accountId, '42');
+  assert.equal(body.authMode, 'oauth-device');
+  assert.equal(body.jobId, 'job-42');
+  assert.deepEqual(startedCalls, [
+    {
+      provider: 'codex',
+      authMode: 'oauth-device',
+      options: { accountId: '42' }
+    }
+  ]);
+  assert.deepEqual(upserts, [
+    {
+      provider: 'codex',
+      accountId: '42',
+      state: {
+        configured: false,
+        apiKeyMode: false,
+        authMode: 'oauth-device',
+        displayName: 'codex-user'
+      }
+    }
+  ]);
+});
+
+test('web ui reauth rejects api key accounts', async () => {
+  const res = createResCapture();
+  let startCalled = false;
+
+  const handled = await handleReauthAccountRequest({
+    pathname: '/v0/webui/accounts/claude/7/reauth',
+    req: { headers: {} },
+    res,
+    fs: {
+      existsSync(filePath) {
+        return String(filePath) === '/tmp/claude/7';
+      },
+      readFileSync() {
+        throw new Error('unexpected_read');
+      }
+    },
+    accountStateIndex: {
+      getAccountState() {
+        return {
+          api_key_mode: true,
+          display_name: 'claude-key'
+        };
+      }
+    },
+    getToolAccountIds() {
+      return ['7'];
+    },
+    getProfileDir() {
+      return '/tmp/claude/7';
+    },
+    getToolConfigDir() {
+      return '/tmp/claude/7/.claude';
+    },
+    getAuthJobManager() {
+      return {
+        startOauthJob() {
+          startCalled = true;
+          throw new Error('should_not_start');
+        }
+      };
+    },
+    deps: {},
+    state: {},
+    writeJson(response, code, payload) {
+      response.statusCode = code;
+      response.end(JSON.stringify(payload));
+    }
+  });
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 400);
+  const body = JSON.parse(res.body);
+  assert.equal(body.ok, false);
+  assert.equal(body.code, 'api_key_reauth_unsupported');
+  assert.equal(startCalled, false);
 });

@@ -156,6 +156,12 @@ test('createAuthJobManager allocates next account id and tracks oauth job progre
   assert.equal(typeof runningJob.expiresAt, 'number');
   assert.equal(runningJob.pollIntervalMs, 5000);
 
+  fs.writeFileSync(path.join(getToolConfigDir('codex', '3'), 'auth.json'), JSON.stringify({
+    tokens: {
+      access_token: 'new-access-token',
+      refresh_token: 'rt_new'
+    }
+  }));
   onExitHandler({ exitCode: 0 });
   await new Promise((resolve) => setImmediate(resolve));
 
@@ -371,6 +377,69 @@ test('createAuthJobManager preserves succeeded status after oauth artifact compl
 
   assert.equal(manager.getJob(started.jobId).status, 'succeeded');
   assert.equal(finishedJobs.length, 1);
+});
+
+test('createAuthJobManager reauth requires fresh oauth artifacts instead of reusing old codex auth file', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-oauth-codex-reauth-'));
+  const getProfileDir = (provider, accountId) => path.join(root, provider, String(accountId));
+  const getToolConfigDir = (provider, accountId) => path.join(getProfileDir(provider, accountId), `.${provider}`);
+  const configDir = getToolConfigDir('codex', '9');
+  fs.mkdirSync(configDir, { recursive: true });
+  const authPath = path.join(configDir, 'auth.json');
+  fs.writeFileSync(authPath, JSON.stringify({
+    tokens: {
+      access_token: 'old-access-token',
+      refresh_token: 'rt_old'
+    }
+  }));
+
+  let onExitHandler = null;
+  const manager = createAuthJobManager({
+    fs,
+    processObj: {
+      ...process,
+      cwd: () => root,
+      env: { ...process.env },
+      platform: process.platform,
+      kill() {
+        return;
+      }
+    },
+    ptyImpl: {
+      spawn() {
+        return {
+          pid: 2201,
+          onData() {},
+          onExit(handler) {
+            onExitHandler = handler;
+          },
+          kill() {}
+        };
+      }
+    },
+    resolveCliPathImpl: () => '/usr/local/bin/codex',
+    getToolAccountIds: () => ['9'],
+    getProfileDir,
+    getToolConfigDir
+  });
+
+  const started = manager.startOauthJob('codex', 'oauth-browser', { accountId: '9' });
+  assert.equal(manager.getJob(started.jobId).status, 'running');
+
+  onExitHandler({ exitCode: 0 });
+  const failedJob = manager.getJob(started.jobId);
+  assert.equal(failedJob.status, 'failed');
+  assert.match(String(failedJob.error || ''), /未检测到新的授权结果/);
+
+  const restarted = manager.startOauthJob('codex', 'oauth-browser', { accountId: '9' });
+  fs.writeFileSync(authPath, JSON.stringify({
+    tokens: {
+      access_token: 'new-access-token',
+      refresh_token: 'rt_new'
+    }
+  }));
+  const succeededJob = manager.getJob(restarted.jobId);
+  assert.equal(succeededJob.status, 'succeeded');
 });
 
 test('createAuthJobManager marks gemini oauth job succeeded when oauth_creds file appears', () => {

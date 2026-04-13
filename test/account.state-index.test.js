@@ -73,6 +73,63 @@ test('account state index stores and returns display name', () => {
   }
 });
 
+test('account state index stores and returns persisted runtime state', () => {
+  const root = mkTmpDir();
+  try {
+    const index = createAccountStateIndex({ aiHomeDir: root, fs });
+    index.upsertRuntimeState('codex', '1', {
+      authInvalidUntil: 123456,
+      lastFailureKind: 'auth_invalid',
+      lastFailureReason: 'upstream_401'
+    }, {
+      configured: true,
+      apiKeyMode: false,
+      displayName: 'user@example.com'
+    });
+    const row = index.getAccountState('codex', '1');
+    assert.deepEqual(row.runtime_state, {
+      authInvalidUntil: 123456,
+      lastFailureKind: 'auth_invalid',
+      lastFailureReason: 'upstream_401'
+    });
+    const listRow = index.listStates('codex')[0];
+    assert.deepEqual(listRow.runtimeState, {
+      authInvalidUntil: 123456,
+      lastFailureKind: 'auth_invalid',
+      lastFailureReason: 'upstream_401'
+    });
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('account state index upsertRuntimeState can clear persisted runtime state', () => {
+  const root = mkTmpDir();
+  try {
+    const index = createAccountStateIndex({ aiHomeDir: root, fs });
+    index.upsertRuntimeState('codex', '1', {
+      authInvalidUntil: 123456,
+      lastFailureKind: 'auth_invalid',
+      lastFailureReason: 'upstream_401'
+    }, {
+      configured: true,
+      apiKeyMode: false,
+      displayName: 'user@example.com'
+    });
+    index.upsertRuntimeState('codex', '1', null, {
+      configured: true,
+      apiKeyMode: false,
+      authMode: 'oauth-browser',
+      displayName: 'user@example.com'
+    });
+    const row = index.getAccountState('codex', '1');
+    assert.equal(row.runtime_state, null);
+    assert.equal(row.auth_mode, 'oauth-browser');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('account state index setExhausted does not create phantom rows', () => {
   const root = mkTmpDir();
   try {

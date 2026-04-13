@@ -35,7 +35,7 @@ export interface Account {
   configured: boolean;
   apiKeyMode: boolean;
   exhausted: boolean;
-  remainingPct: number;
+  remainingPct: number | null;
   updatedAt: number;
   planType: string; // free/plus/team/business/api-key/oauth
   email: string;
@@ -44,6 +44,8 @@ export interface Account {
   runtimeStatus?: string;
   runtimeUntil?: number;
   runtimeReason?: string;
+  usageStatus?: string;
+  usageReason?: string;
   usageSnapshot?: AccountUsageSnapshot | null;
 }
 

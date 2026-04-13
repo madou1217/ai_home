@@ -127,6 +127,58 @@ test('web ui archived sessions list persists archive write-through across fresh 
   }
 });
 
+test('web ui archived sessions list keeps codex archived projectPath metadata', async () => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-archived-project-path-'));
+  const hostHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-archived-project-path-host-'));
+  const originalRealHome = process.env.REAL_HOME;
+  process.env.REAL_HOME = hostHomeDir;
+
+  try {
+    const sessionId = 'abababab-abab-4aba-8aba-abababababab';
+    const projectPath = path.join(hostHomeDir, 'project-from-codex-app');
+    const archivedDir = path.join(hostHomeDir, '.codex', 'archived_sessions');
+    const archivedFile = path.join(archivedDir, `rollout-2026-04-13T10-00-00-${sessionId}.jsonl`);
+    fs.ensureDirSync(projectPath);
+    fs.ensureDirSync(archivedDir);
+    fs.writeFileSync(
+      archivedFile,
+      JSON.stringify({
+        timestamp: '2026-04-13T10:00:00.000Z',
+        type: 'session_meta',
+        payload: {
+          id: sessionId,
+          cwd: projectPath
+        }
+      }) + '\n',
+      'utf8'
+    );
+
+    const listRes = createResCapture();
+    const handled = await handleWebUIRequest({
+      method: 'GET',
+      pathname: '/v0/webui/sessions/archived',
+      url: new URL('http://localhost/v0/webui/sessions/archived?refresh=1'),
+      req: { headers: {} },
+      res: listRes,
+      options: {},
+      state: {},
+      deps: createBaseDeps(aiHomeDir)
+    });
+
+    assert.equal(handled, true);
+    assert.equal(listRes.statusCode, 200);
+    const body = JSON.parse(listRes.body);
+    const item = body.archived.find((entry) => entry.id === sessionId && entry.provider === 'codex');
+    assert.ok(item);
+    assert.equal(item.projectPath, projectPath);
+  } finally {
+    if (originalRealHome === undefined) delete process.env.REAL_HOME;
+    else process.env.REAL_HOME = originalRealHome;
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+    fs.rmSync(hostHomeDir, { recursive: true, force: true });
+  }
+});
+
 test('web ui archived sessions list reflects unarchive removal across fresh state', async () => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-unarchived-'));
   const hostHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-unarchived-host-'));

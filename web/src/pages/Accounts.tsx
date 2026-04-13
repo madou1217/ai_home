@@ -21,7 +21,8 @@ import {
   Typography,
   Grid,
   List,
-  Empty
+  Empty,
+  Tooltip
 } from 'antd';
 import type { MenuProps } from 'antd';
 import {
@@ -29,6 +30,7 @@ import {
   DeleteOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
+  CopyOutlined,
   ReloadOutlined,
   FilterOutlined,
   MoreOutlined,
@@ -101,14 +103,15 @@ const PROVIDER_AUTH_OPTIONS: Record<Provider, Array<{
   ]
 };
 
-const PROVIDER_CAPABILITY_HINTS: Record<Provider, string> = {
-  codex: 'Codex 当前已接通浏览器登录、设备码登录和 API Key。',
-  claude: 'Claude 当前仅支持 Claude 登录与 Anthropic API Key。',
-  gemini: 'Gemini 当前仅支持 Google 登录与 Gemini API Key。'
-};
-
 function getAccountPrimaryLabel(record: Pick<Account, 'email' | 'displayName' | 'provider' | 'accountId'>) {
   return record.email || record.displayName || `${record.provider}-${record.accountId}`;
+}
+
+function getAccountSecondaryLabel(record: Pick<Account, 'email' | 'displayName' | 'provider' | 'accountId'>) {
+  const primary = getAccountPrimaryLabel(record);
+  const secondary = String(record.displayName || '').trim();
+  if (!secondary || secondary === primary) return '';
+  return secondary;
 }
 
 function getAccountMetaLabel(record: Pick<Account, 'apiKeyMode' | 'planType'>) {
@@ -119,12 +122,111 @@ function getAccountKey(record: Pick<Account, 'provider' | 'accountId'>) {
   return `${record.provider}-${record.accountId}`;
 }
 
-function mergeAccountRecord(current: Account, incoming: Account): Account {
+function canCopyAccountEmail(record: Pick<Account, 'apiKeyMode' | 'email'>) {
+  return !record.apiKeyMode && Boolean(String(record.email || '').trim());
+}
+
+function hasBlockingRuntimeStatus(record: Pick<Account, 'runtimeStatus'>) {
+  const status = String(record.runtimeStatus || '').trim();
+  return Boolean(status && status !== 'healthy');
+}
+
+function canRefreshUsageAccount(record: Pick<Account, 'configured' | 'apiKeyMode' | 'runtimeStatus' | 'usageStatus'>) {
+  if (!record.configured || record.apiKeyMode) return false;
+  return hasBlockingRuntimeStatus(record) || Boolean(String(record.usageStatus || '').trim());
+}
+
+function isHealthyAccount(record: Pick<Account, 'configured' | 'exhausted' | 'runtimeStatus'>) {
+  return record.configured && !record.exhausted && !hasBlockingRuntimeStatus(record);
+}
+
+function isExhaustedAccount(record: Pick<Account, 'exhausted' | 'runtimeStatus'>) {
+  return Boolean(record.exhausted) && !hasBlockingRuntimeStatus(record);
+}
+
+function hasKnownUsageSnapshot(record: Pick<Account, 'provider' | 'usageSnapshot'>) {
+  const snapshot = record.usageSnapshot;
+  if (!snapshot) return false;
+  if (record.provider === 'codex' && snapshot.kind === 'codex_oauth_status') {
+    return (snapshot.entries || []).some((entry) => entry.remainingPct != null);
+  }
+  if (record.provider === 'gemini' && snapshot.kind === 'gemini_oauth_stats') {
+    return (snapshot.models || []).some((model) => model.remainingPct != null);
+  }
+  return false;
+}
+
+function hasKnownUsage(record: Pick<Account, 'apiKeyMode' | 'remainingPct' | 'provider' | 'usageSnapshot'>) {
+  if (record.apiKeyMode) return false;
+  if (record.remainingPct != null) return true;
+  return hasKnownUsageSnapshot(record);
+}
+
+function formatUsageStateReason(reason?: string) {
+  const text = String(reason || '').trim();
+  if (!text) return '';
+  if (text === 'provider_returned_no_numeric_usage') {
+    return '已拿到 usage 快照，但上游没有返回可计算的 remaining 数值。';
+  }
+  if (text === 'timeout') return '额度查询超时。';
+  if (text === 'probe_exception') return '额度查询过程中发生异常。';
+  if (text === 'probe_failed') return '额度查询失败。';
+  if (text === 'probe_not_ok') return '额度探测返回非成功结果。';
+  if (text === 'empty_parsed_snapshot') return '上游返回了响应，但没有解析出可用额度。';
+  if (text === 'direct_json_parse_failed') return '直连额度响应解析失败。';
+  if (text === 'direct_missing_rate_limits') return '直连额度响应里缺少 rate limits。';
+  if (text === 'direct_request_failed') return '直连额度请求失败。';
+  if (text.startsWith('direct_http_status_')) {
+    return `直连额度请求返回 ${text.replace('direct_http_status_', 'HTTP ')}。`;
+  }
+  if (text.startsWith('app_server_exit_')) {
+    return `Codex app-server 退出：${text.replace('app_server_exit_', '')}。`;
+  }
+  if (text.startsWith('spawn_error:')) {
+    return `额度探测进程启动失败：${text.replace('spawn_error:', '').trim()}`;
+  }
+  return text;
+}
+
+function renderUsageStateTag(record: Pick<Account, 'usageStatus' | 'usageReason'>) {
+  const status = String(record.usageStatus || '').trim();
+  if (!status) return null;
+  const reason = formatUsageStateReason(record.usageReason);
+  const meta = (
+    status === 'probe_failed' ? { color: 'error', label: '采集失败' }
+      : status === 'provider_unavailable' ? { color: 'warning', label: '上游未返回' }
+        : status === 'pending' ? { color: 'processing', label: '等待采集' }
+          : { color: 'default', label: '额度未知' }
+  );
+  const tag = <Tag color={meta.color}>{meta.label}</Tag>;
+  if (!reason) return tag;
+  return (
+    <Tooltip title={reason}>
+      {tag}
+    </Tooltip>
+  );
+}
+
+function mergeAccountRecord(
+  current: Account,
+  incoming: Account,
+  options: { preserveLiveFields?: boolean } = {}
+): Account {
   const fallbackDisplayName = `${incoming.provider}-${incoming.accountId}`;
   const merged: Account = {
     ...current,
     ...incoming
   };
+
+  if (merged.apiKeyMode) {
+    merged.runtimeStatus = undefined;
+    merged.runtimeUntil = undefined;
+    merged.runtimeReason = undefined;
+    merged.usageSnapshot = null;
+    merged.remainingPct = null as any;
+    merged.exhausted = false;
+    return merged;
+  }
 
   if (!merged.configured || merged.apiKeyMode) {
     return merged;
@@ -133,11 +235,31 @@ function mergeAccountRecord(current: Account, incoming: Account): Account {
   if (!incoming.email && current.email) {
     merged.email = current.email;
   }
-  if (!incoming.usageSnapshot && current.usageSnapshot) {
-    merged.usageSnapshot = current.usageSnapshot;
-  }
-  if ((incoming.remainingPct == null) && current.remainingPct != null) {
-    merged.remainingPct = current.remainingPct;
+  if (options.preserveLiveFields) {
+    if ((incoming.updatedAt == null || incoming.updatedAt <= 0) && current.updatedAt > 0) {
+      merged.updatedAt = current.updatedAt;
+    }
+    if (!incoming.usageSnapshot && current.usageSnapshot) {
+      merged.usageSnapshot = current.usageSnapshot;
+    }
+    if ((incoming.remainingPct == null) && current.remainingPct != null) {
+      merged.remainingPct = current.remainingPct;
+    }
+    if (incoming.runtimeStatus == null && current.runtimeStatus != null) {
+      merged.runtimeStatus = current.runtimeStatus;
+    }
+    if (incoming.runtimeUntil == null && current.runtimeUntil != null) {
+      merged.runtimeUntil = current.runtimeUntil;
+    }
+    if (incoming.runtimeReason == null && current.runtimeReason != null) {
+      merged.runtimeReason = current.runtimeReason;
+    }
+    if (incoming.usageStatus == null && current.usageStatus != null) {
+      merged.usageStatus = current.usageStatus;
+    }
+    if (incoming.usageReason == null && current.usageReason != null) {
+      merged.usageReason = current.usageReason;
+    }
   }
   if (
     (!incoming.planType || incoming.planType === 'oauth' || incoming.planType === 'pending')
@@ -150,15 +272,6 @@ function mergeAccountRecord(current: Account, incoming: Account): Account {
   if ((!incoming.displayName || incoming.displayName === fallbackDisplayName) && current.displayName) {
     merged.displayName = current.displayName;
   }
-  if (incoming.runtimeStatus == null && current.runtimeStatus != null) {
-    merged.runtimeStatus = current.runtimeStatus;
-  }
-  if (incoming.runtimeUntil == null && current.runtimeUntil != null) {
-    merged.runtimeUntil = current.runtimeUntil;
-  }
-  if (incoming.runtimeReason == null && current.runtimeReason != null) {
-    merged.runtimeReason = current.runtimeReason;
-  }
 
   return merged;
 }
@@ -170,6 +283,7 @@ const Accounts = () => {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [refreshingUsageAccountKeys, setRefreshingUsageAccountKeys] = useState<Record<string, boolean>>({});
   const [hydratingDetails, setHydratingDetails] = useState(false);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
@@ -177,6 +291,7 @@ const Accounts = () => {
   const [addJobId, setAddJobId] = useState<string | null>(null);
   const [addJob, setAddJob] = useState<AccountAddJob | null>(null);
   const [authProgressVisible, setAuthProgressVisible] = useState(false);
+  const [authFlowKind, setAuthFlowKind] = useState<'add' | 'reauth'>('add');
   const [form] = Form.useForm();
   const [activeProvider, setActiveProvider] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
@@ -189,9 +304,23 @@ const Accounts = () => {
   const selectedProvider = Form.useWatch('provider', form) as Provider | undefined;
   const selectedAuthMode = (Form.useWatch('authMode', form) as AccountAuthMode | undefined) || 'oauth-browser';
   const providerAuthOptions = selectedProvider ? PROVIDER_AUTH_OPTIONS[selectedProvider] : [];
-  const providerCapabilityHint = selectedProvider ? PROVIDER_CAPABILITY_HINTS[selectedProvider] : '';
 
-  const mergeAccounts = React.useCallback((current: Account[], incoming: Account[]) => {
+  const copyAccountEmail = React.useCallback(async (record: Pick<Account, 'apiKeyMode' | 'email'>) => {
+    const email = String(record.email || '').trim();
+    if (!canCopyAccountEmail(record) || !email) return;
+    try {
+      await navigator.clipboard.writeText(email);
+      message.success('账号已复制');
+    } catch (_error) {
+      message.error('复制失败');
+    }
+  }, []);
+
+  const mergeAccounts = React.useCallback((
+    current: Account[],
+    incoming: Account[],
+    options: { preserveLiveFields?: boolean } = {}
+  ) => {
     const currentMap = new Map<string, Account>(
       current.map((account) => [getAccountKey(account), account])
     );
@@ -199,7 +328,7 @@ const Accounts = () => {
     incoming.forEach((account) => {
       const key = getAccountKey(account);
       const previous = currentMap.get(key);
-      nextMap.set(key, previous ? mergeAccountRecord(previous, account) : account);
+      nextMap.set(key, previous ? mergeAccountRecord(previous, account, options) : account);
     });
     return Array.from(nextMap.values());
   }, []);
@@ -223,6 +352,7 @@ const Accounts = () => {
     }
     setAddJobId(null);
     setAddJob(null);
+    setAuthFlowKind('add');
     setAuthProgressVisible(false);
   }, []);
 
@@ -266,8 +396,10 @@ const Accounts = () => {
     else setLoading(true);
     try {
       const payload = await accountsAPI.list();
-      setAccounts((current) => mergeAccounts(current, payload.accounts));
-      setHydratingDetails(payload.hydrating);
+      setAccounts((current) => mergeAccounts(current, payload.accounts, {
+        preserveLiveFields: Boolean(payload.hydrating)
+      }));
+      setHydratingDetails(Boolean(payload.hydrating));
       setHasLoadedOnce(true);
     } catch (_error) {
       message.error('加载账号失败');
@@ -279,14 +411,14 @@ const Accounts = () => {
 
   useEffect(() => {
     loadAccounts();
-    const interval = setInterval(loadAccounts, 30000);
-    return () => clearInterval(interval);
   }, [loadAccounts]);
 
   useEffect(() => {
     const watcher = accountsAPI.watch({
       onSnapshot: ({ accounts: snapshotAccounts, hydrating }) => {
-        setAccounts((current) => mergeAccounts(current, snapshotAccounts));
+        setAccounts((current) => mergeAccounts(current, snapshotAccounts, {
+          preserveLiveFields: Boolean(hydrating)
+        }));
         setHydratingDetails(Boolean(hydrating));
         setHasLoadedOnce(true);
         setLoading(false);
@@ -327,7 +459,11 @@ const Accounts = () => {
         if (job.status === 'succeeded') {
           loadAccounts();
           setAddJobId(null);
-          message.success(`OAuth 账号 ${job.provider}-${job.accountId} 添加成功`);
+          message.success(
+            authFlowKind === 'reauth'
+              ? `账号 ${job.provider}-${job.accountId} 重新认证成功`
+              : `账号 ${job.provider}-${job.accountId} 授权完成`
+          );
           if (successAutoCloseTimerRef.current !== null) {
             window.clearTimeout(successAutoCloseTimerRef.current);
           }
@@ -350,7 +486,7 @@ const Accounts = () => {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [addJobId, closeAuthProgressPanel]);
+  }, [addJobId, authFlowKind, closeAuthProgressPanel]);
 
   useEffect(() => {
     if (!selectedProvider) return;
@@ -365,7 +501,9 @@ const Accounts = () => {
       if (!forceCancel) {
         Modal.confirm({
           title: '取消当前授权流程？',
-          content: `当前 ${addJob.provider}-${addJob.accountId} 仍在等待授权，取消后会释放占用并删除这次未完成的账号槽位。`,
+          content: authFlowKind === 'reauth'
+            ? `取消后会保留原账号 ${addJob.provider}-${addJob.accountId}，稍后可再次发起重新认证。`
+            : `取消后不会保留这次未完成的接入流程。`,
           okText: '取消授权',
           cancelText: '继续等待',
           okButtonProps: { danger: true },
@@ -389,6 +527,42 @@ const Accounts = () => {
     closeAuthProgressPanel();
   };
 
+  const openAuthProgressFromResult = React.useCallback((result: {
+    jobId?: string;
+    provider: Provider;
+    accountId: string;
+    authMode: AccountAuthMode;
+  }, flowKind: 'add' | 'reauth') => {
+    if (!result.jobId) return;
+    setAuthFlowKind(flowKind);
+    setAddJob({
+      id: result.jobId,
+      provider: result.provider,
+      accountId: result.accountId,
+      authMode: result.authMode,
+      status: 'running',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      exitCode: null,
+      logs: ''
+    });
+    setAddJobId(result.jobId);
+    setAuthProgressVisible(true);
+  }, []);
+
+  const openExistingAuthProgress = React.useCallback(async (
+    jobId: string,
+    fallbackMessage: string,
+    flowKind: 'add' | 'reauth'
+  ) => {
+    const job = await accountsAPI.getAddJob(jobId);
+    setAuthFlowKind(flowKind);
+    setAddJob(job);
+    setAddJobId(job.status === 'running' ? jobId : null);
+    setAuthProgressVisible(true);
+    message.warning(fallbackMessage);
+  }, []);
+
   const handleAdd = async (values: any) => {
     setSubmitting(true);
     const requestPayload = {
@@ -408,20 +582,8 @@ const Accounts = () => {
       form.resetFields();
 
       if (result.jobId) {
-        setAddJob({
-          id: result.jobId,
-          provider: result.provider,
-          accountId: result.accountId,
-          authMode: result.authMode,
-          status: 'running',
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-          exitCode: null,
-          logs: ''
-        });
-        setAddJobId(result.jobId);
-        setAuthProgressVisible(true);
-        message.info(`已创建 ${result.provider}-${result.accountId}，请完成授权`);
+        openAuthProgressFromResult(result, 'add');
+        message.info(`请完成 ${result.provider}-${result.accountId} 的授权`);
       } else {
         message.success('添加账号成功');
         loadAccounts();
@@ -438,30 +600,18 @@ const Accounts = () => {
           setModalVisible(false);
           form.resetFields();
           if (retry.jobId) {
-            setAddJob({
-              id: retry.jobId,
-              provider: retry.provider,
-              accountId: retry.accountId,
-              authMode: retry.authMode,
-              status: 'running',
-              createdAt: Date.now(),
-              updatedAt: Date.now(),
-              exitCode: null,
-              logs: ''
-            });
-            setAddJobId(retry.jobId);
-            setAuthProgressVisible(true);
+            openAuthProgressFromResult(retry, 'add');
           }
           message.warning('检测到上一次未完成授权，已自动替换旧作业并重新开始');
           return;
         } catch (_retryError) {
           try {
-            const job = await accountsAPI.getAddJob(existingJobId);
-            setAddJob(job);
-            setAddJobId(job.status === 'running' ? existingJobId : null);
-            setAuthProgressVisible(true);
             setModalVisible(false);
-            message.warning(`检测到 ${job.provider}-${job.accountId} 仍在授权中，已为你打开当前进度`);
+            await openExistingAuthProgress(
+              existingJobId,
+              '检测到当前仍有未完成授权，已为你打开当前进度',
+              'add'
+            );
             return;
           } catch (_innerError) {
             // fall through
@@ -471,6 +621,30 @@ const Accounts = () => {
       message.error(error?.response?.data?.message || '添加账号失败');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleReauth = async (record: Account) => {
+    try {
+      const result = await accountsAPI.reauth(record.provider, record.accountId);
+      openAuthProgressFromResult(result, 'reauth');
+      message.info(`请重新完成 ${getAccountPrimaryLabel(record)} 的授权`);
+    } catch (error: any) {
+      const code = error?.response?.data?.code;
+      const existingJobId = error?.response?.data?.jobId;
+      if (code === 'oauth_job_already_running' && existingJobId) {
+        try {
+          await openExistingAuthProgress(
+            existingJobId,
+            `检测到 ${getAccountPrimaryLabel(record)} 已有授权流程，已为你打开当前进度`,
+            'reauth'
+          );
+          return;
+        } catch (_innerError) {
+          // fall through
+        }
+      }
+      message.error(error?.response?.data?.message || '重新认证失败');
     }
   };
 
@@ -494,6 +668,26 @@ const Accounts = () => {
     }
   };
 
+  const handleRefreshUsage = async (record: Account) => {
+    const accountKey = getAccountKey(record);
+    setRefreshingUsageAccountKeys((current) => ({
+      ...current,
+      [accountKey]: true
+    }));
+    try {
+      const nextAccount = await accountsAPI.refreshUsage(record.provider, record.accountId);
+      setAccounts((current) => mergeSingleAccount(current, nextAccount));
+    } catch (error: any) {
+      message.error(error?.response?.data?.message || '刷新账号状态失败');
+    } finally {
+      setRefreshingUsageAccountKeys((current) => {
+        const next = { ...current };
+        delete next[accountKey];
+        return next;
+      });
+    }
+  };
+
   // 按 Provider 分组统计
   const providerStats = useMemo(() => {
     const stats: Record<string, { total: number; healthy: number; exhausted: number }> = {
@@ -508,12 +702,12 @@ const Accounts = () => {
       stats.all.total++;
       stats[provider].total++;
 
-      if (account.configured && !account.exhausted) {
+      if (isHealthyAccount(account)) {
         stats.all.healthy++;
         stats[provider].healthy++;
       }
 
-      if (account.exhausted) {
+      if (isExhaustedAccount(account)) {
         stats.all.exhausted++;
         stats[provider].exhausted++;
       }
@@ -533,9 +727,9 @@ const Accounts = () => {
 
     // 按状态过滤
     if (filterStatus === 'healthy') {
-      filtered = filtered.filter(a => a.configured && !a.exhausted);
+      filtered = filtered.filter((account) => isHealthyAccount(account));
     } else if (filterStatus === 'exhausted') {
-      filtered = filtered.filter(a => a.exhausted);
+      filtered = filtered.filter((account) => isExhaustedAccount(account));
     } else if (filterStatus === 'unconfigured') {
       filtered = filtered.filter(a => !a.configured);
     }
@@ -551,9 +745,28 @@ const Accounts = () => {
       width: 250,
       render: (_text: string, record: Account) => (
         <div>
-          <div style={{ fontWeight: 'bold', marginBottom: 4 }}>
-            {getAccountPrimaryLabel(record)}
+          <div className="account-email-row" style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+            <div style={{ fontWeight: 'bold', minWidth: 0, flex: 1 }}>
+              {getAccountPrimaryLabel(record)}
+            </div>
+            {canCopyAccountEmail(record) ? (
+              <Tooltip title="复制账号">
+                <Button
+                  className="account-email-copy-button"
+                  type="text"
+                  size="small"
+                  icon={<CopyOutlined />}
+                  style={{ color: '#bfbfbf' }}
+                  onClick={() => copyAccountEmail(record)}
+                />
+              </Tooltip>
+            ) : null}
           </div>
+          {getAccountSecondaryLabel(record) ? (
+            <div style={{ fontSize: 12, color: '#8c8c8c', marginBottom: 4 }}>
+              {getAccountSecondaryLabel(record)}
+            </div>
+          ) : null}
           <Space size="small" align="center">
             <ProviderIcon provider={record.provider} size={14} />
             <Tag color={
@@ -601,20 +814,48 @@ const Accounts = () => {
       title: '运行状态',
       dataIndex: 'exhausted',
       key: 'exhausted',
-      width: 140,
+      width: 190,
       render: (exhausted: boolean, record: Account) => {
+        const refreshable = canRefreshUsageAccount(record);
+        const refreshingUsage = Boolean(refreshingUsageAccountKeys[getAccountKey(record)]);
+        let content = null;
         if (!record.configured) return <Tag color="default">未配置</Tag>;
         const runtimeStatus = String(record.runtimeStatus || '').trim();
         if (runtimeStatus && runtimeStatus !== 'healthy') {
-          return <RuntimeStatusTag status={runtimeStatus} />;
+          content = (
+            <RuntimeStatusTag
+              status={runtimeStatus}
+              reason={record.runtimeReason}
+              until={record.runtimeUntil}
+            />
+          );
+        } else if (!record.apiKeyMode && !hasKnownUsage(record)) {
+          content = renderUsageStateTag(record) || <Tag color="warning">额度未知</Tag>;
+        } else {
+          content = (
+            <Tag
+              icon={exhausted ? <CloseCircleOutlined /> : <CheckCircleOutlined />}
+              color={exhausted ? 'error' : 'success'}
+            >
+              {exhausted ? '已耗尽' : '正常'}
+            </Tag>
+          );
         }
         return (
-          <Tag
-            icon={exhausted ? <CloseCircleOutlined /> : <CheckCircleOutlined />}
-            color={exhausted ? 'error' : 'success'}
-          >
-            {exhausted ? '已耗尽' : '正常'}
-          </Tag>
+          <Space size={6}>
+            {content}
+            {refreshable ? (
+              <Tooltip title="刷新当前账号状态">
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<ReloadOutlined />}
+                  loading={refreshingUsage}
+                  onClick={() => handleRefreshUsage(record)}
+                />
+              </Tooltip>
+            ) : null}
+          </Space>
         );
       }
     },
@@ -624,7 +865,9 @@ const Accounts = () => {
       key: 'remainingPct',
       width: 260,
       sorter: (a: Account, b: Account) => (a.remainingPct || 0) - (b.remainingPct || 0),
-      render: (_pct: number | null, record: Account) => <UsageSnapshotCell record={record} />
+      render: (_pct: number | null, record: Account) => (
+        <UsageSnapshotCell record={record} />
+      )
     },
     {
       title: '更新时间',
@@ -637,9 +880,7 @@ const Accounts = () => {
         return (
           <div>
             <div>{dayjs(timestamp).format('MM-DD HH:mm')}</div>
-            <div style={{ fontSize: '12px', color: '#999' }}>
-              {dayjs(timestamp).fromNow()}
-            </div>
+            <div style={{ fontSize: '12px', color: '#999' }}>{dayjs(timestamp).fromNow()}</div>
           </div>
         );
       }
@@ -650,14 +891,20 @@ const Accounts = () => {
       width: 120,
       fixed: 'right' as const,
       render: (_: any, record: Account) => {
-        const menuItems: MenuProps['items'] = [
-          {
-            key: 'delete',
-            label: '删除账号',
-            danger: true,
-            icon: <DeleteOutlined />
-          }
-        ];
+        const menuItems: MenuProps['items'] = [];
+        if (record.runtimeStatus === 'auth_invalid' && !record.apiKeyMode) {
+          menuItems.push({
+            key: 'reauth',
+            label: '重新认证',
+            icon: <SyncOutlined />
+          });
+        }
+        menuItems.push({
+          key: 'delete',
+          label: '删除账号',
+          danger: true,
+          icon: <DeleteOutlined />
+        });
 
         return (
           <Space>
@@ -665,10 +912,14 @@ const Accounts = () => {
               menu={{
                 items: menuItems,
                 onClick: ({ key }) => {
+                  if (key === 'reauth') {
+                    handleReauth(record);
+                    return;
+                  }
                   if (key === 'delete') {
                     Modal.confirm({
                       title: '确认删除？',
-                      content: `删除后账号 ${record.displayName} 的所有数据都将被清除`,
+                      content: `将删除 ${getAccountPrimaryLabel(record)}`,
                       okText: '确认',
                       cancelText: '取消',
                       okButtonProps: { danger: true },
@@ -719,14 +970,10 @@ const Accounts = () => {
   ];
 
   const mobileAccounts = useMemo(() => {
-    const healthyConfigured = accounts.filter((account) =>
-      account.configured
-      && !account.exhausted
-      && (!account.runtimeStatus || account.runtimeStatus === 'healthy')
-    );
+    const healthyConfigured = accounts.filter((account) => isHealthyAccount(account));
     return healthyConfigured.length > 0
       ? healthyConfigured
-      : accounts.filter((account) => account.configured && !account.exhausted);
+      : accounts.filter((account) => account.configured && !hasBlockingRuntimeStatus(account) && !account.exhausted);
   }, [accounts]);
 
   if (isMobile) {
@@ -775,10 +1022,29 @@ const Accounts = () => {
                   <div style={{ width: '100%' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
                       <div style={{ minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                        <div className="account-email-row" style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
                           <ProviderIcon provider={record.provider} size={16} />
-                          <Text strong style={{ fontSize: 16, lineHeight: 1.45 }}>{getAccountPrimaryLabel(record)}</Text>
+                          <Text strong style={{ fontSize: 16, lineHeight: 1.45, flex: 1, minWidth: 0 }}>
+                            {getAccountPrimaryLabel(record)}
+                          </Text>
+                          {canCopyAccountEmail(record) ? (
+                            <Tooltip title="复制账号">
+                              <Button
+                                className="account-email-copy-button"
+                                type="text"
+                                size="small"
+                                icon={<CopyOutlined />}
+                                style={{ color: '#bfbfbf' }}
+                                onClick={() => copyAccountEmail(record)}
+                              />
+                            </Tooltip>
+                          ) : null}
                         </div>
+                        {getAccountSecondaryLabel(record) ? (
+                          <div style={{ fontSize: 12, color: '#8c8c8c', lineHeight: 1.5, marginBottom: 4 }}>
+                            {getAccountSecondaryLabel(record)}
+                          </div>
+                        ) : null}
                         <div style={{ fontSize: 13, color: '#8c8c8c', lineHeight: 1.6 }}>
                           {getAccountMetaLabel(record)}
                         </div>
@@ -787,7 +1053,20 @@ const Accounts = () => {
                         </div>
                       </div>
                       <div style={{ flexShrink: 0 }}>
-                        <RuntimeStatusTag status={record.runtimeStatus || 'healthy'} fallback="OK" />
+                        <Space size={6}>
+                          <RuntimeStatusTag status={record.runtimeStatus || 'healthy'} fallback="OK" />
+                          {canRefreshUsageAccount(record) ? (
+                            <Tooltip title="刷新当前账号状态">
+                              <Button
+                                type="text"
+                                size="small"
+                                icon={<ReloadOutlined />}
+                                loading={Boolean(refreshingUsageAccountKeys[getAccountKey(record)])}
+                                onClick={() => handleRefreshUsage(record)}
+                              />
+                            </Tooltip>
+                          ) : null}
+                        </Space>
                       </div>
                     </div>
                   </div>
@@ -1035,28 +1314,7 @@ const Accounts = () => {
             </Radio.Group>
           </Form.Item>
 
-          {providerCapabilityHint ? (
-            <Alert
-              type="info"
-              showIcon
-              message="当前可接入范围"
-              description={providerCapabilityHint}
-              style={{ marginBottom: 16 }}
-            />
-          ) : null}
-
-          {selectedAuthMode !== 'api-key' ? (
-            <Alert
-              type="info"
-              showIcon
-              message="系统会自动分配账号编号"
-              description={
-                selectedAuthMode === 'oauth-browser'
-                  ? '将直接启动 Provider 原生 OAuth 浏览器授权流程。'
-                  : '将启动更适合远程环境的设备码授权流程，你可以在下面的进度弹窗里看到验证码和链接。'
-              }
-            />
-          ) : (
+          {selectedAuthMode === 'api-key' ? (
             <>
               <Form.Item
                 name="apiKey"
@@ -1076,12 +1334,12 @@ const Accounts = () => {
                 </Form.Item>
               )}
             </>
-          )}
+          ) : null}
         </Form>
       </Modal>
 
       <Modal
-        title="OAuth 授权进度"
+        title="授权进度"
         open={authProgressVisible}
         footer={[
           <Button

@@ -294,6 +294,48 @@ test('readAllProjectsFromHost uses codex global state workspace roots to recover
   }
 });
 
+test('readAllProjectsFromHost includes codex workspace roots from global state even without session files', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-session-reader-codex-workspace-roots-'));
+  const originalRealHome = process.env.REAL_HOME;
+  process.env.REAL_HOME = root;
+
+  try {
+    const projectA = path.join(root, 'workspace-a');
+    const projectB = path.join(root, 'workspace-b');
+    fs.ensureDirSync(projectA);
+    fs.ensureDirSync(projectB);
+    fs.ensureDirSync(path.join(root, '.codex'));
+    fs.writeFileSync(
+      path.join(root, '.codex', 'config.toml'),
+      `[projects."${projectA}"]\ntrust_level = "trusted"\n`,
+      'utf8'
+    );
+    fs.writeFileSync(
+      path.join(root, '.codex', '.codex-global-state.json'),
+      JSON.stringify({
+        'project-order': [projectB],
+        'active-workspace-roots': [projectA]
+      }),
+      'utf8'
+    );
+
+    const projects = sessionReader.readAllProjectsFromHost();
+    const paths = projects
+      .filter((item) => item.provider === 'codex')
+      .map((item) => item.path);
+
+    assert.equal(paths.includes(projectA), true);
+    assert.equal(paths.includes(projectB), true);
+    const project = projects.find((item) => item.path === projectB);
+    assert.ok(project);
+    assert.deepEqual(project.sessions, []);
+  } finally {
+    if (originalRealHome === undefined) delete process.env.REAL_HOME;
+    else process.env.REAL_HOME = originalRealHome;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('readSessionMessages strips codex exec_command noise and keeps only real output text', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-session-reader-codex-output-'));
   const originalRealHome = process.env.REAL_HOME;

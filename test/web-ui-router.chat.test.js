@@ -10,6 +10,14 @@ const nativeSessionChat = require('../lib/server/native-session-chat');
 const nativeSlashCommands = require('../lib/server/native-slash-commands');
 const httpUtils = require('../lib/server/http-utils');
 const sessionReader = require('../lib/sessions/session-reader');
+const originalRealHome = process.env.REAL_HOME;
+const sandboxRealHome = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-chat-real-home-'));
+process.env.REAL_HOME = sandboxRealHome;
+test.after(() => {
+  if (originalRealHome === undefined) delete process.env.REAL_HOME;
+  else process.env.REAL_HOME = originalRealHome;
+  fs.rmSync(sandboxRealHome, { recursive: true, force: true });
+});
 
 function createStreamResCapture() {
   return {
@@ -361,6 +369,7 @@ test('web ui chat run input writes to active native stream', async () => {
         options: { appendNewline: true }
       }
     ]);
+    streamReq.emit('close');
   } finally {
     nativeSessionChat.spawnNativeSessionStream = originalSpawn;
   }
@@ -438,6 +447,7 @@ test('web ui chat run input preserves raw terminal keys like space and enter', a
       { input: ' ', options: { appendNewline: false } },
       { input: '\r', options: { appendNewline: false } }
     ]);
+    streamReq.emit('close');
   } finally {
     nativeSessionChat.spawnNativeSessionStream = originalSpawn;
   }
@@ -508,6 +518,7 @@ test('web ui chat run resize updates active native stream pty size', async () =>
     assert.equal(resizeHandled, true);
     assert.equal(resizeRes.statusCode, 200);
     assert.deepEqual(resizeCalls, [{ cols: 120, rows: 32 }]);
+    streamReq.emit('close');
   } finally {
     nativeSessionChat.spawnNativeSessionStream = originalSpawn;
   }
@@ -1348,6 +1359,7 @@ test('web ui chat routes codex api key sessions through api proxy stream instead
     assert.match(res.body, /"type":"ready","mode":"api-proxy"/);
     assert.match(res.body, /"type":"delta","delta":"图片"/);
     assert.match(res.body, /"type":"done","mode":"api-proxy","content":"图片已收到"/);
+    req.emit('close');
   } finally {
     httpUtils.fetchWithTimeout = originalFetchWithTimeout;
     nativeSessionChat.spawnNativeSessionStream = originalSpawn;
@@ -1375,6 +1387,8 @@ test('web ui chat emits thinking events for codex reasoning deltas in api proxy 
 
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-chat-thinking-'));
   try {
+    const req = new EventEmitter();
+    req.headers = {};
     const profileDir = path.join(root, 'profiles', 'codex', '1');
     const configDir = path.join(profileDir, '.codex');
     fs.mkdirSync(configDir, { recursive: true });
@@ -1390,10 +1404,7 @@ test('web ui chat emits thinking events for codex reasoning deltas in api proxy 
       method: 'POST',
       pathname: '/v0/webui/chat',
       url: new URL('http://localhost/v0/webui/chat'),
-      req: {
-        headers: {},
-        on() {}
-      },
+      req,
       res,
       options: { port: 8317, clientKey: 'dummy' },
       state: {},
@@ -1415,6 +1426,7 @@ test('web ui chat emits thinking events for codex reasoning deltas in api proxy 
     assert.equal(handled, true);
     assert.match(res.body, /"type":"thinking","thinking":"先分析问题"/);
     assert.match(res.body, /"type":"delta","delta":"给出答案"/);
+    req.emit('close');
   } finally {
     httpUtils.fetchWithTimeout = originalFetchWithTimeout;
     fs.rmSync(root, { recursive: true, force: true });

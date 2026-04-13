@@ -31,6 +31,31 @@ body {
   min-height: unset !important;
 }
 
+.account-email-row .account-email-copy-button {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-2px);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.account-email-row:hover .account-email-copy-button,
+.account-email-row:focus-within .account-email-copy-button {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(0);
+}
+
+.account-email-copy-button.ant-btn {
+  min-width: 18px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+}
+
+.account-email-copy-button .anticon {
+  font-size: 11px;
+}
+
 @media (max-width: 768px) {
   .ant-drawer-body,
   .ant-modal-body,

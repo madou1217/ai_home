@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button, Progress } from 'antd';
+import { Button, Progress, Space, Spin } from 'antd';
 import type {
   AccountUsageSnapshot,
   CodexUsageEntry,
@@ -12,6 +12,7 @@ interface UsageRecordLike {
   provider?: string;
   remainingPct?: number | null;
   usageSnapshot?: AccountUsageSnapshot | null;
+  usageRefreshing?: boolean;
 }
 
 function formatUsagePercent(value: number | null) {
@@ -39,6 +40,11 @@ function orderCodexEntries(entries: CodexUsageEntry[]) {
     if (aWindow !== bWindow) return aWindow - bWindow;
     return String(a.window || '').localeCompare(String(b.window || ''));
   });
+}
+
+function isVisibleCodexWindow(entry: CodexUsageEntry) {
+  const label = String(entry.window || '').trim().toLowerCase();
+  return label === '5h' || label === '7days';
 }
 
 function orderGeminiModels(models: GeminiUsageModel[]) {
@@ -79,8 +85,17 @@ export default function UsageSnapshotCell({ record }: { record: UsageRecordLike 
   const snapshot = record.usageSnapshot;
 
   if (record.provider === 'codex' && snapshot?.kind === 'codex_oauth_status') {
-    const entries = orderCodexEntries((snapshot.entries || []).filter((entry) => entry.remainingPct != null));
-    if (entries.length === 0) return <>-</>;
+    const entries = orderCodexEntries(
+      (snapshot.entries || []).filter((entry) => entry.remainingPct != null && isVisibleCodexWindow(entry))
+    );
+    if (entries.length === 0) {
+      return record.usageRefreshing ? (
+        <Space size={6}>
+          <span>-</span>
+          <Spin size="small" />
+        </Space>
+      ) : <>-</>;
+    }
     const visibleEntries = expanded ? entries : entries.slice(0, 2);
     return (
       <div style={{ minWidth: 180 }}>
@@ -103,6 +118,12 @@ export default function UsageSnapshotCell({ record }: { record: UsageRecordLike 
           >
             {expanded ? '收起' : `展开 ${entries.length - 2} 项`}
           </Button>
+        ) : null}
+        {record.usageRefreshing ? (
+          <div style={{ marginTop: 4, color: '#8c8c8c', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Spin size="small" />
+            <span>刷新中</span>
+          </div>
         ) : null}
       </div>
     );
@@ -138,14 +159,29 @@ export default function UsageSnapshotCell({ record }: { record: UsageRecordLike 
     );
   }
 
-  if (record.remainingPct == null) return <>-</>;
+  if (record.remainingPct == null) {
+    return record.usageRefreshing ? (
+      <Space size={6}>
+        <span>-</span>
+        <Spin size="small" />
+      </Space>
+    ) : <>-</>;
+  }
   return (
-    <Progress
-      percent={Math.max(0, Math.min(100, Number(record.remainingPct || 0)))}
-      size="small"
-      strokeColor={getUsageBarColor(record.remainingPct)}
-      trailColor="#f0f0f0"
-      format={() => formatUsagePercent(record.remainingPct ?? null)}
-    />
+    <div>
+      <Progress
+        percent={Math.max(0, Math.min(100, Number(record.remainingPct || 0)))}
+        size="small"
+        strokeColor={getUsageBarColor(record.remainingPct)}
+        trailColor="#f0f0f0"
+        format={() => formatUsagePercent(record.remainingPct ?? null)}
+      />
+      {record.usageRefreshing ? (
+        <div style={{ marginTop: 4, color: '#8c8c8c', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Spin size="small" />
+          <span>刷新中</span>
+        </div>
+      ) : null}
+    </div>
   );
 }

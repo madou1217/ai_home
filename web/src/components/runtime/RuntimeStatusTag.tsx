@@ -1,4 +1,4 @@
-import { Tag } from 'antd';
+import { Tag, Tooltip } from 'antd';
 
 const RUNTIME_STATUS_META: Record<string, { color: string; label: string }> = {
   healthy: { color: 'success', label: '正常' },
@@ -36,14 +36,34 @@ export const formatRuntimeUntil = (value?: number) => {
 interface RuntimeStatusTagProps {
   status?: string;
   fallback?: string;
+  reason?: string;
+  until?: number;
 }
 
-const RuntimeStatusTag = ({ status, fallback }: RuntimeStatusTagProps) => {
+const RuntimeStatusTag = ({ status, fallback, reason, until }: RuntimeStatusTagProps) => {
   const meta = getRuntimeStatusMeta(status);
-  return (
+  const normalizedReason = String(reason || '').trim();
+  const normalizedUntil = Number(until || 0);
+  const tag = (
     <Tag color={meta.color}>
       {fallback || meta.label}
     </Tag>
+  );
+  if (!normalizedReason && !normalizedUntil) {
+    return tag;
+  }
+  return (
+    <Tooltip
+      title={(
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxWidth: 360 }}>
+          <div>{fallback || meta.label}</div>
+          {normalizedReason ? <div>错误信息: {normalizedReason}</div> : null}
+          {normalizedUntil ? <div>恢复时间: {formatRuntimeUntil(normalizedUntil)}</div> : null}
+        </div>
+      )}
+    >
+      {tag}
+    </Tooltip>
   );
 };
 

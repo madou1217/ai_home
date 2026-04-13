@@ -417,6 +417,56 @@ test('web ui projects does not let hidden paths suppress provider-discovered pro
   }
 });
 
+test('web ui projects includes codex app workspace roots even without session files', async () => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-projects-workspace-roots-'));
+  const hostHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-projects-workspace-host-'));
+  const originalRealHome = process.env.REAL_HOME;
+  process.env.REAL_HOME = hostHomeDir;
+
+  try {
+    const projectFromConfig = path.join(hostHomeDir, 'config-project');
+    const projectFromGlobalState = path.join(hostHomeDir, 'global-state-project');
+    fs.ensureDirSync(projectFromConfig);
+    fs.ensureDirSync(projectFromGlobalState);
+    fs.ensureDirSync(path.join(hostHomeDir, '.codex'));
+    fs.writeFileSync(
+      path.join(hostHomeDir, '.codex', 'config.toml'),
+      `[projects."${projectFromConfig}"]\ntrust_level = "trusted"\n`,
+      'utf8'
+    );
+    fs.writeFileSync(
+      path.join(hostHomeDir, '.codex', '.codex-global-state.json'),
+      JSON.stringify({
+        'project-order': [projectFromGlobalState]
+      }),
+      'utf8'
+    );
+
+    const res = createResCapture();
+    const handled = await handleWebUIRequest({
+      method: 'GET',
+      pathname: '/v0/webui/projects',
+      url: new URL('http://localhost/v0/webui/projects?refresh=1'),
+      req: { headers: {} },
+      res,
+      options: {},
+      state: {},
+      deps: createBaseDeps(aiHomeDir)
+    });
+
+    assert.equal(handled, true);
+    assert.equal(res.statusCode, 200);
+    const body = JSON.parse(res.body);
+    assert.equal(body.projects.some((item) => item.path === projectFromConfig), true);
+    assert.equal(body.projects.some((item) => item.path === projectFromGlobalState), true);
+  } finally {
+    if (originalRealHome === undefined) delete process.env.REAL_HOME;
+    else process.env.REAL_HOME = originalRealHome;
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+    fs.rmSync(hostHomeDir, { recursive: true, force: true });
+  }
+});
+
 test('web ui models uses cache until provider/account signature changes', async () => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-models-'));
 

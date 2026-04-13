@@ -51,6 +51,8 @@ const Dashboard = () => {
   const [accounts, setAccounts] = useState<ManagementAccount[]>([]);
   const [loading, setLoading] = useState(false);
   const [cooldownClearing, setCooldownClearing] = useState(false);
+  const [statusReceivedAt, setStatusReceivedAt] = useState(0);
+  const [uptimeTickMs, setUptimeTickMs] = useState(() => Date.now());
 
   const loadDashboard = async (options: { showLoading?: boolean; quietError?: boolean } = {}) => {
     const showLoading = Boolean(options.showLoading);
@@ -67,6 +69,7 @@ const Dashboard = () => {
       setStatus(nextStatus);
       setMetrics(nextMetrics);
       setAccounts(nextAccounts.accounts || []);
+      setStatusReceivedAt(Date.now());
     } catch (error: any) {
       if (!quietError) {
         message.error(error?.response?.data?.message || error?.message || '加载管理面板失败');
@@ -80,11 +83,38 @@ const Dashboard = () => {
 
   useEffect(() => {
     loadDashboard({ showLoading: true });
+  }, []);
+
+  useEffect(() => {
+    const watcher = managementAPI.watch({
+      onSnapshot: ({ status: nextStatus, metrics: nextMetrics, accounts: nextAccounts }) => {
+        setStatus(nextStatus);
+        setMetrics(nextMetrics);
+        setAccounts(nextAccounts || []);
+        setStatusReceivedAt(Date.now());
+        setLoading(false);
+      },
+      onError: () => {
+        setLoading(false);
+      }
+    });
+    return () => {
+      watcher.close();
+    };
+  }, []);
+
+  useEffect(() => {
     const timer = window.setInterval(() => {
-      loadDashboard({ quietError: true });
-    }, 15000);
+      setUptimeTickMs(Date.now());
+    }, 1000);
     return () => window.clearInterval(timer);
   }, []);
+
+  const displayedUptimeSec = useMemo(() => {
+    if (typeof status?.uptimeSec !== 'number') return null;
+    if (!statusReceivedAt) return status.uptimeSec;
+    return status.uptimeSec + Math.max(0, Math.floor((uptimeTickMs - statusReceivedAt) / 1000));
+  }, [status?.uptimeSec, statusReceivedAt, uptimeTickMs]);
 
   const handleClearCooldown = async () => {
     setCooldownClearing(true);
@@ -266,7 +296,7 @@ const Dashboard = () => {
               <Descriptions.Item label="总请求">{status?.totalRequests || 0}</Descriptions.Item>
               <Descriptions.Item label="超时率">{formatPercent(status?.timeoutRate)}</Descriptions.Item>
               <Descriptions.Item label="运行时长">
-                {typeof status?.uptimeSec === 'number' ? `${status.uptimeSec}s` : '-'}
+                {typeof displayedUptimeSec === 'number' ? `${displayedUptimeSec}s` : '-'}
               </Descriptions.Item>
             </Descriptions>
           </Card>
@@ -452,7 +482,13 @@ const Dashboard = () => {
               title: '运行状态',
               dataIndex: 'runtimeStatus',
               key: 'runtimeStatus',
-              render: (runtimeStatus: string) => <RuntimeStatusTag status={runtimeStatus} />
+              render: (runtimeStatus: string, record: ManagementAccount) => (
+                <RuntimeStatusTag
+                  status={runtimeStatus}
+                  reason={record.runtimeReason}
+                  until={record.runtimeUntil}
+                />
+              )
             },
             {
               title: '恢复时间',

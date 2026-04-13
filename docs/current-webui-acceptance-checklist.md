@@ -15,6 +15,7 @@
 - [x] AIH Codex provider 配置块生成已统一，修复了 `model_provider` 与 `[model_providers.aih]` 容易丢失的问题。
 - [x] 普通 API Key 模式不再无条件伪造 `http://127.0.0.1:8317/v1`，避免错误退化成伪 `aih` provider。
 - [x] `.codex-global-state.json` 已接入项目路径线索读取，Web 项目发现能力比之前更完整。
+- [x] Codex `config.toml` 与 `.codex-global-state.json` 里的 workspace roots 已并入 Web 项目列表，即使暂时没有新 session 文件也能显示项目。
 - [x] 仪表盘与账号管理页已接入统一的 usage remaining 数据来源。
 - [x] API Key 模式账号统一按无额度显示处理，不再伪造 remaining 数值。
 - [x] Codex 用量快照支持 `5h` 与 `7days` 窗口数据结构。
@@ -45,6 +46,7 @@
 - [x] 真实 Web 文本消息已验证会落到 `~/.codex/sessions/.../rollout-*.jsonl`，且 server 重启后仍能重新出现在项目列表。
 - [x] 真实 Web 图片消息已验证会落到 transcript 读取链路，`readSessionMessages` 能读到带 `images` 的 user message。
 - [x] Web 原生新建 Codex 会话完成后，会等待 transcript 可读再刷新项目快照，避免“完成事件早于持久化”导致的新会话丢失竞态。
+- [x] Codex 归档会话扫描已保留 `projectPath` 元数据，减少 App / Web 归档视图之间的项目来源信息丢失。
 - [x] 浏览器通知权限请求与完成通知逻辑已落地。
 - [x] Codex host 全局配置已写入 `codex_hooks = true`。
 - [x] Codex Stop hook 脚本已自动安装到宿主 `hooks`。

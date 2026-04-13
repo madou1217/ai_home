@@ -159,7 +159,7 @@ test('codex usage snapshot async uses direct HTTP rate-limits by default', async
   }
 });
 
-test('codex usage snapshot async skips refresh when remaining is 0 and reset is in the future', async () => {
+test('codex usage snapshot async keeps fresh depleted cache until it becomes stale', async () => {
   const root = mkTmpDir();
   try {
     const getProfileDir = (cliName, id) => path.join(root, 'profiles', cliName, String(id));
@@ -180,6 +180,72 @@ test('codex usage snapshot async skips refresh when remaining is 0 and reset is 
       fetchImpl: async () => {
         fetchCalls += 1;
         throw new Error('fetch should not be called');
+      },
+      processObj: {
+        execPath: process.execPath,
+        cwd: () => root,
+        env: {},
+        platform: process.platform
+      },
+      resolveCliPath: () => '/usr/bin/codex',
+      usageSnapshotSchemaVersion: 2,
+      usageRefreshStaleMs: 60 * 1000,
+      usageSourceGemini: 'gemini_refresh_user_quota',
+      usageSourceCodex: 'codex_app_server',
+      usageSourceClaudeOauth: 'claude_oauth_usage_api',
+      usageSourceClaudeAuthToken: 'claude_auth_token_usage_api',
+      getProfileDir,
+      getToolConfigDir,
+      writeUsageCache: () => {},
+      readUsageCache: () => null
+    });
+
+    const now = Date.now();
+    const cache = {
+      schemaVersion: 2,
+      kind: 'codex_oauth_status',
+      source: 'codex_app_server',
+      capturedAt: now - 10_000,
+      entries: [{
+        bucket: 'primary',
+        windowMinutes: 300,
+        window: '5h',
+        remainingPct: 0,
+        resetIn: '4h',
+        resetAtMs: now + 4 * 60 * 60 * 1000
+      }]
+    };
+
+    const snapshot = await usageSnapshotService.ensureUsageSnapshotAsync('codex', '11', cache);
+    assert.equal(snapshot, cache);
+    assert.equal(fetchCalls, 0);
+    assert.equal(spawnCalls, 0);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('codex usage snapshot async drops stale depleted cache when refresh can no longer confirm usage', async () => {
+  const root = mkTmpDir();
+  try {
+    const getProfileDir = (cliName, id) => path.join(root, 'profiles', cliName, String(id));
+    const getToolConfigDir = (cliName, id) => path.join(getProfileDir(cliName, id), `.${cliName}`);
+    const profileDir = getProfileDir('codex', '111');
+    fs.mkdirSync(profileDir, { recursive: true });
+
+    let fetchCalls = 0;
+    let spawnCalls = 0;
+    const usageSnapshotService = createUsageSnapshotService({
+      fs,
+      path,
+      spawnSync: () => ({ stdout: '', stderr: '' }),
+      spawn: () => {
+        spawnCalls += 1;
+        throw new Error('spawn should be attempted for stale depleted cache');
+      },
+      fetchImpl: async () => {
+        fetchCalls += 1;
+        return null;
       },
       processObj: {
         execPath: process.execPath,
@@ -216,10 +282,10 @@ test('codex usage snapshot async skips refresh when remaining is 0 and reset is 
       }]
     };
 
-    const snapshot = await usageSnapshotService.ensureUsageSnapshotAsync('codex', '11', cache);
-    assert.equal(snapshot, cache);
+    const snapshot = await usageSnapshotService.ensureUsageSnapshotAsync('codex', '111', cache);
+    assert.equal(snapshot, null);
     assert.equal(fetchCalls, 0);
-    assert.equal(spawnCalls, 0);
+    assert.equal(spawnCalls, 1);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

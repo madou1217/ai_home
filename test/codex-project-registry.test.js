@@ -72,3 +72,59 @@ test('ensureCodexHooksEnabled writes feature flag, hook script and hooks json', 
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('ensureCodexProjectRegistered ignores injected fs existence stubs for host config writes', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-codex-project-registry-hostfs-'));
+  const codexDir = path.join(root, '.codex');
+  const configPath = path.join(codexDir, 'config.toml');
+
+  try {
+    fs.mkdirSync(codexDir, { recursive: true });
+    fs.writeFileSync(configPath, 'model = "gpt-5.4"\nmodel_reasoning_effort = "high"\n', 'utf8');
+
+    const result = ensureCodexProjectRegistered('/Users/model/projects/feature/ai_home', {
+      fs: {
+        existsSync: () => false
+      },
+      hostHomeDir: root,
+      ensureDir: (dirPath) => fs.mkdirSync(dirPath, { recursive: true })
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.updated, true);
+    const content = fs.readFileSync(configPath, 'utf8');
+    assert.match(content, /^model = "gpt-5\.4"$/m);
+    assert.match(content, /^model_reasoning_effort = "high"$/m);
+    assert.match(content, /\[projects\."\/Users\/model\/projects\/feature\/ai_home"\]/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('ensureCodexHooksEnabled preserves existing host config when injected fs is stubbed', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-codex-hooks-hostfs-'));
+  const codexDir = path.join(root, '.codex');
+  const configPath = path.join(codexDir, 'config.toml');
+
+  try {
+    fs.mkdirSync(codexDir, { recursive: true });
+    fs.writeFileSync(configPath, 'model = "gpt-5.4"\nmodel_reasoning_effort = "high"\n', 'utf8');
+
+    const result = ensureCodexHooksEnabled({
+      fs: {
+        existsSync: () => false
+      },
+      hostHomeDir: root,
+      ensureDir: (dirPath) => fs.mkdirSync(dirPath, { recursive: true })
+    });
+
+    assert.equal(result.ok, true);
+    const content = fs.readFileSync(configPath, 'utf8');
+    assert.match(content, /^model = "gpt-5\.4"$/m);
+    assert.match(content, /^model_reasoning_effort = "high"$/m);
+    assert.match(content, /^\[features\]$/m);
+    assert.match(content, /^codex_hooks = true$/m);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

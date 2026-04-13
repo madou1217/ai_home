@@ -9,6 +9,7 @@ const { handleWebUIRequest } = require('../lib/server/web-ui-router');
 const nativeSessionChat = require('../lib/server/native-session-chat');
 const nativeSlashCommands = require('../lib/server/native-slash-commands');
 const httpUtils = require('../lib/server/http-utils');
+const sessionReader = require('../lib/sessions/session-reader');
 
 function createStreamResCapture() {
   return {
@@ -121,6 +122,58 @@ test('web ui chat streams native session resume as SSE events', async () => {
     assert.match(res.body, /"type":"done"/);
   } finally {
     nativeSessionChat.spawnNativeSessionStream = originalSpawn;
+  }
+});
+
+test('web ui projects watch emits aggregated running session keys without opening per-session client streams', async () => {
+  const originalReadAllProjectsFromHost = sessionReader.readAllProjectsFromHost;
+  const originalGetSessionFileCursor = sessionReader.getSessionFileCursor;
+  let cursor = 10;
+
+  sessionReader.readAllProjectsFromHost = () => [{
+    id: 'ai_home',
+    name: 'ai-home',
+    path: '/Users/model/projects/feature/ai_home',
+    provider: 'codex',
+    sessions: [{
+      id: 'session-1',
+      title: 'resume',
+      updatedAt: Date.now(),
+      projectDirName: 'ai_home'
+    }]
+  }];
+  sessionReader.getSessionFileCursor = () => cursor;
+
+  try {
+    const req = new EventEmitter();
+    req.headers = {};
+    const res = createStreamResCapture();
+
+    const handled = await handleWebUIRequest({
+      method: 'GET',
+      pathname: '/v0/webui/projects/watch',
+      url: new URL('http://localhost/v0/webui/projects/watch'),
+      req,
+      res,
+      options: {},
+      state: {},
+      deps: createBaseDeps()
+    });
+
+    assert.equal(handled, true);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.headers['Content-Type'], 'text/event-stream');
+    assert.match(res.body, /"type":"connected"/);
+
+    cursor = 11;
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    req.emit('close');
+
+    assert.match(res.body, /"type":"runtime"/);
+    assert.match(res.body, /"runningSessionKeys":\["codex:session-1:ai_home"\]/);
+  } finally {
+    sessionReader.readAllProjectsFromHost = originalReadAllProjectsFromHost;
+    sessionReader.getSessionFileCursor = originalGetSessionFileCursor;
   }
 });
 
@@ -894,6 +947,117 @@ test('web ui chat accepts built-in codex slash command', async () => {
     assert.match(res.body, /"type":"done"/);
   } finally {
     nativeSessionChat.spawnNativeSessionStream = originalSpawn;
+  }
+});
+
+test('web ui chat uses interactive codex resume input for existing native sessions', async () => {
+  const originalSpawn = nativeSessionChat.spawnNativeSessionStream;
+  let seenOptions = null;
+  nativeSessionChat.spawnNativeSessionStream = (options = {}) => {
+    seenOptions = { ...options };
+    return {
+      runId: 'native-run-codex-input',
+      abort() {},
+      done: Promise.resolve({ content: '已完成', sessionId: 'codex-session-id' })
+    };
+  };
+
+  try {
+    const req = new EventEmitter();
+    req.headers = {};
+    const res = createStreamResCapture();
+    const payload = {
+      provider: 'codex',
+      accountId: '1',
+      sessionId: 'codex-session-id',
+      projectPath: '/Users/model/projects/feature/ai_home',
+      prompt: '帮我检查这个文件',
+      stream: true,
+      messages: [{ role: 'user', content: '帮我检查这个文件' }]
+    };
+
+    const handled = await handleWebUIRequest({
+      method: 'POST',
+      pathname: '/v0/webui/chat',
+      url: new URL('http://localhost/v0/webui/chat'),
+      req,
+      res,
+      options: {},
+      state: {},
+      deps: {
+        ...createBaseDeps(),
+        readRequestBody: async () => Buffer.from(JSON.stringify(payload), 'utf8')
+      }
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    assert.equal(handled, true);
+    assert.equal(String(seenOptions && seenOptions.prompt || ''), '');
+    assert.equal(String(seenOptions && seenOptions.initialInput || ''), '帮我检查这个文件');
+    assert.equal(Boolean(seenOptions && seenOptions.interactiveCli), true);
+    assert.equal(Boolean(seenOptions && seenOptions.emitTerminalOutput), false);
+    assert.match(res.body, /"type":"ready"/);
+    assert.match(res.body, /"type":"done"/);
+  } finally {
+    nativeSessionChat.spawnNativeSessionStream = originalSpawn;
+  }
+});
+
+test('web ui chat registers codex project path into host config before native session start', async () => {
+  const originalSpawn = nativeSessionChat.spawnNativeSessionStream;
+  const hostHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-codex-host-'));
+  const originalRealHome = process.env.REAL_HOME;
+  process.env.REAL_HOME = hostHomeDir;
+
+  nativeSessionChat.spawnNativeSessionStream = () => ({
+    runId: 'native-run-codex-project-register',
+    abort() {},
+    done: Promise.resolve({ content: '已完成', sessionId: 'codex-session-id' })
+  });
+
+  try {
+    const req = new EventEmitter();
+    req.headers = {};
+    const res = createStreamResCapture();
+    const payload = {
+      provider: 'codex',
+      accountId: '1',
+      createSession: true,
+      projectPath: '/Users/model/projects/feature/ai_home',
+      prompt: '新建一个会话',
+      stream: true,
+      messages: [{ role: 'user', content: '新建一个会话' }]
+    };
+
+    const handled = await handleWebUIRequest({
+      method: 'POST',
+      pathname: '/v0/webui/chat',
+      url: new URL('http://localhost/v0/webui/chat'),
+      req,
+      res,
+      options: {},
+      state: {},
+      deps: {
+        ...createBaseDeps(),
+        readRequestBody: async () => Buffer.from(JSON.stringify(payload), 'utf8')
+      }
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    assert.equal(handled, true);
+    const hostConfigPath = path.join(hostHomeDir, '.codex', 'config.toml');
+    assert.equal(fs.existsSync(hostConfigPath), true);
+    assert.match(
+      fs.readFileSync(hostConfigPath, 'utf8'),
+      /\[projects\."\/Users\/model\/projects\/feature\/ai_home"\]\ntrust_level = "trusted"/
+    );
+  } finally {
+    nativeSessionChat.spawnNativeSessionStream = originalSpawn;
+    if (originalRealHome === undefined) delete process.env.REAL_HOME;
+    else process.env.REAL_HOME = originalRealHome;
+    fs.rmSync(hostHomeDir, { recursive: true, force: true });
   }
 });
 

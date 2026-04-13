@@ -141,6 +141,63 @@ test('readAllProjectsFromHost filters codex projects by config.toml registered p
   }
 });
 
+test('readAllProjectsFromHost falls back to first codex user message when session_index thread_name is missing', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-session-reader-codex-title-fallback-'));
+  const originalRealHome = process.env.REAL_HOME;
+  process.env.REAL_HOME = root;
+
+  try {
+    const projectPath = path.join(root, 'feature-project');
+    fs.ensureDirSync(projectPath);
+    fs.ensureDirSync(path.join(root, '.codex', 'sessions', '2026', '04', '12'));
+    fs.writeFileSync(
+      path.join(root, '.codex', 'config.toml'),
+      `[projects."${projectPath}"]\ntrust_level = "trusted"\n`,
+      'utf8'
+    );
+
+    const sessionId = '33333333-4444-4555-8666-777777777777';
+    fs.writeFileSync(
+      path.join(root, '.codex', 'session_index.jsonl'),
+      JSON.stringify({ id: sessionId, updated_at: '2026-04-12T10:00:00.000Z' }) + '\n',
+      'utf8'
+    );
+
+    const sessionFile = path.join(root, '.codex', 'sessions', '2026', '04', '12', `rollout-2026-04-12T10-00-00-${sessionId}.jsonl`);
+    fs.writeFileSync(
+      sessionFile,
+      [
+        JSON.stringify({
+          timestamp: '2026-04-12T10:00:00.000Z',
+          type: 'session_meta',
+          payload: { id: sessionId, cwd: projectPath }
+        }),
+        JSON.stringify({
+          timestamp: '2026-04-12T10:00:01.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'user',
+            content: [{ type: 'input_text', text: 'E2E transcript check: reply with exactly OK.' }]
+          }
+        })
+      ].join('\n') + '\n',
+      'utf8'
+    );
+
+    const projects = sessionReader.readAllProjectsFromHost();
+    const project = projects.find((item) => item.path === projectPath);
+    assert.ok(project);
+    assert.equal(project.sessions.length, 1);
+    assert.equal(project.sessions[0].id, sessionId);
+    assert.equal(project.sessions[0].title, 'E2E transcript check: reply with exactly OK.');
+  } finally {
+    if (originalRealHome === undefined) delete process.env.REAL_HOME;
+    else process.env.REAL_HOME = originalRealHome;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('readSessionMessages strips codex exec_command noise and keeps only real output text', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-session-reader-codex-output-'));
   const originalRealHome = process.env.REAL_HOME;
@@ -591,6 +648,54 @@ test('readSessionEvents requests snapshot fallback when codex cursor advances bu
     assert.ok(payload.cursor > 0);
     assert.deepEqual(payload.events, []);
     assert.equal(payload.requiresSnapshot, true);
+  } finally {
+    if (originalRealHome === undefined) delete process.env.REAL_HOME;
+    else process.env.REAL_HOME = originalRealHome;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('readSessionMessages renders codex update_plan tool calls as structured Task blocks', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-session-reader-codex-plan-'));
+  const originalRealHome = process.env.REAL_HOME;
+  process.env.REAL_HOME = root;
+
+  try {
+    const sessionId = '77777777-7777-4777-8777-777777777777';
+    const sessionDir = path.join(root, '.codex', 'sessions', '2026', '04', '12');
+    const sessionFile = path.join(sessionDir, `rollout-2026-04-12T15-00-00-${sessionId}.jsonl`);
+    fs.ensureDirSync(sessionDir);
+    fs.writeFileSync(
+      sessionFile,
+      [
+        JSON.stringify({
+          timestamp: '2026-04-12T15:00:00.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'function_call',
+            name: 'update_plan',
+            call_id: 'call_plan_1',
+            arguments: JSON.stringify({
+              explanation: '按顺序处理问题',
+              tasks: [
+                { step: '先定位问题', status: 'completed' },
+                { step: '补持久化修复', status: 'in_progress' },
+                { step: '验证并回归', status: 'pending' }
+              ]
+            })
+          }
+        })
+      ].join('\n') + '\n',
+      'utf8'
+    );
+
+    const messages = sessionReader.readSessionMessages('codex', { sessionId });
+    assert.equal(messages.length, 1);
+    assert.equal(messages[0].role, 'assistant');
+    assert.match(messages[0].content, /:::tool\{name="Task"\}/);
+    assert.match(messages[0].content, /按顺序处理问题/);
+    assert.match(messages[0].content, /先定位问题/);
+    assert.match(messages[0].content, /补持久化修复/);
   } finally {
     if (originalRealHome === undefined) delete process.env.REAL_HOME;
     else process.env.REAL_HOME = originalRealHome;

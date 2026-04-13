@@ -4,7 +4,8 @@ const assert = require('node:assert/strict');
 const {
   buildStartCommand,
   buildResumeCommand,
-  collectAssistantReply
+  collectAssistantReply,
+  parseNativeStreamEvent
 } = require('../lib/server/native-session-chat');
 
 test('buildResumeCommand builds gemini native resume invocation', () => {
@@ -215,4 +216,42 @@ test('collectAssistantReply extracts assistant additions after native resume com
     collectAssistantReply(beforeMessages, afterMessages),
     'new-assistant-1\n\nnew-assistant-2'
   );
+});
+
+test('parseNativeStreamEvent emits codex session-created from session_meta payload id', () => {
+  const state = { content: '', sessionId: '' };
+  const event = parseNativeStreamEvent(
+    'codex',
+    JSON.stringify({
+      type: 'session_meta',
+      payload: {
+        id: '019d7bae-4dd5-73f2-b2bd-8125899885cb'
+      }
+    }),
+    state
+  );
+
+  assert.deepEqual(event, {
+    type: 'session-created',
+    sessionId: '019d7bae-4dd5-73f2-b2bd-8125899885cb'
+  });
+  assert.equal(state.sessionId, '019d7bae-4dd5-73f2-b2bd-8125899885cb');
+});
+
+test('parseNativeStreamEvent still supports legacy codex thread.started session ids', () => {
+  const state = { content: '', sessionId: '' };
+  const event = parseNativeStreamEvent(
+    'codex',
+    JSON.stringify({
+      type: 'thread.started',
+      thread_id: 'legacy-thread-id'
+    }),
+    state
+  );
+
+  assert.deepEqual(event, {
+    type: 'session-created',
+    sessionId: 'legacy-thread-id'
+  });
+  assert.equal(state.sessionId, 'legacy-thread-id');
 });

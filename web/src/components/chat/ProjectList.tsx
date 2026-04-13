@@ -5,6 +5,7 @@ import type { AggregatedProject, Session } from '@/types';
 import { sessionsAPI } from '@/services/api';
 import ProviderIcon from './ProviderIcon';
 import ArchivedDrawer from './ArchivedDrawer';
+import { isSessionRunning, getRunningProviders, getVisibleProjectSessions, getProjectProviderBadges } from './project-runtime-state.js';
 import folderIcon from '@/assets/icons/folder.svg';
 import expandIcon from '@/assets/icons/expand.svg';
 import dayjs from 'dayjs';
@@ -14,6 +15,7 @@ interface Props {
   mobile?: boolean;
   projects: AggregatedProject[];
   loading: boolean;
+  runningSessionKeys?: Set<string>;
   selectedSession: Session | null;
   selectedProject: AggregatedProject | null;
   expandedProjects: Set<string>;
@@ -28,7 +30,7 @@ interface Props {
 
 const ProjectList = ({
   mobile = false,
-  projects, loading, selectedSession, selectedProject,
+  projects, loading, runningSessionKeys = new Set(), selectedSession, selectedProject,
   expandedProjects, onRefresh, onToggleProject, onSelectProject, onSelectSession, onOpenProject, onCreateSession,
   onProjectRemoved
 }: Props) => {
@@ -84,25 +86,25 @@ const ProjectList = ({
         />
       </div>
 
-      {loading ? (
-        <div style={{ padding: 24, textAlign: 'center' }}>
-          <Spin tip="加载中..." />
-        </div>
-      ) : projects.length === 0 ? (
-        <Empty description="暂无项目" style={{ marginTop: 24 }} />
-      ) : (
-        <div style={{ padding: '4px 0' }}>
-          {projects.map(project => {
+      <div className={styles.sidebarContent}>
+        {loading ? (
+          <div style={{ padding: 24, textAlign: 'center' }}>
+            <Spin tip="加载中..." />
+          </div>
+        ) : projects.length === 0 ? (
+          <Empty description="暂无项目" style={{ marginTop: 24 }} />
+        ) : (
+          <div style={{ padding: '4px 0' }}>
+            {projects.map(project => {
             const isExpanded = expandedProjects.has(project.id);
             const isHovered = hoveredProject === project.id;
             const isSessionsExpanded = expandedSessions.has(project.id);
             const collapsedLimit = 10;
             const expandedLimit = 15;
-            const maxShow = isSessionsExpanded ? expandedLimit : collapsedLimit;
-            const displaySessions = isExpanded
-              ? project.sessions.slice(0, maxShow)
-              : [];
+            const displaySessions = getVisibleProjectSessions(project.sessions, isExpanded, isSessionsExpanded, collapsedLimit, expandedLimit);
             const canExpandMore = project.sessions.length > collapsedLimit;
+            const runningProviders = getRunningProviders(project.sessions, runningSessionKeys);
+            const projectProviderBadges = getProjectProviderBadges(project.providers || [], runningProviders, isExpanded);
 
             return (
               <div key={project.id}>
@@ -132,9 +134,18 @@ const ProjectList = ({
                     <strong>{project.name}</strong>
                   </span>
                   {/* provider 小图标 */}
-                  <span style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
-                    {(project.providers || []).map(p => (
-                      <ProviderIcon key={p} provider={p} size={12} />
+                  <span className={styles.projectProviders}>
+                    {projectProviderBadges.map((badge) => (
+                      <span
+                        key={badge.provider}
+                        className={`${styles.projectProviderBadge} ${badge.spinning ? styles.projectProviderRunning : ''}`}
+                      >
+                        <ProviderIcon
+                          provider={badge.provider}
+                          size={12}
+                          className={badge.spinning ? styles.projectProviderRunning : undefined}
+                        />
+                      </span>
                     ))}
                   </span>
                   {mobile ? (
@@ -183,16 +194,24 @@ const ProjectList = ({
                     {displaySessions.length === 0 && (
                       <div className={styles.sessionMore}>暂无会话，点击上方 + 新建</div>
                     )}
-                    {displaySessions.map(session => (
+                    {displaySessions.map((session) => {
+                      const isRunning = isSessionRunning(session, runningSessionKeys);
+                      return (
                       <div
                         key={session.id}
                         className={`${styles.sessionItem} ${
                           selectedSession?.id === session.id ? styles.sessionItemActive : ''
-                        }`}
+                        } ${isRunning ? styles.sessionItemRunning : ''}`}
                         onClick={() => onSelectSession(session)}
                       >
                         <div className={styles.sessionHeader}>
-                          <ProviderIcon provider={session.provider} size={14} />
+                          <span className={styles.sessionProviderSlot}>
+                            <ProviderIcon
+                              provider={session.provider}
+                              size={14}
+                              className={isRunning ? styles.sessionProviderRunning : undefined}
+                            />
+                          </span>
                           <span className={styles.sessionTitle}>{session.title}</span>
                           {/* 归档按钮 - hover 显示 */}
                           {mobile ? (
@@ -233,10 +252,11 @@ const ProjectList = ({
                           )}
                         </div>
                         <span className={styles.sessionTime}>
-                          {dayjs(session.updatedAt).fromNow()}
+                          {isRunning ? '进行中' : dayjs(session.updatedAt).fromNow()}
                         </span>
                       </div>
-                    ))}
+                      );
+                    })}
                     {canExpandMore && !isSessionsExpanded && (
                       <div
                         className={styles.sessionMore}
@@ -267,9 +287,10 @@ const ProjectList = ({
                 )}
               </div>
             );
-          })}
-        </div>
-      )}
+            })}
+          </div>
+        )}
+      </div>
 
       {/* 归档入口 */}
       <div className={`${styles.archivedEntry} ${mobile ? styles.archivedEntryMobile : ''}`}>

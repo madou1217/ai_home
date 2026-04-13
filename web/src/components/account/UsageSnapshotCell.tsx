@@ -54,8 +54,8 @@ function UsageMetaLine({ label, value, resetIn }: { label: string; value: number
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
-        <span style={{ color: '#595959', fontSize: 12, whiteSpace: 'nowrap' }}>{label}</span>
-        <span style={{ textAlign: 'right', minWidth: 0, color: '#8c8c8c', fontSize: 11 }}>
+        <span style={{ color: '#595959', fontSize: 'clamp(12.5px, 3.2vw, 13.5px)', whiteSpace: 'nowrap' }}>{label}</span>
+        <span style={{ textAlign: 'right', minWidth: 0, color: '#8c8c8c', fontSize: 'clamp(11.5px, 3vw, 12.5px)' }}>
           {resetIn || ''}
         </span>
       </div>
@@ -98,7 +98,7 @@ export default function UsageSnapshotCell({ record }: { record: UsageRecordLike 
           <Button
             type="link"
             size="small"
-            style={{ padding: 0, height: 20, marginTop: 4 }}
+            style={{ padding: 0, height: 22, marginTop: 4, fontSize: 13 }}
             onClick={() => setExpanded((value) => !value)}
           >
             {expanded ? '收起' : `展开 ${entries.length - 2} 项`}
@@ -128,7 +128,7 @@ export default function UsageSnapshotCell({ record }: { record: UsageRecordLike 
           <Button
             type="link"
             size="small"
-            style={{ padding: 0, height: 20, marginTop: 4 }}
+            style={{ padding: 0, height: 22, marginTop: 4, fontSize: 13 }}
             onClick={() => setExpanded((value) => !value)}
           >
             {expanded ? '收起' : `展开 ${models.length - 2} 个模型`}

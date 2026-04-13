@@ -5,6 +5,17 @@ import copyIcon from '@/assets/icons/copy.svg';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { ChatMessage, Provider } from '@/types';
+import {
+  countChecklistProgress,
+  parseMessageBlocks,
+  parseStructuredChecklist,
+  type StructuredTaskItem
+} from './message-structure';
+import {
+  getRenderablePendingBlocks,
+  hasRenderablePendingBlocks
+} from './pending-message-presentation.js';
+import { normalizePendingStatusText } from './provider-pending-policy.js';
 import ProviderIcon from './ProviderIcon';
 import styles from './chat.module.css';
 import dayjs from 'dayjs';
@@ -14,12 +25,6 @@ interface Props {
   provider: Provider;
   mobile?: boolean;
 }
-
-type Block =
-  | { type: 'text'; value: string }
-  | { type: 'tool_use'; name: string; body: string; result?: string }
-  | { type: 'tool_group'; items: Array<{ name: string; body: string; result?: string }> }
-  | { type: 'thinking'; value: string };
 
 function basenameLike(filePath: string) {
   const text = String(filePath || '').trim();
@@ -149,125 +154,10 @@ function extractShellDurationLabel(rawResult: string) {
   return `${minutes}m ${remain}s`;
 }
 
-function mergeAdjacentToolBlocks(blocks: Block[]): Block[] {
-  const merged: Block[] = [];
-  let toolBuffer: Array<{ name: string; body: string; result?: string }> = [];
-
-  const flushTools = () => {
-    if (toolBuffer.length === 0) return;
-    if (toolBuffer.length === 1) {
-      merged.push({ type: 'tool_use', ...toolBuffer[0] });
-    } else {
-      merged.push({ type: 'tool_group', items: toolBuffer });
-    }
-    toolBuffer = [];
-  };
-
-  for (const block of blocks) {
-    if (block.type === 'tool_use') {
-      toolBuffer.push(block);
-      continue;
-    }
-    flushTools();
-    merged.push(block);
-  }
-  flushTools();
-  return merged;
-}
-
-/** 解析 :::tool{name="xxx"} 和 :::tool-result 格式 */
-function parseContent(content: string): Block[] {
-  const blocks: Block[] = [];
-  const lines = content.split('\n');
-  let i = 0;
-  let textBuf: string[] = [];
-
-  const flushText = () => {
-    const t = textBuf.join('\n').trim();
-    if (t) blocks.push({ type: 'text', value: t });
-    textBuf = [];
-  };
-
-  while (i < lines.length) {
-    const line = lines[i];
-    const toolMatch = line.match(/^:::tool\{name="([^"]+)"\}$/);
-    if (toolMatch) {
-      flushText();
-      const name = toolMatch[1];
-      const bodyLines: string[] = [];
-      i++;
-      while (i < lines.length && lines[i] !== ':::') { bodyLines.push(lines[i]); i++; }
-      i++; // skip :::
-
-      // 检查紧接着是否有 :::tool-result
-      let result: string | undefined;
-      // 跳过空行
-      while (i < lines.length && lines[i].trim() === '') i++;
-      if (i < lines.length && lines[i] === ':::tool-result') {
-        const resultLines: string[] = [];
-        i++;
-        while (i < lines.length && lines[i] !== ':::') { resultLines.push(lines[i]); i++; }
-        i++; // skip :::
-        result = resultLines.join('\n').trim();
-      }
-
-      blocks.push({ type: 'tool_use', name, body: bodyLines.join('\n').trim(), result });
-      continue;
-    }
-    // :::thinking
-    if (line === ':::thinking') {
-      flushText();
-      const thinkLines: string[] = [];
-      i++;
-      while (i < lines.length && lines[i] !== ':::') { thinkLines.push(lines[i]); i++; }
-      i++;
-      blocks.push({ type: 'thinking', value: thinkLines.join('\n').trim() });
-      continue;
-    }
-
-    // 兼容旧格式
-    const old = line.match(/^\[Tool: ([^\]]+)\]$/);
-    if (old) { flushText(); blocks.push({ type: 'tool_use', name: old[1], body: '' }); i++; continue; }
-    if (line === '[Tool Result]') { i++; continue; }
-    if (line === ':::tool-result') { i++; while (i < lines.length && lines[i] !== ':::') i++; i++; continue; }
-
-    // Codex 指令: ::git-stage{cwd="..."} ::git-commit{cwd="..."} ::archive{...}
-    const codexDirective = line.match(/^::([a-z-]+)\{(.+)\}$/);
-    if (codexDirective) {
-      flushText();
-      const cmd = codexDirective[1]; // git-stage, git-commit, git-push, etc.
-      const attrs = codexDirective[2]; // cwd="..." branch="..."
-      const cwdMatch = attrs.match(/cwd="([^"]+)"/);
-      const branchMatch = attrs.match(/branch="([^"]+)"/);
-      let body = cmd;
-      if (cwdMatch) body += '\n# cwd: ' + cwdMatch[1];
-      if (branchMatch) body += '\n# branch: ' + branchMatch[1];
-      blocks.push({ type: 'tool_use', name: 'Git', body });
-      i++;
-      continue;
-    }
-
-    textBuf.push(line);
-    i++;
-  }
-  flushText();
-  if (blocks.length === 0) blocks.push({ type: 'text', value: content });
-  return mergeAdjacentToolBlocks(blocks);
-}
-
 /** 判断是否为错误消息 */
 function isErrorMessage(c: string): boolean {
   const t = c.trim();
   return t.startsWith('API Error:') || t.startsWith('Error:') || (t.startsWith('{') && t.includes('"error"'));
-}
-
-/** 尝试解析 TodoWrite JSON */
-function parseTodos(body: string): Array<{ content: string; status: string }> | null {
-  try {
-    const arr = JSON.parse(body);
-    if (Array.isArray(arr) && arr.length > 0 && arr[0].content) return arr;
-  } catch { /* not json */ }
-  return null;
 }
 
 function parseAttachedImageBlock(content: string) {
@@ -333,13 +223,13 @@ const ImageGallery = ({ images }: { images: string[] }) => {
 };
 
 /** Thinking 折叠块 */
-const ThinkingBlock = ({ value }: { value: string }) => {
+const ThinkingBlock = ({ value, mobile = false }: { value: string; mobile?: boolean }) => {
   const [expanded, setExpanded] = useState(false);
   const lastLine = value.split('\n').filter(l => l.trim()).pop() || '';
   return (
     <div className={styles.thinkingBlock} onClick={() => setExpanded(!expanded)}>
       <div className={styles.thinkingHeader}>
-        <span style={{ fontSize: 12 }}>{expanded ? '▼' : '▶'}</span>
+        <span style={{ fontSize: mobile ? 13 : 12 }}>{expanded ? '▼' : '▶'}</span>
         <span>Thinking</span>
         {!expanded && <span className={styles.thinkingPreview}>{lastLine.slice(0, 60)}</span>}
       </div>
@@ -364,10 +254,10 @@ const toolIcons: Record<string, string> = {
 };
 
 /** TodoWrite 渲染 */
-const TodoList = ({ items }: { items: Array<{ content: string; status: string }> }) => (
+const TodoList = ({ items, mobile = false }: { items: StructuredTaskItem[]; mobile?: boolean }) => (
   <div className={styles.toolBody}>
     {items.map((item, i) => (
-      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '2px 0', fontSize: 13 }}>
+      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '2px 0', fontSize: mobile ? 14 : 13 }}>
         <input type="checkbox" checked={item.status === 'completed'} readOnly
           style={{ accentColor: item.status === 'in_progress' ? '#faad14' : undefined }} />
         <span style={{
@@ -379,22 +269,78 @@ const TodoList = ({ items }: { items: Array<{ content: string; status: string }>
   </div>
 );
 
+const PlanList = ({
+  explanation,
+  items,
+  result,
+  mobile = false
+}: {
+  explanation: string;
+  items: StructuredTaskItem[];
+  result?: string;
+  mobile?: boolean;
+}) => {
+  const { completedCount } = countChecklistProgress(items);
+  return (
+    <>
+      <div className={styles.toolBody}>
+        <div style={{ fontSize: mobile ? 13 : 12, color: '#6b7280', marginBottom: 8 }}>
+          {`共 ${items.length} 个任务，已经完成 ${completedCount} 个`}
+        </div>
+        {explanation ? (
+          <div style={{ fontSize: mobile ? 13 : 12, color: '#4b5563', marginBottom: 10, whiteSpace: 'pre-wrap', lineHeight: 1.65 }}>
+            {explanation}
+          </div>
+        ) : null}
+        {items.map((item, i) => (
+          <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '3px 0', fontSize: mobile ? 14 : 13 }}>
+            <input
+              type="checkbox"
+              checked={item.status === 'completed'}
+              readOnly
+              style={{ marginTop: 2, accentColor: item.status === 'in_progress' ? '#faad14' : undefined }}
+            />
+            <span style={{
+              textDecoration: item.status === 'completed' ? 'line-through' : 'none',
+              color: item.status === 'completed' ? '#999' : item.status === 'in_progress' ? '#1890ff' : '#333',
+              lineHeight: 1.5
+            }}>
+              {`${i + 1}. ${item.content}`}
+            </span>
+          </div>
+        ))}
+      </div>
+      {result ? (
+        <div className={styles.toolBody} style={{ borderTop: '1px solid #e8e8e8', fontSize: mobile ? 13 : 12, color: '#6b7280' }}>
+          <div style={{ whiteSpace: 'pre-wrap' }}>{result}</div>
+        </div>
+      ) : null}
+    </>
+  );
+};
+
 /** Tool 块渲染（含 result） */
-const ToolBlock = ({ name, body, result }: { name: string; body: string; result?: string }) => {
+const ToolBlock = ({ name, body, result, mobile = false }: { name: string; body: string; result?: string; mobile?: boolean }) => {
   const icon = toolIcons[name] || '🔧 ';
   const cleanedResult = name === 'Terminal' ? cleanTerminalResultText(result || '') : (result || '');
+  const checklist = parseStructuredChecklist(name, body, cleanedResult);
 
-  // TodoWrite 特殊渲染
-  if (name === 'TodoWrite') {
-    const todos = parseTodos(body);
-    if (todos) {
-      return (
-        <div className={styles.toolBlock}>
-          <div className={styles.toolHeader}>{icon}Todo</div>
-          <TodoList items={todos} />
-        </div>
-      );
-    }
+  if (checklist?.kind === 'todo') {
+    return (
+      <div className={styles.toolBlock}>
+        <div className={styles.toolHeader}>{icon}Todo</div>
+        <TodoList items={checklist.items} mobile={mobile} />
+      </div>
+    );
+  }
+
+  if (checklist?.kind === 'plan') {
+    return (
+      <div className={styles.toolBlock}>
+        <div className={styles.toolHeader}>{icon}Plan</div>
+        <PlanList explanation={checklist.explanation} items={checklist.items} result={cleanedResult} mobile={mobile} />
+      </div>
+    );
   }
 
   // Bash/Terminal/Git 渲染为代码块 + 输出
@@ -406,10 +352,10 @@ const ToolBlock = ({ name, body, result }: { name: string; body: string; result?
   return (
     <div className={styles.toolBlock}>
       <div className={styles.toolHeader}>{icon}{name}</div>
-      {body && <div className={styles.toolBody}><code style={{ fontSize: 12, wordBreak: 'break-all' }}>{body}</code></div>}
+      {body && <div className={styles.toolBody}><code style={{ fontSize: mobile ? 13 : 12, wordBreak: 'break-all' }}>{body}</code></div>}
       {cleanedResult && (
         <div className={styles.toolBody} style={{ borderTop: '1px solid #e8e8e8' }}>
-          <pre style={{ margin: 0, fontSize: 11, color: '#666', whiteSpace: 'pre-wrap', maxHeight: 150, overflow: 'auto' }}>{cleanedResult}</pre>
+          <pre style={{ margin: 0, fontSize: mobile ? 13 : 11, color: '#666', whiteSpace: 'pre-wrap', maxHeight: 150, overflow: 'auto' }}>{cleanedResult}</pre>
         </div>
       )}
     </div>
@@ -459,7 +405,7 @@ const ShellToolBlock = ({
   );
 };
 
-const ToolGroupBlock = ({ items }: { items: Array<{ name: string; body: string; result?: string }> }) => {
+const ToolGroupBlock = ({ items, mobile = false }: { items: Array<{ name: string; body: string; result?: string }>; mobile?: boolean }) => {
   const [expanded, setExpanded] = useState(false);
   const summary = getToolGroupSummary(items);
 
@@ -478,7 +424,7 @@ const ToolGroupBlock = ({ items }: { items: Array<{ name: string; body: string; 
                 <div className={styles.toolGroupItemLabel}>{label}</div>
                 {item.result ? (
                   <div className={styles.toolGroupItemResult}>
-                    <pre>{item.result}</pre>
+                    <pre style={{ fontSize: mobile ? 13 : undefined }}>{item.result}</pre>
                   </div>
                 ) : null}
               </div>
@@ -514,14 +460,6 @@ const formatMessageTime = (timestamp?: string | number) => {
   return date.format('HH:mm');
 };
 
-const normalizePendingStatusText = (text: string, provider: Provider) => {
-  const raw = String(text || '').trim();
-  if (provider === 'codex') return '正在思考中';
-  if (!raw) return '正在思考中';
-  if (raw.includes('正在思考')) return '正在思考中';
-  return raw.replace(/\.{3,}$/g, '').trim();
-};
-
 const PendingStatusLine = ({ text }: { text: string }) => {
   const chars = Array.from(text || '');
   return (
@@ -542,6 +480,7 @@ const PendingStatusLine = ({ text }: { text: string }) => {
 
 const MessageBubble = ({ message, provider, mobile = false }: Props) => {
   const isUser = message.role === 'user';
+  const showAssistantAvatar = !mobile;
   const timeLabel = formatMessageTime(message.timestamp);
   const [metaVisible, setMetaVisible] = useState(false);
   const parsedAttachmentBlock = useMemo(() => parseAttachedImageBlock(message.content), [message.content]);
@@ -552,6 +491,7 @@ const MessageBubble = ({ message, provider, mobile = false }: Props) => {
   );
   const renderedImages = inlineImages.length > 0 ? inlineImages : persistedImages;
   const messageText = renderedImages.length > 0 ? parsedAttachmentBlock.text : message.content;
+  const blocks = useMemo(() => parseMessageBlocks(messageText || message.content), [messageText, message.content]);
   const metaRowClassName = `${styles.messageMetaRow} ${isUser ? styles.messageMetaRowUser : styles.messageMetaRowAssistant} ${metaVisible ? styles.messageMetaRowVisible : ''}`;
 
   const handleMessageTap = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -583,9 +523,11 @@ const MessageBubble = ({ message, provider, mobile = false }: Props) => {
   if (isErrorMessage(message.content)) {
     return (
       <div className={`${styles.messageRow} ${styles.messageRowAssistant}`}>
-        <Avatar size={32} className={styles.avatarAi} style={{ background: '#fff2f0', border: '1px solid #ffccc7' }}>
-          <WarningOutlined style={{ color: '#cf1322', fontSize: 16 }} />
-        </Avatar>
+        {showAssistantAvatar ? (
+          <Avatar size={32} className={styles.avatarAi} style={{ background: '#fff2f0', border: '1px solid #ffccc7' }}>
+            <WarningOutlined style={{ color: '#cf1322', fontSize: 16 }} />
+          </Avatar>
+        ) : null}
         <div className={styles.bubbleError}>{message.content}</div>
       </div>
     );
@@ -593,16 +535,32 @@ const MessageBubble = ({ message, provider, mobile = false }: Props) => {
 
   if (message.pending) {
     const pendingStatusText = normalizePendingStatusText(message.statusText || '正在思考中', provider);
+    const pendingDetailBlocks = getRenderablePendingBlocks(blocks);
+    const hasLiveDetail = hasRenderablePendingBlocks(blocks);
 
     return (
       <div className={`${styles.messageRow} ${styles.messageRowAssistant}`}>
-        <Avatar size={32} className={styles.avatarAi}>
-          <ProviderIcon provider={provider} size={18} />
-        </Avatar>
+        {showAssistantAvatar ? (
+          <Avatar size={32} className={styles.avatarAi}>
+            <ProviderIcon provider={provider} size={18} />
+          </Avatar>
+        ) : null}
         <div className={`${styles.messageWrapper} ${styles.messageWrapperAssistant}`} onClick={handleMessageTap}>
-          <div className={styles.pendingInline}>
-            <span className={styles.srOnly}>{pendingStatusText}</span>
-            <PendingStatusLine text={pendingStatusText} />
+          <div className={`${styles.bubbleAssistant} ${styles.bubbleAssistantPending} ${!hasLiveDetail ? styles.bubbleAssistantPendingCompact : ''}`}>
+            <div className={styles.pendingInline}>
+              <span className={styles.srOnly}>{pendingStatusText}</span>
+              <PendingStatusLine text={pendingStatusText} />
+            </div>
+            {hasLiveDetail ? (
+              <div className={styles.pendingDetailBody}>
+                {pendingDetailBlocks.map((block, idx) => {
+                  if (block.type === 'tool_use') return <ToolBlock key={idx} name={block.name} body={block.body} result={block.result} mobile={mobile} />;
+                  if (block.type === 'tool_group') return <ToolGroupBlock key={idx} items={block.items} mobile={mobile} />;
+                  if (!String(block.value || '').trim()) return null;
+                  return <ReactMarkdown key={idx} remarkPlugins={[remarkGfm]}>{block.value}</ReactMarkdown>;
+                })}
+              </div>
+            ) : null}
           </div>
           <div className={metaRowClassName}>
             <CopyButton text={message.content || ''} />
@@ -613,20 +571,20 @@ const MessageBubble = ({ message, provider, mobile = false }: Props) => {
     );
   }
 
-  const blocks = useMemo(() => parseContent(messageText || message.content), [messageText, message.content]);
-
   return (
     <div className={`${styles.messageRow} ${styles.messageRowAssistant}`}>
-      <Avatar size={32} className={styles.avatarAi}>
-        <ProviderIcon provider={provider} size={18} />
-      </Avatar>
+      {showAssistantAvatar ? (
+        <Avatar size={32} className={styles.avatarAi}>
+          <ProviderIcon provider={provider} size={18} />
+        </Avatar>
+      ) : null}
         <div className={`${styles.messageWrapper} ${styles.messageWrapperAssistant}`} onClick={handleMessageTap}>
           <div className={styles.bubbleAssistant}>
             <ImageGallery images={renderedImages} />
             {blocks.map((block, idx) => {
-              if (block.type === 'thinking') return <ThinkingBlock key={idx} value={block.value} />;
-              if (block.type === 'tool_use') return <ToolBlock key={idx} name={block.name} body={block.body} result={block.result} />;
-              if (block.type === 'tool_group') return <ToolGroupBlock key={idx} items={block.items} />;
+              if (block.type === 'thinking') return <ThinkingBlock key={idx} value={block.value} mobile={mobile} />;
+              if (block.type === 'tool_use') return <ToolBlock key={idx} name={block.name} body={block.body} result={block.result} mobile={mobile} />;
+              if (block.type === 'tool_group') return <ToolGroupBlock key={idx} items={block.items} mobile={mobile} />;
               return <ReactMarkdown key={idx} remarkPlugins={[remarkGfm]}>{block.value}</ReactMarkdown>;
             })}
           </div>

@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { EventEmitter } = require('node:events');
 const { handleWebUIRequest } = require('../lib/server/web-ui-router');
 
 function createResCapture() {
@@ -14,6 +15,92 @@ function createResCapture() {
     }
   };
 }
+
+function createStreamResCapture() {
+  return {
+    statusCode: 0,
+    headers: {},
+    body: '',
+    writableEnded: false,
+    writeHead(code, headers = {}) {
+      this.statusCode = code;
+      this.headers = { ...this.headers, ...headers };
+    },
+    write(chunk = '') {
+      this.body += String(chunk);
+      return true;
+    },
+    end(chunk = '') {
+      this.body += String(chunk);
+      this.writableEnded = true;
+    }
+  };
+}
+
+test('web ui accounts list returns fast snapshot without synchronously depending on checkStatus', async () => {
+  const res = createResCapture();
+  let checkStatusCalls = 0;
+  const handled = await handleWebUIRequest({
+    method: 'GET',
+    pathname: '/v0/webui/accounts',
+    url: new URL('http://localhost/v0/webui/accounts'),
+    req: { headers: {} },
+    res,
+    options: {},
+    state: {
+      accounts: { codex: [], gemini: [], claude: [] }
+    },
+    deps: {
+      fs: {
+        existsSync(filePath) {
+          return String(filePath).endsWith('/auth.json');
+        },
+        readFileSync() {
+          throw new Error('unexpected_sync_read');
+        }
+      },
+      writeJson: (response, code, payload) => {
+        response.statusCode = code;
+        response.end(JSON.stringify(payload));
+      },
+      readRequestBody: async () => null,
+      accountStateIndex: {
+        getAccountState() {
+          return {
+            configured: true,
+            api_key_mode: false,
+            exhausted: false,
+            remaining_pct: 61,
+            display_name: 'codex-1',
+            updated_at: 100
+          };
+        }
+      },
+      getToolAccountIds(provider) {
+        return provider === 'codex' ? ['1'] : [];
+      },
+      getToolConfigDir: () => '/tmp/codex/1/.codex',
+      getProfileDir: () => '/tmp/codex/1',
+      loadServerRuntimeAccounts: () => ({ codex: [], gemini: [], claude: [] }),
+      applyReloadState: () => {},
+      checkStatus() {
+        checkStatusCalls += 1;
+        throw new Error('check_status_should_not_block_fast_snapshot');
+      }
+    }
+  });
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 200);
+  const body = JSON.parse(res.body);
+  assert.equal(body.ok, true);
+  assert.equal(body.accounts.length, 1);
+  assert.equal(body.accounts[0].configured, true);
+  assert.equal(body.accounts[0].remainingPct, 61);
+  assert.equal(checkStatusCalls, 0);
+
+  await new Promise((resolve) => setTimeout(resolve, 20));
+});
 
 test('web ui accounts list uses live status instead of stale configured state index', async () => {
   const res = createResCapture();
@@ -382,4 +469,74 @@ test('web ui accounts list reads gemini usage snapshot models for account detail
   assert.equal(body.accounts[0].usageSnapshot.kind, 'gemini_oauth_stats');
   assert.equal(body.accounts[0].usageSnapshot.models.length, 2);
   assert.equal(body.accounts[0].usageSnapshot.models[0].model, 'gemini-2.5-pro');
+});
+
+test('web ui accounts watch streams snapshot immediately and completes hydration lifecycle', async () => {
+  const req = new EventEmitter();
+  req.headers = {};
+  const res = createStreamResCapture();
+  const handled = await handleWebUIRequest({
+    method: 'GET',
+    pathname: '/v0/webui/accounts/watch',
+    url: new URL('http://localhost/v0/webui/accounts/watch'),
+    req,
+    res,
+    options: {},
+    state: {
+      accounts: { codex: [], gemini: [], claude: [] }
+    },
+    deps: {
+      fs: {
+        existsSync(filePath) {
+          return String(filePath).endsWith('/auth.json');
+        },
+        readFileSync() {
+          return JSON.stringify({
+            tokens: {
+              id_token: 'header.eyJlbWFpbCI6Imh5ZHJhdGVkQGV4YW1wbGUuY29tIn0=.signature'
+            }
+          });
+        }
+      },
+      writeJson: (response, code, payload) => {
+        response.statusCode = code;
+        response.end(JSON.stringify(payload));
+      },
+      readRequestBody: async () => null,
+      accountStateIndex: {
+        getAccountState() {
+          return {
+            configured: true,
+            api_key_mode: false,
+            exhausted: false,
+            remaining_pct: 54,
+            display_name: 'stale@example.com',
+            updated_at: 555
+          };
+        }
+      },
+      getToolAccountIds(provider) {
+        return provider === 'codex' ? ['9'] : [];
+      },
+      getToolConfigDir: () => '/tmp/codex/9/.codex',
+      getProfileDir: () => '/tmp/codex/9',
+      loadServerRuntimeAccounts: () => ({ codex: [], gemini: [], claude: [] }),
+      applyReloadState: () => {},
+      checkStatus() {
+        return { configured: true, accountName: 'hydrated@example.com' };
+      }
+    }
+  });
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers['Content-Type'], 'text/event-stream');
+  assert.match(res.body, /"type":"connected"/);
+  assert.match(res.body, /"type":"snapshot"/);
+  assert.match(res.body, /hydrated@example.com/);
+
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  req.emit('close');
+
+  assert.match(res.body, /"type":"hydrated"/);
 });

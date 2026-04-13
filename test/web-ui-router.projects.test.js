@@ -89,6 +89,9 @@ test('web ui project picker returns chosen directory from host dialog', async ()
 test('web ui open project stores manual project and returns it in projects list', async () => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-projects-'));
   const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-opened-project-'));
+  const hostHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-opened-project-host-'));
+  const originalRealHome = process.env.REAL_HOME;
+  process.env.REAL_HOME = hostHomeDir;
 
   try {
     const openRes = createResCapture();
@@ -133,9 +136,16 @@ test('web ui open project stores manual project and returns it in projects list'
     assert.ok(project);
     assert.equal(project.name, '测试项目');
     assert.deepEqual(project.sessions, []);
+
+    const hostConfigPath = path.join(hostHomeDir, '.codex', 'config.toml');
+    assert.equal(fs.existsSync(hostConfigPath), true);
+    assert.match(fs.readFileSync(hostConfigPath, 'utf8'), new RegExp(`\\[projects\\."${projectDir.replace(/[.*+?^${}()|[\]\\\\]/g, '\\$&')}"\\]`));
   } finally {
+    if (originalRealHome === undefined) delete process.env.REAL_HOME;
+    else process.env.REAL_HOME = originalRealHome;
     fs.rmSync(aiHomeDir, { recursive: true, force: true });
     fs.rmSync(projectDir, { recursive: true, force: true });
+    fs.rmSync(hostHomeDir, { recursive: true, force: true });
   }
 });
 

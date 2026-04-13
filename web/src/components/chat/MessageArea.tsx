@@ -1,14 +1,43 @@
 import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
-import { Select, Empty, Button, Drawer } from 'antd';
-import { ArrowDownOutlined, PlusOutlined, CloseOutlined } from '@ant-design/icons';
-import type { ChatMessage, Account, Session, NativeSlashCommand } from '@/types';
+import { Select, Empty, Button, Drawer, Tooltip } from 'antd';
+import { ArrowDownOutlined, PlusOutlined, CloseOutlined, InfoCircleOutlined } from '@ant-design/icons';
+import type { ChatMessage, Account, Session, NativeSlashCommand, QueuedChatMessage } from '@/types';
 import { chatAPI, modelsAPI } from '@/services/api';
 import MessageBubble from './MessageBubble';
 import ProviderIcon from './ProviderIcon';
+import TaskDock from './TaskDock';
+import { findLatestActiveChecklist } from './message-structure';
+import { decorateMessagesWithPendingState } from './live-message-state.js';
+import { resolvePendingTailState } from './pending-tail-state.js';
+import { normalizePendingStatusText } from './provider-pending-policy.js';
+import {
+  getQueueModeDescription,
+  getQueueModeLabel,
+  getQueuePrimaryActionLabel,
+  getQueuePrimaryActionTitle
+} from './queue-presentation.js';
 import sendIcon from '@/assets/icons/send.svg';
 import disabledSendIcon from '@/assets/icons/disabled-send.svg';
 import stopIcon from '@/assets/icons/stop.svg';
 import styles from './chat.module.css';
+
+const PendingTailStatusLine = ({ text }: { text: string }) => {
+  const chars = Array.from(text || '');
+  return (
+    <div className={styles.pendingTailStatus} aria-live="polite" aria-label={text}>
+      {chars.map((char, index) => (
+        <span
+          key={`${char}-${index}`}
+          className={styles.pendingTailChar}
+          style={{ animationDelay: `${index * 0.08}s` }}
+          aria-hidden="true"
+        >
+          {char === ' ' ? '\u00A0' : char}
+        </span>
+      ))}
+    </div>
+  );
+};
 
 interface Props {
   mobile?: boolean;
@@ -19,6 +48,8 @@ interface Props {
   selectedModel: string;
   input: string;
   loading: boolean;
+  loadingStatusText?: string;
+  queuedMessages?: QueuedChatMessage[];
   externalPending?: boolean;
   externalPendingStatusText?: string;
   hasMoreHistory?: boolean;
@@ -27,6 +58,9 @@ interface Props {
   onInputChange: (val: string) => void;
   onSend: () => void;
   onStop: () => void;
+  onEditQueuedMessage?: (id: string) => void;
+  onRemoveQueuedMessage?: (id: string) => void;
+  onSendQueuedMessageNow?: (id: string) => void;
   onAccountChange: (account: Account) => void;
   onModelChange: (model: string) => void;
   onImagesChange?: (images: string[]) => void;
@@ -35,8 +69,8 @@ interface Props {
 const MessageArea = ({
   mobile = false,
   session, messages, accounts, selectedAccount, selectedModel,
-  input, loading, externalPending = false, externalPendingStatusText, hasMoreHistory, images = [], onLoadMore, onInputChange,
-  onSend, onStop, onAccountChange, onModelChange, onImagesChange
+  input, loading, loadingStatusText, queuedMessages = [], externalPending = false, externalPendingStatusText, hasMoreHistory, images = [], onLoadMore, onInputChange,
+  onSend, onStop, onEditQueuedMessage, onRemoveQueuedMessage, onSendQueuedMessageNow, onAccountChange, onModelChange, onImagesChange
 }: Props) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -176,14 +210,7 @@ const MessageArea = ({
   const mobileAccountSummary = selectedAccount
     ? `${selectedAccount.provider.toUpperCase()} #${formatLabel(selectedAccount)}`
     : '未选择账号';
-
-  if (!session) {
-    return (
-      <div className={styles.emptyCenter}>
-        <Empty description="选择一个会话开始对话" />
-      </div>
-    );
-  }
+  const sessionProvider = session?.provider || activeProvider || 'codex';
 
   const trimmedInput = input.trim();
   const slashToken = trimmedInput.startsWith('/')
@@ -207,7 +234,6 @@ const MessageArea = ({
       }) || null
     : null;
   const canSend = trimmedInput.length > 0
-    && !loading
     && !embeddedSlashMatch
     && (!slashToken || Boolean(matchedSlashCommand));
   // 按当前 provider 过滤模型
@@ -215,35 +241,62 @@ const MessageArea = ({
   const models = providerModels.map(m => ({ label: m, value: m }));
 
   const displayMessages = useMemo(() => {
-    const hasPendingAssistant = messages.some((msg) => msg.role === 'assistant' && msg.pending);
-    const shouldShowSyntheticPending = (loading || externalPending) && !hasPendingAssistant;
-    if (shouldShowSyntheticPending) {
+    const pendingState = decorateMessagesWithPendingState({
+      messages,
+      loading,
+      externalPending,
+      loadingStatusText,
+      externalPendingStatusText,
+      activeProvider,
+      pendingTimestamp: pendingVisualTsRef.current
+    });
+    if (pendingState.usedSyntheticPending) {
       pendingVisualTsRef.current = Date.now();
     }
-    return shouldShowSyntheticPending
-      ? [
-          ...messages,
-          {
-            role: 'assistant' as const,
-            content: '',
-            pending: true,
-            statusText: externalPendingStatusText || (activeProvider === 'codex' ? 'Codex 正在思考...' : '正在思考...'),
-            timestamp: pendingVisualTsRef.current
-          }
-        ]
-      : messages;
-  }, [activeProvider, externalPending, externalPendingStatusText, loading, messages]);
+    return pendingState.messages;
+  }, [activeProvider, externalPending, externalPendingStatusText, loading, loadingStatusText, messages]);
 
   const renderedMessageNodes = useMemo(() => (
     displayMessages.map((msg, i) => (
       <MessageBubble
         key={`${msg.role}-${i}-${msg.pending ? 'pending' : 'done'}`}
         message={msg}
-        provider={session.provider}
+        provider={sessionProvider}
         mobile={mobile}
       />
     ))
-  ), [displayMessages, mobile, session.provider]);
+  ), [displayMessages, mobile, sessionProvider]);
+
+  const activeChecklist = useMemo(
+    () => findLatestActiveChecklist(displayMessages),
+    [displayMessages]
+  );
+  const pendingTail = useMemo(() => {
+    const state = resolvePendingTailState({
+      messages: displayMessages,
+      loading,
+      externalPending,
+      loadingStatusText,
+      externalPendingStatusText,
+      activeProvider
+    });
+    return {
+      visible: state.visible,
+      statusText: normalizePendingStatusText(state.statusText, sessionProvider)
+    };
+  }, [
+    activeProvider,
+    displayMessages,
+    externalPending,
+    externalPendingStatusText,
+    loading,
+    loadingStatusText,
+    sessionProvider
+  ]);
+  const hasComposerDock = Boolean(activeChecklist) || queuedMessages.length > 0;
+  const helperFontSize = mobile ? 13 : 12;
+  const helperMutedFontSize = mobile ? 12 : 11;
+  const selectFontSize = mobile ? 14 : 13;
 
   useEffect(() => {
     if (!session) return;
@@ -321,19 +374,28 @@ const MessageArea = ({
     slashToken
   ]);
 
+  if (!session) {
+    return (
+      <div className={styles.emptyCenter}>
+        <Empty description="选择一个会话开始对话" />
+      </div>
+    );
+  }
+
   return (
     <>
       {/* 消息列表 */}
       <div className={`${styles.messageArea} ${mobile ? styles.messageAreaMobile : ''}`} ref={scrollContainerRef} onScroll={handleScroll}>
-        {displayMessages.length === 0 ? (
-          <div className={styles.welcomeState}>
-            <div className={styles.welcomeTitle}>你今天想聊些什么？</div>
-            <div className={styles.welcomeHint}>
-              选择项目后直接开始对话，图片和系统输入法语音输入都可以使用。
+        <div className={styles.messageThread}>
+          {displayMessages.length === 0 ? (
+            <div className={styles.welcomeState}>
+              <div className={styles.welcomeTitle}>你今天想聊些什么？</div>
+              <div className={styles.welcomeHint}>
+                选择项目后直接开始对话，图片和系统输入法语音输入都可以使用。
+              </div>
             </div>
-          </div>
-        ) : (
-          <div style={{ paddingBottom: 24 }}>
+          ) : (
+            <div style={{ paddingBottom: 24 }}>
             {/* 加载更多历史 */}
             {hasMoreHistory && (
               <div style={{ textAlign: 'center', padding: '8px 0 16px' }}>
@@ -341,7 +403,7 @@ const MessageArea = ({
                   onClick={onLoadMore}
                   style={{
                     background: '#fff', border: '1px solid #d9d9d9', borderRadius: 16,
-                    padding: '4px 16px', cursor: 'pointer', fontSize: 12, color: '#666'
+                    padding: mobile ? '6px 16px' : '4px 16px', cursor: 'pointer', fontSize: mobile ? 13 : 12, color: '#666'
                   }}
                 >
                   加载更早的消息
@@ -349,9 +411,15 @@ const MessageArea = ({
               </div>
             )}
             {renderedMessageNodes}
-            <div ref={messagesEndRef} />
-          </div>
-        )}
+            {pendingTail.visible ? (
+              <div className={styles.pendingTailRow}>
+                <PendingTailStatusLine text={pendingTail.statusText || '正在思考中'} />
+              </div>
+            ) : null}
+              <div ref={messagesEndRef} />
+            </div>
+          )}
+        </div>
 
         {showScrollBottom && (
           <button onClick={scrollToBottom} className={styles.scrollBottomBtn}>
@@ -362,7 +430,83 @@ const MessageArea = ({
 
       {/* ChatGPT 风格输入区域 */}
       <div className={`${styles.inputArea} ${mobile ? styles.inputAreaMobile : ''}`}>
-        <div className={`${styles.inputBox} ${mobile ? styles.inputBoxMobile : ''}`}>
+        <div className={styles.composerShell}>
+          {hasComposerDock ? (
+            <div className={styles.composerDockStack}>
+            {activeChecklist ? <TaskDock checklist={activeChecklist} className={styles.composerDockCard} /> : null}
+            {queuedMessages.length > 0 ? (
+              <div className={`${styles.queueDock} ${styles.composerDockCard}`}>
+                <div className={styles.queueDockHeader}>
+                  <span className={styles.queueDockTitle}>{`排队消息 ${queuedMessages.length}`}</span>
+                  <span className={styles.queueDockHint}>
+                    运行中继续输入的需求会在这里排队
+                  </span>
+                </div>
+            {queuedMessages.map((item, index) => (
+              <div key={item.id} className={styles.queueItem}>
+                <div className={styles.queueGrip} aria-hidden="true">⋮⋮</div>
+                <button
+                  type="button"
+                  className={styles.queueContent}
+                  onClick={() => onEditQueuedMessage?.(item.id)}
+                  title="编辑排队消息"
+                >
+                  <span className={styles.queuePreview}>
+                    {item.content}
+                  </span>
+                </button>
+                <div className={styles.queueActions}>
+                  <span className={styles.queueActionHintWrap}>
+                    <span className={styles.queueActionHint}>
+                      {getQueueModeLabel(item.mode, index)}
+                    </span>
+                    {index === 0 ? (
+                      <Tooltip
+                        placement="topRight"
+                        title={getQueueModeDescription(item.mode)}
+                      >
+                        <button
+                          type="button"
+                          className={styles.queueInfoBtn}
+                          aria-label="排队说明"
+                        >
+                          <InfoCircleOutlined />
+                        </button>
+                      </Tooltip>
+                    ) : null}
+                  </span>
+                  <button
+                    type="button"
+                    className={styles.queueActionBtn}
+                    onClick={() => onSendQueuedMessageNow?.(item.id)}
+                    title={getQueuePrimaryActionTitle(loading, index)}
+                  >
+                    {getQueuePrimaryActionLabel(loading, index)}
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.queueActionBtn}
+                    onClick={() => onEditQueuedMessage?.(item.id)}
+                    title="编辑消息"
+                  >
+                    编辑
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.queueActionBtn}
+                    onClick={() => onRemoveQueuedMessage?.(item.id)}
+                    title="删除排队"
+                  >
+                    删除
+                  </button>
+                </div>
+              </div>
+            ))}
+              </div>
+            ) : null}
+            </div>
+          ) : null}
+          <div className={`${styles.inputBox} ${mobile ? styles.inputBoxMobile : ''}`}>
           {/* 图片预览 */}
           {images.length > 0 && (
             <div className={styles.imagePreviewRow}>
@@ -384,13 +528,12 @@ const MessageArea = ({
             onKeyDown={handleComposerKeyDown}
             onPaste={handlePaste}
             placeholder={mobile ? '输入消息，系统输入法可直接语音输入' : '输入消息...'}
-            disabled={loading}
             rows={1}
           />
           {slashToken && (
             <div style={{
               padding: '0 12px 8px',
-              fontSize: 12,
+              fontSize: helperFontSize,
               color: hasUnsupportedSlashCommand ? '#cf1322' : '#2468d6'
             }}>
               {matchedSlashCommand ? (
@@ -413,7 +556,7 @@ const MessageArea = ({
           )}
           {slashMatches.length > 0 && (
             <div style={{ padding: '0 12px 8px' }}>
-              <div style={{ marginBottom: 6, fontSize: 11, color: '#6b7280' }}>
+              <div style={{ marginBottom: 6, fontSize: helperMutedFontSize, color: '#6b7280' }}>
                 ↑↓ 切换命令 · Tab 补全 · Enter 选择 · Esc 退出
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -431,7 +574,7 @@ const MessageArea = ({
                         background: active ? '#e6f4ff' : '#f5f9ff',
                         color: '#2468d6',
                         borderRadius: 12,
-                        fontSize: 12,
+                        fontSize: helperFontSize,
                         lineHeight: '18px',
                         padding: '8px 10px',
                         cursor: 'pointer',
@@ -453,7 +596,7 @@ const MessageArea = ({
             </div>
           )}
           {embeddedSlashMatch && (
-            <div style={{ padding: '0 12px 8px', fontSize: 12, color: '#c25100' }}>
+            <div style={{ padding: '0 12px 8px', fontSize: helperFontSize, color: '#c25100' }}>
               检测到命令 {embeddedSlashMatch.command}。Slash 命令必须单独发送，不能和普通文本混在同一条消息里。
             </div>
           )}
@@ -494,7 +637,7 @@ const MessageArea = ({
                   value={selectedModel || models[0]?.value}
                   onChange={onModelChange}
                   options={models}
-                  style={{ fontSize: 13 }}
+                  style={{ fontSize: selectFontSize }}
                   popupMatchSelectWidth={false}
                 />
               )}
@@ -518,28 +661,31 @@ const MessageArea = ({
                     value: `${acc.provider}-${acc.accountId}`
                   }))}
                   popupMatchSelectWidth={false}
-                  style={{ fontSize: 13 }}
+                  style={{ fontSize: selectFontSize }}
                 />
               ) : null}
               {/* 发送/停止按钮 */}
+              {loading ? (
+                <button
+                  className={styles.stopBtn}
+                  onClick={onStop}
+                  title="停止当前会话"
+                >
+                  <img src={stopIcon} alt="stop" style={{ width: 18, height: 18 }} />
+                </button>
+              ) : null}
               <button
                 className={`${styles.sendBtn} ${canSend ? styles.sendBtnActive : ''}`}
                 onClick={() => {
-                  if (loading) {
-                    onStop();
-                    return;
-                  }
                   if (canSend && !embeddedSlashMatch) onSend();
                 }}
-                disabled={(!canSend || Boolean(embeddedSlashMatch)) && !loading}
+                disabled={!canSend || Boolean(embeddedSlashMatch)}
+                title={loading ? '加入排队' : '发送'}
               >
-                {loading ? (
-                  <img src={stopIcon} alt="stop" style={{ width: 20, height: 20 }} />
-                ) : (
-                  <img src={canSend ? sendIcon : disabledSendIcon} alt="send" style={{ width: 20, height: 20 }} />
-                )}
+                <img src={canSend ? sendIcon : disabledSendIcon} alt="send" style={{ width: 20, height: 20 }} />
               </button>
             </div>
+          </div>
           </div>
         </div>
       </div>

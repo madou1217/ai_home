@@ -141,12 +141,63 @@ function getAccountMetaLabel(record: Pick<Account, 'apiKeyMode' | 'planType'>) {
   return `${record.apiKeyMode ? 'API Key' : 'OAuth'} · ${record.planType || 'free'}`;
 }
 
+function getAccountKey(record: Pick<Account, 'provider' | 'accountId'>) {
+  return `${record.provider}-${record.accountId}`;
+}
+
+function mergeAccountRecord(current: Account, incoming: Account): Account {
+  const fallbackDisplayName = `${incoming.provider}-${incoming.accountId}`;
+  const merged: Account = {
+    ...current,
+    ...incoming
+  };
+
+  if (!merged.configured || merged.apiKeyMode) {
+    return merged;
+  }
+
+  if (!incoming.email && current.email) {
+    merged.email = current.email;
+  }
+  if (!incoming.usageSnapshot && current.usageSnapshot) {
+    merged.usageSnapshot = current.usageSnapshot;
+  }
+  if ((incoming.remainingPct == null) && current.remainingPct != null) {
+    merged.remainingPct = current.remainingPct;
+  }
+  if (
+    (!incoming.planType || incoming.planType === 'oauth' || incoming.planType === 'pending')
+    && current.planType
+    && current.planType !== 'oauth'
+    && current.planType !== 'pending'
+  ) {
+    merged.planType = current.planType;
+  }
+  if ((!incoming.displayName || incoming.displayName === fallbackDisplayName) && current.displayName) {
+    merged.displayName = current.displayName;
+  }
+  if (incoming.runtimeStatus == null && current.runtimeStatus != null) {
+    merged.runtimeStatus = current.runtimeStatus;
+  }
+  if (incoming.runtimeUntil == null && current.runtimeUntil != null) {
+    merged.runtimeUntil = current.runtimeUntil;
+  }
+  if (incoming.runtimeReason == null && current.runtimeReason != null) {
+    merged.runtimeReason = current.runtimeReason;
+  }
+
+  return merged;
+}
+
 const Accounts = () => {
   const { Paragraph, Text } = Typography;
   const screens = Grid.useBreakpoint();
   const isMobile = !screens.md;
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [hydratingDetails, setHydratingDetails] = useState(false);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [addJobId, setAddJobId] = useState<string | null>(null);
@@ -166,6 +217,31 @@ const Accounts = () => {
   const providerAuthOptions = selectedProvider ? PROVIDER_AUTH_OPTIONS[selectedProvider] : [];
   const unavailableAuthOptions = selectedProvider ? (PROVIDER_UNAVAILABLE_AUTH_OPTIONS[selectedProvider] || []) : [];
   const providerCapabilityHint = selectedProvider ? PROVIDER_CAPABILITY_HINTS[selectedProvider] : '';
+
+  const mergeAccounts = React.useCallback((current: Account[], incoming: Account[]) => {
+    const currentMap = new Map<string, Account>(
+      current.map((account) => [getAccountKey(account), account])
+    );
+    const nextMap = new Map<string, Account>();
+    incoming.forEach((account) => {
+      const key = getAccountKey(account);
+      const previous = currentMap.get(key);
+      nextMap.set(key, previous ? mergeAccountRecord(previous, account) : account);
+    });
+    return Array.from(nextMap.values());
+  }, []);
+
+  const mergeSingleAccount = React.useCallback((current: Account[], incoming: Account) => {
+    const next = current.slice();
+    const key = getAccountKey(incoming);
+    const index = next.findIndex((account) => getAccountKey(account) === key);
+    if (index >= 0) {
+      next[index] = mergeAccountRecord(next[index], incoming);
+      return next;
+    }
+    next.push(incoming);
+    return next;
+  }, []);
 
   const closeAuthProgressPanel = React.useCallback(() => {
     if (successAutoCloseTimerRef.current !== null) {
@@ -212,23 +288,50 @@ const Accounts = () => {
     }
   };
 
-  const loadAccounts = async () => {
-    setLoading(true);
+  const loadAccounts = React.useCallback(async () => {
+    if (hasLoadedOnce) setRefreshing(true);
+    else setLoading(true);
     try {
-      const data = await accountsAPI.list();
-      setAccounts(data);
-    } catch (error) {
+      const payload = await accountsAPI.list();
+      setAccounts((current) => mergeAccounts(current, payload.accounts));
+      setHydratingDetails(payload.hydrating);
+      setHasLoadedOnce(true);
+    } catch (_error) {
       message.error('加载账号失败');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  };
+  }, [hasLoadedOnce, mergeAccounts]);
 
   useEffect(() => {
     loadAccounts();
     const interval = setInterval(loadAccounts, 30000);
     return () => clearInterval(interval);
-  }, []);
+  }, [loadAccounts]);
+
+  useEffect(() => {
+    const watcher = accountsAPI.watch({
+      onSnapshot: ({ accounts: snapshotAccounts, hydrating }) => {
+        setAccounts((current) => mergeAccounts(current, snapshotAccounts));
+        setHydratingDetails(Boolean(hydrating));
+        setHasLoadedOnce(true);
+        setLoading(false);
+      },
+      onAccount: (account) => {
+        setAccounts((current) => mergeSingleAccount(current, account));
+      },
+      onHydrated: () => {
+        setHydratingDetails(false);
+      },
+      onError: () => {
+        setHydratingDetails(false);
+      }
+    });
+    return () => {
+      watcher.close();
+    };
+  }, [mergeAccounts, mergeSingleAccount]);
 
   useEffect(() => {
     return () => {
@@ -403,7 +506,7 @@ const Accounts = () => {
       await accountsAPI.delete(provider, accountId);
       message.success('删除账号成功');
       loadAccounts();
-    } catch (error) {
+    } catch (_error) {
       message.error('删除账号失败');
     }
   };
@@ -413,7 +516,7 @@ const Accounts = () => {
       await managementAPI.reload();
       message.success('重新加载成功');
       loadAccounts();
-    } catch (error) {
+    } catch (_error) {
       message.error('重新加载失败');
     }
   };
@@ -659,9 +762,11 @@ const Accounts = () => {
         <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <h1 style={{ margin: 0, fontSize: 24 }}>账号</h1>
-            <Text type="secondary">这里只保留可用账号，方便手机快速查看。</Text>
+            <Text type="secondary" style={{ fontSize: 14, lineHeight: 1.65 }}>
+              {hydratingDetails ? '基础列表已显示，详情正在后台补全。' : '这里只保留可用账号，方便手机快速查看。'}
+            </Text>
           </div>
-          <Button icon={<ReloadOutlined />} onClick={loadAccounts} loading={loading}>
+          <Button icon={<ReloadOutlined />} onClick={loadAccounts} loading={refreshing}>
             刷新
           </Button>
         </div>
@@ -699,9 +804,9 @@ const Accounts = () => {
                       <div style={{ minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                           <ProviderIcon provider={record.provider} size={16} />
-                          <Text strong>{getAccountPrimaryLabel(record)}</Text>
+                          <Text strong style={{ fontSize: 16, lineHeight: 1.45 }}>{getAccountPrimaryLabel(record)}</Text>
                         </div>
-                        <div style={{ fontSize: 12, color: '#8c8c8c' }}>
+                        <div style={{ fontSize: 13, color: '#8c8c8c', lineHeight: 1.6 }}>
                           {getAccountMetaLabel(record)}
                         </div>
                         <div style={{ marginTop: 10, maxWidth: 220 }}>
@@ -724,28 +829,33 @@ const Accounts = () => {
 
   return (
     <div>
-      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h1 style={{ margin: 0 }}>账号管理</h1>
-        <Space>
-          <Button icon={<ExportOutlined />} onClick={handleExport}>导出</Button>
-          <Button icon={<ImportOutlined />} onClick={() => setImportModalVisible(true)}>导入</Button>
-          <input ref={importInputRef} type="file" accept=".json,.jsonl" style={{ display: 'none' }} onChange={handleImport} />
-          <Button icon={<ReloadOutlined />} onClick={loadAccounts} loading={loading}>刷新</Button>
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={() => {
-              form.setFieldsValue({
-                provider: 'codex',
-                authMode: 'oauth-browser'
-              });
-              setModalVisible(true);
-            }}
-          >
-            添加账号
-          </Button>
-        </Space>
-      </div>
+        <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h1 style={{ margin: 0 }}>账号管理</h1>
+            {hydratingDetails ? (
+              <Text type="secondary">基础列表已返回，账号详情正在后台增量补全。</Text>
+            ) : null}
+          </div>
+          <Space>
+            <Button icon={<ExportOutlined />} onClick={handleExport}>导出</Button>
+            <Button icon={<ImportOutlined />} onClick={() => setImportModalVisible(true)}>导入</Button>
+            <input ref={importInputRef} type="file" accept=".json,.jsonl" style={{ display: 'none' }} onChange={handleImport} />
+            <Button icon={<ReloadOutlined />} onClick={loadAccounts} loading={refreshing}>刷新</Button>
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => {
+                form.setFieldsValue({
+                  provider: 'codex',
+                  authMode: 'oauth-browser'
+                });
+                setModalVisible(true);
+              }}
+            >
+              添加账号
+            </Button>
+          </Space>
+        </div>
 
       {/* 统计卡片 */}
       <Row gutter={16} style={{ marginBottom: 16 }}>
@@ -863,6 +973,7 @@ const Accounts = () => {
               <Button
                 icon={<SyncOutlined />}
                 onClick={handleReload}
+                loading={refreshing}
               >
                 重新加载
               </Button>

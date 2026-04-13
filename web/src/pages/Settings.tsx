@@ -25,7 +25,7 @@ const Settings = () => {
         background_refresh_interval: parseInterval(config.background_refresh_interval)
       });
       serverForm.setFieldsValue(serverConfig);
-    } catch (error) {
+    } catch (_error) {
       message.error('加载配置失败');
     } finally {
       setLoading(false);
@@ -65,7 +65,7 @@ const Settings = () => {
       };
       await configAPI.update(config);
       message.success('保存额度配置成功');
-    } catch (error) {
+    } catch (_error) {
       message.error('保存额度配置失败');
     } finally {
       setSaving(false);
@@ -85,7 +85,7 @@ const Settings = () => {
       await configAPI.updateServer(nextConfig);
       serverForm.setFieldsValue(nextConfig);
       message.success('保存服务配置成功');
-    } catch (error) {
+    } catch (_error) {
       message.error('保存服务配置失败');
     } finally {
       setServerSaving(false);

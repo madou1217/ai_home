@@ -115,6 +115,14 @@ export interface ChatMessage {
   timestamp?: string | number;
 }
 
+export interface QueuedChatMessage {
+  id: string;
+  content: string;
+  images?: string[];
+  createdAt: number;
+  mode?: 'after_turn' | 'after_tool_call';
+}
+
 export interface SessionMessageBundle {
   messages: ChatMessage[];
   cursor: number;

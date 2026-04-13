@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { ConfigProvider, Layout, Menu, Grid } from 'antd';
+import { Suspense, lazy, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
   DashboardOutlined,
@@ -7,16 +8,15 @@ import {
   MessageOutlined,
   SettingOutlined
 } from '@ant-design/icons';
-import { useState } from 'react';
 import zhCN from 'antd/locale/zh_CN';
-import Dashboard from '@/pages/Dashboard';
-import Accounts from '@/pages/Accounts';
-import Chat from '@/pages/Chat';
-import Settings from '@/pages/Settings';
 import aiHomeIcon from '@/assets/icons/ai-home.svg';
 import './styles/App.css';
 
 const { Header, Sider, Content } = Layout;
+const Dashboard = lazy(() => import('@/pages/Dashboard'));
+const Accounts = lazy(() => import('@/pages/Accounts'));
+const Chat = lazy(() => import('@/pages/Chat'));
+const Settings = lazy(() => import('@/pages/Settings'));
 
 interface NavItem {
   key: string;
@@ -63,6 +63,20 @@ function AppContent() {
   const isChat = location.pathname === '/chat';
   const headerHeight = isMobile ? 56 : 64;
   const mobileNavHeight = isMobile ? 64 : 0;
+  const routeFallback = (
+    <div style={{
+      height: '100%',
+      minHeight: isChat ? '100%' : 240,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      color: '#6b7280',
+      fontSize: isMobile ? 14 : 15
+    }}
+    >
+      页面加载中...
+    </div>
+  );
 
   return (
     <Layout style={{ height: '100dvh', display: 'flex', flexDirection: 'column', background: '#f5f7fb' }}>
@@ -135,13 +149,15 @@ function AppContent() {
             display: isChat ? 'flex' : 'block',
             flexDirection: 'column'
           }}>
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/accounts" element={<Accounts />} />
-              <Route path="/chat" element={<Chat />} />
-              <Route path="/settings" element={<Settings />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
+            <Suspense fallback={routeFallback}>
+              <Routes>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/accounts" element={<Accounts />} />
+                <Route path="/chat" element={<Chat />} />
+                <Route path="/settings" element={<Settings />} />
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
+            </Suspense>
           </Content>
         </Layout>
       </Layout>

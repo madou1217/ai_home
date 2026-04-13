@@ -38,6 +38,17 @@ test('syncGlobalConfigToHost syncs only codex auth and keeps account-owned confi
   assert.equal(fs.existsSync(path.join(accountGlobalDir, 'config.toml')), true);
   assert.equal(fs.readFileSync(path.join(accountGlobalDir, 'config.toml'), 'utf8'), 'model = "gpt-5"\n');
   assert.equal(fs.lstatSync(path.join(accountGlobalDir, 'auth.json')).isSymbolicLink(), false);
+  assert.equal(fs.existsSync(path.join(hostCodexDir, 'hooks.json')), true);
+  assert.equal(fs.existsSync(path.join(hostCodexDir, 'hooks', 'aih-stop-notify.js')), true);
+  const hooksConfig = JSON.parse(fs.readFileSync(path.join(hostCodexDir, 'hooks.json'), 'utf8'));
+  assert.equal(Array.isArray(hooksConfig.hooks.Stop), true);
+  assert.equal(
+    hooksConfig.hooks.Stop.some((group) =>
+      Array.isArray(group && group.hooks)
+      && group.hooks.some((hook) => String(hook.command || '').includes('aih-stop-notify.js'))
+    ),
+    true
+  );
 
   fs.rmSync(root, { recursive: true, force: true });
 });

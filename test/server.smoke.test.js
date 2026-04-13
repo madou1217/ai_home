@@ -131,6 +131,34 @@ async function startMockUpstream(t) {
   return `http://127.0.0.1:${port}`;
 }
 
+async function startSlowModelsUpstream(t, delayMs) {
+  const port = await getFreePort();
+  const server = http.createServer(async (req, res) => {
+    const method = String(req.method || 'GET').toUpperCase();
+    const pathname = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`).pathname;
+    if (method === 'GET' && pathname === '/models') {
+      await sleep(delayMs);
+      res.statusCode = 200;
+      res.setHeader('content-type', 'application/json; charset=utf-8');
+      res.end(JSON.stringify({
+        models: [{ slug: 'gpt-delayed', supported_in_api: true, visibility: 'list' }]
+      }));
+      return;
+    }
+    res.statusCode = 404;
+    res.setHeader('content-type', 'application/json; charset=utf-8');
+    res.end(JSON.stringify({ error: 'not_found' }));
+  });
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(port, '127.0.0.1', resolve);
+  });
+  t.after(() => {
+    try { server.close(); } catch (_error) {}
+  });
+  return `http://127.0.0.1:${port}`;
+}
+
 test('server serve exposes health/models/metrics', async (t) => {
   const upstream = await startMockUpstream(t);
   const { port, getStderr } = await startProxy(t, ['--codex-base-url', upstream]);
@@ -159,6 +187,16 @@ test('server serve exposes health/models/metrics', async (t) => {
   const metrics = await metricsRes.json();
   assert.equal(metrics.ok, true);
   assert.ok(Number(metrics.totalRequests) >= 1);
+});
+
+test('server serve becomes healthy before slow model prewarm completes', async (t) => {
+  const upstream = await startSlowModelsUpstream(t, 4500);
+  const { port, getStderr } = await startProxy(t, ['--codex-base-url', upstream]);
+  const startedAt = Date.now();
+  const ready = await waitForHealth(port, 2500);
+  const elapsedMs = Date.now() - startedAt;
+  assert.equal(ready, true, `server did not become healthy early: ${getStderr()}`);
+  assert.ok(elapsedMs < 3000, `healthz was blocked by startup prewarm (${elapsedMs}ms)`);
 });
 
 test('server serve enforces client and management keys when configured', async (t) => {

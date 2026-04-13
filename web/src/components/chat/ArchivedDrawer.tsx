@@ -4,6 +4,7 @@ import { UndoOutlined } from '@ant-design/icons';
 import type { ArchivedSession } from '@/types';
 import { sessionsAPI } from '@/services/api';
 import ProviderIcon from './ProviderIcon';
+import { getProviderLabel, getProviderTagColor } from './provider-meta.js';
 import dayjs from 'dayjs';
 
 interface Props {
@@ -11,12 +12,6 @@ interface Props {
   onClose: () => void;
   onRestored: () => void; // 还原成功后刷新项目列表
 }
-
-const PROVIDER_LABELS: Record<string, string> = {
-  codex: 'ChatGPT',
-  claude: 'Claude',
-  gemini: 'Gemini'
-};
 
 const ArchivedDrawer = ({ open, onClose, onRestored }: Props) => {
   const screens = Grid.useBreakpoint();
@@ -101,17 +96,17 @@ const ArchivedDrawer = ({ open, onClose, onRestored }: Props) => {
               <List.Item.Meta
                 avatar={<ProviderIcon provider={session.provider} size={18} />}
                 title={
-                  <span style={{ fontSize: 13 }}>
+                  <span style={{ fontSize: isMobile ? 15 : 13, lineHeight: 1.45 }}>
                     {session.title}
                   </span>
                 }
                 description={
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#999' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: isMobile ? 12 : 11, color: '#999' }}>
                     <Tag
-                      color={session.provider === 'codex' ? 'green' : session.provider === 'claude' ? 'orange' : 'blue'}
-                      style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px', margin: 0 }}
+                      color={getProviderTagColor(session.provider)}
+                      style={{ fontSize: isMobile ? 11 : 10, lineHeight: isMobile ? '18px' : '16px', padding: '0 4px', margin: 0 }}
                     >
-                      {PROVIDER_LABELS[session.provider] || session.provider}
+                      {getProviderLabel(session.provider)}
                     </Tag>
                     <span>{dayjs(session.archivedAt).fromNow()}</span>
                   </div>

@@ -137,9 +137,48 @@ export function isSessionRequestCancelled(error: unknown) {
 // 账号管理 API
 export const accountsAPI = {
   // 获取所有账号
-  list: async (): Promise<Account[]> => {
-    const response = await api.get<{ ok: boolean; accounts: Account[] }>('/webui/accounts');
-    return response.data.accounts;
+  list: async (): Promise<{ accounts: Account[]; hydrating: boolean }> => {
+    const response = await api.get<{ ok: boolean; accounts: Account[]; hydrating?: boolean }>('/webui/accounts');
+    return {
+      accounts: response.data.accounts,
+      hydrating: Boolean(response.data.hydrating)
+    };
+  },
+
+  watch: (handlers: {
+    onSnapshot?: (payload: { accounts: Account[]; hydrating?: boolean }) => void;
+    onAccount?: (account: Account) => void;
+    onHydrated?: (payload: { hydratedAt?: number }) => void;
+    onError?: () => void;
+  }) => {
+    const eventSource = new EventSource('/v0/webui/accounts/watch');
+    eventSource.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(String(event.data || '{}'));
+        if (payload.type === 'snapshot') {
+          handlers.onSnapshot?.({
+            accounts: Array.isArray(payload.accounts) ? payload.accounts : [],
+            hydrating: Boolean(payload.hydrating)
+          });
+          return;
+        }
+        if (payload.type === 'account' && payload.account) {
+          handlers.onAccount?.(payload.account as Account);
+          return;
+        }
+        if (payload.type === 'hydrated') {
+          handlers.onHydrated?.({
+            hydratedAt: Number(payload.hydratedAt) || 0
+          });
+        }
+      } catch (_error) {
+        // Ignore malformed SSE frames.
+      }
+    };
+    eventSource.onerror = () => {
+      handlers.onError?.();
+    };
+    return eventSource;
   },
 
   // 添加新账号

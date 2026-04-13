@@ -1,13 +1,54 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Layout, message, Empty, Button, Modal, Input, Drawer, Grid } from 'antd';
 import { chatAPI, accountsAPI, sessionsAPI, isSessionRequestCancelled } from '@/services/api';
-import type { ChatMessage, Account, AggregatedProject, Session, ChatStreamEvent, SessionEventItem } from '@/types';
+import type { ChatMessage, Account, AggregatedProject, Session, ChatStreamEvent, SessionEventItem, Provider, QueuedChatMessage } from '@/types';
 import { ProjectList, MessageArea } from '@/components/chat';
 import { providerNames } from '@/components/chat/ProviderIcon';
+import {
+  getActualSessionRunKey,
+  getSessionRunKey,
+  findActiveRunKeyForSession as findActiveRunKeyForSessionState,
+  collectRunningSessionKeys,
+  resolveSelectedSessionQueueKey
+} from '@/components/chat/active-run-state.js';
+import {
+  applySessionAssistantEvent,
+  applyStreamingAssistantEvent
+} from '@/components/chat/assistant-event-adapter.js';
+import {
+  getThinkingStatusText,
+  getProcessingStatusText,
+  getGeneratingStatusText,
+  shouldUseExternalPending
+} from '@/components/chat/provider-pending-policy.js';
+import {
+  supportsBackgroundRunWatch,
+  supportsSessionWatchPending,
+  supportsToolBoundaryQueue
+} from '@/components/chat/provider-capabilities.js';
+import {
+  appendQueuedMessage,
+  prependQueuedMessage,
+  removeQueuedMessage,
+  shiftQueuedMessage,
+  shiftQueuedMessageByMode,
+  moveQueuedMessages as moveQueuedMessagesState,
+  moveQueuedMessageToFront,
+  resolveQueuedMode
+} from '@/components/chat/queue-state.js';
 import { FolderOpenOutlined, PlusOutlined, MenuOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import 'dayjs/locale/zh-cn';
+import {
+  readPersistedSelection,
+  writePersistedSelection
+} from './chat-selection-state.js';
+import {
+  buildAssistantCompletionNotification,
+  normalizeMessageText,
+  shouldNotifyAssistantCompleted
+} from './chat-notification.js';
 
 dayjs.extend(relativeTime);
 dayjs.locale('zh-cn');
@@ -29,10 +70,6 @@ const sortSessionsByUpdatedAtDesc = (sessions: Session[]) =>
 
 const sortProjectsByLastActivityDesc = (items: AggregatedProject[]) =>
   [...items].sort((left, right) => getProjectLastActivityAt(right) - getProjectLastActivityAt(left));
-
-const normalizeMessageText = (value?: string) => String(value || '').trim();
-
-const CHAT_SELECTION_STORAGE_KEY = 'web-chat-selection-v1';
 
 const normalizeMessageImages = (images?: string[]) => {
   const seen = new Set<string>();
@@ -61,58 +98,22 @@ type PersistedChatSelection = {
   projectDirName?: string;
 };
 
-const readSelectionFromUrl = (): PersistedChatSelection => {
-  if (typeof window === 'undefined') return {};
-  const params = new URLSearchParams(window.location.search);
-  return {
-    projectPath: params.get('projectPath') || undefined,
-    sessionId: params.get('sessionId') || undefined,
-    provider: params.get('provider') || undefined,
-    projectDirName: params.get('projectDirName') || undefined
-  };
+type ActiveSessionRun = {
+  runKey: string;
+  draftSessionId?: string;
+  provider: Provider;
+  sessionId?: string;
+  runId?: string;
+  projectDirName?: string;
+  projectPath?: string;
+  controller: AbortController;
 };
 
-const readPersistedSelection = (): PersistedChatSelection => {
-  if (typeof window === 'undefined') return {};
-  const fromUrl = readSelectionFromUrl();
-  if (fromUrl.projectPath || fromUrl.sessionId) return fromUrl;
-  try {
-    const raw = window.localStorage.getItem(CHAT_SELECTION_STORAGE_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' ? parsed : {};
-  } catch {
-    return {};
-  }
-};
-
-const writePersistedSelection = (selection: PersistedChatSelection) => {
-  if (typeof window === 'undefined') return;
-  const next: PersistedChatSelection = {
-    projectPath: selection.projectPath || undefined,
-    sessionId: selection.sessionId || undefined,
-    provider: selection.provider || undefined,
-    projectDirName: selection.projectDirName || undefined
-  };
-  const params = new URLSearchParams(window.location.search);
-  if (next.projectPath) params.set('projectPath', next.projectPath);
-  else params.delete('projectPath');
-  if (next.sessionId) params.set('sessionId', next.sessionId);
-  else params.delete('sessionId');
-  if (next.provider) params.set('provider', next.provider);
-  else params.delete('provider');
-  if (next.projectDirName) params.set('projectDirName', next.projectDirName);
-  else params.delete('projectDirName');
-  const query = params.toString();
-  const nextUrl = `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash || ''}`;
-  window.history.replaceState(null, '', nextUrl);
-  try {
-    if (next.projectPath || next.sessionId) {
-      window.localStorage.setItem(CHAT_SELECTION_STORAGE_KEY, JSON.stringify(next));
-    } else {
-      window.localStorage.removeItem(CHAT_SELECTION_STORAGE_KEY);
-    }
-  } catch {}
+type QueuedSessionMessage = QueuedChatMessage & {
+  provider: Provider;
+  accountId: string;
+  model?: string;
+  mode: 'after_turn' | 'after_tool_call';
 };
 
 const areDuplicateUserMessages = (left?: ChatMessage, right?: ChatMessage) => {
@@ -219,6 +220,10 @@ const Chat = () => {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [watchPendingStatus, setWatchPendingStatus] = useState<string | null>(null);
+  const [runningSessionKeys, setRunningSessionKeys] = useState<Set<string>>(new Set());
+  const [passiveRunningSessionKeys, setPassiveRunningSessionKeys] = useState<Set<string>>(new Set());
+  const [runStatusByKey, setRunStatusByKey] = useState<Record<string, string>>({});
+  const [queuedMessagesByKey, setQueuedMessagesByKey] = useState<Record<string, QueuedSessionMessage[]>>({});
   const [loadingProjects, setLoadingProjects] = useState(false);
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [selectedModel, setSelectedModel] = useState<string>('');
@@ -231,16 +236,19 @@ const Chat = () => {
   const [mobileProjectPickerOpen, setMobileProjectPickerOpen] = useState(false);
   const selectedSessionRef = useRef<Session | null>(null);
   const initialSelectionRef = useRef<PersistedChatSelection>(readPersistedSelection());
-  const streamAbortRef = useRef<AbortController | null>(null);
+  const activeRunsRef = useRef<Map<string, ActiveSessionRun>>(new Map());
   const sessionMessagesCacheRef = useRef<Map<string, ChatMessage[]>>(new Map());
   const sessionCursorCacheRef = useRef<Map<string, number>>(new Map());
   const sessionReloadTimersRef = useRef<Map<string, number>>(new Map());
+  const activeRunWatchersRef = useRef<Map<string, { eventSource: EventSource | null; cursor: number; reconnectTimer: number | null }>>(new Map());
   const sessionWatchRef = useRef<EventSource | null>(null);
   const sessionWatchReconnectTimerRef = useRef<number | null>(null);
-  const watchPendingClearTimerRef = useRef<number | null>(null);
+  const projectRuntimeWatchRef = useRef<EventSource | null>(null);
+  const projectRuntimeReconnectTimerRef = useRef<number | null>(null);
+  const watchPendingStartedAtRef = useRef<number>(0);
   const resumeSyncTimerRef = useRef<number | null>(null);
+  const notificationPermissionRequestedRef = useRef(false);
   const hiddenAtRef = useRef<number>(0);
-  const loadingRef = useRef(false);
   const suppressAbortToastRef = useRef(false);
   const reloadSessionHistoryRef = useRef<(session: Session) => Promise<void>>(async () => {});
   const applySessionEventsRef = useRef<(session: Session, events: SessionEventItem[]) => void>(() => {});
@@ -260,34 +268,6 @@ const Chat = () => {
     });
   };
 
-  const appendThinkingChunk = (currentContent: string, thinkingChunk: string) => {
-    const safeChunk = String(thinkingChunk || '');
-    if (!safeChunk) return currentContent || '';
-    const base = String(currentContent || '');
-    const marker = '\n:::thinking\n';
-    const closeMarker = '\n:::\n';
-    const thinkingStart = base.indexOf(marker);
-    if (thinkingStart >= 0) {
-      const thinkingBodyStart = thinkingStart + marker.length;
-      const thinkingEnd = base.indexOf(closeMarker, thinkingBodyStart);
-      if (thinkingEnd >= 0) {
-        const before = base.slice(0, thinkingBodyStart);
-        const currentThinking = base.slice(thinkingBodyStart, thinkingEnd);
-        const after = base.slice(thinkingEnd);
-        return `${before}${currentThinking}${safeChunk}${after}`;
-      }
-    }
-    return `${base}${base ? '\n' : ''}:::thinking\n${safeChunk}\n:::\n`;
-  };
-
-  const stripThinkingBlock = (content: string) => {
-    const base = String(content || '');
-    return base
-      .replace(/\n?:::thinking\n[\s\S]*?\n:::\n?/g, '\n')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim();
-  };
-
   const updatePendingAssistantStatus = (statusText: string) => {
     setMessages((current) => {
       if (current.length === 0) return current;
@@ -301,6 +281,29 @@ const Chat = () => {
       return next;
     });
   };
+
+  const requestBrowserNotificationPermission = useCallback(() => {
+    if (typeof window === 'undefined' || typeof Notification === 'undefined') return;
+    if (Notification.permission !== 'default') return;
+    if (notificationPermissionRequestedRef.current) return;
+    notificationPermissionRequestedRef.current = true;
+    Notification.requestPermission().catch(() => {});
+  }, []);
+
+  const notifyAssistantCompleted = useCallback((provider: Provider, content: string) => {
+    if (typeof window === 'undefined' || typeof Notification === 'undefined') return;
+    if (!shouldNotifyAssistantCompleted({
+      permission: Notification.permission,
+      visibilityState: document.visibilityState,
+      hasFocus: typeof document.hasFocus === 'function' ? document.hasFocus() : true
+    })) {
+      return;
+    }
+    const payload = buildAssistantCompletionNotification(provider, content, providerNames);
+    try {
+      new Notification(payload.title, { body: payload.body });
+    } catch {}
+  }, []);
 
   const loadMoreHistory = () => {
     const currentLen = messages.length;
@@ -350,6 +353,201 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
   const getSessionCacheKey = (session: Session) =>
     `${session.provider}:${session.id}:${session.projectDirName || ''}`;
 
+  const findActiveRunKeyForSession = useCallback((session: Session | null) => {
+    return findActiveRunKeyForSessionState(session, activeRunsRef.current.values());
+  }, []);
+
+  const refreshSelectedSessionLoading = useCallback(() => {
+    const currentSession = selectedSessionRef.current;
+    setLoading(Boolean(findActiveRunKeyForSession(currentSession)));
+  }, [findActiveRunKeyForSession]);
+
+  const syncRunningSessions = useCallback(() => {
+    setRunningSessionKeys(collectRunningSessionKeys(activeRunsRef.current.values()));
+    refreshSelectedSessionLoading();
+  }, [refreshSelectedSessionLoading]);
+
+  function registerActiveRun(run: ActiveSessionRun) {
+    activeRunsRef.current.set(run.runKey, run);
+    if (run.sessionId) {
+      connectActiveRunWatch(run.runKey, {
+        id: run.sessionId,
+        title: '',
+        updatedAt: Date.now(),
+        provider: run.provider,
+        projectDirName: run.projectDirName,
+        projectPath: run.projectPath
+      });
+    }
+    syncRunningSessions();
+  }
+
+  function renameActiveRun(previousRunKey: string, nextRunKey: string, patch: Partial<ActiveSessionRun> = {}) {
+    const currentRun = activeRunsRef.current.get(previousRunKey);
+    if (!currentRun) return previousRunKey;
+    activeRunsRef.current.delete(previousRunKey);
+    setRunStatusByKey((current) => {
+      const next = { ...current };
+      const previousStatus = next[previousRunKey];
+      delete next[previousRunKey];
+      if (previousStatus) {
+        next[nextRunKey] = previousStatus;
+      }
+      return next;
+    });
+    activeRunsRef.current.set(nextRunKey, {
+      ...currentRun,
+      ...patch,
+      runKey: nextRunKey
+    });
+    clearActiveRunWatch(previousRunKey);
+    const nextRun = activeRunsRef.current.get(nextRunKey);
+    if (nextRun?.sessionId) {
+      connectActiveRunWatch(nextRunKey, {
+        id: nextRun.sessionId,
+        title: '',
+        updatedAt: Date.now(),
+        provider: nextRun.provider,
+        projectDirName: nextRun.projectDirName,
+        projectPath: nextRun.projectPath
+      });
+    }
+    syncRunningSessions();
+    return nextRunKey;
+  }
+
+  function updateActiveRun(runKey: string, patch: Partial<ActiveSessionRun>) {
+    const currentRun = activeRunsRef.current.get(runKey);
+    if (!currentRun) return;
+    activeRunsRef.current.set(runKey, {
+      ...currentRun,
+      ...patch
+    });
+  }
+
+  function unregisterActiveRun(runKey: string) {
+    clearActiveRunWatch(runKey);
+    activeRunsRef.current.delete(runKey);
+    setRunStatusByKey((current) => {
+      if (!(runKey in current)) return current;
+      const next = { ...current };
+      delete next[runKey];
+      return next;
+    });
+    syncRunningSessions();
+  }
+
+  const updateRunStatus = useCallback((runKey: string, statusText: string) => {
+    setRunStatusByKey((current) => {
+      if (current[runKey] === statusText) return current;
+      return {
+        ...current,
+        [runKey]: statusText
+      };
+    });
+  }, []);
+
+  const enqueueSessionMessage = useCallback((sessionKey: string, item: QueuedSessionMessage) => {
+    setQueuedMessagesByKey((current) => appendQueuedMessage(current, sessionKey, item));
+  }, []);
+
+  const removeQueuedSessionMessage = useCallback((sessionKey: string, messageId: string) => {
+    setQueuedMessagesByKey((current) => removeQueuedMessage(current, sessionKey, messageId));
+  }, []);
+
+  const shiftQueuedSessionMessage = useCallback((sessionKey: string): QueuedSessionMessage | null => {
+    let shifted: QueuedSessionMessage | null = null;
+    setQueuedMessagesByKey((current) => {
+      const result = shiftQueuedMessage(current, sessionKey);
+      shifted = result.shifted;
+      return result.nextState;
+    });
+    return shifted;
+  }, []);
+
+  const shiftQueuedSessionMessageByMode = useCallback((sessionKey: string, mode: QueuedSessionMessage['mode']): QueuedSessionMessage | null => {
+    let shifted: QueuedSessionMessage | null = null;
+    setQueuedMessagesByKey((current) => {
+      const result = shiftQueuedMessageByMode(current, sessionKey, mode);
+      shifted = result.shifted;
+      return result.nextState;
+    });
+    return shifted;
+  }, []);
+
+  const moveQueuedMessages = useCallback((fromKey: string, toKey: string) => {
+    if (!fromKey || !toKey || fromKey === toKey) return;
+    setQueuedMessagesByKey((current) => moveQueuedMessagesState(current, fromKey, toKey));
+  }, []);
+
+  const flushQueuedToolCallMessage = useCallback((session: Session) => {
+    const runKey = findActiveRunKeyForSession(session);
+    if (!runKey) return;
+    const activeRun = activeRunsRef.current.get(runKey);
+    if (!activeRun || !activeRun.runId) return;
+    const queued = shiftQueuedSessionMessageByMode(runKey, 'after_tool_call');
+    if (!queued) return;
+    chatAPI.sendRunInput(activeRun.runId, queued.content, true).catch(() => {
+      enqueueSessionMessage(runKey, queued);
+    });
+  }, [enqueueSessionMessage, findActiveRunKeyForSession, shiftQueuedSessionMessageByMode]);
+
+  const clearActiveRunWatch = useCallback((runKey: string) => {
+    const watcher = activeRunWatchersRef.current.get(runKey);
+    if (!watcher) return;
+    if (watcher.reconnectTimer != null) {
+      window.clearTimeout(watcher.reconnectTimer);
+    }
+    watcher.eventSource?.close();
+    activeRunWatchersRef.current.delete(runKey);
+  }, []);
+
+  const connectActiveRunWatch = useCallback((runKey: string, session: Session) => {
+    if (typeof window === 'undefined') return;
+    if (!supportsBackgroundRunWatch(session.provider) || !session.id || session.draft) return;
+    if (selectedSessionRef.current?.id === session.id && selectedSessionRef.current?.provider === session.provider) {
+      return;
+    }
+
+    clearActiveRunWatch(runKey);
+    const params = new URLSearchParams();
+    params.set('sessionId', session.id);
+    params.set('provider', session.provider);
+    if (session.projectDirName) params.set('projectDirName', session.projectDirName);
+
+    const state = {
+      eventSource: new EventSource(`/v0/webui/sessions/watch?${params.toString()}`),
+      cursor: 0,
+      reconnectTimer: null as number | null
+    };
+    activeRunWatchersRef.current.set(runKey, state);
+
+    state.eventSource.onmessage = () => {
+      sessionsAPI.getSessionEvents(session.provider, session.id, state.cursor, session.projectDirName)
+        .then((payload) => {
+          state.cursor = payload.cursor;
+          if ((payload.events || []).some((event) => event.type === 'assistant_tool_call')) {
+            flushQueuedToolCallMessage(session);
+          }
+        })
+        .catch(() => {});
+    };
+
+    state.eventSource.onerror = () => {
+      state.eventSource?.close();
+      if (!activeRunsRef.current.has(runKey)) {
+        clearActiveRunWatch(runKey);
+        return;
+      }
+      if (state.reconnectTimer != null) {
+        window.clearTimeout(state.reconnectTimer);
+      }
+      state.reconnectTimer = window.setTimeout(() => {
+        connectActiveRunWatch(runKey, session);
+      }, 1200);
+    };
+  }, [clearActiveRunWatch, flushQueuedToolCallMessage]);
+
   const clearSessionWatch = useCallback(() => {
     if (sessionWatchReconnectTimerRef.current != null) {
       window.clearTimeout(sessionWatchReconnectTimerRef.current);
@@ -361,25 +559,29 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
     }
   }, []);
 
-  const clearWatchPending = useCallback(() => {
-    if (watchPendingClearTimerRef.current != null) {
-      window.clearTimeout(watchPendingClearTimerRef.current);
-      watchPendingClearTimerRef.current = null;
+  const clearProjectRuntimeWatch = useCallback(() => {
+    if (projectRuntimeReconnectTimerRef.current != null) {
+      window.clearTimeout(projectRuntimeReconnectTimerRef.current);
+      projectRuntimeReconnectTimerRef.current = null;
     }
+    if (projectRuntimeWatchRef.current) {
+      projectRuntimeWatchRef.current.close();
+      projectRuntimeWatchRef.current = null;
+    }
+  }, []);
+
+  const clearWatchPending = useCallback(() => {
+    watchPendingStartedAtRef.current = 0;
     setWatchPendingStatus(null);
   }, []);
 
-  const markWatchPending = useCallback((session: Session, statusText = 'Codex 正在思考...') => {
+  const markWatchPending = useCallback((session: Session, statusText = getThinkingStatusText(session.provider)) => {
     const currentSession = selectedSessionRef.current;
     if (!currentSession || currentSession.id !== session.id) return;
-    setWatchPendingStatus(statusText);
-    if (watchPendingClearTimerRef.current != null) {
-      window.clearTimeout(watchPendingClearTimerRef.current);
+    if (!watchPendingStartedAtRef.current) {
+      watchPendingStartedAtRef.current = Date.now();
     }
-    watchPendingClearTimerRef.current = window.setTimeout(() => {
-      watchPendingClearTimerRef.current = null;
-      setWatchPendingStatus(null);
-    }, 4500);
+    setWatchPendingStatus(statusText);
   }, []);
 
   const scheduleSessionReload = useCallback((session: Session, delayMs = 180) => {
@@ -421,6 +623,7 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
 
   const reloadSessionHistory = useCallback(async (session: Session) => {
     if (session.draft) return;
+    const previousHistory = sessionMessagesCacheRef.current.get(getSessionCacheKey(session)) || [];
     const bundle = await sessionsAPI.getSessionMessagesBundle(
       session.provider,
       session.id,
@@ -430,55 +633,29 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
     sessionMessagesCacheRef.current.set(getSessionCacheKey(session), history);
     sessionCursorCacheRef.current.set(getSessionCacheKey(session), bundle.cursor);
     if (selectedSessionRef.current && selectedSessionRef.current.id === session.id) {
+      const latest = Array.isArray(history) && history.length > 0 ? history[history.length - 1] : null;
+      const previousLatest = previousHistory.length > 0 ? previousHistory[previousHistory.length - 1] : null;
+      const hasNewAssistantReply = Boolean(
+        latest
+        && latest.role === 'assistant'
+        && (
+          history.length > previousHistory.length
+          || String(latest.content || '') !== String(previousLatest && previousLatest.content || '')
+          || String(latest.timestamp || '') !== String(previousLatest && previousLatest.timestamp || '')
+        )
+      );
+      if (hasNewAssistantReply) {
+        clearWatchPending();
+      }
       applySessionHistory(history);
     }
-  }, []);
+  }, [clearWatchPending]);
 
   const applySessionEvents = useCallback((session: Session, events: SessionEventItem[]) => {
     if (!Array.isArray(events) || events.length === 0) return;
     const cacheKey = getSessionCacheKey(session);
     const baseMessages = sessionMessagesCacheRef.current.get(cacheKey) || [];
     const nextMessages = [...baseMessages];
-
-    const appendAssistantText = (text: string, timestamp?: string) => {
-      const cleanText = String(text || '').trim();
-      if (!cleanText) return;
-      const last = nextMessages[nextMessages.length - 1];
-      if (!last || last.role !== 'assistant') {
-        nextMessages.push({ role: 'assistant', content: cleanText, pending: false, timestamp });
-        return;
-      }
-      nextMessages[nextMessages.length - 1] = {
-        ...last,
-        content: `${String(last.content || '').trim()}${last.content ? '\n\n' : ''}${cleanText}`,
-        pending: false,
-        statusText: undefined,
-        timestamp: last.timestamp || timestamp
-      };
-    };
-
-    const appendAssistantThinking = (text: string, timestamp?: string) => {
-      const cleanText = String(text || '').trim();
-      if (!cleanText) return;
-      const last = nextMessages[nextMessages.length - 1];
-      if (!last || last.role !== 'assistant') {
-        nextMessages.push({
-          role: 'assistant',
-          content: appendThinkingChunk('', cleanText),
-          pending: true,
-          statusText: 'Codex 正在思考...',
-          timestamp
-        });
-        return;
-      }
-      nextMessages[nextMessages.length - 1] = {
-        ...last,
-        content: appendThinkingChunk(String(last.content || ''), cleanText),
-        pending: true,
-        statusText: 'Codex 正在思考...',
-        timestamp: last.timestamp || timestamp
-      };
-    };
 
     events.forEach((event) => {
       if (event.type === 'user_message') {
@@ -502,41 +679,51 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
 
       if (event.type === 'assistant_text') {
         clearWatchPending();
-        appendAssistantText(event.text || event.content || '', event.timestamp);
+        nextMessages.splice(
+          0,
+          nextMessages.length,
+          ...applySessionAssistantEvent(nextMessages, event, {
+            pending: false,
+            provider: session.provider,
+            thinkingStatusText: getThinkingStatusText(session.provider),
+            processingStatusText: getProcessingStatusText()
+          })
+        );
         return;
       }
 
       if (event.type === 'assistant_reasoning') {
-        clearWatchPending();
-        appendAssistantThinking(event.text || event.content || '', event.timestamp);
+        markWatchPending(session, getThinkingStatusText(session.provider));
+        nextMessages.splice(
+          0,
+          nextMessages.length,
+          ...applySessionAssistantEvent(nextMessages, event, {
+            pending: false,
+            provider: session.provider,
+            thinkingStatusText: getThinkingStatusText(session.provider),
+            processingStatusText: getProcessingStatusText()
+          })
+        );
         return;
       }
 
       if (event.type === 'assistant_tool_call' || event.type === 'assistant_tool_result') {
-        clearWatchPending();
-        const toolContent = String(event.content || '').trim();
-        if (!toolContent) return;
-        const last = nextMessages[nextMessages.length - 1];
-        if (!last || last.role !== 'assistant') {
-          nextMessages.push({
-            role: 'assistant',
-            content: toolContent,
-            pending: false,
-            timestamp: event.timestamp
-          });
-          return;
+        if (event.type === 'assistant_tool_call' && supportsToolBoundaryQueue(session.provider, false)) {
+          flushQueuedToolCallMessage(session);
         }
-        const existingContent = String(last.content || '').trim();
-        const alreadyIncluded = existingContent.includes(toolContent);
-        nextMessages[nextMessages.length - 1] = {
-          ...last,
-          content: alreadyIncluded
-            ? existingContent
-            : `${existingContent}${existingContent ? '\n\n' : ''}${toolContent}`,
-          pending: false,
-          statusText: undefined,
-          timestamp: last.timestamp || event.timestamp
-        };
+        const isSessionStillRunning = Boolean(findActiveRunKeyForSession(session));
+        clearWatchPending();
+        nextMessages.splice(
+          0,
+          nextMessages.length,
+          ...applySessionAssistantEvent(nextMessages, event, {
+            pending: isSessionStillRunning,
+            provider: session.provider,
+            thinkingStatusText: getThinkingStatusText(session.provider),
+            processingStatusText: getProcessingStatusText()
+          })
+        );
+        return;
       }
     });
 
@@ -545,7 +732,7 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
     if (selectedSessionRef.current?.id === session.id) {
       applySessionHistory(normalizedMessages);
     }
-  }, [clearWatchPending]);
+  }, [applySessionHistory, clearWatchPending, findActiveRunKeyForSession, flushQueuedToolCallMessage, markWatchPending]);
 
   useEffect(() => {
     reloadSessionHistoryRef.current = reloadSessionHistory;
@@ -581,9 +768,12 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
       try {
         const data = JSON.parse(evt.data);
         if (data.type === 'update') {
-          if (session.provider === 'codex') {
-            markWatchPending(session);
-          }
+          markWatchPending(
+            session,
+            supportsSessionWatchPending(session.provider)
+              ? getThinkingStatusText(session.provider)
+              : getGeneratingStatusText()
+          );
           scheduleSessionReload(session);
         }
       } catch {}
@@ -613,30 +803,48 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
     };
   }, [clearSessionWatch, markWatchPending, scheduleSessionReload]);
 
-  const handleResumeSync = useCallback(async (reason: 'visible' | 'online' | 'pageshow') => {
+  const connectProjectRuntimeWatch = useCallback(() => {
+    if (typeof window === 'undefined') return;
+
+    clearProjectRuntimeWatch();
+    const eventSource = new EventSource('/v0/webui/projects/watch');
+    projectRuntimeWatchRef.current = eventSource;
+
+    eventSource.onmessage = (evt) => {
+      try {
+        const data = JSON.parse(evt.data);
+        if (data.type === 'runtime') {
+          setPassiveRunningSessionKeys(new Set(
+            Array.isArray(data.runningSessionKeys) ? data.runningSessionKeys.map((item: unknown) => String(item || '')) : []
+          ));
+        }
+      } catch {}
+    };
+
+    eventSource.onerror = () => {
+      eventSource.close();
+      if (projectRuntimeWatchRef.current === eventSource) {
+        projectRuntimeWatchRef.current = null;
+      }
+      if (projectRuntimeReconnectTimerRef.current != null) {
+        window.clearTimeout(projectRuntimeReconnectTimerRef.current);
+      }
+      projectRuntimeReconnectTimerRef.current = window.setTimeout(() => {
+        projectRuntimeReconnectTimerRef.current = null;
+        if (document.visibilityState === 'hidden') return;
+        connectProjectRuntimeWatch();
+      }, 1500);
+    };
+  }, [clearProjectRuntimeWatch]);
+
+  const handleResumeSync = useCallback(async (_syncReason: 'visible' | 'online' | 'pageshow') => {
     const session = selectedSessionRef.current;
+    connectProjectRuntimeWatch();
     if (!session) return;
 
-    if (session.draft) {
-      if (loadingRef.current && streamAbortRef.current) {
-        suppressAbortToastRef.current = true;
-        streamAbortRef.current.abort();
-      }
-      return;
-    }
+    if (session.draft) return;
 
     connectSessionWatch(session);
-
-    const hiddenDurationMs = hiddenAtRef.current > 0 ? Date.now() - hiddenAtRef.current : 0;
-    const shouldResetActiveStream = loadingRef.current
-      && streamAbortRef.current
-      && (reason === 'online' || hiddenDurationMs >= 15000);
-
-    if (shouldResetActiveStream) {
-      const activeStream = streamAbortRef.current;
-      suppressAbortToastRef.current = true;
-      activeStream?.abort();
-    }
 
     try {
       await reloadSessionHistory(session);
@@ -647,11 +855,11 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
         projectDirName: session.projectDirName
       });
     } catch {}
-  }, [connectSessionWatch, reloadSessionHistory]);
+  }, [connectProjectRuntimeWatch, connectSessionWatch, reloadSessionHistory]);
 
   const loadAccounts = async () => {
     try {
-      const data = await accountsAPI.list();
+      const { accounts: data } = await accountsAPI.list();
       const usableAccounts = data.filter((a) => a.configured && !a.exhausted);
       setAccounts(usableAccounts);
       setSelectedAccount((current) => {
@@ -697,13 +905,14 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
   useEffect(() => {
     loadAccounts();
     const initialSelection = initialSelectionRef.current;
+    connectProjectRuntimeWatch();
     loadProjects({
       sessionId: initialSelection.sessionId,
       projectPath: initialSelection.projectPath,
       provider: initialSelection.provider,
       projectDirName: initialSelection.projectDirName
     });
-  }, []);
+  }, [connectProjectRuntimeWatch]);
 
   useEffect(() => {
     if (!isMobile) return;
@@ -715,6 +924,25 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
   useEffect(() => {
     selectedSessionRef.current = selectedSession;
   }, [selectedSession]);
+
+  useEffect(() => {
+    activeRunsRef.current.forEach((run, runKey) => {
+      if (!run.sessionId) return;
+      const session: Session = {
+        id: run.sessionId,
+        title: '',
+        updatedAt: Date.now(),
+        provider: run.provider,
+        projectDirName: run.projectDirName,
+        projectPath: run.projectPath
+      };
+      if (selectedSession?.id === session.id && selectedSession?.provider === session.provider) {
+        clearActiveRunWatch(runKey);
+        return;
+      }
+      connectActiveRunWatch(runKey, session);
+    });
+  }, [clearActiveRunWatch, connectActiveRunWatch, selectedSession]);
 
   useEffect(() => {
     writePersistedSelection({
@@ -731,14 +959,52 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
     selectedSession?.provider
   ]);
 
-  useEffect(() => {
-    loadingRef.current = loading;
-  }, [loading]);
+  const selectedSessionRunKey = selectedSession ? findActiveRunKeyForSession(selectedSession) : '';
+  const selectedSessionRunStatusText = selectedSessionRunKey
+    ? runStatusByKey[selectedSessionRunKey] || undefined
+    : undefined;
+  const selectedSessionQueueKey = resolveSelectedSessionQueueKey(selectedSession, selectedSessionRunKey);
+  const selectedQueuedMessages = selectedSessionQueueKey ? (queuedMessagesByKey[selectedSessionQueueKey] || []) : [];
+
+  const handleEditQueuedMessage = useCallback((messageId: string) => {
+    if (!selectedSessionQueueKey) return;
+    const queued = (queuedMessagesByKey[selectedSessionQueueKey] || []).find((item) => item.id === messageId);
+    if (!queued) return;
+    setInput(queued.content);
+    setImages(Array.isArray(queued.images) ? queued.images : []);
+    removeQueuedSessionMessage(selectedSessionQueueKey, messageId);
+  }, [queuedMessagesByKey, removeQueuedSessionMessage, selectedSessionQueueKey]);
+
+  const handleRemoveQueuedMessage = useCallback((messageId: string) => {
+    if (!selectedSessionQueueKey) return;
+    removeQueuedSessionMessage(selectedSessionQueueKey, messageId);
+  }, [removeQueuedSessionMessage, selectedSessionQueueKey]);
+
+  const prioritizeQueuedSessionMessage = useCallback((sessionKey: string, messageId: string): QueuedSessionMessage | null => {
+    let moved: QueuedSessionMessage | null = null;
+    setQueuedMessagesByKey((current) => {
+      const result = moveQueuedMessageToFront(current, sessionKey, messageId);
+      moved = result.moved;
+      return result.nextState;
+    });
+    return moved;
+  }, []);
 
   useEffect(() => {
     return () => {
       clearSessionWatch();
-      streamAbortRef.current?.abort();
+      clearProjectRuntimeWatch();
+      activeRunWatchersRef.current.forEach((watcher) => {
+        if (watcher.reconnectTimer != null) {
+          window.clearTimeout(watcher.reconnectTimer);
+        }
+        watcher.eventSource?.close();
+      });
+      activeRunWatchersRef.current.clear();
+      activeRunsRef.current.forEach((run) => {
+        run.controller.abort();
+      });
+      activeRunsRef.current.clear();
       sessionReloadTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
       sessionReloadTimersRef.current.clear();
       if (resumeSyncTimerRef.current != null) {
@@ -746,7 +1012,7 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
         resumeSyncTimerRef.current = null;
       }
     };
-  }, [clearSessionWatch]);
+  }, [clearProjectRuntimeWatch, clearSessionWatch]);
 
   useEffect(() => {
     const scheduleResumeSync = (reason: 'visible' | 'online' | 'pageshow') => {
@@ -763,6 +1029,7 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
       if (document.visibilityState === 'hidden') {
         hiddenAtRef.current = Date.now();
         clearSessionWatch();
+        clearProjectRuntimeWatch();
         return;
       }
       scheduleResumeSync('visible');
@@ -780,20 +1047,20 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('pageshow', handlePageShow);
     };
-  }, [clearSessionWatch, handleResumeSync]);
+  }, [clearProjectRuntimeWatch, clearSessionWatch, handleResumeSync]);
 
   const selectedProjectRef = (items: AggregatedProject[], projectPath?: string) =>
     items.find((project) => project.path === projectPath) || null;
 
   useEffect(() => {
     clearSessionWatch();
+    refreshSelectedSessionLoading();
     if (!selectedSession) return;
-    streamAbortRef.current?.abort();
     if (selectedSession.draft) {
       setMessages([]);
       setAllMessages([]);
       setHasMoreHistory(false);
-      setLoading(false);
+      refreshSelectedSessionLoading();
       return;
     }
 
@@ -806,7 +1073,6 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
         setAllMessages([]);
         setHasMoreHistory(false);
       }
-      setLoading(true);
       try {
         const bundle = await sessionsAPI.getSessionMessagesBundle(
           selectedSession.provider,
@@ -828,8 +1094,6 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
         if (ownerProject) setSelectedProject(ownerProject);
       } catch {
         message.error('加载会话历史失败');
-      } finally {
-        setLoading(false);
       }
     };
 
@@ -847,7 +1111,7 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
         }
       };
     }
-  }, [clearSessionWatch, connectSessionWatch, selectedSession]);
+  }, [clearSessionWatch, connectSessionWatch, refreshSelectedSessionLoading, selectedSession]);
 
   const handleSelectProject = (project: AggregatedProject) => {
     setSelectedProject(project);
@@ -939,8 +1203,325 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
     }
   };
 
+  const runSessionMessage = useCallback(async ({
+    session,
+    account,
+    model,
+    content,
+    imageList
+  }: {
+    session: Session;
+    account: Account;
+    model?: string;
+    content: string;
+    imageList: string[];
+  }) => {
+    const requestSession = session;
+    const requestProjectPath = requestSession.projectPath || selectedProject?.path;
+    if (!requestProjectPath) {
+      throw new Error('当前会话缺少项目路径');
+    }
+
+    const requestRunKey = findActiveRunKeyForSession(requestSession) || getSessionRunKey(requestSession);
+    const controller = new AbortController();
+    let activeRunKey = requestRunKey;
+    let usedNativeSession = false;
+    let createdSessionId = '';
+    let latestRunMessages = dedupeChatMessages([
+      ...(sessionMessagesCacheRef.current.get(getSessionCacheKey(requestSession)) || (selectedSessionRef.current?.id === requestSession.id ? messages : [])),
+      {
+        role: 'user',
+        content: content.trim(),
+        images: imageList.slice(),
+        timestamp: Date.now()
+      },
+      {
+        role: 'assistant',
+        content: '',
+        pending: true,
+        statusText: '已发送，正在连接...',
+        timestamp: Date.now()
+      }
+    ]);
+
+    const requestMessages = latestRunMessages
+      .filter((message) => message.role === 'user' || message.role === 'assistant' || message.role === 'system')
+      .map((message) => ({
+        role: message.role,
+        content: message.content
+      }));
+
+    const syncVisibleMessages = () => {
+      const currentSession = selectedSessionRef.current;
+      if (!currentSession) return;
+      const currentRunKey = findActiveRunKeyForSession(currentSession) || getSessionRunKey(currentSession);
+      if (currentRunKey !== activeRunKey && !(currentSession.id === requestSession.id && currentSession.provider === requestSession.provider)) {
+        return;
+      }
+      setMessages(latestRunMessages);
+    };
+
+    const persistRunMessages = (resolvedSession: Session) => {
+      sessionMessagesCacheRef.current.set(getSessionCacheKey(resolvedSession), latestRunMessages);
+      if (selectedSessionRef.current?.id === resolvedSession.id && selectedSessionRef.current?.provider === resolvedSession.provider) {
+        applySessionHistory(latestRunMessages);
+      } else {
+        syncVisibleMessages();
+      }
+    };
+
+    let resolvedSession: Session = requestSession;
+    persistRunMessages(resolvedSession);
+
+    registerActiveRun({
+      runKey: activeRunKey,
+      draftSessionId: requestSession.draft ? requestSession.id : undefined,
+      provider: requestSession.provider,
+      sessionId: requestSession.draft ? undefined : requestSession.id,
+      projectDirName: requestSession.projectDirName,
+      projectPath: requestProjectPath,
+      controller
+    });
+    updateRunStatus(activeRunKey, '已发送，正在连接...');
+    requestBrowserNotificationPermission();
+
+    const applyRunMessages = (updater: (current: ChatMessage[]) => ChatMessage[]) => {
+      latestRunMessages = updater([...latestRunMessages]);
+      persistRunMessages(resolvedSession);
+    };
+
+    const updateSelectedPendingStatus = (statusText: string) => {
+      updateRunStatus(activeRunKey, statusText);
+      const currentSession = selectedSessionRef.current;
+      if (currentSession && currentSession.id === resolvedSession.id && currentSession.provider === resolvedSession.provider) {
+        updatePendingAssistantStatus(statusText);
+      }
+    };
+
+    try {
+      const handleStreamEvent = (event: ChatStreamEvent) => {
+        if (event.mode === 'native-session') {
+          usedNativeSession = true;
+        }
+        if (event.type === 'ready' && event.runId) {
+          updateActiveRun(activeRunKey, { runId: event.runId });
+          updateSelectedPendingStatus('已连接，准备处理中...');
+          return;
+        }
+        if (event.type === 'session-created' && event.sessionId) {
+          createdSessionId = event.sessionId;
+          const nextRunKey = getActualSessionRunKey(account.provider, event.sessionId, requestSession.projectDirName);
+          moveQueuedMessages(activeRunKey, nextRunKey);
+          activeRunKey = renameActiveRun(activeRunKey, nextRunKey, {
+            provider: account.provider,
+            sessionId: event.sessionId,
+            projectDirName: requestSession.projectDirName,
+            projectPath: requestProjectPath
+          });
+          resolvedSession = {
+            ...requestSession,
+            id: event.sessionId,
+            draft: false,
+            provider: account.provider,
+            projectPath: requestProjectPath
+          };
+          persistRunMessages(resolvedSession);
+          updateSelectedPendingStatus(`会话已创建，${getGeneratingStatusText()}`);
+          const stillOnDraft = Boolean(selectedSessionRef.current?.draft && selectedSessionRef.current.id === requestSession.id);
+          loadProjects(
+            stillOnDraft
+              ? {
+                  sessionId: event.sessionId,
+                  projectPath: requestProjectPath,
+                  provider: account.provider,
+                  projectDirName: requestSession.projectDirName
+                }
+              : { projectPath: requestProjectPath }
+          ).catch(() => {});
+          return;
+        }
+        if (event.type === 'terminal-output' && event.text) {
+          updateSelectedPendingStatus(getProcessingStatusText());
+          applyRunMessages((next) => {
+            const chunk = cleanLiveTerminalChunk(event.text || '');
+            if (!chunk) return next;
+            return applyStreamingAssistantEvent(next, { ...event, text: chunk }, {
+              timestamp: Date.now(),
+              provider: requestSession.provider,
+              processingStatusText: getProcessingStatusText()
+            });
+          });
+          return;
+        }
+        if (event.type === 'thinking' && event.thinking) {
+          updateSelectedPendingStatus(getThinkingStatusText(requestSession.provider));
+          applyRunMessages((next) => {
+            return applyStreamingAssistantEvent(next, event, {
+              timestamp: Date.now(),
+              provider: requestSession.provider,
+              thinkingStatusText: getThinkingStatusText(requestSession.provider)
+            });
+          });
+          return;
+        }
+        if (event.type === 'delta') {
+          updateSelectedPendingStatus(getGeneratingStatusText());
+          applyRunMessages((next) => {
+            return applyStreamingAssistantEvent(next, event, {
+              timestamp: Date.now(),
+              provider: requestSession.provider,
+              generatingStatusText: getGeneratingStatusText()
+            });
+          });
+          return;
+        }
+        if (event.type === 'result' || event.type === 'done') {
+          if (typeof event.content === 'string' && event.content) {
+            const finalContent = event.content;
+            applyRunMessages((next) => {
+              return applyStreamingAssistantEvent(next, event, {
+                timestamp: Date.now(),
+                provider: requestSession.provider
+              });
+            });
+            notifyAssistantCompleted(requestSession.provider, finalContent);
+          } else if (event.type === 'done') {
+            applyRunMessages((next) => {
+              return applyStreamingAssistantEvent(next, event, {
+                timestamp: Date.now(),
+                provider: requestSession.provider
+              });
+            });
+            notifyAssistantCompleted(requestSession.provider, '');
+          }
+        }
+      };
+
+      await chatAPI.sendStream({
+        messages: requestMessages,
+        prompt: content.trim(),
+        provider: account.provider,
+        accountId: account.accountId,
+        createSession: Boolean(requestSession.draft),
+        sessionId: requestSession.draft ? undefined : requestSession.id,
+        projectDirName: requestSession.draft ? undefined : requestSession.projectDirName,
+        projectPath: requestProjectPath,
+        model: model || undefined,
+        images: imageList,
+        stream: true
+      }, {
+        signal: controller.signal,
+        onEvent: handleStreamEvent
+      });
+
+      if (requestSession.draft) {
+        const stillOnDraft = Boolean(selectedSessionRef.current?.draft && selectedSessionRef.current.id === requestSession.id);
+        if (createdSessionId) {
+          await loadProjects({
+            sessionId: stillOnDraft ? createdSessionId : undefined,
+            projectPath: requestProjectPath,
+            provider: account.provider
+          });
+        } else if (usedNativeSession) {
+          await loadProjects({ projectPath: requestProjectPath });
+        }
+      } else if (usedNativeSession) {
+        await reloadSessionHistory(resolvedSession);
+      }
+    } catch (err: any) {
+      if (selectedSessionRef.current?.id === resolvedSession.id && selectedSessionRef.current?.provider === resolvedSession.provider) {
+        dropPendingAssistantPlaceholder();
+      }
+      throw err;
+    } finally {
+      unregisterActiveRun(activeRunKey);
+      const nextQueued = shiftQueuedSessionMessage(activeRunKey);
+      if (nextQueued && resolvedSession && !resolvedSession.draft) {
+        const queuedToRun = nextQueued;
+        const targetSession = resolvedSession;
+        window.setTimeout(() => {
+          const backgroundAccount = accounts.find((item) =>
+            item.provider === queuedToRun.provider && item.accountId === queuedToRun.accountId
+          );
+          if (!backgroundAccount) return;
+          runSessionMessage({
+            session: targetSession,
+            account: backgroundAccount,
+            model: queuedToRun.model,
+            content: queuedToRun.content,
+            imageList: Array.isArray(queuedToRun.images) ? queuedToRun.images : []
+          }).catch(() => {});
+        }, 0);
+      }
+    }
+  }, [
+    accounts,
+    applySessionHistory,
+    findActiveRunKeyForSession,
+    loadProjects,
+    messages,
+    moveQueuedMessages,
+    notifyAssistantCompleted,
+    registerActiveRun,
+    reloadSessionHistory,
+    renameActiveRun,
+    requestBrowserNotificationPermission,
+    selectedProject?.path,
+    shiftQueuedSessionMessage,
+    unregisterActiveRun,
+    updateActiveRun,
+    updateRunStatus
+  ]);
+
+  const handleSendQueuedMessageNow = useCallback((messageId: string) => {
+    if (!selectedSession || !selectedSessionQueueKey) return;
+    const queue = queuedMessagesByKey[selectedSessionQueueKey] || [];
+    const queued = queue.find((item) => item.id === messageId);
+    if (!queued) return;
+
+    const currentRunKey = findActiveRunKeyForSession(selectedSession);
+    if (currentRunKey) {
+      prioritizeQueuedSessionMessage(selectedSessionQueueKey, messageId);
+      const currentRun = activeRunsRef.current.get(currentRunKey);
+      if (!currentRun) return;
+      suppressAbortToastRef.current = true;
+      currentRun.controller.abort();
+      dropPendingAssistantPlaceholder();
+      message.success('已切换为立即介入，这条需求会在当前轮停止后优先发送');
+      return;
+    }
+
+    const account = accounts.find((item) =>
+      item.provider === queued.provider && item.accountId === queued.accountId
+    );
+    if (!account) {
+      message.error('找不到对应账号，无法立即发送这条队列消息');
+      return;
+    }
+    removeQueuedSessionMessage(selectedSessionQueueKey, messageId);
+    runSessionMessage({
+      session: selectedSession,
+      account,
+      model: queued.model,
+      content: queued.content,
+      imageList: Array.isArray(queued.images) ? queued.images : []
+    }).catch((err: any) => {
+      setQueuedMessagesByKey((current) => prependQueuedMessage(current, selectedSessionQueueKey, queued));
+      message.error(err?.response?.data?.error || err?.response?.data?.message || err?.message || '立即发送失败');
+    });
+  }, [
+    accounts,
+    findActiveRunKeyForSession,
+    prependQueuedMessage,
+    prioritizeQueuedSessionMessage,
+    queuedMessagesByKey,
+    removeQueuedSessionMessage,
+    runSessionMessage,
+    selectedSession,
+    selectedSessionQueueKey
+  ]);
+
   const handleSend = async () => {
-    if (loading) return;
     if (!input.trim()) return message.warning('请输入消息');
     if (!selectedAccount) return message.warning('请先选择一个账号');
     if (!selectedSession) return message.warning('请先选择一个会话');
@@ -953,190 +1534,36 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
     if (!requestProjectPath) {
       return message.error('当前会话缺少项目路径');
     }
-    const userMsg: ChatMessage = {
-      role: 'user',
-      content: input.trim(),
-      images: images.slice(),
-      timestamp: Date.now()
-    };
-    const optimisticMessages = [...messages, userMsg];
-    const requestMessages = optimisticMessages.map((message) => ({
-      role: message.role,
-      content: message.content
-    }));
-    const assistantPlaceholder: ChatMessage = {
-      role: 'assistant',
-      content: '',
-      pending: true,
-      statusText: '已发送，正在连接...',
-      timestamp: Date.now()
-    };
-    const newMessages = [...optimisticMessages, assistantPlaceholder];
-    setMessages(newMessages);
-    if (requestSession && !requestSession.draft) {
-      sessionMessagesCacheRef.current.set(getSessionCacheKey(requestSession), newMessages);
-    }
+    const queuedContent = input.trim();
+    const queuedImages = images.slice();
+    const queuedMode: QueuedSessionMessage['mode'] = resolveQueuedMode(selectedAccount.provider, selectedAccount.apiKeyMode);
     setInput('');
     setImages([]);
-    setLoading(true);
-    const controller = new AbortController();
-    streamAbortRef.current = controller;
-    let usedNativeSession = false;
 
-    try {
-      let createdSessionId = '';
-      const handleStreamEvent = (event: ChatStreamEvent) => {
-        if (event.mode === 'native-session') {
-          usedNativeSession = true;
-        }
-        if (event.type === 'ready' && event.runId) {
-          updatePendingAssistantStatus('已连接，准备处理中...');
-          return;
-        }
-        if (event.type === 'session-created' && event.sessionId) {
-          createdSessionId = event.sessionId;
-          updatePendingAssistantStatus('会话已创建，正在生成回复...');
-          return;
-        }
-        if (event.type === 'terminal-output' && event.text) {
-          setMessages((current) => {
-            const next = current.slice();
-            const chunk = cleanLiveTerminalChunk(event.text || '');
-            if (!chunk) return next;
-            const last = next[next.length - 1];
-            if (!last || last.role !== 'assistant') {
-              next.push({ role: 'assistant', content: chunk, pending: false, timestamp: Date.now() });
-              return next;
-            }
-            next[next.length - 1] = {
-              ...last,
-              content: `${last.content || ''}${chunk}`,
-              pending: false,
-              timestamp: last.timestamp || Date.now()
-            };
-            if (requestSession && !requestSession.draft) {
-              sessionMessagesCacheRef.current.set(getSessionCacheKey(requestSession), next);
-            }
-            return next;
-          });
-          return;
-        }
-        if (event.type === 'thinking' && event.thinking) {
-          updatePendingAssistantStatus('Codex 正在思考...');
-          setMessages((current) => {
-            const next = current.slice();
-            const thinkingChunk = event.thinking || '';
-            const last = next[next.length - 1];
-            if (!last || last.role !== 'assistant') {
-              next.push({
-                role: 'assistant',
-                content: appendThinkingChunk('', thinkingChunk),
-                pending: true,
-                statusText: 'Codex 正在思考...',
-                timestamp: Date.now()
-              });
-              return next;
-            }
-            next[next.length - 1] = {
-              ...last,
-              content: appendThinkingChunk(last.content || '', thinkingChunk),
-              pending: true,
-              statusText: 'Codex 正在思考...',
-              timestamp: last.timestamp || Date.now()
-            };
-            if (requestSession && !requestSession.draft) {
-              sessionMessagesCacheRef.current.set(getSessionCacheKey(requestSession), next);
-            }
-            return next;
-          });
-          return;
-        }
-        if (event.type === 'delta') {
-          updatePendingAssistantStatus('正在生成回复...');
-          setMessages((current) => {
-            const next = current.slice();
-            const last = next[next.length - 1];
-            if (!last || last.role !== 'assistant') {
-              next.push({ role: 'assistant', content: event.delta || '', pending: false, timestamp: Date.now() });
-              return next;
-            }
-            const baseContent = last.pending
-              ? stripThinkingBlock(last.content || '')
-              : String(last.content || '');
-            next[next.length - 1] = {
-              ...last,
-              content: `${baseContent}${baseContent ? '\n\n' : ''}${event.delta || ''}`.trim(),
-              pending: false,
-              timestamp: last.timestamp || Date.now()
-            };
-            if (requestSession && !requestSession.draft) {
-              sessionMessagesCacheRef.current.set(getSessionCacheKey(requestSession), next);
-            }
-            return next;
-          });
-          return;
-        }
-
-        if (event.type === 'result' || event.type === 'done') {
-          if (typeof event.content === 'string' && event.content) {
-            const finalContent = event.content;
-            setMessages((current) => {
-              const next = current.slice();
-              const last = next[next.length - 1];
-              if (!last || last.role !== 'assistant') {
-                next.push({ role: 'assistant', content: finalContent, pending: false, timestamp: Date.now() });
-                return next;
-              }
-              next[next.length - 1] = {
-                ...last,
-                content: finalContent,
-                pending: false,
-                timestamp: last.timestamp || Date.now()
-              };
-              if (requestSession && !requestSession.draft) {
-                sessionMessagesCacheRef.current.set(getSessionCacheKey(requestSession), next);
-              }
-              return next;
-            });
-          }
-        }
-      };
-
-      await chatAPI.sendStream({
-        messages: requestMessages,
-        prompt: userMsg.content,
+    const currentRunKey = findActiveRunKeyForSession(requestSession);
+    if (currentRunKey) {
+      enqueueSessionMessage(currentRunKey, {
+        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        content: queuedContent,
+        images: queuedImages,
+        createdAt: Date.now(),
         provider: selectedAccount.provider,
         accountId: selectedAccount.accountId,
-        createSession: Boolean(requestSession.draft),
-        sessionId: requestSession.draft ? undefined : requestSession.id,
-        projectDirName: requestSession.draft ? undefined : requestSession.projectDirName,
-        projectPath: requestProjectPath,
         model: selectedModel || undefined,
-        images,
-        stream: true
-      }, {
-        signal: controller.signal,
-        onEvent: handleStreamEvent
+        mode: queuedMode
       });
-      if (requestSession.draft) {
-        if (createdSessionId) {
-          await loadProjects({
-            sessionId: createdSessionId,
-            projectPath: requestProjectPath,
-            provider: selectedAccount.provider
-          });
-        } else if (usedNativeSession) {
-          await loadProjects({
-            projectPath: requestProjectPath
-          });
-        }
-      } else {
-        if (usedNativeSession) {
-          await reloadSessionHistory(requestSession);
-        }
-      }
+      return;
+    }
+
+    try {
+      await runSessionMessage({
+        session: requestSession,
+        account: selectedAccount,
+        model: selectedModel || undefined,
+        content: queuedContent,
+        imageList: queuedImages
+      });
     } catch (err: any) {
-      dropPendingAssistantPlaceholder();
       if (err?.name === 'AbortError') {
         if (suppressAbortToastRef.current) {
           suppressAbortToastRef.current = false;
@@ -1153,22 +1580,22 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
       ).catch(() => {});
     } finally {
       suppressAbortToastRef.current = false;
-      if (streamAbortRef.current === controller) {
-        streamAbortRef.current = null;
-      }
-      setLoading(false);
       loadAccounts().catch(() => {});
     }
   };
 
   const handleStop = () => {
-    streamAbortRef.current?.abort();
+    const currentRunKey = findActiveRunKeyForSession(selectedSessionRef.current);
+    if (!currentRunKey) return;
+    const currentRun = activeRunsRef.current.get(currentRunKey);
+    currentRun?.controller.abort();
     dropPendingAssistantPlaceholder();
   };
 
   const toggleProject = (id: string) => {
     const next = new Set(expandedProjects);
-    next.has(id) ? next.delete(id) : next.add(id);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
     setExpandedProjects(next);
   };
 
@@ -1193,6 +1620,16 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
     );
   })();
 
+  const projectListRunningSessionKeys = (() => {
+    const next = new Set<string>();
+    runningSessionKeys.forEach((key) => next.add(key));
+    passiveRunningSessionKeys.forEach((key) => next.add(key));
+    if (selectedSession && !selectedSession.draft && (loading || Boolean(watchPendingStatus))) {
+      next.add(getActualSessionRunKey(selectedSession.provider, selectedSession.id, selectedSession.projectDirName));
+    }
+    return next;
+  })();
+
   const currentProjectLabel = selectedProject?.name || '项目会话';
   const currentSessionLabel = selectedSession?.title
     || (selectedProject?.path ? selectedProject.path : '打开项目后即可开始聊天');
@@ -1202,6 +1639,7 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
       mobile={isMobile}
       projects={displayProjects}
       loading={loadingProjects}
+      runningSessionKeys={projectListRunningSessionKeys}
       selectedSession={selectedSession}
       selectedProject={selectedProject}
       expandedProjects={expandedProjects}
@@ -1241,14 +1679,19 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
       selectedModel={selectedModel}
       input={input}
       loading={loading}
-      externalPending={Boolean(!loading && watchPendingStatus && selectedSession?.provider === 'codex')}
-      externalPendingStatusText={watchPendingStatus || undefined}
+      loadingStatusText={selectedSessionRunStatusText}
+      queuedMessages={selectedQueuedMessages}
+      externalPending={Boolean(!loading && watchPendingStatus && shouldUseExternalPending(selectedSession?.provider))}
+      externalPendingStatusText={watchPendingStatus || selectedSessionRunStatusText || undefined}
       hasMoreHistory={hasMoreHistory}
       images={images}
       onLoadMore={loadMoreHistory}
       onInputChange={setInput}
       onSend={handleSend}
       onStop={handleStop}
+      onEditQueuedMessage={handleEditQueuedMessage}
+      onRemoveQueuedMessage={handleRemoveQueuedMessage}
+      onSendQueuedMessageNow={handleSendQueuedMessageNow}
       onAccountChange={(account) => {
         setSelectedAccount(account);
         if (selectedSession.draft) {

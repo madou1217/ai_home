@@ -28,6 +28,13 @@ interface Props {
   onProjectRemoved?: (project: AggregatedProject) => void;
 }
 
+interface MobileConfirmState {
+  title: string;
+  description?: string;
+  confirmText?: string;
+  action: () => Promise<void>;
+}
+
 const ProjectList = ({
   mobile = false,
   projects, loading, runningSessionKeys = new Set(), selectedSession, selectedProject,
@@ -37,6 +44,8 @@ const ProjectList = ({
   const [hoveredProject, setHoveredProject] = useState<string | null>(null);
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set()); // 展开显示15条的项目
   const [archivedOpen, setArchivedOpen] = useState(false);
+  const [mobileConfirm, setMobileConfirm] = useState<MobileConfirmState | null>(null);
+  const [mobileConfirmLoading, setMobileConfirmLoading] = useState(false);
 
   const handleRemoveProject = async (project: AggregatedProject) => {
     try {
@@ -56,6 +65,26 @@ const ProjectList = ({
       onRefresh();
     } catch {
       message.error('归档失败');
+    }
+  };
+
+  const openMobileConfirm = (state: MobileConfirmState) => {
+    setMobileConfirm(state);
+  };
+
+  const closeMobileConfirm = () => {
+    if (mobileConfirmLoading) return;
+    setMobileConfirm(null);
+  };
+
+  const handleMobileConfirmOk = async () => {
+    if (!mobileConfirm) return;
+    setMobileConfirmLoading(true);
+    try {
+      await mobileConfirm.action();
+      setMobileConfirm(null);
+    } finally {
+      setMobileConfirmLoading(false);
     }
   };
 
@@ -153,12 +182,11 @@ const ProjectList = ({
                       className={styles.archiveBtn}
                       onClick={(e) => {
                         e.stopPropagation();
-                        Modal.confirm({
+                        openMobileConfirm({
                           title: '移除此项目？',
-                          content: '仅从 Web UI 项目列表中隐藏，不会删除磁盘文件。',
-                          okText: '确定',
-                          cancelText: '取消',
-                          onOk: () => handleRemoveProject(project)
+                          description: '仅从 Web UI 项目列表中隐藏，不会删除磁盘文件。',
+                          confirmText: '确定',
+                          action: () => handleRemoveProject(project)
                         });
                       }}
                       title="移除项目"
@@ -219,11 +247,10 @@ const ProjectList = ({
                               className={styles.archiveBtn}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                Modal.confirm({
+                                openMobileConfirm({
                                   title: '归档此会话？',
-                                  okText: '确定',
-                                  cancelText: '取消',
-                                  onOk: () => handleArchiveSession(session)
+                                  confirmText: '确定',
+                                  action: () => handleArchiveSession(session)
                                 });
                               }}
                               title="归档"
@@ -310,6 +337,39 @@ const ProjectList = ({
         onClose={() => setArchivedOpen(false)}
         onRestored={onRefresh}
       />
+
+      {mobile && (
+        <Modal
+          open={!!mobileConfirm}
+          title={mobileConfirm?.title}
+          onOk={handleMobileConfirmOk}
+          onCancel={closeMobileConfirm}
+          okText={mobileConfirm?.confirmText || '确定'}
+          cancelText="取消"
+          confirmLoading={mobileConfirmLoading}
+          centered
+          destroyOnHidden
+          width="calc(100vw - 32px)"
+          className={styles.mobileConfirmModal}
+          styles={{
+            content: {
+              paddingBottom: 'calc(16px + env(safe-area-inset-bottom))'
+            },
+            header: {
+              paddingRight: 28
+            },
+            body: {
+              fontSize: 14,
+              lineHeight: 1.6,
+              color: '#475569'
+            }
+          }}
+        >
+          {mobileConfirm?.description ? (
+            <div className={styles.mobileConfirmDescription}>{mobileConfirm.description}</div>
+          ) : null}
+        </Modal>
+      )}
     </div>
   );
 };

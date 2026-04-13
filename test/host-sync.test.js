@@ -52,3 +52,39 @@ test('syncGlobalConfigToHost syncs only codex auth and keeps account-owned confi
 
   fs.rmSync(root, { recursive: true, force: true });
 });
+
+test('syncGlobalConfigToHost writes managed codex api-key provider config into host config.toml', () => {
+  const root = mkTmpDir();
+  const hostHomeDir = path.join(root, 'home');
+  const profilesDir = path.join(root, 'profiles');
+  const accountGlobalDir = path.join(profilesDir, 'codex', '10', '.codex');
+  const hostCodexDir = path.join(hostHomeDir, '.codex');
+  fs.mkdirSync(accountGlobalDir, { recursive: true });
+  fs.mkdirSync(hostCodexDir, { recursive: true });
+  fs.writeFileSync(path.join(accountGlobalDir, 'auth.json'), JSON.stringify({
+    OPENAI_API_KEY: 'dummy'
+  }, null, 2));
+
+  const syncGlobalConfigToHost = createHostConfigSyncer({
+    fs,
+    fse,
+    ensureDir: (dir) => fs.mkdirSync(dir, { recursive: true }),
+    getProfileDir: (cliName, id) => path.join(profilesDir, cliName, String(id)),
+    hostHomeDir,
+    cliConfigs: { codex: { globalDir: '.codex' } }
+  });
+
+  const result = syncGlobalConfigToHost('codex', '10');
+  assert.equal(result.ok, true);
+
+  const hostConfig = fs.readFileSync(path.join(hostCodexDir, 'config.toml'), 'utf8');
+  assert.match(hostConfig, /^preferred_auth_method = "apikey"/m);
+  assert.match(hostConfig, /^model_provider = "aih"/m);
+  assert.match(hostConfig, /^\[model_providers\.aih\]$/m);
+  assert.match(hostConfig, /^base_url = "http:\/\/127\.0\.0\.1:8317\/v1"$/m);
+  assert.match(hostConfig, /^bearer_token = "dummy"$/m);
+  assert.match(hostConfig, /^\[features\]$/m);
+  assert.match(hostConfig, /^codex_hooks = true$/m);
+
+  fs.rmSync(root, { recursive: true, force: true });
+});

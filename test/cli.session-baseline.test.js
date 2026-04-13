@@ -109,6 +109,32 @@ test('`aih ls` ignores lock-like non-numeric entries under tool profile dir', (t
   assert.equal(result.stdout.includes('Account ID: \x1b[36m1\x1b[0m'), true);
 });
 
+test('`aih codex set-default` writes managed api-key provider config into host codex config', (t) => {
+  const homeDir = mkTmpDir();
+  t.after(() => fs.rmSync(homeDir, { recursive: true, force: true }));
+
+  const toolDir = path.join(homeDir, '.ai_home', 'profiles', 'codex');
+  const accountDir = path.join(toolDir, '10');
+  const sandboxConfigDir = path.join(accountDir, '.codex');
+  fs.mkdirSync(sandboxConfigDir, { recursive: true });
+  fs.writeFileSync(path.join(sandboxConfigDir, 'auth.json'), JSON.stringify({
+    OPENAI_API_KEY: 'dummy'
+  }, null, 2));
+
+  const result = runCli(['codex', 'set-default', '10'], homeDir);
+  assert.equal(result.status, 0, `stdout=${result.stdout}\nstderr=${result.stderr}`);
+
+  const hostConfigPath = path.join(homeDir, '.codex', 'config.toml');
+  assert.equal(fs.existsSync(hostConfigPath), true);
+
+  const hostConfig = fs.readFileSync(hostConfigPath, 'utf8');
+  assert.match(hostConfig, /^preferred_auth_method = "apikey"/m);
+  assert.match(hostConfig, /^model_provider = "aih"/m);
+  assert.match(hostConfig, /^\[model_providers\.aih\]$/m);
+  assert.match(hostConfig, /^base_url = "http:\/\/127\.0\.0\.1:8317\/v1"$/m);
+  assert.match(hostConfig, /^bearer_token = "dummy"$/m);
+});
+
 test('`aih ls` fast index view does not show synthetic Indexed account names', (t) => {
   const homeDir = mkTmpDir();
   t.after(() => fs.rmSync(homeDir, { recursive: true, force: true }));

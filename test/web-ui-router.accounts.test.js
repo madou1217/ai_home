@@ -1,6 +1,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
+const os = require('node:os');
+const path = require('node:path');
+const fs = require('fs-extra');
 const { handleWebUIRequest } = require('../lib/server/web-ui-router');
 
 function createResCapture() {
@@ -169,6 +172,203 @@ test('web ui accounts list uses live status instead of stale configured state in
     configDir: '/tmp/codex/10001/.codex',
     profileDir: '/tmp/codex/10001'
   });
+});
+
+test('web ui accounts list restores persisted snapshot across fresh state without rescanning account ids', async () => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-accounts-cache-'));
+  const accountRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-account-root-'));
+  try {
+    const profileDir = path.join(accountRoot, 'profile');
+    const configDir = path.join(accountRoot, 'profile', '.codex');
+    fs.ensureDirSync(configDir);
+    fs.writeFileSync(path.join(configDir, 'auth.json'), JSON.stringify({ tokens: {} }), 'utf8');
+    const writeJson = (response, code, payload) => {
+      response.statusCode = code;
+      response.end(JSON.stringify(payload));
+    };
+
+    const warmRes = createResCapture();
+    const warmHandled = await handleWebUIRequest({
+      method: 'GET',
+      pathname: '/v0/webui/accounts',
+      url: new URL('http://localhost/v0/webui/accounts'),
+      req: { headers: {} },
+      res: warmRes,
+      options: {},
+      state: {
+        accounts: { codex: [], gemini: [], claude: [] }
+      },
+      deps: {
+        aiHomeDir,
+        fs,
+        writeJson,
+        readRequestBody: async () => null,
+        accountStateIndex: {
+          getAccountState() {
+            return {
+              configured: true,
+              api_key_mode: false,
+              exhausted: false,
+              remaining_pct: 48,
+              display_name: 'persisted@example.com',
+              updated_at: 222
+            };
+          }
+        },
+        getToolAccountIds(provider) {
+          return provider === 'codex' ? ['7'] : [];
+        },
+        getToolConfigDir: () => configDir,
+        getProfileDir: () => profileDir,
+        loadServerRuntimeAccounts: () => ({ codex: [], gemini: [], claude: [] }),
+        applyReloadState: () => {},
+        checkStatus() {
+          return { configured: false, accountName: 'Unknown' };
+        }
+      }
+    });
+
+    assert.equal(warmHandled, true);
+    assert.equal(warmRes.statusCode, 200);
+
+    const coldRes = createResCapture();
+    let getToolAccountIdsCalls = 0;
+    const coldHandled = await handleWebUIRequest({
+      method: 'GET',
+      pathname: '/v0/webui/accounts',
+      url: new URL('http://localhost/v0/webui/accounts'),
+      req: { headers: {} },
+      res: coldRes,
+      options: {},
+      state: {
+        accounts: { codex: [], gemini: [], claude: [] }
+      },
+      deps: {
+        aiHomeDir,
+        fs,
+        writeJson,
+        readRequestBody: async () => null,
+        accountStateIndex: {
+          getAccountState() {
+            throw new Error('state_index_should_not_be_read_for_persisted_snapshot');
+          }
+        },
+        getToolAccountIds() {
+          getToolAccountIdsCalls += 1;
+          throw new Error('account_ids_should_not_be_scanned_for_persisted_snapshot');
+        },
+        getToolConfigDir: () => configDir,
+        getProfileDir: () => profileDir,
+        loadServerRuntimeAccounts: () => ({ codex: [], gemini: [], claude: [] }),
+        applyReloadState: () => {},
+        checkStatus() {
+          throw new Error('check_status_should_not_block_persisted_snapshot');
+        }
+      }
+    });
+
+    assert.equal(coldHandled, true);
+    assert.equal(coldRes.statusCode, 200);
+    const body = JSON.parse(coldRes.body);
+    assert.equal(body.accounts.length, 1);
+    assert.equal(body.accounts[0].provider, 'codex');
+    assert.equal(body.accounts[0].accountId, '7');
+    assert.equal(body.accounts[0].displayName, 'persisted@example.com');
+    assert.equal(body.accounts[0].remainingPct, 48);
+    assert.equal(getToolAccountIdsCalls, 0);
+  } finally {
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+    fs.rmSync(accountRoot, { recursive: true, force: true });
+  }
+});
+
+test('web ui accounts list reuses fast snapshot within short ttl', async () => {
+  const state = {
+    accounts: { codex: [], gemini: [], claude: [] },
+    __webUiAccountsLive: {
+      records: new Map(),
+      metadata: new Map(),
+      usageSnapshots: new Map(),
+      watchers: new Set(),
+      hydrating: false,
+      queued: false,
+      lastHydratedAt: Date.now(),
+      revision: 0,
+      fastSnapshot: null,
+      fastSnapshotAt: 0
+    }
+  };
+  let getToolAccountIdsCalls = 0;
+  const deps = {
+    fs: {
+      existsSync(filePath) {
+        return String(filePath).endsWith('/auth.json');
+      },
+      readFileSync() {
+        return JSON.stringify({
+          tokens: {
+            id_token: 'header.eyJlbWFpbCI6ImNhY2hlZEBleGFtcGxlLmNvbSJ9.signature'
+          }
+        });
+      }
+    },
+    writeJson: (response, code, payload) => {
+      response.statusCode = code;
+      response.end(JSON.stringify(payload));
+    },
+    readRequestBody: async () => null,
+    accountStateIndex: {
+      getAccountState() {
+        return {
+          configured: true,
+          api_key_mode: false,
+          exhausted: false,
+          remaining_pct: 55,
+          display_name: 'codex-1',
+          updated_at: 100
+        };
+      }
+    },
+    getToolAccountIds(provider) {
+      getToolAccountIdsCalls += 1;
+      return provider === 'codex' ? ['1'] : [];
+    },
+    getToolConfigDir: () => '/tmp/codex/1/.codex',
+    getProfileDir: () => '/tmp/codex/1',
+    loadServerRuntimeAccounts: () => ({ codex: [], gemini: [], claude: [] }),
+    applyReloadState: () => {},
+    checkStatus() {
+      return { configured: true, accountName: 'cached@example.com' };
+    }
+  };
+
+  const firstRes = createResCapture();
+  await handleWebUIRequest({
+    method: 'GET',
+    pathname: '/v0/webui/accounts',
+    url: new URL('http://localhost/v0/webui/accounts'),
+    req: { headers: {} },
+    res: firstRes,
+    options: {},
+    state,
+    deps
+  });
+
+  const secondRes = createResCapture();
+  await handleWebUIRequest({
+    method: 'GET',
+    pathname: '/v0/webui/accounts',
+    url: new URL('http://localhost/v0/webui/accounts'),
+    req: { headers: {} },
+    res: secondRes,
+    options: {},
+    state,
+    deps
+  });
+
+  assert.equal(firstRes.statusCode, 200);
+  assert.equal(secondRes.statusCode, 200);
+  assert.equal(getToolAccountIdsCalls, 3);
 });
 
 test('web ui accounts list falls back to runtime remainingPct when state index usage is missing', async () => {

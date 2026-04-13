@@ -276,6 +276,147 @@ test('web ui projects are sorted by last session update time and sessions are so
   }
 });
 
+test('web ui projects keeps codex projects discovered from real sessions even when host config is incomplete', async () => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-projects-codex-sync-'));
+  const hostHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-projects-codex-host-'));
+  const originalRealHome = process.env.REAL_HOME;
+  process.env.REAL_HOME = hostHomeDir;
+
+  try {
+    const registeredProject = path.join(hostHomeDir, 'registered-project');
+    const unregisteredProject = path.join(hostHomeDir, 'unregistered-project');
+    fs.ensureDirSync(registeredProject);
+    fs.ensureDirSync(unregisteredProject);
+    fs.ensureDirSync(path.join(hostHomeDir, '.codex', 'sessions', '2026', '04', '13'));
+
+    fs.writeFileSync(
+      path.join(hostHomeDir, '.codex', 'config.toml'),
+      `[projects."${registeredProject}"]\ntrust_level = "trusted"\n`,
+      'utf8'
+    );
+
+    const registeredSessionId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+    const unregisteredSessionId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+    fs.writeFileSync(
+      path.join(hostHomeDir, '.codex', 'session_index.jsonl'),
+      [
+        JSON.stringify({ id: registeredSessionId, thread_name: '已注册项目', updated_at: '2026-04-13T10:00:00.000Z' }),
+        JSON.stringify({ id: unregisteredSessionId, thread_name: '未注册项目', updated_at: '2026-04-13T11:00:00.000Z' })
+      ].join('\n') + '\n',
+      'utf8'
+    );
+
+    const sessionDir = path.join(hostHomeDir, '.codex', 'sessions', '2026', '04', '13');
+    fs.writeFileSync(
+      path.join(sessionDir, `rollout-2026-04-13T10-00-00-${registeredSessionId}.jsonl`),
+      JSON.stringify({
+        timestamp: '2026-04-13T10:00:00.000Z',
+        type: 'session_meta',
+        payload: { id: registeredSessionId, cwd: registeredProject }
+      }) + '\n',
+      'utf8'
+    );
+    fs.writeFileSync(
+      path.join(sessionDir, `rollout-2026-04-13T11-00-00-${unregisteredSessionId}.jsonl`),
+      JSON.stringify({
+        timestamp: '2026-04-13T11:00:00.000Z',
+        type: 'session_meta',
+        payload: { id: unregisteredSessionId, cwd: unregisteredProject }
+      }) + '\n',
+      'utf8'
+    );
+
+    const res = createResCapture();
+    const handled = await handleWebUIRequest({
+      method: 'GET',
+      pathname: '/v0/webui/projects',
+      url: new URL('http://localhost/v0/webui/projects?refresh=1'),
+      req: { headers: {} },
+      res,
+      options: {},
+      state: {},
+      deps: createBaseDeps(aiHomeDir)
+    });
+
+    assert.equal(handled, true);
+    assert.equal(res.statusCode, 200);
+    const body = JSON.parse(res.body);
+    assert.equal(body.projects.some((project) => project.path === registeredProject), true);
+    assert.equal(body.projects.some((project) => project.path === unregisteredProject), true);
+  } finally {
+    if (originalRealHome === undefined) delete process.env.REAL_HOME;
+    else process.env.REAL_HOME = originalRealHome;
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+    fs.rmSync(hostHomeDir, { recursive: true, force: true });
+  }
+});
+
+test('web ui projects does not let hidden paths suppress provider-discovered projects with real sessions', async () => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-projects-hidden-host-'));
+  const hostHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-projects-hidden-host-home-'));
+  const originalRealHome = process.env.REAL_HOME;
+  process.env.REAL_HOME = hostHomeDir;
+
+  try {
+    const hiddenButRealProject = path.join(hostHomeDir, 'hidden-but-real-project');
+    fs.ensureDirSync(hiddenButRealProject);
+    fs.ensureDirSync(path.join(hostHomeDir, '.codex', 'sessions', '2026', '04', '13'));
+    fs.writeFileSync(
+      path.join(aiHomeDir, 'webui-projects.json'),
+      JSON.stringify({
+        projects: [],
+        hiddenPaths: [hiddenButRealProject]
+      }, null, 2),
+      'utf8'
+    );
+
+    const sessionId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+    fs.writeFileSync(
+      path.join(hostHomeDir, '.codex', 'session_index.jsonl'),
+      JSON.stringify({
+        id: sessionId,
+        thread_name: '真实项目仍应显示',
+        updated_at: '2026-04-13T12:00:00.000Z'
+      }) + '\n',
+      'utf8'
+    );
+    fs.writeFileSync(
+      path.join(hostHomeDir, '.codex', 'sessions', '2026', '04', '13', `rollout-2026-04-13T12-00-00-${sessionId}.jsonl`),
+      JSON.stringify({
+        timestamp: '2026-04-13T12:00:00.000Z',
+        type: 'session_meta',
+        payload: { id: sessionId, cwd: hiddenButRealProject }
+      }) + '\n',
+      'utf8'
+    );
+
+    const res = createResCapture();
+    const handled = await handleWebUIRequest({
+      method: 'GET',
+      pathname: '/v0/webui/projects',
+      url: new URL('http://localhost/v0/webui/projects?refresh=1'),
+      req: { headers: {} },
+      res,
+      options: {},
+      state: {},
+      deps: createBaseDeps(aiHomeDir)
+    });
+
+    assert.equal(handled, true);
+    assert.equal(res.statusCode, 200);
+    const body = JSON.parse(res.body);
+    const project = body.projects.find((item) => item.path === hiddenButRealProject);
+    assert.ok(project);
+    assert.equal(project.sessions.length, 1);
+    assert.equal(project.sessions[0].id, sessionId);
+  } finally {
+    if (originalRealHome === undefined) delete process.env.REAL_HOME;
+    else process.env.REAL_HOME = originalRealHome;
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+    fs.rmSync(hostHomeDir, { recursive: true, force: true });
+  }
+});
+
 test('web ui models uses cache until provider/account signature changes', async () => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-models-'));
 

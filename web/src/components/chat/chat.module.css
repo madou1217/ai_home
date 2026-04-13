@@ -235,6 +235,16 @@
   padding-bottom: calc(8px + env(safe-area-inset-bottom));
 }
 
+.mobileConfirmModal :global(.ant-modal) {
+  max-width: min(360px, calc(100vw - 32px));
+}
+
+.mobileConfirmDescription {
+  color: #475569;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
 /* ===== 消息气泡 ===== */
 .messageRow {
   margin-bottom: 24px;
@@ -1691,6 +1701,44 @@
 
   .projectName {
     font-size: 15px;
+  }
+
+  .mobileConfirmModal :global(.ant-modal) {
+    width: calc(100vw - 32px) !important;
+    max-width: calc(100vw - 32px);
+    margin: 0 auto;
+  }
+
+  .mobileConfirmModal :global(.ant-modal-content) {
+    border-radius: 16px;
+    overflow: hidden;
+  }
+
+  .mobileConfirmModal :global(.ant-modal-header) {
+    padding: 18px 18px 8px;
+  }
+
+  .mobileConfirmModal :global(.ant-modal-title) {
+    font-size: 18px;
+    line-height: 1.4;
+  }
+
+  .mobileConfirmModal :global(.ant-modal-body) {
+    padding: 0 18px 8px;
+  }
+
+  .mobileConfirmModal :global(.ant-modal-footer) {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 12px 18px 0;
+  }
+
+  .mobileConfirmModal :global(.ant-modal-footer .ant-btn) {
+    min-width: 72px;
+    height: 36px;
+    border-radius: 10px;
+    font-size: 14px;
   }
 
   .archiveBtn {

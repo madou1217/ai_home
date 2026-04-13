@@ -227,6 +227,71 @@ test('web ui chat aborts native stream when client disconnects', async () => {
   }
 });
 
+test('web ui projects watch shares one runtime scanner across multiple watchers', async () => {
+  const originalReadAllProjectsFromHost = sessionReader.readAllProjectsFromHost;
+  const originalGetSessionFileCursor = sessionReader.getSessionFileCursor;
+  let readAllProjectsCalls = 0;
+
+  sessionReader.readAllProjectsFromHost = () => {
+    readAllProjectsCalls += 1;
+    return [{
+      id: 'ai_home',
+      name: 'ai-home',
+      path: '/Users/model/projects/feature/ai_home',
+      provider: 'codex',
+      sessions: [{
+        id: 'shared-session',
+        title: 'resume',
+        updatedAt: Date.now(),
+        projectDirName: 'ai_home'
+      }]
+    }];
+  };
+  sessionReader.getSessionFileCursor = () => 10;
+
+  try {
+    const state = {};
+    const reqA = new EventEmitter();
+    reqA.headers = {};
+    const reqB = new EventEmitter();
+    reqB.headers = {};
+    const resA = createStreamResCapture();
+    const resB = createStreamResCapture();
+
+    await handleWebUIRequest({
+      method: 'GET',
+      pathname: '/v0/webui/projects/watch',
+      url: new URL('http://localhost/v0/webui/projects/watch'),
+      req: reqA,
+      res: resA,
+      options: {},
+      state,
+      deps: createBaseDeps()
+    });
+
+    await handleWebUIRequest({
+      method: 'GET',
+      pathname: '/v0/webui/projects/watch',
+      url: new URL('http://localhost/v0/webui/projects/watch'),
+      req: reqB,
+      res: resB,
+      options: {},
+      state,
+      deps: createBaseDeps()
+    });
+
+    reqA.emit('close');
+    reqB.emit('close');
+
+    assert.equal(readAllProjectsCalls, 1);
+    assert.match(resA.body, /"type":"runtime"/);
+    assert.match(resB.body, /"type":"runtime"/);
+  } finally {
+    sessionReader.readAllProjectsFromHost = originalReadAllProjectsFromHost;
+    sessionReader.getSessionFileCursor = originalGetSessionFileCursor;
+  }
+});
+
 test('web ui chat run input writes to active native stream', async () => {
   const originalSpawn = nativeSessionChat.spawnNativeSessionStream;
   const writes = [];
@@ -1057,6 +1122,149 @@ test('web ui chat registers codex project path into host config before native se
     nativeSessionChat.spawnNativeSessionStream = originalSpawn;
     if (originalRealHome === undefined) delete process.env.REAL_HOME;
     else process.env.REAL_HOME = originalRealHome;
+    fs.rmSync(hostHomeDir, { recursive: true, force: true });
+  }
+});
+
+test('web ui chat refreshes persisted projects snapshot after native codex transcript becomes readable', async () => {
+  const originalSpawn = nativeSessionChat.spawnNativeSessionStream;
+  const hostHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-chat-persist-host-'));
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-chat-persist-aihome-'));
+  const projectPath = path.join(hostHomeDir, 'persisted-project');
+  const sessionId = '019d7bae-4dd5-73f2-b2bd-8125899885cb';
+  const originalRealHome = process.env.REAL_HOME;
+  process.env.REAL_HOME = hostHomeDir;
+  fs.mkdirSync(projectPath, { recursive: true });
+
+  nativeSessionChat.spawnNativeSessionStream = (options = {}) => {
+    return {
+      runId: 'native-run-codex-persist',
+      abort() {},
+      done: new Promise((resolve) => {
+        setTimeout(() => {
+          options.onEvent({
+            type: 'session-created',
+            sessionId
+          });
+          resolve({ content: '已完成', sessionId });
+        }, 0);
+
+        setTimeout(() => {
+          const sessionDir = path.join(hostHomeDir, '.codex', 'sessions', '2026', '04', '13');
+          fs.mkdirSync(sessionDir, { recursive: true });
+          fs.writeFileSync(
+            path.join(hostHomeDir, '.codex', 'session_index.jsonl'),
+            JSON.stringify({
+              id: sessionId,
+              thread_name: '来自 Web 的会话',
+              updated_at: '2026-04-13T12:00:00.000Z'
+            }) + '\n',
+            'utf8'
+          );
+          fs.writeFileSync(
+            path.join(sessionDir, `rollout-2026-04-13T12-00-00-${sessionId}.jsonl`),
+            [
+              JSON.stringify({
+                timestamp: '2026-04-13T12:00:00.000Z',
+                type: 'session_meta',
+                payload: {
+                  id: sessionId,
+                  cwd: projectPath
+                }
+              }),
+              JSON.stringify({
+                timestamp: '2026-04-13T12:00:01.000Z',
+                type: 'response_item',
+                payload: {
+                  type: 'message',
+                  role: 'user',
+                  content: [
+                    { type: 'input_text', text: '把这个需求记下来' }
+                  ]
+                }
+              }),
+              JSON.stringify({
+                timestamp: '2026-04-13T12:00:02.000Z',
+                type: 'response_item',
+                payload: {
+                  role: 'assistant',
+                  content: [
+                    { type: 'output_text', text: '已经记下。' }
+                  ]
+                }
+              })
+            ].join('\n') + '\n',
+            'utf8'
+          );
+        }, 150);
+      })
+    };
+  };
+
+  try {
+    const req = new EventEmitter();
+    req.headers = {};
+    const res = createStreamResCapture();
+    const payload = {
+      provider: 'codex',
+      accountId: '1',
+      createSession: true,
+      projectPath,
+      prompt: '把这个需求记下来',
+      stream: true,
+      messages: [{ role: 'user', content: '把这个需求记下来' }]
+    };
+    const state = {};
+
+    const handled = await handleWebUIRequest({
+      method: 'POST',
+      pathname: '/v0/webui/chat',
+      url: new URL('http://localhost/v0/webui/chat'),
+      req,
+      res,
+      options: {},
+      state,
+      deps: {
+        ...createBaseDeps(),
+        fs: require('fs-extra'),
+        aiHomeDir,
+        readRequestBody: async () => Buffer.from(JSON.stringify(payload), 'utf8')
+      }
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    assert.equal(handled, true);
+    assert.match(res.body, /"type":"done"/);
+    assert.match(res.body, new RegExp(`"sessionId":"${sessionId}"`));
+
+    const listRes = createStreamResCapture();
+    const listHandled = await handleWebUIRequest({
+      method: 'GET',
+      pathname: '/v0/webui/projects',
+      url: new URL('http://localhost/v0/webui/projects'),
+      req: { headers: {} },
+      res: listRes,
+      options: {},
+      state: {},
+      deps: {
+        ...createBaseDeps(),
+        fs: require('fs-extra'),
+        aiHomeDir
+      }
+    });
+
+    assert.equal(listHandled, true);
+    assert.equal(listRes.statusCode, 200);
+    const body = JSON.parse(listRes.body);
+    const project = body.projects.find((item) => item.path === projectPath);
+    assert.ok(project);
+    assert.equal(project.sessions.some((item) => item.id === sessionId), true);
+  } finally {
+    nativeSessionChat.spawnNativeSessionStream = originalSpawn;
+    if (originalRealHome === undefined) delete process.env.REAL_HOME;
+    else process.env.REAL_HOME = originalRealHome;
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
     fs.rmSync(hostHomeDir, { recursive: true, force: true });
   }
 });

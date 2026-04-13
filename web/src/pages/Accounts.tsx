@@ -101,36 +101,10 @@ const PROVIDER_AUTH_OPTIONS: Record<Provider, Array<{
   ]
 };
 
-const PROVIDER_UNAVAILABLE_AUTH_OPTIONS: Partial<Record<Provider, Array<{
-  label: string;
-  description: string;
-}>>> = {
-  claude: [
-    {
-      label: 'Claude Bedrock',
-      description: '官方生态里存在该接入方向，但本项目当前还未完成账号导入、运行时读取和服务路由闭环。'
-    },
-    {
-      label: 'Claude Vertex',
-      description: '官方生态里存在该接入方向，但本项目当前还未完成账号导入、运行时读取和服务路由闭环。'
-    },
-    {
-      label: 'Claude Foundry',
-      description: '官方生态里存在该接入方向，但本项目当前还未完成账号导入、运行时读取和服务路由闭环。'
-    }
-  ],
-  gemini: [
-    {
-      label: 'Gemini Vertex AI',
-      description: '官方生态里存在该接入方向，但本项目当前还未完成账号导入、运行时读取和服务路由闭环。'
-    }
-  ]
-};
-
 const PROVIDER_CAPABILITY_HINTS: Record<Provider, string> = {
   codex: 'Codex 当前已接通浏览器登录、设备码登录和 API Key。',
-  claude: 'Claude 当前已接通 Claude 登录与 Anthropic API Key。Bedrock / Vertex / Foundry 需要单独补齐后端接入链路。',
-  gemini: 'Gemini 当前已接通 Google 登录与 Gemini API Key。Vertex AI 需要单独补齐后端接入链路。'
+  claude: 'Claude 当前仅支持 Claude 登录与 Anthropic API Key。',
+  gemini: 'Gemini 当前仅支持 Google 登录与 Gemini API Key。'
 };
 
 function getAccountPrimaryLabel(record: Pick<Account, 'email' | 'displayName' | 'provider' | 'accountId'>) {
@@ -215,7 +189,6 @@ const Accounts = () => {
   const selectedProvider = Form.useWatch('provider', form) as Provider | undefined;
   const selectedAuthMode = (Form.useWatch('authMode', form) as AccountAuthMode | undefined) || 'oauth-browser';
   const providerAuthOptions = selectedProvider ? PROVIDER_AUTH_OPTIONS[selectedProvider] : [];
-  const unavailableAuthOptions = selectedProvider ? (PROVIDER_UNAVAILABLE_AUTH_OPTIONS[selectedProvider] || []) : [];
   const providerCapabilityHint = selectedProvider ? PROVIDER_CAPABILITY_HINTS[selectedProvider] : '';
 
   const mergeAccounts = React.useCallback((current: Account[], incoming: Account[]) => {
@@ -1068,28 +1041,6 @@ const Accounts = () => {
               showIcon
               message="当前可接入范围"
               description={providerCapabilityHint}
-              style={{ marginBottom: 16 }}
-            />
-          ) : null}
-
-          {unavailableAuthOptions.length > 0 ? (
-            <Alert
-              type="warning"
-              showIcon
-              message="以下认证方式暂不提供入口"
-              description={
-                <Space direction="vertical" size={8} style={{ width: '100%' }}>
-                  {unavailableAuthOptions.map((option) => (
-                    <div key={option.label}>
-                      <Text strong>{option.label}</Text>
-                      <br />
-                      <Text type="secondary" style={{ fontSize: 12 }}>
-                        {option.description}
-                      </Text>
-                    </div>
-                  ))}
-                </Space>
-              }
               style={{ marginBottom: 16 }}
             />
           ) : null}

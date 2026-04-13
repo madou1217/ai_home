@@ -83,7 +83,7 @@ test('readSessionMessages reads codex session messages without full file utf8 re
   }
 });
 
-test('readAllProjectsFromHost filters codex projects by config.toml registered project list', () => {
+test('readAllProjectsFromHost keeps codex session projects even when config.toml registered project list is incomplete', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-session-reader-codex-projects-'));
   const originalRealHome = process.env.REAL_HOME;
   process.env.REAL_HOME = root;
@@ -133,7 +133,60 @@ test('readAllProjectsFromHost filters codex projects by config.toml registered p
 
     const projects = sessionReader.readAllProjectsFromHost();
     assert.equal(projects.some((project) => project.path === keptProject), true);
-    assert.equal(projects.some((project) => project.path === removedProject), false);
+    assert.equal(projects.some((project) => project.path === removedProject), true);
+  } finally {
+    if (originalRealHome === undefined) delete process.env.REAL_HOME;
+    else process.env.REAL_HOME = originalRealHome;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('readAllProjectsFromHost ignores codex worktree sessions but keeps unrelated real projects', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-session-reader-codex-worktree-'));
+  const originalRealHome = process.env.REAL_HOME;
+  process.env.REAL_HOME = root;
+
+  try {
+    const realProject = path.join(root, 'real-project');
+    const worktreeProject = path.join(root, '.codex', 'worktrees', 'abcd', 'real-project');
+    fs.ensureDirSync(realProject);
+    fs.ensureDirSync(worktreeProject);
+    fs.ensureDirSync(path.join(root, '.codex', 'sessions', '2026', '04', '13'));
+
+    const realSessionId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const worktreeSessionId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    fs.writeFileSync(
+      path.join(root, '.codex', 'session_index.jsonl'),
+      [
+        JSON.stringify({ id: realSessionId, thread_name: '真实项目会话', updated_at: '2026-04-13T10:00:00.000Z' }),
+        JSON.stringify({ id: worktreeSessionId, thread_name: 'worktree 项目会话', updated_at: '2026-04-13T11:00:00.000Z' })
+      ].join('\n') + '\n',
+      'utf8'
+    );
+
+    const sessionDir = path.join(root, '.codex', 'sessions', '2026', '04', '13');
+    fs.writeFileSync(
+      path.join(sessionDir, `rollout-2026-04-13T10-00-00-${realSessionId}.jsonl`),
+      JSON.stringify({
+        timestamp: '2026-04-13T10:00:00.000Z',
+        type: 'session_meta',
+        payload: { id: realSessionId, cwd: realProject }
+      }) + '\n',
+      'utf8'
+    );
+    fs.writeFileSync(
+      path.join(sessionDir, `rollout-2026-04-13T11-00-00-${worktreeSessionId}.jsonl`),
+      JSON.stringify({
+        timestamp: '2026-04-13T11:00:00.000Z',
+        type: 'session_meta',
+        payload: { id: worktreeSessionId, cwd: worktreeProject }
+      }) + '\n',
+      'utf8'
+    );
+
+    const projects = sessionReader.readAllProjectsFromHost();
+    assert.equal(projects.some((project) => project.path === realProject), true);
+    assert.equal(projects.some((project) => project.path === worktreeProject), false);
   } finally {
     if (originalRealHome === undefined) delete process.env.REAL_HOME;
     else process.env.REAL_HOME = originalRealHome;
@@ -191,6 +244,49 @@ test('readAllProjectsFromHost falls back to first codex user message when sessio
     assert.equal(project.sessions.length, 1);
     assert.equal(project.sessions[0].id, sessionId);
     assert.equal(project.sessions[0].title, 'E2E transcript check: reply with exactly OK.');
+  } finally {
+    if (originalRealHome === undefined) delete process.env.REAL_HOME;
+    else process.env.REAL_HOME = originalRealHome;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('readAllProjectsFromHost uses codex global state workspace roots to recover claude project path hints', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-session-reader-codex-global-state-'));
+  const originalRealHome = process.env.REAL_HOME;
+  process.env.REAL_HOME = root;
+
+  try {
+    const realProjectPath = path.join(root, 'feature', 'workspace-demo');
+    const sanitizedDirName = realProjectPath.replace(/[^a-zA-Z0-9]/g, '-');
+    const claudeProjectDir = path.join(root, '.claude', 'projects', sanitizedDirName);
+    fs.ensureDirSync(realProjectPath);
+    fs.ensureDirSync(claudeProjectDir);
+    fs.ensureDirSync(path.join(root, '.codex'));
+    fs.writeFileSync(
+      path.join(root, '.codex', '.codex-global-state.json'),
+      JSON.stringify({
+        'electron-saved-workspace-roots': [realProjectPath]
+      }),
+      'utf8'
+    );
+    fs.writeFileSync(
+      path.join(claudeProjectDir, 'demo-session.jsonl'),
+      JSON.stringify({
+        type: 'user',
+        timestamp: '2026-04-12T10:00:00.000Z',
+        message: {
+          content: '使用 codex global state 里的 workspace root 恢复路径'
+        }
+      }) + '\n',
+      'utf8'
+    );
+
+    const projects = sessionReader.readAllProjectsFromHost();
+    const project = projects.find((item) => item.provider === 'claude');
+    assert.ok(project);
+    assert.equal(project.path, realProjectPath);
+    assert.equal(project.name, path.basename(realProjectPath));
   } finally {
     if (originalRealHome === undefined) delete process.env.REAL_HOME;
     else process.env.REAL_HOME = originalRealHome;

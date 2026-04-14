@@ -879,8 +879,16 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
     try {
       const filtered = await fetchProjects();
       setProjects(filtered);
-      if (options.sessionId) {
-        const matched = findProjectBySessionId(filtered, options);
+      const currentSession = selectedSessionRef.current;
+      const selection = {
+        sessionId: options.sessionId || (!currentSession?.draft ? currentSession?.id : undefined),
+        provider: options.provider || currentSession?.provider,
+        projectDirName: options.projectDirName || currentSession?.projectDirName,
+        projectPath: options.projectPath || currentSession?.projectPath || selectedProject?.path
+      };
+
+      if (selection.sessionId) {
+        const matched = findProjectBySessionId(filtered, selection);
         if (matched) {
           setExpandedProjects((current) => new Set([...current, matched.project.id]));
           setSelectedProject(matched.project);
@@ -888,12 +896,19 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
           return;
         }
       }
-      if (options.projectPath) {
-        const project = filtered.find((item) => item.path === options.projectPath) || null;
+
+      if (selection.projectPath) {
+        const project = filtered.find((item) => item.path === selection.projectPath) || null;
         if (project) {
           setExpandedProjects((current) => new Set([...current, project.id]));
         }
         setSelectedProject(project);
+        if (currentSession?.draft && currentSession.projectPath === selection.projectPath) {
+          setSelectedSession({
+            ...currentSession,
+            projectPath: selection.projectPath
+          });
+        }
       }
     } catch {
       message.error('加载项目失败');

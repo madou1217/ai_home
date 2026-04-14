@@ -133,6 +133,56 @@ test('web ui chat streams native session resume as SSE events', async () => {
   }
 });
 
+test('web ui chat strips unsupported gemini oauth native model before starting session', async () => {
+  const originalSpawn = nativeSessionChat.spawnNativeSessionStream;
+  let seenOptions = null;
+  nativeSessionChat.spawnNativeSessionStream = (options = {}) => {
+    seenOptions = options;
+    return {
+      abort() {},
+      done: Promise.resolve({ content: '你好', sessionId: options.sessionId || 'gem-session-id' })
+    };
+  };
+
+  try {
+    const req = new EventEmitter();
+    req.headers = {};
+    const res = createStreamResCapture();
+    const payload = {
+      provider: 'gemini',
+      accountId: '1',
+      createSession: true,
+      projectPath: '/Users/model/projects/feature/ai_home',
+      prompt: '你好',
+      model: 'gemini-3.1-pro-preview',
+      stream: true,
+      messages: [{ role: 'user', content: '你好' }]
+    };
+
+    const handled = await handleWebUIRequest({
+      method: 'POST',
+      pathname: '/v0/webui/chat',
+      url: new URL('http://localhost/v0/webui/chat'),
+      req,
+      res,
+      options: {},
+      state: {},
+      deps: {
+        ...createBaseDeps(),
+        readRequestBody: async () => Buffer.from(JSON.stringify(payload), 'utf8')
+      }
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    assert.equal(handled, true);
+    assert.equal(seenOptions.provider, 'gemini');
+    assert.equal(seenOptions.model, undefined);
+  } finally {
+    nativeSessionChat.spawnNativeSessionStream = originalSpawn;
+  }
+});
+
 test('web ui projects watch emits aggregated running session keys without opening per-session client streams', async () => {
   const originalReadAllProjectsFromHost = sessionReader.readAllProjectsFromHost;
   const originalGetSessionFileCursor = sessionReader.getSessionFileCursor;
@@ -165,7 +215,10 @@ test('web ui projects watch emits aggregated running session keys without openin
       res,
       options: {},
       state: {},
-      deps: createBaseDeps()
+      deps: {
+        ...createBaseDeps(),
+        fs
+      }
     });
 
     assert.equal(handled, true);
@@ -297,6 +350,84 @@ test('web ui projects watch shares one runtime scanner across multiple watchers'
   } finally {
     sessionReader.readAllProjectsFromHost = originalReadAllProjectsFromHost;
     sessionReader.getSessionFileCursor = originalGetSessionFileCursor;
+  }
+});
+
+test('web ui projects watch clears codex running state immediately after stop hook event', async () => {
+  const originalReadAllProjectsFromHost = sessionReader.readAllProjectsFromHost;
+  const originalGetSessionFileCursor = sessionReader.getSessionFileCursor;
+  const originalRealHomeValue = process.env.REAL_HOME;
+  const hostHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-project-watch-stop-'));
+  let cursor = 10;
+
+  process.env.REAL_HOME = hostHomeDir;
+  fs.mkdirSync(path.join(hostHomeDir, '.codex'), { recursive: true });
+
+  sessionReader.readAllProjectsFromHost = () => [{
+    id: 'ai_home',
+    name: 'ai-home',
+    path: '/Users/model/projects/feature/ai_home',
+    provider: 'codex',
+    sessions: [{
+      id: 'session-stop-1',
+      title: 'resume',
+      updatedAt: Date.now(),
+      provider: 'codex',
+      projectPath: '/Users/model/projects/feature/ai_home',
+      projectDirName: 'ai_home'
+    }]
+  }];
+  sessionReader.getSessionFileCursor = () => cursor;
+
+  try {
+    const req = new EventEmitter();
+    req.headers = {};
+    const res = createStreamResCapture();
+
+    const handled = await handleWebUIRequest({
+      method: 'GET',
+      pathname: '/v0/webui/projects/watch',
+      url: new URL('http://localhost/v0/webui/projects/watch'),
+      req,
+      res,
+      options: {},
+      state: {},
+      deps: {
+        ...createBaseDeps(),
+        fs
+      }
+    });
+
+    assert.equal(handled, true);
+    assert.equal(res.statusCode, 200);
+
+    cursor = 11;
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    assert.match(res.body, /"runningSessionKeys":\["codex:session-stop-1:ai_home"\]/);
+
+    fs.appendFileSync(
+      path.join(hostHomeDir, '.codex', 'aih-stop-events.jsonl'),
+      JSON.stringify({
+        timestamp: new Date().toISOString(),
+        payload: {
+          session_id: 'session-stop-1',
+          cwd: '/Users/model/projects/feature/ai_home',
+          last_assistant_message: 'done'
+        }
+      }) + '\n',
+      'utf8'
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    req.emit('close');
+
+    assert.match(res.body, /"runningSessionKeys":\[\]/);
+  } finally {
+    sessionReader.readAllProjectsFromHost = originalReadAllProjectsFromHost;
+    sessionReader.getSessionFileCursor = originalGetSessionFileCursor;
+    if (originalRealHomeValue === undefined) delete process.env.REAL_HOME;
+    else process.env.REAL_HOME = originalRealHomeValue;
+    fs.rmSync(hostHomeDir, { recursive: true, force: true });
   }
 });
 
@@ -762,6 +893,99 @@ test('web ui chat uses anthropic messages adapter for claude api-key accounts wi
   } finally {
     httpUtils.fetchWithTimeout = originalFetchWithTimeout;
     fs.rmSync(profileRoot, { recursive: true, force: true });
+  }
+});
+
+test('web ui chat injects project context for claude anthropic-compatible api proxy sessions', async () => {
+  const originalFetchWithTimeout = httpUtils.fetchWithTimeout;
+  let seenBody = null;
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-claude-project-context-'));
+  const profileDir = path.join(root, 'profile');
+  const configDir = path.join(root, 'config');
+  const projectDir = path.join(root, 'project');
+  fs.mkdirSync(profileDir, { recursive: true });
+  fs.mkdirSync(configDir, { recursive: true });
+  fs.mkdirSync(projectDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(profileDir, '.aih_env.json'),
+    JSON.stringify({
+      ANTHROPIC_API_KEY: 'test-key',
+      ANTHROPIC_BASE_URL: 'https://dashscope.aliyuncs.com/apps/anthropic'
+    }, null, 2)
+  );
+  fs.writeFileSync(
+    path.join(projectDir, 'package.json'),
+    JSON.stringify({
+      name: 'demo-project',
+      description: '用于测试项目上下文注入',
+      scripts: {
+        dev: 'node server.js',
+        test: 'node --test'
+      }
+    }, null, 2)
+  );
+  fs.writeFileSync(
+    path.join(projectDir, 'README.md'),
+    '# Demo Project\n\n这是一个用于验证项目上下文注入的测试仓库。\n',
+    'utf8'
+  );
+
+  httpUtils.fetchWithTimeout = async (_url, init) => {
+    seenBody = JSON.parse(String(init && init.body || '{}'));
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        content: [
+          { type: 'text', text: '这是一个测试项目。' }
+        ]
+      })
+    };
+  };
+
+  try {
+    const req = { headers: {} };
+    const res = createStreamResCapture();
+    const payload = {
+      provider: 'claude',
+      accountId: '3',
+      createSession: true,
+      projectPath: projectDir,
+      model: 'qwen3.6-plus',
+      messages: [{ role: 'user', content: '这个项目是什么' }],
+      prompt: '这个项目是什么',
+      stream: false
+    };
+
+    const handled = await handleWebUIRequest({
+      method: 'POST',
+      pathname: '/v0/webui/chat',
+      url: new URL('http://localhost/v0/webui/chat'),
+      req,
+      res,
+      options: {},
+      state: {},
+      deps: {
+        ...createBaseDeps(),
+        readRequestBody: async () => Buffer.from(JSON.stringify(payload), 'utf8'),
+        getProfileDir: () => profileDir,
+        getToolConfigDir: () => configDir,
+        fs: require('fs-extra')
+      }
+    });
+
+    assert.equal(handled, true);
+    assert.equal(res.statusCode, 200);
+    assert.equal(seenBody.model, 'qwen3.6-plus');
+    assert.equal(Array.isArray(seenBody.messages), true);
+    assert.equal(seenBody.messages[0].role, 'user');
+    assert.match(String(seenBody.system || ''), /当前工作项目上下文/);
+    assert.match(String(seenBody.system || ''), /demo-project/);
+    assert.match(String(seenBody.system || ''), /用于测试项目上下文注入/);
+    assert.match(String(seenBody.system || ''), /README.md/);
+  } finally {
+    httpUtils.fetchWithTimeout = originalFetchWithTimeout;
+    fs.rmSync(root, { recursive: true, force: true });
   }
 });
 
@@ -1235,6 +1459,142 @@ test('web ui chat refreshes persisted projects snapshot after native codex trans
       res,
       options: {},
       state,
+      deps: {
+        ...createBaseDeps(),
+        fs: require('fs-extra'),
+        aiHomeDir,
+        readRequestBody: async () => Buffer.from(JSON.stringify(payload), 'utf8')
+      }
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    assert.equal(handled, true);
+    assert.match(res.body, /"type":"done"/);
+    assert.match(res.body, new RegExp(`"sessionId":"${sessionId}"`));
+
+    const listRes = createStreamResCapture();
+    const listHandled = await handleWebUIRequest({
+      method: 'GET',
+      pathname: '/v0/webui/projects',
+      url: new URL('http://localhost/v0/webui/projects'),
+      req: { headers: {} },
+      res: listRes,
+      options: {},
+      state: {},
+      deps: {
+        ...createBaseDeps(),
+        fs: require('fs-extra'),
+        aiHomeDir
+      }
+    });
+
+    assert.equal(listHandled, true);
+    assert.equal(listRes.statusCode, 200);
+    const body = JSON.parse(listRes.body);
+    const project = body.projects.find((item) => item.path === projectPath);
+    assert.ok(project);
+    assert.equal(project.sessions.some((item) => item.id === sessionId), true);
+  } finally {
+    nativeSessionChat.spawnNativeSessionStream = originalSpawn;
+    if (originalRealHome === undefined) delete process.env.REAL_HOME;
+    else process.env.REAL_HOME = originalRealHome;
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+    fs.rmSync(hostHomeDir, { recursive: true, force: true });
+  }
+});
+
+test('web ui chat keeps claude created session after reload for manually added project', async () => {
+  const originalSpawn = nativeSessionChat.spawnNativeSessionStream;
+  const hostHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-chat-claude-persist-host-'));
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-chat-claude-persist-aihome-'));
+  const projectPath = path.join(hostHomeDir, 'my-real-project');
+  const sessionId = 'claude-session-created-1';
+  const originalRealHome = process.env.REAL_HOME;
+  process.env.REAL_HOME = hostHomeDir;
+  fs.mkdirSync(projectPath, { recursive: true });
+  fs.writeFileSync(
+    path.join(aiHomeDir, 'webui-projects.json'),
+    JSON.stringify({
+      projects: [
+        {
+          path: projectPath,
+          name: 'my-real-project',
+          addedAt: Date.now()
+        }
+      ],
+      hiddenPaths: []
+    }, null, 2),
+    'utf8'
+  );
+
+  nativeSessionChat.spawnNativeSessionStream = (options = {}) => {
+    return {
+      runId: 'native-run-claude-persist',
+      abort() {},
+      done: new Promise((resolve) => {
+        setTimeout(() => {
+          options.onEvent({
+            type: 'session-created',
+            sessionId
+          });
+          resolve({ content: '已完成', sessionId });
+        }, 0);
+
+        setTimeout(() => {
+          const projectDirName = projectPath.replace(/[^a-zA-Z0-9]/g, '-');
+          const sessionDir = path.join(hostHomeDir, '.claude', 'projects', projectDirName);
+          fs.mkdirSync(sessionDir, { recursive: true });
+          fs.writeFileSync(
+            path.join(sessionDir, `${sessionId}.jsonl`),
+            [
+              JSON.stringify({
+                type: 'user',
+                message: {
+                  content: '请记住这个 Claude 会话'
+                }
+              }),
+              JSON.stringify({
+                type: 'assistant',
+                message: {
+                  content: [
+                    {
+                      type: 'text',
+                      text: '已经记住。'
+                    }
+                  ]
+                }
+              })
+            ].join('\n') + '\n',
+            'utf8'
+          );
+        }, 150);
+      })
+    };
+  };
+
+  try {
+    const req = new EventEmitter();
+    req.headers = {};
+    const res = createStreamResCapture();
+    const payload = {
+      provider: 'claude',
+      accountId: '1',
+      createSession: true,
+      projectPath,
+      prompt: '请记住这个 Claude 会话',
+      stream: true,
+      messages: [{ role: 'user', content: '请记住这个 Claude 会话' }]
+    };
+
+    const handled = await handleWebUIRequest({
+      method: 'POST',
+      pathname: '/v0/webui/chat',
+      url: new URL('http://localhost/v0/webui/chat'),
+      req,
+      res,
+      options: {},
+      state: {},
       deps: {
         ...createBaseDeps(),
         fs: require('fs-extra'),

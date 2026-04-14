@@ -212,8 +212,200 @@ test('web ui remove project deletes manual project from stored list', async () =
   }
 });
 
+test('web ui remove project hides provider-discovered project even when it has real sessions', async () => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-projects-remove-discovered-'));
+  const hostHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-projects-remove-discovered-host-'));
+  const originalRealHome = process.env.REAL_HOME;
+  process.env.REAL_HOME = hostHomeDir;
+
+  try {
+    const projectDir = path.join(hostHomeDir, 'provider-project');
+    fs.ensureDirSync(projectDir);
+    fs.ensureDirSync(path.join(hostHomeDir, '.codex', 'sessions', '2026', '04', '13'));
+
+    const sessionId = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+    fs.writeFileSync(
+      path.join(hostHomeDir, '.codex', 'session_index.jsonl'),
+      JSON.stringify({
+        id: sessionId,
+        thread_name: 'provider-session',
+        updated_at: '2026-04-13T12:00:00.000Z'
+      }) + '\n',
+      'utf8'
+    );
+    fs.writeFileSync(
+      path.join(hostHomeDir, '.codex', 'sessions', '2026', '04', '13', `rollout-2026-04-13T12-00-00-${sessionId}.jsonl`),
+      JSON.stringify({
+        timestamp: '2026-04-13T12:00:00.000Z',
+        type: 'session_meta',
+        payload: { id: sessionId, cwd: projectDir }
+      }) + '\n',
+      'utf8'
+    );
+
+    const removeRes = createResCapture();
+    const removeHandled = await handleWebUIRequest({
+      method: 'POST',
+      pathname: '/v0/webui/projects/remove',
+      url: new URL('http://localhost/v0/webui/projects/remove'),
+      req: { headers: {} },
+      res: removeRes,
+      options: {},
+      state: {},
+      deps: {
+        ...createBaseDeps(aiHomeDir),
+        readRequestBody: async () => Buffer.from(JSON.stringify({ projectPath: projectDir }), 'utf8')
+      }
+    });
+
+    assert.equal(removeHandled, true);
+    assert.equal(removeRes.statusCode, 200);
+
+    const listRes = createResCapture();
+    const listHandled = await handleWebUIRequest({
+      method: 'GET',
+      pathname: '/v0/webui/projects',
+      url: new URL('http://localhost/v0/webui/projects?refresh=1'),
+      req: { headers: {} },
+      res: listRes,
+      options: {},
+      state: {},
+      deps: createBaseDeps(aiHomeDir)
+    });
+
+    assert.equal(listHandled, true);
+    assert.equal(listRes.statusCode, 200);
+    const body = JSON.parse(listRes.body);
+    const project = body.projects.find((item) => item.path === projectDir);
+    assert.equal(project, undefined);
+  } finally {
+    if (originalRealHome === undefined) delete process.env.REAL_HOME;
+    else process.env.REAL_HOME = originalRealHome;
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+    fs.rmSync(hostHomeDir, { recursive: true, force: true });
+  }
+});
+
+test('web ui projects never returns hidden project from stale cached snapshot', async () => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-projects-hidden-cache-'));
+  const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-hidden-project-'));
+
+  try {
+    fs.ensureDirSync(path.join(aiHomeDir, 'cache'));
+    fs.writeFileSync(
+      path.join(aiHomeDir, 'webui-projects.json'),
+      JSON.stringify({
+        projects: [],
+        hiddenPaths: [projectDir]
+      }, null, 2),
+      'utf8'
+    );
+    fs.writeFileSync(
+      path.join(aiHomeDir, 'cache', 'webui-projects-snapshot.json'),
+      JSON.stringify({
+        revision: 1,
+        updatedAt: Date.now(),
+        projects: [
+          {
+            id: 'gemini-hidden-project',
+            name: 'hidden-project',
+            path: projectDir,
+            providers: ['gemini'],
+            sessions: [
+              {
+                id: 'session-1',
+                title: 'stale session',
+                updatedAt: Date.now(),
+                provider: 'gemini',
+                projectPath: projectDir
+              }
+            ]
+          }
+        ]
+      }, null, 2),
+      'utf8'
+    );
+
+    const res = createResCapture();
+    const handled = await handleWebUIRequest({
+      method: 'GET',
+      pathname: '/v0/webui/projects',
+      url: new URL('http://localhost/v0/webui/projects'),
+      req: { headers: {} },
+      res,
+      options: {},
+      state: {},
+      deps: createBaseDeps(aiHomeDir)
+    });
+
+    assert.equal(handled, true);
+    assert.equal(res.statusCode, 200);
+    const body = JSON.parse(res.body);
+    assert.equal(body.projects.some((project) => project.path === projectDir), false);
+  } finally {
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+    fs.rmSync(projectDir, { recursive: true, force: true });
+  }
+});
+
+test('web ui projects never returns missing project path from stale cached snapshot', async () => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-projects-missing-cache-'));
+  const missingProjectPath = path.join(aiHomeDir, 'missing-project');
+
+  try {
+    fs.ensureDirSync(path.join(aiHomeDir, 'cache'));
+    fs.writeFileSync(
+      path.join(aiHomeDir, 'cache', 'webui-projects-snapshot.json'),
+      JSON.stringify({
+        revision: 1,
+        updatedAt: Date.now(),
+        projects: [
+          {
+            id: 'claude-missing-project',
+            name: 'missing-project',
+            path: missingProjectPath,
+            providers: ['claude'],
+            sessions: [
+              {
+                id: 'session-1',
+                title: 'stale session',
+                updatedAt: Date.now(),
+                provider: 'claude',
+                projectDirName: 'missing-project',
+                projectPath: missingProjectPath
+              }
+            ]
+          }
+        ]
+      }, null, 2),
+      'utf8'
+    );
+
+    const res = createResCapture();
+    const handled = await handleWebUIRequest({
+      method: 'GET',
+      pathname: '/v0/webui/projects',
+      url: new URL('http://localhost/v0/webui/projects'),
+      req: { headers: {} },
+      res,
+      options: {},
+      state: {},
+      deps: createBaseDeps(aiHomeDir)
+    });
+
+    assert.equal(handled, true);
+    assert.equal(res.statusCode, 200);
+    const body = JSON.parse(res.body);
+    assert.equal(body.projects.some((project) => project.path === missingProjectPath), false);
+  } finally {
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+  }
+});
+
 test('web ui projects are sorted by last session update time and sessions are sorted descending', async () => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-projects-sorted-'));
+  const oldProjectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-sorted-old-'));
+  const newProjectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-sorted-new-'));
 
   try {
     const state = {};
@@ -225,7 +417,7 @@ test('web ui projects are sorted by last session update time and sessions are so
       {
         id: 'p-old',
         name: 'old-project',
-        path: '/tmp/old-project',
+        path: oldProjectDir,
         provider: 'codex',
         sessions: [
           { id: 's-1', title: 'older', updatedAt: 100, provider: 'codex' },
@@ -235,7 +427,7 @@ test('web ui projects are sorted by last session update time and sessions are so
       {
         id: 'p-new',
         name: 'new-project',
-        path: '/tmp/new-project',
+        path: newProjectDir,
         provider: 'gemini',
         sessions: [
           { id: 's-3', title: 'latest', updatedAt: 500, provider: 'gemini', projectDirName: 'new-project' }
@@ -259,8 +451,8 @@ test('web ui projects are sorted by last session update time and sessions are so
       assert.equal(handled, true);
       assert.equal(res.statusCode, 200);
       const body = JSON.parse(res.body);
-      assert.equal(body.projects[0].path, '/tmp/new-project');
-      assert.equal(body.projects[1].path, '/tmp/old-project');
+      assert.equal(body.projects[0].path, newProjectDir);
+      assert.equal(body.projects[1].path, oldProjectDir);
       assert.deepEqual(
         body.projects[1].sessions.map((item) => item.id),
         ['s-2', 's-1']
@@ -273,6 +465,8 @@ test('web ui projects are sorted by last session update time and sessions are so
     }
   } finally {
     fs.rmSync(aiHomeDir, { recursive: true, force: true });
+    fs.rmSync(oldProjectDir, { recursive: true, force: true });
+    fs.rmSync(newProjectDir, { recursive: true, force: true });
   }
 });
 
@@ -351,7 +545,7 @@ test('web ui projects keeps codex projects discovered from real sessions even wh
   }
 });
 
-test('web ui projects does not let hidden paths suppress provider-discovered projects with real sessions', async () => {
+test('web ui projects lets hidden paths suppress provider-discovered projects with real sessions', async () => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-projects-hidden-host-'));
   const hostHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-projects-hidden-host-home-'));
   const originalRealHome = process.env.REAL_HOME;
@@ -406,9 +600,7 @@ test('web ui projects does not let hidden paths suppress provider-discovered pro
     assert.equal(res.statusCode, 200);
     const body = JSON.parse(res.body);
     const project = body.projects.find((item) => item.path === hiddenButRealProject);
-    assert.ok(project);
-    assert.equal(project.sessions.length, 1);
-    assert.equal(project.sessions[0].id, sessionId);
+    assert.equal(project, undefined);
   } finally {
     if (originalRealHome === undefined) delete process.env.REAL_HOME;
     else process.env.REAL_HOME = originalRealHome;

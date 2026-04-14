@@ -6,7 +6,8 @@ const path = require('node:path');
 
 const {
   ensureCodexHooksEnabled,
-  ensureCodexProjectRegistered
+  ensureCodexProjectRegistered,
+  getCodexStopEventsPath
 } = require('../lib/server/codex-project-registry');
 
 test('ensureCodexProjectRegistered appends trusted project block once', () => {
@@ -53,11 +54,15 @@ test('ensureCodexHooksEnabled writes feature flag, hook script and hooks json', 
     const configPath = path.join(root, '.codex', 'config.toml');
     const hooksJsonPath = path.join(root, '.codex', 'hooks.json');
     const hookScriptPath = path.join(root, '.codex', 'hooks', 'aih-stop-notify.js');
+    const stopEventsPath = path.join(root, '.codex', 'aih-stop-events.jsonl');
 
     assert.equal(fs.existsSync(configPath), true);
     assert.equal(fs.existsSync(hooksJsonPath), true);
     assert.equal(fs.existsSync(hookScriptPath), true);
+    assert.equal(result.stopEventsPath, stopEventsPath);
     assert.match(fs.readFileSync(configPath, 'utf8'), /\[features\]\ncodex_hooks = true/);
+    assert.match(fs.readFileSync(hookScriptPath, 'utf8'), /aih-stop-events\.jsonl/);
+    assert.equal(getCodexStopEventsPath({ hostHomeDir: root }), stopEventsPath);
 
     const hooksConfig = JSON.parse(fs.readFileSync(hooksJsonPath, 'utf8'));
     assert.equal(Array.isArray(hooksConfig.hooks.Stop), true);

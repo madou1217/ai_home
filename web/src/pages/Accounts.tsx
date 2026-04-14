@@ -22,7 +22,8 @@ import {
   Grid,
   List,
   Empty,
-  Tooltip
+  Tooltip,
+  Collapse
 } from 'antd';
 import type { MenuProps } from 'antd';
 import {
@@ -31,6 +32,7 @@ import {
   CheckCircleOutlined,
   CloseCircleOutlined,
   CopyOutlined,
+  GlobalOutlined,
   ReloadOutlined,
   FilterOutlined,
   MoreOutlined,
@@ -291,6 +293,7 @@ const Accounts = () => {
   const [addJobId, setAddJobId] = useState<string | null>(null);
   const [addJob, setAddJob] = useState<AccountAddJob | null>(null);
   const [authProgressVisible, setAuthProgressVisible] = useState(false);
+  const [authSuccessClosing, setAuthSuccessClosing] = useState(false);
   const [authFlowKind, setAuthFlowKind] = useState<'add' | 'reauth'>('add');
   const [form] = Form.useForm();
   const [activeProvider, setActiveProvider] = useState<string>('all');
@@ -314,6 +317,23 @@ const Accounts = () => {
     } catch (_error) {
       message.error('复制失败');
     }
+  }, []);
+
+  const copyText = React.useCallback(async (value: string, successMessage: string) => {
+    const text = String(value || '').trim();
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      message.success(successMessage);
+    } catch (_error) {
+      message.error('复制失败');
+    }
+  }, []);
+
+  const openAuthLink = React.useCallback((value?: string) => {
+    const target = String(value || '').trim();
+    if (!target) return;
+    window.open(target, '_blank', 'noopener,noreferrer');
   }, []);
 
   const mergeAccounts = React.useCallback((
@@ -350,6 +370,7 @@ const Accounts = () => {
       window.clearTimeout(successAutoCloseTimerRef.current);
       successAutoCloseTimerRef.current = null;
     }
+    setAuthSuccessClosing(false);
     setAddJobId(null);
     setAddJob(null);
     setAuthFlowKind('add');
@@ -459,17 +480,20 @@ const Accounts = () => {
         if (job.status === 'succeeded') {
           loadAccounts();
           setAddJobId(null);
-          message.success(
-            authFlowKind === 'reauth'
-              ? `账号 ${job.provider}-${job.accountId} 重新认证成功`
-              : `账号 ${job.provider}-${job.accountId} 授权完成`
-          );
-          if (successAutoCloseTimerRef.current !== null) {
-            window.clearTimeout(successAutoCloseTimerRef.current);
+          if (!authSuccessClosing) {
+            setAuthSuccessClosing(true);
+            message.success(
+              authFlowKind === 'reauth'
+                ? `账号 ${job.provider}-${job.accountId} 重新认证成功`
+                : `账号 ${job.provider}-${job.accountId} 授权完成`
+            );
+            if (successAutoCloseTimerRef.current !== null) {
+              window.clearTimeout(successAutoCloseTimerRef.current);
+            }
+            successAutoCloseTimerRef.current = window.setTimeout(() => {
+              closeAuthProgressPanel();
+            }, 3000);
           }
-          successAutoCloseTimerRef.current = window.setTimeout(() => {
-            closeAuthProgressPanel();
-          }, 800);
         } else if (job.status === 'failed' || job.status === 'cancelled' || job.status === 'expired') {
           setAddJobId(null);
         }
@@ -486,7 +510,7 @@ const Accounts = () => {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [addJobId, authFlowKind, closeAuthProgressPanel]);
+  }, [addJobId, authFlowKind, authSuccessClosing, closeAuthProgressPanel, loadAccounts]);
 
   useEffect(() => {
     if (!selectedProvider) return;
@@ -497,6 +521,7 @@ const Accounts = () => {
   }, [form, selectedAuthMode, selectedProvider]);
 
   const closeAuthProgress = async (forceCancel = false) => {
+    if (authSuccessClosing) return;
     if (addJob && addJob.status === 'running') {
       if (!forceCancel) {
         Modal.confirm({
@@ -534,6 +559,11 @@ const Accounts = () => {
     authMode: AccountAuthMode;
   }, flowKind: 'add' | 'reauth') => {
     if (!result.jobId) return;
+    if (successAutoCloseTimerRef.current !== null) {
+      window.clearTimeout(successAutoCloseTimerRef.current);
+      successAutoCloseTimerRef.current = null;
+    }
+    setAuthSuccessClosing(false);
     setAuthFlowKind(flowKind);
     setAddJob({
       id: result.jobId,
@@ -556,6 +586,11 @@ const Accounts = () => {
     flowKind: 'add' | 'reauth'
   ) => {
     const job = await accountsAPI.getAddJob(jobId);
+    if (successAutoCloseTimerRef.current !== null) {
+      window.clearTimeout(successAutoCloseTimerRef.current);
+      successAutoCloseTimerRef.current = null;
+    }
+    setAuthSuccessClosing(false);
     setAuthFlowKind(flowKind);
     setAddJob(job);
     setAddJobId(job.status === 'running' ? jobId : null);
@@ -686,6 +721,43 @@ const Accounts = () => {
         return next;
       });
     }
+  };
+
+  const renderAuthDetail = (
+    label: string,
+    value: string,
+    options: { copyMessage: string; openable?: boolean } = { copyMessage: '已复制' }
+  ) => {
+    const text = String(value || '').trim();
+    if (!text) return null;
+    return (
+      <div className="auth-progress-detail-row">
+        <Text strong className="auth-progress-detail-label">{label}</Text>
+        <div className="auth-progress-detail-content">
+          <Text className="auth-progress-detail-text">{text}</Text>
+          <Space size={4} className="auth-progress-detail-actions">
+            <Tooltip title="复制">
+              <Button
+                type="text"
+                size="small"
+                icon={<CopyOutlined />}
+                onClick={() => copyText(text, options.copyMessage)}
+              />
+            </Tooltip>
+            {options.openable ? (
+              <Tooltip title="在当前浏览器打开">
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<GlobalOutlined />}
+                  onClick={() => openAuthLink(text)}
+                />
+              </Tooltip>
+            ) : null}
+          </Space>
+        </div>
+      </div>
+    );
   };
 
   // 按 Provider 分组统计
@@ -1341,14 +1413,21 @@ const Accounts = () => {
       <Modal
         title="授权进度"
         open={authProgressVisible}
+        wrapClassName="auth-progress-modal-wrap"
         footer={[
           <Button
             key="close"
+            disabled={authSuccessClosing}
             onClick={() => closeAuthProgress(false)}
           >
-            {addJob?.status === 'running' ? '关闭 / 取消' : '关闭'}
+            {authSuccessClosing
+              ? '3 秒后自动关闭'
+              : (addJob?.status === 'running' ? '关闭 / 取消' : '关闭')}
           </Button>
         ]}
+        closable={!authSuccessClosing}
+        keyboard={!authSuccessClosing}
+        maskClosable={!authSuccessClosing}
         onCancel={() => closeAuthProgress(false)}
         width={760}
       >
@@ -1372,7 +1451,7 @@ const Accounts = () => {
                 addJob.status === 'running'
                   ? '正在等待授权完成...'
                   : addJob.status === 'succeeded'
-                    ? '授权已完成，账号已经可用。'
+                    ? (authSuccessClosing ? '授权已完成，账号已经可用。弹窗将在 3 秒后自动关闭。' : '授权已完成，账号已经可用。')
                     : addJob.status === 'expired'
                       ? (addJob.error || '授权已过期，请重新发起。')
                     : addJob.status === 'cancelled'
@@ -1398,39 +1477,39 @@ const Accounts = () => {
 
             {(addJob.userCode || addJob.verificationUri || addJob.verificationUriComplete) && (
               <Card size="small" title="设备码信息">
-                {addJob.userCode && (
-                  <Paragraph copyable={{ text: addJob.userCode }}>
-                    <Text strong>验证码：</Text> {addJob.userCode}
-                  </Paragraph>
-                )}
-                {addJob.verificationUri && (
-                  <Paragraph copyable={{ text: addJob.verificationUri }}>
-                    <Text strong>验证地址：</Text> {addJob.verificationUri}
-                  </Paragraph>
-                )}
-                {addJob.verificationUriComplete && addJob.verificationUriComplete !== addJob.verificationUri && (
-                  <Paragraph copyable={{ text: addJob.verificationUriComplete }}>
-                    <Text strong>完整链接：</Text> {addJob.verificationUriComplete}
-                  </Paragraph>
+                {renderAuthDetail('验证码', addJob.userCode || '', { copyMessage: '已复制验证码' })}
+                {renderAuthDetail(
+                  '授权链接',
+                  addJob.verificationUriComplete || addJob.verificationUri || '',
+                  { copyMessage: '已复制授权链接', openable: true }
                 )}
               </Card>
             )}
 
-            <Card size="small" title="授权日志">
-              <pre
-                style={{
-                  margin: 0,
-                  maxHeight: 320,
-                  overflow: 'auto',
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word',
-                  fontSize: 12,
-                  lineHeight: 1.5
-                }}
-              >
-                {addJob.logs || '等待 Provider 返回授权输出...'}
-              </pre>
-            </Card>
+            <Collapse
+              size="small"
+              items={[
+                {
+                  key: 'logs',
+                  label: '授权日志',
+                  children: (
+                    <pre
+                      style={{
+                        margin: 0,
+                        maxHeight: 320,
+                        overflow: 'auto',
+                        whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-word',
+                        fontSize: 12,
+                        lineHeight: 1.5
+                      }}
+                    >
+                      {addJob.logs || '等待 Provider 返回授权输出...'}
+                    </pre>
+                  )
+                }
+              ]}
+            />
           </Space>
         ) : null}
       </Modal>

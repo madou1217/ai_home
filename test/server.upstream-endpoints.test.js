@@ -404,6 +404,86 @@ test('upstream passthrough 429 applies cooldown and retries another account befo
   assert.equal(state.metrics.totalSuccess, 1);
 });
 
+test('upstream passthrough model capacity 400 retries another account instead of passing raw error to client', async () => {
+  const res = createResCapture();
+  const accounts = [
+    { id: '1', email: 'a@example.com', accessToken: 'tok-1', cooldownUntil: 0 },
+    { id: '2', email: 'b@example.com', accessToken: 'tok-2', cooldownUntil: 0 }
+  ];
+  const state = {
+    accounts: { claude: accounts },
+    cursors: { claude: 0 },
+    metrics: { totalFailures: 0, totalSuccess: 0, totalTimeouts: 0, providerFailures: {}, providerSuccess: {} }
+  };
+  const seen = [];
+
+  await handleUpstreamPassthrough({
+    options: {
+      provider: 'claude',
+      claudeBaseUrl: 'https://example.com',
+      upstreamTimeoutMs: 3000,
+      maxAttempts: 2,
+      failureThreshold: 2,
+      logRequests: false
+    },
+    state,
+    req: { url: '/v1/messages', headers: { 'content-type': 'application/json' } },
+    res,
+    method: 'POST',
+    bodyBuffer: Buffer.from('{"x":"y"}'),
+    routeKey: 'POST /v1/messages',
+    requestStartedAt: Date.now(),
+    cooldownMs: 1000,
+    deps: {
+      chooseServerAccount: (pool, _state, _cursorKey, options = {}) => {
+        const excluded = options.excludeIds || new Set();
+        const next = pool.find((account) => !excluded.has(String(account.id)));
+        if (next) seen.push(String(next.id));
+        return next || null;
+      },
+      pushMetricError: () => {},
+      writeJson: (r, code, payload) => {
+        r.statusCode = code;
+        r.setHeader('content-type', 'application/json');
+        r.end(JSON.stringify(payload));
+      },
+      fetchWithTimeout: async (_url, init) => {
+        if (String(init.headers.authorization).includes('tok-1')) {
+          return {
+            status: 400,
+            headers: new Map([['content-type', 'application/json']]),
+            arrayBuffer: async () => Buffer.from(JSON.stringify({
+              error: {
+                message: 'Selected model is at capacity. Please try a different model.'
+              }
+            }))
+          };
+        }
+        return {
+          status: 200,
+          headers: new Map([['content-type', 'application/json']]),
+          arrayBuffer: async () => Buffer.from('{"ok":true}')
+        };
+      },
+      markProxyAccountFailure: (account, _reason, cooldownMs, threshold) => {
+        account.consecutiveFailures = Number(account.consecutiveFailures || 0) + 1;
+        if (account.consecutiveFailures >= threshold) {
+          account.cooldownUntil = Date.now() + cooldownMs;
+        }
+      },
+      markProxyAccountSuccess: (account) => {
+        account.consecutiveFailures = 0;
+      },
+      appendProxyRequestLog: () => {}
+    }
+  });
+
+  assert.deepEqual(seen, ['1', '2']);
+  assert.equal(res.statusCode, 200);
+  assert.equal(String(res.body), '{"ok":true}');
+  assert.equal(accounts[0].cooldownUntil > Date.now(), true);
+});
+
 test('upstream passthrough skips invalid token and retries with another account in same request', async () => {
   const res = createResCapture();
   const pool = [

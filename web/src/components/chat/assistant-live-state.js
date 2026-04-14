@@ -129,7 +129,7 @@ export function appendAssistantDelta(messages, delta, options = {}) {
   const baseContent = last.pending ? stripThinkingBlock(String(last.content || '')) : String(last.content || '');
   next[next.length - 1] = {
     ...last,
-    content: `${baseContent}${baseContent ? '\n\n' : ''}${text}`.trim(),
+    content: `${baseContent}${text}`.trim(),
     pending: true,
     statusText: options.statusText,
     timestamp: last.timestamp || options.timestamp

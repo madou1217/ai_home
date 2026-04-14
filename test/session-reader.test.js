@@ -355,6 +355,92 @@ test('readAllProjectsFromHost uses codex global state workspace roots to recover
   }
 });
 
+test('readAllProjectsFromHost repairs claude mixed transcripts so resume-visible main thread survives', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-session-reader-claude-repair-'));
+  const originalRealHome = process.env.REAL_HOME;
+  process.env.REAL_HOME = root;
+
+  try {
+    const realProjectPath = path.join(root, 'feature', 'claude-repair-demo');
+    const sanitizedDirName = realProjectPath.replace(/[^a-zA-Z0-9]/g, '-');
+    const claudeProjectDir = path.join(root, '.claude', 'projects', sanitizedDirName);
+    const sessionId = 'demo-session';
+    const sessionPath = path.join(claudeProjectDir, `${sessionId}.jsonl`);
+    fs.ensureDirSync(realProjectPath);
+    fs.ensureDirSync(claudeProjectDir);
+    fs.ensureDirSync(path.join(root, '.codex'));
+    fs.writeFileSync(
+      path.join(root, '.codex', '.codex-global-state.json'),
+      JSON.stringify({
+        'electron-saved-workspace-roots': [realProjectPath]
+      }),
+      'utf8'
+    );
+    fs.writeFileSync(
+      sessionPath,
+      [
+        JSON.stringify({
+          type: 'user',
+          isSidechain: true,
+          timestamp: '2026-04-14T10:00:00.000Z',
+          message: { content: 'Warmup' }
+        }),
+        JSON.stringify({
+          type: 'assistant',
+          isSidechain: true,
+          timestamp: '2026-04-14T10:00:01.000Z',
+          message: { content: [{ type: 'text', text: 'sidechain warmup' }] }
+        }),
+        JSON.stringify({
+          type: 'user',
+          isSidechain: false,
+          timestamp: '2026-04-14T10:00:02.000Z',
+          message: { content: '真实主线程问题' }
+        }),
+        JSON.stringify({
+          type: 'assistant',
+          isSidechain: false,
+          timestamp: '2026-04-14T10:00:03.000Z',
+          message: { content: [{ type: 'text', text: '主线程回复' }] }
+        }),
+        JSON.stringify({
+          type: 'user',
+          isSidechain: true,
+          timestamp: '2026-04-14T10:00:04.000Z',
+          message: { content: 'subagent details' }
+        })
+      ].join('\n') + '\n',
+      'utf8'
+    );
+
+    const projects = sessionReader.readAllProjectsFromHost();
+    const project = projects.find((item) => item.provider === 'claude');
+    assert.ok(project);
+    assert.equal(project.path, realProjectPath);
+    assert.equal(project.sessions.length, 1);
+    assert.equal(project.sessions[0].title, '真实主线程问题');
+
+    const repairedContent = fs.readFileSync(sessionPath, 'utf8');
+    assert.doesNotMatch(repairedContent, /"isSidechain":true/);
+
+    const messages = sessionReader.readSessionMessages('claude', {
+      sessionId,
+      projectDirName: sanitizedDirName
+    });
+    assert.deepEqual(
+      messages.map((item) => ({ role: item.role, content: item.content })),
+      [
+        { role: 'user', content: '真实主线程问题' },
+        { role: 'assistant', content: '主线程回复' }
+      ]
+    );
+  } finally {
+    if (originalRealHome === undefined) delete process.env.REAL_HOME;
+    else process.env.REAL_HOME = originalRealHome;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('readAllProjectsFromHost includes codex workspace roots from global state even without session files', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-session-reader-codex-workspace-roots-'));
   const originalRealHome = process.env.REAL_HOME;

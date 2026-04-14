@@ -77,6 +77,33 @@ test('appendAssistantDelta strips transient thinking markup before writing visib
   ]);
 });
 
+test('appendAssistantDelta appends stream chunks without injecting blank lines', async () => {
+  const { appendAssistantDelta } = await loadAssistantLiveState();
+
+  const appended = appendAssistantDelta([
+    {
+      role: 'assistant',
+      content: '正在输',
+      pending: true,
+      statusText: '正在生成回复...',
+      timestamp: 1
+    }
+  ], '出中', {
+    statusText: '正在生成回复...',
+    timestamp: 2
+  });
+
+  assert.deepEqual(appended, [
+    {
+      role: 'assistant',
+      content: '正在输出中',
+      pending: true,
+      statusText: '正在生成回复...',
+      timestamp: 1
+    }
+  ]);
+});
+
 test('appendAssistantToolContent dedupes repeated tool summaries while preserving running state', async () => {
   const { appendAssistantToolContent } = await loadAssistantLiveState();
 

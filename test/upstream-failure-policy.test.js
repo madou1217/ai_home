@@ -55,6 +55,24 @@ test('failure policy keeps 404 as passthrough request error without account pena
   assert.equal(policy.clientStatusCode, 404);
 });
 
+test('failure policy treats model capacity 400 as retryable overload', () => {
+  const policy = classifyUpstreamFailure({
+    provider: 'claude',
+    statusCode: 400,
+    body: JSON.stringify({
+      error: {
+        message: 'Selected model is at capacity. Please try a different model.'
+      }
+    }),
+    defaultCooldownMs: 1000
+  });
+  assert.equal(policy.kind, 'overloaded');
+  assert.equal(policy.shouldMarkFailure, true);
+  assert.equal(policy.shouldRetryAnotherAccount, true);
+  assert.equal(policy.shouldPassthroughToClient, false);
+  assert.equal(policy.clientStatusCode, 503);
+});
+
 test('failure policy classifies timeout errors as retryable transient failures', () => {
   const err = new Error('request timeout');
   err.code = 'ETIMEDOUT';

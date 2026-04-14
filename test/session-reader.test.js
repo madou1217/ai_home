@@ -251,6 +251,67 @@ test('readAllProjectsFromHost falls back to first codex user message when sessio
   }
 });
 
+test('readAllProjectsFromHost reuses cached codex metadata when session files are unchanged', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-session-reader-codex-cache-'));
+  const originalRealHome = process.env.REAL_HOME;
+  const originalOpenSync = fs.openSync;
+  process.env.REAL_HOME = root;
+
+  try {
+    const projectPath = path.join(root, 'cached-project');
+    fs.ensureDirSync(projectPath);
+    fs.ensureDirSync(path.join(root, '.codex', 'sessions', '2026', '04', '13'));
+
+    const sessionId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+    const sessionIndexPath = path.join(root, '.codex', 'session_index.jsonl');
+    const sessionFile = path.join(
+      root,
+      '.codex',
+      'sessions',
+      '2026',
+      '04',
+      '13',
+      `rollout-2026-04-13T12-00-00-${sessionId}.jsonl`
+    );
+    fs.writeFileSync(
+      sessionIndexPath,
+      JSON.stringify({
+        id: sessionId,
+        thread_name: '缓存命中会话',
+        updated_at: '2026-04-13T12:00:00.000Z'
+      }) + '\n',
+      'utf8'
+    );
+    fs.writeFileSync(
+      sessionFile,
+      JSON.stringify({
+        timestamp: '2026-04-13T12:00:00.000Z',
+        type: 'session_meta',
+        payload: { id: sessionId, cwd: projectPath }
+      }) + '\n',
+      'utf8'
+    );
+
+    const firstProjects = sessionReader.readAllProjectsFromHost();
+    assert.equal(firstProjects.some((project) => project.path === projectPath), true);
+
+    fs.openSync = function patchedOpenSync(targetPath, ...args) {
+      if (targetPath === sessionIndexPath || targetPath === sessionFile) {
+        throw new Error('unchanged codex metadata should come from cache');
+      }
+      return originalOpenSync.call(this, targetPath, ...args);
+    };
+
+    const secondProjects = sessionReader.readAllProjectsFromHost();
+    assert.equal(secondProjects.some((project) => project.path === projectPath), true);
+  } finally {
+    fs.openSync = originalOpenSync;
+    if (originalRealHome === undefined) delete process.env.REAL_HOME;
+    else process.env.REAL_HOME = originalRealHome;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('readAllProjectsFromHost uses codex global state workspace roots to recover claude project path hints', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-session-reader-codex-global-state-'));
   const originalRealHome = process.env.REAL_HOME;

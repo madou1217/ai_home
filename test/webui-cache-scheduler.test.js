@@ -52,6 +52,26 @@ test('scheduleDirtyRefresh keeps dirty flag and supports immediate refresh', asy
   assert.equal(cacheState.dirty, true);
 });
 
+test('scheduleDirtyRefresh respects delayMs before starting refresh', async () => {
+  const cacheState = {
+    refreshing: false,
+    queued: false,
+    dirty: false
+  };
+  let refreshCalls = 0;
+
+  scheduleDirtyRefresh(cacheState, async () => {
+    refreshCalls += 1;
+  }, { delayMs: 30 });
+
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(refreshCalls, 0);
+
+  await new Promise((resolve) => setTimeout(resolve, 35));
+  assert.equal(refreshCalls, 1);
+  assert.equal(cacheState.dirty, true);
+});
+
 test('ensurePeriodicRefresh only installs one timer', async () => {
   const cacheState = {
     refreshTimer: null

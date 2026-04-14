@@ -183,6 +183,116 @@ test('web ui chat strips unsupported gemini oauth native model before starting s
   }
 });
 
+test('web ui chat retries gemini native session on permission denied without leaking raw terminal error', async () => {
+  const originalSpawn = nativeSessionChat.spawnNativeSessionStream;
+  const attempts = [];
+
+  nativeSessionChat.spawnNativeSessionStream = (options = {}) => {
+    attempts.push(String(options.accountId || ''));
+    if (String(options.accountId) === '1') {
+      return {
+        runId: `native-run-${options.accountId}`,
+        abort() {},
+        done: new Promise((resolve, reject) => {
+          setTimeout(() => {
+            options.onEvent({
+              type: 'session-created',
+              sessionId: 'failed-session'
+            });
+            options.onEvent({
+              type: 'terminal-output',
+              text: 'The caller does not have permission\n'
+            });
+            options.onEvent({
+              type: 'error',
+              message: '当前 Gemini 账号无权限（PERMISSION_DENIED）'
+            });
+            const error = new Error('The caller does not have permission PERMISSION_DENIED');
+            error.code = 'gemini_permission_denied';
+            reject(error);
+          }, 0);
+        })
+      };
+    }
+    return {
+      runId: `native-run-${options.accountId}`,
+      abort() {},
+      done: new Promise((resolve) => {
+        setTimeout(() => {
+          options.onEvent({
+            type: 'session-created',
+            sessionId: 'ok-session'
+          });
+          options.onEvent({
+            type: 'delta',
+            delta: '你好'
+          });
+          resolve({
+            content: '你好',
+            sessionId: 'ok-session'
+          });
+        }, 0);
+      })
+    };
+  };
+
+  try {
+    const req = new EventEmitter();
+    req.headers = {};
+    const res = createStreamResCapture();
+    const payload = {
+      provider: 'gemini',
+      accountId: '1',
+      sessionId: 'gem-session-id',
+      projectDirName: 'ai-home',
+      projectPath: '/Users/model/projects/feature/ai_home',
+      prompt: '你好',
+      stream: true,
+      messages: [{ role: 'user', content: '你好' }]
+    };
+
+    const handled = await handleWebUIRequest({
+      method: 'POST',
+      pathname: '/v0/webui/chat',
+      url: new URL('http://localhost/v0/webui/chat'),
+      req,
+      res,
+      options: {},
+      state: {},
+      deps: {
+        ...createBaseDeps(),
+        loadServerRuntimeAccounts() {
+          return {
+            codex: [],
+            claude: [],
+            gemini: [
+              { id: '1', cooldownUntil: 0, authInvalidUntil: 0 },
+              { id: '2', cooldownUntil: 0, authInvalidUntil: 0 }
+            ]
+          };
+        },
+        readRequestBody: async () => Buffer.from(JSON.stringify(payload), 'utf8')
+      }
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    assert.equal(handled, true);
+    assert.deepEqual(attempts, ['1', '2']);
+    assert.equal(res.statusCode, 200);
+    assert.match(res.body, /"type":"ready"/);
+    assert.match(res.body, /"type":"session-created","sessionId":"ok-session"/);
+    assert.match(res.body, /"type":"delta","delta":"你好"/);
+    assert.match(res.body, /"type":"done"/);
+    assert.match(res.body, /"accountId":"2"/);
+    assert.doesNotMatch(res.body, /"type":"terminal-output"/);
+    assert.doesNotMatch(res.body, /The caller does not have permission/);
+    assert.doesNotMatch(res.body, /gemini_stream_failed/);
+  } finally {
+    nativeSessionChat.spawnNativeSessionStream = originalSpawn;
+  }
+});
+
 test('web ui projects watch emits aggregated running session keys without opening per-session client streams', async () => {
   const originalReadAllProjectsFromHost = sessionReader.readAllProjectsFromHost;
   const originalGetSessionFileCursor = sessionReader.getSessionFileCursor;

@@ -82,6 +82,19 @@ const normalizeMessageImages = (images?: string[]) => {
     });
 };
 
+const resolveSessionProjectDirName = (
+  provider: Provider,
+  projectPath?: string,
+  projectDirName?: string
+) => {
+  const normalizedProjectDirName = String(projectDirName || '').trim();
+  if (normalizedProjectDirName) return normalizedProjectDirName;
+  if (provider !== 'claude') return undefined;
+  const normalizedProjectPath = String(projectPath || '').trim();
+  if (!normalizedProjectPath) return undefined;
+  return normalizedProjectPath.replace(/[^a-zA-Z0-9]/g, '-');
+};
+
 const toMessageTimeMs = (timestamp?: string | number) => {
   if (typeof timestamp === 'number') return timestamp;
   if (typeof timestamp === 'string') {
@@ -1233,6 +1246,11 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
   }) => {
     const requestSession = session;
     const requestProjectPath = requestSession.projectPath || selectedProject?.path;
+    const resolvedProjectDirName = resolveSessionProjectDirName(
+      account.provider,
+      requestProjectPath,
+      requestSession.projectDirName
+    );
     if (!requestProjectPath) {
       throw new Error('当前会话缺少项目路径');
     }
@@ -1314,6 +1332,40 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
     };
 
     try {
+      const adoptCreatedSession = (nextSessionId: string) => {
+        if (!nextSessionId || createdSessionId === nextSessionId) return;
+        createdSessionId = nextSessionId;
+        const nextRunKey = getActualSessionRunKey(account.provider, nextSessionId, resolvedProjectDirName);
+        moveQueuedMessages(activeRunKey, nextRunKey);
+        activeRunKey = renameActiveRun(activeRunKey, nextRunKey, {
+          provider: account.provider,
+          sessionId: nextSessionId,
+          projectDirName: resolvedProjectDirName,
+          projectPath: requestProjectPath
+        });
+        resolvedSession = {
+          ...requestSession,
+          id: nextSessionId,
+          draft: false,
+          provider: account.provider,
+          projectPath: requestProjectPath,
+          projectDirName: resolvedProjectDirName
+        };
+        persistRunMessages(resolvedSession);
+        updateSelectedPendingStatus(`会话已创建，${getGeneratingStatusText()}`);
+        const stillOnDraft = Boolean(selectedSessionRef.current?.draft && selectedSessionRef.current.id === requestSession.id);
+        loadProjects(
+          stillOnDraft
+            ? {
+                sessionId: nextSessionId,
+                projectPath: requestProjectPath,
+                provider: account.provider,
+                projectDirName: resolvedProjectDirName
+              }
+            : { projectPath: requestProjectPath }
+        ).catch(() => {});
+      };
+
       const handleStreamEvent = (event: ChatStreamEvent) => {
         if (event.mode === 'native-session') {
           usedNativeSession = true;
@@ -1324,35 +1376,7 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
           return;
         }
         if (event.type === 'session-created' && event.sessionId) {
-          createdSessionId = event.sessionId;
-          const nextRunKey = getActualSessionRunKey(account.provider, event.sessionId, requestSession.projectDirName);
-          moveQueuedMessages(activeRunKey, nextRunKey);
-          activeRunKey = renameActiveRun(activeRunKey, nextRunKey, {
-            provider: account.provider,
-            sessionId: event.sessionId,
-            projectDirName: requestSession.projectDirName,
-            projectPath: requestProjectPath
-          });
-          resolvedSession = {
-            ...requestSession,
-            id: event.sessionId,
-            draft: false,
-            provider: account.provider,
-            projectPath: requestProjectPath
-          };
-          persistRunMessages(resolvedSession);
-          updateSelectedPendingStatus(`会话已创建，${getGeneratingStatusText()}`);
-          const stillOnDraft = Boolean(selectedSessionRef.current?.draft && selectedSessionRef.current.id === requestSession.id);
-          loadProjects(
-            stillOnDraft
-              ? {
-                  sessionId: event.sessionId,
-                  projectPath: requestProjectPath,
-                  provider: account.provider,
-                  projectDirName: requestSession.projectDirName
-                }
-              : { projectPath: requestProjectPath }
-          ).catch(() => {});
+          adoptCreatedSession(event.sessionId);
           return;
         }
         if (event.type === 'terminal-output' && event.text) {
@@ -1391,6 +1415,9 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
           return;
         }
         if (event.type === 'result' || event.type === 'done') {
+          if (requestSession.draft && event.sessionId && !createdSessionId) {
+            adoptCreatedSession(event.sessionId);
+          }
           if (typeof event.content === 'string' && event.content) {
             const finalContent = event.content;
             applyRunMessages((next) => {
@@ -1435,7 +1462,8 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
           await loadProjects({
             sessionId: stillOnDraft ? createdSessionId : undefined,
             projectPath: requestProjectPath,
-            provider: account.provider
+            provider: account.provider,
+            projectDirName: resolvedProjectDirName
           });
         } else if (usedNativeSession) {
           await loadProjects({ projectPath: requestProjectPath });

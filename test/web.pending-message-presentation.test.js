@@ -42,3 +42,19 @@ test('pending message presentation preserves tool and text blocks for live detai
   ]);
   assert.equal(hasRenderablePendingBlocks(blocks), true);
 });
+
+test('pending message presentation renders streaming text blocks as plain text first', async () => {
+  const { shouldRenderPendingBlockAsPlainText } = await loadPendingMessagePresentation();
+
+  assert.equal(shouldRenderPendingBlockAsPlainText({ type: 'text', value: '正在输出' }), true);
+  assert.equal(shouldRenderPendingBlockAsPlainText({ type: 'tool_use', name: 'Read', body: 'a.ts' }), false);
+});
+
+test('pending message presentation normalizes streaming text without keeping excessive blank lines', async () => {
+  const { normalizePendingTextBlock } = await loadPendingMessagePresentation();
+
+  assert.equal(
+    normalizePendingTextBlock('第一段\r\n\r\n\r\n第二段\r\n'),
+    '第一段\n\n第二段'
+  );
+});

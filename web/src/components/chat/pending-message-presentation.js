@@ -14,3 +14,14 @@ export function getRenderablePendingBlocks(blocks) {
 export function hasRenderablePendingBlocks(blocks) {
   return getRenderablePendingBlocks(blocks).length > 0;
 }
+
+export function shouldRenderPendingBlockAsPlainText(block) {
+  return Boolean(block && block.type === 'text');
+}
+
+export function normalizePendingTextBlock(value) {
+  return String(value || '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}

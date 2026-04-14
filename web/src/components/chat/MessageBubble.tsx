@@ -13,7 +13,9 @@ import {
 } from './message-structure';
 import {
   getRenderablePendingBlocks,
-  hasRenderablePendingBlocks
+  hasRenderablePendingBlocks,
+  normalizePendingTextBlock,
+  shouldRenderPendingBlockAsPlainText
 } from './pending-message-presentation.js';
 import { normalizePendingStatusText } from './provider-pending-policy.js';
 import ProviderIcon from './ProviderIcon';
@@ -557,6 +559,13 @@ const MessageBubble = ({ message, provider, mobile = false }: Props) => {
                   if (block.type === 'tool_use') return <ToolBlock key={idx} name={block.name} body={block.body} result={block.result} mobile={mobile} />;
                   if (block.type === 'tool_group') return <ToolGroupBlock key={idx} items={block.items} mobile={mobile} />;
                   if (!String(block.value || '').trim()) return null;
+                  if (shouldRenderPendingBlockAsPlainText(block)) {
+                    return (
+                      <div key={idx} className={styles.pendingTextBlock}>
+                        {normalizePendingTextBlock(block.value)}
+                      </div>
+                    );
+                  }
                   return <ReactMarkdown key={idx} remarkPlugins={[remarkGfm]}>{block.value}</ReactMarkdown>;
                 })}
               </div>

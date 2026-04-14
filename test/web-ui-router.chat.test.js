@@ -1750,6 +1750,135 @@ test('web ui chat keeps claude created session after reload for manually added p
   }
 });
 
+test('web ui chat keeps claude created session after reload even when done is the first event carrying session id', async () => {
+  const originalSpawn = nativeSessionChat.spawnNativeSessionStream;
+  const hostHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-chat-claude-done-session-host-'));
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-chat-claude-done-session-aihome-'));
+  const projectPath = path.join(hostHomeDir, 'my-real-project');
+  const sessionId = 'claude-session-created-done-only';
+  const originalRealHome = process.env.REAL_HOME;
+  process.env.REAL_HOME = hostHomeDir;
+  fs.mkdirSync(projectPath, { recursive: true });
+  fs.writeFileSync(
+    path.join(aiHomeDir, 'webui-projects.json'),
+    JSON.stringify({
+      projects: [
+        {
+          path: projectPath,
+          name: 'my-real-project',
+          addedAt: Date.now()
+        }
+      ],
+      hiddenPaths: []
+    }, null, 2),
+    'utf8'
+  );
+
+  nativeSessionChat.spawnNativeSessionStream = () => {
+    return {
+      runId: 'native-run-claude-done-only',
+      abort() {},
+      done: new Promise((resolve) => {
+        setTimeout(() => {
+          const projectDirName = projectPath.replace(/[^a-zA-Z0-9]/g, '-');
+          const sessionDir = path.join(hostHomeDir, '.claude', 'projects', projectDirName);
+          fs.mkdirSync(sessionDir, { recursive: true });
+          fs.writeFileSync(
+            path.join(sessionDir, `${sessionId}.jsonl`),
+            [
+              JSON.stringify({
+                type: 'user',
+                message: {
+                  content: '请持久化这个 Claude 会话'
+                }
+              }),
+              JSON.stringify({
+                type: 'assistant',
+                message: {
+                  content: [
+                    {
+                      type: 'text',
+                      text: '已经持久化。'
+                    }
+                  ]
+                }
+              })
+            ].join('\n') + '\n',
+            'utf8'
+          );
+          resolve({ content: '已经持久化。', sessionId });
+        }, 150);
+      })
+    };
+  };
+
+  try {
+    const req = new EventEmitter();
+    req.headers = {};
+    const res = createStreamResCapture();
+    const payload = {
+      provider: 'claude',
+      accountId: '1',
+      createSession: true,
+      projectPath,
+      prompt: '请持久化这个 Claude 会话',
+      stream: true,
+      messages: [{ role: 'user', content: '请持久化这个 Claude 会话' }]
+    };
+
+    const handled = await handleWebUIRequest({
+      method: 'POST',
+      pathname: '/v0/webui/chat',
+      url: new URL('http://localhost/v0/webui/chat'),
+      req,
+      res,
+      options: {},
+      state: {},
+      deps: {
+        ...createBaseDeps(),
+        fs: require('fs-extra'),
+        aiHomeDir,
+        readRequestBody: async () => Buffer.from(JSON.stringify(payload), 'utf8')
+      }
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    assert.equal(handled, true);
+    assert.match(res.body, /"type":"done"/);
+    assert.match(res.body, new RegExp(`"sessionId":"${sessionId}"`));
+
+    const listRes = createStreamResCapture();
+    const listHandled = await handleWebUIRequest({
+      method: 'GET',
+      pathname: '/v0/webui/projects',
+      url: new URL('http://localhost/v0/webui/projects'),
+      req: { headers: {} },
+      res: listRes,
+      options: {},
+      state: {},
+      deps: {
+        ...createBaseDeps(),
+        fs: require('fs-extra'),
+        aiHomeDir
+      }
+    });
+
+    assert.equal(listHandled, true);
+    assert.equal(listRes.statusCode, 200);
+    const body = JSON.parse(listRes.body);
+    const project = body.projects.find((item) => item.path === projectPath);
+    assert.ok(project);
+    assert.equal(project.sessions.some((item) => item.id === sessionId), true);
+  } finally {
+    nativeSessionChat.spawnNativeSessionStream = originalSpawn;
+    if (originalRealHome === undefined) delete process.env.REAL_HOME;
+    else process.env.REAL_HOME = originalRealHome;
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+    fs.rmSync(hostHomeDir, { recursive: true, force: true });
+  }
+});
+
 test('web ui chat routes codex api key sessions through api proxy stream instead of native session', async () => {
   const originalSpawn = nativeSessionChat.spawnNativeSessionStream;
   const originalFetchWithTimeout = httpUtils.fetchWithTimeout;

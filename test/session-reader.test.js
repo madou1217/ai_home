@@ -355,6 +355,51 @@ test('readAllProjectsFromHost uses codex global state workspace roots to recover
   }
 });
 
+test('readAllProjectsFromHost prefers claude transcript cwd over sanitized path guessing', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-session-reader-claude-cwd-'));
+  const originalRealHome = process.env.REAL_HOME;
+  process.env.REAL_HOME = root;
+
+  try {
+    const realProjectPath = path.join(root, 'feature', 'demo.v2-app');
+    const sanitizedDirName = realProjectPath.replace(/[^a-zA-Z0-9]/g, '-');
+    const claudeProjectDir = path.join(root, '.claude', 'projects', sanitizedDirName);
+    fs.ensureDirSync(realProjectPath);
+    fs.ensureDirSync(claudeProjectDir);
+    fs.writeFileSync(
+      path.join(claudeProjectDir, 'demo-session.jsonl'),
+      [
+        JSON.stringify({
+          type: 'system',
+          subtype: 'init',
+          cwd: realProjectPath,
+          session_id: 'demo-session'
+        }),
+        JSON.stringify({
+          type: 'user',
+          cwd: realProjectPath,
+          timestamp: '2026-04-14T12:00:00.000Z',
+          message: {
+            content: '优先使用 transcript cwd'
+          }
+        })
+      ].join('\n') + '\n',
+      'utf8'
+    );
+
+    const projects = sessionReader.readAllProjectsFromHost();
+    const project = projects.find((item) => item.provider === 'claude');
+    assert.ok(project);
+    assert.equal(project.path, realProjectPath);
+    assert.equal(project.name, path.basename(realProjectPath));
+    assert.equal(project.sessions[0].projectDirName, sanitizedDirName);
+  } finally {
+    if (originalRealHome === undefined) delete process.env.REAL_HOME;
+    else process.env.REAL_HOME = originalRealHome;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('readAllProjectsFromHost repairs claude mixed transcripts so resume-visible main thread survives', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-session-reader-claude-repair-'));
   const originalRealHome = process.env.REAL_HOME;

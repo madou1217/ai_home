@@ -1,12 +1,23 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const {
+  DEFAULT_NATIVE_STREAM_COLS,
+  DEFAULT_NATIVE_STREAM_ROWS,
   buildStartCommand,
   buildResumeCommand,
   collectAssistantReply,
+  inferClaudeCreatedSessionId,
   parseNativeStreamEvent
 } = require('../lib/server/native-session-chat');
+
+test('native session stream uses a wider default pty size to avoid premature hard wraps', () => {
+  assert.equal(DEFAULT_NATIVE_STREAM_COLS, 220);
+  assert.equal(DEFAULT_NATIVE_STREAM_ROWS, 32);
+});
 
 test('buildResumeCommand builds gemini native resume invocation', () => {
   const command = buildResumeCommand('gemini', {
@@ -254,4 +265,57 @@ test('parseNativeStreamEvent still supports legacy codex thread.started session 
     sessionId: 'legacy-thread-id'
   });
   assert.equal(state.sessionId, 'legacy-thread-id');
+});
+
+test('inferClaudeCreatedSessionId finds the newly persisted claude session from host project store', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-native-claude-infer-'));
+  const originalRealHome = process.env.REAL_HOME;
+  process.env.REAL_HOME = root;
+
+  try {
+    const projectDirName = 'Users-model-projects-feature-ai-home';
+    const projectDir = path.join(root, '.claude', 'projects', projectDirName);
+    fs.mkdirSync(projectDir, { recursive: true });
+
+    fs.writeFileSync(
+      path.join(projectDir, 'old-session.jsonl'),
+      `${JSON.stringify({
+        type: 'user',
+        message: { content: '旧会话' }
+      })}\n`,
+      'utf8'
+    );
+
+    const startedAt = Date.now();
+    const nextSessionId = 'claude-session-created-2';
+    fs.writeFileSync(
+      path.join(projectDir, `${nextSessionId}.jsonl`),
+      [
+        JSON.stringify({
+          type: 'user',
+          message: { content: '请记住这个 Claude 会话' }
+        }),
+        JSON.stringify({
+          type: 'assistant',
+          message: {
+            content: [{ type: 'text', text: '已经记住。' }]
+          }
+        })
+      ].join('\n') + '\n',
+      'utf8'
+    );
+
+    const resolvedSessionId = await inferClaudeCreatedSessionId(projectDirName, {
+      beforeSessionIds: ['old-session'],
+      startedAt,
+      prompt: '请记住这个 Claude 会话',
+      timeoutMs: 200
+    });
+
+    assert.equal(resolvedSessionId, nextSessionId);
+  } finally {
+    if (originalRealHome === undefined) delete process.env.REAL_HOME;
+    else process.env.REAL_HOME = originalRealHome;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });

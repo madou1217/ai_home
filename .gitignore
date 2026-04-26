@@ -1,0 +1,35 @@
+node_modules/
+.DS_Store
+accounts/
+.claude/settings.local.json
+.spec-workflow/
+logs/
+*.log
+gitleaks-report.json
+tmp/
+.aih/
+
+# Rust / Tauri / TUI build artifacts
+**/target/
+**/*.pdb
+**/*.dSYM/
+desktop/src-tauri/gen/
+**/dist/
+**/build/
+**/coverage/
+**/.cache/
+**/.turbo/
+**/.next/
+**/out/
+
+# Keep key project docs trackable even if global excludes ignore Markdown.
+!/AGENTS.md
+!/README.md
+!/README_en.md
+!/ROADMAP.md
+
+# Ignored as requested
+codex-auto-reg/
+/cli/
+ai-home*.zip
+output/

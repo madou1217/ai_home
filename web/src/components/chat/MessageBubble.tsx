@@ -1,0 +1,609 @@
+import { memo, useMemo, useState } from 'react';
+import { Avatar, Image } from 'antd';
+import { WarningOutlined, CheckOutlined } from '@ant-design/icons';
+import copyIcon from '@/assets/icons/copy.svg';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import type { ChatMessage, Provider } from '@/types';
+import {
+  countChecklistProgress,
+  parseMessageBlocks,
+  parseStructuredChecklist,
+  type StructuredTaskItem
+} from './message-structure';
+import {
+  getRenderablePendingBlocks,
+  hasRenderablePendingBlocks,
+  normalizePendingTextBlock,
+  shouldRenderPendingBlockAsPlainText
+} from './pending-message-presentation.js';
+import { normalizePendingStatusText } from './provider-pending-policy.js';
+import ProviderIcon from './ProviderIcon';
+import styles from './chat.module.css';
+import dayjs from 'dayjs';
+
+interface Props {
+  message: ChatMessage;
+  provider: Provider;
+  mobile?: boolean;
+}
+
+function basenameLike(filePath: string) {
+  const text = String(filePath || '').trim();
+  if (!text) return '';
+  const normalized = text.replace(/[?#].*$/, '').split('\n')[0].trim();
+  const parts = normalized.split(/[\\/]/);
+  return parts[parts.length - 1] || normalized;
+}
+
+function detectReadLabelFromCommand(command: string) {
+  const text = String(command || '');
+  const pathMatch = text.match(/["']([^"']+\.[a-zA-Z0-9_-]+)["']/);
+  if (pathMatch?.[1] && /(?:^|\s)(cat|sed|nl|head|tail|less|more|bat|rg)\b/.test(text)) {
+    return `Read ${basenameLike(pathMatch[1])}`;
+  }
+  return '';
+}
+
+function getToolItemLabel(name: string, body: string, result?: string) {
+  if (name === 'Read') return `Read ${basenameLike(body)}`;
+  if (name === 'Write') return `Wrote ${basenameLike(body)}`;
+  if (name === 'Edit') return `Edited ${basenameLike(body)}`;
+  if (name === 'Terminal') {
+    const readLabel = detectReadLabelFromCommand(body);
+    if (readLabel) return readLabel;
+    const cmdLine = String(body || '').split('\n')[0].trim();
+    if (/npm\s+run\s+([^\s]+)/.test(cmdLine)) return `Ran npm run ${cmdLine.match(/npm\s+run\s+([^\s]+)/)?.[1] || ''}`.trim();
+    if (/node\s+--test\b/.test(cmdLine)) return 'Ran tests';
+    if (/git\s+diff\b/.test(cmdLine)) return 'Checked git diff';
+    const firstOutput = String(result || '').split('\n').map((line) => line.trim()).find(Boolean);
+    if (firstOutput) return firstOutput.length > 64 ? firstOutput.slice(0, 64) + '...' : firstOutput;
+    return cmdLine.length > 64 ? cmdLine.slice(0, 64) + '...' : (cmdLine || 'Ran command');
+  }
+  return name;
+}
+
+function getToolGroupSummary(items: Array<{ name: string; body: string; result?: string }>) {
+  let readCount = 0;
+  let editCount = 0;
+  let commandCount = 0;
+
+  items.forEach((item) => {
+    const label = getToolItemLabel(item.name, item.body, item.result);
+    if (label.startsWith('Read ')) {
+      readCount += 1;
+      return;
+    }
+    if (label.startsWith('Edited ') || label.startsWith('Wrote ')) {
+      editCount += 1;
+      return;
+    }
+    commandCount += 1;
+  });
+
+  const parts: string[] = [];
+  if (readCount > 0) parts.push(`Explored ${readCount} file${readCount > 1 ? 's' : ''}`);
+  if (editCount > 0) parts.push(`Edited ${editCount} file${editCount > 1 ? 's' : ''}`);
+  if (commandCount > 0) parts.push(`ran ${commandCount} command${commandCount > 1 ? 's' : ''}`);
+  return parts.length > 0 ? parts.join(', ') : `${items.length} actions`;
+}
+
+function cleanTerminalResultText(text: string) {
+  const raw = String(text || '').replace(/\r\n?/g, '\n');
+  if (!raw.trim()) return '';
+
+  const lines = raw.split('\n');
+  const cleaned: string[] = [];
+  let index = 0;
+
+  while (index < lines.length) {
+    const line = lines[index];
+    if (/^Chunk ID:\s*/.test(line)) {
+      index += 1;
+      while (
+        index < lines.length
+        && !/^Output:\s*(.*)$/.test(lines[index])
+        && !/^Chunk ID:\s*/.test(lines[index])
+      ) {
+        index += 1;
+      }
+      if (index < lines.length && /^Output:\s*(.*)$/.test(lines[index])) {
+        const outputMatch = lines[index].match(/^Output:\s*(.*)$/);
+        if (outputMatch?.[1]) cleaned.push(outputMatch[1]);
+        index += 1;
+        while (index < lines.length && !/^Chunk ID:\s*/.test(lines[index])) {
+          cleaned.push(lines[index]);
+          index += 1;
+        }
+      }
+      continue;
+    }
+
+    const plainOutputMatch = line.match(/^Output:\s*(.*)$/);
+    if (plainOutputMatch) {
+      if (plainOutputMatch[1]) cleaned.push(plainOutputMatch[1]);
+      index += 1;
+      continue;
+    }
+
+    if (
+      /^Wall time:\s*/.test(line)
+      || /^Process (?:running|exited) with session ID\s*/.test(line)
+      || /^Original token count:\s*/.test(line)
+    ) {
+      index += 1;
+      continue;
+    }
+
+    cleaned.push(line);
+    index += 1;
+  }
+
+  return cleaned.join('\n').trim();
+}
+
+function extractShellDurationLabel(rawResult: string) {
+  const text = String(rawResult || '');
+  const wallMatch = text.match(/Wall time:\s*([0-9.]+)\s*seconds?/i);
+  if (!wallMatch || !wallMatch[1]) return '';
+  const seconds = Number(wallMatch[1]);
+  if (!Number.isFinite(seconds) || seconds < 0) return '';
+  if (seconds < 1) return '<1s';
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remain = Math.round(seconds % 60);
+  if (remain <= 0) return `${minutes}m`;
+  return `${minutes}m ${remain}s`;
+}
+
+/** 判断是否为错误消息 */
+function isErrorMessage(c: string): boolean {
+  const t = c.trim();
+  return t.startsWith('API Error:') || t.startsWith('Error:') || (t.startsWith('{') && t.includes('"error"'));
+}
+
+function parseAttachedImageBlock(content: string) {
+  const text = String(content || '');
+  const lines = text.split('\n');
+  if (lines.length < 3 || lines[0].trim() !== 'Attached image files:') {
+    return {
+      text,
+      imagePaths: [] as string[]
+    };
+  }
+
+  const imagePaths: string[] = [];
+  let index = 1;
+  while (index < lines.length && lines[index].trim().startsWith('- ')) {
+    imagePaths.push(lines[index].trim().slice(2).trim());
+    index += 1;
+  }
+  if (index < lines.length && lines[index].trim() === 'Please inspect these local image files directly when answering.') {
+    index += 1;
+  }
+  while (index < lines.length && lines[index].trim() === '') index += 1;
+
+  return {
+    text: lines.slice(index).join('\n').trim(),
+    imagePaths
+  };
+}
+
+function toServedImageUrl(filePath: string) {
+  return `/v0/webui/chat/attachments?path=${encodeURIComponent(filePath)}`;
+}
+
+const ImageGallery = ({ images }: { images: string[] }) => {
+  if (!Array.isArray(images) || images.length === 0) return null;
+  return (
+    <Image.PreviewGroup items={images}>
+      <div style={{
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: 8,
+        marginBottom: 10
+      }}>
+        {images.map((src, index) => (
+          <Image
+            key={`${src}-${index}`}
+            src={src}
+            alt={`chat-image-${index + 1}`}
+            width={112}
+            style={{
+              maxWidth: '100%',
+              height: 112,
+              borderRadius: 12,
+              border: '1px solid #e5e7eb',
+              background: '#fff',
+              objectFit: 'cover'
+            }}
+          />
+        ))}
+      </div>
+    </Image.PreviewGroup>
+  );
+};
+
+/** Thinking 折叠块 */
+const ThinkingBlock = ({ value, mobile = false }: { value: string; mobile?: boolean }) => {
+  const [expanded, setExpanded] = useState(false);
+  const lastLine = value.split('\n').filter(l => l.trim()).pop() || '';
+  return (
+    <div className={styles.thinkingBlock} onClick={() => setExpanded(!expanded)}>
+      <div className={styles.thinkingHeader}>
+        <span style={{ fontSize: mobile ? 13 : 12 }}>{expanded ? '▼' : '▶'}</span>
+        <span>Thinking</span>
+        {!expanded && <span className={styles.thinkingPreview}>{lastLine.slice(0, 60)}</span>}
+      </div>
+      {expanded && <div className={styles.thinkingBody}>{value}</div>}
+    </div>
+  );
+};
+
+/** 工具图标映射 */
+const toolIcons: Record<string, string> = {
+  Bash: '$ ',
+  Terminal: '$ ',
+  Read: '📄 ',
+  Write: '📝 ',
+  Edit: '✏️ ',
+  Grep: '🔍 ',
+  Glob: '📂 ',
+  TodoWrite: '☑ ',
+  WebFetch: '🌐 ',
+  Task: '🤖 ',
+  Git: '⑂ ',
+};
+
+/** TodoWrite 渲染 */
+const TodoList = ({ items, mobile = false }: { items: StructuredTaskItem[]; mobile?: boolean }) => (
+  <div className={styles.toolBody}>
+    {items.map((item, i) => (
+      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '2px 0', fontSize: mobile ? 14 : 13 }}>
+        <input type="checkbox" checked={item.status === 'completed'} readOnly
+          style={{ accentColor: item.status === 'in_progress' ? '#faad14' : undefined }} />
+        <span style={{
+          textDecoration: item.status === 'completed' ? 'line-through' : 'none',
+          color: item.status === 'completed' ? '#999' : item.status === 'in_progress' ? '#1890ff' : '#333'
+        }}>{item.content}</span>
+      </div>
+    ))}
+  </div>
+);
+
+const PlanList = ({
+  explanation,
+  items,
+  result,
+  mobile = false
+}: {
+  explanation: string;
+  items: StructuredTaskItem[];
+  result?: string;
+  mobile?: boolean;
+}) => {
+  const { completedCount } = countChecklistProgress(items);
+  return (
+    <>
+      <div className={styles.toolBody}>
+        <div style={{ fontSize: mobile ? 13 : 12, color: '#6b7280', marginBottom: 8 }}>
+          {`共 ${items.length} 个任务，已经完成 ${completedCount} 个`}
+        </div>
+        {explanation ? (
+          <div style={{ fontSize: mobile ? 13 : 12, color: '#4b5563', marginBottom: 10, whiteSpace: 'pre-wrap', lineHeight: 1.65 }}>
+            {explanation}
+          </div>
+        ) : null}
+        {items.map((item, i) => (
+          <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '3px 0', fontSize: mobile ? 14 : 13 }}>
+            <input
+              type="checkbox"
+              checked={item.status === 'completed'}
+              readOnly
+              style={{ marginTop: 2, accentColor: item.status === 'in_progress' ? '#faad14' : undefined }}
+            />
+            <span style={{
+              textDecoration: item.status === 'completed' ? 'line-through' : 'none',
+              color: item.status === 'completed' ? '#999' : item.status === 'in_progress' ? '#1890ff' : '#333',
+              lineHeight: 1.5
+            }}>
+              {`${i + 1}. ${item.content}`}
+            </span>
+          </div>
+        ))}
+      </div>
+      {result ? (
+        <div className={styles.toolBody} style={{ borderTop: '1px solid #e8e8e8', fontSize: mobile ? 13 : 12, color: '#6b7280' }}>
+          <div style={{ whiteSpace: 'pre-wrap' }}>{result}</div>
+        </div>
+      ) : null}
+    </>
+  );
+};
+
+/** Tool 块渲染（含 result） */
+const ToolBlock = ({ name, body, result, mobile = false }: { name: string; body: string; result?: string; mobile?: boolean }) => {
+  const icon = toolIcons[name] || '🔧 ';
+  const cleanedResult = name === 'Terminal' ? cleanTerminalResultText(result || '') : (result || '');
+  const checklist = parseStructuredChecklist(name, body, cleanedResult);
+
+  if (checklist?.kind === 'todo') {
+    return (
+      <div className={styles.toolBlock}>
+        <div className={styles.toolHeader}>{icon}Todo</div>
+        <TodoList items={checklist.items} mobile={mobile} />
+      </div>
+    );
+  }
+
+  if (checklist?.kind === 'plan') {
+    return (
+      <div className={styles.toolBlock}>
+        <div className={styles.toolHeader}>{icon}Plan</div>
+        <PlanList explanation={checklist.explanation} items={checklist.items} result={cleanedResult} mobile={mobile} />
+      </div>
+    );
+  }
+
+  // Bash/Terminal/Git 渲染为代码块 + 输出
+  if ((name === 'Bash' || name === 'Terminal' || name === 'Git') && body) {
+    return <ShellToolBlock name={name} icon={icon} body={body} rawResult={result || ''} cleanedResult={cleanedResult} />;
+  }
+
+  // 通用渲染
+  return (
+    <div className={styles.toolBlock}>
+      <div className={styles.toolHeader}>{icon}{name}</div>
+      {body && <div className={styles.toolBody}><code style={{ fontSize: mobile ? 13 : 12, wordBreak: 'break-all' }}>{body}</code></div>}
+      {cleanedResult && (
+        <div className={styles.toolBody} style={{ borderTop: '1px solid #e8e8e8' }}>
+          <pre style={{ margin: 0, fontSize: mobile ? 13 : 11, color: '#666', whiteSpace: 'pre-wrap', maxHeight: 150, overflow: 'auto' }}>{cleanedResult}</pre>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const ShellToolBlock = ({
+  name,
+  icon,
+  body,
+  rawResult,
+  cleanedResult
+}: {
+  name: string;
+  icon: string;
+  body: string;
+  rawResult: string;
+  cleanedResult: string;
+}) => {
+  const [expanded, setExpanded] = useState(false);
+  const shellCommand = String(body || '').split('\n').find((line) => !line.startsWith('# cwd:')) || String(body || '').split('\n')[0] || '';
+  const durationLabel = extractShellDurationLabel(rawResult);
+  const shellHeader = `已运行命令${durationLabel ? ` (${durationLabel})` : ''}`;
+
+  return (
+    <div className={`${styles.toolBlock} ${name === 'Terminal' ? styles.shellBlock : ''}`}>
+      <button type="button" className={styles.shellCollapseHeader} onClick={() => setExpanded((current) => !current)}>
+        <span className={styles.shellCollapseTitle}>{shellHeader}</span>
+        <span className={styles.shellCollapseCommand}>{shellCommand}</span>
+        <span className={styles.shellCollapseChevron}>{expanded ? '⌄' : '›'}</span>
+      </button>
+      {expanded && (
+        <>
+          <div className={styles.toolHeader}>{name === 'Terminal' ? 'Shell' : `${icon}${name === 'Git' ? 'Git' : 'Terminal'}`}</div>
+          <div className={styles.shellCommandBlock}>
+            <pre className={styles.shellCommandCode}>{`$ ${shellCommand}`}</pre>
+          </div>
+          {cleanedResult && (
+            <div className={styles.shellOutputBlock}>
+              <pre className={styles.shellOutputCode}>{cleanedResult}</pre>
+              <div className={styles.shellStatus}>✓ 成功</div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+};
+
+const ToolGroupBlock = ({ items, mobile = false }: { items: Array<{ name: string; body: string; result?: string }>; mobile?: boolean }) => {
+  const [expanded, setExpanded] = useState(false);
+  const summary = getToolGroupSummary(items);
+
+  return (
+    <div className={styles.toolGroupBlock}>
+      <button type="button" className={styles.toolGroupHeader} onClick={() => setExpanded((current) => !current)}>
+        <span>{summary}</span>
+        <span className={styles.toolGroupChevron}>{expanded ? '⌄' : '›'}</span>
+      </button>
+      {expanded && (
+        <div className={styles.toolGroupList}>
+          {items.map((item, index) => {
+            const label = getToolItemLabel(item.name, item.body, item.result);
+            return (
+              <div key={`${item.name}-${index}`} className={styles.toolGroupItem}>
+                <div className={styles.toolGroupItemLabel}>{label}</div>
+                {item.result ? (
+                  <div className={styles.toolGroupItemResult}>
+                    <pre style={{ fontSize: mobile ? 13 : undefined }}>{item.result}</pre>
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
+/** 复制按钮 */
+const CopyButton = ({ text }: { text: string }) => {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+  return (
+    <button className={styles.actionBtn} onClick={handleCopy} title="复制">
+      {copied ? <CheckOutlined style={{ color: '#52c41a' }} /> : <img src={copyIcon} alt="copy" style={{ width: 14, height: 14 }} />}
+    </button>
+  );
+};
+
+const formatMessageTime = (timestamp?: string | number) => {
+  if (timestamp == null || timestamp === '') return '';
+  const date = dayjs(timestamp);
+  if (!date.isValid()) return '';
+  return date.format('HH:mm');
+};
+
+const PendingStatusLine = ({ text }: { text: string }) => {
+  const chars = Array.from(text || '');
+  return (
+    <div className={styles.pendingInlineStatus} aria-live="polite" aria-label={text}>
+      {chars.map((char, index) => (
+        <span
+          key={`${char}-${index}`}
+          className={styles.pendingInlineChar}
+          style={{ animationDelay: `${index * 0.08}s` }}
+          aria-hidden="true"
+        >
+          {char === ' ' ? '\u00A0' : char}
+        </span>
+      ))}
+    </div>
+  );
+};
+
+const MessageBubble = ({ message, provider, mobile = false }: Props) => {
+  const isUser = message.role === 'user';
+  const showAssistantAvatar = !mobile;
+  const timeLabel = formatMessageTime(message.timestamp);
+  const [metaVisible, setMetaVisible] = useState(false);
+  const parsedAttachmentBlock = useMemo(() => parseAttachedImageBlock(message.content), [message.content]);
+  const inlineImages = useMemo(() => (Array.isArray(message.images) ? message.images : []), [message.images]);
+  const persistedImages = useMemo(
+    () => parsedAttachmentBlock.imagePaths.map(toServedImageUrl),
+    [parsedAttachmentBlock.imagePaths]
+  );
+  const renderedImages = inlineImages.length > 0 ? inlineImages : persistedImages;
+  const messageText = renderedImages.length > 0 ? parsedAttachmentBlock.text : message.content;
+  const blocks = useMemo(() => parseMessageBlocks(messageText || message.content), [messageText, message.content]);
+  const metaRowClassName = `${styles.messageMetaRow} ${isUser ? styles.messageMetaRowUser : styles.messageMetaRowAssistant} ${metaVisible ? styles.messageMetaRowVisible : ''}`;
+
+  const handleMessageTap = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!mobile) return;
+    const target = e.target as HTMLElement | null;
+    if (target?.closest('button, a, input, textarea, select, label, img, video, [role="button"], .ant-image, .ant-image-preview-root')) {
+      return;
+    }
+    setMetaVisible((current) => !current);
+  };
+
+  if (isUser) {
+    return (
+      <div className={`${styles.messageRow} ${styles.messageRowUser}`}>
+        <div className={`${styles.messageWrapper} ${styles.messageWrapperUser}`} onClick={handleMessageTap}>
+          <div className={styles.bubbleUser}>
+            <ImageGallery images={renderedImages} />
+            {messageText || (renderedImages.length > 0 ? '已附加图片' : '')}
+          </div>
+          <div className={metaRowClassName}>
+            {timeLabel ? <span className={styles.messageTime}>{timeLabel}</span> : <span />}
+            <CopyButton text={messageText || message.content} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isErrorMessage(message.content)) {
+    return (
+      <div className={`${styles.messageRow} ${styles.messageRowAssistant}`}>
+        {showAssistantAvatar ? (
+          <Avatar size={32} className={styles.avatarAi} style={{ background: '#fff2f0', border: '1px solid #ffccc7' }}>
+            <WarningOutlined style={{ color: '#cf1322', fontSize: 16 }} />
+          </Avatar>
+        ) : null}
+        <div className={styles.bubbleError}>{message.content}</div>
+      </div>
+    );
+  }
+
+  if (message.pending) {
+    const pendingStatusText = normalizePendingStatusText(message.statusText || '正在思考中', provider);
+    const pendingDetailBlocks = getRenderablePendingBlocks(blocks);
+    const hasLiveDetail = hasRenderablePendingBlocks(blocks);
+
+    return (
+      <div className={`${styles.messageRow} ${styles.messageRowAssistant}`}>
+        {showAssistantAvatar ? (
+          <Avatar size={32} className={styles.avatarAi}>
+            <ProviderIcon provider={provider} size={18} />
+          </Avatar>
+        ) : null}
+        <div className={`${styles.messageWrapper} ${styles.messageWrapperAssistant}`} onClick={handleMessageTap}>
+          <div className={`${styles.bubbleAssistant} ${styles.bubbleAssistantPending} ${!hasLiveDetail ? styles.bubbleAssistantPendingCompact : ''}`}>
+            <div className={styles.pendingInline}>
+              <span className={styles.srOnly}>{pendingStatusText}</span>
+              <PendingStatusLine text={pendingStatusText} />
+            </div>
+            {hasLiveDetail ? (
+              <div className={styles.pendingDetailBody}>
+                {pendingDetailBlocks.map((block, idx) => {
+                  if (block.type === 'tool_use') return <ToolBlock key={idx} name={block.name} body={block.body} result={block.result} mobile={mobile} />;
+                  if (block.type === 'tool_group') return <ToolGroupBlock key={idx} items={block.items} mobile={mobile} />;
+                  if (!String(block.value || '').trim()) return null;
+                  if (shouldRenderPendingBlockAsPlainText(block)) {
+                    return (
+                      <div key={idx} className={styles.pendingTextBlock}>
+                        {normalizePendingTextBlock(block.value)}
+                      </div>
+                    );
+                  }
+                  return <ReactMarkdown key={idx} remarkPlugins={[remarkGfm]}>{block.value}</ReactMarkdown>;
+                })}
+              </div>
+            ) : null}
+          </div>
+          <div className={metaRowClassName}>
+            <CopyButton text={message.content || ''} />
+            {timeLabel ? <span className={styles.messageTime}>{timeLabel}</span> : <span />}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`${styles.messageRow} ${styles.messageRowAssistant}`}>
+      {showAssistantAvatar ? (
+        <Avatar size={32} className={styles.avatarAi}>
+          <ProviderIcon provider={provider} size={18} />
+        </Avatar>
+      ) : null}
+        <div className={`${styles.messageWrapper} ${styles.messageWrapperAssistant}`} onClick={handleMessageTap}>
+          <div className={styles.bubbleAssistant}>
+            <ImageGallery images={renderedImages} />
+            {blocks.map((block, idx) => {
+              if (block.type === 'thinking') return <ThinkingBlock key={idx} value={block.value} mobile={mobile} />;
+              if (block.type === 'tool_use') return <ToolBlock key={idx} name={block.name} body={block.body} result={block.result} mobile={mobile} />;
+              if (block.type === 'tool_group') return <ToolGroupBlock key={idx} items={block.items} mobile={mobile} />;
+              return <ReactMarkdown key={idx} remarkPlugins={[remarkGfm]}>{block.value}</ReactMarkdown>;
+            })}
+          </div>
+          <div className={metaRowClassName}>
+            <CopyButton text={messageText || message.content} />
+            {timeLabel ? <span className={styles.messageTime}>{timeLabel}</span> : <span />}
+          </div>
+        </div>
+      </div>
+  );
+};
+
+export default memo(MessageBubble);

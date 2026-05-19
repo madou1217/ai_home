@@ -1,0 +1,34 @@
+{
+  "name": "ai_home",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "postinstall": "node scripts/postinstall.js",
+    "cleanup:codex": "node scripts/cleanup-codex-free-accounts.js",
+    "web:install": "cd web && npm install",
+    "web:build": "cd web && npm run build",
+    "web:dev": "cd web && npm run dev",
+    "build": "npm run web:build"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "7zip-bin": "^5.2.0",
+    "cli-spinners": "^3.4.0",
+    "commander": "^14.0.3",
+    "cross-spawn": "^7.0.6",
+    "fs-extra": "^11.3.3",
+    "node-pty": "^1.1.0",
+    "open": "^11.0.0",
+    "readline-sync": "^1.4.10",
+    "undici": "^7.22.0",
+    "ws": "^8.20.0"
+  },
+  "bin": {
+    "aih": "./bin/ai-home.js"
+  }
+}

@@ -1,0 +1,123 @@
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
+    'Noto Color Emoji';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+  background: #f5f7fb;
+}
+
+#root {
+  width: 100%;
+  height: 100dvh;
+}
+
+/* 禁止 ant-layout 覆盖 height */
+.ant-layout {
+  min-height: unset !important;
+}
+
+.account-email-row .account-email-copy-button {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-2px);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.account-email-row:hover .account-email-copy-button,
+.account-email-row:focus-within .account-email-copy-button {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(0);
+}
+
+.account-email-copy-button.ant-btn {
+  min-width: 18px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+}
+
+.account-email-copy-button .anticon {
+  font-size: 11px;
+}
+
+.auth-progress-detail-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.auth-progress-detail-row + .auth-progress-detail-row {
+  margin-top: 12px;
+}
+
+.auth-progress-detail-label {
+  flex: 0 0 72px;
+  line-height: 1.7;
+}
+
+.auth-progress-detail-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.auth-progress-detail-text {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.7;
+  word-break: break-word;
+}
+
+.auth-progress-detail-actions.ant-space {
+  flex-shrink: 0;
+}
+
+.auth-progress-detail-actions .ant-btn {
+  color: #8c8c8c;
+}
+
+.auth-progress-detail-actions .ant-btn:hover {
+  color: #1677ff;
+  background: rgba(22, 119, 255, 0.08);
+}
+
+@media (max-width: 768px) {
+  .ant-drawer-body,
+  .ant-modal-body,
+  .ant-layout-content {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: auto;
+    touch-action: auto;
+  }
+
+  .auth-progress-detail-row {
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .auth-progress-detail-label {
+    flex-basis: auto;
+  }
+
+  .auth-progress-detail-content {
+    width: 100%;
+  }
+}

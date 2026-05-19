@@ -1,0 +1,42 @@
+node_modules/
+.DS_Store
+accounts/
+.claude/settings.local.json
+.spec-workflow/
+logs/
+*.log
+gitleaks-report.json
+tmp/
+.aih/
+
+# Documentation policy: keep only the two root entry docs.
+*.md
+!/AGENTS.md
+!/README.md
+
+# Generated bundles copied from external Codex/Electron builds.
+/app-session-*.js
+/app-session-*.js.map
+/main-*.js
+/main-*.js.map
+/workspace-root-drop-handler-*.js
+/workspace-root-drop-handler-*.js.map
+
+# Rust / Tauri / TUI build artifacts
+**/target/
+**/*.pdb
+**/*.dSYM/
+desktop/src-tauri/gen/
+**/dist/
+**/build/
+**/coverage/
+**/.cache/
+**/.turbo/
+**/.next/
+**/out/
+
+# Ignored as requested
+codex-auto-reg/
+/cli/
+ai-home*.zip
+output/

@@ -425,6 +425,71 @@ test('codex adapter converts codex SSE events to openai chunks', () => {
   assert.equal(chunks[chunks.length - 1].choices[0].finish_reason, 'stop');
 });
 
+test('codex adapter preserves function arguments from codex output item done event', () => {
+  const sse = [
+    'data: {"type":"response.created","response":{"id":"resp_tool","created_at":1700000000,"model":"dynamic-codex-model"}}',
+    '',
+    'data: {"type":"response.output_item.added","output_index":0,"item":{"id":"fc_1","type":"function_call","call_id":"call_1","name":"TodoWrite","arguments":""}}',
+    '',
+    'data: {"type":"response.output_item.done","output_index":0,"item":{"id":"fc_1","type":"function_call","call_id":"call_1","name":"TodoWrite","arguments":"{\\"todos\\":[{\\"content\\":\\"fix adapter\\",\\"status\\":\\"in_progress\\",\\"activeForm\\":\\"fixing adapter\\"}]}"}}',
+    '',
+    'data: {"type":"response.completed","response":{"usage":{"input_tokens":2,"output_tokens":3,"total_tokens":5}}}',
+    ''
+  ].join('\n');
+
+  const chunks = __private.convertCodexSseToOpenAIChunks(sse, 'dynamic-codex-model');
+  const argumentText = chunks
+    .flatMap((chunk) => chunk.choices[0].delta.tool_calls || [])
+    .map((toolCall) => toolCall.function && toolCall.function.arguments || '')
+    .join('');
+
+  assert.match(argumentText, /"todos":\[/);
+  assert.equal(JSON.parse(argumentText).todos[0].content, 'fix adapter');
+  assert.equal(chunks[chunks.length - 1].choices[0].finish_reason, 'tool_calls');
+});
+
+test('codex adapter recovers function arguments from completed response output', () => {
+  const sse = [
+    'data: {"type":"response.created","response":{"id":"resp_tool_done","created_at":1700000000,"model":"dynamic-codex-model"}}',
+    '',
+    'data: {"type":"response.output_item.added","output_index":0,"item":{"id":"fc_2","type":"function_call","call_id":"call_2","name":"Task","arguments":""}}',
+    '',
+    'data: {"type":"response.completed","response":{"output":[{"id":"fc_2","type":"function_call","call_id":"call_2","name":"Task","arguments":"{\\"description\\":\\"Explore\\",\\"prompt\\":\\"Read files\\",\\"subagent_type\\":\\"Explore\\"}"}],"usage":{"input_tokens":2,"output_tokens":3,"total_tokens":5}}}',
+    ''
+  ].join('\n');
+
+  const chunks = __private.convertCodexSseToOpenAIChunks(sse, 'dynamic-codex-model');
+  const argumentText = chunks
+    .flatMap((chunk) => chunk.choices[0].delta.tool_calls || [])
+    .map((toolCall) => toolCall.function && toolCall.function.arguments || '')
+    .join('');
+
+  assert.equal(JSON.parse(argumentText).subagent_type, 'Explore');
+  assert.equal(chunks[chunks.length - 1].choices[0].finish_reason, 'tool_calls');
+});
+
+test('codex adapter can match final function arguments by call id', () => {
+  const sse = [
+    'data: {"type":"response.created","response":{"id":"resp_tool_call_id","created_at":1700000000,"model":"dynamic-codex-model"}}',
+    '',
+    'data: {"type":"response.output_item.added","output_index":0,"item":{"id":"fc_3","type":"function_call","call_id":"call_3","name":"TodoWrite","arguments":""}}',
+    '',
+    'data: {"type":"response.function_call_arguments.done","call_id":"call_3","arguments":"{\\"todos\\":[{\\"content\\":\\"match by call id\\",\\"status\\":\\"pending\\",\\"activeForm\\":\\"matching\\"}]}"}',
+    '',
+    'data: {"type":"response.completed","response":{"usage":{"input_tokens":2,"output_tokens":3,"total_tokens":5}}}',
+    ''
+  ].join('\n');
+
+  const chunks = __private.convertCodexSseToOpenAIChunks(sse, 'dynamic-codex-model');
+  const argumentText = chunks
+    .flatMap((chunk) => chunk.choices[0].delta.tool_calls || [])
+    .map((toolCall) => toolCall.function && toolCall.function.arguments || '')
+    .join('');
+
+  assert.equal(JSON.parse(argumentText).todos[0].content, 'match by call id');
+  assert.equal(chunks[chunks.length - 1].choices[0].finish_reason, 'tool_calls');
+});
+
 test('codex adapter converts completed codex response to openai completion', () => {
   const completion = __private.convertCodexResponseToOpenAICompletion({
     type: 'response.completed',

@@ -64,7 +64,23 @@ function createWin32LinkFs(seed = {}) {
     if (links.has(normalized)) {
       const link = links.get(normalized);
       if (!followLinks || link.kind !== 'symlink') return link;
-      return resolveEntry(link.target, true);
+      const target = resolveEntry(link.target, true);
+      if (
+        seed.fileSymlinkToDirectoryStatsAsFile
+        && link.isDir === false
+        && target
+        && target.kind === 'dir'
+      ) {
+        return {
+          kind: 'file',
+          content: '',
+          dev: 1,
+          ino: nextIno += 1,
+          size: 0,
+          mtimeMs: nextIno
+        };
+      }
+      return target;
     }
     if (files.has(normalized)) return { kind: 'file', ...files.get(normalized) };
     if (dirs.has(normalized)) return { kind: 'dir', dev: 1, ino: 0 };
@@ -647,4 +663,124 @@ test('ensureSessionStoreLinks compares win32 symlink targets case-insensitively'
   assert.deepEqual(fake.calls.symlink, []);
   assert.deepEqual(fake.calls.hardlink, []);
   assert.deepEqual(fake.calls.unlink, []);
+});
+
+test('ensureSessionStoreLinks uses win32 directory links when the host target is a symlinked directory', () => {
+  const pathImpl = path.win32;
+  const hostHomeDir = 'C:\\Users\\dev';
+  const profilesDir = pathImpl.join(hostHomeDir, '.ai_home', 'profiles');
+  const hostGeminiDir = pathImpl.join(hostHomeDir, '.gemini');
+  const hostTmpDir = pathImpl.join(hostGeminiDir, 'tmp-real');
+  const accountRoot = pathImpl.join(profilesDir, 'gemini', '1');
+  const accountGeminiDir = pathImpl.join(accountRoot, '.gemini');
+  const accountTmpDir = pathImpl.join(accountGeminiDir, 'tmp');
+
+  const fake = createWin32LinkFs({
+    dirs: [
+      hostHomeDir,
+      profilesDir,
+      pathImpl.join(profilesDir, 'gemini'),
+      accountRoot,
+      accountGeminiDir,
+      hostGeminiDir,
+      hostTmpDir
+    ],
+    links: [
+      {
+        path: pathImpl.join(hostGeminiDir, 'tmp'),
+        target: hostTmpDir,
+        isDir: true
+      }
+    ]
+  });
+
+  const service = createSessionStoreService({
+    fs: fake.fs,
+    fse: {
+      removeSync() { throw new Error('unexpected remove'); },
+      moveSync() { throw new Error('unexpected move'); },
+      copySync() { throw new Error('unexpected copy'); }
+    },
+    path: pathImpl,
+    processObj: { platform: 'win32' },
+    profilesDir,
+    hostHomeDir,
+    cliConfigs: { gemini: { globalDir: '.gemini' } },
+    getProfileDir: (cliName, id) => pathImpl.join(profilesDir, cliName, String(id)),
+    ensureDir: (dir) => fake.fs.mkdirSync(dir, { recursive: true })
+  });
+
+  const result = service.ensureSessionStoreLinks('gemini', '1');
+
+  assert.equal(result.linked >= 1, true);
+  assert.deepEqual(fake.calls.symlink, [{
+    targetPath: pathImpl.join(hostGeminiDir, 'tmp'),
+    linkPath: accountTmpDir,
+    type: 'junction'
+  }]);
+  assert.deepEqual(fake.calls.hardlink, []);
+  assert.deepEqual(fake.calls.unlink, []);
+});
+
+test('ensureSessionStoreLinks repairs win32 directory links that were created as file links', () => {
+  const pathImpl = path.win32;
+  const hostHomeDir = 'C:\\Users\\dev';
+  const profilesDir = pathImpl.join(hostHomeDir, '.ai_home', 'profiles');
+  const hostGeminiDir = pathImpl.join(hostHomeDir, '.gemini');
+  const hostTmpDir = pathImpl.join(hostGeminiDir, 'tmp-real');
+  const accountRoot = pathImpl.join(profilesDir, 'gemini', '1');
+  const accountGeminiDir = pathImpl.join(accountRoot, '.gemini');
+  const accountTmpDir = pathImpl.join(accountGeminiDir, 'tmp');
+
+  const fake = createWin32LinkFs({
+    fileSymlinkToDirectoryStatsAsFile: true,
+    dirs: [
+      hostHomeDir,
+      profilesDir,
+      pathImpl.join(profilesDir, 'gemini'),
+      accountRoot,
+      accountGeminiDir,
+      hostGeminiDir,
+      hostTmpDir
+    ],
+    links: [
+      {
+        path: pathImpl.join(hostGeminiDir, 'tmp'),
+        target: hostTmpDir,
+        isDir: true
+      },
+      {
+        path: accountTmpDir,
+        target: pathImpl.join(hostGeminiDir, 'tmp'),
+        isDir: false
+      }
+    ]
+  });
+
+  const service = createSessionStoreService({
+    fs: fake.fs,
+    fse: {
+      removeSync() { throw new Error('unexpected remove'); },
+      moveSync() { throw new Error('unexpected move'); },
+      copySync() { throw new Error('unexpected copy'); }
+    },
+    path: pathImpl,
+    processObj: { platform: 'win32' },
+    profilesDir,
+    hostHomeDir,
+    cliConfigs: { gemini: { globalDir: '.gemini' } },
+    getProfileDir: (cliName, id) => pathImpl.join(profilesDir, cliName, String(id)),
+    ensureDir: (dir) => fake.fs.mkdirSync(dir, { recursive: true })
+  });
+
+  const result = service.ensureSessionStoreLinks('gemini', '1');
+
+  assert.equal(result.linked >= 1, true);
+  assert.deepEqual(fake.calls.unlink, [accountTmpDir]);
+  assert.deepEqual(fake.calls.symlink, [{
+    targetPath: pathImpl.join(hostGeminiDir, 'tmp'),
+    linkPath: accountTmpDir,
+    type: 'junction'
+  }]);
+  assert.deepEqual(fake.calls.hardlink, []);
 });

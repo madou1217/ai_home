@@ -55,6 +55,45 @@ test('codex cli hook activates by installing wrapper and enabling state', () => 
   assert.equal(state.enabled, true);
 });
 
+test('codex cli hook activates every discovered codex binary', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-codex-cli-hook-'));
+  const aiHomeDir = path.join(root, '.ai_home');
+  const firstBinDir = path.join(root, 'bin-a');
+  const secondBinDir = path.join(root, 'bin-b');
+  const firstCodexPath = path.join(firstBinDir, 'codex');
+  const secondCodexPath = path.join(secondBinDir, 'codex');
+  fs.mkdirSync(firstBinDir, { recursive: true });
+  fs.mkdirSync(secondBinDir, { recursive: true });
+  fs.mkdirSync(aiHomeDir, { recursive: true });
+  fs.writeFileSync(firstCodexPath, '#!/bin/sh\necho first\n', 'utf8');
+  fs.writeFileSync(secondCodexPath, '#!/bin/sh\necho second\n', 'utf8');
+  fs.chmodSync(firstCodexPath, 0o755);
+  fs.chmodSync(secondCodexPath, 0o755);
+
+  const service = createCodexCliHookService({
+    fs,
+    path,
+    processObj: { platform: 'darwin' },
+    aiHomeDir,
+    nodeExecPath: '/usr/local/bin/node',
+    helperScriptPath: '/tmp/codex-proxy.js',
+    collectCliPaths: () => [firstCodexPath, secondCodexPath]
+  });
+
+  const result = service.activate();
+  const state = JSON.parse(fs.readFileSync(path.join(aiHomeDir, 'codex-cli-hook-state.json'), 'utf8'));
+
+  assert.equal(result.ok, true);
+  assert.equal(result.enabled, true);
+  assert.equal(result.targets.length, 2);
+  assert.equal(fs.readFileSync(firstCodexPath, 'utf8').includes(WRAPPER_MARKER), true);
+  assert.equal(fs.readFileSync(secondCodexPath, 'utf8').includes(WRAPPER_MARKER), true);
+  assert.equal(fs.readFileSync(`${firstCodexPath}.aih-original`, 'utf8'), '#!/bin/sh\necho first\n');
+  assert.equal(fs.readFileSync(`${secondCodexPath}.aih-original`, 'utf8'), '#!/bin/sh\necho second\n');
+  assert.equal(state.enabled, true);
+  assert.equal(state.targets.length, 2);
+});
+
 test('codex cli hook refreshes upstream snapshot when global shim was overwritten by upgrade', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-codex-cli-hook-'));
   const aiHomeDir = path.join(root, '.ai_home');

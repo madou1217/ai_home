@@ -437,6 +437,55 @@ test('ensureSessionStoreLinks merges historical codex sessions and session index
   assert.equal(fs.lstatSync(path.join(accountConfigDir, 'session_index.jsonl')).isSymbolicLink(), true);
 });
 
+test('ensureSessionStoreLinks merges codex desktop runtime sessions into host store', (t) => {
+  const root = mkTmpDir();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const hostHomeDir = path.join(root, 'home');
+  const profilesDir = path.join(root, '.ai_home', 'profiles');
+  const hostCodexDir = path.join(hostHomeDir, '.codex');
+  const accountConfigDir = path.join(profilesDir, 'codex', '1', '.codex');
+  const runtimeHome = path.join(root, '.ai_home', 'codex-desktop-runtime', 'app-server-1');
+  const runtimeSessionDir = path.join(runtimeHome, 'sessions', '2026', '05', '21');
+  const hostSessionDir = path.join(hostCodexDir, 'sessions', '2026', '05', '21');
+  const runtimeSessionId = '33333333-3333-4333-8333-333333333333';
+  fs.mkdirSync(accountConfigDir, { recursive: true });
+  fs.mkdirSync(runtimeSessionDir, { recursive: true });
+  fs.mkdirSync(hostSessionDir, { recursive: true });
+  fs.writeFileSync(path.join(accountConfigDir, 'auth.json'), '{"token":"account-secret"}\n');
+  fs.writeFileSync(path.join(runtimeHome, 'config.toml'), 'model = "gpt-5.5"\n');
+  fs.writeFileSync(path.join(runtimeHome, 'auth.json'), '{"token":"runtime-secret"}\n');
+  fs.writeFileSync(
+    path.join(runtimeSessionDir, `rollout-2026-05-21T13-48-30-${runtimeSessionId}.jsonl`),
+    '{"type":"event_msg","payload":{"type":"user_message","message":"runtime"}}\n'
+  );
+
+  const service = createSessionStoreService({
+    fs,
+    fse,
+    path,
+    processObj: process,
+    profilesDir,
+    hostHomeDir,
+    cliConfigs: { codex: { globalDir: '.codex' } },
+    getProfileDir: (cliName, id) => path.join(profilesDir, cliName, String(id)),
+    ensureDir: (dir) => fs.mkdirSync(dir, { recursive: true })
+  });
+
+  service.ensureSessionStoreLinks('codex', '1');
+
+  assert.equal(
+    fs.existsSync(path.join(hostSessionDir, `rollout-2026-05-21T13-48-30-${runtimeSessionId}.jsonl`)),
+    true
+  );
+  assert.equal(fs.lstatSync(path.join(runtimeHome, 'sessions')).isSymbolicLink(), true);
+  assert.equal(fs.lstatSync(path.join(accountConfigDir, 'sessions')).isSymbolicLink(), true);
+  assert.equal(fs.lstatSync(path.join(runtimeHome, 'config.toml')).isSymbolicLink(), false);
+  assert.equal(fs.lstatSync(path.join(runtimeHome, 'auth.json')).isSymbolicLink(), false);
+  assert.equal(fs.existsSync(path.join(hostCodexDir, 'auth.json')), false);
+  assert.equal(fs.existsSync(path.join(hostCodexDir, 'config.toml')), false);
+});
+
 test('ensureSessionStoreLinks auto-aligns all codex accounts on first run', (t) => {
   const root = mkTmpDir();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

@@ -121,6 +121,41 @@ test('shouldAggregateThreadList matches first-page requests for global and cwd l
     method: 'thread/list',
     params: {
       cwd: '/tmp/x',
+      cursor: null,
+      archived: false,
+      sourceKinds: ['cli', 'vscode']
+    }
+  }), true);
+  assert.equal(shouldAggregateThreadList({
+    method: 'thread/list',
+    params: {
+      cwd: '/tmp/x',
+      cursor: null,
+      archived: false,
+      sourceKinds: ['vscode', 'cli']
+    }
+  }), true);
+  assert.equal(shouldAggregateThreadList({
+    method: 'thread/list',
+    params: {
+      cwd: '/tmp/x',
+      cursor: null,
+      archived: false,
+      sourceKinds: ['cli', 'exec']
+    }
+  }), false);
+  assert.equal(shouldAggregateThreadList({
+    method: 'thread/list',
+    params: {
+      cwd: '/tmp/x',
+      cursor: null,
+      archived: false
+    }
+  }), true);
+  assert.equal(shouldAggregateThreadList({
+    method: 'thread/list',
+    params: {
+      cwd: '/tmp/x',
       limit: 50,
       cursor: 'abc',
       archived: false,
@@ -995,7 +1030,10 @@ test('stdio proxy repairs stale optimized rollout path before forwarding thread/
     DatabaseSync,
     spawn: () => child,
     processObj: {
-      env: { CODEX_HOME: codexHome },
+      env: {
+        HOME: codexHome,
+        CODEX_HOME: codexHome
+      },
       pid: 999,
       stdin,
       stdout,
@@ -1079,7 +1117,10 @@ test('stdio proxy repairs blank thread titles before forwarding thread/list', ()
     DatabaseSync,
     spawn: () => child,
     processObj: {
-      env: { CODEX_HOME: codexHome },
+      env: {
+        HOME: codexHome,
+        CODEX_HOME: codexHome
+      },
       pid: 999,
       stdin,
       stdout,
@@ -2427,7 +2468,7 @@ test('stdio proxy aggregates cwd thread/list pages with bounded total size', () 
     }
   });
 
-  stdin.emit('data', Buffer.from('{"id":"list-1","method":"thread/list","params":{"cwd":"/tmp/x","limit":50,"cursor":null,"archived":false,"sourceKinds":[]}}\n'));
+  stdin.emit('data', Buffer.from('{"id":"list-1","method":"thread/list","params":{"cwd":"/tmp/x","limit":50,"cursor":null,"archived":false,"sourceKinds":["cli","vscode"]}}\n'));
 
   const firstRequest = JSON.parse(upstreamStdinWrites[0]);
   assert.equal(firstRequest.params.limit, 50);

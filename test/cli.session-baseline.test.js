@@ -80,14 +80,29 @@ test('`set-default` updates default pointer, migrates shared codex state to host
     'native global codex topology should remain untouched'
   );
   assert.equal(
+    fs.existsSync(path.join(globalCodexDir, 'auth.json')),
+    true,
+    'set-default should write selected account auth into native global tool directory as a snapshot'
+  );
+  assert.equal(fs.lstatSync(path.join(globalCodexDir, 'auth.json')).isSymbolicLink(), false);
+  assert.equal(fs.readFileSync(path.join(globalCodexDir, 'auth.json'), 'utf8'), '{"sandbox":"auth"}\n');
+  fs.writeFileSync(sandboxAuthPath, '{"sandbox":"changed"}\n');
+  assert.equal(
     fs.readFileSync(path.join(globalCodexDir, 'auth.json'), 'utf8'),
-    '{"sandbox":"auth"}\n',
-    'set-default should sync selected account auth into native global tool directory'
+    '{"sandbox":"auth"}\n'
   );
   assert.equal(
     fs.existsSync(path.join(globalCodexDir, 'config.toml')),
-    false,
-    'set-default should keep account-owned codex config isolated'
+    true,
+    'set-default should sync selected account runtime config into native global tool directory'
+  );
+  assert.match(
+    fs.readFileSync(path.join(globalCodexDir, 'config.toml'), 'utf8'),
+    /^preferred_auth_method = "oauth"$/m
+  );
+  assert.match(
+    fs.readFileSync(path.join(globalCodexDir, 'config.toml'), 'utf8'),
+    /^model_provider = "openai"$/m
   );
   assert.equal(
     fs.existsSync(sandboxConfigPath),

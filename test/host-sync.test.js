@@ -14,7 +14,7 @@ function mkTmpDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'aih-host-sync-'));
 }
 
-test('syncGlobalConfigToHost syncs only codex auth and keeps account-owned config isolated', () => {
+test('syncGlobalConfigToHost writes codex auth as an independent global snapshot', () => {
   const root = mkTmpDir();
   const hostHomeDir = path.join(root, 'home');
   const profilesDir = path.join(root, 'profiles');
@@ -38,14 +38,51 @@ test('syncGlobalConfigToHost syncs only codex auth and keeps account-owned confi
 
   const result = syncGlobalConfigToHost('codex', '1');
   assert.equal(result.ok, true);
-  assert.equal(fs.lstatSync(path.join(hostCodexDir, 'auth.json')).isSymbolicLink(), true);
+  assert.equal(fs.lstatSync(path.join(hostCodexDir, 'auth.json')).isSymbolicLink(), false);
   assert.equal(fs.readFileSync(path.join(hostCodexDir, 'auth.json'), 'utf8'), '{"token":"sandbox"}\n');
-  assert.equal(fs.existsSync(path.join(hostCodexDir, 'config.toml')), false);
+  fs.writeFileSync(path.join(accountGlobalDir, 'auth.json'), '{"token":"changed"}\n');
+  assert.equal(
+    fs.readFileSync(path.join(hostCodexDir, 'auth.json'), 'utf8'),
+    '{"token":"sandbox"}\n'
+  );
+  assert.equal(fs.existsSync(path.join(hostCodexDir, 'config.toml')), true);
+  assert.match(fs.readFileSync(path.join(hostCodexDir, 'config.toml'), 'utf8'), /^preferred_auth_method = "oauth"$/m);
+  assert.match(fs.readFileSync(path.join(hostCodexDir, 'config.toml'), 'utf8'), /^model_provider = "openai"$/m);
   assert.equal(fs.existsSync(path.join(accountGlobalDir, 'config.toml')), true);
   assert.equal(fs.readFileSync(path.join(accountGlobalDir, 'config.toml'), 'utf8'), 'model = "gpt-5"\n');
   assert.equal(fs.lstatSync(path.join(accountGlobalDir, 'auth.json')).isSymbolicLink(), false);
   assert.equal(fs.existsSync(path.join(hostCodexDir, 'hooks.json')), false);
   assert.equal(fs.existsSync(path.join(hostCodexDir, 'hooks', 'aih-stop-notify.js')), false);
+
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('syncGlobalConfigToHost replaces legacy host auth symlink with independent codex auth snapshot', () => {
+  const root = mkTmpDir();
+  const hostHomeDir = path.join(root, 'home');
+  const profilesDir = path.join(root, 'profiles');
+  const accountGlobalDir = path.join(profilesDir, 'codex', '1', '.codex');
+  const hostCodexDir = path.join(hostHomeDir, '.codex');
+  fs.mkdirSync(accountGlobalDir, { recursive: true });
+  fs.mkdirSync(hostCodexDir, { recursive: true });
+  fs.writeFileSync(path.join(accountGlobalDir, 'auth.json'), '{"token":"sandbox"}\n');
+  fs.symlinkSync(path.join(accountGlobalDir, 'auth.json'), path.join(hostCodexDir, 'auth.json'));
+
+  const syncGlobalConfigToHost = createHostConfigSyncer({
+    fs,
+    fse,
+    ensureDir: (dir) => fs.mkdirSync(dir, { recursive: true }),
+    getProfileDir: (cliName, id) => path.join(profilesDir, cliName, String(id)),
+    hostHomeDir,
+    cliConfigs: { codex: { globalDir: '.codex' } }
+  });
+
+  const result = syncGlobalConfigToHost('codex', '1');
+  assert.equal(result.ok, true);
+  assert.equal(fs.existsSync(path.join(hostCodexDir, 'auth.json')), true);
+  assert.equal(fs.lstatSync(path.join(hostCodexDir, 'auth.json')).isSymbolicLink(), false);
+  assert.equal(fs.readFileSync(path.join(hostCodexDir, 'auth.json'), 'utf8'), '{"token":"sandbox"}\n');
+  assert.equal(fs.existsSync(path.join(accountGlobalDir, 'auth.json')), true);
 
   fs.rmSync(root, { recursive: true, force: true });
 });
@@ -176,6 +213,40 @@ test('syncGlobalConfigToHost writes managed codex api-key provider config into h
   fs.rmSync(root, { recursive: true, force: true });
 });
 
+test('syncGlobalConfigToHost switches host config to oauth mode when account has no api key', () => {
+  const root = mkTmpDir();
+  const hostHomeDir = path.join(root, 'home');
+  const profilesDir = path.join(root, 'profiles');
+  const accountGlobalDir = path.join(profilesDir, 'codex', '20', '.codex');
+  const hostCodexDir = path.join(hostHomeDir, '.codex');
+  fs.mkdirSync(accountGlobalDir, { recursive: true });
+  fs.mkdirSync(hostCodexDir, { recursive: true });
+  fs.writeFileSync(path.join(accountGlobalDir, 'auth.json'), JSON.stringify({
+    tokens: {
+      access_token: 'oauth-access-token'
+    }
+  }, null, 2));
+
+  const syncGlobalConfigToHost = createHostConfigSyncer({
+    fs,
+    fse,
+    ensureDir: (dir) => fs.mkdirSync(dir, { recursive: true }),
+    getProfileDir: (cliName, id) => path.join(profilesDir, cliName, String(id)),
+    hostHomeDir,
+    cliConfigs: { codex: { globalDir: '.codex' } }
+  });
+
+  const result = syncGlobalConfigToHost('codex', '20');
+  assert.equal(result.ok, true);
+
+  const hostConfig = fs.readFileSync(path.join(hostCodexDir, 'config.toml'), 'utf8');
+  assert.match(hostConfig, /^preferred_auth_method = "oauth"/m);
+  assert.match(hostConfig, /^model_provider = "openai"/m);
+  assert.doesNotMatch(hostConfig, /^\[model_providers\.aih_20\]$/m);
+
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
 test('syncGlobalConfigToHost keeps legacy codex hook flag for older codex versions', () => {
   const root = mkTmpDir();
   const hostHomeDir = path.join(root, 'home');
@@ -248,11 +319,10 @@ test('syncGlobalConfigToHost keeps prior account provider blocks and switches mo
 
   const secondResult = syncGlobalConfigToHost('codex', '11');
   assert.equal(secondResult.ok, true);
-  assert.equal(fs.lstatSync(path.join(hostCodexDir, 'auth.json')).isSymbolicLink(), true);
-  assert.equal(
-    fs.readlinkSync(path.join(hostCodexDir, 'auth.json')),
-    path.join(account11Dir, 'auth.json')
-  );
+  assert.equal(fs.lstatSync(path.join(hostCodexDir, 'auth.json')).isSymbolicLink(), false);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(hostCodexDir, 'auth.json'), 'utf8')), {
+    OPENAI_API_KEY: 'dummy-11'
+  });
 
   const hostConfig = fs.readFileSync(path.join(hostCodexDir, 'config.toml'), 'utf8');
   const provider10 = getAihProviderKey('10');

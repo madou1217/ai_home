@@ -334,7 +334,8 @@ test('server startup reinstalls codex cli hook after global shim is overwritten'
   const upstream = await startMockUpstream(t);
   const fakeBinDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-codex-cli-bin-'));
   const fakeCodexPath = path.join(fakeBinDir, 'codex');
-  fs.writeFileSync(fakeCodexPath, '#!/bin/sh\necho cli-original\n', 'utf8');
+  const originalShim = '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "codex-cli 9.999.0"; exit 0; fi\necho cli-original\n';
+  fs.writeFileSync(fakeCodexPath, originalShim, 'utf8');
   fs.chmodSync(fakeCodexPath, 0o755);
   t.after(() => {
     try { fs.rmSync(fakeBinDir, { recursive: true, force: true }); } catch (_error) {}
@@ -356,14 +357,18 @@ test('server startup reinstalls codex cli hook after global shim is overwritten'
   assert.equal(fs.existsSync(statePath), true, 'expected cli hook state file to be created');
   assert.equal(fs.existsSync(`${fakeCodexPath}.aih-original`), true, 'expected cli wrapper install');
   assert.equal(fs.readFileSync(fakeCodexPath, 'utf8').includes('aih-codex-cli-hook'), true);
-  assert.equal(fs.readFileSync(`${fakeCodexPath}.aih-original`, 'utf8'), '#!/bin/sh\necho cli-original\n');
+  assert.equal(fs.readFileSync(`${fakeCodexPath}.aih-original`, 'utf8'), originalShim);
 });
 
 test('server self-heals codex cli hook while running after shim is overwritten', async (t) => {
   const upstream = await startMockUpstream(t);
   const fakeBinDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-codex-cli-bin-'));
   const fakeCodexPath = path.join(fakeBinDir, 'codex');
-  fs.writeFileSync(fakeCodexPath, '#!/bin/sh\necho cli-original\n', 'utf8');
+  fs.writeFileSync(
+    fakeCodexPath,
+    '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "codex-cli 9.999.0"; exit 0; fi\necho cli-original\n',
+    'utf8'
+  );
   fs.chmodSync(fakeCodexPath, 0o755);
   t.after(() => {
     try { fs.rmSync(fakeBinDir, { recursive: true, force: true }); } catch (_error) {}
@@ -386,7 +391,8 @@ test('server self-heals codex cli hook while running after shim is overwritten',
   }
   assert.equal(fs.readFileSync(fakeCodexPath, 'utf8').includes('aih-codex-cli-hook'), true, 'expected initial cli wrapper install');
 
-  fs.writeFileSync(fakeCodexPath, '#!/bin/sh\necho overwritten-during-runtime\n', 'utf8');
+  const overwrittenShim = '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "codex-cli 9.999.1"; exit 0; fi\necho overwritten-during-runtime\n';
+  fs.writeFileSync(fakeCodexPath, overwrittenShim, 'utf8');
   fs.chmodSync(fakeCodexPath, 0o755);
 
   const deadlineRepair = Date.now() + 5000;
@@ -396,7 +402,7 @@ test('server self-heals codex cli hook while running after shim is overwritten',
   assert.equal(fs.readFileSync(fakeCodexPath, 'utf8').includes('aih-codex-cli-hook'), true, 'expected runtime self-heal to restore cli wrapper');
   assert.equal(
     fs.readFileSync(`${fakeCodexPath}.aih-original`, 'utf8'),
-    '#!/bin/sh\necho overwritten-during-runtime\n'
+    overwrittenShim
   );
 });
 

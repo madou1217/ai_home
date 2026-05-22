@@ -10,7 +10,8 @@ const {
   getAihProviderKey,
   hoistModelProviderSections,
   mergeSharedProjectSections,
-  mergeConfigs
+  mergeConfigs,
+  scopeAccountOnlyConfig
 } = require('../lib/cli/services/pty/codex-config-sync');
 const {
   enableCodexHooksFeatureFlag,
@@ -152,9 +153,123 @@ test('mergeConfigs assigns aih provider defaults for api key mode without explic
   });
 
   assert.match(merged, /preferred_auth_method = "apikey"/);
-  assert.match(merged, /model_provider = "openai"/);
-  assert.doesNotMatch(merged, new RegExp(`\\[model_providers\\.${providerKey}\\]`));
-  assert.doesNotMatch(merged, new RegExp(`base_url = "${AIH_CODEX_PROVIDER_BASE_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`));
+  assert.match(merged, new RegExp(`model_provider = "${providerKey}"`));
+  assert.match(merged, new RegExp(`\\[model_providers\\.${providerKey}\\]`));
+  assert.match(merged, new RegExp(`base_url = "${AIH_CODEX_PROVIDER_BASE_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`));
+  assert.match(merged, /^bearer_token = "dummy"$/m);
+});
+
+test('mergeConfigs switches to oauth mode without rewriting host provider blocks', () => {
+  const merged = mergeConfigs([
+    'model = "gpt-5.5"',
+    '',
+    '[features]',
+    'hooks = true'
+  ].join('\n'), {
+    preferred_auth_method: 'preferred_auth_method = "oauth"',
+    model_provider: 'model_provider = "openai"',
+    providers: ['[[providers]]\nname = "local"\nbase_url = "http://localhost:9000/v1"'],
+    model_providers: []
+  }, '10', {
+    isApiKeyMode: false
+  });
+
+  assert.match(merged, /^preferred_auth_method = "oauth"$/m);
+  assert.match(merged, /^model_provider = "openai"$/m);
+  assert.match(merged, /^model = "gpt-5\.5"$/m);
+  assert.match(merged, /^\[features\]$/m);
+  assert.match(merged, /^hooks = true$/m);
+  assert.doesNotMatch(merged, /\[\[providers\]\]/);
+  assert.doesNotMatch(merged, /\[model_providers\./);
+});
+
+test('mergeConfigs replaces aih provider section without leaving duplicate keys behind', () => {
+  const providerKey = getAihProviderKey('1');
+  const hostConfig = [
+    'preferred_auth_method = "apikey"',
+    'model_provider = "aih_1"',
+    '',
+    `[model_providers.${providerKey}]`,
+    'name = "aih codex"',
+    'base_url = "https://www.yeslaoban.com/llm/api/v1"',
+    'bearer_token = "yesboss-madoudou"',
+    'wire_api = "responses"',
+    '',
+    '[features]',
+    'hooks = true'
+  ].join('\n');
+  const merged = mergeConfigs(hostConfig, {
+    preferred_auth_method: 'preferred_auth_method = "apikey"',
+    model_provider: `model_provider = "${providerKey}"`,
+    providers: [],
+    model_providers: []
+  }, '1', {
+    isApiKeyMode: true,
+    openaiBaseUrl: 'http://127.0.0.1:8317/v1',
+    openaiApiKey: 'dummy'
+  });
+
+  const providerSection = merged.match(new RegExp(`\\[model_providers\\.${providerKey}\\][\\s\\S]*?(?=\\n\\[|(?![\\s\\S]))`));
+  assert.ok(providerSection, 'expected provider section to exist');
+  assert.equal((providerSection[0].match(/^name = /gm) || []).length, 1);
+  assert.equal((providerSection[0].match(/^base_url = /gm) || []).length, 1);
+  assert.equal((providerSection[0].match(/^bearer_token = /gm) || []).length, 1);
+  assert.equal((providerSection[0].match(/^wire_api = /gm) || []).length, 1);
+  assert.doesNotMatch(providerSection[0], /yesboss-madoudou/);
+  assert.match(merged, /^preferred_auth_method = "apikey"$/m);
+  assert.match(merged, new RegExp(`^model_provider = "${providerKey}"$`, 'm'));
+  assert.match(merged, new RegExp(`^base_url = "http:\/\/127\.0\.0\.1:8317\/v1"$`, 'm'));
+  assert.match(merged, /^bearer_token = "dummy"$/m);
+});
+
+test('scopeAccountOnlyConfig keeps only current account managed provider from stale account config', () => {
+  const currentProvider = getAihProviderKey('1');
+  const staleProvider = getAihProviderKey('5');
+  const scoped = scopeAccountOnlyConfig(extractAccountOnlyConfig([
+    'preferred_auth_method = "apikey"',
+    `model_provider = "${currentProvider}"`,
+    '',
+    '[model_providers.yesboss]',
+    'name = "yesboss"',
+    'base_url = "https://example.com/v1"',
+    'wire_api = "responses"',
+    '',
+    `[model_providers.${staleProvider}]`,
+    'name = "stale"',
+    'base_url = "http://127.0.0.1:8317/v1"',
+    'wire_api = "responses"',
+    '',
+    `[model_providers.${currentProvider}]`,
+    'name = "aih codex"',
+    'base_url = "https://account.example.com/v1"',
+    'bearer_token = "account-token"',
+    'wire_api = "responses"'
+  ].join('\n')), '1', {
+    forceAihProvider: true
+  });
+
+  assert.equal(scoped.model_provider, `model_provider = "${currentProvider}"`);
+  assert.equal(scoped.model_providers.length, 1);
+  assert.match(scoped.model_providers[0], new RegExp(`^\\[model_providers\\.${currentProvider}\\]`, 'm'));
+  assert.doesNotMatch(scoped.model_providers[0], /yesboss|stale/);
+});
+
+test('mergeConfigs can force account-scoped aih provider from host template without api key', () => {
+  const providerKey = getAihProviderKey('42');
+  const merged = mergeConfigs('model = "gpt-5.5"\n', {
+    preferred_auth_method: null,
+    model_provider: null,
+    providers: [],
+    model_providers: []
+  }, '42', {
+    forceAihProvider: true
+  });
+
+  assert.match(merged, /^preferred_auth_method = "apikey"$/m);
+  assert.match(merged, new RegExp(`^model_provider = "${providerKey}"$`, 'm'));
+  assert.match(merged, new RegExp(`^\\[model_providers\\.${providerKey}\\]$`, 'm'));
+  assert.match(merged, /^bearer_token = "dummy"$/m);
+  assert.match(merged, /^model = "gpt-5\.5"$/m);
 });
 
 test('mergeConfigs writes shared sqlite home once at root', () => {

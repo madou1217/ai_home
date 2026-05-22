@@ -7,6 +7,10 @@ const path = require('node:path');
 const { createPtyRuntime } = require('../lib/cli/services/pty/runtime');
 const { AIH_SERVER_PROFILE_ID } = require('../lib/account/self-relay-account');
 const {
+  createAccountArtifactHookService,
+  createDefaultProviderArtifactHookRegistry
+} = require('../lib/account/artifact-hooks');
+const {
   shouldEnableShellDrawer,
   isShellDrawerToggleSequence,
   resolveShellDrawerLaunch,
@@ -176,6 +180,7 @@ function createRuntimeHarness(env = {}, overrides = {}) {
     markActiveAccount: () => {},
     ensureAccountUsageRefreshScheduler: () => { schedulerCalls += 1; },
     refreshIndexedStateForAccount: () => {},
+    accountArtifactHooks: overrides.accountArtifactHooks,
     DatabaseSync: overrides.DatabaseSync
   });
 
@@ -200,6 +205,64 @@ test('runtime does not inject --skip-git-repo-check by default', () => {
   runtime.runCliPtyTracked('codex', '10086', ['--version'], false);
   assert.equal(spawns.length, 1);
   assert.deepEqual(spawns[0].args, ['--version']);
+
+  assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
+  assert.deepEqual(rawModeCalls, [true, false]);
+});
+
+test('runtime resolves bare codex slash resume to latest sqlite thread for cwd', () => {
+  let expectedCwd = '';
+
+  class FakeDatabaseSync {
+    exec() {}
+    prepare(sql) {
+      if (String(sql || '').startsWith('PRAGMA table_info')) {
+        return {
+          all: () => [
+            { name: 'id' },
+            { name: 'cwd' },
+            { name: 'updated_at_ms' },
+            { name: 'archived' }
+          ]
+        };
+      }
+      return {
+        get: (cwd) => {
+          assert.equal(cwd, expectedCwd);
+          return { id: 'thread-abc' };
+        }
+      };
+    }
+    close() {}
+  }
+
+  const { runtime, proc, spawns, rawModeCalls, hostHomeDir, cwd } = createRuntimeHarness({}, {
+    DatabaseSync: FakeDatabaseSync
+  });
+  expectedCwd = cwd;
+
+  const hostConfigDir = path.join(hostHomeDir, '.codex');
+  fsBase.mkdirSync(hostConfigDir, { recursive: true });
+  fsBase.writeFileSync(path.join(hostConfigDir, 'config.toml'), 'model = "gpt-5.5"\n', 'utf8');
+  fsBase.writeFileSync(path.join(hostConfigDir, 'state_5.sqlite'), '', 'utf8');
+
+  runtime.runCliPtyTracked('codex', '10086', ['/resume'], false);
+
+  assert.equal(spawns.length, 1);
+  assert.deepEqual(spawns[0].args, ['resume', '-m', 'gpt-5.5', 'thread-abc']);
+
+  assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
+  assert.deepEqual(rawModeCalls, [true, false]);
+});
+
+test('runtime maps codex slash resume shortcut to native resume command', () => {
+  const { runtime, proc, spawns, rawModeCalls } = createRuntimeHarness();
+
+  runtime.runCliPtyTracked('codex', '10086', ['/resume', '--last'], false);
+
+  assert.equal(spawns.length, 1);
+  assert.deepEqual(spawns[0].args, ['resume', '--last']);
+  assert.equal(spawns[0].options.rows, 23);
 
   assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
   assert.deepEqual(rawModeCalls, [true, false]);
@@ -258,7 +321,7 @@ test('runtime keeps codex account auth isolated while sharing host sqlite state'
   assert.deepEqual(rawModeCalls, [true, false]);
 });
 
-test('runtime preserves existing codex account model and permission config during sync', () => {
+test('runtime rebuilds codex account config from host template and account auth overrides', () => {
   const { runtime, proc, aiHomeDir, hostHomeDir, rawModeCalls } = createRuntimeHarness({
     AIH_RUNTIME_SHOW_USAGE: '0'
   });
@@ -290,18 +353,64 @@ test('runtime preserves existing codex account model and permission config durin
 
   const synced = fsBase.readFileSync(path.join(accountConfigDir, 'config.toml'), 'utf8');
   assert.match(synced, new RegExp(`^sqlite_home = "${hostConfigDir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"$`, 'm'));
-  assert.match(synced, /^model = "gpt-5\.5"$/m);
-  assert.match(synced, /^approval_policy = "never"$/m);
-  assert.match(synced, /^\[features\]$/m);
+  assert.match(synced, /^model = "host-model"$/m);
+  assert.match(synced, /^approval_policy = "on-request"$/m);
+  assert.doesNotMatch(synced, /^\[features\]$/m);
   assert.match(synced, /\[projects\."\/workspace\/project-a"\]\ntrust_level = "trusted"/);
-  assert.doesNotMatch(synced, /^model = "host-model"$/m);
-  assert.doesNotMatch(synced, /^approval_policy = "on-request"$/m);
+  assert.doesNotMatch(synced, /^model = "gpt-5\.5"$/m);
+  assert.doesNotMatch(synced, /^approval_policy = "never"$/m);
 
   assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
   assert.deepEqual(rawModeCalls, [true, false]);
 });
 
-test('runtime carries trusted codex projects from sibling account config during sync', () => {
+test('runtime emits provider config update hook when codex account config changes', () => {
+  const aiHomeDir = fsBase.mkdtempSync(path.join(os.tmpdir(), 'aih-pty-config-hook-'));
+  const hostHomeDir = path.join(aiHomeDir, 'host');
+  const profilesDir = path.join(aiHomeDir, 'profiles');
+  const events = [];
+  const hooks = createAccountArtifactHookService({
+    fs: fsBase,
+    path,
+    profilesDir,
+    getProfileDir: (provider, accountId) => path.join(profilesDir, provider, String(accountId)),
+    providerHookRegistry: createDefaultProviderArtifactHookRegistry({
+      providerOptions: {
+        codex: {
+          onAccountConfigUpdated: (event) => events.push(event)
+        }
+      }
+    })
+  });
+  const { runtime, proc, rawModeCalls } = createRuntimeHarness({
+    AIH_RUNTIME_SHOW_USAGE: '0'
+  }, {
+    aiHomeDir,
+    hostHomeDir,
+    getProfileDir: (provider, accountId) => path.join(profilesDir, provider, String(accountId)),
+    accountArtifactHooks: hooks
+  });
+  const hostConfigDir = path.join(hostHomeDir, '.codex');
+  const accountConfigDir = path.join(profilesDir, 'codex', '10014', '.codex');
+  fsBase.mkdirSync(hostConfigDir, { recursive: true });
+  fsBase.mkdirSync(accountConfigDir, { recursive: true });
+  fsBase.writeFileSync(path.join(hostConfigDir, 'config.toml'), 'model = "host-model"\n', 'utf8');
+  fsBase.writeFileSync(path.join(accountConfigDir, 'config.toml'), 'model = "account-model"\n', 'utf8');
+
+  runtime.runCliPtyTracked('codex', '10014', ['--version'], false);
+
+  assert.equal(events.length, 1);
+  assert.equal(events[0].type, 'account_config_updated');
+  assert.equal(events[0].provider, 'codex');
+  assert.equal(events[0].accountId, '10014');
+  assert.equal(events[0].source, 'pty_config_sync');
+  assert.deepEqual(events[0].changedPaths, [path.join(accountConfigDir, 'config.toml')]);
+
+  assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
+  assert.deepEqual(rawModeCalls, [true, false]);
+});
+
+test('runtime ignores sibling codex account config while rebuilding from host template', () => {
   const { runtime, proc, aiHomeDir, hostHomeDir, rawModeCalls } = createRuntimeHarness({
     AIH_RUNTIME_SHOW_USAGE: '0'
   });
@@ -324,9 +433,10 @@ test('runtime carries trusted codex projects from sibling account config during 
   runtime.runCliPtyTracked('codex', '10014', ['--version'], false);
 
   const synced = fsBase.readFileSync(path.join(targetAccountConfigDir, 'config.toml'), 'utf8');
-  assert.match(synced, /^model = "target-account"$/m);
+  assert.match(synced, /^model = "host-model"$/m);
+  assert.doesNotMatch(synced, /^model = "target-account"$/m);
   assert.doesNotMatch(synced, /^model = "trusted-account"$/m);
-  assert.match(synced, /\[projects\."\/workspace\/project-a"\]\ntrust_level = "trusted"/);
+  assert.doesNotMatch(synced, /\[projects\."\/workspace\/project-a"\]\ntrust_level = "trusted"/);
 
   assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
   assert.deepEqual(rawModeCalls, [true, false]);
@@ -700,6 +810,33 @@ test('runtime mirrors proxy env vars across lower/upper case for CLI compatibili
   assert.equal(env.HTTPS_PROXY, 'http://127.0.0.1:6152');
   assert.equal(env.no_proxy, 'localhost,127.0.0.1');
   assert.equal(env.NO_PROXY, 'localhost,127.0.0.1');
+
+  assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
+  assert.deepEqual(rawModeCalls, [true, false]);
+});
+
+test('runtime strips inherited codex session env from spawned sandbox', () => {
+  const { runtime, proc, spawns, rawModeCalls, aiHomeDir, hostHomeDir } = createRuntimeHarness({
+    CODEX_THREAD_ID: 'outer-thread',
+    CODEX_TURN_ID: 'outer-turn',
+    CODEX_CI: '1',
+    CODEX_MANAGED_BY_NPM: '1',
+    CODEX_MANAGED_PACKAGE_ROOT: '/tmp/outer-codex',
+    CODEX_NETWORK_PROXY_ACTIVE: '1'
+  });
+
+  runtime.runCliPtyTracked('codex', '10086', ['--version'], false);
+
+  assert.equal(spawns.length, 1);
+  const env = spawns[0].options.env || {};
+  assert.equal(env.CODEX_THREAD_ID, undefined);
+  assert.equal(env.CODEX_TURN_ID, undefined);
+  assert.equal(env.CODEX_CI, undefined);
+  assert.equal(env.CODEX_MANAGED_BY_NPM, undefined);
+  assert.equal(env.CODEX_MANAGED_PACKAGE_ROOT, undefined);
+  assert.equal(env.CODEX_NETWORK_PROXY_ACTIVE, undefined);
+  assert.equal(env.CODEX_HOME, path.join(aiHomeDir, 'profiles', 'codex', '10086', '.codex'));
+  assert.equal(env.CODEX_SQLITE_HOME, path.join(hostHomeDir, '.codex'));
 
   assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
   assert.deepEqual(rawModeCalls, [true, false]);

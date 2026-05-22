@@ -1,9 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const EventEmitter = require('node:events');
+const { EventEmitter, once } = require('node:events');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const WebSocket = require('ws');
 const {
   AGGREGATE_THREAD_LIST_MAX_ITEMS,
   buildFastResumeHydrationRequest,
@@ -11,6 +12,7 @@ const {
   buildTurnLiveThreadHydrationRequest,
   buildFastThreadReadResponse,
   buildCodexAppServerSpawnEnv,
+  buildCodexCliResumeArgs,
   shouldAggregateThreadList,
   buildAggregatePageRequest,
   mergeThreadListData,
@@ -21,6 +23,7 @@ const {
   parseRecentCodexRolloutTurns,
   parseProxyArgs,
   readHookState,
+  runCodexResumeVisibilityRepair,
   repairMissingOptimizedRolloutPaths,
   repairMissingThreadTitleFields,
   reconcileSelectedThreadConfig,
@@ -30,6 +33,7 @@ const {
   sanitizeTraceText,
   shouldSuppressHydrationNotification,
   summarizeJsonRpcForTrace,
+  runCodexCliResume,
   runCodexAppServerStdioProxy
 } = require('../lib/server/codex-app-server-stdio-proxy');
 
@@ -47,7 +51,265 @@ test('parseProxyArgs splits helper args from upstream args', () => {
   ]);
   assert.equal(parsed.upstream, '/tmp/original');
   assert.equal(parsed.stateFile, '/tmp/state.json');
+  assert.equal(parsed.runCliResume, false);
   assert.deepEqual(parsed.forwardArgs, ['app-server', '--analytics-default-enabled']);
+});
+
+test('parseProxyArgs recognizes cli resume hook mode', () => {
+  const parsed = parseProxyArgs([
+    '--run-cli-resume',
+    '--upstream', '/tmp/original',
+    '--state-file', '/tmp/state.json',
+    '--',
+    'resume',
+    '--last'
+  ]);
+  assert.equal(parsed.runCliResume, true);
+  assert.equal(parsed.upstream, '/tmp/original');
+  assert.deepEqual(parsed.forwardArgs, ['resume', '--last']);
+});
+
+test('buildCodexCliResumeArgs injects remote options after resume command', () => {
+  const args = buildCodexCliResumeArgs(['resume', '--last'], {
+    remoteUrl: 'ws://127.0.0.1:9527',
+    authToken: 'secret'
+  });
+  assert.deepEqual(args, [
+    'resume',
+    '--remote',
+    'ws://127.0.0.1:9527',
+    '--remote-auth-token-env',
+    'AIH_CODEX_REMOTE_AUTH_TOKEN',
+    '--last'
+  ]);
+  assert.deepEqual(
+    buildCodexCliResumeArgs(['resume', '--remote', 'ws://custom', '--last'], { remoteUrl: 'ws://127.0.0.1:9527' }),
+    ['resume', '--remote', 'ws://custom', '--last']
+  );
+});
+
+test('runCodexCliResume scopes shared app-server remote to current cwd', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-cli-resume-remote-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const upstreamServer = new WebSocket.Server({ host: '127.0.0.1', port: 0 });
+  t.after(() => upstreamServer.close());
+  await once(upstreamServer, 'listening');
+  const upstreamPort = upstreamServer.address().port;
+  let upstreamAuth = '';
+  let resolveUpstreamMessage;
+  const upstreamMessage = new Promise((resolve) => {
+    resolveUpstreamMessage = resolve;
+  });
+  upstreamServer.on('connection', (socket, req) => {
+    upstreamAuth = String(req.headers.authorization || '');
+    socket.on('message', (data) => {
+      resolveUpstreamMessage(JSON.parse(Buffer.isBuffer(data) ? data.toString('utf8') : String(data)));
+    });
+  });
+
+  const aiHomeDir = path.join(root, '.ai_home');
+  const stateFile = path.join(aiHomeDir, 'codex-cli-hook-state.json');
+  fs.mkdirSync(aiHomeDir, { recursive: true });
+  fs.writeFileSync(stateFile, JSON.stringify({ enabled: true }), 'utf8');
+  fs.writeFileSync(path.join(aiHomeDir, 'server-config.json'), JSON.stringify({
+    host: '0.0.0.0',
+    port: upstreamPort,
+    apiKey: 'secret'
+  }), 'utf8');
+
+  const spawns = [];
+  const child = new EventEmitter();
+  await runCodexCliResume([
+    '--run-cli-resume',
+    '--upstream', '/tmp/codex-original',
+    '--state-file', stateFile,
+    '--',
+    'resume',
+    '--last'
+  ], {
+    fs,
+    spawn(command, args, options) {
+      spawns.push({ command, args, options });
+      return child;
+    },
+    canConnectToTcpEndpoint: async () => true,
+    processObj: {
+      env: { CODEX_HOME: '/tmp/profile/.codex' },
+      cwd: () => '/tmp/profile/project',
+      stderr: { write() {} },
+      exit() {}
+    }
+  });
+
+  assert.equal(spawns.length, 1);
+  assert.equal(spawns[0].command, '/tmp/codex-original');
+  assert.equal(spawns[0].args[0], 'resume');
+  assert.equal(spawns[0].args[1], '--remote');
+  assert.match(spawns[0].args[2], /^ws:\/\/127\.0\.0\.1:\d+$/);
+  assert.deepEqual(spawns[0].args.slice(3), ['--last']);
+  assert.equal(spawns[0].options.env.AIH_CODEX_REMOTE_AUTH_TOKEN, undefined);
+  assert.equal(spawns[0].options.env.CODEX_HOME, '/tmp/profile/.codex');
+
+  const client = new WebSocket(spawns[0].args[2]);
+  t.after(() => client.close());
+  await once(client, 'open');
+  client.send(JSON.stringify({
+    id: 'list-1',
+    method: 'thread/list',
+    params: { limit: 50 }
+  }));
+  const payload = await upstreamMessage;
+  assert.equal(upstreamAuth, 'Bearer secret');
+  assert.equal(payload.method, 'thread/list');
+  assert.equal(payload.params.cwd, '/tmp/profile/project');
+  assert.deepEqual(payload.params.modelProviders, []);
+  assert.equal(payload.params.useStateDbOnly, true);
+  child.emit('exit', 0);
+});
+
+test('runCodexCliResume falls back to native resume when remote server is unavailable', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-cli-resume-native-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const aiHomeDir = path.join(root, '.ai_home');
+  const stateFile = path.join(aiHomeDir, 'codex-cli-hook-state.json');
+  fs.mkdirSync(aiHomeDir, { recursive: true });
+  fs.writeFileSync(stateFile, JSON.stringify({ enabled: true }), 'utf8');
+
+  const spawns = [];
+  const child = new EventEmitter();
+  await runCodexCliResume([
+    '--run-cli-resume',
+    '--upstream', '/tmp/codex-original',
+    '--state-file', stateFile,
+    '--',
+    'resume',
+    '--last'
+  ], {
+    fs,
+    spawn(command, args, options) {
+      spawns.push({ command, args, options });
+      return child;
+    },
+    canConnectToTcpEndpoint: async () => false,
+    processObj: {
+      env: {},
+      stderr: { write() {} },
+      exit() {}
+    }
+  });
+
+  assert.equal(spawns.length, 1);
+  assert.deepEqual(spawns[0].args, ['resume', '--last']);
+  assert.equal(spawns[0].options.env.AIH_CODEX_REMOTE_AUTH_TOKEN, undefined);
+});
+
+test('runCodexCliResume keeps remote resume global when --all is requested', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-cli-resume-all-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const aiHomeDir = path.join(root, '.ai_home');
+  const stateFile = path.join(aiHomeDir, 'codex-cli-hook-state.json');
+  fs.mkdirSync(aiHomeDir, { recursive: true });
+  fs.writeFileSync(stateFile, JSON.stringify({ enabled: true }), 'utf8');
+
+  const spawns = [];
+  const child = new EventEmitter();
+  await runCodexCliResume([
+    '--run-cli-resume',
+    '--upstream', '/tmp/codex-original',
+    '--state-file', stateFile,
+    '--',
+    'resume',
+    '--all'
+  ], {
+    fs,
+    spawn(command, args, options) {
+      spawns.push({ command, args, options });
+      return child;
+    },
+    canConnectToTcpEndpoint: async () => true,
+    processObj: {
+      env: {},
+      cwd: () => '/tmp/current-project',
+      stderr: { write() {} },
+      exit() {}
+    }
+  });
+
+  assert.equal(spawns.length, 1);
+  assert.deepEqual(spawns[0].args, ['resume', '--remote', 'ws://127.0.0.1:9527', '--all']);
+});
+
+test('resume visibility repair helper is read-only compatibility mode', (t) => {
+  let DatabaseSync;
+  try {
+    ({ DatabaseSync } = require('node:sqlite'));
+  } catch (_error) {
+    return;
+  }
+
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-resume-provider-repair-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const codexHome = path.join(root, '.codex');
+  const sessionsDir = path.join(codexHome, 'sessions', '2026', '05', '22');
+  fs.mkdirSync(sessionsDir, { recursive: true });
+  fs.writeFileSync(path.join(codexHome, 'config.toml'), 'model_provider = "aih_1"\n', 'utf8');
+  const stateFile = path.join(root, '.ai_home', 'codex-cli-hook-state.json');
+  fs.mkdirSync(path.dirname(stateFile), { recursive: true });
+  fs.writeFileSync(stateFile, JSON.stringify({ enabled: true }), 'utf8');
+
+  const rolloutPath = path.join(sessionsDir, 'rollout-2026-05-22T12-00-00-thread-openai.jsonl');
+  fs.writeFileSync(rolloutPath, [
+    JSON.stringify({ type: 'session_meta', payload: { id: 'thread-openai', cwd: '/tmp/project' } }),
+    JSON.stringify({ type: 'event_msg', payload: { type: 'user_message', message: 'openai session' } }),
+    ''
+  ].join('\n'), 'utf8');
+
+  const dbPath = path.join(codexHome, 'state_5.sqlite');
+  let db = new DatabaseSync(dbPath);
+  db.exec(`
+    CREATE TABLE threads (
+      id TEXT PRIMARY KEY,
+      rollout_path TEXT,
+      created_at INTEGER,
+      updated_at INTEGER,
+      created_at_ms INTEGER,
+      updated_at_ms INTEGER,
+      source TEXT,
+      model_provider TEXT,
+      cwd TEXT,
+      title TEXT,
+      first_user_message TEXT,
+      archived INTEGER DEFAULT 0
+    )
+  `);
+  db.prepare(`
+    INSERT INTO threads (
+      id, rollout_path, created_at, updated_at, created_at_ms, updated_at_ms,
+      source, model_provider, cwd, title, first_user_message, archived
+    ) VALUES (?, ?, 1, 1, 1000, 1000, 'cli', 'openai', '/tmp/project', 'openai session', 'openai session', 0)
+  `).run('thread-openai', rolloutPath);
+  db.close();
+
+  const result = runCodexResumeVisibilityRepair([
+    '--repair-resume-visibility',
+    '--state-file', stateFile,
+    '--',
+    'resume'
+  ], {
+    fs,
+    processObj: {
+      env: { HOME: root },
+      platform: process.platform,
+      cwd: () => '/tmp/project'
+    },
+    DatabaseSync
+  });
+
+  assert.equal(result.providerAligned, 0);
+  db = new DatabaseSync(dbPath, { readOnly: true });
+  const row = db.prepare('SELECT model_provider FROM threads WHERE id = ?').get('thread-openai');
+  db.close();
+  assert.equal(row.model_provider, 'openai');
 });
 
 test('readHookState defaults to disabled when state file is missing', () => {
@@ -1849,6 +2111,447 @@ test('stdio proxy patches tracked getAuthStatus response without changing the up
   assert.equal(patched.result.authMethod, 'chatgpt');
   assert.equal(patched.result.authToken, preferredAccessToken);
   assert.equal(patched.result.requiresOpenaiAuth, false);
+  assert.deepEqual(stderr.writes, []);
+});
+
+test('stdio proxy downgrades thread/goal/get failures to a cached goal snapshot when available', () => {
+  let DatabaseSync;
+  try {
+    ({ DatabaseSync } = require('node:sqlite'));
+  } catch (_error) {
+    return;
+  }
+
+  const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-goal-get-'));
+  const codexHome = path.join(tmpHome, '.codex');
+  const goalsDbPath = path.join(codexHome, 'goals_1.sqlite');
+  const threadId = '019e4a55-9205-7e33-95d5-90e1077e5795';
+  fs.mkdirSync(codexHome, { recursive: true });
+  const db = new DatabaseSync(goalsDbPath);
+  db.exec(`
+    CREATE TABLE thread_goals (
+      thread_id TEXT PRIMARY KEY NOT NULL,
+      goal_id TEXT NOT NULL,
+      objective TEXT NOT NULL,
+      status TEXT NOT NULL,
+      token_budget INTEGER,
+      tokens_used INTEGER NOT NULL DEFAULT 0,
+      time_used_seconds INTEGER NOT NULL DEFAULT 0,
+      created_at_ms INTEGER NOT NULL,
+      updated_at_ms INTEGER NOT NULL
+    )
+  `);
+  db.prepare(`
+    INSERT INTO thread_goals (
+      thread_id, goal_id, objective, status, token_budget,
+      tokens_used, time_used_seconds, created_at_ms, updated_at_ms
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    threadId,
+    'goal-1',
+    'Keep the current thread stable',
+    'active',
+    1200,
+    30,
+    12,
+    1779363582469,
+    1779364582469
+  );
+  db.close();
+
+  const stdin = new EventEmitter();
+  const stdout = { writes: [], write(chunk) { this.writes.push(String(chunk || '')); } };
+  const stderr = { writes: [], write(chunk) { this.writes.push(String(chunk || '')); } };
+  const upstreamStdout = new EventEmitter();
+  const upstreamStdinWrites = [];
+  const child = new EventEmitter();
+  child.stdin = {
+    write(chunk) {
+      upstreamStdinWrites.push(String(chunk || ''));
+    },
+    end() {}
+  };
+  child.stdout = upstreamStdout;
+
+  runCodexAppServerStdioProxy([
+    '--upstream', '/tmp/original',
+    '--state-file', '/tmp/state.json',
+    '--',
+    'app-server'
+  ], {
+    fs: {
+      existsSync(filePath) {
+        const normalized = String(filePath || '');
+        return normalized === '/tmp/state.json'
+          || normalized === goalsDbPath
+          || normalized === codexHome;
+      },
+      statSync(filePath) {
+        const normalized = String(filePath || '');
+        if (normalized === goalsDbPath) return { isFile: () => true };
+        if (normalized === codexHome) return { isDirectory: () => true };
+        throw new Error(`missing stat for ${normalized}`);
+      },
+      readFileSync(filePath) {
+        if (String(filePath || '') === '/tmp/state.json') {
+          return JSON.stringify({ enabled: true });
+        }
+        throw new Error(`unexpected read: ${filePath}`);
+      }
+    },
+    DatabaseSync,
+    spawn: () => child,
+    processObj: {
+      platform: 'darwin',
+      env: {
+        HOME: tmpHome,
+        CODEX_HOME: codexHome
+      },
+      pid: 999,
+      stdin,
+      stdout,
+      stderr,
+      exit(code) {
+        throw new Error(`EXIT:${code}`);
+      },
+      kill() {
+        throw new Error('signal should not be used');
+      }
+    }
+  });
+
+  stdin.emit('data', Buffer.from(`{"id":"goal-1","method":"thread/goal/get","params":{"threadId":"${threadId}"}}\n`));
+  upstreamStdout.emit('data', Buffer.from('{"id":"goal-1","error":{"code":"internal_error","message":"failed to read thread goal: no such table: thread_goals"}}\n'));
+
+  assert.deepEqual(JSON.parse(upstreamStdinWrites[0]), {
+    id: 'goal-1',
+    method: 'thread/goal/get',
+    params: { threadId }
+  });
+  const patched = JSON.parse(stdout.writes[0]);
+  assert.equal(patched.id, 'goal-1');
+  assert.equal(patched.result.goal.threadId, threadId);
+  assert.equal(patched.result.goal.objective, 'Keep the current thread stable');
+  assert.equal(patched.result.goal.status, 'active');
+  assert.equal(patched.result.goal.tokenBudget, 1200);
+  assert.equal(patched.result.goal.tokensUsed, 30);
+  assert.equal(patched.result.goal.timeUsedSeconds, 12);
+  assert.equal(patched.result.goal.createdAt, 1779363582);
+  assert.equal(patched.result.goal.updatedAt, 1779364582);
+  assert.deepEqual(stderr.writes, []);
+});
+
+test('stdio proxy merges missing state-db threads into thread/list responses', () => {
+  let DatabaseSync;
+  try {
+    ({ DatabaseSync } = require('node:sqlite'));
+  } catch (_error) {
+    return;
+  }
+
+  const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-thread-list-'));
+  const codexHome = path.join(tmpHome, '.codex');
+  const stateDbPath = path.join(codexHome, 'state_5.sqlite');
+  const stateFilePath = path.join(tmpHome, '.ai_home', 'codex-desktop-hook-state.json');
+  const threadId = '019e4a55-9205-7e33-95d5-90e1077e5795';
+  fs.mkdirSync(codexHome, { recursive: true });
+  fs.mkdirSync(path.dirname(stateFilePath), { recursive: true });
+  fs.writeFileSync(stateFilePath, JSON.stringify({ enabled: true }, null, 2), 'utf8');
+  const db = new DatabaseSync(stateDbPath);
+  db.exec(`
+    CREATE TABLE threads (
+      id TEXT PRIMARY KEY NOT NULL,
+      rollout_path TEXT,
+      created_at INTEGER,
+      updated_at INTEGER,
+      created_at_ms INTEGER,
+      updated_at_ms INTEGER,
+      source TEXT,
+      model_provider TEXT,
+      model TEXT,
+      cwd TEXT,
+      title TEXT,
+      sandbox_policy TEXT,
+      approval_mode TEXT,
+      cli_version TEXT,
+      first_user_message TEXT,
+      agent_nickname TEXT,
+      agent_role TEXT,
+      git_sha TEXT,
+      git_branch TEXT,
+      git_origin_url TEXT,
+      reasoning_effort TEXT,
+      thread_source TEXT,
+      archived INTEGER DEFAULT 0
+    )
+  `);
+  db.prepare(`
+    INSERT INTO threads (
+      id, rollout_path, created_at, updated_at, created_at_ms, updated_at_ms,
+      source, model_provider, model, cwd, title, sandbox_policy, approval_mode,
+      cli_version, first_user_message, agent_nickname, agent_role, git_sha,
+      git_branch, git_origin_url, reasoning_effort, thread_source, archived
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    threadId,
+    path.join(codexHome, 'sessions', '2026', '05', '21', `rollout-2026-05-21T19-39-42-${threadId}.jsonl`),
+    1779363582,
+    1779439999,
+    1779363582469,
+    1779439999469,
+    'cli',
+    'aih_1',
+    'gpt-5.5',
+    '/Users/model/projects/feature/ai_home',
+    'please continue',
+    '{"type":"danger-full-access"}',
+    'never',
+    '0.130.0',
+    'please continue',
+    null,
+    null,
+    '2ef4838c01925e86d1d646bcabab3d12a349f065',
+    'main',
+    'git@github.com:madou1217/ai_home.git',
+    'high',
+    'user',
+    0
+  );
+  db.close();
+
+  const stdin = new EventEmitter();
+  const stdout = { writes: [], write(chunk) { this.writes.push(String(chunk || '')); } };
+  const stderr = { writes: [], write(chunk) { this.writes.push(String(chunk || '')); } };
+  const upstreamStdout = new EventEmitter();
+  const upstreamStdinWrites = [];
+  const child = new EventEmitter();
+  child.stdin = {
+    write(chunk) {
+      upstreamStdinWrites.push(String(chunk || ''));
+    },
+    end() {}
+  };
+  child.stdout = upstreamStdout;
+  child.stderr = new EventEmitter();
+
+  runCodexAppServerStdioProxy([
+    '--upstream', '/tmp/original',
+    '--state-file', stateFilePath,
+    '--',
+    'app-server'
+  ], {
+    fs,
+    DatabaseSync,
+    spawn: () => child,
+    processObj: {
+      platform: 'darwin',
+      env: {
+        HOME: tmpHome,
+        CODEX_HOME: path.join(tmpHome, '.ai_home', 'profiles', 'codex', '1', '.codex'),
+        CODEX_SQLITE_HOME: codexHome
+      },
+      pid: 1001,
+      stdin,
+      stdout,
+      stderr,
+      exit(code) {
+        throw new Error(`EXIT:${code}`);
+      },
+      kill() {
+        throw new Error('signal should not be used');
+      }
+    }
+  });
+
+  stdin.emit('data', Buffer.from('{"id":"list-1","method":"thread/list","params":{"cwd":"/Users/model/projects/feature/ai_home","limit":50,"cursor":null,"archived":false,"sourceKinds":[]}}\n'));
+  assert.equal(upstreamStdinWrites.length, 1);
+  upstreamStdout.emit('data', Buffer.from('{"id":"list-1","result":{"data":[],"nextCursor":null,"backwardsCursor":null}}\n'));
+
+  const patched = JSON.parse(stdout.writes[0]);
+  const ids = (patched.result.data || []).map((item) => item.id);
+  assert.equal(ids.includes(threadId), true);
+  const target = (patched.result.data || []).find((item) => item.id === threadId);
+  assert.equal(target.cwd, '/Users/model/projects/feature/ai_home');
+  assert.equal(target.source, 'cli');
+  assert.equal(target.modelProvider, 'aih_1');
+  assert.equal(target.title, 'please continue');
+  assert.deepEqual(stderr.writes, []);
+});
+
+test('stdio proxy lists shared sessions beyond unfiltered exec rows', () => {
+  let DatabaseSync;
+  try {
+    ({ DatabaseSync } = require('node:sqlite'));
+  } catch (_error) {
+    return;
+  }
+
+  const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-thread-list-filtered-'));
+  const codexHome = path.join(tmpHome, '.codex');
+  const stateDbPath = path.join(codexHome, 'state_5.sqlite');
+  const stateFilePath = path.join(tmpHome, '.ai_home', 'codex-desktop-hook-state.json');
+  const cwd = '/Users/model/projects/feature/ai_home';
+  const targetThreadId = '019e3e82-fddf-7ae2-b679-c3a93e008e05';
+  fs.mkdirSync(codexHome, { recursive: true });
+  fs.mkdirSync(path.dirname(stateFilePath), { recursive: true });
+  fs.writeFileSync(stateFilePath, JSON.stringify({ enabled: true }, null, 2), 'utf8');
+
+  const db = new DatabaseSync(stateDbPath);
+  db.exec(`
+    CREATE TABLE threads (
+      id TEXT PRIMARY KEY NOT NULL,
+      rollout_path TEXT,
+      created_at INTEGER,
+      updated_at INTEGER,
+      created_at_ms INTEGER,
+      updated_at_ms INTEGER,
+      source TEXT,
+      model_provider TEXT,
+      model TEXT,
+      cwd TEXT,
+      title TEXT,
+      sandbox_policy TEXT,
+      approval_mode TEXT,
+      cli_version TEXT,
+      first_user_message TEXT,
+      agent_nickname TEXT,
+      agent_role TEXT,
+      git_sha TEXT,
+      git_branch TEXT,
+      git_origin_url TEXT,
+      reasoning_effort TEXT,
+      thread_source TEXT,
+      archived INTEGER DEFAULT 0
+    )
+  `);
+  const insert = db.prepare(`
+    INSERT INTO threads (
+      id, rollout_path, created_at, updated_at, created_at_ms, updated_at_ms,
+      source, model_provider, model, cwd, title, sandbox_policy, approval_mode,
+      cli_version, first_user_message, agent_nickname, agent_role, git_sha,
+      git_branch, git_origin_url, reasoning_effort, thread_source, archived
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  for (let index = 0; index < 260; index += 1) {
+    insert.run(
+      `exec-${index}`,
+      path.join(codexHome, 'sessions', `exec-${index}.jsonl`),
+      1779500000 + index,
+      1779500000 + index,
+      1779500000000 + index,
+      1779500000000 + index,
+      'exec',
+      'openai',
+      'gpt-5.5',
+      cwd,
+      `exec ${index}`,
+      '{"type":"danger-full-access"}',
+      'never',
+      '0.132.0',
+      `exec ${index}`,
+      null,
+      null,
+      null,
+      null,
+      null,
+      'high',
+      'user',
+      0
+    );
+  }
+  insert.run(
+    targetThreadId,
+    path.join(codexHome, 'sessions', 'rollout-target.jsonl'),
+    1779300000,
+    1779300000,
+    1779300000000,
+    1779300000000,
+    'cli',
+    'openai',
+    'gpt-5.5',
+    cwd,
+    'expected shared session',
+    '{"type":"danger-full-access"}',
+    'never',
+    '0.132.0',
+    'expected shared session',
+    null,
+    null,
+    null,
+    null,
+    null,
+    'high',
+    'user',
+    0
+  );
+  db.close();
+
+  const stdin = new EventEmitter();
+  const stdout = { writes: [], write(chunk) { this.writes.push(String(chunk || '')); } };
+  const stderr = { writes: [], write(chunk) { this.writes.push(String(chunk || '')); } };
+  const upstreamStdout = new EventEmitter();
+  const upstreamStdinWrites = [];
+  const child = new EventEmitter();
+  child.stdin = {
+    write(chunk) {
+      upstreamStdinWrites.push(String(chunk || ''));
+    },
+    end() {}
+  };
+  child.stdout = upstreamStdout;
+  child.stderr = new EventEmitter();
+
+  runCodexAppServerStdioProxy([
+    '--upstream', '/tmp/original',
+    '--state-file', stateFilePath,
+    '--',
+    'app-server'
+  ], {
+    fs,
+    DatabaseSync,
+    spawn: () => child,
+    processObj: {
+      platform: 'darwin',
+      env: {
+        HOME: tmpHome,
+        CODEX_HOME: path.join(tmpHome, '.ai_home', 'profiles', 'codex', '1', '.codex'),
+        CODEX_SQLITE_HOME: codexHome
+      },
+      pid: 1001,
+      stdin,
+      stdout,
+      stderr,
+      exit(code) {
+        throw new Error(`EXIT:${code}`);
+      },
+      kill() {
+        throw new Error('signal should not be used');
+      }
+    }
+  });
+
+  stdin.emit('data', Buffer.from(JSON.stringify({
+    id: 'list-1',
+    method: 'thread/list',
+    params: {
+      cwd,
+      limit: 50,
+      cursor: null,
+      archived: false,
+      sourceKinds: ['cli', 'vscode'],
+      modelProviders: ['aih_1']
+    }
+  }) + '\n'));
+
+  const upstreamRequest = JSON.parse(upstreamStdinWrites[0]);
+  assert.deepEqual(upstreamRequest.params.modelProviders, []);
+  assert.equal(upstreamRequest.params.useStateDbOnly, true);
+  upstreamStdout.emit('data', Buffer.from('{"id":"list-1","result":{"data":[],"nextCursor":null,"backwardsCursor":null}}\n'));
+
+  const patched = JSON.parse(stdout.writes[0]);
+  const ids = (patched.result.data || []).map((item) => item.id);
+  assert.equal(ids.includes(targetThreadId), true);
+  assert.equal(ids.some((id) => String(id).startsWith('exec-')), false);
   assert.deepEqual(stderr.writes, []);
 });
 

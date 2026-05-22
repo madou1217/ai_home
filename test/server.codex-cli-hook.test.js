@@ -19,6 +19,8 @@ test('buildWrapperScript renders stable codex cli wrapper', () => {
   assert.equal(script.includes(WRAPPER_MARKER), true);
   assert.equal(script.includes('/tmp/helper.js'), true);
   assert.equal(script.includes('app-server'), true);
+  assert.equal(script.includes('--run-cli-resume'), true);
+  assert.equal(script.includes('--repair-resume-visibility'), false);
 });
 
 test('codex cli hook activates by installing wrapper and enabling state', () => {

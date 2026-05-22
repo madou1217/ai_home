@@ -148,8 +148,9 @@ function createRuntimeHarness(env = {}, overrides = {}) {
     processObj: proc,
     pty,
     spawn: spawnImpl,
+    spawnSync: overrides.spawnSync,
     execSync: overrides.execSync || (() => {}),
-    resolveCliPath: () => '/usr/bin/codex',
+    resolveCliPath: overrides.resolveCliPath || (() => '/usr/bin/codex'),
     readServerConfig: overrides.readServerConfig || (() => ({ host: '127.0.0.1', port: 9527, apiKey: '' })),
     serverDaemon: overrides.serverDaemon || { status: () => ({ running: false }) },
     buildPtyLaunch: (command, args) => ({ command, args }),
@@ -160,7 +161,10 @@ function createRuntimeHarness(env = {}, overrides = {}) {
     getShellDrawerPtyRows,
     getShellDrawerTotalHeight,
     readUsageConfig: () => ({}),
-    cliConfigs: { codex: { pkg: '@openai/codex', loginArgs: ['login'] } },
+    cliConfigs: {
+      codex: { pkg: '@openai/codex', loginArgs: ['login'] },
+      claude: { pkg: '@anthropic-ai/claude-code', loginArgs: ['login'] }
+    },
     aiHomeDir: profileRoot,
     hostHomeDir,
     getProfileDir,
@@ -181,6 +185,7 @@ function createRuntimeHarness(env = {}, overrides = {}) {
     ensureAccountUsageRefreshScheduler: () => { schedulerCalls += 1; },
     refreshIndexedStateForAccount: () => {},
     accountArtifactHooks: overrides.accountArtifactHooks,
+    repairCodexSessionVisibility: overrides.repairCodexSessionVisibility,
     DatabaseSync: overrides.DatabaseSync
   });
 
@@ -263,6 +268,27 @@ test('runtime maps codex slash resume shortcut to native resume command', () => 
   assert.equal(spawns.length, 1);
   assert.deepEqual(spawns[0].args, ['resume', '--last']);
   assert.equal(spawns[0].options.rows, 23);
+
+  assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
+  assert.deepEqual(rawModeCalls, [true, false]);
+});
+
+test('runtime leaves codex resume visibility to CLI hook without mutating state', () => {
+  const calls = [];
+  const { runtime, proc, spawns, rawModeCalls } = createRuntimeHarness({
+    AIH_RUNTIME_SHOW_USAGE: '0'
+  }, {
+    repairCodexSessionVisibility: () => {
+      calls.push(true);
+      return { ok: true, scanned: 1 };
+    }
+  });
+
+  runtime.runCliPtyTracked('codex', '10086', ['resume'], false);
+
+  assert.equal(calls.length, 0);
+  assert.equal(spawns.length, 1);
+  assert.deepEqual(spawns[0].args, ['resume']);
 
   assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
   assert.deepEqual(rawModeCalls, [true, false]);
@@ -1146,6 +1172,65 @@ test('runtime does not classify claude slash menu usage text as rate limit', asy
   assert.equal(writes.some((line) => line.includes('Auto-switch: 4 -> 10087')), false);
 
   assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
+});
+
+test('runtime repairs missing Claude native binary before spawning pty', () => {
+  const root = fsBase.mkdtempSync(path.join(os.tmpdir(), 'aih-pty-claude-repair-'));
+  const cliPath = path.join(root, 'bin', 'claude');
+  const pkgRoot = path.join(root, 'bin', 'global', '5', '.pnpm', '@anthropic-ai+claude-code@2.1.140', 'node_modules', '@anthropic-ai', 'claude-code');
+  const installScriptPath = path.join(pkgRoot, 'install.cjs');
+  fsBase.mkdirSync(path.join(pkgRoot, 'bin'), { recursive: true });
+  fsBase.writeFileSync(path.join(pkgRoot, 'package.json'), '{"name":"@anthropic-ai/claude-code"}\n');
+  fsBase.writeFileSync(installScriptPath, 'console.log("install")\n', 'utf8');
+  fsBase.writeFileSync(cliPath, [
+    '#!/bin/sh',
+    'basedir=$(dirname "$0")',
+    '"$basedir/global/5/.pnpm/@anthropic-ai+claude-code@2.1.140/node_modules/@anthropic-ai/claude-code/bin/claude.exe" "$@"'
+  ].join('\n'), 'utf8');
+  fsBase.chmodSync(cliPath, 0o755);
+
+  const calls = [];
+  let probeCount = 0;
+  const logs = [];
+  const originalLog = console.log;
+  console.log = (...args) => logs.push(args.join(' '));
+  try {
+    const { runtime, proc, spawns, rawModeCalls } = createRuntimeHarness({
+      AIH_RUNTIME_SHOW_USAGE: '0'
+    }, {
+      resolveCliPath: () => cliPath,
+      spawnSync(command, args) {
+        calls.push({ command, args });
+        if (command === cliPath) {
+          probeCount += 1;
+          return probeCount === 1
+            ? { status: 1, stdout: '', stderr: 'Error: claude native binary not installed.' }
+            : { status: 0, stdout: '2.1.140\n', stderr: '' };
+        }
+        if (args && args[0] === installScriptPath) {
+          return { status: 0, stdout: '', stderr: '' };
+        }
+        return { status: 1, stdout: '', stderr: 'unexpected command' };
+      }
+    });
+
+    runtime.runCliPtyTracked('claude', '4', ['--version'], false);
+
+    assert.equal(spawns.length, 1);
+    assert.equal(spawns[0].command, cliPath);
+    assert.deepEqual(calls.map((call) => [call.command, call.args[0]]), [
+      [cliPath, '--version'],
+      [process.execPath, installScriptPath],
+      [cliPath, '--version']
+    ]);
+    assert.equal(logs.some((line) => line.includes('postinstall repair completed')), true);
+    assert.equal(logs.some((line) => line.includes('native binary not installed')), false);
+    assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
+    assert.deepEqual(rawModeCalls, [true, false]);
+  } finally {
+    console.log = originalLog;
+    fsBase.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('runtime ignores cli output that only looks like a rate-limit error', async () => {

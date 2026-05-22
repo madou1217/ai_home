@@ -26,7 +26,7 @@ test('rewriteCodexAppServerClientMessage injects empty modelProviders and state-
   assert.equal(out.params.cwd, '/tmp/project');
 });
 
-test('rewriteCodexAppServerClientMessage preserves explicit modelProviders while enabling state-db mode', () => {
+test('rewriteCodexAppServerClientMessage clears explicit modelProviders for shared session lists', () => {
   const raw = JSON.stringify({
     jsonrpc: '2.0',
     id: 1,
@@ -37,8 +37,36 @@ test('rewriteCodexAppServerClientMessage preserves explicit modelProviders while
     }
   });
   const out = JSON.parse(rewriteCodexAppServerClientMessage(raw));
-  assert.deepEqual(out.params.modelProviders, ['aih_10']);
+  assert.deepEqual(out.params.modelProviders, []);
   assert.equal(out.params.useStateDbOnly, true);
+});
+
+test('rewriteCodexAppServerClientMessage can inject cwd for remote CLI resume', () => {
+  const raw = JSON.stringify({
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'thread/list',
+    params: {
+      modelProviders: ['aih_10']
+    }
+  });
+  const out = JSON.parse(rewriteCodexAppServerClientMessage(raw, { cwd: '/tmp/current-project' }));
+  assert.equal(out.params.cwd, '/tmp/current-project');
+  assert.deepEqual(out.params.modelProviders, []);
+  assert.equal(out.params.useStateDbOnly, true);
+});
+
+test('rewriteCodexAppServerClientMessage keeps explicit cwd over injected cwd', () => {
+  const raw = JSON.stringify({
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'thread/list',
+    params: {
+      cwd: '/tmp/request-project'
+    }
+  });
+  const out = JSON.parse(rewriteCodexAppServerClientMessage(raw, { cwd: '/tmp/current-project' }));
+  assert.equal(out.params.cwd, '/tmp/request-project');
 });
 
 test('rewriteCodexAppServerClientMessage strips remote-only config.profile on thread/resume', () => {

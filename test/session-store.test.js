@@ -297,6 +297,8 @@ test('ensureSessionStoreLinks shares all non-sensitive codex host entries except
   fs.writeFileSync(path.join(hostCodexDir, 'hooks', 'aih-stop-notify.js'), 'console.log("hook");\n');
   fs.writeFileSync(path.join(hostCodexDir, 'hooks.json'), '{"hooks":{}}\n');
   fs.writeFileSync(path.join(hostCodexDir, 'custom-state.json'), '{"ok":true}\n');
+  fs.writeFileSync(path.join(hostCodexDir, 'state_5.sqlite'), 'state-db\n');
+  fs.writeFileSync(path.join(hostCodexDir, 'goals_1.sqlite'), 'goals-db\n');
   fs.writeFileSync(path.join(hostCodexDir, 'config.toml'), 'model = "host"\n');
   fs.writeFileSync(path.join(hostCodexDir, 'auth.json'), '{"token":"host-secret"}\n');
   fs.writeFileSync(path.join(accountConfigDir, 'config.toml'), 'model = "account"\n');
@@ -319,6 +321,8 @@ test('ensureSessionStoreLinks shares all non-sensitive codex host entries except
   assert.equal(fs.lstatSync(path.join(accountConfigDir, 'hooks')).isSymbolicLink(), true);
   assert.equal(fs.lstatSync(path.join(accountConfigDir, 'hooks.json')).isSymbolicLink(), true);
   assert.equal(fs.lstatSync(path.join(accountConfigDir, 'custom-state.json')).isSymbolicLink(), true);
+  assert.equal(fs.lstatSync(path.join(accountConfigDir, 'state_5.sqlite')).isSymbolicLink(), true);
+  assert.equal(fs.lstatSync(path.join(accountConfigDir, 'goals_1.sqlite')).isSymbolicLink(), true);
   assert.equal(fs.lstatSync(path.join(accountConfigDir, 'config.toml')).isSymbolicLink(), false);
   assert.equal(fs.lstatSync(path.join(accountConfigDir, 'auth.json')).isSymbolicLink(), false);
   assert.equal(fs.readFileSync(path.join(accountConfigDir, 'config.toml'), 'utf8'), 'model = "account"\n');

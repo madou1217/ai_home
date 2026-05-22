@@ -5,7 +5,8 @@ const {
   normalizeCodexAuthPayload,
   extractCodexMetadata,
   parseManualImportText,
-  inferImportProvider
+  inferImportProvider,
+  buildCodexAuthIdentityKey
 } = require('../lib/server/web-account-transfer');
 
 function makeJwt(payload) {
@@ -76,10 +77,57 @@ test('parseManualImportText supports jsonl input', () => {
   assert.equal(rows[1].provider, 'gemini');
 });
 
+test('parseManualImportText expands web ui export bundles and arrays', () => {
+  const rows = parseManualImportText(JSON.stringify({
+    version: 2,
+    accounts: [
+      { provider: 'codex', auth: { tokens: { refresh_token: 'rt_1' } } },
+      [
+        { provider: 'gemini', auth: { access_token: 'at_2' } }
+      ]
+    ]
+  }));
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].provider, 'codex');
+  assert.equal(rows[1].provider, 'gemini');
+});
+
 test('inferImportProvider recognizes flat codex oauth payload', () => {
   assert.equal(inferImportProvider({
     refresh_token: 'rt_x',
     chatgpt_account_id: 'acc_x',
     plan_type: 'team'
   }), 'codex');
+});
+
+test('inferImportProvider recognizes codex auth.json payload', () => {
+  assert.equal(inferImportProvider({
+    auth_mode: 'chatgpt',
+    tokens: {
+      refresh_token: 'rt_x',
+      account_id: 'acc_x'
+    }
+  }), 'codex');
+});
+
+test('buildCodexAuthIdentityKey prefers stable metadata without exposing raw refresh token', () => {
+  const accessToken = makeJwt({
+    'https://api.openai.com/profile': {
+      email: 'Identity@Example.com'
+    }
+  });
+  assert.equal(buildCodexAuthIdentityKey({
+    tokens: {
+      access_token: accessToken,
+      refresh_token: 'rt_secret'
+    }
+  }), 'email:identity@example.com');
+
+  const fallbackKey = buildCodexAuthIdentityKey({
+    tokens: {
+      refresh_token: 'rt_secret'
+    }
+  });
+  assert.match(fallbackKey, /^refresh_sha256:/);
+  assert.equal(fallbackKey.includes('rt_secret'), false);
 });

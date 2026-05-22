@@ -141,6 +141,191 @@ test('web ui account import accepts flat codex oauth json and export returns met
   }
 });
 
+test('web ui account import accepts its own exported bundle content', async () => {
+  const sourceAiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-account-transfer-source-'));
+  const targetAiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-account-transfer-target-'));
+  try {
+    const sourceDeps = createDeps(sourceAiHomeDir);
+    const sourceConfigDir = sourceDeps.getToolConfigDir('codex', '7');
+    const sourceProfileDir = sourceDeps.getProfileDir('codex', '7');
+    fs.ensureDirSync(sourceConfigDir);
+    fs.ensureDirSync(sourceProfileDir);
+    const accessToken = makeJwt({
+      client_id: 'app_bundle',
+      exp: 1776600282,
+      'https://api.openai.com/auth': {
+        chatgpt_plan_type: 'team',
+        chatgpt_account_id: 'acc_bundle'
+      },
+      'https://api.openai.com/profile': {
+        email: 'bundle@example.com'
+      }
+    });
+    fs.writeFileSync(path.join(sourceConfigDir, 'auth.json'), JSON.stringify({
+      auth_mode: 'chatgpt',
+      OPENAI_API_KEY: null,
+      tokens: {
+        access_token: accessToken,
+        refresh_token: 'rt_bundle',
+        id_token: '',
+        account_id: 'acc_bundle'
+      },
+      last_refresh: '2026-05-22T00:00:00.000Z'
+    }, null, 2));
+
+    const exportRes = createResCapture();
+    await handleWebUIRequest({
+      method: 'GET',
+      pathname: '/v0/webui/accounts/export',
+      url: new URL('http://localhost/v0/webui/accounts/export'),
+      req: { headers: {} },
+      res: exportRes,
+      options: {},
+      state: {},
+      deps: sourceDeps
+    });
+    assert.equal(exportRes.statusCode, 200);
+
+    const targetDeps = createDeps(targetAiHomeDir);
+    const importRes = createResCapture();
+    await handleWebUIRequest({
+      method: 'POST',
+      pathname: '/v0/webui/accounts/import',
+      url: new URL('http://localhost/v0/webui/accounts/import'),
+      req: { headers: {} },
+      res: importRes,
+      options: {},
+      state: {},
+      deps: {
+        ...targetDeps,
+        readRequestBody: async () => Buffer.from(JSON.stringify({
+          content: exportRes.body
+        }), 'utf8')
+      }
+    });
+
+    assert.equal(importRes.statusCode, 200);
+    const importBody = JSON.parse(importRes.body);
+    assert.equal(importBody.imported, 1);
+    assert.equal(importBody.summary.created, 1);
+    assert.deepEqual(targetDeps.getToolAccountIds('codex'), ['7']);
+    const importedAuth = JSON.parse(fs.readFileSync(path.join(targetDeps.getToolConfigDir('codex', '7'), 'auth.json'), 'utf8'));
+    assert.equal(importedAuth.tokens.account_id, 'acc_bundle');
+  } finally {
+    fs.rmSync(sourceAiHomeDir, { recursive: true, force: true });
+    fs.rmSync(targetAiHomeDir, { recursive: true, force: true });
+  }
+});
+
+test('web ui account import accepts exported api key account bundle', async () => {
+  const sourceAiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-account-transfer-api-key-source-'));
+  const targetAiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-account-transfer-api-key-target-'));
+  try {
+    const sourceDeps = createDeps(sourceAiHomeDir);
+    const sourceConfigDir = sourceDeps.getToolConfigDir('codex', '1');
+    const sourceProfileDir = sourceDeps.getProfileDir('codex', '1');
+    fs.ensureDirSync(sourceConfigDir);
+    fs.ensureDirSync(sourceProfileDir);
+    fs.writeFileSync(path.join(sourceConfigDir, 'auth.json'), JSON.stringify({
+      OPENAI_API_KEY: 'sk-test-api-key'
+    }, null, 2));
+    fs.writeFileSync(path.join(sourceProfileDir, '.aih_env.json'), JSON.stringify({
+      OPENAI_API_KEY: 'sk-test-api-key',
+      OPENAI_BASE_URL: 'https://api.openai.com/v1'
+    }, null, 2));
+
+    const exportRes = createResCapture();
+    await handleWebUIRequest({
+      method: 'GET',
+      pathname: '/v0/webui/accounts/export',
+      url: new URL('http://localhost/v0/webui/accounts/export'),
+      req: { headers: {} },
+      res: exportRes,
+      options: {},
+      state: {},
+      deps: sourceDeps
+    });
+    assert.equal(exportRes.statusCode, 200);
+
+    const targetDeps = createDeps(targetAiHomeDir);
+    const importRes = createResCapture();
+    await handleWebUIRequest({
+      method: 'POST',
+      pathname: '/v0/webui/accounts/import',
+      url: new URL('http://localhost/v0/webui/accounts/import'),
+      req: { headers: {} },
+      res: importRes,
+      options: {},
+      state: {},
+      deps: {
+        ...targetDeps,
+        readRequestBody: async () => Buffer.from(JSON.stringify({
+          content: exportRes.body
+        }), 'utf8')
+      }
+    });
+
+    assert.equal(importRes.statusCode, 200);
+    const importBody = JSON.parse(importRes.body);
+    assert.equal(importBody.imported, 1);
+    assert.equal(importBody.summary.created, 1);
+    assert.deepEqual(targetDeps.getToolAccountIds('codex'), ['1']);
+    const importedAuth = JSON.parse(fs.readFileSync(path.join(targetDeps.getToolConfigDir('codex', '1'), 'auth.json'), 'utf8'));
+    const importedEnv = JSON.parse(fs.readFileSync(path.join(targetDeps.getProfileDir('codex', '1'), '.aih_env.json'), 'utf8'));
+    assert.equal(importedAuth.OPENAI_API_KEY, 'sk-test-api-key');
+    assert.equal(importedEnv.OPENAI_BASE_URL, 'https://api.openai.com/v1');
+  } finally {
+    fs.rmSync(sourceAiHomeDir, { recursive: true, force: true });
+    fs.rmSync(targetAiHomeDir, { recursive: true, force: true });
+  }
+});
+
+test('web ui account import does not use provider account_id as local profile id', async () => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-account-transfer-flat-'));
+  try {
+    const deps = createDeps(aiHomeDir);
+    const accessToken = makeJwt({
+      client_id: 'app_flat',
+      exp: 1776600282,
+      'https://api.openai.com/profile': {
+        email: 'flat@example.com'
+      }
+    });
+    const importRes = createResCapture();
+    await handleWebUIRequest({
+      method: 'POST',
+      pathname: '/v0/webui/accounts/import',
+      url: new URL('http://localhost/v0/webui/accounts/import'),
+      req: { headers: {} },
+      res: importRes,
+      options: {},
+      state: {},
+      deps: {
+        ...deps,
+        readRequestBody: async () => Buffer.from(JSON.stringify({
+          content: JSON.stringify({
+            type: 'codex',
+            email: 'flat@example.com',
+            access_token: accessToken,
+            refresh_token: 'rt_flat',
+            account_id: 'acc_external'
+          })
+        }), 'utf8')
+      }
+    });
+
+    assert.equal(importRes.statusCode, 200);
+    const importBody = JSON.parse(importRes.body);
+    assert.equal(importBody.imported, 1);
+    assert.deepEqual(deps.getToolAccountIds('codex'), ['1']);
+    assert.equal(fs.existsSync(path.join(aiHomeDir, 'profiles', 'codex', 'acc_external')), false);
+    const importedAuth = JSON.parse(fs.readFileSync(path.join(deps.getToolConfigDir('codex', '1'), 'auth.json'), 'utf8'));
+    assert.equal(importedAuth.tokens.account_id, 'acc_external');
+  } finally {
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+  }
+});
+
 test('web ui account import works when fs only exposes ensureDirSync instead of mkdirpSync', async () => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-account-transfer-fs-'));
   try {

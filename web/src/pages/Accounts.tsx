@@ -48,6 +48,7 @@ import type {
   Account,
   AccountAddJob,
   AccountAuthMode,
+  AccountImportResponse,
   Provider
 } from '@/types';
 import ProviderIcon from '@/components/chat/ProviderIcon';
@@ -127,6 +128,20 @@ function getAccountMetaLabel(record: Pick<Account, 'apiKeyMode' | 'planType'>) {
 
 function getAccountKey(record: Pick<Account, 'provider' | 'accountId'>) {
   return `${record.provider}-${record.accountId}`;
+}
+
+function formatImportResult(result: AccountImportResponse) {
+  const summary = result.summary;
+  const imported = Number(summary?.imported ?? result.imported ?? 0);
+  if (!summary) return `导入完成，写入 ${imported} 个账号`;
+
+  const parts = [`写入 ${imported}`];
+  if (summary.created > 0) parts.push(`新增 ${summary.created}`);
+  if (summary.updated > 0) parts.push(`更新 ${summary.updated}`);
+  if (summary.skipped > 0) parts.push(`跳过 ${summary.skipped}`);
+  if (summary.invalid > 0) parts.push(`无效 ${summary.invalid}`);
+  if (summary.failed > 0) parts.push(`失败 ${summary.failed}`);
+  return `导入完成：${parts.join('，')}`;
 }
 
 function canCopyAccountEmail(record: Pick<Account, 'apiKeyMode' | 'email'>) {
@@ -541,6 +556,10 @@ const Accounts = () => {
   const [importMode, setImportMode] = useState<'file' | 'path' | 'text'>('file');
   const [importPath, setImportPath] = useState('');
   const [importText, setImportText] = useState('');
+  const [importFileName, setImportFileName] = useState('');
+  const [importFileContent, setImportFileContent] = useState('');
+  const [importingAccounts, setImportingAccounts] = useState(false);
+  const [exportingAccounts, setExportingAccounts] = useState(false);
   const importInputRef = React.useRef<HTMLInputElement>(null);
   const successAutoCloseTimerRef = React.useRef<number | null>(null);
   const selectedProvider = Form.useWatch('provider', form) as Provider | undefined;
@@ -619,11 +638,35 @@ const Accounts = () => {
     setAuthProgressVisible(false);
   }, []);
 
+  const canSubmitImport = importMode === 'path'
+    ? Boolean(importPath.trim())
+    : importMode === 'text'
+      ? Boolean(importText.trim())
+      : Boolean(importFileContent.trim());
+
+  const resetImportState = React.useCallback(() => {
+    setImportPath('');
+    setImportText('');
+    setImportFileName('');
+    setImportFileContent('');
+  }, []);
+
+  const closeImportModal = React.useCallback(() => {
+    if (importingAccounts) return;
+    setImportModalVisible(false);
+    resetImportState();
+  }, [importingAccounts, resetImportState]);
+
   const handleExport = async () => {
+    setExportingAccounts(true);
     try {
       await accountsAPI.export();
       message.success('导出成功');
-    } catch { message.error('导出失败'); }
+    } catch (error: any) {
+      message.error(error?.response?.data?.message || error?.message || '导出失败');
+    } finally {
+      setExportingAccounts(false);
+    }
   };
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -631,26 +674,37 @@ const Accounts = () => {
     if (!file) return;
     try {
       const text = await file.text();
-      const result = await accountsAPI.import({ content: text });
-      message.success(`导入成功，共 ${result.imported} 个账号`);
-      loadAccounts();
-    } catch { message.error('导入失败，请检查文件格式'); }
+      setImportFileName(file.name);
+      setImportFileContent(text);
+    } catch {
+      message.error('读取文件失败');
+    }
     e.target.value = '';
   };
 
   const handleImportSubmit = async () => {
+    if (!canSubmitImport) {
+      message.warning(importMode === 'file' ? '请选择导入文件' : '请填写导入内容');
+      return;
+    }
+    setImportingAccounts(true);
     try {
       const payload = importMode === 'path'
-        ? { mode: 'path', path: importPath.trim() }
-        : { content: importText };
+        ? { mode: 'path' as const, path: importPath.trim() }
+        : { content: importMode === 'file' ? importFileContent : importText };
       const result = await accountsAPI.import(payload);
-      message.success(`导入成功，共 ${result.imported || 0} 个账号`);
+      const failedCount = Number(result.summary?.failed || 0) + Number(result.summary?.invalid || 0);
+      const notify = Number(result.imported || 0) > 0 && failedCount === 0
+        ? message.success
+        : message.warning;
+      notify(formatImportResult(result));
       setImportModalVisible(false);
-      setImportPath('');
-      setImportText('');
+      resetImportState();
       loadAccounts();
     } catch (error: any) {
       message.error(error?.response?.data?.message || error?.message || '导入失败');
+    } finally {
+      setImportingAccounts(false);
     }
   };
 
@@ -1625,7 +1679,7 @@ const Accounts = () => {
             ) : null}
           </div>
           <Space>
-            <Button icon={<ExportOutlined />} onClick={handleExport}>导出</Button>
+            <Button icon={<ExportOutlined />} onClick={handleExport} loading={exportingAccounts}>导出</Button>
             <Button icon={<ImportOutlined />} onClick={() => setImportModalVisible(true)}>导入</Button>
             <input ref={importInputRef} type="file" accept=".json,.jsonl" style={{ display: 'none' }} onChange={handleImport} />
             <Button icon={<ReloadOutlined />} onClick={loadAccounts} loading={refreshing}>刷新</Button>
@@ -1752,9 +1806,11 @@ const Accounts = () => {
         title="导入账号"
         open={importModalVisible}
         onOk={handleImportSubmit}
-        onCancel={() => setImportModalVisible(false)}
+        onCancel={closeImportModal}
         okText="导入"
         cancelText="取消"
+        confirmLoading={importingAccounts}
+        okButtonProps={{ disabled: !canSubmitImport }}
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <Segmented
@@ -1768,10 +1824,14 @@ const Accounts = () => {
           />
           {importMode === 'file' ? (
             <Alert
-              type="info"
+              type={importFileName ? 'success' : 'info'}
               showIcon
-              message="支持上传 JSON / JSONL。zip 或目录请改用“本地路径”方式。"
-              action={<Button size="small" onClick={() => importInputRef.current?.click()}>选择文件</Button>}
+              message={importFileName ? `已选择 ${importFileName}` : '选择 JSON / JSONL 文件'}
+              action={
+                <Button size="small" onClick={() => importInputRef.current?.click()}>
+                  {importFileName ? '重新选择' : '选择文件'}
+                </Button>
+              }
             />
           ) : null}
           {importMode === 'path' ? (

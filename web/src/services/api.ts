@@ -3,6 +3,7 @@ import type {
   Account,
   AddAccountRequest,
   AddAccountResponse,
+  AccountImportResponse,
   AccountAddJob,
   UsageConfig,
   ServerConfig,
@@ -255,8 +256,8 @@ export const accountsAPI = {
   },
 
   // 导入账号
-  import: async (data: any) => {
-    const response = await api.post('/webui/accounts/import', data);
+  import: async (data: { content?: string; mode?: 'path'; path?: string; provider?: string }): Promise<AccountImportResponse> => {
+    const response = await api.post<AccountImportResponse>('/webui/accounts/import', data);
     return response.data;
   }
 };

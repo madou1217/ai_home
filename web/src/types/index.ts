@@ -85,6 +85,29 @@ export interface AddAccountResponse {
   callbackCaptureError?: string;
 }
 
+export interface AccountImportSummary {
+  imported: number;
+  created: number;
+  updated: number;
+  skipped: number;
+  invalid: number;
+  failed: number;
+  total: number;
+  providers: Provider[];
+  accounts: Array<{
+    provider: Provider;
+    accountId: string;
+    status: 'created' | 'updated';
+  }>;
+}
+
+export interface AccountImportResponse {
+  ok: boolean;
+  imported: number;
+  summary?: AccountImportSummary;
+  result?: unknown;
+}
+
 export interface AccountAddJob {
   id: string;
   provider: Provider;

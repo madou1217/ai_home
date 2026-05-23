@@ -114,6 +114,48 @@ test('fetchModelsForAccount uses codex api-key account base url without double v
   assert.deepEqual(models, ['qwen3.6-plus', 'gpt-5.4']);
 });
 
+test('fetchModelsForAccount can ignore stale Gemini Code Assist model snapshots', async (t) => {
+  const seenUrls = [];
+  t.mock.method(global, 'fetch', async (url) => {
+    const safeUrl = String(url || '');
+    seenUrls.push(safeUrl);
+    if (safeUrl.includes(':loadCodeAssist')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ cloudaicompanionProject: 'projects/test-project' })
+      };
+    }
+    if (safeUrl.includes(':retrieveUserQuota')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          buckets: [
+            { modelId: 'gemini-3.1-pro-preview_vertex' },
+            { modelId: 'gemini-2.5-flash' }
+          ]
+        })
+      };
+    }
+    throw new Error(`unexpected_url_${safeUrl}`);
+  });
+
+  const models = await fetchModelsForAccount({
+    geminiBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    ignoreAvailableModelsSnapshot: true
+  }, {
+    provider: 'gemini',
+    id: '1',
+    authType: 'oauth-personal',
+    accessToken: 'gemini-token',
+    availableModels: ['gemini-2.5-pro']
+  }, 500);
+
+  assert.deepEqual(models, ['gemini-2.5-flash', 'gemini-3.1-pro-preview']);
+  assert.equal(seenUrls.some((url) => url.includes(':retrieveUserQuota')), true);
+});
+
 test('getProxyDispatcher tries to install undici once, then gracefully falls back on failure', () => {
   let requireCalls = 0;
   let installCalls = 0;

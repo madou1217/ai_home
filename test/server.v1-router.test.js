@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { handleV1Request } = require('../lib/server/v1-router');
 const { buildOpenAIModelsList } = require('../lib/server/models');
+const { handleUpstreamModels } = require('../lib/server/upstream-endpoints');
 
 function createResCapture() {
   return {
@@ -70,6 +71,69 @@ test('v1 router enforces client key', async () => {
   assert.equal(res.statusCode, 401);
   const body = JSON.parse(res.body);
   assert.equal(body.error, 'unauthorized_client');
+});
+
+test('v1 Gemini models use remote catalog instead of stale snapshots', async () => {
+  const res = createResCapture();
+  let fetchCalls = 0;
+  const handled = await handleV1Request({
+    req: { headers: {}, url: '/v1/models' },
+    res,
+    method: 'GET',
+    pathname: '/v1/models',
+    options: {
+      backend: 'codex-adapter',
+      provider: 'gemini',
+      upstreamTimeoutMs: 500,
+      modelsProbeAccounts: 1
+    },
+    state: {
+      metrics: { totalRequests: 0, routeCounts: {}, totalSuccess: 0 },
+      accounts: {
+        codex: [],
+        gemini: [{
+          id: 'g1',
+          provider: 'gemini',
+          accessToken: 'token-g1',
+          availableModels: ['gemini-2.5-pro']
+        }],
+        claude: []
+      },
+      modelRegistry: {
+        providers: {
+          codex: new Set(),
+          gemini: new Set(),
+          claude: new Set()
+        }
+      },
+      modelsCache: { ids: [], updatedAt: 0, byAccount: {}, sourceCount: 0 }
+    },
+    requiredClientKey: '',
+    cooldownMs: 1000,
+    maxRequestBodyBytes: 1024 * 1024,
+    localExecOpts: {},
+    deps: {
+      parseAuthorizationBearer: () => '',
+      writeJson: (r, code, payload) => { r.statusCode = code; r.end(JSON.stringify(payload)); },
+      readRequestBody: async () => Buffer.from(''),
+      buildOpenAIModelsList,
+      handleCodexModels: async () => {},
+      handleUpstreamModels,
+      fetchModelsForAccount: async (options, account) => {
+        fetchCalls += 1;
+        assert.equal(account.id, 'g1');
+        assert.equal(options.ignoreAvailableModelsSnapshot, true);
+        return ['gemini-3.1-pro-preview', 'gemini-2.5-flash'];
+      },
+      FALLBACK_MODELS: []
+    }
+  });
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 200);
+  assert.equal(fetchCalls, 1);
+  const ids = JSON.parse(res.body).data.map((item) => item.id);
+  assert.deepEqual(ids, ['gemini-2.5-flash', 'gemini-3.1-pro-preview']);
 });
 
 test('v1 router returns 413 when request body exceeds limit', async () => {

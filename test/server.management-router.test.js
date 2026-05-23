@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const { handleManagementRequest } = require('../lib/server/management-router');
+const { buildManagementModelsResponse } = require('../lib/server/model-endpoints');
 
 function createResCapture() {
   return {
@@ -49,6 +50,59 @@ test('management router returns false for non-management path', async () => {
     deps: {}
   });
   assert.equal(handled, false);
+});
+
+test('management models uses remote Gemini catalog instead of stale snapshots', async () => {
+  const res = createResCapture();
+  let fetchCalls = 0;
+  const handled = await handleManagementRequest({
+    method: 'GET',
+    pathname: '/v0/management/models',
+    url: new URL('http://localhost/v0/management/models?refresh=1'),
+    req: { headers: {} },
+    res,
+    options: { provider: 'gemini' },
+    state: {
+      accounts: {
+        codex: [],
+        gemini: [{
+          id: 'g1',
+          provider: 'gemini',
+          accessToken: 'token-g1',
+          availableModels: ['gemini-2.5-pro']
+        }],
+        claude: []
+      },
+      modelRegistry: {
+        providers: {
+          codex: new Set(),
+          gemini: new Set(),
+          claude: new Set()
+        }
+      },
+      modelsCache: { ids: [], updatedAt: 0, byAccount: {}, sourceCount: 0 }
+    },
+    requiredManagementKey: '',
+    deps: {
+      parseAuthorizationBearer: () => '',
+      writeJson: (r, code, payload) => { r.statusCode = code; r.end(JSON.stringify(payload)); },
+      buildManagementModelsResponse,
+      fetchModelsForAccount: async (options, account) => {
+        fetchCalls += 1;
+        assert.equal(account.id, 'g1');
+        assert.equal(options.ignoreAvailableModelsSnapshot, true);
+        return ['gemini-3.1-pro-preview', 'gemini-2.5-flash'];
+      }
+    }
+  });
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 200);
+  const body = JSON.parse(res.body);
+  assert.equal(fetchCalls, 1);
+  assert.equal(body.source, 'remote');
+  assert.equal(body.scannedAccounts, 1);
+  assert.deepEqual(body.models, ['gemini-2.5-flash', 'gemini-3.1-pro-preview']);
 });
 
 test('management router enforces key and returns unauthorized', async () => {

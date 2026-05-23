@@ -666,7 +666,12 @@ test('web ui models uses cache until provider/account signature changes', async 
     const state = {
       accounts: {
         codex: [],
-        gemini: [{ id: 'g1', provider: 'gemini', accessToken: 'token-g1' }],
+        gemini: [{
+          id: 'g1',
+          provider: 'gemini',
+          accessToken: 'token-g1',
+          availableModels: ['gemini-2.5-pro']
+        }],
         claude: []
       },
       modelRegistry: {
@@ -686,10 +691,11 @@ test('web ui models uses cache until provider/account signature changes', async 
     let fetchCalls = 0;
     const deps = {
       ...createBaseDeps(aiHomeDir),
-      fetchModelsForAccount: async (_options, account) => {
+      fetchModelsForAccount: async (options, account) => {
         fetchCalls += 1;
+        assert.equal(options.ignoreAvailableModelsSnapshot, true);
         return account.id === 'g1'
-          ? ['gemini-2.5-pro']
+          ? ['gemini-3.1-pro-preview', 'gemini-2.5-flash']
           : ['claude-sonnet-4'];
       }
     };
@@ -710,9 +716,11 @@ test('web ui models uses cache until provider/account signature changes', async 
     assert.equal(firstBody.cached, false);
     assert.deepEqual(firstBody.models, {
       codex: ['gpt-5.4'],
-      gemini: ['gemini-2.5-pro'],
+      gemini: ['gemini-2.5-flash', 'gemini-3.1-pro-preview'],
       claude: []
     });
+    assert.equal(firstBody.source, 'remote');
+    assert.equal(firstBody.scannedAccounts, 1);
     assert.equal(fetchCalls, 1);
 
     const secondRes = createResCapture();
@@ -747,10 +755,68 @@ test('web ui models uses cache until provider/account signature changes', async 
     assert.equal(thirdBody.cached, false);
     assert.deepEqual(thirdBody.models, {
       codex: ['gpt-5.4'],
-      gemini: ['gemini-2.5-pro'],
+      gemini: ['gemini-2.5-flash', 'gemini-3.1-pro-preview'],
       claude: ['claude-sonnet-4']
     });
     assert.equal(fetchCalls, 3);
+  } finally {
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+  }
+});
+
+test('web ui models does not invent Gemini defaults when remote discovery fails', async () => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-models-fail-'));
+
+  try {
+    const state = {
+      accounts: {
+        codex: [],
+        gemini: [{ id: 'g1', provider: 'gemini', accessToken: 'token-g1' }],
+        claude: []
+      },
+      modelRegistry: {
+        providers: {
+          codex: new Set(),
+          gemini: new Set(),
+          claude: new Set()
+        }
+      },
+      webUiModelsCache: {
+        updatedAt: 0,
+        byProvider: {},
+        signature: '',
+        source: 'empty'
+      }
+    };
+    const deps = {
+      ...createBaseDeps(aiHomeDir),
+      fetchModelsForAccount: async () => {
+        throw new Error('quota endpoint down');
+      }
+    };
+
+    const res = createResCapture();
+    await handleWebUIRequest({
+      method: 'GET',
+      pathname: '/v0/webui/models',
+      url: new URL('http://localhost/v0/webui/models'),
+      req: { headers: {} },
+      res,
+      options: {},
+      state,
+      deps
+    });
+
+    assert.equal(res.statusCode, 200);
+    const body = JSON.parse(res.body);
+    assert.equal(body.source, 'empty');
+    assert.equal(body.scannedAccounts, 1);
+    assert.match(body.firstError, /quota endpoint down/);
+    assert.deepEqual(body.models, {
+      codex: [],
+      gemini: [],
+      claude: []
+    });
   } finally {
     fs.rmSync(aiHomeDir, { recursive: true, force: true });
   }

@@ -42,6 +42,36 @@ test('failure policy classifies 429 as immediate rate limit cooldown', () => {
   assert.equal(policy.cooldownMs, 60000);
 });
 
+test('failure policy treats Gemini model capacity 429 as model-scoped without account cooldown', () => {
+  const policy = classifyUpstreamFailure({
+    provider: 'gemini',
+    statusCode: 429,
+    detail: 'HTTP 429 {"error":{"message":"No capacity available for model gemini-3.1-pro-preview on the server"}}',
+    defaultCooldownMs: 1000
+  });
+  assert.equal(policy.kind, 'model_capacity_unavailable');
+  assert.equal(policy.scope, 'model');
+  assert.equal(policy.shouldMarkFailure, false);
+  assert.equal(policy.shouldRetryAnotherAccount, false);
+  assert.equal(policy.clientStatusCode, 429);
+  assert.equal(policy.cooldownMs, 0);
+});
+
+test('failure policy treats Gemini model quota reset 429 as model-scoped without account cooldown', () => {
+  const policy = classifyUpstreamFailure({
+    provider: 'gemini',
+    statusCode: 429,
+    detail: 'HTTP 429 {"error":{"message":"You have exhausted your capacity on this model. Your quota will reset after 26s."}}',
+    defaultCooldownMs: 1000
+  });
+  assert.equal(policy.kind, 'model_capacity_unavailable');
+  assert.equal(policy.scope, 'model');
+  assert.equal(policy.shouldMarkFailure, false);
+  assert.equal(policy.shouldRetryAnotherAccount, false);
+  assert.equal(policy.clientStatusCode, 429);
+  assert.equal(policy.cooldownMs, 0);
+});
+
 test('failure policy keeps 404 as passthrough request error without account penalty', () => {
   const policy = classifyUpstreamFailure({
     provider: 'claude',

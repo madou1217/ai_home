@@ -545,6 +545,33 @@ test('loadGeminiServerAccounts marks env api-key accounts explicitly', (t) => {
   assert.equal(accounts[0].accessToken, 'gemini-key');
 });
 
+test('loadGeminiServerAccounts reads Code Assist overage strategy from settings', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-server-gemini-billing-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const profileDir = path.join(root, 'profiles', 'gemini', '1');
+  const configDir = path.join(profileDir, '.gemini');
+  fs.mkdirSync(configDir, { recursive: true });
+  writeJson(path.join(configDir, 'settings.json'), {
+    security: { auth: { selectedType: 'oauth-personal' } },
+    billing: { overageStrategy: 'never' }
+  });
+  writeJson(path.join(configDir, 'oauth_creds.json'), {
+    access_token: 'gemini-token'
+  });
+
+  const accounts = loadGeminiServerAccounts({
+    fs,
+    getToolAccountIds: () => ['1'],
+    getProfileDir: () => profileDir,
+    checkStatus: () => ({ configured: true, accountName: 'user@example.com' })
+  });
+
+  assert.equal(accounts.length, 1);
+  assert.equal(accounts[0].authType, 'oauth-personal');
+  assert.equal(accounts[0].geminiCodeAssistOverageStrategy, 'never');
+});
+
 test('loadClaudeServerAccounts marks env api-key accounts explicitly', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-server-claude-api-key-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

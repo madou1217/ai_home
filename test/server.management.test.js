@@ -354,6 +354,7 @@ test('applyReloadState invalidates web ui models cache when accounts change', ()
     accounts: { codex: [{ id: 'old' }], gemini: [], claude: [] },
     cursors: { codex: 9, gemini: 7, claude: 5 },
     sessionAffinity: { codex: new Map([['a', 1]]), gemini: new Map(), claude: new Map() },
+    geminiSessionIdMap: new Map([['g1\u0000thread-a', { sessionId: '12345678-1234-4123-8123-123456789abc' }]]),
     modelsCache: { updatedAt: 123, ids: ['x'], byAccount: { old: ['x'] }, sourceCount: 1 },
     webUiModelsCache: {
       updatedAt: 456,
@@ -371,6 +372,7 @@ test('applyReloadState invalidates web ui models cache when accounts change', ()
 
   assert.equal(state.cursors.codex, 0);
   assert.equal(state.cursors.gemini, 0);
+  assert.equal(state.geminiSessionIdMap.size, 0);
   assert.equal(state.modelsCache.updatedAt, 0);
   assert.equal(state.webUiModelsCache.updatedAt, 0);
   assert.deepEqual(state.webUiModelsCache.byProvider, {});

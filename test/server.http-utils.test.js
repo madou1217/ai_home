@@ -4,8 +4,11 @@ const {
   fetchWithTimeout,
   fetchModelsForAccount,
   fetchGeminiCodeAssistChatCompletion,
+  fetchGeminiCodeAssistChatCompletionStream,
   __private
 } = require('../lib/server/http-utils');
+
+const GEMINI_SESSION_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 async function withEnv(patch, fn) {
   const keys = Object.keys(patch);
@@ -287,4 +290,427 @@ test('fetchGeminiCodeAssistChatCompletion maps OpenAI tools/tool_choice to Gemin
   assert.equal(result.choices[0].message.content, null);
   assert.equal(result.choices[0].message.tool_calls[0].function.name, 'mcp__CherryHub__list');
   assert.equal(result.usage.total_tokens, 3);
+});
+
+test('fetchGeminiCodeAssistChatCompletionStream applies Gemini CLI defaults for Gemini 3 Pro', async (t) => {
+  let generateBody = null;
+  let generateHeaders = null;
+  t.mock.method(global, 'fetch', async (url, init) => {
+    const safeUrl = String(url || '');
+    if (safeUrl.includes(':loadCodeAssist')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ cloudaicompanionProject: 'projects/test-project' })
+      };
+    }
+    if (safeUrl.includes(':streamGenerateContent')) {
+      generateBody = JSON.parse(String(init && init.body || '{}'));
+      generateHeaders = init && init.headers;
+      return {
+        ok: true,
+        status: 200,
+        body: (async function* () {
+          yield Buffer.from(
+            'data: {"response":{"modelVersion":"gemini-3.1-pro-preview","candidates":[{"finishReason":"STOP","content":{"parts":[{"text":"OK"}]}}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":1,"totalTokenCount":2}}}\n\n'
+          );
+        })()
+      };
+    }
+    throw new Error(`unexpected_url_${safeUrl}`);
+  });
+
+  const stream = await fetchGeminiCodeAssistChatCompletionStream(
+    {
+      geminiBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai'
+    },
+    {
+      provider: 'gemini',
+      authType: 'oauth-personal',
+      accessToken: 'token-1'
+    },
+    {
+      model: 'gemini-3.1-pro-preview',
+      messages: [{ role: 'user', content: 'hi' }]
+    },
+    800
+  );
+
+  const chunks = [];
+  for await (const chunk of stream) {
+    chunks.push(chunk);
+  }
+
+  assert.ok(generateBody);
+  assert.equal(generateBody.model, 'gemini-3.1-pro-preview');
+  assert.equal(generateBody.request.generationConfig.thinkingConfig.thinkingLevel, 'HIGH');
+  assert.equal(generateBody.request.generationConfig.thinkingConfig.includeThoughts, true);
+  assert.equal(generateBody.request.generationConfig.temperature, 1);
+  assert.equal(generateBody.request.generationConfig.topP, 0.95);
+  assert.equal(generateBody.request.generationConfig.topK, 64);
+  assert.match(generateBody.request.session_id, GEMINI_SESSION_ID_RE);
+  assert.match(
+    String(generateHeaders && generateHeaders['user-agent'] || ''),
+    /^GeminiCLI-cli-command\/0\.42\.0\/gemini-3\.1-pro-preview \(.+; .+; terminal\)$/
+  );
+  assert.equal(chunks[0].model, 'gemini-3.1-pro-preview');
+});
+
+test('fetchGeminiCodeAssistChatCompletionStream enables Google One credits for eligible paid Gemini 3 models', async (t) => {
+  let generateBody = null;
+  const diagnostics = [];
+  t.mock.method(global, 'fetch', async (url, init) => {
+    const safeUrl = String(url || '');
+    if (safeUrl.includes(':loadCodeAssist')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          cloudaicompanionProject: 'projects/test-project',
+          paidTier: {
+            id: 'google-one-ai-premium',
+            availableCredits: [
+              { creditType: 'GOOGLE_ONE_AI', creditAmount: '90' }
+            ]
+          }
+        })
+      };
+    }
+    if (safeUrl.includes(':streamGenerateContent')) {
+      generateBody = JSON.parse(String(init && init.body || '{}'));
+      return {
+        ok: true,
+        status: 200,
+        body: (async function* () {
+          yield Buffer.from(
+            'data: {"response":{"modelVersion":"gemini-3.1-pro-preview","candidates":[{"finishReason":"STOP","content":{"parts":[{"text":"OK"}]}}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":1,"totalTokenCount":2}}}\n\n'
+          );
+        })()
+      };
+    }
+    throw new Error(`unexpected_url_${safeUrl}`);
+  });
+
+  const stream = await fetchGeminiCodeAssistChatCompletionStream(
+    {
+      geminiBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+      appendGeminiCodeAssistDiagnostic: (diagnostic) => diagnostics.push(diagnostic)
+    },
+    {
+      provider: 'gemini',
+      authType: 'oauth-personal',
+      accessToken: 'token-1'
+    },
+    {
+      model: 'gemini-3.1-pro-preview',
+      messages: [{ role: 'user', content: 'hi' }]
+    },
+    800
+  );
+
+  for await (const _chunk of stream) {}
+
+  assert.ok(generateBody);
+  assert.deepEqual(generateBody.enabled_credit_types, ['GOOGLE_ONE_AI']);
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0].creditsEnabled, true);
+  assert.equal(diagnostics[0].creditBalance, 90);
+  assert.equal(diagnostics[0].userPromptId, `${generateBody.request.session_id}########0`);
+});
+
+test('Gemini Code Assist credit decision respects unsupported models, low balance, and explicit never strategy', () => {
+  const paidAccount = {
+    codeAssistPaidTier: {
+      availableCredits: [{ creditType: 'GOOGLE_ONE_AI', creditAmount: '90' }]
+    }
+  };
+  assert.equal(
+    __private.shouldEnableGeminiCodeAssistCredits('gemini-2.5-pro', paidAccount, {}).enabled,
+    false
+  );
+  assert.equal(
+    __private.shouldEnableGeminiCodeAssistCredits('gemini-3.1-pro-preview', {
+      codeAssistPaidTier: {
+        availableCredits: [{ creditType: 'GOOGLE_ONE_AI', creditAmount: '49' }]
+      }
+    }, {}).enabled,
+    false
+  );
+  assert.equal(
+    __private.shouldEnableGeminiCodeAssistCredits('gemini-3.1-pro-preview', {
+      ...paidAccount,
+      geminiCodeAssistOverageStrategy: 'never'
+    }, {}).enabled,
+    false
+  );
+  assert.equal(
+    __private.shouldEnableGeminiCodeAssistCredits('gemini-3.1-pro-preview', paidAccount, {}).enabled,
+    true
+  );
+});
+
+test('fetchGeminiCodeAssistChatCompletion maps external session keys to stable Gemini session ids', async (t) => {
+  const sessionIds = [];
+  const userPromptIds = [];
+  t.mock.method(global, 'fetch', async (url, init) => {
+    const safeUrl = String(url || '');
+    if (safeUrl.includes(':loadCodeAssist')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ cloudaicompanionProject: 'projects/test-project' })
+      };
+    }
+    if (safeUrl.includes(':generateContent')) {
+      const requestBody = JSON.parse(String(init && init.body || '{}'));
+      sessionIds.push(requestBody.request.session_id);
+      userPromptIds.push(requestBody.user_prompt_id);
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          traceId: `trace-${sessionIds.length}`,
+          modelVersion: 'gemini-3.1-pro-preview',
+          candidates: [{
+            finishReason: 'STOP',
+            content: { parts: [{ text: 'OK' }] }
+          }],
+          usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1, totalTokenCount: 2 }
+        })
+      };
+    }
+    throw new Error(`unexpected_url_${safeUrl}`);
+  });
+
+  const options = {
+    geminiBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    geminiSessionIdMap: new Map(),
+    sessionKey: 'cherry-thread-1'
+  };
+  const account = {
+    provider: 'gemini',
+    id: '1',
+    authType: 'oauth-personal',
+    accessToken: 'token-1'
+  };
+
+  await fetchGeminiCodeAssistChatCompletion(
+    options,
+    account,
+    {
+      model: 'gemini-3.1-pro-preview',
+      messages: [{ role: 'user', content: 'hi' }]
+    },
+    800
+  );
+  await fetchGeminiCodeAssistChatCompletion(
+    options,
+    account,
+    {
+      model: 'gemini-3.1-pro-preview',
+      messages: [{ role: 'user', content: 'continue' }]
+    },
+    800
+  );
+
+  assert.equal(sessionIds.length, 2);
+  assert.equal(sessionIds[0], sessionIds[1]);
+  assert.match(sessionIds[0], GEMINI_SESSION_ID_RE);
+  assert.deepEqual(userPromptIds, [
+    `${sessionIds[0]}########0`,
+    `${sessionIds[0]}########1`
+  ]);
+});
+
+test('fetchGeminiCodeAssistChatCompletion keeps distinct external session keys isolated', async (t) => {
+  const sessionIds = [];
+  t.mock.method(global, 'fetch', async (url, init) => {
+    const safeUrl = String(url || '');
+    if (safeUrl.includes(':loadCodeAssist')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ cloudaicompanionProject: 'projects/test-project' })
+      };
+    }
+    if (safeUrl.includes(':generateContent')) {
+      const requestBody = JSON.parse(String(init && init.body || '{}'));
+      sessionIds.push(requestBody.request.session_id);
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          traceId: `trace-${sessionIds.length}`,
+          modelVersion: 'gemini-3.1-pro-preview',
+          candidates: [{
+            finishReason: 'STOP',
+            content: { parts: [{ text: 'OK' }] }
+          }],
+          usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1, totalTokenCount: 2 }
+        })
+      };
+    }
+    throw new Error(`unexpected_url_${safeUrl}`);
+  });
+
+  const geminiSessionIdMap = new Map();
+  const account = {
+    provider: 'gemini',
+    id: '1',
+    authType: 'oauth-personal',
+    accessToken: 'token-1'
+  };
+
+  await fetchGeminiCodeAssistChatCompletion(
+    {
+      geminiBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+      geminiSessionIdMap,
+      sessionKey: 'thread-a'
+    },
+    account,
+    {
+      model: 'gemini-3.1-pro-preview',
+      messages: [{ role: 'user', content: 'hi' }]
+    },
+    800
+  );
+  await fetchGeminiCodeAssistChatCompletion(
+    {
+      geminiBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+      geminiSessionIdMap,
+      sessionKey: 'thread-b'
+    },
+    account,
+    {
+      model: 'gemini-3.1-pro-preview',
+      messages: [{ role: 'user', content: 'hi' }]
+    },
+    800
+  );
+
+  assert.equal(sessionIds.length, 2);
+  assert.notEqual(sessionIds[0], sessionIds[1]);
+  assert.match(sessionIds[0], GEMINI_SESSION_ID_RE);
+  assert.match(sessionIds[1], GEMINI_SESSION_ID_RE);
+});
+
+test('fetchGeminiCodeAssistChatCompletion does not treat OpenAI user as a session key', async (t) => {
+  const sessionIds = [];
+  t.mock.method(global, 'fetch', async (url, init) => {
+    const safeUrl = String(url || '');
+    if (safeUrl.includes(':loadCodeAssist')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ cloudaicompanionProject: 'projects/test-project' })
+      };
+    }
+    if (safeUrl.includes(':generateContent')) {
+      const requestBody = JSON.parse(String(init && init.body || '{}'));
+      sessionIds.push(requestBody.request.session_id);
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          traceId: `trace-${sessionIds.length}`,
+          modelVersion: 'gemini-3.1-pro-preview',
+          candidates: [{
+            finishReason: 'STOP',
+            content: { parts: [{ text: 'OK' }] }
+          }],
+          usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1, totalTokenCount: 2 }
+        })
+      };
+    }
+    throw new Error(`unexpected_url_${safeUrl}`);
+  });
+
+  const options = {
+    geminiBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    geminiSessionIdMap: new Map()
+  };
+  const account = {
+    provider: 'gemini',
+    id: '1',
+    authType: 'oauth-personal',
+    accessToken: 'token-1'
+  };
+
+  await fetchGeminiCodeAssistChatCompletion(
+    options,
+    account,
+    {
+      model: 'gemini-3.1-pro-preview',
+      user: 'same-user',
+      messages: [{ role: 'user', content: 'first chat' }]
+    },
+    800
+  );
+  await fetchGeminiCodeAssistChatCompletion(
+    options,
+    account,
+    {
+      model: 'gemini-3.1-pro-preview',
+      user: 'same-user',
+      messages: [{ role: 'user', content: 'second chat' }]
+    },
+    800
+  );
+
+  assert.equal(sessionIds.length, 2);
+  assert.notEqual(sessionIds[0], sessionIds[1]);
+});
+
+test('fetchGeminiCodeAssistChatCompletion passes through Gemini UUID session ids', async (t) => {
+  let seenSessionId = '';
+  t.mock.method(global, 'fetch', async (url, init) => {
+    const safeUrl = String(url || '');
+    if (safeUrl.includes(':loadCodeAssist')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ cloudaicompanionProject: 'projects/test-project' })
+      };
+    }
+    if (safeUrl.includes(':generateContent')) {
+      const requestBody = JSON.parse(String(init && init.body || '{}'));
+      seenSessionId = requestBody.request.session_id;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          traceId: 'trace-uuid',
+          modelVersion: 'gemini-3.1-pro-preview',
+          candidates: [{
+            finishReason: 'STOP',
+            content: { parts: [{ text: 'OK' }] }
+          }],
+          usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1, totalTokenCount: 2 }
+        })
+      };
+    }
+    throw new Error(`unexpected_url_${safeUrl}`);
+  });
+
+  const sessionId = '12345678-1234-4123-8123-123456789abc';
+  await fetchGeminiCodeAssistChatCompletion(
+    {
+      geminiBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+      geminiSessionIdMap: new Map()
+    },
+    {
+      provider: 'gemini',
+      id: '1',
+      authType: 'oauth-personal',
+      accessToken: 'token-1'
+    },
+    {
+      model: 'gemini-3.1-pro-preview',
+      session_id: sessionId,
+      messages: [{ role: 'user', content: 'hi' }]
+    },
+    800
+  );
+
+  assert.equal(seenSessionId, sessionId);
 });

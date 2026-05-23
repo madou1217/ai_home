@@ -339,6 +339,48 @@ test('protocol adapters render tool calls into Gemini and OpenAI Responses outpu
   assert.equal(response.output[0].arguments, '{"q":"x"}');
 });
 
+test('protocol adapters route OpenAI reasoning wrapper to Gemini thought parts', () => {
+  const completion = {
+    id: 'chatcmpl_reasoning',
+    object: 'chat.completion',
+    created: 1700000000,
+    model: 'gemini-3.1-pro-preview',
+    choices: [{
+      index: 0,
+      message: {
+        role: 'assistant',
+        reasoning_content: '先分析',
+        content: '最终回复'
+      },
+      finish_reason: 'stop'
+    }],
+    usage: { prompt_tokens: 2, completion_tokens: 3, total_tokens: 5 }
+  };
+
+  const gemini = convertOpenAIChatCompletionToGeminiGenerateContent(completion, 'gemini-3.1-pro-preview');
+  assert.deepEqual(gemini.candidates[0].content.parts, [
+    { thought: true, text: '先分析' },
+    { text: '最终回复' }
+  ]);
+});
+
+test('protocol adapters route OpenAI reasoning SSE to Gemini thought parts', () => {
+  const sse = [
+    'data: {"id":"chatcmpl_reasoning","object":"chat.completion.chunk","created":1700000000,"model":"gemini-3.1-pro-preview","choices":[{"index":0,"delta":{"reasoning_content":"先分析"},"finish_reason":null}]}',
+    '',
+    'data: {"id":"chatcmpl_reasoning","object":"chat.completion.chunk","created":1700000000,"model":"gemini-3.1-pro-preview","choices":[{"index":0,"delta":{"content":"最终回复"},"finish_reason":null}]}',
+    '',
+    'data: {"id":"chatcmpl_reasoning","object":"chat.completion.chunk","created":1700000000,"model":"gemini-3.1-pro-preview","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}',
+    '',
+    'data: [DONE]',
+    ''
+  ].join('\n');
+
+  const gemini = convertOpenAIChatSseToGeminiSse(sse, 'gemini-3.1-pro-preview');
+  assert.match(gemini, /"parts":\[\{"thought":true,"text":"先分析"\}\]/);
+  assert.match(gemini, /"parts":\[\{"text":"最终回复"\}\]/);
+});
+
 test('protocol adapters render OpenAI Chat tool-call SSE through canonical Responses events', () => {
   const sse = [
     'data: {"id":"chatcmpl_stream_tool","object":"chat.completion.chunk","created":1700000000,"model":"gpt-tool","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{\\"q\\""}}]},"finish_reason":null}]}',

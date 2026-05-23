@@ -1040,6 +1040,7 @@ test('upstream passthrough uses Gemini Code Assist adapter for oauth-personal ch
     routeKey: 'POST /v1/chat/completions',
     requestStartedAt: Date.now(),
     cooldownMs: 1000,
+    requestMeta: { sessionKey: 'thread-1' },
     deps: {
       chooseServerAccount: (pool) => pool[0],
       pushMetricError: () => {},
@@ -1052,7 +1053,12 @@ test('upstream passthrough uses Gemini Code Assist adapter for oauth-personal ch
         fetchCalled = true;
         throw new Error('should_not_call_passthrough');
       },
-      fetchGeminiCodeAssistChatCompletion: async () => payload,
+      fetchGeminiCodeAssistChatCompletion: async (callOptions) => {
+        assert.equal(String(callOptions.sessionKey || ''), 'thread-1');
+        assert.ok(callOptions.geminiSessionIdMap instanceof Map);
+        assert.equal(callOptions.geminiSessionIdMap, state.geminiSessionIdMap);
+        return payload;
+      },
       markProxyAccountFailure: () => {},
       markProxyAccountSuccess: () => {},
       appendProxyRequestLog: () => {}
@@ -1112,7 +1118,7 @@ test('Gemini Code Assist stream=true uses streamGenerateContent and emits increm
         streamCalled += 1;
         yield {
           model: 'gemini-2.5-pro',
-          candidates: [{ content: { parts: [{ text: '你' }] } }]
+          candidates: [{ content: { parts: [{ thought: true, text: 'internal thought' }, { text: '你' }] } }]
         };
         yield {
           model: 'gemini-2.5-pro',
@@ -1130,6 +1136,7 @@ test('Gemini Code Assist stream=true uses streamGenerateContent and emits increm
   assert.equal(res.statusCode, 200);
   assert.match(String(res.headers['content-type'] || ''), /text\/event-stream/i);
   assert.match(body, /"delta":\{"role":"assistant"\}/);
+  assert.match(body, /"reasoning_content":"internal thought"/);
   assert.match(body, /"content":"你"/);
   assert.match(body, /"content":"好"/);
   assert.match(body, /\[DONE\]/);
@@ -1402,7 +1409,20 @@ test('Gemini Code Assist true stream logs streamRequested/streamTransport=upstre
       fetchGeminiCodeAssistChatCompletion: async () => {
         throw new Error('should_not_call_buffered_generateContent');
       },
-      fetchGeminiCodeAssistChatCompletionStream: async function* () {
+      fetchGeminiCodeAssistChatCompletionStream: async function* (callOptions) {
+        callOptions.appendGeminiCodeAssistDiagnostic({
+          sessionId: '12345678-1234-4123-8123-123456789abc',
+          userPromptId: '12345678-1234-4123-8123-123456789abc########0',
+          sessionSource: 'mapped',
+          sessionReused: false,
+          externalSessionKeyHash: 'abc123',
+          creditsEnabled: true,
+          creditBalance: 90,
+          creditDecisionReason: 'available_credit',
+          upstreamUrl: 'https://cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse',
+          method: 'streamGenerateContent',
+          userAgent: 'GeminiCLI-cli-command/0.42.0/gemini-2.5-pro (darwin; arm64; terminal)'
+        });
         yield {
           model: 'gemini-2.5-pro',
           candidates: [{ content: { parts: [{ text: 'ok' }] }, finishReason: 'STOP' }]
@@ -1419,6 +1439,13 @@ test('Gemini Code Assist true stream logs streamRequested/streamTransport=upstre
   assert.equal(requestLogs[0].requestId, 'req-stream-1');
   assert.equal(requestLogs[0].streamRequested, true);
   assert.equal(requestLogs[0].streamTransport, 'upstream_sse');
+  assert.equal(requestLogs[0].geminiCodeAssistSessionId, '12345678-1234-4123-8123-123456789abc');
+  assert.equal(requestLogs[0].geminiCodeAssistUserPromptId, '12345678-1234-4123-8123-123456789abc########0');
+  assert.equal(requestLogs[0].geminiCodeAssistCreditsEnabled, true);
+  assert.equal(requestLogs[0].geminiCodeAssistCreditBalance, 90);
+  assert.equal(requestLogs[0].geminiCodeAssistMethod, 'streamGenerateContent');
+  assert.match(requestLogs[0].geminiCodeAssistUpstreamUrl, /:streamGenerateContent\?alt=sse$/);
+  assert.match(requestLogs[0].geminiCodeAssistUserAgent, /^GeminiCLI-cli-command\/0\.42\.0\/gemini-2\.5-pro /);
 });
 
 test('Gemini Code Assist buffered fallback logs streamRequested/streamTransport=buffered_fallback', async () => {
@@ -1606,6 +1633,66 @@ test('Gemini Code Assist 429 triggers immediate cooldown and returns 429 upstrea
   assert.equal(body.error, 'upstream_failed');
   assert.match(String(body.detail || ''), /quota exhausted/);
   assert.equal(Number(account.cooldownUntil || 0) > Date.now(), true);
+});
+
+test('Gemini Code Assist model capacity 429 does not block the account', async () => {
+  const res = createResCapture();
+  const account = { id: 'g1', email: 'g@example.com', accessToken: 'tok', authType: 'oauth-personal', cooldownUntil: 0 };
+  const state = {
+    accounts: { gemini: [account] },
+    cursors: { gemini: 0 },
+    metrics: { totalFailures: 0, totalSuccess: 0, totalTimeouts: 0, providerFailures: {}, lastErrors: [] }
+  };
+  let failureCalls = 0;
+
+  await handleUpstreamPassthrough({
+    options: {
+      provider: 'gemini',
+      geminiBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+      upstreamTimeoutMs: 3000,
+      maxAttempts: 1,
+      failureThreshold: 1,
+      logRequests: false
+    },
+    state,
+    req: { url: '/v1/chat/completions', headers: { 'content-type': 'application/json' } },
+    res,
+    method: 'POST',
+    bodyBuffer: Buffer.from('{"x":"y"}'),
+    requestJson: { model: 'gemini-3.1-pro-preview', messages: [{ role: 'user', content: 'hi' }] },
+    routeKey: 'POST /v1/chat/completions',
+    requestStartedAt: Date.now(),
+    cooldownMs: 1000,
+    deps: {
+      chooseServerAccount: (pool) => pool[0],
+      pushMetricError: () => {},
+      writeJson: (r, code, body) => {
+        r.statusCode = code;
+        r.setHeader('content-type', 'application/json');
+        r.end(JSON.stringify(body));
+      },
+      fetchWithTimeout: async () => {
+        throw new Error('should_not_call_passthrough');
+      },
+      fetchGeminiCodeAssistChatCompletion: async () => {
+        const err = new Error(
+          'HTTP 429 {"error":{"message":"You have exhausted your capacity on this model. Your quota will reset after 26s."}}'
+        );
+        err.code = 'HTTP_429';
+        throw err;
+      },
+      markProxyAccountFailure: () => {
+        failureCalls += 1;
+      },
+      markProxyAccountSuccess: () => {},
+      appendProxyRequestLog: () => {}
+    }
+  });
+
+  assert.equal(res.statusCode, 429);
+  assert.equal(failureCalls, 0);
+  assert.equal(Number(account.cooldownUntil || 0), 0);
+  assert.equal(String(account.lastFailureKind || ''), '');
 });
 
 test('Gemini Code Assist 401 blocks account and returns pool unavailable', async () => {

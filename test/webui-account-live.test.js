@@ -310,3 +310,73 @@ test('refreshLiveAccountRecord lets persisted runtime state override healthy in-
   assert.equal(record.remainingPct, null);
   assert.equal(record.schedulableStatus, 'blocked_by_runtime_status');
 });
+
+test('refreshLiveAccountRecord blocks agy keyring-only accounts from schedulable pool', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-account-live-agy-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const profileDir = path.join(root, 'profiles', 'agy', '1');
+  const configDir = path.join(profileDir, '.gemini', 'antigravity-cli');
+  fs.mkdirSync(path.join(configDir, 'log'), { recursive: true });
+  fs.writeFileSync(
+    path.join(configDir, 'log', 'latest.log'),
+    'OAuth: authenticated successfully as agy@example.com\n',
+    'utf8'
+  );
+
+  const ctx = {
+    state: {
+      accounts: {
+        codex: [],
+        gemini: [],
+        claude: [],
+        agy: []
+      }
+    },
+    fs,
+    options: {},
+    accountStateIndex: {
+      getAccountState() {
+        return {
+          status: 'up',
+          configured: true,
+          apiKeyMode: false,
+          remainingPct: 0
+        };
+      }
+    },
+    getToolAccountIds(provider) {
+      return provider === 'agy' ? ['1'] : [];
+    },
+    getToolConfigDir() {
+      return configDir;
+    },
+    getProfileDir() {
+      return profileDir;
+    },
+    checkStatus() {
+      return {
+        configured: true,
+        accountName: 'agy@example.com'
+      };
+    },
+    getLastUsageProbeState() {
+      return null;
+    },
+    getLastUsageProbeError() {
+      return '';
+    }
+  };
+
+  const record = await refreshLiveAccountRecord(ctx, 'agy', '1', {
+    skipUsageRefresh: true,
+    skipRuntimeReload: true
+  });
+
+  assert.equal(record.configured, true);
+  assert.equal(record.email, 'agy@example.com');
+  assert.equal(record.remainingPct, null);
+  assert.equal(record.quotaStatus, 'not_applicable');
+  assert.equal(record.schedulableStatus, 'blocked_by_policy');
+  assert.equal(record.schedulableReason, 'agy_access_token_required');
+});

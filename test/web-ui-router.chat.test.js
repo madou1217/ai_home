@@ -1966,6 +1966,90 @@ test('web ui chat routes codex api key sessions through api proxy stream instead
   }
 });
 
+test('web ui chat routes agy access-token accounts through api proxy stream', async () => {
+  const originalFetchWithTimeout = httpUtils.fetchWithTimeout;
+  const originalSpawn = nativeSessionChat.spawnNativeSessionStream;
+  let nativeSpawned = false;
+  let seenRequest = null;
+  httpUtils.fetchWithTimeout = async (_url, init) => {
+    seenRequest = {
+      headers: init && init.headers,
+      body: JSON.parse(String(init && init.body || '{}'))
+    };
+    return {
+      ok: true,
+      status: 200,
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(Buffer.from(
+            'data: {"choices":[{"delta":{"content":"AGY"}}]}\n\n' +
+            'data: {"choices":[{"delta":{"content":" OK"},"finish_reason":"stop"}]}\n\n' +
+            'data: [DONE]\n\n'
+          ));
+          controller.close();
+        }
+      }),
+      headers: new Headers()
+    };
+  };
+  nativeSessionChat.spawnNativeSessionStream = () => {
+    nativeSpawned = true;
+    throw new Error('agy access-token chat should use api proxy');
+  };
+
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-chat-agy-'));
+  try {
+    const profileDir = path.join(root, 'profiles', 'agy', '2');
+    const configDir = path.join(profileDir, '.gemini', 'antigravity-cli');
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.writeFileSync(path.join(profileDir, '.aih_env.json'), JSON.stringify({
+      AGY_ACCESS_TOKEN: 'agy-token'
+    }, null, 2));
+
+    const req = new EventEmitter();
+    req.headers = {};
+    const res = createStreamResCapture();
+    const payload = {
+      provider: 'agy',
+      accountId: '2',
+      createSession: true,
+      projectPath: '/Users/model',
+      prompt: 'hi',
+      stream: true,
+      messages: [{ role: 'user', content: 'hi' }]
+    };
+
+    const handled = await handleWebUIRequest({
+      method: 'POST',
+      pathname: '/v0/webui/chat',
+      url: new URL('http://localhost/v0/webui/chat'),
+      req,
+      res,
+      options: { port: 8317 },
+      state: {},
+      deps: {
+        ...createBaseDeps(),
+        fs: require('fs-extra'),
+        getProfileDir: () => profileDir,
+        getToolConfigDir: () => configDir,
+        readRequestBody: async () => Buffer.from(JSON.stringify(payload), 'utf8')
+      }
+    });
+
+    assert.equal(handled, true);
+    assert.equal(nativeSpawned, false);
+    assert.equal(seenRequest.headers['X-Provider'], 'agy');
+    assert.equal(seenRequest.body.model, 'gemini-3.1-pro-preview');
+    assert.match(res.body, /"type":"ready","mode":"api-proxy"/);
+    assert.match(res.body, /"type":"done","mode":"api-proxy","content":"AGY OK"/);
+    req.emit('close');
+  } finally {
+    httpUtils.fetchWithTimeout = originalFetchWithTimeout;
+    nativeSessionChat.spawnNativeSessionStream = originalSpawn;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('web ui chat emits thinking events for codex reasoning deltas in api proxy stream', async () => {
   const originalFetchWithTimeout = httpUtils.fetchWithTimeout;
   httpUtils.fetchWithTimeout = async () => ({

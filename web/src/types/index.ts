@@ -1,4 +1,4 @@
-export type Provider = 'codex' | 'gemini' | 'claude';
+export type Provider = 'codex' | 'gemini' | 'claude' | 'agy';
 
 export interface CodexUsageEntry {
   bucket: string;

@@ -10,10 +10,12 @@ const {
 } = require('../lib/server/web-ui-router');
 const {
   handleAddAccountRequest,
+  handleCancelAddJobRequest,
   handleCompleteAddJobCallbackRequest,
   handleReauthAccountRequest,
   handleUpdateAccountStatusRequest
 } = require('../lib/server/webui-account-routes');
+const { SUPPORTED_SERVER_PROVIDERS } = require('../lib/server/providers');
 
 function createResCapture() {
   return {
@@ -450,7 +452,7 @@ test('web ui accounts list reuses fast snapshot within short ttl', async () => {
 
   assert.equal(firstRes.statusCode, 200);
   assert.equal(secondRes.statusCode, 200);
-  assert.equal(getToolAccountIdsCalls, 3);
+  assert.equal(getToolAccountIdsCalls, SUPPORTED_SERVER_PROVIDERS.length);
 });
 
 test('web ui accounts list falls back to runtime remainingPct when state index usage is missing', async () => {
@@ -1900,6 +1902,79 @@ test('web ui accounts list treats auth-json-only codex metadata as pending until
   assert.equal(body.accounts[0].usageSnapshot.account.email, 'auth-only@example.com');
 });
 
+test('web ui accounts list does not render agy keyring-only accounts as exhausted', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-route-agy-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const profileDir = path.join(root, 'profiles', 'agy', '1');
+  const configDir = path.join(profileDir, '.gemini', 'antigravity-cli');
+  fs.mkdirSync(path.join(configDir, 'log'), { recursive: true });
+  fs.writeFileSync(
+    path.join(configDir, 'log', 'latest.log'),
+    'OAuth: authenticated successfully as agy@example.com\n',
+    'utf8'
+  );
+
+  const res = createResCapture();
+  const handled = await handleWebUIRequest({
+    method: 'GET',
+    pathname: '/v0/webui/accounts',
+    url: new URL('http://localhost/v0/webui/accounts'),
+    req: { headers: {} },
+    res,
+    options: {},
+    state: {
+      accounts: { codex: [], gemini: [], claude: [], agy: [] }
+    },
+    deps: {
+      fs,
+      writeJson: (response, code, payload) => {
+        response.statusCode = code;
+        response.end(JSON.stringify(payload));
+      },
+      readRequestBody: async () => null,
+      accountStateIndex: {
+        getAccountState(provider, accountId) {
+          if (provider === 'agy' && accountId === '1') {
+            return {
+              status: 'up',
+              configured: true,
+              api_key_mode: false,
+              remaining_pct: 0,
+              display_name: 'agy@example.com',
+              updated_at: 1776703050450
+            };
+          }
+          return null;
+        }
+      },
+      getToolAccountIds(provider) {
+        return provider === 'agy' ? ['1'] : [];
+      },
+      getToolConfigDir(provider, accountId) {
+        return path.join(root, 'profiles', provider, accountId, provider === 'agy' ? '.gemini/antigravity-cli' : `.${provider}`);
+      },
+      getProfileDir(provider, accountId) {
+        return path.join(root, 'profiles', provider, accountId);
+      },
+      loadServerRuntimeAccounts: () => ({ codex: [], gemini: [], claude: [], agy: [] }),
+      applyReloadState: () => {},
+      checkStatus() {
+        return { configured: true, accountName: 'agy@example.com' };
+      }
+    }
+  });
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 200);
+  const body = JSON.parse(res.body);
+  const agy = body.accounts.find((account) => account.provider === 'agy' && account.accountId === '1');
+  assert.ok(agy);
+  assert.equal(agy.remainingPct, null);
+  assert.equal(agy.quotaStatus, 'not_applicable');
+  assert.equal(agy.schedulableStatus, 'blocked_by_policy');
+  assert.equal(agy.schedulableReason, 'agy_access_token_required');
+});
+
 test('web ui accounts watch streams snapshot immediately and completes hydration lifecycle', async () => {
   const req = new EventEmitter();
   req.headers = {};
@@ -2456,6 +2531,38 @@ test('web ui forwards browser oauth callback through job manager', async () => {
     }
   ]);
   assert.equal(JSON.parse(res.body).job.id, 'job-1');
+});
+
+test('web ui cancel auth job is idempotent when job was already cleaned up', async () => {
+  const res = createResCapture();
+
+  const handled = await handleCancelAddJobRequest({
+    pathname: '/v0/webui/accounts/add/jobs/missing-job/cancel',
+    res,
+    deps: {},
+    state: {},
+    getAuthJobManager() {
+      return {
+        cancelJob() {
+          return { ok: false, code: 'job_not_found' };
+        }
+      };
+    },
+    cleanupAuthJobArtifacts() {
+      throw new Error('cleanup should not run for missing jobs');
+    },
+    writeJson(response, code, payload) {
+      response.statusCode = code;
+      response.end(JSON.stringify(payload));
+    }
+  });
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 200);
+  const body = JSON.parse(res.body);
+  assert.equal(body.ok, true);
+  assert.equal(body.job.id, 'missing-job');
+  assert.equal(body.job.status, 'cancelled');
 });
 
 test('web ui reauth rejects api key accounts', async () => {

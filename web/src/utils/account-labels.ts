@@ -1,10 +1,11 @@
 import type { Account, Provider } from '@/types';
 
-const INTERNAL_ACCOUNT_LABEL_RE = /^(codex|gemini|claude)-\d+$/i;
+const INTERNAL_ACCOUNT_LABEL_RE = /^(agy|codex|gemini|claude)-\d+$/i;
 const DEFAULT_API_KEY_DOMAINS: Record<Provider, string> = {
   codex: 'api.openai.com',
   claude: 'api.anthropic.com',
-  gemini: 'generativelanguage.googleapis.com'
+  gemini: 'generativelanguage.googleapis.com',
+  agy: 'daily-cloudcode-pa.googleapis.com'
 };
 
 export function isInternalAccountLabel(value?: string) {
@@ -30,6 +31,7 @@ function getCleanDisplayName(account: Pick<Account, 'displayName'>) {
   if (!displayName || displayName === 'Unknown') return '';
   if (isInternalAccountLabel(displayName)) return '';
   if (/^api key/i.test(displayName)) return '';
+  if (/^access token/i.test(displayName)) return '';
   return displayName;
 }
 

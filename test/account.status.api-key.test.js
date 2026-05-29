@@ -333,4 +333,89 @@ describe('Account Status - API Key Mode', () => {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
   });
+
+  it('should read agy keyring oauth identity from antigravity logs', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-test-status-agy-'));
+
+    try {
+      const profileDir = path.join(tmpDir, 'agy', '1');
+      const logDir = path.join(profileDir, '.gemini', 'antigravity-cli', 'log');
+      fs.mkdirSync(logDir, { recursive: true });
+      fs.writeFileSync(path.join(logDir, 'latest.log'), [
+        'ChainedAuth: authenticated via keyring (effective: keyring)',
+        'applyAuthResult: email=agy@example.com, authMethod=consumer',
+        'OAuth: authenticated successfully as agy@example.com'
+      ].join('\n'));
+
+      const checkStatus = createAccountStatusChecker({
+        fs,
+        path,
+        BufferImpl: Buffer,
+        cliConfigs: {
+          agy: { globalDir: '.gemini', configSubDir: 'antigravity-cli' }
+        }
+      });
+
+      const status = checkStatus('agy', profileDir);
+      assert.equal(status.configured, true);
+      assert.equal(status.accountName, 'agy@example.com');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('should return configured=false for agy settings without login logs', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-test-status-agy-'));
+
+    try {
+      const profileDir = path.join(tmpDir, 'agy', '2');
+      const configDir = path.join(profileDir, '.gemini', 'antigravity-cli');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(path.join(configDir, 'settings.json'), JSON.stringify({ model: 'Gemini 3.5 Flash (High)' }, null, 2));
+
+      const checkStatus = createAccountStatusChecker({
+        fs,
+        path,
+        BufferImpl: Buffer,
+        cliConfigs: {
+          agy: { globalDir: '.gemini', configSubDir: 'antigravity-cli' }
+        }
+      });
+
+      const status = checkStatus('agy', profileDir);
+      assert.equal(status.configured, false);
+      assert.equal(status.accountName, 'Unknown');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('should treat latest agy logged-out event as unconfigured', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-test-status-agy-'));
+
+    try {
+      const profileDir = path.join(tmpDir, 'agy', '3');
+      const logDir = path.join(profileDir, '.gemini', 'antigravity-cli', 'log');
+      fs.mkdirSync(logDir, { recursive: true });
+      fs.writeFileSync(path.join(logDir, 'latest.log'), [
+        'OAuth: authenticated successfully as stale@example.com',
+        'You are not logged into Antigravity'
+      ].join('\n'));
+
+      const checkStatus = createAccountStatusChecker({
+        fs,
+        path,
+        BufferImpl: Buffer,
+        cliConfigs: {
+          agy: { globalDir: '.gemini', configSubDir: 'antigravity-cli' }
+        }
+      });
+
+      const status = checkStatus('agy', profileDir);
+      assert.equal(status.configured, false);
+      assert.equal(status.accountName, 'Unknown');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
 });

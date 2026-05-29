@@ -7,6 +7,7 @@ const {
   loadCodexServerAccounts,
   loadGeminiServerAccounts,
   loadClaudeServerAccounts,
+  loadAgyServerAccounts,
   loadServerRuntimeAccounts,
   readTrustedUsageSnapshot
 } = require('../lib/server/accounts');
@@ -1083,4 +1084,82 @@ test('loadServerRuntimeAccounts excludes accounts disabled by profile status fil
   });
 
   assert.deepEqual(accounts.codex.map((account) => account.id), ['22']);
+});
+
+test('loadAgyServerAccounts includes explicit access-token accounts', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-server-agy-token-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const aiHomeDir = path.join(root, '.ai_home');
+  const profilesRoot = path.join(aiHomeDir, 'profiles', 'agy');
+  const profileDir = path.join(profilesRoot, '1');
+  const configDir = path.join(profileDir, '.gemini', 'antigravity-cli');
+  fs.mkdirSync(path.join(configDir, 'log'), { recursive: true });
+  writeJson(path.join(profileDir, '.aih_env.json'), {
+    AGY_ACCESS_TOKEN: 'agy-token',
+    AGY_BASE_URL: 'https://daily-cloudcode-pa.googleapis.com/v1internal'
+  });
+  fs.writeFileSync(path.join(configDir, 'log', 'latest.log'), 'OAuth: authenticated successfully as agy@example.com\n', 'utf8');
+
+  const accounts = loadAgyServerAccounts({
+    fs,
+    getToolAccountIds: () => ['1'],
+    getToolConfigDir: (_cli, id) => path.join(profilesRoot, String(id), '.gemini', 'antigravity-cli'),
+    getProfileDir: (_cli, id) => path.join(profilesRoot, String(id)),
+    checkStatus: (_cli, pDir) => ({
+      configured: true,
+      accountName: pDir.endsWith(path.join('agy', '1')) ? 'agy@example.com' : 'Unknown'
+    })
+  });
+
+  assert.equal(accounts.length, 1);
+  assert.equal(accounts[0].provider, 'agy');
+  assert.equal(accounts[0].authType, 'oauth-personal');
+  assert.equal(accounts[0].accessToken, 'agy-token');
+  assert.equal(accounts[0].email, 'agy@example.com');
+});
+
+test('loadAgyServerAccounts skips keyring-only accounts without explicit API token', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-server-agy-keyring-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const aiHomeDir = path.join(root, '.ai_home');
+  const profilesRoot = path.join(aiHomeDir, 'profiles', 'agy');
+  const profileDir = path.join(profilesRoot, '1');
+  const configDir = path.join(profileDir, '.gemini', 'antigravity-cli');
+  fs.mkdirSync(path.join(configDir, 'log'), { recursive: true });
+  fs.writeFileSync(path.join(configDir, 'log', 'latest.log'), 'OAuth: authenticated successfully as agy@example.com\n', 'utf8');
+
+  const accounts = loadAgyServerAccounts({
+    fs,
+    getToolAccountIds: () => ['1'],
+    getToolConfigDir: (_cli, id) => path.join(profilesRoot, String(id), '.gemini', 'antigravity-cli'),
+    getProfileDir: (_cli, id) => path.join(profilesRoot, String(id)),
+    checkStatus: () => ({ configured: true, accountName: 'agy@example.com' })
+  });
+
+  assert.equal(accounts.length, 0);
+});
+
+test('loadServerRuntimeAccounts returns agy provider bucket', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-server-agy-runtime-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const aiHomeDir = path.join(root, '.ai_home');
+  const profilesRoot = path.join(aiHomeDir, 'profiles');
+
+  const accounts = loadServerRuntimeAccounts({
+    fs,
+    aiHomeDir,
+    getToolAccountIds: (provider) => {
+      if (provider === 'agy') return ['1'];
+      return [];
+    },
+    getToolConfigDir: (provider, id) => path.join(profilesRoot, provider, String(id), '.gemini', 'antigravity-cli'),
+    getProfileDir: (provider, id) => path.join(profilesRoot, provider, String(id)),
+    checkStatus: () => ({ configured: true, accountName: 'agy@example.com' })
+  });
+
+  assert.ok(Array.isArray(accounts.agy));
+  assert.deepEqual(accounts.agy, []);
 });

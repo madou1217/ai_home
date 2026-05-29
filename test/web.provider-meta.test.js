@@ -22,7 +22,9 @@ test('provider meta returns stable labels and tag colors for archived session UI
   assert.equal(getProviderLabel('codex'), 'ChatGPT');
   assert.equal(getProviderLabel('claude'), 'Claude');
   assert.equal(getProviderLabel('gemini'), 'Gemini');
+  assert.equal(getProviderLabel('agy'), 'Antigravity');
   assert.equal(getProviderTagColor('codex'), 'green');
   assert.equal(getProviderTagColor('claude'), 'orange');
   assert.equal(getProviderTagColor('gemini'), 'blue');
+  assert.equal(getProviderTagColor('agy'), 'purple');
 });

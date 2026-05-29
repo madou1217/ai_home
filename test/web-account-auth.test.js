@@ -54,6 +54,7 @@ test('getDefaultAuthMode keeps codex browser oauth as the default login mode', (
   assert.equal(getDefaultAuthMode('codex'), 'oauth-browser');
   assert.equal(getDefaultAuthMode('claude'), 'oauth-browser');
   assert.equal(getDefaultAuthMode('gemini'), 'oauth-browser');
+  assert.equal(getDefaultAuthMode('agy'), 'oauth-browser');
 });
 
 test('extractOAuthChallenge parses verification url and user code from logs', () => {
@@ -93,6 +94,22 @@ https://auth.openai.com/oauth/authorize?response_type=code&redirect_uri=http%3A%
   assert.equal(hints.redirectUri, 'http://localhost:1455/auth/callback');
   assert.equal(hints.state, 'state-123');
   assert.match(hints.authorizationUrl, /^https:\/\/auth\.openai\.com\/oauth\/authorize/);
+});
+
+test('extractBrowserOAuthHints rejoins terminal-wrapped authorization urls', () => {
+  const hints = extractBrowserOAuthHints(`
+Open this link in the browser:
+ https://accounts.google.com/o/oauth2/auth?access_type=offline&client_id=1071006060591-tmhssin2h21lcre235vtolojh4g403ep
+ .apps.googleusercontent.com&code_challenge=abc123&code_challenge_method=S256&prom
+ pt=consent&redirect_uri=https%3A%2F%2Fantigravity.google%2Foauth-callback&response_type=code&state=agy-state
+
+If you aren't automatically redirected, paste the authorization code below:
+  `);
+
+  assert.match(hints.authorizationUrl, /^https:\/\/accounts\.google\.com\/o\/oauth2\/auth/);
+  assert.match(hints.authorizationUrl, /1071006060591-tmhssin2h21lcre235vtolojh4g403ep\.apps\.googleusercontent\.com/);
+  assert.equal(hints.redirectUri, 'https://antigravity.google/oauth-callback');
+  assert.equal(hints.state, 'agy-state');
 });
 
 test('parseDeviceCodeExpiryMs parses provider-declared device code expiry from output', () => {
@@ -858,6 +875,190 @@ test('createAuthJobManager marks gemini oauth job succeeded when oauth_creds fil
 
   const job = manager.getJob(started.jobId);
   assert.equal(job.status, 'succeeded');
+});
+
+test('createAuthJobManager treats fresh agy auth logs as reauth completion evidence', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-oauth-agy-reauth-'));
+  const getProfileDir = (provider, accountId) => path.join(root, provider, String(accountId));
+  const getToolConfigDir = (provider, accountId) => (
+    provider === 'agy'
+      ? path.join(getProfileDir(provider, accountId), '.gemini', 'antigravity-cli')
+      : path.join(getProfileDir(provider, accountId), `.${provider}`)
+  );
+
+  let killed = false;
+  const manager = createAuthJobManager({
+    fs,
+    processObj: {
+      ...process,
+      cwd: () => root,
+      env: { ...process.env },
+      platform: process.platform,
+      kill() {
+        return;
+      }
+    },
+    ptyImpl: {
+      spawn() {
+        return {
+          pid: 2202,
+          onData() {},
+          onExit() {},
+          kill() {
+            killed = true;
+          }
+        };
+      }
+    },
+    resolveCliPathImpl: () => '/usr/local/bin/agy',
+    getToolAccountIds: () => ['1'],
+    getProfileDir,
+    getToolConfigDir
+  });
+
+  const started = manager.startOauthJob('agy', 'oauth-browser', { accountId: '1' });
+  assert.equal(started.provider, 'agy');
+  assert.equal(started.accountId, '2');
+  assert.equal(manager.getJob(started.jobId).status, 'running');
+
+  const logDir = path.join(getToolConfigDir('agy', started.accountId), 'log');
+  fs.mkdirSync(logDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(logDir, 'auth.log'),
+    'OAuth: authenticated successfully as agy@example.com\n'
+  );
+
+  const job = manager.getJob(started.jobId);
+  assert.equal(job.status, 'succeeded');
+  assert.equal(killed, true);
+});
+
+test('createAuthJobManager auto-confirms agy Google OAuth login method prompt', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-oauth-agy-prompt-'));
+  const getProfileDir = (provider, accountId) => path.join(root, provider, String(accountId));
+  const getToolConfigDir = (provider, accountId) => (
+    provider === 'agy'
+      ? path.join(getProfileDir(provider, accountId), '.gemini', 'antigravity-cli')
+      : path.join(getProfileDir(provider, accountId), `.${provider}`)
+  );
+
+  let onDataHandler = null;
+  const writes = [];
+  const manager = createAuthJobManager({
+    fs,
+    processObj: {
+      ...process,
+      cwd: () => root,
+      env: { ...process.env },
+      platform: process.platform,
+      kill() {
+        return;
+      }
+    },
+    ptyImpl: {
+      spawn() {
+        return {
+          pid: 2302,
+          onData(handler) {
+            onDataHandler = handler;
+          },
+          onExit() {},
+          write(chunk) {
+            writes.push(chunk);
+          },
+          kill() {}
+        };
+      }
+    },
+    resolveCliPathImpl: () => '/usr/local/bin/agy',
+    getToolAccountIds: () => [],
+    getProfileDir,
+    getToolConfigDir
+  });
+
+  const started = manager.startOauthJob('agy', 'oauth-browser');
+  assert.equal(started.provider, 'agy');
+  assert.equal(typeof onDataHandler, 'function');
+
+  onDataHandler([
+    'Welcome to the Antigravity CLI. You are currently not signed in.',
+    'Signing in...',
+    'Select login method:',
+    '> 1. Google OAuth',
+    '2. Use a Google Cloud project',
+    '[Use arrow keys to navigate, Enter to select]'
+  ].join('\n'));
+  onDataHandler('Select login method:\n> 1. Google OAuth\n2. Use a Google Cloud project\n');
+
+  assert.deepEqual(writes, ['1\r']);
+  assert.match(manager.getJob(started.jobId).logs, /自动选择 1\. Google OAuth/);
+});
+
+test('createAuthJobManager submits agy browser authorization code to pty', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-oauth-agy-code-'));
+  const getProfileDir = (provider, accountId) => path.join(root, provider, String(accountId));
+  const getToolConfigDir = (provider, accountId) => (
+    provider === 'agy'
+      ? path.join(getProfileDir(provider, accountId), '.gemini', 'antigravity-cli')
+      : path.join(getProfileDir(provider, accountId), `.${provider}`)
+  );
+
+  let onDataHandler = null;
+  const writes = [];
+  const manager = createAuthJobManager({
+    fs,
+    processObj: {
+      ...process,
+      cwd: () => root,
+      env: { ...process.env },
+      platform: process.platform,
+      kill() {
+        return;
+      }
+    },
+    ptyImpl: {
+      spawn() {
+        return {
+          pid: 2303,
+          onData(handler) {
+            onDataHandler = handler;
+          },
+          onExit() {},
+          write(chunk) {
+            writes.push(chunk);
+          },
+          kill() {}
+        };
+      }
+    },
+    resolveCliPathImpl: () => '/usr/local/bin/agy',
+    getToolAccountIds: () => [],
+    getProfileDir,
+    getToolConfigDir
+  });
+
+  const started = manager.startOauthJob('agy', 'oauth-browser');
+  onDataHandler([
+    'Select login method:',
+    '> 1. Google OAuth',
+    '2. Use a Google Cloud project',
+    'Open this link in the browser (be sure to copy-paste the whole URL):',
+    ' https://accounts.google.com/o/oauth2/auth?access_type=offline&client_id=1071006060591-tmhssin2h21lcre235vtolojh4g403ep',
+    ' .apps.googleusercontent.com&code_challenge=abc123&code_challenge_method=S256&redirect_uri=https%3A%2F%2Fantigravity.google%2Foauth-callback&state=agy-state',
+    "If you aren't automatically redirected, paste the authorization code below:",
+    'authorization code...'
+  ].join('\n'));
+
+  const job = manager.getJob(started.jobId);
+  assert.equal(job.redirectUri, 'https://antigravity.google/oauth-callback');
+  assert.equal(job.oauthState, 'agy-state');
+  assert.match(job.authorizationUrl, /accounts\.google\.com/);
+
+  const result = await manager.completeBrowserOauthCallback(started.jobId, '4/0AgyAuthorizationCode');
+  assert.equal(result.ok, true);
+  assert.equal(manager.getJob(started.jobId).status, 'running');
+  assert.deepEqual(writes, ['1\r', '4/0AgyAuthorizationCode\r']);
+  assert.match(manager.getJob(started.jobId).logs, /已写回 CLI/);
 });
 
 test('createAuthJobManager preserves expired status after device auth expiry triggers onExit', () => {

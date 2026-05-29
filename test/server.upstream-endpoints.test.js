@@ -1071,6 +1071,68 @@ test('upstream passthrough uses Gemini Code Assist adapter for oauth-personal ch
   assert.equal(state.metrics.totalSuccess, 1);
 });
 
+test('upstream passthrough uses Code Assist adapter for agy provider', async () => {
+  const res = createResCapture();
+  const state = {
+    accounts: {
+      agy: [{ id: 'a1', provider: 'agy', email: 'agy@example.com', accessToken: 'tok', authType: 'oauth-personal' }]
+    },
+    cursors: { agy: 0 },
+    metrics: { totalFailures: 0, totalSuccess: 0, totalTimeouts: 0 }
+  };
+  let passthroughCalled = false;
+  const payload = { id: 'chatcmpl-agy', object: 'chat.completion', choices: [] };
+
+  await handleUpstreamPassthrough({
+    options: {
+      provider: 'agy',
+      agyBaseUrl: 'https://daily-cloudcode-pa.googleapis.com/v1internal',
+      upstreamTimeoutMs: 3000,
+      maxAttempts: 1,
+      failureThreshold: 1,
+      logRequests: false
+    },
+    state,
+    req: { url: '/v1/chat/completions', headers: { 'content-type': 'application/json' } },
+    res,
+    method: 'POST',
+    bodyBuffer: Buffer.from('{"x":"y"}'),
+    requestJson: { model: 'agy-gemini-3-flash', messages: [{ role: 'user', content: 'hi' }] },
+    routeKey: 'POST /v1/chat/completions',
+    requestStartedAt: Date.now(),
+    cooldownMs: 1000,
+    requestMeta: { sessionKey: 'agy-thread-1' },
+    deps: {
+      chooseServerAccount: (pool) => pool[0],
+      pushMetricError: () => {},
+      writeJson: (r, code, body) => {
+        r.statusCode = code;
+        r.setHeader('content-type', 'application/json');
+        r.end(JSON.stringify(body));
+      },
+      fetchWithTimeout: async () => {
+        passthroughCalled = true;
+        throw new Error('should_not_call_passthrough');
+      },
+      fetchGeminiCodeAssistChatCompletion: async (callOptions) => {
+        assert.equal(callOptions.provider, 'agy');
+        assert.equal(String(callOptions.sessionKey || ''), 'agy-thread-1');
+        assert.ok(callOptions.geminiSessionIdMap instanceof Map);
+        assert.equal(callOptions.geminiSessionIdMap, state.agySessionIdMap);
+        return payload;
+      },
+      markProxyAccountFailure: () => {},
+      markProxyAccountSuccess: () => {},
+      appendProxyRequestLog: () => {}
+    }
+  });
+
+  assert.equal(passthroughCalled, false);
+  assert.equal(res.statusCode, 200);
+  assert.equal(String(res.body), JSON.stringify(payload));
+  assert.equal(state.metrics.totalSuccess, 1);
+});
+
 test('Gemini Code Assist stream=true uses streamGenerateContent and emits incremental SSE chunks', async () => {
   const res = createResCapture();
   const state = {

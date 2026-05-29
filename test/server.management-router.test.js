@@ -172,7 +172,8 @@ test('management router reload endpoint returns deterministic payload', async ()
     providers: {
       codex: 2,
       gemini: 1,
-      claude: 0
+      claude: 0,
+      agy: 0
     }
   });
 });
@@ -438,7 +439,7 @@ test('management router supports reload and cooldown clear contracts', async () 
   assert.deepEqual(JSON.parse(reloadRes.body), {
     ok: true,
     reloaded: 3,
-    providers: { codex: 1, gemini: 2, claude: 0 }
+    providers: { codex: 1, gemini: 2, claude: 0, agy: 0 }
   });
 
   const clearRes = createResCapture();

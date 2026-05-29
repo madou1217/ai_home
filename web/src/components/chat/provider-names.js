@@ -1,5 +1,6 @@
 export const providerNames = {
   codex: 'ChatGPT',
   claude: 'Claude',
-  gemini: 'Gemini'
+  gemini: 'Gemini',
+  agy: 'Antigravity'
 };

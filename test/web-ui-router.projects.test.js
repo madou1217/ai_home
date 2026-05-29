@@ -717,7 +717,8 @@ test('web ui models uses cache until provider/account signature changes', async 
     assert.deepEqual(firstBody.models, {
       codex: ['gpt-5.4'],
       gemini: ['gemini-2.5-flash', 'gemini-3.1-pro-preview'],
-      claude: []
+      claude: [],
+      agy: []
     });
     assert.equal(firstBody.source, 'remote');
     assert.equal(firstBody.scannedAccounts, 1);
@@ -756,7 +757,8 @@ test('web ui models uses cache until provider/account signature changes', async 
     assert.deepEqual(thirdBody.models, {
       codex: ['gpt-5.4'],
       gemini: ['gemini-2.5-flash', 'gemini-3.1-pro-preview'],
-      claude: ['claude-sonnet-4']
+      claude: ['claude-sonnet-4'],
+      agy: []
     });
     assert.equal(fetchCalls, 3);
   } finally {
@@ -815,7 +817,8 @@ test('web ui models does not invent Gemini defaults when remote discovery fails'
     assert.deepEqual(body.models, {
       codex: [],
       gemini: [],
-      claude: []
+      claude: [],
+      agy: []
     });
   } finally {
     fs.rmSync(aiHomeDir, { recursive: true, force: true });

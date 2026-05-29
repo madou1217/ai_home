@@ -8,7 +8,8 @@ export { providerNames } from './provider-names.js';
 const iconMap: Record<Provider, string> = {
   codex: openaiIcon,
   claude: claudeIcon,
-  gemini: geminiIcon
+  gemini: geminiIcon,
+  agy: geminiIcon
 };
 
 interface Props {

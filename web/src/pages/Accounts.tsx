@@ -111,6 +111,13 @@ const PROVIDER_AUTH_OPTIONS: Record<Provider, Array<{
       label: 'Gemini API Key',
       description: '绑定 GEMINI_API_KEY 或 GOOGLE_API_KEY。'
     }
+  ],
+  agy: [
+    {
+      value: 'oauth-browser',
+      label: 'Antigravity 登录',
+      description: '使用 Antigravity CLI 原生 Google 登录流程。'
+    }
   ]
 };
 
@@ -292,6 +299,9 @@ function formatSchedulableReason(reason?: string) {
   if (text === 'codex_team_plan_missing_rate_limits') {
     return '当前账号 token claim 仍是 Team，但 Codex 没返回可计算额度窗口；server 暂不把它放进账号池，建议重新登录确认。';
   }
+  if (text === 'agy_access_token_required') {
+    return 'Antigravity OAuth token 在系统 keyring 中，aih server 不能安全读取；需要在账号环境中显式配置 AGY_ACCESS_TOKEN 后才会进入聊天/转发池。';
+  }
   return text;
 }
 
@@ -306,6 +316,8 @@ function renderPolicyBlockedTag(record: Pick<Account, 'schedulableReason'>) {
         ? { color: 'warning', label: 'Free 待确认' }
         : rawReason === 'codex_team_plan_missing_rate_limits'
           ? { color: 'warning', label: 'Team 待确认' }
+          : rawReason === 'agy_access_token_required'
+            ? { color: 'warning', label: '需 Token' }
           : { color: 'warning', label: '已停池' }
   );
   const tag = <Tag color={meta.color}>{meta.label}</Tag>;
@@ -945,7 +957,7 @@ const Accounts = () => {
     if (!addJob || addJob.status !== 'running') return;
     const callbackUrl = authCallbackUrl.trim();
     if (!callbackUrl) {
-      message.warning('请粘贴回调地址');
+      message.warning(addJob.provider === 'agy' ? '请粘贴授权码' : '请粘贴回调地址');
       return;
     }
     setAuthCallbackSubmitting(true);
@@ -953,7 +965,7 @@ const Accounts = () => {
       const job = await accountsAPI.completeBrowserCallback(addJob.id, callbackUrl);
       setAddJob(job);
       setAuthCallbackUrl('');
-      message.success('回调已提交，正在确认授权结果');
+      message.success(addJob.provider === 'agy' ? '授权码已提交，正在确认授权结果' : '回调已提交，正在确认授权结果');
     } catch (error: any) {
       if (error?.response?.data?.job) {
         setAddJob(error.response.data.job);
@@ -1199,7 +1211,8 @@ const Accounts = () => {
       all: { total: 0, healthy: 0, exhausted: 0, policyBlocked: 0, usageAttention: 0, runtimeBlocked: 0, disabled: 0, unconfigured: 0 },
       codex: { total: 0, healthy: 0, exhausted: 0, policyBlocked: 0, usageAttention: 0, runtimeBlocked: 0, disabled: 0, unconfigured: 0 },
       gemini: { total: 0, healthy: 0, exhausted: 0, policyBlocked: 0, usageAttention: 0, runtimeBlocked: 0, disabled: 0, unconfigured: 0 },
-      claude: { total: 0, healthy: 0, exhausted: 0, policyBlocked: 0, usageAttention: 0, runtimeBlocked: 0, disabled: 0, unconfigured: 0 }
+      claude: { total: 0, healthy: 0, exhausted: 0, policyBlocked: 0, usageAttention: 0, runtimeBlocked: 0, disabled: 0, unconfigured: 0 },
+      agy: { total: 0, healthy: 0, exhausted: 0, policyBlocked: 0, usageAttention: 0, runtimeBlocked: 0, disabled: 0, unconfigured: 0 }
     };
 
     accounts.forEach(account => {
@@ -1543,6 +1556,14 @@ const Accounts = () => {
           <ProviderIcon provider="claude" size={14} /> Claude ({providerStats.claude.total})
         </span>
       )
+    },
+    {
+      key: 'agy',
+      label: (
+        <span style={{ padding: '0 8px', display: 'flex', alignItems: 'center', gap: 4 }}>
+          <ProviderIcon provider="agy" size={14} /> Antigravity ({providerStats.agy.total})
+        </span>
+      )
     }
   ];
 
@@ -1573,7 +1594,7 @@ const Accounts = () => {
             valueStyle={{ color: '#1677ff' }}
           />
           <Space wrap size={[8, 8]} style={{ marginTop: 12 }}>
-            {(['codex', 'gemini', 'claude'] as Provider[]).map((provider) => (
+            {(['codex', 'gemini', 'claude', 'agy'] as Provider[]).map((provider) => (
               <Tag key={provider} color="blue">
                 <Space size={4}>
                   <ProviderIcon provider={provider} size={12} />
@@ -1971,6 +1992,12 @@ const Accounts = () => {
                   <span>Claude (Anthropic)</span>
                 </Space>
               </Select.Option>
+              <Select.Option value="agy">
+                <Space align="center">
+                  <ProviderIcon provider="agy" size={18} />
+                  <span>Antigravity (Google)</span>
+                </Space>
+              </Select.Option>
             </Select>
           </Form.Item>
 
@@ -2112,12 +2139,16 @@ const Accounts = () => {
                 {addJob.status === 'running' ? (
                   <Space direction="vertical" style={{ width: '100%' }} size="small">
                     <Text type="secondary">
-                      授权后如果浏览器停在回调页或显示无法连接，把地址栏完整地址粘贴到这里。只有本次授权链接的 state 才会被接受。
+                      {addJob.provider === 'agy'
+                        ? '授权后如果页面显示 authorization code，把完整授权码粘贴到这里，系统会写回 Antigravity CLI。'
+                        : '授权后如果浏览器停在回调页或显示无法连接，把地址栏完整地址粘贴到这里。只有本次授权链接的 state 才会被接受。'}
                     </Text>
                     <Input.TextArea
                       value={authCallbackUrl}
                       onChange={(event) => setAuthCallbackUrl(event.target.value)}
-                      placeholder="粘贴完整回调地址，或只粘贴 ?code=...&state=..."
+                      placeholder={addJob.provider === 'agy'
+                        ? '粘贴 Google 授权页返回的完整授权码'
+                        : '粘贴完整回调地址，或只粘贴 ?code=...&state=...'}
                       autoSize={{ minRows: 2, maxRows: 4 }}
                     />
                     <Button
@@ -2126,7 +2157,7 @@ const Accounts = () => {
                       loading={authCallbackSubmitting}
                       disabled={!authCallbackUrl.trim()}
                     >
-                      提交回调
+                      {addJob.provider === 'agy' ? '提交授权码' : '提交回调'}
                     </Button>
                   </Space>
                 ) : null}

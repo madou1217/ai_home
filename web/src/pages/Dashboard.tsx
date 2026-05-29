@@ -32,13 +32,14 @@ import UsageSnapshotCell from '@/components/account/UsageSnapshotCell';
 import { getBaseDomain, isInternalAccountLabel } from '@/utils/account-labels';
 
 const { Text } = Typography;
-const PROVIDERS: Provider[] = ['codex', 'gemini', 'claude'];
+const PROVIDERS: Provider[] = ['codex', 'gemini', 'claude', 'agy'];
 
 const formatPercent = (value?: number) => `${(Number(value || 0) * 100).toFixed(1)}%`;
 const DEFAULT_API_KEY_DOMAINS: Record<Provider, string> = {
   codex: 'api.openai.com',
   claude: 'api.anthropic.com',
-  gemini: 'generativelanguage.googleapis.com'
+  gemini: 'generativelanguage.googleapis.com',
+  agy: 'daily-cloudcode-pa.googleapis.com'
 };
 const getDashboardAccountPrimaryLabel = (record: Pick<ManagementAccount, 'email' | 'baseUrl' | 'apiKeyMode' | 'provider'>) => {
   if (record.apiKeyMode) {

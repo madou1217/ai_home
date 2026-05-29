@@ -8,6 +8,7 @@ logs/
 gitleaks-report.json
 tmp/
 .aih/
+.antigravitycli/
 
 # Documentation policy: keep only the two root entry docs.
 *.md

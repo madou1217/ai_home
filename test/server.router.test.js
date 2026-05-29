@@ -16,6 +16,10 @@ test('resolveRequestProvider respects explicit mode and model hint', () => {
   assert.equal(resolveRequestProvider({ provider: 'codex' }, { model: 'gemini-2.5-flash' }), 'codex');
   assert.equal(resolveRequestProvider({ provider: 'gemini' }, { model: 'gpt-4o-mini' }), 'gemini');
   assert.equal(resolveRequestProvider({ provider: 'claude' }, { model: 'gpt-4o-mini' }), 'claude');
+  assert.equal(resolveRequestProvider({ provider: 'agy' }, { model: 'gemini-2.5-flash' }), 'agy');
+  assert.equal(resolveRequestProvider({ provider: 'auto' }, { provider: 'agy', model: 'gemini-2.5-flash' }), 'agy');
+  assert.equal(resolveRequestProvider({ provider: 'auto' }, { model: 'agy-gemini-3-flash' }), 'agy');
+  assert.equal(resolveRequestProvider({ provider: 'auto' }, { model: 'antigravity-gemini-3-flash' }), 'agy');
   assert.equal(resolveRequestProvider({ provider: 'auto' }, { model: 'gemini-2.5-pro' }), 'gemini');
   assert.equal(resolveRequestProvider({ provider: 'auto' }, { model: 'claude-sonnet-4-5' }), 'claude');
   assert.equal(resolveRequestProvider({ provider: 'auto' }, { model: 'gpt-dynamic' }), 'codex');

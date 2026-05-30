@@ -890,7 +890,7 @@ test('ensureSessionStoreLinks shares settings.json and links folders while keepi
   assert.ok(fs.lstatSync(guestAgyConfigDir).isSymbolicLink());
 });
 
-test('ensureSessionStoreLinks symlinks macOS keychain folder to allow normal keychain access when HOME is sandboxed', (t) => {
+test('ensureSessionStoreLinks symlinks macOS keychain and preference folders to allow normal keychain access when HOME is sandboxed', (t) => {
   const root = mkTmpDir();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
@@ -898,8 +898,11 @@ test('ensureSessionStoreLinks symlinks macOS keychain folder to allow normal key
   const profilesDir = path.join(root, 'profiles');
   
   const hostKeychainsDir = path.join(hostHomeDir, 'Library', 'Keychains');
+  const hostPreferencesDir = path.join(hostHomeDir, 'Library', 'Preferences');
   fs.mkdirSync(hostKeychainsDir, { recursive: true });
+  fs.mkdirSync(hostPreferencesDir, { recursive: true });
   fs.writeFileSync(path.join(hostKeychainsDir, 'login.keychain-db'), 'keychain content');
+  fs.writeFileSync(path.join(hostPreferencesDir, 'com.apple.security.plist'), 'preferences content');
   
   const agyProfileDir = path.join(profilesDir, 'agy', '1');
   const guestAgyDir = path.join(agyProfileDir, '.gemini', 'antigravity-cli');
@@ -928,5 +931,13 @@ test('ensureSessionStoreLinks symlinks macOS keychain folder to allow normal key
   assert.equal(
     fs.realpathSync(guestKeychainsDir),
     fs.realpathSync(hostKeychainsDir)
+  );
+
+  const guestPreferencesDir = path.join(agyProfileDir, 'Library', 'Preferences');
+  assert.ok(fs.existsSync(guestPreferencesDir));
+  assert.ok(fs.lstatSync(guestPreferencesDir).isSymbolicLink());
+  assert.equal(
+    fs.realpathSync(guestPreferencesDir),
+    fs.realpathSync(hostPreferencesDir)
   );
 });

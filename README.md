@@ -167,5 +167,6 @@ npm run build
 
 ## 说明
 
+- 关于 agy (Antigravity CLI) 用量刷新：由于 `agy` 账号采用命令行 consumerOAuth 方式授权，其 OAuth Token 不具备 IDE (`antigravity-ide`) 专属的 Code Assist 接口权限范围。向 `cloudcode-pa.googleapis.com` (Product Agent) 接口查询会遭遇 403 Forbidden 响应。因此系统对 `agy` 账号屏蔽了自动用量刷新，以保护账号免受频繁请求触发的风控及拉黑限制。
 - 文档只保留当前可用用法
 - 具体实现细节以代码和测试为准

@@ -714,3 +714,58 @@ test('fetchGeminiCodeAssistChatCompletion passes through Gemini UUID session ids
 
   assert.equal(seenSessionId, sessionId);
 });
+
+test('fetchGeminiCodeAssistChatCompletion maps custom agy models upstream and preserves original requested model in response', async (t) => {
+  let seenModel = '';
+  t.mock.method(global, 'fetch', async (url, init) => {
+    const safeUrl = String(url || '');
+    if (safeUrl.includes(':loadCodeAssist')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ cloudaicompanionProject: 'projects/test-project' })
+      };
+    }
+    if (safeUrl.includes(':generateContent')) {
+      const requestBody = JSON.parse(String(init && init.body || '{}'));
+      seenModel = requestBody.model;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          traceId: 'trace-uuid',
+          modelVersion: 'gemini-3-1-pro-preview',
+          candidates: [{
+            finishReason: 'STOP',
+            content: { parts: [{ text: 'OK' }] }
+          }],
+          usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1, totalTokenCount: 2 }
+        })
+      };
+    }
+    throw new Error(`unexpected_url_${safeUrl}`);
+  });
+
+  const result = await fetchGeminiCodeAssistChatCompletion(
+    {
+      geminiBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+      geminiSessionIdMap: new Map()
+    },
+    {
+      provider: 'agy',
+      id: '3',
+      authType: 'oauth-personal',
+      accessToken: 'token-3'
+    },
+    {
+      model: 'Gemini 3.5 Flash (High)',
+      messages: [{ role: 'user', content: 'hi' }]
+    },
+    800
+  );
+
+  // Upstream request should be mapped to the target pro/preview model
+  assert.equal(seenModel, 'gemini-3-flash-preview');
+  // Response returned to the client should preserve the original requested model name
+  assert.equal(result.model, 'Gemini 3.5 Flash (High)');
+});

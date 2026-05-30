@@ -868,6 +868,20 @@ test('runtime strips inherited codex session env from spawned sandbox', () => {
   assert.deepEqual(rawModeCalls, [true, false]);
 });
 
+test('runtime injects bypass keyring environment variables for agy provider', () => {
+  const { runtime, proc, spawns, rawModeCalls } = createRuntimeHarness();
+  runtime.runCliPtyTracked('agy', '3', ['--version'], false);
+  assert.equal(spawns.length, 1);
+  const env = spawns[0].options.env || {};
+  assert.equal(env.SSH_CLIENT, '127.0.0.1 12345 22');
+  assert.equal(env.SSH_TTY, '/dev/tty');
+  assert.equal(env.container, 'docker');
+  assert.equal(env.WSL_DISTRO_NAME, 'Ubuntu');
+
+  assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
+  assert.deepEqual(rawModeCalls, [true, false]);
+});
+
 test('runtime does not start usage refresh scheduler in PTY mode by default', () => {
   const { runtime, proc, getSchedulerCalls } = createRuntimeHarness();
   runtime.runCliPtyTracked('codex', '10086', ['--version'], false);

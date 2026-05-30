@@ -904,9 +904,9 @@ test('ensureSessionStoreLinks symlinks macOS keychain and preference folders to 
   fs.writeFileSync(path.join(hostKeychainsDir, 'login.keychain-db'), 'keychain content');
   fs.writeFileSync(path.join(hostPreferencesDir, 'com.apple.security.plist'), 'preferences content');
   
-  const agyProfileDir = path.join(profilesDir, 'agy', '1');
-  const guestAgyDir = path.join(agyProfileDir, '.gemini', 'antigravity-cli');
-  fs.mkdirSync(guestAgyDir, { recursive: true });
+  const geminiProfileDir = path.join(profilesDir, 'gemini', '1');
+  const guestGeminiDir = path.join(geminiProfileDir, '.gemini');
+  fs.mkdirSync(guestGeminiDir, { recursive: true });
   
   const service = createSessionStoreService({
     fs,
@@ -916,16 +916,16 @@ test('ensureSessionStoreLinks symlinks macOS keychain and preference folders to 
     profilesDir,
     hostHomeDir,
     cliConfigs: {
-      agy: { globalDir: '.gemini', configSubDir: 'antigravity-cli' }
+      gemini: { globalDir: '.gemini' }
     },
     getProfileDir: (cliName, id) => path.join(profilesDir, cliName, String(id)),
     ensureDir: (dir) => fs.mkdirSync(dir, { recursive: true })
   });
 
-  const result = service.ensureSessionStoreLinks('agy', '1');
+  const result = service.ensureSessionStoreLinks('gemini', '1');
   assert.ok(result);
 
-  const guestKeychainsDir = path.join(agyProfileDir, 'Library', 'Keychains');
+  const guestKeychainsDir = path.join(geminiProfileDir, 'Library', 'Keychains');
   assert.ok(fs.existsSync(guestKeychainsDir));
   assert.ok(fs.lstatSync(guestKeychainsDir).isSymbolicLink());
   assert.equal(
@@ -933,7 +933,7 @@ test('ensureSessionStoreLinks symlinks macOS keychain and preference folders to 
     fs.realpathSync(hostKeychainsDir)
   );
 
-  const guestPreferencesDir = path.join(agyProfileDir, 'Library', 'Preferences');
+  const guestPreferencesDir = path.join(geminiProfileDir, 'Library', 'Preferences');
   assert.ok(fs.existsSync(guestPreferencesDir));
   assert.ok(fs.lstatSync(guestPreferencesDir).isSymbolicLink());
   assert.equal(

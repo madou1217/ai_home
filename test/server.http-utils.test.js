@@ -769,3 +769,76 @@ test('fetchGeminiCodeAssistChatCompletion maps custom agy models upstream and pr
   // Response returned to the client should preserve the original requested model name
   assert.equal(result.model, 'Gemini 3.5 Flash (High)');
 });
+
+test('fetchGeminiCodeAssistChatCompletion strips $schema, $id and normalizes array types in tool parameters for Gemini', async (t) => {
+  let generateBody = null;
+  t.mock.method(global, 'fetch', async (url, init) => {
+    const safeUrl = String(url || '');
+    if (safeUrl.includes(':loadCodeAssist')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ cloudaicompanionProject: 'projects/test-project' })
+      };
+    }
+    if (safeUrl.includes(':generateContent')) {
+      generateBody = JSON.parse(String(init && init.body || '{}'));
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          traceId: 'trace-1',
+          modelVersion: 'gemini-2.5-pro',
+          candidates: [{
+            finishReason: 'STOP',
+            content: { parts: [{ text: 'OK' }] }
+          }],
+          usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 2, totalTokenCount: 3 }
+        })
+      };
+    }
+    throw new Error(`unexpected_url_${safeUrl}`);
+  });
+
+  await fetchGeminiCodeAssistChatCompletion(
+    {
+      geminiBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+      geminiSessionIdMap: new Map()
+    },
+    {
+      provider: 'gemini',
+      authType: 'oauth-personal',
+      accessToken: 'token-1'
+    },
+    {
+      model: 'gemini-2.5-pro',
+      messages: [{ role: 'user', content: 'hi' }],
+      tools: [{
+        type: 'function',
+        function: {
+          name: 'get_weather',
+          description: 'get weather info',
+          parameters: {
+            $schema: 'http://json-schema.org/draft-07/schema#',
+            $id: 'weather-schema-id',
+            type: 'object',
+            properties: {
+              location: {
+                type: ['string', 'null'],
+                description: 'city name'
+              }
+            }
+          }
+        }
+      }]
+    },
+    800
+  );
+
+  assert.ok(generateBody);
+  const schema = generateBody.request.tools[0].functionDeclarations[0].parameters;
+  assert.equal(schema.$schema, undefined);
+  assert.equal(schema.$id, undefined);
+  assert.equal(schema.type, 'object');
+  assert.equal(schema.properties.location.type, 'string');
+});

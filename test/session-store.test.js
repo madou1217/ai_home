@@ -889,3 +889,44 @@ test('ensureSessionStoreLinks shares settings.json and links folders while keepi
   // Verify that the parent .gemini/config directory is also shared (symlinked)
   assert.ok(fs.lstatSync(guestAgyConfigDir).isSymbolicLink());
 });
+
+test('ensureSessionStoreLinks symlinks macOS keychain folder to allow normal keychain access when HOME is sandboxed', (t) => {
+  const root = mkTmpDir();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const hostHomeDir = path.join(root, 'home');
+  const profilesDir = path.join(root, 'profiles');
+  
+  const hostKeychainsDir = path.join(hostHomeDir, 'Library', 'Keychains');
+  fs.mkdirSync(hostKeychainsDir, { recursive: true });
+  fs.writeFileSync(path.join(hostKeychainsDir, 'login.keychain-db'), 'keychain content');
+  
+  const agyProfileDir = path.join(profilesDir, 'agy', '1');
+  const guestAgyDir = path.join(agyProfileDir, '.gemini', 'antigravity-cli');
+  fs.mkdirSync(guestAgyDir, { recursive: true });
+  
+  const service = createSessionStoreService({
+    fs,
+    fse,
+    path,
+    processObj: { platform: 'darwin' },
+    profilesDir,
+    hostHomeDir,
+    cliConfigs: {
+      agy: { globalDir: '.gemini', configSubDir: 'antigravity-cli' }
+    },
+    getProfileDir: (cliName, id) => path.join(profilesDir, cliName, String(id)),
+    ensureDir: (dir) => fs.mkdirSync(dir, { recursive: true })
+  });
+
+  const result = service.ensureSessionStoreLinks('agy', '1');
+  assert.ok(result);
+
+  const guestKeychainsDir = path.join(agyProfileDir, 'Library', 'Keychains');
+  assert.ok(fs.existsSync(guestKeychainsDir));
+  assert.ok(fs.lstatSync(guestKeychainsDir).isSymbolicLink());
+  assert.equal(
+    fs.realpathSync(guestKeychainsDir),
+    fs.realpathSync(hostKeychainsDir)
+  );
+});

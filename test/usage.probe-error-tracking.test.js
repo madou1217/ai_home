@@ -58,7 +58,9 @@ test('gemini probe records probe error when output markers are missing', () => {
   const root = mkTmpDir();
   try {
     const profileDir = path.join(root, 'profiles', 'gemini', '1');
-    fs.mkdirSync(profileDir, { recursive: true });
+    const configDir = path.join(profileDir, '.gemini');
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.writeFileSync(path.join(configDir, 'oauth_creds.json'), JSON.stringify({ access_token: 'fake-token' }));
 
     const service = createUsageSnapshotService(makeBaseServiceOptions(root, {
       spawnSync: () => ({ stdout: 'garbage output', stderr: '' }),
@@ -80,7 +82,9 @@ test('gemini probe records probe_not_ok when ok is false', () => {
   const root = mkTmpDir();
   try {
     const profileDir = path.join(root, 'profiles', 'gemini', '1');
-    fs.mkdirSync(profileDir, { recursive: true });
+    const configDir = path.join(profileDir, '.gemini');
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.writeFileSync(path.join(configDir, 'oauth_creds.json'), JSON.stringify({ access_token: 'fake-token' }));
 
     const payload = JSON.stringify({ ok: false, error: 'auth_failed' });
     const stdout = `AIH_QUOTA_JSON_START\n${payload}\nAIH_QUOTA_JSON_END\n`;
@@ -104,7 +108,9 @@ test('gemini probe records empty_parsed_snapshot when buckets produce no models'
   const root = mkTmpDir();
   try {
     const profileDir = path.join(root, 'profiles', 'gemini', '1');
-    fs.mkdirSync(profileDir, { recursive: true });
+    const configDir = path.join(profileDir, '.gemini');
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.writeFileSync(path.join(configDir, 'oauth_creds.json'), JSON.stringify({ access_token: 'fake-token' }));
 
     const payload = JSON.stringify({ ok: true, buckets: [] });
     const stdout = `AIH_QUOTA_JSON_START\n${payload}\nAIH_QUOTA_JSON_END\n`;
@@ -128,7 +134,9 @@ test('gemini probe clears probe error on successful snapshot', () => {
   const root = mkTmpDir();
   try {
     const profileDir = path.join(root, 'profiles', 'gemini', '1');
-    fs.mkdirSync(profileDir, { recursive: true });
+    const configDir = path.join(profileDir, '.gemini');
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.writeFileSync(path.join(configDir, 'oauth_creds.json'), JSON.stringify({ access_token: 'fake-token' }));
 
     // First: produce an error
     const failPayload = JSON.stringify({ ok: false, error: 'temp_failure' });
@@ -172,7 +180,9 @@ test('gemini probe records probe_exception on spawnSync throw', () => {
   const root = mkTmpDir();
   try {
     const profileDir = path.join(root, 'profiles', 'gemini', '1');
-    fs.mkdirSync(profileDir, { recursive: true });
+    const configDir = path.join(profileDir, '.gemini');
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.writeFileSync(path.join(configDir, 'oauth_creds.json'), JSON.stringify({ access_token: 'fake-token' }));
 
     const service = createUsageSnapshotService(makeBaseServiceOptions(root, {
       spawnSync: () => { throw new Error('spawn failed'); },
@@ -390,7 +400,9 @@ test('gemini probe failure records timestamped probe state accessible via getLas
   const root = mkTmpDir();
   try {
     const profileDir = path.join(root, 'profiles', 'gemini', '1');
-    fs.mkdirSync(profileDir, { recursive: true });
+    const configDir = path.join(profileDir, '.gemini');
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.writeFileSync(path.join(configDir, 'oauth_creds.json'), JSON.stringify({ access_token: 'fake-token' }));
 
     const service = createUsageSnapshotService(makeBaseServiceOptions(root, {
       spawnSync: () => ({ stdout: 'no markers', stderr: '' }),

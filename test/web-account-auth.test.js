@@ -877,7 +877,7 @@ test('createAuthJobManager marks gemini oauth job succeeded when oauth_creds fil
   assert.equal(job.status, 'succeeded');
 });
 
-test('createAuthJobManager treats fresh agy auth logs as reauth completion evidence', () => {
+test('createAuthJobManager treats fresh agy oauth token file as reauth completion evidence', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-oauth-agy-reauth-'));
   const getProfileDir = (provider, accountId) => path.join(root, provider, String(accountId));
   const getToolConfigDir = (provider, accountId) => (
@@ -921,11 +921,16 @@ test('createAuthJobManager treats fresh agy auth logs as reauth completion evide
   assert.equal(started.accountId, '2');
   assert.equal(manager.getJob(started.jobId).status, 'running');
 
-  const logDir = path.join(getToolConfigDir('agy', started.accountId), 'log');
-  fs.mkdirSync(logDir, { recursive: true });
+  const configDir = getToolConfigDir('agy', started.accountId);
+  fs.mkdirSync(configDir, { recursive: true });
   fs.writeFileSync(
-    path.join(logDir, 'auth.log'),
-    'OAuth: authenticated successfully as agy@example.com\n'
+    path.join(configDir, 'antigravity-oauth-token'),
+    JSON.stringify({
+      token: {
+        access_token: 'dummy-access-token'
+      },
+      auth_method: 'oauth'
+    })
   );
 
   const job = manager.getJob(started.jobId);

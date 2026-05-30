@@ -334,18 +334,21 @@ describe('Account Status - API Key Mode', () => {
     }
   });
 
-  it('should read agy keyring oauth identity from antigravity logs', () => {
+  it('should read agy identity from antigravity-oauth-token file', () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-test-status-agy-'));
 
     try {
       const profileDir = path.join(tmpDir, 'agy', '1');
-      const logDir = path.join(profileDir, '.gemini', 'antigravity-cli', 'log');
-      fs.mkdirSync(logDir, { recursive: true });
-      fs.writeFileSync(path.join(logDir, 'latest.log'), [
-        'ChainedAuth: authenticated via keyring (effective: keyring)',
-        'applyAuthResult: email=agy@example.com, authMethod=consumer',
-        'OAuth: authenticated successfully as agy@example.com'
-      ].join('\n'));
+      const configDir = path.join(profileDir, '.gemini', 'antigravity-cli');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(path.join(configDir, 'antigravity-oauth-token'), JSON.stringify({
+        token: {
+          access_token: 'valid_access_token',
+          refresh_token: 'valid_refresh_token',
+          expiry: '2026-05-30'
+        },
+        auth_method: 'oauth'
+      }));
 
       const checkStatus = createAccountStatusChecker({
         fs,
@@ -358,13 +361,13 @@ describe('Account Status - API Key Mode', () => {
 
       const status = checkStatus('agy', profileDir);
       assert.equal(status.configured, true);
-      assert.equal(status.accountName, 'agy@example.com');
+      assert.equal(status.accountName, 'OAuth Configured');
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
   });
 
-  it('should return configured=false for agy settings without login logs', () => {
+  it('should return configured=false for agy settings without token files', () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-test-status-agy-'));
 
     try {
@@ -390,17 +393,15 @@ describe('Account Status - API Key Mode', () => {
     }
   });
 
-  it('should treat latest agy logged-out event as unconfigured', () => {
+  it('should recognize agy token-based auth from .aih_env.json', () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-test-status-agy-'));
 
     try {
       const profileDir = path.join(tmpDir, 'agy', '3');
-      const logDir = path.join(profileDir, '.gemini', 'antigravity-cli', 'log');
-      fs.mkdirSync(logDir, { recursive: true });
-      fs.writeFileSync(path.join(logDir, 'latest.log'), [
-        'OAuth: authenticated successfully as stale@example.com',
-        'You are not logged into Antigravity'
-      ].join('\n'));
+      fs.mkdirSync(profileDir, { recursive: true });
+      fs.writeFileSync(path.join(profileDir, '.aih_env.json'), JSON.stringify({
+        AGY_ACCESS_TOKEN: 'explicit_token'
+      }));
 
       const checkStatus = createAccountStatusChecker({
         fs,
@@ -412,8 +413,8 @@ describe('Account Status - API Key Mode', () => {
       });
 
       const status = checkStatus('agy', profileDir);
-      assert.equal(status.configured, false);
-      assert.equal(status.accountName, 'Unknown');
+      assert.equal(status.configured, true);
+      assert.equal(status.accountName, 'Access Token: expli...oken');
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }

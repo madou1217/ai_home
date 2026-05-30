@@ -1907,10 +1907,15 @@ test('web ui accounts list does not render agy keyring-only accounts as exhauste
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const profileDir = path.join(root, 'profiles', 'agy', '1');
   const configDir = path.join(profileDir, '.gemini', 'antigravity-cli');
-  fs.mkdirSync(path.join(configDir, 'log'), { recursive: true });
+  fs.mkdirSync(configDir, { recursive: true });
   fs.writeFileSync(
-    path.join(configDir, 'log', 'latest.log'),
-    'OAuth: authenticated successfully as agy@example.com\n',
+    path.join(configDir, 'antigravity-oauth-token'),
+    JSON.stringify({
+      token: {
+        access_token: 'dummy-access-token'
+      },
+      auth_method: 'oauth'
+    }),
     'utf8'
   );
 

@@ -713,11 +713,18 @@ test('ensureSessionStoreLinks uses win32 directory links when the host target is
   const result = service.ensureSessionStoreLinks('gemini', '1');
 
   assert.equal(result.linked >= 1, true);
-  assert.deepEqual(fake.calls.symlink, [{
-    targetPath: pathImpl.join(hostGeminiDir, 'tmp'),
-    linkPath: accountTmpDir,
-    type: 'junction'
-  }]);
+  assert.deepEqual(fake.calls.symlink, [
+    {
+      targetPath: pathImpl.join(hostGeminiDir, 'tmp'),
+      linkPath: accountTmpDir,
+      type: 'junction'
+    },
+    {
+      targetPath: pathImpl.join(hostGeminiDir, 'tmp-real'),
+      linkPath: pathImpl.join(accountGeminiDir, 'tmp-real'),
+      type: 'junction'
+    }
+  ]);
   assert.deepEqual(fake.calls.hardlink, []);
   assert.deepEqual(fake.calls.unlink, []);
 });
@@ -777,10 +784,108 @@ test('ensureSessionStoreLinks repairs win32 directory links that were created as
 
   assert.equal(result.linked >= 1, true);
   assert.deepEqual(fake.calls.unlink, [accountTmpDir]);
-  assert.deepEqual(fake.calls.symlink, [{
-    targetPath: pathImpl.join(hostGeminiDir, 'tmp'),
-    linkPath: accountTmpDir,
-    type: 'junction'
-  }]);
+  assert.deepEqual(fake.calls.symlink, [
+    {
+      targetPath: pathImpl.join(hostGeminiDir, 'tmp'),
+      linkPath: accountTmpDir,
+      type: 'junction'
+    },
+    {
+      targetPath: pathImpl.join(hostGeminiDir, 'tmp-real'),
+      linkPath: pathImpl.join(accountGeminiDir, 'tmp-real'),
+      type: 'junction'
+    }
+  ]);
   assert.deepEqual(fake.calls.hardlink, []);
+});
+
+test('ensureSessionStoreLinks shares settings.json and links folders while keeping credentials isolated for claude, gemini, and agy', (t) => {
+  const root = mkTmpDir();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const hostHomeDir = path.join(root, 'home');
+  const profilesDir = path.join(root, 'profiles');
+  
+  const hostClaudeDir = path.join(hostHomeDir, '.claude');
+  const hostGeminiDir = path.join(hostHomeDir, '.gemini');
+  const hostGeminiConfigDir = path.join(hostGeminiDir, 'config');
+  
+  fs.mkdirSync(hostHomeDir, { recursive: true });
+  fs.mkdirSync(hostClaudeDir, { recursive: true });
+  fs.mkdirSync(hostGeminiDir, { recursive: true });
+  fs.mkdirSync(hostGeminiConfigDir, { recursive: true });
+  
+  fs.writeFileSync(path.join(hostClaudeDir, 'settings.json'), '{"global":true}');
+  fs.writeFileSync(path.join(hostGeminiDir, 'settings.json'), '{"global":true}');
+  fs.writeFileSync(path.join(hostGeminiConfigDir, 'mcp_config.json'), '{"global":true}');
+  
+  const claudeProfileDir = path.join(profilesDir, 'claude', '1');
+  const geminiProfileDir = path.join(profilesDir, 'gemini', '1');
+  const agyProfileDir = path.join(profilesDir, 'agy', '1');
+  
+  const guestClaudeDir = path.join(claudeProfileDir, '.claude');
+  const guestGeminiDir = path.join(geminiProfileDir, '.gemini');
+  
+  const guestAgyParentDir = path.join(agyProfileDir, '.gemini');
+  const guestAgyConfigDir = path.join(guestAgyParentDir, 'config');
+  const guestAgyDir = path.join(guestAgyParentDir, 'antigravity-cli');
+  
+  fs.mkdirSync(guestClaudeDir, { recursive: true });
+  fs.mkdirSync(guestGeminiDir, { recursive: true });
+  fs.mkdirSync(guestAgyDir, { recursive: true });
+  fs.mkdirSync(guestAgyConfigDir, { recursive: true });
+  
+  fs.writeFileSync(path.join(guestClaudeDir, 'settings.json'), '{"local":true}');
+  fs.writeFileSync(path.join(guestClaudeDir, '.credentials.json'), '{"token":1}');
+  
+  fs.writeFileSync(path.join(guestGeminiDir, 'settings.json'), '{"local":true}');
+  fs.writeFileSync(path.join(guestGeminiDir, 'google_accounts.json'), '{"active":1}');
+  fs.writeFileSync(path.join(guestGeminiDir, 'oauth_creds.json'), '{"token":2}');
+  
+  fs.mkdirSync(path.join(guestAgyDir, 'log'), { recursive: true });
+  fs.writeFileSync(path.join(guestAgyDir, 'log', 'client.log'), 'authenticated');
+  fs.writeFileSync(path.join(guestAgyDir, 'settings.json'), '{"agy":true}');
+  fs.writeFileSync(path.join(guestAgyDir, 'antigravity-oauth-token'), 'oauth_token_secret');
+  fs.writeFileSync(path.join(guestAgyDir, 'cli.log'), 'cli_logs');
+  fs.writeFileSync(path.join(guestAgyConfigDir, 'mcp_config.json'), '{"local":true}');
+  
+  const service = createSessionStoreService({
+    fs,
+    fse,
+    path,
+    processObj: process,
+    profilesDir,
+    hostHomeDir,
+    cliConfigs: {
+      claude: { globalDir: '.claude' },
+      gemini: { globalDir: '.gemini' },
+      agy: { globalDir: '.gemini', configSubDir: 'antigravity-cli' }
+    },
+    getProfileDir: (cliName, id) => path.join(profilesDir, cliName, String(id)),
+    ensureDir: (dir) => fs.mkdirSync(dir, { recursive: true })
+  });
+
+  const claudeRes = service.ensureSessionStoreLinks('claude', '1');
+  assert.ok(claudeRes.linked >= 1);
+  
+  assert.ok(fs.lstatSync(path.join(guestClaudeDir, 'settings.json')).isSymbolicLink());
+  assert.ok(!fs.lstatSync(path.join(guestClaudeDir, '.credentials.json')).isSymbolicLink());
+
+  const geminiRes = service.ensureSessionStoreLinks('gemini', '1');
+  assert.ok(geminiRes.linked >= 1);
+  
+  assert.ok(fs.lstatSync(path.join(guestGeminiDir, 'settings.json')).isSymbolicLink());
+  assert.ok(!fs.lstatSync(path.join(guestGeminiDir, 'google_accounts.json')).isSymbolicLink());
+  assert.ok(!fs.lstatSync(path.join(guestGeminiDir, 'oauth_creds.json')).isSymbolicLink());
+
+  const agyRes = service.ensureSessionStoreLinks('agy', '1');
+  assert.ok(agyRes.linked >= 1);
+  
+  assert.ok(fs.lstatSync(path.join(guestAgyDir, 'settings.json')).isSymbolicLink());
+  assert.ok(fs.lstatSync(path.join(guestAgyDir, 'log')).isSymbolicLink());
+  assert.ok(!fs.lstatSync(path.join(guestAgyDir, 'antigravity-oauth-token')).isSymbolicLink());
+  assert.ok(fs.lstatSync(path.join(guestAgyDir, 'cli.log')).isSymbolicLink());
+  
+  // Verify that the parent .gemini/config directory is also shared (symlinked)
+  assert.ok(fs.lstatSync(guestAgyConfigDir).isSymbolicLink());
 });

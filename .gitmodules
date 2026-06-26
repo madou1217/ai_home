@@ -1,0 +1,4 @@
+[submodule "third_party/models.dev"]
+	path = third_party/models.dev
+	url = https://github.com/anomalyco/models.dev
+	branch = dev

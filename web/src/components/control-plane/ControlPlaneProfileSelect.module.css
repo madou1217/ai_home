@@ -1,0 +1,104 @@
+.root {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.compact {
+  gap: 5px;
+}
+
+.label {
+  flex: 0 0 auto;
+  color: var(--app-muted);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.statusDot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  border-radius: 999px;
+  background: var(--app-border-strong);
+}
+
+.statusReady {
+  background: var(--color-success);
+}
+
+.statusAttention {
+  background: var(--color-warning);
+}
+
+.select {
+  min-width: 0;
+  max-width: 178px;
+  height: 28px;
+  padding: 0 24px 0 8px;
+  border: 1px solid var(--app-border);
+  border-radius: 6px;
+  background: var(--color-surface-raised);
+  color: var(--app-heading);
+  font-size: 12px;
+  line-height: 28px;
+  outline: none;
+}
+
+.compact .select {
+  max-width: 138px;
+  height: 26px;
+  font-size: 11px;
+  line-height: 26px;
+}
+
+.select:hover:not(:disabled) {
+  border-color: var(--app-border-strong);
+}
+
+.select:focus-visible {
+  border-color: var(--app-primary);
+  box-shadow: 0 0 0 2px var(--app-primary-soft);
+}
+
+.select:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.summary {
+  max-width: 128px;
+  overflow: hidden;
+  color: var(--app-muted);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compact .summary {
+  max-width: 96px;
+  font-size: 10px;
+}
+
+.manageLink {
+  flex: 0 0 auto;
+  color: var(--app-primary);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.compact .manageLink {
+  font-size: 11px;
+}
+
+.manageLink:hover {
+  color: var(--app-primary-strong);
+}

@@ -1,0 +1,82 @@
+.unified-hero {
+  margin-bottom: 18px;
+}
+
+.unified-hero-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.unified-hero-title-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.unified-hero-top h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--app-heading);
+  line-height: 1.18;
+  letter-spacing: 0;
+}
+
+.unified-hero-subtitle {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--app-muted-strong);
+  line-height: 1.5;
+}
+
+.unified-hero-top-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.unified-hero-logo {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--app-surface-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--app-border);
+  flex: 0 0 auto;
+}
+
+.unified-hero-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+@media (max-width: 768px) {
+  .unified-hero-top {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .unified-hero-top h1 {
+    display: none;
+  }
+
+  .unified-hero-top-actions,
+  .unified-hero-top-actions .ant-space,
+  .unified-hero-top-actions .ant-btn {
+    width: 100%;
+  }
+
+  .unified-hero-top-actions {
+    justify-content: stretch;
+  }
+}

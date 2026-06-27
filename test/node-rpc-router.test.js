@@ -255,6 +255,77 @@ test('node rpc status can include authorized local node diagnostics on demand', 
   assert.doesNotMatch(res.body, /node-secret/);
 });
 
+test('node rpc diagnostics prefer current runtime server options over stale stored config', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-node-rpc-runtime-diagnostics-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  const res = createResCapture();
+  const handled = await handleNodeRpcRequest({
+    method: 'GET',
+    pathname: '/v0/node-rpc/status',
+    url: new URL('https://control.example.com/v0/node-rpc/status?diagnostics=1&controlUrl=https%3A%2F%2Fcontrol.example.com&nodeId=office-pc'),
+    req: { headers: { authorization: 'Bearer runtime-secret' } },
+    res,
+    options: {
+      host: '0.0.0.0',
+      port: 9527,
+      managementKey: 'runtime-secret',
+      openNetwork: true
+    },
+    state: {},
+    requiredManagementKey: 'runtime-secret',
+    deps: {
+      ...createDeps({ aiHomeDir }),
+      path,
+      aiHomeDir,
+      hostHomeDir: aiHomeDir,
+      hostname: () => 'Office PC',
+      platform: 'linux',
+      arch: 'x64',
+      processObj: {
+        platform: 'linux',
+        arch: 'x64',
+        version: 'v24.1.0',
+        execPath: '/usr/local/bin/node',
+        env: { PATH: '/usr/local/bin:/usr/bin' }
+      },
+      readServerConfig: () => ({
+        host: '127.0.0.1',
+        port: 9527,
+        managementKey: ''
+      }),
+      networkInterfaces: () => ({
+        eth0: [{ family: 'IPv4', address: '192.168.3.8', internal: false }]
+      }),
+      spawnSync(command, args) {
+        if (command === 'sh' && args[0] === '-lc') {
+          const match = String(args[1] || '').match(/^command -v (.+)$/);
+          const paths = { node: '/usr/local/bin/node', npm: '/usr/local/bin/npm', aih: '/usr/local/bin/aih' };
+          const resolved = match ? paths[match[1]] : '';
+          return resolved ? { status: 0, stdout: `${resolved}\n`, stderr: '' } : { status: 1, stdout: '', stderr: '' };
+        }
+        if (args[0] === '--version' && command === 'node') {
+          return { status: 0, stdout: 'v24.1.0\n', stderr: '' };
+        }
+        if (args[0] === '--version' && command === 'npm') {
+          return { status: 0, stdout: '11.0.0\n', stderr: '' };
+        }
+        return { status: 1, stdout: '', stderr: '' };
+      }
+    }
+  });
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 200);
+  const payload = JSON.parse(res.body);
+  assert.equal(payload.result.nodeDiagnostics.server.host, '0.0.0.0');
+  assert.equal(payload.result.nodeDiagnostics.server.managementKeyConfigured, true);
+  assert.equal(
+    payload.result.nodeDiagnostics.issues.some((issue) => issue.code === 'management_key_missing'),
+    false
+  );
+  assert.doesNotMatch(res.body, /runtime-secret/);
+});
+
 test('node rpc descriptor is public and does not leak configured keys', async () => {
   const res = createResCapture();
   const handled = await handleNodeRpcRequest({

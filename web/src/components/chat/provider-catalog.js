@@ -1,4 +1,4 @@
-import providerCatalogData from '../../../../lib/provider-catalog-data.json' with { type: 'json' };
+import providerCatalogData from '../../../../lib/provider-catalog-data.json';
 
 // =============================================================================
 // Provider 数据目录（Node 安全）。

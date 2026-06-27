@@ -49,3 +49,7 @@ codex-auto-reg/
 /cli/
 ai-home*.zip
 output/
+
+# UmiJS temporary cache
+web/src/.umi/
+web/src/.umi-production/

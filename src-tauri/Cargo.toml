@@ -1,0 +1,24 @@
+[package]
+name = "ai-home"
+version = "1.0.0"
+description = "AIH Gateway Desktop Agent"
+authors = ["model"]
+license = "ISC"
+repository = "https://github.com/madou1217/ai_home"
+default-run = "ai-home"
+edition = "2021"
+rust-version = "1.70"
+
+[build-dependencies]
+tauri-build = { version = "1.5" }
+
+[dependencies]
+tauri = { version = "1.6", features = ["api-all"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"

@@ -24,7 +24,9 @@
     "react-router-dom": "^6.28.0",
     "rehype-highlight": "^7.0.2",
     "remark-gfm": "^4.0.1",
-    "tailwindcss": "^4.3.0"
+    "tailwindcss": "^4.3.0",
+    "@ant-design/pro-components": "^2.6.48",
+    "@tauri-apps/api": "^1.6.0"
   },
   "devDependencies": {
     "@types/react": "^18.3.18",

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Form, Input, Modal, Tag, Alert, Space, Popconfirm, Select, Breadcrumb, message, Radio, Tabs } from 'antd';
+import { Button, Form, Input, Modal, Tag, Alert, Space, Popconfirm, Select, Breadcrumb, message, Radio, Tabs } from 'antd';
+import { ProTable, ModalForm } from '@ant-design/pro-components';
 import { PlusOutlined, EditOutlined, DeleteOutlined, CheckCircleOutlined, ExclamationCircleOutlined, CloseCircleOutlined, LoadingOutlined, FolderOpenOutlined, RightOutlined } from '@ant-design/icons';
 import { sshHostsAPI } from '@/services/api';
 import type { SshHostTestResult } from '@/types';
@@ -378,7 +379,7 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
       title: '连接名称',
       dataIndex: 'label',
       key: 'label',
-      render: (text: string) => <strong>{text}</strong>
+      render: (text: any) => <strong>{text}</strong>
     },
     {
       title: '目标地址',
@@ -391,7 +392,7 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
       title: '认证方式',
       dataIndex: 'authType',
       key: 'authType',
-      render: (text: string) => <Tag color={text === 'key' ? 'blue' : text === 'password' ? 'orange' : 'purple'}>{text.toUpperCase()}</Tag>
+      render: (text: any) => <Tag color={text === 'key' ? 'blue' : text === 'password' ? 'orange' : 'purple'}>{text.toUpperCase()}</Tag>
     },
     {
       title: '连接状态',
@@ -461,13 +462,13 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
       title: '项目空间名',
       dataIndex: 'label',
       key: 'label',
-      render: (text: string) => <strong>{text}</strong>
+      render: (text: any) => <strong>{text}</strong>
     },
     {
       title: '关联连接',
       dataIndex: 'connectionId',
       key: 'connectionId',
-      render: (connId: string) => {
+      render: (connId: any) => {
         const conn = connections.find(c => c.id === connId);
         return conn ? <span>{conn.label} (<code>{conn.host}</code>)</span> : <span style={{ color: '#d9d9d9' }}>连接已删除</span>;
       }
@@ -476,7 +477,7 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
       title: '远端工作区路径',
       dataIndex: 'remoteRoot',
       key: 'remoteRoot',
-      render: (text: string) => <code>{text}</code>
+      render: (text: any) => <code>{text}</code>
     },
     {
       title: '操作',
@@ -615,11 +616,13 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
               key: 'connections',
               label: '远程连接',
               children: (
-                <Table
+                <ProTable
                   dataSource={connections}
                   columns={connColumns}
                   rowKey="id"
                   loading={loadingConns}
+                  search={false}
+                  options={false}
                   pagination={{ pageSize: 8 }}
                   expandable={{
                     expandedRowRender: connExpandedRowRender,
@@ -649,11 +652,13 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
                       style={{ marginBottom: 12 }}
                     />
                   )}
-                  <Table
+                  <ProTable
                     dataSource={filteredWorkspaces}
                     columns={wsColumns}
                     rowKey="id"
                     loading={loadingWorkspaces}
+                    search={false}
+                    options={false}
                     pagination={{ pageSize: 8 }}
                   />
                 </>
@@ -666,20 +671,31 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
       {/* ==========================================
           三、 Connection 添加/编辑 Modal
           ========================================== */}
-      <Modal
+      <ModalForm
         title={editingConn ? '编辑远程连接' : '添加远程连接'}
         open={connModalVisible}
-        onOk={handleSaveConn}
-        onCancel={() => setConnModalVisible(false)}
-        okText="保存"
-        cancelText="取消"
-        destroyOnClose
+        onOpenChange={setConnModalVisible}
+        form={connForm}
+        onFinish={async () => {
+          await handleSaveConn();
+          return true;
+        }}
         width={600}
+        submitter={{
+          searchConfig: {
+            submitText: '保存',
+            resetText: '取消',
+          },
+        }}
+        modalProps={{
+          destroyOnClose: true,
+        }}
       >
         <Form
           form={connForm}
           layout="vertical"
           style={{ marginTop: '16px' }}
+          component={false}
         >
           <Form.Item
             name="label"
@@ -753,24 +769,35 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
             </Form.Item>
           )}
         </Form>
-      </Modal>
+      </ModalForm>
 
       {/* ==========================================
           四、 Workspace 添加/编辑 Modal
           ========================================== */}
-      <Modal
+      <ModalForm
         title={editingWs ? '编辑项目工作空间' : '创建远程项目工作空间'}
         open={wsModalVisible}
-        onOk={handleSaveWs}
-        onCancel={() => setWsModalVisible(false)}
-        okText="保存"
-        cancelText="取消"
-        destroyOnClose
+        onOpenChange={setWsModalVisible}
+        form={wsForm}
+        onFinish={async () => {
+          await handleSaveWs();
+          return true;
+        }}
+        submitter={{
+          searchConfig: {
+            submitText: '保存',
+            resetText: '取消',
+          },
+        }}
+        modalProps={{
+          destroyOnClose: true,
+        }}
       >
         <Form
           form={wsForm}
           layout="vertical"
           style={{ marginTop: '16px' }}
+          component={false}
         >
           <Form.Item
             name="connectionId"
@@ -813,7 +840,7 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
             </Space>
           </Form.Item>
         </Form>
-      </Modal>
+      </ModalForm>
 
       {/* ==========================================
           五、 远程目录浏览器 Modal

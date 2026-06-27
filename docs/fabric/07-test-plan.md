@@ -49,6 +49,12 @@
   - `aih fabric broker connect` 前台模式支持 `--reconnect-delay-ms` 与 `--max-attempts`。
   - AWS Japan current 默认 `9527` 再次通过 broker proxy -> relay -> real Codex native session，模型输出 `AIH_BROKER_DIAGNOSTICS_RECOVERY_OK_20260627`。
   - 证据：`docs/fabric/evidence/2026-06-27-broker-diagnostics-recovery.md`。
+- Broker Proxy 的 Server Setup 真实浏览器 smoke 已补：
+  - 真实浏览器选择 `Broker Proxy` 并通过 broker proxy 完成 device pair。
+  - `device-pair`、`descriptor`、`device-profile`、`device-nodes`、`device-status`、`device-accounts`、`device-sessions` 均返回 HTTP 200。
+  - profile 持久化为 `connectionMode=broker-proxy`、`state=paired`、`authState=paired`，点击 `进入工作台` 后进入 `/ui`。
+  - 浏览器 console 为 0 errors / 0 warnings。
+  - 证据：`docs/fabric/evidence/2026-06-27-browser-broker-profile-smoke.md`。
 - Cross-host API-mode relay smoke 工具已落地：`scripts/fabric-real-outbound-relay-smoke.js --node-join-url ... --device-pair-url ...` 可通过真实 join/pair API 准备 node/device，不再要求共享 host-home。
 - 本机 -> AWS 公网 `http://43.207.102.163:9527` 的 API-mode smoke 当前失败在 `node_join` 阶段，错误为 HTTP timeout；这证明跨主机默认路径当前被 AWS public HTTP ingress 阻塞，而不是 relay/native cleanup 逻辑阻塞。
 - 已接受 [12-outbound-broker-routing.md](12-outbound-broker-routing.md)：AWS public HTTP ingress 不再作为当前阶段阻塞点，下一步以 server/node/client 都能 outbound 的 broker proxy 路线闭环。

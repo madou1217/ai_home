@@ -104,6 +104,10 @@ Server outbound client 在本机请求 `http://127.0.0.1:9527/v0/fabric/descript
 - `GET /v0/fabric/registry/nodes`
 - `POST /v0/fabric/registry/nodes`
 - `POST /v0/fabric/registry/heartbeat`
+- `GET /v0/node-rpc/device-profile`
+- `GET /v0/node-rpc/device-status`
+- `GET /v0/node-rpc/device-accounts`
+- `GET /v0/node-rpc/device-sessions`
 - `GET /v0/node-rpc/device-nodes`
 - `GET /v0/node-rpc/device-node-sessions`
 - `GET /v0/node-rpc/device-node-session-run-events`

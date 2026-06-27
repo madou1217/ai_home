@@ -15,6 +15,21 @@
 
 最新真实证据：
 
+- Active Todo（后续有新需求先追加到这里，再按顺序推进）：
+
+  | 顺序 | 状态 | 事项 | 当前证据 | 下一步验收 |
+  |---:|---|---|---|---|
+  | 1 | done | M0 设计包落地：产品说明、拓扑、流程、ER、协议、线框、测试计划、生命周期、迁移边界、竞品/传输研究 | `docs/fabric/00-*.md` 到 `12-outbound-broker-routing.md` 已存在 | 后续只随真实实现补差，不重新发散 |
+  | 2 | done | 当前测试目标收敛为 AWS current，禁止继续使用旧 152/155/39.104 | 本文件 “Current VPS Target Set” 已声明 AWS only | 所有新 smoke 命令只访问 AWS current 或本机默认端口 |
+  | 3 | done | AWS current 默认 `9527` 上完成真实 `/v1/responses`、native relay Codex TUI、broker relay Codex TUI、broker diagnostics recovery | `2026-06-27-outbound-broker-relay-aws-smoke.md`、`2026-06-27-broker-diagnostics-recovery.md` | 后续复测仍要用默认 `9527`，不新增端口 |
+  | 4 | done | Server Profile 解耦第一刀：无 profile 进入 `/ui/server-setup`，配对成功后进入工作台 | `2026-06-26-fabric-browser-pairing-smoke.md` | 保持 browser smoke 作为 UI 改动回归门 |
+  | 5 | done | Broker Proxy 接入 Server Setup 的真实浏览器 smoke | `2026-06-27-browser-broker-profile-smoke.md`：真实浏览器配对、device profile/status/accounts/sessions 全部经 broker proxy 返回 200，console 0 error/0 warning，进入 `/ui` | 后续把同 allowlist 部署到 AWS current 后再做跨主机 broker endpoint smoke |
+  | 6 | pending | 跨主机 outbound-only broker 验收 | AWS public HTTP ingress 对 `43.207.102.163:9527` timeout；本地 socket 和 AWS loopback broker 已 pass | 需要一个真实可达 broker endpoint；client/server/node 都走 outbound，不依赖 AWS public high-port ingress |
+  | 7 | pending | M3 Role Registry 产品闭环：home/company node + relay-node、周期心跳/daemon、UI 节点页、relay health measurement | server API、publisher、heartbeat、foreground agent、AWS current/历史 evidence 已有 | 补真实家里/公司节点 evidence；UI 展示 node/relay health；heartbeat 写入可诊断指标 |
+  | 8 | pending | M4 Native Session 完整互控：公司控家里 Codex、家里控公司 Claude、手机 slash/审批 | AWS current 已有 Codex native relay session；Claude worker 非交互入口不稳定 | 补真实双向 node 场景和手机/PWA 输入、slash、审批 evidence |
+  | 9 | pending | M5 Recovery：ack/resume、relay failover、audit events、diagnostics export | broker 同 `serverId` 断开恢复已验证；未覆盖 multi-broker/failover/semantic event 不丢 | kill relay/broker 后 3 秒内恢复，session event 可 resume 且不重复 |
+  | 10 | pending | WebRTC DataChannel / WebTransport QUIC / Multipath QUIC promotion lab | WebRTC signaling pass，但 DataChannel open/RTT 未通过；QUIC/WebTransport 未成 promotion evidence | 用 headed browser、手机/跨机、STUN/TURN 和明确 RTT 指标补证；未达 gate 前不设默认 |
+
 - AWS Japan 已收敛为唯一 current 部署目录：`/home/ubuntu/aih-fabric-current`。
 - AWS current 默认端口部署已重新收敛到 `9527`：
   - Deploy command 未传 `--port`，启动日志为 `listen: http://0.0.0.0:9527`。
@@ -48,6 +63,15 @@
   - AWS current 默认 `9527` 再次通过 broker proxy -> relay -> real Codex native session；模型输出命中 `AIH_BROKER_DIAGNOSTICS_RECOVERY_OK_20260627`，`/quit` 与 abort cleanup 均 accepted。
   - 远端残留进程检查为空，没有留下 diagnostics smoke、broker relay smoke、broker connect 或 relay connect 进程。
   - 证据：`docs/fabric/evidence/2026-06-27-broker-diagnostics-recovery.md`。
+- Broker Proxy 的 Server Setup 真实浏览器 smoke 已完成：
+  - 新增 `scripts/fabric-browser-broker-profile-smoke-server.js`，启动隔离 AIH server，并建立真实 outbound broker control link。
+  - 真实浏览器打开 `/ui/server-setup`，选择 `Broker Proxy`，填写 broker endpoint 和 server id，通过 broker proxy 消费真实 pair URL。
+  - 首轮发现真实 403 缺口：Server Setup refresh 需要 `device-profile`、`device-status`、`device-accounts`、`device-sessions` 四个 device-scoped GET 路由通过 broker。
+  - Broker allowlist 已补这四个最小路由，仍不开放 management API 或 `/v1/responses`。
+  - 复测请求均为 200：`device-pair`、`descriptor`、`device-profile`、`device-nodes`、`device-status`、`device-accounts`、`device-sessions`。
+  - 浏览器 console 为 0 errors / 0 warnings；profile 保存为 `connectionMode=broker-proxy`、`state=paired`、`authState=paired`，点击 `进入工作台` 后进入 `/ui`。
+  - 本地回归：`node --test test/fabric-broker-routing.test.js test/control-plane-profiles.test.js test/fabric-profile-gate.test.js` -> 41/41 pass；`npm --prefix web run build` pass。
+  - 证据：`docs/fabric/evidence/2026-06-27-browser-broker-profile-smoke.md`。
 - AWS current 默认端口真实 Codex `/v1/responses` 已在重新部署后通过：
   - non-stream：`POST http://127.0.0.1:9527/v1/responses`，`x-provider=codex`，`model=gpt-5.5`，`store=false`，HTTP 200，`response.output_text` 包含 `AIH_AWS_CODEX_NONSTREAM_REDEPLOY_9527_OK_20260627`。
   - stream：同 endpoint，`stream=true`，HTTP 200，`response.output_text.done` 包含 `AIH_AWS_CODEX_STREAM_REDEPLOY_9527_OK_20260627`。
@@ -170,7 +194,7 @@
 - 当前部署纪律已经改为单一 `/home/ubuntu/aih-fabric-current`，后续不得再用 vNN / isolated 目录作为默认验证路径。
 - Registry/agent/本机 TCP echo 的历史证据在 AWS v16 上成立；真实 outbound relay 管理链路、sessions RPC smoke、`/v1/responses` non-stream/stream、native relay Codex TUI session cleanup、以及 broker proxy -> relay -> native Codex session 已在 AWS current 默认 `9527` 上验证成立；节点长期在线前置诊断和双服务 supervisor 汇总的历史证据在 AWS v19 上成立；面向用户的统一 `node service status` 入口历史证据在 AWS v20 上成立；受监督 `node service install` / `uninstall` dry-run 产品入口历史证据在 AWS v21/v22 上成立；Server Profile bundle 的本地迁移入口已成立；非 AWS 服务器只保留历史证据，不再继续验证。
 - Raw public HTTP ingress 仍不成立，产品默认路线不能依赖开放高端口。
-- 小水管部署路径已经从“每个 isolated deploy 都重传源码”推进到“稳定 source artifact 远端缓存复用”；受监督 node agent 已有统一 status、install dry-run 和 uninstall dry-run 入口；多客户端 Server Profile 已有无 secret bundle 迁移入口；outbound broker routing 已完成本地真实 socket 闭环、AWS current 默认端口真实 native session 闭环、Broker Profile 产品入口、broker link 断开诊断和同 `serverId` 恢复。下一步应该补浏览器级 Server Setup smoke，以及真实可达 broker endpoint 的跨主机 outbound-only 验收；不再卡 AWS 高端口 public ingress。
+- 小水管部署路径已经从“每个 isolated deploy 都重传源码”推进到“稳定 source artifact 远端缓存复用”；受监督 node agent 已有统一 status、install dry-run 和 uninstall dry-run 入口；多客户端 Server Profile 已有无 secret bundle 迁移入口；outbound broker routing 已完成本地真实 socket 闭环、AWS current 默认端口真实 native session 闭环、Broker Profile 产品入口、broker link 断开诊断和同 `serverId` 恢复、以及 Broker Profile 的真实浏览器 Server Setup smoke。下一步应该补真实可达 broker endpoint 的跨主机 outbound-only 验收；不再卡 AWS 高端口 public ingress。
 
 ## 2026-06-26
 

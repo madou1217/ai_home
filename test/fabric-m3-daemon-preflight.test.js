@@ -41,6 +41,7 @@ test('buildInstallDryRunCommand never writes services or passes raw secrets', ()
 test('buildRemoteCodeReadinessCommand checks the 7.3 safety entrypoint without writing', () => {
   const parsed = parseArgs([]);
   const command = buildRemoteCodeReadinessCommand(parsed);
+  assert.match(command, /export PATH='\/home\/ubuntu\/aih-fabric-current\/\.node-runtime\/node-v22\.16\.0-linux-x64\/bin':\$PATH/);
   assert.match(command, /grep -q -- '--generate-management-key'/);
   assert.match(command, /13-m3-supervised-daemon-runbook\.md/);
   assert.doesNotMatch(command, />/);

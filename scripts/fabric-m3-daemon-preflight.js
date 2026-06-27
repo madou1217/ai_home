@@ -145,7 +145,7 @@ function buildRemoteEnvPrefix(options) {
   const cliPath = path.posix.join(options.remoteDir, 'bin', 'ai-home.js');
   return [
     `cd ${shQuote(options.remoteDir)}`,
-    `export PATH=${shQuote(`${nodeBin}:$PATH`)}`,
+    `export PATH=${shQuote(nodeBin)}:$PATH`,
     `export AIH_HOST_HOME=${shQuote(hostHome)}`,
     `export AIH_CLI_PATH=${shQuote(cliPath)}`
   ].join(' && ');

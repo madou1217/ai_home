@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Empty, Skeleton, Space, Statistic, Tag, message } from 'antd';
+import { Alert, Button, Empty, Skeleton, Space, Statistic, Tag, message, Descriptions } from 'antd';
+import { PageContainer, ProCard } from '@ant-design/pro-components';
 import {
   ApartmentOutlined,
   CloudServerOutlined,
@@ -241,38 +242,50 @@ export default function FabricNodes() {
   }, [loadRegistry, readyProfileKey]);
 
   return (
-    <div className="fabric-nodes-page animate__animated animate__fadeIn animate__faster">
-      <section className="fabric-nodes-header">
-        <div>
-          <span>AIH Fabric</span>
-          <h1>Nodes / Relay Health</h1>
-          <p>
-            当前 Server 的 role registry 工作台：查看 node、project、runtime 与 relay transport 健康。
-          </p>
-        </div>
-        <Space size={8} wrap>
-          <Tag color={readyProfile ? 'green' : 'gold'}>
-            {readyProfile ? readyProfile.name : 'no ready profile'}
-          </Tag>
+    <PageContainer
+      header={{
+        title: "节点与中继健康 (Nodes / Relay Health)",
+        subTitle: "查看当前 Server 拓扑中所有托管节点、工作空间项目、会话 runtime 与传输通道的健康度。",
+        extra: [
+          readyProfile && (
+            <Tag key="profile-tag" color="green" style={{ margin: 0, height: "auto", padding: "4px 8px" }}>
+              当前服务: {readyProfile.name}
+            </Tag>
+          ),
           <Button
+            key="refresh"
+            type="primary"
             icon={<ReloadOutlined />}
             onClick={() => readyProfile && loadRegistry()}
             loading={loading}
             disabled={!readyProfile}
           >
-            刷新
+            刷新状态
           </Button>
-        </Space>
-      </section>
-
+        ].filter(Boolean),
+      }}
+      content={readyProfile && (
+        <Descriptions size="small" column={{ xs: 1, sm: 2, md: 3 }} style={{ marginTop: 8 }}>
+          <Descriptions.Item label="服务地址">{readyProfile.endpoint}</Descriptions.Item>
+          <Descriptions.Item label="连接状态">
+            <Space>
+              <StatusTag status={readyProfile.state} />
+              <StatusTag status={readyProfile.authState} />
+            </Space>
+          </Descriptions.Item>
+          <Descriptions.Item label="最近检测时间">{formatTime(readyProfile.lastCheckedAt || readyProfile.updatedAt)}</Descriptions.Item>
+        </Descriptions>
+      )}
+    >
       {!readyProfile && (
         <Alert
           type="warning"
           showIcon
-          message="没有 ready server profile"
-          description="请先完成 Server Setup 配对；Fabric Nodes 必须从已授权 server profile 读取 registry。"
+          style={{ marginBottom: 16 }}
+          message="未绑定有效的 Server Profile"
+          description="Fabric 监控需要从已授权的 Server Profile 读取 Registry 数据。请先完成配对设置。"
           action={(
-            <Button size="small" onClick={() => navigate('/server-setup')}>
+            <Button size="small" onClick={() => navigate("/server-setup")}>
               去配置
             </Button>
           )}
@@ -283,59 +296,54 @@ export default function FabricNodes() {
         <Alert
           type="error"
           showIcon
-          message="Role registry 读取失败"
+          style={{ marginBottom: 16 }}
+          message="Registry 拓扑数据获取失败"
           description={error}
         />
       )}
 
       {readyProfile && (
         <>
-          <section className="fabric-active-server" aria-label="active Fabric server">
-            <div>
-              <span>active server</span>
-              <strong>{readyProfile.name}</strong>
-              <em>{readyProfile.endpoint}</em>
-            </div>
-            <div>
-              <span>profile state</span>
-              <StatusTag status={readyProfile.state} />
-              <StatusTag status={readyProfile.authState} />
-            </div>
-            <div>
-              <span>last checked</span>
-              <strong>{formatTime(readyProfile.lastCheckedAt || readyProfile.updatedAt)}</strong>
-            </div>
-          </section>
-
-          <section className="fabric-nodes-summary" aria-label="registry summary">
-            <Statistic title="nodes" value={loading ? '-' : counts.nodes} prefix={<ClusterOutlined />} />
-            <Statistic title="relayNodes" value={loading ? '-' : counts.relayNodes} prefix={<CloudServerOutlined />} />
-            <Statistic title="projects" value={loading ? '-' : counts.projects} prefix={<ProjectOutlined />} />
-            <Statistic title="runtimes" value={loading ? '-' : counts.runtimes} prefix={<ToolOutlined />} />
-            <Statistic title="transports" value={loading ? '-' : counts.transports} prefix={<LinkOutlined />} />
-          </section>
+          {/* 使用 ProCard 展示紧凑的 5 项指标概览 */}
+          <ProCard gutter={16} ghost style={{ marginBottom: 16 }}>
+            <ProCard colSpan={{ xs: 12, sm: 12, md: 4.8 }} layout="center" bordered>
+              <Statistic title="托管节点数 (Nodes)" value={loading ? "-" : counts.nodes} prefix={<ClusterOutlined />} />
+            </ProCard>
+            <ProCard colSpan={{ xs: 12, sm: 12, md: 4.8 }} layout="center" bordered>
+              <Statistic title="中继中枢 (Relays)" value={loading ? "-" : counts.relayNodes} prefix={<CloudServerOutlined />} />
+            </ProCard>
+            <ProCard colSpan={{ xs: 12, sm: 12, md: 4.8 }} layout="center" bordered>
+              <Statistic title="项目工作空间" value={loading ? "-" : counts.projects} prefix={<ProjectOutlined />} />
+            </ProCard>
+            <ProCard colSpan={{ xs: 12, sm: 12, md: 4.8 }} layout="center" bordered>
+              <Statistic title="运行会话 (Runtimes)" value={loading ? "-" : counts.runtimes} prefix={<ToolOutlined />} />
+            </ProCard>
+            <ProCard colSpan={{ xs: 12, sm: 12, md: 4.8 }} layout="center" bordered>
+              <Statistic title="传输隧道 (Channels)" value={loading ? "-" : counts.transports} prefix={<LinkOutlined />} />
+            </ProCard>
+          </ProCard>
 
           {loading && !registry ? (
-            <section className="fabric-nodes-panel">
+            <ProCard bordered>
               <Skeleton active paragraph={{ rows: 8 }} />
-            </section>
+            </ProCard>
           ) : counts.nodes === 0 ? (
-            <section className="fabric-nodes-panel">
+            <ProCard bordered>
               <Empty
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description="registry 暂无 node。等待 node 通过 fabric registry publish 或后续 heartbeat 上报。"
+                description="拓扑中暂无可用计算节点。等待 Node 节点执行加入发布以同步状态。"
               />
-            </section>
+            </ProCard>
           ) : (
-            <div className="fabric-nodes-grid">
-              <section className="fabric-nodes-panel fabric-nodes-panel--list">
-                <div className="fabric-nodes-panel-head">
-                  <div>
-                    <h2>Node List</h2>
-                    <p>来自 `/v0/fabric/registry` 的节点快照。</p>
-                  </div>
-                  <ApartmentOutlined />
-                </div>
+            <ProCard gutter={16} ghost>
+              <ProCard
+                colSpan={{ xs: 24, md: 10 }}
+                title="计算节点列表"
+                headerBordered
+                bordered
+                extra={<ApartmentOutlined />}
+                bodyStyle={{ padding: 0 }}
+              >
                 <div className="fabric-nodes-list">
                   {nodeViews.map((view) => {
                     const active = selectedNode?.node.id === view.node.id;
@@ -343,7 +351,7 @@ export default function FabricNodes() {
                       <button
                         key={view.node.id}
                         type="button"
-                        className={`fabric-node-row${active ? ' fabric-node-row--active' : ''}`}
+                        className={`fabric-node-row${active ? " fabric-node-row--active" : ""}`}
                         onClick={() => setSelectedNodeId(view.node.id)}
                         title={view.node.name || view.node.id}
                       >
@@ -355,7 +363,7 @@ export default function FabricNodes() {
                           <TagList items={view.node.roles} emptyLabel="node" />
                         </div>
                         <div className="fabric-node-row-status">
-                          <StatusTag status={view.node.status || 'unknown'} />
+                          <StatusTag status={view.node.status || "unknown"} />
                           <span>{formatPlatform(view.node)}</span>
                         </div>
                         <div className="fabric-node-row-metrics">
@@ -370,17 +378,15 @@ export default function FabricNodes() {
                     );
                   })}
                 </div>
-              </section>
+              </ProCard>
 
-              <section className="fabric-nodes-panel fabric-nodes-panel--detail">
-                <div className="fabric-nodes-panel-head">
-                  <div>
-                    <h2>{selectedNode?.node.name || selectedNode?.node.id || 'Node Detail'}</h2>
-                    <p>项目、runtime、transport 与 relay metadata 按 node 聚合展示。</p>
-                  </div>
-                  {selectedNode ? <StatusTag status={selectedNode.node.status || 'unknown'} /> : null}
-                </div>
-
+              <ProCard
+                colSpan={{ xs: 24, md: 14 }}
+                title={selectedNode?.node.name || selectedNode?.node.id || "节点属性详情"}
+                headerBordered
+                bordered
+                extra={selectedNode ? <StatusTag status={selectedNode.node.status || "unknown"} /> : null}
+              >
                 {selectedNode && (
                   <div className="fabric-node-detail">
                     <div className="fabric-node-detail-strip">
@@ -404,7 +410,7 @@ export default function FabricNodes() {
                         <div key={project.id} className="fabric-node-detail-item">
                           <strong>{project.name || project.id}</strong>
                           <span>{project.displayPath || project.vcs || project.id}</span>
-                          <em>{project.permissions?.join(', ') || 'permissions unknown'}</em>
+                          <em>{project.permissions?.join(", ") || "permissions unknown"}</em>
                         </div>
                       ))}
                     </section>
@@ -415,9 +421,9 @@ export default function FabricNodes() {
                         <p>暂无 runtime snapshot。</p>
                       ) : selectedNode.runtimes.map((runtime) => (
                         <div key={runtime.id} className="fabric-node-detail-item">
-                          <strong>{normalizeText(runtime.provider)} / {normalizeText(runtime.mode, 'tui')}</strong>
-                          <span>{runtime.version || 'version unknown'}</span>
-                          <em>{runtime.status || 'available'}</em>
+                          <strong>{normalizeText(runtime.provider)} / {normalizeText(runtime.mode, "tui")}</strong>
+                          <span>{runtime.version || "version unknown"}</span>
+                          <em>{runtime.status || "available"}</em>
                         </div>
                       ))}
                     </section>
@@ -429,8 +435,8 @@ export default function FabricNodes() {
                       ) : selectedNode.transports.map((transport) => (
                         <div key={transport.id} className="fabric-node-detail-item">
                           <strong>{transport.kind || transport.id}</strong>
-                          <span>{transport.endpoint || transport.provider || 'endpoint hidden'}</span>
-                          <em>{getTransportHealth(transport)} · {formatTransportMeasurement(transport)}{transport.lastError ? ` · ${transport.lastError}` : ''}</em>
+                          <span>{transport.endpoint || transport.provider || "endpoint hidden"}</span>
+                          <em>{getTransportHealth(transport)} · {formatTransportMeasurement(transport)}{transport.lastError ? ` · ${transport.lastError}` : ""}</em>
                         </div>
                       ))}
                     </section>
@@ -439,9 +445,9 @@ export default function FabricNodes() {
                       <h3>Relay Metadata</h3>
                       {selectedNode.relayNode ? (
                         <div className="fabric-relay-meta">
-                          <span>capacityClass <strong>{selectedNode.relayNode.capacityClass || 'tiny'}</strong></span>
+                          <span>capacityClass <strong>{selectedNode.relayNode.capacityClass || "tiny"}</strong></span>
                           <span>bandwidth <strong>{formatBandwidthKbps(selectedNode.relayNode.bandwidthLimitKbps)}</strong></span>
-                          <span>status <strong>{selectedNode.relayNode.status || 'unknown'}</strong></span>
+                          <span>status <strong>{selectedNode.relayNode.status || "unknown"}</strong></span>
                           <span>measurement <strong>{summarizeRelayMeasurement(selectedNode.transports)}</strong></span>
                           <span>measured <strong>{formatMeasuredAt(selectedNode.transports.find((transport) => transport.measurement)?.measurement?.measuredAt || selectedNode.relayNode.lastMeasuredAt)}</strong></span>
                           <span>score <strong>{resolveRelayScore(selectedNode.relayNode)}</strong></span>
@@ -452,19 +458,17 @@ export default function FabricNodes() {
                     </section>
                   </div>
                 )}
-              </section>
-            </div>
+              </ProCard>
+            </ProCard>
           )}
 
-          <section className="fabric-nodes-panel fabric-nodes-panel--wide">
-            <div className="fabric-nodes-panel-head">
-              <div>
-                <h2>Relay Health</h2>
-                <p>当前只展示 registry 中的 relay metadata 和 transport health；没有真实 measurement 时标注 no measurement。</p>
-              </div>
-              <CloudServerOutlined />
-            </div>
-
+          <ProCard
+            title="中继中枢健康度 (Relay Health)"
+            headerBordered
+            bordered
+            style={{ marginTop: 16 }}
+            extra={<CloudServerOutlined />}
+          >
             {relayViews.length === 0 ? (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无 relay node 注册。" />
             ) : (
@@ -476,9 +480,9 @@ export default function FabricNodes() {
                       <span>{relayNode.id}</span>
                     </div>
                     <div className="fabric-relay-meta">
-                      <span>capacityClass <strong>{relayNode.capacityClass || 'tiny'}</strong></span>
+                      <span>capacityClass <strong>{relayNode.capacityClass || "tiny"}</strong></span>
                       <span>bandwidth <strong>{formatBandwidthKbps(relayNode.bandwidthLimitKbps)}</strong></span>
-                      <span>status <strong>{relayNode.status || (relayNode.enabled ? 'online' : 'disabled')}</strong></span>
+                      <span>status <strong>{relayNode.status || (relayNode.enabled ? "online" : "disabled")}</strong></span>
                       <span>health <strong>{health}</strong></span>
                       <span>measurement <strong>{summarizeRelayMeasurement(transports)}</strong></span>
                       <span>measured <strong>{formatMeasuredAt(transports.find((transport) => transport.measurement)?.measurement?.measuredAt || relayNode.lastMeasuredAt)}</strong></span>
@@ -497,9 +501,9 @@ export default function FabricNodes() {
                 ))}
               </div>
             )}
-          </section>
+          </ProCard>
         </>
       )}
-    </div>
+    </PageContainer>
   );
 }

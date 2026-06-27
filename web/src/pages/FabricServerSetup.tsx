@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Alert, Button, Form, Input, Segmented, Space, Tag, message } from 'antd';
+import { PageContainer, ProCard } from '@ant-design/pro-components';
 import {
   CheckCircleOutlined,
   DownloadOutlined,
@@ -367,20 +368,20 @@ export default function FabricServerSetup() {
   };
 
   return (
-    <div className="fabric-server-setup-page animate__animated animate__fadeIn animate__faster">
-      <section className="fabric-server-setup-header">
-        <div>
-          <span>AIH Fabric</span>
-          <h1>选择或添加 Server</h1>
-          <p>先确定当前 client 连接哪个 AIH server，再进入节点、项目和原生会话。</p>
-        </div>
-        <Space size={8} wrap>
-          <Tag color={readyProfiles.length > 0 ? 'green' : 'gold'}>
-            {readyProfiles.length} ready
+    <PageContainer
+      header={{
+        title: "选择或添加 Server",
+        subTitle: "配对或管理 AIH 控制面 Server。连接建立后即可接入远程节点、项目和进行原生会话。",
+        extra: [
+          <Tag key="ready-tag" color={readyProfiles.length > 0 ? 'green' : 'gold'} style={{ margin: 0, height: "auto", padding: "4px 8px" }}>
+            {readyProfiles.length} 个就绪
+          </Tag>,
+          <Tag key="profiles-tag" style={{ margin: 0, height: "auto", padding: "4px 8px" }}>
+            {profiles.length} 个配置
           </Tag>
-          <Tag>{profiles.length} profiles</Tag>
-        </Space>
-      </section>
+        ]
+      }}
+    >
 
       {endpointIsLoopback && (
         <Alert
@@ -392,15 +393,14 @@ export default function FabricServerSetup() {
         />
       )}
 
-      <div className="fabric-server-setup-grid">
-        <section className="fabric-server-setup-panel fabric-server-setup-panel--primary">
-          <div className="fabric-server-setup-panel-head">
-            <div>
-              <h2>通过配对添加</h2>
-              <p>粘贴 pair URL，或输入 code + endpoint。完成后会保存 device token 并设为当前 server。</p>
-            </div>
-            <SafetyCertificateOutlined />
-          </div>
+      <ProCard gutter={16} ghost style={{ marginBottom: 16 }}>
+        <ProCard
+          colSpan={{ xs: 24, md: 12 }}
+          title="通过配对添加"
+          headerBordered
+          bordered
+          extra={<SafetyCertificateOutlined />}
+        >
           <Form
             form={pairForm}
             layout="vertical"
@@ -467,16 +467,15 @@ export default function FabricServerSetup() {
               配对并进入
             </Button>
           </Form>
-        </section>
+        </ProCard>
 
-        <section className="fabric-server-setup-panel">
-          <div className="fabric-server-setup-panel-head">
-            <div>
-              <h2>探测并保存</h2>
-              <p>先读取 server descriptor；没有 device token 时只保存为待配对 profile。</p>
-            </div>
-            <CheckCircleOutlined />
-          </div>
+        <ProCard
+          colSpan={{ xs: 24, md: 12 }}
+          title="探测并保存"
+          headerBordered
+          bordered
+          extra={<CheckCircleOutlined />}
+        >
           <Form
             form={saveForm}
             layout="vertical"
@@ -534,17 +533,16 @@ export default function FabricServerSetup() {
               探测并保存
             </Button>
           </Form>
-        </section>
-      </div>
+        </ProCard>
+      </ProCard>
 
-      <section className="fabric-server-setup-panel fabric-server-setup-panel--wide">
-        <div className="fabric-server-setup-panel-head">
-          <div>
-            <h2>迁移 Server Profile</h2>
-            <p>导出 endpoint、descriptor 和能力摘要；device token 不会写入 bundle，导入后需要重新配对。</p>
-          </div>
-          <UploadOutlined />
-        </div>
+      <ProCard
+        title="迁移 Server Profile"
+        headerBordered
+        bordered
+        style={{ marginBottom: 16 }}
+        extra={<UploadOutlined />}
+      >
         <div className="fabric-server-setup-transfer-grid">
           <div className="fabric-server-setup-transfer-actions">
             <Button icon={<DownloadOutlined />} disabled={!activeProfile} onClick={handleExportActiveProfile}>
@@ -570,14 +568,13 @@ export default function FabricServerSetup() {
             </Button>
           </Form>
         </div>
-      </section>
+      </ProCard>
 
-      <section className="fabric-server-setup-panel fabric-server-setup-panel--wide">
-        <div className="fabric-server-setup-panel-head">
-          <div>
-            <h2>已保存 Server</h2>
-            <p>业务页面只会在当前 server ready 后开放。未配对 server 可继续保留用于后续配对。</p>
-          </div>
+      <ProCard
+        title="已保存 Server"
+        headerBordered
+        bordered
+        extra={
           <Button
             type="primary"
             icon={<LoginOutlined />}
@@ -586,7 +583,8 @@ export default function FabricServerSetup() {
           >
             进入工作台
           </Button>
-        </div>
+        }
+      >
         <div className="fabric-server-setup-profile-list">
           {profiles.length === 0 ? (
             <Alert type="info" showIcon message="暂无 server profile" />
@@ -635,13 +633,15 @@ export default function FabricServerSetup() {
             );
           })}
         </div>
-        <a className="fabric-server-setup-advanced-link" href="/ui/fabric/control-planes">
-          打开高级控制面设置
-        </a>
-        <a className="fabric-server-setup-advanced-link" href="/ui/fabric/webrtc-lab">
-          打开 WebRTC DataChannel Lab
-        </a>
-      </section>
-    </div>
+        <div style={{ marginTop: 24, paddingTop: 16, borderTop: '1px solid var(--app-border)', display: 'flex', gap: 16 }}>
+          <Button type="link" href="/ui/fabric/control-planes" style={{ padding: 0 }}>
+            打开高级控制面设置
+          </Button>
+          <Button type="link" href="/ui/fabric/webrtc-lab" style={{ padding: 0 }}>
+            打开 WebRTC DataChannel Lab
+          </Button>
+        </div>
+      </ProCard>
+    </PageContainer>
   );
 }

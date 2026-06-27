@@ -100,12 +100,26 @@ remainingGate=remote_code_missing_generate_management_key,remote_runbook_missing
 
 证据：`docs/fabric/evidence/2026-06-27-m3-preflight-code-readiness-audit.md`。
 
-所以真实执行顺序必须是：
+随后已按 todo 顺序同步当前 Fabric 代码到 AWS current，且未写配置、未安装服务、未重启
+server。当前最新只读 preflight 为：
 
 ```text
-同步当前 Fabric 代码到 AWS current
--> 重新运行只读 preflight，确认 remoteCode.ready=true
--> 再进入 managementKey 生成和 service install
+verdict=ready_for_confirmed_7_3_execution
+remoteCode.ready=true
+remoteCode.generateManagementKey=true
+remoteCode.supervisedDaemonRunbook=true
+installDryRun.writes=false
+residue=[]
+remainingGate=management_key_missing,relay_service_not_running,registry_agent_service_not_running
+```
+
+证据：`docs/fabric/evidence/2026-06-27-m3-current-code-sync-preflight-ready.md`。
+
+所以剩余真实执行顺序是：
+
+```text
+确认执行 7.3
+-> 进入 managementKey 生成和 service install
 ```
 
 ## 执行前确认

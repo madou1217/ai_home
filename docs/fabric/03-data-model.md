@@ -182,7 +182,7 @@ server 和 node 都可记录摘要。表示一次实际打开的传输会话。
 
 ### network_measurements
 
-append-only。表示 transport lab、运行时 health probe 或 relay 调度测量。
+append-only。表示 transport candidate 验证、运行时 health probe 或 relay 调度测量。
 
 字段：
 

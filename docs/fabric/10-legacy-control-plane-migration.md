@@ -4,7 +4,7 @@
 
 当前仓库已经有 Control Plane、remote node、relay、device pairing、bootstrap、remote audit 等能力，但产品概念和入口不够清晰。Fabric 不应该全部推倒重写，也不能继续在旧 WebUI 上叠功能。
 
-迁移目标是：复用已验证的底层资产，把用户可见模型升级为 server profile first、instance roles、transport lab、remote session。
+迁移目标是：复用已验证的底层资产，把用户可见模型升级为 server profile first、instance roles、transport candidates、remote session。
 
 ## 旧能力现状
 

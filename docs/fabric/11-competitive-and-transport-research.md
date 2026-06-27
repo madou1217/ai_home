@@ -52,8 +52,8 @@
 | 技术 | 放置层级 | 现阶段策略 | 原因 |
 |---|---|---|---|
 | WSS relay | 默认 fallback | MVP 必须可用 | 部署和企业网络兼容最好，适合小 VPS 控制流 |
-| WebRTC DataChannel | Transport lab，争取进 MVP candidate | 本阶段必须做 signaling/data channel 实验 | 浏览器、手机、桌面壳都可用；适合 P2P，失败时可回 WSS |
-| WebTransport/QUIC | Transport lab | 本阶段必须做 prototype，不默认启用 | 多流/低延迟有价值，但 HTTP/3/TLS/浏览器兼容要实测 |
+| WebRTC DataChannel | Transport candidate，争取进 MVP | 本阶段必须做 signaling/data channel 实验，但未过 gate 前不默认启用 | 浏览器、手机、桌面壳都可用；适合 P2P，失败时可回 WSS |
+| WebTransport/QUIC | Transport candidate | 本阶段必须做 prototype，不默认启用 | 多流/低延迟有价值，但 HTTP/3/TLS/浏览器兼容要实测 |
 | Multipath QUIC | 高级实验 | 不进默认路径 | IETF 工作仍需要跟进，浏览器和服务器栈部署复杂；先证明单路径可靠性 |
 | MPTCP | Underlay | 只在多路径网络环境做专项实验 | RFC 8684 定义的是 TCP 多路径能力，不解决 AIH 身份、节点发现、会话恢复 |
 | OpenMPTCPRouter | Underlay appliance | 可用于多 WAN VPS/家宽聚合实验 | 需要路由器/VPS/多线路部署；单 2M-3M VPS 本身不能靠它变大带宽 |
@@ -88,7 +88,7 @@ WSS fallback first
 ## 研发阶段要求
 
 - M1 必须同时覆盖 `probe`、`tcp-echo`、`ws echo`，再进入 WebRTC/WebTransport。
-- WebRTC 实验必须记录 ICE candidate 类型、是否 direct、是否 relay/TURN、连接时间、RTT、失败原因。
+- WebRTC 候选必须记录 ICE candidate 类型、是否 direct、是否 relay/TURN、连接时间、DataChannel open、RTT、失败原因。
 - WebTransport 实验必须记录浏览器/Node/runtime 版本、HTTP/3/TLS 配置、connect time、stream RTT、fallback 原因。
 - OMR/MPTCP 实验必须记录是否多 WAN、单链路基线、聚合后吞吐/抖动/丢包改善；没有改善就不进入产品默认配置。
 
@@ -99,5 +99,5 @@ AIH Fabric 应该做，但不能做成“又一个 VPN”或“旧 WebUI 加 rem
 - server profile first；
 - node/relay/runtime roles 显式可见；
 - 远程开发会话优先；
-- transport lab 用 evidence 晋级；
+- transport candidates 用 evidence 晋级；
 - 数据落到 audit、network measurements、evidence runs，能复盘。

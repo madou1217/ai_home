@@ -11,6 +11,7 @@ AIH Fabric 的目标是把 AIH 从本机多账号工具扩展成一个远程 AI 
 - 公司电脑可以管理家里电脑项目，家里电脑也可以管理公司电脑项目。
 - 手机 App/PWA/桌面端可以配置多个 AIH server，登录后选择 node、project、provider，再进入会话。
 - 任意 AIH 实例可以同时扮演 client、server、node、relay node。
+- 用户可见主对象统一为 Node：SSH 开发机、远程节点、relay node、runtime host 都是 node 的能力或连接方式，不再作为彼此割裂的对象。
 - 2M-3M 小水管 VPS 也能支撑稳定控制流和 agent 会话流。
 - 远程体验优先保证消息输入、slash、审批、键盘控制、工具调用提示和弱网恢复。
 - 每个功能从设计、实现、测试到真实运行证据都可追溯。
@@ -48,9 +49,9 @@ AIH Fabric 是 AI coding agent 的远程控制层：
 | 能力 | MVP | Phase 2 | Phase 3 |
 |---|---|---|---|
 | Server profile | 添加、测试、登录、切换、删除 | 多 server 聚合视图 | server federation |
-| Node | 注册、项目发现、provider 摘要、会话启动 | 权限模板、分组、标签 | remote lifecycle 管理 |
+| Node | 统一节点总览、项目发现、runtime/SSH/relay 能力、动作 gating | 权限模板、分组、标签 | remote lifecycle 管理 |
 | Relay node | 注册、测速、转发、故障切换 | 多 relay 调度 | relay 计费和配额 |
-| Transport | WSS、WebRTC lab、WebTransport lab | 自动选路 | multipath QUIC 实验 |
+| Transport | WSS fallback、WebRTC/WebTransport candidates、SSH/FRP/Tailscale/OMR underlay 说明和证据 | 自动选路 | multipath QUIC 实验 |
 | 远程交互会话 | 事件流、输入、slash、审批 | 鼠标、图片、文件引用 | provider GUI bridge |
 | 语义事件 | 消息、工具、审批、diff、runtime status | session snapshot | 回放和审计搜索 |
 | 账号治理 | node-local 默认、account grant 设计 | 短期 credential lease | 多 server vault |
@@ -59,6 +60,7 @@ AIH Fabric 是 AI coding agent 的远程控制层：
 ## 成功标准
 
 - 用户第一次打开客户端时知道先添加 AIH server，而不是直接看到绑定本机的 WebUI。
+- 用户在节点总览里能看懂一台机器有哪些能力：server、relay-node、runtime-host、ssh-bootstrap、transport、health。
 - 家里电脑连接 server1 后可以被公司电脑控制，也可以作为 relay node 被调度。
 - 公司电脑连接 server1 后可以被家里电脑控制，反之亦然。
 - 手机可以进入同一会话，发送 prompt、输入 slash、审批工具调用、查看 diff。

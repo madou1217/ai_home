@@ -26,11 +26,20 @@
   | 5 | done | Broker Proxy 接入 Server Setup 的真实浏览器 smoke | `2026-06-27-browser-broker-profile-smoke.md`：真实浏览器配对、device profile/status/accounts/sessions 全部经 broker proxy 返回 200，console 0 error/0 warning，进入 `/ui`；同 allowlist 已同步到 AWS current 默认 `9527` 并通过 broker proxy device route smoke | 已由第 6 项跨主机 broker endpoint 验收闭环 |
   | 6 | done | 跨主机 outbound-only broker 验收 | `2026-06-27-crosshost-outbound-broker-profile-smoke.md`：本机 client -> AWS public broker -> 本机 server outbound link -> 本机 node relay -> Codex 远程会话已完成；readyz、descriptor、device pair、device scoped reads、sessions RPC 和真实 Codex marker 均通过 | 下一步进入 M3 Role Registry 产品闭环 |
   | 7 | done | M3 Role Registry 产品闭环：home/company node + relay-node、周期心跳/daemon、UI 节点页、relay health measurement、本地 AWS 可见性 | server API、publisher、heartbeat、foreground agent、Fabric Nodes UI 已有；`2026-06-27-m3-role-registry-measurement.md` 已证明 AWS current 默认 `9527` 可持久化 relay measurement 并在 UI 展示；`2026-06-27-m3-role-registry-two-nodes.md` 已证明本机 + AWS current 两个真实 node/relay-node 可同屏展示；`2026-06-27-m3-relay-health-strong-metrics.md` 已证明默认 `9527` WS echo p95/成功率/networkMeasurements trace；`2026-06-27-m3-fabric-nodes-mobile-regression.md` 已证明移动端多节点 UI 回归；`2026-06-28-m3-supervised-daemon-aws.md` 已证明 AWS current 默认 `9527` 上 relay + registryAgent 两个 user systemd service 长期运行、`supervisor.ready=true`、fresh `ws_echo_pass` measurement、unit/process 不含 raw secret；`2026-06-28-m3-local-aws-visibility.md` 已证明本机真实浏览器有 paired AWS server profile、Fabric Nodes 从 AWS registry 读到 2 个真实 node/relay-node、AWS 已加入本地 SSH 开发机管理且连接/目录浏览通过 | M3 完成；下一步进入 8/M4 远程开发会话重新规划 |
-  | 8 | pending | M4 远程开发会话：以 server profile -> node -> project -> runtime -> session 的可理解路径替代旧 M4 专用入口路线 | 8.3 Canonical command envelope 已完成；`14-m4-remote-development-session.md` 持续作为 M4 权威设计 | 继续 M4 Todo Queue：下一步做 8.4 event store + seq/ack/resume |
-  | 9 | pending | M5 Recovery：ack/resume、relay failover、audit events、diagnostics export | broker 同 `serverId` 断开恢复已验证；未覆盖 multi-broker/failover/semantic event 不丢 | kill relay/broker 后 3 秒内恢复，session event 可 resume 且不重复 |
-  | 10 | pending | WebRTC DataChannel / WebTransport QUIC / Multipath QUIC promotion lab | WebRTC signaling pass，但 DataChannel open/RTT 未通过；QUIC/WebTransport 未成 promotion evidence | 用 headed browser、手机/跨机、STUN/TURN 和明确 RTT 指标补证；未达 gate 前不设默认 |
+  | 8 | pending | M3.5 统一 Node 产品模型：把控制面、远程节点、SSH 开发机、节点健康和 transport candidates 收敛到一个 Node Inventory / Node Detail 模型 | `15-unified-node-product-model.md` 已定义对象模型；`2026-06-28-current-aws-node-model-readback.md` 已证明 AWS 授权 registry readback 为 nodes=2、relayNodes=2、projects=2、runtimes=4、transports=2 | 实现 Node Inventory read model 和 Node Detail action gating；AWS node 必须明确显示为什么不能启动 provider session |
+  | 9 | pending | M4 远程开发会话：以 server profile -> node -> project -> runtime -> session 的可理解路径替代旧 M4 专用入口路线 | 8.3 Canonical command envelope 已完成；`14-m4-remote-development-session.md` 持续作为 M4 权威设计 | M3.5 完成后继续 M4 Todo Queue：下一步做 8.4 event store + seq/ack/resume |
+  | 10 | pending | M5 Recovery：ack/resume、relay failover、audit events、diagnostics export | broker 同 `serverId` 断开恢复已验证；未覆盖 multi-broker/failover/semantic event 不丢 | kill relay/broker 后 3 秒内恢复，session event 可 resume 且不重复 |
+  | 11 | pending | WebRTC DataChannel / WebTransport QUIC / Multipath QUIC promotion | WebRTC signaling pass，但 DataChannel open/RTT 未通过；QUIC/WebTransport 未成 promotion evidence | 用 headed browser、手机/跨机、STUN/TURN 和明确 RTT 指标补证；未达 gate 前不设默认 |
 
 - AWS Japan 已收敛为唯一 current 部署目录：`/home/ubuntu/aih-fabric-current`。
+- 2026-06-28 当前 AWS Node Model readback：
+  - 本地 shared server profile store 返回 1 个 paired AWS direct profile。
+  - 未授权读 AWS `/v0/fabric/registry` 返回 HTTP 401，证明 registry 仍受 device token gate 保护。
+  - 使用本地 paired profile device token 授权读取 AWS registry 返回 HTTP 200：`nodes=2`、`relayNodes=2`、`projects=2`、`runtimes=4`、`transports=2`。
+  - `aws-current-node` 当前是 `node + relay-node`，有 project `/home/ubuntu/aih-fabric-current` 和 `ws_echo_pass` relay measurement。
+  - AWS `/readyz` 当前 HTTP 200 但 `ready=false`，provider account counts 全为 0；当前 registry runtime records 都属于 `local-mac-remote-node`。
+  - 结论：本地 WebUI 可以真实看到 AWS server profile、AWS node、AWS project 和 relay health；但不能宣称 AWS node 已可点击启动 Codex/Claude 远程开发会话。
+  - 证据：`docs/fabric/evidence/2026-06-28-current-aws-node-model-readback.md`。
 - AWS current 默认端口部署已重新收敛到 `9527`：
   - Deploy command 未传 `--port`，启动日志为 `listen: http://0.0.0.0:9527`。
   - 最新 source artifact 为 `94de613e7fe53fd1a0b145307c8256f4e3c8990f2cd2a3df41ab59bf6f1a6895`，`26340463` bytes。
@@ -274,7 +283,7 @@
 - 当前部署纪律已经改为单一 `/home/ubuntu/aih-fabric-current`，后续不得再用 vNN / isolated 目录作为默认验证路径。
 - Registry/agent/本机 TCP echo 的历史证据在 AWS v16 上成立；真实 outbound relay 管理链路、sessions RPC smoke、`/v1/responses` non-stream/stream、relay Codex 会话 cleanup、以及 broker proxy -> relay -> Codex 远程会话已在 AWS current 默认 `9527` 上验证成立；节点长期在线前置诊断和双服务 supervisor 汇总的历史证据在 AWS v19 上成立；面向用户的统一 `node service status` 入口历史证据在 AWS v20 上成立；受监督 `node service install` / `uninstall` dry-run 产品入口历史证据在 AWS v21/v22 上成立；Server Profile bundle 的本地迁移入口已成立；非 AWS 服务器只保留历史证据，不再继续验证。
 - Raw public HTTP ingress 仍不成立，产品默认路线不能依赖开放高端口。
-- 小水管部署路径已经从“每个 isolated deploy 都重传源码”推进到“稳定 source artifact 远端缓存复用”；受监督 node agent 已有统一 status、install dry-run 和 uninstall dry-run 入口，并已在 AWS current 默认 `9527` 完成真实 systemd user service 安装、重启、heartbeat 和 fresh measurement 验收；多客户端 Server Profile 已有无 secret bundle 迁移入口；outbound broker routing 已完成本地真实 socket 闭环、AWS current 默认端口真实远程会话闭环、Broker Profile 产品入口、broker link 断开诊断和同 `serverId` 恢复、Broker Profile 的真实浏览器 Server Setup smoke，以及真实可达 AWS broker endpoint 的跨主机 outbound-only Server Profile/node relay/Codex 远程会话验收。本机真实浏览器已完成 paired AWS server profile，Fabric Nodes 能从 AWS registry 看到 2 个真实 node/relay-node，AWS current 也已加入本地 SSH 开发机管理并通过连接/目录浏览。M3 已完成；M4 已重新收敛为远程开发会话入口设计，旧 M4 专用入口删除，不再作为计划推进；不再卡 AWS 高端口 public ingress。
+- 小水管部署路径已经从“每个 isolated deploy 都重传源码”推进到“稳定 source artifact 远端缓存复用”；受监督 node agent 已有统一 status、install dry-run 和 uninstall dry-run 入口，并已在 AWS current 默认 `9527` 完成真实 systemd user service 安装、重启、heartbeat 和 fresh measurement 验收；多客户端 Server Profile 已有无 secret bundle 迁移入口；outbound broker routing 已完成本地真实 socket 闭环、AWS current 默认端口真实远程会话闭环、Broker Profile 产品入口、broker link 断开诊断和同 `serverId` 恢复、Broker Profile 的真实浏览器 Server Setup smoke，以及真实可达 AWS broker endpoint 的跨主机 outbound-only Server Profile/node relay/Codex 远程会话验收。本机真实浏览器已完成 paired AWS server profile，Fabric Nodes 能从 AWS registry 看到 2 个真实 node/relay-node，AWS current 也已加入本地 SSH 开发机管理并通过连接/目录浏览。M3 已完成；当前下一步是 M3.5 统一 Node 产品模型和 Node Detail action gating，然后继续 M4 8.4 event store / seq / ack / resume；不再卡 AWS 高端口 public ingress。
 
 ## M3 Todo Queue
 
@@ -487,7 +496,7 @@
 5. 把 agent probe 从本机 `/healthz` 扩展到真实 outbound relay/data-plane health：WSS relay RTT、echo payload、错误原因、可用性评分，并写入 heartbeat transport health。
 6. 用 headed 浏览器、手机/跨机、STUN/TURN 继续验证 WebRTC DataChannel open 和 RTT；当前不能把 WebRTC 设为默认 transport。
 7. 产品化 `aih claude -p` worker 入口后，再把复杂 Fabric 前端改动交给 Claude worker，并记录 command/evidence。
-8. 扩展 transport lab：WebTransport/QUIC、旧 WSS relay metrics、multi-relay failover。
+8. 扩展 transport candidates：WebTransport/QUIC、旧 WSS relay metrics、multi-relay failover。
 
 注意：
 

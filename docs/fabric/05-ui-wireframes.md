@@ -10,8 +10,10 @@ flowchart TD
   Profiles[Server Profiles]
   Login[Pair/Login]
   Dashboard[Server Dashboard]
-  Nodes[Nodes]
-  Relays[Relay Health]
+  Nodes[Nodes Overview]
+  NodeDetail[Node Detail]
+  Health[Health and Measurements]
+  Connection[Connection Setup]
   Projects[Projects]
   Runtime[Runtime Picker]
   Session[Remote Session]
@@ -20,11 +22,20 @@ flowchart TD
   App --> Profiles
   Profiles --> Login
   Login --> Dashboard
-  Dashboard --> Nodes
-  Dashboard --> Relays
-  Nodes --> Projects --> Runtime --> Session
+  Dashboard --> Nodes --> NodeDetail
+  NodeDetail --> Projects --> Runtime --> Session
+  NodeDetail --> Health
+  NodeDetail --> Connection
   Dashboard --> Settings
 ```
+
+信息架构规则：
+
+- `Nodes Overview` 是所有可管理机器的主入口。
+- `Server Profiles` 只管理 server endpoint、pairing、device 状态和切换。
+- `SSH 开发机` 是 Node Detail 的 bootstrap/ops transport，不是独立资源类型。
+- `Relay Health` 改为 Node Detail 和 Health 页面中的 measurement，不再作为割裂对象。
+- `WebRTC 实验室` 改为 `Transport Candidates`；用户看到的是候选连接方式和 promotion 证据，不是一个孤立实验玩具。
 
 ## 1. Server Profile 页面
 
@@ -97,13 +108,34 @@ flowchart TD
 +------------------------------------------------------+
 ```
 
-## 4. Node 详情
+Server Dashboard 只做所选 server profile 的摘要。进入实际资源管理必须从 `Nodes Overview` 开始。
+
+## 4. Nodes Overview
+
+```text
++----------------------------------------------------------------+
+| Nodes                                      [ Add / Pair Server ] |
++----------------------------------------------------------------+
+| Node                 Capabilities              Health  Actions  |
+| AWS Current Node     node, relay-node          good    Details  |
+| Local Mac            node, relay-node,runtime  good    Details  |
+| Company PC           ssh-bootstrap             unknown Setup    |
++----------------------------------------------------------------+
+```
+
+规则：
+
+- 一行就是一台 node 或可升级为 node 的 SSH host。
+- capabilities 决定动作；没有 runtime-host 时不能显示可启动 provider session。
+- health 必须能展开到 transport/relay/runtime 具体测量。
+
+## 5. Node 详情
 
 ```text
 +------------------------------------------------------+
 | Home Mac                                             |
-| Roles: Node, Relay Node                              |
-| Transports: WebRTC pending, WSS good, QUIC lab       |
+| Capabilities: Node, Relay Node, Runtime Host          |
+| Transports: WSS good, WebRTC candidate, SSH ready     |
 +------------------------------------------------------+
 | Projects                                             |
 | shalou             Laravel app        last 2h        |
@@ -115,9 +147,23 @@ flowchart TD
 | AGY                session partial    1 account      |
 | OpenCode           session ready      1 account      |
 +------------------------------------------------------+
+| Health                                                |
+| relay: ws_echo_pass, p95 2ms, 100% ok                |
++------------------------------------------------------+
+| Actions                                               |
+| [Open project] [Start Codex] [Attach session]         |
+| [Configure SSH] [Run measurement] [Enable relay]      |
++------------------------------------------------------+
 ```
 
-## 5. 远程会话页面
+动作 gating：
+
+- `Start Codex/Claude/AGY/OpenCode` 需要 node 上有 project + runtime + account authority。
+- `Configure SSH` 只需要 SSH bootstrap capability。
+- `Enable relay` 需要 relay grant 或 server-side role enable flow。
+- `Run measurement` 写入 network measurement evidence。
+
+## 6. 远程会话页面
 
 远程会话体验优先。WebUI chat 只作为辅助，不是主画面。
 
@@ -165,22 +211,21 @@ GUI bridge deferred contract：
 - 必须有独立弱网策略，不能把 GUI 当普通 event frame 处理。
 - 在该 contract 落地前，产品文案只能写“GUI planned / GUI lab”，不能写“GUI supported”。
 
-## 6. Relay Health 页面
+## 7. Health and Measurements 页面
 
 ```text
 +------------------------------------------------------+
-| Relay Health                                         |
+| Health and Measurements                              |
 +------------------------------------------------------+
-| Relay          RTT p50  RTT p95  Reconnects  Score  |
-| VPS 1          82ms     180ms    0           92     |
-| VPS 2          121ms    260ms    1           77     |
-| Home Mac       38ms     90ms     0           88     |
+| Node       Capability   RTT p50  RTT p95  OK%  Code |
+| AWS        relay        0ms      1ms      100  ok   |
+| Home Mac   relay        -        -        -    stale|
 +------------------------------------------------------+
 | [ Run benchmark ] [ Export evidence ]                |
 +------------------------------------------------------+
 ```
 
-## 7. 审批页面
+## 8. 审批页面
 
 移动端需要优先做好审批，而不是完整编辑器。
 

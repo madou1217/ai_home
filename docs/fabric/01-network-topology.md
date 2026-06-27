@@ -64,7 +64,7 @@ flowchart LR
 
 ## 选路流程
 
-WebRTC 和 WebTransport/QUIC 虽然进入本阶段 transport lab，但在满足 promotion gate 前只能通过 lab flag 或显式实验配置启用。默认生产路径必须保留 WSS relay fallback，不能把未验收实验 transport 静默设为默认。
+WebRTC 和 WebTransport/QUIC 是本阶段 transport candidates，但在满足 promotion gate 前只能通过显式实验配置启用。默认生产路径必须保留 WSS relay fallback，不能把未验收实验 transport 静默设为默认。
 
 Server 也可能没有公网入口，因此默认入口先解析为 server profile endpoint。该 endpoint 可以是真实 server，也可以是 [12-outbound-broker-routing.md](12-outbound-broker-routing.md) 定义的 broker proxy base。只有在 endpoint 探测证明 HTTP 应用层可达时，才能选择 direct public ingress。
 
@@ -110,7 +110,7 @@ flowchart TD
 
 Promotion 规则：
 
-- `lab`: 可以在 transport lab 中手动启用，必须写 evidence。
+- `lab`: 可以在 transport candidate 验证中手动启用，必须写 evidence。
 - `candidate`: 达到单场景 gate，可在小范围用户机器显式启用。
 - `default`: 达到 [07-test-plan.md](07-test-plan.md) 的 promotion gate 后才允许进入默认选路。
 

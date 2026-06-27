@@ -23,12 +23,13 @@
 - `docs/fabric/07-test-plan.md`
 - `docs/fabric/09-development-lifecycle.md`
 - `docs/fabric/10-legacy-control-plane-migration.md`
+- `docs/fabric/15-unified-node-product-model.md`
 - `docs/fabric/skills/*`
 
 验收：
 
 - 用户可以从文档看懂产品怎么配置、怎么使用、流量怎么走。
-- 每个核心名词都有定义：server、node、relay node、client、runtime。
+- 每个核心名词都有定义：server profile、node、capability、transport、health、runtime。
 - 后续任务能按阶段门追溯到设计、实现、证据和复盘。
 
 ### M1: Transport Lab
@@ -118,6 +119,23 @@
 - 公司电脑可在 server1 上显示为 node + relay node。
 - 当前完成 server-side API、测试、本地 loopback CLI publisher smoke、AWS current 默认 `9527` relay measurement 持久化、Fabric Nodes UI 浏览器 smoke、本机 + AWS current 两个真实 node/relay-node 同屏 evidence、AWS current 持久 token + 5 次长跑 registry agent heartbeat partial evidence、默认 `9527` WS echo p95/成功率/networkMeasurements trace evidence，以及移动端多节点 Fabric Nodes 回归 evidence。真正的 systemd daemon/service 安装仍待确认后执行。证据见 `docs/fabric/evidence/2026-06-27-m3-role-registry-measurement.md`、`docs/fabric/evidence/2026-06-27-m3-role-registry-two-nodes.md`、`docs/fabric/evidence/2026-06-27-m3-node-service-daemon-partial.md`、`docs/fabric/evidence/2026-06-27-m3-relay-health-strong-metrics.md` 和 `docs/fabric/evidence/2026-06-27-m3-fabric-nodes-mobile-regression.md`。
 
+### M3.5: Unified Node Product Model
+
+交付：
+
+- `docs/fabric/15-unified-node-product-model.md` 作为产品对象模型来源。
+- Node Inventory read model：按 node 关联 registry nodes、projects、runtimes、relayNodes、transports、measurements 和 SSH inventory。
+- 页面语义收敛：`控制面` 只做 server profile；`远程节点`、`SSH 开发机`、`节点健康` 都进入 node 体系。
+- Node Detail action gating：启动会话、配置 SSH、启用 relay、运行测量都由 capability 决定。
+
+验收：
+
+- AWS current 默认 `9527` 授权 registry readback 显示 `nodes=2`、`relayNodes=2`、`projects=2`、`runtimes=4`、`transports=2`。
+- AWS node 详情能明确显示：有 project 和 relay health，但没有 AWS provider runtime/account，因此不能启动 AWS provider session。
+- Local Mac node 详情能明确显示：有 provider runtimes，但 M4 session action 仍需 event store/attach/resume gate。
+- SSH host 只能作为 bootstrap/ops capability 展示，不能被误认为 remote development session 已 ready。
+- WebRTC/QUIC 显示为 transport candidates，未过 promotion gate 前不进入自动选路默认路径。
+
 ### M4: 远程开发会话重新规划
 
 交付：
@@ -134,6 +152,7 @@
 - 新设计有网络拓扑、流程图、功能矩阵、ER/状态模型和真实验收用例。
 - 没有新设计冻结前，不新增客户端菜单或页面入口。
 - 旧 M4 专用入口路线不得作为计划或验收目标回归。
+- M3.5 Node Detail 能解释每个 session action 为什么可用或不可用。
 
 ### M5: Recovery and Hardening
 
@@ -182,6 +201,14 @@
 - 回滚方式。
 
 阶段门以 [09-development-lifecycle.md](09-development-lifecycle.md) 为准；旧 Control Plane/remote node 能力的复用和废弃边界以 [10-legacy-control-plane-migration.md](10-legacy-control-plane-migration.md) 为准。
+
+## 当前下一步顺序
+
+1. M3.5 Node Inventory read model 和 Node Detail action gating。
+2. M4 8.4 event store + seq/ack/resume。
+3. M4 8.5 approval/artifact lanes。
+4. M4 8.6 real AWS current remote development session smoke。
+5. Transport candidates promotion：WebRTC DataChannel、WebTransport/QUIC、OMR/MPTCP underlay evidence。
 
 ## 代码边界建议
 

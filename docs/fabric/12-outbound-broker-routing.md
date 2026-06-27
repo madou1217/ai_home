@@ -127,6 +127,7 @@ Server outbound client 在本机请求 `http://127.0.0.1:9527/v0/fabric/descript
 
 - 本地真实 socket broker proxy 验证通过，证据见 `evidence/2026-06-27-outbound-broker-routing-local-smoke.md`。
 - AWS current 默认 `9527` 已完成 broker proxy -> outbound relay -> real Codex native session smoke，证据见 `evidence/2026-06-27-outbound-broker-relay-aws-smoke.md`。
+- AWS current 默认 `9527` 已完成 broker link 断开诊断和同 `serverId` 恢复验证；proxy 离线响应包含 `brokerStatus.lastDisconnected`，重连后 readyz 恢复 200，并再次通过 broker relay real Codex native session。证据见 `evidence/2026-06-27-broker-diagnostics-recovery.md`。
 - 跨设备/跨主机验收仍需要一个真实可达 broker endpoint；AWS `9527` 公网 HTTP 当前不可作为 client public ingress 依赖。
 
 ## Consequences

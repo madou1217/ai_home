@@ -40,6 +40,14 @@
   - AWS current 默认 `9527` profile-entry broker relay smoke 通过：`viaProxy=true`，relay online，sessions RPC 200，远端无残留进程。
   - `aih claude` 按 AIH Server profile 路径尝试前端审查，但超过 60 秒仍停在 `Waiting for claude to boot`，没有产出审查文本。
   - 证据：`docs/fabric/evidence/2026-06-27-broker-profile-ui-entry.md`。
+- Broker link 断开诊断与同 `serverId` 恢复已在 AWS current 默认 `9527` 验证：
+  - registry 保存 `lastDisconnected` 快照，包含 `disconnectReason`、`closeCode`、`connectedAt`、`lastSeenAt`、`disconnectedAt`。
+  - broker proxy 离线响应返回 HTTP 503、`fabric_broker_server_offline` 和 `brokerStatus.lastDisconnected.disconnectReason=broker_server_link_closed`。
+  - 同一 `serverId` 重新建立 outbound broker link 后，broker proxy `readyz` 恢复 HTTP 200。
+  - `aih fabric broker connect` 前台模式支持 `--reconnect-delay-ms` 和 `--max-attempts`，可作为长期 outbound link 的受控重连入口。
+  - AWS current 默认 `9527` 再次通过 broker proxy -> relay -> real Codex native session；模型输出命中 `AIH_BROKER_DIAGNOSTICS_RECOVERY_OK_20260627`，`/quit` 与 abort cleanup 均 accepted。
+  - 远端残留进程检查为空，没有留下 diagnostics smoke、broker relay smoke、broker connect 或 relay connect 进程。
+  - 证据：`docs/fabric/evidence/2026-06-27-broker-diagnostics-recovery.md`。
 - AWS current 默认端口真实 Codex `/v1/responses` 已在重新部署后通过：
   - non-stream：`POST http://127.0.0.1:9527/v1/responses`，`x-provider=codex`，`model=gpt-5.5`，`store=false`，HTTP 200，`response.output_text` 包含 `AIH_AWS_CODEX_NONSTREAM_REDEPLOY_9527_OK_20260627`。
   - stream：同 endpoint，`stream=true`，HTTP 200，`response.output_text.done` 包含 `AIH_AWS_CODEX_STREAM_REDEPLOY_9527_OK_20260627`。
@@ -162,7 +170,7 @@
 - 当前部署纪律已经改为单一 `/home/ubuntu/aih-fabric-current`，后续不得再用 vNN / isolated 目录作为默认验证路径。
 - Registry/agent/本机 TCP echo 的历史证据在 AWS v16 上成立；真实 outbound relay 管理链路、sessions RPC smoke、`/v1/responses` non-stream/stream、native relay Codex TUI session cleanup、以及 broker proxy -> relay -> native Codex session 已在 AWS current 默认 `9527` 上验证成立；节点长期在线前置诊断和双服务 supervisor 汇总的历史证据在 AWS v19 上成立；面向用户的统一 `node service status` 入口历史证据在 AWS v20 上成立；受监督 `node service install` / `uninstall` dry-run 产品入口历史证据在 AWS v21/v22 上成立；Server Profile bundle 的本地迁移入口已成立；非 AWS 服务器只保留历史证据，不再继续验证。
 - Raw public HTTP ingress 仍不成立，产品默认路线不能依赖开放高端口。
-- 小水管部署路径已经从“每个 isolated deploy 都重传源码”推进到“稳定 source artifact 远端缓存复用”；受监督 node agent 已有统一 status、install dry-run 和 uninstall dry-run 入口；多客户端 Server Profile 已有无 secret bundle 迁移入口；outbound broker routing 已完成本地真实 socket 闭环、AWS current 默认端口真实 native session 闭环和 Broker Profile 产品入口。下一步应该补 broker 断线诊断/恢复、浏览器级 Server Setup smoke，以及真实可达 broker endpoint 的跨主机 outbound-only 验收；不再卡 AWS 高端口 public ingress。
+- 小水管部署路径已经从“每个 isolated deploy 都重传源码”推进到“稳定 source artifact 远端缓存复用”；受监督 node agent 已有统一 status、install dry-run 和 uninstall dry-run 入口；多客户端 Server Profile 已有无 secret bundle 迁移入口；outbound broker routing 已完成本地真实 socket 闭环、AWS current 默认端口真实 native session 闭环、Broker Profile 产品入口、broker link 断开诊断和同 `serverId` 恢复。下一步应该补浏览器级 Server Setup smoke，以及真实可达 broker endpoint 的跨主机 outbound-only 验收；不再卡 AWS 高端口 public ingress。
 
 ## 2026-06-26
 

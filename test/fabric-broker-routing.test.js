@@ -15,7 +15,8 @@ const {
   buildLocalRequestUrl,
   connectFabricBroker,
   normalizeBrokerUrl,
-  parseFabricBrokerConnectArgs
+  parseFabricBrokerConnectArgs,
+  runFabricBrokerConnect
 } = require('../lib/cli/services/fabric/broker-connect');
 const {
   brokerProxyBase,
@@ -40,6 +41,15 @@ function closeServer(server) {
     }
     server.close(() => resolve());
   });
+}
+
+async function waitForCondition(predicate, timeoutMs = 500) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (predicate()) return true;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  return predicate();
 }
 
 function writeJson(res, statusCode, payload) {
@@ -77,6 +87,10 @@ test('parseFabricBrokerConnectArgs normalizes broker and local endpoints', () =>
     'broker-token',
     '--local-url',
     'http://127.0.0.1:9527/',
+    '--reconnect-delay-ms',
+    '500',
+    '--max-attempts',
+    '3',
     '--once',
     '--json'
   ], { env: {} });
@@ -85,8 +99,53 @@ test('parseFabricBrokerConnectArgs normalizes broker and local endpoints', () =>
   assert.equal(options.serverId, 'home-server');
   assert.equal(options.token, 'broker-token');
   assert.equal(options.localUrl, 'http://127.0.0.1:9527');
+  assert.equal(options.reconnectDelayMs, 500);
+  assert.equal(options.maxAttempts, 3);
   assert.equal(options.once, true);
   assert.equal(options.json, true);
+});
+
+test('broker session registry keeps last disconnect diagnostics', () => {
+  let now = 1000;
+  const registry = createFabricBrokerSessionRegistry({
+    nowMs: () => now,
+    createSessionId: () => 'session-a'
+  });
+  const socket = { readyState: 1, close: () => {} };
+  registry.registerBrokerSession({
+    serverId: 'Home Server',
+    socket,
+    remoteAddress: '127.0.0.1'
+  });
+  assert.equal(registry.getBrokerServerStatus('home-server').online, true);
+  socket.readyState = 3;
+  assert.equal(registry.getBrokerServerStatus('home-server').online, false);
+  socket.readyState = 1;
+  now = 1500;
+  registry.touchBrokerSession('session-a');
+  now = 2000;
+  registry.removeBrokerSession('session-a', {
+    reason: 'broker_server_link_closed',
+    closeCode: 1006,
+    closeReason: 'network drop'
+  });
+
+  assert.deepEqual(registry.getBrokerServerStatus('home-server'), {
+    serverId: 'home-server',
+    online: false,
+    session: null,
+    lastDisconnected: {
+      sessionId: 'session-a',
+      serverId: 'home-server',
+      remoteAddress: '127.0.0.1',
+      connectedAt: 1000,
+      lastSeenAt: 1500,
+      disconnectedAt: 2000,
+      disconnectReason: 'broker_server_link_closed',
+      closeCode: 1006,
+      closeReason: 'network drop'
+    }
+  });
 });
 
 test('broker route allowlist stays narrow', () => {
@@ -265,7 +324,70 @@ test('broker connect proxies real HTTP requests over real WebSocket sockets', as
   assert.equal(sessionStartRequest.authorization, 'Bearer session-device-token');
 
   brokerHandle.close();
-  await new Promise((resolve) => setTimeout(resolve, 20));
+  await waitForCondition(() => {
+    const status = registry.getBrokerServerStatus('home-server');
+    return status.online === false && Boolean(status.lastDisconnected);
+  });
+  const offline = await fetch(`http://127.0.0.1:${brokerAddress.port}/v0/fabric/broker/servers/home-server/proxy/readyz`);
+  assert.equal(offline.status, 503);
+  const offlinePayload = await offline.json();
+  assert.equal(offlinePayload.error, 'fabric_broker_server_offline');
+  assert.equal(offlinePayload.brokerStatus.online, false);
+  assert.equal(offlinePayload.brokerStatus.lastDisconnected.disconnectReason, 'broker_server_link_closed');
+});
+
+test('runFabricBrokerConnect foreground reconnects with bounded attempts', async () => {
+  const calls = [];
+  const result = await runFabricBrokerConnect([
+    'http://broker.example.com',
+    '--server-id',
+    'home-server',
+    '--token',
+    'broker-token',
+    '--max-attempts',
+    '2',
+    '--reconnect-delay-ms',
+    '250',
+    '--json'
+  ], {
+    env: {},
+    sleep: async () => {},
+    connectFabricBroker: async (options) => {
+      calls.push(options);
+      const attempt = calls.length;
+      return {
+        serverId: options.serverId,
+        brokerUrl: options.brokerUrl,
+        localUrl: options.localUrl,
+        sessionId: `session-${attempt}`,
+        diagnostics: {
+          connectedAt: attempt * 1000,
+          lastHeartbeatAt: attempt * 1000 + 100,
+          lastPongAt: attempt * 1000 + 200
+        },
+        closed: Promise.resolve({
+          ok: true,
+          reason: 'closed',
+          code: 1006,
+          closeReason: 'network drop',
+          connectedAt: attempt * 1000,
+          lastHeartbeatAt: attempt * 1000 + 100,
+          lastPongAt: attempt * 1000 + 200,
+          disconnectedAt: attempt * 1000 + 300
+        }),
+        close: () => {}
+      };
+    }
+  });
+
+  assert.equal(calls.length, 2);
+  assert.equal(result.ok, true);
+  assert.equal(result.attempts, 2);
+  assert.equal(result.sessionId, 'session-2');
+  assert.equal(result.reason, 'closed');
+  assert.equal(result.closeCode, 1006);
+  assert.equal(result.closeReason, 'network drop');
+  assert.equal(result.lastPongAt, 2200);
 });
 
 test('runFabricCommandRouter exposes broker connect JSON result', async () => {

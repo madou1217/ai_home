@@ -287,6 +287,7 @@
 | 7.3 | partial | 长期 daemon/service：registry agent + relay 自动在线 | `2026-06-27-m3-node-service-daemon-partial.md`：AWS current 已有持久 token 文件、5 次/10s 间隔 registry agent 长跑 heartbeat、service install dry-run；systemd unit 未安装，relay daemon 未启动；`2026-06-27-m3-continuation-audit.md` 已复核 7.3 是唯一剩余 M3 gate；`13-m3-supervised-daemon-runbook.md` 已补安全生成 managementKey、service install、restart 验收和 rollback；`2026-06-27-m3-daemon-preflight-script.md` 已证明一键只读 preflight 可复核当前 gate；`2026-06-27-m3-preflight-code-readiness-audit.md` 已修正 preflight；`2026-06-27-m3-current-code-sync-preflight-ready.md` 已完成当前代码同步，preflight `remoteCode.ready=true` | 得到明确 `确认执行 7.3` 后生成 managementKey、重启 server，并执行 `node service install ... --yes`，验证 service running、重启后仍 heartbeat、Fabric Nodes UI fresh measurement |
 | 7.4 | done | relay health 强指标：p95 RTT、echo 成功率、失败原因 | `2026-06-27-m3-relay-health-strong-metrics.md`：AWS current 默认 `9527` WS echo 20/20 pass，latest measurement 和 `networkMeasurements` trace 均落盘，Fabric Nodes UI 显示 `p95`、`100% ok (20)`、`ws_echo_pass` | 作为后续 relay health/UI 回归门保留 |
 | 7.5 | done | 节点页移动端/多节点真实浏览器回归 | `2026-06-27-m3-fabric-nodes-mobile-regression.md`：390x844 mobile viewport 真实配对 profile，两个节点可见，点击节点后详情可用，无横向溢出，console 0 issue | 作为后续移动端 UI 回归门保留 |
+| 7.6 | pending | 本地 AWS 可见性：完成本地 ready server profile，并将 AWS 加入 SSH 开发机管理 | 用户反馈本地 Fabric Nodes 显示“没有 ready server profile”；AWS current 已具备 preflight ready，但本地浏览器 profile/SSH 开发机尚未闭环 | 7.3 done 后，本地真实浏览器打开 Fabric Nodes 能看到 AWS server/node registry；本地 SSH 开发机列表包含 AWS current 且连接测试通过 |
 
 ## 2026-06-26
 

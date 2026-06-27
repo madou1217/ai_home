@@ -126,6 +126,33 @@ test('node relay service installs Linux systemd user unit without leaking manage
   assert.equal(calls.some((call) => call.cmd === 'systemctl' && call.args.join(' ') === '--user enable --now com.clawdcodex.ai_home.node-relay.nat-node.service'), true);
 });
 
+test('node relay service writes Linux systemd unit to the real user home', () => {
+  const root = makeTempDir();
+  const realHome = path.join(root, 'real-home');
+  const deps = makeDeps(root, 'linux', (cmd, args) => {
+    if (cmd === 'sh' && args[1] === 'command -v aih') {
+      return { status: 0, stdout: '/usr/local/bin/aih\n', stderr: '' };
+    }
+    if (cmd === 'systemctl') return { status: 0, stdout: 'enabled\n', stderr: '' };
+    return { status: 1, stdout: '', stderr: '' };
+  }, {
+    HOME: realHome
+  });
+
+  const result = runNodeRelayService([
+    'install',
+    'https://control.example.com',
+    '--node-id',
+    'nat-node'
+  ], deps);
+
+  assert.equal(
+    result.status.file,
+    path.join(realHome, '.config', 'systemd', 'user', 'com.clawdcodex.ai_home.node-relay.nat-node.service')
+  );
+  assert.equal(fs.existsSync(result.status.file), true);
+});
+
 test('node relay service installs Windows startup script without leaking management key', () => {
   const root = makeTempDir();
   const appData = path.join(root, 'AppData', 'Roaming');

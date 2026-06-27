@@ -99,6 +99,37 @@ test('fabric registry agent service installs Linux systemd unit without leaking 
   assert.equal(calls.some((call) => call.cmd === 'systemctl' && call.args.join(' ') === '--user enable --now com.clawdcodex.ai_home.fabric-registry-agent.office-node.service'), true);
 });
 
+test('fabric registry agent service writes Linux systemd unit to the real user home', () => {
+  const root = makeTempDir();
+  const realHome = path.join(root, 'real-home');
+  const tokenFile = path.join(root, 'fabric-node.token');
+  fs.writeFileSync(tokenFile, 'secret-device-token');
+  const deps = makeDeps(root, 'linux', (cmd, args) => {
+    if (cmd === 'sh' && args[1] === 'command -v aih') {
+      return { status: 0, stdout: '/usr/local/bin/aih\n', stderr: '' };
+    }
+    if (cmd === 'systemctl') return { status: 0, stdout: 'enabled\n', stderr: '' };
+    return { status: 1, stdout: '', stderr: '' };
+  }, {
+    HOME: realHome
+  });
+
+  const result = runFabricRegistryAgentService([
+    'install',
+    'https://control.example.com',
+    '--node-id',
+    'Office Node',
+    '--token-file',
+    tokenFile
+  ], deps);
+
+  assert.equal(
+    result.status.file,
+    path.join(realHome, '.config', 'systemd', 'user', 'com.clawdcodex.ai_home.fabric-registry-agent.office-node.service')
+  );
+  assert.equal(fs.existsSync(result.status.file), true);
+});
+
 test('fabric registry agent service status and uninstall are scoped by node id', () => {
   const root = makeTempDir();
   const deps = makeDeps(root, 'linux', (cmd) => {

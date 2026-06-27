@@ -42,6 +42,7 @@ export { normalizeControlPlaneEndpoint };
 
 const STORAGE_KEY = 'aih:control-plane-profiles:v1';
 export const CONTROL_PLANE_PROFILES_CHANGED_EVENT = 'aih:control-plane-profiles-changed';
+const SHARED_PROFILE_API_PATH = '/v0/webui/control-plane/profiles';
 const DEFAULT_DESCRIPTOR_TIMEOUT_MS = 8000;
 const DEFAULT_DEVICE_REQUEST_TIMEOUT_MS = 10000;
 const DEFAULT_PAIR_REQUEST_TIMEOUT_MS = 10000;
@@ -79,6 +80,13 @@ interface StorageLike {
   removeItem: (key: string) => void;
 }
 
+interface SharedControlPlaneProfilesResponse {
+  ok?: boolean;
+  profiles?: unknown;
+  profile?: unknown;
+  activeProfileId?: unknown;
+}
+
 export interface ControlPlaneProfilesChangeDetail {
   profileIds: string[];
   previousProfileIds: string[];
@@ -107,6 +115,12 @@ function getEventTarget(): EventTarget | null {
   if (typeof window === 'undefined') return null;
   if (typeof window.addEventListener !== 'function' || typeof window.dispatchEvent !== 'function') return null;
   return window;
+}
+
+function getSharedProfileFetch(): typeof fetch | null {
+  if (typeof window === 'undefined') return null;
+  const fetcher = (window as Window & { fetch?: typeof fetch }).fetch;
+  return typeof fetcher === 'function' ? fetcher.bind(window) : null;
 }
 
 function normalizeText(value: unknown, maxLength = 512) {
@@ -1115,6 +1129,136 @@ function readProfiles(storage = getStorage()): ControlPlaneProfile[] {
   }
 }
 
+function isReadyProfileCandidate(profile: ControlPlaneProfile | null | undefined) {
+  return Boolean(
+    profile
+      && profile.authState === 'paired'
+      && profile.state !== 'degraded'
+      && profile.state !== 'revoked'
+      && normalizeText(profile.deviceToken, 4096)
+  );
+}
+
+function isAutoCurrentControlPlaneProfile(profile: ControlPlaneProfile | null | undefined) {
+  const currentEndpoint = getCurrentWebUiControlPlaneEndpoint();
+  return Boolean(
+    profile
+      && currentEndpoint
+      && profile.endpoint === currentEndpoint
+      && profile.name === CURRENT_CONTROL_PLANE_PROFILE_NAME
+      && profile.authState !== 'paired'
+      && !normalizeText(profile.deviceToken, 4096)
+  );
+}
+
+function chooseProfileForMerge(left: ControlPlaneProfile | null, right: ControlPlaneProfile | null) {
+  if (!left) return right;
+  if (!right) return left;
+  const leftReady = isReadyProfileCandidate(left);
+  const rightReady = isReadyProfileCandidate(right);
+  if (rightReady && !leftReady) return right;
+  if (leftReady && !rightReady) return left;
+  return right.updatedAt >= left.updatedAt ? right : left;
+}
+
+function mergeControlPlaneProfiles(
+  localProfiles: ControlPlaneProfile[],
+  sharedProfiles: ControlPlaneProfile[]
+): ControlPlaneProfile[] {
+  const byEndpoint = new Map<string, ControlPlaneProfile>();
+  localProfiles.forEach((profile) => {
+    byEndpoint.set(profile.endpoint, chooseProfileForMerge(byEndpoint.get(profile.endpoint) || null, profile) as ControlPlaneProfile);
+  });
+  sharedProfiles.forEach((profile) => {
+    byEndpoint.set(profile.endpoint, chooseProfileForMerge(byEndpoint.get(profile.endpoint) || null, profile) as ControlPlaneProfile);
+  });
+  const merged = Array.from(byEndpoint.values());
+  const currentEndpoint = getCurrentWebUiControlPlaneEndpoint();
+  const hasReadyProfile = merged.some(isReadyProfileCandidate);
+  return merged
+    .filter((profile) => {
+      if (!hasReadyProfile || !currentEndpoint) return true;
+      if (profile.endpoint !== currentEndpoint) return true;
+      return isReadyProfileCandidate(profile);
+    })
+    .sort((left, right) => right.updatedAt - left.updatedAt || left.name.localeCompare(right.name));
+}
+
+function normalizeSharedProfilesPayload(payload: SharedControlPlaneProfilesResponse) {
+  const profiles = (Array.isArray(payload.profiles) ? payload.profiles : [])
+    .map(normalizeProfile)
+    .filter((profile): profile is ControlPlaneProfile => Boolean(profile));
+  const activeProfileId = normalizeText(payload.activeProfileId, 96);
+  return { profiles, activeProfileId };
+}
+
+async function readSharedControlPlaneProfiles(options: { fetchImpl?: typeof fetch } = {}) {
+  const fetcher = options.fetchImpl || getSharedProfileFetch();
+  if (!fetcher) return { profiles: [], activeProfileId: '' };
+  const response = await fetcher(SHARED_PROFILE_API_PATH, {
+    method: 'GET',
+    headers: { accept: 'application/json' },
+    credentials: 'same-origin'
+  });
+  if (!response.ok) {
+    throw new Error(`shared_control_plane_profiles_http_${response.status}`);
+  }
+  return normalizeSharedProfilesPayload(await response.json() as SharedControlPlaneProfilesResponse);
+}
+
+function persistSharedControlPlaneProfile(
+  profile: ControlPlaneProfile,
+  options: { active?: boolean; fetchImpl?: typeof fetch } = {}
+) {
+  const fetcher = options.fetchImpl || getSharedProfileFetch();
+  if (!fetcher || !profile) return;
+  if (isAutoCurrentControlPlaneProfile(profile)) return;
+  fetcher(SHARED_PROFILE_API_PATH, {
+    method: 'POST',
+    headers: {
+      accept: 'application/json',
+      'content-type': 'application/json'
+    },
+    credentials: 'same-origin',
+    body: JSON.stringify({
+      profile,
+      active: options.active === true
+    })
+  }).catch(() => {});
+}
+
+function removeSharedControlPlaneProfile(profileId: string, options: { fetchImpl?: typeof fetch } = {}) {
+  const fetcher = options.fetchImpl || getSharedProfileFetch();
+  const id = normalizeText(profileId, 96);
+  if (!fetcher || !id) return;
+  fetcher(`${SHARED_PROFILE_API_PATH}/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: { accept: 'application/json' },
+    credentials: 'same-origin'
+  }).catch(() => {});
+}
+
+export async function syncSharedControlPlaneProfiles(options: { fetchImpl?: typeof fetch } = {}) {
+  const shared = await readSharedControlPlaneProfiles(options);
+  const local = readProfiles();
+  const merged = mergeControlPlaneProfiles(local, shared.profiles);
+  if (JSON.stringify(merged) !== JSON.stringify(local)) {
+    writeProfiles(merged);
+  }
+  local
+    .filter(isReadyProfileCandidate)
+    .forEach((profile) => persistSharedControlPlaneProfile(profile, { fetchImpl: options.fetchImpl }));
+  if (merged.some(isReadyProfileCandidate)) {
+    shared.profiles
+      .filter(isAutoCurrentControlPlaneProfile)
+      .forEach((profile) => removeSharedControlPlaneProfile(profile.id, { fetchImpl: options.fetchImpl }));
+  }
+  return {
+    profiles: merged,
+    activeProfileId: shared.activeProfileId
+  };
+}
+
 function parseProfileIdsFromStorageValue(value: string | null): string[] {
   try {
     const parsed = JSON.parse(value || '[]');
@@ -1205,8 +1349,10 @@ export function listControlPlaneProfiles(): ControlPlaneProfile[] {
 export function ensureCurrentControlPlaneProfile(): ControlPlaneProfile | null {
   const endpoint = getCurrentWebUiControlPlaneEndpoint();
   if (!endpoint) return null;
-  const existing = readProfiles().find((profile) => profile.endpoint === endpoint) || null;
+  const profiles = readProfiles();
+  const existing = profiles.find((profile) => profile.endpoint === endpoint) || null;
   if (existing) return existing;
+  if (profiles.some(isReadyProfileCandidate)) return null;
   return saveControlPlaneProfile({
     name: CURRENT_CONTROL_PLANE_PROFILE_NAME,
     endpoint,
@@ -1488,6 +1634,7 @@ export function saveControlPlaneProfile(input: {
   const next = profiles.filter((item) => item.id !== profile.id && item.endpoint !== profile.endpoint);
   next.unshift(profile);
   writeProfiles(next);
+  persistSharedControlPlaneProfile(profile);
   return profile;
 }
 
@@ -2007,6 +2154,7 @@ export function removeControlPlaneProfile(profileId: string): ControlPlaneProfil
   const id = normalizeText(profileId, 96);
   const next = readProfiles().filter((profile) => profile.id !== id);
   writeProfiles(next);
+  removeSharedControlPlaneProfile(id);
   return next;
 }
 

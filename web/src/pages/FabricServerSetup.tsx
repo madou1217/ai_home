@@ -25,6 +25,7 @@ import {
   resolveControlPlaneProfileEndpointInput,
   saveControlPlaneProfile,
   serializeControlPlaneProfileBundle,
+  syncSharedControlPlaneProfiles,
   summarizeControlPlaneProfileNodes
 } from '@/services/control-plane-profiles';
 import {
@@ -162,6 +163,25 @@ export default function FabricServerSetup() {
     setActiveProfileId(resolution.profileId);
     return resolution;
   };
+
+  useEffect(() => {
+    let cancelled = false;
+    syncSharedControlPlaneProfiles()
+      .then((result) => {
+        if (cancelled) return;
+        const nextProfiles = result.profiles.length > 0 ? result.profiles : listControlPlaneProfiles();
+        const preferredProfileId = result.activeProfileId || activeProfileId;
+        const resolution = preferredProfileId
+          ? selectActiveControlPlaneProfile(nextProfiles, preferredProfileId)
+          : syncStoredActiveControlPlaneProfile(nextProfiles);
+        setProfiles(nextProfiles);
+        setActiveProfileId(resolution.profileId);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const intent = parseControlPlanePairIntentFromSearch(location.search);

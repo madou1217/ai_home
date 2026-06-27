@@ -25,7 +25,8 @@ import type {
 import {
   addControlPlaneProfilesChangeListener,
   isControlPlaneProfileReady,
-  listControlPlaneProfiles
+  listControlPlaneProfiles,
+  syncSharedControlPlaneProfiles
 } from '@/services/control-plane-profiles';
 import {
   addActiveControlPlaneProfileChangeListener,
@@ -211,11 +212,18 @@ export default function FabricNodes() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    syncSharedControlPlaneProfiles()
+      .catch(() => null)
+      .finally(() => {
+        if (!cancelled) refreshProfile();
+      });
     refreshProfile();
     const unsubscribeProfiles = addControlPlaneProfilesChangeListener(refreshProfile);
     const unsubscribeActive = addActiveControlPlaneProfileChangeListener(refreshProfile);
     window.addEventListener('focus', refreshProfile);
     return () => {
+      cancelled = true;
       unsubscribeProfiles();
       unsubscribeActive();
       window.removeEventListener('focus', refreshProfile);

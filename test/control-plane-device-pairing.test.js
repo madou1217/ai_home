@@ -11,6 +11,9 @@ const {
   getControlPlaneDevicesPath,
   getControlPlaneDeviceSecretsPath
 } = require('../lib/server/control-plane-device-pairing');
+const {
+  getControlPlaneProfilesPath
+} = require('../lib/server/control-plane-profile-store');
 
 function createResCapture() {
   return {
@@ -216,6 +219,134 @@ test('webui control plane lan hints are not recommended when server is loopback 
   assert.equal(lanHint.endpoint, 'http://192.168.3.22:9527');
   assert.equal(lanHint.recommended, false);
   assert.match(payload.warnings.join('\n'), /只监听本机地址/);
+});
+
+test('webui control plane profiles persist ready server profiles in local server store', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-control-plane-profiles-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+
+  const profile = {
+    id: 'cp-aws',
+    name: 'AWS Current',
+    endpoint: 'http://ec2-43-207-102-163.ap-northeast-1.compute.amazonaws.com:9527',
+    connectionMode: 'direct',
+    broker: null,
+    state: 'paired',
+    authState: 'paired',
+    deviceToken: 'device-token',
+    nodes: [{
+      id: 'aws-current-node',
+      name: 'AWS Current Node',
+      role: 'relay-node',
+      endpointPolicy: 'auto',
+      preferredTransports: ['relay'],
+      capabilities: ['projects'],
+      fingerprint: '',
+      tags: ['role:node'],
+      disabled: false,
+      lastSeenAt: 123,
+      connection: {
+        status: 'online',
+        transportKind: 'relay',
+        transportId: 'aws-current-node-relay',
+        sessionId: 'relay-session',
+        remoteAddress: '127.0.0.1',
+        connectedAt: 100,
+        lastSeenAt: 123
+      },
+      createdAt: 100,
+      updatedAt: 123,
+      transports: [{
+        id: 'aws-current-node-relay',
+        nodeId: 'aws-current-node',
+        kind: 'relay',
+        status: 'up',
+        score: 55,
+        latencyMs: 0,
+        lastError: '',
+        disabled: false,
+        managedBy: 'aih',
+        provider: 'aih-relay',
+        routeRole: 'data-plane',
+        trustLevel: 'managed',
+        createdAt: 100,
+        updatedAt: 123
+      }]
+    }],
+    nodeCount: 1,
+    accountCount: 0,
+    activeAccountCount: 0,
+    schedulableAccountCount: 0,
+    sessionCount: 0,
+    lastDeviceSyncAt: 123,
+    lastStatusSyncAt: 123,
+    lastAccountsSyncAt: 123,
+    lastSessionsSyncAt: 123,
+    descriptor: {
+      ok: true,
+      service: 'aih-control-plane',
+      protocolVersion: 1,
+      endpoint: 'http://ec2-43-207-102-163.ap-northeast-1.compute.amazonaws.com:9527',
+      host: '0.0.0.0',
+      port: 9527,
+      serverTime: '2026-06-28T00:00:00.000Z',
+      uptimeSec: 1,
+      auth: { managementKeyConfigured: true, clientKeyConfigured: false },
+      capabilities: {
+        nodeRpc: ['descriptor', 'device-nodes'],
+        management: [],
+        remoteManagement: true,
+        remoteInvite: true,
+        devicePairing: true,
+        transports: ['relay']
+      }
+    },
+    lastCheckedAt: 123,
+    lastError: '',
+    createdAt: 100,
+    updatedAt: 123
+  };
+
+  const saveRes = createResCapture();
+  await handleWebUIRequest({
+    method: 'POST',
+    pathname: '/v0/webui/control-plane/profiles',
+    url: new URL('http://127.0.0.1:9527/v0/webui/control-plane/profiles'),
+    req: { headers: {} },
+    res: saveRes,
+    options: {},
+    state: {},
+    deps: createWebDeps(aiHomeDir, Buffer.from(JSON.stringify({ profile, active: true }), 'utf8'))
+  });
+
+  assert.equal(saveRes.statusCode, 200);
+  const saved = JSON.parse(saveRes.body);
+  assert.equal(saved.ok, true);
+  assert.equal(saved.activeProfileId, 'cp-aws');
+  assert.equal(saved.profile.deviceToken, 'device-token');
+  assert.equal(saved.profile.nodes[0].id, 'aws-current-node');
+
+  const storeText = fs.readFileSync(getControlPlaneProfilesPath(aiHomeDir), 'utf8');
+  assert.match(storeText, /aws-current-node/);
+
+  const listRes = createResCapture();
+  await handleWebUIRequest({
+    method: 'GET',
+    pathname: '/v0/webui/control-plane/profiles',
+    url: new URL('http://127.0.0.1:9527/v0/webui/control-plane/profiles'),
+    req: { headers: {} },
+    res: listRes,
+    options: {},
+    state: {},
+    deps: createWebDeps(aiHomeDir)
+  });
+
+  assert.equal(listRes.statusCode, 200);
+  const listed = JSON.parse(listRes.body);
+  assert.equal(listed.activeProfileId, 'cp-aws');
+  assert.equal(listed.profiles.length, 1);
+  assert.equal(listed.profiles[0].endpoint, profile.endpoint);
+  assert.equal(listed.profiles[0].authState, 'paired');
 });
 
 test('node rpc device pair consumes invite once, returns token once, and supports revoke', async (t) => {

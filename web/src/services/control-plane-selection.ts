@@ -2,6 +2,7 @@ import type { ControlPlaneProfile } from '@/types';
 
 const ACTIVE_CONTROL_PLANE_STORAGE_KEY = 'aih:active-control-plane-profile:v1';
 export const ACTIVE_CONTROL_PLANE_CHANGED_EVENT = 'aih:active-control-plane-profile-changed';
+const SHARED_PROFILE_ACTIVE_API_PATH = '/v0/webui/control-plane/profiles/active';
 
 interface StorageLike {
   getItem: (key: string) => string | null;
@@ -31,6 +32,12 @@ function getEventTarget(): EventTarget | null {
   return window;
 }
 
+function getSharedProfileFetch(): typeof fetch | null {
+  if (typeof window === 'undefined') return null;
+  const fetcher = (window as Window & { fetch?: typeof fetch }).fetch;
+  return typeof fetcher === 'function' ? fetcher.bind(window) : null;
+}
+
 function normalizeProfileId(value: unknown) {
   return String(value ?? '').trim().slice(0, 96);
 }
@@ -56,6 +63,21 @@ function emitActiveControlPlaneProfileChange(
   eventTarget.dispatchEvent(createActiveControlPlaneChangeEvent(detail));
 }
 
+function persistSharedActiveControlPlaneProfileId(profileId: string) {
+  const fetcher = getSharedProfileFetch();
+  const id = normalizeProfileId(profileId);
+  if (!fetcher) return;
+  fetcher(SHARED_PROFILE_ACTIVE_API_PATH, {
+    method: 'POST',
+    headers: {
+      accept: 'application/json',
+      'content-type': 'application/json'
+    },
+    credentials: 'same-origin',
+    body: JSON.stringify({ profileId: id })
+  }).catch(() => {});
+}
+
 export function getActiveControlPlaneProfileId(storage = getStorage()) {
   if (!storage) return '';
   return normalizeProfileId(storage.getItem(ACTIVE_CONTROL_PLANE_STORAGE_KEY));
@@ -72,10 +94,12 @@ export function setActiveControlPlaneProfileId(
   if (!id) {
     storage.removeItem(ACTIVE_CONTROL_PLANE_STORAGE_KEY);
     emitActiveControlPlaneProfileChange({ profileId: '', previousProfileId }, eventTarget);
+    persistSharedActiveControlPlaneProfileId('');
     return '';
   }
   storage.setItem(ACTIVE_CONTROL_PLANE_STORAGE_KEY, id);
   emitActiveControlPlaneProfileChange({ profileId: id, previousProfileId }, eventTarget);
+  persistSharedActiveControlPlaneProfileId(id);
   return id;
 }
 

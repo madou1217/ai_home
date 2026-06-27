@@ -164,6 +164,87 @@ test('control plane profiles notify same-window and storage listeners', () => {
   delete global.window;
 });
 
+test('control plane profiles bootstrap ready profiles from shared local server store', async () => {
+  const eventTarget = new EventTarget();
+  const storage = createStorage();
+  const sharedProfile = {
+    id: 'cp-aws',
+    name: 'AWS Current',
+    endpoint: 'http://ec2-43-207-102-163.ap-northeast-1.compute.amazonaws.com:9527',
+    connectionMode: 'direct',
+    broker: null,
+    state: 'paired',
+    authState: 'paired',
+    deviceToken: 'device-token',
+    nodes: [],
+    nodeCount: 1,
+    accountCount: 0,
+    activeAccountCount: 0,
+    schedulableAccountCount: 0,
+    sessionCount: 0,
+    lastDeviceSyncAt: 1,
+    lastStatusSyncAt: 1,
+    lastAccountsSyncAt: 1,
+    lastSessionsSyncAt: 1,
+    descriptor: createDescriptor('http://ec2-43-207-102-163.ap-northeast-1.compute.amazonaws.com:9527'),
+    lastCheckedAt: 1,
+    lastError: '',
+    createdAt: 1,
+    updatedAt: 2
+  };
+  const requests = [];
+  global.window = Object.assign(eventTarget, {
+    localStorage: storage,
+    fetch: async (url, init = {}) => {
+      requests.push({ url: String(url), method: init.method || 'GET' });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          ok: true,
+          activeProfileId: 'cp-aws',
+          profiles: [sharedProfile]
+        })
+      };
+    }
+  });
+  const profiles = loadControlPlaneProfilesModule();
+
+  const result = await profiles.syncSharedControlPlaneProfiles();
+  const listed = profiles.listControlPlaneProfiles();
+
+  assert.equal(requests[0].url, '/v0/webui/control-plane/profiles');
+  assert.equal(requests[0].method, 'GET');
+  assert.equal(result.activeProfileId, 'cp-aws');
+  assert.equal(listed.length, 1);
+  assert.equal(listed[0].id, 'cp-aws');
+  assert.equal(listed[0].authState, 'paired');
+  assert.equal(listed[0].deviceToken, 'device-token');
+  delete global.window;
+});
+
+test('control plane profiles do not auto-seed current origin when a ready server exists', () => {
+  const eventTarget = new EventTarget();
+  global.window = Object.assign(eventTarget, {
+    localStorage: createStorage(),
+    location: { origin: 'http://127.0.0.1:9527' }
+  });
+  const profiles = loadControlPlaneProfilesModule();
+
+  profiles.saveControlPlaneProfile({
+    endpoint: 'http://ec2-43-207-102-163.ap-northeast-1.compute.amazonaws.com:9527',
+    descriptor: createDescriptor('http://ec2-43-207-102-163.ap-northeast-1.compute.amazonaws.com:9527'),
+    state: 'paired',
+    authState: 'paired',
+    deviceToken: 'device-token'
+  });
+  const listed = profiles.listControlPlaneProfiles();
+
+  assert.equal(listed.length, 1);
+  assert.equal(listed[0].endpoint, 'http://ec2-43-207-102-163.ap-northeast-1.compute.amazonaws.com:9527');
+  delete global.window;
+});
+
 test('control plane profiles store discovered state after descriptor probe', () => {
   global.window = { localStorage: createStorage() };
   const profiles = loadControlPlaneProfilesModule();

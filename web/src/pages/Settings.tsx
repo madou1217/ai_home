@@ -653,6 +653,7 @@ interface SettingsSectionItem {
   label: string;
   forceRender?: boolean;
   children: ReactNode;
+  actions?: ReactNode;
 }
 
 const SETTINGS_PAGE_META = {
@@ -758,6 +759,7 @@ const Settings = ({ section }: SettingsProps) => {
   const [nodeAddModalOpen, setNodeAddModalOpen] = useState(false);
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [editingNode, setEditingNode] = useState<RemoteNode | null>(null);
+  const [extraActions, setExtraActions] = useState<React.ReactNode>(null);
 
   const handleEditNode = (node: RemoteNode) => {
     setEditingNode(node);
@@ -2096,31 +2098,27 @@ const Settings = ({ section }: SettingsProps) => {
   const onlineNodesCount = remoteNodes.filter(node => node.connection?.status === 'online').length;
   const offlineNodesCount = remoteNodes.filter(node => node.connection?.status === 'offline').length;
 
+  const remoteNodesActions = (
+    <Space size={8} wrap>
+      <Button
+        icon={<PlusOutlined />}
+        onClick={handleAddNewNode}
+      >
+        手动配置节点
+      </Button>
+      <Button
+        type="primary"
+        icon={<LinkOutlined />}
+        onClick={() => setInviteModalOpen(true)}
+      >
+        一键加入部署
+      </Button>
+    </Space>
+  );
+
   const remoteNodesContent = (
     <div className="settings-remote-nodes-page">
       <section className="settings-panel">
-        <div className="settings-control-plane-head">
-          <div>
-            <h2>远程节点</h2>
-            <p>管理通过 direct、FRP、SSH 或 overlay 连接至 Control Plane 的计算节点。</p>
-          </div>
-          <Space size={8} wrap className="settings-control-plane-toolbar">
-            <Button
-              icon={<PlusOutlined />}
-              onClick={handleAddNewNode}
-            >
-              手动配置节点
-            </Button>
-            <Button
-              type="primary"
-              icon={<LinkOutlined />}
-              onClick={() => setInviteModalOpen(true)}
-            >
-              一键加入部署
-            </Button>
-          </Space>
-        </div>
-
         <div className="settings-remote-nodes-stats">
           <span>
             <strong>{remoteNodes.length}</strong>
@@ -2224,42 +2222,38 @@ const Settings = ({ section }: SettingsProps) => {
     </div>
   );
 
+  const controlPlanesActions = (
+    <Space size={8} wrap>
+      <Button
+        icon={<ReloadOutlined />}
+        disabled={refreshableControlPlaneCount === 0}
+        loading={refreshingControlPlanes}
+        onClick={handleRefreshAllControlPlanes}
+      >
+        同步全部
+      </Button>
+      <Button
+        icon={<LinkOutlined />}
+        onClick={() => setClientPairModalOpen(true)}
+      >
+        生成配对入口
+      </Button>
+      <Button
+        type="primary"
+        icon={<PlusOutlined />}
+        onClick={() => {
+          setControlPlaneAddMode('pair');
+          setControlPlaneAddModalOpen(true);
+        }}
+      >
+        添加 Control Plane
+      </Button>
+    </Space>
+  );
+
   const controlPlanesContent = (
     <div className="settings-control-plane-page">
       <section className="settings-panel settings-control-plane-shell">
-        <div className="settings-control-plane-head">
-          <div>
-            <h2>Control Plane</h2>
-            <p>保存可管理的 AIH server，切换当前目标，并管理外部客户端访问授权。</p>
-          </div>
-          <Space size={8} wrap className="settings-control-plane-toolbar">
-            <Button
-              icon={<ReloadOutlined />}
-              disabled={refreshableControlPlaneCount === 0}
-              loading={refreshingControlPlanes}
-              onClick={handleRefreshAllControlPlanes}
-            >
-              同步全部
-            </Button>
-            <Button
-              icon={<LinkOutlined />}
-              onClick={() => setClientPairModalOpen(true)}
-            >
-              生成配对入口
-            </Button>
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              onClick={() => {
-                setControlPlaneAddMode('pair');
-                setControlPlaneAddModalOpen(true);
-              }}
-            >
-              添加 Control Plane
-            </Button>
-          </Space>
-        </div>
-
         <div className="settings-control-plane-current">
           <div className="settings-control-plane-current-main">
             <span>当前 Control Plane</span>
@@ -2644,11 +2638,7 @@ const Settings = ({ section }: SettingsProps) => {
     </section>
   );
 
-  const sshHostsContent = (
-    <section className="settings-panel settings-panel--ssh-hosts">
-      <SshHostsPanel />
-    </section>
-  );
+
 
   const sectionItems: SettingsSectionItem[] = [
     {
@@ -2667,17 +2657,20 @@ const Settings = ({ section }: SettingsProps) => {
       label: '控制面',
       forceRender: true,
       children: controlPlanesContent,
+      actions: controlPlanesActions,
     },
     {
       key: 'nodes',
       label: '远程节点',
       forceRender: true,
       children: remoteNodesContent,
+      actions: remoteNodesActions,
     },
     {
       key: 'ssh-hosts',
       label: 'SSH 开发机',
-      children: sshHostsContent,
+      children: <SshHostsPanel setActions={setExtraActions} />,
+      actions: extraActions,
     },
   ];
   const standaloneSection = section ? sectionItems.find((item) => item.key === section) : null;
@@ -3131,6 +3124,7 @@ const Settings = ({ section }: SettingsProps) => {
           title={meta.title}
           eyebrow={meta.eyebrow}
           description={meta.description}
+          actions={standaloneSection.actions}
         />
         <div className="settings-section-content">
           {standaloneSection.children}

@@ -32,7 +32,7 @@ interface RemoteDirItem {
   path: string;
 }
 
-export default function SshHostsPanel() {
+export default function SshHostsPanel({ setActions }: { setActions?: (actions: React.ReactNode) => void }) {
   // ------------------------------------------
   // 1. 数据状态声明
   // ------------------------------------------
@@ -57,6 +57,35 @@ export default function SshHostsPanel() {
 
   // 连通性测试状态存储：key 为 connection.id，value 为测试中 (loading) 或测试结果 (result)
   const [testStates, setTestStates] = useState<Record<string, { loading: boolean; result?: SshHostTestResult }>>({});
+  
+  useEffect(() => {
+    if (setActions) {
+      setActions(
+        <Space size={8} wrap>
+          <Button
+            icon={<PlusOutlined />}
+            onClick={() => showConnModal()}
+          >
+            添加连接
+          </Button>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => showWsModal()}
+            disabled={connections.length === 0}
+          >
+            创建工作空间
+          </Button>
+        </Space>
+      );
+    }
+  }, [setActions, connections.length]);
+
+  useEffect(() => {
+    return () => {
+      setActions?.(null);
+    };
+  }, [setActions]);
   const [expandedRowKeys, setExpandedRowKeys] = useState<React.Key[]>([]);
 
   // 远程目录浏览器状态
@@ -560,29 +589,6 @@ export default function SshHostsPanel() {
   return (
     <div className="ssh-hosts-management-wrapper animate__animated animate__fadeIn animate__faster">
       <section className="settings-panel">
-        <div className="settings-control-plane-head">
-          <div>
-            <h2>SSH 开发机</h2>
-            <p>配置用于远程连接的 SSH 物理通道，并将远程机器上的项目目录映射为本地工作空间。</p>
-          </div>
-          <Space size={8} wrap className="settings-control-plane-toolbar">
-            <Button
-              icon={<PlusOutlined />}
-              onClick={() => showConnModal()}
-            >
-              添加连接
-            </Button>
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              onClick={() => showWsModal()}
-              disabled={connections.length === 0}
-            >
-              创建工作空间
-            </Button>
-          </Space>
-        </div>
-
         <div className="settings-remote-nodes-stats">
           <span>
             <strong>{connections.length}</strong>

@@ -459,13 +459,22 @@ export default function FabricWebrtcLab() {
 
   return (
     <div className="fabric-webrtc-lab-page animate__animated animate__fadeIn animate__faster">
-      <PageHero
+            <PageHero
         title="WebRTC DataChannel 实验"
         eyebrow="AIH Fabric Lab"
         description="短期信令房间只用于传输实验；默认工作流仍走已验证的 WSS fallback。跨 NAT 场景需要按实验记录配置 STUN/TURN。"
         actions={
           <Space size={8} wrap>
-            <Tag color={channelState === 'open' ? 'green' : channelState === 'connecting' ? 'orange' : 'default'}>
+            <Button type="primary" icon={<SendOutlined />} disabled={channelState !== 'open'} onClick={runPing}>
+              Ping 测试
+            </Button>
+            <Button disabled={channelState !== 'open'} onClick={runBenchmark}>
+              5次采样
+            </Button>
+            <Button icon={<DisconnectOutlined />} disabled={channelState === 'closed'} onClick={stopPeer}>
+              断开连接
+            </Button>
+            <Tag color={channelState === 'open' ? 'green' : channelState === 'connecting' ? 'orange' : 'default'} style={{ margin: 0, height: 'auto', padding: '4px 8px' }}>
               Channel: {channelState.toUpperCase()}
             </Tag>
             <Tag color={connectionState === 'connected' ? 'green' : 'default'}>
@@ -524,9 +533,6 @@ export default function FabricWebrtcLab() {
                 </Button>
                 <Button icon={<LinkOutlined />} loading={busy} disabled={!roomId} onClick={joinRoom}>
                   加入房间
-                </Button>
-                <Button icon={<DisconnectOutlined />} onClick={stopPeer}>
-                  断开连接
                 </Button>
               </Space>
             </Form>
@@ -597,14 +603,7 @@ export default function FabricWebrtcLab() {
               </div>
             </div>
 
-            <Space wrap style={{ marginTop: 16 }}>
-              <Button type="primary" icon={<SendOutlined />} disabled={channelState !== 'open'} onClick={runPing}>
-                Ping 测试
-              </Button>
-              <Button disabled={channelState !== 'open'} onClick={runBenchmark}>
-                5 次采样基准测试
-              </Button>
-            </Space>
+
           </section>
         </div>
 

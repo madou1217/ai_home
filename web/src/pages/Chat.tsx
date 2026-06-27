@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Layout, message, Empty, Button, Modal, Input, Drawer, Grid, Breadcrumb } from 'antd';
+import { ModalForm, PageContainer } from '@ant-design/pro-components';
 import { chatAPI, accountsAPI, sessionsAPI, isSessionRequestCancelled } from '@/services/api';
 import type {
   ChatMessage,
@@ -2226,7 +2227,8 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
   );
 
   return (
-    <Layout style={{ height: '100%', background: 'var(--color-bg)', overflow: 'hidden' }}>
+    <PageContainer ghost header={{ title: null }} style={{ height: '100%', overflow: 'hidden' }}>
+      <Layout style={{ height: '100%', background: 'var(--color-bg)', overflow: 'hidden' }}>
       {isMobile ? (
         <div className={styles.mobileStack}>
           {/* 列表页（导航栈根视图） */}
@@ -2336,15 +2338,24 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
           </div>
         </Drawer>
       ) : (
-        <Modal
+        <ModalForm
           title="打开项目"
           open={openProjectVisible}
-          onOk={handleOpenProject}
-          onCancel={() => setOpenProjectVisible(false)}
-          okText="打开"
-          cancelText="取消"
+          onOpenChange={(visible) => {
+            if (!visible) setOpenProjectVisible(false);
+          }}
+          onFinish={async () => {
+            await handleOpenProject();
+            return true;
+          }}
+          submitter={{
+            searchConfig: {
+              submitText: '打开',
+              resetText: '取消',
+            },
+          }}
         >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 12 }}>
             <Button onClick={handlePickProject}>
               选择文件夹
             </Button>
@@ -2360,7 +2371,7 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
               onChange={(e) => setOpenProjectName(e.target.value)}
             />
           </div>
-        </Modal>
+        </ModalForm>
       )}
 
       <Modal
@@ -2450,6 +2461,7 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
         </div>
       </Modal>
     </Layout>
+    </PageContainer>
   );
 };
 

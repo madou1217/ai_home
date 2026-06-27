@@ -17,7 +17,8 @@ export default defineConfig({
   history: {
     type: "browser",
   },
-  publicPath: "/",
+  publicPath: "/ui/",
+  base: "/ui",
   outputPath: "dist",
   hash: true,
   targets: {

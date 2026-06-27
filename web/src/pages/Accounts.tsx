@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { ProTable, ModalForm } from '@ant-design/pro-components';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
-  Table,
   Button,
   Space,
   Tag,
@@ -2179,7 +2179,7 @@ const Accounts = () => {
       dataIndex: 'displayName',
       key: 'displayName',
       width: 250,
-      render: (_text: string, record: Account) => (
+      render: (_text: any, record: Account) => (
         <div>
           <div className="account-email-row" style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
             <div style={{ fontWeight: 'bold', minWidth: 0, flex: 1 }}>
@@ -2219,7 +2219,7 @@ const Accounts = () => {
       dataIndex: 'status',
       key: 'status',
       width: 150,
-      render: (_status: Account['status'], record: Account) => {
+      render: (_status: any, record: Account) => {
         const accountKey = getAccountKey(record);
         const enabled = isAccountEnabled(record);
         return (
@@ -2238,7 +2238,7 @@ const Accounts = () => {
       dataIndex: 'configured',
       key: 'configured',
       width: 100,
-      render: (configured: boolean) => (
+      render: (configured: any) => (
         <Tag
           icon={configured ? <CheckCircleOutlined /> : <CloseCircleOutlined />}
           color={configured ? 'success' : 'default'}
@@ -2252,7 +2252,7 @@ const Accounts = () => {
       dataIndex: 'quotaStatus',
       key: 'quotaStatus',
       width: 190,
-      render: (_quotaStatus: string, record: Account) => {
+      render: (_quotaStatus: any, record: Account) => {
         const refreshable = canRefreshUsageAccount(record);
         const refreshingUsage = Boolean(refreshingUsageAccountKeys[getAccountKey(record)]);
         return (
@@ -2277,7 +2277,7 @@ const Accounts = () => {
       title: '模型探测',
       key: 'modelProbe',
       width: 190,
-      render: (_value: unknown, record: Account) => {
+      render: (_value: any, record: Account) => {
         const probe = getAccountModelProbe(record, modelCatalog);
         const modelRefreshing = Boolean(refreshingModelAccountRefs[getModelRefreshAccountRef(record)]);
         const tagLabel = getModelProbeTagLabel(probe, modelRefreshing);
@@ -2328,7 +2328,7 @@ const Accounts = () => {
         if (usageDiff !== 0) return usageDiff;
         return String(getAccountKey(a)).localeCompare(String(getAccountKey(b)));
       },
-      render: (_pct: number | null, record: Account) => (
+      render: (_pct: any, record: Account) => (
         <UsageSnapshotCell record={record} />
       )
     },
@@ -2338,7 +2338,7 @@ const Accounts = () => {
       key: 'updatedAt',
       width: 150,
       sorter: (a: Account, b: Account) => (a.updatedAt || 0) - (b.updatedAt || 0),
-      render: (timestamp: number) => {
+      render: (timestamp: any) => {
         if (!timestamp) return '-';
         return (
           <div>
@@ -2358,7 +2358,7 @@ const Accounts = () => {
       key: 'lastUsedAt',
       width: 160,
       sorter: (a: Account, b: Account) => (a.lastUsedAt || 0) - (b.lastUsedAt || 0),
-      render: (timestamp?: number | null) => {
+      render: (timestamp?: any) => {
         if (!timestamp) return '-';
         return (
           <div>
@@ -2958,7 +2958,7 @@ const Accounts = () => {
           }
         />
 
-        <Table
+        <ProTable
           dataSource={filteredAccounts}
           columns={columns}
           rowKey={(record) => `${record.provider}-${record.accountId}`}
@@ -2970,6 +2970,8 @@ const Accounts = () => {
             'data-account-key': getAccountKey(record)
           } as React.HTMLAttributes<HTMLElement>)}
           loading={loading}
+          search={false}
+          options={false}
           pagination={{
             pageSize: 20,
             showTotal: (total) => `共 ${total} 个账号`,
@@ -2980,17 +2982,28 @@ const Accounts = () => {
         />
       </div>
 
-      <Modal
+      <ModalForm
         title="编辑配置"
         open={editModalVisible}
-        onOk={handleEditSubmit}
-        onCancel={() => {
-          setEditModalVisible(false);
-          editForm.resetFields();
+        onOpenChange={(visible) => {
+          if (!visible) {
+            setEditModalVisible(false);
+            editForm.resetFields();
+          }
         }}
-        confirmLoading={submitting}
+        form={editForm}
+        onFinish={async () => {
+          await handleEditSubmit();
+          return true;
+        }}
+        submitter={{
+          searchConfig: {
+            submitText: '保存',
+            resetText: '取消',
+          },
+        }}
       >
-        <Form form={editForm} layout="vertical">
+        <Form form={editForm} layout="vertical" component={false}>
           {isEditingClaudeCredential ? (
             <Form.Item
               name="authMode"
@@ -3021,7 +3034,7 @@ const Accounts = () => {
             <Input placeholder="https://api.openai.com/v1" />
           </Form.Item>
         </Form>
-      </Modal>
+      </ModalForm>
 
       <Modal
         title="添加新账号"

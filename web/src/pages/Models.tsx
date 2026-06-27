@@ -832,23 +832,6 @@ export default function Models() {
               />
             </>
           )}
-          actions={(
-            <Space wrap>
-              {accountScoped ? (
-                <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/accounts')}>
-                  返回账号
-                </Button>
-              ) : null}
-              {renderManualModelButton()}
-              <Button
-                icon={<ReloadOutlined />}
-                loading={loading || isCatalogJobActive(catalogJob)}
-                onClick={refreshModels}
-              >
-                {accountScoped ? '重新探测' : '重新读取'}
-              </Button>
-            </Space>
-          )}
         />
 
         {accountScoped ? (

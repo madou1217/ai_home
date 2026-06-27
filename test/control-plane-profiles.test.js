@@ -219,6 +219,45 @@ test('control plane profiles save broker proxy endpoint metadata', () => {
   delete global.window;
 });
 
+test('control plane profiles resolve broker proxy form input', () => {
+  const profiles = loadControlPlaneProfilesModule();
+
+  assert.deepEqual(
+    profiles.resolveControlPlaneProfileEndpointInput({
+      endpoint: 'https://direct.example.com/ui',
+      connectionMode: 'direct'
+    }),
+    {
+      endpoint: 'https://direct.example.com',
+      connectionMode: 'direct',
+      broker: null
+    }
+  );
+  assert.deepEqual(
+    profiles.resolveControlPlaneProfileEndpointInput({
+      connectionMode: 'broker-proxy',
+      brokerEndpoint: 'http://broker.example.com/ui/',
+      brokerServerId: 'AWS Current'
+    }),
+    {
+      endpoint: 'http://broker.example.com/v0/fabric/broker/servers/aws-current/proxy',
+      connectionMode: 'broker-proxy',
+      broker: {
+        brokerEndpoint: 'http://broker.example.com',
+        serverId: 'aws-current',
+        proxyEndpoint: 'http://broker.example.com/v0/fabric/broker/servers/aws-current/proxy'
+      }
+    }
+  );
+  assert.throws(
+    () => profiles.resolveControlPlaneProfileEndpointInput({
+      connectionMode: 'broker-proxy',
+      brokerEndpoint: 'http://broker.example.com'
+    }),
+    /invalid_fabric_broker_profile/
+  );
+});
+
 test('control plane profiles migrate legacy paired auth state into profile state', () => {
   global.window = { localStorage: createStorage() };
   const profiles = loadControlPlaneProfilesModule();
@@ -1810,5 +1849,116 @@ test('control plane profiles consume device pair invite and persist profile toke
       platform: 'ios'
     }
   });
+  delete global.window;
+});
+
+test('control plane profiles pair through broker proxy when broker mode is selected', async () => {
+  global.window = { localStorage: createStorage() };
+  const profiles = loadControlPlaneProfilesModule();
+  const proxyEndpoint = profiles.buildFabricBrokerProxyEndpoint(
+    'http://broker.example.com',
+    'aws-current'
+  );
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    const requestUrl = String(url);
+    calls.push({
+      url: requestUrl,
+      method: String(init && init.method || 'GET'),
+      body: init && init.body ? JSON.parse(String(init.body)) : null
+    });
+    if (requestUrl.endsWith('/v0/fabric/device-pair')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          ok: true,
+          rpc: 'fabric.device.pair',
+          result: {
+            device: {
+              id: 'device-phone',
+              name: 'Phone',
+              platform: 'ios',
+              publicKeyFingerprint: '',
+              scopes: ['control-plane:read', 'nodes:read'],
+              state: 'paired',
+              pairedAt: 1000,
+              revokedAt: 0,
+              lastSeenAt: 0,
+              createdAt: 1000,
+              updatedAt: 1000
+            },
+            token: 'broker-device-token'
+          }
+        })
+      };
+    }
+    if (requestUrl.endsWith('/v0/fabric/descriptor')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          ok: true,
+          rpc: 'fabric.descriptor.read',
+          result: {
+            ok: true,
+            service: 'aih-fabric',
+            protocolVersion: 1,
+            server: {
+              id: 'fabric-control',
+              name: 'Control',
+              endpoint: proxyEndpoint,
+              host: 'broker.example.com',
+              port: 80,
+              serverTime: '2026-06-19T00:00:00.000Z',
+              uptimeSec: 10
+            },
+            roles: ['server', 'relay'],
+            auth: {
+              methods: ['device-pair'],
+              devicePairing: true,
+              managementKeyConfigured: true,
+              clientKeyConfigured: false
+            },
+            capabilities: {
+              client: ['server-profile', 'device-pairing'],
+              roles: {},
+              transports: ['relay'],
+              legacyControlPlane: {
+                protocolVersion: 1,
+                nodeRpc: ['descriptor', 'device-profile', 'device-nodes'],
+                management: ['status']
+              }
+            }
+          }
+        })
+      };
+    }
+    throw new Error(`unexpected request ${requestUrl}`);
+  };
+
+  const paired = await profiles.pairControlPlaneDevice({
+    pairUrlOrCode: 'https://direct.example.com/v0/fabric/device-pair?code=pair-code',
+    endpoint: proxyEndpoint,
+    connectionMode: 'broker-proxy',
+    broker: {
+      brokerEndpoint: 'http://broker.example.com',
+      serverId: 'aws-current',
+      proxyEndpoint
+    },
+    deviceId: 'device-ios-1011121314151617',
+    deviceName: 'Phone',
+    platform: 'ios'
+  }, { fetchImpl });
+
+  assert.equal(paired.profile.endpoint, proxyEndpoint);
+  assert.equal(paired.profile.connectionMode, 'broker-proxy');
+  assert.equal(paired.profile.broker.serverId, 'aws-current');
+  assert.equal(paired.profile.deviceToken, 'broker-device-token');
+  assert.deepEqual(calls.map((call) => call.url), [
+    `${proxyEndpoint}/v0/fabric/device-pair`,
+    `${proxyEndpoint}/v0/fabric/descriptor`
+  ]);
+  assert.equal(calls[0].body.code, 'pair-code');
   delete global.window;
 });

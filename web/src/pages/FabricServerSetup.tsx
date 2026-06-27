@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Alert, Button, Form, Input, Space, Tag, message } from 'antd';
+import { Alert, Button, Form, Input, Segmented, Space, Tag, message } from 'antd';
 import {
   CheckCircleOutlined,
   DownloadOutlined,
@@ -12,6 +12,7 @@ import {
   UploadOutlined
 } from '@ant-design/icons';
 import {
+  buildFabricBrokerProxyEndpoint,
   fetchControlPlaneDescriptor,
   importControlPlaneProfileBundle,
   isControlPlaneProfileReady,
@@ -21,6 +22,7 @@ import {
   parseControlPlanePairIntentFromSearch,
   refreshControlPlaneDeviceState,
   removeControlPlaneProfile,
+  resolveControlPlaneProfileEndpointInput,
   saveControlPlaneProfile,
   serializeControlPlaneProfileBundle,
   summarizeControlPlaneProfileNodes
@@ -36,18 +38,24 @@ import {
   isLoopbackEndpoint
 } from '@/services/control-plane-endpoints';
 import { resolveCurrentDeviceIdentity } from '@/services/device-identity';
-import type { ControlPlaneProfile } from '@/types';
+import type { ControlPlaneProfile, ControlPlaneProfileConnectionMode } from '@/types';
 import './FabricServerSetup.css';
 
 type PairFormValues = {
   pairUrlOrCode?: string;
   endpoint?: string;
+  connectionMode?: ControlPlaneProfileConnectionMode;
+  brokerEndpoint?: string;
+  brokerServerId?: string;
   deviceName?: string;
   platform?: string;
 };
 
 type SaveFormValues = {
   endpoint?: string;
+  connectionMode?: ControlPlaneProfileConnectionMode;
+  brokerEndpoint?: string;
+  brokerServerId?: string;
   name?: string;
   deviceToken?: string;
 };
@@ -56,9 +64,36 @@ type ImportFormValues = {
   bundle?: string;
 };
 
+type ConnectionFormValues = Pick<
+  PairFormValues,
+  'endpoint' | 'connectionMode' | 'brokerEndpoint' | 'brokerServerId'
+>;
+
+const CONNECTION_MODE_OPTIONS = [
+  { label: '直连 Server', value: 'direct' },
+  { label: 'Broker Proxy', value: 'broker-proxy' }
+];
+
 function normalizeError(error: unknown) {
   if (error instanceof Error && error.message) return error.message;
   return String(error || '操作失败');
+}
+
+function normalizeConnectionMode(value: unknown): ControlPlaneProfileConnectionMode {
+  return value === 'broker-proxy' ? 'broker-proxy' : 'direct';
+}
+
+function resolveProfileEndpoint(values: ConnectionFormValues) {
+  return resolveControlPlaneProfileEndpointInput({
+    endpoint: values.endpoint,
+    connectionMode: normalizeConnectionMode(values.connectionMode),
+    brokerEndpoint: values.brokerEndpoint,
+    brokerServerId: values.brokerServerId
+  });
+}
+
+function buildProxyPreview(brokerEndpoint?: string, brokerServerId?: string) {
+  return buildFabricBrokerProxyEndpoint(brokerEndpoint || '', brokerServerId || '');
 }
 
 function getProfileStatus(profile: ControlPlaneProfile) {
@@ -107,6 +142,16 @@ export default function FabricServerSetup() {
   const readyProfiles = profiles.filter(isControlPlaneProfileReady);
   const defaultEndpoint = normalizeControlPlaneEndpoint(getBrowserControlEndpoint());
   const endpointIsLoopback = isLoopbackEndpoint(defaultEndpoint);
+  const pairConnectionMode = normalizeConnectionMode(Form.useWatch('connectionMode', pairForm));
+  const saveConnectionMode = normalizeConnectionMode(Form.useWatch('connectionMode', saveForm));
+  const pairProxyPreview = buildProxyPreview(
+    Form.useWatch('brokerEndpoint', pairForm),
+    Form.useWatch('brokerServerId', pairForm)
+  );
+  const saveProxyPreview = buildProxyPreview(
+    Form.useWatch('brokerEndpoint', saveForm),
+    Form.useWatch('brokerServerId', saveForm)
+  );
 
   const syncProfiles = (preferredProfileId = '') => {
     const nextProfiles = listControlPlaneProfiles();
@@ -122,12 +167,14 @@ export default function FabricServerSetup() {
     const intent = parseControlPlanePairIntentFromSearch(location.search);
     const nextPairValues = {
       pairUrlOrCode: intent.pairUrlOrCode,
+      connectionMode: 'direct' as const,
       endpoint: intent.endpoint || defaultEndpoint,
       deviceName: deviceIdentity.name,
       platform: deviceIdentity.platform
     };
     pairForm.setFieldsValue(nextPairValues);
     saveForm.setFieldsValue({
+      connectionMode: 'direct',
       endpoint: intent.endpoint || defaultEndpoint,
       name: 'AIH Server'
     });
@@ -140,13 +187,14 @@ export default function FabricServerSetup() {
   const handleSaveServer = async (values: SaveFormValues) => {
     setSaving(true);
     try {
-      const endpoint = normalizeControlPlaneEndpoint(values.endpoint || '');
-      if (!endpoint) throw new Error('invalid_control_plane_endpoint');
+      const resolved = resolveProfileEndpoint(values);
       const deviceToken = String(values.deviceToken || '').trim();
-      const descriptor = await fetchControlPlaneDescriptor(endpoint);
+      const descriptor = await fetchControlPlaneDescriptor(resolved.endpoint);
       const profile = saveControlPlaneProfile({
-        endpoint,
-        name: values.name || descriptor.endpoint || endpoint,
+        endpoint: resolved.endpoint,
+        connectionMode: resolved.connectionMode,
+        broker: resolved.broker,
+        name: values.name || descriptor.endpoint || resolved.endpoint,
         descriptor,
         state: deviceToken ? 'paired' : 'discovered',
         authState: deviceToken ? 'paired' : 'unpaired',
@@ -172,9 +220,12 @@ export default function FabricServerSetup() {
   const handlePairServer = async (values: PairFormValues) => {
     setPairing(true);
     try {
+      const resolved = resolveProfileEndpoint(values);
       const paired = await pairControlPlaneDevice({
         pairUrlOrCode: values.pairUrlOrCode,
-        endpoint: values.endpoint,
+        endpoint: resolved.endpoint,
+        connectionMode: resolved.connectionMode,
+        broker: resolved.broker,
         deviceId: deviceIdentity.id,
         deviceName: values.deviceName || deviceIdentity.name,
         platform: values.platform || deviceIdentity.platform
@@ -187,7 +238,10 @@ export default function FabricServerSetup() {
       syncProfiles(paired.profile.id);
       pairForm.setFieldsValue({
         pairUrlOrCode: '',
+        connectionMode: paired.profile.connectionMode,
         endpoint: paired.profile.endpoint,
+        brokerEndpoint: paired.profile.broker?.brokerEndpoint || values.brokerEndpoint,
+        brokerServerId: paired.profile.broker?.serverId || values.brokerServerId,
         deviceName: paired.device.name || deviceIdentity.name,
         platform: paired.device.platform || deviceIdentity.platform
       });
@@ -333,7 +387,10 @@ export default function FabricServerSetup() {
             onFinish={handlePairServer}
             initialValues={{
               pairUrlOrCode: '',
+              connectionMode: 'direct',
               endpoint: defaultEndpoint,
+              brokerEndpoint: '',
+              brokerServerId: '',
               deviceName: deviceIdentity.name,
               platform: deviceIdentity.platform
             }}
@@ -348,9 +405,36 @@ export default function FabricServerSetup() {
                 placeholder="https://aih.example.com/ui/server-setup?pair=... 或一次性 code"
               />
             </Form.Item>
-            <Form.Item name="endpoint" label="Server Endpoint">
-              <Input placeholder="https://aih.example.com" />
+            <Form.Item name="connectionMode" label="连接模式">
+              <Segmented block options={CONNECTION_MODE_OPTIONS} />
             </Form.Item>
+            {pairConnectionMode === 'broker-proxy' ? (
+              <>
+                <div className="fabric-server-setup-form-row">
+                  <Form.Item
+                    name="brokerEndpoint"
+                    label="Broker Endpoint"
+                    rules={[{ required: true, message: '请输入 Broker Endpoint' }]}
+                  >
+                    <Input placeholder="https://broker.example.com" />
+                  </Form.Item>
+                  <Form.Item
+                    name="brokerServerId"
+                    label="Server ID"
+                    rules={[{ required: true, message: '请输入 Server ID' }]}
+                  >
+                    <Input placeholder="aws-current" />
+                  </Form.Item>
+                </div>
+                <Form.Item label="Proxy Endpoint">
+                  <Input value={pairProxyPreview} readOnly placeholder="自动生成" />
+                </Form.Item>
+              </>
+            ) : (
+              <Form.Item name="endpoint" label="Server Endpoint">
+                <Input placeholder="https://aih.example.com" />
+              </Form.Item>
+            )}
             <div className="fabric-server-setup-form-row">
               <Form.Item name="deviceName" label="设备名称">
                 <Input placeholder="Mac / iPhone / Web" />
@@ -378,18 +462,48 @@ export default function FabricServerSetup() {
             layout="vertical"
             onFinish={handleSaveServer}
             initialValues={{
+              connectionMode: 'direct',
               endpoint: defaultEndpoint,
+              brokerEndpoint: '',
+              brokerServerId: '',
               name: 'AIH Server',
               deviceToken: ''
             }}
           >
-            <Form.Item
-              name="endpoint"
-              label="Server URL"
-              rules={[{ required: true, message: '请输入 Server URL' }]}
-            >
-              <Input placeholder="https://aih.example.com" />
+            <Form.Item name="connectionMode" label="连接模式">
+              <Segmented block options={CONNECTION_MODE_OPTIONS} />
             </Form.Item>
+            {saveConnectionMode === 'broker-proxy' ? (
+              <>
+                <div className="fabric-server-setup-form-row">
+                  <Form.Item
+                    name="brokerEndpoint"
+                    label="Broker Endpoint"
+                    rules={[{ required: true, message: '请输入 Broker Endpoint' }]}
+                  >
+                    <Input placeholder="https://broker.example.com" />
+                  </Form.Item>
+                  <Form.Item
+                    name="brokerServerId"
+                    label="Server ID"
+                    rules={[{ required: true, message: '请输入 Server ID' }]}
+                  >
+                    <Input placeholder="aws-current" />
+                  </Form.Item>
+                </div>
+                <Form.Item label="Proxy Endpoint">
+                  <Input value={saveProxyPreview} readOnly placeholder="自动生成" />
+                </Form.Item>
+              </>
+            ) : (
+              <Form.Item
+                name="endpoint"
+                label="Server URL"
+                rules={[{ required: true, message: '请输入 Server URL' }]}
+              >
+                <Input placeholder="https://aih.example.com" />
+              </Form.Item>
+            )}
             <Form.Item name="name" label="显示名称">
               <Input placeholder="Home Fabric / Company Fabric" />
             </Form.Item>
@@ -471,6 +585,8 @@ export default function FabricServerSetup() {
                 </div>
                 <div className="fabric-server-setup-profile-meta">
                   {active && <Tag color="green">当前</Tag>}
+                  {profile.connectionMode === 'broker-proxy' && <Tag color="blue">Broker</Tag>}
+                  {profile.broker?.serverId && <Tag>{profile.broker.serverId}</Tag>}
                   <Tag color={status.color}>{status.label}</Tag>
                   <Tag>{formatProfileDetail(profile)}</Tag>
                 </div>

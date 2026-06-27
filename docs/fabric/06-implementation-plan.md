@@ -93,6 +93,7 @@
 - 通过 broker proxy 完成真实 device pairing。
 - 如果 node relay 在线，通过 broker proxy 触发 native session smoke；否则明确记录阻塞原因。
 - AWS current 默认 `9527` 已完成 broker proxy -> outbound relay -> real Codex native session smoke；证据见 `docs/fabric/evidence/2026-06-27-outbound-broker-relay-aws-smoke.md`。
+- Broker Proxy 已接入 Server Profile 配置入口；Server Setup 可保存/配对 broker profile，服务层会持久化 `connectionMode` 和 broker metadata。证据见 `docs/fabric/evidence/2026-06-27-broker-profile-ui-entry.md`。
 - 跨设备/跨主机验收必须使用真实可达 broker endpoint；AWS `9527` 公网 HTTP 当前不可作为 client public ingress 依赖。
 
 ### M3: Role Registry

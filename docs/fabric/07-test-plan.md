@@ -36,6 +36,13 @@
   - relay online，`transportKind=relay`，`sessions.status=200`。
   - 真实 Codex TUI 输出 `AIH_REAL_BROKER_RELAY_OK_627A`，不是 prompt 原文命中。
   - 证据：`docs/fabric/evidence/2026-06-27-outbound-broker-relay-aws-smoke.md`。
+- Broker Proxy 已进入 Server Profile 配置流程：
+  - Server Setup 的配对和探测保存表单都能选择 `Broker Proxy`。
+  - 服务层验证 direct/broker endpoint resolver、broker metadata 持久化、bundle 导出导入、以及 direct pair URL 在 broker 模式下不覆盖 proxy endpoint。
+  - `node --test "test/control-plane-profiles.test.js" "test/fabric-profile-gate.test.js"` -> 33/33 pass。
+  - `npm --prefix web run build` -> pass。
+  - AWS Japan current 默认 `9527` broker profile entry smoke 返回 `ok=true`、`viaProxy=true`、relay online、sessions RPC HTTP 200。
+  - 证据：`docs/fabric/evidence/2026-06-27-broker-profile-ui-entry.md`。
 - Cross-host API-mode relay smoke 工具已落地：`scripts/fabric-real-outbound-relay-smoke.js --node-join-url ... --device-pair-url ...` 可通过真实 join/pair API 准备 node/device，不再要求共享 host-home。
 - 本机 -> AWS 公网 `http://43.207.102.163:9527` 的 API-mode smoke 当前失败在 `node_join` 阶段，错误为 HTTP timeout；这证明跨主机默认路径当前被 AWS public HTTP ingress 阻塞，而不是 relay/native cleanup 逻辑阻塞。
 - 已接受 [12-outbound-broker-routing.md](12-outbound-broker-routing.md)：AWS public HTTP ingress 不再作为当前阶段阻塞点，下一步以 server/node/client 都能 outbound 的 broker proxy 路线闭环。

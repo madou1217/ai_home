@@ -30,8 +30,9 @@ Options:
   -h, --help             Show this help.
 
 This preflight is read-only. It runs service status, service install --dry-run,
-token file stat, readyz, server process, and residue checks. It never installs
-systemd units, never writes server config, and never prints token contents.
+token file stat, readyz, server process, remote code readiness, and residue
+checks. It never installs systemd units, never writes server config, and never
+prints token contents.
 `);
 }
 
@@ -204,6 +205,19 @@ function buildResidueCommand() {
   return "ps -axo pid,command | grep -E 'fabric registry agent|node relay connect|fabric transport echo|browser-smoke|fabric-real|fabric broker connect' | grep -v grep || true";
 }
 
+function buildRemoteCodeReadinessCommand(options) {
+  return buildNodeCommand(
+    options,
+    [
+      "generate_management_key=no",
+      "grep -q -- '--generate-management-key' lib/server/server-config-command.js && generate_management_key=yes",
+      "runbook=no",
+      "test -f docs/fabric/13-m3-supervised-daemon-runbook.md && runbook=yes",
+      'printf "generate_management_key=%s runbook=%s\\n" "$generate_management_key" "$runbook"'
+    ].join('; ')
+  );
+}
+
 function run(command, args, runOptions = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
@@ -276,6 +290,18 @@ function collectIssueCodes(statusPayload) {
   return issues.map((issue) => String(issue && issue.code || '').trim()).filter(Boolean);
 }
 
+function parseRemoteCodeReadiness(stdout) {
+  const text = String(stdout || '').trim();
+  const match = text.match(/(?:^|\s)generate_management_key=(yes|no)\s+runbook=(yes|no)(?:\s|$)/);
+  const generateManagementKey = Boolean(match && match[1] === 'yes');
+  const supervisedDaemonRunbook = Boolean(match && match[2] === 'yes');
+  return {
+    ready: generateManagementKey && supervisedDaemonRunbook,
+    generateManagementKey,
+    supervisedDaemonRunbook
+  };
+}
+
 function summarizePreflight(options, raw = {}) {
   const statusPayload = raw.statusPayload || {};
   const dryRunPayload = raw.dryRunPayload || {};
@@ -285,12 +311,15 @@ function summarizePreflight(options, raw = {}) {
   const readyzHttp = Number(String(raw.readyz && raw.readyz.stdout || '').trim()) || 0;
   const serverProcesses = lines(raw.serverProcesses && raw.serverProcesses.stdout);
   const residue = lines(raw.residue && raw.residue.stdout);
+  const remoteCode = parseRemoteCodeReadiness(raw.remoteCode && raw.remoteCode.stdout);
   const issueCodes = collectIssueCodes(statusPayload);
   const plan = dryRunPayload.plan || {};
   const relay = services.relay || {};
   const registryAgent = services.registryAgent || {};
   const remainingGate = [];
 
+  if (!remoteCode.generateManagementKey) remainingGate.push('remote_code_missing_generate_management_key');
+  if (!remoteCode.supervisedDaemonRunbook) remainingGate.push('remote_runbook_missing');
   if (!serviceStatus.server || !serviceStatus.server.managementKeyConfigured) {
     remainingGate.push('management_key_missing');
   }
@@ -304,6 +333,7 @@ function summarizePreflight(options, raw = {}) {
     && readyzHttp === 200
     && serverProcesses.length === 1
     && residue.length === 0
+    && remoteCode.ready
     && plan.writes === false
   );
 
@@ -346,6 +376,7 @@ function summarizePreflight(options, raw = {}) {
         ? plan.services.map((service) => service.key).filter(Boolean)
         : []
     },
+    remoteCode,
     residue,
     remainingGate: Array.from(new Set(remainingGate))
   };
@@ -357,6 +388,7 @@ async function runPreflight(options, deps = {}) {
   const dryRun = await runSsh(options, buildInstallDryRunCommand(options), deps);
   const serverProcesses = await runSsh(options, buildServerProcessCommand(), deps);
   const readyz = await runSsh(options, buildReadyzCommand(options), deps);
+  const remoteCode = await runSsh(options, buildRemoteCodeReadinessCommand(options), deps);
   const residue = await runSsh(options, buildResidueCommand(), deps);
 
   return summarizePreflight(options, {
@@ -365,6 +397,7 @@ async function runPreflight(options, deps = {}) {
     dryRunPayload: parseJsonOutput(dryRun, 'node service install dry-run'),
     serverProcesses,
     readyz,
+    remoteCode,
     residue
   });
 }
@@ -390,12 +423,14 @@ if (require.main === module) {
 module.exports = {
   buildInstallDryRunCommand,
   buildReadyzCommand,
+  buildRemoteCodeReadinessCommand,
   buildResidueCommand,
   buildServerProcessCommand,
   buildServiceStatusCommand,
   buildTokenStatCommand,
   getTokenFile,
   parseArgs,
+  parseRemoteCodeReadiness,
   parseTokenStat,
   runPreflight,
   summarizePreflight

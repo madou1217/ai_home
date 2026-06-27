@@ -128,9 +128,15 @@ node scripts/fabric-m3-daemon-preflight.js --json
 
 ## 结论
 
-pass
+superseded by `2026-06-27-m3-preflight-code-readiness-audit.md`
 
-7.3 进入真实安装前的只读状态已可一键复核。AWS current 已准备好在明确确认后进入
-`managementKey` 生成、server restart 和 `node service install --yes` 阶段。
+本文件记录的是 preflight 脚本第一版。后续复核发现第一版漏掉了远端代码就绪度检查：
+AWS current 当时还没有同步包含 `--generate-management-key` 的当前代码，因此不能直接判定为
+`ready_for_confirmed_7_3_execution`。
 
-7.3 仍不能标记为 done，因为 user systemd services 尚未安装，`supervisor.ready=false`。
+修正后的当前结论见：
+
+- `docs/fabric/evidence/2026-06-27-m3-preflight-code-readiness-audit.md`
+
+7.3 仍不能标记为 done，因为 AWS current 尚需先同步当前 Fabric 代码，随后才能生成
+`managementKey`、重启 server 并安装 user systemd services。

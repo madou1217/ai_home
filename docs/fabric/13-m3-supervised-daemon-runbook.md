@@ -29,7 +29,7 @@ AWS current 默认 9527
 
 ## 当前 Preflight
 
-2026-06-27 只读 preflight：
+2026-06-27 只读 preflight 第一版：
 
 | check | result |
 |---|---|
@@ -86,6 +86,27 @@ remainingGate=management_key_missing,relay_service_not_running,registry_agent_se
 ```
 
 证据：`docs/fabric/evidence/2026-06-27-m3-daemon-preflight-script.md`。
+
+后续 code readiness audit 修正了该结论：AWS current 远端代码尚未包含
+`--generate-management-key`，且未同步本 runbook，因此当前真实 preflight 为：
+
+```text
+verdict=preflight_failed
+remoteCode.ready=false
+remoteCode.generateManagementKey=false
+remoteCode.supervisedDaemonRunbook=false
+remainingGate=remote_code_missing_generate_management_key,remote_runbook_missing,management_key_missing,relay_service_not_running,registry_agent_service_not_running
+```
+
+证据：`docs/fabric/evidence/2026-06-27-m3-preflight-code-readiness-audit.md`。
+
+所以真实执行顺序必须是：
+
+```text
+同步当前 Fabric 代码到 AWS current
+-> 重新运行只读 preflight，确认 remoteCode.ready=true
+-> 再进入 managementKey 生成和 service install
+```
 
 ## 执行前确认
 

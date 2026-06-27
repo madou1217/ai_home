@@ -120,6 +120,7 @@ test('node relay service installs Linux systemd user unit without leaking manage
   assert.match(unit, /ExecStart="\/usr\/local\/bin\/aih" "node" "relay" "connect" "https:\/\/control\.example\.com"/);
   assert.match(unit, new RegExp(`WorkingDirectory=${root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/\\.ai_home`));
   assert.doesNotMatch(unit, /WorkingDirectory="[^"]+"/);
+  assert.match(unit, new RegExp(`Environment="AIH_HOST_HOME=${root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`));
   assert.match(unit, /"--node-id" "nat-node"/);
   assert.match(unit, /"--reconnect-delay-ms" "5000"/);
   assert.equal(unit.includes('node-secret'), false);

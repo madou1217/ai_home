@@ -113,6 +113,14 @@ test('claude: per-account CLAUDE_CONFIG_DIR, no HOME override, no injected token
   // HOME stays real (fixes the doctor bug); never inject a static OAuth token
   // (it would bypass Claude's own refresh and die on expiry).
   assert.ok(!('HOME' in set) && !('CLAUDE_CODE_OAUTH_TOKEN' in set));
+  // USER makes Claude Code prefer a macOS Keychain item over the account file;
+  // stale keychain entries can shadow a valid per-account .credentials.json.
+  assert.deepEqual(unset, ['USER']);
+});
+
+test('claude: login keeps USER for native OAuth keychain writes', () => {
+  const { set, unset } = claudeStrategy.buildEnvPatch(baseCtx('claude', { isLogin: true }));
+  assert.deepEqual(set, { CLAUDE_CONFIG_DIR: path.join(SANDBOX, '.claude') });
   assert.deepEqual(unset, []);
 });
 
@@ -124,7 +132,7 @@ test('claude: api credential accounts keep shared session config dir', () => {
     }
   }));
   assert.deepEqual(set, { CLAUDE_CONFIG_DIR: path.join(SANDBOX, '.claude') });
-  assert.deepEqual(unset, []);
+  assert.deepEqual(unset, ['USER']);
 });
 
 test('claude: auth-token accounts keep shared session config dir', () => {

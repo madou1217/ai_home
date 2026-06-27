@@ -1583,6 +1583,42 @@ test('runtime forwards login flags when running login flow', () => {
   assert.deepEqual(rawModeCalls, [true, false]);
 });
 
+test('runtime removes USER for non-login Claude launches', () => {
+  const { runtime, proc, spawns, rawModeCalls } = createRuntimeHarness({
+    USER: 'model',
+    AIH_RUNTIME_SHOW_USAGE: '0'
+  }, {
+    resolveCliPath: () => '/usr/bin/claude'
+  });
+
+  runtime.runCliPtyTracked('claude', '4', ['auth', 'status', '--json'], false);
+  assert.equal(spawns.length, 1);
+  assert.deepEqual(spawns[0].args, ['auth', 'status', '--json']);
+  assert.equal(Object.prototype.hasOwnProperty.call(spawns[0].options.env, 'USER'), false);
+  assert.match(spawns[0].options.env.CLAUDE_CONFIG_DIR, /profiles\/claude\/4\/\.claude$/);
+
+  assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
+  assert.deepEqual(rawModeCalls, [true, false]);
+});
+
+test('runtime keeps USER for Claude login launches', () => {
+  const { runtime, proc, spawns, rawModeCalls } = createRuntimeHarness({
+    USER: 'model',
+    AIH_RUNTIME_SHOW_USAGE: '0'
+  }, {
+    resolveCliPath: () => '/usr/bin/claude'
+  });
+
+  runtime.runCliPtyTracked('claude', '4', [], true);
+  assert.equal(spawns.length, 1);
+  assert.deepEqual(spawns[0].args, ['login']);
+  assert.equal(spawns[0].options.env.USER, 'model');
+  assert.match(spawns[0].options.env.CLAUDE_CONFIG_DIR, /profiles\/claude\/4\/\.claude$/);
+
+  assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
+  assert.deepEqual(rawModeCalls, [true, false]);
+});
+
 test('runtime mirrors proxy env vars across lower/upper case for CLI compatibility', () => {
   const { runtime, proc, spawns, rawModeCalls } = createRuntimeHarness({
     https_proxy: 'http://127.0.0.1:6152',

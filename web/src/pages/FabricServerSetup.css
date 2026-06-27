@@ -1,0 +1,215 @@
+.fabric-server-setup-page {
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
+  gap: 18px;
+  overflow: auto;
+  padding: 24px;
+}
+
+.fabric-server-setup-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  padding-bottom: 4px;
+}
+
+.fabric-server-setup-header span {
+  color: var(--app-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.fabric-server-setup-header h1 {
+  margin: 5px 0 6px;
+  color: var(--app-heading);
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.fabric-server-setup-header p,
+.fabric-server-setup-panel p {
+  margin: 0;
+  color: var(--app-muted-strong);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.fabric-server-setup-alert {
+  max-width: 1120px;
+}
+
+.fabric-server-setup-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.fabric-server-setup-panel {
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  background: var(--app-surface);
+  box-shadow: var(--app-shadow-soft);
+}
+
+.fabric-server-setup-panel--primary {
+  border-color: color-mix(in srgb, var(--app-primary) 22%, var(--app-border));
+}
+
+.fabric-server-setup-panel--wide {
+  max-width: 1120px;
+}
+
+.fabric-server-setup-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.fabric-server-setup-panel-head h2 {
+  margin: 0 0 4px;
+  color: var(--app-heading);
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.fabric-server-setup-panel-head > .anticon {
+  color: var(--app-primary);
+  font-size: 22px;
+}
+
+.fabric-server-setup-form-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.72fr);
+  gap: 12px;
+}
+
+.fabric-server-setup-transfer-grid {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.fabric-server-setup-transfer-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fabric-server-setup-profile-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fabric-server-setup-profile {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(190px, auto) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-sm);
+  background: var(--app-surface-muted);
+}
+
+.fabric-server-setup-profile--active {
+  border-color: var(--app-border-strong);
+  background: var(--app-surface-raised);
+}
+
+.fabric-server-setup-profile-main,
+.fabric-server-setup-profile-meta {
+  min-width: 0;
+}
+
+.fabric-server-setup-profile-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.fabric-server-setup-profile-main strong {
+  overflow: hidden;
+  color: var(--app-heading);
+  font-size: 14px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fabric-server-setup-profile-main span,
+.fabric-server-setup-profile-main em {
+  overflow: hidden;
+  color: var(--app-muted);
+  font-size: 12px;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fabric-server-setup-profile-main em {
+  color: var(--color-danger);
+}
+
+.fabric-server-setup-profile-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.fabric-server-setup-profile-actions {
+  justify-content: flex-end;
+}
+
+.fabric-server-setup-advanced-link {
+  display: inline-flex;
+  margin-top: 14px;
+  margin-right: 16px;
+  color: var(--app-primary);
+  font-size: 13px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.fabric-server-setup-advanced-link:hover {
+  color: var(--app-primary-strong);
+}
+
+@media (max-width: 900px) {
+  .fabric-server-setup-page {
+    padding: 16px;
+  }
+
+  .fabric-server-setup-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .fabric-server-setup-grid,
+  .fabric-server-setup-form-row,
+  .fabric-server-setup-transfer-grid,
+  .fabric-server-setup-profile {
+    grid-template-columns: 1fr;
+  }
+
+  .fabric-server-setup-transfer-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .fabric-server-setup-profile-actions {
+    justify-content: flex-start;
+  }
+}

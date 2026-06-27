@@ -686,6 +686,7 @@ test('web ui remote node bootstrap probe runs readonly ssh and tcp diagnostics',
       ...createDeps(aiHomeDir, null, Buffer.from(JSON.stringify({
         probeSshTargets: ['model@linux.local'],
         probeTcpTargets: ['win.local'],
+        probeHttpTargets: ['http://public.example.com:18381'],
         probeTcpPorts: [22, 3389, 445, 5985],
         controlEndpoint: 'https://control.example.com',
         inviteUrl: 'https://control.example.com/v0/node-rpc/join?code=abc',
@@ -712,6 +713,12 @@ test('web ui remote node bootstrap probe runs readonly ssh and tcp diagnostics',
           open: port === 3389 || port === 445,
           error: port === 3389 || port === 445 ? '' : 'ECONNREFUSED'
         }))
+      }),
+      httpProbe: async () => ({
+        httpStatus: 0,
+        timedOut: true,
+        error: 'timeout',
+        latencyMs: 750
       })
     }
   });
@@ -720,6 +727,7 @@ test('web ui remote node bootstrap probe runs readonly ssh and tcp diagnostics',
   const payload = JSON.parse(probeRes.body);
   assert.equal(payload.ok, true);
   assert.match(payload.command, /^aih node bootstrap probe --ssh model@linux\.local --tcp win\.local/);
+  assert.match(payload.command, /--http http:\/\/public\.example\.com:18381/);
   assert.match(payload.command, /--ports 22,445,3389,5985/);
   assert.match(payload.command, /--target win32/);
   assert.match(payload.command, /--repo-subdir projects\/feature\/ai_home/);
@@ -738,6 +746,7 @@ test('web ui remote node bootstrap probe runs readonly ssh and tcp diagnostics',
   assert.equal(payload.apply.plan.actions[1].executionState, 'manual');
   assert.equal(payload.report.summary.reachableSsh, 1);
   assert.equal(payload.report.summary.localManual, 1);
+  assert.equal(payload.report.summary.httpFailed, 1);
   assert.deepEqual(payload.report.executionPlan.map((step) => ({
     order: step.order,
     status: step.status,
@@ -750,6 +759,10 @@ test('web ui remote node bootstrap probe runs readonly ssh and tcp diagnostics',
   assert.match(payload.report.executionPlan[0].command, /ssh model@linux\.local 'sh -s'/);
   assert.match(payload.report.executionPlan[1].command, /aih node bootstrap --target win32 --script-only/);
   assert.equal(payload.report.results[0].bootstrapAction.channel, 'ssh');
+  const httpResult = payload.report.results.find((result) => result.kind === 'http');
+  assert.equal(httpResult.url, 'http://public.example.com:18381/healthz');
+  assert.equal(httpResult.status, 'timeout');
+  assert.equal(httpResult.bootstrapScript, null);
   assert.match(payload.report.results[0].bootstrapAction.remoteRunCommand, /ssh model@linux\.local 'sh -s'/);
   assert.equal(payload.report.results[0].bootstrapScript.target, 'linux');
   assert.equal(payload.report.results[0].bootstrapScript.type, 'sh');

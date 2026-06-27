@@ -13,11 +13,15 @@ tmp/
 .aih/
 .antigravitycli/
 
-# Documentation policy: keep root entry docs plus the Web design-system spec.
+# Documentation policy: keep root entry docs, the Web design-system spec,
+# and the Fabric design pack.
 *.md
 !/AGENTS.md
 !/README.md
 !/web/DESIGN.md
+!/docs/
+!/docs/fabric/
+!/docs/fabric/**
 
 # Generated bundles copied from external Codex/Electron builds.
 /app-session-*.js

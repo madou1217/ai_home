@@ -257,6 +257,31 @@ test('runtime does not inject --skip-git-repo-check by default', () => {
   assert.deepEqual(rawModeCalls, [true, false]);
 });
 
+test('runtime uses headless direct spawn for claude print prompts', () => {
+  const directSpawns = [];
+  const { runtime, spawns, writes } = createRuntimeHarness({}, {
+    resolveCliPath: () => '/usr/local/bin/claude',
+    spawn: (command, args, options) => {
+      const child = new EventEmitter();
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+      child.kill = () => {};
+      directSpawns.push({ command, args, options, child });
+      return child;
+    }
+  });
+
+  runtime.runCliPtyTracked('claude', '4', ['-p', '只输出 ok'], false);
+
+  assert.equal(spawns.length, 0);
+  assert.equal(directSpawns.length, 1);
+  assert.equal(directSpawns[0].command, '/usr/local/bin/claude');
+  assert.deepEqual(directSpawns[0].args, ['-p', '只输出 ok']);
+
+  directSpawns[0].child.stdout.emit('data', Buffer.from('ok\n'));
+  assert.match(writes.join(''), /ok/);
+});
+
 test('runtime preserves caller TERM for provider PTY clients', () => {
   const { runtime, proc, spawns, rawModeCalls } = createRuntimeHarness({
     TERM: 'xterm-256color'
@@ -3220,13 +3245,13 @@ test('runtime preserves CJK/emoji characters in pty output over SSH without lati
   // then toString('latin1') re-mapped each byte to a Latin-1 char, yielding garbled output
   // instead of the original Chinese characters.
   const chinese = '你好世界✦⚠';
-  const { runtime, proc, writes } = createRuntimeHarness({
+  const { runtime, spawns, writes } = createRuntimeHarness({
     SSH_CONNECTION: '192.0.2.10 50000 192.0.2.20 22',
     SSH_TTY: '/dev/pts/0'
   });
   runtime.runCliPtyTracked('claude', '1', [], false);
   // Emit Chinese text from pty as a UTF-8 decoded string (as node-pty delivers it)
-  proc._onData(chinese);
+  spawns[0].proc._onData(chinese);
   const received = writes.join('');
   assert.ok(received.includes(chinese), `CJK output corrupted: got ${JSON.stringify(received)}`);
 });

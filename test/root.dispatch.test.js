@@ -13,6 +13,7 @@ test('createRootCommandContexts builds all root command contexts', () => {
     os: {},
     fse: {},
     execSync: () => '',
+    spawnSync: () => ({}),
     readline: {},
     consoleImpl: {},
     processObj: {},
@@ -108,6 +109,7 @@ test('createRootRouterDeps keeps exact handler references', () => {
   const runBackupCommand = () => {};
   const runServerEntry = () => {};
   const runNodeCommandRouter = () => {};
+  const runFabricCommandRouter = () => {};
   const runClipAgentCommand = () => {};
   const runSshClipboardProbeCommand = () => {};
   const runGlobalPersistentSessionsCommand = () => {};
@@ -131,7 +133,9 @@ test('createRootRouterDeps keeps exact handler references', () => {
     runServerEntry,
     serverEntryContext: {},
     runNodeCommandRouter,
+    runFabricCommandRouter,
     nodeContext: {},
+    fabricContext: {},
     runClipAgentCommand,
     clipAgentContext: {},
     runSshClipboardProbeCommand,
@@ -144,6 +148,7 @@ test('createRootRouterDeps keeps exact handler references', () => {
   assert.equal(deps.runBackupCommand, runBackupCommand);
   assert.equal(deps.runServerEntry, runServerEntry);
   assert.equal(deps.runNodeCommandRouter, runNodeCommandRouter);
+  assert.equal(deps.runFabricCommandRouter, runFabricCommandRouter);
   assert.equal(deps.runClipAgentCommand, runClipAgentCommand);
   assert.equal(deps.runSshClipboardProbeCommand, runSshClipboardProbeCommand);
   assert.equal(deps.runGlobalPersistentSessionsCommand, runGlobalPersistentSessionsCommand);
@@ -154,6 +159,7 @@ test('createRootDispatchWiring composes contexts and router deps in one call', (
   const runBackupCommand = () => {};
   const runServerEntry = () => {};
   const runNodeCommandRouter = () => {};
+  const runFabricCommandRouter = () => {};
   const runClipAgentCommand = () => {};
   const runSshClipboardProbeCommand = () => {};
   const runAiCliCommandRouter = () => {};
@@ -163,6 +169,7 @@ test('createRootDispatchWiring composes contexts and router deps in one call', (
     os: {},
     fse: {},
     execSync: () => '',
+    spawnSync: () => ({}),
     readline: {},
     consoleImpl: {},
     processObj: {},
@@ -238,6 +245,7 @@ test('createRootDispatchWiring composes contexts and router deps in one call', (
     runBackupCommand,
     runServerEntry,
     runNodeCommandRouter,
+    runFabricCommandRouter,
     runClipAgentCommand,
     runSshClipboardProbeCommand,
     runAiCliCommandRouter
@@ -249,11 +257,16 @@ test('createRootDispatchWiring composes contexts and router deps in one call', (
   assert.equal(typeof deps.serverEntryContext, 'object');
   assert.equal(typeof deps.aiCliContext, 'object');
   assert.equal(typeof deps.nodeContext, 'object');
+  assert.equal(typeof deps.fabricContext, 'object');
+  assert.equal(typeof deps.fabricContext.spawnSync, 'function');
+  assert.equal(deps.fabricContext.aiHomeDir, '/tmp/aih');
+  assert.equal(deps.fabricContext.hostHomeDir, '/tmp');
   assert.equal('devContext' in deps, false);
   assert.equal('runDevCommand' in deps, false);
   assert.equal(deps.runBackupCommand, runBackupCommand);
   assert.equal(deps.runServerEntry, runServerEntry);
   assert.equal(deps.runNodeCommandRouter, runNodeCommandRouter);
+  assert.equal(deps.runFabricCommandRouter, runFabricCommandRouter);
   assert.equal(deps.runClipAgentCommand, runClipAgentCommand);
   assert.equal(deps.runSshClipboardProbeCommand, runSshClipboardProbeCommand);
   assert.equal(deps.nodeContext.hostname(), 'node-host');

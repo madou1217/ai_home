@@ -1,0 +1,4 @@
+interface:
+  display_name: "AIH Codex Implementer"
+  short_description: "Implements approved AIH Fabric tasks"
+  default_prompt: "Use $aih-codex-implementer to implement an approved AIH Fabric task with focused tests and evidence."

@@ -787,10 +787,20 @@ export type ControlPlaneProfileState =
   | 'revoked'
   | 'recovery';
 
+export type ControlPlaneProfileConnectionMode = 'direct' | 'broker-proxy';
+
+export interface ControlPlaneProfileBroker {
+  brokerEndpoint: string;
+  serverId: string;
+  proxyEndpoint: string;
+}
+
 export interface ControlPlaneProfile {
   id: string;
   name: string;
   endpoint: string;
+  connectionMode: ControlPlaneProfileConnectionMode;
+  broker: ControlPlaneProfileBroker | null;
   state: ControlPlaneProfileState;
   authState: ControlPlaneAuthState;
   deviceToken: string;
@@ -809,6 +819,27 @@ export interface ControlPlaneProfile {
   lastError: string;
   createdAt: number;
   updatedAt: number;
+}
+
+export interface ControlPlaneProfileBundleEntry {
+  name: string;
+  endpoint: string;
+  connectionMode: ControlPlaneProfileConnectionMode;
+  broker: ControlPlaneProfileBroker | null;
+  descriptor: ControlPlaneDescriptor | null;
+  nodeCount: number;
+  accountCount: number;
+  schedulableAccountCount: number;
+  sessionCount: number;
+  exportedAt: string;
+}
+
+export interface ControlPlaneProfileBundle {
+  kind: 'aih-control-plane-profile-bundle';
+  version: 1;
+  exportedAt: string;
+  profiles: ControlPlaneProfileBundleEntry[];
+  warnings: string[];
 }
 
 export type RemoteNodeTransportKind =

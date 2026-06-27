@@ -29,7 +29,10 @@ function createCodexBulkImportDeps(aiHomeDir) {
     }
   };
   const getProfileDir = (provider, id) => path.join(profilesDir, provider, String(id));
-  const getToolConfigDir = (provider, id) => path.join(profilesDir, provider, String(id), `.${provider}`);
+  const getToolConfigDir = (provider, id) => {
+    if (provider === 'agy') return path.join(profilesDir, provider, String(id), '.gemini', 'antigravity-cli');
+    return path.join(profilesDir, provider, String(id), `.${provider}`);
+  };
   const codexService = createCodexBulkImportService({
     path,
     fs,
@@ -892,6 +895,26 @@ test('runUnifiedImport imports mixed flat single-account JSON zip roots through 
         base_url: 'https://api.anthropic.com/v1'
       }
     }));
+    fs.writeFileSync(path.join(zipExtractDir, 'gemini_flat@example.com.json'), JSON.stringify({
+      platform: 'gemini',
+      type: 'oauth',
+      credentials: {
+        email: 'gemini-flat@example.com',
+        access_token: 'gemini-access-flat',
+        refresh_token: 'gemini-refresh-flat',
+        client_id: 'gemini-client-flat'
+      }
+    }));
+    fs.writeFileSync(path.join(zipExtractDir, 'agy_flat@example.com.json'), JSON.stringify({
+      platform: 'antigravity',
+      type: 'oauth',
+      credentials: {
+        email: 'agy-flat@example.com',
+        access_token: 'agy-access-flat',
+        refresh_token: 'agy-refresh-flat',
+        expires_at: '2030-01-01T00:00:00.000Z'
+      }
+    }));
 
     const deps = createCodexBulkImportDeps(aiHomeDir);
     const service = createUnifiedImportService({
@@ -904,7 +927,12 @@ test('runUnifiedImport imports mixed flat single-account JSON zip roots through 
       processImpl: { platform: 'linux' },
       cryptoImpl: require('node:crypto'),
       aiHomeDir,
-      cliConfigs: { codex: { globalDir: '.codex' }, claude: { globalDir: '.claude' } },
+      cliConfigs: {
+        codex: { globalDir: '.codex' },
+        claude: { globalDir: '.claude' },
+        gemini: { globalDir: '.gemini' },
+        agy: { globalDir: '.gemini', configSubDir: 'antigravity-cli' }
+      },
       ...deps,
       ensureArchiveExtractedByHashImpl: async () => ({
         extractDir: zipExtractDir,
@@ -926,10 +954,18 @@ test('runUnifiedImport imports mixed flat single-account JSON zip roots through 
 
     assert.equal(result.failedSources.length, 0);
     assert.equal(result.sourceResults.length, 1);
-    assert.equal(result.sourceResults[0].imported, 2);
-    assert.deepEqual(result.providers, ['claude', 'codex']);
+    assert.equal(result.sourceResults[0].imported, 4);
+    assert.deepEqual(result.providers, ['agy', 'claude', 'codex', 'gemini']);
     assert.equal(JSON.parse(fs.readFileSync(path.join(deps.getToolConfigDir('codex', '1'), 'auth.json'), 'utf8')).email, 'worker@example.com');
     assert.equal(JSON.parse(fs.readFileSync(path.join(deps.getProfileDir('claude', '1'), '.aih_env.json'), 'utf8')).ANTHROPIC_API_KEY, 'sk-claude-flat');
+    assert.equal(
+      JSON.parse(fs.readFileSync(path.join(deps.getToolConfigDir('gemini', '1'), 'oauth_creds.json'), 'utf8')).access_token,
+      'gemini-access-flat'
+    );
+    assert.equal(
+      JSON.parse(fs.readFileSync(path.join(deps.getToolConfigDir('agy', '1'), 'antigravity-oauth-token'), 'utf8')).token.access_token,
+      'agy-access-flat'
+    );
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

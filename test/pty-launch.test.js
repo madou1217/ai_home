@@ -8,6 +8,32 @@ test('buildPtyLaunch keeps direct launch on linux', () => {
   assert.deepEqual(launch.args, ['--help']);
 });
 
+test('buildPtyLaunch wraps POSIX shell shims for node-pty', () => {
+  const fsImpl = {
+    existsSync: (filePath) => filePath === '/Users/me/bin/codex',
+    readFileSync: () => '#!/bin/sh\nexec /real/codex "$@"\n'
+  };
+  const launch = buildPtyLaunch('/Users/me/bin/codex', ['--version'], {
+    platform: 'darwin',
+    fsImpl
+  });
+  assert.equal(launch.command, '/bin/sh');
+  assert.deepEqual(launch.args, ['/Users/me/bin/codex', '--version']);
+});
+
+test('buildPtyLaunch keeps non-shell POSIX executables direct', () => {
+  const fsImpl = {
+    existsSync: () => true,
+    readFileSync: () => '#!/usr/bin/env node\nconsole.log("ok")\n'
+  };
+  const launch = buildPtyLaunch('/Users/me/bin/tool', ['--version'], {
+    platform: 'darwin',
+    fsImpl
+  });
+  assert.equal(launch.command, '/Users/me/bin/tool');
+  assert.deepEqual(launch.args, ['--version']);
+});
+
 test('buildPtyLaunch wraps .cmd with cmd.exe on windows', () => {
   const launch = buildPtyLaunch(
     'C:\\Users\\me\\AppData\\Roaming\\npm\\codex.cmd',

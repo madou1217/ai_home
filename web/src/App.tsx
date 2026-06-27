@@ -1,9 +1,10 @@
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { ConfigProvider, Grid, Layout } from 'antd';
-import { Suspense, lazy, useEffect } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
   BarChartOutlined,
+  ClusterOutlined,
   DashboardOutlined,
   DatabaseOutlined,
   TeamOutlined,
@@ -13,6 +14,21 @@ import {
 import zhCN from 'antd/locale/zh_CN';
 import aiHomeLogo from '@/assets/brand/ai-home-logo.png';
 import aiHomeMark from '@/assets/brand/ai-home-mark.png';
+import ControlPlaneProfileSelect from '@/components/control-plane/ControlPlaneProfileSelect';
+import {
+  addControlPlaneProfilesChangeListener,
+  listControlPlaneProfiles
+} from '@/services/control-plane-profiles';
+import {
+  addActiveControlPlaneProfileChangeListener,
+  getActiveControlPlaneProfileId
+} from '@/services/control-plane-selection';
+import {
+  FABRIC_SERVER_SETUP_HREF,
+  resolveFabricServerSetupTarget,
+  resolveFabricProfileGateState,
+  shouldRedirectToFabricServerSetup
+} from '@/services/fabric-profile-gate';
 import { throttle } from '@/utils/timing';
 import './styles/App.css';
 
@@ -40,6 +56,9 @@ const Chat = lazyWithChunkRecovery(() => import('@/pages/Chat'));
 const ModelUsage = lazyWithChunkRecovery(() => import('@/pages/ModelUsage'));
 const Models = lazyWithChunkRecovery(() => import('@/pages/Models'));
 const Settings = lazyWithChunkRecovery(() => import('@/pages/Settings'));
+const FabricServerSetup = lazyWithChunkRecovery(() => import('@/pages/FabricServerSetup'));
+const FabricNodes = lazyWithChunkRecovery(() => import('@/pages/FabricNodes'));
+const FabricWebrtcLab = lazyWithChunkRecovery(() => import('@/pages/FabricWebrtcLab'));
 
 interface NavItem {
   key: string;
@@ -85,6 +104,12 @@ const NAV_ITEMS: NavItem[] = [
     mobileLabel: '模型'
   },
   {
+    key: '/fabric/nodes',
+    icon: <ClusterOutlined />,
+    label: 'Fabric Nodes',
+    mobileLabel: '节点'
+  },
+  {
     key: '/settings',
     icon: <SettingOutlined />,
     label: '设置',
@@ -94,12 +119,14 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 function resolveSelectedKey(pathname: string) {
+  if (pathname === '/server-setup') return '/settings';
   const match = NAV_ITEMS.find((item) => (
     item.key === '/'
       ? pathname === '/'
       : pathname === item.key || pathname.startsWith(`${item.key}/`)
   ));
 
+  if (!match && pathname.startsWith('/fabric/')) return '/settings';
   return match?.key || '/';
 }
 
@@ -107,6 +134,12 @@ function AppContent() {
   const navigate = useNavigate();
   const location = useLocation();
   const screens = Grid.useBreakpoint();
+  const [profiles, setProfiles] = useState(() => listControlPlaneProfiles());
+  const [activeProfileId, setActiveProfileId] = useState(() => getActiveControlPlaneProfileId());
+  const fabricGate = useMemo(
+    () => resolveFabricProfileGateState(profiles, activeProfileId),
+    [activeProfileId, profiles]
+  );
   const isMobile = !screens.md;
   const selectedKey = resolveSelectedKey(location.pathname);
   const selectedNavItem = NAV_ITEMS.find((item) => item.key === selectedKey);
@@ -140,6 +173,21 @@ function AppContent() {
       viewport?.removeEventListener('resize', onViewportChange);
       viewport?.removeEventListener('scroll', onViewportChange);
       window.removeEventListener('resize', onViewportChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    const refreshFabricProfiles = () => {
+      setProfiles(listControlPlaneProfiles());
+      setActiveProfileId(getActiveControlPlaneProfileId());
+    };
+    const unsubscribeProfiles = addControlPlaneProfilesChangeListener(refreshFabricProfiles);
+    const unsubscribeActive = addActiveControlPlaneProfileChangeListener(refreshFabricProfiles);
+    window.addEventListener('focus', refreshFabricProfiles);
+    return () => {
+      unsubscribeProfiles();
+      unsubscribeActive();
+      window.removeEventListener('focus', refreshFabricProfiles);
     };
   }, []);
 
@@ -187,10 +235,14 @@ function AppContent() {
               })}
             </nav>
             <div className="app-sidebar-footer">
-              <span className="app-sidebar-footer-dot" />
-              <span>
-                <strong>aih</strong>
-              </span>
+              <ControlPlaneProfileSelect
+                label="Server"
+                size="compact"
+                manageHref={FABRIC_SERVER_SETUP_HREF}
+                emptyLabel="配置"
+                manageLabel="配置"
+                showSummary
+              />
             </div>
           </aside>
         ) : null}
@@ -207,21 +259,35 @@ function AppContent() {
                   <div className="app-page-title">{mobilePageTitle}</div>
                 </div>
               </div>
+              <ControlPlaneProfileSelect
+                label=""
+                size="compact"
+                manageHref={FABRIC_SERVER_SETUP_HREF}
+                emptyLabel="配置"
+                manageLabel="配置"
+              />
             </Header>
           ) : null}
 
           <Content className={`app-content${isChat ? ' app-content--chat' : ''}`}>
             <Suspense fallback={routeFallback}>
-              <Routes>
-                <Route path="/" element={<Dashboard />} />
-                <Route path="/accounts" element={<Accounts />} />
-                <Route path="/chat" element={<Chat />} />
-                <Route path="/usage" element={<ModelUsage />} />
-                <Route path="/models" element={<Models />} />
-                <Route path="/accounts/:provider/:accountId/models" element={<Models />} />
-                <Route path="/settings" element={<Settings />} />
-                <Route path="*" element={<Navigate to="/" replace />} />
-              </Routes>
+              {shouldRedirectToFabricServerSetup(fabricGate, location.pathname, location.search) ? (
+                <Navigate to={resolveFabricServerSetupTarget(location.search)} replace />
+              ) : (
+                <Routes>
+                  <Route path="/" element={<Dashboard />} />
+                  <Route path="/accounts" element={<Accounts />} />
+                  <Route path="/chat" element={<Chat />} />
+                  <Route path="/usage" element={<ModelUsage />} />
+                  <Route path="/models" element={<Models />} />
+                  <Route path="/accounts/:provider/:accountId/models" element={<Models />} />
+                  <Route path="/settings" element={<Settings />} />
+                  <Route path="/server-setup" element={<FabricServerSetup />} />
+                  <Route path="/fabric/nodes" element={<FabricNodes />} />
+                  <Route path="/fabric/webrtc-lab" element={<FabricWebrtcLab />} />
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Routes>
+              )}
             </Suspense>
           </Content>
         </Layout>

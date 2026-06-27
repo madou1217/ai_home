@@ -13,6 +13,15 @@ test('root help explains remote defaults and client pairing boundaries', () => {
 
   const output = logs.join('\n');
   assert.match(output, /relay is the default no-public-IP path/);
+  assert.match(output, /aih fabric transport probe <endpoint\.\.\.>/);
+  assert.match(output, /aih fabric transport tcp-echo <tcp-url>/);
+  assert.match(output, /aih node service status/);
+  assert.match(output, /aih node service install <control-url>/);
+  assert.match(output, /Plan supervised relay \+ registry agent autostart/);
+  assert.match(output, /aih node service uninstall --node-id ID/);
+  assert.match(output, /Plan supervised relay \+ registry agent autostart rollback/);
+  assert.match(output, /supervised node readiness/);
+  assert.match(output, /Fabric starts with explicit server profiles/);
   assert.match(output, /provider\/route\/trust are derived from transport/);
   assert.match(output, /phones, PWAs, tablets, and other computers pair as Control Plane device clients/);
   assert.match(output, /FRP\/SSH\/VPN\/OMR\/MPTCP require a user-managed HTTP endpoint/);

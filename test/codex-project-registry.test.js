@@ -47,6 +47,34 @@ test('ensureCodexProjectRegistered appends trusted project block once', () => {
   }
 });
 
+test('ensureCodexProjectRegistered can write directly to an account codex home', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-codex-project-account-home-'));
+  const hostHomeDir = path.join(root, 'host');
+  const accountCodexHome = path.join(root, 'host', '.ai_home', 'profiles', 'codex', '3', '.codex');
+  const projectPath = '/home/ubuntu/aih-fabric-current';
+
+  try {
+    const result = ensureCodexProjectRegistered(projectPath, {
+      hostHomeDir,
+      codexHomeDir: accountCodexHome,
+      processObj: {
+        env: { AIH_HOST_HOME: hostHomeDir },
+        platform: process.platform
+      }
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.configPath, path.join(accountCodexHome, 'config.toml'));
+    assert.equal(fs.existsSync(path.join(hostHomeDir, '.codex', 'config.toml')), false);
+    assert.match(
+      fs.readFileSync(path.join(accountCodexHome, 'config.toml'), 'utf8'),
+      /\[projects\."\/home\/ubuntu\/aih-fabric-current"\]\ntrust_level = "trusted"/
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('codex project registry decodes encoded Windows host home fallbacks', () => {
   const stopEventsPath = getCodexStopEventsPath({
     processObj: {

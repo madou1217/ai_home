@@ -41,6 +41,8 @@ function createHarness(overrides = {}) {
     updateContext: {},
     runNodeCommandRouter: async () => 0,
     nodeContext: {},
+    runFabricCommandRouter: async () => 0,
+    fabricContext: {},
     runAiCliCommandRouter: (cmd) => events.push(`ai:${cmd}`),
     aiCliContext: {}
   };
@@ -309,6 +311,23 @@ test('runCliRootRouter routes node command before ai cli fallback', async () => 
   assert.deepEqual(calls, [{
     args: ['node', 'join', 'https://control.example.com/v0/node-rpc/join?code=abc'],
     context: { node: true }
+  }]);
+  assert.equal(h.events.some((event) => event.startsWith('ai:')), false);
+});
+
+test('runCliRootRouter routes fabric command before ai cli fallback', async () => {
+  const calls = [];
+  const h = createHarness({
+    runFabricCommandRouter: async (args, context) => {
+      calls.push({ args, context });
+      return 0;
+    },
+    fabricContext: { fabric: true }
+  });
+  await runCliRootRouter(['fabric', 'transport', 'probe', 'tcp://127.0.0.1:9527'], h.deps);
+  assert.deepEqual(calls, [{
+    args: ['fabric', 'transport', 'probe', 'tcp://127.0.0.1:9527'],
+    context: { fabric: true }
   }]);
   assert.equal(h.events.some((event) => event.startsWith('ai:')), false);
 });

@@ -8,6 +8,10 @@ const {
   importStandardAccountRecords,
   parseStandardAccountRecordsFromJson
 } = require('../lib/account/standard-transfer');
+const {
+  loadAgyServerAccounts,
+  loadGeminiServerAccounts
+} = require('../lib/server/accounts');
 const { createStandardFormatExportService } = require('../lib/cli/services/backup/standard-format-export');
 
 function writeJson(filePath, payload) {
@@ -418,6 +422,115 @@ test('importStandardAccountRecords rejects Antigravity api-key records from sub2
       reason: 'unsupported_api_key_provider'
     }]);
     assert.equal(fs.existsSync(path.join(aiHomeDir, 'profiles', 'agy', '1')), false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('importStandardAccountRecords stores flat Gemini OAuth records in native credential layout', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-standard-import-gemini-flat-'));
+  try {
+    const aiHomeDir = path.join(root, '.ai_home');
+    const deps = createImportDeps(aiHomeDir);
+    const records = parseStandardAccountRecordsFromJson({
+      platform: 'gemini',
+      type: 'oauth',
+      credentials: {
+        email: 'gemini-flat@example.com',
+        access_token: 'gemini-access',
+        refresh_token: 'gemini-refresh',
+        id_token: 'gemini-id',
+        client_id: 'gemini-client',
+        expires_at: 1893456000000
+      }
+    });
+
+    const result = importStandardAccountRecords({
+      fs,
+      path,
+      records,
+      ...deps
+    });
+    const profileDir = deps.getProfileDir('gemini', '1');
+    const configDir = deps.getToolConfigDir('gemini', '1');
+    const oauthPath = path.join(configDir, 'oauth_creds.json');
+    const oauth = JSON.parse(fs.readFileSync(oauthPath, 'utf8'));
+    const runtimeAccounts = loadGeminiServerAccounts({
+      fs,
+      getToolAccountIds: deps.getToolAccountIds,
+      getProfileDir: deps.getProfileDir,
+      checkStatus: (_provider, pDir) => ({
+        configured: pDir === profileDir,
+        accountName: 'gemini-flat@example.com'
+      })
+    });
+
+    assert.equal(result.imported, 1);
+    assert.equal(oauth.access_token, 'gemini-access');
+    assert.equal(oauth.refresh_token, 'gemini-refresh');
+    assert.equal(oauth.id_token, 'gemini-id');
+    assert.equal(oauth.client_id, 'gemini-client');
+    assert.equal(oauth.email, 'gemini-flat@example.com');
+    assert.equal(Object.prototype.hasOwnProperty.call(oauth, 'credentials'), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(oauth, 'platform'), false);
+    assert.equal(runtimeAccounts.length, 1);
+    assert.equal(runtimeAccounts[0].accessToken, 'gemini-access');
+    assert.equal(runtimeAccounts[0].email, 'gemini-flat@example.com');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('importStandardAccountRecords stores flat Antigravity OAuth records in native credential layout', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-standard-import-agy-flat-'));
+  try {
+    const aiHomeDir = path.join(root, '.ai_home');
+    const deps = createImportDeps(aiHomeDir);
+    const records = parseStandardAccountRecordsFromJson({
+      platform: 'antigravity',
+      type: 'oauth',
+      credentials: {
+        email: 'agy-flat@example.com',
+        access_token: 'agy-access',
+        refresh_token: 'agy-refresh',
+        expires_at: '2030-01-01T00:00:00.000Z'
+      }
+    });
+
+    const result = importStandardAccountRecords({
+      fs,
+      path,
+      records,
+      ...deps
+    });
+    const profileDir = deps.getProfileDir('agy', '1');
+    const configDir = deps.getToolConfigDir('agy', '1');
+    const tokenPath = path.join(configDir, 'antigravity-oauth-token');
+    const auth = JSON.parse(fs.readFileSync(tokenPath, 'utf8'));
+    const email = fs.readFileSync(path.join(configDir, 'email.cache'), 'utf8');
+    const runtimeAccounts = loadAgyServerAccounts({
+      fs,
+      getToolAccountIds: deps.getToolAccountIds,
+      getToolConfigDir: deps.getToolConfigDir,
+      getProfileDir: deps.getProfileDir,
+      checkStatus: (_provider, pDir) => ({
+        configured: pDir === profileDir,
+        accountName: 'agy-flat@example.com'
+      })
+    });
+
+    assert.equal(result.imported, 1);
+    assert.equal(auth.auth_method, 'oauth');
+    assert.equal(auth.token.access_token, 'agy-access');
+    assert.equal(auth.token.refresh_token, 'agy-refresh');
+    assert.equal(auth.token.expiry, '2030-01-01T00:00:00.000Z');
+    assert.equal(email, 'agy-flat@example.com');
+    assert.equal(Object.prototype.hasOwnProperty.call(auth, 'credentials'), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(auth, 'platform'), false);
+    assert.equal(runtimeAccounts.length, 1);
+    assert.equal(runtimeAccounts[0].accessToken, 'agy-access');
+    assert.equal(runtimeAccounts[0].refreshToken, 'agy-refresh');
+    assert.equal(runtimeAccounts[0].email, 'agy-flat@example.com');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

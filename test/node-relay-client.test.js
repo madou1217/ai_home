@@ -335,13 +335,14 @@ test('runNodeRelayConnect applies relay stream window before forwarding next chu
   assert.equal(secondChunk.sequence, 2);
   assert.equal(secondChunk.payload.result.cursor, 2);
 
+  const endFramePromise = readJsonMessageWithTimeout(session.socket, 500);
   session.socket.send(JSON.stringify({
     type: 'relay.stream.ack',
     streamId: 'window-stream-1',
     credit: 1,
     sequence: 2
   }));
-  const endFrame = await readJsonMessageWithTimeout(session.socket, 500);
+  const endFrame = await endFramePromise;
   assert.equal(endFrame.type, 'relay.stream.end');
   assert.equal(endFrame.ok, true);
 
@@ -575,6 +576,147 @@ test('fetchLocalRelayRequest forwards typed node-rpc session input body to local
   assert.equal(result.status, 200);
   assert.equal(result.ok, true);
   assert.deepEqual(result.payload, { ok: true, rpc: 'node.session_input', result: { accepted: true } });
+});
+
+test('fetchLocalRelayRequest forwards native session start and run controls to local server', async () => {
+  const observed = [];
+  const result = await fetchLocalRelayRequest({
+    method: 'POST',
+    pathname: '/v0/node-rpc/session-start',
+    body: JSON.stringify({
+      provider: 'codex',
+      accountId: '3',
+      prompt: 'relay start'
+    }),
+    requestId: 'request-start'
+  }, {
+    localBaseUrl: 'http://127.0.0.1:9527',
+    managementKey: 'node-secret'
+  }, {
+    fetchImpl: async (url, options) => {
+      observed.push({
+        url,
+        method: options.method,
+        authorization: options.headers.authorization,
+        contentType: options.headers['content-type'],
+        body: options.body
+      });
+      return {
+        status: 200,
+        ok: true,
+        text: async () => JSON.stringify({ ok: true, rpc: 'node.session_start', result: { runId: 'run-1' } })
+      };
+    }
+  });
+
+  assert.deepEqual(observed[0], {
+    url: 'http://127.0.0.1:9527/v0/node-rpc/session-start',
+    method: 'POST',
+    authorization: 'Bearer node-secret',
+    contentType: 'application/json',
+    body: JSON.stringify({
+      provider: 'codex',
+      accountId: '3',
+      prompt: 'relay start'
+    })
+  });
+  assert.equal(result.status, 200);
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.payload, { ok: true, rpc: 'node.session_start', result: { runId: 'run-1' } });
+
+  const events = await fetchLocalRelayRequest({
+    method: 'GET',
+    pathname: '/v0/node-rpc/session-run-events?runId=run-1&cursor=2',
+    requestId: 'request-events'
+  }, {
+    localBaseUrl: 'http://127.0.0.1:9527',
+    managementKey: 'node-secret'
+  }, {
+    fetchImpl: async (url, options) => {
+      observed.push({
+        url,
+        method: options.method,
+        authorization: options.headers.authorization
+      });
+      return {
+        status: 200,
+        ok: true,
+        text: async () => JSON.stringify({ ok: true, rpc: 'node.session_run_events', result: { events: [] } })
+      };
+    }
+  });
+  assert.deepEqual(observed[1], {
+    url: 'http://127.0.0.1:9527/v0/node-rpc/session-run-events?runId=run-1&cursor=2',
+    method: 'GET',
+    authorization: 'Bearer node-secret'
+  });
+  assert.equal(events.ok, true);
+
+  const input = await fetchLocalRelayRequest({
+    method: 'POST',
+    pathname: '/v0/node-rpc/session-run-input',
+    body: JSON.stringify({ runId: 'run-1', input: '/status' }),
+    requestId: 'request-input'
+  }, {
+    localBaseUrl: 'http://127.0.0.1:9527',
+    managementKey: 'node-secret'
+  }, {
+    fetchImpl: async (url, options) => {
+      observed.push({
+        url,
+        method: options.method,
+        authorization: options.headers.authorization,
+        contentType: options.headers['content-type'],
+        body: options.body
+      });
+      return {
+        status: 200,
+        ok: true,
+        text: async () => JSON.stringify({ ok: true, rpc: 'node.session_run_input', result: { accepted: true } })
+      };
+    }
+  });
+  assert.deepEqual(observed[2], {
+    url: 'http://127.0.0.1:9527/v0/node-rpc/session-run-input',
+    method: 'POST',
+    authorization: 'Bearer node-secret',
+    contentType: 'application/json',
+    body: JSON.stringify({ runId: 'run-1', input: '/status' })
+  });
+  assert.equal(input.ok, true);
+
+  const abort = await fetchLocalRelayRequest({
+    method: 'POST',
+    pathname: '/v0/node-rpc/session-run-abort',
+    body: JSON.stringify({ runId: 'run-1' }),
+    requestId: 'request-abort'
+  }, {
+    localBaseUrl: 'http://127.0.0.1:9527',
+    managementKey: 'node-secret'
+  }, {
+    fetchImpl: async (url, options) => {
+      observed.push({
+        url,
+        method: options.method,
+        authorization: options.headers.authorization,
+        contentType: options.headers['content-type'],
+        body: options.body
+      });
+      return {
+        status: 200,
+        ok: true,
+        text: async () => JSON.stringify({ ok: true, rpc: 'node.session_run_abort', result: { accepted: true } })
+      };
+    }
+  });
+  assert.deepEqual(observed[3], {
+    url: 'http://127.0.0.1:9527/v0/node-rpc/session-run-abort',
+    method: 'POST',
+    authorization: 'Bearer node-secret',
+    contentType: 'application/json',
+    body: JSON.stringify({ runId: 'run-1' })
+  });
+  assert.equal(abort.ok, true);
 });
 
 test('runNodeCommandRouter routes relay connect without leaking management key', async () => {

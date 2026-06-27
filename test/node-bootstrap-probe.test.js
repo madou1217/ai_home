@@ -27,6 +27,9 @@ const { runNodeCommandRouter } = require('../lib/cli/commands/node-router');
 
 test('buildNodeBootstrapProbeCommand renders parallel ssh tcp bootstrap template', () => {
   const command = buildNodeBootstrapProbeCommand({
+    sshTargets: ['user@linux-host', 'user@mac-host'],
+    tcpTargets: ['windows-host'],
+    httpTargets: ['https://control.example.com/healthz'],
     controlUrl: 'https://control.example.com',
     inviteUrl: 'https://control.example.com/v0/node-rpc/join?code=abc',
     repoUrl: 'https://example.com/ai_home.git',
@@ -37,6 +40,7 @@ test('buildNodeBootstrapProbeCommand renders parallel ssh tcp bootstrap template
   });
 
   assert.match(command, /^aih node bootstrap probe --ssh user@linux-host --ssh user@mac-host --tcp windows-host/);
+  assert.match(command, /--http https:\/\/control\.example\.com\/healthz/);
   assert.match(command, /--ports 22,445,3389,5985,5986/);
   assert.match(command, /--control-url https:\/\/control\.example\.com/);
   assert.match(command, /--invite-url 'https:\/\/control\.example\.com\/v0\/node-rpc\/join\?code=abc'/);
@@ -45,12 +49,14 @@ test('buildNodeBootstrapProbeCommand renders parallel ssh tcp bootstrap template
   assert.match(command, /--transport frp --endpoint https:\/\/frp\.example\.com\/node-a -j 3 --timeout-ms 3000$/);
 });
 
-test('parseNodeBootstrapProbeArgs accepts ssh and tcp targets with late port selection', () => {
+test('parseNodeBootstrapProbeArgs accepts ssh, tcp, and http targets with late port selection', () => {
   const options = parseNodeBootstrapProbeArgs([
     '--ssh',
     'model@192.168.3.8',
     '--tcp',
     '192.168.3.76',
+    '--http',
+    '155.248.183.169:18381',
     '--ports',
     '22,445,3389',
     '-j',
@@ -90,6 +96,7 @@ test('parseNodeBootstrapProbeArgs accepts ssh and tcp targets with late port sel
   assert.equal(options.sshTargets[0].user, 'model');
   assert.equal(options.sshTargets[0].host, '192.168.3.8');
   assert.deepEqual(options.tcpTargets[0].ports, [22, 445, 3389]);
+  assert.equal(options.httpTargets[0].url, 'http://155.248.183.169:18381/healthz');
 });
 
 test('buildRemoteProbeCommand uses only normalized repo subdir defaults', () => {
@@ -177,6 +184,65 @@ test('runNodeBootstrapProbe probes ssh and tcp targets without mutating remotes'
   assert.match(result.report.results[1].bootstrapAction.targetAction, /Copy and run the generated PowerShell script/);
   assert.match(result.report.results[1].bootstrapAction.note, /Local manual bootstrap only/);
   assert.match(result.report.results[1].recommendation, /local console/);
+});
+
+test('runNodeBootstrapProbe probes HTTP ingress without adding bootstrap execution steps', async () => {
+  const result = await runNodeBootstrapProbe([
+    '--ssh',
+    'model@linux.local',
+    '--http',
+    'http://155.248.183.169:18381',
+    '--http',
+    'https://control.example.com/custom-health',
+    '-j',
+    '2'
+  ], {
+    sshProbe: async () => ({
+      status: 'reachable',
+      platform: 'Linux',
+      arch: 'x86_64',
+      commands: { node: true, npm: true, git: true, aih: true },
+      repo: { present: true }
+    }),
+    httpProbe: async (target) => ({
+      httpStatus: target.url.includes('custom-health') ? 200 : 0,
+      timedOut: !target.url.includes('custom-health'),
+      error: target.url.includes('custom-health') ? '' : 'timeout',
+      latencyMs: target.url.includes('custom-health') ? 42 : 5000
+    })
+  });
+
+  assert.equal(result.report.summary.total, 3);
+  assert.equal(result.report.summary.httpReady, 1);
+  assert.equal(result.report.summary.httpFailed, 1);
+  assert.equal(result.report.summary.unreachable, 0);
+  assert.deepEqual(result.report.results.filter((item) => item.kind === 'http').map((item) => ({
+    target: item.target,
+    url: item.url,
+    status: item.status,
+    ok: item.ok
+  })), [
+    {
+      target: 'http://155.248.183.169:18381',
+      url: 'http://155.248.183.169:18381/healthz',
+      status: 'timeout',
+      ok: false
+    },
+    {
+      target: 'https://control.example.com/custom-health',
+      url: 'https://control.example.com/custom-health',
+      status: 'reachable',
+      ok: true
+    }
+  ]);
+  assert.equal(result.report.executionPlan.length, 1);
+  assert.equal(result.report.executionPlan[0].kind, 'ssh');
+
+  const output = formatNodeBootstrapProbeReport(result.report);
+  assert.match(output, /http-ready:1, http-failed:1/);
+  assert.match(output, /http http:\/\/155\.248\.183\.169:18381: timeout/);
+  assert.match(output, /HTTP timed out/);
+  assert.match(output, /http https:\/\/control\.example\.com\/custom-health: reachable/);
 });
 
 test('runNodeBootstrapProbe uses repo subdir for cross-platform default paths', async () => {
@@ -307,7 +373,7 @@ test('runNodeBootstrapProbe reports password ssh as auth required instead of unr
   assert.equal(result.report.executionPlan[0].manualCommands[0].key, 'windows-interactive-ssh');
 
   const output = formatNodeBootstrapProbeReport(result.report);
-  assert.match(output, /\[aih\] summary: ssh:0, ssh-auth:1, ssh-port:0, winrm:0, local-manual:0, unreachable:0/);
+  assert.match(output, /\[aih\] summary: ssh:0, ssh-auth:1, ssh-port:0, winrm:0, local-manual:0, http-ready:0, http-failed:0, unreachable:0/);
   assert.match(output, /ssh madou@192\.168\.3\.76: auth-required/);
   assert.match(output, /SSH authentication required: madou@192\.168\.3\.76/);
   assert.match(output, /target command: ssh madou@192\.168\.3\.76/);
@@ -513,7 +579,7 @@ test('formatNodeBootstrapProbeReport renders actionable ssh and tcp output', asy
 
   const output = formatNodeBootstrapProbeReport(result.report);
   assert.match(output, /\[aih\] node bootstrap probe/);
-  assert.match(output, /\[aih\] summary: ssh:1, ssh-auth:0, ssh-port:0, winrm:1, local-manual:0, unreachable:0/);
+  assert.match(output, /\[aih\] summary: ssh:1, ssh-auth:0, ssh-port:0, winrm:1, local-manual:0, http-ready:0, http-failed:0, unreachable:0/);
   assert.match(output, /\[aih\] execution plan:/);
   assert.match(output, /1\. SSH remote bootstrap: model@mac\.local/);
   assert.match(output, /2\. WinRM PowerShell bootstrap: win\.local:5985/);

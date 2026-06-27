@@ -46,6 +46,7 @@ test('codex adapter converts openai chat payload to codex responses payload', ()
 test('codex adapter applies provider protocol parameter policy to native responses payloads', () => {
   const payload = __private.convertOpenAIResponsesToCodexPayload({
     model: 'gpt-any-model',
+    provider: 'codex',
     stream: false,
     temperature: 0.7,
     max_output_tokens: 128,
@@ -59,7 +60,27 @@ test('codex adapter applies provider protocol parameter policy to native respons
   assert.equal(payload.model, 'gpt-target-model');
   assert.equal(payload.stream, true);
   assert.equal(payload.max_output_tokens, 128);
+  assert.equal(Object.hasOwn(payload, 'provider'), false);
   assert.equal(Object.hasOwn(payload, 'temperature'), false);
+});
+
+test('codex adapter rebuilds native non-stream output from output_item.done events', () => {
+  const sse = [
+    'data: {"type":"response.created","response":{"id":"resp_native","created_at":1700000000,"model":"gpt-5.5","output":[]}}',
+    '',
+    'data: {"type":"response.output_item.done","output_index":0,"item":{"id":"rs_1","type":"reasoning","content":[],"summary":[]}}',
+    '',
+    'data: {"type":"response.output_item.done","output_index":1,"item":{"id":"msg_1","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"AIH_REAL_TEXT"}]}}',
+    '',
+    'data: {"type":"response.completed","response":{"id":"resp_native","object":"response","created_at":1700000000,"status":"completed","model":"gpt-5.5","output":[],"usage":{"input_tokens":2,"output_tokens":3,"total_tokens":5}}}',
+    ''
+  ].join('\n');
+
+  const response = __private.extractNativeCompletedResponse(sse);
+  assert.equal(response.id, 'resp_native');
+  assert.equal(response.output.length, 2);
+  assert.equal(response.output[1].content[0].text, 'AIH_REAL_TEXT');
+  assert.equal(response.output_text, 'AIH_REAL_TEXT');
 });
 
 test('codex adapter resolves model from request/cache/config without hardcoded aliases', () => {

@@ -20,6 +20,10 @@ import type {
   ControlPlaneDeviceStatus,
   ControlPlaneDeviceStatusResponse,
   ControlPlaneNodeSummary,
+  ControlPlaneProfileBundle,
+  ControlPlaneProfileBundleEntry,
+  ControlPlaneProfileBroker,
+  ControlPlaneProfileConnectionMode,
   ControlPlaneProfileState,
   ControlPlaneProfile
 } from '@/types';
@@ -43,6 +47,18 @@ const DEFAULT_DEVICE_REQUEST_TIMEOUT_MS = 10000;
 const DEFAULT_PAIR_REQUEST_TIMEOUT_MS = 10000;
 const MAX_PROFILE_NODE_CACHE = 100;
 const CURRENT_CONTROL_PLANE_PROFILE_NAME = '当前 Control Plane';
+const CONTROL_PLANE_PROFILE_BUNDLE_KIND = 'aih-control-plane-profile-bundle';
+const CONTROL_PLANE_PROFILE_BUNDLE_VERSION = 1;
+const PROFILE_BUNDLE_SECRET_KEYS = new Set([
+  'apikey',
+  'authorization',
+  'clientkey',
+  'devicetoken',
+  'managementkey',
+  'refreshtoken',
+  'secret',
+  'token'
+]);
 export const CONTROL_PLANE_PROFILE_STATES: ControlPlaneProfileState[] = [
   'draft',
   'discovered',
@@ -51,6 +67,10 @@ export const CONTROL_PLANE_PROFILE_STATES: ControlPlaneProfileState[] = [
   'degraded',
   'revoked',
   'recovery'
+];
+export const CONTROL_PLANE_PROFILE_CONNECTION_MODES: ControlPlaneProfileConnectionMode[] = [
+  'direct',
+  'broker-proxy'
 ];
 
 interface StorageLike {
@@ -78,6 +98,74 @@ function getEventTarget(): EventTarget | null {
 function normalizeText(value: unknown, maxLength = 512) {
   const text = String(value ?? '').trim();
   return text.length > maxLength ? text.slice(0, maxLength) : text;
+}
+
+function normalizeFabricServerId(value: unknown) {
+  const raw = normalizeText(value, 128).toLowerCase()
+    .replace(/[^a-z0-9_.-]+/g, '-')
+    .replace(/^[^a-z0-9]+/, '')
+    .replace(/[^a-z0-9]+$/, '')
+    .slice(0, 64);
+  return /^[a-z0-9][a-z0-9_.-]{1,63}$/.test(raw) ? raw : '';
+}
+
+export function buildFabricBrokerProxyEndpoint(brokerEndpoint: string, serverId: string): string {
+  const endpoint = normalizeControlPlaneEndpoint(brokerEndpoint);
+  const normalizedServerId = normalizeFabricServerId(serverId);
+  if (!endpoint || !normalizedServerId) return '';
+  const encoded = encodeURIComponent(normalizedServerId);
+  return buildControlPlaneHttpUrl(endpoint, `/v0/fabric/broker/servers/${encoded}/proxy`);
+}
+
+function parseFabricBrokerProxyEndpoint(endpoint: string): ControlPlaneProfileBroker | null {
+  const normalized = normalizeControlPlaneEndpoint(endpoint);
+  if (!normalized) return null;
+  try {
+    const url = new URL(normalized);
+    const marker = '/v0/fabric/broker/servers/';
+    const markerIndex = url.pathname.indexOf(marker);
+    if (markerIndex < 0) return null;
+    const rest = url.pathname.slice(markerIndex + marker.length);
+    const parts = rest.split('/').filter(Boolean);
+    if (parts.length < 2 || parts[1] !== 'proxy') return null;
+    const serverId = normalizeFabricServerId(decodeURIComponent(parts[0] || ''));
+    if (!serverId) return null;
+    const brokerPath = url.pathname.slice(0, markerIndex).replace(/\/+$/, '');
+    const brokerEndpoint = normalizeControlPlaneEndpoint(`${url.protocol}//${url.host}${brokerPath}`);
+    const proxyEndpoint = buildFabricBrokerProxyEndpoint(brokerEndpoint, serverId);
+    if (!brokerEndpoint || proxyEndpoint !== normalized) return null;
+    return {
+      brokerEndpoint,
+      serverId,
+      proxyEndpoint
+    };
+  } catch (_error) {
+    return null;
+  }
+}
+
+function normalizeProfileConnectionMode(value: unknown, endpoint = ''): ControlPlaneProfileConnectionMode {
+  const mode = normalizeText(value, 32).toLowerCase();
+  if (CONTROL_PLANE_PROFILE_CONNECTION_MODES.includes(mode as ControlPlaneProfileConnectionMode)) {
+    return mode as ControlPlaneProfileConnectionMode;
+  }
+  return parseFabricBrokerProxyEndpoint(endpoint) ? 'broker-proxy' : 'direct';
+}
+
+function normalizeProfileBroker(value: unknown, endpoint = ''): ControlPlaneProfileBroker | null {
+  const inferred = parseFabricBrokerProxyEndpoint(endpoint);
+  const source = value && typeof value === 'object'
+    ? value as Partial<ControlPlaneProfileBroker>
+    : null;
+  const brokerEndpoint = normalizeControlPlaneEndpoint(source?.brokerEndpoint || inferred?.brokerEndpoint || '');
+  const serverId = normalizeFabricServerId(source?.serverId || inferred?.serverId || '');
+  const proxyEndpoint = buildFabricBrokerProxyEndpoint(brokerEndpoint, serverId);
+  if (!brokerEndpoint || !serverId || !proxyEndpoint) return inferred;
+  return {
+    brokerEndpoint,
+    serverId,
+    proxyEndpoint
+  };
 }
 
 function getCurrentWebUiControlPlaneEndpoint() {
@@ -178,8 +266,61 @@ function normalizeDescriptor(value: unknown): ControlPlaneDescriptor | null {
   };
 }
 
+function normalizeFabricDescriptor(value: unknown): ControlPlaneDescriptor | null {
+  const source = value && typeof value === 'object' ? value as Record<string, unknown> : null;
+  if (!source || source.service !== 'aih-fabric') return null;
+  const server = source.server && typeof source.server === 'object'
+    ? source.server as Record<string, unknown>
+    : {};
+  const auth = source.auth && typeof source.auth === 'object'
+    ? source.auth as Record<string, unknown>
+    : {};
+  const capabilities = source.capabilities && typeof source.capabilities === 'object'
+    ? source.capabilities as Record<string, unknown>
+    : {};
+  const legacy = capabilities.legacyControlPlane && typeof capabilities.legacyControlPlane === 'object'
+    ? capabilities.legacyControlPlane as Record<string, unknown>
+    : {};
+  return {
+    ok: Boolean(source.ok),
+    service: 'aih-control-plane',
+    protocolVersion: Math.max(0, Number(legacy.protocolVersion) || 1),
+    endpoint: normalizeControlPlaneEndpoint(String(server.endpoint || '')),
+    host: normalizeText(server.host, 256),
+    port: Math.max(0, Number(server.port) || 0),
+    serverTime: normalizeText(server.serverTime, 128),
+    uptimeSec: Math.max(0, Number(server.uptimeSec) || 0),
+    auth: {
+      managementKeyConfigured: Boolean(auth.managementKeyConfigured),
+      clientKeyConfigured: Boolean(auth.clientKeyConfigured)
+    },
+    capabilities: {
+      nodeRpc: Array.isArray(legacy.nodeRpc) ? legacy.nodeRpc.map(String).filter(Boolean) : [],
+      management: Array.isArray(legacy.management) ? legacy.management.map(String).filter(Boolean) : [],
+      remoteManagement: true,
+      remoteInvite: true,
+      devicePairing: Boolean(auth.devicePairing),
+      transports: Array.isArray(capabilities.transports) ? capabilities.transports.map(String).filter(Boolean) : []
+    }
+  };
+}
+
+function normalizeAnyDescriptor(value: unknown): ControlPlaneDescriptor | null {
+  return normalizeFabricDescriptor(value) || normalizeDescriptor(value);
+}
+
 function normalizeStringArray(value: unknown) {
   return Array.isArray(value) ? value.map((item) => normalizeText(item, 96)).filter(Boolean) : [];
+}
+
+function hasProfileBundleSecretKey(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false;
+  if (Array.isArray(value)) return value.some(hasProfileBundleSecretKey);
+  return Object.keys(value as Record<string, unknown>).some((key) => {
+    const normalizedKey = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (PROFILE_BUNDLE_SECRET_KEYS.has(normalizedKey)) return true;
+    return hasProfileBundleSecretKey((value as Record<string, unknown>)[key]);
+  });
 }
 
 function normalizeCount(value: unknown) {
@@ -679,9 +820,9 @@ function normalizeProfileNodes(value: unknown): ControlPlaneNodeSummary[] {
 function normalizeDeviceProfile(value: unknown) {
   const payload = value && typeof value === 'object' ? value as Partial<ControlPlaneDeviceProfileResponse> : null;
   const result = payload?.result && typeof payload.result === 'object'
-    ? payload.result as ControlPlaneDeviceProfileResponse['result']
+    ? payload.result as ControlPlaneDeviceProfileResponse['result'] & { fabric?: unknown }
     : null;
-  const descriptor = normalizeDescriptor(result?.controlPlane);
+  const descriptor = normalizeAnyDescriptor(result?.fabric) || normalizeDescriptor(result?.controlPlane);
   const device = result?.device && typeof result.device === 'object' ? result.device : null;
   if (!descriptor || !device) return null;
   return {
@@ -698,10 +839,20 @@ function normalizeDeviceProfile(value: unknown) {
 }
 
 function normalizeDevicePairResponse(value: unknown): ControlPlaneDevicePairResponse | null {
-  const source = value && typeof value === 'object' ? value as Partial<ControlPlaneDevicePairResponse> : null;
-  const device = source?.device && typeof source.device === 'object' ? source.device : null;
-  const token = normalizeText(source?.token, 4096);
-  if (!source || source.rpc !== 'control_plane.device.pair' || !device || !token) return null;
+  const source = value && typeof value === 'object'
+    ? value as Partial<ControlPlaneDevicePairResponse> & { result?: unknown }
+    : null;
+  const result = source?.result && typeof source.result === 'object'
+    ? source.result as { device?: unknown; token?: unknown }
+    : null;
+  const device = (
+    result?.device && typeof result.device === 'object'
+      ? result.device
+      : source?.device && typeof source.device === 'object' ? source.device : null
+  ) as Partial<ControlPlaneDevicePairResponse['device']> | null;
+  const token = normalizeText(result?.token || source?.token, 4096);
+  const rpc = String(source?.rpc || '');
+  if (!source || !['control_plane.device.pair', 'fabric.device.pair'].includes(rpc) || !device || !token) return null;
   return {
     ok: Boolean(source.ok),
     rpc: 'control_plane.device.pair',
@@ -729,7 +880,7 @@ function normalizeProfile(value: unknown): ControlPlaneProfile | null {
   const endpoint = normalizeControlPlaneEndpoint(String(source.endpoint || ''));
   if (!endpoint) return null;
   const now = Date.now();
-  const descriptor = normalizeDescriptor(source.descriptor);
+  const descriptor = normalizeAnyDescriptor(source.descriptor);
   const id = normalizeText(source.id, 96) || stableProfileId(endpoint);
   const state = inferProfileState({
     requestedState: source.state,
@@ -738,10 +889,16 @@ function normalizeProfile(value: unknown): ControlPlaneProfile | null {
     existing: source
   });
   const nodes = normalizeProfileNodes(source.nodes);
+  const connectionMode = normalizeProfileConnectionMode(source.connectionMode, endpoint);
+  const broker = connectionMode === 'broker-proxy'
+    ? normalizeProfileBroker(source.broker, endpoint)
+    : null;
   return {
     id,
     name: normalizeText(source.name, 120) || descriptor?.endpoint || endpoint,
     endpoint,
+    connectionMode,
+    broker,
     state,
     authState: inferAuthState(state, source.authState, source),
     deviceToken: normalizeText(source.deviceToken, 4096),
@@ -760,6 +917,137 @@ function normalizeProfile(value: unknown): ControlPlaneProfile | null {
     lastError: normalizeText(source.lastError, 512),
     createdAt: Math.max(0, Number(source.createdAt) || now),
     updatedAt: Math.max(0, Number(source.updatedAt) || now)
+  };
+}
+
+function createProfileBundleEntry(profile: ControlPlaneProfile, exportedAt: string): ControlPlaneProfileBundleEntry {
+  const connectionMode = normalizeProfileConnectionMode(profile.connectionMode, profile.endpoint);
+  const broker = connectionMode === 'broker-proxy'
+    ? normalizeProfileBroker(profile.broker, profile.endpoint)
+    : null;
+  return {
+    name: normalizeText(profile.name, 120) || profile.endpoint,
+    endpoint: normalizeControlPlaneEndpoint(profile.endpoint),
+    connectionMode,
+    broker,
+    descriptor: normalizeAnyDescriptor(profile.descriptor),
+    nodeCount: Math.max(0, Number(profile.nodeCount) || 0),
+    accountCount: Math.max(0, Number(profile.accountCount) || 0),
+    schedulableAccountCount: Math.max(0, Number(profile.schedulableAccountCount) || 0),
+    sessionCount: Math.max(0, Number(profile.sessionCount) || 0),
+    exportedAt
+  };
+}
+
+function normalizeProfileBundleEntry(value: unknown): ControlPlaneProfileBundleEntry | null {
+  const source = value && typeof value === 'object'
+    ? value as Partial<ControlPlaneProfileBundleEntry>
+    : null;
+  const endpoint = normalizeControlPlaneEndpoint(source?.endpoint || '');
+  if (!source || !endpoint) return null;
+  const descriptor = normalizeAnyDescriptor(source.descriptor);
+  const connectionMode = normalizeProfileConnectionMode(source.connectionMode, endpoint);
+  const broker = connectionMode === 'broker-proxy'
+    ? normalizeProfileBroker(source.broker, endpoint)
+    : null;
+  return {
+    name: normalizeText(source.name, 120) || descriptor?.endpoint || endpoint,
+    endpoint,
+    connectionMode,
+    broker,
+    descriptor,
+    nodeCount: Math.max(0, Number(source.nodeCount) || 0),
+    accountCount: Math.max(0, Number(source.accountCount) || 0),
+    schedulableAccountCount: Math.max(0, Number(source.schedulableAccountCount) || 0),
+    sessionCount: Math.max(0, Number(source.sessionCount) || 0),
+    exportedAt: normalizeText(source.exportedAt, 128)
+  };
+}
+
+export function createControlPlaneProfileBundle(
+  input: ControlPlaneProfile | ControlPlaneProfile[]
+): ControlPlaneProfileBundle {
+  const exportedAt = new Date().toISOString();
+  const profiles = (Array.isArray(input) ? input : [input])
+    .map((profile) => profile && createProfileBundleEntry(profile, exportedAt))
+    .filter((entry): entry is ControlPlaneProfileBundleEntry => Boolean(entry && entry.endpoint));
+  return {
+    kind: CONTROL_PLANE_PROFILE_BUNDLE_KIND,
+    version: CONTROL_PLANE_PROFILE_BUNDLE_VERSION,
+    exportedAt,
+    profiles,
+    warnings: [
+      'device_token_not_exported',
+      'import_requires_pairing'
+    ]
+  };
+}
+
+export function serializeControlPlaneProfileBundle(input: ControlPlaneProfile | ControlPlaneProfile[]) {
+  return `${JSON.stringify(createControlPlaneProfileBundle(input), null, 2)}\n`;
+}
+
+export function parseControlPlaneProfileBundle(input: string | unknown): ControlPlaneProfileBundle {
+  const parsed = typeof input === 'string' ? JSON.parse(input) : input;
+  if (hasProfileBundleSecretKey(parsed)) {
+    throw new Error('control_plane_profile_bundle_contains_secret');
+  }
+  const source = parsed && typeof parsed === 'object'
+    ? parsed as Partial<ControlPlaneProfileBundle>
+    : null;
+  if (!source || source.kind !== CONTROL_PLANE_PROFILE_BUNDLE_KIND || source.version !== CONTROL_PLANE_PROFILE_BUNDLE_VERSION) {
+    throw new Error('invalid_control_plane_profile_bundle');
+  }
+  const profiles = (Array.isArray(source.profiles) ? source.profiles : [])
+    .map(normalizeProfileBundleEntry)
+    .filter((entry): entry is ControlPlaneProfileBundleEntry => Boolean(entry));
+  if (profiles.length === 0) {
+    throw new Error('empty_control_plane_profile_bundle');
+  }
+  return {
+    kind: CONTROL_PLANE_PROFILE_BUNDLE_KIND,
+    version: CONTROL_PLANE_PROFILE_BUNDLE_VERSION,
+    exportedAt: normalizeText(source.exportedAt, 128),
+    profiles,
+    warnings: normalizeStringArray(source.warnings)
+  };
+}
+
+export function importControlPlaneProfileBundle(input: string | unknown) {
+  const bundle = parseControlPlaneProfileBundle(input);
+  const before = readProfiles();
+  const beforeByEndpoint = new Map(before.map((profile) => [profile.endpoint, profile]));
+  const imported = bundle.profiles.map((entry) => {
+    const existing = beforeByEndpoint.get(entry.endpoint) || null;
+    const profile = saveControlPlaneProfile({
+      name: entry.name,
+      endpoint: entry.endpoint,
+      connectionMode: entry.connectionMode,
+      broker: entry.broker,
+      descriptor: entry.descriptor,
+      state: existing?.deviceToken ? existing.state : 'discovered',
+      authState: existing?.deviceToken ? existing.authState : 'unpaired',
+      deviceToken: existing?.deviceToken || '',
+      nodeCount: existing?.deviceToken ? existing.nodeCount : entry.nodeCount,
+      accountCount: existing?.deviceToken ? existing.accountCount : entry.accountCount,
+      activeAccountCount: existing?.deviceToken ? existing.activeAccountCount : 0,
+      schedulableAccountCount: existing?.deviceToken ? existing.schedulableAccountCount : entry.schedulableAccountCount,
+      sessionCount: existing?.deviceToken ? existing.sessionCount : entry.sessionCount,
+      lastError: ''
+    });
+    return {
+      profile,
+      status: existing ? 'updated' as const : 'imported' as const,
+      preservedDeviceToken: Boolean(existing?.deviceToken)
+    };
+  });
+  return {
+    bundle,
+    profiles: listControlPlaneProfiles(),
+    imported,
+    importedCount: imported.filter((item) => item.status === 'imported').length,
+    updatedCount: imported.filter((item) => item.status === 'updated').length,
+    preservedDeviceTokenCount: imported.filter((item) => item.preservedDeviceToken).length
   };
 }
 
@@ -1084,6 +1372,8 @@ export function summarizeControlPlaneClientReadiness(
 export function saveControlPlaneProfile(input: {
   name?: string;
   endpoint: string;
+  connectionMode?: ControlPlaneProfileConnectionMode;
+  broker?: ControlPlaneProfileBroker | null;
   descriptor?: ControlPlaneDescriptor | null;
   state?: ControlPlaneProfileState;
   authState?: ControlPlaneProfile['authState'];
@@ -1100,16 +1390,28 @@ export function saveControlPlaneProfile(input: {
   lastSessionsSyncAt?: number;
   lastError?: string;
 }): ControlPlaneProfile {
-  const endpoint = normalizeControlPlaneEndpoint(input.endpoint);
+  const inputEndpoint = normalizeControlPlaneEndpoint(input.endpoint);
+  const inputConnectionMode = normalizeProfileConnectionMode(input.connectionMode, inputEndpoint);
+  const inputBroker = inputConnectionMode === 'broker-proxy'
+    ? normalizeProfileBroker(input.broker, inputEndpoint)
+    : null;
+  if (inputConnectionMode === 'broker-proxy' && !inputBroker) {
+    throw new Error('invalid_fabric_broker_profile');
+  }
+  const endpoint = inputBroker?.proxyEndpoint || inputEndpoint;
   if (!endpoint) {
     throw new Error('invalid_control_plane_endpoint');
   }
   const now = Date.now();
   const profiles = readProfiles();
   const existing = profiles.find((profile) => profile.endpoint === endpoint) || null;
-  const descriptor = normalizeDescriptor(input.descriptor) || existing?.descriptor || null;
+  const descriptor = normalizeAnyDescriptor(input.descriptor) || existing?.descriptor || null;
   const lastError = normalizeText(input.lastError || '', 512);
   const nodes = input.nodes === undefined ? (existing?.nodes || []) : normalizeProfileNodes(input.nodes);
+  const connectionMode = normalizeProfileConnectionMode(input.connectionMode || existing?.connectionMode, endpoint);
+  const broker = connectionMode === 'broker-proxy'
+    ? normalizeProfileBroker(input.broker || existing?.broker, endpoint)
+    : null;
   const state = inferProfileState({
     requestedState: input.state,
     requestedAuthState: input.authState,
@@ -1121,6 +1423,8 @@ export function saveControlPlaneProfile(input: {
     id: existing?.id || stableProfileId(endpoint),
     name: normalizeText(input.name, 120) || existing?.name || descriptor?.endpoint || endpoint,
     endpoint,
+    connectionMode,
+    broker,
     state,
     authState: inferAuthState(state, input.authState, existing),
     deviceToken: normalizeText(input.deviceToken || existing?.deviceToken || '', 4096),
@@ -1218,8 +1522,11 @@ export function parseControlPlanePairInput(pairUrlOrCode: string, fallbackEndpoi
       return parseControlPlanePairInput(nestedPairUrlOrCode, explicitEndpoint || fallback);
     }
     const code = normalizeText(parsed.searchParams.get('code'), 4096);
-    const marker = '/v0/node-rpc/device-pair';
-    const markerIndex = parsed.pathname.indexOf(marker);
+    const markers = ['/v0/fabric/device-pair', '/v0/node-rpc/device-pair'];
+    const markerIndex = markers
+      .map((marker) => parsed.pathname.indexOf(marker))
+      .filter((index) => index >= 0)
+      .sort((left, right) => left - right)[0] ?? -1;
     const basePath = markerIndex > 0 ? parsed.pathname.slice(0, markerIndex) : '';
     const endpoint = explicitEndpoint || normalizeControlPlaneEndpoint(`${parsed.protocol}//${parsed.host}${basePath}`);
     return {
@@ -1273,14 +1580,14 @@ export async function pairControlPlaneDevice(input: {
     timeoutMs: options.timeoutMs || DEFAULT_PAIR_REQUEST_TIMEOUT_MS,
     fetchImpl: options.fetchImpl
   });
-  const pairResult = normalizeDevicePairResponse(await client.postJson('/v0/node-rpc/device-pair', {
+  const pairResult = normalizeDevicePairResponse(await client.postJson('/v0/fabric/device-pair', {
     code,
     device: {
       id: normalizeText(input.deviceId, 96),
       name: normalizeText(input.deviceName, 120),
       platform: normalizeText(input.platform, 64)
     }
-  }, { httpErrorPrefix: 'control_plane_device_pair_http' }));
+  }, { httpErrorPrefix: 'fabric_device_pair_http' }));
   if (!pairResult) {
     throw new Error('invalid_control_plane_device_pair_response');
   }
@@ -1664,12 +1971,12 @@ export async function fetchControlPlaneDescriptor(endpoint: string, options: {
     timeoutMs: options.timeoutMs || DEFAULT_DESCRIPTOR_TIMEOUT_MS,
     fetchImpl: options.fetchImpl
   });
-  const payload = await client.getJson('/v0/node-rpc/descriptor', {
-    httpErrorPrefix: 'descriptor_http'
+  const payload = await client.getJson('/v0/fabric/descriptor', {
+    httpErrorPrefix: 'fabric_descriptor_http'
   }) as ControlPlaneDescriptorResponse | ControlPlaneDescriptor;
-  const descriptor = normalizeDescriptor('result' in payload ? payload.result : payload);
+  const descriptor = normalizeAnyDescriptor('result' in payload ? payload.result : payload);
   if (!descriptor) {
-    throw new Error('invalid_control_plane_descriptor');
+    throw new Error('invalid_fabric_descriptor');
   }
   return {
     ...descriptor,

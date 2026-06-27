@@ -183,6 +183,42 @@ test('control plane profiles store discovered state after descriptor probe', () 
   delete global.window;
 });
 
+test('control plane profiles save broker proxy endpoint metadata', () => {
+  global.window = { localStorage: createStorage() };
+  const profiles = loadControlPlaneProfilesModule();
+
+  const proxyEndpoint = profiles.buildFabricBrokerProxyEndpoint(
+    'http://broker.example.com/ui/',
+    'AWS Current'
+  );
+  const saved = profiles.saveControlPlaneProfile({
+    name: 'AWS Broker Fabric',
+    endpoint: 'http://broker.example.com',
+    connectionMode: 'broker-proxy',
+    broker: {
+      brokerEndpoint: 'http://broker.example.com/ui/',
+      serverId: 'AWS Current',
+      proxyEndpoint: ''
+    },
+    descriptor: createDescriptor(proxyEndpoint),
+    state: 'discovered',
+    authState: 'unpaired'
+  });
+  const restored = profiles.listControlPlaneProfiles()[0];
+
+  assert.equal(proxyEndpoint, 'http://broker.example.com/v0/fabric/broker/servers/aws-current/proxy');
+  assert.equal(saved.endpoint, proxyEndpoint);
+  assert.equal(saved.connectionMode, 'broker-proxy');
+  assert.deepEqual(saved.broker, {
+    brokerEndpoint: 'http://broker.example.com',
+    serverId: 'aws-current',
+    proxyEndpoint
+  });
+  assert.equal(restored.connectionMode, 'broker-proxy');
+  assert.deepEqual(restored.broker, saved.broker);
+  delete global.window;
+});
+
 test('control plane profiles migrate legacy paired auth state into profile state', () => {
   global.window = { localStorage: createStorage() };
   const profiles = loadControlPlaneProfilesModule();
@@ -274,6 +310,146 @@ test('control plane profiles summarize multi server client readiness', () => {
     sessions: 10
   });
   delete global.window;
+});
+
+test('control plane profile bundle exports portable non-secret server descriptors', () => {
+  global.window = { localStorage: createStorage() };
+  const profiles = loadControlPlaneProfilesModule();
+
+  const saved = profiles.saveControlPlaneProfile({
+    name: 'Home Fabric',
+    endpoint: 'https://home.example.com',
+    descriptor: createDescriptor('https://home.example.com'),
+    state: 'paired',
+    authState: 'paired',
+    deviceToken: 'secret-device-token',
+    nodeCount: 2,
+    accountCount: 4,
+    schedulableAccountCount: 3,
+    sessionCount: 8
+  });
+  const text = profiles.serializeControlPlaneProfileBundle(saved);
+  const bundle = JSON.parse(text);
+
+  assert.equal(bundle.kind, 'aih-control-plane-profile-bundle');
+  assert.equal(bundle.version, 1);
+  assert.equal(bundle.profiles.length, 1);
+  assert.equal(bundle.profiles[0].name, 'Home Fabric');
+  assert.equal(bundle.profiles[0].endpoint, 'https://home.example.com');
+  assert.equal(bundle.profiles[0].connectionMode, 'direct');
+  assert.equal(bundle.profiles[0].broker, null);
+  assert.equal(bundle.profiles[0].nodeCount, 2);
+  assert.equal(bundle.profiles[0].accountCount, 4);
+  assert.equal(bundle.profiles[0].schedulableAccountCount, 3);
+  assert.equal(bundle.profiles[0].sessionCount, 8);
+  assert.equal(bundle.profiles[0].descriptor.endpoint, 'https://home.example.com');
+  assert.deepEqual(bundle.warnings, [
+    'device_token_not_exported',
+    'import_requires_pairing'
+  ]);
+  assert.doesNotMatch(text, /secret-device-token/);
+  assert.equal(Object.prototype.hasOwnProperty.call(bundle.profiles[0], 'deviceToken'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(bundle.profiles[0], 'id'), false);
+  delete global.window;
+});
+
+test('control plane profile bundle preserves non-secret broker metadata', () => {
+  global.window = { localStorage: createStorage() };
+  const profiles = loadControlPlaneProfilesModule();
+  const proxyEndpoint = profiles.buildFabricBrokerProxyEndpoint(
+    'http://broker.example.com',
+    'aws-current'
+  );
+  const saved = profiles.saveControlPlaneProfile({
+    name: 'AWS Broker Fabric',
+    endpoint: proxyEndpoint,
+    descriptor: createDescriptor(proxyEndpoint),
+    state: 'paired',
+    authState: 'paired',
+    deviceToken: 'secret-broker-device-token',
+    nodeCount: 1,
+    accountCount: 3,
+    schedulableAccountCount: 2,
+    sessionCount: 4
+  });
+  const text = profiles.serializeControlPlaneProfileBundle(saved);
+  const bundle = JSON.parse(text);
+
+  assert.equal(bundle.profiles[0].connectionMode, 'broker-proxy');
+  assert.deepEqual(bundle.profiles[0].broker, {
+    brokerEndpoint: 'http://broker.example.com',
+    serverId: 'aws-current',
+    proxyEndpoint
+  });
+  assert.doesNotMatch(text, /secret-broker-device-token/);
+
+  global.window = { localStorage: createStorage() };
+  const result = profiles.importControlPlaneProfileBundle(text);
+  const imported = result.imported[0].profile;
+  assert.equal(imported.endpoint, proxyEndpoint);
+  assert.equal(imported.connectionMode, 'broker-proxy');
+  assert.deepEqual(imported.broker, bundle.profiles[0].broker);
+  assert.equal(imported.authState, 'unpaired');
+  assert.equal(imported.deviceToken, '');
+  delete global.window;
+});
+
+test('control plane profile bundle import creates unpaired portable profile', () => {
+  const sourceStorage = createStorage();
+  global.window = { localStorage: sourceStorage };
+  const profiles = loadControlPlaneProfilesModule();
+  const saved = profiles.saveControlPlaneProfile({
+    name: 'Office Fabric',
+    endpoint: 'https://office.example.com',
+    descriptor: createDescriptor('https://office.example.com'),
+    state: 'paired',
+    authState: 'paired',
+    deviceToken: 'office-device-token',
+    nodeCount: 1,
+    accountCount: 2,
+    schedulableAccountCount: 1,
+    sessionCount: 3
+  });
+  const text = profiles.serializeControlPlaneProfileBundle(saved);
+
+  global.window = { localStorage: createStorage() };
+  const result = profiles.importControlPlaneProfileBundle(text);
+  const imported = profiles.listControlPlaneProfiles()[0];
+
+  assert.equal(result.importedCount, 1);
+  assert.equal(result.updatedCount, 0);
+  assert.equal(result.preservedDeviceTokenCount, 0);
+  assert.equal(imported.name, 'Office Fabric');
+  assert.equal(imported.endpoint, 'https://office.example.com');
+  assert.equal(imported.state, 'discovered');
+  assert.equal(imported.authState, 'unpaired');
+  assert.equal(imported.deviceToken, '');
+  assert.equal(imported.nodeCount, 1);
+  assert.equal(imported.accountCount, 2);
+  assert.equal(imported.schedulableAccountCount, 1);
+  assert.equal(imported.sessionCount, 3);
+  assert.equal(profiles.isControlPlaneProfileReady(imported), false);
+  delete global.window;
+});
+
+test('control plane profile bundle parser rejects secret-bearing payloads', () => {
+  const profiles = loadControlPlaneProfilesModule();
+
+  assert.throws(
+    () => profiles.parseControlPlaneProfileBundle({
+      kind: 'aih-control-plane-profile-bundle',
+      version: 1,
+      exportedAt: '2026-06-27T00:00:00.000Z',
+      profiles: [
+        {
+          name: 'Leaky Fabric',
+          endpoint: 'https://leaky.example.com',
+          deviceToken: 'must-not-import'
+        }
+      ]
+    }),
+    /control_plane_profile_bundle_contains_secret/
+  );
 });
 
 test('control plane profiles summarize mobile client readiness gates', () => {
@@ -1462,6 +1638,13 @@ test('control plane profiles parse pair urls and code fallback', () => {
       code: 'path-code'
     }
   );
+  assert.deepEqual(
+    profiles.parseControlPlanePairInput('https://control.example.com/fabric/v0/fabric/device-pair?code=fabric-code'),
+    {
+      endpoint: 'https://control.example.com/fabric',
+      code: 'fabric-code'
+    }
+  );
   const rawWebPairTarget = 'https://control.example.com/v0/node-rpc/device-pair?code=web-pair-code';
   const webPairUrl = `https://control.example.com/ui/settings?pair=${encodeURIComponent(rawWebPairTarget)}`;
   assert.deepEqual(
@@ -1527,38 +1710,75 @@ test('control plane profiles consume device pair invite and persist profile toke
       method: String(init && init.method || 'GET'),
       body: init && init.body ? JSON.parse(String(init.body)) : null
     });
-    if (requestUrl.endsWith('/v0/node-rpc/device-pair')) {
+    if (requestUrl.endsWith('/v0/fabric/device-pair')) {
       return {
         ok: true,
         status: 200,
         json: async () => ({
           ok: true,
-          rpc: 'control_plane.device.pair',
-          device: {
-            id: 'device-phone',
-            name: 'Phone',
-            platform: 'ios',
-            publicKeyFingerprint: '',
-            scopes: ['control-plane:read', 'nodes:read'],
-            state: 'paired',
-            pairedAt: 1000,
-            revokedAt: 0,
-            lastSeenAt: 0,
-            createdAt: 1000,
-            updatedAt: 1000
-          },
-          token: 'device-token'
+          rpc: 'fabric.device.pair',
+          result: {
+            device: {
+              id: 'device-phone',
+              name: 'Phone',
+              platform: 'ios',
+              publicKeyFingerprint: '',
+              scopes: ['control-plane:read', 'nodes:read'],
+              state: 'paired',
+              pairedAt: 1000,
+              revokedAt: 0,
+              lastSeenAt: 0,
+              createdAt: 1000,
+              updatedAt: 1000
+            },
+            token: 'device-token'
+          }
         })
       };
     }
-    if (requestUrl.endsWith('/v0/node-rpc/descriptor')) {
+    if (requestUrl.endsWith('/v0/fabric/descriptor')) {
       return {
         ok: true,
         status: 200,
         json: async () => ({
           ok: true,
-          rpc: 'control_plane.descriptor.read',
-          result: createDescriptor('https://control.example.com')
+          rpc: 'fabric.descriptor.read',
+          result: {
+            ok: true,
+            service: 'aih-fabric',
+            protocolVersion: 1,
+            server: {
+              id: 'fabric-control',
+              name: 'Control',
+              endpoint: 'https://control.example.com',
+              host: 'control.example.com',
+              port: 443,
+              serverTime: '2026-06-19T00:00:00.000Z',
+              uptimeSec: 10
+            },
+            roles: ['server', 'relay'],
+            auth: {
+              methods: ['device-pair'],
+              devicePairing: true,
+              managementKeyConfigured: true,
+              clientKeyConfigured: false
+            },
+            capabilities: {
+              client: ['server-profile', 'device-pairing'],
+              roles: {
+                server: ['identity'],
+                relay: ['wss-relay'],
+                node: ['remote-runtime'],
+                client: ['profile-selection']
+              },
+              transports: ['direct', 'frp'],
+              legacyControlPlane: {
+                protocolVersion: 1,
+                nodeRpc: ['descriptor', 'device-profile', 'device-nodes'],
+                management: ['status']
+              }
+            }
+          }
         })
       };
     }
@@ -1579,8 +1799,8 @@ test('control plane profiles consume device pair invite and persist profile toke
   assert.equal(paired.device.id, 'device-phone');
   assert.equal(profiles.listControlPlaneProfiles()[0].deviceToken, 'device-token');
   assert.deepEqual(calls.map((call) => call.url), [
-    'https://control.example.com/v0/node-rpc/device-pair',
-    'https://control.example.com/v0/node-rpc/descriptor'
+    'https://control.example.com/v0/fabric/device-pair',
+    'https://control.example.com/v0/fabric/descriptor'
   ]);
   assert.deepEqual(calls[0].body, {
     code: 'pair-code',

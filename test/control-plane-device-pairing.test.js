@@ -100,8 +100,8 @@ test('control plane device pairing creates invite without exposing stored code h
   const created = await createDeviceInvite(aiHomeDir);
   assert.equal(created.ok, true);
   assert.ok(created.code);
-  assert.match(created.pairUrl, /^https:\/\/control\.example\.com\/v0\/node-rpc\/device-pair\?code=/);
-  assert.match(created.webPairUrl, /^https:\/\/control\.example\.com\/ui\/settings\?pair=/);
+  assert.match(created.pairUrl, /^https:\/\/control\.example\.com\/v0\/fabric\/device-pair\?code=/);
+  assert.match(created.webPairUrl, /^https:\/\/control\.example\.com\/ui\/server-setup\?pair=/);
   assert.equal(new URL(created.webPairUrl).searchParams.get('pair'), created.pairUrl);
   assert.equal(created.invite.codeHash, undefined);
 
@@ -136,8 +136,8 @@ test('control plane device pairing warns when control endpoint is loopback', asy
 
   assert.equal(created.ok, true);
   assert.equal(created.warnings.some((warning) => warning.includes('手机或其他设备会把它当成自己本机')), true);
-  assert.match(created.pairUrl, /^http:\/\/127\.0\.0\.1:9527\/v0\/node-rpc\/device-pair\?code=/);
-  assert.match(created.webPairUrl, /^http:\/\/127\.0\.0\.1:9527\/ui\/settings\?pair=/);
+  assert.match(created.pairUrl, /^http:\/\/127\.0\.0\.1:9527\/v0\/fabric\/device-pair\?code=/);
+  assert.match(created.webPairUrl, /^http:\/\/127\.0\.0\.1:9527\/ui\/server-setup\?pair=/);
 });
 
 test('webui control plane endpoints include lan hints for mobile pairing', async (t) => {

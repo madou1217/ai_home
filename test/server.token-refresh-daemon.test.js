@@ -376,34 +376,52 @@ describe('createTokenRefreshDaemon', () => {
     }
   });
 
-  it('does NOT demote an api-key account on missing_refresh_token (regression)', async () => {
-    // api-key codex account: no refresh token by design. The daemon attempts a
-    // refresh, gets missing_refresh_token — which must NOT block the account.
-    const account = {
+  it('skips api-key accounts before token refresh', async () => {
+    // API-key accounts have no refresh token by design. They must not enter the
+    // OAuth refresh path at all, otherwise startup logs report false credential
+    // failures for working API-key accounts.
+    const codexAccount = {
       id: '1',
       provider: 'codex',
       authType: 'api-key',
       apiKeyMode: true,
       accessToken: 'sk-codex-apikey',
-      tokenExpiresAt: Date.now() - 60_000, // "expired" so a refresh is attempted
+      tokenExpiresAt: Date.now() - 60_000,
       codexAuthPath: createTempAuthPath(),
       authInvalidUntil: 0
     };
-    const state = { accounts: { codex: [account], gemini: [], claude: [], agy: [] } };
+    const claudeAccount = {
+      id: '2',
+      provider: 'claude',
+      authType: 'api-key',
+      apiKeyMode: true,
+      accessToken: 'sk-claude-apikey',
+      configDir: path.join(os.tmpdir(), 'missing-claude-credentials'),
+      authInvalidUntil: 0
+    };
+    const state = { accounts: { codex: [codexAccount], gemini: [], claude: [claudeAccount], agy: [] } };
     const events = [];
+    const warnings = [];
+    let refreshCalls = 0;
 
     const daemon = createTokenRefreshDaemon(state, { tokenStartupRefreshBeforeExpiryMs: 5 * 60 * 1000 }, {
-      fetchWithTimeout: async () => ({ ok: false, status: 400, text: async () => '' }),
+      fetchWithTimeout: async () => {
+        refreshCalls += 1;
+        return { ok: false, status: 400, text: async () => '' };
+      },
       hub: { emit: (name, event) => events.push({ name, event }) },
       logInfo: () => {},
-      logWarn: () => {},
+      logWarn: (message) => warnings.push(String(message || '')),
       logError: () => {}
     });
 
     await new Promise((resolve) => setTimeout(resolve, 200));
     daemon.stop();
 
-    assert.equal(account.authInvalidUntil, 0, 'api-key account must never be demoted by token refresh');
+    assert.equal(refreshCalls, 0, 'api-key accounts must not call token refresh executor');
+    assert.deepEqual(warnings, []);
+    assert.equal(codexAccount.authInvalidUntil, 0, 'api-key account must never be demoted by token refresh');
+    assert.equal(claudeAccount.authInvalidUntil, 0, 'api-key account must never be demoted by token refresh');
     assert.ok(!events.some((e) => e.event && e.event.nextStatus === 'auth_invalid'));
     assert.equal(daemon.getStats().totalAuthInvalid, 0);
   });

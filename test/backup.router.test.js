@@ -135,6 +135,53 @@ test('ensureArchiveExtractedByHash reuses cached extraction for same archive has
   }
 });
 
+test('ensureArchiveExtractedByHash falls back to python zipfile when unzip is unavailable', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-backup-router-python-zip-'));
+  try {
+    const aiHomeDir = path.join(root, '.ai_home');
+    fs.mkdirSync(aiHomeDir, { recursive: true });
+    const zipPath = path.join(root, 'sample.zip');
+    fs.writeFileSync(zipPath, 'fake-zip-content');
+
+    const commands = [];
+    const execFileSync = (command, args) => {
+      commands.push([command, ...args]);
+      if (command === 'unzip') {
+        const error = new Error('unzip not found');
+        error.code = 'ENOENT';
+        throw error;
+      }
+      if (command !== 'python3') throw new Error(`unexpected command: ${command}`);
+      assert.deepEqual(args.slice(0, 3), ['-m', 'zipfile', '-e']);
+      const outDir = args[4];
+      fs.mkdirSync(path.join(outDir, 'accounts', 'codex', '1', '.codex'), { recursive: true });
+      fs.writeFileSync(path.join(outDir, 'accounts', 'codex', '1', '.codex', 'auth.json'), '{"ok":true}');
+    };
+
+    const extracted = await __private.ensureArchiveExtractedByHash({
+      fs,
+      path,
+      os,
+      fse,
+      execSync: () => {
+        throw new Error('shell unzip should not be used');
+      },
+      execFileSync,
+      processImpl: { platform: 'linux' },
+      cryptoImpl: require('node:crypto'),
+      zipPath,
+      aiHomeDir,
+      spawnImpl: createSpawnStub(({ child }) => child.emit('close', 1))
+    });
+
+    assert.equal(extracted.cacheHit, false);
+    assert.deepEqual(commands.map((entry) => entry[0]), ['unzip', 'python3']);
+    assert.equal(fs.existsSync(path.join(extracted.extractDir, 'accounts', 'codex', '1', '.codex', 'auth.json')), true);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('ensureArchiveExtractedByHash falls back to copy when moveSync hits EPERM on windows-like filesystems', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-backup-router-eperm-'));
   try {

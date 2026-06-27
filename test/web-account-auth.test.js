@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 
 const {
   stripAnsi,
@@ -61,6 +62,33 @@ test('getDefaultAuthMode keeps codex browser oauth as the default login mode', (
   assert.equal(getDefaultAuthMode('gemini'), 'oauth-browser');
   assert.equal(getDefaultAuthMode('agy'), 'oauth-browser');
   assert.equal(getDefaultAuthMode('opencode'), 'oauth-browser');
+});
+
+test('server auth wiring and CLI help do not require node-pty at module load', () => {
+  const script = `
+const Module = require('node:module');
+const fs = require('node:fs');
+const originalLoad = Module._load;
+Module._load = function patchedLoad(request, parent, isMain) {
+  if (request === 'node-pty') throw new Error('node-pty blocked');
+  return originalLoad.call(this, request, parent, isMain);
+};
+const auth = require('./lib/server/web-account-auth');
+auth.createAuthJobManager({
+  fs,
+  getToolAccountIds: () => [],
+  getProfileDir: () => '',
+  getToolConfigDir: () => ''
+});
+process.argv = [process.execPath, 'bin/ai-home.js', '--help'];
+require('./bin/ai-home.js');
+`;
+  const result = spawnSync(process.execPath, ['-e', script], {
+    cwd: path.join(__dirname, '..'),
+    encoding: 'utf8'
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /Usage:/);
 });
 
 test('extractOAuthChallenge parses verification url and user code from logs', () => {

@@ -1,3 +1,4 @@
+/* ===== WebRTC DataChannel Lab workbench design v2 ===== */
 .fabric-webrtc-lab-page {
   display: flex;
   min-height: 100%;
@@ -7,21 +8,22 @@
   padding: 24px;
 }
 
-.fabric-webrtc-lab-grid-workbench {
+.fabric-webrtc-lab-workbench {
   display: grid;
-  grid-template-columns: 1.25fr 0.75fr;
+  grid-template-columns: 1fr 1fr;
   gap: 16px;
   align-items: start;
 }
 
-.fabric-webrtc-lab-left-column {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+.fabric-webrtc-lab-left-panel,
+.fabric-webrtc-lab-right-panel {
+  min-height: 440px;
 }
 
-.fabric-webrtc-lab-right-column {
-  height: 100%;
+.fabric-webrtc-lab-bottom-panel {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
 }
 
 .fabric-webrtc-lab-panel-head {
@@ -35,7 +37,7 @@
 .fabric-webrtc-lab-panel-head h2 {
   margin: 0 0 4px;
   color: var(--app-heading);
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 800;
   line-height: 1.25;
 }
@@ -49,7 +51,7 @@
 
 .fabric-webrtc-lab-panel-head > .anticon {
   color: var(--app-info);
-  font-size: 22px;
+  font-size: 20px;
 }
 
 .fabric-webrtc-lab-row {
@@ -90,17 +92,11 @@
 }
 
 /* Event Logs Console */
-.fabric-webrtc-lab-log-panel {
-  display: flex;
-  height: 100%;
-  min-height: 565px;
-  flex-direction: column;
-}
-
 .fabric-webrtc-lab-console-log {
   display: flex;
   flex: 1;
-  max-height: 480px;
+  height: 200px;
+  max-height: 240px;
   flex-direction: column;
   gap: 4px;
   overflow-y: auto;
@@ -135,16 +131,16 @@
   color: #e3e3e6;
 }
 
-@media (max-width: 1024px) {
-  .fabric-webrtc-lab-grid-workbench {
+@media (max-width: 900px) {
+  .fabric-webrtc-lab-page {
+    padding: 16px;
+  }
+
+  .fabric-webrtc-lab-workbench {
     grid-template-columns: 1fr;
   }
-  
+
   .fabric-webrtc-lab-stats-card-group {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  
-  .fabric-webrtc-lab-log-panel {
-    min-height: auto;
   }
 }

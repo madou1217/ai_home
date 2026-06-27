@@ -6,7 +6,8 @@ import {
   LinkOutlined,
   PlayCircleOutlined,
   RadarChartOutlined,
-  SendOutlined
+  SendOutlined,
+  DeleteOutlined
 } from '@ant-design/icons';
 import PageHero from '@/components/ui/PageHero';
 import './FabricWebrtcLab.css';
@@ -459,187 +460,202 @@ export default function FabricWebrtcLab() {
 
   return (
     <div className="fabric-webrtc-lab-page animate__animated animate__fadeIn animate__faster">
-            <PageHero
+      <PageHero
         title="WebRTC DataChannel 实验"
         eyebrow="AIH Fabric Lab"
-        description="短期信令房间只用于传输实验；默认工作流仍走已验证的 WSS fallback。跨 NAT 场景需要按实验记录配置 STUN/TURN。"
+        description="短期信令房间只用于传输实验；默认工作流仍走已验证的 WSS fallback。跨 NAT 场景需要配置 STUN/TURN 穿透。"
         actions={
           <Space size={8} wrap>
-            <Button type="primary" icon={<SendOutlined />} disabled={channelState !== 'open'} onClick={runPing}>
-              Ping 测试
-            </Button>
-            <Button disabled={channelState !== 'open'} onClick={runBenchmark}>
-              5次采样
-            </Button>
-            <Button icon={<DisconnectOutlined />} disabled={channelState === 'closed'} onClick={stopPeer}>
+            {channelState === 'open' ? (
+              <Tag color="green">已连接 (OPEN)</Tag>
+            ) : channelState === 'connecting' ? (
+              <Tag color="orange">连接中</Tag>
+            ) : (
+              <Tag color="default">未连接</Tag>
+            )}
+            <Button
+              icon={<DisconnectOutlined />}
+              danger
+              disabled={channelState === 'closed'}
+              onClick={stopPeer}
+            >
               断开连接
             </Button>
-            <Tag color={channelState === 'open' ? 'green' : channelState === 'connecting' ? 'orange' : 'default'} style={{ margin: 0, height: 'auto', padding: '4px 8px' }}>
-              Channel: {channelState.toUpperCase()}
-            </Tag>
-            <Tag color={connectionState === 'connected' ? 'green' : 'default'}>
-              Conn: {connectionState}
-            </Tag>
-            <Tag>ICE: {iceState}</Tag>
-            <Tag>Gathering: {iceGatheringState}</Tag>
-            <Tag>Signaling: {signalingState}</Tag>
           </Space>
         }
       />
 
-      <div className="fabric-webrtc-lab-grid-workbench">
-        <div className="fabric-webrtc-lab-left-column">
-          {/* 信令房间面板 */}
-          <section className="settings-panel">
-            <div className="fabric-webrtc-lab-panel-head">
-              <div>
-                <h2>信令房间 (Signaling Room)</h2>
-                <p>一端创建房间并开启 Offering，另一端使用分享 URL 作为 Answerer 加入。</p>
-              </div>
-              <ApiOutlined />
+      <div className="fabric-webrtc-lab-workbench">
+        {/* 左侧：信令与房间配置 */}
+        <section className="settings-panel fabric-webrtc-lab-left-panel">
+          <div className="fabric-webrtc-lab-panel-head">
+            <div>
+              <h2>信令房间配置</h2>
+              <p>一端创建房间开启 Offer，另一端复制分享链接以 Answerer 加入。</p>
             </div>
+            <ApiOutlined />
+          </div>
 
-            <Form layout="vertical">
-              <Form.Item label="Signal Endpoint" style={{ marginBottom: 12 }}>
-                <Input value={endpoint} onChange={(event) => setEndpoint(event.target.value)} />
+          <Form layout="vertical">
+            <Form.Item label="Signal Endpoint" style={{ marginBottom: 12 }}>
+              <Input value={endpoint} onChange={(event) => setEndpoint(event.target.value)} />
+            </Form.Item>
+            <div className="fabric-webrtc-lab-row">
+              <Form.Item label="Room ID" style={{ marginBottom: 12 }}>
+                <Input value={roomId} onChange={(event) => setRoomId(event.target.value.trim())} />
               </Form.Item>
-              <div className="fabric-webrtc-lab-row">
-                <Form.Item label="Room ID" style={{ marginBottom: 12 }}>
-                  <Input value={roomId} onChange={(event) => setRoomId(event.target.value.trim())} />
-                </Form.Item>
-                <Form.Item label="Role" style={{ marginBottom: 12 }}>
-                  <Segmented
-                    block
-                    value={role}
-                    onChange={(value) => setRole(value as LabRole)}
-                    options={[
-                      { label: 'Offer', value: 'offerer' },
-                      { label: 'Answer', value: 'answerer' }
-                    ]}
-                  />
-                </Form.Item>
-              </div>
-              <Form.Item label="ICE Servers" help="格式为 stun:host:port 或 turn:host:port，多条用换行隔开" style={{ marginBottom: 16 }}>
-                <Input.TextArea
-                  value={iceServersText}
-                  onChange={(event) => setIceServersText(event.target.value)}
-                  autoSize={{ minRows: 2, maxRows: 3 }}
-                  placeholder="stun:host:port / turn:host:port"
+              <Form.Item label="Role" style={{ marginBottom: 12 }}>
+                <Segmented
+                  block
+                  value={role}
+                  onChange={(value) => setRole(value as LabRole)}
+                  options={[
+                    { label: 'Offer', value: 'offerer' },
+                    { label: 'Answer', value: 'answerer' }
+                  ]}
                 />
               </Form.Item>
-              <Space wrap>
-                <Button type="primary" icon={<PlayCircleOutlined />} loading={busy} onClick={createRoomAndStart}>
-                  创建并连接
-                </Button>
-                <Button icon={<LinkOutlined />} loading={busy} disabled={!roomId} onClick={joinRoom}>
-                  加入房间
-                </Button>
-              </Space>
-            </Form>
+            </div>
+            <Form.Item label="ICE Servers" help="格式为 stun:host:port 或 turn:host:port，多条用换行隔开" style={{ marginBottom: 16 }}>
+              <Input.TextArea
+                value={iceServersText}
+                onChange={(event) => setIceServersText(event.target.value)}
+                autoSize={{ minRows: 2, maxRows: 3 }}
+                placeholder="stun:host:port / turn:host:port"
+              />
+            </Form.Item>
+            <Space wrap>
+              <Button type="primary" icon={<PlayCircleOutlined />} loading={busy} onClick={createRoomAndStart}>
+                创建并连接
+              </Button>
+              <Button icon={<LinkOutlined />} loading={busy} disabled={!roomId} onClick={joinRoom}>
+                加入房间
+              </Button>
+            </Space>
+          </Form>
 
-            {shareUrl && (
-              <div className="fabric-webrtc-lab-share-link">
-                <Input
-                  addonBefore="分享 URL"
-                  value={shareUrl}
-                  readOnly
-                  suffix={
-                    <Button type="link" size="small" onClick={copyShareUrl} style={{ padding: '0 4px' }}>
-                      复制链接
-                    </Button>
-                  }
-                />
+          {shareUrl && (
+            <div className="fabric-webrtc-lab-share-link">
+              <Input
+                addonBefore="分享链接"
+                value={shareUrl}
+                readOnly
+                suffix={
+                  <Button type="link" size="small" onClick={copyShareUrl} style={{ padding: '0 4px' }}>
+                    复制链接
+                  </Button>
+                }
+              />
+            </div>
+          )}
+
+          {room && (
+            <div className="fabric-webrtc-lab-room-meta">
+              <Tag color="cyan">过期时间: {new Date(room.expiresAt).toLocaleTimeString()}</Tag>
+              <Tag color="blue">{room.peerCount} Peers</Tag>
+              <Tag color="purple">{room.messageCount} Signals</Tag>
+            </div>
+          )}
+        </section>
+
+        {/* 右侧：延迟测试与内部状态 */}
+        <section className="settings-panel fabric-webrtc-lab-right-panel">
+          <div className="fabric-webrtc-lab-panel-head">
+            <div>
+              <h2>测试与性能打点</h2>
+              <p>建立连接后，可进行 RTT 延迟采样与 WebRTC 内部指标监控。</p>
+            </div>
+            <RadarChartOutlined />
+          </div>
+
+          <div className="fabric-webrtc-lab-stats-section">
+            <div style={{ marginBottom: 8 }}>
+              <strong style={{ fontSize: 13, color: 'var(--app-heading)' }}>延迟打点采样 (RTT)</strong>
+            </div>
+            <div className="fabric-webrtc-lab-stats-card-group">
+              <div className="fabric-webrtc-lab-stats-card">
+                <Statistic title="采样数" value={rttSummary.count} />
               </div>
+              <div className="fabric-webrtc-lab-stats-card">
+                <Statistic title="平均 RTT" value={rttSummary.avg} precision={2} suffix="ms" />
+              </div>
+              <div className="fabric-webrtc-lab-stats-card">
+                <Statistic title="P50 RTT" value={rttSummary.p50} precision={2} suffix="ms" />
+              </div>
+              <div className="fabric-webrtc-lab-stats-card">
+                <Statistic title="P95 RTT" value={rttSummary.p95} precision={2} suffix="ms" />
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 8, marginTop: 16 }}>
+              <strong style={{ fontSize: 13, color: 'var(--app-heading)' }}>WebRTC 内部指标 (Stats)</strong>
+            </div>
+            <div className="fabric-webrtc-lab-stats-card-group">
+              <div className="fabric-webrtc-lab-stats-card">
+                <Statistic title="本地/远端 Candidate" value={`${localCandidateCount} / ${remoteCandidateCount}`} />
+              </div>
+              <div className="fabric-webrtc-lab-stats-card">
+                <Statistic title="信号交互/积压" value={`${receivedSignalCount} / ${candidateQueueRef.current.length}`} />
+              </div>
+              <div className="fabric-webrtc-lab-stats-card">
+                <Statistic title="连接/信令状态" value={`${connectionState} / ${signalingState}`} formatter={(v) => String(v).toUpperCase()} />
+              </div>
+              <div className="fabric-webrtc-lab-stats-card">
+                <Statistic title="ICE 状态/收集" value={`${iceState} / ${iceGatheringState}`} formatter={(v) => String(v).toUpperCase()} />
+              </div>
+            </div>
+          </div>
+
+          <Space wrap style={{ marginTop: 20 }}>
+            <Button type="primary" icon={<SendOutlined />} disabled={channelState !== 'open'} onClick={runPing}>
+              Ping 测试
+            </Button>
+            <Button disabled={channelState !== 'open'} onClick={runBenchmark}>
+              5次采样基准测试
+            </Button>
+          </Space>
+        </section>
+
+        {/* 底部：事件日志 */}
+        <section className="settings-panel fabric-webrtc-lab-bottom-panel">
+          <div className="fabric-webrtc-lab-panel-head" style={{ marginBottom: 12 }}>
+            <div>
+              <h2>诊断事件日志</h2>
+              <p>实时记录信令握手与连接协商事件，仅保留最近 80 条。</p>
+            </div>
+            <Space>
+              <span style={{ fontSize: 12, color: 'var(--app-muted)' }}>Peer ID: </span>
+              <code style={{ fontSize: 11, background: 'var(--app-surface-muted)', padding: '2px 6px', borderRadius: 4, marginRight: 8 }}>{peerId}</code>
+              <Button
+                size="small"
+                icon={<DeleteOutlined />}
+                onClick={() => setLogs([])}
+                disabled={logs.length === 0}
+              >
+                清空日志
+              </Button>
+            </Space>
+          </div>
+
+          <div className="fabric-webrtc-lab-console-log">
+            {logs.length === 0 ? (
+              <div className="fabric-webrtc-lab-console-empty">暂无事件记录</div>
+            ) : (
+              logs.map((line, index) => {
+                const match = line.match(/^(\d{2}:\d{2}:\d{2})\s(.*)$/);
+                if (match) {
+                  return (
+                    <div className="console-line" key={index}>
+                      <span className="console-time">{match[1]}</span>
+                      <span className="console-text">{match[2]}</span>
+                    </div>
+                  );
+                }
+                return <div className="console-line" key={index}>{line}</div>;
+              })
             )}
-
-            {room && (
-              <div className="fabric-webrtc-lab-room-meta">
-                <Tag color="cyan">过期时间: {new Date(room.expiresAt).toLocaleTimeString()}</Tag>
-                <Tag color="blue">{room.peerCount} Peers</Tag>
-                <Tag color="purple">{room.messageCount} Signals</Tag>
-              </div>
-            )}
-          </section>
-
-          {/* RTT 打点采样与监控面板 */}
-          <section className="settings-panel" style={{ marginTop: 16 }}>
-            <div className="fabric-webrtc-lab-panel-head">
-              <div>
-                <h2>延迟打点与信令监控 (RTT & WebRTC Stats)</h2>
-                <p>DataChannel 打点只统计应用层 ping/pong 传输延迟及 ICE 候选包统计。</p>
-              </div>
-              <RadarChartOutlined />
-            </div>
-            
-            <div className="fabric-webrtc-lab-stats-section">
-              <div className="fabric-webrtc-lab-stats-card-group">
-                <div className="fabric-webrtc-lab-stats-card">
-                  <Statistic title="采样数" value={rttSummary.count} />
-                </div>
-                <div className="fabric-webrtc-lab-stats-card">
-                  <Statistic title="平均 RTT" value={rttSummary.avg} precision={2} suffix="ms" />
-                </div>
-                <div className="fabric-webrtc-lab-stats-card">
-                  <Statistic title="P50 RTT" value={rttSummary.p50} precision={2} suffix="ms" />
-                </div>
-                <div className="fabric-webrtc-lab-stats-card">
-                  <Statistic title="P95 RTT" value={rttSummary.p95} precision={2} suffix="ms" />
-                </div>
-              </div>
-
-              <div className="fabric-webrtc-lab-stats-card-group fabric-webrtc-lab-stats-card-group--signals" style={{ marginTop: 12 }}>
-                <div className="fabric-webrtc-lab-stats-card">
-                  <Statistic title="本地 Candidate" value={localCandidateCount} />
-                </div>
-                <div className="fabric-webrtc-lab-stats-card">
-                  <Statistic title="远端 Candidate" value={remoteCandidateCount} />
-                </div>
-                <div className="fabric-webrtc-lab-stats-card">
-                  <Statistic title="信令交互数" value={receivedSignalCount} />
-                </div>
-                <div className="fabric-webrtc-lab-stats-card">
-                  <Statistic title="队列积压" value={candidateQueueRef.current.length} />
-                </div>
-              </div>
-            </div>
-
-
-          </section>
-        </div>
-
-        {/* 右侧一栏：事件日志 */}
-        <div className="fabric-webrtc-lab-right-column">
-          <section className="settings-panel fabric-webrtc-lab-log-panel">
-            <div className="fabric-webrtc-lab-panel-head">
-              <div>
-                <h2>诊断事件日志</h2>
-                <p>实时记录信令握手与连接协商事件，仅保留最近 80 条。</p>
-              </div>
-            </div>
-            <div style={{ marginBottom: 12 }}>
-              <span style={{ fontSize: 12, color: 'var(--app-muted)' }}>当前 Peer ID: </span>
-              <code style={{ fontSize: 11, background: 'var(--app-surface-muted)', padding: '2px 6px', borderRadius: 4 }}>{peerId}</code>
-            </div>
-            <div className="fabric-webrtc-lab-console-log">
-              {logs.length === 0 ? (
-                <div className="fabric-webrtc-lab-console-empty">暂无事件记录</div>
-              ) : (
-                logs.map((line, index) => {
-                  const match = line.match(/^(\d{2}:\d{2}:\d{2})\s(.*)$/);
-                  if (match) {
-                    return (
-                      <div className="console-line" key={index}>
-                        <span className="console-time">{match[1]}</span>
-                        <span className="console-text">{match[2]}</span>
-                      </div>
-                    );
-                  }
-                  return <div className="console-line" key={index}>{line}</div>;
-                })
-              )}
-            </div>
-          </section>
-        </div>
+          </div>
+        </section>
       </div>
     </div>
   );

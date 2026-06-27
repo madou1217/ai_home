@@ -2616,11 +2616,7 @@ const Settings = ({ section }: SettingsProps) => {
     </div>
   );
 
-  const aliasSettingsContent = (
-    <section className="settings-panel settings-panel--aliases">
-      <ModelAliases />
-    </section>
-  );
+
 
 
 
@@ -2634,7 +2630,8 @@ const Settings = ({ section }: SettingsProps) => {
     {
       key: 'aliases',
       label: '模型别名',
-      children: aliasSettingsContent,
+      children: <ModelAliases setActions={setExtraActions} />,
+      actions: extraActions,
     },
     {
       key: 'control-planes',

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Table, Space, Switch, Popconfirm, message, Modal, Form, Input, InputNumber, Select } from 'antd';
+import { Space, Switch, Popconfirm, message, Form, Input, InputNumber, Select } from 'antd';
+import { ProTable, ModalForm } from '@ant-design/pro-components';
 import { PlusOutlined, EditOutlined, DeleteOutlined, ReloadOutlined } from '@ant-design/icons';
 import { modelAliasesAPI, modelsAPI, ModelAlias } from '@/services/api';
 import Button from '@/components/ui/AppButton';
@@ -12,7 +13,7 @@ const PROVIDER_SELECT_OPTIONS = PROVIDER_OPTIONS.map((provider) => ({
   label: getProviderDisplayName(provider)
 }));
 
-const ModelAliases: React.FC = () => {
+const ModelAliases: React.FC<{ setActions?: (actions: React.ReactNode) => void }> = ({ setActions }) => {
   const [aliases, setAliases] = useState<ModelAlias[]>([]);
   const [loading, setLoading] = useState(false);
   const [modelsByProvider, setModelsByProvider] = useState<Record<string, string[]>>({});
@@ -64,6 +65,27 @@ const ModelAliases: React.FC = () => {
     fetchAliases();
     fetchModels();
   }, []);
+
+  useEffect(() => {
+    if (setActions) {
+      setActions(
+        <Space>
+          <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
+            添加别名
+          </Button>
+          <Button icon={<ReloadOutlined />} loading={modelsLoading} onClick={() => fetchModels(true)}>
+            重新读取缓存
+          </Button>
+        </Space>
+      );
+    }
+  }, [setActions, modelsLoading]);
+
+  useEffect(() => {
+    return () => {
+      setActions?.(null);
+    };
+  }, [setActions]);
 
   const providerHasModel = (provider: string, model: string) => {
     return (modelsByProvider[provider] || []).includes(model);
@@ -154,13 +176,13 @@ const ModelAliases: React.FC = () => {
       title: '别名 (Alias)',
       dataIndex: 'alias',
       key: 'alias',
-      render: (text: string) => <strong>{text}</strong>,
+      render: (text: any) => <strong>{text}</strong>,
     },
     {
       title: '目标模型 (Target)',
       dataIndex: 'target',
       key: 'target',
-      render: (text: string) => {
+      render: (text: any) => {
         const label = findModelLabel(text);
         return (
           <span>
@@ -175,19 +197,19 @@ const ModelAliases: React.FC = () => {
       dataIndex: 'priority',
       key: 'priority',
       width: 90,
-      render: (value: number) => Number(value) || 0,
+      render: (value: any) => Number(value) || 0,
     },
     {
       title: '请求范围',
       dataIndex: 'provider',
       key: 'provider',
-      render: (text: string) => (text === 'all' ? '全部 (All)' : getProviderDisplayName(text)),
+      render: (text: any) => (text === 'all' ? '全部 (All)' : getProviderDisplayName(text)),
     },
     {
       title: '目标供应商',
       dataIndex: 'targetProvider',
       key: 'targetProvider',
-      render: (text: string) => (!text || text === 'auto' ? '自动 (Auto)' : getProviderDisplayName(text)),
+      render: (text: any) => (!text || text === 'auto' ? '自动 (Auto)' : getProviderDisplayName(text)),
     },
     {
       title: '备注',
@@ -231,34 +253,41 @@ const ModelAliases: React.FC = () => {
 
   return (
     <div>
-      <div style={{ marginBottom: 16 }}>
-        <Space>
-          <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
-            添加别名
-          </Button>
-          <Button icon={<ReloadOutlined />} loading={modelsLoading} onClick={() => fetchModels(true)}>
-            重新读取缓存
-          </Button>
-        </Space>
-      </div>
-      <Table
+
+      <ProTable
         dataSource={sortedAliases}
         columns={columns}
         rowKey="id"
         loading={loading}
+        search={false}
+        options={false}
         pagination={false}
       />
 
-      <Modal
+      <ModalForm
         title={editingId ? '编辑模型别名' : '添加模型别名'}
         open={modalVisible}
-        onOk={handleModalOk}
-        onCancel={() => setModalVisible(false)}
-        destroyOnClose
+        onOpenChange={setModalVisible}
+        form={form}
+        onFinish={async () => {
+          await handleModalOk();
+          return true;
+        }}
+        submitter={{
+          searchConfig: {
+            submitText: '保存',
+            resetText: '取消',
+          },
+        }}
+        modalProps={{
+          destroyOnClose: true,
+        }}
       >
         <Form
           form={form}
           layout="vertical"
+          style={{ marginTop: '12px' }}
+          component={false}
           initialValues={{
             provider: 'all',
             targetProvider: 'auto',
@@ -358,7 +387,7 @@ const ModelAliases: React.FC = () => {
             <Switch checkedChildren="启用" unCheckedChildren="禁用" />
           </Form.Item>
         </Form>
-      </Modal>
+      </ModalForm>
     </div>
   );
 };

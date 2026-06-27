@@ -2,20 +2,19 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Button,
-  Card,
-  Col,
+  
+  
   Descriptions,
   Empty,
   List,
   Progress,
-  Row,
+  
   Space,
   Statistic,
   Table,
-  Typography,
+  
   message,
   Tag,
-  Grid
 } from 'antd';
 import {
   CheckCircleOutlined,
@@ -28,10 +27,9 @@ import { managementAPI } from '@/services/api';
 import type { ManagementAccount, ManagementMetrics, ManagementStatus, Provider } from '@/types';
 import ProviderIcon, { providerIds, providerNames } from '@/components/chat/ProviderIcon';
 import RuntimeStatusTag from '@/components/runtime/RuntimeStatusTag';
-import PageHero from '@/components/ui/PageHero';
+import { PageContainer, ProCard } from '@ant-design/pro-components';
 import './Dashboard.css';
 
-const { Text } = Typography;
 const PROVIDERS: Provider[] = providerIds;
 
 const formatPercent = (value?: number) => `${(Number(value || 0) * 100).toFixed(1)}%`;
@@ -90,9 +88,7 @@ function buildAccountLink(provider: Provider, accountId: string) {
 }
 
 const Dashboard = () => {
-  const screens = Grid.useBreakpoint();
-  const isMobile = !screens.md;
-  const [status, setStatus] = useState<ManagementStatus | null>(null);
+    const [status, setStatus] = useState<ManagementStatus | null>(null);
   const [metrics, setMetrics] = useState<ManagementMetrics | null>(null);
   const [accounts, setAccounts] = useState<ManagementAccount[]>([]);
   const [loading, setLoading] = useState(false);
@@ -280,213 +276,102 @@ const Dashboard = () => {
     );
   }, [accounts]);
 
-  if (isMobile) {
-    return (
-      <div className="dashboard-page">
-        <PageHero
-          title="仪表盘"
-          eyebrow="运行态"
-          description="这里展示 server 调度、熔断、恢复和队列的真实运行态。"
-          actions={(
-            <Space>
-              <Tag color={liveTag.color}>{liveTag.text}</Tag>
-              <Button
-                type="primary"
-                icon={<ReloadOutlined />}
-                onClick={handleRefreshDashboard}
-                loading={loading}
-              >
-                刷新
-              </Button>
-            </Space>
-          )}
-        />
-
-        {degradedCount > 0 ? (
-          <Alert
-            type="warning"
-            showIcon
-            message={`${degradedCount} 个账号处于异常或冷却状态`}
-          />
-        ) : null}
-
-        {/* 4 项关键指标 2×2 */}
-        <Row gutter={[10, 10]}>
-          <Col span={12}>
-            <Card loading={loading} size="small">
-              <Statistic
-                title="总账号数"
-                value={status?.totalAccounts || 0}
-                prefix={<DashboardOutlined />}
-              />
-            </Card>
-          </Col>
-          <Col span={12}>
-            <Card loading={loading} size="small">
-              <Statistic
-                title="健康账号"
-                value={status?.activeAccounts || 0}
-                prefix={<CheckCircleOutlined />}
-                valueStyle={{ color: '#15803d' }}
-              />
-            </Card>
-          </Col>
-          <Col span={12}>
-            <Card loading={loading} size="small">
-              <Statistic
-                title="异常 / 冷却"
-                value={degradedCount}
-                prefix={<DisconnectOutlined />}
-                valueStyle={{ color: degradedCount > 0 ? '#dc2626' : undefined }}
-              />
-            </Card>
-          </Col>
-          <Col span={12}>
-            <Card loading={loading} size="small">
-              <Statistic
-                title="成功率"
-                value={formatPercent(status?.successRate)}
-                prefix={<SyncOutlined spin={loading} />}
-              />
-            </Card>
-          </Col>
-        </Row>
-
-        {/* Provider 健康状态 */}
-        <Card loading={loading} title="Provider 状态" size="small">
-          <Space direction="vertical" style={{ width: '100%' }} size={8}>
-            {PROVIDERS.map((provider) => {
-              const pdata = status?.providers?.[provider];
-              const active = pdata?.active || 0;
-              const total = pdata?.total || 0;
-              return (
-                <div key={provider} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                  <Space size={6}>
-                    <ProviderIcon provider={provider} size={15} />
-                    <Text strong>{providerNames[provider]}</Text>
-                  </Space>
-                  <Space size={6}>
-                    <Text type="secondary" style={{ fontFamily: 'var(--font-mono)', fontSize: 13 }}>
-                      {active}/{total}
-                    </Text>
-                    <Tag color={active > 0 ? 'green' : 'default'} style={{ margin: 0 }}>
-                      {active > 0 ? '正常' : '无可用'}
-                    </Tag>
-                  </Space>
-                </div>
-              );
-            })}
-          </Space>
-        </Card>
-
-        {/* 服务关键参数 */}
-        <Card loading={loading} title="服务信息" size="small">
-          <Descriptions column={1} size="small">
-            <Descriptions.Item label="Backend">{status?.backend || '-'}</Descriptions.Item>
-            <Descriptions.Item label="调度策略">{status?.strategy || '-'}</Descriptions.Item>
-            <Descriptions.Item label="监听地址">{status ? `${status.host}:${status.port}` : '-'}</Descriptions.Item>
-            <Descriptions.Item label="总请求">{status?.totalRequests || 0}</Descriptions.Item>
-            <Descriptions.Item label="运行时长">{typeof displayedUptimeSec === 'number' ? `${displayedUptimeSec}s` : '-'}</Descriptions.Item>
-          </Descriptions>
-        </Card>
-      </div>
-    );
-  }
-
   return (
-    <div className="dashboard-page">
-      <PageHero
-        title="仪表盘"
-        eyebrow="运行态"
-        description="这里展示 server 调度、熔断、恢复和队列的真实运行态。"
-        actions={(
-          <Space>
-            <Button onClick={handleClearCooldown} loading={cooldownClearing}>
-              清空冷却
-            </Button>
-            <Button
-              type="primary"
-              icon={<ReloadOutlined />}
-              onClick={handleRefreshDashboard}
-              loading={loading}
-            >
-              刷新
-            </Button>
-            <Tag color={liveTag.color}>{liveTag.text}</Tag>
-          </Space>
-        )}
-      />
+    <PageContainer
+      header={{
+        title: "网关仪表盘",
+        subTitle: "展示本地 Server 调度、熔断、恢复和队列的真实运行态。",
+        extra: [
+          <Button key="clear" onClick={handleClearCooldown} loading={cooldownClearing}>
+            清空冷却
+          </Button>,
+          <Button
+            key="refresh"
+            type="primary"
+            icon={<ReloadOutlined />}
+            onClick={handleRefreshDashboard}
+            loading={loading}
+          >
+            刷新
+          </Button>,
+          <Tag key="state" color={liveTag.color} style={{ margin: 0, padding: "4px 8px", height: "auto" }}>
+            {liveTag.text}
+          </Tag>
+        ]
+      }}
+    >
+      {status?.cooldownAccounts ? (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message={`当前共有 ${status.cooldownAccounts} 个账号处于非健康态，已被调度层临时摘除。`}
+        />
+      ) : null}
 
-      <Row gutter={16} style={{ marginBottom: 16 }}>
-        <Col xs={24} md={12} xl={6}>
-          <Card loading={loading}>
-            <Statistic title="总账号数" value={status?.totalAccounts || 0} prefix={<DashboardOutlined />} />
-          </Card>
-        </Col>
-        <Col xs={24} md={12} xl={6}>
-          <Card loading={loading}>
-            <Statistic
-              title="健康账号"
-              value={status?.activeAccounts || 0}
-              prefix={<CheckCircleOutlined />}
-              valueStyle={{ color: '#3f8600' }}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} md={12} xl={6}>
-          <Card loading={loading}>
-            <Statistic
-              title="异常 / 冷却"
-              value={degradedCount}
-              prefix={<DisconnectOutlined />}
-              valueStyle={{ color: degradedCount > 0 ? '#cf1322' : undefined }}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} md={12} xl={6}>
-          <Card loading={loading}>
-            <Statistic
-              title="成功率"
-              value={formatPercent(status?.successRate)}
-              prefix={<SyncOutlined spin={loading} />}
-            />
-          </Card>
-        </Col>
-      </Row>
+      {/* 4 项关键指标 ProCard */}
+      <ProCard gutter={16} ghost style={{ marginBottom: 16 }}>
+        <ProCard colSpan={{ xs: 24, sm: 12, md: 6 }} layout="center" bordered>
+          <Statistic title="总账号数" value={status?.totalAccounts || 0} prefix={<DashboardOutlined />} />
+        </ProCard>
+        <ProCard colSpan={{ xs: 24, sm: 12, md: 6 }} layout="center" bordered>
+          <Statistic
+            title="健康账号"
+            value={status?.activeAccounts || 0}
+            prefix={<CheckCircleOutlined />}
+            valueStyle={{ color: "#0F766E" }}
+          />
+        </ProCard>
+        <ProCard colSpan={{ xs: 24, sm: 12, md: 6 }} layout="center" bordered>
+          <Statistic
+            title="异常 / 冷却"
+            value={degradedCount}
+            prefix={<DisconnectOutlined />}
+            valueStyle={{ color: degradedCount > 0 ? "#dc2626" : undefined }}
+          />
+        </ProCard>
+        <ProCard colSpan={{ xs: 24, sm: 12, md: 6 }} layout="center" bordered>
+          <Statistic
+            title="成功率"
+            value={formatPercent(status?.successRate)}
+            prefix={<SyncOutlined spin={loading} />}
+          />
+        </ProCard>
+      </ProCard>
 
-      <Row gutter={16} style={{ marginBottom: 16 }}>
-        <Col span={24}>
-          <Card loading={loading} title="服务运行态">
-            <Descriptions size="small" column={2} bordered>
-              <Descriptions.Item label="Backend">{status?.backend || '-'}</Descriptions.Item>
-              <Descriptions.Item label="调度策略">{status?.strategy || '-'}</Descriptions.Item>
-              <Descriptions.Item label="监听地址">
-                {status ? `${status.host}:${status.port}` : '-'}
-              </Descriptions.Item>
-              <Descriptions.Item label="Provider 模式">{status?.providerMode || '-'}</Descriptions.Item>
-              <Descriptions.Item label="API Key">{status?.apiKeyConfigured ? '已配置' : '未配置'}</Descriptions.Item>
-              <Descriptions.Item label="Sticky Session">{status?.sessionAffinity?.total || 0}</Descriptions.Item>
-              <Descriptions.Item label="缓存模型">{status?.modelsCached || 0}</Descriptions.Item>
-              <Descriptions.Item label="总请求">{status?.totalRequests || 0}</Descriptions.Item>
-              <Descriptions.Item label="超时率">{formatPercent(status?.timeoutRate)}</Descriptions.Item>
-              <Descriptions.Item label="运行时长">
-                {typeof displayedUptimeSec === 'number' ? `${displayedUptimeSec}s` : '-'}
-              </Descriptions.Item>
-            </Descriptions>
-          </Card>
-        </Col>
-      </Row>
+      <ProCard gutter={16} ghost style={{ marginBottom: 16 }}>
+        {/* 服务运行态 */}
+        <ProCard colSpan={24} title="服务运行参数" headerBordered bordered>
+          <Descriptions size="small" column={{ xs: 1, sm: 2, md: 3 }} bordered>
+            <Descriptions.Item label="Backend">{status?.backend || "-"}</Descriptions.Item>
+            <Descriptions.Item label="调度策略">{status?.strategy || "-"}</Descriptions.Item>
+            <Descriptions.Item label="监听地址">
+              {status ? `${status.host}:${status.port}` : "-"}
+            </Descriptions.Item>
+            <Descriptions.Item label="Provider 模式">{status?.providerMode || "-"}</Descriptions.Item>
+            <Descriptions.Item label="API Key">{status?.apiKeyConfigured ? "已配置" : "未配置"}</Descriptions.Item>
+            <Descriptions.Item label="Sticky Session">{status?.sessionAffinity?.total || 0}</Descriptions.Item>
+            <Descriptions.Item label="缓存模型">{status?.modelsCached || 0}</Descriptions.Item>
+            <Descriptions.Item label="总请求">{status?.totalRequests || 0}</Descriptions.Item>
+            <Descriptions.Item label="超时率">{formatPercent(status?.timeoutRate)}</Descriptions.Item>
+            <Descriptions.Item label="运行时长">
+              {typeof displayedUptimeSec === "number" ? `${displayedUptimeSec}s` : "-"}
+            </Descriptions.Item>
+          </Descriptions>
+        </ProCard>
+      </ProCard>
 
-      <Card loading={loading} title="Provider 运行态" style={{ marginBottom: 16 }}>
+      {/* Provider 运行态 */}
+      <ProCard title="Provider 运行状态" headerBordered bordered style={{ marginBottom: 16 }}>
         <Table
           rowKey="provider"
           pagination={false}
           dataSource={providerRows}
           columns={[
             {
-              title: 'Provider',
-              dataIndex: 'provider',
-              key: 'provider',
+              title: "Provider",
+              dataIndex: "provider",
+              key: "provider",
               render: (provider: Provider) => (
                 <Space>
                   <ProviderIcon provider={provider} size={16} />
@@ -495,25 +380,23 @@ const Dashboard = () => {
               )
             },
             {
-              title: '健康 / 总数',
-              key: 'health',
+              title: "健康 / 总数",
+              key: "health",
               render: (_, record) => `${record.active}/${record.total}`
             },
             {
-              title: '队列',
-              key: 'queue',
-              render: (_, record) => {
-                return formatQueueSnapshot(record.queue);
-              }
+              title: "队列",
+              key: "queue",
+              render: (_, record) => formatQueueSnapshot(record.queue)
             },
             {
-              title: '请求',
-              key: 'requests',
+              title: "请求",
+              key: "requests",
               render: (_, record) => `${record.requests} / 成功 ${record.success} / 失败 ${record.failures}`
             },
             {
-              title: '状态分布',
-              key: 'statuses',
+              title: "状态分布",
+              key: "statuses",
               render: (_, record) => (
                 <Space wrap size={[6, 6]}>
                   {Object.entries(record.statuses || {})
@@ -528,110 +411,91 @@ const Dashboard = () => {
             }
           ]}
         />
-      </Card>
+      </ProCard>
 
-      <Row gutter={16} style={{ marginBottom: 16 }}>
-        <Col xs={24} xl={12}>
-          <Card loading={loading} title="最近错误">
-            {recentErrors.length === 0 ? (
-              <Empty description="最近没有错误" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-            ) : (
-              <List
-                dataSource={recentErrors.slice(0, 8)}
-                renderItem={(item) => (
-                  <List.Item>
-                    <div style={{ width: '100%' }}>
-                      <div
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          gap: 12,
-                          marginBottom: 6
-                        }}
-                      >
-                        <Space size={8} wrap>
-                          {(() => {
-                            const provider = getRecentErrorProvider(item);
-                            const accountRef = getRecentErrorAccountRef(item);
-                            const account = accountRef ? accountByRef.get(accountRef) : undefined;
-                            const accountId = account ? String(account.accountId || account.id || '').trim() : '';
-                            if (!provider) {
-                              return <RuntimeStatusTag status="upstream_error" fallback="unknown" />;
-                            }
-                            return (
-                              <>
-                                <Space size={5}>
-                                  <ProviderIcon provider={provider} size={15} />
-                                  <Text strong>{providerNames[provider]}</Text>
-                                </Space>
-                                {accountId ? (
-                                  <a href={buildAccountLink(provider, accountId)}>
-                                    {getManagementAccountLabel(account) || '查看对应账号'}
-                                  </a>
-                                ) : null}
-                              </>
-                            );
-                          })()}
-                        </Space>
-                        <Text type="secondary" style={{ whiteSpace: 'nowrap' }}>
-                          {formatRecentErrorTime(item.at)}
-                        </Text>
-                      </div>
-                      {item.route ? (
-                        <Text type="secondary" style={{ display: 'block', marginBottom: 4, fontSize: 12 }}>
-                          {item.route}
-                        </Text>
-                      ) : null}
-                      <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                        {formatRecentErrorMessage(item)}
-                      </div>
+      {/* 底部两栏：最近错误 & 热点路由 */}
+      <ProCard gutter={16} ghost>
+        <ProCard colSpan={{ xs: 24, md: 12 }} title="最近错误" headerBordered bordered>
+          {recentErrors.length === 0 ? (
+            <Empty description="最近没有错误" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+          ) : (
+            <List
+              dataSource={recentErrors.slice(0, 8)}
+              renderItem={(item) => (
+                <List.Item>
+                  <div style={{ width: "100%" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 6 }}>
+                      <Space size={8} wrap>
+                        {(() => {
+                          const provider = getRecentErrorProvider(item);
+                          const accountRef = getRecentErrorAccountRef(item);
+                          const account = accountRef ? accountByRef.get(accountRef) : undefined;
+                          const accountId = account ? String(account.accountId || account.id || "").trim() : "";
+                          if (!provider) {
+                            return <RuntimeStatusTag status="upstream_error" fallback="upstream" />;
+                          }
+                          return (
+                            <>
+                              <Space size={5}>
+                                <ProviderIcon provider={provider} size={15} />
+                                <span style={{ fontWeight: "bold" }}>{providerNames[provider]}</span>
+                              </Space>
+                              {accountId ? (
+                                <a href={buildAccountLink(provider, accountId)}>
+                                  {getManagementAccountLabel(account) || "查看对应账号"}
+                                </a>
+                              ) : null}
+                            </>
+                          );
+                        })()}
+                      </Space>
+                      <span style={{ color: "var(--app-muted)", fontSize: 12 }}>
+                        {formatRecentErrorTime(item.at)}
+                      </span>
                     </div>
-                  </List.Item>
-                )}
-              />
-            )}
-          </Card>
-        </Col>
-        <Col xs={24} xl={12}>
-          <Card loading={loading} title="热点路由">
-            {routeRows.length === 0 ? (
-              <Empty description="暂无路由统计" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-            ) : (
-              <List
-                dataSource={routeRows}
-                renderItem={(item) => (
-                  <List.Item>
-                    <div style={{ width: '100%' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                        <Text code>{item.route}</Text>
-                        <Text>{item.count}</Text>
-                      </div>
-                      <Progress
-                        percent={Math.max(1, Math.round((item.count / Math.max(routeRows[0].count, 1)) * 100))}
-                        showInfo={false}
-                        size="small"
-                      />
+                    {item.route ? (
+                      <span style={{ display: "block", marginBottom: 4, fontSize: 12, color: "var(--app-muted)" }}>
+                        {item.route}
+                      </span>
+                    ) : null}
+                    <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 13, color: "var(--app-text)" }}>
+                      {formatRecentErrorMessage(item)}
                     </div>
-                  </List.Item>
-                )}
-              />
-            )}
-          </Card>
-        </Col>
-      </Row>
+                  </div>
+                </List.Item>
+              )}
+            />
+          )}
+        </ProCard>
 
-      {status?.cooldownAccounts ? (
-        <Alert
-          type="warning"
-          showIcon
-          style={{ marginBottom: 16 }}
-          message={`当前共有 ${status.cooldownAccounts} 个账号处于非健康态，已被调度层临时摘除。`}
-        />
-      ) : null}
-
-    </div>
+        <ProCard colSpan={{ xs: 24, md: 12 }} title="热点路由" headerBordered bordered>
+          {routeRows.length === 0 ? (
+            <Empty description="暂无路由统计" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+          ) : (
+            <List
+              dataSource={routeRows}
+              renderItem={(item) => (
+                <List.Item>
+                  <div style={{ width: "100%" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                      <code style={{ background: "var(--app-surface-muted)", padding: "2px 6px", borderRadius: 4, fontSize: 12 }}>{item.route}</code>
+                      <span>{item.count} 次请求</span>
+                    </div>
+                    <Progress
+                      percent={Math.max(1, Math.round((item.count / Math.max(routeRows[0].count, 1)) * 100))}
+                      showInfo={false}
+                      size="small"
+                    />
+                  </div>
+                </List.Item>
+              )}
+            />
+          )}
+        </ProCard>
+      </ProCard>
+    </PageContainer>
   );
 };
+
 
 export default Dashboard;

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Form, Input, Modal, Segmented, Select, Space, Statistic, Switch, Tag, Tooltip, message } from 'antd';
+import { Alert, Form, Input, Modal, Segmented, Select, Statistic, Switch, Tag, Tooltip, message } from 'antd';
 import { ApiOutlined, ArrowLeftOutlined, CopyOutlined, DatabaseOutlined, DeleteOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { modelsAPI } from '@/services/api';
@@ -14,7 +14,7 @@ import type {
 import Button from '@/components/ui/AppButton';
 import DataToolbar from '@/components/ui/DataToolbar';
 import PaginatedList from '@/components/ui/PaginatedList';
-import PageHero from '@/components/ui/PageHero';
+import { PageContainer, ModalForm } from '@ant-design/pro-components';
 import SurfaceCard from '@/components/ui/SurfaceCard';
 import ProviderIcon, { providerIds, providerNames } from '@/components/chat/ProviderIcon';
 import './Models.css';
@@ -160,7 +160,6 @@ export default function Models() {
   const [statusFilter, setStatusFilter] = useState<ModelStatusFilter>('all');
   const [keyword, setKeyword] = useState('');
   const [manualModalOpen, setManualModalOpen] = useState(false);
-  const [manualSubmitting, setManualSubmitting] = useState(false);
   const [updatingModelKeys, setUpdatingModelKeys] = useState<Set<string>>(() => new Set());
   const [manualForm] = Form.useForm();
   const manualProvider = Form.useWatch('provider', manualForm) as Provider | undefined;
@@ -350,7 +349,6 @@ export default function Models() {
       message.error('OAuth 账号不能新增自定义模型，请选择 API Key 账号');
       return;
     }
-    setManualSubmitting(true);
     try {
       await modelsAPI.createManualModel({
         id: values.id,
@@ -366,7 +364,6 @@ export default function Models() {
     } catch (error: any) {
       message.error(error?.response?.data?.message || error?.message || '添加模型失败');
     } finally {
-      setManualSubmitting(false);
     }
   }, [accountByRef, loadModels, manualForm]);
 
@@ -676,32 +673,31 @@ export default function Models() {
   };
 
   return (
-    <div className="models-page animate__animated animate__fadeIn animate__faster">
-      <PageHero
-        title={accountScoped ? '账号模型' : '模型'}
-        eyebrow={accountScoped ? (scopedAccountLabel && !scopedAccountLabel.startsWith('acct_') ? scopedAccountLabel : '账号模型') : '/v1/models'}
-        description={accountScoped
-          ? `${scopedAccountLabel && !scopedAccountLabel.startsWith('acct_') ? scopedAccountLabel : (scopedProvider ? `${providerNames[scopedProvider]} 账号` : '当前账号')} 的独立模型开关和手动补充。`
-          : '按模型聚合展示可见状态；客户端看到的是所有启用账号模型的去重合集。'}
-        actions={(
-          <Space wrap>
-            {accountScoped ? (
-              <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/accounts')}>
-                返回账号
-              </Button>
-            ) : null}
-            {renderManualModelButton()}
-            <Button
-              type="primary"
-              icon={<ReloadOutlined />}
-              loading={loading || isCatalogJobActive(catalogJob)}
-              onClick={refreshModels}
-            >
-              刷新模型
+    <PageContainer
+      header={{
+        title: accountScoped ? "账号模型管理" : "全局模型目录",
+        subTitle: accountScoped
+          ? `${scopedAccountLabel && !scopedAccountLabel.startsWith("acct_") ? scopedAccountLabel : (scopedProvider ? `${providerNames[scopedProvider]} 账号` : "当前账号")} 的独立模型开关和手动补充。`
+          : "按模型聚合展示可见状态；客户端看到的是所有启用账号模型的去重合集。",
+        extra: [
+          accountScoped && (
+            <Button key="back" icon={<ArrowLeftOutlined />} onClick={() => navigate("/accounts")}>
+              返回账号
             </Button>
-          </Space>
-        )}
-      />
+          ),
+          renderManualModelButton(),
+          <Button
+            key="refresh"
+            type="primary"
+            icon={<ReloadOutlined />}
+            loading={loading || isCatalogJobActive(catalogJob)}
+            onClick={refreshModels}
+          >
+            刷新模型
+          </Button>
+        ].filter(Boolean)
+      }}
+    >
 
       <div className="models-metrics">
         <SurfaceCard className="models-metric-card">
@@ -853,16 +849,26 @@ export default function Models() {
         )}
       </SurfaceCard>
 
-      <Modal
+      <ModalForm
         title="手动添加模型"
         open={manualModalOpen}
-        okText="添加"
-        cancelText="取消"
-        confirmLoading={manualSubmitting}
-        onOk={submitManualModel}
-        onCancel={() => setManualModalOpen(false)}
+        onOpenChange={setManualModalOpen}
+        form={manualForm}
+        onFinish={async () => {
+          await submitManualModel();
+          return true;
+        }}
+        submitter={{
+          searchConfig: {
+            submitText: '添加',
+            resetText: '取消',
+          },
+        }}
+        modalProps={{
+          destroyOnClose: true,
+        }}
       >
-        <Form form={manualForm} layout="vertical" initialValues={{ provider: 'codex', enabled: true }}>
+        <Form form={manualForm} layout="vertical" style={{ marginTop: '12px' }} component={false} initialValues={{ provider: 'codex', enabled: true }}>
           <Form.Item
             name="provider"
             label="Provider"
@@ -898,7 +904,7 @@ export default function Models() {
             <Switch />
           </Form.Item>
         </Form>
-      </Modal>
-    </div>
+      </ModalForm>
+    </PageContainer>
   );
 }

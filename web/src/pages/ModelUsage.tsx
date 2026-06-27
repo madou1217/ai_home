@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button,
-  Card,
+  
   Col,
   DatePicker,
   Drawer,
@@ -11,10 +11,10 @@ import {
   Segmented,
   Select,
   Space,
-  Spin,
+  
   Statistic,
   Table,
-  Tag,
+  
   Typography,
   message
 } from 'antd';
@@ -41,7 +41,7 @@ import type {
   Provider
 } from '@/types';
 import ProviderIcon, { providerIds, providerNames } from '@/components/chat/ProviderIcon';
-import PageHero from '@/components/ui/PageHero';
+import { PageContainer, ProCard } from '@ant-design/pro-components';
 import './ModelUsage.css';
 
 const { RangePicker } = DatePicker;
@@ -378,21 +378,21 @@ export default function ModelUsage() {
       dataIndex: 'totalTokens',
       width: 110,
       align: 'right',
-      render: (value: number) => formatTokens(value)
+      render: (value: any) => formatTokens(value)
     },
     {
       title: 'Input',
       dataIndex: 'inputTokens',
       width: 110,
       align: 'right',
-      render: (value: number) => formatTokens(value)
+      render: (value: any) => formatTokens(value)
     },
     {
       title: 'Output',
       dataIndex: 'outputTokens',
       width: 110,
       align: 'right',
-      render: (value: number) => formatTokens(value)
+      render: (value: any) => formatTokens(value)
     },
     {
       title: 'Cache',
@@ -405,7 +405,7 @@ export default function ModelUsage() {
       dataIndex: 'costUsd',
       width: 110,
       align: 'right',
-      render: (value: number) => formatCost(value)
+      render: (value: any) => formatCost(value)
     }
   ];
 
@@ -440,20 +440,20 @@ export default function ModelUsage() {
       dataIndex: 'totalTokens',
       width: 110,
       align: 'right',
-      render: (value: number) => formatTokens(value)
+      render: (value: any) => formatTokens(value)
     },
     {
       title: '成本',
       dataIndex: 'costUsd',
       width: 110,
       align: 'right',
-      render: (value: number) => formatCost(value)
+      render: (value: any) => formatCost(value)
     },
     {
       title: '更新时间',
       dataIndex: 'updatedAtMs',
       width: 130,
-      render: (value: number) => formatTime(value)
+      render: (value: any) => formatTime(value)
     },
     {
       title: '',
@@ -489,14 +489,14 @@ export default function ModelUsage() {
       dataIndex: 'inputTokens',
       width: 110,
       align: 'right',
-      render: (value: number) => formatTokens(value)
+      render: (value: any) => formatTokens(value)
     },
     {
       title: 'Output',
       dataIndex: 'outputTokens',
       width: 110,
       align: 'right',
-      render: (value: number) => formatTokens(value)
+      render: (value: any) => formatTokens(value)
     },
     {
       title: 'Cache',
@@ -509,14 +509,14 @@ export default function ModelUsage() {
       dataIndex: 'reasoningOutputTokens',
       width: 120,
       align: 'right',
-      render: (value: number) => formatTokens(value)
+      render: (value: any) => formatTokens(value)
     },
     {
       title: '成本',
       dataIndex: 'costUsd',
       width: 110,
       align: 'right',
-      render: (value: number) => formatCost(value)
+      render: (value: any) => formatCost(value)
     }
   ];
 
@@ -548,105 +548,22 @@ export default function ModelUsage() {
       });
   }, [modelOptions, provider]);
 
-  if (isMobile) {
-    return (
-      <div className="model-usage-page" style={{ padding: '14px 12px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <div>
-            <Text type="secondary" style={{ fontSize: 13 }}>今日使用量统计概览</Text>
-          </div>
-          <Button icon={<ReloadOutlined />} onClick={handleRefreshUsage} loading={loading}>
-            刷新
-          </Button>
-        </div>
-
-        {/* 4 项关键指标 2×2 */}
-        <Row gutter={[10, 10]} style={{ marginBottom: 16 }}>
-          <Col span={12}>
-            <Card style={{ borderRadius: 8 }} bodyStyle={{ padding: 12 }}>
-              <Statistic title="调用次数" value={stats.totalCalls} prefix={<BarChartOutlined style={{ color: '#1890ff' }} />} valueStyle={{ fontSize: 18 }} />
-            </Card>
-          </Col>
-          <Col span={12}>
-            <Card style={{ borderRadius: 8 }} bodyStyle={{ padding: 12 }}>
-              <Statistic title="会话数" value={stats.totalSessions} prefix={<ClockCircleOutlined style={{ color: '#722ed1' }} />} valueStyle={{ fontSize: 18 }} />
-            </Card>
-          </Col>
-          <Col span={12}>
-            <Card style={{ borderRadius: 8 }} bodyStyle={{ padding: 12 }}>
-              <Statistic title="Tokens总数" value={formatTokens(stats.totalTokens)} prefix={<DatabaseOutlined style={{ color: '#fa8c16' }} />} valueStyle={{ fontSize: 18 }} />
-            </Card>
-          </Col>
-          <Col span={12}>
-            <Card style={{ borderRadius: 8 }} bodyStyle={{ padding: 12 }}>
-              <Statistic title="估算成本" value={formatCost(stats.totalCostUsd)} prefix={<DollarOutlined style={{ color: '#52c41a' }} />} valueStyle={{ fontSize: 18 }} />
-            </Card>
-          </Col>
-        </Row>
-
-        {/* 模型使用情况 */}
-        <Card
-          title="模型使用情况"
-          style={{ borderRadius: 8, marginBottom: 16 }}
-          bodyStyle={{ padding: loading ? '24px 16px' : (models.length === 0 ? '16px' : '8px 16px') }}
-        >
-          {loading ? (
-            <div style={{ textAlign: 'center', padding: '20px 0' }}>
-              <Spin tip="加载中..." />
-            </div>
-          ) : models.length === 0 ? (
-            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无模型调用数据" />
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              {models.map((item, index) => (
-                <div
-                  key={`${item.provider}:${item.model || index}`}
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '12px 0',
-                    borderBottom: index === models.length - 1 ? 'none' : '1px solid #f0f0f0'
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1 }}>
-                    <ProviderIcon provider={item.provider} size={18} />
-                    <Text ellipsis style={{ fontSize: 14, fontWeight: 500 }}>
-                      {item.model || '未知模型'}
-                    </Text>
-                  </div>
-                  <div style={{ marginLeft: 16, flexShrink: 0 }}>
-                    <Tag color="blue" style={{ fontSize: 13, borderRadius: 4, margin: 0 }}>
-                      {item.calls} 次调用
-                    </Tag>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
-      </div>
-    );
-  }
-
   return (
-    <div className="model-usage-page">
-      <PageHero
-        title="模型用量"
-        description="Token、会话、模型和估算成本"
-        actions={(
-          <Space wrap>
-            <Button icon={<ReloadOutlined />} onClick={handleRefreshUsage} loading={loading}>
-              刷新
-            </Button>
-            <Button type="primary" icon={<SyncOutlined />} onClick={handleScan} loading={scanning || isScanJobActive(scanJob)}>
-              扫描
-            </Button>
-          </Space>
-        )}
-      />
-
-      <Card style={{ borderRadius: 8, marginBottom: 16 }} bodyStyle={{ padding: isMobile ? 14 : 16 }}>
+    <PageContainer
+      header={{
+        title: "模型用量统计",
+        subTitle: "监控 Tokens、会话、模型调用频次和估算成本。",
+        extra: [
+          <Button key="refresh" icon={<ReloadOutlined />} onClick={handleRefreshUsage} loading={loading}>
+            刷新
+          </Button>,
+          <Button key="scan" type="primary" icon={<SyncOutlined />} onClick={handleScan} loading={scanning || isScanJobActive(scanJob)}>
+            扫描
+          </Button>
+        ]
+      }}
+    >
+      <ProCard style={{ marginBottom: 16 }} bordered>
         <Space size={12} wrap>
           <Segmented
             value={rangeMode}
@@ -682,12 +599,13 @@ export default function ModelUsage() {
             查询
           </Button>
         </Space>
-      </Card>
+      </ProCard>
 
       {scanJob ? (
-        <Card
+        <ProCard
           className={`usage-live-scan usage-live-scan--${scanJob.status} animate__animated animate__fadeIn animate__faster`}
-          bodyStyle={{ padding: isMobile ? 14 : 16 }}
+          bordered
+          style={{ marginBottom: 16 }}
         >
           <div className="usage-live-scan-main">
             <div>
@@ -708,33 +626,25 @@ export default function ModelUsage() {
             </div>
           </div>
           {scanJob.error ? <Text type="danger">{scanJob.error}</Text> : null}
-        </Card>
+        </ProCard>
       ) : null}
 
-      <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
-        <Col xs={12} md={6}>
-          <Card style={{ borderRadius: 8 }} bodyStyle={{ padding: 16 }}>
-            <Statistic title="调用" value={stats.totalCalls} prefix={<BarChartOutlined />} />
-          </Card>
-        </Col>
-        <Col xs={12} md={6}>
-          <Card style={{ borderRadius: 8 }} bodyStyle={{ padding: 16 }}>
-            <Statistic title="会话" value={stats.totalSessions} prefix={<ClockCircleOutlined />} />
-          </Card>
-        </Col>
-        <Col xs={12} md={6}>
-          <Card style={{ borderRadius: 8 }} bodyStyle={{ padding: 16 }}>
-            <Statistic title="Tokens" value={formatTokens(stats.totalTokens)} prefix={<DatabaseOutlined />} />
-          </Card>
-        </Col>
-        <Col xs={12} md={6}>
-          <Card style={{ borderRadius: 8 }} bodyStyle={{ padding: 16 }}>
-            <Statistic title="成本" value={formatCost(stats.totalCostUsd)} prefix={<DollarOutlined />} />
-          </Card>
-        </Col>
-      </Row>
+      <ProCard gutter={16} ghost style={{ marginBottom: 16 }}>
+        <ProCard colSpan={{ xs: 24, sm: 12, md: 6 }} layout="center" bordered>
+          <Statistic title="调用" value={stats.totalCalls} prefix={<BarChartOutlined />} />
+        </ProCard>
+        <ProCard colSpan={{ xs: 24, sm: 12, md: 6 }} layout="center" bordered>
+          <Statistic title="会话" value={stats.totalSessions} prefix={<ClockCircleOutlined />} />
+        </ProCard>
+        <ProCard colSpan={{ xs: 24, sm: 12, md: 6 }} layout="center" bordered>
+          <Statistic title="Tokens" value={formatTokens(stats.totalTokens)} prefix={<DatabaseOutlined />} />
+        </ProCard>
+        <ProCard colSpan={{ xs: 24, sm: 12, md: 6 }} layout="center" bordered>
+          <Statistic title="成本" value={formatCost(stats.totalCostUsd)} prefix={<DollarOutlined />} />
+        </ProCard>
+      </ProCard>
 
-      <Card title="按模型" style={{ borderRadius: 8, marginBottom: 16 }} bodyStyle={{ padding: 0 }}>
+      <ProCard title="按模型" headerBordered bordered style={{ marginBottom: 16 }}>
         <Table<ModelUsageModelRow>
           size="middle"
           loading={loading}
@@ -745,10 +655,10 @@ export default function ModelUsage() {
           scroll={{ x: 900 }}
           locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="无记录" /> }}
         />
-      </Card>
+      </ProCard>
 
       {scanResult ? (
-        <Card title="最近扫描" style={{ borderRadius: 8, marginBottom: 16 }} bodyStyle={{ padding: 16 }}>
+        <ProCard title="最近扫描" headerBordered bordered style={{ marginBottom: 16 }}>
           <Row gutter={[24, 16]}>
             <Col xs={24} md={6} style={{ borderRight: isMobile ? 'none' : '1px solid var(--app-border, #f0f0f0)' }}>
               <div style={{ paddingBottom: isMobile ? 12 : 0, borderBottom: isMobile ? '1px solid var(--app-border, #f0f0f0)' : 'none' }}>
@@ -789,10 +699,10 @@ export default function ModelUsage() {
               </Space>
             </Col>
           </Row>
-        </Card>
+        </ProCard>
       ) : null}
 
-      <Card title="按会话" style={{ borderRadius: 8 }} bodyStyle={{ padding: 0 }}>
+      <ProCard title="按会话" headerBordered bordered>
         <Table<ModelUsageSessionRow>
           size="middle"
           loading={loading}
@@ -803,7 +713,7 @@ export default function ModelUsage() {
           scroll={{ x: 1000 }}
           locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="无记录" /> }}
         />
-      </Card>
+      </ProCard>
 
       <Drawer
         title={selectedSession ? `${providerNames[selectedSession.provider]} · ${selectedSession.project || selectedSession.sessionId}` : '会话明细'}
@@ -828,6 +738,6 @@ export default function ModelUsage() {
           </Space>
         ) : null}
       </Drawer>
-    </div>
+    </PageContainer>
   );
 }

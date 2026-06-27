@@ -569,6 +569,163 @@ test('upstream passthrough keeps /v1/messages for claude anthropic-compatible ba
   assert.equal(Object.hasOwn(seenHeaders, 'authorization'), false);
 });
 
+test('upstream passthrough strips official-only anthropic server tools for third-party endpoints', async () => {
+  const res = createResCapture();
+  let seenHeaders = null;
+  let seenBody = null;
+  const state = {
+    accounts: {
+      claude: [{
+        id: '3',
+        email: 'claude@example.com',
+        accessToken: 'anthropic-key',
+        baseUrl: 'https://dashscope.aliyuncs.com/apps/anthropic'
+      }]
+    },
+    cursors: { claude: 0 },
+    metrics: { totalFailures: 0, totalSuccess: 0, totalTimeouts: 0, providerCounts: {}, providerSuccess: {}, providerFailures: {} }
+  };
+  const body = {
+    model: 'qwen3.6-plus',
+    messages: [{ role: 'user', content: 'hi' }],
+    tools: [
+      { name: 'Bash', input_schema: {} },
+      { type: 'advisor_20260301', name: 'advisor' },
+      { type: 'web_search_20250305', name: 'web_search' }
+    ]
+  };
+
+  await handleUpstreamPassthrough({
+    options: {
+      provider: 'claude',
+      claudeBaseUrl: 'https://api.anthropic.com/v1',
+      upstreamTimeoutMs: 3000,
+      maxAttempts: 1,
+      failureThreshold: 1,
+      logRequests: false
+    },
+    state,
+    req: {
+      url: '/v1/messages',
+      headers: {
+        'content-type': 'application/json',
+        'anthropic-beta': 'oauth-2025-04-20,advisor-tool-2026-03-01,fine-grained-tool-streaming-2025-05-14'
+      }
+    },
+    res,
+    method: 'POST',
+    bodyBuffer: Buffer.from(JSON.stringify(body)),
+    requestJson: body,
+    routeKey: 'POST /v1/messages',
+    requestStartedAt: Date.now(),
+    cooldownMs: 1000,
+    deps: {
+      chooseServerAccount: (pool) => pool[0],
+      resolveRequestProvider: (options, requestJson, headers) => require('../lib/server/router').resolveRequestProvider(options, requestJson, headers),
+      pushMetricError: () => {},
+      writeJson: (r, code, payload) => {
+        r.statusCode = code;
+        r.setHeader('content-type', 'application/json');
+        r.end(JSON.stringify(payload));
+      },
+      fetchWithTimeout: async (_url, init) => {
+        seenHeaders = init.headers || {};
+        seenBody = JSON.parse(Buffer.from(init.body || '').toString('utf8'));
+        return {
+          status: 200,
+          headers: new Map([['content-type', 'application/json']]),
+          arrayBuffer: async () => Buffer.from('{"id":"msg_dashscope","type":"message"}')
+        };
+      },
+      markProxyAccountFailure: () => {},
+      markProxyAccountSuccess: () => {},
+      appendProxyRequestLog: () => {}
+    }
+  });
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(seenHeaders['anthropic-beta'], 'oauth-2025-04-20,fine-grained-tool-streaming-2025-05-14');
+  assert.deepEqual(seenBody.tools.map((tool) => tool.type || tool.name), ['Bash', 'web_search_20250305']);
+});
+
+test('upstream passthrough keeps official-only anthropic server tools for the official endpoint', async () => {
+  const res = createResCapture();
+  let seenHeaders = null;
+  let seenBody = null;
+  const state = {
+    accounts: {
+      claude: [{
+        id: '3',
+        email: 'claude@example.com',
+        accessToken: 'anthropic-key',
+        baseUrl: 'https://api.anthropic.com/v1'
+      }]
+    },
+    cursors: { claude: 0 },
+    metrics: { totalFailures: 0, totalSuccess: 0, totalTimeouts: 0, providerCounts: {}, providerSuccess: {}, providerFailures: {} }
+  };
+  const body = {
+    model: 'claude-sonnet-4',
+    messages: [{ role: 'user', content: 'hi' }],
+    tools: [
+      { type: 'advisor_20260301', name: 'advisor' },
+      { type: 'web_search_20250305', name: 'web_search' }
+    ]
+  };
+
+  await handleUpstreamPassthrough({
+    options: {
+      provider: 'claude',
+      claudeBaseUrl: 'https://api.anthropic.com/v1',
+      upstreamTimeoutMs: 3000,
+      maxAttempts: 1,
+      failureThreshold: 1,
+      logRequests: false
+    },
+    state,
+    req: {
+      url: '/v1/messages',
+      headers: {
+        'content-type': 'application/json',
+        'anthropic-beta': 'oauth-2025-04-20,advisor-tool-2026-03-01'
+      }
+    },
+    res,
+    method: 'POST',
+    bodyBuffer: Buffer.from(JSON.stringify(body)),
+    requestJson: body,
+    routeKey: 'POST /v1/messages',
+    requestStartedAt: Date.now(),
+    cooldownMs: 1000,
+    deps: {
+      chooseServerAccount: (pool) => pool[0],
+      resolveRequestProvider: (options, requestJson, headers) => require('../lib/server/router').resolveRequestProvider(options, requestJson, headers),
+      pushMetricError: () => {},
+      writeJson: (r, code, payload) => {
+        r.statusCode = code;
+        r.setHeader('content-type', 'application/json');
+        r.end(JSON.stringify(payload));
+      },
+      fetchWithTimeout: async (_url, init) => {
+        seenHeaders = init.headers || {};
+        seenBody = JSON.parse(Buffer.from(init.body || '').toString('utf8'));
+        return {
+          status: 200,
+          headers: new Map([['content-type', 'application/json']]),
+          arrayBuffer: async () => Buffer.from('{"id":"msg_anthropic","type":"message"}')
+        };
+      },
+      markProxyAccountFailure: () => {},
+      markProxyAccountSuccess: () => {},
+      appendProxyRequestLog: () => {}
+    }
+  });
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(seenHeaders['anthropic-beta'], 'oauth-2025-04-20,advisor-tool-2026-03-01');
+  assert.deepEqual(seenBody.tools.map((tool) => tool.type), ['advisor_20260301', 'web_search_20250305']);
+});
+
 test('upstream passthrough resolves qwen model to claude by model availability in auto mode', async () => {
   const res = createResCapture();
   let seenUrl = '';

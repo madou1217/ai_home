@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import type { ComponentProps, ReactNode } from 'react';
 import type { FormInstance } from 'antd';
-import { Form, InputNumber, Button, Input, message, Space, Switch, Alert, Tabs, Select, Tag, Popconfirm, QRCode } from 'antd';
+import { Form, InputNumber, Button, Input, message, Space, Switch, Alert, Tabs, Select, Tag, Popconfirm, QRCode, Modal } from 'antd';
 import { CopyOutlined, DeleteOutlined, FileTextOutlined, LinkOutlined, PlusOutlined, ReloadOutlined, SaveOutlined, SearchOutlined } from '@ant-design/icons';
 import { configAPI, controlPlaneDevicesAPI, managementAPI, remoteNodesAPI } from '@/services/api';
 import {
@@ -15,7 +15,6 @@ import {
   refreshControlPlaneProfileStates,
   refreshControlPlaneDeviceState,
   saveControlPlaneProfile,
-  summarizeControlPlaneClientReadiness,
   summarizeControlPlaneProfileNodes,
   summarizeControlPlaneProfiles
 } from '@/services/control-plane-profiles';
@@ -74,19 +73,10 @@ import './Settings.css';
 
 const DEFAULT_INVITE_CAPABILITIES = ['status', 'metrics', 'accounts', 'models', 'usage'];
 const DEFAULT_REMOTE_TRANSPORT_KIND: RemoteNodeTransportKind = 'relay';
-const DEFAULT_DEVICE_SCOPES = ['control-plane:read', 'nodes:read', 'status:read', 'accounts:read', 'usage:read', 'sessions:read', 'sessions:write'];
-const DEVICE_PROFILE_SYNC_SCOPES = ['control-plane:read', 'nodes:read', 'status:read', 'accounts:read', 'sessions:read'];
-const MOBILE_DEVICE_PLATFORMS = new Set(['ios', 'android']);
 
-const DEVICE_SCOPE_OPTIONS = [
-  { value: 'control-plane:read', label: 'Control Plane' },
-  { value: 'nodes:read', label: 'Nodes' },
-  { value: 'status:read', label: 'Status' },
-  { value: 'accounts:read', label: 'Accounts' },
-  { value: 'usage:read', label: 'Usage' },
-  { value: 'sessions:read', label: 'Sessions Read' },
-  { value: 'sessions:write', label: 'Sessions Write' }
-];
+type ControlPlaneManageTab = 'profiles' | 'authorizations';
+type ControlPlaneAddMode = 'pair' | 'manual';
+type ControlPlaneAuthorizationFilter = 'all' | 'paired' | 'pending' | 'expired' | 'revoked';
 
 type NumericAddonInputProps = ComponentProps<typeof InputNumber> & {
   addonAfter: React.ReactNode;
@@ -360,7 +350,7 @@ const resolveBootstrapApplyMissingInputs = (
 };
 
 const resolveDeviceInviteName = (deviceIdentity: ReturnType<typeof resolveCurrentDeviceIdentity>) => (
-  MOBILE_DEVICE_PLATFORMS.has(deviceIdentity.platform) ? deviceIdentity.name : '手机/PWA'
+  deviceIdentity.name || '外部客户端'
 );
 
 const quoteCliArg = (value: string) => `"${String(value || '').replace(/(["\\$`])/g, '\\$1')}"`;
@@ -559,10 +549,26 @@ const formatInviteStatus = (invite: RemoteNodeInvite) => {
   return { color: 'blue', label: '可用' };
 };
 
-const formatDeviceInviteStatus = (invite: ControlPlaneDeviceInvite) => {
-  if (invite.consumedAt) return { color: 'green', label: '已配对' };
-  if (invite.expiresAt && invite.expiresAt < Date.now()) return { color: 'red', label: '已过期' };
-  return { color: 'blue', label: '待配对' };
+const CONTROL_PLANE_AUTHORIZATION_FILTERS: Array<{ value: ControlPlaneAuthorizationFilter; label: string }> = [
+  { value: 'all', label: '全部状态' },
+  { value: 'paired', label: '已授权' },
+  { value: 'pending', label: '待配对' },
+  { value: 'expired', label: '已过期' },
+  { value: 'revoked', label: '已撤销' }
+];
+
+const getDeviceAuthorizationStatus = (device: ControlPlaneDevice) => (
+  device.state === 'revoked'
+    ? { key: 'revoked' as const, color: 'red', label: '已撤销' }
+    : { key: 'paired' as const, color: 'green', label: '已授权' }
+);
+
+const getInviteAuthorizationStatus = (invite: ControlPlaneDeviceInvite) => {
+  if (invite.consumedAt) return { key: 'paired' as const, color: 'green', label: '已使用' };
+  if (invite.expiresAt && invite.expiresAt < Date.now()) {
+    return { key: 'expired' as const, color: 'red', label: '已过期' };
+  }
+  return { key: 'pending' as const, color: 'blue', label: '待配对' };
 };
 
 const formatTimestamp = (value: number) => {
@@ -632,16 +638,6 @@ const getControlPlaneProfileStatus = (state: ControlPlaneProfileState) => (
   CONTROL_PLANE_PROFILE_STATUS[state] || CONTROL_PLANE_PROFILE_STATUS.draft
 );
 
-const CONTROL_PLANE_CLIENT_READINESS_STATUS = {
-  ready: { color: 'green', label: '就绪' },
-  attention: { color: 'gold', label: '待完善' },
-  blocked: { color: 'red', label: '阻塞' }
-} as const;
-
-const getControlPlaneClientReadinessStatus = (status: keyof typeof CONTROL_PLANE_CLIENT_READINESS_STATUS) => (
-  CONTROL_PLANE_CLIENT_READINESS_STATUS[status] || CONTROL_PLANE_CLIENT_READINESS_STATUS.attention
-);
-
 const getCurrentSearch = () => {
   return typeof window === 'undefined' ? '' : window.location.search;
 };
@@ -678,7 +674,7 @@ const SETTINGS_PAGE_META = {
   'control-planes': {
     title: '控制面',
     eyebrow: 'Fabric',
-    description: '管理 server profile、设备配对和当前 Control Plane。'
+    description: '管理 server profile、客户端授权和当前 Control Plane。'
   },
   nodes: {
     title: '远程节点',
@@ -753,6 +749,11 @@ const Settings = ({ section }: SettingsProps) => {
   const [controlPlaneProfiles, setControlPlaneProfiles] = useState<ControlPlaneProfile[]>(getInitialControlPlaneProfiles);
   const [refreshingControlPlanes, setRefreshingControlPlanes] = useState(false);
   const [activeControlPlaneId, setActiveControlPlaneId] = useState(getInitialActiveControlPlaneId);
+  const [controlPlaneManageTab, setControlPlaneManageTab] = useState<ControlPlaneManageTab>('profiles');
+  const [controlPlaneAddMode, setControlPlaneAddMode] = useState<ControlPlaneAddMode>('pair');
+  const [controlPlaneAddModalOpen, setControlPlaneAddModalOpen] = useState(false);
+  const [clientPairModalOpen, setClientPairModalOpen] = useState(false);
+  const [authorizationStatusFilter, setAuthorizationStatusFilter] = useState<ControlPlaneAuthorizationFilter>('all');
   const [remoteNodes, setRemoteNodes] = useState<RemoteNode[]>([]);
   const [remoteInvites, setRemoteInvites] = useState<RemoteNodeInvite[]>([]);
   const [remoteNodeDefaults, setRemoteNodeDefaults] = useState<RemoteNodeDefaults | null>(null);
@@ -939,7 +940,6 @@ const Settings = ({ section }: SettingsProps) => {
       deviceInviteForm.setFieldsValue({
         name: deviceInviteName,
         controlEndpoint: defaultControlEndpoint,
-        scopes: DEFAULT_DEVICE_SCOPES,
         expiresMinutes: 10
       });
       applyRemoteNodeDefaultsToForms(nodeDefaults, defaultControlEndpoint);
@@ -1089,6 +1089,8 @@ const Settings = ({ section }: SettingsProps) => {
         name: profile.name,
         deviceToken: ''
       });
+      setControlPlaneAddModalOpen(false);
+      setControlPlaneManageTab('profiles');
       message.success('Control Plane 已保存');
     } catch (error: any) {
       message.error(error?.message || 'Control Plane 探测失败');
@@ -1113,23 +1115,20 @@ const Settings = ({ section }: SettingsProps) => {
         deviceName: String(values.deviceName || deviceIdentity.name).trim(),
         platform: String(values.platform || deviceIdentity.platform).trim()
       });
-      const scopes = new Set(paired.device.scopes || []);
       let syncError = '';
-      if (DEVICE_PROFILE_SYNC_SCOPES.every((scope) => scopes.has(scope))) {
-        try {
-          await refreshControlPlaneDeviceState(paired.profile);
-        } catch (error: any) {
-          syncError = error?.message || 'device_state_sync_failed';
-          saveControlPlaneProfile({
-            name: paired.profile.name,
-            endpoint: paired.profile.endpoint,
-            descriptor: paired.profile.descriptor,
-            state: 'paired',
-            authState: 'paired',
-            deviceToken: paired.token,
-            lastError: syncError
-          });
-        }
+      try {
+        await refreshControlPlaneDeviceState(paired.profile);
+      } catch (error: any) {
+        syncError = error?.message || 'device_state_sync_failed';
+        saveControlPlaneProfile({
+          name: paired.profile.name,
+          endpoint: paired.profile.endpoint,
+          descriptor: paired.profile.descriptor,
+          state: 'paired',
+          authState: 'paired',
+          deviceToken: paired.token,
+          lastError: syncError
+        });
       }
       syncSavedControlPlaneProfiles(paired.profile.id);
       pairControlPlaneForm.setFieldsValue({
@@ -1143,6 +1142,8 @@ const Settings = ({ section }: SettingsProps) => {
         name: paired.profile.name,
         deviceToken: ''
       });
+      setControlPlaneAddModalOpen(false);
+      setControlPlaneManageTab('profiles');
       if (syncError) {
         message.warning('Control Plane 已配对，摘要同步失败');
       } else {
@@ -1256,15 +1257,14 @@ const Settings = ({ section }: SettingsProps) => {
       const payload: ControlPlaneDeviceInviteCreatePayload = {
         name: String(values.name || '').trim(),
         controlEndpoint: String(values.controlEndpoint || getDefaultControlEndpoint()).trim(),
-        scopes: Array.isArray(values.scopes) && values.scopes.length > 0 ? values.scopes : DEFAULT_DEVICE_SCOPES,
         expiresInMs: Math.max(1, Number(values.expiresMinutes || 10)) * 60 * 1000
       };
       const result = await controlPlaneDevicesAPI.createInvite(payload);
       setLatestDeviceInvite(result);
       await refreshControlPlaneDevices();
-      message.success('已生成设备配对');
+      message.success('已生成配对入口');
     } catch (error: any) {
-      message.error(error?.response?.data?.message || '生成设备配对失败');
+      message.error(error?.response?.data?.message || '生成配对入口失败');
     } finally {
       setDeviceInviteCreating(false);
     }
@@ -1275,9 +1275,9 @@ const Settings = ({ section }: SettingsProps) => {
     try {
       await controlPlaneDevicesAPI.revokeDevice(deviceId);
       await refreshControlPlaneDevices();
-      message.success('设备授权已撤销');
+      message.success('客户端授权已撤销');
     } catch (error: any) {
-      message.error(error?.response?.data?.message || '撤销设备失败');
+      message.error(error?.response?.data?.message || '撤销客户端授权失败');
     } finally {
       setRevokingDeviceId('');
     }
@@ -1554,20 +1554,43 @@ const Settings = ({ section }: SettingsProps) => {
   };
 
   const restartAlert = getRestartAlert();
-  const currentDeviceIdentity = resolveCurrentDeviceIdentity();
   const controlPlaneOverview = summarizeControlPlaneProfiles(controlPlaneProfiles);
   const refreshableControlPlaneCount = controlPlaneProfiles.filter(isControlPlaneProfileRefreshable).length;
   const activeControlPlaneProfile = controlPlaneProfiles.find((profile) => profile.id === activeControlPlaneId) || null;
-  const controlPlaneClientReadiness = summarizeControlPlaneClientReadiness(controlPlaneProfiles, activeControlPlaneId);
   const latestDevicePairUrl = latestDeviceInvite?.webPairUrl || latestDeviceInvite?.pairUrl || '';
   const latestDevicePairCode = latestDeviceInvite?.code || '';
   const latestDevicePairUrlIsLoopback = isLoopbackEndpoint(latestDevicePairUrl);
   const latestDevicePairWarnings = uniqueTextList([
     ...(latestDeviceInvite?.warnings || []),
     latestDevicePairUrlIsLoopback
-      ? '当前配对链接指向 localhost，手机扫码会连到手机本机；请改用局域网候选、Tailscale/FRP/Cloudflare Tunnel 后重新生成。'
+      ? '当前配对链接指向 localhost，外部客户端打开会连到自身本机；请改用局域网候选、Tailscale/FRP/Cloudflare Tunnel 后重新生成。'
       : ''
   ]);
+  const controlPlaneAuthorizationRecords = [
+    ...controlPlaneDevices.map((device) => ({
+      id: `client:${device.id}`,
+      kind: 'client' as const,
+      title: device.name || device.id,
+      detail: device.platform || device.id,
+      timestamp: Number(device.lastSeenAt || device.updatedAt || device.createdAt || 0),
+      status: getDeviceAuthorizationStatus(device),
+      device,
+      invite: null as ControlPlaneDeviceInvite | null
+    })),
+    ...controlPlaneDeviceInvites.map((invite) => ({
+      id: `invite:${invite.id}`,
+      kind: 'invite' as const,
+      title: invite.name || invite.id,
+      detail: invite.deviceId || invite.controlEndpoint || invite.id,
+      timestamp: Number(invite.consumedAt || invite.createdAt || invite.expiresAt || 0),
+      status: getInviteAuthorizationStatus(invite),
+      device: null as ControlPlaneDevice | null,
+      invite
+    }))
+  ].sort((left, right) => right.timestamp - left.timestamp);
+  const filteredControlPlaneAuthorizationRecords = controlPlaneAuthorizationRecords.filter((record) => (
+    authorizationStatusFilter === 'all' || record.status.key === authorizationStatusFilter
+  ));
   const latestInviteJoinUrl = latestInvite?.joinUrl || '';
   const latestInviteJoinCommand = resolveInviteJoinCommand(latestInvite);
   const latestInviteWarnings = uniqueTextList([
@@ -1797,7 +1820,7 @@ const Settings = ({ section }: SettingsProps) => {
         {descriptor && <Tag color="blue">协议 v{descriptor.protocolVersion}</Tag>}
         {descriptor && <Tag>{managementCount} 个管理能力</Tag>}
         {descriptor && <Tag>{transportCount} 个 transport</Tag>}
-        {profile.authState === 'paired' && <Tag color="green">Device Token</Tag>}
+        {profile.authState === 'paired' && <Tag color="green">访问 Token</Tag>}
         {nodeSummary.total > 0 && (
           <Tag color={nodeSummary.online > 0 ? 'green' : 'default'}>
             {nodeSummary.online}/{nodeSummary.total} 节点在线
@@ -1811,7 +1834,7 @@ const Settings = ({ section }: SettingsProps) => {
         {profile.lastStatusSyncAt > 0 && <Tag>{profile.activeAccountCount}/{profile.accountCount} 账号可用</Tag>}
         {profile.lastAccountsSyncAt > 0 && <Tag>{profile.schedulableAccountCount} 个可调度</Tag>}
         {profile.lastSessionsSyncAt > 0 && <Tag>{profile.sessionCount} 个会话</Tag>}
-        {descriptor?.capabilities.devicePairing && <Tag color="cyan">Device Pairing</Tag>}
+        {descriptor?.capabilities.devicePairing && <Tag color="cyan">配对能力</Tag>}
         {descriptor?.auth.managementKeyConfigured && <Tag color="gold">Management Key</Tag>}
         {descriptor?.auth.clientKeyConfigured && <Tag color="purple">Client Key</Tag>}
       </div>
@@ -2529,97 +2552,338 @@ const Settings = ({ section }: SettingsProps) => {
   );
 
   const controlPlanesContent = (
-    <div className="settings-grid">
-      <section className="settings-panel settings-panel--mobile-client">
-        <div className="settings-panel-head">
+    <div className="settings-control-plane-page">
+      <section className="settings-panel settings-control-plane-shell">
+        <div className="settings-control-plane-head">
           <div>
-            <h2>本机/手机控制面</h2>
-            <p>当前浏览器就是一个 client，可在本机保存多个 Control Plane，并按当前选择读取节点、账号和会话。</p>
+            <h2>Control Plane</h2>
+            <p>保存可管理的 AIH server，切换当前目标，并管理外部客户端访问授权。</p>
           </div>
+          <Space size={8} wrap className="settings-control-plane-toolbar">
+            <Button
+              icon={<ReloadOutlined />}
+              disabled={refreshableControlPlaneCount === 0}
+              loading={refreshingControlPlanes}
+              onClick={handleRefreshAllControlPlanes}
+            >
+              同步全部
+            </Button>
+            <Button
+              icon={<LinkOutlined />}
+              onClick={() => setClientPairModalOpen(true)}
+            >
+              生成配对入口
+            </Button>
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => {
+                setControlPlaneAddMode('pair');
+                setControlPlaneAddModalOpen(true);
+              }}
+            >
+              添加 Control Plane
+            </Button>
+          </Space>
         </div>
-        <div className="settings-mobile-client-overview">
-          <div className="settings-mobile-client-card">
-            <span>当前设备</span>
-            <strong>{currentDeviceIdentity.name}</strong>
-            <em>{currentDeviceIdentity.id}</em>
-            <div className="settings-mobile-client-tags">
-              <Tag>{currentDeviceIdentity.platform}</Tag>
-              <Tag color={MOBILE_DEVICE_PLATFORMS.has(currentDeviceIdentity.platform) ? 'green' : 'blue'}>
-                {MOBILE_DEVICE_PLATFORMS.has(currentDeviceIdentity.platform) ? 'mobile client' : 'web client'}
-              </Tag>
-            </div>
-          </div>
-          <div className="settings-mobile-client-card settings-mobile-client-card--server">
-            <span>当前服务器</span>
+
+        <div className="settings-control-plane-current">
+          <div className="settings-control-plane-current-main">
+            <span>当前 Control Plane</span>
             <strong>{formatActiveControlPlaneLabel(activeControlPlaneProfile)}</strong>
             <em>{formatActiveControlPlaneEndpoint(activeControlPlaneProfile)}</em>
-            <div className="settings-mobile-client-switch">
-              <Select
-                value={activeControlPlaneId || undefined}
-                placeholder="配对服务器"
-                disabled={controlPlaneProfiles.length === 0}
-                onChange={handleSelectControlPlane}
-                options={controlPlaneProfiles.map((profile) => ({
-                  value: profile.id,
-                  label: profile.name || profile.endpoint || profile.id
-                }))}
-              />
-              <Button
-                icon={<ReloadOutlined />}
-                disabled={!activeControlPlaneProfile}
-                loading={checkingControlPlaneId === activeControlPlaneProfile?.id}
-                onClick={() => activeControlPlaneProfile && handleRefreshControlPlane(activeControlPlaneProfile)}
-              >
-                同步当前
-              </Button>
-              <Button
-                icon={<ReloadOutlined />}
-                disabled={refreshableControlPlaneCount === 0}
-                loading={refreshingControlPlanes}
-                onClick={handleRefreshAllControlPlanes}
-              >
-                同步全部
-              </Button>
-              <Button
-                icon={<PlusOutlined />}
-                loading={deviceInviteCreating}
-                onClick={() => deviceInviteForm.submit()}
-              >
-                生成设备配对
-              </Button>
-            </div>
           </div>
-          <div className="settings-mobile-client-stats">
-            <span><strong>{controlPlaneOverview.total}</strong>服务器</span>
-            <span><strong>{controlPlaneOverview.paired}</strong>已配对</span>
-            <span><strong>{controlPlaneOverview.ready}</strong>可用</span>
-            <span><strong>{controlPlaneOverview.nodes}</strong>节点</span>
-            <span><strong>{controlPlaneOverview.schedulableAccounts}</strong>可调度账号</span>
-            <span><strong>{controlPlaneOverview.sessions}</strong>会话</span>
+          <div className="settings-control-plane-current-actions">
+            <Select
+              value={activeControlPlaneId || undefined}
+              placeholder="选择 Control Plane"
+              disabled={controlPlaneProfiles.length === 0}
+              onChange={handleSelectControlPlane}
+              options={controlPlaneProfiles.map((profile) => ({
+                value: profile.id,
+                label: profile.name || profile.endpoint || profile.id
+              }))}
+            />
+            <Button
+              icon={<ReloadOutlined />}
+              disabled={!activeControlPlaneProfile}
+              loading={checkingControlPlaneId === activeControlPlaneProfile?.id}
+              onClick={() => activeControlPlaneProfile && handleRefreshControlPlane(activeControlPlaneProfile)}
+            >
+              同步当前
+            </Button>
           </div>
-          <div className="settings-mobile-client-readiness">
-            {controlPlaneClientReadiness.map((item) => {
-              const status = getControlPlaneClientReadinessStatus(item.status);
-              return (
-                <div className="settings-mobile-client-readiness-item" key={item.id}>
-                  <div>
-                    <strong>{item.label}</strong>
-                    <span>{item.detail}</span>
-                  </div>
-                  <Tag color={status.color}>{status.label}</Tag>
+        </div>
+
+        <div className="settings-control-plane-stats">
+          <span><strong>{controlPlaneOverview.total}</strong>服务器</span>
+          <span><strong>{controlPlaneOverview.paired}</strong>已授权</span>
+          <span><strong>{controlPlaneOverview.ready}</strong>可用</span>
+          <span><strong>{controlPlaneOverview.nodes}</strong>节点</span>
+          <span><strong>{controlPlaneOverview.schedulableAccounts}</strong>可调度账号</span>
+          <span><strong>{controlPlaneOverview.sessions}</strong>会话</span>
+        </div>
+
+        <Tabs
+          className="settings-control-plane-manage-tabs"
+          activeKey={controlPlaneManageTab}
+          onChange={(key) => setControlPlaneManageTab(key as ControlPlaneManageTab)}
+          items={[
+            {
+              key: 'profiles',
+              label: 'Control Plane',
+              children: (
+                <div className="settings-control-plane-list">
+                  {controlPlaneProfiles.length === 0 ? (
+                    <div className="settings-control-plane-empty">
+                      <Alert type="info" showIcon message="暂无已保存 Control Plane" />
+                      <Button
+                        type="primary"
+                        icon={<PlusOutlined />}
+                        onClick={() => {
+                          setControlPlaneAddMode('pair');
+                          setControlPlaneAddModalOpen(true);
+                        }}
+                      >
+                        添加 Control Plane
+                      </Button>
+                    </div>
+                  ) : controlPlaneProfiles.map((profile) => {
+                    const active = activeControlPlaneId === profile.id;
+                    return (
+                      <div
+                        className={`settings-control-plane-item${active ? ' settings-control-plane-item--active' : ''}`}
+                        key={profile.id}
+                      >
+                        <div className="settings-node-main">
+                          <strong>{profile.name || profile.endpoint}</strong>
+                          <span>{profile.endpoint}</span>
+                          {profile.lastError && <span className="settings-control-plane-error">{profile.lastError}</span>}
+                        </div>
+                        {renderControlPlaneSummary(profile)}
+                        <Space size={6} className="settings-control-plane-actions">
+                          {active && <Tag color="green">当前</Tag>}
+                          <Button
+                            size="small"
+                            disabled={active}
+                            onClick={() => handleSelectControlPlane(profile.id)}
+                          >
+                            设为当前
+                          </Button>
+                          <Button
+                            size="small"
+                            icon={<ReloadOutlined />}
+                            loading={checkingControlPlaneId === profile.id}
+                            onClick={() => handleRefreshControlPlane(profile)}
+                          >
+                            {profile.deviceToken ? '同步' : '探测'}
+                          </Button>
+                          <Button
+                            size="small"
+                            danger
+                            icon={<DeleteOutlined />}
+                            onClick={() => handleRemoveControlPlane(profile.id)}
+                          >
+                            移除
+                          </Button>
+                        </Space>
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
-          </div>
-        </div>
+              )
+            },
+            {
+              key: 'authorizations',
+              label: '客户端授权',
+              children: (
+                <div className="settings-control-plane-authorizations">
+                  <div className="settings-control-plane-filterbar">
+                    <div>
+                      <strong>授权记录</strong>
+                      <span>已授权客户端和历史配对入口按状态统一筛选。</span>
+                    </div>
+                    <Select
+                      value={authorizationStatusFilter}
+                      onChange={(value) => setAuthorizationStatusFilter(value)}
+                      options={CONTROL_PLANE_AUTHORIZATION_FILTERS}
+                    />
+                  </div>
+                  <div className="settings-control-plane-auth-list">
+                    {filteredControlPlaneAuthorizationRecords.length === 0 ? (
+                      <Alert
+                        type="info"
+                        showIcon
+                        message={controlPlaneAuthorizationRecords.length === 0 ? '暂无授权记录' : '当前筛选下暂无记录'}
+                      />
+                    ) : filteredControlPlaneAuthorizationRecords.map((record) => (
+                      <div className="settings-control-plane-auth-item" key={record.id}>
+                        <div className="settings-node-main">
+                          <strong>{record.title}</strong>
+                          <span>{record.detail}</span>
+                        </div>
+                        <div className="settings-node-meta">
+                          <Tag color={record.kind === 'client' ? 'green' : 'blue'}>
+                            {record.kind === 'client' ? '客户端授权' : '配对入口'}
+                          </Tag>
+                          <Tag color={record.status.color}>{record.status.label}</Tag>
+                          <Tag>全部权限</Tag>
+                          {record.kind === 'client' && (
+                            <Tag>最近 {formatTimestamp(record.device?.lastSeenAt || 0)}</Tag>
+                          )}
+                          {record.kind === 'invite' && (
+                            <Tag>过期 {formatTimestamp(record.invite?.expiresAt || 0)}</Tag>
+                          )}
+                        </div>
+                        {record.device && (
+                          <Popconfirm
+                            title="撤销客户端授权"
+                            description="撤销后该客户端需要重新配对。"
+                            okText="撤销"
+                            cancelText="取消"
+                            onConfirm={() => handleRevokeDevice(record.device?.id || '')}
+                            disabled={record.device.state === 'revoked'}
+                          >
+                            <Button
+                              size="small"
+                              danger
+                              icon={<DeleteOutlined />}
+                              loading={revokingDeviceId === record.device.id}
+                              disabled={record.device.state === 'revoked'}
+                            >
+                              撤销
+                            </Button>
+                          </Popconfirm>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
+            }
+          ]}
+        />
       </section>
-      <section className="settings-panel">
-        <div className="settings-panel-head">
-          <div>
-            <h2>配对手机/设备</h2>
-            <p>生成一次性配对入口，手机/PWA 消费后保存当前 Control Plane 的 device token。</p>
-          </div>
-        </div>
+
+      <Modal
+        title="添加 Control Plane"
+        open={controlPlaneAddModalOpen}
+        width={760}
+        footer={null}
+        onCancel={() => setControlPlaneAddModalOpen(false)}
+      >
+        <Tabs
+          activeKey={controlPlaneAddMode}
+          onChange={(key) => setControlPlaneAddMode(key as ControlPlaneAddMode)}
+          items={[
+            {
+              key: 'pair',
+              label: '使用配对入口',
+              children: (
+                <Form
+                  form={pairControlPlaneForm}
+                  layout="vertical"
+                  onFinish={handlePairControlPlane}
+                  initialValues={{
+                    pairUrlOrCode: '',
+                    endpoint: getDefaultControlEndpoint(),
+                    deviceName: resolveCurrentDeviceIdentity().name,
+                    platform: resolveCurrentDeviceIdentity().platform
+                  }}
+                >
+                  <Form.Item
+                    name="pairUrlOrCode"
+                    label="配对链接或 Code"
+                    rules={[{ required: true, message: '请输入配对链接或 Code' }]}
+                  >
+                    <Input.TextArea
+                      autoSize={{ minRows: 2, maxRows: 4 }}
+                      placeholder="https://aih.example.com/ui/settings?pair=... 或 https://aih.example.com/v0/node-rpc/device-pair?code=..."
+                    />
+                  </Form.Item>
+
+                  <Form.Item
+                    name="endpoint"
+                    label="Control Endpoint"
+                    help="当 Code 不包含 endpoint 时使用；完整配对链接会自动解析。"
+                  >
+                    <Input placeholder="https://aih.example.com" />
+                  </Form.Item>
+
+                  <Form.Item name="deviceName" label="当前客户端名称">
+                    <Input placeholder="Work browser / Home laptop" />
+                  </Form.Item>
+
+                  <Form.Item name="platform" label="客户端类型">
+                    <Input placeholder="web / desktop / cli" />
+                  </Form.Item>
+
+                  <Form.Item>
+                    <Button type="primary" htmlType="submit" icon={<LinkOutlined />} loading={controlPlanePairing}>
+                      配对并保存
+                    </Button>
+                  </Form.Item>
+                </Form>
+              )
+            },
+            {
+              key: 'manual',
+              label: '手动添加服务器',
+              children: (
+                <Form
+                  form={controlPlaneForm}
+                  layout="vertical"
+                  onFinish={handleSaveControlPlane}
+                  initialValues={{
+                    endpoint: getDefaultControlEndpoint(),
+                    name: '当前 Control Plane'
+                  }}
+                >
+                  <Form.Item
+                    name="endpoint"
+                    label="Control Plane URL"
+                    help="支持 HTTPS、Tailscale/ZeroTier/WireGuard IP、Cloudflare Tunnel 或局域网地址。"
+                    rules={[{ required: true, message: '请输入 Control Plane URL' }]}
+                  >
+                    <Input placeholder="https://aih.example.com" />
+                  </Form.Item>
+                  {renderControlEndpointHints(
+                    controlPlaneEndpointHints,
+                    controlPlaneEndpointWarnings,
+                    (endpoint) => controlPlaneForm.setFieldsValue({ endpoint })
+                  )}
+
+                  <Form.Item name="name" label="显示名称">
+                    <Input placeholder="Home AIH" />
+                  </Form.Item>
+
+                  <Form.Item
+                    name="deviceToken"
+                    label="访问 Token"
+                    help="可选；保存后用于读取该 Control Plane 下的 profile、节点摘要和会话。"
+                  >
+                    <Input.Password autoComplete="new-password" placeholder="配对后返回的一次性 token" />
+                  </Form.Item>
+
+                  <Form.Item>
+                    <Button type="primary" htmlType="submit" icon={<LinkOutlined />} loading={controlPlaneSaving}>
+                      探测并保存
+                    </Button>
+                  </Form.Item>
+                </Form>
+              )
+            }
+          ]}
+        />
+      </Modal>
+
+      <Modal
+        title="生成配对入口"
+        open={clientPairModalOpen}
+        width={760}
+        footer={null}
+        onCancel={() => setClientPairModalOpen(false)}
+      >
         <Form
           form={deviceInviteForm}
           layout="vertical"
@@ -2627,12 +2891,11 @@ const Settings = ({ section }: SettingsProps) => {
           initialValues={{
             name: resolveDeviceInviteName(resolveCurrentDeviceIdentity()),
             controlEndpoint: getDefaultControlEndpoint(),
-            scopes: DEFAULT_DEVICE_SCOPES,
             expiresMinutes: 10
           }}
         >
-          <Form.Item name="name" label="设备名称">
-            <Input placeholder="iPhone / Android / iPad" />
+          <Form.Item name="name" label="客户端名称">
+            <Input placeholder="Work browser / Home laptop" />
           </Form.Item>
 
           <Form.Item
@@ -2648,10 +2911,6 @@ const Settings = ({ section }: SettingsProps) => {
             (endpoint) => deviceInviteForm.setFieldsValue({ controlEndpoint: endpoint })
           )}
 
-          <Form.Item name="scopes" label="权限范围">
-            <Select mode="multiple" options={DEVICE_SCOPE_OPTIONS} />
-          </Form.Item>
-
           <Form.Item
             name="expiresMinutes"
             label="有效期"
@@ -2664,7 +2923,7 @@ const Settings = ({ section }: SettingsProps) => {
 
           <Form.Item>
             <Button type="primary" htmlType="submit" icon={<PlusOutlined />} loading={deviceInviteCreating}>
-              生成设备配对
+              生成配对入口
             </Button>
           </Form.Item>
         </Form>
@@ -2672,7 +2931,7 @@ const Settings = ({ section }: SettingsProps) => {
         {latestDevicePairUrl && (
           <div className="settings-join-command">
             <div className="settings-join-command-head">
-              <strong>手机配对入口</strong>
+              <strong>配对入口</strong>
               <Space size={6}>
                 <Button
                   size="small"
@@ -2702,231 +2961,7 @@ const Settings = ({ section }: SettingsProps) => {
             </div>
           </div>
         )}
-      </section>
-
-      <section className="settings-panel">
-        <div className="settings-panel-head">
-          <div>
-            <h2>通过配对添加 Control Plane</h2>
-            <p>粘贴 pair URL 或输入 code + endpoint，完成后保存为本机 profile。</p>
-          </div>
-        </div>
-        <Form
-          form={pairControlPlaneForm}
-          layout="vertical"
-          onFinish={handlePairControlPlane}
-          initialValues={{
-            pairUrlOrCode: '',
-            endpoint: getDefaultControlEndpoint(),
-            deviceName: resolveCurrentDeviceIdentity().name,
-            platform: resolveCurrentDeviceIdentity().platform
-          }}
-        >
-          <Form.Item
-            name="pairUrlOrCode"
-            label="Pair URL / Code"
-            rules={[{ required: true, message: '请输入 Pair URL 或 Code' }]}
-          >
-            <Input.TextArea
-              autoSize={{ minRows: 2, maxRows: 4 }}
-              placeholder="https://aih.example.com/ui/settings?pair=... 或 https://aih.example.com/v0/node-rpc/device-pair?code=..."
-            />
-          </Form.Item>
-
-          <Form.Item name="endpoint" label="Control Endpoint">
-            <Input placeholder="https://aih.example.com" />
-          </Form.Item>
-
-          <Form.Item name="deviceName" label="本机名称">
-            <Input placeholder="iPhone / Android / Web" />
-          </Form.Item>
-
-          <Form.Item name="platform" label="Platform">
-            <Input placeholder="ios / android / web" />
-          </Form.Item>
-
-          <Form.Item>
-            <Button type="primary" htmlType="submit" icon={<LinkOutlined />} loading={controlPlanePairing}>
-              配对并保存
-            </Button>
-          </Form.Item>
-        </Form>
-      </section>
-
-      <section className="settings-panel">
-        <div className="settings-panel-head">
-          <div>
-            <h2>已配对设备</h2>
-            <p>设备 token 只在配对时返回一次；撤销后该设备不能再读取控制面摘要。</p>
-          </div>
-        </div>
-        <div className="settings-device-list">
-          {controlPlaneDevices.length === 0 ? (
-            <Alert type="info" showIcon message="暂无已配对设备" />
-          ) : controlPlaneDevices.map((device) => (
-            <div className="settings-device-item" key={device.id}>
-              <div className="settings-node-main">
-                <strong>{device.name || device.id}</strong>
-                <span>{device.platform || device.id}</span>
-              </div>
-              <div className="settings-node-meta">
-                <Tag color={device.state === 'revoked' ? 'red' : 'green'}>
-                  {device.state === 'revoked' ? '已撤销' : '已配对'}
-                </Tag>
-                {device.scopes.map((scope) => <Tag key={scope}>{scope.replace(':read', '')}</Tag>)}
-                <Tag>最近 {formatTimestamp(device.lastSeenAt)}</Tag>
-              </div>
-              <Popconfirm
-                title="撤销设备授权"
-                description="撤销后该设备需要重新配对。"
-                okText="撤销"
-                cancelText="取消"
-                onConfirm={() => handleRevokeDevice(device.id)}
-                disabled={device.state === 'revoked'}
-              >
-                <Button
-                  size="small"
-                  danger
-                  icon={<DeleteOutlined />}
-                  loading={revokingDeviceId === device.id}
-                  disabled={device.state === 'revoked'}
-                >
-                  撤销
-                </Button>
-              </Popconfirm>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="settings-panel">
-        <div className="settings-panel-head">
-          <div>
-            <h2>设备配对记录</h2>
-            <p>历史 invite 不保存明文配对码，只保留状态和消费设备。</p>
-          </div>
-        </div>
-        <div className="settings-invite-list">
-          {controlPlaneDeviceInvites.length === 0 ? (
-            <Alert type="info" showIcon message="暂无设备配对记录" />
-          ) : controlPlaneDeviceInvites.map((invite) => {
-            const status = formatDeviceInviteStatus(invite);
-            return (
-              <div className="settings-invite-item" key={invite.id}>
-                <div className="settings-node-main">
-                  <strong>{invite.name || invite.id}</strong>
-                  <span>{invite.deviceId || invite.controlEndpoint || invite.id}</span>
-                </div>
-                <div className="settings-node-meta">
-                  <Tag color={status.color}>{status.label}</Tag>
-                  {invite.scopes.map((scope) => <Tag key={scope}>{scope.replace(':read', '')}</Tag>)}
-                  <Tag>过期 {formatTimestamp(invite.expiresAt)}</Tag>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
-      <section className="settings-panel">
-        <div className="settings-panel-head">
-          <div>
-            <h2>添加 Control Plane</h2>
-            <p>手机/PWA 先探测 descriptor，确认服务身份和能力后再保存 profile。</p>
-          </div>
-        </div>
-        <Form
-          form={controlPlaneForm}
-          layout="vertical"
-          onFinish={handleSaveControlPlane}
-          initialValues={{
-            endpoint: getDefaultControlEndpoint(),
-            name: '当前 Control Plane'
-          }}
-        >
-          <Form.Item
-            name="endpoint"
-            label="Control Plane URL"
-            help="支持 HTTPS、Tailscale/ZeroTier/WireGuard IP、Cloudflare Tunnel 或局域网地址。"
-            rules={[{ required: true, message: '请输入 Control Plane URL' }]}
-          >
-            <Input placeholder="https://aih.example.com" />
-          </Form.Item>
-
-          <Form.Item name="name" label="显示名称">
-            <Input placeholder="Home AIH" />
-          </Form.Item>
-
-          <Form.Item
-            name="deviceToken"
-            label="Device Token"
-            help="可选；保存后用于读取该 Control Plane 下的设备 profile 和节点摘要。"
-          >
-            <Input.Password autoComplete="new-password" placeholder="配对后的一次性返回 token" />
-          </Form.Item>
-
-          <Form.Item>
-            <Button type="primary" htmlType="submit" icon={<LinkOutlined />} loading={controlPlaneSaving}>
-              探测并保存
-            </Button>
-          </Form.Item>
-        </Form>
-      </section>
-
-      <section className="settings-panel">
-        <div className="settings-panel-head">
-          <div>
-            <h2>已保存 Control Plane</h2>
-            <p>这是手机多 server 管理的本地 profile；业务请求使用当前选中的 Control Plane。</p>
-          </div>
-        </div>
-        <div className="settings-control-plane-list">
-          {controlPlaneProfiles.length === 0 ? (
-            <Alert type="info" showIcon message="暂无 Control Plane profile" />
-          ) : controlPlaneProfiles.map((profile) => {
-            const active = activeControlPlaneId === profile.id;
-            return (
-              <div
-                className={`settings-control-plane-item${active ? ' settings-control-plane-item--active' : ''}`}
-                key={profile.id}
-              >
-                <div className="settings-node-main">
-                  <strong>{profile.name || profile.endpoint}</strong>
-                  <span>{profile.endpoint}</span>
-                  {profile.lastError && <span className="settings-control-plane-error">{profile.lastError}</span>}
-                </div>
-                {renderControlPlaneSummary(profile)}
-                <Space size={6} className="settings-control-plane-actions">
-                  {active && <Tag color="green">当前</Tag>}
-                  <Button
-                    size="small"
-                    disabled={active}
-                    onClick={() => handleSelectControlPlane(profile.id)}
-                  >
-                    设为当前
-                  </Button>
-                  <Button
-                    size="small"
-                    icon={<ReloadOutlined />}
-                    loading={checkingControlPlaneId === profile.id}
-                    onClick={() => handleRefreshControlPlane(profile)}
-                  >
-                    {profile.deviceToken ? '同步' : '探测'}
-                  </Button>
-                  <Button
-                    size="small"
-                    danger
-                    icon={<DeleteOutlined />}
-                    onClick={() => handleRemoveControlPlane(profile.id)}
-                  >
-                    移除
-                  </Button>
-                </Space>
-              </div>
-            );
-          })}
-        </div>
-      </section>
+      </Modal>
     </div>
   );
 

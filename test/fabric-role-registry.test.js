@@ -12,6 +12,7 @@ const {
 } = require('../lib/server/fabric-role-registry');
 const { getRemoteNode } = require('../lib/server/remote/node-registry');
 const { listNodeTransports } = require('../lib/server/remote/transport-registry');
+const { selectTransport } = require('../lib/server/remote/transport-selector');
 
 test('fabric role registry stores node roles projects runtimes relay metadata and mirrors legacy relay transport', (t) => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-fabric-role-registry-'));
@@ -176,4 +177,29 @@ test('fabric role registry heartbeat preserves projects and runtimes while updat
     () => heartbeatFabricNode({ node: { id: 'office-pc' } }, { ...deps, ownerDeviceId: 'device-other' }),
     /forbidden_fabric_node_owner/
   );
+});
+
+test('fabric role registry mirrors online relay as selectable legacy transport', (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-fabric-role-selectable-relay-'));
+  const deps = { fs, aiHomeDir, now: () => 1000 };
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+
+  registerFabricNode({
+    node: {
+      id: 'relay-client',
+      name: 'Relay Client',
+      roles: ['node', 'relay-node'],
+      capabilities: ['status']
+    },
+    transports: [
+      { id: 'relay-client-relay', kind: 'relay', health: 'online', priority: 100 }
+    ]
+  }, deps);
+
+  const legacyNode = getRemoteNode('relay-client', deps);
+  const legacyTransports = listNodeTransports('relay-client', deps);
+  assert.equal(legacyTransports.length, 1);
+  assert.equal(legacyTransports[0].status, 'up');
+  assert.equal(legacyTransports[0].score, 55);
+  assert.equal(selectTransport(legacyNode, legacyTransports, { purpose: 'status' })?.id, 'relay-client-relay');
 });

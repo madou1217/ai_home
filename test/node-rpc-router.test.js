@@ -485,7 +485,7 @@ test('node rpc device profile uses scoped device bearer without leaking secrets'
   assert.doesNotMatch(res.body, /deviceTokenHashes|inviteCodeHashes/);
 });
 
-test('node rpc device profile rejects missing, wrong, under-scoped, and revoked tokens', async (t) => {
+test('node rpc device profile rejects missing, wrong, and revoked tokens; paired tokens have full access', async (t) => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-device-profile-auth-'));
   t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
 
@@ -513,19 +513,19 @@ test('node rpc device profile rejects missing, wrong, under-scoped, and revoked 
   assert.equal(wrongRes.statusCode, 401);
   assert.match(wrongRes.body, /unauthorized_control_plane_device/);
 
-  const underScopedInvite = createControlPlaneDeviceInvite({
-    name: 'Read Nodes',
+  const fullAccessInvite = createControlPlaneDeviceInvite({
+    name: 'Paired Phone',
     controlEndpoint: 'https://control.example.com',
     scopes: ['nodes:read']
   }, { fs, aiHomeDir });
-  const underScoped = consumeControlPlaneDeviceInvite({
-    code: underScopedInvite.code,
-    device: { name: 'Limited Phone', platform: 'android' }
+  const fullAccess = consumeControlPlaneDeviceInvite({
+    code: fullAccessInvite.code,
+    device: { name: 'Paired Phone', platform: 'android' }
   }, { fs, aiHomeDir });
-  const underScopedRes = await requestProfile(`Bearer ${underScoped.token}`);
-  assert.equal(underScopedRes.statusCode, 403);
-  assert.match(underScopedRes.body, /forbidden_control_plane_device_scope/);
-  assert.doesNotMatch(underScopedRes.body, new RegExp(underScoped.token));
+  const fullAccessRes = await requestProfile(`Bearer ${fullAccess.token}`);
+  assert.equal(fullAccessRes.statusCode, 200);
+  assert.match(fullAccessRes.body, /control_plane\.device\.profile/);
+  assert.doesNotMatch(fullAccessRes.body, new RegExp(fullAccess.token));
 
   const validInvite = createControlPlaneDeviceInvite({
     name: 'Revoked Phone',
@@ -763,7 +763,7 @@ test('node rpc device status returns scoped aggregate status without leaking loc
   assert.doesNotMatch(res.body, new RegExp(paired.token));
 });
 
-test('node rpc device status rejects devices without status read scope', async (t) => {
+test('node rpc device status accepts any paired device token', async (t) => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-device-status-scope-'));
   t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
 
@@ -790,8 +790,8 @@ test('node rpc device status rejects devices without status read scope', async (
     deps: createDeps({ aiHomeDir })
   });
 
-  assert.equal(res.statusCode, 403);
-  assert.match(res.body, /forbidden_control_plane_device_scope/);
+  assert.equal(res.statusCode, 200);
+  assert.match(res.body, /control_plane\.device\.status/);
   assert.doesNotMatch(res.body, new RegExp(paired.token));
 });
 
@@ -898,7 +898,7 @@ test('node rpc device accounts returns scoped sanitized account summaries', asyn
   assert.doesNotMatch(res.body, new RegExp(paired.token));
 });
 
-test('node rpc device accounts rejects devices without accounts read scope', async (t) => {
+test('node rpc device accounts accepts any paired device token', async (t) => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-device-accounts-scope-'));
   t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
 
@@ -925,8 +925,8 @@ test('node rpc device accounts rejects devices without accounts read scope', asy
     deps: createDeps({ aiHomeDir })
   });
 
-  assert.equal(res.statusCode, 403);
-  assert.match(res.body, /forbidden_control_plane_device_scope/);
+  assert.equal(res.statusCode, 200);
+  assert.match(res.body, /control_plane\.device\.accounts/);
   assert.doesNotMatch(res.body, new RegExp(paired.token));
 });
 
@@ -1694,7 +1694,7 @@ test('node rpc device node sessions proxies safe list through scoped device bear
   assert.doesNotMatch(res.body, /ignored/);
 });
 
-test('node rpc device node sessions requires nodes and sessions scopes', async (t) => {
+test('node rpc device node sessions authorizes paired tokens before checking node existence', async (t) => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-device-node-sessions-scope-'));
   t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
 
@@ -1728,8 +1728,8 @@ test('node rpc device node sessions requires nodes and sessions scopes', async (
   });
 
   assert.equal(handled, true);
-  assert.equal(res.statusCode, 403);
-  assert.match(res.body, /forbidden_control_plane_device_scope/);
+  assert.equal(res.statusCode, 404);
+  assert.match(res.body, /remote_node_not_found/);
   assert.equal(requestCalled, false);
   assert.doesNotMatch(res.body, new RegExp(paired.token));
 });
@@ -1827,7 +1827,7 @@ test('node rpc device node session messages proxies safe snapshot through scoped
   assert.doesNotMatch(res.body, /ignored/);
 });
 
-test('node rpc device node session messages requires nodes and sessions scopes', async (t) => {
+test('node rpc device node session messages authorizes paired tokens before checking node existence', async (t) => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-device-node-session-messages-scope-'));
   t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
 
@@ -1860,8 +1860,8 @@ test('node rpc device node session messages requires nodes and sessions scopes',
     })
   });
 
-  assert.equal(res.statusCode, 403);
-  assert.match(res.body, /forbidden_control_plane_device_scope/);
+  assert.equal(res.statusCode, 404);
+  assert.match(res.body, /remote_node_not_found/);
   assert.equal(requestCalled, false);
   assert.doesNotMatch(res.body, new RegExp(paired.token));
 });
@@ -2008,7 +2008,7 @@ test('node rpc device node session input proxies typed write through scoped devi
   assert.doesNotMatch(res.body, /remote yes/);
 });
 
-test('node rpc device node session input requires explicit sessions write scope', async (t) => {
+test('node rpc device node session input authorizes paired tokens before checking node existence', async (t) => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-device-node-session-input-scope-'));
   t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
 
@@ -2046,8 +2046,8 @@ test('node rpc device node session input requires explicit sessions write scope'
     })
   });
 
-  assert.equal(res.statusCode, 403);
-  assert.match(res.body, /forbidden_control_plane_device_scope/);
+  assert.equal(res.statusCode, 404);
+  assert.match(res.body, /remote_node_not_found/);
   assert.equal(requestCalled, false);
   assert.doesNotMatch(res.body, new RegExp(paired.token));
 });
@@ -2263,7 +2263,7 @@ test('node rpc device node session stream resumes from latest cursor after trans
   assert.doesNotMatch(res.body, /management-secret/);
 });
 
-test('node rpc device node session stream requires nodes and sessions scopes', async (t) => {
+test('node rpc device node session stream authorizes paired tokens before checking node existence', async (t) => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-device-node-session-stream-scope-'));
   t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
 
@@ -2296,8 +2296,8 @@ test('node rpc device node session stream requires nodes and sessions scopes', a
     })
   });
 
-  assert.equal(res.statusCode, 403);
-  assert.match(res.body, /forbidden_control_plane_device_scope/);
+  assert.equal(res.statusCode, 404);
+  assert.match(res.body, /remote_node_not_found/);
   assert.equal(streamCalled, false);
   assert.doesNotMatch(res.body, new RegExp(paired.token));
 });
@@ -2346,7 +2346,7 @@ test('node rpc device node session stream rejects nodes without sessions capabil
   assert.doesNotMatch(res.body, new RegExp(paired.token));
 });
 
-test('node rpc device sessions rejects devices without sessions read scope', async (t) => {
+test('node rpc device sessions accepts any paired device token', async (t) => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-device-sessions-scope-'));
   t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
 
@@ -2373,12 +2373,12 @@ test('node rpc device sessions rejects devices without sessions read scope', asy
     deps: createDeps({ aiHomeDir })
   });
 
-  assert.equal(res.statusCode, 403);
-  assert.match(res.body, /forbidden_control_plane_device_scope/);
+  assert.equal(res.statusCode, 200);
+  assert.match(res.body, /control_plane\.device\.sessions/);
   assert.doesNotMatch(res.body, new RegExp(paired.token));
 });
 
-test('node rpc device session messages reject devices without sessions read scope', async (t) => {
+test('node rpc device session messages authorizes paired tokens before checking session refs', async (t) => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-device-session-messages-scope-'));
   t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
 
@@ -2405,12 +2405,12 @@ test('node rpc device session messages reject devices without sessions read scop
     deps: createDeps({ aiHomeDir })
   });
 
-  assert.equal(res.statusCode, 403);
-  assert.match(res.body, /forbidden_control_plane_device_scope/);
+  assert.equal(res.statusCode, 404);
+  assert.match(res.body, /session_not_found/);
   assert.doesNotMatch(res.body, new RegExp(paired.token));
 });
 
-test('node rpc device session events reject devices without sessions read scope', async (t) => {
+test('node rpc device session events authorizes paired tokens before checking session refs', async (t) => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-device-session-events-scope-'));
   t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
 
@@ -2437,12 +2437,12 @@ test('node rpc device session events reject devices without sessions read scope'
     deps: createDeps({ aiHomeDir })
   });
 
-  assert.equal(res.statusCode, 403);
-  assert.match(res.body, /forbidden_control_plane_device_scope/);
+  assert.equal(res.statusCode, 404);
+  assert.match(res.body, /session_not_found/);
   assert.doesNotMatch(res.body, new RegExp(paired.token));
 });
 
-test('node rpc device session stream rejects devices without sessions read scope', async (t) => {
+test('node rpc device session stream authorizes paired tokens before checking session refs', async (t) => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-device-session-stream-scope-'));
   t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
 
@@ -2469,12 +2469,12 @@ test('node rpc device session stream rejects devices without sessions read scope
     deps: createDeps({ aiHomeDir })
   });
 
-  assert.equal(res.statusCode, 403);
-  assert.match(res.body, /forbidden_control_plane_device_scope/);
+  assert.equal(res.statusCode, 404);
+  assert.match(res.body, /session_not_found/);
   assert.doesNotMatch(res.body, new RegExp(paired.token));
 });
 
-test('node rpc device nodes rejects devices without nodes read scope', async (t) => {
+test('node rpc device nodes accepts any paired device token', async (t) => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-device-nodes-scope-'));
   t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
 
@@ -2501,8 +2501,8 @@ test('node rpc device nodes rejects devices without nodes read scope', async (t)
     deps: createDeps({ aiHomeDir })
   });
 
-  assert.equal(res.statusCode, 403);
-  assert.match(res.body, /forbidden_control_plane_device_scope/);
+  assert.equal(res.statusCode, 200);
+  assert.match(res.body, /control_plane\.device\.nodes/);
   assert.doesNotMatch(res.body, new RegExp(paired.token));
 });
 

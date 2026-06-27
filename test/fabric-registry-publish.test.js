@@ -117,6 +117,16 @@ test('runFabricRegistryPublish posts registry snapshot with bearer token', async
   const body = JSON.parse(requests[0].options.body);
   assert.equal(body.node.id, 'office-pc');
   assert.deepEqual(body.node.roles, ['node', 'relay-node']);
+  assert.deepEqual(body.node.capabilities, [
+    'status',
+    'metrics',
+    'accounts',
+    'models',
+    'usage',
+    'projects',
+    'runtimes',
+    'sessions'
+  ]);
   assert.equal(body.projects[0].path, '/workspace/app');
   assert.equal(body.runtimes[0].provider, 'claude');
   assert.equal(body.transports[0].kind, 'relay');
@@ -205,7 +215,16 @@ test('buildPublishPayload and formatter keep output compact', () => {
   });
   const payload = buildPublishPayload(options);
   assert.equal(payload.node.id, 'home');
-  assert.deepEqual(payload.node.capabilities, ['projects', 'runtimes', 'sessions']);
+  assert.deepEqual(payload.node.capabilities, [
+    'status',
+    'metrics',
+    'accounts',
+    'models',
+    'usage',
+    'projects',
+    'runtimes',
+    'sessions'
+  ]);
   assert.equal(payload.projects[0].name, 'home');
   assert.deepEqual(payload.runtimes.map((runtime) => runtime.provider), ['gemini', 'opencode']);
 

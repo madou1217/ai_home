@@ -57,10 +57,6 @@
   gap: 12px;
 }
 
-.settings-panel--mobile-client {
-  grid-column: 1 / -1;
-}
-
 .settings-panel-head {
   display: flex;
   align-items: flex-start;
@@ -122,12 +118,6 @@
   gap: 10px;
 }
 
-.settings-device-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
 .settings-control-plane-list {
   display: flex;
   flex-direction: column;
@@ -167,16 +157,6 @@
 .settings-control-plane-item--active {
   border-color: color-mix(in srgb, var(--c-success-600) 40%, var(--app-border));
   background: color-mix(in srgb, var(--tint-success) 72%, var(--app-surface));
-}
-
-.settings-device-item {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  gap: 10px;
-  align-items: center;
-  border: 1px solid var(--app-border);
-  border-radius: var(--app-radius);
-  padding: 10px;
 }
 
 .settings-node-main {
@@ -267,30 +247,70 @@
   color: var(--c-danger-600) !important;
 }
 
-.settings-mobile-client-overview {
-  display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.4fr);
-  gap: 12px;
+.settings-control-plane-page {
+  min-width: 0;
 }
 
-.settings-mobile-client-card {
+.settings-control-plane-shell {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 6px;
+  gap: 14px;
+}
+
+.settings-control-plane-head {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.settings-control-plane-head h2 {
+  margin: 0;
+  color: var(--app-heading);
+  font-size: 17px;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.settings-control-plane-head p {
+  margin: 5px 0 0;
+  color: var(--app-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.settings-control-plane-toolbar {
+  justify-content: flex-end;
+}
+
+.settings-control-plane-current {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
   border: 1px solid var(--app-border);
   border-radius: var(--app-radius);
-  background: color-mix(in srgb, var(--c-neutral-50) 68%, transparent);
+  background: color-mix(in srgb, var(--c-neutral-50) 66%, transparent);
   padding: 12px;
 }
 
-.settings-mobile-client-card > span {
+.settings-control-plane-current-main {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.settings-control-plane-current-main span {
   color: var(--app-muted);
   font-size: 12px;
   font-weight: 850;
 }
 
-.settings-mobile-client-card strong {
+.settings-control-plane-current-main strong {
   min-width: 0;
   overflow: hidden;
   color: var(--app-heading);
@@ -301,7 +321,7 @@
   white-space: nowrap;
 }
 
-.settings-mobile-client-card em {
+.settings-control-plane-current-main em {
   min-width: 0;
   overflow: hidden;
   color: var(--app-muted);
@@ -311,32 +331,26 @@
   white-space: nowrap;
 }
 
-.settings-mobile-client-tags,
-.settings-mobile-client-switch {
+.settings-control-plane-current-actions {
   display: flex;
   min-width: 0;
   flex-wrap: wrap;
-  gap: 6px;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
-.settings-mobile-client-switch {
-  margin-top: 4px;
-}
-
-.settings-mobile-client-switch .ant-select {
-  min-width: 220px;
+.settings-control-plane-current-actions .ant-select {
+  width: 260px;
   max-width: 100%;
-  flex: 1 1 220px;
 }
 
-.settings-mobile-client-stats {
+.settings-control-plane-stats {
   display: grid;
-  grid-column: 1 / -1;
   grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 8px;
 }
 
-.settings-mobile-client-stats span {
+.settings-control-plane-stats span {
   display: flex;
   min-width: 0;
   flex-direction: column;
@@ -350,7 +364,7 @@
   line-height: 1.2;
 }
 
-.settings-mobile-client-stats strong {
+.settings-control-plane-stats strong {
   overflow: hidden;
   color: var(--app-heading);
   font-size: 18px;
@@ -359,54 +373,75 @@
   white-space: nowrap;
 }
 
-.settings-mobile-client-readiness {
-  display: grid;
-  grid-column: 1 / -1;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+.settings-control-plane-manage-tabs > .ant-tabs-nav {
+  margin-bottom: 12px;
 }
 
-.settings-mobile-client-readiness-item {
+.settings-control-plane-empty {
   display: flex;
   min-width: 0;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  border: 1px solid var(--app-border);
-  border-radius: var(--app-radius);
-  background: var(--app-surface);
-  padding: 9px 10px;
 }
 
-.settings-mobile-client-readiness-item > div {
+.settings-control-plane-authorizations {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settings-control-plane-filterbar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  background: color-mix(in srgb, var(--c-neutral-50) 64%, transparent);
+  padding: 10px;
+}
+
+.settings-control-plane-filterbar > div {
   display: flex;
   min-width: 0;
   flex-direction: column;
   gap: 2px;
 }
 
-.settings-mobile-client-readiness-item strong,
-.settings-mobile-client-readiness-item span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.settings-mobile-client-readiness-item strong {
+.settings-control-plane-filterbar strong {
   color: var(--app-heading);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 900;
 }
 
-.settings-mobile-client-readiness-item span {
+.settings-control-plane-filterbar span {
   color: var(--app-muted);
   font-size: 12px;
 }
 
-.settings-mobile-client-readiness-item .ant-tag {
+.settings-control-plane-filterbar .ant-select {
+  width: 160px;
   flex: 0 0 auto;
-  margin-inline-end: 0;
+}
+
+.settings-control-plane-auth-list {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settings-control-plane-auth-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  padding: 10px;
 }
 
 .settings-join-command {
@@ -1107,16 +1142,26 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .settings-mobile-client-overview,
-  .settings-mobile-client-stats,
-  .settings-mobile-client-readiness {
+  .settings-control-plane-current,
+  .settings-control-plane-stats {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .settings-mobile-client-switch .ant-select,
-  .settings-mobile-client-switch .ant-btn {
+  .settings-control-plane-head,
+  .settings-control-plane-filterbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .settings-control-plane-toolbar,
+  .settings-control-plane-current-actions {
+    justify-content: flex-start;
+  }
+
+  .settings-control-plane-current-actions .ant-select,
+  .settings-control-plane-current-actions .ant-btn,
+  .settings-control-plane-filterbar .ant-select {
     width: 100%;
-    flex-basis: 100%;
   }
 
   .settings-actions .ant-btn {
@@ -1130,8 +1175,8 @@
 
   .settings-node-item,
   .settings-invite-item,
-  .settings-device-item,
-  .settings-control-plane-item {
+  .settings-control-plane-item,
+  .settings-control-plane-auth-item {
     grid-template-columns: minmax(0, 1fr);
   }
 

@@ -96,7 +96,8 @@
 - Broker Proxy 已接入 Server Profile 配置入口；Server Setup 可保存/配对 broker profile，服务层会持久化 `connectionMode` 和 broker metadata。证据见 `docs/fabric/evidence/2026-06-27-broker-profile-ui-entry.md`。
 - Broker link 断开诊断与同 `serverId` 恢复已在 AWS current 默认 `9527` 验证：proxy 离线返回 `brokerStatus.lastDisconnected`，重连后 readyz 恢复 200，并再次通过 broker relay real Codex native session。证据见 `docs/fabric/evidence/2026-06-27-broker-diagnostics-recovery.md`。
 - Browser-level Server Setup broker profile smoke 已完成：真实浏览器选择 Broker Proxy，配对、descriptor、device profile/status/accounts/sessions 全部经 broker proxy 返回 200，console 0 error/0 warning，并进入 `/ui`。证据见 `docs/fabric/evidence/2026-06-27-browser-broker-profile-smoke.md`。
-- 跨设备/跨主机验收必须使用真实可达 broker endpoint；AWS `9527` 公网 HTTP 当前不可作为 client public ingress 依赖。
+- Cross-host outbound broker 的 Server Profile/control-plane slice 已完成：本机 server outbound 到 AWS public broker，本机 client 经 AWS broker proxy 完成 readyz、descriptor、device pair 和 device scoped reads；node relay/native session 仍待同路径验证。证据见 `docs/fabric/evidence/2026-06-27-crosshost-outbound-broker-profile-smoke.md`。
+- 跨设备/跨主机验收必须使用真实可达 broker endpoint；当前 AWS `9527` 可作为 broker endpoint 验证，但产品仍不能要求每个 AIH server 自己暴露公网 HTTP ingress。
 
 ### M3: Role Registry
 

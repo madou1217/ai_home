@@ -202,7 +202,7 @@ This queue is authoritative for M4. New requirements must be added here before i
 |---:|---|---|---|
 | 8.0 | done | 删除旧 M4 路线和历史 M4 baseline 证据 | full repo search has no deprecated route identifiers |
 | 8.1 | done | M4 远程开发会话设计冻结 | this document exists and is referenced by `08-current-status.md` |
-| 8.2 | pending | Session catalog + attach contract | server can list active/recent remote development sessions and attach by stable session id |
+| 8.2 | done | Session catalog + attach contract | server can list active/recent remote development sessions and attach by stable session id; evidence: `2026-06-28-m4-session-catalog-attach-contract.md` |
 | 8.3 | pending | Canonical command envelope | message/slash/approval/stop are separate command types with idempotency keys |
 | 8.4 | pending | Event store + seq/ack/resume | events can resume from cursor after client reconnect without duplication |
 | 8.5 | pending | Approval and artifact lanes | approval request and large output do not block normal message stream |
@@ -211,12 +211,12 @@ This queue is authoritative for M4. New requirements must be added here before i
 
 ## Next Implementation Slice
 
-The next code slice should be 8.2 only:
+The next code slice should be 8.3 only:
 
-- Add a server-side session catalog abstraction that can represent active runtime sessions and recent completed sessions.
-- Expose a scoped device route to list session summaries by node/project/runtime.
-- Add attach contract that returns `sessionId`, `status`, `cursor`, latest snapshot, and allowed commands.
-- Do not add UI beyond existing pages until 8.2 and 8.3 are verified by API-level tests.
+- Add canonical command envelope helpers for `message`, `slash`, `approval_response`, and `stop`.
+- Keep approval response separate from slash and message inputs.
+- Add idempotency keys to command acceptance.
+- Do not add UI beyond existing pages until 8.3 is verified by API-level tests.
 
 ## Verification Gates
 

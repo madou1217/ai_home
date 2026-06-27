@@ -129,6 +129,15 @@ function createDeps(overrides = {}) {
   if (typeof overrides.requestRemoteManagement === 'function') {
     deps.requestRemoteManagement = overrides.requestRemoteManagement;
   }
+  if (typeof overrides.listNativeChatRuns === 'function') {
+    deps.listNativeChatRuns = overrides.listNativeChatRuns;
+  }
+  if (typeof overrides.getNativeChatRun === 'function') {
+    deps.getNativeChatRun = overrides.getNativeChatRun;
+  }
+  if (typeof overrides.readNativeSessionRunEvents === 'function') {
+    deps.readNativeSessionRunEvents = overrides.readNativeSessionRunEvents;
+  }
   if (typeof overrides.findNativeChatRunBySession === 'function') {
     deps.findNativeChatRunBySession = overrides.findNativeChatRunBySession;
   }
@@ -1604,6 +1613,85 @@ test('node rpc management sessions lists safe public refs without internal sessi
   assert.doesNotMatch(res.body, /management-secret/);
 });
 
+test('node rpc session catalog exposes active run attach contract with management auth', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-node-session-catalog-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  const res = createResCapture();
+
+  const handled = await handleNodeRpcRequest({
+    method: 'GET',
+    pathname: '/v0/node-rpc/session-catalog',
+    url: new URL('https://node.local/v0/node-rpc/session-catalog?limit=5'),
+    req: { headers: { authorization: 'Bearer management-secret' } },
+    res,
+    options: {},
+    state: {},
+    requiredManagementKey: 'management-secret',
+    deps: createDeps({
+      aiHomeDir,
+      getProjectsSnapshot: async () => ({ projects: [] }),
+      listNativeChatRuns: () => [{
+        runId: 'run-catalog-1',
+        provider: 'codex',
+        accountId: '3',
+        eventCursor: 3,
+        startedAt: 1000,
+        events: [{ cursor: 3, at: 2000, type: 'ready' }]
+      }]
+    })
+  });
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 200);
+  const payload = JSON.parse(res.body);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.rpc, 'node.session_catalog');
+  assert.equal(payload.result.sessions[0].sessionId, 'run-catalog-1');
+  assert.equal(payload.result.sessions[0].cursor, 3);
+  assert.ok(payload.result.sessions[0].allowedCommands.includes('slash'));
+  assert.equal(payload.result.summary.bySource['active-run'], 1);
+});
+
+test('node rpc session attach returns active run snapshot with management auth', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-node-session-attach-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  const res = createResCapture();
+
+  const handled = await handleNodeRpcRequest({
+    method: 'POST',
+    pathname: '/v0/node-rpc/session-attach',
+    url: new URL('https://node.local/v0/node-rpc/session-attach'),
+    req: { headers: { authorization: 'Bearer management-secret' } },
+    res,
+    options: {},
+    state: {},
+    requiredManagementKey: 'management-secret',
+    deps: createDeps({
+      aiHomeDir,
+      body: Buffer.from(JSON.stringify({ sessionId: 'run-attach-1', cursor: 4 })),
+      getProjectsSnapshot: async () => ({ projects: [] }),
+      getNativeChatRun: (runId) => (runId === 'run-attach-1' ? { runId, provider: 'codex' } : null),
+      readNativeSessionRunEvents: (query) => ({
+        runId: query.runId,
+        provider: 'codex',
+        status: 'running',
+        cursor: 8,
+        events: [{ cursor: 8, type: 'assistant_text', text: 'attached' }]
+      })
+    })
+  });
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 200);
+  const payload = JSON.parse(res.body);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.rpc, 'node.session_attach');
+  assert.equal(payload.result.sessionId, 'run-attach-1');
+  assert.equal(payload.result.cursor, 8);
+  assert.equal(payload.result.snapshot.events[0].text, 'attached');
+  assert.ok(payload.result.allowedCommands.includes('stop'));
+});
+
 test('node rpc device node sessions proxies safe list through scoped device bearer', async (t) => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-device-node-sessions-'));
   t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
@@ -1692,6 +1780,127 @@ test('node rpc device node sessions proxies safe list through scoped device bear
   assert.doesNotMatch(res.body, /management-secret/);
   assert.doesNotMatch(res.body, /relay:\/\/office-pc/);
   assert.doesNotMatch(res.body, /ignored/);
+});
+
+test('node rpc device node session catalog and attach proxy scoped contract', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-device-node-session-catalog-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+
+  const invite = createControlPlaneDeviceInvite({
+    name: 'Phone',
+    controlEndpoint: 'https://control.example.com',
+    scopes: ['nodes:read', 'sessions:read']
+  }, { fs, aiHomeDir });
+  const paired = consumeControlPlaneDeviceInvite({
+    code: invite.code,
+    device: { name: 'Phone', platform: 'ios' }
+  }, { fs, aiHomeDir });
+  upsertRemoteNode({
+    id: 'office-pc',
+    name: 'Office PC',
+    capabilities: ['status', 'sessions'],
+    preferredTransports: ['relay']
+  }, { fs, aiHomeDir });
+
+  const forwarded = [];
+  const requestRemoteManagement = async (input) => {
+    forwarded.push(input);
+    if (input.pathname === '/v0/node-rpc/session-catalog?limit=3') {
+      return {
+        status: 200,
+        ok: true,
+        payload: {
+          ok: true,
+          rpc: 'node.session_catalog',
+          result: {
+            sessions: [{
+              sessionId: 'run-remote-1',
+              runId: 'run-remote-1',
+              provider: 'codex',
+              status: 'running',
+              cursor: 2,
+              allowedCommands: ['attach', 'detach', 'message', 'slash', 'stop']
+            }],
+            summary: { total: 1, returned: 1 }
+          }
+        }
+      };
+    }
+    if (input.pathname === '/v0/node-rpc/session-attach') {
+      return {
+        status: 200,
+        ok: true,
+        payload: {
+          ok: true,
+          rpc: 'node.session_attach',
+          result: {
+            sessionId: 'run-remote-1',
+            runId: 'run-remote-1',
+            status: 'running',
+            cursor: 5,
+            snapshot: { kind: 'run-events', events: [{ cursor: 5, type: 'ready' }] },
+            allowedCommands: ['attach', 'detach', 'message', 'slash', 'stop']
+          }
+        }
+      };
+    }
+    return { status: 404, ok: false, payload: { ok: false, error: 'unexpected_path' } };
+  };
+
+  const catalogRes = createResCapture();
+  const catalogHandled = await handleNodeRpcRequest({
+    method: 'GET',
+    pathname: '/v0/node-rpc/device-node-session-catalog',
+    url: new URL('https://control.example.com/v0/node-rpc/device-node-session-catalog?nodeId=office-pc&limit=3&ignored=1'),
+    req: { headers: { authorization: `Bearer ${paired.token}` } },
+    res: catalogRes,
+    options: {},
+    state: {},
+    requiredManagementKey: 'management-secret',
+    deps: createDeps({ aiHomeDir, requestRemoteManagement })
+  });
+  assert.equal(catalogHandled, true);
+  assert.equal(catalogRes.statusCode, 200);
+  const catalogPayload = JSON.parse(catalogRes.body);
+  assert.equal(catalogPayload.rpc, 'control_plane.device.node_session_catalog');
+  assert.equal(catalogPayload.nodeId, 'office-pc');
+  assert.equal(catalogPayload.result.sessions[0].sessionId, 'run-remote-1');
+
+  const attachRes = createResCapture();
+  const attachHandled = await handleNodeRpcRequest({
+    method: 'POST',
+    pathname: '/v0/node-rpc/device-node-session-attach',
+    url: new URL('https://control.example.com/v0/node-rpc/device-node-session-attach'),
+    req: { headers: { authorization: `Bearer ${paired.token}` } },
+    res: attachRes,
+    options: {},
+    state: {},
+    requiredManagementKey: 'management-secret',
+    deps: createDeps({
+      aiHomeDir,
+      requestRemoteManagement,
+      body: Buffer.from(JSON.stringify({
+        nodeId: 'office-pc',
+        sessionId: 'run-remote-1',
+        cursor: 2
+      }))
+    })
+  });
+  assert.equal(attachHandled, true);
+  assert.equal(attachRes.statusCode, 200);
+  const attachPayload = JSON.parse(attachRes.body);
+  assert.equal(attachPayload.rpc, 'control_plane.device.node_session_attach');
+  assert.equal(attachPayload.nodeId, 'office-pc');
+  assert.equal(attachPayload.result.cursor, 5);
+  assert.equal(attachPayload.result.snapshot.events[0].type, 'ready');
+
+  assert.deepEqual(forwarded.map((item) => item.pathname), [
+    '/v0/node-rpc/session-catalog?limit=3',
+    '/v0/node-rpc/session-attach'
+  ]);
+  assert.equal(JSON.parse(forwarded[1].body).sessionId, 'run-remote-1');
+  assert.doesNotMatch(catalogRes.body + attachRes.body, new RegExp(paired.token));
+  assert.doesNotMatch(catalogRes.body + attachRes.body, /management-secret|ignored/);
 });
 
 test('node rpc device node sessions authorizes paired tokens before checking node existence', async (t) => {

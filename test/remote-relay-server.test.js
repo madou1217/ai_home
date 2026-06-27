@@ -308,6 +308,92 @@ test('relay management request allows typed node sessions route', async (t) => {
   assert.deepEqual(result.payload, { ok: true, rpc: 'node.sessions', result: { sessions: [] } });
 });
 
+test('relay management request allows session catalog and attach routes', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-remote-relay-session-catalog-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  const deps = { fs, aiHomeDir };
+  const registry = createRelaySessionRegistry();
+
+  const node = upsertRemoteNode({ id: 'catalog-node', name: 'Catalog Node', preferredTransports: ['relay'] }, deps);
+  writeRemoteSecret(node.authRef, { managementKey: 'node-secret' }, deps);
+  const port = await createRelayTestServer(t, deps, registry);
+  const opened = await openRelay(`ws://127.0.0.1:${port}/v0/relay/node?nodeId=catalog-node`, 'node-secret');
+  const { socket } = opened;
+  t.after(() => socket.close());
+  await opened.firstMessage;
+
+  const catalogFramePromise = readJsonMessage(socket);
+  const catalogPromise = requestRemoteManagement({
+    node,
+    transports: [{
+      id: 'catalog-node-relay',
+      nodeId: 'catalog-node',
+      kind: 'relay',
+      endpoint: 'relay://catalog-node',
+      status: 'up',
+      score: 55
+    }],
+    pathname: '/v0/node-rpc/session-catalog?limit=2',
+    method: 'GET',
+    audit: false
+  }, {
+    ...deps,
+    relaySessionRegistry: registry,
+    requestRelayManagement
+  });
+
+  const catalogFrame = await catalogFramePromise;
+  assert.equal(catalogFrame.type, 'relay.request');
+  assert.equal(catalogFrame.pathname, '/v0/node-rpc/session-catalog?limit=2');
+  socket.send(JSON.stringify({
+    type: 'relay.response',
+    requestId: catalogFrame.requestId,
+    status: 200,
+    ok: true,
+    payload: { ok: true, rpc: 'node.session_catalog', result: { sessions: [] } }
+  }));
+  const catalogResult = await catalogPromise;
+  assert.equal(catalogResult.ok, true);
+  assert.equal(catalogResult.payload.rpc, 'node.session_catalog');
+
+  const attachFramePromise = readJsonMessage(socket);
+  const attachPromise = requestRemoteManagement({
+    node,
+    transports: [{
+      id: 'catalog-node-relay',
+      nodeId: 'catalog-node',
+      kind: 'relay',
+      endpoint: 'relay://catalog-node',
+      status: 'up',
+      score: 55
+    }],
+    pathname: '/v0/node-rpc/session-attach',
+    method: 'POST',
+    body: JSON.stringify({ sessionId: 'run-catalog-1' }),
+    audit: false
+  }, {
+    ...deps,
+    relaySessionRegistry: registry,
+    requestRelayManagement
+  });
+
+  const attachFrame = await attachFramePromise;
+  assert.equal(attachFrame.type, 'relay.request');
+  assert.equal(attachFrame.method, 'POST');
+  assert.equal(attachFrame.pathname, '/v0/node-rpc/session-attach');
+  assert.equal(JSON.parse(attachFrame.body).sessionId, 'run-catalog-1');
+  socket.send(JSON.stringify({
+    type: 'relay.response',
+    requestId: attachFrame.requestId,
+    status: 200,
+    ok: true,
+    payload: { ok: true, rpc: 'node.session_attach', result: { sessionId: 'run-catalog-1' } }
+  }));
+  const attachResult = await attachPromise;
+  assert.equal(attachResult.ok, true);
+  assert.equal(attachResult.payload.rpc, 'node.session_attach');
+});
+
 test('relay management request allows typed node session input route with body', async (t) => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-remote-relay-session-input-'));
   t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));

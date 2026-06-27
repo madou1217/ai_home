@@ -155,7 +155,9 @@ test('broker route allowlist stays narrow', () => {
   assert.equal(isFabricBrokerRouteAllowed('GET', '/v0/node-rpc/device-status'), true);
   assert.equal(isFabricBrokerRouteAllowed('GET', '/v0/node-rpc/device-accounts'), true);
   assert.equal(isFabricBrokerRouteAllowed('GET', '/v0/node-rpc/device-sessions'), true);
+  assert.equal(isFabricBrokerRouteAllowed('GET', '/v0/node-rpc/device-node-session-catalog'), true);
   assert.equal(isFabricBrokerRouteAllowed('POST', '/v0/node-rpc/device-node-session-start'), true);
+  assert.equal(isFabricBrokerRouteAllowed('POST', '/v0/node-rpc/device-node-session-attach'), true);
   assert.equal(isFabricBrokerRouteAllowed('GET', '/v0/management/accounts'), false);
   assert.equal(isFabricBrokerRouteAllowed('POST', '/v1/responses'), false);
   assert.equal(isFabricBrokerRouteAllowed('DELETE', '/v0/fabric/registry/nodes'), false);

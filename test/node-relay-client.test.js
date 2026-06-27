@@ -578,6 +578,78 @@ test('fetchLocalRelayRequest forwards typed node-rpc session input body to local
   assert.deepEqual(result.payload, { ok: true, rpc: 'node.session_input', result: { accepted: true } });
 });
 
+test('fetchLocalRelayRequest forwards session catalog and attach contract to local server', async () => {
+  const observed = [];
+  const catalog = await fetchLocalRelayRequest({
+    method: 'GET',
+    pathname: '/v0/node-rpc/session-catalog?limit=2',
+    requestId: 'request-catalog'
+  }, {
+    localBaseUrl: 'http://127.0.0.1:9527',
+    managementKey: 'node-secret'
+  }, {
+    fetchImpl: async (url, options) => {
+      observed.push({
+        url,
+        method: options.method,
+        authorization: options.headers.authorization,
+        contentType: options.headers['content-type'],
+        body: options.body
+      });
+      return {
+        status: 200,
+        ok: true,
+        text: async () => JSON.stringify({ ok: true, rpc: 'node.session_catalog', result: { sessions: [] } })
+      };
+    }
+  });
+
+  assert.deepEqual(observed[0], {
+    url: 'http://127.0.0.1:9527/v0/node-rpc/session-catalog?limit=2',
+    method: 'GET',
+    authorization: 'Bearer node-secret',
+    contentType: undefined,
+    body: undefined
+  });
+  assert.equal(catalog.status, 200);
+  assert.deepEqual(catalog.payload, { ok: true, rpc: 'node.session_catalog', result: { sessions: [] } });
+
+  const attach = await fetchLocalRelayRequest({
+    method: 'POST',
+    pathname: '/v0/node-rpc/session-attach',
+    body: JSON.stringify({ sessionId: 'run-1', cursor: 2 }),
+    requestId: 'request-attach'
+  }, {
+    localBaseUrl: 'http://127.0.0.1:9527',
+    managementKey: 'node-secret'
+  }, {
+    fetchImpl: async (url, options) => {
+      observed.push({
+        url,
+        method: options.method,
+        authorization: options.headers.authorization,
+        contentType: options.headers['content-type'],
+        body: options.body
+      });
+      return {
+        status: 200,
+        ok: true,
+        text: async () => JSON.stringify({ ok: true, rpc: 'node.session_attach', result: { sessionId: 'run-1' } })
+      };
+    }
+  });
+
+  assert.deepEqual(observed[1], {
+    url: 'http://127.0.0.1:9527/v0/node-rpc/session-attach',
+    method: 'POST',
+    authorization: 'Bearer node-secret',
+    contentType: 'application/json',
+    body: JSON.stringify({ sessionId: 'run-1', cursor: 2 })
+  });
+  assert.equal(attach.status, 200);
+  assert.deepEqual(attach.payload, { ok: true, rpc: 'node.session_attach', result: { sessionId: 'run-1' } });
+});
+
 test('fetchLocalRelayRequest forwards native session start and run controls to local server', async () => {
   const observed = [];
   const result = await fetchLocalRelayRequest({

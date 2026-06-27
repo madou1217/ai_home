@@ -108,6 +108,56 @@ test('runServerCommand config set writes patch and reports restart requirement',
   assert.doesNotMatch(output, /management-secret/);
 });
 
+test('runServerCommand serve reads sensitive keys from server config without argv', async () => {
+  let startedOptions = null;
+  const { result: code, errors } = await captureConsole(() => runServerCommand([
+    'server',
+    'serve',
+    '--host',
+    '0.0.0.0',
+    '--port',
+    '9530'
+  ], {
+    showServerUsage() {},
+    serverDaemon: {},
+    parseServerEnvArgs: () => ({}),
+    parseServerServeArgs: () => ({
+      host: '0.0.0.0',
+      port: 9530,
+      clientKey: '',
+      clientKeySource: '',
+      managementKey: '',
+      proxyUrl: '',
+      noProxy: ''
+    }),
+    parseServerSyncArgs: () => ({}),
+    readServerConfig: () => ({
+      host: '0.0.0.0',
+      port: 9530,
+      apiKey: 'client-secret',
+      managementKey: 'management-secret',
+      openNetwork: true,
+      proxyUrl: 'http://127.0.0.1:6152',
+      noProxy: 'localhost'
+    }),
+    writeServerConfig: () => {
+      throw new Error('should not write');
+    },
+    startLocalServer: async (options) => {
+      startedOptions = options;
+    },
+    syncCodexAccountsToServer: async () => ({ dryRun: true, failed: 0 })
+  }));
+
+  assert.equal(code, null);
+  assert.deepEqual(errors, []);
+  assert.equal(startedOptions.clientKey, 'client-secret');
+  assert.equal(startedOptions.clientKeySource, 'server-config');
+  assert.equal(startedOptions.managementKey, 'management-secret');
+  assert.equal(startedOptions.proxyUrl, 'http://127.0.0.1:6152');
+  assert.equal(startedOptions.noProxy, 'localhost');
+});
+
 test('runServerCommand config set can generate management key without printing it', async () => {
   let written = null;
   const { result: code, logs, errors } = await captureConsole(() => runServerCommand([

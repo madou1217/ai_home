@@ -7,7 +7,8 @@ const os = require('node:os');
 const path = require('node:path');
 const {
   startServerSourceAutoRestart,
-  extractServeArgsFromArgv
+  extractServeArgsFromArgv,
+  stripSensitiveServeArgs
 } = require('../lib/server/source-auto-restart');
 
 function makeTempDir() {
@@ -31,6 +32,25 @@ test('extractServeArgsFromArgv preserves original server serve flags', () => {
     ['--host', '0.0.0.0', '--port', '8317']
   );
   assert.deepEqual(extractServeArgsFromArgv(['/node', '/repo/lib/cli/app.js', 'server', 'restart']), []);
+});
+
+test('stripSensitiveServeArgs removes secret-bearing server flags', () => {
+  assert.deepEqual(stripSensitiveServeArgs([
+    '--host',
+    '0.0.0.0',
+    '--api-key',
+    'client-secret',
+    '--management-key=management-secret',
+    '--client-key',
+    'legacy-secret',
+    '--port',
+    '9527'
+  ]), [
+    '--host',
+    '0.0.0.0',
+    '--port',
+    '9527'
+  ]);
 });
 
 test('source auto restart records fingerprint and restarts on source change', (t) => {
@@ -105,7 +125,9 @@ test('source auto restart preserves proxy and model probe options when replaying
   const controller = startServerSourceAutoRestart({
     proxyUrl: 'http://127.0.0.1:6152',
     noProxy: 'localhost,127.0.0.1',
-    modelsProbeAccounts: 8
+    modelsProbeAccounts: 8,
+    apiKey: 'client-secret',
+    managementKey: 'management-secret'
   }, {
     fs,
     path,
@@ -125,7 +147,10 @@ test('source auto restart preserves proxy and model probe options when replaying
         '--host',
         '127.0.0.1',
         '--port',
-        '9527'
+        '9527',
+        '--api-key',
+        'old-client-secret',
+        '--management-key=old-management-secret'
       ]
     },
     aiHomeDir,
@@ -150,5 +175,9 @@ test('source auto restart preserves proxy and model probe options when replaying
     '--models-probe-accounts',
     '8'
   ]);
+  assert.equal(spawnCalls[0].args.includes('client-secret'), false);
+  assert.equal(spawnCalls[0].args.includes('management-secret'), false);
+  assert.equal(spawnCalls[0].args.includes('old-client-secret'), false);
+  assert.equal(spawnCalls[0].args.some((arg) => String(arg).includes('old-management-secret')), false);
   controller.stop();
 });

@@ -48,8 +48,6 @@ test('server config store persists and normalizes server config', (t) => {
   assert.deepEqual(buildServerArgsFromConfig(loaded), [
     '--host', '0.0.0.0',
     '--port', '11435',
-    '--api-key', 'abc123',
-    '--management-key', 'mgmt456',
     '--proxy-url', 'http://127.0.0.1:6152',
     '--no-proxy', 'localhost,127.0.0.1',
     '--models-probe-accounts', '5'

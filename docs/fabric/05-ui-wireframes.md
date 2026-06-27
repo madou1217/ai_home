@@ -110,10 +110,10 @@ flowchart TD
 | ai_home            Node.js app        active         |
 +------------------------------------------------------+
 | Runtimes                                             |
-| Codex              TUI available      5 accounts     |
-| Claude             TUI available      2 accounts     |
-| AGY                GUI/TUI partial    1 account      |
-| OpenCode           TUI available      1 account      |
+| Codex              session ready      5 accounts     |
+| Claude             session ready      2 accounts     |
+| AGY                session partial    1 account      |
+| OpenCode           session ready      1 account      |
 +------------------------------------------------------+
 ```
 
@@ -126,14 +126,14 @@ flowchart TD
 | Server: VPS 1 | Node: Company PC | Project: shalou   |
 | Runtime: Codex | Transport: WSS relay | Latency 92ms |
 +------------------------------------------------------+
-| Remote session viewport                              |
+| Remote session event stream                          |
 |                                                      |
 |  > /plan                                             |
 |  assistant is thinking...                            |
 |                                                      |
 +------------------------------------------------------+
 | [ message or slash input                         ]   |
-| [ Send ] [ Raw Keys ] [ Resize ] [ Stop ] [ Detach ] |
+| [ Send ] [ Stop ] [ Detach ]                         |
 +------------------------------------------------------+
 | Semantic side rail: approvals, diffs, files, events  |
 +------------------------------------------------------+
@@ -141,28 +141,28 @@ flowchart TD
 
 要求：
 
-- PTY viewport 尺寸稳定。
+- 会话 event stream 尺寸稳定。
 - 输入框支持 slash。
-- 支持 raw terminal mode。
+- 普通消息、slash、审批回复和 stop 必须是不同命令类型。
 - 右侧或底部有 semantic side rail，显示审批、diff、文件引用和错误。
 - 显示当前 server/node/project/transport，用户不迷路。
 
 ## Provider Runtime Capability Matrix
 
-MVP 明确承诺 **TUI/native terminal bridge**，不声称已经完整覆盖 GUI。GUI bridge 是独立能力，需要自己的事件模型和验收。
+MVP 明确承诺远程开发会话的消息、slash、审批、artifact 和恢复能力，不声称已经完整覆盖 GUI。GUI bridge 是独立能力，需要自己的事件模型和验收。
 
-| Provider | MVP TUI | MVP GUI | Slash/raw input | Resize | Approval side rail | 说明 |
+| Provider | Message | Slash | Approval | Artifact lane | Resume | 说明 |
 |---|---:|---:|---:|---:|---:|---|
-| Codex | yes | no | yes | yes | yes | 以 PTY/TUI 和 semantic events 为主 |
-| Claude | yes | no | yes | yes | yes | 以 PTY/TUI 和 tool approval 为主 |
-| AGY | partial | no | partial | partial | partial | 先验证 TUI/CLI 能力，GUI bridge 延后 |
-| OpenCode | yes | no | yes | yes | partial | 先接 TUI，再补 provider-specific 语义 |
+| Codex | yes | yes | yes | yes | yes | 以 canonical command 和 semantic events 为主 |
+| Claude | yes | yes | yes | yes | yes | 以 tool approval 和 artifact refs 为主 |
+| AGY | partial | partial | partial | partial | partial | 先验证 CLI/session 能力，GUI bridge 延后 |
+| OpenCode | yes | yes | partial | yes | yes | 先接 command/event contract，再补 provider-specific 语义 |
 
 GUI bridge deferred contract：
 
 - 必须定义 GUI surface 类型、输入事件、截图/DOM/窗口同步策略。
 - 必须有 provider-specific capability discovery。
-- 必须有独立弱网策略，不能把 GUI 当 PTY frame 处理。
+- 必须有独立弱网策略，不能把 GUI 当普通 event frame 处理。
 - 在该 contract 落地前，产品文案只能写“GUI planned / GUI lab”，不能写“GUI supported”。
 
 ## 6. Relay Health 页面

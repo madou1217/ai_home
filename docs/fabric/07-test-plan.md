@@ -60,7 +60,7 @@
   - 本机 server 通过 outbound broker link 注册到 AWS broker，client 通过 AWS broker proxy 访问本机 default `9527`。
   - `readyz`、`descriptor`、`device-pair`、`device-profile`、`device-nodes`、`device-status`、`device-accounts`、`device-sessions` 均 HTTP 200。
   - 同一 AWS broker proxy endpoint 上，node relay sessions RPC 返回 `ok=true`、`viaProxy=true`、`relay.online=true`、sessions HTTP 200。
-  - 同一 AWS broker proxy endpoint 上，真实 Codex 远程会话返回 `ok=true`、runId present、模型输出 `AIH_CROSSHOST_BROKER_NATIVE_SESSION_VERIFY_OK_20260627`，`/quit` 与 abort cleanup 均 accepted。
+  - 同一 AWS broker proxy endpoint 上，真实 Codex 远程会话返回 `ok=true`、runId present、模型输出命中预期 marker，`/quit` 与 abort cleanup 均 accepted。
   - 跨主机 M2.5 判定为 pass；下一步进入 M3 Role Registry 产品闭环。
   - 证据：`docs/fabric/evidence/2026-06-27-crosshost-outbound-broker-profile-smoke.md`。
 - Cross-host API-mode relay smoke 工具已落地：`scripts/fabric-real-outbound-relay-smoke.js --node-join-url ... --device-pair-url ...` 可通过真实 join/pair API 准备 node/device，不再要求共享 host-home。
@@ -219,10 +219,10 @@ Transport 只有满足 gate 后才能进入 MVP 默认路径。
 
 | 场景 | 验收 |
 |---|---|
-| 公司控制家里项目 | 从公司 client 进入家里 node，启动 Codex TUI |
-| 家里控制公司项目 | 从家里 client 进入公司 node，启动 Claude TUI |
+| 公司控制家里项目 | 从公司 client 进入家里 node/project/runtime，创建或 attach Codex 远程开发会话 |
+| 家里控制公司项目 | 从家里 client 进入公司 node/project/runtime，创建或 attach Claude 远程开发会话 |
 | 手机控制会话 | 手机发送 prompt、slash、审批 |
-| resize | 客户端窗口变化同步到 PTY |
+| viewport/session state | 客户端视图变化不影响会话状态，事件 cursor 可继续 |
 | detach/attach | 关闭客户端后重连不丢会话 |
 | relay failover | 主 relay 断开后会话恢复 |
 
@@ -239,7 +239,7 @@ Transport 只有满足 gate 后才能进入 MVP 默认路径。
 
 - 输入和审批优先到达。
 - semantic event 不丢。
-- PTY 可以降帧但最终状态正确。
+- 高频输出 frame 可以降帧，但 semantic event、cursor 和最终状态必须正确。
 - artifact/bulk 不阻塞 control/semantic。
 
 ## 安全测试

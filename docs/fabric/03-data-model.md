@@ -231,7 +231,7 @@ node 上报。表示可启动的 provider runtime。
 - `id`
 - `nodeId`
 - `provider`: `codex`, `claude`, `agy`, `opencode`
-- `mode`: `tui`, `gui`, `api`
+- `mode`: `cli`, `gui`, `api`
 - `version`
 - `capabilities`
 - `status`

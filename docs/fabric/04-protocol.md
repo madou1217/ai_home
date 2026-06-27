@@ -6,7 +6,7 @@ AIH Fabric 协议分三层：
 
 1. Transport Layer: WSS、WebRTC DataChannel、WebTransport/QUIC、direct HTTP。
 2. Session Layer: 认证、路由、seq、ack、resume、优先级。
-3. Runtime Layer: PTY frame 和 semantic event。
+3. Runtime Layer: command、output frame 和 semantic event。
 
 业务代码只能依赖 Session/Runtime 层，不直接依赖某个 transport。
 
@@ -29,7 +29,7 @@ AIH Fabric 协议分三层：
 字段规则：
 
 - `version`: 协议版本。
-- `channel`: `control`, `semantic`, `pty`, `artifact`, `bulk`。
+- `channel`: `control`, `semantic`, `output`, `artifact`, `bulk`。
 - `seq`: session 内单调递增。
 - `ack`: 接收端最后确认的 seq。
 - `priority`: `critical`, `high`, `normal`, `low`, `bulk`。
@@ -39,31 +39,31 @@ AIH Fabric 协议分三层：
 
 | Channel | 内容 | 策略 |
 |---|---|---|
-| control | ping、auth、route、resize、stop | 最高优先级，小包 |
+| control | ping、auth、route、stop | 最高优先级，小包 |
 | semantic | 消息、工具、审批、diff 元数据 | 不允许丢，必须可恢复 |
-| pty | terminal frame、raw input | 可合并、可降帧 |
+| output | 高频输出 frame | 可合并、可降帧 |
 | artifact | diff 片段、文件片段、日志页 | 按需分页 |
 | bulk | 大文件、图片、归档 | 低优先级，可暂停 |
 
-## PTY Layer
+## Runtime Command Layer
 
-PTY layer 目标是保留远程交互会话的关键输入和事件语义。
+Runtime command layer 目标是保留远程开发会话的输入、控制和事件语义。
 
-事件：
+命令：
 
-- `pty.open`
-- `pty.frame`
-- `pty.input`
-- `pty.resize`
-- `pty.close`
-- `pty.snapshot`
+- `runtime.message`
+- `runtime.slash`
+- `runtime.approval_response`
+- `runtime.stop`
+- `runtime.attach`
+- `runtime.detach`
 
 规则：
 
-- slash 默认作为普通输入透传给原生 runtime。
-- `Ctrl+C`、方向键、Tab、Enter、粘贴都必须走 raw input。
-- resize 必须同步给 node 端 PTY。
-- 弱网时 `pty.frame` 可以合并，但最后可见状态必须正确。
+- slash 默认作为普通输入透传给 provider runtime。
+- 审批回复必须引用 active approval id，不能混在普通 slash 或 message 中。
+- stop 必须明确 `scope=run` 或 `scope=session`。
+- 弱网时 output frame 可以合并，但 semantic event 不允许丢。
 
 ## Semantic Layer
 
@@ -148,7 +148,7 @@ Role registry 是 M3 的 server-side truth source。它与旧 `remote-nodes.json
     { "path": "/Users/model/projects/feature/ai_home", "name": "ai_home", "vcs": "git" }
   ],
   "runtimes": [
-    { "provider": "codex", "mode": "tui", "version": "0.142.0" }
+    { "provider": "codex", "mode": "cli", "version": "0.142.0" }
   ]
 }
 ```
@@ -171,7 +171,7 @@ Role registry 是 M3 的 server-side truth source。它与旧 `remote-nodes.json
 
 - 每条 channel 都有窗口大小。
 - 低优先级 channel 不得阻塞 control/semantic。
-- pty frame 队列超过阈值时丢弃旧 frame，保留最后状态。
+- output frame 队列超过阈值时丢弃旧 frame，保留最后状态。
 - artifact/bulk 必须支持暂停和继续。
 
 ## 错误码

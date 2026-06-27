@@ -32,9 +32,9 @@ If reviewing implementation, also inspect the changed code and tests.
 
 Prioritize findings in this order:
 
-1. Product clarity: can a user understand how to add a server, select a node, open a project, and start a native runtime?
+1. Product clarity: can a user understand how to add a server, select a node, open a project, and start or attach a remote development session?
 2. Role correctness: can an AIH instance be client, server, node, and relay node without hidden coupling?
-3. Native experience: does the design preserve Codex/Claude/AGY/OpenCode TUI/GUI capabilities, including slash and raw input?
+3. Provider interaction: does the design preserve Codex/Claude/AGY/OpenCode message, slash, approval, artifact, and recovery capabilities?
 4. Network rigor: are WebRTC, WebTransport/QUIC, WSS, relay failover, and low-bandwidth constraints handled with evidence?
 5. Data traceability: are node, relay, session, event, network measurement, and audit records persisted enough to debug later?
 6. Security: are device tokens, management keys, provider accounts, and project permissions separated?
@@ -63,6 +63,6 @@ Block the change when:
 
 - The client still defaults into a local WebUI without server configuration.
 - The feature cannot be explained from the docs.
-- Remote session success is claimed without native runtime evidence.
+- Remote session success is claimed without real provider runtime evidence.
 - Transport reliability is claimed without real network or resumability evidence.
 - Cross-node account use lacks explicit grant or credential boundary.

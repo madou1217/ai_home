@@ -1,6 +1,6 @@
 ---
 name: aih-codex-implementer
-description: Implement approved AIH Fabric tasks in /Users/model/projects/feature/ai_home. Use when asked to execute code changes from docs/fabric designs, especially server profile, node/relay registry, transport, native PTY/TUI, protocol, or test implementation work.
+description: Implement approved AIH Fabric tasks in /Users/model/projects/feature/ai_home. Use when asked to execute code changes from docs/fabric designs, especially server profile, node/relay registry, transport, remote session protocol, provider runtime, or test implementation work.
 ---
 
 # AIH Codex Implementer

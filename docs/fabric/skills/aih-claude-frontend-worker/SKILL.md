@@ -45,7 +45,7 @@ Read only the sections needed for the task, but never implement behavior that co
 - Nodes, node details, projects, runtimes, and role/transport status.
 - Relay Health, benchmark controls, metrics, and evidence export UI.
 - WebRTC Lab status levels: signaling, ICE, DataChannel, RTT samples, and failures.
-- Native session UI: terminal viewport, slash input, raw keys, resize, stop, detach, and semantic side rail.
+- Remote session UI: message input, slash input, approval actions, stop, detach, event stream, and semantic side rail.
 - Mobile shell for pairing, approvals, sending input, and viewing server/node/session state.
 
 ## Boundaries
@@ -63,7 +63,7 @@ Read only the sections needed for the task, but never implement behavior that co
 - Use cards only for list items, dialogs, and tool panels; avoid nested cards.
 - Keep current server, node, project, runtime, transport, and health visible where users can get lost.
 - Prioritize mobile pairing, approvals, input sending, and status visibility.
-- Prioritize desktop remote-session viewport stability, keyboard flow, slash input, and side-rail diagnostics.
+- Prioritize desktop remote-session event-stream stability, keyboard flow, slash input, and side-rail diagnostics.
 - Surface precise degraded and partial states instead of broad success labels.
 
 ## Required Evidence

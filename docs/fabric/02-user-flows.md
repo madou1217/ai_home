@@ -163,20 +163,22 @@ sequenceDiagram
   C->>S: start session request
   S->>N: start runtime with provider and cwd
   N->>A: spawn or attach runtime session
-  A-->>N: PTY and semantic events
+  A-->>N: output frames and semantic events
   N-->>C: session stream
 ```
 
 ## 远程交互会话
 
-客户端必须支持两条输入路径：
+客户端必须支持明确的 command envelope：
 
-- Text input: prompt、slash、普通命令文本。
-- Raw input: 方向键、快捷键、Ctrl 组合、粘贴。
+- `message`: prompt、普通文本。
+- `slash`: provider slash command。
+- `approval_response`: approve/reject。
+- `stop`: stop run 或 stop session。
 
 slash 支持原则：
 
-- 首选透传到原生 runtime，由 Codex/Claude/AGY/OpenCode 自己解释。
+- 首选透传到 provider runtime，由 Codex/Claude/AGY/OpenCode 自己解释。
 - 对 AIH 自有 slash 只使用明确 namespace，例如 `/aih status`。
 - 不在中间层重写 provider 原生命令，避免兼容分支扩散。
 
@@ -196,5 +198,5 @@ stateDiagram-v2
 
 - Agent runtime 不因 client 断线退出。
 - semantic event 通过 `seq` 和 `resumeToken` 补齐。
-- PTY tail 可以只恢复最近窗口，不回放全部历史。
+- output frame 可以只恢复最近窗口，不回放全部历史。
 - UI 明确显示恢复来源：原 transport、备用 relay、直连。

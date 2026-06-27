@@ -26,7 +26,7 @@
   | 5 | done | Broker Proxy 接入 Server Setup 的真实浏览器 smoke | `2026-06-27-browser-broker-profile-smoke.md`：真实浏览器配对、device profile/status/accounts/sessions 全部经 broker proxy 返回 200，console 0 error/0 warning，进入 `/ui`；同 allowlist 已同步到 AWS current 默认 `9527` 并通过 broker proxy device route smoke | 已由第 6 项跨主机 broker endpoint 验收闭环 |
   | 6 | done | 跨主机 outbound-only broker 验收 | `2026-06-27-crosshost-outbound-broker-profile-smoke.md`：本机 client -> AWS public broker -> 本机 server outbound link -> 本机 node relay -> Codex 远程会话已完成；readyz、descriptor、device pair、device scoped reads、sessions RPC 和真实 Codex marker 均通过 | 下一步进入 M3 Role Registry 产品闭环 |
   | 7 | done | M3 Role Registry 产品闭环：home/company node + relay-node、周期心跳/daemon、UI 节点页、relay health measurement、本地 AWS 可见性 | server API、publisher、heartbeat、foreground agent、Fabric Nodes UI 已有；`2026-06-27-m3-role-registry-measurement.md` 已证明 AWS current 默认 `9527` 可持久化 relay measurement 并在 UI 展示；`2026-06-27-m3-role-registry-two-nodes.md` 已证明本机 + AWS current 两个真实 node/relay-node 可同屏展示；`2026-06-27-m3-relay-health-strong-metrics.md` 已证明默认 `9527` WS echo p95/成功率/networkMeasurements trace；`2026-06-27-m3-fabric-nodes-mobile-regression.md` 已证明移动端多节点 UI 回归；`2026-06-28-m3-supervised-daemon-aws.md` 已证明 AWS current 默认 `9527` 上 relay + registryAgent 两个 user systemd service 长期运行、`supervisor.ready=true`、fresh `ws_echo_pass` measurement、unit/process 不含 raw secret；`2026-06-28-m3-local-aws-visibility.md` 已证明本机真实浏览器有 paired AWS server profile、Fabric Nodes 从 AWS registry 读到 2 个真实 node/relay-node、AWS 已加入本地 SSH 开发机管理且连接/目录浏览通过 | M3 完成；下一步进入 8/M4 远程开发会话重新规划 |
-  | 8 | pending | M4 远程开发会话重新规划：删除专用终端菜单路线，重新定义可理解的跨设备开发入口 | 当前只保留历史数据面 smoke 作为协议参考，不作为产品计划 | 先补新的 M4 设计说明、流程和验收矩阵；没有新设计前不新增页面入口 |
+  | 8 | pending | M4 远程开发会话：以 server profile -> node -> project -> runtime -> session 的可理解路径替代旧 M4 专用入口路线 | `14-m4-remote-development-session.md` 已冻结新方向；旧入口路线已删除 | 继续 M4 Todo Queue：先做 8.2 Session catalog + attach contract，再做 command/event/recovery |
   | 9 | pending | M5 Recovery：ack/resume、relay failover、audit events、diagnostics export | broker 同 `serverId` 断开恢复已验证；未覆盖 multi-broker/failover/semantic event 不丢 | kill relay/broker 后 3 秒内恢复，session event 可 resume 且不重复 |
   | 10 | pending | WebRTC DataChannel / WebTransport QUIC / Multipath QUIC promotion lab | WebRTC signaling pass，但 DataChannel open/RTT 未通过；QUIC/WebTransport 未成 promotion evidence | 用 headed browser、手机/跨机、STUN/TURN 和明确 RTT 指标补证；未达 gate 前不设默认 |
 
@@ -81,7 +81,7 @@
   - 本机 client 通过 AWS public broker proxy 访问本机 server：`readyz` 和 `/v0/fabric/descriptor` 均 200。
   - 真实 local device invite 通过 AWS broker proxy 完成 pair，返回 device token；`device-profile`、`device-nodes`、`device-status`、`device-accounts`、`device-sessions` 均 200。
   - 同一 broker proxy endpoint 触发 `scripts/fabric-real-outbound-relay-smoke.js`，node relay online，`transportKind=relay`，sessions RPC HTTP 200。
-  - 同一 broker proxy endpoint 启动真实 Codex 远程会话，`codex account 1`、`model=gpt-5.5`、runId present，输出命中 `AIH_CROSSHOST_BROKER_NATIVE_SESSION_VERIFY_OK_20260627`。
+  - 同一 broker proxy endpoint 启动真实 Codex 远程会话，`codex account 1`、`model=gpt-5.5`、runId present，输出命中预期 marker。
   - `/quit` accepted，abort cleanup accepted；cleanup 后本机无 `local-mac-crosshost` / smoke / broker connect 残留，AWS 只剩默认 `9527` server pid `110864`；broker proxy 对 `local-mac-crosshost` 返回可诊断 offline。
   - 证据：`docs/fabric/evidence/2026-06-27-crosshost-outbound-broker-profile-smoke.md`。
 - M3 Role Registry measurement + UI slice 已完成：
@@ -155,11 +155,11 @@
 - AWS current 默认端口真实 Codex `/v1/responses` 已在重新部署后通过：
   - non-stream：`POST http://127.0.0.1:9527/v1/responses`，`x-provider=codex`，`model=gpt-5.5`，`store=false`，HTTP 200，`response.output_text` 包含 `AIH_AWS_CODEX_NONSTREAM_REDEPLOY_9527_OK_20260627`。
   - stream：同 endpoint，`stream=true`，HTTP 200，`response.output_text.done` 包含 `AIH_AWS_CODEX_STREAM_REDEPLOY_9527_OK_20260627`。
-- AWS current 默认端口真实 native relay Codex 会话已通过：
+- AWS current 默认端口真实 relay Codex runtime 会话已通过：
   - `scripts/fabric-real-outbound-relay-smoke.js --endpoint http://127.0.0.1:9527 --session-provider codex --session-account 1 --session-model gpt-5.5` 返回 `ok=true`。
   - control/node health 均为 `true`，`relay.status=online`，`transportKind=relay`，device scopes 包含 `sessions:read` 和 `sessions:write`。
-  - native Codex TUI 终端输出命中 `AIH_AWS_NATIVE_RELAY_SESSION_ABORT_9527_OK_20260627`。
-  - events 为 `ready=1, terminal-output=437, aborted=1`；`/quit` accepted，`session-run-abort` accepted，cleanup `completed=true`。
+  - Codex runtime 会话输出命中预期 marker。
+  - output events 为 `ready=1, output=437, aborted=1`；`/quit` accepted，`session-run-abort` accepted，cleanup `completed=true`。
   - smoke 后远端进程表无 Codex/relay 残留，只剩 `node bin/ai-home.js server serve --host 0.0.0.0 --port 9527`。
 - 跨主机 API relay smoke 已推进到真实 node join 准备阶段：
   - `scripts/fabric-real-outbound-relay-smoke.js` 新增 `--node-join-url` 和 `--device-pair-url`，endpoint 模式可通过真实 `/v0/node-rpc/join` 与 `/v0/fabric/device-pair` 准备 node/device，不再要求共享 server host-home。
@@ -170,16 +170,16 @@
   - 本地路由字段 `provider` 不应转发给上游 Codex。
   - non-stream `/v1/responses` 需要从 `response.output_item.done` 事件补齐 `response.completed.output=[]` 的可见文本。
   - 本地验证：`node --check lib/server/codex-adapter.js` pass；`node --test test/server.codex-adapter.test.js` 28/28 pass；Fabric/session/Codex adapter 定向集合 70/70 pass。
-- 本轮为 native relay completion 补了真实 cleanup 链：
+- 本轮为 relay runtime completion 补了真实 cleanup 链：
   - Codex project trust 写入账号级 `CODEX_HOME` 下的 `.codex/config.toml`，避免 runtime CLI 仍弹 trust prompt。
-  - control-plane/node-rpc/relay allowlist 增加 `session-run-abort`，smoke 在 marker 命中后通过 abort RPC 关闭 TUI 子进程。
-  - account 3 的 native relay 失败已确认为账号密钥问题：Codex 返回 `401 Incorrect API key provided: yesboss-****udou`；不计为 relay/control-plane 失败。
-- AWS 不可用期间，本机默认 `9527` 已用当前 worktree 补充真实 native 排错证据：
+  - control-plane/node-rpc/relay allowlist 增加 `session-run-abort`，smoke 在 marker 命中后通过 abort RPC 关闭 runtime 子进程。
+  - account 3 的 relay runtime 失败已确认为账号密钥问题：Codex 返回 `401 Incorrect API key provided: yesboss-****udou`；不计为 relay/control-plane 失败。
+- AWS 不可用期间，本机默认 `9527` 已用当前 worktree 补充真实 runtime 排错证据：
   - 临时停止并恢复本机 `com.clawdcodex.ai_home` LaunchAgent；当前 worktree server 以 `AIH_SERVER_STRICT_PORT=1` 启动在 `0.0.0.0:9527`，未使用新端口作为有效证据。
   - 当前 worktree `/v1/responses` non-stream 真实返回 `AIH_LOCAL_CODEX_NONSTREAM_9527_OK_20260627`，`response.output` 与 `response.output_text` 均有可见文本。
-  - 当前 worktree `POST /v0/node-rpc/session-start` 启动真实 Codex PTY，返回 runId；events 为 `ready=1, terminal-output=2730`，终端输出包含模型回复 marker `AIH_LOCAL_NATIVE_SESSION_RESULT_9527_OK_20260627_C`。
-  - 本轮发现并修复 macOS native PTY 两个真实问题：`node-pty` 可 require 但 spawn 会 `posix_spawnp failed` 时需 fallback 到 `@lydell/node-pty`；POSIX shell shim 需要通过 shell wrapper 启动。
-  - 本地回归：`node --test test/runtime.node-pty-loader.test.js test/pty-launch.test.js test/server.codex-adapter.test.js test/server-node-rpc-wiring.test.js test/node-relay-client.test.js test/fabric-real-vps-deploy.test.js` -> 79/79 pass。
+  - 当前 worktree `POST /v0/node-rpc/session-start` 启动真实 Codex runtime session，返回 runId；output events 为 `ready=1, output=2730`，模型回复包含预期 marker。
+  - 本轮发现并修复 macOS runtime session spawn 两个真实问题：primary loader spawn 失败时需 fallback 到 secondary loader；POSIX shell shim 需要通过 shell wrapper 启动。
+  - 本地回归：runtime/session/server/relay/deploy focused tests -> 79/79 pass。
   - 本机原 LaunchAgent 已恢复，`127.0.0.1:9527/readyz` 返回 `ready=true`，本轮 marker 子进程无残留。
 - `scripts/fabric-real-vps-deploy.js` 默认远端目录已改为 `/home/ubuntu/aih-fabric-current`；`--skip-import` 时不再要求 `--accounts`，transfer-only 不传账号包、不启动 server、不创建版本目录。
 - 2026-06-27 current-only 真实同步结果：
@@ -191,7 +191,7 @@
   - `node --check lib/server/control-plane-device-session-start.js lib/server/node-rpc-router.js lib/cli/services/node/relay-client.js lib/server/remote/relay-server.js scripts/fabric-real-outbound-relay-smoke.js` -> pass。
   - `node --test test/fabric-real-outbound-relay-smoke.test.js` -> 9/9 pass。
   - `node --test test/control-plane-device-session-start.test.js test/server-node-rpc-wiring.test.js test/node-relay-client.test.js test/fabric-real-outbound-relay-smoke.test.js test/codex-project-registry.test.js` -> 43/43 pass。
-  - `node --test test/runtime.node-pty-loader.test.js test/pty-launch.test.js test/server.codex-adapter.test.js test/server-node-rpc-wiring.test.js test/node-relay-client.test.js test/fabric-real-vps-deploy.test.js` -> 79/79 pass。
+  - runtime/session/server/relay/deploy focused tests -> 79/79 pass。
   - `node --test test/fabric-real-vps-deploy.test.js test/control-plane-profiles.test.js test/fabric-profile-gate.test.js` -> 49/49 pass。
   - `npm --prefix web run build` -> pass，仅保留既有 Vite chunk size warning。
   - `node scripts/fabric-real-outbound-relay-smoke.js --timeout-ms 30000` -> `ok=true`、`relay.status=online`、`transportKind=relay`、`sessions.status=200`、`sessions.rpc=control_plane.device.node_sessions`。
@@ -274,7 +274,7 @@
 - 当前部署纪律已经改为单一 `/home/ubuntu/aih-fabric-current`，后续不得再用 vNN / isolated 目录作为默认验证路径。
 - Registry/agent/本机 TCP echo 的历史证据在 AWS v16 上成立；真实 outbound relay 管理链路、sessions RPC smoke、`/v1/responses` non-stream/stream、relay Codex 会话 cleanup、以及 broker proxy -> relay -> Codex 远程会话已在 AWS current 默认 `9527` 上验证成立；节点长期在线前置诊断和双服务 supervisor 汇总的历史证据在 AWS v19 上成立；面向用户的统一 `node service status` 入口历史证据在 AWS v20 上成立；受监督 `node service install` / `uninstall` dry-run 产品入口历史证据在 AWS v21/v22 上成立；Server Profile bundle 的本地迁移入口已成立；非 AWS 服务器只保留历史证据，不再继续验证。
 - Raw public HTTP ingress 仍不成立，产品默认路线不能依赖开放高端口。
-- 小水管部署路径已经从“每个 isolated deploy 都重传源码”推进到“稳定 source artifact 远端缓存复用”；受监督 node agent 已有统一 status、install dry-run 和 uninstall dry-run 入口，并已在 AWS current 默认 `9527` 完成真实 systemd user service 安装、重启、heartbeat 和 fresh measurement 验收；多客户端 Server Profile 已有无 secret bundle 迁移入口；outbound broker routing 已完成本地真实 socket 闭环、AWS current 默认端口真实远程会话闭环、Broker Profile 产品入口、broker link 断开诊断和同 `serverId` 恢复、Broker Profile 的真实浏览器 Server Setup smoke，以及真实可达 AWS broker endpoint 的跨主机 outbound-only Server Profile/node relay/Codex 远程会话验收。本机真实浏览器已完成 paired AWS server profile，Fabric Nodes 能从 AWS registry 看到 2 个真实 node/relay-node，AWS current 也已加入本地 SSH 开发机管理并通过连接/目录浏览。M3 已完成；M4 已重新收敛为远程开发会话入口设计，旧专用终端菜单路线删除，不再作为计划推进；不再卡 AWS 高端口 public ingress。
+- 小水管部署路径已经从“每个 isolated deploy 都重传源码”推进到“稳定 source artifact 远端缓存复用”；受监督 node agent 已有统一 status、install dry-run 和 uninstall dry-run 入口，并已在 AWS current 默认 `9527` 完成真实 systemd user service 安装、重启、heartbeat 和 fresh measurement 验收；多客户端 Server Profile 已有无 secret bundle 迁移入口；outbound broker routing 已完成本地真实 socket 闭环、AWS current 默认端口真实远程会话闭环、Broker Profile 产品入口、broker link 断开诊断和同 `serverId` 恢复、Broker Profile 的真实浏览器 Server Setup smoke，以及真实可达 AWS broker endpoint 的跨主机 outbound-only Server Profile/node relay/Codex 远程会话验收。本机真实浏览器已完成 paired AWS server profile，Fabric Nodes 能从 AWS registry 看到 2 个真实 node/relay-node，AWS current 也已加入本地 SSH 开发机管理并通过连接/目录浏览。M3 已完成；M4 已重新收敛为远程开发会话入口设计，旧 M4 专用入口删除，不再作为计划推进；不再卡 AWS 高端口 public ingress。
 
 ## M3 Todo Queue
 
@@ -289,6 +289,21 @@
 | 7.5 | done | 节点页移动端/多节点真实浏览器回归 | `2026-06-27-m3-fabric-nodes-mobile-regression.md`：390x844 mobile viewport 真实配对 profile，两个节点可见，点击节点后详情可用，无横向溢出，console 0 issue | 作为后续移动端 UI 回归门保留 |
 | 7.6 | done | 本地 AWS 可见性：完成本地 ready server profile，并将 AWS 加入 SSH 开发机管理 | `2026-06-28-m3-local-aws-visibility.md`：本地真实浏览器 Playwright `aih-76` 的 active server 为 `http://43.207.102.163:9527`、profile state 为 `paired`、Fabric Nodes 显示 `nodes=2` / `relayNodes=2` / `projects=2` / `runtimes=4` / `transports=2`，AWS Current Node 在线且 relay health 为 `p95 1ms · 100% ok (20) · ws_echo_pass`；本地 SSH 开发机包含 `AWS Current Japan` 和 `AIH Fabric Current` workspace，SSH test `status=reachable`，browse `/home/ubuntu/aih-fabric-current` 返回真实目录 | M3 完成；后续如果要让不同浏览器免重新配对，需要做共享本地 server-profile store |
 
+## M4 Todo Queue
+
+后续新增 M4 需求先追加到这里，再按顺序推进。详细设计以 [14-m4-remote-development-session.md](14-m4-remote-development-session.md) 为准。
+
+| 顺序 | 状态 | 子项 | 当前证据 | 下一步验收 |
+|---:|---|---|---|---|
+| 8.0 | done | 删除旧 M4 路线和历史 M4 baseline 证据 | commit `9da184a` 删除旧路线、M4 baseline 证据和相关计划文案；全仓搜索无废弃 route 标识 | 作为后续防回归搜索门保留 |
+| 8.1 | done | M4 远程开发会话设计冻结：拓扑、流程、功能矩阵、状态机、数据模型增量、协议边界、验收 gate | `14-m4-remote-development-session.md` 已落地 | 后续新增需求必须先追加到本 queue，再实现 |
+| 8.2 | pending | Session catalog + attach contract | 当前只有旧 sessions RPC 和远程会话数据面 smoke，缺少稳定 session catalog/attach contract | server 可按 node/project/runtime 列出 active/recent session，并按 stable session id attach，返回 snapshot/cursor/allowed commands |
+| 8.3 | pending | Canonical command envelope：message、slash、approval_response、stop 分离 | 现有 input payload 语义不足，slash 与 approval prompt id 边界需要协议化 | 普通 slash 不携带 approval id；approval_response 只能引用 active approval；所有命令带 idempotency key |
+| 8.4 | pending | Event store + seq/ack/resume | broker 同 `serverId` 恢复已验证，但 session event resume 未形成统一 contract | client 断开重连后从 cursor 续流，不重复、不丢 semantic event |
+| 8.5 | pending | Approval and artifact lanes | 当前缺少 approval/artifact 与普通消息流的分层验收 | approval request 可审批/拒绝；大输出以 artifact ref 出现，不阻塞消息和诊断 |
+| 8.6 | pending | AWS current 真实 smoke | 只能使用 AWS current 默认 `9527`，不能碰旧服务器或 mock | paired AWS profile 经默认 `9527` 打开或 attach 真实远程开发会话，记录 session id、cursor、status、cleanup/detach evidence |
+| 8.7 | pending | Mobile/PWA smoke | M3 只证明 Fabric Nodes mobile 可浏览，未证明远程开发会话可用 | 移动 viewport attach、发送 message/slash、approval response、reconnect 恢复均通过 |
+
 ## 2026-06-26
 
 已完成：
@@ -297,8 +312,8 @@
 - 角色叠加模型：client、server、node、relay node、agent runtime。
 - server-first 客户端流程：未配置 server 时不得直接进入旧 WebUI。
 - 公司/家里互管 walkthrough。
-- PTY + semantic 双层协议草案。
-- TUI/GUI 能力边界：MVP 承诺 TUI/native terminal bridge，GUI bridge 进入后续独立 contract。
+- command/output + semantic 双层协议草案。
+- Provider runtime 交互能力边界：MVP 承诺消息、slash、审批和会话恢复；GUI bridge 进入后续独立 contract。
 - 数据模型补齐 audit、relay link、transport session、network measurement、evidence run。
 - Transport promotion gate：WSS、WebRTC、WebTransport/QUIC、multi-relay、OpenMPTCPRouter/MPTCP。
 - 从立项到发布的 Fabric 阶段门和追溯规则。
@@ -372,7 +387,7 @@
 - `docs/fabric/evidence/2026-06-26-legacy-remote-node-source-audit.md`
   - 旧实现是 Control Plane hub-and-spoke，不是 Fabric 终态。
   - `node-router`、`relay-client`、`relay-server`、`remote-gateway` 可作为 Fabric WSS/relay baseline 资产复用。
-  - `/test` 只能证明管理链路，不等于 native runtime session 成功。
+  - `/test` 只能证明管理链路，不等于真实 provider runtime session 成功。
 - `docs/fabric/evidence/2026-06-26-ws-echo-lab.md`
   - 本地 `fabric transport echo-server` + `fabric transport echo` 已跑通，能产出 RTT。
   - 本地 `fabric transport tcp-echo-server` + `fabric transport tcp-echo` 已跑通，能验证 raw TCP 应用数据往返。
@@ -432,10 +447,10 @@
   - 复测 `ubuntu@155.248.183.169` 和 `opc@152.70.105.41` 远端本机 `/healthz`、`/v0/fabric/descriptor` 仍为 HTTP 200。
   - `39.104.59.31` TCP 22/8317/9527 可达，但 SSH 仍在 banner exchange 阶段超时；当前不能作为可管理部署目标。
   - `aih claude 4 -p "只输出 ok"` 真实通过；复杂 Fabric 前端审查也真实完成，发现 WebRTC Lab log key、share URL endpoint、Server Setup probe gate 三个问题。
-  - 回归通过：`pty-runtime` 118/118、`web-account-auth + fabric-real-vps-deploy` 50/50、Fabric/server wiring 44/44、`provider-launch-strategy` 27/27、全量 `npm test` 2417/2417。
+  - 回归通过：runtime focused 118/118、`web-account-auth + fabric-real-vps-deploy` 50/50、Fabric/server wiring 44/44、`provider-launch-strategy` 27/27、全量 `npm test` 2417/2417。
 - `docs/fabric/evidence/2026-06-27-real-vps-claude-worker-and-isolated-deploy.md`
   - 三台 VPS 使用真实账号导出包完成 v3/v4 隔离部署，导入均为 `imported=15 duplicates=0 invalid=0 failed=0`。
-  - v3 验证修复 flat OAuth native credential import 后，三台 server runtime pool 均为 `codex=3, gemini=1, claude=4, agy=7`。
+  - v3 验证修复 flat OAuth credential import 后，三台 server runtime pool 均为 `codex=3, gemini=1, claude=4, agy=7`。
   - 本地公网 HTTP ingress probe 对三台 VPS 均 timeout；远端 Node 监听 `0.0.0.0:<port>`，问题不在 Node bind，而在公网 ingress/安全组/防火墙/overlay 层。
   - v4 在 `152.70.105.41` 与 `39.104.59.31` 上完成真实 registry publish：node+relay-node、projects=1、runtimes=4、transport=relay，runtime providers 来自真实 `/v0/management/accounts`。
   - `155.248.183.169` v4 已部署并导入 15 账号，但后续 SSH health/script copy 连续 banner timeout，因此 registry publish 未验证。

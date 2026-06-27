@@ -6,9 +6,9 @@ AIH Fabric 是下一阶段远程开发产品线的设计源。这里的文档先
 
 1. [00-product-brief.md](00-product-brief.md): 产品目标、竞品、范围和成功标准。
 2. [01-network-topology.md](01-network-topology.md): 角色叠加、网络拓扑、选路和低带宽策略。
-3. [02-user-flows.md](02-user-flows.md): 从添加 server 到启动原生 agent 的标准流程。
+3. [02-user-flows.md](02-user-flows.md): 从添加 server 到进入远程开发会话的标准流程。
 4. [03-data-model.md](03-data-model.md): ER 图、数据对象、状态和可追溯要求。
-5. [04-protocol.md](04-protocol.md): PTY 层、语义层、传输层和断线恢复。
+5. [04-protocol.md](04-protocol.md): command/output 层、语义层、传输层和断线恢复。
 6. [05-ui-wireframes.md](05-ui-wireframes.md): 客户端信息架构和关键页面线框。
 7. [06-implementation-plan.md](06-implementation-plan.md): 里程碑、任务拆分和工程规则。
 8. [07-test-plan.md](07-test-plan.md): 真实网络实验、弱网验收和回归矩阵。
@@ -23,7 +23,7 @@ AIH Fabric 是下一阶段远程开发产品线的设计源。这里的文档先
 
 - 不再把当前 WebUI 入口当作默认产品形态。客户端必须先配置并选择 server。
 - 任意 AIH 实例可以同时是 client、server、node、relay node。
-- 原生 Codex/Claude/AGY/OpenCode TUI/GUI 能力优先于现有 WebUI chat 体验。
+- Codex/Claude/AGY/OpenCode runtime 的消息、slash、审批、恢复和诊断能力优先于现有 WebUI chat 体验。
 - WebRTC、QUIC/WebTransport、WSS fallback 都进入本阶段 transport lab。
 - 所有网络和会话能力必须有 evidence，不允许只停留在“理论上可用”。
 - `fabric transport probe` 只证明端口或 HTTP 可达；`fabric transport tcp-echo` 证明应用数据能往返；`fabric transport echo` 证明 WebSocket echo/session-level RTT。

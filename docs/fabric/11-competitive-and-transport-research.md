@@ -7,7 +7,7 @@
 1. 这个需求是否已有竞品或相邻产品验证。
 2. WebRTC、WebTransport/QUIC、MPTCP、OpenMPTCPRouter 应该放在 AIH Fabric 的哪一层。
 
-结论：需求不是凭空想象，已有产品分别验证了远端主动出站、P2P/relay fallback、云端 agent、远程 IDE、自托管开发环境和移动端控制本机 coding agent。但 AIH 的组合目标不同：项目和 provider 账号默认留在真实开发电脑，客户端只是进入被授权 node 的原生 agent runtime。
+结论：需求不是凭空想象，已有产品分别验证了远端主动出站、P2P/relay fallback、云端 agent、远程 IDE、自托管开发环境和移动端控制本机 coding agent。但 AIH 的组合目标不同：项目和 provider 账号默认留在真实开发电脑，客户端只是进入被授权 node 的 provider runtime session。
 
 来源核查时间：2026-06-26。后续如果竞品能力变化，先刷新本节再调整产品判断。
 
@@ -15,7 +15,7 @@
 
 | 产品 | 官方资料 | 可借鉴点 | AIH 不照搬的点 |
 |---|---|---|---|
-| VS Code Remote Tunnels | https://code.visualstudio.com/docs/remote/tunnels | 远端机器主动建立隧道，客户端不需要远端有公网 IP | 不把完整 IDE remote 作为核心体验；AIH 优先原生 Codex/Claude/AGY/OpenCode runtime |
+| VS Code Remote Tunnels | https://code.visualstudio.com/docs/remote/tunnels | 远端机器主动建立隧道，客户端不需要远端有公网 IP | 不把完整 IDE remote 作为核心体验；AIH 优先多 provider runtime session |
 | Tailscale | https://tailscale.com/kb/1232/derp-servers | 直连优先，无法直连时使用 DERP relay | 不要求用户先接受一个全局 VPN 身份体系；可作为 underlay |
 | Cloudflare Tunnel | https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/ | 无公网 origin 通过出站连接暴露服务 | 不把 relay 路径锁死到第三方网络；AIH server/relay 要能自托管 |
 | Claude Code Remote Control | https://code.claude.com/docs/en/remote-control | 移动端/网页控制本机 Claude Code，会话仍在原机器运行 | 只覆盖 Claude Code；AIH 要多 provider、多 server、多 node、relay 调度和审计 |

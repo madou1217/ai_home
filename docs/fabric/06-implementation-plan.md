@@ -122,16 +122,18 @@
 
 交付：
 
+- `docs/fabric/14-m4-remote-development-session.md` 作为 M4 权威 todo 和协议设计入口。
 - 重新定义跨设备开发入口和用户流程。
 - 明确 server、node、project、runtime、account grant 的选择顺序。
 - 明确普通消息、slash、审批、停止、恢复的协议边界。
-- 明确哪些能力走既有 Chat，哪些能力需要新的会话承载，不预设专用终端页面。
+- 明确哪些能力走既有 Chat，哪些能力需要新的会话承载，不预设旧 M4 专用页面。
 
 验收：
 
 - 用户能看懂从 server profile 到 node/project/runtime 的完整路径。
 - 新设计有网络拓扑、流程图、功能矩阵、ER/状态模型和真实验收用例。
 - 没有新设计冻结前，不新增客户端菜单或页面入口。
+- 旧 M4 专用入口路线不得作为计划或验收目标回归。
 
 ### M5: Recovery and Hardening
 
@@ -161,7 +163,7 @@
 
 - Claude reviewer 不能直接改代码，先出 review 和阻塞项。
 - 复杂前端页面或交互失败必须交给前端 worker 先做实现/评审，主线程负责集成、真实浏览器验证和 evidence。
-- 当前 `aih claude` 已验证会进入远程交互/PTY，不是稳定的非交互 patch worker；后续需要把它产品化成可传任务、可限制文件范围、可回收 evidence 的委派入口。
+- 当前 `aih claude` 已验证会进入远程交互式 CLI，不是稳定的非交互 patch worker；后续需要把它产品化成可传任务、可限制文件范围、可回收 evidence 的委派入口。
 - Codex implementer 只能执行已冻结的小任务，不改产品方向。
 - 每个 agent 输出必须包含 evidence。
 - 主线程负责把 evidence 写回测试计划或实现日志。

@@ -23,8 +23,8 @@
   | 2 | done | 当前测试目标收敛为 AWS current，禁止继续使用旧 152/155/39.104 | 本文件 “Current VPS Target Set” 已声明 AWS only | 所有新 smoke 命令只访问 AWS current 或本机默认端口 |
   | 3 | done | AWS current 默认 `9527` 上完成真实 `/v1/responses`、native relay Codex TUI、broker relay Codex TUI、broker diagnostics recovery | `2026-06-27-outbound-broker-relay-aws-smoke.md`、`2026-06-27-broker-diagnostics-recovery.md` | 后续复测仍要用默认 `9527`，不新增端口 |
   | 4 | done | Server Profile 解耦第一刀：无 profile 进入 `/ui/server-setup`，配对成功后进入工作台 | `2026-06-26-fabric-browser-pairing-smoke.md` | 保持 browser smoke 作为 UI 改动回归门 |
-  | 5 | done | Broker Proxy 接入 Server Setup 的真实浏览器 smoke | `2026-06-27-browser-broker-profile-smoke.md`：真实浏览器配对、device profile/status/accounts/sessions 全部经 broker proxy 返回 200，console 0 error/0 warning，进入 `/ui`；同 allowlist 已同步到 AWS current 默认 `9527` 并通过 broker proxy device route smoke | 下一步做跨主机 broker endpoint smoke |
-  | 6 | partial | 跨主机 outbound-only broker 验收 | `2026-06-27-crosshost-outbound-broker-profile-smoke.md`：本机 client -> AWS public broker -> 本机 server outbound link 已完成 readyz、descriptor、device pair、device profile/status/accounts/sessions 全部 200 | 剩余 gate：node relay 和 native session 也必须通过同一个 AWS broker profile |
+  | 5 | done | Broker Proxy 接入 Server Setup 的真实浏览器 smoke | `2026-06-27-browser-broker-profile-smoke.md`：真实浏览器配对、device profile/status/accounts/sessions 全部经 broker proxy 返回 200，console 0 error/0 warning，进入 `/ui`；同 allowlist 已同步到 AWS current 默认 `9527` 并通过 broker proxy device route smoke | 已由第 6 项跨主机 broker endpoint 验收闭环 |
+  | 6 | done | 跨主机 outbound-only broker 验收 | `2026-06-27-crosshost-outbound-broker-profile-smoke.md`：本机 client -> AWS public broker -> 本机 server outbound link -> 本机 node relay -> Codex native session 已完成；readyz、descriptor、device pair、device scoped reads、sessions RPC 和真实 Codex marker 均通过 | 下一步进入 M3 Role Registry 产品闭环 |
   | 7 | pending | M3 Role Registry 产品闭环：home/company node + relay-node、周期心跳/daemon、UI 节点页、relay health measurement | server API、publisher、heartbeat、foreground agent、AWS current/历史 evidence 已有 | 补真实家里/公司节点 evidence；UI 展示 node/relay health；heartbeat 写入可诊断指标 |
   | 8 | pending | M4 Native Session 完整互控：公司控家里 Codex、家里控公司 Claude、手机 slash/审批 | AWS current 已有 Codex native relay session；Claude worker 非交互入口不稳定 | 补真实双向 node 场景和手机/PWA 输入、slash、审批 evidence |
   | 9 | pending | M5 Recovery：ack/resume、relay failover、audit events、diagnostics export | broker 同 `serverId` 断开恢复已验证；未覆盖 multi-broker/failover/semantic event 不丢 | kill relay/broker 后 3 秒内恢复，session event 可 resume 且不重复 |
@@ -75,13 +75,14 @@
   - AWS current 远端 `node --test test/fabric-broker-routing.test.js` -> 8/8 pass；broker proxy device route smoke 返回 pair 200，`descriptor/profile/nodes/status/accounts/sessions` 全部 200。
   - AWS current 事后无 broker connect 或 smoke 残留进程；`/readyz` 仍为账号清理后的 `ready=false, accounts=0`，不影响本次 broker/device route 结论。
   - 证据：`docs/fabric/evidence/2026-06-27-browser-broker-profile-smoke.md`。
-- 跨主机 outbound broker Server Profile/control-plane slice 已完成：
+- 跨主机 outbound broker Server Profile/node relay/native session 已完成：
   - AWS public `http://43.207.102.163:9527/readyz` 当前 HTTP 200。
   - 本机 AIH server 通过 `aih fabric broker connect http://43.207.102.163:9527 --server-id local-mac-crosshost --local-url http://127.0.0.1:9527` 主动 outbound 注册到 AWS broker。
   - 本机 client 通过 AWS public broker proxy 访问本机 server：`readyz` 和 `/v0/fabric/descriptor` 均 200。
   - 真实 local device invite 通过 AWS broker proxy 完成 pair，返回 device token；`device-profile`、`device-nodes`、`device-status`、`device-accounts`、`device-sessions` 均 200。
-  - cleanup 后本机无 `fabric broker connect` 残留，AWS 只剩默认 `9527` server pid `110864`；broker proxy 对 `local-mac-crosshost` 返回可诊断 offline。
-  - 该证据不包含 node relay/native session，M2.5 跨主机验收仍为 partial。
+  - 同一 broker proxy endpoint 触发 `scripts/fabric-real-outbound-relay-smoke.js`，node relay online，`transportKind=relay`，sessions RPC HTTP 200。
+  - 同一 broker proxy endpoint 启动真实 Codex native TUI session，`codex account 1`、`model=gpt-5.5`、runId present，输出命中 `AIH_CROSSHOST_BROKER_NATIVE_SESSION_VERIFY_OK_20260627`。
+  - `/quit` accepted，abort cleanup accepted；cleanup 后本机无 `local-mac-crosshost` / smoke / broker connect 残留，AWS 只剩默认 `9527` server pid `110864`；broker proxy 对 `local-mac-crosshost` 返回可诊断 offline。
   - 证据：`docs/fabric/evidence/2026-06-27-crosshost-outbound-broker-profile-smoke.md`。
 - AWS current 默认端口真实 Codex `/v1/responses` 已在重新部署后通过：
   - non-stream：`POST http://127.0.0.1:9527/v1/responses`，`x-provider=codex`，`model=gpt-5.5`，`store=false`，HTTP 200，`response.output_text` 包含 `AIH_AWS_CODEX_NONSTREAM_REDEPLOY_9527_OK_20260627`。
@@ -205,7 +206,7 @@
 - 当前部署纪律已经改为单一 `/home/ubuntu/aih-fabric-current`，后续不得再用 vNN / isolated 目录作为默认验证路径。
 - Registry/agent/本机 TCP echo 的历史证据在 AWS v16 上成立；真实 outbound relay 管理链路、sessions RPC smoke、`/v1/responses` non-stream/stream、native relay Codex TUI session cleanup、以及 broker proxy -> relay -> native Codex session 已在 AWS current 默认 `9527` 上验证成立；节点长期在线前置诊断和双服务 supervisor 汇总的历史证据在 AWS v19 上成立；面向用户的统一 `node service status` 入口历史证据在 AWS v20 上成立；受监督 `node service install` / `uninstall` dry-run 产品入口历史证据在 AWS v21/v22 上成立；Server Profile bundle 的本地迁移入口已成立；非 AWS 服务器只保留历史证据，不再继续验证。
 - Raw public HTTP ingress 仍不成立，产品默认路线不能依赖开放高端口。
-- 小水管部署路径已经从“每个 isolated deploy 都重传源码”推进到“稳定 source artifact 远端缓存复用”；受监督 node agent 已有统一 status、install dry-run 和 uninstall dry-run 入口；多客户端 Server Profile 已有无 secret bundle 迁移入口；outbound broker routing 已完成本地真实 socket 闭环、AWS current 默认端口真实 native session 闭环、Broker Profile 产品入口、broker link 断开诊断和同 `serverId` 恢复、以及 Broker Profile 的真实浏览器 Server Setup smoke。下一步应该补真实可达 broker endpoint 的跨主机 outbound-only 验收；不再卡 AWS 高端口 public ingress。
+- 小水管部署路径已经从“每个 isolated deploy 都重传源码”推进到“稳定 source artifact 远端缓存复用”；受监督 node agent 已有统一 status、install dry-run 和 uninstall dry-run 入口；多客户端 Server Profile 已有无 secret bundle 迁移入口；outbound broker routing 已完成本地真实 socket 闭环、AWS current 默认端口真实 native session 闭环、Broker Profile 产品入口、broker link 断开诊断和同 `serverId` 恢复、Broker Profile 的真实浏览器 Server Setup smoke，以及真实可达 AWS broker endpoint 的跨主机 outbound-only Server Profile/node relay/Codex native session 验收。下一步进入 M3 Role Registry 产品闭环；不再卡 AWS 高端口 public ingress。
 
 ## 2026-06-26
 

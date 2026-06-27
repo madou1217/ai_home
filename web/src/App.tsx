@@ -3,10 +3,13 @@ import { ConfigProvider, Grid, Layout } from 'antd';
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
+  ApartmentOutlined,
   BarChartOutlined,
+  CloudServerOutlined,
   ClusterOutlined,
   DashboardOutlined,
   DatabaseOutlined,
+  DesktopOutlined,
   TeamOutlined,
   MessageOutlined,
   SettingOutlined,
@@ -59,6 +62,9 @@ const Settings = lazyWithChunkRecovery(() => import('@/pages/Settings'));
 const FabricServerSetup = lazyWithChunkRecovery(() => import('@/pages/FabricServerSetup'));
 const FabricNodes = lazyWithChunkRecovery(() => import('@/pages/FabricNodes'));
 const FabricWebrtcLab = lazyWithChunkRecovery(() => import('@/pages/FabricWebrtcLab'));
+const FabricControlPlanes = lazyWithChunkRecovery(() => import('@/pages/FabricControlPlanes'));
+const FabricRemoteNodes = lazyWithChunkRecovery(() => import('@/pages/FabricRemoteNodes'));
+const FabricSshHosts = lazyWithChunkRecovery(() => import('@/pages/FabricSshHosts'));
 
 interface NavItem {
   key: string;
@@ -66,6 +72,7 @@ interface NavItem {
   label: string;
   mobileLabel: string;
   primary?: boolean;
+  children?: NavItem[];
 }
 
 const NAV_ITEMS: NavItem[] = [
@@ -106,8 +113,41 @@ const NAV_ITEMS: NavItem[] = [
   {
     key: '/fabric/nodes',
     icon: <ClusterOutlined />,
-    label: 'Fabric Nodes',
-    mobileLabel: '节点'
+    label: 'Fabric',
+    mobileLabel: 'Fabric',
+    primary: true,
+    children: [
+      {
+        key: '/fabric/control-planes',
+        icon: <CloudServerOutlined />,
+        label: '控制面',
+        mobileLabel: '控制'
+      },
+      {
+        key: '/fabric/remote-nodes',
+        icon: <ApartmentOutlined />,
+        label: '远程节点',
+        mobileLabel: '节点'
+      },
+      {
+        key: '/fabric/ssh-hosts',
+        icon: <DesktopOutlined />,
+        label: 'SSH 开发机',
+        mobileLabel: 'SSH'
+      },
+      {
+        key: '/fabric/nodes',
+        icon: <ClusterOutlined />,
+        label: '节点健康',
+        mobileLabel: '健康'
+      },
+      {
+        key: '/fabric/webrtc-lab',
+        icon: <ClusterOutlined />,
+        label: 'WebRTC Lab',
+        mobileLabel: 'WebRTC'
+      }
+    ]
   },
   {
     key: '/settings',
@@ -118,15 +158,25 @@ const NAV_ITEMS: NavItem[] = [
   }
 ];
 
+function flattenNavItems(items: NavItem[]): NavItem[] {
+  return items.flatMap((item) => [item, ...flattenNavItems(item.children || [])]);
+}
+
+function isNavItemSelected(item: NavItem, selectedKey: string): boolean {
+  return item.key === selectedKey || Boolean(item.children?.some((child) => isNavItemSelected(child, selectedKey)));
+}
+
 function resolveSelectedKey(pathname: string) {
-  if (pathname === '/server-setup') return '/settings';
-  const match = NAV_ITEMS.find((item) => (
+  if (pathname === '/server-setup') return '/fabric/control-planes';
+  const allNavItems = flattenNavItems(NAV_ITEMS);
+  const match = allNavItems.find((item) => (
     item.key === '/'
       ? pathname === '/'
       : pathname === item.key || pathname.startsWith(`${item.key}/`)
   ));
 
-  if (!match && pathname.startsWith('/fabric/')) return '/settings';
+  if (!match && pathname === '/fabric') return '/fabric/nodes';
+  if (!match && pathname.startsWith('/fabric/')) return '/fabric/nodes';
   return match?.key || '/';
 }
 
@@ -142,7 +192,7 @@ function AppContent() {
   );
   const isMobile = !screens.md;
   const selectedKey = resolveSelectedKey(location.pathname);
-  const selectedNavItem = NAV_ITEMS.find((item) => item.key === selectedKey);
+  const selectedNavItem = flattenNavItems(NAV_ITEMS).find((item) => item.key === selectedKey);
   const primaryNavItems = NAV_ITEMS.filter((item) => item.primary);
   const mobilePageTitle = selectedNavItem?.label || NAV_ITEMS[0].label;
   const isChat = location.pathname === '/chat';
@@ -218,19 +268,40 @@ function AppContent() {
             <nav className="app-nav-stack">
               <div className="app-nav-section">工作区</div>
               {NAV_ITEMS.map((item) => {
-                const active = selectedKey === item.key;
+                const active = isNavItemSelected(item, selectedKey);
                 return (
-                  <button
-                    key={item.key}
-                    type="button"
-                    onClick={() => handleNavigate(item.key)}
-                    className={`app-nav-item${active ? ' app-nav-item--active' : ''}`}
-                    aria-current={active ? 'page' : undefined}
-                  >
-                    <span className="app-nav-icon">{item.icon}</span>
-                    <span className="app-nav-label">{item.label}</span>
-                    <span className="app-nav-signal" aria-hidden="true" />
-                  </button>
+                  <div className="app-nav-group" key={item.key}>
+                    <button
+                      type="button"
+                      onClick={() => handleNavigate(item.key)}
+                      className={`app-nav-item${active ? ' app-nav-item--active' : ''}${item.children ? ' app-nav-item--parent' : ''}`}
+                      aria-current={selectedKey === item.key ? 'page' : undefined}
+                      aria-expanded={item.children ? active : undefined}
+                    >
+                      <span className="app-nav-icon">{item.icon}</span>
+                      <span className="app-nav-label">{item.label}</span>
+                      <span className="app-nav-signal" aria-hidden="true" />
+                    </button>
+                    {item.children && active ? (
+                      <div className="app-nav-substack" aria-label={`${item.label} 子菜单`}>
+                        {item.children.map((child) => {
+                          const childActive = selectedKey === child.key;
+                          return (
+                            <button
+                              key={child.key}
+                              type="button"
+                              onClick={() => handleNavigate(child.key)}
+                              className={`app-nav-subitem${childActive ? ' app-nav-subitem--active' : ''}`}
+                              aria-current={childActive ? 'page' : undefined}
+                            >
+                              <span className="app-nav-subicon">{child.icon}</span>
+                              <span className="app-nav-label">{child.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
                 );
               })}
             </nav>
@@ -283,6 +354,10 @@ function AppContent() {
                   <Route path="/accounts/:provider/:accountId/models" element={<Models />} />
                   <Route path="/settings" element={<Settings />} />
                   <Route path="/server-setup" element={<FabricServerSetup />} />
+                  <Route path="/fabric" element={<Navigate to="/fabric/nodes" replace />} />
+                  <Route path="/fabric/control-planes" element={<FabricControlPlanes />} />
+                  <Route path="/fabric/remote-nodes" element={<FabricRemoteNodes />} />
+                  <Route path="/fabric/ssh-hosts" element={<FabricSshHosts />} />
                   <Route path="/fabric/nodes" element={<FabricNodes />} />
                   <Route path="/fabric/webrtc-lab" element={<FabricWebrtcLab />} />
                   <Route path="*" element={<Navigate to="/" replace />} />
@@ -296,7 +371,7 @@ function AppContent() {
       {isMobile ? (
         <nav className="app-mobile-nav" aria-label="主导航">
           {primaryNavItems.map((item) => {
-            const active = selectedKey === item.key;
+            const active = isNavItemSelected(item, selectedKey);
             return (
               <button
                 key={item.key}

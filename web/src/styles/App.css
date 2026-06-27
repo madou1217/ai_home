@@ -200,6 +200,17 @@ button {
     transform var(--app-motion-fast) var(--app-ease);
 }
 
+.app-nav-group {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.app-nav-item--parent {
+  min-height: 44px;
+}
+
 .app-nav-item:hover,
 .app-nav-item:focus-visible {
   border-color: var(--app-border);
@@ -239,6 +250,60 @@ button {
 .app-nav-label {
   font-size: 13px;
   font-weight: 800;
+}
+
+.app-nav-substack {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+  padding-left: 18px;
+}
+
+.app-nav-subitem {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  border: 1px solid transparent;
+  border-radius: var(--app-radius-sm);
+  background: transparent;
+  color: var(--app-muted-strong);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    background var(--app-motion) var(--app-ease),
+    border-color var(--app-motion) var(--app-ease),
+    color var(--app-motion) var(--app-ease),
+    transform var(--app-motion-fast) var(--app-ease);
+}
+
+.app-nav-subitem:hover,
+.app-nav-subitem:focus-visible {
+  border-color: var(--app-border);
+  background: var(--app-surface-muted);
+  color: var(--app-heading);
+  outline: none;
+}
+
+.app-nav-subitem:active {
+  transform: scale(0.98);
+}
+
+.app-nav-subitem--active {
+  border-color: var(--app-border-strong);
+  background: var(--app-primary-soft);
+  color: var(--app-heading);
+}
+
+.app-nav-subicon {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  color: inherit;
+  font-size: 14px;
 }
 
 .app-nav-signal {
@@ -386,7 +451,7 @@ button {
   left: 0;
   z-index: 30;
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(52px, 1fr));
   width: 100dvw;
   height: calc(var(--app-mobile-nav-height) + env(safe-area-inset-bottom));
   padding: 8px 10px calc(8px + env(safe-area-inset-bottom));

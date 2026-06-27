@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import type { ComponentProps } from 'react';
+import type { ComponentProps, ReactNode } from 'react';
 import type { FormInstance } from 'antd';
 import { Form, InputNumber, Button, Input, message, Space, Switch, Alert, Tabs, Select, Tag, Popconfirm, QRCode } from 'antd';
 import { CopyOutlined, DeleteOutlined, FileTextOutlined, LinkOutlined, PlusOutlined, ReloadOutlined, SaveOutlined, SearchOutlined } from '@ant-design/icons';
@@ -646,14 +646,58 @@ const getCurrentSearch = () => {
   return typeof window === 'undefined' ? '' : window.location.search;
 };
 
-  const getInitialSettingsTab = () => {
-    if (typeof window === 'undefined') return 'basic';
-    const params = new URLSearchParams(window.location.search);
-    const tab = String(params.get('tab') || '').trim();
-    if (tab === 'remote-nodes') return 'nodes';
-    if (tab === 'control-planes' || tab === 'nodes' || tab === 'aliases') return tab;
-    return parseControlPlanePairIntentFromSearch(window.location.search).pairUrlOrCode ? 'control-planes' : 'basic';
-  };
+export type SettingsSectionKey = 'basic' | 'aliases' | 'control-planes' | 'nodes' | 'ssh-hosts';
+
+interface SettingsProps {
+  section?: SettingsSectionKey;
+}
+
+interface SettingsSectionItem {
+  key: SettingsSectionKey;
+  label: string;
+  forceRender?: boolean;
+  children: ReactNode;
+}
+
+const SETTINGS_PAGE_META = {
+  settings: {
+    title: '设置',
+    eyebrow: '配置',
+    description: '管理 server、额度刷新和模型别名。'
+  },
+  basic: {
+    title: '基础设置',
+    eyebrow: '配置',
+    description: '管理 server、额度刷新和本地服务参数。'
+  },
+  aliases: {
+    title: '模型别名',
+    eyebrow: '配置',
+    description: '管理模型展示、路由和别名配置。'
+  },
+  'control-planes': {
+    title: '控制面',
+    eyebrow: 'Fabric',
+    description: '管理 server profile、设备配对和当前 Control Plane。'
+  },
+  nodes: {
+    title: '远程节点',
+    eyebrow: 'Fabric',
+    description: '生成加入命令，管理远程节点和 relay 连接状态。'
+  },
+  'ssh-hosts': {
+    title: 'SSH 开发机',
+    eyebrow: 'Fabric',
+    description: '管理 SSH 连接和可用于远端开发的工作区。'
+  }
+} as const;
+
+const getInitialSettingsTab = () => {
+  if (typeof window === 'undefined') return 'basic';
+  const params = new URLSearchParams(window.location.search);
+  const tab = String(params.get('tab') || '').trim();
+  return tab === 'aliases' ? 'aliases' : 'basic';
+};
 
 const resolveHealthyProfileState = (profile: ControlPlaneProfile): ControlPlaneProfileState => {
   if (profile.state === 'pairing' || profile.state === 'recovery' || profile.state === 'revoked') {
@@ -682,7 +726,7 @@ const getInitialActiveControlPlaneId = () => (
   resolveStoredActiveControlPlaneProfile(listControlPlaneProfiles(), getActiveControlPlaneProfileId()).profileId
 );
 
-const Settings = () => {
+const Settings = ({ section }: SettingsProps) => {
   const [usageForm] = Form.useForm();
   const [serverForm] = Form.useForm();
   const [controlPlaneForm] = Form.useForm();
@@ -2886,54 +2930,77 @@ const Settings = () => {
     </div>
   );
 
+  const aliasSettingsContent = (
+    <section className="settings-panel settings-panel--aliases">
+      <ModelAliases />
+    </section>
+  );
+
+  const sshHostsContent = (
+    <section className="settings-panel settings-panel--ssh-hosts">
+      <SshHostsPanel />
+    </section>
+  );
+
+  const sectionItems: SettingsSectionItem[] = [
+    {
+      key: 'basic',
+      label: '基础设置',
+      forceRender: true,
+      children: basicSettingsContent,
+    },
+    {
+      key: 'aliases',
+      label: '模型别名',
+      children: aliasSettingsContent,
+    },
+    {
+      key: 'control-planes',
+      label: '控制面',
+      forceRender: true,
+      children: controlPlanesContent,
+    },
+    {
+      key: 'nodes',
+      label: '远程节点',
+      forceRender: true,
+      children: remoteNodesContent,
+    },
+    {
+      key: 'ssh-hosts',
+      label: 'SSH 开发机',
+      children: sshHostsContent,
+    },
+  ];
+  const standaloneSection = section ? sectionItems.find((item) => item.key === section) : null;
+
+  if (standaloneSection) {
+    const meta = SETTINGS_PAGE_META[standaloneSection.key];
+    return (
+      <div className="settings-page settings-page--standalone animate__animated animate__fadeIn animate__faster">
+        <PageHero
+          title={meta.title}
+          eyebrow={meta.eyebrow}
+          description={meta.description}
+        />
+        <div className="settings-section-content">
+          {standaloneSection.children}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="settings-page animate__animated animate__fadeIn animate__faster">
       <PageHero
-        title="设置"
-        eyebrow="配置"
-        description="管理 server、额度刷新和模型别名。"
+        title={SETTINGS_PAGE_META.settings.title}
+        eyebrow={SETTINGS_PAGE_META.settings.eyebrow}
+        description={SETTINGS_PAGE_META.settings.description}
       />
       <Tabs
         className="settings-tabs"
         defaultActiveKey={getInitialSettingsTab()}
-        items={[
-          {
-            key: 'basic',
-            label: '基础设置',
-            forceRender: true,
-            children: basicSettingsContent,
-          },
-          {
-            key: 'aliases',
-            label: '模型别名',
-            children: (
-              <section className="settings-panel settings-panel--aliases">
-                <ModelAliases />
-              </section>
-            ),
-          },
-          {
-            key: 'control-planes',
-            label: '控制面',
-            forceRender: true,
-            children: controlPlanesContent,
-          },
-          {
-            key: 'nodes',
-            label: '远程节点',
-            forceRender: true,
-            children: remoteNodesContent,
-          },
-          {
-            key: 'ssh-hosts',
-            label: 'SSH 开发机',
-            children: (
-              <section className="settings-panel settings-panel--ssh-hosts">
-                <SshHostsPanel />
-              </section>
-            ),
-          },
-        ]}
+        items={sectionItems.filter((item) => item.key === 'basic' || item.key === 'aliases')}
       />
     </div>
   );

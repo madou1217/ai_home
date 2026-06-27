@@ -615,7 +615,7 @@ export default function FabricServerSetup() {
             );
           })}
         </div>
-        <a className="fabric-server-setup-advanced-link" href="/ui/settings?tab=control-planes">
+        <a className="fabric-server-setup-advanced-link" href="/ui/fabric/control-planes">
           打开高级控制面设置
         </a>
         <a className="fabric-server-setup-advanced-link" href="/ui/fabric/webrtc-lab">

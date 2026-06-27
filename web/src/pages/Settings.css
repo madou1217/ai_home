@@ -4,6 +4,14 @@
   gap: 18px;
 }
 
+.settings-page--standalone {
+  min-width: 0;
+}
+
+.settings-section-content {
+  min-width: 0;
+}
+
 .settings-panel {
   border: 1px solid var(--app-border);
   border-radius: var(--app-radius);

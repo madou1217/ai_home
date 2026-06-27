@@ -53,6 +53,10 @@ export function isFabricRoute(pathname: string) {
 export function isFabricProfileProtectedPath(pathname: string) {
   const path = normalizePathname(pathname);
   if (!isFabricRoute(path)) return false;
+  if (path === '/fabric') return false;
+  if (path === '/fabric/control-planes') return false;
+  if (path === '/fabric/remote-nodes') return false;
+  if (path === '/fabric/ssh-hosts') return false;
   if (path === '/fabric/nodes') return false;
   if (path === '/fabric/webrtc-lab') return false;
   return true;

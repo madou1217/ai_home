@@ -17,7 +17,7 @@ import type { ControlPlaneProfile } from '@/types';
 import styles from './ControlPlaneProfileSelect.module.css';
 
 type ControlPlaneProfileSelectSize = 'default' | 'compact';
-const DEFAULT_MANAGE_HREF = '/ui/settings?tab=control-planes';
+const DEFAULT_MANAGE_HREF = '/ui/fabric/control-planes';
 
 interface ControlPlaneProfileSelectProps {
   id?: string;

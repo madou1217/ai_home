@@ -640,6 +640,27 @@ test('server node-rpc starts native session through injectable runtime service',
   assert.equal(input.result.accepted, true);
   assert.equal(observed.input.input, '/status');
 
+  const commandResponse = await fetch(`${controlEndpoint}/v0/node-rpc/session-command`, {
+    method: 'POST',
+    headers: {
+      authorization: 'Bearer node-secret',
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({
+      type: 'slash',
+      sessionId: 'run-test-1',
+      command: '/status',
+      idempotencyKey: 'idem-http-command'
+    })
+  });
+  assert.equal(commandResponse.status, 200);
+  const command = await commandResponse.json();
+  assert.equal(command.rpc, 'node.session_command');
+  assert.equal(command.result.accepted, true);
+  assert.equal(command.result.type, 'slash');
+  assert.equal(command.result.idempotencyKey, 'idem-http-command');
+  assert.equal(observed.input.input, '/status');
+
   const abortResponse = await fetch(`${controlEndpoint}/v0/node-rpc/session-run-abort`, {
     method: 'POST',
     headers: {
@@ -716,6 +737,24 @@ test('server node-rpc device node session start and run controls forward through
           }
         };
       }
+      if (input.pathname === '/v0/node-rpc/session-command') {
+        return {
+          ok: true,
+          status: 200,
+          payload: {
+            ok: true,
+            rpc: 'node.session_command',
+            result: {
+              accepted: true,
+              commandId: 'idem-remote-command',
+              idempotencyKey: 'idem-remote-command',
+              type: 'message',
+              sessionId: 'run-remote-1',
+              runId: 'run-remote-1'
+            }
+          }
+        };
+      }
       if (input.pathname === '/v0/node-rpc/session-run-abort') {
         return {
           ok: true,
@@ -779,6 +818,26 @@ test('server node-rpc device node session start and run controls forward through
   assert.equal(input.rpc, 'control_plane.device.node_session_run_input');
   assert.equal(input.result.accepted, true);
 
+  const commandResponse = await fetch(`${controlEndpoint}/v0/node-rpc/device-node-session-command`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${paired.token}`,
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({
+      nodeId: 'home-win',
+      type: 'message',
+      sessionId: 'run-remote-1',
+      text: 'remote command',
+      idempotencyKey: 'idem-remote-command'
+    })
+  });
+  assert.equal(commandResponse.status, 200);
+  const command = await commandResponse.json();
+  assert.equal(command.rpc, 'control_plane.device.node_session_command');
+  assert.equal(command.result.accepted, true);
+  assert.equal(command.result.type, 'message');
+
   const abortResponse = await fetch(`${controlEndpoint}/v0/node-rpc/device-node-session-run-abort`, {
     method: 'POST',
     headers: {
@@ -799,11 +858,14 @@ test('server node-rpc device node session start and run controls forward through
     '/v0/node-rpc/session-start',
     '/v0/node-rpc/session-run-events?runId=run-remote-1&cursor=0',
     '/v0/node-rpc/session-run-input',
+    '/v0/node-rpc/session-command',
     '/v0/node-rpc/session-run-abort'
   ]);
   assert.equal(JSON.parse(forwarded[0].body).prompt, 'remote start');
   assert.equal(JSON.parse(forwarded[2].body).input, '/status');
-  assert.equal(JSON.parse(forwarded[3].body).runId, 'run-remote-1');
+  assert.equal(JSON.parse(forwarded[3].body).text, 'remote command');
+  assert.equal(JSON.parse(forwarded[3].body).idempotencyKey, 'idem-remote-command');
+  assert.equal(JSON.parse(forwarded[4].body).runId, 'run-remote-1');
 });
 
 test('server node-rpc device sessions uses injected project snapshot loader', async (t) => {

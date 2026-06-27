@@ -158,6 +158,7 @@ test('broker route allowlist stays narrow', () => {
   assert.equal(isFabricBrokerRouteAllowed('GET', '/v0/node-rpc/device-node-session-catalog'), true);
   assert.equal(isFabricBrokerRouteAllowed('POST', '/v0/node-rpc/device-node-session-start'), true);
   assert.equal(isFabricBrokerRouteAllowed('POST', '/v0/node-rpc/device-node-session-attach'), true);
+  assert.equal(isFabricBrokerRouteAllowed('POST', '/v0/node-rpc/device-node-session-command'), true);
   assert.equal(isFabricBrokerRouteAllowed('GET', '/v0/management/accounts'), false);
   assert.equal(isFabricBrokerRouteAllowed('POST', '/v1/responses'), false);
   assert.equal(isFabricBrokerRouteAllowed('DELETE', '/v0/fabric/registry/nodes'), false);
@@ -221,6 +222,18 @@ test('broker connect proxies real HTTP requests over real WebSocket sockets', as
         rpc: 'control_plane.device.node_session_start',
         result: {
           runId: 'broker-run-1',
+          body: JSON.parse(body.toString('utf8')),
+          authorization: req.headers.authorization || ''
+        }
+      });
+      return;
+    }
+    if (req.url === '/v0/node-rpc/device-node-session-command') {
+      writeJson(res, 200, {
+        ok: true,
+        rpc: 'control_plane.device.node_session_command',
+        result: {
+          accepted: true,
           body: JSON.parse(body.toString('utf8')),
           authorization: req.headers.authorization || ''
         }
@@ -328,6 +341,29 @@ test('broker connect proxies real HTTP requests over real WebSocket sockets', as
   assert.equal(sessionStartPayload.result.authorization, 'Bearer session-device-token');
   const sessionStartRequest = localRequests.find((entry) => entry.url === '/v0/node-rpc/device-node-session-start');
   assert.equal(sessionStartRequest.authorization, 'Bearer session-device-token');
+
+  const sessionCommand = await fetch(`http://127.0.0.1:${brokerAddress.port}/v0/fabric/broker/servers/home-server/proxy/v0/node-rpc/device-node-session-command`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: 'Bearer session-device-token'
+    },
+    body: JSON.stringify({
+      nodeId: 'home-node',
+      type: 'message',
+      sessionId: 'broker-run-1',
+      text: 'broker command',
+      idempotencyKey: 'idem-broker-command'
+    })
+  });
+  assert.equal(sessionCommand.status, 200);
+  const sessionCommandPayload = await sessionCommand.json();
+  assert.equal(sessionCommandPayload.result.accepted, true);
+  assert.equal(sessionCommandPayload.result.body.type, 'message');
+  assert.equal(sessionCommandPayload.result.body.idempotencyKey, 'idem-broker-command');
+  assert.equal(sessionCommandPayload.result.authorization, 'Bearer session-device-token');
+  const sessionCommandRequest = localRequests.find((entry) => entry.url === '/v0/node-rpc/device-node-session-command');
+  assert.equal(sessionCommandRequest.authorization, 'Bearer session-device-token');
 
   brokerHandle.close();
   await waitForCondition(() => {

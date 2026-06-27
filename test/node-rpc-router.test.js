@@ -138,6 +138,15 @@ function createDeps(overrides = {}) {
   if (typeof overrides.readNativeSessionRunEvents === 'function') {
     deps.readNativeSessionRunEvents = overrides.readNativeSessionRunEvents;
   }
+  if (typeof overrides.writeNativeSessionRunInput === 'function') {
+    deps.writeNativeSessionRunInput = overrides.writeNativeSessionRunInput;
+  }
+  if (typeof overrides.abortNativeSessionRun === 'function') {
+    deps.abortNativeSessionRun = overrides.abortNativeSessionRun;
+  }
+  if (typeof overrides.writeDeviceSessionInput === 'function') {
+    deps.writeDeviceSessionInput = overrides.writeDeviceSessionInput;
+  }
   if (typeof overrides.findNativeChatRunBySession === 'function') {
     deps.findNativeChatRunBySession = overrides.findNativeChatRunBySession;
   }
@@ -376,6 +385,7 @@ test('node rpc descriptor is public and does not leak configured keys', async ()
   assert.equal(payload.result.auth.clientKeyConfigured, true);
   assert.ok(payload.result.capabilities.nodeRpc.includes('session-messages'));
   assert.ok(payload.result.capabilities.nodeRpc.includes('session-stream'));
+  assert.ok(payload.result.capabilities.nodeRpc.includes('session-command'));
   assert.ok(payload.result.capabilities.nodeRpc.includes('join'));
   assert.ok(payload.result.capabilities.nodeRpc.includes('device-pair'));
   assert.ok(payload.result.capabilities.nodeRpc.includes('device-status'));
@@ -387,6 +397,7 @@ test('node rpc descriptor is public and does not leak configured keys', async ()
   assert.ok(payload.result.capabilities.nodeRpc.includes('device-node-session-messages'));
   assert.ok(payload.result.capabilities.nodeRpc.includes('device-node-session-stream'));
   assert.ok(payload.result.capabilities.nodeRpc.includes('device-node-session-input'));
+  assert.ok(payload.result.capabilities.nodeRpc.includes('device-node-session-command'));
   assert.ok(payload.result.capabilities.nodeRpc.includes('device-nodes'));
   assert.equal(payload.result.capabilities.devicePairing, true);
   assert.ok(payload.result.capabilities.transports.includes('relay'));
@@ -1692,6 +1703,92 @@ test('node rpc session attach returns active run snapshot with management auth',
   assert.ok(payload.result.allowedCommands.includes('stop'));
 });
 
+test('node rpc session command accepts canonical message envelope with management auth', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-node-session-command-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  const res = createResCapture();
+  const writes = [];
+
+  const handled = await handleNodeRpcRequest({
+    method: 'POST',
+    pathname: '/v0/node-rpc/session-command',
+    url: new URL('https://node.local/v0/node-rpc/session-command'),
+    req: { headers: { authorization: 'Bearer management-secret' } },
+    res,
+    options: {},
+    state: {},
+    requiredManagementKey: 'management-secret',
+    deps: createDeps({
+      aiHomeDir,
+      body: Buffer.from(JSON.stringify({
+        type: 'message',
+        sessionId: 'run-command-1',
+        commandId: 'cmd-command-1',
+        idempotencyKey: 'idem-command-1',
+        text: 'do not echo this'
+      })),
+      writeNativeSessionRunInput(payload) {
+        writes.push(payload);
+        return { accepted: true, runId: payload.runId };
+      },
+      readNativeSessionRunEvents: () => ({ cursor: 9, events: [] })
+    })
+  });
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(writes, [{
+    runId: 'run-command-1',
+    input: 'do not echo this',
+    appendNewline: true
+  }]);
+  const payload = JSON.parse(res.body);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.rpc, 'node.session_command');
+  assert.equal(payload.result.accepted, true);
+  assert.equal(payload.result.commandId, 'cmd-command-1');
+  assert.equal(payload.result.idempotencyKey, 'idem-command-1');
+  assert.equal(payload.result.type, 'message');
+  assert.equal(payload.result.sessionId, 'run-command-1');
+  assert.equal(payload.result.runId, 'run-command-1');
+  assert.equal(payload.result.cursor, 9);
+  assert.doesNotMatch(res.body, /do not echo this/);
+  assert.doesNotMatch(res.body, /management-secret/);
+});
+
+test('node rpc session command rejects slash carrying approval id', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-node-session-command-invalid-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  const res = createResCapture();
+
+  const handled = await handleNodeRpcRequest({
+    method: 'POST',
+    pathname: '/v0/node-rpc/session-command',
+    url: new URL('https://node.local/v0/node-rpc/session-command'),
+    req: { headers: { authorization: 'Bearer management-secret' } },
+    res,
+    options: {},
+    state: {},
+    requiredManagementKey: 'management-secret',
+    deps: createDeps({
+      aiHomeDir,
+      body: Buffer.from(JSON.stringify({
+        type: 'slash',
+        sessionId: 'run-command-1',
+        command: '/status',
+        approvalId: 'codex-plan-active',
+        idempotencyKey: 'idem-invalid-slash'
+      }))
+    })
+  });
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 400);
+  const payload = JSON.parse(res.body);
+  assert.equal(payload.ok, false);
+  assert.equal(payload.error, 'slash_command_must_not_carry_approval_id');
+});
+
 test('node rpc device node sessions proxies safe list through scoped device bearer', async (t) => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-device-node-sessions-'));
   t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
@@ -1901,6 +1998,97 @@ test('node rpc device node session catalog and attach proxy scoped contract', as
   assert.equal(JSON.parse(forwarded[1].body).sessionId, 'run-remote-1');
   assert.doesNotMatch(catalogRes.body + attachRes.body, new RegExp(paired.token));
   assert.doesNotMatch(catalogRes.body + attachRes.body, /management-secret|ignored/);
+});
+
+test('node rpc device node session command proxies canonical envelope', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-device-node-session-command-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+
+  const invite = createControlPlaneDeviceInvite({
+    name: 'Phone',
+    controlEndpoint: 'https://control.example.com',
+    scopes: ['nodes:read', 'sessions:read', 'sessions:write']
+  }, { fs, aiHomeDir });
+  const paired = consumeControlPlaneDeviceInvite({
+    code: invite.code,
+    device: { name: 'Phone', platform: 'ios' }
+  }, { fs, aiHomeDir });
+  upsertRemoteNode({
+    id: 'office-pc',
+    name: 'Office PC',
+    capabilities: ['status', 'sessions'],
+    preferredTransports: ['relay']
+  }, { fs, aiHomeDir });
+
+  let observedInput = null;
+  const res = createResCapture();
+  const handled = await handleNodeRpcRequest({
+    method: 'POST',
+    pathname: '/v0/node-rpc/device-node-session-command',
+    url: new URL('https://control.example.com/v0/node-rpc/device-node-session-command'),
+    req: { headers: { authorization: `Bearer ${paired.token}` } },
+    res,
+    options: {},
+    state: {},
+    requiredManagementKey: 'management-secret',
+    deps: createDeps({
+      aiHomeDir,
+      body: Buffer.from(JSON.stringify({
+        nodeId: 'office-pc',
+        ignored: 'no',
+        type: 'slash',
+        sessionId: 'run-remote-1',
+        command: '/status',
+        args: '--json',
+        idempotencyKey: 'idem-remote-command'
+      })),
+      requestRemoteManagement: async (input) => {
+        observedInput = input;
+        return {
+          status: 200,
+          ok: true,
+          payload: {
+            ok: true,
+            rpc: 'node.session_command',
+            result: {
+              accepted: true,
+              commandId: 'idem-remote-command',
+              idempotencyKey: 'idem-remote-command',
+              type: 'slash',
+              sessionId: 'run-remote-1',
+              runId: 'run-remote-1',
+              command: '/status',
+              cursor: 6
+            }
+          }
+        };
+      }
+    })
+  });
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 200);
+  assert.equal(observedInput.node.id, 'office-pc');
+  assert.equal(observedInput.pathname, '/v0/node-rpc/session-command');
+  assert.equal(observedInput.method, 'POST');
+  assert.equal(observedInput.rpc, 'control_plane.device.node_session_command');
+  assert.equal(observedInput.scope, 'sessions:write');
+  assert.deepEqual(JSON.parse(observedInput.body), {
+    type: 'slash',
+    sessionId: 'run-remote-1',
+    commandId: 'idem-remote-command',
+    idempotencyKey: 'idem-remote-command',
+    command: '/status',
+    args: '--json'
+  });
+  const payload = JSON.parse(res.body);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.rpc, 'control_plane.device.node_session_command');
+  assert.equal(payload.nodeId, 'office-pc');
+  assert.equal(payload.result.type, 'slash');
+  assert.equal(payload.result.cursor, 6);
+  assert.doesNotMatch(res.body, new RegExp(paired.token));
+  assert.doesNotMatch(res.body, /management-secret|ignored|--json/);
 });
 
 test('node rpc device node sessions authorizes paired tokens before checking node existence', async (t) => {

@@ -648,6 +648,51 @@ test('fetchLocalRelayRequest forwards session catalog and attach contract to loc
   });
   assert.equal(attach.status, 200);
   assert.deepEqual(attach.payload, { ok: true, rpc: 'node.session_attach', result: { sessionId: 'run-1' } });
+
+  const command = await fetchLocalRelayRequest({
+    method: 'POST',
+    pathname: '/v0/node-rpc/session-command',
+    body: JSON.stringify({
+      type: 'message',
+      sessionId: 'run-1',
+      text: 'relay command',
+      idempotencyKey: 'idem-relay-command'
+    }),
+    requestId: 'request-command'
+  }, {
+    localBaseUrl: 'http://127.0.0.1:9527',
+    managementKey: 'node-secret'
+  }, {
+    fetchImpl: async (url, options) => {
+      observed.push({
+        url,
+        method: options.method,
+        authorization: options.headers.authorization,
+        contentType: options.headers['content-type'],
+        body: options.body
+      });
+      return {
+        status: 200,
+        ok: true,
+        text: async () => JSON.stringify({ ok: true, rpc: 'node.session_command', result: { accepted: true } })
+      };
+    }
+  });
+
+  assert.deepEqual(observed[2], {
+    url: 'http://127.0.0.1:9527/v0/node-rpc/session-command',
+    method: 'POST',
+    authorization: 'Bearer node-secret',
+    contentType: 'application/json',
+    body: JSON.stringify({
+      type: 'message',
+      sessionId: 'run-1',
+      text: 'relay command',
+      idempotencyKey: 'idem-relay-command'
+    })
+  });
+  assert.equal(command.status, 200);
+  assert.deepEqual(command.payload, { ok: true, rpc: 'node.session_command', result: { accepted: true } });
 });
 
 test('fetchLocalRelayRequest forwards native session start and run controls to local server', async () => {

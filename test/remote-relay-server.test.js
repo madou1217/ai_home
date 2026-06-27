@@ -392,6 +392,48 @@ test('relay management request allows session catalog and attach routes', async 
   const attachResult = await attachPromise;
   assert.equal(attachResult.ok, true);
   assert.equal(attachResult.payload.rpc, 'node.session_attach');
+
+  const commandFramePromise = readJsonMessage(socket);
+  const commandPromise = requestRemoteManagement({
+    node,
+    transports: [{
+      id: 'catalog-node-relay',
+      nodeId: 'catalog-node',
+      kind: 'relay',
+      endpoint: 'relay://catalog-node',
+      status: 'up',
+      score: 55
+    }],
+    pathname: '/v0/node-rpc/session-command',
+    method: 'POST',
+    body: JSON.stringify({
+      type: 'stop',
+      sessionId: 'run-catalog-1',
+      scope: 'run',
+      idempotencyKey: 'idem-relay-stop'
+    }),
+    audit: false
+  }, {
+    ...deps,
+    relaySessionRegistry: registry,
+    requestRelayManagement
+  });
+
+  const commandFrame = await commandFramePromise;
+  assert.equal(commandFrame.type, 'relay.request');
+  assert.equal(commandFrame.method, 'POST');
+  assert.equal(commandFrame.pathname, '/v0/node-rpc/session-command');
+  assert.equal(JSON.parse(commandFrame.body).idempotencyKey, 'idem-relay-stop');
+  socket.send(JSON.stringify({
+    type: 'relay.response',
+    requestId: commandFrame.requestId,
+    status: 200,
+    ok: true,
+    payload: { ok: true, rpc: 'node.session_command', result: { accepted: true, type: 'stop' } }
+  }));
+  const commandResult = await commandPromise;
+  assert.equal(commandResult.ok, true);
+  assert.equal(commandResult.payload.rpc, 'node.session_command');
 });
 
 test('relay management request allows typed node session input route with body', async (t) => {

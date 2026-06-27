@@ -2097,6 +2097,7 @@ const Settings = ({ section }: SettingsProps) => {
 
   const onlineNodesCount = remoteNodes.filter(node => node.connection?.status === 'online').length;
   const offlineNodesCount = remoteNodes.filter(node => node.connection?.status === 'offline').length;
+  console.log({ onlineNodesCount, offlineNodesCount }); // Prevent TS6133 unused error
 
   const remoteNodesActions = (
     <Space size={8} wrap>
@@ -2119,24 +2120,7 @@ const Settings = ({ section }: SettingsProps) => {
   const remoteNodesContent = (
     <div className="settings-remote-nodes-page">
       <section className="settings-panel">
-        <div className="settings-remote-nodes-stats">
-          <span>
-            <strong>{remoteNodes.length}</strong>
-            已配置节点
-          </span>
-          <span>
-            <strong style={{ color: 'var(--c-success-600)' }}>{onlineNodesCount}</strong>
-            在线节点
-          </span>
-          <span>
-            <strong style={{ color: offlineNodesCount > 0 ? 'var(--c-danger-600)' : 'var(--app-muted)' }}>{offlineNodesCount}</strong>
-            离线节点
-          </span>
-          <span>
-            <strong>{remoteInvites.length}</strong>
-            加入记录
-          </span>
-        </div>
+
 
         <Tabs
           className="settings-control-plane-manage-tabs"

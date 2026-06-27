@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Button, Form, Input, Modal, Tag, Alert, Space, Popconfirm, Select, Breadcrumb, message, Radio, Tabs } from 'antd';
+import { Button, Form, Input, Modal, Tag, Alert, Space, Popconfirm, Select, Breadcrumb, message, Radio, Tabs, Drawer } from 'antd';
 import { ProTable, ModalForm } from '@ant-design/pro-components';
 import { PlusOutlined, EditOutlined, DeleteOutlined, CheckCircleOutlined, ExclamationCircleOutlined, CloseCircleOutlined, LoadingOutlined, FolderOpenOutlined, RightOutlined } from '@ant-design/icons';
 import { sshHostsAPI } from '@/services/api';
@@ -40,6 +40,8 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
   const [connections, setConnections] = useState<SshConnection[]>([]);
   const [activeTab, setActiveTab] = useState<'connections' | 'workspaces'>('connections');
   const [filterConnectionId, setFilterConnectionId] = useState<string>('');
+  const [diagnosticDrawerVisible, setDiagnosticDrawerVisible] = useState(false);
+  const [activeDiagnosticConn, setActiveDiagnosticConn] = useState<SshConnection | null>(null);
   const [workspaces, setWorkspaces] = useState<SshWorkspace[]>([]);
   const [loadingConns, setLoadingConns] = useState(false);
   const [loadingWorkspaces, setLoadingWorkspaces] = useState(false);
@@ -87,7 +89,6 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
       setActions?.(null);
     };
   }, [setActions]);
-  const [expandedRowKeys, setExpandedRowKeys] = useState<React.Key[]>([]);
 
   // 远程目录浏览器状态
   const [dirModalVisible, setDirModalVisible] = useState(false);
@@ -185,10 +186,9 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
   };
 
   const handleTestConnection = async (conn: SshConnection) => {
+    setActiveDiagnosticConn(conn);
+    setDiagnosticDrawerVisible(true);
     setTestStates(prev => ({ ...prev, [conn.id]: { loading: true } }));
-    if (!expandedRowKeys.includes(conn.id)) {
-      setExpandedRowKeys(prev => [...prev, conn.id]);
-    }
 
     try {
       const result = await sshHostsAPI.testConnection({
@@ -507,79 +507,88 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
     }
   ];
 
-  // 展开连接行渲染诊断结果
-  const connExpandedRowRender = (record: SshConnection) => {
-    const state = testStates[record.id];
-    if (!state) return <p style={{ margin: 0, color: '#8c8c8c' }}>点击右侧的“测试连接”按钮以获取远程服务器环境诊断结果。</p>;
-    if (state.loading) return <p style={{ margin: 0 }}><LoadingOutlined /> 正在通过 SSH 连通通道获取远程系统和 NodeJS/Git 等依赖状态，请稍后...</p>;
+  const renderDiagnosticDrawerContent = () => {
+    if (!activeDiagnosticConn) return null;
+    const state = testStates[activeDiagnosticConn.id];
+    if (!state) return <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--app-muted)' }}>等待测试连接...</div>;
+    if (state.loading) return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', flexDirection: 'column', gap: 12 }}>
+        <LoadingOutlined style={{ fontSize: 24, color: 'var(--app-primary)' }} />
+        <span style={{ color: 'var(--app-muted)', fontSize: 13 }}>正在连接远程主机并执行依赖诊断，请稍后...</span>
+      </div>
+    );
 
     const result = state.result;
     if (!result) return null;
 
     return (
-      <div className="ssh-host-diagnostic-detail" style={{ padding: '8px 16px', background: '#fafafa', borderRadius: '4px' }}>
-        <h4 style={{ margin: '0 0 12px 0', fontSize: '14px' }}>系统诊断与依赖项测试结果：</h4>
-        <Space direction="vertical" style={{ width: '100%' }} size="middle">
-          {result.status === 'reachable' && (
-            <Alert
-              message="SSH 连通成功"
-              description={`已成功建立连接。远程主机IP: ${result.target}。`}
-              type="success"
-              showIcon
-            />
-          )}
-          {result.status === 'auth-required' && (
-            <Alert
-              message="地址可达但拒绝访问"
-              description="连接无法通过免密认证。请检查你在当前连接中配置的私钥内容或密码是否正确。若使用 ssh-agent，请确保本地 ssh-agent 正常代理了对应密钥。"
-              type="warning"
-              showIcon
-            />
-          )}
-          {result.status === 'unreachable' && (
-            <Alert
-              message="连接失败"
-              description={result.stderr || "网络不可达，请检查 IP 端口是否开通，或者 SSHD 服务是否启动。"}
-              type="error"
-              showIcon
-            />
-          )}
+      <Space direction="vertical" style={{ width: '100%' }} size="large">
+        {result.status === 'reachable' && (
+          <Alert
+            message="SSH 连通成功"
+            description={`已成功建立连接。远程主机: ${result.target}。`}
+            type="success"
+            showIcon
+          />
+        )}
+        {result.status === 'auth-required' && (
+          <Alert
+            message="拒绝访问 (认证未通过)"
+            description="连接无法通过免密认证。请检查你在当前连接中配置的私钥内容或密码是否正确。若使用 ssh-agent，请确保本地 ssh-agent 正常代理了对应密钥。"
+            type="warning"
+            showIcon
+          />
+        )}
+        {result.status === 'unreachable' && (
+          <Alert
+            message="连接失败"
+            description={result.stderr || "网络不可达，请检查 IP 端口是否开通，或者 SSHD 服务是否启动。"}
+            type="error"
+            showIcon
+          />
+        )}
 
-          {result.status === 'reachable' && (
-            <div className="diagnostic-dependencies" style={{ background: '#fff', padding: '12px', border: '1px solid #f0f0f0', borderRadius: '4px' }}>
-              <div style={{ marginBottom: '8px' }}>
-                <strong style={{ marginRight: '8px' }}>系统类型:</strong>
+        {result.status === 'reachable' && (
+          <div style={{ background: 'var(--app-surface-muted)', padding: '16px', borderRadius: '8px', border: '1px solid var(--app-border)' }}>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 12, color: 'var(--app-muted)', marginBottom: 4 }}>系统平台 / 架构</div>
+              <Space size={6}>
                 <Tag color="blue">{result.platform || '未知'}</Tag>
-                <strong style={{ marginRight: '8px', marginLeft: '16px' }}>架构:</strong>
                 <Tag color="cyan">{result.arch || '未知'}</Tag>
-              </div>
-              <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginTop: '12px' }}>
-                <div>
-                  <span style={{ marginRight: '6px' }}>Node.js:</span>
-                  <Tag color={result.commands?.node ? 'green' : 'red'}>{result.commands?.node ? 'Installed' : 'Missing'}</Tag>
-                </div>
-                <div>
-                  <span style={{ marginRight: '6px' }}>Npm:</span>
-                  <Tag color={result.commands?.npm ? 'green' : 'red'}>{result.commands?.npm ? 'Installed' : 'Missing'}</Tag>
-                </div>
-                <div>
-                  <span style={{ marginRight: '6px' }}>Git:</span>
-                  <Tag color={result.commands?.git ? 'green' : 'red'}>{result.commands?.git ? 'Installed' : 'Missing'}</Tag>
-                </div>
-                <div>
-                  <span style={{ marginRight: '6px' }}>AIH Agent:</span>
-                  <Tag color={result.commands?.aih ? 'green' : 'orange'}>{result.commands?.aih ? 'Installed' : 'Not Required (0-install mode)'}</Tag>
-                </div>
-              </div>
-              {result.recommendation && (
-                <div style={{ marginTop: '12px', color: '#595959', fontSize: '13px' }}>
-                  <strong>诊断建议:</strong> {result.recommendation}
-                </div>
-              )}
+              </Space>
             </div>
-          )}
-        </Space>
-      </div>
+
+            <div>
+              <div style={{ fontSize: 12, color: 'var(--app-muted)', marginBottom: 8 }}>依赖项检测</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Node.js</span>
+                  <Tag color={result.commands?.node ? 'green' : 'red'}>{result.commands?.node ? '已安装' : '未检测到'}</Tag>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Npm</span>
+                  <Tag color={result.commands?.npm ? 'green' : 'red'}>{result.commands?.npm ? '已安装' : '未检测到'}</Tag>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Git</span>
+                  <Tag color={result.commands?.git ? 'green' : 'red'}>{result.commands?.git ? '已安装' : '未检测到'}</Tag>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>AIH Agent</span>
+                  <Tag color={result.commands?.aih ? 'green' : 'orange'}>{result.commands?.aih ? '已配置' : '免装模式'}</Tag>
+                </div>
+              </div>
+            </div>
+
+            {result.recommendation && (
+              <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--app-border)' }}>
+                <div style={{ fontSize: 12, color: 'var(--app-muted)', marginBottom: 4 }}>诊断建议</div>
+                <p style={{ margin: 0, fontSize: 13, color: 'var(--app-text)', lineHeight: 1.5 }}>{result.recommendation}</p>
+              </div>
+            )}
+          </div>
+        )}
+      </Space>
     );
   };
 
@@ -590,22 +599,7 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
   return (
     <div className="ssh-hosts-management-wrapper animate__animated animate__fadeIn animate__faster">
       <section className="settings-panel">
-        <div className="settings-remote-nodes-stats">
-          <span>
-            <strong>{connections.length}</strong>
-            远程连接
-          </span>
-          <span>
-            <strong style={{ color: 'var(--c-success-600)' }}>
-              {Object.values(testStates).filter(s => s.result?.status === 'reachable').length}
-            </strong>
-            在线连接
-          </span>
-          <span>
-            <strong>{workspaces.length}</strong>
-            项目工作空间
-          </span>
-        </div>
+
 
         <Tabs
           activeKey={activeTab}
@@ -624,11 +618,7 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
                   search={false}
                   options={false}
                   pagination={{ pageSize: 8 }}
-                  expandable={{
-                    expandedRowRender: connExpandedRowRender,
-                    expandedRowKeys,
-                    onExpandedRowsChange: (keys) => setExpandedRowKeys(keys as React.Key[])
-                  }}
+
                 />
               )
             },
@@ -841,6 +831,17 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
           </Form.Item>
         </Form>
       </ModalForm>
+
+      <Drawer
+        title={activeDiagnosticConn ? `${activeDiagnosticConn.label} 系统诊断结果` : '系统诊断结果'}
+        placement="right"
+        width={480}
+        onClose={() => setDiagnosticDrawerVisible(false)}
+        open={diagnosticDrawerVisible}
+        destroyOnClose
+      >
+        {renderDiagnosticDrawerContent()}
+      </Drawer>
 
       {/* ==========================================
           五、 远程目录浏览器 Modal

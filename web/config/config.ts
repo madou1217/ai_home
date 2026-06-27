@@ -7,6 +7,13 @@ export default defineConfig({
   model: {},
   initialState: {},
   request: {},
+  proxy: {
+    "/v0": {
+      target: "http://127.0.0.1:9527",
+      changeOrigin: true,
+      ws: true
+    }
+  },
   esbuildMinifyIIFE: true,
   layout: {
     title: "AIH Local Orchestrator",

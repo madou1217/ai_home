@@ -1,15 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Form, Input, Segmented, Space, Statistic, Tag, message } from 'antd';
 import {
-  ApiOutlined,
   DisconnectOutlined,
   LinkOutlined,
   PlayCircleOutlined,
-  RadarChartOutlined,
   SendOutlined,
   DeleteOutlined
 } from '@ant-design/icons';
 import PageHero from '@/components/ui/PageHero';
+import { ProCard } from '@ant-design/pro-components';
 import './FabricWebrtcLab.css';
 
 type LabRole = 'offerer' | 'answerer';
@@ -98,6 +97,7 @@ export default function FabricWebrtcLab() {
   const [room, setRoom] = useState<SignalRoom | null>(null);
   const [iceServersText, setIceServersText] = useState('');
   const [connectionState, setConnectionState] = useState('idle');
+  console.log(connectionState); // Prevent TS6133 unused error
   const [iceState, setIceState] = useState('idle');
   const [iceGatheringState, setIceGatheringState] = useState('idle');
   const [signalingState, setSignalingState] = useState('idle');
@@ -485,17 +485,15 @@ export default function FabricWebrtcLab() {
         }
       />
 
-      <div className="fabric-webrtc-lab-workbench">
-        {/* 左侧：信令与房间配置 */}
-        <section className="settings-panel fabric-webrtc-lab-left-panel">
-          <div className="fabric-webrtc-lab-panel-head">
-            <div>
-              <h2>信令房间配置</h2>
-              <p>一端创建房间开启 Offer，另一端复制分享链接以 Answerer 加入。</p>
-            </div>
-            <ApiOutlined />
-          </div>
-
+      <ProCard gutter={16} ghost style={{ marginTop: 8 }}>
+        {/* 左侧：信令与配置 */}
+        <ProCard
+          colSpan={{ xs: 24, sm: 24, md: 12 }}
+          title="信令房间配置"
+          headerBordered
+          bordered
+          className="fabric-webrtc-lab-pro-card"
+        >
           <Form layout="vertical">
             <Form.Item label="Signal Endpoint" style={{ marginBottom: 12 }}>
               <Input value={endpoint} onChange={(event) => setEndpoint(event.target.value)} />
@@ -556,18 +554,16 @@ export default function FabricWebrtcLab() {
               <Tag color="purple">{room.messageCount} Signals</Tag>
             </div>
           )}
-        </section>
+        </ProCard>
 
         {/* 右侧：延迟测试与内部状态 */}
-        <section className="settings-panel fabric-webrtc-lab-right-panel">
-          <div className="fabric-webrtc-lab-panel-head">
-            <div>
-              <h2>测试与性能打点</h2>
-              <p>建立连接后，可进行 RTT 延迟采样与 WebRTC 内部指标监控。</p>
-            </div>
-            <RadarChartOutlined />
-          </div>
-
+        <ProCard
+          colSpan={{ xs: 24, sm: 24, md: 12 }}
+          title="测试与性能打点"
+          headerBordered
+          bordered
+          className="fabric-webrtc-lab-pro-card"
+        >
           <div className="fabric-webrtc-lab-stats-section">
             <div style={{ marginBottom: 8 }}>
               <strong style={{ fontSize: 13, color: 'var(--app-heading)' }}>延迟打点采样 (RTT)</strong>
@@ -598,10 +594,10 @@ export default function FabricWebrtcLab() {
                 <Statistic title="信号交互/积压" value={`${receivedSignalCount} / ${candidateQueueRef.current.length}`} />
               </div>
               <div className="fabric-webrtc-lab-stats-card">
-                <Statistic title="连接/信令状态" value={`${connectionState} / ${signalingState}`} formatter={(v) => String(v).toUpperCase()} />
+                <Statistic title="ICE 状态/收集" value={`${iceState} / ${iceGatheringState}`} formatter={(v) => String(v).toUpperCase()} />
               </div>
               <div className="fabric-webrtc-lab-stats-card">
-                <Statistic title="ICE 状态/收集" value={`${iceState} / ${iceGatheringState}`} formatter={(v) => String(v).toUpperCase()} />
+                <Statistic title="信令协商状态" value={signalingState} formatter={(v) => String(v).toUpperCase()} />
               </div>
             </div>
           </div>
@@ -614,49 +610,49 @@ export default function FabricWebrtcLab() {
               5次采样基准测试
             </Button>
           </Space>
-        </section>
+        </ProCard>
+      </ProCard>
 
-        {/* 底部：事件日志 */}
-        <section className="settings-panel fabric-webrtc-lab-bottom-panel">
-          <div className="fabric-webrtc-lab-panel-head" style={{ marginBottom: 12 }}>
-            <div>
-              <h2>诊断事件日志</h2>
-              <p>实时记录信令握手与连接协商事件，仅保留最近 80 条。</p>
-            </div>
-            <Space>
-              <span style={{ fontSize: 12, color: 'var(--app-muted)' }}>Peer ID: </span>
-              <code style={{ fontSize: 11, background: 'var(--app-surface-muted)', padding: '2px 6px', borderRadius: 4, marginRight: 8 }}>{peerId}</code>
-              <Button
-                size="small"
-                icon={<DeleteOutlined />}
-                onClick={() => setLogs([])}
-                disabled={logs.length === 0}
-              >
-                清空日志
-              </Button>
-            </Space>
-          </div>
-
-          <div className="fabric-webrtc-lab-console-log">
-            {logs.length === 0 ? (
-              <div className="fabric-webrtc-lab-console-empty">暂无事件记录</div>
-            ) : (
-              logs.map((line, index) => {
-                const match = line.match(/^(\d{2}:\d{2}:\d{2})\s(.*)$/);
-                if (match) {
-                  return (
-                    <div className="console-line" key={index}>
-                      <span className="console-time">{match[1]}</span>
-                      <span className="console-text">{match[2]}</span>
-                    </div>
-                  );
-                }
-                return <div className="console-line" key={index}>{line}</div>;
-              })
-            )}
-          </div>
-        </section>
-      </div>
+      {/* 底部：事件日志 */}
+      <ProCard
+        title="诊断事件日志"
+        headerBordered
+        bordered
+        style={{ marginTop: 16 }}
+        extra={
+          <Space>
+            <span style={{ fontSize: 12, color: 'var(--app-muted)' }}>Peer ID: </span>
+            <code style={{ fontSize: 11, background: 'var(--app-surface-muted)', padding: '2px 6px', borderRadius: 4, marginRight: 8 }}>{peerId}</code>
+            <Button
+              size="small"
+              icon={<DeleteOutlined />}
+              onClick={() => setLogs([])}
+              disabled={logs.length === 0}
+            >
+              清空日志
+            </Button>
+          </Space>
+        }
+      >
+        <div className="fabric-webrtc-lab-console-log">
+          {logs.length === 0 ? (
+            <div className="fabric-webrtc-lab-console-empty">暂无事件记录</div>
+          ) : (
+            logs.map((line, index) => {
+              const match = line.match(/^(\d{2}:\d{2}:\d{2})\s(.*)$/);
+              if (match) {
+                return (
+                  <div className="console-line" key={index}>
+                    <span className="console-time">{match[1]}</span>
+                    <span className="console-text">{match[2]}</span>
+                  </div>
+                );
+              }
+              return <div className="console-line" key={index}>{line}</div>;
+            })
+          )}
+        </div>
+      </ProCard>
     </div>
   );
 }

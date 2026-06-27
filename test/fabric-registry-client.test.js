@@ -70,7 +70,17 @@ test('normalizeFabricRegistryResult builds stable registry and node views', () =
         nodeId: 'home-mac',
         ownerId: 'home-mac-relay',
         kind: 'relay',
-        health: 'unknown'
+        health: 'online',
+        measurement: {
+          status: 'tcp_echo_pass',
+          durationMs: 12,
+          successes: 1,
+          failures: 0,
+          sampleCount: 5,
+          successRate: 1,
+          measuredAt: 2000,
+          rttMs: { min: 12, p50: 12, p95: 12, max: 12, avg: 12 }
+        }
       }],
       projects: [{
         id: 'home-mac-p',
@@ -84,6 +94,23 @@ test('normalizeFabricRegistryResult builds stable registry and node views', () =
         provider: 'codex',
         mode: 'tui',
         status: 'available'
+      }],
+      networkMeasurements: [{
+        id: 'nm-home-mac-relay-1',
+        nodeId: 'home-mac',
+        transportId: 'home-mac-relay',
+        transportKind: 'relay',
+        ownerType: 'relay-node',
+        ownerId: 'home-mac-relay',
+        status: 'tcp_echo_pass',
+        durationMs: 12,
+        successes: 1,
+        failures: 0,
+        sampleCount: 5,
+        successRate: 1,
+        measuredAt: 2000,
+        createdAt: 2000,
+        rttMs: { min: 12, p50: 12, p95: 12, max: 12, avg: 12, count: 5 }
       }]
     }
   });
@@ -97,6 +124,20 @@ test('normalizeFabricRegistryResult builds stable registry and node views', () =
   });
   assert.equal(registry.nodes[0].name, 'Home Mac');
   assert.equal(registry.relayNodes[0].bandwidthLimitKbps, 2048);
+  assert.equal(registry.networkMeasurements.length, 1);
+  assert.equal(registry.networkMeasurements[0].transportId, 'home-mac-relay');
+  assert.equal(registry.networkMeasurements[0].successRate, 1);
+  assert.deepEqual(registry.transports[0].measurement, {
+    status: 'tcp_echo_pass',
+    durationMs: 12,
+    successes: 1,
+    failures: 0,
+    sampleCount: 5,
+    successRate: 1,
+    failureReason: '',
+    measuredAt: 2000,
+    rttMs: { min: 12, p50: 12, p95: 12, max: 12, avg: 12, count: 0 }
+  });
 
   const nodeViews = fabric.buildFabricRegistryNodeViews(registry);
   assert.equal(nodeViews.length, 1);
@@ -107,6 +148,20 @@ test('normalizeFabricRegistryResult builds stable registry and node views', () =
   const relayViews = fabric.buildFabricRegistryRelayViews(registry);
   assert.equal(relayViews.length, 1);
   assert.equal(relayViews[0].node.name, 'Home Mac');
+  assert.equal(relayViews[0].health, 'online');
+});
+
+test('buildFabricRegistryRelayViews keeps unmeasured relay health pending', () => {
+  const fabric = loadFabricRegistryModule();
+  const registry = fabric.normalizeFabricRegistryResult({
+    result: {
+      nodes: [{ id: 'home-mac', name: 'Home Mac' }],
+      relayNodes: [{ id: 'home-mac-relay', nodeId: 'home-mac', enabled: true }],
+      transports: [{ id: 'home-mac-relay', nodeId: 'home-mac', ownerId: 'home-mac-relay', kind: 'relay', health: 'unknown' }]
+    }
+  });
+
+  const relayViews = fabric.buildFabricRegistryRelayViews(registry);
   assert.equal(relayViews[0].health, 'pending-measurement');
 });
 

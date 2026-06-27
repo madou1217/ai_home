@@ -110,12 +110,13 @@
 - `fabric-registry.json` 保存 node roles、projects、runtimes、relayNodes、transport endpoints。
 - 可兼容的 node/relay transport 双写到旧 remote node registry，保证迁移期 `/v0/node-rpc/device-nodes` 可读。
 - `aih fabric registry publish` 已支持一次性 node snapshot 上报，不保存 token、不安装服务、不启动 daemon。
+- `aih fabric registry agent` 已把 probe 摘要写入 transport latest `measurement`，并追加 `networkMeasurements` trace；Fabric Nodes UI 已能显示 relay measurement、p95、成功率和 online health。
 
 验收：
 
 - 家里电脑可在 server1 上显示为 node + relay node。
 - 公司电脑可在 server1 上显示为 node + relay node。
-- 当前完成 server-side API、测试和本地 loopback CLI publisher smoke；真实 home/company evidence、周期心跳/daemon、UI 节点页、relay health measurement 仍待实现。
+- 当前完成 server-side API、测试、本地 loopback CLI publisher smoke、AWS current 默认 `9527` relay measurement 持久化、Fabric Nodes UI 浏览器 smoke、本机 + AWS current 两个真实 node/relay-node 同屏 evidence、AWS current 持久 token + 5 次长跑 registry agent heartbeat partial evidence、默认 `9527` WS echo p95/成功率/networkMeasurements trace evidence，以及移动端多节点 Fabric Nodes 回归 evidence。真正的 systemd daemon/service 安装仍待确认后执行。证据见 `docs/fabric/evidence/2026-06-27-m3-role-registry-measurement.md`、`docs/fabric/evidence/2026-06-27-m3-role-registry-two-nodes.md`、`docs/fabric/evidence/2026-06-27-m3-node-service-daemon-partial.md`、`docs/fabric/evidence/2026-06-27-m3-relay-health-strong-metrics.md` 和 `docs/fabric/evidence/2026-06-27-m3-fabric-nodes-mobile-regression.md`。
 
 ### M4: Native Session
 

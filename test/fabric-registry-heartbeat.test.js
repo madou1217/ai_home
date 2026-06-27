@@ -104,6 +104,42 @@ test('buildHeartbeatPayload omits relay when not requested', () => {
   });
 });
 
+test('buildHeartbeatPayload preserves transport measurement summaries', () => {
+  const payload = buildHeartbeatPayload({
+    nodeId: 'home',
+    status: 'online',
+    relayStatus: 'online',
+    transports: [{
+      kind: 'relay',
+      health: 'online',
+      lastError: '',
+      measurement: {
+        status: 'tcp_echo_pass',
+        durationMs: 12,
+        successes: 1,
+        failures: 0,
+        rttMs: { p95: 12 }
+      }
+    }]
+  });
+  assert.deepEqual(payload, {
+    node: { id: 'home', status: 'online' },
+    relayNode: { status: 'online' },
+    transports: [{
+      kind: 'relay',
+      health: 'online',
+      lastError: '',
+      measurement: {
+        status: 'tcp_echo_pass',
+        durationMs: 12,
+        successes: 1,
+        failures: 0,
+        rttMs: { p95: 12 }
+      }
+    }]
+  });
+});
+
 test('runFabricCommandRouter routes registry heartbeat JSON', async () => {
   const writes = [];
   const exits = [];

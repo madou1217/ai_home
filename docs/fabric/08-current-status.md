@@ -25,7 +25,7 @@
   | 4 | done | Server Profile 解耦第一刀：无 profile 进入 `/ui/server-setup`，配对成功后进入工作台 | `2026-06-26-fabric-browser-pairing-smoke.md` | 保持 browser smoke 作为 UI 改动回归门 |
   | 5 | done | Broker Proxy 接入 Server Setup 的真实浏览器 smoke | `2026-06-27-browser-broker-profile-smoke.md`：真实浏览器配对、device profile/status/accounts/sessions 全部经 broker proxy 返回 200，console 0 error/0 warning，进入 `/ui`；同 allowlist 已同步到 AWS current 默认 `9527` 并通过 broker proxy device route smoke | 已由第 6 项跨主机 broker endpoint 验收闭环 |
   | 6 | done | 跨主机 outbound-only broker 验收 | `2026-06-27-crosshost-outbound-broker-profile-smoke.md`：本机 client -> AWS public broker -> 本机 server outbound link -> 本机 node relay -> Codex native session 已完成；readyz、descriptor、device pair、device scoped reads、sessions RPC 和真实 Codex marker 均通过 | 下一步进入 M3 Role Registry 产品闭环 |
-  | 7 | pending | M3 Role Registry 产品闭环：home/company node + relay-node、周期心跳/daemon、UI 节点页、relay health measurement | server API、publisher、heartbeat、foreground agent、AWS current/历史 evidence 已有 | 补真实家里/公司节点 evidence；UI 展示 node/relay health；heartbeat 写入可诊断指标 |
+  | 7 | partial | M3 Role Registry 产品闭环：home/company node + relay-node、周期心跳/daemon、UI 节点页、relay health measurement | server API、publisher、heartbeat、foreground agent、Fabric Nodes UI 已有；`2026-06-27-m3-role-registry-measurement.md` 已证明 AWS current 默认 `9527` 可持久化 relay measurement 并在 UI 展示；`2026-06-27-m3-role-registry-two-nodes.md` 已证明本机 + AWS current 两个真实 node/relay-node 可同屏展示；`2026-06-27-m3-relay-health-strong-metrics.md` 已证明默认 `9527` WS echo p95/成功率/networkMeasurements trace；`2026-06-27-m3-fabric-nodes-mobile-regression.md` 已证明移动端多节点 UI 回归；`2026-06-27-m3-continuation-audit.md` 已复核当前只剩 7.3；`13-m3-supervised-daemon-runbook.md` 已补执行/回退步骤；`2026-06-27-m3-daemon-preflight-script.md` 已证明只读 preflight 可重复 | 剩余 gate：长期 daemon/service evidence；未完成 7.3 前不进入 8/9/10 |
   | 8 | pending | M4 Native Session 完整互控：公司控家里 Codex、家里控公司 Claude、手机 slash/审批 | AWS current 已有 Codex native relay session；Claude worker 非交互入口不稳定 | 补真实双向 node 场景和手机/PWA 输入、slash、审批 evidence |
   | 9 | pending | M5 Recovery：ack/resume、relay failover、audit events、diagnostics export | broker 同 `serverId` 断开恢复已验证；未覆盖 multi-broker/failover/semantic event 不丢 | kill relay/broker 后 3 秒内恢复，session event 可 resume 且不重复 |
   | 10 | pending | WebRTC DataChannel / WebTransport QUIC / Multipath QUIC promotion lab | WebRTC signaling pass，但 DataChannel open/RTT 未通过；QUIC/WebTransport 未成 promotion evidence | 用 headed browser、手机/跨机、STUN/TURN 和明确 RTT 指标补证；未达 gate 前不设默认 |
@@ -84,6 +84,61 @@
   - 同一 broker proxy endpoint 启动真实 Codex native TUI session，`codex account 1`、`model=gpt-5.5`、runId present，输出命中 `AIH_CROSSHOST_BROKER_NATIVE_SESSION_VERIFY_OK_20260627`。
   - `/quit` accepted，abort cleanup accepted；cleanup 后本机无 `local-mac-crosshost` / smoke / broker connect 残留，AWS 只剩默认 `9527` server pid `110864`；broker proxy 对 `local-mac-crosshost` 返回可诊断 offline。
   - 证据：`docs/fabric/evidence/2026-06-27-crosshost-outbound-broker-profile-smoke.md`。
+- M3 Role Registry measurement + UI slice 已完成：
+  - 本轮修复 agent -> heartbeat -> server registry -> Web UI 的 relay measurement 链路。
+  - `aih fabric registry agent` 会把 probe 摘要写入 transport `measurement`，server 按白名单持久化 `status/durationMs/successes/failures/rttMs/measuredAt`。
+  - Fabric Nodes UI 不再把 `online` relay transport 误判为 `pending-measurement`，并显示 measurement 摘要。
+  - AWS current 默认 `9527` 已同步服务端最小变更和 Web build；当前 server pid 为 `113275`。
+  - 真实 local agent -> AWS current heartbeat 通过：`ok=true`、`attempts=1`、`failures=0`、probe `health=online`、`status=reachable`、`durationMs=238`。
+  - 独立 registry readback 返回 `counts=nodes:1, relayNodes:1, transports:1, projects:1, runtimes:4`，relay transport 含 `measurement.status=reachable`、`durationMs=238`。
+  - 真实浏览器打开 `http://43.207.102.163:9527/ui/fabric/nodes`，节点、Relay Health、measurement 和 online 均可见，console 0 error/0 warning。
+  - 本地回归：Fabric registry focused 21/21 pass，`node --check` pass，`npm --prefix web run build` pass。
+  - 证据：`docs/fabric/evidence/2026-06-27-m3-role-registry-measurement.md`。
+- M3 Role Registry two-node slice 已完成：
+  - AWS current 自身通过 `scripts/fabric-real-vps-registry-publish.js --port 9527 --node-id aws-current-node` 注册为第二个真实 `node + relay-node`。
+  - 本轮未访问旧 `152/155/39.104`，未新增产品端口；AWS current 仍使用默认 `9527`。
+  - AWS self publish `ok=true`，roles 为 `node, relay-node`，heartbeat `ok=true`，foreground agent `ok=true`、`attempts=1`、`failures=0`、probe `status=reachable`、`durationMs=33`。
+  - 独立 registry readback 返回 `nodes=2, relayNodes=2, transports=2, projects=2, runtimes=4`；node ids 为 `aws-current-node` 和 `local-mac-remote-node`。
+  - 两条 relay transport 均为 `online`，且均含 measurement。
+  - 真实浏览器打开 `http://43.207.102.163:9527/ui/fabric/nodes`，两个节点、两个 relayNodes、Relay Health、reachable 和 online 均可见，console 0 error/0 warning。
+  - 证据：`docs/fabric/evidence/2026-06-27-m3-role-registry-two-nodes.md`。
+- M3 Role Registry service/daemon partial 已补：
+  - AWS current 生成了持久 Fabric device token file：`/home/ubuntu/aih-fabric-current/.aih-host-home/.ai_home/fabric/aws-current-node.token`，权限 `600`，证据不打印 token。
+  - 首次 5 次 heartbeat 长跑失败为 `forbidden_fabric_node_owner`，确认 7.2 自注册使用一次性内存 token，未持久化 owner token。
+  - 通过真实 `POST /v0/fabric/registry/nodes` 将 `aws-current-node` 重新绑定到持久 token 设备 `fabric-agent-aws-current-node`，registry 总计仍为 `nodes=2, relayNodes=2, transports=2, projects=2, runtimes=4`。
+  - 第二次 `aih fabric registry agent` 以 10 秒间隔运行 5 次，返回 `ok=true`、`attempts=5`、`failures=0`，probe `status=reachable`、`durationMs=4`，独立 readback 显示 `aws-current-node-relay` measurement 已更新。
+  - `node service install --dry-run` 在 AWS current 返回 `ok=true`、`writes=false`，计划包含 `relay` 和 `registryAgent`；`node service status` 明确两个 systemd user unit 仍为 `missing`，且 `management_key_missing` 阻塞真实安装。
+  - `aih server config set --generate-management-key` 已补为本地安全前置入口，后续 7.3 可由 CLI 内部生成 management key，避免在 argv/stdout 暴露。
+  - `scripts/fabric-m3-daemon-preflight.js --json` 已补为只读 preflight 入口；真实 AWS current 返回 `verdict=ready_for_confirmed_7_3_execution`、`installDryRun.writes=false`、`residue=[]`。
+  - `13-m3-supervised-daemon-runbook.md` 已落地 7.3 执行、验收和回退步骤。
+  - 事后无 `fabric registry agent` 或 `node relay connect` 残留进程，未安装 systemd unit。
+  - 本地服务/registry focused tests：53/53 pass；`fabric-m3-daemon-preflight + server.command-fast-start + node-doctor + node-relay-service + fabric-registry-agent-service` 56/56 pass。
+  - 证据：`docs/fabric/evidence/2026-06-27-m3-node-service-daemon-partial.md`。
+- M3 Relay Health strong metrics 已完成：
+  - AWS current 默认 `9527` server listener 已增加 `/v0/fabric/transport/echo` WS echo endpoint，不新增产品端口。
+  - 真实 direct WS echo 返回 `ok=true`、`successes=20`、`failures=0`、`rttMs.count=20`、`p95=1ms`。
+  - 真实 `aih fabric registry agent` 通过 `relay=ws://127.0.0.1:9527/v0/fabric/transport/echo` 写入 `aws-current-node-relay` latest measurement：`status=ws_echo_pass`、`sampleCount=20`、`successRate=1`、`rttMs.p95=2`。
+  - 同次 heartbeat 追加 `networkMeasurements` trace；独立 readback 返回 `networkMeasurements=2`，latest entry 指向 `aws-current-node-relay`。
+  - 真实浏览器打开 `http://43.207.102.163:9527/ui/fabric/nodes`，两个节点、`p95`、`100% ok (20)`、`ws_echo_pass` 均可见，console 0 error/0 exception。
+  - AWS current 只剩默认 `9527` server pid `121002`，无 registry agent、relay connect、transport echo 或 browser smoke 残留进程。
+  - 本地 focused tests 36/36 pass；AWS current focused tests 36/36 pass；Web build pass。
+  - 证据：`docs/fabric/evidence/2026-06-27-m3-relay-health-strong-metrics.md`。
+- M3 Fabric Nodes mobile regression 已完成：
+  - 真实 Chrome mobile viewport `390x844` + touch emulation，通过 AWS current 真实 device pair profile 打开 `/ui/fabric/nodes`。
+  - 首轮发现并修复移动端空白首屏：`.fabric-nodes-page` 被布局到 `y=-1008`，根因是 mobile `.app-content` 缺少稳定 height/flex 边界。
+  - 修复后复测 `headerRect.y=106`、`pageRect.y=68`、content scroll container `720/3633`，无横向溢出，`overflowEls=[]`。
+  - 两个 node row 可见；点击 `local-mac-remote-node` 后详情切换为 `Local Mac Remote Node`，项目、runtime、transport、Relay Metadata 均可查看。
+  - 页面仍显示 `p95`、`100% ok (20)`、`ws_echo_pass`，console 0 warning/error/exception。
+  - 截图：`/tmp/aih-m3-fabric-nodes-mobile-390-fixed.png`、`/tmp/aih-m3-fabric-nodes-mobile-390-detail.png`。
+  - 证据：`docs/fabric/evidence/2026-06-27-m3-fabric-nodes-mobile-regression.md`。
+- M3 continuation audit 已完成：
+  - 当前 authoritative todo 仍是本文件的 Active Todo 和 M3 Todo Queue；后续新增需求必须先追加到对应 todo，再按顺序推进。
+  - 本轮复核确认 top-level 1-6 done，7 partial，8-10 pending；M3 7.1、7.2、7.4、7.5 done，只有 7.3 partial。
+  - 复核命令不访问旧 `152/155/39.104`，只使用本机与 AWS current 默认 `9527`。
+  - 本地 focused tests 36/36 pass，AWS focused tests 36/36 pass，Web build pass，AWS WS echo 20/20 pass 且 p95=2ms。
+  - AWS current 只剩默认 `9527` server，无 registry agent、relay connect、broker 或 smoke 残留；本机移动端验证 Chrome 已关闭。
+  - 工作区仍混有另一条 Anthropic/Claude 改动，Fabric/M3 后续提交只能 stage Fabric 文件。
+  - 证据：`docs/fabric/evidence/2026-06-27-m3-continuation-audit.md`。
 - AWS current 默认端口真实 Codex `/v1/responses` 已在重新部署后通过：
   - non-stream：`POST http://127.0.0.1:9527/v1/responses`，`x-provider=codex`，`model=gpt-5.5`，`store=false`，HTTP 200，`response.output_text` 包含 `AIH_AWS_CODEX_NONSTREAM_REDEPLOY_9527_OK_20260627`。
   - stream：同 endpoint，`stream=true`，HTTP 200，`response.output_text.done` 包含 `AIH_AWS_CODEX_STREAM_REDEPLOY_9527_OK_20260627`。
@@ -206,7 +261,19 @@
 - 当前部署纪律已经改为单一 `/home/ubuntu/aih-fabric-current`，后续不得再用 vNN / isolated 目录作为默认验证路径。
 - Registry/agent/本机 TCP echo 的历史证据在 AWS v16 上成立；真实 outbound relay 管理链路、sessions RPC smoke、`/v1/responses` non-stream/stream、native relay Codex TUI session cleanup、以及 broker proxy -> relay -> native Codex session 已在 AWS current 默认 `9527` 上验证成立；节点长期在线前置诊断和双服务 supervisor 汇总的历史证据在 AWS v19 上成立；面向用户的统一 `node service status` 入口历史证据在 AWS v20 上成立；受监督 `node service install` / `uninstall` dry-run 产品入口历史证据在 AWS v21/v22 上成立；Server Profile bundle 的本地迁移入口已成立；非 AWS 服务器只保留历史证据，不再继续验证。
 - Raw public HTTP ingress 仍不成立，产品默认路线不能依赖开放高端口。
-- 小水管部署路径已经从“每个 isolated deploy 都重传源码”推进到“稳定 source artifact 远端缓存复用”；受监督 node agent 已有统一 status、install dry-run 和 uninstall dry-run 入口；多客户端 Server Profile 已有无 secret bundle 迁移入口；outbound broker routing 已完成本地真实 socket 闭环、AWS current 默认端口真实 native session 闭环、Broker Profile 产品入口、broker link 断开诊断和同 `serverId` 恢复、Broker Profile 的真实浏览器 Server Setup smoke，以及真实可达 AWS broker endpoint 的跨主机 outbound-only Server Profile/node relay/Codex native session 验收。下一步进入 M3 Role Registry 产品闭环；不再卡 AWS 高端口 public ingress。
+- 小水管部署路径已经从“每个 isolated deploy 都重传源码”推进到“稳定 source artifact 远端缓存复用”；受监督 node agent 已有统一 status、install dry-run 和 uninstall dry-run 入口；多客户端 Server Profile 已有无 secret bundle 迁移入口；outbound broker routing 已完成本地真实 socket 闭环、AWS current 默认端口真实 native session 闭环、Broker Profile 产品入口、broker link 断开诊断和同 `serverId` 恢复、Broker Profile 的真实浏览器 Server Setup smoke，以及真实可达 AWS broker endpoint 的跨主机 outbound-only Server Profile/node relay/Codex native session 验收。M3 还剩 7.3 真实 supervised daemon install/start；不再卡 AWS 高端口 public ingress。7.3 未完成前，不进入 M4/M5/WebRTC promotion。
+
+## M3 Todo Queue
+
+后续新增 M3 需求先追加到这里，再按顺序推进：
+
+| 顺序 | 状态 | 子项 | 当前证据 | 下一步验收 |
+|---:|---|---|---|---|
+| 7.1 | done | heartbeat 写入 relay measurement，Fabric Nodes UI 正确展示 relay health | `2026-06-27-m3-role-registry-measurement.md` | 作为后续 UI/agent 回归门保留 |
+| 7.2 | done | 第二真实节点 evidence：至少区分 home/company 风格的 node + relay-node | `2026-06-27-m3-role-registry-two-nodes.md`：`local-mac-remote-node` + `aws-current-node` 两个真实 node/relay-node 已同屏展示 | 作为后续多节点 UI/registry 回归门保留 |
+| 7.3 | partial | 长期 daemon/service：registry agent + relay 自动在线 | `2026-06-27-m3-node-service-daemon-partial.md`：AWS current 已有持久 token 文件、5 次/10s 间隔 registry agent 长跑 heartbeat、service install dry-run；systemd unit 未安装，relay daemon 未启动；`2026-06-27-m3-continuation-audit.md` 已复核 7.3 是唯一剩余 M3 gate；`13-m3-supervised-daemon-runbook.md` 已补安全生成 managementKey、service install、restart 验收和 rollback；`2026-06-27-m3-daemon-preflight-script.md` 已证明一键只读 preflight 可复核当前 gate | 需要明确确认后同步当前代码到 AWS current，生成 managementKey，重启 server，并执行 `node service install ... --yes`，验证 service running、重启后仍 heartbeat、Fabric Nodes UI fresh measurement |
+| 7.4 | done | relay health 强指标：p95 RTT、echo 成功率、失败原因 | `2026-06-27-m3-relay-health-strong-metrics.md`：AWS current 默认 `9527` WS echo 20/20 pass，latest measurement 和 `networkMeasurements` trace 均落盘，Fabric Nodes UI 显示 `p95`、`100% ok (20)`、`ws_echo_pass` | 作为后续 relay health/UI 回归门保留 |
+| 7.5 | done | 节点页移动端/多节点真实浏览器回归 | `2026-06-27-m3-fabric-nodes-mobile-regression.md`：390x844 mobile viewport 真实配对 profile，两个节点可见，点击节点后详情可用，无横向溢出，console 0 issue | 作为后续移动端 UI 回归门保留 |
 
 ## 2026-06-26
 

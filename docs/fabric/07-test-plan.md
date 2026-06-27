@@ -66,6 +66,42 @@
 - Cross-host API-mode relay smoke 工具已落地：`scripts/fabric-real-outbound-relay-smoke.js --node-join-url ... --device-pair-url ...` 可通过真实 join/pair API 准备 node/device，不再要求共享 host-home。
 - 本机 -> AWS 公网 `http://43.207.102.163:9527` 的 API-mode smoke 当前失败在 `node_join` 阶段，错误为 HTTP timeout；这证明跨主机默认路径当前被 AWS public HTTP ingress 阻塞，而不是 relay/native cleanup 逻辑阻塞。
 - 已接受 [12-outbound-broker-routing.md](12-outbound-broker-routing.md)：AWS public HTTP ingress 不再作为当前阶段阻塞点，下一步以 server/node/client 都能 outbound 的 broker proxy 路线闭环。
+- M3 Role Registry measurement + UI slice 已补：
+  - 当前工作区 `aih fabric registry agent` 会把 probe 摘要传入 heartbeat transport `measurement`。
+  - AWS current 默认 `9527` 持久化 `local-mac-remote-node` relay measurement：`status=reachable`、`durationMs=238`。
+  - Fabric Nodes 页面真实浏览器 smoke 通过：`/ui/fabric/nodes` HTTP 200，节点、Relay Health、measurement 和 online 均可见，console 0 error/0 warning。
+  - 证据：`docs/fabric/evidence/2026-06-27-m3-role-registry-measurement.md`。
+- M3 Role Registry two-node slice 已补：
+  - AWS current 自身注册为 `aws-current-node`，与本机 `local-mac-remote-node` 共用 AWS current registry。
+  - 两个节点均声明 `node + relay-node`，独立 registry readback 返回 `nodes=2`、`relayNodes=2`、`projects=2`、`transports=2`。
+  - Fabric Nodes 页面真实浏览器 smoke 通过：两个 node 名称、两个 relayNodes 计数、Relay Health、reachable 和 online 均可见，console 0 error/0 warning。
+  - 证据：`docs/fabric/evidence/2026-06-27-m3-role-registry-two-nodes.md`。
+- M3 Role Registry service/daemon partial 已补：
+  - AWS current 已生成不打印 token 的持久 Fabric token file，权限 `600`。
+  - `aws-current-node` 已通过真实 registry HTTP register 绑定到持久 token 设备。
+  - `aih fabric registry agent` 以 10 秒间隔运行 5 次，`attempts=5`、`failures=0`，relay measurement 更新为 `status=reachable`、`durationMs=4`。
+  - `node service install --dry-run` 当前可生成 relay + registryAgent 双服务计划且 `writes=false`。
+  - `aih server config set --generate-management-key` 已补为 7.3 安全前置入口，避免把 management key 放到命令行或输出中。
+  - `scripts/fabric-m3-daemon-preflight.js --json` 已补为只读 preflight 入口，能复核 token file、service status、install dry-run、readyz、server process 和 residue。
+  - 真正的 systemd install 仍未执行；AWS current 缺 server `managementKey` 和 relay remote-node secret，必须确认后才能写 server config 和 user service unit。
+  - 7.3 执行和回退 runbook：`docs/fabric/13-m3-supervised-daemon-runbook.md`。
+  - 只读 preflight 证据：`docs/fabric/evidence/2026-06-27-m3-daemon-preflight-script.md`。
+  - 证据：`docs/fabric/evidence/2026-06-27-m3-node-service-daemon-partial.md`。
+- M3 Relay Health strong metrics 已补：
+  - AWS current 默认 `9527` server listener 增加 `/v0/fabric/transport/echo` WS echo endpoint，不新增产品端口。
+  - 真实 `aih fabric transport echo ws://127.0.0.1:9527/v0/fabric/transport/echo --count 20` 返回 `successes=20`、`failures=0`、`rttMs.count=20`、`p95=1ms`。
+  - `aih fabric registry agent` 通过 WS echo probe 写入 latest transport `measurement`：`status=ws_echo_pass`、`sampleCount=20`、`successRate=1`、`rttMs.p95=2`。
+  - 同次 heartbeat 追加 `networkMeasurements` trace entry，独立 readback 返回 `networkMeasurements=2`。
+  - Fabric Nodes 页面真实浏览器 smoke 通过：两个 node、`p95`、`100% ok (20)`、`ws_echo_pass` 均可见，console 0 error/0 exception。
+  - 本地 focused tests 36/36 pass，AWS current focused tests 36/36 pass，Web build pass。
+  - 证据：`docs/fabric/evidence/2026-06-27-m3-relay-health-strong-metrics.md`。
+- M3 Fabric Nodes mobile regression 已补：
+  - 390x844 mobile viewport + touch emulation 下使用真实 device pair profile 打开 AWS current `/ui/fabric/nodes`。
+  - 首轮真实截图发现移动端空白：`.fabric-nodes-page.y=-1008`，根因是 mobile `.app-content` 没有稳定 flex/height 边界。
+  - 修复共享 shell content 高度后复测：`headerRect.y=106`、`pageRect.y=68`、`scrollWidth=clientWidth=390`、`overflowEls=[]`。
+  - 两个 node row 可见；点击 `local-mac-remote-node` 后详情标题为 `Local Mac Remote Node`，项目、runtime、transport、Relay Metadata 均可查看。
+  - 页面文本仍包含 `p95`、`100% ok (20)`、`ws_echo_pass`，console 0 warning/error/exception。
+  - 证据：`docs/fabric/evidence/2026-06-27-m3-fabric-nodes-mobile-regression.md`。
 - AWS Japan v16 已完成真实部署、真实账号导入、server 启动、registry publish/heartbeat、foreground agent 和本机 TCP echo probe。
 - AWS Japan v18 已完成 source artifact 部署和真实 outbound relay smoke：两个真实 AIH server 子进程 + 一个真实 `aih node relay connect` 子进程，设备端通过 relay 读 `/v0/node-rpc/device-node-sessions` 返回 HTTP 200。
 - AWS Japan v19 已完成 `node doctor --json` 只读 supervisor 验证：Linux `systemd-user` relay service 与 Fabric registry agent service 都能被识别，隔离 home 下两者为 `missing/running=false`，`nodeSupervisor.ready=false`，没有安装或启动服务。

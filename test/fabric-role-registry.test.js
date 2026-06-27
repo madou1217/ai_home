@@ -140,7 +140,21 @@ test('fabric role registry heartbeat preserves projects and runtimes while updat
       status: 'degraded'
     },
     transports: [
-      { kind: 'relay', health: 'degraded', lastError: 'rtt_high' }
+      {
+        kind: 'relay',
+        health: 'degraded',
+        lastError: 'rtt_high',
+        measurement: {
+          status: 'tcp_echo_fail',
+          durationMs: 42,
+          successes: 1,
+          failures: 1,
+          sampleCount: 2,
+          successRate: 0.5,
+          failureReason: 'echo_response_timeout',
+          rttMs: { min: 20, p50: 20, p95: 42, max: 42, avg: 31, count: 2 }
+        }
+      }
     ]
   }, {
     ...deps,
@@ -153,9 +167,39 @@ test('fabric role registry heartbeat preserves projects and runtimes while updat
   assert.equal(touched.transports.length, 1);
   assert.equal(touched.transports[0].health, 'degraded');
   assert.equal(touched.transports[0].lastError, 'rtt_high');
+  assert.deepEqual(touched.transports[0].measurement, {
+    status: 'tcp_echo_fail',
+    durationMs: 42,
+    successes: 1,
+    failures: 1,
+    measuredAt: 5000,
+    sampleCount: 2,
+    successRate: 0.5,
+    failureReason: 'echo_response_timeout',
+    rttMs: { min: 20, p50: 20, p95: 42, max: 42, avg: 31, count: 2 }
+  });
   assert.equal(touched.registry.counts.projects, 1);
   assert.equal(touched.registry.counts.runtimes, 2);
   assert.deepEqual(touched.registry.runtimes.map((runtime) => runtime.provider), ['codex', 'gemini']);
+  assert.equal(touched.registry.networkMeasurements.length, 1);
+  assert.deepEqual(touched.registry.networkMeasurements[0], {
+    id: touched.registry.networkMeasurements[0].id,
+    nodeId: 'office-pc',
+    transportId: 'office-pc-relay',
+    transportKind: 'relay',
+    ownerType: 'relay-node',
+    ownerId: 'office-pc-relay',
+    status: 'tcp_echo_fail',
+    durationMs: 42,
+    successes: 1,
+    failures: 1,
+    measuredAt: 5000,
+    createdAt: 5000,
+    sampleCount: 2,
+    successRate: 0.5,
+    failureReason: 'echo_response_timeout',
+    rttMs: { min: 20, p50: 20, p95: 42, max: 42, avg: 31, count: 2 }
+  });
 
   const registry = listFabricRegistry(deps);
   assert.deepEqual(registry.counts, {
@@ -167,6 +211,7 @@ test('fabric role registry heartbeat preserves projects and runtimes while updat
   });
   assert.equal(registry.projects[0].name, 'project');
   assert.equal(registry.runtimes[1].provider, 'gemini');
+  assert.equal(registry.networkMeasurements[0].transportId, 'office-pc-relay');
 
   const legacyNode = getRemoteNode('office-pc', deps);
   assert.equal(legacyNode.lastSeenAt, 5000);

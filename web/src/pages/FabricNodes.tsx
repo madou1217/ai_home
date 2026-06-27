@@ -94,6 +94,27 @@ function getTransportHealth(transport: FabricRegistryTransport) {
   return normalizeText(transport.health);
 }
 
+function formatTransportMeasurement(transport: FabricRegistryTransport) {
+  const measurement = transport.measurement;
+  if (!measurement) return 'no measurement';
+  const parts = [];
+  if (measurement.rttMs && measurement.rttMs.count) parts.push(`p95 ${measurement.rttMs.p95}ms`);
+  if (measurement.sampleCount && measurement.successRate !== null) {
+    parts.push(`${Math.round(measurement.successRate * 100)}% ok (${measurement.sampleCount})`);
+  } else if (measurement.successes || measurement.failures) {
+    parts.push(`${measurement.successes}/${measurement.successes + measurement.failures} ok`);
+  }
+  if (measurement.durationMs) parts.push(`${measurement.durationMs}ms`);
+  if (measurement.status) parts.push(measurement.status);
+  if (measurement.failureReason) parts.push(measurement.failureReason);
+  return parts.join(' · ') || 'measured';
+}
+
+function summarizeRelayMeasurement(transports: FabricRegistryTransport[]) {
+  const measured = transports.find((transport) => transport.measurement);
+  return measured ? formatTransportMeasurement(measured) : 'no measurement';
+}
+
 function summarizeTransportHealth(transports: FabricRegistryTransport[]) {
   if (transports.length === 0) return 'none';
   const groups = transports.reduce<Record<string, number>>((acc, transport) => {
@@ -401,7 +422,7 @@ export default function FabricNodes() {
                         <div key={transport.id} className="fabric-node-detail-item">
                           <strong>{transport.kind || transport.id}</strong>
                           <span>{transport.endpoint || transport.provider || 'endpoint hidden'}</span>
-                          <em>{getTransportHealth(transport)}{transport.lastError ? ` · ${transport.lastError}` : ''}</em>
+                          <em>{getTransportHealth(transport)} · {formatTransportMeasurement(transport)}{transport.lastError ? ` · ${transport.lastError}` : ''}</em>
                         </div>
                       ))}
                     </section>
@@ -413,7 +434,8 @@ export default function FabricNodes() {
                           <span>capacityClass <strong>{selectedNode.relayNode.capacityClass || 'tiny'}</strong></span>
                           <span>bandwidth <strong>{formatBandwidthKbps(selectedNode.relayNode.bandwidthLimitKbps)}</strong></span>
                           <span>status <strong>{selectedNode.relayNode.status || 'unknown'}</strong></span>
-                          <span>measured <strong>{formatMeasuredAt(selectedNode.relayNode.lastMeasuredAt)}</strong></span>
+                          <span>measurement <strong>{summarizeRelayMeasurement(selectedNode.transports)}</strong></span>
+                          <span>measured <strong>{formatMeasuredAt(selectedNode.transports.find((transport) => transport.measurement)?.measurement?.measuredAt || selectedNode.relayNode.lastMeasuredAt)}</strong></span>
                           <span>score <strong>{resolveRelayScore(selectedNode.relayNode)}</strong></span>
                         </div>
                       ) : (
@@ -450,7 +472,8 @@ export default function FabricNodes() {
                       <span>bandwidth <strong>{formatBandwidthKbps(relayNode.bandwidthLimitKbps)}</strong></span>
                       <span>status <strong>{relayNode.status || (relayNode.enabled ? 'online' : 'disabled')}</strong></span>
                       <span>health <strong>{health}</strong></span>
-                      <span>measured <strong>{formatMeasuredAt(relayNode.lastMeasuredAt)}</strong></span>
+                      <span>measurement <strong>{summarizeRelayMeasurement(transports)}</strong></span>
+                      <span>measured <strong>{formatMeasuredAt(transports.find((transport) => transport.measurement)?.measurement?.measuredAt || relayNode.lastMeasuredAt)}</strong></span>
                       <span>score <strong>{resolveRelayScore(relayNode)}</strong></span>
                     </div>
                     <div className="fabric-relay-transports">

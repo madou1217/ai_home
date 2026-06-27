@@ -108,6 +108,51 @@ test('runServerCommand config set writes patch and reports restart requirement',
   assert.doesNotMatch(output, /management-secret/);
 });
 
+test('runServerCommand config set can generate management key without printing it', async () => {
+  let written = null;
+  const { result: code, logs, errors } = await captureConsole(() => runServerCommand([
+    'server',
+    'config',
+    'set',
+    '--generate-management-key',
+    '--port',
+    '9527'
+  ], {
+    showServerUsage() {},
+    serverDaemon: {},
+    parseServerEnvArgs: () => ({}),
+    parseServerServeArgs: () => ({}),
+    parseServerSyncArgs: () => ({}),
+    readServerConfig: () => ({ host: '127.0.0.1', port: 9527, apiKey: '', managementKey: '', openNetwork: false }),
+    writeServerConfig: (patch) => {
+      written = patch;
+      return {
+        host: '127.0.0.1',
+        port: patch.port,
+        apiKey: '',
+        managementKey: patch.managementKey,
+        openNetwork: false,
+        proxyUrl: '',
+        noProxy: '',
+        modelsProbeAccounts: 2
+      };
+    },
+    startLocalServer: async () => ({}),
+    syncCodexAccountsToServer: async () => ({ dryRun: true, failed: 0 }),
+    generateManagementKey: () => 'generated-management-secret'
+  }));
+
+  const output = logs.join('\n');
+  assert.equal(code, 0);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(written, {
+    managementKey: 'generated-management-secret',
+    port: 9527
+  });
+  assert.match(output, /management_key: configured/);
+  assert.doesNotMatch(output, /generated-management-secret/);
+});
+
 test('runServerCommand starts daemon in non-blocking mode', async () => {
   const calls = [];
   const code = await runServerCommand(['server', 'start'], {

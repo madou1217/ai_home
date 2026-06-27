@@ -14,6 +14,7 @@ const {
 } = require('../lib/server/control-plane-device-pairing');
 const { upsertRemoteNode } = require('../lib/server/remote/node-registry');
 const { upsertRemoteTransport } = require('../lib/server/remote/transport-registry');
+const { runFabricTransportEcho } = require('../lib/cli/services/fabric/transport-echo');
 
 async function getFreePort() {
   return new Promise((resolve, reject) => {
@@ -166,7 +167,9 @@ test('server fabric descriptor and device pair endpoints support server setup on
   assert.equal(descriptor.result.capabilities.client.includes('role-registry'), true);
   assert.equal(descriptor.result.capabilities.roles.server.includes('role-registry'), true);
   assert.equal(descriptor.result.capabilities.transportLab.includes('webrtc-signaling'), true);
+  assert.equal(descriptor.result.capabilities.transportLab.includes('ws-echo'), true);
   assert.equal(descriptor.result.capabilities.transports.includes('webrtc-datachannel-lab'), true);
+  assert.equal(descriptor.result.capabilities.transports.includes('ws-echo'), true);
 
   const redirectResponse = await fetch(invite.pairUrl, { redirect: 'manual' });
   assert.equal(redirectResponse.status, 302);
@@ -190,6 +193,45 @@ test('server fabric descriptor and device pair endpoints support server setup on
   assert.equal(paired.result.device.id, 'device-ios-fabric');
   assert.equal(paired.result.fabric.service, 'aih-fabric');
   assert.ok(paired.result.token);
+});
+
+test('server fabric transport echo endpoint runs on the existing server listener', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-server-fabric-echo-'));
+  const port = await getFreePort();
+  const processObj = createProcessCapture();
+  const relaySessionRegistry = { closeAll() {} };
+
+  t.after(async () => {
+    await processObj.stop();
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+  });
+
+  await startLocalServer({
+    host: '127.0.0.1',
+    port,
+    provider: 'codex',
+    backend: 'openai',
+    strategy: 'round_robin',
+    codexClientVersion: '0.0.0-test',
+    modelUsageScan: false,
+    logRequests: false
+  }, createServerDeps(aiHomeDir, processObj, relaySessionRegistry));
+
+  const result = await runFabricTransportEcho([
+    `ws://127.0.0.1:${port}/v0/fabric/transport/echo`,
+    '--count',
+    '3',
+    '--payload-size',
+    '16',
+    '--timeout-ms',
+    '5000',
+    '--json'
+  ]);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.successes, 3);
+  assert.equal(result.failures.length, 0);
+  assert.equal(result.rttMs.count, 3);
 });
 
 test('server fabric webrtc signaling endpoint exchanges lab messages', async (t) => {

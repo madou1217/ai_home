@@ -55,6 +55,26 @@ export interface FabricRegistryTransport {
   routeRole: string;
   trustLevel: string;
   updatedAt: number;
+  measurement: FabricRegistryTransportMeasurement | null;
+}
+
+export interface FabricRegistryTransportMeasurement {
+  status: string;
+  durationMs: number;
+  successes: number;
+  failures: number;
+  sampleCount: number;
+  successRate: number | null;
+  failureReason: string;
+  measuredAt: number;
+  rttMs: {
+    min: number;
+    p50: number;
+    p95: number;
+    max: number;
+    avg: number;
+    count: number;
+  } | null;
 }
 
 export interface FabricRegistryProject {
@@ -67,6 +87,25 @@ export interface FabricRegistryProject {
   permissions: string[];
   lastOpenedAt: number;
   updatedAt: number;
+}
+
+export interface FabricRegistryNetworkMeasurement {
+  id: string;
+  nodeId: string;
+  transportId: string;
+  transportKind: string;
+  ownerType: string;
+  ownerId: string;
+  status: string;
+  durationMs: number;
+  successes: number;
+  failures: number;
+  sampleCount: number;
+  successRate: number | null;
+  failureReason: string;
+  measuredAt: number;
+  createdAt: number;
+  rttMs: FabricRegistryTransportMeasurement['rttMs'];
 }
 
 export interface FabricRegistryRuntime {
@@ -87,6 +126,7 @@ export interface FabricRegistryResult {
   transports: FabricRegistryTransport[];
   projects: FabricRegistryProject[];
   runtimes: FabricRegistryRuntime[];
+  networkMeasurements: FabricRegistryNetworkMeasurement[];
   counts: FabricRegistryCounts;
 }
 
@@ -121,6 +161,13 @@ function normalizeNumber(value: unknown) {
   return Number.isFinite(number) && number > 0 ? Math.floor(number) : 0;
 }
 
+function normalizeRatio(value: unknown): number | null {
+  if (value === undefined || value === null || value === '') return null;
+  const number = Number(value);
+  if (!Number.isFinite(number)) return null;
+  return Math.max(0, Math.min(1, number));
+}
+
 function normalizeBoolean(value: unknown, fallback = false) {
   if (value === true || value === false) return value;
   return fallback;
@@ -140,6 +187,49 @@ function normalizeArray<T>(value: unknown, mapper: (item: unknown) => T | null):
   return (Array.isArray(value) ? value : [])
     .map(mapper)
     .filter((item): item is T => Boolean(item));
+}
+
+function normalizeRttMetrics(value: unknown): FabricRegistryTransportMeasurement['rttMs'] {
+  const source = normalizeObject(value);
+  const keys = ['min', 'p50', 'p95', 'max', 'avg', 'count'] as const;
+  const hasValue = keys.some((key) => source[key] !== undefined && source[key] !== null && source[key] !== '');
+  if (!hasValue) return null;
+  return {
+    min: normalizeNumber(source.min),
+    p50: normalizeNumber(source.p50),
+    p95: normalizeNumber(source.p95),
+    max: normalizeNumber(source.max),
+    avg: normalizeNumber(source.avg),
+    count: normalizeNumber(source.count)
+  };
+}
+
+function normalizeTransportMeasurement(value: unknown): FabricRegistryTransportMeasurement | null {
+  const source = normalizeObject(value);
+  const rttMs = normalizeRttMetrics(source.rttMs);
+  const hasValue = Boolean(
+    normalizeText(source.status, 96)
+      || normalizeNumber(source.durationMs)
+      || normalizeNumber(source.successes)
+      || normalizeNumber(source.failures)
+      || normalizeNumber(source.sampleCount)
+      || normalizeRatio(source.successRate) !== null
+      || normalizeText(source.failureReason, 160)
+      || normalizeNumber(source.measuredAt)
+      || rttMs
+  );
+  if (!hasValue) return null;
+  return {
+    status: normalizeText(source.status, 96),
+    durationMs: normalizeNumber(source.durationMs),
+    successes: normalizeNumber(source.successes),
+    failures: normalizeNumber(source.failures),
+    sampleCount: normalizeNumber(source.sampleCount),
+    successRate: normalizeRatio(source.successRate),
+    failureReason: normalizeText(source.failureReason, 160),
+    measuredAt: normalizeNumber(source.measuredAt),
+    rttMs
+  };
 }
 
 function normalizeNode(value: unknown): FabricRegistryNode | null {
@@ -199,7 +289,8 @@ function normalizeTransport(value: unknown): FabricRegistryTransport | null {
     provider: normalizeText(source.provider, 64),
     routeRole: normalizeText(source.routeRole, 64),
     trustLevel: normalizeText(source.trustLevel, 64),
-    updatedAt: normalizeNumber(source.updatedAt)
+    updatedAt: normalizeNumber(source.updatedAt),
+    measurement: normalizeTransportMeasurement(source.measurement)
   };
 }
 
@@ -239,6 +330,32 @@ function normalizeRuntime(value: unknown): FabricRegistryRuntime | null {
   };
 }
 
+function normalizeNetworkMeasurement(value: unknown): FabricRegistryNetworkMeasurement | null {
+  const source = normalizeObject(value);
+  const id = normalizeText(source.id, 96);
+  const nodeId = normalizeText(source.nodeId, 96);
+  const transportId = normalizeText(source.transportId, 96);
+  if (!id || !nodeId || !transportId) return null;
+  return {
+    id,
+    nodeId,
+    transportId,
+    transportKind: normalizeText(source.transportKind, 64),
+    ownerType: normalizeText(source.ownerType, 64),
+    ownerId: normalizeText(source.ownerId, 96),
+    status: normalizeText(source.status, 96),
+    durationMs: normalizeNumber(source.durationMs),
+    successes: normalizeNumber(source.successes),
+    failures: normalizeNumber(source.failures),
+    sampleCount: normalizeNumber(source.sampleCount),
+    successRate: normalizeRatio(source.successRate),
+    failureReason: normalizeText(source.failureReason, 160),
+    measuredAt: normalizeNumber(source.measuredAt),
+    createdAt: normalizeNumber(source.createdAt),
+    rttMs: normalizeRttMetrics(source.rttMs)
+  };
+}
+
 function normalizeCounts(value: unknown, fallback: FabricRegistryCounts): FabricRegistryCounts {
   const source = normalizeObject(value);
   return {
@@ -263,6 +380,7 @@ export function normalizeFabricRegistryResult(payload: unknown): FabricRegistryR
   const transports = normalizeArray(source.transports, normalizeTransport);
   const projects = normalizeArray(source.projects, normalizeProject);
   const runtimes = normalizeArray(source.runtimes, normalizeRuntime);
+  const networkMeasurements = normalizeArray(source.networkMeasurements, normalizeNetworkMeasurement);
   const fallbackCounts = {
     nodes: nodes.length,
     relayNodes: relayNodes.length,
@@ -277,6 +395,7 @@ export function normalizeFabricRegistryResult(payload: unknown): FabricRegistryR
     transports,
     projects,
     runtimes,
+    networkMeasurements,
     counts: normalizeCounts(source.counts, fallbackCounts)
   };
 }
@@ -297,14 +416,16 @@ export function buildFabricRegistryRelayViews(registry: FabricRegistryResult): F
       transport.nodeId === relayNode.nodeId
         && (transport.ownerId === relayNode.id || transport.kind === 'relay')
     ));
-    const transportHealth = transports.map((transport) => transport.health);
+    const transportHealth = transports.map((transport) => String(transport.health || '').toLowerCase());
     const health = !relayNode.enabled
       ? 'disabled'
-      : transportHealth.includes('up')
-        ? 'partial'
-        : transportHealth.includes('down')
+      : transportHealth.some((value) => value === 'online' || value === 'up' || value === 'healthy')
+        ? 'online'
+        : transportHealth.some((value) => value === 'degraded' || value === 'partial' || value === 'warning')
           ? 'degraded'
-          : 'pending-measurement';
+          : transportHealth.some((value) => value === 'offline' || value === 'down' || value === 'failed' || value === 'unhealthy')
+            ? 'offline'
+            : 'pending-measurement';
     return {
       relayNode,
       node: registry.nodes.find((node) => node.id === relayNode.nodeId) || null,

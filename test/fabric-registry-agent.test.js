@@ -151,7 +151,20 @@ test('runFabricRegistryAgent reuses heartbeat sender without leaking credentials
   assert.equal(calls.length, 2);
   assert.equal(calls[0].token, 'secret-token');
   assert.deepEqual(calls[0].transports, [
-    { kind: 'relay', health: 'online', lastError: '' }
+    {
+      kind: 'relay',
+      health: 'online',
+      lastError: '',
+      measurement: {
+        status: 'tcp_echo_pass',
+        durationMs: 12,
+        successes: 1,
+        failures: 0,
+        sampleCount: 1,
+        successRate: 1,
+        rttMs: { min: 12, p50: 12, p95: 12, max: 12, avg: 12 }
+      }
+    }
   ]);
   assert.deepEqual(sleeps, [1000]);
   assert.equal(events.length, 2);
@@ -166,7 +179,9 @@ test('runFabricRegistryAgent reuses heartbeat sender without leaking credentials
       status: 'tcp_echo_pass',
       rttMs: { min: 12, p50: 12, p95: 12, max: 12, avg: 12 },
       successes: 1,
-      failures: 0
+      failures: 0,
+      sampleCount: 1,
+      successRate: 1
     }
   ]);
 });
@@ -229,11 +244,16 @@ test('probeAgentTransports dispatches ws and tcp targets to application echo run
   assert.equal(measured[0].health, 'online');
   assert.equal(measured[0].status, 'ws_echo_pass');
   assert.equal(measured[0].successes, 2);
+  assert.equal(measured[0].sampleCount, 2);
+  assert.equal(measured[0].successRate, 1);
   assert.equal(measured[1].health, 'degraded');
   assert.equal(measured[1].lastError, 'tcp_echo_response_timeout');
   assert.equal(measured[1].status, 'tcp_echo_fail');
   assert.equal(measured[1].successes, 1);
   assert.equal(measured[1].failures, 1);
+  assert.equal(measured[1].sampleCount, 2);
+  assert.equal(measured[1].successRate, 0.5);
+  assert.equal(measured[1].failureReason, 'tcp_echo_response_timeout');
 });
 
 test('runFabricRegistryAgent maps failed probes to degraded heartbeat transport', async () => {
@@ -269,19 +289,61 @@ test('runFabricRegistryAgent maps failed probes to degraded heartbeat transport'
 
   assert.equal(result.ok, true);
   assert.deepEqual(calls[0].transports, [
-    { kind: 'relay', health: 'degraded', lastError: 'http_503' }
+    {
+      kind: 'relay',
+      health: 'degraded',
+      lastError: 'http_503',
+      measurement: {
+        status: 'reachable',
+        durationMs: 33,
+        failureReason: 'http_503'
+      }
+    }
   ]);
   assert.deepEqual(result.probes, [
-    { kind: 'relay', health: 'degraded', lastError: 'http_503', durationMs: 33, status: 'reachable' }
+    {
+      kind: 'relay',
+      health: 'degraded',
+      lastError: 'http_503',
+      durationMs: 33,
+      status: 'reachable',
+      failureReason: 'http_503'
+    }
   ]);
 });
 
 test('mergeTransportHeartbeats lets probe measurements override manual transport health', () => {
   assert.deepEqual(mergeTransportHeartbeats(
     [{ kind: 'relay', health: 'online', lastError: '' }],
-    [{ kind: 'relay', health: 'offline', lastError: 'ECONNREFUSED' }]
+    [{
+      kind: 'relay',
+      health: 'offline',
+      lastError: 'ECONNREFUSED',
+      durationMs: 30,
+      status: 'tcp_echo_fail',
+      successes: 0,
+      failures: 1,
+      sampleCount: 1,
+      successRate: 0,
+      failureReason: 'ECONNREFUSED',
+      rttMs: { p95: 0 }
+    }]
   ), [
-    { kind: 'relay', health: 'offline', lastError: 'ECONNREFUSED' }
+    {
+      kind: 'relay',
+      health: 'offline',
+      lastError: 'ECONNREFUSED',
+      measurement: {
+        status: 'tcp_echo_fail',
+        durationMs: 30,
+        successes: 0,
+        failures: 1,
+        sampleCount: 1,
+        successRate: 0,
+        failureReason: 'ECONNREFUSED',
+        rttMs: { p95: 0 }
+      }
+    }
   ]);
 });
 

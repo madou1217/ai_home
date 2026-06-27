@@ -29,7 +29,7 @@
 |---:|---|---|
 | 1 | done | M0 设计包已落在 `docs/fabric/00-*.md` 到 `12-outbound-broker-routing.md` |
 | 2 | done | AWS current 是唯一 active VPS target |
-| 3 | done | AWS current 默认 `9527` 的真实 `/v1/responses`、native relay Codex TUI、broker relay Codex TUI、diagnostics recovery 证据已存在 |
+| 3 | done | AWS current 默认 `9527` 的真实 `/v1/responses`、relay Codex session、broker relay Codex session、diagnostics recovery 证据已存在 |
 | 4 | done | Server Profile gate 真实浏览器 smoke 证据已存在 |
 | 5 | done | Broker Proxy Server Setup 真实浏览器 smoke 证据已存在 |
 | 6 | done | Cross-host outbound-only broker 证据已存在 |

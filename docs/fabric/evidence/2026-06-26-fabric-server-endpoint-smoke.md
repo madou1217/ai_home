@@ -9,7 +9,7 @@
 - 新生成的 invite URL 指向 Fabric pair endpoint 和 `/ui/server-setup`。
 - 前端 profile 服务优先调用 Fabric descriptor / pairing endpoint，并复用现有 profile store。
 
-本轮不验证跨设备真实浏览器配对，不验证 node/relay/native session。
+本轮不验证跨设备真实浏览器配对，不验证 node/relay/remote session。
 
 ## Changed Files
 

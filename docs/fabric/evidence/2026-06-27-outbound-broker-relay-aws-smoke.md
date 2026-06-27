@@ -2,12 +2,12 @@
 
 ## Scope
 
-验证 AWS current 默认 `9527` 上的 outbound broker routing 能否接到现有 relay/native session 链路：
+验证 AWS current 默认 `9527` 上的 outbound broker routing 能否接到现有 relay/remote session 链路：
 
 - AIH Server 主动 outbound 连接同一 broker endpoint。
 - Client/device API 使用 broker proxy base。
 - Relay node 仍通过 outbound relay link 连接 Control Plane。
-- 通过 broker proxy 触发真实 Codex native TUI 会话，并验证模型输出 marker。
+- 通过 broker proxy 触发真实 Codex remote session 会话，并验证模型输出 marker。
 
 这不是 public ingress 证明；所有命令都在 AWS host 内部访问 `127.0.0.1:9527`。它证明 broker proxy 可以作为 client/server profile endpoint 进入真实 relay/session 控制链路。
 
@@ -98,10 +98,10 @@ ssh -i /Users/model/.ssh/aws.pem ubuntu@ec2-43-207-102-163.ap-northeast-1.comput
 | remote server startup | pass | `listen: http://0.0.0.0:9527` |
 | account pool | `codex=3, gemini=1, claude=4, agy=7, opencode=0` | real imported accounts |
 | base broker relay duration | `555ms` | broker + relay + sessions RPC |
-| native session duration | `8758ms` | broker + relay + Codex TUI marker |
+| remote session duration | `8758ms` | broker + relay + Codex TUI marker |
 | broker proxy endpoint | `viaProxy=true` | `/v0/fabric/broker/servers/aws-current/proxy` |
 | base relay sessions API | HTTP `200` | `rpc=control_plane.device.node_sessions` |
-| native session start | HTTP `200` | runId present |
+| remote session start | HTTP `200` | runId present |
 | native model marker | pass | `expectedOutputFound=true` |
 | local focused regression | 49/49 pass | fabric broker/relay/deploy/node-rpc |
 | full test suite | 2507/2507 pass | `npm test` |

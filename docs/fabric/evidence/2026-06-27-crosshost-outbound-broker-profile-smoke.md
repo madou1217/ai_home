@@ -1,14 +1,14 @@
-# 2026-06-27 Cross-host Outbound Broker Profile and Native Session Smoke
+# 2026-06-27 Cross-host Outbound Broker Profile and Remote Session Smoke
 
 ## Scope
 
 验证跨主机 outbound broker 的完整 M2.5 产品链路：
 
 ```text
-Local client -> AWS public broker endpoint -> local Mac AIH server outbound broker link -> local Mac default 9527 -> local node relay -> Codex native session
+Local client -> AWS public broker endpoint -> local Mac AIH server outbound broker link -> local Mac default 9527 -> local node relay -> Codex remote session
 ```
 
-本轮覆盖 Server Profile / device scoped API、node relay sessions RPC，以及真实 Codex native TUI 对话。
+本轮覆盖 Server Profile / device scoped API、node relay sessions RPC，以及真实 Codex remote session 对话。
 
 ## Environment
 
@@ -247,14 +247,14 @@ Post-cleanup broker proxy status:
 - The local Mac AIH server does not need public ingress; it connects outbound to AWS broker.
 - The client can pair and read device scoped Server Profile APIs through AWS public broker proxy.
 - The client can read node sessions through the same AWS broker proxy while the node relay dials the local server outbound.
-- The client can start a real Codex native TUI session through the same AWS broker proxy and observe model output.
-- This validates the cross-host M2.5 broker profile path for Server Profile, node relay and native session.
+- The client can start a real Codex remote session session through the same AWS broker proxy and observe model output.
+- This validates the cross-host M2.5 broker profile path for Server Profile, node relay and remote session.
 
 ## Verdict
 
 pass
 
-Cross-host outbound broker works for Server Profile, device scoped control-plane APIs, node relay sessions RPC and real Codex native session through the same AWS broker profile.
+Cross-host outbound broker works for Server Profile, device scoped control-plane APIs, node relay sessions RPC and real Codex remote session through the same AWS broker profile.
 
 ## Next Checks
 

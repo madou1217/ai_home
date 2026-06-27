@@ -166,4 +166,4 @@ partial
 2. Test phone <-> local server over LAN with a non-loopback endpoint.
 3. Test home <-> company with at least one STUN server and one controlled TURN candidate.
 4. Record 5 RTT samples only after `channelState=open`; otherwise keep verdict `partial` or `fail`.
-5. Add fallback decision logic: WebRTC candidate failure must fall back to WSS without blocking native session startup.
+5. Add fallback decision logic: WebRTC candidate failure must fall back to WSS without blocking remote session startup.

@@ -14,7 +14,7 @@ flowchart TD
   Relays[Relay Health]
   Projects[Projects]
   Runtime[Runtime Picker]
-  Session[Native Session]
+  Session[Remote Session]
   Settings[Settings]
 
   App --> Profiles
@@ -117,16 +117,16 @@ flowchart TD
 +------------------------------------------------------+
 ```
 
-## 5. Native Session 页面
+## 5. 远程会话页面
 
-原生 TUI 体验优先。WebUI chat 只作为辅助，不是主画面。
+远程会话体验优先。WebUI chat 只作为辅助，不是主画面。
 
 ```text
 +------------------------------------------------------+
 | Server: VPS 1 | Node: Company PC | Project: shalou   |
 | Runtime: Codex | Transport: WSS relay | Latency 92ms |
 +------------------------------------------------------+
-| Terminal / Native TUI viewport                       |
+| Remote session viewport                              |
 |                                                      |
 |  > /plan                                             |
 |  assistant is thinking...                            |
@@ -202,4 +202,4 @@ GUI bridge deferred contract：
 - 卡片只用于列表项、弹窗和工具面板，不做卡片套卡片。
 - 页面文字必须解释当前状态，不用空泛宣传语。
 - 移动端优先保证选择 server、审批、发送输入、查看状态。
-- 桌面端优先保证原生 TUI viewport 和快捷键体验。
+- 桌面端优先保证远程会话 viewport 和快捷键体验。

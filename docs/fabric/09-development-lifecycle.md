@@ -82,4 +82,4 @@ Definition of Done：
 
 ## 为什么必须这样做
 
-旧 Control Plane/remote node 已经证明一个问题：代码能跑、测试能过，不等于产品能被用户理解。Fabric 的核心验收不是“某个接口返回 200”，而是用户能从任意设备选择 server、node、project、runtime，并稳定进入原生 TUI/GUI 能力边界内的会话。
+旧 Control Plane/remote node 已经证明一个问题：代码能跑、测试能过，不等于产品能被用户理解。Fabric 的核心验收不是“某个接口返回 200”，而是用户能从任意设备选择 server、node、project、runtime，并稳定进入可解释、可恢复的远程开发会话。

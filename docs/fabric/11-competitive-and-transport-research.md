@@ -32,9 +32,9 @@
 - Client 启动必须先选择 server profile。VS Code/Tunnel/Cloudflare/Tailscale 都证明“先有连接域/身份域，再进入资源”更可理解。
 - Node 必须主动出站连接 server/relay。两端无公网 IP 时，要求 client 直接打 node 是不现实的默认路径。
 - Relay 是产品内概念，不只是网络技巧。Relay node 会消耗带宽、影响稳定性，必须有授权、限速、health 和 evidence。
-- Native session 是第一体验。竞品远程 IDE 的价值在交互完整性；AIH 对应的是 PTY/raw input/slash/resize/approval，而不是现有 WebUI chat。
+- 远程开发会话是第一体验。竞品远程 IDE 的价值在交互完整性；AIH 对应的是输入、slash、approval、状态恢复和诊断，而不是现有 WebUI chat。
 - 诊断必须分层。`tcp connect`、`tcp echo`、`ws echo`、`runtime session` 是不同层级，任何一层失败都不能向上宣称成功。
-- 直接竞品已经证明“手机/网页控制本机 agent”有用户价值；AIH 不能只做 WebUI 聊天，必须优先补 native TUI bridge 和 session recovery。
+- 直接竞品已经证明“手机/网页控制本机 agent”有用户价值；AIH 不能只做 WebUI 聊天，必须优先补远程会话桥接和 session recovery。
 
 ## Transport 取舍
 
@@ -98,6 +98,6 @@ AIH Fabric 应该做，但不能做成“又一个 VPN”或“旧 WebUI 加 rem
 
 - server profile first；
 - node/relay/runtime roles 显式可见；
-- 原生 TUI session 优先；
+- 远程开发会话优先；
 - transport lab 用 evidence 晋级；
 - 数据落到 audit、network measurements、evidence runs，能复盘。

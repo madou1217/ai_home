@@ -46,7 +46,7 @@ Options:
   --session-account <id> Native provider account id for session smoke.
   --session-model <m>   Optional native model for session smoke.
   --session-project <p> Optional project path for session smoke, default current working directory.
-  --session-prompt <p>  Prompt sent to the native TUI for session smoke.
+  --session-prompt <p>  Prompt sent to the remote runtime for session smoke.
   --expect-output <txt> Required marker expected from terminal output in session smoke.
   --session-timeout-ms <n>
                          Session output wait timeout, default ${DEFAULT_SESSION_TIMEOUT_MS}.

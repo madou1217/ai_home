@@ -101,7 +101,7 @@ Profile detail:
 - Server Setup 的真实 browser auto-pair happy path 已跑通。
 - First-run gate 没有把 ready profile 用户困在配置页。
 - 临时 smoke 环境已证明不再读取宿主真实 session store。
-- 这只证明 local browser onboarding；跨设备、弱网、relay、native TUI runtime 仍未完成。
+- 这只证明 local browser onboarding；跨设备、弱网、relay、remote session runtime 仍未完成。
 
 ## Verdict
 

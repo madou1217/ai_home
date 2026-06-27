@@ -4,7 +4,7 @@
 
 - 不以单元测试代替真实网络验收。
 - 不以 WebUI 能打开代替产品可用。
-- 不以 relay 能连上代替原生 TUI 会话可用。
+- 不以 relay 能连上代替远程会话可用。
 - 每个实验必须记录环境、命令、时间、结果和失败原因。
 
 ## Lab 节点
@@ -29,12 +29,12 @@
   - `npm --prefix web run build` pass。
   - `node scripts/fabric-real-outbound-relay-smoke.js --timeout-ms 30000` 返回 `ok=true`、relay online、sessions RPC HTTP 200。
   - 远端复核只剩 `aih-fabric-current`，无 `aih-fabric-real-*` 目录；smoke 后无后台进程残留。
-- AWS Japan current 默认 `9527` 已完成真实 native relay Codex TUI 会话 smoke：marker 命中、`/quit` accepted、`session-run-abort` accepted、cleanup `completed=true`，事后无 Codex/relay 残留。
-- AWS Japan current 默认 `9527` 已完成真实 broker relay + Codex native session smoke：
+- AWS Japan current 默认 `9527` 已完成真实 relay Codex 会话 smoke：marker 命中、`/quit` accepted、`session-run-abort` accepted、cleanup `completed=true`，事后无 Codex/relay 残留。
+- AWS Japan current 默认 `9527` 已完成真实 broker relay + Codex 远程会话 smoke：
   - broker outbound link connected。
   - device/client endpoint 为 `/v0/fabric/broker/servers/aws-current/proxy`，`viaProxy=true`。
   - relay online，`transportKind=relay`，`sessions.status=200`。
-  - 真实 Codex TUI 输出 `AIH_REAL_BROKER_RELAY_OK_627A`，不是 prompt 原文命中。
+  - 真实 Codex 输出 `AIH_REAL_BROKER_RELAY_OK_627A`，不是 prompt 原文命中。
   - 证据：`docs/fabric/evidence/2026-06-27-outbound-broker-relay-aws-smoke.md`。
 - Broker Proxy 已进入 Server Profile 配置流程：
   - Server Setup 的配对和探测保存表单都能选择 `Broker Proxy`。
@@ -47,7 +47,7 @@
   - Broker proxy 离线响应返回 HTTP 503、`fabric_broker_server_offline`、`brokerStatus.online=false` 和 `lastDisconnected.disconnectReason=broker_server_link_closed`。
   - 同一个 `serverId` 重新连接后 broker proxy `readyz` 恢复 HTTP 200。
   - `aih fabric broker connect` 前台模式支持 `--reconnect-delay-ms` 与 `--max-attempts`。
-  - AWS Japan current 默认 `9527` 再次通过 broker proxy -> relay -> real Codex native session，模型输出 `AIH_BROKER_DIAGNOSTICS_RECOVERY_OK_20260627`。
+  - AWS Japan current 默认 `9527` 再次通过 broker proxy -> relay -> real Codex remote session，模型输出 `AIH_BROKER_DIAGNOSTICS_RECOVERY_OK_20260627`。
   - 证据：`docs/fabric/evidence/2026-06-27-broker-diagnostics-recovery.md`。
 - Broker Proxy 的 Server Setup 真实浏览器 smoke 已补：
   - 真实浏览器选择 `Broker Proxy` 并通过 broker proxy 完成 device pair。
@@ -55,16 +55,16 @@
   - profile 持久化为 `connectionMode=broker-proxy`、`state=paired`、`authState=paired`，点击 `进入工作台` 后进入 `/ui`。
   - 浏览器 console 为 0 errors / 0 warnings。
   - 证据：`docs/fabric/evidence/2026-06-27-browser-broker-profile-smoke.md`。
-- Cross-host outbound broker Server Profile/node relay/native session 已补：
+- Cross-host outbound broker Server Profile/node relay/远程会话已补：
   - AWS public broker endpoint `http://43.207.102.163:9527` 当前可由本机 client 访问。
   - 本机 server 通过 outbound broker link 注册到 AWS broker，client 通过 AWS broker proxy 访问本机 default `9527`。
   - `readyz`、`descriptor`、`device-pair`、`device-profile`、`device-nodes`、`device-status`、`device-accounts`、`device-sessions` 均 HTTP 200。
   - 同一 AWS broker proxy endpoint 上，node relay sessions RPC 返回 `ok=true`、`viaProxy=true`、`relay.online=true`、sessions HTTP 200。
-  - 同一 AWS broker proxy endpoint 上，真实 Codex native TUI session 返回 `ok=true`、runId present、模型输出 `AIH_CROSSHOST_BROKER_NATIVE_SESSION_VERIFY_OK_20260627`，`/quit` 与 abort cleanup 均 accepted。
+  - 同一 AWS broker proxy endpoint 上，真实 Codex 远程会话返回 `ok=true`、runId present、模型输出 `AIH_CROSSHOST_BROKER_NATIVE_SESSION_VERIFY_OK_20260627`，`/quit` 与 abort cleanup 均 accepted。
   - 跨主机 M2.5 判定为 pass；下一步进入 M3 Role Registry 产品闭环。
   - 证据：`docs/fabric/evidence/2026-06-27-crosshost-outbound-broker-profile-smoke.md`。
 - Cross-host API-mode relay smoke 工具已落地：`scripts/fabric-real-outbound-relay-smoke.js --node-join-url ... --device-pair-url ...` 可通过真实 join/pair API 准备 node/device，不再要求共享 host-home。
-- 本机 -> AWS 公网 `http://43.207.102.163:9527` 的 API-mode smoke 当前失败在 `node_join` 阶段，错误为 HTTP timeout；这证明跨主机默认路径当前被 AWS public HTTP ingress 阻塞，而不是 relay/native cleanup 逻辑阻塞。
+- 本机 -> AWS 公网 `http://43.207.102.163:9527` 的 API-mode smoke 当前失败在 `node_join` 阶段，错误为 HTTP timeout；这证明跨主机默认路径当前被 AWS public HTTP ingress 阻塞，而不是 relay/session cleanup 逻辑阻塞。
 - 已接受 [12-outbound-broker-routing.md](12-outbound-broker-routing.md)：AWS public HTTP ingress 不再作为当前阶段阻塞点，下一步以 server/node/client 都能 outbound 的 broker proxy 路线闭环。
 - M3 Role Registry measurement + UI slice 已补：
   - 当前工作区 `aih fabric registry agent` 会把 probe 摘要传入 heartbeat transport `measurement`。
@@ -215,7 +215,7 @@ Transport 只有满足 gate 后才能进入 MVP 默认路径。
 - 每次重连有原因和耗时。
 - 没有未知断开。
 
-## Native Session 验收
+## Remote Session 验收
 
 | 场景 | 验收 |
 |---|---|
@@ -284,7 +284,7 @@ node bin/ai-home.js fabric transport echo ws://127.0.0.1:<port>/echo --count 5 -
 # WebRTC browser lab: open /ui/fabric/webrtc-lab after Server Setup pairing and record evidence.
 # Current real AWS transfer-only deploy example:
 # node scripts/fabric-real-vps-deploy.js --ssh ubuntu@ec2-43-207-102-163.ap-northeast-1.compute.amazonaws.com --ssh-key /Users/model/.ssh/aws.pem --remote-dir /home/ubuntu/aih-fabric-current --node-runtime tmp/fabric-real-deploy/node-runtime/node-v22.16.0-linux-x64.tar.xz --skip-build --skip-import --skip-start
-# Current real AWS broker relay/native session smoke:
+# Current real AWS broker relay/remote session smoke:
 # node scripts/fabric-real-broker-relay-smoke.js --endpoint http://127.0.0.1:9527 --server-id aws-current --token-file /home/ubuntu/aih-fabric-current/.broker-token --host-home /home/ubuntu/aih-fabric-current/.aih-host-home
 # Supervised node service plan smoke:
 # node bin/ai-home.js node service install http://127.0.0.1:19886 --node-id aws-v21 --token-file /path/to/device.token --dry-run --json

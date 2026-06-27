@@ -4,7 +4,7 @@
 
 用户需要在公司、家里、手机、服务器之间随时接管任意电脑上的项目开发。两端通常都没有公网 IP，现有 SSH 能用但不够产品化；当前 WebUI 和 server 绑定过紧，远程节点功能缺少清晰配置入口、真实网络验收和可解释的产品流程。
 
-AIH Fabric 的目标是把 AIH 从本机多账号工具扩展成一个远程 AI coding fabric：任意设备可以进入任意授权机器上的原生 AI coding runtime，并尽量保留 Codex、Claude、AGY、OpenCode 的 TUI/GUI 能力。
+AIH Fabric 的目标是把 AIH 从本机多账号工具扩展成一个远程 AI coding fabric：任意设备可以进入任意授权机器上的 AI coding runtime，并尽量保留 Codex、Claude、AGY、OpenCode 的交互能力。
 
 ## 目标
 
@@ -12,7 +12,7 @@ AIH Fabric 的目标是把 AIH 从本机多账号工具扩展成一个远程 AI 
 - 手机 App/PWA/桌面端可以配置多个 AIH server，登录后选择 node、project、provider，再进入会话。
 - 任意 AIH 实例可以同时扮演 client、server、node、relay node。
 - 2M-3M 小水管 VPS 也能支撑稳定控制流和 agent 会话流。
-- 远程体验优先复刻原生 TUI/GUI，包括输入消息、slash、审批、resize、键盘控制、工具调用提示。
+- 远程体验优先保证消息输入、slash、审批、键盘控制、工具调用提示和弱网恢复。
 - 每个功能从设计、实现、测试到真实运行证据都可追溯。
 
 ## 非目标
@@ -41,7 +41,7 @@ AIH Fabric 是 AI coding agent 的远程控制层：
 - 账号和权限可治理。
 - 多设备进入同一会话。
 - 弱网下优先保证输入、审批、语义事件和恢复。
-- 原生 TUI/GUI 不被当前 WebUI chat 简化掉。
+- 远程开发会话不被当前 WebUI chat 简化成单一聊天框。
 
 ## 功能矩阵
 
@@ -51,7 +51,7 @@ AIH Fabric 是 AI coding agent 的远程控制层：
 | Node | 注册、项目发现、provider 摘要、会话启动 | 权限模板、分组、标签 | remote lifecycle 管理 |
 | Relay node | 注册、测速、转发、故障切换 | 多 relay 调度 | relay 计费和配额 |
 | Transport | WSS、WebRTC lab、WebTransport lab | 自动选路 | multipath QUIC 实验 |
-| 原生 TUI | PTY 镜像、输入、slash、resize | 鼠标、图片、文件引用 | provider GUI bridge |
+| 远程交互会话 | 事件流、输入、slash、审批 | 鼠标、图片、文件引用 | provider GUI bridge |
 | 语义事件 | 消息、工具、审批、diff、runtime status | session snapshot | 回放和审计搜索 |
 | 账号治理 | node-local 默认、account grant 设计 | 短期 credential lease | 多 server vault |
 | 手机端 | PWA/壳 App server 选择和会话控制 | 推送通知 | 离线审批队列 |

@@ -13,7 +13,7 @@ flowchart TD
   SelectNode[Select node]
   SelectProject[Select project]
   SelectRuntime[Select provider/runtime]
-  Session[Enter native session]
+  Session[Enter remote session]
 
   Open --> HasProfile
   HasProfile -- no --> Add --> Test --> Login --> Dashboard
@@ -96,7 +96,7 @@ sequenceDiagram
    - UI 状态：`Company PC` 同时是 node 和 relay node。
 
 6. 公司电脑作为 Client 选择 `server1 -> Home Mac -> project -> Codex/Claude`。
-   - UI 状态：Native Session header 显示 `Server: server1 / Node: Home Mac / Project: ... / Transport: ...`。
+   - UI 状态：Remote Session header 显示 `Server: server1 / Node: Home Mac / Project: ... / Transport: ...`。
    - 授权边界：使用 Home Mac 本地 provider account，或使用明确授予 Home Mac/project 的 account grant。
 
 7. 家里电脑作为 Client 选择 `server1 -> Company PC -> project -> Codex/Claude`。
@@ -162,17 +162,17 @@ sequenceDiagram
   S-->>C: projects
   C->>S: start session request
   S->>N: start runtime with provider and cwd
-  N->>A: spawn or attach native TUI
+  N->>A: spawn or attach runtime session
   A-->>N: PTY and semantic events
   N-->>C: session stream
 ```
 
-## 原生 TUI 会话
+## 远程交互会话
 
 客户端必须支持两条输入路径：
 
 - Text input: prompt、slash、普通命令文本。
-- Raw terminal input: 方向键、快捷键、Ctrl 组合、resize、粘贴。
+- Raw input: 方向键、快捷键、Ctrl 组合、粘贴。
 
 slash 支持原则：
 

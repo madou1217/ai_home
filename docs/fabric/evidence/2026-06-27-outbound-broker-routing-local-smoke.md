@@ -69,13 +69,13 @@ AIH_FABRIC_BROKER_TOKEN='<redacted-management-key>' node scripts/fabric-real-bro
 - Client 可以把 broker proxy base 当作 server profile endpoint。
 - 默认产品端口不增加；broker endpoint 复用 `aih server` listener。
 
-后续 AWS current 默认端口已完成 broker proxy -> outbound relay -> real Codex native session smoke，见 `2026-06-27-outbound-broker-relay-aws-smoke.md`。AWS `43.207.102.163:9527` 公网 HTTP 仍不可作为 client public ingress 依赖；本轮不继续卡在这个已确认限制上。
+后续 AWS current 默认端口已完成 broker proxy -> outbound relay -> real Codex remote session smoke，见 `2026-06-27-outbound-broker-relay-aws-smoke.md`。AWS `43.207.102.163:9527` 公网 HTTP 仍不可作为 client public ingress 依赖；本轮不继续卡在这个已确认限制上。
 
 ## Verdict
 
 partial
 
-协议和本机真实 socket 实现通过；跨主机 broker endpoint 与 native session over broker 仍待可达 broker 环境验证。
+协议和本机真实 socket 实现通过；跨主机 broker endpoint 与 remote session over broker 仍待可达 broker 环境验证。
 
 ## Next Checks
 

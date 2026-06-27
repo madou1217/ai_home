@@ -10,7 +10,7 @@ Accepted for the next implementation slice.
 
 2026-06-27 的真实验证显示：
 
-- AWS current 上 `127.0.0.1:9527` 的 `/readyz`、`/v1/responses`、native relay Codex TUI session 都可用。
+- AWS current 上 `127.0.0.1:9527` 的 `/readyz`、`/v1/responses`、relay Codex session session 都可用。
 - 公网 `43.207.102.163:9527` 只能 TCP connect，HTTP 请求没有进入 Node handler。
 - 本机到 AWS 的 API-mode relay smoke 卡在真实 `node_join` HTTP timeout。
 
@@ -125,15 +125,15 @@ Server outbound client 在本机请求 `http://127.0.0.1:9527/v0/fabric/descript
 2. 一个真实 AIH server 通过 outbound broker link 注册为 `serverId`。
 3. Client 通过 broker proxy 访问 `/readyz` 和 `/v0/fabric/descriptor`。
 4. Client 通过 broker proxy 完成 device pair。
-5. 如本地 node relay 已在线，Client 通过 broker proxy 触发 native session smoke。
+5. 如本地 node relay 已在线，Client 通过 broker proxy 触发 remote session smoke。
 
 当前状态：
 
 - 本地真实 socket broker proxy 验证通过，证据见 `evidence/2026-06-27-outbound-broker-routing-local-smoke.md`。
-- AWS current 默认 `9527` 已完成 broker proxy -> outbound relay -> real Codex native session smoke，证据见 `evidence/2026-06-27-outbound-broker-relay-aws-smoke.md`。
-- AWS current 默认 `9527` 已完成 broker link 断开诊断和同 `serverId` 恢复验证；proxy 离线响应包含 `brokerStatus.lastDisconnected`，重连后 readyz 恢复 200，并再次通过 broker relay real Codex native session。证据见 `evidence/2026-06-27-broker-diagnostics-recovery.md`。
+- AWS current 默认 `9527` 已完成 broker proxy -> outbound relay -> real Codex remote session smoke，证据见 `evidence/2026-06-27-outbound-broker-relay-aws-smoke.md`。
+- AWS current 默认 `9527` 已完成 broker link 断开诊断和同 `serverId` 恢复验证；proxy 离线响应包含 `brokerStatus.lastDisconnected`，重连后 readyz 恢复 200，并再次通过 broker relay real Codex remote session。证据见 `evidence/2026-06-27-broker-diagnostics-recovery.md`。
 - Browser-level Server Setup broker profile smoke 已完成，并已在 AWS current 默认 `9527` 验证 broker proxy device scoped routes。证据见 `evidence/2026-06-27-browser-broker-profile-smoke.md`。
-- Cross-host outbound broker 完整 M2.5 路径已完成：本机 server outbound 到 AWS public broker，本机 client 通过 AWS broker proxy 完成 readyz、descriptor、device pair、device scoped reads、node relay sessions RPC 和真实 Codex native session。证据见 `evidence/2026-06-27-crosshost-outbound-broker-profile-smoke.md`。
+- Cross-host outbound broker 完整 M2.5 路径已完成：本机 server outbound 到 AWS public broker，本机 client 通过 AWS broker proxy 完成 readyz、descriptor、device pair、device scoped reads、node relay sessions RPC 和真实 Codex remote session。证据见 `evidence/2026-06-27-crosshost-outbound-broker-profile-smoke.md`。
 
 ## Consequences
 

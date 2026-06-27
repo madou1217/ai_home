@@ -213,7 +213,7 @@ curl --noproxy "*" --max-time 10 http://43.207.102.163:9527/readyz -> timeout wi
 Fixes and regression used for this pass:
 
 ```text
-Codex native trust:
+Codex runtime trust:
   lib/server/codex-project-registry.js writes trust config to the account CODEX_HOME when provided.
   lib/server/control-plane-device-session-start.js passes the account .codex config dir before spawning native Codex.
 
@@ -256,7 +256,7 @@ response.output contains message output_text
 response.output_text == AIH_LOCAL_CODEX_NONSTREAM_9527_OK_20260627
 ```
 
-Local current-worktree native session-start evidence:
+Local current-worktree remote session-start evidence:
 
 ```text
 POST http://127.0.0.1:9527/v0/node-rpc/session-start

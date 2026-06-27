@@ -1,6 +1,6 @@
 ---
 name: aih-claude-frontend-worker
-description: Delegate complex AIH Fabric frontend and UI implementation work in /Users/model/projects/feature/ai_home to a Claude/frontend worker. Use for Server Setup, Nodes, Relay Health, WebRTC Lab, native session UI, mobile shell, interaction states, usability fixes, and browser-verified Fabric client experience work.
+description: Delegate complex AIH Fabric frontend and UI implementation work in /Users/model/projects/feature/ai_home to a Claude/frontend worker. Use for Server Setup, Nodes, Relay Health, WebRTC Lab, remote session UI, mobile shell, interaction states, usability fixes, and browser-verified Fabric client experience work.
 ---
 
 # AIH Claude Frontend Worker
@@ -53,9 +53,9 @@ Read only the sections needed for the task, but never implement behavior that co
 - Do not change product direction, role semantics, or milestone scope.
 - Do not modify backend protocol, API schemas, persistence contracts, or transport semantics unless the main thread explicitly assigns that work.
 - Do not hide missing API support with fake success states or hard-coded demo data.
-- Do not treat WebUI rendering as proof that Fabric transport or native TUI sessions work.
+- Do not treat WebUI rendering as proof that Fabric transport or remote sessions work.
 - Do not claim GUI bridge support; use `GUI planned` or `GUI lab` until its contract and evidence exist.
-- Keep server profile, Fabric registry, transport lab, native session, and legacy Control Plane UI concerns separate.
+- Keep server profile, Fabric registry, transport lab, remote session, and legacy Control Plane UI concerns separate.
 
 ## UI Design Rules
 
@@ -63,7 +63,7 @@ Read only the sections needed for the task, but never implement behavior that co
 - Use cards only for list items, dialogs, and tool panels; avoid nested cards.
 - Keep current server, node, project, runtime, transport, and health visible where users can get lost.
 - Prioritize mobile pairing, approvals, input sending, and status visibility.
-- Prioritize desktop native TUI viewport stability, keyboard flow, slash input, and side-rail diagnostics.
+- Prioritize desktop remote-session viewport stability, keyboard flow, slash input, and side-rail diagnostics.
 - Surface precise degraded and partial states instead of broad success labels.
 
 ## Required Evidence
@@ -75,7 +75,7 @@ Every worker report must include:
 - Files changed.
 - Build/type/test commands and results.
 - Browser verification: viewport, route, key user action, and observed result.
-- Runtime or network evidence when touching WebRTC, relay, or native session UI.
+- Runtime or network evidence when touching WebRTC, relay, or remote session UI.
 - Known gaps and follow-up checks.
 
 ## Stop Conditions

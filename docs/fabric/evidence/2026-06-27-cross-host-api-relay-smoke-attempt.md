@@ -140,7 +140,7 @@ No local relay child stayed running because the smoke failed before relay startu
 
 - The smoke tool now has the correct cross-host preparation path: it can use real node join and device pair APIs instead of direct host-home writes.
 - The actual local Mac -> AWS public `9527` control URL still fails before node join completes.
-- This confirms the current blocker for true cross-host node attachment is the public HTTP ingress path to AWS, not the native session cleanup logic proven in the previous AWS same-host relay smoke.
+- This confirms the current blocker for true cross-host node attachment is the public HTTP ingress path to AWS, not the remote session cleanup logic proven in the previous AWS same-host relay smoke.
 - A local SSH tunnel would likely bypass the ingress issue, but that would be SSH-assisted evidence, not the desired default product path. This pass intentionally did not create a tunnel or use another port.
 
 ## Verdict

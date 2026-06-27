@@ -47,7 +47,7 @@ AIH Fabric 协议分三层：
 
 ## PTY Layer
 
-PTY layer 目标是保留原生 TUI 体验。
+PTY layer 目标是保留远程交互会话的关键输入和事件语义。
 
 事件：
 

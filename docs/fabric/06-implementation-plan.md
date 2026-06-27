@@ -91,12 +91,12 @@
 
 - 本机真实 broker + 真实 AIH server outbound link 可访问 `/readyz` 和 `/v0/fabric/descriptor`。
 - 通过 broker proxy 完成真实 device pairing。
-- 如果 node relay 在线，通过 broker proxy 触发 native session smoke；否则明确记录阻塞原因。
-- AWS current 默认 `9527` 已完成 broker proxy -> outbound relay -> real Codex native session smoke；证据见 `docs/fabric/evidence/2026-06-27-outbound-broker-relay-aws-smoke.md`。
+- 如果 node relay 在线，通过 broker proxy 触发 remote session smoke；否则明确记录阻塞原因。
+- AWS current 默认 `9527` 已完成 broker proxy -> outbound relay -> real Codex remote session smoke；证据见 `docs/fabric/evidence/2026-06-27-outbound-broker-relay-aws-smoke.md`。
 - Broker Proxy 已接入 Server Profile 配置入口；Server Setup 可保存/配对 broker profile，服务层会持久化 `connectionMode` 和 broker metadata。证据见 `docs/fabric/evidence/2026-06-27-broker-profile-ui-entry.md`。
-- Broker link 断开诊断与同 `serverId` 恢复已在 AWS current 默认 `9527` 验证：proxy 离线返回 `brokerStatus.lastDisconnected`，重连后 readyz 恢复 200，并再次通过 broker relay real Codex native session。证据见 `docs/fabric/evidence/2026-06-27-broker-diagnostics-recovery.md`。
+- Broker link 断开诊断与同 `serverId` 恢复已在 AWS current 默认 `9527` 验证：proxy 离线返回 `brokerStatus.lastDisconnected`，重连后 readyz 恢复 200，并再次通过 broker relay real Codex remote session。证据见 `docs/fabric/evidence/2026-06-27-broker-diagnostics-recovery.md`。
 - Browser-level Server Setup broker profile smoke 已完成：真实浏览器选择 Broker Proxy，配对、descriptor、device profile/status/accounts/sessions 全部经 broker proxy 返回 200，console 0 error/0 warning，并进入 `/ui`。证据见 `docs/fabric/evidence/2026-06-27-browser-broker-profile-smoke.md`。
-- Cross-host outbound broker 的完整 M2.5 路径已完成：本机 server outbound 到 AWS public broker，本机 client 经 AWS broker proxy 完成 readyz、descriptor、device pair、device scoped reads、node relay sessions RPC 和真实 Codex native session。证据见 `docs/fabric/evidence/2026-06-27-crosshost-outbound-broker-profile-smoke.md`。
+- Cross-host outbound broker 的完整 M2.5 路径已完成：本机 server outbound 到 AWS public broker，本机 client 经 AWS broker proxy 完成 readyz、descriptor、device pair、device scoped reads、node relay sessions RPC 和真实 Codex remote session。证据见 `docs/fabric/evidence/2026-06-27-crosshost-outbound-broker-profile-smoke.md`。
 - 跨设备/跨主机验收必须使用真实可达 broker endpoint；当前 AWS `9527` 可作为 broker endpoint 验证，但产品仍不能要求每个 AIH server 自己暴露公网 HTTP ingress。
 
 ### M3: Role Registry
@@ -118,20 +118,20 @@
 - 公司电脑可在 server1 上显示为 node + relay node。
 - 当前完成 server-side API、测试、本地 loopback CLI publisher smoke、AWS current 默认 `9527` relay measurement 持久化、Fabric Nodes UI 浏览器 smoke、本机 + AWS current 两个真实 node/relay-node 同屏 evidence、AWS current 持久 token + 5 次长跑 registry agent heartbeat partial evidence、默认 `9527` WS echo p95/成功率/networkMeasurements trace evidence，以及移动端多节点 Fabric Nodes 回归 evidence。真正的 systemd daemon/service 安装仍待确认后执行。证据见 `docs/fabric/evidence/2026-06-27-m3-role-registry-measurement.md`、`docs/fabric/evidence/2026-06-27-m3-role-registry-two-nodes.md`、`docs/fabric/evidence/2026-06-27-m3-node-service-daemon-partial.md`、`docs/fabric/evidence/2026-06-27-m3-relay-health-strong-metrics.md` 和 `docs/fabric/evidence/2026-06-27-m3-fabric-nodes-mobile-regression.md`。
 
-### M4: Native Session
+### M4: 远程开发会话重新规划
 
 交付：
 
-- PTY layer session stream。
-- semantic event layer。
-- 输入、slash、resize、stop、detach。
-- provider runtime adapter：codex、claude 优先，agy/opencode 后接。
+- 重新定义跨设备开发入口和用户流程。
+- 明确 server、node、project、runtime、account grant 的选择顺序。
+- 明确普通消息、slash、审批、停止、恢复的协议边界。
+- 明确哪些能力走既有 Chat，哪些能力需要新的会话承载，不预设专用终端页面。
 
 验收：
 
-- 公司电脑从家里 node 启动 `aih codex`。
-- 家里电脑从公司 node 启动 `aih claude`。
-- 手机可以发送 slash 和审批。
+- 用户能看懂从 server profile 到 node/project/runtime 的完整路径。
+- 新设计有网络拓扑、流程图、功能矩阵、ER/状态模型和真实验收用例。
+- 没有新设计冻结前，不新增客户端菜单或页面入口。
 
 ### M5: Recovery and Hardening
 
@@ -161,7 +161,7 @@
 
 - Claude reviewer 不能直接改代码，先出 review 和阻塞项。
 - 复杂前端页面或交互失败必须交给前端 worker 先做实现/评审，主线程负责集成、真实浏览器验证和 evidence。
-- 当前 `aih claude` 已验证会进入原生 TUI/PTY，不是稳定的非交互 patch worker；后续需要把它产品化成可传任务、可限制文件范围、可回收 evidence 的委派入口。
+- 当前 `aih claude` 已验证会进入远程交互/PTY，不是稳定的非交互 patch worker；后续需要把它产品化成可传任务、可限制文件范围、可回收 evidence 的委派入口。
 - Codex implementer 只能执行已冻结的小任务，不改产品方向。
 - 每个 agent 输出必须包含 evidence。
 - 主线程负责把 evidence 写回测试计划或实现日志。

@@ -44,7 +44,7 @@ Read only the sections needed for the task, but never implement behavior that co
 - Prefer adapters over large rewrites when migrating existing Control Plane code.
 - Do not hard-code a local server as the client default.
 - Do not add provider-specific hacks to generic protocol code.
-- Do not treat WSS relay success as proof that native TUI sessions work.
+- Do not treat WSS relay success as proof that remote sessions work.
 - Do not store real tokens, private keys, refresh tokens, or production secrets in repo files.
 
 ## Required Evidence

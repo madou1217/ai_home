@@ -164,7 +164,7 @@ The remote raw TCP server printed `ready 18770` but did not print `conn` or `dat
 
 - The local echo lab is functional and can produce RTT evidence.
 - `39.104.59.31` can run temporary Node servers locally, but the public path on high ports `18768` and `18770` only proves TCP connect; application data did not reach the Node process during these tests.
-- This validates the product rule that `tcp reachable` is not enough to claim WSS/WebSocket or native session readiness.
+- This validates the product rule that `tcp reachable` is not enough to claim WSS/WebSocket or remote session readiness.
 - The next remote baseline should either open a known allowed port/security-group path, use 443 with a real reverse proxy/TLS setup, or run through the existing AIH server/relay route instead of ad hoc high ports.
 
 ## Verdict

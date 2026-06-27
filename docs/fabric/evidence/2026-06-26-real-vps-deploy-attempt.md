@@ -205,7 +205,7 @@ node "bin/ai-home.js" claude -p "<FabricNodes frontend worker prompt>" --no-sess
 - 已中断。
 - 没有获得 Claude 产出的前端 patch。
 
-解释：当前 `aih claude` 可作为原生 TUI/PTY 入口，但还不能被视为稳定的非交互 patch worker。后续需要先产品化 worker entry：任务输入、文件范围约束、超时、结果回收、evidence 输出。
+解释：当前 `aih claude` 可作为远程交互/PTY 入口，但还不能被视为稳定的非交互 patch worker。后续需要先产品化 worker entry：任务输入、文件范围约束、超时、结果回收、evidence 输出。
 
 ## Interpretation
 

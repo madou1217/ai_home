@@ -4,7 +4,7 @@
 
 当前仓库已经有 Control Plane、remote node、relay、device pairing、bootstrap、remote audit 等能力，但产品概念和入口不够清晰。Fabric 不应该全部推倒重写，也不能继续在旧 WebUI 上叠功能。
 
-迁移目标是：复用已验证的底层资产，把用户可见模型升级为 server profile first、instance roles、transport lab、native session。
+迁移目标是：复用已验证的底层资产，把用户可见模型升级为 server profile first、instance roles、transport lab、remote session。
 
 ## 旧能力现状
 
@@ -35,7 +35,7 @@
 - 不再把 Control Plane 等同于产品终态 server。
 - 不再用 `/test` 返回 200 代表远程开发成功。
 - 不再把 `remote-nodes.json` 继续扩成所有 Fabric 状态的总表。
-- 不再把 relay 成功连接等同于 native TUI 会话成功。
+- 不再把 relay 成功连接等同于远程开发会话成功。
 - 不再把 OMR/MPTCP 当成 AIH 自己的穿透能力；它们只能是 underlay 优化。
 
 ## 迁移路线
@@ -55,7 +55,7 @@
 把客户端启动入口改为：
 
 ```text
-Open client -> Server Profiles -> Test -> Pair/Login -> Dashboard -> Node -> Project -> Runtime -> Native Session
+Open client -> Server Profiles -> Test -> Pair/Login -> Dashboard -> Node -> Project -> Runtime -> Remote Session
 ```
 
 旧 `/ui/` 可以保留为已登录 server 下的一个页面，但不能在无 profile 时默认展示本机 WebUI。
@@ -78,7 +78,7 @@ Open client -> Server Profiles -> Test -> Pair/Login -> Dashboard -> Node -> Pro
 - `fabric-registry.json` 保存 Fabric role/project/runtime/relay metadata。
 - 可兼容的 node/relay transport 会双写到旧 remote registry，作为迁移期 `/v0/node-rpc/device-nodes` 的回读来源。
 
-### Step 4: Native Session
+### Step 4: Remote Session
 
 复用现有 session stream 能力时，必须经过 Fabric protocol：
 
@@ -102,14 +102,14 @@ transport -> session frame -> runtime event -> client renderer
 - `dual-write`: Fabric registry 和旧 registry 同时写入，evidence 证明两边结果一致。
 - `read-from-fabric`: UI 和客户端改读 Fabric，旧 registry 只做回滚来源。
 - `deprecated`: 至少一个小版本保留旧 API，并在返回 payload 中暴露迁移提示。
-- `removed`: 只有当 30 天内无旧 API 访问，且公司/家里互管、手机审批、native session、relay failover evidence 全部通过后才能移除。
+- `removed`: 只有当 30 天内无旧 API 访问，且公司/家里互管、手机审批、remote session、relay failover evidence 全部通过后才能移除。
 
 迁移指标：
 
 - 旧 `/v0/webui/nodes` 访问次数。
 - Fabric `nodes`/`relay_links` 写入成功率。
 - 旧 registry 到 Fabric registry 的双写差异数。
-- remote management `/test` 成功但 native session 失败的比例。
+- remote management `/test` 成功但 remote session 失败的比例。
 - 按 server/node/transport/session 聚合的失败错误码。
 
 ## 用户可见解释

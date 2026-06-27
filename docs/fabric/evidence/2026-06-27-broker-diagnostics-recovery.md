@@ -8,7 +8,7 @@
 - Broker proxy 离线响应返回 `brokerStatus.lastDisconnected`。
 - `aih fabric broker connect` 前台模式支持受控重连参数。
 - AWS current 默认 `9527` 上完成真实 broker diagnostics smoke。
-- AWS current 默认 `9527` 上再次完成 broker proxy -> relay -> real Codex native session smoke。
+- AWS current 默认 `9527` 上再次完成 broker proxy -> relay -> real Codex remote session smoke。
 
 ## Environment
 
@@ -141,7 +141,7 @@ Diagnostics smoke returned:
 }
 ```
 
-Broker relay native session returned:
+Broker relay remote session returned:
 
 ```json
 {
@@ -171,7 +171,7 @@ Broker relay native session returned:
 - Broker link failure is now diagnosable from the client-facing proxy response without shell access to the broker process.
 - The foreground `aih fabric broker connect` command can be run as a long-lived outbound link with bounded or infinite reconnect attempts.
 - Recovery with the same `serverId` replaces the previous offline state and restores proxy requests.
-- The real AWS native session check proves the diagnostics change did not regress broker proxy -> relay -> TUI runtime routing.
+- The real AWS remote session check proves the diagnostics change did not regress broker proxy -> relay -> TUI runtime routing.
 
 ## Verdict
 

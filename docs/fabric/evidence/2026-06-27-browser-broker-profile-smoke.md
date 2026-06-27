@@ -86,6 +86,9 @@ curl -s "http://127.0.0.1:50560/v0/fabric/broker/servers/browser-broker-mqwdmpmn
 | Browser console | 0 errors, 0 warnings |
 | Stored profile | `connectionMode=broker-proxy`, `state=paired`, `authState=paired`, device token present |
 | Enter workspace | final URL `http://127.0.0.1:50560/ui`, not setup |
+| AWS current default `9527` sync | pass; updated allowlist file and restarted single default-port server |
+| AWS current broker token env | present after restart |
+| AWS current broker device routes | pair 200; descriptor/profile/nodes/status/accounts/sessions all 200 |
 
 Stored profile summary:
 
@@ -126,11 +129,58 @@ The first browser run found a real product gap: pairing succeeded, but Server Se
 
 The broker allowlist now includes those four device-scoped read routes. It still does not allow management APIs or `/v1/responses`.
 
+## AWS Current Verification
+
+The same allowlist was synced to AWS current at `/home/ubuntu/aih-fabric-current` and the server was restarted on the default port only:
+
+```text
+PID: 110864
+Command: node bin/ai-home.js server serve --host 0.0.0.0 --port 9527
+AIH_FABRIC_BROKER_TOKEN: present
+```
+
+Remote focused test:
+
+```bash
+ssh -i "/Users/model/.ssh/aws.pem" \
+  "ubuntu@ec2-43-207-102-163.ap-northeast-1.compute.amazonaws.com" \
+  "cd /home/ubuntu/aih-fabric-current && \
+   PATH=/home/ubuntu/aih-fabric-current/.node-runtime/node-v22.16.0-linux-x64/bin:/home/ubuntu/aih-fabric-current/node_modules/.bin:\$PATH \
+   node --test test/fabric-broker-routing.test.js"
+```
+
+Result: 8/8 pass.
+
+Remote default-port broker proxy device route smoke:
+
+```json
+{
+  "ok": true,
+  "pair": { "status": 200, "ok": true, "hasToken": true },
+  "results": [
+    { "route": "/v0/fabric/descriptor", "status": 200, "ok": true },
+    { "route": "/v0/node-rpc/device-profile", "status": 200, "ok": true },
+    { "route": "/v0/node-rpc/device-nodes", "status": 200, "ok": true },
+    { "route": "/v0/node-rpc/device-status", "status": 200, "ok": true },
+    { "route": "/v0/node-rpc/device-accounts", "status": 200, "ok": true },
+    { "route": "/v0/node-rpc/device-sessions", "status": 200, "ok": true }
+  ]
+}
+```
+
+Post-smoke process check:
+
+```text
+110864 node bin/ai-home.js server serve --host 0.0.0.0 --port 9527
+```
+
+No broker connect or smoke process remained. `/readyz` reports `ready=false` and zero accounts because AWS current host data was previously cleared; that does not affect this broker/device-route verification.
+
 ## Interpretation
 
 - Browser-level Server Setup now works for Broker Proxy profiles, not just service-level profile serialization.
 - The route allowlist remains narrow and follows the actual client startup contract.
-- This closes the local browser smoke gap for Broker Profile UI entry.
+- This closes the browser smoke gap for Broker Profile UI entry and confirms the same server-side allowlist on AWS current default `9527`.
 - Cross-host outbound-only validation remains open because it requires a broker endpoint that is reachable by the client while the AIH server connects outbound.
 
 ## Verdict
@@ -139,6 +189,5 @@ pass
 
 ## Next Checks
 
-- Deploy or otherwise run this allowlist on AWS current before using AWS current as the browser-visible broker endpoint.
 - Add a reachable public broker endpoint smoke where client and server are on different hosts and both use outbound-only connectivity.
 - Add multi-broker/failover evidence.

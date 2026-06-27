@@ -23,7 +23,7 @@
   | 2 | done | 当前测试目标收敛为 AWS current，禁止继续使用旧 152/155/39.104 | 本文件 “Current VPS Target Set” 已声明 AWS only | 所有新 smoke 命令只访问 AWS current 或本机默认端口 |
   | 3 | done | AWS current 默认 `9527` 上完成真实 `/v1/responses`、native relay Codex TUI、broker relay Codex TUI、broker diagnostics recovery | `2026-06-27-outbound-broker-relay-aws-smoke.md`、`2026-06-27-broker-diagnostics-recovery.md` | 后续复测仍要用默认 `9527`，不新增端口 |
   | 4 | done | Server Profile 解耦第一刀：无 profile 进入 `/ui/server-setup`，配对成功后进入工作台 | `2026-06-26-fabric-browser-pairing-smoke.md` | 保持 browser smoke 作为 UI 改动回归门 |
-  | 5 | done | Broker Proxy 接入 Server Setup 的真实浏览器 smoke | `2026-06-27-browser-broker-profile-smoke.md`：真实浏览器配对、device profile/status/accounts/sessions 全部经 broker proxy 返回 200，console 0 error/0 warning，进入 `/ui` | 后续把同 allowlist 部署到 AWS current 后再做跨主机 broker endpoint smoke |
+  | 5 | done | Broker Proxy 接入 Server Setup 的真实浏览器 smoke | `2026-06-27-browser-broker-profile-smoke.md`：真实浏览器配对、device profile/status/accounts/sessions 全部经 broker proxy 返回 200，console 0 error/0 warning，进入 `/ui`；同 allowlist 已同步到 AWS current 默认 `9527` 并通过 broker proxy device route smoke | 下一步做跨主机 broker endpoint smoke |
   | 6 | pending | 跨主机 outbound-only broker 验收 | AWS public HTTP ingress 对 `43.207.102.163:9527` timeout；本地 socket 和 AWS loopback broker 已 pass | 需要一个真实可达 broker endpoint；client/server/node 都走 outbound，不依赖 AWS public high-port ingress |
   | 7 | pending | M3 Role Registry 产品闭环：home/company node + relay-node、周期心跳/daemon、UI 节点页、relay health measurement | server API、publisher、heartbeat、foreground agent、AWS current/历史 evidence 已有 | 补真实家里/公司节点 evidence；UI 展示 node/relay health；heartbeat 写入可诊断指标 |
   | 8 | pending | M4 Native Session 完整互控：公司控家里 Codex、家里控公司 Claude、手机 slash/审批 | AWS current 已有 Codex native relay session；Claude worker 非交互入口不稳定 | 补真实双向 node 场景和手机/PWA 输入、slash、审批 evidence |
@@ -71,6 +71,9 @@
   - 复测请求均为 200：`device-pair`、`descriptor`、`device-profile`、`device-nodes`、`device-status`、`device-accounts`、`device-sessions`。
   - 浏览器 console 为 0 errors / 0 warnings；profile 保存为 `connectionMode=broker-proxy`、`state=paired`、`authState=paired`，点击 `进入工作台` 后进入 `/ui`。
   - 本地回归：`node --test test/fabric-broker-routing.test.js test/control-plane-profiles.test.js test/fabric-profile-gate.test.js` -> 41/41 pass；`npm --prefix web run build` pass。
+  - AWS current 默认 `9527` 已同步 allowlist 并重启，唯一 server 进程为 `110864 node bin/ai-home.js server serve --host 0.0.0.0 --port 9527`，`AIH_FABRIC_BROKER_TOKEN` env present。
+  - AWS current 远端 `node --test test/fabric-broker-routing.test.js` -> 8/8 pass；broker proxy device route smoke 返回 pair 200，`descriptor/profile/nodes/status/accounts/sessions` 全部 200。
+  - AWS current 事后无 broker connect 或 smoke 残留进程；`/readyz` 仍为账号清理后的 `ready=false, accounts=0`，不影响本次 broker/device route 结论。
   - 证据：`docs/fabric/evidence/2026-06-27-browser-broker-profile-smoke.md`。
 - AWS current 默认端口真实 Codex `/v1/responses` 已在重新部署后通过：
   - non-stream：`POST http://127.0.0.1:9527/v1/responses`，`x-provider=codex`，`model=gpt-5.5`，`store=false`，HTTP 200，`response.output_text` 包含 `AIH_AWS_CODEX_NONSTREAM_REDEPLOY_9527_OK_20260627`。

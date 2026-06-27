@@ -755,6 +755,44 @@ const Settings = ({ section }: SettingsProps) => {
   const [clientPairModalOpen, setClientPairModalOpen] = useState(false);
   const [authorizationStatusFilter, setAuthorizationStatusFilter] = useState<ControlPlaneAuthorizationFilter>('all');
   const [remoteNodes, setRemoteNodes] = useState<RemoteNode[]>([]);
+  const [nodeAddModalOpen, setNodeAddModalOpen] = useState(false);
+  const [inviteModalOpen, setInviteModalOpen] = useState(false);
+  const [editingNode, setEditingNode] = useState<RemoteNode | null>(null);
+
+  const handleEditNode = (node: RemoteNode) => {
+    setEditingNode(node);
+    const preferredTransport = node.preferredTransports?.[0] || node.transports?.[0]?.kind || DEFAULT_REMOTE_TRANSPORT_KIND;
+    const mainTransport = node.transports?.find(t => t.kind === preferredTransport) || node.transports?.[0];
+
+    nodeForm.setFieldsValue({
+      id: node.id,
+      name: node.name,
+      endpoint: mainTransport?.endpoint || '',
+      transportKind: preferredTransport,
+      routeRole: mainTransport?.routeRole || 'data-plane',
+      trustLevel: mainTransport?.trustLevel || 'manual',
+      setupHint: mainTransport?.setupHint || '',
+      managementKey: ''
+    });
+    setNodeTransportKind(preferredTransport);
+    setNodeAddModalOpen(true);
+  };
+
+  const handleAddNewNode = () => {
+    setEditingNode(null);
+    nodeForm.resetFields();
+    const defaults = getRemoteTransportFormDefaults(DEFAULT_REMOTE_TRANSPORT_KIND);
+    nodeForm.setFieldsValue({
+      ...defaults,
+      id: '',
+      name: '',
+      endpoint: '',
+      setupHint: '',
+      managementKey: ''
+    });
+    setNodeTransportKind(DEFAULT_REMOTE_TRANSPORT_KIND);
+    setNodeAddModalOpen(true);
+  };
   const [remoteInvites, setRemoteInvites] = useState<RemoteNodeInvite[]>([]);
   const [remoteNodeDefaults, setRemoteNodeDefaults] = useState<RemoteNodeDefaults | null>(null);
   const [remoteNodeTestResults, setRemoteNodeTestResults] = useState<Record<string, RemoteNodeTestView>>({});
@@ -1304,6 +1342,7 @@ const Settings = ({ section }: SettingsProps) => {
       setRemoteNodes(await remoteNodesAPI.list());
       nodeForm.resetFields(['managementKey']);
       message.success('保存远程节点成功');
+      setNodeAddModalOpen(false);
     } catch (error: any) {
       message.error(error?.response?.data?.message || '保存远程节点失败');
     } finally {
@@ -2054,499 +2093,133 @@ const Settings = ({ section }: SettingsProps) => {
     );
   };
 
+  const onlineNodesCount = remoteNodes.filter(node => node.connection?.status === 'online').length;
+  const offlineNodesCount = remoteNodes.filter(node => node.connection?.status === 'offline').length;
+
   const remoteNodesContent = (
-    <div className="settings-grid">
+    <div className="settings-remote-nodes-page">
       <section className="settings-panel">
-        <div className="settings-panel-head">
+        <div className="settings-control-plane-head">
           <div>
-            <h2>一键加入</h2>
-            <p>为目标机器生成一次性命令，执行后自动注册到当前 Control Plane。</p>
+            <h2>远程节点</h2>
+            <p>管理通过 direct、FRP、SSH 或 overlay 连接至 Control Plane 的计算节点。</p>
           </div>
-        </div>
-        <Form
-          form={inviteForm}
-          layout="vertical"
-          onFinish={handleCreateInvite}
-          onValuesChange={handleInviteValuesChange}
-          initialValues={{
-            controlEndpoint: getDefaultControlEndpoint(),
-            ...getRemoteTransportFormDefaults(DEFAULT_REMOTE_TRANSPORT_KIND),
-            routeRole: 'data-plane',
-            bootstrapTarget: 'linux',
-            concurrency: 3,
-            timeoutMs: 3000,
-            executeConcurrency: 2,
-            executeTimeoutMs: 30 * 60 * 1000,
-            expiresMinutes: 60
-          }}
-        >
-          <Form.Item
-            name="controlEndpoint"
-            label="Control Endpoint"
-            rules={[{ required: true, message: '请输入 Control Endpoint' }]}
-          >
-            <Input placeholder="https://control.example.com" />
-          </Form.Item>
-          {renderControlEndpointHints(
-            controlPlaneEndpointHints,
-            controlPlaneEndpointWarnings,
-            (endpoint) => setInviteFieldsValue({ controlEndpoint: endpoint })
-          )}
-
-          <Form.Item name="transportKind" label="首选 Transport">
-            <Select options={REMOTE_TRANSPORT_KIND_OPTIONS} />
-          </Form.Item>
-          {renderRemoteTransportSummary(inviteTransportKind)}
-          {renderRemoteTransportStrategies()}
-
-          <details className="settings-advanced-fields">
-            <summary>高级路由覆盖</summary>
-            <Form.Item name="routeRole" label="Route Role">
-              <Select options={REMOTE_TRANSPORT_ROUTE_ROLE_OPTIONS} />
-            </Form.Item>
-
-            <Form.Item name="trustLevel" label="Trust Level">
-              <Select options={REMOTE_TRANSPORT_TRUST_LEVEL_OPTIONS} />
-            </Form.Item>
-          </details>
-
-          <Form.Item name="bootstrapTarget" label="目标系统">
-            <Select options={REMOTE_BOOTSTRAP_TARGET_OPTIONS} />
-          </Form.Item>
-
-          <details className="settings-advanced-fields">
-            <summary>高级身份覆盖</summary>
-            <Form.Item
-              name="nodeId"
-              label="覆盖节点 ID"
-              help="留空时由目标机器按 machine-id/电脑名自动生成。"
+          <Space size={8} wrap className="settings-control-plane-toolbar">
+            <Button
+              icon={<PlusOutlined />}
+              onClick={handleAddNewNode}
             >
-              <Input placeholder="自动使用目标机本机 ID" />
-            </Form.Item>
-
-            <Form.Item
-              name="name"
-              label="覆盖显示名称"
-              help="留空时由目标机器使用电脑名称。"
-            >
-              <Input placeholder="自动使用目标机电脑名称" />
-            </Form.Item>
-          </details>
-
-          <Form.Item
-            name="repoUrl"
-            label="Repo URL"
-            help="默认读取当前仓库 origin；SSH origin 会转成 HTTPS clone URL，减少目标机 SSH key 配置。"
-            rules={[{ required: true, message: '请输入 Repo URL' }]}
-          >
-            <Input placeholder="https://github.com/your-org/ai_home.git" />
-          </Form.Item>
-
-          <Form.Item name="repoDir" label="Repo Dir">
-            <Input placeholder={'可选，例如 /opt/ai_home 或 C:\\Users\\model\\ai_home'} />
-          </Form.Item>
-
-          <Form.Item
-            name="probeSshTargets"
-            label="SSH 探测目标"
-            help="可选；点击只读探测时并行执行 SSH 诊断，不写远端文件。"
-          >
-            <Input.TextArea
-              autoSize={{ minRows: 2, maxRows: 4 }}
-              placeholder={'model@192.168.3.8\nmodel@192.168.3.22'}
-            />
-          </Form.Item>
-
-          <Form.Item
-            name="probeTcpTargets"
-            label="TCP 探测目标"
-            help="可选；点击只读探测时检查 Windows/RDP/SMB/WinRM 端口，不执行远端命令。"
-          >
-            <Input.TextArea
-              autoSize={{ minRows: 2, maxRows: 4 }}
-              placeholder="192.168.3.76"
-            />
-          </Form.Item>
-
-          <details className="settings-advanced-fields">
-            <summary>高级探测/执行参数</summary>
-            <Form.Item name="concurrency" label="探测并发">
-              <InputNumber min={1} max={32} style={{ width: '100%' }} />
-            </Form.Item>
-            <Form.Item name="timeoutMs" label="探测超时">
-              <NumericAddonInput min={250} max={120000} addonAfter="ms" />
-            </Form.Item>
-            <Form.Item name="executeConcurrency" label="SSH 部署并发">
-              <InputNumber min={1} max={16} style={{ width: '100%' }} />
-            </Form.Item>
-            <Form.Item name="executeTimeoutMs" label="SSH 部署超时">
-              <NumericAddonInput min={1000} max={24 * 60 * 60 * 1000} addonAfter="ms" />
-            </Form.Item>
-          </details>
-
-          <Form.Item name="endpointHint" label="Endpoint Hint">
-            <Input placeholder="可选，例如 http://100.64.0.20:9527" />
-          </Form.Item>
-
-          <Form.Item name="setupHint" label="Setup Hint">
-            <Input placeholder="可选，例如 已通过 VPN 暴露本地端口" />
-          </Form.Item>
-
-          <Form.Item
-            name="expiresMinutes"
-            label="有效期"
-            rules={[
-              { type: 'number', min: 5, max: 1440, message: '有效期必须在 5-1440 分钟之间' }
-            ]}
-          >
-            <NumericAddonInput min={5} max={1440} addonAfter="分钟" />
-          </Form.Item>
-
-          <Form.Item>
-            <Space className="settings-actions" wrap>
-              <Button type="primary" htmlType="submit" icon={<PlusOutlined />} loading={inviteCreating}>
-                生成加入命令
-              </Button>
-              <Button
-                htmlType="button"
-                icon={<FileTextOutlined />}
-                loading={bootstrapPlanLoading}
-                onClick={handlePreviewBootstrapPlan}
-              >
-                部署计划
-              </Button>
-              <Button
-                htmlType="button"
-                icon={<SearchOutlined />}
-                loading={bootstrapProbeRunning}
-                onClick={handleRunBootstrapProbe}
-              >
-                只读探测
-              </Button>
-            </Space>
-          </Form.Item>
-        </Form>
-
-        {renderBootstrapPlanPanel()}
-
-        {latestBootstrapProbe && (
-          <div className="settings-join-command settings-probe-panel">
-            <div className="settings-join-command-head">
-              <strong>只读探测结果</strong>
-              <Button
-                size="small"
-                icon={<CopyOutlined />}
-                onClick={() => copyText(latestBootstrapProbe.command, '已复制探测命令')}
-              >
-                复制命令
-              </Button>
-            </div>
-            <div className="settings-probe-summary">
-              <Tag>targets {latestBootstrapProbe.report.summary.total}</Tag>
-              <Tag color="green">ssh {latestBootstrapProbe.report.summary.reachableSsh}</Tag>
-              <Tag color="gold">ssh auth {latestBootstrapProbe.report.summary.authRequiredSsh || 0}</Tag>
-              <Tag color="blue">winrm {latestBootstrapProbe.report.summary.winrm}</Tag>
-              <Tag color="gold">local {latestBootstrapProbe.report.summary.localManual}</Tag>
-              <Tag color="red">unreachable {latestBootstrapProbe.report.summary.unreachable}</Tag>
-            </div>
-            {renderWarningAlert(latestBootstrapProbe.report.warnings, '探测注意事项')}
-            {renderBootstrapApplyPreview()}
-            {latestBootstrapProbe.report.executionPlan?.length ? (
-              <div className="settings-probe-execution-plan">
-                <strong>建议执行顺序</strong>
-                <div className="settings-probe-execution-list">
-                  {latestBootstrapProbe.report.executionPlan.map((step) => {
-                    const status = getProbeExecutionStatusMeta(step);
-                    const copyAction = getProbeExecutionCopyAction(step);
-                    return (
-                      <div className="settings-probe-execution-step" key={`${step.order}:${step.resultKey}`}>
-                        <div className="settings-probe-execution-main">
-                          <span className="settings-probe-execution-order">{step.order}</span>
-                          <span className="settings-probe-execution-copy">
-                            <strong>{step.title}</strong>
-                            <span>{step.target}</span>
-                          </span>
-                        </div>
-                        <div className="settings-probe-execution-meta">
-                          <Tag color={status.color}>{status.label}</Tag>
-                          {step.channel && <Tag>{step.channel}</Tag>}
-                          {copyAction && (
-                            <Button
-                              size="small"
-                              icon={<CopyOutlined />}
-                              onClick={() => copyText(step.command, copyAction.successMessage)}
-                            >
-                              {copyAction.label}
-                            </Button>
-                          )}
-                          {renderManualCommandActions(step.manualCommands, { compact: true })}
-                        </div>
-                        <p>{step.summary}</p>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : null}
-            <div className="settings-probe-results">
-              {latestBootstrapProbe.report.results.map((result) => {
-                const status = getProbeStatus(result);
-                const meta = getProbeResultMeta(result);
-                const copyActions = getProbeCopyActions(result);
-                return (
-                  <div className="settings-probe-result" key={`${result.kind}:${result.target}`}>
-                    <div className="settings-probe-result-head">
-                      <strong>{getProbeResultTitle(result)}</strong>
-                      <Space size={4} wrap>
-                        <Tag color={status.color}>{status.label}</Tag>
-                        {result.bootstrapAction?.channel && <Tag>{result.bootstrapAction.channel}</Tag>}
-                        {copyActions.map((action) => (
-                          <Button
-                            key={action.key}
-                            size="small"
-                            icon={<CopyOutlined />}
-                            onClick={() => copyText(action.value, action.successMessage)}
-                          >
-                            {action.label}
-                          </Button>
-                        ))}
-                      </Space>
-                    </div>
-                    <div className="settings-probe-meta">
-                      {meta.map((item) => <span key={item}>{item}</span>)}
-                      {result.bootstrapScript?.type && <span>script: {result.bootstrapScript.type}</span>}
-                    </div>
-                    {result.bootstrapScript?.requiredInputs?.length ? (
-                      <p className="settings-probe-note">
-                        缺少输入：{result.bootstrapScript.requiredInputs.join(', ')}
-                      </p>
-                    ) : null}
-                    {result.bootstrapAction?.note && (
-                      <p className="settings-probe-note">{result.bootstrapAction.note}</p>
-                    )}
-                    <pre>{result.recommendation}</pre>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {latestInviteJoinUrl && (
-          <div className="settings-join-command">
-            <div className="settings-join-command-head">
-              <strong>加入命令</strong>
-              <Space size={6}>
-                <Button
-                  size="small"
-                  icon={<CopyOutlined />}
-                  onClick={() => copyText(latestInviteJoinCommand, '已复制加入命令')}
-                >
-                  复制命令
-                </Button>
-                <Button
-                  size="small"
-                  icon={<CopyOutlined />}
-                  onClick={() => copyText(latestInviteJoinUrl, '已复制加入链接')}
-                >
-                  复制 URL
-                </Button>
-              </Space>
-            </div>
-            <div className="settings-pair-body">
-              <div className="settings-pair-qr">
-                <QRCode value={latestInviteJoinUrl} size={168} bordered={false} />
-              </div>
-              <div className="settings-pair-detail">
-                {renderWarningAlert(latestInviteWarnings, '加入前确认 Control Endpoint')}
-                <div className="settings-pair-code">{latestInvite?.code}</div>
-                <pre>{latestInviteJoinCommand}</pre>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {latestInvite?.probeCommand && (
-          <div className="settings-join-command">
-            <div className="settings-join-command-head">
-              <strong>多节点探测命令</strong>
-              <Button
-                size="small"
-                icon={<CopyOutlined />}
-                onClick={() => copyText(latestInvite.probeCommand || '', '已复制探测命令')}
-              >
-                复制
-              </Button>
-            </div>
-            <pre>{latestInvite.probeCommand}</pre>
-            {renderWarningAlert(latestInviteWarnings, '探测前确认 Control Endpoint')}
-          </div>
-        )}
-
-      </section>
-
-      <section className="settings-panel">
-        <div className="settings-panel-head">
-          <div>
-            <h2>添加远程节点</h2>
-            <p>先接入 direct、FRP、SSH、本地转发或 overlay 提供的 HTTP endpoint。</p>
-          </div>
-        </div>
-        <Form
-          form={nodeForm}
-          layout="vertical"
-          onFinish={handleSaveNode}
-          onValuesChange={handleNodeValuesChange}
-          initialValues={{
-            ...getRemoteTransportFormDefaults(DEFAULT_REMOTE_TRANSPORT_KIND),
-            routeRole: 'data-plane',
-          }}
-        >
-          <div className="settings-derived-grid settings-derived-grid--identity">
-            {buildRemoteNodeDefaultPreview(
-              remoteNodeDefaults,
-              getRemoteTransportFormDefaults(nodeTransportKind)
-            ).map((item) => (
-              <div className="settings-derived-cell" key={item.id}>
-                <span>{item.label}</span>
-                <strong>{item.value}</strong>
-              </div>
-            ))}
-          </div>
-
-          <Form.Item
-            name="id"
-            label="覆盖节点 ID"
-            help="留空使用默认节点 ID；登记其他机器时才需要覆盖。"
-          >
-            <Input placeholder={remoteNodeDefaults?.nodeId || '默认节点 ID 加载中'} />
-          </Form.Item>
-
-          <Form.Item
-            name="name"
-            label="覆盖显示名称"
-            help="留空使用当前电脑名称。"
-          >
-            <Input placeholder={remoteNodeDefaults?.name || '默认电脑名称加载中'} />
-          </Form.Item>
-
-          <Form.Item
-            name="endpoint"
-            label="管理入口"
-            help={getRemoteTransportEndpointHelp(remoteTransportCatalog, nodeTransportKind)}
-            rules={isRemoteTransportEndpointRequired(remoteTransportCatalog, nodeTransportKind)
-              ? [{ required: true, message: '请输入管理入口' }]
-              : []}
-          >
-            <Input placeholder={getRemoteTransportEndpointPlaceholder(remoteTransportCatalog, nodeTransportKind)} />
-          </Form.Item>
-
-          <Form.Item name="transportKind" label="Transport">
-            <Select options={REMOTE_TRANSPORT_KIND_OPTIONS} />
-          </Form.Item>
-          {renderRemoteTransportSummary(nodeTransportKind)}
-
-          <details className="settings-advanced-fields">
-            <summary>高级路由覆盖</summary>
-            <Form.Item name="routeRole" label="Route Role">
-              <Select options={REMOTE_TRANSPORT_ROUTE_ROLE_OPTIONS} />
-            </Form.Item>
-
-            <Form.Item name="trustLevel" label="Trust Level">
-              <Select options={REMOTE_TRANSPORT_TRUST_LEVEL_OPTIONS} />
-            </Form.Item>
-          </details>
-
-          <Form.Item name="setupHint" label="Setup Hint">
-            <Input placeholder="可选，例如 用户托管的本地端口映射" />
-          </Form.Item>
-
-          <Form.Item
-            name="managementKey"
-            label="Management Key"
-            help="只保存在本机 secret store，不会出现在节点列表响应里。"
-          >
-            <Input.Password autoComplete="new-password" placeholder="远程节点的 management key" />
-          </Form.Item>
-
-          <Form.Item>
-            <Button type="primary" htmlType="submit" icon={<SaveOutlined />} loading={nodeSaving}>
-              保存远程节点
+              手动配置节点
             </Button>
-          </Form.Item>
-        </Form>
-      </section>
+            <Button
+              type="primary"
+              icon={<LinkOutlined />}
+              onClick={() => setInviteModalOpen(true)}
+            >
+              一键加入部署
+            </Button>
+          </Space>
+        </div>
 
-      <section className="settings-panel">
-        <div className="settings-panel-head">
-          <div>
-            <h2>已配置节点</h2>
-            <p>节点能力通过 Control Plane 聚合，业务页面后续按节点维度读取。</p>
-          </div>
+        <div className="settings-remote-nodes-stats">
+          <span>
+            <strong>{remoteNodes.length}</strong>
+            已配置节点
+          </span>
+          <span>
+            <strong style={{ color: 'var(--c-success-600)' }}>{onlineNodesCount}</strong>
+            在线节点
+          </span>
+          <span>
+            <strong style={{ color: offlineNodesCount > 0 ? 'var(--c-danger-600)' : 'var(--app-muted)' }}>{offlineNodesCount}</strong>
+            离线节点
+          </span>
+          <span>
+            <strong>{remoteInvites.length}</strong>
+            加入记录
+          </span>
         </div>
-        <div className="settings-node-list">
-          {remoteNodes.length === 0 ? (
-            <Alert type="info" showIcon message="暂无远程节点" />
-          ) : remoteNodes.map((node) => {
-            const connection = getRemoteNodeConnectionMeta(node);
-            return (
-              <div className="settings-node-item" key={node.id}>
-                <div className="settings-node-main">
-                  <strong>{node.name || node.id}</strong>
-                  <span>{node.id}</span>
-                </div>
-                <div className="settings-node-meta">
-                  <Tag color={connection.color}>{connection.label}</Tag>
-                  <Tag>{connection.detail}</Tag>
-                  {(node.transports || []).map((transport) => (
-                    <Space key={transport.id} size={4} wrap>
-                      <Tag>{transport.kind}</Tag>
-                      <Tag color={getRemoteTransportStatusColor(transport.status)}>{transport.status || 'unknown'}</Tag>
-                      {transport.provider && <Tag>{transport.provider}</Tag>}
-                      <Tag>{transport.routeRole}</Tag>
-                      <Tag>{transport.trustLevel}</Tag>
-                    </Space>
-                  ))}
-                </div>
-                <Button size="small" loading={testingNodeId === node.id} onClick={() => handleTestNode(node.id)}>
-                  测试连接
-                </Button>
-                {renderRemoteNodeTestResult(node.id)}
-              </div>
-            );
-          })}
-        </div>
-      </section>
 
-      <section className="settings-panel">
-        <div className="settings-panel-head">
-          <div>
-            <h2>加入记录</h2>
-            <p>历史 invite 只保留 hash 后状态，加入命令只在创建时显示。</p>
-          </div>
-        </div>
-        <div className="settings-invite-list">
-          {remoteInvites.length === 0 ? (
-            <Alert type="info" showIcon message="暂无加入记录" />
-          ) : remoteInvites.map((invite) => {
-            const status = formatInviteStatus(invite);
-            return (
-              <div className="settings-invite-item" key={invite.id}>
-                <div className="settings-node-main">
-                  <strong>{invite.name || invite.nodeId || invite.id}</strong>
-                  <span>{invite.nodeId || invite.id}</span>
+        <Tabs
+          className="settings-control-plane-manage-tabs"
+          items={[
+            {
+              key: 'nodes',
+              label: '远程节点',
+              children: (
+                <div className="settings-node-list">
+                  {remoteNodes.length === 0 ? (
+                    <Alert type="info" showIcon message="暂无配置节点" />
+                  ) : (
+                    remoteNodes.map((node) => {
+                      const connection = getRemoteNodeConnectionMeta(node);
+                      return (
+                        <div className="settings-node-item" key={node.id}>
+                          <div className="settings-node-main">
+                            <strong>{node.name || node.id}</strong>
+                            <span>{node.id}</span>
+                          </div>
+                          <div className="settings-node-meta">
+                            <Tag color={connection.color}>{connection.label}</Tag>
+                            <Tag>{connection.detail}</Tag>
+                            {(node.transports || []).map((transport) => (
+                              <Space key={transport.id} size={4} wrap>
+                                <Tag>{transport.kind}</Tag>
+                                <Tag color={getRemoteTransportStatusColor(transport.status)}>{transport.status || 'unknown'}</Tag>
+                                {transport.provider && <Tag>{transport.provider}</Tag>}
+                                <Tag>{transport.routeRole}</Tag>
+                                <Tag>{transport.trustLevel}</Tag>
+                              </Space>
+                            ))}
+                          </div>
+                          <Space size={6}>
+                            <Button size="small" onClick={() => handleEditNode(node)}>
+                              编辑配置
+                            </Button>
+                            <Button size="small" loading={testingNodeId === node.id} onClick={() => handleTestNode(node.id)}>
+                              测试连接
+                            </Button>
+                          </Space>
+                          {renderRemoteNodeTestResult(node.id)}
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
-                <div className="settings-node-meta">
-                  <Tag>{invite.transportKind}</Tag>
-                  {invite.provider && <Tag>{invite.provider}</Tag>}
-                  <Tag>{invite.routeRole}</Tag>
-                  <Tag>{invite.trustLevel}</Tag>
-                  <Tag color={status.color}>{status.label}</Tag>
+              )
+            },
+            {
+              key: 'invites',
+              label: '加入记录',
+              children: (
+                <div className="settings-invite-list">
+                  {remoteInvites.length === 0 ? (
+                    <Alert type="info" showIcon message="暂无加入记录" />
+                  ) : (
+                    remoteInvites.map((invite) => {
+                      const status = formatInviteStatus(invite);
+                      return (
+                        <div className="settings-invite-item" key={invite.id}>
+                          <div className="settings-node-main">
+                            <strong>{invite.name || invite.nodeId || invite.id}</strong>
+                            <span>{invite.nodeId || invite.id}</span>
+                          </div>
+                          <div className="settings-node-meta">
+                            <Tag>{invite.transportKind}</Tag>
+                            {invite.provider && <Tag>{invite.provider}</Tag>}
+                            <Tag>{invite.routeRole}</Tag>
+                            <Tag>{invite.trustLevel}</Tag>
+                            <Tag color={status.color}>{status.label}</Tag>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              )
+            }
+          ]}
+        />
       </section>
     </div>
   );
@@ -3009,6 +2682,447 @@ const Settings = ({ section }: SettingsProps) => {
   ];
   const standaloneSection = section ? sectionItems.find((item) => item.key === section) : null;
 
+  const nodeModals = (
+    <>
+      <Modal
+        title={editingNode ? "编辑远程节点" : "手动配置节点"}
+        open={nodeAddModalOpen}
+        footer={null}
+        width={680}
+        onCancel={() => setNodeAddModalOpen(false)}
+        destroyOnClose
+      >
+        <Form
+          form={nodeForm}
+          layout="vertical"
+          onFinish={handleSaveNode}
+          onValuesChange={handleNodeValuesChange}
+          initialValues={{
+            ...getRemoteTransportFormDefaults(DEFAULT_REMOTE_TRANSPORT_KIND),
+            routeRole: 'data-plane',
+          }}
+        >
+          <div className="settings-derived-grid settings-derived-grid--identity" style={{ marginBottom: 16 }}>
+            {buildRemoteNodeDefaultPreview(
+              remoteNodeDefaults,
+              getRemoteTransportFormDefaults(nodeTransportKind)
+            ).map((item) => (
+              <div className="settings-derived-cell" key={item.id}>
+                <span>{item.label}</span>
+                <strong>{item.value}</strong>
+              </div>
+            ))}
+          </div>
+
+          <Form.Item
+            name="id"
+            label="覆盖节点 ID"
+            help="留空使用默认节点 ID；登记其他机器时才需要覆盖。"
+          >
+            <Input placeholder={remoteNodeDefaults?.nodeId || '默认节点 ID 加载中'} disabled={!!editingNode} />
+          </Form.Item>
+
+          <Form.Item
+            name="name"
+            label="覆盖显示名称"
+            help="留空使用当前电脑名称。"
+          >
+            <Input placeholder={remoteNodeDefaults?.name || '默认电脑名称加载中'} />
+          </Form.Item>
+
+          <Form.Item
+            name="endpoint"
+            label="管理入口"
+            help={getRemoteTransportEndpointHelp(remoteTransportCatalog, nodeTransportKind)}
+            rules={isRemoteTransportEndpointRequired(remoteTransportCatalog, nodeTransportKind)
+              ? [{ required: true, message: '请输入管理入口' }]
+              : []}
+          >
+            <Input placeholder={getRemoteTransportEndpointPlaceholder(remoteTransportCatalog, nodeTransportKind)} />
+          </Form.Item>
+
+          <Form.Item name="transportKind" label="Transport">
+            <Select options={REMOTE_TRANSPORT_KIND_OPTIONS} />
+          </Form.Item>
+          {renderRemoteTransportSummary(nodeTransportKind)}
+
+          <details className="settings-advanced-fields" style={{ marginBottom: 16 }}>
+            <summary>高级路由覆盖</summary>
+            <div style={{ marginTop: 8 }}>
+              <Form.Item name="routeRole" label="Route Role">
+                <Select options={REMOTE_TRANSPORT_ROUTE_ROLE_OPTIONS} />
+              </Form.Item>
+
+              <Form.Item name="trustLevel" label="Trust Level">
+                <Select options={REMOTE_TRANSPORT_TRUST_LEVEL_OPTIONS} />
+              </Form.Item>
+            </div>
+          </details>
+
+          <Form.Item name="setupHint" label="Setup Hint">
+            <Input placeholder="可选，例如 用户托管的本地端口映射" />
+          </Form.Item>
+
+          <Form.Item
+            name="managementKey"
+            label="Management Key"
+            help="只保存在本机 secret store，不会出现在节点列表响应里。"
+          >
+            <Input.Password autoComplete="new-password" placeholder="远程节点的 management key" />
+          </Form.Item>
+
+          <Form.Item style={{ marginBottom: 0, textAlign: 'right' }}>
+            <Space>
+              <Button onClick={() => setNodeAddModalOpen(false)}>取消</Button>
+              <Button type="primary" htmlType="submit" icon={<SaveOutlined />} loading={nodeSaving}>
+                保存
+              </Button>
+            </Space>
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="一键加入部署"
+        open={inviteModalOpen}
+        footer={null}
+        width={960}
+        onCancel={() => setInviteModalOpen(false)}
+        destroyOnClose
+        style={{ top: 40 }}
+      >
+        <div style={{ maxHeight: 'calc(100vh - 200px)', overflowY: 'auto', paddingRight: 8 }}>
+          <Form
+            form={inviteForm}
+            layout="vertical"
+            onFinish={handleCreateInvite}
+            onValuesChange={handleInviteValuesChange}
+            initialValues={{
+              controlEndpoint: getDefaultControlEndpoint(),
+              ...getRemoteTransportFormDefaults(DEFAULT_REMOTE_TRANSPORT_KIND),
+              routeRole: 'data-plane',
+              bootstrapTarget: 'linux',
+              concurrency: 3,
+              timeoutMs: 3000,
+              executeConcurrency: 2,
+              executeTimeoutMs: 30 * 60 * 1000,
+              expiresMinutes: 60
+            }}
+          >
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <div>
+                <Form.Item
+                  name="controlEndpoint"
+                  label="Control Endpoint"
+                  rules={[{ required: true, message: '请输入 Control Endpoint' }]}
+                >
+                  <Input placeholder="https://control.example.com" />
+                </Form.Item>
+                {renderControlEndpointHints(
+                  controlPlaneEndpointHints,
+                  controlPlaneEndpointWarnings,
+                  (endpoint) => setInviteFieldsValue({ controlEndpoint: endpoint })
+                )}
+
+                <Form.Item name="transportKind" label="首选 Transport">
+                  <Select options={REMOTE_TRANSPORT_KIND_OPTIONS} />
+                </Form.Item>
+                {renderRemoteTransportSummary(inviteTransportKind)}
+                {renderRemoteTransportStrategies()}
+
+                <Form.Item name="bootstrapTarget" label="目标系统">
+                  <Select options={REMOTE_BOOTSTRAP_TARGET_OPTIONS} />
+                </Form.Item>
+              </div>
+
+              <div>
+                <Form.Item
+                  name="repoUrl"
+                  label="Repo URL"
+                  help="默认读取当前仓库 origin；SSH origin 会转成 HTTPS clone URL，减少目标机 SSH key 配置。"
+                  rules={[{ required: true, message: '请输入 Repo URL' }]}
+                >
+                  <Input placeholder="https://github.com/your-org/ai_home.git" />
+                </Form.Item>
+
+                <Form.Item name="repoDir" label="Repo Dir">
+                  <Input placeholder={'可选，例如 /opt/ai_home 或 C:\\\\Users\\\\model\\\\ai_home'} />
+                </Form.Item>
+
+                <Form.Item
+                  name="expiresMinutes"
+                  label="有效期"
+                  rules={[
+                    { type: 'number', min: 5, max: 1440, message: '有效期必须在 5-1440 分钟之间' }
+                  ]}
+                >
+                  <NumericAddonInput min={5} max={1440} addonAfter="分钟" />
+                </Form.Item>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <details className="settings-advanced-fields" style={{ gridColumn: '1 / -1', marginBottom: 16 }}>
+                <summary>高级路由覆盖与诊断参数</summary>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginTop: 12 }}>
+                  <Form.Item name="routeRole" label="Route Role">
+                    <Select options={REMOTE_TRANSPORT_ROUTE_ROLE_OPTIONS} />
+                  </Form.Item>
+
+                  <Form.Item name="trustLevel" label="Trust Level">
+                    <Select options={REMOTE_TRANSPORT_TRUST_LEVEL_OPTIONS} />
+                  </Form.Item>
+
+                  <Form.Item
+                    name="nodeId"
+                    label="覆盖节点 ID"
+                    help="留空时由目标机器按 machine-id/电脑名自动生成。"
+                  >
+                    <Input placeholder="自动使用目标机本机 ID" />
+                  </Form.Item>
+
+                  <Form.Item
+                    name="name"
+                    label="覆盖显示名称"
+                    help="留空时由目标机器使用电脑名称。"
+                  >
+                    <Input placeholder="自动使用目标机电脑名称" />
+                  </Form.Item>
+
+                  <Form.Item
+                    name="probeSshTargets"
+                    label="SSH 探测目标"
+                    help="可选；点击只读探测时并行执行 SSH 诊断，不写远端文件。"
+                  >
+                    <Input.TextArea
+                      autoSize={{ minRows: 2, maxRows: 4 }}
+                      placeholder={'model@192.168.3.8\\nmodel@192.168.3.22'}
+                    />
+                  </Form.Item>
+
+                  <Form.Item
+                    name="probeTcpTargets"
+                    label="TCP 探测目标"
+                    help="可选；点击只读探测时检查 Windows/RDP/SMB/WinRM 端口，不执行远端命令。"
+                  >
+                    <Input.TextArea
+                      autoSize={{ minRows: 2, maxRows: 4 }}
+                      placeholder="192.168.3.76"
+                    />
+                  </Form.Item>
+
+                  <Form.Item name="concurrency" label="探测并发">
+                    <InputNumber min={1} max={32} style={{ width: '100%' }} />
+                  </Form.Item>
+
+                  <Form.Item name="timeoutMs" label="探测超时">
+                    <NumericAddonInput min={250} max={120000} addonAfter="ms" />
+                  </Form.Item>
+
+                  <Form.Item name="executeConcurrency" label="SSH 部署并发">
+                    <InputNumber min={1} max={16} style={{ width: '100%' }} />
+                  </Form.Item>
+
+                  <Form.Item name="executeTimeoutMs" label="SSH 部署超时">
+                    <NumericAddonInput min={1000} max={24 * 60 * 60 * 1000} addonAfter="ms" />
+                  </Form.Item>
+
+                  <Form.Item name="endpointHint" label="Endpoint Hint" style={{ gridColumn: '1 / -1' }}>
+                    <Input placeholder="可选，例如 http://100.64.0.20:9527" />
+                  </Form.Item>
+
+                  <Form.Item name="setupHint" label="Setup Hint" style={{ gridColumn: '1 / -1' }}>
+                    <Input placeholder="可选，例如 已通过 VPN 暴露本地端口" />
+                  </Form.Item>
+                </div>
+              </details>
+            </div>
+
+            <Form.Item style={{ textAlign: 'right', marginBottom: 16 }}>
+              <Space className="settings-actions" wrap>
+                <Button
+                  htmlType="button"
+                  icon={<FileTextOutlined />}
+                  loading={bootstrapPlanLoading}
+                  onClick={handlePreviewBootstrapPlan}
+                >
+                  部署计划
+                </Button>
+                <Button
+                  htmlType="button"
+                  icon={<SearchOutlined />}
+                  loading={bootstrapProbeRunning}
+                  onClick={handleRunBootstrapProbe}
+                >
+                  只读探测
+                </Button>
+                <Button type="primary" htmlType="submit" icon={<PlusOutlined />} loading={inviteCreating}>
+                  生成加入命令
+                </Button>
+              </Space>
+            </Form.Item>
+          </Form>
+
+          {renderBootstrapPlanPanel()}
+
+          {latestBootstrapProbe && (
+            <div className="settings-join-command settings-probe-panel" style={{ marginTop: 16 }}>
+              <div className="settings-join-command-head">
+                <strong>只读探测结果</strong>
+                <Button
+                  size="small"
+                  icon={<CopyOutlined />}
+                  onClick={() => copyText(latestBootstrapProbe.command, '已复制探测命令')}
+                >
+                  复制命令
+                </Button>
+              </div>
+              <div className="settings-probe-summary">
+                <Tag>targets {latestBootstrapProbe.report.summary.total}</Tag>
+                <Tag color="green">ssh {latestBootstrapProbe.report.summary.reachableSsh}</Tag>
+                <Tag color="gold">ssh auth {latestBootstrapProbe.report.summary.authRequiredSsh || 0}</Tag>
+                <Tag color="blue">winrm {latestBootstrapProbe.report.summary.winrm}</Tag>
+                <Tag color="gold">local {latestBootstrapProbe.report.summary.localManual}</Tag>
+                <Tag color="red">unreachable {latestBootstrapProbe.report.summary.unreachable}</Tag>
+              </div>
+              {renderWarningAlert(latestBootstrapProbe.report.warnings, '探测注意事项')}
+              {renderBootstrapApplyPreview()}
+              {latestBootstrapProbe.report.executionPlan?.length ? (
+                <div className="settings-probe-execution-plan">
+                  <strong>建议执行顺序</strong>
+                  <div className="settings-probe-execution-list">
+                    {latestBootstrapProbe.report.executionPlan.map((step) => {
+                      const status = getProbeExecutionStatusMeta(step);
+                      const copyAction = getProbeExecutionCopyAction(step);
+                      return (
+                        <div className="settings-probe-execution-step" key={`${step.order}:${step.resultKey}`}>
+                          <div className="settings-probe-execution-main">
+                            <span className="settings-probe-execution-order">{step.order}</span>
+                            <span className="settings-probe-execution-copy">
+                              <strong>{step.title}</strong>
+                              <span>{step.target}</span>
+                            </span>
+                          </div>
+                          <div className="settings-probe-execution-meta">
+                            <Tag color={status.color}>{status.label}</Tag>
+                            {step.channel && <Tag>{step.channel}</Tag>}
+                            {copyAction && (
+                              <Button
+                                size="small"
+                                icon={<CopyOutlined />}
+                                onClick={() => copyText(step.command, copyAction.successMessage)}
+                              >
+                                {copyAction.label}
+                              </Button>
+                            )}
+                            {renderManualCommandActions(step.manualCommands, { compact: true })}
+                          </div>
+                          <p>{step.summary}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
+              <div className="settings-probe-results">
+                {latestBootstrapProbe.report.results.map((result) => {
+                  const status = getProbeStatus(result);
+                  const meta = getProbeResultMeta(result);
+                  const copyActions = getProbeCopyActions(result);
+                  return (
+                    <div className="settings-probe-result" key={`${result.kind}:${result.target}`}>
+                      <div className="settings-probe-result-head">
+                        <strong>{getProbeResultTitle(result)}</strong>
+                        <Space size={4} wrap>
+                          <Tag color={status.color}>{status.label}</Tag>
+                          {result.bootstrapAction?.channel && <Tag>{result.bootstrapAction.channel}</Tag>}
+                          {copyActions.map((action) => (
+                            <Button
+                              key={action.key}
+                              size="small"
+                              icon={<CopyOutlined />}
+                              onClick={() => copyText(action.value, action.successMessage)}
+                            >
+                              {action.label}
+                            </Button>
+                          ))}
+                        </Space>
+                      </div>
+                      <div className="settings-probe-meta">
+                        {meta.map((item) => <span key={item}>{item}</span>)}
+                        {result.bootstrapScript?.type && <span>script: {result.bootstrapScript.type}</span>}
+                      </div>
+                      {result.bootstrapScript?.requiredInputs?.length ? (
+                        <p className="settings-probe-note">
+                          缺少输入：{result.bootstrapScript.requiredInputs.join(', ')}
+                        </p>
+                      ) : null}
+                      {result.bootstrapAction?.note && (
+                        <p className="settings-probe-note">{result.bootstrapAction.note}</p>
+                      )}
+                      <pre>{result.recommendation}</pre>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {latestInviteJoinUrl && (
+            <div className="settings-join-command" style={{ marginTop: 16 }}>
+              <div className="settings-join-command-head">
+                <strong>加入命令</strong>
+                <Space size={6}>
+                  <Button
+                    size="small"
+                    icon={<CopyOutlined />}
+                    onClick={() => copyText(latestInviteJoinCommand, '已复制加入命令')}
+                  >
+                    复制命令
+                  </Button>
+                  <Button
+                    size="small"
+                    icon={<CopyOutlined />}
+                    onClick={() => copyText(latestInviteJoinUrl, '已复制加入链接')}
+                  >
+                    复制 URL
+                  </Button>
+                </Space>
+              </div>
+              <div className="settings-pair-body">
+                <div className="settings-pair-qr">
+                  <QRCode value={latestInviteJoinUrl} size={168} bordered={false} />
+                </div>
+                <div className="settings-pair-detail">
+                  {renderWarningAlert(latestInviteWarnings, '加入前确认 Control Endpoint')}
+                  <div className="settings-pair-code">{latestInvite?.code}</div>
+                  <pre>{latestInviteJoinCommand}</pre>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {latestInvite?.probeCommand && (
+            <div className="settings-join-command" style={{ marginTop: 16 }}>
+              <div className="settings-join-command-head">
+                <strong>多节点探测命令</strong>
+                <Button
+                  size="small"
+                  icon={<CopyOutlined />}
+                  onClick={() => copyText(latestInvite.probeCommand || '', '已复制探测命令')}
+                >
+                  复制
+                </Button>
+              </div>
+              <pre>{latestInvite.probeCommand}</pre>
+              {renderWarningAlert(latestInviteWarnings, '探测前确认 Control Endpoint')}
+            </div>
+          )}
+        </div>
+      </Modal>
+    </>
+  );
+
   if (standaloneSection) {
     const meta = SETTINGS_PAGE_META[standaloneSection.key];
     return (
@@ -3021,6 +3135,7 @@ const Settings = ({ section }: SettingsProps) => {
         <div className="settings-section-content">
           {standaloneSection.children}
         </div>
+        {nodeModals}
       </div>
     );
   }
@@ -3037,6 +3152,7 @@ const Settings = ({ section }: SettingsProps) => {
         defaultActiveKey={getInitialSettingsTab()}
         items={sectionItems.filter((item) => item.key === 'basic' || item.key === 'aliases')}
       />
+      {nodeModals}
     </div>
   );
 };

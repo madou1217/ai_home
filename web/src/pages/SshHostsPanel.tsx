@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Form, Input, Modal, Tag, Alert, Space, Popconfirm, Select, Breadcrumb, message, Radio } from 'antd';
+import { Table, Button, Form, Input, Modal, Tag, Alert, Space, Popconfirm, Select, Breadcrumb, message, Radio, Tabs } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, CheckCircleOutlined, ExclamationCircleOutlined, CloseCircleOutlined, LoadingOutlined, FolderOpenOutlined, RightOutlined } from '@ant-design/icons';
 import { sshHostsAPI } from '@/services/api';
 import type { SshHostTestResult } from '@/types';
-import SurfaceCard from '@/components/ui/SurfaceCard';
 
 // 密码掩码常量
 const PASSWORD_MASK = '******';
@@ -38,6 +37,8 @@ export default function SshHostsPanel() {
   // 1. 数据状态声明
   // ------------------------------------------
   const [connections, setConnections] = useState<SshConnection[]>([]);
+  const [activeTab, setActiveTab] = useState<'connections' | 'workspaces'>('connections');
+  const [filterConnectionId, setFilterConnectionId] = useState<string>('');
   const [workspaces, setWorkspaces] = useState<SshWorkspace[]>([]);
   const [loadingConns, setLoadingConns] = useState(false);
   const [loadingWorkspaces, setLoadingWorkspaces] = useState(false);
@@ -372,7 +373,7 @@ export default function SshHostsPanel() {
     {
       title: '操作',
       key: 'actions',
-      width: 240,
+      width: 320,
       render: (_: any, record: SshConnection) => (
         <Space size="middle">
           <Button
@@ -381,6 +382,27 @@ export default function SshHostsPanel() {
             loading={testStates[record.id]?.loading}
           >
             测试连接
+          </Button>
+          <Button
+            size="small"
+            onClick={() => {
+              setFilterConnectionId(record.id);
+              setActiveTab('workspaces');
+            }}
+          >
+            查看工作区
+          </Button>
+          <Button
+            size="small"
+            onClick={() => {
+              showWsModal();
+              setTimeout(() => {
+                wsForm.setFieldsValue({ connectionId: record.id });
+                setSelectedConnIdInForm(record.id);
+              }, 50);
+            }}
+          >
+            快捷建工作区
           </Button>
           <Button
             size="small"
@@ -531,64 +553,109 @@ export default function SshHostsPanel() {
     );
   };
 
+  const filteredWorkspaces = filterConnectionId 
+    ? workspaces.filter(w => w.connectionId === filterConnectionId)
+    : workspaces;
+
   return (
-    <div className="ssh-hosts-management-wrapper" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+    <div className="ssh-hosts-management-wrapper animate__animated animate__fadeIn animate__faster">
+      <section className="settings-panel">
+        <div className="settings-control-plane-head">
+          <div>
+            <h2>SSH 开发机</h2>
+            <p>配置用于远程连接的 SSH 物理通道，并将远程机器上的项目目录映射为本地工作空间。</p>
+          </div>
+          <Space size={8} wrap className="settings-control-plane-toolbar">
+            <Button
+              icon={<PlusOutlined />}
+              onClick={() => showConnModal()}
+            >
+              添加连接
+            </Button>
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => showWsModal()}
+              disabled={connections.length === 0}
+            >
+              创建工作空间
+            </Button>
+          </Space>
+        </div>
 
-      {/* ==========================================
-          一、 远程连接管理卡片 (SSH Connections)
-          ========================================== */}
-      <SurfaceCard
-        title="远程连接 (SSH Connections)"
-        description="配置用于连接远程目标服务器的 SSH 连接信息。支持 SSH Key 证书认证和密码认证，凭证数据只物理保存在你本地的控制面数据库，绝不上传。"
-        actions={
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={() => showConnModal()}
-          >
-            添加连接
-          </Button>
-        }
-      >
-        <Table
-          dataSource={connections}
-          columns={connColumns}
-          rowKey="id"
-          loading={loadingConns}
-          pagination={{ pageSize: 5 }}
-          expandable={{
-            expandedRowRender: connExpandedRowRender,
-            expandedRowKeys,
-            onExpandedRowsChange: (keys) => setExpandedRowKeys(keys as React.Key[])
-          }}
-        />
-      </SurfaceCard>
+        <div className="settings-remote-nodes-stats">
+          <span>
+            <strong>{connections.length}</strong>
+            远程连接
+          </span>
+          <span>
+            <strong style={{ color: 'var(--c-success-600)' }}>
+              {Object.values(testStates).filter(s => s.result?.status === 'reachable').length}
+            </strong>
+            在线连接
+          </span>
+          <span>
+            <strong>{workspaces.length}</strong>
+            项目工作空间
+          </span>
+        </div>
 
-      {/* ==========================================
-          二、 远程项目工作空间管理卡片 (Remote Workspaces)
-          ========================================== */}
-      <SurfaceCard
-        title="远程工作空间 (Remote Workspaces)"
-        description="将远程机器上的项目目录映射为本地工作空间。你可以直接在网页上图形化地浏览并选择目录，完成与物理连接的多对一绑定映射。"
-        actions={
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={() => showWsModal()}
-            disabled={connections.length === 0}
-          >
-            创建工作空间
-          </Button>
-        }
-      >
-        <Table
-          dataSource={workspaces}
-          columns={wsColumns}
-          rowKey="id"
-          loading={loadingWorkspaces}
-          pagination={{ pageSize: 5 }}
+        <Tabs
+          activeKey={activeTab}
+          onChange={(key: string) => setActiveTab(key as any)}
+          className="settings-control-plane-manage-tabs"
+          items={[
+            {
+              key: 'connections',
+              label: '远程连接',
+              children: (
+                <Table
+                  dataSource={connections}
+                  columns={connColumns}
+                  rowKey="id"
+                  loading={loadingConns}
+                  pagination={{ pageSize: 8 }}
+                  expandable={{
+                    expandedRowRender: connExpandedRowRender,
+                    expandedRowKeys,
+                    onExpandedRowsChange: (keys) => setExpandedRowKeys(keys as React.Key[])
+                  }}
+                />
+              )
+            },
+            {
+              key: 'workspaces',
+              label: '项目工作空间',
+              children: (
+                <>
+                  {filterConnectionId && (
+                    <Alert
+                      message={
+                        <span>
+                          当前正在筛选连接 <strong>{connections.find(c => c.id === filterConnectionId)?.label || '已未知'}</strong> 的工作空间。
+                          <Button type="link" size="small" onClick={() => setFilterConnectionId('')} style={{ padding: '0 4px' }}>
+                            清除筛选
+                          </Button>
+                        </span>
+                      }
+                      type="info"
+                      showIcon
+                      style={{ marginBottom: 12 }}
+                    />
+                  )}
+                  <Table
+                    dataSource={filteredWorkspaces}
+                    columns={wsColumns}
+                    rowKey="id"
+                    loading={loadingWorkspaces}
+                    pagination={{ pageSize: 8 }}
+                  />
+                </>
+              )
+            }
+          ]}
         />
-      </SurfaceCard>
+      </section>
 
       {/* ==========================================
           三、 Connection 添加/编辑 Modal

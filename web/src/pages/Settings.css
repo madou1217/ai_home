@@ -1233,3 +1233,46 @@
 .settings-panel-head h2 {
   font-size: 20px;
 }
+
+/* ===== Settings Remote Nodes Layout Optimizations ===== */
+.settings-remote-nodes-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.settings-remote-nodes-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.settings-remote-nodes-stats span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  background: var(--app-surface);
+  color: var(--app-muted);
+  padding: 9px 12px;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.settings-remote-nodes-stats strong {
+  overflow: hidden;
+  color: var(--app-heading);
+  font-size: 20px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+  .settings-remote-nodes-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

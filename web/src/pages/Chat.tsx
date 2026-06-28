@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Layout, message, Empty, Button, Modal, Input, Drawer, Grid, Breadcrumb } from 'antd';
-import { ModalForm, PageContainer } from '@ant-design/pro-components';
+import { ModalForm } from '@ant-design/pro-components';
+import PageScaffold from '@/components/ui/PageScaffold';
 import { chatAPI, accountsAPI, sessionsAPI, isSessionRequestCancelled } from '@/services/api';
 import type {
   ChatMessage,
@@ -2227,7 +2228,7 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
   );
 
   return (
-    <PageContainer ghost header={{ title: null }} style={{ height: '100%', overflow: 'hidden' }}>
+    <PageScaffold title="AI 智能会话终端" subTitle="与各大 AI 模型进行实时多轮交互对话与工程编排。" ghost headerContent={null}>
       <Layout style={{ height: '100%', background: 'var(--color-bg)', overflow: 'hidden' }}>
       {isMobile ? (
         <div className={styles.mobileStack}>
@@ -2461,7 +2462,7 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
         </div>
       </Modal>
     </Layout>
-    </PageContainer>
+    </PageScaffold>
   );
 };
 

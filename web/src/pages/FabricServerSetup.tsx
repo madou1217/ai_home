@@ -440,7 +440,7 @@ export default function FabricServerSetup() {
   ], [activeProfileId, checkingId]);
 
   return (
-    <PageScaffold
+    <PageScaffold ghost
       title="选择或添加 Server"
       subTitle="配对或管理 AIH 控制面 Server。连接建立后即可接入远程节点、项目和进行原生会话。"
       headerContent={

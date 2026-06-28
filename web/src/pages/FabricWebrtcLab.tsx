@@ -480,7 +480,7 @@ export default function FabricWebrtcLab() {
   );
 
   return (
-    <PageScaffold
+    <PageScaffold ghost
       title="WebRTC DataChannel 实验"
       subTitle="短期信令房间只用于传输实验；默认工作流仍走已验证的 WSS fallback。跨 NAT 场景需要配置 STUN/TURN 穿透。"
       extra={

@@ -565,7 +565,7 @@ export default function ModelUsage() {
   ) : null;
 
   return (
-    <PageScaffold
+    <PageScaffold ghost
       title="模型用量统计"
       subTitle="监控 Tokens、会话、模型调用频次和估算成本。"
       extra={

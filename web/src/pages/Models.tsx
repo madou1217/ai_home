@@ -673,7 +673,7 @@ export default function Models() {
   };
 
   return (
-    <PageScaffold
+    <PageScaffold ghost
       title={accountScoped ? '账号模型管理' : '全局模型目录'}
       subTitle={accountScoped
         ? `${scopedAccountLabel && !scopedAccountLabel.startsWith('acct_') ? scopedAccountLabel : (scopedProvider ? `${providerNames[scopedProvider]} 账号` : '当前账号')} 的独立模型开关和手动补充。`

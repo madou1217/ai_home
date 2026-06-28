@@ -2493,7 +2493,7 @@ export default function Accounts() {
   ), [removingAccountKeys]);
 
   return (
-    <PageScaffold
+    <PageScaffold ghost
       title="账号池管理"
       subTitle="统一管理 OAuth 和密钥账号；密钥账号的网络可达性以模型探测为准。"
       extra={(

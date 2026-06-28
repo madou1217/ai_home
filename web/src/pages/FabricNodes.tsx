@@ -363,7 +363,7 @@ export default function FabricNodes() {
   );
 
   return (
-    <PageScaffold
+    <PageScaffold ghost
       title="节点总览 (Nodes)"
       subTitle="所有能连上的机器统一显示为 Node；SSH、relay、provider runtime 和健康度都是 Node 的能力或观测结果。"
       extra={

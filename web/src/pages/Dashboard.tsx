@@ -332,7 +332,7 @@ const Dashboard = () => {
   ];
 
   return (
-    <PageScaffold
+    <PageScaffold ghost
       title="网关仪表盘"
       subTitle="展示本地 Server 调度、熔断、恢复和队列的真实运行态。"
       extra={[

@@ -14,6 +14,7 @@ export interface PageScaffoldProps {
   /** 主体内容，通常是若干 <SectionCard> / <ListTable> */
   children?: ReactNode;
   className?: string;
+  ghost?: boolean;
 }
 
 /**
@@ -31,6 +32,7 @@ export default function PageScaffold({
   headerContent,
   children,
   className = '',
+  ghost,
 }: PageScaffoldProps) {
   return (
     <PageContainer
@@ -39,6 +41,7 @@ export default function PageScaffold({
       subTitle={subTitle}
       extra={extra}
       content={headerContent}
+      ghost={ghost}
     >
       {children}
     </PageContainer>

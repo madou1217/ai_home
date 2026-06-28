@@ -65,7 +65,9 @@ import type {
   RemoteNodeTransportStrategy,
   RemoteNodeTransportTrustLevel
 } from '@/types';
-import PageHero from '@/components/ui/PageHero';
+import ListTable from '@/components/ui/ListTable';
+import PageScaffold from '@/components/ui/PageScaffold';
+import { Badge } from 'antd';
 import ModelAliases from './ModelAliases';
 import SshHostsPanel from './SshHostsPanel';
 import { buildRemoteNodeDefaultPreview } from './settings-remote-node-view.js';
@@ -2116,6 +2118,67 @@ const Settings = ({ section }: SettingsProps) => {
     </Space>
   );
 
+  const remoteNodeColumns = [
+    {
+      title: '节点',
+      key: 'node',
+      render: (_: any, record: RemoteNode) => (
+        <Space direction="vertical" size={0}>
+          <strong>{record.name || record.id}</strong>
+          <code style={{ fontSize: 11, color: 'rgba(0,0,0,0.45)' }}>{record.id}</code>
+        </Space>
+      )
+    },
+    {
+      title: '连接状态',
+      key: 'connection',
+      render: (_: any, record: RemoteNode) => {
+        const connection = getRemoteNodeConnectionMeta(record);
+        const color = connection.color;
+        const status = color === 'green' ? 'success' : color === 'red' ? 'error' : 'default';
+        return (
+          <Space direction="vertical" size={2}>
+            <Badge status={status} text={connection.label} />
+            <span style={{ fontSize: 11, color: 'rgba(0,0,0,0.45)' }}>{connection.detail}</span>
+          </Space>
+        );
+      }
+    },
+    {
+      title: '传输通道',
+      key: 'transports',
+      render: (_: any, record: RemoteNode) => {
+        if (!record.transports || record.transports.length === 0) {
+          return <span style={{ color: 'rgba(0,0,0,0.25)' }}>无活跃通道</span>;
+        }
+        return (
+          <Space size={[4, 4]} wrap>
+            {record.transports.map((transport) => (
+              <Tag key={transport.id} color={getRemoteTransportStatusColor(transport.status)}>
+                {transport.kind} · {transport.routeRole}
+              </Tag>
+            ))}
+          </Space>
+        );
+      }
+    },
+    {
+      title: '操作',
+      key: 'actions',
+      width: 220,
+      render: (_: any, record: RemoteNode) => (
+        <Space size="middle">
+          <Button size="small" onClick={() => handleEditNode(record)}>
+            编辑配置
+          </Button>
+          <Button size="small" loading={testingNodeId === record.id} onClick={() => handleTestNode(record.id)}>
+            测试连接
+          </Button>
+        </Space>
+      )
+    }
+  ];
+
   const remoteNodesContent = (
     <div className="settings-remote-nodes-page">
       <section className="settings-panel">
@@ -2128,45 +2191,16 @@ const Settings = ({ section }: SettingsProps) => {
               key: 'nodes',
               label: '远程节点',
               children: (
-                <div className="settings-node-list">
-                  {remoteNodes.length === 0 ? (
-                    <Alert type="info" showIcon message="暂无配置节点" />
-                  ) : (
-                    remoteNodes.map((node) => {
-                      const connection = getRemoteNodeConnectionMeta(node);
-                      return (
-                        <div className="settings-node-item" key={node.id}>
-                          <div className="settings-node-main">
-                            <strong>{node.name || node.id}</strong>
-                            <span>{node.id}</span>
-                          </div>
-                          <div className="settings-node-meta">
-                            <Tag color={connection.color}>{connection.label}</Tag>
-                            <Tag>{connection.detail}</Tag>
-                            {(node.transports || []).map((transport) => (
-                              <Space key={transport.id} size={4} wrap>
-                                <Tag>{transport.kind}</Tag>
-                                <Tag color={getRemoteTransportStatusColor(transport.status)}>{transport.status || 'unknown'}</Tag>
-                                {transport.provider && <Tag>{transport.provider}</Tag>}
-                                <Tag>{transport.routeRole}</Tag>
-                                <Tag>{transport.trustLevel}</Tag>
-                              </Space>
-                            ))}
-                          </div>
-                          <Space size={6}>
-                            <Button size="small" onClick={() => handleEditNode(node)}>
-                              编辑配置
-                            </Button>
-                            <Button size="small" loading={testingNodeId === node.id} onClick={() => handleTestNode(node.id)}>
-                              测试连接
-                            </Button>
-                          </Space>
-                          {renderRemoteNodeTestResult(node.id)}
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
+                <ListTable
+                  dataSource={remoteNodes}
+                  columns={remoteNodeColumns}
+                  rowKey="id"
+                  loading={loading}
+                  expandable={{
+                    expandedRowRender: (record) => renderRemoteNodeTestResult(record.id),
+                    rowExpandable: (record) => !!remoteNodeTestResults[record.id]
+                  }}
+                />
               )
             },
             {
@@ -3100,11 +3134,11 @@ const Settings = ({ section }: SettingsProps) => {
     const meta = SETTINGS_PAGE_META[standaloneSection.key];
     return (
       <div className="settings-page settings-page--standalone animate__animated animate__fadeIn animate__faster">
-        <PageHero
+        <PageScaffold
           title={meta.title}
-          eyebrow={meta.eyebrow}
-          description={meta.description}
-          actions={standaloneSection.actions}
+          subTitle={meta.description}
+          extra={standaloneSection.actions}
+          ghost
         />
         <div className="settings-section-content">
           {standaloneSection.children}
@@ -3116,10 +3150,10 @@ const Settings = ({ section }: SettingsProps) => {
 
   return (
     <div className="settings-page animate__animated animate__fadeIn animate__faster">
-      <PageHero
+      <PageScaffold
         title={SETTINGS_PAGE_META.settings.title}
-        eyebrow={SETTINGS_PAGE_META.settings.eyebrow}
-        description={SETTINGS_PAGE_META.settings.description}
+        subTitle={SETTINGS_PAGE_META.settings.description}
+        ghost
       />
       <Tabs
         className="settings-tabs"

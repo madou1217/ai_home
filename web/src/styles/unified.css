@@ -1,0 +1,38 @@
+:root {
+  --unified-page-padding: 24px;
+  --unified-card-padding: 16px;
+  --unified-card-border-radius: 12px;
+  --unified-pagination-margin: 12px;
+  --unified-section-gap: 16px;
+}
+
+/* 统一页面内容内距：所有页面 24px，禁止各页自定义 padding */
+.ant-pro-page-container-content {
+  padding: var(--unified-page-padding);
+}
+
+/* 统一卡片：12px 圆角、headerBordered、bordered 由组件传入；
+   这里兜底圆角与内距，禁止任何选择器再覆盖 ant-table 单元格背景或 ant-layout min-height。 */
+.ant-pro-card.unified-section-card {
+  border-radius: var(--unified-card-border-radius);
+}
+.ant-pro-card.unified-section-card .ant-pro-card-body {
+  padding: var(--unified-card-padding);
+}
+
+/* 统一分页间距 */
+.ant-pagination {
+  margin-top: var(--unified-pagination-margin);
+}
+
+/* 统一行 hover（浅色），禁止页面再写各自的行 hover */
+.unified-list-table .ant-table-tbody > tr:hover > td,
+.unified-list-table .ant-table-tbody > tr.ant-table-row:hover > td {
+  background: rgba(24, 144, 255, 0.06) !important;
+}
+
+/* 统一空态：保留 Empty.PRESENTED_IMAGE_SIMPLE，文案统一“暂无数据” */
+.unified-empty,
+.ant-table-placeholder .ant-empty-description {
+  color: rgba(0, 0, 0, 0.45);
+}

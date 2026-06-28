@@ -5,7 +5,6 @@
   flex-direction: column;
   gap: 16px;
   overflow: auto;
-  padding: 24px;
 }
 
 .fabric-webrtc-lab-workbench {
@@ -132,14 +131,6 @@
 }
 
 @media (max-width: 900px) {
-  .fabric-webrtc-lab-page {
-    padding: 16px;
-  }
-
-  .fabric-webrtc-lab-workbench {
-    grid-template-columns: 1fr;
-  }
-
   .fabric-webrtc-lab-stats-card-group {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

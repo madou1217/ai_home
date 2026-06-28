@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Button, Form, Input, Modal, Tag, Alert, Space, Popconfirm, Select, Breadcrumb, message, Radio, Tabs, Drawer } from 'antd';
-import { ProTable, ModalForm } from '@ant-design/pro-components';
+import { ModalForm } from '@ant-design/pro-components';
+import SectionCard from '@/components/ui/SectionCard';
+import ListTable from '@/components/ui/ListTable';
 import { PlusOutlined, EditOutlined, DeleteOutlined, CheckCircleOutlined, ExclamationCircleOutlined, CloseCircleOutlined, LoadingOutlined, FolderOpenOutlined, RightOutlined } from '@ant-design/icons';
 import { sshHostsAPI } from '@/services/api';
 import type { SshHostTestResult } from '@/types';
@@ -598,28 +600,23 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
 
   return (
     <div className="ssh-hosts-management-wrapper animate__animated animate__fadeIn animate__faster">
-      <section className="settings-panel">
-
-
-        <Tabs
-          activeKey={activeTab}
-          onChange={(key: string) => setActiveTab(key as any)}
-          className="settings-control-plane-manage-tabs"
-          items={[
+      <Tabs
+        activeKey={activeTab}
+        onChange={(key: string) => setActiveTab(key as any)}
+        className="settings-control-plane-manage-tabs"
+        items={[
             {
               key: 'connections',
               label: '远程连接',
               children: (
-                <ProTable
-                  dataSource={connections}
-                  columns={connColumns}
-                  rowKey="id"
-                  loading={loadingConns}
-                  search={false}
-                  options={false}
-                  pagination={{ pageSize: 8 }}
-
-                />
+                <SectionCard title="远程连接列表">
+                  <ListTable
+                    dataSource={connections}
+                    columns={connColumns}
+                    rowKey="id"
+                    loading={loadingConns}
+                  />
+                </SectionCard>
               )
             },
             {
@@ -642,21 +639,19 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
                       style={{ marginBottom: 12 }}
                     />
                   )}
-                  <ProTable
-                    dataSource={filteredWorkspaces}
-                    columns={wsColumns}
-                    rowKey="id"
-                    loading={loadingWorkspaces}
-                    search={false}
-                    options={false}
-                    pagination={{ pageSize: 8 }}
-                  />
+                  <SectionCard title="项目工作空间列表">
+                    <ListTable
+                      dataSource={filteredWorkspaces}
+                      columns={wsColumns}
+                      rowKey="id"
+                      loading={loadingWorkspaces}
+                    />
+                  </SectionCard>
                 </>
               )
             }
           ]}
-        />
-      </section>
+      />
 
       {/* ==========================================
           三、 Connection 添加/编辑 Modal

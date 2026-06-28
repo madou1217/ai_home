@@ -161,6 +161,14 @@
   color: var(--app-heading) !important;
 }
 
+.models-catalog-desc {
+  margin: 0 0 14px;
+  color: var(--app-muted);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
 .models-list {
   margin-top: 14px;
 }

@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Alert, Button, Form, Input, Segmented, Space, Tag, message } from 'antd';
-import { PageContainer, ProCard } from '@ant-design/pro-components';
+import { Alert, Button, Descriptions, Form, Input, Segmented, Space, Tag, message } from 'antd';
 import {
   CheckCircleOutlined,
   DownloadOutlined,
@@ -12,6 +11,7 @@ import {
   SafetyCertificateOutlined,
   UploadOutlined
 } from '@ant-design/icons';
+import type { ProColumns } from '@ant-design/pro-components';
 import {
   buildFabricBrokerProxyEndpoint,
   fetchControlPlaneDescriptor,
@@ -41,6 +41,9 @@ import {
 } from '@/services/control-plane-endpoints';
 import { resolveCurrentDeviceIdentity } from '@/services/device-identity';
 import type { ControlPlaneProfile, ControlPlaneProfileConnectionMode } from '@/types';
+import PageScaffold from '@/components/ui/PageScaffold';
+import SectionCard from '@/components/ui/SectionCard';
+import ListTable from '@/components/ui/ListTable';
 import './FabricServerSetup.css';
 
 type PairFormValues = {
@@ -114,6 +117,8 @@ function formatProfileDetail(profile: ControlPlaneProfile) {
   ];
   return chunks.join(' · ');
 }
+
+type ProfileRow = ControlPlaneProfile & { __key: string };
 
 function getInitialServerSetupState() {
   const profiles = listControlPlaneProfiles();
@@ -367,22 +372,101 @@ export default function FabricServerSetup() {
     }
   };
 
-  return (
-    <PageContainer
-      header={{
-        title: "选择或添加 Server",
-        subTitle: "配对或管理 AIH 控制面 Server。连接建立后即可接入远程节点、项目和进行原生会话。",
-        extra: [
-          <Tag key="ready-tag" color={readyProfiles.length > 0 ? 'green' : 'gold'} style={{ margin: 0, height: "auto", padding: "4px 8px" }}>
-            {readyProfiles.length} 个就绪
-          </Tag>,
-          <Tag key="profiles-tag" style={{ margin: 0, height: "auto", padding: "4px 8px" }}>
-            {profiles.length} 个配置
-          </Tag>
-        ]
-      }}
-    >
+  const profileRows: ProfileRow[] = useMemo(
+    () => profiles.map((profile) => ({ ...profile, __key: profile.id })),
+    [profiles]
+  );
 
+  const profileColumns: ProColumns<ProfileRow>[] = useMemo(() => [
+    {
+      title: 'Server',
+      dataIndex: 'name',
+      width: 240,
+      ellipsis: true,
+      render: (_, record) => (
+        <div className="fabric-server-setup-profile-main">
+          <strong>{record.name || record.endpoint}</strong>
+          <span>{record.endpoint}</span>
+          {record.lastError && <em>{record.lastError}</em>}
+        </div>
+      )
+    },
+    {
+      title: '状态 / 摘要',
+      width: 320,
+      render: (_, record) => {
+        const status = getProfileStatus(record);
+        const active = record.id === activeProfileId;
+        return (
+          <div className="fabric-server-setup-profile-meta">
+            {active && <Tag color="green">当前</Tag>}
+            {record.connectionMode === 'broker-proxy' && <Tag color="blue">Broker</Tag>}
+            {record.broker?.serverId && <Tag>{record.broker.serverId}</Tag>}
+            <Tag color={status.color}>{status.label}</Tag>
+            <Tag>{formatProfileDetail(record)}</Tag>
+          </div>
+        );
+      }
+    },
+    {
+      title: '操作',
+      width: 200,
+      render: (_, record) => {
+        const active = record.id === activeProfileId;
+        return (
+          <Space size={6} wrap className="fabric-server-setup-profile-actions">
+            <Button size="small" disabled={active} onClick={() => handleSelectProfile(record.id)}>
+              设为当前
+            </Button>
+            <Button
+              size="small"
+              icon={<ReloadOutlined />}
+              loading={checkingId === record.id}
+              onClick={() => handleRefreshProfile(record)}
+            >
+              {record.deviceToken ? '同步' : '探测'}
+            </Button>
+            <Button
+              size="small"
+              danger
+              icon={<DeleteOutlined />}
+              onClick={() => handleRemoveProfile(record.id)}
+            >
+              移除
+            </Button>
+          </Space>
+        );
+      }
+    }
+  ], [activeProfileId, checkingId]);
+
+  return (
+    <PageScaffold
+      title="选择或添加 Server"
+      subTitle="配对或管理 AIH 控制面 Server。连接建立后即可接入远程节点、项目和进行原生会话。"
+      headerContent={
+        <Descriptions size="small" column={2}>
+          <Descriptions.Item label="就绪">
+            <Tag color={readyProfiles.length > 0 ? 'green' : 'gold'} style={{ margin: 0 }}>
+              {readyProfiles.length} 个
+            </Tag>
+          </Descriptions.Item>
+          <Descriptions.Item label="配置">
+            <Tag style={{ margin: 0 }}>{profiles.length} 个</Tag>
+          </Descriptions.Item>
+        </Descriptions>
+      }
+      extra={
+        <Button
+          type="primary"
+          icon={<LoginOutlined />}
+          disabled={!activeProfile || !isControlPlaneProfileReady(activeProfile)}
+          onClick={() => navigate('/')}
+        >
+          进入工作台
+        </Button>
+      }
+    >
       {endpointIsLoopback && (
         <Alert
           className="fabric-server-setup-alert"
@@ -393,13 +477,12 @@ export default function FabricServerSetup() {
         />
       )}
 
-      <ProCard gutter={16} ghost style={{ marginBottom: 16 }}>
-        <ProCard
-          colSpan={{ xs: 24, md: 12 }}
+      <div className="fabric-server-setup-grid">
+        <SectionCard
           title="通过配对添加"
-          headerBordered
-          bordered
           extra={<SafetyCertificateOutlined />}
+          bordered
+          headerBordered
         >
           <Form
             form={pairForm}
@@ -467,14 +550,13 @@ export default function FabricServerSetup() {
               配对并进入
             </Button>
           </Form>
-        </ProCard>
+        </SectionCard>
 
-        <ProCard
-          colSpan={{ xs: 24, md: 12 }}
+        <SectionCard
           title="探测并保存"
-          headerBordered
-          bordered
           extra={<CheckCircleOutlined />}
+          bordered
+          headerBordered
         >
           <Form
             form={saveForm}
@@ -533,16 +615,10 @@ export default function FabricServerSetup() {
               探测并保存
             </Button>
           </Form>
-        </ProCard>
-      </ProCard>
+        </SectionCard>
+      </div>
 
-      <ProCard
-        title="迁移 Server Profile"
-        headerBordered
-        bordered
-        style={{ marginBottom: 16 }}
-        extra={<UploadOutlined />}
-      >
+      <SectionCard title="迁移 Server Profile" extra={<UploadOutlined />}>
         <div className="fabric-server-setup-transfer-grid">
           <div className="fabric-server-setup-transfer-actions">
             <Button icon={<DownloadOutlined />} disabled={!activeProfile} onClick={handleExportActiveProfile}>
@@ -568,71 +644,15 @@ export default function FabricServerSetup() {
             </Button>
           </Form>
         </div>
-      </ProCard>
+      </SectionCard>
 
-      <ProCard
-        title="已保存 Server"
-        headerBordered
-        bordered
-        extra={
-          <Button
-            type="primary"
-            icon={<LoginOutlined />}
-            disabled={!activeProfile || !isControlPlaneProfileReady(activeProfile)}
-            onClick={() => navigate('/')}
-          >
-            进入工作台
-          </Button>
-        }
-      >
-        <div className="fabric-server-setup-profile-list">
-          {profiles.length === 0 ? (
-            <Alert type="info" showIcon message="暂无 server profile" />
-          ) : profiles.map((profile) => {
-            const status = getProfileStatus(profile);
-            const active = profile.id === activeProfileId;
-            return (
-              <div
-                key={profile.id}
-                className={`fabric-server-setup-profile${active ? ' fabric-server-setup-profile--active' : ''}`}
-              >
-                <div className="fabric-server-setup-profile-main">
-                  <strong>{profile.name || profile.endpoint}</strong>
-                  <span>{profile.endpoint}</span>
-                  {profile.lastError && <em>{profile.lastError}</em>}
-                </div>
-                <div className="fabric-server-setup-profile-meta">
-                  {active && <Tag color="green">当前</Tag>}
-                  {profile.connectionMode === 'broker-proxy' && <Tag color="blue">Broker</Tag>}
-                  {profile.broker?.serverId && <Tag>{profile.broker.serverId}</Tag>}
-                  <Tag color={status.color}>{status.label}</Tag>
-                  <Tag>{formatProfileDetail(profile)}</Tag>
-                </div>
-                <Space size={6} wrap className="fabric-server-setup-profile-actions">
-                  <Button size="small" disabled={active} onClick={() => handleSelectProfile(profile.id)}>
-                    设为当前
-                  </Button>
-                  <Button
-                    size="small"
-                    icon={<ReloadOutlined />}
-                    loading={checkingId === profile.id}
-                    onClick={() => handleRefreshProfile(profile)}
-                  >
-                    {profile.deviceToken ? '同步' : '探测'}
-                  </Button>
-                  <Button
-                    size="small"
-                    danger
-                    icon={<DeleteOutlined />}
-                    onClick={() => handleRemoveProfile(profile.id)}
-                  >
-                    移除
-                  </Button>
-                </Space>
-              </div>
-            );
-          })}
-        </div>
+      <SectionCard title="已保存 Server">
+        <ListTable<ProfileRow>
+          rowKey="__key"
+          columns={profileColumns}
+          dataSource={profileRows}
+          loading={false}
+        />
         <div style={{ marginTop: 24, paddingTop: 16, borderTop: '1px solid var(--app-border)', display: 'flex', gap: 16 }}>
           <Button type="link" href="/ui/fabric/control-planes" style={{ padding: 0 }}>
             打开高级控制面设置
@@ -641,7 +661,7 @@ export default function FabricServerSetup() {
             打开 WebRTC DataChannel Lab
           </Button>
         </div>
-      </ProCard>
-    </PageContainer>
+      </SectionCard>
+    </PageScaffold>
   );
 }

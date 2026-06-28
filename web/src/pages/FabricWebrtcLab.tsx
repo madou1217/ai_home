@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Form, Input, Segmented, Space, Statistic, Tag, message } from 'antd';
+import { Button, Descriptions, Form, Input, Segmented, Space, Tag, message } from 'antd';
 import {
   DisconnectOutlined,
   LinkOutlined,
@@ -7,8 +7,8 @@ import {
   SendOutlined,
   DeleteOutlined
 } from '@ant-design/icons';
-import PageHero from '@/components/ui/PageHero';
-import { ProCard } from '@ant-design/pro-components';
+import PageScaffold from '@/components/ui/PageScaffold';
+import SectionCard from '@/components/ui/SectionCard';
 import './FabricWebrtcLab.css';
 
 type LabRole = 'offerer' | 'answerer';
@@ -97,7 +97,6 @@ export default function FabricWebrtcLab() {
   const [room, setRoom] = useState<SignalRoom | null>(null);
   const [iceServersText, setIceServersText] = useState('');
   const [connectionState, setConnectionState] = useState('idle');
-  console.log(connectionState); // Prevent TS6133 unused error
   const [iceState, setIceState] = useState('idle');
   const [iceGatheringState, setIceGatheringState] = useState('idle');
   const [signalingState, setSignalingState] = useState('idle');
@@ -458,151 +457,107 @@ export default function FabricWebrtcLab() {
     message.success('已复制');
   };
 
+  const connectionTag = channelState === 'open' ? (
+    <Tag color="green">已连接 (OPEN)</Tag>
+  ) : channelState === 'connecting' ? (
+    <Tag color="orange">连接中</Tag>
+  ) : (
+    <Tag color="default">未连接</Tag>
+  );
+
+  const headerContent = (
+    <Descriptions size="small" column={{ xs: 1, sm: 2, md: 4 }} style={{ marginTop: 8 }}>
+      <Descriptions.Item label="连接状态">
+        <Space size={4}>{connectionTag}{String(connectionState || 'idle').toUpperCase()}</Space>
+      </Descriptions.Item>
+      <Descriptions.Item label="ICE 状态 / 收集">{iceState} / {iceGatheringState}</Descriptions.Item>
+      <Descriptions.Item label="信令协商">{signalingState}</Descriptions.Item>
+      <Descriptions.Item label="数据通道">{channelState}</Descriptions.Item>
+      <Descriptions.Item label="Candidate 本 / 远">{localCandidateCount} / {remoteCandidateCount}</Descriptions.Item>
+      <Descriptions.Item label="信号交互 / 积压">{receivedSignalCount} / {candidateQueueRef.current.length}</Descriptions.Item>
+      <Descriptions.Item label="RTT 采样">{rttSummary.count}</Descriptions.Item>
+      <Descriptions.Item label="平均 / P50 / P95">{rttSummary.avg} / {rttSummary.p50} / {rttSummary.p95} ms</Descriptions.Item>
+    </Descriptions>
+  );
+
   return (
-    <div className="fabric-webrtc-lab-page animate__animated animate__fadeIn animate__faster">
-      <PageHero
-        title="WebRTC DataChannel 实验"
-        eyebrow="AIH Fabric Lab"
-        description="短期信令房间只用于传输实验；默认工作流仍走已验证的 WSS fallback。跨 NAT 场景需要配置 STUN/TURN 穿透。"
-        actions={
-          <Space size={8} wrap>
-            {channelState === 'open' ? (
-              <Tag color="green">已连接 (OPEN)</Tag>
-            ) : channelState === 'connecting' ? (
-              <Tag color="orange">连接中</Tag>
-            ) : (
-              <Tag color="default">未连接</Tag>
-            )}
-            <Button
-              icon={<DisconnectOutlined />}
-              danger
-              disabled={channelState === 'closed'}
-              onClick={stopPeer}
-            >
-              断开连接
-            </Button>
-          </Space>
-        }
-      />
-
-      <ProCard gutter={16} ghost style={{ marginTop: 8 }}>
-        {/* 左侧：信令与配置 */}
-        <ProCard
-          colSpan={{ xs: 24, sm: 24, md: 12 }}
-          title="信令房间配置"
-          headerBordered
-          bordered
-          className="fabric-webrtc-lab-pro-card"
-        >
-          <Form layout="vertical">
-            <Form.Item label="Signal Endpoint" style={{ marginBottom: 12 }}>
-              <Input value={endpoint} onChange={(event) => setEndpoint(event.target.value)} />
+    <PageScaffold
+      title="WebRTC DataChannel 实验"
+      subTitle="短期信令房间只用于传输实验；默认工作流仍走已验证的 WSS fallback。跨 NAT 场景需要配置 STUN/TURN 穿透。"
+      extra={
+        <Space size={8} wrap>
+          <Button type="primary" icon={<PlayCircleOutlined />} loading={busy} onClick={createRoomAndStart}>
+            创建并连接
+          </Button>
+          <Button icon={<LinkOutlined />} loading={busy} disabled={!roomId} onClick={joinRoom}>
+            加入房间
+          </Button>
+          <Button icon={<DisconnectOutlined />} danger disabled={channelState === 'closed'} onClick={stopPeer}>
+            断开连接
+          </Button>
+        </Space>
+      }
+      headerContent={headerContent}
+    >
+      <SectionCard title="信令房间配置">
+        <Form layout="vertical">
+          <Form.Item label="Signal Endpoint" style={{ marginBottom: 12 }}>
+            <Input value={endpoint} onChange={(event) => setEndpoint(event.target.value)} />
+          </Form.Item>
+          <div className="fabric-webrtc-lab-row">
+            <Form.Item label="Room ID" style={{ marginBottom: 12 }}>
+              <Input value={roomId} onChange={(event) => setRoomId(event.target.value.trim())} />
             </Form.Item>
-            <div className="fabric-webrtc-lab-row">
-              <Form.Item label="Room ID" style={{ marginBottom: 12 }}>
-                <Input value={roomId} onChange={(event) => setRoomId(event.target.value.trim())} />
-              </Form.Item>
-              <Form.Item label="Role" style={{ marginBottom: 12 }}>
-                <Segmented
-                  block
-                  value={role}
-                  onChange={(value) => setRole(value as LabRole)}
-                  options={[
-                    { label: 'Offer', value: 'offerer' },
-                    { label: 'Answer', value: 'answerer' }
-                  ]}
-                />
-              </Form.Item>
-            </div>
-            <Form.Item label="ICE Servers" help="格式为 stun:host:port 或 turn:host:port，多条用换行隔开" style={{ marginBottom: 16 }}>
-              <Input.TextArea
-                value={iceServersText}
-                onChange={(event) => setIceServersText(event.target.value)}
-                autoSize={{ minRows: 2, maxRows: 3 }}
-                placeholder="stun:host:port / turn:host:port"
+            <Form.Item label="Role" style={{ marginBottom: 12 }}>
+              <Segmented
+                block
+                value={role}
+                onChange={(value) => setRole(value as LabRole)}
+                options={[
+                  { label: 'Offer', value: 'offerer' },
+                  { label: 'Answer', value: 'answerer' }
+                ]}
               />
             </Form.Item>
-            <Space wrap>
-              <Button type="primary" icon={<PlayCircleOutlined />} loading={busy} onClick={createRoomAndStart}>
-                创建并连接
-              </Button>
-              <Button icon={<LinkOutlined />} loading={busy} disabled={!roomId} onClick={joinRoom}>
-                加入房间
-              </Button>
-            </Space>
-          </Form>
-
-          {shareUrl && (
-            <div className="fabric-webrtc-lab-share-link">
-              <Input
-                addonBefore="分享链接"
-                value={shareUrl}
-                readOnly
-                suffix={
-                  <Button type="link" size="small" onClick={copyShareUrl} style={{ padding: '0 4px' }}>
-                    复制链接
-                  </Button>
-                }
-              />
-            </div>
-          )}
-
-          {room && (
-            <div className="fabric-webrtc-lab-room-meta">
-              <Tag color="cyan">过期时间: {new Date(room.expiresAt).toLocaleTimeString()}</Tag>
-              <Tag color="blue">{room.peerCount} Peers</Tag>
-              <Tag color="purple">{room.messageCount} Signals</Tag>
-            </div>
-          )}
-        </ProCard>
-
-        {/* 右侧：延迟测试与内部状态 */}
-        <ProCard
-          colSpan={{ xs: 24, sm: 24, md: 12 }}
-          title="测试与性能打点"
-          headerBordered
-          bordered
-          className="fabric-webrtc-lab-pro-card"
-        >
-          <div className="fabric-webrtc-lab-stats-section">
-            <div style={{ marginBottom: 8 }}>
-              <strong style={{ fontSize: 13, color: 'var(--app-heading)' }}>延迟打点采样 (RTT)</strong>
-            </div>
-            <div className="fabric-webrtc-lab-stats-card-group">
-              <div className="fabric-webrtc-lab-stats-card">
-                <Statistic title="采样数" value={rttSummary.count} />
-              </div>
-              <div className="fabric-webrtc-lab-stats-card">
-                <Statistic title="平均 RTT" value={rttSummary.avg} precision={2} suffix="ms" />
-              </div>
-              <div className="fabric-webrtc-lab-stats-card">
-                <Statistic title="P50 RTT" value={rttSummary.p50} precision={2} suffix="ms" />
-              </div>
-              <div className="fabric-webrtc-lab-stats-card">
-                <Statistic title="P95 RTT" value={rttSummary.p95} precision={2} suffix="ms" />
-              </div>
-            </div>
-
-            <div style={{ marginBottom: 8, marginTop: 16 }}>
-              <strong style={{ fontSize: 13, color: 'var(--app-heading)' }}>WebRTC 内部指标 (Stats)</strong>
-            </div>
-            <div className="fabric-webrtc-lab-stats-card-group">
-              <div className="fabric-webrtc-lab-stats-card">
-                <Statistic title="本地/远端 Candidate" value={`${localCandidateCount} / ${remoteCandidateCount}`} />
-              </div>
-              <div className="fabric-webrtc-lab-stats-card">
-                <Statistic title="信号交互/积压" value={`${receivedSignalCount} / ${candidateQueueRef.current.length}`} />
-              </div>
-              <div className="fabric-webrtc-lab-stats-card">
-                <Statistic title="ICE 状态/收集" value={`${iceState} / ${iceGatheringState}`} formatter={(v) => String(v).toUpperCase()} />
-              </div>
-              <div className="fabric-webrtc-lab-stats-card">
-                <Statistic title="信令协商状态" value={signalingState} formatter={(v) => String(v).toUpperCase()} />
-              </div>
-            </div>
           </div>
+          <Form.Item label="ICE Servers" help="格式为 stun:host:port 或 turn:host:port，多条用换行隔开" style={{ marginBottom: 16 }}>
+            <Input.TextArea
+              value={iceServersText}
+              onChange={(event) => setIceServersText(event.target.value)}
+              autoSize={{ minRows: 2, maxRows: 3 }}
+              placeholder="stun:host:port / turn:host:port"
+            />
+          </Form.Item>
+        </Form>
 
-          <Space wrap style={{ marginTop: 20 }}>
+        {shareUrl && (
+          <div className="fabric-webrtc-lab-share-link">
+            <Input
+              addonBefore="分享链接"
+              value={shareUrl}
+              readOnly
+              suffix={
+                <Button type="link" size="small" onClick={copyShareUrl} style={{ padding: '0 4px' }}>
+                  复制链接
+                </Button>
+              }
+            />
+          </div>
+        )}
+
+        {room && (
+          <div className="fabric-webrtc-lab-room-meta">
+            <Tag color="cyan">过期时间: {new Date(room.expiresAt).toLocaleTimeString()}</Tag>
+            <Tag color="blue">{room.peerCount} Peers</Tag>
+            <Tag color="purple">{room.messageCount} Signals</Tag>
+          </div>
+        )}
+      </SectionCard>
+
+      <SectionCard
+        title="测试与性能打点"
+        extra={
+          <Space wrap>
             <Button type="primary" icon={<SendOutlined />} disabled={channelState !== 'open'} onClick={runPing}>
               Ping 测试
             </Button>
@@ -610,15 +565,18 @@ export default function FabricWebrtcLab() {
               5次采样基准测试
             </Button>
           </Space>
-        </ProCard>
-      </ProCard>
+        }
+      >
+        <Descriptions size="small" column={{ xs: 1, sm: 2, md: 4 }}>
+          <Descriptions.Item label="RTT 采样数">{rttSummary.count}</Descriptions.Item>
+          <Descriptions.Item label="平均 RTT">{rttSummary.avg} ms</Descriptions.Item>
+          <Descriptions.Item label="P50 RTT">{rttSummary.p50} ms</Descriptions.Item>
+          <Descriptions.Item label="P95 RTT">{rttSummary.p95} ms</Descriptions.Item>
+        </Descriptions>
+      </SectionCard>
 
-      {/* 底部：事件日志 */}
-      <ProCard
+      <SectionCard
         title="诊断事件日志"
-        headerBordered
-        bordered
-        style={{ marginTop: 16 }}
         extra={
           <Space>
             <span style={{ fontSize: 12, color: 'var(--app-muted)' }}>Peer ID: </span>
@@ -636,7 +594,7 @@ export default function FabricWebrtcLab() {
       >
         <div className="fabric-webrtc-lab-console-log">
           {logs.length === 0 ? (
-            <div className="fabric-webrtc-lab-console-empty">暂无事件记录</div>
+            <div className="fabric-webrtc-lab-console-empty">暂无数据</div>
           ) : (
             logs.map((line, index) => {
               const match = line.match(/^(\d{2}:\d{2}:\d{2})\s(.*)$/);
@@ -652,7 +610,7 @@ export default function FabricWebrtcLab() {
             })
           )}
         </div>
-      </ProCard>
-    </div>
+      </SectionCard>
+    </PageScaffold>
   );
 }

@@ -1,14 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Empty, Skeleton, Space, Statistic, Tag, message, Descriptions } from 'antd';
-import { PageContainer, ProCard } from '@ant-design/pro-components';
+import { Alert, Button, Skeleton, Space, Tag, message, Descriptions } from 'antd';
+import type { ProColumns } from '@ant-design/pro-components';
 import {
   ApartmentOutlined,
   CloudServerOutlined,
-  ClusterOutlined,
-  LinkOutlined,
-  ProjectOutlined,
-  ReloadOutlined,
-  ToolOutlined
+  ReloadOutlined
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -20,6 +16,7 @@ import type {
   FabricRegistryNode,
   FabricRegistryNodeView,
   FabricRegistryRelayNode,
+  FabricRegistryRelayView,
   FabricRegistryResult,
   FabricRegistryTransport
 } from '@/services/fabric-registry';
@@ -35,6 +32,9 @@ import {
   resolveStoredActiveControlPlaneProfile
 } from '@/services/control-plane-selection';
 import type { ControlPlaneProfile } from '@/types';
+import PageScaffold from '@/components/ui/PageScaffold';
+import SectionCard from '@/components/ui/SectionCard';
+import ListTable from '@/components/ui/ListTable';
 import './FabricNodes.css';
 
 const STATUS_COLORS: Record<string, string> = {
@@ -157,6 +157,85 @@ function TagList({ items, emptyLabel }: { items?: string[]; emptyLabel: string }
   );
 }
 
+const RELAY_COLUMNS: ProColumns<FabricRegistryRelayView>[] = [
+  {
+    title: 'Relay',
+    dataIndex: 'relayNode',
+    width: 180,
+    render: (_, record) => {
+      const { relayNode, node } = record;
+      return (
+        <Space direction="vertical" size={0} style={{ minWidth: 0 }}>
+          <strong style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {node?.name || relayNode.nodeId}
+          </strong>
+          <span style={{ fontSize: 12, color: 'rgba(0,0,0,0.45)' }}>{relayNode.id}</span>
+        </Space>
+      );
+    }
+  },
+  {
+    title: 'capacityClass',
+    dataIndex: 'relayNode',
+    width: 110,
+    render: (_, record) => record.relayNode.capacityClass || 'tiny'
+  },
+  {
+    title: 'bandwidth',
+    dataIndex: 'relayNode',
+    width: 120,
+    render: (_, record) => formatBandwidthKbps(record.relayNode.bandwidthLimitKbps)
+  },
+  {
+    title: 'status',
+    dataIndex: 'relayNode',
+    width: 100,
+    render: (_, record) => record.relayNode.status || (record.relayNode.enabled ? 'online' : 'disabled')
+  },
+  {
+    title: 'health',
+    dataIndex: 'health',
+    width: 100,
+    render: (_, record) => record.health
+  },
+  {
+    title: 'measurement',
+    dataIndex: 'transports',
+    render: (_, record) => summarizeRelayMeasurement(record.transports)
+  },
+  {
+    title: 'measured',
+    dataIndex: 'transports',
+    width: 180,
+    render: (_, record) => formatMeasuredAt(
+      record.transports.find((transport) => transport.measurement)?.measurement?.measuredAt || record.relayNode.lastMeasuredAt
+    )
+  },
+  {
+    title: 'score',
+    dataIndex: 'relayNode',
+    width: 150,
+    render: (_, record) => resolveRelayScore(record.relayNode)
+  },
+  {
+    title: 'transports',
+    dataIndex: 'transports',
+    render: (_, record) => {
+      const transports = record.transports;
+      if (transports.length === 0) return <Tag>transport none</Tag>;
+      return (
+        <Space size={[4, 4]} wrap>
+          {transports.map((transport) => (
+            <Tag key={transport.id} color={getStatusColor(getTransportHealth(transport))}>
+              {transport.kind || transport.id}: {getTransportHealth(transport)}
+            </Tag>
+          ))}
+        </Space>
+      );
+    }
+  }
+];
+
 export default function FabricNodes() {
   const navigate = useNavigate();
   const [activeProfile, setActiveProfile] = useState<ControlPlaneProfile | null>(getInitialProfile);
@@ -241,41 +320,45 @@ export default function FabricNodes() {
     loadRegistry();
   }, [loadRegistry, readyProfileKey]);
 
+  const headerContent = readyProfile && (
+    <Descriptions size="small" column={{ xs: 1, sm: 2, md: 3 }} style={{ marginTop: 8 }}>
+      <Descriptions.Item label="当前服务">{readyProfile.name}</Descriptions.Item>
+      <Descriptions.Item label="服务地址">{readyProfile.endpoint}</Descriptions.Item>
+      <Descriptions.Item label="连接状态">
+        <Space>
+          <StatusTag status={readyProfile.state} />
+          <StatusTag status={readyProfile.authState} />
+        </Space>
+      </Descriptions.Item>
+      <Descriptions.Item label="最近检测时间">{formatTime(readyProfile.lastCheckedAt || readyProfile.updatedAt)}</Descriptions.Item>
+      <Descriptions.Item label="拓扑计数">
+        <Space size={4} wrap>
+          <Tag color="blue">节点 {loading ? '-' : counts.nodes}</Tag>
+          <Tag color="blue">中继 {loading ? '-' : counts.relayNodes}</Tag>
+          <Tag color="blue">项目 {loading ? '-' : counts.projects}</Tag>
+          <Tag color="blue">会话 {loading ? '-' : counts.runtimes}</Tag>
+          <Tag color="blue">通道 {loading ? '-' : counts.transports}</Tag>
+        </Space>
+      </Descriptions.Item>
+    </Descriptions>
+  );
+
   return (
-    <PageContainer
-      header={{
-        title: "节点与中继健康 (Nodes / Relay Health)",
-        subTitle: "查看当前 Server 拓扑中所有托管节点、工作空间项目、会话 runtime 与传输通道的健康度。",
-        extra: [
-          readyProfile && (
-            <Tag key="profile-tag" color="green" style={{ margin: 0, height: "auto", padding: "4px 8px" }}>
-              当前服务: {readyProfile.name}
-            </Tag>
-          ),
-          <Button
-            key="refresh"
-            type="primary"
-            icon={<ReloadOutlined />}
-            onClick={() => readyProfile && loadRegistry()}
-            loading={loading}
-            disabled={!readyProfile}
-          >
-            刷新状态
-          </Button>
-        ].filter(Boolean),
-      }}
-      content={readyProfile && (
-        <Descriptions size="small" column={{ xs: 1, sm: 2, md: 3 }} style={{ marginTop: 8 }}>
-          <Descriptions.Item label="服务地址">{readyProfile.endpoint}</Descriptions.Item>
-          <Descriptions.Item label="连接状态">
-            <Space>
-              <StatusTag status={readyProfile.state} />
-              <StatusTag status={readyProfile.authState} />
-            </Space>
-          </Descriptions.Item>
-          <Descriptions.Item label="最近检测时间">{formatTime(readyProfile.lastCheckedAt || readyProfile.updatedAt)}</Descriptions.Item>
-        </Descriptions>
-      )}
+    <PageScaffold
+      title="节点与中继健康 (Nodes / Relay Health)"
+      subTitle="查看当前 Server 拓扑中所有托管节点、工作空间项目、会话 runtime 与传输通道的健康度。"
+      extra={
+        <Button
+          type="primary"
+          icon={<ReloadOutlined />}
+          onClick={() => readyProfile && loadRegistry()}
+          loading={loading}
+          disabled={!readyProfile}
+        >
+          刷新状态
+        </Button>
+      }
+      headerContent={headerContent}
     >
       {!readyProfile && (
         <Alert
@@ -304,206 +387,143 @@ export default function FabricNodes() {
 
       {readyProfile && (
         <>
-          {/* 使用 ProCard 展示紧凑的 5 项指标概览 */}
-          <ProCard gutter={16} ghost style={{ marginBottom: 16 }}>
-            <ProCard colSpan={{ xs: 12, sm: 12, md: 4.8 }} layout="center" bordered>
-              <Statistic title="托管节点数 (Nodes)" value={loading ? "-" : counts.nodes} prefix={<ClusterOutlined />} />
-            </ProCard>
-            <ProCard colSpan={{ xs: 12, sm: 12, md: 4.8 }} layout="center" bordered>
-              <Statistic title="中继中枢 (Relays)" value={loading ? "-" : counts.relayNodes} prefix={<CloudServerOutlined />} />
-            </ProCard>
-            <ProCard colSpan={{ xs: 12, sm: 12, md: 4.8 }} layout="center" bordered>
-              <Statistic title="项目工作空间" value={loading ? "-" : counts.projects} prefix={<ProjectOutlined />} />
-            </ProCard>
-            <ProCard colSpan={{ xs: 12, sm: 12, md: 4.8 }} layout="center" bordered>
-              <Statistic title="运行会话 (Runtimes)" value={loading ? "-" : counts.runtimes} prefix={<ToolOutlined />} />
-            </ProCard>
-            <ProCard colSpan={{ xs: 12, sm: 12, md: 4.8 }} layout="center" bordered>
-              <Statistic title="传输隧道 (Channels)" value={loading ? "-" : counts.transports} prefix={<LinkOutlined />} />
-            </ProCard>
-          </ProCard>
-
           {loading && !registry ? (
-            <ProCard bordered>
+            <SectionCard>
               <Skeleton active paragraph={{ rows: 8 }} />
-            </ProCard>
+            </SectionCard>
           ) : counts.nodes === 0 ? (
-            <ProCard bordered>
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description="拓扑中暂无可用计算节点。等待 Node 节点执行加入发布以同步状态。"
-              />
-            </ProCard>
+            <SectionCard title="计算节点列表" extra={<ApartmentOutlined />}>
+              <p style={{ margin: 0, color: 'rgba(0,0,0,0.45)' }}>暂无数据：拓扑中暂无可用计算节点。等待 Node 节点执行加入发布以同步状态。</p>
+            </SectionCard>
           ) : (
-            <ProCard gutter={16} ghost>
-              <ProCard
-                colSpan={{ xs: 24, md: 10 }}
-                title="计算节点列表"
-                headerBordered
-                bordered
-                extra={<ApartmentOutlined />}
-                bodyStyle={{ padding: 0 }}
-              >
-                <div className="fabric-nodes-list">
-                  {nodeViews.map((view) => {
-                    const active = selectedNode?.node.id === view.node.id;
-                    return (
-                      <button
-                        key={view.node.id}
-                        type="button"
-                        className={`fabric-node-row${active ? " fabric-node-row--active" : ""}`}
-                        onClick={() => setSelectedNodeId(view.node.id)}
-                        title={view.node.name || view.node.id}
-                      >
-                        <div className="fabric-node-row-main">
-                          <strong>{view.node.name || view.node.id}</strong>
-                          <span>{view.node.id}</span>
-                        </div>
-                        <div className="fabric-node-row-tags">
-                          <TagList items={view.node.roles} emptyLabel="node" />
-                        </div>
-                        <div className="fabric-node-row-status">
-                          <StatusTag status={view.node.status || "unknown"} />
-                          <span>{formatPlatform(view.node)}</span>
-                        </div>
-                        <div className="fabric-node-row-metrics">
-                          <span>{view.projects.length} projects</span>
-                          <span>{view.runtimes.length} runtimes</span>
-                          <span>{summarizeTransportHealth(view.transports)}</span>
-                        </div>
-                        <div className="fabric-node-row-time">
-                          lastSeen {formatTime(view.node.lastSeenAt)}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </ProCard>
-
-              <ProCard
-                colSpan={{ xs: 24, md: 14 }}
-                title={selectedNode?.node.name || selectedNode?.node.id || "节点属性详情"}
-                headerBordered
-                bordered
-                extra={selectedNode ? <StatusTag status={selectedNode.node.status || "unknown"} /> : null}
-              >
-                {selectedNode && (
-                  <div className="fabric-node-detail">
-                    <div className="fabric-node-detail-strip">
-                      <span>roles</span>
-                      <div><TagList items={selectedNode.node.roles} emptyLabel="node" /></div>
-                    </div>
-                    <div className="fabric-node-detail-strip">
-                      <span>platform</span>
-                      <strong>{formatPlatform(selectedNode.node)}</strong>
-                    </div>
-                    <div className="fabric-node-detail-strip">
-                      <span>capabilities</span>
-                      <div><TagList items={selectedNode.node.capabilities} emptyLabel="none" /></div>
-                    </div>
-
-                    <section className="fabric-node-detail-section">
-                      <h3>Projects</h3>
-                      {selectedNode.projects.length === 0 ? (
-                        <p>暂无 project snapshot。</p>
-                      ) : selectedNode.projects.map((project) => (
-                        <div key={project.id} className="fabric-node-detail-item">
-                          <strong>{project.name || project.id}</strong>
-                          <span>{project.displayPath || project.vcs || project.id}</span>
-                          <em>{project.permissions?.join(", ") || "permissions unknown"}</em>
-                        </div>
-                      ))}
-                    </section>
-
-                    <section className="fabric-node-detail-section">
-                      <h3>Runtimes</h3>
-                      {selectedNode.runtimes.length === 0 ? (
-                        <p>暂无 runtime snapshot。</p>
-                      ) : selectedNode.runtimes.map((runtime) => (
-                        <div key={runtime.id} className="fabric-node-detail-item">
-                          <strong>{normalizeText(runtime.provider)} / {normalizeText(runtime.mode, "tui")}</strong>
-                          <span>{runtime.version || "version unknown"}</span>
-                          <em>{runtime.status || "available"}</em>
-                        </div>
-                      ))}
-                    </section>
-
-                    <section className="fabric-node-detail-section">
-                      <h3>Transports</h3>
-                      {selectedNode.transports.length === 0 ? (
-                        <p>暂无 transport snapshot。</p>
-                      ) : selectedNode.transports.map((transport) => (
-                        <div key={transport.id} className="fabric-node-detail-item">
-                          <strong>{transport.kind || transport.id}</strong>
-                          <span>{transport.endpoint || transport.provider || "endpoint hidden"}</span>
-                          <em>{getTransportHealth(transport)} · {formatTransportMeasurement(transport)}{transport.lastError ? ` · ${transport.lastError}` : ""}</em>
-                        </div>
-                      ))}
-                    </section>
-
-                    <section className="fabric-node-detail-section">
-                      <h3>Relay Metadata</h3>
-                      {selectedNode.relayNode ? (
-                        <div className="fabric-relay-meta">
-                          <span>capacityClass <strong>{selectedNode.relayNode.capacityClass || "tiny"}</strong></span>
-                          <span>bandwidth <strong>{formatBandwidthKbps(selectedNode.relayNode.bandwidthLimitKbps)}</strong></span>
-                          <span>status <strong>{selectedNode.relayNode.status || "unknown"}</strong></span>
-                          <span>measurement <strong>{summarizeRelayMeasurement(selectedNode.transports)}</strong></span>
-                          <span>measured <strong>{formatMeasuredAt(selectedNode.transports.find((transport) => transport.measurement)?.measurement?.measuredAt || selectedNode.relayNode.lastMeasuredAt)}</strong></span>
-                          <span>score <strong>{resolveRelayScore(selectedNode.relayNode)}</strong></span>
-                        </div>
-                      ) : (
-                        <p>该 node 未声明 relay-node metadata。</p>
-                      )}
-                    </section>
-                  </div>
-                )}
-              </ProCard>
-            </ProCard>
+            <SectionCard title="计算节点列表" extra={<ApartmentOutlined />} bodyStyle={{ padding: 0 }}>
+              <div className="fabric-nodes-list">
+                {nodeViews.map((view) => {
+                  const active = selectedNode?.node.id === view.node.id;
+                  return (
+                    <button
+                      key={view.node.id}
+                      type="button"
+                      className={`fabric-node-row${active ? " fabric-node-row--active" : ""}`}
+                      onClick={() => setSelectedNodeId(view.node.id)}
+                      title={view.node.name || view.node.id}
+                    >
+                      <div className="fabric-node-row-main">
+                        <strong>{view.node.name || view.node.id}</strong>
+                        <span>{view.node.id}</span>
+                      </div>
+                      <div className="fabric-node-row-tags">
+                        <TagList items={view.node.roles} emptyLabel="node" />
+                      </div>
+                      <div className="fabric-node-row-status">
+                        <StatusTag status={view.node.status || "unknown"} />
+                        <span>{formatPlatform(view.node)}</span>
+                      </div>
+                      <div className="fabric-node-row-metrics">
+                        <span>{view.projects.length} projects</span>
+                        <span>{view.runtimes.length} runtimes</span>
+                        <span>{summarizeTransportHealth(view.transports)}</span>
+                      </div>
+                      <div className="fabric-node-row-time">
+                        lastSeen {formatTime(view.node.lastSeenAt)}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </SectionCard>
           )}
 
-          <ProCard
+          {selectedNode && (counts.nodes > 0) && (
+            <SectionCard
+              title={selectedNode?.node.name || selectedNode?.node.id || "节点属性详情"}
+              extra={selectedNode ? <StatusTag status={selectedNode.node.status || "unknown"} /> : null}
+            >
+              <div className="fabric-node-detail">
+                <div className="fabric-node-detail-strip">
+                  <span>roles</span>
+                  <div><TagList items={selectedNode.node.roles} emptyLabel="node" /></div>
+                </div>
+                <div className="fabric-node-detail-strip">
+                  <span>platform</span>
+                  <strong>{formatPlatform(selectedNode.node)}</strong>
+                </div>
+                <div className="fabric-node-detail-strip">
+                  <span>capabilities</span>
+                  <div><TagList items={selectedNode.node.capabilities} emptyLabel="none" /></div>
+                </div>
+
+                <section className="fabric-node-detail-section">
+                  <h3>Projects</h3>
+                  {selectedNode.projects.length === 0 ? (
+                    <p>暂无 project snapshot。</p>
+                  ) : selectedNode.projects.map((project) => (
+                    <div key={project.id} className="fabric-node-detail-item">
+                      <strong>{project.name || project.id}</strong>
+                      <span>{project.displayPath || project.vcs || project.id}</span>
+                      <em>{project.permissions?.join(", ") || "permissions unknown"}</em>
+                    </div>
+                  ))}
+                </section>
+
+                <section className="fabric-node-detail-section">
+                  <h3>Runtimes</h3>
+                  {selectedNode.runtimes.length === 0 ? (
+                    <p>暂无 runtime snapshot。</p>
+                  ) : selectedNode.runtimes.map((runtime) => (
+                    <div key={runtime.id} className="fabric-node-detail-item">
+                      <strong>{normalizeText(runtime.provider)} / {normalizeText(runtime.mode, "tui")}</strong>
+                      <span>{runtime.version || "version unknown"}</span>
+                      <em>{runtime.status || "available"}</em>
+                    </div>
+                  ))}
+                </section>
+
+                <section className="fabric-node-detail-section">
+                  <h3>Transports</h3>
+                  {selectedNode.transports.length === 0 ? (
+                    <p>暂无 transport snapshot。</p>
+                  ) : selectedNode.transports.map((transport) => (
+                    <div key={transport.id} className="fabric-node-detail-item">
+                      <strong>{transport.kind || transport.id}</strong>
+                      <span>{transport.endpoint || transport.provider || "endpoint hidden"}</span>
+                      <em>{getTransportHealth(transport)} · {formatTransportMeasurement(transport)}{transport.lastError ? ` · ${transport.lastError}` : ""}</em>
+                    </div>
+                  ))}
+                </section>
+
+                <section className="fabric-node-detail-section">
+                  <h3>Relay Metadata</h3>
+                  {selectedNode.relayNode ? (
+                    <div className="fabric-relay-meta">
+                      <span>capacityClass <strong>{selectedNode.relayNode.capacityClass || "tiny"}</strong></span>
+                      <span>bandwidth <strong>{formatBandwidthKbps(selectedNode.relayNode.bandwidthLimitKbps)}</strong></span>
+                      <span>status <strong>{selectedNode.relayNode.status || "unknown"}</strong></span>
+                      <span>measurement <strong>{summarizeRelayMeasurement(selectedNode.transports)}</strong></span>
+                      <span>measured <strong>{formatMeasuredAt(selectedNode.transports.find((transport) => transport.measurement)?.measurement?.measuredAt || selectedNode.relayNode.lastMeasuredAt)}</strong></span>
+                      <span>score <strong>{resolveRelayScore(selectedNode.relayNode)}</strong></span>
+                    </div>
+                  ) : (
+                    <p>该 node 未声明 relay-node metadata。</p>
+                  )}
+                </section>
+              </div>
+            </SectionCard>
+          )}
+
+          <SectionCard
             title="中继中枢健康度 (Relay Health)"
-            headerBordered
-            bordered
-            style={{ marginTop: 16 }}
             extra={<CloudServerOutlined />}
           >
-            {relayViews.length === 0 ? (
-              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无 relay node 注册。" />
-            ) : (
-              <div className="fabric-relay-list">
-                {relayViews.map(({ relayNode, node, transports, health }) => (
-                  <div key={relayNode.id} className="fabric-relay-row">
-                    <div className="fabric-relay-main">
-                      <strong>{node?.name || relayNode.nodeId}</strong>
-                      <span>{relayNode.id}</span>
-                    </div>
-                    <div className="fabric-relay-meta">
-                      <span>capacityClass <strong>{relayNode.capacityClass || "tiny"}</strong></span>
-                      <span>bandwidth <strong>{formatBandwidthKbps(relayNode.bandwidthLimitKbps)}</strong></span>
-                      <span>status <strong>{relayNode.status || (relayNode.enabled ? "online" : "disabled")}</strong></span>
-                      <span>health <strong>{health}</strong></span>
-                      <span>measurement <strong>{summarizeRelayMeasurement(transports)}</strong></span>
-                      <span>measured <strong>{formatMeasuredAt(transports.find((transport) => transport.measurement)?.measurement?.measuredAt || relayNode.lastMeasuredAt)}</strong></span>
-                      <span>score <strong>{resolveRelayScore(relayNode)}</strong></span>
-                    </div>
-                    <div className="fabric-relay-transports">
-                      {transports.length === 0 ? (
-                        <Tag>transport none</Tag>
-                      ) : transports.map((transport) => (
-                        <Tag key={transport.id} color={getStatusColor(getTransportHealth(transport))}>
-                          {transport.kind || transport.id}: {getTransportHealth(transport)}
-                        </Tag>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </ProCard>
+            <ListTable
+              columns={RELAY_COLUMNS}
+              dataSource={relayViews}
+              rowKey={(row) => row.relayNode.id}
+              loading={loading}
+            />
+          </SectionCard>
         </>
       )}
-    </PageContainer>
+    </PageScaffold>
   );
 }

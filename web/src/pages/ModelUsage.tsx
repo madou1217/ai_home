@@ -1,29 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button,
-  
   Col,
   DatePicker,
+  Descriptions,
   Drawer,
-  Empty,
   Grid,
   Row,
   Segmented,
   Select,
   Space,
-  
-  Statistic,
-  Table,
-  
   Typography,
   message
 } from 'antd';
-import type { TableColumnsType } from 'antd';
+import { ProColumns } from '@ant-design/pro-components';
 import {
-  BarChartOutlined,
-  ClockCircleOutlined,
-  DatabaseOutlined,
-  DollarOutlined,
   EyeOutlined,
   ReloadOutlined,
   SyncOutlined
@@ -41,7 +32,9 @@ import type {
   Provider
 } from '@/types';
 import ProviderIcon, { providerIds, providerNames } from '@/components/chat/ProviderIcon';
-import { PageContainer, ProCard } from '@ant-design/pro-components';
+import PageScaffold from '@/components/ui/PageScaffold';
+import SectionCard from '@/components/ui/SectionCard';
+import ListTable from '@/components/ui/ListTable';
 import './ModelUsage.css';
 
 const { RangePicker } = DatePicker;
@@ -354,18 +347,18 @@ export default function ModelUsage() {
     }
   };
 
-  const modelColumns: TableColumnsType<ModelUsageModelRow> = [
+  const modelColumns: ProColumns<ModelUsageModelRow>[] = [
     {
       title: 'Provider',
       dataIndex: 'provider',
       width: 130,
-      render: (value: Provider) => formatProvider(value)
+      render: (value: any) => formatProvider(value as Provider)
     },
     {
       title: '模型',
       dataIndex: 'model',
       ellipsis: true,
-      render: (value: string) => value || '-'
+      render: (value: any) => value || '-'
     },
     {
       title: '调用',
@@ -398,7 +391,7 @@ export default function ModelUsage() {
       title: 'Cache',
       width: 110,
       align: 'right',
-      render: (_, row) => formatTokens(row.cacheReadInputTokens + row.cacheCreationInputTokens)
+      render: (_, row: any) => formatTokens(row.cacheReadInputTokens + row.cacheCreationInputTokens)
     },
     {
       title: '成本',
@@ -409,25 +402,25 @@ export default function ModelUsage() {
     }
   ];
 
-  const sessionColumns: TableColumnsType<ModelUsageSessionRow> = [
+  const sessionColumns: ProColumns<ModelUsageSessionRow>[] = [
     {
       title: 'Provider',
       dataIndex: 'provider',
       width: 130,
-      render: (value: Provider) => formatProvider(value)
+      render: (value: any) => formatProvider(value as Provider)
     },
     {
       title: '会话',
       dataIndex: 'sessionId',
       ellipsis: true,
-      render: (value: string) => <Text code>{value}</Text>
+      render: (value: any) => <Text code>{value}</Text>
     },
     {
       title: '项目',
       dataIndex: 'project',
       width: 170,
       ellipsis: true,
-      render: (value: string) => value || '-'
+      render: (value: any) => value || '-'
     },
     {
       title: '调用',
@@ -460,23 +453,23 @@ export default function ModelUsage() {
       key: 'action',
       width: 56,
       align: 'center',
-      render: (_, row) => (
+      render: (_, row: any) => (
         <Button
           aria-label="查看会话明细"
           icon={<EyeOutlined />}
           size="small"
-          onClick={() => openSessionDetail(row)}
+          onClick={() => openSessionDetail(row as ModelUsageSessionRow)}
         />
       )
     }
   ];
 
-  const detailColumns: TableColumnsType<ModelUsageSessionDetailRow> = [
+  const detailColumns: ProColumns<ModelUsageSessionDetailRow>[] = [
     {
       title: '模型',
       dataIndex: 'model',
       ellipsis: true,
-      render: (value: string) => value || '-'
+      render: (value: any) => value || '-'
     },
     {
       title: '调用',
@@ -502,7 +495,7 @@ export default function ModelUsage() {
       title: 'Cache',
       width: 110,
       align: 'right',
-      render: (_, row) => formatTokens(row.cacheReadInputTokens + row.cacheCreationInputTokens)
+      render: (_, row: any) => formatTokens(row.cacheReadInputTokens + row.cacheCreationInputTokens)
     },
     {
       title: 'Reasoning',
@@ -548,22 +541,54 @@ export default function ModelUsage() {
       });
   }, [modelOptions, provider]);
 
+  const scanStatusNode = scanJob ? (
+    <SectionCard className={`usage-live-scan usage-live-scan--${scanJob.status} animate__animated animate__fadeIn animate__faster`}>
+      <div className="usage-live-scan-main">
+        <div>
+          <Text type="secondary">扫描状态</Text>
+          <strong>{formatScanJobStatus(scanJob)}</strong>
+        </div>
+        <div>
+          <Text type="secondary">范围</Text>
+          <strong>{formatScanJobProvider(scanJob)}</strong>
+        </div>
+        <div>
+          <Text type="secondary">记录</Text>
+          <strong>{scanJob.result?.records ?? '-'}</strong>
+        </div>
+        <div>
+          <Text type="secondary">文件</Text>
+          <strong>{scanJob.result?.files ?? '-'}</strong>
+        </div>
+      </div>
+      {scanJob.error ? <Text type="danger">{scanJob.error}</Text> : null}
+    </SectionCard>
+  ) : null;
+
   return (
-    <PageContainer
-      header={{
-        title: "模型用量统计",
-        subTitle: "监控 Tokens、会话、模型调用频次和估算成本。",
-        extra: [
+    <PageScaffold
+      title="模型用量统计"
+      subTitle="监控 Tokens、会话、模型调用频次和估算成本。"
+      extra={
+        <>
           <Button key="refresh" icon={<ReloadOutlined />} onClick={handleRefreshUsage} loading={loading}>
             刷新
-          </Button>,
+          </Button>
           <Button key="scan" type="primary" icon={<SyncOutlined />} onClick={handleScan} loading={scanning || isScanJobActive(scanJob)}>
             扫描
           </Button>
-        ]
-      }}
+        </>
+      }
+      headerContent={
+        <Descriptions column={{ xs: 1, sm: 2, md: 4 }} size="small" style={{ marginBottom: 8 }}>
+          <Descriptions.Item label="调用">{stats.totalCalls}</Descriptions.Item>
+          <Descriptions.Item label="会话">{stats.totalSessions}</Descriptions.Item>
+          <Descriptions.Item label="Tokens">{formatTokens(stats.totalTokens)}</Descriptions.Item>
+          <Descriptions.Item label="成本">{formatCost(stats.totalCostUsd)}</Descriptions.Item>
+        </Descriptions>
+      }
     >
-      <ProCard style={{ marginBottom: 16 }} bordered>
+      <SectionCard bordered className="usage-filter-card">
         <Space size={12} wrap>
           <Segmented
             value={rangeMode}
@@ -599,66 +624,22 @@ export default function ModelUsage() {
             查询
           </Button>
         </Space>
-      </ProCard>
+      </SectionCard>
 
-      {scanJob ? (
-        <ProCard
-          className={`usage-live-scan usage-live-scan--${scanJob.status} animate__animated animate__fadeIn animate__faster`}
-          bordered
-          style={{ marginBottom: 16 }}
-        >
-          <div className="usage-live-scan-main">
-            <div>
-              <Text type="secondary">扫描状态</Text>
-              <strong>{formatScanJobStatus(scanJob)}</strong>
-            </div>
-            <div>
-              <Text type="secondary">范围</Text>
-              <strong>{formatScanJobProvider(scanJob)}</strong>
-            </div>
-            <div>
-              <Text type="secondary">记录</Text>
-              <strong>{scanJob.result?.records ?? '-'}</strong>
-            </div>
-            <div>
-              <Text type="secondary">文件</Text>
-              <strong>{scanJob.result?.files ?? '-'}</strong>
-            </div>
-          </div>
-          {scanJob.error ? <Text type="danger">{scanJob.error}</Text> : null}
-        </ProCard>
-      ) : null}
+      {scanStatusNode}
 
-      <ProCard gutter={16} ghost style={{ marginBottom: 16 }}>
-        <ProCard colSpan={{ xs: 24, sm: 12, md: 6 }} layout="center" bordered>
-          <Statistic title="调用" value={stats.totalCalls} prefix={<BarChartOutlined />} />
-        </ProCard>
-        <ProCard colSpan={{ xs: 24, sm: 12, md: 6 }} layout="center" bordered>
-          <Statistic title="会话" value={stats.totalSessions} prefix={<ClockCircleOutlined />} />
-        </ProCard>
-        <ProCard colSpan={{ xs: 24, sm: 12, md: 6 }} layout="center" bordered>
-          <Statistic title="Tokens" value={formatTokens(stats.totalTokens)} prefix={<DatabaseOutlined />} />
-        </ProCard>
-        <ProCard colSpan={{ xs: 24, sm: 12, md: 6 }} layout="center" bordered>
-          <Statistic title="成本" value={formatCost(stats.totalCostUsd)} prefix={<DollarOutlined />} />
-        </ProCard>
-      </ProCard>
-
-      <ProCard title="按模型" headerBordered bordered style={{ marginBottom: 16 }}>
-        <Table<ModelUsageModelRow>
-          size="middle"
+      <SectionCard title="按模型">
+        <ListTable<ModelUsageModelRow>
           loading={loading}
           rowKey={(row) => `${row.provider}:${row.model || 'unknown'}`}
           columns={modelColumns}
           dataSource={models}
-          pagination={false}
           scroll={{ x: 900 }}
-          locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="无记录" /> }}
         />
-      </ProCard>
+      </SectionCard>
 
       {scanResult ? (
-        <ProCard title="最近扫描" headerBordered bordered style={{ marginBottom: 16 }}>
+        <SectionCard title="最近扫描">
           <Row gutter={[24, 16]}>
             <Col xs={24} md={6} style={{ borderRight: isMobile ? 'none' : '1px solid var(--app-border, #f0f0f0)' }}>
               <div style={{ paddingBottom: isMobile ? 12 : 0, borderBottom: isMobile ? '1px solid var(--app-border, #f0f0f0)' : 'none' }}>
@@ -699,21 +680,18 @@ export default function ModelUsage() {
               </Space>
             </Col>
           </Row>
-        </ProCard>
+        </SectionCard>
       ) : null}
 
-      <ProCard title="按会话" headerBordered bordered>
-        <Table<ModelUsageSessionRow>
-          size="middle"
+      <SectionCard title="按会话">
+        <ListTable<ModelUsageSessionRow>
           loading={loading}
           rowKey={getSessionKey}
           columns={sessionColumns}
           dataSource={sessions}
-          pagination={{ pageSize: 12, showSizeChanger: false }}
           scroll={{ x: 1000 }}
-          locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="无记录" /> }}
         />
-      </ProCard>
+      </SectionCard>
 
       <Drawer
         title={selectedSession ? `${providerNames[selectedSession.provider]} · ${selectedSession.project || selectedSession.sessionId}` : '会话明细'}
@@ -725,19 +703,16 @@ export default function ModelUsage() {
           <Space direction="vertical" size={12} style={{ width: '100%' }}>
             <Text code>{selectedSession.sessionId}</Text>
             {selectedSession.cwd ? <Text type="secondary">{selectedSession.cwd}</Text> : null}
-            <Table<ModelUsageSessionDetailRow>
-              size="middle"
+            <ListTable<ModelUsageSessionDetailRow>
               loading={sessionDetailLoading}
               rowKey={(row) => `${row.provider}:${row.sessionId}:${row.model || 'unknown'}`}
               columns={detailColumns}
               dataSource={sessionDetail}
-              pagination={false}
               scroll={{ x: 760 }}
-              locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="无记录" /> }}
             />
           </Space>
         ) : null}
       </Drawer>
-    </PageContainer>
+    </PageScaffold>
   );
 }

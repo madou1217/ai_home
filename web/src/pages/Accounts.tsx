@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { PageContainer, ProTable, ModalForm } from '@ant-design/pro-components';
+import { ModalForm } from '@ant-design/pro-components';
+import PageScaffold from '@/components/ui/PageScaffold';
+import ListTable from '@/components/ui/ListTable';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Button,
@@ -2438,11 +2440,11 @@ export default function Accounts() {
   ), [removingAccountKeys]);
 
   return (
-    <PageContainer
-      header={{
-        title: "账号池管理",
-        subTitle: "统一管理 OAuth 和密钥账号；密钥账号的网络可达性以模型探测为准。",
-        extra: [
+    <PageScaffold
+      title="账号池管理"
+      subTitle="统一管理 OAuth 和密钥账号；密钥账号的网络可达性以模型探测为准。"
+      extra={(
+        <>
           <Popover
             key="export"
             trigger="click"
@@ -2460,7 +2462,7 @@ export default function Accounts() {
             >
               导出
             </Button>
-          </Popover>,
+          </Popover>
           <Button
             key="import"
             icon={<ImportOutlined />}
@@ -2468,7 +2470,7 @@ export default function Accounts() {
             onClick={() => setImportModalVisible(true)}
           >
             导入
-          </Button>,
+          </Button>
           <Button
             key="add"
             type="primary"
@@ -2480,14 +2482,14 @@ export default function Accounts() {
           >
             添加账号
           </Button>
-        ]
-      }}
-      content={(
+        </>
+      )}
+      headerContent={(
         <Descriptions size="small" column={{ xs: 1, sm: 2, md: 3 }} style={{ marginTop: 8 }}>
           <Descriptions.Item label="账号状态">
-              <Tag color={hydratingDetails ? "orange" : "green"}>{hydratingDetails ? "详情补全中" : "就绪"}</Tag>
-            </Descriptions.Item>
-            <Descriptions.Item label="正常可用">
+            <Tag color={hydratingDetails ? "orange" : "green"}>{hydratingDetails ? "详情补全中" : "就绪"}</Tag>
+          </Descriptions.Item>
+          <Descriptions.Item label="正常可用">
             <span style={{ color: '#0F766E', fontWeight: 'bold' }}>{providerStats[activeProvider].healthy}</span> / {providerStats[activeProvider].total}
           </Descriptions.Item>
           <Descriptions.Item label="待处理问题">
@@ -2502,7 +2504,7 @@ export default function Accounts() {
           </Descriptions.Item>
         </Descriptions>
       )}
-    >
+>
       {hasActiveImportJob ? (
         <Alert
           type="info"
@@ -2603,7 +2605,7 @@ export default function Accounts() {
         </div>
       </Modal>
 
-        <ProTable
+        <ListTable
           dataSource={filteredAccounts}
           columns={columns}
           rowKey={(record) => `${record.provider}-${record.accountId}`}
@@ -2615,8 +2617,6 @@ export default function Accounts() {
             'data-account-key': getAccountKey(record)
           } as React.HTMLAttributes<HTMLElement>)}
           loading={loading}
-          search={false}
-          options={false}
           toolbar={{
             menu: {
               type: 'tab',
@@ -2652,12 +2652,6 @@ export default function Accounts() {
               </Button>
             ],
             settings: []
-          }}
-          pagination={{
-            pageSize: 15,
-            showSizeChanger: true,
-            showQuickJumper: true,
-            showTotal: (total) => `共 ${total} 个账号`
           }}
           scroll={{ x: 1200 }}
         />
@@ -2947,6 +2941,6 @@ export default function Accounts() {
           </Space>
         ) : null}
       </Modal>
-    </PageContainer>
+    </PageScaffold>
   );
 };

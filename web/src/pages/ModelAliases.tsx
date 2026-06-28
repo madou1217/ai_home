@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Space, Switch, Popconfirm, message, Form, Input, InputNumber, Select } from 'antd';
-import { ProTable, ModalForm } from '@ant-design/pro-components';
+import { ModalForm } from '@ant-design/pro-components';
 import { PlusOutlined, EditOutlined, DeleteOutlined, ReloadOutlined } from '@ant-design/icons';
 import { modelAliasesAPI, modelsAPI, ModelAlias } from '@/services/api';
 import Button from '@/components/ui/AppButton';
+import SectionCard from '@/components/ui/SectionCard';
+import ListTable from '@/components/ui/ListTable';
 import { providerIds, providerNames } from '@/components/chat/ProviderIcon';
 
 const PROVIDER_OPTIONS = providerIds;
@@ -252,16 +254,12 @@ const ModelAliases: React.FC<{ setActions?: (actions: React.ReactNode) => void }
   ];
 
   return (
-    <div>
-
-      <ProTable
+    <SectionCard title="模型别名">
+      <ListTable
         dataSource={sortedAliases}
         columns={columns}
         rowKey="id"
         loading={loading}
-        search={false}
-        options={false}
-        pagination={false}
       />
 
       <ModalForm
@@ -388,7 +386,7 @@ const ModelAliases: React.FC<{ setActions?: (actions: React.ReactNode) => void }
           </Form.Item>
         </Form>
       </ModalForm>
-    </div>
+    </SectionCard>
   );
 };
 

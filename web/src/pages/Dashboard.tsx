@@ -2,20 +2,17 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Button,
-  
-  
+  Col,
   Descriptions,
   Empty,
   List,
   Progress,
-  
+  Row,
   Space,
-  Statistic,
-  Table,
-  
   message,
   Tag,
 } from 'antd';
+import { ProColumns } from '@ant-design/pro-components';
 import {
   CheckCircleOutlined,
   DashboardOutlined,
@@ -27,8 +24,10 @@ import { managementAPI } from '@/services/api';
 import type { ManagementAccount, ManagementMetrics, ManagementStatus, Provider } from '@/types';
 import ProviderIcon, { providerIds, providerNames } from '@/components/chat/ProviderIcon';
 import RuntimeStatusTag from '@/components/runtime/RuntimeStatusTag';
-import { PageContainer, ProCard } from '@ant-design/pro-components';
-import './Dashboard.css';
+import PageScaffold from '@/components/ui/PageScaffold';
+import SectionCard from '@/components/ui/SectionCard';
+import ListTable from '@/components/ui/ListTable';
+import '../styles/unified.css';
 
 const PROVIDERS: Provider[] = providerIds;
 
@@ -87,8 +86,20 @@ function buildAccountLink(provider: Provider, accountId: string) {
   return `/accounts?${params.toString()}`;
 }
 
+type ProviderRow = {
+  key: Provider;
+  provider: Provider;
+  total: number;
+  active: number;
+  statuses: Record<string, number>;
+  queue: ManagementStatus['queue'][Provider] | undefined;
+  requests: number;
+  success: number;
+  failures: number;
+};
+
 const Dashboard = () => {
-    const [status, setStatus] = useState<ManagementStatus | null>(null);
+  const [status, setStatus] = useState<ManagementStatus | null>(null);
   const [metrics, setMetrics] = useState<ManagementMetrics | null>(null);
   const [accounts, setAccounts] = useState<ManagementAccount[]>([]);
   const [loading, setLoading] = useState(false);
@@ -231,7 +242,7 @@ const Dashboard = () => {
     await loadDashboard({ showLoading: true });
   };
 
-  const providerRows = useMemo(() => {
+  const providerRows = useMemo<ProviderRow[]>(() => {
     return PROVIDERS.map((provider) => {
       const providerStatus = status?.providers?.[provider];
       const providerQueue = status?.queue?.[provider];
@@ -276,29 +287,93 @@ const Dashboard = () => {
     );
   }, [accounts]);
 
+  const providerColumns: ProColumns<ProviderRow>[] = [
+    {
+      title: 'Provider',
+      dataIndex: 'provider',
+      key: 'provider',
+      render: (_, record) => (
+        <Space>
+          <ProviderIcon provider={record.provider} size={16} />
+          {providerNames[record.provider]}
+        </Space>
+      )
+    },
+    {
+      title: '健康 / 总数',
+      key: 'health',
+      render: (_, record) => `${record.active}/${record.total}`
+    },
+    {
+      title: '队列',
+      key: 'queue',
+      render: (_, record) => formatQueueSnapshot(record.queue)
+    },
+    {
+      title: '请求',
+      key: 'requests',
+      render: (_, record) => `${record.requests} / 成功 ${record.success} / 失败 ${record.failures}`
+    },
+    {
+      title: '状态分布',
+      key: 'statuses',
+      render: (_, record) => (
+        <Space wrap size={[6, 6]}>
+          {Object.entries(record.statuses || {})
+            .filter(([, count]) => Number(count) > 0)
+            .map(([runtimeStatus, count]) => (
+              <span key={runtimeStatus}>
+                <RuntimeStatusTag status={runtimeStatus} /> {count}
+              </span>
+            ))}
+        </Space>
+      )
+    }
+  ];
+
   return (
-    <PageContainer
-      header={{
-        title: "网关仪表盘",
-        subTitle: "展示本地 Server 调度、熔断、恢复和队列的真实运行态。",
-        extra: [
-          <Button key="clear" onClick={handleClearCooldown} loading={cooldownClearing}>
-            清空冷却
-          </Button>,
-          <Button
-            key="refresh"
-            type="primary"
-            icon={<ReloadOutlined />}
-            onClick={handleRefreshDashboard}
-            loading={loading}
-          >
-            刷新
-          </Button>,
-          <Tag key="state" color={liveTag.color} style={{ margin: 0, padding: "4px 8px", height: "auto" }}>
-            {liveTag.text}
-          </Tag>
-        ]
-      }}
+    <PageScaffold
+      title="网关仪表盘"
+      subTitle="展示本地 Server 调度、熔断、恢复和队列的真实运行态。"
+      extra={[
+        <Button key="clear" onClick={handleClearCooldown} loading={cooldownClearing}>
+          清空冷却
+        </Button>,
+        <Button
+          key="refresh"
+          type="primary"
+          icon={<ReloadOutlined />}
+          onClick={handleRefreshDashboard}
+          loading={loading}
+        >
+          刷新
+        </Button>
+      ]}
+      headerContent={
+        <Descriptions
+          size="small"
+          column={{ xs: 1, sm: 2, md: 5 }}
+          style={{ marginBottom: 8 }}
+        >
+          <Descriptions.Item label="实时态">
+            <Tag color={liveTag.color} style={{ margin: 0, padding: '4px 8px', height: 'auto' }}>
+              {liveTag.text}
+            </Tag>
+          </Descriptions.Item>
+          <Descriptions.Item label={<><DashboardOutlined /> 总账号数</>}>
+            {status?.totalAccounts || 0}
+          </Descriptions.Item>
+          <Descriptions.Item label={<><CheckCircleOutlined /> 健康账号</>}>
+            <span style={{ color: '#0F766E' }}>{status?.activeAccounts || 0}</span>
+          </Descriptions.Item>
+          <Descriptions.Item label={<><DisconnectOutlined /> 异常 / 冷却</>}>
+            <span style={{ color: degradedCount > 0 ? '#dc2626' : undefined }}>{degradedCount}</span>
+          </Descriptions.Item>
+          <Descriptions.Item label={<><SyncOutlined spin={loading} /> 成功率</>}>
+            {formatPercent(status?.successRate)}
+          </Descriptions.Item>
+        </Descriptions>
+      }
     >
       {status?.cooldownAccounts ? (
         <Alert
@@ -309,191 +384,118 @@ const Dashboard = () => {
         />
       ) : null}
 
-      {/* 4 项关键指标 ProCard */}
-      <ProCard gutter={16} ghost style={{ marginBottom: 16 }}>
-        <ProCard colSpan={{ xs: 24, sm: 12, md: 6 }} layout="center" bordered>
-          <Statistic title="总账号数" value={status?.totalAccounts || 0} prefix={<DashboardOutlined />} />
-        </ProCard>
-        <ProCard colSpan={{ xs: 24, sm: 12, md: 6 }} layout="center" bordered>
-          <Statistic
-            title="健康账号"
-            value={status?.activeAccounts || 0}
-            prefix={<CheckCircleOutlined />}
-            valueStyle={{ color: "#0F766E" }}
-          />
-        </ProCard>
-        <ProCard colSpan={{ xs: 24, sm: 12, md: 6 }} layout="center" bordered>
-          <Statistic
-            title="异常 / 冷却"
-            value={degradedCount}
-            prefix={<DisconnectOutlined />}
-            valueStyle={{ color: degradedCount > 0 ? "#dc2626" : undefined }}
-          />
-        </ProCard>
-        <ProCard colSpan={{ xs: 24, sm: 12, md: 6 }} layout="center" bordered>
-          <Statistic
-            title="成功率"
-            value={formatPercent(status?.successRate)}
-            prefix={<SyncOutlined spin={loading} />}
-          />
-        </ProCard>
-      </ProCard>
+      <SectionCard title="服务运行参数">
+        <Descriptions size="small" column={{ xs: 1, sm: 2, md: 3 }} bordered>
+          <Descriptions.Item label="Backend">{status?.backend || "-"}</Descriptions.Item>
+          <Descriptions.Item label="调度策略">{status?.strategy || "-"}</Descriptions.Item>
+          <Descriptions.Item label="监听地址">
+            {status ? `${status.host}:${status.port}` : "-"}
+          </Descriptions.Item>
+          <Descriptions.Item label="Provider 模式">{status?.providerMode || "-"}</Descriptions.Item>
+          <Descriptions.Item label="API Key">{status?.apiKeyConfigured ? "已配置" : "未配置"}</Descriptions.Item>
+          <Descriptions.Item label="Sticky Session">{status?.sessionAffinity?.total || 0}</Descriptions.Item>
+          <Descriptions.Item label="缓存模型">{status?.modelsCached || 0}</Descriptions.Item>
+          <Descriptions.Item label="总请求">{status?.totalRequests || 0}</Descriptions.Item>
+          <Descriptions.Item label="超时率">{formatPercent(status?.timeoutRate)}</Descriptions.Item>
+          <Descriptions.Item label="运行时长">
+            {typeof displayedUptimeSec === "number" ? `${displayedUptimeSec}s` : "-"}
+          </Descriptions.Item>
+        </Descriptions>
+      </SectionCard>
 
-      <ProCard gutter={16} ghost style={{ marginBottom: 16 }}>
-        {/* 服务运行态 */}
-        <ProCard colSpan={24} title="服务运行参数" headerBordered bordered>
-          <Descriptions size="small" column={{ xs: 1, sm: 2, md: 3 }} bordered>
-            <Descriptions.Item label="Backend">{status?.backend || "-"}</Descriptions.Item>
-            <Descriptions.Item label="调度策略">{status?.strategy || "-"}</Descriptions.Item>
-            <Descriptions.Item label="监听地址">
-              {status ? `${status.host}:${status.port}` : "-"}
-            </Descriptions.Item>
-            <Descriptions.Item label="Provider 模式">{status?.providerMode || "-"}</Descriptions.Item>
-            <Descriptions.Item label="API Key">{status?.apiKeyConfigured ? "已配置" : "未配置"}</Descriptions.Item>
-            <Descriptions.Item label="Sticky Session">{status?.sessionAffinity?.total || 0}</Descriptions.Item>
-            <Descriptions.Item label="缓存模型">{status?.modelsCached || 0}</Descriptions.Item>
-            <Descriptions.Item label="总请求">{status?.totalRequests || 0}</Descriptions.Item>
-            <Descriptions.Item label="超时率">{formatPercent(status?.timeoutRate)}</Descriptions.Item>
-            <Descriptions.Item label="运行时长">
-              {typeof displayedUptimeSec === "number" ? `${displayedUptimeSec}s` : "-"}
-            </Descriptions.Item>
-          </Descriptions>
-        </ProCard>
-      </ProCard>
-
-      {/* Provider 运行态 */}
-      <ProCard title="Provider 运行状态" headerBordered bordered style={{ marginBottom: 16 }}>
-        <Table
+      <SectionCard title="Provider 运行状态">
+        <ListTable<ProviderRow>
           rowKey="provider"
-          pagination={false}
           dataSource={providerRows}
-          columns={[
-            {
-              title: "Provider",
-              dataIndex: "provider",
-              key: "provider",
-              render: (provider: Provider) => (
-                <Space>
-                  <ProviderIcon provider={provider} size={16} />
-                  {providerNames[provider]}
-                </Space>
-              )
-            },
-            {
-              title: "健康 / 总数",
-              key: "health",
-              render: (_, record) => `${record.active}/${record.total}`
-            },
-            {
-              title: "队列",
-              key: "queue",
-              render: (_, record) => formatQueueSnapshot(record.queue)
-            },
-            {
-              title: "请求",
-              key: "requests",
-              render: (_, record) => `${record.requests} / 成功 ${record.success} / 失败 ${record.failures}`
-            },
-            {
-              title: "状态分布",
-              key: "statuses",
-              render: (_, record) => (
-                <Space wrap size={[6, 6]}>
-                  {Object.entries(record.statuses || {})
-                    .filter(([, count]) => Number(count) > 0)
-                    .map(([runtimeStatus, count]) => (
-                      <span key={runtimeStatus}>
-                        <RuntimeStatusTag status={runtimeStatus} /> {count}
-                      </span>
-                    ))}
-                </Space>
-              )
-            }
-          ]}
+          loading={loading}
+          columns={providerColumns}
         />
-      </ProCard>
+      </SectionCard>
 
-      {/* 底部两栏：最近错误 & 热点路由 */}
-      <ProCard gutter={16} ghost>
-        <ProCard colSpan={{ xs: 24, md: 12 }} title="最近错误" headerBordered bordered>
-          {recentErrors.length === 0 ? (
-            <Empty description="最近没有错误" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-          ) : (
-            <List
-              dataSource={recentErrors.slice(0, 8)}
-              renderItem={(item) => (
-                <List.Item>
-                  <div style={{ width: "100%" }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 6 }}>
-                      <Space size={8} wrap>
-                        {(() => {
-                          const provider = getRecentErrorProvider(item);
-                          const accountRef = getRecentErrorAccountRef(item);
-                          const account = accountRef ? accountByRef.get(accountRef) : undefined;
-                          const accountId = account ? String(account.accountId || account.id || "").trim() : "";
-                          if (!provider) {
-                            return <RuntimeStatusTag status="upstream_error" fallback="upstream" />;
-                          }
-                          return (
-                            <>
-                              <Space size={5}>
-                                <ProviderIcon provider={provider} size={15} />
-                                <span style={{ fontWeight: "bold" }}>{providerNames[provider]}</span>
-                              </Space>
-                              {accountId ? (
-                                <a href={buildAccountLink(provider, accountId)}>
-                                  {getManagementAccountLabel(account) || "查看对应账号"}
-                                </a>
-                              ) : null}
-                            </>
-                          );
-                        })()}
-                      </Space>
-                      <span style={{ color: "var(--app-muted)", fontSize: 12 }}>
-                        {formatRecentErrorTime(item.at)}
-                      </span>
+      <Row gutter={16}>
+        <Col xs={24} md={12}>
+          <SectionCard title="最近错误">
+            {recentErrors.length === 0 ? (
+              <Empty description="暂无数据" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+            ) : (
+              <List
+                dataSource={recentErrors.slice(0, 8)}
+                renderItem={(item) => (
+                  <List.Item>
+                    <div style={{ width: "100%" }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 6 }}>
+                        <Space size={8} wrap>
+                          {(() => {
+                            const provider = getRecentErrorProvider(item);
+                            const accountRef = getRecentErrorAccountRef(item);
+                            const account = accountRef ? accountByRef.get(accountRef) : undefined;
+                            const accountId = account ? String(account.accountId || account.id || "").trim() : "";
+                            if (!provider) {
+                              return <RuntimeStatusTag status="upstream_error" fallback="upstream" />;
+                            }
+                            return (
+                              <>
+                                <Space size={5}>
+                                  <ProviderIcon provider={provider} size={15} />
+                                  <span style={{ fontWeight: "bold" }}>{providerNames[provider]}</span>
+                                </Space>
+                                {accountId ? (
+                                  <a href={buildAccountLink(provider, accountId)}>
+                                    {getManagementAccountLabel(account) || "查看对应账号"}
+                                  </a>
+                                ) : null}
+                              </>
+                            );
+                          })()}
+                        </Space>
+                        <span style={{ color: "var(--app-muted)", fontSize: 12 }}>
+                          {formatRecentErrorTime(item.at)}
+                        </span>
+                      </div>
+                      {item.route ? (
+                        <span style={{ display: "block", marginBottom: 4, fontSize: 12, color: "var(--app-muted)" }}>
+                          {item.route}
+                        </span>
+                      ) : null}
+                      <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 13, color: "var(--app-text)" }}>
+                        {formatRecentErrorMessage(item)}
+                      </div>
                     </div>
-                    {item.route ? (
-                      <span style={{ display: "block", marginBottom: 4, fontSize: 12, color: "var(--app-muted)" }}>
-                        {item.route}
-                      </span>
-                    ) : null}
-                    <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 13, color: "var(--app-text)" }}>
-                      {formatRecentErrorMessage(item)}
-                    </div>
-                  </div>
-                </List.Item>
-              )}
-            />
-          )}
-        </ProCard>
+                  </List.Item>
+                )}
+              />
+            )}
+          </SectionCard>
+        </Col>
 
-        <ProCard colSpan={{ xs: 24, md: 12 }} title="热点路由" headerBordered bordered>
-          {routeRows.length === 0 ? (
-            <Empty description="暂无路由统计" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-          ) : (
-            <List
-              dataSource={routeRows}
-              renderItem={(item) => (
-                <List.Item>
-                  <div style={{ width: "100%" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                      <code style={{ background: "var(--app-surface-muted)", padding: "2px 6px", borderRadius: 4, fontSize: 12 }}>{item.route}</code>
-                      <span>{item.count} 次请求</span>
+        <Col xs={24} md={12}>
+          <SectionCard title="热点路由">
+            {routeRows.length === 0 ? (
+              <Empty description="暂无数据" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+            ) : (
+              <List
+                dataSource={routeRows}
+                renderItem={(item) => (
+                  <List.Item>
+                    <div style={{ width: "100%" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                        <code style={{ background: "var(--app-surface-muted)", padding: "2px 6px", borderRadius: 4, fontSize: 12 }}>{item.route}</code>
+                        <span>{item.count} 次请求</span>
+                      </div>
+                      <Progress
+                        percent={Math.max(1, Math.round((item.count / Math.max(routeRows[0].count, 1)) * 100))}
+                        showInfo={false}
+                        size="small"
+                      />
                     </div>
-                    <Progress
-                      percent={Math.max(1, Math.round((item.count / Math.max(routeRows[0].count, 1)) * 100))}
-                      showInfo={false}
-                      size="small"
-                    />
-                  </div>
-                </List.Item>
-              )}
-            />
-          )}
-        </ProCard>
-      </ProCard>
-    </PageContainer>
+                  </List.Item>
+                )}
+              />
+            )}
+          </SectionCard>
+        </Col>
+      </Row>
+    </PageScaffold>
   );
 };
 

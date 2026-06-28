@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Form, Input, Modal, Segmented, Select, Statistic, Switch, Tag, Tooltip, message } from 'antd';
-import { ApiOutlined, ArrowLeftOutlined, CopyOutlined, DatabaseOutlined, DeleteOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
+import { Alert, Descriptions, Form, Input, Modal, Segmented, Select, Switch, Tag, Tooltip, message } from 'antd';
+import { ApiOutlined, ArrowLeftOutlined, CopyOutlined, DeleteOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { modelsAPI } from '@/services/api';
 import type {
@@ -14,8 +14,9 @@ import type {
 import Button from '@/components/ui/AppButton';
 import DataToolbar from '@/components/ui/DataToolbar';
 import PaginatedList from '@/components/ui/PaginatedList';
-import { PageContainer, ModalForm } from '@ant-design/pro-components';
-import SurfaceCard from '@/components/ui/SurfaceCard';
+import { ModalForm } from '@ant-design/pro-components';
+import PageScaffold from '@/components/ui/PageScaffold';
+import SectionCard from '@/components/ui/SectionCard';
 import ProviderIcon, { providerIds, providerNames } from '@/components/chat/ProviderIcon';
 import './Models.css';
 
@@ -673,44 +674,36 @@ export default function Models() {
   };
 
   return (
-    <PageContainer
-      header={{
-        title: accountScoped ? "账号模型管理" : "全局模型目录",
-        subTitle: accountScoped
-          ? `${scopedAccountLabel && !scopedAccountLabel.startsWith("acct_") ? scopedAccountLabel : (scopedProvider ? `${providerNames[scopedProvider]} 账号` : "当前账号")} 的独立模型开关和手动补充。`
-          : "按模型聚合展示可见状态；客户端看到的是所有启用账号模型的去重合集。",
-        extra: [
-          accountScoped && (
-            <Button key="back" icon={<ArrowLeftOutlined />} onClick={() => navigate("/accounts")}>
-              返回账号
-            </Button>
-          ),
-          renderManualModelButton(),
-          <Button
-            key="refresh"
-            type="primary"
-            icon={<ReloadOutlined />}
-            loading={loading || isCatalogJobActive(catalogJob)}
-            onClick={refreshModels}
-          >
-            刷新模型
+    <PageScaffold
+      title={accountScoped ? '账号模型管理' : '全局模型目录'}
+      subTitle={accountScoped
+        ? `${scopedAccountLabel && !scopedAccountLabel.startsWith('acct_') ? scopedAccountLabel : (scopedProvider ? `${providerNames[scopedProvider]} 账号` : '当前账号')} 的独立模型开关和手动补充。`
+        : '按模型聚合展示可见状态；客户端看到的是所有启用账号模型的去重合集。'}
+      extra={[
+        accountScoped && (
+          <Button key="back" icon={<ArrowLeftOutlined />} onClick={() => navigate('/accounts')}>
+            返回账号
           </Button>
-        ].filter(Boolean)
-      }}
+        ),
+        renderManualModelButton(),
+        <Button
+          key="refresh"
+          type="primary"
+          icon={<ReloadOutlined />}
+          loading={loading || isCatalogJobActive(catalogJob)}
+          onClick={refreshModels}
+        >
+          刷新模型
+        </Button>
+      ].filter(Boolean)}
+      headerContent={(
+        <Descriptions size="small" column={{ xs: 1, sm: 3 }} style={{ marginTop: 8 }}>
+          <Descriptions.Item label="账号模型">{metricSource.length}</Descriptions.Item>
+          <Descriptions.Item label={accountScoped ? '启用模型' : '可见模型'}>{visibleUnionCount}</Descriptions.Item>
+          <Descriptions.Item label="手动补充">{manualCount}</Descriptions.Item>
+        </Descriptions>
+      )}
     >
-
-      <div className="models-metrics">
-        <SurfaceCard className="models-metric-card">
-          <Statistic title="账号模型" value={metricSource.length} prefix={<DatabaseOutlined />} />
-        </SurfaceCard>
-        <SurfaceCard className="models-metric-card">
-          <Statistic title={accountScoped ? '启用模型' : '可见模型'} value={visibleUnionCount} prefix={<ApiOutlined />} />
-        </SurfaceCard>
-        <SurfaceCard className="models-metric-card">
-          <Statistic title="手动补充" value={manualCount} prefix={<ProviderIcon provider="codex" size={18} />} />
-        </SurfaceCard>
-      </div>
-
       {globalProbeError ? (
         <Alert
           type={catalog?.source === 'remote' ? 'warning' : 'error'}
@@ -721,7 +714,9 @@ export default function Models() {
       ) : null}
 
       {catalogJob ? (
-        <SurfaceCard className={`models-live-refresh models-live-refresh--${catalogJob.status} animate__animated animate__fadeIn animate__faster`}>
+        <SectionCard
+          className={`models-live-refresh models-live-refresh--${catalogJob.status} animate__animated animate__fadeIn animate__faster`}
+        >
           <div className="models-live-refresh-grid">
             <div>
               <span>刷新状态</span>
@@ -741,20 +736,23 @@ export default function Models() {
             </div>
           </div>
           {catalogJob.error ? <p>{catalogJob.error}</p> : null}
-        </SurfaceCard>
+        </SectionCard>
       ) : null}
 
-      <SurfaceCard
+      <SectionCard
         title={accountScoped ? '当前账号模型' : '模型目录'}
-        description={accountScoped
-          ? `${scopedAccountLabel && !scopedAccountLabel.startsWith('acct_') ? scopedAccountLabel : (scopedProvider ? `${providerNames[scopedProvider]} 账号` : '当前账号')}，更新时间 ${formatUpdatedAt(catalog?.updatedAt)}。`
-          : `端点 ${catalog?.endpoint || '/v1/models'}，当前可见模型 ${visibleUnionCount} 个。更新时间 ${formatUpdatedAt(catalog?.updatedAt)}。`}
-        actions={(
+        extra={(
           <Tag color={catalog?.cached ? 'default' : 'processing'}>
             {catalog?.cached ? '缓存' : '实时'}
           </Tag>
         )}
       >
+        <p className="models-catalog-desc">
+          {accountScoped
+            ? `${scopedAccountLabel && !scopedAccountLabel.startsWith('acct_') ? scopedAccountLabel : (scopedProvider ? `${providerNames[scopedProvider]} 账号` : '当前账号')}，更新时间 ${formatUpdatedAt(catalog?.updatedAt)}。`
+            : `端点 ${catalog?.endpoint || '/v1/models'}，当前可见模型 ${visibleUnionCount} 个。更新时间 ${formatUpdatedAt(catalog?.updatedAt)}。`}
+        </p>
+
         {accountScoped ? (
           <div className="models-account-context">
             <div className="models-account-context-main">
@@ -835,7 +833,7 @@ export default function Models() {
             className="models-list models-list--account"
             items={accountModelRows}
             pageSize={16}
-            emptyText="当前账号暂无匹配模型"
+            emptyText="暂无数据"
             renderItem={(model) => renderModelRow(model)}
           />
         ) : (
@@ -843,11 +841,11 @@ export default function Models() {
             className="models-list"
             items={globalRows}
             pageSize={14}
-            emptyText="暂无匹配模型"
+            emptyText="暂无数据"
             renderItem={(model) => renderGlobalModelRow(model)}
           />
         )}
-      </SurfaceCard>
+      </SectionCard>
 
       <ModalForm
         title="手动添加模型"
@@ -905,6 +903,6 @@ export default function Models() {
           </Form.Item>
         </Form>
       </ModalForm>
-    </PageContainer>
+    </PageScaffold>
   );
 }

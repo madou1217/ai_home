@@ -43,30 +43,30 @@ export default [
         redirect: "/fabric/nodes",
       },
       {
-        name: "控制面",
+        name: "Server 管理",
         path: "/fabric/control-planes",
         component: "./FabricControlPlanes",
         icon: "cloudServer",
       },
       {
-        name: "远程节点",
+        name: "连接方式",
         path: "/fabric/remote-nodes",
         component: "./FabricRemoteNodes",
         icon: "apartment",
       },
       {
-        name: "SSH 开发机",
+        name: "SSH / Bootstrap",
         path: "/fabric/ssh-hosts",
         component: "./FabricSshHosts",
         icon: "desktop",
       },
       {
-        name: "节点健康",
+        name: "节点总览",
         path: "/fabric/nodes",
         component: "./FabricNodes",
       },
       {
-        name: "WebRTC 实验室",
+        name: "传输候选",
         path: "/fabric/webrtc-lab",
         component: "./FabricWebrtcLab",
       }

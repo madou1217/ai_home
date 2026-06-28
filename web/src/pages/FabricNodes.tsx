@@ -8,13 +8,13 @@ import {
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import {
-  buildFabricRegistryNodeViews,
   buildFabricRegistryRelayViews,
   readActiveFabricRegistry
 } from '@/services/fabric-registry';
 import type {
+  FabricNodeAction,
+  FabricNodeInventoryItem,
   FabricRegistryNode,
-  FabricRegistryNodeView,
   FabricRegistryRelayNode,
   FabricRegistryRelayView,
   FabricRegistryResult,
@@ -117,21 +117,41 @@ function summarizeRelayMeasurement(transports: FabricRegistryTransport[]) {
   return measured ? formatTransportMeasurement(measured) : 'no measurement';
 }
 
-function summarizeTransportHealth(transports: FabricRegistryTransport[]) {
-  if (transports.length === 0) return 'none';
-  const groups = transports.reduce<Record<string, number>>((acc, transport) => {
-    const health = getTransportHealth(transport);
-    acc[health] = (acc[health] || 0) + 1;
-    return acc;
-  }, {});
-  return Object.entries(groups)
-    .map(([health, count]) => `${health} ${count}`)
-    .join(' · ');
-}
+
 
 function resolveRelayScore(relay: FabricRegistryRelayNode) {
   if (relay.lastMeasuredAt) return 'measured / no score';
   return 'no measurement';
+}
+
+function formatBlocker(value: string) {
+  const [code, provider, status] = String(value || '').split(':');
+  const labels: Record<string, string> = {
+    m4_project_action_pending: '项目打开动作待 M4 接入',
+    m4_remote_session_action_pending: '远程会话动作待 M4 接入',
+    missing_project_snapshot: '缺少项目快照',
+    missing_transport: '缺少传输通道',
+    missing_ssh_bootstrap_transport: '未配置 SSH bootstrap',
+    relay_already_registered: '已是 relay node',
+    relay_role_enable_flow_pending: '启用 relay 流程待接入'
+  };
+  if (code === 'missing_provider_runtime') return `缺少 ${provider || 'provider'} runtime`;
+  if (code === 'provider_runtime_not_ready') return `${provider || 'provider'} runtime 不可用${status ? ` (${status})` : ''}`;
+  return labels[code] || value;
+}
+
+function ActionSummary({ actions }: { actions: FabricNodeAction[] }) {
+  const visible = actions.filter((action) => action.id.startsWith('start-session:') || action.id === 'open-project');
+  if (visible.length === 0) return <Tag>no actions</Tag>;
+  return (
+    <Space size={[4, 4]} wrap>
+      {visible.map((action) => (
+        <Tag key={action.id} color={action.eligible ? 'blue' : 'default'}>
+          {action.label}: {action.eligible ? 'eligible' : formatBlocker(action.blockers[0] || 'blocked')}
+        </Tag>
+      ))}
+    </Space>
+  );
 }
 
 function getInitialProfile() {
@@ -244,8 +264,8 @@ export default function FabricNodes() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const nodeViews = useMemo<FabricRegistryNodeView[]>(
-    () => registry ? buildFabricRegistryNodeViews(registry) : [],
+  const nodeViews = useMemo<FabricNodeInventoryItem[]>(
+    () => registry ? registry.nodeInventory : [],
     [registry]
   );
   const relayViews = useMemo(
@@ -276,7 +296,7 @@ export default function FabricNodes() {
       const result = await readActiveFabricRegistry();
       setActiveProfile(result.profile);
       setRegistry(result || null);
-      const nextViews = buildFabricRegistryNodeViews(result);
+      const nextViews = result.nodeInventory;
       setSelectedNodeId((current) => (
         current && nextViews.some((view) => view.node.id === current)
           ? current
@@ -336,7 +356,7 @@ export default function FabricNodes() {
           <Tag color="blue">节点 {loading ? '-' : counts.nodes}</Tag>
           <Tag color="blue">中继 {loading ? '-' : counts.relayNodes}</Tag>
           <Tag color="blue">项目 {loading ? '-' : counts.projects}</Tag>
-          <Tag color="blue">会话 {loading ? '-' : counts.runtimes}</Tag>
+          <Tag color="blue">Runtime {loading ? '-' : counts.runtimes}</Tag>
           <Tag color="blue">通道 {loading ? '-' : counts.transports}</Tag>
         </Space>
       </Descriptions.Item>
@@ -345,8 +365,8 @@ export default function FabricNodes() {
 
   return (
     <PageScaffold
-      title="节点与中继健康 (Nodes / Relay Health)"
-      subTitle="查看当前 Server 拓扑中所有托管节点、工作空间项目、会话 runtime 与传输通道的健康度。"
+      title="节点总览 (Nodes)"
+      subTitle="所有能连上的机器统一显示为 Node；SSH、relay、provider runtime 和健康度都是 Node 的能力或观测结果。"
       extra={
         <Button
           type="primary"
@@ -413,7 +433,15 @@ export default function FabricNodes() {
                         <span>{view.node.id}</span>
                       </div>
                       <div className="fabric-node-row-tags">
-                        <TagList items={view.node.roles} emptyLabel="node" />
+                        <TagList
+                          items={[
+                            ...(view.capabilities.node ? ['node'] : []),
+                            ...(view.capabilities.relayNode ? ['relay-node'] : []),
+                            ...(view.capabilities.runtimeHost ? ['runtime-host'] : []),
+                            ...(view.capabilities.sshBootstrap ? ['ssh-bootstrap'] : [])
+                          ]}
+                          emptyLabel="node"
+                        />
                       </div>
                       <div className="fabric-node-row-status">
                         <StatusTag status={view.node.status || "unknown"} />
@@ -422,7 +450,7 @@ export default function FabricNodes() {
                       <div className="fabric-node-row-metrics">
                         <span>{view.projects.length} projects</span>
                         <span>{view.runtimes.length} runtimes</span>
-                        <span>{summarizeTransportHealth(view.transports)}</span>
+                        <span>{view.capabilities.transportState}</span>
                       </div>
                       <div className="fabric-node-row-time">
                         lastSeen {formatTime(view.node.lastSeenAt)}
@@ -450,7 +478,24 @@ export default function FabricNodes() {
                 </div>
                 <div className="fabric-node-detail-strip">
                   <span>capabilities</span>
-                  <div><TagList items={selectedNode.node.capabilities} emptyLabel="none" /></div>
+                  <div>
+                    <TagList
+                      items={[
+                        ...(selectedNode.capabilities.server ? ['server'] : []),
+                        ...(selectedNode.capabilities.node ? ['node'] : []),
+                        ...(selectedNode.capabilities.relayNode ? [`relay:${selectedNode.capabilities.relayState}`] : []),
+                        ...(selectedNode.capabilities.projectHost ? ['project-host'] : []),
+                        ...(selectedNode.capabilities.runtimeHost ? ['runtime-host'] : []),
+                        ...(selectedNode.capabilities.sshBootstrap ? ['ssh-bootstrap'] : []),
+                        ...(selectedNode.capabilities.measured ? ['measured'] : [])
+                      ]}
+                      emptyLabel="none"
+                    />
+                  </div>
+                </div>
+                <div className="fabric-node-detail-strip">
+                  <span>actions</span>
+                  <div><ActionSummary actions={selectedNode.actions} /></div>
                 </div>
 
                 <section className="fabric-node-detail-section">
@@ -469,12 +514,23 @@ export default function FabricNodes() {
                 <section className="fabric-node-detail-section">
                   <h3>Runtimes</h3>
                   {selectedNode.runtimes.length === 0 ? (
-                    <p>暂无 runtime snapshot。</p>
+                    <p>暂无 provider runtime snapshot；该 node 目前不能作为 Codex / Claude / AGY / OpenCode runtime host。</p>
                   ) : selectedNode.runtimes.map((runtime) => (
                     <div key={runtime.id} className="fabric-node-detail-item">
                       <strong>{normalizeText(runtime.provider)} / {normalizeText(runtime.mode, "tui")}</strong>
                       <span>{runtime.version || "version unknown"}</span>
                       <em>{runtime.status || "available"}</em>
+                    </div>
+                  ))}
+                </section>
+
+                <section className="fabric-node-detail-section">
+                  <h3>Action Gating</h3>
+                  {selectedNode.actions.map((action) => (
+                    <div key={action.id} className="fabric-node-detail-item">
+                      <strong>{action.label}</strong>
+                      <span>{action.eligible ? 'capability eligible' : 'capability blocked'}</span>
+                      <em>{action.blockers.map(formatBlocker).join(' · ') || 'ready'}</em>
                     </div>
                   ))}
                 </section>

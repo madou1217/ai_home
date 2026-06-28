@@ -144,6 +144,13 @@ test('normalizeFabricRegistryResult builds stable registry and node views', () =
   assert.equal(nodeViews[0].projects[0].name, 'ai_home');
   assert.equal(nodeViews[0].runtimes[0].provider, 'codex');
   assert.equal(nodeViews[0].relayNode.id, 'home-mac-relay');
+  assert.equal(registry.nodeInventory.length, 1);
+  assert.equal(registry.nodeInventory[0].capabilities.runtimeHost, true);
+  assert.equal(registry.nodeInventory[0].actions.find((action) => action.id === 'start-session:codex').eligible, true);
+  assert.deepEqual(
+    registry.nodeInventory[0].actions.find((action) => action.id === 'start-session:codex').blockers,
+    ['m4_remote_session_action_pending']
+  );
 
   const relayViews = fabric.buildFabricRegistryRelayViews(registry);
   assert.equal(relayViews.length, 1);
@@ -163,6 +170,42 @@ test('buildFabricRegistryRelayViews keeps unmeasured relay health pending', () =
 
   const relayViews = fabric.buildFabricRegistryRelayViews(registry);
   assert.equal(relayViews[0].health, 'pending-measurement');
+});
+
+test('normalizeFabricRegistryResult falls back to node inventory when server omits it', () => {
+  const fabric = loadFabricRegistryModule();
+  const registry = fabric.normalizeFabricRegistryResult({
+    result: {
+      nodes: [
+        { id: 'aws-current-node', name: 'AWS Current Node', roles: ['node', 'relay-node'], status: 'online' },
+        { id: 'local-mac-remote-node', name: 'Local Mac Remote Node', roles: ['node', 'relay-node'], status: 'online' }
+      ],
+      relayNodes: [
+        { id: 'aws-current-node-relay', nodeId: 'aws-current-node', enabled: true, status: 'online' },
+        { id: 'local-mac-remote-node-relay', nodeId: 'local-mac-remote-node', enabled: true, status: 'online' }
+      ],
+      projects: [
+        { id: 'aws-project', nodeId: 'aws-current-node', name: 'aih-fabric-current' },
+        { id: 'local-project', nodeId: 'local-mac-remote-node', name: 'ai_home' }
+      ],
+      runtimes: [
+        { id: 'local-codex', nodeId: 'local-mac-remote-node', provider: 'codex', mode: 'tui', status: 'available' },
+        { id: 'local-claude', nodeId: 'local-mac-remote-node', provider: 'claude', mode: 'tui', status: 'available' },
+        { id: 'local-agy', nodeId: 'local-mac-remote-node', provider: 'agy', mode: 'tui', status: 'available' },
+        { id: 'local-opencode', nodeId: 'local-mac-remote-node', provider: 'opencode', mode: 'tui', status: 'available' }
+      ],
+      transports: [
+        { id: 'aws-current-node-relay', nodeId: 'aws-current-node', kind: 'relay', health: 'online' },
+        { id: 'local-mac-remote-node-relay', nodeId: 'local-mac-remote-node', kind: 'relay', health: 'online' }
+      ]
+    }
+  });
+
+  const aws = registry.nodeInventory.find((node) => node.id === 'aws-current-node');
+  const local = registry.nodeInventory.find((node) => node.id === 'local-mac-remote-node');
+  assert.equal(aws.capabilities.runtimeHost, false);
+  assert.equal(aws.actions.find((action) => action.id === 'start-session:codex').blockers.includes('missing_provider_runtime:codex'), true);
+  assert.deepEqual(local.capabilities.runtimeProviders, ['agy', 'claude', 'codex', 'opencode']);
 });
 
 test('fetchFabricRegistry reads scoped registry with bearer token', async () => {

@@ -69,6 +69,14 @@ test('fabric role registry stores node roles projects runtimes relay metadata an
     projects: 1,
     runtimes: 2
   });
+  assert.equal(registry.nodeInventory.length, 1);
+  assert.equal(registry.nodeInventory[0].capabilities.runtimeHost, true);
+  assert.deepEqual(registry.nodeInventory[0].capabilities.runtimeProviders, ['claude', 'codex']);
+  assert.equal(registry.nodeInventory[0].actions.find((action) => action.id === 'start-session:codex').eligible, true);
+  assert.deepEqual(
+    registry.nodeInventory[0].actions.find((action) => action.id === 'start-session:codex').blockers,
+    ['m4_remote_session_action_pending']
+  );
 
   const legacyNode = getRemoteNode('home-mac', deps);
   assert.equal(legacyNode.role, 'relay-node');

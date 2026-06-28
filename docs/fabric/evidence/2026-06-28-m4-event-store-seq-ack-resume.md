@@ -116,7 +116,59 @@ descriptor missing session-ack/device-node-session-ack
 POST /v0/node-rpc/device-node-session-ack -> 401 unauthorized_node_rpc
 ```
 
-AWS post-deploy ack/proxy smoke must be recorded after this code is committed and synced to the AWS current default `9527`.
+AWS post-deploy default-port smoke:
+
+```text
+commit deployed: 5c51743
+endpoint: http://ec2-43-207-102-163.ap-northeast-1.compute.amazonaws.com:9527
+server pid: 189000
+readyz: 200, ready=false, accounts=0
+descriptor: 200, legacyControlPlane.nodeRpc includes session-ack and device-node-session-ack
+device nodes: 200, local-mac-remote-node online through relay, capabilities include sessions
+```
+
+AWS -> local node ack proxy result:
+
+```json
+{
+  "status": 200,
+  "ok": true,
+  "payload": {
+    "ok": true,
+    "rpc": "control_plane.device.node_session_ack",
+    "nodeId": "local-mac-remote-node",
+    "result": {
+      "accepted": true,
+      "sessionId": "m4-8-4-aws-proxy-smoke",
+      "consumerId": "m4-8-4-aws-smoke",
+      "cursor": 44,
+      "ackedAt": 1782617847167
+    }
+  }
+}
+```
+
+AWS -> local node stale ack high-water result:
+
+```json
+{
+  "status": 200,
+  "ok": true,
+  "payload": {
+    "ok": true,
+    "rpc": "control_plane.device.node_session_ack",
+    "nodeId": "local-mac-remote-node",
+    "result": {
+      "accepted": true,
+      "sessionId": "m4-8-4-aws-proxy-smoke",
+      "consumerId": "m4-8-4-aws-smoke",
+      "cursor": 44,
+      "ackedAt": 1782617847167,
+      "stale": true
+    }
+  }
+}
+```
 
 ## Verdict
 

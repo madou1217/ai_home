@@ -206,18 +206,17 @@ This queue is authoritative for M4. New requirements must be added here before i
 | 8.3 | done | Canonical command envelope | message/slash/approval/stop are separate command types with idempotency keys; evidence: `2026-06-28-m4-canonical-command-envelope.md` |
 | 8.4 | done | Event store + seq/ack/resume | events can resume from cursor after client reconnect without duplication; evidence: `2026-06-28-m4-event-store-seq-ack-resume.md` |
 | 8.5 | done | Approval and artifact lanes | approval requests, idempotent approval responses, and artifact refs are routed without blocking normal message stream; evidence: `2026-06-28-m4-approval-artifact-lanes.md` |
-| 8.6 | pending | Real AWS current smoke | paired AWS profile opens or attaches a real remote development session through default `9527` and records evidence |
+| 8.6 | done | Real AWS current smoke | AWS current default `9527` opened a real Codex session through node invite, device pair, relay, event polling, and artifact retrieval; evidence: `2026-06-28-m4-aws-real-remote-session-smoke.md` |
 | 8.7 | pending | Mobile/PWA smoke | mobile viewport can attach, send message/slash, respond to approval, and recover from reconnect |
 
 ## Next Implementation Slice
 
-The next code slice should be 8.6 only:
+The next code slice should be 8.7 only:
 
-- Deploy the 8.5 approval/artifact lane slice to AWS current.
 - Use only AWS current default `9527`.
-- Open or attach a real remote development session through the paired AWS profile.
-- Prove the selected node, project, runtime, run id, cursor, artifact/approval capability, and cleanup behavior.
-- Do not add UI beyond existing pages until 8.6 is verified by real AWS evidence.
+- Open or attach the M4 remote session flow from a mobile/PWA viewport.
+- Prove message, slash, approval response, cursor resume, and reconnect behavior.
+- Keep the existing server/node/session protocol unchanged unless the smoke exposes a real gap.
 
 ## Verification Gates
 

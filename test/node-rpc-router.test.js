@@ -2102,6 +2102,101 @@ test('node rpc device node session catalog and attach proxy scoped contract', as
   assert.doesNotMatch(catalogRes.body + attachRes.body, /management-secret|ignored/);
 });
 
+test('node rpc device node session start preserves artifact threshold for remote node', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-device-node-session-start-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+
+  const invite = createControlPlaneDeviceInvite({
+    name: 'Phone',
+    controlEndpoint: 'https://control.example.com',
+    scopes: ['nodes:read', 'sessions:write']
+  }, { fs, aiHomeDir });
+  const paired = consumeControlPlaneDeviceInvite({
+    code: invite.code,
+    device: { name: 'Phone', platform: 'ios' }
+  }, { fs, aiHomeDir });
+  upsertRemoteNode({
+    id: 'office-pc',
+    name: 'Office PC',
+    capabilities: ['status', 'sessions'],
+    preferredTransports: ['relay']
+  }, { fs, aiHomeDir });
+
+  let observedInput = null;
+  const res = createResCapture();
+  const handled = await handleNodeRpcRequest({
+    method: 'POST',
+    pathname: '/v0/node-rpc/device-node-session-start',
+    url: new URL('https://control.example.com/v0/node-rpc/device-node-session-start'),
+    req: { headers: { authorization: `Bearer ${paired.token}` } },
+    res,
+    options: {},
+    state: {},
+    requiredManagementKey: 'management-secret',
+    deps: createDeps({
+      aiHomeDir,
+      body: Buffer.from(JSON.stringify({
+        nodeId: 'office-pc',
+        provider: 'codex',
+        accountId: '1',
+        prompt: 'say hello',
+        projectPath: '/repo/project',
+        model: 'gpt-5.5',
+        artifactThreshold: 256,
+        cols: 100,
+        rows: 30,
+        ignored: 'no'
+      })),
+      requestRemoteManagement: async (input) => {
+        observedInput = input;
+        return {
+          status: 200,
+          ok: true,
+          payload: {
+            ok: true,
+            rpc: 'node.session_start',
+            result: {
+              accepted: true,
+              provider: 'codex',
+              runId: 'run-remote-artifact',
+              sessionId: 'run-remote-artifact',
+              projectPath: '/repo/project',
+              status: 'running'
+            }
+          }
+        };
+      }
+    })
+  });
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 200);
+  assert.equal(observedInput.node.id, 'office-pc');
+  assert.equal(observedInput.pathname, '/v0/node-rpc/session-start');
+  assert.equal(observedInput.method, 'POST');
+  assert.equal(observedInput.rpc, 'control_plane.device.node_session_start');
+  assert.equal(observedInput.scope, 'sessions:write');
+  assert.deepEqual(JSON.parse(observedInput.body), {
+    provider: 'codex',
+    accountId: '1',
+    prompt: 'say hello',
+    projectPath: '/repo/project',
+    projectDirName: '',
+    model: 'gpt-5.5',
+    sessionId: '',
+    artifactThreshold: 256,
+    cols: 100,
+    rows: 30
+  });
+  const payload = JSON.parse(res.body);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.rpc, 'control_plane.device.node_session_start');
+  assert.equal(payload.nodeId, 'office-pc');
+  assert.equal(payload.result.runId, 'run-remote-artifact');
+  assert.doesNotMatch(res.body, new RegExp(paired.token));
+  assert.doesNotMatch(res.body, /management-secret|ignored/);
+});
+
 test('node rpc device node session command proxies canonical envelope', async (t) => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-device-node-session-command-'));
   t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));

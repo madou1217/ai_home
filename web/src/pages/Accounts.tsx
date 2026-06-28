@@ -2606,6 +2606,18 @@ export default function Accounts() {
       </Modal>
 
         <ListTable
+          headerTitle={
+            <Space size={8}>
+              <span style={{ fontWeight: 600 }}>当前账号池</span>
+              <Tag color="success">可用 {providerStats[activeProvider].healthy}</Tag>
+              {providerStats[activeProvider].runtimeBlocked + providerStats[activeProvider].usageAttention > 0 && (
+                <Tag color="warning">待处理 {providerStats[activeProvider].runtimeBlocked + providerStats[activeProvider].usageAttention}</Tag>
+              )}
+              {providerStats[activeProvider].exhausted + providerStats[activeProvider].policyBlocked > 0 && (
+                <Tag color="error">不可用 {providerStats[activeProvider].exhausted + providerStats[activeProvider].policyBlocked}</Tag>
+              )}
+            </Space>
+          }
           dataSource={filteredAccounts}
           columns={columns}
           rowKey={(record) => `${record.provider}-${record.accountId}`}

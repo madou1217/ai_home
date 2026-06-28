@@ -1,38 +1,100 @@
 :root {
   --unified-page-padding: 24px;
-  --unified-card-padding: 16px;
+  --unified-card-padding: 20px;
   --unified-card-border-radius: 12px;
-  --unified-pagination-margin: 12px;
+  --unified-pagination-margin: 16px;
   --unified-section-gap: 16px;
 }
 
-/* 统一页面内容内距：所有页面 24px，禁止各页自定义 padding */
+/* 1. 统一页面内容区自适应边距：适配 ProLayout 所有子级和内容容器 */
+.ant-pro-page-container-children-content,
+.ant-pro-grid-content,
+.ant-pro-page-container-content-children,
 .ant-pro-page-container-content {
-  padding: var(--unified-page-padding);
+  padding: var(--unified-page-padding) !important;
 }
 
-/* 统一卡片：12px 圆角、headerBordered、bordered 由组件传入；
-   这里兜底圆角与内距，禁止任何选择器再覆盖 ant-table 单元格背景或 ant-layout min-height。 */
+/* 2. 统一卡片：圆角、扁平阴影与大厂质感 */
 .ant-pro-card.unified-section-card {
-  border-radius: var(--unified-card-border-radius);
+  border-radius: var(--unified-card-border-radius) !important;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.03), 0 1px 2px rgba(15, 23, 42, 0.04) !important;
+  border: 1px solid var(--color-border, #e2e8f0) !important;
 }
+
 .ant-pro-card.unified-section-card .ant-pro-card-body {
-  padding: var(--unified-card-padding);
+  padding: var(--unified-card-padding) !important;
 }
 
-/* 统一分页间距 */
-.ant-pagination {
-  margin-top: var(--unified-pagination-margin);
+/* 3. 统一 ProTable 表格与大厂行 hover 高亮 */
+.unified-list-table {
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 12px;
+  background: #fff;
+  overflow: hidden;
 }
 
-/* 统一行 hover（浅色），禁止页面再写各自的行 hover */
+.unified-list-table .ant-table {
+  background: transparent !important;
+}
+
+.unified-list-table .ant-table-thead > tr > th {
+  background: var(--c-brand-soft, #f1f5f9) !important;
+  font-weight: 700 !important;
+  color: var(--c-brand-600, #171717) !important;
+}
+
 .unified-list-table .ant-table-tbody > tr:hover > td,
 .unified-list-table .ant-table-tbody > tr.ant-table-row:hover > td {
-  background: rgba(24, 144, 255, 0.06) !important;
+  background: rgba(37, 99, 235, 0.05) !important;
+  transition: background 0.15s ease;
 }
 
-/* 统一空态：保留 Empty.PRESENTED_IMAGE_SIMPLE，文案统一“暂无数据” */
+/* 4. 统一分页器 (Pagination) 精美排版 */
+.ant-table-wrapper .ant-pagination {
+  margin: var(--unified-pagination-margin) 0 0 0 !important;
+  padding: 0 16px 16px 16px !important;
+  display: flex !important;
+  justify-content: flex-end !important;
+  align-items: center !important;
+  gap: 6px;
+}
+
+.ant-pagination-item,
+.ant-pagination-prev,
+.ant-pagination-next,
+.ant-pagination-jump-prev,
+.ant-pagination-jump-next {
+  min-width: 32px !important;
+  height: 32px !important;
+  line-height: 30px !important;
+  border-radius: 6px !important;
+  border: 1px solid var(--color-border, #e2e8f0) !important;
+  background: #fff !important;
+  transition: all 0.2s ease;
+}
+
+.ant-pagination-item-active {
+  background-color: var(--c-brand-600, #171717) !important;
+  border-color: var(--c-brand-600, #171717) !important;
+}
+
+.ant-pagination-item-active a {
+  color: #fff !important;
+}
+
+.ant-pagination-item:hover,
+.ant-pagination-prev:hover,
+.ant-pagination-next:hover {
+  border-color: var(--c-brand-600, #171717) !important;
+}
+
+.ant-pagination-item:hover a {
+  color: var(--c-brand-600, #171717) !important;
+}
+
+/* 5. 统一空态样式 */
 .unified-empty,
 .ant-table-placeholder .ant-empty-description {
-  color: rgba(0, 0, 0, 0.45);
+  color: var(--color-text-secondary, #64748b) !important;
+  font-size: 13px !important;
 }

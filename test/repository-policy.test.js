@@ -24,6 +24,8 @@ const ALLOWED_MARKDOWN = new Set([
   'AGENTS.md',
   'README.md',
   'web/DESIGN.md',
+  'web/DESIGN_SYSTEM.md',
+  'web/TODO_REFACTOR.md',
   'CLAUDE.md',
   'GEMINI.md'
 ]);

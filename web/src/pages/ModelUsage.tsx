@@ -35,7 +35,6 @@ import ProviderIcon, { providerIds, providerNames } from '@/components/chat/Prov
 import PageScaffold from '@/components/ui/PageScaffold';
 import SectionCard from '@/components/ui/SectionCard';
 import ListTable from '@/components/ui/ListTable';
-import './ModelUsage.css';
 
 const { RangePicker } = DatePicker;
 const { Text } = Typography;

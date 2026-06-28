@@ -7,6 +7,7 @@ import {
   Button,
   Space,
   Tag,
+  Badge,
   Modal,
   Descriptions,
   Form,
@@ -70,7 +71,6 @@ import { formatAccountIssueReason } from '@/utils/account-reasons';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import 'dayjs/locale/zh-cn';
-import './Accounts.css';
 
 dayjs.extend(relativeTime);
 dayjs.locale('zh-cn');
@@ -2174,12 +2174,10 @@ export default function Accounts() {
       key: 'configured',
       width: 100,
       render: (configured: any) => (
-        <Tag
-          icon={configured ? <CheckCircleOutlined /> : <CloseCircleOutlined />}
-          color={configured ? 'success' : 'default'}
-        >
-          {configured ? '已配置' : '未配置'}
-        </Tag>
+        <Badge
+          status={configured ? 'success' : 'default'}
+          text={configured ? '已配置' : '未配置'}
+        />
       )
     },
     {

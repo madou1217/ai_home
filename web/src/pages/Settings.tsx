@@ -69,7 +69,6 @@ import PageHero from '@/components/ui/PageHero';
 import ModelAliases from './ModelAliases';
 import SshHostsPanel from './SshHostsPanel';
 import { buildRemoteNodeDefaultPreview } from './settings-remote-node-view.js';
-import './Settings.css';
 
 const DEFAULT_INVITE_CAPABILITIES = ['status', 'metrics', 'accounts', 'models', 'usage'];
 const DEFAULT_REMOTE_TRANSPORT_KIND: RemoteNodeTransportKind = 'relay';

@@ -9,7 +9,6 @@ import {
 } from '@ant-design/icons';
 import PageScaffold from '@/components/ui/PageScaffold';
 import SectionCard from '@/components/ui/SectionCard';
-import './FabricWebrtcLab.css';
 
 type LabRole = 'offerer' | 'answerer';
 type SignalType = 'offer' | 'answer' | 'candidate' | 'ready' | 'meta';

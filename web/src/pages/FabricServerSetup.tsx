@@ -44,7 +44,6 @@ import type { ControlPlaneProfile, ControlPlaneProfileConnectionMode } from '@/t
 import PageScaffold from '@/components/ui/PageScaffold';
 import SectionCard from '@/components/ui/SectionCard';
 import ListTable from '@/components/ui/ListTable';
-import './FabricServerSetup.css';
 
 type PairFormValues = {
   pairUrlOrCode?: string;

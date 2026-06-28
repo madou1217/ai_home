@@ -18,7 +18,6 @@ import { ModalForm } from '@ant-design/pro-components';
 import PageScaffold from '@/components/ui/PageScaffold';
 import SectionCard from '@/components/ui/SectionCard';
 import ProviderIcon, { providerIds, providerNames } from '@/components/chat/ProviderIcon';
-import './Models.css';
 
 type ProviderFilter = Provider | 'all';
 type AccountFilter = string | 'all';

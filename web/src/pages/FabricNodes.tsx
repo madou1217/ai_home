@@ -35,7 +35,6 @@ import type { ControlPlaneProfile } from '@/types';
 import PageScaffold from '@/components/ui/PageScaffold';
 import SectionCard from '@/components/ui/SectionCard';
 import ListTable from '@/components/ui/ListTable';
-import './FabricNodes.css';
 
 const STATUS_COLORS: Record<string, string> = {
   available: 'green',

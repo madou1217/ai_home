@@ -73,6 +73,9 @@ test('parseArgs accepts existing endpoint session smoke options without opening 
     'reply with the joined token parts',
     '--expect-output',
     'AIH_REAL_SESSION_OK',
+    '--expect-artifact',
+    '--artifact-threshold',
+    '256',
     '--session-timeout-ms',
     '30000'
   ]);
@@ -88,6 +91,8 @@ test('parseArgs accepts existing endpoint session smoke options without opening 
   assert.equal(options.sessionModel, 'gpt-5.5');
   assert.equal(options.sessionProjectPath, '/repo/project');
   assert.equal(options.expectOutput, 'AIH_REAL_SESSION_OK');
+  assert.equal(options.expectArtifact, true);
+  assert.equal(options.sessionArtifactThreshold, 256);
   assert.equal(options.sessionTimeoutMs, 30000);
   assert.equal(hasSessionSmokeOptions(options), true);
 });
@@ -164,6 +169,23 @@ test('parseArgs rejects invalid node id and invalid ports', () => {
       'AIH_REAL_SESSION_OK'
     ]),
     /must not contain --expect-output/
+  );
+  assert.throws(
+    () => parseArgs([
+      '--endpoint',
+      'http://127.0.0.1:9527',
+      '--session-provider',
+      'codex',
+      '--session-account',
+      '3',
+      '--session-prompt',
+      'reply',
+      '--expect-output',
+      'ok',
+      '--artifact-threshold',
+      '128'
+    ]),
+    /--artifact-threshold must be an integer/
   );
 });
 
@@ -309,7 +331,8 @@ test('endpoint helpers resolve host home and build session payload without expos
     sessionAccountId: '3',
     sessionPrompt: 'reply with token parts',
     sessionProjectPath: '/repo/project',
-    sessionModel: 'gpt-5.5'
+    sessionModel: 'gpt-5.5',
+    sessionArtifactThreshold: 256
   });
 
   assert.deepEqual(payload, {
@@ -319,6 +342,7 @@ test('endpoint helpers resolve host home and build session payload without expos
     prompt: 'reply with token parts',
     projectPath: '/repo/project',
     model: 'gpt-5.5',
+    artifactThreshold: 256,
     cols: 100,
     rows: 30
   });
@@ -340,6 +364,7 @@ test('runDeviceNodeSessionSmoke sends device session traffic through client endp
       sessionPrompt: 'reply with token parts',
       sessionProjectPath: '/repo/project',
       expectOutput: 'AIH_REAL_SESSION_OK',
+      expectArtifact: true,
       sessionTimeoutMs: 5000
     }
   }, {
@@ -360,8 +385,30 @@ test('runDeviceNodeSessionSmoke sends device session traffic through client endp
             completed: true,
             status: 'completed',
             events: [
-              { type: 'terminal-output', text: 'AIH_REAL_SESSION_OK' }
+              {
+                type: 'artifact_ref',
+                artifactId: 'art_1',
+                artifact: {
+                  artifactId: 'art_1',
+                  kind: 'terminal-output',
+                  byteLength: 4097
+                }
+              }
             ]
+          }
+        }), { status: 200 });
+      }
+      if (pathname.endsWith('/v0/node-rpc/device-node-session-artifact')) {
+        return new Response(JSON.stringify({
+          ok: true,
+          result: {
+            artifact: {
+              artifactId: 'art_1',
+              kind: 'terminal-output',
+              byteLength: 4097,
+              preview: 'large terminal output'
+            },
+            content: 'AIH_REAL_SESSION_OK'
           }
         }), { status: 200 });
       }
@@ -376,9 +423,12 @@ test('runDeviceNodeSessionSmoke sends device session traffic through client endp
   });
 
   assert.equal(session.ok, true);
-  assert.equal(requestedUrls.length >= 3, true);
+  assert.equal(session.artifacts.required, true);
+  assert.equal(session.artifacts.fetched, 1);
+  assert.equal(requestedUrls.length >= 4, true);
   assert.equal(requestedUrls.every((url) => url.startsWith(clientEndpoint)), true);
   assert.equal(requestedUrls.some((url) => url.startsWith(controlEndpoint)), false);
+  assert.equal(requestedUrls.some((url) => url.includes('/v0/node-rpc/device-node-session-artifact')), true);
 });
 
 test('resolveExistingNodeManagementKey prefers server config to avoid command argv secrets', () => {

@@ -728,6 +728,40 @@ test('fetchLocalRelayRequest forwards session catalog and attach contract to loc
   });
   assert.equal(ack.status, 200);
   assert.deepEqual(ack.payload, { ok: true, rpc: 'node.session_ack', result: { accepted: true, cursor: 12 } });
+
+  const artifact = await fetchLocalRelayRequest({
+    method: 'GET',
+    pathname: '/v0/node-rpc/session-artifact?artifactId=art_local_1',
+    requestId: 'request-artifact'
+  }, {
+    localBaseUrl: 'http://127.0.0.1:9527',
+    managementKey: 'node-secret'
+  }, {
+    fetchImpl: async (url, options) => {
+      observed.push({
+        url,
+        method: options.method,
+        authorization: options.headers.authorization,
+        contentType: options.headers['content-type'],
+        body: options.body
+      });
+      return {
+        status: 200,
+        ok: true,
+        text: async () => JSON.stringify({ ok: true, rpc: 'node.session_artifact', result: { artifact: { artifactId: 'art_local_1' }, content: 'artifact' } })
+      };
+    }
+  });
+
+  assert.deepEqual(observed[4], {
+    url: 'http://127.0.0.1:9527/v0/node-rpc/session-artifact?artifactId=art_local_1',
+    method: 'GET',
+    authorization: 'Bearer node-secret',
+    contentType: undefined,
+    body: undefined
+  });
+  assert.equal(artifact.status, 200);
+  assert.deepEqual(artifact.payload, { ok: true, rpc: 'node.session_artifact', result: { artifact: { artifactId: 'art_local_1' }, content: 'artifact' } });
 });
 
 test('fetchLocalRelayRequest forwards native session start and run controls to local server', async () => {

@@ -93,6 +93,38 @@ test('startNativeDeviceSession skips codex trust registration for non-codex prov
   assert.equal(trustCalls, 0);
 });
 
+test('startNativeDeviceSession applies session artifact threshold to terminal events', () => {
+  const observed = {};
+  const result = startNativeDeviceSession({
+    provider: 'codex',
+    accountId: '1',
+    prompt: 'hello',
+    projectPath: '/repo/project',
+    artifactThreshold: 128
+  }, {
+    env: { AIH_SESSION_ARTIFACT_THRESHOLD: '9999' },
+    getProfileDir: (provider, accountId) => `/profiles/${provider}/${accountId}`,
+    ensureCodexProjectRegistered: () => ({ ok: true }),
+    spawnNativeSessionStream(options) {
+      observed.spawn = options;
+      return createPendingNativeStream('native-run-artifact-threshold');
+    }
+  });
+
+  observed.spawn.onEvent({
+    type: 'terminal-output',
+    text: 'x'.repeat(300)
+  });
+
+  const events = readNativeSessionRunEvents({ runId: result.runId, cursor: 0 });
+  const artifactEvent = events.events.find((event) => event.type === 'artifact_ref');
+  assert.ok(artifactEvent);
+  assert.equal(artifactEvent.artifact.kind, 'terminal-output');
+  assert.equal(artifactEvent.artifact.byteLength, 300);
+
+  abortNativeSessionRun({ runId: result.runId });
+});
+
 test('abortNativeSessionRun aborts active run and marks it completed', () => {
   let aborted = false;
 

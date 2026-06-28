@@ -147,6 +147,9 @@ function createDeps(overrides = {}) {
   if (typeof overrides.ackSessionEvents === 'function') {
     deps.ackSessionEvents = overrides.ackSessionEvents;
   }
+  if (typeof overrides.readSessionArtifact === 'function') {
+    deps.readSessionArtifact = overrides.readSessionArtifact;
+  }
   if (typeof overrides.writeDeviceSessionInput === 'function') {
     deps.writeDeviceSessionInput = overrides.writeDeviceSessionInput;
   }
@@ -390,6 +393,7 @@ test('node rpc descriptor is public and does not leak configured keys', async ()
   assert.ok(payload.result.capabilities.nodeRpc.includes('session-stream'));
   assert.ok(payload.result.capabilities.nodeRpc.includes('session-command'));
   assert.ok(payload.result.capabilities.nodeRpc.includes('session-ack'));
+  assert.ok(payload.result.capabilities.nodeRpc.includes('session-artifact'));
   assert.ok(payload.result.capabilities.nodeRpc.includes('join'));
   assert.ok(payload.result.capabilities.nodeRpc.includes('device-pair'));
   assert.ok(payload.result.capabilities.nodeRpc.includes('device-status'));
@@ -403,6 +407,7 @@ test('node rpc descriptor is public and does not leak configured keys', async ()
   assert.ok(payload.result.capabilities.nodeRpc.includes('device-node-session-input'));
   assert.ok(payload.result.capabilities.nodeRpc.includes('device-node-session-command'));
   assert.ok(payload.result.capabilities.nodeRpc.includes('device-node-session-ack'));
+  assert.ok(payload.result.capabilities.nodeRpc.includes('device-node-session-artifact'));
   assert.ok(payload.result.capabilities.nodeRpc.includes('device-nodes'));
   assert.equal(payload.result.capabilities.devicePairing, true);
   assert.ok(payload.result.capabilities.transports.includes('relay'));
@@ -1844,6 +1849,48 @@ test('node rpc session ack records client cursor with management auth', async (t
   assert.doesNotMatch(res.body, /management-secret/);
 });
 
+test('node rpc session artifact reads metadata and content with management auth', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-node-session-artifact-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  const res = createResCapture();
+  let observed = null;
+
+  const handled = await handleNodeRpcRequest({
+    method: 'GET',
+    pathname: '/v0/node-rpc/session-artifact',
+    url: new URL('https://node.local/v0/node-rpc/session-artifact?artifactId=art_abc123'),
+    req: { headers: { authorization: 'Bearer management-secret' } },
+    res,
+    options: {},
+    state: {},
+    requiredManagementKey: 'management-secret',
+    deps: createDeps({
+      aiHomeDir,
+      readSessionArtifact(payload) {
+        observed = payload;
+        return {
+          artifact: {
+            artifactId: payload.artifactId,
+            kind: 'terminal-output',
+            byteLength: 9000
+          },
+          content: 'AIH_ARTIFACT_CONTENT'
+        };
+      }
+    })
+  });
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(observed, { artifactId: 'art_abc123' });
+  const payload = JSON.parse(res.body);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.rpc, 'node.session_artifact');
+  assert.equal(payload.result.artifact.artifactId, 'art_abc123');
+  assert.equal(payload.result.content, 'AIH_ARTIFACT_CONTENT');
+  assert.doesNotMatch(res.body, /management-secret/);
+});
+
 test('node rpc device node sessions proxies safe list through scoped device bearer', async (t) => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-device-node-sessions-'));
   t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
@@ -2224,6 +2271,78 @@ test('node rpc device node session ack proxies resume cursor', async (t) => {
   assert.equal(payload.rpc, 'control_plane.device.node_session_ack');
   assert.equal(payload.nodeId, 'office-pc');
   assert.equal(payload.result.cursor, 8192);
+  assert.doesNotMatch(res.body, new RegExp(paired.token));
+  assert.doesNotMatch(res.body, /management-secret|ignored/);
+});
+
+test('node rpc device node session artifact proxies artifact read', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-device-node-session-artifact-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+
+  const invite = createControlPlaneDeviceInvite({
+    name: 'Phone',
+    controlEndpoint: 'https://control.example.com',
+    scopes: ['nodes:read', 'sessions:read']
+  }, { fs, aiHomeDir });
+  const paired = consumeControlPlaneDeviceInvite({
+    code: invite.code,
+    device: { name: 'Phone', platform: 'ios' }
+  }, { fs, aiHomeDir });
+  upsertRemoteNode({
+    id: 'office-pc',
+    name: 'Office PC',
+    capabilities: ['status', 'sessions'],
+    preferredTransports: ['relay']
+  }, { fs, aiHomeDir });
+
+  let observedInput = null;
+  const res = createResCapture();
+  const handled = await handleNodeRpcRequest({
+    method: 'GET',
+    pathname: '/v0/node-rpc/device-node-session-artifact',
+    url: new URL('https://control.example.com/v0/node-rpc/device-node-session-artifact?nodeId=office-pc&artifactId=art_remote_1&ignored=1'),
+    req: { headers: { authorization: `Bearer ${paired.token}` } },
+    res,
+    options: {},
+    state: {},
+    requiredManagementKey: 'management-secret',
+    deps: createDeps({
+      aiHomeDir,
+      requestRemoteManagement: async (input) => {
+        observedInput = input;
+        return {
+          status: 200,
+          ok: true,
+          payload: {
+            ok: true,
+            rpc: 'node.session_artifact',
+            result: {
+              artifact: {
+                artifactId: 'art_remote_1',
+                kind: 'terminal-output',
+                byteLength: 5000
+              },
+              content: 'AIH_REMOTE_ARTIFACT_CONTENT'
+            }
+          }
+        };
+      }
+    })
+  });
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 200);
+  assert.equal(observedInput.node.id, 'office-pc');
+  assert.equal(observedInput.pathname, '/v0/node-rpc/session-artifact?artifactId=art_remote_1');
+  assert.equal(observedInput.method, 'GET');
+  assert.equal(observedInput.rpc, 'control_plane.device.node_session_artifact');
+  assert.equal(observedInput.scope, 'sessions:read');
+  const payload = JSON.parse(res.body);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.rpc, 'control_plane.device.node_session_artifact');
+  assert.equal(payload.nodeId, 'office-pc');
+  assert.equal(payload.result.artifact.artifactId, 'art_remote_1');
+  assert.equal(payload.result.content, 'AIH_REMOTE_ARTIFACT_CONTENT');
   assert.doesNotMatch(res.body, new RegExp(paired.token));
   assert.doesNotMatch(res.body, /management-secret|ignored/);
 });

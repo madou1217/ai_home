@@ -48,6 +48,9 @@ Options:
   --session-project <p> Optional project path for session smoke, default current working directory.
   --session-prompt <p>  Prompt sent to the remote runtime for session smoke.
   --expect-output <txt> Required marker expected from terminal output in session smoke.
+  --expect-artifact    Require an artifact_ref event and fetch it through device-node-session-artifact.
+  --artifact-threshold <n>
+                         Optional per-session artifact threshold, min 256 bytes.
   --session-timeout-ms <n>
                          Session output wait timeout, default ${DEFAULT_SESSION_TIMEOUT_MS}.
   --keep-temp           Keep the temporary AIH_HOST_HOME directories for debugging.
@@ -122,6 +125,8 @@ function parseArgs(argv = []) {
     sessionProjectPath: '',
     sessionPrompt: '',
     expectOutput: '',
+    expectArtifact: false,
+    sessionArtifactThreshold: 0,
     sessionTimeoutMs: DEFAULT_SESSION_TIMEOUT_MS,
     keepTemp: false
   };
@@ -232,6 +237,17 @@ function parseArgs(argv = []) {
       index += next.consumed;
       continue;
     }
+    if (token === '--expect-artifact') {
+      options.expectArtifact = true;
+      index += 1;
+      continue;
+    }
+    if (token === '--artifact-threshold' || token.startsWith('--artifact-threshold=')) {
+      const next = readOptionValue(argv, index, '--artifact-threshold');
+      options.sessionArtifactThreshold = parsePositiveInteger(next.value, '--artifact-threshold', undefined, 256, 1048576);
+      index += next.consumed;
+      continue;
+    }
     if (token === '--session-timeout-ms' || token.startsWith('--session-timeout-ms=')) {
       const next = readOptionValue(argv, index, '--session-timeout-ms');
       options.sessionTimeoutMs = parsePositiveInteger(
@@ -265,6 +281,8 @@ function hasSessionSmokeOptions(options = {}) {
     || options.sessionProjectPath
     || options.sessionPrompt
     || options.expectOutput
+    || options.expectArtifact
+    || options.sessionArtifactThreshold
   );
 }
 
@@ -615,7 +633,7 @@ function resolveExistingNodeManagementKey(aiHomeDir, deps = {}) {
 }
 
 function buildSessionStartPayload(options = {}) {
-  return {
+  const payload = {
     nodeId: options.nodeId,
     provider: options.sessionProvider,
     accountId: options.sessionAccountId,
@@ -625,6 +643,10 @@ function buildSessionStartPayload(options = {}) {
     cols: 100,
     rows: 30
   };
+  if (Number(options.sessionArtifactThreshold) > 0) {
+    payload.artifactThreshold = Number(options.sessionArtifactThreshold);
+  }
+  return payload;
 }
 
 function appendEventText(current, events) {
@@ -681,6 +703,100 @@ async function fetchRunEvents(endpoint, token, input = {}, deps = {}) {
       authorization: `Bearer ${token}`
     }
   });
+}
+
+function collectArtifactRefs(events = []) {
+  const refs = [];
+  (Array.isArray(events) ? events : []).forEach((event) => {
+    if (!event || event.type !== 'artifact_ref') return;
+    const artifact = event.artifact && typeof event.artifact === 'object' ? event.artifact : {};
+    const artifactId = String(event.artifactId || event.artifact_id || artifact.artifactId || artifact.artifact_id || '').trim();
+    if (!artifactId) return;
+    refs.push({
+      artifactId,
+      kind: String(event.artifactKind || artifact.kind || '').trim(),
+      byteLength: Number(event.byteLength || event.byte_length || artifact.byteLength || artifact.byte_length) || 0
+    });
+  });
+  return refs;
+}
+
+async function fetchSessionArtifact(endpoint, token, input = {}, deps = {}) {
+  const url = `${endpoint}/v0/node-rpc/device-node-session-artifact?nodeId=${encodeURIComponent(input.nodeId)}&artifactId=${encodeURIComponent(input.artifactId)}`;
+  return fetchJson(url, {
+    timeoutMs: 5000,
+    fetchImpl: deps.fetchImpl,
+    headers: {
+      authorization: `Bearer ${token}`
+    }
+  });
+}
+
+async function fetchNewArtifacts(endpoint, token, input = {}, deps = {}) {
+  const seenArtifactIds = input.seenArtifactIds || new Set();
+  const refs = collectArtifactRefs(input.events);
+  const fetched = [];
+  let contentTail = '';
+
+  for (const ref of refs) {
+    if (seenArtifactIds.has(ref.artifactId)) continue;
+    seenArtifactIds.add(ref.artifactId);
+    let response = null;
+    try {
+      response = await fetchSessionArtifact(endpoint, token, {
+        nodeId: input.nodeId,
+        artifactId: ref.artifactId
+      }, deps);
+    } catch (error) {
+      fetched.push({
+        artifactId: ref.artifactId,
+        status: 0,
+        ok: false,
+        error: String((error && error.message) || error || 'artifact_fetch_failed'),
+        refByteLength: ref.byteLength
+      });
+      continue;
+    }
+    const result = response.body && response.body.result && typeof response.body.result === 'object'
+      ? response.body.result
+      : {};
+    const artifact = result.artifact && typeof result.artifact === 'object' ? result.artifact : {};
+    const content = String(result.content || '');
+    if (content) contentTail = appendTail(contentTail, content);
+    fetched.push({
+      artifactId: ref.artifactId,
+      status: response.status,
+      ok: response.status === 200 && response.body && response.body.ok !== false && Boolean(content),
+      kind: String(artifact.kind || ref.kind || '').trim(),
+      byteLength: Buffer.byteLength(content, 'utf8'),
+      declaredByteLength: Number(artifact.byteLength || artifact.byte_length || ref.byteLength) || 0,
+      preview: redactSensitiveText(String(artifact.preview || '').slice(0, 240))
+    });
+  }
+
+  return { fetched, contentTail };
+}
+
+function summarizeArtifacts(items = [], required = false) {
+  const source = Array.isArray(items) ? items : [];
+  const fetched = source.filter((item) => item && item.ok);
+  return {
+    required: Boolean(required),
+    refs: source.length,
+    fetched: fetched.length,
+    bytes: fetched.reduce((sum, item) => sum + (Number(item.byteLength) || 0), 0),
+    ok: !required || fetched.length > 0,
+    items: source.slice(-20).map((item) => ({
+      artifactId: item.artifactId,
+      status: Number(item.status) || 0,
+      ok: Boolean(item.ok),
+      kind: String(item.kind || ''),
+      byteLength: Number(item.byteLength) || 0,
+      declaredByteLength: Number(item.declaredByteLength || item.refByteLength) || 0,
+      ...(item.error ? { error: item.error } : {}),
+      ...(item.preview ? { preview: item.preview } : {})
+    }))
+  };
 }
 
 function mergeEventCounts(current = {}, events = []) {
@@ -750,6 +866,8 @@ async function runDeviceNodeSessionSmoke(input = {}, deps = {}) {
   let cursor = 0;
   let terminalTail = '';
   let eventCounts = {};
+  const seenArtifactIds = new Set();
+  const artifactFetches = [];
   let latestEventsStatus = 0;
   let quit = null;
 
@@ -798,6 +916,15 @@ async function runDeviceNodeSessionSmoke(input = {}, deps = {}) {
       const batch = Array.isArray(result.events) ? result.events : [];
       eventCounts = mergeEventCounts(eventCounts, batch);
       terminalTail = appendEventText(terminalTail, batch);
+      const artifacts = await fetchNewArtifacts(apiEndpoint, deviceToken, {
+        nodeId: options.nodeId,
+        events: batch,
+        seenArtifactIds
+      }, deps);
+      artifactFetches.push(...artifacts.fetched);
+      if (artifacts.contentTail) {
+        terminalTail = appendTail(terminalTail, artifacts.contentTail);
+      }
       cursor = Math.max(cursor, Number(result.cursor) || cursor);
       if (redactSensitiveText(terminalTail).includes(options.expectOutput)) {
         break;
@@ -806,6 +933,7 @@ async function runDeviceNodeSessionSmoke(input = {}, deps = {}) {
     }
 
     const expectedOutputFound = redactSensitiveText(terminalTail).includes(options.expectOutput);
+    const artifactSummary = summarizeArtifacts(artifactFetches, options.expectArtifact);
     quit = await postRunInput(apiEndpoint, deviceToken, {
       nodeId: options.nodeId,
       runId,
@@ -872,7 +1000,7 @@ async function runDeviceNodeSessionSmoke(input = {}, deps = {}) {
     }
 
     return {
-      ok: expectedOutputFound && cleanup.completed === true,
+      ok: expectedOutputFound && cleanup.completed === true && artifactSummary.ok,
       enabled: true,
       provider: options.sessionProvider,
       accountId: options.sessionAccountId,
@@ -886,6 +1014,7 @@ async function runDeviceNodeSessionSmoke(input = {}, deps = {}) {
       cursor,
       latestEventsStatus,
       eventCounts,
+      artifacts: artifactSummary,
       terminalTail: redactSensitiveText(terminalTail),
       quit: {
         status: quit.status,

@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 
 const {
   buildForwardedSessionCommandPayload,
+  clearSessionCommandAcks,
   executeRemoteDevelopmentSessionCommand,
   normalizeSessionCommandPayload
 } = require('../lib/server/control-plane-device-session-command');
@@ -99,6 +100,7 @@ test('session command executes slash as a separate command type', async () => {
 });
 
 test('session command approval response carries approval id separately from slash', async () => {
+  clearSessionCommandAcks();
   let observed = null;
   const ack = await executeRemoteDevelopmentSessionCommand({
     type: 'approval_response',
@@ -125,7 +127,77 @@ test('session command approval response carries approval id separately from slas
   assert.equal(ack.decision, 'approve');
 });
 
+test('session command idempotency returns prior approval response without rewriting input', async () => {
+  clearSessionCommandAcks();
+  const writes = [];
+  const input = {
+    type: 'approval_response',
+    sessionId: 'run-approval-idempotent',
+    approvalId: 'codex-plan-active',
+    decision: 'approve',
+    response: '1',
+    idempotencyKey: 'idem-approval-repeat'
+  };
+
+  const first = await executeRemoteDevelopmentSessionCommand(input, {
+    writeNativeSessionRunInput(payload) {
+      writes.push(payload);
+      return { accepted: true, runId: payload.runId };
+    },
+    readNativeSessionRunEvents() {
+      return { cursor: 19, events: [] };
+    }
+  });
+  const duplicate = await executeRemoteDevelopmentSessionCommand(input, {
+    writeNativeSessionRunInput(payload) {
+      writes.push(payload);
+      return { accepted: true, runId: payload.runId };
+    },
+    readNativeSessionRunEvents() {
+      return { cursor: 20, events: [] };
+    }
+  });
+
+  assert.equal(writes.length, 1);
+  assert.equal(first.cursor, 19);
+  assert.deepEqual(duplicate, {
+    ...first,
+    duplicate: true
+  });
+});
+
+test('session command idempotency rejects conflicting payload reuse', async () => {
+  clearSessionCommandAcks();
+  await executeRemoteDevelopmentSessionCommand({
+    type: 'approval_response',
+    sessionId: 'run-approval-conflict',
+    approvalId: 'codex-plan-active',
+    decision: 'approve',
+    idempotencyKey: 'idem-approval-conflict'
+  }, {
+    writeNativeSessionRunInput() {
+      return { accepted: true, runId: 'run-approval-conflict' };
+    }
+  });
+
+  await assert.rejects(
+    () => executeRemoteDevelopmentSessionCommand({
+      type: 'approval_response',
+      sessionId: 'run-approval-conflict',
+      approvalId: 'codex-plan-active',
+      decision: 'reject',
+      idempotencyKey: 'idem-approval-conflict'
+    }, {
+      writeNativeSessionRunInput() {
+        return { accepted: true, runId: 'run-approval-conflict' };
+      }
+    }),
+    { code: 'session_command_idempotency_conflict' }
+  );
+});
+
 test('session command stop requires explicit run or session scope', async () => {
+  clearSessionCommandAcks();
   let observed = null;
   const ack = await executeRemoteDevelopmentSessionCommand({
     type: 'stop',

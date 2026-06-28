@@ -1,3 +1,4 @@
+import { formatRuntimeUntil } from '@/components/runtime/RuntimeStatusTag';
 import React, { useState, useEffect, useMemo } from 'react';
 import { ModalForm } from '@ant-design/pro-components';
 import PageScaffold from '@/components/ui/PageScaffold';
@@ -31,7 +32,6 @@ import {
   PlusOutlined,
   DeleteOutlined,
   CheckCircleOutlined,
-  CloseCircleOutlined,
   CopyOutlined,
   GlobalOutlined,
   ReloadOutlined,
@@ -60,7 +60,6 @@ import type {
   WebUiModelsResponse,
 } from '@/types';
 import ProviderIcon, { providerIds, providerNames } from '@/components/chat/ProviderIcon';
-import RuntimeStatusTag from '@/components/runtime/RuntimeStatusTag';
 import UsageSnapshotCell from '@/components/account/UsageSnapshotCell';
 import {
   getAccountIdentityLabel,
@@ -499,103 +498,142 @@ function formatSchedulableReason(reason?: string) {
   return formatAccountIssueReason(text);
 }
 
-function renderPolicyBlockedTag(record: Pick<Account, 'schedulableReason'>) {
+function renderRuntimeStatusBadge(record: Pick<Account, 'runtimeStatus' | 'runtimeReason' | 'runtimeUntil'>) {
+  const status = record.runtimeStatus || 'unknown';
+  const reason = record.runtimeReason;
+  const until = record.runtimeUntil;
+
+  const statusMap: Record<string, { status: 'success' | 'processing' | 'default' | 'error' | 'warning'; label: string }> = {
+    healthy: { status: 'success', label: '正常' },
+    rate_limited: { status: 'warning', label: '限流中' },
+    auth_invalid: { status: 'error', label: '认证失效' },
+    overloaded: { status: 'warning', label: '上游繁忙' },
+    transient_network: { status: 'warning', label: '网络抖动' },
+    service_unavailable: { status: 'error', label: '服务不可用' },
+    upstream_error: { status: 'error', label: '上游错误' },
+    cooling_down: { status: 'default', label: '冷却中' },
+    unknown: { status: 'default', label: '未知' }
+  };
+
+  const meta = statusMap[status] || { status: 'default', label: status };
+  const normalizedReason = String(reason || '').trim();
+  const formattedReason = formatAccountIssueReason(normalizedReason);
+  const normalizedUntil = Number(until || 0);
+
+  const badge = <Badge status={meta.status} text={meta.label} />;
+
+  if (!normalizedReason && !normalizedUntil) {
+    return badge;
+  }
+
+  return (
+    <Tooltip
+      title={(
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxWidth: 360 }}>
+          <div>{meta.label}</div>
+          {normalizedReason ? <div>错误信息: {formattedReason}</div> : null}
+          {normalizedUntil ? <div>恢复时间: {formatRuntimeUntil(normalizedUntil)}</div> : null}
+        </div>
+      )}
+    >
+      <span>
+        {badge}
+      </span>
+    </Tooltip>
+  );
+}
+
+function renderPolicyBlockedBadge(record: Pick<Account, 'schedulableReason'>) {
   const rawReason = String(record.schedulableReason || '').trim();
   if (!rawReason) return null;
   const reason = formatSchedulableReason(rawReason);
   const meta = (
     rawReason === 'codex_free_plan_below_server_min_remaining'
-      ? { color: 'warning', label: 'Free <20% 停池' }
+      ? { status: 'warning' as const, label: 'Free <20% 停池' }
       : rawReason === 'codex_free_plan_missing_rate_limits'
-        ? { color: 'warning', label: 'Free 待确认' }
+        ? { status: 'warning' as const, label: 'Free 待确认' }
         : rawReason === 'codex_team_plan_missing_rate_limits'
-          ? { color: 'warning', label: 'Team 待确认' }
+          ? { status: 'warning' as const, label: 'Team 待确认' }
           : rawReason === 'agy_access_token_required'
-            ? { color: 'warning', label: '需 Token' }
-          : { color: 'warning', label: '已停池' }
+            ? { status: 'warning' as const, label: '需 Token' }
+          : { status: 'warning' as const, label: '已停池' }
   );
-  const tag = <Tag color={meta.color}>{meta.label}</Tag>;
-  if (!reason) return tag;
+  const badge = <Badge status={meta.status} text={meta.label} />;
+  if (!reason) return badge;
   return (
     <Tooltip title={reason}>
-      {tag}
+      <span>
+        {badge}
+      </span>
     </Tooltip>
   );
 }
 
-function renderQuotaStateTag(record: Pick<Account, 'quotaStatus' | 'quotaReason'>) {
+function renderQuotaStateBadge(record: Pick<Account, 'quotaStatus' | 'quotaReason'>) {
   const status = String(record.quotaStatus || '').trim();
   if (!status) return null;
   const rawReason = String(record.quotaReason || '').trim();
   const reason = formatQuotaReason(record.quotaReason);
   const meta = (
-    status === 'probe_failed' ? { color: 'error', label: '采集失败' }
+    status === 'probe_failed' ? { status: 'error' as const, label: '采集失败' }
       : status === 'provider_unavailable' && rawReason === 'codex_team_plan_missing_rate_limits'
-        ? { color: 'warning', label: 'Team 待确认' }
+        ? { status: 'warning' as const, label: 'Team 待确认' }
         : status === 'provider_unavailable' && rawReason === 'codex_free_plan_missing_rate_limits'
-          ? { color: 'warning', label: 'Free 待确认' }
-        : status === 'provider_unavailable' ? { color: 'warning', label: '上游未返回' }
-        : status === 'pending' ? { color: 'processing', label: '等待采集' }
-          : { color: 'default', label: '额度未知' }
+          ? { status: 'warning' as const, label: 'Free 待确认' }
+        : status === 'provider_unavailable' ? { status: 'warning' as const, label: '上游未返回' }
+        : status === 'pending' ? { status: 'processing' as const, label: '等待采集' }
+          : { status: 'default' as const, label: '额度未知' }
   );
-  const tag = <Tag color={meta.color}>{meta.label}</Tag>;
-  if (!reason) return tag;
+  const badge = <Badge status={meta.status} text={meta.label} />;
+  if (!reason) return badge;
   return (
     <Tooltip title={reason}>
-      {tag}
+      <span>
+        {badge}
+      </span>
     </Tooltip>
   );
 }
 
-function renderAccountDisplayTag(record: Account) {
-  if (!record.configured && record.authPendingStale) return <Tag color="warning">授权超时</Tag>;
+function renderAccountDisplayBadge(record: Account) {
+  if (!record.configured && record.authPendingStale) return <Badge status="warning" text="授权超时" />;
   const state = getAccountDisplayState(record);
-  if (state === 'disabled') return <Tag color="default">已关闭</Tag>;
-  if (state === 'unconfigured') return <Tag color="default">未配置</Tag>;
+  if (state === 'disabled') return <Badge status="default" text="已关闭" />;
+  if (state === 'unconfigured') return <Badge status="default" text="未配置" />;
   if (state === 'runtime_blocked') {
-    return (
-      <RuntimeStatusTag
-        status={record.runtimeStatus}
-        reason={record.runtimeReason}
-        until={record.runtimeUntil}
-      />
-    );
+    return renderRuntimeStatusBadge(record);
   }
   if (state === 'policy_blocked') {
-    return renderPolicyBlockedTag(record) || <Tag color="warning">已停池</Tag>;
+    return renderPolicyBlockedBadge(record) || <Badge status="warning" text="已停池" />;
   }
   if (state === 'usage_attention') {
-    return renderQuotaStateTag(record) || <Tag color="warning">额度待确认</Tag>;
+    return renderQuotaStateBadge(record) || <Badge status="warning" text="额度待确认" />;
   }
   if (state === 'exhausted') {
     return (
-      <Tag
-        icon={<CloseCircleOutlined />}
-        color="error"
-      >
-        已耗尽
-      </Tag>
+      <Badge
+        status="error"
+        text="已耗尽"
+      />
     );
   }
   if (record.apiKeyMode) {
     return (
       <Tooltip title="密钥已配置且当前没有运行时阻塞；网络和模型接口可达性请看模型探测。">
-        <Tag
-          icon={<CheckCircleOutlined />}
-          color="success"
-        >
-          可调度
-        </Tag>
+        <span>
+          <Badge
+            status="success"
+            text="可调度"
+          />
+        </span>
       </Tooltip>
     );
   }
   return (
-    <Tag
-      icon={<CheckCircleOutlined />}
-      color="success"
-    >
-      正常
-    </Tag>
+    <Badge
+      status="success"
+      text="正常"
+    />
   );
 }
 
@@ -2113,39 +2151,45 @@ export default function Accounts() {
       title: '账号',
       dataIndex: 'displayName',
       key: 'displayName',
-      width: 250,
+      width: 280,
       render: (_text: any, record: Account) => (
-        <div>
-          <div className="account-email-row" style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-            <div style={{ fontWeight: 'bold', minWidth: 0, flex: 1 }}>
-              {getAccountPrimaryLabel(record)}
-            </div>
-            {renderAccountRoleIcons(record)}
-            {canCopyAccountEmail(record) ? (
-              <Tooltip title="复制账号">
-                <Button
-                  className="account-email-copy-button"
-                  type="text"
-                  size="small"
-                  icon={<CopyOutlined />}
-                  style={{ color: '#bfbfbf' }}
-                  onClick={() => copyAccountEmail(record)}
-                />
-              </Tooltip>
-            ) : null}
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+          <div style={{ paddingTop: 3, flexShrink: 0 }}>
+            <ProviderIcon provider={record.provider} size={18} />
           </div>
-          {getAccountSecondaryLabel(record) ? (
-            <div style={{ fontSize: 12, color: '#8c8c8c', marginBottom: 4 }}>
-              {getAccountSecondaryLabel(record)}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="account-email-row" style={{ display: 'flex', alignItems: 'center', gap: 8, height: 24 }}>
+              <div style={{ fontWeight: 600, minWidth: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {getAccountPrimaryLabel(record)}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                {renderAccountRoleIcons(record)}
+                {canCopyAccountEmail(record) ? (
+                  <Tooltip title="复制账号">
+                    <Button
+                      className="account-email-copy-button"
+                      type="text"
+                      size="small"
+                      icon={<CopyOutlined />}
+                      style={{ color: '#bfbfbf', width: 22, height: 22, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                      onClick={() => copyAccountEmail(record)}
+                    />
+                  </Tooltip>
+                ) : null}
+              </div>
             </div>
-          ) : null}
-          <Space size="small" align="center">
-            <ProviderIcon provider={record.provider} size={14} />
-            {renderAccountRoleTags(record)}
-            <Tag color={getPlanTagColor(record)} style={{ fontSize: 11, lineHeight: '18px', padding: '0 4px' }}>
-              {getPlanTagLabel(record)}
-            </Tag>
-          </Space>
+            {getAccountSecondaryLabel(record) ? (
+              <div style={{ fontSize: 12, color: '#8c8c8c', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {getAccountSecondaryLabel(record)}
+              </div>
+            ) : null}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+              {renderAccountRoleTags(record)}
+              <Tag color={getPlanTagColor(record)} style={{ fontSize: 11, lineHeight: '18px', padding: '0 4px', margin: 0 }}>
+                {getPlanTagLabel(record)}
+              </Tag>
+            </div>
+          </div>
         </div>
       )
     },
@@ -2153,7 +2197,8 @@ export default function Accounts() {
       title: '账号开关',
       dataIndex: 'status',
       key: 'status',
-      width: 150,
+      width: 120,
+      align: 'center' as const,
       render: (_status: any, record: Account) => {
         const accountKey = getAccountKey(record);
         const enabled = isAccountEnabled(record);
@@ -2172,7 +2217,8 @@ export default function Accounts() {
       title: '配置状态',
       dataIndex: 'configured',
       key: 'configured',
-      width: 100,
+      width: 120,
+      align: 'center' as const,
       render: (configured: any) => (
         <Badge
           status={configured ? 'success' : 'default'}
@@ -2184,13 +2230,13 @@ export default function Accounts() {
       title: '调度状态',
       dataIndex: 'quotaStatus',
       key: 'quotaStatus',
-      width: 190,
+      width: 180,
       render: (_quotaStatus: any, record: Account) => {
         const refreshable = canRefreshUsageAccount(record);
         const refreshingUsage = Boolean(refreshingUsageAccountKeys[getAccountKey(record)]);
         return (
-          <Space size={6}>
-            {renderAccountDisplayTag(record)}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {renderAccountDisplayBadge(record)}
             {refreshable ? (
               <Tooltip title="刷新当前账号状态">
                 <Button
@@ -2202,34 +2248,44 @@ export default function Accounts() {
                 />
               </Tooltip>
             ) : null}
-          </Space>
+          </div>
         );
       }
     },
     {
       title: '模型探测',
       key: 'modelProbe',
-      width: 190,
+      width: 180,
       render: (_value: any, record: Account) => {
         const probe = getAccountModelProbe(record, modelCatalog);
         const modelRefreshing = Boolean(refreshingModelAccountRefs[getModelRefreshAccountRef(record)]);
         const tagLabel = getModelProbeTagLabel(probe, modelRefreshing);
         return (
-          <Space size={6} className="accounts-model-probe">
-            <Tag
-              className="accounts-model-probe-tag"
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} className="accounts-model-probe">
+            <span
+              className="accounts-model-probe-badge-link"
               role="button"
               tabIndex={0}
-              color={getModelProbeTagColor(probe, modelRefreshing)}
               onClick={() => openModelManagement(record)}
               onKeyDown={(event) => {
                 if (event.key !== 'Enter' && event.key !== ' ') return;
                 event.preventDefault();
                 openModelManagement(record);
               }}
+              style={{
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                transition: 'opacity 0.2s'
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.8'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}
             >
-              {tagLabel}
-            </Tag>
+              <Badge
+                status={getModelProbeTagColor(probe, modelRefreshing) as any}
+                text={tagLabel}
+              />
+            </span>
             <Tooltip title="刷新该账号模型目录">
               <Button
                 type="text"
@@ -2239,7 +2295,7 @@ export default function Accounts() {
                 onClick={() => refreshAccountModelCatalog(record)}
               />
             </Tooltip>
-          </Space>
+          </div>
         );
       }
     },
@@ -2304,7 +2360,8 @@ export default function Accounts() {
     {
       title: '操作',
       key: 'actions',
-      width: 120,
+      width: 80,
+      align: 'center' as const,
       fixed: 'right' as const,
       render: (_: any, record: Account) => {
         const menuItems: MenuProps['items'] = [];
@@ -2351,44 +2408,42 @@ export default function Accounts() {
         });
 
         return (
-          <Space>
-            <Dropdown
-              menu={{
-                items: menuItems,
-                onClick: ({ key }: { key: string }) => {
-                  if (key === 'set-default') {
-                    handleSetDefault(record);
-                    return;
-                  }
-                  if (key === 'set-mobile') {
-                    handleSetMobile(record);
-                    return;
-                  }
-                  if (key === 'reauth') {
-                    handleReauth(record);
-                    return;
-                  }
-                  if (key === 'edit' && canEditAccountConfig(record)) {
-                    handleEdit(record);
-                    return;
-                  }
-                  if (key === 'delete') {
-                    Modal.confirm({
-                      title: '确认删除？',
-                      content: `将删除 ${getAccountPrimaryLabel(record)}`,
-                      okText: '确认',
-                      cancelText: '取消',
-                      okButtonProps: { danger: true },
-                      onOk: () => handleDelete(record.provider, record.accountId)
-                    });
-                  }
+          <Dropdown
+            menu={{
+              items: menuItems,
+              onClick: ({ key }: { key: string }) => {
+                if (key === 'set-default') {
+                  handleSetDefault(record);
+                  return;
                 }
-              }}
-              trigger={['click']}
-            >
-              <Button icon={<MoreOutlined />} />
-            </Dropdown>
-          </Space>
+                if (key === 'set-mobile') {
+                  handleSetMobile(record);
+                  return;
+                }
+                if (key === 'reauth') {
+                  handleReauth(record);
+                  return;
+                }
+                if (key === 'edit' && canEditAccountConfig(record)) {
+                  handleEdit(record);
+                  return;
+                }
+                if (key === 'delete') {
+                  Modal.confirm({
+                    title: '确认删除？',
+                    content: `将删除 ${getAccountPrimaryLabel(record)}`,
+                    okText: '确认',
+                    cancelText: '取消',
+                    okButtonProps: { danger: true },
+                    onOk: () => handleDelete(record.provider, record.accountId)
+                  });
+                }
+              }
+            }}
+            trigger={['click']}
+          >
+            <Button type="text" icon={<MoreOutlined />} />
+          </Dropdown>
         );
       }
     }
@@ -2485,7 +2540,7 @@ export default function Accounts() {
       headerContent={(
         <Descriptions size="small" column={{ xs: 1, sm: 2, md: 3 }} style={{ marginTop: 8 }}>
           <Descriptions.Item label="账号状态">
-            <Tag color={hydratingDetails ? "orange" : "green"}>{hydratingDetails ? "详情补全中" : "就绪"}</Tag>
+            <Badge status={hydratingDetails ? "warning" : "success"} text={hydratingDetails ? "详情补全中" : "就绪"} />
           </Descriptions.Item>
           <Descriptions.Item label="正常可用">
             <span style={{ color: '#0F766E', fontWeight: 'bold' }}>{providerStats[activeProvider].healthy}</span> / {providerStats[activeProvider].total}
@@ -2605,14 +2660,14 @@ export default function Accounts() {
 
         <ListTable
           headerTitle={
-            <Space size={8}>
+            <Space size={12}>
               <span style={{ fontWeight: 600 }}>当前账号池</span>
-              <Tag color="success">可用 {providerStats[activeProvider].healthy}</Tag>
+              <Badge status="success" text={`可用 ${providerStats[activeProvider].healthy}`} />
               {providerStats[activeProvider].runtimeBlocked + providerStats[activeProvider].usageAttention > 0 && (
-                <Tag color="warning">待处理 {providerStats[activeProvider].runtimeBlocked + providerStats[activeProvider].usageAttention}</Tag>
+                <Badge status="warning" text={`待处理 ${providerStats[activeProvider].runtimeBlocked + providerStats[activeProvider].usageAttention}`} />
               )}
               {providerStats[activeProvider].exhausted + providerStats[activeProvider].policyBlocked > 0 && (
-                <Tag color="error">不可用 {providerStats[activeProvider].exhausted + providerStats[activeProvider].policyBlocked}</Tag>
+                <Badge status="error" text={`不可用 ${providerStats[activeProvider].exhausted + providerStats[activeProvider].policyBlocked}`} />
               )}
             </Space>
           }

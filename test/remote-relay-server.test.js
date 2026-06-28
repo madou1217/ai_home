@@ -434,6 +434,47 @@ test('relay management request allows session catalog and attach routes', async 
   const commandResult = await commandPromise;
   assert.equal(commandResult.ok, true);
   assert.equal(commandResult.payload.rpc, 'node.session_command');
+
+  const ackFramePromise = readJsonMessage(socket);
+  const ackPromise = requestRemoteManagement({
+    node,
+    transports: [{
+      id: 'catalog-node-relay',
+      nodeId: 'catalog-node',
+      kind: 'relay',
+      endpoint: 'relay://catalog-node',
+      status: 'up',
+      score: 55
+    }],
+    pathname: '/v0/node-rpc/session-ack',
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'run-catalog-1',
+      cursor: 44,
+      consumerId: 'phone'
+    }),
+    audit: false
+  }, {
+    ...deps,
+    relaySessionRegistry: registry,
+    requestRelayManagement
+  });
+
+  const ackFrame = await ackFramePromise;
+  assert.equal(ackFrame.type, 'relay.request');
+  assert.equal(ackFrame.method, 'POST');
+  assert.equal(ackFrame.pathname, '/v0/node-rpc/session-ack');
+  assert.equal(JSON.parse(ackFrame.body).cursor, 44);
+  socket.send(JSON.stringify({
+    type: 'relay.response',
+    requestId: ackFrame.requestId,
+    status: 200,
+    ok: true,
+    payload: { ok: true, rpc: 'node.session_ack', result: { accepted: true, cursor: 44 } }
+  }));
+  const ackResult = await ackPromise;
+  assert.equal(ackResult.ok, true);
+  assert.equal(ackResult.payload.rpc, 'node.session_ack');
 });
 
 test('relay management request allows typed node session input route with body', async (t) => {

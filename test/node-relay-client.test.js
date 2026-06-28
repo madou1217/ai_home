@@ -693,6 +693,41 @@ test('fetchLocalRelayRequest forwards session catalog and attach contract to loc
   });
   assert.equal(command.status, 200);
   assert.deepEqual(command.payload, { ok: true, rpc: 'node.session_command', result: { accepted: true } });
+
+  const ack = await fetchLocalRelayRequest({
+    method: 'POST',
+    pathname: '/v0/node-rpc/session-ack',
+    body: JSON.stringify({ sessionId: 'run-1', cursor: 12, consumerId: 'phone' }),
+    requestId: 'request-ack'
+  }, {
+    localBaseUrl: 'http://127.0.0.1:9527',
+    managementKey: 'node-secret'
+  }, {
+    fetchImpl: async (url, options) => {
+      observed.push({
+        url,
+        method: options.method,
+        authorization: options.headers.authorization,
+        contentType: options.headers['content-type'],
+        body: options.body
+      });
+      return {
+        status: 200,
+        ok: true,
+        text: async () => JSON.stringify({ ok: true, rpc: 'node.session_ack', result: { accepted: true, cursor: 12 } })
+      };
+    }
+  });
+
+  assert.deepEqual(observed[3], {
+    url: 'http://127.0.0.1:9527/v0/node-rpc/session-ack',
+    method: 'POST',
+    authorization: 'Bearer node-secret',
+    contentType: 'application/json',
+    body: JSON.stringify({ sessionId: 'run-1', cursor: 12, consumerId: 'phone' })
+  });
+  assert.equal(ack.status, 200);
+  assert.deepEqual(ack.payload, { ok: true, rpc: 'node.session_ack', result: { accepted: true, cursor: 12 } });
 });
 
 test('fetchLocalRelayRequest forwards native session start and run controls to local server', async () => {

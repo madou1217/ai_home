@@ -144,6 +144,9 @@ function createDeps(overrides = {}) {
   if (typeof overrides.abortNativeSessionRun === 'function') {
     deps.abortNativeSessionRun = overrides.abortNativeSessionRun;
   }
+  if (typeof overrides.ackSessionEvents === 'function') {
+    deps.ackSessionEvents = overrides.ackSessionEvents;
+  }
   if (typeof overrides.writeDeviceSessionInput === 'function') {
     deps.writeDeviceSessionInput = overrides.writeDeviceSessionInput;
   }
@@ -386,6 +389,7 @@ test('node rpc descriptor is public and does not leak configured keys', async ()
   assert.ok(payload.result.capabilities.nodeRpc.includes('session-messages'));
   assert.ok(payload.result.capabilities.nodeRpc.includes('session-stream'));
   assert.ok(payload.result.capabilities.nodeRpc.includes('session-command'));
+  assert.ok(payload.result.capabilities.nodeRpc.includes('session-ack'));
   assert.ok(payload.result.capabilities.nodeRpc.includes('join'));
   assert.ok(payload.result.capabilities.nodeRpc.includes('device-pair'));
   assert.ok(payload.result.capabilities.nodeRpc.includes('device-status'));
@@ -398,6 +402,7 @@ test('node rpc descriptor is public and does not leak configured keys', async ()
   assert.ok(payload.result.capabilities.nodeRpc.includes('device-node-session-stream'));
   assert.ok(payload.result.capabilities.nodeRpc.includes('device-node-session-input'));
   assert.ok(payload.result.capabilities.nodeRpc.includes('device-node-session-command'));
+  assert.ok(payload.result.capabilities.nodeRpc.includes('device-node-session-ack'));
   assert.ok(payload.result.capabilities.nodeRpc.includes('device-nodes'));
   assert.equal(payload.result.capabilities.devicePairing, true);
   assert.ok(payload.result.capabilities.transports.includes('relay'));
@@ -1263,8 +1268,8 @@ test('node rpc device session events resolve public session ref and filter unsaf
   assert.equal(payload.result.requiresSnapshot, true);
   assert.equal(payload.result.truncated, false);
   assert.deepEqual(payload.result.events, [
-    { type: 'user_message', timestamp: '2026-06-19T00:00:00.000Z', content: 'please continue' },
-    { type: 'assistant_text', timestamp: '2026-06-19T00:00:01.000Z', text: 'continuing now' }
+    { seq: 8190, cursor: 8190, type: 'user_message', timestamp: '2026-06-19T00:00:00.000Z', content: 'please continue' },
+    { seq: 8191, cursor: 8191, type: 'assistant_text', timestamp: '2026-06-19T00:00:01.000Z', text: 'continuing now' }
   ]);
   assert.deepEqual(observedReaderCalls[0], {
     provider: 'codex',
@@ -1384,7 +1389,7 @@ test('node rpc device session stream emits safe SSE frames and clears poll timer
   assert.equal(firstFrames[0].result.cursor, 8192);
   assert.equal(firstFrames[0].result.requiresSnapshot, true);
   assert.deepEqual(firstFrames[0].result.events, [
-    { type: 'user_message', timestamp: '2026-06-19T00:00:00.000Z', content: 'please continue' }
+    { seq: 8191, cursor: 8191, type: 'user_message', timestamp: '2026-06-19T00:00:00.000Z', content: 'please continue' }
   ]);
 
   intervals[0].fn();
@@ -1392,7 +1397,7 @@ test('node rpc device session stream emits safe SSE frames and clears poll timer
   assert.equal(frames.length, 2);
   assert.equal(frames[1].result.cursor, 9000);
   assert.deepEqual(frames[1].result.events, [
-    { type: 'assistant_text', timestamp: '2026-06-19T00:00:03.000Z', text: 'second update' }
+    { seq: 9000, cursor: 9000, type: 'assistant_text', timestamp: '2026-06-19T00:00:03.000Z', text: 'second update' }
   ]);
   assert.deepEqual(observedReaderCalls.map((call) => call.options), [
     { cursor: 4096 },
@@ -1482,7 +1487,7 @@ test('node rpc management session stream uses management bearer and safe event p
   assert.equal(frames[0].rpc, 'node.session_stream');
   assert.equal(frames[0].result.session.sessionRef, publicSession.sessionRef);
   assert.deepEqual(frames[0].result.events, [
-    { type: 'user_message', timestamp: '2026-06-19T00:00:00.000Z', content: 'phone read only' }
+    { seq: 8191, cursor: 8191, type: 'user_message', timestamp: '2026-06-19T00:00:00.000Z', content: 'phone read only' }
   ]);
   assert.doesNotMatch(res.body, /management-secret/);
   assert.doesNotMatch(res.body, /raw-session-id-1/);
@@ -1789,6 +1794,56 @@ test('node rpc session command rejects slash carrying approval id', async (t) =>
   assert.equal(payload.error, 'slash_command_must_not_carry_approval_id');
 });
 
+test('node rpc session ack records client cursor with management auth', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-node-session-ack-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  const res = createResCapture();
+  let observed = null;
+
+  const handled = await handleNodeRpcRequest({
+    method: 'POST',
+    pathname: '/v0/node-rpc/session-ack',
+    url: new URL('https://node.local/v0/node-rpc/session-ack'),
+    req: { headers: { authorization: 'Bearer management-secret' } },
+    res,
+    options: {},
+    state: {},
+    requiredManagementKey: 'management-secret',
+    deps: createDeps({
+      aiHomeDir,
+      body: Buffer.from(JSON.stringify({
+        sessionId: 'run-ack-1',
+        cursor: 12,
+        consumerId: 'phone'
+      })),
+      ackSessionEvents(payload) {
+        observed = payload;
+        return {
+          accepted: true,
+          sessionId: payload.sessionId,
+          cursor: payload.cursor,
+          consumerId: payload.consumerId,
+          ackedAt: 1234
+        };
+      }
+    })
+  });
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(observed, {
+    sessionId: 'run-ack-1',
+    cursor: 12,
+    consumerId: 'phone'
+  });
+  const payload = JSON.parse(res.body);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.rpc, 'node.session_ack');
+  assert.equal(payload.result.cursor, 12);
+  assert.equal(payload.result.consumerId, 'phone');
+  assert.doesNotMatch(res.body, /management-secret/);
+});
+
 test('node rpc device node sessions proxies safe list through scoped device bearer', async (t) => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-device-node-sessions-'));
   t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
@@ -2089,6 +2144,88 @@ test('node rpc device node session command proxies canonical envelope', async (t
   assert.equal(payload.result.cursor, 6);
   assert.doesNotMatch(res.body, new RegExp(paired.token));
   assert.doesNotMatch(res.body, /management-secret|ignored|--json/);
+});
+
+test('node rpc device node session ack proxies resume cursor', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-device-node-session-ack-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+
+  const invite = createControlPlaneDeviceInvite({
+    name: 'Phone',
+    controlEndpoint: 'https://control.example.com',
+    scopes: ['nodes:read', 'sessions:read', 'sessions:write']
+  }, { fs, aiHomeDir });
+  const paired = consumeControlPlaneDeviceInvite({
+    code: invite.code,
+    device: { name: 'Phone', platform: 'ios' }
+  }, { fs, aiHomeDir });
+  upsertRemoteNode({
+    id: 'office-pc',
+    name: 'Office PC',
+    capabilities: ['status', 'sessions'],
+    preferredTransports: ['relay']
+  }, { fs, aiHomeDir });
+
+  let observedInput = null;
+  const res = createResCapture();
+  const handled = await handleNodeRpcRequest({
+    method: 'POST',
+    pathname: '/v0/node-rpc/device-node-session-ack',
+    url: new URL('https://control.example.com/v0/node-rpc/device-node-session-ack'),
+    req: { headers: { authorization: `Bearer ${paired.token}` } },
+    res,
+    options: {},
+    state: {},
+    requiredManagementKey: 'management-secret',
+    deps: createDeps({
+      aiHomeDir,
+      body: Buffer.from(JSON.stringify({
+        nodeId: 'office-pc',
+        sessionId: 'run-remote-1',
+        cursor: 8192,
+        consumerId: 'phone',
+        ignored: 'no'
+      })),
+      requestRemoteManagement: async (input) => {
+        observedInput = input;
+        return {
+          status: 200,
+          ok: true,
+          payload: {
+            ok: true,
+            rpc: 'node.session_ack',
+            result: {
+              accepted: true,
+              sessionId: 'run-remote-1',
+              cursor: 8192,
+              consumerId: 'phone',
+              ackedAt: 1234
+            }
+          }
+        };
+      }
+    })
+  });
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 200);
+  assert.equal(observedInput.node.id, 'office-pc');
+  assert.equal(observedInput.pathname, '/v0/node-rpc/session-ack');
+  assert.equal(observedInput.method, 'POST');
+  assert.equal(observedInput.rpc, 'control_plane.device.node_session_ack');
+  assert.equal(observedInput.scope, 'sessions:write');
+  assert.deepEqual(JSON.parse(observedInput.body), {
+    sessionId: 'run-remote-1',
+    cursor: 8192,
+    consumerId: 'phone'
+  });
+  const payload = JSON.parse(res.body);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.rpc, 'control_plane.device.node_session_ack');
+  assert.equal(payload.nodeId, 'office-pc');
+  assert.equal(payload.result.cursor, 8192);
+  assert.doesNotMatch(res.body, new RegExp(paired.token));
+  assert.doesNotMatch(res.body, /management-secret|ignored/);
 });
 
 test('node rpc device node sessions authorizes paired tokens before checking node existence', async (t) => {

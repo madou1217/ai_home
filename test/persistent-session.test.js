@@ -220,7 +220,7 @@ test('buildTmuxLaunch: explicit label yields a named concurrent window', () => {
   ]);
 });
 
-test('buildTmuxLaunch: passes UTF-8 locale through tmux session env only', () => {
+test('buildTmuxLaunch: passes safe runtime env through tmux session env only', () => {
   const wrapped = persistentSession.buildTmuxLaunch(
     { command: 'codex', args: [], env: { OPENAI_API_KEY: 'sk-secret' } },
     {
@@ -232,12 +232,15 @@ test('buildTmuxLaunch: passes UTF-8 locale through tmux session env only', () =>
         LANG: 'C.UTF-8',
         LC_CTYPE: 'C.UTF-8',
         LC_ALL: 'C.UTF-8',
+        CLAUDE_CODE_ALT_SCREEN_FULL_REPAINT: '1',
+        CLAUDE_CODE_DISABLE_VIRTUAL_SCROLL: '1',
+        [persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_KEY]: persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_VALUE,
         OPENAI_API_KEY: 'sk-secret'
       }
     }
   );
 
-  assert.deepEqual(wrapped.args.slice(3, 15), [
+  assert.deepEqual(wrapped.args.slice(3, 21), [
     'new-session',
     '-A',
     '-D',
@@ -248,13 +251,19 @@ test('buildTmuxLaunch: passes UTF-8 locale through tmux session env only', () =>
     '-e',
     'LC_ALL=C.UTF-8',
     '-e',
+    'CLAUDE_CODE_ALT_SCREEN_FULL_REPAINT=1',
+    '-e',
+    'CLAUDE_CODE_DISABLE_VIRTUAL_SCROLL=1',
+    '-e',
+    `${persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_KEY}=${persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_VALUE}`,
+    '-e',
     `${persistentSession.UTF8_RUNTIME_MARKER_KEY}=${persistentSession.UTF8_RUNTIME_MARKER_VALUE}`,
     '-s'
   ]);
   assert.equal(wrapped.args.includes('OPENAI_API_KEY=sk-secret'), false);
 });
 
-test('buildSetEnvironmentCommands syncs only UTF-8 locale keys', () => {
+test('buildSetEnvironmentCommands syncs only safe tmux env keys', () => {
   const commands = persistentSession.buildSetEnvironmentCommands({
     cliName: 'claude',
     id: '2',
@@ -263,6 +272,9 @@ test('buildSetEnvironmentCommands syncs only UTF-8 locale keys', () => {
       LANG: 'en_US.UTF-8',
       LC_CTYPE: 'en_US.UTF-8',
       LC_ALL: 'en_US.UTF-8',
+      CLAUDE_CODE_FORCE_SYNC_OUTPUT: '1',
+      CLAUDE_CODE_DISABLE_VIRTUAL_SCROLL: '1',
+      [persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_KEY]: persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_VALUE,
       ANTHROPIC_API_KEY: 'sk-secret'
     }
   });
@@ -270,7 +282,18 @@ test('buildSetEnvironmentCommands syncs only UTF-8 locale keys', () => {
   assert.deepEqual(commands.map((cmd) => cmd.args), [
     ['-u', '-L', 'aih-claude-2', 'set-environment', '-g', 'LANG', 'en_US.UTF-8'],
     ['-u', '-L', 'aih-claude-2', 'set-environment', '-g', 'LC_CTYPE', 'en_US.UTF-8'],
-    ['-u', '-L', 'aih-claude-2', 'set-environment', '-g', 'LC_ALL', 'en_US.UTF-8']
+    ['-u', '-L', 'aih-claude-2', 'set-environment', '-g', 'LC_ALL', 'en_US.UTF-8'],
+    ['-u', '-L', 'aih-claude-2', 'set-environment', '-g', 'CLAUDE_CODE_FORCE_SYNC_OUTPUT', '1'],
+    ['-u', '-L', 'aih-claude-2', 'set-environment', '-g', 'CLAUDE_CODE_DISABLE_VIRTUAL_SCROLL', '1'],
+    [
+      '-u',
+      '-L',
+      'aih-claude-2',
+      'set-environment',
+      '-g',
+      persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_KEY,
+      persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_VALUE
+    ]
   ]);
   assert.equal(commands.some((cmd) => cmd.args.includes('sk-secret')), false);
 });
@@ -317,7 +340,8 @@ test('buildListSessionsCommand targets the account socket', () => {
       '#{window_name}',
       '#{pane_current_command}',
       '#{pane_pid}',
-      `#{E:${persistentSession.UTF8_RUNTIME_MARKER_KEY}}`
+      `#{E:${persistentSession.UTF8_RUNTIME_MARKER_KEY}}`,
+      `#{E:${persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_KEY}}`
     ].join(sep)
   ]);
 });
@@ -388,7 +412,7 @@ test('ensureTmuxConf writes the transparent config idempotently', () => {
   assert.match(body, /set -g extended-keys on/);
   assert.doesNotMatch(body, /set -g extended-keys always/);
   assert.match(body, /set -g extended-keys-format csi-u/);
-  assert.match(body, /set -g terminal-features\[0\] "xterm\*:clipboard:ccolour:cstyle:focus:title:extkeys"/);
+  assert.match(body, /set -g terminal-features\[0\] "xterm\*:clipboard:ccolour:cstyle:focus:title:extkeys:sync"/);
   assert.match(body, /set -gqu terminal-features\[3\]/);
   assert.doesNotMatch(body, /set -as terminal-features/);
   // aggressive-resize must be explicitly OFF: under our multi-session /
@@ -415,7 +439,10 @@ test('parseSessionList parses name + attached state + path', () => {
         panePid: 0,
         utf8Runtime: '',
         utf8RuntimeChecked: false,
-        utf8RuntimeReady: false
+        utf8RuntimeReady: false,
+        claudeRenderRuntime: '',
+        claudeRenderRuntimeChecked: false,
+        claudeRenderRuntimeReady: false
       },
       {
         name: 'p-y',
@@ -428,7 +455,10 @@ test('parseSessionList parses name + attached state + path', () => {
         panePid: 0,
         utf8Runtime: '',
         utf8RuntimeChecked: false,
-        utf8RuntimeReady: false
+        utf8RuntimeReady: false,
+        claudeRenderRuntime: '',
+        claudeRenderRuntimeChecked: false,
+        claudeRenderRuntimeReady: false
       }
     ]
   );
@@ -467,6 +497,42 @@ test('parseSessionList carries UTF-8 runtime marker from tmux format', () => {
   assert.equal(persistentSession.isUtf8RuntimeReadySession(ready), true);
   assert.equal(legacy.utf8RuntimeChecked, true);
   assert.equal(legacy.utf8RuntimeReady, false);
+});
+
+test('parseSessionList carries Claude render runtime marker from tmux format', () => {
+  const sep = persistentSession.SESSION_LIST_SEPARATOR;
+  const [ready, legacy] = persistentSession.parseSessionList([
+    [
+      'p-ready',
+      '0',
+      '100',
+      '/work/ready',
+      '',
+      'claude',
+      'claude',
+      '123',
+      persistentSession.UTF8_RUNTIME_MARKER_VALUE,
+      persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_VALUE
+    ].join(sep),
+    [
+      'p-legacy',
+      '0',
+      '100',
+      '/work/legacy',
+      '',
+      'claude',
+      'claude',
+      '124',
+      persistentSession.UTF8_RUNTIME_MARKER_VALUE,
+      ''
+    ].join(sep)
+  ].join('\n'));
+
+  assert.equal(ready.claudeRenderRuntimeChecked, true);
+  assert.equal(ready.claudeRenderRuntimeReady, true);
+  assert.equal(persistentSession.isClaudeRenderRuntimeReadySession(ready), true);
+  assert.equal(legacy.claudeRenderRuntimeChecked, true);
+  assert.equal(legacy.claudeRenderRuntimeReady, false);
 });
 
 test('parseSessionList carries pane title fields for session descriptions', () => {
@@ -570,6 +636,33 @@ test('planPersistentSession opens a fresh compatible session for legacy UTF-8 ru
       { requireUtf8Runtime: true }
     ),
     { session: base, action: 'reattach' }
+  );
+});
+
+test('planPersistentSession opens a fresh compatible session for legacy Claude render runtime', () => {
+  const base = 'p-proj-ab12cd34';
+  const ready = {
+    name: `${base}-2`,
+    attached: false,
+    claudeRenderRuntimeChecked: true,
+    claudeRenderRuntime: persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_VALUE
+  };
+
+  assert.deepEqual(
+    persistentSession.planPersistentSession(
+      [{ name: base, attached: false, claudeRenderRuntimeChecked: true, claudeRenderRuntime: '' }],
+      base,
+      { requireClaudeRenderRuntime: true }
+    ),
+    { session: `${base}-2`, action: 'new-compatible' }
+  );
+  assert.deepEqual(
+    persistentSession.planPersistentSession(
+      [{ name: base, attached: true, claudeRenderRuntimeChecked: true, claudeRenderRuntime: '' }, ready],
+      base,
+      { requireClaudeRenderRuntime: true }
+    ),
+    { session: `${base}-2`, action: 'reattach' }
   );
 });
 

@@ -615,6 +615,128 @@ test('runtime opens a parallel tmux session when the project session is already 
   assert.deepEqual(rawModeCalls, [true, false]);
 });
 
+test('runtime applies Claude tmux render compatibility only when persistent tmux wraps Claude', () => {
+  const cwd = '/tmp/aih-claude-render-project';
+  const baseSession = persistentSession.deriveSessionName({ cwd });
+  const spawnSyncCalls = [];
+  const { runtime, proc, spawns } = createRuntimeHarness({
+    AIH_RUNTIME_SHOW_USAGE: '0'
+  }, {
+    cwd,
+    stdoutIsTTY: true,
+    resolveCliPath: (name) => (name === 'tmux' ? '/usr/bin/tmux' : '/usr/local/bin/claude'),
+    spawnSync: (command, args, options) => {
+      spawnSyncCalls.push({ command, args, options });
+      if (args.includes('list-sessions')) {
+        return { status: 0, stdout: '' };
+      }
+      return { status: 0, stdout: '' };
+    }
+  });
+
+  runtime.runCliPtyTracked('claude', '4', [], false);
+
+  assert.equal(spawns.length, 1);
+  assert.equal(spawns[0].command, '/usr/bin/tmux');
+  assert.equal(spawns[0].options.env.CLAUDE_CODE_ALT_SCREEN_FULL_REPAINT, '1');
+  assert.equal(spawns[0].options.env.CLAUDE_CODE_FORCE_SYNC_OUTPUT, '1');
+  assert.equal(spawns[0].options.env.CLAUDE_CODE_DISABLE_VIRTUAL_SCROLL, '1');
+  assert.equal(
+    spawns[0].options.env[persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_KEY],
+    persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_VALUE
+  );
+  assert.equal(
+    spawns[0].args.includes('CLAUDE_CODE_ALT_SCREEN_FULL_REPAINT=1'),
+    true
+  );
+  assert.equal(
+    spawns[0].args.includes('CLAUDE_CODE_FORCE_SYNC_OUTPUT=1'),
+    true
+  );
+  assert.equal(
+    spawns[0].args.includes('CLAUDE_CODE_DISABLE_VIRTUAL_SCROLL=1'),
+    true
+  );
+  assert.equal(
+    spawns[0].args.includes(
+      `${persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_KEY}=${persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_VALUE}`
+    ),
+    true
+  );
+  assert.equal(
+    spawnSyncCalls.some((call) => call.args.join('\x1f') === [
+      '-u',
+      '-L',
+      'aih-claude-4',
+      'set-environment',
+      '-t',
+      baseSession,
+      'CLAUDE_CODE_ALT_SCREEN_FULL_REPAINT',
+      '1'
+    ].join('\x1f')),
+    true
+  );
+  assert.equal(
+    spawnSyncCalls.some((call) => call.args.join('\x1f') === [
+      '-u',
+      '-L',
+      'aih-claude-4',
+      'set-environment',
+      '-t',
+      baseSession,
+      'CLAUDE_CODE_FORCE_SYNC_OUTPUT',
+      '1'
+    ].join('\x1f')),
+    true
+  );
+  assert.equal(
+    spawnSyncCalls.some((call) => call.args.join('\x1f') === [
+      '-u',
+      '-L',
+      'aih-claude-4',
+      'set-environment',
+      '-t',
+      baseSession,
+      'CLAUDE_CODE_DISABLE_VIRTUAL_SCROLL',
+      '1'
+    ].join('\x1f')),
+    true
+  );
+  assert.equal(
+    spawnSyncCalls.some((call) => call.args.join('\x1f') === [
+      '-u',
+      '-L',
+      'aih-claude-4',
+      'set-environment',
+      '-t',
+      baseSession,
+      persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_KEY,
+      persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_VALUE
+    ].join('\x1f')),
+    true
+  );
+  assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
+});
+
+test('runtime leaves direct Claude launches without tmux render compatibility env', () => {
+  const { runtime, proc, spawns } = createRuntimeHarness({
+    AIH_RUNTIME_SHOW_USAGE: '0'
+  }, {
+    stdoutIsTTY: true,
+    resolveCliPath: (name) => (name === 'claude' ? '/usr/local/bin/claude' : '')
+  });
+
+  runtime.runCliPtyTracked('claude', '4', [], false);
+
+  assert.equal(spawns.length, 1);
+  assert.equal(spawns[0].command, '/usr/local/bin/claude');
+  assert.equal(spawns[0].options.env.CLAUDE_CODE_ALT_SCREEN_FULL_REPAINT, undefined);
+  assert.equal(spawns[0].options.env.CLAUDE_CODE_FORCE_SYNC_OUTPUT, undefined);
+  assert.equal(spawns[0].options.env.CLAUDE_CODE_DISABLE_VIRTUAL_SCROLL, undefined);
+  assert.equal(spawns[0].options.env[persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_KEY], undefined);
+  assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
+});
+
 test('runtime uses zh_CN UTF-8 tmux env for macOS generic UTF-8 sessions', () => {
   const cwd = '/tmp/aih-macos-cjk-project';
   const baseSession = persistentSession.deriveSessionName({ cwd });

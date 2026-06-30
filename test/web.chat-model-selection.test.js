@@ -44,3 +44,35 @@ test('chat model selector does not fall back to provider models without account 
 
   assert.deepEqual(selectedModels, []);
 });
+
+test('chat model selector prefers selectable account projection and exposes default model', async () => {
+  const { getAccountDefaultModel, listAccountEnabledModels } = await loadAccountModelSelection();
+
+  const catalog = {
+    byAccountRef: {
+      acct_selected: ['disabled-model', 'default-model', 'manual-model']
+    },
+    selectableByAccountRef: {
+      acct_selected: ['default-model', 'manual-model']
+    },
+    defaultByAccountRef: {
+      acct_selected: 'default-model'
+    }
+  };
+
+  assert.deepEqual(listAccountEnabledModels(catalog, 'acct_selected'), ['default-model', 'manual-model']);
+  assert.equal(getAccountDefaultModel(catalog, 'acct_selected'), 'default-model');
+});
+
+test('chat model selector ignores default model outside selectable projection', async () => {
+  const { getAccountDefaultModel } = await loadAccountModelSelection();
+
+  assert.equal(getAccountDefaultModel({
+    selectableByAccountRef: {
+      acct_selected: ['enabled-model']
+    },
+    defaultByAccountRef: {
+      acct_selected: 'disabled-model'
+    }
+  }, 'acct_selected'), '');
+});

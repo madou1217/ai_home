@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './Models.css';
 import { Alert, Form, Input, Modal, Segmented, Select, Space, Switch, Tag, Tooltip, Typography, message } from 'antd';
-import { ApiOutlined, ArrowLeftOutlined, CopyOutlined, DeleteOutlined, PlusOutlined, ReloadOutlined, StarFilled, StarOutlined } from '@ant-design/icons';
+import { ApiOutlined, ArrowLeftOutlined, CopyOutlined, DeleteOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { modelsAPI } from '@/services/api';
 import type {
@@ -392,7 +392,11 @@ export default function Models() {
     }
   }, [loadModels]);
 
-  const updateModelDefault = useCallback(async (model: ManagedOpenAIModelItem) => {
+  const updateModelDefault = useCallback(async (model: ManagedOpenAIModelItem, checked: boolean) => {
+    if (!checked) {
+      message.info('每个账号保留一个默认模型，请直接切换到其他模型');
+      return;
+    }
     if (model.enabled === false) {
       message.warning('请先启用模型');
       return;
@@ -654,17 +658,19 @@ export default function Models() {
           <span>{enabled ? '启用' : '停用'}</span>
         </div>
         <div className="models-model-row-actions">
-          <Tooltip title={model.defaultModel ? '当前默认模型' : enabled ? '设为默认模型' : '启用后才能设为默认'}>
-            <span>
-              <Button
-                appVariant="icon"
-                disabled={!enabled || model.defaultModel || updatingModelKeys.has(rowKey)}
-                icon={model.defaultModel ? <StarFilled /> : <StarOutlined />}
-                aria-label={`设为默认 ${model.accountRef} ${model.id}`}
-                onClick={() => updateModelDefault(model)}
-              />
-            </span>
-          </Tooltip>
+          <div className="models-model-default-control">
+            <Switch
+              size="small"
+              checked={model.defaultModel === true}
+              disabled={!enabled || updatingModelKeys.has(rowKey)}
+              loading={updatingModelKeys.has(rowKey)}
+              checkedChildren="默认"
+              unCheckedChildren="默认"
+              aria-label={`默认模型 ${model.accountRef} ${model.id}`}
+              onChange={(checked) => updateModelDefault(model, checked)}
+            />
+            <span>{model.defaultModel ? '默认模型' : '设为默认'}</span>
+          </div>
           {model.manual ? (
             <Tooltip title="删除手动模型">
               <Button

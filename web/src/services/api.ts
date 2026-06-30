@@ -794,6 +794,8 @@ async function fetchWebUiModels(options: ModelCatalogRequestOptions = {}): Promi
     models: response.data.models || {},
     byAccount: response.data.byAccount || {},
     byAccountRef: response.data.byAccountRef || {},
+    selectableByAccountRef: response.data.selectableByAccountRef || {},
+    defaultByAccountRef: response.data.defaultByAccountRef || {},
     errorsByAccount: response.data.errorsByAccount || {},
     errorsByAccountRef: response.data.errorsByAccountRef || {},
     labels: response.data.labels || {}
@@ -833,7 +835,8 @@ export const modelsAPI = {
   updateModel: async (payload: {
     id: string;
     accountRef: string;
-    enabled: boolean;
+    enabled?: boolean;
+    defaultModel?: boolean;
     provider?: string;
     description?: string;
   }) => {

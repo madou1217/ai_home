@@ -1054,6 +1054,65 @@ test('web ui models scopes cached account projection by public accountRef', asyn
   }
 });
 
+test('web ui models returns selectable and default account model projections', async () => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-models-default-'));
+
+  try {
+    const accountRef = WEBUI_CODEX_REF_1;
+    const state = {
+      accounts: {
+        codex: [{ id: 'c1', accountRef, provider: 'codex', accessToken: 'token-c1' }],
+        gemini: [],
+        claude: [],
+        agy: [],
+        opencode: []
+      },
+      webUiModelsCache: {
+        updatedAt: Date.now(),
+        byProvider: { codex: ['a', 'b', 'c'] },
+        byAccount: { [accountRef]: ['a', 'b', 'c'] },
+        errorsByAccount: {},
+        signature: '',
+        source: 'remote',
+        sourceCount: 1,
+        scannedAccounts: 1
+      }
+    };
+    const deps = {
+      ...createBaseDeps(aiHomeDir),
+      loadModelCatalogSettings: async () => ({
+        version: 5,
+        accountModels: [
+          { id: 'b', provider: 'codex', accountRef, enabled: true, defaultModel: true },
+          { id: 'c', provider: 'codex', accountRef, enabled: false },
+          { id: 'm', provider: 'codex', accountRef, enabled: true, manual: true }
+        ]
+      })
+    };
+
+    const res = createResCapture();
+    await handleWebUIRequest({
+      method: 'GET',
+      pathname: '/v0/webui/models',
+      url: new URL(`http://localhost/v0/webui/models?accountRef=${accountRef}`),
+      req: { headers: {} },
+      res,
+      options: {},
+      state,
+      deps
+    });
+
+    assert.equal(res.statusCode, 200);
+    const body = JSON.parse(res.body);
+    assert.deepEqual(body.byAccountRef[accountRef], ['a', 'b', 'c']);
+    assert.deepEqual(body.selectableByAccountRef[accountRef], ['a', 'b', 'm']);
+    assert.deepEqual(body.defaultByAccountRef, { [accountRef]: 'b' });
+    assertNoInternalAccountKeys(body);
+  } finally {
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+  }
+});
+
 test('web ui models returns empty cache without remote discovery', async () => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-models-fail-'));
 
@@ -1474,6 +1533,7 @@ test('web ui openai models manages model visibility per account', async () => {
 
     await postSettings('PATCH', { id: 'c', provider: 'codex', accountRef: WEBUI_CODEX_REF_1, enabled: false });
     await postSettings('PATCH', { id: 'd', provider: 'codex', accountRef: WEBUI_CODEX_REF_1, enabled: false });
+    await postSettings('PATCH', { id: 'b', provider: 'codex', accountRef: WEBUI_CODEX_REF_1, defaultModel: true });
     await postSettings('PATCH', { id: 'c', provider: 'codex', accountRef: WEBUI_CODEX_REF_2, enabled: false });
     await postSettings('PATCH', { id: 'f', provider: 'codex', accountRef: WEBUI_CODEX_REF_2, enabled: false });
     await postSettings('POST', {
@@ -1510,6 +1570,8 @@ test('web ui openai models manages model visibility per account', async () => {
     assert.equal(managedByRef.get(`${WEBUI_CODEX_REF_2}:c`).enabled, false);
     assert.equal(managedByRef.get(`${WEBUI_CODEX_REF_2}:f`).enabled, false);
     assert.equal(managedByRef.get(`${WEBUI_CODEX_REF_1}:b`).enabled, true);
+    assert.equal(managedByRef.get(`${WEBUI_CODEX_REF_1}:b`).defaultModel, true);
+    assert.equal(managedByRef.get(`${WEBUI_CODEX_REF_1}:a`).defaultModel, false);
     assert.equal(managedByRef.get(`${WEBUI_CODEX_REF_2}:e`).enabled, true);
     assert.equal(managedByRef.get(`${WEBUI_CODEX_REF_3}:g`).manual, true);
     assert.equal(managedByRef.get(`${WEBUI_CODEX_REF_3}:g`).enabled, true);

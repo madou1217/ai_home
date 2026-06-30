@@ -13,7 +13,7 @@ import TerminalDock, { type TerminalRunState } from './TerminalDock';
 import { decorateMessagesWithPendingState } from './live-message-state.js';
 import { resolvePendingTailState } from './pending-tail-state.js';
 import { normalizePendingStatusText } from './provider-pending-policy.js';
-import { listAccountEnabledModels } from './account-model-selection.js';
+import { getAccountDefaultModel, listAccountEnabledModels } from './account-model-selection.js';
 import { getAccountIdentityLabel } from '@/utils/account-labels';
 import { throttle } from '@/utils/timing';
 import {
@@ -134,7 +134,7 @@ const MessageArea = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingVisualTsRef = useRef<number>(Date.now());
   const [showScrollBottom, setShowScrollBottom] = useState(false);
-  const [accountModelState, setAccountModelState] = useState<{ accountRef: string; ids: string[] }>({ accountRef: '', ids: [] });
+  const [accountModelState, setAccountModelState] = useState<{ accountRef: string; ids: string[]; defaultModel: string }>({ accountRef: '', ids: [], defaultModel: '' });
   const [slashCommands, setSlashCommands] = useState<NativeSlashCommand[]>([]);
   const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
   const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
@@ -189,23 +189,24 @@ const MessageArea = ({
   // 加载当前账号启用模型：会话框只能使用账号投影，不能回退到 provider 聚合列表。
   useEffect(() => {
     if (!selectedAccountRef) {
-      setAccountModelState({ accountRef: '', ids: [] });
+      setAccountModelState({ accountRef: '', ids: [], defaultModel: '' });
       return;
     }
 
     let cancelled = false;
-    setAccountModelState({ accountRef: selectedAccountRef, ids: [] });
+    setAccountModelState({ accountRef: selectedAccountRef, ids: [], defaultModel: '' });
     modelsAPI.listCatalog({ accountRef: selectedAccountRef })
       .then((catalog) => {
         if (!cancelled) {
           setAccountModelState({
             accountRef: selectedAccountRef,
-            ids: listAccountEnabledModels(catalog, selectedAccountRef)
+            ids: listAccountEnabledModels(catalog, selectedAccountRef),
+            defaultModel: getAccountDefaultModel(catalog, selectedAccountRef)
           });
         }
       })
       .catch(() => {
-        if (!cancelled) setAccountModelState({ accountRef: selectedAccountRef, ids: [] });
+        if (!cancelled) setAccountModelState({ accountRef: selectedAccountRef, ids: [], defaultModel: '' });
       });
 
     return () => {
@@ -352,6 +353,7 @@ const MessageArea = ({
       }) || null
     : null;
   const isTerminated = isTerminatedProp || session?.status === 'stopped' || session?.status === 'archived';
+  const accountDefaultModel = accountModelState.accountRef === selectedAccountRef ? accountModelState.defaultModel : '';
   const models = accountModelIds.map(m => ({ label: m, value: m }));
   const effectiveSelectedModel = selectedModel || models[0]?.value || '';
   const hasAccountModel = Boolean(effectiveSelectedModel);
@@ -443,10 +445,15 @@ const MessageArea = ({
       } catch {}
     }
     if (!nextModel) {
+      if (accountDefaultModel && accountModelIds.includes(accountDefaultModel)) {
+        nextModel = accountDefaultModel;
+      }
+    }
+    if (!nextModel) {
       nextModel = accountModelIds[0] || '';
     }
     if (selectedModel !== nextModel) onModelChange(nextModel);
-  }, [accountModelIds, activeProvider, onModelChange, selectedModel, session]);
+  }, [accountDefaultModel, accountModelIds, activeProvider, onModelChange, selectedModel, session]);
 
   const applySlashCommand = useCallback((command: NativeSlashCommand | null) => {
     if (!command) return;

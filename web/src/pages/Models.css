@@ -136,7 +136,7 @@
 .models-model-row {
   display: grid;
   min-width: 0;
-  grid-template-columns: minmax(220px, 1fr) 96px 92px;
+  grid-template-columns: minmax(220px, 1fr) 96px 148px;
   align-items: center;
   gap: 12px;
   min-height: 58px;
@@ -200,6 +200,16 @@
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
+}
+.models-model-default-control {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  color: var(--app-muted-strong);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
 }
 .models-global-row {
   display: grid;

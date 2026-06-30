@@ -166,6 +166,8 @@ export interface WebUiModelsResponse {
   models: Record<string, string[]>;
   byAccount?: Record<string, string[]>;
   byAccountRef?: Record<string, string[]>;
+  selectableByAccountRef?: Record<string, string[]>;
+  defaultByAccountRef?: Record<string, string>;
   errorsByAccount?: Record<string, string>;
   errorsByAccountRef?: Record<string, string>;
   /** provider -> modelId -> 上游 displayName(id 与显示名可能完全错位) */
@@ -246,6 +248,7 @@ export interface ManagedOpenAIModelItem extends OpenAIModelItem {
   accountRef: string;
   enabled: boolean;
   manual: boolean;
+  defaultModel?: boolean;
   source: string;
   providers: Provider[];
   description: string;

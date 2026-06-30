@@ -86,3 +86,54 @@ test('upsert account model rejects missing accountRef', () => {
     enabled: false
   }), /invalid_account_model/);
 });
+
+test('account model default is unique per accountRef', () => {
+  const first = store.upsertAccountModelSetting(seedSettings([]), {
+    id: 'm1',
+    provider: 'codex',
+    accountRef: CLAUDE_ACCOUNT_REF,
+    enabled: true,
+    defaultModel: true
+  });
+  const second = store.upsertAccountModelSetting(first, {
+    id: 'm2',
+    provider: 'codex',
+    accountRef: CLAUDE_ACCOUNT_REF,
+    enabled: true,
+    defaultModel: true
+  });
+  const otherAccount = store.upsertAccountModelSetting(second, {
+    id: 'm3',
+    provider: 'codex',
+    accountRef: OTHER_ACCOUNT_REF,
+    enabled: true,
+    defaultModel: true
+  });
+
+  const byKey = new Map(otherAccount.accountModels.map((item) => [`${item.accountRef}:${item.id}`, item]));
+  assert.equal(byKey.get(`${CLAUDE_ACCOUNT_REF}:m1`).defaultModel, false);
+  assert.equal(byKey.get(`${CLAUDE_ACCOUNT_REF}:m2`).defaultModel, true);
+  assert.equal(byKey.get(`${OTHER_ACCOUNT_REF}:m3`).defaultModel, true);
+  assert.equal(store.findDefaultAccountModelSetting(otherAccount, CLAUDE_ACCOUNT_REF).id, 'm2');
+});
+
+test('disabling a default account model clears default marker', () => {
+  const defaulted = store.upsertAccountModelSetting(seedSettings([]), {
+    id: 'm1',
+    provider: 'codex',
+    accountRef: CLAUDE_ACCOUNT_REF,
+    enabled: true,
+    defaultModel: true
+  });
+  const disabled = store.upsertAccountModelSetting(defaulted, {
+    id: 'm1',
+    provider: 'codex',
+    accountRef: CLAUDE_ACCOUNT_REF,
+    enabled: false,
+    defaultModel: true
+  });
+
+  assert.equal(disabled.accountModels[0].enabled, false);
+  assert.equal(disabled.accountModels[0].defaultModel, false);
+  assert.equal(store.findDefaultAccountModelSetting(disabled, CLAUDE_ACCOUNT_REF), null);
+});

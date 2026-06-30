@@ -1785,8 +1785,8 @@ test('`aih codex sessions` picker enters the selected tmux session in mirror mod
   const pickerLines = pickerOutput
     .split('\n')
     .map((line) => line.replace(/\r/g, '').replace(/\x1b\[[0-9;]*[A-Za-z]/g, ''));
-  assert.equal(pickerLines.some((line) => line === '/work/one'), true);
-  assert.equal(pickerLines.some((line) => line === '/work/two'), true);
+  assert.equal(pickerLines.some((line) => line === ' /work/one'), true);
+  assert.equal(pickerLines.some((line) => line === ' /work/two'), true);
   assert.equal(pickerLines.some((line) => line.startsWith('- /')), false);
   assert.equal(pickerLines.some((line) => line.startsWith('> - ')), false);
   assert.equal(pickerOutput.includes('◎ GPT #1'), false);

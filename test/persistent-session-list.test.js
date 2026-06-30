@@ -63,6 +63,7 @@ test('formatGlobalPersistentSessionsByProject groups by project and sorts newest
       cliName: 'claude',
       accountId: '2',
       path: firstProject,
+      gitBranch: 'feature/session-ui',
       command: 'cd "/work/first" && aih claude 2 -M',
       description: 'new session',
       created: 300,
@@ -81,6 +82,8 @@ test('formatGlobalPersistentSessionsByProject groups by project and sorts newest
 
   assert.equal(output.includes(firstProject), true);
   assert.equal(output.includes(secondProject), true);
+  assert.equal(output.includes(' ' + firstProject), true);
+  assert.equal(output.includes('⌁ feature/session-ui'), true);
   assert.equal(output.indexOf(firstProject) < output.indexOf(secondProject), true);
   assert.equal(output.indexOf('claude#2') < output.indexOf('gemini#3'), true);
   assert.equal(output.includes('codex#1'), true);
@@ -136,12 +139,14 @@ test('runGlobalPersistentSessionsCommand previews active sessions across provide
         };
       }
       return { status: 0, stdout: '' };
-    }
+    },
+    gitBranchResolver: (projectPath) => (projectPath === projectDir ? 'main' : '')
   });
 
   const output = logs.join('\n');
   assert.equal(code, 0);
   assert.equal(output.includes(projectDir), true);
+  assert.equal(output.includes('⌁ main'), true);
   assert.equal(output.includes('codex#1'), true);
   assert.equal(output.includes(`codex#${AIH_SERVER_PROFILE_ID}`), true);
   assert.equal(output.includes('claude#2'), true);
@@ -209,6 +214,48 @@ test('selectPersistentSessionRow keeps repeated project rows under the same proj
   assert.equal(selected.targetSession, 'codex-ai-home');
   assert.equal(plainOutput.indexOf('/work/ai_home') < plainOutput.indexOf('codex#1'), true);
   assert.equal(plainOutput.indexOf('codex#1') < plainOutput.indexOf('/work/password-gen-ext'), true);
+});
+
+test('selectPersistentSessionRow renders project icon and git branch', () => {
+  const writes = [];
+  const rows = [
+    {
+      cliName: 'codex',
+      accountId: '1',
+      path: '/work/ai_home',
+      gitBranch: 'main',
+      command: 'aih codex 1',
+      description: 'codex task',
+      targetSession: 'codex-ai-home',
+      live: true
+    }
+  ];
+
+  const selected = selectPersistentSessionRow(rows, {
+    fs,
+    readKey: () => 'q',
+    processImpl: {
+      stdout: {
+        isTTY: true,
+        columns: 120,
+        write: (chunk) => writes.push(String(chunk || ''))
+      },
+      stdin: {
+        isTTY: true,
+        isRaw: false,
+        setRawMode: () => {},
+        resume: () => {},
+        isPaused: () => true,
+        pause: () => {}
+      }
+    }
+  });
+
+  const output = stripAnsi(writes.join(''));
+  assert.equal(selected, null);
+  assert.equal(output.includes(' /work/ai_home  ⌁ main'), true);
+  assert.equal(/\x1b\[38;5;\d+m/.test(writes.join('')), false);
+  assert.equal(/\x1b\[38;5;\d+m⌁/.test(writes.join('')), false);
 });
 
 test('selectPersistentSessionRowAsync keeps narrow terminal output on single visual lines', async () => {
@@ -311,6 +358,7 @@ test('selectPersistentSessionRowAsync animates the selected live marker without 
   assert.equal((output.match(/\[aih\] 选择/g) || []).length, 1);
   assert.match(output, /[⠙⠹]/);
   assert.match(output, /\x1b\[38;5;(196|202|226|46|51|33|129)m/);
+  assert.equal(/\x1b\[[0-9;]*48;5;/.test(output), false);
 });
 
 test('selectPersistentSessionRowAsync breathes the selected idle marker without repainting header', async () => {
@@ -356,6 +404,7 @@ test('selectPersistentSessionRowAsync breathes the selected idle marker without 
   assert.equal((output.match(/\[aih\] 选择/g) || []).length, 1);
   assert.match(output, /[◉●]/);
   assert.match(output, /\x1b\[38;5;(196|202|226|46|51|33|129)m/);
+  assert.equal(/\x1b\[[0-9;]*48;5;/.test(output), false);
 });
 
 test('selectPersistentSessionRowAsync skips idle repaint when refreshed rows are unchanged', async () => {

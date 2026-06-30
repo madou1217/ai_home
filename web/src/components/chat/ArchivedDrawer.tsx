@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Drawer, List, Tag, Empty, Spin, Popconfirm, message, Grid } from 'antd';
+import { Drawer, List, Tag, Empty, Skeleton, Popconfirm, message, Grid } from 'antd';
 import { UndoOutlined } from '@ant-design/icons';
 import type { ArchivedSession } from '@/types';
 import { sessionsAPI } from '@/services/api';
@@ -60,8 +60,26 @@ const ArchivedDrawer = ({ open, onClose, onRestored }: Props) => {
       }}
     >
       {loading ? (
-        <div style={{ textAlign: 'center', padding: 40 }}>
-          <Spin tip="加载中..." />
+        <div style={{ paddingTop: 8 }}>
+          {Array.from({ length: 5 }).map((_, index) => (
+            <div
+              key={index}
+              style={{
+                padding: '14px 16px',
+                marginBottom: '12px',
+                background: '#fff',
+                borderRadius: '16px',
+                border: '1px solid #f0f0f0'
+              }}
+            >
+              <Skeleton
+                active
+                avatar={{ size: 'small' }}
+                title={{ width: '62%' }}
+                paragraph={{ rows: 1, width: '40%' }}
+              />
+            </div>
+          ))}
         </div>
       ) : sessions.length === 0 ? (
         <Empty description="暂无归档会话" style={{ marginTop: 60 }} />

@@ -310,7 +310,7 @@ const ProjectList = ({
                     {canExpandMore && !isSessionsExpanded && (
                       <div
                         className={styles.sessionMore}
-                        style={{ cursor: 'pointer', color: '#1890ff' }}
+                        style={{ cursor: 'pointer', color: 'var(--color-info)' }}
                         onClick={() => {
                           const next = new Set(expandedSessions);
                           next.add(project.id);
@@ -323,7 +323,7 @@ const ProjectList = ({
                     {canExpandMore && isSessionsExpanded && (
                       <div
                         className={styles.sessionMore}
-                        style={{ cursor: 'pointer', color: '#1890ff' }}
+                        style={{ cursor: 'pointer', color: 'var(--color-info)' }}
                         onClick={() => {
                           const next = new Set(expandedSessions);
                           next.delete(project.id);

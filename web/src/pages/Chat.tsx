@@ -1583,7 +1583,7 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
 
     breadcrumbItems.push(
       <Breadcrumb.Item key="root" onClick={() => loadLocalDirectory('/')}>
-        <span style={{ cursor: 'pointer', color: '#1890ff' }}>[Root]</span>
+        <span style={{ cursor: 'pointer', color: 'var(--color-info)' }}>[Root]</span>
       </Breadcrumb.Item>
     );
 
@@ -1598,7 +1598,7 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
       const isLast = index === parts.length - 1;
       breadcrumbItems.push(
         <Breadcrumb.Item key={index} onClick={isLast ? undefined : () => loadLocalDirectory(targetPath)}>
-          <span style={isLast ? { fontWeight: 'bold' } : { cursor: 'pointer', color: '#1890ff' }}>
+          <span style={isLast ? { fontWeight: 'bold' } : { cursor: 'pointer', color: 'var(--color-info)' }}>
             {part}
           </span>
         </Breadcrumb.Item>
@@ -2456,7 +2456,7 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
                     onDoubleClick={() => loadLocalDirectory(parentPath)}
                   >
                     <FolderOpenOutlined style={{ marginRight: '8px', color: '#faad14' }} />
-                    <strong style={{ color: '#1890ff' }}>.. (返回上级目录)</strong>
+                    <strong style={{ color: 'var(--color-info)' }}>.. (返回上级目录)</strong>
                   </div>
                 )}
 

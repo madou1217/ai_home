@@ -112,7 +112,7 @@ const ArchivedDrawer = ({ open, onClose, onRestored }: Props) => {
                     type="text"
                     icon={<UndoOutlined />}
                     size="small"
-                    style={{ color: '#1890ff', background: '#e6f4ff', borderRadius: '8px', padding: '4px 12px' }}
+                    style={{ color: 'var(--color-info)', background: 'var(--color-info-soft)', borderRadius: '8px', padding: '4px 12px' }}
                   >
                     还原
                   </Button>

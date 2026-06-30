@@ -690,7 +690,7 @@ function renderAccountRoleIcons(record: Pick<Account, 'isDefault' | 'isMobile'>)
     <Space size={4} style={{ flex: '0 0 auto' }}>
       {record.isDefault ? (
         <Tooltip title="当前默认账号">
-          <span style={{ ...accountRoleIconStyle, color: '#1677ff', background: '#e6f4ff' }}>
+          <span style={{ ...accountRoleIconStyle, color: 'var(--color-info)', background: 'var(--color-info-soft)' }}>
             <CheckCircleOutlined />
           </span>
         </Tooltip>

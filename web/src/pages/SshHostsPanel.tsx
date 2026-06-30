@@ -344,7 +344,7 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
     // 根目录项
     breadcrumbItems.push(
       <Breadcrumb.Item key="root" onClick={() => loadRemoteDirectory(dirBrowserConnId, '/')}>
-        <span style={{ cursor: 'pointer', color: '#1890ff' }}>[Root]</span>
+        <span style={{ cursor: 'pointer', color: 'var(--color-info)' }}>[Root]</span>
       </Breadcrumb.Item>
     );
 
@@ -355,7 +355,7 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
       const isLast = index === parts.length - 1;
       breadcrumbItems.push(
         <Breadcrumb.Item key={index} onClick={isLast ? undefined : () => loadRemoteDirectory(dirBrowserConnId, targetPath)}>
-          <span style={isLast ? { fontWeight: 'bold' } : { cursor: 'pointer', color: '#1890ff' }}>
+          <span style={isLast ? { fontWeight: 'bold' } : { cursor: 'pointer', color: 'var(--color-info)' }}>
             {part}
           </span>
         </Breadcrumb.Item>
@@ -886,7 +886,7 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
                     onDoubleClick={() => loadRemoteDirectory(dirBrowserConnId, parentPath)}
                   >
                     <FolderOpenOutlined style={{ marginRight: '8px', color: '#faad14' }} />
-                    <strong style={{ color: '#1890ff' }}>.. (返回上级目录)</strong>
+                    <strong style={{ color: 'var(--color-info)' }}>.. (返回上级目录)</strong>
                   </div>
                 )}
 

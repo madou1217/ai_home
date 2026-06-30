@@ -341,9 +341,116 @@ test('buildListSessionsCommand targets the account socket', () => {
       '#{pane_current_command}',
       '#{pane_pid}',
       `#{E:${persistentSession.UTF8_RUNTIME_MARKER_KEY}}`,
-      `#{E:${persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_KEY}}`
+      `#{E:${persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_KEY}}`,
+      '#{pane_dead}',
+      `#{E:${persistentSession.PSMUX_CODEX_LAUNCH_RUNTIME_MARKER_KEY}}`
     ].join(sep)
   ]);
+});
+
+test('isNativeWindowsPsmuxCommand identifies only native Windows psmux binaries', () => {
+  assert.equal(persistentSession.isNativeWindowsPsmuxCommand('psmux', 'win32'), true);
+  assert.equal(persistentSession.isNativeWindowsPsmuxCommand('C:\\tools\\psmux.exe', 'win32'), true);
+  assert.equal(persistentSession.isNativeWindowsPsmuxCommand('C:/tools/psmux.exe', 'win32'), true);
+  assert.equal(persistentSession.isNativeWindowsPsmuxCommand('tmux.exe', 'win32'), false);
+  assert.equal(persistentSession.isNativeWindowsPsmuxCommand('/usr/bin/psmux', 'linux'), false);
+});
+
+test('buildTmuxLaunch can use explicit psmux attach after a trusted existing-session plan', () => {
+  const explicitPsmuxAttachedLaunch = persistentSession.buildTmuxLaunch(
+    { command: 'codex', args: [] },
+    {
+      cliName: 'codex',
+      id: '1',
+      sessionName: 'p-ai-home-abc123',
+      tmuxCommand: 'C:\\tools\\psmux.exe',
+      confPath: 'C:\\aih\\persist\\tmux.conf',
+      explicitAttach: true,
+      attachExisting: true,
+      detachOnAttach: false
+    }
+  );
+
+  assert.deepEqual(explicitPsmuxAttachedLaunch.args, [
+    '-u',
+    '-L',
+    'aih-codex-1',
+    '-f',
+    'C:\\aih\\persist\\tmux.conf',
+    'attach-session',
+    '-t',
+    'p-ai-home-abc123'
+  ]);
+  assert.equal(explicitPsmuxAttachedLaunch.args.includes('codex'), false);
+
+  const explicitPsmuxCreateLaunch = persistentSession.buildTmuxLaunch(
+    { command: 'codex', args: ['--ask-for-approval'] },
+    {
+      cliName: 'codex',
+      id: '1',
+      sessionName: 'p-ai-home-abc123-2',
+      tmuxCommand: 'C:\\tools\\psmux.exe',
+      explicitAttach: true
+    }
+  );
+
+  assert.equal(explicitPsmuxCreateLaunch.args.includes('new-session'), true);
+  assert.equal(explicitPsmuxCreateLaunch.args.includes('-A'), false);
+  assert.equal(explicitPsmuxCreateLaunch.args.includes('-D'), false);
+  assert.equal(explicitPsmuxCreateLaunch.args.includes('codex'), true);
+  assert.equal(explicitPsmuxCreateLaunch.args.includes('--ask-for-approval'), true);
+});
+
+test('buildDetachClientCommand targets all clients attached to one safe session', () => {
+  const cmd = persistentSession.buildDetachClientCommand({
+    cliName: 'codex',
+    id: '.aih-server',
+    sessionName: 'p-ai-home-abc123',
+    tmuxCommand: 'psmux'
+  });
+
+  assert.equal(cmd.socket, 'aih-codex-.aih-server');
+  assert.equal(cmd.session, 'p-ai-home-abc123');
+  assert.deepEqual(cmd.args, [
+    '-u',
+    '-L',
+    'aih-codex-.aih-server',
+    'detach-client',
+    '-s',
+    'p-ai-home-abc123'
+  ]);
+  assert.equal(
+    persistentSession.buildDetachClientCommand({ cliName: 'codex', id: '1', sessionName: 'bad name' }),
+    null
+  );
+});
+
+test('buildCapturePaneCommand targets one safe account session', () => {
+  const cmd = persistentSession.buildCapturePaneCommand({
+    cliName: 'codex',
+    id: '.aih-server',
+    sessionName: 'p-ai-home-abc123',
+    tmuxCommand: 'psmux',
+    start: -40
+  });
+
+  assert.equal(cmd.socket, 'aih-codex-.aih-server');
+  assert.equal(cmd.session, 'p-ai-home-abc123');
+  assert.deepEqual(cmd.args, [
+    '-u',
+    '-L',
+    'aih-codex-.aih-server',
+    'capture-pane',
+    '-p',
+    '-t',
+    'p-ai-home-abc123',
+    '-S',
+    '-40'
+  ]);
+  assert.equal(
+    persistentSession.buildCapturePaneCommand({ cliName: 'codex', id: '1', sessionName: 'bad name' }),
+    null
+  );
 });
 
 test('buildKillSessionCommand targets one safe account session', () => {
@@ -412,6 +519,7 @@ test('ensureTmuxConf writes the transparent config idempotently', () => {
   assert.match(body, /set -g extended-keys on/);
   assert.doesNotMatch(body, /set -g extended-keys always/);
   assert.match(body, /set -g extended-keys-format csi-u/);
+  assert.match(body, /set -g remain-on-exit off/);
   assert.match(body, /set -g terminal-features\[0\] "xterm\*:clipboard:ccolour:cstyle:focus:title:extkeys:sync"/);
   assert.match(body, /set -gqu terminal-features\[3\]/);
   assert.doesNotMatch(body, /set -as terminal-features/);
@@ -421,6 +529,31 @@ test('ensureTmuxConf writes the transparent config idempotently', () => {
   assert.match(body, /set -g aggressive-resize off/);
   assert.doesNotMatch(body, /set -g aggressive-resize on/);
   assert.equal(persistentSession.ensureTmuxConf(confPath, fs), confPath);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('ensureTmuxConf writes a psmux-compatible transparent config on native Windows', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-persist-psmux-'));
+  const confPath = path.join(dir, 'persist', 'tmux.conf');
+
+  assert.equal(persistentSession.ensureTmuxConf(confPath, fs, {
+    platform: 'win32',
+    tmuxCommand: 'C:\\tools\\psmux.exe'
+  }), confPath);
+
+  const body = fs.readFileSync(confPath, 'utf8');
+  assert.match(body, /Keeps psmux invisible/);
+  assert.match(body, /set -g status off/);
+  assert.match(body, /set -g remain-on-exit off/);
+  assert.match(body, /set -g destroy-unattached off/);
+  assert.doesNotMatch(body, /extended-keys on/);
+  assert.doesNotMatch(body, /extended-keys-format/);
+  assert.doesNotMatch(body, /detach-on-destroy/);
+  assert.equal(persistentSession.getTmuxConfContent({
+    platform: 'win32',
+    tmuxCommand: 'psmux'
+  }), persistentSession.PSMUX_TRANSPARENT_CONF);
+
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -442,7 +575,12 @@ test('parseSessionList parses name + attached state + path', () => {
         utf8RuntimeReady: false,
         claudeRenderRuntime: '',
         claudeRenderRuntimeChecked: false,
-        claudeRenderRuntimeReady: false
+        claudeRenderRuntimeReady: false,
+        paneDead: false,
+        paneDeadChecked: false,
+        psmuxCodexLaunchRuntime: '',
+        psmuxCodexLaunchRuntimeChecked: false,
+        psmuxCodexLaunchRuntimeReady: false
       },
       {
         name: 'p-y',
@@ -458,11 +596,60 @@ test('parseSessionList parses name + attached state + path', () => {
         utf8RuntimeReady: false,
         claudeRenderRuntime: '',
         claudeRenderRuntimeChecked: false,
-        claudeRenderRuntimeReady: false
+        claudeRenderRuntimeReady: false,
+        paneDead: false,
+        paneDeadChecked: false,
+        psmuxCodexLaunchRuntime: '',
+        psmuxCodexLaunchRuntimeChecked: false,
+        psmuxCodexLaunchRuntimeReady: false
       }
     ]
   );
   assert.deepEqual(persistentSession.parseSessionList(''), []);
+});
+
+test('parseSessionList carries pane dead state from tmux format', () => {
+  const sep = persistentSession.SESSION_LIST_SEPARATOR;
+  const [dead, live] = persistentSession.parseSessionList([
+    [
+      'p-dead',
+      '0',
+      '100',
+      '/work/dead',
+      'session completed',
+      'codex',
+      'node',
+      '123',
+      persistentSession.UTF8_RUNTIME_MARKER_VALUE,
+      '',
+      '1'
+    ].join(sep),
+    [
+      'p-live',
+      '0',
+      '100',
+      '/work/live',
+      'live task',
+      'codex',
+      'node',
+      '124',
+      persistentSession.UTF8_RUNTIME_MARKER_VALUE,
+      '',
+      '0'
+    ].join(sep)
+  ].join('\n'));
+
+  assert.equal(dead.paneDeadChecked, true);
+  assert.equal(dead.paneDead, true);
+  assert.equal(live.paneDeadChecked, true);
+  assert.equal(live.paneDead, false);
+});
+
+test('isCompletedSessionScreen detects only explicit completed terminal screens', () => {
+  assert.equal(persistentSession.isCompletedSessionScreen('\x1b[2KSession completed\r\n'), true);
+  assert.equal(persistentSession.isCompletedSessionScreen('session    completed'), true);
+  assert.equal(persistentSession.isCompletedSessionScreen('Import completed successfully'), false);
+  assert.equal(persistentSession.isCompletedSessionScreen('Working (1m 01s - esc to interrupt)'), false);
 });
 
 test('parseSessionList carries UTF-8 runtime marker from tmux format', () => {
@@ -533,6 +720,46 @@ test('parseSessionList carries Claude render runtime marker from tmux format', (
   assert.equal(persistentSession.isClaudeRenderRuntimeReadySession(ready), true);
   assert.equal(legacy.claudeRenderRuntimeChecked, true);
   assert.equal(legacy.claudeRenderRuntimeReady, false);
+});
+
+test('parseSessionList carries psmux Codex launch runtime marker from tmux format', () => {
+  const sep = persistentSession.SESSION_LIST_SEPARATOR;
+  const [ready, legacy] = persistentSession.parseSessionList([
+    [
+      'p-ready',
+      '0',
+      '100',
+      '/work/ready',
+      '',
+      'codex',
+      'node',
+      '123',
+      persistentSession.UTF8_RUNTIME_MARKER_VALUE,
+      '',
+      '0',
+      persistentSession.PSMUX_CODEX_LAUNCH_RUNTIME_MARKER_VALUE
+    ].join(sep),
+    [
+      'p-legacy',
+      '0',
+      '100',
+      '/work/legacy',
+      '',
+      'codex',
+      'node',
+      '124',
+      persistentSession.UTF8_RUNTIME_MARKER_VALUE,
+      '',
+      '0',
+      ''
+    ].join(sep)
+  ].join('\n'));
+
+  assert.equal(ready.psmuxCodexLaunchRuntimeChecked, true);
+  assert.equal(ready.psmuxCodexLaunchRuntimeReady, true);
+  assert.equal(persistentSession.isPsmuxCodexLaunchRuntimeReadySession(ready), true);
+  assert.equal(legacy.psmuxCodexLaunchRuntimeChecked, true);
+  assert.equal(legacy.psmuxCodexLaunchRuntimeReady, false);
 });
 
 test('parseSessionList carries pane title fields for session descriptions', () => {
@@ -666,6 +893,72 @@ test('planPersistentSession opens a fresh compatible session for legacy Claude r
   );
 });
 
+test('planPersistentSession opens a fresh compatible session for legacy psmux Codex launch runtime', () => {
+  const base = 'p-proj-ab12cd34';
+  const ready = {
+    name: `${base}-2`,
+    attached: false,
+    psmuxCodexLaunchRuntimeChecked: true,
+    psmuxCodexLaunchRuntime: persistentSession.PSMUX_CODEX_LAUNCH_RUNTIME_MARKER_VALUE
+  };
+
+  assert.deepEqual(
+    persistentSession.planPersistentSession(
+      [{ name: base, attached: false, psmuxCodexLaunchRuntimeChecked: true, psmuxCodexLaunchRuntime: '2026-07-no-cmd-shim' }],
+      base,
+      { requirePsmuxCodexLaunchRuntime: true }
+    ),
+    { session: `${base}-2`, action: 'new-compatible' }
+  );
+  assert.deepEqual(
+    persistentSession.planPersistentSession(
+      [{ name: base, attached: true, psmuxCodexLaunchRuntimeChecked: true, psmuxCodexLaunchRuntime: '' }, ready],
+      base,
+      { requirePsmuxCodexLaunchRuntime: true }
+    ),
+    { session: `${base}-2`, action: 'reattach' }
+  );
+});
+
+test('planPersistentSession opens a fresh session for completed dead panes', () => {
+  const base = 'p-proj-ab12cd34';
+  const ready = {
+    name: `${base}-2`,
+    attached: false,
+    paneDeadChecked: true,
+    paneDead: false
+  };
+
+  assert.deepEqual(
+    persistentSession.planPersistentSession(
+      [{ name: base, attached: false, paneDeadChecked: true, paneDead: true }],
+      base,
+      {}
+    ),
+    { session: `${base}-2`, action: 'new-completed' }
+  );
+  assert.deepEqual(
+    persistentSession.planPersistentSession(
+      [{ name: base, attached: true, paneDeadChecked: true, paneDead: true }, ready],
+      base,
+      { hasLabel: true }
+    ),
+    { session: `${base}-2`, action: 'reattach' }
+  );
+});
+
+test('planPersistentSession opens a fresh session for completed terminal screens', () => {
+  const base = 'p-proj-ab12cd34';
+  assert.deepEqual(
+    persistentSession.planPersistentSession(
+      [{ name: base, attached: true, screenCompletedChecked: true, screenCompleted: true }],
+      base,
+      { hasLabel: true }
+    ),
+    { session: `${base}-2`, action: 'new-completed' }
+  );
+});
+
 test('planPersistentSession honors an explicit -S label (takeover when live)', () => {
   const named = 's-debug';
   const plan = (sessions) => persistentSession.planPersistentSession(sessions, named, { hasLabel: true });
@@ -698,6 +991,29 @@ test('describeSessionList groups this-project vs others with runnable commands',
   assert.deepEqual(v.others.map((r) => r.command), ['cd "/home/me/projB" && aih claude 4']);
 });
 
+test('describeSessionList recommends takeover commands when shared attach is unavailable', () => {
+  const noShareProjectCwd = '/home/me/projA';
+  const noShareBaseSession = persistentSession.deriveSessionName({ cwd: noShareProjectCwd });
+  const noShareSessionRows = [
+    { name: noShareBaseSession, attached: true, path: noShareProjectCwd },
+    { name: 's-debug', attached: true, path: noShareProjectCwd },
+    { name: persistentSession.deriveSessionName({ cwd: '/home/me/projB' }), attached: true, path: '/home/me/projB' }
+  ];
+
+  const noShareView = persistentSession.describeSessionList(noShareSessionRows, {
+    cliName: 'codex',
+    id: '1',
+    cwd: noShareProjectCwd,
+    shareLive: false
+  });
+
+  assert.deepEqual(noShareView.here.map((row) => row.command), [
+    'aih codex 1 -R',
+    'aih codex 1 -R -S debug'
+  ]);
+  assert.deepEqual(noShareView.others.map((row) => row.command), ['cd "/home/me/projB" && aih codex 1 -R']);
+});
+
 test('describeSessionList recommends compatible launch commands for legacy UTF-8 runtime rows', () => {
   const cwd = '/home/me/projA';
   const base = persistentSession.deriveSessionName({ cwd });
@@ -721,6 +1037,62 @@ test('describeSessionList recommends compatible launch commands for legacy UTF-8
     'aih codex 1'
   ]);
   assert.deepEqual(v.others.map((r) => r.command), ['cd "/home/me/projB" && aih codex 1']);
+});
+
+test('describeSessionList recommends fresh launches for legacy psmux Codex launch runtime rows', () => {
+  const cwd = '/home/me/projA';
+  const base = persistentSession.deriveSessionName({ cwd });
+  const v = persistentSession.describeSessionList([
+    {
+      name: base,
+      attached: true,
+      path: cwd,
+      psmuxCodexLaunchRuntimeChecked: true,
+      psmuxCodexLaunchRuntime: ''
+    }
+  ], { cliName: 'codex', id: '1', cwd, shareLive: false });
+
+  assert.deepEqual(v.here.map((r) => r.command), ['aih codex 1']);
+  assert.deepEqual(v.here.map((r) => r.live), [true]);
+});
+
+test('describeSessionList recommends fresh launches for completed dead panes', () => {
+  const cwd = '/home/me/projA';
+  const base = persistentSession.deriveSessionName({ cwd });
+  const otherCwd = '/home/me/projB';
+  const sessions = [
+    { name: base, attached: true, path: cwd, paneDeadChecked: true, paneDead: true },
+    { name: 's-debug', attached: true, path: cwd, paneDeadChecked: true, paneDead: true },
+    {
+      name: persistentSession.deriveSessionName({ cwd: otherCwd }),
+      attached: true,
+      path: otherCwd,
+      paneDeadChecked: true,
+      paneDead: true
+    }
+  ];
+
+  const v = persistentSession.describeSessionList(sessions, { cliName: 'codex', id: '1', cwd });
+
+  assert.deepEqual(v.here.map((r) => r.command), [
+    'aih codex 1',
+    'aih codex 1'
+  ]);
+  assert.deepEqual(v.here.map((r) => r.live), [false, false]);
+  assert.deepEqual(v.here.map((r) => r.completed), [true, true]);
+  assert.deepEqual(v.others.map((r) => r.command), ['cd "/home/me/projB" && aih codex 1']);
+});
+
+test('describeSessionList recommends fresh launches for completed terminal screens', () => {
+  const cwd = '/home/me/projA';
+  const base = persistentSession.deriveSessionName({ cwd });
+  const v = persistentSession.describeSessionList([
+    { name: base, attached: true, path: cwd, screenCompletedChecked: true, screenCompleted: true }
+  ], { cliName: 'codex', id: '1', cwd });
+
+  assert.deepEqual(v.here.map((r) => r.command), ['aih codex 1']);
+  assert.deepEqual(v.here.map((r) => r.live), [false]);
+  assert.deepEqual(v.here.map((r) => r.completed), [true]);
 });
 
 test('describeSessionList without a cwd just lists everything', () => {

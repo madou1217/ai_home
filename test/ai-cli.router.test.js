@@ -1489,15 +1489,17 @@ test('`aih codex sessions <id>` can install missing Windows psmux then list sess
   }
 
   assert.deepEqual(exits, [0]);
-  assert.equal(spawnCalls.length, 5);
+  assert.equal(spawnCalls.length >= 5, true);
   assert.equal(spawnCalls[0].command, 'winget');
   assert.deepEqual(spawnCalls[0].args.slice(0, 4), ['install', '--id', 'marlocarlo.psmux', '--exact']);
   const setEnvCalls = spawnCalls.filter((call) => call.args.includes('set-environment'));
   const listCall = spawnCalls.find((call) => call.args.includes('list-sessions'));
+  const captureCall = spawnCalls.find((call) => call.args.includes('capture-pane'));
   assert.equal(setEnvCalls.length, 3);
   assert.equal(setEnvCalls.every((call) => call.command === psmuxPath), true);
   assert.equal(listCall.command, psmuxPath);
   assert.deepEqual(listCall.args.slice(0, 4), ['-u', '-L', 'aih-codex-12', 'list-sessions']);
+  assert.equal(captureCall.command, psmuxPath);
   assert.equal(logs.some((line) => line.includes('psmux')), true);
 });
 
@@ -1878,6 +1880,190 @@ test('`aih codex sessions` picker opens a compatible session for legacy UTF-8 ru
     mirror: undefined
   }]);
   assert.equal(writes.join('').includes('[旧 tmux UTF-8 运行时]'), true);
+});
+
+test('`aih codex sessions` picker opens a fresh session for completed psmux panes', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-router-session-picker-dead-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const profilesDir = path.join(root, 'profiles');
+  fs.mkdirSync(path.join(profilesDir, 'codex', '1'), { recursive: true });
+  const sep = persistentSession.SESSION_LIST_SEPARATOR;
+  const exits = [];
+  const writes = [];
+  const runCalls = [];
+  const env = {
+    [persistentSession.TARGET_ENV]: 'stale-target',
+    [persistentSession.MIRROR_ENV]: '1'
+  };
+  let cwd = 'C:\\Users\\me\\projects\\ai_home';
+  const chdirCalls = [];
+  const keys = ['\r'];
+
+  runAiCliCommandRouter('codex', ['codex', 'sessions'], {
+    processImpl: {
+      platform: 'win32',
+      env,
+      stdout: {
+        isTTY: true,
+        columns: 120,
+        write: (chunk) => writes.push(String(chunk || ''))
+      },
+      stdin: {
+        isTTY: true,
+        isRaw: false,
+        setRawMode: () => {},
+        resume: () => {},
+        isPaused: () => true,
+        pause: () => {}
+      },
+      cwd: () => cwd,
+      chdir: (nextCwd) => {
+        chdirCalls.push(nextCwd);
+        cwd = nextCwd;
+      },
+      exit: (code) => exits.push(code)
+    },
+    fs,
+    PROFILES_DIR: profilesDir,
+    resolveCliPath: (name) => (name === 'psmux' ? 'C:\\tools\\psmux.exe' : ''),
+    agentSessionTitleResolver: (_cliName, sessions) => sessions,
+    readSessionPickerKey: () => keys.shift() || '\r',
+    spawnSync: (_command, args) => {
+      if (args.includes('source-file')) return { status: 0, stdout: '' };
+      if (args.includes('list-sessions')) {
+        return {
+          status: 0,
+          stdout: [
+            'p-completed',
+            '1',
+            '100',
+            'C:\\Users\\me\\projects\\ai_home',
+            'session completed',
+            'codex',
+            'node',
+            '123',
+            persistentSession.UTF8_RUNTIME_MARKER_VALUE,
+            '',
+            '1'
+          ].join(sep)
+        };
+      }
+      return { status: 0, stdout: '' };
+    },
+    runCliPty: (cliName, id, forwardArgs, isLogin) => {
+      runCalls.push({
+        cliName,
+        id,
+        forwardArgs,
+        isLogin,
+        cwd,
+        target: env[persistentSession.TARGET_ENV],
+        mirror: env[persistentSession.MIRROR_ENV]
+      });
+    }
+  });
+
+  assert.deepEqual(exits, []);
+  assert.deepEqual(chdirCalls, []);
+  assert.deepEqual(runCalls, [{
+    cliName: 'codex',
+    id: '1',
+    forwardArgs: [],
+    isLogin: false,
+    cwd: 'C:\\Users\\me\\projects\\ai_home',
+    target: undefined,
+    mirror: undefined
+  }]);
+  assert.equal(writes.join('').includes('[已结束]'), true);
+});
+
+test('`aih codex sessions` picker opens a fresh session for completed psmux screens', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-router-session-picker-screen-completed-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const profilesDir = path.join(root, 'profiles');
+  fs.mkdirSync(path.join(profilesDir, 'codex', '1'), { recursive: true });
+  const sep = persistentSession.SESSION_LIST_SEPARATOR;
+  const writes = [];
+  const runCalls = [];
+  const env = {
+    [persistentSession.TARGET_ENV]: 'stale-target',
+    [persistentSession.MIRROR_ENV]: '1'
+  };
+  const cwd = 'C:\\Users\\me\\projects\\ai_home';
+  const keys = ['\r'];
+
+  runAiCliCommandRouter('codex', ['codex', 'sessions'], {
+    processImpl: {
+      platform: 'win32',
+      env,
+      stdout: {
+        isTTY: true,
+        columns: 120,
+        write: (chunk) => writes.push(String(chunk || ''))
+      },
+      stdin: {
+        isTTY: true,
+        isRaw: false,
+        setRawMode: () => {},
+        resume: () => {},
+        isPaused: () => true,
+        pause: () => {}
+      },
+      cwd: () => cwd,
+      chdir: () => {},
+      exit: () => {}
+    },
+    fs,
+    PROFILES_DIR: profilesDir,
+    resolveCliPath: (name) => (name === 'psmux' ? 'C:\\tools\\psmux.exe' : ''),
+    agentSessionTitleResolver: (_cliName, sessions) => sessions,
+    readSessionPickerKey: () => keys.shift() || '\r',
+    spawnSync: (_command, args) => {
+      if (args.includes('source-file')) return { status: 0, stdout: '' };
+      if (args.includes('list-sessions')) {
+        return {
+          status: 0,
+          stdout: [
+            'p-screen-completed',
+            '1',
+            '100',
+            cwd,
+            'codex',
+            'codex',
+            'node',
+            '123',
+            persistentSession.UTF8_RUNTIME_MARKER_VALUE,
+            '',
+            '0'
+          ].join(sep)
+        };
+      }
+      if (args.includes('capture-pane')) {
+        return { status: 0, stdout: 'Session completed\r\n' };
+      }
+      return { status: 0, stdout: '' };
+    },
+    runCliPty: (cliName, id, forwardArgs, isLogin) => {
+      runCalls.push({
+        cliName,
+        id,
+        forwardArgs,
+        isLogin,
+        target: env[persistentSession.TARGET_ENV],
+        mirror: env[persistentSession.MIRROR_ENV]
+      });
+    }
+  });
+
+  assert.deepEqual(runCalls, [{
+    cliName: 'codex',
+    id: '1',
+    forwardArgs: [],
+    isLogin: false,
+    target: undefined,
+    mirror: undefined
+  }]);
+  assert.equal(writes.join('').includes('[已结束]'), true);
 });
 
 test('`aih codex sessions <id>` picker closes the selected tmux session', (t) => {

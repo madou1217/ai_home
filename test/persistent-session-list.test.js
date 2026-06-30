@@ -8,7 +8,9 @@ const persistentSession = require('../lib/runtime/persistent-session');
 const { AIH_SERVER_PROFILE_ID } = require('../lib/account/self-relay-account');
 const {
   formatGlobalPersistentSessionsByProject,
+  getSessionDisplayDescription,
   listProviderProfileIds,
+  needsFreshCompatibleSession,
   runGlobalPersistentSessionsCommand,
   selectPersistentSessionRow,
   selectPersistentSessionRowAsync
@@ -45,6 +47,18 @@ function stripAnsi(value) {
     .replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '')
     .replace(/\r/g, '');
 }
+
+test('session list marks legacy psmux Codex launch runtime rows as fresh-session only', () => {
+  const row = {
+    cliName: 'codex',
+    description: 'Working task',
+    psmuxCodexLaunchRuntimeChecked: true,
+    psmuxCodexLaunchRuntimeReady: false
+  };
+
+  assert.equal(needsFreshCompatibleSession(row), true);
+  assert.equal(getSessionDisplayDescription(row).includes('[旧 psmux Codex 启动运行时]'), true);
+});
 
 test('formatGlobalPersistentSessionsByProject groups by project and sorts newest first', () => {
   const firstProject = '/work/first';
@@ -774,6 +788,99 @@ test('runGlobalPersistentSessionsCommand opens a compatible session for legacy U
     mirror: undefined
   }]);
   assert.equal(writes.join('').includes('[旧 tmux UTF-8 运行时]'), true);
+});
+
+test('runGlobalPersistentSessionsCommand opens a fresh session for legacy psmux Codex launch runtime rows', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-global-sessions-psmux-legacy-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const profilesDir = path.join(root, 'profiles');
+  fs.mkdirSync(path.join(profilesDir, 'codex', '1'), { recursive: true });
+  const sep = persistentSession.SESSION_LIST_SEPARATOR;
+  const env = {
+    [persistentSession.TARGET_ENV]: 'stale-target',
+    [persistentSession.MIRROR_ENV]: '1'
+  };
+  const cwd = 'C:\\work\\current';
+  const writes = [];
+  const runCalls = [];
+  const keys = ['\r'];
+
+  const result = runGlobalPersistentSessionsCommand([], {
+    fs,
+    profilesDir,
+    aiHomeDir: root,
+    hostHomeDir: root,
+    providers: ['codex'],
+    processImpl: {
+      platform: 'win32',
+      env,
+      stdout: {
+        isTTY: true,
+        columns: 120,
+        write: (chunk) => writes.push(String(chunk || ''))
+      },
+      stdin: {
+        isTTY: true,
+        isRaw: false,
+        setRawMode: () => {},
+        resume: () => {},
+        isPaused: () => true,
+        pause: () => {}
+      },
+      cwd: () => cwd,
+      chdir: () => {}
+    },
+    consoleImpl: {
+      log: (msg) => writes.push(`${String(msg)}\n`),
+      error: (msg) => writes.push(`error:${msg}\n`)
+    },
+    resolveCliPath: (name) => (name === 'psmux' ? 'C:\\tools\\psmux.exe' : ''),
+    readSessionPickerKey: () => keys.shift() || '\r',
+    spawnSync: (_command, args) => {
+      if (args.includes('source-file')) return { status: 0, stdout: '' };
+      if (args.includes('list-sessions')) {
+        return {
+          status: 0,
+          stdout: [
+            'p-legacy-psmux',
+            '1',
+            '300',
+            cwd,
+            'legacy psmux task',
+            'codex',
+            'node',
+            '123',
+            persistentSession.UTF8_RUNTIME_MARKER_VALUE,
+            '',
+            '0',
+            ''
+          ].join(sep)
+        };
+      }
+      return { status: 0, stdout: '' };
+    },
+    runCliPty: (cliName, id, forwardArgs, isLogin) => {
+      runCalls.push({
+        cliName,
+        id,
+        forwardArgs,
+        isLogin,
+        target: env[persistentSession.TARGET_ENV],
+        mirror: env[persistentSession.MIRROR_ENV]
+      });
+    }
+  });
+
+  assert.deepEqual(result, { entered: true });
+  assert.deepEqual(runCalls, [{
+    cliName: 'codex',
+    id: '1',
+    forwardArgs: [],
+    isLogin: false,
+    target: undefined,
+    mirror: undefined
+  }]);
+  assert.equal(writes.join('').includes('[旧 psmux Codex 启动运行时]'), true);
 });
 
 test('runGlobalPersistentSessionsCommand closes idle sessions across providers', (t) => {

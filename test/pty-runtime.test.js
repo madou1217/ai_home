@@ -7,6 +7,7 @@ const path = require('node:path');
 const { createPtyRuntime } = require('../lib/cli/services/pty/runtime');
 const { AIH_SERVER_PROFILE_ID } = require('../lib/account/self-relay-account');
 const persistentSession = require('../lib/runtime/persistent-session');
+const ptyLaunch = require('../lib/runtime/pty-launch');
 const {
   createAccountArtifactHookService,
   createDefaultProviderArtifactHookRegistry
@@ -194,8 +195,9 @@ function createRuntimeHarness(env = {}, overrides = {}) {
     resolveCliPath: overrides.resolveCliPath || (() => '/usr/bin/codex'),
     readServerConfig: overrides.readServerConfig || (() => ({ host: '127.0.0.1', port: 9527, apiKey: '' })),
     serverDaemon: overrides.serverDaemon || { status: () => ({ running: false }) },
-    buildPtyLaunch: (command, args) => ({ command, args }),
-    resolveWindowsBatchLaunch: (_cliName, cliBin) => ({ launchBin: cliBin, envPatch: {} }),
+    buildPtyLaunch: overrides.buildPtyLaunch || ((command, args) => ({ command, args })),
+    resolveWindowsBatchLaunch: overrides.resolveWindowsBatchLaunch || ((_cliName, cliBin) => ({ launchBin: cliBin, envPatch: {} })),
+    resolveWindowsNodeShimLaunch: overrides.resolveWindowsNodeShimLaunch,
     shouldEnableShellDrawer,
     isShellDrawerToggleSequence,
     resolveShellDrawerLaunch,
@@ -244,6 +246,16 @@ function createRuntimeHarness(env = {}, overrides = {}) {
     aiHomeDir: profileRoot,
     hostHomeDir,
     cwd: mockCwd
+  };
+}
+
+function fakeCodexNodeShimLaunch(_cliBin, args) {
+  return {
+    command: 'C:\\Program Files\\nodejs\\node.exe',
+    args: ['C:\\tools\\node_modules\\@openai\\codex\\bin\\codex.js', ...(Array.isArray(args) ? args : [])],
+    envPatch: {
+      NODE_PATH: 'C:\\tools\\node_modules'
+    }
   };
 }
 
@@ -478,11 +490,14 @@ test('runtime asks before installing psmux on Windows and degrades when declined
   const calls = [];
   const { runtime, proc, spawns, rawModeCalls } = createRuntimeHarness({
     AIH_RUNTIME_SHOW_USAGE: '0',
+    AIH_PSMUX_CODEX_EXPERIMENTAL: '1',
     LOCALAPPDATA: 'C:\\Users\\me\\AppData\\Local',
     Path: ''
   }, {
     platform: 'win32',
     stdoutIsTTY: true,
+    buildPtyLaunch: ptyLaunch.buildPtyLaunch,
+    resolveWindowsNodeShimLaunch: fakeCodexNodeShimLaunch,
     resolveCliPath: (name) => (name === 'codex' ? 'C:\\tools\\codex.cmd' : ''),
     askYesNo: (query, defaultYes) => {
       calls.push({ query, defaultYes });
@@ -500,7 +515,47 @@ test('runtime asks before installing psmux on Windows and degrades when declined
   assert.equal(calls[0].defaultYes, false);
   assert.match(calls[0].query, /psmux/);
   assert.equal(spawns.length, 1);
-  assert.equal(spawns[0].command, 'C:\\tools\\codex.cmd');
+  assert.equal(spawns[0].command, 'cmd.exe');
+  assert.equal(spawns[0].args.includes('chcp 65001>nul & C:\\tools\\codex.cmd'), true);
+  assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
+  assert.deepEqual(rawModeCalls, [true, false]);
+});
+
+test('runtime disables native Windows psmux for Codex by default', () => {
+  const psmuxPath = 'C:\\Users\\me\\AppData\\Local\\Microsoft\\WinGet\\Links\\psmux.exe';
+  const syncCalls = [];
+  const { runtime, proc, spawns, rawModeCalls } = createRuntimeHarness({
+    AIH_RUNTIME_SHOW_USAGE: '0',
+    LOCALAPPDATA: 'C:\\Users\\me\\AppData\\Local',
+    Path: ''
+  }, {
+    platform: 'win32',
+    stdoutIsTTY: true,
+    buildPtyLaunch: ptyLaunch.buildPtyLaunch,
+    resolveWindowsNodeShimLaunch: fakeCodexNodeShimLaunch,
+    resolveCliPath: (name) => {
+      if (name === 'psmux') return psmuxPath;
+      if (name === 'codex') return 'C:\\tools\\codex.cmd';
+      return '';
+    },
+    fs: {
+      existsSync: (target) => {
+        if (target === psmuxPath) return true;
+        return fsBase.existsSync(String(target || ''));
+      }
+    },
+    spawnSync: (command, args, options) => {
+      syncCalls.push({ command, args, options });
+      return { status: 0, stdout: '' };
+    }
+  });
+
+  runtime.runCliPtyTracked('codex', '10086', [], false);
+
+  assert.equal(syncCalls.some((call) => call.command === psmuxPath && call.args.includes('list-sessions')), false);
+  assert.equal(spawns.length, 1);
+  assert.equal(spawns[0].command, 'cmd.exe');
+  assert.equal(spawns[0].args.includes('chcp 65001>nul & C:\\tools\\codex.cmd'), true);
   assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
   assert.deepEqual(rawModeCalls, [true, false]);
 });
@@ -511,11 +566,14 @@ test('runtime installs psmux on Windows, re-detects it, and wraps the launch', (
   const psmuxPath = 'C:\\Users\\me\\AppData\\Local\\Microsoft\\WinGet\\Links\\psmux.exe';
   const { runtime, proc, spawns, rawModeCalls } = createRuntimeHarness({
     AIH_RUNTIME_SHOW_USAGE: '0',
+    AIH_PSMUX_CODEX_EXPERIMENTAL: '1',
     LOCALAPPDATA: 'C:\\Users\\me\\AppData\\Local',
     Path: ''
   }, {
     platform: 'win32',
     stdoutIsTTY: true,
+    buildPtyLaunch: ptyLaunch.buildPtyLaunch,
+    resolveWindowsNodeShimLaunch: fakeCodexNodeShimLaunch,
     resolveCliPath: (name) => (name === 'codex' ? 'C:\\tools\\codex.cmd' : ''),
     askYesNo: () => true,
     fs: {
@@ -545,7 +603,363 @@ test('runtime installs psmux on Windows, re-detects it, and wraps the launch', (
   assert.equal(spawns.length, 1);
   assert.equal(spawns[0].command, psmuxPath);
   assert.deepEqual(spawns[0].args.slice(0, 4), ['-u', '-L', 'aih-codex-10086', '-f']);
+  assert.equal(spawns[0].args.includes('new-session'), true);
+  assert.equal(spawns[0].args.includes('-A'), false);
+  assert.equal(spawns[0].args.includes('-D'), false);
+  assert.equal(spawns[0].args.includes('C:\\tools\\codex.cmd'), false);
+  assert.equal(spawns[0].args.includes('C:\\Program Files\\nodejs\\node.exe'), true);
+  assert.equal(spawns[0].args.includes('C:\\tools\\node_modules\\@openai\\codex\\bin\\codex.js'), true);
+  assert.equal(spawns[0].args.includes('NODE_PATH=C:\\tools\\node_modules'), true);
+  assert.equal(
+    spawns[0].args.includes(`${persistentSession.PSMUX_CODEX_LAUNCH_RUNTIME_MARKER_KEY}=${persistentSession.PSMUX_CODEX_LAUNCH_RUNTIME_MARKER_VALUE}`),
+    true
+  );
   assert.equal(spawns[0].options.env.AIH_PERSIST_ACTIVE, '1');
+  assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
+  assert.deepEqual(rawModeCalls, [true, false]);
+});
+
+test('runtime avoids psmux attach-or-create when session probing falls back to a unique session', () => {
+  const fallbackProjectCwd = 'C:\\work\\ai_home';
+  const fallbackPsmuxPath = 'C:\\Users\\me\\AppData\\Local\\Microsoft\\WinGet\\Links\\psmux.exe';
+  const fallbackSyncCalls = [];
+  const { runtime, proc, spawns, rawModeCalls } = createRuntimeHarness({
+    AIH_RUNTIME_SHOW_USAGE: '0',
+    AIH_PSMUX_CODEX_EXPERIMENTAL: '1',
+    LOCALAPPDATA: 'C:\\Users\\me\\AppData\\Local',
+    Path: ''
+  }, {
+    cwd: fallbackProjectCwd,
+    platform: 'win32',
+    stdoutIsTTY: true,
+    buildPtyLaunch: ptyLaunch.buildPtyLaunch,
+    resolveWindowsNodeShimLaunch: fakeCodexNodeShimLaunch,
+    resolveCliPath: (name) => {
+      if (name === 'psmux') return fallbackPsmuxPath;
+      if (name === 'codex') return 'C:\\tools\\codex.cmd';
+      return '';
+    },
+    fs: {
+      existsSync: (target) => {
+        if (target === fallbackPsmuxPath) return true;
+        return fsBase.existsSync(String(target || ''));
+      }
+    },
+    spawnSync: (command, args, options) => {
+      fallbackSyncCalls.push({ command, args, options });
+      if (command === fallbackPsmuxPath && args.includes('list-sessions')) {
+        return { status: 1, stdout: '', stderr: 'unexpected psmux probe failure' };
+      }
+      return { status: 0, stdout: '' };
+    }
+  });
+
+  runtime.runCliPtyTracked('codex', '10086', [], false);
+
+  assert.equal(fallbackSyncCalls.some((call) => call.command === fallbackPsmuxPath && call.args.includes('list-sessions')), true);
+  assert.equal(spawns.length, 1);
+  assert.equal(spawns[0].command, fallbackPsmuxPath);
+  assert.equal(spawns[0].args.includes('new-session'), true);
+  assert.equal(spawns[0].args.includes('-A'), false);
+  assert.equal(spawns[0].args.includes('-D'), false);
+  assert.equal(spawns[0].args.includes('C:\\tools\\codex.cmd'), false);
+  assert.equal(spawns[0].args.includes('C:\\Program Files\\nodejs\\node.exe'), true);
+  assert.equal(spawns[0].args.includes('C:\\tools\\node_modules\\@openai\\codex\\bin\\codex.js'), true);
+  assert.equal(spawns[0].args.includes('NODE_PATH=C:\\tools\\node_modules'), true);
+  assert.equal(
+    spawns[0].args.includes(`${persistentSession.PSMUX_CODEX_LAUNCH_RUNTIME_MARKER_KEY}=${persistentSession.PSMUX_CODEX_LAUNCH_RUNTIME_MARKER_VALUE}`),
+    true
+  );
+
+  assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
+  assert.deepEqual(rawModeCalls, [true, false]);
+});
+
+test('runtime re-enters Windows psmux Codex sessions with an exclusive explicit attach', () => {
+  const explicitAttachProjectCwd = 'C:\\work\\ai_home';
+  const explicitAttachBaseSession = persistentSession.deriveSessionName({ cwd: explicitAttachProjectCwd });
+  const explicitAttachSeparator = persistentSession.SESSION_LIST_SEPARATOR;
+  const explicitAttachPsmuxPath = 'C:\\Users\\me\\AppData\\Local\\Microsoft\\WinGet\\Links\\psmux.exe';
+  const explicitAttachSyncCalls = [];
+  const { runtime, proc, spawns, writes, ptyWrites, rawModeCalls } = createRuntimeHarness({
+    AIH_RUNTIME_SHOW_USAGE: '0',
+    AIH_PSMUX_CODEX_EXPERIMENTAL: '1',
+    AIH_SESSION_TARGET: explicitAttachBaseSession,
+    AIH_SESSION_MIRROR: '1',
+    LOCALAPPDATA: 'C:\\Users\\me\\AppData\\Local',
+    Path: ''
+  }, {
+    cwd: explicitAttachProjectCwd,
+    platform: 'win32',
+    stdoutIsTTY: true,
+    buildPtyLaunch: ptyLaunch.buildPtyLaunch,
+    resolveWindowsNodeShimLaunch: fakeCodexNodeShimLaunch,
+    resolveCliPath: (name) => {
+      if (name === 'psmux') return explicitAttachPsmuxPath;
+      if (name === 'codex') return 'C:\\tools\\codex.cmd';
+      return '';
+    },
+    fs: {
+      existsSync: (target) => {
+        if (target === explicitAttachPsmuxPath) return true;
+        return fsBase.existsSync(String(target || ''));
+      }
+    },
+    spawnSync: (command, args, options) => {
+      explicitAttachSyncCalls.push({ command, args, options });
+      if (command === explicitAttachPsmuxPath && args.includes('list-sessions')) {
+        return {
+          status: 0,
+          stdout: [
+            explicitAttachBaseSession,
+            '1',
+            '100',
+            explicitAttachProjectCwd,
+            'codex task',
+            'codex',
+            'node',
+            '123',
+            persistentSession.UTF8_RUNTIME_MARKER_VALUE,
+            '',
+            '0',
+            persistentSession.PSMUX_CODEX_LAUNCH_RUNTIME_MARKER_VALUE
+          ].join(explicitAttachSeparator)
+        };
+      }
+      return { status: 0, stdout: '' };
+    }
+  });
+
+  runtime.runCliPtyTracked('codex', '10086', [], false);
+
+  assert.equal(explicitAttachSyncCalls.some((call) => call.command === explicitAttachPsmuxPath && call.args.includes('list-sessions')), true);
+  const detachCall = explicitAttachSyncCalls.find((call) => call.command === explicitAttachPsmuxPath && call.args.includes('detach-client'));
+  assert.ok(detachCall);
+  assert.deepEqual(detachCall.args.slice(-3), ['detach-client', '-s', explicitAttachBaseSession]);
+  assert.equal(spawns.length, 1);
+  assert.equal(spawns[0].command, explicitAttachPsmuxPath);
+  assert.equal(spawns[0].args.includes('new-session'), false);
+  assert.equal(spawns[0].args.includes('-A'), false);
+  assert.deepEqual(spawns[0].args.slice(-3), ['attach-session', '-t', explicitAttachBaseSession]);
+  assert.equal(spawns[0].args.includes('C:\\tools\\codex.cmd'), false);
+
+  spawns[0].proc._onData('live repaint from psmux\r\n');
+  assert.equal(writes.some((line) => line.includes('live repaint from psmux')), true);
+  proc.stdin.emit('data', Buffer.from('hello'));
+  assert.equal(String(ptyWrites[ptyWrites.length - 1]), 'hello');
+  assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
+  assert.deepEqual(rawModeCalls, [true, false]);
+});
+
+test('runtime does not re-enter legacy Windows psmux Codex sessions without direct launch marker', () => {
+  const legacyProjectCwd = 'C:\\work\\ai_home';
+  const legacyBaseSession = persistentSession.deriveSessionName({ cwd: legacyProjectCwd });
+  const legacySeparator = persistentSession.SESSION_LIST_SEPARATOR;
+  const legacyPsmuxPath = 'C:\\Users\\me\\AppData\\Local\\Microsoft\\WinGet\\Links\\psmux.exe';
+  const legacySyncCalls = [];
+  const { runtime, proc, spawns, rawModeCalls } = createRuntimeHarness({
+    AIH_RUNTIME_SHOW_USAGE: '0',
+    AIH_PSMUX_CODEX_EXPERIMENTAL: '1',
+    AIH_SESSION_TARGET: legacyBaseSession,
+    AIH_SESSION_MIRROR: '1',
+    LOCALAPPDATA: 'C:\\Users\\me\\AppData\\Local',
+    Path: ''
+  }, {
+    cwd: legacyProjectCwd,
+    platform: 'win32',
+    stdoutIsTTY: true,
+    buildPtyLaunch: ptyLaunch.buildPtyLaunch,
+    resolveWindowsNodeShimLaunch: fakeCodexNodeShimLaunch,
+    resolveCliPath: (name) => {
+      if (name === 'psmux') return legacyPsmuxPath;
+      if (name === 'codex') return 'C:\\tools\\codex.cmd';
+      return '';
+    },
+    fs: {
+      existsSync: (target) => {
+        if (target === legacyPsmuxPath) return true;
+        return fsBase.existsSync(String(target || ''));
+      }
+    },
+    spawnSync: (command, args, options) => {
+      legacySyncCalls.push({ command, args, options });
+      if (command === legacyPsmuxPath && args.includes('list-sessions')) {
+        return {
+          status: 0,
+          stdout: [
+            legacyBaseSession,
+            '1',
+            '100',
+            legacyProjectCwd,
+            'codex task',
+            'codex',
+            'node',
+            '123',
+            persistentSession.UTF8_RUNTIME_MARKER_VALUE,
+            '',
+            '0',
+            ''
+          ].join(legacySeparator)
+        };
+      }
+      return { status: 0, stdout: '' };
+    }
+  });
+
+  runtime.runCliPtyTracked('codex', '10086', [], false);
+
+  assert.equal(legacySyncCalls.some((call) => call.command === legacyPsmuxPath && call.args.includes('detach-client')), false);
+  assert.equal(spawns.length, 1);
+  assert.equal(spawns[0].command, legacyPsmuxPath);
+  assert.equal(spawns[0].args.includes('attach-session'), false);
+  assert.equal(spawns[0].args.includes('new-session'), true);
+  const sessionIndex = spawns[0].args.indexOf('-s');
+  assert.equal(spawns[0].args[sessionIndex + 1], `${legacyBaseSession}-2`);
+  assert.equal(spawns[0].args.includes('C:\\tools\\codex.cmd'), false);
+  assert.equal(spawns[0].args.includes('C:\\Program Files\\nodejs\\node.exe'), true);
+  assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
+  assert.deepEqual(rawModeCalls, [true, false]);
+});
+
+test('runtime creates a fresh Windows psmux session when the probed pane is completed', () => {
+  const completedProjectCwd = 'C:\\work\\ai_home';
+  const completedBaseSession = persistentSession.deriveSessionName({ cwd: completedProjectCwd });
+  const completedSeparator = persistentSession.SESSION_LIST_SEPARATOR;
+  const completedPsmuxPath = 'C:\\Users\\me\\AppData\\Local\\Microsoft\\WinGet\\Links\\psmux.exe';
+  const completedSyncCalls = [];
+  const { runtime, proc, spawns, rawModeCalls } = createRuntimeHarness({
+    AIH_RUNTIME_SHOW_USAGE: '0',
+    AIH_PSMUX_CODEX_EXPERIMENTAL: '1',
+    LOCALAPPDATA: 'C:\\Users\\me\\AppData\\Local',
+    Path: ''
+  }, {
+    cwd: completedProjectCwd,
+    platform: 'win32',
+    stdoutIsTTY: true,
+    buildPtyLaunch: ptyLaunch.buildPtyLaunch,
+    resolveWindowsNodeShimLaunch: fakeCodexNodeShimLaunch,
+    resolveCliPath: (name) => {
+      if (name === 'psmux') return completedPsmuxPath;
+      if (name === 'codex') return 'C:\\tools\\codex.cmd';
+      return '';
+    },
+    fs: {
+      existsSync: (target) => {
+        if (target === completedPsmuxPath) return true;
+        return fsBase.existsSync(String(target || ''));
+      }
+    },
+    spawnSync: (command, args, options) => {
+      completedSyncCalls.push({ command, args, options });
+      if (command === completedPsmuxPath && args.includes('list-sessions')) {
+        return {
+          status: 0,
+          stdout: [
+            completedBaseSession,
+            '0',
+            '100',
+            completedProjectCwd,
+            'session completed',
+            'codex',
+            'node',
+            '123',
+            persistentSession.UTF8_RUNTIME_MARKER_VALUE,
+            '',
+            '1',
+            persistentSession.PSMUX_CODEX_LAUNCH_RUNTIME_MARKER_VALUE
+          ].join(completedSeparator)
+        };
+      }
+      return { status: 0, stdout: '' };
+    }
+  });
+
+  runtime.runCliPtyTracked('codex', '10086', [], false);
+
+  assert.equal(completedSyncCalls.some((call) => call.command === completedPsmuxPath && call.args.includes('list-sessions')), true);
+  assert.equal(spawns.length, 1);
+  assert.equal(spawns[0].command, completedPsmuxPath);
+  assert.equal(spawns[0].args.includes('attach-session'), false);
+  assert.equal(spawns[0].args.includes('new-session'), true);
+  assert.equal(spawns[0].args.includes('-A'), false);
+  assert.equal(spawns[0].args.includes('-D'), false);
+  const sessionIndex = spawns[0].args.indexOf('-s');
+  assert.equal(spawns[0].args[sessionIndex + 1], `${completedBaseSession}-2`);
+  assert.equal(spawns[0].args.includes('C:\\tools\\codex.cmd'), false);
+  assert.equal(spawns[0].args.includes('C:\\Program Files\\nodejs\\node.exe'), true);
+
+  assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
+  assert.deepEqual(rawModeCalls, [true, false]);
+});
+
+test('runtime creates a fresh Windows psmux session when the live pane screen is completed', () => {
+  const screenCompletedProjectCwd = 'C:\\work\\ai_home';
+  const screenCompletedBaseSession = persistentSession.deriveSessionName({ cwd: screenCompletedProjectCwd });
+  const screenCompletedSeparator = persistentSession.SESSION_LIST_SEPARATOR;
+  const screenCompletedPsmuxPath = 'C:\\Users\\me\\AppData\\Local\\Microsoft\\WinGet\\Links\\psmux.exe';
+  const screenCompletedSyncCalls = [];
+  const { runtime, proc, spawns, rawModeCalls } = createRuntimeHarness({
+    AIH_RUNTIME_SHOW_USAGE: '0',
+    AIH_PSMUX_CODEX_EXPERIMENTAL: '1',
+    LOCALAPPDATA: 'C:\\Users\\me\\AppData\\Local',
+    Path: ''
+  }, {
+    cwd: screenCompletedProjectCwd,
+    platform: 'win32',
+    stdoutIsTTY: true,
+    buildPtyLaunch: ptyLaunch.buildPtyLaunch,
+    resolveWindowsNodeShimLaunch: fakeCodexNodeShimLaunch,
+    resolveCliPath: (name) => {
+      if (name === 'psmux') return screenCompletedPsmuxPath;
+      if (name === 'codex') return 'C:\\tools\\codex.cmd';
+      return '';
+    },
+    fs: {
+      existsSync: (target) => {
+        if (target === screenCompletedPsmuxPath) return true;
+        return fsBase.existsSync(String(target || ''));
+      }
+    },
+    spawnSync: (command, args, options) => {
+      screenCompletedSyncCalls.push({ command, args, options });
+      if (command === screenCompletedPsmuxPath && args.includes('list-sessions')) {
+        return {
+          status: 0,
+          stdout: [
+            screenCompletedBaseSession,
+            '1',
+            '100',
+            screenCompletedProjectCwd,
+            'codex',
+            'codex',
+            'node',
+            '123',
+            persistentSession.UTF8_RUNTIME_MARKER_VALUE,
+            '',
+            '0',
+            persistentSession.PSMUX_CODEX_LAUNCH_RUNTIME_MARKER_VALUE
+          ].join(screenCompletedSeparator)
+        };
+      }
+      if (command === screenCompletedPsmuxPath && args.includes('capture-pane')) {
+        return { status: 0, stdout: 'last turn\nSession completed\n' };
+      }
+      return { status: 0, stdout: '' };
+    }
+  });
+
+  runtime.runCliPtyTracked('codex', '10086', [], false);
+
+  assert.equal(screenCompletedSyncCalls.some((call) => call.command === screenCompletedPsmuxPath && call.args.includes('capture-pane')), true);
+  assert.equal(spawns.length, 1);
+  assert.equal(spawns[0].command, screenCompletedPsmuxPath);
+  assert.equal(spawns[0].args.includes('attach-session'), false);
+  assert.equal(spawns[0].args.includes('new-session'), true);
+  const sessionIndex = spawns[0].args.indexOf('-s');
+  assert.equal(spawns[0].args[sessionIndex + 1], `${screenCompletedBaseSession}-2`);
+  assert.equal(spawns[0].args.includes('C:\\tools\\codex.cmd'), false);
+  assert.equal(spawns[0].args.includes('C:\\Program Files\\nodejs\\node.exe'), true);
+
   assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
   assert.deepEqual(rawModeCalls, [true, false]);
 });

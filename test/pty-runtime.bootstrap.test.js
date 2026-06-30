@@ -6,19 +6,23 @@ test('createPtyRuntimeDeps forwards required runtime handlers', () => {
   const resolveCliPath = () => '/bin/codex';
   const buildPtyLaunch = () => ({});
   const resolveWindowsBatchLaunch = () => ({});
+  const resolveWindowsNodeShimLaunch = () => ({});
   const spawn = () => ({});
+  const spawnSync = () => ({});
   const deps = createPtyRuntimeDeps({
     path: {},
     fs: {},
     processObj: {},
     pty: {},
     spawn,
+    spawnSync,
     execSync: () => '',
     resolveCliPath,
     readServerConfig: () => ({}),
     serverDaemon: { status: () => ({ running: false }) },
     buildPtyLaunch,
     resolveWindowsBatchLaunch,
+    resolveWindowsNodeShimLaunch,
     readUsageConfig: () => ({}),
     cliConfigs: {},
     aiHomeDir: '/tmp/aih',
@@ -46,7 +50,9 @@ test('createPtyRuntimeDeps forwards required runtime handlers', () => {
   assert.equal(typeof deps.serverDaemon.status, 'function');
   assert.equal(deps.buildPtyLaunch, buildPtyLaunch);
   assert.equal(deps.resolveWindowsBatchLaunch, resolveWindowsBatchLaunch);
+  assert.equal(deps.resolveWindowsNodeShimLaunch, resolveWindowsNodeShimLaunch);
   assert.equal(deps.spawn, spawn);
+  assert.equal(deps.spawnSync, spawnSync);
   assert.equal(deps.aiHomeDir, '/tmp/aih');
   assert.equal(deps.hostHomeDir, '/tmp');
   assert.equal(typeof deps.ensureUsageSnapshotAsync, 'function');

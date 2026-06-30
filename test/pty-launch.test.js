@@ -1,6 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { buildPtyLaunch, resolveWindowsBatchLaunch } = require('../lib/runtime/pty-launch');
+const {
+  buildPtyLaunch,
+  resolveWindowsBatchLaunch,
+  resolveWindowsNodeShimLaunch
+} = require('../lib/runtime/pty-launch');
 
 test('buildPtyLaunch keeps direct launch on linux', () => {
   const launch = buildPtyLaunch('/usr/local/bin/codex', ['--help'], { platform: 'linux' });
@@ -10,7 +14,7 @@ test('buildPtyLaunch keeps direct launch on linux', () => {
 
 test('buildPtyLaunch wraps POSIX shell shims for node-pty', () => {
   const fsImpl = {
-    existsSync: (filePath) => filePath === '/Users/me/bin/codex',
+    existsSync: (filePath) => filePath === '/Users/me/bin/codex' || filePath === '/bin/sh',
     readFileSync: () => '#!/bin/sh\nexec /real/codex "$@"\n'
   };
   const launch = buildPtyLaunch('/Users/me/bin/codex', ['--version'], {
@@ -75,4 +79,78 @@ test('resolveWindowsBatchLaunch injects cmd directory into PATH and uses basenam
   assert.equal(resolved.launchBin, 'codex');
   assert.match(resolved.envPatch.Path, /D:\\nvm4w\\nodejs/i);
   assert.equal(resolved.envPatch.Path, resolved.envPatch.PATH);
+});
+
+test('resolveWindowsNodeShimLaunch unwraps pnpm cmd shim to direct node launch', () => {
+  const shimPath = 'C:\\Users\\me\\AppData\\Local\\pnpm\\codex.cmd';
+  const fsImpl = {
+    existsSync: (filePath) => filePath === shimPath,
+    readFileSync: () => [
+      '@SETLOCAL',
+      '@IF NOT DEFINED NODE_PATH (',
+      '  @SET "NODE_PATH=C:\\Users\\me\\AppData\\Local\\pnpm\\global\\5\\.pnpm\\@openai+codex@1\\node_modules"',
+      ') ELSE (',
+      '  @SET "NODE_PATH=C:\\Users\\me\\AppData\\Local\\pnpm\\global\\5\\.pnpm\\@openai+codex@1\\node_modules;%NODE_PATH%"',
+      ')',
+      '@IF EXIST "%~dp0\\node.exe" (',
+      '  "%~dp0\\node.exe"  "%~dp0\\global\\5\\.pnpm\\@openai+codex@1\\node_modules\\@openai\\codex\\bin\\codex.js" %*',
+      ') ELSE (',
+      '  node  "%~dp0\\global\\5\\.pnpm\\@openai+codex@1\\node_modules\\@openai\\codex\\bin\\codex.js" %*',
+      ')'
+    ].join('\r\n')
+  };
+
+  const launch = resolveWindowsNodeShimLaunch(shimPath, ['--model', 'gpt-5'], {
+    platform: 'win32',
+    fsImpl,
+    env: { NODE_PATH: 'C:\\existing' },
+    nodeExecPath: 'C:\\Program Files\\nodejs\\node.exe'
+  });
+
+  assert.equal(launch.command, 'C:\\Program Files\\nodejs\\node.exe');
+  assert.deepEqual(launch.args, [
+    'C:\\Users\\me\\AppData\\Local\\pnpm\\global\\5\\.pnpm\\@openai+codex@1\\node_modules\\@openai\\codex\\bin\\codex.js',
+    '--model',
+    'gpt-5'
+  ]);
+  assert.equal(
+    launch.envPatch.NODE_PATH,
+    'C:\\Users\\me\\AppData\\Local\\pnpm\\global\\5\\.pnpm\\@openai+codex@1\\node_modules;C:\\existing'
+  );
+});
+
+test('resolveWindowsNodeShimLaunch prefers adjacent node.exe for npm cmd shim', () => {
+  const shimPath = 'D:\\nvm\\v24.13.0\\codex.cmd';
+  const localNode = 'D:\\nvm\\v24.13.0\\node.exe';
+  const fsImpl = {
+    existsSync: (filePath) => filePath === shimPath || filePath === localNode,
+    readFileSync: () => [
+      '@ECHO off',
+      'IF EXIST "%dp0%\\node.exe" (',
+      '  SET "_prog=%dp0%\\node.exe"',
+      ') ELSE (',
+      '  SET "_prog=node"',
+      ')',
+      'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\node_modules\\@openai\\codex\\bin\\codex.js" %*'
+    ].join('\r\n')
+  };
+
+  const launch = resolveWindowsNodeShimLaunch(shimPath, [], {
+    platform: 'win32',
+    fsImpl,
+    nodeExecPath: 'C:\\Program Files\\nodejs\\node.exe'
+  });
+
+  assert.equal(launch.command, localNode);
+  assert.deepEqual(launch.args, ['D:\\nvm\\v24.13.0\\node_modules\\@openai\\codex\\bin\\codex.js']);
+});
+
+test('resolveWindowsNodeShimLaunch ignores non-node cmd files', () => {
+  const shimPath = 'C:\\tools\\tool.cmd';
+  const fsImpl = {
+    existsSync: (filePath) => filePath === shimPath,
+    readFileSync: () => '@echo off\r\necho hello %*\r\n'
+  };
+
+  assert.equal(resolveWindowsNodeShimLaunch(shimPath, [], { platform: 'win32', fsImpl }), null);
 });

@@ -832,7 +832,7 @@ test('codex adapter returns pool unavailable when 401 remains after refresh', as
   assert.equal(res.statusCode, 401);
   const body = JSON.parse(String(res.body));
   assert.equal(body.error, 'auth_invalid_reauth_required');
-  assert.match(String(body.detail || ''), /cooldown:auth_invalid_reauth_required=1/);
+  assert.match(String(body.detail || ''), /runtime:auth_invalid:auth_invalid_reauth_required=1/);
 });
 
 test('codex adapter retries another account on deactivated workspace 402', async () => {

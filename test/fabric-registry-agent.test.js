@@ -6,6 +6,7 @@ const path = require('node:path');
 
 const { runFabricCommandRouter } = require('../lib/cli/commands/fabric-router');
 const {
+  discoverRuntimeDiagnostics,
   formatFabricRegistryAgentEvent,
   mergeTransportHeartbeats,
   parseFabricRegistryAgentArgs,
@@ -35,6 +36,7 @@ test('parseFabricRegistryAgentArgs builds a foreground heartbeat loop config', (
     '3',
     '--probe-payload-size',
     '64',
+    '--runtime-diagnostics',
     '--interval-ms',
     '5000',
     '--count',
@@ -56,9 +58,156 @@ test('parseFabricRegistryAgentArgs builds a foreground heartbeat loop config', (
   assert.equal(options.probeMethod, 'GET');
   assert.equal(options.probeCount, 3);
   assert.equal(options.probePayloadSize, 64);
+  assert.equal(options.runtimeDiagnostics, true);
   assert.equal(options.intervalMs, 5000);
   assert.equal(options.count, 2);
   assert.equal(options.json, true);
+});
+
+test('discoverRuntimeDiagnostics records provider CLI and local readyz account facts', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-runtime-diagnostics-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const codexPath = path.join(dir, 'codex');
+  fs.writeFileSync(codexPath, '#!/bin/sh\nexit 0\n');
+  fs.chmodSync(codexPath, 0o755);
+
+  const diagnostics = await discoverRuntimeDiagnostics({
+    endpoint: 'http://127.0.0.1:9527',
+    runtimeDiagnostics: true
+  }, {
+    env: { PATH: dir },
+    projectFallback: false,
+    spawnSyncImpl: () => ({ status: 1, stdout: '', stderr: '' }),
+    fetchImpl: async (url) => {
+      assert.equal(url, 'http://127.0.0.1:9527/readyz');
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          ok: true,
+          accounts: {
+            codex: 0,
+            claude: 2,
+            agy: 0,
+            opencode: 0
+          }
+        })
+      };
+    }
+  });
+
+  const codex = diagnostics.find((item) => item.provider === 'codex');
+  const claude = diagnostics.find((item) => item.provider === 'claude');
+  assert.equal(diagnostics.length, 4);
+  assert.equal(codex.cli.available, true);
+  assert.equal(codex.cli.path, codexPath);
+  assert.equal(codex.accounts.total, 0);
+  assert.equal(claude.cli.available, false);
+  assert.equal(claude.accounts.total, 2);
+});
+
+test('discoverRuntimeDiagnostics uses the same app-local CLI fallback as native sessions', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-runtime-app-cli-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const binDir = path.join(root, 'node_modules', '.bin');
+  const codexPath = path.join(binDir, 'codex');
+  fs.mkdirSync(binDir, { recursive: true });
+  fs.writeFileSync(codexPath, '#!/bin/sh\nexit 0\n', 'utf8');
+  fs.chmodSync(codexPath, 0o755);
+
+  const diagnostics = await discoverRuntimeDiagnostics({
+    endpoint: 'http://127.0.0.1:9527',
+    runtimeDiagnostics: true
+  }, {
+    appRoot: root,
+    env: {
+      PATH: '',
+      AIH_CODEX_RESOLVE_LATEST: '0'
+    },
+    spawnSyncImpl: () => ({ status: 1, stdout: '', stderr: '' }),
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ok: true,
+        accounts: {
+          codex: 1,
+          claude: 0,
+          agy: 0,
+          opencode: 0
+        }
+      })
+    })
+  });
+
+  const codex = diagnostics.find((item) => item.provider === 'codex');
+  assert.equal(codex.cli.available, true);
+  assert.equal(codex.cli.path, codexPath);
+  assert.equal(codex.accounts.total, 1);
+});
+
+test('discoverRuntimeDiagnostics prefers local runtime account availability over readyz totals', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-runtime-availability-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const codexPath = path.join(dir, 'codex');
+  fs.writeFileSync(codexPath, '#!/bin/sh\nexit 0\n');
+  fs.chmodSync(codexPath, 0o755);
+
+  const diagnostics = await discoverRuntimeDiagnostics({
+    endpoint: 'http://127.0.0.1:9527',
+    runtimeDiagnostics: true
+  }, {
+    fs,
+    aiHomeDir: dir,
+    env: { PATH: dir },
+    projectFallback: false,
+    spawnSyncImpl: () => ({ status: 1, stdout: '', stderr: '' }),
+    getToolAccountIds: () => [],
+    getToolConfigDir: () => dir,
+    getProfileDir: () => dir,
+    checkStatus: () => ({ configured: true }),
+    loadServerRuntimeAccounts: () => ({
+      codex: [{
+        id: '2',
+        provider: 'codex',
+        accessToken: 'sk-test',
+        authInvalidUntil: Date.now() + 60_000,
+        lastFailureKind: 'auth_invalid',
+        lastFailureReason: 'upstream_401',
+        schedulableStatus: 'schedulable'
+      }],
+      claude: [{
+        id: '1',
+        provider: 'claude',
+        accessToken: 'claude-token',
+        schedulableStatus: 'schedulable'
+      }],
+      agy: [],
+      opencode: []
+    }),
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ok: true,
+        accounts: {
+          codex: 99,
+          claude: 99,
+          agy: 99,
+          opencode: 99
+        }
+      })
+    })
+  });
+
+  const codex = diagnostics.find((item) => item.provider === 'codex');
+  const claude = diagnostics.find((item) => item.provider === 'claude');
+  assert.equal(codex.accounts.source, 'runtime_accounts');
+  assert.equal(codex.accounts.total, 1);
+  assert.equal(codex.accounts.available, 0);
+  assert.equal(codex.accounts.unavailable, 1);
+  assert.equal(codex.accounts.reasons[0].reason, 'runtime:auth_invalid:upstream_401');
+  assert.equal(claude.accounts.available, 1);
 });
 
 test('parseFabricRegistryAgentArgs reads token from token file without exposing it in args', () => {
@@ -184,6 +333,54 @@ test('runFabricRegistryAgent reuses heartbeat sender without leaking credentials
       successRate: 1
     }
   ]);
+});
+
+test('runFabricRegistryAgent sends runtime diagnostics when explicitly enabled', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-agent-runtime-diagnostics-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const codexPath = path.join(dir, 'codex');
+  fs.writeFileSync(codexPath, '#!/bin/sh\nexit 0\n');
+  fs.chmodSync(codexPath, 0o755);
+
+  const calls = [];
+  const result = await runFabricRegistryAgent([
+    'http://127.0.0.1:9527',
+    '--token',
+    'secret-token',
+    '--node-id',
+    'aws-current-node',
+    '--runtime-diagnostics',
+    '--count',
+    '1'
+  ], {
+    env: { PATH: dir },
+    projectFallback: false,
+    spawnSyncImpl: () => ({ status: 1, stdout: '', stderr: '' }),
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ok: true,
+        accounts: {
+          codex: 0,
+          claude: 0,
+          agy: 0,
+          opencode: 0
+        }
+      })
+    }),
+    postFabricRegistryHeartbeat: async (options) => {
+      calls.push(options);
+      return { ok: true, result: { registry: { counts: {} } } };
+    }
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].runtimeDiagnostics.length, 4);
+  assert.equal(calls[0].runtimeDiagnostics.find((item) => item.provider === 'codex').cli.available, true);
+  assert.equal(calls[0].runtimeDiagnostics.find((item) => item.provider === 'claude').cli.available, false);
+  assert.equal(JSON.stringify(calls[0].runtimeDiagnostics).includes('secret-token'), false);
 });
 
 test('probeAgentTransports dispatches ws and tcp targets to application echo runners', async () => {
@@ -342,6 +539,59 @@ test('mergeTransportHeartbeats lets probe measurements override manual transport
         successRate: 0,
         failureReason: 'ECONNREFUSED',
         rttMs: { p95: 0 }
+      }
+    }
+  ]);
+});
+
+test('mergeTransportHeartbeats preserves explicit promotion while probe updates liveness', () => {
+  assert.deepEqual(mergeTransportHeartbeats(
+    [{
+      kind: 'webrtc',
+      health: 'online',
+      lastError: '',
+      promotion: {
+        remoteRequestReady: true,
+        mode: 'direct',
+        evidenceRef: 'docs/fabric/evidence/2026-06-29-m6-direct-webrtc-promotion.md',
+        rttP95Ms: 201,
+        rpcP95Ms: 200,
+        promotedAt: 1782691200000
+      }
+    }],
+    [{
+      kind: 'webrtc',
+      health: 'online',
+      lastError: '',
+      durationMs: 30,
+      status: 'webrtc_datachannel_pass',
+      successes: 20,
+      failures: 0,
+      sampleCount: 20,
+      successRate: 1,
+      rttMs: { p95: 201 }
+    }]
+  ), [
+    {
+      kind: 'webrtc',
+      health: 'online',
+      lastError: '',
+      measurement: {
+        status: 'webrtc_datachannel_pass',
+        durationMs: 30,
+        successes: 20,
+        failures: 0,
+        sampleCount: 20,
+        successRate: 1,
+        rttMs: { p95: 201 }
+      },
+      promotion: {
+        remoteRequestReady: true,
+        mode: 'direct',
+        evidenceRef: 'docs/fabric/evidence/2026-06-29-m6-direct-webrtc-promotion.md',
+        rttP95Ms: 201,
+        rpcP95Ms: 200,
+        promotedAt: 1782691200000
       }
     }
   ]);

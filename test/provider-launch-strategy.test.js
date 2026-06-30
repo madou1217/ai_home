@@ -131,7 +131,13 @@ test('claude: api credential accounts keep shared session config dir', () => {
       ANTHROPIC_BASE_URL: 'https://relay.example.com'
     }
   }));
-  assert.deepEqual(set, { CLAUDE_CONFIG_DIR: path.join(SANDBOX, '.claude') });
+  // A non-official, non-loopback endpoint also disables the first-party-only
+  // advisor tool (Claude Code would otherwise inject advisor_20260301 and strict
+  // third-party endpoints 400 on it).
+  assert.deepEqual(set, {
+    CLAUDE_CONFIG_DIR: path.join(SANDBOX, '.claude'),
+    CLAUDE_CODE_DISABLE_ADVISOR_TOOL: '1'
+  });
   assert.deepEqual(unset, ['USER']);
 });
 

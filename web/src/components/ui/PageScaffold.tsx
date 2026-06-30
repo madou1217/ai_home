@@ -15,15 +15,21 @@ export interface PageScaffoldProps {
   children?: ReactNode;
   className?: string;
   ghost?: boolean;
+  /**
+   * 全屏铺满模式（如 AI 会话页）：隐藏页面标题头、去掉内容区内距、children 撑满高度，
+   * 由页面自身的全高布局接管。普通文档页不要用。
+   */
+  fullBleed?: boolean;
 }
 
 /**
  * 统一页面脚手架 —— 全站唯一的 PageContainer 包装。
  *
- * 固定规则（DESIGN_SYSTEM.md 的单一真相源）：
- *  - 不允许直接使用 PageContainer，必须经此组件
- *  - extra 仅放右上角 action；headerContent 放紧凑健康条，禁止平铺 Statistic 卡片
- *  - 页面 padding 固定 24px（见 unified.css），卡片 padding 固定 16px
+ * 标准模式采用与 Settings 相同的布局结构：
+ *  - PageContainer 只渲染页头（不包裹 children）
+ *  - children 作为页头的兄弟元素渲染在 .unified-page-content wrapper 内
+ *  - 外层 .unified-page-wrapper 提供统一的横向内距（桌面 32px / 移动 16px）
+ *  - 页头内距归零，改由 wrapper 统一提供，确保页头文字与内容对齐
  */
 export default function PageScaffold({
   title,
@@ -33,17 +39,34 @@ export default function PageScaffold({
   children,
   className = '',
   ghost,
+  fullBleed,
 }: PageScaffoldProps) {
+  if (fullBleed) {
+    return (
+      <PageContainer
+        className={['unified-page-scaffold', 'unified-page-scaffold--fullbleed', className]
+          .filter(Boolean)
+          .join(' ')}
+        ghost
+        header={{ title: '', breadcrumb: {} }}
+      >
+        {children}
+      </PageContainer>
+    );
+  }
   return (
-    <PageContainer
-      className={['unified-page-scaffold', className].filter(Boolean).join(' ')}
-      title={title}
-      subTitle={subTitle}
-      extra={extra}
-      content={headerContent}
-      ghost={ghost}
-    >
-      {children}
-    </PageContainer>
+    <div className={['unified-page-wrapper', className].filter(Boolean).join(' ')}>
+      <PageContainer
+        className="unified-page-scaffold"
+        title={title}
+        subTitle={subTitle}
+        extra={extra}
+        content={headerContent}
+        ghost={ghost}
+      />
+      <div className="unified-page-content">
+        {children}
+      </div>
+    </div>
   );
 }

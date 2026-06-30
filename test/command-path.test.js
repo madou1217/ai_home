@@ -11,8 +11,9 @@ test('resolveCommandPath returns empty for blank command', () => {
 
 test('resolveCommandPath uses where on win32 and returns first match', () => {
   const calls = [];
+  const env = { Path: '' };
   const out = resolveCommandPath('codex', {
-    env: { Path: '' },
+    env,
     platform: 'win32',
     spawnSyncImpl: (cmd, args, options) => {
       calls.push({ cmd, args, options });
@@ -27,6 +28,7 @@ test('resolveCommandPath uses where on win32 and returns first match', () => {
   assert.equal(calls.length, 1);
   assert.equal(calls[0].cmd, 'where.exe');
   assert.deepEqual(calls[0].args, ['codex']);
+  assert.equal(calls[0].options.env, env);
 });
 
 test('resolveCommandPath returns empty on win32 probe failure', () => {
@@ -40,8 +42,9 @@ test('resolveCommandPath returns empty on win32 probe failure', () => {
 
 test('resolveCommandPath uses command -v on linux and trims output', () => {
   const calls = [];
+  const env = { PATH: '' };
   const out = resolveCommandPath('codex', {
-    env: { PATH: '' },
+    env,
     platform: 'linux',
     spawnSyncImpl: (cmd, args, options) => {
       calls.push({ cmd, args, options });
@@ -54,6 +57,7 @@ test('resolveCommandPath uses command -v on linux and trims output', () => {
   assert.equal(calls[0].cmd, 'sh');
   assert.equal(calls[0].args[0], '-lc');
   assert.match(calls[0].args[1], /command -v "codex"/);
+  assert.equal(calls[0].options.env, env);
 });
 
 test('resolveCommandPath escapes special characters for shell probing', () => {

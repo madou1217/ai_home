@@ -1,5 +1,4 @@
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;600;700;800&family=Manrope:wght@500;600;700;800&family=Sora:wght@600;700;800&display=swap');
-@import 'tailwindcss';
 @import 'animate.css';
 @import './design-tokens.css';
 @import '../components/ui/data-display.css';
@@ -18,13 +17,20 @@ body,
 }
 
 body {
-  overflow: hidden;
   background: var(--app-bg);
   color: var(--app-text);
   font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: geometricPrecision;
+}
+
+/* 桌面端才锁 body 滚动（app-shell 内部滚动）。移动端保留原生 body 滚动，
+ * 否则 100vh + overflow:hidden 会把内容裁在地址栏后面、长页面无法滚动。 */
+@media (min-width: 768px) {
+  body {
+    overflow: hidden;
+  }
 }
 
 button,
@@ -49,9 +55,31 @@ button {
   height: 100vh;
 }
 
-/* 确保 ProLayout 的侧边栏和内容区域高度自适应 */
-.ant-pro-layout {
-  height: 100vh !important;
+/* App-shell 内部滚动只在桌面端启用：内容区固定为视口高度、超出在内容区内部滚动。
+ * 移动端（<768px）走原生 body 滚动，避免 100vh 把内容裁在地址栏后/长页无法滚。
+ * 此前 has-sider 用 min-height:100% 但无上限 → 撑高溢出；且移动端无 has-sider 结构。 */
+@media (min-width: 768px) {
+  .ant-pro-layout {
+    height: 100vh !important;
+    overflow: hidden !important;
+  }
+
+  .ant-pro-layout > .ant-layout-has-sider {
+    height: 100% !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+  }
+
+  .ant-pro-layout-container {
+    height: 100% !important;
+    min-height: 0 !important;
+  }
+
+  .ant-pro-layout-content.ant-pro-layout-content {
+    flex: 1 1 0 !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+  }
 }
 
 /* 移除 ProLayout 默认的页面容器上边距，使页面更紧凑 */

@@ -6,7 +6,8 @@
 }
 
 .compact {
-  gap: 5px;
+  width: 100%;
+  gap: 4px;
 }
 
 .label {
@@ -49,10 +50,15 @@
 }
 
 .compact .select {
-  max-width: 138px;
+  width: 100%;
+  min-width: 68px;
+  max-width: none;
+  flex: 1 1 88px;
   height: 26px;
+  overflow: hidden;
   font-size: 11px;
   line-height: 26px;
+  text-overflow: ellipsis;
 }
 
 .select:hover:not(:disabled) {
@@ -81,7 +87,8 @@
 }
 
 .compact .summary {
-  max-width: 96px;
+  flex: 0 1 48px;
+  max-width: 52px;
   font-size: 10px;
 }
 
@@ -96,6 +103,7 @@
 }
 
 .compact .manageLink {
+  flex: 0 0 auto;
   font-size: 11px;
 }
 

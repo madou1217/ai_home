@@ -4,6 +4,7 @@ import antigravityIcon from '@/assets/icons/antigravity.svg';
 import claudeIcon from '@/assets/icons/claude.svg';
 import geminiIcon from '@/assets/icons/gemini.svg';
 import opencodeIcon from '@/assets/icons/opencode.svg';
+import chatgptIcon from '@/assets/icons/chatgpt.svg';
 import openaiIcon from '@/assets/icons/openai.svg';
 import aiHomeMark from '@/assets/brand/ai-home-mark.png';
 import agyTerminalIcon from '../../../../assets/provider-icons/agy.png';
@@ -41,7 +42,7 @@ export interface ProviderMeta {
 }
 
 const ICONS: Record<Provider, string> = {
-  codex: openaiIcon,
+  codex: chatgptIcon,
   gemini: geminiIcon,
   claude: claudeIcon,
   agy: antigravityIcon,

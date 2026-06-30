@@ -22,7 +22,7 @@ function createResCapture() {
   };
 }
 
-function createDeps(aiHomeDir, fetchImpl, body = null) {
+function createDeps(aiHomeDir, fetchImpl, body = null, extra = {}) {
   return {
     fs,
     aiHomeDir,
@@ -38,7 +38,8 @@ function createDeps(aiHomeDir, fetchImpl, body = null) {
     getProfileDir() { return ''; },
     loadServerRuntimeAccounts() { return {}; },
     applyReloadState() {},
-    checkStatus() { return {}; }
+    checkStatus() { return {}; },
+    ...extra
   };
 }
 
@@ -191,6 +192,77 @@ test('web ui remote node defaults use local machine identity and relay provider'
   );
   assert.equal(payload.defaults.repoUrl, 'https://github.com/madou1217/ai_home.git');
   assert.equal(payload.defaults.repoSubdir, 'projects/feature/ai_home');
+});
+
+test('web ui remote node test returns transport decision when relay is unavailable', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-remote-node-decision-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+
+  const savePayload = Buffer.from(JSON.stringify({
+    id: 'decision-node',
+    name: 'Decision Node',
+    preferredTransports: ['webrtc', 'relay'],
+    capabilities: ['status'],
+    transports: [
+      {
+        id: 'decision-node-webrtc',
+        kind: 'webrtc',
+        endpoint: 'http://control.example.com:9527',
+        status: 'up',
+        score: 100
+      },
+      {
+        id: 'decision-node-relay',
+        kind: 'relay',
+        status: 'up',
+        score: 55
+      }
+    ]
+  }), 'utf8');
+  const saveRes = createResCapture();
+  await handleWebUIRequest({
+    method: 'POST',
+    pathname: '/v0/webui/nodes',
+    url: new URL('http://localhost/v0/webui/nodes'),
+    req: { headers: {} },
+    res: saveRes,
+    options: {},
+    state: {},
+    deps: createDeps(aiHomeDir, null, savePayload)
+  });
+  assert.equal(saveRes.statusCode, 200);
+
+  const relayError = new Error('remote_relay_session_unavailable');
+  relayError.code = 'remote_relay_session_unavailable';
+  relayError.status = 503;
+  const testRes = createResCapture();
+  await handleWebUIRequest({
+    method: 'POST',
+    pathname: '/v0/webui/nodes/decision-node/test',
+    url: new URL('http://localhost/v0/webui/nodes/decision-node/test'),
+    req: { headers: {} },
+    res: testRes,
+    options: {},
+    state: {},
+    deps: createDeps(aiHomeDir, null, null, {
+      requestRelayManagement: async () => {
+        throw relayError;
+      }
+    })
+  });
+
+  assert.equal(testRes.statusCode, 503);
+  const body = JSON.parse(testRes.body);
+  assert.equal(body.error, 'remote_relay_session_unavailable');
+  assert.equal(body.transportDecision.fallbackUsed, true);
+  assert.deepEqual(body.transportDecision.fallbackFrom, ['webrtc']);
+  assert.deepEqual(body.transportDecision.rejectedTransports, [
+    {
+      id: 'decision-node-webrtc',
+      kind: 'webrtc',
+      reason: 'webrtc_not_promoted'
+    }
+  ]);
 });
 
 test('web ui remote node routes save relay nodes without public endpoint', async (t) => {

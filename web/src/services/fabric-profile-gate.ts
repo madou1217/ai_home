@@ -58,7 +58,7 @@ export function isFabricProfileProtectedPath(pathname: string) {
   if (path === '/fabric/remote-nodes') return false;
   if (path === '/fabric/ssh-hosts') return false;
   if (path === '/fabric/nodes') return false;
-  if (path === '/fabric/webrtc-lab') return false;
+  if (path === '/fabric/webrtc-diagnostics') return false;
   return true;
 }
 

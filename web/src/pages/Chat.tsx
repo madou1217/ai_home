@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Layout, message, Empty, Button, Modal, Input, Drawer, Grid, Breadcrumb } from 'antd';
+import { Layout, message, Empty, Modal, Input, Drawer, Grid, Breadcrumb } from 'antd';
 import { ModalForm } from '@ant-design/pro-components';
+import Button from '@/components/ui/AppButton';
 import PageScaffold from '@/components/ui/PageScaffold';
 import { chatAPI, accountsAPI, sessionsAPI, isSessionRequestCancelled } from '@/services/api';
 import type {
@@ -215,6 +216,36 @@ const isChatSelectableAccount = (account: Account) => {
 };
 
 const MODEL_STORAGE_PREFIX = 'chat-selected-model:';
+const PROJECTS_CACHE_KEY = 'chat-projects-cache:v1';
+const PROJECTS_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+type CachedProjectsPayload = {
+  updatedAt: number;
+  projects: AggregatedProject[];
+};
+
+const readCachedProjects = (): AggregatedProject[] => {
+  if (typeof window === 'undefined') return [];
+  try {
+    const payload = JSON.parse(localStorage.getItem(PROJECTS_CACHE_KEY) || 'null') as CachedProjectsPayload | null;
+    if (!payload || !Array.isArray(payload.projects)) return [];
+    if (Date.now() - Number(payload.updatedAt || 0) > PROJECTS_CACHE_TTL_MS) return [];
+    return payload.projects;
+  } catch {
+    return [];
+  }
+};
+
+const writeCachedProjects = (projects: AggregatedProject[]): void => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(PROJECTS_CACHE_KEY, JSON.stringify({
+      updatedAt: Date.now(),
+      projects
+    }));
+  } catch {}
+};
+
 const readPersistedModel = (provider: string): string => {
   if (typeof window === 'undefined') return '';
   try {
@@ -234,7 +265,7 @@ const Chat = () => {
   const screens = Grid.useBreakpoint();
   const isMobile = !screens.md;
   const [accounts, setAccounts] = useState<Account[]>([]);
-  const [projects, setProjects] = useState<AggregatedProject[]>([]);
+  const [projects, setProjects] = useState<AggregatedProject[]>(() => readCachedProjects());
   const [selectedProject, setSelectedProject] = useState<AggregatedProject | null>(null);
   const [selectedSession, setSelectedSession] = useState<Session | null>(null);
   const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
@@ -412,6 +443,7 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
 
   const applyProjectSnapshot = (items: AggregatedProject[], options: PersistedChatSelection = {}) => {
     const filtered = normalizeProjects(items);
+    writeCachedProjects(filtered);
     setProjects(filtered);
     const currentSession = selectedSessionRef.current;
     const currentProject = selectedProjectStateRef.current;
@@ -1084,12 +1116,18 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
   useEffect(() => {
     const initialSelection = initialSelectionRef.current;
     pendingProjectSelectionRef.current = initialSelection;
-    setLoadingProjects(true);
+    const cachedProjects = readCachedProjects();
+    if (cachedProjects.length > 0) {
+      applyProjectSnapshot(cachedProjects, initialSelection);
+      setLoadingProjects(false);
+    } else {
+      setLoadingProjects(true);
+    }
     connectProjectRuntimeWatch();
     projectRefreshFallbackTimerRef.current = window.setTimeout(() => {
       if (projectSnapshotReceivedAtRef.current > 0) return;
       loadProjectsFromHttp(initialSelection).catch(() => {});
-    }, 2500);
+    }, cachedProjects.length > 0 ? 800 : 2500);
     return () => {
       clearProjectRefreshFallbackTimer();
     };
@@ -2228,7 +2266,7 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
   );
 
   return (
-    <PageScaffold title="AI 智能会话终端" subTitle="与各大 AI 模型进行实时多轮交互对话与工程编排。" ghost headerContent={null}>
+    <PageScaffold fullBleed>
       <Layout style={{ height: '100%', background: 'var(--color-bg)', overflow: 'hidden' }}>
       {isMobile ? (
         <div className={styles.mobileStack}>
@@ -2258,7 +2296,7 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
               <div className={styles.mobileNavCenter}>
                 {selectedSession?.provider ? (
                   <span className={`${styles.mobileNavBadge} ${selectedSessionRunning ? styles.mobileNavBadgeRunning : ''}`}>
-                    <ProviderIcon provider={selectedSession.provider} size={16} variant="terminal" />
+                    <ProviderIcon provider={selectedSession.provider} size={16} />
                   </span>
                 ) : null}
                 <span className={styles.mobileNavTitle}>{selectedSession?.title || currentProjectLabel}</span>

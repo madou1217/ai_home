@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { ProTable } from '@ant-design/pro-components';
 import type { ProColumns, ProTableProps } from '@ant-design/pro-components';
-import { Empty } from 'antd';
+import { Empty, Skeleton } from 'antd';
 import '../../styles/unified.css';
 
 export interface ListTableProps<T extends Record<string, any>, U extends Record<string, any> = Record<string, any>>
@@ -21,6 +21,31 @@ const emptyText = (
   <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" />
 );
 
+// 全站统一的列表骨架屏：首屏加载（loading 且无缓存数据）时展示，列头沿用真实
+// 列标题、行用 Skeleton 占位，节奏与表格一致，替代 ProTable 默认的转圈空态。
+function ListTableSkeleton<T extends Record<string, any>>({ columns, rows = 5 }: { columns: ProColumns<T>[]; rows?: number }) {
+  const cells = columns.slice(0, 6);
+  const gridStyle = { gridTemplateColumns: `repeat(${cells.length || 1}, minmax(0, 1fr))` };
+  return (
+    <div className="unified-list-table-skeleton" aria-busy="true" aria-live="polite">
+      <div className="unified-list-table-skeleton-head" style={gridStyle}>
+        {cells.map((column, index) => (
+          <span className="unified-list-table-skeleton-headcell" key={index}>
+            {typeof column.title === 'string' ? column.title : ''}
+          </span>
+        ))}
+      </div>
+      {Array.from({ length: rows }).map((_, rowIndex) => (
+        <div className="unified-list-table-skeleton-row" key={rowIndex} style={gridStyle}>
+          {cells.map((_column, cellIndex) => (
+            <Skeleton.Input active size="small" block key={cellIndex} />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /**
  * 统一列表表格 —— 全站唯一的列表渲染方式。
  * 固定默认（FIXED，不可由各页再覆盖）：
@@ -39,6 +64,13 @@ export default function ListTable<T extends Record<string, any>, U extends Recor
   children,
   ...rest
 }: ListTableProps<T, U>) {
+  // 首屏（loading 且无数据）走骨架屏；有缓存数据时即便 loading 也保持表格可见，
+  // 仅由 ProTable 的轻量 overlay 提示刷新中，避免整表被遮罩闪白。
+  const isFirstLoad = Boolean(rest.loading) && (!Array.isArray(rest.dataSource) || rest.dataSource.length === 0);
+  if (isFirstLoad) {
+    return <ListTableSkeleton columns={columns} />;
+  }
+
   const fixedProps = {
     className: 'unified-list-table',
     columns,

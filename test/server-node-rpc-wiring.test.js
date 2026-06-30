@@ -433,6 +433,107 @@ test('server fabric registry registers scoped nodes and mirrors node-rpc views',
   assert.equal(nodeRpc.result.nodes[0].transports[0].endpoint, undefined);
 });
 
+test('server fabric transport readiness route reports relay fallback and promotion blockers', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-fabric-readiness-'));
+  const port = await getFreePort();
+  const controlEndpoint = `http://127.0.0.1:${port}`;
+  const processObj = createProcessCapture();
+  const relaySessionRegistry = { closeAll() {} };
+  const invite = createControlPlaneDeviceInvite({
+    name: 'Home Mac',
+    controlEndpoint,
+    scopes: ['nodes:read', 'nodes:write']
+  }, { fs, aiHomeDir });
+  const paired = consumeControlPlaneDeviceInvite({
+    code: invite.code,
+    device: {
+      id: 'device-home-mac',
+      name: 'Home Mac',
+      platform: 'darwin'
+    }
+  }, { fs, aiHomeDir });
+
+  t.after(async () => {
+    await processObj.stop();
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+  });
+
+  await startLocalServer({
+    host: '127.0.0.1',
+    port,
+    provider: 'codex',
+    backend: 'openai',
+    strategy: 'round_robin',
+    codexClientVersion: '0.0.0-test',
+    modelUsageScan: false,
+    logRequests: false
+  }, createServerDeps(aiHomeDir, processObj, relaySessionRegistry));
+
+  const registerResponse = await fetch(`${controlEndpoint}/v0/fabric/registry/nodes`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${paired.token}`,
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({
+      node: {
+        id: 'home-mac',
+        name: 'Home Mac',
+        roles: ['node', 'relay-node'],
+        status: 'online'
+      },
+      relayNode: {
+        status: 'online'
+      },
+      transports: [
+        {
+          id: 'home-mac-relay',
+          kind: 'relay',
+          health: 'online',
+          measurement: {
+            status: 'ws_echo_pass',
+            sampleCount: 20,
+            successes: 20,
+            failures: 0,
+            successRate: 1,
+            rttMs: { p50: 3, p95: 5, p99: 6 }
+          }
+        },
+        {
+          id: 'home-mac-webrtc',
+          kind: 'webrtc',
+          endpoint: 'signaling://home-mac',
+          health: 'online'
+        }
+      ]
+    })
+  });
+  assert.equal(registerResponse.status, 200);
+
+  const unauthenticated = await fetch(`${controlEndpoint}/v0/fabric/transport/readiness`);
+  assert.equal(unauthenticated.status, 401);
+
+  const readinessResponse = await fetch(`${controlEndpoint}/v0/fabric/transport/readiness?nodeId=home-mac&purpose=runtime`, {
+    headers: { authorization: `Bearer ${paired.token}` }
+  });
+  assert.equal(readinessResponse.status, 200);
+  const readiness = await readinessResponse.json();
+  assert.equal(readiness.ok, true);
+  assert.equal(readiness.rpc, 'fabric.transport.readiness');
+  assert.equal(readiness.result.summary.nodes, 1);
+  assert.equal(readiness.result.summary.defaultTransport, 'relay');
+  assert.equal(readiness.result.summary.fallbackReady, true);
+  assert.equal(readiness.result.summary.promotionReady, false);
+  assert.equal(readiness.result.summary.blockers.includes('webrtc:webrtc_not_promoted'), true);
+
+  const node = readiness.result.nodes[0];
+  assert.equal(node.node.id, 'home-mac');
+  assert.equal(node.relayFallback.measurementPass, true);
+  assert.equal(node.relayFallback.measurement.rttMs.p95, 5);
+  assert.equal(node.decision.rejected.some((item) => item.reason === 'webrtc_not_promoted'), true);
+  assert.equal(node.advanced.find((gate) => gate.kind === 'webrtc').blockers.includes('turn_relay_gate_not_ready'), true);
+});
+
 test('server node-rpc device nodes uses shared relay registry for mobile status', async (t) => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-server-node-rpc-'));
   const port = await getFreePort();
@@ -551,13 +652,22 @@ test('server node-rpc starts native session through injectable runtime service',
     modelUsageScan: false,
     logRequests: false
   }, createServerDeps(aiHomeDir, processObj, relaySessionRegistry, {
-    startNativeDeviceSession(payload) {
-      observed.start = payload;
+    loadServerRuntimeAccounts: () => ({
+      claude: [{
+        id: '3',
+        accessToken: 'token-3',
+        schedulableStatus: 'schedulable',
+        remainingPct: 100
+      }]
+    }),
+    startNativeDeviceSession(payload, runtimeDeps = {}) {
+      const accountId = payload.accountId || runtimeDeps.resolveSessionAccountId(payload);
+      observed.start = { ...payload, accountId };
       return {
         accepted: true,
         mode: 'native-session',
         provider: payload.provider,
-        accountId: payload.accountId,
+        accountId,
         runId: 'run-test-1',
         sessionId: 'session-test-1'
       };
@@ -594,8 +704,7 @@ test('server node-rpc starts native session through injectable runtime service',
       'content-type': 'application/json'
     },
     body: JSON.stringify({
-      provider: 'codex',
-      accountId: '3',
+      provider: 'claude',
       prompt: 'hello from rpc',
       projectPath: '/tmp/project'
     })
@@ -606,7 +715,7 @@ test('server node-rpc starts native session through injectable runtime service',
   assert.equal(started.rpc, 'node.session_start');
   assert.equal(started.result.runId, 'run-test-1');
   assert.deepEqual(observed.start, {
-    provider: 'codex',
+    provider: 'claude',
     accountId: '3',
     prompt: 'hello from rpc',
     projectPath: '/tmp/project'
@@ -686,6 +795,17 @@ test('server node-rpc device node session start and run controls forward through
   const processObj = createProcessCapture();
   const relaySessionRegistry = { closeAll() {} };
   const forwarded = [];
+  const transportEvidence = {
+    transport: { id: 'home-win-relay', kind: 'relay', endpoint: 'relay://home-win' },
+    transportDecision: {
+      transportPurpose: 'stream',
+      selectedTransportId: 'home-win-relay',
+      selectedTransportKind: 'relay',
+      fallbackUsed: false,
+      fallbackFrom: [],
+      rejectedTransports: []
+    }
+  };
 
   t.after(async () => {
     await processObj.stop();
@@ -706,6 +826,7 @@ test('server node-rpc device node session start and run controls forward through
       forwarded.push(input);
       if (input.pathname === '/v0/node-rpc/session-start') {
         return {
+          ...transportEvidence,
           ok: true,
           status: 200,
           payload: {
@@ -717,6 +838,7 @@ test('server node-rpc device node session start and run controls forward through
       }
       if (String(input.pathname).startsWith('/v0/node-rpc/session-run-events')) {
         return {
+          ...transportEvidence,
           ok: true,
           status: 200,
           payload: {
@@ -728,6 +850,7 @@ test('server node-rpc device node session start and run controls forward through
       }
       if (input.pathname === '/v0/node-rpc/session-run-input') {
         return {
+          ...transportEvidence,
           ok: true,
           status: 200,
           payload: {
@@ -739,6 +862,7 @@ test('server node-rpc device node session start and run controls forward through
       }
       if (input.pathname === '/v0/node-rpc/session-command') {
         return {
+          ...transportEvidence,
           ok: true,
           status: 200,
           payload: {
@@ -757,6 +881,7 @@ test('server node-rpc device node session start and run controls forward through
       }
       if (input.pathname === '/v0/node-rpc/session-run-abort') {
         return {
+          ...transportEvidence,
           ok: true,
           status: 200,
           payload: {
@@ -791,6 +916,8 @@ test('server node-rpc device node session start and run controls forward through
   const started = await startResponse.json();
   assert.equal(started.rpc, 'control_plane.device.node_session_start');
   assert.equal(started.nodeId, 'home-win');
+  assert.deepEqual(started.transport, { id: 'home-win-relay', kind: 'relay' });
+  assert.equal(started.transportDecision.selectedTransportKind, 'relay');
   assert.equal(started.result.runId, 'run-remote-1');
 
   const eventsResponse = await fetch(`${controlEndpoint}/v0/node-rpc/device-node-session-run-events?nodeId=home-win&runId=run-remote-1&cursor=0`, {
@@ -799,6 +926,8 @@ test('server node-rpc device node session start and run controls forward through
   assert.equal(eventsResponse.status, 200);
   const events = await eventsResponse.json();
   assert.equal(events.rpc, 'control_plane.device.node_session_run_events');
+  assert.equal(events.transport.kind, 'relay');
+  assert.equal(events.transportDecision.selectedTransportKind, 'relay');
   assert.equal(events.result.events[0].type, 'ready');
 
   const inputResponse = await fetch(`${controlEndpoint}/v0/node-rpc/device-node-session-run-input`, {
@@ -866,6 +995,61 @@ test('server node-rpc device node session start and run controls forward through
   assert.equal(JSON.parse(forwarded[3].body).text, 'remote command');
   assert.equal(JSON.parse(forwarded[3].body).idempotencyKey, 'idem-remote-command');
   assert.equal(JSON.parse(forwarded[4].body).runId, 'run-remote-1');
+});
+
+test('server node-rpc device node session start forwards remote failure reason', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-server-node-rpc-session-start-error-'));
+  const port = await getFreePort();
+  const controlEndpoint = `http://127.0.0.1:${port}`;
+  const paired = seedPairedDeviceNode(aiHomeDir, controlEndpoint, ['nodes:read', 'sessions:write']);
+  const processObj = createProcessCapture();
+  const relaySessionRegistry = { closeAll() {} };
+
+  t.after(async () => {
+    await processObj.stop();
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+  });
+
+  await startLocalServer({
+    host: '127.0.0.1',
+    port,
+    provider: 'codex',
+    backend: 'openai',
+    strategy: 'round_robin',
+    codexClientVersion: '0.0.0-test',
+    modelUsageScan: false,
+    logRequests: false
+  }, createServerDeps(aiHomeDir, processObj, relaySessionRegistry, {
+    requestRemoteManagement: async () => ({
+      ok: false,
+      status: 400,
+      payload: {
+        ok: false,
+        error: 'cli_not_found',
+        message: '未找到 claude CLI'
+      }
+    })
+  }));
+
+  const response = await fetch(`${controlEndpoint}/v0/node-rpc/device-node-session-start`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${paired.token}`,
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({
+      nodeId: 'home-win',
+      provider: 'claude',
+      prompt: 'remote start'
+    })
+  });
+
+  assert.equal(response.status, 400);
+  const payload = await response.json();
+  assert.equal(payload.ok, false);
+  assert.equal(payload.error, 'cli_not_found');
+  assert.equal(payload.message, '未找到 claude CLI');
+  assert.equal(payload.remoteStatus, 400);
 });
 
 test('server node-rpc device sessions uses injected project snapshot loader', async (t) => {

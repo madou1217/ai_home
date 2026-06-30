@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import type { ComponentProps, ReactNode } from 'react';
+import './Settings.css';
+import { ProCard, StatisticCard } from '@ant-design/pro-components';
 import type { FormInstance } from 'antd';
-import { Form, InputNumber, Button, Input, message, Space, Switch, Alert, Tabs, Select, Tag, Popconfirm, QRCode, Modal } from 'antd';
+import { Form, InputNumber, Input, message, Space, Switch, Alert, Tabs, Select, Tag, Popconfirm, QRCode, Modal, Collapse, Descriptions, Divider, List, Popover, Typography } from 'antd';
 import { CopyOutlined, DeleteOutlined, FileTextOutlined, LinkOutlined, PlusOutlined, ReloadOutlined, SaveOutlined, SearchOutlined } from '@ant-design/icons';
 import { configAPI, controlPlaneDevicesAPI, managementAPI, remoteNodesAPI } from '@/services/api';
 import {
@@ -65,6 +67,7 @@ import type {
   RemoteNodeTransportStrategy,
   RemoteNodeTransportTrustLevel
 } from '@/types';
+import Button from '@/components/ui/AppButton';
 import ListTable from '@/components/ui/ListTable';
 import PageScaffold from '@/components/ui/PageScaffold';
 import { Badge } from 'antd';
@@ -842,45 +845,79 @@ const Settings = ({ section }: SettingsProps) => {
   const renderRemoteTransportSummary = (kind?: RemoteNodeTransportKind) => {
     const defaults = getRemoteTransportFormDefaults(kind);
     const entry = getRemoteTransportCatalogEntry(remoteTransportCatalog, defaults.transportKind);
+    // 派生信息（provider / lane / trust）放进一句话说明 + Popover，不再排一行标签。
     return (
-      <div className="settings-transport-summary">
-        <div className="settings-transport-summary-tags">
-          <Tag>{defaults.provider}</Tag>
-          <Tag>{entry?.lane || defaults.routeRole}</Tag>
-          <Tag>{defaults.trustLevel}</Tag>
-          {entry?.endpointMode && <Tag>{entry.endpointMode}</Tag>}
-        </div>
-        <span>{entry?.summary || '根据 transport 自动派生 provider、route role 和 trust level。'}</span>
-      </div>
+      <Alert
+        type="info"
+        showIcon={false}
+        style={{ marginTop: -8, marginBottom: 16 }}
+        message={(
+          <Space size={6} wrap style={{ fontSize: 12 }}>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {entry?.summary || '根据 transport 自动派生 provider、route role 和 trust level。'}
+            </Typography.Text>
+            <Popover
+              placement="bottomLeft"
+              content={(
+                <Descriptions size="small" column={1} colon={false} style={{ maxWidth: 280 }} labelStyle={{ color: 'var(--app-muted)' }}>
+                  <Descriptions.Item label="Provider">{defaults.provider}</Descriptions.Item>
+                  <Descriptions.Item label="Lane">{entry?.lane || defaults.routeRole}</Descriptions.Item>
+                  <Descriptions.Item label="Trust">{defaults.trustLevel}</Descriptions.Item>
+                  {entry?.endpointMode && <Descriptions.Item label="Endpoint">{entry.endpointMode}</Descriptions.Item>}
+                </Descriptions>
+              )}
+            >
+              <Typography.Link style={{ fontSize: 12 }}>派生参数 ›</Typography.Link>
+            </Popover>
+          </Space>
+        )}
+      />
     );
   };
   const renderRemoteTransportStrategies = () => {
     const strategies = remoteNodeDefaults?.transportStrategies || [];
     if (!strategies.length) return null;
+    // 策略对照是参考内容，默认折叠，避免在表单里堆一片卡片标签（杂乱）。
     return (
-      <div className="settings-transport-strategies">
-        {strategies.map((strategy: RemoteNodeTransportStrategy) => (
-          <div className="settings-transport-strategy" key={strategy.id}>
-            <div className="settings-transport-strategy-head">
-              <strong>{strategy.title}</strong>
-              <div className="settings-transport-strategy-tags">
-                <Tag>{strategy.defaultTransport}</Tag>
-                {strategy.provider && <Tag>{strategy.provider}</Tag>}
-                {strategy.lane && <Tag>{strategy.lane}</Tag>}
-              </div>
-            </div>
-            <p>{strategy.summary}</p>
-            <div className="settings-transport-strategy-lanes">
-              <span>data {formatTransportKinds(strategy.dataPlaneTransports)}</span>
-              <span>bootstrap {formatTransportKinds(strategy.bootstrapTransports)}</span>
-              <span>underlay {formatTransportKinds(strategy.underlayTransports)}</span>
-            </div>
-            {strategy.constraints[0] && (
-              <span className="settings-transport-strategy-note">{strategy.constraints[0]}</span>
-            )}
-          </div>
-        ))}
-      </div>
+      <Collapse
+        ghost
+        size="small"
+        style={{ marginBottom: 16 }}
+        items={[{
+          key: 'strategies',
+          label: <Typography.Text type="secondary" style={{ fontSize: 12 }}>传输策略对照（{strategies.length}）</Typography.Text>,
+          children: (
+            <List
+              size="small"
+              dataSource={strategies}
+              rowKey={(strategy: RemoteNodeTransportStrategy) => strategy.id}
+              renderItem={(strategy: RemoteNodeTransportStrategy) => (
+                <List.Item>
+                  <List.Item.Meta
+                    title={(
+                      <Space size={8} wrap>
+                        <span>{strategy.title}</span>
+                        <Tag style={{ marginInlineEnd: 0 }}>{strategy.defaultTransport}</Tag>
+                      </Space>
+                    )}
+                    description={(
+                      <Space direction="vertical" size={2} style={{ fontSize: 12 }}>
+                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>{strategy.summary}</Typography.Text>
+                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                          data {formatTransportKinds(strategy.dataPlaneTransports)} · bootstrap {formatTransportKinds(strategy.bootstrapTransports)} · underlay {formatTransportKinds(strategy.underlayTransports)}
+                        </Typography.Text>
+                        {strategy.constraints[0] && (
+                          <Typography.Text type="warning" style={{ fontSize: 12 }}>{strategy.constraints[0]}</Typography.Text>
+                        )}
+                      </Space>
+                    )}
+                  />
+                </List.Item>
+              )}
+            />
+          )
+        }]}
+      />
     );
   };
 
@@ -1851,41 +1888,54 @@ const Settings = ({ section }: SettingsProps) => {
   };
 
   const renderControlPlaneSummary = (profile: ControlPlaneProfile) => {
-    const descriptor = profile.descriptor;
     const status = getControlPlaneProfileStatus(profile.state);
-    const managementCount = descriptor?.capabilities.management.length || 0;
-    const transportCount = descriptor?.capabilities.transports.length || 0;
     const nodeSummary = summarizeControlPlaneProfileNodes(profile);
+    // 只展示对「管理 server」真正有用的运营指标：在线节点 / 可用账号 / 会话。
+    // 协议版本、管理能力数、transport 拆分、Key 配置等内部 plumbing 一律剔除（无用数据）。
+    const metrics = [
+      nodeSummary.total > 0 && (
+        <Typography.Text key="nodes" type="secondary" style={{ fontSize: 12 }}>
+          节点 <Typography.Text strong style={{ fontSize: 12 }}>{nodeSummary.online}/{nodeSummary.total}</Typography.Text> 在线
+          {nodeSummary.offline > 0 && (
+            <Typography.Text type="danger" style={{ fontSize: 12 }}> · {nodeSummary.offline} 离线</Typography.Text>
+          )}
+        </Typography.Text>
+      ),
+      profile.lastStatusSyncAt > 0 && (
+        <Typography.Text key="accounts" type="secondary" style={{ fontSize: 12 }}>
+          账号 <Typography.Text strong style={{ fontSize: 12 }}>{profile.activeAccountCount}/{profile.accountCount}</Typography.Text>
+          {profile.lastAccountsSyncAt > 0 && profile.schedulableAccountCount > 0
+            ? `（${profile.schedulableAccountCount} 可调度）`
+            : ''}
+        </Typography.Text>
+      ),
+      profile.lastSessionsSyncAt > 0 && (
+        <Typography.Text key="sessions" type="secondary" style={{ fontSize: 12 }}>
+          会话 <Typography.Text strong style={{ fontSize: 12 }}>{profile.sessionCount}</Typography.Text>
+        </Typography.Text>
+      )
+    ].filter(Boolean);
+
     return (
-      <div className="settings-control-plane-summary">
-        <Tag color={status.color}>{status.label}</Tag>
-        {descriptor && <Tag color="blue">协议 v{descriptor.protocolVersion}</Tag>}
-        {descriptor && <Tag>{managementCount} 个管理能力</Tag>}
-        {descriptor && <Tag>{transportCount} 个 transport</Tag>}
-        {profile.authState === 'paired' && <Tag color="green">访问 Token</Tag>}
-        {nodeSummary.total > 0 && (
-          <Tag color={nodeSummary.online > 0 ? 'green' : 'default'}>
-            {nodeSummary.online}/{nodeSummary.total} 节点在线
-          </Tag>
+      <Space direction="vertical" size={4} style={{ minWidth: 0 }}>
+        <Space size={8} wrap>
+          <Tag color={status.color} style={{ marginInlineEnd: 0 }}>{status.label}</Tag>
+          {profile.authState === 'paired' && (
+            <Typography.Text type="success" style={{ fontSize: 12 }}>已授权</Typography.Text>
+          )}
+        </Space>
+        {metrics.length > 0 && (
+          <Space split={<Divider type="vertical" />} size={4} wrap>
+            {metrics}
+          </Space>
         )}
-        {nodeSummary.offline > 0 && <Tag color="red">{nodeSummary.offline} 个离线</Tag>}
-        {nodeSummary.unknown > 0 && <Tag>{nodeSummary.unknown} 个未知</Tag>}
-        {nodeSummary.dataPlaneTransports > 0 && <Tag color="blue">数据面 {nodeSummary.dataPlaneTransports}</Tag>}
-        {nodeSummary.bootstrapTransports > 0 && <Tag color="cyan">引导 {nodeSummary.bootstrapTransports}</Tag>}
-        {nodeSummary.underlayTransports > 0 && <Tag color="purple">底层 {nodeSummary.underlayTransports}</Tag>}
-        {profile.lastStatusSyncAt > 0 && <Tag>{profile.activeAccountCount}/{profile.accountCount} 账号可用</Tag>}
-        {profile.lastAccountsSyncAt > 0 && <Tag>{profile.schedulableAccountCount} 个可调度</Tag>}
-        {profile.lastSessionsSyncAt > 0 && <Tag>{profile.sessionCount} 个会话</Tag>}
-        {descriptor?.capabilities.devicePairing && <Tag color="cyan">配对能力</Tag>}
-        {descriptor?.auth.managementKeyConfigured && <Tag color="gold">Management Key</Tag>}
-        {descriptor?.auth.clientKeyConfigured && <Tag color="purple">Client Key</Tag>}
-      </div>
+      </Space>
     );
   };
 
   const basicSettingsContent = (
     <div className="settings-grid">
-      <section className="settings-panel">
+      <ProCard className="settings-panel" bordered bodyStyle={{ padding: 18 }}>
         <div className="settings-panel-head">
           <div>
             <h2>账号调度</h2>
@@ -1948,9 +1998,9 @@ const Settings = ({ section }: SettingsProps) => {
             </Space>
           </Form.Item>
         </Form>
-      </section>
+      </ProCard>
 
-      <section className="settings-panel">
+      <ProCard className="settings-panel" bordered bodyStyle={{ padding: 18 }}>
         <div className="settings-panel-head">
           <div>
             <h2>服务配置</h2>
@@ -2046,7 +2096,7 @@ const Settings = ({ section }: SettingsProps) => {
             </Space>
           </Form.Item>
         </Form>
-      </section>
+      </ProCard>
     </div>
   );
 
@@ -2181,7 +2231,7 @@ const Settings = ({ section }: SettingsProps) => {
 
   const remoteNodesContent = (
     <div className="settings-remote-nodes-page">
-      <section className="settings-panel">
+      <ProCard className="settings-panel" bordered bodyStyle={{ padding: 18 }}>
 
 
         <Tabs
@@ -2207,35 +2257,48 @@ const Settings = ({ section }: SettingsProps) => {
               key: 'invites',
               label: '加入记录',
               children: (
-                <div className="settings-invite-list">
-                  {remoteInvites.length === 0 ? (
-                    <Alert type="info" showIcon message="暂无加入记录" />
-                  ) : (
-                    remoteInvites.map((invite) => {
-                      const status = formatInviteStatus(invite);
-                      return (
-                        <div className="settings-invite-item" key={invite.id}>
-                          <div className="settings-node-main">
-                            <strong>{invite.name || invite.nodeId || invite.id}</strong>
-                            <span>{invite.nodeId || invite.id}</span>
-                          </div>
-                          <div className="settings-node-meta">
-                            <Tag>{invite.transportKind}</Tag>
-                            {invite.provider && <Tag>{invite.provider}</Tag>}
-                            <Tag>{invite.routeRole}</Tag>
-                            <Tag>{invite.trustLevel}</Tag>
-                            <Tag color={status.color}>{status.label}</Tag>
-                          </div>
+                <ListTable
+                  dataSource={remoteInvites}
+                  rowKey="id"
+                  columns={[
+                    {
+                      title: '加入节点',
+                      key: 'node',
+                      render: (_: any, invite: RemoteNodeInvite) => (
+                        <div className="settings-node-main">
+                          <strong>{invite.name || invite.nodeId || invite.id}</strong>
+                          <span>{invite.nodeId || invite.id}</span>
                         </div>
-                      );
-                    })
-                  )}
-                </div>
+                      )
+                    },
+                    {
+                      title: '传输',
+                      key: 'transport',
+                      render: (_: any, invite: RemoteNodeInvite) => (
+                        <Space size={[4, 4]} wrap>
+                          <Tag>{invite.transportKind}</Tag>
+                          {invite.provider && <Tag>{invite.provider}</Tag>}
+                          <Tag>{invite.routeRole}</Tag>
+                          <Tag>{invite.trustLevel}</Tag>
+                        </Space>
+                      )
+                    },
+                    {
+                      title: '状态',
+                      key: 'status',
+                      width: 110,
+                      render: (_: any, invite: RemoteNodeInvite) => {
+                        const status = formatInviteStatus(invite);
+                        return <Tag color={status.color}>{status.label}</Tag>;
+                      }
+                    }
+                  ]}
+                />
               )
             }
           ]}
         />
-      </section>
+      </ProCard>
     </div>
   );
 
@@ -2270,7 +2333,7 @@ const Settings = ({ section }: SettingsProps) => {
 
   const controlPlanesContent = (
     <div className="settings-control-plane-page">
-      <section className="settings-panel settings-control-plane-shell">
+      <ProCard className="settings-panel settings-control-plane-shell" bordered bodyStyle={{ padding: 18 }}>
         <div className="settings-control-plane-current">
           <div className="settings-control-plane-current-main">
             <span>当前 Control Plane</span>
@@ -2299,14 +2362,13 @@ const Settings = ({ section }: SettingsProps) => {
           </div>
         </div>
 
-        <div className="settings-control-plane-stats">
-          <span><strong>{controlPlaneOverview.total}</strong>服务器</span>
-          <span><strong>{controlPlaneOverview.paired}</strong>已授权</span>
-          <span><strong>{controlPlaneOverview.ready}</strong>可用</span>
-          <span><strong>{controlPlaneOverview.nodes}</strong>节点</span>
-          <span><strong>{controlPlaneOverview.schedulableAccounts}</strong>可调度账号</span>
-          <span><strong>{controlPlaneOverview.sessions}</strong>会话</span>
-        </div>
+        {/* 只保留运营指标；服务器「已授权/可用」计数与状态标签重复，剔除。 */}
+        <StatisticCard.Group direction="row" bordered={false} style={{ marginBottom: 12 }}>
+          <StatisticCard statistic={{ title: '服务器', value: controlPlaneOverview.total }} />
+          <StatisticCard statistic={{ title: '节点', value: controlPlaneOverview.nodes }} />
+          <StatisticCard statistic={{ title: '可调度账号', value: controlPlaneOverview.schedulableAccounts }} />
+          <StatisticCard statistic={{ title: '会话', value: controlPlaneOverview.sessions }} />
+        </StatisticCard.Group>
 
         <Tabs
           className="settings-control-plane-manage-tabs"
@@ -2317,64 +2379,72 @@ const Settings = ({ section }: SettingsProps) => {
               key: 'profiles',
               label: 'Control Plane',
               children: (
-                <div className="settings-control-plane-list">
-                  {controlPlaneProfiles.length === 0 ? (
-                    <div className="settings-control-plane-empty">
-                      <Alert type="info" showIcon message="暂无已保存 Control Plane" />
-                      <Button
-                        type="primary"
-                        icon={<PlusOutlined />}
-                        onClick={() => {
-                          setControlPlaneAddMode('pair');
-                          setControlPlaneAddModalOpen(true);
-                        }}
-                      >
-                        添加 Control Plane
-                      </Button>
-                    </div>
-                  ) : controlPlaneProfiles.map((profile) => {
-                    const active = activeControlPlaneId === profile.id;
-                    return (
-                      <div
-                        className={`settings-control-plane-item${active ? ' settings-control-plane-item--active' : ''}`}
-                        key={profile.id}
-                      >
-                        <div className="settings-node-main">
-                          <strong>{profile.name || profile.endpoint}</strong>
-                          <span>{profile.endpoint}</span>
-                          {profile.lastError && <span className="settings-control-plane-error">{profile.lastError}</span>}
-                        </div>
-                        {renderControlPlaneSummary(profile)}
-                        <Space size={6} className="settings-control-plane-actions">
-                          {active && <Tag color="green">当前</Tag>}
-                          <Button
-                            size="small"
-                            disabled={active}
-                            onClick={() => handleSelectControlPlane(profile.id)}
-                          >
-                            设为当前
-                          </Button>
-                          <Button
-                            size="small"
-                            icon={<ReloadOutlined />}
-                            loading={checkingControlPlaneId === profile.id}
-                            onClick={() => handleRefreshControlPlane(profile)}
-                          >
-                            {profile.deviceToken ? '同步' : '探测'}
-                          </Button>
-                          <Button
-                            size="small"
-                            danger
-                            icon={<DeleteOutlined />}
-                            onClick={() => handleRemoveControlPlane(profile.id)}
-                          >
-                            移除
-                          </Button>
-                        </Space>
-                      </div>
-                    );
-                  })}
-                </div>
+                controlPlaneProfiles.length === 0 ? (
+                  <div className="settings-control-plane-empty">
+                    <Alert type="info" showIcon message="暂无已保存 Control Plane" />
+                    <Button
+                      type="primary"
+                      icon={<PlusOutlined />}
+                      onClick={() => {
+                        setControlPlaneAddMode('pair');
+                        setControlPlaneAddModalOpen(true);
+                      }}
+                    >
+                      添加 Control Plane
+                    </Button>
+                  </div>
+                ) : (
+                  <ListTable
+                    dataSource={controlPlaneProfiles}
+                    rowKey="id"
+                    rowClassName={(profile) => activeControlPlaneId === profile.id ? 'settings-control-plane-item--active' : ''}
+                    columns={[
+                      {
+                        title: 'Control Plane',
+                        key: 'profile',
+                        render: (_: any, profile: ControlPlaneProfile) => (
+                          <div className="settings-node-main">
+                            <strong>{profile.name || profile.endpoint}</strong>
+                            <span>{profile.endpoint}</span>
+                            {profile.lastError && <span className="settings-control-plane-error">{profile.lastError}</span>}
+                          </div>
+                        )
+                      },
+                      {
+                        title: '摘要',
+                        key: 'summary',
+                        render: (_: any, profile: ControlPlaneProfile) => renderControlPlaneSummary(profile)
+                      },
+                      {
+                        title: '操作',
+                        key: 'actions',
+                        width: 280,
+                        render: (_: any, profile: ControlPlaneProfile) => {
+                          const active = activeControlPlaneId === profile.id;
+                          return (
+                            <Space size={6} wrap>
+                              {active && <Tag color="green">当前</Tag>}
+                              <Button size="small" disabled={active} onClick={() => handleSelectControlPlane(profile.id)}>
+                                设为当前
+                              </Button>
+                              <Button
+                                size="small"
+                                icon={<ReloadOutlined />}
+                                loading={checkingControlPlaneId === profile.id}
+                                onClick={() => handleRefreshControlPlane(profile)}
+                              >
+                                {profile.deviceToken ? '同步' : '探测'}
+                              </Button>
+                              <Button size="small" danger icon={<DeleteOutlined />} onClick={() => handleRemoveControlPlane(profile.id)}>
+                                移除
+                              </Button>
+                            </Space>
+                          );
+                        }
+                      }
+                    ]}
+                  />
+                )
               )
             },
             {
@@ -2393,33 +2463,40 @@ const Settings = ({ section }: SettingsProps) => {
                       options={CONTROL_PLANE_AUTHORIZATION_FILTERS}
                     />
                   </div>
-                  <div className="settings-control-plane-auth-list">
-                    {filteredControlPlaneAuthorizationRecords.length === 0 ? (
-                      <Alert
-                        type="info"
-                        showIcon
-                        message={controlPlaneAuthorizationRecords.length === 0 ? '暂无授权记录' : '当前筛选下暂无记录'}
-                      />
-                    ) : filteredControlPlaneAuthorizationRecords.map((record) => (
-                      <div className="settings-control-plane-auth-item" key={record.id}>
-                        <div className="settings-node-main">
-                          <strong>{record.title}</strong>
-                          <span>{record.detail}</span>
-                        </div>
-                        <div className="settings-node-meta">
-                          <Tag color={record.kind === 'client' ? 'green' : 'blue'}>
-                            {record.kind === 'client' ? '客户端授权' : '配对入口'}
-                          </Tag>
-                          <Tag color={record.status.color}>{record.status.label}</Tag>
-                          <Tag>全部权限</Tag>
-                          {record.kind === 'client' && (
-                            <Tag>最近 {formatTimestamp(record.device?.lastSeenAt || 0)}</Tag>
-                          )}
-                          {record.kind === 'invite' && (
-                            <Tag>过期 {formatTimestamp(record.invite?.expiresAt || 0)}</Tag>
-                          )}
-                        </div>
-                        {record.device && (
+                  <ListTable
+                    dataSource={filteredControlPlaneAuthorizationRecords}
+                    rowKey="id"
+                    columns={[
+                      {
+                        title: '授权对象',
+                        key: 'target',
+                        render: (_: any, record: (typeof controlPlaneAuthorizationRecords)[number]) => (
+                          <div className="settings-node-main">
+                            <strong>{record.title}</strong>
+                            <span>{record.detail}</span>
+                          </div>
+                        )
+                      },
+                      {
+                        title: '状态',
+                        key: 'meta',
+                        render: (_: any, record: (typeof controlPlaneAuthorizationRecords)[number]) => (
+                          <Space size={[4, 4]} wrap>
+                            <Tag color={record.kind === 'client' ? 'green' : 'blue'}>
+                              {record.kind === 'client' ? '客户端授权' : '配对入口'}
+                            </Tag>
+                            <Tag color={record.status.color}>{record.status.label}</Tag>
+                            <Tag>全部权限</Tag>
+                            {record.kind === 'client' && <Tag>最近 {formatTimestamp(record.device?.lastSeenAt || 0)}</Tag>}
+                            {record.kind === 'invite' && <Tag>过期 {formatTimestamp(record.invite?.expiresAt || 0)}</Tag>}
+                          </Space>
+                        )
+                      },
+                      {
+                        title: '操作',
+                        key: 'actions',
+                        width: 100,
+                        render: (_: any, record: (typeof controlPlaneAuthorizationRecords)[number]) => record.device ? (
                           <Popconfirm
                             title="撤销客户端授权"
                             description="撤销后该客户端需要重新配对。"
@@ -2438,16 +2515,19 @@ const Settings = ({ section }: SettingsProps) => {
                               撤销
                             </Button>
                           </Popconfirm>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+                        ) : null
+                      }
+                    ]}
+                    locale={{
+                      emptyText: controlPlaneAuthorizationRecords.length === 0 ? '暂无授权记录' : '当前筛选下暂无记录'
+                    }}
+                  />
                 </div>
               )
             }
           ]}
         />
-      </section>
+      </ProCard>
 
       <Modal
         title="添加 Control Plane"
@@ -3133,35 +3213,36 @@ const Settings = ({ section }: SettingsProps) => {
   if (standaloneSection) {
     const meta = SETTINGS_PAGE_META[standaloneSection.key];
     return (
-      <div className="settings-page settings-page--standalone animate__animated animate__fadeIn animate__faster">
-        <PageScaffold
-          title={meta.title}
-          subTitle={meta.description}
-          extra={standaloneSection.actions}
-          ghost
-        />
+      <PageScaffold
+        title={meta.title}
+        subTitle={meta.description}
+        extra={standaloneSection.actions}
+        ghost
+        className="animate__animated animate__fadeIn animate__faster"
+      >
         <div className="settings-section-content">
           {standaloneSection.children}
         </div>
         {nodeModals}
-      </div>
+      </PageScaffold>
     );
   }
 
   return (
-    <div className="settings-page animate__animated animate__fadeIn animate__faster">
-      <PageScaffold
-        title={SETTINGS_PAGE_META.settings.title}
-        subTitle={SETTINGS_PAGE_META.settings.description}
-        ghost
-      />
+    <PageScaffold
+      title={SETTINGS_PAGE_META.settings.title}
+      subTitle={SETTINGS_PAGE_META.settings.description}
+      extra={extraActions}
+      ghost
+      className="animate__animated animate__fadeIn animate__faster"
+    >
       <Tabs
         className="settings-tabs"
         defaultActiveKey={getInitialSettingsTab()}
         items={sectionItems.filter((item) => item.key === 'basic' || item.key === 'aliases')}
       />
       {nodeModals}
-    </div>
+    </PageScaffold>
   );
 };
 

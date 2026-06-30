@@ -7,6 +7,11 @@ const {
   attachRemoteDevelopmentSession,
   buildRemoteDevelopmentSessionCatalog
 } = require('../lib/server/control-plane-device-session-catalog');
+const {
+  appendNativeChatRunEvent,
+  registerNativeChatRun,
+  unregisterNativeChatRun
+} = require('../lib/server/native-chat-run-store');
 
 test('remote development session catalog combines active runs and snapshot sessions', () => {
   const activeRun = {
@@ -84,6 +89,54 @@ test('remote development session attach returns active run cursor and allowed co
   assert.equal(result.snapshot.kind, 'run-events');
   assert.equal(result.snapshot.events[0].text, 'hello');
   assert.ok(result.allowedCommands.includes('slash'));
+});
+
+test('remote development session attach uses run events reader as active run truth', () => {
+  const result = attachRemoteDevelopmentSession({ projects: [] }, {
+    sessionId: 'run-reader-only',
+    cursor: 3
+  }, {
+    getNativeChatRun: () => null,
+    readNativeSessionRunEvents: (query) => ({
+      runId: query.runId,
+      provider: 'codex',
+      status: 'running',
+      cursor: 7,
+      events: [{ cursor: 7, type: 'terminal-output', text: 'reader snapshot' }]
+    })
+  });
+
+  assert.equal(result.sessionId, 'run-reader-only');
+  assert.equal(result.cursor, 7);
+  assert.equal(result.snapshot.kind, 'run-events');
+  assert.equal(result.snapshot.events[0].text, 'reader snapshot');
+  assert.ok(result.allowedCommands.includes('message'));
+});
+
+test('remote development session attach reads the default native run store', (t) => {
+  const runId = 'run-default-store-attach';
+  registerNativeChatRun({
+    runId,
+    provider: 'codex',
+    events: [],
+    eventCursor: 0,
+    completed: false
+  });
+  t.after(() => unregisterNativeChatRun(runId));
+  appendNativeChatRunEvent(runId, {
+    type: 'terminal-output',
+    text: 'default store snapshot'
+  });
+
+  const result = attachRemoteDevelopmentSession({ projects: [] }, {
+    sessionId: runId,
+    cursor: 0
+  });
+
+  assert.equal(result.sessionId, runId);
+  assert.equal(result.cursor, 1);
+  assert.equal(result.snapshot.kind, 'run-events');
+  assert.equal(result.snapshot.events[0].text, 'default store snapshot');
 });
 
 test('remote development session attach can target snapshot sessions by stable session ref', () => {

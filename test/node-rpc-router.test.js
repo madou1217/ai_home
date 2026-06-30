@@ -144,6 +144,21 @@ function createDeps(overrides = {}) {
   if (typeof overrides.abortNativeSessionRun === 'function') {
     deps.abortNativeSessionRun = overrides.abortNativeSessionRun;
   }
+  if (typeof overrides.startNativeDeviceSession === 'function') {
+    deps.startNativeDeviceSession = overrides.startNativeDeviceSession;
+  }
+  if (typeof overrides.getProfileDir === 'function') {
+    deps.getProfileDir = overrides.getProfileDir;
+  }
+  if (typeof overrides.resolveSessionAccountId === 'function') {
+    deps.resolveSessionAccountId = overrides.resolveSessionAccountId;
+  }
+  if (typeof overrides.ensureSessionStoreLinks === 'function') {
+    deps.ensureSessionStoreLinks = overrides.ensureSessionStoreLinks;
+  }
+  if (typeof overrides.registerNativeChatRun === 'function') {
+    deps.registerNativeChatRun = overrides.registerNativeChatRun;
+  }
   if (typeof overrides.ackSessionEvents === 'function') {
     deps.ackSessionEvents = overrides.ackSessionEvents;
   }
@@ -276,6 +291,93 @@ test('node rpc status can include authorized local node diagnostics on demand', 
   assert.equal(payload.result.nodeDiagnostics.node.id, 'office-pc');
   assert.equal(payload.result.nodeDiagnostics.service.state, 'missing');
   assert.match(payload.result.nodeDiagnostics.service.installHint, /https:\/\/control\.example\.com --node-id office-pc/);
+  assert.doesNotMatch(res.body, /node-secret/);
+});
+
+test('node rpc diagnostics read running supervised services through user systemd env', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-node-rpc-systemd-env-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const serviceDir = path.join(root, '.config', 'systemd', 'user');
+  fs.mkdirSync(serviceDir, { recursive: true });
+  [
+    'com.clawdcodex.ai_home.node-relay.office-pc.service',
+    'com.clawdcodex.ai_home.fabric-registry-agent.office-pc.service',
+    'com.clawdcodex.ai_home.node-webrtc.office-pc.service'
+  ].forEach((file) => {
+    fs.writeFileSync(path.join(serviceDir, file), '[Service]\nExecStart=aih\n');
+  });
+
+  const res = createResCapture();
+  const handled = await handleNodeRpcRequest({
+    method: 'GET',
+    pathname: '/v0/node-rpc/status',
+    url: new URL('https://control.example.com/v0/node-rpc/status?diagnostics=1&controlUrl=https%3A%2F%2Fcontrol.example.com&nodeId=office-pc'),
+    req: { headers: { authorization: 'Bearer node-secret' } },
+    res,
+    options: {},
+    state: {},
+    requiredManagementKey: 'node-secret',
+    deps: {
+      ...createDeps({ aiHomeDir: path.join(root, '.ai_home') }),
+      path,
+      aiHomeDir: path.join(root, '.ai_home'),
+      hostHomeDir: root,
+      hostname: () => 'Office PC',
+      platform: 'linux',
+      arch: 'x64',
+      processObj: {
+        platform: 'linux',
+        arch: 'x64',
+        version: 'v24.1.0',
+        execPath: '/usr/local/bin/node',
+        env: { PATH: '/usr/local/bin:/usr/bin' },
+        getuid: () => 1000
+      },
+      readServerConfig: () => ({
+        host: '0.0.0.0',
+        port: 9527,
+        managementKey: 'node-secret',
+        openNetwork: true
+      }),
+      networkInterfaces: () => ({
+        eth0: [{ family: 'IPv4', address: '192.168.3.8', internal: false }]
+      }),
+      spawnSync(command, args, options = {}) {
+        if (command === 'sh' && args[0] === '-lc') {
+          const match = String(args[1] || '').match(/^command -v (.+)$/);
+          const paths = { node: '/usr/local/bin/node', npm: '/usr/local/bin/npm', aih: '/usr/local/bin/aih' };
+          const resolved = match ? paths[match[1]] : '';
+          return resolved ? { status: 0, stdout: `${resolved}\n`, stderr: '' } : { status: 1, stdout: '', stderr: '' };
+        }
+        if (args[0] === '--version' && command === 'node') {
+          return { status: 0, stdout: 'v24.1.0\n', stderr: '' };
+        }
+        if (args[0] === '--version' && command === 'npm') {
+          return { status: 0, stdout: '11.0.0\n', stderr: '' };
+        }
+        if (command === 'systemctl' && args[0] === '--version') {
+          return { status: 0, stdout: 'systemd 255\n', stderr: '' };
+        }
+        if (command === 'systemctl'
+          && args[0] === '--user'
+          && (args[1] === 'is-enabled' || args[1] === 'is-active')) {
+          assert.equal(options.env.XDG_RUNTIME_DIR, '/run/user/1000');
+          assert.equal(options.env.DBUS_SESSION_BUS_ADDRESS, 'unix:path=/run/user/1000/bus');
+          return { status: 0, stdout: args[1] === 'is-active' ? 'active\n' : 'enabled\n', stderr: '' };
+        }
+        return { status: 1, stdout: '', stderr: '' };
+      }
+    }
+  });
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 200);
+  const payload = JSON.parse(res.body);
+  const diagnostics = payload.result.nodeDiagnostics;
+  assert.equal(diagnostics.services.relay.running, true);
+  assert.equal(diagnostics.services.registryAgent.running, true);
+  assert.equal(diagnostics.services.webrtc.running, true);
+  assert.equal(diagnostics.nodeSupervisor.ready, true);
   assert.doesNotMatch(res.body, /node-secret/);
 });
 
@@ -926,6 +1028,229 @@ test('node rpc device accounts returns scoped sanitized account summaries', asyn
   assert.doesNotMatch(res.body, /upstream-account-id/);
   assert.doesNotMatch(res.body, /secret upstream error/);
   assert.doesNotMatch(res.body, new RegExp(paired.token));
+});
+
+test('node rpc device provider account reauth starts oauth job through paired token', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-device-provider-reauth-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+
+  const invite = createControlPlaneDeviceInvite({
+    name: 'Desktop',
+    controlEndpoint: 'https://control.example.com',
+    scopes: ['accounts:read']
+  }, { fs, aiHomeDir });
+  const paired = consumeControlPlaneDeviceInvite({
+    code: invite.code,
+    device: { name: 'Desktop', platform: 'macos' }
+  }, { fs, aiHomeDir });
+
+  const startedCalls = [];
+  const upserts = [];
+  const body = Buffer.from(JSON.stringify({
+    provider: 'codex',
+    accountId: '42'
+  }), 'utf8');
+  const deps = createDeps({ aiHomeDir, body });
+  deps.accountStateIndex = {
+    getAccountState() {
+      return {
+        display_name: 'codex-user',
+        api_key_mode: false,
+        auth_mode: 'oauth-browser',
+        status: 'up',
+        configured: true
+      };
+    }
+  };
+  deps.accountStateService = {
+    syncAccountBaseState(provider, accountId, state) {
+      upserts.push({ provider, accountId, state });
+    }
+  };
+  deps.getToolAccountIds = () => ['42'];
+  deps.getProfileDir = (provider, accountId) => path.join(aiHomeDir, 'profiles', provider, accountId);
+  deps.getToolConfigDir = (provider, accountId) => path.join(aiHomeDir, 'profiles', provider, accountId, '.codex');
+  deps.checkStatus = () => ({ configured: true, accountName: 'codex-user' });
+  deps.getAuthJobManager = () => ({
+    startOauthJob(provider, authMode, options) {
+      startedCalls.push({ provider, authMode, options });
+      return {
+        jobId: 'job-42',
+        provider,
+        accountId: options.accountId,
+        expiresAt: 12345,
+        pollIntervalMs: 5000,
+        authorizationUrl: 'https://login.example.com/oauth'
+      };
+    }
+  });
+
+  const res = createResCapture();
+  const handled = await handleNodeRpcRequest({
+    method: 'POST',
+    pathname: '/v0/node-rpc/device-provider-account-reauth',
+    url: new URL('https://control.example.com/v0/node-rpc/device-provider-account-reauth'),
+    req: { headers: { authorization: `Bearer ${paired.token}` } },
+    res,
+    options: {},
+    state: {},
+    requiredManagementKey: 'management-secret',
+    deps
+  });
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 200);
+  const payload = JSON.parse(res.body);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.rpc, 'control_plane.device.provider_account_reauth');
+  assert.equal(payload.result.jobId, 'job-42');
+  assert.equal(payload.result.targetAccountId, '42');
+  assert.equal(payload.result.authorizationUrl, 'https://login.example.com/oauth');
+  assert.deepEqual(startedCalls.map((call) => ({
+    provider: call.provider,
+    authMode: call.authMode,
+    accountId: call.options.accountId
+  })), [{
+    provider: 'codex',
+    authMode: 'oauth-browser',
+    accountId: '42'
+  }]);
+  assert.equal(upserts[0].provider, 'codex');
+  assert.equal(upserts[0].accountId, '42');
+  assert.doesNotMatch(res.body, new RegExp(paired.token));
+});
+
+test('node rpc device provider auth job get cancel and callback use paired token', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-device-provider-auth-job-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+
+  const invite = createControlPlaneDeviceInvite({
+    name: 'Desktop',
+    controlEndpoint: 'https://control.example.com',
+    scopes: ['accounts:read']
+  }, { fs, aiHomeDir });
+  const paired = consumeControlPlaneDeviceInvite({
+    code: invite.code,
+    device: { name: 'Desktop', platform: 'macos' }
+  }, { fs, aiHomeDir });
+
+  const job = {
+    id: 'job-42',
+    provider: 'agy',
+    accountId: '8',
+    authMode: 'oauth-browser',
+    status: 'running',
+    authProgressState: 'awaiting_code',
+    authorizationUrl: 'https://login.example.com/oauth',
+    createdAt: Date.now(),
+    updatedAt: Date.now()
+  };
+  const callbackCalls = [];
+  const cancelCalls = [];
+  const cleanupCalls = [];
+  const deps = createDeps({ aiHomeDir });
+  deps.getAuthJobManager = () => ({
+    getJob(jobId) {
+      return jobId === 'job-42' ? job : null;
+    },
+    cancelJob(jobId) {
+      cancelCalls.push(jobId);
+      return {
+        ok: true,
+        job: {
+          ...job,
+          status: 'cancelled',
+          authProgressState: 'cancelled',
+          error: 'user cancelled'
+        }
+      };
+    },
+    completeBrowserOauthCallback(jobId, callbackUrl) {
+      callbackCalls.push({ jobId, callbackUrl });
+      return {
+        ok: true,
+        job: {
+          ...job,
+          status: 'succeeded',
+          authProgressState: 'completed'
+        }
+      };
+    }
+  });
+  deps.cleanupAuthJobArtifacts = (cleanedJob) => cleanupCalls.push(cleanedJob.id);
+
+  const getRes = createResCapture();
+  const getHandled = await handleNodeRpcRequest({
+    method: 'GET',
+    pathname: '/v0/node-rpc/device-provider-account-auth-job',
+    url: new URL('https://control.example.com/v0/node-rpc/device-provider-account-auth-job?jobId=job-42'),
+    req: { headers: { authorization: `Bearer ${paired.token}` } },
+    res: getRes,
+    options: {},
+    state: {},
+    requiredManagementKey: 'management-secret',
+    deps
+  });
+  assert.equal(getHandled, true);
+  assert.equal(getRes.statusCode, 200);
+  const getPayload = JSON.parse(getRes.body);
+  assert.equal(getPayload.rpc, 'control_plane.device.provider_account_auth_job');
+  assert.equal(getPayload.result.job.id, 'job-42');
+  assert.equal(getPayload.result.job.authorizationUrl, 'https://login.example.com/oauth');
+
+  const cancelRes = createResCapture();
+  const cancelDeps = {
+    ...deps,
+    readRequestBody: async () => Buffer.from(JSON.stringify({ jobId: 'job-42' }), 'utf8')
+  };
+  const cancelHandled = await handleNodeRpcRequest({
+    method: 'POST',
+    pathname: '/v0/node-rpc/device-provider-account-auth-job-cancel',
+    url: new URL('https://control.example.com/v0/node-rpc/device-provider-account-auth-job-cancel'),
+    req: { headers: { authorization: `Bearer ${paired.token}` } },
+    res: cancelRes,
+    options: {},
+    state: {},
+    requiredManagementKey: 'management-secret',
+    deps: cancelDeps
+  });
+  assert.equal(cancelHandled, true);
+  assert.equal(cancelRes.statusCode, 200);
+  const cancelPayload = JSON.parse(cancelRes.body);
+  assert.equal(cancelPayload.result.action, 'cancel');
+  assert.equal(cancelPayload.result.job.status, 'cancelled');
+  assert.deepEqual(cancelCalls, ['job-42']);
+  assert.deepEqual(cleanupCalls, ['job-42']);
+
+  const callbackRes = createResCapture();
+  const callbackDeps = {
+    ...deps,
+    readRequestBody: async () => Buffer.from(JSON.stringify({
+      jobId: 'job-42',
+      code: '4/0AgyAuthorizationCode'
+    }), 'utf8')
+  };
+  const callbackHandled = await handleNodeRpcRequest({
+    method: 'POST',
+    pathname: '/v0/node-rpc/device-provider-account-auth-job-callback',
+    url: new URL('https://control.example.com/v0/node-rpc/device-provider-account-auth-job-callback'),
+    req: { headers: { authorization: `Bearer ${paired.token}` } },
+    res: callbackRes,
+    options: {},
+    state: {},
+    requiredManagementKey: 'management-secret',
+    deps: callbackDeps
+  });
+  assert.equal(callbackHandled, true);
+  assert.equal(callbackRes.statusCode, 200);
+  const callbackPayload = JSON.parse(callbackRes.body);
+  assert.equal(callbackPayload.result.action, 'callback');
+  assert.equal(callbackPayload.result.job.status, 'succeeded');
+  assert.deepEqual(callbackCalls, [{
+    jobId: 'job-42',
+    callbackUrl: '4/0AgyAuthorizationCode'
+  }]);
+  assert.doesNotMatch(getRes.body + cancelRes.body + callbackRes.body, new RegExp(paired.token));
 });
 
 test('node rpc device accounts accepts any paired device token', async (t) => {
@@ -1929,6 +2254,14 @@ test('node rpc device node sessions proxies safe list through scoped device bear
         return {
           nodeId: 'office-pc',
           transport: { id: 'office-pc-relay', kind: 'relay', endpoint: 'relay://office-pc' },
+          transportDecision: {
+            transportPurpose: 'stream',
+            selectedTransportId: 'office-pc-relay',
+            selectedTransportKind: 'relay',
+            fallbackUsed: false,
+            fallbackFrom: [],
+            rejectedTransports: []
+          },
           status: 200,
           ok: true,
           payload: {
@@ -1973,6 +2306,9 @@ test('node rpc device node sessions proxies safe list through scoped device bear
   assert.equal(payload.ok, true);
   assert.equal(payload.rpc, 'control_plane.device.node_sessions');
   assert.equal(payload.nodeId, 'office-pc');
+  assert.deepEqual(payload.transport, { id: 'office-pc-relay', kind: 'relay' });
+  assert.equal(payload.transportDecision.selectedTransportKind, 'relay');
+  assert.equal(payload.transportDecision.fallbackUsed, false);
   assert.equal(payload.result.sessions[0].sessionRef, 'sess_0123456789abcdefabcd');
   assert.equal(payload.result.summary.total, 1);
   assert.doesNotMatch(res.body, new RegExp(paired.token));
@@ -2002,10 +2338,22 @@ test('node rpc device node session catalog and attach proxy scoped contract', as
   }, { fs, aiHomeDir });
 
   const forwarded = [];
+  const transportEvidence = {
+    transport: { id: 'office-pc-relay', kind: 'relay', endpoint: 'relay://office-pc' },
+    transportDecision: {
+      transportPurpose: 'stream',
+      selectedTransportId: 'office-pc-relay',
+      selectedTransportKind: 'relay',
+      fallbackUsed: false,
+      fallbackFrom: [],
+      rejectedTransports: []
+    }
+  };
   const requestRemoteManagement = async (input) => {
     forwarded.push(input);
     if (input.pathname === '/v0/node-rpc/session-catalog?limit=3') {
       return {
+        ...transportEvidence,
         status: 200,
         ok: true,
         payload: {
@@ -2027,6 +2375,7 @@ test('node rpc device node session catalog and attach proxy scoped contract', as
     }
     if (input.pathname === '/v0/node-rpc/session-attach') {
       return {
+        ...transportEvidence,
         status: 200,
         ok: true,
         payload: {
@@ -2063,6 +2412,8 @@ test('node rpc device node session catalog and attach proxy scoped contract', as
   const catalogPayload = JSON.parse(catalogRes.body);
   assert.equal(catalogPayload.rpc, 'control_plane.device.node_session_catalog');
   assert.equal(catalogPayload.nodeId, 'office-pc');
+  assert.equal(catalogPayload.transport.kind, 'relay');
+  assert.equal(catalogPayload.transportDecision.selectedTransportKind, 'relay');
   assert.equal(catalogPayload.result.sessions[0].sessionId, 'run-remote-1');
 
   const attachRes = createResCapture();
@@ -2090,6 +2441,8 @@ test('node rpc device node session catalog and attach proxy scoped contract', as
   const attachPayload = JSON.parse(attachRes.body);
   assert.equal(attachPayload.rpc, 'control_plane.device.node_session_attach');
   assert.equal(attachPayload.nodeId, 'office-pc');
+  assert.equal(attachPayload.transport.kind, 'relay');
+  assert.equal(attachPayload.transportDecision.selectedTransportKind, 'relay');
   assert.equal(attachPayload.result.cursor, 5);
   assert.equal(attachPayload.result.snapshot.events[0].type, 'ready');
 
@@ -2099,7 +2452,7 @@ test('node rpc device node session catalog and attach proxy scoped contract', as
   ]);
   assert.equal(JSON.parse(forwarded[1].body).sessionId, 'run-remote-1');
   assert.doesNotMatch(catalogRes.body + attachRes.body, new RegExp(paired.token));
-  assert.doesNotMatch(catalogRes.body + attachRes.body, /management-secret|ignored/);
+  assert.doesNotMatch(catalogRes.body + attachRes.body, /management-secret|ignored|relay:\/\/office-pc/);
 });
 
 test('node rpc device node session start preserves artifact threshold for remote node', async (t) => {
@@ -2150,6 +2503,15 @@ test('node rpc device node session start preserves artifact threshold for remote
       requestRemoteManagement: async (input) => {
         observedInput = input;
         return {
+          transport: { id: 'office-pc-relay', kind: 'relay', endpoint: 'relay://office-pc' },
+          transportDecision: {
+            transportPurpose: 'stream',
+            selectedTransportId: 'office-pc-relay',
+            selectedTransportKind: 'relay',
+            fallbackUsed: false,
+            fallbackFrom: [],
+            rejectedTransports: []
+          },
           status: 200,
           ok: true,
           payload: {
@@ -2192,9 +2554,12 @@ test('node rpc device node session start preserves artifact threshold for remote
   assert.equal(payload.ok, true);
   assert.equal(payload.rpc, 'control_plane.device.node_session_start');
   assert.equal(payload.nodeId, 'office-pc');
+  assert.deepEqual(payload.transport, { id: 'office-pc-relay', kind: 'relay' });
+  assert.equal(payload.transportDecision.transportPurpose, 'stream');
+  assert.equal(payload.transportDecision.selectedTransportKind, 'relay');
   assert.equal(payload.result.runId, 'run-remote-artifact');
   assert.doesNotMatch(res.body, new RegExp(paired.token));
-  assert.doesNotMatch(res.body, /management-secret|ignored/);
+  assert.doesNotMatch(res.body, /management-secret|ignored|relay:\/\/office-pc/);
 });
 
 test('node rpc device node session command proxies canonical envelope', async (t) => {
@@ -2286,6 +2651,77 @@ test('node rpc device node session command proxies canonical envelope', async (t
   assert.equal(payload.result.cursor, 6);
   assert.doesNotMatch(res.body, new RegExp(paired.token));
   assert.doesNotMatch(res.body, /management-secret|ignored|--json/);
+});
+
+test('node rpc device node session command preserves remote command error and transport evidence', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-device-node-session-command-error-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+
+  const invite = createControlPlaneDeviceInvite({
+    name: 'Phone',
+    controlEndpoint: 'https://control.example.com',
+    scopes: ['nodes:read', 'sessions:read', 'sessions:write']
+  }, { fs, aiHomeDir });
+  const paired = consumeControlPlaneDeviceInvite({
+    code: invite.code,
+    device: { name: 'Phone', platform: 'ios' }
+  }, { fs, aiHomeDir });
+  upsertRemoteNode({
+    id: 'office-pc',
+    name: 'Office PC',
+    capabilities: ['status', 'sessions'],
+    preferredTransports: ['webrtc']
+  }, { fs, aiHomeDir });
+
+  const res = createResCapture();
+  const handled = await handleNodeRpcRequest({
+    method: 'POST',
+    pathname: '/v0/node-rpc/device-node-session-command',
+    url: new URL('https://control.example.com/v0/node-rpc/device-node-session-command'),
+    req: { headers: { authorization: `Bearer ${paired.token}` } },
+    res,
+    options: {},
+    state: {},
+    requiredManagementKey: 'management-secret',
+    deps: createDeps({
+      aiHomeDir,
+      body: Buffer.from(JSON.stringify({
+        nodeId: 'office-pc',
+        type: 'message',
+        sessionId: 'run-remote-busy',
+        text: 'next',
+        idempotencyKey: 'idem-remote-busy'
+      })),
+      requestRemoteManagement: async () => ({
+        status: 409,
+        ok: false,
+        transport: { id: 'office-pc-webrtc', kind: 'webrtc', endpoint: 'redacted' },
+        transportDecision: {
+          transportPurpose: 'stream',
+          selectedTransportId: 'office-pc-webrtc',
+          selectedTransportKind: 'webrtc',
+          fallbackUsed: false,
+          fallbackFrom: [],
+          rejectedTransports: []
+        },
+        payload: {
+          ok: false,
+          error: 'headless_session_run_still_running',
+          message: 'headless_session_run_still_running'
+        }
+      })
+    })
+  });
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 409);
+  const payload = JSON.parse(res.body);
+  assert.equal(payload.ok, false);
+  assert.equal(payload.error, 'headless_session_run_still_running');
+  assert.equal(payload.remoteStatus, 409);
+  assert.deepEqual(payload.transport, { id: 'office-pc-webrtc', kind: 'webrtc' });
+  assert.equal(payload.transportDecision.selectedTransportKind, 'webrtc');
+  assert.doesNotMatch(res.body, /management-secret|redacted|next/);
 });
 
 test('node rpc device node session ack proxies resume cursor', async (t) => {

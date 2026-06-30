@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Alert, Button, Descriptions, Form, Input, Segmented, Space, Tag, message } from 'antd';
+import { Alert, Col, Form, Input, Modal, Row, Segmented, Space, Tabs, Tag, Typography, message } from 'antd';
+import { StatisticCard } from '@ant-design/pro-components';
 import {
   CheckCircleOutlined,
   DownloadOutlined,
@@ -9,7 +10,8 @@ import {
   LoginOutlined,
   ReloadOutlined,
   SafetyCertificateOutlined,
-  UploadOutlined
+  UploadOutlined,
+  PlusOutlined
 } from '@ant-design/icons';
 import type { ProColumns } from '@ant-design/pro-components';
 import {
@@ -41,6 +43,7 @@ import {
 } from '@/services/control-plane-endpoints';
 import { resolveCurrentDeviceIdentity } from '@/services/device-identity';
 import type { ControlPlaneProfile, ControlPlaneProfileConnectionMode } from '@/types';
+import Button from '@/components/ui/AppButton';
 import PageScaffold from '@/components/ui/PageScaffold';
 import SectionCard from '@/components/ui/SectionCard';
 import ListTable from '@/components/ui/ListTable';
@@ -142,7 +145,15 @@ export default function FabricServerSetup() {
   const [saving, setSaving] = useState(false);
   const [pairing, setPairing] = useState(false);
   const [importing, setImporting] = useState(false);
-  const autoPairSubmittedRef = useRef(false);
+  const [setupModalOpen, setSetupModalOpen] = useState(false);
+  const [setupModalTab, setSetupModalTab] = useState<'pair' | 'manual' | 'transfer'>('pair');
+  const [pendingAutoPairSubmit, setPendingAutoPairSubmit] = useState(false);
+  const autoPairSubmittedSearchRef = useRef('');
+
+  const openSetupModal = (tab: 'pair' | 'manual' | 'transfer') => {
+    setSetupModalTab(tab);
+    setSetupModalOpen(true);
+  };
 
   const activeProfile = profiles.find((profile) => profile.id === activeProfileId) || null;
   const readyProfiles = profiles.filter(isControlPlaneProfileReady);
@@ -203,11 +214,22 @@ export default function FabricServerSetup() {
       endpoint: intent.endpoint || defaultEndpoint,
       name: 'AIH Server'
     });
-    if (intent.autoSubmit && !autoPairSubmittedRef.current) {
-      autoPairSubmittedRef.current = true;
-      pairForm.submit();
+    if (intent.pairUrlOrCode) {
+      setSetupModalTab('pair');
+      setSetupModalOpen(true);
+    }
+    if (intent.autoSubmit && autoPairSubmittedSearchRef.current !== location.search) {
+      autoPairSubmittedSearchRef.current = location.search;
+      setPendingAutoPairSubmit(true);
     }
   }, [defaultEndpoint, deviceIdentity.name, deviceIdentity.platform, location.search, pairForm, saveForm]);
+
+  useEffect(() => {
+    if (!pendingAutoPairSubmit) return;
+    if (!setupModalOpen || setupModalTab !== 'pair') return;
+    setPendingAutoPairSubmit(false);
+    pairForm.submit();
+  }, [pendingAutoPairSubmit, setupModalOpen, setupModalTab, pairForm]);
 
   const handleSaveServer = async (values: SaveFormValues) => {
     setSaving(true);
@@ -234,6 +256,7 @@ export default function FabricServerSetup() {
         }
       }
       syncProfiles(deviceToken ? profile.id : '');
+      setSetupModalOpen(false);
       message.success(deviceToken ? 'Server 已保存并设为当前' : 'Server 已探测，下一步需要配对');
     } catch (error) {
       message.error(normalizeError(error));
@@ -261,6 +284,7 @@ export default function FabricServerSetup() {
         message.warning(`已配对，但同步摘要失败：${normalizeError(error)}`);
       }
       syncProfiles(paired.profile.id);
+      setSetupModalOpen(false);
       pairForm.setFieldsValue({
         pairUrlOrCode: '',
         connectionMode: paired.profile.connectionMode,
@@ -362,6 +386,7 @@ export default function FabricServerSetup() {
       const result = importControlPlaneProfileBundle(values.bundle || '');
       const firstProfileId = result.imported[0]?.profile.id || '';
       syncProfiles(firstProfileId);
+      setSetupModalOpen(false);
       importForm.setFieldsValue({ bundle: '' });
       message.success(`已导入 ${result.imported.length} 个 Server Profile，需重新配对后进入`);
     } catch (error) {
@@ -383,11 +408,15 @@ export default function FabricServerSetup() {
       width: 240,
       ellipsis: true,
       render: (_, record) => (
-        <div className="fabric-server-setup-profile-main">
-          <strong>{record.name || record.endpoint}</strong>
-          <span>{record.endpoint}</span>
-          {record.lastError && <em>{record.lastError}</em>}
-        </div>
+        <Space direction="vertical" size={0} style={{ minWidth: 0 }}>
+          <strong style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {record.name || record.endpoint}
+          </strong>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>{record.endpoint}</Typography.Text>
+          {record.lastError && (
+            <Typography.Text type="danger" style={{ fontSize: 12 }}>{record.lastError}</Typography.Text>
+          )}
+        </Space>
       )
     },
     {
@@ -397,13 +426,13 @@ export default function FabricServerSetup() {
         const status = getProfileStatus(record);
         const active = record.id === activeProfileId;
         return (
-          <div className="fabric-server-setup-profile-meta">
+          <Space wrap size={[4, 4]}>
             {active && <Tag color="green">当前</Tag>}
             {record.connectionMode === 'broker-proxy' && <Tag color="blue">Broker</Tag>}
             {record.broker?.serverId && <Tag>{record.broker.serverId}</Tag>}
             <Tag color={status.color}>{status.label}</Tag>
             <Tag>{formatProfileDetail(record)}</Tag>
-          </div>
+          </Space>
         );
       }
     },
@@ -413,7 +442,7 @@ export default function FabricServerSetup() {
       render: (_, record) => {
         const active = record.id === activeProfileId;
         return (
-          <Space size={6} wrap className="fabric-server-setup-profile-actions">
+          <Space size={6} wrap>
             <Button size="small" disabled={active} onClick={() => handleSelectProfile(record.id)}>
               设为当前
             </Button>
@@ -443,207 +472,58 @@ export default function FabricServerSetup() {
     <PageScaffold ghost
       title="选择或添加 Server"
       subTitle="配对或管理 AIH 控制面 Server。连接建立后即可接入远程节点、项目和进行原生会话。"
-      headerContent={
-        <Descriptions size="small" column={2}>
-          <Descriptions.Item label="就绪">
-            <Tag color={readyProfiles.length > 0 ? 'green' : 'gold'} style={{ margin: 0 }}>
-              {readyProfiles.length} 个
-            </Tag>
-          </Descriptions.Item>
-          <Descriptions.Item label="配置">
-            <Tag style={{ margin: 0 }}>{profiles.length} 个</Tag>
-          </Descriptions.Item>
-        </Descriptions>
-      }
       extra={
-        <Button
-          type="primary"
-          icon={<LoginOutlined />}
-          disabled={!activeProfile || !isControlPlaneProfileReady(activeProfile)}
-          onClick={() => navigate('/')}
-        >
-          进入工作台
-        </Button>
+        <Space size={8} wrap>
+          <Button icon={<PlusOutlined />} onClick={() => openSetupModal('pair')}>
+            添加 Server
+          </Button>
+          <Button icon={<UploadOutlined />} onClick={() => openSetupModal('transfer')}>
+            导入/迁移
+          </Button>
+          <Button icon={<DownloadOutlined />} disabled={!activeProfile} onClick={handleExportActiveProfile}>
+            导出当前
+          </Button>
+          <Button icon={<DownloadOutlined />} disabled={profiles.length === 0} onClick={handleExportAllProfiles}>
+            导出全部
+          </Button>
+          <Button
+            type="primary"
+            icon={<LoginOutlined />}
+            disabled={!activeProfile || !isControlPlaneProfileReady(activeProfile)}
+            onClick={() => navigate('/')}
+          >
+            进入工作台
+          </Button>
+        </Space>
       }
     >
+      <StatisticCard.Group direction="row" style={{ marginBottom: 16 }}>
+        <StatisticCard
+          statistic={{
+            title: '就绪 Server',
+            value: readyProfiles.length,
+            suffix: '个',
+            status: readyProfiles.length > 0 ? 'success' : 'warning'
+          }}
+        />
+        <StatisticCard
+          statistic={{
+            title: '已保存配置',
+            value: profiles.length,
+            suffix: '个'
+          }}
+        />
+      </StatisticCard.Group>
+
       {endpointIsLoopback && (
         <Alert
-          className="fabric-server-setup-alert"
+          style={{ marginBottom: 16 }}
           type="warning"
           showIcon
           message="当前默认 endpoint 是 loopback"
           description="127.0.0.1 / localhost 只适合同机访问；手机或另一台电脑需要填写局域网、隧道、WSS relay 或公网 HTTPS endpoint。"
         />
       )}
-
-      <div className="fabric-server-setup-grid">
-        <SectionCard
-          title="通过配对添加"
-          extra={<SafetyCertificateOutlined />}
-          bordered
-          headerBordered
-        >
-          <Form
-            form={pairForm}
-            layout="vertical"
-            onFinish={handlePairServer}
-            initialValues={{
-              pairUrlOrCode: '',
-              connectionMode: 'direct',
-              endpoint: defaultEndpoint,
-              brokerEndpoint: '',
-              brokerServerId: '',
-              deviceName: deviceIdentity.name,
-              platform: deviceIdentity.platform
-            }}
-          >
-            <Form.Item
-              name="pairUrlOrCode"
-              label="Pair URL / Code"
-              rules={[{ required: true, message: '请输入 Pair URL 或 Code' }]}
-            >
-              <Input.TextArea
-                autoSize={{ minRows: 2, maxRows: 4 }}
-                placeholder="https://aih.example.com/ui/server-setup?pair=... 或一次性 code"
-              />
-            </Form.Item>
-            <Form.Item name="connectionMode" label="连接模式">
-              <Segmented block options={CONNECTION_MODE_OPTIONS} />
-            </Form.Item>
-            {pairConnectionMode === 'broker-proxy' ? (
-              <>
-                <div className="fabric-server-setup-form-row">
-                  <Form.Item
-                    name="brokerEndpoint"
-                    label="Broker Endpoint"
-                    rules={[{ required: true, message: '请输入 Broker Endpoint' }]}
-                  >
-                    <Input placeholder="https://broker.example.com" />
-                  </Form.Item>
-                  <Form.Item
-                    name="brokerServerId"
-                    label="Server ID"
-                    rules={[{ required: true, message: '请输入 Server ID' }]}
-                  >
-                    <Input placeholder="aws-current" />
-                  </Form.Item>
-                </div>
-                <Form.Item label="Proxy Endpoint">
-                  <Input value={pairProxyPreview} readOnly placeholder="自动生成" />
-                </Form.Item>
-              </>
-            ) : (
-              <Form.Item name="endpoint" label="Server Endpoint">
-                <Input placeholder="https://aih.example.com" />
-              </Form.Item>
-            )}
-            <div className="fabric-server-setup-form-row">
-              <Form.Item name="deviceName" label="设备名称">
-                <Input placeholder="Mac / iPhone / Web" />
-              </Form.Item>
-              <Form.Item name="platform" label="Platform">
-                <Input placeholder="macos / ios / web" />
-              </Form.Item>
-            </div>
-            <Button type="primary" htmlType="submit" icon={<LinkOutlined />} loading={pairing}>
-              配对并进入
-            </Button>
-          </Form>
-        </SectionCard>
-
-        <SectionCard
-          title="探测并保存"
-          extra={<CheckCircleOutlined />}
-          bordered
-          headerBordered
-        >
-          <Form
-            form={saveForm}
-            layout="vertical"
-            onFinish={handleSaveServer}
-            initialValues={{
-              connectionMode: 'direct',
-              endpoint: defaultEndpoint,
-              brokerEndpoint: '',
-              brokerServerId: '',
-              name: 'AIH Server',
-              deviceToken: ''
-            }}
-          >
-            <Form.Item name="connectionMode" label="连接模式">
-              <Segmented block options={CONNECTION_MODE_OPTIONS} />
-            </Form.Item>
-            {saveConnectionMode === 'broker-proxy' ? (
-              <>
-                <div className="fabric-server-setup-form-row">
-                  <Form.Item
-                    name="brokerEndpoint"
-                    label="Broker Endpoint"
-                    rules={[{ required: true, message: '请输入 Broker Endpoint' }]}
-                  >
-                    <Input placeholder="https://broker.example.com" />
-                  </Form.Item>
-                  <Form.Item
-                    name="brokerServerId"
-                    label="Server ID"
-                    rules={[{ required: true, message: '请输入 Server ID' }]}
-                  >
-                    <Input placeholder="aws-current" />
-                  </Form.Item>
-                </div>
-                <Form.Item label="Proxy Endpoint">
-                  <Input value={saveProxyPreview} readOnly placeholder="自动生成" />
-                </Form.Item>
-              </>
-            ) : (
-              <Form.Item
-                name="endpoint"
-                label="Server URL"
-                rules={[{ required: true, message: '请输入 Server URL' }]}
-              >
-                <Input placeholder="https://aih.example.com" />
-              </Form.Item>
-            )}
-            <Form.Item name="name" label="显示名称">
-              <Input placeholder="Home Fabric / Company Fabric" />
-            </Form.Item>
-            <Form.Item name="deviceToken" label="Device Token">
-              <Input.Password autoComplete="new-password" placeholder="可选；配对后返回的一次性 token" />
-            </Form.Item>
-            <Button type="primary" htmlType="submit" icon={<CheckCircleOutlined />} loading={saving}>
-              探测并保存
-            </Button>
-          </Form>
-        </SectionCard>
-      </div>
-
-      <SectionCard title="迁移 Server Profile" extra={<UploadOutlined />}>
-        <div className="fabric-server-setup-transfer-grid">
-          <div className="fabric-server-setup-transfer-actions">
-            <Button icon={<DownloadOutlined />} disabled={!activeProfile} onClick={handleExportActiveProfile}>
-              导出当前
-            </Button>
-            <Button icon={<DownloadOutlined />} disabled={profiles.length === 0} onClick={handleExportAllProfiles}>
-              导出全部
-            </Button>
-          </div>
-          <Form form={importForm} layout="vertical" onFinish={handleImportProfileBundle}>
-            <Form.Item
-              name="bundle"
-              label="Profile Bundle JSON"
-              rules={[{ required: true, message: '请粘贴 profile bundle JSON' }]}
-            >
-              <Input.TextArea
-                autoSize={{ minRows: 4, maxRows: 8 }}
-                placeholder='{"kind":"aih-control-plane-profile-bundle","version":1,...}'
-              />
-            </Form.Item>
-            <Button type="primary" htmlType="submit" icon={<UploadOutlined />} loading={importing}>
-              导入 Profile
-            </Button>
-          </Form>
-        </div>
-      </SectionCard>
 
       <SectionCard title="已保存 Server">
         <ListTable<ProfileRow>
@@ -656,11 +536,207 @@ export default function FabricServerSetup() {
           <Button type="link" href="/ui/fabric/control-planes" style={{ padding: 0 }}>
             打开高级控制面设置
           </Button>
-          <Button type="link" href="/ui/fabric/webrtc-lab" style={{ padding: 0 }}>
-            打开 WebRTC DataChannel Lab
-          </Button>
         </div>
       </SectionCard>
+
+      <Modal
+        title="添加或迁移 Server"
+        open={setupModalOpen}
+        width={760}
+        footer={null}
+        destroyOnClose={false}
+        forceRender
+        onCancel={() => setSetupModalOpen(false)}
+      >
+        <Tabs
+          activeKey={setupModalTab}
+          onChange={(key) => setSetupModalTab(key as any)}
+          items={[
+            {
+              key: 'pair',
+              label: '通过配对添加',
+              children: (
+                <Form
+                  form={pairForm}
+                  layout="vertical"
+                  onFinish={handlePairServer}
+                  initialValues={{
+                    pairUrlOrCode: '',
+                    connectionMode: 'direct',
+                    endpoint: defaultEndpoint,
+                    brokerEndpoint: '',
+                    brokerServerId: '',
+                    deviceName: deviceIdentity.name,
+                    platform: deviceIdentity.platform
+                  }}
+                >
+                  <Form.Item
+                    name="pairUrlOrCode"
+                    label="Pair URL / Code"
+                    rules={[{ required: true, message: '请输入 Pair URL 或 Code' }]}
+                  >
+                    <Input.TextArea
+                      autoSize={{ minRows: 2, maxRows: 4 }}
+                      placeholder="https://aih.example.com/ui/server-setup?pair=... 或一次性 code"
+                    />
+                  </Form.Item>
+                  <Form.Item name="connectionMode" label="连接模式">
+                    <Segmented block options={CONNECTION_MODE_OPTIONS} />
+                  </Form.Item>
+                  {pairConnectionMode === 'broker-proxy' ? (
+                    <>
+                      <Row gutter={12}>
+                        <Col xs={24} sm={14}>
+                          <Form.Item
+                            name="brokerEndpoint"
+                            label="Broker Endpoint"
+                            rules={[{ required: true, message: '请输入 Broker Endpoint' }]}
+                          >
+                            <Input placeholder="https://broker.example.com" />
+                          </Form.Item>
+                        </Col>
+                        <Col xs={24} sm={10}>
+                          <Form.Item
+                            name="brokerServerId"
+                            label="Server ID"
+                            rules={[{ required: true, message: '请输入 Server ID' }]}
+                          >
+                            <Input placeholder="aws-current" />
+                          </Form.Item>
+                        </Col>
+                      </Row>
+                      <Form.Item label="Proxy Endpoint">
+                        <Input value={pairProxyPreview} readOnly placeholder="自动生成" />
+                      </Form.Item>
+                    </>
+                  ) : (
+                    <Form.Item name="endpoint" label="Server Endpoint">
+                      <Input placeholder="https://aih.example.com" />
+                    </Form.Item>
+                  )}
+                  <Row gutter={12}>
+                    <Col xs={24} sm={12}>
+                      <Form.Item name="deviceName" label="设备名称">
+                        <Input placeholder="Mac / iPhone / Web" />
+                      </Form.Item>
+                    </Col>
+                    <Col xs={24} sm={12}>
+                      <Form.Item name="platform" label="Platform">
+                        <Input placeholder="macos / ios / web" />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+                  <Button type="primary" htmlType="submit" icon={<LinkOutlined />} loading={pairing}>
+                    配对并进入
+                  </Button>
+                </Form>
+              )
+            },
+            {
+              key: 'manual',
+              label: '探测并保存',
+              children: (
+                <Form
+                  form={saveForm}
+                  layout="vertical"
+                  onFinish={handleSaveServer}
+                  initialValues={{
+                    connectionMode: 'direct',
+                    endpoint: defaultEndpoint,
+                    brokerEndpoint: '',
+                    brokerServerId: '',
+                    name: 'AIH Server',
+                    deviceToken: ''
+                  }}
+                >
+                  <Form.Item name="connectionMode" label="连接模式">
+                    <Segmented block options={CONNECTION_MODE_OPTIONS} />
+                  </Form.Item>
+                  {saveConnectionMode === 'broker-proxy' ? (
+                    <>
+                      <Row gutter={12}>
+                        <Col xs={24} sm={14}>
+                          <Form.Item
+                            name="brokerEndpoint"
+                            label="Broker Endpoint"
+                            rules={[{ required: true, message: '请输入 Broker Endpoint' }]}
+                          >
+                            <Input placeholder="https://broker.example.com" />
+                          </Form.Item>
+                        </Col>
+                        <Col xs={24} sm={10}>
+                          <Form.Item
+                            name="brokerServerId"
+                            label="Server ID"
+                            rules={[{ required: true, message: '请输入 Server ID' }]}
+                          >
+                            <Input placeholder="aws-current" />
+                          </Form.Item>
+                        </Col>
+                      </Row>
+                      <Form.Item label="Proxy Endpoint">
+                        <Input value={saveProxyPreview} readOnly placeholder="自动生成" />
+                      </Form.Item>
+                    </>
+                  ) : (
+                    <Form.Item
+                      name="endpoint"
+                      label="Server URL"
+                      rules={[{ required: true, message: '请输入 Server URL' }]}
+                    >
+                      <Input placeholder="https://aih.example.com" />
+                    </Form.Item>
+                  )}
+                  <Form.Item name="name" label="显示名称">
+                    <Input placeholder="Home Fabric / Company Fabric" />
+                  </Form.Item>
+                  <Form.Item name="deviceToken" label="Device Token">
+                    <Input.Password autoComplete="new-password" placeholder="可选；配对后返回的一次性 token" />
+                  </Form.Item>
+                  <Button type="primary" htmlType="submit" icon={<CheckCircleOutlined />} loading={saving}>
+                    探测并保存
+                  </Button>
+                </Form>
+              )
+            },
+            {
+              key: 'transfer',
+              label: '迁移 Profile',
+              children: (
+                <Row gutter={16}>
+                  <Col xs={24} sm={6}>
+                    <Space direction="vertical" style={{ display: 'flex' }}>
+                      <Button block icon={<DownloadOutlined />} disabled={!activeProfile} onClick={handleExportActiveProfile}>
+                        导出当前
+                      </Button>
+                      <Button block icon={<DownloadOutlined />} disabled={profiles.length === 0} onClick={handleExportAllProfiles}>
+                        导出全部
+                      </Button>
+                    </Space>
+                  </Col>
+                  <Col xs={24} sm={18}>
+                  <Form form={importForm} layout="vertical" onFinish={handleImportProfileBundle}>
+                    <Form.Item
+                      name="bundle"
+                      label="Profile Bundle JSON"
+                      rules={[{ required: true, message: '请粘贴 profile bundle JSON' }]}
+                    >
+                      <Input.TextArea
+                        autoSize={{ minRows: 4, maxRows: 8 }}
+                        placeholder='{"kind":"aih-control-plane-profile-bundle","version":1,...}'
+                      />
+                    </Form.Item>
+                    <Button type="primary" htmlType="submit" icon={<UploadOutlined />} loading={importing}>
+                      导入 Profile
+                    </Button>
+                  </Form>
+                  </Col>
+                </Row>
+              )
+            }
+          ]}
+        />
+      </Modal>
     </PageScaffold>
   );
 }

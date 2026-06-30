@@ -17,9 +17,9 @@ test('root help explains remote defaults and client pairing boundaries', () => {
   assert.match(output, /aih fabric transport tcp-echo <tcp-url>/);
   assert.match(output, /aih node service status/);
   assert.match(output, /aih node service install <control-url>/);
-  assert.match(output, /Plan supervised relay \+ registry agent autostart/);
+  assert.match(output, /Plan supervised relay \+ registry agent \+ WebRTC autostart/);
   assert.match(output, /aih node service uninstall --node-id ID/);
-  assert.match(output, /Plan supervised relay \+ registry agent autostart rollback/);
+  assert.match(output, /Plan supervised relay \+ registry agent \+ WebRTC autostart rollback/);
   assert.match(output, /supervised node readiness/);
   assert.match(output, /Fabric starts with explicit server profiles/);
   assert.match(output, /provider\/route\/trust are derived from transport/);

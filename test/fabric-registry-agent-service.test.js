@@ -77,6 +77,7 @@ test('fabric registry agent service installs Linux systemd unit without leaking 
     'relay=online',
     '--probe-transport',
     'relay=tcp://127.0.0.1:8766',
+    '--runtime-diagnostics',
     '--interval-ms',
     '2000'
   ], deps);
@@ -94,6 +95,7 @@ test('fabric registry agent service installs Linux systemd unit without leaking 
   assert.match(unit, /"--token-file"/);
   assert.match(unit, new RegExp(tokenFile.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.match(unit, /"--probe-transport" "relay=tcp:\/\/127\.0\.0\.1:8766"/);
+  assert.match(unit, /"--runtime-diagnostics"/);
   assert.match(unit, /"--interval-ms" "2000"/);
   assert.match(unit, new RegExp(`Environment="AIH_HOST_HOME=${root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`));
   assert.equal(unit.includes('secret-device-token'), false);

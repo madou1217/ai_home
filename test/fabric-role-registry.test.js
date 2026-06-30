@@ -11,7 +11,11 @@ const {
   registerFabricNode
 } = require('../lib/server/fabric-role-registry');
 const { getRemoteNode } = require('../lib/server/remote/node-registry');
-const { listNodeTransports } = require('../lib/server/remote/transport-registry');
+const {
+  listNodeTransports,
+  transportSupportsRemoteRequest,
+  upsertRemoteTransport
+} = require('../lib/server/remote/transport-registry');
 const { selectTransport } = require('../lib/server/remote/transport-selector');
 
 test('fabric role registry stores node roles projects runtimes relay metadata and mirrors legacy relay transport', (t) => {
@@ -73,9 +77,10 @@ test('fabric role registry stores node roles projects runtimes relay metadata an
   assert.equal(registry.nodeInventory[0].capabilities.runtimeHost, true);
   assert.deepEqual(registry.nodeInventory[0].capabilities.runtimeProviders, ['claude', 'codex']);
   assert.equal(registry.nodeInventory[0].actions.find((action) => action.id === 'start-session:codex').eligible, true);
+  assert.equal(registry.nodeInventory[0].actions.find((action) => action.id === 'start-session:codex').enabled, true);
   assert.deepEqual(
     registry.nodeInventory[0].actions.find((action) => action.id === 'start-session:codex').blockers,
-    ['m4_remote_session_action_pending']
+    []
   );
 
   const legacyNode = getRemoteNode('home-mac', deps);
@@ -230,6 +235,404 @@ test('fabric role registry heartbeat preserves projects and runtimes while updat
     () => heartbeatFabricNode({ node: { id: 'office-pc' } }, { ...deps, ownerDeviceId: 'device-other' }),
     /forbidden_fabric_node_owner/
   );
+});
+
+test('fabric role registry persists runtime diagnostics for inventory gap blockers', (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-fabric-runtime-diagnostics-'));
+  const deps = { fs, aiHomeDir, now: () => 9000 };
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+
+  registerFabricNode({
+    node: {
+      id: 'aws-current-node',
+      status: 'online',
+      ownerDeviceId: 'device-aws-current'
+    },
+    projects: [
+      { path: '/home/ubuntu/aih-fabric-current', name: 'aih-fabric-current' }
+    ],
+    transports: [
+      { kind: 'relay', health: 'online' }
+    ]
+  }, deps);
+
+  const touched = heartbeatFabricNode({
+    node: {
+      id: 'aws-current-node',
+      status: 'online'
+    },
+    relayNode: {
+      status: 'online'
+    },
+    transports: [
+      { kind: 'relay', health: 'online' }
+    ],
+    runtimeDiagnostics: [
+      {
+        provider: 'codex',
+        cli: { command: 'codex', available: false },
+        accounts: { total: 0, source: 'readyz' }
+      },
+      {
+        provider: 'claude',
+        cli: { command: 'claude', available: true, path: '/usr/local/bin/claude' },
+        accounts: { total: 0, source: 'readyz' }
+      },
+      {
+        provider: 'agy',
+        cli: { command: 'agy', available: true, path: '/usr/local/bin/agy' },
+        accounts: {
+          total: 1,
+          available: 0,
+          unavailable: 1,
+          source: 'runtime_accounts',
+          reasons: [{ reason: 'blocked_by_runtime_status:agy_not_signed_in', count: 1, sampleAccountIds: ['7'] }]
+        }
+      }
+    ]
+  }, {
+    ...deps,
+    ownerDeviceId: 'device-aws-current'
+  });
+
+  assert.equal(touched.runtimeDiagnostics.length, 3);
+  const registry = listFabricRegistry(deps);
+  const node = registry.nodeInventory.find((item) => item.id === 'aws-current-node');
+  assert.ok(node);
+  assert.deepEqual(
+    node.runtimeGaps.map((gap) => `${gap.provider}:${gap.blocker}`),
+    [
+      'codex:missing_provider_cli:codex',
+      'claude:missing_provider_account:claude',
+      'agy:provider_account_unavailable:agy',
+      'opencode:missing_provider_runtime:opencode'
+    ]
+  );
+  assert.deepEqual(node.runtimeGaps.find((gap) => gap.provider === 'agy').diagnostic.accounts.reasons, [
+    { reason: 'blocked_by_runtime_status:agy_not_signed_in', count: 1, sampleAccountIds: ['7'] }
+  ]);
+  assert.deepEqual(
+    node.actions.find((action) => action.id === 'start-session:codex').blockers,
+    ['missing_provider_cli:codex']
+  );
+  assert.deepEqual(
+    node.actions.find((action) => action.id === 'start-session:claude').blockers,
+    ['missing_provider_account:claude']
+  );
+  assert.deepEqual(
+    node.actions.find((action) => action.id === 'start-session:agy').blockers,
+    ['provider_account_unavailable:agy']
+  );
+});
+
+test('fabric role registry heartbeat preserves WebRTC promotion evidence and mirrors legacy capability', (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-fabric-webrtc-promotion-'));
+  let now = 1000;
+  const deps = { fs, aiHomeDir, now: () => now };
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+
+  registerFabricNode({
+    node: {
+      id: 'aws-current-node',
+      name: 'AWS Current Node',
+      roles: ['node', 'relay-node'],
+      ownerDeviceId: 'device-aws-current'
+    },
+    transports: [
+      { id: 'aws-current-node-relay', kind: 'relay', health: 'online', priority: 100 },
+      {
+        id: 'aws-current-node-webrtc',
+        kind: 'webrtc',
+        endpoint: 'http://control.example.com:9527',
+        health: 'online',
+        priority: 1,
+        promotion: {
+          remoteRequestReady: true,
+          mode: 'direct',
+          evidenceRef: 'docs/fabric/evidence/2026-06-29-m6-direct-webrtc-promotion.md',
+          rttP95Ms: 201,
+          rpcP95Ms: 200,
+          promotedAt: 1782691200000
+        }
+      }
+    ]
+  }, deps);
+
+  now = 2000;
+  const touched = heartbeatFabricNode({
+    node: {
+      id: 'aws-current-node',
+      status: 'online'
+    },
+    transports: [
+      {
+        kind: 'webrtc',
+        health: 'online'
+      }
+    ]
+  }, {
+    ...deps,
+    ownerDeviceId: 'device-aws-current'
+  });
+
+  const fabricWebrtc = touched.registry.transports.find((transport) => transport.kind === 'webrtc');
+  assert.equal(fabricWebrtc.promotion.remoteRequestReady, true);
+  assert.equal(fabricWebrtc.promotion.mode, 'direct');
+  assert.equal(fabricWebrtc.promotion.evidenceRef, 'docs/fabric/evidence/2026-06-29-m6-direct-webrtc-promotion.md');
+
+  const legacyWebrtc = listNodeTransports('aws-current-node', deps).find((transport) => transport.kind === 'webrtc');
+  assert.equal(legacyWebrtc.promotion.remoteRequestReady, true);
+  assert.equal(transportSupportsRemoteRequest(legacyWebrtc), true);
+});
+
+test('fabric role registry register preserves active WebRTC promotion across full node publish', (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-fabric-register-promotion-'));
+  let now = 1000;
+  const deps = { fs, aiHomeDir, now: () => now };
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+
+  registerFabricNode({
+    node: {
+      id: 'aws-current-node',
+      name: 'AWS Current Node',
+      roles: ['node', 'relay-node'],
+      ownerDeviceId: 'device-aws-current'
+    },
+    transports: [
+      { id: 'aws-current-node-relay', kind: 'relay', health: 'online', priority: 100 },
+      {
+        id: 'aws-current-node-webrtc',
+        kind: 'webrtc',
+        endpoint: 'webrtc://aws-current-node',
+        health: 'online',
+        priority: 1,
+        promotion: {
+          remoteRequestReady: true,
+          mode: 'direct',
+          evidenceRef: 'docs/fabric/evidence/2026-06-29-m6-direct-webrtc-promotion.md',
+          rttP95Ms: 201,
+          rpcP95Ms: 200,
+          promotedAt: 1000,
+          expiresAt: Date.now() + 86_400_000
+        }
+      }
+    ]
+  }, deps);
+
+  now = 2000;
+  const updated = registerFabricNode({
+    node: {
+      id: 'aws-current-node',
+      name: 'AWS Current Node',
+      roles: ['node', 'relay-node'],
+      ownerDeviceId: 'device-aws-current'
+    },
+    transports: [
+      { id: 'aws-current-node-relay', kind: 'relay', health: 'online', priority: 100 },
+      {
+        id: 'aws-current-node-webrtc',
+        kind: 'webrtc',
+        endpoint: 'webrtc://aws-current-node',
+        health: 'online',
+        priority: 1
+      }
+    ],
+    runtimes: [
+      { provider: 'opencode', mode: 'tui', version: 'latest' }
+    ]
+  }, deps);
+
+  const returnedWebrtc = updated.transports.find((transport) => transport.kind === 'webrtc');
+  assert.equal(returnedWebrtc.promotion.remoteRequestReady, true);
+  assert.equal(returnedWebrtc.promotion.mode, 'direct');
+  assert.equal(returnedWebrtc.promotion.evidenceRef, 'docs/fabric/evidence/2026-06-29-m6-direct-webrtc-promotion.md');
+
+  const fabricWebrtc = listFabricRegistry(deps).transports.find((transport) => transport.kind === 'webrtc');
+  assert.equal(fabricWebrtc.promotion.remoteRequestReady, true);
+  assert.equal(fabricWebrtc.promotion.rpcP95Ms, 200);
+
+  const legacyWebrtc = listNodeTransports('aws-current-node', deps).find((transport) => transport.kind === 'webrtc');
+  assert.equal(legacyWebrtc.promotion.remoteRequestReady, true);
+  assert.equal(transportSupportsRemoteRequest(legacyWebrtc), true);
+});
+
+test('fabric role registry mirror clears stale legacy WebRTC promotion when fabric transport is not promoted', (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-fabric-clear-legacy-promotion-'));
+  const deps = { fs, aiHomeDir, now: () => 3000 };
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+
+  upsertRemoteTransport({
+    id: 'aws-current-node-webrtc',
+    nodeId: 'aws-current-node',
+    kind: 'webrtc',
+    endpoint: 'http://control.example.com:9527',
+    status: 'up',
+    score: 88,
+    promotion: {
+      remoteRequestReady: true,
+      mode: 'direct',
+      evidenceRef: 'docs/fabric/evidence/stale.md',
+      promotedAt: 1000
+    }
+  }, deps);
+
+  registerFabricNode({
+    node: {
+      id: 'aws-current-node',
+      name: 'AWS Current Node',
+      roles: ['node', 'relay-node'],
+      ownerDeviceId: 'device-aws-current'
+    },
+    transports: [
+      { id: 'aws-current-node-relay', kind: 'relay', health: 'online', priority: 100 },
+      {
+        id: 'aws-current-node-webrtc',
+        kind: 'webrtc',
+        endpoint: 'webrtc://aws-current-node',
+        health: 'online',
+        priority: 1
+      }
+    ]
+  }, deps);
+
+  const legacyWebrtc = listNodeTransports('aws-current-node', deps).find((transport) => transport.kind === 'webrtc');
+  assert.equal(legacyWebrtc.promotion, undefined);
+  assert.equal(transportSupportsRemoteRequest(legacyWebrtc), false);
+});
+
+test('fabric role registry heartbeat preserves runtime WebRTC RPC promotion in legacy mirror', (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-fabric-runtime-promotion-'));
+  let now = 1000;
+  const deps = { fs, aiHomeDir, now: () => now };
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+
+  registerFabricNode({
+    node: {
+      id: 'aws-current-node',
+      name: 'AWS Current Node',
+      roles: ['node', 'relay-node'],
+      ownerDeviceId: 'device-aws-current'
+    },
+    transports: [
+      { id: 'aws-current-node-relay', kind: 'relay', health: 'online', priority: 100 },
+      {
+        id: 'aws-current-node-webrtc',
+        kind: 'webrtc',
+        endpoint: 'http://control.example.com:9527',
+        health: 'online',
+        priority: 1,
+        promotion: {
+          remoteRequestReady: true,
+          mode: 'direct',
+          evidenceRef: 'docs/fabric/evidence/stale-direct.md',
+          rttP95Ms: 302.6,
+          rpcP95Ms: 302.6,
+          promotedAt: 1000,
+          expiresAt: Date.now() + 43_200_000
+        }
+      }
+    ]
+  }, deps);
+
+  upsertRemoteTransport({
+    id: 'aws-current-node-webrtc',
+    nodeId: 'aws-current-node',
+    kind: 'webrtc',
+    endpoint: 'http://control.example.com:9527',
+    status: 'up',
+    score: 88,
+    promotion: {
+      remoteRequestReady: true,
+      mode: 'management-rpc',
+      evidenceRef: 'runtime:webrtc-management-rpc:/v0/node-rpc/status',
+      rttP95Ms: 0,
+      rpcP95Ms: 169,
+      promotedAt: 2000,
+      expiresAt: Date.now() + 86_400_000
+    }
+  }, deps);
+
+  now = 3000;
+  heartbeatFabricNode({
+    node: {
+      id: 'aws-current-node',
+      status: 'online'
+    },
+    transports: [
+      {
+        kind: 'webrtc',
+        health: 'online'
+      }
+    ]
+  }, {
+    ...deps,
+    ownerDeviceId: 'device-aws-current'
+  });
+
+  const legacyWebrtc = listNodeTransports('aws-current-node', deps).find((transport) => transport.kind === 'webrtc');
+  assert.equal(legacyWebrtc.promotion.remoteRequestReady, true);
+  assert.equal(legacyWebrtc.promotion.mode, 'management-rpc');
+  assert.equal(legacyWebrtc.promotion.rpcP95Ms, 169);
+  assert.equal(transportSupportsRemoteRequest(legacyWebrtc), true);
+});
+
+test('fabric role registry heartbeat bootstraps missing node liveness only', (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-fabric-role-heartbeat-bootstrap-'));
+  const deps = { fs, aiHomeDir, now: () => 7000 };
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+
+  const touched = heartbeatFabricNode({
+    node: {
+      id: 'aws-current-node',
+      status: 'online'
+    },
+    relayNode: {
+      status: 'online'
+    },
+    transports: [
+      {
+        kind: 'relay',
+        health: 'online',
+        measurement: {
+          status: 'ws_echo_pass',
+          durationMs: 31,
+          successes: 20,
+          failures: 0,
+          sampleCount: 20,
+          successRate: 1
+        }
+      }
+    ]
+  }, {
+    ...deps,
+    ownerDeviceId: 'device-aws-current'
+  });
+
+  assert.equal(touched.node.id, 'aws-current-node');
+  assert.equal(touched.node.ownerDeviceId, 'device-aws-current');
+  assert.deepEqual(touched.node.roles, ['node', 'relay-node']);
+  assert.equal(touched.node.lastSeenAt, 7000);
+  assert.equal(touched.relayNode.status, 'online');
+  assert.equal(touched.transports.length, 1);
+  assert.equal(touched.transports[0].endpoint, 'relay://aws-current-node');
+  assert.deepEqual(touched.registry.counts, {
+    nodes: 1,
+    relayNodes: 1,
+    transports: 1,
+    projects: 0,
+    runtimes: 0
+  });
+  assert.equal(touched.registry.networkMeasurements.length, 1);
+
+  const registry = listFabricRegistry(deps);
+  assert.equal(registry.nodes[0].id, 'aws-current-node');
+  assert.equal(registry.projects.length, 0);
+  assert.equal(registry.runtimes.length, 0);
+
+  const legacyNode = getRemoteNode('aws-current-node', deps);
+  assert.equal(legacyNode.role, 'relay-node');
+  const legacyTransports = listNodeTransports('aws-current-node', deps);
+  assert.equal(legacyTransports[0].status, 'up');
 });
 
 test('fabric role registry mirrors online relay as selectable legacy transport', (t) => {

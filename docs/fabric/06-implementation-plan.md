@@ -67,6 +67,7 @@
 - 第一刀已落地：未 ready profile 时，Web client 重定向到独立 `/ui/server-setup`。
 - `/ui/server-setup` 已承载 pair URL/code、endpoint 探测、profile 列表、ready 后进入工作台。
 - Server 已提供 `/v0/fabric/descriptor` 和 `/v0/fabric/device-pair`，作为 Server Setup 的新配置入口。
+- CLI 已提供 `aih fabric profile pair` 和 `aih fabric profile pair-self`，可用同一真实 device-pair 流程为本机或远端 server 保存 ready profile；AWS current 已用 `pair-self` 闭合自检缺口。
 - 新生成的 device invite URL 指向 `/ui/server-setup`，旧 node-rpc pair URL 仍可消费历史链接。
 - 旧 `Settings -> 控制面` 只保留为高级入口。
 - 本地真实浏览器 pairing smoke 已完成：新 invite -> `/ui/server-setup?pair=...` -> ready profile -> 进入 `/ui`。
@@ -75,6 +76,7 @@
 
 - 新浏览器/手机无 profile 时无法直接误入 chat。
 - 添加 server、测试、配对、切换全链路可用。
+- Server 自身也能通过 CLI pair-self 生成自有 ready profile；不能通过复制其他机器 profile 数据绕过配对。
 - 独立 first-run Add Server 页面可用；后续必须补真实跨设备/手机 browser smoke 和 server profile 切换持久化测试。
 - Broker proxy endpoint 必须能完成 descriptor、device pair 和 node/session API 的真实请求；不能只保存一个 URL。
 
@@ -115,9 +117,9 @@
 
 验收：
 
-- 家里电脑可在 server1 上显示为 node + relay node。
-- 公司电脑可在 server1 上显示为 node + relay node。
-- 当前完成 server-side API、测试、本地 loopback CLI publisher smoke、AWS current 默认 `9527` relay measurement 持久化、Fabric Nodes UI 浏览器 smoke、本机 + AWS current 两个真实 node/relay-node 同屏 evidence、AWS current 持久 token + 5 次长跑 registry agent heartbeat partial evidence、默认 `9527` WS echo p95/成功率/networkMeasurements trace evidence，以及移动端多节点 Fabric Nodes 回归 evidence。真正的 systemd daemon/service 安装仍待确认后执行。证据见 `docs/fabric/evidence/2026-06-27-m3-role-registry-measurement.md`、`docs/fabric/evidence/2026-06-27-m3-role-registry-two-nodes.md`、`docs/fabric/evidence/2026-06-27-m3-node-service-daemon-partial.md`、`docs/fabric/evidence/2026-06-27-m3-relay-health-strong-metrics.md` 和 `docs/fabric/evidence/2026-06-27-m3-fabric-nodes-mobile-regression.md`。
+- 家里/公司风格的两类机器可在 server1 上显示为 node + relay node；当前真实证据以本机 `local-mac-remote-node` 和 AWS current `aws-current-node` 代表。
+- AWS current 默认 `9527` 已完成长期 relay + registryAgent user systemd service，`supervisor.ready=true`，fresh relay measurement 为 `ws_echo_pass`，并且本地 Fabric Nodes 能从 AWS registry 看到两个真实 node/relay-node。
+- M3 当前状态以 [08-current-status.md](08-current-status.md) 的 M3 Todo Queue 为准；核心证据包括 `2026-06-28-m3-supervised-daemon-aws.md`、`2026-06-28-m3-local-aws-visibility.md`、`2026-06-27-m3-role-registry-two-nodes.md`、`2026-06-27-m3-relay-health-strong-metrics.md` 和 `2026-06-27-m3-fabric-nodes-mobile-regression.md`。
 
 ### M3.5: Unified Node Product Model
 
@@ -132,7 +134,8 @@
 
 - AWS current 默认 `9527` 授权 registry readback 显示 `nodes=2`、`relayNodes=2`、`projects=2`、`runtimes=4`、`transports=2`。
 - AWS node 详情能明确显示：有 project 和 relay health，但没有 AWS provider runtime/account，因此不能启动 AWS provider session。
-- Local Mac node 详情能明确显示：有 provider runtimes，但 M4 session action 仍需 event store/attach/resume gate。
+- Local Mac node 详情能明确显示：有 provider runtimes；M4 session start/attach/message/slash/cursor/artifact/stop 已在 AWS current default `9527` 真实 smoke 闭环。
+- 当前 M3.5 完成状态以 `2026-06-28-node-inventory-read-model.md`、`2026-06-28-current-aws-node-model-readback.md` 和 `2026-06-28-aws-runtime-gap-diagnosis.md` 为证据。
 - SSH host 只能作为 bootstrap/ops capability 展示，不能被误认为 remote development session 已 ready。
 - WebRTC/QUIC 显示为 transport candidates，未过 promotion gate 前不进入自动选路默认路径。
 
@@ -204,11 +207,10 @@
 
 ## 当前下一步顺序
 
-1. M3.5 Node Inventory read model 和 Node Detail action gating。
-2. M4 8.4 event store + seq/ack/resume。
-3. M4 8.5 approval/artifact lanes。
-4. M4 8.6 real AWS current remote development session smoke。
-5. Transport candidates promotion：WebRTC DataChannel、WebTransport/QUIC、OMR/MPTCP underlay evidence。
+1. M3、M3.5、M4 和 M5 已完成当前默认产品切片；不要再按本文件旧顺序重复实现。
+2. M6 软件侧 WebRTC DataChannel、RPC adapter、fallback decision、diagnostics surface、prerequisite audit 和 direct WebRTC promotion publish 已完成；direct WebRTC 必须显式跑真实 gate 并发布带 expiry 的 registry promotion，不能静默永久晋级。
+3. M6 剩余外部前置复测：受控 TURN relay `iceServers`/凭据、HTTPS/H3 WebTransport endpoint、真实 OpenMPTCPRouter/Linux underlay。没有这些真实前置时不得把对应高级 transport 设为默认。
+4. 新增里程碑或需求必须先追加到 [08-current-status.md](08-current-status.md) 对应 queue，再进入实现和证据闭环。
 
 ## 代码边界建议
 

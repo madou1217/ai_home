@@ -1,16 +1,17 @@
 import { formatRuntimeUntil } from '@/components/runtime/RuntimeStatusTag';
+import './Accounts.css';
 import React, { useState, useEffect, useMemo } from 'react';
-import { ModalForm } from '@ant-design/pro-components';
+import { ModalForm, StatisticCard } from '@ant-design/pro-components';
+import Button from '@/components/ui/AppButton';
 import PageScaffold from '@/components/ui/PageScaffold';
+import SectionCard from '@/components/ui/SectionCard';
 import ListTable from '@/components/ui/ListTable';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
-  Button,
   Space,
   Tag,
   Badge,
   Modal,
-  Descriptions,
   Form,
   Input,
   Select,
@@ -44,6 +45,7 @@ import {
   EditOutlined
 } from '@ant-design/icons';
 import { accountsAPI, modelsAPI } from '@/services/api';
+import { formatTimeCell } from '@/utils/datetime';
 import type { AccountExportFormat } from '@/services/api';
 import type { AccountImportUploadFile } from '@/services/api';
 import type {
@@ -322,8 +324,11 @@ function formatImportJobProgress(job: AccountImportJob | null) {
   return `${percent}%${label ? ` · ${label}` : ''}`;
 }
 
-function canCopyAccountEmail(record: Pick<Account, 'apiKeyMode' | 'email'>) {
-  return !record.apiKeyMode && Boolean(String(record.email || '').trim());
+function canCopyAccountEmail(record: Pick<Account, 'apiKeyMode' | 'email' | 'baseUrl'>) {
+  if (record.apiKeyMode) {
+    return true; // API Key 账号始终展示复制按钮
+  }
+  return Boolean(String(record.email || '').trim());
 }
 
 function hasBlockingRuntimeStatus(record: Pick<Account, 'runtimeStatus'>) {
@@ -956,11 +961,14 @@ export default function Accounts() {
     };
   }, [location.search]);
 
-  const copyAccountEmail = React.useCallback(async (record: Pick<Account, 'apiKeyMode' | 'email'>) => {
-    const email = String(record.email || '').trim();
-    if (!canCopyAccountEmail(record) || !email) return;
+  const copyAccountEmail = React.useCallback(async (record: Pick<Account, 'apiKeyMode' | 'email' | 'baseUrl' | 'accountId'>) => {
+    if (!canCopyAccountEmail(record)) return;
+    const text = record.apiKeyMode
+      ? (String(record.baseUrl || '').trim() || record.accountId)
+      : String(record.email || '').trim();
+    if (!text) return;
     try {
-      await navigator.clipboard.writeText(email);
+      await navigator.clipboard.writeText(text);
       message.success('账号已复制');
     } catch (_error) {
       message.error('复制失败');
@@ -2167,11 +2175,10 @@ export default function Accounts() {
                 {canCopyAccountEmail(record) ? (
                   <Tooltip title="复制账号">
                     <Button
-                      className="account-email-copy-button"
+                      className="copy-icon-btn"
                       type="text"
                       size="small"
                       icon={<CopyOutlined />}
-                      style={{ color: '#bfbfbf', width: 22, height: 22, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
                       onClick={() => copyAccountEmail(record)}
                     />
                   </Tooltip>
@@ -2194,22 +2201,24 @@ export default function Accounts() {
       )
     },
     {
-      title: '账号开关',
+      title: '开关',
       dataIndex: 'status',
       key: 'status',
-      width: 120,
+      width: 88,
       align: 'center' as const,
       render: (_status: any, record: Account) => {
         const accountKey = getAccountKey(record);
         const enabled = isAccountEnabled(record);
         return (
-          <Switch
-            checked={enabled}
-            checkedChildren="启用"
-            unCheckedChildren="关闭"
-            loading={Boolean(updatingStatusAccountKeys[accountKey])}
-            onChange={(checked) => handleToggleStatus(record, checked)}
-          />
+          <span style={{ display: 'inline-flex', justifyContent: 'center', width: 64 }}>
+            <Switch
+              checked={enabled}
+              checkedChildren="启用"
+              unCheckedChildren="关闭"
+              loading={Boolean(updatingStatusAccountKeys[accountKey])}
+              onChange={(checked) => handleToggleStatus(record, checked)}
+            />
+          </span>
         );
       }
     },
@@ -2328,11 +2337,12 @@ export default function Accounts() {
       width: 150,
       sorter: (a: Account, b: Account) => (a.updatedAt || 0) - (b.updatedAt || 0),
       render: (timestamp: any) => {
-        if (!timestamp) return '-';
+        const t = formatTimeCell(timestamp);
+        if (!t) return '-';
         return (
           <div>
-            <div>{dayjs(timestamp).format('MM-DD HH:mm')}</div>
-            <div style={{ fontSize: '12px', color: '#999' }}>{dayjs(timestamp).fromNow()}</div>
+            <div>{t.absolute}</div>
+            <div style={{ fontSize: '12px', color: '#999' }}>{t.relative}</div>
           </div>
         );
       }
@@ -2348,11 +2358,12 @@ export default function Accounts() {
       width: 160,
       sorter: (a: Account, b: Account) => (a.lastUsedAt || 0) - (b.lastUsedAt || 0),
       render: (timestamp?: any) => {
-        if (!timestamp) return '-';
+        const t = formatTimeCell(timestamp);
+        if (!t) return '-';
         return (
           <div>
-            <div>{dayjs(timestamp).format('MM-DD HH:mm')}</div>
-            <div style={{ fontSize: '12px', color: '#999' }}>{dayjs(timestamp).fromNow()}</div>
+            <div>{t.absolute}</div>
+            <div style={{ fontSize: '12px', color: '#999' }}>{t.relative}</div>
           </div>
         );
       }
@@ -2537,27 +2548,48 @@ export default function Accounts() {
           </Button>
         </>
       )}
-      headerContent={(
-        <Descriptions size="small" column={{ xs: 1, sm: 2, md: 3 }} style={{ marginTop: 8 }}>
-          <Descriptions.Item label="账号状态">
-            <Badge status={hydratingDetails ? "warning" : "success"} text={hydratingDetails ? "详情补全中" : "就绪"} />
-          </Descriptions.Item>
-          <Descriptions.Item label="正常可用">
-            <span style={{ color: '#0F766E', fontWeight: 'bold' }}>{providerStats[activeProvider].healthy}</span> / {providerStats[activeProvider].total}
-          </Descriptions.Item>
-          <Descriptions.Item label="待处理问题">
-            <span style={{ color: providerStats[activeProvider].runtimeBlocked + providerStats[activeProvider].usageAttention > 0 ? '#fa8c16' : '#8c8c8c', fontWeight: 'bold' }}>
-              {providerStats[activeProvider].runtimeBlocked + providerStats[activeProvider].usageAttention}
-            </span> (阻塞 {providerStats[activeProvider].runtimeBlocked} · 待校准 {providerStats[activeProvider].usageAttention})
-          </Descriptions.Item>
-          <Descriptions.Item label="耗尽/停用">
-            <span style={{ color: providerStats[activeProvider].exhausted + providerStats[activeProvider].policyBlocked > 0 ? '#DC2626' : '#8c8c8c', fontWeight: 'bold' }}>
-              {providerStats[activeProvider].exhausted + providerStats[activeProvider].policyBlocked}
-            </span> (耗尽 {providerStats[activeProvider].exhausted} · 停池 {providerStats[activeProvider].policyBlocked})
-          </Descriptions.Item>
-        </Descriptions>
-      )}
 >
+      {/* 顶部统计 —— 框架 StatisticCard.Group，自带卡片效果 */}
+      <StatisticCard.Group direction="row" style={{ marginBottom: 16 }}>
+        <StatisticCard
+          statistic={{
+            title: '账号状态',
+            value: hydratingDetails ? '详情补全中' : '就绪',
+            status: hydratingDetails ? 'processing' : 'success'
+          }}
+        />
+        <StatisticCard
+          statistic={{
+            title: '正常可用',
+            value: `${providerStats[activeProvider].healthy} / ${providerStats[activeProvider].total}`
+          }}
+        />
+        <StatisticCard
+          statistic={{
+            title: '待处理问题',
+            value: providerStats[activeProvider].runtimeBlocked + providerStats[activeProvider].usageAttention,
+            description: `阻塞 ${providerStats[activeProvider].runtimeBlocked} · 待校准 ${providerStats[activeProvider].usageAttention}`,
+            valueStyle: {
+              color: providerStats[activeProvider].runtimeBlocked + providerStats[activeProvider].usageAttention > 0
+                ? 'var(--color-warning, #d97706)'
+                : undefined
+            }
+          }}
+        />
+        <StatisticCard
+          statistic={{
+            title: '耗尽/停用',
+            value: providerStats[activeProvider].exhausted + providerStats[activeProvider].policyBlocked,
+            description: `耗尽 ${providerStats[activeProvider].exhausted} · 停池 ${providerStats[activeProvider].policyBlocked}`,
+            valueStyle: {
+              color: providerStats[activeProvider].exhausted + providerStats[activeProvider].policyBlocked > 0
+                ? 'var(--color-danger, #dc2626)'
+                : undefined
+            }
+          }}
+        />
+      </StatisticCard.Group>
+
       {hasActiveImportJob ? (
         <Alert
           type="info"
@@ -2658,68 +2690,69 @@ export default function Accounts() {
         </div>
       </Modal>
 
-        <ListTable
-          headerTitle={
-            <Space size={12}>
-              <span style={{ fontWeight: 600 }}>当前账号池</span>
-              <Badge status="success" text={`可用 ${providerStats[activeProvider].healthy}`} />
-              {providerStats[activeProvider].runtimeBlocked + providerStats[activeProvider].usageAttention > 0 && (
-                <Badge status="warning" text={`待处理 ${providerStats[activeProvider].runtimeBlocked + providerStats[activeProvider].usageAttention}`} />
-              )}
-              {providerStats[activeProvider].exhausted + providerStats[activeProvider].policyBlocked > 0 && (
-                <Badge status="error" text={`不可用 ${providerStats[activeProvider].exhausted + providerStats[activeProvider].policyBlocked}`} />
-              )}
-            </Space>
-          }
-          dataSource={filteredAccounts}
-          columns={columns}
-          rowKey={(record) => `${record.provider}-${record.accountId}`}
-          rowClassName={(record) => [
-            accountRouteTarget?.key === getAccountKey(record) ? 'accounts-row-target' : '',
-            getAccountExitClassName(record)
-          ].filter(Boolean).join(' ')}
-          onRow={(record) => ({
-            'data-account-key': getAccountKey(record)
-          } as React.HTMLAttributes<HTMLElement>)}
-          loading={loading}
-          toolbar={{
-            menu: {
-              type: 'tab',
-              activeKey: activeProvider,
-              items: tabItems.map(tab => ({ key: tab.key, label: tab.label })),
-              onChange: (key) => setActiveProvider(key as any)
-            },
-            actions: [
-              <Select
-                key="status-filter"
-                value={filterStatus}
-                onChange={setFilterStatus}
-                style={{ width: 140 }}
-                options={[
-                  { label: '全部状态', value: 'all' },
-                  { label: '正常可用', value: 'healthy' },
-                  { label: '运行阻塞', value: 'runtime_blocked' },
-                  { label: '额度待确认', value: 'usage_attention' },
-                  { label: '已停池', value: 'policy_blocked' },
-                  { label: '已耗尽', value: 'exhausted' },
-                  { label: '已关闭', value: 'disabled' },
-                  { label: '未配置', value: 'unconfigured' }
-                ]}
-                suffixIcon={<FilterOutlined />}
-              />,
-              <Button
-                key="reload"
-                icon={<SyncOutlined />}
-                onClick={handleReload}
-                loading={refreshing}
-              >
-                刷新
-              </Button>
-            ],
-            settings: []
-          }}
-          scroll={{ x: 1200 }}
-        />
+        <SectionCard title="当前账号池">
+          <ListTable
+            headerTitle={
+              <Space size={12}>
+                <Badge status="success" text={`可用 ${providerStats[activeProvider].healthy}`} />
+                {providerStats[activeProvider].runtimeBlocked + providerStats[activeProvider].usageAttention > 0 && (
+                  <Badge status="warning" text={`待处理 ${providerStats[activeProvider].runtimeBlocked + providerStats[activeProvider].usageAttention}`} />
+                )}
+                {providerStats[activeProvider].exhausted + providerStats[activeProvider].policyBlocked > 0 && (
+                  <Badge status="error" text={`不可用 ${providerStats[activeProvider].exhausted + providerStats[activeProvider].policyBlocked}`} />
+                )}
+              </Space>
+            }
+            dataSource={filteredAccounts}
+            columns={columns}
+            rowKey={(record) => `${record.provider}-${record.accountId}`}
+            rowClassName={(record) => [
+              accountRouteTarget?.key === getAccountKey(record) ? 'accounts-row-target' : '',
+              getAccountExitClassName(record)
+            ].filter(Boolean).join(' ')}
+            onRow={(record) => ({
+              'data-account-key': getAccountKey(record)
+            } as React.HTMLAttributes<HTMLElement>)}
+            loading={loading}
+            toolbar={{
+              menu: {
+                type: 'tab',
+                activeKey: activeProvider,
+                items: tabItems.map(tab => ({ key: tab.key, label: tab.label })),
+                onChange: (key) => setActiveProvider(key as any)
+              },
+              actions: [
+                <Select
+                  key="status-filter"
+                  value={filterStatus}
+                  onChange={setFilterStatus}
+                  style={{ width: 140 }}
+                  options={[
+                    { label: '全部状态', value: 'all' },
+                    { label: '正常可用', value: 'healthy' },
+                    { label: '运行阻塞', value: 'runtime_blocked' },
+                    { label: '额度待确认', value: 'usage_attention' },
+                    { label: '已停池', value: 'policy_blocked' },
+                    { label: '已耗尽', value: 'exhausted' },
+                    { label: '已关闭', value: 'disabled' },
+                    { label: '未配置', value: 'unconfigured' }
+                  ]}
+                  suffixIcon={<FilterOutlined />}
+                />,
+                <Button
+                  key="reload"
+                  icon={<SyncOutlined />}
+                  onClick={handleReload}
+                  loading={refreshing}
+                >
+                  刷新
+                </Button>
+              ],
+              settings: []
+            }}
+            scroll={{ x: 1200 }}
+          />
+        </SectionCard>
       
 
       <ModalForm

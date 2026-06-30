@@ -18,6 +18,23 @@
   scrollbar-width: none;
 }
 
+/* 首次无缓存加载时的骨架屏：模拟项目行（方形图标 + 名称），与列表节奏一致避免空白 */
+.sidebarSkeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 12px 12px 4px;
+}
+.sidebarSkeletonRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.sidebarSkeletonRow :global(.ant-skeleton-input) {
+  min-width: 0;
+  height: 16px;
+}
+
 .sidebarContent::-webkit-scrollbar {
   display: none;
 }
@@ -1622,14 +1639,26 @@
   transform: translateX(-50%) translateY(-1px);
 }
 
-/* ChatGPT 风格输入区域 */
+/* ChatGPT 风格输入区域：与消息区共用同一底色，输入框浮在统一背景上，
+ * 不再出现「消息区灰 / 输入区白」的割裂分界。顶部加一段渐隐让消息滚动到底部时柔和淡出。 */
 .inputArea {
   position: relative;
   display: flex;
   flex-direction: column;
   padding: 0 16px 24px;
-  background: transparent;
+  background: var(--c-neutral-50);
   width: 100%;
+}
+
+.inputArea::before {
+  content: '';
+  position: absolute;
+  top: -24px;
+  left: 0;
+  right: 0;
+  height: 24px;
+  background: linear-gradient(to bottom, transparent, var(--c-neutral-50));
+  pointer-events: none;
 }
 
 .inputAreaMobile {

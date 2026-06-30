@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
-import { Spin, Empty, Popconfirm, message, Modal } from 'antd';
+import { Skeleton, Empty, Popconfirm, message, Modal } from 'antd';
 import { ReloadOutlined, InboxOutlined, PlusOutlined, FolderOpenOutlined, MinusOutlined } from '@ant-design/icons';
 import type { AggregatedProject, Session } from '@/types';
 import { sessionsAPI } from '@/services/api';
@@ -130,9 +130,16 @@ const ProjectList = ({
       {remoteSessionsPanel}
 
       <div className={styles.sidebarContent}>
-        {loading ? (
-          <div style={{ padding: 24, textAlign: 'center' }}>
-            <Spin tip="加载中..." />
+        {/* 缓存存在时（projects 非空）即便在异步刷新也保持列表可见，刷新指示交给顶部刷新按钮的 loading，
+            避免整列被遮罩导致空白感；只有首次无缓存加载时才用骨架屏占位。 */}
+        {loading && projects.length === 0 ? (
+          <div className={styles.sidebarSkeleton}>
+            {Array.from({ length: 6 }).map((_, index) => (
+              <div key={index} className={styles.sidebarSkeletonRow}>
+                <Skeleton.Avatar active size={16} shape="square" />
+                <Skeleton.Input active size="small" block />
+              </div>
+            ))}
           </div>
         ) : projects.length === 0 ? (
           <Empty description="暂无项目" style={{ marginTop: 24 }} />
@@ -187,7 +194,6 @@ const ProjectList = ({
                         <ProviderIcon
                           provider={badge.provider}
                           size={12}
-                          variant="terminal"
                         />
                       </span>
                     ))}
@@ -255,7 +261,6 @@ const ProjectList = ({
                             <ProviderIcon
                               provider={session.provider}
                               size={14}
-                              variant="terminal"
                             />
                           </span>
                           <span className={styles.sessionTitle}>{session.title}</span>

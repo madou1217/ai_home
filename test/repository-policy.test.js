@@ -26,6 +26,8 @@ const ALLOWED_MARKDOWN = new Set([
   'web/DESIGN.md',
   'web/DESIGN_SYSTEM.md',
   'web/TODO_REFACTOR.md',
+  'web/src/styles/DESIGN_SPECIFICATION.md',
+  'web/src/styles/UI_WIREFRAMES_AND_MOCKUPS.md',
   'CLAUDE.md',
   'GEMINI.md'
 ]);

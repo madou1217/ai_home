@@ -246,6 +246,88 @@ describe('createTokenRefreshDaemon', () => {
     }
   });
 
+  it('does not clear agy runtime memory when persisted clear is rejected', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-token-refresh-daemon-agy-rejected-'));
+    try {
+      const configDir = path.join(root, '.gemini', 'antigravity-cli');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(path.join(configDir, 'antigravity-oauth-token'), JSON.stringify({
+        client_id: 'agy-client-id',
+        client_secret: 'agy-client-secret',
+        token: {
+          access_token: 'old-agy-token',
+          refresh_token: 'agy-refresh-token',
+          expiry: '2000-01-01T00:00:00Z'
+        },
+        auth_method: 'consumer'
+      }, null, 2));
+
+      const account = {
+        id: '1',
+        provider: 'agy',
+        authType: 'oauth-personal',
+        accessToken: 'old-agy-token',
+        tokenExpiresAt: Date.now() - 60_000,
+        configDir,
+        email: 'agy@example.com',
+        authInvalidUntil: Date.now() + 60_000,
+        consecutiveFailures: 1,
+        lastError: 'agy_not_signed_in'
+      };
+      const state = {
+        accounts: {
+          codex: [],
+          gemini: [],
+          claude: [],
+          agy: [account]
+        }
+      };
+      const clears = [];
+      const events = [];
+
+      const daemon = createTokenRefreshDaemon(state, {
+        tokenRefreshIntervalMs: 60000,
+        tokenStartupRefreshBeforeExpiryMs: 5 * 60 * 1000
+      }, {
+        fetchWithTimeout: async () => ({
+          ok: true,
+          text: async () => JSON.stringify({
+            access_token: 'new-agy-token',
+            refresh_token: 'agy-refresh-token',
+            expires_in: 3600
+          })
+        }),
+        accountStateService: {
+          clearRuntimeBlock(provider, accountId, options) {
+            clears.push({ provider, accountId, options });
+            return false;
+          }
+        },
+        hub: {
+          emit(name, event) {
+            events.push({ name, event });
+          }
+        },
+        logInfo: () => {},
+        logWarn: () => {},
+        logError: () => {}
+      });
+
+      await new Promise(resolve => setTimeout(resolve, 200));
+      daemon.stop();
+
+      assert.equal(account.accessToken, 'new-agy-token');
+      assert.ok(account.authInvalidUntil > Date.now());
+      assert.equal(account.consecutiveFailures, 1);
+      assert.equal(account.lastError, 'agy_not_signed_in');
+      assert.equal(clears.length, 1);
+      assert.equal(clears[0].options.evidence, 'token_refresh_success');
+      assert.equal(events.length, 0);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('should not refresh if token is far from expiry', async () => {
     const nowMs = Date.now();
     const expiresAt = nowMs + 60 * 60 * 1000; // 1 小时后过期

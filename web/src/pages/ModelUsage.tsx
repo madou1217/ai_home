@@ -1,20 +1,23 @@
+import { StatisticCard } from '@ant-design/pro-components';
+import './ModelUsage.css';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Button,
   Col,
   DatePicker,
-  Descriptions,
   Drawer,
   Grid,
   Row,
   Segmented,
   Select,
   Space,
+  Tabs,
+  Tooltip,
   Typography,
   message
 } from 'antd';
 import { ProColumns } from '@ant-design/pro-components';
 import {
+  CopyOutlined,
   EyeOutlined,
   ReloadOutlined,
   SyncOutlined
@@ -32,6 +35,7 @@ import type {
   Provider
 } from '@/types';
 import ProviderIcon, { providerIds, providerNames } from '@/components/chat/ProviderIcon';
+import Button from '@/components/ui/AppButton';
 import PageScaffold from '@/components/ui/PageScaffold';
 import SectionCard from '@/components/ui/SectionCard';
 import ListTable from '@/components/ui/ListTable';
@@ -346,6 +350,17 @@ export default function ModelUsage() {
     }
   };
 
+  const copySessionId = async (sessionId: string) => {
+    const value = String(sessionId || '').trim();
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      message.success('会话 ID 已复制');
+    } catch {
+      message.error('复制失败');
+    }
+  };
+
   const modelColumns: ProColumns<ModelUsageModelRow>[] = [
     {
       title: 'Provider',
@@ -412,7 +427,20 @@ export default function ModelUsage() {
       title: '会话',
       dataIndex: 'sessionId',
       ellipsis: true,
-      render: (value: any) => <Text code>{value}</Text>
+      render: (value: any) => (
+        <span className="usage-session-cell">
+          <span className="usage-session-id" title={String(value || '')}>{value}</span>
+          <Tooltip title="复制会话 ID">
+            <Button
+              className="copy-icon-btn"
+              type="text"
+              size="small"
+              icon={<CopyOutlined />}
+              onClick={() => copySessionId(String(value || ''))}
+            />
+          </Tooltip>
+        </span>
+      )
     },
     {
       title: '项目',
@@ -568,26 +596,24 @@ export default function ModelUsage() {
     <PageScaffold ghost
       title="模型用量统计"
       subTitle="监控 Tokens、会话、模型调用频次和估算成本。"
-      extra={
-        <>
-          <Button key="refresh" icon={<ReloadOutlined />} onClick={handleRefreshUsage} loading={loading}>
-            刷新
-          </Button>
-          <Button key="scan" type="primary" icon={<SyncOutlined />} onClick={handleScan} loading={scanning || isScanJobActive(scanJob)}>
-            扫描
-          </Button>
-        </>
-      }
-      headerContent={
-        <Descriptions column={{ xs: 1, sm: 2, md: 4 }} size="small" style={{ marginBottom: 8 }}>
-          <Descriptions.Item label="调用">{stats.totalCalls}</Descriptions.Item>
-          <Descriptions.Item label="会话">{stats.totalSessions}</Descriptions.Item>
-          <Descriptions.Item label="Tokens">{formatTokens(stats.totalTokens)}</Descriptions.Item>
-          <Descriptions.Item label="成本">{formatCost(stats.totalCostUsd)}</Descriptions.Item>
-        </Descriptions>
-      }
+      extra={[
+        <Button key="refresh" icon={<ReloadOutlined />} onClick={handleRefreshUsage} loading={loading}>
+          刷新
+        </Button>,
+        <Button key="scan" type="primary" icon={<SyncOutlined />} onClick={handleScan} loading={scanning || isScanJobActive(scanJob)}>
+          扫描
+        </Button>
+      ]}
     >
-      <SectionCard bordered className="usage-filter-card">
+      {/* 4 项关键指标 —— 框架 StatisticCard.Group */}
+      <StatisticCard.Group direction="row" style={{ marginBottom: 16 }}>
+        <StatisticCard statistic={{ title: '总调用次数', value: stats.totalCalls }} />
+        <StatisticCard statistic={{ title: '运行会话', value: stats.totalSessions }} />
+        <StatisticCard statistic={{ title: '总 Tokens', value: formatTokens(stats.totalTokens) }} />
+        <StatisticCard statistic={{ title: '估算成本 (USD)', value: formatCost(stats.totalCostUsd), valueStyle: { color: 'var(--color-success, #15803d)' } }} />
+      </StatisticCard.Group>
+
+      <SectionCard bordered >
         <Space size={12} wrap>
           <Segmented
             value={rangeMode}
@@ -626,16 +652,6 @@ export default function ModelUsage() {
       </SectionCard>
 
       {scanStatusNode}
-
-      <SectionCard title="按模型">
-        <ListTable<ModelUsageModelRow>
-          loading={loading}
-          rowKey={(row) => `${row.provider}:${row.model || 'unknown'}`}
-          columns={modelColumns}
-          dataSource={models}
-          scroll={{ x: 900 }}
-        />
-      </SectionCard>
 
       {scanResult ? (
         <SectionCard title="最近扫描">
@@ -682,13 +698,36 @@ export default function ModelUsage() {
         </SectionCard>
       ) : null}
 
-      <SectionCard title="按会话">
-        <ListTable<ModelUsageSessionRow>
-          loading={loading}
-          rowKey={getSessionKey}
-          columns={sessionColumns}
-          dataSource={sessions}
-          scroll={{ x: 1000 }}
+      <SectionCard>
+        <Tabs
+          items={[
+            {
+              key: 'model',
+              label: '按模型',
+              children: (
+                <ListTable<ModelUsageModelRow>
+                  loading={loading}
+                  rowKey={(row) => `${row.provider}:${row.model || 'unknown'}`}
+                  columns={modelColumns}
+                  dataSource={models}
+                  scroll={{ x: 900 }}
+                />
+              )
+            },
+            {
+              key: 'session',
+              label: '按会话',
+              children: (
+                <ListTable<ModelUsageSessionRow>
+                  loading={loading}
+                  rowKey={getSessionKey}
+                  columns={sessionColumns}
+                  dataSource={sessions}
+                  scroll={{ x: 1000 }}
+                />
+              )
+            }
+          ]}
         />
       </SectionCard>
 

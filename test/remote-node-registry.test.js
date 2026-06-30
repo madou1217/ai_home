@@ -13,6 +13,7 @@ const {
   upsertRemoteNode
 } = require('../lib/server/remote/node-registry');
 const {
+  getTransportKindCatalog,
   listNodeTransports,
   transportSupportsRemoteRequest,
   upsertRemoteTransport
@@ -23,7 +24,8 @@ const {
   writeRemoteSecret
 } = require('../lib/server/remote/secret-store');
 const {
-  selectTransport
+  selectTransport,
+  selectTransportDecision
 } = require('../lib/server/remote/transport-selector');
 const { buildRemoteTransportStrategies } = require('../lib/server/remote/transport-strategies');
 const {
@@ -198,6 +200,523 @@ test('remote relay transport is a normalized fallback for remote requests', (t) 
   assert.equal(selected.id, 'home-mac-relay');
 });
 
+test('remote transport catalog keeps WebRTC and WebTransport as candidate-only transports', (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-remote-transport-candidates-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  const deps = { fs, aiHomeDir };
+
+  upsertRemoteNode({
+    id: 'home-mac',
+    name: 'Home Mac',
+    preferredTransports: ['webrtc', 'webtransport', 'relay']
+  }, deps);
+  const webrtc = upsertRemoteTransport({
+    id: 'home-mac-webrtc',
+    nodeId: 'home-mac',
+    kind: 'webrtc',
+    endpoint: 'http://control.example.com:9527',
+    status: 'up',
+    score: 100
+  }, deps);
+  const webtransport = upsertRemoteTransport({
+    id: 'home-mac-webtransport',
+    nodeId: 'home-mac',
+    kind: 'webtransport',
+    endpoint: 'https://control.example.com:9527',
+    status: 'up',
+    score: 100
+  }, deps);
+  const catalog = getTransportKindCatalog();
+
+  assert.equal(webrtc.kind, 'webrtc');
+  assert.equal(webtransport.kind, 'webtransport');
+  assert.equal(catalog.webrtc.lane, 'candidate');
+  assert.equal(catalog.webtransport.endpointMode, 'https-h3');
+  assert.equal(transportSupportsRemoteRequest(webrtc), false);
+  assert.equal(transportSupportsRemoteRequest(webtransport), false);
+
+  const promotedWebrtc = upsertRemoteTransport({
+    id: 'home-mac-webrtc-promoted',
+    nodeId: 'home-mac',
+    kind: 'webrtc',
+    endpoint: 'http://control.example.com:9527',
+    status: 'up',
+    score: 100,
+    promotion: {
+      remoteRequestReady: true,
+      mode: 'direct',
+      evidenceRef: 'docs/fabric/evidence/example.md',
+      rttP95Ms: 201,
+      rpcP95Ms: 205,
+      promotedAt: 1000
+    }
+  }, deps);
+
+  assert.equal(transportSupportsRemoteRequest(promotedWebrtc), true);
+  assert.equal(promotedWebrtc.promotion.remoteRequestReady, true);
+  assert.equal(promotedWebrtc.promotion.mode, 'direct');
+});
+
+test('remote transport upsert clears previous promotion when promotion is explicitly null', (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-remote-clear-promotion-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  const deps = { fs, aiHomeDir };
+
+  upsertRemoteTransport({
+    id: 'home-mac-webrtc',
+    nodeId: 'home-mac',
+    kind: 'webrtc',
+    endpoint: 'http://control.example.com:9527',
+    status: 'up',
+    score: 100,
+    promotion: {
+      remoteRequestReady: true,
+      mode: 'direct',
+      evidenceRef: 'docs/fabric/evidence/example.md',
+      promotedAt: 1000
+    }
+  }, deps);
+
+  const cleared = upsertRemoteTransport({
+    id: 'home-mac-webrtc',
+    nodeId: 'home-mac',
+    kind: 'webrtc',
+    endpoint: 'webrtc://home-mac',
+    status: 'up',
+    score: 80,
+    promotion: null
+  }, deps);
+
+  assert.equal(cleared.promotion, undefined);
+  assert.equal(transportSupportsRemoteRequest(cleared), false);
+  assert.equal(listNodeTransports('home-mac', deps)[0].promotion, undefined);
+});
+
+test('remote transport selector falls back to relay when WebRTC candidate is not promoted', () => {
+  const node = {
+    preferredTransports: ['webrtc', 'relay']
+  };
+  const transports = [
+    {
+      id: 'home-mac-webrtc',
+      kind: 'webrtc',
+      endpoint: 'http://control.example.com:9527',
+      status: 'up',
+      score: 100
+    },
+    {
+      id: 'home-mac-relay',
+      kind: 'relay',
+      endpoint: 'relay://home-mac',
+      status: 'up',
+      score: 55
+    }
+  ];
+
+  const selected = selectTransport(node, transports, { purpose: 'runtime' });
+  const decision = selectTransportDecision(node, transports, { purpose: 'runtime' });
+
+  assert.equal(selected.id, 'home-mac-relay');
+  assert.equal(decision.selectedTransportId, 'home-mac-relay');
+  assert.equal(decision.fallbackUsed, true);
+  assert.deepEqual(decision.fallbackFrom, ['webrtc']);
+  assert.deepEqual(decision.rejected, [
+    {
+      id: 'home-mac-webrtc',
+      kind: 'webrtc',
+      reason: 'webrtc_not_promoted'
+    }
+  ]);
+});
+
+test('remote transport selector requires a WebRTC adapter after promotion', () => {
+  const node = {
+    preferredTransports: ['webrtc', 'relay']
+  };
+  const transports = [
+    {
+      id: 'home-mac-webrtc',
+      kind: 'webrtc',
+      endpoint: 'http://control.example.com:9527',
+      status: 'up',
+      score: 100,
+      promotion: { remoteRequestReady: true, promotedAt: 1000 }
+    },
+    {
+      id: 'home-mac-relay',
+      kind: 'relay',
+      endpoint: 'relay://home-mac',
+      status: 'up',
+      score: 55
+    }
+  ];
+
+  const missingAdapter = selectTransportDecision(node, transports, { purpose: 'runtime' });
+  assert.equal(missingAdapter.selectedTransportId, 'home-mac-relay');
+  assert.deepEqual(missingAdapter.fallbackFrom, ['webrtc']);
+  assert.deepEqual(missingAdapter.rejected, [
+    {
+      id: 'home-mac-webrtc',
+      kind: 'webrtc',
+      reason: 'webrtc_adapter_not_available'
+    }
+  ]);
+
+  const withAdapter = selectTransportDecision(node, transports, {
+    purpose: 'runtime',
+    availableAdapters: ['webrtc']
+  });
+  assert.equal(withAdapter.selectedTransportId, 'home-mac-webrtc');
+  assert.equal(withAdapter.selectedKind, 'webrtc');
+  assert.equal(withAdapter.fallbackUsed, false);
+  assert.deepEqual(withAdapter.rejected, []);
+});
+
+test('remote gateway records transport promotion fallback decision in result and audit', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-remote-gateway-decision-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  const node = {
+    id: 'home-mac',
+    preferredTransports: ['webrtc', 'relay']
+  };
+  const transports = [
+    {
+      id: 'home-mac-webrtc',
+      kind: 'webrtc',
+      endpoint: 'http://control.example.com:9527',
+      status: 'up',
+      score: 100
+    },
+    {
+      id: 'home-mac-relay',
+      kind: 'relay',
+      endpoint: 'relay://home-mac',
+      status: 'up',
+      score: 55
+    }
+  ];
+
+  const result = await requestRemoteManagement({
+    node,
+    transports,
+    purpose: 'runtime',
+    rpc: 'session-start',
+    pathname: '/v0/node-rpc/session-start'
+  }, {
+    fs,
+    aiHomeDir,
+    requestRelayManagement: async () => ({
+      status: 200,
+      ok: true,
+      payload: { ok: true }
+    })
+  });
+
+  assert.equal(result.transport.id, 'home-mac-relay');
+  assert.equal(result.transportDecision.transportPurpose, 'runtime');
+  assert.equal(result.transportDecision.fallbackUsed, true);
+  assert.deepEqual(result.transportDecision.fallbackFrom, ['webrtc']);
+  assert.deepEqual(result.transportDecision.rejectedTransports, [
+    {
+      id: 'home-mac-webrtc',
+      kind: 'webrtc',
+      reason: 'webrtc_not_promoted'
+    }
+  ]);
+
+  const auditLine = fs.readFileSync(getRemoteAuditLogPath(aiHomeDir), 'utf8').trim();
+  const audit = JSON.parse(auditLine);
+  assert.equal(audit.transportId, 'home-mac-relay');
+  assert.equal(audit.transportKind, 'relay');
+  assert.equal(audit.transportPurpose, 'runtime');
+  assert.equal(audit.fallbackUsed, true);
+  assert.deepEqual(audit.fallbackFrom, ['webrtc']);
+  assert.deepEqual(audit.rejectedTransports, result.transportDecision.rejectedTransports);
+});
+
+test('remote gateway uses promoted WebRTC when an adapter is available', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-remote-gateway-webrtc-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  const node = {
+    id: 'home-mac',
+    preferredTransports: ['webrtc', 'relay']
+  };
+  const transports = [
+    {
+      id: 'home-mac-webrtc',
+      kind: 'webrtc',
+      endpoint: 'http://control.example.com:9527',
+      status: 'up',
+      score: 100,
+      promotion: { remoteRequestReady: true, promotedAt: 1000 }
+    },
+    {
+      id: 'home-mac-relay',
+      kind: 'relay',
+      endpoint: 'relay://home-mac',
+      status: 'up',
+      score: 55
+    }
+  ];
+
+  const result = await requestRemoteManagement({
+    node,
+    transports,
+    purpose: 'runtime',
+    rpc: 'session-start',
+    pathname: '/v0/node-rpc/session-start'
+  }, {
+    fs,
+    aiHomeDir,
+    requestWebrtcManagement: async (input) => ({
+      status: 200,
+      ok: true,
+      payload: {
+        ok: true,
+        via: input.transport.kind
+      }
+    }),
+    requestRelayManagement: async () => {
+      throw new Error('relay_should_not_be_used');
+    }
+  });
+
+  assert.equal(result.transport.id, 'home-mac-webrtc');
+  assert.equal(result.transportDecision.selectedTransportKind, 'webrtc');
+  assert.equal(result.transportDecision.fallbackUsed, false);
+  assert.deepEqual(result.transportDecision.rejectedTransports, []);
+  assert.deepEqual(result.payload, { ok: true, via: 'webrtc' });
+
+  const auditLine = fs.readFileSync(getRemoteAuditLogPath(aiHomeDir), 'utf8').trim();
+  const audit = JSON.parse(auditLine);
+  assert.equal(audit.transportId, 'home-mac-webrtc');
+  assert.equal(audit.transportKind, 'webrtc');
+  assert.equal(audit.fallbackUsed, false);
+});
+
+test('remote gateway waits for a promoted WebRTC session before relay fallback for session RPC', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-remote-gateway-webrtc-recover-gap-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  const node = {
+    id: 'aws-current-node',
+    preferredTransports: ['webrtc', 'relay']
+  };
+  const transports = [
+    {
+      id: 'aws-current-node-webrtc',
+      kind: 'webrtc',
+      endpoint: 'http://control.example.com:9527',
+      status: 'up',
+      score: 100,
+      promotion: { remoteRequestReady: true, promotedAt: 1000 }
+    },
+    {
+      id: 'aws-current-node-relay',
+      kind: 'relay',
+      endpoint: 'relay://aws-current-node',
+      status: 'up',
+      score: 55
+    }
+  ];
+  const calls = [];
+  let webRtcOpen = false;
+
+  const result = await requestRemoteManagement({
+    node,
+    transports,
+    rpc: 'session-start',
+    pathname: '/v0/node-rpc/session-start'
+  }, {
+    fs,
+    aiHomeDir,
+    hasWebrtcManagementSession: () => webRtcOpen,
+    waitForWebrtcManagementSession: async (_nodeId, options) => {
+      calls.push(`wait:${options.timeoutMs}`);
+      webRtcOpen = true;
+      return true;
+    },
+    requestWebrtcManagement: async (input) => {
+      calls.push('webrtc');
+      return {
+        status: 200,
+        ok: true,
+        payload: {
+          ok: true,
+          via: input.transport.kind
+        }
+      };
+    },
+    requestRelayManagement: async () => {
+      calls.push('relay');
+      throw new Error('relay_should_not_be_used');
+    }
+  });
+
+  assert.deepEqual(calls, ['wait:6000', 'webrtc']);
+  assert.equal(result.transport.id, 'aws-current-node-webrtc');
+  assert.equal(result.transportDecision.selectedTransportKind, 'webrtc');
+  assert.equal(result.transportDecision.fallbackUsed, false);
+  assert.deepEqual(result.payload, { ok: true, via: 'webrtc' });
+
+  const audit = JSON.parse(fs.readFileSync(getRemoteAuditLogPath(aiHomeDir), 'utf8').trim());
+  assert.equal(audit.transportId, 'aws-current-node-webrtc');
+  assert.equal(audit.transportKind, 'webrtc');
+  assert.equal(audit.fallbackUsed, false);
+});
+
+test('remote gateway retries WebRTC once when the selected session closes during session RPC', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-remote-gateway-webrtc-retry-closed-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  const node = {
+    id: 'aws-current-node',
+    preferredTransports: ['webrtc', 'relay']
+  };
+  const transports = [
+    {
+      id: 'aws-current-node-webrtc',
+      kind: 'webrtc',
+      endpoint: 'http://control.example.com:9527',
+      status: 'up',
+      score: 100,
+      promotion: { remoteRequestReady: true, promotedAt: 1000 }
+    },
+    {
+      id: 'aws-current-node-relay',
+      kind: 'relay',
+      endpoint: 'relay://aws-current-node',
+      status: 'up',
+      score: 55
+    }
+  ];
+  const calls = [];
+  let requestCount = 0;
+
+  const result = await requestRemoteManagement({
+    node,
+    transports,
+    rpc: 'session-start',
+    pathname: '/v0/node-rpc/session-start'
+  }, {
+    fs,
+    aiHomeDir,
+    hasWebrtcManagementSession: () => true,
+    waitForWebrtcManagementSession: async (_nodeId, options) => {
+      calls.push(`wait:${options.timeoutMs}`);
+      return true;
+    },
+    requestWebrtcManagement: async (input) => {
+      requestCount += 1;
+      calls.push(`webrtc:${requestCount}`);
+      if (requestCount === 1) {
+        const error = new Error('remote_webrtc_session_closed');
+        error.code = 'remote_webrtc_session_closed';
+        error.status = 503;
+        throw error;
+      }
+      return {
+        status: 200,
+        ok: true,
+        payload: {
+          ok: true,
+          via: input.transport.kind
+        }
+      };
+    },
+    requestRelayManagement: async () => {
+      calls.push('relay');
+      throw new Error('relay_should_not_be_used');
+    }
+  });
+
+  assert.deepEqual(calls, ['webrtc:1', 'wait:6000', 'webrtc:2']);
+  assert.equal(result.transport.id, 'aws-current-node-webrtc');
+  assert.equal(result.transportDecision.selectedTransportKind, 'webrtc');
+  assert.equal(result.transportDecision.fallbackUsed, false);
+  assert.deepEqual(result.payload, { ok: true, via: 'webrtc' });
+
+  const audit = JSON.parse(fs.readFileSync(getRemoteAuditLogPath(aiHomeDir), 'utf8').trim());
+  assert.equal(audit.transportId, 'aws-current-node-webrtc');
+  assert.equal(audit.transportKind, 'webrtc');
+  assert.equal(audit.fallbackUsed, false);
+});
+
+test('remote gateway falls back to relay when selected WebRTC session closes during request', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-remote-gateway-webrtc-closed-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  const node = {
+    id: 'aws-current-node',
+    preferredTransports: ['webrtc', 'relay']
+  };
+  const transports = [
+    {
+      id: 'aws-current-node-webrtc',
+      kind: 'webrtc',
+      endpoint: 'http://control.example.com:9527',
+      status: 'up',
+      score: 100,
+      promotion: { remoteRequestReady: true, promotedAt: 1000 }
+    },
+    {
+      id: 'aws-current-node-relay',
+      kind: 'relay',
+      endpoint: 'relay://aws-current-node',
+      status: 'up',
+      score: 55
+    }
+  ];
+  const calls = [];
+
+  const result = await requestRemoteManagement({
+    node,
+    transports,
+    purpose: 'runtime',
+    rpc: 'session-start',
+    pathname: '/v0/node-rpc/session-start'
+  }, {
+    fs,
+    aiHomeDir,
+    requestWebrtcManagement: async () => {
+      calls.push('webrtc');
+      const error = new Error('remote_webrtc_session_closed');
+      error.code = 'remote_webrtc_session_closed';
+      error.status = 503;
+      throw error;
+    },
+    requestRelayManagement: async (input) => {
+      calls.push('relay');
+      return {
+        status: 200,
+        ok: true,
+        payload: {
+          ok: true,
+          via: input.transport.kind
+        }
+      };
+    }
+  });
+
+  assert.deepEqual(calls, ['webrtc', 'relay']);
+  assert.equal(result.transport.id, 'aws-current-node-relay');
+  assert.equal(result.transportDecision.selectedTransportKind, 'relay');
+  assert.equal(result.transportDecision.fallbackUsed, true);
+  assert.deepEqual(result.transportDecision.fallbackFrom, ['webrtc']);
+  assert.deepEqual(result.transportDecision.rejectedTransports, [
+    {
+      id: 'aws-current-node-webrtc',
+      kind: 'webrtc',
+      reason: 'remote_webrtc_session_closed'
+    }
+  ]);
+  assert.deepEqual(result.payload, { ok: true, via: 'relay' });
+
+  const audit = JSON.parse(fs.readFileSync(getRemoteAuditLogPath(aiHomeDir), 'utf8').trim());
+  assert.equal(audit.transportId, 'aws-current-node-relay');
+  assert.equal(audit.transportKind, 'relay');
+  assert.equal(audit.fallbackUsed, true);
+  assert.deepEqual(audit.fallbackFrom, ['webrtc']);
+  assert.deepEqual(audit.rejectedTransports, result.transportDecision.rejectedTransports);
+});
+
 test('remote node view derives relay connection state from active sessions', (t) => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-remote-node-view-relay-'));
   t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
@@ -358,6 +877,70 @@ test('remote gateway requires relay rpc handler before using relay transport', a
   );
 });
 
+test('remote gateway keeps transport decision when relay request throws', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-remote-relay-error-decision-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  const relayError = new Error('remote_relay_session_unavailable');
+  relayError.code = 'remote_relay_session_unavailable';
+  relayError.status = 503;
+
+  await assert.rejects(
+    requestRemoteManagement({
+      node: {
+        id: 'nat-node',
+        preferredTransports: ['webrtc', 'relay']
+      },
+      transports: [
+        {
+          id: 'nat-node-webrtc',
+          nodeId: 'nat-node',
+          kind: 'webrtc',
+          endpoint: 'http://control.example.com:9527',
+          status: 'up',
+          score: 100
+        },
+        {
+          id: 'nat-node-relay',
+          nodeId: 'nat-node',
+          kind: 'relay',
+          endpoint: 'relay://nat-node',
+          status: 'up',
+          score: 55
+        }
+      ],
+      pathname: '/v0/node-rpc/session-start',
+      rpc: 'session-start',
+      purpose: 'runtime'
+    }, {
+      fs,
+      aiHomeDir,
+      requestRelayManagement: async () => {
+        throw relayError;
+      }
+    }),
+    (error) => {
+      assert.equal(error.code, 'remote_relay_session_unavailable');
+      assert.equal(error.status, 503);
+      assert.equal(error.details.transportDecision.fallbackUsed, true);
+      assert.deepEqual(error.details.transportDecision.fallbackFrom, ['webrtc']);
+      assert.deepEqual(error.details.transportDecision.rejectedTransports, [
+        {
+          id: 'nat-node-webrtc',
+          kind: 'webrtc',
+          reason: 'webrtc_not_promoted'
+        }
+      ]);
+      return true;
+    }
+  );
+
+  const audit = JSON.parse(fs.readFileSync(getRemoteAuditLogPath(aiHomeDir), 'utf8').trim());
+  assert.equal(audit.error, 'remote_relay_session_unavailable');
+  assert.equal(audit.status, 503);
+  assert.equal(audit.fallbackUsed, true);
+  assert.deepEqual(audit.fallbackFrom, ['webrtc']);
+});
+
 test('remote gateway posts direct session input with management bearer and audit', async (t) => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-remote-input-direct-'));
   t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
@@ -488,6 +1071,90 @@ test('remote gateway streams direct session events with management bearer and au
   assert.match(auditText, /control_plane\.device\.node_session_stream/);
   assert.match(auditText, /sessions:read/);
   assert.doesNotMatch(auditText, /direct-secret/);
+});
+
+test('remote gateway falls back to relay when selected WebRTC stream session closes', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-remote-stream-webrtc-closed-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  const node = {
+    id: 'aws-current-node',
+    preferredTransports: ['webrtc', 'relay']
+  };
+  const transports = [
+    {
+      id: 'aws-current-node-webrtc',
+      kind: 'webrtc',
+      endpoint: 'http://control.example.com:9527',
+      status: 'up',
+      score: 100,
+      promotion: { remoteRequestReady: true, promotedAt: 1000 }
+    },
+    {
+      id: 'aws-current-node-relay',
+      kind: 'relay',
+      endpoint: 'relay://aws-current-node',
+      status: 'up',
+      score: 55
+    }
+  ];
+  const calls = [];
+  const chunks = [];
+
+  const result = await streamRemoteManagement({
+    node,
+    transports,
+    purpose: 'stream',
+    rpc: 'session-stream',
+    pathname: '/v0/node-rpc/session-stream?sessionRef=sess_0123456789abcdefabcd'
+  }, {
+    onChunk: (payload) => chunks.push(payload)
+  }, {
+    fs,
+    aiHomeDir,
+    requestWebrtcManagement: async () => {
+      throw new Error('request_webrtc_should_not_be_called_for_stream');
+    },
+    requestWebrtcManagementStream: async () => {
+      calls.push('webrtc');
+      const error = new Error('remote_webrtc_session_closed');
+      error.code = 'remote_webrtc_session_closed';
+      error.status = 503;
+      throw error;
+    },
+    requestRelayManagementStream: async (input, handlers) => {
+      calls.push('relay');
+      if (handlers && typeof handlers.onChunk === 'function') {
+        handlers.onChunk({ ok: true, type: 'events', result: { via: input.transport.kind } });
+      }
+      return {
+        status: 200,
+        ok: true
+      };
+    }
+  });
+
+  assert.deepEqual(calls, ['webrtc', 'relay']);
+  assert.equal(result.transport.id, 'aws-current-node-relay');
+  assert.equal(result.transportDecision.selectedTransportKind, 'relay');
+  assert.equal(result.transportDecision.fallbackUsed, true);
+  assert.deepEqual(result.transportDecision.fallbackFrom, ['webrtc']);
+  assert.deepEqual(result.transportDecision.rejectedTransports, [
+    {
+      id: 'aws-current-node-webrtc',
+      kind: 'webrtc',
+      reason: 'remote_webrtc_session_closed'
+    }
+  ]);
+  assert.deepEqual(chunks, [
+    { ok: true, type: 'events', result: { via: 'relay' } }
+  ]);
+
+  const audit = JSON.parse(fs.readFileSync(getRemoteAuditLogPath(aiHomeDir), 'utf8').trim());
+  assert.equal(audit.transportId, 'aws-current-node-relay');
+  assert.equal(audit.transportKind, 'relay');
+  assert.equal(audit.fallbackUsed, true);
+  assert.deepEqual(audit.fallbackFrom, ['webrtc']);
+  assert.deepEqual(audit.rejectedTransports, result.transportDecision.rejectedTransports);
 });
 
 test('remote gateway requires relay stream handler before using relay stream transport', async () => {

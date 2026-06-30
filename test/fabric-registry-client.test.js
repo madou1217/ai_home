@@ -147,9 +147,10 @@ test('normalizeFabricRegistryResult builds stable registry and node views', () =
   assert.equal(registry.nodeInventory.length, 1);
   assert.equal(registry.nodeInventory[0].capabilities.runtimeHost, true);
   assert.equal(registry.nodeInventory[0].actions.find((action) => action.id === 'start-session:codex').eligible, true);
+  assert.equal(registry.nodeInventory[0].actions.find((action) => action.id === 'start-session:codex').enabled, true);
   assert.deepEqual(
     registry.nodeInventory[0].actions.find((action) => action.id === 'start-session:codex').blockers,
-    ['m4_remote_session_action_pending']
+    []
   );
 
   const relayViews = fabric.buildFabricRegistryRelayViews(registry);
@@ -204,8 +205,18 @@ test('normalizeFabricRegistryResult falls back to node inventory when server omi
   const aws = registry.nodeInventory.find((node) => node.id === 'aws-current-node');
   const local = registry.nodeInventory.find((node) => node.id === 'local-mac-remote-node');
   assert.equal(aws.capabilities.runtimeHost, false);
+  assert.deepEqual(
+    aws.runtimeGaps.map((gap) => `${gap.provider}:${gap.blocker}`),
+    [
+      'codex:missing_provider_runtime:codex',
+      'claude:missing_provider_runtime:claude',
+      'agy:missing_provider_runtime:agy',
+      'opencode:missing_provider_runtime:opencode'
+    ]
+  );
   assert.equal(aws.actions.find((action) => action.id === 'start-session:codex').blockers.includes('missing_provider_runtime:codex'), true);
   assert.deepEqual(local.capabilities.runtimeProviders, ['agy', 'claude', 'codex', 'opencode']);
+  assert.deepEqual(local.runtimeGaps, []);
 });
 
 test('fetchFabricRegistry reads scoped registry with bearer token', async () => {

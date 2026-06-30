@@ -136,6 +136,41 @@ test('buildFlatAccountExportEntries names oauth by email and api-key by url plus
   }
 });
 
+test('buildFlatAccountExportEntries exports opencode auth with stable public identity', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-flat-export-opencode-'));
+  try {
+    const aiHomeDir = path.join(root, '.ai_home');
+    const profileDir = path.join(aiHomeDir, 'profiles', 'opencode', '1');
+    writeJson(path.join(profileDir, '.local', 'share', 'opencode', 'auth.json'), {
+      openai: {
+        type: 'api',
+        key: 'sk-opencode-openai'
+      },
+      anthropic: {
+        type: 'api',
+        key: 'sk-opencode-anthropic'
+      }
+    });
+
+    const result = buildFlatAccountExportEntries({
+      fs,
+      path,
+      accounts: [
+        { provider: 'opencode', id: '1', profileDir }
+      ]
+    });
+
+    assert.deepEqual(result.skipped, []);
+    assert.equal(result.entries.length, 1);
+    assert.match(result.entries[0].fileName, /^opencode_auth_[a-f0-9]{20}\.json$/);
+    assert.equal(result.entries[0].payload.platform, 'opencode');
+    assert.equal(result.entries[0].payload.type, 'oauth');
+    assert.deepEqual(Object.keys(result.entries[0].payload.credentials).sort(), ['anthropic', 'openai']);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('importStandardAccountRecords stores sub2api metadata without overwriting duplicate accounts', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-standard-import-sub2api-meta-'));
   try {
@@ -233,6 +268,51 @@ test('importStandardAccountRecords stores sub2api metadata without overwriting d
     assert.equal(duplicateResult.duplicates, 1);
     assert.equal(metadataAfterDuplicate.name, 'Codex key from sub2api');
     assert.equal(metadataAfterDuplicate.notes, 'kept for round trip');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('importStandardAccountRecords writes opencode auth and deduplicates by auth digest', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-standard-import-opencode-'));
+  try {
+    const aiHomeDir = path.join(root, '.ai_home');
+    const deps = createImportDeps(aiHomeDir);
+    const records = parseStandardAccountRecordsFromJson({
+      platform: 'opencode',
+      type: 'oauth',
+      credentials: {
+        openai: {
+          type: 'api',
+          key: 'sk-opencode-openai'
+        },
+        anthropic: {
+          type: 'api',
+          key: 'sk-opencode-anthropic'
+        }
+      }
+    });
+
+    const first = importStandardAccountRecords({
+      fs,
+      path,
+      records,
+      ...deps
+    });
+    const second = importStandardAccountRecords({
+      fs,
+      path,
+      records,
+      ...deps
+    });
+    const authPath = path.join(deps.getProfileDir('opencode', '1'), '.local', 'share', 'opencode', 'auth.json');
+    const auth = JSON.parse(fs.readFileSync(authPath, 'utf8'));
+
+    assert.equal(first.imported, 1);
+    assert.equal(first.failed, 0);
+    assert.equal(second.imported, 0);
+    assert.equal(second.duplicates, 1);
+    assert.deepEqual(Object.keys(auth).sort(), ['anthropic', 'openai']);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

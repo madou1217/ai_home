@@ -1343,7 +1343,10 @@ test('createAuthJobManager treats fresh agy oauth token file as reauth completio
   const started = manager.startOauthJob('agy', 'oauth-browser', { accountId: '1' });
   assert.equal(started.provider, 'agy');
   assert.equal(started.accountId, '2');
-  assert.equal(manager.getJob(started.jobId).status, 'running');
+  const runningJob = manager.getJob(started.jobId);
+  assert.equal(runningJob.status, 'running');
+  assert.equal(runningJob.reauth, true);
+  assert.equal(runningJob._reauthTargetId, '1');
 
   const configDir = getToolConfigDir('agy', started.accountId);
   fs.mkdirSync(configDir, { recursive: true });
@@ -1360,6 +1363,59 @@ test('createAuthJobManager treats fresh agy oauth token file as reauth completio
   const job = manager.getJob(started.jobId);
   assert.equal(job.status, 'succeeded');
   assert.equal(killed, true);
+});
+
+test('createAuthJobManager resolves native oauth cli from runtime-tools fallback', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-oauth-runtime-cli-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const runtimeBin = path.join(root, '.runtime-tools', 'bin');
+  const agyPath = path.join(runtimeBin, 'agy');
+  fs.mkdirSync(runtimeBin, { recursive: true });
+  fs.writeFileSync(agyPath, '#!/bin/sh\nexit 0\n', 'utf8');
+  fs.chmodSync(agyPath, 0o755);
+
+  const getProfileDir = (provider, accountId) => path.join(root, provider, String(accountId));
+  const getToolConfigDir = (provider, accountId) => (
+    provider === 'agy'
+      ? path.join(getProfileDir(provider, accountId), '.gemini', 'antigravity-cli')
+      : path.join(getProfileDir(provider, accountId), `.${provider}`)
+  );
+
+  let spawnCall = null;
+  const manager = createAuthJobManager({
+    fs,
+    processObj: {
+      ...process,
+      cwd: () => root,
+      env: {
+        PATH: '',
+        AIH_RUNTIME_TOOLS_DIR: runtimeBin
+      },
+      platform: process.platform,
+      kill() {
+        return;
+      }
+    },
+    ptyImpl: {
+      spawn(command, args, options) {
+        spawnCall = { command, args, options };
+        return {
+          pid: 2301,
+          onData() {},
+          onExit() {},
+          write() {},
+          kill() {}
+        };
+      }
+    },
+    getToolAccountIds: () => [],
+    getProfileDir,
+    getToolConfigDir
+  });
+
+  const started = manager.startOauthJob('agy', 'oauth-browser');
+  assert.equal(started.provider, 'agy');
+  assert.equal(spawnCall.args[0], agyPath);
 });
 
 test('createAuthJobManager auto-confirms agy Google OAuth login method prompt', () => {

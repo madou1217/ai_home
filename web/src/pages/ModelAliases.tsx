@@ -277,22 +277,17 @@ const ModelAliases: React.FC<{ setActions?: (actions: React.ReactNode) => void }
             resetText: '取消',
           },
         }}
-        modalProps={{
-          destroyOnClose: true,
+        initialValues={{
+          provider: 'all',
+          targetProvider: 'auto',
+          priority: 0,
+          enabled: true,
         }}
+        modalProps={{
+          destroyOnClose: false,
+        }}
+        layout="vertical"
       >
-        <Form
-          form={form}
-          layout="vertical"
-          style={{ marginTop: '12px' }}
-          component={false}
-          initialValues={{
-            provider: 'all',
-            targetProvider: 'auto',
-            priority: 0,
-            enabled: true,
-          }}
-        >
           <Form.Item
             name="alias"
             label="别名 (Alias)"
@@ -384,7 +379,6 @@ const ModelAliases: React.FC<{ setActions?: (actions: React.ReactNode) => void }
           >
             <Switch checkedChildren="启用" unCheckedChildren="禁用" />
           </Form.Item>
-        </Form>
       </ModalForm>
     </SectionCard>
   );

@@ -1,11 +1,21 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const {
   abortNativeSessionRun,
+  DEFAULT_COMPLETED_RUN_RETENTION_MS,
   readNativeSessionRunEvents,
+  resolveCompletedRunRetentionMs,
   startNativeDeviceSession
 } = require('../lib/server/control-plane-device-session-start');
+const {
+  clearSessionArtifacts,
+  readSessionArtifact
+} = require('../lib/server/control-plane-device-session-artifact-store');
+const { unregisterNativeChatRun } = require('../lib/server/native-chat-run-store');
 
 function createPendingNativeStream(runId = 'native-run-test') {
   return {
@@ -16,6 +26,19 @@ function createPendingNativeStream(runId = 'native-run-test') {
     abort() {}
   };
 }
+
+test('resolveCompletedRunRetentionMs keeps completed run history long enough for reconnects', () => {
+  assert.equal(DEFAULT_COMPLETED_RUN_RETENTION_MS, 30 * 60 * 1000);
+  assert.equal(resolveCompletedRunRetentionMs({}), DEFAULT_COMPLETED_RUN_RETENTION_MS);
+  assert.equal(resolveCompletedRunRetentionMs({ AIH_NATIVE_RUN_RETENTION_MS: '120000' }), 120000);
+  assert.equal(resolveCompletedRunRetentionMs({ AIH_SESSION_RUN_RETENTION_MS: '240000' }), 240000);
+  assert.equal(resolveCompletedRunRetentionMs({ AIH_NATIVE_RUN_RETENTION_MS: '100' }), 60 * 1000);
+  assert.equal(
+    resolveCompletedRunRetentionMs({ AIH_NATIVE_RUN_RETENTION_MS: String(48 * 60 * 60 * 1000) }),
+    24 * 60 * 60 * 1000
+  );
+  assert.equal(resolveCompletedRunRetentionMs({ AIH_NATIVE_RUN_RETENTION_MS: 'not-a-number' }), DEFAULT_COMPLETED_RUN_RETENTION_MS);
+});
 
 test('startNativeDeviceSession registers codex project trust before spawning native CLI', () => {
   const observed = { order: [] };
@@ -67,8 +90,39 @@ test('startNativeDeviceSession registers codex project trust before spawning nat
   assert.equal(observed.run.runId, 'native-run-codex-trust');
 });
 
+test('startNativeDeviceSession resolves default account when accountId is omitted', () => {
+  const observed = {};
+
+  const result = startNativeDeviceSession({
+    provider: 'codex',
+    prompt: 'hello',
+    projectPath: '/repo/project',
+    model: 'gpt-5.5'
+  }, {
+    getProfileDir: (provider, accountId) => `/profiles/${provider}/${accountId}`,
+    resolveSessionAccountId(input) {
+      observed.resolve = input;
+      return '3';
+    },
+    ensureCodexProjectRegistered: () => ({ ok: true }),
+    spawnNativeSessionStream(options) {
+      observed.spawn = options;
+      return createPendingNativeStream('native-run-default-account');
+    },
+    registerNativeChatRun() {},
+    unregisterNativeChatRun() {}
+  });
+
+  assert.equal(result.accepted, true);
+  assert.equal(result.accountId, '3');
+  assert.equal(observed.resolve.provider, 'codex');
+  assert.equal(observed.resolve.model, 'gpt-5.5');
+  assert.equal(observed.spawn.accountId, '3');
+});
+
 test('startNativeDeviceSession skips codex trust registration for non-codex providers', () => {
   let trustCalls = 0;
+  let spawnOptions = null;
 
   const result = startNativeDeviceSession({
     provider: 'claude',
@@ -81,7 +135,8 @@ test('startNativeDeviceSession skips codex trust registration for non-codex prov
       trustCalls += 1;
       return { ok: true };
     },
-    spawnNativeSessionStream() {
+    spawnNativeSessionStream(options) {
+      spawnOptions = options;
       return createPendingNativeStream('native-run-claude');
     },
     registerNativeChatRun() {},
@@ -91,6 +146,69 @@ test('startNativeDeviceSession skips codex trust registration for non-codex prov
   assert.equal(result.accepted, true);
   assert.equal(result.runId, 'native-run-claude');
   assert.equal(trustCalls, 0);
+  assert.equal(spawnOptions.interactiveCli, false);
+  assert.equal(spawnOptions.completeOnTranscriptUpdate, false);
+});
+
+test('startNativeDeviceSession starts opencode in headless run mode', () => {
+  let spawnOptions = null;
+
+  const result = startNativeDeviceSession({
+    provider: 'opencode',
+    accountId: '1',
+    prompt: 'hello',
+    projectPath: '/repo/project'
+  }, {
+    getProfileDir: (provider, accountId) => `/profiles/${provider}/${accountId}`,
+    resolveSessionAccountId() {
+      throw new Error('account id should be explicit');
+    },
+    spawnNativeSessionStream(options) {
+      spawnOptions = options;
+      return createPendingNativeStream('native-run-opencode');
+    },
+    registerNativeChatRun() {},
+    unregisterNativeChatRun() {}
+  });
+
+  assert.equal(result.accepted, true);
+  assert.equal(result.provider, 'opencode');
+  assert.equal(result.runId, 'native-run-opencode');
+  assert.equal(spawnOptions.provider, 'opencode');
+  assert.equal(spawnOptions.accountId, '1');
+  assert.equal(spawnOptions.projectPath, '/repo/project');
+  assert.equal(spawnOptions.interactiveCli, false);
+  assert.equal(spawnOptions.completeOnTranscriptUpdate, false);
+});
+
+test('startNativeDeviceSession can force opencode interactive slash input', () => {
+  let spawnOptions = null;
+
+  const result = startNativeDeviceSession({
+    provider: 'opencode',
+    accountId: '1',
+    initialInput: '/status',
+    interactiveCli: true,
+    sessionId: 'ses-opencode-slash',
+    projectPath: '/repo/project'
+  }, {
+    getProfileDir: (provider, accountId) => `/profiles/${provider}/${accountId}`,
+    spawnNativeSessionStream(options) {
+      spawnOptions = options;
+      return createPendingNativeStream('native-run-opencode-slash');
+    },
+    registerNativeChatRun() {},
+    unregisterNativeChatRun() {}
+  });
+
+  assert.equal(result.accepted, true);
+  assert.equal(result.runId, 'native-run-opencode-slash');
+  assert.equal(spawnOptions.provider, 'opencode');
+  assert.equal(spawnOptions.sessionId, 'ses-opencode-slash');
+  assert.equal(spawnOptions.prompt, '');
+  assert.equal(spawnOptions.initialInput, '/status');
+  assert.equal(spawnOptions.interactiveCli, true);
+  assert.equal(spawnOptions.completeOnTranscriptUpdate, false);
 });
 
 test('startNativeDeviceSession applies session artifact threshold to terminal events', () => {
@@ -154,4 +272,56 @@ test('abortNativeSessionRun aborts active run and marks it completed', () => {
   const events = readNativeSessionRunEvents({ runId: result.runId, cursor: 0 });
   assert.equal(events.completed, true);
   assert.ok(events.events.some((event) => event.type === 'aborted'));
+});
+
+test('native session run events and artifacts survive memory cleanup', (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-native-run-persistence-'));
+  const terminalText = 'persisted terminal output '.repeat(20);
+  const observed = {};
+  t.after(() => {
+    unregisterNativeChatRun('native-run-persisted');
+    clearSessionArtifacts();
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+  });
+
+  const result = startNativeDeviceSession({
+    provider: 'codex',
+    accountId: '1',
+    prompt: 'hello',
+    projectPath: '/repo/project',
+    artifactThreshold: 128
+  }, {
+    aiHomeDir,
+    getProfileDir: (provider, accountId) => `/profiles/${provider}/${accountId}`,
+    ensureCodexProjectRegistered: () => ({ ok: true }),
+    spawnNativeSessionStream(options) {
+      observed.onEvent = options.onEvent;
+      return createPendingNativeStream('native-run-persisted');
+    }
+  });
+
+  observed.onEvent({
+    type: 'terminal-output',
+    text: terminalText
+  });
+
+  const activeEvents = readNativeSessionRunEvents({ runId: result.runId, cursor: 0, aiHomeDir });
+  const artifactEvent = activeEvents.events.find((event) => event.type === 'artifact_ref');
+  assert.ok(artifactEvent);
+  assert.equal(artifactEvent.artifact.byteLength, Buffer.byteLength(terminalText, 'utf8'));
+
+  abortNativeSessionRun({ runId: result.runId }, { aiHomeDir, unregisterNativeChatRun });
+  unregisterNativeChatRun(result.runId);
+  clearSessionArtifacts();
+
+  const persistedEvents = readNativeSessionRunEvents({ runId: result.runId, cursor: 0, aiHomeDir });
+  assert.equal(persistedEvents.persisted, true);
+  assert.equal(persistedEvents.completed, true);
+  assert.equal(persistedEvents.status, 'completed');
+  assert.ok(persistedEvents.events.some((event) => event.type === 'ready'));
+  assert.ok(persistedEvents.events.some((event) => event.type === 'artifact_ref'));
+  assert.ok(persistedEvents.events.some((event) => event.type === 'aborted'));
+
+  const artifact = readSessionArtifact({ artifactId: artifactEvent.artifactId }, { aiHomeDir });
+  assert.equal(artifact.content, terminalText);
 });

@@ -61,7 +61,7 @@
   - `readyz`、`descriptor`、`device-pair`、`device-profile`、`device-nodes`、`device-status`、`device-accounts`、`device-sessions` 均 HTTP 200。
   - 同一 AWS broker proxy endpoint 上，node relay sessions RPC 返回 `ok=true`、`viaProxy=true`、`relay.online=true`、sessions HTTP 200。
   - 同一 AWS broker proxy endpoint 上，真实 Codex 远程会话返回 `ok=true`、runId present、模型输出命中预期 marker，`/quit` 与 abort cleanup 均 accepted。
-  - 跨主机 M2.5 判定为 pass；下一步进入 M3 Role Registry 产品闭环。
+  - 跨主机 M2.5 判定为 pass；当前作为 broker/outbound 回归门保留。
   - 证据：`docs/fabric/evidence/2026-06-27-crosshost-outbound-broker-profile-smoke.md`。
 - Cross-host API-mode relay smoke 工具已落地：`scripts/fabric-real-outbound-relay-smoke.js --node-join-url ... --device-pair-url ...` 可通过真实 join/pair API 准备 node/device，不再要求共享 host-home。
 - 本机 -> AWS 公网 `http://43.207.102.163:9527` 的 API-mode smoke 当前失败在 `node_join` 阶段，错误为 HTTP timeout；这证明跨主机默认路径当前被 AWS public HTTP ingress 阻塞，而不是 relay/session cleanup 逻辑阻塞。
@@ -76,17 +76,14 @@
   - 两个节点均声明 `node + relay-node`，独立 registry readback 返回 `nodes=2`、`relayNodes=2`、`projects=2`、`transports=2`。
   - Fabric Nodes 页面真实浏览器 smoke 通过：两个 node 名称、两个 relayNodes 计数、Relay Health、reachable 和 online 均可见，console 0 error/0 warning。
   - 证据：`docs/fabric/evidence/2026-06-27-m3-role-registry-two-nodes.md`。
-- M3 Role Registry service/daemon partial 已补：
+- M3 Role Registry service/daemon 已完成当前默认 gate：
   - AWS current 已生成不打印 token 的持久 Fabric token file，权限 `600`。
   - `aws-current-node` 已通过真实 registry HTTP register 绑定到持久 token 设备。
-  - `aih fabric registry agent` 以 10 秒间隔运行 5 次，`attempts=5`、`failures=0`，relay measurement 更新为 `status=reachable`、`durationMs=4`。
-  - `node service install --dry-run` 当前可生成 relay + registryAgent 双服务计划且 `writes=false`。
-  - `aih server config set --generate-management-key` 已补为 7.3 安全前置入口，避免把 management key 放到命令行或输出中。
-  - `scripts/fabric-m3-daemon-preflight.js --json` 已补为只读 preflight 入口，能复核 token file、service status、install dry-run、readyz、server process 和 residue。
-  - 真正的 systemd install 仍未执行；AWS current 缺 server `managementKey` 和 relay remote-node secret，必须确认后才能写 server config 和 user service unit。
+  - AWS current 默认 `9527` 已完成真实 `node service install --yes`，relay + registryAgent 两个 user systemd service 处于 running。
+  - `scripts/fabric-m3-daemon-preflight.js --json` 当前真实返回 `ok=true`、`supervisorReady=true`、`processCount=1`、registry readback `nodes=2 relayNodes=2 projects=2 runtimes=4 transports=2`、`residue=[]`、`remainingGate=[]`。
   - 7.3 执行和回退 runbook：`docs/fabric/13-m3-supervised-daemon-runbook.md`。
-  - 只读 preflight 证据：`docs/fabric/evidence/2026-06-27-m3-daemon-preflight-script.md`。
-  - 证据：`docs/fabric/evidence/2026-06-27-m3-node-service-daemon-partial.md`。
+  - 完成证据：`docs/fabric/evidence/2026-06-28-m3-supervised-daemon-aws.md`。
+  - 早期 partial 证据 `docs/fabric/evidence/2026-06-27-m3-node-service-daemon-partial.md` 仅保留历史追溯，不再代表当前状态。
 - M3 Relay Health strong metrics 已补：
   - AWS current 默认 `9527` server listener 增加 `/v0/fabric/transport/echo` WS echo endpoint，不新增产品端口。
   - 真实 `aih fabric transport echo ws://127.0.0.1:9527/v0/fabric/transport/echo --count 20` 返回 `successes=20`、`failures=0`、`rttMs.count=20`、`p95=1ms`。
@@ -162,6 +159,14 @@ ssh -i ~/.ssh/aws.pem ubuntu@ec2-43-207-102-163.ap-northeast-1.compute.amazonaws
 
 Transport 只有满足 gate 后才能进入 MVP 默认路径。
 
+当前统一执行入口：
+
+```bash
+node scripts/fabric-m6-promotion-gate.js --json
+```
+
+该入口聚合 relay fallback baseline、WebRTC DataChannel、TURN relay、WebTransport/QUIC 和 Multipath/MPTCP/OpenMPTCPRouter 的真实检查；单项 `candidateReady=true` 不能替代 `promotionReady=true`，`defaultTransport=relay` 也必须先证明 relay echo 可用。
+
 | Transport | Promotion gate |
 |---|---|
 | WSS | 当前 AWS active 节点可稳定连接；1h p95 RTT 可记录；断线后 3s 内重连；resume 成功率 >= 99%。多 VPS gate 暂停，不触碰非 AWS 服务器 |
@@ -179,7 +184,7 @@ Transport 只有满足 gate 后才能进入 MVP 默认路径。
 - Broker 本地 loopback 成功只能证明协议和实现切片成立；跨主机 pass 必须使用真实可达 broker endpoint。
 - 没有原始命令和结果的结论为 inconclusive。
 - WebRTC 只有 signaling room、offer/answer/candidate 时最多为 partial；必须看到 `ICE connected`、`DataChannel open` 和 RTT 样本才能判定 data channel pass。
-- Role Registry 只有 server-side API 或本地 loopback publisher smoke 通过时最多为 partial；必须有真实 home/company publisher、UI 展示和 heartbeat/relay health evidence 才能判定 M3 pass。
+- Role Registry 只有 server-side API 或本地 loopback publisher smoke 通过时最多为 partial；必须有真实多节点 publisher、UI 展示、heartbeat/relay health、supervised daemon 和 readback evidence 才能判定 M3 pass。
 - 弱 VPS 上不得把远端 `npm run web:build` 作为默认部署步骤；前端 production build 应在本地或 CI 完成，VPS 验收只运行 server、导入账号、发布真实 registry。
 
 ### Evidence Template

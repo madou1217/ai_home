@@ -1,10 +1,15 @@
+import { StatisticCard } from '@ant-design/pro-components';
+import './FabricNodes.css';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Skeleton, Space, Tag, message, Descriptions } from 'antd';
+import type { ReactNode } from 'react';
+import { Alert, Col, List, Row, Space, Tag, Typography, message, Descriptions } from 'antd';
 import type { ProColumns } from '@ant-design/pro-components';
 import {
   ApartmentOutlined,
   CloudServerOutlined,
-  ReloadOutlined
+  ReloadOutlined,
+  ClusterOutlined,
+  ToolOutlined
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -15,7 +20,6 @@ import type {
   FabricNodeAction,
   FabricNodeInventoryItem,
   FabricRegistryNode,
-  FabricRegistryRelayNode,
   FabricRegistryRelayView,
   FabricRegistryResult,
   FabricRegistryTransport
@@ -32,6 +36,7 @@ import {
   resolveStoredActiveControlPlaneProfile
 } from '@/services/control-plane-selection';
 import type { ControlPlaneProfile } from '@/types';
+import Button from '@/components/ui/AppButton';
 import PageScaffold from '@/components/ui/PageScaffold';
 import SectionCard from '@/components/ui/SectionCard';
 import ListTable from '@/components/ui/ListTable';
@@ -117,11 +122,6 @@ function summarizeRelayMeasurement(transports: FabricRegistryTransport[]) {
 }
 
 
-
-function resolveRelayScore(relay: FabricRegistryRelayNode) {
-  if (relay.lastMeasuredAt) return 'measured / no score';
-  return 'no measurement';
-}
 
 function formatBlocker(value: string) {
   const [code, provider, status] = String(value || '').split(':');
@@ -231,12 +231,6 @@ const RELAY_COLUMNS: ProColumns<FabricRegistryRelayView>[] = [
     )
   },
   {
-    title: 'score',
-    dataIndex: 'relayNode',
-    width: 150,
-    render: (_, record) => resolveRelayScore(record.relayNode)
-  },
-  {
     title: 'transports',
     dataIndex: 'transports',
     render: (_, record) => {
@@ -252,6 +246,96 @@ const RELAY_COLUMNS: ProColumns<FabricRegistryRelayView>[] = [
         </Space>
       );
     }
+  }
+];
+
+function NodeDetailList<T>({ header, items, empty, getKey, render }: {
+  header: string;
+  items: T[];
+  empty: string;
+  getKey: (item: T) => string;
+  render: (item: T) => { title: ReactNode; description: ReactNode };
+}) {
+  return (
+    <List
+      size="small"
+      header={<Typography.Text strong>{header}</Typography.Text>}
+      dataSource={items}
+      locale={{ emptyText: empty }}
+      renderItem={(item) => {
+        const { title, description } = render(item);
+        return (
+          <List.Item key={getKey(item)}>
+            <List.Item.Meta title={title} description={description} />
+          </List.Item>
+        );
+      }}
+    />
+  );
+}
+
+function nodeCapabilityTags(view: FabricNodeInventoryItem) {
+  return [
+    ...(view.capabilities.node ? ['node'] : []),
+    ...(view.capabilities.relayNode ? ['relay-node'] : []),
+    ...(view.capabilities.runtimeHost ? ['runtime-host'] : []),
+    ...(view.capabilities.sshBootstrap ? ['ssh-bootstrap'] : [])
+  ];
+}
+
+const NODE_COLUMNS: ProColumns<FabricNodeInventoryItem>[] = [
+  {
+    title: '节点',
+    dataIndex: ['node', 'name'],
+    render: (_, { node }) => (
+      <Space direction="vertical" size={0} style={{ minWidth: 0 }}>
+        <strong style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {node.name || node.id}
+        </strong>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>{node.id}</Typography.Text>
+      </Space>
+    )
+  },
+  {
+    title: '能力',
+    dataIndex: 'capabilities',
+    width: 200,
+    render: (_, view) => (
+      <Space size={[4, 4]} wrap>
+        <TagList items={nodeCapabilityTags(view)} emptyLabel="node" />
+      </Space>
+    )
+  },
+  {
+    title: '状态',
+    dataIndex: ['node', 'status'],
+    width: 150,
+    render: (_, { node }) => (
+      <Space direction="vertical" size={2} style={{ minWidth: 0 }}>
+        <StatusTag status={node.status || 'unknown'} />
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>{formatPlatform(node)}</Typography.Text>
+      </Space>
+    )
+  },
+  {
+    title: '资源',
+    dataIndex: 'projects',
+    width: 130,
+    render: (_, view) => (
+      <Space direction="vertical" size={0} style={{ fontSize: 12 }}>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>{view.projects.length} projects</Typography.Text>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>{view.runtimes.length} runtimes</Typography.Text>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>{view.capabilities.transportState}</Typography.Text>
+      </Space>
+    )
+  },
+  {
+    title: 'lastSeen',
+    dataIndex: ['node', 'lastSeenAt'],
+    width: 170,
+    render: (_, view) => (
+      <Typography.Text type="secondary" style={{ fontSize: 12 }}>{formatTime(view.node.lastSeenAt)}</Typography.Text>
+    )
   }
 ];
 
@@ -339,28 +423,7 @@ export default function FabricNodes() {
     loadRegistry();
   }, [loadRegistry, readyProfileKey]);
 
-  const headerContent = readyProfile && (
-    <Descriptions size="small" column={{ xs: 1, sm: 2, md: 3 }} style={{ marginTop: 8 }}>
-      <Descriptions.Item label="当前服务">{readyProfile.name}</Descriptions.Item>
-      <Descriptions.Item label="服务地址">{readyProfile.endpoint}</Descriptions.Item>
-      <Descriptions.Item label="连接状态">
-        <Space>
-          <StatusTag status={readyProfile.state} />
-          <StatusTag status={readyProfile.authState} />
-        </Space>
-      </Descriptions.Item>
-      <Descriptions.Item label="最近检测时间">{formatTime(readyProfile.lastCheckedAt || readyProfile.updatedAt)}</Descriptions.Item>
-      <Descriptions.Item label="拓扑计数">
-        <Space size={4} wrap>
-          <Tag color="blue">节点 {loading ? '-' : counts.nodes}</Tag>
-          <Tag color="blue">中继 {loading ? '-' : counts.relayNodes}</Tag>
-          <Tag color="blue">项目 {loading ? '-' : counts.projects}</Tag>
-          <Tag color="blue">Runtime {loading ? '-' : counts.runtimes}</Tag>
-          <Tag color="blue">通道 {loading ? '-' : counts.transports}</Tag>
-        </Space>
-      </Descriptions.Item>
-    </Descriptions>
-  );
+
 
   return (
     <PageScaffold ghost
@@ -377,7 +440,6 @@ export default function FabricNodes() {
           刷新状态
         </Button>
       }
-      headerContent={headerContent}
     >
       {!readyProfile && (
         <Alert
@@ -406,163 +468,159 @@ export default function FabricNodes() {
 
       {readyProfile && (
         <>
-          {loading && !registry ? (
-            <SectionCard>
-              <Skeleton active paragraph={{ rows: 8 }} />
-            </SectionCard>
-          ) : counts.nodes === 0 ? (
-            <SectionCard title="计算节点列表" extra={<ApartmentOutlined />}>
-              <p style={{ margin: 0, color: 'rgba(0,0,0,0.45)' }}>暂无数据：拓扑中暂无可用计算节点。等待 Node 节点执行加入发布以同步状态。</p>
-            </SectionCard>
-          ) : (
-            <SectionCard title="计算节点列表" extra={<ApartmentOutlined />} bodyStyle={{ padding: 0 }}>
-              <div className="fabric-nodes-list">
-                {nodeViews.map((view) => {
-                  const active = selectedNode?.node.id === view.node.id;
-                  return (
-                    <button
-                      key={view.node.id}
-                      type="button"
-                      className={`fabric-node-row${active ? " fabric-node-row--active" : ""}`}
-                      onClick={() => setSelectedNodeId(view.node.id)}
-                      title={view.node.name || view.node.id}
-                    >
-                      <div className="fabric-node-row-main">
-                        <strong>{view.node.name || view.node.id}</strong>
-                        <span>{view.node.id}</span>
-                      </div>
-                      <div className="fabric-node-row-tags">
-                        <TagList
-                          items={[
-                            ...(view.capabilities.node ? ['node'] : []),
-                            ...(view.capabilities.relayNode ? ['relay-node'] : []),
-                            ...(view.capabilities.runtimeHost ? ['runtime-host'] : []),
-                            ...(view.capabilities.sshBootstrap ? ['ssh-bootstrap'] : [])
-                          ]}
-                          emptyLabel="node"
-                        />
-                      </div>
-                      <div className="fabric-node-row-status">
-                        <StatusTag status={view.node.status || "unknown"} />
-                        <span>{formatPlatform(view.node)}</span>
-                      </div>
-                      <div className="fabric-node-row-metrics">
-                        <span>{view.projects.length} projects</span>
-                        <span>{view.runtimes.length} runtimes</span>
-                        <span>{view.capabilities.transportState}</span>
-                      </div>
-                      <div className="fabric-node-row-time">
-                        lastSeen {formatTime(view.node.lastSeenAt)}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </SectionCard>
-          )}
+          {/* 控制面状态 */}
+          <SectionCard title="控制面状态">
+            <Descriptions size="small" column={{ xs: 1, sm: 2, md: 3 }} bordered>
+              <Descriptions.Item label="服务地址">{readyProfile.endpoint}</Descriptions.Item>
+              <Descriptions.Item label="连接状态">
+                <Space>
+                  <StatusTag status={readyProfile.state} />
+                  <StatusTag status={readyProfile.authState} />
+                </Space>
+              </Descriptions.Item>
+              <Descriptions.Item label="检测时间">{formatTime(readyProfile.lastCheckedAt || readyProfile.updatedAt)}</Descriptions.Item>
+            </Descriptions>
+          </SectionCard>
+
+          {/* 关键运营指标：节点 / 中继 / 运行会话。项目数、传输通道数已在节点表内逐行展示，剔除。 */}
+          <StatisticCard.Group direction="row" style={{ marginBottom: 16 }}>
+            <StatisticCard statistic={{ title: '计算节点数', value: loading ? '-' : counts.nodes, prefix: <ClusterOutlined /> }} />
+            <StatisticCard statistic={{ title: '中继中枢', value: loading ? '-' : counts.relayNodes, prefix: <CloudServerOutlined /> }} />
+            <StatisticCard statistic={{ title: '运行会话', value: loading ? '-' : counts.runtimes, prefix: <ToolOutlined /> }} />
+          </StatisticCard.Group>
+          <SectionCard title="计算节点列表" extra={<ApartmentOutlined />} bodyStyle={{ padding: 0 }}>
+            <ListTable<FabricNodeInventoryItem>
+              columns={NODE_COLUMNS}
+              dataSource={nodeViews}
+              rowKey={(row) => row.node.id}
+              loading={loading && !registry}
+              onRow={(record) => ({
+                onClick: () => setSelectedNodeId(record.node.id),
+                style: { cursor: 'pointer' }
+              })}
+              rowClassName={(record) => (
+                record.node.id === selectedNode?.node.id ? 'fabric-node-row-selected' : ''
+              )}
+            />
+          </SectionCard>
 
           {selectedNode && (counts.nodes > 0) && (
             <SectionCard
               title={selectedNode?.node.name || selectedNode?.node.id || "节点属性详情"}
               extra={selectedNode ? <StatusTag status={selectedNode.node.status || "unknown"} /> : null}
             >
-              <div className="fabric-node-detail">
-                <div className="fabric-node-detail-strip">
-                  <span>roles</span>
-                  <div><TagList items={selectedNode.node.roles} emptyLabel="node" /></div>
-                </div>
-                <div className="fabric-node-detail-strip">
-                  <span>platform</span>
-                  <strong>{formatPlatform(selectedNode.node)}</strong>
-                </div>
-                <div className="fabric-node-detail-strip">
-                  <span>capabilities</span>
-                  <div>
-                    <TagList
-                      items={[
-                        ...(selectedNode.capabilities.server ? ['server'] : []),
-                        ...(selectedNode.capabilities.node ? ['node'] : []),
-                        ...(selectedNode.capabilities.relayNode ? [`relay:${selectedNode.capabilities.relayState}`] : []),
-                        ...(selectedNode.capabilities.projectHost ? ['project-host'] : []),
-                        ...(selectedNode.capabilities.runtimeHost ? ['runtime-host'] : []),
-                        ...(selectedNode.capabilities.sshBootstrap ? ['ssh-bootstrap'] : []),
-                        ...(selectedNode.capabilities.measured ? ['measured'] : [])
-                      ]}
-                      emptyLabel="none"
+              {/* 主从两栏：左＝身份/能力/中继元数据，右＝项目/运行时/传输清单；不再纵向平铺。
+                  Action Gating 与 actions 行重复，已剔除。 */}
+              <Row gutter={[24, 16]}>
+                <Col xs={24} lg={10}>
+                  <Space direction="vertical" size={16} style={{ display: 'flex' }}>
+                    <Descriptions
+                      column={1}
+                      size="small"
+                      colon={false}
+                      labelStyle={{ width: 105, color: 'var(--app-muted)', fontFamily: 'var(--font-mono)', fontSize: 11 }}
+                    >
+                      <Descriptions.Item label="roles">
+                        <TagList items={selectedNode.node.roles} emptyLabel="node" />
+                      </Descriptions.Item>
+                      <Descriptions.Item label="platform">
+                        <strong>{formatPlatform(selectedNode.node)}</strong>
+                      </Descriptions.Item>
+                      <Descriptions.Item label="capabilities">
+                        <TagList
+                          items={[
+                            ...(selectedNode.capabilities.server ? ['server'] : []),
+                            ...(selectedNode.capabilities.node ? ['node'] : []),
+                            ...(selectedNode.capabilities.relayNode ? [`relay:${selectedNode.capabilities.relayState}`] : []),
+                            ...(selectedNode.capabilities.projectHost ? ['project-host'] : []),
+                            ...(selectedNode.capabilities.runtimeHost ? ['runtime-host'] : []),
+                            ...(selectedNode.capabilities.sshBootstrap ? ['ssh-bootstrap'] : []),
+                            ...(selectedNode.capabilities.measured ? ['measured'] : [])
+                          ]}
+                          emptyLabel="none"
+                        />
+                      </Descriptions.Item>
+                      <Descriptions.Item label="actions">
+                        <ActionSummary actions={selectedNode.actions} />
+                      </Descriptions.Item>
+                    </Descriptions>
+
+                    {selectedNode.relayNode ? (
+                      <Descriptions
+                        title={<Typography.Text strong>Relay Metadata</Typography.Text>}
+                        size="small"
+                        column={1}
+                        bordered
+                      >
+                        <Descriptions.Item label="capacityClass">{selectedNode.relayNode.capacityClass || 'tiny'}</Descriptions.Item>
+                        <Descriptions.Item label="bandwidth">{formatBandwidthKbps(selectedNode.relayNode.bandwidthLimitKbps)}</Descriptions.Item>
+                        <Descriptions.Item label="status">{selectedNode.relayNode.status || 'unknown'}</Descriptions.Item>
+                        <Descriptions.Item label="measurement">{summarizeRelayMeasurement(selectedNode.transports)}</Descriptions.Item>
+                        <Descriptions.Item label="measured">{formatMeasuredAt(selectedNode.transports.find((transport) => transport.measurement)?.measurement?.measuredAt || selectedNode.relayNode.lastMeasuredAt)}</Descriptions.Item>
+                      </Descriptions>
+                    ) : (
+                      <div>
+                        <Typography.Text strong>Relay Metadata</Typography.Text>
+                        <Typography.Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0 }}>
+                          该 node 未声明 relay-node metadata。
+                        </Typography.Paragraph>
+                      </div>
+                    )}
+                  </Space>
+                </Col>
+
+                <Col xs={24} lg={14}>
+                  <Space direction="vertical" size={16} style={{ display: 'flex' }}>
+                    <NodeDetailList
+                      header="Projects"
+                      items={selectedNode.projects}
+                      empty="暂无 project snapshot。"
+                      getKey={(project) => project.id}
+                      render={(project) => ({
+                        title: project.name || project.id,
+                        description: (
+                          <Space direction="vertical" size={0}>
+                            <span>{project.displayPath || project.vcs || project.id}</span>
+                            <span>{project.permissions?.join(', ') || 'permissions unknown'}</span>
+                          </Space>
+                        )
+                      })}
                     />
-                  </div>
-                </div>
-                <div className="fabric-node-detail-strip">
-                  <span>actions</span>
-                  <div><ActionSummary actions={selectedNode.actions} /></div>
-                </div>
 
-                <section className="fabric-node-detail-section">
-                  <h3>Projects</h3>
-                  {selectedNode.projects.length === 0 ? (
-                    <p>暂无 project snapshot。</p>
-                  ) : selectedNode.projects.map((project) => (
-                    <div key={project.id} className="fabric-node-detail-item">
-                      <strong>{project.name || project.id}</strong>
-                      <span>{project.displayPath || project.vcs || project.id}</span>
-                      <em>{project.permissions?.join(", ") || "permissions unknown"}</em>
-                    </div>
-                  ))}
-                </section>
+                    <NodeDetailList
+                      header="Runtimes"
+                      items={selectedNode.runtimes}
+                      empty="暂无 provider runtime snapshot；该 node 目前不能作为 Codex / Claude / AGY / OpenCode runtime host。"
+                      getKey={(runtime) => runtime.id}
+                      render={(runtime) => ({
+                        title: `${normalizeText(runtime.provider)} / ${normalizeText(runtime.mode, 'tui')}`,
+                        description: (
+                          <Space direction="vertical" size={0}>
+                            <span>{runtime.version || 'version unknown'}</span>
+                            <span>{runtime.status || 'available'}</span>
+                          </Space>
+                        )
+                      })}
+                    />
 
-                <section className="fabric-node-detail-section">
-                  <h3>Runtimes</h3>
-                  {selectedNode.runtimes.length === 0 ? (
-                    <p>暂无 provider runtime snapshot；该 node 目前不能作为 Codex / Claude / AGY / OpenCode runtime host。</p>
-                  ) : selectedNode.runtimes.map((runtime) => (
-                    <div key={runtime.id} className="fabric-node-detail-item">
-                      <strong>{normalizeText(runtime.provider)} / {normalizeText(runtime.mode, "tui")}</strong>
-                      <span>{runtime.version || "version unknown"}</span>
-                      <em>{runtime.status || "available"}</em>
-                    </div>
-                  ))}
-                </section>
-
-                <section className="fabric-node-detail-section">
-                  <h3>Action Gating</h3>
-                  {selectedNode.actions.map((action) => (
-                    <div key={action.id} className="fabric-node-detail-item">
-                      <strong>{action.label}</strong>
-                      <span>{action.eligible ? 'capability eligible' : 'capability blocked'}</span>
-                      <em>{action.blockers.map(formatBlocker).join(' · ') || 'ready'}</em>
-                    </div>
-                  ))}
-                </section>
-
-                <section className="fabric-node-detail-section">
-                  <h3>Transports</h3>
-                  {selectedNode.transports.length === 0 ? (
-                    <p>暂无 transport snapshot。</p>
-                  ) : selectedNode.transports.map((transport) => (
-                    <div key={transport.id} className="fabric-node-detail-item">
-                      <strong>{transport.kind || transport.id}</strong>
-                      <span>{transport.endpoint || transport.provider || "endpoint hidden"}</span>
-                      <em>{getTransportHealth(transport)} · {formatTransportMeasurement(transport)}{transport.lastError ? ` · ${transport.lastError}` : ""}</em>
-                    </div>
-                  ))}
-                </section>
-
-                <section className="fabric-node-detail-section">
-                  <h3>Relay Metadata</h3>
-                  {selectedNode.relayNode ? (
-                    <div className="fabric-relay-meta">
-                      <span>capacityClass <strong>{selectedNode.relayNode.capacityClass || "tiny"}</strong></span>
-                      <span>bandwidth <strong>{formatBandwidthKbps(selectedNode.relayNode.bandwidthLimitKbps)}</strong></span>
-                      <span>status <strong>{selectedNode.relayNode.status || "unknown"}</strong></span>
-                      <span>measurement <strong>{summarizeRelayMeasurement(selectedNode.transports)}</strong></span>
-                      <span>measured <strong>{formatMeasuredAt(selectedNode.transports.find((transport) => transport.measurement)?.measurement?.measuredAt || selectedNode.relayNode.lastMeasuredAt)}</strong></span>
-                      <span>score <strong>{resolveRelayScore(selectedNode.relayNode)}</strong></span>
-                    </div>
-                  ) : (
-                    <p>该 node 未声明 relay-node metadata。</p>
-                  )}
-                </section>
-              </div>
+                    <NodeDetailList
+                      header="Transports"
+                      items={selectedNode.transports}
+                      empty="暂无 transport snapshot。"
+                      getKey={(transport) => transport.id}
+                      render={(transport) => ({
+                        title: transport.kind || transport.id,
+                        description: (
+                          <Space direction="vertical" size={0}>
+                            <span>{transport.endpoint || transport.provider || 'endpoint hidden'}</span>
+                            <span>{getTransportHealth(transport)} · {formatTransportMeasurement(transport)}{transport.lastError ? ` · ${transport.lastError}` : ''}</span>
+                          </Space>
+                        )
+                      })}
+                    />
+                  </Space>
+                </Col>
+              </Row>
             </SectionCard>
           )}
 

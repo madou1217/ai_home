@@ -23,7 +23,12 @@ test('account state service writes operational status through one boundary and m
           status: 'up',
           configured: true,
           api_key_mode: false,
-          display_name: 'user@example.com'
+          display_name: 'user@example.com',
+          runtime_state: {
+            authInvalidUntil: Date.now() + 60_000,
+            lastFailureKind: 'auth_invalid',
+            lastFailureReason: 'auth_invalid_reauth_required'
+          }
         };
       },
       setStatus(provider, accountId, status) {
@@ -53,7 +58,12 @@ test('account state service requires evidence before clearing runtime block', ()
           status: 'up',
           configured: true,
           api_key_mode: false,
-          display_name: 'user@example.com'
+          display_name: 'user@example.com',
+          runtime_state: {
+            authInvalidUntil: Date.now() + 60_000,
+            lastFailureKind: 'auth_invalid',
+            lastFailureReason: 'auth_invalid_reauth_required'
+          }
         };
       },
       upsertRuntimeState(provider, accountId, runtimeState, baseState) {
@@ -80,6 +90,49 @@ test('account state service requires evidence before clearing runtime block', ()
   }]);
 });
 
+test('account state service syncs base state without writing runtime null when no block exists', () => {
+  const writes = [];
+  const service = createAccountStateService({
+    accountStateIndex: {
+      getAccountState() {
+        return {
+          account_id: '1',
+          status: 'up',
+          configured: true,
+          api_key_mode: false,
+          display_name: 'user@example.com',
+          runtime_state: null
+        };
+      },
+      upsertAccountState(provider, accountId, baseState) {
+        writes.push({ op: 'base', provider, accountId, baseState });
+        return true;
+      },
+      upsertRuntimeState(provider, accountId, runtimeState, baseState) {
+        writes.push({ op: 'runtime', provider, accountId, runtimeState, baseState });
+        return true;
+      }
+    }
+  });
+
+  assert.equal(service.clearRuntimeBlock('codex', '1', {
+    evidence: 'token_refresh_success',
+    displayName: 'fresh@example.com'
+  }), true);
+  assert.deepEqual(writes, [{
+    op: 'base',
+    provider: 'codex',
+    accountId: '1',
+    baseState: {
+      status: 'up',
+      configured: true,
+      apiKeyMode: false,
+      authMode: '',
+      displayName: 'fresh@example.com'
+    }
+  }]);
+});
+
 test('account state service accepts verified api key config as runtime clear evidence', () => {
   const writes = [];
   const service = createAccountStateService({
@@ -90,7 +143,12 @@ test('account state service accepts verified api key config as runtime clear evi
           status: 'up',
           configured: true,
           api_key_mode: false,
-          display_name: 'proxy.example.com'
+          display_name: 'proxy.example.com',
+          runtime_state: {
+            authInvalidUntil: Date.now() + 60_000,
+            lastFailureKind: 'auth_invalid',
+            lastFailureReason: 'upstream_401'
+          }
         };
       },
       upsertRuntimeState(provider, accountId, runtimeState, baseState) {
@@ -167,6 +225,45 @@ test('account state service preserves active model cooldowns when clearing accou
   assert.deepEqual(writes[0].runtimeState.modelFailures, {
     'claude-sonnet-4-6': 2
   });
+});
+
+test('account state service refuses token refresh clear for agy cli login-missing block', () => {
+  const now = Date.now();
+  const writes = [];
+  const service = createAccountStateService({
+    accountStateIndex: {
+      getAccountState() {
+        return {
+          account_id: '5',
+          status: 'up',
+          configured: true,
+          api_key_mode: false,
+          auth_mode: 'oauth',
+          display_name: 'agy5@example.com',
+          runtime_state: {
+            cooldownUntil: now + 60_000,
+            authInvalidUntil: now + 60_000,
+            lastFailureKind: 'auth_invalid',
+            lastFailureReason: 'agy_not_signed_in',
+            lastError: 'agy_not_signed_in',
+            lastFailureAt: now - 1_000
+          }
+        };
+      },
+      upsertRuntimeState(provider, accountId, runtimeState, baseState) {
+        writes.push({ provider, accountId, runtimeState, baseState });
+        return true;
+      }
+    }
+  });
+
+  assert.equal(service.clearRuntimeBlock('agy', '5', { evidence: 'token_refresh_success' }), false);
+  assert.equal(service.clearRuntimeBlock('agy', '5', { evidence: 'agy_oauth_credentials_recoverable' }), false);
+  assert.equal(service.clearRuntimeBlock('agy', '5', { evidence: 'upstream_success' }), false);
+  assert.equal(writes.length, 0);
+  assert.equal(service.clearRuntimeBlock('agy', '5', { evidence: 'manual_admin_clear' }), true);
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].runtimeState, null);
 });
 
 test('account state service records runtime failures with merged base state', () => {

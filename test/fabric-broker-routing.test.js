@@ -151,6 +151,7 @@ test('broker session registry keeps last disconnect diagnostics', () => {
 test('broker route allowlist stays narrow', () => {
   assert.equal(isFabricBrokerRouteAllowed('GET', '/readyz'), true);
   assert.equal(isFabricBrokerRouteAllowed('GET', '/v0/fabric/descriptor'), true);
+  assert.equal(isFabricBrokerRouteAllowed('GET', '/v0/fabric/transport/readiness'), true);
   assert.equal(isFabricBrokerRouteAllowed('GET', '/v0/node-rpc/device-profile'), true);
   assert.equal(isFabricBrokerRouteAllowed('GET', '/v0/node-rpc/device-status'), true);
   assert.equal(isFabricBrokerRouteAllowed('GET', '/v0/node-rpc/device-accounts'), true);

@@ -1,18 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { StatisticCard } from '@ant-design/pro-components';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
   Alert,
-  Button,
-  Col,
   Descriptions,
-  Empty,
-  List,
   Progress,
   Row,
+  Col,
   Space,
-  message,
-  Tag,
+    message
 } from 'antd';
-import { ProColumns } from '@ant-design/pro-components';
 import {
   CheckCircleOutlined,
   DashboardOutlined,
@@ -20,13 +16,14 @@ import {
   ReloadOutlined,
   SyncOutlined
 } from '@ant-design/icons';
+import Button from '@/components/ui/AppButton';
+import SectionCard from '@/components/ui/SectionCard';
+import ListTable from '@/components/ui/ListTable';
+import PageScaffold from '@/components/ui/PageScaffold';
 import { managementAPI } from '@/services/api';
 import type { ManagementAccount, ManagementMetrics, ManagementStatus, Provider } from '@/types';
 import ProviderIcon, { providerIds, providerNames } from '@/components/chat/ProviderIcon';
 import RuntimeStatusTag from '@/components/runtime/RuntimeStatusTag';
-import PageScaffold from '@/components/ui/PageScaffold';
-import SectionCard from '@/components/ui/SectionCard';
-import ListTable from '@/components/ui/ListTable';
 import '../styles/unified.css';
 
 const PROVIDERS: Provider[] = providerIds;
@@ -48,14 +45,26 @@ function formatQueueSnapshot(snapshot?: ManagementStatus['queue'][string]) {
 }
 
 function formatRecentErrorMessage(item: ManagementMetrics['lastErrors'][number]) {
-  const message = String(item?.message || item?.error || item?.detail || item?.reason || '').trim();
-  if (message) return message;
+  const msg = String(item?.message || item?.error || item?.detail || item?.reason || '').trim();
+  if (msg) return msg;
   return '未提供错误详情';
 }
 
+type ProviderRow = {
+  key: Provider;
+  provider: Provider;
+  total: number;
+  active: number;
+  statuses: Record<string, number>;
+  queue: any;
+  requests: number;
+  success: number;
+  failures: number;
+};
+
 function getRecentErrorProvider(item: ManagementMetrics['lastErrors'][number]) {
   const provider = String(item.provider || '').trim().toLowerCase();
-  return PROVIDERS.includes(provider as Provider) ? provider as Provider : null;
+  return PROVIDERS.includes(provider as Provider) ? (provider as Provider) : null;
 }
 
 function getRecentErrorAccountRef(item: ManagementMetrics['lastErrors'][number]) {
@@ -86,19 +95,7 @@ function buildAccountLink(provider: Provider, accountId: string) {
   return `/accounts?${params.toString()}`;
 }
 
-type ProviderRow = {
-  key: Provider;
-  provider: Provider;
-  total: number;
-  active: number;
-  statuses: Record<string, number>;
-  queue: ManagementStatus['queue'][Provider] | undefined;
-  requests: number;
-  success: number;
-  failures: number;
-};
-
-const Dashboard = () => {
+export default function Dashboard() {
   const [status, setStatus] = useState<ManagementStatus | null>(null);
   const [metrics, setMetrics] = useState<ManagementMetrics | null>(null);
   const [accounts, setAccounts] = useState<ManagementAccount[]>([]);
@@ -132,7 +129,7 @@ const Dashboard = () => {
     clearRefreshFallbackTimer();
   }
 
-  const loadDashboard = async (options: { showLoading?: boolean; quietError?: boolean } = {}) => {
+  const loadDashboard = useCallback(async (options: { showLoading?: boolean; quietError?: boolean } = {}) => {
     const showLoading = Boolean(options.showLoading);
     const quietError = Boolean(options.quietError);
     if (showLoading) {
@@ -160,7 +157,7 @@ const Dashboard = () => {
         setLoading(false);
       }
     }
-  };
+  }, []);
 
   useEffect(() => {
     setLoading(true);
@@ -190,7 +187,7 @@ const Dashboard = () => {
       clearRefreshFallbackTimer();
       watcher.close();
     };
-  }, []);
+  }, [loadDashboard]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -271,13 +268,7 @@ const Dashboard = () => {
       }));
   }, [metrics]);
 
-
   const degradedCount = Math.max(0, Number(status?.totalAccounts || 0) - Number(status?.activeAccounts || 0));
-  const liveTag = liveState === 'live'
-    ? { color: 'green', text: '实时' }
-    : liveState === 'connecting'
-      ? { color: 'blue', text: '连接中' }
-      : { color: 'orange', text: '降级' };
   const recentErrors = metrics?.lastErrors || [];
   const accountByRef = useMemo(() => {
     return new Map(
@@ -287,37 +278,121 @@ const Dashboard = () => {
     );
   }, [accounts]);
 
-  const providerColumns: ProColumns<ProviderRow>[] = [
+  const recentErrorRows = recentErrors.slice(0, 8).map((item, index) => ({ ...item, __key: `${item.at || 'unknown'}-${index}` }));
+
+  const routeTotalMax = Math.max(routeRows[0]?.count || 0, 1);
+
+  const recentErrorColumns = [
     {
-      title: 'Provider',
-      dataIndex: 'provider',
+      title: 'Provider / 账号',
       key: 'provider',
-      render: (_, record) => (
+      width: 220,
+      render: (_: any, item: ManagementMetrics['lastErrors'][number]) => {
+        const provider = getRecentErrorProvider(item);
+        const accountRef = getRecentErrorAccountRef(item);
+        const account = accountRef ? accountByRef.get(accountRef) : undefined;
+        const accountId = account ? String(account.accountId || account.id || '').trim() : '';
+        if (!provider) return <RuntimeStatusTag status="upstream_error" fallback="upstream" />;
+        return (
+          <Space size={8} wrap>
+            <Space size={5}>
+              <ProviderIcon provider={provider} size={15} />
+              <span style={{ fontWeight: 700 }}>{providerNames[provider as keyof typeof providerNames] || provider}</span>
+            </Space>
+            {accountId ? (
+              <a href={buildAccountLink(provider, accountId)}>{getManagementAccountLabel(account) || '查看对应账号'}</a>
+            ) : null}
+          </Space>
+        );
+      }
+    },
+    {
+      title: 'Route',
+      dataIndex: 'route',
+      key: 'route',
+      width: 180,
+      render: (route: string) => route ? <span style={{ color: 'var(--app-muted)', fontSize: 12 }}>{route}</span> : '-'
+    },
+    {
+      title: '错误详情',
+      key: 'message',
+      render: (_: any, item: ManagementMetrics['lastErrors'][number]) => (
+        <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 13, color: 'var(--app-text)' }}>
+          {formatRecentErrorMessage(item)}
+        </div>
+      )
+    },
+    {
+      title: '时间',
+      dataIndex: 'at',
+      key: 'at',
+      width: 120,
+      render: (at: string) => <span style={{ color: 'var(--app-muted)', fontSize: 12 }}>{formatRecentErrorTime(at)}</span>
+    }
+  ];
+
+  const routeColumns = [
+    {
+      title: 'Route',
+      dataIndex: 'route',
+      key: 'route',
+      render: (route: string) => (
+        <code style={{ background: 'var(--app-surface-muted)', padding: '2px 6px', borderRadius: 4, fontSize: 12 }}>{route}</code>
+      )
+    },
+    {
+      title: '请求数',
+      dataIndex: 'count',
+      key: 'count',
+      width: 110,
+      align: 'right' as const,
+      render: (count: number) => `${count} 次`
+    },
+    {
+      title: '占比',
+      key: 'progress',
+      width: 160,
+      render: (_: any, item: { count: number }) => (
+        <Progress
+          percent={Math.max(1, Math.round((item.count / routeTotalMax) * 100))}
+          showInfo={false}
+          size="small"
+        />
+      )
+    }
+  ];
+
+  const providerColumns = [
+    {
+      title: "Provider",
+      dataIndex: "provider",
+      key: "provider",
+      render: (provider: any) => (
         <Space>
-          <ProviderIcon provider={record.provider} size={16} />
-          {providerNames[record.provider]}
+          <ProviderIcon provider={provider} size={16} />
+          {providerNames[provider as keyof typeof providerNames] || provider}
         </Space>
       )
     },
     {
-      title: '健康 / 总数',
-      key: 'health',
-      render: (_, record) => `${record.active}/${record.total}`
+      title: "健康 / 总数",
+      key: "health",
+      render: (_: any, record: ProviderRow) => `${record.active}/${record.total}`
     },
     {
-      title: '队列',
-      key: 'queue',
-      render: (_, record) => formatQueueSnapshot(record.queue)
+      title: "队列",
+      key: "queue",
+      render: (_: any, record: ProviderRow) => formatQueueSnapshot(record.queue)
     },
     {
-      title: '请求',
-      key: 'requests',
-      render: (_, record) => `${record.requests} / 成功 ${record.success} / 失败 ${record.failures}`
+      title: "请求",
+      key: "requests",
+      render: (_: any, record: ProviderRow) => `${record.requests} / 成功 ${record.success} / 失败 ${record.failures}`
     },
     {
-      title: '状态分布',
-      key: 'statuses',
-      render: (_, record) => (
+      title: "状态分布",
+      key: "statuses",
+      render: (_: any, record: ProviderRow) => (
         <Space wrap size={[6, 6]}>
           {Object.entries(record.statuses || {})
             .filter(([, count]) => Number(count) > 0)
@@ -349,31 +424,6 @@ const Dashboard = () => {
           刷新
         </Button>
       ]}
-      headerContent={
-        <Descriptions
-          size="small"
-          column={{ xs: 1, sm: 2, md: 5 }}
-          style={{ marginBottom: 8 }}
-        >
-          <Descriptions.Item label="实时态">
-            <Tag color={liveTag.color} style={{ margin: 0, padding: '4px 8px', height: 'auto' }}>
-              {liveTag.text}
-            </Tag>
-          </Descriptions.Item>
-          <Descriptions.Item label={<><DashboardOutlined /> 总账号数</>}>
-            {status?.totalAccounts || 0}
-          </Descriptions.Item>
-          <Descriptions.Item label={<><CheckCircleOutlined /> 健康账号</>}>
-            <span style={{ color: '#0F766E' }}>{status?.activeAccounts || 0}</span>
-          </Descriptions.Item>
-          <Descriptions.Item label={<><DisconnectOutlined /> 异常 / 冷却</>}>
-            <span style={{ color: degradedCount > 0 ? '#dc2626' : undefined }}>{degradedCount}</span>
-          </Descriptions.Item>
-          <Descriptions.Item label={<><SyncOutlined spin={loading} /> 成功率</>}>
-            {formatPercent(status?.successRate)}
-          </Descriptions.Item>
-        </Descriptions>
-      }
     >
       {status?.cooldownAccounts ? (
         <Alert
@@ -383,6 +433,34 @@ const Dashboard = () => {
           message={`当前共有 ${status.cooldownAccounts} 个账号处于非健康态，已被调度层临时摘除。`}
         />
       ) : null}
+
+      {/* 4 项关键指标 —— 用框架 StatisticCard.Group（自带卡片 + 响应式 + 分隔） */}
+      <StatisticCard.Group direction="row" style={{ marginBottom: 16 }}>
+        <StatisticCard statistic={{ title: '总账号数', value: status?.totalAccounts || 0, prefix: <DashboardOutlined /> }} />
+        <StatisticCard
+          statistic={{
+            title: '健康账号',
+            value: status?.activeAccounts || 0,
+            prefix: <CheckCircleOutlined />,
+            valueStyle: { color: 'var(--color-success, #15803d)' }
+          }}
+        />
+        <StatisticCard
+          statistic={{
+            title: '异常 / 冷却',
+            value: degradedCount,
+            prefix: <DisconnectOutlined />,
+            valueStyle: { color: degradedCount > 0 ? 'var(--color-danger, #dc2626)' : undefined }
+          }}
+        />
+        <StatisticCard
+          statistic={{
+            title: '成功率',
+            value: formatPercent(status?.successRate),
+            prefix: <SyncOutlined spin={loading} />
+          }}
+        />
+      </StatisticCard.Group>
 
       <SectionCard title="服务运行参数">
         <Descriptions size="small" column={{ xs: 1, sm: 2, md: 3 }} bordered>
@@ -407,97 +485,34 @@ const Dashboard = () => {
         <ListTable<ProviderRow>
           rowKey="provider"
           dataSource={providerRows}
-          loading={loading}
           columns={providerColumns}
+          loading={loading}
         />
       </SectionCard>
 
       <Row gutter={16}>
         <Col xs={24} md={12}>
           <SectionCard title="最近错误">
-            {recentErrors.length === 0 ? (
-              <Empty description="暂无数据" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-            ) : (
-              <List
-                dataSource={recentErrors.slice(0, 8)}
-                renderItem={(item) => (
-                  <List.Item>
-                    <div style={{ width: "100%" }}>
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 6 }}>
-                        <Space size={8} wrap>
-                          {(() => {
-                            const provider = getRecentErrorProvider(item);
-                            const accountRef = getRecentErrorAccountRef(item);
-                            const account = accountRef ? accountByRef.get(accountRef) : undefined;
-                            const accountId = account ? String(account.accountId || account.id || "").trim() : "";
-                            if (!provider) {
-                              return <RuntimeStatusTag status="upstream_error" fallback="upstream" />;
-                            }
-                            return (
-                              <>
-                                <Space size={5}>
-                                  <ProviderIcon provider={provider} size={15} />
-                                  <span style={{ fontWeight: "bold" }}>{providerNames[provider]}</span>
-                                </Space>
-                                {accountId ? (
-                                  <a href={buildAccountLink(provider, accountId)}>
-                                    {getManagementAccountLabel(account) || "查看对应账号"}
-                                  </a>
-                                ) : null}
-                              </>
-                            );
-                          })()}
-                        </Space>
-                        <span style={{ color: "var(--app-muted)", fontSize: 12 }}>
-                          {formatRecentErrorTime(item.at)}
-                        </span>
-                      </div>
-                      {item.route ? (
-                        <span style={{ display: "block", marginBottom: 4, fontSize: 12, color: "var(--app-muted)" }}>
-                          {item.route}
-                        </span>
-                      ) : null}
-                      <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 13, color: "var(--app-text)" }}>
-                        {formatRecentErrorMessage(item)}
-                      </div>
-                    </div>
-                  </List.Item>
-                )}
-              />
-            )}
+            <ListTable
+              rowKey="__key"
+              dataSource={recentErrorRows}
+              columns={recentErrorColumns}
+              loading={loading}
+              scroll={{ x: 720 }}
+            />
           </SectionCard>
         </Col>
-
         <Col xs={24} md={12}>
           <SectionCard title="热点路由">
-            {routeRows.length === 0 ? (
-              <Empty description="暂无数据" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-            ) : (
-              <List
-                dataSource={routeRows}
-                renderItem={(item) => (
-                  <List.Item>
-                    <div style={{ width: "100%" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                        <code style={{ background: "var(--app-surface-muted)", padding: "2px 6px", borderRadius: 4, fontSize: 12 }}>{item.route}</code>
-                        <span>{item.count} 次请求</span>
-                      </div>
-                      <Progress
-                        percent={Math.max(1, Math.round((item.count / Math.max(routeRows[0].count, 1)) * 100))}
-                        showInfo={false}
-                        size="small"
-                      />
-                    </div>
-                  </List.Item>
-                )}
-              />
-            )}
+            <ListTable
+              rowKey="key"
+              dataSource={routeRows}
+              columns={routeColumns}
+              loading={loading}
+            />
           </SectionCard>
         </Col>
       </Row>
     </PageScaffold>
   );
-};
-
-
-export default Dashboard;
+}

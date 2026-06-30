@@ -1,0 +1,9 @@
+/* 计算节点列表（ListTable）选中行高亮：保留原 fabric-node-row--active 的选中语义。
+ * 其余原自建样式（fabric-node-row / fabric-node-detail-* / fabric-relay-meta）已全部
+ * 迁移到框架组件（ListTable / antd List / Descriptions），不再需要自定义 CSS。 */
+.fabric-node-row-selected > td.ant-table-cell {
+  background: var(--app-surface-raised);
+}
+.fabric-node-row-selected > td.ant-table-cell:first-child {
+  box-shadow: inset 2px 0 0 var(--app-primary);
+}

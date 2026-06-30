@@ -1,0 +1,61 @@
+/* ===== Accounts Page — Umi ProLayout Compatible ===== */
+
+/* 行高亮动画 */
+.accounts-row-target td {
+  background: var(--tint-info) !important;
+  transition: background-color 0.2s ease;
+}
+.accounts-row-exiting {
+  --animate-duration: 0.38s;
+  pointer-events: none;
+  transform-origin: left center;
+}
+.accounts-row-exiting td {
+  background: var(--tint-warning) !important;
+}
+
+
+@media (prefers-reduced-motion: reduce) {.accounts-row-exiting {
+    animation: none !important;
+    opacity: 0.42;
+  }
+
+}/* 导入粘贴区域 */
+.accounts-import-paste {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.accounts-import-template {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.accounts-import-template > div {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--app-muted);
+}
+.accounts-import-template pre {
+  padding: 12px;
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  background: var(--app-surface-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+/* 导出弹窗 */
+.accounts-export-popover .ant-popover-inner {
+  padding: 4px;
+  border-radius: 10px;
+}
+.accounts-remote-control-plane-list .ant-list-item {
+  padding: 8px 0;
+}
+.accounts-remote-control-plane-account-main .ant-typography {
+  max-width: 260px;
+}

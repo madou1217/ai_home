@@ -53,7 +53,26 @@ test('fabric node inventory gates provider sessions per node, not by global runt
   assert.equal(aws.capabilities.runtimeHost, false);
   assert.equal(aws.capabilities.measured, true);
   assert.deepEqual(aws.capabilities.runtimeProviders, []);
+  assert.deepEqual(
+    aws.runtimeGaps.map((gap) => `${gap.provider}:${gap.status}:${gap.blocker}`),
+    [
+      'codex:missing:missing_provider_runtime:codex',
+      'claude:missing:missing_provider_runtime:claude',
+      'agy:missing:missing_provider_runtime:agy',
+      'opencode:missing:missing_provider_runtime:opencode'
+    ]
+  );
   assert.deepEqual(local.capabilities.runtimeProviders, ['agy', 'claude', 'codex', 'opencode']);
+  assert.deepEqual(local.runtimeGaps, []);
+
+  const awsOpenProject = aws.actions.find((action) => action.id === 'open-project');
+  const localOpenProject = local.actions.find((action) => action.id === 'open-project');
+  assert.equal(awsOpenProject.eligible, true);
+  assert.equal(awsOpenProject.enabled, true);
+  assert.deepEqual(awsOpenProject.blockers, []);
+  assert.equal(localOpenProject.eligible, true);
+  assert.equal(localOpenProject.enabled, true);
+  assert.deepEqual(localOpenProject.blockers, []);
 
   const awsCodex = aws.actions.find((action) => action.id === 'start-session:codex');
   const localCodex = local.actions.find((action) => action.id === 'start-session:codex');
@@ -62,10 +81,10 @@ test('fabric node inventory gates provider sessions per node, not by global runt
   assert.equal(awsCodex.eligible, false);
   assert.equal(awsCodex.enabled, false);
   assert.equal(awsCodex.blockers.includes('missing_provider_runtime:codex'), true);
-  assert.equal(awsCodex.blockers.includes('m4_remote_session_action_pending'), true);
+  assert.deepEqual(awsCodex.blockers, ['missing_provider_runtime:codex']);
   assert.equal(localCodex.eligible, true);
-  assert.equal(localCodex.enabled, false);
-  assert.deepEqual(localCodex.blockers, ['m4_remote_session_action_pending']);
+  assert.equal(localCodex.enabled, true);
+  assert.deepEqual(localCodex.blockers, []);
 });
 
 test('fabric node inventory treats ssh as bootstrap capability, not runtime readiness', () => {
@@ -84,9 +103,64 @@ test('fabric node inventory treats ssh as bootstrap capability, not runtime read
   const host = inventory[0];
   assert.equal(host.capabilities.sshBootstrap, true);
   assert.equal(host.capabilities.runtimeHost, false);
+  assert.deepEqual(host.runtimeGaps.map((gap) => gap.provider), ['codex', 'claude', 'agy', 'opencode']);
+  assert.equal(host.actions.find((action) => action.id === 'open-project').enabled, false);
+  assert.deepEqual(host.actions.find((action) => action.id === 'open-project').blockers, ['missing_project_snapshot']);
   assert.equal(host.actions.find((action) => action.id === 'configure-ssh').enabled, true);
   assert.equal(
     host.actions.find((action) => action.id === 'start-session:codex').blockers.includes('missing_provider_runtime:codex'),
     true
   );
+});
+
+test('fabric node inventory blocks registered runtime when all provider accounts are unavailable', () => {
+  const inventory = buildFabricNodeInventory({
+    nodes: [
+      { id: 'aws-current-node', name: 'AWS Current Node', roles: ['node', 'relay-node'], status: 'online' }
+    ],
+    relayNodes: [
+      { id: 'aws-current-node-relay', nodeId: 'aws-current-node', enabled: true, status: 'online' }
+    ],
+    projects: [
+      { id: 'aws-project', nodeId: 'aws-current-node', name: 'aih-fabric-current' }
+    ],
+    runtimes: [
+      { id: 'aws-codex-api', nodeId: 'aws-current-node', provider: 'codex', mode: 'api', status: 'available' }
+    ],
+    runtimeDiagnostics: [
+      {
+        id: 'aws-codex-diagnostic',
+        nodeId: 'aws-current-node',
+        provider: 'codex',
+        cli: { command: 'codex', available: true, path: '/app/.runtime-tools/bin/codex' },
+        accounts: {
+          total: 2,
+          schedulable: 0,
+          source: 'runtime_accounts',
+          reasons: [{ reason: 'runtime:auth_invalid:upstream_401', count: 2, sampleAccountIds: ['1', '2'] }]
+        }
+      }
+    ],
+    transports: [
+      { id: 'aws-current-node-relay', nodeId: 'aws-current-node', kind: 'relay', health: 'online' }
+    ]
+  });
+
+  const node = inventory[0];
+  assert.equal(node.capabilities.runtimeHost, true);
+  assert.deepEqual(node.capabilities.runtimeProviders, ['codex']);
+  assert.deepEqual(
+    node.runtimeGaps.map((gap) => `${gap.provider}:${gap.status}:${gap.blocker}`),
+    [
+      'codex:degraded:provider_account_unavailable:codex',
+      'claude:missing:missing_provider_runtime:claude',
+      'agy:missing:missing_provider_runtime:agy',
+      'opencode:missing:missing_provider_runtime:opencode'
+    ]
+  );
+  const codexAction = node.actions.find((action) => action.id === 'start-session:codex');
+  assert.equal(codexAction.enabled, false);
+  assert.equal(codexAction.eligible, false);
+  assert.equal(codexAction.runtimeStatus, 'degraded');
+  assert.deepEqual(codexAction.blockers, ['provider_account_unavailable:codex']);
 });

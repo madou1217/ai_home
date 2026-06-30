@@ -130,6 +130,13 @@ export interface FabricNodeAction {
   runtimeStatus: string;
 }
 
+export interface FabricNodeRuntimeGap {
+  provider: string;
+  status: string;
+  blocker: string;
+  runtimeId: string;
+}
+
 export interface FabricNodeCapabilities {
   server: boolean;
   node: boolean;
@@ -154,6 +161,7 @@ export interface FabricNodeInventoryItem {
   transports: FabricRegistryTransport[];
   networkMeasurements: FabricRegistryNetworkMeasurement[];
   capabilities: FabricNodeCapabilities;
+  runtimeGaps: FabricNodeRuntimeGap[];
   actions: FabricNodeAction[];
 }
 
@@ -415,6 +423,19 @@ function normalizeAction(value: unknown): FabricNodeAction | null {
   };
 }
 
+function normalizeRuntimeGap(value: unknown): FabricNodeRuntimeGap | null {
+  const source = normalizeObject(value);
+  const provider = normalizeText(source.provider, 64);
+  const blocker = normalizeText(source.blocker, 128);
+  if (!provider || !blocker) return null;
+  return {
+    provider,
+    status: normalizeText(source.status, 64) || 'unknown',
+    blocker,
+    runtimeId: normalizeText(source.runtimeId, 96)
+  };
+}
+
 function normalizeNodeCapabilities(value: unknown): FabricNodeCapabilities {
   const source = normalizeObject(value);
   return {
@@ -506,28 +527,55 @@ function buildAction(
   };
 }
 
-function buildStartSessionAction(provider: string, view: Omit<FabricNodeInventoryItem, 'capabilities' | 'actions'>): FabricNodeAction {
-  const hasProjects = view.projects.length > 0;
+function resolveProviderRuntimeGate(provider: string, view: Omit<FabricNodeInventoryItem, 'capabilities' | 'actions' | 'runtimeGaps'>) {
   const runtime = view.runtimes.find((item) => normalizeLowerText(item.provider, 64) === provider) || null;
   const runtimeStatus = runtime ? (runtime.status || 'available') : 'missing';
   const runtimeReady = Boolean(runtime) && !isOfflineStatus(runtimeStatus);
+  const blocker = !runtime
+    ? `missing_provider_runtime:${provider}`
+    : (!runtimeReady ? `provider_runtime_not_ready:${provider}:${runtimeStatus}` : '');
+  return {
+    runtime,
+    runtimeStatus,
+    runtimeReady,
+    blocker
+  };
+}
+
+function buildStartSessionAction(provider: string, view: Omit<FabricNodeInventoryItem, 'capabilities' | 'actions' | 'runtimeGaps'>): FabricNodeAction {
+  const hasProjects = view.projects.length > 0;
+  const runtimeGate = resolveProviderRuntimeGate(provider, view);
   const hasTransport = view.transports.length > 0;
   const blockers = [
     ...(hasProjects ? [] : ['missing_project_snapshot']),
-    ...(runtime ? [] : [`missing_provider_runtime:${provider}`]),
-    ...(runtime && !runtimeReady ? [`provider_runtime_not_ready:${provider}:${runtimeStatus}`] : []),
-    ...(hasTransport ? [] : ['missing_transport']),
-    'm4_remote_session_action_pending'
+    ...(runtimeGate.blocker ? [runtimeGate.blocker] : []),
+    ...(hasTransport ? [] : ['missing_transport'])
   ];
-  return buildAction(`start-session:${provider}`, `Start ${provider}`, false, blockers, {
+  const eligible = hasProjects && runtimeGate.runtimeReady && hasTransport;
+  return buildAction(`start-session:${provider}`, `Start ${provider}`, eligible, blockers, {
     provider,
-    eligible: hasProjects && runtimeReady && hasTransport,
-    runtimeId: runtime?.id || '',
-    runtimeStatus
+    eligible,
+    runtimeId: runtimeGate.runtime?.id || '',
+    runtimeStatus: runtimeGate.runtimeStatus
   });
 }
 
-function buildNodeCapabilities(view: Omit<FabricNodeInventoryItem, 'capabilities' | 'actions'>): FabricNodeCapabilities {
+function buildRuntimeGaps(view: Omit<FabricNodeInventoryItem, 'capabilities' | 'actions' | 'runtimeGaps'>): FabricNodeRuntimeGap[] {
+  return ['codex', 'claude', 'agy', 'opencode']
+    .map((provider) => {
+      const gate = resolveProviderRuntimeGate(provider, view);
+      if (!gate.blocker) return null;
+      return {
+        provider,
+        status: gate.runtimeStatus,
+        blocker: gate.blocker,
+        runtimeId: gate.runtime?.id || ''
+      };
+    })
+    .filter((item): item is FabricNodeRuntimeGap => Boolean(item));
+}
+
+function buildNodeCapabilities(view: Omit<FabricNodeInventoryItem, 'capabilities' | 'actions' | 'runtimeGaps'>): FabricNodeCapabilities {
   const roles = view.node.roles.map((role) => normalizeLowerText(role, 64));
   const declaredCapabilities = view.node.capabilities.map((capability) => normalizeLowerText(capability, 96));
   const relayTransports = view.transports.filter((transport) => normalizeLowerText(transport.kind, 64) === 'relay');
@@ -549,7 +597,7 @@ function buildNodeCapabilities(view: Omit<FabricNodeInventoryItem, 'capabilities
   };
 }
 
-function buildNodeActions(view: Omit<FabricNodeInventoryItem, 'actions'>): FabricNodeAction[] {
+function buildNodeActions(view: Omit<FabricNodeInventoryItem, 'actions' | 'runtimeGaps'>): FabricNodeAction[] {
   return [
     buildAction('open-project', 'Open project', false, [
       ...(view.projects.length > 0 ? [] : ['missing_project_snapshot']),
@@ -584,6 +632,7 @@ export function buildFabricNodeInventory(registry: Pick<FabricRegistryResult, 'n
     const withCapabilities = { ...view, capabilities };
     return {
       ...withCapabilities,
+      runtimeGaps: buildRuntimeGaps(withCapabilities),
       actions: buildNodeActions(withCapabilities)
     };
   });
@@ -598,10 +647,12 @@ function normalizeNodeInventory(value: unknown, registry: Pick<FabricRegistryRes
     const id = normalizeText(source.id, 96);
     const base = fallback.find((entry) => entry.id === id) || null;
     if (!id || !base) return null;
+    const hasRuntimeGaps = Array.isArray(source.runtimeGaps);
     return {
       ...base,
       name: normalizeText(source.name, 120) || base.name,
       capabilities: normalizeNodeCapabilities(source.capabilities || base.capabilities),
+      runtimeGaps: hasRuntimeGaps ? normalizeArray(source.runtimeGaps, normalizeRuntimeGap) : base.runtimeGaps,
       actions: normalizeArray(source.actions, normalizeAction)
     };
   }).filter((item): item is FabricNodeInventoryItem => Boolean(item));

@@ -203,8 +203,17 @@ test('buildRemoteStartCommand backgrounds server and records pid without invalid
 
   assert.match(command, /export AIH_HOST_HOME='\/home\/ubuntu\/aih-fabric-current\/\.aih-host-home'/);
   assert.match(command, /export PATH='\/home\/ubuntu\/aih-fabric-current\/\.node-runtime\/node-v22\.16\.0-linux-x64\/bin':'\/home\/ubuntu\/aih-fabric-current\/node_modules\/\.bin':\$PATH/);
+  assert.match(command, /ps -axo pid=,command= \| awk -v port='--port 9527'/);
+  assert.match(command, /\$2 ~ \/\(\^\|\\\/\)node\$\/ && \$0 ~ \/bin\\\/ai-home\\\.js server serve\//);
+  assert.match(command, /port_9527_still_in_use/);
   assert.match(command, /nohup node bin\/ai-home\.js server serve --host 0\.0\.0\.0 --port 9527/);
-  assert.match(command, /echo \$! > '\/home\/ubuntu\/aih-fabric-current\/fabric-server\.pid'/);
+  assert.match(command, /2>&1 & new_pid=\$!/);
+  assert.match(command, /new_pid=\$!/);
+  assert.match(command, /echo "\$new_pid" > '\/home\/ubuntu\/aih-fabric-current\/fabric-server\.pid'/);
+  assert.match(command, /kill -0 "\$new_pid"/);
+  assert.match(command, /server serve failed/);
+  assert.match(command, /http:\/\/127\.0\.0\.1:9527\/readyz/);
+  assert.doesNotMatch(command, /pgrep -f/);
   assert.doesNotMatch(command, /&\s*&&/);
   assert.doesNotMatch(command, /\(\s*&&/);
   assert.doesNotMatch(command, /&&\s*&&/);

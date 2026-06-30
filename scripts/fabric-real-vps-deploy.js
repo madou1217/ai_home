@@ -321,22 +321,26 @@ function buildRemoteNodeCommand(options, command) {
 }
 
 function buildRemoteStartCommand(options, remoteLog, remotePid) {
-  const stopPrevious = [
-    `if [ -f ${shQuote(remotePid)} ]; then`,
-    `old_pid=$(cat ${shQuote(remotePid)} 2>/dev/null || true);`,
-    `if [ -n "$old_pid" ] && kill -0 "$old_pid" 2>/dev/null; then kill "$old_pid"; sleep 2; fi;`,
-    'fi'
-  ].join(' ');
+  const stopPrevious = `if [ -f ${shQuote(remotePid)} ]; then old_pid=$(cat ${shQuote(remotePid)} 2>/dev/null || true); if [ -n "$old_pid" ] && kill -0 "$old_pid" 2>/dev/null; then kill "$old_pid"; sleep 2; fi; fi`;
+  const stopStaleServer = [
+    `server_pids=$(ps -axo pid=,command= | awk -v port=${shQuote(`--port ${options.port}`)} '$2 ~ /(^|\\/)node$/ && $0 ~ /bin\\/ai-home\\.js server serve/ && index($0, port) { print $1 }')`,
+    `if [ -n "$server_pids" ]; then kill $server_pids; sleep 2; fi`,
+    `if ss -lntp 2>/dev/null | grep -q ${shQuote(`:${options.port}`)}; then echo ${shQuote(`port_${options.port}_still_in_use`)} >&2; ss -lntp 2>/dev/null | grep ${shQuote(`:${options.port}`)} >&2 || true; exit 91; fi`
+  ].join('; ');
   const launch = [
-    `AIH_SERVER_DISABLE_SOURCE_AUTO_RESTART=1 AIH_SERVER_STRICT_PORT=1 nohup node bin/ai-home.js server serve --host 0.0.0.0 --port ${options.port} > ${shQuote(remoteLog)} 2>&1 &`,
-    `echo $! > ${shQuote(remotePid)}`
-  ].join(' ');
+    `AIH_SERVER_DISABLE_SOURCE_AUTO_RESTART=1 AIH_SERVER_STRICT_PORT=1 nohup node bin/ai-home.js server serve --host 0.0.0.0 --port ${options.port} > ${shQuote(remoteLog)} 2>&1 & new_pid=$!`,
+    `echo "$new_pid" > ${shQuote(remotePid)}`,
+    'sleep 2',
+    `if ! kill -0 "$new_pid" 2>/dev/null; then tail -80 ${shQuote(remoteLog)} || true; exit 92; fi`,
+    `if grep -q 'server serve failed' ${shQuote(remoteLog)} 2>/dev/null; then tail -80 ${shQuote(remoteLog)} || true; exit 93; fi`,
+    `ready=0; for _ in 1 2 3 4 5; do if curl --noproxy '*' -fsS --max-time 5 ${shQuote(`http://127.0.0.1:${options.port}/readyz`)} >/dev/null; then ready=1; break; fi; sleep 1; done; if [ "$ready" != "1" ]; then tail -80 ${shQuote(remoteLog)} || true; exit 94; fi`
+  ].join('; ');
   return [
     `cd ${shQuote(options.remoteDir)}`,
     buildRemoteEnvCommand(options),
     stopPrevious,
+    stopStaleServer,
     `( ${launch} )`,
-    `sleep 2`,
     `cat ${shQuote(remotePid)}`,
     `tail -40 ${shQuote(remoteLog)} || true`
   ].filter(Boolean).join(' && ');

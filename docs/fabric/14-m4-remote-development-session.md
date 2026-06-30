@@ -16,20 +16,21 @@ M4 的目标不是新增一个旧式专用入口，而是让任意已授权 clie
 
 ## Current Baseline
 
-已证明的底层能力：
+当前已证明的能力：
 
 - server profile、broker proxy、device pair、device scoped reads 可用。
 - AWS current 默认 `9527` 可作为当前唯一 server/broker 测试目标。
 - Role Registry 已能展示本机和 AWS current 两个真实 node/relay-node。
 - Relay health 已有 `ws_echo_pass`、p95、successRate 和 networkMeasurements evidence。
 - broker link 断开诊断和同 `serverId` 恢复已有 evidence。
-- 远程 Codex 会话的数据面 smoke 只能作为协议参考，不再作为产品计划完成项。
+- 用户从 server profile -> node -> project -> runtime -> session 的路径已冻结到本计划和 `08-current-status.md`。
+- 会话目录、attach、resume、事件去重、stop、approval、artifact 已形成统一协议，并完成 M4 8.2-8.7 的本地/AWS/mobile 真实验收。
+- AWS current default `9527` 已完成真实 Codex session start、event polling、message/slash、cursor reconnect、artifact retrieval 和 stop cleanup；证据见 `2026-06-28-m4-aws-real-remote-session-smoke.md` 与 `2026-06-28-m4-mobile-pwa-session-smoke.md`。
 
-未完成的产品能力：
+仍不能越级宣称的能力：
 
-- 用户从 server profile 到 node/project/runtime/session 的路径还没有冻结。
-- 会话目录、attach、resume、事件去重、stop、approval、artifact 的职责边界还没有统一协议。
-- 移动端只是证明 Fabric Nodes 可浏览，不等于远程开发会话可用。
+- AWS current 自身不能作为 provider runtime host，因为当前不导入 provider 凭据，registry 中 `aws-current-node.runtimeHost=false` 且存在 `missing_provider_runtime` gaps。
+- WebRTC/WebTransport/Multipath 不能作为默认 transport；M6 promotion 仍受外部 TURN/HTTPS-H3/OMR 前置约束。
 
 ## Topology
 
@@ -207,16 +208,15 @@ This queue is authoritative for M4. New requirements must be added here before i
 | 8.4 | done | Event store + seq/ack/resume | events can resume from cursor after client reconnect without duplication; evidence: `2026-06-28-m4-event-store-seq-ack-resume.md` |
 | 8.5 | done | Approval and artifact lanes | approval requests, idempotent approval responses, and artifact refs are routed without blocking normal message stream; evidence: `2026-06-28-m4-approval-artifact-lanes.md` |
 | 8.6 | done | Real AWS current smoke | AWS current default `9527` opened a real Codex session through node invite, device pair, relay, event polling, and artifact retrieval; evidence: `2026-06-28-m4-aws-real-remote-session-smoke.md` |
-| 8.7 | pending | Mobile/PWA smoke | mobile viewport can attach, send message/slash, respond to approval, and recover from reconnect |
+| 8.7 | done | Mobile/PWA smoke | real mobile viewport against AWS current default `9527` can start a Codex session, attach to the active run, send message/slash, conditionally respond to a real approval request, recover from cursor reconnect without duplicate events, fetch artifacts, and stop cleanly; evidence: `2026-06-28-m4-mobile-pwa-session-smoke.md` |
 
 ## Next Implementation Slice
 
-The next code slice should be 8.7 only:
+M4 is complete at the current protocol/product slice, and M5 Recovery has also been completed in the current status queue. The next implementation slice is not another M4 recovery task:
 
-- Use only AWS current default `9527`.
-- Open or attach the M4 remote session flow from a mobile/PWA viewport.
-- Prove message, slash, approval response, cursor resume, and reconnect behavior.
-- Keep the existing server/node/session protocol unchanged unless the smoke exposes a real gap.
+- Keep M4 as a regression gate for future node/session changes.
+- Continue transport work only through M6 prerequisite gates: controlled TURN, HTTPS/H3 WebTransport endpoint, or real OpenMPTCPRouter/Linux underlay.
+- New session features must first extend this queue or `08-current-status.md`, then add focused tests and real AWS default `9527` evidence.
 
 ## Verification Gates
 

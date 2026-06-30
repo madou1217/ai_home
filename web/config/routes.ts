@@ -67,8 +67,8 @@ export default [
       },
       {
         name: "传输候选",
-        path: "/fabric/webrtc-lab",
-        component: "./FabricWebrtcLab",
+        path: "/fabric/webrtc-diagnostics",
+        component: "./FabricWebrtcDiagnostics",
       }
     ]
   },
@@ -81,6 +81,11 @@ export default [
   {
     path: "/server-setup",
     component: "./FabricServerSetup",
+    hideInMenu: true,
+  },
+  {
+    path: "/accounts/:provider/:accountId/models",
+    component: "./Models",
     hideInMenu: true,
   },
   {

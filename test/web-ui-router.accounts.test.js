@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const fs = require('fs-extra');
 const {
+  cleanupAuthJobArtifacts,
   handleWebUIRequest,
   handleOauthJobFinishedStateSync
 } = require('../lib/server/web-ui-router');
@@ -3117,7 +3118,8 @@ test('web ui reauth reuses original account id and stored auth mode for oauth ac
       getAccountState() {
         return {
           display_name: 'codex-user',
-          api_key_mode: false,
+          configured: 1,
+          api_key_mode: 0,
           auth_mode: 'oauth-device'
         };
       },
@@ -3463,6 +3465,78 @@ test('web ui cancel auth job returns cancelled auth progress state', async () =>
   assert.equal(body.ok, true);
   assert.equal(body.job.status, 'cancelled');
   assert.equal(body.job.authProgressState, 'cancelled');
+});
+
+test('web ui cleanup removes transient reauth account and restores target state', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-reauth-cleanup-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const profileRoot = path.join(root, 'profiles');
+  const targetDir = path.join(profileRoot, 'agy', '1');
+  const transientDir = path.join(profileRoot, 'agy', '9');
+  fs.ensureDirSync(targetDir);
+  fs.ensureDirSync(transientDir);
+  fs.writeFileSync(path.join(transientDir, 'token.json'), '{}');
+
+  const deleted = [];
+  const synced = [];
+  let reloaded = false;
+  cleanupAuthJobArtifacts({
+    id: 'job-reauth-cancelled',
+    provider: 'agy',
+    accountId: '9',
+    reauth: true,
+    profileDir: '',
+    _preserveExistingAccount: true,
+    _reauthTargetId: '1',
+    _previousAccountState: {
+      status: 'up',
+      configured: true,
+      apiKeyMode: false,
+      authMode: 'oauth-browser',
+      displayName: 'agy-user'
+    }
+  }, {
+    fs,
+    aiHomeDir: root,
+    accountStateIndex: {},
+    accountStateService: {
+      deleteAccount(provider, accountId) {
+        deleted.push(`${provider}:${accountId}`);
+      },
+      syncAccountBaseState(provider, accountId, state) {
+        synced.push({ provider, accountId, state });
+      }
+    },
+    loadServerRuntimeAccounts() {
+      return { agy: [] };
+    },
+    applyReloadState() {
+      reloaded = true;
+    },
+    getToolAccountIds() {
+      return ['1'];
+    },
+    getProfileDir(provider, accountId) {
+      return path.join(profileRoot, provider, accountId);
+    },
+    getToolConfigDir(provider, accountId) {
+      return path.join(profileRoot, provider, accountId, '.config');
+    },
+    checkStatus() {
+      return { configured: true };
+    },
+    options: {}
+  }, {});
+
+  assert.equal(fs.existsSync(targetDir), true);
+  assert.equal(fs.existsSync(transientDir), false);
+  assert.deepEqual(deleted, ['agy:9']);
+  assert.equal(synced.length, 1);
+  assert.equal(synced[0].provider, 'agy');
+  assert.equal(synced[0].accountId, '1');
+  assert.equal(synced[0].state.displayName, 'agy-user');
+  assert.equal(reloaded, true);
 });
 
 test('web ui reauth rejects api key accounts', async () => {

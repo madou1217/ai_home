@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Descriptions, Form, Input, Modal, Segmented, Select, Switch, Tag, Tooltip, message } from 'antd';
+import './Models.css';
+import { Alert, Form, Input, Modal, Segmented, Select, Space, Switch, Tag, Tooltip, Typography, message } from 'antd';
 import { ApiOutlined, ArrowLeftOutlined, CopyOutlined, DeleteOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { modelsAPI } from '@/services/api';
@@ -14,7 +15,7 @@ import type {
 import Button from '@/components/ui/AppButton';
 import DataToolbar from '@/components/ui/DataToolbar';
 import PaginatedList from '@/components/ui/PaginatedList';
-import { ModalForm } from '@ant-design/pro-components';
+import { ModalForm, StatisticCard } from '@ant-design/pro-components';
 import PageScaffold from '@/components/ui/PageScaffold';
 import SectionCard from '@/components/ui/SectionCard';
 import ProviderIcon, { providerIds, providerNames } from '@/components/chat/ProviderIcon';
@@ -62,6 +63,31 @@ function getVisibleModelProbeError(catalog: WebUiOpenAIModelsResponse | null) {
   if (!catalog) return '';
   const candidates = [catalog.firstError, ...Object.values(catalog.errorsByAccountRef || {})];
   return candidates.find((error) => error && !isIgnorableModelProbeError(error)) || '';
+}
+
+// 把上游探测错误（多为 `HTTP 500 {"error":{"message":"..."}}` 这种裸串）拆成
+// { 状态码, 人类可读消息, issue 链接, 原文 }，避免把原始 JSON 直接糊给用户。
+function parseModelProbeError(raw: string) {
+  const text = String(raw || '').trim();
+  const httpMatch = text.match(/HTTP\s+(\d{3})/i);
+  const statusCode = httpMatch ? httpMatch[1] : '';
+  let body = httpMatch ? text.slice(text.indexOf(httpMatch[0]) + httpMatch[0].length).trim() : text;
+  const jsonStart = body.indexOf('{');
+  if (jsonStart >= 0) {
+    try {
+      const parsed = JSON.parse(body.slice(jsonStart));
+      body = String(parsed?.error?.message || parsed?.message || parsed?.error?.code || parsed?.error || body);
+    } catch {
+      // 非合法 JSON，保留原串
+    }
+  }
+  let url = '';
+  const urlMatch = body.match(/https?:\/\/[^\s"')]+/);
+  if (urlMatch) {
+    url = urlMatch[0];
+    body = body.replace(urlMatch[0], '').replace(/[，,]?\s*(please\s+submit\s+a?\s*issue\s+here)\s*[:：]?\s*$/i, '').trim();
+  }
+  return { statusCode, message: body || text, url, raw: text };
 }
 
 function isCatalogJobActive(job: WebUiOpenAIModelsJob | null) {
@@ -597,10 +623,19 @@ export default function Models() {
         <div className="models-model-row-main">
           <div className="models-model-title-line">
             <h3 title={model.id}>{model.id}</h3>
-            <div className="models-model-row-tags">
-              {model.manual ? <Tag color="processing">手动</Tag> : <Tag>探测</Tag>}
-              {!enabled ? <Tag>停用</Tag> : null}
-            </div>
+            <Tooltip title="复制模型 ID">
+              <Button
+                className="copy-icon-btn"
+                type="text"
+                size="small"
+                icon={<CopyOutlined />}
+                onClick={() => copyModelId(model.id)}
+              />
+            </Tooltip>
+          </div>
+          <div className="models-model-row-tags">
+            {model.manual ? <Tag color="processing">手动</Tag> : <Tag>探测</Tag>}
+            {!enabled ? <Tag>停用</Tag> : null}
           </div>
           <p>{model.object} · {model.owned_by || 'aih'}{model.description ? ` · ${model.description}` : ''}</p>
         </div>
@@ -614,13 +649,6 @@ export default function Models() {
           <span>{enabled ? '启用' : '停用'}</span>
         </div>
         <div className="models-model-row-actions">
-          <Tooltip title="复制模型 ID">
-            <Button
-              appVariant="icon"
-              icon={<CopyOutlined />}
-              onClick={() => copyModelId(model.id)}
-            />
-          </Tooltip>
           {model.manual ? (
             <Tooltip title="删除手动模型">
               <Button
@@ -643,6 +671,15 @@ export default function Models() {
         <div className="models-global-main">
           <div className="models-global-title-line">
             <h3 title={model.id}>{model.id}</h3>
+            <Tooltip title="复制模型 ID">
+              <Button
+                className="copy-icon-btn"
+                type="text"
+                size="small"
+                icon={<CopyOutlined />}
+                onClick={() => copyModelId(model.id)}
+              />
+            </Tooltip>
             <div className="models-global-providers">
               {model.providers.length > 0 ? model.providers.map((provider) => (
                 <Tag className="models-provider-tag" key={provider}>
@@ -658,15 +695,6 @@ export default function Models() {
             {model.object} · {model.owned_by || 'aih'} · 启用账号 {model.enabledCount}
             {model.disabledCount > 0 ? ` · 停用账号 ${model.disabledCount}` : ''}
           </p>
-        </div>
-        <div className="models-global-actions">
-          <Tooltip title="复制模型 ID">
-            <Button
-              appVariant="icon"
-              icon={<CopyOutlined />}
-              onClick={() => copyModelId(model.id)}
-            />
-          </Tooltip>
         </div>
       </article>
     );
@@ -695,22 +723,55 @@ export default function Models() {
           刷新模型
         </Button>
       ].filter(Boolean)}
-      headerContent={(
-        <Descriptions size="small" column={{ xs: 1, sm: 3 }} style={{ marginTop: 8 }}>
-          <Descriptions.Item label="账号模型">{metricSource.length}</Descriptions.Item>
-          <Descriptions.Item label={accountScoped ? '启用模型' : '可见模型'}>{visibleUnionCount}</Descriptions.Item>
-          <Descriptions.Item label="手动补充">{manualCount}</Descriptions.Item>
-        </Descriptions>
-      )}
     >
-      {globalProbeError ? (
-        <Alert
-          type={catalog?.source === 'remote' ? 'warning' : 'error'}
-          showIcon
-          message="部分账号模型探测失败"
-          description={globalProbeError}
-        />
-      ) : null}
+      {/* 顶部统计 —— 框架 StatisticCard.Group */}
+      <StatisticCard.Group direction="row" style={{ marginBottom: 16 }}>
+        <StatisticCard statistic={{ title: '账号模型', value: metricSource.length }} />
+        <StatisticCard statistic={{ title: accountScoped ? '启用模型' : '可见模型', value: visibleUnionCount }} />
+        <StatisticCard statistic={{ title: '手动补充', value: manualCount }} />
+      </StatisticCard.Group>
+
+      {globalProbeError ? (() => {
+        const probeError = parseModelProbeError(globalProbeError);
+        return (
+          <Alert
+            type={catalog?.source === 'remote' ? 'warning' : 'error'}
+            showIcon
+            style={{ marginBottom: 16 }}
+            message={(
+              <Space size={8} wrap>
+                <span>部分账号模型探测失败</span>
+                {probeError.statusCode ? <Tag color="error" style={{ marginInlineEnd: 0 }}>HTTP {probeError.statusCode}</Tag> : null}
+              </Space>
+            )}
+            description={(
+              <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                <Typography.Paragraph
+                  type="secondary"
+                  style={{ margin: 0, fontSize: 13 }}
+                  ellipsis={{ rows: 2, expandable: true, symbol: '展开' }}
+                >
+                  {probeError.message}
+                </Typography.Paragraph>
+                <Space size={12} wrap>
+                  {probeError.url ? (
+                    <Typography.Link href={probeError.url} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>
+                      提交上游 issue ›
+                    </Typography.Link>
+                  ) : null}
+                  <Typography.Text
+                    type="secondary"
+                    copyable={{ text: probeError.raw, tooltips: ['复制原始错误', '已复制'] }}
+                    style={{ fontSize: 12 }}
+                  >
+                    原始错误
+                  </Typography.Text>
+                </Space>
+              </Space>
+            )}
+          />
+        );
+      })() : null}
 
       {catalogJob ? (
         <SectionCard
@@ -796,7 +857,12 @@ export default function Models() {
                       ...accountOptions
                         .filter((account) => providerFilter === 'all' || account.provider === providerFilter)
                         .map((account) => ({
-                          label: getAccountLabel(account),
+                          label: (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                              <ProviderIcon provider={account.provider} size={14} />
+                              <span>{getAccountLabel(account)}</span>
+                            </span>
+                          ),
                           value: account.accountRef
                         }))
                     ]}

@@ -114,8 +114,8 @@ Reasons:
 
 - AWS `/readyz` currently has no provider accounts loaded;
 - AWS node has no provider runtime records in the current registry readback;
-- M4 remote development session UX/action surface is not complete;
-- event store, approval/artifact lanes, attach/resume, and real AWS end-to-end M4 smoke are still pending.
+- M4 remote development session UX/action surface is complete for the current slice, but it can only start sessions on nodes that actually expose provider runtimes;
+- event store, approval/artifact lanes, attach/resume, AWS end-to-end smoke, and mobile/PWA smoke are complete and now serve as regression gates rather than blockers.
 
 ## WebRTC Naming
 

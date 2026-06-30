@@ -650,7 +650,7 @@ test('runBackupCommand provider-scoped codex export writes api-key account as fl
   }
 });
 
-test('runBackupCommand provider-scoped opencode export reports unsupported standard JSON', async () => {
+test('runBackupCommand provider-scoped opencode export writes auth as flat JSON', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-backup-provider-export-opencode-'));
   const events = [];
   let exitCode = null;
@@ -668,7 +668,16 @@ test('runBackupCommand provider-scoped opencode export reports unsupported stand
       fse,
       execSync: (cmd) => {
         const text = String(cmd || '');
-        throw new Error(`unexpected command: ${text}`);
+        const cdMatch = text.match(/^cd "([^"]+)" && zip -rq "([^"]+)"/);
+        if (!cdMatch) throw new Error(`unexpected command: ${text}`);
+        const stageDir = cdMatch[1];
+        const fileNames = fs.readdirSync(stageDir).filter((name) => name.endsWith('.json'));
+        assert.equal(fileNames.length, 1);
+        assert.match(fileNames[0], /^opencode_auth_[a-f0-9]{20}\.json$/);
+        const payload = JSON.parse(fs.readFileSync(path.join(stageDir, fileNames[0]), 'utf8'));
+        assert.equal(payload.platform, 'opencode');
+        assert.equal(payload.type, 'oauth');
+        assert.deepEqual(Object.keys(payload.credentials), ['openai']);
       },
       readline: {},
       consoleImpl: {
@@ -690,8 +699,8 @@ test('runBackupCommand provider-scoped opencode export reports unsupported stand
     });
 
     assert.equal(handled, true);
-    assert.equal(exitCode, 1);
-    assert.equal(events.some((entry) => entry.includes('No standard account JSON files found for opencode')), true);
+    assert.equal(exitCode, 0);
+    assert.equal(events.some((entry) => entry.includes('providers=opencode accounts=1 files=1')), true);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

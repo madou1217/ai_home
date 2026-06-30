@@ -8,19 +8,199 @@ const {
   DEFAULT_NATIVE_STREAM_COLS,
   DEFAULT_NATIVE_STREAM_ROWS,
   buildProviderEnv,
+  buildPtyInputChunks,
   buildStartCommand,
   buildResumeCommand,
+  classifyNativeAccountRuntimeBlocker,
   collectAssistantReply,
   ensureCodexSessionIndexEntry,
   inferCodexSessionIdFromStateDb,
   inferClaudeCreatedSessionId,
   isOfficialNativeSessionProvider,
-  parseNativeStreamEvent
+  parseNativeStreamEvent,
+  recordNativeAccountRuntimeBlocker,
+  resolveNativeCliLaunch,
+  shouldScanNativeRuntimeBlockerOutput
 } = require('../lib/server/native-session-chat');
 
 test('native session stream uses a wider default pty size to avoid premature hard wraps', () => {
   assert.equal(DEFAULT_NATIVE_STREAM_COLS, 220);
   assert.equal(DEFAULT_NATIVE_STREAM_ROWS, 32);
+});
+
+test('native session pty input writes submit key as a separate chunk', () => {
+  assert.deepEqual(buildPtyInputChunks('hello'), ['hello', '\r']);
+  assert.deepEqual(buildPtyInputChunks('hello\r'), ['hello', '\r']);
+  assert.deepEqual(buildPtyInputChunks('hello', { appendNewline: false }), ['hello']);
+  assert.deepEqual(buildPtyInputChunks('line one\nline two'), ['line one\rline two', '\r']);
+});
+
+test('native session CLI resolution uses the runtime env PATH', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-native-cli-path-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const binDir = path.join(root, 'bin');
+  const opencodeBin = path.join(binDir, 'opencode');
+  fs.mkdirSync(binDir, { recursive: true });
+  fs.writeFileSync(opencodeBin, '#!/bin/sh\necho 1.0.0\n', 'utf8');
+  fs.chmodSync(opencodeBin, 0o755);
+
+  const launch = resolveNativeCliLaunch('opencode', {
+    env: {
+      PATH: binDir,
+      AIH_OPENCODE_RESOLVE_LATEST: '0'
+    }
+  });
+
+  assert.equal(launch.command, opencodeBin);
+  assert.deepEqual(launch.prefixArgs, []);
+});
+
+test('native session CLI resolution falls back to app node_modules bin', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-native-cli-app-bin-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const binDir = path.join(root, 'node_modules', '.bin');
+  const codexBin = path.join(binDir, 'codex');
+  fs.mkdirSync(binDir, { recursive: true });
+  fs.writeFileSync(codexBin, '#!/bin/sh\necho codex\n', 'utf8');
+  fs.chmodSync(codexBin, 0o755);
+
+  const launch = resolveNativeCliLaunch('codex', {
+    appRoot: root,
+    env: {
+      PATH: '',
+      AIH_CODEX_RESOLVE_LATEST: '0'
+    },
+    spawnSyncImpl: () => ({ status: 1, stdout: '', stderr: '' })
+  });
+
+  assert.equal(launch.command, codexBin);
+  assert.deepEqual(launch.prefixArgs, []);
+});
+
+test('native session classifies provider auth failures from interactive terminal output', () => {
+  const blocker = classifyNativeAccountRuntimeBlocker(
+    'codex',
+    'unexpected status 401 Unauthorized: Incorrect API key provided: yesboss-****udou'
+  );
+
+  assert.ok(blocker);
+  assert.equal(blocker.status, 'auth_invalid');
+  assert.equal(blocker.reason, 'upstream_401');
+  assert.equal(blocker.runtimeState.lastFailureKind, 'auth_invalid');
+  assert.ok(Number(blocker.runtimeState.authInvalidUntil) > Date.now());
+});
+
+test('native session classifies Claude login-missing headless output as auth invalid', () => {
+  const blocker = classifyNativeAccountRuntimeBlocker(
+    'claude',
+    '{"error":"authentication_failed"} Not logged in · Please run /login'
+  );
+
+  assert.ok(blocker);
+  assert.equal(blocker.provider, 'claude');
+  assert.equal(blocker.status, 'auth_invalid');
+  assert.equal(blocker.reason, 'claude_not_logged_in');
+  assert.equal(blocker.runtimeState.lastFailureKind, 'auth_invalid');
+});
+
+test('native session classifies Antigravity login method prompt as auth invalid', () => {
+  const blocker = classifyNativeAccountRuntimeBlocker(
+    'agy',
+    'Welcome to the Antigravity CLI. You are currently not signed in. Select login method: 1. Google OAuth'
+  );
+
+  assert.ok(blocker);
+  assert.equal(blocker.provider, 'agy');
+  assert.equal(blocker.status, 'auth_invalid');
+  assert.equal(blocker.reason, 'agy_not_signed_in');
+  assert.equal(blocker.runtimeState.lastFailureKind, 'auth_invalid');
+});
+
+test('native session only scans runtime blockers from trusted failure surfaces', () => {
+  assert.equal(shouldScanNativeRuntimeBlockerOutput({}), false);
+  assert.equal(shouldScanNativeRuntimeBlockerOutput({ explicitError: false }), false);
+  assert.equal(shouldScanNativeRuntimeBlockerOutput({ interactiveCli: false, exitCode: 0 }), false);
+  assert.equal(shouldScanNativeRuntimeBlockerOutput({ interactiveCli: true, exitCode: 0 }), true);
+  assert.equal(shouldScanNativeRuntimeBlockerOutput({ explicitError: true, exitCode: 0 }), true);
+  assert.equal(shouldScanNativeRuntimeBlockerOutput({ interactiveCli: false, exitCode: 1 }), true);
+});
+
+test('native session runtime blocker preserves api-key auth mode for account pool gating', (t) => {
+  const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-native-runtime-block-'));
+  t.after(() => fs.rmSync(profileDir, { recursive: true, force: true }));
+  fs.writeFileSync(
+    path.join(profileDir, '.aih_env.json'),
+    `${JSON.stringify({ OPENAI_API_KEY: 'sk-test' }, null, 2)}\n`
+  );
+
+  const blocker = classifyNativeAccountRuntimeBlocker(
+    'codex',
+    'unexpected status 401 Unauthorized: Incorrect API key provided: sk-****test'
+  );
+  const events = [];
+  const persisted = recordNativeAccountRuntimeBlocker({
+    provider: 'codex',
+    accountId: '2',
+    profileDir,
+    accountRuntimeEventHub: {
+      emit(type, event) {
+        events.push({ type, event });
+        return [true];
+      }
+    }
+  }, blocker);
+
+  assert.equal(persisted, true);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].event.baseState.authMode, 'api-key');
+  assert.equal(events[0].event.baseState.apiKeyMode, true);
+});
+
+test('native session runtime blocker falls back when hub does not persist', () => {
+  const blocker = classifyNativeAccountRuntimeBlocker(
+    'agy',
+    'Welcome to the Antigravity CLI. You are currently not signed in. Select login method: 1. Google OAuth'
+  );
+  const writes = [];
+  const persisted = recordNativeAccountRuntimeBlocker({
+    provider: 'agy',
+    accountId: '7',
+    accountRuntimeEventHub: {
+      emit() {
+        return [false];
+      }
+    },
+    accountStateService: {
+      recordRuntimeFailure(provider, accountId, runtimeState, baseState) {
+        writes.push({ provider, accountId, runtimeState, baseState });
+        return true;
+      }
+    }
+  }, blocker);
+
+  assert.equal(persisted, true);
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].provider, 'agy');
+  assert.equal(writes[0].accountId, '7');
+  assert.equal(writes[0].runtimeState.lastFailureReason, 'agy_not_signed_in');
+});
+
+test('native session runtime blocker does not treat non-persistence listeners as persisted', () => {
+  const blocker = classifyNativeAccountRuntimeBlocker(
+    'agy',
+    'Welcome to the Antigravity CLI. You are currently not signed in. Select login method: 1. Google OAuth'
+  );
+  const persisted = recordNativeAccountRuntimeBlocker({
+    provider: 'agy',
+    accountId: '7',
+    accountRuntimeEventHub: {
+      emit() {
+        return [false, true];
+      }
+    }
+  }, blocker);
+
+  assert.equal(persisted, false);
 });
 
 test('ensureCodexSessionIndexEntry writes a prompt-derived thread_name so the session is not filtered as 未命名会话', (t) => {
@@ -250,6 +430,22 @@ test('buildResumeCommand builds claude interactive resume invocation for slash c
   ]);
 });
 
+test('buildResumeCommand builds opencode interactive resume invocation for slash commands', () => {
+  const command = buildResumeCommand('opencode', {
+    sessionId: 'ses-opencode-real',
+    model: 'opencode-go/glm-5.2',
+    interactiveCli: true
+  });
+
+  assert.equal(command.commandName, 'opencode');
+  assert.deepEqual(command.args, [
+    '--model',
+    'opencode-go/glm-5.2',
+    '--session',
+    'ses-opencode-real'
+  ]);
+});
+
 test('buildStartCommand builds codex official start invocation', () => {
   const command = buildStartCommand('codex', {
     prompt: 'hello',
@@ -304,6 +500,27 @@ test('buildStartCommand builds claude headless stream start invocation', () => {
   ]);
 });
 
+test('buildStartCommand builds opencode headless run invocation', () => {
+  const command = buildStartCommand('opencode', {
+    prompt: 'hello',
+    model: 'opencode-go/glm-5.2',
+    projectPath: '/repo/project'
+  });
+
+  assert.equal(command.commandName, 'opencode');
+  assert.deepEqual(command.args, [
+    'run',
+    '--format',
+    'json',
+    '--dangerously-skip-permissions',
+    '--model',
+    'opencode-go/glm-5.2',
+    '--dir',
+    '/repo/project',
+    'hello'
+  ]);
+});
+
 test('buildProviderEnv keeps codex sqlite state shared with host home', () => {
   const profileDir = path.join(os.tmpdir(), '.ai_home', 'profiles', 'codex', '10086');
   const env = buildProviderEnv('codex', profileDir, {});
@@ -344,12 +561,37 @@ test('buildResumeCommand keeps claude normal resume on the official headless str
   ]);
 });
 
-test('official native session provider policy includes codex/claude/gemini/agy', () => {
+test('official native session provider policy includes codex/claude/gemini/agy/opencode', () => {
   assert.equal(isOfficialNativeSessionProvider('codex'), true);
   assert.equal(isOfficialNativeSessionProvider('claude'), true);
   assert.equal(isOfficialNativeSessionProvider('gemini'), true);
   assert.equal(isOfficialNativeSessionProvider('agy'), true);
+  assert.equal(isOfficialNativeSessionProvider('opencode'), true);
   assert.equal(isOfficialNativeSessionProvider('openai'), false);
+});
+
+test('opencode native session builds run resume command', () => {
+  const resume = buildResumeCommand('opencode', {
+    sessionId: 'ses_123',
+    prompt: '继续',
+    model: 'opencode-go/glm-5.2',
+    projectPath: '/repo/project'
+  });
+
+  assert.equal(resume.commandName, 'opencode');
+  assert.deepEqual(resume.args, [
+    'run',
+    '--format',
+    'json',
+    '--dangerously-skip-permissions',
+    '--session',
+    'ses_123',
+    '--model',
+    'opencode-go/glm-5.2',
+    '--dir',
+    '/repo/project',
+    '继续'
+  ]);
 });
 
 test('agy native session builds antigravity CLI start/resume commands', () => {
@@ -418,6 +660,84 @@ test('parseNativeStreamEvent still supports legacy codex thread.started session 
     sessionId: 'legacy-thread-id'
   });
   assert.equal(state.sessionId, 'legacy-thread-id');
+});
+
+test('parseNativeStreamEvent parses opencode json run events', () => {
+  const state = { content: '', sessionId: '' };
+  const created = parseNativeStreamEvent(
+    'opencode',
+    JSON.stringify({
+      type: 'step_start',
+      sessionID: 'ses_0ee54c1daffeMaR3jDxVMyeIT7'
+    }),
+    state
+  );
+  const delta = parseNativeStreamEvent(
+    'opencode',
+    JSON.stringify({
+      type: 'text',
+      sessionID: 'ses_0ee54c1daffeMaR3jDxVMyeIT7',
+      part: {
+        type: 'text',
+        text: 'AIH_OPENCODE_CLI_JSON_OK'
+      }
+    }),
+    state
+  );
+  const result = parseNativeStreamEvent(
+    'opencode',
+    JSON.stringify({
+      type: 'step_finish',
+      sessionID: 'ses_0ee54c1daffeMaR3jDxVMyeIT7',
+      part: {
+        reason: 'stop'
+      }
+    }),
+    state
+  );
+  const ignoredResumeStep = parseNativeStreamEvent(
+    'opencode',
+    JSON.stringify({
+      type: 'step_start',
+      sessionID: 'ses_0ee54c1daffeMaR3jDxVMyeIT7',
+      part: {
+        type: 'step-start'
+      }
+    }),
+    state
+  );
+  const ignoredToolCallsStep = parseNativeStreamEvent(
+    'opencode',
+    JSON.stringify({
+      type: 'step_finish',
+      sessionID: 'ses_0ee54c1daffeMaR3jDxVMyeIT7',
+      part: {
+        reason: 'tool-calls'
+      }
+    }),
+    state
+  );
+
+  assert.deepEqual(created, {
+    type: 'session-created',
+    sessionId: 'ses_0ee54c1daffeMaR3jDxVMyeIT7'
+  });
+  assert.deepEqual(delta, {
+    type: 'delta',
+    delta: 'AIH_OPENCODE_CLI_JSON_OK'
+  });
+  assert.deepEqual(result, {
+    type: 'result',
+    content: 'AIH_OPENCODE_CLI_JSON_OK'
+  });
+  assert.deepEqual(ignoredResumeStep, {
+    type: 'ignored'
+  });
+  assert.deepEqual(ignoredToolCallsStep, {
+    type: 'ignored'
+  });
+  assert.equal(state.sessionId, 'ses_0ee54c1daffeMaR3jDxVMyeIT7');
+  assert.equal(state.content, 'AIH_OPENCODE_CLI_JSON_OK');
 });
 
 test('inferClaudeCreatedSessionId finds the newly persisted claude session from host project store', async () => {

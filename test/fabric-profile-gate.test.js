@@ -122,7 +122,7 @@ test('fabric profile gate does not lock existing app routes without a ready serv
     '/fabric/remote-nodes',
     '/fabric/ssh-hosts',
     '/fabric/nodes',
-    '/fabric/webrtc-lab'
+    '/fabric/webrtc-diagnostics'
   ].forEach((pathname) => {
     assert.equal(gate.shouldRedirectToFabricServerSetup({ ready: false }, pathname, ''), false, pathname);
   });

@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const { runFabricCommandRouter } = require('../lib/cli/commands/fabric-router');
 const {
   buildHeartbeatPayload,
+  formatTransportHeartbeat,
   parseFabricRegistryHeartbeatArgs,
   parseTransportHeartbeat,
   runFabricRegistryHeartbeat
@@ -42,6 +43,45 @@ test('parseTransportHeartbeat accepts colon shorthand', () => {
     health: 'online',
     lastError: ''
   });
+});
+
+test('parseTransportHeartbeat preserves WebRTC promotion evidence', () => {
+  const transport = parseTransportHeartbeat([
+    'webrtc=online',
+    'promotion=ready',
+    'mode=direct',
+    'evidence-ref=docs/fabric/evidence/2026-06-29-m6-direct-webrtc-promotion.md',
+    'rtt-p95-ms=201',
+    'rpc-p95-ms=200',
+    'promoted-at=1782691200000',
+    'expires-at=1783296000000'
+  ].join(','));
+
+  assert.deepEqual(transport, {
+    kind: 'webrtc',
+    health: 'online',
+    lastError: '',
+    promotion: {
+      remoteRequestReady: true,
+      mode: 'direct',
+      evidenceRef: 'docs/fabric/evidence/2026-06-29-m6-direct-webrtc-promotion.md',
+      rttP95Ms: 201,
+      rpcP95Ms: 200,
+      promotedAt: 1782691200000,
+      expiresAt: 1783296000000
+    }
+  });
+
+  assert.equal(formatTransportHeartbeat(transport), [
+    'webrtc=online',
+    'remote-request-ready=true',
+    'mode=direct',
+    'evidence-ref=docs/fabric/evidence/2026-06-29-m6-direct-webrtc-promotion.md',
+    'rtt-p95-ms=201',
+    'rpc-p95-ms=200',
+    'promoted-at=1782691200000',
+    'expires-at=1783296000000'
+  ].join(','));
 });
 
 test('runFabricRegistryHeartbeat posts liveness without credentials in payload', async () => {
@@ -137,6 +177,34 @@ test('buildHeartbeatPayload preserves transport measurement summaries', () => {
         rttMs: { p95: 12 }
       }
     }]
+  });
+});
+
+test('buildHeartbeatPayload includes runtime diagnostics only when provided', () => {
+  const payload = buildHeartbeatPayload({
+    nodeId: 'aws-current-node',
+    status: 'online',
+    relayStatus: '',
+    transports: [],
+    runtimeDiagnostics: [
+      {
+        provider: 'codex',
+        cli: { command: 'codex', available: false },
+        accounts: { total: 0, source: 'readyz' }
+      }
+    ]
+  });
+  assert.deepEqual(payload, {
+    node: { id: 'aws-current-node', status: 'online' },
+    relayNode: undefined,
+    transports: [],
+    runtimeDiagnostics: [
+      {
+        provider: 'codex',
+        cli: { command: 'codex', available: false },
+        accounts: { total: 0, source: 'readyz' }
+      }
+    ]
   });
 });
 

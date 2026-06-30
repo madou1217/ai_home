@@ -1394,6 +1394,61 @@ test('loadServerRuntimeAccounts clears stale agy auth block when OAuth creds are
   assert.equal(accountStateIndex.getAccountState('agy', '1').runtime_state, null);
 });
 
+test('loadServerRuntimeAccounts keeps agy login-missing auth block even with refresh token', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-server-agy-auth-login-missing-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const aiHomeDir = path.join(root, '.ai_home');
+  const profilesRoot = path.join(aiHomeDir, 'profiles');
+  const profileDir = path.join(profilesRoot, 'agy', '1');
+  const configDir = path.join(profileDir, '.gemini', 'antigravity-cli');
+  fs.mkdirSync(path.join(configDir, 'log'), { recursive: true });
+  writeJson(path.join(configDir, 'antigravity-oauth-token'), {
+    token: {
+      access_token: 'agy-token',
+      refresh_token: 'agy-refresh',
+      expiry: new Date(Date.now() - 60_000).toISOString()
+    },
+    auth_method: 'consumer'
+  });
+  fs.writeFileSync(path.join(configDir, 'email.cache'), 'agy@example.com', 'utf8');
+
+  const accountStateIndex = createAccountStateIndex({ aiHomeDir, fs });
+  accountStateIndex.upsertRuntimeState('agy', '1', {
+    authInvalidUntil: Date.now() + 10 * 60 * 1000,
+    lastFailureKind: 'auth_invalid',
+    lastFailureReason: 'agy_not_signed_in'
+  }, {
+    configured: true,
+    apiKeyMode: false,
+    authMode: 'consumer',
+    displayName: 'agy@example.com'
+  });
+  const accountStateService = createAccountStateService({
+    accountStateIndex
+  });
+
+  const accounts = loadServerRuntimeAccounts({
+    fs,
+    aiHomeDir,
+    accountStateIndex,
+    accountStateService,
+    getToolAccountIds: (provider) => (provider === 'agy' ? ['1'] : []),
+    getToolConfigDir: (provider, id) => path.join(profilesRoot, provider, String(id), '.gemini', 'antigravity-cli'),
+    getProfileDir: (provider, id) => path.join(profilesRoot, provider, String(id)),
+    checkStatus: (_provider, pDir) => ({
+      configured: true,
+      accountName: pDir === profileDir ? 'agy@example.com' : 'Unknown'
+    })
+  });
+
+  assert.equal(accounts.agy.length, 1);
+  assert.equal(accounts.agy[0].lastFailureKind, 'auth_invalid');
+  assert.equal(accounts.agy[0].lastFailureReason, 'agy_not_signed_in');
+  assert.ok(accounts.agy[0].authInvalidUntil > Date.now());
+  assert.ok(accountStateIndex.getAccountState('agy', '1').runtime_state);
+});
+
 test('loadServerRuntimeAccounts returns agy provider bucket', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-server-agy-runtime-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

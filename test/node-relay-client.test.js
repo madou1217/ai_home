@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { EventEmitter } = require('node:events');
 const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
@@ -19,6 +20,7 @@ const { requestRemoteManagement } = require('../lib/server/remote/remote-gateway
 const {
   fetchLocalRelayRequest,
   normalizeRelayUrl,
+  runRelayLoop,
   runNodeRelayConnect
 } = require('../lib/cli/services/node/relay-client');
 const { runNodeCommandRouter } = require('../lib/cli/commands/node-router');
@@ -73,6 +75,79 @@ function readJsonMessageWithTimeout(socket, timeoutMs = 100) {
     socket.once('error', onError);
   });
 }
+
+function createFakeRelaySocket() {
+  const socket = new EventEmitter();
+  socket.readyState = 1;
+  socket.send = () => true;
+  socket.close = () => {
+    socket.readyState = 3;
+    socket.emit('close');
+  };
+  return socket;
+}
+
+test('runRelayLoop retries transient connect failures before succeeding', async () => {
+  let attempts = 0;
+  const result = await runRelayLoop({
+    url: new URL('ws://control.example.com/v0/relay/node?nodeId=nat-node'),
+    nodeId: 'nat-node',
+    managementKey: 'node-secret',
+    heartbeatMs: 1000,
+    connectTimeoutMs: 1000,
+    reconnectDelayMs: 1,
+    maxAttempts: 2
+  }, {
+    connectRelayOnce: async () => {
+      attempts += 1;
+      if (attempts === 1) {
+        const error = new Error('connect ECONNREFUSED');
+        error.code = 'ECONNREFUSED';
+        throw error;
+      }
+      const socket = createFakeRelaySocket();
+      setTimeout(() => socket.close(), 1);
+      return {
+        socket,
+        hello: {
+          sessionId: 'session-1',
+          transportId: 'nat-node-relay'
+        }
+      };
+    }
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.sessionId, 'session-1');
+  assert.equal(result.transportId, 'nat-node-relay');
+  assert.equal(result.attempts, 2);
+  assert.equal(attempts, 2);
+});
+
+test('runRelayLoop fails fast for non-retryable rejected upgrades', async () => {
+  let attempts = 0;
+  await assert.rejects(
+    () => runRelayLoop({
+      url: new URL('ws://control.example.com/v0/relay/node?nodeId=nat-node'),
+      nodeId: 'nat-node',
+      managementKey: 'bad-secret',
+      heartbeatMs: 1000,
+      connectTimeoutMs: 1000,
+      reconnectDelayMs: 1,
+      maxAttempts: 0
+    }, {
+      connectRelayOnce: async () => {
+        attempts += 1;
+        const error = new Error('relay_http_401');
+        error.code = 'relay_upgrade_rejected';
+        error.statusCode = 401;
+        throw error;
+      }
+    }),
+    { code: 'relay_upgrade_rejected' }
+  );
+  assert.equal(attempts, 1);
+});
 
 async function createRelayControlPlane(t, deps, registry) {
   const server = http.createServer();

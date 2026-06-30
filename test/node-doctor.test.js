@@ -125,6 +125,10 @@ test('parseNodeSupervisorServiceArgs accepts status, install, and uninstall acti
       connectTimeoutMs: '',
       reconnectDelayMs: ''
     },
+    webrtc: {
+      connectTimeoutMs: '',
+      reconnectDelayMs: ''
+    },
     registryAgent: {
       status: '',
       relayStatus: '',
@@ -179,12 +183,14 @@ test('buildNodeSupervisorInstallPlan composes relay and registry agent service c
   assert.equal(plan.dryRun, true);
   assert.equal(plan.writes, false);
   assert.equal(plan.requiresConfirmation, false);
-  assert.deepEqual(plan.services.map((service) => service.key), ['relay', 'registryAgent']);
+  assert.deepEqual(plan.services.map((service) => service.key), ['relay', 'registryAgent', 'webrtc']);
   assert.match(plan.services[0].command, /aih node relay service install https:\/\/control\.example\.com --node-id nat-node/);
   assert.match(plan.services[0].command, /--heartbeat-ms 2000/);
   assert.match(plan.services[1].command, /aih fabric registry agent service install https:\/\/control\.example\.com --node-id nat-node --token-file \/tmp\/fabric-node\.token/);
   assert.match(plan.services[1].command, /--relay-status online/);
   assert.match(plan.services[1].command, /--probe-transport relay=tcp:\/\/127\.0\.0\.1:8766/);
+  assert.match(plan.services[1].command, /--runtime-diagnostics/);
+  assert.match(plan.services[2].command, /aih node webrtc service install https:\/\/control\.example\.com --node-id nat-node/);
 });
 
 test('buildNodeSupervisorUninstallPlan composes registry agent and relay rollback commands', () => {
@@ -199,9 +205,10 @@ test('buildNodeSupervisorUninstallPlan composes registry agent and relay rollbac
   assert.equal(plan.dryRun, true);
   assert.equal(plan.writes, false);
   assert.equal(plan.requiresConfirmation, false);
-  assert.deepEqual(plan.services.map((service) => service.key), ['registryAgent', 'relay']);
-  assert.equal(plan.services[0].command, 'aih fabric registry agent service uninstall --node-id nat-node');
-  assert.equal(plan.services[1].command, 'aih node relay service uninstall --node-id nat-node');
+  assert.deepEqual(plan.services.map((service) => service.key), ['webrtc', 'registryAgent', 'relay']);
+  assert.equal(plan.services[0].command, 'aih node webrtc service uninstall --node-id nat-node');
+  assert.equal(plan.services[1].command, 'aih fabric registry agent service uninstall --node-id nat-node');
+  assert.equal(plan.services[2].command, 'aih node relay service uninstall --node-id nat-node');
 });
 
 test('listNetworkCandidates prioritizes overlay addresses over private LAN addresses', () => {
@@ -314,10 +321,13 @@ test('buildNodeDoctorReport includes relay service running state', (t) => {
   assert.equal(report.service.issues.length, 0);
   assert.equal(report.services.relay.state, 'running');
   assert.equal(report.services.registryAgent.state, 'missing');
+  assert.equal(report.services.webrtc.state, 'missing');
   assert.equal(report.services.registryAgent.installHint, "aih fabric registry agent service install https://control.example.com --node-id nat-node --token-file '<token-file>'");
   assert.equal(report.nodeSupervisor.ready, false);
   assert.equal(report.nodeSupervisor.issues.some((issue) => issue.code === 'registry_agent_service_not_running'), true);
+  assert.equal(report.nodeSupervisor.issues.some((issue) => issue.code === 'webrtc_service_not_running'), true);
   assert.equal(report.nextSteps.some((step) => step.includes('fabric registry agent service install')), true);
+  assert.equal(report.nextSteps.some((step) => step.includes('node webrtc service install')), true);
   assert.match(report.service.commands.logs, /journalctl --user -u com\.clawdcodex\.ai_home\.node-relay\.nat-node\.service/);
 });
 
@@ -333,6 +343,14 @@ test('buildNodeDoctorReport reports supervisor ready when relay and registry age
   fs.writeFileSync(
     path.join(serviceDir, 'com.clawdcodex.ai_home.fabric-registry-agent.nat-node.service'),
     '[Service]\nExecStart=aih fabric registry agent\n'
+  );
+  fs.writeFileSync(
+    path.join(serviceDir, 'com.clawdcodex.ai_home.node-webrtc.nat-node.service'),
+    '[Service]\nExecStart=aih node webrtc connect\n'
+  );
+  fs.writeFileSync(
+    path.join(serviceDir, 'com.clawdcodex.ai_home.node-webrtc.nat-node.service'),
+    '[Service]\nExecStart=aih node webrtc connect\n'
   );
 
   const baseSpawn = createSpawnSync({
@@ -360,7 +378,8 @@ test('buildNodeDoctorReport reports supervisor ready when relay and registry age
         && (args[1] === 'is-enabled' || args[1] === 'is-active')
         && [
           'com.clawdcodex.ai_home.node-relay.nat-node.service',
-          'com.clawdcodex.ai_home.fabric-registry-agent.nat-node.service'
+          'com.clawdcodex.ai_home.fabric-registry-agent.nat-node.service',
+          'com.clawdcodex.ai_home.node-webrtc.nat-node.service'
         ].includes(args[2])) {
         return { status: 0, stdout: args[1] === 'is-active' ? 'active\n' : 'enabled\n', stderr: '' };
       }
@@ -370,12 +389,72 @@ test('buildNodeDoctorReport reports supervisor ready when relay and registry age
 
   assert.equal(report.services.relay.running, true);
   assert.equal(report.services.registryAgent.running, true);
+  assert.equal(report.services.webrtc.running, true);
   assert.equal(report.nodeSupervisor.ready, true);
   assert.equal(report.nodeSupervisor.issues.length, 0);
   assert.deepEqual(report.nodeSupervisor.required.map((item) => [item.key, item.ready]), [
     ['relay', true],
-    ['registry_agent', true]
+    ['registry_agent', true],
+    ['webrtc', true]
   ]);
+});
+
+test('buildNodeDoctorReport injects user systemd env for server diagnostics', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-node-doctor-systemd-env-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const serviceDir = path.join(root, '.config', 'systemd', 'user');
+  fs.mkdirSync(serviceDir, { recursive: true });
+  [
+    'com.clawdcodex.ai_home.node-relay.nat-node.service',
+    'com.clawdcodex.ai_home.fabric-registry-agent.nat-node.service',
+    'com.clawdcodex.ai_home.node-webrtc.nat-node.service'
+  ].forEach((file) => {
+    fs.writeFileSync(path.join(serviceDir, file), '[Service]\nExecStart=aih\n');
+  });
+
+  const baseSpawn = createSpawnSync({
+    node: '/usr/local/bin/node',
+    npm: '/usr/local/bin/npm',
+    aih: '/usr/local/bin/aih'
+  }, {
+    node: 'v24.1.0',
+    npm: '11.0.0'
+  });
+  const report = buildNodeDoctorReport({
+    controlUrl: 'https://control.example.com',
+    nodeId: 'nat-node'
+  }, makeDeps({
+    fs,
+    path,
+    aiHomeDir: path.join(root, '.ai_home'),
+    hostHomeDir: root,
+    processObj: {
+      platform: 'linux',
+      arch: 'x64',
+      version: 'v24.1.0',
+      execPath: '/usr/local/bin/node',
+      env: { PATH: '/usr/local/bin:/usr/bin' },
+      getuid: () => 1000
+    },
+    spawnSync(command, args, options = {}) {
+      if (command === 'systemctl' && args[0] === '--version') {
+        return { status: 0, stdout: 'systemd 255\n', stderr: '' };
+      }
+      if (command === 'systemctl'
+        && args[0] === '--user'
+        && (args[1] === 'is-enabled' || args[1] === 'is-active')) {
+        assert.equal(options.env.XDG_RUNTIME_DIR, '/run/user/1000');
+        assert.equal(options.env.DBUS_SESSION_BUS_ADDRESS, 'unix:path=/run/user/1000/bus');
+        return { status: 0, stdout: args[1] === 'is-active' ? 'active\n' : 'enabled\n', stderr: '' };
+      }
+      return baseSpawn(command, args);
+    }
+  }));
+
+  assert.equal(report.services.relay.running, true);
+  assert.equal(report.services.registryAgent.running, true);
+  assert.equal(report.services.webrtc.running, true);
+  assert.equal(report.nodeSupervisor.ready, true);
 });
 
 test('runNodeSupervisorService summarizes both supervised services without leaking secrets', (t) => {
@@ -426,7 +505,8 @@ test('runNodeSupervisorService summarizes both supervised services without leaki
         && (args[1] === 'is-enabled' || args[1] === 'is-active')
         && [
           'com.clawdcodex.ai_home.node-relay.nat-node.service',
-          'com.clawdcodex.ai_home.fabric-registry-agent.nat-node.service'
+          'com.clawdcodex.ai_home.fabric-registry-agent.nat-node.service',
+          'com.clawdcodex.ai_home.node-webrtc.nat-node.service'
         ].includes(args[2])) {
         return { status: 0, stdout: args[1] === 'is-active' ? 'active\n' : 'enabled\n', stderr: '' };
       }
@@ -442,6 +522,7 @@ test('runNodeSupervisorService summarizes both supervised services without leaki
   assert.equal(result.status.supervisor.ready, true);
   assert.equal(result.status.services.relay.running, true);
   assert.equal(result.status.services.registryAgent.running, true);
+  assert.equal(result.status.services.webrtc.running, true);
   assert.equal(result.status.server.managementKeyConfigured, true);
   assert.equal(serialized.includes('super-secret'), false);
 });
@@ -487,7 +568,7 @@ test('runNodeSupervisorService install dry-run returns plan without writing serv
   assert.equal(result.ok, true);
   assert.equal(result.json, true);
   assert.equal(result.dryRun, true);
-  assert.equal(result.plan.services.length, 2);
+  assert.equal(result.plan.services.length, 3);
   assert.equal(fs.existsSync(serviceDir), false);
 });
 
@@ -597,8 +678,10 @@ test('runNodeSupervisorService install writes supervised systemd units without l
 
   const relayUnit = path.join(root, '.config', 'systemd', 'user', 'com.clawdcodex.ai_home.node-relay.nat-node.service');
   const registryUnit = path.join(root, '.config', 'systemd', 'user', 'com.clawdcodex.ai_home.fabric-registry-agent.nat-node.service');
+  const webrtcUnit = path.join(root, '.config', 'systemd', 'user', 'com.clawdcodex.ai_home.node-webrtc.nat-node.service');
   const relayContent = fs.readFileSync(relayUnit, 'utf8');
   const registryContent = fs.readFileSync(registryUnit, 'utf8');
+  const webrtcContent = fs.readFileSync(webrtcUnit, 'utf8');
   const serialized = JSON.stringify(result);
 
   assert.equal(result.ok, true);
@@ -607,6 +690,7 @@ test('runNodeSupervisorService install writes supervised systemd units without l
   assert.equal(result.status.supervisor.ready, true);
   assert.equal(result.result.relay.status.running, true);
   assert.equal(result.result.registryAgent.status.running, true);
+  assert.equal(result.result.webrtc.status.running, true);
   assert.match(relayContent, /ExecStart="\/opt\/aih\/bin\/aih" "node" "relay" "connect" "https:\/\/control\.example\.com"/);
   assert.match(relayContent, /"--node-id" "nat-node"/);
   assert.match(relayContent, /"--reconnect-delay-ms" "5000"/);
@@ -615,11 +699,16 @@ test('runNodeSupervisorService install writes supervised systemd units without l
   assert.match(registryContent, /"--token-file"/);
   assert.match(registryContent, new RegExp(tokenFile.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.match(registryContent, /"--probe-transport" "relay=tcp:\/\/127\.0\.0\.1:8766"/);
+  assert.match(webrtcContent, /ExecStart="\/opt\/aih\/bin\/aih" "node" "webrtc" "connect" "https:\/\/control\.example\.com"/);
+  assert.match(webrtcContent, /"--node-id" "nat-node"/);
+  assert.match(webrtcContent, /"--reconnect-delay-ms" "5000"/);
   assert.equal(serialized.includes('super-secret'), false);
   assert.equal(relayContent.includes('super-secret'), false);
   assert.equal(registryContent.includes('secret-device-token'), false);
+  assert.equal(webrtcContent.includes('super-secret'), false);
   assert.equal(calls.filter((call) => call.command === 'systemctl' && call.args.join(' ') === '--user enable --now com.clawdcodex.ai_home.node-relay.nat-node.service').length, 1);
   assert.equal(calls.filter((call) => call.command === 'systemctl' && call.args.join(' ') === '--user enable --now com.clawdcodex.ai_home.fabric-registry-agent.nat-node.service').length, 1);
+  assert.equal(calls.filter((call) => call.command === 'systemctl' && call.args.join(' ') === '--user enable --now com.clawdcodex.ai_home.node-webrtc.nat-node.service').length, 1);
 });
 
 test('runNodeSupervisorService uninstall dry-run returns rollback plan without deleting files', (t) => {
@@ -628,9 +717,11 @@ test('runNodeSupervisorService uninstall dry-run returns rollback plan without d
   const serviceDir = path.join(root, '.config', 'systemd', 'user');
   const relayUnit = path.join(serviceDir, 'com.clawdcodex.ai_home.node-relay.nat-node.service');
   const registryUnit = path.join(serviceDir, 'com.clawdcodex.ai_home.fabric-registry-agent.nat-node.service');
+  const webrtcUnit = path.join(serviceDir, 'com.clawdcodex.ai_home.node-webrtc.nat-node.service');
   fs.mkdirSync(serviceDir, { recursive: true });
   fs.writeFileSync(relayUnit, '[Service]\nExecStart=aih node relay connect\n');
   fs.writeFileSync(registryUnit, '[Service]\nExecStart=aih fabric registry agent\n');
+  fs.writeFileSync(webrtcUnit, '[Service]\nExecStart=aih node webrtc connect\n');
 
   const result = runNodeSupervisorService([
     'uninstall',
@@ -666,9 +757,10 @@ test('runNodeSupervisorService uninstall dry-run returns rollback plan without d
   assert.equal(result.json, true);
   assert.equal(result.action, 'uninstall');
   assert.equal(result.dryRun, true);
-  assert.deepEqual(result.plan.services.map((service) => service.key), ['registryAgent', 'relay']);
+  assert.deepEqual(result.plan.services.map((service) => service.key), ['webrtc', 'registryAgent', 'relay']);
   assert.equal(fs.existsSync(relayUnit), true);
   assert.equal(fs.existsSync(registryUnit), true);
+  assert.equal(fs.existsSync(webrtcUnit), true);
 });
 
 test('runNodeSupervisorService uninstall requires confirmation and deletes supervised systemd units', (t) => {
@@ -677,10 +769,12 @@ test('runNodeSupervisorService uninstall requires confirmation and deletes super
   const serviceDir = path.join(root, '.config', 'systemd', 'user');
   const relayUnit = path.join(serviceDir, 'com.clawdcodex.ai_home.node-relay.nat-node.service');
   const registryUnit = path.join(serviceDir, 'com.clawdcodex.ai_home.fabric-registry-agent.nat-node.service');
+  const webrtcUnit = path.join(serviceDir, 'com.clawdcodex.ai_home.node-webrtc.nat-node.service');
   const calls = [];
   fs.mkdirSync(serviceDir, { recursive: true });
   fs.writeFileSync(relayUnit, '[Service]\nExecStart=aih node relay connect\n');
   fs.writeFileSync(registryUnit, '[Service]\nExecStart=aih fabric registry agent\n');
+  fs.writeFileSync(webrtcUnit, '[Service]\nExecStart=aih node webrtc connect\n');
 
   const deps = makeDeps({
     fs,
@@ -710,7 +804,9 @@ test('runNodeSupervisorService uninstall requires confirmation and deletes super
         && (args[1] === 'is-enabled' || args[1] === 'is-active')) {
         const unitExists = args[2] && args[2].includes('fabric-registry-agent')
           ? fs.existsSync(registryUnit)
-          : fs.existsSync(relayUnit);
+          : (args[2] && args[2].includes('node-webrtc')
+            ? fs.existsSync(webrtcUnit)
+            : fs.existsSync(relayUnit));
         return unitExists
           ? { status: 0, stdout: args[1] === 'is-active' ? 'active\n' : 'enabled\n', stderr: '' }
           : { status: 1, stdout: 'inactive\n', stderr: '' };
@@ -745,9 +841,12 @@ test('runNodeSupervisorService uninstall requires confirmation and deletes super
   assert.equal(result.status.supervisor.ready, false);
   assert.equal(result.status.services.relay.state, 'missing');
   assert.equal(result.status.services.registryAgent.state, 'missing');
+  assert.equal(result.status.services.webrtc.state, 'missing');
   assert.equal(fs.existsSync(relayUnit), false);
   assert.equal(fs.existsSync(registryUnit), false);
+  assert.equal(fs.existsSync(webrtcUnit), false);
   assert.equal(serialized.includes('super-secret'), false);
+  assert.equal(calls.some((call) => call.command === 'systemctl' && call.args.join(' ') === '--user disable --now com.clawdcodex.ai_home.node-webrtc.nat-node.service'), true);
   assert.equal(calls.some((call) => call.command === 'systemctl' && call.args.join(' ') === '--user disable --now com.clawdcodex.ai_home.fabric-registry-agent.nat-node.service'), true);
   assert.equal(calls.some((call) => call.command === 'systemctl' && call.args.join(' ') === '--user disable --now com.clawdcodex.ai_home.node-relay.nat-node.service'), true);
 });
@@ -790,7 +889,8 @@ test('runNodeCommandRouter prints node service status JSON', async () => {
           },
           services: {
             relay: { state: 'missing', running: false },
-            registryAgent: { state: 'missing', running: false }
+            registryAgent: { state: 'missing', running: false },
+            webrtc: { state: 'missing', running: false }
           },
           issues: [],
           nextSteps: []
@@ -814,6 +914,7 @@ test('runNodeCommandRouter prints node service status JSON', async () => {
   assert.equal(payload.action, 'status');
   assert.equal(payload.nodeId, 'nat-node');
   assert.equal(payload.status.services.relay.state, 'missing');
+  assert.equal(payload.status.services.webrtc.state, 'missing');
 });
 
 test('runNodeCommandRouter prints node service install JSON plan', async () => {
@@ -862,6 +963,11 @@ test('runNodeCommandRouter prints node service install JSON plan', async () => {
               key: 'registryAgent',
               label: 'Fabric registry agent service',
               command: 'aih fabric registry agent service install https://control.example.com --node-id nat-node --token-file /tmp/fabric-node.token'
+            },
+            {
+              key: 'webrtc',
+              label: 'WebRTC connector service',
+              command: 'aih node webrtc service install https://control.example.com --node-id nat-node'
             }
           ]
         },
@@ -869,7 +975,8 @@ test('runNodeCommandRouter prints node service install JSON plan', async () => {
           supervisor: { ready: false, required: [], issues: [] },
           services: {
             relay: { state: 'missing', running: false },
-            registryAgent: { state: 'missing', running: false }
+            registryAgent: { state: 'missing', running: false },
+            webrtc: { state: 'missing', running: false }
           },
           issues: [],
           nextSteps: []
@@ -892,7 +999,7 @@ test('runNodeCommandRouter prints node service install JSON plan', async () => {
   assert.equal(payload.ok, true);
   assert.equal(payload.action, 'install');
   assert.equal(payload.dryRun, true);
-  assert.deepEqual(payload.plan.services.map((service) => service.key), ['relay', 'registryAgent']);
+  assert.deepEqual(payload.plan.services.map((service) => service.key), ['relay', 'registryAgent', 'webrtc']);
 });
 
 test('runNodeCommandRouter prints node service uninstall JSON plan', async () => {
@@ -927,6 +1034,11 @@ test('runNodeCommandRouter prints node service uninstall JSON plan', async () =>
         plan: {
           services: [
             {
+              key: 'webrtc',
+              label: 'WebRTC connector service',
+              command: 'aih node webrtc service uninstall --node-id nat-node'
+            },
+            {
               key: 'registryAgent',
               label: 'Fabric registry agent service',
               command: 'aih fabric registry agent service uninstall --node-id nat-node'
@@ -942,7 +1054,8 @@ test('runNodeCommandRouter prints node service uninstall JSON plan', async () =>
           supervisor: { ready: false, required: [], issues: [] },
           services: {
             relay: { state: 'installed', running: false },
-            registryAgent: { state: 'installed', running: false }
+            registryAgent: { state: 'installed', running: false },
+            webrtc: { state: 'installed', running: false }
           },
           issues: [],
           nextSteps: []
@@ -965,7 +1078,7 @@ test('runNodeCommandRouter prints node service uninstall JSON plan', async () =>
   assert.equal(payload.ok, true);
   assert.equal(payload.action, 'uninstall');
   assert.equal(payload.dryRun, true);
-  assert.deepEqual(payload.plan.services.map((service) => service.key), ['registryAgent', 'relay']);
+  assert.deepEqual(payload.plan.services.map((service) => service.key), ['webrtc', 'registryAgent', 'relay']);
 });
 
 test('runNodeDoctor json report does not leak management key', () => {

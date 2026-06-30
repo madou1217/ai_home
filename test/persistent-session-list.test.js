@@ -3,18 +3,47 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { EventEmitter } = require('node:events');
 const persistentSession = require('../lib/runtime/persistent-session');
 const { AIH_SERVER_PROFILE_ID } = require('../lib/account/self-relay-account');
 const {
   formatGlobalPersistentSessionsByProject,
   listProviderProfileIds,
   runGlobalPersistentSessionsCommand,
-  selectPersistentSessionRow
+  selectPersistentSessionRow,
+  selectPersistentSessionRowAsync
 } = require('../lib/cli/services/ai-cli/persistent-session-list');
 
 function tmuxSocket(args) {
   const index = Array.isArray(args) ? args.indexOf('-L') : -1;
   return index >= 0 ? args[index + 1] : '';
+}
+
+function testCellWidth(value) {
+  return Array.from(String(value || '')).reduce((sum, char) => {
+    const code = char.codePointAt(0);
+    if (!code) return sum;
+    if (code < 32 || (code >= 0x7f && code < 0xa0)) return sum;
+    if (
+      (code >= 0x1100 && code <= 0x115f)
+      || code === 0x2329
+      || code === 0x232a
+      || (code >= 0x2e80 && code <= 0xa4cf)
+      || (code >= 0xac00 && code <= 0xd7a3)
+      || (code >= 0xf900 && code <= 0xfaff)
+      || (code >= 0xfe10 && code <= 0xfe19)
+      || (code >= 0xfe30 && code <= 0xfe6f)
+      || (code >= 0xff00 && code <= 0xff60)
+      || (code >= 0xffe0 && code <= 0xffe6)
+    ) return sum + 2;
+    return sum + 1;
+  }, 0);
+}
+
+function stripAnsi(value) {
+  return String(value || '')
+    .replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '')
+    .replace(/\r/g, '');
 }
 
 test('formatGlobalPersistentSessionsByProject groups by project and sorts newest first', () => {
@@ -179,6 +208,111 @@ test('selectPersistentSessionRow keeps repeated project rows under the same proj
   assert.equal(selected.targetSession, 'codex-ai-home');
   assert.equal(output.indexOf('/work/ai_home') < output.indexOf('codex#1'), true);
   assert.equal(output.indexOf('codex#1') < output.indexOf('/work/password-gen-ext'), true);
+});
+
+test('selectPersistentSessionRowAsync keeps narrow terminal output on single visual lines', async () => {
+  const writes = [];
+  const stdin = new EventEmitter();
+  stdin.isTTY = true;
+  stdin.isRaw = false;
+  stdin.setRawMode = (enabled) => { stdin.isRaw = Boolean(enabled); };
+  stdin.resume = () => {};
+  stdin.isPaused = () => false;
+  stdin.pause = () => {};
+  const rows = [
+    {
+      cliName: 'codex',
+      accountId: '1',
+      path: '/Users/model/projects/feature/ai_home/very-long-mobile-terminal-path',
+      command: 'aih codex 1',
+      description: '这是一个非常长的移动端会话标题，用来模拟 Termius 窄屏自动换行',
+      targetSession: 'p-mobile-narrow',
+      live: true
+    },
+    {
+      cliName: 'claude',
+      accountId: '10',
+      path: '/Users/model/projects/feature/ai_home/very-long-mobile-terminal-path',
+      command: 'aih claude 10',
+      description: '另一个非常长的会话标题',
+      targetSession: 'p-mobile-second',
+      live: false
+    }
+  ];
+
+  const selectedPromise = selectPersistentSessionRowAsync(rows, {
+    processImpl: {
+      stdout: {
+        isTTY: true,
+        columns: 32,
+        write: (chunk) => writes.push(String(chunk || ''))
+      },
+      stdin
+    },
+    refreshIntervalMs: 60000
+  });
+
+  await new Promise((resolve) => setImmediate(resolve));
+  stdin.emit('data', Buffer.from('q'));
+  const selected = await selectedPromise;
+  const output = writes.join('');
+  const lines = stripAnsi(output)
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .filter(Boolean);
+
+  assert.equal(selected, null);
+  assert.equal(output.includes('选择要进入的持久会话'), false);
+  assert.equal(output.includes('[aih] 会话 Enter/q'), true);
+  assert.equal(lines.every((line) => testCellWidth(line) <= 31), true);
+});
+
+test('selectPersistentSessionRowAsync skips idle repaint when refreshed rows are unchanged', async () => {
+  const writes = [];
+  const stdin = new EventEmitter();
+  stdin.isTTY = true;
+  stdin.isRaw = false;
+  stdin.setRawMode = (enabled) => { stdin.isRaw = Boolean(enabled); };
+  stdin.resume = () => {};
+  stdin.isPaused = () => false;
+  stdin.pause = () => {};
+  const rows = [
+    {
+      cliName: 'codex',
+      accountId: '1',
+      path: '/work/ai_home',
+      command: 'aih codex 1',
+      description: 'stable task',
+      targetSession: 'p-stable',
+      live: true
+    }
+  ];
+  let refreshCalls = 0;
+
+  const selectedPromise = selectPersistentSessionRowAsync(rows, {
+    processImpl: {
+      stdout: {
+        isTTY: true,
+        columns: 120,
+        write: (chunk) => writes.push(String(chunk || ''))
+      },
+      stdin
+    },
+    refreshRows: () => {
+      refreshCalls += 1;
+      return rows;
+    },
+    refreshIntervalMs: 300
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 450));
+  stdin.emit('data', Buffer.from('q'));
+  const selected = await selectedPromise;
+  const output = writes.join('');
+
+  assert.equal(selected, null);
+  assert.equal(refreshCalls >= 1, true);
+  assert.equal((output.match(/\[aih\] 选择/g) || []).length, 1);
 });
 
 test('selectPersistentSessionRow closes the selected session and keeps the picker open', () => {
@@ -411,7 +545,7 @@ test('runGlobalPersistentSessionsCommand enters selected global session', (t) =>
     mirror: '1'
   }]);
   assert.deepEqual(rawModeCalls, [true, false]);
-  assert.equal(writes.join('').includes('[aih] 选择要进入的持久会话'), true);
+  assert.equal((writes.join('').match(/\[aih\] 选择/g) || []).length, 1);
 });
 
 test('runGlobalPersistentSessionsCommand opens a compatible session for legacy UTF-8 runtime rows', (t) => {

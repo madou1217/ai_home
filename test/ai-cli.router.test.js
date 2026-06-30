@@ -2130,7 +2130,7 @@ test('`aih codex sessions` picker keeps header stable and constrains title width
   });
 
   const output = writes.join('');
-  assert.equal((output.match(/\[aih\] 选择要进入的持久会话/g) || []).length, 1);
+  assert.equal((output.match(/\[aih\] 选择/g) || []).length, 1);
   assert.equal(output.includes(longTitle), false);
   assert.equal(output.includes('Long agent title Long agent title'), true);
   assert.equal(output.includes('Long agent title Long agent title Long agent title'), true);

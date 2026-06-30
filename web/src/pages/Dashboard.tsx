@@ -7,7 +7,9 @@ import {
   Row,
   Col,
   Space,
-    message
+  Tag,
+  Typography,
+  message
 } from 'antd';
 import {
   CheckCircleOutlined,
@@ -23,6 +25,7 @@ import PageScaffold from '@/components/ui/PageScaffold';
 import { managementAPI } from '@/services/api';
 import type { ManagementAccount, ManagementMetrics, ManagementStatus, Provider } from '@/types';
 import ProviderIcon, { providerIds, providerNames } from '@/components/chat/ProviderIcon';
+import { parseUpstreamError } from '@/utils/format-upstream-error';
 import RuntimeStatusTag from '@/components/runtime/RuntimeStatusTag';
 import '../styles/unified.css';
 
@@ -316,11 +319,20 @@ export default function Dashboard() {
     {
       title: '错误详情',
       key: 'message',
-      render: (_: any, item: ManagementMetrics['lastErrors'][number]) => (
-        <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 13, color: 'var(--app-text)' }}>
-          {formatRecentErrorMessage(item)}
-        </div>
-      )
+      render: (_: any, item: ManagementMetrics['lastErrors'][number]) => {
+        const parsed = parseUpstreamError(formatRecentErrorMessage(item));
+        return (
+          <Space direction="vertical" size={2} style={{ width: '100%' }}>
+            {parsed.statusCode ? <Tag color="error" style={{ marginInlineEnd: 0 }}>HTTP {parsed.statusCode}</Tag> : null}
+            <Typography.Paragraph
+              style={{ margin: 0, fontSize: 13 }}
+              ellipsis={{ rows: 2, expandable: true, symbol: '展开' }}
+            >
+              {parsed.message}
+            </Typography.Paragraph>
+          </Space>
+        );
+      }
     },
     {
       title: '时间',

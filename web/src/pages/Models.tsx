@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './Models.css';
 import { Alert, Form, Input, Modal, Segmented, Select, Space, Switch, Tag, Tooltip, Typography, message } from 'antd';
-import { ApiOutlined, ArrowLeftOutlined, CopyOutlined, DeleteOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
+import { ApiOutlined, ArrowLeftOutlined, CopyOutlined, DeleteOutlined, PlusOutlined, ReloadOutlined, StarFilled, StarOutlined } from '@ant-design/icons';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { modelsAPI } from '@/services/api';
 import type {
@@ -19,6 +19,7 @@ import { ModalForm, StatisticCard } from '@ant-design/pro-components';
 import PageScaffold from '@/components/ui/PageScaffold';
 import SectionCard from '@/components/ui/SectionCard';
 import ProviderIcon, { providerIds, providerNames } from '@/components/chat/ProviderIcon';
+import { parseUpstreamError } from '@/utils/format-upstream-error';
 
 type ProviderFilter = Provider | 'all';
 type AccountFilter = string | 'all';
@@ -63,31 +64,6 @@ function getVisibleModelProbeError(catalog: WebUiOpenAIModelsResponse | null) {
   if (!catalog) return '';
   const candidates = [catalog.firstError, ...Object.values(catalog.errorsByAccountRef || {})];
   return candidates.find((error) => error && !isIgnorableModelProbeError(error)) || '';
-}
-
-// 把上游探测错误（多为 `HTTP 500 {"error":{"message":"..."}}` 这种裸串）拆成
-// { 状态码, 人类可读消息, issue 链接, 原文 }，避免把原始 JSON 直接糊给用户。
-function parseModelProbeError(raw: string) {
-  const text = String(raw || '').trim();
-  const httpMatch = text.match(/HTTP\s+(\d{3})/i);
-  const statusCode = httpMatch ? httpMatch[1] : '';
-  let body = httpMatch ? text.slice(text.indexOf(httpMatch[0]) + httpMatch[0].length).trim() : text;
-  const jsonStart = body.indexOf('{');
-  if (jsonStart >= 0) {
-    try {
-      const parsed = JSON.parse(body.slice(jsonStart));
-      body = String(parsed?.error?.message || parsed?.message || parsed?.error?.code || parsed?.error || body);
-    } catch {
-      // 非合法 JSON，保留原串
-    }
-  }
-  let url = '';
-  const urlMatch = body.match(/https?:\/\/[^\s"')]+/);
-  if (urlMatch) {
-    url = urlMatch[0];
-    body = body.replace(urlMatch[0], '').replace(/[，,]?\s*(please\s+submit\s+a?\s*issue\s+here)\s*[:：]?\s*$/i, '').trim();
-  }
-  return { statusCode, message: body || text, url, raw: text };
 }
 
 function isCatalogJobActive(job: WebUiOpenAIModelsJob | null) {
@@ -416,6 +392,34 @@ export default function Models() {
     }
   }, [loadModels]);
 
+  const updateModelDefault = useCallback(async (model: ManagedOpenAIModelItem) => {
+    if (model.enabled === false) {
+      message.warning('请先启用模型');
+      return;
+    }
+    const rowKey = getModelRowKey(model);
+    setUpdatingModelKeys((current) => new Set(current).add(rowKey));
+    try {
+      await modelsAPI.updateModel({
+        id: model.id,
+        accountRef: model.accountRef,
+        provider: model.provider,
+        enabled: true,
+        defaultModel: true
+      });
+      message.success('默认模型已更新');
+      await loadModels({ quiet: true });
+    } catch (error: any) {
+      message.error(error?.response?.data?.message || error?.message || '设置默认模型失败');
+    } finally {
+      setUpdatingModelKeys((current) => {
+        const next = new Set(current);
+        next.delete(rowKey);
+        return next;
+      });
+    }
+  }, [loadModels]);
+
   const deleteManualModel = useCallback((model: ManagedOpenAIModelItem) => {
     const account = accountByRef.get(model.accountRef);
     const label = account ? getAccountLabel(account) : model.accountRef;
@@ -635,6 +639,7 @@ export default function Models() {
           </div>
           <div className="models-model-row-tags">
             {model.manual ? <Tag color="processing">手动</Tag> : <Tag>探测</Tag>}
+            {model.defaultModel ? <Tag color="success">默认</Tag> : null}
             {!enabled ? <Tag>停用</Tag> : null}
           </div>
           <p>{model.object} · {model.owned_by || 'aih'}{model.description ? ` · ${model.description}` : ''}</p>
@@ -649,6 +654,17 @@ export default function Models() {
           <span>{enabled ? '启用' : '停用'}</span>
         </div>
         <div className="models-model-row-actions">
+          <Tooltip title={model.defaultModel ? '当前默认模型' : enabled ? '设为默认模型' : '启用后才能设为默认'}>
+            <span>
+              <Button
+                appVariant="icon"
+                disabled={!enabled || model.defaultModel || updatingModelKeys.has(rowKey)}
+                icon={model.defaultModel ? <StarFilled /> : <StarOutlined />}
+                aria-label={`设为默认 ${model.accountRef} ${model.id}`}
+                onClick={() => updateModelDefault(model)}
+              />
+            </span>
+          </Tooltip>
           {model.manual ? (
             <Tooltip title="删除手动模型">
               <Button
@@ -732,7 +748,7 @@ export default function Models() {
       </StatisticCard.Group>
 
       {globalProbeError ? (() => {
-        const probeError = parseModelProbeError(globalProbeError);
+        const probeError = parseUpstreamError(globalProbeError);
         return (
           <Alert
             type={catalog?.source === 'remote' ? 'warning' : 'error'}

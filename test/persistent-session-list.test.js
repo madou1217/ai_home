@@ -205,9 +205,10 @@ test('selectPersistentSessionRow keeps repeated project rows under the same proj
   });
 
   const output = writes.join('');
+  const plainOutput = stripAnsi(output);
   assert.equal(selected.targetSession, 'codex-ai-home');
-  assert.equal(output.indexOf('/work/ai_home') < output.indexOf('codex#1'), true);
-  assert.equal(output.indexOf('codex#1') < output.indexOf('/work/password-gen-ext'), true);
+  assert.equal(plainOutput.indexOf('/work/ai_home') < plainOutput.indexOf('codex#1'), true);
+  assert.equal(plainOutput.indexOf('codex#1') < plainOutput.indexOf('/work/password-gen-ext'), true);
 });
 
 test('selectPersistentSessionRowAsync keeps narrow terminal output on single visual lines', async () => {
@@ -265,6 +266,96 @@ test('selectPersistentSessionRowAsync keeps narrow terminal output on single vis
   assert.equal(output.includes('选择要进入的持久会话'), false);
   assert.equal(output.includes('[aih] 会话 Enter/q'), true);
   assert.equal(lines.every((line) => testCellWidth(line) <= 31), true);
+});
+
+test('selectPersistentSessionRowAsync animates the selected live marker without repainting header', async () => {
+  const writes = [];
+  const stdin = new EventEmitter();
+  stdin.isTTY = true;
+  stdin.isRaw = false;
+  stdin.setRawMode = (enabled) => { stdin.isRaw = Boolean(enabled); };
+  stdin.resume = () => {};
+  stdin.isPaused = () => false;
+  stdin.pause = () => {};
+  const rows = [
+    {
+      cliName: 'codex',
+      accountId: '1',
+      path: '/work/ai_home',
+      command: 'aih codex 1',
+      description: 'live task',
+      targetSession: 'p-live',
+      live: true
+    }
+  ];
+
+  const selectedPromise = selectPersistentSessionRowAsync(rows, {
+    processImpl: {
+      stdout: {
+        isTTY: true,
+        columns: 80,
+        write: (chunk) => writes.push(String(chunk || ''))
+      },
+      stdin
+    },
+    refreshIntervalMs: 60000,
+    animationIntervalMs: 120
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 280));
+  stdin.emit('data', Buffer.from('q'));
+  const selected = await selectedPromise;
+  const output = writes.join('');
+
+  assert.equal(selected, null);
+  assert.equal((output.match(/\[aih\] 选择/g) || []).length, 1);
+  assert.match(output, /[⠙⠹]/);
+  assert.match(output, /\x1b\[38;5;(196|202|226|46|51|33|129)m/);
+});
+
+test('selectPersistentSessionRowAsync breathes the selected idle marker without repainting header', async () => {
+  const writes = [];
+  const stdin = new EventEmitter();
+  stdin.isTTY = true;
+  stdin.isRaw = false;
+  stdin.setRawMode = (enabled) => { stdin.isRaw = Boolean(enabled); };
+  stdin.resume = () => {};
+  stdin.isPaused = () => false;
+  stdin.pause = () => {};
+  const rows = [
+    {
+      cliName: 'claude',
+      accountId: '2',
+      path: '/work/ai_home',
+      command: 'aih claude 2',
+      description: 'idle task',
+      targetSession: 'p-idle',
+      live: false
+    }
+  ];
+
+  const selectedPromise = selectPersistentSessionRowAsync(rows, {
+    processImpl: {
+      stdout: {
+        isTTY: true,
+        columns: 80,
+        write: (chunk) => writes.push(String(chunk || ''))
+      },
+      stdin
+    },
+    refreshIntervalMs: 60000,
+    animationIntervalMs: 120
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 280));
+  stdin.emit('data', Buffer.from('q'));
+  const selected = await selectedPromise;
+  const output = writes.join('');
+
+  assert.equal(selected, null);
+  assert.equal((output.match(/\[aih\] 选择/g) || []).length, 1);
+  assert.match(output, /[◉●]/);
+  assert.match(output, /\x1b\[38;5;(196|202|226|46|51|33|129)m/);
 });
 
 test('selectPersistentSessionRowAsync skips idle repaint when refreshed rows are unchanged', async () => {

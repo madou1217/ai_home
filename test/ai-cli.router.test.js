@@ -2085,7 +2085,7 @@ test('`aih codex sessions` picker keeps header stable and constrains title width
   fs.mkdirSync(path.join(profilesDir, 'codex', '1'), { recursive: true });
   const sep = persistentSession.SESSION_LIST_SEPARATOR;
   const writes = [];
-  const env = {};
+  const env = { HOME: '/Users/model' };
   const keys = ['\x1b[B', '\x1b[A', '\r'];
   const longTitle = 'Long agent title '.repeat(8);
 
@@ -2130,14 +2130,16 @@ test('`aih codex sessions` picker keeps header stable and constrains title width
   });
 
   const output = writes.join('');
+  const visibleOutput = output.replace(/\r/g, '').replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
   assert.equal((output.match(/\[aih\] 选择/g) || []).length, 1);
   assert.equal(output.includes(longTitle), false);
   assert.equal(output.includes('Long agent title Long agent title'), true);
   assert.equal(output.includes('Long agent title Long agent title Long agent title'), true);
-  assert.equal(output.includes('/Users/model/projects'), true);
-  const sessionLines = output
+  assert.equal(visibleOutput.includes('~/projects/feature/ai_home'), true);
+  assert.equal(visibleOutput.includes('~/WebstormProjects/project-admin'), true);
+  assert.equal(visibleOutput.includes('/Users/model/'), false);
+  const sessionLines = visibleOutput
     .split('\n')
-    .map((line) => line.replace(/\r/g, '').replace(/\x1b\[[0-9;]*[A-Za-z]/g, ''))
     .filter((line) => line.includes('Long agent title') || line.includes('短标题'));
   assert.equal(sessionLines.every((line) => !line.includes('/Users/model/')), true);
 });

@@ -1902,6 +1902,116 @@ export async function fetchControlPlaneDeviceNodeSessionMessages(
   return normalizeDeviceNodeSessionMessages(payload);
 }
 
+export interface DeviceNodeSessionStartResult {
+  ok: boolean;
+  accepted: boolean;
+  status: string;
+  runId: string;
+  sessionId: string;
+}
+
+/**
+ * 起一个远端 node 会话（走已验证的设备 token 路：POST device-node-session-start）。
+ * 传 sessionId 可在同一 session 上续话。返回 runId 供拉取事件。
+ */
+export async function startControlPlaneDeviceNodeSession(
+  profile: Pick<ControlPlaneProfile, 'endpoint' | 'deviceToken'>,
+  params: {
+    nodeId: string;
+    provider: string;
+    projectPath: string;
+    prompt: string;
+    sessionId?: string;
+    accountId?: string;
+    model?: string;
+  },
+  options: {
+    timeoutMs?: number;
+    fetchImpl?: typeof fetch;
+  } = {}
+): Promise<DeviceNodeSessionStartResult> {
+  const payload = await postDeviceJson(profile, '/v0/node-rpc/device-node-session-start', {
+    nodeId: normalizeText(params.nodeId, 96),
+    provider: normalizeText(params.provider, 64),
+    projectPath: normalizeText(params.projectPath, 2048),
+    prompt: String(params.prompt ?? ''),
+    sessionId: normalizeText(params.sessionId, 96),
+    accountId: normalizeText(params.accountId, 96),
+    model: normalizeText(params.model, 96)
+  }, options);
+  const envelope = (payload && typeof payload === 'object' ? payload : {}) as Record<string, unknown>;
+  const result = (envelope.result && typeof envelope.result === 'object'
+    ? envelope.result
+    : envelope) as Record<string, unknown>;
+  return {
+    ok: envelope.ok === undefined ? true : Boolean(envelope.ok),
+    accepted: Boolean(result.accepted),
+    status: normalizeText(result.status, 32),
+    runId: normalizeText(result.runId, 96),
+    sessionId: normalizeText(result.sessionId, 96)
+  };
+}
+
+export interface DeviceNodeSessionRunEvent {
+  type: string;
+  text: string;
+  sessionId: string;
+}
+
+export interface DeviceNodeSessionRunEventsResult {
+  status: string;
+  sessionId: string;
+  events: DeviceNodeSessionRunEvent[];
+}
+
+/**
+ * 拉取某个 run 的事件（GET device-node-session-run-events，nodeId 必填）。
+ * delta/result 文本即模型回复；done 表示本轮结束。
+ */
+export async function fetchControlPlaneDeviceNodeSessionRunEvents(
+  profile: Pick<ControlPlaneProfile, 'endpoint' | 'deviceToken'>,
+  nodeId: string,
+  runId: string,
+  options: {
+    cursor?: number;
+    limit?: number;
+    timeoutMs?: number;
+    fetchImpl?: typeof fetch;
+  } = {}
+): Promise<DeviceNodeSessionRunEventsResult> {
+  const params = new URLSearchParams({
+    nodeId: normalizeText(nodeId, 96),
+    runId: normalizeText(runId, 96)
+  });
+  if (options.cursor !== undefined) params.set('cursor', String(options.cursor));
+  params.set('limit', String(options.limit && options.limit > 0 ? options.limit : 100));
+  const payload = await fetchDeviceJson(
+    profile,
+    `/v0/node-rpc/device-node-session-run-events?${params.toString()}`,
+    options
+  );
+  const envelope = (payload && typeof payload === 'object' ? payload : {}) as Record<string, unknown>;
+  const result = (envelope.result && typeof envelope.result === 'object'
+    ? envelope.result
+    : envelope) as Record<string, unknown>;
+  const rawEvents = Array.isArray(result.events) ? result.events : [];
+  const events: DeviceNodeSessionRunEvent[] = rawEvents.map((entry) => {
+    const source = (entry && typeof entry === 'object' ? entry : {}) as Record<string, unknown>;
+    const delta = typeof source.delta === 'string' ? source.delta : '';
+    const content = typeof source.content === 'string' ? source.content : '';
+    return {
+      type: normalizeText(source.type, 40),
+      text: delta || content,
+      sessionId: normalizeText(source.sessionId, 96)
+    };
+  });
+  return {
+    status: normalizeText(result.status, 32),
+    sessionId: normalizeText(result.sessionId, 96),
+    events
+  };
+}
+
 export async function sendControlPlaneDeviceNodeSessionInput(
   profile: Pick<ControlPlaneProfile, 'endpoint' | 'deviceToken'>,
   nodeId: string,

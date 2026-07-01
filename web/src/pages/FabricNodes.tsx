@@ -26,6 +26,7 @@ import {
 import type { ControlPlaneProfile } from '@/types';
 import Button from '@/components/ui/AppButton';
 import PageScaffold from '@/components/ui/PageScaffold';
+import FabricNodeSession from './FabricNodeSession';
 
 /* ============================================================================
  * 展示层辅助（仅本页用）：把 registry 的英文/代码字段翻译成大白话中文。
@@ -238,13 +239,19 @@ function SecondaryList<T>({ items, empty, getKey, render }: {
  * 节点详情（右侧常驻栏）
  * ========================================================================== */
 
-function NodeDetail({ view, onPendingAction }: {
+function NodeDetail({ view, profile, onPendingAction }: {
   view: FabricNodeInventoryItem;
+  profile: Pick<ControlPlaneProfile, 'endpoint' | 'deviceToken'> | null;
   onPendingAction: (label: string) => void;
 }) {
   const { node } = view;
   const liveness = livenessOf(node.status);
   const offline = liveness === 'offline';
+  const [sessionProvider, setSessionProvider] = useState('');
+
+  useEffect(() => {
+    setSessionProvider('');
+  }, [node.id]);
 
   const openAction = view.actions.find((action) => action.id === 'open-project') || null;
   const sessionActions = view.actions.filter((action) => action.id.startsWith('start-session:'));
@@ -297,13 +304,22 @@ function NodeDetail({ view, onPendingAction }: {
             <Button
               key={action.id}
               size="small"
-              disabled={offline}
-              onClick={() => onPendingAction(`发起会话（${providerLabel(action.provider)}）`)}
+              type={sessionProvider === action.provider ? 'primary' : 'default'}
+              disabled={offline || !profile}
+              onClick={() => setSessionProvider((prev) => (prev === action.provider ? '' : action.provider))}
             >
               发起会话（{providerLabel(action.provider)}）
             </Button>
           ))}
         </Space>
+        {sessionProvider && profile && (
+          <FabricNodeSession
+            profile={profile}
+            nodeId={node.id}
+            provider={sessionProvider}
+            projects={view.projects}
+          />
+        )}
         {offline && (
           <Typography.Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0 }}>
             节点离线，动作暂不可用。
@@ -597,7 +613,7 @@ export default function FabricNodes() {
             {/* 右：常驻详情栏 */}
             <div className="fabric-node-panel">
               {selectedNode ? (
-                <NodeDetail view={selectedNode} onPendingAction={handlePendingAction} />
+                <NodeDetail view={selectedNode} profile={readyProfile} onPendingAction={handlePendingAction} />
               ) : firstLoading ? (
                 <div className="fabric-node-panel__placeholder">
                   <Spin />

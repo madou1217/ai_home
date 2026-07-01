@@ -1,28 +1,16 @@
-import { StatisticCard } from '@ant-design/pro-components';
 import './FabricNodes.css';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Alert, Col, List, Row, Space, Tag, Typography, message, Descriptions } from 'antd';
-import type { ProColumns } from '@ant-design/pro-components';
-import {
-  ApartmentOutlined,
-  CloudServerOutlined,
-  ReloadOutlined,
-  ClusterOutlined,
-  ToolOutlined
-} from '@ant-design/icons';
+import { Alert, Collapse, Empty, List, Space, Spin, Tag, Tooltip, Typography, message } from 'antd';
+import { ReloadOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
-import {
-  buildFabricRegistryRelayViews,
-  readActiveFabricRegistry
-} from '@/services/fabric-registry';
+import { readActiveFabricRegistry } from '@/services/fabric-registry';
 import type {
-  FabricNodeAction,
   FabricNodeInventoryItem,
   FabricRegistryNode,
-  FabricRegistryRelayView,
   FabricRegistryResult,
-  FabricRegistryTransport
+  FabricRegistryTransport,
+  FabricRegistryTransportMeasurement
 } from '@/services/fabric-registry';
 import {
   addControlPlaneProfilesChangeListener,
@@ -38,119 +26,160 @@ import {
 import type { ControlPlaneProfile } from '@/types';
 import Button from '@/components/ui/AppButton';
 import PageScaffold from '@/components/ui/PageScaffold';
-import SectionCard from '@/components/ui/SectionCard';
-import ListTable from '@/components/ui/ListTable';
 
-const STATUS_COLORS: Record<string, string> = {
-  available: 'green',
-  disabled: 'default',
-  degraded: 'orange',
-  down: 'red',
-  failed: 'red',
-  healthy: 'green',
-  offline: 'red',
-  online: 'green',
-  partial: 'gold',
-  pending: 'gold',
-  ready: 'green',
-  unknown: 'default',
-  up: 'green'
+/* ============================================================================
+ * 展示层辅助（仅本页用）：把 registry 的英文/代码字段翻译成大白话中文。
+ * 不改数据层，只做“看不懂 → 看得懂”的映射。
+ * ========================================================================== */
+
+const ONLINE_STATES = ['available', 'healthy', 'online', 'ready', 'up'];
+const DEGRADED_STATES = ['degraded', 'partial', 'pending', 'warning'];
+const OFFLINE_STATES = ['disabled', 'down', 'failed', 'offline', 'unhealthy'];
+
+type Liveness = 'online' | 'degraded' | 'offline' | 'unknown';
+
+const LIVENESS_LABEL: Record<Liveness, string> = {
+  online: '在线',
+  degraded: '不稳定',
+  offline: '离线',
+  unknown: '状态未知'
 };
+
+const PLATFORM_LABEL: Record<string, string> = {
+  darwin: 'Mac',
+  linux: 'Linux',
+  win32: 'Windows',
+  windows: 'Windows'
+};
+
+const TRANSPORT_KIND_LABEL: Record<string, string> = {
+  webrtc: 'WebRTC 直连',
+  relay: '中继线路 (relay)',
+  ssh: 'SSH 通道',
+  ws: 'WebSocket',
+  wss: 'WebSocket',
+  tcp: 'TCP 直连'
+};
+
+const PROVIDER_LABEL: Record<string, string> = {
+  codex: 'Codex',
+  claude: 'Claude',
+  agy: 'AGY',
+  opencode: 'OpenCode'
+};
+
+function lower(value: unknown) {
+  return String(value ?? '').trim().toLowerCase();
+}
 
 function normalizeError(error: unknown) {
   if (error instanceof Error && error.message) return error.message;
   return String(error || '加载失败');
 }
 
-function normalizeText(value: unknown, fallback = 'unknown') {
-  const text = String(value ?? '').trim();
-  return text || fallback;
-}
-
-function getStatusColor(status: unknown) {
-  return STATUS_COLORS[String(status || '').toLowerCase()] || 'default';
+function livenessOf(status: unknown): Liveness {
+  const value = lower(status);
+  if (ONLINE_STATES.includes(value)) return 'online';
+  if (DEGRADED_STATES.includes(value)) return 'degraded';
+  if (OFFLINE_STATES.includes(value)) return 'offline';
+  return 'unknown';
 }
 
 function formatTime(value: unknown) {
   const timestamp = Number(value || 0);
-  if (!timestamp) return 'never';
+  if (!timestamp) return '从未';
   const date = new Date(timestamp);
-  if (Number.isNaN(date.getTime())) return 'invalid';
+  if (Number.isNaN(date.getTime())) return '时间无效';
   return date.toLocaleString();
 }
 
-function formatMeasuredAt(value: unknown) {
-  const timestamp = Number(value || 0);
-  if (!timestamp) return 'not measured';
-  return formatTime(timestamp);
+function platformLabel(node: FabricRegistryNode) {
+  const key = lower(node.platform);
+  return PLATFORM_LABEL[key] || node.platform || '未知平台';
+}
+
+function platformDetail(node: FabricRegistryNode) {
+  return [node.platform, node.arch].map((item) => String(item || '').trim()).filter(Boolean).join(' / ') || '平台未知';
+}
+
+function providerLabel(provider: string) {
+  return PROVIDER_LABEL[lower(provider)] || provider;
+}
+
+function transportKindLabel(kind: string) {
+  return TRANSPORT_KIND_LABEL[lower(kind)] || (kind || '未知线路');
 }
 
 function formatBandwidthKbps(value: unknown) {
   const bandwidth = Number(value || 0);
-  if (!Number.isFinite(bandwidth) || bandwidth <= 0) return 'unlimited';
+  if (!Number.isFinite(bandwidth) || bandwidth <= 0) return '不限速';
   if (bandwidth >= 1000) return `${Math.round(bandwidth / 100) / 10} Mbps`;
   return `${Math.floor(bandwidth)} Kbps`;
 }
 
-function formatPlatform(node: FabricRegistryNode) {
-  return [node.platform, node.arch].map((item) => String(item || '').trim()).filter(Boolean).join(' / ') || 'unknown';
+/** 每台机器“能干什么”，大白话 + ✓/✗。 */
+function capabilityRows(view: FabricNodeInventoryItem) {
+  const caps = view.capabilities;
+  const providers = caps.runtimeProviders.filter(Boolean).map(providerLabel);
+  return [
+    {
+      ok: caps.runtimeHost,
+      label: caps.runtimeHost && providers.length ? `跑AI(${caps.runtimeProviders.filter(Boolean).join('/')})` : '跑AI',
+      hint: caps.runtimeHost ? `能在这台机器上跑：${providers.join(' / ')}` : '这台机器还没装可用的 AI 运行时'
+    },
+    {
+      ok: caps.relayNode,
+      label: '中继',
+      hint: caps.relayNode ? '能帮别的机器转发流量（relay）' : '没有开启中继能力'
+    },
+    {
+      ok: caps.sshBootstrap,
+      label: 'SSH 开发',
+      hint: caps.sshBootstrap ? '能通过 SSH 远程开发' : '没有配置 SSH 通道'
+    }
+  ];
 }
 
-function getTransportHealth(transport: FabricRegistryTransport) {
-  return normalizeText(transport.health);
-}
-
-function formatTransportMeasurement(transport: FabricRegistryTransport) {
-  const measurement = transport.measurement;
-  if (!measurement) return 'no measurement';
-  const parts = [];
-  if (measurement.rttMs && measurement.rttMs.count) parts.push(`p95 ${measurement.rttMs.p95}ms`);
-  if (measurement.sampleCount && measurement.successRate !== null) {
-    parts.push(`${Math.round(measurement.successRate * 100)}% ok (${measurement.sampleCount})`);
-  } else if (measurement.successes || measurement.failures) {
-    parts.push(`${measurement.successes}/${measurement.successes + measurement.failures} ok`);
+/** 把 action 的英文 blocker 代码翻译成“为什么不能用”。 */
+function describeProviderBlocker(provider: string, blockers: string[]) {
+  const primary = blockers.find((code) => code && !code.startsWith('m4_')) || blockers[0] || '';
+  const [code, , status] = primary.split(':');
+  const name = providerLabel(provider);
+  switch (code) {
+    case 'provider_account_unavailable':
+      return { headline: '未授权', detail: `这台机器没登录 ${name} 账号` };
+    case 'missing_provider_runtime':
+      return { headline: '未授权', detail: `这台机器没检测到 ${name} 运行时（可能未安装或未登录）` };
+    case 'provider_runtime_not_ready':
+      return { headline: '未就绪', detail: `${name} 运行时状态：${status || '未知'}` };
+    case 'missing_project_snapshot':
+      return { headline: '缺项目', detail: '这台机器还没有可打开的项目' };
+    case 'missing_transport':
+      return { headline: '没连上', detail: '这台机器暂时没有可用线路' };
+    default:
+      return { headline: '不可用', detail: primary || '暂不可用' };
   }
-  if (measurement.durationMs) parts.push(`${measurement.durationMs}ms`);
-  if (measurement.status) parts.push(measurement.status);
+}
+
+function describeMeasurement(measurement: FabricRegistryTransportMeasurement | null) {
+  if (!measurement) return '尚未测量';
+  const parts: string[] = [];
+  if (measurement.rttMs && measurement.rttMs.count) parts.push(`延迟 p95 ${measurement.rttMs.p95}ms`);
+  if (measurement.sampleCount && measurement.successRate !== null) {
+    parts.push(`成功率 ${Math.round(measurement.successRate * 100)}%（${measurement.sampleCount} 次）`);
+  } else if (measurement.successes || measurement.failures) {
+    parts.push(`${measurement.successes}/${measurement.successes + measurement.failures} 成功`);
+  }
   if (measurement.failureReason) parts.push(measurement.failureReason);
-  return parts.join(' · ') || 'measured';
+  return parts.join(' · ') || '已测量';
 }
 
-function summarizeRelayMeasurement(transports: FabricRegistryTransport[]) {
+/** 挑一条“主线路”用于连接质量展示：优先有测量的，其次在线的，再退第一条。 */
+function pickPrimaryTransport(transports: FabricRegistryTransport[]) {
   const measured = transports.find((transport) => transport.measurement);
-  return measured ? formatTransportMeasurement(measured) : 'no measurement';
-}
-
-
-
-function formatBlocker(value: string) {
-  const [code, provider, status] = String(value || '').split(':');
-  const labels: Record<string, string> = {
-    m4_project_action_pending: '项目打开动作待 M4 接入',
-    m4_remote_session_action_pending: '远程会话动作待 M4 接入',
-    missing_project_snapshot: '缺少项目快照',
-    missing_transport: '缺少传输通道',
-    missing_ssh_bootstrap_transport: '未配置 SSH bootstrap',
-    relay_already_registered: '已是 relay node',
-    relay_role_enable_flow_pending: '启用 relay 流程待接入'
-  };
-  if (code === 'missing_provider_runtime') return `缺少 ${provider || 'provider'} runtime`;
-  if (code === 'provider_runtime_not_ready') return `${provider || 'provider'} runtime 不可用${status ? ` (${status})` : ''}`;
-  return labels[code] || value;
-}
-
-function ActionSummary({ actions }: { actions: FabricNodeAction[] }) {
-  const visible = actions.filter((action) => action.id.startsWith('start-session:') || action.id === 'open-project');
-  if (visible.length === 0) return <Tag>no actions</Tag>;
-  return (
-    <Space size={[4, 4]} wrap>
-      {visible.map((action) => (
-        <Tag key={action.id} color={action.eligible ? 'blue' : 'default'}>
-          {action.label}: {action.eligible ? 'eligible' : formatBlocker(action.blockers[0] || 'blocked')}
-        </Tag>
-      ))}
-    </Space>
-  );
+  if (measured) return measured;
+  const online = transports.find((transport) => livenessOf(transport.health) === 'online');
+  return online || transports[0] || null;
 }
 
 function getInitialProfile() {
@@ -159,109 +188,40 @@ function getInitialProfile() {
   return active.profile || null;
 }
 
-function StatusTag({ status }: { status: unknown }) {
-  const label = normalizeText(status);
-  return <Tag color={getStatusColor(label)}>{label}</Tag>;
+function LivenessDot({ liveness }: { liveness: Liveness }) {
+  return <span className={`fabric-dot fabric-dot--${liveness}`} aria-hidden />;
 }
 
-function TagList({ items, emptyLabel }: { items?: string[]; emptyLabel: string }) {
-  const values = (items || []).filter(Boolean);
-  if (values.length === 0) return <Tag>{emptyLabel}</Tag>;
+function LivenessBadge({ status }: { status: unknown }) {
+  const liveness = livenessOf(status);
   return (
-    <>
-      {values.map((item) => (
-        <Tag key={item}>{item}</Tag>
-      ))}
-    </>
+    <span className={`fabric-liveness fabric-liveness--${liveness}`}>
+      <LivenessDot liveness={liveness} />
+      {LIVENESS_LABEL[liveness]}
+    </span>
   );
 }
 
-const RELAY_COLUMNS: ProColumns<FabricRegistryRelayView>[] = [
-  {
-    title: 'Relay',
-    dataIndex: 'relayNode',
-    width: 180,
-    render: (_, record) => {
-      const { relayNode, node } = record;
-      return (
-        <Space direction="vertical" size={0} style={{ minWidth: 0 }}>
-          <strong style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {node?.name || relayNode.nodeId}
-          </strong>
-          <span style={{ fontSize: 12, color: 'rgba(0,0,0,0.45)' }}>{relayNode.id}</span>
-        </Space>
-      );
-    }
-  },
-  {
-    title: 'capacityClass',
-    dataIndex: 'relayNode',
-    width: 110,
-    render: (_, record) => record.relayNode.capacityClass || 'tiny'
-  },
-  {
-    title: 'bandwidth',
-    dataIndex: 'relayNode',
-    width: 120,
-    render: (_, record) => formatBandwidthKbps(record.relayNode.bandwidthLimitKbps)
-  },
-  {
-    title: 'status',
-    dataIndex: 'relayNode',
-    width: 100,
-    render: (_, record) => record.relayNode.status || (record.relayNode.enabled ? 'online' : 'disabled')
-  },
-  {
-    title: 'health',
-    dataIndex: 'health',
-    width: 100,
-    render: (_, record) => record.health
-  },
-  {
-    title: 'measurement',
-    dataIndex: 'transports',
-    render: (_, record) => summarizeRelayMeasurement(record.transports)
-  },
-  {
-    title: 'measured',
-    dataIndex: 'transports',
-    width: 180,
-    render: (_, record) => formatMeasuredAt(
-      record.transports.find((transport) => transport.measurement)?.measurement?.measuredAt || record.relayNode.lastMeasuredAt
-    )
-  },
-  {
-    title: 'transports',
-    dataIndex: 'transports',
-    render: (_, record) => {
-      const transports = record.transports;
-      if (transports.length === 0) return <Tag>transport none</Tag>;
-      return (
-        <Space size={[4, 4]} wrap>
-          {transports.map((transport) => (
-            <Tag key={transport.id} color={getStatusColor(getTransportHealth(transport))}>
-              {transport.kind || transport.id}: {getTransportHealth(transport)}
-            </Tag>
-          ))}
-        </Space>
-      );
-    }
-  }
-];
+function DetailBlock({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="fabric-detail-block">
+      <div className="fabric-detail-block__label">{label}</div>
+      <div className="fabric-detail-block__body">{children}</div>
+    </div>
+  );
+}
 
-function NodeDetailList<T>({ header, items, empty, getKey, render }: {
-  header: string;
+function SecondaryList<T>({ items, empty, getKey, render }: {
   items: T[];
   empty: string;
   getKey: (item: T) => string;
   render: (item: T) => { title: ReactNode; description: ReactNode };
 }) {
+  if (items.length === 0) return <Typography.Text type="secondary">{empty}</Typography.Text>;
   return (
     <List
       size="small"
-      header={<Typography.Text strong>{header}</Typography.Text>}
       dataSource={items}
-      locale={{ emptyText: empty }}
       renderItem={(item) => {
         const { title, description } = render(item);
         return (
@@ -274,70 +234,197 @@ function NodeDetailList<T>({ header, items, empty, getKey, render }: {
   );
 }
 
-function nodeCapabilityTags(view: FabricNodeInventoryItem) {
-  return [
-    ...(view.capabilities.node ? ['node'] : []),
-    ...(view.capabilities.relayNode ? ['relay-node'] : []),
-    ...(view.capabilities.runtimeHost ? ['runtime-host'] : []),
-    ...(view.capabilities.sshBootstrap ? ['ssh-bootstrap'] : [])
-  ];
+/* ============================================================================
+ * 节点详情（右侧常驻栏）
+ * ========================================================================== */
+
+function NodeDetail({ view, onPendingAction }: {
+  view: FabricNodeInventoryItem;
+  onPendingAction: (label: string) => void;
+}) {
+  const { node } = view;
+  const liveness = livenessOf(node.status);
+  const offline = liveness === 'offline';
+
+  const openAction = view.actions.find((action) => action.id === 'open-project') || null;
+  const sessionActions = view.actions.filter((action) => action.id.startsWith('start-session:'));
+  const readySessions = sessionActions.filter((action) => action.eligible);
+  const blockedSessions = sessionActions.filter((action) => !action.eligible);
+
+  const primaryTransport = pickPrimaryTransport(view.transports);
+  const transportState = view.capabilities.transportState;
+
+  const canOpenProject = Boolean(openAction?.eligible) && !offline;
+
+  return (
+    <div className="fabric-detail">
+      {/* 身份行 */}
+      <div className="fabric-detail__identity">
+        <div>
+          <div className="fabric-detail__name" title={node.id}>{node.name || node.id}</div>
+          <div className="fabric-detail__sub">
+            {platformLabel(node)} · <span className="fabric-mono">{platformDetail(node)}</span>
+          </div>
+        </div>
+        <LivenessBadge status={node.status} />
+      </div>
+
+      {/* 能力：它能干什么 */}
+      <DetailBlock label="能力（这台机器能干什么）">
+        <div className="fabric-caps">
+          {capabilityRows(view).map((row) => (
+            <Tooltip key={row.label} title={row.hint}>
+              <span className={`fabric-cap ${row.ok ? 'fabric-cap--ok' : 'fabric-cap--no'}`}>
+                {row.ok ? '✓' : '✗'} {row.label}
+              </span>
+            </Tooltip>
+          ))}
+        </div>
+      </DetailBlock>
+
+      {/* 我能做：动作 */}
+      <DetailBlock label="我现在能做什么">
+        <Space wrap>
+          <Button
+            size="small"
+            type="primary"
+            disabled={!canOpenProject}
+            onClick={() => onPendingAction('打开项目')}
+          >
+            打开项目
+          </Button>
+          {readySessions.map((action) => (
+            <Button
+              key={action.id}
+              size="small"
+              disabled={offline}
+              onClick={() => onPendingAction(`发起会话（${providerLabel(action.provider)}）`)}
+            >
+              发起会话（{providerLabel(action.provider)}）
+            </Button>
+          ))}
+        </Space>
+        {offline && (
+          <Typography.Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0 }}>
+            节点离线，动作暂不可用。
+          </Typography.Paragraph>
+        )}
+        {!offline && readySessions.length === 0 && (
+          <Typography.Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0 }}>
+            这台机器暂时没有可直接发起的 AI 会话（见下方原因）。
+          </Typography.Paragraph>
+        )}
+        {blockedSessions.length > 0 && (
+          <div className="fabric-provider-gaps">
+            {blockedSessions.map((action) => {
+              const gap = describeProviderBlocker(action.provider, action.blockers);
+              return (
+                <div key={action.id} className="fabric-provider-gap">
+                  <span className="fabric-provider-gap__name">{providerLabel(action.provider)}</span>
+                  <span className="fabric-provider-gap__headline">— {gap.headline}</span>
+                  <span className="fabric-provider-gap__detail">{gap.detail}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </DetailBlock>
+
+      {/* 连接质量：并入原 Relay Health */}
+      <DetailBlock label="连接质量">
+        {primaryTransport ? (
+          <div className="fabric-conn">
+            <div className="fabric-conn__line">
+              <strong>{transportKindLabel(primaryTransport.kind)}</strong>
+              <LivenessBadge status={primaryTransport.health} />
+              <span className="fabric-muted">{describeMeasurement(primaryTransport.measurement)}</span>
+            </div>
+            {primaryTransport.lastError && (
+              <div className="fabric-conn__error">最近错误：{primaryTransport.lastError}</div>
+            )}
+            {transportState === 'degraded' && (
+              <div className="fabric-conn__warn">线路不稳定（degraded），可能偶发断连。</div>
+            )}
+          </div>
+        ) : (
+          <Typography.Text type="secondary">还没有可用线路（未连接 / 未测量）。</Typography.Text>
+        )}
+        {view.relayNode && (
+          <div className="fabric-conn__relay">
+            作为中继：容量 {view.relayNode.capacityClass || 'tiny'} · 带宽 {formatBandwidthKbps(view.relayNode.bandwidthLimitKbps)}
+            {' · '}状态 {LIVENESS_LABEL[livenessOf(view.relayNode.status)]}
+          </div>
+        )}
+      </DetailBlock>
+
+      {/* 次要信息：默认折叠 */}
+      <Collapse
+        ghost
+        className="fabric-detail__more"
+        items={[
+          {
+            key: 'projects',
+            label: `项目（${view.projects.length}）`,
+            children: (
+              <SecondaryList
+                items={view.projects}
+                empty="暂无项目快照。"
+                getKey={(project) => project.id}
+                render={(project) => ({
+                  title: project.name || project.id,
+                  description: project.displayPath || project.vcs || project.id
+                })}
+              />
+            )
+          },
+          {
+            key: 'runtimes',
+            label: `AI 运行时（${view.runtimes.length}）`,
+            children: (
+              <SecondaryList
+                items={view.runtimes}
+                empty="暂无运行时；这台机器目前不能作为 Codex / Claude / AGY / OpenCode 的宿主。"
+                getKey={(runtime) => runtime.id}
+                render={(runtime) => ({
+                  title: `${providerLabel(runtime.provider)} · ${runtime.mode || 'tui'}`,
+                  description: `${runtime.version || '版本未知'} · ${runtime.status || 'available'}`
+                })}
+              />
+            )
+          },
+          {
+            key: 'transports',
+            label: `线路 / 传输（${view.transports.length}）`,
+            children: (
+              <SecondaryList
+                items={view.transports}
+                empty="暂无线路快照。"
+                getKey={(transport) => transport.id}
+                render={(transport) => ({
+                  title: (
+                    <span>
+                      {transportKindLabel(transport.kind)}{' '}
+                      <Tag color={livenessOf(transport.health) === 'online' ? 'green' : livenessOf(transport.health) === 'degraded' ? 'orange' : 'default'}>
+                        {LIVENESS_LABEL[livenessOf(transport.health)]}
+                      </Tag>
+                    </span>
+                  ),
+                  description: `${describeMeasurement(transport.measurement)}${transport.lastError ? ` · ${transport.lastError}` : ''}`
+                })}
+              />
+            )
+          }
+        ]}
+      />
+
+      <div className="fabric-detail__seen">最近可见：{formatTime(node.lastSeenAt)}</div>
+    </div>
+  );
 }
 
-const NODE_COLUMNS: ProColumns<FabricNodeInventoryItem>[] = [
-  {
-    title: '节点',
-    dataIndex: ['node', 'name'],
-    render: (_, { node }) => (
-      <Space direction="vertical" size={0} style={{ minWidth: 0 }}>
-        <strong style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {node.name || node.id}
-        </strong>
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>{node.id}</Typography.Text>
-      </Space>
-    )
-  },
-  {
-    title: '能力',
-    dataIndex: 'capabilities',
-    width: 200,
-    render: (_, view) => (
-      <Space size={[4, 4]} wrap>
-        <TagList items={nodeCapabilityTags(view)} emptyLabel="node" />
-      </Space>
-    )
-  },
-  {
-    title: '状态',
-    dataIndex: ['node', 'status'],
-    width: 150,
-    render: (_, { node }) => (
-      <Space direction="vertical" size={2} style={{ minWidth: 0 }}>
-        <StatusTag status={node.status || 'unknown'} />
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>{formatPlatform(node)}</Typography.Text>
-      </Space>
-    )
-  },
-  {
-    title: '资源',
-    dataIndex: 'projects',
-    width: 130,
-    render: (_, view) => (
-      <Space direction="vertical" size={0} style={{ fontSize: 12 }}>
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>{view.projects.length} projects</Typography.Text>
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>{view.runtimes.length} runtimes</Typography.Text>
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>{view.capabilities.transportState}</Typography.Text>
-      </Space>
-    )
-  },
-  {
-    title: 'lastSeen',
-    dataIndex: ['node', 'lastSeenAt'],
-    width: 170,
-    render: (_, view) => (
-      <Typography.Text type="secondary" style={{ fontSize: 12 }}>{formatTime(view.node.lastSeenAt)}</Typography.Text>
-    )
-  }
-];
+/* ============================================================================
+ * 页面
+ * ========================================================================== */
 
 export default function FabricNodes() {
   const navigate = useNavigate();
@@ -348,20 +435,9 @@ export default function FabricNodes() {
   const [error, setError] = useState('');
 
   const nodeViews = useMemo<FabricNodeInventoryItem[]>(
-    () => registry ? registry.nodeInventory : [],
+    () => (registry ? registry.nodeInventory : []),
     [registry]
   );
-  const relayViews = useMemo(
-    () => registry ? buildFabricRegistryRelayViews(registry) : [],
-    [registry]
-  );
-  const counts = registry?.counts || {
-    nodes: 0,
-    relayNodes: 0,
-    projects: 0,
-    runtimes: 0,
-    transports: 0
-  };
   const selectedNode = nodeViews.find((view) => view.node.id === selectedNodeId) || nodeViews[0] || null;
   const readyProfile = activeProfile && isControlPlaneProfileReady(activeProfile) ? activeProfile : null;
   const readyProfileKey = readyProfile
@@ -423,12 +499,18 @@ export default function FabricNodes() {
     loadRegistry();
   }, [loadRegistry, readyProfileKey]);
 
+  const handlePendingAction = useCallback((label: string) => {
+    message.info(`${label}：动作通道将在后续里程碑（M4）接入，当前仅展示可用性。`);
+  }, []);
 
+  const nodeCount = nodeViews.length;
+  const firstLoading = loading && !registry;
 
   return (
-    <PageScaffold ghost
-      title="节点总览 (Nodes)"
-      subTitle="所有能连上的机器统一显示为 Node；SSH、relay、provider runtime 和健康度都是 Node 的能力或观测结果。"
+    <PageScaffold
+      ghost
+      title={`节点总览${readyProfile && nodeCount ? `（${nodeCount}）` : ''}`}
+      subTitle="每台能连上的机器都是一个 Node：它是什么机器、能干什么、你能对它做什么、连得好不好，一眼看清。"
       extra={
         <Button
           type="primary"
@@ -437,7 +519,7 @@ export default function FabricNodes() {
           loading={loading}
           disabled={!readyProfile}
         >
-          刷新状态
+          刷新
         </Button>
       }
     >
@@ -446,10 +528,10 @@ export default function FabricNodes() {
           type="warning"
           showIcon
           style={{ marginBottom: 16 }}
-          message="未绑定有效的 Server Profile"
-          description="Fabric 监控需要从已授权的 Server Profile 读取 Registry 数据。请先完成配对设置。"
+          message="还没有连上服务器"
+          description="节点总览需要先连上一个已授权的服务器（Server Profile）才能读取机器列表。请先完成配对设置。"
           action={(
-            <Button size="small" onClick={() => navigate("/server-setup")}>
+            <Button size="small" onClick={() => navigate('/server-setup')}>
               去配置
             </Button>
           )}
@@ -461,180 +543,73 @@ export default function FabricNodes() {
           type="error"
           showIcon
           style={{ marginBottom: 16 }}
-          message="Registry 拓扑数据获取失败"
+          message="读取节点数据失败"
           description={error}
         />
       )}
 
       {readyProfile && (
         <>
-          {/* 控制面状态 */}
-          <SectionCard title="控制面状态">
-            <Descriptions size="small" column={{ xs: 1, sm: 2, md: 3 }} bordered>
-              <Descriptions.Item label="服务地址">{readyProfile.endpoint}</Descriptions.Item>
-              <Descriptions.Item label="连接状态">
-                <Space>
-                  <StatusTag status={readyProfile.state} />
-                  <StatusTag status={readyProfile.authState} />
-                </Space>
-              </Descriptions.Item>
-              <Descriptions.Item label="检测时间">{formatTime(readyProfile.lastCheckedAt || readyProfile.updatedAt)}</Descriptions.Item>
-            </Descriptions>
-          </SectionCard>
+          <div className="fabric-topline">
+            <span className="fabric-topline__label">服务器</span>
+            <span className="fabric-mono">{readyProfile.endpoint}</span>
+            <LivenessBadge status={readyProfile.state} />
+            <span className="fabric-muted">检测于 {formatTime(readyProfile.lastCheckedAt || readyProfile.updatedAt)}</span>
+          </div>
 
-          {/* 关键运营指标：节点 / 中继 / 运行会话。项目数、传输通道数已在节点表内逐行展示，剔除。 */}
-          <StatisticCard.Group direction="row" style={{ marginBottom: 16 }}>
-            <StatisticCard statistic={{ title: '计算节点数', value: loading ? '-' : counts.nodes, prefix: <ClusterOutlined /> }} />
-            <StatisticCard statistic={{ title: '中继中枢', value: loading ? '-' : counts.relayNodes, prefix: <CloudServerOutlined /> }} />
-            <StatisticCard statistic={{ title: '运行会话', value: loading ? '-' : counts.runtimes, prefix: <ToolOutlined /> }} />
-          </StatisticCard.Group>
-          <SectionCard title="计算节点列表" extra={<ApartmentOutlined />} bodyStyle={{ padding: 0 }}>
-            <ListTable<FabricNodeInventoryItem>
-              columns={NODE_COLUMNS}
-              dataSource={nodeViews}
-              rowKey={(row) => row.node.id}
-              loading={loading && !registry}
-              onRow={(record) => ({
-                onClick: () => setSelectedNodeId(record.node.id),
-                style: { cursor: 'pointer' }
-              })}
-              rowClassName={(record) => (
-                record.node.id === selectedNode?.node.id ? 'fabric-node-row-selected' : ''
-              )}
-            />
-          </SectionCard>
-
-          {selectedNode && (counts.nodes > 0) && (
-            <SectionCard
-              title={selectedNode?.node.name || selectedNode?.node.id || "节点属性详情"}
-              extra={selectedNode ? <StatusTag status={selectedNode.node.status || "unknown"} /> : null}
-            >
-              {/* 主从两栏：左＝身份/能力/中继元数据，右＝项目/运行时/传输清单；不再纵向平铺。
-                  Action Gating 与 actions 行重复，已剔除。 */}
-              <Row gutter={[24, 16]}>
-                <Col xs={24} lg={10}>
-                  <Space direction="vertical" size={16} style={{ display: 'flex' }}>
-                    <Descriptions
-                      column={1}
-                      size="small"
-                      colon={false}
-                      labelStyle={{ width: 105, color: 'var(--app-muted)', fontFamily: 'var(--font-mono)', fontSize: 11 }}
+          <div className="fabric-workbench">
+            {/* 左：节点列表 */}
+            <div className="fabric-node-list">
+              {firstLoading ? (
+                <div className="fabric-node-list__loading">
+                  <Spin />
+                </div>
+              ) : nodeCount === 0 ? (
+                <Empty
+                  className="fabric-node-list__empty"
+                  description="还没有任何机器上线。请在需要的机器上启动 AIH 并加入本服务器。"
+                />
+              ) : (
+                nodeViews.map((view) => {
+                  const active = selectedNode?.node.id === view.node.id;
+                  return (
+                    <button
+                      type="button"
+                      key={view.node.id}
+                      className={`fabric-node-item ${active ? 'fabric-node-item--active' : ''}`}
+                      onClick={() => setSelectedNodeId(view.node.id)}
                     >
-                      <Descriptions.Item label="roles">
-                        <TagList items={selectedNode.node.roles} emptyLabel="node" />
-                      </Descriptions.Item>
-                      <Descriptions.Item label="platform">
-                        <strong>{formatPlatform(selectedNode.node)}</strong>
-                      </Descriptions.Item>
-                      <Descriptions.Item label="capabilities">
-                        <TagList
-                          items={[
-                            ...(selectedNode.capabilities.server ? ['server'] : []),
-                            ...(selectedNode.capabilities.node ? ['node'] : []),
-                            ...(selectedNode.capabilities.relayNode ? [`relay:${selectedNode.capabilities.relayState}`] : []),
-                            ...(selectedNode.capabilities.projectHost ? ['project-host'] : []),
-                            ...(selectedNode.capabilities.runtimeHost ? ['runtime-host'] : []),
-                            ...(selectedNode.capabilities.sshBootstrap ? ['ssh-bootstrap'] : []),
-                            ...(selectedNode.capabilities.measured ? ['measured'] : [])
-                          ]}
-                          emptyLabel="none"
-                        />
-                      </Descriptions.Item>
-                      <Descriptions.Item label="actions">
-                        <ActionSummary actions={selectedNode.actions} />
-                      </Descriptions.Item>
-                    </Descriptions>
+                      <LivenessDot liveness={livenessOf(view.node.status)} />
+                      <span className="fabric-node-item__text">
+                        <span className="fabric-node-item__name" title={view.node.id}>
+                          {view.node.name || view.node.id}
+                        </span>
+                        <span className="fabric-node-item__sub">
+                          {platformLabel(view.node)} · {LIVENESS_LABEL[livenessOf(view.node.status)]}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
 
-                    {selectedNode.relayNode ? (
-                      <Descriptions
-                        title={<Typography.Text strong>Relay Metadata</Typography.Text>}
-                        size="small"
-                        column={1}
-                        bordered
-                      >
-                        <Descriptions.Item label="capacityClass">{selectedNode.relayNode.capacityClass || 'tiny'}</Descriptions.Item>
-                        <Descriptions.Item label="bandwidth">{formatBandwidthKbps(selectedNode.relayNode.bandwidthLimitKbps)}</Descriptions.Item>
-                        <Descriptions.Item label="status">{selectedNode.relayNode.status || 'unknown'}</Descriptions.Item>
-                        <Descriptions.Item label="measurement">{summarizeRelayMeasurement(selectedNode.transports)}</Descriptions.Item>
-                        <Descriptions.Item label="measured">{formatMeasuredAt(selectedNode.transports.find((transport) => transport.measurement)?.measurement?.measuredAt || selectedNode.relayNode.lastMeasuredAt)}</Descriptions.Item>
-                      </Descriptions>
-                    ) : (
-                      <div>
-                        <Typography.Text strong>Relay Metadata</Typography.Text>
-                        <Typography.Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0 }}>
-                          该 node 未声明 relay-node metadata。
-                        </Typography.Paragraph>
-                      </div>
-                    )}
-                  </Space>
-                </Col>
-
-                <Col xs={24} lg={14}>
-                  <Space direction="vertical" size={16} style={{ display: 'flex' }}>
-                    <NodeDetailList
-                      header="Projects"
-                      items={selectedNode.projects}
-                      empty="暂无 project snapshot。"
-                      getKey={(project) => project.id}
-                      render={(project) => ({
-                        title: project.name || project.id,
-                        description: (
-                          <Space direction="vertical" size={0}>
-                            <span>{project.displayPath || project.vcs || project.id}</span>
-                            <span>{project.permissions?.join(', ') || 'permissions unknown'}</span>
-                          </Space>
-                        )
-                      })}
-                    />
-
-                    <NodeDetailList
-                      header="Runtimes"
-                      items={selectedNode.runtimes}
-                      empty="暂无 provider runtime snapshot；该 node 目前不能作为 Codex / Claude / AGY / OpenCode runtime host。"
-                      getKey={(runtime) => runtime.id}
-                      render={(runtime) => ({
-                        title: `${normalizeText(runtime.provider)} / ${normalizeText(runtime.mode, 'tui')}`,
-                        description: (
-                          <Space direction="vertical" size={0}>
-                            <span>{runtime.version || 'version unknown'}</span>
-                            <span>{runtime.status || 'available'}</span>
-                          </Space>
-                        )
-                      })}
-                    />
-
-                    <NodeDetailList
-                      header="Transports"
-                      items={selectedNode.transports}
-                      empty="暂无 transport snapshot。"
-                      getKey={(transport) => transport.id}
-                      render={(transport) => ({
-                        title: transport.kind || transport.id,
-                        description: (
-                          <Space direction="vertical" size={0}>
-                            <span>{transport.endpoint || transport.provider || 'endpoint hidden'}</span>
-                            <span>{getTransportHealth(transport)} · {formatTransportMeasurement(transport)}{transport.lastError ? ` · ${transport.lastError}` : ''}</span>
-                          </Space>
-                        )
-                      })}
-                    />
-                  </Space>
-                </Col>
-              </Row>
-            </SectionCard>
-          )}
-
-          <SectionCard
-            title="中继中枢健康度 (Relay Health)"
-            extra={<CloudServerOutlined />}
-          >
-            <ListTable
-              columns={RELAY_COLUMNS}
-              dataSource={relayViews}
-              rowKey={(row) => row.relayNode.id}
-              loading={loading}
-            />
-          </SectionCard>
+            {/* 右：常驻详情栏 */}
+            <div className="fabric-node-panel">
+              {selectedNode ? (
+                <NodeDetail view={selectedNode} onPendingAction={handlePendingAction} />
+              ) : firstLoading ? (
+                <div className="fabric-node-panel__placeholder">
+                  <Spin />
+                </div>
+              ) : (
+                <Empty
+                  className="fabric-node-panel__placeholder"
+                  description="选择左侧一台机器查看详情。"
+                />
+              )}
+            </div>
+          </div>
         </>
       )}
     </PageScaffold>

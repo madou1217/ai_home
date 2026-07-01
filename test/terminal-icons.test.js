@@ -10,6 +10,8 @@ const {
   buildIterm2SetProfileSequence,
   buildProviderTerminalTitle,
   buildTerminalTitleSequence,
+  buildWindowsTerminalCommandLine,
+  buildWindowsTerminalStartingDirectory,
   buildKonsoleProfile,
   buildKonsoleSetProfileCommand,
   buildLinuxDesktopEntry,
@@ -27,8 +29,10 @@ const {
   resolveLinuxIconPath,
   resolveProviderTerminalIconPath,
   resolveWindowsTerminalFragmentPath,
+  resolveWindowsTerminalSettingsPath,
   runTerminalIconCommand,
   stableGuidForProvider,
+  syncWindowsTerminalSettingsProfiles,
   writeWarpAgentCommandSettings,
   writeIterm2DynamicProfiles,
   writeLinuxTerminalIconFiles,
@@ -120,6 +124,7 @@ test('windows terminal fragment uses provider profile icons', () => {
       guid: profile.guid,
       name: profile.name,
       commandline: profile.commandline,
+      startingDirectory: profile.startingDirectory,
       icon: profile.icon,
       hidden: profile.hidden
     })),
@@ -127,18 +132,41 @@ test('windows terminal fragment uses provider profile icons', () => {
       {
         guid: stableGuidForProvider('codex'),
         name: 'AIH ChatGPT',
-        commandline: 'aih codex',
+        commandline: 'cmd.exe /d /s /c "aih codex"',
+        startingDirectory: '%USERPROFILE%',
         icon: path.resolve('/repo', 'assets/provider-icons/codex.png'),
         hidden: false
       },
       {
         guid: stableGuidForProvider('claude'),
         name: 'AIH Claude',
-        commandline: 'aih claude',
+        commandline: 'cmd.exe /d /s /c "aih claude"',
+        startingDirectory: '%USERPROFILE%',
         icon: path.resolve('/repo', 'assets/provider-icons/claude.png'),
         hidden: false
       }
     ]
+  );
+});
+
+test('windows terminal profile starts from user home instead of System32', () => {
+  assert.equal(buildWindowsTerminalStartingDirectory(), '%USERPROFILE%');
+  assert.equal(
+    buildWindowsTerminalStartingDirectory({ startingDirectory: 'D:\\work' }),
+    'D:\\work'
+  );
+});
+
+test('windows terminal commandline runs through cmd so npm shims resolve', () => {
+  assert.equal(
+    buildWindowsTerminalCommandLine('codex'),
+    'cmd.exe /d /s /c "aih codex"'
+  );
+  assert.equal(
+    buildWindowsTerminalCommandLine('codex', {
+      aihCommand: 'C:\\Program Files\\AI Home\\aih.cmd'
+    }),
+    'cmd.exe /d /s /c ""C:\\Program Files\\AI Home\\aih.cmd" codex"'
   );
 });
 
@@ -198,6 +226,52 @@ test('writeWindowsTerminalFragment writes installable JSON', (t) => {
   assert.equal(written.profiles.length, 1);
   assert.equal(written.profiles[0].name, 'AIH Claude');
   assert.equal(written.profiles[0].icon, path.resolve('/repo', 'assets/provider-icons/claude.png'));
+});
+
+test('windows terminal install repairs matching settings profile commandline', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-terminal-settings-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const env = { LOCALAPPDATA: root };
+  const settingsPath = resolveWindowsTerminalSettingsPath({ path, env });
+  fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+  fs.writeFileSync(settingsPath, JSON.stringify({
+    profiles: {
+      list: [
+        {
+          guid: stableGuidForProvider('codex'),
+          hidden: false,
+          name: 'AIH ChatGPT',
+          source: 'AI Home'
+        }
+      ]
+    }
+  }, null, 2));
+
+  const result = writeWindowsTerminalFragment(['codex'], {
+    fs,
+    path,
+    env,
+    repoRoot: '/repo'
+  });
+  const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+  const profile = settings.profiles.list[0];
+
+  assert.equal(result.settings.changed, true);
+  assert.deepEqual(result.settings.profiles, ['AIH ChatGPT']);
+  assert.equal(profile.commandline, 'cmd.exe /d /s /c "aih codex"');
+  assert.equal(profile.startingDirectory, '%USERPROFILE%');
+  assert.equal(profile.icon, path.resolve('/repo', 'assets/provider-icons/codex.png'));
+});
+
+test('windows terminal settings sync skips missing settings file', () => {
+  const result = syncWindowsTerminalSettingsProfiles(['codex'], {
+    fs,
+    path,
+    env: { LOCALAPPDATA: path.join(os.tmpdir(), 'aih-terminal-settings-missing') }
+  });
+
+  assert.equal(result.changed, false);
+  assert.equal(result.skipped, 'missing-file');
 });
 
 test('iterm2 dynamic profile uses a real provider icon path', () => {

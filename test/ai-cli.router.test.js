@@ -107,7 +107,8 @@ test('`aih claude terminal-icon` is handled by ai-home instead of native passthr
   assert.deepEqual(errors, []);
   assert.deepEqual(runCalls, []);
   assert.equal(fragment.profiles[0].name, 'AIH Claude');
-  assert.equal(fragment.profiles[0].commandline, 'aih claude');
+  assert.equal(fragment.profiles[0].commandline, 'cmd.exe /d /s /c "aih claude"');
+  assert.equal(fragment.profiles[0].startingDirectory, '%USERPROFILE%');
   assert.equal(fragment.profiles[0].icon.endsWith(path.join('assets', 'provider-icons', 'claude.png')), true);
 });
 

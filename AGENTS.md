@@ -1,5 +1,10 @@
 # Repository Guidelines
 
+> This is the single source of truth for agent/contributor guidance in this repo. `CLAUDE.md` intentionally links here instead of duplicating content.
+
+## Project Overview
+`ai-home` (`aih`) manages multi-account sandboxed runs of Codex / Claude / Gemini / Antigravity (agy) and exposes them uniformly as one OpenAI/Anthropic-compatible gateway. Core capabilities: per-`(account, model)` routing and circuit-breaking, model-alias fallback, persistent tmux CLI sessions, and a React WebUI.
+
 ## Project Structure & Module Organization
 - `lib/` contains runtime code, CLI commands, server logic, and service modules.
 - `lib/cli/commands/` holds command routers and command entry logic.
@@ -9,18 +14,40 @@
 - `bin/ai-home.js` is the CLI executable entry.
 - Root documentation is intentionally limited to `AGENTS.md` and `README.md`.
 
+Fuller layer map:
+- `bin/` — CLI executable entry (`ai-home.js` → `lib/cli/app.js`).
+- `lib/cli/app.js` — composition root: imports all bootstrap wiring, dispatches commands.
+- `lib/cli/commands/` — command routers (root, ai-cli, backup).
+- `lib/cli/services/` — business logic (PTY, account orchestration, import/export, server daemon).
+- `lib/cli/bootstrap/` — dependency injection via explicit factory functions, no IoC container.
+- `lib/cli/config/` — constants, paths, feature flags.
+- `lib/server/` — gateway engine (~143 files): request ingestion → protocol translation → provider routing → circuit-breaking.
+- `lib/account/` — account domain: loading, identity, state cache, cross-host sync.
+- `lib/sessions/` — session reading: `session-reader.js` parses each provider's history.
+- `lib/runtime/` — platform abstraction: `persistent-session.js` (tmux), `pty-launch.js`.
+- `lib/usage/` — usage tracking, pricing, cycle scheduling.
+- `lib/protocol/` — SSE parsing, tool-call adaptation, token counting.
+- `web/src/` — React WebUI (pages + hooks + services).
+- `cli/src/` — vendored Claude Code (Bun/TypeScript, independent tech stack).
+- `test/` — all test files (`*.test.js`, ~155).
+
 ## Build, Test, and Development Commands
 - `npm install`: install dependencies.
 - `npm test`: run full test suite (`node --test test/*.test.js`).
 - `node --test test/backup.router.test.js`: run a focused test file during iteration.
 - `node bin/ai-home.js --help`: verify CLI bootstrap and command wiring.
 - `npm run postinstall`: repair local executable permissions/hooks (already runs after install).
+- `npm run web:dev`: WebUI dev server (`cd web && npm run dev`, Vite).
+- `npm run build`: build the WebUI (`cd web && tsc && vite build`).
+- `cd web && npm run lint`: lint the WebUI.
 
 ## Coding Style & Naming Conventions
-- Language: Node.js CommonJS (`require`, `module.exports`).
+- Main body (`lib/`): Node.js CommonJS (`require`, `module.exports`).
 - Formatting style in repo: 2-space indentation, semicolons, single quotes.
 - File names use kebab-case (for example `account-import-orchestrator.js`).
 - Prefer small, composable functions; avoid feature growth in one large file.
+- `cli/`: TypeScript ESM, run by Bun (vendored Claude Code source — do not modify unless necessary).
+- `web/`: TypeScript + React 18 + Ant Design + Vite, ESM.
 
 ## Architecture & Layering Principles
 - Enforce separation of concerns: each module should have one clear responsibility (composition, domain logic, integration, or I/O).
@@ -59,6 +86,12 @@
 - Discovery / re-attach UX: `aih <provider> sessions [id]` lists an account's live sessions and prints the exact re-attach command for each.
 - Gating: best-effort — applied only when a tmux engine is found, stdout is a TTY, the run is not a login/oauth flow, and `AIH_PERSIST_ACTIVE` is unset (avoids nesting). Escape hatch: `AIH_NO_PERSIST=1`.
 - Cross-platform: the engine is real tmux on macOS / Linux / WSL. On **native Windows** `detectTmux()` looks for a tmux-compatible binary — `psmux` (native ConPTY, speaks tmux's CLI) first, then an MSYS2/Cygwin `tmux.exe` (`C:\msys64\usr\bin`, `C:\cygwin64\bin`) or anything named `tmux` on PATH. If none is found, persistence degrades to a plain direct spawn and `sessions` prints an install hint (psmux / MSYS2). The Windows wiring is implemented but needs validation on a Windows host.
+
+## Gateway & Account Internals
+- Gateway routing (`lib/server/`): request enters → `router.js` (account selection + failure/success accounting) → `capability-router.js` (route by provider capability) → `protocol-*.js` (OpenAI/Anthropic/Gemini protocol translation) → upstream.
+- Account unique identity: `accountId` is only a mutable CLI-internal index; the persisted truth is `unique_key` (email for OAuth accounts, url+keyhash for API-key accounts). Single source: `lib/account/account-identity.js`.
+- Model alias + circuit-breaking: aliases resolve fallback at runtime and `/v1/models` does not expose the wildcard `claude-*`; 429s trip a circuit breaker at `(account, model)` granularity rather than locking the whole account.
+- WebUI real-time push: `session-event-bus.js` → `webui-sse-broadcaster.js` → browser SSE connection.
 
 ## Testing Guidelines
 - Framework: built-in Node test runner (`node:test`) with `assert/strict`.

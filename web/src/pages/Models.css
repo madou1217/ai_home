@@ -136,10 +136,10 @@
 .models-model-row {
   display: grid;
   min-width: 0;
-  grid-template-columns: minmax(220px, 1fr) 96px 148px;
+  grid-template-columns: minmax(220px, 1fr) 96px 176px;
   align-items: center;
   gap: 12px;
-  min-height: 58px;
+  min-height: 76px;
   padding: 10px 12px;
   border: 1px solid var(--app-border);
   border-radius: var(--app-radius-sm);
@@ -156,8 +156,10 @@
   min-width: 0;
   align-items: center;
   gap: 8px;
+  min-height: 24px;
 }
 .models-model-title-line h3 {
+  flex: 0 1 auto;
   overflow: hidden;
   min-width: 0;
   margin: 0;
@@ -174,6 +176,7 @@
   flex: 0 0 auto;
   align-items: center;
   gap: 6px;
+  min-height: 22px;
   margin-top: 6px;
 }
 .models-model-row p {
@@ -203,13 +206,20 @@
 }
 .models-model-default-control {
   display: inline-flex;
-  min-width: 0;
+  min-width: 132px;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
   color: var(--app-muted-strong);
   font-size: 12px;
   font-weight: 800;
   white-space: nowrap;
+}
+.models-model-default-control--active {
+  color: var(--c-success-600);
+}
+.models-model-default-switch.ant-switch {
+  min-width: 58px;
 }
 .models-global-row {
   display: grid;
@@ -263,15 +273,19 @@
   gap: 4px;
   margin-inline-end: 0;
 }
-/* 复制图标紧跟在模型 ID 后面：空闲时彻底不占位（display:none，不会在名字旁留缺口），
- * 行 hover 时才出现，紧贴 ID 之后。 */
+/* 复制图标紧跟在模型 ID 后面：固定占位，只切换透明度，避免 hover 造成 row 高度/换行抖动。 */
 .models-global-title-line .copy-icon-btn,
 .models-model-title-line .copy-icon-btn {
-  display: none;
+  display: inline-flex;
+  opacity: 0;
+  pointer-events: none;
 }
 .models-global-row:hover .models-global-title-line .copy-icon-btn,
-.models-model-row:hover .models-model-title-line .copy-icon-btn {
-  display: inline-flex;
+.models-model-row:hover .models-model-title-line .copy-icon-btn,
+.models-global-title-line .copy-icon-btn:focus-visible,
+.models-model-title-line .copy-icon-btn:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
 }
 .models-global-main p {
   overflow: hidden;
@@ -309,6 +323,10 @@
 .models-global-title-line {
     align-items: flex-start;
     flex-direction: column;
+  }
+.models-model-title-line {
+    align-items: center;
+    flex-direction: row;
   }
 .models-global-providers {
     width: 100%;

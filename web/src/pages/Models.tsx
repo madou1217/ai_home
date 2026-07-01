@@ -626,6 +626,10 @@ export default function Models() {
   const renderModelRow = (model: ManagedOpenAIModelItem) => {
     const enabled = model.enabled !== false;
     const rowKey = getModelRowKey(model);
+    const defaultControlLabel = model.defaultModel ? '当前默认' : '设为默认';
+    const defaultControlTip = model.defaultModel
+      ? '当前账号默认模型；切换其他模型即可替换'
+      : (enabled ? '设为此账号默认模型' : '启用模型后可设为默认');
     return (
       <div className={`models-model-row ${enabled ? '' : 'models-model-row--disabled'}`.trim()} key={rowKey}>
         <div className="models-model-row-main">
@@ -658,19 +662,22 @@ export default function Models() {
           <span>{enabled ? '启用' : '停用'}</span>
         </div>
         <div className="models-model-row-actions">
-          <div className="models-model-default-control">
-            <Switch
-              size="small"
-              checked={model.defaultModel === true}
-              disabled={!enabled || updatingModelKeys.has(rowKey)}
-              loading={updatingModelKeys.has(rowKey)}
-              checkedChildren="默认"
-              unCheckedChildren="默认"
-              aria-label={`默认模型 ${model.accountRef} ${model.id}`}
-              onChange={(checked) => updateModelDefault(model, checked)}
-            />
-            <span>{model.defaultModel ? '默认模型' : '设为默认'}</span>
-          </div>
+          <Tooltip title={defaultControlTip}>
+            <div className={`models-model-default-control ${model.defaultModel ? 'models-model-default-control--active' : ''}`.trim()}>
+              <Switch
+                className="models-model-default-switch"
+                size="small"
+                checked={model.defaultModel === true}
+                disabled={!enabled || updatingModelKeys.has(rowKey)}
+                loading={updatingModelKeys.has(rowKey)}
+                checkedChildren="默认"
+                unCheckedChildren="设为"
+                aria-label={`默认模型 ${model.accountRef} ${model.id}`}
+                onChange={(checked) => updateModelDefault(model, checked)}
+              />
+              <span>{defaultControlLabel}</span>
+            </div>
+          </Tooltip>
           {model.manual ? (
             <Tooltip title="删除手动模型">
               <Button

@@ -1,3 +1,4 @@
+import { resolveWebUiDeviceToken } from './api';
 import type {
   ControlPlaneDescriptor,
   ControlPlaneDescriptorResponse,
@@ -43,6 +44,12 @@ export { normalizeControlPlaneEndpoint };
 const STORAGE_KEY = 'aih:control-plane-profiles:v1';
 export const CONTROL_PLANE_PROFILES_CHANGED_EVENT = 'aih:control-plane-profiles-changed';
 const SHARED_PROFILE_API_PATH = '/v0/webui/control-plane/profiles';
+
+// R2 鉴权门:共享 profile 同步是裸 fetch,需自带设备 token(无 token 时 401,由调用方 catch 静默)。
+function sharedProfileAuthHeaders(): Record<string, string> {
+  const token = resolveWebUiDeviceToken();
+  return token ? { authorization: `Bearer ${token}` } : {};
+}
 const DEFAULT_DESCRIPTOR_TIMEOUT_MS = 8000;
 const DEFAULT_DEVICE_REQUEST_TIMEOUT_MS = 10000;
 const DEFAULT_PAIR_REQUEST_TIMEOUT_MS = 10000;
@@ -1197,7 +1204,7 @@ async function readSharedControlPlaneProfiles(options: { fetchImpl?: typeof fetc
   if (!fetcher) return { profiles: [], activeProfileId: '' };
   const response = await fetcher(SHARED_PROFILE_API_PATH, {
     method: 'GET',
-    headers: { accept: 'application/json' },
+    headers: { accept: 'application/json', ...sharedProfileAuthHeaders() },
     credentials: 'same-origin'
   });
   if (!response.ok) {
@@ -1217,7 +1224,8 @@ function persistSharedControlPlaneProfile(
     method: 'POST',
     headers: {
       accept: 'application/json',
-      'content-type': 'application/json'
+      'content-type': 'application/json',
+      ...sharedProfileAuthHeaders()
     },
     credentials: 'same-origin',
     body: JSON.stringify({
@@ -1233,7 +1241,7 @@ function removeSharedControlPlaneProfile(profileId: string, options: { fetchImpl
   if (!fetcher || !id) return;
   fetcher(`${SHARED_PROFILE_API_PATH}/${encodeURIComponent(id)}`, {
     method: 'DELETE',
-    headers: { accept: 'application/json' },
+    headers: { accept: 'application/json', ...sharedProfileAuthHeaders() },
     credentials: 'same-origin'
   }).catch(() => {});
 }

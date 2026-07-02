@@ -1,3 +1,4 @@
+import { withWebUiAccessToken } from '@/services/api';
 export type FilePreviewKind = 'image' | 'markdown' | 'source';
 export type FilePreviewMode = 'source' | 'rendered' | 'image';
 
@@ -175,7 +176,7 @@ export function buildFileMediaUrl(filePath: string, projectPath?: string, source
   params.set('path', filePath);
   if (projectPath) params.set('projectPath', projectPath);
   if (source) params.set('source', source);
-  return `/v0/webui/fs/media?${params.toString()}`;
+  return withWebUiAccessToken(`/v0/webui/fs/media?${params.toString()}`);
 }
 
 export function buildFileBackedImageUrl(filePath: string, projectPath?: string, source?: string) {

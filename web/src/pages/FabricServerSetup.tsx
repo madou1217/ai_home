@@ -515,6 +515,22 @@ export default function FabricServerSetup() {
         />
       </StatisticCard.Group>
 
+      {new URLSearchParams(location.search).get('gate') === '1' && (
+        <Alert
+          style={{ marginBottom: 16 }}
+          type="info"
+          showIcon
+          message="需要授权才能使用此 Server"
+          description={
+            <span>
+              这个浏览器还没有与当前 server 配对（未授权时看不到任何数据）。
+              在 server 所在机器的终端运行 <Typography.Text code>aih fabric profile invite</Typography.Text>，
+              把打印出的 browser url 在本浏览器打开即可完成配对。
+            </span>
+          }
+        />
+      )}
+
       {endpointIsLoopback && (
         <Alert
           style={{ marginBottom: 16 }}

@@ -3,7 +3,7 @@ import { Layout, message, Empty, Modal, Input, Drawer, Grid, Breadcrumb } from '
 import { ModalForm } from '@ant-design/pro-components';
 import Button from '@/components/ui/AppButton';
 import PageScaffold from '@/components/ui/PageScaffold';
-import { chatAPI, accountsAPI, sessionsAPI, isSessionRequestCancelled } from '@/services/api';
+import { chatAPI, accountsAPI, sessionsAPI, isSessionRequestCancelled, withWebUiAccessToken } from '@/services/api';
 import type {
   ChatMessage,
   Account,
@@ -699,7 +699,7 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
     if (session.projectDirName) params.set('projectDirName', session.projectDirName);
 
     const state = {
-      eventSource: new EventSource(`/v0/webui/sessions/watch?${params.toString()}`),
+      eventSource: new EventSource(withWebUiAccessToken(`/v0/webui/sessions/watch?${params.toString()}`)),
       cursor: 0,
       reconnectTimer: null as number | null
     };
@@ -949,7 +949,7 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
       params.set('projectDirName', session.projectDirName);
     }
 
-    const eventSource = new EventSource(`/v0/webui/sessions/watch?${params.toString()}`);
+    const eventSource = new EventSource(withWebUiAccessToken(`/v0/webui/sessions/watch?${params.toString()}`));
     sessionWatchRef.current = eventSource;
 
     eventSource.onmessage = (evt) => {

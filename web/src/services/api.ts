@@ -69,6 +69,53 @@ const api = axios.create({
   }
 });
 
+/* ── WebUI 鉴权门（R2）：本 server 的 /v0/webui/* 需要已配对设备 token（localhost 不豁免）──
+ * token 来源：localStorage 里 endpoint 与当前页面同源(回环等价)的已配对 profile。
+ * 常规请求走 Authorization header；EventSource/WebSocket 无法带 header，用 ?access_token=。 */
+const GATE_PROFILE_STORAGE_KEY = 'aih:control-plane-profiles:v1';
+
+function normalizeGateHost(host: string) {
+  const value = String(host || '').toLowerCase();
+  return value === 'localhost' || value === '[::1]' || value === '::1' ? '127.0.0.1' : value;
+}
+
+export function resolveWebUiDeviceToken(): string {
+  try {
+    if (typeof window === 'undefined') return '';
+    const origin = new URL(window.location.origin);
+    const raw = window.localStorage.getItem(GATE_PROFILE_STORAGE_KEY);
+    const profiles = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(profiles)) return '';
+    for (const profile of profiles) {
+      const token = String(profile?.deviceToken || '').trim();
+      if (!token || profile?.authState !== 'paired' || profile?.state === 'revoked') continue;
+      try {
+        const endpoint = new URL(String(profile.endpoint || ''));
+        if (normalizeGateHost(endpoint.hostname) === normalizeGateHost(origin.hostname)
+          && String(endpoint.port || '80') === String(origin.port || '80')) {
+          return token;
+        }
+      } catch (_error) { /* 无效 endpoint，跳过 */ }
+    }
+  } catch (_error) { /* localStorage 不可用等，视为无 token */ }
+  return '';
+}
+
+/** 给 EventSource/WebSocket 的 /v0/webui/* 路径追加 access_token。 */
+export function withWebUiAccessToken(pathname: string): string {
+  const token = resolveWebUiDeviceToken();
+  if (!token) return pathname;
+  return `${pathname}${pathname.includes('?') ? '&' : '?'}access_token=${encodeURIComponent(token)}`;
+}
+
+function redirectToWebUiGate() {
+  try {
+    if (typeof window === 'undefined') return;
+    if ((window.location.pathname || '').includes('/server-setup')) return;
+    window.location.href = '/ui/server-setup?gate=1';
+  } catch (_error) { /* ignore */ }
+}
+
 const SESSION_REQUEST_SCOPE = 'session-message-stream';
 const sessionAbortControllers = new Map<string, AbortController>();
 const inflightSessionRequests = new Map<string, Promise<any>>();
@@ -113,6 +160,18 @@ function buildSessionSupersedeKey(url: string) {
 }
 
 api.interceptors.request.use((config) => {
+  // R2 鉴权门：为本 server 的请求附加设备 token。
+  const gateToken = resolveWebUiDeviceToken();
+  if (gateToken) {
+    const headers: any = config.headers ?? {};
+    if (typeof headers.set === 'function') {
+      if (!headers.get?.('Authorization')) headers.set('Authorization', `Bearer ${gateToken}`);
+    } else if (!headers.Authorization) {
+      headers.Authorization = `Bearer ${gateToken}`;
+    }
+    config.headers = headers;
+  }
+
   const fullUrl = normalizeRequestUrl(config);
   const requestKey = buildSessionRequestKey(fullUrl);
   const supersedeKey = buildSessionSupersedeKey(fullUrl);
@@ -146,6 +205,11 @@ api.interceptors.response.use(
     const requestKey = (error.config as any)?.__sessionRequestKey;
     if (requestKey) {
       sessionAbortControllers.delete(requestKey);
+    }
+    // R2 鉴权门：未授权 → 引导去配对页。
+    if (error.response?.status === 401
+      && (error.response.data as any)?.error === 'webui_unauthorized') {
+      redirectToWebUiGate();
     }
     return Promise.reject(error);
   }
@@ -304,7 +368,7 @@ export const accountsAPI = {
 
     const connect = () => {
       if (closed) return;
-      socket = new WebSocket(buildWebSocketUrl('/v0/webui/accounts/watch'));
+      socket = new WebSocket(buildWebSocketUrl(withWebUiAccessToken('/v0/webui/accounts/watch')));
       socket.onmessage = (event) => {
         try {
           dispatchAccountsWatchPayload(JSON.parse(String(event.data || '{}')), handlers);
@@ -638,7 +702,7 @@ export const sessionsAPI = {
     onConnected?: () => void;
     onError?: () => void;
   }) => {
-    const eventSource = new EventSource('/v0/webui/projects/watch');
+    const eventSource = new EventSource(withWebUiAccessToken('/v0/webui/projects/watch'));
     eventSource.onopen = () => {
       handlers.onConnected?.();
     };
@@ -860,7 +924,7 @@ export const modelsAPI = {
     onSnapshot?: (jobs: WebUiOpenAIModelsJob[]) => void;
     onError?: () => void;
   }) => {
-    const eventSource = new EventSource('/v0/webui/openai-models/watch');
+    const eventSource = new EventSource(withWebUiAccessToken('/v0/webui/openai-models/watch'));
     eventSource.onmessage = (event) => {
       try {
         const payload = JSON.parse(String(event.data || '{}'));
@@ -1027,7 +1091,7 @@ export const managementAPI = {
     onConnected?: () => void;
     onError?: () => void;
   }) => {
-    const eventSource = new EventSource('/v0/webui/management/watch');
+    const eventSource = new EventSource(withWebUiAccessToken('/v0/webui/management/watch'));
     eventSource.onopen = () => {
       handlers.onConnected?.();
     };
@@ -1131,7 +1195,7 @@ export const modelUsageAPI = {
     onSnapshot?: (jobs: ModelUsageScanJob[]) => void;
     onError?: () => void;
   }) => {
-    const eventSource = new EventSource('/v0/webui/management/usage/scan/watch');
+    const eventSource = new EventSource(withWebUiAccessToken('/v0/webui/management/usage/scan/watch'));
     eventSource.onmessage = (event) => {
       try {
         const payload = JSON.parse(String(event.data || '{}'));

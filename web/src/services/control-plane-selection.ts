@@ -1,4 +1,5 @@
 import type { ControlPlaneProfile } from '@/types';
+import { resolveWebUiDeviceToken } from './api';
 
 const ACTIVE_CONTROL_PLANE_STORAGE_KEY = 'aih:active-control-plane-profile:v1';
 export const ACTIVE_CONTROL_PLANE_CHANGED_EVENT = 'aih:active-control-plane-profile-changed';
@@ -71,7 +72,8 @@ function persistSharedActiveControlPlaneProfileId(profileId: string) {
     method: 'POST',
     headers: {
       accept: 'application/json',
-      'content-type': 'application/json'
+      'content-type': 'application/json',
+      ...(resolveWebUiDeviceToken() ? { authorization: `Bearer ${resolveWebUiDeviceToken()}` } : {})
     },
     credentials: 'same-origin',
     body: JSON.stringify({ profileId: id })

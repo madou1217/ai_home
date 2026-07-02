@@ -1,4 +1,5 @@
 import { memo, useMemo, useState, useCallback, Fragment, type ReactNode } from 'react';
+import { withWebUiAccessToken } from '@/services/api';
 import { Avatar } from 'antd';
 import {
   WarningOutlined, CheckOutlined,
@@ -297,7 +298,7 @@ function stripImageReferenceTags(content: string) {
 }
 
 function toServedImageUrl(filePath: string) {
-  return `/v0/webui/chat/attachments?path=${encodeURIComponent(filePath)}`;
+  return withWebUiAccessToken(`/v0/webui/chat/attachments?path=${encodeURIComponent(filePath)}`);
 }
 
 function toRenderableImageUrl(source: string) {

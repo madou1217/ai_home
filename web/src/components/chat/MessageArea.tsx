@@ -54,6 +54,10 @@ const isChatSelectableAccount = (account: Account) => {
   return true;
 };
 
+// 账号模型目录缓存（accountRef→启用模型）：切账号时先用缓存立即渲染，后台异步刷新，
+// 避免每次点开会话/切账号都清空重拉、闪一下"无可用模型"。
+const accountModelCatalogCache = new Map<string, { ids: string[]; defaultModel: string }>();
+
 function findCodexUsageWindow(account: Account, window: '5h' | '7days') {
   if (account.provider !== 'codex' || account.apiKeyMode) return null;
   const snapshot = account.usageSnapshot;
@@ -134,7 +138,9 @@ const MessageArea = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingVisualTsRef = useRef<number>(Date.now());
   const [showScrollBottom, setShowScrollBottom] = useState(false);
-  const [accountModelState, setAccountModelState] = useState<{ accountRef: string; ids: string[]; defaultModel: string }>({ accountRef: '', ids: [], defaultModel: '' });
+  const [accountModelState, setAccountModelState] = useState<{ accountRef: string; ids: string[]; defaultModel: string; loading: boolean }>(() => {
+    return { accountRef: '', ids: [], defaultModel: '', loading: false };
+  });
   const [slashCommands, setSlashCommands] = useState<NativeSlashCommand[]>([]);
   const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
   const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
@@ -187,26 +193,41 @@ const MessageArea = ({
   const accountModelIds = accountModelState.accountRef === selectedAccountRef ? accountModelState.ids : [];
 
   // 加载当前账号启用模型：会话框只能使用账号投影，不能回退到 provider 聚合列表。
+  // 缓存优先 + 后台异步刷新：切账号时若有缓存立即显示（不清空、不闪"无可用模型"），
+  // 同时后台拉最新，回来再更新缓存与显示。
   useEffect(() => {
     if (!selectedAccountRef) {
-      setAccountModelState({ accountRef: '', ids: [], defaultModel: '' });
+      setAccountModelState({ accountRef: '', ids: [], defaultModel: '', loading: false });
       return;
     }
 
     let cancelled = false;
-    setAccountModelState({ accountRef: selectedAccountRef, ids: [], defaultModel: '' });
+    const cached = accountModelCatalogCache.get(selectedAccountRef);
+    // 先渲染缓存（若有），并标记后台刷新中；无缓存则空列表 + loading（显示"加载中…"而非"无可用模型"）。
+    setAccountModelState({
+      accountRef: selectedAccountRef,
+      ids: cached ? cached.ids : [],
+      defaultModel: cached ? cached.defaultModel : '',
+      loading: true
+    });
     modelsAPI.listCatalog({ accountRef: selectedAccountRef })
       .then((catalog) => {
+        const next = {
+          ids: listAccountEnabledModels(catalog, selectedAccountRef),
+          defaultModel: getAccountDefaultModel(catalog, selectedAccountRef)
+        };
+        accountModelCatalogCache.set(selectedAccountRef, next);
         if (!cancelled) {
-          setAccountModelState({
-            accountRef: selectedAccountRef,
-            ids: listAccountEnabledModels(catalog, selectedAccountRef),
-            defaultModel: getAccountDefaultModel(catalog, selectedAccountRef)
-          });
+          setAccountModelState({ accountRef: selectedAccountRef, ...next, loading: false });
         }
       })
       .catch(() => {
-        if (!cancelled) setAccountModelState({ accountRef: selectedAccountRef, ids: [], defaultModel: '' });
+        // 刷新失败：保留缓存内容，仅结束 loading，不清空成"无可用模型"。
+        if (!cancelled) {
+          setAccountModelState((prev) => (
+            prev.accountRef === selectedAccountRef ? { ...prev, loading: false } : prev
+          ));
+        }
       });
 
     return () => {
@@ -355,6 +376,9 @@ const MessageArea = ({
   const isTerminated = isTerminatedProp || session?.status === 'stopped' || session?.status === 'archived';
   const accountDefaultModel = accountModelState.accountRef === selectedAccountRef ? accountModelState.defaultModel : '';
   const models = accountModelIds.map(m => ({ label: m, value: m }));
+  const modelsLoading = accountModelState.accountRef === selectedAccountRef && accountModelState.loading;
+  // 加载中且暂无模型 → "加载中…"；确实空 → "无可用模型"。避免刷新窗口误显示"无可用模型"。
+  const emptyModelHint = modelsLoading && models.length === 0 ? '加载中…' : '无可用模型';
   const effectiveSelectedModel = selectedModel || models[0]?.value || '';
   const hasAccountModel = Boolean(effectiveSelectedModel);
   const canSend = !isTerminated && hasAccountModel && trimmedInput.length > 0
@@ -804,7 +828,7 @@ const MessageArea = ({
                 >
                   <div className={styles.mobileComposerMeta}>
                     <span>{mobileAccountSummary}</span>
-                    <span>{effectiveSelectedModel || '无可用模型'}</span>
+                    <span>{effectiveSelectedModel || emptyModelHint}</span>
                   </div>
                 </button>
               ) : (
@@ -829,12 +853,12 @@ const MessageArea = ({
                   }}
                   dropdownRender={(menu) => (
                     <div style={{ background: '#fff', borderRadius: 12, padding: '4px 0', boxShadow: '0 4px 24px rgba(0,0,0,0.08)', minWidth: 160 }}>
-                      {models.length === 0 ? <div style={{ padding: '12px', textAlign: 'center', color: '#999', fontSize: 13 }}>无可用模型</div> : menu}
+                      {models.length === 0 ? <div style={{ padding: '12px', textAlign: 'center', color: '#999', fontSize: 13 }}>{emptyModelHint}</div> : menu}
                     </div>
                   )}
                 >
                   <button type="button" className={styles.metaDropdownBtn}>
-                    <span>{effectiveSelectedModel || '无可用模型'}</span>
+                    <span>{effectiveSelectedModel || emptyModelHint}</span>
                     <DownOutlined style={{ fontSize: 10, color: '#9ca3af', marginLeft: 2 }} />
                   </button>
                 </Dropdown>
@@ -965,7 +989,7 @@ const MessageArea = ({
               onChange={onModelChange}
               options={models}
               disabled={models.length === 0}
-              placeholder="无可用模型"
+              placeholder={emptyModelHint}
               style={{ width: '100%' }}
               size="large"
             />

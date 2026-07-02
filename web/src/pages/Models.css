@@ -206,7 +206,7 @@
 }
 .models-model-default-control {
   display: inline-flex;
-  min-width: 132px;
+  min-width: 72px;
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
@@ -217,9 +217,6 @@
 }
 .models-model-default-control--active {
   color: var(--c-success-600);
-}
-.models-model-default-switch.ant-switch {
-  min-width: 58px;
 }
 .models-global-row {
   display: grid;

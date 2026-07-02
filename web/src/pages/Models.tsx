@@ -626,7 +626,7 @@ export default function Models() {
   const renderModelRow = (model: ManagedOpenAIModelItem) => {
     const enabled = model.enabled !== false;
     const rowKey = getModelRowKey(model);
-    const defaultControlLabel = model.defaultModel ? '当前默认' : '设为默认';
+    const defaultControlLabel = '默认';
     const defaultControlTip = model.defaultModel
       ? '当前账号默认模型；切换其他模型即可替换'
       : (enabled ? '设为此账号默认模型' : '启用模型后可设为默认');
@@ -666,12 +666,9 @@ export default function Models() {
             <div className={`models-model-default-control ${model.defaultModel ? 'models-model-default-control--active' : ''}`.trim()}>
               <Switch
                 className="models-model-default-switch"
-                size="small"
                 checked={model.defaultModel === true}
                 disabled={!enabled || updatingModelKeys.has(rowKey)}
                 loading={updatingModelKeys.has(rowKey)}
-                checkedChildren="默认"
-                unCheckedChildren="设为"
                 aria-label={`默认模型 ${model.accountRef} ${model.id}`}
                 onChange={(checked) => updateModelDefault(model, checked)}
               />

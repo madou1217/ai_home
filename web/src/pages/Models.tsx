@@ -626,7 +626,6 @@ export default function Models() {
   const renderModelRow = (model: ManagedOpenAIModelItem) => {
     const enabled = model.enabled !== false;
     const rowKey = getModelRowKey(model);
-    const defaultControlLabel = '默认';
     const defaultControlTip = model.defaultModel
       ? '当前账号默认模型；切换其他模型即可替换'
       : (enabled ? '设为此账号默认模型' : '启用模型后可设为默认');
@@ -654,25 +653,28 @@ export default function Models() {
         </div>
         <div className="models-model-row-state">
           <Switch
+            className="models-model-switch"
             checked={enabled}
             loading={updatingModelKeys.has(rowKey)}
+            checkedChildren="启用"
+            unCheckedChildren="停用"
             aria-label={`${enabled ? '停用' : '启用'} ${model.accountRef} ${model.id}`}
             onChange={(checked) => updateModelEnabled(model, checked)}
           />
-          <span>{enabled ? '启用' : '停用'}</span>
         </div>
         <div className="models-model-row-actions">
           <Tooltip title={defaultControlTip}>
             <div className={`models-model-default-control ${model.defaultModel ? 'models-model-default-control--active' : ''}`.trim()}>
               <Switch
-                className="models-model-default-switch"
+                className="models-model-switch models-model-default-switch"
                 checked={model.defaultModel === true}
                 disabled={!enabled || updatingModelKeys.has(rowKey)}
                 loading={updatingModelKeys.has(rowKey)}
+                checkedChildren="默认"
+                unCheckedChildren="默认"
                 aria-label={`默认模型 ${model.accountRef} ${model.id}`}
                 onChange={(checked) => updateModelDefault(model, checked)}
               />
-              <span>{defaultControlLabel}</span>
             </div>
           </Tooltip>
           {model.manual ? (

@@ -206,17 +206,15 @@
 }
 .models-model-default-control {
   display: inline-flex;
-  min-width: 72px;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
-  color: var(--app-muted-strong);
-  font-size: 12px;
-  font-weight: 800;
-  white-space: nowrap;
 }
 .models-model-default-control--active {
   color: var(--c-success-600);
+}
+/* 全行开关统一宽度：文字内嵌(启用/停用/默认)，两开关同尺寸。 */
+.models-model-switch.ant-switch {
+  min-width: 56px;
 }
 .models-global-row {
   display: grid;

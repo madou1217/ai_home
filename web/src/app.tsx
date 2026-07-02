@@ -1,5 +1,6 @@
 import type { Settings as LayoutSettings } from "@ant-design/pro-components";
 import ControlPlaneProfileSelect from "@/components/control-plane/ControlPlaneProfileSelect";
+import CurrentServerBadge from "@/components/control-plane/CurrentServerBadge";
 import { FABRIC_SERVER_SETUP_HREF } from "@/services/fabric-profile-gate";
 import logo from "@/assets/brand/ai-home-logo.png";
 
@@ -22,6 +23,7 @@ export const layout = ({ initialState }: any) => {
   return {
     logo,
     title: "AIH",
+    rightContentRender: () => <CurrentServerBadge />,
     menuFooterRender: () => (
       <div style={{ padding: "8px 12px" }}>
         <ControlPlaneProfileSelect

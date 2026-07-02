@@ -124,6 +124,23 @@ export function resolveActiveServer(): { serverId: string; isRemote: boolean } {
   }
 }
 
+/** 打开 /v0/webui/* 的 SSE；远端 server 时返回不连接的 stub
+ * （缓冲代理不支持长连，且连本地会串本机推送数据）。 */
+export function guardedWebUiEventSource(path: string): EventSource {
+  if (resolveActiveServer().isRemote) {
+    return {
+      close: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      onmessage: null,
+      onerror: null,
+      onopen: null,
+      readyState: 2
+    } as unknown as EventSource;
+  }
+  return new EventSource(withWebUiAccessToken(path));
+}
+
 /** 给 EventSource/WebSocket 的 /v0/webui/* 路径追加 access_token。 */
 export function withWebUiAccessToken(pathname: string): string {
   const token = resolveWebUiDeviceToken();
@@ -732,7 +749,7 @@ export const sessionsAPI = {
     onConnected?: () => void;
     onError?: () => void;
   }) => {
-    const eventSource = new EventSource(withWebUiAccessToken('/v0/webui/projects/watch'));
+    const eventSource = guardedWebUiEventSource('/v0/webui/projects/watch');
     eventSource.onopen = () => {
       handlers.onConnected?.();
     };
@@ -954,7 +971,7 @@ export const modelsAPI = {
     onSnapshot?: (jobs: WebUiOpenAIModelsJob[]) => void;
     onError?: () => void;
   }) => {
-    const eventSource = new EventSource(withWebUiAccessToken('/v0/webui/openai-models/watch'));
+    const eventSource = guardedWebUiEventSource('/v0/webui/openai-models/watch');
     eventSource.onmessage = (event) => {
       try {
         const payload = JSON.parse(String(event.data || '{}'));
@@ -1121,7 +1138,7 @@ export const managementAPI = {
     onConnected?: () => void;
     onError?: () => void;
   }) => {
-    const eventSource = new EventSource(withWebUiAccessToken('/v0/webui/management/watch'));
+    const eventSource = guardedWebUiEventSource('/v0/webui/management/watch');
     eventSource.onopen = () => {
       handlers.onConnected?.();
     };
@@ -1225,7 +1242,7 @@ export const modelUsageAPI = {
     onSnapshot?: (jobs: ModelUsageScanJob[]) => void;
     onError?: () => void;
   }) => {
-    const eventSource = new EventSource(withWebUiAccessToken('/v0/webui/management/usage/scan/watch'));
+    const eventSource = guardedWebUiEventSource('/v0/webui/management/usage/scan/watch');
     eventSource.onmessage = (event) => {
       try {
         const payload = JSON.parse(String(event.data || '{}'));

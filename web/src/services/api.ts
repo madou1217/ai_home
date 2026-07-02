@@ -101,6 +101,29 @@ export function resolveWebUiDeviceToken(): string {
   return '';
 }
 
+const ACTIVE_PROFILE_STORAGE_KEY = 'aih:active-control-plane-profile:v1';
+
+/** 解析当前激活 server：{ serverId, isRemote }。远端=endpoint 与页面不同源。
+ * 自包含读 localStorage，避免与 control-plane-* 形成循环依赖。 */
+export function resolveActiveServer(): { serverId: string; isRemote: boolean } {
+  try {
+    if (typeof window === 'undefined') return { serverId: '', isRemote: false };
+    const activeId = String(window.localStorage.getItem(ACTIVE_PROFILE_STORAGE_KEY) || '').trim();
+    if (!activeId) return { serverId: '', isRemote: false };
+    const raw = window.localStorage.getItem(GATE_PROFILE_STORAGE_KEY);
+    const profiles = raw ? JSON.parse(raw) : [];
+    const profile = Array.isArray(profiles) ? profiles.find((p) => p && p.id === activeId) : null;
+    if (!profile || !profile.endpoint) return { serverId: '', isRemote: false };
+    const origin = new URL(window.location.origin);
+    const target = new URL(String(profile.endpoint));
+    const isRemote = !(normalizeGateHost(target.hostname) === normalizeGateHost(origin.hostname)
+      && String(target.port || '80') === String(origin.port || '80'));
+    return { serverId: activeId, isRemote };
+  } catch (_error) {
+    return { serverId: '', isRemote: false };
+  }
+}
+
 /** 给 EventSource/WebSocket 的 /v0/webui/* 路径追加 access_token。 */
 export function withWebUiAccessToken(pathname: string): string {
   const token = resolveWebUiDeviceToken();
@@ -162,13 +185,16 @@ function buildSessionSupersedeKey(url: string) {
 api.interceptors.request.use((config) => {
   // R2 鉴权门：为本 server 的请求附加设备 token。
   const gateToken = resolveWebUiDeviceToken();
-  if (gateToken) {
+  const active = resolveActiveServer();
+  if (gateToken || active.isRemote) {
     const headers: any = config.headers ?? {};
-    if (typeof headers.set === 'function') {
-      if (!headers.get?.('Authorization')) headers.set('Authorization', `Bearer ${gateToken}`);
-    } else if (!headers.Authorization) {
-      headers.Authorization = `Bearer ${gateToken}`;
-    }
+    const setHeader = (name: string, value: string) => {
+      if (typeof headers.set === 'function') { if (!headers.get?.(name)) headers.set(name, value); }
+      else if (!headers[name]) headers[name] = value;
+    };
+    if (gateToken) setHeader('Authorization', `Bearer ${gateToken}`);
+    // R1 薄壳：远端 server 时带上目标 id，本地 server 据此透明转发。
+    if (active.isRemote && active.serverId) setHeader('x-aih-server-id', active.serverId);
     config.headers = headers;
   }
 
@@ -338,6 +364,10 @@ export const accountsAPI = {
     onAccountRefreshJob?: (job: AccountRefreshJob) => void;
     onError?: () => void;
   }) => {
+    // R1：远端 server 无本地实时推送通道（缓冲代理不支持长连），不开本地 watch 以免串本机数据。
+    if (resolveActiveServer().isRemote) {
+      return { close: () => {} };
+    }
     let closed = false;
     let socket: WebSocket | null = null;
     let connectTimer: number | null = null;

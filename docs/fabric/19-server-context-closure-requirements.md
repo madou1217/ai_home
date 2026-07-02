@@ -92,3 +92,14 @@
 - `types` 的 `ControlPlaneProfileBundle(Entry)`；`control-plane-profiles.test.js` 的 3 个 bundle 用例。
 - 验证：`node --test test/control-plane-profiles.test.js` 28/28 pass；web build pass。
 - **未改 git 历史 / 带日期的历史证据文件**（2026-06-26/27 evidence、02/03/07 设计规范）——那是不可变的历史记录，篡改属 revisionism；如需从历史彻底抹除请单独指示（会重写已推送的 main，破坏性高）。
+
+## R1 完成（2026-07-02，commit 9289e49 + c93f34c）
+
+架构改为**薄壳 + 本地 server 透明代理**（放弃错误的远端只读摘要）：
+- 浏览器只跟本地 /v0/webui/* 说话；带 x-aih-server-id 时本地 server server→server 转发到远端 /v0/webui/*，原样回传。所有完整页面无需改动即跟随当前 server（账号/会话/模型/用量/仪表盘）。
+- SSE 实时流远端 no-op（`guardedWebUiEventSource`），避免本机推送串进远端视图；远端靠请求+代理跟随（暂无实时推送）。
+- 顶部 CurrentServerBadge：本机/远端·<host>，避免看串。
+- 实测：账号页本机 15 / 切 AWS 13（同一完整页、经代理）、CORS 0、切换 0 报错。
+- 遗留（可选）：远端实时推送（需代理 SSE/WS 长连，当前不做）；`/readyz` 计数在门外。
+
+R1 三条需求达成：数据全跟随(R1)+授权门(R2)+；R3 会话统一待做。

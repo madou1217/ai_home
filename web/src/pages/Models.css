@@ -212,10 +212,6 @@
 .models-model-default-control--active {
   color: var(--c-success-600);
 }
-/* 全行开关统一宽度：文字内嵌(启用/停用/默认)，两开关同尺寸。 */
-.models-model-switch.ant-switch {
-  min-width: 56px;
-}
 .models-global-row {
   display: grid;
   min-width: 0;

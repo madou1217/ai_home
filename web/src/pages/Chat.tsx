@@ -28,6 +28,7 @@ import {
   resolveSelectedSessionQueueKey
 } from '@/components/chat/active-run-state.js';
 import { isSessionRunning as isProjectSessionRunning } from '@/components/chat/project-runtime-state.js';
+import { writeSessionModel } from '@/components/chat/account-model-selection.js';
 import {
   applySessionAssistantEvent,
   applyStreamingAssistantEvent
@@ -60,8 +61,7 @@ import relativeTime from 'dayjs/plugin/relativeTime';
 import 'dayjs/locale/zh-cn';
 import {
   readPersistedSelection,
-  writePersistedSelection,
-  readSelectionFromSearch
+  writePersistedSelection
 } from './chat-selection-state.js';
 import {
   buildAssistantCompletionNotification,
@@ -215,7 +215,6 @@ const isChatSelectableAccount = (account: Account) => {
   return true;
 };
 
-const MODEL_STORAGE_PREFIX = 'chat-selected-model:';
 const PROJECTS_CACHE_KEY = 'chat-projects-cache:v1';
 const PROJECTS_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -246,21 +245,6 @@ const writeCachedProjects = (projects: AggregatedProject[]): void => {
   } catch {}
 };
 
-const readPersistedModel = (provider: string): string => {
-  if (typeof window === 'undefined') return '';
-  try {
-    return localStorage.getItem(`${MODEL_STORAGE_PREFIX}${provider}`) || '';
-  } catch {
-    return '';
-  }
-};
-const writePersistedModel = (provider: string, model: string): void => {
-  if (typeof window === 'undefined' || !provider || !model) return;
-  try {
-    localStorage.setItem(`${MODEL_STORAGE_PREFIX}${provider}`, model);
-  } catch {}
-};
-
 const Chat = () => {
   const screens = Grid.useBreakpoint();
   const isMobile = !screens.md;
@@ -283,17 +267,8 @@ const Chat = () => {
   const [queuedMessagesByKey, setQueuedMessagesByKey] = useState<Record<string, QueuedSessionMessage[]>>({});
   const [loadingProjects, setLoadingProjects] = useState(false);
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
-  const [selectedModel, setSelectedModel] = useState<string>(() => {
-    if (typeof window !== 'undefined') {
-      const search = window.location.search;
-      const fromUrl = readSelectionFromSearch(search);
-      const provider = fromUrl.provider || readPersistedSelection().provider;
-      if (provider) {
-        return readPersistedModel(provider);
-      }
-    }
-    return '';
-  });
+  // 初值留空：具体默认由 MessageArea 依据「新会话→账号默认 / 已存在会话→上次使用」统一解析。
+  const [selectedModel, setSelectedModel] = useState<string>('');
   const [images, setImages] = useState<string[]>([]);
   const [openProjectVisible, setOpenProjectVisible] = useState(false);
   const [openProjectPath, setOpenProjectPath] = useState('');
@@ -1212,18 +1187,8 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
     selectedSession?.provider
   ]);
 
-  useEffect(() => {
-    if (selectedSession?.provider && selectedModel) {
-      writePersistedModel(selectedSession.provider, selectedModel);
-    }
-  }, [selectedModel, selectedSession?.provider]);
-
-  useEffect(() => {
-    if (selectedSession?.provider) {
-      const saved = readPersistedModel(selectedSession.provider);
-      setSelectedModel(saved);
-    }
-  }, [selectedSession?.provider]);
+  // 会话模型的持久化/恢复统一交给 MessageArea（唯一解析处）+ 用户显式切换时写入会话记忆，
+  // 这里不再用「监听 selectedModel」的副作用回写（会在切会话瞬间把上一个会话的模型写到新会话键上）。
 
   const selectedSessionRunKey = selectedSession ? findActiveRunKeyForSession(selectedSession) : '';
   const selectedSessionInteractivePrompt = selectedSessionRunKey
@@ -1780,6 +1745,8 @@ const findProjectBySessionId = (items: AggregatedProject[], selection: Persisted
           projectDirName: resolvedProjectDirName
         };
         persistRunMessages(resolvedSession);
+        // 新会话落地为真实会话：记住本次使用的模型，下次进入该会话默认沿用。
+        if (model) writeSessionModel(resolvedSession, model);
         updateSelectedPendingStatus(`会话已创建，${getGeneratingStatusText()}`);
         const stillOnDraft = Boolean(selectedSessionRef.current?.draft && selectedSessionRef.current.id === requestSession.id);
         // 立即把当前会话切到刚创建的真实会话——否则 selectedSession 仍是 draft，

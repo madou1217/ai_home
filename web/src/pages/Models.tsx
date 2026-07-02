@@ -122,6 +122,33 @@ function sortProviders(providers: Provider[]) {
   });
 }
 
+// 从模型 id 抽取版本向量做"版本判断"：claude-opus-4-8 → [4,8]、gpt-5 → [5]、gemini-2.5-pro → [2,5]。
+function parseModelVersion(id: string): number[] {
+  const matches = String(id || '').match(/\d+/g);
+  return matches ? matches.map((chunk) => Number(chunk)) : [];
+}
+
+// 版本降序：越新（版本号越大）的模型排越前；缺失位补 -1 让"无版本"沉底。
+function compareModelVersionDesc(leftId: string, rightId: string) {
+  const left = parseModelVersion(leftId);
+  const right = parseModelVersion(rightId);
+  const len = Math.max(left.length, right.length);
+  for (let index = 0; index < len; index += 1) {
+    const leftValue = left[index] ?? -1;
+    const rightValue = right[index] ?? -1;
+    if (leftValue !== rightValue) return rightValue - leftValue;
+  }
+  return 0;
+}
+
+// 账号模型列表排序：默认模型永远置顶 → 其次版本新→旧 → 最后 id 兜底。
+function compareAccountModelRows(left: ManagedOpenAIModelItem, right: ManagedOpenAIModelItem) {
+  const leftDefault = left.defaultModel === true ? 0 : 1;
+  const rightDefault = right.defaultModel === true ? 0 : 1;
+  if (leftDefault !== rightDefault) return leftDefault - rightDefault;
+  return compareModelVersionDesc(left.id, right.id) || left.id.localeCompare(right.id);
+}
+
 function isGlobalModelVisible(row: Pick<GlobalModelRow, 'enabledCount' | 'visible'>) {
   return row.visible || row.enabledCount > 0;
 }
@@ -461,7 +488,7 @@ export default function Models() {
       return model.id.toLowerCase().includes(query)
         || model.accountRef.toLowerCase().includes(query)
         || getAccountLabel(accountByRef.get(model.accountRef) || { provider: model.provider, displayName: '', email: '', accountRef: model.accountRef }).toLowerCase().includes(query);
-    });
+    }).sort(compareAccountModelRows);
   }, [accountByRef, accountFilter, managedSource, providerFilter, queryKeyword, statusFilter]);
 
   const globalModelRows = useMemo<GlobalModelRow[]>(() => {

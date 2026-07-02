@@ -23,6 +23,35 @@ export function listAccountEnabledModels(catalog, accountRef) {
   return normalizeModelIds(byAccountRef[ref]);
 }
 
+// 会话级"上次使用模型"记忆：按 provider:id:projectDirName 建 key；draft/无 id 返回空（不读不写）。
+export function getSessionModelKey(session) {
+  if (!session || session.draft) return '';
+  const id = String(session.id || '').trim();
+  if (!id) return '';
+  const provider = String(session.provider || '').trim();
+  const dir = String(session.projectDirName || '').trim();
+  return `chat-session-model:${provider}:${id}:${dir}`;
+}
+
+export function readSessionModel(session) {
+  const key = getSessionModelKey(session);
+  if (!key || typeof window === 'undefined') return '';
+  try {
+    return window.localStorage.getItem(key) || '';
+  } catch {
+    return '';
+  }
+}
+
+export function writeSessionModel(session, model) {
+  const key = getSessionModelKey(session);
+  const value = String(model || '').trim();
+  if (!key || !value || typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {}
+}
+
 export function getAccountDefaultModel(catalog, accountRef) {
   const ref = String(accountRef || '').trim();
   if (!ref) return '';

@@ -2040,7 +2040,7 @@ const Settings = ({ section }: SettingsProps) => {
             label="开放网络访问"
             valuePropName="checked"
           >
-            <Switch checkedChildren="开放" unCheckedChildren="仅本机" />
+            <Switch checkedChildren="开放" unCheckedChildren="本机" />
           </Form.Item>
 
           <Form.Item shouldUpdate noStyle>

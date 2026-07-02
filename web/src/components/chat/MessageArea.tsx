@@ -13,7 +13,7 @@ import TerminalDock, { type TerminalRunState } from './TerminalDock';
 import { decorateMessagesWithPendingState } from './live-message-state.js';
 import { resolvePendingTailState } from './pending-tail-state.js';
 import { normalizePendingStatusText } from './provider-pending-policy.js';
-import { getAccountDefaultModel, listAccountEnabledModels } from './account-model-selection.js';
+import { getAccountDefaultModel, getSessionModelKey, listAccountEnabledModels, readSessionModel, writeSessionModel } from './account-model-selection.js';
 import { getAccountIdentityLabel } from '@/utils/account-labels';
 import { throttle } from '@/utils/timing';
 import {
@@ -454,30 +454,35 @@ const MessageArea = ({
   const helperFontSize = mobile ? 13 : 12;
   const helperMutedFontSize = mobile ? 12 : 11;
 
+  // 会话模型默认值的唯一解析处（切会话时按会话键重算，不靠"模型失效"触发，避免与父组件竞争）：
+  //   · 新会话(draft) / 无记录 → 账号默认模型
+  //   · 已存在会话 → 该会话上次使用过的模型（localStorage 记忆）
+  //   · 兜底 → 第一个可用模型
+  // 会话未变且当前模型仍可用时，保留用户当前选择、不覆盖。
+  const sessionModelKey = getSessionModelKey(session);
+  const lastSessionModelKeyRef = useRef('');
   useEffect(() => {
     if (!session) return;
-    if (accountModelIds.includes(selectedModel)) return;
-    // 当前选中模型不在可用列表中时，优先从 localStorage 恢复该 provider 的上次选择
-    const provider = activeProvider;
+    if (!accountModelIds.length) return; // 目录未就绪：先不解析，别清空、别闪切
+    const isValid = (id: string) => Boolean(id) && accountModelIds.includes(id);
+    const switched = sessionModelKey !== lastSessionModelKeyRef.current;
+    if (!switched && isValid(selectedModel)) return;
     let nextModel = '';
-    if (provider) {
-      try {
-        const saved = localStorage.getItem(`chat-selected-model:${provider}`) || '';
-        if (saved && accountModelIds.includes(saved)) {
-          nextModel = saved;
-        }
-      } catch {}
+    if (session && !session.draft) {
+      const saved = readSessionModel(session);
+      if (isValid(saved)) nextModel = saved;
     }
-    if (!nextModel) {
-      if (accountDefaultModel && accountModelIds.includes(accountDefaultModel)) {
-        nextModel = accountDefaultModel;
-      }
-    }
-    if (!nextModel) {
-      nextModel = accountModelIds[0] || '';
-    }
+    if (!nextModel && isValid(accountDefaultModel)) nextModel = accountDefaultModel;
+    if (!nextModel) nextModel = accountModelIds[0] || '';
+    lastSessionModelKeyRef.current = sessionModelKey;
     if (selectedModel !== nextModel) onModelChange(nextModel);
-  }, [accountDefaultModel, accountModelIds, activeProvider, onModelChange, selectedModel, session]);
+  }, [accountDefaultModel, accountModelIds, onModelChange, selectedModel, session, sessionModelKey]);
+
+  // 用户显式切换模型：记住该会话的选择（draft 时 key 为空自动跳过），下次进这个会话默认沿用。
+  const handleModelPick = useCallback((model: string) => {
+    onModelChange(model);
+    writeSessionModel(session, model);
+  }, [onModelChange, session]);
 
   const applySlashCommand = useCallback((command: NativeSlashCommand | null) => {
     if (!command) return;
@@ -840,7 +845,7 @@ const MessageArea = ({
                       const isActive = effectiveSelectedModel === m.value;
                       return {
                         key: m.value,
-                        onClick: () => onModelChange(m.value),
+                        onClick: () => handleModelPick(m.value),
                         label: (
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 2px', width: '100%' }}>
                             <span style={{ fontWeight: isActive ? 600 : 400, color: '#333' }}>{m.label}</span>
@@ -986,7 +991,7 @@ const MessageArea = ({
             <div className={styles.mobileControlsLabel}>模型</div>
             <Select
               value={effectiveSelectedModel || undefined}
-              onChange={onModelChange}
+              onChange={handleModelPick}
               options={models}
               disabled={models.length === 0}
               placeholder={emptyModelHint}

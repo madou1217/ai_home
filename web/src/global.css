@@ -32,3 +32,10 @@
 .copy-icon-btn:focus-visible {
   opacity: 1;
 }
+
+/* 全局开关统一尺寸：所有常规 Switch（启用/停用、默认、开放/本机…）共享同一最小宽度，
+ * 不再因文案长度不同而宽窄不一（文案统一控制在 2 字内即可稳定落位）。
+ * size="small" 的开关是刻意的紧凑场景，排除在外。 */
+.ant-switch:not(.ant-switch-sm) {
+  min-width: 56px;
+}

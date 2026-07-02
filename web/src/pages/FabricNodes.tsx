@@ -27,6 +27,7 @@ import type { ControlPlaneProfile } from '@/types';
 import Button from '@/components/ui/AppButton';
 import PageScaffold from '@/components/ui/PageScaffold';
 import FabricNodeSession from './FabricNodeSession';
+import { sshHostsAPI } from '@/services/api';
 
 /* ============================================================================
  * 展示层辅助（仅本页用）：把 registry 的英文/代码字段翻译成大白话中文。
@@ -118,10 +119,59 @@ function formatBandwidthKbps(value: unknown) {
   return `${Math.floor(bandwidth)} Kbps`;
 }
 
+/* ── SSH 开发机 ↔ Node 绑定（展示层，语义同 CLI 的 local-ssh-node-bindings）──
+ * 「SSH 开发机」页配置的连接/工作区存在本地 server；registry 里的 node 不知道它们。
+ * 这里按 工作区 remoteRoot ↔ 节点项目路径 做匹配，让节点能力如实显示「SSH 开发」。 */
+
+interface LocalSshBinding {
+  connectionLabel: string;
+  workspaceLabel: string;
+  target: string;
+  port: number;
+  remoteRoot: string;
+}
+
+function normalizeRemotePath(value: unknown) {
+  const text = String(value || '').trim().replace(/\/+$/, '');
+  return text || '';
+}
+
+function buildSshWorkspaceBindings(connections: any[], workspaces: any[]): LocalSshBinding[] {
+  const connectionById = new Map<string, any>();
+  (Array.isArray(connections) ? connections : []).forEach((connection) => {
+    if (connection && connection.id) connectionById.set(String(connection.id), connection);
+  });
+  return (Array.isArray(workspaces) ? workspaces : [])
+    .map((workspace) => {
+      const connection = workspace ? connectionById.get(String(workspace.connectionId || '')) : null;
+      const remoteRoot = normalizeRemotePath(workspace?.remoteRoot);
+      if (!connection || !connection.host || !remoteRoot) return null;
+      return {
+        connectionLabel: String(connection.label || connection.host),
+        workspaceLabel: String(workspace.label || remoteRoot),
+        target: connection.user ? `${connection.user}@${connection.host}` : String(connection.host),
+        port: Number(connection.port) || 22,
+        remoteRoot
+      };
+    })
+    .filter(Boolean) as LocalSshBinding[];
+}
+
+function findNodeSshBindings(view: FabricNodeInventoryItem, bindings: LocalSshBinding[]): LocalSshBinding[] {
+  if (!bindings.length) return [];
+  const projectPaths = new Set(view.projects.map((project) => normalizeRemotePath(project.displayPath)).filter(Boolean));
+  if (!projectPaths.size) return [];
+  return bindings.filter((binding) => projectPaths.has(binding.remoteRoot));
+}
+
 /** 每台机器“能干什么”，大白话 + ✓/✗。 */
-function capabilityRows(view: FabricNodeInventoryItem) {
+function capabilityRows(view: FabricNodeInventoryItem, sshBindings: LocalSshBinding[]) {
   const caps = view.capabilities;
   const providers = caps.runtimeProviders.filter(Boolean).map(providerLabel);
+  const sshOk = caps.sshBootstrap || sshBindings.length > 0;
+  const sshHint = sshBindings.length > 0
+    ? `可经 SSH 开发机「${sshBindings[0].connectionLabel}」(${sshBindings[0].target}) 远程开发 · 工作区「${sshBindings[0].workspaceLabel}」`
+    : (caps.sshBootstrap ? '能通过 SSH 远程开发' : '未配置：可在「SSH / Bootstrap」页添加连接和工作区');
   return [
     {
       ok: caps.runtimeHost,
@@ -134,9 +184,9 @@ function capabilityRows(view: FabricNodeInventoryItem) {
       hint: caps.relayNode ? '能帮别的机器转发流量（relay）' : '没有开启中继能力'
     },
     {
-      ok: caps.sshBootstrap,
+      ok: sshOk,
       label: 'SSH 开发',
-      hint: caps.sshBootstrap ? '能通过 SSH 远程开发' : '没有配置 SSH 通道'
+      hint: sshHint
     }
   ];
 }
@@ -239,14 +289,16 @@ function SecondaryList<T>({ items, empty, getKey, render }: {
  * 节点详情（右侧常驻栏）
  * ========================================================================== */
 
-function NodeDetail({ view, profile, onPendingAction }: {
+function NodeDetail({ view, profile, sshBindings, onPendingAction }: {
   view: FabricNodeInventoryItem;
   profile: Pick<ControlPlaneProfile, 'endpoint' | 'deviceToken'> | null;
+  sshBindings: LocalSshBinding[];
   onPendingAction: (label: string) => void;
 }) {
   const { node } = view;
   const liveness = livenessOf(node.status);
   const offline = liveness === 'offline';
+  const nodeSshBindings = useMemo(() => findNodeSshBindings(view, sshBindings), [view, sshBindings]);
   const [sessionProvider, setSessionProvider] = useState('');
 
   useEffect(() => {
@@ -279,7 +331,7 @@ function NodeDetail({ view, profile, onPendingAction }: {
       {/* 能力：它能干什么 */}
       <DetailBlock label="能力（这台机器能干什么）">
         <div className="fabric-caps">
-          {capabilityRows(view).map((row) => (
+          {capabilityRows(view, nodeSshBindings).map((row) => (
             <Tooltip key={row.label} title={row.hint}>
               <span className={`fabric-cap ${row.ok ? 'fabric-cap--ok' : 'fabric-cap--no'}`}>
                 {row.ok ? '✓' : '✗'} {row.label}
@@ -449,6 +501,22 @@ export default function FabricNodes() {
   const [selectedNodeId, setSelectedNodeId] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [sshBindings, setSshBindings] = useState<LocalSshBinding[]>([]);
+
+  // SSH 开发机（本地 server 的连接/工作区）→ 节点能力桥。失败不阻塞页面，仅少显示 SSH 能力。
+  const loadSshBindings = useCallback(async () => {
+    try {
+      const [connections, workspaces] = await Promise.all([
+        sshHostsAPI.listConnections(),
+        sshHostsAPI.listWorkspaces()
+      ]);
+      setSshBindings(buildSshWorkspaceBindings(connections, workspaces));
+    } catch (_error) {
+      setSshBindings([]);
+    }
+  }, []);
+
+  useEffect(() => { void loadSshBindings(); }, [loadSshBindings]);
 
   const nodeViews = useMemo<FabricNodeInventoryItem[]>(
     () => (registry ? registry.nodeInventory : []),
@@ -531,7 +599,7 @@ export default function FabricNodes() {
         <Button
           type="primary"
           icon={<ReloadOutlined />}
-          onClick={() => readyProfile && loadRegistry()}
+          onClick={() => { if (readyProfile) { void loadRegistry(); void loadSshBindings(); } }}
           loading={loading}
           disabled={!readyProfile}
         >
@@ -613,7 +681,7 @@ export default function FabricNodes() {
             {/* 右：常驻详情栏 */}
             <div className="fabric-node-panel">
               {selectedNode ? (
-                <NodeDetail view={selectedNode} profile={readyProfile} onPendingAction={handlePendingAction} />
+                <NodeDetail view={selectedNode} profile={readyProfile} sshBindings={sshBindings} onPendingAction={handlePendingAction} />
               ) : firstLoading ? (
                 <div className="fabric-node-panel__placeholder">
                   <Spin />

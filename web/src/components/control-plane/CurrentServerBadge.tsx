@@ -17,11 +17,26 @@ export default function CurrentServerBadge() {
       <Tag icon={<DesktopOutlined />} color="default" style={{ marginInlineEnd: 8 }}>本机</Tag>
     );
   }
+  // 远端名压缩：取主机名首段（如 ec2-43-207-102-163），避免超长域名撑破布局。
   let shortName = ctx.displayName;
-  try { shortName = new URL(ctx.endpoint).hostname || ctx.displayName; } catch (_error) { /* 非 URL，用原名 */ }
+  try {
+    const host = new URL(ctx.endpoint).hostname || ctx.displayName;
+    shortName = host.split('.')[0] || host;
+  } catch (_error) { /* 非 URL，用原名 */ }
   return (
     <Tooltip title={`数据来自远端 server：${ctx.endpoint}`}>
-      <Tag icon={<CloudServerOutlined />} color="processing" style={{ marginInlineEnd: 8 }}>
+      <Tag
+        icon={<CloudServerOutlined />}
+        color="processing"
+        style={{
+          marginInlineEnd: 8,
+          maxWidth: 220,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          verticalAlign: 'middle'
+        }}
+      >
         远端 · {shortName}
       </Tag>
     </Tooltip>

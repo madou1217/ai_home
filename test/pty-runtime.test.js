@@ -294,6 +294,47 @@ test('runtime uses headless direct spawn for claude print prompts', () => {
   assert.match(writes.join(''), /ok/);
 });
 
+test('headless direct 仅在 stream-json 输入时接通 stdin', () => {
+  const directSpawns = [];
+  const makeSpawn = () => (command, args, options) => {
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.stdin = new EventEmitter();
+    child.stdin.writable = true;
+    child.stdin.write = () => true;
+    child.stdin.end = () => {};
+    child.kill = () => {};
+    directSpawns.push({ command, args, options, child });
+    return child;
+  };
+
+  // stream-json 输入 → stdin 接通（'pipe'）
+  {
+    directSpawns.length = 0;
+    const { runtime } = createRuntimeHarness({}, {
+      resolveCliPath: () => '/usr/local/bin/claude',
+      spawn: makeSpawn()
+    });
+    runtime.runCliPtyTracked('claude', '4',
+      ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json'], false);
+    assert.equal(directSpawns.length, 1);
+    assert.equal(directSpawns[0].options.stdio[0], 'pipe');
+  }
+
+  // 普通文本 -p → stdin 仍忽略（'ignore'），行为不变
+  {
+    directSpawns.length = 0;
+    const { runtime } = createRuntimeHarness({}, {
+      resolveCliPath: () => '/usr/local/bin/claude',
+      spawn: makeSpawn()
+    });
+    runtime.runCliPtyTracked('claude', '4', ['-p', 'hello'], false);
+    assert.equal(directSpawns.length, 1);
+    assert.equal(directSpawns[0].options.stdio[0], 'ignore');
+  }
+});
+
 test('runtime preserves caller TERM for provider PTY clients', () => {
   const { runtime, proc, spawns, rawModeCalls } = createRuntimeHarness({
     TERM: 'xterm-256color'

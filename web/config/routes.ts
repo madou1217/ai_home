@@ -12,7 +12,7 @@ export default [
   {
     name: "账号管理",
     path: "/accounts",
-    component: "./Accounts",
+    component: "./AccountsRoute",
     icon: "team",
   },
   {

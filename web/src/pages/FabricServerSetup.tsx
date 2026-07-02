@@ -410,10 +410,14 @@ export default function FabricServerSetup() {
   return (
     <PageScaffold ghost
       title="选择或添加 Server"
-      subTitle={
-        new URLSearchParams(location.search).get('gate') === '1'
-          ? '此浏览器尚未与当前 server 配对，未授权看不到数据。在 server 所在机器终端运行 aih fabric profile invite，打开打印的 browser url 完成配对。'
-          : '配对或管理 AIH 控制面 Server。连接建立后即可接入远程节点、项目和进行原生会话。'
+      subTitle="配对或管理 AIH 控制面 Server"
+      headerContent={
+        new URLSearchParams(location.search).get('gate') === '1' ? (
+          <Typography.Paragraph type="secondary" style={{ margin: 0 }}>
+            此浏览器尚未与当前 server 配对，未授权看不到数据。在 server 所在机器终端运行{' '}
+            <Typography.Text code>aih fabric profile invite</Typography.Text>，打开打印的 browser url 完成配对。
+          </Typography.Paragraph>
+        ) : undefined
       }
       extra={
         <Space size={8} wrap>

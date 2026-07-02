@@ -11,7 +11,8 @@ import {
   addControlPlaneProfilesChangeListener,
   isControlPlaneProfileReady,
   listControlPlaneProfiles,
-  summarizeControlPlaneProfileNodes
+  summarizeControlPlaneProfileNodes,
+  syncSharedControlPlaneProfiles
 } from '@/services/control-plane-profiles';
 import type { ControlPlaneProfile } from '@/types';
 import styles from './ControlPlaneProfileSelect.module.css';
@@ -130,6 +131,9 @@ export default function ControlPlaneProfileSelect({
     const eventTarget = getWindowEventTarget();
     const handleRefresh = () => refreshProfiles();
     eventTarget?.addEventListener('focus', handleRefresh);
+    // 全局同步共享 profile：切换器在任意页面挂载时都从 server 拉齐 profile 列表，
+    // 避免"只在 Server Setup 页才同步"导致其它页只有 1 个 profile、切换器禁用。
+    syncSharedControlPlaneProfiles().then(() => refreshProfiles()).catch(() => {});
     return () => {
       eventTarget?.removeEventListener('focus', handleRefresh);
       unsubscribe();

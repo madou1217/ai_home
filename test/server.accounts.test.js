@@ -1533,3 +1533,114 @@ test('loadServerRuntimeAccounts returns opencode provider bucket', (t) => {
   assert.equal(accounts.opencode[0].lastFailureKind, '');
   assert.equal(accounts.opencode[0].consecutiveFailures, 0);
 });
+
+test('loadServerRuntimeAccounts auto-clears agy auth_invalid after a successful usage probe', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-agy-authinvalid-clear-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const aiHomeDir = path.join(root, '.ai_home');
+  const profileDir = path.join(aiHomeDir, 'profiles', 'agy', '1');
+  const configDir = path.join(profileDir, '.gemini', 'antigravity-cli');
+  fs.mkdirSync(configDir, { recursive: true });
+  fs.writeFileSync(path.join(configDir, 'antigravity-oauth-token'), JSON.stringify({
+    auth_method: 'oauth',
+    token: {
+      access_token: 'ya29.test',
+      refresh_token: 'refresh.test',
+      expiry: new Date(Date.now() + 3600 * 1000).toISOString()
+    }
+  }));
+
+  const lastFailureAt = Date.now() - 60 * 60 * 1000;
+  // 失败之后又有一次成功探测：capturedAt 晚于 lastFailureAt。
+  writeJson(path.join(profileDir, '.aih_usage.json'), {
+    schemaVersion: 2,
+    kind: 'agy_code_assist_quota',
+    source: 'agy_fetch_available_models',
+    capturedAt: Date.now(),
+    models: [{ model: 'gemini-2.5-flash', remainingPct: 100 }]
+  });
+
+  const accountStateIndex = createAccountStateIndex({ aiHomeDir, fs });
+  // 用 agy_not_signed_in（既有逻辑视为不可恢复），专门验证"探测成功"能推翻该误判。
+  accountStateIndex.upsertRuntimeState('agy', '1', {
+    cooldownUntil: Date.now() + 10 * 60 * 1000,
+    authInvalidUntil: Date.now() + 10 * 60 * 1000,
+    lastFailureKind: 'auth_invalid',
+    lastFailureReason: 'agy_not_signed_in',
+    lastError: 'agy_not_signed_in',
+    lastFailureAt,
+    consecutiveFailures: 1,
+    failCount: 1
+  }, { configured: true, displayName: 'agy@example.com' });
+  const accountStateService = createAccountStateService({ accountStateIndex });
+
+  const accounts = loadServerRuntimeAccounts({
+    fs,
+    aiHomeDir,
+    accountStateIndex,
+    accountStateService,
+    getToolAccountIds: (cli) => (cli === 'agy' ? ['1'] : []),
+    getToolConfigDir: (_cli, id) => path.join(aiHomeDir, 'profiles', 'agy', String(id), '.gemini', 'antigravity-cli'),
+    getProfileDir: (_cli, id) => path.join(aiHomeDir, 'profiles', 'agy', String(id)),
+    checkStatus: () => ({ configured: true }),
+    serverPort: 8317
+  });
+
+  assert.equal(accounts.agy.length, 1);
+  assert.equal(accounts.agy[0].authInvalidUntil, 0);
+  assert.equal(accounts.agy[0].lastFailureKind, '');
+});
+
+test('loadServerRuntimeAccounts keeps agy auth_invalid when no successful probe after failure', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-agy-authinvalid-keep-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const aiHomeDir = path.join(root, '.ai_home');
+  const profileDir = path.join(aiHomeDir, 'profiles', 'agy', '1');
+  const configDir = path.join(profileDir, '.gemini', 'antigravity-cli');
+  fs.mkdirSync(configDir, { recursive: true });
+  fs.writeFileSync(path.join(configDir, 'antigravity-oauth-token'), JSON.stringify({
+    auth_method: 'oauth',
+    token: { refresh_token: 'refresh.test' }
+  }));
+
+  const now = Date.now();
+  // 探测发生在失败之前（capturedAt 早于 lastFailureAt）：不能清（真实新失败）。
+  writeJson(path.join(profileDir, '.aih_usage.json'), {
+    schemaVersion: 2,
+    kind: 'agy_code_assist_quota',
+    source: 'agy_fetch_available_models',
+    capturedAt: now - 2 * 60 * 60 * 1000,
+    models: [{ model: 'gemini-2.5-flash', remainingPct: 100 }]
+  });
+
+  const accountStateIndex = createAccountStateIndex({ aiHomeDir, fs });
+  accountStateIndex.upsertRuntimeState('agy', '1', {
+    cooldownUntil: now + 10 * 60 * 1000,
+    authInvalidUntil: now + 10 * 60 * 1000,
+    lastFailureKind: 'auth_invalid',
+    lastFailureReason: 'agy_not_signed_in',
+    lastError: 'agy_not_signed_in',
+    lastFailureAt: now - 60 * 1000,
+    consecutiveFailures: 1,
+    failCount: 1
+  }, { configured: true, displayName: 'agy@example.com' });
+  const accountStateService = createAccountStateService({ accountStateIndex });
+
+  const accounts = loadServerRuntimeAccounts({
+    fs,
+    aiHomeDir,
+    accountStateIndex,
+    accountStateService,
+    getToolAccountIds: (cli) => (cli === 'agy' ? ['1'] : []),
+    getToolConfigDir: (_cli, id) => path.join(aiHomeDir, 'profiles', 'agy', String(id), '.gemini', 'antigravity-cli'),
+    getProfileDir: (_cli, id) => path.join(aiHomeDir, 'profiles', 'agy', String(id)),
+    checkStatus: () => ({ configured: true }),
+    serverPort: 8317
+  });
+
+  assert.equal(accounts.agy.length, 1);
+  assert.equal(accounts.agy[0].lastFailureKind, 'auth_invalid');
+  assert.ok(accounts.agy[0].authInvalidUntil > now);
+});

@@ -26,7 +26,6 @@ import {
 import type { ControlPlaneProfile } from '@/types';
 import Button from '@/components/ui/AppButton';
 import PageScaffold from '@/components/ui/PageScaffold';
-import FabricNodeSession from './FabricNodeSession';
 import { sshHostsAPI } from '@/services/api';
 
 /* ============================================================================
@@ -289,21 +288,16 @@ function SecondaryList<T>({ items, empty, getKey, render }: {
  * 节点详情（右侧常驻栏）
  * ========================================================================== */
 
-function NodeDetail({ view, profile, sshBindings, onPendingAction }: {
+function NodeDetail({ view, sshBindings, onPendingAction, onOpenChat }: {
   view: FabricNodeInventoryItem;
-  profile: Pick<ControlPlaneProfile, 'endpoint' | 'deviceToken'> | null;
   sshBindings: LocalSshBinding[];
   onPendingAction: (label: string) => void;
+  onOpenChat: () => void;
 }) {
   const { node } = view;
   const liveness = livenessOf(node.status);
   const offline = liveness === 'offline';
   const nodeSshBindings = useMemo(() => findNodeSshBindings(view, sshBindings), [view, sshBindings]);
-  const [sessionProvider, setSessionProvider] = useState('');
-
-  useEffect(() => {
-    setSessionProvider('');
-  }, [node.id]);
 
   const openAction = view.actions.find((action) => action.id === 'open-project') || null;
   const sessionActions = view.actions.filter((action) => action.id.startsWith('start-session:'));
@@ -352,25 +346,21 @@ function NodeDetail({ view, profile, sshBindings, onPendingAction }: {
           >
             打开项目
           </Button>
-          {readySessions.map((action) => (
+          {readySessions.length > 0 && (
             <Button
-              key={action.id}
               size="small"
-              type={sessionProvider === action.provider ? 'primary' : 'default'}
-              disabled={offline || !profile}
-              onClick={() => setSessionProvider((prev) => (prev === action.provider ? '' : action.provider))}
+              type="primary"
+              disabled={offline}
+              onClick={onOpenChat}
             >
-              发起会话（{providerLabel(action.provider)}）
+              发起会话
             </Button>
-          ))}
+          )}
         </Space>
-        {sessionProvider && profile && (
-          <FabricNodeSession
-            profile={profile}
-            nodeId={node.id}
-            provider={sessionProvider}
-            projects={view.projects}
-          />
+        {readySessions.length > 0 && !offline && (
+          <Typography.Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0 }}>
+            可发起会话的 AI：{readySessions.map((action) => providerLabel(action.provider)).join(' / ')}。会话统一在「AI 会话」里进行，跟随当前 server。
+          </Typography.Paragraph>
         )}
         {offline && (
           <Typography.Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0 }}>
@@ -681,7 +671,7 @@ export default function FabricNodes() {
             {/* 右：常驻详情栏 */}
             <div className="fabric-node-panel">
               {selectedNode ? (
-                <NodeDetail view={selectedNode} profile={readyProfile} sshBindings={sshBindings} onPendingAction={handlePendingAction} />
+                <NodeDetail view={selectedNode} sshBindings={sshBindings} onPendingAction={handlePendingAction} onOpenChat={() => navigate('/chat')} />
               ) : firstLoading ? (
                 <div className="fabric-node-panel__placeholder">
                   <Spin />

@@ -1,23 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Alert, Col, Form, Input, Modal, Row, Segmented, Space, Tabs, Tag, Typography, message } from 'antd';
+import { Col, Form, Input, Modal, Row, Segmented, Space, Tabs, Tag, Typography, message } from 'antd';
 import { StatisticCard } from '@ant-design/pro-components';
 import {
   CheckCircleOutlined,
-  DownloadOutlined,
   DeleteOutlined,
   LinkOutlined,
   LoginOutlined,
   ReloadOutlined,
   SafetyCertificateOutlined,
-  UploadOutlined,
   PlusOutlined
 } from '@ant-design/icons';
 import type { ProColumns } from '@ant-design/pro-components';
 import {
   buildFabricBrokerProxyEndpoint,
   fetchControlPlaneDescriptor,
-  importControlPlaneProfileBundle,
   isControlPlaneProfileReady,
   listControlPlaneProfiles,
   normalizeControlPlaneEndpoint,
@@ -27,7 +24,6 @@ import {
   removeControlPlaneProfile,
   resolveControlPlaneProfileEndpointInput,
   saveControlPlaneProfile,
-  serializeControlPlaneProfileBundle,
   syncSharedControlPlaneProfiles,
   summarizeControlPlaneProfileNodes
 } from '@/services/control-plane-profiles';
@@ -37,10 +33,7 @@ import {
   selectActiveControlPlaneProfile,
   syncStoredActiveControlPlaneProfile
 } from '@/services/control-plane-selection';
-import {
-  getBrowserControlEndpoint,
-  isLoopbackEndpoint
-} from '@/services/control-plane-endpoints';
+import { getBrowserControlEndpoint } from '@/services/control-plane-endpoints';
 import { resolveCurrentDeviceIdentity } from '@/services/device-identity';
 import type { ControlPlaneProfile, ControlPlaneProfileConnectionMode } from '@/types';
 import Button from '@/components/ui/AppButton';
@@ -65,10 +58,6 @@ type SaveFormValues = {
   brokerServerId?: string;
   name?: string;
   deviceToken?: string;
-};
-
-type ImportFormValues = {
-  bundle?: string;
 };
 
 type ConnectionFormValues = Pick<
@@ -137,20 +126,18 @@ export default function FabricServerSetup() {
   const deviceIdentity = useMemo(() => resolveCurrentDeviceIdentity(), []);
   const [pairForm] = Form.useForm<PairFormValues>();
   const [saveForm] = Form.useForm<SaveFormValues>();
-  const [importForm] = Form.useForm<ImportFormValues>();
   const [initialState] = useState(getInitialServerSetupState);
   const [profiles, setProfiles] = useState<ControlPlaneProfile[]>(initialState.profiles);
   const [activeProfileId, setActiveProfileId] = useState(initialState.activeProfileId);
   const [checkingId, setCheckingId] = useState('');
   const [saving, setSaving] = useState(false);
   const [pairing, setPairing] = useState(false);
-  const [importing, setImporting] = useState(false);
   const [setupModalOpen, setSetupModalOpen] = useState(false);
-  const [setupModalTab, setSetupModalTab] = useState<'pair' | 'manual' | 'transfer'>('pair');
+  const [setupModalTab, setSetupModalTab] = useState<'pair' | 'manual'>('pair');
   const [pendingAutoPairSubmit, setPendingAutoPairSubmit] = useState(false);
   const autoPairSubmittedSearchRef = useRef('');
 
-  const openSetupModal = (tab: 'pair' | 'manual' | 'transfer') => {
+  const openSetupModal = (tab: 'pair' | 'manual') => {
     setSetupModalTab(tab);
     setSetupModalOpen(true);
   };
@@ -158,7 +145,6 @@ export default function FabricServerSetup() {
   const activeProfile = profiles.find((profile) => profile.id === activeProfileId) || null;
   const readyProfiles = profiles.filter(isControlPlaneProfileReady);
   const defaultEndpoint = normalizeControlPlaneEndpoint(getBrowserControlEndpoint());
-  const endpointIsLoopback = isLoopbackEndpoint(defaultEndpoint);
   const pairConnectionMode = normalizeConnectionMode(Form.useWatch('connectionMode', pairForm));
   const saveConnectionMode = normalizeConnectionMode(Form.useWatch('connectionMode', saveForm));
   const pairProxyPreview = buildProxyPreview(
@@ -349,53 +335,6 @@ export default function FabricServerSetup() {
     setActiveProfileId(resolution.profileId);
   };
 
-  const downloadProfileBundle = (targets: ControlPlaneProfile[], scope: 'active' | 'all') => {
-    const items = targets.filter(Boolean);
-    if (items.length === 0) {
-      message.warning('没有可导出的 Server Profile');
-      return;
-    }
-    const payload = serializeControlPlaneProfileBundle(items);
-    const blob = new Blob([payload], { type: 'application/json;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `aih-server-profiles-${scope}.json`;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    URL.revokeObjectURL(url);
-    message.success(`已导出 ${items.length} 个 Server Profile，不包含 device token`);
-  };
-
-  const handleExportActiveProfile = () => {
-    if (!activeProfile) {
-      message.warning('请先选择一个 Server Profile');
-      return;
-    }
-    downloadProfileBundle([activeProfile], 'active');
-  };
-
-  const handleExportAllProfiles = () => {
-    downloadProfileBundle(profiles, 'all');
-  };
-
-  const handleImportProfileBundle = async (values: ImportFormValues) => {
-    setImporting(true);
-    try {
-      const result = importControlPlaneProfileBundle(values.bundle || '');
-      const firstProfileId = result.imported[0]?.profile.id || '';
-      syncProfiles(firstProfileId);
-      setSetupModalOpen(false);
-      importForm.setFieldsValue({ bundle: '' });
-      message.success(`已导入 ${result.imported.length} 个 Server Profile，需重新配对后进入`);
-    } catch (error) {
-      message.error(normalizeError(error));
-    } finally {
-      setImporting(false);
-    }
-  };
-
   const profileRows: ProfileRow[] = useMemo(
     () => profiles.map((profile) => ({ ...profile, __key: profile.id })),
     [profiles]
@@ -471,20 +410,15 @@ export default function FabricServerSetup() {
   return (
     <PageScaffold ghost
       title="选择或添加 Server"
-      subTitle="配对或管理 AIH 控制面 Server。连接建立后即可接入远程节点、项目和进行原生会话。"
+      subTitle={
+        new URLSearchParams(location.search).get('gate') === '1'
+          ? '此浏览器尚未与当前 server 配对，未授权看不到数据。在 server 所在机器终端运行 aih fabric profile invite，打开打印的 browser url 完成配对。'
+          : '配对或管理 AIH 控制面 Server。连接建立后即可接入远程节点、项目和进行原生会话。'
+      }
       extra={
         <Space size={8} wrap>
           <Button icon={<PlusOutlined />} onClick={() => openSetupModal('pair')}>
             添加 Server
-          </Button>
-          <Button icon={<UploadOutlined />} onClick={() => openSetupModal('transfer')}>
-            导入/迁移
-          </Button>
-          <Button icon={<DownloadOutlined />} disabled={!activeProfile} onClick={handleExportActiveProfile}>
-            导出当前
-          </Button>
-          <Button icon={<DownloadOutlined />} disabled={profiles.length === 0} onClick={handleExportAllProfiles}>
-            导出全部
           </Button>
           <Button
             type="primary"
@@ -514,32 +448,6 @@ export default function FabricServerSetup() {
           }}
         />
       </StatisticCard.Group>
-
-      {new URLSearchParams(location.search).get('gate') === '1' && (
-        <Alert
-          style={{ marginBottom: 16 }}
-          type="info"
-          showIcon
-          message="需要授权才能使用此 Server"
-          description={
-            <span>
-              这个浏览器还没有与当前 server 配对（未授权时看不到任何数据）。
-              在 server 所在机器的终端运行 <Typography.Text code>aih fabric profile invite</Typography.Text>，
-              把打印出的 browser url 在本浏览器打开即可完成配对。
-            </span>
-          }
-        />
-      )}
-
-      {endpointIsLoopback && (
-        <Alert
-          style={{ marginBottom: 16 }}
-          type="warning"
-          showIcon
-          message="当前默认 endpoint 是 loopback"
-          description="127.0.0.1 / localhost 只适合同机访问；手机或另一台电脑需要填写局域网、隧道、WSS relay 或公网 HTTPS endpoint。"
-        />
-      )}
 
       <SectionCard title="已保存 Server">
         <ListTable<ProfileRow>
@@ -713,41 +621,6 @@ export default function FabricServerSetup() {
                     探测并保存
                   </Button>
                 </Form>
-              )
-            },
-            {
-              key: 'transfer',
-              label: '迁移 Profile',
-              children: (
-                <Row gutter={16}>
-                  <Col xs={24} sm={6}>
-                    <Space direction="vertical" style={{ display: 'flex' }}>
-                      <Button block icon={<DownloadOutlined />} disabled={!activeProfile} onClick={handleExportActiveProfile}>
-                        导出当前
-                      </Button>
-                      <Button block icon={<DownloadOutlined />} disabled={profiles.length === 0} onClick={handleExportAllProfiles}>
-                        导出全部
-                      </Button>
-                    </Space>
-                  </Col>
-                  <Col xs={24} sm={18}>
-                  <Form form={importForm} layout="vertical" onFinish={handleImportProfileBundle}>
-                    <Form.Item
-                      name="bundle"
-                      label="Profile Bundle JSON"
-                      rules={[{ required: true, message: '请粘贴 profile bundle JSON' }]}
-                    >
-                      <Input.TextArea
-                        autoSize={{ minRows: 4, maxRows: 8 }}
-                        placeholder='{"kind":"aih-control-plane-profile-bundle","version":1,...}'
-                      />
-                    </Form.Item>
-                    <Button type="primary" htmlType="submit" icon={<UploadOutlined />} loading={importing}>
-                      导入 Profile
-                    </Button>
-                  </Form>
-                  </Col>
-                </Row>
               )
             }
           ]}

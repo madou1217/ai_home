@@ -667,12 +667,7 @@
   - Source artifact: `3d96dff582250a7cde53357ab8e3f5cd6ab06e25208521b29bf12a4644b6bdc7`，`26314708` bytes。
   - 远端 `node bin/ai-home.js node service uninstall --node-id aws-v22 --dry-run --json` 返回 `ok=true`、`dryRun=true`、`plan.writes=false`、`services=[registryAgent,relay]`。
   - v22 明确返回 `no-service-dir` 与 `no-v22-process`；没有写/删 systemd unit，没有启动后台进程。
-- 本地 M2 Server Profile bundle 入口完成：
-  - Web client `/ui/server-setup` 增加 `导出当前`、`导出全部`、`导入 Profile`。
-  - bundle 格式为 `kind=aih-control-plane-profile-bundle, version=1`。
-  - 导出只包含 endpoint、descriptor、node/account/session 摘要和 warnings；不包含 `deviceToken`、本地 profile id 或任何 raw secret。
-  - 导入到新客户端后 profile 为 `discovered/unpaired`，必须重新 device pairing 才能 ready。
-  - 本地验证：`node --test test/control-plane-profiles.test.js test/fabric-profile-gate.test.js` 29/29 pass；`npm --prefix web run build` pass。
+- Server Profile 导入/导出/迁移功能已按用户决定于 2026-07-02 **整体移除**（UI 按钮、页面逻辑、`serialize/parse/import ProfileBundle` 服务函数、类型与相关测试全部删除）。客户端是薄壳，连到哪个 server 就完整用哪个（见 `19-server-context-closure-requirements.md`），不再提供 profile bundle 导入导出。
 - 本轮重新按正确路径尝试 Claude worker：
   - 错误路径 `aih claude 4/5` 不应作为前端 worker 证据。
   - 正确路径 `node bin/ai-home.js claude --print ...` 显示 `Running claude (AIH Server)`，但超过 60 秒停在 `Waiting for claude to boot`，未产出审阅内容或 diff。

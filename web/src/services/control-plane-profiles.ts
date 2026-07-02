@@ -21,8 +21,6 @@ import type {
   ControlPlaneDeviceStatus,
   ControlPlaneDeviceStatusResponse,
   ControlPlaneNodeSummary,
-  ControlPlaneProfileBundle,
-  ControlPlaneProfileBundleEntry,
   ControlPlaneProfileBroker,
   ControlPlaneProfileConnectionMode,
   ControlPlaneProfileState,
@@ -55,18 +53,6 @@ const DEFAULT_DEVICE_REQUEST_TIMEOUT_MS = 10000;
 const DEFAULT_PAIR_REQUEST_TIMEOUT_MS = 10000;
 const MAX_PROFILE_NODE_CACHE = 100;
 const CURRENT_CONTROL_PLANE_PROFILE_NAME = '当前 Control Plane';
-const CONTROL_PLANE_PROFILE_BUNDLE_KIND = 'aih-control-plane-profile-bundle';
-const CONTROL_PLANE_PROFILE_BUNDLE_VERSION = 1;
-const PROFILE_BUNDLE_SECRET_KEYS = new Set([
-  'apikey',
-  'authorization',
-  'clientkey',
-  'devicetoken',
-  'managementkey',
-  'refreshtoken',
-  'secret',
-  'token'
-]);
 export const CONTROL_PLANE_PROFILE_STATES: ControlPlaneProfileState[] = [
   'draft',
   'discovered',
@@ -383,16 +369,6 @@ function normalizeAnyDescriptor(value: unknown): ControlPlaneDescriptor | null {
 
 function normalizeStringArray(value: unknown) {
   return Array.isArray(value) ? value.map((item) => normalizeText(item, 96)).filter(Boolean) : [];
-}
-
-function hasProfileBundleSecretKey(value: unknown): boolean {
-  if (!value || typeof value !== 'object') return false;
-  if (Array.isArray(value)) return value.some(hasProfileBundleSecretKey);
-  return Object.keys(value as Record<string, unknown>).some((key) => {
-    const normalizedKey = key.toLowerCase().replace(/[^a-z0-9]/g, '');
-    if (PROFILE_BUNDLE_SECRET_KEYS.has(normalizedKey)) return true;
-    return hasProfileBundleSecretKey((value as Record<string, unknown>)[key]);
-  });
 }
 
 function normalizeCount(value: unknown) {
@@ -989,137 +965,6 @@ function normalizeProfile(value: unknown): ControlPlaneProfile | null {
     lastError: normalizeText(source.lastError, 512),
     createdAt: Math.max(0, Number(source.createdAt) || now),
     updatedAt: Math.max(0, Number(source.updatedAt) || now)
-  };
-}
-
-function createProfileBundleEntry(profile: ControlPlaneProfile, exportedAt: string): ControlPlaneProfileBundleEntry {
-  const connectionMode = normalizeProfileConnectionMode(profile.connectionMode, profile.endpoint);
-  const broker = connectionMode === 'broker-proxy'
-    ? normalizeProfileBroker(profile.broker, profile.endpoint)
-    : null;
-  return {
-    name: normalizeText(profile.name, 120) || profile.endpoint,
-    endpoint: normalizeControlPlaneEndpoint(profile.endpoint),
-    connectionMode,
-    broker,
-    descriptor: normalizeAnyDescriptor(profile.descriptor),
-    nodeCount: Math.max(0, Number(profile.nodeCount) || 0),
-    accountCount: Math.max(0, Number(profile.accountCount) || 0),
-    schedulableAccountCount: Math.max(0, Number(profile.schedulableAccountCount) || 0),
-    sessionCount: Math.max(0, Number(profile.sessionCount) || 0),
-    exportedAt
-  };
-}
-
-function normalizeProfileBundleEntry(value: unknown): ControlPlaneProfileBundleEntry | null {
-  const source = value && typeof value === 'object'
-    ? value as Partial<ControlPlaneProfileBundleEntry>
-    : null;
-  const endpoint = normalizeControlPlaneEndpoint(source?.endpoint || '');
-  if (!source || !endpoint) return null;
-  const descriptor = normalizeAnyDescriptor(source.descriptor);
-  const connectionMode = normalizeProfileConnectionMode(source.connectionMode, endpoint);
-  const broker = connectionMode === 'broker-proxy'
-    ? normalizeProfileBroker(source.broker, endpoint)
-    : null;
-  return {
-    name: normalizeText(source.name, 120) || descriptor?.endpoint || endpoint,
-    endpoint,
-    connectionMode,
-    broker,
-    descriptor,
-    nodeCount: Math.max(0, Number(source.nodeCount) || 0),
-    accountCount: Math.max(0, Number(source.accountCount) || 0),
-    schedulableAccountCount: Math.max(0, Number(source.schedulableAccountCount) || 0),
-    sessionCount: Math.max(0, Number(source.sessionCount) || 0),
-    exportedAt: normalizeText(source.exportedAt, 128)
-  };
-}
-
-export function createControlPlaneProfileBundle(
-  input: ControlPlaneProfile | ControlPlaneProfile[]
-): ControlPlaneProfileBundle {
-  const exportedAt = new Date().toISOString();
-  const profiles = (Array.isArray(input) ? input : [input])
-    .map((profile) => profile && createProfileBundleEntry(profile, exportedAt))
-    .filter((entry): entry is ControlPlaneProfileBundleEntry => Boolean(entry && entry.endpoint));
-  return {
-    kind: CONTROL_PLANE_PROFILE_BUNDLE_KIND,
-    version: CONTROL_PLANE_PROFILE_BUNDLE_VERSION,
-    exportedAt,
-    profiles,
-    warnings: [
-      'device_token_not_exported',
-      'import_requires_pairing'
-    ]
-  };
-}
-
-export function serializeControlPlaneProfileBundle(input: ControlPlaneProfile | ControlPlaneProfile[]) {
-  return `${JSON.stringify(createControlPlaneProfileBundle(input), null, 2)}\n`;
-}
-
-export function parseControlPlaneProfileBundle(input: string | unknown): ControlPlaneProfileBundle {
-  const parsed = typeof input === 'string' ? JSON.parse(input) : input;
-  if (hasProfileBundleSecretKey(parsed)) {
-    throw new Error('control_plane_profile_bundle_contains_secret');
-  }
-  const source = parsed && typeof parsed === 'object'
-    ? parsed as Partial<ControlPlaneProfileBundle>
-    : null;
-  if (!source || source.kind !== CONTROL_PLANE_PROFILE_BUNDLE_KIND || source.version !== CONTROL_PLANE_PROFILE_BUNDLE_VERSION) {
-    throw new Error('invalid_control_plane_profile_bundle');
-  }
-  const profiles = (Array.isArray(source.profiles) ? source.profiles : [])
-    .map(normalizeProfileBundleEntry)
-    .filter((entry): entry is ControlPlaneProfileBundleEntry => Boolean(entry));
-  if (profiles.length === 0) {
-    throw new Error('empty_control_plane_profile_bundle');
-  }
-  return {
-    kind: CONTROL_PLANE_PROFILE_BUNDLE_KIND,
-    version: CONTROL_PLANE_PROFILE_BUNDLE_VERSION,
-    exportedAt: normalizeText(source.exportedAt, 128),
-    profiles,
-    warnings: normalizeStringArray(source.warnings)
-  };
-}
-
-export function importControlPlaneProfileBundle(input: string | unknown) {
-  const bundle = parseControlPlaneProfileBundle(input);
-  const before = readProfiles();
-  const beforeByEndpoint = new Map(before.map((profile) => [profile.endpoint, profile]));
-  const imported = bundle.profiles.map((entry) => {
-    const existing = beforeByEndpoint.get(entry.endpoint) || null;
-    const profile = saveControlPlaneProfile({
-      name: entry.name,
-      endpoint: entry.endpoint,
-      connectionMode: entry.connectionMode,
-      broker: entry.broker,
-      descriptor: entry.descriptor,
-      state: existing?.deviceToken ? existing.state : 'discovered',
-      authState: existing?.deviceToken ? existing.authState : 'unpaired',
-      deviceToken: existing?.deviceToken || '',
-      nodeCount: existing?.deviceToken ? existing.nodeCount : entry.nodeCount,
-      accountCount: existing?.deviceToken ? existing.accountCount : entry.accountCount,
-      activeAccountCount: existing?.deviceToken ? existing.activeAccountCount : 0,
-      schedulableAccountCount: existing?.deviceToken ? existing.schedulableAccountCount : entry.schedulableAccountCount,
-      sessionCount: existing?.deviceToken ? existing.sessionCount : entry.sessionCount,
-      lastError: ''
-    });
-    return {
-      profile,
-      status: existing ? 'updated' as const : 'imported' as const,
-      preservedDeviceToken: Boolean(existing?.deviceToken)
-    };
-  });
-  return {
-    bundle,
-    profiles: listControlPlaneProfiles(),
-    imported,
-    importedCount: imported.filter((item) => item.status === 'imported').length,
-    updatedCount: imported.filter((item) => item.status === 'updated').length,
-    preservedDeviceTokenCount: imported.filter((item) => item.preservedDeviceToken).length
   };
 }
 

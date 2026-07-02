@@ -83,3 +83,12 @@
 - AI 会话（与 R3 合并做，较重）
 - 模型目录 / 模型用量：远端 device 接口若无 → 显示「此 server 暂不提供」
 - 仪表盘 / 顶部当前 server 常驻横幅
+
+## 决定：移除 Server Profile 导入/导出/迁移（2026-07-02）
+
+用户明确：Server 管理里不应有 导入/迁移 / 导出当前 / 导出全部。已彻底移除：
+- FabricServerSetup 的三个按钮 + 「迁移 Profile」弹窗页 + 导出/导入处理器。
+- `control-plane-profiles.ts` 的 `createControlPlaneProfileBundle/serialize/parse/import` + 私有 helper + 常量。
+- `types` 的 `ControlPlaneProfileBundle(Entry)`；`control-plane-profiles.test.js` 的 3 个 bundle 用例。
+- 验证：`node --test test/control-plane-profiles.test.js` 28/28 pass；web build pass。
+- **未改 git 历史 / 带日期的历史证据文件**（2026-06-26/27 evidence、02/03/07 设计规范）——那是不可变的历史记录，篡改属 revisionism；如需从历史彻底抹除请单独指示（会重写已推送的 main，破坏性高）。

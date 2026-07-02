@@ -70,3 +70,16 @@
 **已知缺口（记录）**：`/readyz` 在门外，任何人可读账号数量计数（如 `codex:1/claude:4`）——是计数非数据，暂列已知项，后续可选择性收敛。
 
 **用户须知**：现有只配了 AWS profile 的浏览器标签，刷新后访问本机 :9527/ui 会因无 localhost token 被挡到 gate 页——这是 R2「localhost 不豁免」的预期行为，需一次性配对本机（`aih fabric profile invite` → 打开链接）。
+
+## R1 进度：切片 1 = 账号（已交付，commit 95ff932 + 51e2c47）
+
+架构：server-context.ts 单一真相（激活 profile→endpoint/deviceToken/isLocal）+ 路由级双模。
+- 本机(同源)→ 原完整 UI（零改动）；远端→只读摘要（直连远端 endpoint+token，不走本地代理）。
+- 拒绝把远端只读摘要塞进本地完整 Account 结构（不造假字段/假管理按钮）。
+- 切到远端本地页随组件卸载→SSE/WS watcher 自动拆除；切换瞬间清空到 loading。
+真实浏览器验收：切 AWS→13 真实账号(codex1/claude4/agy7/opencode1)+只读横幅；切回本机→完整 UI；**CORS 0 报错**（浏览器验，非 curl）。
+
+**R1 剩余切片（待做，同一套 server-context 模式）**：
+- AI 会话（与 R3 合并做，较重）
+- 模型目录 / 模型用量：远端 device 接口若无 → 显示「此 server 暂不提供」
+- 仪表盘 / 顶部当前 server 常驻横幅

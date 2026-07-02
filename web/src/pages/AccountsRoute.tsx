@@ -1,6 +1,6 @@
 import PageScaffold from '@/components/ui/PageScaffold';
 import Accounts from './Accounts';
-import RemoteAccountsSummary from '@/components/accounts/RemoteAccountsSummary';
+import RemoteAccountsSummary from '@/components/account/RemoteAccountsSummary';
 import { useActiveServerContext } from '@/services/server-context';
 
 /* 账号路由（R1）：数据跟随当前 server。

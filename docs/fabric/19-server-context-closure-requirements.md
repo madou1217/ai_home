@@ -57,3 +57,16 @@
 1. **授权门不豁免 localhost**：任何浏览器（含本机）打开 :9527/ui 都必须先配对/授权，数据接口一律 401 挡住。
 2. **顺序**：R2 授权门 → R1 切换语义 → R3 会话统一。
 3. **远端缺口**：切到远端 server 时缺的数据页如实显示「此 server 暂不提供」，先接已有接口（账号/会话/状态），不假装不混数据。
+
+## R2 授权门：已交付 + 验收（2026-07-02，commit 6784fb4）
+
+真实无头浏览器 + curl 验收（无 mock）：
+- 侧门全挡：无 token 时 `/v0/webui/*`、`/v0/node-rpc/device-accounts|sessions|status`、`/v0/fabric/registry` 一律 401（数据无侧门泄漏）。
+- 配对闭环：无痕浏览器闯数据页→重定向 gate 页、无数据泄漏、显示授权引导；`aih fabric profile invite`→打开链接配对成功→再访问不再被踢。
+- 配对 token 有效：本机 token 读 registry `ok:true`（授权成功；nodes=0 是本机 server 自身 registry 内容，非鉴权失败，归 R1）。
+- 流站点全带 token：accounts/watch(WS)、openai-models/watch、projects/watch、sessions/watch 均经 `withWebUiAccessToken` 携 access_token 连接，0 个 401 流；账号页数据正常。
+- 配对路径/`/readyz`/`/ui` 静态壳不在门内，仍可达。
+
+**已知缺口（记录）**：`/readyz` 在门外，任何人可读账号数量计数（如 `codex:1/claude:4`）——是计数非数据，暂列已知项，后续可选择性收敛。
+
+**用户须知**：现有只配了 AWS profile 的浏览器标签，刷新后访问本机 :9527/ui 会因无 localhost token 被挡到 gate 页——这是 R2「localhost 不豁免」的预期行为，需一次性配对本机（`aih fabric profile invite` → 打开链接）。

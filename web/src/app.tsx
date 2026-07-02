@@ -33,6 +33,10 @@ export const layout = ({ initialState }: any) => {
           emptyLabel="配置"
           manageLabel="配置"
           showSummary
+          onChange={() => {
+            // 切换 server 后强制整页重载：所有数据页从新 server 重新取数，避免残留上一台的数据。
+            if (typeof window !== "undefined") window.location.reload();
+          }}
         />
       </div>
     ),

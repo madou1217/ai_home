@@ -1,0 +1,441 @@
+/* ============================================================================
+ * 移动端卡片 / 指标网格 —— 手机专属视觉底座,统一到「会话页设计语言」。
+ *
+ * 设计语言(与 mobile-sessions.css 同源):Plus Jakarta Sans + JetBrains Mono、
+ * 暖赤陶强调色、大大方方的白色圆角卡片 + 轻阴影、宽松留白。账号 / 用量 / 设置
+ * 等页面的移动卡片全部复用这里的类,从而一处定义、多页一致。
+ *
+ * 铁律:任何用到这些类的区块都不得横向溢出(scrollWidth ≤ 视口宽)。卡片一律
+ * min-width:0 + 文本省略,保证窄屏不撑破。
+ * ==========================================================================*/
+
+/* 移动端设计 token —— 全局定义,供本文件与页面级移动样式共享 */
+:root {
+  --m-font: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
+  --m-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --m-bg: #f1f1f7;
+  --m-surface: #ffffff;
+  --m-surface-2: #fafaff;
+  --m-ink: #1b1b2b;
+  --m-ink-2: #5a5a72;
+  --m-ink-3: #8b8ba3;
+  --m-ink-4: #b6b6c8;
+  --m-line: #ececf4;
+  --m-line-2: #e2e2ee;
+  --m-acc: #d97757;
+  --m-run: #13a65a;
+  --m-radius: 18px;
+  --m-radius-sm: 12px;
+  --m-sh-xs: 0 1px 2px rgba(27, 27, 43, .05);
+  --m-sh-sm: 0 1px 3px rgba(27, 27, 43, .06), 0 1px 2px rgba(27, 27, 43, .04);
+}
+
+/* ── 入场动画 ──────────────────────────────────────────────────────────────
+ * 卡片/指标块首次挂载时淡入 + 轻微上移,避免整屏"猛地一下"全部弹出。
+ * 关键:列表项都用稳定 key(id/path),data tick 时 React 复用 DOM 不重挂,
+ * 因此动画只在首次出现(或真正的新项进入)时播一次,不会随刷新反复抖动。
+ * 尊重系统「减少动态效果」偏好。 */
+@keyframes mEnterUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@media (max-width: 767.98px) {
+  .mobile-stat-tile,
+  .mobile-card {
+    animation: mEnterUp .42s cubic-bezier(.16, .84, .44, 1) both;
+  }
+  /* 轻错峰:前几项渐次进入,更从容 */
+  .mobile-stat-tile:nth-child(2) { animation-delay: .05s; }
+  .mobile-stat-tile:nth-child(3) { animation-delay: .10s; }
+  .mobile-stat-tile:nth-child(4) { animation-delay: .15s; }
+  .mobile-card:nth-child(2) { animation-delay: .04s; }
+  .mobile-card:nth-child(3) { animation-delay: .08s; }
+  .mobile-card:nth-child(4) { animation-delay: .12s; }
+  .mobile-card:nth-child(5) { animation-delay: .16s; }
+  .mobile-card:nth-child(6) { animation-delay: .20s; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mobile-stat-tile,
+  .mobile-card { animation: none !important; }
+}
+
+/* 原生移动图标按钮(刷新等)——赤陶描边、够大的触控目标 */
+.m-icon-btn {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  border: 1px solid var(--m-line);
+  background: var(--m-surface);
+  color: var(--m-ink-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  cursor: pointer;
+  box-shadow: var(--m-sh-xs);
+  transition: background .15s;
+}
+.m-icon-btn:active { background: var(--m-surface-2); }
+.m-icon-btn:disabled { opacity: .5; }
+.m-icon-btn.primary {
+  background: var(--m-acc);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 3px 9px color-mix(in srgb, var(--m-acc) 38%, transparent);
+}
+/* 页头右侧原生操作:一排紧凑图标按钮(主操作赤陶 + 次操作描边) */
+.m-header-actions { display: inline-flex; align-items: center; gap: 8px; }
+
+/* 卡片右上「更多」:小号幽灵按钮,点开原生底部操作表 */
+.m-card-more {
+  border: none;
+  background: transparent;
+  color: var(--m-ink-3);
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  cursor: pointer;
+}
+.m-card-more:active { background: var(--m-surface-2); }
+
+/* 原生底部操作表(替代 PC 下拉菜单) */
+.m-action-sheet .ant-drawer-body { padding: 8px 16px calc(16px + env(safe-area-inset-bottom)); font-family: var(--m-font); }
+.m-sheet-list { display: flex; flex-direction: column; }
+.m-sheet-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 16px 8px;
+  border: none;
+  background: transparent;
+  font-family: var(--m-font);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--m-ink);
+  text-align: left;
+  cursor: pointer;
+  border-radius: 12px;
+}
+.m-sheet-item + .m-sheet-item { border-top: 1px solid var(--m-line); border-radius: 0; }
+.m-sheet-item:active { background: var(--m-surface-2); }
+.m-sheet-item.danger { color: var(--color-danger, #dc2626); }
+.m-sheet-item:disabled { color: var(--m-ink-4); cursor: default; }
+.m-sheet-item.cancel { justify-content: center; color: var(--m-ink-2); margin-top: 10px; border-top: none; background: var(--m-surface-2); }
+.m-sheet-icon { display: inline-flex; font-size: 18px; }
+.m-sheet-divider { height: 8px; }
+
+/* 防止移动端全局样式把 antd Switch 压扁成一条线:锁定轨道尺寸 */
+.mobile-card .ant-switch,
+.mobile-card-foot .ant-switch,
+.ltcard-actions .ant-switch {
+  min-width: 48px;
+  height: 26px;
+  line-height: 24px;
+}
+.mobile-card .ant-switch .ant-switch-handle {
+  width: 22px;
+  height: 22px;
+  top: 2px;
+}
+.mobile-card .ant-switch.ant-switch-checked .ant-switch-handle {
+  inset-inline-start: calc(100% - 24px);
+}
+
+/* 原生筛选:主屏只放一个「筛选」按钮,选项收进底部抽屉 */
+.m-filterbar { display: flex; align-items: center; gap: 10px; margin-bottom: 13px; }
+.m-filter-btn {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 16px;
+  border-radius: 14px;
+  background: var(--m-surface);
+  border: 1px solid var(--m-line);
+  box-shadow: var(--m-sh-xs);
+  font-family: var(--m-font);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--m-ink);
+  cursor: pointer;
+}
+.m-filter-summary {
+  min-width: 0;
+  color: var(--m-ink-3);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.m-filter-group-label { font-size: 13px; font-weight: 700; color: var(--m-ink-2); margin: 0 0 11px; }
+.m-filter-group-label:not(:first-child) { margin-top: 20px; }
+.m-filter-drawer .ant-drawer-body { font-family: var(--m-font); }
+.m-filter-drawer .ant-drawer-header { font-family: var(--m-font); }
+
+/* ---- 指标网格(替代 StatisticCard.Group)---- */
+.mobile-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 11px;
+  margin-bottom: 13px;
+}
+.mobile-stat-grid[data-cols='3'] {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.mobile-stat-tile {
+  min-width: 0;
+  padding: 16px 17px;
+  border-radius: var(--m-radius);
+  background: var(--m-surface);
+  border: 1px solid var(--m-line);
+  box-shadow: var(--m-sh-xs);
+  font-family: var(--m-font);
+}
+.mobile-stat-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--m-ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mobile-stat-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.mobile-stat-value {
+  margin-top: 7px;
+  font-family: var(--m-font);
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -.02em;
+  line-height: 1.1;
+  color: var(--m-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mobile-stat-hint {
+  margin-top: 5px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--m-ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- 通用卡片列表 ---- */
+.mobile-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+
+.mobile-card {
+  min-width: 0;
+  padding: 16px;
+  border-radius: var(--m-radius);
+  background: var(--m-surface);
+  border: 1px solid var(--m-line);
+  box-shadow: var(--m-sh-xs);
+  font-family: var(--m-font);
+  transition: box-shadow .15s ease, transform .15s ease;
+}
+.mobile-card:active {
+  box-shadow: var(--m-sh-sm);
+  transform: translateY(-1px);
+}
+
+/* 卡片头:图标 + 主标题 + 右侧操作 */
+.mobile-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+  min-width: 0;
+}
+.mobile-card-head-icon {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  background: var(--m-surface-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.mobile-card-head-main {
+  flex: 1;
+  min-width: 0;
+}
+.mobile-card-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--m-ink);
+}
+.mobile-card-title-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mobile-card-subtitle {
+  margin-top: 3px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--m-ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mobile-card-head-action {
+  flex: none;
+  margin: -4px -6px 0 0;
+}
+
+/* 标签行 */
+.mobile-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  margin-top: 13px;
+}
+.mobile-card-tags:empty {
+  display: none;
+}
+
+/* 元信息行(键值对):可换行、不溢出 */
+.mobile-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  margin-top: 14px;
+}
+.mobile-card-meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.mobile-card-meta-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--m-ink-3);
+}
+.mobile-card-meta-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--m-ink);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 账号卡:状态 + 模型探测一行,用量快照一行 */
+.account-mobile-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px 16px;
+  flex-wrap: wrap;
+  margin-top: 13px;
+  font-size: 13px;
+}
+.account-mobile-probe { cursor: pointer; }
+.account-mobile-usage { margin-top: 12px; }
+
+/* 卡片脚:分隔线 + 开关等主操作 */
+.mobile-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 15px;
+  padding-top: 14px;
+  border-top: 1px solid var(--m-line);
+}
+.mobile-card-foot-hint {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--m-ink-3);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- ListTable 移动端通用卡片(任意表格自动降级:label 左 / value 右)---- */
+.ltcard-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  min-width: 0;
+}
+.ltcard-row + .ltcard-row {
+  border-top: 1px dashed var(--m-line);
+}
+.ltcard-label {
+  flex: none;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--m-ink-3);
+}
+.ltcard-value {
+  min-width: 0;
+  text-align: right;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--m-ink);
+  overflow-wrap: anywhere;
+}
+.ltcard-value .ant-space,
+.ltcard-value .ant-space-horizontal {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  row-gap: 6px;
+}
+.ltcard-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 13px;
+  padding-top: 13px;
+  border-top: 1px solid var(--m-line);
+}
+.ltcard-actions .ant-space,
+.ltcard-actions .ant-space-horizontal {
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+.ltcard-actions > span {
+  min-width: 0;
+  max-width: 100%;
+}
+.ltcard-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--m-ink);
+  margin-bottom: 5px;
+  overflow-wrap: anywhere;
+}

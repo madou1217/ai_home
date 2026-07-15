@@ -1,0 +1,356 @@
+/* =============================================================================
+ * AI Home — Design Tokens (Single Source of Truth)
+ * -----------------------------------------------------------------------------
+ * 这是整个 Web UI 的设计规范地基。任何颜色 / 字号 / 间距 / 圆角 / 阴影 / 动效
+ * 都应引用这里的 token，禁止在组件里写魔法数字与硬编码颜色。
+ *
+ * 分层：
+ *   1. Primitive  原始刻度（--c-*, --space-*, --text-*, --radius-* ...）
+ *   2. Semantic   语义别名（--color-bg / --color-text / --color-danger ...）
+ *   3. Domain     领域语义（provider 强调色、事件语义色）
+ *
+ * 旧的 --app-* / --chat-* 变量在文件末尾统一映射到本系统，保证渐进迁移不破坏。
+ * 详见 web/DESIGN.md。
+ * ========================================================================== */
+
+:root {
+  color-scheme: light;
+
+  /* ---------------------------------------------------------------------------
+   * 1. PRIMITIVES — Color ramps
+   * 中性色采用 slate，品牌主色为近黑（沿用现有视觉）。
+   * ------------------------------------------------------------------------ */
+
+  /* Neutral (slate) */
+  --c-neutral-0:  #ffffff;
+  --c-neutral-25: #fbfcfd;
+  --c-neutral-50: #f8fafc;
+  --c-neutral-100:#f1f5f9;
+  --c-neutral-150:#eaeff5;
+  --c-neutral-200:#e2e8f0;
+  --c-neutral-300:#cbd5e1;
+  --c-neutral-400:#94a3b8;
+  --c-neutral-500:#64748b;
+  --c-neutral-600:#475569;
+  --c-neutral-700:#334155;
+  --c-neutral-800:#1e293b;
+  --c-neutral-900:#0f172a;
+  --c-neutral-950:#020617;
+
+  /* Brand (near-black, mono-ink) */
+  --c-brand-soft:  #f1f5f9;
+  --c-brand-500:   #262626;
+  --c-brand-600:   #171717;
+  --c-brand-700:   #0a0a0a;
+  --c-brand-900:   #000000;
+
+  /* Status hues */
+  --c-info-500:    #3b82f6;
+  --c-info-600:    #2563eb;
+  --c-success-500: #16a34a;
+  --c-success-600: #15803d;
+  --c-warning-500: #d97706;
+  --c-warning-600: #b45309;
+  --c-danger-500:  #ef4444;
+  --c-danger-600:  #dc2626;
+  --c-purple-500:  #8b5cf6;
+  --c-purple-600:  #7c3aed;
+  --c-teal-500:    #0d9488;
+
+  /* Provider brand hues */
+  --c-codex:   #10a37f;  /* OpenAI green */
+  --c-claude:  #d97757;  /* Anthropic coral */
+  --c-gemini:  #4285f4;  /* Google blue */
+  --c-agy:     #8b5cf6;  /* Antigravity purple */
+  --c-opencode: #1f2937; /* OpenCode neutral */
+
+  /* ---------------------------------------------------------------------------
+   * 2. PRIMITIVES — Typography
+   * 字体族 + 模块化字号刻度（1.2 比例，基准 14px）。
+   * ------------------------------------------------------------------------ */
+  --font-display: 'Sora', 'Manrope', 'Noto Sans SC', sans-serif;
+  --font-body: 'Manrope', 'HarmonyOS Sans SC', 'Noto Sans SC', 'PingFang SC', sans-serif;
+  --font-mono: 'JetBrains Mono', 'SFMono-Regular', 'Cascadia Mono', monospace;
+
+  --text-2xs: 10px;
+  --text-xs:  11px;
+  --text-sm:  12px;
+  --text-base:13px;
+  --text-md:  14px;
+  --text-lg:  16px;
+  --text-xl:  18px;
+  --text-2xl: 22px;
+  --text-3xl: 28px;
+  --text-4xl: 34px;
+
+  --leading-tight: 1.25;
+  --leading-snug:  1.4;
+  --leading-normal:1.6;
+  --leading-relaxed:1.75;
+
+  --weight-regular: 400;
+  --weight-medium:  500;
+  --weight-semibold:600;
+  --weight-bold:    700;
+  --weight-extrabold:800;
+
+  --tracking-tight: -0.01em;
+  --tracking-normal: 0;
+  --tracking-wide: 0.04em;
+  --tracking-caps: 0.08em;
+
+  /* ---------------------------------------------------------------------------
+   * 3. PRIMITIVES — Spacing scale (4px base)
+   * ------------------------------------------------------------------------ */
+  --space-0:  0;
+  --space-1:  2px;
+  --space-2:  4px;
+  --space-3:  6px;
+  --space-4:  8px;
+  --space-5:  10px;
+  --space-6:  12px;
+  --space-7:  14px;
+  --space-8:  16px;
+  --space-10: 20px;
+  --space-12: 24px;
+  --space-14: 28px;
+  --space-16: 32px;
+  --space-20: 40px;
+  --space-24: 48px;
+  --space-32: 64px;
+
+  /* ---------------------------------------------------------------------------
+   * 4. PRIMITIVES — Radius / Elevation / Motion
+   * ------------------------------------------------------------------------ */
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 20px;
+  --radius-pill: 999px;
+
+  --elevation-1: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --elevation-2: 0 2px 8px rgba(15, 23, 42, 0.08);
+  --elevation-3: 0 8px 24px rgba(15, 23, 42, 0.10);
+  --elevation-4: 0 16px 44px rgba(15, 23, 42, 0.14);
+  --ring-focus: 0 0 0 3px rgba(23, 23, 23, 0.20);
+  --ring-focus-info: 0 0 0 3px rgba(59, 130, 246, 0.28);
+
+  --motion-instant: 80ms;
+  --motion-fast: 120ms;
+  --motion-base: 180ms;
+  --motion-slow: 280ms;
+  --motion-slower: 420ms;
+  --ease-standard: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ---------------------------------------------------------------------------
+   * 5. PRIMITIVES — Z-index layers
+   * ------------------------------------------------------------------------ */
+  --z-base: 0;
+  --z-raised: 10;
+  --z-sticky: 100;
+  --z-drawer: 1000;
+  --z-overlay: 1100;
+  --z-modal: 1200;
+  --z-popover: 1300;
+  --z-toast: 1400;
+
+  /* ---------------------------------------------------------------------------
+   * 6. SEMANTIC — Surfaces / Text / Borders
+   * ------------------------------------------------------------------------ */
+  --color-bg: var(--c-neutral-50);
+  --color-bg-elevated: var(--c-neutral-0);
+  --color-surface: var(--c-neutral-0);
+  --color-surface-raised: var(--c-neutral-25);
+  --color-surface-muted: var(--c-neutral-100);
+  --color-surface-soft: var(--c-neutral-50);
+  --color-surface-sunken: var(--c-neutral-150);
+
+  --color-border: var(--c-neutral-200);
+  --color-border-strong: var(--c-neutral-300);
+  --color-border-subtle: rgba(15, 23, 42, 0.06);
+
+  --color-text: var(--c-neutral-800);
+  --color-heading: var(--c-neutral-900);
+  --color-muted: var(--c-neutral-500);
+  --color-muted-strong: var(--c-neutral-600);
+  --color-faint: var(--c-neutral-400);
+  --color-on-brand: var(--c-neutral-0);
+
+  --color-brand: var(--c-brand-600);
+  --color-brand-strong: var(--c-brand-900);
+  --color-brand-soft: var(--c-brand-soft);
+
+  /* Status semantics (fg + soft bg) */
+  --color-info: var(--c-info-600);
+  --color-info-soft: rgba(37, 99, 235, 0.10);
+  --color-success: var(--c-success-600);
+  --color-success-soft: rgba(22, 163, 74, 0.10);
+  --color-warning: var(--c-warning-500);
+  --color-warning-soft: rgba(217, 119, 6, 0.12);
+  --color-danger: var(--c-danger-600);
+  --color-danger-soft: rgba(220, 38, 38, 0.10);
+  --color-attention: var(--c-warning-500);
+  --color-attention-soft: rgba(217, 119, 6, 0.12);
+
+  /* ---------------------------------------------------------------------------
+   * 7. DOMAIN — Provider accents
+   * 每个 provider 的强调色 + 弱化底色，用于会话标识与气泡强调。
+   * ------------------------------------------------------------------------ */
+  --provider-codex: var(--c-codex);
+  --provider-codex-soft: rgba(16, 163, 127, 0.12);
+  --provider-claude: var(--c-claude);
+  --provider-claude-soft: rgba(217, 119, 87, 0.14);
+  --provider-gemini: var(--c-gemini);
+  --provider-gemini-soft: rgba(66, 133, 244, 0.12);
+  --provider-agy: var(--c-agy);
+  --provider-agy-soft: rgba(139, 92, 246, 0.12);
+  --provider-opencode: var(--c-opencode);
+  --provider-opencode-soft: rgba(31, 41, 55, 0.10);
+
+  /* 当前会话的强调色：组件层用 data-provider 覆盖（见 DESIGN.md） */
+  --provider-accent: var(--c-brand-600);
+  --provider-accent-soft: var(--c-brand-soft);
+
+  /* ---------------------------------------------------------------------------
+   * 8. DOMAIN — Event semantics
+   * 事件块（工具/思考/计划/目标/记忆/通知/确认）统一的语义色与几何。
+   * ------------------------------------------------------------------------ */
+  --event-radius: var(--radius-lg);
+  --event-radius-sm: var(--radius-sm);
+  --event-border: var(--color-border);
+  --event-bg: var(--color-surface);
+  --event-bg-muted: var(--color-surface-muted);
+  --event-header-gap: var(--space-4);
+  --event-pad-x: var(--space-8);
+  --event-pad-y: var(--space-6);
+
+  --event-tool: var(--c-neutral-600);
+  --event-tool-soft: rgba(71, 85, 105, 0.10);
+  --event-thinking: var(--c-purple-600);
+  --event-thinking-soft: rgba(124, 58, 237, 0.10);
+  --event-plan: var(--c-info-600);
+  --event-plan-soft: rgba(37, 99, 235, 0.10);
+  --event-goal: var(--c-teal-500);
+  --event-goal-soft: rgba(13, 148, 136, 0.10);
+  --event-memory: var(--c-warning-500);
+  --event-memory-soft: rgba(217, 119, 6, 0.10);
+  --event-notify: var(--c-info-600);
+  --event-notify-soft: rgba(37, 99, 235, 0.10);
+  --event-ask: var(--c-purple-600);
+  --event-ask-soft: rgba(124, 58, 237, 0.10);
+
+  /* ---------------------------------------------------------------------------
+   * 8c. DOMAIN — Status badge palette (solid tints)
+   * 会话内徽章 / 标签 / 状态片的实底配色：底(bg) / 字(ink) / 边(bd)。
+   * 沿用既有视觉，集中沉淀为 token —— 组件层禁止再写这些原始值。
+   * ------------------------------------------------------------------------ */
+  --c-accent-blue:  #2f5aa8;   /* 强调蓝：链接 / 激活 / 主操作 */
+  --c-accent-green: #35a06f;   /* 强调绿：成功 / 确认 */
+
+  --tint-info:    #eef4ff;  --ink-info:    #2f5aa8;
+  --tint-success: #ecfdf3;  --ink-success: #067647;  --bd-success: #9bd3b4;
+  --tint-warning: #fff7e6;  --ink-warning: #9a5a00;
+  --tint-danger:  #fff1f0;  --ink-danger:  #b42318;  --bd-danger:  #ffccc7;
+  --tint-neutral: #f2f4f7;  --ink-neutral: #667085;
+
+  /* ---------------------------------------------------------------------------
+   * 9. LAYOUT — Shell dimensions
+   * ------------------------------------------------------------------------ */
+  --layout-sidebar-w: 276px;
+  --layout-topbar-h: 64px;
+  --layout-topbar-h-mobile: 56px;
+  --layout-mobilenav-h: 68px;
+  --layout-page-max: 1560px;
+  --layout-chat-max: 860px;
+  --visual-viewport-height: 100dvh;
+}
+
+/* ===========================================================================
+ * BREAKPOINTS (文档化常量；CSS @media 无法读取变量，统一在此声明标准)
+ *   --bp-xs:  480px   手机竖屏
+ *   --bp-sm:  640px   大手机
+ *   --bp-md:  768px   平板竖屏 / 移动布局切换点
+ *   --bp-lg:  1024px  平板横屏 / 桌面侧栏切换点
+ *   --bp-xl:  1280px  桌面
+ *   --bp-2xl: 1560px  宽屏内容上限
+ * ========================================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-instant: 0ms;
+    --motion-fast: 0ms;
+    --motion-base: 0ms;
+    --motion-slow: 0ms;
+    --motion-slower: 0ms;
+  }
+}
+
+/* ===========================================================================
+ * 移动端字号刻度（≤768px）—— 向 iOS Dynamic Type 对齐
+ * 一处统一上调，所有引用 --text-* 的组件自动适配；body 提到 16px，
+ * 既符合手机可读性，也避免 iOS 输入框聚焦时自动放大。
+ * ========================================================================= */
+@media (max-width: 768px) {
+  :root {
+    --text-2xs: 11px;
+    --text-xs:  12px;
+    --text-sm:  13px;
+    --text-base:15px;
+    --text-md:  16px;
+    --text-lg:  17px;
+    --text-xl:  20px;
+    --text-2xl: 24px;
+    --text-3xl: 30px;
+    --text-4xl: 34px;
+  }
+}
+
+/* ===========================================================================
+ * LEGACY ALIASES — 旧 --app-* 变量映射到新系统（渐进迁移，勿在新代码使用）
+ * ========================================================================= */
+:root {
+  --app-bg: var(--color-bg);
+  --app-bg-elevated: var(--color-bg-elevated);
+  --app-sidebar: var(--color-surface);
+  --app-sidebar-raised: var(--color-surface-raised);
+  --app-surface: var(--color-surface);
+  --app-surface-raised: var(--color-surface-raised);
+  --app-surface-muted: var(--color-surface-muted);
+  --app-surface-soft: var(--color-surface-soft);
+  --app-border: var(--color-border);
+  --app-border-strong: var(--color-border-strong);
+  --app-text: var(--color-text);
+  --app-heading: var(--color-heading);
+  --app-muted: var(--color-muted);
+  --app-muted-strong: var(--color-muted-strong);
+  --app-primary: var(--color-brand);
+  --app-primary-strong: var(--color-brand-strong);
+  --app-primary-soft: var(--color-brand-soft);
+  --app-accent: var(--color-brand);
+  --app-accent-strong: var(--color-brand-strong);
+  --app-accent-soft: var(--c-brand-soft);
+  --app-info: var(--color-info);
+  --app-info-soft: var(--color-info-soft);
+  --app-warning: var(--color-warning);
+  --app-warning-soft: var(--color-warning-soft);
+  --app-danger: var(--color-danger);
+  --app-danger-soft: var(--color-danger-soft);
+  --app-shadow: var(--elevation-4);
+  --app-shadow-soft: var(--elevation-3);
+  --app-focus: var(--ring-focus);
+  --app-radius: var(--radius-xl);
+  --app-radius-sm: var(--radius-lg);
+  --app-topbar-height: var(--layout-topbar-h);
+  --app-mobile-topbar-height: var(--layout-topbar-h-mobile);
+  --app-mobile-nav-height: var(--layout-mobilenav-h);
+  --app-page-max: var(--layout-page-max);
+  --app-motion-fast: var(--motion-fast);
+  --app-motion: var(--motion-base);
+  --app-motion-slow: var(--motion-slow);
+  --app-ease: var(--ease-standard);
+  --app-visual-viewport-height: var(--visual-viewport-height);
+}

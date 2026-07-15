@@ -1,0 +1,38 @@
+.meta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.prompt {
+  margin-bottom: var(--space-5);
+  color: var(--color-muted);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  white-space: pre-wrap;
+}
+
+.loading,
+.empty,
+.error {
+  padding-top: var(--space-5);
+  color: var(--color-muted);
+  font-size: var(--text-sm);
+}
+
+.error {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  color: var(--color-danger);
+}
+
+.transcript {
+  min-width: 0;
+  padding-top: var(--space-5);
+}
+
+.transcript > *:last-child {
+  margin-bottom: 0;
+}

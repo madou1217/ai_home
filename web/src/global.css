@@ -1,0 +1,42 @@
+/* Umi 全局样式入口（约定文件，自动注入）。
+ *
+ * 背景：项目从 Vite 迁移到 UmiJS（commit 687f44a）后，原 Vite main.tsx 里的全局
+ * 样式入口丢失，导致 design-tokens / 品牌字体 / body 布局 / ProLayout 高度等全局
+ * 地基从未加载——所有 var(--color-*) 解析为空、整页错误滚动。此文件恢复加载。
+ *
+ * design-tokens.css 与 App.css 的其余全局规则都从 App.css 串联引入（单一来源）。 */
+@import './styles/App.css';
+@import './styles/mobile-shell.css';
+
+/* 复制图标按钮：全站统一的小号无边框图标。
+ * 默认隐藏（opacity:0，不占位变化、不抖动），悬停所在行或键盘聚焦时才显示。 */
+.copy-icon-btn.ant-btn {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  padding: 0;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #bfbfbf;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+.copy-icon-btn.ant-btn:hover {
+  color: var(--app-link, #1677ff);
+}
+.account-email-row:hover .copy-icon-btn,
+.models-model-row:hover .copy-icon-btn,
+.models-global-row:hover .copy-icon-btn,
+.usage-session-cell:hover .copy-icon-btn,
+.copy-icon-btn:focus-visible {
+  opacity: 1;
+}
+
+/* 全局开关统一尺寸：所有常规 Switch（启用/停用、默认、开放/本机…）共享同一最小宽度，
+ * 不再因文案长度不同而宽窄不一（文案统一控制在 2 字内即可稳定落位）。
+ * size="small" 的开关是刻意的紧凑场景，排除在外。 */
+.ant-switch:not(.ant-switch-sm) {
+  min-width: 56px;
+}

@@ -1,0 +1,99 @@
+.surface-card {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  background: var(--app-surface);
+  box-shadow: var(--app-shadow-soft);
+}
+
+.surface-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.surface-card-copy {
+  min-width: 0;
+}
+
+.surface-card-copy h2 {
+  margin: 0;
+  color: var(--app-heading);
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.surface-card-copy p {
+  margin: 5px 0 0;
+  color: var(--app-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.surface-card-actions,
+.data-toolbar-actions,
+.data-toolbar-filters {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.data-toolbar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.data-toolbar-filters {
+  min-width: 0;
+  flex: 1;
+  flex-wrap: wrap;
+}
+
+.data-toolbar-actions {
+  flex: 0 0 auto;
+}
+
+.paginated-list {
+  min-width: 0;
+}
+
+.paginated-list-grid {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.paginated-list-pagination {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
+@media (max-width: 768px) {
+  .surface-card {
+    padding: 14px;
+  }
+
+  .surface-card-head,
+  .data-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .data-toolbar-actions,
+  .data-toolbar-filters {
+    width: 100%;
+  }
+
+  .paginated-list-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

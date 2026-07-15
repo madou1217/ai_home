@@ -1,0 +1,79 @@
+/* ModelUsage 页已重构为框架组件（SectionCard / ProTable / StatisticCard）。
+ * 原 484 行里 ~40 个 .usage-* 面板/卡片/网格类已全部死亡（无 tsx 引用），此处只保留
+ * 仍在用的「实时扫描」状态条规则：
+ *   - usage-live-scan--{status}：状态色边框（叠加在 SectionCard 上，基础卡样式由
+ *     SectionCard 提供，不再重复 border/radius/shadow）。
+ *   - usage-live-scan-main：扫描条内部 4 列指标网格。 */
+
+.usage-live-scan--queued,
+.usage-live-scan--running {
+  border-color: color-mix(in srgb, var(--c-teal-500) 32%, transparent) !important;
+}
+
+.usage-live-scan--failed {
+  border-color: color-mix(in srgb, var(--c-danger-600) 28%, transparent) !important;
+}
+
+.usage-live-scan-main {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.usage-live-scan-main > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.usage-live-scan-main strong {
+  overflow: hidden;
+  color: var(--app-heading);
+  font-size: 15px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 会话 ID 单元格：等宽纯文本（无 code 灰底边框），尾随悬停才显示的复制图标 */
+.usage-session-cell {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  align-items: center;
+  gap: 6px;
+}
+.usage-session-id {
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+  .usage-live-scan-main {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* 移动端筛选区：时间/Provider 的 Segmented 选项多，窄屏放不下就横向滚动，
+   绝不撑破文档宽度。各项占满一行，Select 全宽。 */
+@media (max-width: 767.98px) {
+  .usage-mobile-filters {
+    row-gap: 10px !important;
+  }
+  .usage-mobile-filters > .ant-space-item {
+    max-width: 100%;
+    min-width: 0;
+  }
+  .usage-mobile-filters .ant-segmented {
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .usage-mobile-filters .ant-segmented::-webkit-scrollbar {
+    display: none;
+  }
+}

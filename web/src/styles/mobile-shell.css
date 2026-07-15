@@ -1,0 +1,220 @@
+/* ============================================================================
+ * 移动端应用外壳（mobile app shell）
+ *
+ * 背景：本站是「同一套 Umi/antd-pro 应用、同一批路由」跑桌面 + 移动双端。桌面用
+ * ProLayout 的 side 布局（顶栏 logo + 左侧菜单）；但在手机上，ProLayout 的全局顶栏
+ * （汉堡 + logo，56px）会和各页自己的移动导航（如 Chat 的 .mobileNav「会话」栏）
+ * 叠成**双层顶栏**，白白吃掉 ~110px 且导航语义重复——这是移动端最主要的破坏点。
+ *
+ * 方案（对齐 design.reuse-antd-pro.md 第 2 章「侧边菜单 → 底部 Tab」）：
+ *   1) 移动端隐藏 ProLayout 全局顶栏，把竖向空间还给页面；
+ *   2) 跨页导航改由固定「底部 TabBar」（MobileTabBar）承接；
+ *   3) 页面内容区补上安全区 + 底部 TabBar 高度的留白。
+ *
+ * 断点用 767.98px（antd md = 768，与页面里的 !screens.md 判定一致）。
+ * ==========================================================================*/
+
+:root {
+  /* 底部 TabBar 视觉高度 + iPhone 底部 home 条安全区 */
+  --mobile-tabbar-h: 52px;
+  --mobile-tabbar-safe: calc(var(--mobile-tabbar-h) + env(safe-area-inset-bottom));
+}
+
+@media (max-width: 767.98px) {
+  /* 0) 字体：桌面用 Sora/Manrope（拉丁字型重、中文靠 fallback）。移动端整体换系统字体栈
+   *    （iOS=SF/苹方，Android=Roboto/思源），贴原生观感、中文渲染更干净。design.reuse-antd-pro
+   *    第 0 章「一致性路线 + 手感层」：字体族属手感层，换成系统栈不破坏品牌 token（色/圆角/间距不变）。
+   *    覆盖 --font-display / --font-body 令牌，令所有读令牌的标题/正文一并生效。--font-mono 保持等宽。 */
+  :root {
+    --font-display: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'HarmonyOS Sans SC', 'Microsoft YaHei', sans-serif;
+    --font-body: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'HarmonyOS Sans SC', 'Microsoft YaHei', sans-serif;
+  }
+  body {
+    font-family: var(--font-body);
+    /* 惯性滚动 + 去点击灰块，手感层通用底子 */
+    -webkit-tap-highlight-color: transparent;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+  /* 输入框字号 ≥16px：iOS Safari 聚焦时 <16px 会自动放大整页，体验破坏点 */
+  input, textarea, select {
+    font-size: max(16px, 1em);
+  }
+
+  /* 1) 干掉 ProLayout 全局顶栏（汉堡 + logo），消除双层顶栏。
+   *    fixedHeader 让它 position:fixed 并给 content 预留了 header 占位，一并回收。
+   *    兜底：不带 pro 类的 ant-layout-header 也一并隐藏（某些版本头部只有 ant-layout-header）。 */
+  .ant-pro-layout .ant-pro-layout-header,
+  .ant-pro-layout .ant-layout-header.ant-pro-layout-header,
+  .ant-pro-layout > .ant-layout > .ant-layout-header,
+  .ant-pro-layout .ant-layout-header:empty {
+    display: none !important;
+  }
+  .ant-pro-layout .ant-pro-layout-content.ant-pro-layout-has-header {
+    margin-block-start: 0 !important;
+    /* fixedHeader 下 content 还用 padding-block-start 给不可见顶栏留了占位，
+       不清零会在页面顶部留出一条 ~56px 纯黑缺口（会话页 fullBleed 上方那条）。 */
+    padding-block-start: 0 !important;
+  }
+
+  /* 2) 普通滚动页（.unified-page-wrapper）：顶部补刘海安全区、底部给 TabBar 让位。
+   *    Chat 是 fullBleed 全高布局、且对话态会隐藏 TabBar，自己管理安全区/留白，不走这里。 */
+  .unified-page-wrapper {
+    /* 统一到会话页设计语言的浅底,让白色卡片浮起来 */
+    background: var(--m-bg, #f1f1f7);
+    padding-top: env(safe-area-inset-top);
+    /* !important:unified.css 移动端用简写 padding:0 16px 16px 会把 bottom 重置成 16px,
+       导致最后一张卡片被固定 TabBar 遮住。这里强制底部留出 TabBar 安全高度。 */
+    padding-bottom: var(--mobile-tabbar-safe) !important;
+  }
+
+  /* 3) 沉浸态：某些页面（Chat 对话视图）进入后需要整屏，隐藏 TabBar。 */
+  body[data-mobile-immersive='1'] .mobile-tabbar {
+    transform: translateY(120%);
+    pointer-events: none;
+  }
+
+  /* 3b) 会话页是整屏列表设计（对齐设计稿），隐藏底部 TabBar，并回收其让位留白。 */
+  body[data-mobile-sessions='1'] {
+    --mobile-tabbar-safe: 0px;
+  }
+  body[data-mobile-sessions='1'] .mobile-tabbar {
+    transform: translateY(120%);
+    pointer-events: none;
+  }
+
+  /* 4) 页头统一规范(全站 PageScaffold 一致):
+   *    - 标题 + 副标题占左侧,竖排(标题独占一行完整显示、副标题换行折行);
+   *    - 操作区(extra)固定在右上角、与标题同处顶部一行,不再换行掉到副标题下方。
+   *    antd PageHeader 默认在窄屏会把 heading 整体 wrap 导致 extra 掉行,这里强制
+   *    heading 不换行、左侧可伸缩、extra 贴顶右对齐。 */
+  /* antd 用 emotion 双类(.css-xxxx)给 heading 设了 flex-wrap:wrap,特异性高于单类,
+     必须 !important 提权,否则 extra 会换行掉到副标题下方。 */
+  .ant-page-header-heading {
+    flex-wrap: nowrap !important;
+    align-items: flex-start !important;
+    gap: 12px;
+  }
+  .ant-page-header-heading-left {
+    flex: 1 1 auto !important;
+    min-width: 0;
+    flex-wrap: wrap;
+    row-gap: 2px;
+    margin: 0;
+  }
+  .ant-page-header-heading-title {
+    max-width: 100%;
+  }
+  .ant-page-header-heading-sub-title {
+    margin-inline-start: 0;
+    white-space: normal;
+  }
+  .ant-page-header-heading-extra {
+    flex: 0 0 auto !important;
+    margin: 0 !important;
+    white-space: nowrap;
+    align-self: flex-start;
+  }
+  /* 操作区内的图标按钮组保持一致间距 */
+  .ant-page-header-heading-extra .m-header-actions { gap: 8px; }
+}
+
+/* ---- 底部 TabBar 本体 ---- */
+.mobile-tabbar {
+  display: none;
+}
+
+@media (max-width: 767.98px) {
+  /* --mobile-tabbar-h 覆盖为更从容的高度,让图标+文字有呼吸感 */
+  :root { --mobile-tabbar-h: 60px; }
+
+  .mobile-tabbar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: var(--z-sticky, 100);
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    align-items: stretch;
+    height: var(--mobile-tabbar-safe);
+    padding: 7px 10px env(safe-area-inset-bottom);
+    background: color-mix(in srgb, #ffffff 86%, transparent);
+    -webkit-backdrop-filter: saturate(180%) blur(22px);
+    backdrop-filter: saturate(180%) blur(22px);
+    border-top: 1px solid var(--m-line, #ececf4);
+    font-family: var(--m-font);
+    transition: transform var(--motion-slow, 0.32s) var(--ease-emphasized, cubic-bezier(0.2, 0, 0, 1));
+    will-change: transform;
+  }
+
+  .mobile-tabbar-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    color: var(--m-ink-3, #8b8ba3);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    -webkit-tap-highlight-color: transparent;
+    transition: color .18s ease;
+    text-decoration: none;
+  }
+
+  .mobile-tabbar-item .anticon {
+    font-size: 23px;
+    line-height: 1;
+    transition: transform .18s var(--ease-emphasized, cubic-bezier(0.2, 0, 0, 1));
+  }
+  .mobile-tabbar-item:active .anticon { transform: scale(0.9); }
+
+  /* 选中态:赤陶色 + 图标上方一条短赤陶指示条,干净不遮挡图标 */
+  .mobile-tabbar-item-active { color: var(--m-acc, #d97757); }
+  .mobile-tabbar-item-active .anticon {
+    color: var(--m-acc, #d97757);
+    filter: drop-shadow(0 2px 6px color-mix(in srgb, var(--m-acc, #d97757) 40%, transparent));
+  }
+}
+
+/* ============================================================================
+ * 移动端按钮/开关统一到会话页设计语言:主操作赤陶(不再纯黑)、次操作干净描边、
+ * 开关选中态赤陶。一处覆盖 = 全站移动端按钮一致。
+ * ==========================================================================*/
+@media (max-width: 767.98px) {
+  .ant-btn {
+    border-radius: 12px;
+    font-family: var(--m-font);
+    font-weight: 600;
+  }
+  .ant-btn-primary:not(:disabled) {
+    background: var(--m-acc, #d97757) !important;
+    border-color: transparent !important;
+    box-shadow: 0 3px 10px color-mix(in srgb, var(--m-acc, #d97757) 32%, transparent) !important;
+  }
+  .ant-btn-primary:not(:disabled):hover,
+  .ant-btn-primary:not(:disabled):active,
+  .ant-btn-primary:not(:disabled):focus {
+    background: color-mix(in srgb, var(--m-acc, #d97757) 88%, #000) !important;
+    border-color: transparent !important;
+  }
+  .ant-btn-default:not(:disabled) {
+    border-color: var(--m-line-2, #e2e2ee) !important;
+    color: var(--m-ink, #1b1b2b);
+    box-shadow: var(--m-sh-xs);
+  }
+  .ant-btn-default:not(:disabled):hover {
+    color: var(--m-acc, #d97757) !important;
+    border-color: color-mix(in srgb, var(--m-acc, #d97757) 45%, var(--m-line-2, #e2e2ee)) !important;
+  }
+  /* 开关选中态:赤陶,与强调色一致 */
+  .ant-switch.ant-switch-checked { background: var(--m-acc, #d97757) !important; }
+  .ant-switch.ant-switch-checked:hover:not(.ant-switch-disabled) {
+    background: color-mix(in srgb, var(--m-acc, #d97757) 88%, #000) !important;
+  }
+}

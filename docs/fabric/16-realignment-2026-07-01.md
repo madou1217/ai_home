@@ -1,0 +1,65 @@
+# AIH Fabric 重新对齐与计划（2026-07-01）
+
+> **历史归档（禁止作为当前实现依据）**：本文保留旧阶段设计；其中客户端 pairing、device token、scope/revoke、Control Plane 或 Node-first 表述仅用于追溯，**不得实现或恢复**。当前客户端只使用 `Server URL + Management Key`；worker join invite 仅用于高级 worker 接入，不是客户端授权。当前规范见 [20-current-server-client-model.md](20-current-server-client-model.md) 和仓库根 [README.md](../../README.md)。
+
+> 这份文档用大白话写。之前的 `08-current-status.md` 满篇「已闭环 / coreReady=true / 2904 pass」，
+> 但那是上一个 agent 自己写的，用户的真实体验是「看不懂、用不了、节点根本没出现」。
+> **在我们一起真实跑通之前，那些乐观结论一律视为「未经用户验证」，不作为事实。**
+
+## 一句话目标
+
+在任意一台设备的本地 WebUI 里，把另一台机器（可无公网 IP）加成一个 **Node**，
+打开它上面的项目，发一条真实消息、拿到真实回复。**全程无 mock。**
+（AWS 只是「众多机器中的一台」示例，不是专为 AWS 做。）
+
+## 为什么之前不尽人意（按用户原话归类）
+
+1. **看不懂（第一痛点）**：控制面/远程节点/节点健康/nodes 概念糊成一团。
+2. **核心闭环从没真跑通**：本地看到并操作远端 node 这件事，直到最后仍「没有闭环」。
+3. **摊子铺太大**：一堆页面、复制多版本、多 worktree/多分支。
+4. **陷入循环不思考**：反复超时空耗。
+5. **委派没落地**：aih claude 本该做前端，没看到痕迹。
+
+## 概念收敛（唯一心智模型）
+
+**一切可连接的机器 = 一个 Node。** Node 带能力标签：
+- `SSH`：能 SSH 开发
+- `runtime`：能跑 AI coding runtime（codex/claude/agy/opencode）
+- `relay`：能做中继
+
+删掉「控制面 / 远程节点 / 节点健康」这类互相割裂、看不懂的分类入口。
+
+## 分阶段计划（每阶段做完必须让用户看懂、能用，再进下一阶段）
+
+### Phase 0 — 一起验证现状（真实，无 mock）【下一步】
+- 在本地 WebUI 里真实走一遍：加 Node → 打开项目 → 发消息。
+- 精确记录这条线**今天走到哪一步断了**（例如「no ready server profile」卡点）。
+- 产出：一份大白话的「现状实况」报告，替代乐观的旧状态文档。
+- 保留现有 Fabric 代码，不删；验证过的才算能用。
+
+### Phase 1 — 概念收敛 + 页面重构
+- 前端只保留：Server Setup / Node 列表 / Node 详情（能力标签 + 可做的动作）。
+- 复杂/完美的前端页面 → 委派 `aih claude 4`，产出明确标注 `[aih claude 4]`。
+
+### Phase 2 — 打通主线闭环
+- 修掉 Phase 0 发现的断点，让「加 Node → 开项目 → 真实消息真实回复」端到端真跑通。
+- 核心协议/后端 = 主控（我）亲自做；独立实现模块可委派 `aih codex 1`，标注 `[aih codex 1]`。
+
+### Phase 3 — 解冻
+- 主线跑通且用户看懂后，再逐个解冻：relay、transport 选路、多 node、手机壳等。
+- native TUI「原生体验」作为**远期愿景保留**，近期不做菜单（用户已要求删菜单）。
+
+## 协作与治理规则（硬约束）
+
+- **委派入口固定**：前端 → `aih claude 4`；实现 → `aih codex 1`；产出必须标注来源。
+- **无 mock**：只做真实连接、真实对话、真实测试。
+- **不堆积**：一段做完就自查「还差什么、下一步做什么」，合适就 scoped commit。
+- **只留主分支**：不开多 worktree、多分支；所有 git log 归一到 main。
+- **可追溯**：每个阶段落一份简短证据到 `docs/fabric/evidence/`。
+- **不空耗**：卡在外部依赖（网络/账号）时收敛并说明，不原地循环。
+
+## 已核实的事实
+
+- `aih claude 4` = 活的默认账号（madou1217@gmail.com，额度充足），委派可用。
+- 仓库现有：`docs/fabric/*`、`lib/server/fabric-*` 与 control-plane 系列、
+  `lib/cli/services/fabric/*`、`web/src/pages/Fabric*`。代码保留待一起验证。

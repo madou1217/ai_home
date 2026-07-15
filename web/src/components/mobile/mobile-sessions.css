@@ -1,0 +1,328 @@
+/* Mobile "Sessions · project-grouped" view.
+ * Ported from the reference design (AI Home · 会话 · 项目分组): Plus Jakarta Sans
+ * + JetBrains Mono, warm terracotta accent, soft cards, project accordions with
+ * expandable session cards. All rules are scoped under `.msx` so this bespoke
+ * mobile look can never leak into the desktop ProjectList render. */
+
+.msx {
+  /* design tokens — scoped, not global :root, so desktop is untouched */
+  --msx-font: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
+  --msx-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --msx-bg: #f1f1f7;
+  --msx-surface: #ffffff;
+  --msx-surface-2: #fafaff;
+  --msx-ink: #1b1b2b;
+  --msx-ink-2: #5a5a72;
+  --msx-ink-3: #8b8ba3;
+  --msx-ink-4: #b6b6c8;
+  --msx-line: #ececf4;
+  --msx-line-2: #e2e2ee;
+  --msx-acc: #d97757;
+  --msx-run: #13a65a;
+  --msx-sh-xs: 0 1px 2px rgba(27, 27, 43, .05);
+  --msx-sh-sm: 0 1px 3px rgba(27, 27, 43, .06), 0 1px 2px rgba(27, 27, 43, .04);
+
+  /* fill the flex parent (.mobileScreenBody) rather than absolute-positioning,
+     so the parent's tabbar-safe padding-bottom keeps the list clear of the TabBar */
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--msx-bg);
+  font-family: var(--msx-font);
+  color: var(--msx-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+@keyframes msxSpin { to { transform: rotate(360deg); } }
+@keyframes msxPulse {
+  0% { box-shadow: 0 0 0 0 rgba(19, 166, 90, .5); }
+  70% { box-shadow: 0 0 0 5px rgba(19, 166, 90, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(19, 166, 90, 0); }
+}
+@keyframes msxUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+/* header */
+.msx-head {
+  flex-shrink: 0;
+  padding: 12px 15px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.msx-head h1 {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -.02em;
+  color: var(--msx-ink);
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+.msx-iconbtn {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--msx-surface);
+  border: 1px solid var(--msx-line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--msx-ink-2);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background .15s;
+  font-size: 15px;
+  padding: 0;
+}
+.msx-iconbtn:hover { background: var(--msx-surface-2); }
+.msx-iconbtn:disabled { opacity: .45; cursor: default; }
+/* back arrow sits left of the title and reads darker, like the reference */
+.msx-iconbtn.back { color: var(--msx-ink); border-color: var(--msx-line-2); }
+.msx-iconbtn.primary {
+  background: var(--msx-acc);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 3px 9px color-mix(in srgb, var(--msx-acc) 40%, transparent);
+}
+
+/* scroll list */
+.msx-list {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 8px 14px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  -webkit-overflow-scrolling: touch;
+}
+.msx-list::-webkit-scrollbar { width: 0; height: 0; }
+
+/* project header (accordion trigger) */
+.msx-proj { animation: msxUp .4s both; }
+.msx-phead {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 18px 16px;
+  cursor: pointer;
+  background: var(--msx-surface);
+  border: 1px solid var(--msx-line);
+  border-radius: 18px;
+  box-shadow: var(--msx-sh-xs);
+  transition: border-color .15s, box-shadow .15s;
+  /* long-press must not trigger text selection / the iOS callout menu */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.msx-phead:active { border-color: var(--msx-line-2); }
+.msx-folder {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--msx-acc) 12%, #fff);
+  color: var(--msx-acc);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 18px;
+}
+.msx-pbody { flex: 1; min-width: 0; }
+.msx-pname {
+  font-family: var(--msx-mono);
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--msx-ink);
+  letter-spacing: -.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.msx-pmeta {
+  font-size: 13px;
+  color: var(--msx-ink-2);
+  margin-top: 3px;
+  font-weight: 600;
+}
+.msx-pmeta .run { color: var(--msx-run); }
+.msx-avatars { display: flex; align-items: center; padding-left: 9px; flex-shrink: 0; }
+.msx-avatars .av {
+  width: 27px;
+  height: 27px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  margin-left: -10px;
+  overflow: hidden;
+  box-shadow: var(--msx-sh-xs);
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.msx-avatars .av.spin { animation: msxSpin 2.8s linear infinite; }
+.msx-chev {
+  transition: transform .28s cubic-bezier(.34, 1.56, .64, 1);
+  color: var(--msx-acc);
+  display: flex;
+  flex-shrink: 0;
+  font-size: 16px;
+}
+.msx-phead.open .msx-chev { transform: rotate(180deg); }
+
+/* expanding drawer */
+.msx-drawer {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows .34s cubic-bezier(.16, .84, .44, 1);
+}
+.msx-drawer.open { grid-template-rows: 1fr; }
+.msx-drawer > div { overflow: hidden; }
+.msx-subs { display: flex; flex-direction: column; gap: 10px; padding-top: 10px; }
+
+/* session card */
+.msx-sub {
+  display: flex;
+  gap: 13px;
+  align-items: flex-start;
+  background: var(--msx-surface);
+  border: 1px solid var(--msx-line);
+  border-radius: 16px;
+  padding: 15px;
+  cursor: pointer;
+  box-shadow: var(--msx-sh-xs);
+  transition: box-shadow .15s, transform .15s;
+}
+.msx-sub:active { box-shadow: var(--msx-sh-sm); transform: translateY(-1px); }
+.msx-sub.active { border-color: color-mix(in srgb, var(--msx-acc) 55%, var(--msx-line)); }
+.msx-avi {
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  flex-shrink: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--msx-surface-2);
+}
+.msx-avi.spin { animation: msxSpin 2.8s linear infinite; }
+.msx-sbody { flex: 1; min-width: 0; }
+.msx-titrow { display: flex; align-items: flex-start; gap: 8px; }
+.msx-tit {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--msx-ink);
+  flex: 1;
+  min-width: 0;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* When the snapshot carries no last-message preview, let the title (the real
+   first-message text) fill two lines so the card still reads as content-rich. */
+.msx-tit.twoline {
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+/* Real last-message preview (gray, two lines) — matches the reference card. */
+.msx-prev {
+  font-size: 14.5px;
+  color: var(--msx-ink-2);
+  margin-top: 9px;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.msx-time {
+  font-size: 12px;
+  color: var(--msx-ink-3);
+  font-family: var(--msx-mono);
+  flex-shrink: 0;
+  padding-top: 2px;
+}
+.msx-time.run {
+  color: var(--msx-run);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.msx-time.run::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--msx-run);
+  animation: msxPulse 1.8s infinite;
+}
+.msx-metarow { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 9px; }
+.msx-provtag {
+  font-family: var(--msx-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--msx-ink-3);
+  background: var(--msx-bg);
+  border-radius: 7px;
+  padding: 3px 10px;
+  white-space: nowrap;
+  text-transform: lowercase;
+}
+.msx-subact {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--msx-ink-4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.msx-subact:hover { background: var(--msx-bg); color: var(--msx-ink-2); }
+
+.msx-empty-subs {
+  font-size: 12px;
+  color: var(--msx-ink-3);
+  padding: 10px 4px 4px;
+}
+.msx-more {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--msx-acc);
+  text-align: center;
+  padding: 8px;
+  cursor: pointer;
+}
+/* Cards stay uniformly white like the reference; a running session is shown by
+   its spinning avatar + the green pulsing "进行中" time, not a card tint. */
+
+/* loading / empty */
+.msx-skel { display: flex; flex-direction: column; gap: 11px; padding-top: 4px; }
+.msx-skel-row {
+  height: 56px;
+  border-radius: 15px;
+  background: linear-gradient(100deg, var(--msx-surface) 30%, var(--msx-surface-2) 50%, var(--msx-surface) 70%);
+  background-size: 200% 100%;
+  animation: msxShimmer 1.3s infinite;
+  border: 1px solid var(--msx-line);
+}
+@keyframes msxShimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.msx-empty {
+  margin-top: 60px;
+  text-align: center;
+  color: var(--msx-ink-3);
+  font-size: 13px;
+  font-weight: 600;
+}
+.msx-empty .big { font-size: 30px; margin-bottom: 8px; opacity: .5; }

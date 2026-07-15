@@ -1,0 +1,65 @@
+{
+  "providers": [
+    {
+      "id": "codex",
+      "label": "ChatGPT",
+      "short": "GPT",
+      "terminalIcon": "◎",
+      "terminalIconAsset": "assets/provider-icons/codex.png",
+      "accentVar": "var(--provider-codex)",
+      "softVar": "var(--provider-codex-soft)",
+      "tagColor": "green"
+    },
+    {
+      "id": "gemini",
+      "label": "Gemini",
+      "short": "GM",
+      "terminalIcon": "✦",
+      "terminalIconAsset": "assets/provider-icons/gemini.png",
+      "accentVar": "var(--provider-gemini)",
+      "softVar": "var(--provider-gemini-soft)",
+      "tagColor": "blue"
+    },
+    {
+      "id": "claude",
+      "label": "Claude",
+      "short": "CL",
+      "terminalIcon": "◇",
+      "terminalIconAsset": "assets/provider-icons/claude.png",
+      "accentVar": "var(--provider-claude)",
+      "softVar": "var(--provider-claude-soft)",
+      "tagColor": "orange"
+    },
+    {
+      "id": "agy",
+      "label": "Antigravity",
+      "short": "AGY",
+      "terminalIcon": "▲",
+      "terminalIconAsset": "assets/provider-icons/agy.png",
+      "accentVar": "var(--provider-agy)",
+      "softVar": "var(--provider-agy-soft)",
+      "tagColor": "purple"
+    },
+    {
+      "id": "opencode",
+      "label": "OpenCode",
+      "short": "OC",
+      "terminalIcon": "⌘",
+      "terminalIconAsset": "assets/provider-icons/opencode.png",
+      "accentVar": "var(--provider-opencode)",
+      "softVar": "var(--provider-opencode-soft)",
+      "tagColor": "default"
+    }
+  ],
+  "fallback": {
+    "id": "codex",
+    "label": "AI",
+    "short": "AI",
+    "terminalIcon": "◌",
+    "terminalIconAsset": "web/src/assets/brand/ai-home-mark.png",
+    "accentVar": "var(--color-brand)",
+    "softVar": "var(--color-brand-soft)",
+    "tagColor": "blue"
+  },
+  "deprecatedGatewayProviders": ["gemini"]
+}

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:xlink="http://www.w3.org/1999/xlink"
+     width="1024"
+     height="1024"
+     viewBox="0 0 1024 1024">
+  <title>AI Home desktop app icon</title>
+  <defs>
+    <!-- Legacy Tauri/macOS .icns compatibility mask. The 100 px optical
+         margin and continuous corner curve match the modern macOS icon grid. -->
+    <path id="app-icon-mask"
+          d="M512 92
+             C758 92 840 92 886 138
+             C932 184 932 266 932 512
+             C932 758 932 840 886 886
+             C840 932 758 932 512 932
+             C266 932 184 932 138 886
+             C92 840 92 758 92 512
+             C92 266 92 184 138 138
+             C184 92 266 92 512 92Z" />
+    <clipPath id="app-icon-clip">
+      <use xlink:href="#app-icon-mask" />
+    </clipPath>
+    <filter id="app-icon-shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#24335f" flood-opacity="0.22" />
+    </filter>
+  </defs>
+
+  <use xlink:href="#app-icon-mask" fill="#ffffff" filter="url(#app-icon-shadow)" />
+  <image x="92"
+         y="92"
+         width="840"
+         height="840"
+         preserveAspectRatio="xMidYMid slice"
+         clip-path="url(#app-icon-clip)"
+         xlink:href="../../web/src/assets/brand/ai-home-logo.png" />
+  <use xlink:href="#app-icon-mask"
+       fill="none"
+       stroke="#ffffff"
+       stroke-opacity="0.42"
+       stroke-width="3" />
+</svg>

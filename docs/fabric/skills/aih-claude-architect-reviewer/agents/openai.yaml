@@ -1,0 +1,4 @@
+interface:
+  display_name: "AIH Claude Architect Reviewer"
+  short_description: "Reviews AIH Fabric architecture"
+  default_prompt: "Use $aih-claude-architect-reviewer to review AIH Fabric design or implementation evidence before approval."

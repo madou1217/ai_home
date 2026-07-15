@@ -264,6 +264,51 @@ test('desktop workflow covers every required runner and unsigned package matrix 
   assert.equal(workflow.includes('secrets.'), false);
 });
 
+test('desktop workflow publishes a guarded GitHub prerelease only after the matrix succeeds', () => {
+  const workflow = fs.readFileSync(
+    path.resolve(__dirname, '..', '..', '.github', 'workflows', 'desktop-release.yml'),
+    'utf8',
+  );
+  const publishStart = workflow.indexOf('  publish-release:');
+  assert.notEqual(publishStart, -1, 'workflow 缺少 publish-release job');
+  const publishBlock = workflow.slice(publishStart);
+  for (const requiredValue of [
+    'needs: build-package-smoke',
+    "github.ref == 'refs/heads/main'",
+    "needs.build-package-smoke.result == 'success'",
+    'actions: read',
+    'contents: write',
+    'actions/download-artifact@v4',
+    'pattern: desktop-*',
+    'merge-multiple: false',
+    'github-token: ${{ github.token }}',
+    'repository: ${{ github.repository }}',
+    'run-id: ${{ github.run_id }}',
+    'scripts/desktop/prepare-release-assets.js',
+    'scripts/desktop/resolve-release-action.js',
+    'git/ref/tags/${RELEASE_TAG}',
+    'releases?per_page=100',
+    '--paginate',
+    'gh release create',
+    'gh release upload',
+    'gh release edit',
+    '--clobber',
+    '--draft=false',
+    '--prerelease',
+    '--generate-notes',
+  ]) {
+    assert.equal(publishBlock.includes(requiredValue), true, `发布 job 缺少 ${requiredValue}`);
+  }
+  assert.equal(publishBlock.includes('if [[ "$TAG_SHA" != none ]]'), false);
+  const buildBlock = workflow.slice(
+    workflow.indexOf('  build-package-smoke:'),
+    publishStart,
+  );
+  assert.equal(buildBlock.includes('contents: write'), false);
+  assert.equal(buildBlock.includes('name: desktop-${{ matrix.platform }}'), true);
+  assert.equal(buildBlock.includes('overwrite: true'), true);
+});
+
 test('measured command preserves real success and failure exit evidence', () => {
   const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-desktop-timing-'));
   const measureScript = path.resolve(__dirname, 'measure-command.js');

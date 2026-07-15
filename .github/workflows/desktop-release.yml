@@ -37,6 +37,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Install Linux desktop and keyring dependencies
         if: matrix.platform == 'linux'
@@ -268,7 +270,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: desktop-${{ matrix.platform }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: desktop-${{ matrix.platform }}
+          overwrite: true
           path: |
             src-tauri/target/release/bundle/**/*
             desktop-evidence/**/*
@@ -281,3 +284,117 @@ jobs:
           node scripts/desktop/validate-release-evidence.js
           --evidence "${{ env.EVIDENCE_DIR }}/release-evidence.json"
           --workspace-root "${{ github.workspace }}"
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: build-package-smoke
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      needs.build-package-smoke.result == 'success'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Download verified desktop artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-*
+          path: downloaded-artifacts
+          merge-multiple: false
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.run_id }}
+
+      - name: Prepare guarded Release assets
+        run: >-
+          node scripts/desktop/prepare-release-assets.js
+          --workspace-root "${{ github.workspace }}"
+          --input "${{ github.workspace }}/downloaded-artifacts"
+          --output "${{ github.workspace }}/release-assets"
+
+      - name: Create or refresh GitHub prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          RELEASE_TAG="$(node -e "const manifest = require('./release-assets/release-manifest.json'); process.stdout.write(manifest.tag);")"
+          RELEASE_TITLE="$(node -e "const manifest = require('./release-assets/release-manifest.json'); process.stdout.write(manifest.title);")"
+          TAG_ERROR="$(mktemp)"
+          RELEASE_ERROR="$(mktemp)"
+          trap 'rm -f "$TAG_ERROR" "$RELEASE_ERROR"' EXIT
+
+          if TAG_OBJECT="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" \
+            --jq '.object | "\(.type) \(.sha)"' 2>"$TAG_ERROR")"; then
+            read -r TAG_TYPE TAG_SHA <<< "$TAG_OBJECT"
+            TAG_DEPTH=0
+            while [[ "$TAG_TYPE" == tag ]]; do
+              TAG_DEPTH=$((TAG_DEPTH + 1))
+              if (( TAG_DEPTH > 8 )); then
+                echo "Release Tag 引用层级过深: $RELEASE_TAG" >&2
+                exit 1
+              fi
+              TAG_OBJECT="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${TAG_SHA}" \
+                --jq '.object | "\(.type) \(.sha)"')"
+              read -r TAG_TYPE TAG_SHA <<< "$TAG_OBJECT"
+            done
+            if [[ "$TAG_TYPE" != commit ]]; then
+              echo "Release Tag 未指向 Git commit: $RELEASE_TAG ($TAG_TYPE)" >&2
+              exit 1
+            fi
+          elif grep -q 'HTTP 404' "$TAG_ERROR"; then
+            TAG_SHA=none
+          else
+            cat "$TAG_ERROR" >&2
+            exit 1
+          fi
+
+          RELEASE_EXISTS=false
+          if RELEASE_IDS="$(gh api --paginate \
+            "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+            --jq ".[] | select(.tag_name == \"${RELEASE_TAG}\") | .id" \
+            2>"$RELEASE_ERROR")"; then
+            if [[ -n "$RELEASE_IDS" ]]; then
+              RELEASE_EXISTS=true
+            fi
+          else
+            cat "$RELEASE_ERROR" >&2
+            exit 1
+          fi
+
+          RELEASE_ACTION="$(node scripts/desktop/resolve-release-action.js \
+            --current-sha "$GITHUB_SHA" \
+            --tag-sha "$TAG_SHA" \
+            --release-exists "$RELEASE_EXISTS")"
+          mapfile -t RELEASE_ASSETS < <(find release-assets -maxdepth 1 -type f -print | sort)
+
+          if [[ "$RELEASE_ACTION" == create ]]; then
+            if [[ "$TAG_SHA" == none ]]; then
+              gh release create "$RELEASE_TAG" "${RELEASE_ASSETS[@]}" \
+                --target "$GITHUB_SHA" \
+                --title "$RELEASE_TITLE" \
+                --prerelease \
+                --generate-notes
+            else
+              gh release create "$RELEASE_TAG" "${RELEASE_ASSETS[@]}" \
+                --verify-tag \
+                --title "$RELEASE_TITLE" \
+                --prerelease \
+                --generate-notes
+            fi
+          else
+            gh release upload "$RELEASE_TAG" "${RELEASE_ASSETS[@]}" --clobber
+            gh release edit "$RELEASE_TAG" \
+              --title "$RELEASE_TITLE" \
+              --prerelease \
+              --draft=false
+          fi

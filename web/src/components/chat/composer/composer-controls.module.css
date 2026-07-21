@@ -1,0 +1,89 @@
+.controlButton,
+.approvalButton,
+.modelSummary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 30px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 9px;
+  color: #303030;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.controlButton:hover,
+.approvalButton:hover,
+.modelSummary:hover { background: #f2f2f2; }
+
+.controlButton:focus-visible,
+.approvalButton:focus-visible,
+.modelSummary:focus-visible {
+  outline: 2px solid #8ab4f8;
+  outline-offset: 1px;
+}
+
+.controlButton:disabled,
+.approvalButton:disabled,
+.modelSummary:disabled { cursor: default; opacity: 0.48; }
+
+.controlValue {
+  max-width: 168px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.controlButton small {
+  padding: 1px 5px;
+  border-radius: 5px;
+  color: #6f6f6f;
+  background: #ededed;
+  font-size: 10px;
+  line-height: 16px;
+}
+
+.approvalButton { color: #e23b19; }
+
+.modelSummary {
+  justify-content: flex-end;
+  padding-inline: 12px 8px;
+  background: #f4f4f4;
+}
+
+.modelSummary small { color: #8a8a8a; font-size: 13px; }
+.chevron { color: #929292; font-size: 10px; }
+
+.optionRow,
+.menuHeading,
+.approvalOption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  min-width: 210px;
+}
+
+.optionMain { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.optionMain small { color: #8a8a8a; font-size: 11px; }
+
+.menuHeading > span:first-child { color: #242424; }
+.menuHeading > span:nth-child(2) { margin-left: auto; color: #929292; }
+.menuHeading > :last-child { color: #929292; font-size: 10px; }
+
+.approvalOption { align-items: flex-start; min-width: 330px; }
+.approvalOption > span:first-child { display: grid; gap: 2px; }
+.approvalOption strong { color: #242424; font-weight: 500; }
+.approvalOption small { color: #8a8a8a; font-size: 12px; }
+.retryOption { color: #9a5d00; }
+
+@media (max-width: 768px) {
+  .controlValue { max-width: 112px; }
+  .approvalButton span:nth-child(2) { display: none; }
+  .modelSummary { max-width: 48vw; }
+  .modelSummary > span:first-of-type { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}

@@ -1,0 +1,72 @@
+.rtsync-card {
+  --rt-acc: var(--m-acc, #d97757);
+  --rt-run: var(--m-run, #13a65a);
+  --rt-line: var(--color-border, #ececf4);
+  --rt-ink: var(--color-text, #1b1b2b);
+  --rt-ink-3: var(--color-muted, #8b8ba3);
+}
+.rtsync-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 14px 0 12px;
+  flex-wrap: wrap;
+}
+.rtsync-overall {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--rt-ink);
+}
+.rtsync-overall.on :where(.anticon) { color: var(--rt-run); }
+.rtsync-overall.partial :where(.anticon) { color: var(--rt-acc); }
+.rtsync-repair {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: 1px solid var(--rt-line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--rt-acc);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+.rtsync-repair:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--rt-acc) 45%, var(--rt-line));
+  background: color-mix(in srgb, var(--rt-acc) 6%, #fff);
+}
+.rtsync-repair:disabled { opacity: .55; cursor: default; color: var(--rt-ink-3); }
+.rtsync-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.rtsync-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px;
+  border: 1px solid var(--rt-line);
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--rt-ink);
+  background: #fff;
+}
+.rtsync-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--rt-ink-3);
+}
+.rtsync-chip.on .rtsync-dot {
+  background: var(--rt-run);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--rt-run) 20%, transparent);
+}
+.rtsync-chip.off { color: var(--rt-ink-3); }

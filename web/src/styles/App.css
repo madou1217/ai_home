@@ -1,0 +1,123 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;600;700;800&family=Manrope:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap');
+@import 'animate.css';
+@import './design-tokens.css';
+@import '../components/ui/data-display.css';
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--app-bg);
+  color: var(--app-text);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: geometricPrecision;
+}
+
+/* 桌面端才锁 body 滚动（app-shell 内部滚动）。移动端保留原生 body 滚动，
+ * 否则 100vh + overflow:hidden 会把内容裁在地址栏后面、长页面无法滚动。 */
+@media (min-width: 768px) {
+  body {
+    overflow: hidden;
+  }
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  touch-action: manipulation;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--c-brand-600) 22%, transparent);
+  color: var(--app-heading);
+}
+
+/* ===== Umi ProLayout 全局微调 ===== */
+/* 让 ProLayout 的内容区撑满视口高度 */
+#root {
+  height: 100vh;
+}
+
+/* App-shell 内部滚动只在桌面端启用：内容区固定为视口高度、超出在内容区内部滚动。
+ * 移动端（<768px）走原生 body 滚动，避免 100vh 把内容裁在地址栏后/长页无法滚。
+ * 此前 has-sider 用 min-height:100% 但无上限 → 撑高溢出；且移动端无 has-sider 结构。 */
+@media (min-width: 768px) {
+  .ant-pro-layout {
+    height: 100vh !important;
+    overflow: hidden !important;
+  }
+
+  .ant-pro-layout > .ant-layout-has-sider {
+    height: 100% !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+  }
+
+  .ant-pro-layout-container {
+    height: 100% !important;
+    min-height: 0 !important;
+  }
+
+  .ant-pro-layout-content.ant-pro-layout-content {
+    flex: 1 1 0 !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+  }
+}
+
+/* 移除 ProLayout 默认的页面容器上边距，使页面更紧凑 */
+.ant-page-header {
+  padding-block: 12px;
+}
+
+/* 全局 ProTable 分页美化 */
+.ant-pagination {
+  margin-top: 16px !important;
+}
+
+.ant-pagination .ant-pagination-item {
+  border-radius: 6px;
+}
+
+.ant-pagination .ant-pagination-item-active {
+  font-weight: 600;
+}
+
+/* 全局 ProCard 间距规范 */
+.ant-pro-card {
+  border-radius: 12px;
+}
+
+/* 全局 Modal 圆角 */
+.ant-modal-content {
+  border-radius: 12px;
+}
+
+/* 全局 Drawer 圆角 */
+.ant-drawer-content {
+  border-radius: 12px 0 0 12px;
+}
+
+/* 全局 Alert 圆角 */
+.ant-alert {
+  border-radius: 8px;
+}
+
+/* 移动端底部 TabBar 已迁至 MobileTabBar 组件 + styles/mobile-shell.css（承接跨页导航）。 */

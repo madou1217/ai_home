@@ -1,0 +1,66 @@
+'use strict';
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const {
+  buildCodexProviderArgs,
+  hasCodexModelProviderArg,
+  injectCodexProviderArgs
+} = require('../lib/cli/services/ai-cli/codex-provider-args');
+
+test('codex provider args inject endpoint through config and keep the key in env', () => {
+  const args = buildCodexProviderArgs({
+    OPENAI_API_KEY: 'secret-key',
+    OPENAI_BASE_URL: 'http://127.0.0.1:9527/v1'
+  });
+
+  assert.deepEqual(args, [
+    '-c', 'suppress_unstable_features_warning=true',
+    '-c', 'model_provider=aih_server',
+    '-c', 'model_providers.aih_server.base_url=http://127.0.0.1:9527/v1',
+    '-c', 'model_providers.aih_server.wire_api=responses',
+    '-c', 'model_providers.aih_server.env_key=OPENAI_API_KEY'
+  ]);
+  assert.equal(args.join(' ').includes('secret-key'), false);
+});
+
+test('codex provider args leave native OAuth config untouched', () => {
+  assert.deepEqual(buildCodexProviderArgs({}), []);
+});
+
+test('codex provider args recognize valid split and long-form model-provider overrides', () => {
+  assert.equal(hasCodexModelProviderArg(['-c', 'model_provider=custom']), true);
+  assert.equal(hasCodexModelProviderArg(['--config', 'model_provider=custom']), true);
+  assert.equal(hasCodexModelProviderArg(['--config=model_provider=custom']), true);
+  assert.equal(hasCodexModelProviderArg(['-c model_provider=custom']), false);
+  assert.equal(hasCodexModelProviderArg(['--model', 'gpt-5.4']), false);
+});
+
+test('codex provider args are scoped after native subcommands', () => {
+  const providerArgs = ['-c', 'model_provider=aih_server'];
+
+  assert.deepEqual(
+    injectCodexProviderArgs(['exec', '--json'], providerArgs),
+    ['exec', '-c', 'model_provider=aih_server', '--json']
+  );
+  assert.deepEqual(
+    injectCodexProviderArgs(['resume', 'thread-id'], providerArgs),
+    ['resume', '-c', 'model_provider=aih_server', 'thread-id']
+  );
+  assert.deepEqual(
+    injectCodexProviderArgs(['app-server', '--listen', 'ws://127.0.0.1:1234'], providerArgs),
+    ['app-server', '-c', 'model_provider=aih_server', '--listen', 'ws://127.0.0.1:1234']
+  );
+  assert.deepEqual(
+    injectCodexProviderArgs(['--version'], providerArgs),
+    ['-c', 'model_provider=aih_server', '--version']
+  );
+  assert.deepEqual(
+    injectCodexProviderArgs(['--', 'resume'], providerArgs),
+    ['-c', 'model_provider=aih_server', '--', 'resume']
+  );
+  assert.deepEqual(
+    injectCodexProviderArgs(['--model', 'resume', 'prompt'], providerArgs),
+    ['-c', 'model_provider=aih_server', '--model', 'resume', 'prompt']
+  );
+});

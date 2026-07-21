@@ -1,0 +1,106 @@
+.root {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+.compact {
+  width: 100%;
+}
+
+.statusDot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  border-radius: 999px;
+  background: var(--app-border-strong);
+}
+
+.statusReady {
+  background: var(--color-success);
+}
+
+.statusAttention {
+  background: var(--color-warning);
+}
+
+/* 服务器切换触发器：图标 + 本机/远端·xxx + 下拉箭头，融合成一个干净可点区域。 */
+.trigger,
+.addLink {
+  display: inline-flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--app-heading);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.16s ease, border-color 0.16s ease;
+}
+
+.trigger:hover:not(:disabled),
+.addLink:hover {
+  border-color: var(--app-border);
+  background: var(--color-surface-raised);
+}
+
+.trigger:focus-visible,
+.addLink:focus-visible {
+  outline: none;
+  border-color: var(--app-primary);
+  box-shadow: 0 0 0 2px var(--app-primary-soft);
+}
+
+.trigger:disabled {
+  cursor: default;
+}
+
+.serverIcon {
+  flex: 0 0 auto;
+  color: var(--app-muted-strong);
+  font-size: 14px;
+}
+
+.serverName {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.caret {
+  flex: 0 0 auto;
+  color: var(--app-muted);
+  font-size: 10px;
+}
+
+/* 配置入口：纯齿轮图标，替代原来的"配置"文字。 */
+.gear {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  color: var(--app-muted);
+  font-size: 15px;
+  text-decoration: none;
+  transition: background 0.16s ease, color 0.16s ease;
+}
+
+.gear:hover {
+  background: var(--color-surface-raised);
+  color: var(--app-primary);
+}

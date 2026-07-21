@@ -1,0 +1,367 @@
+.models-live-refresh {
+  border-color: color-mix(in srgb, var(--c-teal-500) 26%, transparent);
+}
+.models-live-refresh--failed {
+  border-color: color-mix(in srgb, var(--c-danger-600) 28%, transparent);
+}
+.models-live-refresh-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+.models-live-refresh-grid > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+}
+.models-live-refresh-grid span {
+  color: var(--app-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+.models-live-refresh-grid strong {
+  overflow: hidden;
+  color: var(--app-heading);
+  font-size: 15px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.models-live-refresh p {
+  margin: 10px 0 0;
+  color: var(--c-danger-600);
+  font-size: 12px;
+}
+.models-search {
+  width: min(320px, 100%);
+}
+.models-account-filter {
+  width: min(360px, 100%);
+}
+.models-account-context {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 2px 0 16px;
+  border-bottom: 1px solid var(--app-border);
+  margin-bottom: 14px;
+}
+.models-account-context-main {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+.models-account-context-main > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+.models-account-context-main strong,
+.models-account-context-main span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.models-account-context-main strong {
+  color: var(--app-heading);
+  font-size: 15px;
+  font-weight: 900;
+}
+.models-account-context-main span {
+  color: var(--app-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+.models-account-context-stats {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+  color: var(--app-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+.models-search :where(.ant-input-group) {
+  display: flex;
+  align-items: stretch;
+  overflow: hidden;
+  border: 1px solid var(--app-border);
+  border-radius: 12px;
+  background: var(--app-surface-raised);
+}
+.models-search :where(.ant-input-affix-wrapper) {
+  flex: 1;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent;
+  box-shadow: none !important;
+}
+.models-search :where(.ant-input-group-addon) {
+  width: 44px;
+  border: 0;
+  background: transparent;
+}
+.models-search :where(.ant-input-search-button) {
+  width: 38px;
+  height: 34px;
+  margin-right: 4px;
+  border: 0 !important;
+  border-radius: 10px !important;
+  background: var(--c-neutral-0) !important;
+  color: var(--app-muted-strong) !important;
+  box-shadow: none !important;
+}
+.models-search :where(.ant-input-search-button:hover) {
+  background: var(--app-primary-soft) !important;
+  color: var(--app-heading) !important;
+}
+.models-catalog-desc {
+  margin: 0 0 14px;
+  color: var(--app-muted);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+.models-list {
+  margin-top: 14px;
+}
+.models-list .paginated-list-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+.models-model-row {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(220px, 1fr) 96px 176px;
+  align-items: center;
+  gap: 12px;
+  min-height: 76px;
+  padding: 10px 12px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-sm);
+  background: var(--app-surface);
+}
+.models-model-row--disabled {
+  background: color-mix(in srgb, var(--app-surface) 86%, var(--c-neutral-100) 14%);
+}
+.models-model-row-main {
+  min-width: 0;
+}
+.models-model-title-line {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+}
+.models-model-title-line h3 {
+  flex: 0 1 auto;
+  overflow: hidden;
+  min-width: 0;
+  margin: 0;
+  color: var(--app-heading);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.models-model-row-tags {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  min-height: 22px;
+  margin-top: 6px;
+}
+.models-model-row p {
+  overflow: hidden;
+  margin: 4px 0 0;
+  color: var(--app-muted);
+  font-size: 12px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.models-model-row-state {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  color: var(--app-muted-strong);
+  font-size: 12px;
+  font-weight: 800;
+}
+.models-model-row-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.models-model-default-control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+.models-model-default-control--active {
+  color: var(--c-success-600);
+}
+.models-global-row {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(220px, 1fr);
+  align-items: center;
+  gap: 14px;
+  min-height: 66px;
+  padding: 12px 14px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-sm);
+  background: var(--app-surface-raised);
+}
+.models-global-row--disabled {
+  background: color-mix(in srgb, var(--app-surface-raised) 88%, var(--c-neutral-100) 12%);
+}
+.models-global-main {
+  min-width: 0;
+}
+.models-global-title-line {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.models-global-title-line h3 {
+  flex: 1 1 180px;
+  overflow: hidden;
+  min-width: 0;
+  margin: 0;
+  color: var(--app-heading);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 850;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.models-global-providers {
+  display: flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+.models-provider-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-inline-end: 0;
+}
+/* 复制图标紧跟在模型 ID 后面：固定占位，只切换透明度，避免 hover 造成 row 高度/换行抖动。 */
+.models-global-title-line .copy-icon-btn,
+.models-model-title-line .copy-icon-btn {
+  display: inline-flex;
+  opacity: 0;
+  pointer-events: none;
+}
+.models-global-row:hover .models-global-title-line .copy-icon-btn,
+.models-model-row:hover .models-model-title-line .copy-icon-btn,
+.models-global-title-line .copy-icon-btn:focus-visible,
+.models-model-title-line .copy-icon-btn:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+.models-global-main p {
+  overflow: hidden;
+  margin: 5px 0 0;
+  color: var(--app-muted);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+
+@media (max-width: 768px) {.models-live-refresh-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+.models-account-context {
+    align-items: stretch;
+    flex-direction: column;
+  }
+.models-account-context-stats {
+    flex-wrap: wrap;
+  }
+.models-model-row,
+.models-global-row {
+    align-items: stretch;
+    grid-template-columns: minmax(0, 1fr);
+  }
+.models-model-row-state,
+.models-model-row-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+.models-model-title-line,
+.models-global-title-line {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+.models-model-title-line {
+    align-items: center;
+    flex-direction: row;
+  }
+.models-global-providers {
+    width: 100%;
+  }
+
+}
+
+/* ============================================================================
+ * 账号模型管理 —— 移动端原生卡片:模型信息占整行,下方是 iOS 式带标签开关行
+ * (标签在左、开关在右、行间细分隔线),不再把文字塞进胶囊、也不再让开关一左一右飘着。
+ * ==========================================================================*/
+@media (max-width: 767.98px) {
+  .models-model-row {
+    display: block !important;
+    padding: 16px 16px 6px !important;
+    border: 1px solid var(--m-line, #ececf4) !important;
+    border-radius: 16px !important;
+    background: var(--m-surface, #fff) !important;
+    box-shadow: var(--m-sh-xs, 0 1px 2px rgba(27, 27, 43, .05));
+    font-family: var(--m-font);
+  }
+  .models-model-row-main { min-width: 0; }
+  .models-model-row p { margin: 6px 0 0; font-size: 13px; color: var(--m-ink-3, #8b8ba3); }
+
+  /* 开关区:与信息区之间一条分隔线,像卡片页脚 */
+  .models-model-row-controls {
+    margin-top: 12px;
+    border-top: 1px solid var(--m-line, #ececf4);
+  }
+  .models-toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 46px;
+  }
+  .models-toggle-row + .models-toggle-row {
+    border-top: 1px solid color-mix(in srgb, var(--m-line, #ececf4) 60%, transparent);
+  }
+  .models-toggle-label {
+    font-size: 14.5px;
+    font-weight: 600;
+    color: var(--m-ink, #1b1b2b);
+    letter-spacing: -0.01em;
+  }
+  .models-toggle-label--active { color: var(--m-acc, #d97757); }
+}

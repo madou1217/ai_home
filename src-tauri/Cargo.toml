@@ -1,0 +1,52 @@
+[package]
+name = "ai-home"
+version = "1.0.0"
+description = "AIH Gateway Desktop Agent"
+authors = ["model"]
+license = "ISC"
+repository = "https://github.com/madou1217/ai_home"
+default-run = "ai-home"
+edition = "2021"
+rust-version = "1.85"
+
+[build-dependencies]
+# Tauri 1.6 dev context must stay on the pre-config-parent codegen line.
+tauri-build = { version = "=1.5.3", features = [] }
+tauri-codegen = "=1.4.4"
+
+[dependencies]
+tauri = { version = "=1.6.8", features = ["icon-png", "shell-open", "system-tray"] }
+tauri-macros = "=1.4.4"
+tauri-codegen = "=1.4.4"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "=1.0.61"
+reqwest = { version = "=0.11.27", default-features = false, features = ["json", "stream", "rustls-tls-native-roots"] }
+futures-util = "=0.3.31"
+base64 = "=0.21.7"
+rand = "=0.8.5"
+# Keep the Tauri 1.x transitive graph compatible with the package MSRV.
+time = "=0.3.36"
+serde_with = "=3.8.1"
+uuid = "=1.8.0"
+sha2 = "=0.10.8"
+hmac = "=0.12.1"
+tokio = { version = "=1.37.0", features = ["time"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "=2.3.3", default-features = false, features = ["platform-macos"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "=2.3.3", default-features = false, features = ["platform-windows"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "=2.3.3", default-features = false, features = ["linux-secret-service"] }
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"

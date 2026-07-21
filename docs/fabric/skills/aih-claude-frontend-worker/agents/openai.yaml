@@ -1,0 +1,4 @@
+interface:
+  display_name: "AIH Claude Frontend Worker"
+  short_description: "Builds Fabric frontend experience"
+  default_prompt: "Use $aih-claude-frontend-worker to implement a Fabric frontend task with browser evidence."

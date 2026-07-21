@@ -1,0 +1,1112 @@
+/* Settings 现在统一走 PageScaffold(.unified-page-wrapper) 布局，
+ * 不再需要 .settings-page 自带的 padding/gap（已由全局 unified.css 提供）。 */
+.settings-section-content {
+  min-width: 0;
+}
+/* .settings-panel 已改用框架 ProCard（border/radius/bg 走 ProCard + 主题 token）；
+ * 仅保留扁平阴影（antd Card 无阴影 token）。 */
+.ant-pro-card.settings-panel {
+  box-shadow: var(--app-shadow-soft);
+}
+.settings-tabs.ant-tabs {
+  min-width: 0;
+}
+.settings-tabs > .ant-tabs-nav {
+  margin-bottom: 14px;
+}
+.settings-tabs > .ant-tabs-nav::before {
+  border-color: var(--app-border);
+}
+.settings-tabs .ant-tabs-tab {
+  padding: 10px 0;
+  font-weight: 850;
+}
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+.settings-panel {
+  min-width: 0;
+}
+.settings-panel-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.settings-panel-head h2 {
+  margin: 0;
+  color: var(--app-heading);
+  font-size: 17px;
+  font-weight: 900;
+  line-height: 1.2;
+}
+.settings-panel-head p {
+  margin: 5px 0 0;
+  color: var(--app-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.settings-actions {
+  display: flex;
+  gap: 10px;
+  padding-top: 4px;
+}
+.settings-actions .ant-btn {
+  min-width: 136px;
+}
+.settings-invite-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.settings-control-plane-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.settings-invite-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  padding: 10px;
+}
+.settings-control-plane-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  padding: 10px;
+}
+.settings-control-plane-item--active {
+  border-color: color-mix(in srgb, var(--c-success-600) 40%, var(--app-border));
+  background: color-mix(in srgb, var(--tint-success) 72%, var(--app-surface));
+}
+.settings-node-main {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+.settings-node-main strong,
+.settings-node-main span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-node-main strong {
+  color: var(--app-heading);
+  font-size: 13px;
+}
+.settings-node-main span {
+  color: var(--app-muted);
+  font-size: 12px;
+}
+.settings-node-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+}
+.settings-node-test-result {
+  display: flex;
+  grid-column: 1 / -1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+  border-top: 1px solid var(--app-border);
+  padding-top: 8px;
+}
+.settings-node-test-summary,
+.settings-node-test-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.settings-node-test-summary span {
+  color: var(--app-muted);
+  font-size: 12px;
+}
+.settings-node-test-result p {
+  margin: 0;
+  color: var(--app-muted);
+  font-size: 12px;
+}
+.settings-node-test-issues {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+.settings-node-test-issues span {
+  overflow-wrap: anywhere;
+  color: var(--c-danger-700);
+  font-size: 12px;
+}
+.settings-control-plane-actions {
+  justify-content: flex-end;
+}
+.settings-control-plane-error {
+  color: var(--c-danger-600) !important;
+}
+.settings-control-plane-page {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 14px;
+}
+.settings-control-plane-shell {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 14px;
+}
+.settings-control-plane-current {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  background: color-mix(in srgb, var(--c-neutral-50) 66%, transparent);
+  padding: 12px;
+}
+.settings-control-plane-current-main {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+.settings-control-plane-current-main span {
+  color: var(--app-muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+.settings-control-plane-current-main strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--app-heading);
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-control-plane-current-main em {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--app-muted);
+  font-size: 12px;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-control-plane-current-actions {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.settings-control-plane-current-actions .ant-select {
+  width: 260px;
+  max-width: 100%;
+}
+.settings-server-route-list {
+  display: flex;
+  min-width: 260px;
+  flex-direction: column;
+  gap: 6px;
+}
+.settings-server-route {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+  border-left: 2px solid var(--app-border);
+  padding-left: 8px;
+}
+.settings-server-route--primary {
+  border-left-color: var(--app-primary);
+}
+.settings-server-route-head {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.settings-server-route-head .ant-tag {
+  margin-inline-end: 0;
+}
+.settings-server-route-head strong {
+  color: var(--app-heading);
+  font-size: 12px;
+}
+.settings-server-route-head span {
+  color: var(--app-muted);
+  font-size: 11px;
+}
+.settings-server-route-endpoint {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--app-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-public-entry-card {
+  min-width: 0;
+}
+.settings-public-entry-mode {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+.settings-public-entry-mode strong {
+  color: var(--app-heading);
+  font-size: 14px;
+  font-weight: 900;
+}
+.settings-public-entry-mode p {
+  margin: 0 0 10px;
+  color: var(--app-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.settings-public-entry-fields {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+.settings-public-entry-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+.settings-public-entry-field > span {
+  color: var(--app-heading);
+  font-size: 12px;
+  font-weight: 850;
+}
+.settings-public-entry-field .ant-select {
+  width: 100%;
+}
+.settings-public-entry-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 14px;
+}
+.settings-public-entry-status-list {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+.settings-public-entry-status {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  align-items: center;
+  border-top: 1px solid var(--app-border);
+  padding-top: 8px;
+}
+.settings-public-entry-status-main {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+.settings-public-entry-status-main strong {
+  color: var(--app-heading);
+  font-size: 13px;
+}
+.settings-public-entry-status-main span,
+.settings-public-entry-status-meta span {
+  color: var(--app-muted);
+  font-size: 11px;
+}
+.settings-public-entry-status-main span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-public-entry-status-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+.settings-public-entry-status-meta .ant-tag {
+  margin-inline-end: 0;
+}
+.settings-public-entry-error {
+  grid-column: 1 / -1;
+  color: var(--c-danger-600);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 767px) {
+  .settings-public-entry-fields {
+    grid-template-columns: 1fr;
+  }
+  .settings-public-entry-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .settings-public-entry-status {
+    grid-template-columns: 1fr;
+  }
+  .settings-public-entry-status-meta {
+    justify-content: flex-start;
+  }
+}
+/* .settings-control-plane-stats 已改用框架 StatisticCard.Group，原磁贴 CSS 删除。 */
+
+.settings-control-plane-manage-tabs > .ant-tabs-nav {
+  margin-bottom: 12px;
+}
+.settings-control-plane-empty {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.settings-control-plane-authorizations {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 10px;
+}
+.settings-control-plane-filterbar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  background: color-mix(in srgb, var(--c-neutral-50) 64%, transparent);
+  padding: 10px;
+}
+.settings-control-plane-filterbar > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+.settings-control-plane-filterbar strong {
+  color: var(--app-heading);
+  font-size: 13px;
+  font-weight: 900;
+}
+.settings-control-plane-filterbar span {
+  color: var(--app-muted);
+  font-size: 12px;
+}
+.settings-control-plane-filterbar .ant-select {
+  width: 160px;
+  flex: 0 0 auto;
+}
+.settings-control-plane-auth-list {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 10px;
+}
+.settings-control-plane-auth-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  padding: 10px;
+}
+.settings-join-command {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  background: color-mix(in srgb, var(--c-neutral-50) 72%, transparent);
+  padding: 10px;
+}
+.settings-join-command-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.settings-join-command-head strong {
+  color: var(--app-heading);
+  font-size: 13px;
+}
+.settings-join-command pre {
+  overflow-x: auto;
+  margin: 0;
+  border-radius: calc(var(--app-radius) - 2px);
+  background: var(--c-neutral-950);
+  color: var(--c-neutral-0);
+  padding: 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.settings-join-body {
+  display: grid;
+  grid-template-columns: 176px minmax(0, 1fr);
+  gap: 10px;
+  align-items: stretch;
+}
+.settings-join-qr {
+  display: grid;
+  min-height: 176px;
+  place-items: center;
+  border: 1px solid var(--app-border);
+  border-radius: calc(var(--app-radius) - 2px);
+  background: var(--app-surface);
+}
+.settings-join-detail {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+}
+.settings-join-code {
+  overflow-wrap: anywhere;
+  border: 1px dashed var(--app-border);
+  border-radius: calc(var(--app-radius) - 2px);
+  background: var(--app-surface);
+  color: var(--app-heading);
+  padding: 8px 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.settings-probe-panel {
+  gap: 10px;
+}
+.settings-bootstrap-plan-panel {
+  gap: 10px;
+}
+.settings-bootstrap-readiness {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+}
+.settings-bootstrap-readiness-item {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+  border: 1px solid var(--app-border);
+  border-radius: calc(var(--app-radius) - 2px);
+  background: var(--app-surface);
+  padding: 8px 10px;
+}
+.settings-bootstrap-readiness-head {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.settings-bootstrap-readiness-head strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--app-heading);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-bootstrap-readiness-item span {
+  color: var(--app-muted);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.settings-bootstrap-plan-steps {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 10px;
+}
+.settings-bootstrap-plan-step {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+.settings-bootstrap-plan-step-head {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+.settings-bootstrap-plan-step-head strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--app-heading);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.settings-bootstrap-guidance {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+  border: 1px solid var(--app-border);
+  border-radius: calc(var(--app-radius) - 2px);
+  background: var(--app-surface);
+  padding: 8px 10px;
+}
+.settings-bootstrap-guidance span {
+  color: var(--app-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.settings-probe-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.settings-probe-results {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+.settings-probe-result {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid var(--app-border);
+  padding: 10px 0 0;
+}
+.settings-probe-result:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.settings-probe-execution-plan {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  background: color-mix(in srgb, var(--c-neutral-50) 72%, transparent);
+  padding: 10px;
+}
+.settings-probe-apply-plan {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid color-mix(in srgb, var(--c-success-500) 28%, var(--app-border));
+  border-radius: var(--app-radius);
+  background: color-mix(in srgb, var(--c-success-50) 58%, var(--app-surface));
+  padding: 10px;
+}
+.settings-probe-execution-plan > strong {
+  color: var(--app-heading);
+  font-size: 13px;
+}
+.settings-probe-execution-list {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+}
+.settings-probe-execution-step {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 10px;
+  align-items: start;
+  border-top: 1px solid var(--app-border);
+  padding-top: 8px;
+}
+.settings-probe-execution-step:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.settings-probe-execution-main {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 8px;
+}
+.settings-probe-execution-order {
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--app-heading);
+  color: var(--app-surface);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+}
+.settings-probe-execution-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+.settings-probe-execution-copy strong,
+.settings-probe-execution-copy span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.settings-probe-execution-copy strong {
+  color: var(--app-heading);
+  font-size: 13px;
+}
+.settings-probe-execution-copy span {
+  color: var(--app-muted);
+  font-size: 12px;
+}
+.settings-probe-execution-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+}
+.settings-manual-command-list {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+.settings-manual-command-list--compact {
+  flex: 1 1 100%;
+  align-items: flex-end;
+}
+.settings-manual-command-item {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px 6px;
+}
+.settings-manual-command-item span {
+  max-width: 280px;
+  color: var(--app-muted);
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+.settings-probe-execution-step p {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--app-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.settings-probe-execution-log {
+  grid-column: 1 / -1;
+  max-height: 120px;
+  margin: 0;
+  overflow: auto;
+  border: 1px solid var(--app-border);
+  border-radius: 6px;
+  background: var(--c-neutral-950);
+  color: var(--c-neutral-50);
+  font-size: 11px;
+  line-height: 1.45;
+  padding: 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.settings-probe-execution-log--error {
+  border-color: color-mix(in srgb, var(--c-danger-500) 42%, var(--app-border));
+}
+.settings-probe-result-head {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.settings-probe-result-head strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--app-heading);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-probe-meta {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  color: var(--app-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.settings-probe-note {
+  margin: 0;
+  color: var(--app-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.settings-inline-alert {
+  margin-bottom: 16px;
+  border: 1px solid color-mix(in srgb, var(--c-info-600) 18%, transparent);
+  background: var(--tint-info);
+}
+.settings-warning-list {
+  margin: 0;
+  padding-left: 18px;
+  line-height: 1.5;
+}
+.settings-warning-list li + li {
+  margin-top: 4px;
+}
+.settings-restart-alert {
+  margin-top: -4px;
+}
+.settings-derived-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 18px;
+}
+.settings-derived-cell {
+  min-width: 0;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  background: color-mix(in srgb, var(--c-neutral-50) 64%, transparent);
+  padding: 8px 10px;
+}
+.settings-derived-cell span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--app-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+.settings-derived-cell strong {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--app-heading);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
+}
+.settings-endpoint-hints {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+  margin: -12px 0 18px;
+}
+.settings-endpoint-hints .ant-btn {
+  max-width: 100%;
+}
+.settings-endpoint-hints .ant-btn > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-endpoint-warning {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--app-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.settings-advanced-fields {
+  margin: -2px 0 18px;
+  border: 1px dashed var(--app-border);
+  border-radius: var(--app-radius);
+  padding: 0 10px 10px;
+}
+.settings-advanced-fields summary {
+  cursor: pointer;
+  padding: 10px 0;
+  color: var(--app-heading);
+  font-size: 13px;
+  font-weight: 850;
+}
+.settings-advanced-fields .ant-form-item:last-child {
+  margin-bottom: 0;
+}
+.settings-panel .ant-form-item {
+  margin-bottom: 18px;
+}
+.settings-panel .ant-form-item-label > label {
+  color: var(--app-heading);
+  font-weight: 850;
+}
+.settings-panel .ant-form-item-explain,
+.settings-panel .ant-form-item-extra {
+  color: var(--app-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.settings-panel .ant-input,
+.settings-panel .ant-input-affix-wrapper,
+.settings-panel .ant-input-number,
+.settings-panel .ant-select-selector {
+  border-color: var(--app-border);
+  border-radius: var(--app-radius);
+}
+.settings-panel .ant-table-wrapper {
+  min-width: 0;
+  overflow-x: auto;
+}
+
+
+@media (max-width: 1080px) {.settings-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+}
+
+@media (max-width: 767px) {
+.settings-tabs > .ant-tabs-nav {
+    overflow: hidden;
+  }
+.settings-tabs .ant-tabs-nav-list {
+    width: 100%;
+  }
+.settings-tabs .ant-tabs-tab {
+    flex: 1;
+    justify-content: center;
+    margin: 0;
+  }
+.settings-panel {
+    padding: 14px;
+  }
+.settings-panel-head {
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+.settings-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+.settings-derived-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+.settings-control-plane-current {
+    grid-template-columns: minmax(0, 1fr);
+  }
+.settings-control-plane-filterbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+.settings-control-plane-current-actions {
+    justify-content: flex-start;
+  }
+.settings-control-plane-current-actions .ant-select,
+.settings-control-plane-current-actions .ant-btn,
+.settings-control-plane-filterbar .ant-select {
+    width: 100%;
+  }
+.settings-actions .ant-btn {
+    width: 100%;
+    min-width: 0;
+  }
+.settings-join-body {
+    grid-template-columns: 1fr;
+  }
+.settings-invite-item,
+.settings-control-plane-item,
+.settings-control-plane-auth-item {
+    grid-template-columns: minmax(0, 1fr);
+  }
+.settings-node-meta,
+.settings-control-plane-actions {
+    justify-content: flex-start;
+  }
+.settings-probe-execution-step {
+    grid-template-columns: minmax(0, 1fr);
+  }
+.settings-probe-execution-meta {
+    justify-content: flex-start;
+  }
+.settings-manual-command-list--compact {
+    align-items: flex-start;
+  }
+.settings-manual-command-item {
+    justify-content: flex-start;
+  }
+.settings-manual-command-item span {
+    text-align: left;
+  }
+
+}
+
+@media (max-width: 480px) {.settings-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+}/* ===== Settings Server management v3 ===== */
+.settings-panel {
+  border-color: color-mix(in srgb, var(--c-neutral-200) 96%, transparent);
+  background: color-mix(in srgb, var(--c-neutral-0) 96%, transparent);
+  box-shadow: 0 12px 28px color-mix(in srgb, var(--c-neutral-900) 6%, transparent);
+}
+.settings-panel {
+  border-color: var(--c-neutral-200);
+}
+.settings-panel-head h2 {
+  font-size: 20px;
+}
+/* ===== Settings Remote Nodes Layout Optimizations ===== */
+.settings-remote-nodes-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* 设置页面 aih server 选择器美化 */
+.settings-server-select-trigger {
+  width: 100% !important;
+  max-width: 320px;
+}
+.settings-server-select-trigger [class*="trigger"] {
+  display: flex !important;
+  width: 100% !important;
+  height: 40px !important;
+  padding: 0 14px !important;
+  border-radius: var(--app-radius, 8px) !important;
+  border: 1px solid var(--app-border, #e2e8f0) !important;
+  background: var(--color-surface-sunken, #f8fafc) !important;
+  font-size: 14px !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02) !important;
+}
+.settings-server-select-trigger [class*="trigger"]:active {
+  background: var(--color-surface-muted, #f1f5f9) !important;
+}
+@media (max-width: 767px) {
+  .settings-server-select-trigger {
+    max-width: 100% !important;
+  }
+  .settings-server-select-trigger [class*="trigger"] {
+    height: 44px !important;
+  }
+}
+
+/* ============================================================================
+ * 移动端「原生设置」布局:摒弃 PC 的「标签在上 + 竖排表单 + 保存按钮」,
+ * 改成 iOS 式分组卡片 + 一行一项(标签左、控件右)。
+ * ==========================================================================*/
+@media (max-width: 767.98px) {
+  .ant-pro-card.settings-panel {
+    background: var(--m-surface, #fff);
+    border: 1px solid var(--m-line, #ececf4);
+    border-radius: var(--m-radius, 18px);
+    box-shadow: var(--m-sh-xs);
+    font-family: var(--m-font);
+    margin-bottom: 14px;
+  }
+  .ant-pro-card.settings-panel > .ant-pro-card-body { padding: 6px 16px 14px !important; }
+  .settings-panel .settings-panel-head { padding: 12px 0 6px; }
+  .settings-panel .settings-panel-head h2 { font-size: 17px; font-weight: 800; color: var(--m-ink, #1b1b2b); margin: 0; }
+  .settings-panel .settings-panel-head p { font-size: 12.5px; color: var(--m-ink-3, #8b8ba3); margin: 3px 0 0; }
+
+  /* 表单项 → 原生设置行 */
+  .settings-panel form .ant-form-item {
+    margin: 0;
+    padding: 14px 0;
+    border-top: 1px solid var(--m-line, #ececf4);
+  }
+  .settings-panel form .ant-form-item:first-of-type { border-top: none; }
+  .settings-grid { grid-template-columns: 1fr !important; width: 100%; }
+  .settings-panel form .ant-form-item .ant-form-item-row {
+    flex-flow: row nowrap !important;
+    align-items: center;
+    gap: 14px;
+  }
+  .settings-panel form .ant-form-item-label {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    padding: 0;
+    text-align: left;
+    white-space: normal;
+  }
+  .settings-panel form .ant-form-item-label > label {
+    height: auto;
+    font-family: var(--m-font);
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--m-ink, #1b1b2b);
+  }
+  .settings-panel form .ant-form-item-label > label::after { display: none; }
+  .settings-panel form .ant-form-item-control {
+    flex: 0 0 150px !important;
+    width: 150px !important;
+    max-width: 150px !important;
+    min-width: 0 !important;
+  }
+  .settings-panel form .ant-form-item-control-input,
+  .settings-panel form .ant-form-item-control-input-content {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+  /* 关键:带 addonAfter 的 InputNumber 外层是 group-wrapper,必须一并锁 100%,
+     否则它按自然宽度撑开、把步进器顶到视口外造成横向溢出 */
+  .settings-panel form .ant-form-item-control .ant-input-number-group-wrapper,
+  .settings-panel form .ant-form-item-control .ant-input-number-wrapper,
+  .settings-panel form .ant-form-item-control .ant-input-number,
+  .settings-panel form .ant-form-item-control .ant-input-number-affix-wrapper,
+  .settings-panel form .ant-form-item-control .ant-input-affix-wrapper,
+  .settings-panel form .ant-form-item-control .ant-input,
+  .settings-panel form .ant-form-item-control .ant-select {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+  /* 行内不再显示大段帮助文字(原生设置里靠标题/上下文表达) */
+  .settings-panel form .ant-form-item-explain,
+  .settings-panel form .ant-form-item-extra { display: none; }
+
+  /* 保存/重置 → 整宽主操作,独占一行、无分隔线 */
+  .settings-panel form .ant-form-item:has(.settings-actions) {
+    border-top: none;
+    padding-top: 16px;
+  }
+  .settings-panel form .ant-form-item:has(.settings-actions) .ant-form-item-control { width: 100%; max-width: none; flex: 1; }
+  .settings-actions { width: 100%; display: flex; gap: 10px; }
+  .settings-actions .ant-btn { flex: 1; height: 46px; border-radius: 12px; }
+}

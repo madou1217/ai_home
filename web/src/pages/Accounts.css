@@ -1,0 +1,93 @@
+/* ===== Accounts Page — Umi ProLayout Compatible ===== */
+
+/* 行高亮动画 */
+.accounts-row-target td {
+  background: var(--tint-info) !important;
+  transition: background-color 0.2s ease;
+}
+.accounts-row-exiting {
+  --animate-duration: 0.38s;
+  pointer-events: none;
+  transform-origin: left center;
+}
+.accounts-row-exiting td {
+  background: var(--tint-warning) !important;
+}
+
+
+@media (prefers-reduced-motion: reduce) {.accounts-row-exiting {
+    animation: none !important;
+    opacity: 0.42;
+  }
+
+}/* 导入粘贴区域 */
+.accounts-import-paste {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.accounts-import-template {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.accounts-import-template > div {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--app-muted);
+}
+.accounts-import-template pre {
+  padding: 12px;
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  background: var(--app-surface-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+/* 导出弹窗 */
+.accounts-export-popover .ant-popover-inner {
+  padding: 4px;
+  border-radius: 10px;
+}
+.accounts-remote-control-plane-list .ant-list-item {
+  padding: 8px 0;
+}
+.accounts-remote-control-plane-account-main .ant-typography {
+  max-width: 260px;
+}
+
+/* 移动端账号池：横向滚动 provider 标签 + 筛选条 + 卡片列表（替代宽表格）。
+   顶部统计已改用 MobileStatGrid，桌面才走 StatisticCard.Group。 */
+.accounts-mobile-pool {
+  display: flex;
+  flex-direction: column;
+}
+.accounts-mobile-tabs .ant-tabs-nav {
+  margin-bottom: 8px;
+}
+.accounts-mobile-tabs .ant-tabs-nav::before {
+  border-bottom: none;
+}
+.accounts-mobile-filterbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+/* 卡片内额度快照：占满卡片宽度、不横向溢出 */
+.account-mobile-usage {
+  margin-top: 12px;
+  min-width: 0;
+}
+.account-mobile-usage > div {
+  min-width: 0 !important;
+}
+/* 命中路由高亮的卡片 */
+.account-mobile-card.accounts-row-target {
+  border-color: var(--color-info, #1677ff);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-info, #1677ff) 14%, transparent);
+}

@@ -1,0 +1,51 @@
+{
+  "name": "ai_home",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "node scripts/run-tests.js",
+    "test:desktop-portable": "node --test scripts/desktop/desktop-harness.test.js test/active-control-plane.test.js test/control-plane-api-client.test.js test/control-plane-endpoints.test.js test/control-plane-profiles.test.js test/control-plane-selection.test.js test/desktop-menu-model.test.js test/desktop-renderer-config.test.js test/fabric-profile-gate.test.js test/management-key-auth.test.js test/management-key-rotation.test.js test/management-key-rotation-web.test.js test/native-axios-adapter.test.js test/native-control-plane-profiles.test.js test/open-external-url.test.js test/server-profile-command.test.js test/server-transport-browser-adapter.test.js test/server-transport-native-error.test.js test/server-transport-sse-parser.test.js test/server-transport-tauri-adapter.test.js test/server.management-router.test.js test/web.load-failure-message.test.js test/web.session-history-window.test.js test/webui-auth-transport.test.js",
+    "postinstall": "node scripts/postinstall.js",
+    "codex:sessions:align": "node scripts/align-codex-session-providers.js",
+    "ui:delegate": "node scripts/ai-ui-delegate.js",
+    "web:install": "cd web && npm install",
+    "web:build": "cd web && npm run build",
+    "web:build:desktop": "node scripts/desktop/build-web.js",
+    "web:dev": "cd web && npm run dev",
+    "web:dev:desktop": "node scripts/desktop/dev-web.js",
+    "desktop:icons": "tauri icon assets/brand/ai-home-app-icon.png --output src-tauri/icons",
+    "build": "npm run web:build",
+    "tauri": "tauri",
+    "desktop:build": "npm run tauri -- build",
+    "desktop:check": "cargo test --manifest-path src-tauri/Cargo.toml --locked"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "engines": {
+    "node": ">=20 <23"
+  },
+  "type": "commonjs",
+  "dependencies": {
+    "@lydell/node-pty": "^1.2.0-beta.12",
+    "@openai/codex": "^0.142.3",
+    "7zip-bin": "^5.2.0",
+    "cli-spinners": "^3.4.0",
+    "commander": "^14.0.3",
+    "cross-spawn": "^7.0.6",
+    "fs-extra": "^11.3.3",
+    "node-pty": "^1.1.0",
+    "open": "^11.0.0",
+    "readline-sync": "^1.4.10",
+    "undici": "^7.22.0",
+    "werift": "^0.23.0",
+    "ws": "^8.20.0"
+  },
+  "bin": {
+    "aih": "./bin/ai-home.js"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^1.6.0"
+  }
+}

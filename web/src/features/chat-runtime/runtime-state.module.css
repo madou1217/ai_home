@@ -1,0 +1,15 @@
+.runtimeState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  height: 100%;
+  padding: 24px;
+  color: var(--color-text-secondary);
+}
+
+.runtimeState :global(.ant-alert),
+.runtimeState :global(.ant-select) {
+  width: min(100%, 560px);
+}

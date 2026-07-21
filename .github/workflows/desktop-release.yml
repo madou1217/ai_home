@@ -1,0 +1,400 @@
+name: desktop-release
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build-package-smoke:
+    name: ${{ matrix.platform }} package + smoke
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos
+            runner: macos-14
+            bundles: app,dmg
+          - platform: windows
+            runner: windows-2022
+            bundles: msi
+          - platform: linux
+            runner: ubuntu-22.04
+            bundles: deb,appimage
+
+    env:
+      BUNDLE_ROOT: src-tauri/target/release/bundle
+      EVIDENCE_DIR: desktop-evidence
+      PRODUCT_NAME: "AI Home"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install Linux desktop and keyring dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            build-essential \
+            dbus-x11 \
+            file \
+            gnome-keyring \
+            libayatana-appindicator3-dev \
+            libfuse2 \
+            libgtk-3-dev \
+            librsvg2-dev \
+            libsecret-tools \
+            libssl-dev \
+            libwebkit2gtk-4.0-dev \
+            patchelf \
+            wget \
+            xvfb
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            web/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@1.85.0
+
+      - name: Install JavaScript dependencies
+        run: |
+          npm ci
+          npm ci --prefix web
+
+      - name: Verify full Node.js application
+        if: matrix.platform != 'windows'
+        run: npm test
+
+      - name: Verify portable desktop application
+        run: npm run test:desktop-portable
+
+      - name: Verify native core
+        run: |
+          cargo test --manifest-path src-tauri/Cargo.toml --locked
+          cargo check --manifest-path src-tauri/Cargo.toml --locked
+
+      - name: Build unsigned desktop bundles
+        run: >-
+          node scripts/desktop/measure-command.js
+          --label tauri-build
+          --output "${{ env.EVIDENCE_DIR }}/build-timing.json"
+          --
+          node node_modules/@tauri-apps/cli/tauri.js build
+          --ci
+          --bundles "${{ matrix.bundles }}"
+
+      - name: Install app from DMG
+        if: matrix.platform == 'macos'
+        run: >-
+          node scripts/desktop/measure-command.js
+          --label install-dmg
+          --output "${{ env.EVIDENCE_DIR }}/install-dmg-timing.json"
+          --
+          node scripts/desktop/install-package.js
+          --bundle-root "${{ env.BUNDLE_ROOT }}"
+          --kind dmg
+          --install-root "${{ runner.temp }}/aih-desktop-dmg"
+          --product-name "${{ env.PRODUCT_NAME }}"
+          --output "${{ env.EVIDENCE_DIR }}/install-dmg.json"
+
+      - name: Smoke installed macOS app
+        if: matrix.platform == 'macos'
+        run: >-
+          node scripts/desktop/measure-command.js
+          --label smoke-dmg
+          --output "${{ env.EVIDENCE_DIR }}/smoke-dmg-timing.json"
+          --
+          node scripts/desktop/run-packaged-smoke.js
+          --install-manifest "${{ env.EVIDENCE_DIR }}/install-dmg.json"
+          --output "${{ env.EVIDENCE_DIR }}/smoke-dmg.json"
+
+      - name: Install app from MSI
+        if: matrix.platform == 'windows'
+        run: >-
+          node scripts/desktop/measure-command.js
+          --label install-msi
+          --output "${{ env.EVIDENCE_DIR }}/install-msi-timing.json"
+          --
+          node scripts/desktop/install-package.js
+          --bundle-root "${{ env.BUNDLE_ROOT }}"
+          --kind msi
+          --install-root "${{ runner.temp }}/aih-desktop-msi"
+          --product-name "${{ env.PRODUCT_NAME }}"
+          --output "${{ env.EVIDENCE_DIR }}/install-msi.json"
+
+      - name: Smoke installed Windows app
+        if: matrix.platform == 'windows'
+        run: >-
+          node scripts/desktop/measure-command.js
+          --label smoke-msi
+          --output "${{ env.EVIDENCE_DIR }}/smoke-msi-timing.json"
+          --
+          node scripts/desktop/run-packaged-smoke.js
+          --install-manifest "${{ env.EVIDENCE_DIR }}/install-msi.json"
+          --output "${{ env.EVIDENCE_DIR }}/smoke-msi.json"
+
+      - name: Install app from DEB
+        if: matrix.platform == 'linux'
+        run: >-
+          node scripts/desktop/measure-command.js
+          --label install-deb
+          --output "${{ env.EVIDENCE_DIR }}/install-deb-timing.json"
+          --
+          node scripts/desktop/install-package.js
+          --bundle-root "${{ env.BUNDLE_ROOT }}"
+          --kind deb
+          --install-root "${{ runner.temp }}/aih-desktop-deb"
+          --product-name "${{ env.PRODUCT_NAME }}"
+          --output "${{ env.EVIDENCE_DIR }}/install-deb.json"
+
+      - name: Smoke installed DEB app
+        if: matrix.platform == 'linux'
+        run: >-
+          node scripts/desktop/measure-command.js
+          --label smoke-deb
+          --output "${{ env.EVIDENCE_DIR }}/smoke-deb-timing.json"
+          --
+          dbus-run-session --
+          xvfb-run -a
+          node scripts/desktop/run-packaged-smoke.js
+          --bootstrap-linux-keyring
+          --install-manifest "${{ env.EVIDENCE_DIR }}/install-deb.json"
+          --output "${{ env.EVIDENCE_DIR }}/smoke-deb.json"
+
+      - name: Stage AppImage
+        if: matrix.platform == 'linux'
+        run: >-
+          node scripts/desktop/measure-command.js
+          --label install-appimage
+          --output "${{ env.EVIDENCE_DIR }}/install-appimage-timing.json"
+          --
+          node scripts/desktop/install-package.js
+          --bundle-root "${{ env.BUNDLE_ROOT }}"
+          --kind appimage
+          --install-root "${{ runner.temp }}/aih-desktop-appimage"
+          --product-name "${{ env.PRODUCT_NAME }}"
+          --output "${{ env.EVIDENCE_DIR }}/install-appimage.json"
+
+      - name: Smoke staged AppImage
+        if: matrix.platform == 'linux'
+        run: >-
+          node scripts/desktop/measure-command.js
+          --label smoke-appimage
+          --output "${{ env.EVIDENCE_DIR }}/smoke-appimage-timing.json"
+          --
+          dbus-run-session --
+          xvfb-run -a
+          node scripts/desktop/run-packaged-smoke.js
+          --bootstrap-linux-keyring
+          --install-manifest "${{ env.EVIDENCE_DIR }}/install-appimage.json"
+          --output "${{ env.EVIDENCE_DIR }}/smoke-appimage.json"
+
+      - name: Collect macOS release evidence
+        if: always() && matrix.platform == 'macos'
+        run: >-
+          node scripts/desktop/collect-release-evidence.js
+          --allow-incomplete
+          --platform macos
+          --bundle-root "${{ env.BUNDLE_ROOT }}"
+          --required-kind app
+          --required-kind dmg
+          --required-smoke-kind dmg
+          --timing "${{ env.EVIDENCE_DIR }}/build-timing.json"
+          --timing "${{ env.EVIDENCE_DIR }}/install-dmg-timing.json"
+          --timing "${{ env.EVIDENCE_DIR }}/smoke-dmg-timing.json"
+          --install "${{ env.EVIDENCE_DIR }}/install-dmg.json"
+          --smoke "${{ env.EVIDENCE_DIR }}/smoke-dmg.json"
+          --signing-status unsigned
+          --signing-reason "workflow_dispatch does not use signing or notarization secrets"
+          --output "${{ env.EVIDENCE_DIR }}/release-evidence.json"
+
+      - name: Collect Windows release evidence
+        if: always() && matrix.platform == 'windows'
+        run: >-
+          node scripts/desktop/collect-release-evidence.js
+          --allow-incomplete
+          --platform windows
+          --bundle-root "${{ env.BUNDLE_ROOT }}"
+          --required-kind msi
+          --required-smoke-kind msi
+          --timing "${{ env.EVIDENCE_DIR }}/build-timing.json"
+          --timing "${{ env.EVIDENCE_DIR }}/install-msi-timing.json"
+          --timing "${{ env.EVIDENCE_DIR }}/smoke-msi-timing.json"
+          --install "${{ env.EVIDENCE_DIR }}/install-msi.json"
+          --smoke "${{ env.EVIDENCE_DIR }}/smoke-msi.json"
+          --signing-status unsigned
+          --signing-reason "workflow_dispatch does not use Authenticode signing secrets"
+          --output "${{ env.EVIDENCE_DIR }}/release-evidence.json"
+
+      - name: Collect Linux release evidence
+        if: always() && matrix.platform == 'linux'
+        run: >-
+          node scripts/desktop/collect-release-evidence.js
+          --allow-incomplete
+          --platform linux
+          --bundle-root "${{ env.BUNDLE_ROOT }}"
+          --required-kind deb
+          --required-kind appimage
+          --required-smoke-kind deb
+          --required-smoke-kind appimage
+          --timing "${{ env.EVIDENCE_DIR }}/build-timing.json"
+          --timing "${{ env.EVIDENCE_DIR }}/install-deb-timing.json"
+          --timing "${{ env.EVIDENCE_DIR }}/smoke-deb-timing.json"
+          --timing "${{ env.EVIDENCE_DIR }}/install-appimage-timing.json"
+          --timing "${{ env.EVIDENCE_DIR }}/smoke-appimage-timing.json"
+          --install "${{ env.EVIDENCE_DIR }}/install-deb.json"
+          --install "${{ env.EVIDENCE_DIR }}/install-appimage.json"
+          --smoke "${{ env.EVIDENCE_DIR }}/smoke-deb.json"
+          --smoke "${{ env.EVIDENCE_DIR }}/smoke-appimage.json"
+          --signing-status unsigned
+          --signing-reason "workflow_dispatch does not use Linux package signing secrets"
+          --output "${{ env.EVIDENCE_DIR }}/release-evidence.json"
+
+      - name: Upload packages and evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.platform }}
+          overwrite: true
+          path: |
+            src-tauri/target/release/bundle/**/*
+            desktop-evidence/**/*
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Enforce complete release evidence
+        if: always()
+        run: >-
+          node scripts/desktop/validate-release-evidence.js
+          --evidence "${{ env.EVIDENCE_DIR }}/release-evidence.json"
+          --workspace-root "${{ github.workspace }}"
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: build-package-smoke
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      needs.build-package-smoke.result == 'success'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Download verified desktop artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-*
+          path: downloaded-artifacts
+          merge-multiple: false
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.run_id }}
+
+      - name: Prepare guarded Release assets
+        run: >-
+          node scripts/desktop/prepare-release-assets.js
+          --workspace-root "${{ github.workspace }}"
+          --input "${{ github.workspace }}/downloaded-artifacts"
+          --output "${{ github.workspace }}/release-assets"
+
+      - name: Create or refresh GitHub prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          RELEASE_TAG="$(node -e "const manifest = require('./release-assets/release-manifest.json'); process.stdout.write(manifest.tag);")"
+          RELEASE_TITLE="$(node -e "const manifest = require('./release-assets/release-manifest.json'); process.stdout.write(manifest.title);")"
+          TAG_ERROR="$(mktemp)"
+          RELEASE_ERROR="$(mktemp)"
+          trap 'rm -f "$TAG_ERROR" "$RELEASE_ERROR"' EXIT
+
+          if TAG_OBJECT="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" \
+            --jq '.object | "\(.type) \(.sha)"' 2>"$TAG_ERROR")"; then
+            read -r TAG_TYPE TAG_SHA <<< "$TAG_OBJECT"
+            TAG_DEPTH=0
+            while [[ "$TAG_TYPE" == tag ]]; do
+              TAG_DEPTH=$((TAG_DEPTH + 1))
+              if (( TAG_DEPTH > 8 )); then
+                echo "Release Tag 引用层级过深: $RELEASE_TAG" >&2
+                exit 1
+              fi
+              TAG_OBJECT="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${TAG_SHA}" \
+                --jq '.object | "\(.type) \(.sha)"')"
+              read -r TAG_TYPE TAG_SHA <<< "$TAG_OBJECT"
+            done
+            if [[ "$TAG_TYPE" != commit ]]; then
+              echo "Release Tag 未指向 Git commit: $RELEASE_TAG ($TAG_TYPE)" >&2
+              exit 1
+            fi
+          elif grep -q 'HTTP 404' "$TAG_ERROR"; then
+            TAG_SHA=none
+          else
+            cat "$TAG_ERROR" >&2
+            exit 1
+          fi
+
+          RELEASE_EXISTS=false
+          if RELEASE_IDS="$(gh api --paginate \
+            "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+            --jq ".[] | select(.tag_name == \"${RELEASE_TAG}\") | .id" \
+            2>"$RELEASE_ERROR")"; then
+            if [[ -n "$RELEASE_IDS" ]]; then
+              RELEASE_EXISTS=true
+            fi
+          else
+            cat "$RELEASE_ERROR" >&2
+            exit 1
+          fi
+
+          RELEASE_ACTION="$(node scripts/desktop/resolve-release-action.js \
+            --current-sha "$GITHUB_SHA" \
+            --tag-sha "$TAG_SHA" \
+            --release-exists "$RELEASE_EXISTS")"
+          mapfile -t RELEASE_ASSETS < <(find release-assets -maxdepth 1 -type f -print | sort)
+
+          if [[ "$RELEASE_ACTION" == create ]]; then
+            if [[ "$TAG_SHA" == none ]]; then
+              gh release create "$RELEASE_TAG" "${RELEASE_ASSETS[@]}" \
+                --target "$GITHUB_SHA" \
+                --title "$RELEASE_TITLE" \
+                --prerelease \
+                --generate-notes
+            else
+              gh release create "$RELEASE_TAG" "${RELEASE_ASSETS[@]}" \
+                --verify-tag \
+                --title "$RELEASE_TITLE" \
+                --prerelease \
+                --generate-notes
+            fi
+          else
+            gh release upload "$RELEASE_TAG" "${RELEASE_ASSETS[@]}" --clobber
+            gh release edit "$RELEASE_TAG" \
+              --title "$RELEASE_TITLE" \
+              --prerelease \
+              --draft=false
+          fi

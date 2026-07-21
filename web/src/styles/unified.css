@@ -1,0 +1,205 @@
+:root {
+  --unified-page-padding: 32px;
+  --unified-card-padding: 24px;
+  --unified-card-border-radius: 12px;
+  --unified-pagination-margin: 16px;
+  --unified-section-gap: 20px;
+}
+
+/* 1. 统一页面布局：PageScaffold 标准模式采用 wrapper + content 兄弟结构，
+ *    与 Settings 页面布局一致。wrapper 提供横向内距，页头内距归零实现对齐。 */
+.unified-page-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 0 var(--unified-page-padding) var(--unified-page-padding);
+}
+
+.unified-page-wrapper .ant-page-header {
+  padding-inline: 0 !important;
+}
+
+.unified-page-content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+@media (max-width: 767px) {
+  .unified-page-wrapper {
+    padding: 0 16px 16px;
+    gap: 12px;
+  }
+}
+
+/* 1b. 兼容旧的 .ant-pro-grid-content 内距（Settings 等仍用 PageContainer 包裹内容） */
+.ant-pro-grid-content {
+  padding: 0 var(--unified-page-padding) var(--unified-page-padding) !important;
+}
+
+@media (max-width: 767px) {
+  .ant-pro-grid-content {
+    padding: 0 16px 16px !important;
+  }
+}
+
+/* 2. 统一卡片：圆角/边框走 antd 主题 token（borderRadiusLG + colorBorderSecondary），
+ *    仅扁平阴影留一条非 !important 规则（antd Card 无阴影 token）。 */
+.ant-pro-card.unified-section-card {
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.03), 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.ant-pro-card.unified-section-card .ant-pro-card-body {
+  padding: var(--unified-card-padding) !important;
+}
+
+/* 2b. 卡片即容器：卡内的表格/列表去掉自身边框与阴影，杜绝「卡中卡」双层描边。
+ *     单一逻辑容器只保留一层边框（外层卡片承担），内部内容贴合卡片。 */
+.ant-pro-card.unified-section-card {
+  overflow: hidden;
+}
+
+.ant-pro-card.unified-section-card .unified-list-table {
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
+}
+
+/* 卡内表格统一贴边：表格作为卡片 body 的直接子级时，用负 margin 抵消卡片内距，
+ *  让表头/数据行铺满卡片宽度，全站表格卡片视觉一致（无需逐页加 class）。
+ *  卡片已 overflow:hidden，任何 1px 溢出都被裁剪，不会产生横向滚动。 */
+.ant-pro-card.unified-section-card > .ant-pro-card-body > .unified-list-table {
+  margin: calc(var(--unified-card-padding) * -1);
+}
+
+/* 贴边表格的分页区补回内距，避免贴卡片边缘 */
+.ant-pro-card.unified-section-card .unified-list-table .ant-table-wrapper .ant-pagination {
+  padding: 12px 16px 16px 16px !important;
+}
+
+/* 卡内 Descriptions：外框由卡片承担，仅保留内部分隔线，避免和卡片描边叠加。 */
+.ant-pro-card.unified-section-card .ant-descriptions-bordered .ant-descriptions-view {
+  border-radius: 0;
+  border-inline-start: none;
+  border-top: none;
+}
+
+/* 指标卡统一改用框架 StatisticCard.Group（自带卡片/响应式/分隔），
+ * 原自定义 .unified-stat-card / .unified-stat-row 已删除——优先框架组件、少写 CSS。 */
+
+/* 3. 统一 ProTable 表格与大厂行 hover 高亮 */
+.unified-list-table {
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 12px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.unified-list-table .ant-table {
+  background: transparent !important;
+}
+
+/* 表头底色 / 行 hover 已迁到 antd 主题 token（config.ts > antd.theme.components.Table），
+ * 此处不再用 !important 覆盖。 */
+
+/* 全站统一列表骨架屏（ListTable 首屏加载） */
+.unified-list-table-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 12px;
+  background: #fff;
+  padding: 14px 16px 18px;
+}
+.unified-list-table-skeleton-head,
+.unified-list-table-skeleton-row {
+  display: grid;
+  gap: 16px;
+  align-items: center;
+}
+.unified-list-table-skeleton-head {
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--color-border, #e2e8f0);
+}
+.unified-list-table-skeleton-headcell {
+  overflow: hidden;
+  color: var(--color-muted, #94a3b8);
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.unified-list-table-skeleton-row .ant-skeleton-input {
+  min-width: 0;
+  height: 16px;
+}
+
+/* 分页器样式已迁到 antd 主题 token（config.ts > antd.theme.components.Pagination：
+ * itemActiveBg 深色填充 + Pagination 作用域 colorPrimary 白字）。ProTable 默认右对齐，
+ * 不再用自定义 !important 覆盖。贴边表格的分页内距见上方 2b 规则。 */
+
+/* 4b. 全屏铺满页面（AI 会话等）：去内容区内距、隐藏页面标题头、撑满高度，
+ *     让页面自身的全高 App 布局接管，内部面板各自滚动。
+ *     注意 PageContainer 真实结构是多层嵌套
+ *     page-container > grid-content > grid-content-children > children-content，
+ *     必须用后代选择器把 height:100% 贯穿整条链，否则最内层只有自然高、布局撑不满。 */
+/* 标题头与内距：桌面/移动都去掉 */
+.unified-page-scaffold--fullbleed .ant-pro-grid-content,
+.unified-page-scaffold--fullbleed .ant-pro-grid-content-children {
+  padding: 0 !important;
+}
+
+.unified-page-scaffold--fullbleed .ant-page-header,
+.unified-page-scaffold--fullbleed .ant-pro-page-container-warp {
+  display: none !important;
+}
+
+/* 填充链（两端通用）：整条 page-container>grid-content>grid-content-children 设为
+ * flex column，并让 grid-content-children 的直接子级（children-content 包裹层，
+ * 类名随 pro 版本漂移）flex:1 撑满。只把根节点的「确定高度」按端区分，避免依赖
+ * 最内层不确定类名 / height:100% 链塌成 0。 */
+.unified-page-scaffold--fullbleed,
+.unified-page-scaffold--fullbleed .ant-pro-grid-content,
+.unified-page-scaffold--fullbleed .ant-pro-grid-content-children {
+  display: flex !important;
+  flex-direction: column !important;
+  min-height: 0 !important;
+}
+
+.unified-page-scaffold--fullbleed .ant-pro-grid-content,
+.unified-page-scaffold--fullbleed .ant-pro-grid-content-children,
+.unified-page-scaffold--fullbleed .ant-pro-grid-content-children > * {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+}
+
+.unified-page-scaffold--fullbleed .ant-pro-grid-content-children > * {
+  height: auto !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+/* 根节点的确定高度：桌面用 100%（内容区已是 100vh），移动用 dvh（body 原生滚动，
+ * 减去移动顶栏，并规避 100vh 地址栏遮挡）。 */
+@media (min-width: 768px) {
+  .unified-page-scaffold--fullbleed {
+    height: 100% !important;
+  }
+}
+
+@media (max-width: 767px) {
+  /* 移动端顶栏已被 mobile-shell.css 隐藏并清掉占位，fullBleed 页面（会话页）应撑满整个视口；
+   * 之前扣 56px 会在顶部留出一条纯黑缺口。bottom TabBar 由各页自己的 padding 让位。 */
+  .unified-page-scaffold--fullbleed {
+    height: 100dvh !important;
+  }
+}
+
+/* 5. 统一空态样式 */
+.unified-empty,
+.ant-table-placeholder .ant-empty-description {
+  color: var(--color-text-secondary, #64748b) !important;
+  font-size: 13px !important;
+}

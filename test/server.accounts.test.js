@@ -511,7 +511,7 @@ test('runtime buckets expose accountRef without CLI identity fields', (t) => {
 
   const accounts = loadServerRuntimeAccounts(fixture.deps());
 
-  assert.deepEqual(Object.keys(accounts).sort(), ['agy', 'claude', 'codex', 'gemini', 'grok', 'opencode']);
+  assert.deepEqual(Object.keys(accounts).sort(), ['agy', 'claude', 'codex', 'gemini', 'grok', 'kimi', 'kiro', 'opencode']);
   assert.equal(accounts.opencode[0].accountRef, accountRef);
   assert.equal(Object.hasOwn(accounts.opencode[0], 'id'), false);
   assert.equal(Object.hasOwn(accounts.opencode[0], 'accountId'), false);

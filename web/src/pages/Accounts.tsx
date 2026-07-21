@@ -287,6 +287,25 @@ const PROVIDER_AUTH_OPTIONS: Record<Provider, Array<{
       label: 'Grok 登录',
       description: '使用 Grok Build CLI 原生 auth login 流程（需 SuperGrok 订阅）。'
     }
+  ],
+  kimi: [
+    {
+      value: 'api-key',
+      label: 'Moonshot 密钥',
+      description: '绑定 MOONSHOT_API_KEY / KIMI_BASE_URL（支持 api.moonshot.cn 和 api.moonshot.ai 双端点）。'
+    },
+    {
+      value: 'oauth-browser',
+      label: 'Kimi Code 登录',
+      description: '使用 Kimi Code CLI 原生 OAuth 设备码流程（需 Kimi 会员订阅）。'
+    }
+  ],
+  kiro: [
+    {
+      value: 'oauth-browser',
+      label: 'AWS Builder ID 登录',
+      description: '使用 Kiro CLI Device Flow 认证（支持 Google/GitHub/AWS Builder ID）。'
+    }
   ]
 };
 

@@ -79,6 +79,26 @@
       "accentVar": "var(--provider-qodercn)",
       "softVar": "var(--provider-qodercn-soft)",
       "tagColor": "purple"
+    },
+    {
+      "id": "kimi",
+      "label": "Kimi",
+      "short": "KM",
+      "terminalIcon": "☾",
+      "terminalIconAsset": "assets/provider-icons/kimi.png",
+      "accentVar": "var(--provider-kimi)",
+      "softVar": "var(--provider-kimi-soft)",
+      "tagColor": "geekblue"
+    },
+    {
+      "id": "kiro",
+      "label": "Kiro",
+      "short": "KR",
+      "terminalIcon": "⬡",
+      "terminalIconAsset": "assets/provider-icons/kiro.png",
+      "accentVar": "var(--provider-kiro)",
+      "softVar": "var(--provider-kiro-soft)",
+      "tagColor": "volcano"
     }
   ],
   "fallback": {

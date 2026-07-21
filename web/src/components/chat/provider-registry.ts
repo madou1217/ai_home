@@ -7,6 +7,8 @@ import opencodeIcon from '@/assets/icons/opencode.svg';
 import chatgptIcon from '@/assets/icons/chatgpt.svg';
 import openaiIcon from '@/assets/icons/openai.svg';
 import grokIcon from '@/assets/icons/grok.svg';
+import kimiIcon from '@/assets/icons/kimi.svg';
+import kiroIcon from '@/assets/icons/kiro.svg';
 import aiHomeMark from '@/assets/brand/ai-home-mark.png';
 import agyTerminalIcon from '../../../../assets/provider-icons/agy.png';
 import claudeTerminalIcon from '../../../../assets/provider-icons/claude.png';
@@ -48,7 +50,9 @@ const ICONS: Record<Provider, string> = {
   claude: claudeIcon,
   agy: antigravityIcon,
   opencode: opencodeIcon,
-  grok: grokIcon
+  grok: grokIcon,
+  kimi: kimiIcon,
+  kiro: kiroIcon
 };
 
 const TERMINAL_ICON_ASSETS: Record<Provider, string> = {
@@ -57,7 +61,9 @@ const TERMINAL_ICON_ASSETS: Record<Provider, string> = {
   claude: claudeTerminalIcon,
   agy: agyTerminalIcon,
   opencode: opencodeTerminalIcon,
-  grok: aiHomeMark
+  grok: aiHomeMark,
+  kimi: aiHomeMark,
+  kiro: aiHomeMark
 };
 
 export const PROVIDERS: Record<Provider, ProviderMeta> = Object.fromEntries(

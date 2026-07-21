@@ -64,6 +64,8 @@
   --c-agy:     #8b5cf6;  /* Antigravity purple */
   --c-opencode: #1f2937; /* OpenCode neutral */
   --c-grok:    #00bcd4;  /* xAI cyan */
+  --c-kimi:    #1a73e8;  /* Moonshot blue */
+  --c-kiro:    #ff9900;  /* AWS orange */
 
   /* ---------------------------------------------------------------------------
    * 2. PRIMITIVES — Typography
@@ -213,6 +215,10 @@
   --provider-opencode-soft: rgba(31, 41, 55, 0.10);
   --provider-grok: var(--c-grok);
   --provider-grok-soft: rgba(0, 188, 212, 0.12);
+  --provider-kimi: var(--c-kimi);
+  --provider-kimi-soft: rgba(26, 115, 232, 0.12);
+  --provider-kiro: var(--c-kiro);
+  --provider-kiro-soft: rgba(255, 153, 0, 0.12);
 
   /* 当前会话的强调色：组件层用 data-provider 覆盖（见 DESIGN.md） */
   --provider-accent: var(--c-brand-600);

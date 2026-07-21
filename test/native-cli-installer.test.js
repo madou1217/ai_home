@@ -59,3 +59,30 @@ test('Windows Claude lookup includes the official native install directory only 
     processObj: { platform: 'linux' }
   }), []);
 });
+
+test('Qoder install plans use region-specific official installers', () => {
+  const winGlobal = resolveNativeCliInstallPlans('qoder', '@qoder-ai/qodercli', {
+    path,
+    processObj: { platform: 'win32', env: { SystemRoot: 'C:\\Windows' } },
+    resolveNpmInstall: () => ({ command: 'npm.cmd', args: ['install', '-g', '@qoder-ai/qodercli'] })
+  });
+  assert.equal(winGlobal[0].id, 'qoder_global_windows');
+  assert.match(winGlobal[0].args.at(-1), /qoder\.com\/install\.ps1/);
+
+  const posixCn = resolveNativeCliInstallPlans('qodercn', '', {
+    path,
+    processObj: { platform: 'darwin', env: {} }
+  });
+  assert.equal(posixCn.length, 1);
+  assert.equal(posixCn[0].id, 'qoder_cn_posix');
+  assert.match(posixCn[0].args.at(-1), /qoder\.com\.cn\/install/);
+
+  assert.deepEqual(
+    collectNativeCliPathEntries('qodercn', {
+      path,
+      hostHomeDir: 'C:\\Users\\example',
+      processObj: { platform: 'win32' }
+    }),
+    ['C:\\Users\\example\\.local\\bin']
+  );
+});

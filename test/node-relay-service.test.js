@@ -323,8 +323,10 @@ test('node relay service installs Windows startup script without leaking managem
   assert.equal(status.state, 'installed');
   assert.equal(status.running, false);
   assert.equal(status.issues[0].code, 'relay_service_not_running');
-  assert.match(status.nextActions[0].command, /node-relay\.nat-node\.cmd/);
-  assert.equal(script.includes('"C:\\Users\\model\\AppData\\Roaming\\npm\\aih.cmd" "node" "relay" "connect" "https://control.example.com" "--node-id" "nat-node"'), true);
+  assert.match(status.nextActions[0].command, /node-relay\.nat-node\.vbs/);
+  assert.equal(script.includes('""C:\\Users\\model\\AppData\\Roaming\\npm\\aih.cmd"" ""node"" ""relay"" ""connect"" ""https://control.example.com"" ""--node-id"" ""nat-node""'), true);
+  assert.equal(script.includes('shell.Run'), true);
+  assert.equal(script.includes(', 0, False'), true);
   assert.equal(script.includes('node-secret'), false);
 });
 

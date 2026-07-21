@@ -646,6 +646,7 @@ test('runtime asks before installing psmux on Windows and degrades when declined
   assert.equal(spawns.length, 1);
   assert.equal(spawns[0].command, 'cmd.exe');
   assert.equal(spawns[0].args.includes('chcp 65001>nul & C:\\tools\\codex.cmd'), true);
+  assert.equal(spawns[0].options.useConptyDll, true);
   assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
   assert.deepEqual(rawModeCalls, [true, false]);
 });
@@ -3731,6 +3732,7 @@ test('runtime repairs missing Claude native binary before spawning pty', () => {
     const { runtime, proc, spawns, rawModeCalls } = createRuntimeHarness({
       AIH_RUNTIME_SHOW_USAGE: '0'
     }, {
+      platform: 'linux',
       resolveCliPath: () => cliPath,
       spawnSync(command, args) {
         calls.push({ command, args });
@@ -3756,7 +3758,7 @@ test('runtime repairs missing Claude native binary before spawning pty', () => {
       [process.execPath, installScriptPath],
       [cliPath, '--version']
     ]);
-    assert.equal(logs.some((line) => line.includes('postinstall repair completed')), true);
+    assert.equal(logs.some((line) => line.includes('repair completed')), true);
     assert.equal(logs.some((line) => line.includes('native binary not installed')), false);
     assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
     assert.deepEqual(rawModeCalls, [true, false]);

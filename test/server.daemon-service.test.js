@@ -2473,7 +2473,7 @@ test('daemon service installs Windows Startup script for login autostart', () =>
     'Start Menu',
     'Programs',
     'Startup',
-    'com.clawdcodex.ai_home.cmd'
+    'com.clawdcodex.ai_home.vbs'
   );
   const script = fs.readFileSync(scriptPath, 'utf8');
 
@@ -2481,7 +2481,9 @@ test('daemon service installs Windows Startup script for login autostart', () =>
   assert.equal(status.type, 'windows-startup');
   assert.equal(status.installed, true);
   assert.equal(status.loaded, true);
-  assert.equal(script.includes('"C:\\Users\\model\\AppData\\Roaming\\npm\\aih.cmd" "server" "start"'), true);
+  assert.equal(script.includes('""C:\\Users\\model\\AppData\\Roaming\\npm\\aih.cmd"" ""server"" ""start""'), true);
+  assert.equal(script.includes('shell.Run'), true);
+  assert.equal(script.includes(', 0, False'), true);
   assert.equal(script.includes('C:\\Node\\node.exe'), false);
   assert.equal(fs.existsSync(legacyScriptPath), false);
 });

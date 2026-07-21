@@ -56,10 +56,10 @@ test('repairs Claude native binary by running package postinstall then verifying
     fs,
     path,
     nodeExecPath: '/usr/local/bin/node',
-    processObj: { env: {}, execPath: '/usr/local/bin/node' },
+    processObj: { platform: 'linux', env: {}, execPath: '/usr/local/bin/node' },
     onRepairStart: (context) => repairStarts.push(context),
-    spawnSync(command, args) {
-      calls.push({ command, args });
+    spawnSync(command, args, options) {
+      calls.push({ command, args, options });
       if (command === cliPath) {
         probeCount += 1;
         return probeCount === 1
@@ -82,6 +82,53 @@ test('repairs Claude native binary by running package postinstall then verifying
     ['/usr/local/bin/node', installScriptPath],
     [cliPath, '--version']
   ]);
+});
+
+test('repairs missing Claude native binary with official installer on Windows', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-claude-windows-repair-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const wrapperPath = path.join(root, 'nodejs', 'claude.cmd');
+  const installedPath = path.join(root, '.local', 'bin', 'claude.exe');
+  fs.mkdirSync(path.dirname(wrapperPath), { recursive: true });
+  fs.writeFileSync(wrapperPath, '@echo off\r\n', 'utf8');
+
+  const calls = [];
+  const repairStarts = [];
+  const result = repairNativeBinaryIfNeeded('claude', wrapperPath, {
+    fs,
+    path,
+    hostHomeDir: root,
+    processObj: {
+      platform: 'win32',
+      env: { USERPROFILE: root, SystemRoot: 'C:\\Windows' },
+      execPath: 'C:\\nodejs\\node.exe'
+    },
+    onRepairStart: (context) => repairStarts.push(context),
+    spawnSync(command, args, options) {
+      calls.push({ command, args, options });
+      if (command.endsWith('cmd.exe') && args.at(-1).includes(wrapperPath)) {
+        return { status: 1, stdout: '', stderr: 'Error: claude native binary not installed.' };
+      }
+      if (command.endsWith('powershell.exe')) {
+        fs.mkdirSync(path.dirname(installedPath), { recursive: true });
+        fs.writeFileSync(installedPath, '', 'utf8');
+        return { status: 0, stdout: '', stderr: '' };
+      }
+      if (command === installedPath) {
+        return { status: 0, stdout: '2.1.140\n', stderr: '' };
+      }
+      return { status: 1, stdout: '', stderr: 'unexpected command' };
+    }
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.repaired, true);
+  assert.equal(result.cliPath, installedPath);
+  assert.equal(result.strategy, 'claude_windows_native');
+  assert.equal(repairStarts[0].strategy, 'claude_windows_native');
+  assert.equal(calls.some((call) => call.command.endsWith('powershell.exe')), true);
+  assert.equal(calls.find((call) => call.command.endsWith('powershell.exe')).options.windowsHide, true);
+  assert.equal(calls.at(-1).command, installedPath);
 });
 
 test('does not run Claude repair for other providers', () => {

@@ -27,3 +27,24 @@ test('loadNodePty falls back when primary spawn is broken', () => {
   });
   assert.equal(loaded, fallback);
 });
+
+test('node-pty self test uses ConPTY DLL on Windows', () => {
+  const calls = [];
+  const ptyModule = {
+    spawn(command, args, options) {
+      calls.push({ command, args, options });
+      return { kill() {} };
+    }
+  };
+
+  assertPtySpawnUsable(ptyModule, {
+    processObj: {
+      platform: 'win32',
+      execPath: 'C:\\Node\\node.exe',
+      env: {},
+      cwd: () => 'C:\\repo'
+    }
+  });
+
+  assert.equal(calls[0].options.useConptyDll, true);
+});

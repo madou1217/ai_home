@@ -19,6 +19,23 @@ const {
   isManagedCommand
 } = require('../lib/server/provider-session-hook-config');
 
+test('builds Windows Codex hook commands with node.exe and cmd-safe quoting', () => {
+  const command = buildProviderSessionHookSenderCommand({
+    provider: 'codex',
+    eventName: 'SessionStart',
+    platform: 'win32',
+    nodeExecPath: 'C:\\Program Files\\nodejs\\node.exe',
+    senderScriptPath: 'C:\\repo path\\scripts\\aih-provider-session-hook-sender.js'
+  });
+
+  assert.match(command, /^call "C:\\Program Files\\nodejs\\node\.exe" /);
+  assert.match(command, /"C:\\repo path\\scripts\\aih-provider-session-hook-sender\.js"/);
+  assert.match(command, /--provider "codex"/);
+  assert.equal(command.includes('powershell'), false);
+  assert.equal(command.includes('/usr/bin/env'), false);
+  assert.equal(isManagedCommand(command, 'codex'), true);
+});
+
 test('builds Codex hooks.json without replacing user hooks', () => {
   const existing = {
     hooks: {
@@ -165,6 +182,7 @@ test('sender command includes managed marker and shell-quoted values', () => {
   const command = buildProviderSessionHookSenderCommand({
     provider: 'agy',
     eventName: 'Stop',
+    platform: 'linux',
     senderScriptPath: '/tmp/aih hook.js',
     receiverUrl: 'http://127.0.0.1:9527/v0/webui/session-events/provider-hook?provider=agy&event=Stop'
   });

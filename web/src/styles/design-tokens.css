@@ -63,6 +63,7 @@
   --c-gemini:  #4285f4;  /* Google blue */
   --c-agy:     #8b5cf6;  /* Antigravity purple */
   --c-opencode: #1f2937; /* OpenCode neutral */
+  --c-grok:    #00bcd4;  /* xAI cyan */
 
   /* ---------------------------------------------------------------------------
    * 2. PRIMITIVES — Typography
@@ -210,6 +211,8 @@
   --provider-agy-soft: rgba(139, 92, 246, 0.12);
   --provider-opencode: var(--c-opencode);
   --provider-opencode-soft: rgba(31, 41, 55, 0.10);
+  --provider-grok: var(--c-grok);
+  --provider-grok-soft: rgba(0, 188, 212, 0.12);
 
   /* 当前会话的强调色：组件层用 data-provider 覆盖（见 DESIGN.md） */
   --provider-accent: var(--c-brand-600);

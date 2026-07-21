@@ -6,7 +6,7 @@ const GATEWAY_SELECTION_SCOPE_PREFIX = 'gateway:';
 
 // 仅这些 provider 支持网关 profile（与后端 self-relay-account.AIH_SERVER_PROFILE_PROVIDERS 对齐）。
 // agy 无端点覆盖、gemini 尚未接入网关 → 不提供该选项，保持单账号直连。
-export const AIH_SERVER_PROVIDERS: Provider[] = ['codex', 'claude', 'opencode'];
+export const AIH_SERVER_PROVIDERS: Provider[] = ['codex', 'claude', 'opencode', 'grok'];
 
 export function supportsAihServer(provider?: string | null): boolean {
   return AIH_SERVER_PROVIDERS.includes(String(provider || '').trim() as Provider);

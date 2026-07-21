@@ -23,6 +23,7 @@ aih gemini
 aih claude
 aih codex
 aih opencode
+aih grok
 ```
 
 新增账号：
@@ -32,6 +33,7 @@ aih gemini add
 aih claude add
 aih codex add
 aih opencode add
+aih grok add
 ```
 
 指定账号运行：
@@ -41,6 +43,7 @@ aih gemini 1
 aih claude 2
 aih codex 3
 aih opencode 4
+aih grok 5
 ```
 
 查看账号：
@@ -51,6 +54,7 @@ aih gemini ls
 aih claude ls
 aih codex ls
 aih opencode ls
+aih grok ls
 ```
 
 切换默认账号 / Codex App 账号：
@@ -98,7 +102,7 @@ aih import [provider] [sources...] [-j N] [-f <folder>] [--dry-run]
 ```
 
 - `cliproxyapi` 生成 `cliproxyapi-data` JSON；只导出数据文件，不写入本机 CLIProxyAPI 配置。
-- `sub2api` 生成 `sub2api-data` JSON；`provider` 可选，支持 `codex`、`claude`、`gemini`、`agy`。
+- `sub2api` 生成 `sub2api-data` JSON；`provider` 可选，支持 `codex`、`claude`、`gemini`、`agy`、`grok`。
 - `antigravity` 只导出 `agy` OAuth 账号，生成 Antigravity Manager JSON。
 - `import` 可混合读取目录、zip、JSON、JSONL、`cliproxyapi`；这些目录只作为显式输入，不参与运行时账号发现。
 - `-j N` 控制并发预算；`-f <folder>` 从 zip 内指定子目录开始导入；`--dry-run` 只解析和统计，不写入数据库。
@@ -148,7 +152,7 @@ aih export sub2api gemini ./sub2api-data.json
 aih export sub2api agy ./sub2api-data.json
 ```
 
-`provider` 可选；省略时导出 `codex`、`claude`、`gemini`、`agy` 的所有可迁移账号。
+`provider` 可选；省略时导出 `codex`、`claude`、`gemini`、`agy`、`grok` 的所有可迁移账号。
 
 sub2api 导出结构示例：
 

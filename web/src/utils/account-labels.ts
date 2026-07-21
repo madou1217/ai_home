@@ -1,12 +1,13 @@
 import type { Account, Provider } from '@/types';
 
-const INTERNAL_ACCOUNT_LABEL_RE = /^(agy|codex|gemini|claude|opencode)-\d+$/i;
+const INTERNAL_ACCOUNT_LABEL_RE = /^(agy|codex|gemini|claude|opencode|grok)-\d+$/i;
 const DEFAULT_API_KEY_DOMAINS: Record<Provider, string> = {
   codex: 'api.openai.com',
   claude: 'api.anthropic.com',
   gemini: 'generativelanguage.googleapis.com',
   agy: 'daily-cloudcode-pa.googleapis.com',
-  opencode: 'opencode.ai'
+  opencode: 'opencode.ai',
+  grok: 'api.x.ai'
 };
 
 export function isInternalAccountLabel(value?: string) {

@@ -49,6 +49,36 @@
       "accentVar": "var(--provider-opencode)",
       "softVar": "var(--provider-opencode-soft)",
       "tagColor": "default"
+    },
+    {
+      "id": "grok",
+      "label": "Grok",
+      "short": "GK",
+      "terminalIcon": "⚡",
+      "terminalIconAsset": "assets/provider-icons/grok.png",
+      "accentVar": "var(--provider-grok)",
+      "softVar": "var(--provider-grok-soft)",
+      "tagColor": "cyan"
+    },
+    {
+      "id": "qoder",
+      "label": "Qoder",
+      "short": "QD",
+      "terminalIcon": "◆",
+      "terminalIconAsset": "assets/provider-icons/qoder.png",
+      "accentVar": "var(--provider-qoder)",
+      "softVar": "var(--provider-qoder-soft)",
+      "tagColor": "blue"
+    },
+    {
+      "id": "qodercn",
+      "label": "Qoder CN",
+      "short": "QCN",
+      "terminalIcon": "◇",
+      "terminalIconAsset": "assets/provider-icons/qodercn.png",
+      "accentVar": "var(--provider-qodercn)",
+      "softVar": "var(--provider-qodercn-soft)",
+      "tagColor": "purple"
     }
   ],
   "fallback": {

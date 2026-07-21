@@ -275,6 +275,18 @@ const PROVIDER_AUTH_OPTIONS: Record<Provider, Array<{
       label: 'OpenCode 登录',
       description: '使用 OpenCode CLI 原生 auth login 流程。'
     }
+  ],
+  grok: [
+    {
+      value: 'api-key',
+      label: 'xAI 密钥',
+      description: '绑定 XAI_API_KEY / XAI_BASE_URL。'
+    },
+    {
+      value: 'oauth-browser',
+      label: 'Grok 登录',
+      description: '使用 Grok Build CLI 原生 auth login 流程（需 SuperGrok 订阅）。'
+    }
   ]
 };
 

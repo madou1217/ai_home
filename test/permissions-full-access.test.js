@@ -171,7 +171,7 @@ model = "gpt-5.4"
       lines.push('');
       lines.push('# AI Home managed provider for API Key mode');
       lines.push(`[model_providers.${providerKey}]`);
-      lines.push('name = "aih codex"');
+      lines.push('name = "AIH Server"');
       lines.push(`base_url = "${String(options.openaiBaseUrl).trim()}"`);
       lines.push(`bearer_token = "${String(options.openaiApiKey).trim()}"`);
       lines.push('wire_api = "responses"');
@@ -182,7 +182,7 @@ model = "gpt-5.4"
 
     // 验证: 包含 [model_providers.aih_<account>] section
     assert.ok(result.includes(`[model_providers.${providerKey}]`));
-    assert.ok(result.includes('name = "aih codex"'));
+    assert.ok(result.includes('name = "AIH Server"'));
     assert.ok(result.includes('base_url = "http://localhost:8317/v1"'));
     assert.ok(result.includes('bearer_token = "dummy"'));
     assert.ok(result.includes('wire_api = "responses"'));

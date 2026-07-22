@@ -644,8 +644,9 @@ test('runtime asks before installing psmux on Windows and degrades when declined
   assert.equal(calls[0].defaultYes, false);
   assert.match(calls[0].query, /psmux/);
   assert.equal(spawns.length, 1);
-  assert.equal(spawns[0].command, 'cmd.exe');
-  assert.equal(spawns[0].args.includes('chcp 65001>nul & C:\\tools\\codex.cmd'), true);
+  assert.equal(spawns[0].command, 'C:\\Program Files\\nodejs\\node.exe');
+  assert.equal(spawns[0].args[0], 'C:\\tools\\node_modules\\@openai\\codex\\bin\\codex.js');
+  assert.equal(spawns[0].options.env.NODE_PATH, 'C:\\tools\\node_modules');
   assert.equal(spawns[0].options.useConptyDll, true);
   assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
   assert.deepEqual(rawModeCalls, [true, false]);
@@ -2540,7 +2541,7 @@ test('runtime routes codex through the built-in AIH server profile when no accou
     'model_provider = "aih_1"',
     '',
     '[model_providers.aih_1]',
-    'name = "aih codex"',
+    'name = "AIH Server"',
     'base_url = "https://upstream.example.com/v1"',
     'bearer_token = "host-token"',
     'wire_api = "responses"',
@@ -2554,6 +2555,7 @@ test('runtime routes codex through the built-in AIH server profile when no accou
   assert.deepEqual(spawns[0].args, [
     '-c', 'suppress_unstable_features_warning=true',
     '-c', 'model_provider=aih_server',
+    '-c', 'model_providers.aih_server.name="AIH Server"',
     '-c', 'model_providers.aih_server.base_url=http://127.0.0.1:8317/v1',
     '-c', 'model_providers.aih_server.wire_api=responses',
     '-c', 'model_providers.aih_server.env_key=OPENAI_API_KEY',
@@ -2630,6 +2632,7 @@ test('runtime injects codex remote proxy for built-in AIH server resume by defau
     'resume',
     '-c', 'suppress_unstable_features_warning=true',
     '-c', 'model_provider=aih_server',
+    '-c', 'model_providers.aih_server.name="AIH Server"',
     '-c', 'model_providers.aih_server.base_url=http://127.0.0.1:9527/v1',
     '-c', 'model_providers.aih_server.wire_api=responses',
     '-c', 'model_providers.aih_server.env_key=OPENAI_API_KEY',
@@ -2661,6 +2664,7 @@ test('runtime keeps reboot-restored Codex resume native with gateway credentials
     'resume',
     '-c', 'suppress_unstable_features_warning=true',
     '-c', 'model_provider=aih_server',
+    '-c', 'model_providers.aih_server.name="AIH Server"',
     '-c', 'model_providers.aih_server.base_url=http://127.0.0.1:9527/v1',
     '-c', 'model_providers.aih_server.wire_api=responses',
     '-c', 'model_providers.aih_server.env_key=OPENAI_API_KEY',

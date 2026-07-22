@@ -53,7 +53,7 @@ test('getCodexHooksFeatureFlagState treats absent flag as enabled and explicit f
 test('filterHostConfig excludes bearer_token from model_providers section', () => {
   const hostConfig = `
 [model_providers.aih]
-name = "aih codex"
+name = "AIH Server"
 base_url = "${AIH_CODEX_PROVIDER_BASE_URL}"
 bearer_token = "dummy"
 wire_api = "responses"
@@ -65,7 +65,7 @@ wire_api = "responses"
   });
 
   assert.ok(!filtered.includes('bearer_token'));
-  assert.ok(filtered.includes('name = "aih codex"'));
+  assert.ok(filtered.includes('name = "AIH Server"'));
   assert.ok(filtered.includes(`base_url = "${AIH_CODEX_PROVIDER_BASE_URL}"`));
   assert.ok(filtered.includes('wire_api = "responses"'));
 });
@@ -95,7 +95,7 @@ model_provider = "${providerKey}"
 model = "gpt-5.4"
 
 [model_providers.${providerKey}]
-name = "aih codex"
+name = "AIH Server"
 base_url = "${AIH_CODEX_PROVIDER_BASE_URL}"
 bearer_token = "dummy"
 wire_api = "responses"
@@ -121,7 +121,7 @@ test('mergeConfigs keeps account-managed aih provider block during host sync', (
 model = "gpt-5.4"
 
 [model_providers.${providerKey}]
-name = "aih codex"
+name = "AIH Server"
 base_url = "${AIH_CODEX_PROVIDER_BASE_URL}"
 wire_api = "responses"
 
@@ -133,7 +133,7 @@ preferred_auth_method = "apikey"
 model_provider = "${providerKey}"
 
 [model_providers.${providerKey}]
-name = "aih codex"
+name = "AIH Server"
 base_url = "${AIH_CODEX_PROVIDER_BASE_URL}"
 bearer_token = "dummy"
 wire_api = "responses"
@@ -207,7 +207,7 @@ test('mergeConfigs replaces aih provider section without leaving duplicate keys 
     'model_provider = "aih_1"',
     '',
     `[model_providers.${providerKey}]`,
-    'name = "aih codex"',
+    'name = "AIH Server"',
     'base_url = "https://www.yeslaoban.com/llm/api/v1"',
     'bearer_token = "yesboss-madoudou"',
     'wire_api = "responses"',
@@ -248,7 +248,7 @@ test('mergeConfigs routes the CLI server alias through the canonical gateway pro
     `model_provider = "${hostProviderKey}"`,
     '',
     `[model_providers.${hostProviderKey}]`,
-    'name = "aih codex"',
+    'name = "AIH Server"',
     'base_url = "https://upstream.example.com/v1"',
     'bearer_token = "host-token"',
     'wire_api = "responses"'
@@ -293,7 +293,7 @@ test('scopeAccountOnlyConfig keeps only current account managed provider from st
     'wire_api = "responses"',
     '',
     `[model_providers.${currentProvider}]`,
-    'name = "aih codex"',
+    'name = "AIH Server"',
     'base_url = "https://account.example.com/v1"',
     'bearer_token = "account-token"',
     'wire_api = "responses"'
@@ -365,7 +365,7 @@ test('hoistModelProviderSections keeps codex providers before project sections',
     'trust_level = "trusted"',
     '',
     '[model_providers.aih_10014]',
-    'name = "aih codex"',
+    'name = "AIH Server"',
     'base_url = "https://example.com/v1"',
     'bearer_token = "token"',
     'wire_api = "responses"',

@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { upsertAccountRef } = require('../lib/server/account-ref-store');
+const { registerAccountIdentity } = require('../lib/account/account-registration');
 const { writeAccountNativeAuth } = require('../lib/server/account-credential-store');
 const {
   discoverNativeCliModels,
@@ -42,11 +42,12 @@ test('parseNativeCliModelList reads Kiro JSON model ids', () => {
 test('Qoder model discovery materializes account auth and invokes list-models', async (t) => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-qoder-models-'));
   t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
-  const accountRef = upsertAccountRef(fs, aiHomeDir, {
+  const registration = registerAccountIdentity(fs, aiHomeDir, {
     provider: 'qodercn',
     cliAccountId: '1',
     identitySeed: 'oauth:qodercn:user@example.com'
   });
+  const { accountRef } = registration;
   writeAccountNativeAuth(fs, aiHomeDir, accountRef, {
     credentials: 'opaque-credential',
     machineId: 'machine-id'

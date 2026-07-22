@@ -15,6 +15,7 @@ import PlanChoiceDock from './PlanChoiceDock';
 import TerminalDock, { type TerminalRunState } from './TerminalDock';
 import ShellTerminalPanel from './ShellTerminalPanel';
 import { decorateMessagesWithPendingState } from './live-message-state.js';
+import { filterRenderableChatMessages } from './message-display-policy.js';
 import { resolvePendingTailState } from './pending-tail-state.js';
 import { normalizePendingStatusText } from './provider-pending-policy.js';
 import { getAccountDefaultModel, getSessionModelKey, listAccountEnabledModels, listAihServerModels, recallSessionModel, rememberSessionModel, resolveEffectiveSelectedModel } from './account-model-selection.js';
@@ -483,7 +484,7 @@ const MessageArea = ({
     if (pendingState.usedSyntheticPending) {
       pendingVisualTsRef.current = Date.now();
     }
-    return pendingState.messages;
+    return filterRenderableChatMessages(pendingState.messages);
   }, [activeProvider, externalPending, externalPendingStatusText, loading, loadingStatusText, messages]);
 
   const renderedMessageNodes = useMemo(() => (

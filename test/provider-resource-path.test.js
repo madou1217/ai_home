@@ -22,7 +22,7 @@ const {
   resolveChatAttachmentPath
 } = require('../lib/server/chat-attachments');
 
-const hostHomeDir = '/Users/tester';
+const hostHomeDir = path.join(path.parse(process.cwd()).root, 'Users', 'tester');
 const aiHomeDir = path.join(hostHomeDir, '.ai_home');
 const accountRef = 'acct_0123456789abcdef0123';
 
@@ -227,10 +227,12 @@ test('session text and nested message values canonicalize legacy and current res
     aiHomeDir,
     hostHomeDir
   });
-  assert.match(text, new RegExp(`${expectedRoot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/brain/session-id/artifact\\.md`));
-  assert.match(text, /\.gemini\/antigravity-cli\/brain\/session-id\/image\.jpg/);
-  assert.equal(text.includes('/.ai_home/profiles/agy/1/.gemini/antigravity-cli/brain'), false);
-  assert.equal(text.includes('/.ai_home/run/auth-projections/agy/'), false);
+  const expectedArtifact = path.join(expectedRoot, 'brain', 'session-id', 'artifact.md');
+  const expectedImage = path.join(expectedRoot, 'brain', 'session-id', 'image.jpg');
+  assert.equal(text.includes(expectedArtifact), true);
+  assert.equal(text.includes(expectedImage), true);
+  assert.equal(text.includes(path.join(aiHomeDir, 'profiles', 'agy', '1', '.gemini', 'antigravity-cli', 'brain')), false);
+  assert.equal(text.includes(path.join(aiHomeDir, 'run', 'auth-projections', 'agy')), false);
   assert.equal(text.includes(secret), true);
   const wrappedSecret = `${secret}); next`;
   assert.equal(canonicalizeProviderResourceText(wrappedSecret, {

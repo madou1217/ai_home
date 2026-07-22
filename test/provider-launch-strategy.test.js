@@ -78,7 +78,7 @@ test('home-redirect fallback has no cache redirect when host home is unknown', (
 
 test('claude: normal launches always use the host CLAUDE_CONFIG_DIR', () => {
   const { set, unset } = claudeStrategy.buildEnvPatch(baseCtx('claude', { hostHomeDir: '/home/u' }));
-  assert.deepEqual(set, { CLAUDE_CONFIG_DIR: '/home/u/.claude' });
+  assert.deepEqual(set, { CLAUDE_CONFIG_DIR: path.join('/home/u', '.claude') });
   assert.ok(!('HOME' in set) && !('CLAUDE_CODE_OAUTH_TOKEN' in set));
   assert.deepEqual(unset, ['USER']);
 });
@@ -104,7 +104,7 @@ test('claude: api credential accounts keep shared session config dir', () => {
   // advisor tool (Claude Code would otherwise inject advisor_20260301 and strict
   // third-party endpoints 400 on it).
   assert.deepEqual(set, {
-    CLAUDE_CONFIG_DIR: '/home/u/.claude',
+    CLAUDE_CONFIG_DIR: path.join('/home/u', '.claude'),
     CLAUDE_CODE_DISABLE_ADVISOR_TOOL: '1'
   });
   assert.deepEqual(unset, ['USER']);
@@ -117,7 +117,7 @@ test('claude: auth-token accounts keep shared session config dir', () => {
       ANTHROPIC_AUTH_TOKEN: 'sk-token'
     }
   }));
-  assert.deepEqual(set, { CLAUDE_CONFIG_DIR: '/home/u/.claude' });
+  assert.deepEqual(set, { CLAUDE_CONFIG_DIR: path.join('/home/u', '.claude') });
 });
 
 test('claude launch strategy leaves auth projection lifecycle to the DB projection service', () => {

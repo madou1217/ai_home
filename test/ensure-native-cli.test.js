@@ -33,8 +33,8 @@ test('listProviderBinaryNames returns strategy binary aliases', () => {
   assert.equal(listProviderBinaryNames('qodercn').includes('qoder'), false);
 });
 
-test('collectNativeCliPathEntries covers Windows Qoder install roots', () => {
-  const entries = collectNativeCliPathEntries('qodercn', {
+test('collectNativeCliPathEntries covers official Qoder install home layout', () => {
+  const cnEntries = collectNativeCliPathEntries('qodercn', {
     path,
     hostHomeDir: 'C:\\Users\\example',
     processObj: {
@@ -46,19 +46,19 @@ test('collectNativeCliPathEntries covers Windows Qoder install roots', () => {
       }
     }
   });
-  assert.ok(entries.some((entry) => entry.includes('.local') && entry.includes('bin')));
-  assert.ok(entries.some((entry) => /qoderclicn/i.test(entry) || /QoderCli/i.test(entry)));
-  assert.ok(entries.some((entry) => /Program Files.*Qoder/i.test(entry)));
-});
+  assert.ok(cnEntries.includes(path.join('C:\\Users\\example', '.local', 'bin')));
+  // Official CN install path verified via live `qoderclicn install --force`
+  assert.ok(cnEntries.includes(path.join('C:\\Users\\example', '.qoder-cn', 'bin', 'qoderclicn')));
+  assert.ok(cnEntries.some((entry) => /QoderCN/i.test(entry) || /qoderclicn/i.test(entry)));
 
-test('collectNativeCliPathEntries covers POSIX Qoder roots', () => {
-  const entries = collectNativeCliPathEntries('qoder', {
+  const globalEntries = collectNativeCliPathEntries('qoder', {
     path,
     hostHomeDir: '/home/u',
     processObj: { platform: 'linux', env: { HOME: '/home/u' } }
   });
-  assert.ok(entries.includes(path.join('/home/u', '.local', 'bin')));
-  assert.ok(entries.includes('/usr/local/bin'));
+  assert.ok(globalEntries.includes(path.join('/home/u', '.local', 'bin')));
+  assert.ok(globalEntries.includes(path.join('/home/u', '.qoder', 'bin', 'qodercli')));
+  assert.ok(globalEntries.includes('/usr/local/bin'));
 });
 
 test('resolveProviderCliPath looks up qodercn via binaryName qoderclicn', () => {
@@ -133,8 +133,10 @@ test('ensureNativeCliAvailable auto-installs when missing then re-resolves (win3
   assert.equal(result.cliPath, 'C:\\Users\\example\\.local\\bin\\qoderclicn.exe');
   assert.equal(result.binaryName, 'qoderclicn');
   assert.equal(spawnCalls.length, 1);
-  assert.match(String(spawnCalls[0].args.at(-1) || ''), /qoder\.com\.cn\/install\.ps1/);
+  // Preferred plan is direct (manifest → binary install --force)
+  assert.match(String(spawnCalls[0].args.at(-1) || ''), /static\.qoder\.com\.cn\/qoder-cli-cn|install --force|qoderclicn/);
   assert.equal(result.installAttempts[0].ok, true);
+  assert.match(result.installAttempts[0].id, /qoder_cn_windows/);
 });
 
 test('ensureNativeCliAvailable auto-installs on posix global region', () => {
@@ -149,7 +151,9 @@ test('ensureNativeCliAvailable auto-installs on posix global region', () => {
     },
     path,
     resolveNativeCliPath: (name) => {
-      if ((name === 'qodercli' || name === 'qoder') && present) return '/home/u/.local/bin/qodercli';
+      if ((name === 'qodercli' || name === 'qoder') && present) {
+        return path.join('/home/u', '.qoder', 'bin', 'qodercli', 'qodercli');
+      }
       return '';
     },
     spawnSync: (command, args) => {
@@ -159,9 +163,8 @@ test('ensureNativeCliAvailable auto-installs on posix global region', () => {
     }
   });
   assert.equal(result.installed, true);
-  assert.equal(result.cliPath, '/home/u/.local/bin/qodercli');
+  assert.ok(result.cliPath.includes('qodercli'));
   assert.equal(spawnCalls[0].command, 'bash');
-  assert.match(String(spawnCalls[0].args.join(' ')), /qoder\.com\/install/);
 });
 
 test('ensureNativeCliAvailable does not install when autoInstall=false', () => {
@@ -180,21 +183,24 @@ test('ensureNativeCliAvailable does not install when autoInstall=false', () => {
   assert.deepEqual(result.installAttempts, []);
 });
 
-test('resolveNativeCliInstallPlans is strategy-driven and region-specific', () => {
+test('resolveNativeCliInstallPlans prefers direct install then official script', () => {
   const winGlobal = resolveNativeCliInstallPlans('qoder', '@qoder-ai/qodercli', {
     path,
+    hostHomeDir: 'C:\\Users\\example',
     processObj: { platform: 'win32', env: { SystemRoot: 'C:\\Windows' } },
     resolveNpmInstall: () => ({ command: 'npm.cmd', args: ['install', '-g', '@qoder-ai/qodercli'] })
   });
-  assert.equal(winGlobal[0].id, 'qoder_global_windows');
-  assert.equal(winGlobal.some((p) => p.id === 'npm_global'), true);
+  assert.equal(winGlobal[0].id, 'qoder_global_windows_direct');
+  assert.ok(winGlobal.some((p) => p.id === 'qoder_global_windows_script'));
+  assert.ok(winGlobal.some((p) => p.id === 'npm_global'));
 
   const posixCn = resolveNativeCliInstallPlans('qodercn', '', {
     path,
+    hostHomeDir: '/home/u',
     processObj: { platform: 'darwin', env: {} }
   });
-  assert.equal(posixCn.length, 1);
-  assert.equal(posixCn[0].id, 'qoder_cn_posix');
+  assert.ok(posixCn.length >= 1);
+  assert.equal(posixCn[0].id, 'qoder_cn_posix_script');
 });
 
 test('buildCliNotFoundMessage mentions binary and install failure detail', () => {

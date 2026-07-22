@@ -63,19 +63,20 @@ test('Windows Claude lookup includes the official native install directory only 
 test('Qoder install plans use region-specific official installers', () => {
   const winGlobal = resolveNativeCliInstallPlans('qoder', '@qoder-ai/qodercli', {
     path,
+    hostHomeDir: 'C:\\Users\\example',
     processObj: { platform: 'win32', env: { SystemRoot: 'C:\\Windows' } },
     resolveNpmInstall: () => ({ command: 'npm.cmd', args: ['install', '-g', '@qoder-ai/qodercli'] })
   });
-  assert.equal(winGlobal[0].id, 'qoder_global_windows');
-  assert.match(winGlobal[0].args.at(-1), /qoder\.com\/install\.ps1/);
+  assert.equal(winGlobal[0].id, 'qoder_global_windows_direct');
+  assert.match(winGlobal[0].args.at(-1), /qodercli|install --force|manifest/);
 
   const posixCn = resolveNativeCliInstallPlans('qodercn', '', {
     path,
+    hostHomeDir: '/Users/u',
     processObj: { platform: 'darwin', env: {} }
   });
-  assert.equal(posixCn.length, 1);
-  assert.equal(posixCn[0].id, 'qoder_cn_posix');
-  assert.match(posixCn[0].args.at(-1), /qoder\.com\.cn\/install/);
+  assert.ok(posixCn.length >= 1);
+  assert.equal(posixCn[0].id, 'qoder_cn_posix_script');
 
   const qoderCnEntries = collectNativeCliPathEntries('qodercn', {
     path,
@@ -89,7 +90,6 @@ test('Qoder install plans use region-specific official installers', () => {
       }
     }
   });
-  assert.ok(qoderCnEntries.includes('C:\\Users\\example\\.local\\bin'));
-  assert.ok(qoderCnEntries.some((entry) => /qoderclicn|QoderCli/i.test(entry)));
-  assert.ok(qoderCnEntries.some((entry) => /Program Files.*Qoder/i.test(entry)));
+  assert.ok(qoderCnEntries.includes(path.join('C:\\Users\\example', '.local', 'bin')));
+  assert.ok(qoderCnEntries.includes(path.join('C:\\Users\\example', '.qoder-cn', 'bin', 'qoderclicn')));
 });

@@ -40,6 +40,21 @@ test('parseNativeCliModelList reads Kiro JSON model ids', () => {
     ['deepseek-3.2', 'glm-5']
   );
 });
+
+test('parseNativeCliModelList reads Grok model rows without status prose', () => {
+  assert.deepEqual(
+    parseNativeCliModelList([
+      'You are logged in with grok.com.',
+      '',
+      'Default model: grok-4.5',
+      '',
+      'Available models:',
+      '  * grok-4.5 (default)',
+      '  * grok-code-fast-1'
+    ].join('\n'), 'grok-lines'),
+    ['grok-4.5', 'grok-code-fast-1']
+  );
+});
 test('Qoder model discovery materializes account auth and invokes list-models', async (t) => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-qoder-models-'));
   t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
@@ -61,6 +76,8 @@ test('Qoder model discovery materializes account auth and invokes list-models', 
     aiHomeDir,
     hostHomeDir: 'C:\\Users\\test',
     platform: 'win32',
+    proxyUrl: 'http://127.0.0.1:6152',
+    noProxy: '127.0.0.1,localhost',
     resolveProviderCliPath: () => 'C:\\tools\\qoderclicn.exe',
     execFile: async (cliPath, args, options) => {
       invocation = { cliPath, args, options };
@@ -75,5 +92,8 @@ test('Qoder model discovery materializes account auth and invokes list-models', 
   assert.equal(invocation.options.timeout, 20000);
   assert.equal(invocation.options.env.HOME, 'C:\\Users\\test');
   assert.equal(invocation.options.env.USERPROFILE, 'C:\\Users\\test');
+  assert.equal(invocation.options.env.HTTPS_PROXY, 'http://127.0.0.1:6152');
+  assert.equal(invocation.options.env.HTTP_PROXY, 'http://127.0.0.1:6152');
+  assert.equal(invocation.options.env.NO_PROXY, '127.0.0.1,localhost');
   assert.equal(fs.existsSync(path.join(invocation.args[2], '.auth', 'user')), true);
 });

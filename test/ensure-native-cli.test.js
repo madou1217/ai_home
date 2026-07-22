@@ -27,7 +27,7 @@ test('Strategy registry matches qoder / qodercn / claude', () => {
 
 test('listProviderBinaryNames returns strategy binary aliases', () => {
   assert.deepEqual(listProviderBinaryNames('qodercn'), ['qoderclicn']);
-  assert.deepEqual(listProviderBinaryNames('qoder'), ['qodercli', 'qoder']);
+  assert.deepEqual(listProviderBinaryNames('qoder'), ['qodercli']);
   assert.ok(listStrategyBinaryNames('qoder').includes('qodercli'));
   // CN must never alias to global qoder binary.
   assert.equal(listProviderBinaryNames('qodercn').includes('qoder'), false);
@@ -85,7 +85,7 @@ test('resolveProviderCliPath looks up qodercn via binaryName qoderclicn', () => 
   assert.equal(calls[0].pathHasLocalBin, true);
 });
 
-test('resolveProviderCliPath tries strategy aliases after primary binary', () => {
+test('resolveProviderCliPath resolves the strategy binary before provider fallback', () => {
   const calls = [];
   const cliPath = resolveProviderCliPath('qoder', {
     hostHomeDir: '/home/u',
@@ -93,14 +93,32 @@ test('resolveProviderCliPath tries strategy aliases after primary binary', () =>
     path,
     resolveNativeCliPath: (name) => {
       calls.push(name);
-      if (name === 'qoder') return '/usr/local/bin/qoder';
+      if (name === 'qodercli') return '/usr/local/bin/qodercli';
       return '';
     }
   });
-  assert.equal(cliPath, '/usr/local/bin/qoder');
-  assert.ok(calls.includes('qodercli'));
-  assert.ok(calls.includes('qoder'));
-  assert.ok(calls.indexOf('qodercli') < calls.indexOf('qoder'));
+  assert.equal(cliPath, '/usr/local/bin/qodercli');
+  assert.deepEqual(calls, ['qodercli']);
+});
+
+test('resolveProviderCliPath does not fall back to provider id when binaryName differs', () => {
+  const calls = [];
+  const cliPath = resolveProviderCliPath('qoder', {
+    hostHomeDir: 'C:\\Users\\example',
+    processObj: {
+      platform: 'win32',
+      env: { USERPROFILE: 'C:\\Users\\example', PATH: 'C:\\empty' },
+      cwd: () => 'C:\\repo'
+    },
+    path,
+    resolveNativeCliPath(name) {
+      calls.push(name);
+      return name === 'qoder' ? 'C:\\Program Files\\Qoder\\bin\\qoder.cmd' : '';
+    }
+  });
+
+  assert.equal(cliPath, '');
+  assert.deepEqual(calls, ['qodercli']);
 });
 
 test('ensureNativeCliAvailable auto-installs when missing then re-resolves (win32 CN)', () => {

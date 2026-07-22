@@ -40,6 +40,26 @@ test('resolveCommandPath returns empty on win32 probe failure', () => {
   assert.equal(out, '');
 });
 
+test('resolveCommandPath prefers Windows PATHEXT shim over extensionless POSIX script', () => {
+  const resolved = resolveCommandPath('qoder', {
+    platform: 'win32',
+    env: { PATH: '', PATHEXT: '.EXE;.CMD;.BAT;.COM' },
+    spawnSyncImpl(command, args) {
+      assert.equal(command, 'where.exe');
+      assert.deepEqual(args, ['qoder']);
+      return {
+        status: 0,
+        stdout: [
+          'C:\\Program Files\\Qoder\\bin\\qoder',
+          'C:\\Program Files\\Qoder\\bin\\qoder.cmd'
+        ].join('\r\n')
+      };
+    }
+  });
+
+  assert.equal(resolved, 'C:\\Program Files\\Qoder\\bin\\qoder.cmd');
+});
+
 test('resolveCommandPath uses command -v on linux and trims output', () => {
   const calls = [];
   const env = { PATH: '' };
@@ -76,13 +96,16 @@ test('resolveCommandPath escapes special characters for shell probing', () => {
 
 test('resolveCommandPath prioritizes deterministic PATH scan before probe', () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-cmdpath-'));
-  const fakeCmd = path.join(tmpDir, 'codex');
-  fs.writeFileSync(fakeCmd, '#!/bin/sh\nexit 0\n');
-  fs.chmodSync(fakeCmd, 0o755);
+  const windows = process.platform === 'win32';
+  const fakeCmd = path.join(tmpDir, windows ? 'codex.cmd' : 'codex');
+  fs.writeFileSync(fakeCmd, windows ? '@exit /b 0\r\n' : '#!/bin/sh\nexit 0\n');
+  if (!windows) fs.chmodSync(fakeCmd, 0o755);
 
   const out = resolveCommandPath('codex', {
-    platform: 'linux',
-    env: { PATH: `${tmpDir}:/usr/local/bin:/usr/bin` },
+    platform: process.platform,
+    env: windows
+      ? { Path: tmpDir, PATHEXT: '.CMD;.EXE;.BAT;.COM' }
+      : { PATH: `${tmpDir}:/usr/local/bin:/usr/bin` },
     spawnSyncImpl: () => {
       throw new Error('probe should not be called when PATH scan resolves');
     }

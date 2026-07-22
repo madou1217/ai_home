@@ -54,18 +54,26 @@ test('buildQoderIdentitySeed prefers email then uid then token hash', () => {
     buildQoderIdentitySeed('qodercn', { uid: 'u-99' }),
     'oauth:qodercn:uid:u-99'
   );
+  assert.equal(
+    buildQoderIdentitySeed('qoder', { username: 'MeaDeo' }),
+    'oauth:qoder:username:meadeo'
+  );
   const tokenSeed = buildQoderIdentitySeed('qoder', { security_oauth_token: 'secret-token' });
   assert.match(tokenSeed, /^oauth:qoder:token:[0-9a-f]{16}$/);
   assert.equal(buildQoderIdentitySeed('qoder', {}), '');
 });
 
-test('extractQoderLoginProjectionMetadata captures the successful login email', () => {
+test('extractQoderLoginProjectionMetadata captures successful email or username identity', () => {
   assert.deepEqual(
     extractQoderLoginProjectionMetadata(
       'qodercn',
       '\u001b[32mLogin successful! Welcome, 779282939@QQ.com.\u001b[0m'
     ),
     { userInfo: { email: '779282939@qq.com' } }
+  );
+  assert.deepEqual(
+    extractQoderLoginProjectionMetadata('qoder', 'Login successful! Welcome, MeaDeo.'),
+    { userInfo: { username: 'meadeo' } }
   );
   assert.deepEqual(extractQoderLoginProjectionMetadata('claude', 'Login successful! Welcome, a@b.com.'), {});
   assert.deepEqual(extractQoderLoginProjectionMetadata('qoder', 'Waiting for browser authorization...'), {});

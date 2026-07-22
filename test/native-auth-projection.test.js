@@ -244,8 +244,8 @@ test('Claude login captures its scoped keychain directly into DB without a crede
 test('Qoder login registers encrypted projection with canonical login metadata', (t) => {
   const fixture = createProjectionFixture(t);
   const runtimeDir = path.join(fixture.aiHomeDir, 'run', 'login', 'qodercn', 'scoped');
-  const credentialsPath = path.join(runtimeDir, '.qoder-cn', '.auth', 'user');
-  const machineIdPath = path.join(runtimeDir, '.qoder-cn', '.auth', 'machine_id');
+  const credentialsPath = path.join(runtimeDir, '.auth', 'user');
+  const machineIdPath = path.join(runtimeDir, '.auth', 'machine_id');
   fs.mkdirSync(path.dirname(credentialsPath), { recursive: true });
   fs.writeFileSync(credentialsPath, 'opaque-official-qoder-credential', 'utf8');
   fs.writeFileSync(machineIdPath, 'machine-id', 'utf8');

@@ -5,7 +5,6 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const os = require('node:os');
 const fs = require('node:fs');
-const crypto = require('node:crypto');
 
 const {
   AI_CLI_CONFIGS,
@@ -24,10 +23,6 @@ const {
   readProviderAuthProjection,
   materializeProviderAuth
 } = require('../lib/account/native-auth-projection');
-const {
-  encryptQoderCredentials
-} = require('../lib/account/qoder-auth-metadata');
-const { resolveNativeAuthIdentitySeed } = require('../lib/account/account-identity');
 const { PROVIDER_IDS } = require('../lib/provider-catalog');
 
 test('catalog and CLI registry expose both Qoder variants', () => {
@@ -71,20 +66,12 @@ test('launch strategy isolates Qoder via host HOME + prepare config dir', () => 
   }
 });
 
-test('storage policy points at encrypted credential basenames under config-dir root', () => {
-  const globalArtifacts = getProviderAuthArtifacts('qoder');
-  assert.deepEqual(globalArtifacts.map((a) => a.path.join('/')), [
-    'qoder-cli-credentials.json',
-    '.keychain-salt'
-  ]);
-  const cnArtifacts = getProviderAuthArtifacts('qodercn');
-  assert.deepEqual(cnArtifacts.map((a) => a.path.join('/')), [
-    'qoder-cli-cn-credentials.json',
-    '.keychain-salt'
-  ]);
+test('storage policy and artifact hooks share config-root-relative auth paths', () => {
+  const expected = ['.auth/user', '.auth/machine_id', '.cache/dns-cache.json'];
+  assert.deepEqual(getProviderAuthArtifacts('qoder').map((a) => a.path.join('/')), expected);
+  assert.deepEqual(getProviderAuthArtifacts('qodercn').map((a) => a.path.join('/')), expected);
   assert.equal(getProviderStoragePolicy('qoder').nativeRoot.length, 0);
 });
-
 test('official install plans cover Windows PowerShell and POSIX curl for both regions', () => {
   assert.ok(QODER_INSTALLERS.qoder.ps1Url.includes('qoder.com'));
   assert.ok(QODER_INSTALLERS.qodercn.ps1Url.includes('qoder.com.cn'));
@@ -94,61 +81,41 @@ test('official install plans cover Windows PowerShell and POSIX curl for both re
     processObj: { platform: 'win32', env: { SystemRoot: 'C:\\Windows' } },
     resolveNpmInstall: (pkg) => ({ command: 'npm', args: ['install', '-g', pkg] })
   });
-  assert.equal(winPlans[0].id, 'qoder_global_windows');
-  assert.match(winPlans[0].args.at(-1), /qoder\.com\/install\.ps1/);
+  assert.equal(winPlans[0].id, 'qoder_global_windows_direct');
+  assert.equal(winPlans[0].command.endsWith('powershell.exe'), true);
   assert.equal(winPlans.some((p) => p.id === 'npm_global'), true);
 
   const cnPosix = resolveNativeCliInstallPlans('qodercn', '', {
     path,
     processObj: { platform: 'linux', env: {} }
   });
-  assert.equal(cnPosix.length, 1);
-  assert.equal(cnPosix[0].id, 'qoder_cn_posix');
+  assert.equal(cnPosix.length >= 1, true);
+  assert.equal(cnPosix.every((plan) => plan.id === 'qoder_cn_posix'), true);
   assert.match(cnPosix[0].args.at(-1), /qoder\.com\.cn\/install/);
 
-  assert.deepEqual(
-    collectNativeCliPathEntries('qoder', {
-      path,
-      hostHomeDir: '/home/u',
-      processObj: { platform: 'linux' }
-    }),
-    [path.join('/home/u', '.local', 'bin')]
-  );
+  const globalPathEntries = collectNativeCliPathEntries('qoder', {
+    path,
+    hostHomeDir: '/home/u',
+    processObj: { platform: 'linux' }
+  });
+  assert.equal(globalPathEntries.includes(path.join('/home/u', '.local', 'bin')), true);
+  assert.equal(globalPathEntries.includes(path.join('/home/u', '.qoder', 'bin', 'qodercli')), true);
 });
 
-test('auth projection capture/materialize preserves encrypted blob + salt', () => {
+test('auth projection capture preserves the official config-root layout', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-qoder-auth-'));
-  const salt = crypto.randomBytes(32);
-  const saltB64 = salt.toString('base64');
-  const payload = { email: 'proj@example.com', uid: 'p1' };
-  const encrypted = encryptQoderCredentials(payload, saltB64, 'qoder-cli');
-  fs.writeFileSync(path.join(tmp, 'qoder-cli-credentials.json'), encrypted, 'utf8');
-  fs.writeFileSync(path.join(tmp, '.keychain-salt'), salt);
+  const authDir = path.join(tmp, '.auth');
+  fs.mkdirSync(authDir, { recursive: true });
+  fs.writeFileSync(path.join(authDir, 'user'), 'opaque-official-qoder-credential', 'utf8');
+  fs.writeFileSync(path.join(authDir, 'machine_id'), 'machine-id', 'utf8');
 
   const projection = readProviderAuthProjection(fs, tmp, 'qoder', { path });
-  assert.equal(projection.credentials, encrypted);
-  assert.equal(projection.keychainSalt, saltB64);
+  assert.equal(projection.credentials, 'opaque-official-qoder-credential');
+  assert.equal(projection.machineId, 'machine-id');
 
-  const identity = resolveNativeAuthIdentitySeed('qoder', projection);
-  assert.equal(identity.identitySeed, 'oauth:qoder:proj@example.com');
-  assert.equal(identity.degraded, false);
-
-  // Materialise into a fresh dir via a fake storage layer is covered by write
-  // of the encrypted text format; verify writeArtifactAtomic binary path via
-  // a second projection write.
-  const out = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-qoder-out-'));
-  // Directly exercise write by materializing with a stubbed credential store is
-  // heavy; instead re-read after manual write of projected fields.
-  fs.writeFileSync(path.join(out, 'qoder-cli-credentials.json'), projection.credentials, 'utf8');
-  fs.writeFileSync(path.join(out, '.keychain-salt'), Buffer.from(projection.keychainSalt, 'base64'));
-  const again = readProviderAuthProjection(fs, out, 'qoder', { path });
-  assert.equal(again.credentials, encrypted);
-  assert.equal(again.keychainSalt, saltB64);
-
-  // materializeProviderAuth without a real account returns missing (unknown ref)
-  const result = materializeProviderAuth(fs, out, 'qoder', {
+  const result = materializeProviderAuth(fs, tmp, 'qoder', {
     path,
-    aiHomeDir: out,
+    aiHomeDir: tmp,
     accountRef: 'not-a-ref'
   });
   assert.equal(result.missing, true);

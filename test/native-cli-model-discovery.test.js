@@ -44,6 +44,8 @@ test('Qoder model discovery materializes account auth and invokes list-models', 
     fs,
     path,
     aiHomeDir,
+    hostHomeDir: 'C:\\Users\\test',
+    platform: 'win32',
     resolveProviderCliPath: () => 'C:\\tools\\qoderclicn.exe',
     execFile: async (cliPath, args, options) => {
       invocation = { cliPath, args, options };
@@ -55,6 +57,8 @@ test('Qoder model discovery materializes account auth and invokes list-models', 
   assert.equal(invocation.cliPath, 'C:\\tools\\qoderclicn.exe');
   assert.deepEqual(invocation.args.slice(0, 1), ['--list-models']);
   assert.equal(invocation.args[1], '--config-dir');
-  assert.equal(invocation.options.timeout, 4321);
-  assert.equal(fs.existsSync(path.join(invocation.args[2], '.qoder-cn', '.auth', 'user')), true);
+  assert.equal(invocation.options.timeout, 20000);
+  assert.equal(invocation.options.env.HOME, 'C:\\Users\\test');
+  assert.equal(invocation.options.env.USERPROFILE, 'C:\\Users\\test');
+  assert.equal(fs.existsSync(path.join(invocation.args[2], '.auth', 'user')), true);
 });

@@ -268,6 +268,39 @@ test('Qoder login registers encrypted projection with canonical login metadata',
   );
 });
 
+test('Grok login registers mapped OAuth credentials by stable profile identity', (t) => {
+  const fixture = createProjectionFixture(t);
+  const runtimeDir = path.join(fixture.aiHomeDir, 'run', 'login', 'grok', 'scoped');
+  const authPath = path.join(runtimeDir, '.grok', 'auth.json');
+  fs.mkdirSync(path.dirname(authPath), { recursive: true });
+  fs.writeFileSync(authPath, JSON.stringify({
+    'https://auth.x.ai::client-id': {
+      email: 'grok@example.com',
+      user_id: 'grok-user-id',
+      key: 'secret-access-token',
+      refresh_token: 'secret-refresh-token'
+    }
+  }), 'utf8');
+
+  const registration = registerProviderAuthProjection(fs, runtimeDir, 'grok', {
+    aiHomeDir: fixture.aiHomeDir,
+    cliAccountId: '16'
+  });
+
+  assert.equal(registration.registered, true);
+  assert.equal(registration.cliAccountId, '16');
+  assert.deepEqual(readAccountNativeAuth(fs, fixture.aiHomeDir, registration.accountRef), {
+    auth: {
+      'https://auth.x.ai::client-id': {
+        email: 'grok@example.com',
+        user_id: 'grok-user-id',
+        key: 'secret-access-token',
+        refresh_token: 'secret-refresh-token'
+      }
+    }
+  });
+});
+
 test('AGY, Gemini and OpenCode login projections register one accountRef-backed DB record', (t) => {
   const fixture = createProjectionFixture(t);
   const cases = [

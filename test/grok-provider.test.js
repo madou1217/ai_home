@@ -211,6 +211,16 @@ test('loadGrokServerAccounts returns oauth account for grok-build auth', (t) => 
   assert.equal(account.accessToken, 'oauth-token-xyz');
 });
 
+test('loadGrokServerAccounts reads official mapped Grok OAuth auth', (t) => {
+  const { aiHomeDir, accountStateIndex, register } = createGrokFixture(t);
+  register('grok', '1', {}, {
+    auth: { 'https://auth.x.ai::client-id': { key: 'mapped-token', email: 'grok@example.com' } }
+  });
+  const accounts = loadGrokServerAccounts({ fs, aiHomeDir, accountStateIndex, checkStatus: () => ({ configured: true }) });
+  assert.equal(accounts[0].accessToken, 'mapped-token');
+  assert.equal(accounts[0].email, 'grok@example.com');
+});
+
 test('loadGrokServerAccounts skips account without credentials', (t) => {
   const { aiHomeDir, accountStateIndex, register } = createGrokFixture(t);
   register('grok', '1', {});

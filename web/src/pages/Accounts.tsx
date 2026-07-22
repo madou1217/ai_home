@@ -288,6 +288,30 @@ const PROVIDER_AUTH_OPTIONS: Record<Provider, Array<{
       description: '使用 Grok Build CLI 原生 auth login 流程（需 SuperGrok 订阅）。'
     }
   ],
+  qoder: [
+    {
+      value: 'oauth-browser',
+      label: 'Qoder 登录',
+      description: '使用 Qoder CLI 原生 browser login 流程（全球站 qodercli）。'
+    },
+    {
+      value: 'api-key',
+      label: 'Qoder Personal Access Token',
+      description: '绑定 QODER_PERSONAL_ACCESS_TOKEN（全球站）。'
+    }
+  ],
+  qodercn: [
+    {
+      value: 'oauth-browser',
+      label: 'Qoder CN 登录',
+      description: '使用 Qoder CLI CN 原生 browser login 流程（qoderclicn）。'
+    },
+    {
+      value: 'api-key',
+      label: 'Qoder CN Personal Access Token',
+      description: '绑定 QODER_PERSONAL_ACCESS_TOKEN（国内站）。'
+    }
+  ],
   kimi: [
     {
       value: 'api-key',
@@ -983,7 +1007,9 @@ export default function Accounts() {
   const selectedProvider = Form.useWatch('provider', form) as Provider | undefined;
   const selectedAuthMode = (Form.useWatch('authMode', form) as AccountAuthMode | undefined) || 'oauth-browser';
   const selectedEditAuthMode = Form.useWatch('authMode', editForm) as AccountAuthMode | undefined;
-  const providerAuthOptions = selectedProvider ? PROVIDER_AUTH_OPTIONS[selectedProvider] : [];
+  const providerAuthOptions = selectedProvider
+    ? (PROVIDER_AUTH_OPTIONS[selectedProvider] || [])
+    : [];
   const editingClaudeCredentialMode = editingAccount?.provider === 'claude'
     ? getClaudeCredentialMode(editingAccount)
     : 'api-key';
@@ -1775,7 +1801,8 @@ export default function Accounts() {
 
   useEffect(() => {
     if (!selectedProvider) return;
-    const allowedModes = PROVIDER_AUTH_OPTIONS[selectedProvider].map((item) => item.value);
+    const allowedModes = (PROVIDER_AUTH_OPTIONS[selectedProvider] || []).map((item) => item.value);
+    if (allowedModes.length === 0) return;
     if (!allowedModes.includes(selectedAuthMode)) {
       form.setFieldValue('authMode', allowedModes[0]);
     }

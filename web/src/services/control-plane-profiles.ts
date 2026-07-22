@@ -490,7 +490,7 @@ function normalizeDeviceStatus(value: unknown): ControlPlaneDeviceStatus | null 
 
 function normalizeControlPlaneProvider(value: unknown) {
   const provider = normalizeText(value, 64).toLowerCase();
-  if (['codex', 'gemini', 'claude', 'agy', 'opencode', 'grok', 'kimi', 'kiro'].includes(provider)) {
+  if (['codex', 'gemini', 'claude', 'agy', 'opencode', 'grok', 'qoder', 'qodercn', 'kimi', 'kiro'].includes(provider)) {
     return provider as ControlPlaneDeviceAccountsResponse['result']['accounts'][number]['provider'];
   }
   return 'codex';

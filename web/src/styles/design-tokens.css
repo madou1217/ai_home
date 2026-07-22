@@ -64,6 +64,8 @@
   --c-agy:     #8b5cf6;  /* Antigravity purple */
   --c-opencode: #1f2937; /* OpenCode neutral */
   --c-grok:    #00bcd4;  /* xAI cyan */
+  --c-qoder:   #6366f1;  /* Qoder indigo */
+  --c-qodercn: #8b5cf6;  /* Qoder CN violet */
   --c-kimi:    #1a73e8;  /* Moonshot blue */
   --c-kiro:    #ff9900;  /* AWS orange */
 
@@ -215,6 +217,10 @@
   --provider-opencode-soft: rgba(31, 41, 55, 0.10);
   --provider-grok: var(--c-grok);
   --provider-grok-soft: rgba(0, 188, 212, 0.12);
+  --provider-qoder: var(--c-qoder);
+  --provider-qoder-soft: rgba(99, 102, 241, 0.12);
+  --provider-qodercn: var(--c-qodercn);
+  --provider-qodercn-soft: rgba(139, 92, 246, 0.12);
   --provider-kimi: var(--c-kimi);
   --provider-kimi-soft: rgba(26, 115, 232, 0.12);
   --provider-kiro: var(--c-kiro);

@@ -51,6 +51,8 @@ const ICONS: Record<Provider, string> = {
   agy: antigravityIcon,
   opencode: opencodeIcon,
   grok: grokIcon,
+  qoder: openaiIcon,
+  qodercn: openaiIcon,
   kimi: kimiIcon,
   kiro: kiroIcon
 };
@@ -62,6 +64,8 @@ const TERMINAL_ICON_ASSETS: Record<Provider, string> = {
   agy: agyTerminalIcon,
   opencode: opencodeTerminalIcon,
   grok: aiHomeMark,
+  qoder: aiHomeMark,
+  qodercn: aiHomeMark,
   kimi: aiHomeMark,
   kiro: aiHomeMark
 };

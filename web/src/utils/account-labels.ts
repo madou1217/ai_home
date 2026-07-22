@@ -1,6 +1,6 @@
 import type { Account, Provider } from '@/types';
 
-const INTERNAL_ACCOUNT_LABEL_RE = /^(agy|codex|gemini|claude|opencode|grok|kimi|kiro)-\d+$/i;
+const INTERNAL_ACCOUNT_LABEL_RE = /^(agy|codex|gemini|claude|opencode|grok|qoder|qodercn|kimi|kiro)-\d+$/i;
 const DEFAULT_API_KEY_DOMAINS: Record<Provider, string> = {
   codex: 'api.openai.com',
   claude: 'api.anthropic.com',
@@ -8,6 +8,8 @@ const DEFAULT_API_KEY_DOMAINS: Record<Provider, string> = {
   agy: 'daily-cloudcode-pa.googleapis.com',
   opencode: 'opencode.ai',
   grok: 'api.x.ai',
+  qoder: 'qoder.com',
+  qodercn: 'qoder.com.cn',
   kimi: 'api.moonshot.cn',
   kiro: 'kiro.dev'
 };

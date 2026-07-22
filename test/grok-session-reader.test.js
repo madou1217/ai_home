@@ -22,14 +22,19 @@ test('Grok sessions are listed and restored from account-scoped storage', (t) =>
     updated_at: '2026-07-22T12:00:00.000Z'
   });
   fs.writeFileSync(path.join(sessionDir, 'chat_history.jsonl'), [
-    JSON.stringify({ role: 'user', content: 'hello' }),
-    JSON.stringify({ role: 'assistant', content: [{ type: 'text', text: 'world' }], model: 'grok-code-fast-1' }),
+    JSON.stringify({ type: 'user', content: [{ type: 'text', text: 'project rules' }], synthetic_reason: 'project_instructions' }),
+    JSON.stringify({ type: 'user', content: [{ type: 'text', text: '<user_query>\nhello\n</user_query>' }], prompt_index: 0 }),
+    JSON.stringify({ type: 'assistant', content: 'world', model: 'grok-code-fast-1' }),
     '{incomplete'
   ].join('\n'));
 
   const options = { aiHomeDir: root, accountRef, hostHomeDir: path.join(root, 'host') };
+  const hostSessions = path.join(options.hostHomeDir, '.grok', 'sessions');
+  fs.ensureDirSync(path.dirname(hostSessions));
+  fs.copySync(path.join(root, 'run', 'auth-projections', 'grok', accountRef, '.grok', 'sessions'), hostSessions);
   const projects = sessionReader.readProjectsFromHostByProviders(['grok'], options);
   assert.equal(projects.length, 1);
+  assert.equal(projects[0].sessions.length, 1);
   assert.equal(projects[0].path, 'C:\\work\\demo');
   assert.equal(projects[0].sessions[0].id, sessionId);
   assert.equal(projects[0].sessions[0].accountRef, accountRef);

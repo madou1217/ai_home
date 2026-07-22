@@ -2833,7 +2833,7 @@ export default function Accounts() {
                 <FilterOutlined />
                 <span>筛选</span>
                 <span className="m-filter-summary">
-                  {({ all: '全部', codex: 'ChatGPT', claude: 'Claude', gemini: 'Gemini', agy: 'Antigravity', opencode: 'OpenCode' } as Record<string, string>)[activeProvider] || activeProvider}
+                  {(activeProvider === 'all' ? '全部' : providerNames[activeProvider as Provider]) || activeProvider}
                   {filterStatus !== 'all' ? ' · 已筛状态' : ''}
                 </span>
               </button>

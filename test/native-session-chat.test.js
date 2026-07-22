@@ -11,6 +11,7 @@ const {
   buildPtyInputChunks,
   buildStartCommand,
   buildResumeCommand,
+  applyProviderConfigDirArgs,
   classifyNativeSessionFailure,
   classifyNativeAccountRuntimeBlocker,
   collectAssistantReply,
@@ -644,6 +645,64 @@ test('buildStartCommand builds opencode headless run invocation', () => {
     '/repo/project',
     'hello'
   ]);
+});
+
+test('qoder providers use native headless stream commands', () => {
+  assert.equal(isOfficialNativeSessionProvider('qoder'), true);
+  assert.equal(isOfficialNativeSessionProvider('qodercn'), true);
+  assert.deepEqual(buildStartCommand('qodercn', {
+    sessionId: 'qoder-session',
+    prompt: 'hello',
+    model: 'Qwen3.8-Max-Preview'
+  }), {
+    commandName: 'qodercn',
+    args: [
+      '--model',
+      'Qwen3.8-Max-Preview',
+      '--print',
+      '--output-format',
+      'stream-json',
+      '--session-id',
+      'qoder-session',
+      'hello'
+    ]
+  });
+  assert.deepEqual(buildResumeCommand('qoder', {
+    sessionId: 'qoder-session',
+    prompt: 'again'
+  }), {
+    commandName: 'qoder',
+    args: ['--print', '--output-format', 'stream-json', '--resume', 'qoder-session', 'again']
+  });
+});
+
+test('applyProviderConfigDirArgs uses the centralized provider registry flag', () => {
+  assert.deepEqual(
+    applyProviderConfigDirArgs('qodercn', ['--print', 'hello'], 'C:\\aih\\qoder-cn-account'),
+    ['--config-dir', 'C:\\aih\\qoder-cn-account', '--print', 'hello']
+  );
+  assert.deepEqual(
+    applyProviderConfigDirArgs('claude', ['--print', 'hello'], 'C:\\aih\\claude-account'),
+    ['--print', 'hello']
+  );
+});
+
+test('parseNativeStreamEvent parses qoder stream-json like claude protocol events', () => {
+  const state = { content: '' };
+  assert.deepEqual(parseNativeStreamEvent('qodercn', JSON.stringify({
+    type: 'system',
+    subtype: 'init',
+    session_id: 'qoder-session'
+  }), state), { type: 'session-created', sessionId: 'qoder-session' });
+  assert.deepEqual(parseNativeStreamEvent('qodercn', JSON.stringify({
+    type: 'assistant',
+    message: { content: [{ type: 'text', text: 'hello' }] }
+  }), state), [{ type: 'delta', delta: 'hello' }]);
+  assert.deepEqual(parseNativeStreamEvent('qodercn', JSON.stringify({
+    type: 'result',
+    subtype: 'success',
+    result: 'hello'
+  }), state), { type: 'result', content: 'hello' });
 });
 
 test('buildProviderEnv keeps codex sqlite state shared with host home', (t) => {

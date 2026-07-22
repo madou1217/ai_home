@@ -10,7 +10,6 @@ import type {
   LegacyChatCatalogPort,
   LegacyChatSelectionPort,
 } from './legacy-runtime-ports';
-import { findProjectBySessionId } from './project-selection-policy';
 import type { LegacyComposerActions } from './use-legacy-composer-actions';
 import type { LegacyQueueActions } from './use-legacy-queue-actions';
 import type { LegacySessionRuntime } from './use-legacy-session-orchestration';
@@ -64,11 +63,8 @@ export function LegacyChatSurface({
   onSelectPlanChoice,
 }: LegacyChatSurfaceProps) {
   const { history, queue, runs, terminal } = runtime;
-  const terminated = !selection.session.draft && !findProjectBySessionId(catalog.projects, {
-    sessionId: selection.session.id,
-    provider: selection.session.provider,
-    projectPath: selection.session.projectPath,
-  });
+  const terminated = selection.session.status === 'stopped'
+    || selection.session.status === 'archived';
   const canSteer = supportsMidRunSteer(
     selection.account?.provider || '',
     selection.account?.apiKeyMode,

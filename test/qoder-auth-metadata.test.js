@@ -9,6 +9,7 @@ const {
   encryptQoderCredentials,
   decryptQoderCredentials,
   buildQoderIdentitySeed,
+  extractQoderLoginProjectionMetadata,
   resolveQoderNativeAuthPayload,
   summarizeQoderAuth
 } = require('../lib/account/qoder-auth-metadata');
@@ -56,6 +57,18 @@ test('buildQoderIdentitySeed prefers email then uid then token hash', () => {
   const tokenSeed = buildQoderIdentitySeed('qoder', { security_oauth_token: 'secret-token' });
   assert.match(tokenSeed, /^oauth:qoder:token:[0-9a-f]{16}$/);
   assert.equal(buildQoderIdentitySeed('qoder', {}), '');
+});
+
+test('extractQoderLoginProjectionMetadata captures the successful login email', () => {
+  assert.deepEqual(
+    extractQoderLoginProjectionMetadata(
+      'qodercn',
+      '\u001b[32mLogin successful! Welcome, 779282939@QQ.com.\u001b[0m'
+    ),
+    { userInfo: { email: '779282939@qq.com' } }
+  );
+  assert.deepEqual(extractQoderLoginProjectionMetadata('claude', 'Login successful! Welcome, a@b.com.'), {});
+  assert.deepEqual(extractQoderLoginProjectionMetadata('qoder', 'Waiting for browser authorization...'), {});
 });
 
 test('resolveQoderNativeAuthPayload decrypts projected native auth', () => {

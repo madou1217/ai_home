@@ -29,8 +29,14 @@ interface ResolveTargetInput {
   readonly approvalMode: ApprovalMode;
 }
 
-export function usesCanonicalSessionRuntime(session: Session | null): boolean {
-  return Boolean(session && chatRuntimeProviders.resolve(session.provider));
+export function usesCanonicalSessionRuntime(
+  session: Session | null,
+  account?: ChatAccount | null,
+): boolean {
+  if (!session) return false;
+  const descriptor = chatRuntimeProviders.resolve(session.provider);
+  if (!descriptor) return false;
+  return account === undefined || Boolean(account && descriptor.acceptsAccount(account));
 }
 
 export function resolveSessionRuntimeTarget(

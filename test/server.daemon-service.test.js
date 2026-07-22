@@ -2487,3 +2487,115 @@ test('daemon service installs Windows Startup script for login autostart', () =>
   assert.equal(script.includes('C:\\Node\\node.exe'), false);
   assert.equal(fs.existsSync(legacyScriptPath), false);
 });
+
+test('daemon service preserves Windows access denied as a restart elevation signal', async (t) => {
+  const root = makeTempDir();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const { entryFilePath } = makeSourceCheckout(root);
+  const aiHomeDir = path.join(root, '.ai_home');
+  const pidFile = path.join(aiHomeDir, 'server.pid');
+  const logFile = path.join(aiHomeDir, 'server.log');
+  fs.mkdirSync(aiHomeDir, { recursive: true });
+  fs.writeFileSync(pidFile, '9001', 'utf8');
+  const commandLine = `"C:\\Program Files\\nodejs\\node.exe" "${entryFilePath}" server serve --host 127.0.0.1 --port 9527`;
+  let backgroundSpawnCalls = 0;
+
+  const daemon = createServerDaemonService({
+    fs,
+    path,
+    spawn() {
+      backgroundSpawnCalls += 1;
+      return { pid: 9002, unref() {} };
+    },
+    spawnSync(command, args) {
+      if (command === 'powershell.exe' && args.includes('-Command')) {
+        const script = args[args.indexOf('-Command') + 1];
+        if (script.includes('Get-CimInstance Win32_Process |')) {
+          return { status: 0, stdout: `9001 ${commandLine}\n`, stderr: '' };
+        }
+        if (script.includes('ProcessId=9001')) {
+          return { status: 0, stdout: `${commandLine}\n`, stderr: '' };
+        }
+      }
+      return { status: 1, stdout: '', stderr: '' };
+    },
+    fetchImpl: async () => ({ ok: false }),
+    processObj: {
+      execPath: 'C:\\Program Files\\nodejs\\node.exe',
+      env: {},
+      platform: 'win32',
+      cwd: () => root,
+      kill() {
+        const error = new Error('Access is denied');
+        error.code = 'EPERM';
+        throw error;
+      }
+    },
+    ensureDir(dir) { fs.mkdirSync(dir, { recursive: true }); },
+    parseServeArgs() { return { host: '127.0.0.1', port: 9527 }; },
+    aiHomeDir,
+    hostHomeDir: root,
+    pidFile,
+    logFile,
+    launchdLabel: 'com.clawdcodex.ai_home',
+    launchdPlist: path.join(root, 'server.plist'),
+    entryFilePath
+  });
+
+  const result = await daemon.restart([], { waitForReady: false, gracefulStopWaitMs: 20 });
+  assert.equal(result.started, false);
+  assert.equal(result.stoppedForRestart.stopped, false);
+  assert.equal(result.stoppedForRestart.reason, 'permission_denied');
+  assert.equal(result.stoppedForRestart.pid, 9001);
+  assert.equal(backgroundSpawnCalls, 0);
+  assert.equal(fs.readFileSync(pidFile, 'utf8').trim(), '9001');
+});
+
+test('daemon restart elevates when tracked admin pid owns the configured port but command line is unreadable', async (t) => {
+  const root = makeTempDir();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const { entryFilePath } = makeSourceCheckout(root);
+  const aiHomeDir = path.join(root, '.ai_home');
+  const pidFile = path.join(aiHomeDir, 'server.pid');
+  fs.mkdirSync(aiHomeDir, { recursive: true });
+  fs.writeFileSync(pidFile, '3800', 'utf8');
+
+  const daemon = createServerDaemonService({
+    fs,
+    path,
+    spawn() { throw new Error('must not spawn before elevation'); },
+    spawnSync(command, args) {
+      if (command === 'cmd.exe' && args.some((arg) => String(arg).includes('netstat'))) {
+        return { status: 0, stdout: 'TCP 127.0.0.1:9527 0.0.0.0:0 LISTENING 3800\r\n', stderr: '' };
+      }
+      return { status: 1, stdout: '', stderr: '' };
+    },
+    fetchImpl: async () => ({ ok: false }),
+    processObj: {
+      execPath: 'C:\\Program Files\\nodejs\\node.exe',
+      env: {},
+      platform: 'win32',
+      cwd: () => root,
+      kill() {
+        const error = new Error('Access is denied');
+        error.code = 'EPERM';
+        throw error;
+      }
+    },
+    ensureDir(dir) { fs.mkdirSync(dir, { recursive: true }); },
+    parseServeArgs() { return { host: '127.0.0.1', port: 9527 }; },
+    aiHomeDir,
+    hostHomeDir: root,
+    pidFile,
+    logFile: path.join(aiHomeDir, 'server.log'),
+    launchdLabel: 'com.clawdcodex.ai_home',
+    launchdPlist: path.join(root, 'server.plist'),
+    entryFilePath
+  });
+
+  const result = await daemon.restart([], { waitForReady: false, gracefulStopWaitMs: 20 });
+  assert.equal(result.started, false);
+  assert.equal(result.stoppedForRestart.reason, 'permission_denied');
+  assert.equal(result.stoppedForRestart.pid, 3800);
+  assert.equal(result.stoppedForRestart.port, 9527);
+});

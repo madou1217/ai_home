@@ -87,6 +87,8 @@ test('createRootCommandContexts builds all root command contexts', () => {
   const contexts = createRootCommandContexts(deps);
   assert.equal(typeof contexts.backupContext, 'object');
   assert.equal(typeof contexts.serverEntryContext, 'object');
+  assert.equal(contexts.serverEntryContext.spawnSync, deps.spawnSync);
+  assert.equal(contexts.serverEntryContext.aiHomeDir, '/tmp/aih');
   assert.equal(typeof contexts.aiCliContext, 'object');
   assert.equal(typeof contexts.nodeContext, 'object');
   assert.equal(typeof contexts.globalSessionContext, 'object');

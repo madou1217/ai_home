@@ -19,7 +19,8 @@ const account: Account = {
 };
 
 test('Codex sessions select the canonical surface at the composition boundary', () => {
-  assert.equal(usesCanonicalSessionRuntime(savedSession), true);
+  assert.equal(usesCanonicalSessionRuntime(savedSession, account), true);
+  assert.equal(usesCanonicalSessionRuntime(savedSession, { ...account, apiKeyMode: true }), false);
   assert.equal(usesCanonicalSessionRuntime({ ...savedSession, provider: 'claude' }), false);
 });
 
@@ -37,7 +38,7 @@ test('saved sessions resolve the current native identity without a legacy fallba
   });
 });
 
-test('API-key accounts are valid execution credentials while gateway remains separate', () => {
+test('native runtime rejects API-key and gateway accounts', () => {
   const gateway = {
     ...account, gateway: true as const, accountRef: undefined,
   } as unknown as ChatAccount;
@@ -51,8 +52,8 @@ test('API-key accounts are valid execution credentials while gateway remains sep
     session: savedSession,
     account: apiKey,
     approvalMode: 'bypass',
-  }).status, 'ready');
-  assert.deepEqual(runtimeAccountsForSession(savedSession, [account, apiKey]), [account, apiKey]);
+  }).status, 'blocked');
+  assert.deepEqual(runtimeAccountsForSession(savedSession, [account, apiKey]), [account]);
 });
 
 test('draft sessions create a canonical target without inventing native identity', () => {

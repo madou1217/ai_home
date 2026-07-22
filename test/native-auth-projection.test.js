@@ -241,6 +241,33 @@ test('Claude login captures its scoped keychain directly into DB without a crede
   assert.equal(fs.existsSync(path.join(runtimeDir, '.claude', '.credentials.json')), false);
 });
 
+test('Qoder login registers encrypted projection with canonical login metadata', (t) => {
+  const fixture = createProjectionFixture(t);
+  const runtimeDir = path.join(fixture.aiHomeDir, 'run', 'login', 'qodercn', 'scoped');
+  const credentialsPath = path.join(runtimeDir, '.qoder-cn', '.auth', 'user');
+  const machineIdPath = path.join(runtimeDir, '.qoder-cn', '.auth', 'machine_id');
+  fs.mkdirSync(path.dirname(credentialsPath), { recursive: true });
+  fs.writeFileSync(credentialsPath, 'opaque-official-qoder-credential', 'utf8');
+  fs.writeFileSync(machineIdPath, 'machine-id', 'utf8');
+
+  const registration = registerProviderAuthProjection(fs, runtimeDir, 'qodercn', {
+    aiHomeDir: fixture.aiHomeDir,
+    cliAccountId: '15',
+    projectionMetadata: { userInfo: { email: 'qoder-cn@example.com' } }
+  });
+
+  assert.equal(registration.registered, true);
+  assert.equal(registration.cliAccountId, '15');
+  assert.deepEqual(
+    readAccountNativeAuth(fs, fixture.aiHomeDir, registration.accountRef),
+    {
+      credentials: 'opaque-official-qoder-credential',
+      machineId: 'machine-id',
+      userInfo: { email: 'qoder-cn@example.com' }
+    }
+  );
+});
+
 test('AGY, Gemini and OpenCode login projections register one accountRef-backed DB record', (t) => {
   const fixture = createProjectionFixture(t);
   const cases = [

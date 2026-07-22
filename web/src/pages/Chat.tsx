@@ -180,6 +180,7 @@ export default function Chat() {
   const chatContent = (
     <ChatRuntimeBoundary
       session={projectCatalog.selectedSession}
+      account={accountCatalog.selectedAccount}
       canonical={(session) => (
         <CanonicalChatRuntime
           session={session}

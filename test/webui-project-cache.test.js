@@ -84,6 +84,48 @@ test('projects snapshot can rebuild from persisted host index without rescanning
   }
 });
 
+test('projects snapshot aggregates account-scoped Qoder sessions', async () => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-qoder-project-cache-'));
+  const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-qoder-project-'));
+  const originalReadAllProjectsFromHost = sessionReader.readAllProjectsFromHost;
+  const originalReadProjectsFromHostByProviders = sessionReader.readProjectsFromHostByProviders;
+  const calls = [];
+
+  try {
+    sessionReader.readAllProjectsFromHost = () => [];
+    sessionReader.readProjectsFromHostByProviders = (providers, options = {}) => {
+      calls.push({ providers, options });
+      if (providers[0] !== 'qodercn' || options.accountRef !== 'acct_qoder') return [];
+      return [{
+        id: 'qoder-project',
+        name: 'qoder-project',
+        path: projectDir,
+        provider: 'qodercn',
+        sessions: [{
+          id: 'qoder-session',
+          title: 'Qoder session',
+          updatedAt: 200,
+          provider: 'qodercn',
+          accountRef: 'acct_qoder'
+        }]
+      }];
+    };
+    const ctx = createContext(aiHomeDir);
+    ctx.hostHomeDir = path.dirname(aiHomeDir);
+    ctx.state.accounts = { qodercn: [{ accountRef: 'acct_qoder' }] };
+
+    await refreshProjectsSnapshot(ctx, { forceRefresh: true });
+    const snapshot = await getProjectsSnapshot(ctx);
+    assert.equal(snapshot.projects[0].sessions[0].id, 'qoder-session');
+    assert.equal(calls.some((call) => call.options.accountRef === 'acct_qoder'), true);
+  } finally {
+    sessionReader.readAllProjectsFromHost = originalReadAllProjectsFromHost;
+    sessionReader.readProjectsFromHostByProviders = originalReadProjectsFromHostByProviders;
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+    fs.rmSync(projectDir, { recursive: true, force: true });
+  }
+});
+
 test('projects snapshot returns persisted snapshot first and refreshes stale host index in background', async () => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-project-cache-bg-'));
   const oldProjectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-project-cache-old-'));

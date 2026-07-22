@@ -199,7 +199,7 @@ export function useLegacyHistoryProjection({
         session.provider,
         session.id,
         session.projectDirName,
-        { before: historyWindow.start, limit: LOAD_MORE_MESSAGE_COUNT },
+        { before: historyWindow.start, limit: LOAD_MORE_MESSAGE_COUNT, accountRef: session.accountRef },
       );
       const latestWindow = historyState.readWindow(session) || historyWindow;
       const merged = rebaseOlderSessionHistoryPage(latestWindow, olderPage) as SessionMessageBundle;
@@ -241,7 +241,7 @@ export function useLegacyHistoryProjection({
           session.provider,
           session.id,
           session.projectDirName,
-          options,
+          { ...options, accountRef: session.accountRef },
         ),
       ) as SessionMessageBundle;
       const observedCursor = historyState.readCursor(session);

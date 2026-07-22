@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 
 const {
   deriveQuotaState,
+  deriveSchedulableState,
   getMinRemainingPctFromUsageSnapshot,
   getUsageRemainingPctValues
 } = require('../lib/account/derived-state');
@@ -80,4 +81,18 @@ test('derived state treats OpenCode auth as not requiring quota collection', () 
   assert.equal(state.status, 'not_applicable');
   assert.equal(state.remainingPct, null);
   assert.equal(state.hasNumericRemaining, false);
+});
+
+test('derived state treats Qoder auth as schedulable without a quota endpoint', () => {
+  for (const provider of ['qoder', 'qodercn']) {
+    const quotaState = deriveQuotaState({ provider, configured: true, apiKeyMode: false });
+    const schedulableState = deriveSchedulableState({
+      provider,
+      configured: true,
+      apiKeyMode: false,
+      quotaState
+    });
+    assert.equal(quotaState.status, 'not_applicable');
+    assert.equal(schedulableState.status, 'schedulable');
+  }
 });

@@ -9,6 +9,7 @@ import openaiIcon from '@/assets/icons/openai.svg';
 import grokIcon from '@/assets/icons/grok.svg';
 import kimiIcon from '@/assets/icons/kimi.svg';
 import kiroIcon from '@/assets/icons/kiro.svg';
+import qoderIcon from '@/assets/icons/qoder.png';
 import aiHomeMark from '@/assets/brand/ai-home-mark.png';
 import agyTerminalIcon from '../../../../assets/provider-icons/agy.png';
 import claudeTerminalIcon from '../../../../assets/provider-icons/claude.png';
@@ -51,8 +52,8 @@ const ICONS: Record<Provider, string> = {
   agy: antigravityIcon,
   opencode: opencodeIcon,
   grok: grokIcon,
-  qoder: openaiIcon,
-  qodercn: openaiIcon,
+  qoder: qoderIcon,
+  qodercn: qoderIcon,
   kimi: kimiIcon,
   kiro: kiroIcon
 };

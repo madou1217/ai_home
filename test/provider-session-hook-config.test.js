@@ -28,8 +28,8 @@ test('builds Windows Codex hook commands with node.exe and cmd-safe quoting', ()
     senderScriptPath: 'C:\\repo path\\scripts\\aih-provider-session-hook-sender.js'
   });
 
-  assert.match(command, /^call "C:\\Program Files\\nodejs\\node\.exe" /);
-  assert.match(command, /"C:\\repo path\\scripts\\aih-provider-session-hook-sender\.js"/);
+  assert.match(command, /^"C:\/Program Files\/nodejs\/node\.exe" /);
+  assert.match(command, /"C:\/repo path\/scripts\/aih-provider-session-hook-sender\.js"/);
   assert.match(command, /--provider "codex"/);
   assert.equal(command.includes('powershell'), false);
   assert.equal(command.includes('/usr/bin/env'), false);

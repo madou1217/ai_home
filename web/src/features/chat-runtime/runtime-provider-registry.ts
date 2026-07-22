@@ -31,6 +31,7 @@ function nativeCredentialProvider(provider: Provider): RuntimeProviderDescriptor
     acceptsAccount: (account): account is Account => (
       account.provider === provider
       && !isGatewayAccount(account)
+      && !account.apiKeyMode
       && Boolean(account.accountRef)
     ),
   };

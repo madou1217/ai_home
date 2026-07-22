@@ -31,6 +31,7 @@ test('collectPersistentSessionRunKeys maps attached tmux sessions to known web u
     ['p-ai-home-idle', '0', '101', projectPath, 'ai_home', 'node', 'node', '4322'].join(sep)
   ].join('\n');
 
+  const spawnCalls = [];
   const keys = collectPersistentSessionRunKeys([{
     id: 'ai_home',
     name: 'ai-home',
@@ -54,7 +55,8 @@ test('collectPersistentSessionRunKeys maps attached tmux sessions to known web u
     aiHomeDir,
     hostHomeDir: '/host',
     platform: 'darwin',
-    spawnSync: (_command, args) => {
+    spawnSync: (command, args, options) => {
+      spawnCalls.push({ command, args, options });
       if (args.includes('-V')) return { status: 0, stdout: 'tmux 3.4\n' };
       if (args.includes('list-sessions')) return { status: 0, stdout: tmuxOutput };
       return { status: 0, stdout: '' };
@@ -66,6 +68,8 @@ test('collectPersistentSessionRunKeys maps attached tmux sessions to known web u
   });
 
   assert.deepEqual([...keys], ['codex:session-live:ai_home']);
+  const listCall = spawnCalls.find((call) => call.args.includes('list-sessions'));
+  assert.equal(listCall.options.windowsHide, true);
 });
 
 test('collectPersistentSessionRunKeys ignores attached sessions without a known session id', (t) => {

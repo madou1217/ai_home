@@ -652,11 +652,12 @@ export const sessionsAPI = {
   },
 
   // 获取 session 的消息内容
-  getSessionMessages: async (provider: string, sessionId: string, projectDirName?: string): Promise<ChatMessage[]> => {
+  getSessionMessages: async (provider: string, sessionId: string, projectDirName?: string, accountRef?: string): Promise<ChatMessage[]> => {
     return collectAllSessionHistoryMessages((page: { before?: number }) => (
       sessionsAPI.getSessionMessagesBundle(provider, sessionId, projectDirName, {
         ...page,
-        limit: SESSION_HISTORY_PAGE_LIMIT
+        limit: SESSION_HISTORY_PAGE_LIMIT,
+        accountRef
       })
     ));
   },
@@ -665,10 +666,11 @@ export const sessionsAPI = {
     provider: string,
     sessionId: string,
     projectDirName?: string,
-    options: { before?: number; limit?: number } = {}
+    options: { before?: number; limit?: number; accountRef?: string } = {}
   ): Promise<SessionMessageBundle> => {
     const params = new URLSearchParams();
     if (projectDirName) params.set('projectDirName', projectDirName);
+    if (options.accountRef) params.set('accountRef', options.accountRef);
     if (Number.isInteger(options.before) && Number(options.before) >= 0) {
       params.set('before', String(options.before));
     }

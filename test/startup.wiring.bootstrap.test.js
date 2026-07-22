@@ -81,3 +81,37 @@ test('createStartupWiring decodes encoded Windows codex home before deriving pat
   assert.equal(out.aiHomeDir, 'C:\\Users\\alice\\.ai_home');
   assert.equal(profileLayoutArg.aiHomeDir, 'C:\\Users\\alice\\.ai_home');
 });
+
+test('createStartupWiring keeps explicit AIH_HOME across Windows elevation home changes', () => {
+  let profileLayoutArg = null;
+
+  const out = createStartupWiring({
+    path: path.win32,
+    fs: {},
+    env: {
+      AIH_HOME: 'C:\\Users\\alice\\.ai_home',
+      USERPROFILE: 'C:\\Windows\\System32\\config\\systemprofile'
+    },
+    platform: 'win32',
+    os: {
+      userInfo: () => ({ homedir: 'C:\\Windows\\System32\\config\\systemprofile' }),
+      homedir: () => 'C:\\Windows\\System32\\config\\systemprofile'
+    },
+    launchdLabel: 'aih.test'
+  }, {
+    configureConsoleEncoding: () => {},
+    createProfileLayoutService: (arg) => {
+      profileLayoutArg = arg;
+      return {
+        ensureDir: () => {},
+        getProfileDir: () => 'C:\\Users\\alice\\.ai_home\\run\\auth-projections\\codex\\acct_11111111111111111111'
+      };
+    }
+  });
+
+  assert.equal(out.hostHomeDir, 'C:\\Windows\\System32\\config\\systemprofile');
+  assert.equal(out.aiHomeDir, 'C:\\Users\\alice\\.ai_home');
+  assert.equal(out.serverPidFile, 'C:\\Users\\alice\\.ai_home\\run\\server.pid');
+  assert.equal(out.serverLogFile, 'C:\\Users\\alice\\.ai_home\\logs\\server.log');
+  assert.equal(profileLayoutArg.aiHomeDir, 'C:\\Users\\alice\\.ai_home');
+});

@@ -2678,6 +2678,61 @@ test('web ui openai models refresh reloads runtime accounts for scoped accountRe
   }
 });
 
+test('web ui openai models refresh accepts a Qoder CN scoped account', async () => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-qoder-models-'));
+
+  try {
+    const accountRef = 'acct_63044849a0f6d3b8ee09';
+    const state = {
+      accounts: {
+        qodercn: [{
+          accountRef,
+          provider: 'qodercn',
+          authType: 'oauth',
+          schedulableStatus: 'schedulable'
+        }]
+      },
+      modelRegistry: { providers: { qodercn: new Set() } },
+      webUiModelsCache: {
+        updatedAt: 0,
+        byProvider: {},
+        byAccount: {},
+        errorsByAccount: {},
+        signature: '',
+        source: 'empty'
+      }
+    };
+    const postRes = createResCapture();
+    const handled = await handleWebUIRequest({
+      method: 'POST',
+      pathname: '/v0/webui/openai-models/refresh',
+      url: new URL(`http://localhost/v0/webui/openai-models/refresh?accountRef=${accountRef}`),
+      req: { headers: {} },
+      res: postRes,
+      options: {},
+      state,
+      deps: {
+        ...createBaseDeps(aiHomeDir),
+        fetchModelsForAccount: async () => ['Auto', 'Qwen3.7-Max']
+      }
+    });
+
+    assert.equal(handled, true);
+    assert.equal(postRes.statusCode, 202);
+    assert.deepEqual(JSON.parse(postRes.body).job.accountScope, { accountRef });
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const job = Array.from(state.modelCatalogLive.jobs.values())[0];
+      if (job && job.status === 'succeeded') break;
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    const job = Array.from(state.modelCatalogLive.jobs.values())[0];
+    assert.equal(job.status, 'succeeded');
+    assert.deepEqual(job.catalog.byAccountRef[accountRef], ['Auto', 'Qwen3.7-Max']);
+  } finally {
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+  }
+});
+
 test('web ui openai models keeps aggregator models and final owner groups', async () => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-openai-owner-models-'));
 

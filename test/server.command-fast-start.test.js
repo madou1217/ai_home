@@ -322,6 +322,66 @@ test('runServerCommand restarts daemon in non-blocking mode after stop', async (
   }]);
 });
 
+test('runServerCommand elevates restart only after permission denied', async () => {
+  let elevationCalls = 0;
+  const { result: code, logs, errors } = await captureConsole(() => runServerCommand(['server', 'restart'], {
+    showServerUsage() {},
+    serverDaemon: {
+      restart: async () => ({
+        alreadyRunning: true,
+        started: false,
+        ready: false,
+        pid: 9001,
+        stoppedForRestart: {
+          stopped: false,
+          reason: 'permission_denied',
+          pid: 9001
+        }
+      })
+    },
+    elevateServerRestart: () => {
+      elevationCalls += 1;
+      return { ok: true, elevated: true };
+    },
+    parseServerEnvArgs: () => ({}),
+    parseServerServeArgs: () => ({}),
+    parseServerSyncArgs: () => ({}),
+    startLocalServer: async () => ({}),
+    syncCodexAccountsToServer: async () => ({ dryRun: true, failed: 0 })
+  }));
+
+  assert.equal(code, 0);
+  assert.equal(elevationCalls, 1);
+  assert.equal(errors.length, 0);
+  assert.match(logs.join('\n'), /opening UAC/);
+});
+
+test('runServerCommand never opens UAC for a background restart', async () => {
+  let elevationCalls = 0;
+  const { result: code, logs, errors } = await captureConsole(() => runServerCommand(['server', 'restart'], {
+    processObj: { env: { AIH_SERVER_BACKGROUND_RESTART: '1' } },
+    showServerUsage() {},
+    serverDaemon: {
+      restart: async () => ({
+        stoppedForRestart: {
+          stopped: false,
+          reason: 'permission_denied',
+          pid: 9001
+        }
+      })
+    },
+    elevateServerRestart: () => {
+      elevationCalls += 1;
+      return { ok: true };
+    }
+  }));
+
+  assert.equal(code, 1);
+  assert.equal(elevationCalls, 0);
+  assert.deepEqual(logs, []);
+  assert.deepEqual(errors, []);
+});
+
 test('runServerCommand restart reports missing server api key when config has none', async () => {
   const { result: code, logs, errors } = await captureConsole(() => runServerCommand(['server', 'restart'], {
     showServerUsage() {},

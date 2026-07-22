@@ -93,3 +93,18 @@ test('Qoder install plans use region-specific official installers', () => {
   assert.ok(qoderCnEntries.includes(path.join('C:\\Users\\example', '.local', 'bin')));
   assert.ok(qoderCnEntries.includes(path.join('C:\\Users\\example', '.qoder-cn', 'bin', 'qoderclicn')));
 });
+
+test('Grok uses the official installer and user-level binary directory', () => {
+  const options = {
+    path,
+    hostHomeDir: 'C:\\Users\\test',
+    processObj: { platform: 'win32', env: {} }
+  };
+  const plans = resolveNativeCliInstallPlans('grok', '', options);
+  assert.equal(plans.length, 1);
+  assert.equal(plans[0].id, 'grok_windows_official');
+  assert.match(plans[0].args.join(' '), /https:\/\/x\.ai\/cli\/install\.ps1/);
+  assert.deepEqual(collectNativeCliPathEntries('grok', options), [
+    path.join(options.hostHomeDir, '.grok', 'bin')
+  ]);
+});

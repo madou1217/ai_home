@@ -16,6 +16,7 @@ const {
 test('native CLI discovery supports both Qoder regions', () => {
   assert.equal(supportsNativeCliModelDiscovery('qoder'), true);
   assert.equal(supportsNativeCliModelDiscovery('qodercn'), true);
+  assert.equal(supportsNativeCliModelDiscovery('grok'), true);
   assert.equal(supportsNativeCliModelDiscovery('kiro'), true);
   assert.equal(supportsNativeCliModelDiscovery('claude'), false);
 });

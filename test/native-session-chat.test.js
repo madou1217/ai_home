@@ -705,6 +705,48 @@ test('parseNativeStreamEvent parses qoder stream-json like claude protocol event
   }), state), { type: 'result', content: 'hello' });
 });
 
+test('Grok native session commands use streaming JSON and exact resume ids', () => {
+  assert.equal(isOfficialNativeSessionProvider('grok'), true);
+  assert.deepEqual(buildStartCommand('grok', {
+    prompt: 'hello',
+    sessionId: '11111111-1111-4111-8111-111111111111',
+    model: 'grok-code-fast-1'
+  }), {
+    commandName: 'grok',
+    args: [
+      '--single', 'hello', '--output-format', 'streaming-json',
+      '--session-id', '11111111-1111-4111-8111-111111111111',
+      '--model', 'grok-code-fast-1'
+    ]
+  });
+  assert.deepEqual(buildResumeCommand('grok', {
+    prompt: 'continue',
+    sessionId: '11111111-1111-4111-8111-111111111111'
+  }), {
+    commandName: 'grok',
+    args: [
+      '--single', 'continue', '--output-format', 'streaming-json',
+      '--resume', '11111111-1111-4111-8111-111111111111'
+    ]
+  });
+});
+
+test('parseNativeStreamEvent maps Grok streaming JSON events', () => {
+  const state = { content: '', sessionId: '' };
+  assert.deepEqual(parseNativeStreamEvent('grok', JSON.stringify({ type: 'thought', data: 'check' }), state), {
+    type: 'thinking', thinking: 'check'
+  });
+  assert.deepEqual(parseNativeStreamEvent('grok', JSON.stringify({ type: 'text', data: 'OK' }), state), {
+    type: 'delta', delta: 'OK'
+  });
+  assert.deepEqual(parseNativeStreamEvent('grok', JSON.stringify({
+    type: 'end', sessionId: '11111111-1111-4111-8111-111111111111'
+  }), state), [
+    { type: 'session-created', sessionId: '11111111-1111-4111-8111-111111111111' },
+    { type: 'result', content: 'OK' }
+  ]);
+});
+
 test('buildProviderEnv keeps codex sqlite state shared with host home', (t) => {
   const hostHome = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-native-codex-host-'));
   t.after(() => fs.rmSync(hostHome, { recursive: true, force: true }));

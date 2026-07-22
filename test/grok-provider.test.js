@@ -22,9 +22,10 @@ test('getAiCliConfig grok returns correct CLI configuration', () => {
   const config = getAiCliConfig('grok');
   assert.ok(config, 'grok config should exist');
   assert.equal(config.globalDir, '.grok');
-  assert.equal(config.pkg, '@xai/grok-build');
-  assert.deepEqual(config.envKeys, ['XAI_API_KEY']);
-  assert.deepEqual(config.loginArgs, ['auth', 'login']);
+  assert.equal(config.binaryName, 'grok');
+  assert.equal(config.pkg, '');
+  assert.deepEqual(config.envKeys, ['GROK_HOME', 'XAI_API_KEY']);
+  assert.deepEqual(config.loginArgs, ['login', '--oauth']);
 });
 
 test('listSupportedAiClis includes grok', () => {

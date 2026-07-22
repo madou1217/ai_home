@@ -77,12 +77,19 @@ test('Qoder install plans use region-specific official installers', () => {
   assert.equal(posixCn[0].id, 'qoder_cn_posix');
   assert.match(posixCn[0].args.at(-1), /qoder\.com\.cn\/install/);
 
-  assert.deepEqual(
-    collectNativeCliPathEntries('qodercn', {
-      path,
-      hostHomeDir: 'C:\\Users\\example',
-      processObj: { platform: 'win32' }
-    }),
-    ['C:\\Users\\example\\.local\\bin']
-  );
+  const qoderCnEntries = collectNativeCliPathEntries('qodercn', {
+    path,
+    hostHomeDir: 'C:\\Users\\example',
+    processObj: {
+      platform: 'win32',
+      env: {
+        LOCALAPPDATA: 'C:\\Users\\example\\AppData\\Local',
+        ProgramFiles: 'C:\\Program Files',
+        'ProgramFiles(x86)': 'C:\\Program Files (x86)'
+      }
+    }
+  });
+  assert.ok(qoderCnEntries.includes('C:\\Users\\example\\.local\\bin'));
+  assert.ok(qoderCnEntries.some((entry) => /qoderclicn|QoderCli/i.test(entry)));
+  assert.ok(qoderCnEntries.some((entry) => /Program Files.*Qoder/i.test(entry)));
 });

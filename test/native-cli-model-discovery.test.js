@@ -16,6 +16,7 @@ const {
 test('native CLI discovery supports both Qoder regions', () => {
   assert.equal(supportsNativeCliModelDiscovery('qoder'), true);
   assert.equal(supportsNativeCliModelDiscovery('qodercn'), true);
+  assert.equal(supportsNativeCliModelDiscovery('kiro'), true);
   assert.equal(supportsNativeCliModelDiscovery('claude'), false);
 });
 
@@ -26,6 +27,18 @@ test('parseNativeCliModelList removes the table header and duplicates', () => {
   );
 });
 
+test('parseNativeCliModelList reads Kiro JSON model ids', () => {
+  assert.deepEqual(
+    parseNativeCliModelList(JSON.stringify({
+      models: [
+        { model_id: 'deepseek-3.2' },
+        { model_name: 'glm-5' },
+        { model_id: 'deepseek-3.2' }
+      ]
+    }), 'kiro-json'),
+    ['deepseek-3.2', 'glm-5']
+  );
+});
 test('Qoder model discovery materializes account auth and invokes list-models', async (t) => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-qoder-models-'));
   t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));

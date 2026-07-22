@@ -32,7 +32,7 @@ test('ProviderCatalog exposes provider capabilities centrally', () => {
   assert.deepEqual(listProvidersByCapability('unknownCapability'), []);
   assert.deepEqual(
     listProvidersByCapability('modelCatalog'),
-    ['codex', 'gemini', 'claude', 'agy', 'opencode', 'qoder', 'qodercn']
+    ['codex', 'gemini', 'claude', 'agy', 'opencode', 'qoder', 'qodercn', 'kiro']
   );
 });
 

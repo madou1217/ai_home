@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const zlib = require('node:zlib');
 const { handleCodexChatCompletions, __private } = require('../lib/server/codex-adapter');
 const { getAccountModelCooldownUntil } = require('../lib/server/account-runtime-state');
-const { chooseServerAccount, markProxyAccountFailure } = require('../lib/server/router');
+const { chooseServerAccount, markProxyAccountFailure, markProxyAccountSuccess } = require('../lib/server/router');
 
 const accountRef = (value) => `acct_${String(value).padStart(20, '0')}`;
 
@@ -15,6 +15,27 @@ function createResCapture() {
     setHeader(k, v) { this.headers[String(k).toLowerCase()] = v; },
     write(chunk = '') { this.body += String(chunk); },
     end(chunk = '') { this.body += String(chunk); }
+  };
+}
+
+function createCompletedUpstreamResponse(text = 'recovered') {
+  return {
+    ok: true,
+    status: 200,
+    headers: new Map(),
+    text: async () => JSON.stringify({
+      type: 'response.completed',
+      response: {
+        id: 'resp_recovered',
+        created_at: 1700000000,
+        model: 'gpt-5.6-sol',
+        output: [{
+          type: 'message',
+          content: [{ type: 'output_text', text }]
+        }],
+        usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 }
+      }
+    })
   };
 }
 
@@ -1284,7 +1305,7 @@ test('codex adapter logs stream disconnect account failure and retries another a
   assert.equal(retryLog.error, 'stream_disconnected_before_completion');
   assert.equal(retryLog.provider, 'codex');
   assert.equal(retryLog.attempt, 1);
-  assert.equal(retryLog.maxAttempts, 3);
+  assert.equal(retryLog.maxAttempts, 4);
   assert.equal(retryLog.requestedModel, 'gpt-5.3-codex');
   assert.equal(retryLog.effectiveModel, 'gpt-5.3-codex');
   assert.equal(retryLog.upstreamStatus, 200);
@@ -1292,6 +1313,231 @@ test('codex adapter logs stream disconnect account failure and retries another a
   assert.equal(Object.hasOwn(retryLog.upstreamHeaders, 'set-cookie'), false);
   assert.match(retryLog.upstreamBody, /stream disconnected before completion/);
   assert.match(retryLog.upstreamError, /stream disconnected before completion/);
+});
+
+test('codex adapter retries another account after ECONNRESET', async () => {
+  const res = createResCapture();
+  const firstAccount = {
+    accountRef: accountRef('1'),
+    email: 'a@example.com',
+    accessToken: 'reset-token',
+    apiKeyMode: true,
+    schedulableStatus: 'schedulable'
+  };
+  const secondAccount = {
+    accountRef: accountRef('2'),
+    email: 'b@example.com',
+    accessToken: 'ok-token',
+    apiKeyMode: true,
+    schedulableStatus: 'schedulable'
+  };
+  const state = {
+    accounts: { codex: [firstAccount, secondAccount] },
+    cursors: { codex: 0 },
+    metrics: { totalFailures: 0, totalSuccess: 0, totalTimeouts: 0 }
+  };
+  const chosen = [];
+
+  await handleCodexChatCompletions({
+    options: {
+      codexBaseUrl: 'https://chatgpt.com/backend-api/codex',
+      upstreamTimeoutMs: 3000,
+      maxAttempts: 2,
+      failureThreshold: 1,
+      logRequests: false
+    },
+    state,
+    req: { headers: { 'content-type': 'application/json' } },
+    res,
+    requestJson: {
+      model: 'gpt-5.6-sol',
+      stream: false,
+      messages: [{ role: 'user', content: 'hello' }]
+    },
+    routeKey: 'POST /v1/chat/completions',
+    requestStartedAt: Date.now(),
+    cooldownMs: 60_000,
+    requestMeta: { requestId: 'network-switch', sessionKey: 's' },
+    deps: {
+      chooseServerAccount: (pool, selectionState, cursorKey, options) => {
+        const account = chooseServerAccount(pool, selectionState, cursorKey, options);
+        if (account) chosen.push(account.accountRef);
+        return account;
+      },
+      pushMetricError: () => {},
+      writeJson: (r, code, payload) => {
+        r.statusCode = code;
+        r.setHeader('content-type', 'application/json');
+        r.end(JSON.stringify(payload));
+      },
+      fetchWithTimeout: async (_url, init) => {
+        const auth = String(init && init.headers && init.headers.authorization || '');
+        if (auth.includes('reset-token')) {
+          const error = new Error('fetch failed');
+          error.cause = { code: 'ECONNRESET' };
+          throw error;
+        }
+        return createCompletedUpstreamResponse('switched');
+      },
+      markProxyAccountFailure,
+      markProxyAccountSuccess,
+      appendProxyRequestLog: () => {}
+    }
+  });
+
+  assert.deepEqual(chosen, [firstAccount.accountRef, secondAccount.accountRef]);
+  assert.equal(res.statusCode, 200);
+  assert.match(String(res.body), /switched/);
+  assert.equal(getAccountModelCooldownUntil(firstAccount, 'gpt-5.6-sol'), 0);
+});
+
+test('codex adapter retries the only account once after a stream disconnect', async () => {
+  const res = createResCapture();
+  const account = {
+    accountRef: accountRef('1'),
+    email: 'a@example.com',
+    accessToken: 'single-token',
+    apiKeyMode: true,
+    schedulableStatus: 'schedulable'
+  };
+  const state = {
+    accounts: { codex: [account] },
+    cursors: { codex: 0 },
+    metrics: { totalFailures: 0, totalSuccess: 0, totalTimeouts: 0 }
+  };
+  let fetchCalls = 0;
+
+  await handleCodexChatCompletions({
+    options: {
+      codexBaseUrl: 'https://chatgpt.com/backend-api/codex',
+      upstreamTimeoutMs: 3000,
+      maxAttempts: 1,
+      failureThreshold: 1,
+      logRequests: false
+    },
+    state,
+    req: { headers: { 'content-type': 'application/json' } },
+    res,
+    requestJson: {
+      model: 'gpt-5.6-sol',
+      stream: false,
+      messages: [{ role: 'user', content: 'hello' }]
+    },
+    routeKey: 'POST /v1/chat/completions',
+    requestStartedAt: Date.now(),
+    cooldownMs: 60_000,
+    requestMeta: { requestId: 'single-retry', sessionKey: 's' },
+    deps: {
+      chooseServerAccount,
+      pushMetricError: () => {},
+      writeJson: (r, code, payload) => {
+        r.statusCode = code;
+        r.setHeader('content-type', 'application/json');
+        r.end(JSON.stringify(payload));
+      },
+      fetchWithTimeout: async () => {
+        fetchCalls += 1;
+        if (fetchCalls === 1) {
+          return {
+            ok: true,
+            status: 200,
+            headers: new Map(),
+            text: async () => [
+              'data: {"type":"response.failed","response":{"error":{"message":"stream disconnected before completion"}}}',
+              ''
+            ].join('\n')
+          };
+        }
+        return createCompletedUpstreamResponse('retried');
+      },
+      markProxyAccountFailure,
+      markProxyAccountSuccess,
+      appendProxyRequestLog: () => {}
+    }
+  });
+
+  assert.equal(fetchCalls, 2);
+  assert.equal(res.statusCode, 200);
+  assert.match(String(res.body), /retried/);
+  assert.equal(getAccountModelCooldownUntil(account, 'gpt-5.6-sol'), 0);
+  assert.equal(account.modelFailureStreaks && account.modelFailureStreaks['gpt-5.6-sol'], undefined);
+});
+
+test('codex adapter reports temporary upstream failure when mixed transient retries exhaust without cooldown', async () => {
+  const res = createResCapture();
+  const account = {
+    accountRef: accountRef('1'),
+    email: 'a@example.com',
+    accessToken: 'single-token',
+    apiKeyMode: true,
+    schedulableStatus: 'schedulable'
+  };
+  const state = {
+    accounts: { codex: [account] },
+    cursors: { codex: 0 },
+    metrics: { totalFailures: 0, totalSuccess: 0, totalTimeouts: 0 }
+  };
+  let fetchCalls = 0;
+
+  await handleCodexChatCompletions({
+    options: {
+      codexBaseUrl: 'https://chatgpt.com/backend-api/codex',
+      upstreamTimeoutMs: 3000,
+      maxAttempts: 1,
+      failureThreshold: 1,
+      logRequests: false
+    },
+    state,
+    req: { headers: { 'content-type': 'application/json' } },
+    res,
+    requestJson: {
+      model: 'gpt-5.6-sol',
+      stream: false,
+      messages: [{ role: 'user', content: 'hello' }]
+    },
+    routeKey: 'POST /v1/chat/completions',
+    requestStartedAt: Date.now(),
+    cooldownMs: 60_000,
+    requestMeta: { requestId: 'mixed-transient', sessionKey: 's' },
+    deps: {
+      chooseServerAccount,
+      pushMetricError: () => {},
+      writeJson: (r, code, payload) => {
+        r.statusCode = code;
+        r.setHeader('content-type', 'application/json');
+        r.end(JSON.stringify(payload));
+      },
+      fetchWithTimeout: async () => {
+        fetchCalls += 1;
+        if (fetchCalls === 1) {
+          return {
+            ok: true,
+            status: 200,
+            headers: new Map(),
+            text: async () => [
+              'data: {"type":"response.failed","response":{"error":{"message":"stream disconnected before completion"}}}',
+              ''
+            ].join('\n')
+          };
+        }
+        const error = new Error('fetch failed');
+        error.cause = { code: 'ECONNRESET' };
+        throw error;
+      },
+      refreshCodexAccessToken: async () => ({ ok: true, refreshed: false }),
+      markProxyAccountFailure,
+      markProxyAccountSuccess,
+      appendProxyRequestLog: () => {}
+    }
+  });
+
+  assert.equal(fetchCalls, 2);
+  assert.equal(res.statusCode, 502);
+  const body = JSON.parse(String(res.body));
+  assert.equal(body.error, 'upstream_temporarily_unavailable');
+  assert.equal(getAccountModelCooldownUntil(account, 'gpt-5.6-sol'), 0);
+  assert.equal(account.modelFailureStreaks['gpt-5.6-sol'].kind, 'network_error');
+  assert.equal(account.modelFailureStreaks['gpt-5.6-sol'].count, 1);
 });
 
 test('codex adapter hides stream disconnect detail when all account attempts are exhausted', async () => {

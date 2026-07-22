@@ -119,11 +119,70 @@ test('usage-limit exhaustion cools the whole account and survives last-resort', 
 test('clearExpiredAccountModelState prunes elapsed cooldowns', () => {
   const account = normalizeAccountRuntime({ id: '1' });
   account.modelCooldowns = { 'm-old': Date.now() - 1000, 'm-new': Date.now() + 60_000 };
-  account.modelFailures = { 'm-old': 3, 'm-new': 1 };
+  account.modelFailureStreaks = {
+    'm-old': { kind: 'network_error', count: 2, expiresAt: Date.now() - 1000 },
+    'm-new': { kind: 'network_error', count: 1, expiresAt: Date.now() + 60_000 }
+  };
   clearExpiredAccountModelState(account);
   assert.equal(account.modelCooldowns['m-old'], undefined);
   assert.ok(account.modelCooldowns['m-new'] > Date.now());
-  assert.equal(account.modelFailures['m-old'], undefined);
+  assert.equal(account.modelFailureStreaks['m-old'], undefined);
+});
+
+test('expired legacy model failures do not poison a new transient streak', () => {
+  const model = 'gpt-5.6-sol';
+  const account = normalizeAccountRuntime({
+    id: '1',
+    modelCooldowns: { [model]: Date.now() - 1000 },
+    modelFailures: { [model]: 1 },
+    lastFailureKind: 'service_unavailable',
+    lastFailureReason: 'stream_disconnected_before_completion'
+  });
+  const networkPolicy = {
+    kind: 'network_error',
+    shouldMarkFailure: true,
+    failureThreshold: 2,
+    cooldownMs: 30_000,
+    failureReason: 'fetch failed [ECONNRESET]',
+    scope: 'model'
+  };
+
+  applyAccountFailurePolicy(account, networkPolicy, { markProxyAccountFailure, model });
+
+  assert.equal(getAccountModelCooldownUntil(account, model), 0);
+  assert.deepEqual(account.modelFailureStreaks[model], {
+    kind: 'network_error',
+    count: 1,
+    expiresAt: account.modelFailureStreaks[model].expiresAt,
+    reason: 'fetch failed [ECONNRESET]'
+  });
+  assert.ok(account.modelFailureStreaks[model].expiresAt > Date.now());
+  assert.equal(Object.hasOwn(account, 'modelFailures'), false);
+});
+
+test('model failure streak resets when the transient failure kind changes', () => {
+  const model = 'gpt-5.6-sol';
+  const account = normalizeAccountRuntime({ id: '1' });
+  const streamPolicy = {
+    kind: 'service_unavailable',
+    shouldMarkFailure: true,
+    failureThreshold: 2,
+    cooldownMs: 30_000,
+    failureReason: 'stream_disconnected_before_completion',
+    scope: 'model'
+  };
+  const networkPolicy = {
+    ...streamPolicy,
+    kind: 'network_error',
+    failureReason: 'fetch failed [ECONNRESET]'
+  };
+
+  applyAccountFailurePolicy(account, streamPolicy, { markProxyAccountFailure, model });
+  applyAccountFailurePolicy(account, networkPolicy, { markProxyAccountFailure, model });
+
+  assert.equal(getAccountModelCooldownUntil(account, model), 0);
+  assert.equal(account.modelFailureStreaks[model].kind, 'network_error');
+  assert.equal(account.modelFailureStreaks[model].count, 1);
 });
 
 test('model cooldowns survive a pool reload (persisted + restored)', () => {
@@ -193,10 +252,19 @@ test('upstream 503 cools only the failing model end-to-end, leaving sibling mode
 
 test('threshold > 1 requires repeated model failures before cooling', () => {
   const account = normalizeAccountRuntime({ id: '1' });
-  markProxyAccountFailure(account, '429', 60_000, 2, { scope: 'model', model: 'm1' });
+  markProxyAccountFailure(account, 'fetch failed', 60_000, 2, {
+    scope: 'model',
+    model: 'm1',
+    kind: 'network_error'
+  });
   assert.equal(getAccountModelCooldownUntil(account, 'm1'), 0); // 1 < threshold 2
-  markProxyAccountFailure(account, '429', 60_000, 2, { scope: 'model', model: 'm1' });
+  markProxyAccountFailure(account, 'fetch failed', 60_000, 2, {
+    scope: 'model',
+    model: 'm1',
+    kind: 'network_error'
+  });
   assert.ok(getAccountModelCooldownUntil(account, 'm1') > Date.now()); // 2 >= threshold
   clearAccountModelState(account, 'm1');
   assert.equal(getAccountModelCooldownUntil(account, 'm1'), 0);
+  assert.equal(account.modelFailureStreaks.m1, undefined);
 });

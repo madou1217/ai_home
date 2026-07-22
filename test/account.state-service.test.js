@@ -196,9 +196,19 @@ test('account state service preserves active model cooldowns when clearing accou
               'claude-sonnet-4-6': now + 24 * 60 * 60 * 1000,
               'old-model': now - 1_000
             },
-            modelFailures: {
-              'claude-sonnet-4-6': 2,
-              'old-model': 1
+            modelFailureStreaks: {
+              'claude-sonnet-4-6': {
+                kind: 'model_quota_exhausted',
+                count: 2,
+                expiresAt: now + 24 * 60 * 60 * 1000,
+                reason: 'quota exhausted'
+              },
+              'old-model': {
+                kind: 'service_unavailable',
+                count: 1,
+                expiresAt: now - 1_000,
+                reason: 'service unavailable'
+              }
             }
           }
         };
@@ -216,8 +226,58 @@ test('account state service preserves active model cooldowns when clearing accou
   assert.deepEqual(writes[0].runtimeState.modelCooldowns, {
     'claude-sonnet-4-6': now + 24 * 60 * 60 * 1000
   });
-  assert.deepEqual(writes[0].runtimeState.modelFailures, {
-    'claude-sonnet-4-6': 2
+  assert.deepEqual(writes[0].runtimeState.modelFailureStreaks, {
+    'claude-sonnet-4-6': {
+      kind: 'model_quota_exhausted',
+      count: 2,
+      expiresAt: now + 24 * 60 * 60 * 1000,
+      reason: 'quota exhausted'
+    }
+  });
+  assert.equal(Object.hasOwn(writes[0].runtimeState, 'modelFailures'), false);
+});
+
+test('account state service preserves an active model failure streak before cooldown', () => {
+  const now = Date.now();
+  const writes = [];
+  const service = createAccountStateService({
+    accountStateIndex: {
+      getAccountState() {
+        return {
+          accountRef: ACCOUNT_REF_5,
+          status: 'up',
+          configured: true,
+          runtimeState: {
+            cooldownUntil: now + 60_000,
+            consecutiveFailures: 1,
+            modelFailureStreaks: {
+              'gpt-5.6-sol': {
+                kind: 'network_error',
+                count: 1,
+                expiresAt: now + 30_000,
+                reason: 'fetch failed [ECONNRESET]'
+              }
+            }
+          }
+        };
+      },
+      upsertRuntimeState(accountRef, provider, runtimeState, baseState) {
+        writes.push({ accountRef, provider, runtimeState, baseState });
+        return true;
+      }
+    }
+  });
+
+  assert.equal(service.recordRuntimeSuccess(ACCOUNT_REF_5, 'codex'), true);
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].runtimeState.cooldownUntil, 0);
+  assert.deepEqual(writes[0].runtimeState.modelFailureStreaks, {
+    'gpt-5.6-sol': {
+      kind: 'network_error',
+      count: 1,
+      expiresAt: now + 30_000,
+      reason: 'fetch failed [ECONNRESET]'
+    }
   });
 });
 

@@ -215,6 +215,8 @@ test('failure policy treats stream disconnected before completion as model-scope
   assert.equal(policy.shouldMarkFailure, true);
   assert.equal(policy.shouldRetryAnotherAccount, true);
   assert.equal(policy.shouldPassthroughToClient, false);
+  assert.equal(policy.failureThreshold, 2);
+  assert.equal(policy.cooldownMs, 30000);
 });
 
 test('failure policy treats upstream 503 as model-scoped so the account keeps serving other models', () => {

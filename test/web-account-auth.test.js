@@ -39,6 +39,21 @@ function createAuthJobManager(options = {}) {
   return createAuthJobManagerImpl({ ...options, aiHomeDir });
 }
 
+// Windows buildPtyLaunch wraps extensionless bins as:
+//   cmd.exe /d /s /c "chcp 65001>nul & \"/path/bin\" arg1 arg2"
+// Assert against the flattened command line so tests stay platform-agnostic.
+function launchCommandLine(spawnCall) {
+  if (!spawnCall) return '';
+  return `${String(spawnCall.command || '')} ${(Array.isArray(spawnCall.args) ? spawnCall.args : []).join(' ')}`;
+}
+
+function assertLaunchIncludes(spawnCall, ...needles) {
+  const blob = launchCommandLine(spawnCall);
+  needles.forEach((needle) => {
+    assert.match(blob, needle instanceof RegExp ? needle : new RegExp(String(needle).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  });
+}
+
 function makeJwt(payload) {
   return [
     Buffer.from(JSON.stringify({ alg: 'none' })).toString('base64url'),
@@ -332,8 +347,7 @@ test('createAuthJobManager uses a login runtime and exposes accountRef after OAu
   const started = manager.startOauthJob('codex', 'oauth-device');
   assert.equal(Object.hasOwn(started, 'accountId'), false);
   assert.equal(Array.isArray(spawnCall.args), true);
-  assert.equal(spawnCall.args.includes('login'), true);
-  assert.equal(spawnCall.args.includes('--device-auth'), true);
+  assertLaunchIncludes(spawnCall, /codex/i, /\blogin\b/, /--device-auth/);
   assert.equal(spawnCall.options.env.HOME, root);
   assert.equal(spawnCall.options.env.USERPROFILE, root);
   assert.equal(spawnCall.options.env.CODEX_SQLITE_HOME, path.join(root, '.codex'));
@@ -414,8 +428,7 @@ test('createAuthJobManager starts opencode login with shared home and account au
     const bridgeDataDir = path.join(profileDir, '.local', 'share', 'aih-opencode-runtime', 'opencode');
     const sharedDataDir = path.join(root, '.local', 'share', 'opencode');
 
-    assert.equal(spawnCall.command, '/usr/local/bin/opencode');
-    assert.deepEqual(spawnCall.args, ['auth', 'login']);
+    assertLaunchIncludes(spawnCall, /opencode/, /\bauth\b/, /\blogin\b/);
     assert.equal(spawnCall.options.env.HOME, root);
     assert.equal(spawnCall.options.env.USERPROFILE, root);
     assert.equal(spawnCall.options.env.XDG_CONFIG_HOME, path.join(root, '.config'));
@@ -1546,7 +1559,9 @@ test('createAuthJobManager resolves native oauth cli from runtime-tools fallback
 
   const started = manager.startOauthJob('agy', 'oauth-browser');
   assert.equal(started.provider, 'agy');
-  assert.equal(spawnCall.args[0], agyPath);
+  // Match path separators as either / or \ so Windows cmd wrappers still pass.
+  const agyPathPattern = new RegExp(agyPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\//g, '[\\\\/]'));
+  assertLaunchIncludes(spawnCall, agyPathPattern, /\bagy\b/);
 });
 
 test('createAuthJobManager auto-confirms agy Google OAuth login method prompt', () => {
@@ -1849,4 +1864,85 @@ test('createAuthJobManager preserves expired status after device auth expiry tri
   } finally {
     Date.now = originalNow;
   }
+});
+
+test('startOauthJob auto-installs qodercn CLI via ensureNativeCli before failing closed', async () => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-qodercn-auth-'));
+  let ensureCalls = 0;
+  const manager = createAuthJobManager({
+    fs,
+    aiHomeDir,
+    processObj: { platform: 'win32', env: process.env, cwd: () => aiHomeDir },
+    ensureNativeCliImpl: (provider) => {
+      ensureCalls += 1;
+      assert.equal(provider, 'qodercn');
+      return {
+        cliPath: '',
+        binaryName: 'qoderclicn',
+        installed: false,
+        installAttempts: [{
+          id: 'qoder_cn_windows',
+          label: 'Qoder CLI CN official installer',
+          ok: false,
+          error: 'simulated'
+        }]
+      };
+    },
+    resolveCliPathImpl: null
+  });
+  assert.throws(
+    () => manager.startOauthJob('qodercn', 'oauth-browser'),
+    (error) => {
+      assert.equal(error.code, 'cli_not_found');
+      assert.match(String(error.message), /qoderclicn/);
+      assert.match(String(error.message), /自动安装失败/);
+      assert.equal(Array.isArray(error.installAttempts), true);
+      return true;
+    }
+  );
+  assert.equal(ensureCalls, 1);
+});
+
+test('startOauthJob resolves qodercn through ensureNativeCli success path', async () => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-qodercn-ok-'));
+  const spawned = [];
+  const manager = createAuthJobManager({
+    fs,
+    aiHomeDir,
+    processObj: { platform: 'win32', env: process.env, cwd: () => aiHomeDir },
+    ensureNativeCliImpl: (provider) => {
+      assert.equal(provider, 'qodercn');
+      return {
+        cliPath: 'C:\\tools\\qoderclicn.exe',
+        binaryName: 'qoderclicn',
+        installed: true,
+        installAttempts: [{
+          id: 'qoder_cn_windows',
+          label: 'Qoder CLI CN official installer',
+          ok: true
+        }]
+      };
+    },
+    resolveCliPathImpl: null,
+    ptyImpl: {
+      spawn: (command, args, opts) => {
+        spawned.push({ command, args, opts });
+        return {
+          onData() {},
+          onExit(cb) { setImmediate(() => cb({ exitCode: 1 })); },
+          write() {},
+          kill() {}
+        };
+      }
+    }
+  });
+  const started = manager.startOauthJob('qodercn', 'oauth-browser');
+  assert.ok(started && started.jobId);
+  assert.equal(started.provider, 'qodercn');
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.ok(spawned.length >= 1);
+  // Windows may wrap extensionless bins with cmd.exe; .exe should spawn directly.
+  const launch = spawned[0];
+  const launchBlob = `${launch.command} ${(launch.args || []).join(' ')}`;
+  assert.match(launchBlob, /qoderclicn\.exe/i);
 });

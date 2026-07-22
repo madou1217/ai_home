@@ -140,4 +140,13 @@ test('buildAihServerProfileEnv maps server config to Codex and Claude client env
     ANTHROPIC_API_KEY: 'dummy',
     ANTHROPIC_BASE_URL: 'http://127.0.0.1:8317'
   });
+
+  assert.deepEqual(buildAihServerProfileEnv('grok', {
+    host: '127.0.0.1',
+    port: 8317,
+    apiKey: 'server-key'
+  }), {
+    XAI_API_KEY: 'server-key',
+    XAI_BASE_URL: 'http://127.0.0.1:8317/v1'
+  });
 });

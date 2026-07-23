@@ -34,6 +34,10 @@ test('ProviderCatalog exposes provider capabilities centrally', () => {
     listProvidersByCapability('modelCatalog'),
     ['codex', 'gemini', 'claude', 'agy', 'opencode', 'grok', 'qoder', 'qodercn', 'kiro']
   );
+  assert.deepEqual(
+    listProvidersByCapability('quotaUsage'),
+    ['codex', 'gemini', 'claude', 'agy']
+  );
 });
 
 test('core account modules do not duplicate the complete provider list', () => {

@@ -10,6 +10,7 @@ const { agyStrategy } = require('../lib/cli/services/ai-cli/launch-profile/agy-s
 const { claudeStrategy } = require('../lib/cli/services/ai-cli/launch-profile/claude-strategy');
 const { codexStrategy } = require('../lib/cli/services/ai-cli/launch-profile/codex-strategy');
 const { geminiStrategy } = require('../lib/cli/services/ai-cli/launch-profile/gemini-strategy');
+const { grokStrategy } = require('../lib/cli/services/ai-cli/launch-profile/grok-strategy');
 const {
   opencodeStrategy,
   reconcileSharedData: reconcileOpenCodeSharedData
@@ -36,8 +37,15 @@ test('registry maps known providers and defaults to home-redirect', () => {
   assert.equal(getProviderLaunchStrategy('gemini'), geminiStrategy);
   assert.equal(getProviderLaunchStrategy('agy'), agyStrategy);
   assert.equal(getProviderLaunchStrategy('opencode'), opencodeStrategy);
+  assert.equal(getProviderLaunchStrategy('grok'), grokStrategy);
   assert.equal(getProviderLaunchStrategy('unknown'), homeRedirectStrategy);
   assert.equal(getProviderLaunchStrategy(''), homeRedirectStrategy);
+});
+
+test('grok strategy uses the supported account-local GROK_HOME', () => {
+  const { set, unset } = grokStrategy.buildEnvPatch(baseCtx('grok'));
+  assert.deepEqual(set, { GROK_HOME: path.join(SANDBOX, '.grok') });
+  assert.deepEqual(unset, []);
 });
 
 // ---- home-redirect fallback + AGY provider home ----
@@ -72,6 +80,20 @@ test('home-redirect fallback redirects regenerable caches to the shared host hom
 test('home-redirect fallback has no cache redirect when host home is unknown', () => {
   const { set } = homeRedirectStrategy.buildEnvPatch(baseCtx('unknown'));
   assert.ok(!('CARGO_HOME' in set) && !('GOPATH' in set) && !('XDG_CACHE_HOME' in set));
+});
+
+test('home-redirect fallback redirects Windows native home variables', () => {
+  const sandboxDir = 'C:\\Users\\u\\.ai_home\\run\\auth-projections\\grok\\acct_1234567890abcdef1234';
+  const { set } = homeRedirectStrategy.buildEnvPatch({
+    ...baseCtx('grok'),
+    sandboxDir,
+    platform: 'win32',
+    path: path.win32
+  });
+  assert.equal(set.HOME, sandboxDir);
+  assert.equal(set.USERPROFILE, sandboxDir);
+  assert.equal(set.HOMEDRIVE, 'C:');
+  assert.equal(set.HOMEPATH, '\\Users\\u\\.ai_home\\run\\auth-projections\\grok\\acct_1234567890abcdef1234');
 });
 
 // ---- claude: one host state dir, disposable login auth dir ----

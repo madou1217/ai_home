@@ -7,6 +7,9 @@ const path = require('node:path');
 const {
   buildProviderRuntimeEnv
 } = require('../lib/cli/services/ai-cli/provider-runtime-env');
+const {
+  parseWindowsProxyServer
+} = require('../lib/runtime/windows-system-proxy');
 
 test('provider runtime env prepends project-local runtime tool paths', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-runtime-tools-path-'));
@@ -20,7 +23,7 @@ test('provider runtime env prepends project-local runtime tool paths', (t) => {
 
   const env = buildProviderRuntimeEnv('claude', '/home/u/.ai_home/run/auth-projections/claude/acct_0123456789abcdef0123', {
     HOME: '/home/u',
-    PATH: `/usr/bin:${runtimeBin}`
+    PATH: `/usr/bin${path.delimiter}${runtimeBin}`
   }, {
     fs,
     path,
@@ -34,4 +37,51 @@ test('provider runtime env prepends project-local runtime tool paths', (t) => {
     nodeBin,
     '/usr/bin'
   ]);
+});
+
+test('Windows provider runtime inherits enabled WinINET proxy without overriding explicit env', () => {
+  const registryOutput = `
+HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings
+    ProxyEnable    REG_DWORD    0x1
+    ProxyServer    REG_SZ    192.168.3.76:6152
+`;
+  const execCalls = [];
+  const env = buildProviderRuntimeEnv('grok', 'C:\\Users\\u\\.ai_home\\run\\login\\grok', {
+    USERPROFILE: 'C:\\Users\\u',
+    PATH: 'C:\\Windows\\System32'
+  }, {
+    platform: 'win32',
+    execFileSync(command, args, options) {
+      execCalls.push({ command, args, options });
+      return registryOutput;
+    }
+  });
+
+  assert.equal(env.HTTP_PROXY, 'http://192.168.3.76:6152');
+  assert.equal(env.HTTPS_PROXY, 'http://192.168.3.76:6152');
+  assert.equal(env.http_proxy, 'http://192.168.3.76:6152');
+  assert.equal(env.https_proxy, 'http://192.168.3.76:6152');
+  assert.equal(execCalls.length, 1);
+  assert.equal(execCalls[0].options.windowsHide, true);
+
+  const explicitEnv = buildProviderRuntimeEnv('grok', 'C:\\Users\\u\\.ai_home\\run\\login\\grok', {
+    USERPROFILE: 'C:\\Users\\u',
+    PATH: 'C:\\Windows\\System32',
+    HTTPS_PROXY: 'http://explicit-proxy:8080'
+  }, {
+    platform: 'win32',
+    execFileSync() {
+      throw new Error('registry must not be queried');
+    }
+  });
+  assert.equal(explicitEnv.HTTPS_PROXY, 'http://explicit-proxy:8080');
+  assert.equal(explicitEnv.https_proxy, 'http://explicit-proxy:8080');
+});
+
+test('Windows proxy parser supports protocol-specific and socks entries', () => {
+  assert.deepEqual(parseWindowsProxyServer('http=127.0.0.1:8080;https=127.0.0.1:8443;socks=127.0.0.1:1080'), {
+    HTTP_PROXY: 'http://127.0.0.1:8080',
+    HTTPS_PROXY: 'http://127.0.0.1:8443',
+    ALL_PROXY: 'socks5://127.0.0.1:1080'
+  });
 });

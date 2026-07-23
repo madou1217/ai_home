@@ -1426,6 +1426,51 @@ test('createAuthJobManager marks gemini oauth job succeeded when oauth_creds fil
   assert.equal(job.status, 'succeeded');
 });
 
+test('createAuthJobManager marks grok oauth succeeded when auth.json appears', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-oauth-grok-complete-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  let onExitHandler = null;
+  const manager = createAuthJobManager({
+    fs,
+    processObj: {
+      ...process,
+      cwd: () => root,
+      env: { ...process.env },
+      platform: process.platform,
+      kill() {}
+    },
+    ptyImpl: {
+      spawn() {
+        return {
+          pid: 2201,
+          onData() {},
+          onExit(handler) { onExitHandler = handler; },
+          kill() {}
+        };
+      }
+    },
+    resolveCliPathImpl: () => '/usr/local/bin/grok'
+  });
+
+  const started = manager.startOauthJob('grok', 'oauth-browser');
+  const running = manager.getJob(started.jobId);
+  fs.writeFileSync(path.join(running.configDir, 'auth.json'), JSON.stringify({
+    'https://auth.x.ai::client': {
+      key: 'grok-access-token',
+      refresh_token: 'grok-refresh-token',
+      email: 'grok@example.com',
+      principal_id: 'grok-user-id'
+    }
+  }));
+  onExitHandler({ exitCode: 0 });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  const completed = manager.getJob(started.jobId);
+  assert.equal(completed.status, 'succeeded');
+  assert.match(completed.accountRef, /^acct_/);
+  assert.equal(readAccountNativeAuth(fs, root, completed.accountRef).auth['https://auth.x.ai::client'].email, 'grok@example.com');
+});
+
 test('createAuthJobManager treats fresh agy oauth token file as reauth completion evidence', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-oauth-agy-reauth-'));
   const getProfileDir = (provider, accountId) => path.join(root, provider, String(accountId));

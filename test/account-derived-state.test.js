@@ -83,8 +83,8 @@ test('derived state treats OpenCode auth as not requiring quota collection', () 
   assert.equal(state.hasNumericRemaining, false);
 });
 
-test('derived state treats Qoder auth as schedulable without a quota endpoint', () => {
-  for (const provider of ['qoder', 'qodercn']) {
+test('derived state treats providers without quota usage as schedulable', () => {
+  for (const provider of ['opencode', 'grok', 'qoder', 'qodercn', 'kimi', 'kiro']) {
     const quotaState = deriveQuotaState({ provider, configured: true, apiKeyMode: false });
     const schedulableState = deriveSchedulableState({
       provider,

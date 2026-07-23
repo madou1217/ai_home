@@ -1051,3 +1051,47 @@ test('refreshLiveAccountRecord treats OpenCode as schedulable without usage coll
   assert.equal(record.remainingPct, null);
   assert.equal(record.usageSnapshot, null);
 });
+
+test('refreshLiveAccountRecord treats Grok as schedulable without usage collection', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-account-live-grok-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const accountRef = registerDbAccount(root, 'grok', '1', { nativeAuth: { auth: {
+    'https://auth.x.ai::client': {
+      key: 'grok-access-token',
+      refresh_token: 'grok-refresh-token',
+      email: 'grok@example.com',
+      principal_id: 'grok-user-id'
+    }
+  } } });
+  const ctx = buildRefreshContext({
+    aiHomeDir: root,
+    provider: 'grok',
+    accountRef,
+    stateInfo: { status: 'up', configured: true, apiKeyMode: false, displayName: 'grok@example.com' },
+    runtimeAccount: {
+      email: 'grok@example.com',
+      apiKeyMode: false,
+      authType: 'oauth',
+      accessToken: 'grok-access-token',
+      quotaStatus: 'not_applicable',
+      schedulableStatus: 'schedulable'
+    },
+    status: {
+      configured: true,
+      accountName: 'grok@example.com',
+      authMode: 'oauth',
+      hasAccessToken: true,
+      hasRefreshToken: true
+    }
+  });
+
+  const record = await refreshLiveAccountRecord(ctx, 'grok', accountRef, {
+    skipUsageRefresh: true,
+    skipRuntimeReload: true
+  });
+
+  assert.equal(record.quotaStatus, 'not_applicable');
+  assert.equal(record.schedulableStatus, 'schedulable');
+  assert.equal(record.remainingPct, null);
+  assert.equal(record.usageSnapshot, null);
+});

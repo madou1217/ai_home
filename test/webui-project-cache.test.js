@@ -614,3 +614,85 @@ test('projects snapshot refreshes only changed codex project after session file 
     fs.rmSync(codexBDir, { recursive: true, force: true });
   }
 });
+
+test('account-scoped session stores trigger provider-only WebUI refreshes', async () => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-account-session-watch-'));
+  const hostHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-account-session-host-'));
+  const originalRealHome = process.env.REAL_HOME;
+  const originalReadAllProjectsFromHost = sessionReader.readAllProjectsFromHost;
+  const originalReadProjectsFromHostByProviders = sessionReader.readProjectsFromHostByProviders;
+  const originalWatch = fs.watch;
+  let ctx = null;
+  process.env.REAL_HOME = hostHomeDir;
+
+  try {
+    const qoderAccountRef = 'acct_11111111111111111111';
+    const kiroAccountRef = 'acct_22222222222222222222';
+    const qoderProjectsDir = path.join(aiHomeDir, 'run', 'auth-projections', 'qoder', qoderAccountRef, 'projects');
+    const kiroRuntimeDir = path.join(aiHomeDir, 'run', 'auth-projections', 'kiro', kiroAccountRef);
+    fs.ensureDirSync(qoderProjectsDir);
+    fs.ensureDirSync(kiroRuntimeDir);
+
+    const watcherCallbacks = new Map();
+    fs.watch = (targetPath, listener) => {
+      watcherCallbacks.set(String(targetPath), listener);
+      return {
+        close() {},
+        on() { return this; },
+        unref() {}
+      };
+    };
+
+    sessionReader.readAllProjectsFromHost = () => ([{
+      id: 'baseline-project',
+      name: 'baseline-project',
+      path: hostHomeDir,
+      provider: 'codex',
+      sessions: [{ id: 'baseline-session', title: 'baseline', updatedAt: 1, provider: 'codex' }]
+    }]);
+    const providerReads = [];
+    sessionReader.readProjectsFromHostByProviders = (providers, options = {}) => {
+      const provider = String(providers && providers[0] || '');
+      providerReads.push({ provider, accountRef: options.accountRef });
+      return [];
+    };
+
+    ctx = createContext(aiHomeDir);
+    ctx.hostHomeDir = hostHomeDir;
+    ctx.state.accounts = {
+      qoder: [{ accountRef: qoderAccountRef }],
+      kiro: [{ accountRef: kiroAccountRef }]
+    };
+    await refreshProjectsSnapshot(ctx, { forceRefresh: true });
+    ensureProjectsSnapshotScheduler(ctx);
+    providerReads.length = 0;
+
+    const qoderWatcher = watcherCallbacks.get(qoderProjectsDir);
+    assert.equal(typeof qoderWatcher, 'function');
+    qoderWatcher('change', 'session.jsonl');
+    await waitFor(async () => {
+      await getProjectsSnapshot(ctx);
+      assert.ok(providerReads.some((entry) => entry.provider === 'qoder' && entry.accountRef === qoderAccountRef));
+      assert.equal(providerReads.some((entry) => entry.provider === 'kiro'), false);
+    });
+
+    providerReads.length = 0;
+    const kiroWatcher = watcherCallbacks.get(kiroRuntimeDir);
+    assert.equal(typeof kiroWatcher, 'function');
+    kiroWatcher('change', 'data.sqlite3-wal');
+    await waitFor(async () => {
+      await getProjectsSnapshot(ctx);
+      assert.ok(providerReads.some((entry) => entry.provider === 'kiro' && entry.accountRef === kiroAccountRef));
+      assert.equal(providerReads.some((entry) => entry.provider === 'qoder'), false);
+    });
+  } finally {
+    if (ctx) closeProjectsSnapshotScheduler(ctx);
+    fs.watch = originalWatch;
+    sessionReader.readAllProjectsFromHost = originalReadAllProjectsFromHost;
+    sessionReader.readProjectsFromHostByProviders = originalReadProjectsFromHostByProviders;
+    if (originalRealHome === undefined) delete process.env.REAL_HOME;
+    else process.env.REAL_HOME = originalRealHome;
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+    fs.rmSync(hostHomeDir, { recursive: true, force: true });
+  }
+});

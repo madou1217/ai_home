@@ -1,6 +1,20 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { assertPtySpawnUsable, loadNodePty } = require('../lib/runtime/node-pty-loader');
+const {
+  assertPtySpawnUsable,
+  loadNodePty,
+  withPlatformPtyOptions
+} = require('../lib/runtime/node-pty-loader');
+
+test('withPlatformPtyOptions enables ConPTY only on Windows', () => {
+  assert.deepEqual(withPlatformPtyOptions({ cwd: 'C:\\repo' }, 'win32'), {
+    cwd: 'C:\\repo',
+    useConptyDll: true
+  });
+  assert.deepEqual(withPlatformPtyOptions({ cwd: '/repo' }, 'linux'), {
+    cwd: '/repo'
+  });
+});
 
 test('assertPtySpawnUsable rejects modules without spawn', () => {
   assert.throws(() => assertPtySpawnUsable({}, { selfTest: false }), /node_pty_spawn_unavailable/);

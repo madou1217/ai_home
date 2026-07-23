@@ -5,6 +5,7 @@ const {
   normalizeApprovalMode,
   approvalModeNeedsBridge,
   claudeApprovalArgs,
+  grokApprovalArgs,
   buildClaudeApprovalMcpConfig
 } = require('../lib/server/native-approval-modes');
 const {
@@ -34,6 +35,12 @@ test('审批模式归一与 claude 参数映射', () => {
   }));
   assert.equal(config.mcpServers.aih.command, '/usr/bin/node');
   assert.equal(config.mcpServers.aih.env.AIH_RUN_ID, 'r1');
+});
+
+test('grok approval args map canonical modes to native permission modes', () => {
+  assert.deepEqual(grokApprovalArgs('bypass'), ['--permission-mode', 'bypassPermissions']);
+  assert.deepEqual(grokApprovalArgs('confirm'), ['--permission-mode', 'default']);
+  assert.deepEqual(grokApprovalArgs('plan'), ['--permission-mode', 'plan']);
 });
 
 test('审批桥:登记→prompt 可见→决策回填→清理;run 结束批量 deny', () => {

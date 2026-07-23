@@ -747,6 +747,12 @@ test('parseNativeStreamEvent maps Grok streaming JSON events', () => {
   ]);
 });
 
+test('classifyNativeSessionFailure marks revoked Grok OAuth as reauthentication required', () => {
+  const failure = classifyNativeAccountRuntimeBlocker('grok', 'invalid_grant: Your session has expired. Run `grok login` to sign in again.');
+  assert.equal(failure.status, 'auth_invalid');
+  assert.equal(failure.reason, 'auth_invalid_reauth_required');
+});
+
 test('buildProviderEnv keeps codex sqlite state shared with host home', (t) => {
   const hostHome = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-native-codex-host-'));
   t.after(() => fs.rmSync(hostHome, { recursive: true, force: true }));

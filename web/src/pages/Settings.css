@@ -61,11 +61,6 @@
   flex-direction: column;
   gap: 10px;
 }
-.settings-control-plane-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
 .settings-invite-item {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -74,81 +69,6 @@
   border: 1px solid var(--app-border);
   border-radius: var(--app-radius);
   padding: 10px;
-}
-.settings-control-plane-item {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  gap: 10px;
-  align-items: center;
-  border: 1px solid var(--app-border);
-  border-radius: var(--app-radius);
-  padding: 10px;
-}
-.settings-control-plane-item--active {
-  border-color: color-mix(in srgb, var(--c-success-600) 40%, var(--app-border));
-  background: color-mix(in srgb, var(--tint-success) 72%, var(--app-surface));
-}
-.settings-node-main {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 2px;
-}
-.settings-node-main strong,
-.settings-node-main span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.settings-node-main strong {
-  color: var(--app-heading);
-  font-size: 13px;
-}
-.settings-node-main span {
-  color: var(--app-muted);
-  font-size: 12px;
-}
-.settings-node-meta {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 4px;
-}
-.settings-node-test-result {
-  display: flex;
-  grid-column: 1 / -1;
-  min-width: 0;
-  flex-direction: column;
-  gap: 6px;
-  border-top: 1px solid var(--app-border);
-  padding-top: 8px;
-}
-.settings-node-test-summary,
-.settings-node-test-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-.settings-node-test-summary span {
-  color: var(--app-muted);
-  font-size: 12px;
-}
-.settings-node-test-result p {
-  margin: 0;
-  color: var(--app-muted);
-  font-size: 12px;
-}
-.settings-node-test-issues {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 3px;
-}
-.settings-node-test-issues span {
-  overflow-wrap: anywhere;
-  color: var(--c-danger-700);
-  font-size: 12px;
 }
 .settings-control-plane-actions {
   justify-content: flex-end;
@@ -219,49 +139,6 @@
 .settings-control-plane-current-actions .ant-select {
   width: 260px;
   max-width: 100%;
-}
-.settings-server-route-list {
-  display: flex;
-  min-width: 260px;
-  flex-direction: column;
-  gap: 6px;
-}
-.settings-server-route {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 3px;
-  border-left: 2px solid var(--app-border);
-  padding-left: 8px;
-}
-.settings-server-route--primary {
-  border-left-color: var(--app-primary);
-}
-.settings-server-route-head {
-  display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px;
-}
-.settings-server-route-head .ant-tag {
-  margin-inline-end: 0;
-}
-.settings-server-route-head strong {
-  color: var(--app-heading);
-  font-size: 12px;
-}
-.settings-server-route-head span {
-  color: var(--app-muted);
-  font-size: 11px;
-}
-.settings-server-route-endpoint {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--app-muted);
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .settings-public-entry-card {
   min-width: 0;
@@ -390,57 +267,6 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-}
-.settings-control-plane-authorizations {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 10px;
-}
-.settings-control-plane-filterbar {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border: 1px solid var(--app-border);
-  border-radius: var(--app-radius);
-  background: color-mix(in srgb, var(--c-neutral-50) 64%, transparent);
-  padding: 10px;
-}
-.settings-control-plane-filterbar > div {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 2px;
-}
-.settings-control-plane-filterbar strong {
-  color: var(--app-heading);
-  font-size: 13px;
-  font-weight: 900;
-}
-.settings-control-plane-filterbar span {
-  color: var(--app-muted);
-  font-size: 12px;
-}
-.settings-control-plane-filterbar .ant-select {
-  width: 160px;
-  flex: 0 0 auto;
-}
-.settings-control-plane-auth-list {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 10px;
-}
-.settings-control-plane-auth-item {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  gap: 10px;
-  align-items: center;
-  border: 1px solid var(--app-border);
-  border-radius: var(--app-radius);
-  padding: 10px;
 }
 .settings-join-command {
   display: flex;

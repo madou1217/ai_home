@@ -1,0 +1,203 @@
+.cp-server-list {
+  --cp-font: var(--m-font, 'Plus Jakarta Sans', -apple-system, sans-serif);
+  --cp-acc: var(--m-acc, #d97757);
+  --cp-run: var(--m-run, #13a65a);
+  --cp-warn: #d97706;
+  --cp-crit: #dc2626;
+  --cp-ink: var(--m-ink, #1b1b2b);
+  --cp-ink-2: var(--m-ink-2, #5a5a72);
+  --cp-ink-3: var(--m-ink-3, #8b8ba3);
+  --cp-line: var(--m-line, #ececf4);
+  --cp-surface: var(--m-surface, #fff);
+  --cp-radius: 16px;
+  --cp-sh: 0 1px 3px rgba(27, 27, 43, .06), 0 1px 2px rgba(27, 27, 43, .04);
+
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 12px;
+  font-family: var(--cp-font);
+}
+
+.cp-server-card.ant-card {
+  min-width: 0;
+  border: 1px solid var(--cp-line);
+  border-radius: var(--cp-radius);
+  background: var(--cp-surface);
+  box-shadow: var(--cp-sh);
+}
+.cp-server-card.ant-card > .ant-card-body {
+  padding: 16px 18px;
+}
+.cp-server-card--active.ant-card {
+  border-color: color-mix(in srgb, var(--cp-acc) 42%, var(--cp-line));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--cp-acc) 22%, transparent), var(--cp-sh);
+}
+
+.cp-server-card-head {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.cp-server-card-title {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 240px;
+  flex-direction: column;
+  gap: 5px;
+}
+.cp-server-card-name {
+  display: inline-block;
+  max-width: min(320px, 60vw);
+  overflow: hidden;
+  color: var(--cp-ink);
+  font-size: 15px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+.cp-server-meta {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--cp-ink-3);
+  font-size: 12px;
+}
+.cp-server-error {
+  overflow-wrap: anywhere;
+  color: var(--cp-crit);
+}
+.cp-server-card-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+/* Status pills — one restrained palette, replaces AntD preset Tag colors */
+.cp-status-pill {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 4px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.cp-status-pill--ready {
+  background: color-mix(in srgb, var(--cp-run) 14%, white);
+  color: var(--cp-run);
+}
+.cp-status-pill--degraded {
+  background: color-mix(in srgb, var(--cp-warn) 14%, white);
+  color: var(--cp-warn);
+}
+.cp-status-pill--offline {
+  background: var(--cp-line);
+  color: var(--cp-ink-3);
+}
+.cp-status-pill--pending {
+  background: color-mix(in srgb, var(--cp-acc) 16%, white);
+  color: var(--cp-acc);
+}
+.cp-key-configured {
+  flex: 0 0 auto;
+  color: var(--cp-run);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* Current-server badge — solid accent, deliberately distinct from health pills */
+.cp-current-badge {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--cp-acc);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+}
+
+.cp-route-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+.cp-route-chip {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px 3px 8px;
+  border-radius: 999px;
+  background: var(--cp-line);
+  color: var(--cp-ink-2);
+  font-size: 11.5px;
+}
+.cp-route-chip--health-green { background: color-mix(in srgb, var(--cp-run) 12%, white); }
+.cp-route-chip--health-orange { background: color-mix(in srgb, var(--cp-warn) 12%, white); }
+.cp-route-chip--health-red { background: color-mix(in srgb, var(--cp-crit) 10%, white); }
+.cp-route-chip--primary {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cp-acc) 45%, transparent);
+}
+.cp-route-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--cp-ink-3);
+}
+.cp-route-dot--green { background: var(--cp-run); }
+.cp-route-dot--orange { background: var(--cp-warn); }
+.cp-route-dot--red { background: var(--cp-crit); }
+.cp-route-kind {
+  flex: 0 0 auto;
+  color: var(--cp-ink);
+  font-weight: 700;
+}
+.cp-route-endpoint {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cp-route-rtt {
+  flex: 0 0 auto;
+  color: var(--cp-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.cp-server-card-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--cp-line);
+  color: var(--cp-ink-2);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.cp-server-card-footer b {
+  color: var(--cp-ink);
+  font-weight: 700;
+}
+.cp-footer-pending {
+  color: var(--cp-ink-3);
+  font-weight: 500;
+}

@@ -2,9 +2,9 @@ import { useState, useEffect, useRef } from 'react';
 import type { ComponentProps, ReactNode } from 'react';
 import './Settings.css';
 import { ProCard, StatisticCard } from '@ant-design/pro-components';
-import { Form, InputNumber, Input, message, Space, Switch, Alert, Tabs, Select, Tag, Modal, Divider, Typography, Grid } from 'antd';
+import { Form, InputNumber, Input, message, Space, Switch, Alert, Tabs, Select, Modal, Grid } from 'antd';
 import MobilePills from '@/components/mobile/MobilePills';
-import { DeleteOutlined, LinkOutlined, PlusOutlined, RadarChartOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons';
+import { LinkOutlined, PlusOutlined, RadarChartOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons';
 import { configAPI, managementAPI, serverProfilesAPI } from '@/services/api';
 import {
   addControlPlaneProfilesChangeListener,
@@ -35,17 +35,16 @@ import type {
   ServerConfig,
   ManagementRestartEvent,
   ControlPlaneEndpointHint,
-  ControlPlaneProfile,
-  ControlPlaneProfileState
+  ControlPlaneProfile
 } from '@/types';
 import Button from '@/components/ui/AppButton';
-import ListTable from '@/components/ui/ListTable';
 import PageScaffold from '@/components/ui/PageScaffold';
 import ModelAliases from './ModelAliases';
 import SshHostsPanel from './SshHostsPanel';
 import ControlPlaneProfileSelect from '@/components/control-plane/ControlPlaneProfileSelect';
 import RealtimeSyncCard from '@/components/settings/RealtimeSyncCard';
 import PublicServerEntryCard from '@/components/settings/PublicServerEntryCard';
+import ControlPlaneServerList from '@/components/settings/ControlPlaneServerList';
 import { rotateManagementKey as updateServerManagementKey } from '@/services/management-key-rotation';
 import {
   discoverNativeServers,
@@ -57,7 +56,6 @@ import {
   buildLanDiscoveryProfileInputs,
   buildServerRouteRows
 } from '@/services/server-route-presentation';
-import type { ServerRouteRow } from '@/services/server-route-presentation';
 
 type NumericAddonInputProps = ComponentProps<typeof InputNumber> & {
   addonAfter: React.ReactNode;
@@ -99,16 +97,6 @@ const renderControlEndpointHints = (
     </div>
   );
 };
-
-const CONTROL_PLANE_PROFILE_STATUS: Record<ControlPlaneProfileState, { color: string; label: string }> = {
-  ready: { color: 'green', label: '就绪' },
-  degraded: { color: 'orange', label: '连接异常' },
-  offline: { color: 'default', label: '离线' }
-};
-
-const getControlPlaneProfileStatus = (state: ControlPlaneProfileState) => (
-  CONTROL_PLANE_PROFILE_STATUS[state] || CONTROL_PLANE_PROFILE_STATUS.offline
-);
 
 export type SettingsSectionKey = 'basic' | 'aliases' | 'control-planes' | 'ssh-hosts';
 
@@ -577,82 +565,6 @@ const Settings = ({ section }: SettingsProps) => {
   const refreshableControlPlaneCount = logicalControlPlaneProfiles.filter(isControlPlaneProfileRefreshable).length;
   const activeControlPlaneProfile = logicalControlPlaneProfiles.find((profile) => profile.id === activeControlPlaneId) || null;
 
-  const renderControlPlaneSummary = (profile: ControlPlaneProfile, authorizationPending: boolean) => {
-    if (authorizationPending) {
-      return (
-        <Space direction="vertical" size={4}>
-          <Tag color="orange" style={{ marginInlineEnd: 0 }}>已发现，待授权</Tag>
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            输入 Management Key 后即可连接
-          </Typography.Text>
-        </Space>
-      );
-    }
-    const status = getControlPlaneProfileStatus(profile.state);
-    const syncUnavailable = profile.state === 'degraded' || Boolean(profile.lastError);
-    const cachedSummary = [
-      profile.lastStatusSyncAt > 0 ? `账号 ${profile.accountCount}` : '',
-      profile.lastSessionsSyncAt > 0 ? `会话 ${profile.sessionCount}` : ''
-    ].filter(Boolean).join(' · ');
-    // 只展示对「管理 Server」真正有用的运营指标：可用账号 / 会话。
-    // 协议版本、管理能力数、transport 拆分、Key 配置等内部 plumbing 一律剔除（无用数据）。
-    const metrics = syncUnavailable ? [
-      <Typography.Text key="unavailable" type="secondary" style={{ fontSize: 12 }}>
-        数据无法获取
-        {cachedSummary && <> · 上次缓存：{cachedSummary}</>}
-      </Typography.Text>
-    ] : [
-      profile.lastStatusSyncAt > 0 && (
-        <Typography.Text key="accounts" type="secondary" style={{ fontSize: 12 }}>
-          账号 <Typography.Text strong style={{ fontSize: 12 }}>{profile.activeAccountCount}/{profile.accountCount}</Typography.Text>
-          {profile.lastAccountsSyncAt > 0 && profile.schedulableAccountCount > 0
-            ? `（${profile.schedulableAccountCount} 可调度）`
-            : ''}
-        </Typography.Text>
-      ),
-      profile.lastSessionsSyncAt > 0 && (
-        <Typography.Text key="sessions" type="secondary" style={{ fontSize: 12 }}>
-          会话 <Typography.Text strong style={{ fontSize: 12 }}>{profile.sessionCount}</Typography.Text>
-        </Typography.Text>
-      )
-    ].filter(Boolean);
-
-    return (
-      <Space direction="vertical" size={4} style={{ minWidth: 0 }}>
-        <Space size={8} wrap>
-          <Tag color={status.color} style={{ marginInlineEnd: 0 }}>{status.label}</Tag>
-          {isControlPlaneManagementKeyConfigured(profile) && (
-            <Typography.Text type="success" style={{ fontSize: 12 }}>Key 已配置</Typography.Text>
-          )}
-        </Space>
-        {metrics.length > 0 && (
-          <Space split={<Divider type="vertical" />} size={4} wrap>
-            {metrics}
-          </Space>
-        )}
-      </Space>
-    );
-  };
-
-  const renderServerRoutes = (row: ServerRouteRow) => (
-    <div className="settings-server-route-list">
-      {row.routes.map((route) => (
-        <div
-          key={route.id}
-          className={`settings-server-route${route.primary ? ' settings-server-route--primary' : ''}`}
-        >
-          <div className="settings-server-route-head">
-            <Tag color={route.primary ? 'blue' : 'default'}>{route.roleLabel}</Tag>
-            <strong>{route.kindLabel}</strong>
-            <Tag color={route.healthColor}>{route.healthLabel}</Tag>
-            <span>{route.rttLabel}</span>
-          </div>
-          <span className="settings-server-route-endpoint">{route.endpointLabel}</span>
-        </div>
-      ))}
-    </div>
-  );
-
   const basicSettingsContent = (
     <div className="settings-grid">
       <ProCard className="settings-panel" bordered bodyStyle={{ padding: 18 }}>
@@ -925,71 +837,14 @@ const Settings = ({ section }: SettingsProps) => {
                     </Button>
                   </div>
                 ) : (
-                  <ListTable
-                    dataSource={serverRouteRows}
-                    rowKey="stableServerId"
-                    rowClassName={(row) => activeControlPlaneId === row.profile.id ? 'settings-control-plane-item--active' : ''}
-                    columns={[
-                      {
-                        title: 'Server',
-                        key: 'profile',
-                        render: (_: unknown, row: ServerRouteRow) => (
-                          <div className="settings-node-main">
-                            <strong>{row.profile.name || row.profile.endpoint}</strong>
-                            <span>{row.stableServerId}</span>
-                            {row.profile.lastError && <span className="settings-control-plane-error">{row.profile.lastError}</span>}
-                          </div>
-                        )
-                      },
-                      {
-                        title: '连接路径',
-                        key: 'routes',
-                        render: (_: unknown, row: ServerRouteRow) => renderServerRoutes(row)
-                      },
-                      {
-                        title: '状态',
-                        key: 'summary',
-                        render: (_: unknown, row: ServerRouteRow) => (
-                          renderControlPlaneSummary(row.profile, row.authorizationPending)
-                        )
-                      },
-                      {
-                        title: '操作',
-                        key: 'actions',
-                        width: 280,
-                        render: (_: unknown, row: ServerRouteRow) => {
-                          const profile = row.profile;
-                          const active = activeControlPlaneId === profile.id;
-                          return (
-                            <Space size={6} wrap>
-                              {active && <Tag color="green">当前</Tag>}
-                              {row.authorizationPending ? (
-                                <Button size="small" type="primary" onClick={() => openDiscoveredServerAuthorization(profile)}>
-                                  授权
-                                </Button>
-                              ) : (
-                                <>
-                                  <Button size="small" disabled={active} onClick={() => handleSelectControlPlane(profile.id)}>
-                                    设为当前
-                                  </Button>
-                                  <Button
-                                    size="small"
-                                    icon={<ReloadOutlined />}
-                                    loading={checkingControlPlaneId === profile.id}
-                                    onClick={() => handleRefreshControlPlane(profile)}
-                                  >
-                                    同步
-                                  </Button>
-                                </>
-                              )}
-                              <Button size="small" danger icon={<DeleteOutlined />} onClick={() => handleRemoveControlPlane(profile.id)}>
-                                移除
-                              </Button>
-                            </Space>
-                          );
-                        }
-                      }
-                    ]}
+                  <ControlPlaneServerList
+                    rows={serverRouteRows}
+                    activeControlPlaneId={activeControlPlaneId}
+                    checkingControlPlaneId={checkingControlPlaneId}
+                    onSelect={handleSelectControlPlane}
+                    onRefresh={handleRefreshControlPlane}
+                    onRemove={handleRemoveControlPlane}
+                    onAuthorize={openDiscoveredServerAuthorization}
                   />
                 )
               )

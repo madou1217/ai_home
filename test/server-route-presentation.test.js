@@ -251,6 +251,10 @@ test('Server management UI wires native LAN discovery and stable logical server 
     path.join(__dirname, '../web/src/pages/Settings.tsx'),
     'utf8'
   );
+  const serverListSource = fs.readFileSync(
+    path.join(__dirname, '../web/src/components/settings/ControlPlaneServerList.tsx'),
+    'utf8'
+  );
   const connectionSource = fs.readFileSync(
     path.join(__dirname, '../web/src/services/control-plane-profile-connection.ts'),
     'utf8'
@@ -265,9 +269,10 @@ test('Server management UI wires native LAN discovery and stable logical server 
   assert.match(source, /refreshNativeLanRoutes\(authorizedProfileIds\)/u);
   assert.match(connectionSource, /endpoint\s*!==\s*existing\.endpoint/u);
   assert.match(source, /isNativeDesktopRuntime\(\)\s*&&[\s\S]*发现局域网 Server/u);
-  assert.match(source, /dataSource=\{serverRouteRows\}/u);
-  assert.match(source, /rowKey="stableServerId"/u);
-  assert.match(source, /authorizationPending[\s\S]*授权/u);
+  assert.match(source, /<ControlPlaneServerList[\s\S]*rows=\{serverRouteRows\}/u);
+  assert.match(source, /onAuthorize=\{openDiscoveredServerAuthorization\}/u);
+  assert.match(serverListSource, /key=\{row\.stableServerId\}/u);
+  assert.match(serverListSource, /authorizationPending[\s\S]*授权/u);
 });
 
 test('public Server selection requires one authorized local Server and one to five distinct peers', () => {

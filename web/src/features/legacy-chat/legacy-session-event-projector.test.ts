@@ -25,6 +25,30 @@ test('legacy event projector deduplicates users and exposes ordered effects', ()
   assert.deepEqual(projection.effects, ['mark_thinking', 'tool_boundary', 'clear_pending']);
 });
 
+test('legacy event projector merges a near-duplicate user event instead of duplicating it', () => {
+  const projection = projectLegacySessionEvents({
+    messages: [{ role: 'user', content: '  hello  ', images: [], timestamp: '2026-01-01T00:00:00.000Z' }],
+    events: [
+      {
+        type: 'user_message',
+        content: 'hello',
+        images: ['a.png'],
+        timestamp: '2026-01-01T00:00:00.010Z',
+        source: 'codex-mobile',
+      } as SessionEventItem,
+    ],
+    session,
+    current: false,
+    running: false,
+  });
+
+  const userMessages = projection.messages.filter((item) => item.role === 'user');
+  assert.equal(userMessages.length, 1);
+  assert.deepEqual(userMessages[0].images, ['a.png']);
+  assert.equal(userMessages[0].source, 'codex-mobile');
+  assert.equal(userMessages[0].timestamp, '2026-01-01T00:00:00.010Z');
+});
+
 test('legacy event projector keeps background clear-pending effects local to the visible session', () => {
   const projection = projectLegacySessionEvents({
     messages: [],

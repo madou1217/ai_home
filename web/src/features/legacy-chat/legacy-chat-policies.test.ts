@@ -16,6 +16,7 @@ import {
 import { humanizeChatError } from './chat-error-policy';
 import { buildDirectoryBreadcrumbs } from './directory-path-policy';
 import {
+  areCloseTimestamps,
   dedupeChatMessages,
   isPureSessionHistoryAppend,
 } from './message-history-policy';
@@ -91,6 +92,23 @@ test('message history policy merges only adjacent duplicate user messages', () =
     { role: 'user', content: 'hello', images: ['a.png'], timestamp: 2_000 },
     { role: 'assistant', content: 'done', images: [] },
   ]);
+});
+
+test('message history policy merges duplicate user messages even when image counts differ and keeps source', () => {
+  const messages: ChatMessage[] = [
+    { role: 'user', content: 'hi', images: [], timestamp: 1_000 },
+    { role: 'user', content: 'hi', images: ['a.png', 'b.png'], timestamp: 1_500, source: 'codex-mobile' },
+  ];
+  assert.deepEqual(dedupeChatMessages(messages), [
+    { role: 'user', content: 'hi', images: ['a.png', 'b.png'], timestamp: 1_500, source: 'codex-mobile' },
+  ]);
+});
+
+test('areCloseTimestamps tolerates missing values and small drift but rejects large gaps', () => {
+  assert.equal(areCloseTimestamps(undefined, 1_000), true);
+  assert.equal(areCloseTimestamps(1_000, undefined), true);
+  assert.equal(areCloseTimestamps(1_000, 1_000 + 30_000), true);
+  assert.equal(areCloseTimestamps(1_000, 1_000 + 30_001), false);
 });
 
 test('message history policy recognizes only an unchanged prefix as a pure append', () => {

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CheckOutlined } from '@ant-design/icons';
+import { CheckOutlined, MobileOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import copyIcon from '@/assets/icons/copy.svg';
 import type { ChatMessage } from '@/types';
@@ -9,6 +9,7 @@ interface Props {
   role: ChatMessage['role'];
   timestamp?: ChatMessage['timestamp'];
   model?: ChatMessage['model'];
+  source?: ChatMessage['source'];
   copyText: string;
   actionsVisible?: boolean;
 }
@@ -42,11 +43,13 @@ export default function MessageMetadata({
   role,
   timestamp,
   model,
+  source,
   copyText,
   actionsVisible = false,
 }: Props) {
   const timeLabel = formatMessageTime(timestamp);
   const modelLabel = String(model || '').trim();
+  const isCodexMobile = source === 'codex-mobile';
   const alignmentClass = role === 'user'
     ? styles.messageMetaRowUser
     : styles.messageMetaRowAssistant;
@@ -58,6 +61,12 @@ export default function MessageMetadata({
         {timeLabel && modelLabel ? <span aria-hidden="true">·</span> : null}
         {modelLabel ? (
           <span className={styles.messageModel} title={modelLabel}>{modelLabel}</span>
+        ) : null}
+        {(timeLabel || modelLabel) && isCodexMobile ? <span aria-hidden="true">·</span> : null}
+        {isCodexMobile ? (
+          <span className={styles.messageModel} title="来自 Codex Mobile">
+            <MobileOutlined /> Codex Mobile
+          </span>
         ) : null}
       </div>
       <div className={`${styles.messageMetaActions} ${actionsVisible ? styles.messageMetaActionsVisible : ''}`}>

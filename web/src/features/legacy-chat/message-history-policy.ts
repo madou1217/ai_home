@@ -19,18 +19,20 @@ function messageTimeMs(timestamp?: string | number): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+export function areCloseTimestamps(
+  left?: string | number,
+  right?: string | number,
+  toleranceMs = 30 * 1000,
+): boolean {
+  const leftTime = messageTimeMs(left);
+  const rightTime = messageTimeMs(right);
+  return !leftTime || !rightTime || Math.abs(leftTime - rightTime) <= toleranceMs;
+}
+
 function areDuplicateUserMessages(left?: ChatMessage, right?: ChatMessage): boolean {
   if (!left || !right || left.role !== 'user' || right.role !== 'user') return false;
   if (normalizeMessageText(left.content) !== normalizeMessageText(right.content)) return false;
-
-  const leftImages = normalizeMessageImages(left.images);
-  const rightImages = normalizeMessageImages(right.images);
-  if (leftImages.length !== rightImages.length) return false;
-  if (leftImages.some((item, index) => item !== rightImages[index])) return false;
-
-  const leftTime = messageTimeMs(left.timestamp);
-  const rightTime = messageTimeMs(right.timestamp);
-  return !leftTime || !rightTime || Math.abs(leftTime - rightTime) <= 30 * 1000;
+  return areCloseTimestamps(left.timestamp, right.timestamp);
 }
 
 export function dedupeChatMessages(messages: ChatMessage[]): ChatMessage[] {
@@ -70,10 +72,13 @@ function normalizeChatMessage(message: ChatMessage): ChatMessage {
 }
 
 function mergeDuplicateUserMessage(previous: ChatMessage, current: ChatMessage): ChatMessage {
+  const model = current.model || previous.model;
+  const source = current.source || previous.source;
   return {
     ...previous,
     images: (current.images || []).length > 0 ? current.images : previous.images,
     timestamp: current.timestamp || previous.timestamp,
-    model: current.model || previous.model,
+    ...(model ? { model } : {}),
+    ...(source ? { source } : {}),
   };
 }

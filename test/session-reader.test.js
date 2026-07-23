@@ -2686,6 +2686,130 @@ test('readSessionMessages merges codex image user turn and prefers inline render
   }
 });
 
+test('readSessionMessages strips codex mobile attachment preamble and tags source', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-session-reader-codex-mobile-'));
+  const originalRealHome = process.env.REAL_HOME;
+  process.env.REAL_HOME = root;
+
+  try {
+    const sessionId = '89898989-8989-4989-8989-898989898989';
+    const sessionDir = path.join(root, '.codex', 'sessions', '2026', '07', '23');
+    const sessionFile = path.join(sessionDir, `rollout-2026-07-23T13-55-42-${sessionId}.jsonl`);
+    const remotePathOne = `/tmp/codex-remote-attachments/${sessionId}/uuid-1/1-Photo-1.jpg`;
+    const remotePathTwo = `/tmp/codex-remote-attachments/${sessionId}/uuid-1/2-Photo-2.jpg`;
+    const preamble = '# Files mentioned by the user:\n\n'
+      + `## Photo 1.jpg: ${remotePathOne}\n\n`
+      + `## Photo 2.jpg: ${remotePathTwo}\n\n`
+      + '## My request for Codex:\n\n';
+    fs.ensureDirSync(sessionDir);
+    fs.writeFileSync(
+      sessionFile,
+      [
+        JSON.stringify({
+          timestamp: '2026-07-23T13:56:17.857Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'user',
+            content: [
+              { type: 'input_text', text: preamble },
+              { type: 'input_text', text: `<image name="[Image #1]" path="${remotePathOne}">` },
+              { type: 'input_image', image_url: 'data:image/jpeg;base64,first' },
+              { type: 'input_text', text: '</image>' },
+              { type: 'input_text', text: `<image name="[Image #2]" path="${remotePathTwo}">` },
+              { type: 'input_image', image_url: 'data:image/jpeg;base64,second' },
+              { type: 'input_text', text: '</image>' },
+              { type: 'input_text', text: '目前如图，帮我分析分析。' }
+            ]
+          }
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-23T13:56:17.858Z',
+          type: 'event_msg',
+          payload: {
+            type: 'user_message',
+            message: preamble
+              + `<image name="[Image #1]" path="${remotePathOne}">\n</image>\n`
+              + `<image name="[Image #2]" path="${remotePathTwo}">\n</image>\n`
+              + '目前如图，帮我分析分析。',
+            images: [],
+            local_images: [remotePathOne, remotePathTwo]
+          }
+        })
+      ].join('\n') + '\n',
+      'utf8'
+    );
+
+    const messages = sessionReader.readSessionMessages('codex', { sessionId });
+    assert.equal(messages.length, 1);
+    assert.equal(messages[0].role, 'user');
+    assert.equal(messages[0].content, '目前如图，帮我分析分析。');
+    assert.equal(messages[0].source, 'codex-mobile');
+    assert.deepEqual(messages[0].images, [
+      'data:image/jpeg;base64,first',
+      'data:image/jpeg;base64,second'
+    ]);
+  } finally {
+    if (originalRealHome === undefined) delete process.env.REAL_HOME;
+    else process.env.REAL_HOME = originalRealHome;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('readSessionMessages does not tag ordinary clipboard image turns as codex-mobile', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-session-reader-codex-clipboard-'));
+  const originalRealHome = process.env.REAL_HOME;
+  process.env.REAL_HOME = root;
+
+  try {
+    const sessionId = '90909090-9090-4909-8909-909090909090';
+    const sessionDir = path.join(root, '.codex', 'sessions', '2026', '07', '23');
+    const sessionFile = path.join(sessionDir, `rollout-2026-07-23T14-00-00-${sessionId}.jsonl`);
+    const localImage = path.join(root, 'codex-clipboard-qVZZSB.png');
+    fs.ensureDirSync(sessionDir);
+    fs.writeFileSync(localImage, Buffer.from('clipboard-image'));
+    fs.writeFileSync(
+      sessionFile,
+      [
+        JSON.stringify({
+          timestamp: '2026-07-23T14:00:00.100Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'user',
+            content: [
+              { type: 'input_text', text: '<image name=[Image #1]>' },
+              { type: 'input_image', image_url: 'data:image/png;base64,clip' },
+              { type: 'input_text', text: '</image>' },
+              { type: 'input_text', text: '这是剪贴板截图' }
+            ]
+          }
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-23T14:00:00.101Z',
+          type: 'event_msg',
+          payload: {
+            type: 'user_message',
+            message: '这是剪贴板截图',
+            images: [],
+            local_images: [localImage]
+          }
+        })
+      ].join('\n') + '\n',
+      'utf8'
+    );
+
+    const messages = sessionReader.readSessionMessages('codex', { sessionId });
+    assert.equal(messages.length, 1);
+    assert.equal(messages[0].content, '这是剪贴板截图');
+    assert.equal(messages[0].source, undefined);
+  } finally {
+    if (originalRealHome === undefined) delete process.env.REAL_HOME;
+    else process.env.REAL_HOME = originalRealHome;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('readSessionMessages prefers codex exec_command_end aggregated output and parsed command metadata', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-session-reader-codex-exec-end-'));
   const originalRealHome = process.env.REAL_HOME;
@@ -2951,6 +3075,62 @@ test('readSessionEvents merges duplicate codex image user events', () => {
       'data:image/png;base64,first',
       'data:image/png;base64,second'
     ]);
+  } finally {
+    if (originalRealHome === undefined) delete process.env.REAL_HOME;
+    else process.env.REAL_HOME = originalRealHome;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('readSessionEvents strips codex mobile attachment preamble and tags source', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-session-reader-codex-mobile-events-'));
+  const originalRealHome = process.env.REAL_HOME;
+  process.env.REAL_HOME = root;
+
+  try {
+    const sessionId = '91919191-9191-4919-8919-919191919191';
+    const sessionDir = path.join(root, '.codex', 'sessions', '2026', '07', '23');
+    const sessionFile = path.join(sessionDir, `rollout-2026-07-23T15-00-00-${sessionId}.jsonl`);
+    const remotePath = `/tmp/codex-remote-attachments/${sessionId}/uuid-9/1-Photo-1.jpg`;
+    const preamble = '# Files mentioned by the user:\n\n'
+      + `## Photo 1.jpg: ${remotePath}\n\n`
+      + '## My request for Codex:\n\n';
+    fs.ensureDirSync(sessionDir);
+    fs.writeFileSync(sessionFile, [
+      JSON.stringify({
+        timestamp: '2026-07-23T15:00:00.100Z',
+        type: 'response_item',
+        payload: {
+          type: 'message',
+          role: 'user',
+          content: [
+            { type: 'input_text', text: preamble },
+            { type: 'input_text', text: `<image name="[Image #1]" path="${remotePath}">` },
+            { type: 'input_image', image_url: 'data:image/jpeg;base64,onlyimg' },
+            { type: 'input_text', text: '</image>' },
+            { type: 'input_text', text: '帮我看看这个' }
+          ]
+        }
+      }),
+      JSON.stringify({
+        timestamp: '2026-07-23T15:00:00.101Z',
+        type: 'event_msg',
+        payload: {
+          type: 'user_message',
+          message: preamble + `<image name="[Image #1]" path="${remotePath}">\n</image>\n` + '帮我看看这个',
+          images: [],
+          local_images: [remotePath]
+        }
+      }),
+      ''
+    ].join('\n'), 'utf8');
+
+    const payload = sessionReader.readSessionEvents('codex', { sessionId }, { cursor: 0 });
+    assert.equal(payload.events.length, 1);
+    assert.equal(payload.events[0].type, 'user_message');
+    assert.equal(payload.events[0].content, '帮我看看这个');
+    assert.equal(payload.events[0].source, 'codex-mobile');
+    assert.deepEqual(payload.events[0].images, ['data:image/jpeg;base64,onlyimg']);
   } finally {
     if (originalRealHome === undefined) delete process.env.REAL_HOME;
     else process.env.REAL_HOME = originalRealHome;

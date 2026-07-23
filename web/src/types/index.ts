@@ -1238,6 +1238,7 @@ export interface ChatMessage {
   statusText?: string;
   timestamp?: string | number;
   model?: string;
+  source?: 'codex-mobile';
 }
 
 export interface QueuedChatMessage {
@@ -1264,6 +1265,7 @@ export interface SessionEventItem {
   images?: string[];
   model?: string;
   callId?: string;
+  source?: string;
 }
 
 export interface SessionEventsResponse {

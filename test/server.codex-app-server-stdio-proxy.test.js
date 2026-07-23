@@ -2310,7 +2310,7 @@ test('buildCodexAppServerSpawnEnv separates mobile identity from default executi
   assert.match(runtimeConfig, /^model_provider = "aih_server"$/m);
   assert.match(runtimeConfig, new RegExp(`X-Account-Ref.*${defaultAccountRef}`));
   assert.match(runtimeConfig, /^chatgpt_base_url = "http:\/\/127\.0\.0\.1:18888\/backend-api"$/m);
-  assert.match(runtimeConfig, new RegExp(`^sqlite_home = "${hostCodexHome.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"$`, 'm'));
+  assert.match(runtimeConfig, new RegExp(`^sqlite_home = "${hostCodexHome.replace(/\\/g, '/').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"$`, 'm'));
   assert.match(runtimeConfig, /^cli_auth_credentials_store = "file"$/m);
   assert.equal(runtimeConfig.indexOf('cli_auth_credentials_store = "file"') < runtimeConfig.indexOf('[model_providers.aih_10]'), true);
 });
@@ -2425,7 +2425,7 @@ test('buildCodexAppServerSpawnEnv uses explicit state home without runtime-path 
   assert.equal(result.env.CODEX_SQLITE_HOME, hostCodexHome);
   assert.equal(result.env.CODEX_HOME, externalRuntimeHome);
   const runtimeConfig = fs.readFileSync(path.join(result.env.CODEX_HOME, 'config.toml'), 'utf8');
-  assert.match(runtimeConfig, new RegExp(`^sqlite_home = "${hostCodexHome.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"$`, 'm'));
+  assert.match(runtimeConfig, new RegExp(`^sqlite_home = "${hostCodexHome.replace(/\\/g, '/').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"$`, 'm'));
   assert.doesNotMatch(runtimeConfig, new RegExp(`^sqlite_home = "${externalRuntimeHome.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"$`, 'm'));
 
   const fallbackResult = buildCodexAppServerSpawnEnv(fs, { enabled: true, desktopAccountRef: accountRef }, {

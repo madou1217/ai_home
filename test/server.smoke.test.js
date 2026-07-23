@@ -10,6 +10,7 @@ const { upsertAccountRef } = require('../lib/server/account-ref-store');
 const { writeAccountNativeAuth } = require('../lib/server/account-credential-store');
 
 const MACOS_ONLY = { skip: process.platform !== 'darwin' };
+const POSIX_ONLY = { skip: process.platform === 'win32' };
 
 async function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -445,7 +446,7 @@ test('server shutdown keeps codex desktop hook enabled across restarts', MACOS_O
   assert.equal(afterStop.enabled, true);
 });
 
-test('server startup reinstalls codex cli hook after global shim is overwritten', async (t) => {
+test('server startup reinstalls codex cli hook after global shim is overwritten', POSIX_ONLY, async (t) => {
   const upstream = await startMockUpstream(t);
   const fakeBinDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-codex-cli-bin-'));
   const fakeCodexPath = path.join(fakeBinDir, 'codex');
@@ -475,7 +476,7 @@ test('server startup reinstalls codex cli hook after global shim is overwritten'
   assert.equal(fs.readFileSync(`${fakeCodexPath}.aih-original`, 'utf8'), originalShim);
 });
 
-test('server self-heals codex cli hook while running after shim is overwritten', async (t) => {
+test('server self-heals codex cli hook while running after shim is overwritten', POSIX_ONLY, async (t) => {
   const upstream = await startMockUpstream(t);
   const fakeBinDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-codex-cli-bin-'));
   const fakeCodexPath = path.join(fakeBinDir, 'codex');

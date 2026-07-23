@@ -139,7 +139,8 @@ test('syncGlobalConfigToHost installs codex stop hook only when explicitly enabl
 
   const result = createCodexSyncer(fixture, {
     codexVersion: '0.114.0',
-    enableCodexStopHook: true
+    enableCodexStopHook: true,
+    processObj: { platform: 'linux', env: {}, pid: process.pid }
   })('codex', accountRef);
 
   assert.equal(result.ok, true);
@@ -172,7 +173,8 @@ test('syncGlobalConfigToHost normalizes old managed codex stop hook schema', (t)
 
   const result = createCodexSyncer(fixture, {
     codexVersion: '0.130.0',
-    enableCodexStopHook: true
+    enableCodexStopHook: true,
+    processObj: { platform: 'linux', env: {}, pid: process.pid }
   })('codex', accountRef);
 
   assert.equal(result.ok, true);
@@ -204,7 +206,10 @@ test('syncGlobalConfigToHost removes only its managed codex stop hook by default
     }
   }, null, 2) + '\n', 'utf8');
 
-  const result = createCodexSyncer(fixture, { codexVersion: '0.130.0' })('codex', accountRef);
+  const result = createCodexSyncer(fixture, {
+    codexVersion: '0.130.0',
+    processObj: { platform: 'linux', env: {}, pid: process.pid }
+  })('codex', accountRef);
 
   assert.equal(result.ok, true);
   assert.equal(result.codexHook.reason, 'stop_hook_disabled');

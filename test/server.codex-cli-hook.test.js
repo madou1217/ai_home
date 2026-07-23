@@ -74,7 +74,9 @@ test('all wrapper variants share option-aware Codex subcommand semantics', () =>
   assert.equal(findCodexSubcommand(['--profile']), '');
 });
 
-test('POSIX wrapper requires the explicit marker after global Codex options', (t) => {
+test('POSIX wrapper requires the explicit marker after global Codex options', {
+  skip: process.platform === 'win32'
+}, (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-codex-wrapper-'));
   const wrapperPath = path.join(root, 'codex');
   const helperPath = path.join(root, 'helper.sh');

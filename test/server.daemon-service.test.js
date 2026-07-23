@@ -6,6 +6,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { createServerDaemonService } = require('../lib/cli/services/server/daemon');
+
+const POSIX_ONLY = { skip: process.platform === 'win32' };
 const { createServerDaemonController } = require('../lib/server/daemon');
 
 function makeTempDir() {
@@ -210,7 +212,7 @@ test('daemon service restart heals a loaded macOS supervisor ghost without serve
   assert.equal(fixture.runtime.launchdLoaded, true);
 });
 
-test('daemon service start reuses running server discovered by port when pid file is stale', async () => {
+test('daemon service start reuses running server discovered by port when pid file is stale', POSIX_ONLY, async () => {
   const root = makeTempDir();
   const aiHomeDir = path.join(root, '.ai_home');
   fs.mkdirSync(aiHomeDir, { recursive: true });
@@ -270,7 +272,7 @@ test('daemon service start reuses running server discovered by port when pid fil
   assert.equal(spawnCalls.length, 0);
 });
 
-test('daemon service manages server launched through global aih shim', async () => {
+test('daemon service manages server launched through global aih shim', POSIX_ONLY, async () => {
   const root = makeTempDir();
   const { repoDir, entryFilePath } = makeSourceCheckout(root);
   const aihCommandPath = makeAihCommandShim(root, repoDir);
@@ -350,7 +352,7 @@ test('daemon service manages server launched through global aih shim', async () 
   assert.equal(killCalls.some((call) => call.pid === 1001 && call.signal === 'SIGTERM'), true);
 });
 
-test('daemon service reuses the single-process background supervisor', async () => {
+test('daemon service reuses the single-process background supervisor', POSIX_ONLY, async () => {
   const root = makeTempDir();
   const { repoDir, entryFilePath } = makeSourceCheckout(root);
   const aihCommandPath = makeAihCommandShim(root, repoDir);
@@ -412,7 +414,7 @@ test('daemon service reuses the single-process background supervisor', async () 
   assert.equal(spawnCalls.length, 0);
 });
 
-test('daemon service status recovers running pid by listening port when pid file is stale', () => {
+test('daemon service status recovers running pid by listening port when pid file is stale', POSIX_ONLY, () => {
   const root = makeTempDir();
   const aiHomeDir = path.join(root, '.ai_home');
   fs.mkdirSync(aiHomeDir, { recursive: true });
@@ -462,7 +464,7 @@ test('daemon service status recovers running pid by listening port when pid file
   assert.equal(fs.readFileSync(pidFile, 'utf8').trim(), '7777');
 });
 
-test('daemon service start replaces a tracked AIH server on a legacy port', async () => {
+test('daemon service start replaces a tracked AIH server on a legacy port', POSIX_ONLY, async () => {
   const root = makeTempDir();
   const aiHomeDir = path.join(root, '.ai_home');
   fs.mkdirSync(aiHomeDir, { recursive: true });
@@ -538,7 +540,7 @@ test('daemon service start replaces a tracked AIH server on a legacy port', asyn
   assert.equal(killCalls.some((call) => call.pid === 77904 && call.signal === 'SIGTERM'), true);
 });
 
-test('daemon service status reports the discovered AIH server even when it runs on a legacy port', () => {
+test('daemon service status reports the discovered AIH server even when it runs on a legacy port', POSIX_ONLY, () => {
   const root = makeTempDir();
   const aiHomeDir = path.join(root, '.ai_home');
   fs.mkdirSync(aiHomeDir, { recursive: true });
@@ -591,7 +593,7 @@ test('daemon service status reports the discovered AIH server even when it runs 
   assert.equal(fs.readFileSync(pidFile, 'utf8').trim(), '77904');
 });
 
-test('daemon service start migrates a discovered legacy AIH listener back to the configured port', async () => {
+test('daemon service start migrates a discovered legacy AIH listener back to the configured port', POSIX_ONLY, async () => {
   const root = makeTempDir();
   const aiHomeDir = path.join(root, '.ai_home');
   fs.mkdirSync(aiHomeDir, { recursive: true });
@@ -674,7 +676,7 @@ test('daemon service start migrates a discovered legacy AIH listener back to the
   assert.deepEqual(spawnCalls[0].args.slice(-2), ['--port', '9527']);
 });
 
-test('daemon service status reports stale source when running server has no launch fingerprint', () => {
+test('daemon service status reports stale source when running server has no launch fingerprint', POSIX_ONLY, () => {
   const root = makeTempDir();
   const aiHomeDir = path.join(root, '.ai_home');
   fs.mkdirSync(aiHomeDir, { recursive: true });
@@ -723,7 +725,7 @@ test('daemon service status reports stale source when running server has no laun
   assert.equal(status.staleReason, 'missing_source_fingerprint');
 });
 
-test('daemon service status reports starting when pid exists before port is ready', () => {
+test('daemon service status reports starting when pid exists before port is ready', POSIX_ONLY, () => {
   const root = makeTempDir();
   const aiHomeDir = path.join(root, '.ai_home');
   fs.mkdirSync(aiHomeDir, { recursive: true });
@@ -813,7 +815,7 @@ test('daemon service status reports configured port when server is stopped', () 
   assert.equal(status.baseUrl, 'http://127.0.0.1:9531/v1');
 });
 
-test('daemon service status prefers configured-port AIH server when multiple instances exist', () => {
+test('daemon service status prefers configured-port AIH server when multiple instances exist', POSIX_ONLY, () => {
   const root = makeTempDir();
   const aiHomeDir = path.join(root, '.ai_home');
   fs.mkdirSync(aiHomeDir, { recursive: true });
@@ -939,7 +941,7 @@ test('daemon service start can skip foreground ready wait for fast restart paths
   assert.equal(fs.readFileSync(pidFile, 'utf8').trim(), '45678');
 });
 
-test('daemon service start fails when the preferred port belongs to another process', async () => {
+test('daemon service start fails when the preferred port belongs to another process', POSIX_ONLY, async () => {
   const root = makeTempDir();
   const aiHomeDir = path.join(root, '.ai_home');
   fs.mkdirSync(aiHomeDir, { recursive: true });
@@ -1000,7 +1002,7 @@ test('daemon service start fails when the preferred port belongs to another proc
   assert.deepEqual(spawnCalls, []);
 });
 
-test('daemon service restart does not stop current AIH server when target port is external', async () => {
+test('daemon service restart does not stop current AIH server when target port is external', POSIX_ONLY, async () => {
   const root = makeTempDir();
   const aiHomeDir = path.join(root, '.ai_home');
   fs.mkdirSync(aiHomeDir, { recursive: true });
@@ -1080,7 +1082,7 @@ test('daemon service restart does not stop current AIH server when target port i
   assert.equal(fs.readFileSync(pidFile, 'utf8').trim(), '1001');
 });
 
-test('daemon service restart replaces own listener on the configured target port', async () => {
+test('daemon service restart replaces own listener on the configured target port', POSIX_ONLY, async () => {
   const root = makeTempDir();
   const aiHomeDir = path.join(root, '.ai_home');
   fs.mkdirSync(aiHomeDir, { recursive: true });
@@ -1467,7 +1469,7 @@ test('daemon service prepares foreground integrations before spawning the backgr
   assert.deepEqual(events, ['prepare', 'spawn']);
 });
 
-test('daemon service start replaces same-port server when saved serve config changed', async () => {
+test('daemon service start replaces same-port server when saved serve config changed', POSIX_ONLY, async () => {
   const root = makeTempDir();
   const aiHomeDir = path.join(root, '.ai_home');
   fs.mkdirSync(aiHomeDir, { recursive: true });
@@ -1627,7 +1629,7 @@ test('daemon service start prefers ai_home source checkout from cwd over install
   assert.equal(spawnCalls[0].args[0], source.entryFilePath);
 });
 
-test('daemon service start discovers running ai_home server from a different checkout', async () => {
+test('daemon service start discovers running ai_home server from a different checkout', POSIX_ONLY, async () => {
   const root = makeTempDir();
   const aiHomeDir = path.join(root, '.ai_home');
   fs.mkdirSync(aiHomeDir, { recursive: true });
@@ -1685,7 +1687,7 @@ test('daemon service start discovers running ai_home server from a different che
   assert.equal(spawnCalls.length, 0);
 });
 
-test('daemon service start reuses target AIH listener and stops extra AIH servers on other ports', async () => {
+test('daemon service start reuses target AIH listener and stops extra AIH servers on other ports', POSIX_ONLY, async () => {
   const root = makeTempDir();
   const aiHomeDir = path.join(root, '.ai_home');
   fs.mkdirSync(aiHomeDir, { recursive: true });
@@ -1779,7 +1781,7 @@ test('daemon service start reuses target AIH listener and stops extra AIH server
   }]);
 });
 
-test('daemon service stop clears every discovered AIH server instance', () => {
+test('daemon service stop clears every discovered AIH server instance', POSIX_ONLY, () => {
   const root = makeTempDir();
   const aiHomeDir = path.join(root, '.ai_home');
   fs.mkdirSync(aiHomeDir, { recursive: true });
@@ -2108,7 +2110,7 @@ test('daemon service stop does not terminate external process occupying target p
   assert.equal(killCalls.some((call) => call.pid === 2222 && call.signal === 'SIGTERM'), false);
 });
 
-test('legacy daemon controller delegates port ownership checks to daemon service', async () => {
+test('legacy daemon controller delegates port ownership checks to daemon service', POSIX_ONLY, async () => {
   const root = makeTempDir();
   const aiHomeDir = path.join(root, '.ai_home');
   fs.mkdirSync(aiHomeDir, { recursive: true });
@@ -2153,7 +2155,7 @@ test('legacy daemon controller delegates port ownership checks to daemon service
   assert.equal(spawnCalls.length, 0);
 });
 
-test('daemon service installs the branded macOS background supervisor', (t) => {
+test('daemon service installs the branded macOS background supervisor', POSIX_ONLY, (t) => {
   const root = makeTempDir();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const aiHomeDir = path.join(root, '.ai_home');

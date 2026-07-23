@@ -56,8 +56,8 @@ test('collectNativeCliPathEntries covers official Qoder install home layout', ()
     hostHomeDir: '/home/u',
     processObj: { platform: 'linux', env: { HOME: '/home/u' } }
   });
-  assert.ok(globalEntries.includes(path.join('/home/u', '.local', 'bin')));
-  assert.ok(globalEntries.includes(path.join('/home/u', '.qoder', 'bin', 'qodercli')));
+  assert.ok(globalEntries.includes(path.posix.join('/home/u', '.local', 'bin')));
+  assert.ok(globalEntries.includes(path.posix.join('/home/u', '.qoder', 'bin', 'qodercli')));
   assert.ok(globalEntries.includes('/usr/local/bin'));
 });
 

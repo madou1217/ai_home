@@ -2437,19 +2437,34 @@ test('daemon service installs Windows Startup script for login autostart', () =>
   );
   fs.mkdirSync(path.dirname(legacyScriptPath), { recursive: true });
   fs.writeFileSync(legacyScriptPath, 'legacy', 'utf8');
+  const staleAihPath = path.join(root, 'stale-node', 'aih');
+  const validAihPath = path.join(root, 'stable-bin', 'aih.cmd');
+  fs.mkdirSync(path.dirname(validAihPath), { recursive: true });
+  fs.writeFileSync(validAihPath, '@echo off\r\n', 'utf8');
   const daemon = createServerDaemonService({
     fs,
     path,
     spawn() { throw new Error('not_used'); },
     spawnSync(cmd, args) {
       if (cmd === 'where' && args[0] === 'aih') {
-        return { status: 0, stdout: 'C:\\Users\\model\\AppData\\Roaming\\npm\\aih.cmd\r\n', stderr: '' };
+        return {
+          status: 0,
+          stdout: [
+            staleAihPath,
+            validAihPath.slice(0, -4),
+            validAihPath
+          ].join('\r\n'),
+          stderr: ''
+        };
       }
       return { status: 1, stdout: '', stderr: '' };
     },
     processObj: {
       execPath: 'C:\\Node\\node.exe',
-      env: { APPDATA: appData, PATH: 'C:\\Node' },
+      env: {
+        APPDATA: appData,
+        PATH: 'C:\\Users\\model\\.codex\\tmp\\arg0\\transient;C:\\Node'
+      },
       platform: 'win32',
       cwd() { return root; },
       kill() { throw new Error('ESRCH'); }
@@ -2481,10 +2496,11 @@ test('daemon service installs Windows Startup script for login autostart', () =>
   assert.equal(status.type, 'windows-startup');
   assert.equal(status.installed, true);
   assert.equal(status.loaded, true);
-  assert.equal(script.includes('""C:\\Users\\model\\AppData\\Roaming\\npm\\aih.cmd"" ""server"" ""start""'), true);
+  assert.equal(script.includes(`""${validAihPath}"" ""server"" ""start""`), true);
   assert.equal(script.includes('shell.Run'), true);
   assert.equal(script.includes(', 0, False'), true);
   assert.equal(script.includes('C:\\Node\\node.exe'), false);
+  assert.equal(script.includes('.codex\\tmp\\arg0'), false);
   assert.equal(fs.existsSync(legacyScriptPath), false);
 });
 

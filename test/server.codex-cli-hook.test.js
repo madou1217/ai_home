@@ -31,6 +31,7 @@ test('buildWrapperScript renders stable codex cli wrapper', () => {
   assert.equal(script.includes('app-server'), true);
   assert.equal(script.includes('AIH_CODEX_APP_SERVER_PASSTHROUGH'), true);
   assert.equal(script.includes('--run-cli-resume'), true);
+  assert.equal(script.includes('--run-cli-default'), true);
   assert.equal(script.includes('--repair-resume-visibility'), false);
 });
 
@@ -43,6 +44,7 @@ test('buildWindowsPowerShellWrapperScript renders stable codex cli wrapper', () 
   });
   assert.equal(script.includes(WRAPPER_MARKER), true);
   assert.equal(script.includes('--run-cli-resume'), true);
+  assert.equal(script.includes('--run-cli-default'), true);
   assert.equal(script.includes('$subcommand -eq "app-server"'), true);
   assert.equal(script.includes('$valueOptions -contains $arg'), true);
   assert.equal(script.includes('$env:AIH_CODEX_APP_SERVER_PASSTHROUGH'), true);
@@ -58,6 +60,7 @@ test('buildWindowsCmdWrapperScript renders stable codex cli wrapper', () => {
   assert.equal(script.includes(WRAPPER_MARKER), true);
   assert.equal(script.includes('if /I "%AIH_SUBCOMMAND%"=="resume"'), true);
   assert.equal(script.includes('if /I "%AIH_SUBCOMMAND%"=="app-server"'), true);
+  assert.equal(script.includes('--run-cli-default'), true);
   assert.equal(script.includes(':AIH_FIND_SUBCOMMAND'), true);
   assert.equal(script.includes('%AIH_CODEX_APP_SERVER_PASSTHROUGH%'), true);
 });
@@ -101,6 +104,13 @@ test('POSIX wrapper requires the explicit marker after global Codex options', (t
   assert.match(proxied.stdout, /^proxy:/);
   assert.equal(passedThrough.status, 0);
   assert.match(passedThrough.stdout, /^upstream:unset:/);
+
+  const rawCli = spawnSync(wrapperPath, ['exec', 'hello'], {
+    encoding: 'utf8',
+    env: { PATH: process.env.PATH }
+  });
+  assert.equal(rawCli.status, 0);
+  assert.match(rawCli.stdout, /^proxy:--run-cli-default /);
 });
 
 test('codex cli hook activates by installing wrapper and enabling state', () => {

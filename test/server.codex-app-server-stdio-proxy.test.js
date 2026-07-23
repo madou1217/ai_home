@@ -207,6 +207,7 @@ test('parseProxyArgs splits helper args from upstream args', () => {
   ]);
   assert.equal(parsed.upstream, '/tmp/original');
   assert.equal(parsed.stateFile, '/tmp/state.json');
+  assert.equal(parsed.runCliDefault, false);
   assert.equal(parsed.runCliResume, false);
   assert.deepEqual(parsed.forwardArgs, ['app-server', '--analytics-default-enabled']);
 });
@@ -223,6 +224,21 @@ test('parseProxyArgs recognizes cli resume hook mode', () => {
   assert.equal(parsed.runCliResume, true);
   assert.equal(parsed.upstream, '/tmp/original');
   assert.deepEqual(parsed.forwardArgs, ['resume', '--last']);
+});
+
+test('parseProxyArgs recognizes default cli launch mode', () => {
+  const parsed = parseProxyArgs([
+    '--run-cli-default',
+    '--upstream', '/tmp/original',
+    '--state-file', '/tmp/state.json',
+    '--',
+    'exec',
+    'hello'
+  ]);
+  assert.equal(parsed.runCliDefault, true);
+  assert.equal(parsed.runCliResume, false);
+  assert.equal(parsed.upstream, '/tmp/original');
+  assert.deepEqual(parsed.forwardArgs, ['exec', 'hello']);
 });
 
 test('buildCodexCliResumeArgs injects remote options after resume command', () => {

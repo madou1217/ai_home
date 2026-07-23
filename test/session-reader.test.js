@@ -673,7 +673,7 @@ test('readCodexSessionProjectPath normalizes Windows cwd for host lookup', () =>
   }
 });
 
-test('readAllProjectsFromHost reads codex projects from state sqlite threads', (t) => {
+test('readAllProjectsFromHost merges codex projects from both state sqlite layouts', (t) => {
   let DatabaseSync;
   try {
     ({ DatabaseSync } = require('node:sqlite'));
@@ -689,11 +689,12 @@ test('readAllProjectsFromHost reads codex projects from state sqlite threads', (
   try {
     const codexDir = path.join(root, '.codex');
     const projectDir = path.join(root, 'state-db-project');
-    fs.ensureDirSync(codexDir);
+    const nestedSqliteDir = path.join(codexDir, 'sqlite');
+    fs.ensureDirSync(nestedSqliteDir);
     fs.ensureDirSync(projectDir);
 
-    const db = new DatabaseSync(path.join(codexDir, 'state_5.sqlite'));
-    try {
+    const writeStateDb = (dbPath, rows) => {
+      const db = new DatabaseSync(dbPath);
       db.exec(`
         CREATE TABLE threads (
           id TEXT PRIMARY KEY,
@@ -711,35 +712,63 @@ test('readAllProjectsFromHost reads codex projects from state sqlite threads', (
           updated_at_ms INTEGER
         );
       `);
-      db.prepare(`
+      const insert = db.prepare(`
         INSERT INTO threads (
           id, rollout_path, created_at, updated_at, source, model_provider, cwd, title,
           sandbox_policy, approval_mode, archived, created_at_ms, updated_at_ms
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        '33333333-3333-4333-8333-333333333333',
-        '/tmp/rollout.jsonl',
-        1770000000,
-        1770000001,
-        'cli',
-        'aih_10',
-        projectDir,
-        '新版 state db 会话',
-        'workspace-write',
-        'on-request',
-        0,
-        1770000000000,
-        1770000001000
-      );
-    } finally {
+      `);
+      for (const row of rows) {
+        insert.run(
+          row.id,
+          '/tmp/rollout.jsonl',
+          1770000000,
+          Math.floor(row.updatedAt / 1000),
+          'cli',
+          'aih_10',
+          projectDir,
+          row.title,
+          'workspace-write',
+          'on-request',
+          0,
+          1770000000000,
+          row.updatedAt
+        );
+      }
       db.close();
-    }
+    };
+    writeStateDb(path.join(codexDir, 'state_5.sqlite'), [
+      {
+        id: '33333333-3333-4333-8333-333333333333',
+        title: '顶层 state db 会话',
+        updatedAt: 1770000001000
+      },
+      {
+        id: '55555555-5555-4555-8555-555555555555',
+        title: '旧重复会话',
+        updatedAt: 1770000002000
+      }
+    ]);
+    writeStateDb(path.join(nestedSqliteDir, 'state_5.sqlite'), [
+      {
+        id: '44444444-4444-4444-8444-444444444444',
+        title: '新版嵌套 state db 会话',
+        updatedAt: 1770000003000
+      },
+      {
+        id: '55555555-5555-4555-8555-555555555555',
+        title: '新重复会话',
+        updatedAt: 1770000004000
+      }
+    ]);
 
     const projects = sessionReader.readAllProjectsFromHost();
     const project = projects.find((item) => item.provider === 'codex' && item.path === projectDir);
     assert.ok(project);
-    assert.equal(project.sessions.length, 1);
-    assert.equal(project.sessions[0].title, '新版 state db 会话');
+    assert.deepEqual(
+      project.sessions.map((session) => session.title).sort(),
+      ['新重复会话', '新版嵌套 state db 会话', '顶层 state db 会话'].sort()
+    );
   } finally {
     if (originalRealHome === undefined) delete process.env.REAL_HOME;
     else process.env.REAL_HOME = originalRealHome;

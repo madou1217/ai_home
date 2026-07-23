@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const {
+  HOOK_STATE_VERSION,
   WRAPPER_MARKER,
   buildWrapperScript,
   createCodexDesktopHookService
@@ -244,6 +245,51 @@ test('codex desktop hook can restart a pre-wrapper ChatGPT app-server process', 
 
   assert.deepEqual(result.pids, [81315]);
   assert.deepEqual(killed, [{ pid: 81315, signal: 'SIGTERM' }]);
+});
+
+test('codex desktop hook finds proxy through node_repl ancestors without selecting upstream child', () => {
+  const targetBinaryPath = '/Applications/ChatGPT.app/Contents/Resources/codex';
+  const stateFilePath = '/tmp/.ai_home/run/codex/desktop-hook-state.json';
+  const killed = [];
+  const service = createCodexDesktopHookService({
+    fs: {
+      existsSync: () => true,
+      readFileSync(filePath) {
+        if (filePath === stateFilePath) {
+          return JSON.stringify({
+            enabled: true,
+            bundlePath: '/Applications/ChatGPT.app',
+            targetBinaryPath,
+            upstreamBinaryPath: `${targetBinaryPath}.aih-original`
+          });
+        }
+        return '';
+      }
+    },
+    path,
+    processObj: {
+      pid: 900,
+      platform: 'darwin',
+      kill(pid, signal) { killed.push({ pid, signal }); }
+    },
+    spawnSync: () => ({
+      status: 0,
+      stdout: [
+        ' 81000 1 /Applications/ChatGPT.app/Contents/MacOS/ChatGPT',
+        ' 81001 81000 /Applications/ChatGPT.app/Contents/Resources/node_repl',
+        ` 81002 81001 /usr/local/bin/node /tmp/codex-proxy.js --state-file ${stateFilePath} -- app-server --listen stdio://`,
+        ` 81003 81002 ${targetBinaryPath}.aih-original app-server --listen stdio://`
+      ].join('\n')
+    }),
+    aiHomeDir: '/tmp/.ai_home',
+    hostHomeDir: '/Users/model',
+    helperScriptPath: '/tmp/codex-proxy.js'
+  });
+
+  const result = service.restartRunningAppServers();
+
+  assert.deepEqual(result.pids, [81002]);
+  assert.deepEqual(killed, [{ pid: 81002, signal: 'SIGTERM' }]);
 });
 
 test('codex desktop hook activate does not terminate running app-server processes', () => {
@@ -667,4 +713,82 @@ test('codex desktop hook marks trace config changed when helper code changes', (
   assert.equal(firstUpdate.changed, true);
   assert.equal(secondUpdate.changed, false);
   assert.equal(thirdUpdate.changed, true);
+});
+
+test('codex desktop hook records versions and repairs helper revision drift', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-codex-hook-version-'));
+  const aiHomeDir = path.join(root, '.ai_home');
+  const bundlePath = path.join(root, 'Applications', 'ChatGPT.app');
+  const contentsDir = path.join(bundlePath, 'Contents');
+  const resourcesDir = path.join(contentsDir, 'Resources');
+  const targetBinaryPath = path.join(resourcesDir, 'codex');
+  const helperScriptPath = path.join(root, 'codex-proxy.js');
+  fs.mkdirSync(resourcesDir, { recursive: true });
+  fs.mkdirSync(aiHomeDir, { recursive: true });
+  fs.writeFileSync(path.join(contentsDir, 'Info.plist'), [
+    '<plist><dict>',
+    '<key>CFBundleShortVersionString</key><string>26.715.72359</string>',
+    '<key>CFBundleVersion</key><string>72359</string>',
+    '</dict></plist>'
+  ].join(''), 'utf8');
+  fs.writeFileSync(targetBinaryPath, '#!/bin/sh\necho codex-cli 0.145.0-alpha.30\n', 'utf8');
+  fs.writeFileSync(helperScriptPath, 'module.exports = 1;\n', 'utf8');
+  fs.chmodSync(targetBinaryPath, 0o755);
+
+  const service = createCodexDesktopHookService({
+    fs,
+    path,
+    processObj: { pid: 610, platform: 'darwin', kill() {} },
+    aiHomeDir,
+    hostHomeDir: root,
+    helperScriptPath
+  });
+  service.activate();
+  const statePath = path.join(aiHomeDir, 'run', 'codex', 'desktop-hook-state.json');
+  const initial = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+
+  assert.equal(initial.version, HOOK_STATE_VERSION);
+  assert.equal(initial.appVersion, '26.715.72359');
+  assert.equal(initial.appBuildVersion, '72359');
+  assert.equal(initial.codexVersion, 'codex-cli 0.145.0-alpha.30');
+  assert.match(initial.wrapperRevision, /^[a-f0-9]{64}$/);
+  assert.match(initial.helperRevision, /^[a-f0-9]{64}$/);
+  assert.equal(typeof initial.upstreamFingerprint.size, 'number');
+
+  service.setDesktopAccountRef('acct_11111111111111111111');
+  const afterAccountChange = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+  assert.equal(afterAccountChange.appVersion, initial.appVersion);
+  assert.equal(afterAccountChange.codexVersion, initial.codexVersion);
+  assert.equal(afterAccountChange.wrapperRevision, initial.wrapperRevision);
+  assert.deepEqual(afterAccountChange.upstreamFingerprint, initial.upstreamFingerprint);
+  assert.equal(service.ensureInstalled().repaired, false);
+
+  fs.writeFileSync(helperScriptPath, 'module.exports = 2;\n', 'utf8');
+  const repaired = service.ensureInstalled();
+  const next = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+  assert.equal(repaired.repaired, true);
+  assert.equal(repaired.restartRequired, true);
+  assert.equal(repaired.driftReasons.includes('helper_revision'), true);
+  assert.notEqual(next.helperRevision, initial.helperRevision);
+
+  fs.writeFileSync(path.join(contentsDir, 'Info.plist'), [
+    '<plist><dict>',
+    '<key>CFBundleShortVersionString</key><string>26.716.80000</string>',
+    '<key>CFBundleVersion</key><string>80000</string>',
+    '</dict></plist>'
+  ].join(''), 'utf8');
+  fs.writeFileSync(targetBinaryPath, '#!/bin/sh\necho codex-cli 0.146.0\n', 'utf8');
+  fs.chmodSync(targetBinaryPath, 0o755);
+
+  const upgraded = service.ensureInstalled();
+  const upgradedState = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+  assert.equal(upgraded.repaired, true);
+  assert.equal(upgraded.restartRequired, true);
+  assert.equal(upgraded.driftReasons.includes('wrapper_missing'), true);
+  assert.equal(upgraded.driftReasons.includes('app_version'), true);
+  assert.equal(upgradedState.appVersion, '26.716.80000');
+  assert.equal(upgradedState.appBuildVersion, '80000');
+  assert.equal(upgradedState.codexVersion, 'codex-cli 0.146.0');
+  assert.match(fs.readFileSync(targetBinaryPath, 'utf8'), new RegExp(WRAPPER_MARKER));
+  assert.match(fs.readFileSync(`${targetBinaryPath}.aih-original`, 'utf8'), /codex-cli 0\.146\.0/);
 });

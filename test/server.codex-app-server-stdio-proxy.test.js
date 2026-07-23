@@ -7,6 +7,7 @@ const path = require('node:path');
 const WebSocket = require('ws');
 const {
   AGGREGATE_THREAD_LIST_MAX_ITEMS,
+  STATE_THREAD_LIST_CURSOR_PREFIX,
   buildFastResumeHydrationRequest,
   buildTurnStartHydrationRequest,
   buildTurnLiveThreadHydrationRequest,
@@ -18,6 +19,7 @@ const {
   buildFastThreadReadResponse,
   buildCodexAppServerRuntimeConfig,
   buildCodexAppServerSpawnEnv,
+  buildStateThreadListResponse,
   buildCodexCliResumeArgs,
   shouldAggregateThreadList,
   buildAggregatePageRequest,
@@ -146,6 +148,44 @@ test('desktop account sync injects an OAuth login request without restarting app
   assert.equal(controller.refresh(), false);
   assert.equal(JSON.stringify(traces).includes(accessToken), false);
   assert.equal(traces.some((entry) => entry.action === 'desktop_account_sync_completed'), true);
+});
+
+test('desktop account sync does not treat desired state as already applied', (t) => {
+  const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-desktop-account-initial-sync-'));
+  const stateFile = path.join(tmpHome, '.ai_home', 'run', 'codex', 'desktop-hook-state.json');
+  fs.mkdirSync(path.dirname(stateFile), { recursive: true });
+  t.after(() => fs.rmSync(tmpHome, { recursive: true, force: true }));
+  const accountRef = registerCodexAccount(tmpHome, {
+    cliAccountId: '92',
+    email: 'initial@example.com',
+    auth: {
+      tokens: {
+        access_token: createJwt({
+          exp: Math.floor(Date.now() / 1000) + 3600,
+          'https://api.openai.com/profile': { email: 'initial@example.com' },
+          'https://api.openai.com/auth': {
+            chatgpt_plan_type: 'plus',
+            chatgpt_account_id: 'acc_initial'
+          }
+        }),
+        refresh_token: 'refresh-initial',
+        account_id: 'acc_initial'
+      }
+    }
+  });
+  fs.writeFileSync(stateFile, JSON.stringify({ enabled: true, desktopAccountRef: accountRef }), 'utf8');
+  const writes = [];
+  const controller = createCodexDesktopAccountSyncController({
+    fs,
+    stateFile,
+    initialState: { enabled: true, desktopAccountRef: accountRef },
+    initialAccountRef: '',
+    processObj: { platform: 'darwin', env: { HOME: tmpHome } },
+    writeUpstream: (payload) => writes.push(payload)
+  });
+
+  assert.equal(controller.refresh(), true);
+  assert.equal(JSON.parse(writes[0]).method, 'account/login/start');
 });
 
 async function waitForCondition(predicate, timeoutMs = 1000) {
@@ -2188,7 +2228,7 @@ test('patchAuthStatusResponse ignores api-key Codex App auth', () => {
   assert.equal(patched.result.requiresOpenaiAuth, false);
 });
 
-test('buildCodexAppServerSpawnEnv gives upstream app-server a ChatGPT auth runtime home', () => {
+test('buildCodexAppServerSpawnEnv separates mobile identity from default execution account', () => {
   const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-codex-app-runtime-'));
   const hostCodexHome = path.join(tmpHome, '.codex');
   fs.mkdirSync(hostCodexHome, { recursive: true });
@@ -2219,6 +2259,16 @@ test('buildCodexAppServerSpawnEnv gives upstream app-server a ChatGPT auth runti
     email: 'mobile@example.com',
     auth
   });
+  const defaultAccountRef = registerCodexAccount(tmpHome, {
+    cliAccountId: '12',
+    email: 'default@example.com',
+    auth: { OPENAI_API_KEY: 'sk-default' },
+    env: {
+      OPENAI_API_KEY: 'sk-default',
+      OPENAI_BASE_URL: 'https://api.example.com/v1'
+    }
+  });
+  writeDefaultAccountRef(fs, path.join(tmpHome, '.ai_home'), 'codex', defaultAccountRef);
 
   const result = buildCodexAppServerSpawnEnv(fs, { enabled: true, desktopAccountRef: accountRef }, {
     chatgptBaseUrl: 'http://127.0.0.1:18888/backend-api',
@@ -2231,7 +2281,8 @@ test('buildCodexAppServerSpawnEnv gives upstream app-server a ChatGPT auth runti
     }
   });
 
-  assert.equal(result.runtime.accountRef, accountRef);
+  assert.equal(result.runtime.identityAccountRef, accountRef);
+  assert.equal(result.runtime.executionAccountRef, defaultAccountRef);
   assert.equal(result.env.CODEX_SQLITE_HOME, hostCodexHome);
   assert.equal(result.env.CODEX_HOME, path.join(tmpHome, '.ai_home', 'run', 'codex-desktop', accountRef));
   const runtimeAuth = JSON.parse(fs.readFileSync(path.join(result.env.CODEX_HOME, 'auth.json'), 'utf8'));
@@ -2240,14 +2291,15 @@ test('buildCodexAppServerSpawnEnv gives upstream app-server a ChatGPT auth runti
   assert.equal(runtimeAuth.tokens.refresh_token, 'refresh-mobile');
   assert.equal(runtimeAuth.tokens.account_id, 'acc_mobile');
   const runtimeConfig = fs.readFileSync(path.join(result.env.CODEX_HOME, 'config.toml'), 'utf8');
-  assert.match(runtimeConfig, /^model_provider = "aih_10"$/m);
+  assert.match(runtimeConfig, /^model_provider = "aih_server"$/m);
+  assert.match(runtimeConfig, new RegExp(`X-Account-Ref.*${defaultAccountRef}`));
   assert.match(runtimeConfig, /^chatgpt_base_url = "http:\/\/127\.0\.0\.1:18888\/backend-api"$/m);
   assert.match(runtimeConfig, new RegExp(`^sqlite_home = "${hostCodexHome.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"$`, 'm'));
   assert.match(runtimeConfig, /^cli_auth_credentials_store = "file"$/m);
   assert.equal(runtimeConfig.indexOf('cli_auth_credentials_store = "file"') < runtimeConfig.indexOf('[model_providers.aih_10]'), true);
 });
 
-test('buildCodexAppServerSpawnEnv keeps host Codex home for API-key default instead of OAuth fallback', () => {
+test('buildCodexAppServerSpawnEnv keeps mobile identity isolated when default uses API key', () => {
   const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-codex-app-runtime-apikey-'));
   const hostCodexHome = path.join(tmpHome, '.codex');
   fs.mkdirSync(hostCodexHome, { recursive: true });
@@ -2281,6 +2333,13 @@ test('buildCodexAppServerSpawnEnv keeps host Codex home for API-key default inst
       }
     }
   });
+  const defaultAccountRef = registerCodexAccount(tmpHome, {
+    cliAccountId: '10',
+    email: 'api@example.com',
+    auth: { OPENAI_API_KEY: 'sk-api-key' },
+    env: { OPENAI_API_KEY: 'sk-api-key' }
+  });
+  writeDefaultAccountRef(fs, path.join(tmpHome, '.ai_home'), 'codex', defaultAccountRef);
 
   const result = buildCodexAppServerSpawnEnv(fs, { enabled: true, desktopAccountRef: oauthAccountRef }, {
     processObj: {
@@ -2292,14 +2351,17 @@ test('buildCodexAppServerSpawnEnv keeps host Codex home for API-key default inst
     }
   });
 
-  assert.equal(result.runtime.authType, 'apikey');
-  assert.equal(result.runtime.usesHostHome, true);
-  assert.equal(result.runtime.runtimeHome, hostCodexHome);
+  assert.equal(result.runtime.authType, 'chatgpt');
+  assert.equal(result.runtime.identityAccountRef, oauthAccountRef);
+  assert.equal(result.runtime.executionAccountRef, defaultAccountRef);
+  assert.equal(result.runtime.usesHostHome, false);
   assert.equal(result.env.CODEX_SQLITE_HOME, hostCodexHome);
-  assert.equal(result.env.CODEX_HOME, hostCodexHome);
+  assert.equal(result.env.CODEX_HOME, path.join(tmpHome, '.ai_home', 'run', 'codex-desktop', oauthAccountRef));
   const hostAuth = JSON.parse(fs.readFileSync(path.join(result.env.CODEX_HOME, 'auth.json'), 'utf8'));
-  assert.equal(hostAuth.OPENAI_API_KEY, 'sk-api-key');
-  assert.equal(fs.existsSync(path.join(tmpHome, '.ai_home', 'run', 'codex-desktop', oauthAccountRef, 'auth.json')), false);
+  assert.equal(hostAuth.OPENAI_API_KEY, undefined);
+  assert.equal(hostAuth.tokens.account_id, 'acc_fallback');
+  const runtimeConfig = fs.readFileSync(path.join(result.env.CODEX_HOME, 'config.toml'), 'utf8');
+  assert.match(runtimeConfig, new RegExp(`X-Account-Ref.*${defaultAccountRef}`));
 });
 
 test('buildCodexAppServerSpawnEnv uses explicit state home without runtime-path inference', () => {
@@ -2329,6 +2391,7 @@ test('buildCodexAppServerSpawnEnv uses explicit state home without runtime-path 
     email: 'mobile@example.com',
     auth
   });
+  writeDefaultAccountRef(fs, path.join(tmpHome, '.ai_home'), 'codex', accountRef);
   const externalRuntimeHome = path.join(tmpHome, '.ai_home', 'run', 'codex-desktop', accountRef);
 
   const result = buildCodexAppServerSpawnEnv(fs, { enabled: true, desktopAccountRef: accountRef }, {
@@ -2882,11 +2945,16 @@ test('stdio proxy derives thread/list title from codex internal goal objective',
       backwardsCursor: null
     }
   });
-  assert.equal(patchThreadListVisibilityResponse(
+  const mergedFirstPage = JSON.parse(patchThreadListVisibilityResponse(
     firstPageWithCursor,
     { cwd: '/tmp/project', limit: 50, cursor: null, archived: false, sourceKinds: [] },
     { fs, DatabaseSync, codexHome }
-  ), firstPageWithCursor);
+  ));
+  assert.deepEqual(
+    mergedFirstPage.result.data.map((item) => item.id),
+    ['thread-goal', 'upstream-first-page-thread']
+  );
+  assert.equal(mergedFirstPage.result.nextCursor, 'cursor-2');
 });
 
 test('thread/list visibility patch removes subagents classified by metadata or spawn edges', () => {
@@ -2945,6 +3013,158 @@ test('thread/list visibility patch removes subagents classified by metadata or s
   ));
 
   assert.deepEqual(patched.result.data.map((thread) => thread.id), ['main-thread']);
+});
+
+test('thread/list paginates complete read-only history across both Codex sqlite layouts', () => {
+  let DatabaseSync;
+  try {
+    ({ DatabaseSync } = require('node:sqlite'));
+  } catch (_error) {
+    return;
+  }
+
+  const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-thread-list-complete-'));
+  const codexHome = path.join(tmpHome, '.codex');
+  const topDbPath = path.join(codexHome, 'state_5.sqlite');
+  const nestedDbPath = path.join(codexHome, 'sqlite', 'state_5.sqlite');
+  fs.mkdirSync(path.dirname(nestedDbPath), { recursive: true });
+
+  const createStateDb = (dbPath, rows) => {
+    const db = new DatabaseSync(dbPath);
+    db.exec(`
+      CREATE TABLE threads (
+        id TEXT PRIMARY KEY NOT NULL,
+        rollout_path TEXT,
+        created_at INTEGER,
+        updated_at INTEGER,
+        created_at_ms INTEGER,
+        updated_at_ms INTEGER,
+        source TEXT,
+        model_provider TEXT,
+        model TEXT,
+        cwd TEXT,
+        title TEXT,
+        first_user_message TEXT,
+        cli_version TEXT,
+        thread_source TEXT,
+        archived INTEGER DEFAULT 0
+      )
+    `);
+    const insert = db.prepare(`
+      INSERT INTO threads (
+        id, rollout_path, created_at, updated_at, created_at_ms, updated_at_ms,
+        source, model_provider, model, cwd, title, first_user_message,
+        cli_version, thread_source, archived
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const row of rows) {
+      insert.run(
+        row.id, '', Math.floor(row.createdAt / 1000), Math.floor(row.updatedAt / 1000), row.createdAt, row.updatedAt,
+        'cli', 'aih_server', 'gpt-5.5', '/tmp/project', row.title, row.title,
+        '0.145.0', 'user', 0
+      );
+    }
+    db.close();
+  };
+
+  createStateDb(topDbPath, [
+    { id: 'thread-a', createdAt: 1_790_000_008_000, updatedAt: 1_780_000_005_000, title: 'A' },
+    { id: 'thread-duplicate', createdAt: 1_790_000_004_000, updatedAt: 1_780_000_004_000, title: 'old duplicate' },
+    { id: 'thread-b', createdAt: 1_790_000_003_000, updatedAt: 1_780_000_003_000, title: 'B' }
+  ]);
+  createStateDb(nestedDbPath, [
+    { id: 'thread-duplicate', createdAt: 1_790_000_004_000, updatedAt: 1_780_000_006_000, title: 'new duplicate' },
+    { id: 'thread-c', createdAt: 1_790_000_009_000, updatedAt: 1_780_000_002_000, title: 'C' },
+    { id: 'thread-d', createdAt: 1_790_000_001_000, updatedAt: 1_780_000_001_000, title: 'D' }
+  ]);
+  const before = [fs.statSync(topDbPath).mtimeMs, fs.statSync(nestedDbPath).mtimeMs];
+  const params = {
+    cwd: '/tmp/project',
+    limit: 2,
+    cursor: null,
+    archived: false,
+    sourceKinds: [],
+    modelProviders: [],
+    sortKey: 'updated_at'
+  };
+  const first = JSON.parse(patchThreadListVisibilityResponse(
+    JSON.stringify({
+      id: 'page-1',
+      result: {
+        data: [
+          { id: 'thread-duplicate', title: 'new duplicate', updatedAt: 1_780_000_006 },
+          { id: 'thread-a', title: 'A', updatedAt: 1_780_000_005 }
+        ],
+        nextCursor: 'native-cursor'
+      }
+    }),
+    params,
+    { fs, DatabaseSync, codexHome }
+  ));
+  assert.deepEqual(first.result.data.map((item) => item.id), ['thread-duplicate', 'thread-a']);
+  assert.equal(first.result.data[0].title, 'new duplicate');
+  assert.equal(first.result.nextCursor.startsWith(STATE_THREAD_LIST_CURSOR_PREFIX), true);
+
+  const second = buildStateThreadListResponse({
+    id: 'page-2',
+    method: 'thread/list',
+    params: { ...params, cursor: first.result.nextCursor }
+  }, { fs, DatabaseSync, codexHome });
+  assert.deepEqual(second.result.data.map((item) => item.id), ['thread-b', 'thread-c']);
+  assert.equal(second.result.nextCursor.startsWith(STATE_THREAD_LIST_CURSOR_PREFIX), true);
+
+  const third = buildStateThreadListResponse({
+    id: 'page-3',
+    method: 'thread/list',
+    params: { ...params, cursor: second.result.nextCursor }
+  }, { fs, DatabaseSync, codexHome });
+  assert.deepEqual(third.result.data.map((item) => item.id), ['thread-d']);
+  assert.equal(third.result.nextCursor, null);
+
+  const assertSortedPages = (sortKey, expectedIds) => {
+    const sortedParams = { ...params, sortKey };
+    const sortedFirst = JSON.parse(patchThreadListVisibilityResponse(
+      JSON.stringify({ id: `${sortKey}-1`, result: { data: [], nextCursor: 'native-cursor' } }),
+      sortedParams,
+      { fs, DatabaseSync, codexHome }
+    ));
+    const sortedSecond = buildStateThreadListResponse({
+      id: `${sortKey}-2`,
+      method: 'thread/list',
+      params: { ...sortedParams, cursor: sortedFirst.result.nextCursor }
+    }, { fs, DatabaseSync, codexHome });
+    const sortedThird = buildStateThreadListResponse({
+      id: `${sortKey}-3`,
+      method: 'thread/list',
+      params: { ...sortedParams, cursor: sortedSecond.result.nextCursor }
+    }, { fs, DatabaseSync, codexHome });
+    assert.deepEqual([
+      ...sortedFirst.result.data,
+      ...sortedSecond.result.data,
+      ...sortedThird.result.data
+    ].map((item) => item.id), expectedIds);
+  };
+  assertSortedPages('created_at', [
+    'thread-c',
+    'thread-a',
+    'thread-duplicate',
+    'thread-b',
+    'thread-d'
+  ]);
+  assertSortedPages('recency_at', [
+    'thread-c',
+    'thread-a',
+    'thread-duplicate',
+    'thread-b',
+    'thread-d'
+  ]);
+  assert.deepEqual([fs.statSync(topDbPath).mtimeMs, fs.statSync(nestedDbPath).mtimeMs], before);
+
+  assert.equal(buildStateThreadListResponse({
+    id: 'bad-page',
+    method: 'thread/list',
+    params: { ...params, cursor: `${STATE_THREAD_LIST_CURSOR_PREFIX}broken` }
+  }, { fs, DatabaseSync, codexHome }), null);
 });
 
 test('stdio proxy lists shared sessions beyond unfiltered exec rows', () => {

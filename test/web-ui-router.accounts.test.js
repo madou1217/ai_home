@@ -855,14 +855,14 @@ test('web ui refresh usage reads auth-invalid state from accountRef runtime acco
   }]);
 });
 
-test('web ui set-default writes accountRef pointer and syncs host config', async (t) => {
+test('web ui set-default writes accountRef pointer without changing Codex App identity', async (t) => {
   const fixture = createAccountFixture(t, 'aih-webui-set-default-');
   const accountRef = fixture.register('codex', '42', {
     state: { configured: true, apiKeyMode: false, displayName: 'default@example.com' }
   });
   const sessionLinks = [];
   const syncCalls = [];
-  const desktopCalls = [];
+  const desktopRuntimeCalls = [];
   const res = createResCapture();
   const pathname = `/v0/webui/accounts/codex/${accountRef}/set-default`;
   await handleWebUIRequest({
@@ -882,9 +882,16 @@ test('web ui set-default writes accountRef pointer and syncs host config', async
         return { ok: true };
       },
       codexDesktopHookService: {
-        setDesktopAccountRef(candidateRef) {
-          desktopCalls.push({ action: 'set', accountRef: candidateRef });
-          return { ok: true, changed: true, desktopAccountRef: candidateRef };
+        setDesktopAccountRef() {
+          throw new Error('set-default must not replace Codex App identity');
+        },
+        ensureInstalled() {
+          desktopRuntimeCalls.push('ensure-installed');
+          return { ok: true, restartRequired: false };
+        },
+        restartRunningAppServers() {
+          desktopRuntimeCalls.push('restart-app-servers');
+          return { ok: true, count: 1, pids: [42] };
         }
       }
     })
@@ -896,13 +903,10 @@ test('web ui set-default writes accountRef pointer and syncs host config', async
   assert.equal(readDefaultAccountRef(fs, fixture.aiHomeDir, 'codex'), accountRef);
   assert.deepEqual(sessionLinks, [{ provider: 'codex', accountRef }]);
   assert.deepEqual(syncCalls, [{ provider: 'codex', accountRef }]);
-  assert.deepEqual(desktopCalls, [{ action: 'set', accountRef }]);
-  assert.deepEqual(body.desktopAccount, {
-    eligible: true,
-    synced: true,
-    changed: true,
-    hotSyncQueued: true
-  });
+  assert.deepEqual(desktopRuntimeCalls, ['ensure-installed', 'restart-app-servers']);
+  assert.equal(body.desktopAccount, undefined);
+  assert.equal(body.desktopRuntime.ok, true);
+  assert.equal(body.desktopRuntime.restarted, true);
 });
 
 test('web ui set-default leaves Codex App identity unchanged for api-key accounts', async (t) => {
@@ -934,13 +938,7 @@ test('web ui set-default leaves Codex App identity unchanged for api-key account
   const body = JSON.parse(res.body);
   assert.equal(res.statusCode, 200);
   assert.equal(readDefaultAccountRef(fs, fixture.aiHomeDir, 'codex'), accountRef);
-  assert.deepEqual(body.desktopAccount, {
-    eligible: false,
-    synced: false,
-    changed: false,
-    hotSyncQueued: false,
-    reason: 'missing_codex_desktop_oauth'
-  });
+  assert.equal(body.desktopAccount, undefined);
 });
 
 test('web ui clear-default clears only the matching accountRef pointer', async (t) => {

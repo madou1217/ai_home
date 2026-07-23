@@ -3,10 +3,17 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
+  buildCodexStartupWarningArgs,
   buildCodexProviderArgs,
   hasCodexModelProviderArg,
   injectCodexProviderArgs
 } = require('../lib/cli/services/ai-cli/codex-provider-args');
+
+test('codex startup warning args use the root config key', () => {
+  assert.deepEqual(buildCodexStartupWarningArgs(), [
+    '-c', 'suppress_unstable_features_warning=true'
+  ]);
+});
 
 test('codex provider args inject endpoint through config and keep the key in env', () => {
   const args = buildCodexProviderArgs({

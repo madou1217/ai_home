@@ -169,11 +169,33 @@ test('mergeConfigs assigns aih provider defaults for api key mode without explic
   });
 
   assert.match(merged, /preferred_auth_method = "apikey"/);
+  assert.match(merged, /^suppress_unstable_features_warning = true$/m);
   assert.match(merged, new RegExp(`model_provider = "${providerKey}"`));
   assert.match(merged, new RegExp(`\\[model_providers\\.${providerKey}\\]`));
   assert.match(merged, new RegExp(`base_url = "${AIH_CODEX_PROVIDER_BASE_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`));
   assert.match(merged, /^env_key = "OPENAI_API_KEY"$/m);
   assert.doesNotMatch(merged, /^bearer_token = /m);
+});
+
+test('mergeConfigs moves misplaced unstable warning suppression to the root table', () => {
+  const merged = mergeConfigs([
+    'model = "gpt-5.6-sol"',
+    '',
+    '[features]',
+    'chronicle = true',
+    'suppress_unstable_features_warning=true'
+  ].join('\n'), {
+    preferred_auth_method: null,
+    model_provider: null,
+    providers: [],
+    model_providers: []
+  });
+
+  const rootKeyIndex = merged.indexOf('suppress_unstable_features_warning = true');
+  const featuresIndex = merged.indexOf('[features]');
+  assert.equal(rootKeyIndex >= 0, true);
+  assert.equal(rootKeyIndex < featuresIndex, true);
+  assert.equal((merged.match(/suppress_unstable_features_warning = true/g) || []).length, 1);
 });
 
 test('mergeConfigs switches to oauth mode without rewriting host provider blocks', () => {

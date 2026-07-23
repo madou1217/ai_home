@@ -227,6 +227,7 @@ test('syncGlobalConfigToHost writes the canonical codex API-key provider block f
   const hostConfig = fs.readFileSync(path.join(fixture.hostCodexDir, 'config.toml'), 'utf8');
   const providerKey = getAihProviderKey();
   assert.match(hostConfig, /^preferred_auth_method = "apikey"$/m);
+  assert.match(hostConfig, /^suppress_unstable_features_warning = true$/m);
   assert.match(hostConfig, new RegExp(`^model_provider = "${providerKey}"$`, 'm'));
   assert.match(hostConfig, new RegExp(`^\\[model_providers\\.${providerKey}\\]$`, 'm'));
   assert.match(hostConfig, new RegExp(`^base_url = "${AIH_CODEX_PROVIDER_BASE_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"$`, 'm'));

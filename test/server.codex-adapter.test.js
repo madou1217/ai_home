@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const zlib = require('node:zlib');
-const { handleCodexChatCompletions, __private } = require('../lib/server/codex-adapter');
+const { handleCodexModels, handleCodexChatCompletions, __private } = require('../lib/server/codex-adapter');
 const { getAccountModelCooldownUntil } = require('../lib/server/account-runtime-state');
 const { chooseServerAccount, markProxyAccountFailure, markProxyAccountSuccess } = require('../lib/server/router');
 
@@ -36,6 +36,19 @@ function createCompletedUpstreamResponse(text = 'recovered') {
         usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 }
       }
     })
+  };
+}
+
+function createCodexModelMetadata(slug = 'gpt-5.6-sol') {
+  return {
+    slug,
+    display_name: 'GPT-5.6-Sol',
+    description: 'Codex model metadata',
+    supported_in_api: true,
+    visibility: 'list',
+    supported_reasoning_levels: [{ effort: 'high', description: 'High' }],
+    service_tiers: [{ id: 'priority', name: 'Fast', description: 'Faster' }],
+    base_instructions: 'You are Codex.'
   };
 }
 
@@ -139,6 +152,28 @@ test('codex adapter parses OpenAI-compatible model list payloads', () => {
   assert.deepEqual(ids, ['gpt-5.5', 'gpt-5.4-mini']);
 });
 
+test('codex adapter preserves native model metadata separately from OpenAI ids', () => {
+  const metadata = createCodexModelMetadata();
+  assert.deepEqual(__private.parseCodexModelCatalog({ models: [metadata] }), [metadata]);
+  assert.deepEqual(__private.parseCodexModelCatalog({
+    data: [{ id: metadata.slug }]
+  }), []);
+});
+
+test('codex adapter projects a missing gateway alias from same-family native metadata', () => {
+  const terra = createCodexModelMetadata('gpt-5.6-terra');
+  const models = __private.buildCodexNativeModelCatalog(
+    ['gpt-5.6-terra', 'gpt-5.6-sol'],
+    { [accountRef('projection')]: [terra] }
+  );
+  assert.deepEqual(models.map((model) => model.slug), [
+    'gpt-5.6-terra',
+    'gpt-5.6-sol'
+  ]);
+  assert.equal(models[1].base_instructions, terra.base_instructions);
+  assert.equal(models[1].availability_nux, null);
+});
+
 test('codex adapter fetches upstream models with client_version query', async () => {
   const seen = { url: '', headers: {} };
   const ids = await __private.fetchCodexModelsForAccount({
@@ -170,6 +205,95 @@ test('codex adapter fetches upstream models with client_version query', async ()
   assert.equal(seen.headers['user-agent'], 'codex_cli_rs/0.130.0');
   assert.equal(seen.headers['chatgpt-account-id'], 'acct_1');
   assert.deepEqual(ids, ['gpt-5.3-codex']);
+});
+
+test('codex adapter serves the native ModelInfo contract to Codex clients', async () => {
+  const metadata = createCodexModelMetadata();
+  const res = createResCapture();
+  const state = {
+    accounts: {
+      codex: [{
+        accountRef: accountRef('catalog'),
+        accessToken: 'token'
+      }]
+    },
+    modelsCache: {
+      updatedAt: 0,
+      ids: [],
+      byAccount: {},
+      catalogByAccount: {},
+      sourceCount: 0
+    }
+  };
+
+  await handleCodexModels({
+    options: {
+      codexBaseUrl: 'https://chatgpt.com/backend-api/codex',
+      codexClientVersion: 'codex-cli 0.145.0',
+      modelsProbeAccounts: 1,
+      modelsCacheTtlMs: 300000
+    },
+    state,
+    res,
+    responseFormat: 'codex',
+    deps: {
+      buildOpenAIModelsList() {
+        throw new Error('native catalog must not be flattened');
+      },
+      fetchWithTimeout: async () => ({
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ models: [metadata] })
+      })
+    }
+  });
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers['x-aih-models-format'], 'codex');
+  assert.deepEqual(JSON.parse(res.body), { models: [metadata] });
+  assert.deepEqual(state.modelsCache.catalogByAccount[accountRef('catalog')], [metadata]);
+});
+
+test('codex adapter never returns an OpenAI data list to a native catalog request', async () => {
+  const res = createResCapture();
+  await handleCodexModels({
+    options: {
+      codexBaseUrl: 'https://proxy.example.test/v1',
+      modelsProbeAccounts: 1,
+      modelsCacheTtlMs: 300000
+    },
+    state: {
+      accounts: {
+        codex: [{
+          accountRef: accountRef('openai-list'),
+          accessToken: 'token',
+          apiKeyMode: true,
+          openaiBaseUrl: 'https://proxy.example.test/v1'
+        }]
+      },
+      modelsCache: { updatedAt: 0, ids: [], byAccount: {}, catalogByAccount: {} }
+    },
+    res,
+    responseFormat: 'codex',
+    deps: {
+      buildOpenAIModelsList() {
+        throw new Error('native catalog must not be flattened');
+      },
+      fetchWithTimeout: async () => ({
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({
+          object: 'list',
+          data: [{ id: 'gpt-5.6-sol' }]
+        })
+      })
+    }
+  });
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers['x-aih-models-format'], 'codex');
+  assert.equal(res.headers['x-aih-models-fallback'], 'metadata-unavailable');
+  assert.deepEqual(JSON.parse(res.body), { models: [] });
 });
 
 test('codex adapter decodes compressed model error bodies', async () => {

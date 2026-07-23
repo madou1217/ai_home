@@ -513,6 +513,49 @@ test('v1 models applies account-scoped WebUI model catalog settings', async () =
   assert.deepEqual(ids, ['a', 'b', 'e', 'g']);
 });
 
+test('v1 models preserves the Codex catalog contract for client_version requests', async () => {
+  const res = createResCapture();
+  let responseFormat = '';
+  const handled = await handleV1Request({
+    req: { headers: {}, url: '/v1/models?client_version=0.145.0' },
+    res,
+    method: 'GET',
+    pathname: '/v1/models',
+    options: { backend: 'codex-adapter', provider: 'auto' },
+    state: {
+      metrics: { totalRequests: 0, routeCounts: {}, totalSuccess: 0 },
+      accounts: { codex: [], gemini: [], claude: [], agy: [], opencode: [] },
+      modelRegistry: { providers: { codex: new Set(), gemini: new Set(), claude: new Set() } },
+      modelsCache: { ids: [], updatedAt: 0, byAccount: {}, catalogByAccount: {}, sourceCount: 0 }
+    },
+    requiredClientKey: '',
+    cooldownMs: 1000,
+    maxRequestBodyBytes: 1024 * 1024,
+    requestMeta: {},
+    deps: {
+      parseAuthorizationBearer: () => '',
+      writeJson: (r, code, payload) => { r.statusCode = code; r.end(JSON.stringify(payload)); },
+      readRequestBody: async () => Buffer.from(''),
+      buildOpenAIModelsList,
+      handleCodexModels: async (ctx) => {
+        responseFormat = ctx.responseFormat;
+        ctx.res.statusCode = 200;
+        ctx.res.end(JSON.stringify({ models: [{ slug: 'gpt-5.6-sol' }] }));
+      },
+      handleUpstreamModels: async () => {
+        throw new Error('Codex catalog request must not use the OpenAI models handler');
+      },
+      fetchModelsForAccount: async () => [],
+      FALLBACK_MODELS: [],
+      fetchWithTimeout: async () => ({})
+    }
+  });
+
+  assert.equal(handled, true);
+  assert.equal(responseFormat, 'codex');
+  assert.deepEqual(JSON.parse(res.body), { models: [{ slug: 'gpt-5.6-sol' }] });
+});
+
 test('v1 router returns 413 when request body exceeds limit', async () => {
   const res = createResCapture();
   const handled = await handleV1Request({

@@ -644,9 +644,8 @@ test('runtime asks before installing psmux on Windows and degrades when declined
   assert.equal(calls[0].defaultYes, false);
   assert.match(calls[0].query, /psmux/);
   assert.equal(spawns.length, 1);
-  assert.equal(spawns[0].command, 'C:\\Program Files\\nodejs\\node.exe');
-  assert.equal(spawns[0].args[0], 'C:\\tools\\node_modules\\@openai\\codex\\bin\\codex.js');
-  assert.equal(spawns[0].options.env.NODE_PATH, 'C:\\tools\\node_modules');
+  assert.equal(spawns[0].command, 'cmd.exe');
+  assert.equal(spawns[0].args.includes('chcp 65001>nul & C:\\tools\\codex.cmd'), true);
   assert.equal(spawns[0].options.useConptyDll, true);
   assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
   assert.deepEqual(rawModeCalls, [true, false]);

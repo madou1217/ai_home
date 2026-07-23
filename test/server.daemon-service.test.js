@@ -1171,6 +1171,8 @@ test('daemon service restart replaces own listener on the configured target port
 
 test('daemon service restart reloads loaded launchd autostart with saved serve config', async () => {
   const root = makeTempDir();
+  const { repoDir, entryFilePath } = makeSourceCheckout(root);
+  const aihCommandPath = makeAihCommandShim(root, repoDir);
   const aiHomeDir = path.join(root, '.ai_home');
   fs.mkdirSync(aiHomeDir, { recursive: true });
   const pidFile = path.join(aiHomeDir, 'server.pid');
@@ -1188,10 +1190,10 @@ test('daemon service restart reloads loaded launchd autostart with saved serve c
 
   const commandForPid = (pid) => {
     if (pid === 1001 && oldAlive) {
-      return '/usr/local/bin/node /repo/lib/cli/app.js server serve --host 127.0.0.1 --port 9527';
+      return `/usr/local/bin/node ${entryFilePath} server serve --host 127.0.0.1 --port 9527`;
     }
     if (pid === 2002 && newAlive) {
-      return '/usr/local/bin/node /opt/homebrew/bin/aih __background run';
+      return `/usr/local/bin/node ${aihCommandPath} __background run`;
     }
     return '';
   };
@@ -1205,7 +1207,7 @@ test('daemon service restart reloads loaded launchd autostart with saved serve c
     },
     spawnSync(cmd, args) {
       if (cmd === 'sh' && args[1] === 'command -v aih') {
-        return { status: 0, stdout: '/opt/homebrew/bin/aih\n', stderr: '' };
+        return { status: 0, stdout: `${aihCommandPath}\n`, stderr: '' };
       }
       if (String(cmd).endsWith('/lsregister')) return { status: 0, stdout: '', stderr: '' };
       if (cmd === 'launchctl') {
@@ -1282,7 +1284,7 @@ test('daemon service restart reloads loaded launchd autostart with saved serve c
     logFile,
     launchdLabel,
     launchdPlist,
-    entryFilePath: '/repo/lib/cli/app.js'
+    entryFilePath
   });
 
   const result = await daemon.restart([], { waitForReady: false, gracefulStopWaitMs: 20 });

@@ -4,11 +4,19 @@ const { EventEmitter } = require('node:events');
 const { handleManagementRequest } = require('../lib/server/management-router');
 const { buildManagementModelsResponse } = require('../lib/server/model-endpoints');
 const { normalizeMetricErrors } = require('../lib/server/management');
+const { SUPPORTED_SERVER_PROVIDERS } = require('../lib/server/providers');
 
 const MANAGEMENT_GEMINI_ACCOUNT_REF = 'acct_0123456789abcdefabcd';
 const MANAGEMENT_CODEX_ACCOUNT_REF = 'acct_11111111111111111111';
 const MANAGEMENT_GEMINI_SECOND_REF = 'acct_22222222222222222222';
 const MANAGEMENT_CODEX_SECOND_REF = 'acct_33333333333333333333';
+
+function buildProviderCounts(overrides = {}) {
+  return Object.fromEntries(SUPPORTED_SERVER_PROVIDERS.map((provider) => [
+    provider,
+    Number(overrides[provider]) || 0
+  ]));
+}
 
 test('management metric errors expose accountRef without deriving accountKey', () => {
   const errors = normalizeMetricErrors([{
@@ -221,13 +229,7 @@ test('management router reload endpoint returns deterministic payload', async ()
   assert.deepEqual(body, {
     ok: true,
     reloaded: 3,
-    providers: {
-      codex: 2,
-      gemini: 1,
-      claude: 0,
-      agy: 0,
-      opencode: 0
-    }
+    providers: buildProviderCounts({ codex: 2, gemini: 1 })
   });
 });
 
@@ -719,7 +721,7 @@ test('management router supports reload and cooldown clear contracts', async () 
   assert.deepEqual(JSON.parse(reloadRes.body), {
     ok: true,
     reloaded: 3,
-    providers: { codex: 1, gemini: 2, claude: 0, agy: 0, opencode: 0 }
+    providers: buildProviderCounts({ codex: 1, gemini: 2 })
   });
 
   const clearRes = createResCapture();

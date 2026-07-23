@@ -12,7 +12,7 @@ const {
 test('native capability registry declares all AIH providers', () => {
   assert.deepEqual(
     listProviderNativeCapabilities().map((item) => item.provider),
-    ['agy', 'claude', 'codex', 'gemini']
+    ['agy', 'claude', 'codex', 'gemini', 'grok', 'kimi', 'kiro']
   );
 });
 

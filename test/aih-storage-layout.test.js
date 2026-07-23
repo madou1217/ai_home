@@ -64,6 +64,19 @@ test('AIH storage layout rejects traversal and compound path segments', () => {
   ));
 });
 
+test('AIH storage layout keeps Windows roots canonical on non-Windows hosts', () => {
+  const aiHomeDir = 'C:\\Users\\alice\\.ai_home';
+
+  assert.equal(
+    resolveAihRunPath(aiHomeDir, 'server.pid'),
+    'C:\\Users\\alice\\.ai_home\\run\\server.pid'
+  );
+  assert.equal(
+    resolveAihLogPath(aiHomeDir, 'server.log'),
+    'C:\\Users\\alice\\.ai_home\\logs\\server.log'
+  );
+});
+
 test('core stores keep AIH root to one database plus run and logs', async (t) => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-storage-contract-'));
   t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));

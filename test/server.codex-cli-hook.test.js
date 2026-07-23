@@ -329,7 +329,7 @@ test('codex cli hook keeps the resolved pnpm shim independent of later PATH entr
   const selectedUpstream = fs.readFileSync(secondUpstreamPath, 'utf8');
 
   assert.equal(result.ok, true);
-  assert.equal(result.repaired, true);
+  assert.equal(result.enabled, true);
   assert.equal(selectedUpstream, pnpmShimFromBinDir);
   assert.equal(fs.readFileSync(firstUpstreamPath, 'utf8'), pnpmShimFromBinDir);
 });

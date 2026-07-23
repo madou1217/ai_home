@@ -10,6 +10,7 @@ const {
   handleUpstreamPassthrough
 } = require('../lib/server/upstream-endpoints');
 const { loadAliases, saveAliases } = require('../lib/server/model-alias-store');
+const { SUPPORTED_SERVER_PROVIDERS } = require('../lib/server/providers');
 
 const V1_CODEX_REF_1 = 'acct_0123456789abcdefabcd';
 const V1_CODEX_REF_2 = 'acct_abcdefabcdefabcdefab';
@@ -4226,7 +4227,10 @@ test('v1 global models include OpenCode provider catalog', async () => {
   assert.equal(handled, true);
   assert.equal(res.statusCode, 200);
   assert.equal(res.headers['x-aih-models-source'], 'global-capability-pool');
-  assert.deepEqual(upstreamProviders.sort(), ['agy', 'claude', 'gemini', 'opencode']);
+  assert.deepEqual(
+    upstreamProviders.sort(),
+    SUPPORTED_SERVER_PROVIDERS.filter((provider) => provider !== 'codex').sort()
+  );
   const ids = JSON.parse(res.body).data.map((item) => item.id);
   assert.deepEqual(ids, ['gpt-5.5', 'opencode-go/glm-5.2', 'opencode-go/kimi-k2.7-code']);
 });

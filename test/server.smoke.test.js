@@ -42,8 +42,7 @@ async function waitForHealth(port, timeoutMs = 10000) {
   return false;
 }
 
-function seedCodexTestAccount(homeDir) {
-  const aiHomeDir = path.join(homeDir, '.ai_home');
+function seedCodexTestAccount(aiHomeDir) {
   const accountRef = upsertAccountRef(fs, aiHomeDir, {
     provider: 'codex',
     cliAccountId: '1',
@@ -60,9 +59,8 @@ function seedCodexTestAccount(homeDir) {
   } });
 }
 
-function seedFakeCodexDesktopBundle(homeDir) {
-  const aiHomeDir = path.join(homeDir, '.ai_home');
-  const bundlePath = path.join(homeDir, 'Applications', 'Codex.app');
+function seedFakeCodexDesktopBundle(hostHomeDir, aiHomeDir) {
+  const bundlePath = path.join(hostHomeDir, 'Applications', 'Codex.app');
   const resourcesDir = path.join(bundlePath, 'Contents', 'Resources');
   const targetBinaryPath = path.join(resourcesDir, 'codex');
   fs.mkdirSync(resourcesDir, { recursive: true });
@@ -71,8 +69,7 @@ function seedFakeCodexDesktopBundle(homeDir) {
   return { aiHomeDir, targetBinaryPath };
 }
 
-function assertCanonicalAihRoot(homeDir) {
-  const aiHomeDir = path.join(homeDir, '.ai_home');
+function assertCanonicalAihRoot(aiHomeDir) {
   const entries = fs.readdirSync(aiHomeDir).sort();
   const unexpected = entries.filter((entry) => (
     entry !== 'run'
@@ -139,9 +136,10 @@ async function startProxy(t, extraArgs = [], envOverrides = {}, options = {}) {
   const port = await getFreePort();
   const cliPath = path.join(process.cwd(), 'bin', 'ai-home.js');
   const testHome = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-smoke-'));
-  seedCodexTestAccount(testHome);
+  const aiHomeDir = path.join(testHome, '.ai_home');
+  seedCodexTestAccount(aiHomeDir);
   if (typeof options.beforeStart === 'function') {
-    options.beforeStart(testHome);
+    options.beforeStart(testHome, aiHomeDir);
   }
   const env = { ...process.env };
   Object.keys(env).forEach((key) => {
@@ -162,7 +160,7 @@ async function startProxy(t, extraArgs = [], envOverrides = {}, options = {}) {
     stdio: ['ignore', 'pipe', 'pipe'],
     env: {
       ...env,
-      AIH_HOME: testHome,
+      AIH_HOME: aiHomeDir,
       AIH_HOST_HOME: testHome,
       HOME: testHome,
       AIH_SERVER_HOST: '127.0.0.1',
@@ -189,7 +187,7 @@ async function startProxy(t, extraArgs = [], envOverrides = {}, options = {}) {
     try { fs.rmSync(testHome, { recursive: true, force: true }); } catch (_error) {}
   });
 
-  return { child, port, testHome, getStderr: () => stderr };
+  return { child, port, testHome, aiHomeDir, getStderr: () => stderr };
 }
 
 async function startMockUpstream(t) {
@@ -249,7 +247,7 @@ async function startSlowModelsUpstream(t, delayMs) {
 
 test('server serve exposes health/models/metrics', async (t) => {
   const upstream = await startMockUpstream(t);
-  const { port, testHome, getStderr } = await startProxy(t, ['--codex-base-url', upstream]);
+  const { port, aiHomeDir, getStderr } = await startProxy(t, ['--codex-base-url', upstream]);
   const ready = await waitForHealth(port, 12000);
   assert.equal(ready, true, `server did not become healthy: ${getStderr()}`);
 
@@ -275,7 +273,7 @@ test('server serve exposes health/models/metrics', async (t) => {
   const metrics = await metricsRes.json();
   assert.equal(metrics.ok, true);
   assert.ok(Number(metrics.totalRequests) >= 1);
-  assertCanonicalAihRoot(testHome);
+  assertCanonicalAihRoot(aiHomeDir);
 });
 
 test('server serve becomes healthy without waiting for model refresh scheduling', async (t) => {
@@ -420,8 +418,8 @@ test('server shutdown keeps codex desktop hook enabled across restarts', MACOS_O
     ['--codex-base-url', upstream],
     { AIH_SERVER_CODEX_DESKTOP_HOOK: '1' },
     {
-      beforeStart(homeDir) {
-        seededDesktop = seedFakeCodexDesktopBundle(homeDir);
+      beforeStart(homeDir, aiHomeDir) {
+        seededDesktop = seedFakeCodexDesktopBundle(homeDir, aiHomeDir);
       }
     }
   );
@@ -458,7 +456,7 @@ test('server startup reinstalls codex cli hook after global shim is overwritten'
     try { fs.rmSync(fakeBinDir, { recursive: true, force: true }); } catch (_error) {}
   });
 
-  const { port, testHome, getStderr } = await startProxy(
+  const { port, aiHomeDir, getStderr } = await startProxy(
     t,
     ['--codex-base-url', upstream],
     { PATH: `${fakeBinDir}:${process.env.PATH || ''}` }
@@ -466,7 +464,7 @@ test('server startup reinstalls codex cli hook after global shim is overwritten'
   const ready = await waitForHealth(port, 12000);
   assert.equal(ready, true, `server did not become healthy: ${getStderr()}`);
 
-  const statePath = path.join(testHome, '.ai_home', 'run', 'codex', 'cli-hook-state.json');
+  const statePath = path.join(aiHomeDir, 'run', 'codex', 'cli-hook-state.json');
   const deadline = Date.now() + 5000;
   while (Date.now() < deadline && !fs.existsSync(statePath)) {
     await sleep(100);
@@ -536,8 +534,8 @@ test('server self-heals codex desktop hook while running after wrapper is overwr
       AIH_SERVER_CODEX_DESKTOP_TRACE_RESPONSES: '1'
     },
     {
-      beforeStart(homeDir) {
-        seededDesktop = seedFakeCodexDesktopBundle(homeDir);
+      beforeStart(homeDir, aiHomeDir) {
+        seededDesktop = seedFakeCodexDesktopBundle(homeDir, aiHomeDir);
       }
     }
   );

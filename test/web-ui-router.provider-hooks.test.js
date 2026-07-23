@@ -13,6 +13,7 @@ const {
 const {
   buildProviderSessionHookDiagnostic
 } = require('../lib/server/webui-provider-hook-routes');
+const { SUPPORTED_SERVER_PROVIDERS } = require('../lib/server/providers');
 
 function createResCapture() {
   return {
@@ -138,7 +139,10 @@ test('web ui provider-hooks route returns read-only diagnostics', async (t) => {
   assert.equal(res.statusCode, 200);
   const body = JSON.parse(res.body);
   assert.equal(body.ok, true);
-  assert.equal(body.providers.length, 5);
+  assert.deepEqual(
+    body.providers.map((item) => item.provider),
+    SUPPORTED_SERVER_PROVIDERS
+  );
   const byProvider = new Map(body.providers.map((item) => [item.provider, item]));
   assert.equal(byProvider.get('codex').installed, true);
   assert.equal(byProvider.get('codex').sessionSync.sourceHook.available, true);

@@ -46,9 +46,9 @@ test('collectNativeCliPathEntries covers official Qoder install home layout', ()
       }
     }
   });
-  assert.ok(cnEntries.includes(path.join('C:\\Users\\example', '.local', 'bin')));
+  assert.ok(cnEntries.includes(path.win32.join('C:\\Users\\example', '.local', 'bin')));
   // Official CN install path verified via live `qoderclicn install --force`
-  assert.ok(cnEntries.includes(path.join('C:\\Users\\example', '.qoder-cn', 'bin', 'qoderclicn')));
+  assert.ok(cnEntries.includes(path.win32.join('C:\\Users\\example', '.qoder-cn', 'bin', 'qoderclicn')));
   assert.ok(cnEntries.some((entry) => /QoderCN/i.test(entry) || /qoderclicn/i.test(entry)));
 
   const globalEntries = collectNativeCliPathEntries('qoder', {

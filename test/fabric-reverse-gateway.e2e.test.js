@@ -21,7 +21,7 @@ const {
 } = require('./fabric-reverse-gateway-harness');
 
 function seedCodexAccount(homeDir) {
-  const aiHomeDir = path.join(homeDir, '.ai_home');
+  const aiHomeDir = homeDir;
   const accountRef = upsertAccountRef(fs, aiHomeDir, {
     provider: 'codex',
     cliAccountId: '1',

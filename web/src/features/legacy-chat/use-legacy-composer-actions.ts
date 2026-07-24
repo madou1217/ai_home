@@ -71,8 +71,9 @@ export function useLegacyComposerActions({
     suppressAbortToastRef.current = true;
   }, []);
 
-  const send = useCallback(async (): Promise<void> => {
-    if (!input.trim()) return void message.warning('请输入消息');
+  const runMessage = useCallback(async (rawContent: string, rawImages: string[]): Promise<void> => {
+    const content = rawContent.trim();
+    if (!content) return void message.warning('请输入消息');
     if (!selection.account) return void message.warning('请先选择一个账号');
     if (!selection.session.draft && selection.account.provider !== selection.session.provider) {
       return void message.error(
@@ -81,10 +82,7 @@ export function useLegacyComposerActions({
     }
     const projectPath = selection.project?.path || selection.session.projectPath;
     if (!projectPath) return void message.error('当前会话缺少项目路径');
-    const content = input.trim();
-    const imageList = images.slice();
-    setInput('');
-    setImages([]);
+    const imageList = rawImages.slice();
 
     const currentRunKey = findRun(selection.session);
     const queueKey = resolveQueueTargetKey(
@@ -131,8 +129,6 @@ export function useLegacyComposerActions({
     detachedRunRef,
     findRun,
     enqueueMessage,
-    images,
-    input,
     reloadSessionHistory,
     refreshProjects,
     runSessionMessage,
@@ -141,6 +137,15 @@ export function useLegacyComposerActions({
     selection.project?.path,
     selection.session,
   ]);
+
+  const send = useCallback(async (): Promise<void> => {
+    const content = input;
+    const imageList = images.slice();
+    if (!content.trim()) return void message.warning('请输入消息');
+    setInput('');
+    setImages([]);
+    await runMessage(content, imageList);
+  }, [images, input, runMessage]);
 
   const stop = useCallback((): void => {
     const session = selection.sessionRef.current;

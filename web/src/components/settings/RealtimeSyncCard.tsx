@@ -5,16 +5,21 @@ import api from '@/services/api';
 import { providerNames } from '@/components/chat/ProviderIcon';
 import './RealtimeSyncCard.css';
 
+type ProviderSyncMode = 'hook' | 'polling' | 'unavailable';
+
 interface ProviderHookStatus {
   provider: string;
   supported?: boolean;
+  syncMode?: ProviderSyncMode;
   installed?: boolean;
   disabled?: boolean;
   targetKind?: string;
 }
 
-// 会话实时同步状态卡：展示各 provider 官方 session-sync hook 是否已安装(已装=CLI 会话事件事件驱动
-// 实时推送到 web,而非 500ms 文件轮询)。启动时会自动安装,这里提供可见状态 + 手动「修复」。
+// 会话实时同步状态卡:展示全部 10 个 provider 的真实同步方式,不再悄悄隐藏没有官方 hook 的 provider。
+// syncMode 三态(后端 provider-session-hook-config.js 的 getProviderSessionSyncMode 派生):
+//   hook = 官方 hook 已接入(事件驱动,可一键启用/修复) / polling = 无官方 hook,靠 500ms 文件轮询兜底
+//   / unavailable = 连轮询都读不到会话文件。启动时会自动安装 hook 态的 provider,这里提供可见状态 + 手动「修复」。
 export default function RealtimeSyncCard() {
   const [rows, setRows] = useState<ProviderHookStatus[]>([]);
   const [loading, setLoading] = useState(false);
@@ -34,11 +39,13 @@ export default function RealtimeSyncCard() {
 
   useEffect(() => { load(); }, [load]);
 
-  const supported = rows.filter((r) => r.supported !== false);
-  const missing = supported.filter((r) => !r.installed);
+  const hookRows = rows.filter((r) => r.syncMode === 'hook');
+  const pollingRows = rows.filter((r) => r.syncMode === 'polling');
+  const unavailableRows = rows.filter((r) => r.syncMode === 'unavailable');
+  const missing = hookRows.filter((r) => !r.installed);
 
   const handleRepair = useCallback(async () => {
-    const targets = (missing.length > 0 ? missing : supported).map((r) => r.provider);
+    const targets = (missing.length > 0 ? missing : hookRows).map((r) => r.provider);
     if (targets.length === 0) return;
     setInstalling(true);
     try {
@@ -53,9 +60,10 @@ export default function RealtimeSyncCard() {
     } finally {
       setInstalling(false);
     }
-  }, [missing, supported, load]);
+  }, [missing, hookRows, load]);
 
-  const allOn = supported.length > 0 && missing.length === 0;
+  const allOn = hookRows.length > 0 && missing.length === 0;
+  const providerLabel = (provider: string) => providerNames[provider as keyof typeof providerNames] || provider;
 
   return (
     <div className="rtsync-card">
@@ -69,7 +77,7 @@ export default function RealtimeSyncCard() {
       <div className="rtsync-status-row">
         <span className={`rtsync-overall ${allOn ? 'on' : 'partial'}`}>
           {allOn ? <CheckCircleFilled /> : <ExclamationCircleFilled />}
-          {loading ? '检测中…' : allOn ? '实时同步已全部启用' : `${supported.length - missing.length}/${supported.length} provider 已启用`}
+          {loading ? '检测中…' : allOn ? '官方 hook 已全部启用' : `${hookRows.length - missing.length}/${hookRows.length} provider 官方 hook 已启用`}
         </span>
         <button className="rtsync-repair" onClick={handleRepair} disabled={installing || loading || allOn}>
           <SyncOutlined spin={installing} />
@@ -78,10 +86,24 @@ export default function RealtimeSyncCard() {
       </div>
 
       <div className="rtsync-chips">
-        {supported.map((r) => (
-          <span key={r.provider} className={`rtsync-chip ${r.installed ? 'on' : 'off'}`}>
+        {hookRows.map((r) => (
+          <span key={r.provider} className={`rtsync-chip ${r.installed ? 'on' : 'off'}`} title={r.installed ? '官方 hook 已安装,事件驱动实时同步' : '官方 hook 未安装,点「一键启用」'}>
             <span className="rtsync-dot" />
-            {providerNames[r.provider as keyof typeof providerNames] || r.provider}
+            {providerLabel(r.provider)}
+          </span>
+        ))}
+        {pollingRows.map((r) => (
+          <span key={r.provider} className="rtsync-chip poll" title="该 provider 暂无官方 hook,靠文件轮询兜底同步(非事件驱动,有延迟)">
+            <span className="rtsync-dot" />
+            {providerLabel(r.provider)}
+            <span className="rtsync-chip-tag">轮询</span>
+          </span>
+        ))}
+        {unavailableRows.map((r) => (
+          <span key={r.provider} className="rtsync-chip na" title="该 provider 尚不支持会话读取,暂无法同步到网页">
+            <span className="rtsync-dot" />
+            {providerLabel(r.provider)}
+            <span className="rtsync-chip-tag">不可用</span>
           </span>
         ))}
       </div>

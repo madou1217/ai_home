@@ -17,7 +17,12 @@ provider CLI (hook/插件/协议事件)
 ```
 
 安装与诊断:`GET/POST /v0/webui/provider-hooks`(webui-provider-hook-routes.js),
-配置写入由 provider-session-hook-config.js 负责(claude settings.json / codex hooks.json / agy hooks.json / gemini settings.json)。
+配置写入由 provider-session-hook-config.js 负责(claude settings.json / codex hooks.json / agy hooks.json / gemini settings.json / grok hooks.json,见 §8)。
+
+诊断对象带 `syncMode` 三态(`getProviderSessionSyncMode`,2026-07-24 加):`hook`=官方 hook 已接入、
+`polling`=无官方 hook 但 `resolveSessionFilePath` 有实现,靠 session-event-bus 的 500ms 文件 watch/poll
+兜底、`unavailable`=连会话文件都读不到。WebUI 设置页「会话实时同步」卡(RealtimeSyncCard.tsx)按此三态
+诚实展示**全部 10 个 provider**,不再把没有官方 hook 的 provider 从卡片里滤掉。
 
 ### 归一化事件(前端消费的 9 类)
 `session:opened / turn-started / turn-updated / turn-completed / turn-failed / closed / notification / interactive-prompt / interactive-prompt-cleared`
@@ -170,6 +175,26 @@ handle 与 spawnNativeSessionStream 同构:`writeSteer→turn/steer`、`abort→
 | gemini | `settings.json` | SessionStart / BeforeAgent / AfterAgent / SessionEnd |
 | agy | `hooks.json` | PreInvocation / PostInvocation / Stop |
 | opencode | 插件 `plugin/aih-session-hook.js`(P4) | session lifecycle(见 §4.3) |
+| grok | `~/.grok/hooks/aih-session-sync.json` | SessionStart / UserPromptSubmit / Stop / StopFailure / SessionEnd |
+
+**grok(2026-07-24 加,⚠️ 未真机实证)**:官方 CLI 是 `x.ai/cli/install.sh`(AI Home 的
+`native-cli-install-strategies.js:grokInstallStrategy` 装的就是这个),对应官方文档
+`docs.x.ai/build/features/hooks` ——**注意不是**同名的 `superagent-ai/grok-cli` 社区项目(两者都用
+`.grok/` 目录,首轮 WebSearch 差点搞混,已通过对比 install strategy 的下载 URL 与官方文档域名排除)。
+schema 与 claude 一致(`{"hooks":{"EventName":[{"hooks":[{"type":"command",...,"timeout":秒}]}]}}`),
+事件名与 claude 完全同名,因此复用了 `buildEventHooksConfig` 通用分支,未新增专属 build/diagnose 逻辑。
+本机未装 grok CLI,无法端到端触发验证,**故未加入 `provider-session-hook-autoinstall.js` 的启动自动安装
+白名单**——只能通过设置页「一键启用」手动触发(写入前用户可见、可控),避免对未验证 provider 每次启动
+静默写用户配置文件。真机验证后再考虑转入自动安装。
+
+**qoder / qodercn / kiro(未接入,`syncMode='polling'`)**:WebSearch 显示三者都疑似有 Claude 兼容的 hook
+机制(qoder `~/.qoder/hooks`、kiro `agentSpawn`/`postToolUse` 等不同事件命名),但尚未像 grok 那样核对到
+官方文档 + 排除同名项目混淆风险,暂缓接入,靠 `resolveSessionFilePath` 的文件轮询兜底同步(有延迟,非
+事件驱动)。
+
+**kimi(未接入,`syncMode='unavailable'`)**:`resolveSessionFilePath` 无 kimi 分支(`session-reader.js`
+default 返回空字符串),会话读取本身就没做,装了 hook 也无处可读——这是比"没有官方 hook"更前置的缺口,
+需要先补会话文件读取支持才谈得上 hook。
 
 **归一化映射**(`provider-hook-event-normalizer.js`):40+ 原始事件 → 9 类 `session:*`(§1)。
 PreToolUse/PostToolUse/BeforeTool/AfterTool 已映射为 `session:turn-updated`,Notification→`session:notification`。

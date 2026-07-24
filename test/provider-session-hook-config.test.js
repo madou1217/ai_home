@@ -15,6 +15,7 @@ const {
   buildProviderSessionHookConfigPatch,
   buildProviderSessionHookSenderCommand,
   diagnoseProviderSessionHookConfig,
+  getProviderSessionSyncMode,
   installProviderSessionHookConfig,
   isManagedCommand
 } = require('../lib/server/provider-session-hook-config');
@@ -97,6 +98,27 @@ test('builds Claude settings hooks with required lifecycle events', () => {
   assert.equal(isManagedCommand(patch.config.hooks.Stop[0].hooks[0].command, 'claude'), true);
 });
 
+test('builds Grok hooks.json under ~/.grok/hooks/, matching official x.ai schema', () => {
+  const patch = buildProviderSessionHookConfigPatch('grok', {}, {
+    homeDir: '/home/u',
+    senderScriptPath: '/tmp/aih-hook.js',
+    serverUrl: 'http://127.0.0.1:8317/v0/webui/session-events/provider-hook'
+  });
+
+  assert.equal(patch.ok, true);
+  assert.equal(patch.targetKind, 'hooks.json');
+  assert.equal(patch.targetPath, require('node:path').join('/home/u', '.grok', 'hooks', 'aih-session-sync.json'));
+  assert.deepEqual(patch.events, ['SessionStart', 'UserPromptSubmit', 'Stop', 'StopFailure', 'SessionEnd']);
+  assert.equal(patch.config.hooks.Stop[0].hooks[0].type, 'command');
+  assert.equal(isManagedCommand(patch.config.hooks.Stop[0].hooks[0].command, 'grok'), true);
+
+  const diagnostic = diagnoseProviderSessionHookConfig('grok', patch.config, { homeDir: '/home/u' });
+  assert.equal(diagnostic.supported, true);
+  assert.equal(diagnostic.syncMode, 'hook');
+  assert.equal(diagnostic.installed, true);
+  assert.deepEqual(diagnostic.missingEvents, []);
+});
+
 test('builds Gemini settings hooks and avoids model chunk hooks by default', () => {
   const patch = buildProviderSessionHookConfigPatch('gemini', {}, {
     senderScriptPath: '/tmp/aih-hook.js'
@@ -150,6 +172,35 @@ test('diagnoses installed and missing provider hook configs', () => {
   const installed = diagnoseProviderSessionHookConfig('gemini', config);
   assert.equal(installed.installed, true);
   assert.deepEqual(installed.missingEvents, []);
+});
+
+test('getProviderSessionSyncMode reports honest tri-state instead of hiding unsupported providers', () => {
+  // 有官方 hook 接入(DEFAULT_EVENTS_BY_PROVIDER / opencode 插件桥 / grok 官方 hooks.json)。
+  assert.equal(getProviderSessionSyncMode('claude'), 'hook');
+  assert.equal(getProviderSessionSyncMode('opencode'), 'hook');
+  assert.equal(getProviderSessionSyncMode('grok'), 'hook');
+  // 无官方 hook(或尚未验证接入),但 resolveSessionFilePath 有实现,靠 500ms 文件轮询兜底。
+  assert.equal(getProviderSessionSyncMode('qoder'), 'polling');
+  assert.equal(getProviderSessionSyncMode('qodercn'), 'polling');
+  assert.equal(getProviderSessionSyncMode('kiro'), 'polling');
+  // 连会话文件读取都没有,同步彻底不可用。
+  assert.equal(getProviderSessionSyncMode('kimi'), 'unavailable');
+});
+
+test('diagnoseProviderSessionHookConfig surfaces syncMode on every branch, including unsupported providers', () => {
+  const unsupported = diagnoseProviderSessionHookConfig('qoder', {});
+  assert.equal(unsupported.supported, false);
+  assert.equal(unsupported.syncMode, 'polling');
+
+  const unavailable = diagnoseProviderSessionHookConfig('kimi', {});
+  assert.equal(unavailable.supported, false);
+  assert.equal(unavailable.syncMode, 'unavailable');
+
+  const hookSupported = diagnoseProviderSessionHookConfig('gemini', {});
+  assert.equal(hookSupported.syncMode, 'hook');
+
+  const opencode = diagnoseProviderSessionHookConfig('opencode', {}, { fs: { existsSync: () => false } });
+  assert.equal(opencode.syncMode, 'hook');
 });
 
 test('diagnoses Codex generated hooks as disabled when feature flag is false', () => {

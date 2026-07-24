@@ -464,6 +464,24 @@ function isProvider(value: string): value is Provider {
   return PROVIDERS.includes(value as Provider);
 }
 
+const ACCOUNTS_ACTIVE_PROVIDER_STORAGE_KEY = 'accounts-active-provider-tab:v1';
+
+function readStoredActiveProviderTab(): AccountProviderFilter {
+  if (typeof window === 'undefined') return 'all';
+  try {
+    const saved = window.localStorage.getItem(ACCOUNTS_ACTIVE_PROVIDER_STORAGE_KEY);
+    if (saved === 'all' || isProvider(saved || '')) return saved as AccountProviderFilter;
+  } catch (_error) {
+    // localStorage 不可用（隐私模式等）时静默回退到默认 tab。
+  }
+  return 'all';
+}
+
+function persistActiveProviderTab(provider: AccountProviderFilter): void {
+  if (typeof window === 'undefined') return;
+  try { window.localStorage.setItem(ACCOUNTS_ACTIVE_PROVIDER_STORAGE_KEY, provider); } catch (_error) {}
+}
+
 function getAccountDisplayState(record: Pick<Account, 'status' | 'configured' | 'apiKeyMode' | 'runtimeStatus' | 'quotaStatus' | 'schedulableStatus' | 'remainingPct' | 'provider' | 'usageSnapshot'>): AccountDisplayStateKind {
   if (!isAccountEnabled(record)) return 'disabled';
   if (!record.configured) return 'unconfigured';
@@ -974,7 +992,7 @@ export default function Accounts() {
   const [editForm] = Form.useForm();
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
-  const [activeProvider, setActiveProvider] = useState<AccountProviderFilter>('all');
+  const [activeProvider, setActiveProvider] = useState<AccountProviderFilter>(() => readStoredActiveProviderTab());
   const [filterStatus, setFilterStatus] = useState<AccountFilterValue>('all');
   const [acctFilterOpen, setAcctFilterOpen] = useState(false);
   const [actionAccount, setActionAccount] = useState<Account | null>(null);
@@ -1674,6 +1692,10 @@ export default function Accounts() {
   }, [accounts]);
 
   useEffect(() => {
+    persistActiveProviderTab(activeProvider);
+  }, [activeProvider]);
+
+  useEffect(() => {
     loadAccounts();
   }, [loadAccounts]);
 
@@ -1955,6 +1977,13 @@ export default function Accounts() {
       setCliInstallSubmitting(false);
     }
   };
+
+  const handleOpenAddAccountModal = React.useCallback(() => {
+    setEditingAccount(null);
+    // 弹窗内 provider 下拉默认跟随当前选中的 tab，仍可在弹窗里手动切换。
+    form.setFieldsValue({ provider: isProvider(activeProvider) ? activeProvider : undefined });
+    setModalVisible(true);
+  }, [activeProvider, form]);
 
   const handleAdd = async (values: any) => {
     setSubmitting(true);
@@ -2664,7 +2693,7 @@ export default function Accounts() {
             <button className="m-icon-btn" aria-label="导出" disabled={exportingAccounts}><ExportOutlined /></button>
           </Popover>
           <button className="m-icon-btn" aria-label="导入" disabled={hasActiveImportJob} onClick={() => setImportModalVisible(true)}><ImportOutlined /></button>
-          <button className="m-icon-btn primary" aria-label="添加账号" onClick={() => { setEditingAccount(null); setModalVisible(true); }}><PlusOutlined /></button>
+          <button className="m-icon-btn primary" aria-label="添加账号" onClick={handleOpenAddAccountModal}><PlusOutlined /></button>
         </div>
       ) : (
         <>
@@ -2698,10 +2727,7 @@ export default function Accounts() {
             key="add"
             type="primary"
             icon={<PlusOutlined />}
-            onClick={() => {
-              setEditingAccount(null);
-              setModalVisible(true);
-            }}
+            onClick={handleOpenAddAccountModal}
           >
             添加账号
           </Button>

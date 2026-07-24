@@ -69,6 +69,7 @@ test('protocol fallback bridge prefers provider-native fallback protocols when r
     payload: {
       model: 'gpt-5.3-codex',
       max_tokens: 128,
+      stop_sequences: ['</block>'],
       messages: [{
         role: 'user',
         content: [{ type: 'text', text: 'ping' }]
@@ -81,6 +82,7 @@ test('protocol fallback bridge prefers provider-native fallback protocols when r
   assert.equal(bridgeRequest.fallbackProtocol, 'openai_responses');
   assert.equal(bridgeRequest.requestJson.model, 'gpt-5.3-codex');
   assert.equal(bridgeRequest.requestJson.max_output_tokens, 128);
+  assert.equal(Object.hasOwn(bridgeRequest.requestJson, 'stop'), false);
   assert.deepEqual(bridgeRequest.requestJson.input, [{
     type: 'message',
     role: 'user',

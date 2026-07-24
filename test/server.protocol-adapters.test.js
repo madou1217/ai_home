@@ -1110,6 +1110,28 @@ test('direct protocol adapters convert client requests to OpenAI Responses witho
   assert.deepEqual(responseFromGemini.tool_choice, { type: 'function', name: 'CustomFetch' });
 });
 
+test('Anthropic stop sequences are omitted for Responses and preserved for Chat Completions', () => {
+  const anthropicRequest = {
+    model: 'gpt-5.6-sol',
+    max_tokens: 64,
+    temperature: 0,
+    stop_sequences: ['</block>'],
+    messages: [{
+      role: 'user',
+      content: [{ type: 'text', text: 'Classify with <block>yes</block> or <block>no</block>.' }]
+    }]
+  };
+
+  const responses = convertAnthropicMessagesToOpenAIResponses(anthropicRequest);
+  assert.equal(Object.hasOwn(responses, 'stop'), false);
+  assert.equal(Object.hasOwn(responses, 'stop_sequences'), false);
+  assert.equal(responses.max_output_tokens, 64);
+  assert.equal(responses.temperature, 0);
+
+  const chat = convertAnthropicMessagesToOpenAIChat(anthropicRequest);
+  assert.deepEqual(chat.stop, ['</block>']);
+});
+
 test('direct protocol adapters convert client requests to Gemini without OpenAI wrapping', () => {
   assert.deepEqual(
     resolveProtocolRequestAdapterPath('anthropic_messages', 'gemini_stream_generate_content').map((adapter) => adapter.id),

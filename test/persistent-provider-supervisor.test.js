@@ -3,7 +3,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const EventEmitter = require('node:events');
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
+const persistentSession = require('../lib/runtime/persistent-session');
+const {
+  createTransientAuthProjection
+} = require('../lib/runtime/transient-auth-projection');
 const {
   buildPersistentProviderSupervisorLaunch,
   parsePersistentProviderSupervisorArgs,
@@ -123,7 +129,8 @@ test('persistent provider supervisor inherits stdio/env then finalizes in captur
     },
     captureAuth() { calls.push('capture'); },
     reconcileResources() { calls.push('reconcile'); },
-    removeRegistry() { calls.push('remove'); return true; }
+    removeProjection() { calls.push('remove-projection'); return true; },
+    removeRegistry() { calls.push('remove-registry'); return true; }
   });
 
   assert.deepEqual(spawnCall, {
@@ -138,7 +145,7 @@ test('persistent provider supervisor inherits stdio/env then finalizes in captur
   child.emit('close', 0, null);
   const result = await completed;
 
-  assert.deepEqual(calls, ['capture', 'reconcile', 'remove']);
+  assert.deepEqual(calls, ['capture', 'reconcile', 'remove-projection', 'remove-registry']);
   assert.equal(result.exitCode, 0);
   assert.equal(processObj.exitCode, 0);
 });
@@ -155,6 +162,7 @@ test('capture failure still reconciles resources but retains registry and exits 
       throw new Error('auth capture failed');
     },
     reconcileResources() { calls.push('reconcile'); },
+    removeProjection() { calls.push('remove-projection'); return true; },
     removeRegistry() { calls.push('remove'); return true; }
   });
 
@@ -180,6 +188,7 @@ test('reconciliation or registry removal failure retains the current registry', 
         calls.push('reconcile');
         throw new Error('unresolved projection');
       },
+      removeProjection() { calls.push('remove-projection'); return true; },
       removeRegistry() { calls.push('remove'); return true; }
     });
     child.emit('close', 0, null);
@@ -197,11 +206,12 @@ test('reconciliation or registry removal failure retains the current registry', 
       spawn: () => child,
       captureAuth() { calls.push('capture'); },
       reconcileResources() { calls.push('reconcile'); },
+      removeProjection() { calls.push('remove-projection'); return true; },
       removeRegistry() { calls.push('remove'); return false; }
     });
     child.emit('close', 0, null);
     const result = await completed;
-    assert.deepEqual(calls, ['capture', 'reconcile', 'remove']);
+    assert.deepEqual(calls, ['capture', 'reconcile', 'remove-projection', 'remove']);
     assert.equal(result.exitCode, 1);
   });
 });
@@ -214,6 +224,7 @@ test('persistent provider supervisor forwards termination signals and preserves 
     spawn: () => child,
     captureAuth() {},
     reconcileResources() {},
+    removeProjection() {},
     removeRegistry() { return true; },
     signalNumbers: { SIGTERM: 15 }
   });
@@ -256,6 +267,7 @@ test('production supervisor dependencies use the explicit host/projection roots'
 
   dependencies.captureAuth();
   dependencies.reconcileResources();
+  assert.equal(dependencies.removeProjection(), true);
   assert.equal(dependencies.removeRegistry(), true);
   assert.deepEqual(calls, [
     ['create-store', context.aiHomeDir, context.hostHomeDir],
@@ -263,4 +275,44 @@ test('production supervisor dependencies use the explicit host/projection roots'
     ['reconcile', ensureSessionStoreLinks, context.provider, context.accountRef, context.runtimeDir],
     ['remove', context.aiHomeDir, context.socket, context.session]
   ]);
+});
+
+test('production supervisor removes a transient projection after successful finalization', async (t) => {
+  const hostHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-supervisor-host-'));
+  const aiHomeDir = path.join(hostHomeDir, '.ai_home');
+  fs.mkdirSync(aiHomeDir, { recursive: true });
+  t.after(() => fs.rmSync(hostHomeDir, { recursive: true, force: true }));
+  const runtimeDir = createTransientAuthProjection(fs, 'codex', ACCOUNT_REF, { path });
+  t.after(() => fs.rmSync(runtimeDir, { recursive: true, force: true }));
+  const context = supervisorContext({
+    provider: 'codex',
+    runtimeDir,
+    aiHomeDir,
+    hostHomeDir,
+    socket: persistentSession.deriveSocket('codex', ACCOUNT_REF),
+    command: '/usr/local/bin/codex'
+  });
+  const child = createChildDouble();
+  const processObj = createProcessDouble();
+  const dependencies = createPersistentProviderSupervisorDependencies(context, {
+    fs,
+    path,
+    processObj,
+    spawn: () => child,
+    createSessionStoreService: () => ({
+      ensureSessionStoreLinks: () => ({ migrated: 0, linked: 0 })
+    }),
+    captureProviderAuth() {},
+    reconcileProviderResources() {},
+    persistentSessionRegistry: {
+      removeEntry() { return true; }
+    }
+  });
+
+  const completed = runPersistentProviderSupervisor(context, dependencies);
+  child.emit('close', 0, null);
+  const result = await completed;
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(fs.existsSync(runtimeDir), false);
 });

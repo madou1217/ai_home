@@ -329,6 +329,35 @@ test('ensureSessionStoreLinks migrates sandbox codex tmp and cache into host sto
   assert.equal(fs.lstatSync(path.join(accountConfigDir, 'cache')).isSymbolicLink(), true);
 });
 
+test('Codex launch tmp stays projection-local and nested wrapper symlinks are ignored', (t) => {
+  const root = mkTmpDir();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const hostHomeDir = path.join(root, 'home');
+  const runtimeDir = path.join(root, 'run', 'auth-projections', 'codex', 'acct_0123456789abcdef0123');
+  const localTmp = path.join(runtimeDir, '.codex', 'tmp', 'arg0', 'codex-arg0-test');
+  const externalBinary = path.join(root, 'codex-native');
+  fs.mkdirSync(localTmp, { recursive: true });
+  fs.writeFileSync(externalBinary, 'binary', 'utf8');
+  fs.symlinkSync(externalBinary, path.join(localTmp, 'apply_patch'));
+
+  const service = createSessionStoreService({
+    fs,
+    fse,
+    path,
+    processObj: process,
+    hostHomeDir,
+    cliConfigs: { codex: { globalDir: '.codex' } },
+    getProfileDir: () => runtimeDir,
+    ensureDir: (dir) => fs.mkdirSync(dir, { recursive: true })
+  });
+
+  const result = service.ensureSessionStoreLinks('codex', 'acct_0123456789abcdef0123');
+
+  assert.equal(Array.isArray(result.unresolved), false);
+  assert.equal(fs.lstatSync(path.join(runtimeDir, '.codex', 'tmp')).isSymbolicLink(), false);
+  assert.equal(fs.existsSync(path.join(hostHomeDir, '.codex', 'tmp', 'arg0', 'codex-arg0-test')), false);
+});
+
 test('ensureSessionStoreLinks shares every non-private codex entry using exact artifact names', (t) => {
   const root = mkTmpDir();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

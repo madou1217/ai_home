@@ -26,6 +26,9 @@ const {
   resolveLoginRuntimeDir
 } = require('../lib/runtime/aih-storage-layout');
 const {
+  isTransientAuthProjection
+} = require('../lib/runtime/transient-auth-projection');
+const {
   createAccountArtifactHookService,
   createDefaultProviderArtifactHookRegistry
 } = require('../lib/account/artifact-hooks');
@@ -46,6 +49,14 @@ const {
   STRING_TERMINATOR
 } = require('../lib/cli/services/ssh-clipboard/terminal-clipboard');
 const { buildShimRequestFrame } = require('../lib/cli/services/ssh-clipboard/shim-protocol');
+
+const harnessTransientProjectionDirs = new Set();
+test.after(() => {
+  for (const runtimeDir of harnessTransientProjectionDirs) {
+    fsBase.rmSync(runtimeDir, { recursive: true, force: true });
+  }
+  harnessTransientProjectionDirs.clear();
+});
 
 function pngBuffer(seed = 'x') {
   return Buffer.concat([
@@ -68,6 +79,12 @@ function assertTomlPathValue(content, key, expectedPath) {
   const actual = path.normalize(match[1].replace(/\\\\/g, '\\'));
   const expected = path.normalize(expectedPath);
   assert.equal(actual, expected);
+}
+
+function assertTransientCodexHome(codexHome, accountRef) {
+  const runtimeDir = path.dirname(String(codexHome || ''));
+  assert.equal(isTransientAuthProjection(fsBase, runtimeDir, 'codex', accountRef), true);
+  return runtimeDir;
 }
 
 function assertStrictFreshSessionLaunch(spawn, baseSession) {
@@ -190,7 +207,13 @@ function createRuntimeHarness(env = {}, overrides = {}) {
     readFileSync: fsBase.readFileSync.bind(fsBase),
     readdirSync: fsBase.readdirSync.bind(fsBase),
     statSync: fsBase.statSync.bind(fsBase),
-    mkdtempSync: fsBase.mkdtempSync.bind(fsBase),
+    mkdtempSync: (prefix, options) => {
+      const runtimeDir = fsBase.mkdtempSync(prefix, options);
+      if (path.basename(String(prefix || '')).startsWith('aih-auth-')) {
+        harnessTransientProjectionDirs.add(runtimeDir);
+      }
+      return runtimeDir;
+    },
     mkdirSync: fsBase.mkdirSync.bind(fsBase),
     openSync: fsBase.openSync.bind(fsBase),
     readSync: fsBase.readSync.bind(fsBase),
@@ -529,11 +552,13 @@ test('runtime reinitializes codex session links after config sync creates accoun
     AIH_RUNTIME_SHOW_USAGE: '0'
   }, {
     aiHomeDir,
-    ensureSessionStoreLinks: (cliName, accountRef) => {
+    ensureSessionStoreLinks: (cliName, accountRef, options = {}) => {
+      const projectionRoot = String(options.projectionRoot || '');
       calls.push({
         cliName,
         accountRef,
-        accountCodexDirExists: fsBase.existsSync(path.join(resolveAccountRuntimeDir(aiHomeDir, 'codex', accountRef), '.codex'))
+        projectionRoot,
+        accountCodexDirExists: fsBase.existsSync(path.join(projectionRoot, '.codex'))
       });
       return { migrated: 0, linked: 0 };
     }
@@ -547,9 +572,12 @@ test('runtime reinitializes codex session links after config sync creates accoun
   assert.deepEqual(calls[0], {
     cliName: 'codex',
     accountRef,
+    projectionRoot: calls[0].projectionRoot,
     accountCodexDirExists: false
   });
+  assert.equal(isTransientAuthProjection(fsBase, calls[0].projectionRoot, 'codex', accountRef), true);
   assert.equal(calls.some((call) => call.accountCodexDirExists), true);
+  assert.equal(fsBase.existsSync(resolveAccountRuntimeDir(aiHomeDir, 'codex', accountRef)), false);
 
   assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
   assert.deepEqual(rawModeCalls, [true, false]);
@@ -574,17 +602,19 @@ test('runtime keeps codex account auth isolated while sharing host sqlite state'
     AIH_RUNTIME_SHOW_USAGE: '0'
   });
   const accountRef = resolveHarnessAccountRef('codex', '10086');
-  const accountConfigDir = path.join(resolveAccountRuntimeDir(aiHomeDir, 'codex', accountRef), '.codex');
+  const persistentAccountDir = resolveAccountRuntimeDir(aiHomeDir, 'codex', accountRef);
   const hostCodexHome = path.join(hostHomeDir, '.codex');
 
   try {
     runtime.runCliPtyTracked('codex', '10086', ['--version'], false);
 
     assert.equal(spawns.length, 1);
-    assert.equal(spawns[0].options.env.CODEX_HOME, accountConfigDir);
+    const accountConfigDir = spawns[0].options.env.CODEX_HOME;
+    assertTransientCodexHome(accountConfigDir, accountRef);
     assert.equal(spawns[0].options.env.CODEX_SQLITE_HOME, hostCodexHome);
     const synced = fsBase.readFileSync(path.join(accountConfigDir, 'config.toml'), 'utf8');
     assertTomlPathValue(synced, 'sqlite_home', hostCodexHome);
+    assert.equal(fsBase.existsSync(persistentAccountDir), false);
   } finally {
     assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
   }
@@ -1524,10 +1554,11 @@ test('runtime supervises the inner provider only when creating a projected persi
   );
   const context = parsePersistentProviderSupervisorArgs(supervisorArgs.slice(2));
   const accountRef = resolveHarnessAccountRef('codex', '10086');
+  assert.equal(isTransientAuthProjection(fsBase, context.runtimeDir, 'codex', accountRef), true);
   assert.deepEqual(context, {
     provider: 'codex',
     accountRef,
-    runtimeDir: resolveAccountRuntimeDir(aiHomeDir, 'codex', accountRef),
+    runtimeDir: context.runtimeDir,
     aiHomeDir,
     hostHomeDir,
     socket: persistentSession.deriveSocket('codex', accountRef),
@@ -1589,11 +1620,18 @@ test('runtime creates a fresh unique projected session when the same-cwd base is
   assert.deepEqual(rawModeCalls, [true, false]);
 });
 
-test('runtime attaches an explicit detached session target exactly', () => {
+test('runtime attaches an explicit detached session target without retaining an unused Codex projection', () => {
   const cwd = '/tmp/aih-explicit-detached-target-project';
   const targetSession = persistentSession.deriveSessionName({ cwd });
   const separator = persistentSession.SESSION_LIST_SEPARATOR;
-  const { runtime, proc, spawns, rawModeCalls } = createRuntimeHarness({
+  const {
+    runtime,
+    proc,
+    spawns,
+    rawModeCalls,
+    aiHomeDir,
+    resolveHarnessAccountRef
+  } = createRuntimeHarness({
     AIH_RUNTIME_SHOW_USAGE: '0',
     AIH_SESSION_TARGET: targetSession
   }, {
@@ -1627,6 +1665,8 @@ test('runtime attaches an explicit detached session target exactly', () => {
   });
 
   runtime.runCliPtyTracked('codex', '10086', [], false);
+  const accountRef = resolveHarnessAccountRef('codex', '10086');
+  const unusedRuntimeDir = path.dirname(spawns[0].options.env.CODEX_HOME);
 
   assert.equal(spawns.length, 1);
   assert.equal(spawns[0].command, '/usr/bin/tmux');
@@ -1636,6 +1676,9 @@ test('runtime attaches an explicit detached session target exactly', () => {
   assert.equal(spawns[0].args.includes('-d'), false);
   assert.deepEqual(spawns[0].args.slice(-3), ['attach-session', '-t', targetSession]);
   assert.equal(spawns[0].options.env.AIH_PERSIST_ACTIVE, '1');
+  assert.equal(spawns[0].proc.aihTransientAuthProjection, false);
+  assert.equal(fsBase.existsSync(unusedRuntimeDir), false);
+  assert.equal(fsBase.existsSync(resolveAccountRuntimeDir(aiHomeDir, 'codex', accountRef)), false);
   assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
   assert.deepEqual(rawModeCalls, [true, false]);
 });
@@ -2279,8 +2322,8 @@ test('runtime coalesces Claude tool diagnostics without transcript evidence and 
   assert.deepEqual(rawModeCalls, [true, false]);
 });
 
-test('runtime rebuilds codex account config from host template and account auth overrides', () => {
-  const { runtime, proc, aiHomeDir, hostHomeDir, rawModeCalls, resolveHarnessAccountRef } = createRuntimeHarness({
+test('runtime rebuilds transient codex config from the host template', () => {
+  const { runtime, proc, spawns, aiHomeDir, hostHomeDir, rawModeCalls, resolveHarnessAccountRef } = createRuntimeHarness({
     AIH_RUNTIME_SHOW_USAGE: '0'
   });
   const accountRef = resolveHarnessAccountRef('codex', '10014');
@@ -2310,7 +2353,9 @@ test('runtime rebuilds codex account config from host template and account auth 
 
   runtime.runCliPtyTracked('codex', '10014', ['--version'], false);
 
-  const synced = fsBase.readFileSync(path.join(accountConfigDir, 'config.toml'), 'utf8');
+  const transientConfigDir = spawns[0].options.env.CODEX_HOME;
+  assertTransientCodexHome(transientConfigDir, accountRef);
+  const synced = fsBase.readFileSync(path.join(transientConfigDir, 'config.toml'), 'utf8');
   assertTomlPathValue(synced, 'sqlite_home', hostConfigDir);
   assert.match(synced, /^model = "host-model"$/m);
   assert.match(synced, /^approval_policy = "on-request"$/m);
@@ -2323,7 +2368,7 @@ test('runtime rebuilds codex account config from host template and account auth 
   assert.deepEqual(rawModeCalls, [true, false]);
 });
 
-test('runtime emits provider config update hook when codex account config changes', () => {
+test('runtime does not emit account config hooks for disposable codex config', () => {
   const aiHomeDir = fsBase.mkdtempSync(path.join(os.tmpdir(), 'aih-pty-config-hook-'));
   const hostHomeDir = path.join(aiHomeDir, 'host');
   const events = [];
@@ -2339,7 +2384,7 @@ test('runtime emits provider config update hook when codex account config change
       }
     })
   });
-  const { runtime, proc, rawModeCalls, resolveHarnessAccountRef } = createRuntimeHarness({
+  const { runtime, proc, spawns, rawModeCalls, resolveHarnessAccountRef } = createRuntimeHarness({
     AIH_RUNTIME_SHOW_USAGE: '0'
   }, {
     aiHomeDir,
@@ -2357,19 +2402,15 @@ test('runtime emits provider config update hook when codex account config change
 
   runtime.runCliPtyTracked('codex', '10014', ['--version'], false);
 
-  assert.equal(events.length, 1);
-  assert.equal(events[0].type, 'account_config_updated');
-  assert.equal(events[0].provider, 'codex');
-  assert.equal(events[0].accountRef, accountRef);
-  assert.equal(events[0].source, 'pty_config_sync');
-  assert.deepEqual(events[0].changedPaths, [path.join(accountConfigDir, 'config.toml')]);
+  assertTransientCodexHome(spawns[0].options.env.CODEX_HOME, accountRef);
+  assert.deepEqual(events, []);
 
   assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
   assert.deepEqual(rawModeCalls, [true, false]);
 });
 
-test('runtime ignores sibling codex account config while rebuilding from host template', () => {
-  const { runtime, proc, aiHomeDir, hostHomeDir, rawModeCalls, resolveHarnessAccountRef } = createRuntimeHarness({
+test('runtime ignores legacy account configs while rebuilding transient config from host', () => {
+  const { runtime, proc, spawns, aiHomeDir, hostHomeDir, rawModeCalls, resolveHarnessAccountRef } = createRuntimeHarness({
     AIH_RUNTIME_SHOW_USAGE: '0'
   });
   const trustedAccountRef = resolveHarnessAccountRef('codex', '10086');
@@ -2392,7 +2433,9 @@ test('runtime ignores sibling codex account config while rebuilding from host te
 
   runtime.runCliPtyTracked('codex', '10014', ['--version'], false);
 
-  const synced = fsBase.readFileSync(path.join(targetAccountConfigDir, 'config.toml'), 'utf8');
+  const transientConfigDir = spawns[0].options.env.CODEX_HOME;
+  assertTransientCodexHome(transientConfigDir, targetAccountRef);
+  const synced = fsBase.readFileSync(path.join(transientConfigDir, 'config.toml'), 'utf8');
   assert.match(synced, /^model = "host-model"$/m);
   assert.doesNotMatch(synced, /^model = "target-account"$/m);
   assert.doesNotMatch(synced, /^model = "trusted-account"$/m);
@@ -2935,7 +2978,7 @@ test('runtime starts an unregistered OAuth login in a session-scoped runtime', (
   assert.deepEqual(rawModeCalls, [true, false]);
 });
 
-test('runtime links Codex pending-login tmp into the host store before native spawn', {
+test('runtime keeps Codex pending-login tmp local and deletes it with the login runtime', {
   skip: process.platform === 'win32'
 }, (t) => {
   const hostHomeDir = fsBase.mkdtempSync(path.join(os.tmpdir(), 'aih-pending-codex-resources-'));
@@ -2969,18 +3012,18 @@ test('runtime links Codex pending-login tmp into the host store before native sp
   const loginRuntimeDir = resolveLoginRuntimeDir(aiHomeDir, 'codex', loginSessionId);
   const pendingCodexTmp = path.join(loginRuntimeDir, '.codex', 'tmp');
   assert.equal(spawns.length, 1);
-  assert.equal(fsBase.lstatSync(pendingCodexTmp).isSymbolicLink(), true);
-  assert.equal(fsBase.realpathSync(pendingCodexTmp), fsBase.realpathSync(hostCodexTmp));
+  assert.equal(fsBase.existsSync(pendingCodexTmp), false);
 
   const nativeBinary = path.join(hostHomeDir, 'native-codex');
   const generatedTmp = path.join(pendingCodexTmp, 'arg0', 'codex-arg0-test');
   fsBase.writeFileSync(nativeBinary, '', 'utf8');
   fsBase.mkdirSync(generatedTmp, { recursive: true });
   fsBase.symlinkSync(nativeBinary, path.join(generatedTmp, 'apply_patch'));
+  assert.equal(fsBase.lstatSync(pendingCodexTmp).isSymbolicLink(), false);
 
   assert.throws(() => spawns[0].proc._onExit({ exitCode: 7 }), /EXIT:7/);
   assert.equal(fsBase.existsSync(loginRuntimeDir), false);
-  assert.equal(fsBase.lstatSync(path.join(hostCodexTmp, 'arg0', 'codex-arg0-test', 'apply_patch')).isSymbolicLink(), true);
+  assert.equal(fsBase.existsSync(path.join(hostCodexTmp, 'arg0', 'codex-arg0-test')), false);
 });
 
 test('runtime atomically assigns a Codex CLI id only after pending OAuth succeeds', async (t) => {
@@ -3026,10 +3069,8 @@ test('runtime atomically assigns a Codex CLI id only after pending OAuth succeed
   assert.equal(accounts[0].cliAccountId, '1');
   assert.equal(spawns.length, 2);
   assert.deepEqual(spawns[1].args, []);
-  assert.equal(
-    spawns[1].options.env.CODEX_HOME,
-    path.join(resolveAccountRuntimeDir(aiHomeDir, 'codex', accounts[0].accountRef), '.codex')
-  );
+  assertTransientCodexHome(spawns[1].options.env.CODEX_HOME, accounts[0].accountRef);
+  assert.equal(fsBase.existsSync(resolveAccountRuntimeDir(aiHomeDir, 'codex', accounts[0].accountRef)), false);
   assert.equal(fsBase.existsSync(loginRuntimeDir), false);
 
   assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
@@ -3177,7 +3218,8 @@ test('runtime strips inherited codex session env from spawned sandbox', () => {
   assert.equal(env.CODEX_MANAGED_BY_NPM, undefined);
   assert.equal(env.CODEX_MANAGED_PACKAGE_ROOT, undefined);
   assert.equal(env.CODEX_NETWORK_PROXY_ACTIVE, undefined);
-  assert.equal(env.CODEX_HOME, path.join(resolveAccountRuntimeDir(aiHomeDir, 'codex', accountRef), '.codex'));
+  assertTransientCodexHome(env.CODEX_HOME, accountRef);
+  assert.equal(fsBase.existsSync(resolveAccountRuntimeDir(aiHomeDir, 'codex', accountRef)), false);
   assert.equal(env.CODEX_SQLITE_HOME, path.join(hostHomeDir, '.codex'));
 
   assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
@@ -3342,7 +3384,7 @@ test('runtime auto-switch resumes the latest codex thread for the current projec
 
   try {
     const now = Date.now();
-    const { runtime, proc, spawns, aiHomeDir, hostHomeDir, cwd, resolveHarnessAccountRef } = createRuntimeHarness({
+    const { runtime, proc, spawns, hostHomeDir, cwd, resolveHarnessAccountRef } = createRuntimeHarness({
       AIH_RUNTIME_SHOW_USAGE: '0'
     }, {
       DatabaseSync: FakeDatabaseSync,
@@ -3357,7 +3399,7 @@ test('runtime auto-switch resumes the latest codex thread for the current projec
       getNextAvailableId: () => '10087'
     });
     expectedCwd = cwd;
-    const fromAccountRef = resolveHarnessAccountRef('codex', '10086');
+    resolveHarnessAccountRef('codex', '10086');
     resolveHarnessAccountRef('codex', '10087');
 
     const hostConfigDir = path.join(hostHomeDir, '.codex');
@@ -3365,9 +3407,7 @@ test('runtime auto-switch resumes the latest codex thread for the current projec
     fsBase.writeFileSync(path.join(hostConfigDir, 'config.toml'), 'model = "gpt-5.5"\n', 'utf8');
 
     runtime.runCliPtyTracked('codex', '10086', [], false);
-    const fromCodexDir = path.join(resolveAccountRuntimeDir(aiHomeDir, 'codex', fromAccountRef), '.codex');
-    fsBase.mkdirSync(fromCodexDir, { recursive: true });
-    fsBase.writeFileSync(path.join(fromCodexDir, 'state_5.sqlite'), '', 'utf8');
+    fsBase.writeFileSync(path.join(hostConfigDir, 'state_5.sqlite'), '', 'utf8');
 
     assert.equal(spawns.length, 1);
     assert.equal(intervalTicks.length > 0, true);

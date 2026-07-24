@@ -1,7 +1,8 @@
-import { CheckOutlined, DownOutlined, RobotOutlined } from '@ant-design/icons';
+import { CheckOutlined, DownOutlined } from '@ant-design/icons';
 import { Dropdown, Spin } from 'antd';
 import type { MenuProps } from 'antd';
 import type { ComposerModelOption } from '@/chat-runtime';
+import BrainIcon from './BrainIcon';
 import styles from './composer-controls.module.css';
 
 interface Props {
@@ -60,7 +61,7 @@ export default function ComposerModelMenu(props: Props) {
         aria-label="选择模型与推理强度"
         title={current?.label || '选择模型'}
       >
-        <RobotOutlined className={styles.modelIcon} />
+        <BrainIcon className={styles.modelIcon} />
         {props.loading && !current ? <Spin size="small" /> : (
           <>
             <span className={styles.modelLabel}>{current?.label || '选择模型'}</span>

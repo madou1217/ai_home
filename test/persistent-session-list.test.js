@@ -6,6 +6,9 @@ const path = require('node:path');
 const { EventEmitter } = require('node:events');
 const persistentSession = require('../lib/runtime/persistent-session');
 const persistentSessionRegistry = require('../lib/runtime/persistent-session-registry');
+const {
+  CODEX_MANAGED_LAUNCH_VALUE
+} = require('../lib/runtime/codex-launch-context');
 const { registerAccountIdentity } = require('../lib/account/account-registration');
 const { AIH_SERVER_PROFILE_ID } = require('../lib/account/self-relay-account');
 const { writeAccountCredentials } = require('../lib/server/account-credential-store');
@@ -75,6 +78,16 @@ test('session list marks legacy psmux Codex launch runtime rows as fresh-session
   assert.equal(getSessionDisplayDescription(row), 'Working task');
 });
 
+test('session list marks Codex sessions without managed authentication context as fresh-session only', () => {
+  assert.equal(needsFreshCompatibleSession({
+    cliName: 'codex',
+    requireCodexManagedLaunch: true,
+    codexManagedLaunch: '',
+    codexManagedLaunchChecked: true,
+    codexManagedLaunchReady: false
+  }), true);
+});
+
 test('session picker applies the same render and supervisor compatibility requirements as launch', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-session-compatibility-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -97,7 +110,8 @@ test('session picker applies the same render and supervisor compatibility requir
     '0',
     '',
     cwd,
-    ''
+    '',
+    CODEX_MANAGED_LAUNCH_VALUE
   ].join(sep);
   const collect = (cliName, accountRef, cliAccountId, sessionRow) => listPersistentSessions(
     cliName,
@@ -139,6 +153,7 @@ test('session picker applies the same render and supervisor compatibility requir
     row('p-legacy-supervisor', '/work/codex-oauth')
   );
   assert.equal(codexOauthRow.requirePsmuxCodexLaunchRuntime, false);
+  assert.equal(codexOauthRow.requireCodexManagedLaunch, true);
   assert.equal(codexOauthRow.requireProviderSupervisorRuntime, true);
   assert.equal(needsFreshCompatibleSession(codexOauthRow), true);
 
@@ -149,6 +164,7 @@ test('session picker applies the same render and supervisor compatibility requir
     row('p-compatible-api-key', '/work/codex-api-key')
   );
   assert.equal(codexApiKeyRow.requirePsmuxCodexLaunchRuntime, false);
+  assert.equal(codexApiKeyRow.requireCodexManagedLaunch, true);
   assert.equal(codexApiKeyRow.requireProviderSupervisorRuntime, false);
   assert.equal(needsFreshCompatibleSession(codexApiKeyRow), false);
 });

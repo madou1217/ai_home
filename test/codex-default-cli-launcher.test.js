@@ -17,6 +17,9 @@ const {
   runCodexDefaultCli
 } = require('../lib/server/codex-default-cli-launcher');
 const {
+  CODEX_MANAGED_LAUNCH_ENV
+} = require('../lib/runtime/codex-launch-context');
+const {
   buildCodexDefaultCliArgs,
   buildModelCatalogProjectionArgs
 } = require('../lib/server/codex-cli-startup-policy');
@@ -95,6 +98,63 @@ test('default Codex CLI switches API key and OAuth environments without credenti
   assert.equal(restoredApiKeyRuntime.authMode, 'apikey');
   assert.equal(restoredApiKeyRuntime.env.OPENAI_API_KEY, apiKey);
   assert.equal(processObj.env.OPENAI_API_KEY, 'stale-shell-key');
+});
+
+test('AIH-managed Codex launches preserve the authentication selected by the caller', (t) => {
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-codex-managed-cli-'));
+  const aiHomeDir = path.join(homeDir, '.ai_home');
+  t.after(() => fs.rmSync(homeDir, { recursive: true, force: true }));
+
+  const defaultAccountRef = registerCodexAccount(
+    aiHomeDir,
+    '1',
+    'api-key:codex:managed-launch-default-test'
+  );
+  writeAccountCredentials(fs, aiHomeDir, defaultAccountRef, {
+    OPENAI_API_KEY: 'sk-default-must-not-replace-managed-auth'
+  });
+  writeDefaultAccountRef(fs, aiHomeDir, 'codex', defaultAccountRef);
+
+  const cases = [
+    {
+      name: 'gateway API key',
+      env: {
+        OPENAI_API_KEY: 'aih-gateway-key',
+        OPENAI_BASE_URL: 'http://127.0.0.1:9527/v1'
+      },
+      authMode: 'apikey'
+    },
+    {
+      name: 'explicit API key account',
+      env: {
+        OPENAI_API_KEY: 'sk-explicit-account-key',
+        OPENAI_BASE_URL: 'https://relay.example.test/v1'
+      },
+      authMode: 'apikey'
+    },
+    {
+      name: 'explicit OAuth account',
+      env: {},
+      authMode: 'oauth'
+    }
+  ];
+
+  for (const scenario of cases) {
+    const processObj = {
+      platform: 'darwin',
+      env: {
+        HOME: homeDir,
+        [CODEX_MANAGED_LAUNCH_ENV]: '1',
+        ...scenario.env
+      }
+    };
+    const runtime = buildCodexDefaultCliEnv(fs, { aiHomeDir, processObj });
+    assert.equal(runtime.authMode, scenario.authMode, scenario.name);
+    assert.equal(runtime.accountRef, '', scenario.name);
+    assert.equal(runtime.env.OPENAI_API_KEY, scenario.env.OPENAI_API_KEY, scenario.name);
+    assert.equal(runtime.env.OPENAI_BASE_URL, scenario.env.OPENAI_BASE_URL, scenario.name);
+    assert.equal(runtime.env[CODEX_MANAGED_LAUNCH_ENV], undefined, scenario.name);
+  }
 });
 
 test('default Codex CLI passes the API key only through the child environment', (t) => {

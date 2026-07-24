@@ -5,6 +5,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const persistentSession = require('../lib/runtime/persistent-session');
+const {
+  CODEX_MANAGED_LAUNCH_ENV,
+  CODEX_MANAGED_LAUNCH_VALUE
+} = require('../lib/runtime/codex-launch-context');
 
 const ACCOUNT_REF_1 = 'acct_00000000000000000001';
 const ACCOUNT_REF_2 = 'acct_00000000000000000002';
@@ -53,6 +57,7 @@ test('buildSessionCompatibilityOptions keeps picker and launcher marker policy a
     {
       requireUtf8Runtime: true,
       requireClaudeRenderRuntime: false,
+      requireCodexManagedLaunch: true,
       requirePsmuxCodexLaunchRuntime: true,
       requireProviderSupervisorRuntime: true
     }
@@ -66,6 +71,7 @@ test('buildSessionCompatibilityOptions keeps picker and launcher marker policy a
     {
       requireUtf8Runtime: true,
       requireClaudeRenderRuntime: true,
+      requireCodexManagedLaunch: false,
       requirePsmuxCodexLaunchRuntime: false,
       requireProviderSupervisorRuntime: false
     }
@@ -278,12 +284,13 @@ test('buildTmuxLaunch: passes safe runtime env through tmux session env only', (
         CLAUDE_CODE_DISABLE_VIRTUAL_SCROLL: '1',
         [persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_KEY]: persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_VALUE,
         AIH_PROVIDER_SESSION_CORRELATION_ID: 'pty-run-1',
+        [CODEX_MANAGED_LAUNCH_ENV]: '1',
         OPENAI_API_KEY: 'sk-secret'
       }
     }
   );
 
-  assert.deepEqual(wrapped.args.slice(3, 21), [
+  assert.deepEqual(wrapped.args.slice(3, 23), [
     'new-session',
     '-e',
     'LANG=C.UTF-8',
@@ -299,6 +306,8 @@ test('buildTmuxLaunch: passes safe runtime env through tmux session env only', (
     `${persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_KEY}=${persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_VALUE}`,
     '-e',
     'AIH_PROVIDER_SESSION_CORRELATION_ID=pty-run-1',
+    '-e',
+    `${CODEX_MANAGED_LAUNCH_ENV}=1`,
     '-e',
     `${persistentSession.UTF8_RUNTIME_MARKER_KEY}=${persistentSession.UTF8_RUNTIME_MARKER_VALUE}`,
     '-s'
@@ -366,6 +375,7 @@ test('buildSetEnvironmentCommands syncs only safe tmux env keys', () => {
       CLAUDE_CODE_FORCE_SYNC_OUTPUT: '1',
       CLAUDE_CODE_DISABLE_VIRTUAL_SCROLL: '1',
       [persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_KEY]: persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_VALUE,
+      [CODEX_MANAGED_LAUNCH_ENV]: CODEX_MANAGED_LAUNCH_VALUE,
       ANTHROPIC_API_KEY: 'sk-secret'
     }
   });
@@ -387,6 +397,7 @@ test('buildSetEnvironmentCommands syncs only safe tmux env keys', () => {
     ]
   ]);
   assert.equal(commands.some((cmd) => cmd.args.includes('sk-secret')), false);
+  assert.equal(commands.some((cmd) => cmd.key === CODEX_MANAGED_LAUNCH_ENV), false);
 });
 
 test('buildSetEnvironmentCommands can target one existing session', () => {
@@ -397,7 +408,8 @@ test('buildSetEnvironmentCommands can target one existing session', () => {
     env: {
       LANG: 'C.UTF-8',
       LC_CTYPE: 'C.UTF-8',
-      LC_ALL: 'C.UTF-8'
+      LC_ALL: 'C.UTF-8',
+      [CODEX_MANAGED_LAUNCH_ENV]: CODEX_MANAGED_LAUNCH_VALUE
     }
   });
 
@@ -412,6 +424,7 @@ test('buildSetEnvironmentCommands can target one existing session', () => {
     'C.UTF-8'
   ]);
   assert.equal(commands.every((cmd) => cmd.session === 'p-picked'), true);
+  assert.equal(commands.some((cmd) => cmd.key === CODEX_MANAGED_LAUNCH_ENV), true);
 });
 
 test('buildListSessionsCommand targets the account socket', () => {
@@ -436,7 +449,8 @@ test('buildListSessionsCommand targets the account socket', () => {
       '#{pane_dead}',
       `#{E:${persistentSession.PSMUX_CODEX_LAUNCH_RUNTIME_MARKER_KEY}}`,
       '#{pane_current_path}',
-      `#{E:${persistentSession.PROVIDER_SUPERVISOR_RUNTIME_MARKER_KEY}}`
+      `#{E:${persistentSession.PROVIDER_SUPERVISOR_RUNTIME_MARKER_KEY}}`,
+      `#{E:${CODEX_MANAGED_LAUNCH_ENV}}`
     ].join(sep)
   ]);
 });
@@ -664,7 +678,10 @@ test('parseSessionList parses name + attached state + path', () => {
         psmuxCodexLaunchRuntimeReady: false,
         providerSupervisorRuntime: '',
         providerSupervisorRuntimeChecked: false,
-        providerSupervisorRuntimeReady: false
+        providerSupervisorRuntimeReady: false,
+        codexManagedLaunch: '',
+        codexManagedLaunchChecked: false,
+        codexManagedLaunchReady: false
       },
       {
         name: 'p-y',
@@ -689,7 +706,10 @@ test('parseSessionList parses name + attached state + path', () => {
         psmuxCodexLaunchRuntimeReady: false,
         providerSupervisorRuntime: '',
         providerSupervisorRuntimeChecked: false,
-        providerSupervisorRuntimeReady: false
+        providerSupervisorRuntimeReady: false,
+        codexManagedLaunch: '',
+        codexManagedLaunchChecked: false,
+        codexManagedLaunchReady: false
       }
     ]
   );
@@ -915,6 +935,27 @@ test('parseSessionList carries persistent provider supervisor runtime marker', (
   assert.equal(legacy.providerSupervisorRuntimeReady, false);
 });
 
+test('parseSessionList carries the AIH-managed Codex launch marker', () => {
+  const sep = persistentSession.SESSION_LIST_SEPARATOR;
+  const [ready, legacy] = persistentSession.parseSessionList([
+    [
+      'p-ready', '0', '100', '/work/ready', '', 'codex', 'node', '123',
+      persistentSession.UTF8_RUNTIME_MARKER_VALUE, '', '0', '', '/work/ready', '',
+      CODEX_MANAGED_LAUNCH_VALUE
+    ].join(sep),
+    [
+      'p-legacy', '0', '100', '/work/legacy', '', 'codex', 'node', '124',
+      persistentSession.UTF8_RUNTIME_MARKER_VALUE, '', '0', '', '/work/legacy', '', ''
+    ].join(sep)
+  ].join('\n'));
+
+  assert.equal(ready.codexManagedLaunchChecked, true);
+  assert.equal(ready.codexManagedLaunchReady, true);
+  assert.equal(persistentSession.isCodexManagedLaunchReadySession(ready), true);
+  assert.equal(legacy.codexManagedLaunchChecked, true);
+  assert.equal(legacy.codexManagedLaunchReady, false);
+});
+
 test('parseSessionList carries pane title fields for session descriptions', () => {
   const sep = persistentSession.SESSION_LIST_SEPARATOR;
   const [session] = persistentSession.parseSessionList([
@@ -1085,6 +1126,23 @@ test('planPersistentSession opens a fresh compatible session for legacy psmux Co
       { intent: 'upsert', requirePsmuxCodexLaunchRuntime: true }
     ),
     { session: `${base}-3`, action: 'new-compatible' }
+  );
+});
+
+test('planPersistentSession replaces legacy Codex sessions missing managed authentication context', () => {
+  const base = 'p-proj-ab12cd34';
+  assert.deepEqual(
+    persistentSession.planPersistentSession(
+      [{
+        name: base,
+        attached: false,
+        codexManagedLaunchChecked: true,
+        codexManagedLaunch: ''
+      }],
+      base,
+      { intent: 'upsert', requireCodexManagedLaunch: true }
+    ),
+    { session: `${base}-2`, action: 'new-compatible' }
   );
 });
 
@@ -1263,6 +1321,24 @@ test('describeSessionList recommends fresh launches for legacy psmux Codex launc
 
   assert.deepEqual(v.here.map((r) => r.command), ['aih codex 1']);
   assert.deepEqual(v.here.map((r) => r.live), [true]);
+});
+
+test('describeSessionList recommends a fresh launch for Codex sessions missing managed authentication context', () => {
+  const cwd = '/home/me/projA';
+  const base = persistentSession.deriveSessionName({ cwd });
+  const view = persistentSession.describeSessionList([{
+    name: base,
+    attached: true,
+    path: cwd,
+    codexManagedLaunchChecked: true,
+    codexManagedLaunch: ''
+  }], {
+    cliName: 'codex',
+    cliSelector: '1',
+    cwd
+  });
+
+  assert.equal(view.here[0].command, 'aih codex 1');
 });
 
 test('describeSessionList recommends fresh launches for completed dead panes', () => {

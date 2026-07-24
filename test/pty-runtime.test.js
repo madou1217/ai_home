@@ -15,6 +15,9 @@ const { listCliAccountRefRecords } = require('../lib/server/account-ref-store');
 const persistentSession = require('../lib/runtime/persistent-session');
 const persistentSessionRegistry = require('../lib/runtime/persistent-session-registry');
 const {
+  CODEX_MANAGED_LAUNCH_ENV
+} = require('../lib/runtime/codex-launch-context');
+const {
   parsePersistentProviderSupervisorArgs
 } = require('../lib/cli/services/pty/persistent-provider-supervisor');
 const ptyLaunch = require('../lib/runtime/pty-launch');
@@ -330,6 +333,7 @@ test('runtime does not inject --skip-git-repo-check by default', () => {
   runtime.runCliPtyTracked('codex', '10086', ['--version'], false);
   assert.equal(spawns.length, 1);
   assert.deepEqual(spawns[0].args, ['--version']);
+  assert.equal(spawns[0].options.env[CODEX_MANAGED_LAUNCH_ENV], '1');
 
   assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
   assert.deepEqual(rawModeCalls, [true, false]);
@@ -338,7 +342,8 @@ test('runtime does not inject --skip-git-repo-check by default', () => {
 test('runtime uses headless direct spawn for claude print prompts', () => {
   const directSpawns = [];
   const { runtime, spawns, writes } = createRuntimeHarness({
-    AIH_PROVIDER_SESSION_CORRELATION_ID: 'stale-parent-run'
+    AIH_PROVIDER_SESSION_CORRELATION_ID: 'stale-parent-run',
+    [CODEX_MANAGED_LAUNCH_ENV]: '1'
   }, {
     resolveCliPath: () => '/usr/local/bin/claude',
     spawn: (command, args, options) => {
@@ -365,6 +370,7 @@ test('runtime uses headless direct spawn for claude print prompts', () => {
     directSpawns[0].options.env.AIH_PROVIDER_SESSION_CORRELATION_ID,
     'stale-parent-run'
   );
+  assert.equal(directSpawns[0].options.env[CODEX_MANAGED_LAUNCH_ENV], undefined);
 
   directSpawns[0].child.stdout.emit('data', Buffer.from('ok\n'));
   assert.match(writes.join(''), /ok/);
@@ -1125,6 +1131,7 @@ test('runtime bare launch creates a fresh strict tmux session when a project ses
     'set-environment',
     'set-environment',
     'set-environment',
+    'set-environment',
     'set-environment'
   ]);
   assert.equal(spawnSyncCalls.every((call) => call.options.env.LANG === 'C.UTF-8'), true);
@@ -1142,7 +1149,8 @@ test('runtime bare launch creates a fresh strict tmux session when a project ses
       ['-t', sessionName, 'LANG', 'C.UTF-8'],
       ['-t', sessionName, 'LC_CTYPE', 'C.UTF-8'],
       ['-t', sessionName, 'LC_ALL', 'C.UTF-8'],
-      ['-t', sessionName, 'AIH_PROVIDER_SESSION_CORRELATION_ID', correlationId]
+      ['-t', sessionName, 'AIH_PROVIDER_SESSION_CORRELATION_ID', correlationId],
+      ['-t', sessionName, CODEX_MANAGED_LAUNCH_ENV, '1']
     ]
   );
   assert.deepEqual(
@@ -1152,6 +1160,7 @@ test('runtime bare launch creates a fresh strict tmux session when a project ses
       'LC_CTYPE=C.UTF-8',
       'LC_ALL=C.UTF-8',
       `AIH_PROVIDER_SESSION_CORRELATION_ID=${correlationId}`,
+      `${CODEX_MANAGED_LAUNCH_ENV}=1`,
       `${persistentSession.PROVIDER_SUPERVISOR_RUNTIME_MARKER_KEY}=${persistentSession.PROVIDER_SUPERVISOR_RUNTIME_MARKER_VALUE}`,
       `${persistentSession.UTF8_RUNTIME_MARKER_KEY}=${persistentSession.UTF8_RUNTIME_MARKER_VALUE}`
     ]
@@ -1330,7 +1339,8 @@ test('runtime uses zh_CN UTF-8 tmux env for macOS generic UTF-8 sessions', () =>
       ['-t', sessionName, 'LANG', 'zh_CN.UTF-8'],
       ['-t', sessionName, 'LC_CTYPE', 'zh_CN.UTF-8'],
       ['-t', sessionName, 'LC_ALL', 'zh_CN.UTF-8'],
-      ['-t', sessionName, 'AIH_PROVIDER_SESSION_CORRELATION_ID', correlationId]
+      ['-t', sessionName, 'AIH_PROVIDER_SESSION_CORRELATION_ID', correlationId],
+      ['-t', sessionName, CODEX_MANAGED_LAUNCH_ENV, '1']
     ]
   );
   assert.deepEqual(
@@ -1340,6 +1350,7 @@ test('runtime uses zh_CN UTF-8 tmux env for macOS generic UTF-8 sessions', () =>
       'LC_CTYPE=zh_CN.UTF-8',
       'LC_ALL=zh_CN.UTF-8',
       `AIH_PROVIDER_SESSION_CORRELATION_ID=${correlationId}`,
+      `${CODEX_MANAGED_LAUNCH_ENV}=1`,
       `${persistentSession.PROVIDER_SUPERVISOR_RUNTIME_MARKER_KEY}=${persistentSession.PROVIDER_SUPERVISOR_RUNTIME_MARKER_VALUE}`,
       `${persistentSession.UTF8_RUNTIME_MARKER_KEY}=${persistentSession.UTF8_RUNTIME_MARKER_VALUE}`
     ]
@@ -2563,6 +2574,7 @@ test('runtime routes codex through the built-in AIH server profile when no accou
   assert.doesNotMatch(spawns[0].args.join(' '), /secret-key/);
   assert.equal(spawns[0].options.env.OPENAI_API_KEY, 'secret-key');
   assert.equal(spawns[0].options.env.OPENAI_BASE_URL, 'http://127.0.0.1:8317/v1');
+  assert.equal(spawns[0].options.env[CODEX_MANAGED_LAUNCH_ENV], '1');
   assert.equal(spawns[0].options.env.CODEX_HOME, hostConfigDir);
   const gatewayRuntimeDir = path.join(lockRoot, 'run', 'internal', 'codex');
   assert.equal(fsBase.existsSync(gatewayRuntimeDir), false);
@@ -2585,6 +2597,7 @@ test('runtime does not create an account directory for codex API-key accounts', 
 
   assert.equal(spawns.length, 1);
   assert.equal(spawns[0].options.env.CODEX_HOME, path.join(hostHomeDir, '.codex'));
+  assert.equal(spawns[0].options.env[CODEX_MANAGED_LAUNCH_ENV], '1');
   assert.equal(
     fsBase.existsSync(resolveAccountRuntimeDir(aiHomeDir, 'codex', accountRef)),
     false
@@ -2876,6 +2889,7 @@ test('runtime forwards login flags when running login flow', () => {
   runtime.runCliPtyTracked('codex', '10086', ['--no-browser'], true);
   assert.equal(spawns.length, 1);
   assert.deepEqual(spawns[0].args, ['login', '--device-auth']);
+  assert.equal(spawns[0].options.env[CODEX_MANAGED_LAUNCH_ENV], '1');
 
   assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
   assert.deepEqual(rawModeCalls, [true, false]);

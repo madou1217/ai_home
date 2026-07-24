@@ -185,6 +185,29 @@ function loadProviderBlocks() {
   return moduleRef.exports;
 }
 
+function loadTaskNotification() {
+  const ts = require(path.join(__dirname, '..', 'web', 'node_modules', 'typescript'));
+  const filePath = path.join(
+    __dirname,
+    '..',
+    'web',
+    'src',
+    'components',
+    'chat',
+    'task-notification.ts'
+  );
+  const source = fs.readFileSync(filePath, 'utf8');
+  const { outputText } = ts.transpileModule(source, {
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2020
+    }
+  });
+  const moduleRef = { exports: {} };
+  Function('module', 'exports', outputText)(moduleRef, moduleRef.exports);
+  return moduleRef.exports;
+}
+
 function loadMarkdownDetection() {
   const ts = require(path.join(__dirname, '..', 'web', 'node_modules', 'typescript'));
   const filePath = path.join(
@@ -419,7 +442,7 @@ test('provider blocks expose Codex spawn_agent child metadata for lazy loading',
   });
 });
 
-test('real message parser recognizes proposed plan and task notification tags', () => {
+test('real message parser recognizes proposed plan and XML task notification tags', () => {
   const structure = loadRealMessageStructure();
   const blocks = structure.parseMessageBlocks([
     '<proposed_plan>',
@@ -440,4 +463,54 @@ test('real message parser recognizes proposed plan and task notification tags', 
   assert.equal(blocks[1].type, 'tag');
   assert.equal(blocks[1].name, 'task-notification');
   assert.match(blocks[1].value, /"taskId":"task-1"/);
+});
+
+test('real message parser preserves session-reader JSON task notification fields', () => {
+  const structure = loadRealMessageStructure();
+  const blocks = structure.parseMessageBlocks([
+    '<task-notification>',
+    '{"taskId":"9","toolUseId":"call_demo","outputFile":"","status":"in_progress","summary":"TaskUpdate"}',
+    '</task-notification>'
+  ].join('\n'));
+
+  assert.equal(blocks.length, 1);
+  assert.equal(blocks[0].type, 'tag');
+  assert.equal(blocks[0].name, 'task-notification');
+  assert.deepEqual(JSON.parse(blocks[0].value), {
+    taskId: '9',
+    toolUseId: 'call_demo',
+    outputFile: '',
+    status: 'in_progress',
+    summary: 'TaskUpdate'
+  });
+});
+
+test('task notification status mapping distinguishes progress, failure and unknown states', () => {
+  const { getTaskNotificationStatus } = loadTaskNotification();
+
+  assert.deepEqual(getTaskNotificationStatus('created'), {
+    label: 'created',
+    tone: 'running',
+    dot: true
+  });
+  assert.deepEqual(getTaskNotificationStatus('in_progress'), {
+    label: 'in_progress',
+    tone: 'running',
+    dot: true
+  });
+  assert.deepEqual(getTaskNotificationStatus('completed'), {
+    label: 'completed',
+    tone: 'success',
+    dot: false
+  });
+  assert.deepEqual(getTaskNotificationStatus('failed'), {
+    label: 'failed',
+    tone: 'failed',
+    dot: false
+  });
+  assert.deepEqual(getTaskNotificationStatus('future_state'), {
+    label: 'future_state',
+    tone: 'neutral',
+    dot: false
+  });
 });

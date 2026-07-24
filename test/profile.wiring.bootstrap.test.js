@@ -77,6 +77,7 @@ test('createProfileListWiring maps list dependencies', () => {
     getToolAccountIds: () => [],
     getAccountStateIndex: () => ({}),
     checkStatus: () => ({}),
+    formatAccountPlanBadge: () => '[Pro]',
     formatUsageLabel: () => 'ok',
     refreshIndexedStateForAccount: () => {}
   }, {
@@ -89,4 +90,5 @@ test('createProfileListWiring maps list dependencies', () => {
   assert.equal(out.showLsHelp, showLsHelp);
   assert.equal(out.listProfiles, listProfiles);
   assert.equal(receivedArg.listPageSize, 20);
+  assert.equal(receivedArg.formatAccountPlanBadge(), '[Pro]');
 });

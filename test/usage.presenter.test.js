@@ -68,6 +68,25 @@ test('buildUsageProbePayloadAsync carries minRemainingPct from refreshed snapsho
   assert.equal(payload.minRemainingPct, 42);
 });
 
+test('formatAccountPlanBadge uses cached OAuth metadata and hides free plans', () => {
+  const capturedAt = Date.now();
+  const { service: proService } = createPresenterHarness({
+    readUsageCache: () => ({
+      capturedAt,
+      account: { planType: 'pro' }
+    })
+  });
+  const { service: freeService } = createPresenterHarness({
+    readUsageCache: () => ({
+      capturedAt,
+      account: { planType: 'free' }
+    })
+  });
+
+  assert.match(proService.formatAccountPlanBadge('codex', '1'), /\[Pro\]/);
+  assert.equal(freeService.formatAccountPlanBadge('codex', '1'), '');
+});
+
 test('printAllUsageSnapshots updates state from probe payload without re-reading cache', async () => {
   const snapshot = {
     capturedAt: Date.now(),

@@ -138,6 +138,131 @@ test('codex usage snapshot falls back to account/read payload when rateLimits ar
   }
 });
 
+test('codex usage snapshot keeps app-server plan type when local metadata has no plan', () => {
+  const root = mkTmpDir();
+  try {
+    const { aiHomeDir, getProfileDir, getToolConfigDir } = createUsagePaths(root);
+    const accountRef = registerUsageAccount(aiHomeDir, 'codex', '2', {
+      nativeAuth: { auth: { tokens: { access_token: 'codex-access-token' } } }
+    });
+    const cacheService = createUsageCacheService({
+      fs,
+      aiHomeDir,
+      path,
+      getProfileDir,
+      usageSnapshotSchemaVersion: 2,
+      usageSourceGemini: 'gemini_refresh_user_quota',
+      usageSourceCodex: 'codex_app_server',
+      usageSourceClaudeOauth: 'claude_oauth_usage_api',
+      usageSourceClaudeAuthToken: 'claude_auth_token_usage_api'
+    });
+    const stdout = `AIH_CODEX_RATE_LIMIT_JSON_START\n${JSON.stringify({
+      ok: true,
+      rateLimits: {
+        planType: 'pro',
+        primary: { windowDurationMins: 300, usedPercent: 20, resetsAt: 123 }
+      }
+    })}\nAIH_CODEX_RATE_LIMIT_JSON_END\n`;
+    const usageSnapshotService = createUsageSnapshotService({
+      fs,
+      path,
+      aiHomeDir,
+      spawnSync: () => ({ stdout, stderr: '' }),
+      processObj: {
+        execPath: process.execPath,
+        cwd: () => root,
+        env: {},
+        platform: process.platform
+      },
+      resolveCliPath: () => '/usr/bin/codex',
+      usageSnapshotSchemaVersion: 2,
+      usageRefreshStaleMs: 5 * 60 * 1000,
+      usageSourceGemini: 'gemini_refresh_user_quota',
+      usageSourceCodex: 'codex_app_server',
+      usageSourceClaudeOauth: 'claude_oauth_usage_api',
+      usageSourceClaudeAuthToken: 'claude_auth_token_usage_api',
+      getProfileDir,
+      getToolConfigDir,
+      writeUsageCache: cacheService.writeUsageCache,
+      readUsageCache: cacheService.readUsageCache
+    });
+
+    const snapshot = usageSnapshotService.ensureUsageSnapshot('codex', accountRef, null);
+    assert.equal(snapshot.account.planType, 'pro');
+    assert.equal(snapshot.entries[0].remainingPct, 80);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('claude OAuth usage snapshot preserves the explicit Max rate-limit tier', () => {
+  const root = mkTmpDir();
+  try {
+    const { aiHomeDir, getProfileDir, getToolConfigDir } = createUsagePaths(root);
+    const accountRef = registerUsageAccount(aiHomeDir, 'claude', '1', {
+      nativeAuth: {
+        credentials: {
+          claudeAiOauth: { accessToken: 'claude-access-token' }
+        }
+      }
+    });
+    const cacheService = createUsageCacheService({
+      fs,
+      aiHomeDir,
+      path,
+      getProfileDir,
+      usageSnapshotSchemaVersion: 2,
+      usageSourceGemini: 'gemini_refresh_user_quota',
+      usageSourceCodex: 'codex_app_server',
+      usageSourceClaudeOauth: 'claude_oauth_usage_api',
+      usageSourceClaudeAuthToken: 'claude_auth_token_usage_api'
+    });
+    const stdout = `AIH_CLAUDE_USAGE_JSON_START\n${JSON.stringify({
+      ok: true,
+      payload: {
+        five_hour: { utilization: 25, resets_at: '2030-01-01T00:00:00.000Z' }
+      },
+      profile: {
+        account: { email: 'max@example.com' },
+        organization: {
+          organization_type: 'claude_max',
+          rate_limit_tier: 'default_claude_max_20x'
+        }
+      }
+    })}\nAIH_CLAUDE_USAGE_JSON_END\n`;
+    const usageSnapshotService = createUsageSnapshotService({
+      fs,
+      path,
+      aiHomeDir,
+      spawnSync: () => ({ stdout, stderr: '' }),
+      processObj: {
+        execPath: process.execPath,
+        cwd: () => root,
+        env: {},
+        platform: process.platform
+      },
+      resolveCliPath: () => '/usr/bin/claude',
+      usageSnapshotSchemaVersion: 2,
+      usageRefreshStaleMs: 5 * 60 * 1000,
+      usageSourceGemini: 'gemini_refresh_user_quota',
+      usageSourceCodex: 'codex_app_server',
+      usageSourceClaudeOauth: 'claude_oauth_usage_api',
+      usageSourceClaudeAuthToken: 'claude_auth_token_usage_api',
+      getProfileDir,
+      getToolConfigDir,
+      writeUsageCache: cacheService.writeUsageCache,
+      readUsageCache: cacheService.readUsageCache
+    });
+
+    const snapshot = usageSnapshotService.ensureUsageSnapshot('claude', accountRef, null);
+    assert.equal(snapshot.account.planType, 'max');
+    assert.equal(snapshot.account.rateLimitTier, 'default_claude_max_20x');
+    assert.equal(snapshot.entries[0].remainingPct, 75);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('agy usage snapshot reads Antigravity OAuth token and caches fetchAvailableModels quota', async () => {
   const root = mkTmpDir();
   try {

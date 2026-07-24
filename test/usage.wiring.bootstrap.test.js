@@ -17,6 +17,7 @@ test('createUsageWiring composes cache/snapshot/runtime/presenter services deter
   const fakeGetToolAccountIds = () => ['10086'];
   const fakeGetMinRemainingPctFromCache = () => 42;
   const fakeGetAccountQuotaState = () => ({ quotaStatus: 'available' });
+  const fakeFormatAccountPlanBadge = () => '[Pro]';
   const ensureSessionStoreLinks = () => ({ migrated: 0, linked: 0 });
 
   const out = createUsageWiring({
@@ -89,6 +90,7 @@ test('createUsageWiring composes cache/snapshot/runtime/presenter services deter
     createUsagePresenterService: (arg) => {
       calls.presenterArg = arg;
       return {
+        formatAccountPlanBadge: fakeFormatAccountPlanBadge,
         formatUsageLabel: () => 'ok',
         printUsageSnapshot: () => {},
         buildUsageProbePayload: () => ({ ok: true }),
@@ -101,6 +103,7 @@ test('createUsageWiring composes cache/snapshot/runtime/presenter services deter
   assert.equal(typeof out.ensureUsageSnapshot, 'function');
   assert.equal(typeof out.getToolAccountIds, 'function');
   assert.equal(typeof out.buildUsageProbePayload, 'function');
+  assert.equal(out.formatAccountPlanBadge, fakeFormatAccountPlanBadge);
 
   assert.equal(calls.cacheArg.usageSnapshotSchemaVersion, 2);
   assert.equal(calls.cacheArg.usageSourceAgyCodeAssist, 'agy_fetch_available_models');

@@ -242,6 +242,37 @@ test('listProfiles marks default and codex mobile account roles', () => {
   assert.match(joined, /Account ID: .*\x1b\[36m2\x1b\[0m.*📱 Mobile/);
 });
 
+test('listProfiles renders plan before account id and omits normal status badges', () => {
+  const { root, aiHomeDir } = createTempAccounts('codex', ['1']);
+  const logs = [];
+  const oldLog = console.log;
+  console.log = (...args) => logs.push(args.join(' '));
+  try {
+    const service = createProfileListService({
+      fs,
+      path,
+      processObj: { stdout: { isTTY: false, write: () => {} } },
+      readline: { keyIn: () => '' },
+      aiHomeDir,
+      cliConfigs: { codex: {} },
+      listPageSize: 20,
+      getAccountStateIndex: () => ({ listStates: () => [] }),
+      checkStatus: () => ({ configured: true, accountName: 'pro@example.com' }),
+      formatAccountPlanBadge: () => '\x1b[34m[Pro]\x1b[0m',
+      formatUsageLabel: () => '',
+      refreshIndexedStateForAccount: () => ({ remainingPct: 88 })
+    });
+    service.listProfiles('codex');
+  } finally {
+    console.log = oldLog;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+
+  const joined = logs.join('\n');
+  assert.match(joined, /\[Pro\].*Account ID:/);
+  assert.doesNotMatch(joined, /Active|启用/);
+});
+
 test('listProfiles supports filtering by specific account id', () => {
   const { root, aiHomeDir, getCliAccountId } = createTempAccounts();
   const logs = [];
@@ -380,7 +411,7 @@ test('listProfiles shows pending login + unconfigured remaining for unconfigured
     fs.rmSync(root, { recursive: true, force: true });
   }
   const joined = logs.join('\n');
-  assert.match(joined, /Pending Login/);
+  assert.match(joined, /待登录/);
   assert.match(joined, /Unconfigured \(login required\)/);
 });
 
@@ -469,7 +500,7 @@ test('listProfiles shows auth expired instead of stale remaining', () => {
   }
 
   const joined = logs.join('\n');
-  assert.match(joined, /Auth Expired/);
+  assert.match(joined, /认证失效/);
   assert.match(joined, /Auth: expired/);
   assert.doesNotMatch(joined, /Remaining: 95\.0%/);
 });
@@ -523,6 +554,7 @@ test('listProfiles re-reads runtime state after indexed refresh clears agy auth 
   }
 
   const joined = logs.join('\n');
-  assert.doesNotMatch(joined, /Auth Expired/);
-  assert.match(joined, /Active/);
+  assert.doesNotMatch(joined, /认证失效/);
+  assert.match(joined, /Account ID:/);
+  assert.doesNotMatch(joined, /Active|启用/);
 });

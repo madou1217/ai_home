@@ -301,6 +301,77 @@ test('Grok login registers mapped OAuth credentials by stable profile identity',
   });
 });
 
+test('Kimi login registers and materializes its device OAuth credential file', (t) => {
+  const fixture = createProjectionFixture(t);
+  const runtimeDir = path.join(fixture.aiHomeDir, 'run', 'login', 'kimi', 'scoped');
+  const credentialsPath = path.join(runtimeDir, 'credentials', 'kimi-code.json');
+  const credentials = {
+    access_token: 'kimi-access-token',
+    refresh_token: 'kimi-refresh-token',
+    expires_at: 1770000000000,
+    token_type: 'Bearer'
+  };
+  fs.mkdirSync(path.dirname(credentialsPath), { recursive: true });
+  fs.writeFileSync(credentialsPath, JSON.stringify(credentials), 'utf8');
+
+  const registration = registerProviderAuthProjection(fs, runtimeDir, 'kimi', {
+    aiHomeDir: fixture.aiHomeDir,
+    cliAccountId: '17'
+  });
+
+  assert.equal(registration.registered, true);
+  assert.equal(registration.cliAccountId, '17');
+  assert.deepEqual(readAccountNativeAuth(fs, fixture.aiHomeDir, registration.accountRef), {
+    credentials
+  });
+
+  fs.rmSync(runtimeDir, { recursive: true, force: true });
+  assert.deepEqual(materializeProviderAuth(
+    fs,
+    runtimeDir,
+    'kimi',
+    projectionOptions(fixture, registration.accountRef)
+  ), {
+    materialized: 1,
+    removed: 0,
+    missing: false
+  });
+  assert.deepEqual(readJson(credentialsPath), credentials);
+});
+
+test('Kiro login extracts OAuth metadata from SQLite and registers the account', (t) => {
+  const { DatabaseSync } = require('node:sqlite');
+  const fixture = createProjectionFixture(t);
+  const runtimeDir = path.join(fixture.aiHomeDir, 'run', 'login', 'kiro', 'scoped');
+  const databasePath = path.join(runtimeDir, 'data.sqlite3');
+  fs.mkdirSync(runtimeDir, { recursive: true });
+  const database = new DatabaseSync(databasePath);
+  database.exec('CREATE TABLE auth_kv (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
+  database.prepare('INSERT INTO auth_kv (key, value) VALUES (?, ?)').run(
+    'kirocli:odic:token',
+    JSON.stringify({
+      access_token: 'kiro-access-token',
+      refresh_token: 'kiro-refresh-token',
+      expires_at: 1770000000000,
+      region: 'us-east-1'
+    })
+  );
+  database.close();
+
+  const registration = registerProviderAuthProjection(fs, runtimeDir, 'kiro', {
+    aiHomeDir: fixture.aiHomeDir,
+    cliAccountId: '18'
+  });
+
+  assert.equal(registration.registered, true);
+  assert.equal(registration.cliAccountId, '18');
+  const nativeAuth = readAccountNativeAuth(fs, fixture.aiHomeDir, registration.accountRef);
+  assert.equal(nativeAuth.auth.access_token, 'kiro-access-token');
+  assert.equal(nativeAuth.auth.refresh_token, 'kiro-refresh-token');
+  assert.equal(typeof nativeAuth.database, 'string');
+  assert.ok(nativeAuth.database.length > 0);
+});
+
 test('AGY, Gemini and OpenCode login projections register one accountRef-backed DB record', (t) => {
   const fixture = createProjectionFixture(t);
   const cases = [

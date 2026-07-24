@@ -12,12 +12,26 @@ const {
   isProcessAlive,
   normalizeAuthMode,
   getDefaultAuthMode,
+  isSupportedAuthMode,
   extractOAuthChallenge,
   extractBrowserOAuthHints,
   configureApiKeyAccount,
   serializeAuthJob,
   createAuthJobManager: createAuthJobManagerImpl
 } = require('../lib/server/web-account-auth');
+
+test('Kimi WebUI auth contract supports browser OAuth and API keys', () => {
+  assert.equal(getDefaultAuthMode('kimi'), 'oauth-browser');
+  assert.equal(isSupportedAuthMode('kimi', 'oauth-browser'), true);
+  assert.equal(isSupportedAuthMode('kimi', 'api-key'), true);
+  assert.equal(isSupportedAuthMode('kimi', 'oauth-device'), false);
+});
+
+test('Kiro WebUI auth contract supports browser OAuth', () => {
+  assert.equal(getDefaultAuthMode('kiro'), 'oauth-browser');
+  assert.equal(isSupportedAuthMode('kiro', 'oauth-browser'), true);
+  assert.equal(isSupportedAuthMode('kiro', 'api-key'), false);
+});
 const {
   readAccountCredentials,
   readAccountNativeAuth,
@@ -1424,6 +1438,62 @@ test('createAuthJobManager marks gemini oauth job succeeded when oauth_creds fil
 
   const job = manager.getJob(started.jobId);
   assert.equal(job.status, 'succeeded');
+});
+
+test('missing Kimi CLI waits for confirmation then installs and continues OAuth with the same job id', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-oauth-kimi-install-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  let installed = false;
+  const spawned = [];
+  const changed = [];
+  const manager = createAuthJobManager({
+    fs,
+    aiHomeDir: root,
+    processObj: {
+      ...process,
+      cwd: () => root,
+      env: { ...process.env },
+      platform: 'win32',
+      kill() {}
+    },
+    resolveCliPathImpl: () => installed ? 'C:\\Users\\test\\AppData\\Roaming\\npm\\kimi.cmd' : '',
+    ensureNativeCliImpl: () => ({ cliPath: '', binaryName: 'kimi', installed: false, installAttempts: [] }),
+    installNativeCliImpl: async (_provider, options) => {
+      options.onPlanStart({ id: 'npm_global', label: 'npm global installer' });
+      options.onOutput('installing kimi\n', 'stdout', { id: 'npm_global', label: 'npm global installer' });
+      installed = true;
+      options.onPlanFinish({ id: 'npm_global', label: 'npm global installer', ok: true, error: '' });
+      return {
+        cliPath: 'C:\\Users\\test\\AppData\\Roaming\\npm\\kimi.cmd',
+        binaryName: 'kimi',
+        installed: true,
+        installAttempts: [{ id: 'npm_global', label: 'npm global installer', ok: true, error: '' }]
+      };
+    },
+    ptyImpl: {
+      spawn(command, args) {
+        spawned.push({ command, args });
+        return { pid: 4312, onData() {}, onExit() {}, kill() {} };
+      }
+    },
+    onJobChanged(job) {
+      changed.push(serializeAuthJob(job));
+    }
+  });
+
+  const started = manager.startOauthJob('kimi', 'oauth-browser', { deferInstallConfirmation: true });
+  assert.equal(started.installRequired, true);
+  assert.equal(started.setupPhase, 'awaiting-install-confirmation');
+  assert.equal(manager.getJob(started.jobId).authProgressState, 'awaiting_install_confirmation');
+
+  const confirmed = await manager.confirmCliInstall(started.jobId);
+  assert.equal(confirmed.ok, true);
+  assert.equal(confirmed.job.id, started.jobId);
+  assert.equal(confirmed.job.installRequired, undefined);
+  assert.equal(spawned.length, 1);
+  assert.match(launchCommandLine(spawned[0]), /kimi/);
+  assert.match(launchCommandLine(spawned[0]), /login/);
+  assert.ok(changed.some((job) => job.setupPhase === 'installing'));
 });
 
 test('createAuthJobManager marks grok oauth succeeded when auth.json appears', async (t) => {

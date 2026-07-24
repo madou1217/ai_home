@@ -112,6 +112,24 @@ test('opencode OAuth identity hashes refresh credentials and ignores rotating ac
   assert.equal(first.degraded, false);
 });
 
+test('kimi OAuth identity hashes refresh credentials and ignores rotating access data', () => {
+  const first = identity.resolveNativeAuthIdentitySeed('kimi', { credentials: {
+    access_token: 'access-a',
+    refresh_token: 'refresh-stable',
+    expires_at: 100
+  } });
+  const second = identity.resolveNativeAuthIdentitySeed('kimi', { credentials: {
+    access_token: 'access-b',
+    refresh_token: 'refresh-stable',
+    expires_at: 200
+  } });
+
+  assert.equal(first.identitySeed, second.identitySeed);
+  assert.match(first.identitySeed, /^oauth:kimi:token:[a-f0-9]{16}$/);
+  assert.equal(first.identitySeed.includes('refresh-stable'), false);
+  assert.equal(first.degraded, false);
+});
+
 test('api-key identity uses a key hash to distinguish accounts at one endpoint', () => {
   const secret = 'sk-super-secret-123456';
   const raw = buildApiKeyIdentity('codex', { config: {

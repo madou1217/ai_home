@@ -264,6 +264,13 @@ export const accountsAPI = {
     return response.data;
   },
 
+  confirmCliInstall: async (jobId: string): Promise<AccountAddJob> => {
+    const response = await api.post<{ ok: boolean; job: AccountAddJob }>(
+      `/webui/accounts/add/jobs/${jobId}/install`
+    );
+    return response.data.job;
+  },
+
   completeBrowserCallback: async (jobId: string, callbackUrl: string): Promise<AccountAddJob> => {
     const response = await api.post<{ ok: boolean; job: AccountAddJob }>(
       `/webui/accounts/add/jobs/${jobId}/callback`,

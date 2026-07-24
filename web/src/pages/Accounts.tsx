@@ -969,6 +969,7 @@ export default function Accounts() {
   const [authSubjectLabel, setAuthSubjectLabel] = useState('');
   const [authCallbackUrl, setAuthCallbackUrl] = useState('');
   const [authCallbackSubmitting, setAuthCallbackSubmitting] = useState(false);
+  const [cliInstallSubmitting, setCliInstallSubmitting] = useState(false);
   const [form] = Form.useForm();
   const [editForm] = Form.useForm();
   const [editModalVisible, setEditModalVisible] = useState(false);
@@ -1004,8 +1005,9 @@ export default function Accounts() {
   const hasLoadedAccountsRef = React.useRef(false);
   const accountsSnapshotRevisionRef = React.useRef(0);
   const accountsLoadRequestRef = React.useRef(0);
+  const previousAddProviderRef = React.useRef<Provider | undefined>(undefined);
   const selectedProvider = Form.useWatch('provider', form) as Provider | undefined;
-  const selectedAuthMode = (Form.useWatch('authMode', form) as AccountAuthMode | undefined) || 'oauth-browser';
+  const selectedAuthMode = Form.useWatch('authMode', form) as AccountAuthMode | undefined;
   const selectedEditAuthMode = Form.useWatch('authMode', editForm) as AccountAuthMode | undefined;
   const providerAuthOptions = selectedProvider
     ? (PROVIDER_AUTH_OPTIONS[selectedProvider] || [])
@@ -1800,13 +1802,16 @@ export default function Accounts() {
   }, [addJobId, handleAuthJobUpdate]);
 
   useEffect(() => {
-    if (!selectedProvider) return;
-    const allowedModes = (PROVIDER_AUTH_OPTIONS[selectedProvider] || []).map((item) => item.value);
-    if (allowedModes.length === 0) return;
-    if (!allowedModes.includes(selectedAuthMode)) {
-      form.setFieldValue('authMode', allowedModes[0]);
+    if (!selectedProvider) {
+      previousAddProviderRef.current = undefined;
+      form.setFieldValue('authMode', undefined);
+      return;
     }
-  }, [form, selectedAuthMode, selectedProvider]);
+    if (previousAddProviderRef.current === selectedProvider) return;
+    previousAddProviderRef.current = selectedProvider;
+    const firstMode = (PROVIDER_AUTH_OPTIONS[selectedProvider] || [])[0]?.value;
+    form.setFieldValue('authMode', firstMode);
+  }, [form, selectedProvider]);
 
   const closeAuthProgress = async (forceCancel = false) => {
     if (authSuccessClosing) return;
@@ -1936,6 +1941,20 @@ export default function Accounts() {
     if (!getCallbackUiCopy(addJob.provider).requiresAwaitingCode) return true;
     return addJob.authProgressState === 'awaiting_code';
   }, [addJob, authCallbackUrl]);
+
+  const handleConfirmCliInstall = async () => {
+    if (!addJob?.id) return;
+    setCliInstallSubmitting(true);
+    try {
+      const job = await accountsAPI.confirmCliInstall(addJob.id);
+      setAddJob(job);
+      message.info(`正在安装 ${providerNames[job.provider] || job.provider} CLI，完成后会自动继续授权。`);
+    } catch (error: any) {
+      message.error(error?.response?.data?.message || '启动 CLI 安装失败');
+    } finally {
+      setCliInstallSubmitting(false);
+    }
+  };
 
   const handleAdd = async (values: any) => {
     setSubmitting(true);
@@ -3085,26 +3104,28 @@ export default function Accounts() {
             </Select>
           </Form.Item>
 
-          <Form.Item
-            name="authMode"
-            label="认证方式"
-            rules={[{ required: true, message: '请选择认证方式' }]}
-          >
-            <Radio.Group size="large">
-              <Space direction="vertical">
-                {providerAuthOptions.map((option) => (
-                  <Radio key={option.value} value={option.value}>
-                    <Space direction="vertical" size={0}>
-                      <span>{option.label}</span>
-                      <Text type="secondary" style={{ fontSize: 12 }}>
-                        {option.description}
-                      </Text>
-                    </Space>
-                  </Radio>
-                ))}
-              </Space>
-            </Radio.Group>
-          </Form.Item>
+          {selectedProvider ? (
+            <Form.Item
+              name="authMode"
+              label="认证方式"
+              rules={[{ required: true, message: '请选择认证方式' }]}
+            >
+              <Radio.Group size="large">
+                <Space direction="vertical">
+                  {providerAuthOptions.map((option) => (
+                    <Radio key={option.value} value={option.value}>
+                      <Space direction="vertical" size={0}>
+                        <span>{option.label}</span>
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          {option.description}
+                        </Text>
+                      </Space>
+                    </Radio>
+                  ))}
+                </Space>
+              </Radio.Group>
+            </Form.Item>
+          ) : null}
 
           {selectedAuthMode === 'api-key' || selectedAuthMode === 'auth-token' ? (
             <>
@@ -3180,6 +3201,22 @@ export default function Accounts() {
               }
             />
 
+            {addJob.installRequired && addJob.setupPhase === 'awaiting-install-confirmation' ? (
+              <Card size="small" title="需要安装 CLI">
+                <Space direction="vertical" style={{ width: '100%' }}>
+                  <Text>检测到未安装 {providerNames[addJob.provider] || addJob.provider} CLI。</Text>
+                  <Text type="secondary">确认后将在后台静默安装；安装成功会自动继续账号授权。</Text>
+                  <Button type="primary" loading={cliInstallSubmitting} onClick={handleConfirmCliInstall}>
+                    确认并安装
+                  </Button>
+                </Space>
+              </Card>
+            ) : null}
+
+            {addJob.setupPhase === 'installing' ? (
+              <Alert type="info" showIcon message="正在安装 CLI" description="安装输出会实时显示在下方日志中，成功后自动继续授权。" />
+            ) : null}
+
             {Boolean(addJob.expiresAt || addJob.pollIntervalMs) && (
               <Card size="small" title="授权状态">
                 {addJob.expiresAt ? (
@@ -3195,7 +3232,7 @@ export default function Accounts() {
               </Card>
             )}
 
-            {addJob.authMode === 'oauth-browser' && (
+            {addJob.authMode === 'oauth-browser' && !addJob.installRequired && (
               <Card size="small" title="浏览器授权">
                 {renderAuthDetail(
                   '邮箱',
@@ -3263,15 +3300,19 @@ export default function Accounts() {
                     <pre
                       style={{
                         margin: 0,
-                        maxHeight: 320,
+                        minHeight: 48,
+                        maxHeight: 240,
+                        padding: '8px 10px',
                         overflow: 'auto',
                         whiteSpace: 'pre-wrap',
                         wordBreak: 'break-word',
                         fontSize: 12,
-                        lineHeight: 1.5
+                        lineHeight: 1.5,
+                        background: 'var(--app-surface-muted)',
+                        borderRadius: 6
                       }}
                     >
-                      {addJob.logs || '等待供应商返回授权输出...'}
+                      {String(addJob.logs || '').trimStart() || '等待供应商返回授权输出...'}
                     </pre>
                   )
                 }

@@ -8,6 +8,16 @@ const {
   ensureNativeCliAvailable,
   buildCliNotFoundMessage
 } = require('../lib/cli/services/ai-cli/ensure-native-cli');
+
+test('Windows async installer can execute npm.cmd without spawn EINVAL', { skip: process.platform !== 'win32' }, async () => {
+  const { runInstallPlanAsync } = require('../lib/cli/services/ai-cli/ensure-native-cli');
+  const result = await runInstallPlanAsync({
+    command: 'npm.cmd',
+    args: ['--version']
+  }, { processObj: process });
+  assert.equal(result.ok, true, result.error || result.stderr);
+  assert.match(result.stdout, /\d+\.\d+\.\d+/);
+});
 const {
   collectNativeCliPathEntries,
   resolveNativeCliInstallPlans,

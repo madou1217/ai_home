@@ -27,9 +27,27 @@ describe('kimi/kiro provider catalog', () => {
     const kimi = getAiCliConfig('kimi');
     assert.ok(kimi, 'kimi config exists');
     assert.equal(kimi.globalDir, '.kimi-code');
+    assert.deepEqual(kimi.loginArgs, ['login']);
     assert.equal(kimi.pkg, '@moonshot-ai/kimi-code');
     assert.ok(kimi.envKeys.includes('MOONSHOT_API_KEY'));
     assert.ok(kimi.envKeys.includes('KIMI_CODE_HOME'));
+  });
+
+  it('kimi launch strategy scopes OAuth files without replacing the host home', () => {
+    const { buildProviderRuntimeEnv } = require('../lib/cli/services/ai-cli/provider-runtime-env');
+    const sandboxDir = path.join(os.tmpdir(), 'kimi-runtime');
+    const hostHomeDir = path.join(os.tmpdir(), 'kimi-host-home');
+    const env = buildProviderRuntimeEnv('kimi', sandboxDir, {
+      HOME: hostHomeDir,
+      USERPROFILE: hostHomeDir,
+      MOONSHOT_API_KEY: 'host-secret',
+      KIMI_CODE_HOME: 'stale-home'
+    }, { path, hostHomeDir, platform: 'win32' });
+
+    assert.equal(env.KIMI_CODE_HOME, sandboxDir);
+    assert.equal(env.HOME, hostHomeDir);
+    assert.equal(env.USERPROFILE, hostHomeDir);
+    assert.equal(env.MOONSHOT_API_KEY, undefined);
   });
 
   it('provider-registry exposes kiro CLI config', () => {

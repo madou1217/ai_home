@@ -328,3 +328,94 @@ test('syncGlobalConfigToHost never projects host files back into an account runt
   assert.equal(fs.lstatSync(path.join(runtimeCodexDir, 'config.toml')).isSymbolicLink(), false);
   assert.equal(fs.readFileSync(path.join(runtimeCodexDir, 'config.toml'), 'utf8'), 'model = "account"\n');
 });
+
+for (const [provider, globalDir] of [['qoder', '.qoder'], ['qodercn', '.qoder-cn']]) {
+  test(`syncGlobalConfigToHost projects ${provider} policy auth artifacts`, (t) => {
+    const fixture = createFixture(t);
+    const registration = registerAccountIdentity(fs, fixture.aiHomeDir, {
+      provider,
+      cliAccountId: '1',
+      identitySeed: `test:host-sync:${provider}:1`
+    });
+    writeAccountNativeAuth(fs, fixture.aiHomeDir, registration.accountRef, {
+      credentials: `encrypted-${provider}-credentials`,
+      machineId: `${provider}-machine`,
+      dnsCache: { endpoint: `${provider}.example.com` }
+    });
+    const sync = createHostConfigSyncer({
+      fs,
+      fse,
+      ensureDir: (dir) => fs.mkdirSync(dir, { recursive: true }),
+      aiHomeDir: fixture.aiHomeDir,
+      hostHomeDir: fixture.hostHomeDir,
+      cliConfigs: { [provider]: { globalDir } }
+    });
+
+    const result = sync(provider, registration.accountRef);
+    const hostDir = path.join(fixture.hostHomeDir, globalDir);
+
+    assert.equal(result.ok, true);
+    assert.equal(fs.readFileSync(path.join(hostDir, '.auth', 'user'), 'utf8'), `encrypted-${provider}-credentials`);
+    assert.equal(fs.readFileSync(path.join(hostDir, '.auth', 'machine_id'), 'utf8'), `${provider}-machine`);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(hostDir, '.cache', 'dns-cache.json'), 'utf8')), {
+      endpoint: `${provider}.example.com`
+    });
+  });
+}
+
+test('syncGlobalConfigToHost projects Grok auth through its host policy root', (t) => {
+  const fixture = createFixture(t);
+  const registration = registerAccountIdentity(fs, fixture.aiHomeDir, {
+    provider: 'grok',
+    cliAccountId: '1',
+    identitySeed: 'test:host-sync:grok:1'
+  });
+  writeAccountNativeAuth(fs, fixture.aiHomeDir, registration.accountRef, {
+    auth: { access_token: 'grok-access', refresh_token: 'grok-refresh' }
+  });
+  const sync = createHostConfigSyncer({
+    fs,
+    fse,
+    ensureDir: (dir) => fs.mkdirSync(dir, { recursive: true }),
+    aiHomeDir: fixture.aiHomeDir,
+    hostHomeDir: fixture.hostHomeDir,
+    cliConfigs: { grok: { globalDir: '.grok' } }
+  });
+
+  const result = sync('grok', registration.accountRef);
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(fixture.hostHomeDir, '.grok', 'auth.json'), 'utf8')), {
+    access_token: 'grok-access',
+    refresh_token: 'grok-refresh'
+  });
+});
+
+test('syncGlobalConfigToHost decodes Kiro database into its native host data root', (t) => {
+  const fixture = createFixture(t);
+  const registration = registerAccountIdentity(fs, fixture.aiHomeDir, {
+    provider: 'kiro',
+    cliAccountId: '1',
+    identitySeed: 'test:host-sync:kiro:1'
+  });
+  const databaseBytes = Buffer.from('sqlite-kiro-account');
+  writeAccountNativeAuth(fs, fixture.aiHomeDir, registration.accountRef, {
+    database: databaseBytes.toString('base64')
+  });
+  const sync = createHostConfigSyncer({
+    fs,
+    fse,
+    ensureDir: (dir) => fs.mkdirSync(dir, { recursive: true }),
+    aiHomeDir: fixture.aiHomeDir,
+    hostHomeDir: fixture.hostHomeDir,
+    cliConfigs: { kiro: { globalDir: '.kiro' } }
+  });
+
+  const result = sync('kiro', registration.accountRef);
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(
+    fs.readFileSync(path.join(fixture.hostHomeDir, '.local', 'share', 'kiro-cli', 'data.sqlite3')),
+    databaseBytes
+  );
+});

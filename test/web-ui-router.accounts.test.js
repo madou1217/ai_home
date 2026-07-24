@@ -1464,6 +1464,62 @@ test('web ui add codex oauth defaults to browser auth without allocating a local
   assert.deepEqual(startedCalls, [{ provider: 'codex', authMode: 'oauth-browser' }]);
 });
 
+test('web ui add starts Kimi browser OAuth instead of rejecting the auth mode', async (t) => {
+  const fixture = createAccountFixture(t, 'aih-webui-add-kimi-');
+  const res = createResCapture();
+  const startedCalls = [];
+
+  const handled = await handleAddAccountRequest({
+    req: { headers: { host: '127.0.0.1:9527' } },
+    res,
+    fs,
+    aiHomeDir: fixture.aiHomeDir,
+    deps: { aiHomeDir: fixture.aiHomeDir },
+    state: {},
+    readRequestBody: async () => Buffer.from(JSON.stringify({
+      provider: 'kimi',
+      authMode: 'oauth-browser'
+    })),
+    accountStateIndex: fixture.accountStateIndex,
+    getProfileDir: fixture.getProfileDir,
+    getToolConfigDir: fixture.getToolConfigDir,
+    getAuthJobManager() {
+      return {
+        startOauthJob(provider, authMode) {
+          startedCalls.push({ provider, authMode });
+          return {
+            jobId: 'job-kimi',
+            provider,
+            accountRef: '',
+            expiresAt: null,
+            pollIntervalMs: null
+          };
+        }
+      };
+    },
+    cleanupAuthJobArtifacts() {},
+    loadServerRuntimeAccounts() {
+      return { kimi: [] };
+    },
+    applyReloadState() {},
+    checkStatus() {
+      return { configured: false };
+    },
+    writeJson(response, code, payload) {
+      response.statusCode = code;
+      response.end(JSON.stringify(payload));
+    }
+  });
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 200);
+  const body = JSON.parse(res.body);
+  assert.equal(body.ok, true);
+  assert.equal(body.status, 'pending');
+  assert.equal(body.jobId, 'job-kimi');
+  assert.deepEqual(startedCalls, [{ provider: 'kimi', authMode: 'oauth-browser' }]);
+});
+
 test('web ui add api key account persists base url domain as display name', async (t) => {
   const fixture = createAccountFixture(t, 'aih-webui-add-api-key-');
   const res = createResCapture();

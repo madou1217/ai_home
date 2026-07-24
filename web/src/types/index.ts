@@ -340,6 +340,8 @@ export interface AddAccountResponse {
   callbackListeningUrl?: string;
   callbackCaptureError?: string;
   authProgressState?: string;
+  setupPhase?: string;
+  installRequired?: boolean;
 }
 
 export interface AccountImportSummary {
@@ -411,6 +413,9 @@ export interface AccountAddJob {
   callbackListeningUrl?: string;
   callbackCaptureError?: string;
   authProgressState?: string;
+  setupPhase?: string;
+  installRequired?: boolean;
+  installAttempts?: Array<{ id: string; label: string; ok: boolean; error?: string }>;
   email?: string;
   displayName?: string;
   planType?: string;

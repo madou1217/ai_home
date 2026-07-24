@@ -1,4 +1,4 @@
-import { CheckOutlined, DownOutlined } from '@ant-design/icons';
+import { CheckOutlined, DownOutlined, RobotOutlined } from '@ant-design/icons';
 import { Dropdown, Spin } from 'antd';
 import type { MenuProps } from 'antd';
 import type { ComposerModelOption } from '@/chat-runtime';
@@ -54,11 +54,17 @@ export default function ComposerModelMenu(props: Props) {
       menu={{ items }}
       disabled={props.disabled || (props.loading && props.models.length === 0)}
     >
-      <button type="button" className={styles.modelSummary} aria-label="选择模型与推理强度">
+      <button
+        type="button"
+        className={styles.modelSummary}
+        aria-label="选择模型与推理强度"
+        title={current?.label || '选择模型'}
+      >
+        <RobotOutlined className={styles.modelIcon} />
         {props.loading && !current ? <Spin size="small" /> : (
           <>
-            <span>{current?.label || '选择模型'}</span>
-            {current && props.effort ? <small>{effortLabel(props.effort)}</small> : null}
+            <span className={styles.modelLabel}>{current?.label || '选择模型'}</span>
+            {current && props.effort ? <small className={styles.modelEffort}>{effortLabel(props.effort)}</small> : null}
           </>
         )}
         <DownOutlined className={styles.chevron} />

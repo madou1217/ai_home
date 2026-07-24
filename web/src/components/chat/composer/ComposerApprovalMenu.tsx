@@ -38,9 +38,9 @@ export default function ComposerApprovalMenu(props: Props) {
   }));
   return (
     <Dropdown trigger={['click']} menu={{ items }} disabled={props.disabled}>
-      <button type="button" className={styles.approvalButton} aria-label="选择审批模式">
+      <button type="button" className={styles.approvalButton} aria-label="选择审批模式" title={current.label}>
         <SafetyCertificateOutlined />
-        <span>{current.label}</span>
+        <span className={styles.approvalLabel}>{current.label}</span>
         <DownOutlined className={styles.chevron} />
       </button>
     </Dropdown>

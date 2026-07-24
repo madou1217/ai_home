@@ -56,6 +56,7 @@
 }
 
 .modelSummary small { color: #8a8a8a; font-size: 13px; }
+.modelIcon { font-size: 14px; color: #6f6f6f; }
 .chevron { color: #929292; font-size: 10px; }
 
 .optionRow,
@@ -86,4 +87,20 @@
   .approvalButton span:nth-child(2) { display: none; }
   .modelSummary { max-width: 48vw; }
   .modelSummary > span:first-of-type { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+
+/* composer 容器(.inputToolbar,见 chat.module.css)本身变窄时——不依赖视口宽度，
+   而是响应侧栏/终端面板挤压聊天列后的真实可用宽度——把带文字的按钮收成纯图标。 */
+@container (max-width: 460px) {
+  .approvalLabel,
+  .modelLabel,
+  .modelEffort,
+  .chevron { display: none; }
+
+  .approvalButton,
+  .modelSummary {
+    width: 30px;
+    padding: 0;
+    justify-content: center;
+  }
 }

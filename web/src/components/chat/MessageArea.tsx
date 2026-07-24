@@ -8,6 +8,10 @@ import ProviderIcon from './ProviderIcon';
 import ComposerAccountMenu from './composer/ComposerAccountMenu';
 import ComposerApprovalMenu from './composer/ComposerApprovalMenu';
 import ComposerModelMenu from './composer/ComposerModelMenu';
+import DictationButton from './composer/DictationButton';
+import DictationRecordingBar from './composer/DictationRecordingBar';
+import { useDictation } from './composer/useDictation';
+import dictationStyles from './composer/dictation.module.css';
 import { providerAccentStyle } from './provider-registry';
 import TaskDock from './TaskDock';
 import { findLatestActiveChecklist } from './message-structure';
@@ -202,6 +206,10 @@ const MessageArea = ({
   const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
   const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
   const [shellTerminalOpen, setShellTerminalOpen] = useState(false);
+  const dictation = useDictation();
+  const startDictation = useCallback(() => {
+    dictation.start(input, onInputChange);
+  }, [dictation, input, onInputChange]);
   const activeProvider = session
     ? (session.draft ? (selectedAccount?.provider || session.provider) : session.provider)
     : '';
@@ -935,16 +943,18 @@ const MessageArea = ({
               >
                 <PlusOutlined style={{ fontSize: 16 }} />
               </button>
-              <button
-                className={styles.inputToolbarBtn}
-                title={shellTerminalOpen ? '关闭终端' : '打开终端'}
-                aria-pressed={shellTerminalOpen}
-                onClick={() => setShellTerminalOpen((v) => !v)}
-                style={shellTerminalOpen ? { color: '#2563eb' } : undefined}
-              >
-                <CodeOutlined style={{ fontSize: 16 }} />
-              </button>
-              {mobile ? (
+              {!dictation.recording && (
+                <button
+                  className={styles.inputToolbarBtn}
+                  title={shellTerminalOpen ? '关闭终端' : '打开终端'}
+                  aria-pressed={shellTerminalOpen}
+                  onClick={() => setShellTerminalOpen((v) => !v)}
+                  style={shellTerminalOpen ? { color: '#2563eb' } : undefined}
+                >
+                  <CodeOutlined style={{ fontSize: 16 }} />
+                </button>
+              )}
+              {dictation.recording ? null : mobile ? (
                 <button
                   type="button"
                   className={styles.mobileMetaBtn}
@@ -987,26 +997,35 @@ const MessageArea = ({
                   }}
                 />
               )}
-              {onApprovalModeChange && !mobile ? (
+              {onApprovalModeChange && !mobile && !dictation.recording ? (
                 <ComposerApprovalMenu value={approvalMode} onChange={onApprovalModeChange} />
               ) : null}
             </div>
-            <div className={styles.inputToolbarRight}>
-              {!mobile ? (
-                <ComposerModelMenu
-                  models={models.map((model) => ({
-                    id: model.value,
-                    label: model.label,
-                    supportedEfforts: [],
-                    defaultEffort: '',
-                  }))}
-                  model={effectiveSelectedModel}
-                  effort=""
-                  loading={modelsLoading}
-                  onModelChange={handleModelPick}
-                  onEffortChange={() => {}}
-                />
-              ) : null}
+            <div className={`${styles.inputToolbarRight} ${dictation.recording ? dictationStyles.toolbarRightRecording : ''}`}>
+              {dictation.recording ? (
+                <DictationRecordingBar elapsedSeconds={dictation.elapsedSeconds} onStop={dictation.stop} />
+              ) : (
+                <>
+                  {!mobile ? (
+                    <ComposerModelMenu
+                      models={models.map((model) => ({
+                        id: model.value,
+                        label: model.label,
+                        supportedEfforts: [],
+                        defaultEffort: '',
+                      }))}
+                      model={effectiveSelectedModel}
+                      effort=""
+                      loading={modelsLoading}
+                      onModelChange={handleModelPick}
+                      onEffortChange={() => {}}
+                    />
+                  ) : null}
+                  {!mobile && dictation.supported ? (
+                    <DictationButton onClick={startDictation} />
+                  ) : null}
+                </>
+              )}
               {/* 发送/停止：固定位置的切换按钮，loading 时变为停止 */}
               <button
                 type="button"

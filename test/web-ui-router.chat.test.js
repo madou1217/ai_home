@@ -328,6 +328,142 @@ test('web ui chat closes an already-started AGY stream with an SSE error when se
   }
 });
 
+test('web ui chat streams cli-install-progress SSE events before spawning the native session', async () => {
+  const originalEnsureReady = nativeSessionChat.ensureNativeCliReadyForChat;
+  const originalSpawn = nativeSessionChat.spawnNativeSessionStream;
+  nativeSessionChat.ensureNativeCliReadyForChat = async (provider, options = {}) => {
+    options.onProgress({ installPhase: 'installing' });
+    options.onProgress({ installPhase: 'plan-succeeded', planId: 'brew', planLabel: 'Homebrew' });
+    options.onProgress({ installPhase: 'installed' });
+    return { ok: true, installed: true };
+  };
+  nativeSessionChat.spawnNativeSessionStream = (options = {}) => ({
+    abort() {},
+    done: new Promise((resolve) => {
+      setTimeout(() => {
+        options.onEvent({ type: 'delta', delta: '你好' });
+        resolve({ content: '你好' });
+      }, 0);
+    })
+  });
+
+  try {
+    const req = new EventEmitter();
+    req.headers = {};
+    const res = createStreamResCapture();
+    const payload = {
+      provider: 'gemini',
+      accountRef: ACCOUNT_REFS.geminiOne,
+      sessionId: 'gem-session-id',
+      projectDirName: 'ai-home',
+      projectPath: '/Users/model/projects/feature/ai_home',
+      prompt: '你好',
+      stream: true,
+      messages: [{ role: 'user', content: '你好' }]
+    };
+
+    const handled = await handleWebUIRequest({
+      method: 'POST',
+      pathname: '/v0/webui/chat',
+      url: new URL('http://localhost/v0/webui/chat'),
+      req,
+      res,
+      options: {},
+      state: {},
+      deps: {
+        ...createBaseDeps(),
+        readRequestBody: async () => Buffer.from(JSON.stringify(payload), 'utf8')
+      }
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    assert.equal(handled, true);
+    assert.equal(res.statusCode, 200, res.body);
+    const events = res.body
+      .split('\n\n')
+      .map((chunk) => chunk.trim())
+      .filter((chunk) => chunk.startsWith('data: '))
+      .map((chunk) => JSON.parse(chunk.slice('data: '.length)));
+
+    const installEvents = events.filter((event) => event.type === 'cli-install-progress');
+    assert.equal(installEvents.length, 3);
+    assert.deepEqual(installEvents.map((event) => event.installPhase), [
+      'installing',
+      'plan-succeeded',
+      'installed'
+    ]);
+    assert.equal(installEvents[0].provider, 'gemini');
+    assert.equal(installEvents[1].planId, 'brew');
+    assert.equal(installEvents[1].planLabel, 'Homebrew');
+    installEvents.forEach((event) => assert.equal(typeof event.elapsedMs, 'number'));
+
+    // Install progress must arrive before the native session actually starts streaming.
+    const readyIndex = events.findIndex((event) => event.type === 'ready');
+    assert.ok(readyIndex > installEvents.length - 1);
+    assert.match(res.body, /"type":"delta","delta":"你好"/);
+    assert.match(res.body, /"type":"done"/);
+  } finally {
+    nativeSessionChat.ensureNativeCliReadyForChat = originalEnsureReady;
+    nativeSessionChat.spawnNativeSessionStream = originalSpawn;
+  }
+});
+
+test('web ui chat closes the SSE stream with cli_not_found when auto-install fails', async () => {
+  const originalEnsureReady = nativeSessionChat.ensureNativeCliReadyForChat;
+  const originalSpawn = nativeSessionChat.spawnNativeSessionStream;
+  let spawnCalled = false;
+  nativeSessionChat.ensureNativeCliReadyForChat = async (provider, options = {}) => {
+    options.onProgress({ installPhase: 'installing' });
+    options.onProgress({ installPhase: 'failed', message: '安装失败：网络不可用' });
+    return { ok: false, message: '安装失败：网络不可用' };
+  };
+  nativeSessionChat.spawnNativeSessionStream = () => {
+    spawnCalled = true;
+    return { abort() {}, done: Promise.resolve({ content: '' }) };
+  };
+
+  try {
+    const req = new EventEmitter();
+    req.headers = {};
+    const res = createStreamResCapture();
+    const payload = {
+      provider: 'gemini',
+      accountRef: ACCOUNT_REFS.geminiOne,
+      sessionId: 'gem-session-id',
+      projectDirName: 'ai-home',
+      projectPath: '/Users/model/projects/feature/ai_home',
+      prompt: '你好',
+      stream: true,
+      messages: [{ role: 'user', content: '你好' }]
+    };
+
+    const handled = await handleWebUIRequest({
+      method: 'POST',
+      pathname: '/v0/webui/chat',
+      url: new URL('http://localhost/v0/webui/chat'),
+      req,
+      res,
+      options: {},
+      state: {},
+      deps: {
+        ...createBaseDeps(),
+        readRequestBody: async () => Buffer.from(JSON.stringify(payload), 'utf8')
+      }
+    });
+
+    assert.equal(handled, true);
+    assert.equal(res.statusCode, 200, res.body);
+    assert.equal(res.writableEnded, true);
+    assert.equal(spawnCalled, false);
+    assert.match(res.body, /"type":"cli-install-progress","provider":"gemini","installPhase":"installing"/);
+    assert.match(res.body, /"type":"error","code":"cli_not_found","message":"安装失败：网络不可用"/);
+  } finally {
+    nativeSessionChat.ensureNativeCliReadyForChat = originalEnsureReady;
+    nativeSessionChat.spawnNativeSessionStream = originalSpawn;
+  }
+});
+
 test('web ui native session chat publishes updates to session event bus', async (t) => {
   const originalSpawn = nativeSessionChat.spawnNativeSessionStream;
   const sessionEventBus = createSessionEventBus({

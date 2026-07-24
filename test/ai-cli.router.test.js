@@ -1090,6 +1090,105 @@ test('`aih claude set-default --restart-client` prepares an account-scoped web s
   assert.deepEqual(exits, [0]);
 });
 
+test('`aih claude set-default --desktop-mode api --restart-client` configures 3P mode without importing a web session', (t) => {
+  const { root, aiHomeDir, profilesDir, accountRef } = createRegisteredTestHome(t, 'claude', '12');
+  const calls = [];
+  const exits = [];
+  const logs = [];
+  const originalLog = console.log;
+  console.log = (message) => logs.push(String(message));
+  try {
+    runAiCliCommandRouter('claude', [
+      'claude',
+      'set-default',
+      '12',
+      '--desktop-mode',
+      'api',
+      '--restart-client'
+    ], {
+      processImpl: { exit: (code) => exits.push(code) },
+      fs,
+      PROFILES_DIR: profilesDir,
+      aiHomeDir,
+      HOST_HOME_DIR: root,
+      syncGlobalConfigToHost: () => ({ ok: true }),
+      readServerConfig: () => ({ host: '0.0.0.0', port: 9527 }),
+      syncClaudeDesktopWebSession: () => {
+        calls.push({ type: 'web-session' });
+        return { ok: true, status: 'migrated' };
+      },
+      configureClaudeDesktopMode: (options) => {
+        calls.push({ type: 'desktop-mode', options });
+        return {
+          ok: true,
+          status: 'api_configured',
+          gatewayBaseUrl: 'http://127.0.0.1:9527'
+        };
+      },
+      restartDetectedDesktopClient: (provider, options) => ({
+        detected: true,
+        restarted: true,
+        clientName: 'Claude',
+        launchPreparation: options.prepareLaunch()
+      })
+    });
+  } finally {
+    console.log = originalLog;
+  }
+
+  assert.deepEqual(calls, [{
+    type: 'desktop-mode',
+    options: {
+      fs,
+      mode: 'api',
+      accountRef,
+      profileDir: path.join(aiHomeDir, 'desktop-clients', 'claude', accountRef),
+      serverConfig: { host: '0.0.0.0', port: 9527 }
+    }
+  }]);
+  assert.equal(logs.some((line) => line.includes('global routing pool')), true);
+  assert.equal(logs.some((line) => line.includes('Configured the isolated Claude Desktop profile for ai-home API mode')), true);
+  assert.deepEqual(exits, [0]);
+});
+
+test('`--desktop-mode` is explicit to Claude Desktop and requires a client restart', (t) => {
+  const claudeFixture = createRegisteredTestHome(t, 'claude', '12');
+  const codexFixture = createRegisteredTestHome(t, 'codex', '12');
+  const exits = [];
+  const errors = [];
+  const originalError = console.error;
+  console.error = (message) => errors.push(String(message));
+  try {
+    runAiCliCommandRouter('claude', ['claude', 'set-default', '12', '--desktop-mode=api'], {
+      processImpl: { exit: (code) => exits.push(code) },
+      fs,
+      PROFILES_DIR: claudeFixture.profilesDir,
+      aiHomeDir: claudeFixture.aiHomeDir,
+      HOST_HOME_DIR: claudeFixture.root
+    });
+    runAiCliCommandRouter('codex', [
+      'codex',
+      'set-default',
+      '12',
+      '--desktop-mode',
+      'api',
+      '--restart-client'
+    ], {
+      processImpl: { exit: (code) => exits.push(code) },
+      fs,
+      PROFILES_DIR: codexFixture.profilesDir,
+      aiHomeDir: codexFixture.aiHomeDir,
+      HOST_HOME_DIR: codexFixture.root
+    });
+  } finally {
+    console.error = originalError;
+  }
+
+  assert.deepEqual(exits, [1, 1]);
+  assert.equal(errors.some((line) => line.includes('--desktop-mode requires --restart-client')), true);
+  assert.equal(errors.some((line) => line.includes('--desktop-mode is supported only for Claude Desktop')), true);
+});
+
 test('`aih codex set-default --restart-client` reports force-quit restart when graceful stop timed out', (t) => {
   const { root, aiHomeDir, profilesDir } = createRegisteredTestHome(t);
   const exits = [];

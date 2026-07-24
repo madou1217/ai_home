@@ -87,6 +87,27 @@ export function formatStreamFailureText(failure, provider = '') {
   return `${providerLabel} 正在自动重试${message ? `：${message}` : '...'}`;
 }
 
+export function formatCliInstallProgressText(event, provider = '') {
+  const providerLabel = getProviderLabel(event?.provider || provider);
+  const planLabel = String(event?.planLabel || '').trim();
+  switch (event?.installPhase) {
+    case 'installing':
+      return planLabel
+        ? `正在安装 ${providerLabel} CLI（${planLabel}）...`
+        : `未检测到 ${providerLabel} CLI，正在自动安装...`;
+    case 'plan-succeeded':
+      return planLabel ? `${providerLabel} CLI 安装步骤完成（${planLabel}），继续安装...` : `正在安装 ${providerLabel} CLI...`;
+    case 'plan-failed':
+      return planLabel ? `${providerLabel} CLI 安装步骤失败（${planLabel}），尝试其他方式...` : `${providerLabel} CLI 安装遇到问题，尝试其他方式...`;
+    case 'installed':
+      return `${providerLabel} CLI 安装完成，继续处理中...`;
+    case 'failed':
+      return `${providerLabel} CLI 安装失败`;
+    default:
+      return `正在准备 ${providerLabel} CLI...`;
+  }
+}
+
 export function shouldUseExternalPending(provider) {
   return supportsExternalPending(provider);
 }

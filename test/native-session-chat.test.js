@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { EventEmitter } = require('node:events');
 
 const {
   DEFAULT_NATIVE_STREAM_COLS,
@@ -16,6 +17,7 @@ const {
   classifyNativeAccountRuntimeBlocker,
   collectAssistantReply,
   ensureCodexSessionIndexEntry,
+  ensureNativeCliReadyForChat,
   inferCodexSessionIdFromStateDb,
   inferClaudeCreatedSessionId,
   isOfficialNativeSessionProvider,
@@ -132,6 +134,92 @@ test('native session CLI resolution falls back to app node_modules bin', (t) => 
 
   assert.equal(launch.command, codexBin);
   assert.deepEqual(launch.prefixArgs, []);
+});
+
+test('ensureNativeCliReadyForChat skips install when the CLI already resolves', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-cli-ready-available-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const binDir = path.join(root, 'bin');
+  const opencodeBin = path.join(binDir, 'opencode');
+  fs.mkdirSync(binDir, { recursive: true });
+  fs.writeFileSync(opencodeBin, '#!/bin/sh\necho 1.0.0\n', 'utf8');
+  fs.chmodSync(opencodeBin, 0o755);
+
+  const progressEvents = [];
+  const result = await ensureNativeCliReadyForChat('opencode', {
+    env: { PATH: binDir, AIH_OPENCODE_RESOLVE_LATEST: '0' },
+    onProgress: (event) => progressEvents.push(event)
+  });
+
+  assert.deepEqual(result, { ok: true, installed: false });
+  assert.deepEqual(progressEvents, []);
+});
+
+test('ensureNativeCliReadyForChat auto-installs a missing CLI and reports progress', async (t) => {
+  const emptyPathDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-cli-ready-empty-path-'));
+  t.after(() => fs.rmSync(emptyPathDir, { recursive: true, force: true }));
+
+  let installed = false;
+  const spawnCalls = [];
+  const fakeSpawn = (command, args) => {
+    spawnCalls.push({ command, args });
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    process.nextTick(() => {
+      installed = true;
+      child.emit('close', 0);
+    });
+    return child;
+  };
+
+  const progressEvents = [];
+  const result = await ensureNativeCliReadyForChat('qoder', {
+    env: { PATH: emptyPathDir },
+    processObj: { platform: 'linux', env: { HOME: '/home/u', PATH: emptyPathDir }, cwd: () => '/repo' },
+    path,
+    spawn: fakeSpawn,
+    resolveNativeCliPath: (name) => (installed && name === 'qodercli' ? '/home/u/.qoder/bin/qodercli/qodercli' : ''),
+    onProgress: (event) => progressEvents.push(event)
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.installed, true);
+  assert.equal(result.cliPath, '/home/u/.qoder/bin/qodercli/qodercli');
+  assert.ok(spawnCalls.length > 0);
+  assert.equal(progressEvents[0].installPhase, 'installing');
+  assert.ok(progressEvents.some((event) => event.installPhase === 'plan-succeeded'));
+  assert.equal(progressEvents.at(-1).installPhase, 'installed');
+});
+
+test('ensureNativeCliReadyForChat reports a composed failure message when every install plan fails', async (t) => {
+  const emptyPathDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-cli-ready-fail-path-'));
+  t.after(() => fs.rmSync(emptyPathDir, { recursive: true, force: true }));
+
+  const fakeSpawn = () => {
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    process.nextTick(() => child.emit('close', 1));
+    return child;
+  };
+
+  const progressEvents = [];
+  const result = await ensureNativeCliReadyForChat('qoder', {
+    env: { PATH: emptyPathDir },
+    processObj: { platform: 'linux', env: { HOME: '/home/u', PATH: emptyPathDir }, cwd: () => '/repo' },
+    path,
+    spawn: fakeSpawn,
+    resolveNativeCliPath: () => '',
+    onProgress: (event) => progressEvents.push(event)
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.installed, false);
+  assert.match(result.message, /qodercli/);
+  assert.ok(Array.isArray(result.installAttempts) && result.installAttempts.length > 0);
+  assert.ok(progressEvents.some((event) => event.installPhase === 'plan-failed'));
+  assert.equal(progressEvents.at(-1).installPhase, 'failed');
 });
 
 test('native session classifies provider auth failures from interactive terminal output', () => {

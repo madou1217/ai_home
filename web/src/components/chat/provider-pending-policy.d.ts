@@ -25,6 +25,14 @@ interface StreamFailureStatus {
   readonly retryable?: boolean;
 }
 
+interface CliInstallProgressStatus {
+  readonly provider?: Provider | string;
+  readonly installPhase?: 'installing' | 'plan-succeeded' | 'plan-failed' | 'installed' | 'failed';
+  readonly planId?: string;
+  readonly planLabel?: string;
+  readonly message?: string;
+}
+
 export declare function getThinkingStatusText(provider?: Provider | string): string;
 
 export declare function getProcessingStatusText(): string;
@@ -55,6 +63,11 @@ export declare function getRetryCountdownDelayMs(
 
 export declare function formatStreamFailureText(
   failure?: StreamFailureStatus,
+  provider?: Provider | string
+): string;
+
+export declare function formatCliInstallProgressText(
+  event?: CliInstallProgressStatus,
   provider?: Provider | string
 ): string;
 

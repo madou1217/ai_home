@@ -13,6 +13,7 @@ import {
   getProcessingStatusText,
   getThinkingStatusText,
   formatRetryStatusText,
+  formatCliInstallProgressText,
 } from '@/components/chat/provider-pending-policy.js';
 import type {
   Account,
@@ -219,6 +220,10 @@ export function useLegacyMessageRunner({
         if (event.type === 'retry-status') {
           const statusText = formatRetryStatusText(event, requestSession.provider);
           updateSelectedPendingStatus(statusText);
+          return;
+        }
+        if (event.type === 'cli-install-progress') {
+          updateSelectedPendingStatus(formatCliInstallProgressText(event, requestSession.provider));
           return;
         }
         if (event.type === 'thinking' && event.thinking) {

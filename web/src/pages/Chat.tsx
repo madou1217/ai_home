@@ -16,6 +16,7 @@ import {
 } from '@/features/chat-runtime';
 import ChatRuntimeBoundary from '@/features/chat-runtime/ChatRuntimeBoundary';
 import ChatWorkspaceLayout from '@/features/legacy-chat/ChatWorkspaceLayout';
+import ProjectWorkbench from '@/features/project-workbench/ProjectWorkbench';
 import LegacyChatRuntime from '@/features/legacy-chat/LegacyChatRuntime';
 import { useChatAccountCatalog } from '@/features/legacy-chat/use-chat-account-catalog';
 import { useProjectDialogs } from '@/features/legacy-chat/use-project-dialogs';
@@ -177,7 +178,7 @@ export default function Chat() {
       remoteSessionsPanel={null}
     />
   );
-  const chatContent = (
+  const runtimeContent = (
     <ChatRuntimeBoundary
       session={projectCatalog.selectedSession}
       account={accountCatalog.selectedAccount}
@@ -236,6 +237,13 @@ export default function Chat() {
           onOpenProject={dialogs.openProject}
         />
       )}
+    />
+  );
+  const chatContent = (
+    <ProjectWorkbench
+      projectPath={projectCatalog.selectedProject?.path}
+      mobile={mobile}
+      chat={runtimeContent}
     />
   );
   const navigation = useMobileChatNavigation(setMobileShowChat);

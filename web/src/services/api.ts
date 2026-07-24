@@ -431,8 +431,27 @@ export function parseFileRequestError(error: unknown): FileRequestError {
   };
 }
 
+export interface FileTreeEntry {
+  name: string;
+  type: 'directory' | 'file';
+  size?: number;
+  mtime: number;
+  hasChildren: boolean;
+}
+
+export interface FileTreeResponse {
+  path: string;
+  projectPath: string;
+  entries: FileTreeEntry[];
+  truncated: boolean;
+}
+
 // 本地文件系统 API
 export const fsAPI = {
+  tree: async (projectPath: string, path = ''): Promise<FileTreeResponse> => {
+    const response = await api.get('/webui/fs/tree', { params: { projectPath, path } });
+    return response.data;
+  },
   read: async (path: string, projectPath?: string, source?: string): Promise<FileMetadataResponse & { content: string }> => {
     // source 用于后端选择受控根目录，例如 Codex memory citation 不应按当前项目解析。
     const response = await api.get('/webui/fs/read', { params: { path, projectPath, source } });
@@ -444,6 +463,34 @@ export const fsAPI = {
   },
   trust: async (path: string, scope: FileTrustScope, source?: string): Promise<{ trustedRoot: string; filePath: string }> => {
     const response = await api.post('/webui/fs/trust', { path, scope, source });
+    return response.data;
+  }
+};
+
+export interface GitChangedFile {
+  path: string;
+  oldPath?: string;
+  staged: boolean;
+  unstaged: boolean;
+  untracked: boolean;
+  status: string;
+}
+
+export interface GitSummary {
+  branch: string;
+  upstream: string;
+  ahead: number;
+  behind: number;
+  files: GitChangedFile[];
+}
+
+export const gitReviewAPI = {
+  summary: async (projectPath: string): Promise<GitSummary> => {
+    const response = await api.get('/webui/git/summary', { params: { projectPath } });
+    return response.data;
+  },
+  diff: async (projectPath: string, path: string, staged = false): Promise<{ content: string; truncated: boolean }> => {
+    const response = await api.get('/webui/git/diff', { params: { projectPath, path, staged: staged ? 1 : 0 } });
     return response.data;
   }
 };

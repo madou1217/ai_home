@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useSessionSelector } from '@/chat-runtime';
 import type {
   SessionProjection,
@@ -7,7 +7,7 @@ import type {
 } from '@/chat-runtime';
 import type { Account } from '@/types';
 import type { Provider } from '@/types';
-import ShellTerminalPanel from '@/components/chat/ShellTerminalPanel';
+import { useWorkbench } from '@/features/project-workbench/WorkbenchContext';
 import Composer from './Composer';
 import ConversationTimeline from './ConversationTimeline';
 import InteractionDock from './InteractionDock';
@@ -43,7 +43,7 @@ interface Props {
 }
 
 export default function SessionWorkspace(props: Props) {
-  const [terminalOpen, setTerminalOpen] = useState(false);
+  const workbench = useWorkbench();
   const projection = useSessionSelector(props.controller.store, selectWorkspaceProjection);
   const firstTextPaintProbe = useMemo(
     () => new BrowserFirstTextPaintProbe(props.controller.sessionId),
@@ -119,16 +119,11 @@ export default function SessionWorkspace(props: Props) {
             onModelChange={props.onModelChange}
             onApprovalModeChange={props.onApprovalModeChange}
             uploadAttachments={(attachments) => props.controller.uploadAttachments(attachments)}
-            terminalOpen={terminalOpen}
-            onToggleTerminal={() => setTerminalOpen((current) => !current)}
+            terminalOpen={false}
+            onToggleTerminal={() => workbench?.openPanel('terminal')}
           />
         </fieldset>
       </div>
-      <ShellTerminalPanel
-        visible={terminalOpen}
-        onClose={() => setTerminalOpen(false)}
-        cwd={props.runtimeTarget.projectPath}
-      />
     </main>
   );
 }

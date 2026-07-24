@@ -1,36 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Form, Input, Modal, Tag, Alert, Space, Popconfirm, Select, Breadcrumb, message, Radio, Tabs, Drawer } from 'antd';
+import { Form, Input, Modal, Tag, Alert, Space, Select, Breadcrumb, message, Radio, Tabs, Drawer } from 'antd';
 import { ModalForm } from '@ant-design/pro-components';
 import Button from '@/components/ui/AppButton';
-import SectionCard from '@/components/ui/SectionCard';
-import ListTable from '@/components/ui/ListTable';
-import { PlusOutlined, EditOutlined, DeleteOutlined, LoadingOutlined, FolderOpenOutlined, RightOutlined } from '@ant-design/icons';
+import { SshConnectionCardList, SshWorkspaceCardList } from '@/components/settings/SshHostCardLists';
+import type { SshConnection, SshWorkspace } from '@/components/settings/SshHostCardLists';
+import { PlusOutlined, LoadingOutlined, FolderOpenOutlined, RightOutlined } from '@ant-design/icons';
 import { sshHostsAPI } from '@/services/api';
 import type { SshHostTestResult } from '@/types';
 
 // 密码掩码常量
 const PASSWORD_MASK = '******';
-
-interface SshConnection {
-  id: string;
-  label: string;
-  host: string;
-  port: number;
-  user: string;
-  authType: 'key' | 'key-file' | 'password' | 'agent';
-  identityFile?: string;
-  privateKey?: string;
-  password?: string;
-  createdAt: number;
-}
-
-interface SshWorkspace {
-  id: string;
-  connectionId: string;
-  label: string;
-  remoteRoot: string;
-  createdAt: number;
-}
 
 interface RemoteDirItem {
   name: string;
@@ -352,147 +331,6 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
     );
   };
 
-  // ------------------------------------------
-  // 6. UI 渲染与 Columns 定义
-  // ------------------------------------------
-
-  // SSH Connection columns
-  const connColumns = [
-    {
-      title: '连接名称',
-      dataIndex: 'label',
-      key: 'label',
-      render: (text: any) => <strong>{text}</strong>
-    },
-    {
-      title: '目标地址',
-      key: 'destination',
-      render: (_: any, record: SshConnection) => (
-        <code>{record.user ? `${record.user}@${record.host}:${record.port}` : `${record.host}:${record.port}`}</code>
-      )
-    },
-    {
-      title: '认证方式',
-      dataIndex: 'authType',
-      key: 'authType',
-      render: (_dom: React.ReactNode, record: SshConnection) => {
-        const text = record.authType;
-        const meta = {
-          agent: { color: 'purple', label: 'SSH Agent' },
-          'key-file': { color: 'cyan', label: '私钥文件' },
-          key: { color: 'blue', label: '粘贴私钥' },
-          password: { color: 'orange', label: '密码' }
-        }[text] || { color: 'default', label: text };
-        return <Tag color={meta.color}>{meta.label}</Tag>;
-      }
-    },
-    {
-      title: '操作',
-      key: 'actions',
-      width: 320,
-      render: (_: any, record: SshConnection) => (
-        <Space size="middle">
-          <Button
-            size="small"
-            onClick={() => handleTestConnection(record)}
-            loading={testStates[record.id]?.loading}
-          >
-            测试连接
-          </Button>
-          <Button
-            size="small"
-            onClick={() => {
-              setFilterConnectionId(record.id);
-              setActiveTab('workspaces');
-            }}
-          >
-            查看工作区
-          </Button>
-          <Button
-            size="small"
-            onClick={() => {
-              showWsModal();
-              setTimeout(() => {
-                wsForm.setFieldsValue({ connectionId: record.id });
-                setSelectedConnIdInForm(record.id);
-              }, 50);
-            }}
-          >
-            快捷建工作区
-          </Button>
-          <Button
-            size="small"
-            icon={<EditOutlined />}
-            onClick={() => showConnModal(record)}
-          >
-            编辑
-          </Button>
-          <Popconfirm
-            title="将同步删除关联该连接的所有工作空间！确认删除？"
-            onConfirm={() => handleDeleteConn(record.id)}
-            okText="确认"
-            cancelText="取消"
-          >
-            <Button size="small" danger icon={<DeleteOutlined />}>
-              删除
-            </Button>
-          </Popconfirm>
-        </Space>
-      )
-    }
-  ];
-
-  // SSH Workspace columns
-  const wsColumns = [
-    {
-      title: '项目空间名',
-      dataIndex: 'label',
-      key: 'label',
-      render: (text: any) => <strong>{text}</strong>
-    },
-    {
-      title: '关联连接',
-      dataIndex: 'connectionId',
-      key: 'connectionId',
-      render: (connId: any) => {
-        const conn = connections.find(c => c.id === connId);
-        return conn ? <span>{conn.label} (<code>{conn.host}</code>)</span> : <span style={{ color: '#d9d9d9' }}>连接已删除</span>;
-      }
-    },
-    {
-      title: '远端工作区路径',
-      dataIndex: 'remoteRoot',
-      key: 'remoteRoot',
-      render: (text: any) => <code>{text}</code>
-    },
-    {
-      title: '操作',
-      key: 'actions',
-      width: 180,
-      render: (_: any, record: SshWorkspace) => (
-        <Space size="middle">
-          <Button
-            size="small"
-            icon={<EditOutlined />}
-            onClick={() => showWsModal(record)}
-          >
-            编辑
-          </Button>
-          <Popconfirm
-            title="仅在数据库中删除此空间，不会影响远程服务器的物理文件。确认移除？"
-            onConfirm={() => handleDeleteWs(record.id)}
-            okText="确认"
-            cancelText="取消"
-          >
-            <Button size="small" danger icon={<DeleteOutlined />}>
-              移除
-            </Button>
-          </Popconfirm>
-        </Space>
-      )
-    }
-  ];
-
   const renderDiagnosticDrawerContent = () => {
     if (!activeDiagnosticConn) return null;
     const state = testStates[activeDiagnosticConn.id];
@@ -594,14 +432,25 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
               key: 'connections',
               label: '远程连接',
               children: (
-                <SectionCard title="远程连接列表">
-                  <ListTable
-                    dataSource={connections}
-                    columns={connColumns}
-                    rowKey="id"
-                    loading={loadingConns}
-                  />
-                </SectionCard>
+                <SshConnectionCardList
+                  connections={connections}
+                  loading={loadingConns}
+                  testingIds={Object.entries(testStates).filter(([, state]) => state.loading).map(([id]) => id)}
+                  onTest={handleTestConnection}
+                  onViewWorkspaces={(connection) => {
+                    setFilterConnectionId(connection.id);
+                    setActiveTab('workspaces');
+                  }}
+                  onCreateWorkspace={(connection) => {
+                    showWsModal();
+                    setTimeout(() => {
+                      wsForm.setFieldsValue({ connectionId: connection.id });
+                      setSelectedConnIdInForm(connection.id);
+                    }, 50);
+                  }}
+                  onEdit={showConnModal}
+                  onDelete={handleDeleteConn}
+                />
               )
             },
             {
@@ -624,14 +473,13 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
                       style={{ marginBottom: 12 }}
                     />
                   )}
-                  <SectionCard title="项目工作空间列表">
-                    <ListTable
-                      dataSource={filteredWorkspaces}
-                      columns={wsColumns}
-                      rowKey="id"
-                      loading={loadingWorkspaces}
-                    />
-                  </SectionCard>
+                  <SshWorkspaceCardList
+                    workspaces={filteredWorkspaces}
+                    connections={connections}
+                    loading={loadingWorkspaces}
+                    onEdit={showWsModal}
+                    onDelete={handleDeleteWs}
+                  />
                 </>
               )
             }

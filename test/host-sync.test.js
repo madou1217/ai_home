@@ -55,6 +55,70 @@ function createCodexSyncer(fixture, options = {}) {
   });
 }
 
+function registerClaudeAccount(fixture, cliAccountId, credentials) {
+  const registration = registerAccountIdentity(fs, fixture.aiHomeDir, {
+    provider: 'claude',
+    cliAccountId: String(cliAccountId),
+    identitySeed: `test:host-sync:claude:${cliAccountId}`
+  });
+  writeAccountNativeAuth(fs, fixture.aiHomeDir, registration.accountRef, { credentials });
+  return registration.accountRef;
+}
+
+function createClaudeSyncer(fixture, options = {}) {
+  return createHostConfigSyncer({
+    fs,
+    fse,
+    ensureDir: (dir) => fs.mkdirSync(dir, { recursive: true }),
+    aiHomeDir: fixture.aiHomeDir,
+    hostHomeDir: fixture.hostHomeDir,
+    cliConfigs: { claude: { globalDir: '.claude' } },
+    ...options
+  });
+}
+
+test('syncGlobalConfigToHost writes the reconciled Claude credentials snapshot', (t) => {
+  const fixture = createFixture(t);
+  const databaseCredentials = { claudeAiOauth: { accessToken: 'database' } };
+  const reconciledCredentials = { claudeAiOauth: { accessToken: 'keychain' } };
+  const accountRef = registerClaudeAccount(fixture, '1', databaseCredentials);
+  const sync = createClaudeSyncer(fixture, {
+    reconcileClaudeHostCredentials: () => ({
+      ok: true,
+      credentials: reconciledCredentials,
+      source: 'keychain'
+    })
+  });
+
+  const result = sync('claude', accountRef);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.authSync.source, 'keychain');
+  assert.deepEqual(
+    JSON.parse(fs.readFileSync(path.join(fixture.hostHomeDir, '.claude', '.credentials.json'), 'utf8')),
+    reconciledCredentials
+  );
+});
+
+test('syncGlobalConfigToHost does not write Claude files when keychain reconciliation fails', (t) => {
+  const fixture = createFixture(t);
+  const accountRef = registerClaudeAccount(fixture, '1', {
+    claudeAiOauth: { accessToken: 'database' }
+  });
+  const sync = createClaudeSyncer(fixture, {
+    reconcileClaudeHostCredentials: () => ({
+      ok: false,
+      reason: 'keychain_write_failed'
+    })
+  });
+
+  const result = sync('claude', accountRef);
+
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'keychain_write_failed');
+  assert.equal(fs.existsSync(path.join(fixture.hostHomeDir, '.claude', '.credentials.json')), false);
+});
+
 test('syncGlobalConfigToHost writes codex auth from DB as an independent global snapshot', (t) => {
   const fixture = createFixture(t);
   const accountRef = registerCodexAccount(fixture, '1', { auth: { token: 'database' } });

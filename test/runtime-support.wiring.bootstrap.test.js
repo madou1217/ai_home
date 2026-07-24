@@ -1,10 +1,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
+  createAccountArtifactHookWiring,
   createHostConfigSyncWiring,
   createStateIndexClientWiring,
   createInteractionWiring
 } = require('../lib/cli/bootstrap/runtime-support-wiring');
+
+const ACCOUNT_REF = 'acct_1234567890abcdef1234';
 
 test('createHostConfigSyncWiring maps host sync dependencies', () => {
   let receivedArg = null;
@@ -91,4 +94,52 @@ test('createInteractionWiring exposes askYesNo/stripAnsi from interaction servic
   assert.equal(out.askYesNo, askYesNo);
   assert.equal(out.stripAnsi, stripAnsi);
   assert.deepEqual(receivedArg, { readLine: {} });
+});
+
+test('createAccountArtifactHookWiring syncs refreshed default auth to host config', () => {
+  const syncCalls = [];
+  let receivedArg = null;
+  createAccountArtifactHookWiring({
+    fs: {},
+    path: {},
+    aiHomeDir: '/tmp/aih',
+    getProfileDir: () => '/tmp/profile',
+    syncGlobalConfigToHost: (provider, accountRef) => {
+      syncCalls.push({ provider, accountRef });
+      return { ok: true };
+    }
+  }, {
+    createAccountArtifactHookService: (arg) => {
+      receivedArg = arg;
+      return {};
+    }
+  });
+
+  receivedArg.onDefaultAccountAuthUpdated({
+    provider: 'claude',
+    accountRef: ACCOUNT_REF
+  });
+
+  assert.deepEqual(syncCalls, [{ provider: 'claude', accountRef: ACCOUNT_REF }]);
+});
+
+test('default auth host sync failures are observable to the artifact hook', () => {
+  let receivedArg = null;
+  createAccountArtifactHookWiring({
+    fs: {},
+    path: {},
+    aiHomeDir: '/tmp/aih',
+    getProfileDir: () => '/tmp/profile',
+    syncGlobalConfigToHost: () => ({ ok: false, reason: 'keychain_write_failed' })
+  }, {
+    createAccountArtifactHookService: (arg) => {
+      receivedArg = arg;
+      return {};
+    }
+  });
+
+  assert.throws(
+    () => receivedArg.onDefaultAccountAuthUpdated({ provider: 'claude', accountRef: ACCOUNT_REF }),
+    /default_account_host_sync_failed:keychain_write_failed/
+  );
 });

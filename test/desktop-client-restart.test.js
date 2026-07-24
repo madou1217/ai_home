@@ -619,3 +619,138 @@ test('desktop client restart launches the installed merged ChatGPT bundle when c
   assert.equal(savedPaths.codex.macos.executablePath, executablePath);
   assert.equal(savedPaths.codex.macos.bundlePath, bundlePath);
 });
+
+test('desktop client restart injects a sanitized account profile into macOS open', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-claude-profile-launch-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const launches = [];
+  const service = createDesktopClientRestartService({
+    aiHomeDir: path.join(root, '.ai_home'),
+    hostHomeDir: '/Users/model',
+    fs: {
+      ...fs,
+      existsSync(target) {
+        return target === '/Applications/Claude.app'
+          || target === '/Applications/Claude.app/Contents/MacOS/Claude'
+          || fs.existsSync(target);
+      }
+    },
+    processObj: {
+      platform: 'darwin',
+      pid: 999,
+      env: {
+        PATH: '/usr/bin:/bin',
+        AIH_HOME: '/tmp/sandbox',
+        CLAUDE_USER_DATA_DIR: '/tmp/wrong-profile'
+      },
+      kill() {}
+    },
+    spawnSync: () => ({ status: 0, stdout: '' }),
+    spawn(command, args, options) {
+      launches.push({ command, args, options });
+      return { unref() {} };
+    }
+  });
+
+  const profileDir = '/Users/model/.ai_home/desktop-clients/claude/acct_example';
+  const result = service.restartDetectedDesktopClient('claude', {
+    launchEnv: {
+      CLAUDE_USER_DATA_DIR: profileDir,
+      'INVALID-KEY': 'ignored',
+      EMPTY_VALUE: ''
+    }
+  });
+
+  assert.equal(result.launched, true);
+  assert.deepEqual(launches[0].args, [
+    '-a',
+    '/Applications/Claude.app',
+    '--env',
+    `CLAUDE_USER_DATA_DIR=${profileDir}`
+  ]);
+  assert.equal(launches[0].options.env.CLAUDE_USER_DATA_DIR, profileDir);
+  assert.equal(Object.prototype.hasOwnProperty.call(launches[0].options.env, 'AIH_HOME'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(launches[0].options.env, 'INVALID-KEY'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(launches[0].options.env, 'EMPTY_VALUE'), false);
+});
+
+test('desktop client restart prepares state after stop and before launch', () => {
+  const events = [];
+  let alive = true;
+  const service = createDesktopClientRestartService({
+    aiHomeDir: '/tmp/aih',
+    stopWaitTimeoutMs: 1000,
+    stopWaitIntervalMs: 1,
+    fs: {
+      mkdirSync() {},
+      writeFileSync() {},
+      readFileSync() { throw Object.assign(new Error('missing'), { code: 'ENOENT' }); },
+      existsSync: () => true
+    },
+    processObj: {
+      platform: 'darwin',
+      pid: 999,
+      kill(_pid, signal) {
+        if (signal === 0 && !alive) throw new Error('not running');
+        if (signal === 'SIGTERM') {
+          events.push('stop');
+          alive = false;
+        }
+      }
+    },
+    spawnSync(command) {
+      if (command === 'ps') {
+        return { status: 0, stdout: '123 /Applications/Claude.app/Contents/MacOS/Claude\n' };
+      }
+      throw new Error(`unexpected command ${command}`);
+    },
+    spawn() {
+      events.push('launch');
+      return { unref() {} };
+    }
+  });
+
+  const result = service.restartDetectedDesktopClient('claude', {
+    prepareLaunch() {
+      events.push('prepare');
+      return { ok: true, status: 'migrated', cookieCount: 2 };
+    }
+  });
+
+  assert.equal(result.restarted, true);
+  assert.deepEqual(result.launchPreparation, {
+    ok: true,
+    status: 'migrated',
+    cookieCount: 2
+  });
+  assert.deepEqual(events, ['stop', 'prepare', 'launch']);
+});
+
+test('desktop client restart fails closed when launch preparation fails', () => {
+  let launched = false;
+  const service = createDesktopClientRestartService({
+    aiHomeDir: '/tmp/aih',
+    hostHomeDir: '/Users/model',
+    fs: {
+      mkdirSync() {},
+      writeFileSync() {},
+      readFileSync() { throw Object.assign(new Error('missing'), { code: 'ENOENT' }); },
+      existsSync: (target) => target === '/Applications/Claude.app'
+    },
+    processObj: { platform: 'darwin', pid: 999, kill() {} },
+    spawnSync: () => ({ status: 0, stdout: '' }),
+    spawn() {
+      launched = true;
+      return { unref() {} };
+    }
+  });
+
+  const result = service.restartDetectedDesktopClient('claude', {
+    prepareLaunch: () => ({ ok: false, reason: 'cookie_schema_invalid' })
+  });
+
+  assert.equal(result.launched, false);
+  assert.equal(result.reason, 'launch_preparation_failed');
+  assert.equal(result.launchPreparation.reason, 'cookie_schema_invalid');
+  assert.equal(launched, false);
+});

@@ -1023,6 +1023,73 @@ test('`aih codex set-default --restart-client` restarts desktop client as best e
   assert.equal(logs.some((line) => line.includes('Restarted local Codex desktop client')), true);
 });
 
+test('`aih claude set-default --restart-client` prepares an account-scoped web session before restart', (t) => {
+  const { root, aiHomeDir, profilesDir, accountRef } = createRegisteredTestHome(t, 'claude', '12');
+  const calls = [];
+  const exits = [];
+  const logs = [];
+  const originalLog = console.log;
+  console.log = (message) => logs.push(String(message));
+  try {
+    runAiCliCommandRouter('claude', ['claude', 'set-default', '12', '--restart-client'], {
+      processImpl: { exit: (code) => exits.push(code) },
+      fs,
+      PROFILES_DIR: profilesDir,
+      aiHomeDir,
+      HOST_HOME_DIR: root,
+      syncGlobalConfigToHost: (provider, selectedRef) => {
+        calls.push({ type: 'sync', provider, accountRef: selectedRef });
+        return { ok: true };
+      },
+      syncClaudeDesktopWebSession: (options) => {
+        calls.push({
+          type: 'desktop-session',
+          accountRef: options.accountRef,
+          profileDir: options.profileDir
+        });
+        return { ok: true, status: 'migrated', cookieCount: 2 };
+      },
+      restartDetectedDesktopClient: (provider, options) => {
+        calls.push({ type: 'restart', provider, options });
+        return {
+          detected: true,
+          restarted: true,
+          clientName: 'Claude',
+          launchPreparation: options.prepareLaunch()
+        };
+      }
+    });
+  } finally {
+    console.log = originalLog;
+  }
+
+  assert.deepEqual(calls, [
+    { type: 'sync', provider: 'claude', accountRef },
+    {
+      type: 'restart',
+      provider: 'claude',
+      options: {
+        forceQuit: false,
+        launchEnv: {
+          CLAUDE_USER_DATA_DIR: path.join(aiHomeDir, 'desktop-clients', 'claude', accountRef)
+        },
+        prepareLaunch: calls[1] && calls[1].options && calls[1].options.prepareLaunch
+      }
+    },
+    {
+      type: 'desktop-session',
+      accountRef,
+      profileDir: path.join(aiHomeDir, 'desktop-clients', 'claude', accountRef)
+    }
+  ]);
+  assert.equal(readDefaultAccountRef(fs, aiHomeDir, 'claude'), accountRef);
+  assert.equal(logs.some((line) => line.includes('account-scoped web session')), true);
+  assert.equal(logs.some((line) => line.includes('Imported matching Claude web session')), true);
+  assert.equal(logs.some((line) => line.includes('Restarted local Claude desktop client.')), true);
+  assert.equal(logs.some((line) => line.includes('Claude desktop client to reload host auth')), false);
+  assert.deepEqual(exits, [0]);
+});
+
 test('`aih codex set-default --restart-client` reports force-quit restart when graceful stop timed out', (t) => {
   const { root, aiHomeDir, profilesDir } = createRegisteredTestHome(t);
   const exits = [];

@@ -44,16 +44,12 @@ export interface WorkbenchState {
   readonly activeTabId: string;
 }
 
-export const PANEL_LABELS: Record<WorkbenchPanelKind, string> = {
-  chat: '会话',
-  terminal: '终端',
-  files: '文件',
-  review: '变更',
-  browser: '浏览器',
-};
+export const PANEL_LABELS = WORKBENCH_PANEL_LABELS as Record<WorkbenchPanelKind, string>;
 
-export const PANEL_LIMITS: Partial<Record<WorkbenchPanelKind, number>> = {
-  terminal: 4,
-  browser: 3,
-  files: 20,
-};
+export const PANEL_LIMITS = WORKBENCH_PANEL_LIMITS as Partial<
+  Record<WorkbenchPanelKind, number>
+>;
+import {
+  PANEL_LABELS as WORKBENCH_PANEL_LABELS,
+  PANEL_LIMITS as WORKBENCH_PANEL_LIMITS,
+} from './workbench-state-policy.js';

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { beginDictationSession } from './dictation-session.js';
 
 interface SpeechRecognitionResultLike {
   readonly [index: number]: { readonly transcript: string };
@@ -15,6 +16,7 @@ interface SpeechRecognitionLike {
   lang: string;
   continuous: boolean;
   interimResults: boolean;
+  onstart: (() => void) | null;
   onresult: ((event: SpeechRecognitionEventLike) => void) | null;
   onerror: (() => void) | null;
   onend: (() => void) | null;
@@ -64,41 +66,36 @@ export function useDictation(): UseDictationResult {
 
   useEffect(() => () => {
     clearTimer();
-    recognitionRef.current?.abort();
+    const recognition = recognitionRef.current;
     recognitionRef.current = null;
+    recognition?.abort();
   }, [clearTimer]);
 
   const start = useCallback((baseText: string, onTranscript: (mergedText: string) => void) => {
     if (!ctor || recognitionRef.current) return;
-    const recognition = new ctor();
-    recognition.lang = 'zh-CN';
-    recognition.continuous = true;
-    recognition.interimResults = true;
-
-    const prefix = baseText.trim() ? `${baseText} ` : '';
-    const finishRecording = () => {
-      recognitionRef.current = null;
-      clearTimer();
-      setRecording(false);
-    };
-
-    recognition.onresult = (event) => {
-      let transcript = '';
-      for (let i = 0; i < event.results.length; i += 1) {
-        transcript += event.results[i][0].transcript;
-      }
-      onTranscript(prefix + transcript);
-    };
-    recognition.onerror = finishRecording;
-    recognition.onend = finishRecording;
-
-    recognitionRef.current = recognition;
-    setElapsedSeconds(0);
-    setRecording(true);
-    timerRef.current = setInterval(() => {
-      setElapsedSeconds((value) => value + 1);
-    }, 1000);
-    recognition.start();
+    beginDictationSession({
+      Recognition: ctor,
+      baseText,
+      onReady: (recognition: SpeechRecognitionLike) => {
+        recognitionRef.current = recognition;
+      },
+      onStart: (recognition: SpeechRecognitionLike) => {
+        if (recognitionRef.current !== recognition) return;
+        setElapsedSeconds(0);
+        setRecording(true);
+        clearTimer();
+        timerRef.current = setInterval(() => {
+          setElapsedSeconds((value) => value + 1);
+        }, 1000);
+      },
+      onTranscript,
+      onFinish: (recognition: SpeechRecognitionLike) => {
+        if (recognitionRef.current !== recognition) return;
+        recognitionRef.current = null;
+        clearTimer();
+        setRecording(false);
+      },
+    });
   }, [ctor, clearTimer]);
 
   return { supported: ctor !== null, recording, elapsedSeconds, start, stop };

@@ -150,6 +150,83 @@ test('persistent provider supervisor inherits stdio/env then finalizes in captur
   assert.equal(processObj.exitCode, 0);
 });
 
+test('persistent provider supervisor finalizes once after child error then close', async () => {
+  const calls = [];
+  const child = createChildDouble();
+  const processObj = createProcessDouble();
+  const spawnError = new Error('spawn ENOENT');
+  spawnError.code = 'ENOENT';
+  const completed = runPersistentProviderSupervisor(supervisorContext(), {
+    processObj,
+    spawn: () => child,
+    captureAuth() { calls.push('capture'); },
+    reconcileResources() { calls.push('reconcile'); },
+    removeProjection() { calls.push('remove-projection'); return true; },
+    removeRegistry() { calls.push('remove-registry'); return true; }
+  });
+
+  child.emit('error', spawnError);
+  child.emit('close', -2, null);
+  const result = await completed;
+
+  assert.deepEqual(calls, ['capture', 'reconcile', 'remove-projection', 'remove-registry']);
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.childExitCode, -2);
+  assert.equal(result.error, spawnError);
+  assert.equal(processObj.exitCode, 1);
+});
+
+test('persistent provider supervisor finalizes after synchronous spawn failure', async () => {
+  const calls = [];
+  const processObj = createProcessDouble();
+  const spawnError = new Error('spawn failed before child creation');
+  const result = await runPersistentProviderSupervisor(supervisorContext(), {
+    processObj,
+    spawn() {
+      throw spawnError;
+    },
+    captureAuth() { calls.push('capture'); },
+    reconcileResources() { calls.push('reconcile'); },
+    removeProjection() { calls.push('remove-projection'); return true; },
+    removeRegistry() { calls.push('remove-registry'); return true; }
+  });
+
+  assert.deepEqual(calls, ['capture', 'reconcile', 'remove-projection', 'remove-registry']);
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.childExitCode, null);
+  assert.equal(result.error, spawnError);
+  assert.equal(processObj.exitCode, 1);
+});
+
+test('persistent provider supervisor preserves launch and cleanup errors together', async () => {
+  const calls = [];
+  const child = createChildDouble();
+  const processObj = createProcessDouble();
+  const spawnError = new Error('spawn ENOENT');
+  const completed = runPersistentProviderSupervisor(supervisorContext(), {
+    processObj,
+    spawn: () => child,
+    captureAuth() {
+      calls.push('capture');
+      throw new Error('auth capture failed');
+    },
+    reconcileResources() { calls.push('reconcile'); },
+    removeProjection() { calls.push('remove-projection'); return true; },
+    removeRegistry() { calls.push('remove-registry'); return true; }
+  });
+
+  child.emit('error', spawnError);
+  child.emit('close', -2, null);
+  const result = await completed;
+
+  assert.deepEqual(calls, ['capture', 'reconcile']);
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.error.code, 'persistent_provider_supervisor_failed');
+  assert.equal(result.error.cause, spawnError);
+  assert.equal(result.error.errors[0], spawnError);
+  assert.equal(result.error.errors[1].code, 'persistent_provider_cleanup_failed');
+});
+
 test('capture failure still reconciles resources but retains registry and exits nonzero', async () => {
   const calls = [];
   const child = createChildDouble();
@@ -277,42 +354,64 @@ test('production supervisor dependencies use the explicit host/projection roots'
   ]);
 });
 
-test('production supervisor removes a transient projection after successful finalization', async (t) => {
-  const hostHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-supervisor-host-'));
-  const aiHomeDir = path.join(hostHomeDir, '.ai_home');
-  fs.mkdirSync(aiHomeDir, { recursive: true });
-  t.after(() => fs.rmSync(hostHomeDir, { recursive: true, force: true }));
-  const runtimeDir = createTransientAuthProjection(fs, 'codex', ACCOUNT_REF, { path });
-  t.after(() => fs.rmSync(runtimeDir, { recursive: true, force: true }));
-  const context = supervisorContext({
-    provider: 'codex',
-    runtimeDir,
-    aiHomeDir,
-    hostHomeDir,
-    socket: persistentSession.deriveSocket('codex', ACCOUNT_REF),
-    command: '/usr/local/bin/codex'
-  });
-  const child = createChildDouble();
-  const processObj = createProcessDouble();
-  const dependencies = createPersistentProviderSupervisorDependencies(context, {
-    fs,
-    path,
-    processObj,
-    spawn: () => child,
-    createSessionStoreService: () => ({
-      ensureSessionStoreLinks: () => ({ migrated: 0, linked: 0 })
-    }),
-    captureProviderAuth() {},
-    reconcileProviderResources() {},
-    persistentSessionRegistry: {
-      removeEntry() { return true; }
+test('production supervisor removes a transient projection after every terminal path', async (t) => {
+  const scenarios = [
+    {
+      name: 'successful close',
+      expectedExitCode: 0,
+      terminate(child) {
+        child.emit('close', 0, null);
+      }
+    },
+    {
+      name: 'child spawn error',
+      expectedExitCode: 1,
+      terminate(child) {
+        child.emit('error', new Error('spawn ENOENT'));
+        child.emit('close', -2, null);
+      }
     }
-  });
+  ];
 
-  const completed = runPersistentProviderSupervisor(context, dependencies);
-  child.emit('close', 0, null);
-  const result = await completed;
+  for (const scenario of scenarios) {
+    await t.test(scenario.name, async (subtest) => {
+      const hostHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-supervisor-host-'));
+      const aiHomeDir = path.join(hostHomeDir, '.ai_home');
+      fs.mkdirSync(aiHomeDir, { recursive: true });
+      subtest.after(() => fs.rmSync(hostHomeDir, { recursive: true, force: true }));
+      const runtimeDir = createTransientAuthProjection(fs, 'codex', ACCOUNT_REF, { path });
+      subtest.after(() => fs.rmSync(runtimeDir, { recursive: true, force: true }));
+      const context = supervisorContext({
+        provider: 'codex',
+        runtimeDir,
+        aiHomeDir,
+        hostHomeDir,
+        socket: persistentSession.deriveSocket('codex', ACCOUNT_REF),
+        command: '/usr/local/bin/codex'
+      });
+      const child = createChildDouble();
+      const processObj = createProcessDouble();
+      const dependencies = createPersistentProviderSupervisorDependencies(context, {
+        fs,
+        path,
+        processObj,
+        spawn: () => child,
+        createSessionStoreService: () => ({
+          ensureSessionStoreLinks: () => ({ migrated: 0, linked: 0 })
+        }),
+        captureProviderAuth() {},
+        reconcileProviderResources() {},
+        persistentSessionRegistry: {
+          removeEntry() { return true; }
+        }
+      });
 
-  assert.equal(result.exitCode, 0);
-  assert.equal(fs.existsSync(runtimeDir), false);
+      const completed = runPersistentProviderSupervisor(context, dependencies);
+      scenario.terminate(child);
+      const result = await completed;
+
+      assert.equal(result.exitCode, scenario.expectedExitCode);
+      assert.equal(fs.existsSync(runtimeDir), false);
+    });
+  }
 });

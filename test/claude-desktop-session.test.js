@@ -6,6 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 const {
+  verifyClaudeWebSessionIdentity,
   syncClaudeDesktopWebSession
 } = require('../lib/cli/services/ai-cli/claude-desktop-session');
 
@@ -144,6 +145,12 @@ test('Claude desktop session migrates only matching auth cookies and re-encrypts
     }),
     readSafeStoragePassword({ service }) {
       return Buffer.from(service === 'Chrome Safe Storage' ? chromePassword : claudePassword);
+    },
+    verifySessionIdentity({ accountIdentity, cookies }) {
+      assert.equal(accountIdentity.emailAddress, 'target@example.com');
+      assert.equal(cookies.sessionKey, expected.sessionKey);
+      assert.equal(cookies.lastActiveOrg, expected.lastActiveOrg);
+      return { status: 'match' };
     }
   });
 
@@ -173,10 +180,25 @@ test('Claude desktop session migrates only matching auth cookies and re-encrypts
 
 test('Claude desktop session reuses an existing account profile without reading browser secrets', (t) => {
   const fixture = createFixture(t);
+  const claudePassword = Buffer.from('claude-password');
   fs.mkdirSync(fixture.profileDir, { recursive: true });
   createCookieDatabase(path.join(fixture.profileDir, 'Cookies'), [
-    { name: 'sessionKey', encryptedValue: Buffer.from('v10-existing-session') },
-    { name: 'lastActiveOrg', encryptedValue: Buffer.from('v10-existing-org') }
+    {
+      name: 'sessionKey',
+      encryptedValue: encryptCookie(
+        '.claude.ai',
+        'sk-ant-sid-existing-session',
+        claudePassword
+      )
+    },
+    {
+      name: 'lastActiveOrg',
+      encryptedValue: encryptCookie(
+        '.claude.ai',
+        '11111111-2222-4333-8444-555555555555',
+        claudePassword
+      )
+    }
   ]);
 
   const result = syncClaudeDesktopWebSession({
@@ -189,8 +211,13 @@ test('Claude desktop session reuses an existing account profile without reading 
     readAccountNativeAuth: () => ({
       credentials: { claudeAiOauth: { account: { emailAddress: 'target@example.com' } } }
     }),
-    readSafeStoragePassword() {
-      throw new Error('existing profile must not access Safe Storage');
+    readSafeStoragePassword({ service }) {
+      assert.equal(service, 'Claude Safe Storage');
+      return Buffer.from(claudePassword);
+    },
+    verifySessionIdentity({ cookies }) {
+      assert.equal(cookies.sessionKey, 'sk-ant-sid-existing-session');
+      return { status: 'match' };
     }
   });
 
@@ -283,6 +310,13 @@ test('Claude desktop session skips expired Chrome auth and selects a matching Ed
       if (service === 'Microsoft Edge Safe Storage') return Buffer.from(edgePassword);
       if (service === 'Claude Safe Storage') return Buffer.from(claudePassword);
       throw new Error(`unexpected Safe Storage service: ${service}`);
+    },
+    verifySessionIdentity({ cookies }) {
+      return {
+        status: cookies.sessionKey === 'sk-ant-sid-edge-session'
+          ? 'match'
+          : 'mismatch'
+      };
     }
   });
 
@@ -297,6 +331,208 @@ test('Claude desktop session skips expired Chrome auth and selects a matching Ed
     'Microsoft Edge Safe Storage',
     'Claude Safe Storage'
   ]);
+});
+
+test('Claude desktop session rejects stale storage email when the cookie identity mismatches', (t) => {
+  const fixture = createFixture(t);
+  const chromePassword = Buffer.from('chrome-password');
+  const sourceCookiesPath = path.join(fixture.chromeProfileDir, 'Cookies');
+  const staleStorageDir = path.join(fixture.chromeProfileDir, 'Local Storage', 'leveldb');
+  fs.mkdirSync(staleStorageDir, { recursive: true });
+  fs.writeFileSync(path.join(staleStorageDir, '000001.log'), 'target@example.com');
+  createCookieDatabase(sourceCookiesPath, [
+    {
+      name: 'sessionKey',
+      encryptedValue: encryptCookie('.claude.ai', 'sk-ant-sid-wrong-account', chromePassword)
+    },
+    {
+      name: 'lastActiveOrg',
+      encryptedValue: encryptCookie(
+        '.claude.ai',
+        '11111111-2222-4333-8444-555555555555',
+        chromePassword
+      )
+    }
+  ]);
+
+  const result = syncClaudeDesktopWebSession({
+    fs,
+    path,
+    processObj: { platform: 'darwin', pid: 123 },
+    hostHomeDir: fixture.hostHomeDir,
+    profileDir: fixture.profileDir,
+    accountRef: ACCOUNT_REF,
+    readAccountNativeAuth: () => ({
+      credentials: {
+        claudeAiOauth: { account: { emailAddress: 'target@example.com' } }
+      }
+    }),
+    readSafeStoragePassword: () => Buffer.from(chromePassword),
+    verifySessionIdentity({ cookies }) {
+      assert.equal(cookies.sessionKey, 'sk-ant-sid-wrong-account');
+      return { status: 'mismatch' };
+    }
+  });
+
+  assert.deepEqual(result, {
+    ok: true,
+    status: 'login_required',
+    reason: 'matching_browser_session_not_found',
+    cookieCount: 0
+  });
+  assert.equal(fs.existsSync(path.join(fixture.profileDir, 'Cookies')), false);
+});
+
+test('Claude desktop session selects the verified cookie identity across browser profiles', (t) => {
+  const fixture = createFixture(t);
+  const chromePassword = Buffer.from('chrome-password');
+  const claudePassword = Buffer.from('claude-password');
+  createCookieDatabase(path.join(fixture.chromeProfileDir, 'Cookies'), [
+    {
+      name: 'sessionKey',
+      encryptedValue: encryptCookie('.claude.ai', 'sk-ant-sid-wrong-profile', chromePassword)
+    },
+    {
+      name: 'lastActiveOrg',
+      encryptedValue: encryptCookie(
+        '.claude.ai',
+        'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+        chromePassword
+      )
+    }
+  ]);
+  const matchingProfileDir = path.join(
+    fixture.hostHomeDir,
+    'Library',
+    'Application Support',
+    'Google',
+    'Chrome',
+    'Profile 1'
+  );
+  createCookieDatabase(path.join(matchingProfileDir, 'Network', 'Cookies'), [
+    {
+      name: 'sessionKey',
+      encryptedValue: encryptCookie('.claude.ai', 'sk-ant-sid-target-profile', chromePassword)
+    },
+    {
+      name: 'lastActiveOrg',
+      encryptedValue: encryptCookie(
+        '.claude.ai',
+        '11111111-2222-4333-8444-555555555555',
+        chromePassword
+      )
+    }
+  ]);
+
+  const verifiedSessions = [];
+  const result = syncClaudeDesktopWebSession({
+    fs,
+    path,
+    processObj: { platform: 'darwin', pid: 123 },
+    hostHomeDir: fixture.hostHomeDir,
+    profileDir: fixture.profileDir,
+    accountRef: ACCOUNT_REF,
+    readAccountNativeAuth: () => ({
+      credentials: {
+        claudeAiOauth: { account: { emailAddress: 'target@example.com' } }
+      }
+    }),
+    readSafeStoragePassword({ service }) {
+      return Buffer.from(service === 'Chrome Safe Storage' ? chromePassword : claudePassword);
+    },
+    verifySessionIdentity({ cookies }) {
+      verifiedSessions.push(cookies.sessionKey);
+      return {
+        status: cookies.sessionKey === 'sk-ant-sid-target-profile'
+          ? 'match'
+          : 'mismatch'
+      };
+    }
+  });
+
+  assert.deepEqual(result, {
+    ok: true,
+    status: 'migrated',
+    sourceBrowser: 'chrome',
+    sourceProfile: 'Profile 1',
+    cookieCount: 2
+  });
+  assert.deepEqual(verifiedSessions, [
+    'sk-ant-sid-wrong-profile',
+    'sk-ant-sid-target-profile'
+  ]);
+});
+
+test('Claude desktop session fails closed when cookie identity cannot be verified', (t) => {
+  const fixture = createFixture(t);
+  const chromePassword = Buffer.from('chrome-password');
+  createCookieDatabase(path.join(fixture.chromeProfileDir, 'Cookies'), [
+    {
+      name: 'sessionKey',
+      encryptedValue: encryptCookie('.claude.ai', 'sk-ant-sid-unverified', chromePassword)
+    },
+    {
+      name: 'lastActiveOrg',
+      encryptedValue: encryptCookie(
+        '.claude.ai',
+        '11111111-2222-4333-8444-555555555555',
+        chromePassword
+      )
+    }
+  ]);
+
+  const result = syncClaudeDesktopWebSession({
+    fs,
+    path,
+    processObj: { platform: 'darwin', pid: 123 },
+    hostHomeDir: fixture.hostHomeDir,
+    profileDir: fixture.profileDir,
+    accountRef: ACCOUNT_REF,
+    readAccountNativeAuth: () => ({
+      credentials: {
+        claudeAiOauth: { account: { emailAddress: 'target@example.com' } }
+      }
+    }),
+    readSafeStoragePassword: () => Buffer.from(chromePassword),
+    verifySessionIdentity: () => ({ status: 'unavailable' })
+  });
+
+  assert.deepEqual(result, {
+    ok: false,
+    status: 'failed',
+    reason: 'browser_session_identity_unverified',
+    cookieCount: 0
+  });
+});
+
+test('Claude web session verifier keeps cookies off argv and binds account plus organization', () => {
+  const sessionKey = 'sk-ant-sid-secret-session';
+  const lastActiveOrg = '11111111-2222-4333-8444-555555555555';
+  let childInput = null;
+
+  const result = verifyClaudeWebSessionIdentity({
+    accountIdentity: {
+      emailAddress: 'target@example.com',
+      accountUuid: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
+    },
+    cookies: { sessionKey, lastActiveOrg }
+  }, {
+    execFileSync(executable, args, options) {
+      assert.equal(executable, process.execPath);
+      assert.equal(args.some((arg) => String(arg).includes(sessionKey)), false);
+      assert.equal(args.some((arg) => String(arg).includes(lastActiveOrg)), false);
+      childInput = JSON.parse(Buffer.from(options.input).toString('utf8'));
+      return Buffer.from(JSON.stringify({
+        status: 'ok',
+        accountUuid: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+        emailAddress: 'target@example.com',
+        organizationUuids: [lastActiveOrg]
+      }));
+    }
+  });
+
+  assert.deepEqual(childInput, { sessionKey, lastActiveOrg });
+  assert.deepEqual(result, { status: 'match' });
 });
 
 test('Claude desktop session rejects an unsafe account scope', (t) => {

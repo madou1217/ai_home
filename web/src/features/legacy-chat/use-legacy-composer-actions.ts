@@ -10,6 +10,7 @@ import {
   resolveQueueTargetKey,
 } from './legacy-runtime-policy';
 import { humanizeChatError } from './chat-error-policy';
+import { resolveLegacyComposerSubmission } from './legacy-composer-submission-policy.js';
 import type { LegacySessionRuntime } from './use-legacy-session-orchestration';
 
 interface LegacyComposerActionOptions {
@@ -71,29 +72,22 @@ export function useLegacyComposerActions({
     suppressAbortToastRef.current = true;
   }, []);
 
-  const runMessage = useCallback(async (rawContent: string, rawImages: string[]): Promise<void> => {
-    const content = rawContent.trim();
-    if (!content) return void message.warning('请输入消息');
-    if (!selection.account) return void message.warning('请先选择一个账号');
-    if (!selection.session.draft && selection.account.provider !== selection.session.provider) {
-      return void message.error(
-        `当前会话来自 ${providerNames[selection.session.provider]}，请选择对应的账号`,
-      );
-    }
-    const projectPath = selection.project?.path || selection.session.projectPath;
-    if (!projectPath) return void message.error('当前会话缺少项目路径');
-    const imageList = rawImages.slice();
-
-    const currentRunKey = findRun(selection.session);
+  const runMessage = useCallback(async (submission: ReturnType<
+    typeof resolveLegacyComposerSubmission
+  > & { ok: true }): Promise<void> => {
+    const {
+      account, content, imageList, model, projectPath, session,
+    } = submission;
+    const currentRunKey = findRun(session);
     const queueKey = resolveQueueTargetKey(
-      selection.session,
+      session,
       currentRunKey,
       detachedRunRef.current,
     );
     if (queueKey) {
       enqueueMessage(queueKey, createQueuedMessage(
-        selection.account,
-        selection.model,
+        account,
+        model,
         content,
         imageList,
       ));
@@ -102,9 +96,9 @@ export function useLegacyComposerActions({
     }
     try {
       await runSessionMessage({
-        session: selection.session,
-        account: selection.account,
-        model: selection.model || undefined,
+        session,
+        account,
+        model: model || undefined,
         content,
         imageList,
       });
@@ -117,10 +111,10 @@ export function useLegacyComposerActions({
         suppressAbortToastRef.current = false;
         message.error(humanizeChatError(error, '发送失败'));
       }
-      if (selection.session.draft) {
+      if (session.draft) {
         await refreshProjects({ projectPath }).catch(() => {});
       } else if (aborted) {
-        await reloadSessionHistory(selection.session).catch(() => {});
+        await reloadSessionHistory(session).catch(() => {});
       }
     } finally {
       suppressAbortToastRef.current = false;
@@ -132,20 +126,39 @@ export function useLegacyComposerActions({
     reloadSessionHistory,
     refreshProjects,
     runSessionMessage,
+  ]);
+
+  const send = useCallback(async (): Promise<void> => {
+    const submission = resolveLegacyComposerSubmission({
+      account: selection.account,
+      content: input,
+      images,
+      model: selection.model,
+      projectPath: selection.project?.path,
+      session: selection.session,
+    });
+    if (!submission.ok) {
+      if (submission.reason === 'empty_content') return void message.warning('请输入消息');
+      if (submission.reason === 'account_required') return void message.warning('请先选择一个账号');
+      if (submission.reason === 'provider_mismatch') {
+        return void message.error(
+          `当前会话来自 ${providerNames[submission.expectedProvider]}，请选择对应的账号`,
+        );
+      }
+      return void message.error('当前会话缺少项目路径');
+    }
+    setInput('');
+    setImages([]);
+    await runMessage(submission);
+  }, [
+    images,
+    input,
+    runMessage,
     selection.account,
     selection.model,
     selection.project?.path,
     selection.session,
   ]);
-
-  const send = useCallback(async (): Promise<void> => {
-    const content = input;
-    const imageList = images.slice();
-    if (!content.trim()) return void message.warning('请输入消息');
-    setInput('');
-    setImages([]);
-    await runMessage(content, imageList);
-  }, [images, input, runMessage]);
 
   const stop = useCallback((): void => {
     const session = selection.sessionRef.current;

@@ -317,7 +317,13 @@
   font-size: 9px;
 }
 
-.composerToolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.composerToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  container-type: inline-size;
+}
 .composerControls,
 .composerActions { display: flex; align-items: center; gap: 5px; min-width: 0; }
 

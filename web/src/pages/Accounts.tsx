@@ -74,6 +74,7 @@ import type {
   WebUiModelsResponse,
 } from '@/types';
 import ProviderIcon, { providerIds, providerNames } from '@/components/chat/ProviderIcon';
+import { PROVIDER_AUTH_OPTIONS } from '@/providers/catalog';
 import UsageSnapshotCell from '@/components/account/UsageSnapshotCell';
 import {
   getAccountIdentityLabel,
@@ -88,7 +89,8 @@ import 'dayjs/locale/zh-cn';
 dayjs.extend(relativeTime);
 dayjs.locale('zh-cn');
 
-const PROVIDERS: Provider[] = providerIds;
+// Provider 顺序和认证方式都来自 Go 核心生成的 Client 合同。
+const PROVIDERS: readonly Provider[] = providerIds;
 type ImportMode = 'file' | 'folder' | 'text' | 'cliproxyapi';
 type PasteTemplate = 'sub2api' | 'antigravity' | 'jsonl';
 const ACCOUNT_REMOVE_ANIMATION_MS = 420;
@@ -210,129 +212,6 @@ const PASTE_TEMPLATES: Record<PasteTemplate, { label: string; description: strin
     ].join('\n')
   }
 };
-
-const PROVIDER_AUTH_OPTIONS: Record<Provider, Array<{
-  value: AccountAuthMode;
-  label: string;
-  description: string;
-}>> = {
-  codex: [
-    {
-      value: 'oauth-browser',
-      label: 'ChatGPT / OpenAI 登录',
-      description: '打开授权链接，授权后把回调地址提交给 WebUI。'
-    },
-    {
-      value: 'oauth-device',
-      label: '设备码登录',
-      description: '仅在账号支持 device auth 时使用，适合远程环境。'
-    },
-    {
-      value: 'api-key',
-      label: 'OpenAI 密钥',
-      description: '绑定 OPENAI_API_KEY / OPENAI_BASE_URL。'
-    }
-  ],
-  claude: [
-    {
-      value: 'oauth-browser',
-      label: 'Claude 登录',
-      description: '使用 Claude Code 原生 login 流程（Claude.ai 凭据）。'
-    },
-    {
-      value: 'api-key',
-      label: 'Anthropic 密钥',
-      description: '绑定 ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL。'
-    },
-    {
-      value: 'auth-token',
-      label: 'Claude Code Token',
-      description: '绑定 ANTHROPIC_AUTH_TOKEN / ANTHROPIC_BASE_URL。'
-    }
-  ],
-  gemini: [
-    {
-      value: 'oauth-browser',
-      label: 'Google 登录',
-      description: '使用 Gemini CLI 原生 Google 登录流程。'
-    },
-    {
-      value: 'api-key',
-      label: 'Gemini 密钥',
-      description: '绑定 GEMINI_API_KEY 或 GOOGLE_API_KEY。'
-    }
-  ],
-  agy: [
-    {
-      value: 'oauth-browser',
-      label: 'Antigravity 登录',
-      description: '使用 Antigravity CLI 原生 Google 登录流程。'
-    }
-  ],
-  opencode: [
-    {
-      value: 'oauth-browser',
-      label: 'OpenCode 登录',
-      description: '使用 OpenCode CLI 原生 auth login 流程。'
-    }
-  ],
-  grok: [
-    {
-      value: 'api-key',
-      label: 'xAI 密钥',
-      description: '绑定 XAI_API_KEY / XAI_BASE_URL。'
-    },
-    {
-      value: 'oauth-browser',
-      label: 'Grok 登录',
-      description: '使用 Grok Build CLI 原生 auth login 流程（需 SuperGrok 订阅）。'
-    }
-  ],
-  qoder: [
-    {
-      value: 'oauth-browser',
-      label: 'Qoder 登录',
-      description: '使用 Qoder CLI 原生 browser login 流程（全球站 qodercli）。'
-    },
-    {
-      value: 'api-key',
-      label: 'Qoder Personal Access Token',
-      description: '绑定 QODER_PERSONAL_ACCESS_TOKEN（全球站）。'
-    }
-  ],
-  qodercn: [
-    {
-      value: 'oauth-browser',
-      label: 'Qoder CN 登录',
-      description: '使用 Qoder CLI CN 原生 browser login 流程（qoderclicn）。'
-    },
-    {
-      value: 'api-key',
-      label: 'Qoder CN Personal Access Token',
-      description: '绑定 QODER_PERSONAL_ACCESS_TOKEN（国内站）。'
-    }
-  ],
-  kimi: [
-    {
-      value: 'api-key',
-      label: 'Moonshot 密钥',
-      description: '绑定 MOONSHOT_API_KEY / KIMI_BASE_URL（支持 api.moonshot.cn 和 api.moonshot.ai 双端点）。'
-    },
-    {
-      value: 'oauth-browser',
-      label: 'Kimi Code 登录',
-      description: '使用 Kimi Code CLI 原生 OAuth 设备码流程（需 Kimi 会员订阅）。'
-    }
-  ],
-  kiro: [
-    {
-      value: 'oauth-browser',
-      label: 'AWS Builder ID 登录',
-      description: '使用 Kiro CLI Device Flow 认证（支持 Google/GitHub/AWS Builder ID）。'
-    }
-  ]
-};
-
 
 function getAccountPrimaryLabel(record: Account) {
   return getAccountIdentityLabel(record);

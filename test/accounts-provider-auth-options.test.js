@@ -2,61 +2,40 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { listProviderIds } = require('../lib/provider-catalog');
+const {
+  getProviderAuthOptions,
+  listProviderDefinitions,
+  listProviderIds
+} = require('../lib/provider-catalog');
 
-/**
- * Mirror of web/src/pages/Accounts.tsx PROVIDER_AUTH_OPTIONS keys.
- * Keep in sync: every catalog provider must have auth modes so the add-account
- * modal never does undefined.map(...) when a provider is selected.
- */
-const PROVIDER_AUTH_OPTIONS = {
-  codex: ['oauth-browser', 'oauth-device', 'api-key'],
-  claude: ['oauth-browser', 'api-key', 'auth-token'],
-  gemini: ['oauth-browser', 'api-key'],
-  agy: ['oauth-browser'],
-  opencode: ['oauth-browser'],
-  grok: ['api-key', 'oauth-browser'],
-  qoder: ['oauth-browser', 'api-key'],
-  qodercn: ['oauth-browser', 'api-key'],
-  kimi: ['api-key', 'oauth-browser'],
-  kiro: ['oauth-browser']
-};
-
+// resolveProviderAuthOptions 模拟 Accounts 页面面对未知 Provider 时的安全读取方式。
 function resolveProviderAuthOptions(provider) {
-  return PROVIDER_AUTH_OPTIONS[provider] || [];
+  return getProviderAuthOptions(provider);
 }
 
-test('every catalog provider has non-empty auth options (Accounts add modal)', () => {
+test('每个 Provider 都由生成合同提供非空认证选项', () => {
+  const definitions = listProviderDefinitions();
   const catalogIds = listProviderIds();
-  assert.ok(catalogIds.includes('qoder'));
-  assert.ok(catalogIds.includes('qodercn'));
 
-  const missing = [];
-  for (const id of catalogIds) {
-    const modes = resolveProviderAuthOptions(id);
-    if (!Array.isArray(modes) || modes.length === 0) missing.push(id);
+  assert.deepEqual(definitions.map((definition) => definition.id), catalogIds);
+  for (const definition of definitions) {
+    const options = resolveProviderAuthOptions(definition.id);
+    assert.ok(options.length > 0, `${definition.id} 缺少认证选项`);
+    assert.deepEqual(options, definition.authOptions);
   }
-  assert.deepEqual(missing, [], `missing PROVIDER_AUTH_OPTIONS for: ${missing.join(', ')}`);
 });
 
-test('selecting qoder/qodercn never yields undefined for .map', () => {
+test('Qoder 两个区域的认证选项可安全遍历', () => {
   for (const provider of ['qoder', 'qodercn']) {
     const options = resolveProviderAuthOptions(provider);
-    assert.equal(Array.isArray(options), true);
-    // This is the exact pattern that crashed in Accounts.tsx:
-    // PROVIDER_AUTH_OPTIONS[selectedProvider].map(...)
-    assert.doesNotThrow(() => options.map((mode) => mode));
-    assert.ok(options.includes('oauth-browser'));
+    assert.doesNotThrow(() => options.map((option) => option.value));
+    assert.ok(options.some((option) => option.value === 'oauth-browser'));
   }
 });
 
-test('Type Provider union and catalog stay aligned for new providers', () => {
-  // If catalog gains a provider without auth options, the WebUI add form will
-  // crash. This test is the CI guard until auth options are generated from a
-  // shared registry.
-  const catalogIds = new Set(listProviderIds());
-  const optionIds = new Set(Object.keys(PROVIDER_AUTH_OPTIONS));
-  for (const id of catalogIds) {
-    assert.ok(optionIds.has(id), `catalog provider "${id}" missing from PROVIDER_AUTH_OPTIONS mirror`);
-  }
+test('未知 Provider 返回空认证选项而不是 undefined', () => {
+  const options = resolveProviderAuthOptions('missing-provider');
+
+  assert.deepEqual(options, []);
+  assert.doesNotThrow(() => options.map((option) => option.value));
 });

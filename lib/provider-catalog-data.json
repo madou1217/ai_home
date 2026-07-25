@@ -111,5 +111,7 @@
     "softVar": "var(--color-brand-soft)",
     "tagColor": "blue"
   },
-  "deprecatedGatewayProviders": ["gemini"]
+  "deprecatedGatewayProviders": [
+    "gemini"
+  ]
 }

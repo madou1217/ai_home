@@ -4,7 +4,7 @@ import { UndoOutlined } from '@ant-design/icons';
 import type { ArchivedSession } from '@/types';
 import { sessionsAPI } from '@/services/api';
 import ProviderIcon from './ProviderIcon';
-import { getProviderLabel, getProviderTagColor } from './provider-meta.js';
+import { getProviderLabel, getProviderTagColor } from '@/providers/catalog';
 import { getSessionRunKey, isSameSession } from './project-runtime-state.js';
 import {
   archivedSessionTime,

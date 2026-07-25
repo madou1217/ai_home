@@ -16,10 +16,19 @@ import claudeTerminalIcon from '../../../../assets/provider-icons/claude.png';
 import codexTerminalIcon from '../../../../assets/provider-icons/codex.png';
 import geminiTerminalIcon from '../../../../assets/provider-icons/gemini.png';
 import opencodeTerminalIcon from '../../../../assets/provider-icons/opencode.png';
-import { PROVIDER_CATALOG, CATALOG_FALLBACK, getProviderLabel, getProviderTagColor, getProviderTerminalBadge, getProviderTerminalIcon, getProviderTerminalIconAsset, providerIds, providerNames } from './provider-catalog.js';
+import {
+  PROVIDER_CATALOG,
+  PROVIDER_FALLBACK,
+  getProviderLabel,
+  getProviderTagColor,
+  getProviderTerminalBadge,
+  getProviderTerminalIcon,
+  getProviderTerminalIconAsset,
+  providerIds,
+  providerNames,
+} from '@/providers/catalog';
 
-// label / short / 颜色等非视觉资源在 Node 安全的 provider-catalog.js 里统一维护；
-// 这里只负责叠加前端独有的品牌图标（SVG url）。详见 web/DESIGN.md。
+// Provider 身份和展示字段来自生成的 Client 合同；这里只叠加需要 Webpack 打包的品牌图标资源。
 export { getProviderLabel, getProviderTagColor, getProviderTerminalBadge, getProviderTerminalIcon, getProviderTerminalIconAsset, providerIds, providerNames };
 
 /**
@@ -45,7 +54,7 @@ export interface ProviderMeta {
   tagColor: string;
 }
 
-const ICONS: Record<Provider, string> = {
+const ICONS: Partial<Record<Provider, string>> = {
   codex: chatgptIcon,
   gemini: geminiIcon,
   claude: claudeIcon,
@@ -58,7 +67,7 @@ const ICONS: Record<Provider, string> = {
   kiro: kiroIcon
 };
 
-const TERMINAL_ICON_ASSETS: Record<Provider, string> = {
+const TERMINAL_ICON_ASSETS: Partial<Record<Provider, string>> = {
   codex: codexTerminalIcon,
   gemini: geminiTerminalIcon,
   claude: claudeTerminalIcon,
@@ -73,10 +82,10 @@ const TERMINAL_ICON_ASSETS: Record<Provider, string> = {
 
 export const PROVIDERS: Record<Provider, ProviderMeta> = Object.fromEntries(
   (Object.entries(PROVIDER_CATALOG) as Array<[Provider, Omit<ProviderMeta, 'icon'>]>)
-    .map(([id, meta]) => [id, { ...meta, icon: ICONS[id] }])
+    .map(([id, meta]) => [id, { ...meta, icon: ICONS[id] || openaiIcon }])
 ) as Record<Provider, ProviderMeta>;
 
-const FALLBACK: ProviderMeta = { ...CATALOG_FALLBACK, icon: openaiIcon } as ProviderMeta;
+const FALLBACK: ProviderMeta = { ...PROVIDER_FALLBACK, icon: openaiIcon } as ProviderMeta;
 
 export function getProvider(provider: Provider | string | undefined | null): ProviderMeta {
   return PROVIDERS[provider as Provider] || FALLBACK;

@@ -1,59 +1,48 @@
+'use strict';
+
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const path = require('node:path');
-const { pathToFileURL } = require('node:url');
 
-async function loadProviderMeta() {
-  const modulePath = pathToFileURL(path.join(
+const sharedCatalog = require('../lib/provider-catalog');
+
+// readGeneratedClientDefinitions 从生成文件中提取纯 JSON 定义，不执行浏览器代码。
+function readGeneratedClientDefinitions() {
+  const source = fs.readFileSync(path.join(
     __dirname,
     '..',
     'web',
     'src',
-    'components',
-    'chat',
-    'provider-meta.js'
-  )).href;
-  return import(modulePath);
+    'providers',
+    'provider-contract.generated.ts'
+  ), 'utf8');
+  const match = source.match(/export const PROVIDER_DEFINITIONS = ([\s\S]*?) as const;/);
+  assert.ok(match, '无法从 TypeScript 生成文件读取 Provider 定义');
+  return JSON.parse(match[1]);
 }
 
-async function loadWebProviderCatalog() {
-  const modulePath = pathToFileURL(path.join(
-    __dirname,
-    '..',
-    'web',
-    'src',
-    'components',
-    'chat',
-    'provider-catalog.js'
-  )).href;
-  return import(modulePath);
-}
-
-test('provider meta returns stable labels and tag colors for archived session UI', async () => {
-  const { getProviderLabel, getProviderTagColor } = await loadProviderMeta();
-
-  assert.equal(getProviderLabel('codex'), 'ChatGPT');
-  assert.equal(getProviderLabel('claude'), 'Claude');
-  assert.equal(getProviderLabel('gemini'), 'Gemini');
-  assert.equal(getProviderLabel('agy'), 'Antigravity');
-  assert.equal(getProviderLabel('opencode'), 'OpenCode');
-  assert.equal(getProviderTagColor('codex'), 'green');
-  assert.equal(getProviderTagColor('claude'), 'orange');
-  assert.equal(getProviderTagColor('gemini'), 'blue');
-  assert.equal(getProviderTagColor('agy'), 'purple');
-  assert.equal(getProviderTagColor('opencode'), 'default');
+test('Provider 展示元数据为归档会话提供稳定名称和颜色', () => {
+  assert.equal(sharedCatalog.getProviderMeta('codex').label, 'ChatGPT');
+  assert.equal(sharedCatalog.getProviderMeta('claude').label, 'Claude');
+  assert.equal(sharedCatalog.getProviderMeta('gemini').label, 'Gemini');
+  assert.equal(sharedCatalog.getProviderMeta('agy').label, 'Antigravity');
+  assert.equal(sharedCatalog.getProviderMeta('opencode').label, 'OpenCode');
+  assert.equal(sharedCatalog.getProviderMeta('codex').tagColor, 'green');
+  assert.equal(sharedCatalog.getProviderMeta('claude').tagColor, 'orange');
+  assert.equal(sharedCatalog.getProviderMeta('gemini').tagColor, 'blue');
+  assert.equal(sharedCatalog.getProviderMeta('agy').tagColor, 'purple');
+  assert.equal(sharedCatalog.getProviderMeta('opencode').tagColor, 'default');
 });
 
-test('provider catalog keeps server and web provider ids aligned', async () => {
-  const sharedCatalog = require('../lib/provider-catalog');
+test('Server 与 TypeScript Client Provider 投影保持一致', () => {
   const { SUPPORTED_SERVER_PROVIDERS } = require('../lib/server/providers');
-  const { providerIds, providerNames, getProviderTerminalBadge, getProviderTerminalIconAsset } = await loadWebProviderCatalog();
+  const clientDefinitions = readGeneratedClientDefinitions();
+  const clientIds = clientDefinitions.map((definition) => definition.id);
 
-  assert.deepEqual(providerIds, sharedCatalog.listProviderIds());
+  assert.deepEqual(clientIds, sharedCatalog.listProviderIds());
   assert.deepEqual(SUPPORTED_SERVER_PROVIDERS, sharedCatalog.listProviderIds());
-  assert.equal(providerNames.opencode, 'OpenCode');
+  assert.equal(clientDefinitions.find((definition) => definition.id === 'opencode').label, 'OpenCode');
   assert.equal(sharedCatalog.getProviderTerminalIconAsset('claude'), 'assets/provider-icons/claude.png');
-  assert.equal(getProviderTerminalIconAsset('codex'), 'assets/provider-icons/codex.png');
   assert.equal(sharedCatalog.getProviderTerminalBadge('codex'), '◎ GPT');
-  assert.equal(getProviderTerminalBadge('gemini'), '✦ GM');
 });

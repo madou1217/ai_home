@@ -37,8 +37,8 @@ Fuller layer map:
 - `node --test test/backup.router.test.js`: run a focused test file during iteration.
 - `node bin/ai-home.js --help`: verify CLI bootstrap and command wiring.
 - `npm run postinstall`: repair local executable permissions/hooks (already runs after install).
-- `npm run web:dev`: WebUI dev server (`cd web && npm run dev`, Vite).
-- `npm run build`: build the WebUI (`cd web && tsc && vite build`).
+- `npm run web:dev`: WebUI dev server (`cd web && npm run dev`, Umi Max).
+- `npm run build`: build the WebUI (`cd web && npm run build`, Umi Max/Webpack).
 - `cd web && npm run lint`: lint the WebUI.
 
 ## Coding Style & Naming Conventions
@@ -47,7 +47,7 @@ Fuller layer map:
 - File names use kebab-case (for example `account-import-orchestrator.js`).
 - Prefer small, composable functions; avoid feature growth in one large file.
 - `cli/`: TypeScript ESM, run by Bun (vendored Claude Code source — do not modify unless necessary).
-- `web/`: TypeScript + React 18 + Ant Design + Vite, ESM.
+- `web/`: TypeScript + React 18 + Ant Design + Umi Max (Webpack build), ESM.
 
 ## Architecture & Layering Principles
 - Enforce separation of concerns: each module should have one clear responsibility (composition, domain logic, integration, or I/O).

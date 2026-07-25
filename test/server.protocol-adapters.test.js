@@ -203,7 +203,10 @@ test('response adapter chain applies inverse adapters without provider coupling'
   });
 
   assert.equal(result.protocol, 'openai_responses');
-  assert.deepEqual(result.adapters, ['codex2claudeAdapter']);
+  assert.deepEqual(result.adapters, [
+    'anthropic_messages->aih_canonical_response',
+    'aih_canonical_response->openai_responses'
+  ]);
   assert.equal(result.payload.object, 'response');
   assert.equal(result.payload.model, 'claude-sonnet-4');
   assert.equal(result.payload.output[0].content[0].text, 'pong');

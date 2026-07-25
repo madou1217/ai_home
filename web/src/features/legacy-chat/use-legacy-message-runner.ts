@@ -13,6 +13,7 @@ import {
   getProcessingStatusText,
   getThinkingStatusText,
   formatRetryStatusText,
+  formatCliInstallConfirmationText,
   formatCliInstallProgressText,
 } from '@/components/chat/provider-pending-policy.js';
 import type {
@@ -42,6 +43,7 @@ import {
 } from './legacy-run-message-policy';
 import { humanizeChatError } from './chat-error-policy';
 import { useAssistantCompletionNotification } from './use-assistant-completion-notification';
+import { useCliInstallConfirmationDialogs } from './use-cli-install-confirmation-dialogs';
 
 export type { LegacyRunMessageInput } from './runtime-types';
 
@@ -74,6 +76,10 @@ export function useLegacyMessageRunner({
     requestPermission,
     notify,
   } = useAssistantCompletionNotification();
+  const {
+    open: openCliInstallDialog,
+    dismiss: dismissCliInstallDialog,
+  } = useCliInstallConfirmationDialogs();
 
   const runSessionMessage = useCallback(async ({
     session: requestSession,
@@ -95,6 +101,15 @@ export function useLegacyMessageRunner({
     let activeRunKey = requestRunKey;
     let usedNativeSession = false;
     let createdSessionId = '';
+    let cliInstallCancelled = false;
+    const cliInstallConfirmationIds = new Set<string>();
+    const dismissCliInstallConfirmations = (): void => {
+      for (const confirmationId of cliInstallConfirmationIds) {
+        dismissCliInstallDialog(confirmationId);
+      }
+      cliInstallConfirmationIds.clear();
+    };
+    controller.signal.addEventListener('abort', dismissCliInstallConfirmations, { once: true });
     const baseMessages = history.readSessionMessages(requestSession)
       || (isSameVisibleSession(selectedSessionRef.current, requestSession) ? history.messages : []);
     let latestRunMessages = buildInitialRunMessages(baseMessages, content, imageList, { model });
@@ -222,8 +237,24 @@ export function useLegacyMessageRunner({
           updateSelectedPendingStatus(statusText);
           return;
         }
+        if (event.type === 'cli-install-confirmation' && event.confirmationId) {
+          cliInstallConfirmationIds.add(event.confirmationId);
+          openCliInstallDialog(event);
+          updateSelectedPendingStatus(
+            formatCliInstallConfirmationText(event, requestSession.provider),
+          );
+          return;
+        }
         if (event.type === 'cli-install-progress') {
+          if (event.confirmationId) {
+            dismissCliInstallDialog(event.confirmationId);
+            cliInstallConfirmationIds.delete(event.confirmationId);
+          }
           updateSelectedPendingStatus(formatCliInstallProgressText(event, requestSession.provider));
+          return;
+        }
+        if (event.type === 'error' && event.code === 'cli_install_cancelled') {
+          cliInstallCancelled = true;
           return;
         }
         if (event.type === 'thinking' && event.thinking) {
@@ -312,17 +343,21 @@ export function useLegacyMessageRunner({
       }
     } catch (error) {
       const aborted = (error as { name?: unknown } | null | undefined)?.name === 'AbortError';
-      applyRunMessages(aborted
+      const cancelled = aborted || cliInstallCancelled;
+      applyRunMessages(cancelled
         ? removePendingAssistant
         : (messages) => finalizePendingAssistantFailure(
           messages,
           humanizeChatError(error, '模型未能完成本次回复'),
         ));
-      if (aborted && isSameVisibleSession(selectedSessionRef.current, resolvedSession)) {
+      if (cancelled && isSameVisibleSession(selectedSessionRef.current, resolvedSession)) {
         history.dropPendingAssistantPlaceholder();
       }
+      if (cliInstallCancelled) return;
       throw error;
     } finally {
+      controller.signal.removeEventListener('abort', dismissCliInstallConfirmations);
+      dismissCliInstallConfirmations();
       runs.unregister(activeRunKey);
       terminal.settleRun(activeRunKey);
       const nextQueued = queue.shift(activeRunKey);
@@ -343,9 +378,11 @@ export function useLegacyMessageRunner({
   }, [
     accounts,
     approvalModeRef,
+    dismissCliInstallDialog,
     history,
     notify,
     onSessionChange,
+    openCliInstallDialog,
     queue,
     refreshProjects,
     requestPermission,

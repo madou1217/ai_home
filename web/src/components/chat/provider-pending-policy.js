@@ -8,7 +8,7 @@ const PROVIDER_LABELS = Object.freeze({
   agy: 'Antigravity'
 });
 
-function getProviderLabel(provider) {
+export function getProviderLabel(provider) {
   return PROVIDER_LABELS[String(provider || '').toLowerCase()] || '模型';
 }
 
@@ -103,9 +103,23 @@ export function formatCliInstallProgressText(event, provider = '') {
       return `${providerLabel} CLI 安装完成，继续处理中...`;
     case 'failed':
       return `${providerLabel} CLI 安装失败`;
+    case 'cancelled':
+      return `已取消安装 ${providerLabel} CLI`;
     default:
       return `正在准备 ${providerLabel} CLI...`;
   }
+}
+
+export function getCliInstallConfirmationRemainingSeconds(event, now = Date.now()) {
+  const expiresAt = Number(event?.expiresAt);
+  if (!Number.isFinite(expiresAt)) return 0;
+  return Math.max(0, Math.ceil((expiresAt - now) / 1000));
+}
+
+export function formatCliInstallConfirmationText(event, provider = '', now = Date.now()) {
+  const providerLabel = getProviderLabel(event?.provider || provider);
+  const remainingSeconds = getCliInstallConfirmationRemainingSeconds(event, now);
+  return `未检测到 ${providerLabel} CLI。${remainingSeconds} 秒内可取消，倒计时结束后将自动安装。`;
 }
 
 export function shouldUseExternalPending(provider) {

@@ -180,6 +180,7 @@ test('ensureNativeCliReadyForChat auto-installs a missing CLI and reports progre
     path,
     spawn: fakeSpawn,
     resolveNativeCliPath: (name) => (installed && name === 'qodercli' ? '/home/u/.qoder/bin/qodercli/qodercli' : ''),
+    confirmInstall: async () => ({ decision: 'confirm' }),
     onProgress: (event) => progressEvents.push(event)
   });
 
@@ -190,6 +191,55 @@ test('ensureNativeCliReadyForChat auto-installs a missing CLI and reports progre
   assert.equal(progressEvents[0].installPhase, 'installing');
   assert.ok(progressEvents.some((event) => event.installPhase === 'plan-succeeded'));
   assert.equal(progressEvents.at(-1).installPhase, 'installed');
+});
+
+test('ensureNativeCliReadyForChat fails closed when installation confirmation is unavailable', async (t) => {
+  const emptyPathDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-cli-ready-confirm-required-'));
+  t.after(() => fs.rmSync(emptyPathDir, { recursive: true, force: true }));
+
+  const result = await ensureNativeCliReadyForChat('qoder', {
+    env: { PATH: emptyPathDir },
+    resolveNativeCliPath: () => ''
+  });
+
+  assert.deepEqual(result, {
+    ok: false,
+    installed: false,
+    confirmationRequired: true,
+    message: '安装 qoder CLI 前需要用户确认'
+  });
+});
+
+test('ensureNativeCliReadyForChat does not install when confirmation is cancelled', async (t) => {
+  const emptyPathDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-cli-ready-cancel-path-'));
+  t.after(() => fs.rmSync(emptyPathDir, { recursive: true, force: true }));
+
+  let spawnCalled = false;
+  const progressEvents = [];
+  const result = await ensureNativeCliReadyForChat('qoder', {
+    env: { PATH: emptyPathDir },
+    processObj: { platform: 'linux', env: { HOME: '/home/u', PATH: emptyPathDir }, cwd: () => '/repo' },
+    path,
+    spawn() {
+      spawnCalled = true;
+      throw new Error('install_must_not_start');
+    },
+    resolveNativeCliPath: () => '',
+    confirmInstall: async () => ({ decision: 'cancel' }),
+    onProgress: (event) => progressEvents.push(event)
+  });
+
+  assert.equal(spawnCalled, false);
+  assert.deepEqual(result, {
+    ok: false,
+    installed: false,
+    cancelled: true,
+    message: '已取消安装 qoder CLI'
+  });
+  assert.deepEqual(progressEvents, [{
+    installPhase: 'cancelled',
+    message: '已取消安装 qoder CLI'
+  }]);
 });
 
 test('ensureNativeCliReadyForChat reports a composed failure message when every install plan fails', async (t) => {
@@ -211,6 +261,7 @@ test('ensureNativeCliReadyForChat reports a composed failure message when every 
     path,
     spawn: fakeSpawn,
     resolveNativeCliPath: () => '',
+    confirmInstall: async () => ({ decision: 'confirm' }),
     onProgress: (event) => progressEvents.push(event)
   });
 

@@ -25,6 +25,8 @@ test('provider pending policy exposes provider-aware thinking text and external 
     formatRetryCountdownStatus,
     formatRetryStatusText,
     formatStreamFailureText,
+    formatCliInstallConfirmationText,
+    getCliInstallConfirmationRemainingSeconds,
     getRetryCountdownDelayMs,
     shouldUseExternalPending,
     normalizePendingStatusText
@@ -67,6 +69,18 @@ test('provider pending policy exposes provider-aware thinking text and external 
   assert.equal(formatStreamFailureText({
     message: 'request rejected', retryable: false
   }, 'codex'), 'request rejected');
+  const cliInstallConfirmation = {
+    provider: 'claude',
+    expiresAt: 110_000
+  };
+  assert.equal(
+    getCliInstallConfirmationRemainingSeconds(cliInstallConfirmation, 100_001),
+    10
+  );
+  assert.equal(
+    formatCliInstallConfirmationText(cliInstallConfirmation, '', 101_001),
+    '未检测到 Claude CLI。9 秒内可取消，倒计时结束后将自动安装。'
+  );
   assert.equal(shouldUseExternalPending('codex'), true);
   assert.equal(shouldUseExternalPending('claude'), true);
   assert.equal(shouldUseExternalPending('opencode'), true);

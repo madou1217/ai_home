@@ -1110,6 +1110,16 @@ export const chatAPI = {
     }
   },
 
+  decideCliInstallConfirmation: async (
+    confirmationId: string,
+    decision: 'confirm' | 'cancel'
+  ): Promise<void> => {
+    await api.post(
+      `/webui/chat/cli-install-confirmations/${encodeURIComponent(confirmationId)}`,
+      { decision }
+    );
+  },
+
   sendRunInput: async (runId: string, input: string, appendNewline = true, promptId = '') => {
     const response = await api.post(`/webui/chat/runs/${encodeURIComponent(runId)}/input`, {
       input,

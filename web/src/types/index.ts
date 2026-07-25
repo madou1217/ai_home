@@ -1328,7 +1328,7 @@ export interface InteractivePrompt {
 }
 
 export interface ChatStreamEvent {
-  type: 'ready' | 'session-created' | 'delta' | 'thinking' | 'result' | 'done' | 'error' | 'terminal-output' | 'interactive-prompt' | 'interactive-prompt-cleared' | 'assistant_tool_call' | 'assistant_tool_result' | 'retry-status' | 'cli-install-progress';
+  type: 'ready' | 'session-created' | 'delta' | 'thinking' | 'result' | 'done' | 'error' | 'terminal-output' | 'interactive-prompt' | 'interactive-prompt-cleared' | 'assistant_tool_call' | 'assistant_tool_result' | 'retry-status' | 'cli-install-confirmation' | 'cli-install-progress';
   delta?: string;
   thinking?: string;
   content?: string;
@@ -1358,7 +1358,10 @@ export interface ChatStreamEvent {
   mode?: 'native-session' | 'api-proxy';
   interactionMode?: 'default' | 'terminal';
   slashCommand?: string;
-  installPhase?: 'installing' | 'plan-succeeded' | 'plan-failed' | 'installed' | 'failed';
+  installPhase?: 'installing' | 'plan-succeeded' | 'plan-failed' | 'installed' | 'failed' | 'cancelled';
+  confirmationId?: string;
+  countdownMs?: number;
+  expiresAt?: number;
   planId?: string;
   planLabel?: string;
 }

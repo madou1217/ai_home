@@ -15,6 +15,9 @@ const { getPublicAccountRef } = require('../lib/account/public-account-ref');
 const { registerAccountIdentity } = require('../lib/account/account-registration');
 const { writeAccountCredentials } = require('../lib/server/account-credential-store');
 const { addOpenedProject } = require('../lib/server/webui-project-store');
+const {
+  createCliInstallConfirmationRegistry
+} = require('../lib/server/cli-install-confirmation-registry');
 
 const ACCOUNT_IDENTITIES = Object.freeze({
   geminiOne: { provider: 'gemini', cliAccountId: '1', identitySeed: 'oauth:gemini:chat-one@example.com' },
@@ -90,6 +93,14 @@ async function waitForStreamEnd(res, timeoutMs = 6000) {
   if (!res.writableEnded) {
     assert.fail(`stream did not finish within ${timeoutMs}ms:\n${res.body}`);
   }
+}
+
+async function waitForCondition(predicate, timeoutMs = 1000) {
+  const startedAt = Date.now();
+  while (!predicate() && Date.now() - startedAt < timeoutMs) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  assert.equal(predicate(), true, 'condition did not become true before timeout');
 }
 
 function createBaseDeps(overrides = {}) {
@@ -328,10 +339,13 @@ test('web ui chat closes an already-started AGY stream with an SSE error when se
   }
 });
 
-test('web ui chat streams cli-install-progress SSE events before spawning the native session', async () => {
+test('web ui chat auto-confirms cli installation after the countdown and streams progress', async () => {
   const originalEnsureReady = nativeSessionChat.ensureNativeCliReadyForChat;
   const originalSpawn = nativeSessionChat.spawnNativeSessionStream;
   nativeSessionChat.ensureNativeCliReadyForChat = async (provider, options = {}) => {
+    const confirmation = await options.confirmInstall();
+    assert.equal(confirmation.decision, 'confirm');
+    assert.equal(confirmation.source, 'timeout');
     options.onProgress({ installPhase: 'installing' });
     options.onProgress({ installPhase: 'plan-succeeded', planId: 'brew', planLabel: 'Homebrew' });
     options.onProgress({ installPhase: 'installed' });
@@ -372,6 +386,8 @@ test('web ui chat streams cli-install-progress SSE events before spawning the na
       state: {},
       deps: {
         ...createBaseDeps(),
+        cliInstallConfirmationRegistry: createCliInstallConfirmationRegistry(),
+        cliInstallConfirmationTimeoutMs: 10,
         readRequestBody: async () => Buffer.from(JSON.stringify(payload), 'utf8')
       }
     });
@@ -387,6 +403,11 @@ test('web ui chat streams cli-install-progress SSE events before spawning the na
       .map((chunk) => JSON.parse(chunk.slice('data: '.length)));
 
     const installEvents = events.filter((event) => event.type === 'cli-install-progress');
+    const confirmationEvent = events.find((event) => event.type === 'cli-install-confirmation');
+    assert.ok(confirmationEvent);
+    assert.equal(confirmationEvent.provider, 'gemini');
+    assert.equal(confirmationEvent.countdownMs, 10);
+    assert.equal(typeof confirmationEvent.confirmationId, 'string');
     assert.equal(installEvents.length, 3);
     assert.deepEqual(installEvents.map((event) => event.installPhase), [
       'installing',
@@ -397,12 +418,117 @@ test('web ui chat streams cli-install-progress SSE events before spawning the na
     assert.equal(installEvents[1].planId, 'brew');
     assert.equal(installEvents[1].planLabel, 'Homebrew');
     installEvents.forEach((event) => assert.equal(typeof event.elapsedMs, 'number'));
+    installEvents.forEach((event) => {
+      assert.equal(event.confirmationId, confirmationEvent.confirmationId);
+    });
 
     // Install progress must arrive before the native session actually starts streaming.
+    const confirmationIndex = events.findIndex((event) => event.type === 'cli-install-confirmation');
+    const firstInstallIndex = events.findIndex((event) => event.type === 'cli-install-progress');
     const readyIndex = events.findIndex((event) => event.type === 'ready');
+    assert.ok(confirmationIndex >= 0 && confirmationIndex < firstInstallIndex);
     assert.ok(readyIndex > installEvents.length - 1);
     assert.match(res.body, /"type":"delta","delta":"你好"/);
     assert.match(res.body, /"type":"done"/);
+  } finally {
+    nativeSessionChat.ensureNativeCliReadyForChat = originalEnsureReady;
+    nativeSessionChat.spawnNativeSessionStream = originalSpawn;
+  }
+});
+
+test('web ui chat cancels cli installation through the confirmation endpoint', async () => {
+  const originalEnsureReady = nativeSessionChat.ensureNativeCliReadyForChat;
+  const originalSpawn = nativeSessionChat.spawnNativeSessionStream;
+  const confirmationRegistry = createCliInstallConfirmationRegistry();
+  let spawnCalled = false;
+  nativeSessionChat.ensureNativeCliReadyForChat = async (_provider, options = {}) => {
+    const confirmation = await options.confirmInstall();
+    if (confirmation.decision === 'cancel') {
+      options.onProgress({ installPhase: 'cancelled', message: '已取消安装 gemini CLI' });
+      return {
+        ok: false,
+        installed: false,
+        cancelled: true,
+        message: '已取消安装 gemini CLI'
+      };
+    }
+    return { ok: true, installed: true };
+  };
+  nativeSessionChat.spawnNativeSessionStream = () => {
+    spawnCalled = true;
+    return { abort() {}, done: Promise.resolve({ content: '' }) };
+  };
+
+  try {
+    const req = new EventEmitter();
+    req.headers = {};
+    const res = createStreamResCapture();
+    const payload = {
+      provider: 'gemini',
+      accountRef: ACCOUNT_REFS.geminiOne,
+      sessionId: 'gem-session-id',
+      projectDirName: 'ai-home',
+      projectPath: '/Users/model/projects/feature/ai_home',
+      prompt: '你好',
+      stream: true,
+      messages: [{ role: 'user', content: '你好' }]
+    };
+    const sharedDeps = {
+      ...createBaseDeps(),
+      cliInstallConfirmationRegistry: confirmationRegistry
+    };
+    const chatHandled = handleWebUIRequest({
+      method: 'POST',
+      pathname: '/v0/webui/chat',
+      url: new URL('http://localhost/v0/webui/chat'),
+      req,
+      res,
+      options: {},
+      state: {},
+      deps: {
+        ...sharedDeps,
+        readRequestBody: async () => Buffer.from(JSON.stringify(payload), 'utf8')
+      }
+    });
+
+    await waitForCondition(() => res.body.includes('"type":"cli-install-confirmation"'));
+    const confirmationEvent = res.body
+      .split('\n\n')
+      .map((chunk) => chunk.trim())
+      .filter((chunk) => chunk.startsWith('data: '))
+      .map((chunk) => JSON.parse(chunk.slice('data: '.length)))
+      .find((event) => event.type === 'cli-install-confirmation');
+    assert.ok(confirmationEvent);
+
+    const decisionReq = new EventEmitter();
+    decisionReq.headers = {};
+    const decisionRes = createStreamResCapture();
+    const confirmationPath = `/v0/webui/chat/cli-install-confirmations/${confirmationEvent.confirmationId}`;
+    const decisionHandled = await handleWebUIRequest({
+      method: 'POST',
+      pathname: confirmationPath,
+      url: new URL(`http://localhost${confirmationPath}`),
+      req: decisionReq,
+      res: decisionRes,
+      options: {},
+      state: {},
+      deps: {
+        ...sharedDeps,
+        readRequestBody: async () => Buffer.from(JSON.stringify({ decision: 'cancel' }), 'utf8')
+      }
+    });
+
+    assert.equal(decisionHandled, true);
+    assert.equal(decisionRes.statusCode, 200);
+    assert.deepEqual(JSON.parse(decisionRes.body), {
+      ok: true,
+      confirmationId: confirmationEvent.confirmationId,
+      decision: 'cancel'
+    });
+    assert.equal(await chatHandled, true);
+    assert.equal(spawnCalled, false);
+    assert.match(res.body, /"installPhase":"cancelled"/);
+    assert.match(res.body, /"type":"error","code":"cli_install_cancelled"/);
   } finally {
     nativeSessionChat.ensureNativeCliReadyForChat = originalEnsureReady;
     nativeSessionChat.spawnNativeSessionStream = originalSpawn;
@@ -461,6 +587,65 @@ test('web ui chat closes the SSE stream with cli_not_found when auto-install fai
   } finally {
     nativeSessionChat.ensureNativeCliReadyForChat = originalEnsureReady;
     nativeSessionChat.spawnNativeSessionStream = originalSpawn;
+  }
+});
+
+test('web ui non-stream chat never installs a missing CLI without interactive confirmation', async () => {
+  const originalEnsureReady = nativeSessionChat.ensureNativeCliReadyForChat;
+  const originalRun = nativeSessionChat.runNativeSessionPrompt;
+  let runCalled = false;
+  nativeSessionChat.ensureNativeCliReadyForChat = async () => ({
+    ok: false,
+    installed: false,
+    confirmationRequired: true,
+    message: '安装 gemini CLI 前需要用户确认'
+  });
+  nativeSessionChat.runNativeSessionPrompt = async () => {
+    runCalled = true;
+    return { content: '' };
+  };
+
+  try {
+    const req = new EventEmitter();
+    req.headers = {};
+    const res = createStreamResCapture();
+    const payload = {
+      provider: 'gemini',
+      accountRef: ACCOUNT_REFS.geminiOne,
+      sessionId: 'gem-session-id',
+      projectDirName: 'ai-home',
+      projectPath: '/Users/model/projects/feature/ai_home',
+      prompt: '你好',
+      stream: false,
+      messages: [{ role: 'user', content: '你好' }]
+    };
+
+    const handled = await handleWebUIRequest({
+      method: 'POST',
+      pathname: '/v0/webui/chat',
+      url: new URL('http://localhost/v0/webui/chat'),
+      req,
+      res,
+      options: {},
+      state: {},
+      deps: {
+        ...createBaseDeps(),
+        readRequestBody: async () => Buffer.from(JSON.stringify(payload), 'utf8')
+      }
+    });
+
+    assert.equal(handled, true);
+    assert.equal(res.statusCode, 409);
+    assert.equal(runCalled, false);
+    assert.deepEqual(JSON.parse(res.body), {
+      ok: false,
+      error: 'cli_install_confirmation_required',
+      code: 'cli_install_confirmation_required',
+      message: '安装 gemini CLI 前需要用户确认'
+    });
+  } finally {
+    nativeSessionChat.ensureNativeCliReadyForChat = originalEnsureReady;
+    nativeSessionChat.runNativeSessionPrompt = originalRun;
   }
 });
 

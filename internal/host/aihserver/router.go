@@ -31,6 +31,7 @@ func newRouter(accountsHandler http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", handleHealth)
 	mux.HandleFunc("/readyz", handleReadiness)
+	mux.Handle(accountsapi.NativeImportPath, accountsHandler)
 	mux.Handle(accountsapi.CollectionPath, accountsHandler)
 	mux.Handle(accountsapi.CollectionPath+"/", accountsHandler)
 	mux.HandleFunc("/", handleRouteNotFound)

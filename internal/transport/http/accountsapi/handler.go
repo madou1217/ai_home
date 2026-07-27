@@ -17,7 +17,9 @@ import (
 const (
 	// CollectionPath 是账号管理 v1 集合资源的规范路径。
 	CollectionPath = "/v1/management/accounts"
-	apiMaxPageSize = accountapp.MaxOverviewLimit - 1
+	// NativeImportPath 是 Codex、Claude 官方 artifact 导入资源的规范路径。
+	NativeImportPath = "/v1/management/account-imports"
+	apiMaxPageSize   = accountapp.MaxOverviewLimit - 1
 )
 
 // ErrInvalidDependencies 表示 Handler 缺少应用服务、凭据工厂或鉴权策略。
@@ -49,12 +51,22 @@ type Registrar interface {
 	) (accountcore.Account, error)
 }
 
+// NativeAccountDecoder 是 HTTP 导入入口依赖的 Provider 官方 artifact 反腐端口。
+type NativeAccountDecoder interface {
+	Supports(providerID string) bool
+	Decode(
+		providerID string,
+		artifactsJSON []byte,
+	) (accountapp.Credential, accountapp.PublicProfile, error)
+}
+
 // Dependencies 集中声明账号 HTTP 入站适配器的依赖。
 type Dependencies struct {
-	Management Management
-	Registrar  Registrar
-	APIKeys    APIKeyCredentialFactory
-	Authorizer Authorizer
+	Management     Management
+	Registrar      Registrar
+	APIKeys        APIKeyCredentialFactory
+	NativeAccounts NativeAccountDecoder
+	Authorizer     Authorizer
 }
 
 // Handler 是可挂载到未来 Go Server Composition Root 的账号管理路由。
@@ -62,6 +74,7 @@ type Handler struct {
 	management Management
 	registrar  Registrar
 	apiKeys    APIKeyCredentialFactory
+	native     NativeAccountDecoder
 	authorizer Authorizer
 }
 
@@ -70,6 +83,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	if dependencies.Management == nil ||
 		dependencies.Registrar == nil ||
 		dependencies.APIKeys == nil ||
+		dependencies.NativeAccounts == nil ||
 		dependencies.Authorizer == nil {
 		return nil, ErrInvalidDependencies
 	}
@@ -77,6 +91,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		management: dependencies.Management,
 		registrar:  dependencies.Registrar,
 		apiKeys:    dependencies.APIKeys,
+		native:     dependencies.NativeAccounts,
 		authorizer: dependencies.Authorizer,
 	}, nil
 }
@@ -99,6 +114,8 @@ func (handler *Handler) ServeHTTP(
 		return
 	}
 	switch {
+	case request.URL.Path == NativeImportPath:
+		handler.handleNativeImport(response, request)
 	case request.URL.Path == CollectionPath:
 		handler.handleCollection(response, request)
 	case strings.HasPrefix(request.URL.Path, CollectionPath+"/"):

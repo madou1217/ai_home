@@ -11,12 +11,14 @@ Composition Root 挂载。该命令直接装配 Provider Catalog、账号应用�
 
 - Codex API Key 账号创建；
 - Claude API Key 账号创建；
+- Codex 官方 `auth.json` 原生账号导入；
+- Claude 官方 secure storage 与 `oauthAccount` 原生账号导入；
 - 无敏感字段的账号列表和详情；
 - 用户启用或关闭账号。
 
-本阶段明确不覆盖 OAuth 发起、回调、刷新、删除、导入导出、usage、模型运行态和
-Provider 运行健康。OAuth 是独立作业和 Provider Adapter，不与 API Key 凭据创建混成
-一个请求。
+本阶段明确不覆盖 OAuth 发起、回调、刷新、删除、标准迁移格式导入导出、usage、
+模型运行态和 Provider 运行健康。原生导入只消费用户已经拥有的官方登录 artifact，
+不执行 OAuth 流程，也不与 API Key 凭据创建混成一个请求。
 
 ## 2. 分层
 
@@ -25,7 +27,10 @@ HTTP Client
     ↓ Bearer Management Key + JSON
 internal/transport/http/accountsapi
     鉴权、路由、DTO、输入限制、HTTP 错误映射
-    ↓ 细粒度应用端口
+    ↓ NativeAccountDecoder + 细粒度应用端口
+internal/adapters/accounts/nativeaccount
+    组合 Provider 官方 codec，输出 Credential / PublicProfile
+    ↓
 application/accounts
     Management / Registrar 用例
     ↓ Store 端口
@@ -33,8 +38,9 @@ internal/adapters/accounts/sqliteaccount
     aih.db 事务和查询
 ```
 
-Transport 不打开数据库、不读取凭据内容、不执行 Provider OAuth，也不依赖 Node
-Server 或 WebUI。`internal/host/aihserver` 负责 Composition Root 和进程生命周期。
+Transport 不打开数据库、不读取文件路径、不执行 Provider OAuth，也不依赖 Node
+Server 或 WebUI。原生 JSON 只传给 Provider codec；`internal/host/aihserver` 负责
+Composition Root 和进程生命周期。
 
 ## 3. 通用合同
 
@@ -44,6 +50,7 @@ Server 或 WebUI。`internal/host/aihserver` 负责 Composition Root 和进程�
 
 ```text
 http://127.0.0.1:9527/v1/management/accounts
+http://127.0.0.1:9527/v1/management/account-imports
 ```
 
 可以使用 `--port 0` 让操作系统为 smoke 分配临时 loopback 端口。命令启动后输出实际
@@ -61,12 +68,12 @@ Authorization: Bearer <Management Key>
 - 当前 Key 由 Composition Root 从 `AIH_SERVER_MANAGEMENT_KEY` 注入
   `ManagementKeyProvider`；不接受命令行密钥，避免出现在进程参数中。
 - 比较过程使用 SHA-256 摘要和常量时间比较。
-- Management Key、API Key 和内部错误文本不得进入响应。
+- Management Key、API Key、OAuth Token 和内部错误文本不得进入响应。
 
 ### 3.3 JSON 与缓存
 
 - 写请求必须使用 `Content-Type: application/json`，允许标准媒体类型参数。
-- 单个请求体最大 `64 KiB`。
+- 普通账号写请求最大 `64 KiB`；原生 artifact 导入最大 `1 MiB`。
 - 拒绝未知字段、任意层级重复 JSON key、尾随 JSON 和非法 JSON。
 - 所有响应使用 `application/json; charset=utf-8`。
 - 所有响应设置 `Cache-Control: no-store` 和
@@ -91,10 +98,11 @@ Authorization: Bearer <Management Key>
 | --- | --- | --- | --- |
 | `GET` | `/v1/management/accounts` | keyset 分页列出账号 | `200` |
 | `POST` | `/v1/management/accounts` | 创建 Codex/Claude API Key 账号 | `201` |
+| `POST` | `/v1/management/account-imports` | 导入 Codex/Claude 官方认证 artifact | `201` |
 | `GET` | `/v1/management/accounts/{account_ref}` | AccountRef 点查 | `200` |
 | `PATCH` | `/v1/management/accounts/{account_ref}` | 幂等设置用户启停 | `200` |
 
-集合列表只接受 `after_ref` 和 `limit`。其他三个操作不接受 query 参数。未知参数、
+集合列表只接受 `after_ref` 和 `limit`。其他操作不接受 query 参数。未知参数、
 重复参数、显式空值和 malformed query 均返回 `400 invalid_query`。
 
 ## 5. 创建 API Key 账号
@@ -162,7 +170,79 @@ Claude payload：
 API Key 不出现在响应、应用错误或 smoke 证据中。OAuth 或其他 Provider 分别返回
 `unsupported_auth_kind` 或 `unsupported_provider`，不会进入错误的兼容分支。
 
-## 6. 账号列表
+## 6. 导入 Provider 原生账号
+
+请求：
+
+```http
+POST /v1/management/account-imports
+Authorization: Bearer <Management Key>
+Content-Type: application/json
+```
+
+Codex payload 直接携带官方 `auth.json` 对象：
+
+```json
+{
+  "provider_id": "codex",
+  "artifacts": {
+    "auth_json": {
+      "auth_mode": "chatgpt",
+      "OPENAI_API_KEY": null,
+      "tokens": {
+        "id_token": "<ID Token>",
+        "access_token": "<Access Token>",
+        "refresh_token": "<Refresh Token>",
+        "account_id": "<ChatGPT workspace ID 或 null>"
+      },
+      "last_refresh": "2026-07-27T10:00:00Z"
+    }
+  }
+}
+```
+
+Codex 官方 `apikey` auth.json 也可导入；由于官方文件不保存 endpoint，该模式使用
+Codex 领域定义的官方默认 Base URL。自定义 endpoint 应继续使用第 5 节创建接口。
+
+Claude payload 必须同时携带 secure storage 和全局 `oauthAccount`：
+
+```json
+{
+  "provider_id": "claude",
+  "artifacts": {
+    "credentials_json": {
+      "claudeAiOauth": {
+        "accessToken": "<Access Token>",
+        "refreshToken": "<Refresh Token>",
+        "expiresAt": 4102444800000,
+        "scopes": ["user:inference"],
+        "subscriptionType": "max",
+        "rateLimitTier": "default_claude_max_20x"
+      }
+    },
+    "global_config_json": {
+      "oauthAccount": {
+        "accountUuid": "<Claude account UUID>",
+        "emailAddress": "<公开邮箱>"
+      }
+    }
+  }
+}
+```
+
+Codex 只允许 `auth_json`；Claude 只允许
+`credentials_json + global_config_json`。缺失、混用、显式兼容字段或 Provider codec
+拒绝的内容统一返回 `422 invalid_native_artifacts`。HTTP 错误不回显底层 artifact。
+
+成功响应与第 5 节共享无敏感账号投影。Registrar 在一个 SQLite 事务中创建账号、
+凭据和公开资料。相同稳定身份再次导入返回 `409 account_conflict`，不会把可能较旧的
+本地 artifact 静默覆盖到现有账号。
+
+接口只接收 JSON 对象，不接收文件路径，因此不存在 Server 任意文件读取或路径穿越
+入口。请求仍只允许 loopback，并要求 Management Key；API Key 和 OAuth Token 不进入
+日志、响应或错误。
+
+## 7. 账号列表
 
 请求：
 
@@ -214,7 +294,7 @@ AccountRef keyset pagination，不使用 offset，也不执行 `COUNT(*)`。
 只有 `has_more=true` 时 `next_after_ref` 才包含下一页游标。账号列表读取公开标量，不
 读取或反序列化 `credential_json`、`profile_json`。
 
-## 7. 详情与启停
+## 8. 详情与启停
 
 详情：
 
@@ -236,7 +316,7 @@ Content-Type: application/json
 PATCH 只允许 `enabled`，不接受隐含的 `status`、Provider、别名、凭据或 Profile
 修改。成功后返回与详情相同的公开账号投影。
 
-## 8. 错误码
+## 9. 错误码
 
 | HTTP | code | 含义 |
 | ---: | --- | --- |
@@ -249,33 +329,37 @@ PATCH 只允许 `enabled`，不接受隐含的 `status`、Provider、别名、�
 | `405` | `method_not_allowed` | HTTP 方法不受支持，并返回 `Allow` |
 | `409` | `account_conflict` | 稳定身份或 Provider 数字别名冲突 |
 | `409` | `cli_account_id_exhausted` | Provider 数字别名耗尽 |
-| `413` | `request_too_large` | 请求体超过 `64 KiB` |
+| `413` | `request_too_large` | 普通请求超过 `64 KiB`，或原生导入超过 `1 MiB` |
 | `415` | `unsupported_media_type` | 写请求不是 JSON |
 | `422` | `unsupported_provider` | 不是当前确认的 Codex/Claude |
 | `422` | `unsupported_auth_kind` | 创建接口收到非 API Key 认证 |
 | `422` | `invalid_api_key` | API Key 或 Base URL 未通过领域校验 |
+| `422` | `invalid_native_artifacts` | Provider 官方 artifact 缺失、混用或无效 |
 | `422` | `invalid_account` | 应用层账号数据违反领域不变量 |
 | `500` | `internal_error` | 未公开内部细节的服务错误 |
 
-## 9. 验证命令
+## 10. 验证命令
 
 ```bash
 go test ./internal/transport/http/accountsapi
+go test ./internal/adapters/accounts/nativeaccount
 go test ./internal/host/aihserver ./cmd/aih-server
 go test -run '^TestAccountsAPILiveSmoke$' -v \
   ./internal/transport/http/accountsapi
 ```
 
-真实 TCP 和命令级 smoke 使用临时 `aih.db` 完成 Codex 创建、Claude 创建、列表、
-Codex 详情、关闭账号及优雅退出的完整链路。测试只使用合成凭据，日志中的 `api_key`
-固定显示为 `<redacted>`。
+真实 TCP 和命令级 smoke 使用临时 `aih.db` 完成 API Key 创建、Claude 原生 OAuth
+导入、重复导入冲突、列表、详情、关闭账号及优雅退出的完整链路。自动化测试只使用
+合成凭据；日志和响应不包含原始 Key 或 Token。
 
-## 10. 设计模式
+## 11. 设计模式
 
 | 模块 | 模式 | 目的 |
 | --- | --- | --- |
 | `Handler` + 细粒度端口 | Ports and Adapters | HTTP 只依赖应用能力，不依赖 SQLite 实现 |
 | `APIKeyCredentialFactory` | Strategy + Registry | Provider 构造差异集中扩展，不增长路由分支 |
+| `NativeAccountDecoder` | Strategy | HTTP 不认识 Codex/Claude 官方认证内部结构 |
+| `nativeaccount.Decoder` | Anti-Corruption Layer + Facade | 组合现有 Provider codec，输出稳定应用合同 |
 | `Authorizer` | Strategy | 鉴权策略与账号路由解耦，默认失败关闭 |
 | request/response DTO | Anti-Corruption Layer | 阻止 HTTP JSON 形状进入领域对象和凭据内部 |
 

@@ -6,7 +6,8 @@
 
 - `GET /healthz`；
 - `GET /readyz`；
-- `/v1/management/accounts` 账号管理 API。
+- `/v1/management/accounts` 账号管理 API；
+- `/v1/management/account-imports` Codex/Claude 原生账号导入 API。
 
 它还不是完整 AIH Gateway，不提供 OpenAI/Anthropic 推理协议、OAuth 作业、usage、
 模型刷新、运行态路由、WebUI 或 Fabric。`readyz.capabilities` 固定公开
@@ -26,6 +27,9 @@ internal/host/aihserver
         ↓
 internal/transport/http/accountsapi
     账号 HTTP 入站适配器
+        ↓
+internal/adapters/accounts/nativeaccount
+    Codex / Claude 官方 artifact 反腐层
         ↓
 application/accounts
     Registrar / Management 用例
@@ -103,7 +107,7 @@ Go Server 使用标准库 `net/http`：
 4. 关闭 SQLite 连接池；
 5. 任一步失败时返回非零退出，不吞掉错误。
 
-Management Key、API Key 和请求体不进入启动输出或 `net/http` 错误日志。
+Management Key、API Key、OAuth Token 和请求体不进入启动输出或 `net/http` 错误日志。
 
 ## 5. 系统探针
 
@@ -148,6 +152,7 @@ GET /readyz
 - Host 启动前校验 Management Key；弱 Key 不会创建 `aih.db`。
 - Host 只绑定 loopback；不提供“自动信任局域网”分支。
 - 账号 HTTP 层继续限制 JSON 大小、重复字段、未知字段和 query。
+- 原生导入只接收 JSON artifact，不接受任何服务端文件路径。
 - SQLite 文件和目录权限继续由 Adapter 固定为 `0600` / `0700`。
 
 ## 7. 验证
@@ -159,8 +164,9 @@ go vet ./internal/host/aihserver ./cmd/aih-server
 go build ./cmd/aih-server
 ```
 
-测试包含真实 TCP Listener、Codex API Key 创建、账号列表、Management Key 拒绝、
-health/ready、未知路由、方法错误、临时 `aih.db` 和上下文取消后的优雅关闭。
+测试包含真实 TCP Listener、Codex API Key 创建、Claude 原生 OAuth 导入、重复导入
+冲突、账号列表、Management Key 拒绝、health/ready、未知路由、方法错误、临时
+`aih.db` 和上下文取消后的优雅关闭。
 
 ## 8. 设计模式
 

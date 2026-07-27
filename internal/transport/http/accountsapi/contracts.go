@@ -1,10 +1,17 @@
 package accountsapi
 
 import (
+	"encoding/json"
 	"time"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 )
+
+// nativeImportRequest 是 Provider 原生认证 artifact 导入 DTO。
+type nativeImportRequest struct {
+	ProviderID string          `json:"provider_id"`
+	Artifacts  json.RawMessage `json:"artifacts"`
+}
 
 // createAccountRequest 是当前只允许 API Key 的账号创建 DTO。
 type createAccountRequest struct {

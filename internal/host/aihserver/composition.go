@@ -8,6 +8,7 @@ import (
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
 )
@@ -55,10 +56,11 @@ func newAccountsHandler(
 		return nil, fmt.Errorf("创建账号管理鉴权失败: %w", err)
 	}
 	handler, err := accountsapi.NewHandler(accountsapi.Dependencies{
-		Management: management,
-		Registrar:  registrar,
-		APIKeys:    accountsapi.NewBuiltinAPIKeyCredentialFactory(),
-		Authorizer: authorizer,
+		Management:     management,
+		Registrar:      registrar,
+		APIKeys:        accountsapi.NewBuiltinAPIKeyCredentialFactory(),
+		NativeAccounts: nativeaccount.NewDecoder(),
+		Authorizer:     authorizer,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建账号 HTTP Handler 失败: %w", err)

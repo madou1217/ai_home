@@ -13,6 +13,7 @@ import (
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
 )
@@ -60,10 +61,11 @@ func TestAccountsAPILiveSmoke(t *testing.T) {
 		t.Fatalf("NewBearerAuthorizer() error = %v", err)
 	}
 	handler, err := accountsapi.NewHandler(accountsapi.Dependencies{
-		Management: management,
-		Registrar:  registrar,
-		APIKeys:    accountsapi.NewBuiltinAPIKeyCredentialFactory(),
-		Authorizer: authorizer,
+		Management:     management,
+		Registrar:      registrar,
+		APIKeys:        accountsapi.NewBuiltinAPIKeyCredentialFactory(),
+		NativeAccounts: nativeaccount.NewDecoder(),
+		Authorizer:     authorizer,
 	})
 	if err != nil {
 		t.Fatalf("NewHandler() error = %v", err)

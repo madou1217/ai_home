@@ -70,6 +70,62 @@ func TestServerMountsSystemAndAccountRoutes(t *testing.T) {
 		t.Fatal("Go Server 创建响应泄漏 API Key")
 	}
 
+	nativeAccessToken := "sk-ant-oat01-mounted-native-access"
+	nativeRefreshToken := "sk-ant-ort01-mounted-native-refresh"
+	nativePayload := claudeNativeImportBody(
+		t,
+		nativeAccessToken,
+		nativeRefreshToken,
+	)
+	nativeCreated := performRequest(
+		t,
+		client,
+		http.MethodPost,
+		baseURL+accountsapi.NativeImportPath,
+		testManagementKey,
+		nativePayload,
+	)
+	assertStatus(t, nativeCreated, http.StatusCreated)
+	if strings.Contains(nativeCreated.body, nativeAccessToken) ||
+		strings.Contains(nativeCreated.body, nativeRefreshToken) {
+		t.Fatal("Go Server 原生导入响应泄漏 OAuth Token")
+	}
+	var nativeDocument struct {
+		Data struct {
+			ProviderID       string `json:"provider_id"`
+			CLIAccountID     int64  `json:"cli_account_id"`
+			AuthKind         string `json:"auth_kind"`
+			AuthMode         string `json:"auth_mode"`
+			HasProfile       bool   `json:"has_profile"`
+			Email            string `json:"email"`
+			SubscriptionKind string `json:"subscription_kind"`
+		} `json:"data"`
+	}
+	decodeJSON(t, nativeCreated.body, &nativeDocument)
+	if nativeDocument.Data.ProviderID != "claude" ||
+		nativeDocument.Data.CLIAccountID != 1 ||
+		nativeDocument.Data.AuthKind != "oauth" ||
+		nativeDocument.Data.AuthMode != "refreshable" ||
+		!nativeDocument.Data.HasProfile ||
+		nativeDocument.Data.Email != "mounted-native@example.invalid" ||
+		nativeDocument.Data.SubscriptionKind != "pro" {
+		t.Fatalf("Go Server 原生导入响应错误: %#v", nativeDocument.Data)
+	}
+	duplicateNative := performRequest(
+		t,
+		client,
+		http.MethodPost,
+		baseURL+accountsapi.NativeImportPath,
+		testManagementKey,
+		nativePayload,
+	)
+	assertStatus(t, duplicateNative, http.StatusConflict)
+	assertJSONErrorCode(t, duplicateNative.body, "account_conflict")
+	if strings.Contains(duplicateNative.body, nativeAccessToken) ||
+		strings.Contains(duplicateNative.body, nativeRefreshToken) {
+		t.Fatal("重复导入错误响应泄漏 OAuth Token")
+	}
+
 	listed := performRequest(
 		t,
 		client,
@@ -86,10 +142,15 @@ func TestServerMountsSystemAndAccountRoutes(t *testing.T) {
 		} `json:"data"`
 	}
 	decodeJSON(t, listed.body, &listDocument)
-	if len(listDocument.Data) != 1 ||
-		listDocument.Data[0].ProviderID != "codex" ||
-		listDocument.Data[0].CLIAccountID != 1 {
+	if len(listDocument.Data) != 2 {
 		t.Fatalf("账号列表响应错误: %#v", listDocument.Data)
+	}
+	providersFound := make(map[string]int64, len(listDocument.Data))
+	for _, account := range listDocument.Data {
+		providersFound[account.ProviderID] = account.CLIAccountID
+	}
+	if providersFound["codex"] != 1 || providersFound["claude"] != 1 {
+		t.Fatalf("账号 Provider 别名错误: %#v", providersFound)
 	}
 
 	unknown := performRequest(
@@ -115,6 +176,42 @@ func TestServerMountsSystemAndAccountRoutes(t *testing.T) {
 	if wrongMethod.header.Get("Allow") != "GET, HEAD" {
 		t.Fatalf("healthz Allow = %q", wrongMethod.header.Get("Allow"))
 	}
+}
+
+// claudeNativeImportBody 创建 Host 完整链路使用的 Claude 官方 artifact。
+func claudeNativeImportBody(
+	t *testing.T,
+	accessToken string,
+	refreshToken string,
+) []byte {
+	t.Helper()
+
+	document, err := json.Marshal(map[string]any{
+		"provider_id": "claude",
+		"artifacts": map[string]any{
+			"credentials_json": map[string]any{
+				"claudeAiOauth": map[string]any{
+					"accessToken":      accessToken,
+					"refreshToken":     refreshToken,
+					"expiresAt":        int64(4_102_444_800_000),
+					"scopes":           []string{"user:inference"},
+					"subscriptionType": "pro",
+					"rateLimitTier":    nil,
+				},
+			},
+			"global_config_json": map[string]any{
+				"oauthAccount": map[string]any{
+					"accountUuid":  "123e4567-e89b-12d3-a456-426614174333",
+					"emailAddress": "mounted-native@example.invalid",
+					"displayName":  "Mounted Native",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	return document
 }
 
 // TestNewRejectsInvalidManagementKeyBeforeCreatingDatabase 验证错误密钥不会产生数据库副作用。

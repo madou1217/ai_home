@@ -13,8 +13,10 @@ import (
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/core/accounts/claude"
 	"github.com/madou1217/ai_home/core/accounts/codex"
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
 )
 
@@ -449,6 +451,7 @@ type accountServiceStub struct {
 	setEnabledCalls      int
 	registerErr          error
 	registeredCredential accountapp.Credential
+	registeredProfile    accountapp.PublicProfile
 	registerCalls        int
 }
 
@@ -519,11 +522,9 @@ func (service *accountServiceStub) Register(
 ) (accountcore.Account, error) {
 	service.registerCalls++
 	service.registeredCredential = credential
+	service.registeredProfile = profile
 	if service.registerErr != nil {
 		return accountcore.Account{}, service.registerErr
-	}
-	if profile != nil {
-		service.t.Fatal("API Key 注册不应携带公开 Profile")
 	}
 	alias, err := accountcore.NewCLIAccountID(1)
 	if err != nil {
@@ -538,15 +539,82 @@ func (service *accountServiceStub) Register(
 		service.t.Fatalf("NewAccount() error = %v", err)
 	}
 	overview, err := accountapp.NewAccountOverview(accountapp.AccountOverviewInput{
-		Account:       account,
-		HasCredential: true,
-		AuthKind:      "api_key",
+		Account:          account,
+		HasCredential:    true,
+		AuthKind:         credentialKind(credential),
+		AuthMode:         credentialMode(credential),
+		HasProfile:       profile != nil,
+		DisplayName:      profileDisplayName(profile),
+		Email:            profileEmail(profile),
+		SubscriptionKind: profileSubscriptionKind(profile),
+		SubscriptionRaw:  profileSubscriptionRaw(profile),
+		ProfileUpdatedAt: profileUpdatedAt(profile),
 	})
 	if err != nil {
 		service.t.Fatalf("NewAccountOverview() error = %v", err)
 	}
 	service.overview = &overview
 	return account, nil
+}
+
+// credentialKind 返回测试凭据对应的公开认证类型。
+func credentialKind(credential accountapp.Credential) string {
+	switch credential.(type) {
+	case *codex.OAuthAuth, *claude.OAuthAuth:
+		return "oauth"
+	case *codex.APIKeyAuth, *claude.APIKeyAuth:
+		return "api_key"
+	default:
+		return ""
+	}
+}
+
+// credentialMode 返回只有 Claude 可刷新 OAuth 使用的公开模式。
+func credentialMode(credential accountapp.Credential) string {
+	if _, valid := credential.(*claude.OAuthAuth); valid {
+		return "refreshable"
+	}
+	return ""
+}
+
+// profileDisplayName 安全读取可选公开资料展示名。
+func profileDisplayName(profile accountapp.PublicProfile) string {
+	if profile == nil {
+		return ""
+	}
+	return profile.DisplayName()
+}
+
+// profileEmail 安全读取可选公开资料邮箱。
+func profileEmail(profile accountapp.PublicProfile) string {
+	if profile == nil {
+		return ""
+	}
+	return profile.Email()
+}
+
+// profileSubscriptionKind 安全读取可选公开资料订阅分类。
+func profileSubscriptionKind(profile accountapp.PublicProfile) string {
+	if profile == nil {
+		return ""
+	}
+	return profile.SubscriptionKind()
+}
+
+// profileSubscriptionRaw 安全读取可选公开资料订阅原值。
+func profileSubscriptionRaw(profile accountapp.PublicProfile) string {
+	if profile == nil {
+		return ""
+	}
+	return profile.SubscriptionRaw()
+}
+
+// profileUpdatedAt 为携带公开资料的测试注册生成稳定采集时间。
+func profileUpdatedAt(profile accountapp.PublicProfile) time.Time {
+	if profile == nil {
+		return time.Time{}
+	}
+	return testHTTPTime()
 }
 
 // newTestHandler 创建使用真实 Bearer 校验与内置凭据工厂的 HTTP Handler。
@@ -560,10 +628,11 @@ func newTestHandler(t *testing.T, service *accountServiceStub) http.Handler {
 		t.Fatalf("NewBearerAuthorizer() error = %v", err)
 	}
 	handler, err := accountsapi.NewHandler(accountsapi.Dependencies{
-		Management: service,
-		Registrar:  service,
-		APIKeys:    accountsapi.NewBuiltinAPIKeyCredentialFactory(),
-		Authorizer: authorizer,
+		Management:     service,
+		Registrar:      service,
+		APIKeys:        accountsapi.NewBuiltinAPIKeyCredentialFactory(),
+		NativeAccounts: nativeaccount.NewDecoder(),
+		Authorizer:     authorizer,
 	})
 	if err != nil {
 		t.Fatalf("NewHandler() error = %v", err)

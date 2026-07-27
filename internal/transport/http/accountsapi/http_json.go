@@ -9,7 +9,10 @@ import (
 	"net/http"
 )
 
-const maxRequestBodyBytes int64 = 64 * 1024
+const (
+	maxRequestBodyBytes             int64 = 64 * 1024
+	maxNativeImportRequestBodyBytes int64 = 1024 * 1024
+)
 
 var (
 	// errInvalidJSONBody 表示请求体不是唯一且符合 DTO 的 JSON 文档。
@@ -26,13 +29,28 @@ func decodeJSONRequest(
 	request *http.Request,
 	target any,
 ) error {
+	return decodeJSONRequestWithLimit(
+		response,
+		request,
+		target,
+		maxRequestBodyBytes,
+	)
+}
+
+// decodeJSONRequestWithLimit 为较大的官方 artifact 导入保留独立有界上限。
+func decodeJSONRequestWithLimit(
+	response http.ResponseWriter,
+	request *http.Request,
+	target any,
+	maxBytes int64,
+) error {
 	if !isJSONContentType(request.Header.Get("Content-Type")) {
 		return errUnsupportedMediaType
 	}
 	request.Body = http.MaxBytesReader(
 		response,
 		request.Body,
-		maxRequestBodyBytes,
+		maxBytes,
 	)
 	document, err := io.ReadAll(request.Body)
 	if err != nil {

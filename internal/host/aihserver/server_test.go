@@ -14,6 +14,7 @@ import (
 
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	"github.com/madou1217/ai_home/internal/host/aihserver"
+	"github.com/madou1217/ai_home/internal/transport/http/accountauthapi"
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
 )
 
@@ -37,8 +38,9 @@ func TestServerMountsSystemAndAccountRoutes(t *testing.T) {
 	}
 	decodeJSON(t, ready.body, &readiness)
 	if !readiness.Ready ||
-		len(readiness.Capabilities) != 1 ||
-		readiness.Capabilities[0] != "account_management_v1" {
+		len(readiness.Capabilities) != 2 ||
+		readiness.Capabilities[0] != "account_management_v1" ||
+		readiness.Capabilities[1] != "account_auth_jobs_v1" {
 		t.Fatalf("readyz response = %#v", readiness)
 	}
 
@@ -51,6 +53,47 @@ func TestServerMountsSystemAndAccountRoutes(t *testing.T) {
 		nil,
 	)
 	assertStatus(t, unauthorized, http.StatusUnauthorized)
+
+	startedOAuth := performRequest(
+		t,
+		client,
+		http.MethodPost,
+		baseURL+accountauthapi.CollectionPath,
+		testManagementKey,
+		[]byte(`{"provider_id":"codex"}`),
+	)
+	assertStatus(t, startedOAuth, http.StatusCreated)
+	var startedOAuthDocument struct {
+		Data struct {
+			JobID            string `json:"job_id"`
+			ProviderID       string `json:"provider_id"`
+			Status           string `json:"status"`
+			AuthorizationURL string `json:"authorization_url"`
+		} `json:"data"`
+	}
+	decodeJSON(t, startedOAuth.body, &startedOAuthDocument)
+	if len(startedOAuthDocument.Data.JobID) != 32 ||
+		startedOAuthDocument.Data.ProviderID != "codex" ||
+		startedOAuthDocument.Data.Status != "pending" ||
+		!strings.HasPrefix(
+			startedOAuthDocument.Data.AuthorizationURL,
+			"https://auth.openai.com/oauth/authorize?",
+		) {
+		t.Fatalf("OAuth Job 创建响应错误: %#v", startedOAuthDocument.Data)
+	}
+	cancelledOAuth := performRequest(
+		t,
+		client,
+		http.MethodDelete,
+		baseURL+accountauthapi.CollectionPath+"/"+startedOAuthDocument.Data.JobID,
+		testManagementKey,
+		nil,
+	)
+	assertStatus(t, cancelledOAuth, http.StatusOK)
+	if strings.Contains(cancelledOAuth.body, "authorization_url") ||
+		strings.Contains(cancelledOAuth.body, "state") {
+		t.Fatal("OAuth Job 终态响应泄漏授权 URL 或 state")
+	}
 
 	secret := "synthetic-mounted-codex-api-key"
 	createBody := []byte(

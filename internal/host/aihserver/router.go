@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/madou1217/ai_home/internal/transport/http/accountauthapi"
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
 )
 
@@ -26,14 +27,19 @@ type systemErrorView struct {
 	Message string `json:"message"`
 }
 
-// newRouter 只挂载当前确认的系统路由和账号管理路由。
-func newRouter(accountsHandler http.Handler) http.Handler {
+// newRouter 只挂载当前确认的系统、账号管理和 OAuth Job 路由。
+func newRouter(
+	accountsHandler http.Handler,
+	accountAuthHandler http.Handler,
+) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", handleHealth)
 	mux.HandleFunc("/readyz", handleReadiness)
 	mux.Handle(accountsapi.NativeImportPath, accountsHandler)
 	mux.Handle(accountsapi.CollectionPath, accountsHandler)
 	mux.Handle(accountsapi.CollectionPath+"/", accountsHandler)
+	mux.Handle(accountauthapi.CollectionPath, accountAuthHandler)
+	mux.Handle(accountauthapi.CollectionPath+"/", accountAuthHandler)
 	mux.HandleFunc("/", handleRouteNotFound)
 	return mux
 }
@@ -49,16 +55,19 @@ func handleHealth(response http.ResponseWriter, request *http.Request) {
 	})
 }
 
-// handleReadiness 明确当前进程只提供账号管理 v1 能力。
+// handleReadiness 明确当前进程提供账号管理和 OAuth Job v1 能力。
 func handleReadiness(response http.ResponseWriter, request *http.Request) {
 	if !requireGet(response, request) {
 		return
 	}
 	writeSystemJSON(response, http.StatusOK, systemStatusResponse{
-		OK:           true,
-		Service:      "aih-server",
-		Ready:        true,
-		Capabilities: []string{"account_management_v1"},
+		OK:      true,
+		Service: "aih-server",
+		Ready:   true,
+		Capabilities: []string{
+			"account_management_v1",
+			"account_auth_jobs_v1",
+		},
 	})
 }
 

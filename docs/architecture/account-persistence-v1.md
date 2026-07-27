@@ -41,6 +41,10 @@ SQL。账号管理列表使用独立只读投影端口，不让管理查询依�
 读取端口与生命周期写入端口保持独立，启停时间通过应用时钟注入。注册、凭据刷新、
 删除、导入导出不得继续堆入该类型。
 
+`application/accounts.Registrar` 只负责构造新账号注册命令：从经过 Provider
+领域校验的 Credential 派生 `account_ref`，校验可选 Profile 属于同一身份，并注入
+毫秒精度业务时间。CLI 别名分配和三表原子写入属于 SQLite Adapter，不泄漏到应用层。
+
 ## 3. `accounts`
 
 | 字段 | SQLite 类型 | 约束与含义 |
@@ -58,6 +62,24 @@ SQL。账号管理列表使用独立只读投影端口，不让管理查询依�
 - `(provider_id, cli_account_id)`
 
 不设置 `deleted_at`。当前删除语义是硬删除，未来只有在出现真实审计需求时才增加归档设计。
+
+### 3.1 新账号注册与 CLI 别名分配
+
+新账号注册不允许调用方指定 `cli_account_id`。SQLite Adapter 在一个事务中依次完成：
+
+1. 使用单条 `INSERT ... SELECT MAX(cli_account_id) + 1 ... RETURNING` 写语句，为当前
+   Provider 分配下一个正整数别名并创建 `accounts`；
+2. 写入对应的 `account_credentials`；
+3. 仅在命令携带同身份公开资料时写入 `account_profiles`；
+4. 三步全部成功后提交，否则回滚整笔注册。
+
+别名依赖现有 `(provider_id, cli_account_id)` 唯一索引和 SQLite 单写者事务语义。
+Codex 与 Claude 独立从 `1` 开始；不新增 sequence 表，也不在 Go 内执行“先读再写”
+的竞争窗口。达到 SQLite 最大正整数时返回 `ErrCLIAccountIDExhausted`，不发生整数
+溢出。相同稳定身份或其他唯一约束竞争统一返回 `ErrAccountConflict`。
+
+当前没有删除用例，因此分配只向当前最大别名之后增长。未来若加入删除，必须先明确
+数字别名是否允许复用，不能通过修改本 SQL 隐式决定业务语义。
 
 ## 4. `account_credentials`
 
@@ -267,8 +289,8 @@ Token、API Key 或 Auth Token。
   重复字段、尾随 JSON、旧快照、同版本不同内容以及被篡改的资料身份均失败关闭。
 - 账号管理列表只读取基础账号、认证类型和公开资料标量；查询计划对三张表都使用主键，
   SQL 自动化测试禁止选择两个 JSON 文档。
-- 32 个不同账号并发注册、16 路同身份竞争、Provider 内别名冲突、跨 Provider
-  同别名、事务回滚、关闭重开恢复均有自动化测试。
+- 64 个不同账号并发自动分配别名、16 路同身份竞争、Provider 内别名冲突、跨
+  Provider 同别名、别名耗尽、Profile 写入失败整笔回滚、关闭重开恢复均有自动化测试。
 - 8 路并发首次打开同一个空数据库连续运行 50 轮通过。
 
 ### 8.2 性能
@@ -326,7 +348,29 @@ fixture 使用身份一致的 Codex 合成公开资料，不读取本机或真�
 不变；详情点查在两个规模下均约 36µs。100,000 条全载会产生约 235MB 累计分配，
 因此只保留为压力基线；CLI、Server 和 WebUI 均不得把全载作为常规列表或征召策略。
 
-### 8.4 全量回归
+### 8.4 真实账号管理场景
+
+场景命令：
+
+```bash
+go test -run '^TestAccountManagementScenario$' -v \
+  ./internal/adapters/accounts/sqliteaccount
+```
+
+测试使用临时 `$AIH_HOME/aih.db` 和合成凭据，真实执行以下应用链路：
+
+- 注册带公开 Profile 的 Codex OAuth 账号，分配 `codex/1`；
+- 注册无 Profile 的 Claude API Key 账号，分配 `claude/1`；
+- 通过 `Management` 执行 `after_ref=""、limit=50` 的账号列表；
+- 按 Codex `account_ref` 查询详情；
+- 停用 Codex 账号后再次查询详情，`enabled` 从 `true` 变为 `false`，
+  `updated_at` 从 `10:00:00Z` 变为 `10:05:00Z`。
+
+测试日志只输出基础账号、认证类型和公开资料标量；不读取或输出
+`credential_json`、`profile_json`。这是 Go 应用用例和 SQLite Adapter 的集成场景，
+当前阶段尚未暴露 HTTP API。
+
+### 8.5 全量回归
 
 - `go test ./...`：通过。
 - `go vet ./...`：通过。

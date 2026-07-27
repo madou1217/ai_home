@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/madou1217/ai_home/application/accountauth"
+	accountapp "github.com/madou1217/ai_home/application/accounts"
 )
 
 const testJobID = "0123456789abcdef0123456789abcdef"
@@ -24,6 +25,8 @@ func TestHandlerRejectsUnauthorizedAndInvalidRequests(t *testing.T) {
 		body       string
 		status     int
 		code       string
+		startErr   error
+		wantCalls  int
 	}{
 		{
 			name:       "缺少管理鉴权",
@@ -42,6 +45,29 @@ func TestHandlerRejectsUnauthorizedAndInvalidRequests(t *testing.T) {
 			body:       `{"provider_id":"gemini"}`,
 			status:     http.StatusUnprocessableEntity,
 			code:       "unsupported_provider",
+			startErr:   accountauth.ErrUnsupportedProvider,
+			wantCalls:  1,
+		},
+		{
+			name:       "错误目标账号引用",
+			authorized: true,
+			method:     http.MethodPost,
+			path:       CollectionPath,
+			body:       `{"provider_id":"codex","target_account_ref":"1"}`,
+			status:     http.StatusBadRequest,
+			code:       "invalid_request",
+		},
+		{
+			name:       "目标账号不支持原地认证",
+			authorized: true,
+			method:     http.MethodPost,
+			path:       CollectionPath,
+			body: `{"provider_id":"codex",` +
+				`"target_account_ref":"acct_1234567890abcdef1234"}`,
+			status:    http.StatusUnprocessableEntity,
+			code:      "reauthentication_unsupported",
+			startErr:  accountapp.ErrReauthenticationUnsupported,
+			wantCalls: 1,
 		},
 		{
 			name:       "回调重复键",
@@ -83,7 +109,7 @@ func TestHandlerRejectsUnauthorizedAndInvalidRequests(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			jobs := &jobsStub{}
+			jobs := &jobsStub{startErr: test.startErr}
 			handler, err := NewHandler(Dependencies{
 				Jobs:       jobs,
 				Authorizer: authorizerStub(test.authorized),
@@ -112,8 +138,12 @@ func TestHandlerRejectsUnauthorizedAndInvalidRequests(t *testing.T) {
 					response.Body.String(),
 				)
 			}
-			if test.name != "不支持的 Provider" && jobs.calls != 0 {
-				t.Fatalf("无效请求进入应用层: calls=%d", jobs.calls)
+			if jobs.calls != test.wantCalls {
+				t.Fatalf(
+					"应用层调用次数=%d want=%d",
+					jobs.calls,
+					test.wantCalls,
+				)
 			}
 		})
 	}
@@ -129,16 +159,17 @@ func (authorizer authorizerStub) Authorized(*http.Request) bool {
 
 // jobsStub 记录应用端口调用，并只返回安全固定错误。
 type jobsStub struct {
-	calls int
+	calls    int
+	startErr error
 }
 
 // Start 模拟不支持 Provider 的创建结果。
 func (jobs *jobsStub) Start(
 	context.Context,
-	string,
+	accountauth.StartRequest,
 ) (accountauth.StartResult, error) {
 	jobs.calls++
-	return accountauth.StartResult{}, accountauth.ErrUnsupportedProvider
+	return accountauth.StartResult{}, jobs.startErr
 }
 
 // Get 不应被当前失败关闭用例调用。

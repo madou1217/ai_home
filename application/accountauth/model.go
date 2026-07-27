@@ -1,7 +1,7 @@
 // Package accountauth 编排 Codex、Claude OAuth 登录作业。
 //
 // 该应用层只保存短期、进程内的 OAuth Flow，不持久化授权码、PKCE verifier、state
-// 或 Token。成功后统一复用原生 artifact 解码与账号注册端口。
+// 或 Token。成功后统一复用原生 artifact 解码，再按 Job 意图注册或原地 reauth。
 package accountauth
 
 import (
@@ -47,6 +47,18 @@ var (
 	ErrProviderUnavailable = errors.New("OAuth Provider 暂时不可用")
 	// ErrInvalidArtifacts 表示 OAuth 适配器没有生成可注册的官方 artifact。
 	ErrInvalidArtifacts = errors.New("OAuth 官方 artifact 无效")
+	// ErrInvalidStartRequest 表示 Job 起始命令缺少 Provider 或目标身份无效。
+	ErrInvalidStartRequest = errors.New("OAuth Job 起始命令无效")
+)
+
+// Purpose 区分新账号注册与已有账号原地重新认证。
+type Purpose string
+
+const (
+	// PurposeRegister 表示 OAuth 成功后创建新账号。
+	PurposeRegister Purpose = "register"
+	// PurposeReauth 表示 OAuth 成功后原子替换目标账号凭据和资料。
+	PurposeReauth Purpose = "reauth"
 )
 
 // Status 是 OAuth Job 的稳定公开状态。
@@ -55,11 +67,11 @@ type Status string
 const (
 	// StatusPending 表示 Job 正在等待用户回调。
 	StatusPending Status = "pending"
-	// StatusProcessing 表示回调已被唯一消费者领取并正在完成注册。
+	// StatusProcessing 表示回调已被唯一消费者领取并正在完成账号写入。
 	StatusProcessing Status = "processing"
-	// StatusCompleted 表示 OAuth 账号已原子注册成功。
+	// StatusCompleted 表示 OAuth 账号已原子注册或重新认证成功。
 	StatusCompleted Status = "completed"
-	// StatusFailed 表示换取凭据、资料确认或账号注册失败。
+	// StatusFailed 表示换取凭据、资料确认或账号写入失败。
 	StatusFailed Status = "failed"
 	// StatusCancelled 表示用户主动取消了等待中的 Job。
 	StatusCancelled Status = "cancelled"
@@ -71,6 +83,8 @@ const (
 type Job struct {
 	id           string
 	providerID   string
+	purpose      Purpose
+	targetRef    accountcore.AccountRef
 	status       Status
 	createdAt    time.Time
 	expiresAt    time.Time
@@ -88,6 +102,16 @@ func (job Job) ID() string {
 // ProviderID 返回 Job 绑定的规范 Provider ID。
 func (job Job) ProviderID() string {
 	return job.providerID
+}
+
+// Purpose 返回 Job 的注册或原地重新认证意图。
+func (job Job) Purpose() Purpose {
+	return job.purpose
+}
+
+// TargetAccountRef 返回 reauth 目标；register Job 返回零值。
+func (job Job) TargetAccountRef() accountcore.AccountRef {
+	return job.targetRef
 }
 
 // Status 返回 Job 当前公开状态。
@@ -163,6 +187,22 @@ type OAuthFlow interface {
 	Exchange(ctx context.Context, callback string) ([]byte, error)
 }
 
+// StartRequest 是创建 OAuth Job 的应用命令。
+type StartRequest struct {
+	// ProviderID 是本次 OAuth Flow 使用的规范 Provider ID。
+	ProviderID string
+	// TargetAccountRef 非空时表示原地 reauth，空值表示注册新账号。
+	TargetAccountRef accountcore.AccountRef
+}
+
+// Purpose 根据目标账号是否存在返回明确 Job 意图。
+func (request StartRequest) Purpose() Purpose {
+	if request.TargetAccountRef.IsValid() {
+		return PurposeReauth
+	}
+	return PurposeRegister
+}
+
 // NativeAccountDecoder 是 OAuth artifact 进入账号应用层前的反腐端口。
 type NativeAccountDecoder interface {
 	Decode(
@@ -180,6 +220,21 @@ type Registrar interface {
 	) (accountcore.Account, error)
 }
 
+// Reauthenticator 是 OAuth Job 对已有账号执行目标预检和原子替换的端口。
+type Reauthenticator interface {
+	ValidateTarget(
+		ctx context.Context,
+		accountRef accountcore.AccountRef,
+		providerID string,
+	) error
+	Reauthenticate(
+		ctx context.Context,
+		accountRef accountcore.AccountRef,
+		credential accountapp.Credential,
+		profile accountapp.PublicProfile,
+	) (accountcore.Account, error)
+}
+
 // Clock 返回当前时间，测试可注入确定性时钟。
 type Clock func() time.Time
 
@@ -191,6 +246,7 @@ type Dependencies struct {
 	Providers  []OAuthProvider
 	Decoder    NativeAccountDecoder
 	Registrar  Registrar
+	Reauth     Reauthenticator
 	Clock      Clock
 	GenerateID IDGenerator
 }

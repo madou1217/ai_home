@@ -11,6 +11,13 @@ import (
 // writeApplicationError 把 OAuth、账号注册和容器错误映射为稳定 HTTP 合同。
 func writeApplicationError(response http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, accountauth.ErrInvalidStartRequest):
+		writeAPIError(
+			response,
+			http.StatusBadRequest,
+			"invalid_request",
+			"OAuth Job 请求无效",
+		)
 	case errors.Is(err, accountauth.ErrUnsupportedProvider):
 		writeAPIError(
 			response,
@@ -80,6 +87,42 @@ func writeApplicationError(response http.ResponseWriter, err error) {
 			http.StatusConflict,
 			"cli_account_id_exhausted",
 			"Provider 数字别名已经耗尽",
+		)
+	case errors.Is(err, accountapp.ErrAccountNotFound):
+		writeAPIError(
+			response,
+			http.StatusNotFound,
+			"reauthentication_target_not_found",
+			"重新认证目标账号不存在",
+		)
+	case errors.Is(err, accountapp.ErrCredentialNotFound),
+		errors.Is(err, accountapp.ErrReauthenticationUnsupported):
+		writeAPIError(
+			response,
+			http.StatusUnprocessableEntity,
+			"reauthentication_unsupported",
+			"目标账号不支持原地 OAuth 重新认证",
+		)
+	case errors.Is(err, accountapp.ErrReauthenticationIdentityMismatch):
+		writeAPIError(
+			response,
+			http.StatusConflict,
+			"reauthentication_identity_mismatch",
+			"OAuth 登录身份与目标账号不匹配",
+		)
+	case errors.Is(err, accountapp.ErrReauthenticationConflict):
+		writeAPIError(
+			response,
+			http.StatusConflict,
+			"reauthentication_conflict",
+			"目标账号已被其他操作更新",
+		)
+	case errors.Is(err, accountapp.ErrInvalidReauthentication):
+		writeAPIError(
+			response,
+			http.StatusUnprocessableEntity,
+			"invalid_reauthentication",
+			"OAuth 重新认证结果无效",
 		)
 	case errors.Is(err, accountauth.ErrProviderRejected):
 		writeAPIError(

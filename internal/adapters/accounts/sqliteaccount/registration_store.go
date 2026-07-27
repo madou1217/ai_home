@@ -149,7 +149,7 @@ func insertAccountWithAllocatedAlias(
 // insertRegistrationProfile 在注册事务中写入经过 codec 校验的公开资料。
 func insertRegistrationProfile(
 	ctx context.Context,
-	transaction *sql.Tx,
+	executor statementExecutor,
 	accountRef accountcore.AccountRef,
 	document encodedProfile,
 	updatedAtMS int64,
@@ -159,7 +159,7 @@ func insertRegistrationProfile(
 			account_ref, display_name, email, subscription_kind,
 			subscription_raw, format_version, profile_json, updated_at_ms
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-	_, err := transaction.ExecContext(
+	_, err := executor.ExecContext(
 		ctx,
 		statement,
 		accountRef.String(),
@@ -178,4 +178,13 @@ func insertRegistrationProfile(
 		return fmt.Errorf("写入注册账号公开资料失败: %w", err)
 	}
 	return nil
+}
+
+// statementExecutor 让事务和独占连接复用相同的参数化写入函数。
+type statementExecutor interface {
+	ExecContext(
+		ctx context.Context,
+		query string,
+		args ...any,
+	) (sql.Result, error)
 }

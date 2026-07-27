@@ -8,7 +8,8 @@ import (
 
 // startJobRequest 是创建 OAuth Job 的唯一输入。
 type startJobRequest struct {
-	ProviderID string `json:"provider_id"`
+	ProviderID       string `json:"provider_id"`
+	TargetAccountRef string `json:"target_account_ref,omitempty"`
 }
 
 // callbackRequest 是一次性 OAuth 回调输入。
@@ -18,15 +19,17 @@ type callbackRequest struct {
 
 // jobView 是不包含授权 URL、state、PKCE、授权码或 Token 的公开投影。
 type jobView struct {
-	JobID        string `json:"job_id"`
-	ProviderID   string `json:"provider_id"`
-	Status       string `json:"status"`
-	CreatedAt    string `json:"created_at"`
-	ExpiresAt    string `json:"expires_at"`
-	FinishedAt   string `json:"finished_at,omitempty"`
-	AccountRef   string `json:"account_ref,omitempty"`
-	CLIAccountID int64  `json:"cli_account_id,omitempty"`
-	FailureCode  string `json:"failure_code,omitempty"`
+	JobID            string `json:"job_id"`
+	ProviderID       string `json:"provider_id"`
+	Purpose          string `json:"purpose"`
+	TargetAccountRef string `json:"target_account_ref,omitempty"`
+	Status           string `json:"status"`
+	CreatedAt        string `json:"created_at"`
+	ExpiresAt        string `json:"expires_at"`
+	FinishedAt       string `json:"finished_at,omitempty"`
+	AccountRef       string `json:"account_ref,omitempty"`
+	CLIAccountID     int64  `json:"cli_account_id,omitempty"`
+	FailureCode      string `json:"failure_code,omitempty"`
 }
 
 // startJobView 只在创建响应中增加一次性授权 URL。
@@ -59,15 +62,17 @@ type errorView struct {
 // newJobView 从应用快照选择允许公开的非敏感字段。
 func newJobView(job accountauth.Job) jobView {
 	return jobView{
-		JobID:        job.ID(),
-		ProviderID:   job.ProviderID(),
-		Status:       string(job.Status()),
-		CreatedAt:    formatTime(job.CreatedAt()),
-		ExpiresAt:    formatTime(job.ExpiresAt()),
-		FinishedAt:   formatOptionalTime(job.FinishedAt()),
-		AccountRef:   job.AccountRef().String(),
-		CLIAccountID: job.CLIAccountID().Int64(),
-		FailureCode:  job.FailureCode(),
+		JobID:            job.ID(),
+		ProviderID:       job.ProviderID(),
+		Purpose:          string(job.Purpose()),
+		TargetAccountRef: job.TargetAccountRef().String(),
+		Status:           string(job.Status()),
+		CreatedAt:        formatTime(job.CreatedAt()),
+		ExpiresAt:        formatTime(job.ExpiresAt()),
+		FinishedAt:       formatOptionalTime(job.FinishedAt()),
+		AccountRef:       job.AccountRef().String(),
+		CLIAccountID:     job.CLIAccountID().Int64(),
+		FailureCode:      job.FailureCode(),
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	accountcore "github.com/madou1217/ai_home/core/accounts"
 )
 
 // serviceSettings 允许包内测试缩短时间并压低容量，不扩大生产配置面。
@@ -35,6 +36,7 @@ type Service struct {
 	activeJobs map[string]string
 	decoder    NativeAccountDecoder
 	registrar  Registrar
+	reauth     Reauthenticator
 	clock      Clock
 	generateID IDGenerator
 	settings   serviceSettings
@@ -56,6 +58,7 @@ func newService(
 ) (*Service, error) {
 	if dependencies.Decoder == nil ||
 		dependencies.Registrar == nil ||
+		dependencies.Reauth == nil ||
 		dependencies.Clock == nil ||
 		dependencies.GenerateID == nil ||
 		settings.jobTTL <= 0 ||
@@ -88,6 +91,7 @@ func newService(
 		activeJobs: make(map[string]string),
 		decoder:    dependencies.Decoder,
 		registrar:  dependencies.Registrar,
+		reauth:     dependencies.Reauth,
 		clock:      dependencies.Clock,
 		generateID: dependencies.GenerateID,
 		settings:   settings,
@@ -106,13 +110,27 @@ func NewRandomJobID() (string, error) {
 // Start 创建一个等待回调的 Provider OAuth Job。
 func (service *Service) Start(
 	ctx context.Context,
-	providerID string,
+	request StartRequest,
 ) (StartResult, error) {
-	provider, found := service.providers[providerID]
+	if request.ProviderID == "" ||
+		(request.TargetAccountRef != "" &&
+			!request.TargetAccountRef.IsValid()) {
+		return StartResult{}, ErrInvalidStartRequest
+	}
+	provider, found := service.providers[request.ProviderID]
 	if !found {
 		return StartResult{}, ErrUnsupportedProvider
 	}
-	if err := service.checkStartCapacity(providerID); err != nil {
+	if request.Purpose() == PurposeReauth {
+		if err := service.reauth.ValidateTarget(
+			ctx,
+			request.TargetAccountRef,
+			request.ProviderID,
+		); err != nil {
+			return StartResult{}, err
+		}
+	}
+	if err := service.checkStartCapacity(request.ProviderID); err != nil {
 		return StartResult{}, err
 	}
 	flow, err := provider.Begin(ctx)
@@ -131,7 +149,7 @@ func (service *Service) Start(
 	service.mu.Lock()
 	defer service.mu.Unlock()
 	service.expireAndPruneLocked(now)
-	if _, active := service.activeJobs[providerID]; active {
+	if _, active := service.activeJobs[request.ProviderID]; active {
 		return StartResult{}, ErrActiveJobExists
 	}
 	service.evictTerminalJobsLocked()
@@ -143,13 +161,15 @@ func (service *Service) Start(
 	}
 	job := Job{
 		id:         jobID,
-		providerID: providerID,
+		providerID: request.ProviderID,
+		purpose:    request.Purpose(),
+		targetRef:  request.TargetAccountRef,
 		status:     StatusPending,
 		createdAt:  now,
 		expiresAt:  now.Add(service.settings.jobTTL),
 	}
 	service.jobs[jobID] = &jobRecord{job: job, flow: flow}
-	service.activeJobs[providerID] = jobID
+	service.activeJobs[request.ProviderID] = jobID
 	return StartResult{
 		job:              job,
 		authorizationURL: flow.AuthorizationURL(),
@@ -191,23 +211,31 @@ func (service *Service) Complete(
 	jobID string,
 	callback string,
 ) (Job, error) {
-	flow, providerID, err := service.claimPendingJob(jobID)
+	claimed, err := service.claimPendingJob(jobID)
 	if err != nil {
 		return Job{}, err
 	}
-	artifacts, err := flow.Exchange(ctx, callback)
+	artifacts, err := claimed.flow.Exchange(ctx, callback)
 	if err != nil {
 		return service.failJob(jobID, failureCode(err)), err
 	}
 	defer clearBytes(artifacts)
-	credential, profile, err := service.decoder.Decode(providerID, artifacts)
+	credential, profile, err := service.decoder.Decode(
+		claimed.providerID,
+		artifacts,
+	)
 	if err != nil {
 		failed := service.failJob(jobID, "invalid_artifacts")
 		return failed, errors.Join(ErrInvalidArtifacts, err)
 	}
-	account, err := service.registrar.Register(ctx, credential, profile)
+	account, err := service.persistAccount(
+		ctx,
+		claimed,
+		credential,
+		profile,
+	)
 	if err != nil {
-		return service.failJob(jobID, registrationFailureCode(err)), err
+		return service.failJob(jobID, accountWriteFailureCode(err)), err
 	}
 
 	now := service.now()
@@ -222,8 +250,30 @@ func (service *Service) Complete(
 	record.job.accountRef = account.Ref()
 	record.job.cliAccountID = account.CLIAccountID()
 	record.retainedUntil = now.Add(service.settings.terminalRetention)
-	delete(service.activeJobs, providerID)
+	delete(service.activeJobs, claimed.providerID)
 	return record.job, nil
+}
+
+// persistAccount 按 Job 意图选择新账号注册或同账号原子重新认证。
+func (service *Service) persistAccount(
+	ctx context.Context,
+	claimed claimedJob,
+	credential accountapp.Credential,
+	profile accountapp.PublicProfile,
+) (accountcore.Account, error) {
+	switch claimed.purpose {
+	case PurposeRegister:
+		return service.registrar.Register(ctx, credential, profile)
+	case PurposeReauth:
+		return service.reauth.Reauthenticate(
+			ctx,
+			claimed.targetRef,
+			credential,
+			profile,
+		)
+	default:
+		return accountcore.Account{}, ErrInvalidStartRequest
+	}
 }
 
 // Cancel 只取消尚未被回调消费者领取的 pending Job。
@@ -254,25 +304,30 @@ func (service *Service) Cancel(jobID string) (Job, error) {
 // claimPendingJob 原子把 pending Job 转成 processing，并立即移除容器中的私有 Flow。
 func (service *Service) claimPendingJob(
 	jobID string,
-) (OAuthFlow, string, error) {
+) (claimedJob, error) {
 	now := service.now()
 	service.mu.Lock()
 	defer service.mu.Unlock()
 	service.expireAndPruneLocked(now)
 	record, found := service.jobs[jobID]
 	if !found {
-		return nil, "", ErrJobNotFound
+		return claimedJob{}, ErrJobNotFound
 	}
 	if record.job.status == StatusExpired {
-		return nil, "", ErrJobExpired
+		return claimedJob{}, ErrJobExpired
 	}
 	if record.job.status != StatusPending || record.flow == nil {
-		return nil, "", ErrJobNotPending
+		return claimedJob{}, ErrJobNotPending
 	}
-	flow := record.flow
+	claimed := claimedJob{
+		flow:       record.flow,
+		providerID: record.job.providerID,
+		purpose:    record.job.purpose,
+		targetRef:  record.job.targetRef,
+	}
 	record.flow = nil
 	record.job.status = StatusProcessing
-	return flow, record.job.providerID, nil
+	return claimed, nil
 }
 
 // failJob 把 processing Job 收敛为不含内部错误文本的 failed 终态。
@@ -385,13 +440,39 @@ func failureCode(err error) string {
 	}
 }
 
-// registrationFailureCode 保留可行动的账号冲突语义，其余注册错误统一隐藏。
-func registrationFailureCode(err error) string {
+// accountWriteFailureCode 保留可行动的注册与 reauth 错误，其余内部错误统一隐藏。
+func accountWriteFailureCode(err error) string {
 	if errors.Is(err, accountapp.ErrAccountConflict) {
 		return "account_conflict"
 	}
 	if errors.Is(err, accountapp.ErrCLIAccountIDExhausted) {
 		return "cli_account_id_exhausted"
 	}
-	return "registration_failed"
+	if errors.Is(err, accountapp.ErrReauthenticationIdentityMismatch) {
+		return "reauthentication_identity_mismatch"
+	}
+	if errors.Is(err, accountapp.ErrReauthenticationConflict) {
+		return "reauthentication_conflict"
+	}
+	if errors.Is(err, accountapp.ErrReauthenticationUnsupported) {
+		return "reauthentication_unsupported"
+	}
+	if errors.Is(err, accountapp.ErrAccountNotFound) {
+		return "reauthentication_target_not_found"
+	}
+	if errors.Is(err, accountapp.ErrCredentialNotFound) {
+		return "reauthentication_unsupported"
+	}
+	if errors.Is(err, accountapp.ErrInvalidReauthentication) {
+		return "invalid_reauthentication"
+	}
+	return "account_write_failed"
+}
+
+// claimedJob 是 processing 阶段唯一消费者持有的不可变执行上下文。
+type claimedJob struct {
+	flow       OAuthFlow
+	providerID string
+	purpose    Purpose
+	targetRef  accountcore.AccountRef
 }

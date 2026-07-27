@@ -10,11 +10,15 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/madou1217/ai_home/application/accountauth"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/core/accounts/claude"
+	"github.com/madou1217/ai_home/core/accounts/codex"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/claudeoauth"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/codexoauth"
@@ -28,8 +32,14 @@ const (
 	smokeManagementKey   = "synthetic-oauth-live-smoke-management-key"
 	smokeCodexAccess     = "synthetic-oauth-live-codex-access"
 	smokeCodexRefresh    = "synthetic-oauth-live-codex-refresh"
+	smokeCodexReauth     = "synthetic-oauth-live-codex-reauth"
+	smokeCodexReauthRT   = "synthetic-oauth-live-codex-reauth-refresh"
+	smokeCodexWrong      = "synthetic-oauth-live-codex-wrong"
+	smokeCodexWrongRT    = "synthetic-oauth-live-codex-wrong-refresh"
 	smokeClaudeAccess    = "sk-ant-oat01-synthetic-oauth-live-claude-access"
 	smokeClaudeRefresh   = "sk-ant-ort01-synthetic-oauth-live-claude-refresh"
+	smokeClaudeReauth    = "sk-ant-oat01-synthetic-oauth-live-claude-reauth"
+	smokeClaudeReauthRT  = "sk-ant-ort01-synthetic-oauth-live-claude-reauth"
 	smokeClaudeAccountID = "123e4567-e89b-12d3-a456-426614174555"
 )
 
@@ -42,11 +52,12 @@ func TestOAuthJobLiveSmoke(t *testing.T) {
 	))
 	defer upstream.Close()
 
-	handler := newLiveManagementHandler(t, upstream.URL)
+	clock := newLiveClock()
+	handler, store := newLiveManagementHandler(t, upstream.URL, clock.now)
 	server := httptest.NewServer(handler)
 	defer server.Close()
 
-	codexJob := startLiveJob(t, server, "codex")
+	codexJob := startLiveJob(t, server, "codex", "")
 	codexCallback := "http://localhost:1455/auth/callback?code=codex-live-code&state=" +
 		url.QueryEscape(codexJob.state)
 	codexCompleted := completeLiveJob(
@@ -55,16 +66,105 @@ func TestOAuthJobLiveSmoke(t *testing.T) {
 		codexJob.id,
 		codexCallback,
 	)
-	assertCompletedJob(t, codexCompleted, "codex", 1)
+	codexAccount := assertCompletedJob(t, codexCompleted, "codex", 1)
 
-	claudeJob := startLiveJob(t, server, "claude")
+	claudeJob := startLiveJob(t, server, "claude", "")
 	claudeCompleted := completeLiveJob(
 		t,
 		server,
 		claudeJob.id,
 		"claude-live-code#"+claudeJob.state,
 	)
-	assertCompletedJob(t, claudeCompleted, "claude", 1)
+	claudeAccount := assertCompletedJob(t, claudeCompleted, "claude", 1)
+
+	clock.advance(2 * time.Second)
+	codexReauthJob := startLiveJob(
+		t,
+		server,
+		"codex",
+		codexAccount.accountRef,
+	)
+	codexReauthCompleted := completeLiveJob(
+		t,
+		server,
+		codexReauthJob.id,
+		"http://localhost:1455/auth/callback?code=codex-reauth-code&state="+
+			url.QueryEscape(codexReauthJob.state),
+	)
+	assertSameReauthenticatedAccount(
+		t,
+		codexReauthCompleted,
+		codexAccount,
+	)
+
+	claudeReauthJob := startLiveJob(
+		t,
+		server,
+		"claude",
+		claudeAccount.accountRef,
+	)
+	claudeReauthCompleted := completeLiveJob(
+		t,
+		server,
+		claudeReauthJob.id,
+		"claude-reauth-code#"+claudeReauthJob.state,
+	)
+	assertSameReauthenticatedAccount(
+		t,
+		claudeReauthCompleted,
+		claudeAccount,
+	)
+
+	clock.advance(2 * time.Second)
+	wrongJob := startLiveJob(
+		t,
+		server,
+		"codex",
+		codexAccount.accountRef,
+	)
+	wrongCallback := submitLiveJobCallback(
+		t,
+		server,
+		wrongJob.id,
+		"http://localhost:1455/auth/callback?code=codex-wrong-code&state="+
+			url.QueryEscape(wrongJob.state),
+	)
+	if wrongCallback.status != http.StatusConflict ||
+		!strings.Contains(
+			wrongCallback.responseBody,
+			`"code":"reauthentication_identity_mismatch"`,
+		) {
+		t.Fatalf(
+			"错误身份 reauth status=%d body=%s",
+			wrongCallback.status,
+			wrongCallback.responseBody,
+		)
+	}
+	wrongJobStatus := performLiveRequest(
+		t,
+		server.Client(),
+		http.MethodGet,
+		server.URL+accountauthapi.CollectionPath+"/"+wrongJob.id,
+		nil,
+	)
+	logLiveExchange(t, wrongJobStatus)
+	if wrongJobStatus.status != http.StatusOK ||
+		!strings.Contains(
+			wrongJobStatus.responseBody,
+			`"failure_code":"reauthentication_identity_mismatch"`,
+		) {
+		t.Fatalf(
+			"错误身份 Job status=%d body=%s",
+			wrongJobStatus.status,
+			wrongJobStatus.responseBody,
+		)
+	}
+	assertReauthenticationCredentials(
+		t,
+		store,
+		codexAccount.accountRef,
+		claudeAccount.accountRef,
+	)
 
 	listed := performLiveRequest(
 		t,
@@ -110,24 +210,34 @@ func TestOAuthJobLiveSmoke(t *testing.T) {
 			plan:  account.SubscriptionKind,
 		}
 	}
-	if found["codex"].email != "oauth-live-codex@example.invalid" ||
-		found["codex"].plan != "business" ||
+	if found["codex"].email != "oauth-live-codex-reauth@example.invalid" ||
+		found["codex"].plan != "pro" ||
 		found["claude"].mode != "refreshable" ||
-		found["claude"].email != "oauth-live-claude@example.invalid" ||
-		found["claude"].plan != "max" {
+		found["claude"].email != "oauth-live-claude-reauth@example.invalid" ||
+		found["claude"].plan != "pro" {
 		t.Fatalf("账号列表 Provider 结果错误: %#v", found)
 	}
 
 	for _, secret := range []string{
 		smokeCodexAccess,
 		smokeCodexRefresh,
+		smokeCodexReauth,
+		smokeCodexReauthRT,
+		smokeCodexWrong,
+		smokeCodexWrongRT,
 		smokeClaudeAccess,
 		smokeClaudeRefresh,
+		smokeClaudeReauth,
+		smokeClaudeReauthRT,
 		"codex-live-code",
 		"claude-live-code",
 	} {
 		if strings.Contains(codexCompleted.responseBody, secret) ||
 			strings.Contains(claudeCompleted.responseBody, secret) ||
+			strings.Contains(codexReauthCompleted.responseBody, secret) ||
+			strings.Contains(claudeReauthCompleted.responseBody, secret) ||
+			strings.Contains(wrongCallback.responseBody, secret) ||
+			strings.Contains(wrongJobStatus.responseBody, secret) ||
 			strings.Contains(listed.responseBody, secret) {
 			t.Fatalf("公开 API 响应泄漏 OAuth 私有值")
 		}
@@ -145,10 +255,15 @@ func startLiveJob(
 	t *testing.T,
 	server *httptest.Server,
 	providerID string,
+	targetAccountRef string,
 ) liveJob {
 	t.Helper()
 
-	payload, err := json.Marshal(map[string]string{"provider_id": providerID})
+	requestDocument := map[string]string{"provider_id": providerID}
+	if targetAccountRef != "" {
+		requestDocument["target_account_ref"] = targetAccountRef
+	}
+	payload, err := json.Marshal(requestDocument)
 	if err != nil {
 		t.Fatalf("json.Marshal() error = %v", err)
 	}
@@ -166,14 +281,22 @@ func startLiveJob(
 	var document struct {
 		Data struct {
 			JobID            string `json:"job_id"`
+			Purpose          string `json:"purpose"`
+			TargetAccountRef string `json:"target_account_ref"`
 			Status           string `json:"status"`
 			AuthorizationURL string `json:"authorization_url"`
 		} `json:"data"`
 	}
 	decodeLiveJSON(t, exchange.responseBody, &document)
 	authorizationURL, err := url.Parse(document.Data.AuthorizationURL)
+	expectedPurpose := "register"
+	if targetAccountRef != "" {
+		expectedPurpose = "reauth"
+	}
 	if err != nil ||
 		document.Data.Status != "pending" ||
+		document.Data.Purpose != expectedPurpose ||
+		document.Data.TargetAccountRef != targetAccountRef ||
 		len(document.Data.JobID) != 32 ||
 		authorizationURL.Query().Get("state") == "" {
 		t.Fatalf("创建 %s Job 响应无效", providerID)
@@ -186,6 +309,22 @@ func startLiveJob(
 
 // completeLiveJob 提交回调，但日志只显示脱敏后的 payload。
 func completeLiveJob(
+	t *testing.T,
+	server *httptest.Server,
+	jobID string,
+	callback string,
+) liveExchange {
+	t.Helper()
+
+	exchange := submitLiveJobCallback(t, server, jobID, callback)
+	if exchange.status != http.StatusOK {
+		t.Fatalf("完成 Job status=%d body=%s", exchange.status, exchange.responseBody)
+	}
+	return exchange
+}
+
+// submitLiveJobCallback 提交回调并只记录脱敏后的请求 payload。
+func submitLiveJobCallback(
 	t *testing.T,
 	server *httptest.Server,
 	jobID string,
@@ -207,9 +346,6 @@ func completeLiveJob(
 	redacted := exchange
 	redacted.requestBody = `{"callback":"<redacted>"}`
 	logLiveExchange(t, redacted)
-	if exchange.status != http.StatusOK {
-		t.Fatalf("完成 Job status=%d body=%s", exchange.status, exchange.responseBody)
-	}
 	return exchange
 }
 
@@ -219,12 +355,13 @@ func assertCompletedJob(
 	exchange liveExchange,
 	providerID string,
 	cliAccountID int64,
-) {
+) completedLiveAccount {
 	t.Helper()
 
 	var document struct {
 		Data struct {
 			ProviderID   string `json:"provider_id"`
+			Purpose      string `json:"purpose"`
 			Status       string `json:"status"`
 			AccountRef   string `json:"account_ref"`
 			CLIAccountID int64  `json:"cli_account_id"`
@@ -232,10 +369,106 @@ func assertCompletedJob(
 	}
 	decodeLiveJSON(t, exchange.responseBody, &document)
 	if document.Data.ProviderID != providerID ||
+		document.Data.Purpose != "register" ||
 		document.Data.Status != "completed" ||
 		!strings.HasPrefix(document.Data.AccountRef, "acct_") ||
 		document.Data.CLIAccountID != cliAccountID {
 		t.Fatalf("completed Job = %#v", document.Data)
+	}
+	return completedLiveAccount{
+		providerID:   providerID,
+		accountRef:   document.Data.AccountRef,
+		cliAccountID: document.Data.CLIAccountID,
+	}
+}
+
+// completedLiveAccount 保存注册后用于验证 reauth 身份不变的公开投影。
+type completedLiveAccount struct {
+	providerID   string
+	accountRef   string
+	cliAccountID int64
+}
+
+// assertSameReauthenticatedAccount 验证 reauth 结果保留账号引用和数字别名。
+func assertSameReauthenticatedAccount(
+	t *testing.T,
+	exchange liveExchange,
+	expected completedLiveAccount,
+) {
+	t.Helper()
+
+	var document struct {
+		Data struct {
+			ProviderID       string `json:"provider_id"`
+			Purpose          string `json:"purpose"`
+			TargetAccountRef string `json:"target_account_ref"`
+			Status           string `json:"status"`
+			AccountRef       string `json:"account_ref"`
+			CLIAccountID     int64  `json:"cli_account_id"`
+		} `json:"data"`
+	}
+	decodeLiveJSON(t, exchange.responseBody, &document)
+	if document.Data.ProviderID != expected.providerID ||
+		document.Data.Purpose != "reauth" ||
+		document.Data.TargetAccountRef != expected.accountRef ||
+		document.Data.Status != "completed" ||
+		document.Data.AccountRef != expected.accountRef ||
+		document.Data.CLIAccountID != expected.cliAccountID {
+		t.Fatalf("reauth completed Job = %#v", document.Data)
+	}
+}
+
+// assertReauthenticationCredentials 验证成功替换后的 Token 存在且错误身份没有覆盖它。
+func assertReauthenticationCredentials(
+	t *testing.T,
+	store *sqliteaccount.Store,
+	codexAccountRef string,
+	claudeAccountRef string,
+) {
+	t.Helper()
+
+	codexRef, err := accountcore.ParseAccountRef(codexAccountRef)
+	if err != nil {
+		t.Fatalf("ParseAccountRef(codex) error = %v", err)
+	}
+	codexCredential, err := store.GetCredential(
+		context.Background(),
+		codexRef,
+	)
+	if err != nil {
+		t.Fatalf("GetCredential(codex) error = %v", err)
+	}
+	codexOAuth, valid := codexCredential.(*codex.OAuthAuth)
+	if !valid ||
+		codexOAuth.AccessToken() != smokeCodexReauth ||
+		codexOAuth.RefreshToken() != smokeCodexReauthRT {
+		t.Fatalf("Codex reauth credential = %T", codexCredential)
+	}
+	codexProfile, err := store.GetProfile(context.Background(), codexRef)
+	if err != nil {
+		t.Fatalf("GetProfile(codex) error = %v", err)
+	}
+	if codexProfile.Profile().Email() !=
+		"oauth-live-codex-reauth@example.invalid" {
+		t.Fatalf("Codex reauth profile = %#v", codexProfile)
+	}
+
+	claudeRef, err := accountcore.ParseAccountRef(claudeAccountRef)
+	if err != nil {
+		t.Fatalf("ParseAccountRef(claude) error = %v", err)
+	}
+	claudeCredential, err := store.GetCredential(
+		context.Background(),
+		claudeRef,
+	)
+	if err != nil {
+		t.Fatalf("GetCredential(claude) error = %v", err)
+	}
+	claudeOAuth, valid := claudeCredential.(*claude.OAuthAuth)
+	if !valid ||
+		claudeOAuth.AccessToken() != smokeClaudeReauth ||
+		claudeOAuth.RefreshToken() != smokeClaudeReauthRT {
+		t.Fatalf("Claude reauth credential = %T", claudeCredential)
 	}
 }
 
@@ -243,7 +476,8 @@ func assertCompletedJob(
 func newLiveManagementHandler(
 	t *testing.T,
 	upstreamURL string,
-) http.Handler {
+	clock func() time.Time,
+) (http.Handler, *sqliteaccount.Store) {
 	t.Helper()
 
 	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
@@ -262,11 +496,19 @@ func newLiveManagementHandler(
 			t.Errorf("store.Close() error = %v", err)
 		}
 	})
-	registrar, err := accountapp.NewRegistrar(catalog, store, liveClock)
+	registrar, err := accountapp.NewRegistrar(catalog, store, clock)
 	if err != nil {
 		t.Fatalf("accounts.NewRegistrar() error = %v", err)
 	}
-	management, err := accountapp.NewManagement(store, store, liveClock)
+	reauthenticator, err := accountapp.NewReauthenticator(
+		catalog,
+		store,
+		clock,
+	)
+	if err != nil {
+		t.Fatalf("accounts.NewReauthenticator() error = %v", err)
+	}
+	management, err := accountapp.NewManagement(store, store, clock)
 	if err != nil {
 		t.Fatalf("accounts.NewManagement() error = %v", err)
 	}
@@ -287,11 +529,11 @@ func newLiveManagementHandler(
 			base:   http.DefaultTransport,
 		},
 	}
-	codexProvider, err := codexoauth.New(oauthClient, liveClock)
+	codexProvider, err := codexoauth.New(oauthClient, clock)
 	if err != nil {
 		t.Fatalf("codexoauth.New() error = %v", err)
 	}
-	claudeProvider, err := claudeoauth.New(oauthClient, liveClock)
+	claudeProvider, err := claudeoauth.New(oauthClient, clock)
 	if err != nil {
 		t.Fatalf("claudeoauth.New() error = %v", err)
 	}
@@ -303,7 +545,8 @@ func newLiveManagementHandler(
 		},
 		Decoder:    decoder,
 		Registrar:  registrar,
-		Clock:      liveClock,
+		Reauth:     reauthenticator,
+		Clock:      clock,
 		GenerateID: accountauth.NewRandomJobID,
 	})
 	if err != nil {
@@ -331,7 +574,7 @@ func newLiveManagementHandler(
 	mux.Handle(accountauthapi.CollectionPath+"/", authHandler)
 	mux.Handle(accountsapi.CollectionPath, accountsHandler)
 	mux.Handle(accountsapi.CollectionPath+"/", accountsHandler)
-	return mux
+	return mux, store
 }
 
 // rewriteTransport 把官方 OAuth 请求透明转发到本地 fake upstream。
@@ -364,15 +607,10 @@ func handleFakeOAuthUpstream(
 		if err := request.ParseForm(); err != nil {
 			t.Fatalf("Codex ParseForm() error = %v", err)
 		}
-		if request.Form.Get("code") != "codex-live-code" ||
-			request.Form.Get("code_verifier") == "" {
+		if request.Form.Get("code_verifier") == "" {
 			t.Fatal("Codex token request 缺少 code 或 verifier")
 		}
-		writeUpstreamJSON(t, response, map[string]any{
-			"id_token":      liveCodexJWT(t),
-			"access_token":  smokeCodexAccess,
-			"refresh_token": smokeCodexRefresh,
-		})
+		handleFakeCodexToken(t, response, request.Form.Get("code"))
 	case "/v1/oauth/token":
 		var input struct {
 			Code         string `json:"code"`
@@ -380,50 +618,171 @@ func handleFakeOAuthUpstream(
 			State        string `json:"state"`
 		}
 		if err := json.NewDecoder(request.Body).Decode(&input); err != nil ||
-			input.Code != "claude-live-code" ||
 			input.CodeVerifier == "" ||
 			input.State == "" {
 			t.Fatal("Claude token request 无效")
 		}
-		writeUpstreamJSON(t, response, map[string]any{
-			"access_token":  smokeClaudeAccess,
-			"refresh_token": smokeClaudeRefresh,
-			"expires_in":    3600,
-			"scope":         "user:profile user:inference",
-		})
+		handleFakeClaudeToken(t, response, input.Code)
 	case "/api/oauth/profile":
-		if request.Header.Get("Authorization") != "Bearer "+smokeClaudeAccess {
-			t.Fatal("Claude Profile 缺少正确 Bearer Token")
-		}
-		writeUpstreamJSON(t, response, map[string]any{
-			"account": map[string]any{
-				"uuid":         smokeClaudeAccountID,
-				"email":        "oauth-live-claude@example.invalid",
-				"display_name": "OAuth Live Claude",
-				"created_at":   "2025-01-02T03:04:05Z",
-			},
-			"organization": map[string]any{
-				"uuid":                    "123e4567-e89b-12d3-a456-426614174556",
-				"name":                    "OAuth Live Org",
-				"organization_type":       "claude_max",
-				"rate_limit_tier":         "default_claude_max_20x",
-				"billing_type":            "stripe_subscription",
-				"has_extra_usage_enabled": true,
-				"subscription_created_at": "2025-02-03T04:05:06Z",
-			},
-		})
+		handleFakeClaudeProfile(
+			t,
+			response,
+			request.Header.Get("Authorization"),
+		)
 	default:
 		http.NotFound(response, request)
 	}
 }
 
-// liveClock 返回 smoke 中所有持久化时间的固定值。
-func liveClock() time.Time {
-	return time.Date(2026, 7, 27, 15, 0, 0, 0, time.UTC)
+// handleFakeCodexToken 按授权码返回注册、同身份 reauth 或错误身份产物。
+func handleFakeCodexToken(
+	t *testing.T,
+	response http.ResponseWriter,
+	code string,
+) {
+	t.Helper()
+
+	userID := "oauth-live-codex-user"
+	accountID := "oauth-live-codex-workspace"
+	email := "oauth-live-codex@example.invalid"
+	plan := "team"
+	accessToken := smokeCodexAccess
+	refreshToken := smokeCodexRefresh
+	switch code {
+	case "codex-live-code":
+	case "codex-reauth-code":
+		email = "oauth-live-codex-reauth@example.invalid"
+		plan = "pro"
+		accessToken = smokeCodexReauth
+		refreshToken = smokeCodexReauthRT
+	case "codex-wrong-code":
+		userID = "oauth-live-codex-other-user"
+		accountID = "oauth-live-codex-other-workspace"
+		email = "oauth-live-codex-other@example.invalid"
+		accessToken = smokeCodexWrong
+		refreshToken = smokeCodexWrongRT
+	default:
+		http.Error(response, "unknown synthetic code", http.StatusBadRequest)
+		return
+	}
+	writeUpstreamJSON(t, response, map[string]any{
+		"id_token": liveCodexJWT(
+			t,
+			userID,
+			accountID,
+			email,
+			plan,
+		),
+		"access_token":  accessToken,
+		"refresh_token": refreshToken,
+	})
+}
+
+// handleFakeClaudeToken 返回注册或同身份 reauth 的新 Token。
+func handleFakeClaudeToken(
+	t *testing.T,
+	response http.ResponseWriter,
+	code string,
+) {
+	t.Helper()
+
+	var accessToken, refreshToken string
+	switch code {
+	case "claude-live-code":
+		accessToken = smokeClaudeAccess
+		refreshToken = smokeClaudeRefresh
+	case "claude-reauth-code":
+		accessToken = smokeClaudeReauth
+		refreshToken = smokeClaudeReauthRT
+	default:
+		http.Error(response, "unknown synthetic code", http.StatusBadRequest)
+		return
+	}
+	writeUpstreamJSON(t, response, map[string]any{
+		"access_token":  accessToken,
+		"refresh_token": refreshToken,
+		"expires_in":    3600,
+		"scope":         "user:profile user:inference",
+	})
+}
+
+// handleFakeClaudeProfile 按 Access Token 返回同 UUID 的最新公开资料。
+func handleFakeClaudeProfile(
+	t *testing.T,
+	response http.ResponseWriter,
+	authorization string,
+) {
+	t.Helper()
+
+	email := "oauth-live-claude@example.invalid"
+	displayName := "OAuth Live Claude"
+	organizationType := "claude_max"
+	rateLimitTier := "default_claude_max_20x"
+	switch authorization {
+	case "Bearer " + smokeClaudeAccess:
+	case "Bearer " + smokeClaudeReauth:
+		email = "oauth-live-claude-reauth@example.invalid"
+		displayName = "OAuth Live Claude Reauth"
+		organizationType = "claude_pro"
+		rateLimitTier = ""
+	default:
+		http.Error(response, "unknown synthetic bearer", http.StatusUnauthorized)
+		return
+	}
+	writeUpstreamJSON(t, response, map[string]any{
+		"account": map[string]any{
+			"uuid":         smokeClaudeAccountID,
+			"email":        email,
+			"display_name": displayName,
+			"created_at":   "2025-01-02T03:04:05Z",
+		},
+		"organization": map[string]any{
+			"uuid":                    "123e4567-e89b-12d3-a456-426614174556",
+			"name":                    "OAuth Live Org",
+			"organization_type":       organizationType,
+			"rate_limit_tier":         rateLimitTier,
+			"billing_type":            "stripe_subscription",
+			"has_extra_usage_enabled": true,
+			"subscription_created_at": "2025-02-03T04:05:06Z",
+		},
+	})
+}
+
+// liveClockStub 为注册和 reauth 提供可单调推进的持久化时间。
+type liveClockStub struct {
+	mu      sync.Mutex
+	current time.Time
+}
+
+// newLiveClock 创建 smoke 的固定初始时钟。
+func newLiveClock() *liveClockStub {
+	return &liveClockStub{
+		current: time.Date(2026, 7, 27, 15, 0, 0, 0, time.UTC),
+	}
+}
+
+// now 返回当前 smoke 时间。
+func (clock *liveClockStub) now() time.Time {
+	clock.mu.Lock()
+	defer clock.mu.Unlock()
+	return clock.current
+}
+
+// advance 单调推进 smoke 时间。
+func (clock *liveClockStub) advance(duration time.Duration) {
+	clock.mu.Lock()
+	defer clock.mu.Unlock()
+	clock.current = clock.current.Add(duration)
 }
 
 // liveCodexJWT 创建 fake 官方 token endpoint 返回的合成 ID Token。
-func liveCodexJWT(t *testing.T) string {
+func liveCodexJWT(
+	t *testing.T,
+	userID string,
+	accountID string,
+	email string,
+	plan string,
+) string {
 	t.Helper()
 
 	header, err := json.Marshal(map[string]any{"alg": "none", "typ": "JWT"})
@@ -431,11 +790,11 @@ func liveCodexJWT(t *testing.T) string {
 		t.Fatalf("json.Marshal(header) error = %v", err)
 	}
 	payload, err := json.Marshal(map[string]any{
-		"sub":   "oauth-live-codex-user",
-		"email": "oauth-live-codex@example.invalid",
+		"sub":   userID,
+		"email": email,
 		"https://api.openai.com/auth": map[string]any{
-			"chatgpt_account_id": "oauth-live-codex-workspace",
-			"chatgpt_plan_type":  "team",
+			"chatgpt_account_id": accountID,
+			"chatgpt_plan_type":  plan,
 		},
 	})
 	if err != nil {

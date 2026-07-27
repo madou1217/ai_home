@@ -61,6 +61,14 @@ func newManagementHandlers(
 	if err != nil {
 		return nil, nil, fmt.Errorf("创建账号注册用例失败: %w", err)
 	}
+	reauthenticator, err := accountapp.NewReauthenticator(
+		catalog,
+		store,
+		time.Now,
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("创建账号重新认证用例失败: %w", err)
+	}
 	management, err := accountapp.NewManagement(store, store, time.Now)
 	if err != nil {
 		return nil, nil, fmt.Errorf("创建账号管理用例失败: %w", err)
@@ -99,6 +107,7 @@ func newManagementHandlers(
 		},
 		Decoder:    decoder,
 		Registrar:  registrar,
+		Reauth:     reauthenticator,
 		Clock:      time.Now,
 		GenerateID: accountauth.NewRandomJobID,
 	})

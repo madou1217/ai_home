@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/madou1217/ai_home/application/accountauth"
+	accountcore "github.com/madou1217/ai_home/core/accounts"
 )
 
 const (
@@ -23,7 +24,7 @@ var ErrInvalidDependencies = errors.New("OAuth Job HTTP Handler 依赖无效")
 type Jobs interface {
 	Start(
 		ctx context.Context,
-		providerID string,
+		request accountauth.StartRequest,
 	) (accountauth.StartResult, error)
 	Get(jobID string) (accountauth.Job, error)
 	Complete(
@@ -118,7 +119,17 @@ func (handler *Handler) handleCollection(
 		writeRequestDecodeError(response, err)
 		return
 	}
-	result, err := handler.jobs.Start(request.Context(), input.ProviderID)
+	startRequest, err := newStartRequest(input)
+	if err != nil {
+		writeAPIError(
+			response,
+			http.StatusBadRequest,
+			"invalid_request",
+			"JSON 请求体无效",
+		)
+		return
+	}
+	result, err := handler.jobs.Start(request.Context(), startRequest)
 	if err != nil {
 		writeApplicationError(response, err)
 		return
@@ -129,6 +140,20 @@ func (handler *Handler) handleCollection(
 			AuthorizationURL: result.AuthorizationURL(),
 		},
 	})
+}
+
+// newStartRequest 严格解析可选目标账号，不修剪或纠正客户端输入。
+func newStartRequest(input startJobRequest) (accountauth.StartRequest, error) {
+	request := accountauth.StartRequest{ProviderID: input.ProviderID}
+	if input.TargetAccountRef == "" {
+		return request, nil
+	}
+	accountRef, err := accountcore.ParseAccountRef(input.TargetAccountRef)
+	if err != nil {
+		return accountauth.StartRequest{}, err
+	}
+	request.TargetAccountRef = accountRef
+	return request, nil
 }
 
 // handleMember 分发 Job 查询和取消操作。

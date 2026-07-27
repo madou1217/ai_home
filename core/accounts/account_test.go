@@ -199,6 +199,131 @@ func TestZeroAccountRejectsLifecycleChanges(t *testing.T) {
 	}
 }
 
+func TestRestoreAccountRequiresCanonicalPersistedSnapshot(t *testing.T) {
+	t.Parallel()
+
+	accountRef, err := accounts.ParseAccountRef("acct_4a6fd2d115fe1edacb4a")
+	if err != nil {
+		t.Fatalf("ParseAccountRef() error = %v", err)
+	}
+	cliAccountID, err := accounts.NewCLIAccountID(42)
+	if err != nil {
+		t.Fatalf("NewCLIAccountID() error = %v", err)
+	}
+	createdAt := time.Date(2026, time.July, 27, 1, 2, 3, 0, time.UTC)
+	updatedAt := createdAt.Add(time.Second)
+
+	account, err := accounts.RestoreAccount(builtinCatalog(t), accounts.RestoreAccountInput{
+		Ref:          accountRef,
+		ProviderID:   codex.ProviderID,
+		CLIAccountID: cliAccountID,
+		Enabled:      false,
+		CreatedAt:    createdAt,
+		UpdatedAt:    updatedAt,
+	})
+	if err != nil {
+		t.Fatalf("RestoreAccount() error = %v", err)
+	}
+	if !account.IsValid() || account.Enabled() {
+		t.Fatalf("恢复的账号快照无效: %#v", account)
+	}
+	if account.Ref() != accountRef || account.CLIAccountID() != cliAccountID {
+		t.Fatalf("恢复的账号身份错误: %#v", account)
+	}
+}
+
+func TestRestoreAccountRejectsCorruptPersistedFields(t *testing.T) {
+	t.Parallel()
+
+	accountRef, err := accounts.ParseAccountRef("acct_4a6fd2d115fe1edacb4a")
+	if err != nil {
+		t.Fatalf("ParseAccountRef() error = %v", err)
+	}
+	cliAccountID, err := accounts.NewCLIAccountID(1)
+	if err != nil {
+		t.Fatalf("NewCLIAccountID() error = %v", err)
+	}
+	validTime := time.Date(2026, time.July, 27, 0, 0, 0, 0, time.UTC)
+	valid := accounts.RestoreAccountInput{
+		Ref:          accountRef,
+		ProviderID:   codex.ProviderID,
+		CLIAccountID: cliAccountID,
+		Enabled:      true,
+		CreatedAt:    validTime,
+		UpdatedAt:    validTime,
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*accounts.RestoreAccountInput)
+		target error
+	}{
+		{
+			name: "invalid ref",
+			mutate: func(input *accounts.RestoreAccountInput) {
+				input.Ref = ""
+			},
+			target: accounts.ErrInvalidAccountRef,
+		},
+		{
+			name: "unknown provider",
+			mutate: func(input *accounts.RestoreAccountInput) {
+				input.ProviderID = "future"
+			},
+			target: accounts.ErrUnknownProvider,
+		},
+		{
+			name: "non canonical provider",
+			mutate: func(input *accounts.RestoreAccountInput) {
+				input.ProviderID = " CODEX "
+			},
+			target: accounts.ErrUnknownProvider,
+		},
+		{
+			name: "invalid alias",
+			mutate: func(input *accounts.RestoreAccountInput) {
+				input.CLIAccountID = 0
+			},
+			target: accounts.ErrInvalidCLIAccountID,
+		},
+		{
+			name: "non UTC time",
+			mutate: func(input *accounts.RestoreAccountInput) {
+				input.CreatedAt = time.Date(2026, time.July, 27, 8, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+			},
+			target: accounts.ErrInvalidAccountTime,
+		},
+		{
+			name: "sub millisecond time",
+			mutate: func(input *accounts.RestoreAccountInput) {
+				input.UpdatedAt = input.UpdatedAt.Add(time.Nanosecond)
+			},
+			target: accounts.ErrInvalidAccountTime,
+		},
+		{
+			name: "time regression",
+			mutate: func(input *accounts.RestoreAccountInput) {
+				input.CreatedAt = validTime.Add(time.Second)
+			},
+			target: accounts.ErrAccountTimeRegression,
+		},
+	}
+
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			input := valid
+			test.mutate(&input)
+			_, restoreErr := accounts.RestoreAccount(builtinCatalog(t), input)
+			if !errors.Is(restoreErr, test.target) {
+				t.Fatalf("RestoreAccount() error = %v, want %v", restoreErr, test.target)
+			}
+		})
+	}
+}
+
 func builtinCatalog(t *testing.T) *providers.Catalog {
 	t.Helper()
 

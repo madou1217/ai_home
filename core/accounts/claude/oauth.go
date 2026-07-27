@@ -78,7 +78,7 @@ func NewOAuthAuth(input OAuthInput) (*OAuthAuth, error) {
 		clientID:                clientID,
 		scopes:                  scopes,
 		identity:                identity,
-		identitySeed:            fmt.Sprintf("oauth:claude:uuid:%s", identity.AccountUUID),
+		identitySeed:            oauthIdentitySeed(identity.AccountUUID),
 	}, nil
 }
 

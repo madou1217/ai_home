@@ -36,19 +36,31 @@ func (catalog *Catalog) Get(id string) (Definition, bool) {
 	if catalog == nil {
 		return Definition{}, false
 	}
-	index, ok := catalog.byID[strings.ToLower(strings.TrimSpace(id))]
+	canonicalID, ok := catalog.CanonicalID(id)
 	if !ok {
 		return Definition{}, false
 	}
+	index := catalog.byID[canonicalID]
 	return cloneDefinition(catalog.ordered[index]), true
+}
+
+// CanonicalID 返回规范 Provider ID，不复制包含切片和指针的完整定义。
+//
+// 账号征召等热路径只需要验证身份时应使用该方法，避免为每一行深复制 Provider 合同。
+func (catalog *Catalog) CanonicalID(id string) (string, bool) {
+	if catalog == nil {
+		return "", false
+	}
+	index, found := catalog.byID[strings.ToLower(strings.TrimSpace(id))]
+	if !found {
+		return "", false
+	}
+	return catalog.ordered[index].ID, true
 }
 
 // Contains 判断规范化后的 Provider ID 是否已经注册，不复制完整定义。
 func (catalog *Catalog) Contains(id string) bool {
-	if catalog == nil {
-		return false
-	}
-	_, found := catalog.byID[strings.ToLower(strings.TrimSpace(id))]
+	_, found := catalog.CanonicalID(id)
 	return found
 }
 

@@ -40,12 +40,19 @@ func TestCatalogContainsChecksIdentityWithoutReturningDefinition(t *testing.T) {
 	if !catalog.Contains(" CODEX ") {
 		t.Fatal("Contains() 应按规范化 Provider ID 查询")
 	}
+	canonicalID, found := catalog.CanonicalID(" CODEX ")
+	if !found || canonicalID != "codex" {
+		t.Fatalf("CanonicalID() = (%q, %t), want (codex, true)", canonicalID, found)
+	}
 	if catalog.Contains("future") {
 		t.Fatal("Contains() 不应接受未注册 Provider")
 	}
 	var nilCatalog *Catalog
 	if nilCatalog.Contains("codex") {
 		t.Fatal("nil Catalog 不应包含任何 Provider")
+	}
+	if canonicalID, found := nilCatalog.CanonicalID("codex"); found || canonicalID != "" {
+		t.Fatalf("nil CanonicalID() = (%q, %t), want empty/false", canonicalID, found)
 	}
 }
 

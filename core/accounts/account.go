@@ -30,6 +30,22 @@ type NewAccountInput struct {
 	CreatedAt time.Time
 }
 
+// RestoreAccountInput 是从可信持久化记录恢复账号快照所需的完整输入。
+type RestoreAccountInput struct {
+	// Ref 是账号首次注册时派生且之后不可修改的业务身份。
+	Ref AccountRef
+	// ProviderID 是账号所属的规范 Provider ID。
+	ProviderID string
+	// CLIAccountID 是本机用户可见数字别名。
+	CLIAccountID CLIAccountID
+	// Enabled 是用户控制的账号启停状态。
+	Enabled bool
+	// CreatedAt 是账号首次注册时间。
+	CreatedAt time.Time
+	// UpdatedAt 是账号最后一次业务修改时间。
+	UpdatedAt time.Time
+}
+
 // Account 是账号基础聚合的不可变快照。
 //
 // 凭据、公开资料、套餐、额度、模型和运行态属于独立边界，不能放入该实体。
@@ -69,6 +85,35 @@ func NewAccount(catalog *providers.Catalog, input NewAccountInput) (Account, err
 		enabled:      true,
 		createdAt:    createdAt,
 		updatedAt:    createdAt,
+	}, nil
+}
+
+// RestoreAccount 校验持久化字段并恢复不可变账号快照。
+//
+// 与 NewAccount 不同，该函数不修剪或规范化持久化值；数据库中的非规范数据必须失败关闭。
+func RestoreAccount(catalog *providers.Catalog, input RestoreAccountInput) (Account, error) {
+	if !input.Ref.IsValid() {
+		return Account{}, ErrInvalidAccountRef
+	}
+	if catalog == nil || !isCanonicalProviderID(input.ProviderID) || !catalog.Contains(input.ProviderID) {
+		return Account{}, ErrUnknownProvider
+	}
+	if !input.CLIAccountID.IsValid() {
+		return Account{}, ErrInvalidCLIAccountID
+	}
+	if !isCanonicalAccountTime(input.CreatedAt) || !isCanonicalAccountTime(input.UpdatedAt) {
+		return Account{}, ErrInvalidAccountTime
+	}
+	if input.UpdatedAt.Before(input.CreatedAt) {
+		return Account{}, ErrAccountTimeRegression
+	}
+	return Account{
+		ref:          input.Ref,
+		providerID:   input.ProviderID,
+		cliAccountID: input.CLIAccountID,
+		enabled:      input.Enabled,
+		createdAt:    input.CreatedAt,
+		updatedAt:    input.UpdatedAt,
 	}, nil
 }
 

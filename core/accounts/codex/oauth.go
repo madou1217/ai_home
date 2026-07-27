@@ -86,7 +86,7 @@ func NewOAuthAuth(input OAuthInput) (*OAuthAuth, error) {
 		refreshedAtMS:     input.RefreshedAtMS,
 		accessExpiresAtMS: readAccessTokenExpiryMS(accessToken),
 		profile:           profile,
-		identitySeed:      fmt.Sprintf("oauth:codex:%s:%s", profile.UserID, profile.AccountID),
+		identitySeed:      oauthIdentitySeed(profile.UserID, profile.AccountID),
 	}, nil
 }
 

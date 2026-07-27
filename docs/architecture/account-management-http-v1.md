@@ -2,10 +2,10 @@
 
 ## 1. 状态与边界
 
-本合同实现于 `internal/transport/http/accountsapi`，是可挂载到未来 Go Server
-Composition Root 的 HTTP 入站适配器。当前阶段没有创建临时常驻 Server 命令，也没有
-把路由接入旧 Node Server；因此下面的路径是稳定路由合同，不代表当前生产端口已经提供
-这些接口。
+本合同实现于 `internal/transport/http/accountsapi`，并由 `cmd/aih-server` 的 Go
+Composition Root 挂载。该命令直接装配 Provider Catalog、账号应用用例和
+`$AIH_HOME/aih.db`，不接入旧 Node Server，也不读取 `app-state.db`。Host 设计见
+[Go Server Host v1](go-server-host-v1.md)。
 
 本阶段只覆盖：
 
@@ -34,20 +34,20 @@ internal/adapters/accounts/sqliteaccount
 ```
 
 Transport 不打开数据库、不读取凭据内容、不执行 Provider OAuth，也不依赖 Node
-Server 或 WebUI。未来 Go Server 只负责在 Composition Root 创建依赖并挂载 Handler。
+Server 或 WebUI。`internal/host/aihserver` 负责 Composition Root 和进程生命周期。
 
 ## 3. 通用合同
 
 ### 3.1 基础地址
 
-挂载后的完整地址为：
+默认完整地址为：
 
 ```text
-<go-server-base-url>/v1/management/accounts
+http://127.0.0.1:9527/v1/management/accounts
 ```
 
-真实 TCP smoke 使用 `httptest.Server` 的临时 loopback 端口，并在测试输出中记录当次
-完整地址、脱敏 payload、状态码和 response。
+可以使用 `--port 0` 让操作系统为 smoke 分配临时 loopback 端口。命令启动后输出实际
+监听地址；真实进程 smoke 会记录当次地址、脱敏 payload、状态码和 response。
 
 ### 3.2 鉴权
 
@@ -58,8 +58,8 @@ Authorization: Bearer <Management Key>
 ```
 
 - 缺失、空值、格式错误、多个 `Authorization` 请求头或错误 Key 均返回 `401`。
-- 当前 Key 由 `ManagementKeyProvider` 按请求读取，支持未来由 Composition Root
-  热更新。
+- 当前 Key 由 Composition Root 从 `AIH_SERVER_MANAGEMENT_KEY` 注入
+  `ManagementKeyProvider`；不接受命令行密钥，避免出现在进程参数中。
 - 比较过程使用 SHA-256 摘要和常量时间比较。
 - Management Key、API Key 和内部错误文本不得进入响应。
 
@@ -261,13 +261,14 @@ PATCH 只允许 `enabled`，不接受隐含的 `status`、Provider、别名、�
 
 ```bash
 go test ./internal/transport/http/accountsapi
+go test ./internal/host/aihserver ./cmd/aih-server
 go test -run '^TestAccountsAPILiveSmoke$' -v \
   ./internal/transport/http/accountsapi
 ```
 
-真实 TCP smoke 使用临时 `aih.db` 完成 Codex 创建、Claude 创建、列表、Codex 详情和
-关闭账号的完整链路。测试只使用合成凭据，日志中的 `api_key` 固定显示为
-`<redacted>`。
+真实 TCP 和命令级 smoke 使用临时 `aih.db` 完成 Codex 创建、Claude 创建、列表、
+Codex 详情、关闭账号及优雅退出的完整链路。测试只使用合成凭据，日志中的 `api_key`
+固定显示为 `<redacted>`。
 
 ## 10. 设计模式
 
@@ -278,5 +279,5 @@ go test -run '^TestAccountsAPILiveSmoke$' -v \
 | `Authorizer` | Strategy | 鉴权策略与账号路由解耦，默认失败关闭 |
 | request/response DTO | Anti-Corruption Layer | 阻止 HTTP JSON 形状进入领域对象和凭据内部 |
 
-没有引入 Web 框架、IoC 容器、OAuth 状态机或临时 Go daemon。当前边界使用标准库即可，
-符合 KISS 和 YAGNI。
+没有引入 Web 框架、IoC 容器、OAuth 状态机、Node bridge 或旧数据库兼容。当前边界
+使用标准库即可，符合 KISS 和 YAGNI。

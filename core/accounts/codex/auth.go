@@ -7,6 +7,11 @@ package codex
 
 import "fmt"
 
+const (
+	// ProviderID 是 Codex 认证身份绑定的规范 Provider 标识。
+	ProviderID = "codex"
+)
+
 // AuthKind 表示 Codex 账号唯一允许的认证类型。
 type AuthKind string
 
@@ -34,6 +39,7 @@ func (kind AuthKind) String() string {
 // 未导出的 seal 方法确保只有本包能够增加认证变体，避免调用方绕过构造器不变量。
 type Auth interface {
 	fmt.Stringer
+	ProviderID() string
 	Kind() AuthKind
 	IdentitySeed() string
 	Summary() AuthSummary

@@ -62,6 +62,11 @@ func (*APIKeyAuth) Kind() AuthKind {
 	return AuthKindAPIKey
 }
 
+// ProviderID 返回 Codex 认证身份绑定的规范 Provider 标识。
+func (*APIKeyAuth) ProviderID() string {
+	return ProviderID
+}
+
 // IdentitySeed 返回由规范端点和密钥指纹组成的稳定账号身份种子。
 func (auth *APIKeyAuth) IdentitySeed() string {
 	if auth == nil {

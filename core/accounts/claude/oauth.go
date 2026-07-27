@@ -98,6 +98,11 @@ func (*OAuthAuth) Kind() AuthKind {
 	return AuthKindOAuth
 }
 
+// ProviderID 返回 Claude 认证身份绑定的规范 Provider 标识。
+func (*OAuthAuth) ProviderID() string {
+	return ProviderID
+}
+
 // Mode 返回可刷新 OAuth 模式。
 func (*OAuthAuth) Mode() OAuthMode {
 	return OAuthModeRefreshable

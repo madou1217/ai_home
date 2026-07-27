@@ -43,6 +43,15 @@ func (catalog *Catalog) Get(id string) (Definition, bool) {
 	return cloneDefinition(catalog.ordered[index]), true
 }
 
+// Contains 判断规范化后的 Provider ID 是否已经注册，不复制完整定义。
+func (catalog *Catalog) Contains(id string) bool {
+	if catalog == nil {
+		return false
+	}
+	_, found := catalog.byID[strings.ToLower(strings.TrimSpace(id))]
+	return found
+}
+
 // Supports 判断 Provider 是否声明了指定能力。
 func (catalog *Catalog) Supports(id string, capability Capability) bool {
 	definition, ok := catalog.Get(id)

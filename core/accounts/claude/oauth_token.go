@@ -36,6 +36,11 @@ func (*OAuthTokenAuth) Kind() AuthKind {
 	return AuthKindOAuth
 }
 
+// ProviderID 返回 Claude 认证身份绑定的规范 Provider 标识。
+func (*OAuthTokenAuth) ProviderID() string {
+	return ProviderID
+}
+
 // Mode 返回不可刷新 access token 模式。
 func (*OAuthTokenAuth) Mode() OAuthMode {
 	return OAuthModeAccessToken

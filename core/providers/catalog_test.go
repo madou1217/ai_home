@@ -31,6 +31,24 @@ func TestCatalogQueriesCapabilitiesAndLifecycle(t *testing.T) {
 	}
 }
 
+func TestCatalogContainsChecksIdentityWithoutReturningDefinition(t *testing.T) {
+	// 只验证身份时不能复制完整 Provider 定义，账号批量注册依赖该轻量查询。
+	catalog, err := NewCatalog(BuiltinManifest())
+	if err != nil {
+		t.Fatalf("构建 Provider 注册表失败: %v", err)
+	}
+	if !catalog.Contains(" CODEX ") {
+		t.Fatal("Contains() 应按规范化 Provider ID 查询")
+	}
+	if catalog.Contains("future") {
+		t.Fatal("Contains() 不应接受未注册 Provider")
+	}
+	var nilCatalog *Catalog
+	if nilCatalog.Contains("codex") {
+		t.Fatal("nil Catalog 不应包含任何 Provider")
+	}
+}
+
 func TestCatalogReturnsDefensiveCopies(t *testing.T) {
 	// 调用方修改返回值不能污染注册表中的定义。
 	catalog, err := NewCatalog(BuiltinManifest())

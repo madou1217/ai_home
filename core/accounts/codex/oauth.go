@@ -95,6 +95,11 @@ func (*OAuthAuth) Kind() AuthKind {
 	return AuthKindOAuth
 }
 
+// ProviderID 返回 Codex 认证身份绑定的规范 Provider 标识。
+func (*OAuthAuth) ProviderID() string {
+	return ProviderID
+}
+
 // IdentitySeed 返回不含凭证的稳定账号身份种子。
 func (auth *OAuthAuth) IdentitySeed() string {
 	if auth == nil {

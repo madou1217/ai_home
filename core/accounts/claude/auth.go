@@ -6,6 +6,11 @@ package claude
 
 import "fmt"
 
+const (
+	// ProviderID 是 Claude 认证身份绑定的规范 Provider 标识。
+	ProviderID = "claude"
+)
+
 // AuthKind 表示 Claude 纯账号唯一允许的认证类型。
 type AuthKind string
 
@@ -53,6 +58,7 @@ func (mode OAuthMode) String() string {
 // 未导出的 seal 方法确保调用方只能使用经过本包构造器校验的认证变体。
 type Auth interface {
 	fmt.Stringer
+	ProviderID() string
 	Kind() AuthKind
 	IdentitySeed() string
 	Summary() AuthSummary

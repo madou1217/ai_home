@@ -98,6 +98,11 @@ func (*APIKeyAuth) Kind() AuthKind {
 	return AuthKindAPIKey
 }
 
+// ProviderID 返回 Claude 认证身份绑定的规范 Provider 标识。
+func (*APIKeyAuth) ProviderID() string {
+	return ProviderID
+}
+
 // IdentitySeed 返回端点和 API Key 指纹组成的稳定身份种子。
 func (auth *APIKeyAuth) IdentitySeed() string {
 	if auth == nil {
@@ -162,6 +167,11 @@ func (*APIKeyAuth) seal() {}
 // Kind 返回 auth_token 认证类型。
 func (*AuthTokenAuth) Kind() AuthKind {
 	return AuthKindAuthToken
+}
+
+// ProviderID 返回 Claude 认证身份绑定的规范 Provider 标识。
+func (*AuthTokenAuth) ProviderID() string {
+	return ProviderID
 }
 
 // IdentitySeed 返回端点和 Auth Token 指纹组成的稳定身份种子。

@@ -2,11 +2,13 @@ package sqliteaccount
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	accountcore "github.com/madou1217/ai_home/core/accounts"
 )
 
 func TestStoreListsAccountOverviewsWithoutSecretDocuments(t *testing.T) {
@@ -107,42 +109,156 @@ func TestStoreAccountOverviewUsesStableCursor(t *testing.T) {
 	}
 }
 
+// TestStoreGetsAccountOverviewByRef 验证单账号查询返回公开管理投影。
+func TestStoreGetsAccountOverviewByRef(t *testing.T) {
+	t.Parallel()
+
+	store := openTestStore(t)
+	credential := newTestCodexOAuth(t)
+	account := newAccountForCredential(t, store, credential, 1)
+	registerAccountWithCredential(t, store, account, credential)
+	profile := newProfileSnapshot(
+		t,
+		store,
+		newTestCodexAccountProfile(t),
+		testAccountTime(),
+	)
+	if err := store.UpsertProfile(context.Background(), profile); err != nil {
+		t.Fatalf("UpsertProfile() error = %v", err)
+	}
+
+	overview, err := store.GetAccountOverview(context.Background(), account.Ref())
+	if err != nil {
+		t.Fatalf("GetAccountOverview() error = %v", err)
+	}
+	if overview.Account() != account ||
+		!overview.HasCredential() ||
+		overview.AuthKind() != "oauth" ||
+		!overview.HasProfile() ||
+		overview.Email() != "codex@example.com" ||
+		overview.SubscriptionKind() != "plus" {
+		t.Fatalf("account overview invalid: %#v", overview)
+	}
+}
+
+// TestStoreGetAccountOverviewRejectsInvalidAndMissingRefs 验证无效或不存在身份不会降级查询。
+func TestStoreGetAccountOverviewRejectsInvalidAndMissingRefs(t *testing.T) {
+	t.Parallel()
+
+	store := openTestStore(t)
+	if _, err := store.GetAccountOverview(
+		context.Background(),
+		"invalid",
+	); !errors.Is(err, accountcore.ErrInvalidAccountRef) {
+		t.Fatalf("invalid ref error = %v, want ErrInvalidAccountRef", err)
+	}
+	missingRef, err := accountcore.ParseAccountRef("acct_4a6fd2d115fe1edacb4a")
+	if err != nil {
+		t.Fatalf("ParseAccountRef() error = %v", err)
+	}
+	if _, err := store.GetAccountOverview(
+		context.Background(),
+		missingRef,
+	); !errors.Is(err, accountapp.ErrAccountNotFound) {
+		t.Fatalf("missing ref error = %v, want ErrAccountNotFound", err)
+	}
+}
+
+// TestStoreGetAccountOverviewRejectsIncompatiblePublicMetadata 验证数据库公开标量被篡改后失败关闭。
+func TestStoreGetAccountOverviewRejectsIncompatiblePublicMetadata(t *testing.T) {
+	t.Parallel()
+
+	store := openTestStore(t)
+	credential := newTestCodexOAuth(t)
+	account := newAccountForCredential(t, store, credential, 1)
+	registerAccountWithCredential(t, store, account, credential)
+	profile := newProfileSnapshot(
+		t,
+		store,
+		newTestCodexAccountProfile(t),
+		testAccountTime(),
+	)
+	if err := store.UpsertProfile(context.Background(), profile); err != nil {
+		t.Fatalf("UpsertProfile() error = %v", err)
+	}
+	if _, err := store.db.Exec(
+		"UPDATE account_profiles SET display_name = ? WHERE account_ref = ?",
+		"invalid\nname",
+		account.Ref().String(),
+	); err != nil {
+		t.Fatalf("tamper profile error = %v", err)
+	}
+
+	if _, err := store.GetAccountOverview(
+		context.Background(),
+		account.Ref(),
+	); !errors.Is(err, ErrIncompatibleDatabase) {
+		t.Fatalf("GetAccountOverview() error = %v, want ErrIncompatibleDatabase", err)
+	}
+}
+
 func TestStoreAccountOverviewQueryUsesPrimaryKeys(t *testing.T) {
 	t.Parallel()
 
 	store := openTestStore(t)
-	rows, err := store.db.Query(
-		"EXPLAIN QUERY PLAN "+accountOverviewSQL,
-		"",
-		50,
-	)
-	if err != nil {
-		t.Fatalf("EXPLAIN QUERY PLAN error = %v", err)
+	tests := []struct {
+		name      string
+		statement string
+		arguments []any
+	}{
+		{
+			name:      "keyset list",
+			statement: accountOverviewSQL,
+			arguments: []any{"", 50},
+		},
+		{
+			name:      "point lookup",
+			statement: accountOverviewByRefSQL,
+			arguments: []any{"acct_4a6fd2d115fe1edacb4a"},
+		},
 	}
-	defer func() {
-		_ = rows.Close()
-	}()
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 
-	var details []string
-	for rows.Next() {
-		var id, parent, unused int
-		var detail string
-		if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
-			t.Fatalf("scan query plan error = %v", err)
-		}
-		details = append(details, detail)
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatalf("iterate query plan error = %v", err)
-	}
-	queryPlan := strings.Join(details, "\n")
-	for _, expected := range []string{
-		"SEARCH a USING PRIMARY KEY",
-		"SEARCH c USING PRIMARY KEY",
-		"SEARCH p USING PRIMARY KEY",
-	} {
-		if !strings.Contains(queryPlan, expected) {
-			t.Fatalf("overview query plan = %q, want %q", queryPlan, expected)
-		}
+			rows, err := store.db.Query(
+				"EXPLAIN QUERY PLAN "+test.statement,
+				test.arguments...,
+			)
+			if err != nil {
+				t.Fatalf("EXPLAIN QUERY PLAN error = %v", err)
+			}
+			defer func() {
+				_ = rows.Close()
+			}()
+
+			var details []string
+			for rows.Next() {
+				var id, parent, unused int
+				var detail string
+				if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+					t.Fatalf("scan query plan error = %v", err)
+				}
+				details = append(details, detail)
+			}
+			if err := rows.Err(); err != nil {
+				t.Fatalf("iterate query plan error = %v", err)
+			}
+			queryPlan := strings.Join(details, "\n")
+			for _, expected := range []string{
+				"SEARCH a USING PRIMARY KEY",
+				"SEARCH c USING PRIMARY KEY",
+				"SEARCH p USING PRIMARY KEY",
+			} {
+				if !strings.Contains(queryPlan, expected) {
+					t.Fatalf("overview query plan = %q, want %q", queryPlan, expected)
+				}
+			}
+			if strings.Contains(test.statement, "credential_json") ||
+				strings.Contains(test.statement, "profile_json") {
+				t.Fatal("账号管理 SQL 不得读取凭据或公开资料 JSON")
+			}
+		})
 	}
 }

@@ -32,16 +32,21 @@ func NewOverviewQuery(
 	afterRef accountcore.AccountRef,
 	limit int,
 ) (OverviewQuery, error) {
-	if afterRef != "" && !afterRef.IsValid() {
-		return OverviewQuery{}, ErrInvalidOverview
-	}
 	if limit == 0 {
 		limit = DefaultOverviewLimit
 	}
-	if limit < 1 || limit > MaxOverviewLimit {
+	query := OverviewQuery{afterRef: afterRef, limit: limit}
+	if !query.IsValid() {
 		return OverviewQuery{}, ErrInvalidOverview
 	}
-	return OverviewQuery{afterRef: afterRef, limit: limit}, nil
+	return query, nil
+}
+
+// IsValid 判断查询是否只能产生有界的稳定游标分页。
+func (query OverviewQuery) IsValid() bool {
+	return (query.afterRef == "" || query.afterRef.IsValid()) &&
+		query.limit >= 1 &&
+		query.limit <= MaxOverviewLimit
 }
 
 // AfterRef 返回不包含在下一页中的 AccountRef 游标。
@@ -159,6 +164,10 @@ type AccountOverviewStore interface {
 		ctx context.Context,
 		query OverviewQuery,
 	) ([]AccountOverview, error)
+	GetAccountOverview(
+		ctx context.Context,
+		accountRef accountcore.AccountRef,
+	) (AccountOverview, error)
 }
 
 // validCredentialOverview 校验凭据存在标记和公开认证类型的一致性。

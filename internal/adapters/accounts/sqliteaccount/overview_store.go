@@ -2,16 +2,19 @@ package sqliteaccount
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	accountcore "github.com/madou1217/ai_home/core/accounts"
 )
 
-// accountOverviewSQL 是账号管理列表及查询计划验证的单一 SQL 合同。
+// accountOverviewSelectSQL 集中定义账号管理查询允许读取的公开标量。
 //
-// 该查询只读取凭据类型和公开资料标量，禁止选择 credential_json 或 profile_json。
-const accountOverviewSQL = `
+// 账号管理查询禁止选择 credential_json 或 profile_json。
+const accountOverviewSelectSQL = `
 	SELECT a.account_ref, a.provider_id, a.cli_account_id, a.enabled,
 	       a.created_at_ms, a.updated_at_ms,
 	       c.account_ref IS NOT NULL,
@@ -22,10 +25,18 @@ const accountOverviewSQL = `
 	       COALESCE(p.updated_at_ms, 0)
 	FROM accounts AS a
 	LEFT JOIN account_credentials AS c ON c.account_ref = a.account_ref
-	LEFT JOIN account_profiles AS p ON p.account_ref = a.account_ref
+	LEFT JOIN account_profiles AS p ON p.account_ref = a.account_ref`
+
+// accountOverviewSQL 是账号管理列表及查询计划验证的 keyset SQL 合同。
+const accountOverviewSQL = accountOverviewSelectSQL + `
 	WHERE a.account_ref > ?
 	ORDER BY a.account_ref
 	LIMIT ?`
+
+// accountOverviewByRefSQL 是账号管理详情使用的主键点查 SQL 合同。
+const accountOverviewByRefSQL = accountOverviewSelectSQL + `
+	WHERE a.account_ref = ?
+	LIMIT 1`
 
 var _ accountapp.AccountOverviewStore = (*Store)(nil)
 
@@ -34,6 +45,9 @@ func (store *Store) ListAccountOverviews(
 	ctx context.Context,
 	query accountapp.OverviewQuery,
 ) ([]accountapp.AccountOverview, error) {
+	if !query.IsValid() {
+		return nil, accountapp.ErrInvalidOverview
+	}
 	rows, err := store.db.QueryContext(
 		ctx,
 		accountOverviewSQL,
@@ -61,6 +75,21 @@ func (store *Store) ListAccountOverviews(
 	return overviews, nil
 }
 
+// GetAccountOverview 按稳定账号身份读取无敏感数据的账号管理投影。
+func (store *Store) GetAccountOverview(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+) (accountapp.AccountOverview, error) {
+	if !accountRef.IsValid() {
+		return accountapp.AccountOverview{}, accountcore.ErrInvalidAccountRef
+	}
+	return store.scanAccountOverview(store.db.QueryRowContext(
+		ctx,
+		accountOverviewByRefSQL,
+		accountRef.String(),
+	))
+}
+
 // scanAccountOverview 校验账号、凭据类型和公开资料标量。
 func (store *Store) scanAccountOverview(row rowScanner) (accountapp.AccountOverview, error) {
 	var record accountRecord
@@ -83,6 +112,9 @@ func (store *Store) scanAccountOverview(row rowScanner) (accountapp.AccountOverv
 		&input.SubscriptionRaw,
 		&profileUpdatedAtMS,
 	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return accountapp.AccountOverview{}, accountapp.ErrAccountNotFound
+		}
 		return accountapp.AccountOverview{}, fmt.Errorf("读取账号管理投影失败: %w", err)
 	}
 	account, err := store.restoreAccount(record)

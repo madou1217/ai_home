@@ -54,6 +54,17 @@ func BenchmarkAccountReadModels(benchmark *testing.B) {
 					}
 				}
 			})
+			benchmark.Run("overview_by_ref", func(benchmark *testing.B) {
+				benchmark.ReportAllocs()
+				for range benchmark.N {
+					if _, err := store.GetAccountOverview(
+						context.Background(),
+						targetRef,
+					); err != nil {
+						benchmark.Fatalf("GetAccountOverview() error = %v", err)
+					}
+				}
+			})
 			benchmark.Run("overview_load_all", func(benchmark *testing.B) {
 				benchmark.ReportAllocs()
 				for range benchmark.N {

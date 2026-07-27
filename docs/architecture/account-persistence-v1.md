@@ -37,6 +37,10 @@ Provider 凭据和公开资料分别使用 codec strategy 注册到 SQLite Adapt
 时只增加已经研究确认的领域值和对应 codec，不修改表结构、Account Core 或账号查询
 SQL。账号管理列表使用独立只读投影端口，不让管理查询依赖或反序列化凭据。
 
+`application/accounts.Management` 当前只编排有界列表、AccountRef 详情和用户启停。
+读取端口与生命周期写入端口保持独立，启停时间通过应用时钟注入。注册、凭据刷新、
+删除、导入导出不得继续堆入该类型。
+
 ## 3. `accounts`
 
 | 字段 | SQLite 类型 | 约束与含义 |
@@ -220,6 +224,7 @@ Token、API Key 或 Auth Token。
 | 按需读取凭据 | `WHERE account_ref = ?` | `account_credentials` 主键 |
 | 按需读取资料 | `WHERE account_ref = ?` | `account_profiles` 主键 |
 | 账号管理列表 | 三表按主键 `LEFT JOIN`，`account_ref > ? ORDER BY account_ref LIMIT ?` | 三张表主键 |
+| 账号管理详情 | 三表按主键 `LEFT JOIN`，`account_ref = ? LIMIT 1` | 三张表主键 |
 
 `idx_accounts_routing(provider_id, account_ref, cli_account_id) WHERE enabled=1`
 覆盖完整 RoutingAccount 查询。SQL 只读取 `account_ref`、`cli_account_id`；
@@ -309,15 +314,17 @@ fixture 使用身份一致的 Codex 合成公开资料，不读取本机或真�
 | 账号数 | 操作 | 中位耗时 | B/op | allocs/op |
 | ---: | --- | ---: | ---: | ---: |
 | 10,000 | Profile 按 AccountRef 点查并领域重构 | 23.92µs | 4,484 | 110 |
+| 10,000 | 账号管理详情按 AccountRef 点查 | 36.70µs | 2,040 | 48 |
 | 10,000 | 账号管理首屏 `LIMIT 50` | 117.16µs | 51,168 | 1,027 |
 | 10,000 | keyset 分页加载全部账号管理投影 | 33.06ms | 21,802,070 | 200,956 |
 | 100,000 | Profile 按 AccountRef 点查并领域重构 | 44.53µs | 4,483 | 110 |
+| 100,000 | 账号管理详情按 AccountRef 点查 | 36.17µs | 2,040 | 48 |
 | 100,000 | 账号管理首屏 `LIMIT 50` | 124.08µs | 51,168 | 1,027 |
 | 100,000 | keyset 分页加载全部账号管理投影 | 213.01ms | 235,039,235 | 2,011,496 |
 
 账号管理正常路径固定分页 50 条，账号量扩大十倍后首屏耗时只增加约 6%，单次分配量
-不变。100,000 条全载会产生约 235MB 累计分配，因此只保留为压力基线；CLI、Server
-和 WebUI 均不得把全载作为常规列表或征召策略。
+不变；详情点查在两个规模下均约 36µs。100,000 条全载会产生约 235MB 累计分配，
+因此只保留为压力基线；CLI、Server 和 WebUI 均不得把全载作为常规列表或征召策略。
 
 ### 8.4 全量回归
 

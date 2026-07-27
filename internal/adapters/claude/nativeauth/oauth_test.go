@@ -10,10 +10,11 @@ import (
 
 // TestDecodeOAuth 证明上层可以通过一个入口组合官方身份与 secure storage。
 func TestDecodeOAuth(t *testing.T) {
-	auth, err := DecodeOAuth(validSecureStorage(), validGlobalConfig())
+	artifacts, err := DecodeOAuth(validSecureStorage(), validGlobalConfig())
 	if err != nil {
 		t.Fatalf("组合解析 Claude OAuth 失败: %v", err)
 	}
+	auth := artifacts.Auth
 	if auth.Kind() != claude.AuthKindOAuth {
 		t.Fatalf("认证类型错误: %s", auth.Kind())
 	}
@@ -25,6 +26,13 @@ func TestDecodeOAuth(t *testing.T) {
 	}
 	if auth.RefreshTokenExpiresAtMS() != 4_105_036_800_000 || auth.ClientID() != "claude-code-official-client" {
 		t.Fatal("官方可选 OAuth 元数据没有进入领域对象")
+	}
+	if artifacts.Profile.Email() != "owner@example.com" ||
+		artifacts.Profile.DisplayName() != "Owner" {
+		t.Fatal("公开账号资料没有进入独立领域对象")
+	}
+	if artifacts.Subscription.Kind() != claude.SubscriptionKindMax {
+		t.Fatalf("订阅值没有进入独立领域对象: %s", artifacts.Subscription.Kind())
 	}
 }
 
@@ -69,5 +77,5 @@ func validSecureStorage() []byte {
 
 // validGlobalConfig 返回官方独立 oauthAccount 身份测试数据。
 func validGlobalConfig() []byte {
-	return []byte(`{"oauthAccount":{"accountUuid":"123e4567-e89b-12d3-a456-426614174000","emailAddress":"owner@example.com","organizationUuid":"223e4567-e89b-12d3-a456-426614174000"}}`)
+	return []byte(`{"oauthAccount":{"accountUuid":"123e4567-e89b-12d3-a456-426614174000","emailAddress":"owner@example.com","organizationUuid":"223e4567-e89b-12d3-a456-426614174000","displayName":"Owner"}}`)
 }

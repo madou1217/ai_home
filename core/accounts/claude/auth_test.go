@@ -32,12 +32,6 @@ func TestNewOAuthAuth(t *testing.T) {
 	if auth.AccountUUID() != strings.ToLower(testAccountUUID) {
 		t.Fatalf("账号 UUID 未规范化: %s", auth.AccountUUID())
 	}
-	if auth.Email() != "owner@example.com" {
-		t.Fatalf("邮箱未规范化: %s", auth.Email())
-	}
-	if auth.OrganizationUUID() != testOrgUUID {
-		t.Fatalf("组织 UUID 错误: %s", auth.OrganizationUUID())
-	}
 	if auth.AccessToken() != testAccessToken || auth.RefreshToken() != testRefreshToken {
 		t.Fatal("OAuth 访问器没有返回原始凭据")
 	}
@@ -49,9 +43,6 @@ func TestNewOAuthAuth(t *testing.T) {
 	}
 	if auth.ClientID() != "claude-code-official-client" {
 		t.Fatalf("OAuth Client ID 错误: %s", auth.ClientID())
-	}
-	if auth.SubscriptionType() != "max" || auth.RateLimitTier() != "default_claude_max_20x" {
-		t.Fatalf("套餐元数据错误: %s / %s", auth.SubscriptionType(), auth.RateLimitTier())
 	}
 	if !auth.HasScope(InferenceScope) || !auth.HasScope("user:profile") {
 		t.Fatalf("OAuth scopes 错误: %v", auth.Scopes())
@@ -138,10 +129,6 @@ func TestNewOAuthAuthRejectsInvalidInput(t *testing.T) {
 		{name: "Scope 重复", mutate: func(input *OAuthInput) { input.Scopes = []string{InferenceScope, InferenceScope} }},
 		{name: "Scope 含空白", mutate: func(input *OAuthInput) { input.Scopes = []string{" user:inference"} }},
 		{name: "账号 UUID 无效", mutate: func(input *OAuthInput) { input.Identity.AccountUUID = "not-a-uuid" }},
-		{name: "邮箱无效", mutate: func(input *OAuthInput) { input.Identity.Email = "not-an-email" }},
-		{name: "组织 UUID 无效", mutate: func(input *OAuthInput) { input.Identity.OrganizationUUID = "org" }},
-		{name: "套餐含控制字符", mutate: func(input *OAuthInput) { input.SubscriptionType = "max\nforged" }},
-		{name: "额度层级过长", mutate: func(input *OAuthInput) { input.RateLimitTier = strings.Repeat("x", maxMetadataLength+1) }},
 		{name: "Client ID 含控制字符", mutate: func(input *OAuthInput) { input.ClientID = "client\nforged" }},
 		{name: "Client ID 过长", mutate: func(input *OAuthInput) { input.ClientID = strings.Repeat("x", maxMetadataLength+1) }},
 	}
@@ -277,11 +264,7 @@ func validOAuthInput() OAuthInput {
 		ClientID:                "claude-code-official-client",
 		Scopes:                  []string{InferenceScope, "user:profile"},
 		Identity: OAuthIdentity{
-			AccountUUID:      testAccountUUID,
-			Email:            "Owner@Example.COM",
-			OrganizationUUID: testOrgUUID,
+			AccountUUID: testAccountUUID,
 		},
-		SubscriptionType: "max",
-		RateLimitTier:    "default_claude_max_20x",
 	}
 }

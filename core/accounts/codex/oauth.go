@@ -78,7 +78,6 @@ func NewOAuthAuth(input OAuthInput) (*OAuthAuth, error) {
 		return nil, err
 	}
 	profile.Email = normalizePublicMetadata(profile.Email)
-	profile.PlanType = normalizePublicMetadata(profile.PlanType)
 
 	return &OAuthAuth{
 		accessToken:       newSecretValue(accessToken),
@@ -178,7 +177,12 @@ func (auth *OAuthAuth) Email() string {
 
 // PlanType 返回 ID Token 提供的套餐类型。
 func (auth *OAuthAuth) PlanType() string {
-	return auth.Profile().PlanType
+	return auth.Profile().Plan.Raw()
+}
+
+// Plan 返回同时包含上游原始值和稳定归类的套餐值。
+func (auth *OAuthAuth) Plan() Plan {
+	return auth.Profile().Plan
 }
 
 // IsFedRAMP 返回官方 FedRAMP claim。
@@ -195,7 +199,8 @@ func (auth *OAuthAuth) Summary() AuthSummary {
 		Kind:              AuthKindOAuth,
 		UserID:            auth.profile.UserID,
 		AccountID:         auth.profile.AccountID,
-		PlanType:          auth.profile.PlanType,
+		PlanType:          auth.profile.Plan.Raw(),
+		PlanFamily:        auth.profile.Plan.Family(),
 		IsFedRAMP:         auth.profile.IsFedRAMP,
 		AccessExpiresAtMS: auth.accessExpiresAtMS,
 		RefreshedAtMS:     auth.refreshedAtMS,

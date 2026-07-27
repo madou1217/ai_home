@@ -51,6 +51,8 @@ type AuthSummary struct {
 	AccountID string
 	// PlanType 是 OAuth 套餐类型。
 	PlanType string
+	// PlanFamily 是 OAuth 套餐的稳定领域归类。
+	PlanFamily PlanFamily
 	// IsFedRAMP 表示 OAuth 账号是否属于 FedRAMP 环境。
 	IsFedRAMP bool
 	// BaseURL 是 API Key 账号规范化后的上游地址。
@@ -66,11 +68,12 @@ func (summary AuthSummary) String() string {
 	switch summary.Kind {
 	case AuthKindOAuth:
 		return fmt.Sprintf(
-			"codex.AuthSummary{kind=%s,user=%s,account=%s,plan=%s,fedramp=%t,access_expires_at_ms=%d,refreshed_at_ms=%d}",
+			"codex.AuthSummary{kind=%s,user=%s,account=%s,plan=%s,plan_family=%s,fedramp=%t,access_expires_at_ms=%d,refreshed_at_ms=%d}",
 			summary.Kind,
 			summary.UserID,
 			summary.AccountID,
 			summary.PlanType,
+			summary.PlanFamily,
 			summary.IsFedRAMP,
 			summary.AccessExpiresAtMS,
 			summary.RefreshedAtMS,

@@ -22,8 +22,8 @@ type Profile struct {
 	AccountID string
 	// Email 是 ID Token 提供的展示邮箱。
 	Email string
-	// PlanType 是 ChatGPT 套餐类型。
-	PlanType string
+	// Plan 是 ChatGPT 上游套餐值及其稳定归类。
+	Plan Plan
 	// IsFedRAMP 表示工作区是否属于 FedRAMP 环境。
 	IsFedRAMP bool
 }
@@ -76,7 +76,7 @@ func parseIDTokenProfile(idToken string) (Profile, error) {
 		UserID:    userID,
 		AccountID: accountID,
 		Email:     firstNonEmpty(claims.Email, claims.Profile.Email),
-		PlanType:  strings.TrimSpace(claims.Auth.ChatGPTPlanType),
+		Plan:      ParsePlan(claims.Auth.ChatGPTPlanType),
 		IsFedRAMP: claims.Auth.AccountIsFedRAMP,
 	}, nil
 }

@@ -21,10 +21,11 @@ func TestDecodeOfficialOAuth(t *testing.T) {
 		"claudeAiOauth":     validOAuthPayload(),
 		"pluginCredentials": map[string]any{"preserved": true},
 	})
-	auth, err := Decode(data, validDecodeOptions())
+	decoded, err := Decode(data, validDecodeOptions())
 	if err != nil {
 		t.Fatalf("解析 Claude secure storage 失败: %v", err)
 	}
+	auth := decoded.Auth
 
 	if auth.Kind() != claude.AuthKindOAuth {
 		t.Fatalf("认证类型错误: %s", auth.Kind())
@@ -41,7 +42,8 @@ func TestDecodeOfficialOAuth(t *testing.T) {
 	if auth.ClientID() != "claude-code-official-client" {
 		t.Fatalf("OAuth Client ID 解析错误: %s", auth.ClientID())
 	}
-	if auth.SubscriptionType() != "max" || auth.RateLimitTier() != "default_claude_max_20x" {
+	if decoded.Subscription.RawType() != "max" ||
+		decoded.Subscription.RateLimitTier() != "default_claude_max_20x" {
 		t.Fatal("官方 OAuth 公开元数据解析错误")
 	}
 }
@@ -72,10 +74,11 @@ func TestDecodeAcceptsMissingOrNullOptionalOAuthMetadata(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			payload := validOAuthPayload()
 			test.mutate(payload)
-			auth, err := Decode(mustJSON(t, map[string]any{"claudeAiOauth": payload}), validDecodeOptions())
+			decoded, err := Decode(mustJSON(t, map[string]any{"claudeAiOauth": payload}), validDecodeOptions())
 			if err != nil {
 				t.Fatalf("解析可选 OAuth 元数据失败: %v", err)
 			}
+			auth := decoded.Auth
 			if auth.RefreshTokenExpiresAtMS() != 0 || auth.ClientID() != "" {
 				t.Fatal("缺失或 null 的可选 OAuth 元数据应映射为领域零值")
 			}
@@ -88,12 +91,41 @@ func TestDecodeAcceptsNullPublicMetadata(t *testing.T) {
 	payload := validOAuthPayload()
 	payload["subscriptionType"] = nil
 	payload["rateLimitTier"] = nil
-	auth, err := Decode(mustJSON(t, map[string]any{"claudeAiOauth": payload}), validDecodeOptions())
+	decoded, err := Decode(mustJSON(t, map[string]any{"claudeAiOauth": payload}), validDecodeOptions())
 	if err != nil {
 		t.Fatalf("解析 null 元数据失败: %v", err)
 	}
-	if auth.SubscriptionType() != "" || auth.RateLimitTier() != "" {
+	if decoded.Subscription.RawType() != "" || decoded.Subscription.RateLimitTier() != "" {
 		t.Fatal("null 元数据应映射为空领域值")
+	}
+}
+
+// TestUnknownSubscriptionRoundTrip 验证未来订阅值通过 Adapter 往返时不会丢失。
+func TestUnknownSubscriptionRoundTrip(t *testing.T) {
+	payload := validOAuthPayload()
+	payload["subscriptionType"] = "future_plan"
+	payload["rateLimitTier"] = "future_tier_42x"
+	decoded, err := Decode(
+		mustJSON(t, map[string]any{"claudeAiOauth": payload}),
+		validDecodeOptions(),
+	)
+	if err != nil {
+		t.Fatalf("解析未来订阅值失败: %v", err)
+	}
+	if decoded.Subscription.Kind() != claude.SubscriptionKindUnknown {
+		t.Fatalf("未来订阅不应伪装成已知类型: %s", decoded.Subscription.Kind())
+	}
+	encoded, err := Encode(decoded)
+	if err != nil {
+		t.Fatalf("编码未来订阅值失败: %v", err)
+	}
+	roundTrip, err := Decode(encoded, validDecodeOptions())
+	if err != nil {
+		t.Fatalf("重新解析未来订阅值失败: %v", err)
+	}
+	if roundTrip.Subscription.RawType() != "future_plan" ||
+		roundTrip.Subscription.RateLimitTier() != "future_tier_42x" {
+		t.Fatal("未来订阅值往返后丢失")
 	}
 }
 
@@ -155,14 +187,16 @@ func TestUpsertPreservesOtherSecureStorageData(t *testing.T) {
 		ClientID:                "claude-code-official-client",
 		Scopes:                  []string{claude.InferenceScope, "user:profile"},
 		Identity:                validDecodeOptions().Identity,
-		SubscriptionType:        "max",
-		RateLimitTier:           "default_claude_max_20x",
 	})
 	if err != nil {
 		t.Fatalf("创建 OAuth 领域值失败: %v", err)
 	}
+	subscription, err := claude.NewSubscription("max", "default_claude_max_20x")
+	if err != nil {
+		t.Fatalf("创建订阅领域值失败: %v", err)
+	}
 
-	encoded, err := Upsert(existing, auth)
+	encoded, err := Upsert(existing, DecodedOAuth{Auth: auth, Subscription: subscription})
 	if err != nil {
 		t.Fatalf("写回 secure storage 失败: %v", err)
 	}
@@ -191,12 +225,17 @@ func TestUpsertPreservesOtherSecureStorageData(t *testing.T) {
 		"subscriptionType",
 		"rateLimitTier",
 	)
-	decoded, err := Decode(encoded, validDecodeOptions())
+	roundTrip, err := Decode(encoded, validDecodeOptions())
 	if err != nil {
 		t.Fatalf("写回结果不能重新解析: %v", err)
 	}
-	if decoded.RefreshTokenExpiresAtMS() != auth.RefreshTokenExpiresAtMS() || decoded.ClientID() != auth.ClientID() {
+	if roundTrip.Auth.RefreshTokenExpiresAtMS() != auth.RefreshTokenExpiresAtMS() ||
+		roundTrip.Auth.ClientID() != auth.ClientID() {
 		t.Fatal("写回结果没有保留官方可选 OAuth 元数据")
+	}
+	if roundTrip.Subscription.RawType() != subscription.RawType() ||
+		roundTrip.Subscription.RateLimitTier() != subscription.RateLimitTier() {
+		t.Fatal("写回结果没有保留订阅元数据")
 	}
 }
 
@@ -212,7 +251,11 @@ func TestEncodeCreatesMinimalOfficialDocument(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建 OAuth 领域值失败: %v", err)
 	}
-	encoded, err := Encode(auth)
+	subscription, err := claude.NewSubscription("", "")
+	if err != nil {
+		t.Fatalf("创建空订阅值失败: %v", err)
+	}
+	encoded, err := Encode(DecodedOAuth{Auth: auth, Subscription: subscription})
 	if err != nil {
 		t.Fatalf("编码 OAuth 失败: %v", err)
 	}
@@ -291,9 +334,7 @@ func validOAuthPayload() map[string]any {
 // validDecodeOptions 返回 secure storage 外部提供的稳定账号身份。
 func validDecodeOptions() DecodeOptions {
 	return DecodeOptions{Identity: claude.OAuthIdentity{
-		AccountUUID:      "123e4567-e89b-12d3-a456-426614174000",
-		Email:            "owner@example.com",
-		OrganizationUUID: "223e4567-e89b-12d3-a456-426614174000",
+		AccountUUID: "123e4567-e89b-12d3-a456-426614174000",
 	}}
 }
 

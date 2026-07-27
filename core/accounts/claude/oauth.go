@@ -2,17 +2,13 @@ package claude
 
 import "fmt"
 
-// OAuthIdentity 是 Claude secure storage 之外的稳定账号身份上下文。
+// OAuthIdentity 是 Claude secure storage 之外的最小稳定账号身份。
 //
-// Claude Code 把 Token 放在 Keychain 或 .credentials.json，却把账号 UUID、邮箱和组织
-// 放在独立 oauthAccount 配置中，因此 Adapter 必须显式提供该上下文，不能从 Token 猜测。
+// Claude Code 把 Token 放在 Keychain 或 .credentials.json，却把账号 UUID 放在独立
+// oauthAccount 配置中，因此 Adapter 必须显式提供该上下文，不能从 Token 猜测。
 type OAuthIdentity struct {
 	// AccountUUID 是 Claude 账号的稳定 UUID，OAuth 领域值必须提供。
 	AccountUUID string
-	// Email 是账号公开邮箱；空值表示登录边界未取得。
-	Email string
-	// OrganizationUUID 是当前组织 UUID；空值表示个人或未知组织。
-	OrganizationUUID string
 }
 
 // OAuthInput 是创建 OAuthAuth 所需的完整输入。
@@ -31,10 +27,6 @@ type OAuthInput struct {
 	Scopes []string
 	// Identity 来自官方 oauthAccount，而不是 secure storage Token 容器。
 	Identity OAuthIdentity
-	// SubscriptionType 是可选 Claude.ai 套餐类型。
-	SubscriptionType string
-	// RateLimitTier 是可选 Claude.ai 额度层级。
-	RateLimitTier string
 }
 
 // OAuthAuth 是构造后不可变的 Claude.ai OAuth 认证值。
@@ -46,8 +38,6 @@ type OAuthAuth struct {
 	clientID                string
 	scopes                  []string
 	identity                OAuthIdentity
-	subscriptionType        string
-	rateLimitTier           string
 	identitySeed            string
 }
 
@@ -79,14 +69,6 @@ func NewOAuthAuth(input OAuthInput) (*OAuthAuth, error) {
 	if err != nil {
 		return nil, err
 	}
-	subscriptionType, err := normalizeMetadata(input.SubscriptionType)
-	if err != nil {
-		return nil, err
-	}
-	rateLimitTier, err := normalizeMetadata(input.RateLimitTier)
-	if err != nil {
-		return nil, err
-	}
 
 	return &OAuthAuth{
 		accessToken:             newSecretValue(accessToken),
@@ -96,8 +78,6 @@ func NewOAuthAuth(input OAuthInput) (*OAuthAuth, error) {
 		clientID:                clientID,
 		scopes:                  scopes,
 		identity:                identity,
-		subscriptionType:        subscriptionType,
-		rateLimitTier:           rateLimitTier,
 		identitySeed:            fmt.Sprintf("oauth:claude:uuid:%s", identity.AccountUUID),
 	}, nil
 }
@@ -108,18 +88,8 @@ func ValidateOAuthIdentity(input OAuthIdentity) (OAuthIdentity, error) {
 	if err != nil {
 		return OAuthIdentity{}, err
 	}
-	email, err := normalizeEmail(input.Email)
-	if err != nil {
-		return OAuthIdentity{}, err
-	}
-	organizationUUID, err := normalizeUUID(input.OrganizationUUID, false, errInvalidOrgUUID)
-	if err != nil {
-		return OAuthIdentity{}, err
-	}
 	return OAuthIdentity{
-		AccountUUID:      accountUUID,
-		Email:            email,
-		OrganizationUUID: organizationUUID,
+		AccountUUID: accountUUID,
 	}, nil
 }
 
@@ -215,46 +185,16 @@ func (auth *OAuthAuth) AccountUUID() string {
 	return auth.Identity().AccountUUID
 }
 
-// Email 返回公开账号邮箱。
-func (auth *OAuthAuth) Email() string {
-	return auth.Identity().Email
-}
-
-// OrganizationUUID 返回当前组织 UUID。
-func (auth *OAuthAuth) OrganizationUUID() string {
-	return auth.Identity().OrganizationUUID
-}
-
-// SubscriptionType 返回官方套餐类型。
-func (auth *OAuthAuth) SubscriptionType() string {
-	if auth == nil {
-		return ""
-	}
-	return auth.subscriptionType
-}
-
-// RateLimitTier 返回官方额度层级。
-func (auth *OAuthAuth) RateLimitTier() string {
-	if auth == nil {
-		return ""
-	}
-	return auth.rateLimitTier
-}
-
 // Summary 返回不包含 Token 的认证摘要。
 func (auth *OAuthAuth) Summary() AuthSummary {
 	if auth == nil {
 		return AuthSummary{}
 	}
 	return AuthSummary{
-		Kind:             AuthKindOAuth,
-		OAuthMode:        OAuthModeRefreshable,
-		AccountUUID:      auth.identity.AccountUUID,
-		Email:            auth.identity.Email,
-		OrganizationUUID: auth.identity.OrganizationUUID,
-		SubscriptionType: auth.subscriptionType,
-		RateLimitTier:    auth.rateLimitTier,
-		ExpiresAtMS:      auth.expiresAtMS,
+		Kind:        AuthKindOAuth,
+		OAuthMode:   OAuthModeRefreshable,
+		AccountUUID: auth.identity.AccountUUID,
+		ExpiresAtMS: auth.expiresAtMS,
 	}
 }
 

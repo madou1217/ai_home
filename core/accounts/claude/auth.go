@@ -68,14 +68,6 @@ type AuthSummary struct {
 	OAuthMode OAuthMode
 	// AccountUUID 是 OAuth 的稳定 Claude 账号 UUID。
 	AccountUUID string
-	// Email 是 OAuth 登录得到的公开邮箱。
-	Email string
-	// OrganizationUUID 是 OAuth 当前组织 UUID；空值表示未知。
-	OrganizationUUID string
-	// SubscriptionType 是 Claude.ai 套餐类型；空值表示官方未返回。
-	SubscriptionType string
-	// RateLimitTier 是 Claude.ai 额度层级；空值表示官方未返回。
-	RateLimitTier string
 	// ExpiresAtMS 是 OAuth Access Token 的绝对过期时间。
 	ExpiresAtMS int64
 	// BaseURL 是静态凭据绑定的规范化上游地址。
@@ -95,14 +87,10 @@ func (summary AuthSummary) String() string {
 			)
 		}
 		return fmt.Sprintf(
-			"claude.AuthSummary{kind=%s,oauth_mode=%s,account_uuid=%s,email=%s,organization_uuid=%s,subscription=%s,rate_limit_tier=%s,expires_at_ms=%d}",
+			"claude.AuthSummary{kind=%s,oauth_mode=%s,account_uuid=%s,expires_at_ms=%d}",
 			summary.Kind,
 			summary.OAuthMode,
 			summary.AccountUUID,
-			summary.Email,
-			summary.OrganizationUUID,
-			summary.SubscriptionType,
-			summary.RateLimitTier,
 			summary.ExpiresAtMS,
 		)
 	case AuthKindAPIKey, AuthKindAuthToken:

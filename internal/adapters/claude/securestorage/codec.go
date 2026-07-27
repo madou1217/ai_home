@@ -32,6 +32,14 @@ type DecodeOptions struct {
 	Identity claude.OAuthIdentity
 }
 
+// DecodedOAuth 是 secure storage 中凭据与公开订阅元数据的分层结果。
+type DecodedOAuth struct {
+	// Auth 是只包含认证不变量和稳定账号 UUID 的领域凭据。
+	Auth *claude.OAuthAuth
+	// Subscription 是与凭据分离的 Claude.ai 订阅值。
+	Subscription claude.Subscription
+}
+
 // oauthOutput 是 Claude Code 2.1.207 持久化 OAuth 的精确字段形态。
 type oauthOutput struct {
 	AccessToken           string   `json:"accessToken"`
@@ -44,21 +52,21 @@ type oauthOutput struct {
 	RateLimitTier         *string  `json:"rateLimitTier"`
 }
 
-// Decode 从 Keychain 或 .credentials.json 的原始 JSON 中提取官方 OAuth 凭据。
-func Decode(data []byte, options DecodeOptions) (*claude.OAuthAuth, error) {
+// Decode 从 Keychain 或 .credentials.json 提取分层的 OAuth 凭据与订阅值。
+func Decode(data []byte, options DecodeOptions) (DecodedOAuth, error) {
 	if !utf8.Valid(data) {
-		return nil, invalidCredentials("JSON 必须使用有效 UTF-8")
+		return DecodedOAuth{}, invalidCredentials("JSON 必须使用有效 UTF-8")
 	}
 	document, err := jsonobject.Decode(data)
 	if err != nil {
-		return nil, invalidCredentials("JSON 结构错误")
+		return DecodedOAuth{}, invalidCredentials("JSON 结构错误")
 	}
 	if _, exists := document[legacyOAuthKey]; exists {
-		return nil, invalidCredentials("不接受历史 OAuth 字段别名")
+		return DecodedOAuth{}, invalidCredentials("不接受历史 OAuth 字段别名")
 	}
 	rawOAuth, exists := document[canonicalOAuthKey]
 	if !exists || jsonobject.IsNull(rawOAuth) {
-		return nil, invalidCredentials("claudeAiOauth 缺失")
+		return DecodedOAuth{}, invalidCredentials("claudeAiOauth 缺失")
 	}
 	oauthFields, err := jsonobject.DecodeShape(
 		rawOAuth,
@@ -74,40 +82,44 @@ func Decode(data []byte, options DecodeOptions) (*claude.OAuthAuth, error) {
 		"clientId",
 	)
 	if err != nil {
-		return nil, invalidCredentials("claudeAiOauth 结构错误")
+		return DecodedOAuth{}, invalidCredentials("claudeAiOauth 结构错误")
 	}
 
 	accessToken, err := decodeRequiredString(oauthFields["accessToken"])
 	if err != nil {
-		return nil, invalidCredentials("accessToken 无效")
+		return DecodedOAuth{}, invalidCredentials("accessToken 无效")
 	}
 	refreshToken, err := decodeRequiredString(oauthFields["refreshToken"])
 	if err != nil {
-		return nil, invalidCredentials("refreshToken 无效")
+		return DecodedOAuth{}, invalidCredentials("refreshToken 无效")
 	}
 	expiresAt, err := decodeRequiredInt64(oauthFields["expiresAt"])
 	if err != nil {
-		return nil, invalidCredentials("expiresAt 无效")
+		return DecodedOAuth{}, invalidCredentials("expiresAt 无效")
 	}
 	refreshTokenExpiresAt, err := decodeOptionalPositiveInt64(oauthFields["refreshTokenExpiresAt"])
 	if err != nil {
-		return nil, invalidCredentials("refreshTokenExpiresAt 无效")
+		return DecodedOAuth{}, invalidCredentials("refreshTokenExpiresAt 无效")
 	}
 	clientID, err := decodeOptionalMetadata(oauthFields["clientId"])
 	if err != nil {
-		return nil, invalidCredentials("clientId 无效")
+		return DecodedOAuth{}, invalidCredentials("clientId 无效")
 	}
 	scopes, err := decodeRequiredStrings(oauthFields["scopes"])
 	if err != nil {
-		return nil, invalidCredentials("scopes 无效")
+		return DecodedOAuth{}, invalidCredentials("scopes 无效")
 	}
 	subscriptionType, err := decodeNullableMetadata(oauthFields["subscriptionType"])
 	if err != nil {
-		return nil, invalidCredentials("subscriptionType 无效")
+		return DecodedOAuth{}, invalidCredentials("subscriptionType 无效")
 	}
 	rateLimitTier, err := decodeNullableMetadata(oauthFields["rateLimitTier"])
 	if err != nil {
-		return nil, invalidCredentials("rateLimitTier 无效")
+		return DecodedOAuth{}, invalidCredentials("rateLimitTier 无效")
+	}
+	subscription, domainErr := claude.NewSubscription(subscriptionType, rateLimitTier)
+	if domainErr != nil {
+		return DecodedOAuth{}, invalidCredentials("订阅元数据不满足领域约束")
 	}
 
 	auth, domainErr := claude.NewOAuthAuth(claude.OAuthInput{
@@ -118,38 +130,41 @@ func Decode(data []byte, options DecodeOptions) (*claude.OAuthAuth, error) {
 		ClientID:                clientID,
 		Scopes:                  scopes,
 		Identity:                options.Identity,
-		SubscriptionType:        subscriptionType,
-		RateLimitTier:           rateLimitTier,
 	})
 	if domainErr != nil {
-		return nil, invalidCredentials("OAuth 凭据不满足领域约束")
+		return DecodedOAuth{}, invalidCredentials("OAuth 凭据不满足领域约束")
 	}
-	return auth, nil
+	return DecodedOAuth{Auth: auth, Subscription: subscription}, nil
 }
 
 // Encode 创建只包含 claudeAiOauth 的最小官方 secure storage 文档。
-func Encode(auth *claude.OAuthAuth) ([]byte, error) {
-	return Upsert([]byte("{}"), auth)
+func Encode(decoded DecodedOAuth) ([]byte, error) {
+	return Upsert([]byte("{}"), decoded)
 }
 
 // Upsert 写入 claudeAiOauth，同时原样保留 secure storage 的其他顶层数据。
-func Upsert(existing []byte, auth *claude.OAuthAuth) ([]byte, error) {
-	if auth == nil {
+func Upsert(existing []byte, decoded DecodedOAuth) ([]byte, error) {
+	if decoded.Auth == nil {
 		return nil, invalidCredentials("认证对象为空")
 	}
 	validated, err := claude.NewOAuthAuth(claude.OAuthInput{
-		AccessToken:             auth.AccessToken(),
-		RefreshToken:            auth.RefreshToken(),
-		ExpiresAtMS:             auth.ExpiresAtMS(),
-		RefreshTokenExpiresAtMS: auth.RefreshTokenExpiresAtMS(),
-		ClientID:                auth.ClientID(),
-		Scopes:                  auth.Scopes(),
-		Identity:                auth.Identity(),
-		SubscriptionType:        auth.SubscriptionType(),
-		RateLimitTier:           auth.RateLimitTier(),
+		AccessToken:             decoded.Auth.AccessToken(),
+		RefreshToken:            decoded.Auth.RefreshToken(),
+		ExpiresAtMS:             decoded.Auth.ExpiresAtMS(),
+		RefreshTokenExpiresAtMS: decoded.Auth.RefreshTokenExpiresAtMS(),
+		ClientID:                decoded.Auth.ClientID(),
+		Scopes:                  decoded.Auth.Scopes(),
+		Identity:                decoded.Auth.Identity(),
 	})
 	if err != nil {
 		return nil, invalidCredentials("OAuth 认证对象无效")
+	}
+	subscription, err := claude.NewSubscription(
+		decoded.Subscription.RawType(),
+		decoded.Subscription.RateLimitTier(),
+	)
+	if err != nil {
+		return nil, invalidCredentials("订阅元数据无效")
 	}
 
 	document, err := jsonobject.Decode(existing)
@@ -159,7 +174,7 @@ func Upsert(existing []byte, auth *claude.OAuthAuth) ([]byte, error) {
 	if _, exists := document[legacyOAuthKey]; exists {
 		return nil, invalidCredentials("现有 secure storage 含历史 OAuth 字段别名")
 	}
-	oauthJSON, err := encodeOAuth(validated)
+	oauthJSON, err := encodeOAuth(validated, subscription)
 	if err != nil {
 		return nil, err
 	}
@@ -172,15 +187,15 @@ func Upsert(existing []byte, auth *claude.OAuthAuth) ([]byte, error) {
 }
 
 // encodeOAuth 把已验证的领域值写成官方 camelCase OAuth 对象。
-func encodeOAuth(auth *claude.OAuthAuth) (json.RawMessage, error) {
+func encodeOAuth(auth *claude.OAuthAuth, subscription claude.Subscription) (json.RawMessage, error) {
 	var subscriptionType *string
-	if auth.SubscriptionType() != "" {
-		value := auth.SubscriptionType()
+	if subscription.RawType() != "" {
+		value := subscription.RawType()
 		subscriptionType = &value
 	}
 	var rateLimitTier *string
-	if auth.RateLimitTier() != "" {
-		value := auth.RateLimitTier()
+	if subscription.RateLimitTier() != "" {
+		value := subscription.RateLimitTier()
 		rateLimitTier = &value
 	}
 	encoded, err := json.Marshal(oauthOutput{

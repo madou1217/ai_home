@@ -62,6 +62,14 @@ func TestClassifyClaudeResponse(t *testing.T) {
 			want: runtimecore.FailureModelOverloaded,
 		},
 		{
+			name: "HTTP 529 忽略异常长恢复提示",
+			input: Input{
+				StatusCode: 529,
+				RetryAfter: runtimecore.MaxCooldownHint + time.Hour,
+			},
+			want: runtimecore.FailureModelOverloaded,
+		},
+		{
 			name: "认证失败",
 			input: Input{
 				StatusCode: 401,

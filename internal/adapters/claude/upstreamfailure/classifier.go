@@ -41,7 +41,8 @@ func Classify(input Input) (sharedfailure.Classification, error) {
 		input.UnifiedRateLimit,
 	)
 	retryAfter := time.Duration(0)
-	if carriesRetryAfter {
+	if carriesRetryAfter &&
+		response.RetryAfter() <= runtimecore.MaxCooldownHint {
 		retryAfter = response.RetryAfter()
 	}
 	return sharedfailure.NewClassification(kind, retryAfter)

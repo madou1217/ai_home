@@ -7,9 +7,9 @@
 > cooldown 只表示“预计经过有限时间可以自动恢复，因此在截止时间前暂缓自动重试”。
 
 因此，凭据失效、额度耗尽、工作区停用、模型或地区不支持都不是 cooldown。v1 不修改
-SQLite schema，也不读取旧 Node `runtime_state`。Codex / Claude 结构化错误分类器已经
-接入本合同，但 Go Server 的 HTTP / SSE observer 尚未调用分类器；不能把本阶段解释成
-旧 Node Gateway 已经完成切换。
+SQLite schema，也不读取旧 Node `runtime_state`。Codex / Claude HTTP、SSE 和 Go
+transport Observer 已经接入结构化分类器，但 Go Server 还没有上游执行器调用它们；
+不能把本阶段解释成旧 Node Gateway 已经完成切换。
 
 运行态固定按 `(account_ref, effective_model_id)` 隔离。`effective_model_id` 是完成模型
 别名解析后的真实上游模型 ID；客户端别名不能作为 cooldown 键。v1 不提供账号级请求
@@ -49,13 +49,21 @@ Provider Adapter 必须先把 HTTP、SDK 或 streaming 结果映射为稳定 `Fa
 
 未知 `FailureKind` 必须返回错误，不能获得默认 cooldown。显式 `Retry-After` 或 reset
 提示只允许覆盖三个直接 cooldown 和三个 streak cooldown 的默认等待时间，且最长为
-24 小时；更长限制必须重新分类为 quota 或 policy block。
+24 小时。普通 rate limit 的更长窗口重新分类为 quota block；如果 529/5xx 等明确瞬态
+信号携带冲突的超长 Header，Adapter 丢弃该提示并使用领域默认 cooldown，不能因此把
+模型容量不足猜成额度耗尽。只有 Provider 提供 quota 或 policy 的稳定证据时才进入硬
+阻塞。
 
 ### 2.1 Provider 结构化映射
 
 共享入口只允许 `status_code`、`error_type`、`error_code`、`retry_after` 四类低敏字段。
 错误标识统一为小写，只能包含 ASCII 字母、数字、`_-.` 且最长 80 字符；空格、换行、
 message 和原始响应正文都会被拒绝。HTTP 200 被保留用于 SSE 流内结构化错误。
+
+Observer 读取错误正文时使用 64 KiB 固定上限；非 JSON、过大或读取失败的 HTTP 错误
+仍可按状态码保守分类，但不会保存正文。`Retry-After` 只接受 RFC 秒数或 HTTP 日期，
+非法值被忽略。timeout、`ECONNRESET`、调用方取消都使用 Go `errors.Is/errors.As`
+身份判断，不使用 error message 文本。
 
 Codex 分类器使用以下稳定证据：
 
@@ -74,6 +82,10 @@ Codex 分类器使用以下稳定证据：
 | `content_policy_violation` | `safety_rejected` |
 | 普通 404 | `not_found` |
 
+Codex `response.failed` 允许对当前已确认的
+`Selected model is at capacity. Please try a different model.` 做精确匹配；匹配后只生成
+`model_at_capacity`，原始 message 立即丢弃。相似文案不会按容量不足猜测。
+
 Claude 分类器使用以下稳定证据：
 
 | 结构化信号 | FailureKind |
@@ -90,6 +102,10 @@ Claude 分类器使用以下稳定证据：
 | `api_error`、5xx | `upstream_unavailable` |
 | `safety_rejected` | `safety_rejected` |
 | 普通 404 | `not_found` |
+
+Claude 统一额度只在 `anthropic-ratelimit-unified-status=rejected` 且 overage 不是
+`allowed/allowed_warning` 时成立；普通 429 或仍可使用 overage 的请求继续保持模型级
+`rate_limited`。
 
 明确错误 code/type 的优先级高于宽泛 HTTP 状态。例如 429 +
 `insufficient_quota` 不能降级为普通限流；403 + `oauth_token_revoked` 不能降级为普通
@@ -116,11 +132,14 @@ streak 尚未过期时才累加：
 ## 4. 分层与数据结构
 
 ```text
-Provider HTTP / SDK / SSE observer（后续）
-    原始结果 -> 低敏结构化投影
+Go Server 上游执行器（后续）
+    HTTP Response / 单个 SSE data payload / Go transport error
         ↓
-internal/adapters/{codex,claude}/upstreamfailure
-    Provider 结构化信号 -> 稳定 FailureKind
+internal/adapters/upstreamfailure
+    有界 JSON + Retry-After + transport 低敏投影
+        ↓
+internal/adapters/{codex,claude}/upstreamfailure observer + classifier
+    Provider envelope / safe Header -> 稳定 FailureKind
         ↓
 core/accountruntime
     FailurePolicy + ModelState + Eligibility + ModelRoute
@@ -181,4 +200,9 @@ Claude:
   claude-opus-4-1 -> 选择 account B
   claude-sonnet-4 -> 仍选择 account A
   claude-opus-4-1 成功后 -> 恢复选择 account A
+
+Transport:
+  account A + gpt-5.6-sol 第一次 stream_disconnected -> 仍选择 account A
+  相同元组第二次 stream_disconnected                  -> 选择 account B
+  sibling gpt-5.4                                    -> 仍选择 account A
 ```

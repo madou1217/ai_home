@@ -76,6 +76,14 @@ func TestClassifyCodexResponse(t *testing.T) {
 			want: runtimecore.FailureModelOverloaded,
 		},
 		{
+			name: "模型过载忽略异常长恢复提示",
+			input: Input{
+				StatusCode: 529,
+				RetryAfter: runtimecore.MaxCooldownHint + time.Hour,
+			},
+			want: runtimecore.FailureModelOverloaded,
+		},
+		{
 			name: "流内模型容量不足",
 			input: Input{
 				StatusCode: 200,

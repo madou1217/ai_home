@@ -70,6 +70,29 @@ func TestToolJSONSnapshotsAreImmutable(t *testing.T) {
 	}
 }
 
+// TestToolDefinitionPreservesExplicitStrictMode 验证 Responses 工具的 strict 显式值
+// 不会被 Claude 或 Codex Adapter 按默认值重新猜测。
+func TestToolDefinitionPreservesExplicitStrictMode(t *testing.T) {
+	t.Parallel()
+
+	tool, err := NewToolDefinitionWithStrict("lookup", "", []byte(`{"type":"object"}`), false)
+	if err != nil {
+		t.Fatalf("NewToolDefinitionWithStrict() error = %v", err)
+	}
+	strict, specified := tool.Strict()
+	if !specified || strict {
+		t.Fatalf("ToolDefinition.Strict() = (%t, %t), want (false, true)", strict, specified)
+	}
+
+	defaultTool, err := NewToolDefinition("lookup", "", []byte(`{"type":"object"}`))
+	if err != nil {
+		t.Fatalf("NewToolDefinition() error = %v", err)
+	}
+	if _, specified := defaultTool.Strict(); specified {
+		t.Fatal("未声明 strict 的工具不应被填充默认值")
+	}
+}
+
 // TestToolResultRejectsMissingOrRecursiveContent 验证工具结果不能缺 call ID，
 // 也不能递归包含另一个工具结果来制造模糊配对。
 func TestToolResultRejectsMissingOrRecursiveContent(t *testing.T) {

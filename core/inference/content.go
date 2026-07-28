@@ -14,6 +14,8 @@ type ContentKind string
 const (
 	// ContentText 表示普通可见文本。
 	ContentText ContentKind = "text"
+	// ContentRefusal 表示模型因安全或策略拒绝生成的独立内容。
+	ContentRefusal ContentKind = "refusal"
 	// ContentImage 表示图片输入。
 	ContentImage ContentKind = "image"
 	// ContentDocument 表示文档输入。
@@ -30,6 +32,7 @@ const (
 func (kind ContentKind) IsValid() bool {
 	switch kind {
 	case ContentText,
+		ContentRefusal,
 		ContentImage,
 		ContentDocument,
 		ContentToolCall,
@@ -97,6 +100,8 @@ const (
 	MediaSourceBase64 MediaSourceKind = "base64"
 	// MediaSourceText 表示文档内联的原始文本。
 	MediaSourceText MediaSourceKind = "text"
+	// MediaSourceFileID 表示 Provider 文件存储中的稳定文件引用。
+	MediaSourceFileID MediaSourceKind = "file_id"
 )
 
 // MediaSource 是图片或文档的不可变来源。
@@ -114,13 +119,24 @@ func NewURLMediaSource(rawURL string, mediaType string) (MediaSource, error) {
 	if err != nil ||
 		(parsedURL.Scheme != "http" && parsedURL.Scheme != "https") ||
 		parsedURL.Host == "" ||
-		!isValidMediaType(mediaType) {
+		!isValidOptionalMediaType(mediaType) {
 		return MediaSource{}, ErrInvalidContent
 	}
 	return MediaSource{
 		kind:      MediaSourceURL,
 		mediaType: mediaType,
 		value:     rawURL,
+	}, nil
+}
+
+// NewFileIDMediaSource 创建由客户端协议明确提供的 Provider 文件引用。
+func NewFileIDMediaSource(fileID string) (MediaSource, error) {
+	if !isCanonicalOpaqueID(fileID) {
+		return MediaSource{}, ErrInvalidContent
+	}
+	return MediaSource{
+		kind:  MediaSourceFileID,
+		value: fileID,
 	}, nil
 }
 
@@ -181,9 +197,17 @@ func (source MediaSource) IsValid() bool {
 	case MediaSourceText:
 		_, err := NewTextMediaSource(source.mediaType, source.value)
 		return err == nil
+	case MediaSourceFileID:
+		_, err := NewFileIDMediaSource(source.value)
+		return err == nil && source.mediaType == ""
 	default:
 		return false
 	}
+}
+
+// isValidOptionalMediaType 判断可选 MIME 类型为空或满足完整语法。
+func isValidOptionalMediaType(value string) bool {
+	return value == "" || isValidMediaType(value)
 }
 
 // isValidMediaType 判断 MIME 类型语法完整且没有被静默规范化。
@@ -205,11 +229,16 @@ const (
 	ImageDetailLow ImageDetail = "low"
 	// ImageDetailHigh 表示请求高精度图片解析。
 	ImageDetailHigh ImageDetail = "high"
+	// ImageDetailOriginal 表示请求保留原始图片尺寸和空间细节。
+	ImageDetailOriginal ImageDetail = "original"
 )
 
 // IsValid 判断图片精度是否可以无歧义映射。
 func (detail ImageDetail) IsValid() bool {
-	return detail == ImageDetailAuto || detail == ImageDetailLow || detail == ImageDetailHigh
+	return detail == ImageDetailAuto ||
+		detail == ImageDetailLow ||
+		detail == ImageDetailHigh ||
+		detail == ImageDetailOriginal
 }
 
 // ImageContent 是保留来源与解析精度的图片输入值对象。
@@ -222,7 +251,7 @@ type ImageContent struct {
 func NewImageContent(source MediaSource, detail ImageDetail) (ImageContent, error) {
 	if !source.IsValid() ||
 		source.kind == MediaSourceText ||
-		!strings.HasPrefix(source.mediaType, "image/") ||
+		(source.mediaType != "" && !strings.HasPrefix(source.mediaType, "image/")) ||
 		!detail.IsValid() {
 		return ImageContent{}, ErrInvalidContent
 	}
@@ -262,14 +291,41 @@ func (ImageContent) isContent() {}
 type DocumentContent struct {
 	source MediaSource
 	title  string
+	detail DocumentDetail
 }
 
 // NewDocumentContent 创建 URL、Base64 或内联文本形式的文档输入。
 func NewDocumentContent(source MediaSource, title string) (DocumentContent, error) {
-	if !source.IsValid() || (title != "" && !isNonBlankText(title)) {
+	return NewDetailedDocumentContent(source, title, DocumentDetailAuto)
+}
+
+// DocumentDetail 表示客户端对文档解析精度的明确意图。
+type DocumentDetail string
+
+const (
+	// DocumentDetailAuto 表示由上游决定文档解析精度。
+	DocumentDetailAuto DocumentDetail = "auto"
+	// DocumentDetailLow 表示请求低成本文档解析。
+	DocumentDetailLow DocumentDetail = "low"
+	// DocumentDetailHigh 表示请求高精度文档解析。
+	DocumentDetailHigh DocumentDetail = "high"
+)
+
+// IsValid 判断文档解析精度是否可以无歧义映射。
+func (detail DocumentDetail) IsValid() bool {
+	return detail == DocumentDetailAuto || detail == DocumentDetailLow || detail == DocumentDetailHigh
+}
+
+// NewDetailedDocumentContent 创建保留明确解析精度的文档输入。
+func NewDetailedDocumentContent(
+	source MediaSource,
+	title string,
+	detail DocumentDetail,
+) (DocumentContent, error) {
+	if !source.IsValid() || (title != "" && !isNonBlankText(title)) || !detail.IsValid() {
 		return DocumentContent{}, ErrInvalidContent
 	}
-	return DocumentContent{source: source, title: title}, nil
+	return DocumentContent{source: source, title: title, detail: detail}, nil
 }
 
 // Kind 返回文档内容类别。
@@ -287,9 +343,14 @@ func (content DocumentContent) Title() string {
 	return content.title
 }
 
+// Detail 返回文档解析精度意图。
+func (content DocumentContent) Detail() DocumentDetail {
+	return content.detail
+}
+
 // IsValid 判断文档来源与标题仍满足不变量。
 func (content DocumentContent) IsValid() bool {
-	_, err := NewDocumentContent(content.source, content.title)
+	_, err := NewDetailedDocumentContent(content.source, content.title, content.detail)
 	return err == nil
 }
 
@@ -300,6 +361,42 @@ func (content DocumentContent) cloneContent() Content {
 
 // isContent 将 DocumentContent 限制在 Canonical Content 联合类型内。
 func (DocumentContent) isContent() {}
+
+// RefusalContent 是与普通 Assistant 文本严格分离的安全或策略拒绝。
+type RefusalContent struct {
+	refusal string
+}
+
+// NewRefusalContent 创建非空的模型拒绝内容。
+func NewRefusalContent(refusal string) (RefusalContent, error) {
+	if !isNonBlankText(refusal) {
+		return RefusalContent{}, ErrInvalidContent
+	}
+	return RefusalContent{refusal: refusal}, nil
+}
+
+// Kind 返回模型拒绝内容类别。
+func (content RefusalContent) Kind() ContentKind {
+	return ContentRefusal
+}
+
+// Refusal 返回模型提供的拒绝说明。
+func (content RefusalContent) Refusal() string {
+	return content.refusal
+}
+
+// IsValid 判断拒绝说明仍满足构造不变量。
+func (content RefusalContent) IsValid() bool {
+	return isNonBlankText(content.refusal)
+}
+
+// cloneContent 返回拒绝值对象的独立语义快照。
+func (content RefusalContent) cloneContent() Content {
+	return content
+}
+
+// isContent 将 RefusalContent 限制在 Canonical Content 联合类型内。
+func (RefusalContent) isContent() {}
 
 // Role 是 Canonical Message 的稳定参与方语义。
 type Role string
@@ -320,15 +417,47 @@ func (role Role) IsValid() bool {
 	return role == RoleSystem || role == RoleDeveloper || role == RoleUser || role == RoleAssistant
 }
 
+// MessagePhase 是 Codex assistant 历史的输出阶段语义。
+type MessagePhase string
+
+const (
+	// MessagePhaseCommentary 表示中间进度或分析性输出。
+	MessagePhaseCommentary MessagePhase = "commentary"
+	// MessagePhaseFinalAnswer 表示面向用户的最终回答。
+	MessagePhaseFinalAnswer MessagePhase = "final_answer"
+)
+
+// IsValid 判断消息阶段是否是当前协议支持的明确值。
+func (phase MessagePhase) IsValid() bool {
+	return phase == MessagePhaseCommentary || phase == MessagePhaseFinalAnswer
+}
+
 // Message 是角色和内容块组成的不可变 Canonical 消息。
 type Message struct {
 	role     Role
+	phase    MessagePhase
 	contents []Content
 }
 
 // NewMessage 创建角色与内容组合，并持有内容的防御性副本。
 func NewMessage(role Role, contents ...Content) (Message, error) {
-	if !role.IsValid() || len(contents) == 0 {
+	return newMessage(role, "", contents)
+}
+
+// NewPhasedMessage 创建保留 commentary 或 final_answer 阶段的 Assistant 消息。
+func NewPhasedMessage(
+	role Role,
+	phase MessagePhase,
+	contents ...Content,
+) (Message, error) {
+	return newMessage(role, phase, contents)
+}
+
+// newMessage 统一校验消息角色、阶段和内容组合。
+func newMessage(role Role, phase MessagePhase, contents []Content) (Message, error) {
+	if !role.IsValid() ||
+		len(contents) == 0 ||
+		(phase != "" && (!phase.IsValid() || role != RoleAssistant)) {
 		return Message{}, ErrInvalidMessage
 	}
 	clonedContents := make([]Content, len(contents))
@@ -338,12 +467,17 @@ func NewMessage(role Role, contents ...Content) (Message, error) {
 		}
 		clonedContents[index] = content.cloneContent()
 	}
-	return Message{role: role, contents: clonedContents}, nil
+	return Message{role: role, phase: phase, contents: clonedContents}, nil
 }
 
 // Role 返回消息参与方语义。
 func (message Message) Role() Role {
 	return message.role
+}
+
+// Phase 返回 Assistant 消息的可选输出阶段。
+func (message Message) Phase() MessagePhase {
+	return message.phase
 }
 
 // Contents 返回不能反向修改消息的内容副本。
@@ -353,7 +487,7 @@ func (message Message) Contents() []Content {
 
 // IsValid 判断消息角色、内容和组合仍满足构造不变量。
 func (message Message) IsValid() bool {
-	_, err := NewMessage(message.role, message.contents...)
+	_, err := newMessage(message.role, message.phase, message.contents)
 	return err == nil
 }
 
@@ -361,6 +495,7 @@ func (message Message) IsValid() bool {
 func (message Message) clone() Message {
 	return Message{
 		role:     message.role,
+		phase:    message.phase,
 		contents: cloneContents(message.contents),
 	}
 }
@@ -384,6 +519,8 @@ func isContentAllowedForRole(role Role, content Content) bool {
 	switch typed := content.(type) {
 	case TextContent:
 		return typed.IsValid()
+	case RefusalContent:
+		return role == RoleAssistant && typed.IsValid()
 	case ImageContent:
 		return role == RoleUser && typed.IsValid()
 	case DocumentContent:

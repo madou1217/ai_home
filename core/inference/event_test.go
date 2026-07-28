@@ -97,6 +97,43 @@ func TestReasoningCompletedEventPreservesEncryptedContinuity(t *testing.T) {
 	}
 }
 
+// TestOutputItemEventsPreserveStableItemIdentity 验证 Responses Renderer 可以通过
+// output index 找回真实 item ID，而不是临时生成一个新标识。
+func TestOutputItemEventsPreserveStableItemIdentity(t *testing.T) {
+	t.Parallel()
+
+	started, err := NewOutputItemStartedEvent(1, 0, "msg_exact_1", OutputItemMessage)
+	if err != nil {
+		t.Fatalf("NewOutputItemStartedEvent() error = %v", err)
+	}
+	completed, err := NewOutputItemCompletedEvent(4, 0, "msg_exact_1")
+	if err != nil {
+		t.Fatalf("NewOutputItemCompletedEvent() error = %v", err)
+	}
+	if started.ItemID() != completed.ItemID() ||
+		started.OutputIndex() != completed.OutputIndex() ||
+		started.ItemKind() != OutputItemMessage {
+		t.Fatalf("output item identity changed: started=%#v completed=%#v", started, completed)
+	}
+}
+
+// TestRefusalEventsRemainDistinctFromTextEvents 验证 refusal 增量和终值具有独立事件类型。
+func TestRefusalEventsRemainDistinctFromTextEvents(t *testing.T) {
+	t.Parallel()
+
+	delta, err := NewRefusalDeltaEvent(2, 0, 0, "无法")
+	if err != nil {
+		t.Fatalf("NewRefusalDeltaEvent() error = %v", err)
+	}
+	completed, err := NewRefusalCompletedEvent(3, 0, 0, "无法协助")
+	if err != nil {
+		t.Fatalf("NewRefusalCompletedEvent() error = %v", err)
+	}
+	if delta.Kind() != EventRefusalDelta || completed.Kind() != EventRefusalCompleted {
+		t.Fatalf("refusal events = (%q, %q), want distinct refusal kinds", delta.Kind(), completed.Kind())
+	}
+}
+
 // TestStreamEventsRejectSyntheticSuccessInputs 验证完成事件不能缺结束原因，
 // 增量事件也不能用空值伪造有效输出。
 func TestStreamEventsRejectSyntheticSuccessInputs(t *testing.T) {

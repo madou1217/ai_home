@@ -93,17 +93,36 @@ const (
 type ReasoningEffort string
 
 const (
+	// ReasoningEffortNone 表示明确禁用模型 reasoning。
+	ReasoningEffortNone ReasoningEffort = "none"
+	// ReasoningEffortMinimal 表示最小 reasoning 强度。
+	ReasoningEffortMinimal ReasoningEffort = "minimal"
 	// ReasoningEffortLow 表示低 reasoning 强度。
 	ReasoningEffortLow ReasoningEffort = "low"
 	// ReasoningEffortMedium 表示中 reasoning 强度。
 	ReasoningEffortMedium ReasoningEffort = "medium"
 	// ReasoningEffortHigh 表示高 reasoning 强度。
 	ReasoningEffortHigh ReasoningEffort = "high"
+	// ReasoningEffortXHigh 表示超高 reasoning 强度。
+	ReasoningEffortXHigh ReasoningEffort = "xhigh"
+	// ReasoningEffortMax 表示模型允许的最大 reasoning 强度。
+	ReasoningEffortMax ReasoningEffort = "max"
 )
 
 // IsValid 判断 reasoning 强度是否已经注册。
 func (effort ReasoningEffort) IsValid() bool {
-	return effort == ReasoningEffortLow || effort == ReasoningEffortMedium || effort == ReasoningEffortHigh
+	switch effort {
+	case ReasoningEffortNone,
+		ReasoningEffortMinimal,
+		ReasoningEffortLow,
+		ReasoningEffortMedium,
+		ReasoningEffortHigh,
+		ReasoningEffortXHigh,
+		ReasoningEffortMax:
+		return true
+	default:
+		return false
+	}
 }
 
 // ReasoningSummaryMode 是客户端对 reasoning 摘要的输出意图。
@@ -114,13 +133,18 @@ const (
 	ReasoningSummaryNone ReasoningSummaryMode = "none"
 	// ReasoningSummaryAuto 表示允许上游决定摘要粒度。
 	ReasoningSummaryAuto ReasoningSummaryMode = "auto"
+	// ReasoningSummaryConcise 表示请求精简 reasoning 摘要。
+	ReasoningSummaryConcise ReasoningSummaryMode = "concise"
 	// ReasoningSummaryDetailed 表示请求详细 reasoning 摘要。
 	ReasoningSummaryDetailed ReasoningSummaryMode = "detailed"
 )
 
 // IsValid 判断 reasoning 摘要模式是否已经注册。
 func (mode ReasoningSummaryMode) IsValid() bool {
-	return mode == ReasoningSummaryNone || mode == ReasoningSummaryAuto || mode == ReasoningSummaryDetailed
+	return mode == ReasoningSummaryNone ||
+		mode == ReasoningSummaryAuto ||
+		mode == ReasoningSummaryConcise ||
+		mode == ReasoningSummaryDetailed
 }
 
 // ReasoningConfig 是不携带 Provider 私有字段的 reasoning 请求意图。
@@ -136,7 +160,9 @@ func NewEffortReasoning(
 	effort ReasoningEffort,
 	summary ReasoningSummaryMode,
 ) (ReasoningConfig, error) {
-	if !effort.IsValid() || !summary.IsValid() {
+	if (effort == "" && summary == "") ||
+		(effort != "" && !effort.IsValid()) ||
+		(summary != "" && !summary.IsValid()) {
 		return ReasoningConfig{}, ErrInvalidReasoning
 	}
 	return ReasoningConfig{
@@ -196,7 +222,10 @@ func (config ReasoningConfig) Summary() ReasoningSummaryMode {
 func (config ReasoningConfig) IsValid() bool {
 	switch config.mode {
 	case ReasoningModeEffort:
-		return config.effort.IsValid() && config.budgetTokens == 0 && config.summary.IsValid()
+		return config.budgetTokens == 0 &&
+			(config.effort == "" || config.effort.IsValid()) &&
+			(config.summary == "" || config.summary.IsValid()) &&
+			(config.effort != "" || config.summary != "")
 	case ReasoningModeBudget:
 		return config.effort == "" && config.budgetTokens > 0 && config.summary.IsValid()
 	case ReasoningModeAdaptive:
@@ -325,6 +354,66 @@ func (choice ToolChoice) IsValid() bool {
 		(choice.mode == ToolChoiceAuto || choice.mode == ToolChoiceNone || choice.mode == ToolChoiceRequired)
 }
 
+// ContinuationKind 是请求显式复用历史上下文的方式。
+type ContinuationKind string
+
+const (
+	// ContinuationPreviousResponse 表示复用 Responses previous_response_id。
+	ContinuationPreviousResponse ContinuationKind = "previous_response"
+	// ContinuationConversation 表示复用 Provider 管理的 conversation。
+	ContinuationConversation ContinuationKind = "conversation"
+)
+
+// IsValid 判断连续性方式是否已经注册。
+func (kind ContinuationKind) IsValid() bool {
+	return kind == ContinuationPreviousResponse || kind == ContinuationConversation
+}
+
+// Continuation 是允许引用请求外历史工具调用的明确上下文身份。
+type Continuation struct {
+	kind ContinuationKind
+	id   string
+}
+
+// NewContinuation 创建具有稳定 ID 的历史上下文引用。
+func NewContinuation(kind ContinuationKind, id string) (Continuation, error) {
+	if !kind.IsValid() || !isCanonicalOpaqueID(id) {
+		return Continuation{}, ErrInvalidRequest
+	}
+	return Continuation{kind: kind, id: id}, nil
+}
+
+// Kind 返回历史上下文引用方式。
+func (continuation Continuation) Kind() ContinuationKind {
+	return continuation.kind
+}
+
+// ID 返回历史响应或 conversation 的精确标识。
+func (continuation Continuation) ID() string {
+	return continuation.id
+}
+
+// IsValid 判断连续性方式与 ID 仍满足构造不变量。
+func (continuation Continuation) IsValid() bool {
+	_, err := NewContinuation(continuation.kind, continuation.id)
+	return err == nil
+}
+
+// TruncationMode 是请求超出上下文窗口时的处理意图。
+type TruncationMode string
+
+const (
+	// TruncationAuto 表示允许上游从上下文开头删除输入项。
+	TruncationAuto TruncationMode = "auto"
+	// TruncationDisabled 表示上下文过长时失败关闭。
+	TruncationDisabled TruncationMode = "disabled"
+)
+
+// IsValid 判断截断策略是否已经注册。
+func (mode TruncationMode) IsValid() bool {
+	return mode == TruncationAuto || mode == TruncationDisabled
+}
+
 // RequestInput 是 Client Decoder 创建 Canonical Request 的显式输入。
 type RequestInput struct {
 	// ClientProtocol 是请求进入 AI Home 时使用的协议。
@@ -353,6 +442,14 @@ type RequestInput struct {
 	TopP *float64
 	// StopSequences 是必须原样保留的非空停止序列。
 	StopSequences []string
+	// Store 表示客户端是否明确要求 Provider 保存响应状态。
+	Store *bool
+	// IncludeEncryptedReasoning 表示客户端要求返回加密 reasoning 连续性。
+	IncludeEncryptedReasoning bool
+	// Truncation 是可选的上下文截断策略。
+	Truncation TruncationMode
+	// Continuation 是可选的历史响应或 conversation 引用。
+	Continuation *Continuation
 	// ExternalToolCallIDs 是 continuation 上下文中明确已知的工具调用 ID。
 	//
 	// 该字段只允许精确匹配，不允许 Decoder 根据顺序猜测调用。
@@ -374,6 +471,10 @@ type Request struct {
 	temperature       *float64
 	topP              *float64
 	stopSequences     []string
+	store             *bool
+	includeEncrypted  bool
+	truncation        TruncationMode
+	continuation      *Continuation
 	capabilities      CapabilitySet
 }
 
@@ -415,6 +516,10 @@ func NewRequest(input RequestInput) (Request, error) {
 		temperature:       cloneFloat(input.Temperature),
 		topP:              cloneFloat(input.TopP),
 		stopSequences:     append([]string(nil), input.StopSequences...),
+		store:             cloneBool(input.Store),
+		includeEncrypted:  input.IncludeEncryptedReasoning,
+		truncation:        input.Truncation,
+		continuation:      cloneContinuation(input.Continuation),
 	}
 	request.capabilities = deriveRequiredCapabilities(request)
 	return request, nil
@@ -511,6 +616,32 @@ func (request Request) StopSequences() []string {
 	return append([]string(nil), request.stopSequences...)
 }
 
+// Store 返回客户端是否明确设置 Provider 响应存储。
+func (request Request) Store() (bool, bool) {
+	if request.store == nil {
+		return false, false
+	}
+	return *request.store, true
+}
+
+// IncludeEncryptedReasoning 返回是否要求响应携带加密 reasoning 连续性。
+func (request Request) IncludeEncryptedReasoning() bool {
+	return request.includeEncrypted
+}
+
+// Truncation 返回可选上下文截断策略。
+func (request Request) Truncation() (TruncationMode, bool) {
+	return request.truncation, request.truncation != ""
+}
+
+// Continuation 返回可选的历史上下文身份。
+func (request Request) Continuation() (Continuation, bool) {
+	if request.continuation == nil {
+		return Continuation{}, false
+	}
+	return *request.continuation, true
+}
+
 // RequiredCapabilities 返回构造时一次性推导的能力位图。
 func (request Request) RequiredCapabilities() CapabilitySet {
 	return request.capabilities
@@ -565,6 +696,15 @@ func validateRequestOptions(input RequestInput, tools []ToolDefinition) error {
 		return ErrInvalidReasoning
 	}
 	if input.StructuredOutput != nil && !input.StructuredOutput.IsValid() {
+		return ErrInvalidRequest
+	}
+	if input.Continuation != nil && !input.Continuation.IsValid() {
+		return ErrInvalidRequest
+	}
+	if input.Truncation != "" && !input.Truncation.IsValid() {
+		return ErrInvalidRequest
+	}
+	if len(input.ExternalToolCallIDs) > 0 && input.Continuation == nil {
 		return ErrInvalidRequest
 	}
 	return nil
@@ -626,6 +766,9 @@ func deriveRequiredCapabilities(request Request) CapabilitySet {
 		required = required.with(CapabilityTools)
 	}
 	if request.reasoning != nil {
+		required = required.with(CapabilityReasoning)
+	}
+	if request.includeEncrypted {
 		required = required.with(CapabilityReasoning)
 	}
 	if request.structuredOutput != nil {
@@ -730,6 +873,15 @@ func cloneBool(value *bool) *bool {
 
 // cloneFloat 返回可选浮点值的独立副本。
 func cloneFloat(value *float64) *float64 {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
+}
+
+// cloneContinuation 返回可选历史上下文身份的独立副本。
+func cloneContinuation(value *Continuation) *Continuation {
 	if value == nil {
 		return nil
 	}

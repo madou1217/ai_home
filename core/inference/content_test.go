@@ -67,6 +67,25 @@ func TestMediaContentPreservesTypedSources(t *testing.T) {
 	if document.Kind() != ContentDocument || document.Title() != "协议说明" {
 		t.Fatalf("document = %#v, want titled document", document)
 	}
+	detailedDocument, err := NewDetailedDocumentContent(documentSource, "协议说明", DocumentDetailHigh)
+	if err != nil {
+		t.Fatalf("NewDetailedDocumentContent() error = %v", err)
+	}
+	if detailedDocument.Detail() != DocumentDetailHigh {
+		t.Fatalf("DocumentContent.Detail() = %q, want %q", detailedDocument.Detail(), DocumentDetailHigh)
+	}
+
+	fileSource, err := NewFileIDMediaSource("file_exact_1")
+	if err != nil {
+		t.Fatalf("NewFileIDMediaSource() error = %v", err)
+	}
+	fileImage, err := NewImageContent(fileSource, ImageDetailOriginal)
+	if err != nil {
+		t.Fatalf("NewImageContent() file ID error = %v", err)
+	}
+	if fileImage.Source().Kind() != MediaSourceFileID || fileImage.Detail() != ImageDetailOriginal {
+		t.Fatalf("file image = %#v, want original-detail file reference", fileImage)
+	}
 }
 
 // TestContentRejectsInvalidRoleAndMediaCombinations 验证角色与内容组合失败关闭，
@@ -92,5 +111,46 @@ func TestContentRejectsInvalidRoleAndMediaCombinations(t *testing.T) {
 	}
 	if _, err := NewMessage(RoleAssistant, image); !errors.Is(err, ErrInvalidMessage) {
 		t.Fatalf("NewMessage() error = %v, want ErrInvalidMessage", err)
+	}
+}
+
+// TestMessagePreservesAssistantPhase 验证 Codex assistant 历史的 commentary/final_answer
+// 阶段不会在 Canonical Message 中丢失，也不会错误应用到用户消息。
+func TestMessagePreservesAssistantPhase(t *testing.T) {
+	t.Parallel()
+
+	text, err := NewTextContent("先检查仓库状态")
+	if err != nil {
+		t.Fatalf("NewTextContent() error = %v", err)
+	}
+	message, err := NewPhasedMessage(RoleAssistant, MessagePhaseCommentary, text)
+	if err != nil {
+		t.Fatalf("NewPhasedMessage() error = %v", err)
+	}
+	if message.Phase() != MessagePhaseCommentary {
+		t.Fatalf("Message.Phase() = %q, want %q", message.Phase(), MessagePhaseCommentary)
+	}
+	if _, err := NewPhasedMessage(RoleUser, MessagePhaseFinalAnswer, text); !errors.Is(err, ErrInvalidMessage) {
+		t.Fatalf("user phase error = %v, want ErrInvalidMessage", err)
+	}
+}
+
+// TestRefusalContentRemainsDistinctFromAssistantText 验证安全拒绝不会被伪装成普通文本。
+func TestRefusalContentRemainsDistinctFromAssistantText(t *testing.T) {
+	t.Parallel()
+
+	refusal, err := NewRefusalContent("无法协助该请求")
+	if err != nil {
+		t.Fatalf("NewRefusalContent() error = %v", err)
+	}
+	message, err := NewMessage(RoleAssistant, refusal)
+	if err != nil {
+		t.Fatalf("NewMessage() error = %v", err)
+	}
+	if message.Contents()[0].Kind() != ContentRefusal {
+		t.Fatalf("refusal kind = %q, want %q", message.Contents()[0].Kind(), ContentRefusal)
+	}
+	if _, ok := message.Contents()[0].(TextContent); ok {
+		t.Fatal("RefusalContent 不应能断言为 TextContent")
 	}
 }

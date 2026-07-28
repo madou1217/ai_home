@@ -7,13 +7,35 @@ import (
 
 // ToolDefinition 是不携带 Provider 私有字段的函数工具定义。
 type ToolDefinition struct {
-	name        string
-	description string
-	inputSchema []byte
+	name            string
+	description     string
+	inputSchema     []byte
+	strict          bool
+	strictSpecified bool
 }
 
 // NewToolDefinition 创建名称稳定且 Schema 为 JSON Object 的工具定义。
 func NewToolDefinition(name string, description string, inputSchema []byte) (ToolDefinition, error) {
+	return newToolDefinition(name, description, inputSchema, nil)
+}
+
+// NewToolDefinitionWithStrict 创建保留显式 strict 值的工具定义。
+func NewToolDefinitionWithStrict(
+	name string,
+	description string,
+	inputSchema []byte,
+	strict bool,
+) (ToolDefinition, error) {
+	return newToolDefinition(name, description, inputSchema, &strict)
+}
+
+// newToolDefinition 统一校验工具字段并区分 strict 缺省和显式 false。
+func newToolDefinition(
+	name string,
+	description string,
+	inputSchema []byte,
+	strict *bool,
+) (ToolDefinition, error) {
 	if !isToolName(name) {
 		return ToolDefinition{}, ErrInvalidToolName
 	}
@@ -23,11 +45,16 @@ func NewToolDefinition(name string, description string, inputSchema []byte) (Too
 	if !isJSONObject(inputSchema) {
 		return ToolDefinition{}, ErrInvalidJSONObject
 	}
-	return ToolDefinition{
+	definition := ToolDefinition{
 		name:        name,
 		description: description,
 		inputSchema: cloneBytes(inputSchema),
-	}, nil
+	}
+	if strict != nil {
+		definition.strict = *strict
+		definition.strictSpecified = true
+	}
+	return definition, nil
 }
 
 // Name 返回跨协议使用的精确工具名。
@@ -45,18 +72,34 @@ func (definition ToolDefinition) InputSchema() []byte {
 	return cloneBytes(definition.inputSchema)
 }
 
+// Strict 返回 strict 的显式值和客户端是否提供了该字段。
+func (definition ToolDefinition) Strict() (bool, bool) {
+	return definition.strict, definition.strictSpecified
+}
+
 // IsValid 判断工具定义仍满足名称和 JSON Schema 不变量。
 func (definition ToolDefinition) IsValid() bool {
+	if definition.strictSpecified {
+		_, err := NewToolDefinitionWithStrict(
+			definition.name,
+			definition.description,
+			definition.inputSchema,
+			definition.strict,
+		)
+		return err == nil
+	}
 	_, err := NewToolDefinition(definition.name, definition.description, definition.inputSchema)
-	return err == nil
+	return err == nil && !definition.strict
 }
 
 // clone 返回工具定义及其 JSON Schema 的独立快照。
 func (definition ToolDefinition) clone() ToolDefinition {
 	return ToolDefinition{
-		name:        definition.name,
-		description: definition.description,
-		inputSchema: cloneBytes(definition.inputSchema),
+		name:            definition.name,
+		description:     definition.description,
+		inputSchema:     cloneBytes(definition.inputSchema),
+		strict:          definition.strict,
+		strictSpecified: definition.strictSpecified,
 	}
 }
 

@@ -6,12 +6,20 @@ type EventKind string
 const (
 	// EventResponseStarted 表示上游已经创建响应。
 	EventResponseStarted EventKind = "response_started"
+	// EventOutputItemStarted 表示拥有稳定 item ID 的输出项开始。
+	EventOutputItemStarted EventKind = "output_item_started"
+	// EventOutputItemCompleted 表示拥有稳定 item ID 的输出项完成。
+	EventOutputItemCompleted EventKind = "output_item_completed"
 	// EventContentBlockStarted 表示一个有明确索引和类别的内容块开始。
 	EventContentBlockStarted EventKind = "content_block_started"
 	// EventTextDelta 表示普通文本增量。
 	EventTextDelta EventKind = "text_delta"
 	// EventTextCompleted 表示指定内容块的完整文本终值。
 	EventTextCompleted EventKind = "text_completed"
+	// EventRefusalDelta 表示模型安全或策略拒绝增量。
+	EventRefusalDelta EventKind = "refusal_delta"
+	// EventRefusalCompleted 表示模型安全或策略拒绝终值。
+	EventRefusalCompleted EventKind = "refusal_completed"
 	// EventReasoningDelta 表示 thinking 或 signature 增量。
 	EventReasoningDelta EventKind = "reasoning_delta"
 	// EventReasoningCompleted 表示完整 reasoning 摘要、thinking 或加密连续性。
@@ -97,6 +105,137 @@ func (event ResponseStartedEvent) Model() string {
 
 // isStreamEvent 将 ResponseStartedEvent 限制在 Canonical 事件联合类型内。
 func (ResponseStartedEvent) isStreamEvent() {}
+
+// OutputItemKind 是响应顶层输出项的稳定类别。
+type OutputItemKind string
+
+const (
+	// OutputItemMessage 表示 Assistant 消息输出项。
+	OutputItemMessage OutputItemKind = "message"
+	// OutputItemReasoning 表示 reasoning 输出项。
+	OutputItemReasoning OutputItemKind = "reasoning"
+	// OutputItemToolCall 表示函数工具调用输出项。
+	OutputItemToolCall OutputItemKind = "tool_call"
+)
+
+// IsValid 判断输出项类别是否已经注册。
+func (kind OutputItemKind) IsValid() bool {
+	return kind == OutputItemMessage || kind == OutputItemReasoning || kind == OutputItemToolCall
+}
+
+// OutputItemStartedEvent 表示顶层输出项拥有明确身份并开始生成。
+type OutputItemStartedEvent struct {
+	eventBase
+	outputIndex  uint32
+	itemID       string
+	itemKind     OutputItemKind
+	messagePhase MessagePhase
+}
+
+// NewOutputItemStartedEvent 创建输出项开始事件。
+func NewOutputItemStartedEvent(
+	sequence uint64,
+	outputIndex uint32,
+	itemID string,
+	itemKind OutputItemKind,
+) (OutputItemStartedEvent, error) {
+	if !isCanonicalOpaqueID(itemID) || !itemKind.IsValid() {
+		return OutputItemStartedEvent{}, ErrInvalidEvent
+	}
+	return OutputItemStartedEvent{
+		eventBase:   eventBase{sequence: sequence},
+		outputIndex: outputIndex,
+		itemID:      itemID,
+		itemKind:    itemKind,
+	}, nil
+}
+
+// NewPhasedOutputItemStartedEvent 创建保留 Codex assistant phase 的消息输出项。
+func NewPhasedOutputItemStartedEvent(
+	sequence uint64,
+	outputIndex uint32,
+	itemID string,
+	phase MessagePhase,
+) (OutputItemStartedEvent, error) {
+	if !phase.IsValid() {
+		return OutputItemStartedEvent{}, ErrInvalidEvent
+	}
+	event, err := NewOutputItemStartedEvent(sequence, outputIndex, itemID, OutputItemMessage)
+	if err != nil {
+		return OutputItemStartedEvent{}, err
+	}
+	event.messagePhase = phase
+	return event, nil
+}
+
+// Kind 返回输出项开始类别。
+func (OutputItemStartedEvent) Kind() EventKind {
+	return EventOutputItemStarted
+}
+
+// OutputIndex 返回响应顶层输出索引。
+func (event OutputItemStartedEvent) OutputIndex() uint32 {
+	return event.outputIndex
+}
+
+// ItemID 返回 Provider 提供的稳定输出项 ID。
+func (event OutputItemStartedEvent) ItemID() string {
+	return event.itemID
+}
+
+// ItemKind 返回输出项的稳定类别。
+func (event OutputItemStartedEvent) ItemKind() OutputItemKind {
+	return event.itemKind
+}
+
+// MessagePhase 返回消息输出项的可选 commentary 或 final_answer 阶段。
+func (event OutputItemStartedEvent) MessagePhase() MessagePhase {
+	return event.messagePhase
+}
+
+// isStreamEvent 将 OutputItemStartedEvent 限制在 Canonical 事件联合类型内。
+func (OutputItemStartedEvent) isStreamEvent() {}
+
+// OutputItemCompletedEvent 表示指定顶层输出项明确完成。
+type OutputItemCompletedEvent struct {
+	eventBase
+	outputIndex uint32
+	itemID      string
+}
+
+// NewOutputItemCompletedEvent 创建输出项完成事件。
+func NewOutputItemCompletedEvent(
+	sequence uint64,
+	outputIndex uint32,
+	itemID string,
+) (OutputItemCompletedEvent, error) {
+	if !isCanonicalOpaqueID(itemID) {
+		return OutputItemCompletedEvent{}, ErrInvalidEvent
+	}
+	return OutputItemCompletedEvent{
+		eventBase:   eventBase{sequence: sequence},
+		outputIndex: outputIndex,
+		itemID:      itemID,
+	}, nil
+}
+
+// Kind 返回输出项完成类别。
+func (OutputItemCompletedEvent) Kind() EventKind {
+	return EventOutputItemCompleted
+}
+
+// OutputIndex 返回响应顶层输出索引。
+func (event OutputItemCompletedEvent) OutputIndex() uint32 {
+	return event.outputIndex
+}
+
+// ItemID 返回 Provider 提供的稳定输出项 ID。
+func (event OutputItemCompletedEvent) ItemID() string {
+	return event.itemID
+}
+
+// isStreamEvent 将 OutputItemCompletedEvent 限制在 Canonical 事件联合类型内。
+func (OutputItemCompletedEvent) isStreamEvent() {}
 
 // ContentBlockStartedEvent 表示一个有明确位置和内容类别的块开始。
 type ContentBlockStartedEvent struct {
@@ -240,6 +379,100 @@ func (event TextCompletedEvent) Text() string {
 
 // isStreamEvent 将 TextCompletedEvent 限制在 Canonical 事件联合类型内。
 func (TextCompletedEvent) isStreamEvent() {}
+
+// RefusalDeltaEvent 是指定内容块的模型拒绝增量。
+type RefusalDeltaEvent struct {
+	eventBase
+	eventPosition
+	delta string
+}
+
+// NewRefusalDeltaEvent 创建与普通文本分离的模型拒绝增量。
+func NewRefusalDeltaEvent(
+	sequence uint64,
+	outputIndex uint32,
+	blockIndex uint32,
+	delta string,
+) (RefusalDeltaEvent, error) {
+	if !isValidDelta(delta) {
+		return RefusalDeltaEvent{}, ErrInvalidEvent
+	}
+	return RefusalDeltaEvent{
+		eventBase:     eventBase{sequence: sequence},
+		eventPosition: eventPosition{outputIndex: outputIndex, blockIndex: blockIndex},
+		delta:         delta,
+	}, nil
+}
+
+// Kind 返回模型拒绝增量类别。
+func (RefusalDeltaEvent) Kind() EventKind {
+	return EventRefusalDelta
+}
+
+// OutputIndex 返回响应输出项索引。
+func (event RefusalDeltaEvent) OutputIndex() uint32 {
+	return event.outputIndex
+}
+
+// BlockIndex 返回输出项内的内容块索引。
+func (event RefusalDeltaEvent) BlockIndex() uint32 {
+	return event.blockIndex
+}
+
+// Delta 返回必须按顺序拼接的模型拒绝片段。
+func (event RefusalDeltaEvent) Delta() string {
+	return event.delta
+}
+
+// isStreamEvent 将 RefusalDeltaEvent 限制在 Canonical 事件联合类型内。
+func (RefusalDeltaEvent) isStreamEvent() {}
+
+// RefusalCompletedEvent 是指定内容块的完整模型拒绝终值。
+type RefusalCompletedEvent struct {
+	eventBase
+	eventPosition
+	refusal string
+}
+
+// NewRefusalCompletedEvent 创建模型拒绝终值事件。
+func NewRefusalCompletedEvent(
+	sequence uint64,
+	outputIndex uint32,
+	blockIndex uint32,
+	refusal string,
+) (RefusalCompletedEvent, error) {
+	if !isNonBlankText(refusal) {
+		return RefusalCompletedEvent{}, ErrInvalidEvent
+	}
+	return RefusalCompletedEvent{
+		eventBase:     eventBase{sequence: sequence},
+		eventPosition: eventPosition{outputIndex: outputIndex, blockIndex: blockIndex},
+		refusal:       refusal,
+	}, nil
+}
+
+// Kind 返回模型拒绝终值类别。
+func (RefusalCompletedEvent) Kind() EventKind {
+	return EventRefusalCompleted
+}
+
+// OutputIndex 返回响应输出项索引。
+func (event RefusalCompletedEvent) OutputIndex() uint32 {
+	return event.outputIndex
+}
+
+// BlockIndex 返回输出项内的内容块索引。
+func (event RefusalCompletedEvent) BlockIndex() uint32 {
+	return event.blockIndex
+}
+
+// Refusal 返回完整模型拒绝说明。
+func (event RefusalCompletedEvent) Refusal() string {
+	return event.refusal
+}
+
+// isStreamEvent 将 RefusalCompletedEvent 限制在 Canonical 事件联合类型内。
+func (RefusalCompletedEvent) isStreamEvent() {}
 
 // ReasoningDeltaKind 区分可见 thinking 与不可见签名的增量。
 type ReasoningDeltaKind string

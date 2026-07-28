@@ -93,6 +93,28 @@ func TestCapabilitySetUsesExactSubsetMatching(t *testing.T) {
 	}
 }
 
+// TestReasoningConfigPreservesCurrentResponsesEffortLevels 验证 none、minimal、
+// xhigh 和 max 不会被静默压缩为低中高三个旧等级。
+func TestReasoningConfigPreservesCurrentResponsesEffortLevels(t *testing.T) {
+	t.Parallel()
+
+	efforts := []ReasoningEffort{
+		ReasoningEffortNone,
+		ReasoningEffortMinimal,
+		ReasoningEffortXHigh,
+		ReasoningEffortMax,
+	}
+	for _, effort := range efforts {
+		config, err := NewEffortReasoning(effort, ReasoningSummaryConcise)
+		if err != nil {
+			t.Fatalf("NewEffortReasoning(%q) error = %v", effort, err)
+		}
+		if config.Effort() != effort || config.Summary() != ReasoningSummaryConcise {
+			t.Fatalf("reasoning = (%q, %q), want (%q, %q)", config.Effort(), config.Summary(), effort, ReasoningSummaryConcise)
+		}
+	}
+}
+
 // TestRequestOwnsIndependentMessagesAndTools 验证 Canonical Request 不暴露调用方持有的
 // 消息和工具切片，避免 Decoder 缓冲复用导致请求内容变化。
 func TestRequestOwnsIndependentMessagesAndTools(t *testing.T) {
@@ -191,5 +213,52 @@ func TestRequestPreservesWhitespaceStopSequence(t *testing.T) {
 	}
 	if got := request.StopSequences(); len(got) != 1 || got[0] != "\n\n" {
 		t.Fatalf("StopSequences() = %#v, want exact newline sequence", got)
+	}
+}
+
+// TestRequestRequiresExplicitContinuationForExternalToolResult 验证只有明确的
+// previous response 或 conversation 连续性才能引用请求外工具调用。
+func TestRequestRequiresExplicitContinuationForExternalToolResult(t *testing.T) {
+	t.Parallel()
+
+	resultText, err := NewTextContent("外部调用结果")
+	if err != nil {
+		t.Fatalf("NewTextContent() error = %v", err)
+	}
+	result, err := NewToolResultContent("call_external_1", false, resultText)
+	if err != nil {
+		t.Fatalf("NewToolResultContent() error = %v", err)
+	}
+	message, err := NewMessage(RoleUser, result)
+	if err != nil {
+		t.Fatalf("NewMessage() error = %v", err)
+	}
+	continuation, err := NewContinuation(ContinuationPreviousResponse, "resp_exact_1")
+	if err != nil {
+		t.Fatalf("NewContinuation() error = %v", err)
+	}
+	request, err := NewRequest(RequestInput{
+		ClientProtocol:      ClientProtocolOpenAIResponses,
+		Model:               "gpt-5.6-sol",
+		Messages:            []Message{message},
+		Continuation:        &continuation,
+		ExternalToolCallIDs: []string{"call_external_1"},
+	})
+	if err != nil {
+		t.Fatalf("NewRequest() error = %v", err)
+	}
+	got, found := request.Continuation()
+	if !found || got.Kind() != ContinuationPreviousResponse || got.ID() != "resp_exact_1" {
+		t.Fatalf("Request.Continuation() = (%#v, %t), want previous response", got, found)
+	}
+
+	_, err = NewRequest(RequestInput{
+		ClientProtocol:      ClientProtocolOpenAIResponses,
+		Model:               "gpt-5.6-sol",
+		Messages:            []Message{message},
+		ExternalToolCallIDs: []string{"call_external_1"},
+	})
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("external call without continuation error = %v, want ErrInvalidRequest", err)
 	}
 }

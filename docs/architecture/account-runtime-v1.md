@@ -7,8 +7,9 @@
 > cooldown 只表示“预计经过有限时间可以自动恢复，因此在截止时间前暂缓自动重试”。
 
 因此，凭据失效、额度耗尽、工作区停用、模型或地区不支持都不是 cooldown。v1 不修改
-SQLite schema，也不读取旧 Node `runtime_state`。Go Server 上游适配器尚未接入本合同，
-不能把本阶段解释成旧 Node Gateway 已经完成切换。
+SQLite schema，也不读取旧 Node `runtime_state`。Codex / Claude 结构化错误分类器已经
+接入本合同，但 Go Server 的 HTTP / SSE observer 尚未调用分类器；不能把本阶段解释成
+旧 Node Gateway 已经完成切换。
 
 运行态固定按 `(account_ref, effective_model_id)` 隔离。`effective_model_id` 是完成模型
 别名解析后的真实上游模型 ID；客户端别名不能作为 cooldown 键。v1 不提供账号级请求
@@ -50,6 +51,51 @@ Provider Adapter 必须先把 HTTP、SDK 或 streaming 结果映射为稳定 `Fa
 提示只允许覆盖三个直接 cooldown 和三个 streak cooldown 的默认等待时间，且最长为
 24 小时；更长限制必须重新分类为 quota 或 policy block。
 
+### 2.1 Provider 结构化映射
+
+共享入口只允许 `status_code`、`error_type`、`error_code`、`retry_after` 四类低敏字段。
+错误标识统一为小写，只能包含 ASCII 字母、数字、`_-.` 且最长 80 字符；空格、换行、
+message 和原始响应正文都会被拒绝。HTTP 200 被保留用于 SSE 流内结构化错误。
+
+Codex 分类器使用以下稳定证据：
+
+| 结构化信号 | FailureKind |
+| --- | --- |
+| 普通 429、`rate_limit_error`、`rate_limit_exceeded` | `rate_limited` |
+| 限流恢复提示超过 24 小时、`insufficient_quota` | `quota_exhausted` |
+| `billing_not_active` | `billing_blocked` |
+| 401/403、`invalid_api_key` | `credential_rejected` |
+| `deactivated_workspace` | `workspace_deactivated` |
+| 529、`model_at_capacity` | `model_overloaded` |
+| `model_not_found` | `model_unsupported` |
+| 408 | `request_timeout` |
+| 5xx | `upstream_unavailable` |
+| 400/422、`invalid_request_error` | `invalid_request` |
+| `content_policy_violation` | `safety_rejected` |
+| 普通 404 | `not_found` |
+
+Claude 分类器使用以下稳定证据：
+
+| 结构化信号 | FailureKind |
+| --- | --- |
+| 普通 429、`rate_limit_error` | `rate_limited` |
+| 明确统一额度窗口、限流恢复提示超过 24 小时、`quota_error` | `quota_exhausted` |
+| 529、`overloaded_error` | `model_overloaded` |
+| 401/403、`authentication_error`、`permission_error` | `credential_rejected` |
+| `oauth_token_revoked` | `reauthentication_required` |
+| `billing_error` | `billing_blocked` |
+| `deactivated_workspace` | `workspace_deactivated` |
+| `model_not_found` | `model_unsupported` |
+| 400/422、`invalid_request_error` | `invalid_request` |
+| `api_error`、5xx | `upstream_unavailable` |
+| `safety_rejected` | `safety_rejected` |
+| 普通 404 | `not_found` |
+
+明确错误 code/type 的优先级高于宽泛 HTTP 状态。例如 429 +
+`insufficient_quota` 不能降级为普通限流；403 + `oauth_token_revoked` 不能降级为普通
+凭据拒绝。硬阻塞分类不允许携带 `Retry-After`，避免调用方误把 quota 或 policy 当成
+自动恢复 cooldown。
+
 ## 3. 连续失败规则
 
 `request_timeout`、`connection_reset`、`stream_disconnected` 使用一分钟 streak
@@ -70,8 +116,11 @@ streak 尚未过期时才累加：
 ## 4. 分层与数据结构
 
 ```text
-Provider Adapter（后续）
-    HTTP / SDK / stream error -> 稳定 FailureKind
+Provider HTTP / SDK / SSE observer（后续）
+    原始结果 -> 低敏结构化投影
+        ↓
+internal/adapters/{codex,claude}/upstreamfailure
+    Provider 结构化信号 -> 稳定 FailureKind
         ↓
 core/accountruntime
     FailurePolicy + ModelState + Eligibility + ModelRoute
@@ -117,3 +166,19 @@ BenchmarkStoreQueries/accounts_100000/recruit_ready_account-10   32.619 µs/op
 完整征召基准已经包含运行态资格读取、SQLite 候选查询和真实 Credential Resolver。
 账号规模扩大十倍后仍保持同一数量级；运行态索引没有全量加载账号。
 数值取 `-benchtime=1s -count=3` 三轮中位数。
+
+Provider 分类到征召结果的集成场景：
+
+```text
+Codex:
+  account A + gpt-5.6-sol 发生 HTTP 529
+  gpt-5.6-sol -> 选择 account B
+  gpt-5.4     -> 仍选择 account A
+  gpt-5.6-sol 成功后 -> 恢复选择 account A
+
+Claude:
+  account A + claude-opus-4-1 发生流内 overloaded_error
+  claude-opus-4-1 -> 选择 account B
+  claude-sonnet-4 -> 仍选择 account A
+  claude-opus-4-1 成功后 -> 恢复选择 account A
+```

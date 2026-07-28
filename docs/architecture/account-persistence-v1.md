@@ -26,6 +26,9 @@ core/accounts
 application/accounts
     账号用例需要的 Store 端口和紧凑 RoutingAccount 读取模型
         ↓
+application/accountcredentials + application/accountrouting
+    按需凭据可用化；有界扫描候选并返回首个身份匹配的可用账号
+        ↓
 internal/adapters/accounts/sqliteaccount
     aih.db、migration、SQL、Provider credential/profile codec
         ↓
@@ -258,6 +261,17 @@ Token、API Key 或 Auth Token。
 账号管理查询只选择认证类型和公开资料标量，SQL 合同明确禁止读取
 `credential_json`、`profile_json`。
 
+账号征召器保持无状态，不把候选池或凭据缓存到进程内：
+
+1. 使用 `RoutingQuery` 一次读取最多 32 条紧凑投影；
+2. 按候选顺序通过 `AccountRef` 主键点查凭据，只在 OAuth 即将过期时刷新；
+3. 缺失凭据、需要重新认证、刷新被拒绝或刷新暂时不可用只淘汰当前候选；
+4. 数据库、解码、Provider 合同或凭据身份不一致立即失败，不能静默跳过；
+5. 未命中时返回最后检查的 `AccountRef`，调用方可继续 keyset 下一页。
+
+模型能力、usage、账号运行态和 `(account, model)` cooldown 尚无 Go v1 持久化真相源，
+因此不在本阶段伪造筛选字段或内存缓存；后续必须在各自数据边界落地后接入征召流水线。
+
 ## 7. Migration 与打开数据库
 
 - `PRAGMA application_id=0x41494831`，用于拒绝误打开其他 SQLite 文件。
@@ -320,7 +334,29 @@ go test -run '^$' -bench '^BenchmarkStoreQueries$' \
 从 10,000 增长到 100,000 时，征召耗时和分配量基本不变。全量加载项是故意设置的
 压力基线，不是 Server 运行策略。
 
-### 8.3 公开资料与账号管理性能
+### 8.3 完整账号征召性能
+
+命令：
+
+```bash
+go test -run '^$' \
+  -bench '^BenchmarkStoreQueries/accounts_(10000|100000)/recruit_ready_account$' \
+  -benchmem -benchtime=1s -count=3 \
+  ./internal/adapters/accounts/sqliteaccount
+```
+
+该基准执行真实 covering-index 候选查询、凭据主键点查、严格 JSON 解码、领域身份复核和
+Resolver 编排。三轮中位数：
+
+| 账号数 | 中位耗时 | B/op | allocs/op |
+| ---: | ---: | ---: | ---: |
+| 10,000 | 30.34µs | 6,990 | 122 |
+| 100,000 | 31.53µs | 6,990 | 122 |
+
+账号规模扩大十倍后完整征召耗时和分配量保持稳定；正常请求不会全量加载账号，更不会把
+1 万个凭据保存在 Go 内存中。
+
+### 8.4 公开资料与账号管理性能
 
 命令：
 

@@ -146,6 +146,18 @@ func (resolver *Resolver) Resolve(
 	})
 }
 
+// ResolveCredential 以最小端口形式返回当前可用凭据，供账号征召等应用用例组合。
+func (resolver *Resolver) ResolveCredential(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+) (accountapp.Credential, error) {
+	result, err := resolver.Resolve(ctx, accountRef)
+	if err != nil {
+		return nil, err
+	}
+	return result.Credential(), nil
+}
+
 // readResolutionState 读取最新凭据，并选择唯一 Provider 刷新策略。
 func (resolver *Resolver) readResolutionState(
 	ctx context.Context,

@@ -3,11 +3,17 @@ package sqliteaccount
 import (
 	"context"
 	"fmt"
+	"math/big"
+	"net/http"
 	"testing"
 
+	"github.com/madou1217/ai_home/application/accountcredentials"
+	"github.com/madou1217/ai_home/application/accountrouting"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/core/accounts/codex"
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/adapters/accountauth/codexoauth"
 )
 
 func BenchmarkStoreQueries(benchmark *testing.B) {
@@ -29,6 +35,11 @@ func BenchmarkStoreQueries(benchmark *testing.B) {
 			if err != nil {
 				benchmark.Fatalf("NewRoutingQuery() error = %v", err)
 			}
+			recruiter, recruitRequest := prepareRecruitmentBenchmark(
+				benchmark,
+				store,
+				accountCount,
+			)
 
 			benchmark.Run("account_ref", func(benchmark *testing.B) {
 				benchmark.ReportAllocs()
@@ -82,8 +93,140 @@ func BenchmarkStoreQueries(benchmark *testing.B) {
 					}
 				}
 			})
+			benchmark.Run("recruit_ready_account", func(benchmark *testing.B) {
+				benchmark.ReportAllocs()
+				for range benchmark.N {
+					result, recruitErr := recruiter.Recruit(
+						context.Background(),
+						recruitRequest,
+					)
+					if recruitErr != nil {
+						benchmark.Fatalf("Recruit() error = %v", recruitErr)
+					}
+					if result.Examined() != 1 || result.Credential() == nil {
+						benchmark.Fatalf("Recruit() result = %#v", result)
+					}
+				}
+			})
 		})
 	}
+}
+
+// prepareRecruitmentBenchmark 在普通账号之外注册一个可稳定点查的真实凭据账号。
+func prepareRecruitmentBenchmark(
+	benchmark *testing.B,
+	store *Store,
+	accountCount int,
+) (*accountrouting.Recruiter, accountrouting.Request) {
+	benchmark.Helper()
+
+	maxSeededRef := fmt.Sprintf("acct_%020x", accountCount)
+	var credential *codex.APIKeyAuth
+	for suffix := 0; suffix < 100; suffix++ {
+		candidate, err := codex.NewAPIKeyAuth(codex.APIKeyInput{
+			APIKey: fmt.Sprintf(
+				"synthetic-recruitment-benchmark-%d",
+				suffix,
+			),
+		})
+		if err != nil {
+			benchmark.Fatalf("codex.NewAPIKeyAuth() error = %v", err)
+		}
+		accountRef, err := accountcore.DeriveAccountRef(candidate)
+		if err != nil {
+			benchmark.Fatalf("DeriveAccountRef() error = %v", err)
+		}
+		if accountRef.String() > maxSeededRef {
+			credential = candidate
+			break
+		}
+	}
+	if credential == nil {
+		benchmark.Fatal("未找到可隔离点查的征召基准账号")
+	}
+	cliAccountID, err := accountcore.NewCLIAccountID(int64(accountCount + 1))
+	if err != nil {
+		benchmark.Fatalf("NewCLIAccountID() error = %v", err)
+	}
+	account, err := accountcore.NewAccount(
+		store.catalog,
+		accountcore.NewAccountInput{
+			Identity:     credential,
+			CLIAccountID: cliAccountID,
+			CreatedAt:    testAccountTime(),
+		},
+	)
+	if err != nil {
+		benchmark.Fatalf("NewAccount() error = %v", err)
+	}
+	registration, err := accountapp.NewRegistration(
+		account,
+		credential,
+		testAccountTime(),
+	)
+	if err != nil {
+		benchmark.Fatalf("NewRegistration() error = %v", err)
+	}
+	if err := store.Register(context.Background(), registration); err != nil {
+		benchmark.Fatalf("Register() error = %v", err)
+	}
+	provider, err := codexoauth.New(&http.Client{}, testAccountTime)
+	if err != nil {
+		benchmark.Fatalf("codexoauth.New() error = %v", err)
+	}
+	resolver, err := accountcredentials.NewResolver(
+		accountcredentials.Dependencies{
+			Store: store,
+			Strategies: []accountcredentials.RefreshStrategy{
+				provider,
+			},
+			Clock: testAccountTime,
+		},
+	)
+	if err != nil {
+		benchmark.Fatalf("NewResolver() error = %v", err)
+	}
+	recruiter, err := accountrouting.NewRecruiter(
+		accountrouting.Dependencies{
+			Candidates:  store,
+			Credentials: resolver,
+		},
+	)
+	if err != nil {
+		benchmark.Fatalf("NewRecruiter() error = %v", err)
+	}
+	afterRef := previousAccountRef(benchmark, account.Ref())
+	request, err := accountrouting.NewRequest(
+		store.catalog,
+		"codex",
+		afterRef,
+		accountapp.DefaultRoutingLimit,
+	)
+	if err != nil {
+		benchmark.Fatalf("NewRequest() error = %v", err)
+	}
+	return recruiter, request
+}
+
+// previousAccountRef 返回字典序紧邻目标之前的合法 AccountRef。
+func previousAccountRef(
+	benchmark *testing.B,
+	target accountcore.AccountRef,
+) accountcore.AccountRef {
+	benchmark.Helper()
+
+	value, valid := new(big.Int).SetString(target.String()[5:], 16)
+	if !valid || value.Sign() <= 0 {
+		benchmark.Fatalf("target AccountRef = %q", target)
+	}
+	value.Sub(value, big.NewInt(1))
+	accountRef, err := accountcore.ParseAccountRef(
+		fmt.Sprintf("acct_%020x", value),
+	)
+	if err != nil {
+		benchmark.Fatalf("ParseAccountRef(previous) error = %v", err)
+	}
+	return accountRef
 }
 
 // openBenchmarkStore 为每个账号规模创建相互隔离的真实 SQLite 文件。

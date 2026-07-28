@@ -9,6 +9,7 @@ import (
 
 	"github.com/madou1217/ai_home/application/accountcredentials"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
 )
@@ -44,6 +45,109 @@ func TestRecruiterReturnsFirstUsableCandidate(t *testing.T) {
 	}
 	if resolver.CallCount() != 1 {
 		t.Fatalf("ResolveCredential() calls = %d, want 1", resolver.CallCount())
+	}
+}
+
+// TestRecruiterSkipsRuntimeBlockedAccountBeforeCredential 验证运行态筛选先于敏感凭据读取。
+func TestRecruiterSkipsRuntimeBlockedAccountBeforeCredential(t *testing.T) {
+	t.Parallel()
+
+	blocked, blockedCredential := newRecruitmentCandidate(
+		t,
+		"codex",
+		1,
+		"runtime-blocked",
+	)
+	ready, readyCredential := newRecruitmentCandidate(
+		t,
+		"codex",
+		2,
+		"runtime-ready",
+	)
+	source := &recruitmentCandidateSource{
+		candidates: []accountapp.RoutingAccount{blocked, ready},
+	}
+	runtimeSource := &recruitmentEligibilitySource{
+		eligibility: map[accountcore.AccountRef]runtimecore.Eligibility{
+			blocked.Ref(): runtimecore.QuotaBlockedEligibility(),
+		},
+	}
+	resolver := newRecruitmentCredentialResolver(
+		map[accountcore.AccountRef]credentialResolution{
+			blocked.Ref(): {credential: blockedCredential},
+			ready.Ref():   {credential: readyCredential},
+		},
+	)
+	recruiter := newTestRecruiterWithRuntime(
+		t,
+		source,
+		runtimeSource,
+		resolver,
+	)
+	request := newTestRequest(t, "codex", "", 2)
+
+	result, err := recruiter.Recruit(context.Background(), request)
+	if err != nil {
+		t.Fatalf("Recruit() error = %v", err)
+	}
+	if result.Account().Ref() != ready.Ref() ||
+		result.Examined() != 2 ||
+		resolver.CallCount() != 1 {
+		t.Fatalf(
+			"Recruit() result=%#v credentialCalls=%d",
+			result,
+			resolver.CallCount(),
+		)
+	}
+	routes := runtimeSource.Routes()
+	if len(routes) != 2 ||
+		routes[0].ModelID() != request.ModelID() ||
+		routes[1].ModelID() != request.ModelID() {
+		t.Fatalf("CheckEligibility() routes = %#v", routes)
+	}
+}
+
+// TestRecruiterFailsClosedOnInvalidRuntimeEligibility 验证非法运行态投影不会被当成可用。
+func TestRecruiterFailsClosedOnInvalidRuntimeEligibility(t *testing.T) {
+	t.Parallel()
+
+	candidate, credential := newRecruitmentCandidate(
+		t,
+		"claude",
+		1,
+		"invalid-runtime",
+	)
+	source := &recruitmentCandidateSource{
+		candidates: []accountapp.RoutingAccount{candidate},
+	}
+	runtimeSource := &recruitmentEligibilitySource{
+		eligibility: map[accountcore.AccountRef]runtimecore.Eligibility{
+			candidate.Ref(): {},
+		},
+	}
+	resolver := newRecruitmentCredentialResolver(
+		map[accountcore.AccountRef]credentialResolution{
+			candidate.Ref(): {credential: credential},
+		},
+	)
+	recruiter := newTestRecruiterWithRuntime(
+		t,
+		source,
+		runtimeSource,
+		resolver,
+	)
+
+	_, err := recruiter.Recruit(
+		context.Background(),
+		newTestRequest(t, "claude", "", 1),
+	)
+	if !errors.Is(err, ErrInvalidRuntimeEligibility) ||
+		resolver.CallCount() != 0 {
+		t.Fatalf(
+			"Recruit() error=%v credentialCalls=%d",
+			err,
+			resolver.CallCount(),
+		)
 	}
 }
 
@@ -225,8 +329,26 @@ func newTestRecruiter(
 ) *Recruiter {
 	t.Helper()
 
+	return newTestRecruiterWithRuntime(
+		t,
+		source,
+		&recruitmentEligibilitySource{},
+		resolver,
+	)
+}
+
+// newTestRecruiterWithRuntime 创建可注入运行态资格端口的征召器。
+func newTestRecruiterWithRuntime(
+	t *testing.T,
+	source CandidateSource,
+	runtimeSource RuntimeEligibilitySource,
+	resolver CredentialResolver,
+) *Recruiter {
+	t.Helper()
+
 	recruiter, err := NewRecruiter(Dependencies{
 		Candidates:  source,
+		Runtime:     runtimeSource,
 		Credentials: resolver,
 	})
 	if err != nil {
@@ -247,6 +369,7 @@ func newTestRequest(
 	request, err := NewRequest(
 		testRecruitmentCatalog(t),
 		providerID,
+		testModelID(providerID),
 		afterRef,
 		limit,
 	)
@@ -254,6 +377,14 @@ func newTestRequest(
 		t.Fatalf("NewRequest() error = %v", err)
 	}
 	return request
+}
+
+// testModelID 返回当前两种 Provider 的确定性真实模型 ID。
+func testModelID(providerID string) string {
+	if providerID == "claude" {
+		return "claude-sonnet-4"
+	}
+	return "gpt-5.6-sol"
 }
 
 // testRecruitmentCatalog 创建生产内置 Provider 注册表。
@@ -401,4 +532,37 @@ func (resolver *recruitmentCredentialResolver) CallCount() int {
 	resolver.mu.Lock()
 	defer resolver.mu.Unlock()
 	return resolver.calls
+}
+
+// recruitmentEligibilitySource 是按 AccountRef 返回资格的运行态测试端口。
+type recruitmentEligibilitySource struct {
+	mu          sync.Mutex
+	eligibility map[accountcore.AccountRef]runtimecore.Eligibility
+	err         error
+	routes      []runtimecore.ModelRoute
+}
+
+// CheckEligibility 返回目标元组的预设资格，未配置时视为健康。
+func (source *recruitmentEligibilitySource) CheckEligibility(
+	_ context.Context,
+	route runtimecore.ModelRoute,
+) (runtimecore.Eligibility, error) {
+	source.mu.Lock()
+	defer source.mu.Unlock()
+	source.routes = append(source.routes, route)
+	if source.err != nil {
+		return runtimecore.Eligibility{}, source.err
+	}
+	eligibility, found := source.eligibility[route.AccountRef()]
+	if !found {
+		return runtimecore.AvailableEligibility(), nil
+	}
+	return eligibility, nil
+}
+
+// Routes 返回资格端口收到的独立路由键快照。
+func (source *recruitmentEligibilitySource) Routes() []runtimecore.ModelRoute {
+	source.mu.Lock()
+	defer source.mu.Unlock()
+	return append([]runtimecore.ModelRoute(nil), source.routes...)
 }

@@ -9,6 +9,7 @@ import (
 
 	"github.com/madou1217/ai_home/application/accountcredentials"
 	"github.com/madou1217/ai_home/application/accountrouting"
+	runtimeapp "github.com/madou1217/ai_home/application/accountruntime"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/accounts/codex"
@@ -103,9 +104,16 @@ func TestRecruiterUsesSQLiteAndProductionCredentialResolver(t *testing.T) {
 	if err != nil {
 		t.Fatalf("accountcredentials.NewResolver() error = %v", err)
 	}
+	runtimeRegistry, err := runtimeapp.NewRegistry(func() time.Time {
+		return now
+	})
+	if err != nil {
+		t.Fatalf("accountruntime.NewRegistry() error = %v", err)
+	}
 	recruiter, err := accountrouting.NewRecruiter(
 		accountrouting.Dependencies{
 			Candidates:  store,
+			Runtime:     runtimeRegistry,
 			Credentials: credentialResolver,
 		},
 	)
@@ -115,6 +123,7 @@ func TestRecruiterUsesSQLiteAndProductionCredentialResolver(t *testing.T) {
 	request, err := accountrouting.NewRequest(
 		catalog,
 		" CODEX ",
+		"gpt-5.6-sol",
 		"",
 		3,
 	)

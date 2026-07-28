@@ -20,14 +20,14 @@ OAuth refresh token 是长期账号凭据，属于 `account_credentials`。OAuth
 ## 2. 分层
 
 ```text
-core/accounts
-    账号不变量和值对象，不认识数据库和 JSON
+core/accounts + core/accountruntime
+    账号不变量、运行态策略和值对象，不认识数据库和 JSON
         ↓
-application/accounts
-    账号用例需要的 Store 端口和紧凑 RoutingAccount 读取模型
+application/accounts + application/accountcredentials
+    Store 端口、账号用例和按需凭据可用化
         ↓
-application/accountcredentials + application/accountrouting
-    按需凭据可用化；有界扫描候选并返回首个身份匹配的可用账号
+application/accountruntime + application/accountrouting
+    稀疏模型元组索引；有界扫描并返回首个可用账号
         ↓
 internal/adapters/accounts/sqliteaccount
     aih.db、migration、SQL、Provider credential/profile codec
@@ -261,16 +261,19 @@ Token、API Key 或 Auth Token。
 账号管理查询只选择认证类型和公开资料标量，SQL 合同明确禁止读取
 `credential_json`、`profile_json`。
 
-账号征召器保持无状态，不把候选池或凭据缓存到进程内：
+账号征召器自身保持无状态，不把候选池或凭据缓存到进程内：
 
 1. 使用 `RoutingQuery` 一次读取最多 32 条紧凑投影；
-2. 按候选顺序通过 `AccountRef` 主键点查凭据，只在 OAuth 即将过期时刷新；
-3. 缺失凭据、需要重新认证、刷新被拒绝或刷新暂时不可用只淘汰当前候选；
-4. 数据库、解码、Provider 合同或凭据身份不一致立即失败，不能静默跳过；
-5. 未命中时返回最后检查的 `AccountRef`，调用方可继续 keyset 下一页。
+2. 使用别名解析后的真实模型 ID 检查稀疏运行态资格；
+3. 只有运行态可用的候选才通过 `AccountRef` 点查凭据，并在 OAuth 即将过期时刷新；
+4. 硬阻塞、quota 阻塞、模型 cooldown、缺失凭据、需要重新认证、刷新被拒绝或刷新
+   暂时不可用只淘汰当前候选；
+5. 数据库、运行态端口、解码、Provider 合同或凭据身份不一致立即失败，不能静默跳过；
+6. 未命中时返回最后检查的 `AccountRef`，调用方可继续 keyset 下一页。
 
-模型能力、usage、账号运行态和 `(account, model)` cooldown 尚无 Go v1 持久化真相源，
-因此不在本阶段伪造筛选字段或内存缓存；后续必须在各自数据边界落地后接入征召流水线。
+模型能力和 usage 尚无 Go v1 持久化真相源，不在账号表伪造字段。模型 cooldown 已使用
+独立的进程内稀疏索引接入征召流水线，详细状态矩阵和解除条件见
+[`account-runtime-v1.md`](account-runtime-v1.md)；它不是账号池或凭据缓存。
 
 ## 7. Migration 与打开数据库
 

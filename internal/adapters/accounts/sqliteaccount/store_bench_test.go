@@ -9,6 +9,7 @@ import (
 
 	"github.com/madou1217/ai_home/application/accountcredentials"
 	"github.com/madou1217/ai_home/application/accountrouting"
+	runtimeapp "github.com/madou1217/ai_home/application/accountruntime"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/accounts/codex"
@@ -186,9 +187,14 @@ func prepareRecruitmentBenchmark(
 	if err != nil {
 		benchmark.Fatalf("NewResolver() error = %v", err)
 	}
+	runtimeRegistry, err := runtimeapp.NewRegistry(testAccountTime)
+	if err != nil {
+		benchmark.Fatalf("accountruntime.NewRegistry() error = %v", err)
+	}
 	recruiter, err := accountrouting.NewRecruiter(
 		accountrouting.Dependencies{
 			Candidates:  store,
+			Runtime:     runtimeRegistry,
 			Credentials: resolver,
 		},
 	)
@@ -199,6 +205,7 @@ func prepareRecruitmentBenchmark(
 	request, err := accountrouting.NewRequest(
 		store.catalog,
 		"codex",
+		"gpt-5.6-sol",
 		afterRef,
 		accountapp.DefaultRoutingLimit,
 	)

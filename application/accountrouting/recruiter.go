@@ -1,6 +1,7 @@
 // Package accountrouting 负责从紧凑账号候选中征召一个当前可用的账号。
 //
-// 该应用层只组合候选读取和凭据可用化，不认识 SQLite、HTTP、模型目录、usage 或运行态。
+// 该应用层只组合候选读取、运行态资格和凭据可用化，不认识 SQLite、HTTP、
+// Provider SDK、usage 存储或具体运行态实现。
 package accountrouting
 
 import (
@@ -10,6 +11,7 @@ import (
 
 	"github.com/madou1217/ai_home/application/accountcredentials"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
 )
@@ -23,6 +25,8 @@ var (
 	ErrInvalidCandidatePage = errors.New("账号征召候选页无效")
 	// ErrInvalidResolvedCredential 表示凭据解析结果不属于候选账号。
 	ErrInvalidResolvedCredential = errors.New("账号征召凭据无效")
+	// ErrInvalidRuntimeEligibility 表示运行态端口返回了不完整的资格值。
+	ErrInvalidRuntimeEligibility = errors.New("账号征召运行态资格无效")
 	// ErrNoRoutableAccount 表示当前候选页没有可直接交给上游的账号。
 	ErrNoRoutableAccount = errors.New("没有可征召账号")
 )
@@ -45,23 +49,38 @@ type CredentialResolver interface {
 	) (accountapp.Credential, error)
 }
 
-// Dependencies 声明征召器所需的两个最小应用端口。
+// RuntimeEligibilitySource 提供账号与真实模型元组的当前运行态资格。
+type RuntimeEligibilitySource interface {
+	// CheckEligibility 在读取凭据前判断硬阻塞或模型 cooldown。
+	CheckEligibility(
+		ctx context.Context,
+		route runtimecore.ModelRoute,
+	) (runtimecore.Eligibility, error)
+}
+
+// Dependencies 声明征召器所需的三个最小应用端口。
 type Dependencies struct {
 	// Candidates 负责有界读取启用账号的紧凑投影。
 	Candidates CandidateSource
+	// Runtime 负责在敏感凭据读取前排除运行态不可用元组。
+	Runtime RuntimeEligibilitySource
 	// Credentials 负责单账号凭据读取和必要刷新。
 	Credentials CredentialResolver
 }
 
 // Request 是经过 Provider 注册表校验的有界征召请求。
 type Request struct {
-	query accountapp.RoutingQuery
+	query   accountapp.RoutingQuery
+	modelID runtimecore.ModelID
 }
 
-// NewRequest 规范化 Provider，并校验稳定游标和扫描上限。
+// NewRequest 规范化 Provider，并校验真实模型、稳定游标和扫描上限。
+//
+// modelID 必须是别名解析后的真实上游模型，不能使用客户端模型别名。
 func NewRequest(
 	catalog *providers.Catalog,
 	providerID string,
+	modelID string,
 	afterRef accountcore.AccountRef,
 	limit int,
 ) (Request, error) {
@@ -74,12 +93,24 @@ func NewRequest(
 	if err != nil {
 		return Request{}, errors.Join(ErrInvalidRequest, err)
 	}
-	return Request{query: query}, nil
+	runtimeModelID, err := runtimecore.NewModelID(modelID)
+	if err != nil {
+		return Request{}, errors.Join(ErrInvalidRequest, err)
+	}
+	return Request{
+		query:   query,
+		modelID: runtimeModelID,
+	}, nil
 }
 
 // ProviderID 返回规范 Provider ID。
 func (request Request) ProviderID() string {
 	return request.query.ProviderID()
+}
+
+// ModelID 返回别名解析后的真实上游模型 ID。
+func (request Request) ModelID() runtimecore.ModelID {
+	return request.modelID
 }
 
 // AfterRef 返回本页不包含的稳定账号游标。
@@ -95,6 +126,7 @@ func (request Request) Limit() int {
 // isValid 防止零值或跨层篡改请求进入持久化端口。
 func (request Request) isValid() bool {
 	return request.ProviderID() != "" &&
+		request.ModelID().IsValid() &&
 		(request.AfterRef() == "" || request.AfterRef().IsValid()) &&
 		request.Limit() >= 1 &&
 		request.Limit() <= accountapp.MaxRoutingLimit
@@ -140,16 +172,20 @@ func (result Result) SourceExhausted() bool {
 // Recruiter 编排有界候选读取和单账号凭据可用化。
 type Recruiter struct {
 	candidates  CandidateSource
+	runtime     RuntimeEligibilitySource
 	credentials CredentialResolver
 }
 
 // NewRecruiter 创建不持有账号池、不缓存凭据的无状态征召器。
 func NewRecruiter(dependencies Dependencies) (*Recruiter, error) {
-	if dependencies.Candidates == nil || dependencies.Credentials == nil {
+	if dependencies.Candidates == nil ||
+		dependencies.Runtime == nil ||
+		dependencies.Credentials == nil {
 		return nil, ErrInvalidDependencies
 	}
 	return &Recruiter{
 		candidates:  dependencies.Candidates,
+		runtime:     dependencies.Runtime,
 		credentials: dependencies.Credentials,
 	}, nil
 }
@@ -164,6 +200,7 @@ func (recruiter *Recruiter) Recruit(
 ) (Result, error) {
 	if recruiter == nil ||
 		recruiter.candidates == nil ||
+		recruiter.runtime == nil ||
 		recruiter.credentials == nil {
 		return Result{}, ErrInvalidDependencies
 	}
@@ -193,6 +230,17 @@ func (recruiter *Recruiter) Recruit(
 		if !validCandidate(candidate, request.ProviderID()) {
 			return progress, ErrInvalidCandidatePage
 		}
+		eligible, eligibilityErr := recruiter.isRuntimeEligible(
+			ctx,
+			candidate,
+			request.ModelID(),
+		)
+		if eligibilityErr != nil {
+			return progress, eligibilityErr
+		}
+		if !eligible {
+			continue
+		}
 		credential, resolveErr := recruiter.credentials.ResolveCredential(
 			ctx,
 			candidate.Ref(),
@@ -219,6 +267,32 @@ func (recruiter *Recruiter) Recruit(
 		return progress, nil
 	}
 	return progress, ErrNoRoutableAccount
+}
+
+// isRuntimeEligible 在读取敏感凭据前检查账号与真实模型元组。
+func (recruiter *Recruiter) isRuntimeEligible(
+	ctx context.Context,
+	candidate accountapp.RoutingAccount,
+	modelID runtimecore.ModelID,
+) (bool, error) {
+	route, err := runtimecore.NewModelRoute(
+		candidate.Ref(),
+		modelID.String(),
+	)
+	if err != nil {
+		return false, ErrInvalidCandidatePage
+	}
+	eligibility, err := recruiter.runtime.CheckEligibility(ctx, route)
+	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return false, ctxErr
+		}
+		return false, fmt.Errorf("读取账号征召运行态失败: %w", err)
+	}
+	if !eligibility.IsValid() {
+		return false, ErrInvalidRuntimeEligibility
+	}
+	return eligibility.Eligible(), nil
 }
 
 // validCandidate 复核候选源返回的 Provider、身份和 CLI 别名。

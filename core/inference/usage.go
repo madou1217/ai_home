@@ -30,6 +30,7 @@ type Usage struct {
 func NewUsage(input UsageInput) (Usage, error) {
 	if input.CachedInputTokens > input.InputTokens ||
 		input.CacheWriteInputTokens > input.InputTokens ||
+		input.CachedInputTokens > input.InputTokens-input.CacheWriteInputTokens ||
 		input.ReasoningTokens > input.OutputTokens ||
 		input.OutputTokens > math.MaxUint64-input.InputTokens {
 		return Usage{}, ErrInvalidUsage

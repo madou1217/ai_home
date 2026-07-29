@@ -68,6 +68,14 @@ func isOpaqueContinuityData(value string) bool {
 	return true
 }
 
+// isValidRequestUserID 校验低敏用户标识不会携带控制字符或无界数据。
+func isValidRequestUserID(value string) bool {
+	if len(value) > 1024 || !isNonBlankText(value) {
+		return false
+	}
+	return true
+}
+
 // isJSONObject 判断字节内容是完整 JSON Object，不接受数组、null 或损坏参数。
 func isJSONObject(value []byte) bool {
 	trimmed := strings.TrimSpace(string(value))

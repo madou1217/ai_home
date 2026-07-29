@@ -115,6 +115,109 @@ func TestReasoningConfigPreservesCurrentResponsesEffortLevels(t *testing.T) {
 	}
 }
 
+// TestAdaptiveReasoningPreservesAnthropicEffort 验证 adaptive thinking 与
+// output_config.effort 可以同时进入 Canonical Contract。
+func TestAdaptiveReasoningPreservesAnthropicEffort(t *testing.T) {
+	t.Parallel()
+
+	config, err := NewAdaptiveReasoningWithEffort(ReasoningSummaryAuto, ReasoningEffortMax)
+	if err != nil {
+		t.Fatalf("NewAdaptiveReasoningWithEffort() error = %v", err)
+	}
+	if config.Mode() != ReasoningModeAdaptive ||
+		config.Effort() != ReasoningEffortMax ||
+		config.Summary() != ReasoningSummaryAuto {
+		t.Fatalf("reasoning = %#v, want adaptive max effort", config)
+	}
+}
+
+// TestBudgetReasoningPreservesAnthropicEffort 验证明确 thinking 预算与
+// output_config.effort 同时存在时不会丢失任一字段。
+func TestBudgetReasoningPreservesAnthropicEffort(t *testing.T) {
+	t.Parallel()
+
+	config, err := NewBudgetReasoningWithEffort(
+		4096,
+		ReasoningSummaryNone,
+		ReasoningEffortHigh,
+	)
+	if err != nil {
+		t.Fatalf("NewBudgetReasoningWithEffort() error = %v", err)
+	}
+	if config.Mode() != ReasoningModeBudget ||
+		config.BudgetTokens() != 4096 ||
+		config.Effort() != ReasoningEffortHigh ||
+		config.Summary() != ReasoningSummaryNone {
+		t.Fatalf("reasoning = %#v, want budget high effort", config)
+	}
+}
+
+// TestRequestPreservesTopKAndDoesNotRecruitReasoningForExplicitDisable 验证
+// Anthropic top_k 不丢失，并且显式关闭 thinking 不会错误提高征召能力要求。
+func TestRequestPreservesTopKAndDoesNotRecruitReasoningForExplicitDisable(t *testing.T) {
+	t.Parallel()
+
+	text, err := NewTextContent("直接回答")
+	if err != nil {
+		t.Fatalf("NewTextContent() error = %v", err)
+	}
+	message, err := NewMessage(RoleUser, text)
+	if err != nil {
+		t.Fatalf("NewMessage() error = %v", err)
+	}
+	disabled, err := NewEffortReasoning(ReasoningEffortNone, ReasoningSummaryNone)
+	if err != nil {
+		t.Fatalf("NewEffortReasoning() error = %v", err)
+	}
+	topK := uint64(64)
+	request, err := NewRequest(RequestInput{
+		ClientProtocol: ClientProtocolAnthropicMessages,
+		Model:          "claude-opus-4-6",
+		Messages:       []Message{message},
+		Reasoning:      &disabled,
+		TopK:           &topK,
+	})
+	if err != nil {
+		t.Fatalf("NewRequest() error = %v", err)
+	}
+	gotTopK, found := request.TopK()
+	if !found || gotTopK != 64 {
+		t.Fatalf("TopK() = (%d, %t), want (64, true)", gotTopK, found)
+	}
+	if request.RequiredCapabilities().Has(CapabilityReasoning) {
+		t.Fatal("显式关闭 thinking 不应要求 reasoning 能力")
+	}
+}
+
+// TestRequestPreservesLowSensitiveUserID 验证 metadata.user_id 不会进入模型文本，
+// 但可由后续上游 Adapter 精确读取。
+func TestRequestPreservesLowSensitiveUserID(t *testing.T) {
+	t.Parallel()
+
+	text, err := NewTextContent("请求")
+	if err != nil {
+		t.Fatalf("NewTextContent() error = %v", err)
+	}
+	message, err := NewMessage(RoleUser, text)
+	if err != nil {
+		t.Fatalf("NewMessage() error = %v", err)
+	}
+	userID := "session_exact_1"
+	request, err := NewRequest(RequestInput{
+		ClientProtocol: ClientProtocolAnthropicMessages,
+		Model:          "claude-opus-4-6",
+		Messages:       []Message{message},
+		UserID:         &userID,
+	})
+	if err != nil {
+		t.Fatalf("NewRequest() error = %v", err)
+	}
+	got, found := request.UserID()
+	if !found || got != userID {
+		t.Fatalf("UserID() = (%q, %t), want exact value", got, found)
+	}
+}
+
 // TestRequestOwnsIndependentMessagesAndTools 验证 Canonical Request 不暴露调用方持有的
 // 消息和工具切片，避免 Decoder 缓冲复用导致请求内容变化。
 func TestRequestOwnsIndependentMessagesAndTools(t *testing.T) {

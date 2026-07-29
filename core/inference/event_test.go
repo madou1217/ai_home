@@ -150,3 +150,21 @@ func TestStreamEventsRejectSyntheticSuccessInputs(t *testing.T) {
 		t.Fatalf("empty text delta error = %v, want ErrInvalidEvent", err)
 	}
 }
+
+// TestResponseCompletedEventPreservesPauseTurn 验证 Anthropic 长任务暂停语义
+// 不会被降级为普通 end_turn。
+func TestResponseCompletedEventPreservesPauseTurn(t *testing.T) {
+	t.Parallel()
+
+	usage, err := NewUsage(UsageInput{InputTokens: 3, OutputTokens: 2})
+	if err != nil {
+		t.Fatalf("NewUsage() error = %v", err)
+	}
+	event, err := NewResponseCompletedEvent(1, StopReasonPauseTurn, "", usage)
+	if err != nil {
+		t.Fatalf("NewResponseCompletedEvent() error = %v", err)
+	}
+	if event.StopReason() != StopReasonPauseTurn {
+		t.Fatalf("StopReason() = %q, want %q", event.StopReason(), StopReasonPauseTurn)
+	}
+}

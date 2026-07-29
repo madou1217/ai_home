@@ -93,6 +93,51 @@ func TestToolDefinitionPreservesExplicitStrictMode(t *testing.T) {
 	}
 }
 
+// TestToolDefinitionPreservesExecutionHints 验证 Claude custom tool 的调用来源、
+// 延迟加载、参数流和输入示例都由 Canonical Contract 持有独立副本。
+func TestToolDefinitionPreservesExecutionHints(t *testing.T) {
+	t.Parallel()
+
+	strict := true
+	deferLoading := true
+	eagerInputStreaming := false
+	example := []byte(`{"query":"codex"}`)
+	tool, err := NewToolDefinitionWithOptions(
+		"lookup",
+		"查询账号",
+		[]byte(`{"type":"object"}`),
+		ToolDefinitionOptions{
+			Strict:              &strict,
+			AllowedCallers:      []ToolCaller{ToolCallerDirect, ToolCallerCodeExecution20260120},
+			DeferLoading:        &deferLoading,
+			EagerInputStreaming: &eagerInputStreaming,
+			InputExamples:       [][]byte{example},
+		},
+	)
+	if err != nil {
+		t.Fatalf("NewToolDefinitionWithOptions() error = %v", err)
+	}
+	example[0] = '['
+	callers := tool.AllowedCallers()
+	callers[0] = ToolCallerCodeExecution20250825
+	examples := tool.InputExamples()
+	examples[0][0] = '['
+
+	gotCallers := tool.AllowedCallers()
+	gotExamples := tool.InputExamples()
+	if len(gotCallers) != 2 ||
+		gotCallers[0] != ToolCallerDirect ||
+		string(gotExamples[0]) != `{"query":"codex"}` {
+		t.Fatalf("tool hints mutated: callers=%#v examples=%q", gotCallers, gotExamples)
+	}
+	if value, found := tool.DeferLoading(); !found || !value {
+		t.Fatalf("DeferLoading() = (%t, %t), want explicit true", value, found)
+	}
+	if value, found := tool.EagerInputStreaming(); !found || value {
+		t.Fatalf("EagerInputStreaming() = (%t, %t), want explicit false", value, found)
+	}
+}
+
 // TestToolResultRejectsMissingOrRecursiveContent 验证工具结果不能缺 call ID，
 // 也不能递归包含另一个工具结果来制造模糊配对。
 func TestToolResultRejectsMissingOrRecursiveContent(t *testing.T) {
@@ -111,5 +156,19 @@ func TestToolResultRejectsMissingOrRecursiveContent(t *testing.T) {
 	}
 	if _, err := NewToolResultContent("call_exact_2", false, result); !errors.Is(err, ErrInvalidToolResult) {
 		t.Fatalf("recursive result error = %v, want ErrInvalidToolResult", err)
+	}
+}
+
+// TestToolResultAllowsExplicitEmptyContent 验证缺省 content 仍保留调用 ID 和
+// 错误状态，不需要伪造占位文本。
+func TestToolResultAllowsExplicitEmptyContent(t *testing.T) {
+	t.Parallel()
+
+	result, err := NewToolResultContent("call_empty_1", true)
+	if err != nil {
+		t.Fatalf("NewToolResultContent() error = %v", err)
+	}
+	if result.CallID() != "call_empty_1" || !result.IsError() || len(result.Contents()) != 0 {
+		t.Fatalf("result = %#v, want empty error result", result)
 	}
 }

@@ -177,11 +177,23 @@ func NewBudgetReasoning(
 	budgetTokens uint64,
 	summary ReasoningSummaryMode,
 ) (ReasoningConfig, error) {
-	if budgetTokens == 0 || !summary.IsValid() {
+	return NewBudgetReasoningWithEffort(budgetTokens, summary, "")
+}
+
+// NewBudgetReasoningWithEffort 创建同时保留预算和抽象强度的 reasoning 意图。
+func NewBudgetReasoningWithEffort(
+	budgetTokens uint64,
+	summary ReasoningSummaryMode,
+	effort ReasoningEffort,
+) (ReasoningConfig, error) {
+	if budgetTokens == 0 ||
+		!summary.IsValid() ||
+		(effort != "" && !effort.IsValid()) {
 		return ReasoningConfig{}, ErrInvalidReasoning
 	}
 	return ReasoningConfig{
 		mode:         ReasoningModeBudget,
+		effort:       effort,
 		budgetTokens: budgetTokens,
 		summary:      summary,
 	}, nil
@@ -189,11 +201,23 @@ func NewBudgetReasoning(
 
 // NewAdaptiveReasoning 创建由上游模型自适应控制的 reasoning 意图。
 func NewAdaptiveReasoning(summary ReasoningSummaryMode) (ReasoningConfig, error) {
-	if !summary.IsValid() {
+	return NewAdaptiveReasoningWithEffort(summary, "")
+}
+
+// NewAdaptiveReasoningWithEffort 创建同时保留自适应模式和抽象强度的 reasoning 意图。
+//
+// Anthropic adaptive thinking 允许 output_config.effort 与 thinking 同时出现，
+// 因此不能把两者压缩为互斥配置。
+func NewAdaptiveReasoningWithEffort(
+	summary ReasoningSummaryMode,
+	effort ReasoningEffort,
+) (ReasoningConfig, error) {
+	if !summary.IsValid() || (effort != "" && !effort.IsValid()) {
 		return ReasoningConfig{}, ErrInvalidReasoning
 	}
 	return ReasoningConfig{
 		mode:    ReasoningModeAdaptive,
+		effort:  effort,
 		summary: summary,
 	}, nil
 }
@@ -227,9 +251,13 @@ func (config ReasoningConfig) IsValid() bool {
 			(config.summary == "" || config.summary.IsValid()) &&
 			(config.effort != "" || config.summary != "")
 	case ReasoningModeBudget:
-		return config.effort == "" && config.budgetTokens > 0 && config.summary.IsValid()
+		return (config.effort == "" || config.effort.IsValid()) &&
+			config.budgetTokens > 0 &&
+			config.summary.IsValid()
 	case ReasoningModeAdaptive:
-		return config.effort == "" && config.budgetTokens == 0 && config.summary.IsValid()
+		return (config.effort == "" || config.effort.IsValid()) &&
+			config.budgetTokens == 0 &&
+			config.summary.IsValid()
 	default:
 		return false
 	}
@@ -440,6 +468,12 @@ type RequestInput struct {
 	Temperature *float64
 	// TopP 是可选 nucleus sampling 概率。
 	TopP *float64
+	// TopK 是可选的候选 token 数量上限。
+	TopK *uint64
+	// UserID 是客户端提供的低敏最终用户或会话标识。
+	UserID *string
+	// PromptCacheBreakpoints 是请求级、消息内容级或工具级缓存断点。
+	PromptCacheBreakpoints []PromptCacheBreakpoint
 	// StopSequences 是必须原样保留的非空停止序列。
 	StopSequences []string
 	// Store 表示客户端是否明确要求 Provider 保存响应状态。
@@ -470,6 +504,9 @@ type Request struct {
 	maxOutputTokens   uint64
 	temperature       *float64
 	topP              *float64
+	topK              *uint64
+	userID            *string
+	cacheBreakpoints  []PromptCacheBreakpoint
 	stopSequences     []string
 	store             *bool
 	includeEncrypted  bool
@@ -515,6 +552,9 @@ func NewRequest(input RequestInput) (Request, error) {
 		maxOutputTokens:   input.MaxOutputTokens,
 		temperature:       cloneFloat(input.Temperature),
 		topP:              cloneFloat(input.TopP),
+		topK:              cloneUint64(input.TopK),
+		userID:            cloneString(input.UserID),
+		cacheBreakpoints:  append([]PromptCacheBreakpoint(nil), input.PromptCacheBreakpoints...),
 		stopSequences:     append([]string(nil), input.StopSequences...),
 		store:             cloneBool(input.Store),
 		includeEncrypted:  input.IncludeEncryptedReasoning,
@@ -611,6 +651,27 @@ func (request Request) TopP() (float64, bool) {
 	return *request.topP, true
 }
 
+// TopK 返回可选候选 token 数量上限。
+func (request Request) TopK() (uint64, bool) {
+	if request.topK == nil {
+		return 0, false
+	}
+	return *request.topK, true
+}
+
+// UserID 返回客户端提供的可选最终用户或会话标识。
+func (request Request) UserID() (string, bool) {
+	if request.userID == nil {
+		return "", false
+	}
+	return *request.userID, true
+}
+
+// PromptCacheBreakpoints 返回不能修改请求内部状态的缓存断点副本。
+func (request Request) PromptCacheBreakpoints() []PromptCacheBreakpoint {
+	return append([]PromptCacheBreakpoint(nil), request.cacheBreakpoints...)
+}
+
 // StopSequences 返回不能修改请求内部状态的停止序列副本。
 func (request Request) StopSequences() []string {
 	return append([]string(nil), request.stopSequences...)
@@ -695,6 +756,19 @@ func validateRequestOptions(input RequestInput, tools []ToolDefinition) error {
 	if input.Reasoning != nil && !input.Reasoning.IsValid() {
 		return ErrInvalidReasoning
 	}
+	if input.TopK != nil && *input.TopK == 0 {
+		return ErrInvalidRequest
+	}
+	if input.UserID != nil && !isValidRequestUserID(*input.UserID) {
+		return ErrInvalidRequest
+	}
+	if !areValidPromptCacheBreakpoints(
+		input.PromptCacheBreakpoints,
+		input.Messages,
+		tools,
+	) {
+		return ErrInvalidRequest
+	}
 	if input.StructuredOutput != nil && !input.StructuredOutput.IsValid() {
 		return ErrInvalidRequest
 	}
@@ -765,7 +839,9 @@ func deriveRequiredCapabilities(request Request) CapabilitySet {
 	if len(request.tools) > 0 {
 		required = required.with(CapabilityTools)
 	}
-	if request.reasoning != nil {
+	if request.reasoning != nil &&
+		!(request.reasoning.mode == ReasoningModeEffort &&
+			request.reasoning.effort == ReasoningEffortNone) {
 		required = required.with(CapabilityReasoning)
 	}
 	if request.includeEncrypted {
@@ -873,6 +949,24 @@ func cloneBool(value *bool) *bool {
 
 // cloneFloat 返回可选浮点值的独立副本。
 func cloneFloat(value *float64) *float64 {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
+}
+
+// cloneUint64 返回可选无符号整数的独立副本。
+func cloneUint64(value *uint64) *uint64 {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
+}
+
+// cloneString 返回可选字符串的独立副本。
+func cloneString(value *string) *string {
 	if value == nil {
 		return nil
 	}

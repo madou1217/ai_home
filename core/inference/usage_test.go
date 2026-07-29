@@ -33,6 +33,7 @@ func TestUsageRejectsImpossibleBreakdownAndOverflow(t *testing.T) {
 	invalidInputs := []UsageInput{
 		{InputTokens: 1, CachedInputTokens: 2},
 		{InputTokens: 1, CacheWriteInputTokens: 2},
+		{InputTokens: 3, CachedInputTokens: 2, CacheWriteInputTokens: 2},
 		{OutputTokens: 1, ReasoningTokens: 2},
 		{InputTokens: ^uint64(0), OutputTokens: 1},
 	}

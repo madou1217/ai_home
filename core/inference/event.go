@@ -842,6 +842,8 @@ const (
 	StopReasonMaxTokens StopReason = "max_tokens"
 	// StopReasonToolUse 表示模型结束文本并等待工具结果。
 	StopReasonToolUse StopReason = "tool_use"
+	// StopReasonPauseTurn 表示长任务暂时让出本轮，可带原响应继续。
+	StopReasonPauseTurn StopReason = "pause_turn"
 	// StopReasonContentFilter 表示输出被内容策略停止。
 	StopReasonContentFilter StopReason = "content_filter"
 	// StopReasonCancelled 表示调用方主动取消响应。
@@ -855,6 +857,7 @@ func (reason StopReason) IsValid() bool {
 		StopReasonStopSequence,
 		StopReasonMaxTokens,
 		StopReasonToolUse,
+		StopReasonPauseTurn,
 		StopReasonContentFilter,
 		StopReasonCancelled:
 		return true

@@ -722,8 +722,8 @@ type adapterRouteResolver struct {
 func (resolver adapterRouteResolver) Resolve(
 	context.Context,
 	inference.Request,
-) (inferencegateway.Route, error) {
-	return resolver.route, nil
+) (inferencegateway.RoutePlan, error) {
+	return inferencegateway.NewRoutePlan(resolver.route)
 }
 
 // adapterAttemptRecorder 保存 Coordinator 的成功与失败提交。

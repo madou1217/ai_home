@@ -293,6 +293,313 @@ func TestCoordinatorDoesNotRotateNonRetryableFailure(t *testing.T) {
 	}
 }
 
+// TestCoordinatorFallsBackAcrossOrderedRouteCandidates 验证一个模型候选耗尽后，
+// Coordinator 会尝试下一候选，并且不会把前一候选失败暴露给客户端。
+func TestCoordinatorFallsBackAcrossOrderedRouteCandidates(t *testing.T) {
+	t.Parallel()
+
+	fixture := newCoordinatorFixture(t, "codex", 1)
+	secondRoute, err := inferencegateway.NewRoute(
+		inference.ProviderCodex,
+		inference.ProtocolCodexResponses,
+		"gpt-5.4",
+		fixture.route.Capabilities(),
+	)
+	if err != nil {
+		t.Fatalf("NewRoute(second) error = %v", err)
+	}
+	_, firstFailure := overloadedFailure(t)
+	upstream := newScriptedUpstream(
+		inference.ProtocolCodexResponses,
+		func(
+			_ context.Context,
+			invocation inferencegateway.Invocation,
+			emit inferencegateway.EventSink,
+		) (inferencegateway.AttemptResult, error) {
+			if invocation.Route().EffectiveModel() == fixture.route.EffectiveModel() {
+				return inferencegateway.FailedAttempt(firstFailure), nil
+			}
+			for _, event := range successfulEventsForModel(
+				t,
+				"resp_route_fallback",
+				secondRoute.EffectiveModel(),
+			) {
+				if err := emit(event); err != nil {
+					return inferencegateway.AttemptResult{}, err
+				}
+			}
+			return inferencegateway.CompletedAttempt(), nil
+		},
+	)
+	recorder := &attemptRecorder{}
+	coordinator := fixture.newCoordinatorWithRoutes(
+		t,
+		upstream,
+		recorder,
+		fixture.route,
+		secondRoute,
+	)
+	events := make([]inference.StreamEvent, 0, 2)
+
+	err = coordinator.Execute(
+		context.Background(),
+		newTextRequest(t, "client-model-alias", true),
+		func(event inference.StreamEvent) error {
+			events = append(events, event)
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	invocations := upstream.Invocations()
+	if len(invocations) != 2 ||
+		invocations[0].Route().EffectiveModel() != "gpt-5.6-sol" ||
+		invocations[1].Route().EffectiveModel() != "gpt-5.4" ||
+		recorder.FailureCount() != 1 ||
+		recorder.SuccessCount() != 1 ||
+		len(events) != 2 ||
+		events[0].Kind() != inference.EventResponseStarted ||
+		events[1].Kind() != inference.EventResponseCompleted {
+		t.Fatalf(
+			"invocations=%#v failures=%d successes=%d events=%v",
+			invocations,
+			recorder.FailureCount(),
+			recorder.SuccessCount(),
+			eventKinds(events),
+		)
+	}
+	started := events[0].(inference.ResponseStartedEvent)
+	if started.ResponseID() != "resp_route_fallback" ||
+		started.Model() != "gpt-5.4" {
+		t.Fatalf("visible started event = %#v", started)
+	}
+}
+
+// TestCoordinatorSkipsUnsupportedRouteCandidateBeforeRecruitment 验证能力不足的
+// 候选不会读取账号，并且不会阻止后续候选执行。
+func TestCoordinatorSkipsUnsupportedRouteCandidateBeforeRecruitment(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	fixture := newCoordinatorFixture(t, "codex", 1)
+	textOnly, err := inference.NewCapabilitySet(
+		inference.CapabilityTextGeneration,
+	)
+	if err != nil {
+		t.Fatalf("NewCapabilitySet() error = %v", err)
+	}
+	unsupported, err := inferencegateway.NewRoute(
+		inference.ProviderCodex,
+		inference.ProtocolCodexResponses,
+		"gpt-text-only",
+		textOnly,
+	)
+	if err != nil {
+		t.Fatalf("NewRoute(unsupported) error = %v", err)
+	}
+	upstream := newScriptedUpstream(
+		inference.ProtocolCodexResponses,
+		func(
+			_ context.Context,
+			invocation inferencegateway.Invocation,
+			emit inferencegateway.EventSink,
+		) (inferencegateway.AttemptResult, error) {
+			for _, event := range successfulEventsForModel(
+				t,
+				"resp_capability_fallback",
+				invocation.Route().EffectiveModel(),
+			) {
+				if err := emit(event); err != nil {
+					return inferencegateway.AttemptResult{}, err
+				}
+			}
+			return inferencegateway.CompletedAttempt(), nil
+		},
+	)
+	recorder := &attemptRecorder{}
+	coordinator := fixture.newCoordinatorWithRoutes(
+		t,
+		upstream,
+		recorder,
+		unsupported,
+		fixture.route,
+	)
+
+	err = coordinator.Execute(
+		context.Background(),
+		newToolRequest(t),
+		func(inference.StreamEvent) error { return nil },
+	)
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	invocations := upstream.Invocations()
+	if fixture.source.CallCount() != 1 ||
+		len(invocations) != 1 ||
+		invocations[0].Route() != fixture.route ||
+		recorder.SuccessCount() != 1 {
+		t.Fatalf(
+			"recruiter calls=%d invocations=%#v successes=%d",
+			fixture.source.CallCount(),
+			invocations,
+			recorder.SuccessCount(),
+		)
+	}
+}
+
+// TestCoordinatorCommitsLastFailureAcrossAllRouteCandidates 验证所有候选均耗尽时
+// 只提交最后一次已记录的安全失败。
+func TestCoordinatorCommitsLastFailureAcrossAllRouteCandidates(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	fixture := newCoordinatorFixture(t, "codex", 1)
+	secondRoute, err := inferencegateway.NewRoute(
+		inference.ProviderCodex,
+		inference.ProtocolCodexResponses,
+		"gpt-5.4",
+		fixture.route.Capabilities(),
+	)
+	if err != nil {
+		t.Fatalf("NewRoute(second) error = %v", err)
+	}
+	firstPublic, firstFailure := newAttemptFailure(
+		t,
+		"first_route_overloaded",
+		"First route is overloaded",
+		true,
+		runtimecore.FailureModelOverloaded,
+	)
+	lastPublic, lastFailure := newAttemptFailure(
+		t,
+		"last_route_overloaded",
+		"Last route is overloaded",
+		true,
+		runtimecore.FailureModelOverloaded,
+	)
+	upstream := newScriptedUpstream(
+		inference.ProtocolCodexResponses,
+		func(
+			_ context.Context,
+			invocation inferencegateway.Invocation,
+			_ inferencegateway.EventSink,
+		) (inferencegateway.AttemptResult, error) {
+			if invocation.Route() == fixture.route {
+				return inferencegateway.FailedAttempt(firstFailure), nil
+			}
+			return inferencegateway.FailedAttempt(lastFailure), nil
+		},
+	)
+	recorder := &attemptRecorder{}
+	coordinator := fixture.newCoordinatorWithRoutes(
+		t,
+		upstream,
+		recorder,
+		fixture.route,
+		secondRoute,
+	)
+	events := make([]inference.StreamEvent, 0, 1)
+
+	err = coordinator.Execute(
+		context.Background(),
+		newTextRequest(t, "client-model-alias", true),
+		func(event inference.StreamEvent) error {
+			events = append(events, event)
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if len(upstream.Invocations()) != 2 ||
+		recorder.FailureCount() != 2 ||
+		len(events) != 1 ||
+		events[0].Kind() != inference.EventResponseFailed {
+		t.Fatalf(
+			"invocations=%d failures=%d events=%v",
+			len(upstream.Invocations()),
+			recorder.FailureCount(),
+			eventKinds(events),
+		)
+	}
+	failed := events[0].(inference.ResponseFailedEvent)
+	if sameFailure(failed.Failure(), firstPublic) ||
+		!sameFailure(failed.Failure(), lastPublic) {
+		t.Fatalf("committed failure = %#v", failed.Failure())
+	}
+}
+
+// TestCoordinatorBoundsAccountScanForEveryRouteCandidate 验证路由候选不会共享
+// 已消耗的账号扫描预算，也不会让单候选突破固定上限。
+func TestCoordinatorBoundsAccountScanForEveryRouteCandidate(t *testing.T) {
+	t.Parallel()
+
+	fixture := newCoordinatorFixture(
+		t,
+		"codex",
+		inferencegateway.DefaultAccountScanLimit+8,
+	)
+	secondRoute, err := inferencegateway.NewRoute(
+		inference.ProviderCodex,
+		inference.ProtocolCodexResponses,
+		"gpt-5.4",
+		fixture.route.Capabilities(),
+	)
+	if err != nil {
+		t.Fatalf("NewRoute(second) error = %v", err)
+	}
+	publicFailure, attemptFailure := overloadedFailure(t)
+	upstream := newScriptedUpstream(
+		inference.ProtocolCodexResponses,
+		func(
+			context.Context,
+			inferencegateway.Invocation,
+			inferencegateway.EventSink,
+		) (inferencegateway.AttemptResult, error) {
+			return inferencegateway.FailedAttempt(attemptFailure), nil
+		},
+	)
+	recorder := &attemptRecorder{}
+	coordinator := fixture.newCoordinatorWithRoutes(
+		t,
+		upstream,
+		recorder,
+		fixture.route,
+		secondRoute,
+	)
+	events := make([]inference.StreamEvent, 0, 1)
+
+	err = coordinator.Execute(
+		context.Background(),
+		newTextRequest(t, "client-model-alias", true),
+		func(event inference.StreamEvent) error {
+			events = append(events, event)
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	wantAttempts := inferencegateway.DefaultAccountScanLimit * 2
+	if len(upstream.Invocations()) != wantAttempts ||
+		recorder.FailureCount() != wantAttempts ||
+		len(events) != 1 {
+		t.Fatalf(
+			"invocations=%d failures=%d events=%v",
+			len(upstream.Invocations()),
+			recorder.FailureCount(),
+			eventKinds(events),
+		)
+	}
+	failed := events[0].(inference.ResponseFailedEvent)
+	if !sameFailure(failed.Failure(), publicFailure) {
+		t.Fatalf("committed failure = %#v", failed.Failure())
+	}
+}
+
 // TestCoordinatorStopsAtBoundedAccountScanLimit 验证大账号池也只检查固定数量，
 // 不会因上游连续失败退化为全量账号扫描。
 func TestCoordinatorStopsAtBoundedAccountScanLimit(t *testing.T) {
@@ -756,6 +1063,21 @@ func (fixture *coordinatorFixture) newCoordinator(
 	upstream inferencegateway.UpstreamAdapter,
 	recorder inferencegateway.AttemptRecorder,
 ) *inferencegateway.Coordinator {
+	return fixture.newCoordinatorWithRoutes(
+		t,
+		upstream,
+		recorder,
+		fixture.route,
+	)
+}
+
+// newCoordinatorWithRoutes 使用显式有序路由计划创建执行器。
+func (fixture *coordinatorFixture) newCoordinatorWithRoutes(
+	t testing.TB,
+	upstream inferencegateway.UpstreamAdapter,
+	recorder inferencegateway.AttemptRecorder,
+	routes ...inferencegateway.Route,
+) *inferencegateway.Coordinator {
 	t.Helper()
 
 	registry, err := inferencegateway.NewUpstreamRegistry(upstream)
@@ -765,7 +1087,7 @@ func (fixture *coordinatorFixture) newCoordinator(
 	coordinator, err := inferencegateway.NewCoordinator(
 		inferencegateway.Dependencies{
 			Catalog:   fixture.catalog,
-			Routes:    staticRouteResolver{route: fixture.route},
+			Routes:    staticRouteResolver{routes: routes},
 			Recruiter: fixture.recruit,
 			Upstreams: registry,
 			Attempts:  recorder,
@@ -869,16 +1191,19 @@ func (credential coordinatorCredential) GoString() string {
 
 // staticRouteResolver 返回测试显式指定的 Provider、协议和真实模型。
 type staticRouteResolver struct {
-	route inferencegateway.Route
-	err   error
+	routes []inferencegateway.Route
+	err    error
 }
 
 // Resolve 不根据模型名称猜测 Provider。
 func (resolver staticRouteResolver) Resolve(
 	context.Context,
 	inference.Request,
-) (inferencegateway.Route, error) {
-	return resolver.route, resolver.err
+) (inferencegateway.RoutePlan, error) {
+	if resolver.err != nil {
+		return inferencegateway.RoutePlan{}, resolver.err
+	}
+	return inferencegateway.NewRoutePlan(resolver.routes...)
 }
 
 // scriptedUpstream 执行单个协议脚本并记录不可变 Invocation。
@@ -1073,12 +1398,21 @@ func successfulEvents(
 	t testing.TB,
 	responseID string,
 ) []inference.StreamEvent {
+	return successfulEventsForModel(t, responseID, "gpt-5.6-sol")
+}
+
+// successfulEventsForModel 创建指定真实模型的最小成功流。
+func successfulEventsForModel(
+	t testing.TB,
+	responseID string,
+	model string,
+) []inference.StreamEvent {
 	t.Helper()
 
 	started, err := inference.NewResponseStartedEvent(
 		0,
 		responseID,
-		"gpt-5.6-sol",
+		model,
 	)
 	if err != nil {
 		t.Fatalf("NewResponseStartedEvent() error = %v", err)

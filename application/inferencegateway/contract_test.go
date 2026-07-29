@@ -3,6 +3,7 @@ package inferencegateway_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -84,6 +85,91 @@ func TestRouteRequiresExplicitProviderProtocolOwnership(t *testing.T) {
 				t.Fatalf("NewRoute() error = %v", err)
 			}
 		})
+	}
+}
+
+// TestRoutePlanPreservesBoundedCandidateOrder 验证路由计划保持候选顺序、
+// 防御性复制，并拒绝空计划、重复路由和无界候选。
+func TestRoutePlanPreservesBoundedCandidateOrder(t *testing.T) {
+	t.Parallel()
+
+	capabilities, err := inference.NewCapabilitySet(
+		inference.CapabilityTextGeneration,
+		inference.CapabilityStreaming,
+	)
+	if err != nil {
+		t.Fatalf("NewCapabilitySet() error = %v", err)
+	}
+	first, err := inferencegateway.NewRoute(
+		inference.ProviderCodex,
+		inference.ProtocolCodexResponses,
+		"gpt-5.6-sol",
+		capabilities,
+	)
+	if err != nil {
+		t.Fatalf("NewRoute(first) error = %v", err)
+	}
+	second, err := inferencegateway.NewRoute(
+		inference.ProviderClaude,
+		inference.ProtocolClaudeMessages,
+		"claude-opus-4-6",
+		capabilities,
+	)
+	if err != nil {
+		t.Fatalf("NewRoute(second) error = %v", err)
+	}
+	plan, err := inferencegateway.NewRoutePlan(first, second)
+	if err != nil {
+		t.Fatalf("NewRoutePlan() error = %v", err)
+	}
+	candidates := plan.Candidates()
+	if !plan.IsValid() ||
+		len(candidates) != 2 ||
+		candidates[0] != first ||
+		candidates[1] != second {
+		t.Fatalf("plan candidates = %#v", candidates)
+	}
+	candidates[0] = second
+	if plan.Candidates()[0] != first {
+		t.Fatal("Candidates() 返回值修改了 RoutePlan")
+	}
+	if _, err := inferencegateway.NewRoutePlan(); !errors.Is(
+		err,
+		inferencegateway.ErrRouteNotFound,
+	) {
+		t.Fatalf("NewRoutePlan(empty) error = %v", err)
+	}
+	if _, err := inferencegateway.NewRoutePlan(
+		inferencegateway.Route{},
+	); !errors.Is(err, inferencegateway.ErrInvalidRoutePlan) {
+		t.Fatalf("NewRoutePlan(invalid) error = %v", err)
+	}
+	if _, err := inferencegateway.NewRoutePlan(first, first); !errors.Is(
+		err,
+		inferencegateway.ErrInvalidRoutePlan,
+	) {
+		t.Fatalf("NewRoutePlan(duplicate) error = %v", err)
+	}
+	tooMany := make(
+		[]inferencegateway.Route,
+		inferencegateway.MaxRouteCandidates+1,
+	)
+	for index := range tooMany {
+		tooMany[index], err = inferencegateway.NewRoute(
+			inference.ProviderCodex,
+			inference.ProtocolCodexResponses,
+			fmt.Sprintf("gpt-route-%d", index),
+			capabilities,
+		)
+		if err != nil {
+			t.Fatalf("NewRoute(%d) error = %v", index, err)
+		}
+	}
+	if _, err := inferencegateway.NewRoutePlan(tooMany...); !errors.Is(
+		err,
+		inferencegateway.ErrInvalidRoutePlan,
+	) {
+		t.Fatalf("NewRoutePlan(too many) error = %v", err)
 	}
 }
 

@@ -62,6 +62,12 @@ type Coordinator struct {
 	accountScanLimit int
 }
 
+// routeExecution 描述单个候选是否已经终止请求或留下可延迟提交的失败。
+type routeExecution struct {
+	terminal       bool
+	pendingFailure *attemptStream
+}
+
 // 编译期确认 Coordinator 完整实现稳定 Executor 端口。
 var _ Executor = (*Coordinator)(nil)
 
@@ -92,7 +98,7 @@ func NewCoordinator(
 	}, nil
 }
 
-// Execute 以有界账号扫描执行一次 Canonical Request。
+// Execute 依次执行有界路由计划中的 Canonical Request。
 func (coordinator *Coordinator) Execute(
 	ctx context.Context,
 	request inference.Request,
@@ -101,19 +107,59 @@ func (coordinator *Coordinator) Execute(
 	if err := coordinator.validateExecute(ctx, request, emit); err != nil {
 		return err
 	}
-	route, err := coordinator.routes.Resolve(ctx, request)
+	plan, err := coordinator.routes.Resolve(ctx, request)
 	if err != nil {
 		return fmt.Errorf("解析 Canonical 推理路由失败: %w", err)
 	}
-	if !route.IsValid() {
-		return ErrInvalidRoute
+	if !plan.IsValid() {
+		return ErrInvalidRoutePlan
 	}
-	if !route.Supports(request.RequiredCapabilities()) {
+	return coordinator.executePlan(ctx, request, plan, emit)
+}
+
+// executePlan 顺序尝试支持请求能力的候选，并保留最后一个安全失败。
+func (coordinator *Coordinator) executePlan(
+	ctx context.Context,
+	request inference.Request,
+	plan RoutePlan,
+	emit EventSink,
+) error {
+	var pendingFailure *attemptStream
+	supported := false
+	for _, route := range plan.candidates {
+		if !route.Supports(request.RequiredCapabilities()) {
+			continue
+		}
+		supported = true
+		execution, err := coordinator.executeCandidate(
+			ctx,
+			request,
+			route,
+			emit,
+		)
+		if err != nil || execution.terminal {
+			return err
+		}
+		if execution.pendingFailure != nil {
+			pendingFailure = execution.pendingFailure
+		}
+	}
+	if !supported {
 		return ErrUnsupportedRouteCapabilities
 	}
+	return finishExhaustedPlan(pendingFailure)
+}
+
+// executeCandidate 解析精确协议 Adapter 后执行一个路由候选。
+func (coordinator *Coordinator) executeCandidate(
+	ctx context.Context,
+	request inference.Request,
+	route Route,
+	emit EventSink,
+) (routeExecution, error) {
 	upstream, err := coordinator.upstreams.Resolve(route.ProtocolID())
 	if err != nil {
-		return err
+		return routeExecution{}, err
 	}
 	return coordinator.executeRoute(ctx, request, route, upstream, emit)
 }
@@ -125,7 +171,7 @@ func (coordinator *Coordinator) executeRoute(
 	route Route,
 	upstream UpstreamAdapter,
 	emit EventSink,
-) error {
+) (routeExecution, error) {
 	var afterRef accountcore.AccountRef
 	var pendingFailure *attemptStream
 	remaining := coordinator.accountScanLimit
@@ -139,9 +185,11 @@ func (coordinator *Coordinator) executeRoute(
 		remaining -= recruited.Examined()
 		if err != nil {
 			if errors.Is(err, accountrouting.ErrNoRoutableAccount) {
-				return finishExhaustedRoute(pendingFailure)
+				return routeExecution{
+					pendingFailure: pendingFailure,
+				}, nil
 			}
-			return err
+			return routeExecution{}, err
 		}
 		invocation, err := newInvocation(
 			request,
@@ -150,7 +198,7 @@ func (coordinator *Coordinator) executeRoute(
 			recruited.Credential(),
 		)
 		if err != nil {
-			return err
+			return routeExecution{}, err
 		}
 		pendingFailure, err = coordinator.executeAttempt(
 			ctx,
@@ -158,15 +206,20 @@ func (coordinator *Coordinator) executeRoute(
 			upstream,
 			emit,
 		)
-		if err != nil || pendingFailure == nil {
-			return err
+		if err != nil {
+			return routeExecution{}, err
+		}
+		if pendingFailure == nil {
+			return routeExecution{terminal: true}, nil
 		}
 		if remaining <= 0 || recruited.SourceExhausted() {
-			return finishExhaustedRoute(pendingFailure)
+			return routeExecution{
+				pendingFailure: pendingFailure,
+			}, nil
 		}
 		afterRef = recruited.Account().Ref()
 	}
-	return finishExhaustedRoute(pendingFailure)
+	return routeExecution{pendingFailure: pendingFailure}, nil
 }
 
 // recruit 使用剩余扫描预算创建真实模型账号征召请求。
@@ -303,8 +356,8 @@ func (coordinator *Coordinator) validateExecute(
 	return nil
 }
 
-// finishExhaustedRoute 提交最后一个已记录的安全失败，或返回无账号错误。
-func finishExhaustedRoute(pendingFailure *attemptStream) error {
+// finishExhaustedPlan 提交最后一个已记录的安全失败，或返回无账号错误。
+func finishExhaustedPlan(pendingFailure *attemptStream) error {
 	if pendingFailure == nil {
 		return ErrNoRoutableAccount
 	}

@@ -8,16 +8,23 @@ import (
 	"github.com/madou1217/ai_home/core/inference"
 )
 
+const (
+	// MaxRouteCandidates 限制一次请求可尝试的有序路由候选数量。
+	MaxRouteCandidates = 8
+)
+
 var (
 	// ErrInvalidRoute 表示 Provider、上游协议、真实模型或能力不一致。
 	ErrInvalidRoute = errors.New("Canonical 推理路由无效")
+	// ErrInvalidRoutePlan 表示路由计划含无效、重复或过多候选。
+	ErrInvalidRoutePlan = errors.New("Canonical 推理路由计划无效")
 	// ErrRouteNotFound 表示当前请求没有明确可用的 Provider 路由。
 	ErrRouteNotFound = errors.New("Canonical 推理路由不存在")
 	// ErrUnsupportedRouteCapabilities 表示路由不能完整表达请求能力。
 	ErrUnsupportedRouteCapabilities = errors.New("Canonical 推理路由能力不足")
 )
 
-// Route 是完成别名和能力选择后的单一上游执行计划。
+// Route 是完成别名和能力选择后的单一上游执行候选。
 type Route struct {
 	providerID     inference.ProviderID
 	protocolID     inference.ProtocolID
@@ -88,12 +95,65 @@ func (route Route) IsValid() bool {
 	return err == nil && restored == route
 }
 
-// RouteResolver 把客户端模型、别名和能力解析为唯一上游路由。
+// RoutePlan 保存按优先级排列且数量有界的不可变路由候选。
+type RoutePlan struct {
+	candidates []Route
+}
+
+// NewRoutePlan 创建拒绝空集合、重复身份和无界输入的路由计划。
+func NewRoutePlan(routes ...Route) (RoutePlan, error) {
+	if len(routes) == 0 {
+		return RoutePlan{}, ErrRouteNotFound
+	}
+	if !validRouteCandidates(routes) {
+		return RoutePlan{}, ErrInvalidRoutePlan
+	}
+	return RoutePlan{
+		candidates: append([]Route(nil), routes...),
+	}, nil
+}
+
+// Candidates 返回不会修改计划内部顺序的候选副本。
+func (plan RoutePlan) Candidates() []Route {
+	return append([]Route(nil), plan.candidates...)
+}
+
+// IsValid 重新检查跨层传递后的计划不变量。
+func (plan RoutePlan) IsValid() bool {
+	return validRouteCandidates(plan.candidates)
+}
+
+// RouteResolver 把客户端模型、别名和能力解析为有序上游路由计划。
 type RouteResolver interface {
 	Resolve(
 		ctx context.Context,
 		request inference.Request,
-	) (Route, error)
+	) (RoutePlan, error)
+}
+
+// validRouteCandidates 验证候选上限、路由不变量和真实目标唯一性。
+func validRouteCandidates(routes []Route) bool {
+	if len(routes) == 0 || len(routes) > MaxRouteCandidates {
+		return false
+	}
+	for index, route := range routes {
+		if !route.IsValid() {
+			return false
+		}
+		for previous := range index {
+			if sameRouteIdentity(route, routes[previous]) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// sameRouteIdentity 判断两个候选是否指向同一个真实上游模型。
+func sameRouteIdentity(left Route, right Route) bool {
+	return left.ProviderID() == right.ProviderID() &&
+		left.ProtocolID() == right.ProtocolID() &&
+		left.EffectiveModel() == right.EffectiveModel()
 }
 
 // providerOwnsProtocol 固化当前阶段两个 Provider 的原生上游协议。

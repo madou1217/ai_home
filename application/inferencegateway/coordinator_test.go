@@ -332,12 +332,28 @@ func TestCoordinatorFallsBackAcrossOrderedRouteCandidates(t *testing.T) {
 		},
 	)
 	recorder := &attemptRecorder{}
-	coordinator := fixture.newCoordinatorWithRoutes(
+	catalog := testRouteCatalog(
+		t,
+		testRouteRule(
+			t,
+			"client-model-alias",
+			inferencegateway.RouteScopeAll,
+			fixture.route,
+			10,
+		),
+		testRouteRule(
+			t,
+			"client-model-alias",
+			inferencegateway.RouteScopeAll,
+			secondRoute,
+			0,
+		),
+	)
+	coordinator := fixture.newCoordinatorWithResolver(
 		t,
 		upstream,
 		recorder,
-		fixture.route,
-		secondRoute,
+		catalog,
 	)
 	events := make([]inference.StreamEvent, 0, 2)
 
@@ -1080,6 +1096,23 @@ func (fixture *coordinatorFixture) newCoordinatorWithRoutes(
 ) *inferencegateway.Coordinator {
 	t.Helper()
 
+	return fixture.newCoordinatorWithResolver(
+		t,
+		upstream,
+		recorder,
+		staticRouteResolver{routes: routes},
+	)
+}
+
+// newCoordinatorWithResolver 使用显式路由策略创建执行器。
+func (fixture *coordinatorFixture) newCoordinatorWithResolver(
+	t testing.TB,
+	upstream inferencegateway.UpstreamAdapter,
+	recorder inferencegateway.AttemptRecorder,
+	resolver inferencegateway.RouteResolver,
+) *inferencegateway.Coordinator {
+	t.Helper()
+
 	registry, err := inferencegateway.NewUpstreamRegistry(upstream)
 	if err != nil {
 		t.Fatalf("NewUpstreamRegistry() error = %v", err)
@@ -1087,7 +1120,7 @@ func (fixture *coordinatorFixture) newCoordinatorWithRoutes(
 	coordinator, err := inferencegateway.NewCoordinator(
 		inferencegateway.Dependencies{
 			Catalog:   fixture.catalog,
-			Routes:    staticRouteResolver{routes: routes},
+			Routes:    resolver,
 			Recruiter: fixture.recruit,
 			Upstreams: registry,
 			Attempts:  recorder,
@@ -1365,32 +1398,7 @@ func newTextRequest(
 func newToolRequest(t *testing.T) inference.Request {
 	t.Helper()
 
-	text, err := inference.NewTextContent("查询账号")
-	if err != nil {
-		t.Fatalf("NewTextContent() error = %v", err)
-	}
-	message, err := inference.NewMessage(inference.RoleUser, text)
-	if err != nil {
-		t.Fatalf("NewMessage() error = %v", err)
-	}
-	tool, err := inference.NewToolDefinition(
-		"lookup_account",
-		"查询账号",
-		[]byte(`{"type":"object"}`),
-	)
-	if err != nil {
-		t.Fatalf("NewToolDefinition() error = %v", err)
-	}
-	request, err := inference.NewRequest(inference.RequestInput{
-		ClientProtocol: inference.ClientProtocolAnthropicMessages,
-		Model:          "gpt-5.6-sol",
-		Messages:       []inference.Message{message},
-		Tools:          []inference.ToolDefinition{tool},
-	})
-	if err != nil {
-		t.Fatalf("NewRequest() error = %v", err)
-	}
-	return request
+	return newToolRequestForModel(t, "gpt-5.6-sol")
 }
 
 // successfulEvents 创建只有开始和完成终态的最小成功流。

@@ -97,7 +97,8 @@ func (route Route) IsValid() bool {
 
 // RoutePlan 保存按优先级排列且数量有界的不可变路由候选。
 type RoutePlan struct {
-	candidates []Route
+	candidates [MaxRouteCandidates]Route
+	count      uint8
 }
 
 // NewRoutePlan 创建拒绝空集合、重复身份和无界输入的路由计划。
@@ -108,19 +109,24 @@ func NewRoutePlan(routes ...Route) (RoutePlan, error) {
 	if !validRouteCandidates(routes) {
 		return RoutePlan{}, ErrInvalidRoutePlan
 	}
-	return RoutePlan{
-		candidates: append([]Route(nil), routes...),
-	}, nil
+	var plan RoutePlan
+	copy(plan.candidates[:], routes)
+	plan.count = uint8(len(routes))
+	return plan, nil
 }
 
 // Candidates 返回不会修改计划内部顺序的候选副本。
 func (plan RoutePlan) Candidates() []Route {
-	return append([]Route(nil), plan.candidates...)
+	if plan.count > MaxRouteCandidates {
+		return nil
+	}
+	return append([]Route(nil), plan.candidates[:plan.count]...)
 }
 
 // IsValid 重新检查跨层传递后的计划不变量。
 func (plan RoutePlan) IsValid() bool {
-	return validRouteCandidates(plan.candidates)
+	return plan.count <= MaxRouteCandidates &&
+		validRouteCandidates(plan.candidates[:plan.count])
 }
 
 // RouteResolver 把客户端模型、别名和能力解析为有序上游路由计划。

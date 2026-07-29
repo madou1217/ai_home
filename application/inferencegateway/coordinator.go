@@ -126,7 +126,7 @@ func (coordinator *Coordinator) executePlan(
 ) error {
 	var pendingFailure *attemptStream
 	supported := false
-	for _, route := range plan.candidates {
+	for _, route := range plan.candidates[:plan.count] {
 		if !route.Supports(request.RequiredCapabilities()) {
 			continue
 		}

@@ -77,9 +77,10 @@ type reasoningDTO struct {
 	Context string `json:"context,omitempty"`
 }
 
-// textControlDTO 是 Responses 结构化输出外层合同。
+// textControlDTO 是 Responses 文本详细度和结构化输出外层合同。
 type textControlDTO struct {
-	Format textFormatDTO `json:"format"`
+	Verbosity string         `json:"verbosity,omitempty"`
+	Format    *textFormatDTO `json:"format,omitempty"`
 }
 
 // textFormatDTO 是 JSON Schema 输出合同。

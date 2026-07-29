@@ -218,6 +218,11 @@ func TestEncodeRequestAppliesResponsesLiteProfile(t *testing.T) {
 		include[0] != "reasoning.encrypted_content" {
 		t.Fatalf("include = %#v", include)
 	}
+	textControl := encoded["text"].(map[string]any)
+	if textControl["verbosity"] != "low" ||
+		textControl["format"] != nil {
+		t.Fatalf("text = %#v", textControl)
+	}
 }
 
 // TestRequestProfileForModelMatchesCodex0145 固化当前官方模型清单中的

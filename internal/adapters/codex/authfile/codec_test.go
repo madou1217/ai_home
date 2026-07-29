@@ -17,7 +17,7 @@ const (
 )
 
 func TestDecodeOAuthAuthFile(t *testing.T) {
-	// OAuth 文件只负责把官方线格式转换成严格领域对象。
+	// 当前 Codex 原生文件允许 OAuth 省略可选 OPENAI_API_KEY。
 	idToken := buildJWT(map[string]any{
 		"sub":   "fallback-user",
 		"email": "person@example.com",
@@ -30,8 +30,7 @@ func TestDecodeOAuthAuthFile(t *testing.T) {
 	})
 	accessToken := buildJWT(map[string]any{"exp": 2_000_000_000})
 	data := mustJSON(t, map[string]any{
-		"auth_mode":      "chatgpt",
-		"OPENAI_API_KEY": nil,
+		"auth_mode": "chatgpt",
 		"tokens": map[string]any{
 			"id_token":      idToken,
 			"access_token":  accessToken,
@@ -270,7 +269,6 @@ func TestDecodeRejectsInvalidAndMixedAuthFiles(t *testing.T) {
 		{name: "未知顶层字段", data: mustJSON(t, map[string]any{"auth_mode": "apikey", "OPENAI_API_KEY": "key", "expired": 1})},
 		{name: "顶层字段大小写不匹配", data: []byte(`{"AUTH_MODE":"apikey","OPENAI_API_KEY":"key"}`)},
 		{name: "重复认证模式", data: []byte(`{"auth_mode":"apikey","auth_mode":"chatgpt","OPENAI_API_KEY":"key"}`)},
-		{name: "OAuth 缺少空 API Key 槽位", data: mustJSON(t, map[string]any{"auth_mode": "chatgpt", "tokens": validTokens, "last_refresh": "2023-11-14T22:13:20Z"})},
 		{name: "OAuth 混入 API Key", data: mustJSON(t, map[string]any{"auth_mode": "chatgpt", "OPENAI_API_KEY": testAPIKey, "tokens": validTokens, "last_refresh": "2023-11-14T22:13:20Z"})},
 		{name: "OAuth 缺少 tokens", data: mustJSON(t, map[string]any{"auth_mode": "chatgpt", "OPENAI_API_KEY": nil, "last_refresh": "2023-11-14T22:13:20Z"})},
 		{name: "OAuth tokens 为 null", data: mustJSON(t, map[string]any{"auth_mode": "chatgpt", "OPENAI_API_KEY": nil, "tokens": nil, "last_refresh": "2023-11-14T22:13:20Z"})},

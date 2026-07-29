@@ -112,9 +112,9 @@ func Encode(auth codex.Auth) ([]byte, error) {
 
 // decodeOAuth 校验 OAuth 专属字段并交由领域构造器建立不变量。
 func decodeOAuth(document authDocument) (codex.Auth, error) {
-	// 旧 token-exchange 会留下 OAuth + API Key 混合文件；本轮 canonical 有意拒绝该历史形态。
-	if len(document.OpenAIAPIKey) == 0 || !isJSONNull(document.OpenAIAPIKey) {
-		return nil, invalidAuthFile("OAuth OPENAI_API_KEY 必须为 null")
+	// Codex 原生 AuthDotJson 允许 OAuth 省略可选 API Key；非 null 值仍属于混合凭据。
+	if len(document.OpenAIAPIKey) != 0 && !isJSONNull(document.OpenAIAPIKey) {
+		return nil, invalidAuthFile("OAuth OPENAI_API_KEY 必须缺失或为 null")
 	}
 	if len(document.Tokens) == 0 || isJSONNull(document.Tokens) {
 		return nil, invalidAuthFile("OAuth tokens 缺失")

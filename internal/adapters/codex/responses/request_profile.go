@@ -21,6 +21,7 @@ const (
 type requestProfile struct {
 	mode                   requestWireMode
 	defaultReasoningEffort string
+	defaultVerbosity       string
 }
 
 // requestProfileForModel 返回与 Codex rust-v0.145.0 模型清单一致的请求策略。
@@ -32,11 +33,13 @@ func requestProfileForModel(model string) requestProfile {
 		return requestProfile{
 			mode:                   responsesLiteMode,
 			defaultReasoningEffort: "low",
+			defaultVerbosity:       "low",
 		}
 	case "gpt-5.6-terra", "gpt-5.6-luna":
 		return requestProfile{
 			mode:                   responsesLiteMode,
 			defaultReasoningEffort: "medium",
+			defaultVerbosity:       "low",
 		}
 	default:
 		return requestProfile{mode: standardResponsesMode}
@@ -85,6 +88,20 @@ func (profile requestProfile) projectRequest(
 	include = appendUnique(include, "reasoning.encrypted_content")
 
 	return projectedInput, nil, false, reasoning, include
+}
+
+// projectText 补齐模型清单声明的默认文本控制，同时保留客户端结构化输出。
+func (profile requestProfile) projectText(
+	text *textControlDTO,
+) *textControlDTO {
+	if profile.defaultVerbosity == "" {
+		return text
+	}
+	if text == nil {
+		text = &textControlDTO{}
+	}
+	text.Verbosity = profile.defaultVerbosity
+	return text
 }
 
 // applyHeaders 为 Responses Lite 请求附加官方兼容 Header。

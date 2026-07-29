@@ -39,6 +39,7 @@ func encodeRequest(
 	if err != nil {
 		return nil, err
 	}
+	text = profile.projectText(text)
 	store, _ := request.Store()
 	parallelToolCalls, specified := request.ParallelToolCalls()
 	if !specified {
@@ -443,7 +444,7 @@ func encodeStructuredOutput(
 		return nil, nil
 	}
 	return &textControlDTO{
-		Format: textFormatDTO{
+		Format: &textFormatDTO{
 			Type:        "json_schema",
 			Name:        output.Name(),
 			Description: output.Description(),

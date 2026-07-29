@@ -13,6 +13,8 @@ var (
 	ErrInvalidProtocolID = errors.New("上游协议 ID 无效")
 	// ErrInvalidClientProtocolID 表示客户端入口协议未注册或值不规范。
 	ErrInvalidClientProtocolID = errors.New("客户端协议 ID 无效")
+	// ErrInvalidCapabilitySet 表示能力集合为空或包含未注册能力。
+	ErrInvalidCapabilitySet = errors.New("推理能力集合无效")
 	// ErrInvalidContent 表示内容块的类型、来源或内容不满足不变量。
 	ErrInvalidContent = errors.New("推理内容无效")
 	// ErrInvalidMessage 表示消息角色、内容或组合不满足协议公共约束。

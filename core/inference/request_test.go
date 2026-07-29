@@ -93,6 +93,43 @@ func TestCapabilitySetUsesExactSubsetMatching(t *testing.T) {
 	}
 }
 
+// TestNewCapabilitySetBuildsValidatedPublicCapabilityMask 验证应用层无需依赖私有位运算。
+func TestNewCapabilitySetBuildsValidatedPublicCapabilityMask(t *testing.T) {
+	t.Parallel()
+
+	set, err := NewCapabilitySet(
+		CapabilityTextGeneration,
+		CapabilityTools,
+		CapabilityStreaming,
+	)
+	if err != nil {
+		t.Fatalf("NewCapabilitySet() error = %v", err)
+	}
+	if !set.IsValid() ||
+		!set.Has(CapabilityTextGeneration) ||
+		!set.Has(CapabilityTools) ||
+		!set.Has(CapabilityStreaming) ||
+		set.Has(CapabilityImageInput) {
+		t.Fatalf("CapabilitySet = %032b", set)
+	}
+	for _, capabilities := range [][]Capability{
+		nil,
+		{Capability(0)},
+		{CapabilityStreaming + 1},
+	} {
+		if _, err := NewCapabilitySet(capabilities...); !errors.Is(
+			err,
+			ErrInvalidCapabilitySet,
+		) {
+			t.Fatalf(
+				"NewCapabilitySet(%v) error = %v",
+				capabilities,
+				err,
+			)
+		}
+	}
+}
+
 // TestReasoningConfigPreservesCurrentResponsesEffortLevels 验证 none、minimal、
 // xhigh 和 max 不会被静默压缩为低中高三个旧等级。
 func TestReasoningConfigPreservesCurrentResponsesEffortLevels(t *testing.T) {

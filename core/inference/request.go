@@ -56,6 +56,23 @@ func (capability Capability) IsValid() bool {
 // 单次请求推导和账号征召均可使用常数时间 Has 检查，不需要热路径 map。
 type CapabilitySet uint32
 
+// NewCapabilitySet 创建只包含已注册能力的非空位图。
+func NewCapabilitySet(
+	capabilities ...Capability,
+) (CapabilitySet, error) {
+	if len(capabilities) == 0 {
+		return 0, ErrInvalidCapabilitySet
+	}
+	var set CapabilitySet
+	for _, capability := range capabilities {
+		if !capability.IsValid() {
+			return 0, ErrInvalidCapabilitySet
+		}
+		set = set.with(capability)
+	}
+	return set, nil
+}
+
 // Has 判断能力集合是否包含指定能力。
 func (set CapabilitySet) Has(capability Capability) bool {
 	if !capability.IsValid() {
@@ -67,6 +84,14 @@ func (set CapabilitySet) Has(capability Capability) bool {
 // ContainsAll 判断候选能力集合是否完整覆盖请求能力集合。
 func (set CapabilitySet) ContainsAll(required CapabilitySet) bool {
 	return set&required == required
+}
+
+// IsValid 判断位图非空且没有未注册能力位。
+func (set CapabilitySet) IsValid() bool {
+	knownMask := CapabilitySet(
+		(1 << uint(CapabilityStreaming)) - 1,
+	)
+	return set != 0 && set&^knownMask == 0
 }
 
 // with 返回加入一个合法能力后的集合。

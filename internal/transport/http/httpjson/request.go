@@ -41,7 +41,7 @@ func DecodeRequest(
 		}
 		return ErrInvalidDocument
 	}
-	if err := validateUniqueJSONKeys(document); err != nil {
+	if err := ValidateDocument(document); err != nil {
 		return ErrInvalidDocument
 	}
 	decoder := json.NewDecoder(bytes.NewReader(document))
@@ -54,6 +54,11 @@ func DecodeRequest(
 		return ErrInvalidDocument
 	}
 	return nil
+}
+
+// ValidateDocument 拒绝空文档、重复键、损坏 JSON 和尾随 JSON。
+func ValidateDocument(document []byte) error {
+	return validateUniqueJSONKeys(document)
 }
 
 // validateUniqueJSONKeys 拒绝任意嵌套对象中的重复键和尾随 JSON。

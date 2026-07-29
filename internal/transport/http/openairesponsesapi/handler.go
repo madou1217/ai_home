@@ -1,5 +1,5 @@
-// Package anthropicmessagesapi 提供 Anthropic Messages 的 HTTP 入站适配器。
-package anthropicmessagesapi
+// Package openairesponsesapi 提供 OpenAI Responses 的 Go HTTP 入站适配器。
+package openairesponsesapi
 
 import (
 	"context"
@@ -13,8 +13,8 @@ import (
 )
 
 const (
-	// Path 是 Anthropic Messages create 的规范 HTTP 路径。
-	Path = "/v1/messages"
+	// Path 是 OpenAI Responses create 的规范 HTTP 路径。
+	Path = "/v1/responses"
 	// DefaultMaxBodyBytes 覆盖常规图片和文档请求，同时保持明确内存上限。
 	DefaultMaxBodyBytes int64 = 32 * 1024 * 1024
 	// MaxBodyBytesLimit 防止 Composition Root 意外关闭请求体边界。
@@ -23,25 +23,29 @@ const (
 
 var (
 	// ErrInvalidDependencies 表示 Handler 缺少协议、执行器或鉴权策略。
-	ErrInvalidDependencies = errors.New("Anthropic Messages HTTP Handler 依赖无效")
+	ErrInvalidDependencies = errors.New("OpenAI Responses HTTP Handler 依赖无效")
 	// ErrStreamingUnsupported 表示 ResponseWriter 不能即时刷新 SSE。
 	ErrStreamingUnsupported = inferenceapi.ErrStreamingUnsupported
 )
 
-// Authorizer 是 Messages 请求使用的 API Key 鉴权策略。
+// Authorizer 是 Responses 请求使用的 Bearer 鉴权策略。
 type Authorizer interface {
 	Authorized(request *http.Request) bool
 }
 
-// Dependencies 集中声明 Messages HTTP 入站适配器依赖。
+// Dependencies 集中声明 Responses HTTP 入站适配器依赖。
 type Dependencies struct {
-	Protocols    *clientprotocol.Registry
-	Executor     inferencegateway.Executor
-	Authorizer   Authorizer
+	// Protocols 提供精确的 OpenAI Responses Decoder 和 Renderer。
+	Protocols *clientprotocol.Registry
+	// Executor 执行与客户端协议解耦的 Canonical 请求。
+	Executor inferencegateway.Executor
+	// Authorizer 在读取请求体前校验客户端凭据。
+	Authorizer Authorizer
+	// MaxBodyBytes 是单请求允许读取的最大字节数。
 	MaxBodyBytes int64
 }
 
-// Handler 负责鉴权、请求解码、Canonical 执行和 Messages 响应渲染。
+// Handler 负责鉴权、请求解码、Canonical 执行和 Responses 输出渲染。
 type Handler struct {
 	adapter      clientprotocol.Adapter
 	executor     inferencegateway.Executor
@@ -49,7 +53,7 @@ type Handler struct {
 	maxBodyBytes int64
 }
 
-// NewHandler 解析一次协议注册并创建默认失败关闭的 Messages Handler。
+// NewHandler 解析一次协议注册并创建默认失败关闭的 Responses Handler。
 func NewHandler(dependencies Dependencies) (*Handler, error) {
 	if dependencies.Executor == nil || dependencies.Authorizer == nil {
 		return nil, ErrInvalidDependencies
@@ -62,7 +66,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		return nil, ErrInvalidDependencies
 	}
 	adapter, err := dependencies.Protocols.Resolve(
-		inference.ClientProtocolAnthropicMessages,
+		inference.ClientProtocolOpenAIResponses,
 	)
 	if err != nil {
 		return nil, ErrInvalidDependencies
@@ -88,6 +92,7 @@ func (handler *Handler) ServeHTTP(
 			response,
 			http.StatusUnauthorized,
 			"authentication_error",
+			"invalid_api_key",
 			"Invalid API key",
 		)
 		return
@@ -96,7 +101,8 @@ func (handler *Handler) ServeHTTP(
 		writeAPIError(
 			response,
 			http.StatusNotFound,
-			"not_found_error",
+			"invalid_request_error",
+			"not_found",
 			"Resource not found",
 		)
 		return
@@ -107,6 +113,7 @@ func (handler *Handler) ServeHTTP(
 			response,
 			http.StatusMethodNotAllowed,
 			"invalid_request_error",
+			"method_not_allowed",
 			"Method not allowed",
 		)
 		return
@@ -116,12 +123,17 @@ func (handler *Handler) ServeHTTP(
 			response,
 			http.StatusBadRequest,
 			"invalid_request_error",
+			"invalid_query",
 			"Query parameters are not supported",
 		)
 		return
 	}
 
-	body, err := readJSONBody(response, request, handler.maxBodyBytes)
+	body, err := inferenceapi.ReadJSONBody(
+		response,
+		request,
+		handler.maxBodyBytes,
+	)
 	if err != nil {
 		writeRequestError(response, err)
 		return
@@ -168,11 +180,12 @@ func (handler *Handler) executeNonStream(
 		writeAPIError(
 			response,
 			http.StatusBadGateway,
-			"api_error",
+			"server_error",
+			"invalid_upstream_response",
 			"Invalid upstream response",
 		)
 	case executionErr != nil:
-		writeExecutionError(response, request.Context(), executionErr)
+		writeExecutionError(response, request.Context())
 	case failed:
 		writeCanonicalFailure(response, failure)
 	default:
@@ -181,7 +194,8 @@ func (handler *Handler) executeNonStream(
 			writeAPIError(
 				response,
 				http.StatusBadGateway,
-				"api_error",
+				"server_error",
+				"incomplete_upstream_response",
 				"Upstream response ended unexpectedly",
 			)
 			return
@@ -196,65 +210,48 @@ func (handler *Handler) executeStream(
 	request *http.Request,
 	canonicalRequest inference.Request,
 ) {
-	stream, err := newSSEStream(response)
+	stream, err := inferenceapi.NewSSEStream(response)
 	if err != nil {
 		writeAPIError(
 			response,
 			http.StatusInternalServerError,
-			"api_error",
+			"server_error",
+			"streaming_unavailable",
 			"Streaming is unavailable",
 		)
 		return
 	}
 	renderer := handler.adapter.NewStreamRenderer(canonicalRequest)
-	var sinkErr error
-	var writeErr error
+	execution := newResponseStream(response, stream, renderer)
 	executionErr := handler.executor.Execute(
 		request.Context(),
 		canonicalRequest,
-		func(event inference.StreamEvent) error {
-			frames, renderErr := renderer.Render(event)
-			if renderErr != nil {
-				sinkErr = renderErr
-				return renderErr
-			}
-			if streamErr := stream.Write(frames); streamErr != nil {
-				writeErr = streamErr
-				return streamErr
-			}
-			return nil
-		},
+		execution.Accept,
 	)
-	if writeErr != nil || renderer.Terminal() {
+	if execution.WriteFailed() || execution.Terminal() {
+		return
+	}
+	if errors.Is(request.Context().Err(), context.Canceled) {
 		return
 	}
 	switch {
-	case sinkErr != nil:
-		writeStreamFailure(
-			stream,
-			response,
-			http.StatusBadGateway,
-			"api_error",
-			"Invalid upstream response",
-		)
+	case execution.RenderFailed():
+		execution.Finish(streamFailure{
+			status:  http.StatusBadGateway,
+			code:    "invalid_upstream_response",
+			message: "Invalid upstream response",
+		})
 	case executionErr != nil:
-		if errors.Is(request.Context().Err(), context.Canceled) {
-			return
-		}
-		writeStreamFailure(
-			stream,
-			response,
-			http.StatusServiceUnavailable,
-			"api_error",
-			"Inference service is unavailable",
-		)
+		execution.Finish(streamFailure{
+			status:  http.StatusServiceUnavailable,
+			code:    "upstream_unavailable",
+			message: "Inference service is unavailable",
+		})
 	default:
-		writeStreamFailure(
-			stream,
-			response,
-			http.StatusBadGateway,
-			"api_error",
-			"Upstream response ended unexpectedly",
-		)
+		execution.Finish(streamFailure{
+			status:  http.StatusBadGateway,
+			code:    "stream_disconnected",
+			message: "Upstream response ended unexpectedly",
+		})
 	}
 }

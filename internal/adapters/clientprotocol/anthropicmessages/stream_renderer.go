@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 
 	"github.com/madou1217/ai_home/core/inference"
+	"github.com/madou1217/ai_home/internal/adapters/clientprotocol"
 )
 
 // streamPosition 唯一标识一个 Canonical 输出项内的内容块。
@@ -49,6 +50,13 @@ func (renderer *StreamRenderer) Render(
 		return nil, err
 	}
 	return renderer.renderPreparedFrames(event, prepared)
+}
+
+// Terminal 表示 Renderer 已收到成功或失败终态。
+func (renderer *StreamRenderer) Terminal() bool {
+	return renderer != nil &&
+		renderer.state != nil &&
+		renderer.state.terminal
 }
 
 // validateSupportedResponseEvent 在修改状态前拒绝 Messages 无法无损表达的事件。
@@ -543,9 +551,12 @@ func (renderer *StreamRenderer) renderMany(
 		if err != nil {
 			return nil, err
 		}
-		rendered[index] = RenderedEvent{
-			name: event.Type,
-			data: data,
+		rendered[index], err = clientprotocol.NewMarshaledEvent(
+			event.Type,
+			data,
+		)
+		if err != nil {
+			return nil, err
 		}
 	}
 	return rendered, nil

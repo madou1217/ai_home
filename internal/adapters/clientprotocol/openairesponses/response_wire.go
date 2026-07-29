@@ -4,23 +4,11 @@ import (
 	"encoding/json"
 
 	"github.com/madou1217/ai_home/core/inference"
+	"github.com/madou1217/ai_home/internal/adapters/clientprotocol"
 )
 
-// RenderedEvent 是 HTTP 传输层可直接写为 SSE 的事件名和 JSON 数据。
-type RenderedEvent struct {
-	name string
-	data []byte
-}
-
-// Name 返回 SSE event 字段。
-func (event RenderedEvent) Name() string {
-	return event.name
-}
-
-// Data 返回不能修改 Renderer 内部状态的 JSON 数据副本。
-func (event RenderedEvent) Data() []byte {
-	return append([]byte(nil), event.data...)
-}
+// RenderedEvent 复用客户端协议层的不可变 SSE 事件值对象。
+type RenderedEvent = clientprotocol.RenderedEvent
 
 // responseWireDTO 是流式终态和非流式响应共用的 Responses 对象。
 type responseWireDTO struct {

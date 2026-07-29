@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/madou1217/ai_home/core/inference"
+	"github.com/madou1217/ai_home/internal/adapters/clientprotocol"
 )
 
 // streamPosition 唯一标识一个输出项内的内容块。
@@ -48,6 +49,13 @@ func (renderer *StreamRenderer) Render(
 		return nil, err
 	}
 	return renderer.renderPreparedFrames(event, frames)
+}
+
+// Terminal 表示 Renderer 已收到成功或失败终态。
+func (renderer *StreamRenderer) Terminal() bool {
+	return renderer != nil &&
+		renderer.state != nil &&
+		renderer.state.terminal
 }
 
 // preparedFrames 保存必须在状态更新前计算的缺失后缀。
@@ -275,9 +283,12 @@ func (renderer *StreamRenderer) renderMany(
 		if err != nil {
 			return nil, err
 		}
-		rendered[index] = RenderedEvent{
-			name: events[index].Type,
-			data: data,
+		rendered[index], err = clientprotocol.NewMarshaledEvent(
+			events[index].Type,
+			data,
+		)
+		if err != nil {
+			return nil, err
 		}
 	}
 	renderer.nextSequence += uint64(len(events))

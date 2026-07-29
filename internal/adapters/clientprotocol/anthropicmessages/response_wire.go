@@ -4,23 +4,11 @@ import (
 	"encoding/json"
 
 	"github.com/madou1217/ai_home/core/inference"
+	"github.com/madou1217/ai_home/internal/adapters/clientprotocol"
 )
 
-// RenderedEvent 是 HTTP 传输层可直接写为 SSE 的事件名和 JSON 数据。
-type RenderedEvent struct {
-	name string
-	data []byte
-}
-
-// Name 返回 SSE event 字段。
-func (event RenderedEvent) Name() string {
-	return event.name
-}
-
-// Data 返回不能修改 Renderer 内部状态的 JSON 数据副本。
-func (event RenderedEvent) Data() []byte {
-	return append([]byte(nil), event.data...)
-}
+// RenderedEvent 复用客户端协议层的不可变 SSE 事件值对象。
+type RenderedEvent = clientprotocol.RenderedEvent
 
 // messageWireDTO 是非流式响应和 message_start 共用的 Messages 对象。
 type messageWireDTO struct {
@@ -147,6 +135,12 @@ type inputJSONDeltaWireDTO struct {
 type errorWireDTO struct {
 	Type    string `json:"type"`
 	Message string `json:"message"`
+}
+
+// errorResponseWireDTO 是非流式 Messages 错误响应。
+type errorResponseWireDTO struct {
+	Type  string       `json:"type"`
+	Error errorWireDTO `json:"error"`
 }
 
 // buildStartMessageWire 创建 message_start 使用的空内容和零 usage。
@@ -332,4 +326,15 @@ func newErrorWire(failure inference.ResponseFailure) errorWireDTO {
 		message = "request failed"
 	}
 	return errorWireDTO{Type: errorType, Message: message}
+}
+
+// MarshalErrorResponse 把 Canonical 失败编码为低敏 Messages 错误响应。
+func MarshalErrorResponse(failure inference.ResponseFailure) ([]byte, error) {
+	if !failure.IsValid() {
+		return nil, ErrUnsupportedResponseEvent
+	}
+	return json.Marshal(errorResponseWireDTO{
+		Type:  "error",
+		Error: newErrorWire(failure),
+	})
 }

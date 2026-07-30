@@ -36,6 +36,17 @@ type AccountRecruiter interface {
 	) (accountrouting.Result, error)
 }
 
+// ModelRefreshScheduler 接收精确账号和 Provider 的异步模型刷新信号。
+//
+// 实现只能完成有界入队，不能在当前推理请求内访问凭据或远端目录。
+type ModelRefreshScheduler interface {
+	ScheduleModelRefresh(
+		ctx context.Context,
+		accountRef accountcore.AccountRef,
+		providerID string,
+	) error
+}
+
 // Dependencies 声明 Canonical Coordinator 的最小组合边界。
 type Dependencies struct {
 	// Catalog 只用于构造经过校验的账号征召请求。
@@ -48,6 +59,8 @@ type Dependencies struct {
 	Upstreams *UpstreamRegistry
 	// Attempts 在终态对客户端可见前记录成功或失败。
 	Attempts AttemptRecorder
+	// ModelRefreshes 只在账号明确不支持目标模型时异步修正目录。
+	ModelRefreshes ModelRefreshScheduler
 	// AccountScanLimit 是单请求允许检查的账号上限。
 	AccountScanLimit int
 }
@@ -59,6 +72,7 @@ type Coordinator struct {
 	recruiter        AccountRecruiter
 	upstreams        *UpstreamRegistry
 	attempts         AttemptRecorder
+	modelRefreshes   ModelRefreshScheduler
 	accountScanLimit int
 }
 
@@ -84,6 +98,7 @@ func NewCoordinator(
 		dependencies.Recruiter == nil ||
 		dependencies.Upstreams == nil ||
 		dependencies.Attempts == nil ||
+		dependencies.ModelRefreshes == nil ||
 		scanLimit < 1 ||
 		scanLimit > DefaultAccountScanLimit {
 		return nil, ErrInvalidCoordinatorDependencies
@@ -94,6 +109,7 @@ func NewCoordinator(
 		recruiter:        dependencies.Recruiter,
 		upstreams:        dependencies.Upstreams,
 		attempts:         dependencies.Attempts,
+		modelRefreshes:   dependencies.ModelRefreshes,
 		accountScanLimit: scanLimit,
 	}, nil
 }
@@ -280,6 +296,7 @@ func (coordinator *Coordinator) executeAttempt(
 	retry, err := coordinator.failAttempt(
 		ctx,
 		route,
+		string(invocation.Route().ProviderID()),
 		result.Failure(),
 		stream,
 	)
@@ -308,6 +325,7 @@ func (coordinator *Coordinator) completeAttempt(
 func (coordinator *Coordinator) failAttempt(
 	ctx context.Context,
 	route runtimecore.ModelRoute,
+	providerID string,
 	failure AttemptFailure,
 	stream *attemptStream,
 ) (bool, error) {
@@ -324,6 +342,15 @@ func (coordinator *Coordinator) failAttempt(
 		failure,
 	); err != nil {
 		return false, fmt.Errorf("记录上游失败状态失败: %w", err)
+	}
+	if failure.RuntimeKind() == runtimecore.FailureModelUnsupported {
+		// 刷新是修复后续路由快照的旁路任务；队列关闭或拒绝入队不能覆盖
+		// 已经记录的真实上游终态，也不能阻止当前请求按原策略换号。
+		_ = coordinator.modelRefreshes.ScheduleModelRefresh(
+			ctx,
+			route.AccountRef(),
+			providerID,
+		)
 	}
 	if !stream.Visible() && failure.retriesAnotherAccount() {
 		return true, nil
@@ -343,6 +370,7 @@ func (coordinator *Coordinator) validateExecute(
 		coordinator.recruiter == nil ||
 		coordinator.upstreams == nil ||
 		coordinator.attempts == nil ||
+		coordinator.modelRefreshes == nil ||
 		ctx == nil ||
 		emit == nil ||
 		!request.ClientProtocol().IsValid() ||

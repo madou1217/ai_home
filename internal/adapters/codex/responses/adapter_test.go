@@ -571,11 +571,12 @@ func newAdapterCoordinatorFixture(
 	recorder := &adapterAttemptRecorder{}
 	coordinator, err := inferencegateway.NewCoordinator(
 		inferencegateway.Dependencies{
-			Catalog:   catalog,
-			Routes:    adapterRouteResolver{route: route},
-			Recruiter: recruiter,
-			Upstreams: registry,
-			Attempts:  recorder,
+			Catalog:        catalog,
+			Routes:         adapterRouteResolver{route: route},
+			Recruiter:      recruiter,
+			Upstreams:      registry,
+			Attempts:       recorder,
+			ModelRefreshes: adapterModelRefreshScheduler{},
 		},
 	)
 	if err != nil {
@@ -730,6 +731,17 @@ func (resolver adapterRouteResolver) Resolve(
 type adapterAttemptRecorder struct {
 	successes int
 	failures  []inferencegateway.AttemptFailure
+}
+
+// adapterModelRefreshScheduler 丢弃与 Adapter 合同无关的异步刷新信号。
+type adapterModelRefreshScheduler struct{}
+
+func (adapterModelRefreshScheduler) ScheduleModelRefresh(
+	context.Context,
+	accountcore.AccountRef,
+	string,
+) error {
+	return nil
 }
 
 // RecordSuccess 记录成功终态。

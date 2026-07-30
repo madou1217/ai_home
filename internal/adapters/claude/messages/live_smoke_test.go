@@ -353,11 +353,12 @@ func newRealClaudeCoordinator(
 	recorder := &claudeAttemptRecorder{}
 	coordinator, err := inferencegateway.NewCoordinator(
 		inferencegateway.Dependencies{
-			Catalog:   catalog,
-			Routes:    newRealClaudeRouteCatalog(t, model),
-			Recruiter: recruiter,
-			Upstreams: upstreams,
-			Attempts:  recorder,
+			Catalog:        catalog,
+			Routes:         newRealClaudeRouteCatalog(t, model),
+			Recruiter:      recruiter,
+			Upstreams:      upstreams,
+			Attempts:       recorder,
+			ModelRefreshes: claudeModelRefreshScheduler{},
 		},
 	)
 	if err != nil {

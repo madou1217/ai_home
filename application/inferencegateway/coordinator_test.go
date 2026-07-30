@@ -293,6 +293,138 @@ func TestCoordinatorDoesNotRotateNonRetryableFailure(t *testing.T) {
 	}
 }
 
+// TestCoordinatorRefreshesOnlyExplicitlyUnsupportedModels 验证容量、限流和 5xx 不污染模型目录。
+func TestCoordinatorRefreshesOnlyExplicitlyUnsupportedModels(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		kind          runtimecore.FailureKind
+		wantSchedules int
+	}{
+		{
+			name:          "model unsupported",
+			kind:          runtimecore.FailureModelUnsupported,
+			wantSchedules: 1,
+		},
+		{
+			name: "rate limited",
+			kind: runtimecore.FailureRateLimited,
+		},
+		{
+			name: "model overloaded",
+			kind: runtimecore.FailureModelOverloaded,
+		},
+		{
+			name: "upstream unavailable",
+			kind: runtimecore.FailureUpstreamUnavailable,
+		},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			fixture := newCoordinatorFixture(t, "codex", 1)
+			_, failure := newAttemptFailure(
+				t,
+				string(test.kind),
+				"safe synthetic failure",
+				true,
+				test.kind,
+			)
+			upstream := newScriptedUpstream(
+				inference.ProtocolCodexResponses,
+				func(
+					_ context.Context,
+					_ inferencegateway.Invocation,
+					_ inferencegateway.EventSink,
+				) (inferencegateway.AttemptResult, error) {
+					return inferencegateway.FailedAttempt(failure), nil
+				},
+			)
+			coordinator := fixture.newCoordinator(
+				t,
+				upstream,
+				&attemptRecorder{},
+			)
+			if err := coordinator.Execute(
+				context.Background(),
+				newTextRequest(t, "gpt-5.6-sol", true),
+				func(inference.StreamEvent) error { return nil },
+			); err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+			schedules := fixture.refreshes.Schedules()
+			if len(schedules) != test.wantSchedules {
+				t.Fatalf(
+					"refresh schedules = %#v, want %d",
+					schedules,
+					test.wantSchedules,
+				)
+			}
+			if test.wantSchedules == 1 &&
+				(schedules[0].accountRef != fixture.accounts[0].Ref() ||
+					schedules[0].providerID != "codex") {
+				t.Fatalf("refresh schedule = %#v", schedules[0])
+			}
+		})
+	}
+}
+
+// TestCoordinatorDoesNotOverrideUpstreamFailureWhenRefreshQueueRejects
+// 验证旁路刷新队列故障不会把真实模型不支持终态改写成内部错误。
+func TestCoordinatorDoesNotOverrideUpstreamFailureWhenRefreshQueueRejects(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	fixture := newCoordinatorFixture(t, "codex", 1)
+	fixture.refreshes.err = errors.New("synthetic refresh queue closed")
+	publicFailure, failure := newAttemptFailure(
+		t,
+		"model_not_found",
+		"Account does not support this model",
+		false,
+		runtimecore.FailureModelUnsupported,
+	)
+	upstream := newScriptedUpstream(
+		inference.ProtocolCodexResponses,
+		func(
+			_ context.Context,
+			_ inferencegateway.Invocation,
+			_ inferencegateway.EventSink,
+		) (inferencegateway.AttemptResult, error) {
+			return inferencegateway.FailedAttempt(failure), nil
+		},
+	)
+	coordinator := fixture.newCoordinator(t, upstream, &attemptRecorder{})
+	var events []inference.StreamEvent
+	if err := coordinator.Execute(
+		context.Background(),
+		newTextRequest(t, "gpt-5.6-sol", true),
+		func(event inference.StreamEvent) error {
+			events = append(events, event)
+			return nil
+		},
+	); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if len(events) != 1 ||
+		events[0].Kind() != inference.EventResponseFailed ||
+		!sameFailure(
+			events[0].(inference.ResponseFailedEvent).Failure(),
+			publicFailure,
+		) ||
+		len(fixture.refreshes.Schedules()) != 1 {
+		t.Fatalf(
+			"events=%v schedules=%#v",
+			eventKinds(events),
+			fixture.refreshes.Schedules(),
+		)
+	}
+}
+
 // TestCoordinatorFallsBackAcrossOrderedRouteCandidates 验证一个模型候选耗尽后，
 // Coordinator 会尝试下一候选，并且不会把前一候选失败暴露给客户端。
 func TestCoordinatorFallsBackAcrossOrderedRouteCandidates(t *testing.T) {
@@ -974,11 +1106,12 @@ func TestCoordinatorRejectsMismatchedFailureTerminal(t *testing.T) {
 
 // coordinatorFixture 保存执行器测试共用的真实 Recruiter 和显式 Route。
 type coordinatorFixture struct {
-	catalog  *providers.Catalog
-	accounts []accountapp.RoutingAccount
-	source   *candidateSource
-	recruit  *accountrouting.Recruiter
-	route    inferencegateway.Route
+	catalog   *providers.Catalog
+	accounts  []accountapp.RoutingAccount
+	source    *candidateSource
+	recruit   *accountrouting.Recruiter
+	route     inferencegateway.Route
+	refreshes *modelRefreshScheduler
 }
 
 // newCoordinatorFixture 创建按 AccountRef 排序的合成账号征召边界。
@@ -1065,11 +1198,12 @@ func newCoordinatorFixture(
 		t.Fatalf("NewRoute() error = %v", err)
 	}
 	return &coordinatorFixture{
-		catalog:  catalog,
-		accounts: accounts,
-		source:   source,
-		recruit:  recruiter,
-		route:    route,
+		catalog:   catalog,
+		accounts:  accounts,
+		source:    source,
+		recruit:   recruiter,
+		route:     route,
+		refreshes: &modelRefreshScheduler{},
 	}
 }
 
@@ -1119,11 +1253,12 @@ func (fixture *coordinatorFixture) newCoordinatorWithResolver(
 	}
 	coordinator, err := inferencegateway.NewCoordinator(
 		inferencegateway.Dependencies{
-			Catalog:   fixture.catalog,
-			Routes:    resolver,
-			Recruiter: fixture.recruit,
-			Upstreams: registry,
-			Attempts:  recorder,
+			Catalog:        fixture.catalog,
+			Routes:         resolver,
+			Recruiter:      fixture.recruit,
+			Upstreams:      registry,
+			Attempts:       recorder,
+			ModelRefreshes: fixture.refreshes,
 		},
 	)
 	if err != nil {
@@ -1307,6 +1442,40 @@ type attemptRecorder struct {
 		runtimecore.ModelRoute,
 		inferencegateway.AttemptFailure,
 	) error
+}
+
+// modelRefreshSchedule 保存 Coordinator 发出的低敏异步刷新信号。
+type modelRefreshSchedule struct {
+	accountRef accountcore.AccountRef
+	providerID string
+}
+
+// modelRefreshScheduler 记录测试中的模型刷新调度。
+type modelRefreshScheduler struct {
+	mu        sync.Mutex
+	schedules []modelRefreshSchedule
+	err       error
+}
+
+func (scheduler *modelRefreshScheduler) ScheduleModelRefresh(
+	_ context.Context,
+	accountRef accountcore.AccountRef,
+	providerID string,
+) error {
+	scheduler.mu.Lock()
+	defer scheduler.mu.Unlock()
+	scheduler.schedules = append(scheduler.schedules, modelRefreshSchedule{
+		accountRef: accountRef,
+		providerID: providerID,
+	})
+	return scheduler.err
+}
+
+// Schedules 返回不允许测试修改内部切片的调度快照。
+func (scheduler *modelRefreshScheduler) Schedules() []modelRefreshSchedule {
+	scheduler.mu.Lock()
+	defer scheduler.mu.Unlock()
+	return append([]modelRefreshSchedule(nil), scheduler.schedules...)
 }
 
 // RecordSuccess 记录成功前执行可选断言。

@@ -604,11 +604,12 @@ func newClaudeAdapterFixtureWithCredential(
 	recorder := &claudeAttemptRecorder{}
 	coordinator, err := inferencegateway.NewCoordinator(
 		inferencegateway.Dependencies{
-			Catalog:   catalog,
-			Routes:    claudeRouteResolver{route: route},
-			Recruiter: recruiter,
-			Upstreams: registry,
-			Attempts:  recorder,
+			Catalog:        catalog,
+			Routes:         claudeRouteResolver{route: route},
+			Recruiter:      recruiter,
+			Upstreams:      registry,
+			Attempts:       recorder,
+			ModelRefreshes: claudeModelRefreshScheduler{},
 		},
 	)
 	if err != nil {
@@ -782,6 +783,17 @@ func (resolver claudeRouteResolver) Resolve(
 type claudeAttemptRecorder struct {
 	successes int
 	failures  []inferencegateway.AttemptFailure
+}
+
+// claudeModelRefreshScheduler 丢弃与 Adapter 合同无关的异步刷新信号。
+type claudeModelRefreshScheduler struct{}
+
+func (claudeModelRefreshScheduler) ScheduleModelRefresh(
+	context.Context,
+	accountcore.AccountRef,
+	string,
+) error {
+	return nil
 }
 
 // RecordSuccess 记录成功终态。

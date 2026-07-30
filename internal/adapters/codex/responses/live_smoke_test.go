@@ -360,11 +360,12 @@ func newRealCodexCoordinator(
 	recorder := &adapterAttemptRecorder{}
 	coordinator, err := inferencegateway.NewCoordinator(
 		inferencegateway.Dependencies{
-			Catalog:   catalog,
-			Routes:    resolver,
-			Recruiter: recruiter,
-			Upstreams: upstreams,
-			Attempts:  recorder,
+			Catalog:        catalog,
+			Routes:         resolver,
+			Recruiter:      recruiter,
+			Upstreams:      upstreams,
+			Attempts:       recorder,
+			ModelRefreshes: adapterModelRefreshScheduler{},
 		},
 	)
 	if err != nil {

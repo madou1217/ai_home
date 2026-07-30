@@ -23,8 +23,8 @@ const (
 type RecoveryTrigger string
 
 const (
-	// RecoveryCredentialVersion 表示新凭据版本可以解除凭据阻塞。
-	RecoveryCredentialVersion RecoveryTrigger = "credential_version"
+	// RecoveryCredentialsUpdated 表示账号凭据已经由重登或显式更新替换。
+	RecoveryCredentialsUpdated RecoveryTrigger = "credentials_updated"
 	// RecoveryUsageSnapshot 表示新额度快照可以解除 quota 阻塞。
 	RecoveryUsageSnapshot RecoveryTrigger = "usage_snapshot"
 	// RecoveryBillingSnapshot 表示新账单快照可以解除 billing 阻塞。
@@ -116,7 +116,7 @@ func recoveryForBlock(
 ) (RecoveryTrigger, bool) {
 	switch kind {
 	case FailureCredentialRejected, FailureReauthenticationRequired:
-		return RecoveryCredentialVersion, scope == BlockScopeAccount
+		return RecoveryCredentialsUpdated, scope == BlockScopeAccount
 	case FailureQuotaExhausted:
 		return RecoveryUsageSnapshot, isAccountScope(scope)
 	case FailureBillingBlocked:

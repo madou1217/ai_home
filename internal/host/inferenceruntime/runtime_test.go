@@ -9,7 +9,6 @@ import (
 
 	"github.com/madou1217/ai_home/application/accountcredentials"
 	"github.com/madou1217/ai_home/application/accountrouting"
-	runtimeapp "github.com/madou1217/ai_home/application/accountruntime"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
@@ -17,6 +16,7 @@ import (
 	"github.com/madou1217/ai_home/core/accounts/codex"
 	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/core/providers"
+	runtimeinmemory "github.com/madou1217/ai_home/internal/adapters/accountruntime/inmemory"
 	"github.com/madou1217/ai_home/internal/adapters/attemptfailure"
 )
 
@@ -311,7 +311,7 @@ type runtimeFixture struct {
 	routes    *inferencegateway.RouteCatalog
 	upstream  *scriptedUpstream
 	refreshes *refreshScheduler
-	runtime   *runtimeState
+	runtime   *runtimeinmemory.Runtime
 	account   accountapp.RoutingAccount
 	clock     time.Time
 }
@@ -359,11 +359,11 @@ func newRuntimeFixture(t *testing.T) *runtimeFixture {
 	if err != nil {
 		t.Fatalf("accountapp.NewCredentialSnapshot() error = %v", err)
 	}
-	modelRuntime, err := runtimeapp.NewRegistry(
+	accountRuntime, err := runtimeinmemory.New(
 		func() time.Time { return clock },
 	)
 	if err != nil {
-		t.Fatalf("runtimeapp.NewRegistry() error = %v", err)
+		t.Fatalf("runtimeinmemory.New() error = %v", err)
 	}
 	return &runtimeFixture{
 		catalog: catalog,
@@ -378,13 +378,9 @@ func newRuntimeFixture(t *testing.T) *runtimeFixture {
 		routes:    newRouteCatalog(t),
 		upstream:  &scriptedUpstream{failureKind: runtimecore.FailureModelOverloaded},
 		refreshes: &refreshScheduler{},
-		runtime: &runtimeState{
-			models:        modelRuntime,
-			accountBlocks: make(map[accountcore.AccountRef]runtimecore.Eligibility),
-			modelBlocks:   make(map[runtimecore.ModelRoute]runtimecore.Eligibility),
-		},
-		account: account,
-		clock:   clock,
+		runtime:   accountRuntime,
+		account:   account,
+		clock:     clock,
 	}
 }
 
@@ -463,108 +459,6 @@ func (store *runtimeStore) CredentialReadCount() int {
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	return store.credentialReads
-}
-
-// runtimeState 在测试中显式分发全部失败动作，避免把硬阻塞误当作 cooldown。
-type runtimeState struct {
-	mu            sync.RWMutex
-	models        *runtimeapp.Registry
-	accountBlocks map[accountcore.AccountRef]runtimecore.Eligibility
-	modelBlocks   map[runtimecore.ModelRoute]runtimecore.Eligibility
-}
-
-// CheckEligibility 原子读取硬阻塞，并回退到模型级稀疏 cooldown 索引。
-func (state *runtimeState) CheckEligibility(
-	ctx context.Context,
-	route runtimecore.ModelRoute,
-) (runtimecore.Eligibility, error) {
-	state.mu.RLock()
-	defer state.mu.RUnlock()
-	if eligibility, found := state.accountBlocks[route.AccountRef()]; found {
-		return eligibility, nil
-	}
-	if eligibility, found := state.modelBlocks[route]; found {
-		return eligibility, nil
-	}
-	return state.models.CheckEligibility(ctx, route)
-}
-
-// RecordSuccess 只清理当前模型瞬态状态；硬阻塞必须等待对应外部真相源更新。
-func (state *runtimeState) RecordSuccess(
-	ctx context.Context,
-	route runtimecore.ModelRoute,
-) error {
-	state.mu.Lock()
-	defer state.mu.Unlock()
-	return state.models.RecordSuccess(ctx, route)
-}
-
-// RecordFailure 根据领域 Transition 把失败交给唯一状态边界。
-func (state *runtimeState) RecordFailure(
-	ctx context.Context,
-	route runtimecore.ModelRoute,
-	failure inferencegateway.AttemptFailure,
-) error {
-	state.mu.Lock()
-	defer state.mu.Unlock()
-	transition, err := state.models.RecordFailure(
-		ctx,
-		route,
-		failure.RuntimeKind(),
-		failure.RetryAfter(),
-	)
-	if err != nil {
-		return err
-	}
-	switch transition.Action() {
-	case runtimecore.ActionNoStateChange,
-		runtimecore.ActionModelCooldown:
-		return nil
-	case runtimecore.ActionCredentialBlock:
-		return state.recordBlock(
-			route,
-			failure.RuntimeKind(),
-			failure.BlockDirective(),
-			runtimecore.CredentialBlockedEligibility(),
-		)
-	case runtimecore.ActionQuotaBlock:
-		return state.recordBlock(
-			route,
-			failure.RuntimeKind(),
-			failure.BlockDirective(),
-			runtimecore.QuotaBlockedEligibility(),
-		)
-	case runtimecore.ActionPolicyBlock:
-		return state.recordBlock(
-			route,
-			failure.RuntimeKind(),
-			failure.BlockDirective(),
-			runtimecore.PolicyBlockedEligibility(),
-		)
-	default:
-		return errors.New("测试运行态收到未知失败动作")
-	}
-}
-
-// recordBlock 按 Provider 已确认的最小作用域保存测试硬阻塞。
-func (state *runtimeState) recordBlock(
-	route runtimecore.ModelRoute,
-	kind runtimecore.FailureKind,
-	directive runtimecore.BlockDirective,
-	eligibility runtimecore.Eligibility,
-) error {
-	if !directive.IsValidFor(kind) {
-		return errors.New("测试运行态收到无效硬阻塞指令")
-	}
-	switch directive.Scope() {
-	case runtimecore.BlockScopeAccount:
-		state.accountBlocks[route.AccountRef()] = eligibility
-	case runtimecore.BlockScopeAccountModel:
-		state.modelBlocks[route] = eligibility
-	default:
-		return errors.New("测试运行态收到未知硬阻塞作用域")
-	}
-	return nil
 }
 
 // staticCredentialStrategy 让 API Key 通过统一凭据 Resolver 而不执行刷新。
@@ -838,7 +732,7 @@ func successfulEvents(model string) ([]inference.StreamEvent, error) {
 var _ AccountStore = (*runtimeStore)(nil)
 
 // 编译期确认测试运行态同时实现征召资格和终态记录端口。
-var _ AccountRuntime = (*runtimeState)(nil)
+var _ AccountRuntime = (*runtimeinmemory.Runtime)(nil)
 
 // 编译期确认 Runtime 测试执行器遵守账号征召和模型刷新边界。
 var (

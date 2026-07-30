@@ -20,13 +20,13 @@ func TestNewBlockDirectiveDefinesScopeAndRecovery(t *testing.T) {
 			"凭据拒绝作用于账号",
 			FailureCredentialRejected,
 			BlockScopeAccount,
-			RecoveryCredentialVersion,
+			RecoveryCredentialsUpdated,
 		},
 		{
 			"重新认证作用于账号",
 			FailureReauthenticationRequired,
 			BlockScopeAccount,
-			RecoveryCredentialVersion,
+			RecoveryCredentialsUpdated,
 		},
 		{
 			"统一额度作用于账号",

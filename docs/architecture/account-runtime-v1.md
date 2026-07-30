@@ -34,7 +34,7 @@ Provider Adapter 必须先把 HTTP、SDK 或 streaming 结果映射为稳定 `Fa
 | `request_timeout` | 非用户取消的上游请求超时 | `model_cooldown` | 同类连续 2 次 | 30 秒 | 到期或当前模型成功 |
 | `connection_reset` | `ECONNRESET`、等价连接中断 | `model_cooldown` | 同类连续 2 次 | 30 秒 | 到期或当前模型成功 |
 | `stream_disconnected` | 缺少正常完成事件的真实流中断 | `model_cooldown` | 同类连续 2 次 | 30 秒 | 到期或当前模型成功 |
-| `credential_rejected` | 401、invalid API key | `credential_block` | 不适用 | 不适用 | 凭据版本更新 |
+| `credential_rejected` | 401、invalid API key | `credential_block` | 不适用 | 不适用 | 凭据更新成功 |
 | `reauthentication_required` | Refresh Token 失效或明确 revoked | `credential_block` | 不适用 | 不适用 | reauth 写入新凭据 |
 | `quota_exhausted` | 明确 usage window / quota 已耗尽 | `quota_block` | 不适用 | 不适用 | 新 usage 快照确认恢复 |
 | `billing_blocked` | 明确 billing 不可用 | `quota_block` | 不适用 | 不适用 | 新账单/usage 快照确认恢复 |
@@ -124,8 +124,8 @@ Claude 统一额度只在 `anthropic-ratelimit-unified-status=rejected` 且 over
 
 | FailureKind | 允许作用域 | 解除信号 | 作用域证据 |
 | --- | --- | --- | --- |
-| `credential_rejected` | `account` | `credential_version` | 凭据属于账号，兄弟模型共享同一版本 |
-| `reauthentication_required` | `account` | `credential_version` | reauth 写入新凭据版本 |
+| `credential_rejected` | `account` | `credentials_updated` | 凭据属于账号，更新成功后直接解除阻塞 |
+| `reauthentication_required` | `account` | `credentials_updated` | reauth 成功写入凭据后直接解除阻塞 |
 | `quota_exhausted` | `account` 或 `account_model` | `usage_snapshot` | 必须由 Provider 的统一额度或当前模型长窗口证据明确选择 |
 | `billing_blocked` | `account` | `billing_snapshot` | 账单状态属于账号 |
 | `workspace_deactivated` | `account` | `account_status` | 工作区状态属于账号 |
@@ -142,9 +142,10 @@ Claude 统一额度只在 `anthropic-ratelimit-unified-status=rejected` 且 over
 - Codex/Claude 泛化 403 或 Claude `permission_error` 当前使用最小账号模型级作用域；
 - 凭据、billing、workspace 和 model-not-found 使用上表固定作用域。
 
-`RecoveryTrigger` 只声明哪个外部真相源有资格重新判断阻塞，不表示收到任意更新就无条件
-清除。后续生产状态实现仍必须比较失败时版本和新快照版本，避免旧请求迟到后封锁已经更新
-的凭据或模型目录。
+`RecoveryTrigger` 只声明哪个外部真相源可以解除对应阻塞。v1 不传播、不比较也不持久化
+凭据或快照版本：重新认证或凭据更新成功后直接清除 `credentials_updated` 位，模型目录
+刷新成功后直接清除 `model_catalog` 位。迟到旧请求若产生真实错误，再按当次上游结果
+重新记录；在没有实际并发故障证据前不引入版本机制。
 
 ## 3. 连续失败规则
 
@@ -181,13 +182,18 @@ core/accountruntime
 application/accountruntime
     线程安全稀疏 Registry，只保存出现过失败的模型 cooldown 元组
         ↓
+internal/adapters/accountruntime/inmemory
+    AccountRuntime Dispatcher + 账号/账号模型硬阻塞 bitset
+        ↓
 application/accountrouting
     enabled 候选 -> runtime eligibility -> credential resolver
 ```
 
 `ModelState` 是单个模型元组的紧凑值，不包含 map。`Registry` 使用
 `map[ModelRoute]ModelState`，健康账号没有条目；10,000 个账号不会预分配 10,000 个
-运行态对象。健康读取使用读锁，过期或失败更新才进入写锁。
+运行态对象。生产 `Runtime` 使用 `map[AccountRef]uint8` 与
+`map[ModelRoute]uint8` 保存发生过硬阻塞的稀疏条目，每个 bit 对应一个恢复事件。
+健康读取使用读锁，过期、失败或明确恢复事件才进入写锁。
 
 征召器必须先检查运行态资格，再读取凭据。`available` 才进入 Credential Resolver；
 `credential_blocked`、`quota_blocked`、`policy_blocked`、`model_cooldown` 都会跳过
@@ -196,7 +202,7 @@ application/accountrouting
 
 ## 5. 当前持久化决定
 
-v1 的模型 cooldown 是进程内瞬态索引，不新增数据库字段或表。原因：
+v1 的模型 cooldown 与硬阻塞都是进程内稀疏索引，不新增数据库字段或表。原因：
 
 - 当前只确认了路由读取与状态转换，还没有确定 Go Server 的写入吞吐和跨进程所有权；
 - cooldown 到期后无长期业务价值，不能先把旧 Node JSON 原样迁入新数据库；
@@ -208,11 +214,12 @@ v1 的模型 cooldown 是进程内瞬态索引，不新增数据库字段或表�
 
 ## 6. 当前验证
 
-验证环境：2026-07-28，Apple M4、darwin/arm64、Go 1.26.4。
+验证环境：2026-07-30，Apple M4、darwin/arm64、Go 1.26.4。
 
 ```text
 BenchmarkRegistryCheckEligibilityHealthy-10       84.24 ns/op   0 B/op   0 allocs/op
 BenchmarkRegistryCheckEligibilityCooldown-10     147.80 ns/op   0 B/op   0 allocs/op
+BenchmarkRuntimeCheckEligibilityHealthy-10       140.50 ns/op   0 B/op   0 allocs/op
 
 BenchmarkStoreQueries/accounts_10000/recruit_ready_account-10    31.489 µs/op
 BenchmarkStoreQueries/accounts_100000/recruit_ready_account-10   32.619 µs/op
@@ -241,4 +248,11 @@ Transport:
   account A + gpt-5.6-sol 第一次 stream_disconnected -> 仍选择 account A
   相同元组第二次 stream_disconnected                  -> 选择 account B
   sibling gpt-5.4                                    -> 仍选择 account A
+
+Hard block:
+  account A + gpt-overloaded 发生 credential_rejected
+  sibling gpt-sibling -> 在凭据读取前被排除
+  credentials_updated -> 账号两个模型恢复资格
+  model_unsupported -> 只排除发生失败的账号模型元组
+  model_catalog -> 只恢复该账号模型元组
 ```

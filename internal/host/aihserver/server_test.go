@@ -44,12 +44,13 @@ func TestServerMountsSystemAndAccountRoutes(t *testing.T) {
 	}
 	decodeJSON(t, ready.body, &readiness)
 	if !readiness.Ready ||
-		len(readiness.Capabilities) != 5 ||
+		len(readiness.Capabilities) != 6 ||
 		readiness.Capabilities[0] != "account_management_v1" ||
 		readiness.Capabilities[1] != "account_auth_jobs_v1" ||
 		readiness.Capabilities[2] != "local_model_catalog_v1" ||
-		readiness.Capabilities[3] != "claude_relay_leases_v1" ||
-		readiness.Capabilities[4] != "claude_native_relay_v1" {
+		readiness.Capabilities[3] != "canonical_inference_v1" ||
+		readiness.Capabilities[4] != "claude_relay_leases_v1" ||
+		readiness.Capabilities[5] != "claude_native_relay_v1" {
 		t.Fatalf("readyz response = %#v", readiness)
 	}
 
@@ -219,12 +220,14 @@ func TestServerMountsSystemAndAccountRoutes(t *testing.T) {
 		strings.Contains(issuedLease.body, nativeRefreshToken) {
 		t.Fatalf("Go Server Relay 租约响应错误: %#v", leaseDocument.Data)
 	}
-	unauthorizedRelay := performRequest(
+	unauthorizedRelay := performRequestWithHeaders(
 		t,
 		client,
 		http.MethodPost,
 		baseURL+claudenativerelay.Path,
-		"",
+		map[string]string{
+			claudenativerelay.RelayTokenHeader: "invalid-relay-token-2026",
+		},
 		[]byte(`{"model":"claude-opus-5"}`),
 	)
 	assertStatus(t, unauthorizedRelay, http.StatusUnauthorized)
@@ -401,11 +404,22 @@ type httpExchange struct {
 func startTestServer(t *testing.T) (string, *http.Client) {
 	t.Helper()
 
+	return startTestServerWithInferenceClient(t, nil)
+}
+
+// startTestServerWithInferenceClient 创建可注入合成上游的真实 Listener。
+func startTestServerWithInferenceClient(
+	t *testing.T,
+	inferenceClient aihserver.InferenceHTTPClient,
+) (string, *http.Client) {
+	t.Helper()
+
 	server, err := aihserver.New(context.Background(), aihserver.Options{
-		AIHomeDir:        t.TempDir(),
-		ManagementKey:    func() string { return testManagementKey },
-		ClientKey:        func() string { return testClientKey },
-		ModelDiscoverers: accountmodels.NewDiscoverers(),
+		AIHomeDir:           t.TempDir(),
+		ManagementKey:       func() string { return testManagementKey },
+		ClientKey:           func() string { return testClientKey },
+		ModelDiscoverers:    accountmodels.NewDiscoverers(),
+		InferenceHTTPClient: inferenceClient,
 	})
 	if err != nil {
 		t.Fatalf("aihserver.New() error = %v", err)
@@ -448,6 +462,24 @@ func performRequest(
 ) httpExchange {
 	t.Helper()
 
+	headers := make(map[string]string)
+	if managementKey != "" {
+		headers["Authorization"] = "Bearer " + managementKey
+	}
+	return performRequestWithHeaders(t, client, method, url, headers, body)
+}
+
+// performRequestWithHeaders 执行需要显式区分客户端权限域的真实 TCP 请求。
+func performRequestWithHeaders(
+	t *testing.T,
+	client *http.Client,
+	method string,
+	url string,
+	headers map[string]string,
+	body []byte,
+) httpExchange {
+	t.Helper()
+
 	request, err := http.NewRequestWithContext(
 		context.Background(),
 		method,
@@ -457,8 +489,8 @@ func performRequest(
 	if err != nil {
 		t.Fatalf("http.NewRequestWithContext() error = %v", err)
 	}
-	if managementKey != "" {
-		request.Header.Set("Authorization", "Bearer "+managementKey)
+	for name, value := range headers {
+		request.Header.Set(name, value)
 	}
 	if body != nil {
 		request.Header.Set("Content-Type", "application/json")

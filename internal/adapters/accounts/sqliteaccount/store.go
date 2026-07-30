@@ -16,6 +16,17 @@ const maxLifecycleUpdateAttempts = 4
 var _ accountapp.Store = (*Store)(nil)
 var _ accountapp.RoutableModelReader = (*Store)(nil)
 
+// SetRoutableModelObserver 把全部已提交路由索引变化集中发送给一个观察端口。
+func (store *Store) SetRoutableModelObserver(
+	observer accountapp.RoutableModelObserver,
+) error {
+	if store == nil || store.routes == nil || observer == nil {
+		return accountapp.ErrInvalidRoutableModel
+	}
+	store.routes.setRoutableModelObserver(observer)
+	return nil
+}
+
 // Create 创建一个不含凭据的基础账号，适用于尚未完成认证的账号生命周期。
 func (store *Store) Create(ctx context.Context, account accountcore.Account) error {
 	if !store.acceptsAccount(account) {

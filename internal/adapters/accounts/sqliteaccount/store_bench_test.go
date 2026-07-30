@@ -104,6 +104,7 @@ func BenchmarkStoreQueries(benchmark *testing.B) {
 					result, recruitErr := recruiter.Recruit(
 						context.Background(),
 						recruitRequest,
+						benchmarkCredentialTransport{},
 					)
 					if recruitErr != nil {
 						benchmark.Fatalf("Recruit() error = %v", recruitErr)
@@ -115,6 +116,16 @@ func BenchmarkStoreQueries(benchmark *testing.B) {
 			})
 		})
 	}
+}
+
+// benchmarkCredentialTransport 接受基准中已经构造成功的 Codex API Key。
+type benchmarkCredentialTransport struct{}
+
+// SupportsCredential 排除零值而不增加网络或持久化开销。
+func (benchmarkCredentialTransport) SupportsCredential(
+	credential accountapp.Credential,
+) bool {
+	return credential != nil
 }
 
 // BenchmarkModelsAPIWithTenThousandAccounts 测量 1000 并发标准目录请求的本地读路径。

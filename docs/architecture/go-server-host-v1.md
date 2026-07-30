@@ -2,16 +2,23 @@
 
 ## 1. 状态与范围
 
-`cmd/aih-server` 是当前 Go Server 的真实可执行 Composition Root。v1 只挂载：
+`cmd/aih-server` 是当前 Go Server 的真实可执行 Composition Root。当前挂载：
 
 - `GET /healthz`；
 - `GET /readyz`；
 - `/v1/management/accounts` 账号管理 API；
-- `/v1/management/account-imports` Codex/Claude 原生账号导入 API。
+- `/v1/management/account-imports` Codex/Claude 原生账号导入 API；
+- `/v1/management/account-auth-jobs` OAuth Job API；
+- `GET /v1/models` 本地模型目录；
+- `POST /v1/responses`、`POST /v1/chat/completions`、`POST /v1/messages`；
+- Claude Native Relay 租约和同路径透传。
 
-它还不是完整 AIH Gateway，不提供 OpenAI/Anthropic 推理协议、OAuth 作业、usage、
-模型刷新、运行态路由、WebUI 或 Fabric。`readyz.capabilities` 固定公开
-`account_management_v1`，防止调用方把“账号管理已就绪”误判为“完整 Gateway 已就绪”。
+Go Host 已装配账号模型倒排、原子 Route Catalog、账号征召、进程内 Runtime 和
+Codex/Claude Adapter。它仍不提供 usage、WebUI 或 Fabric。
+
+Canonical 账号征召会使用目标 Adapter 的凭据传输策略。Claude 官方 OAuth 只允许
+Native Relay；普通 `/v1/messages` 会跳过它并继续征召 API Key/Auth Token 账号，
+不会把本地传输不兼容写成账号失败或 cooldown。
 
 本阶段不创建 Node bridge，不启动 stdio worker，不读取、迁移或双写 `app-state.db`。
 账号持久化只使用 `$AIH_HOME/aih.db`。
@@ -25,17 +32,17 @@ cmd/aih-server
 internal/host/aihserver
     Composition Root、HTTP 生命周期、系统探针
         ↓
-internal/transport/http/accountsapi
-    账号 HTTP 入站适配器
+internal/host/inferencehttp + internal/transport/http/*
+    账号、模型和三种推理 HTTP 入站适配器
         ↓
-internal/adapters/accounts/nativeaccount
-    Codex / Claude 官方 artifact 反腐层
+application/inferencecatalog + application/inferencegateway
+    不可变路由快照、Canonical Coordinator
         ↓
-application/accounts
-    Registrar / Management 用例
+application/accountrouting + application/accounts
+    账号征召、管理和模型刷新
         ↓
-internal/adapters/accounts/sqliteaccount
-    $AIH_HOME/aih.db
+internal/adapters/{accounts,accountruntime,codex,claude}
+    aih.db、内存运行态和上游协议
         ↓
 core/accounts + core/providers
     领域不变量和 Provider Catalog
@@ -52,6 +59,7 @@ Application 不反向依赖进程、HTTP、环境变量或命令行。
 | `AIH_SERVER_HOST` | `127.0.0.1` | 监听主机，只允许 loopback |
 | `AIH_SERVER_PORT` | `9527` | 监听端口；`0` 只用于系统分配临时端口 |
 | `AIH_SERVER_MANAGEMENT_KEY` | 无 | 必填的管理 Bearer 凭据 |
+| `AIH_SERVER_CLIENT_KEY` | 无 | 必填的模型目录和推理客户端凭据 |
 | `--host` | 环境值 | 显式覆盖 loopback 主机 |
 | `--port` | 环境值 | 显式覆盖端口 |
 
@@ -69,6 +77,7 @@ Management Key 必须为 32–8192 个非空白、非控制字符。命令刻意
 ```text
 AIH_HOME
 AIH_SERVER_MANAGEMENT_KEY
+AIH_SERVER_CLIENT_KEY
 ```
 
 然后启动：
@@ -94,7 +103,7 @@ Go Server 使用标准库 `net/http`：
 | --- | ---: |
 | `ReadHeaderTimeout` | 5s |
 | `ReadTimeout` | 30s |
-| `WriteTimeout` | 30s |
+| `WriteTimeout` | 10m |
 | `IdleTimeout` | 60s |
 | `MaxHeaderBytes` | 64 KiB |
 | 优雅关闭上限 | 10s |
@@ -104,8 +113,9 @@ Go Server 使用标准库 `net/http`：
 1. 停止接受新连接；
 2. 在 10 秒内等待当前请求；
 3. 关闭 HTTP 连接；
-4. 关闭 SQLite 连接池；
-5. 任一步失败时返回非零退出，不吞掉错误。
+4. 停止账号模型和 Route Catalog 后台 worker；
+5. 关闭 SQLite 连接池；
+6. 任一步失败时返回非零退出，不吞掉错误。
 
 Management Key、API Key、OAuth Token 和请求体不进入启动输出或 `net/http` 错误日志。
 
@@ -136,18 +146,26 @@ GET /readyz
   "service": "aih-server",
   "ready": true,
   "capabilities": [
-    "account_management_v1"
-  ]
+    "account_management_v1",
+    "account_auth_jobs_v1",
+    "local_model_catalog_v1",
+    "canonical_inference_v1",
+    "claude_relay_leases_v1",
+    "claude_native_relay_v1"
+  ],
+  "inference_catalog_ready": true
 }
 ```
 
-进程只有在 Provider Catalog、aih.db 和账号 Handler 全部装配成功后才开始监听，因此
-`ready=true` 表示当前声明的账号管理能力可接收请求，不表示存在可征召账号。
+`ready=true` 表示生产 Route Catalog 已发布；空账号集合也是有效的空快照。后续刷新
+失败但存在 last-known-good 时保持 ready，同时返回 `inference_catalog_stale=true`。
 
 ## 6. 安全边界
 
 - Management Key 只来自进程环境，不进入 argv。
+- Client Key 与 Management Key 必须不同。
 - 所有账号接口包括 loopback 请求都必须携带 Management Key。
+- 模型和推理接口只接受 Client Key；Messages 支持标准 `x-api-key`。
 - Health/ready 不返回数据库路径、账号数量、凭据或内部错误。
 - Host 启动前校验 Management Key；弱 Key 不会创建 `aih.db`。
 - Host 只绑定 loopback；不提供“自动信任局域网”分支。
@@ -164,9 +182,10 @@ go vet ./internal/host/aihserver ./cmd/aih-server
 go build ./cmd/aih-server
 ```
 
-测试包含真实 TCP Listener、Codex API Key 创建、Claude 原生 OAuth 导入、重复导入
-冲突、账号列表、Management Key 拒绝、health/ready、未知路由、方法错误、临时
-`aih.db` 和上下文取消后的优雅关闭。
+测试包含真实 TCP Listener、Codex/Claude API Key 推理、三种客户端协议、Claude
+原生 OAuth 导入与 Relay 分流、OAuth 在前而 API Key 在后的 Canonical 征召、
+重复导入、账号列表、权限域拒绝、health/ready、临时 `aih.db` 和优雅关闭。上游由
+合成 HTTP Client 提供，不使用真实凭据或网络。
 
 ## 8. 设计模式
 
@@ -174,6 +193,10 @@ go build ./cmd/aih-server
 | --- | --- | --- |
 | `cmd/aih-server` | Composition Root | 只在最外层选择具体 Adapter 和运行参数 |
 | `internal/host/aihserver` | Application Host | 集中进程、HTTP 和资源生命周期 |
+| `application/inferencecatalog` | Immutable Snapshot | 原子发布模型展示与路由解析的单一真相 |
+| `RefreshCoordinator` | Coalescing Worker | 合并账号写入触发的目录刷新 |
+| `ProviderRouteFactory` | Strategy + Registry | Provider 自己声明协议和能力 |
+| `CredentialTransportPolicy` | Strategy | Adapter 决定当前线协议支持哪些凭据，征召器保持 Provider 无关 |
 | `accountsapi.Management` / `Registrar` | Ports and Adapters | Host 依赖应用端口，不把 SQL 放入路由 |
 | `ManagementKeyProvider` | Strategy | 鉴权读取与密钥来源解耦 |
 | `commandRuntime` | Dependency Injection | 测试不读取真实环境，也不占用固定端口 |

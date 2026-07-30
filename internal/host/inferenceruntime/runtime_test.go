@@ -497,6 +497,13 @@ func (*scriptedUpstream) ProtocolID() inference.ProtocolID {
 	return inference.ProtocolCodexResponses
 }
 
+// SupportsCredential 接受 Runtime 夹具中已经绑定的 Codex 测试凭据。
+func (*scriptedUpstream) SupportsCredential(
+	credential accountapp.Credential,
+) bool {
+	return credential != nil
+}
+
 // Execute 按真实模型选择失败或成功结果。
 func (upstream *scriptedUpstream) Execute(
 	_ context.Context,

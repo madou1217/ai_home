@@ -423,9 +423,9 @@ func TestNewAdapterRejectsMissingDependencies(t *testing.T) {
 	}
 }
 
-// TestAdapterRejectsOfficialOAuthBeforeNetwork 验证错误的 Go 直连路径
-// 不触网、不产出事件，也不把传输不兼容写成账号 cooldown。
-func TestAdapterRejectsOfficialOAuthBeforeNetwork(t *testing.T) {
+// TestCoordinatorSkipsOfficialOAuthBeforeAdapter 验证错误的 Go 直连路径
+// 在账号征召阶段停止，不触网、不产出事件，也不写账号运行态。
+func TestCoordinatorSkipsOfficialOAuthBeforeAdapter(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -487,7 +487,7 @@ func TestAdapterRejectsOfficialOAuthBeforeNetwork(t *testing.T) {
 					return nil
 				},
 			)
-			if !errors.Is(err, ErrNativeTransportRequired) ||
+			if !errors.Is(err, inferencegateway.ErrNoRoutableAccount) ||
 				client.calls != 0 ||
 				fixture.recorder.successes != 0 ||
 				len(fixture.recorder.failures) != 0 ||

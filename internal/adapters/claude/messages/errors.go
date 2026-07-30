@@ -18,6 +18,8 @@ var (
 	ErrModelCatalogUnavailable = errors.New("Claude 账号模型目录暂不可用")
 	// ErrInvalidModelCatalog 表示成功响应不符合 Claude 模型目录合同。
 	ErrInvalidModelCatalog = errors.New("Claude 账号模型目录无效")
+	// ErrInvalidRouteModel 表示目录请求使用了无效的真实模型标识。
+	ErrInvalidRouteModel = errors.New("Claude Messages 路由模型无效")
 )
 
 // eventSinkError 保留调用方背压错误身份，不把实现细节写入普通日志。

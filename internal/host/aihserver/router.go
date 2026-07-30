@@ -6,17 +6,32 @@ import (
 
 	"github.com/madou1217/ai_home/internal/transport/http/accountauthapi"
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
+	"github.com/madou1217/ai_home/internal/transport/http/anthropicmessagesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/claudenativerelay"
 	"github.com/madou1217/ai_home/internal/transport/http/clauderelayleaseapi"
 	"github.com/madou1217/ai_home/internal/transport/http/modelsapi"
+	"github.com/madou1217/ai_home/internal/transport/http/openaichatcompletionsapi"
+	"github.com/madou1217/ai_home/internal/transport/http/openairesponsesapi"
 )
 
 // systemStatusResponse 是公开存活和就绪检查的稳定响应。
 type systemStatusResponse struct {
-	OK           bool     `json:"ok"`
-	Service      string   `json:"service"`
-	Ready        bool     `json:"ready,omitempty"`
-	Capabilities []string `json:"capabilities,omitempty"`
+	OK                    bool     `json:"ok"`
+	Service               string   `json:"service"`
+	Ready                 bool     `json:"ready,omitempty"`
+	Capabilities          []string `json:"capabilities,omitempty"`
+	InferenceCatalogReady bool     `json:"inference_catalog_ready,omitempty"`
+	InferenceCatalogStale bool     `json:"inference_catalog_stale,omitempty"`
+	ModelCount            int      `json:"model_count,omitempty"`
+	RouteCount            int      `json:"route_count,omitempty"`
+}
+
+// catalogReadiness 是 Host 探针读取的低敏原子目录状态。
+type catalogReadiness struct {
+	ready      bool
+	stale      bool
+	modelCount int
+	routeCount int
 }
 
 // systemErrorResponse 是 Host 级路由错误的稳定响应。
@@ -30,11 +45,16 @@ type systemErrorView struct {
 	Message string `json:"message"`
 }
 
-// newRouter 挂载系统、账号管理、OAuth Job 和 Claude Native Relay 路由。
+// newRouter 挂载系统、账号、推理和 Claude Native Relay 路由。
 func newRouter(handlers serverHandlers) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", handleHealth)
-	mux.HandleFunc("/readyz", handleReadiness)
+	mux.HandleFunc("/readyz", func(
+		response http.ResponseWriter,
+		request *http.Request,
+	) {
+		handleReadiness(response, request, handlers.catalogStatus)
+	})
 	mux.Handle(accountsapi.NativeImportPath, handlers.accounts)
 	mux.Handle(accountsapi.CollectionPath, handlers.accounts)
 	mux.Handle(accountsapi.CollectionPath+"/", handlers.accounts)
@@ -45,9 +65,38 @@ func newRouter(handlers serverHandlers) http.Handler {
 		clauderelayleaseapi.Path,
 		handlers.claudeRelayLeases,
 	)
-	mux.Handle(claudenativerelay.Path, handlers.claudeNativeRelay)
+	mux.Handle(openairesponsesapi.Path, handlers.inference)
+	mux.Handle(openaichatcompletionsapi.Path, handlers.inference)
+	mux.Handle(
+		anthropicmessagesapi.Path,
+		claudeMessagesDispatcher{
+			canonical: handlers.inference,
+			relay:     handlers.claudeNativeRelay,
+		},
+	)
 	mux.HandleFunc("/", handleRouteNotFound)
 	return mux
+}
+
+// claudeMessagesDispatcher 让同一路径按服务端签发的 Relay Token 区分原生透传。
+//
+// 只要请求声明 Relay Token 就必须进入 Relay 自身鉴权；无效 Token 不能降级为
+// 普通客户端请求，避免权限域混淆。
+type claudeMessagesDispatcher struct {
+	canonical http.Handler
+	relay     http.Handler
+}
+
+func (dispatcher claudeMessagesDispatcher) ServeHTTP(
+	response http.ResponseWriter,
+	request *http.Request,
+) {
+	if request != nil &&
+		len(request.Header.Values(claudenativerelay.RelayTokenHeader)) > 0 {
+		dispatcher.relay.ServeHTTP(response, request)
+		return
+	}
+	dispatcher.canonical.ServeHTTP(response, request)
 }
 
 // handleHealth 返回不依赖账号数量的进程存活状态。
@@ -62,21 +111,38 @@ func handleHealth(response http.ResponseWriter, request *http.Request) {
 }
 
 // handleReadiness 明确当前进程已经装配的稳定能力。
-func handleReadiness(response http.ResponseWriter, request *http.Request) {
+func handleReadiness(
+	response http.ResponseWriter,
+	request *http.Request,
+	statusReader func() catalogReadiness,
+) {
 	if !requireGet(response, request) {
 		return
 	}
-	writeSystemJSON(response, http.StatusOK, systemStatusResponse{
-		OK:      true,
+	status := catalogReadiness{}
+	if statusReader != nil {
+		status = statusReader()
+	}
+	httpStatus := http.StatusOK
+	if !status.ready {
+		httpStatus = http.StatusServiceUnavailable
+	}
+	writeSystemJSON(response, httpStatus, systemStatusResponse{
+		OK:      status.ready,
 		Service: "aih-server",
-		Ready:   true,
+		Ready:   status.ready,
 		Capabilities: []string{
 			"account_management_v1",
 			"account_auth_jobs_v1",
 			"local_model_catalog_v1",
+			"canonical_inference_v1",
 			"claude_relay_leases_v1",
 			"claude_native_relay_v1",
 		},
+		InferenceCatalogReady: status.ready,
+		InferenceCatalogStale: status.stale,
+		ModelCount:            status.modelCount,
+		RouteCount:            status.routeCount,
 	})
 }
 

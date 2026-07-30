@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -20,10 +21,12 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	claudemessages "github.com/madou1217/ai_home/internal/adapters/claude/messages"
 	codexresponses "github.com/madou1217/ai_home/internal/adapters/codex/responses"
+	"github.com/madou1217/ai_home/internal/host/inferenceruntime"
 	"github.com/madou1217/ai_home/internal/transport/http/accountauthapi"
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/claudenativerelay"
 	"github.com/madou1217/ai_home/internal/transport/http/clauderelayleaseapi"
+	"github.com/madou1217/ai_home/internal/transport/http/clientauth"
 	"github.com/madou1217/ai_home/internal/transport/http/modelsapi"
 )
 
@@ -33,13 +36,21 @@ const (
 	modelCatalogHTTPTimeout = 15 * time.Second
 )
 
-// serverHandlers 保存 Composition Root 创建的五个独立 HTTP 边界。
+// serverHandlers 保存 Composition Root 创建的管理、目录、推理和 Relay 边界。
 type serverHandlers struct {
 	accounts          http.Handler
 	accountAuth       http.Handler
 	models            http.Handler
+	inference         http.Handler
 	claudeRelayLeases http.Handler
 	claudeNativeRelay http.Handler
+	catalogStatus     func() catalogReadiness
+}
+
+// serverAccountRuntime 是账号恢复、征召读取和推理终态共享的唯一运行态。
+type serverAccountRuntime interface {
+	accountrecovery.Runtime
+	inferenceruntime.AccountRuntime
 }
 
 // New 装配 Provider Catalog、aih.db、账号用例、OAuth Strategy 和 HTTP 入站适配器。
@@ -68,34 +79,39 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		_ = store.Close()
 		return nil, fmt.Errorf("创建账号运行态失败: %w", err)
 	}
-	handlers, err := newHandlers(
+	handlers, resources, err := newHandlers(
+		ctx,
 		catalog,
 		store,
 		modelDiscovery,
 		accountRuntime,
 		options.ManagementKey,
 		options.ClientKey,
+		options.InferenceHTTPClient,
 	)
 	if err != nil {
 		_ = store.Close()
 		return nil, err
 	}
+	resources = append(resources, store)
 	return newServer(
 		newRouter(handlers),
-		store,
+		resources,
 		options,
 	), nil
 }
 
-// newHandlers 共享数据库、凭据刷新和鉴权端口，并保持五个 HTTP 边界隔离。
+// newHandlers 共享数据库、运行态和鉴权端口，并保持各 HTTP 边界隔离。
 func newHandlers(
+	ctx context.Context,
 	catalog *providers.Catalog,
 	store *sqliteaccount.Store,
 	modelDiscovery *accountapp.ModelDiscovery,
-	accountRuntime accountrecovery.Runtime,
+	accountRuntime serverAccountRuntime,
 	managementKey func() string,
 	clientKey func() string,
-) (serverHandlers, error) {
+	inferenceClient InferenceHTTPClient,
+) (serverHandlers, []io.Closer, error) {
 	registrar, err := accountapp.NewRegistrar(
 		catalog,
 		store,
@@ -103,7 +119,7 @@ func newHandlers(
 		time.Now,
 	)
 	if err != nil {
-		return serverHandlers{}, fmt.Errorf("创建账号注册用例失败: %w", err)
+		return serverHandlers{}, nil, fmt.Errorf("创建账号注册用例失败: %w", err)
 	}
 	reauthenticator, err := accountapp.NewReauthenticator(
 		catalog,
@@ -112,11 +128,11 @@ func newHandlers(
 		time.Now,
 	)
 	if err != nil {
-		return serverHandlers{}, fmt.Errorf("创建账号重新认证用例失败: %w", err)
+		return serverHandlers{}, nil, fmt.Errorf("创建账号重新认证用例失败: %w", err)
 	}
 	management, err := accountapp.NewManagement(store, store, time.Now)
 	if err != nil {
-		return serverHandlers{}, fmt.Errorf("创建账号管理用例失败: %w", err)
+		return serverHandlers{}, nil, fmt.Errorf("创建账号管理用例失败: %w", err)
 	}
 	modelManagement, err := accountapp.NewModelManagement(
 		store,
@@ -125,7 +141,7 @@ func newHandlers(
 		time.Now,
 	)
 	if err != nil {
-		return serverHandlers{}, fmt.Errorf("创建账号模型管理用例失败: %w", err)
+		return serverHandlers{}, nil, fmt.Errorf("创建账号模型管理用例失败: %w", err)
 	}
 	recoveringReauthenticator, err :=
 		accountrecovery.NewReauthenticator(
@@ -133,7 +149,7 @@ func newHandlers(
 			accountRuntime,
 		)
 	if err != nil {
-		return serverHandlers{}, fmt.Errorf(
+		return serverHandlers{}, nil, fmt.Errorf(
 			"创建账号重新认证恢复边界失败: %w",
 			err,
 		)
@@ -144,25 +160,18 @@ func newHandlers(
 			accountRuntime,
 		)
 	if err != nil {
-		return serverHandlers{}, fmt.Errorf(
+		return serverHandlers{}, nil, fmt.Errorf(
 			"创建账号模型恢复边界失败: %w",
 			err,
 		)
 	}
 	authorizer, err := accountsapi.NewBearerAuthorizer(managementKey)
 	if err != nil {
-		return serverHandlers{}, fmt.Errorf("创建账号管理鉴权失败: %w", err)
+		return serverHandlers{}, nil, fmt.Errorf("创建账号管理鉴权失败: %w", err)
 	}
-	clientAuthorizer, err := accountsapi.NewBearerAuthorizer(clientKey)
+	clientAuthorizer, err := clientauth.NewAuthorizer(clientKey)
 	if err != nil {
-		return serverHandlers{}, fmt.Errorf("创建客户端鉴权失败: %w", err)
-	}
-	modelsHandler, err := modelsapi.NewHandler(modelsapi.Dependencies{
-		Models:     store,
-		Authorizer: clientAuthorizer,
-	})
-	if err != nil {
-		return serverHandlers{}, fmt.Errorf("创建本地模型目录 Handler 失败: %w", err)
+		return serverHandlers{}, nil, fmt.Errorf("创建客户端鉴权失败: %w", err)
 	}
 	decoder := nativeaccount.NewDecoder()
 	accountsHandler, err := accountsapi.NewHandler(accountsapi.Dependencies{
@@ -174,7 +183,7 @@ func newHandlers(
 		Authorizer:     authorizer,
 	})
 	if err != nil {
-		return serverHandlers{}, fmt.Errorf("创建账号 HTTP Handler 失败: %w", err)
+		return serverHandlers{}, nil, fmt.Errorf("创建账号 HTTP Handler 失败: %w", err)
 	}
 	oauthClient := &http.Client{
 		Timeout:       oauthHTTPTimeout,
@@ -182,11 +191,11 @@ func newHandlers(
 	}
 	codexProvider, err := codexoauth.New(oauthClient, time.Now)
 	if err != nil {
-		return serverHandlers{}, fmt.Errorf("创建 Codex OAuth Strategy 失败: %w", err)
+		return serverHandlers{}, nil, fmt.Errorf("创建 Codex OAuth Strategy 失败: %w", err)
 	}
 	claudeProvider, err := claudeoauth.New(oauthClient, time.Now)
 	if err != nil {
-		return serverHandlers{}, fmt.Errorf("创建 Claude OAuth Strategy 失败: %w", err)
+		return serverHandlers{}, nil, fmt.Errorf("创建 Claude OAuth Strategy 失败: %w", err)
 	}
 	jobs, err := accountauth.NewService(accountauth.Dependencies{
 		Providers: []accountauth.OAuthProvider{
@@ -200,7 +209,7 @@ func newHandlers(
 		GenerateID: accountauth.NewRandomJobID,
 	})
 	if err != nil {
-		return serverHandlers{}, fmt.Errorf("创建 OAuth Job 服务失败: %w", err)
+		return serverHandlers{}, nil, fmt.Errorf("创建 OAuth Job 服务失败: %w", err)
 	}
 	accountAuthHandler, err := accountauthapi.NewHandler(
 		accountauthapi.Dependencies{
@@ -209,7 +218,7 @@ func newHandlers(
 		},
 	)
 	if err != nil {
-		return serverHandlers{}, fmt.Errorf("创建 OAuth Job HTTP Handler 失败: %w", err)
+		return serverHandlers{}, nil, fmt.Errorf("创建 OAuth Job HTTP Handler 失败: %w", err)
 	}
 	credentials, err := accountcredentials.NewResolver(
 		accountcredentials.Dependencies{
@@ -219,7 +228,7 @@ func newHandlers(
 		},
 	)
 	if err != nil {
-		return serverHandlers{}, fmt.Errorf("创建 Claude 凭据解析器失败: %w", err)
+		return serverHandlers{}, nil, fmt.Errorf("创建 Claude 凭据解析器失败: %w", err)
 	}
 	relayLeases, err := clauderelay.NewLeaseRegistry(
 		clauderelay.Dependencies{
@@ -228,13 +237,13 @@ func newHandlers(
 		},
 	)
 	if err != nil {
-		return serverHandlers{}, fmt.Errorf("创建 Claude Relay 租约注册表失败: %w", err)
+		return serverHandlers{}, nil, fmt.Errorf("创建 Claude Relay 租约注册表失败: %w", err)
 	}
 	relayAuthorizer, err := claudenativerelay.NewScopedTokenAuthorizer(
 		relayLeases,
 	)
 	if err != nil {
-		return serverHandlers{}, fmt.Errorf("创建 Claude Relay 鉴权失败: %w", err)
+		return serverHandlers{}, nil, fmt.Errorf("创建 Claude Relay 鉴权失败: %w", err)
 	}
 	relayLeaseHandler, err := clauderelayleaseapi.NewHandler(
 		clauderelayleaseapi.Dependencies{
@@ -244,7 +253,7 @@ func newHandlers(
 		},
 	)
 	if err != nil {
-		return serverHandlers{}, fmt.Errorf("创建 Claude Relay 租约 Handler 失败: %w", err)
+		return serverHandlers{}, nil, fmt.Errorf("创建 Claude Relay 租约 Handler 失败: %w", err)
 	}
 	relayClient := &http.Client{
 		Timeout:       claudeRelayHTTPTimeout,
@@ -258,15 +267,52 @@ func newHandlers(
 		},
 	)
 	if err != nil {
-		return serverHandlers{}, fmt.Errorf("创建 Claude Native Relay Handler 失败: %w", err)
+		return serverHandlers{}, nil, fmt.Errorf("创建 Claude Native Relay Handler 失败: %w", err)
+	}
+	inference, err := newInferenceComposition(
+		ctx,
+		inferenceCompositionDependencies{
+			catalog: catalog,
+			store:   store,
+			runtime: accountRuntime,
+			models:  recoveringModelManagement,
+			credentialRefresh: []accountcredentials.RefreshStrategy{
+				codexProvider,
+				claudeProvider,
+			},
+			authorizer: clientAuthorizer,
+			httpClient: inferenceClient,
+			clock:      time.Now,
+		},
+	)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建生产推理组合失败: %w", err)
+	}
+	modelsHandler, err := modelsapi.NewHandler(modelsapi.Dependencies{
+		Models:     inference.models,
+		Authorizer: clientAuthorizer,
+	})
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建本地模型目录 Handler 失败: %w", err)
 	}
 	return serverHandlers{
 		accounts:          accountsHandler,
 		accountAuth:       accountAuthHandler,
 		models:            modelsHandler,
+		inference:         inference.handler,
 		claudeRelayLeases: relayLeaseHandler,
 		claudeNativeRelay: nativeRelayHandler,
-	}, nil
+		catalogStatus: func() catalogReadiness {
+			status := inference.models.Status()
+			return catalogReadiness{
+				ready:      status.Ready,
+				stale:      status.Stale,
+				modelCount: status.ModelCount,
+				routeCount: status.RouteCount,
+			}
+		},
+	}, []io.Closer{inference}, nil
 }
 
 // newModelDiscovery 创建生产 Codex/Claude 目录源，或使用测试显式注入的策略。

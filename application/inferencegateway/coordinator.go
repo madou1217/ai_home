@@ -33,6 +33,7 @@ type AccountRecruiter interface {
 	Recruit(
 		ctx context.Context,
 		request accountrouting.Request,
+		transport accountrouting.CredentialTransportPolicy,
 	) (accountrouting.Result, error)
 }
 
@@ -195,6 +196,7 @@ func (coordinator *Coordinator) executeRoute(
 		recruited, err := coordinator.recruit(
 			ctx,
 			route,
+			upstream,
 			afterRef,
 			remaining,
 		)
@@ -242,6 +244,7 @@ func (coordinator *Coordinator) executeRoute(
 func (coordinator *Coordinator) recruit(
 	ctx context.Context,
 	route Route,
+	transport accountrouting.CredentialTransportPolicy,
 	afterRef accountcore.AccountRef,
 	limit int,
 ) (accountrouting.Result, error) {
@@ -255,7 +258,7 @@ func (coordinator *Coordinator) recruit(
 	if err != nil {
 		return accountrouting.Result{}, err
 	}
-	result, err := coordinator.recruiter.Recruit(ctx, request)
+	result, err := coordinator.recruiter.Recruit(ctx, request, transport)
 	if result.Examined() < 0 || result.Examined() > limit {
 		return result, accountrouting.ErrInvalidCandidatePage
 	}

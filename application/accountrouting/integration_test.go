@@ -148,7 +148,11 @@ func TestRecruiterUsesSQLiteAndProductionCredentialResolver(t *testing.T) {
 		t.Fatalf("accountrouting.NewRequest() error = %v", err)
 	}
 
-	result, err := recruiter.Recruit(ctx, request)
+	result, err := recruiter.Recruit(
+		ctx,
+		request,
+		integrationCredentialTransport{},
+	)
 	if err != nil {
 		t.Fatalf("Recruit() error = %v", err)
 	}
@@ -166,6 +170,16 @@ func TestRecruiterUsesSQLiteAndProductionCredentialResolver(t *testing.T) {
 		result.Account().CLIAccountID().Int64(),
 		result.Account().Ref(),
 	)
+}
+
+// integrationCredentialTransport 接受已由真实 Resolver 返回的 Codex 凭据。
+type integrationCredentialTransport struct{}
+
+// SupportsCredential 拒绝零值，不引入具体 HTTP Adapter。
+func (integrationCredentialTransport) SupportsCredential(
+	credential accountapp.Credential,
+) bool {
+	return credential != nil
 }
 
 // integrationIdentitySource 是创建无凭据基础账号所需的测试身份。

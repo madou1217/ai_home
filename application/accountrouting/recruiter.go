@@ -27,6 +27,8 @@ var (
 	ErrInvalidResolvedCredential = errors.New("账号征召凭据无效")
 	// ErrInvalidRuntimeEligibility 表示运行态端口返回了不完整的资格值。
 	ErrInvalidRuntimeEligibility = errors.New("账号征召运行态资格无效")
+	// ErrInvalidCredentialTransport 表示调用方没有提供当前上游协议的凭据传输策略。
+	ErrInvalidCredentialTransport = errors.New("账号征召凭据传输策略无效")
 	// ErrNoRoutableAccount 表示当前候选页没有可直接交给上游的账号。
 	ErrNoRoutableAccount = errors.New("没有可征召账号")
 )
@@ -47,6 +49,14 @@ type CredentialResolver interface {
 		ctx context.Context,
 		accountRef accountcore.AccountRef,
 	) (accountapp.Credential, error)
+}
+
+// CredentialTransportPolicy 判断领域凭据能否由当前上游协议安全承载。
+//
+// 该策略只表达本地协议兼容性，不执行网络请求，也不改变账号运行态。
+type CredentialTransportPolicy interface {
+	// SupportsCredential 返回当前 Adapter 是否可以直接使用该凭据。
+	SupportsCredential(credential accountapp.Credential) bool
 }
 
 // RuntimeEligibilitySource 提供账号与真实模型元组的当前运行态资格。
@@ -191,13 +201,15 @@ func NewRecruiter(dependencies Dependencies) (*Recruiter, error) {
 	}, nil
 }
 
-// Recruit 返回本地倒排中首个运行态和凭据均可用的账号。
+// Recruit 返回本地倒排中首个运行态、凭据和传输方式均可用的账号。
 //
 // 单账号缺失凭据、需要重新认证、刷新被拒绝或刷新暂时失败时继续检查下一候选；
+// 凭据不能由当前 Adapter 承载时也只跳过该账号，不写入 cooldown 或硬阻塞；
 // 未分类的存储、解码和合同错误立即失败，避免静默掩盖系统问题。
 func (recruiter *Recruiter) Recruit(
 	ctx context.Context,
 	request Request,
+	transport CredentialTransportPolicy,
 ) (Result, error) {
 	if recruiter == nil ||
 		recruiter.candidates == nil ||
@@ -207,6 +219,9 @@ func (recruiter *Recruiter) Recruit(
 	}
 	if ctx == nil || !request.isValid() {
 		return Result{}, ErrInvalidRequest
+	}
+	if transport == nil {
+		return Result{}, ErrInvalidCredentialTransport
 	}
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
@@ -260,6 +275,9 @@ func (recruiter *Recruiter) Recruit(
 		}
 		if !credentialMatchesCandidate(candidate, credential) {
 			return progress, ErrInvalidResolvedCredential
+		}
+		if !transport.SupportsCredential(credential) {
+			continue
 		}
 		progress.account = candidate
 		progress.credential = credential

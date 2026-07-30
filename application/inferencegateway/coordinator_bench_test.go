@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	"github.com/madou1217/ai_home/core/inference"
@@ -105,6 +106,13 @@ type benchmarkUpstream struct {
 // ProtocolID 返回基准使用的真实线协议。
 func (upstream benchmarkUpstream) ProtocolID() inference.ProtocolID {
 	return upstream.protocol
+}
+
+// SupportsCredential 接受基准夹具中已校验的合成凭据。
+func (benchmarkUpstream) SupportsCredential(
+	credential accountapp.Credential,
+) bool {
+	return credential != nil
 }
 
 // Execute 同步执行预构造事件，不引入网络、日志或测试锁开销。

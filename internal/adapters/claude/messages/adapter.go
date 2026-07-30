@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	"github.com/madou1217/ai_home/core/inference"
@@ -54,6 +55,21 @@ func NewAdapter(client HTTPClient, clock Clock) (*Adapter, error) {
 // ProtocolID 返回 Claude Messages 的精确线协议身份。
 func (*Adapter) ProtocolID() inference.ProtocolID {
 	return inference.ProtocolClaudeMessages
+}
+
+// SupportsCredential 只接受能够由 Go Messages 协议直接承载的 Claude 凭据。
+//
+// 官方订阅 OAuth 必须继续走 Native Relay，不能被降级成普通 Bearer 请求。
+func (adapter *Adapter) SupportsCredential(
+	credential accountapp.Credential,
+) bool {
+	if adapter == nil ||
+		credential == nil ||
+		credential.ProviderID() != string(inference.ProviderClaude) {
+		return false
+	}
+	_, err := projectAuth(credential)
+	return err == nil
 }
 
 // Execute 编码请求、执行 HTTP 传输并同步输出 Canonical 事件。

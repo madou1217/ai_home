@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	"github.com/madou1217/ai_home/core/inference"
@@ -325,6 +326,13 @@ type inertUpstream struct {
 // ProtocolID 返回显式注册协议。
 func (upstream inertUpstream) ProtocolID() inference.ProtocolID {
 	return upstream.protocol
+}
+
+// SupportsCredential 接受合同测试中的非空合成凭据。
+func (inertUpstream) SupportsCredential(
+	credential accountapp.Credential,
+) bool {
+	return credential != nil
 }
 
 // Execute 不应在 Registry 合同测试中被调用。

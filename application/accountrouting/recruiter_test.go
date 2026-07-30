@@ -32,7 +32,11 @@ func TestRecruiterReturnsFirstUsableCandidate(t *testing.T) {
 	recruiter := newTestRecruiter(t, source, resolver)
 	request := newTestRequest(t, "codex", "", 2)
 
-	result, err := recruiter.Recruit(context.Background(), request)
+	result, err := recruiter.Recruit(
+		context.Background(),
+		request,
+		allowAllCredentialTransport{},
+	)
 	if err != nil {
 		t.Fatalf("Recruit() error = %v", err)
 	}
@@ -86,7 +90,11 @@ func TestRecruiterSkipsRuntimeBlockedAccountBeforeCredential(t *testing.T) {
 	)
 	request := newTestRequest(t, "codex", "", 2)
 
-	result, err := recruiter.Recruit(context.Background(), request)
+	result, err := recruiter.Recruit(
+		context.Background(),
+		request,
+		allowAllCredentialTransport{},
+	)
 	if err != nil {
 		t.Fatalf("Recruit() error = %v", err)
 	}
@@ -140,6 +148,7 @@ func TestRecruiterFailsClosedOnInvalidRuntimeEligibility(t *testing.T) {
 	_, err := recruiter.Recruit(
 		context.Background(),
 		newTestRequest(t, "claude", "", 1),
+		allowAllCredentialTransport{},
 	)
 	if !errors.Is(err, ErrInvalidRuntimeEligibility) ||
 		resolver.CallCount() != 0 {
@@ -186,7 +195,11 @@ func TestRecruiterSkipsAccountScopedCredentialFailures(t *testing.T) {
 	recruiter := newTestRecruiter(t, source, resolver)
 	request := newTestRequest(t, "claude", "", 5)
 
-	result, err := recruiter.Recruit(context.Background(), request)
+	result, err := recruiter.Recruit(
+		context.Background(),
+		request,
+		allowAllCredentialTransport{},
+	)
 	if err != nil {
 		t.Fatalf("Recruit() error = %v", err)
 	}
@@ -195,6 +208,67 @@ func TestRecruiterSkipsAccountScopedCredentialFailures(t *testing.T) {
 		result.NextAfterRef() != ready.Ref() ||
 		!result.SourceExhausted() {
 		t.Fatalf("Recruit() result = %#v", result)
+	}
+}
+
+// TestRecruiterSkipsCredentialUnsupportedByCurrentTransport 验证本地协议
+// 不兼容只淘汰当前候选，不制造账号运行态失败。
+func TestRecruiterSkipsCredentialUnsupportedByCurrentTransport(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	nativeOnly, nativeCredential := newRecruitmentCandidate(
+		t,
+		"claude",
+		1,
+		"native-only",
+	)
+	direct, directCredential := newRecruitmentCandidate(
+		t,
+		"claude",
+		2,
+		"direct",
+	)
+	resolver := newRecruitmentCredentialResolver(
+		map[accountcore.AccountRef]credentialResolution{
+			nativeOnly.Ref(): {credential: nativeCredential},
+			direct.Ref():     {credential: directCredential},
+		},
+	)
+	runtimeSource := &recruitmentEligibilitySource{}
+	recruiter := newTestRecruiterWithRuntime(
+		t,
+		&recruitmentCandidateSource{
+			candidates: []accountapp.RoutingAccount{nativeOnly, direct},
+		},
+		runtimeSource,
+		resolver,
+	)
+	policy := rejectIdentityCredentialTransport{
+		identitySeed: nativeCredential.IdentitySeed(),
+	}
+
+	result, err := recruiter.Recruit(
+		context.Background(),
+		newTestRequest(t, "claude", "", 3),
+		policy,
+	)
+	if err != nil {
+		t.Fatalf("Recruit() error = %v", err)
+	}
+	if result.Account().Ref() != direct.Ref() ||
+		result.Examined() != 2 ||
+		result.NextAfterRef() != direct.Ref() ||
+		!result.SourceExhausted() ||
+		resolver.CallCount() != 2 ||
+		len(runtimeSource.Routes()) != 2 {
+		t.Fatalf(
+			"Recruit() result=%#v credentialCalls=%d runtimeCalls=%d",
+			result,
+			resolver.CallCount(),
+			len(runtimeSource.Routes()),
+		)
 	}
 }
 
@@ -216,7 +290,11 @@ func TestRecruiterReturnsProgressWhenPageHasNoUsableAccount(t *testing.T) {
 	recruiter := newTestRecruiter(t, source, resolver)
 	request := newTestRequest(t, "codex", "", 2)
 
-	result, err := recruiter.Recruit(context.Background(), request)
+	result, err := recruiter.Recruit(
+		context.Background(),
+		request,
+		allowAllCredentialTransport{},
+	)
 	if !errors.Is(err, ErrNoRoutableAccount) {
 		t.Fatalf("Recruit() error = %v, want ErrNoRoutableAccount", err)
 	}
@@ -246,7 +324,11 @@ func TestRecruiterFailsClosedOnUnexpectedResolutionError(t *testing.T) {
 	recruiter := newTestRecruiter(t, source, resolver)
 	request := newTestRequest(t, "codex", "", 2)
 
-	result, err := recruiter.Recruit(context.Background(), request)
+	result, err := recruiter.Recruit(
+		context.Background(),
+		request,
+		allowAllCredentialTransport{},
+	)
 	if !errors.Is(err, unexpected) {
 		t.Fatalf("Recruit() error = %v, want unexpected error", err)
 	}
@@ -278,7 +360,11 @@ func TestRecruiterRejectsCredentialBoundToAnotherAccount(t *testing.T) {
 	recruiter := newTestRecruiter(t, source, resolver)
 	request := newTestRequest(t, "claude", "", 1)
 
-	_, err := recruiter.Recruit(context.Background(), request)
+	_, err := recruiter.Recruit(
+		context.Background(),
+		request,
+		allowAllCredentialTransport{},
+	)
 	if !errors.Is(err, ErrInvalidResolvedCredential) {
 		t.Fatalf(
 			"Recruit() error = %v, want ErrInvalidResolvedCredential",
@@ -304,13 +390,28 @@ func TestRecruiterValidatesDependenciesRequestAndContext(t *testing.T) {
 	if _, err := recruiter.Recruit(
 		context.Background(),
 		Request{},
+		allowAllCredentialTransport{},
 	); !errors.Is(err, ErrInvalidRequest) {
 		t.Fatalf("Recruit(zero request) error = %v, want ErrInvalidRequest", err)
 	}
 	cancelled, cancel := context.WithCancel(context.Background())
 	cancel()
 	request := newTestRequest(t, "codex", "", 1)
-	if _, err := recruiter.Recruit(cancelled, request); !errors.Is(
+	if _, err := recruiter.Recruit(
+		context.Background(),
+		request,
+		nil,
+	); !errors.Is(err, ErrInvalidCredentialTransport) {
+		t.Fatalf(
+			"Recruit(nil transport) error = %v, want ErrInvalidCredentialTransport",
+			err,
+		)
+	}
+	if _, err := recruiter.Recruit(
+		cancelled,
+		request,
+		allowAllCredentialTransport{},
+	); !errors.Is(
 		err,
 		context.Canceled,
 	) {
@@ -319,6 +420,29 @@ func TestRecruiterValidatesDependenciesRequestAndContext(t *testing.T) {
 	if source.CallCount() != 0 {
 		t.Fatalf("ListRoutingCandidates() calls = %d, want 0", source.CallCount())
 	}
+}
+
+// allowAllCredentialTransport 让不关注传输差异的征召测试保持原有边界。
+type allowAllCredentialTransport struct{}
+
+// SupportsCredential 接受所有非空测试凭据。
+func (allowAllCredentialTransport) SupportsCredential(
+	credential accountapp.Credential,
+) bool {
+	return credential != nil
+}
+
+// rejectIdentityCredentialTransport 模拟只拒绝一种原生传输凭据的 Adapter。
+type rejectIdentityCredentialTransport struct {
+	identitySeed string
+}
+
+// SupportsCredential 根据稳定测试身份表达传输支持，不读取或修改运行态。
+func (policy rejectIdentityCredentialTransport) SupportsCredential(
+	credential accountapp.Credential,
+) bool {
+	return credential != nil &&
+		credential.IdentitySeed() != policy.identitySeed
 }
 
 // newTestRecruiter 创建仅依赖内存端口的征召器。

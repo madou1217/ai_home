@@ -358,7 +358,11 @@ func recruitProviderFailureScenario(
 	if err != nil {
 		t.Fatalf("NewRequest() error = %v", err)
 	}
-	result, err := recruiter.Recruit(context.Background(), request)
+	result, err := recruiter.Recruit(
+		context.Background(),
+		request,
+		allowAllCredentialTransport{},
+	)
 	if err != nil {
 		t.Fatalf("Recruit() error = %v", err)
 	}

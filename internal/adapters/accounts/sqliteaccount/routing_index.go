@@ -18,9 +18,11 @@ import (
 //
 // 读请求只持有共享锁并复制有界结果；写请求只更新一个账号涉及的模型切片。
 type routingIndex struct {
-	mu       sync.RWMutex
-	accounts map[accountcore.AccountRef]indexedRoutingAccount
-	reverse  map[routingIndexKey][]accountapp.RoutingAccount
+	mu         sync.RWMutex
+	accounts   map[accountcore.AccountRef]indexedRoutingAccount
+	reverse    map[routingIndexKey][]accountapp.RoutingAccount
+	observerMu sync.RWMutex
+	observer   accountapp.RoutableModelObserver
 }
 
 // indexedRoutingAccount 保存账号启停状态及排序后的有效模型正排。
@@ -155,8 +157,9 @@ func (index *routingIndex) replaceAccount(
 		return
 	}
 	index.mu.Lock()
-	defer index.mu.Unlock()
 	index.replaceAccountLocked(account, enabled, models)
+	index.mu.Unlock()
+	index.notifyRoutableModelsChanged()
 }
 
 // replaceAccountLocked 在唯一写锁内同时更新账号正排和所有受影响倒排。
@@ -206,12 +209,14 @@ func (index *routingIndex) replaceModels(
 		return false
 	}
 	index.mu.Lock()
-	defer index.mu.Unlock()
 	current, found := index.accounts[accountRef]
 	if !found {
+		index.mu.Unlock()
 		return false
 	}
 	index.replaceAccountLocked(current.account, current.enabled, models)
+	index.mu.Unlock()
+	index.notifyRoutableModelsChanged()
 	return true
 }
 
@@ -224,13 +229,41 @@ func (index *routingIndex) setAccount(
 		return
 	}
 	index.mu.Lock()
-	defer index.mu.Unlock()
 	current, found := index.accounts[account.Ref()]
 	if !found {
 		index.replaceAccountLocked(account, enabled, nil)
+		index.mu.Unlock()
+		index.notifyRoutableModelsChanged()
 		return
 	}
 	index.replaceAccountLocked(account, enabled, current.models)
+	index.mu.Unlock()
+	index.notifyRoutableModelsChanged()
+}
+
+// setRoutableModelObserver 注册唯一的进程内目录变化观察端口。
+func (index *routingIndex) setRoutableModelObserver(
+	observer accountapp.RoutableModelObserver,
+) {
+	if index == nil {
+		return
+	}
+	index.observerMu.Lock()
+	index.observer = observer
+	index.observerMu.Unlock()
+}
+
+// notifyRoutableModelsChanged 在路由索引写锁外发送快速变化通知。
+func (index *routingIndex) notifyRoutableModelsChanged() {
+	if index == nil {
+		return
+	}
+	index.observerMu.RLock()
+	observer := index.observer
+	index.observerMu.RUnlock()
+	if observer != nil {
+		observer.RoutableModelsChanged()
+	}
 }
 
 // list 使用二分游标从本地倒排返回有界账号候选。

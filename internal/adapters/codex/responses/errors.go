@@ -16,6 +16,8 @@ var (
 	ErrModelCatalogUnavailable = errors.New("Codex 账号模型目录暂不可用")
 	// ErrInvalidModelCatalog 表示成功响应不符合账号模型目录合同。
 	ErrInvalidModelCatalog = errors.New("Codex 账号模型目录无效")
+	// ErrInvalidRouteModel 表示目录请求使用了无效的真实模型标识。
+	ErrInvalidRouteModel = errors.New("Codex Responses 路由模型无效")
 )
 
 // eventSinkError 保留调用方背压错误身份，但不改变其对外文本。

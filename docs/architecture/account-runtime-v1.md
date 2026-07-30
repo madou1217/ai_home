@@ -187,6 +187,7 @@ internal/adapters/accountruntime/inmemory
         ↓
 application/accountrouting
     enabled 候选 -> runtime eligibility -> credential resolver
+                    -> adapter credential transport policy
 ```
 
 `ModelState` 是单个模型元组的紧凑值，不包含 map。`Registry` 使用
@@ -198,7 +199,10 @@ application/accountrouting
 征召器必须先检查运行态资格，再读取凭据。`available` 才进入 Credential Resolver；
 `credential_blocked`、`quota_blocked`、`policy_blocked`、`model_cooldown` 都会跳过
 当前候选。账号级硬阻塞会让该账号的所有模型都返回不可用；账号模型级阻塞不影响兄弟
-模型。运行态端口异常或返回非法零值时失败关闭，不能把系统错误当成账号不可用。
+模型。凭据解析成功后还必须通过当前 Adapter 的传输策略；例如 Canonical Claude
+Messages 跳过官方 OAuth 并继续选择 API Key，而 Native Relay 仍使用官方 OAuth。
+这种本地不兼容不属于账号失败，不写 credential block、policy block 或 cooldown。
+运行态端口异常或返回非法零值时失败关闭，不能把系统错误当成账号不可用。
 
 ### 4.1 事务后恢复接线
 
@@ -220,9 +224,9 @@ application/accountrouting
 被误放行。批量清理会先验证整个集合，再使用一次 Runtime 写锁完成，非法批次不会产生
 部分更新。
 
-`internal/host/aihserver` 当前创建一个进程级 `inmemory.Runtime`，由重新认证和模型
-管理 Decorator 共享。Go Host 尚未挂载真实推理 Executor，因此这一步只完成账号写侧
-恢复接线，不能解释成生产推理流量已经切换到该 Runtime。
+`internal/host/aihserver` 当前创建一个进程级 `inmemory.Runtime`，由重新认证、模型
+管理 Decorator、账号征召和 Canonical Coordinator 共享。Go Host 已挂载生产推理
+Executor；请求资格读取和成功/失败终态写入使用同一个 Runtime 实例。
 
 ## 5. 当前持久化决定
 
@@ -272,6 +276,9 @@ Transport:
   account A + gpt-5.6-sol 第一次 stream_disconnected -> 仍选择 account A
   相同元组第二次 stream_disconnected                  -> 选择 account B
   sibling gpt-5.4                                    -> 仍选择 account A
+  Claude OAuth + claude-sonnet-4                      -> Canonical 跳过
+  后续 Claude API Key + claude-sonnet-4               -> Canonical 使用
+  同一 Claude OAuth                                   -> Native Relay 使用
 
 Hard block:
   account A + gpt-overloaded 发生 credential_rejected

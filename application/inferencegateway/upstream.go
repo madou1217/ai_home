@@ -233,6 +233,8 @@ func (result AttemptResult) IsValid() bool {
 // UpstreamAdapter 编码请求、执行传输并解码 Canonical Event。
 type UpstreamAdapter interface {
 	ProtocolID() inference.ProtocolID
+	// SupportsCredential 判断该线协议能否直接承载领域凭据。
+	SupportsCredential(credential accountapp.Credential) bool
 	Execute(
 		ctx context.Context,
 		invocation Invocation,

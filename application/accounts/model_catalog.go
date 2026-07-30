@@ -19,6 +19,13 @@ type RoutableModelReader interface {
 	ListRoutableModels(ctx context.Context) ([]RoutableModel, error)
 }
 
+// RoutableModelObserver 接收已提交并发布到本地索引的模型目录变化。
+//
+// 实现必须快速返回；耗时重建应通过非阻塞队列异步执行。
+type RoutableModelObserver interface {
+	RoutableModelsChanged()
+}
+
 // RoutableModel 是不会读取凭据、SQLite 或上游的本地模型目录项。
 type RoutableModel struct {
 	providerID string

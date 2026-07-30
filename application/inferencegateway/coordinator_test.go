@@ -80,6 +80,59 @@ func TestCoordinatorCommitsSuccessTerminalAfterStateRecord(t *testing.T) {
 	}
 }
 
+// TestCoordinatorSkipsTransportIncompatibleAccount 验证 Adapter 的传输策略
+// 在 Invocation 和失败记录前生效，并继续使用同一模型的后续账号。
+func TestCoordinatorSkipsTransportIncompatibleAccount(t *testing.T) {
+	t.Parallel()
+
+	fixture := newCoordinatorFixture(t, "claude", 2)
+	nativeOnlyRef := fixture.accounts[0].Ref()
+	upstream := newScriptedUpstream(
+		inference.ProtocolClaudeMessages,
+		func(
+			_ context.Context,
+			_ inferencegateway.Invocation,
+			emit inferencegateway.EventSink,
+		) (inferencegateway.AttemptResult, error) {
+			for _, event := range successfulEvents(t, "resp_transport") {
+				if err := emit(event); err != nil {
+					return inferencegateway.AttemptResult{}, err
+				}
+			}
+			return inferencegateway.CompletedAttempt(), nil
+		},
+	)
+	upstream.supportsCredential = func(
+		credential accountapp.Credential,
+	) bool {
+		accountRef, err := accountcore.DeriveAccountRef(credential)
+		return err == nil && accountRef != nativeOnlyRef
+	}
+	recorder := &attemptRecorder{}
+	coordinator := fixture.newCoordinator(t, upstream, recorder)
+
+	err := coordinator.Execute(
+		context.Background(),
+		newTextRequest(t, "claude-opus-4-6", true),
+		func(inference.StreamEvent) error { return nil },
+	)
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	invocations := upstream.Invocations()
+	if len(invocations) != 1 ||
+		invocations[0].Account().Ref() == nativeOnlyRef ||
+		recorder.SuccessCount() != 1 ||
+		recorder.FailureCount() != 0 {
+		t.Fatalf(
+			"invocations=%v successes=%d failures=%d",
+			invocations,
+			recorder.SuccessCount(),
+			recorder.FailureCount(),
+		)
+	}
+}
+
 // TestCoordinatorRotatesOnlyBeforeVisibleOutput 验证未提交输出时才丢弃失败并换号。
 func TestCoordinatorRotatesOnlyBeforeVisibleOutput(t *testing.T) {
 	t.Parallel()
@@ -1376,9 +1429,10 @@ func (resolver staticRouteResolver) Resolve(
 
 // scriptedUpstream 执行单个协议脚本并记录不可变 Invocation。
 type scriptedUpstream struct {
-	mu       sync.Mutex
-	protocol inference.ProtocolID
-	execute  func(
+	mu                 sync.Mutex
+	protocol           inference.ProtocolID
+	supportsCredential func(accountapp.Credential) bool
+	execute            func(
 		context.Context,
 		inferencegateway.Invocation,
 		inferencegateway.EventSink,
@@ -1404,6 +1458,19 @@ func newScriptedUpstream(
 // ProtocolID 返回测试上游的精确线协议。
 func (upstream *scriptedUpstream) ProtocolID() inference.ProtocolID {
 	return upstream.protocol
+}
+
+// SupportsCredential 接受 Coordinator 测试中身份已绑定的合成凭据。
+func (upstream *scriptedUpstream) SupportsCredential(
+	credential accountapp.Credential,
+) bool {
+	if upstream == nil || credential == nil {
+		return false
+	}
+	upstream.mu.Lock()
+	policy := upstream.supportsCredential
+	upstream.mu.Unlock()
+	return policy == nil || policy(credential)
 }
 
 // Execute 记录调用后执行预设脚本。

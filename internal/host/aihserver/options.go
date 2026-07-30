@@ -3,11 +3,19 @@ package aihserver
 import (
 	"errors"
 	"log"
+	"net/http"
 	"strings"
 	"unicode"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 )
+
+// InferenceHTTPClient 是 Codex/Claude 上游 Adapter 共用的最小传输端口。
+//
+// 生产留空时由 Host 创建安全客户端；测试可注入不会访问网络的确定性实现。
+type InferenceHTTPClient interface {
+	Do(request *http.Request) (*http.Response, error)
+}
 
 const (
 	// MinServerKeyLength 是 Client 与 Management Key 共用的最小长度。
@@ -39,6 +47,8 @@ type Options struct {
 	ErrorLog *log.Logger
 	// ModelDiscoverers 允许嵌入方注入无网络测试策略；生产留空时装配 Codex/Claude。
 	ModelDiscoverers []accountapp.ProviderModelDiscoverer
+	// InferenceHTTPClient 允许测试注入合成上游；生产必须留空。
+	InferenceHTTPClient InferenceHTTPClient
 }
 
 // ValidateManagementKey 校验 Bearer 请求头可安全表达的 Management Key。

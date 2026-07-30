@@ -117,6 +117,66 @@ func TestRuntimeModelBlockDoesNotCoverSiblingModel(t *testing.T) {
 	)
 }
 
+// TestRuntimeClearsModelBlocksAsValidatedBatch 验证模型目录恢复可以在一次写锁内
+// 精确清理多个已确认可用模型，并在批次无效时保持原状态。
+func TestRuntimeClearsModelBlocksAsValidatedBatch(t *testing.T) {
+	t.Parallel()
+
+	runtime := newTestRuntime(t, runtimeTestTime)
+	first := newTestRoute(t, 2, "claude-opus-4-6")
+	second := newTestRoute(t, 2, "claude-sonnet-4-5")
+	failure := newBlockingFailure(
+		t,
+		runtimecore.FailureModelUnsupported,
+		runtimecore.BlockScopeAccountModel,
+	)
+	for _, route := range []runtimecore.ModelRoute{first, second} {
+		if err := runtime.RecordFailure(
+			context.Background(),
+			route,
+			failure,
+		); err != nil {
+			t.Fatalf("RecordFailure() error = %v", err)
+		}
+	}
+
+	if err := runtime.ClearModelBlocks(
+		context.Background(),
+		first.AccountRef(),
+		[]runtimecore.ModelID{first.ModelID()},
+		runtimecore.RecoveryModelCatalog,
+	); err != nil {
+		t.Fatalf("ClearModelBlocks(first) error = %v", err)
+	}
+	assertEligibilityStatus(
+		t,
+		runtime,
+		first,
+		runtimecore.EligibilityAvailable,
+	)
+	assertEligibilityStatus(
+		t,
+		runtime,
+		second,
+		runtimecore.EligibilityPolicyBlocked,
+	)
+
+	if err := runtime.ClearModelBlocks(
+		context.Background(),
+		first.AccountRef(),
+		[]runtimecore.ModelID{second.ModelID(), ""},
+		runtimecore.RecoveryModelCatalog,
+	); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("ClearModelBlocks(invalid) error = %v", err)
+	}
+	assertEligibilityStatus(
+		t,
+		runtime,
+		second,
+		runtimecore.EligibilityPolicyBlocked,
+	)
+}
+
 // TestRuntimeClearsOnlyMatchingBlock 验证同一账号多个硬阻塞共存时，
 // 一个真相源更新不会误删另一个真相源负责的阻塞。
 func TestRuntimeClearsOnlyMatchingBlock(t *testing.T) {

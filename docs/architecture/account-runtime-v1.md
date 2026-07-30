@@ -200,6 +200,30 @@ application/accountrouting
 当前候选。账号级硬阻塞会让该账号的所有模型都返回不可用；账号模型级阻塞不影响兄弟
 模型。运行态端口异常或返回非法零值时失败关闭，不能把系统错误当成账号不可用。
 
+### 4.1 事务后恢复接线
+
+账号写用例本身不依赖运行态实现。`internal/adapters/accountruntime/accountrecovery`
+使用 Decorator 包装重新认证与模型管理端口，并固定以下顺序：
+
+```text
+重新认证或模型目录事务成功
+    ↓
+校验返回的账号或完整模型快照
+    ↓
+使用不继承请求取消的同进程上下文
+    ↓
+清除 credentials_updated 或有效模型的 model_catalog 位
+```
+
+持久化失败、目录发现失败或返回快照无效时都不会清除阻塞。模型恢复只处理
+`AccountModel.Effective()` 为真的排序模型集合：仍不受支持或人工强制禁用的模型不会
+被误放行。批量清理会先验证整个集合，再使用一次 Runtime 写锁完成，非法批次不会产生
+部分更新。
+
+`internal/host/aihserver` 当前创建一个进程级 `inmemory.Runtime`，由重新认证和模型
+管理 Decorator 共享。Go Host 尚未挂载真实推理 Executor，因此这一步只完成账号写侧
+恢复接线，不能解释成生产推理流量已经切换到该 Runtime。
+
 ## 5. 当前持久化决定
 
 v1 的模型 cooldown 与硬阻塞都是进程内稀疏索引，不新增数据库字段或表。原因：

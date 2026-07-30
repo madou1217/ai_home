@@ -14,6 +14,8 @@ import (
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/claudeoauth"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/codexoauth"
+	"github.com/madou1217/ai_home/internal/adapters/accountruntime/accountrecovery"
+	runtimeinmemory "github.com/madou1217/ai_home/internal/adapters/accountruntime/inmemory"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	claudemessages "github.com/madou1217/ai_home/internal/adapters/claude/messages"
@@ -61,10 +63,16 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		_ = store.Close()
 		return nil, err
 	}
+	accountRuntime, err := runtimeinmemory.New(time.Now)
+	if err != nil {
+		_ = store.Close()
+		return nil, fmt.Errorf("创建账号运行态失败: %w", err)
+	}
 	handlers, err := newHandlers(
 		catalog,
 		store,
 		modelDiscovery,
+		accountRuntime,
 		options.ManagementKey,
 		options.ClientKey,
 	)
@@ -84,6 +92,7 @@ func newHandlers(
 	catalog *providers.Catalog,
 	store *sqliteaccount.Store,
 	modelDiscovery *accountapp.ModelDiscovery,
+	accountRuntime accountrecovery.Runtime,
 	managementKey func() string,
 	clientKey func() string,
 ) (serverHandlers, error) {
@@ -118,6 +127,28 @@ func newHandlers(
 	if err != nil {
 		return serverHandlers{}, fmt.Errorf("创建账号模型管理用例失败: %w", err)
 	}
+	recoveringReauthenticator, err :=
+		accountrecovery.NewReauthenticator(
+			reauthenticator,
+			accountRuntime,
+		)
+	if err != nil {
+		return serverHandlers{}, fmt.Errorf(
+			"创建账号重新认证恢复边界失败: %w",
+			err,
+		)
+	}
+	recoveringModelManagement, err :=
+		accountrecovery.NewModelManagement(
+			modelManagement,
+			accountRuntime,
+		)
+	if err != nil {
+		return serverHandlers{}, fmt.Errorf(
+			"创建账号模型恢复边界失败: %w",
+			err,
+		)
+	}
 	authorizer, err := accountsapi.NewBearerAuthorizer(managementKey)
 	if err != nil {
 		return serverHandlers{}, fmt.Errorf("创建账号管理鉴权失败: %w", err)
@@ -136,7 +167,7 @@ func newHandlers(
 	decoder := nativeaccount.NewDecoder()
 	accountsHandler, err := accountsapi.NewHandler(accountsapi.Dependencies{
 		Management:     management,
-		Models:         modelManagement,
+		Models:         recoveringModelManagement,
 		Registrar:      registrar,
 		APIKeys:        accountsapi.NewBuiltinAPIKeyCredentialFactory(),
 		NativeAccounts: decoder,
@@ -164,7 +195,7 @@ func newHandlers(
 		},
 		Decoder:    decoder,
 		Registrar:  registrar,
-		Reauth:     reauthenticator,
+		Reauth:     recoveringReauthenticator,
 		Clock:      time.Now,
 		GenerateID: accountauth.NewRandomJobID,
 	})

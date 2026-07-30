@@ -152,15 +152,43 @@ func (runtime *Runtime) ClearModelBlock(
 	route runtimecore.ModelRoute,
 	trigger runtimecore.RecoveryTrigger,
 ) error {
-	block, err := runtime.modelRecoveryBlock(ctx, route, trigger)
+	return runtime.ClearModelBlocks(
+		ctx,
+		route.AccountRef(),
+		[]runtimecore.ModelID{route.ModelID()},
+		trigger,
+	)
+}
+
+// ClearModelBlocks 在一次写锁内精确清除已确认模型集合的对应阻塞位。
+//
+// modelIDs 必须严格升序且去重，避免恢复热批次重复扫描同一键。
+func (runtime *Runtime) ClearModelBlocks(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+	modelIDs []runtimecore.ModelID,
+	trigger runtimecore.RecoveryTrigger,
+) error {
+	block, err := runtime.validateModelRecoveryBatch(
+		ctx,
+		accountRef,
+		modelIDs,
+		trigger,
+	)
 	if err != nil {
 		return err
 	}
 
 	runtime.mu.Lock()
 	defer runtime.mu.Unlock()
-	next := runtime.modelBlocks[route].clear(block)
-	runtime.replaceModelBlocks(route, next)
+	for _, modelID := range modelIDs {
+		route, _ := runtimecore.NewModelRoute(
+			accountRef,
+			modelID.String(),
+		)
+		next := runtime.modelBlocks[route].clear(block)
+		runtime.replaceModelBlocks(route, next)
+	}
 	return nil
 }
 
@@ -242,18 +270,36 @@ func (runtime *Runtime) accountRecoveryBlock(
 	return definition.block, nil
 }
 
-// modelRecoveryBlock 校验账号模型级恢复请求并返回对应阻塞位。
-func (runtime *Runtime) modelRecoveryBlock(
+// validateModelRecoveryBatch 校验批量模型恢复请求并返回对应阻塞位。
+func (runtime *Runtime) validateModelRecoveryBatch(
 	ctx context.Context,
-	route runtimecore.ModelRoute,
+	accountRef accountcore.AccountRef,
+	modelIDs []runtimecore.ModelID,
 	trigger runtimecore.RecoveryTrigger,
 ) (blockSet, error) {
-	if err := runtime.validateRouteRequest(ctx, route); err != nil {
+	if runtime == nil ||
+		runtime.cooldowns == nil ||
+		runtime.accountBlocks == nil ||
+		runtime.modelBlocks == nil ||
+		ctx == nil ||
+		!accountRef.IsValid() ||
+		len(modelIDs) == 0 {
+		return 0, ErrInvalidRequest
+	}
+	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
 	definition, valid := definitionForRecovery(trigger)
 	if !valid || !definition.supports(recoveryScopeModel) {
 		return 0, ErrInvalidRecovery
+	}
+	var previous runtimecore.ModelID
+	for index, modelID := range modelIDs {
+		if !modelID.IsValid() ||
+			index > 0 && modelID.String() <= previous.String() {
+			return 0, ErrInvalidRequest
+		}
+		previous = modelID
 	}
 	return definition.block, nil
 }

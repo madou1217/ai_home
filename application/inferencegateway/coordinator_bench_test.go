@@ -46,11 +46,11 @@ func BenchmarkCoordinatorExecute(benchmark *testing.B) {
 		}
 	})
 
-	benchmark.Run("thirty_one_failures_then_success", func(benchmark *testing.B) {
+	benchmark.Run("bounded_failover_to_healthy_account", func(benchmark *testing.B) {
 		fixture := newCoordinatorFixture(
 			benchmark,
 			"codex",
-			inferencegateway.DefaultAccountScanLimit,
+			inferencegateway.DefaultUpstreamAttemptLimit,
 		)
 		_, failure := overloadedFailure(benchmark)
 		successEvents := successfulEvents(benchmark, "resp_benchmark_failover")

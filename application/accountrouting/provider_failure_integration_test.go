@@ -352,8 +352,6 @@ func recruitProviderFailureScenario(
 		testRecruitmentCatalog(t),
 		providerID,
 		modelID,
-		"",
-		2,
 	)
 	if err != nil {
 		t.Fatalf("NewRequest() error = %v", err)

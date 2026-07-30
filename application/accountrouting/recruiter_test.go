@@ -43,12 +43,111 @@ func TestRecruiterReturnsFirstUsableCandidate(t *testing.T) {
 	if result.Account().Ref() != first.Ref() ||
 		result.Credential().IdentitySeed() != firstCredential.IdentitySeed() ||
 		result.Examined() != 1 ||
-		result.NextAfterRef() != first.Ref() ||
 		result.SourceExhausted() {
 		t.Fatalf("Recruit() result = %#v", result)
 	}
 	if resolver.CallCount() != 1 {
 		t.Fatalf("ResolveCredential() calls = %d, want 1", resolver.CallCount())
+	}
+}
+
+// TestRecruitmentSessionReturnsEachAccountAtMostOnce 验证环形扫描不会在同一请求内重复账号。
+func TestRecruitmentSessionReturnsEachAccountAtMostOnce(t *testing.T) {
+	t.Parallel()
+
+	candidates := make([]accountapp.RoutingAccount, 0, 3)
+	resolutions := make(map[accountcore.AccountRef]credentialResolution, 3)
+	for index := int64(1); index <= 3; index++ {
+		candidate, credential := newRecruitmentCandidate(
+			t,
+			"codex",
+			index,
+			fmt.Sprintf("unique-%d", index),
+		)
+		candidates = append(candidates, candidate)
+		resolutions[candidate.Ref()] = credentialResolution{credential: credential}
+	}
+	recruiter := newTestRecruiter(
+		t,
+		&recruitmentCandidateSource{candidates: candidates},
+		newRecruitmentCredentialResolver(resolutions),
+	)
+	session, err := recruiter.Begin(
+		context.Background(),
+		newTestRequest(t, "codex", "", 1),
+		allowAllCredentialTransport{},
+	)
+	if err != nil {
+		t.Fatalf("Begin() error = %v", err)
+	}
+
+	seen := make(map[accountcore.AccountRef]struct{}, len(candidates))
+	for range len(candidates) {
+		result, nextErr := session.Next(context.Background())
+		if nextErr != nil {
+			t.Fatalf("Next() error = %v", nextErr)
+		}
+		if _, duplicate := seen[result.Account().Ref()]; duplicate {
+			t.Fatalf("duplicate account = %s", result.Account().Ref())
+		}
+		seen[result.Account().Ref()] = struct{}{}
+	}
+	if _, err := session.Next(context.Background()); !errors.Is(
+		err,
+		ErrNoRoutableAccount,
+	) {
+		t.Fatalf("Next(exhausted) error = %v, want ErrNoRoutableAccount", err)
+	}
+}
+
+// TestRecruitmentSessionKeepsSnapshotWhileNewRequestSeesUpdate 验证请求内快照稳定、
+// 后续请求立即读取账号管理发布的新快照。
+func TestRecruitmentSessionKeepsSnapshotWhileNewRequestSeesUpdate(t *testing.T) {
+	t.Parallel()
+
+	first, firstCredential := newRecruitmentCandidate(t, "codex", 1, "snapshot-first")
+	second, secondCredential := newRecruitmentCandidate(t, "codex", 2, "snapshot-second")
+	source := &recruitmentCandidateSource{
+		candidates: []accountapp.RoutingAccount{first},
+	}
+	recruiter := newTestRecruiter(
+		t,
+		source,
+		newRecruitmentCredentialResolver(
+			map[accountcore.AccountRef]credentialResolution{
+				first.Ref():  {credential: firstCredential},
+				second.Ref(): {credential: secondCredential},
+			},
+		),
+	)
+	request := newTestRequest(t, "codex", "", 1)
+	oldSession, err := recruiter.Begin(
+		context.Background(),
+		request,
+		allowAllCredentialTransport{},
+	)
+	if err != nil {
+		t.Fatalf("Begin(old) error = %v", err)
+	}
+	source.SetCandidates([]accountapp.RoutingAccount{first, second})
+
+	oldResult, err := oldSession.Next(context.Background())
+	if err != nil || oldResult.Account().Ref() != first.Ref() {
+		t.Fatalf("old Next() result=%#v error=%v", oldResult, err)
+	}
+	if _, err := oldSession.Next(context.Background()); !errors.Is(
+		err,
+		ErrNoRoutableAccount,
+	) {
+		t.Fatalf("old Next(exhausted) error = %v", err)
+	}
+	newResult, err := recruiter.Recruit(
+		context.Background(),
+		request,
+		allowAllCredentialTransport{},
+	)
+	if err != nil || newResult.Account().Ref() != second.Ref() {
+		t.Fatalf("new Recruit() result=%#v error=%v", newResult, err)
 	}
 }
 
@@ -205,7 +304,6 @@ func TestRecruiterSkipsAccountScopedCredentialFailures(t *testing.T) {
 	}
 	if result.Account().Ref() != ready.Ref() ||
 		result.Examined() != 4 ||
-		result.NextAfterRef() != ready.Ref() ||
 		!result.SourceExhausted() {
 		t.Fatalf("Recruit() result = %#v", result)
 	}
@@ -259,7 +357,6 @@ func TestRecruiterSkipsCredentialUnsupportedByCurrentTransport(
 	}
 	if result.Account().Ref() != direct.Ref() ||
 		result.Examined() != 2 ||
-		result.NextAfterRef() != direct.Ref() ||
 		!result.SourceExhausted() ||
 		resolver.CallCount() != 2 ||
 		len(runtimeSource.Routes()) != 2 {
@@ -272,8 +369,8 @@ func TestRecruiterSkipsCredentialUnsupportedByCurrentTransport(
 	}
 }
 
-// TestRecruiterReturnsProgressWhenPageHasNoUsableAccount 验证无可用账号时仍返回稳定续查游标。
-func TestRecruiterReturnsProgressWhenPageHasNoUsableAccount(t *testing.T) {
+// TestRecruiterExhaustsSnapshotWithoutUsableAccount 验证无可用账号时完整扫描固定快照。
+func TestRecruiterExhaustsSnapshotWithoutUsableAccount(t *testing.T) {
 	t.Parallel()
 
 	first, _ := newRecruitmentCandidate(t, "codex", 1, "missing-1")
@@ -298,9 +395,7 @@ func TestRecruiterReturnsProgressWhenPageHasNoUsableAccount(t *testing.T) {
 	if !errors.Is(err, ErrNoRoutableAccount) {
 		t.Fatalf("Recruit() error = %v, want ErrNoRoutableAccount", err)
 	}
-	if result.Examined() != 2 ||
-		result.NextAfterRef() != second.Ref() ||
-		result.SourceExhausted() {
+	if result.Examined() != 2 || !result.SourceExhausted() {
 		t.Fatalf("Recruit() result = %#v", result)
 	}
 }
@@ -332,9 +427,7 @@ func TestRecruiterFailsClosedOnUnexpectedResolutionError(t *testing.T) {
 	if !errors.Is(err, unexpected) {
 		t.Fatalf("Recruit() error = %v, want unexpected error", err)
 	}
-	if result.Examined() != 1 ||
-		result.NextAfterRef() != first.Ref() ||
-		resolver.CallCount() != 1 {
+	if result.Examined() != 1 || resolver.CallCount() != 1 {
 		t.Fatalf(
 			"Recruit() result=%#v calls=%d",
 			result,
@@ -418,7 +511,7 @@ func TestRecruiterValidatesDependenciesRequestAndContext(t *testing.T) {
 		t.Fatalf("Recruit(cancelled) error = %v, want context.Canceled", err)
 	}
 	if source.CallCount() != 0 {
-		t.Fatalf("ListRoutingCandidates() calls = %d, want 0", source.CallCount())
+		t.Fatalf("LoadRoutingCandidates() calls = %d, want 0", source.CallCount())
 	}
 }
 
@@ -485,8 +578,8 @@ func newTestRecruiterWithRuntime(
 func newTestRequest(
 	t *testing.T,
 	providerID string,
-	afterRef accountcore.AccountRef,
-	limit int,
+	_ accountcore.AccountRef,
+	_ int,
 ) Request {
 	t.Helper()
 
@@ -494,8 +587,6 @@ func newTestRequest(
 		testRecruitmentCatalog(t),
 		providerID,
 		testModelID(providerID),
-		afterRef,
-		limit,
 	)
 	if err != nil {
 		t.Fatalf("NewRequest() error = %v", err)
@@ -591,22 +682,19 @@ type recruitmentCandidateSource struct {
 	calls      int
 }
 
-// ListRoutingCandidates 返回已配置的有界候选页。
-func (source *recruitmentCandidateSource) ListRoutingCandidates(
+// LoadRoutingCandidates 返回已配置的完整不可变候选快照。
+func (source *recruitmentCandidateSource) LoadRoutingCandidates(
 	_ context.Context,
-	query accountapp.RoutingQuery,
-) ([]accountapp.RoutingAccount, error) {
+	_ string,
+	_ runtimecore.ModelID,
+) (*accountapp.RoutingCandidates, error) {
 	source.mu.Lock()
 	defer source.mu.Unlock()
 	source.calls++
 	if source.err != nil {
 		return nil, source.err
 	}
-	count := min(len(source.candidates), query.Limit())
-	return append(
-		[]accountapp.RoutingAccount(nil),
-		source.candidates[:count]...,
-	), nil
+	return accountapp.NewRoutingCandidates(source.candidates), nil
 }
 
 // CallCount 返回候选读取次数。
@@ -614,6 +702,15 @@ func (source *recruitmentCandidateSource) CallCount() int {
 	source.mu.Lock()
 	defer source.mu.Unlock()
 	return source.calls
+}
+
+// SetCandidates 原子替换后续候选读取返回的测试快照。
+func (source *recruitmentCandidateSource) SetCandidates(
+	candidates []accountapp.RoutingAccount,
+) {
+	source.mu.Lock()
+	source.candidates = append([]accountapp.RoutingAccount(nil), candidates...)
+	source.mu.Unlock()
 }
 
 // credentialResolution 保存单账号解析结果。

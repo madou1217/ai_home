@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -505,10 +506,192 @@ func TestCoordinatorSkipsOfficialOAuthBeforeAdapter(t *testing.T) {
 	}
 }
 
+// TestCoordinatorSkipsOAuthAndFairlyRotatesAPIKeys 验证混合账号池中官方 OAuth
+// 不进入 Messages 直连，同时两个 API Key 在连续请求中公平轮转。
+func TestCoordinatorSkipsOAuthAndFairlyRotatesAPIKeys(t *testing.T) {
+	t.Parallel()
+
+	coordinator, client, recorder := newClaudeFairCoordinator(t)
+	for range 20 {
+		if err := coordinator.Execute(
+			t.Context(),
+			newClaudeAdapterRequest(t, true),
+			func(inference.StreamEvent) error { return nil },
+		); err != nil {
+			t.Fatalf("Coordinator.Execute() error = %v", err)
+		}
+	}
+	counts := client.APIKeyCounts()
+	if client.CallCount() != 20 ||
+		counts["synthetic-claude-fair-key-1"] != 10 ||
+		counts["synthetic-claude-fair-key-2"] != 10 ||
+		len(counts) != 2 ||
+		recorder.successes != 20 ||
+		len(recorder.failures) != 0 {
+		t.Fatalf(
+			"calls=%d keys=%v successes=%d failures=%d",
+			client.CallCount(),
+			counts,
+			recorder.successes,
+			len(recorder.failures),
+		)
+	}
+	t.Logf("requests=%d api_key_distribution=%v oauth_upstream_calls=0", 20, counts)
+}
+
 // claudeAdapterFixture 保存真实 Coordinator 和测试记录端口。
 type claudeAdapterFixture struct {
 	coordinator *inferencegateway.Coordinator
 	recorder    *claudeAttemptRecorder
+}
+
+// newClaudeFairCoordinator 装配两个 OAuth 与两个 API Key 的真实征召链。
+func newClaudeFairCoordinator(
+	t *testing.T,
+) (
+	*inferencegateway.Coordinator,
+	*claudeFairHTTPClient,
+	*claudeAttemptRecorder,
+) {
+	t.Helper()
+
+	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
+	if err != nil {
+		t.Fatalf("providers.NewCatalog() error = %v", err)
+	}
+	accounts, credentials := newClaudeFairAccountPool(t, catalog)
+	recruiter, err := accountrouting.NewRecruiter(accountrouting.Dependencies{
+		Candidates:  claudeCandidatePoolSource{accounts: accounts},
+		Runtime:     claudeAvailableRuntime{},
+		Credentials: claudeCredentialPoolResolver{credentials: credentials},
+	})
+	if err != nil {
+		t.Fatalf("accountrouting.NewRecruiter() error = %v", err)
+	}
+	capabilities, err := inference.NewCapabilitySet(
+		inference.CapabilityTextGeneration,
+		inference.CapabilityStreaming,
+	)
+	if err != nil {
+		t.Fatalf("inference.NewCapabilitySet() error = %v", err)
+	}
+	route, err := inferencegateway.NewRoute(
+		inference.ProviderClaude,
+		inference.ProtocolClaudeMessages,
+		"claude-sonnet-4-6",
+		capabilities,
+	)
+	if err != nil {
+		t.Fatalf("inferencegateway.NewRoute() error = %v", err)
+	}
+	client := &claudeFairHTTPClient{}
+	adapter, err := NewAdapter(client, func() time.Time {
+		return time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
+	})
+	if err != nil {
+		t.Fatalf("messages.NewAdapter() error = %v", err)
+	}
+	registry, err := inferencegateway.NewUpstreamRegistry(adapter)
+	if err != nil {
+		t.Fatalf("NewUpstreamRegistry() error = %v", err)
+	}
+	recorder := &claudeAttemptRecorder{}
+	coordinator, err := inferencegateway.NewCoordinator(
+		inferencegateway.Dependencies{
+			Catalog:        catalog,
+			Routes:         claudeRouteResolver{route: route},
+			Recruiter:      recruiter,
+			Upstreams:      registry,
+			Attempts:       recorder,
+			ModelRefreshes: claudeModelRefreshScheduler{},
+		},
+	)
+	if err != nil {
+		t.Fatalf("NewCoordinator() error = %v", err)
+	}
+	return coordinator, client, recorder
+}
+
+// newClaudeFairAccountPool 创建身份相互独立的混合凭据账号池。
+func newClaudeFairAccountPool(
+	t *testing.T,
+	catalog *providers.Catalog,
+) (
+	[]accountapp.RoutingAccount,
+	map[accountcore.AccountRef]accountapp.Credential,
+) {
+	t.Helper()
+
+	credentials := []accountapp.Credential{
+		newClaudeFairOAuth(t, "first", "123e4567-e89b-12d3-a456-426614174001"),
+		newClaudeFairAPIKey(t, "1"),
+		newClaudeFairOAuth(t, "second", "123e4567-e89b-12d3-a456-426614174002"),
+		newClaudeFairAPIKey(t, "2"),
+	}
+	accounts := make([]accountapp.RoutingAccount, 0, len(credentials))
+	credentialsByRef := make(
+		map[accountcore.AccountRef]accountapp.Credential,
+		len(credentials),
+	)
+	for index, credential := range credentials {
+		accountRef, err := accountcore.DeriveAccountRef(credential)
+		if err != nil {
+			t.Fatalf("accounts.DeriveAccountRef() error = %v", err)
+		}
+		alias, err := accountcore.NewCLIAccountID(int64(index + 1))
+		if err != nil {
+			t.Fatalf("accounts.NewCLIAccountID() error = %v", err)
+		}
+		account, err := accountapp.NewRoutingAccount(
+			catalog,
+			accountapp.RoutingAccountInput{
+				Ref:          accountRef,
+				ProviderID:   "claude",
+				CLIAccountID: alias,
+			},
+		)
+		if err != nil {
+			t.Fatalf("accounts.NewRoutingAccount() error = %v", err)
+		}
+		accounts = append(accounts, account)
+		credentialsByRef[accountRef] = credential
+	}
+	return accounts, credentialsByRef
+}
+
+// newClaudeFairOAuth 创建不会触网的官方订阅 OAuth 测试凭据。
+func newClaudeFairOAuth(
+	t *testing.T,
+	suffix string,
+	accountUUID string,
+) accountapp.Credential {
+	t.Helper()
+
+	credential, err := claudeauth.NewOAuthAuth(claudeauth.OAuthInput{
+		AccessToken:  "sk-ant-oat01-fair-" + suffix,
+		RefreshToken: "sk-ant-ort01-fair-" + suffix,
+		ExpiresAtMS:  4_102_444_800_000,
+		Scopes:       []string{claudeauth.InferenceScope},
+		Identity:     claudeauth.OAuthIdentity{AccountUUID: accountUUID},
+	})
+	if err != nil {
+		t.Fatalf("claude.NewOAuthAuth(%s) error = %v", suffix, err)
+	}
+	return credential
+}
+
+// newClaudeFairAPIKey 创建可由 Messages Adapter 直连的测试 API Key。
+func newClaudeFairAPIKey(t *testing.T, suffix string) accountapp.Credential {
+	t.Helper()
+
+	credential, err := claudeauth.NewAPIKeyAuth(claudeauth.APIKeyInput{
+		APIKey:  "synthetic-claude-fair-key-" + suffix,
+		BaseURL: "https://upstream.example",
+	})
+	if err != nil {
+		t.Fatalf("claude.NewAPIKeyAuth(%s) error = %v", suffix, err)
+	}
+	return credential
 }
 
 // newClaudeAdapterFixture 使用真实 Recruiter 绑定合成 Claude API Key。
@@ -654,6 +837,47 @@ type claudeRecordingHTTPClient struct {
 	requestBody []byte
 }
 
+// claudeFairHTTPClient 为每次调用创建独立成功响应并统计实际 API Key。
+type claudeFairHTTPClient struct {
+	mu      sync.Mutex
+	calls   int
+	apiKeys map[string]int
+}
+
+// Do 记录真正越过传输策略的凭据并返回可重复消费的成功流。
+func (client *claudeFairHTTPClient) Do(request *http.Request) (*http.Response, error) {
+	client.mu.Lock()
+	client.calls++
+	if client.apiKeys == nil {
+		client.apiKeys = make(map[string]int)
+	}
+	client.apiKeys[request.Header.Get("x-api-key")]++
+	client.mu.Unlock()
+	return claudeHTTPResponse(
+		http.StatusOK,
+		"text/event-stream; charset=utf-8",
+		successfulClaudeStream(),
+	), nil
+}
+
+// CallCount 返回真实 Messages 上游调用次数。
+func (client *claudeFairHTTPClient) CallCount() int {
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	return client.calls
+}
+
+// APIKeyCounts 返回不暴露内部 Map 的 API Key 命中分布。
+func (client *claudeFairHTTPClient) APIKeyCounts() map[string]int {
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	result := make(map[string]int, len(client.apiKeys))
+	for key, count := range client.apiKeys {
+		result[key] = count
+	}
+	return result
+}
+
 // Do 复制请求正文，便于验证凭据没有进入 JSON。
 func (client *claudeRecordingHTTPClient) Do(
 	request *http.Request,
@@ -726,16 +950,35 @@ type claudeCandidateSource struct {
 	account accountapp.RoutingAccount
 }
 
-// ListRoutingCandidates 实现稳定 AccountRef 游标。
-func (source claudeCandidateSource) ListRoutingCandidates(
+// claudeCandidatePoolSource 返回混合凭据账号的固定不可变快照。
+type claudeCandidatePoolSource struct {
+	accounts []accountapp.RoutingAccount
+}
+
+// LoadRoutingCandidates 返回完整 Claude 候选池。
+func (source claudeCandidatePoolSource) LoadRoutingCandidates(
 	_ context.Context,
-	query accountapp.RoutingQuery,
-) ([]accountapp.RoutingAccount, error) {
-	if query.AfterRef() != "" ||
-		query.ProviderID() != source.account.ProviderID() {
-		return nil, nil
+	providerID string,
+	_ runtimecore.ModelID,
+) (*accountapp.RoutingCandidates, error) {
+	if providerID != "claude" {
+		return accountapp.NewRoutingCandidates(nil), nil
 	}
-	return []accountapp.RoutingAccount{source.account}, nil
+	return accountapp.NewRoutingCandidates(source.accounts), nil
+}
+
+// LoadRoutingCandidates 返回唯一账号的不可变候选快照。
+func (source claudeCandidateSource) LoadRoutingCandidates(
+	_ context.Context,
+	providerID string,
+	_ runtimecore.ModelID,
+) (*accountapp.RoutingCandidates, error) {
+	if providerID != source.account.ProviderID() {
+		return accountapp.NewRoutingCandidates(nil), nil
+	}
+	return accountapp.NewRoutingCandidates(
+		[]accountapp.RoutingAccount{source.account},
+	), nil
 }
 
 // claudeAvailableRuntime 让合成账号模型元组保持可征召。
@@ -753,6 +996,23 @@ func (claudeAvailableRuntime) CheckEligibility(
 type claudeCredentialResolver struct {
 	accountRef accountcore.AccountRef
 	credential accountapp.Credential
+}
+
+// claudeCredentialPoolResolver 按稳定账号身份返回混合 Claude 测试凭据。
+type claudeCredentialPoolResolver struct {
+	credentials map[accountcore.AccountRef]accountapp.Credential
+}
+
+// ResolveCredential 返回账号绑定的 Claude 凭据。
+func (resolver claudeCredentialPoolResolver) ResolveCredential(
+	_ context.Context,
+	accountRef accountcore.AccountRef,
+) (accountapp.Credential, error) {
+	credential, found := resolver.credentials[accountRef]
+	if !found {
+		return nil, accountapp.ErrCredentialNotFound
+	}
+	return credential, nil
 }
 
 // ResolveCredential 拒绝其他账号身份。

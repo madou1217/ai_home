@@ -39,6 +39,6 @@ type Store interface {
 		enabled bool,
 		changedAt time.Time,
 	) (accountcore.Account, error)
-	// ListRoutingCandidates 使用稳定游标读取紧凑账号征召投影。
+	// ListRoutingCandidates 使用稳定游标读取紧凑候选诊断页。
 	ListRoutingCandidates(ctx context.Context, query RoutingQuery) ([]RoutingAccount, error)
 }

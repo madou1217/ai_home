@@ -13,8 +13,8 @@ import (
 )
 
 const (
-	// DefaultAccountScanLimit 限制单请求最多检查的账号数量。
-	DefaultAccountScanLimit = 32
+	// DefaultUpstreamAttemptLimit 限制单个路由候选最多调用的不同上游账号数。
+	DefaultUpstreamAttemptLimit = 4
 )
 
 var (
@@ -28,13 +28,13 @@ var (
 	ErrInvalidUpstreamEventStream = errors.New("上游 Canonical 事件流无效")
 )
 
-// AccountRecruiter 是 Coordinator 使用的有界账号征召端口。
+// AccountRecruiter 是 Coordinator 使用的请求级账号征召端口。
 type AccountRecruiter interface {
-	Recruit(
+	Begin(
 		ctx context.Context,
 		request accountrouting.Request,
 		transport accountrouting.CredentialTransportPolicy,
-	) (accountrouting.Result, error)
+	) (*accountrouting.RecruitmentSession, error)
 }
 
 // ModelRefreshScheduler 接收精确账号和 Provider 的异步模型刷新信号。
@@ -62,19 +62,19 @@ type Dependencies struct {
 	Attempts AttemptRecorder
 	// ModelRefreshes 只在账号明确不支持目标模型时异步修正目录。
 	ModelRefreshes ModelRefreshScheduler
-	// AccountScanLimit 是单请求允许检查的账号上限。
-	AccountScanLimit int
+	// UpstreamAttemptLimit 是单个路由候选允许调用的不同上游账号数。
+	UpstreamAttemptLimit int
 }
 
 // Coordinator 组合路由、账号征召、上游执行和状态提交。
 type Coordinator struct {
-	catalog          *providers.Catalog
-	routes           RouteResolver
-	recruiter        AccountRecruiter
-	upstreams        *UpstreamRegistry
-	attempts         AttemptRecorder
-	modelRefreshes   ModelRefreshScheduler
-	accountScanLimit int
+	catalog              *providers.Catalog
+	routes               RouteResolver
+	recruiter            AccountRecruiter
+	upstreams            *UpstreamRegistry
+	attempts             AttemptRecorder
+	modelRefreshes       ModelRefreshScheduler
+	upstreamAttemptLimit int
 }
 
 // routeExecution 描述单个候选是否已经终止请求或留下可延迟提交的失败。
@@ -86,13 +86,13 @@ type routeExecution struct {
 // 编译期确认 Coordinator 完整实现稳定 Executor 端口。
 var _ Executor = (*Coordinator)(nil)
 
-// NewCoordinator 创建不缓存账号或凭据的 Canonical 执行器。
+// NewCoordinator 创建不缓存凭据的 Canonical 执行器。
 func NewCoordinator(
 	dependencies Dependencies,
 ) (*Coordinator, error) {
-	scanLimit := dependencies.AccountScanLimit
-	if scanLimit == 0 {
-		scanLimit = DefaultAccountScanLimit
+	attemptLimit := dependencies.UpstreamAttemptLimit
+	if attemptLimit == 0 {
+		attemptLimit = DefaultUpstreamAttemptLimit
 	}
 	if dependencies.Catalog == nil ||
 		dependencies.Routes == nil ||
@@ -100,18 +100,18 @@ func NewCoordinator(
 		dependencies.Upstreams == nil ||
 		dependencies.Attempts == nil ||
 		dependencies.ModelRefreshes == nil ||
-		scanLimit < 1 ||
-		scanLimit > DefaultAccountScanLimit {
+		attemptLimit < 1 ||
+		attemptLimit > DefaultUpstreamAttemptLimit {
 		return nil, ErrInvalidCoordinatorDependencies
 	}
 	return &Coordinator{
-		catalog:          dependencies.Catalog,
-		routes:           dependencies.Routes,
-		recruiter:        dependencies.Recruiter,
-		upstreams:        dependencies.Upstreams,
-		attempts:         dependencies.Attempts,
-		modelRefreshes:   dependencies.ModelRefreshes,
-		accountScanLimit: scanLimit,
+		catalog:              dependencies.Catalog,
+		routes:               dependencies.Routes,
+		recruiter:            dependencies.Recruiter,
+		upstreams:            dependencies.Upstreams,
+		attempts:             dependencies.Attempts,
+		modelRefreshes:       dependencies.ModelRefreshes,
+		upstreamAttemptLimit: attemptLimit,
 	}, nil
 }
 
@@ -181,7 +181,7 @@ func (coordinator *Coordinator) executeCandidate(
 	return coordinator.executeRoute(ctx, request, route, upstream, emit)
 }
 
-// executeRoute 按稳定 AccountRef 游标尝试不同账号。
+// executeRoute 在固定候选快照中尝试不超过上游预算的不同账号。
 func (coordinator *Coordinator) executeRoute(
 	ctx context.Context,
 	request inference.Request,
@@ -189,18 +189,13 @@ func (coordinator *Coordinator) executeRoute(
 	upstream UpstreamAdapter,
 	emit EventSink,
 ) (routeExecution, error) {
-	var afterRef accountcore.AccountRef
 	var pendingFailure *attemptStream
-	remaining := coordinator.accountScanLimit
-	for remaining > 0 {
-		recruited, err := coordinator.recruit(
-			ctx,
-			route,
-			upstream,
-			afterRef,
-			remaining,
-		)
-		remaining -= recruited.Examined()
+	session, err := coordinator.beginRecruitment(ctx, route, upstream)
+	if err != nil {
+		return routeExecution{}, err
+	}
+	for range coordinator.upstreamAttemptLimit {
+		recruited, err := session.Next(ctx)
 		if err != nil {
 			if errors.Is(err, accountrouting.ErrNoRoutableAccount) {
 				return routeExecution{
@@ -230,42 +225,25 @@ func (coordinator *Coordinator) executeRoute(
 		if pendingFailure == nil {
 			return routeExecution{terminal: true}, nil
 		}
-		if remaining <= 0 || recruited.SourceExhausted() {
-			return routeExecution{
-				pendingFailure: pendingFailure,
-			}, nil
-		}
-		afterRef = recruited.Account().Ref()
 	}
 	return routeExecution{pendingFailure: pendingFailure}, nil
 }
 
-// recruit 使用剩余扫描预算创建真实模型账号征召请求。
-func (coordinator *Coordinator) recruit(
+// beginRecruitment 创建真实模型征召请求并固定当前不可变候选快照。
+func (coordinator *Coordinator) beginRecruitment(
 	ctx context.Context,
 	route Route,
 	transport accountrouting.CredentialTransportPolicy,
-	afterRef accountcore.AccountRef,
-	limit int,
-) (accountrouting.Result, error) {
+) (*accountrouting.RecruitmentSession, error) {
 	request, err := accountrouting.NewRequest(
 		coordinator.catalog,
 		string(route.ProviderID()),
 		route.EffectiveModel(),
-		afterRef,
-		limit,
 	)
 	if err != nil {
-		return accountrouting.Result{}, err
+		return nil, err
 	}
-	result, err := coordinator.recruiter.Recruit(ctx, request, transport)
-	if result.Examined() < 0 || result.Examined() > limit {
-		return result, accountrouting.ErrInvalidCandidatePage
-	}
-	if err == nil && result.Examined() == 0 {
-		return result, accountrouting.ErrInvalidCandidatePage
-	}
-	return result, err
+	return coordinator.recruiter.Begin(ctx, request, transport)
 }
 
 // executeAttempt 执行单账号调用并返回尚未对客户端可见的可重试失败。

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 )
 
@@ -126,7 +127,7 @@ func (store *Store) SetEnabled(
 	return accountcore.Account{}, accountapp.ErrAccountConflict
 }
 
-// ListRoutingCandidates 从进程内模型倒排返回紧凑账号征召投影。
+// ListRoutingCandidates 从进程内模型倒排返回紧凑候选诊断页。
 func (store *Store) ListRoutingCandidates(
 	ctx context.Context,
 	query accountapp.RoutingQuery,
@@ -135,6 +136,22 @@ func (store *Store) ListRoutingCandidates(
 		return nil, accountapp.ErrInvalidRoutingQuery
 	}
 	return store.routes.list(ctx, query)
+}
+
+// LoadRoutingCandidates 从进程内倒排原子读取完整不可变候选快照。
+func (store *Store) LoadRoutingCandidates(
+	ctx context.Context,
+	providerID string,
+	modelID runtimecore.ModelID,
+) (*accountapp.RoutingCandidates, error) {
+	if store == nil || store.routes == nil || store.catalog == nil {
+		return nil, accountapp.ErrInvalidRoutingQuery
+	}
+	canonicalProviderID, found := store.catalog.CanonicalID(providerID)
+	if !found || canonicalProviderID != providerID {
+		return nil, accountapp.ErrInvalidRoutingQuery
+	}
+	return store.routes.loadCandidates(ctx, canonicalProviderID, modelID)
 }
 
 // ListRoutableModels 从进程内倒排索引返回当前可征召模型，不访问 SQLite。

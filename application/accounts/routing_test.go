@@ -151,6 +151,45 @@ func TestRoutingAccountRejectsNonCanonicalPersistedProvider(t *testing.T) {
 	}
 }
 
+// TestRoutingCandidatesCopiesInputAndRejectsOutOfRangeRead 验证候选快照不暴露底层切片。
+func TestRoutingCandidatesCopiesInputAndRejectsOutOfRangeRead(t *testing.T) {
+	t.Parallel()
+
+	accountRef, err := accountcore.ParseAccountRef("acct_4a6fd2d115fe1edacb4a")
+	if err != nil {
+		t.Fatalf("ParseAccountRef() error = %v", err)
+	}
+	cliAccountID, err := accountcore.NewCLIAccountID(1)
+	if err != nil {
+		t.Fatalf("NewCLIAccountID() error = %v", err)
+	}
+	account, err := accountapp.NewRoutingAccount(
+		testCatalog(t),
+		accountapp.RoutingAccountInput{
+			Ref:          accountRef,
+			ProviderID:   "codex",
+			CLIAccountID: cliAccountID,
+		},
+	)
+	if err != nil {
+		t.Fatalf("NewRoutingAccount() error = %v", err)
+	}
+	input := []accountapp.RoutingAccount{account, account}
+	snapshot := accountapp.NewRoutingCandidates(input)
+	input[0] = accountapp.RoutingAccount{}
+
+	got, found := snapshot.At(0)
+	if snapshot.Len() != 1 || !found || got.Ref() != account.Ref() {
+		t.Fatalf("snapshot len=%d found=%t account=%#v", snapshot.Len(), found, got)
+	}
+	if _, found := snapshot.At(-1); found {
+		t.Fatal("At(-1) found = true, want false")
+	}
+	if _, found := snapshot.At(1); found {
+		t.Fatal("At(1) found = true, want false")
+	}
+}
+
 func testCatalog(t *testing.T) *providers.Catalog {
 	t.Helper()
 

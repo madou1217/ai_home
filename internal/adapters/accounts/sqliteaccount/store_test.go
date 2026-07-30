@@ -197,6 +197,60 @@ func TestStoreRoutingQueryDoesNotReadSQLite(t *testing.T) {
 	}
 }
 
+// TestStoreAtomicallyPublishesRoutingSnapshots 验证管理写发布新快照且不修改在途旧快照。
+func TestStoreAtomicallyPublishesRoutingSnapshots(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := openTestStore(t)
+	account := newCodexAPIKeyAccount(t, store, 1, "sk-atomic-routing-snapshot")
+	if err := store.Create(ctx, account); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	models, err := accountapp.NormalizeDiscoveredModels([]string{"gpt-5.6-sol"})
+	if err != nil {
+		t.Fatalf("NormalizeDiscoveredModels() error = %v", err)
+	}
+	if _, err := store.ReplaceDiscoveredModels(
+		ctx,
+		account.Ref(),
+		models,
+		testAccountTime(),
+	); err != nil {
+		t.Fatalf("ReplaceDiscoveredModels() error = %v", err)
+	}
+	modelID := mustModelID(t, "gpt-5.6-sol")
+	oldSnapshot, err := store.LoadRoutingCandidates(ctx, "codex", modelID)
+	if err != nil || oldSnapshot.Len() != 1 {
+		t.Fatalf("LoadRoutingCandidates(old) len=%d error=%v", oldSnapshot.Len(), err)
+	}
+	if _, err := store.SetEnabled(
+		ctx,
+		account.Ref(),
+		false,
+		testAccountTime().Add(time.Second),
+	); err != nil {
+		t.Fatalf("SetEnabled(false) error = %v", err)
+	}
+	newSnapshot, err := store.LoadRoutingCandidates(ctx, "codex", modelID)
+	if err != nil {
+		t.Fatalf("LoadRoutingCandidates(new) error = %v", err)
+	}
+	oldAccount, oldFound := oldSnapshot.At(0)
+	if oldSnapshot.Len() != 1 ||
+		!oldFound ||
+		oldAccount.Ref() != account.Ref() ||
+		newSnapshot.Len() != 0 {
+		t.Fatalf(
+			"old_len=%d old_found=%t old_ref=%s new_len=%d",
+			oldSnapshot.Len(),
+			oldFound,
+			oldAccount.Ref(),
+			newSnapshot.Len(),
+		)
+	}
+}
+
 // TestStoreListsUniqueRoutableModelsWithoutSQLite 验证标准目录只读取本地倒排。
 func TestStoreListsUniqueRoutableModelsWithoutSQLite(t *testing.T) {
 	t.Parallel()

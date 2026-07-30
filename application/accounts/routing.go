@@ -9,9 +9,9 @@ import (
 )
 
 const (
-	// DefaultRoutingLimit 是未指定分页大小时的默认账号征召数量。
+	// DefaultRoutingLimit 是未指定分页大小时的默认候选诊断页大小。
 	DefaultRoutingLimit = 32
-	// MaxRoutingLimit 防止一次征召查询意外加载过多账号。
+	// MaxRoutingLimit 防止一次候选诊断查询意外复制过多账号。
 	MaxRoutingLimit = 256
 )
 
@@ -22,7 +22,9 @@ var (
 	ErrInvalidRoutingAccount = errors.New("账号征召投影无效")
 )
 
-// RoutingQuery 是按 Provider 使用 AccountRef 稳定游标分页的账号征召查询。
+// RoutingQuery 是按 Provider 使用 AccountRef 稳定游标的候选诊断查询。
+//
+// Server 征召热路径使用 RoutingCandidates 原子快照，不使用该分页值。
 type RoutingQuery struct {
 	providerID string
 	modelID    runtimecore.ModelID
@@ -105,6 +107,14 @@ type RoutingAccount struct {
 	cliAccountID accountcore.CLIAccountID
 }
 
+// RoutingCandidates 是单个 Provider、模型元组的不可变候选快照。
+//
+// 构造时只复制一次底层切片；读取方只能按下标取得值，不能修改快照内容。
+// 账号管理写路径发布新快照后，已经开始的请求仍安全地使用旧快照完成本轮征召。
+type RoutingCandidates struct {
+	accounts []RoutingAccount
+}
+
 // NewRoutingAccount 校验持久化字段并创建紧凑账号征召投影。
 func NewRoutingAccount(catalog *providers.Catalog, input RoutingAccountInput) (RoutingAccount, error) {
 	if catalog == nil ||
@@ -136,4 +146,65 @@ func (account RoutingAccount) ProviderID() string {
 // CLIAccountID 返回 Provider 内用户可见数字别名。
 func (account RoutingAccount) CLIAccountID() accountcore.CLIAccountID {
 	return account.cliAccountID
+}
+
+// NewRoutingCandidates 复制投影并按稳定身份去重，创建不可变候选快照。
+//
+// 生产倒排已经按 AccountRef 排序，因此使用相邻去重且不分配辅助 Map；
+// 测试或其他 Adapter 提供未排序输入时保留原顺序并使用一次冷路径去重。
+func NewRoutingCandidates(accounts []RoutingAccount) *RoutingCandidates {
+	snapshot := append([]RoutingAccount(nil), accounts...)
+	sorted := routingAccountsSorted(snapshot)
+	write := 0
+	if sorted {
+		for _, account := range snapshot {
+			if write > 0 && snapshot[write-1].Ref() == account.Ref() {
+				continue
+			}
+			snapshot[write] = account
+			write++
+		}
+	} else {
+		seen := make(map[accountcore.AccountRef]struct{}, len(snapshot))
+		for _, account := range snapshot {
+			if _, found := seen[account.Ref()]; found {
+				continue
+			}
+			seen[account.Ref()] = struct{}{}
+			snapshot[write] = account
+			write++
+		}
+	}
+	for index := write; index < len(snapshot); index++ {
+		snapshot[index] = RoutingAccount{}
+	}
+	return &RoutingCandidates{
+		accounts: snapshot[:write],
+	}
+}
+
+// routingAccountsSorted 线性确认生产倒排是否保持 AccountRef 顺序。
+func routingAccountsSorted(accounts []RoutingAccount) bool {
+	for index := 1; index < len(accounts); index++ {
+		if accounts[index-1].Ref().String() > accounts[index].Ref().String() {
+			return false
+		}
+	}
+	return true
+}
+
+// Len 返回当前快照中的候选账号数量。
+func (candidates *RoutingCandidates) Len() int {
+	if candidates == nil {
+		return 0
+	}
+	return len(candidates.accounts)
+}
+
+// At 返回指定位置的候选值；越界时返回 false。
+func (candidates *RoutingCandidates) At(index int) (RoutingAccount, bool) {
+	if candidates == nil || index < 0 || index >= len(candidates.accounts) {
+		return RoutingAccount{}, false
+	}
+	return candidates.accounts[index], true
 }

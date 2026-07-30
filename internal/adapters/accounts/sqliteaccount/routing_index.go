@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
@@ -16,13 +17,20 @@ import (
 
 // routingIndex 是账号模型正排和模型账号倒排的进程内物化读模型。
 //
-// 读请求只持有共享锁并复制有界结果；写请求只更新一个账号涉及的模型切片。
+// 征召热读使用原子不可变快照；管理写请求只重建一个账号涉及的模型切片。
 type routingIndex struct {
 	mu         sync.RWMutex
 	accounts   map[accountcore.AccountRef]indexedRoutingAccount
 	reverse    map[routingIndexKey][]accountapp.RoutingAccount
+	slots      sync.Map
+	empty      *accountapp.RoutingCandidates
 	observerMu sync.RWMutex
 	observer   accountapp.RoutableModelObserver
+}
+
+// routeSlot 为单个 Provider、模型元组原子发布最新候选快照。
+type routeSlot struct {
+	candidates atomic.Pointer[accountapp.RoutingCandidates]
 }
 
 // indexedRoutingAccount 保存账号启停状态及排序后的有效模型正排。
@@ -61,7 +69,7 @@ func (store *Store) loadRoutingIndex(ctx context.Context) (*routingIndex, error)
 	var currentModels []runtimecore.ModelID
 	flush := func() {
 		if currentRef.IsValid() {
-			index.replaceAccount(current, currentEnabled, currentModels)
+			index.replaceAccountDataLocked(current, currentEnabled, currentModels)
 		}
 	}
 	for rows.Next() {
@@ -136,6 +144,7 @@ func (store *Store) loadRoutingIndex(ctx context.Context) (*routingIndex, error)
 		return nil, fmt.Errorf("遍历账号模型路由索引失败: %w", err)
 	}
 	flush()
+	index.publishAllSnapshots()
 	return index, nil
 }
 
@@ -144,6 +153,7 @@ func newRoutingIndex() *routingIndex {
 	return &routingIndex{
 		accounts: make(map[accountcore.AccountRef]indexedRoutingAccount),
 		reverse:  make(map[routingIndexKey][]accountapp.RoutingAccount),
+		empty:    accountapp.NewRoutingCandidates(nil),
 	}
 }
 
@@ -157,13 +167,41 @@ func (index *routingIndex) replaceAccount(
 		return
 	}
 	index.mu.Lock()
-	index.replaceAccountLocked(account, enabled, models)
+	index.replaceAccountAndPublishLocked(account, enabled, models)
 	index.mu.Unlock()
 	index.notifyRoutableModelsChanged()
 }
 
-// replaceAccountLocked 在唯一写锁内同时更新账号正排和所有受影响倒排。
-func (index *routingIndex) replaceAccountLocked(
+// replaceAccountAndPublishLocked 更新账号数据并发布全部受影响的路由快照。
+func (index *routingIndex) replaceAccountAndPublishLocked(
+	account accountapp.RoutingAccount,
+	enabled bool,
+	models []runtimecore.ModelID,
+) {
+	affected := make(map[routingIndexKey]struct{}, len(models))
+	if previous, found := index.accounts[account.Ref()]; found && previous.enabled {
+		for _, modelID := range previous.models {
+			key := routingIndexKey{
+				providerID: previous.account.ProviderID(),
+				modelID:    modelID,
+			}
+			affected[key] = struct{}{}
+		}
+	}
+	if enabled {
+		for _, modelID := range models {
+			affected[routingIndexKey{
+				providerID: account.ProviderID(),
+				modelID:    modelID,
+			}] = struct{}{}
+		}
+	}
+	index.replaceAccountDataLocked(account, enabled, models)
+	index.publishSnapshotsLocked(affected)
+}
+
+// replaceAccountDataLocked 只更新正排和倒排数据，供启动批量构建避免逐账号发布。
+func (index *routingIndex) replaceAccountDataLocked(
 	account accountapp.RoutingAccount,
 	enabled bool,
 	models []runtimecore.ModelID,
@@ -214,7 +252,7 @@ func (index *routingIndex) replaceModels(
 		index.mu.Unlock()
 		return false
 	}
-	index.replaceAccountLocked(current.account, current.enabled, models)
+	index.replaceAccountAndPublishLocked(current.account, current.enabled, models)
 	index.mu.Unlock()
 	index.notifyRoutableModelsChanged()
 	return true
@@ -231,14 +269,69 @@ func (index *routingIndex) setAccount(
 	index.mu.Lock()
 	current, found := index.accounts[account.Ref()]
 	if !found {
-		index.replaceAccountLocked(account, enabled, nil)
+		index.replaceAccountAndPublishLocked(account, enabled, nil)
 		index.mu.Unlock()
 		index.notifyRoutableModelsChanged()
 		return
 	}
-	index.replaceAccountLocked(account, enabled, current.models)
+	index.replaceAccountAndPublishLocked(account, enabled, current.models)
 	index.mu.Unlock()
 	index.notifyRoutableModelsChanged()
+}
+
+// publishAllSnapshots 在启动加载完成后一次性发布全部路由，避免逐账号复制大切片。
+func (index *routingIndex) publishAllSnapshots() {
+	if index == nil {
+		return
+	}
+	for key := range index.reverse {
+		index.publishSnapshotLocked(key)
+	}
+}
+
+// publishSnapshotsLocked 为一次管理写涉及的路由发布新不可变快照。
+func (index *routingIndex) publishSnapshotsLocked(
+	keys map[routingIndexKey]struct{},
+) {
+	for key := range keys {
+		index.publishSnapshotLocked(key)
+	}
+}
+
+// publishSnapshotLocked 复制一次最终倒排切片并原子替换热读指针。
+func (index *routingIndex) publishSnapshotLocked(key routingIndexKey) {
+	value, _ := index.slots.LoadOrStore(key, &routeSlot{})
+	slot := value.(*routeSlot)
+	slot.candidates.Store(accountapp.NewRoutingCandidates(index.reverse[key]))
+}
+
+// loadCandidates 无锁读取单个 Provider、模型元组的当前不可变快照。
+func (index *routingIndex) loadCandidates(
+	ctx context.Context,
+	providerID string,
+	modelID runtimecore.ModelID,
+) (*accountapp.RoutingCandidates, error) {
+	if index == nil ||
+		ctx == nil ||
+		providerID == "" ||
+		!modelID.IsValid() {
+		return nil, accountapp.ErrInvalidRoutingQuery
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	value, found := index.slots.Load(routingIndexKey{
+		providerID: providerID,
+		modelID:    modelID,
+	})
+	if !found {
+		return index.empty, nil
+	}
+	candidates := value.(*routeSlot).candidates.Load()
+	if candidates == nil {
+		return index.empty, nil
+	}
+	return candidates, nil
 }
 
 // setRoutableModelObserver 注册唯一的进程内目录变化观察端口。

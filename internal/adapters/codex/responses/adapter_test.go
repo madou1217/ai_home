@@ -674,16 +674,18 @@ type adapterCandidateSource struct {
 	account accountapp.RoutingAccount
 }
 
-// ListRoutingCandidates 实现稳定 AccountRef 游标。
-func (source adapterCandidateSource) ListRoutingCandidates(
+// LoadRoutingCandidates 返回唯一账号的不可变候选快照。
+func (source adapterCandidateSource) LoadRoutingCandidates(
 	_ context.Context,
-	query accountapp.RoutingQuery,
-) ([]accountapp.RoutingAccount, error) {
-	if query.AfterRef() != "" ||
-		query.ProviderID() != source.account.ProviderID() {
-		return nil, nil
+	providerID string,
+	_ runtimecore.ModelID,
+) (*accountapp.RoutingCandidates, error) {
+	if providerID != source.account.ProviderID() {
+		return accountapp.NewRoutingCandidates(nil), nil
 	}
-	return []accountapp.RoutingAccount{source.account}, nil
+	return accountapp.NewRoutingCandidates(
+		[]accountapp.RoutingAccount{source.account},
+	), nil
 }
 
 // adapterAvailableRuntime 让合成账号模型元组保持可征召。

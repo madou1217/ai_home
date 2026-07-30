@@ -141,8 +141,6 @@ func TestRecruiterUsesSQLiteAndProductionCredentialResolver(t *testing.T) {
 		catalog,
 		" CODEX ",
 		"gpt-5.6-sol",
-		"",
-		3,
 	)
 	if err != nil {
 		t.Fatalf("accountrouting.NewRequest() error = %v", err)

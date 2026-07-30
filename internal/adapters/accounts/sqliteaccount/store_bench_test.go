@@ -3,7 +3,6 @@ package sqliteaccount
 import (
 	"context"
 	"fmt"
-	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -13,6 +12,7 @@ import (
 	"github.com/madou1217/ai_home/application/accountrouting"
 	runtimeapp "github.com/madou1217/ai_home/application/accountruntime"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/accounts/codex"
 	"github.com/madou1217/ai_home/core/providers"
@@ -45,6 +45,10 @@ func BenchmarkStoreQueries(benchmark *testing.B) {
 				store,
 				accountCount,
 			)
+			routingModelID, err := runtimecore.NewModelID("gpt-5.6-sol")
+			if err != nil {
+				benchmark.Fatalf("NewModelID() error = %v", err)
+			}
 
 			benchmark.Run("account_ref", func(benchmark *testing.B) {
 				benchmark.ReportAllocs()
@@ -81,6 +85,26 @@ func BenchmarkStoreQueries(benchmark *testing.B) {
 							"candidate count = %d, want %d",
 							len(candidates),
 							accountapp.DefaultRoutingLimit,
+						)
+					}
+				}
+			})
+			benchmark.Run("routing_snapshot_load", func(benchmark *testing.B) {
+				benchmark.ReportAllocs()
+				for range benchmark.N {
+					candidates, loadErr := store.LoadRoutingCandidates(
+						context.Background(),
+						"codex",
+						routingModelID,
+					)
+					if loadErr != nil {
+						benchmark.Fatalf("LoadRoutingCandidates() error = %v", loadErr)
+					}
+					if candidates.Len() != accountCount+1 {
+						benchmark.Fatalf(
+							"candidate count = %d, want %d",
+							candidates.Len(),
+							accountCount+1,
 						)
 					}
 				}
@@ -284,39 +308,15 @@ func prepareRecruitmentBenchmark(
 	if err != nil {
 		benchmark.Fatalf("NewRecruiter() error = %v", err)
 	}
-	afterRef := previousAccountRef(benchmark, account.Ref())
 	request, err := accountrouting.NewRequest(
 		store.catalog,
 		"codex",
 		"gpt-5.6-sol",
-		afterRef,
-		accountapp.DefaultRoutingLimit,
 	)
 	if err != nil {
 		benchmark.Fatalf("NewRequest() error = %v", err)
 	}
 	return recruiter, request
-}
-
-// previousAccountRef 返回字典序紧邻目标之前的合法 AccountRef。
-func previousAccountRef(
-	benchmark *testing.B,
-	target accountcore.AccountRef,
-) accountcore.AccountRef {
-	benchmark.Helper()
-
-	value, valid := new(big.Int).SetString(target.String()[5:], 16)
-	if !valid || value.Sign() <= 0 {
-		benchmark.Fatalf("target AccountRef = %q", target)
-	}
-	value.Sub(value, big.NewInt(1))
-	accountRef, err := accountcore.ParseAccountRef(
-		fmt.Sprintf("acct_%020x", value),
-	)
-	if err != nil {
-		benchmark.Fatalf("ParseAccountRef(previous) error = %v", err)
-	}
-	return accountRef
 }
 
 // openBenchmarkStore 为每个账号规模创建相互隔离的真实 SQLite 文件。

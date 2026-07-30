@@ -39,7 +39,7 @@ type AccountRuntime interface {
 
 // Dependencies 声明 Canonical Runtime 的最小生产组合边界。
 type Dependencies struct {
-	// Catalog 校验 Provider，并供账号征召构造规范查询。
+	// Catalog 校验 Provider，并供账号征召构造规范请求。
 	Catalog *providers.Catalog
 	// Store 延迟读取模型倒排候选与版本化凭据。
 	Store AccountStore
@@ -55,8 +55,8 @@ type Dependencies struct {
 	ModelRefreshes inferencegateway.ModelRefreshScheduler
 	// Clock 提供 OAuth 过期判断和凭据版本时间。
 	Clock accountapp.Clock
-	// AccountScanLimit 为零时使用 Coordinator 的安全默认值。
-	AccountScanLimit int
+	// UpstreamAttemptLimit 为零时使用 Coordinator 的安全默认值。
+	UpstreamAttemptLimit int
 }
 
 // New 创建共享同一账号运行态和凭据解析器的 Canonical Executor。
@@ -92,13 +92,13 @@ func New(dependencies Dependencies) (*inferencegateway.Coordinator, error) {
 	}
 	coordinator, err := inferencegateway.NewCoordinator(
 		inferencegateway.Dependencies{
-			Catalog:          dependencies.Catalog,
-			Routes:           dependencies.Routes,
-			Recruiter:        recruiter,
-			Upstreams:        upstreams,
-			Attempts:         dependencies.Runtime,
-			ModelRefreshes:   dependencies.ModelRefreshes,
-			AccountScanLimit: dependencies.AccountScanLimit,
+			Catalog:              dependencies.Catalog,
+			Routes:               dependencies.Routes,
+			Recruiter:            recruiter,
+			Upstreams:            upstreams,
+			Attempts:             dependencies.Runtime,
+			ModelRefreshes:       dependencies.ModelRefreshes,
+			UpstreamAttemptLimit: dependencies.UpstreamAttemptLimit,
 		},
 	)
 	if err != nil {

@@ -291,7 +291,7 @@ func TestNewRejectsIncompleteDependencies(t *testing.T) {
 			Upstreams:            valid.Upstreams,
 			ModelRefreshes:       valid.ModelRefreshes,
 			Clock:                valid.Clock,
-			AccountScanLimit:     inferencegateway.DefaultAccountScanLimit + 1,
+			UpstreamAttemptLimit: inferencegateway.DefaultUpstreamAttemptLimit + 1,
 		},
 	}
 	for index, dependencies := range testCases {
@@ -409,24 +409,26 @@ type runtimeStore struct {
 	credentialReads int
 }
 
-// ListRoutingCandidates 从两个合成模型的本地倒排返回同一账号。
-func (store *runtimeStore) ListRoutingCandidates(
+// LoadRoutingCandidates 从两个合成模型的本地倒排返回同一账号快照。
+func (store *runtimeStore) LoadRoutingCandidates(
 	ctx context.Context,
-	query accountapp.RoutingQuery,
-) ([]accountapp.RoutingAccount, error) {
+	providerID string,
+	modelID runtimecore.ModelID,
+) (*accountapp.RoutingCandidates, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	if query.ProviderID() != store.account.ProviderID() ||
-		query.AfterRef() != "" {
-		return nil, nil
+	if providerID != store.account.ProviderID() {
+		return accountapp.NewRoutingCandidates(nil), nil
 	}
-	if _, found := store.models[query.ModelID().String()]; !found {
-		return nil, nil
+	if _, found := store.models[modelID.String()]; !found {
+		return accountapp.NewRoutingCandidates(nil), nil
 	}
-	return []accountapp.RoutingAccount{store.account}, nil
+	return accountapp.NewRoutingCandidates(
+		[]accountapp.RoutingAccount{store.account},
+	), nil
 }
 
 // GetCredentialSnapshot 返回不会过期的合成 API Key 快照。

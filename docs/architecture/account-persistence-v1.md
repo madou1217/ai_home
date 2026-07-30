@@ -27,7 +27,7 @@ application/accounts + application/accountcredentials
     Store 端口、账号用例和按需凭据可用化
         ↓
 application/accountruntime + application/accountrouting
-    稀疏模型元组索引；有界扫描并返回首个可用账号
+    稀疏模型元组索引；固定候选快照、公平轮转和按需凭据解析
         ↓
 internal/adapters/accounts/sqliteaccount
     aih.db、migration、SQL、Provider credential/profile codec
@@ -245,7 +245,7 @@ Token、API Key 或 Auth Token。
 | --- | --- | --- |
 | 稳定身份点查 | `WHERE account_ref = ?` | `accounts` 主键 |
 | CLI 别名点查 | `WHERE provider_id = ? AND cli_account_id = ?` | 唯一约束自动索引 |
-| 账号征召 | `WHERE provider_id = ? AND enabled = 1 AND account_ref > ? ORDER BY account_ref LIMIT ?` | `idx_accounts_routing` |
+| 账号征召 | 原子读取 `(provider_id, model_id)` 的不可变 `RoutingCandidates` | 进程内模型倒排 |
 | 按需读取凭据 | `WHERE account_ref = ?` | `account_credentials` 主键 |
 | 按需读取资料 | `WHERE account_ref = ?` | `account_profiles` 主键 |
 | 账号管理列表 | 三表按主键 `LEFT JOIN`，`account_ref > ? ORDER BY account_ref LIMIT ?` | 三张表主键 |
@@ -261,15 +261,19 @@ Token、API Key 或 Auth Token。
 账号管理查询只选择认证类型和公开资料标量，SQL 合同明确禁止读取
 `credential_json`、`profile_json`。
 
-账号征召器自身保持无状态，不把候选池或凭据缓存到进程内：
+账号征召不在请求内执行 SQL。启动时从账号和模型关系构建正排、倒排；添加、导入、
+启停和模型刷新只重建受影响模型的切片并原子发布新快照。`Recruiter` 不持有账号或凭据
+副本，只保存每个 `(provider_id, model_id)` 的原子公平票号：
 
-1. 使用 `RoutingQuery` 一次读取最多 32 条紧凑投影；
-2. 使用别名解析后的真实模型 ID 检查稀疏运行态资格；
-3. 只有运行态可用的候选才通过 `AccountRef` 点查凭据，并在 OAuth 即将过期时刷新；
-4. 硬阻塞、quota 阻塞、模型 cooldown、缺失凭据、需要重新认证、刷新被拒绝或刷新
+1. 一个请求原子读取一次完整不可变候选快照，管理写不会改变在途请求；
+2. `start = ticket % candidateCount`，随后环形扫描一次，每个账号在同一请求内最多出现一次；
+3. 使用别名解析后的真实模型 ID 检查稀疏运行态资格；
+4. 只有运行态可用的候选才通过 `AccountRef` 点查凭据，并在 OAuth 即将过期时刷新；
+5. 硬阻塞、quota 阻塞、模型 cooldown、缺失凭据、需要重新认证、刷新被拒绝或刷新
    暂时不可用只淘汰当前候选；
-5. 数据库、运行态端口、解码、Provider 合同或凭据身份不一致立即失败，不能静默跳过；
-6. 未命中时返回最后检查的 `AccountRef`，调用方可继续 keyset 下一页。
+6. 数据库、运行态端口、解码、Provider 合同或凭据身份不一致立即失败，不能静默跳过；
+7. 内存候选扫描可遍历完整快照，但单个 Route Candidate 最多调用 4 个不同上游账号；
+   已产生客户端可见输出后仍禁止换号。
 
 模型能力和 usage 尚无 Go v1 持久化真相源，不在账号表伪造字段。模型 cooldown 已使用
 独立的进程内稀疏索引接入征召流水线，详细状态矩阵和解除条件见
@@ -310,7 +314,7 @@ Token、API Key 或 Auth Token。
   Provider 同别名、别名耗尽、Profile 写入失败整笔回滚、关闭重开恢复均有自动化测试。
 - 8 路并发首次打开同一个空数据库连续运行 50 轮通过。
 
-### 8.2 性能
+### 8.2 历史数据库读取基线
 
 命令：
 
@@ -333,31 +337,42 @@ go test -run '^$' -bench '^BenchmarkStoreQueries$' \
 | 100,000 | 征召 `LIMIT 32` | 24.51µs | 5,576 | 208 |
 | 100,000 | keyset 分页加载全部紧凑投影 | 40.48ms | 38,693,212 | 707,194 |
 
-正常 Server 征召只加载 32 条紧凑投影，不全量加载账号，更不会读取凭据。因此账号数
-从 10,000 增长到 100,000 时，征召耗时和分配量基本不变。全量加载项是故意设置的
-压力基线，不是 Server 运行策略。
+`LIMIT 32` 和 keyset 全载数据保留为旧读取模型的诊断基线，不再代表 Server 征召
+路径。当前请求直接读取账号管理时已维护好的进程内不可变倒排快照。
 
-### 8.3 完整账号征召性能
+### 8.3 公平征召热路径
 
 命令：
 
 ```bash
+go test -run '^$' -bench '^BenchmarkFairRoundRobinScheduler$' \
+  -benchmem -benchtime=1s -count=3 ./application/accountrouting
+
 go test -run '^$' \
-  -bench '^BenchmarkStoreQueries/accounts_(10000|100000)/recruit_ready_account$' \
+  -bench '^BenchmarkStoreQueries/accounts_(10000|100000)/routing_snapshot_load$' \
   -benchmem -benchtime=1s -count=3 \
   ./internal/adapters/accounts/sqliteaccount
+
+go test -run '^$' \
+  -bench '^BenchmarkCoordinatorExecute/(ready_account_success|bounded_failover_to_healthy_account)$' \
+  -benchmem -benchtime=1s -count=3 ./application/inferencegateway
 ```
 
-该基准执行真实 covering-index 候选查询、凭据主键点查、严格 JSON 解码、领域身份复核和
-Resolver 编排。三轮中位数：
+验证环境：2026-07-31，Apple M4、darwin/arm64、Go 1.26.4。三轮中位数：
 
-| 账号数 | 中位耗时 | B/op | allocs/op |
-| ---: | ---: | ---: | ---: |
-| 10,000 | 30.34µs | 6,990 | 122 |
-| 100,000 | 31.53µs | 6,990 | 122 |
+| 操作 | 中位耗时 | B/op | allocs/op |
+| --- | ---: | ---: | ---: |
+| 公平票号，100,000 候选取模 | 49.37ns | 0 | 0 |
+| 10,000 账号快照读取 | 66.97ns | 0 | 0 |
+| 100,000 账号快照读取 | 61.81ns | 0 | 0 |
+| Coordinator 健康账号成功 | 1.077µs | 344 | 8 |
+| Coordinator 有界换号后成功 | 2.632µs | 856 | 15 |
 
-账号规模扩大十倍后完整征召耗时和分配量保持稳定；正常请求不会全量加载账号，更不会把
-1 万个凭据保存在 Go 内存中。
+快照读取耗时不随账号数线性增长，因为热路径只加载原子指针，不复制候选切片。候选
+快照只保存稳定身份、Provider 和 CLI 别名，不保存凭据、Profile、Usage 或运行态。
+本地资格扫描与上游尝试预算分离：1 万账号全部 quota blocked 时自动化测试确认
+`10,000` 次本地资格检查、`0` 次凭据读取、`0` 次上游调用；1 万账号全部返回可重试
+上游失败时只调用 `4` 个不同账号。
 
 ### 8.4 公开资料与账号管理性能
 

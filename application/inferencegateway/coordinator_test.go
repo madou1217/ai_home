@@ -80,6 +80,123 @@ func TestCoordinatorCommitsSuccessTerminalAfterStateRecord(t *testing.T) {
 	}
 }
 
+// TestCoordinatorDistributesHealthyRequestsFairly 验证连续请求不会长期集中到
+// AccountRef 最小的健康账号。
+func TestCoordinatorDistributesHealthyRequestsFairly(t *testing.T) {
+	t.Parallel()
+
+	const requestCount = 30
+	fixture := newCoordinatorFixture(t, "codex", 3)
+	upstream := newScriptedUpstream(
+		inference.ProtocolCodexResponses,
+		func(
+			_ context.Context,
+			_ inferencegateway.Invocation,
+			emit inferencegateway.EventSink,
+		) (inferencegateway.AttemptResult, error) {
+			for _, event := range successfulEvents(t, "resp_fair") {
+				if err := emit(event); err != nil {
+					return inferencegateway.AttemptResult{}, err
+				}
+			}
+			return inferencegateway.CompletedAttempt(), nil
+		},
+	)
+	coordinator := fixture.newCoordinator(t, upstream, &attemptRecorder{})
+	request := newTextRequest(t, "gpt-5.6-sol", true)
+
+	for range requestCount {
+		if err := coordinator.Execute(
+			context.Background(),
+			request,
+			func(inference.StreamEvent) error { return nil },
+		); err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+	}
+	counts := make(map[accountcore.AccountRef]int, len(fixture.accounts))
+	for _, invocation := range upstream.Invocations() {
+		counts[invocation.Account().Ref()]++
+	}
+	for _, account := range fixture.accounts {
+		if counts[account.Ref()] != requestCount/len(fixture.accounts) {
+			t.Fatalf(
+				"account=%s calls=%d distribution=%v",
+				account.Ref(),
+				counts[account.Ref()],
+				counts,
+			)
+		}
+	}
+	t.Logf("requests=%d accounts=%d distribution=%v", requestCount, len(counts), counts)
+}
+
+// TestCoordinatorDistributesConcurrentHealthyRequestsFairly 验证并发请求仍按原子票号
+// 均匀分配，不会因竞争丢票或集中到少数账号。
+func TestCoordinatorDistributesConcurrentHealthyRequestsFairly(t *testing.T) {
+	t.Parallel()
+
+	const (
+		accountCount = 10
+		requestCount = 1_000
+	)
+	fixture := newCoordinatorFixture(t, "codex", accountCount)
+	events := successfulEvents(t, "resp_concurrent_fair")
+	upstream := newScriptedUpstream(
+		inference.ProtocolCodexResponses,
+		func(
+			_ context.Context,
+			_ inferencegateway.Invocation,
+			emit inferencegateway.EventSink,
+		) (inferencegateway.AttemptResult, error) {
+			for _, event := range events {
+				if err := emit(event); err != nil {
+					return inferencegateway.AttemptResult{}, err
+				}
+			}
+			return inferencegateway.CompletedAttempt(), nil
+		},
+	)
+	coordinator := fixture.newCoordinator(t, upstream, &attemptRecorder{})
+	request := newTextRequest(t, "gpt-5.6-sol", true)
+	errorsByRequest := make(chan error, requestCount)
+	var waitGroup sync.WaitGroup
+	waitGroup.Add(requestCount)
+	for range requestCount {
+		go func() {
+			defer waitGroup.Done()
+			if err := coordinator.Execute(
+				context.Background(),
+				request,
+				func(inference.StreamEvent) error { return nil },
+			); err != nil {
+				errorsByRequest <- err
+			}
+		}()
+	}
+	waitGroup.Wait()
+	close(errorsByRequest)
+	for err := range errorsByRequest {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	counts := make(map[accountcore.AccountRef]int, accountCount)
+	for _, invocation := range upstream.Invocations() {
+		counts[invocation.Account().Ref()]++
+	}
+	for _, account := range fixture.accounts {
+		if counts[account.Ref()] != requestCount/accountCount {
+			t.Fatalf(
+				"account=%s calls=%d distribution=%v",
+				account.Ref(),
+				counts[account.Ref()],
+				counts,
+			)
+		}
+	}
+	t.Logf("requests=%d accounts=%d calls_per_account=%d", requestCount, accountCount, requestCount/accountCount)
+}
+
 // TestCoordinatorSkipsTransportIncompatibleAccount 验证 Adapter 的传输策略
 // 在 Invocation 和失败记录前生效，并继续使用同一模型的后续账号。
 func TestCoordinatorSkipsTransportIncompatibleAccount(t *testing.T) {
@@ -733,15 +850,15 @@ func TestCoordinatorCommitsLastFailureAcrossAllRouteCandidates(
 	}
 }
 
-// TestCoordinatorBoundsAccountScanForEveryRouteCandidate 验证路由候选不会共享
-// 已消耗的账号扫描预算，也不会让单候选突破固定上限。
-func TestCoordinatorBoundsAccountScanForEveryRouteCandidate(t *testing.T) {
+// TestCoordinatorBoundsUpstreamAttemptsForEveryRouteCandidate 验证路由候选不会共享
+// 已消耗的上游调用预算，也不会让单候选突破固定上限。
+func TestCoordinatorBoundsUpstreamAttemptsForEveryRouteCandidate(t *testing.T) {
 	t.Parallel()
 
 	fixture := newCoordinatorFixture(
 		t,
 		"codex",
-		inferencegateway.DefaultAccountScanLimit+8,
+		inferencegateway.DefaultUpstreamAttemptLimit+8,
 	)
 	secondRoute, err := inferencegateway.NewRoute(
 		inference.ProviderCodex,
@@ -784,7 +901,7 @@ func TestCoordinatorBoundsAccountScanForEveryRouteCandidate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	wantAttempts := inferencegateway.DefaultAccountScanLimit * 2
+	wantAttempts := inferencegateway.DefaultUpstreamAttemptLimit * 2
 	if len(upstream.Invocations()) != wantAttempts ||
 		recorder.FailureCount() != wantAttempts ||
 		len(events) != 1 {
@@ -801,15 +918,15 @@ func TestCoordinatorBoundsAccountScanForEveryRouteCandidate(t *testing.T) {
 	}
 }
 
-// TestCoordinatorStopsAtBoundedAccountScanLimit 验证大账号池也只检查固定数量，
-// 不会因上游连续失败退化为全量账号扫描。
-func TestCoordinatorStopsAtBoundedAccountScanLimit(t *testing.T) {
+// TestCoordinatorStopsAtBoundedUpstreamAttemptLimit 验证大账号池也只调用固定数量，
+// 不会因上游连续失败放大为全账号上游请求。
+func TestCoordinatorStopsAtBoundedUpstreamAttemptLimit(t *testing.T) {
 	t.Parallel()
 
 	fixture := newCoordinatorFixture(
 		t,
 		"codex",
-		inferencegateway.DefaultAccountScanLimit+8,
+		10_000,
 	)
 	publicFailure, attemptFailure := overloadedFailure(t)
 	upstream := newScriptedUpstream(
@@ -837,8 +954,8 @@ func TestCoordinatorStopsAtBoundedAccountScanLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	if len(upstream.Invocations()) != inferencegateway.DefaultAccountScanLimit ||
-		recorder.FailureCount() != inferencegateway.DefaultAccountScanLimit ||
+	if len(upstream.Invocations()) != inferencegateway.DefaultUpstreamAttemptLimit ||
+		recorder.FailureCount() != inferencegateway.DefaultUpstreamAttemptLimit ||
 		len(events) != 1 ||
 		events[0].Kind() != inference.EventResponseFailed {
 		t.Fatalf(
@@ -857,6 +974,67 @@ func TestCoordinatorStopsAtBoundedAccountScanLimit(t *testing.T) {
 		len(fixture.accounts),
 		len(upstream.Invocations()),
 		failed.Failure().Code(),
+	)
+}
+
+// TestCoordinatorScansTenThousandBlockedAccountsWithoutCredentialOrUpstream
+// 验证候选全不可用时只做本地运行态扫描，不读取秘密也不制造上游请求风暴。
+func TestCoordinatorScansTenThousandBlockedAccountsWithoutCredentialOrUpstream(
+	t *testing.T,
+) {
+	const accountCount = 10_000
+
+	fixture := newCoordinatorFixture(t, "codex", accountCount)
+	runtimeSource := &blockedRuntime{}
+	credentials := &countingCredentialResolver{}
+	recruiter, err := accountrouting.NewRecruiter(
+		accountrouting.Dependencies{
+			Candidates:  fixture.source,
+			Runtime:     runtimeSource,
+			Credentials: credentials,
+		},
+	)
+	if err != nil {
+		t.Fatalf("NewRecruiter() error = %v", err)
+	}
+	fixture.recruit = recruiter
+	upstream := newScriptedUpstream(
+		inference.ProtocolCodexResponses,
+		func(
+			context.Context,
+			inferencegateway.Invocation,
+			inferencegateway.EventSink,
+		) (inferencegateway.AttemptResult, error) {
+			return inferencegateway.AttemptResult{}, errors.New("不应调用上游")
+		},
+	)
+	coordinator := fixture.newCoordinator(t, upstream, &attemptRecorder{})
+
+	err = coordinator.Execute(
+		context.Background(),
+		newTextRequest(t, "gpt-5.6-sol", true),
+		func(inference.StreamEvent) error { return nil },
+	)
+	if !errors.Is(err, inferencegateway.ErrNoRoutableAccount) ||
+		runtimeSource.CallCount() != accountCount ||
+		credentials.CallCount() != 0 ||
+		len(upstream.Invocations()) != 0 ||
+		fixture.source.CallCount() != 1 {
+		t.Fatalf(
+			"error=%v runtime=%d credentials=%d upstream=%d snapshots=%d",
+			err,
+			runtimeSource.CallCount(),
+			credentials.CallCount(),
+			len(upstream.Invocations()),
+			fixture.source.CallCount(),
+		)
+	}
+	t.Logf(
+		"pool=%d runtime_checks=%d credential_reads=%d upstream_calls=%d",
+		accountCount,
+		runtimeSource.CallCount(),
+		credentials.CallCount(),
+		len(upstream.Invocations()),
 	)
 }
 
@@ -1320,33 +1498,30 @@ func (fixture *coordinatorFixture) newCoordinatorWithResolver(
 	return coordinator
 }
 
-// candidateSource 实现稳定游标分页并统计是否触发账号读取。
+// candidateSource 返回完整不可变候选快照并统计读取次数。
 type candidateSource struct {
 	mu       sync.Mutex
 	accounts []accountapp.RoutingAccount
 	calls    int
 }
 
-// ListRoutingCandidates 返回指定 Provider 的有界账号页。
-func (source *candidateSource) ListRoutingCandidates(
+// LoadRoutingCandidates 返回指定 Provider 的完整不可变账号快照。
+func (source *candidateSource) LoadRoutingCandidates(
 	_ context.Context,
-	query accountapp.RoutingQuery,
-) ([]accountapp.RoutingAccount, error) {
+	providerID string,
+	_ runtimecore.ModelID,
+) (*accountapp.RoutingCandidates, error) {
 	source.mu.Lock()
 	defer source.mu.Unlock()
 	source.calls++
-	page := make([]accountapp.RoutingAccount, 0, query.Limit())
+	candidates := make([]accountapp.RoutingAccount, 0, len(source.accounts))
 	for _, account := range source.accounts {
-		if account.ProviderID() != query.ProviderID() ||
-			account.Ref().String() <= query.AfterRef().String() {
+		if account.ProviderID() != providerID {
 			continue
 		}
-		page = append(page, account)
-		if len(page) == query.Limit() {
-			break
-		}
+		candidates = append(candidates, account)
 	}
-	return page, nil
+	return accountapp.NewRoutingCandidates(candidates), nil
 }
 
 // CallCount 返回候选源调用次数。
@@ -1367,6 +1542,30 @@ func (availableRuntime) CheckEligibility(
 	return runtimecore.AvailableEligibility(), nil
 }
 
+// blockedRuntime 统计全量本地资格扫描并把每个模型元组标记为 quota block。
+type blockedRuntime struct {
+	mu    sync.Mutex
+	calls int
+}
+
+// CheckEligibility 返回账号级 quota block，不触发任何凭据读取。
+func (runtime *blockedRuntime) CheckEligibility(
+	context.Context,
+	runtimecore.ModelRoute,
+) (runtimecore.Eligibility, error) {
+	runtime.mu.Lock()
+	runtime.calls++
+	runtime.mu.Unlock()
+	return runtimecore.QuotaBlockedEligibility(), nil
+}
+
+// CallCount 返回本地运行态资格检查次数。
+func (runtime *blockedRuntime) CallCount() int {
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	return runtime.calls
+}
+
 // credentialResolver 按稳定账号身份返回合成凭据。
 type credentialResolver struct {
 	credentials map[accountcore.AccountRef]accountapp.Credential
@@ -1382,6 +1581,30 @@ func (resolver credentialResolver) ResolveCredential(
 		return nil, accountapp.ErrCredentialNotFound
 	}
 	return credential, nil
+}
+
+// countingCredentialResolver 记录不应发生的敏感凭据读取。
+type countingCredentialResolver struct {
+	mu    sync.Mutex
+	calls int
+}
+
+// ResolveCredential 记录调用并返回缺失，供全阻塞边界测试发现越层读取。
+func (resolver *countingCredentialResolver) ResolveCredential(
+	context.Context,
+	accountcore.AccountRef,
+) (accountapp.Credential, error) {
+	resolver.mu.Lock()
+	resolver.calls++
+	resolver.mu.Unlock()
+	return nil, accountapp.ErrCredentialNotFound
+}
+
+// CallCount 返回敏感凭据读取次数。
+func (resolver *countingCredentialResolver) CallCount() int {
+	resolver.mu.Lock()
+	defer resolver.mu.Unlock()
+	return resolver.calls
 }
 
 // coordinatorCredential 是不含真实秘密的测试凭据。

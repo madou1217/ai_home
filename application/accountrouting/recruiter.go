@@ -19,27 +19,28 @@ import (
 var (
 	// ErrInvalidDependencies 表示征召器缺少模型候选、运行态或凭据端口。
 	ErrInvalidDependencies = errors.New("账号征召器依赖无效")
-	// ErrInvalidRequest 表示 Provider、游标、扫描上限或上下文无效。
+	// ErrInvalidRequest 表示 Provider、真实模型或上下文无效。
 	ErrInvalidRequest = errors.New("账号征召请求无效")
-	// ErrInvalidCandidatePage 表示候选源违反了有界、Provider 或身份合同。
-	ErrInvalidCandidatePage = errors.New("账号征召候选页无效")
+	// ErrInvalidCandidateSnapshot 表示候选源违反了快照、Provider 或身份合同。
+	ErrInvalidCandidateSnapshot = errors.New("账号征召候选快照无效")
 	// ErrInvalidResolvedCredential 表示凭据解析结果不属于候选账号。
 	ErrInvalidResolvedCredential = errors.New("账号征召凭据无效")
 	// ErrInvalidRuntimeEligibility 表示运行态端口返回了不完整的资格值。
 	ErrInvalidRuntimeEligibility = errors.New("账号征召运行态资格无效")
 	// ErrInvalidCredentialTransport 表示调用方没有提供当前上游协议的凭据传输策略。
 	ErrInvalidCredentialTransport = errors.New("账号征召凭据传输策略无效")
-	// ErrNoRoutableAccount 表示当前候选页没有可直接交给上游的账号。
+	// ErrNoRoutableAccount 表示当前候选快照没有可直接交给上游的账号。
 	ErrNoRoutableAccount = errors.New("没有可征召账号")
 )
 
-// CandidateSource 提供已经按 Provider 和启用状态筛选的紧凑账号页。
+// CandidateSource 提供已经按 Provider、模型和启用状态筛选的不可变候选快照。
 type CandidateSource interface {
-	// ListRoutingCandidates 使用稳定游标返回不超过查询上限的候选。
-	ListRoutingCandidates(
+	// LoadRoutingCandidates 返回当前原子发布的完整本地候选快照。
+	LoadRoutingCandidates(
 		ctx context.Context,
-		query accountapp.RoutingQuery,
-	) ([]accountapp.RoutingAccount, error)
+		providerID string,
+		modelID runtimecore.ModelID,
+	) (*accountapp.RoutingCandidates, error)
 }
 
 // CredentialResolver 把候选账号凭据解析为当前可直接使用的版本。
@@ -70,7 +71,7 @@ type RuntimeEligibilitySource interface {
 
 // Dependencies 声明征召器所需的三个最小应用端口。
 type Dependencies struct {
-	// Candidates 负责从本地模型倒排有界读取启用账号的紧凑投影。
+	// Candidates 负责从本地模型倒排读取启用账号的不可变紧凑快照。
 	Candidates CandidateSource
 	// Runtime 负责在敏感凭据读取前排除运行态不可用元组。
 	Runtime RuntimeEligibilitySource
@@ -78,45 +79,40 @@ type Dependencies struct {
 	Credentials CredentialResolver
 }
 
-// Request 是经过 Provider 注册表校验的有界征召请求。
+// Request 是经过 Provider 注册表校验的征召请求。
 type Request struct {
-	query   accountapp.RoutingQuery
-	modelID runtimecore.ModelID
+	providerID string
+	modelID    runtimecore.ModelID
 }
 
-// NewRequest 规范化 Provider，并校验真实模型、稳定游标和扫描上限。
+// NewRequest 规范化 Provider，并校验别名解析后的真实模型。
 //
 // modelID 必须是别名解析后的真实上游模型，不能使用客户端模型别名。
 func NewRequest(
 	catalog *providers.Catalog,
 	providerID string,
 	modelID string,
-	afterRef accountcore.AccountRef,
-	limit int,
 ) (Request, error) {
+	if catalog == nil {
+		return Request{}, ErrInvalidRequest
+	}
+	canonicalProviderID, found := catalog.CanonicalID(providerID)
+	if !found {
+		return Request{}, ErrInvalidRequest
+	}
 	runtimeModelID, err := runtimecore.NewModelID(modelID)
 	if err != nil {
 		return Request{}, errors.Join(ErrInvalidRequest, err)
 	}
-	query, err := accountapp.NewRoutingQuery(
-		catalog,
-		providerID,
-		runtimeModelID.String(),
-		afterRef,
-		limit,
-	)
-	if err != nil {
-		return Request{}, errors.Join(ErrInvalidRequest, err)
-	}
 	return Request{
-		query:   query,
-		modelID: runtimeModelID,
+		providerID: canonicalProviderID,
+		modelID:    runtimeModelID,
 	}, nil
 }
 
 // ProviderID 返回规范 Provider ID。
 func (request Request) ProviderID() string {
-	return request.query.ProviderID()
+	return request.providerID
 }
 
 // ModelID 返回别名解析后的真实上游模型 ID。
@@ -124,34 +120,17 @@ func (request Request) ModelID() runtimecore.ModelID {
 	return request.modelID
 }
 
-// AfterRef 返回本页不包含的稳定账号游标。
-func (request Request) AfterRef() accountcore.AccountRef {
-	return request.query.AfterRef()
-}
-
-// Limit 返回本次最多检查的候选数量。
-func (request Request) Limit() int {
-	return request.query.Limit()
-}
-
-// isValid 防止零值或跨层篡改请求进入持久化端口。
+// isValid 防止零值或跨层篡改请求进入候选端口。
 func (request Request) isValid() bool {
 	return request.ProviderID() != "" &&
-		request.ModelID().IsValid() &&
-		(request.AfterRef() == "" || request.AfterRef().IsValid()) &&
-		request.Limit() >= 1 &&
-		request.Limit() <= accountapp.MaxRoutingLimit
+		request.ModelID().IsValid()
 }
 
-// Result 保存一次有界征召的账号、凭据和续查进度。
-//
-// ErrNoRoutableAccount 时账号和凭据为空，但 Examined、NextAfterRef 和
-// SourceExhausted 仍可用于继续下一页或结束本轮扫描。
+// Result 保存一次征召的账号、凭据和本次扫描进度。
 type Result struct {
 	account         accountapp.RoutingAccount
 	credential      accountapp.Credential
 	examined        int
-	nextAfterRef    accountcore.AccountRef
 	sourceExhausted bool
 }
 
@@ -170,12 +149,7 @@ func (result Result) Examined() int {
 	return result.examined
 }
 
-// NextAfterRef 返回最后检查的账号，可直接作为下一页稳定游标。
-func (result Result) NextAfterRef() accountcore.AccountRef {
-	return result.nextAfterRef
-}
-
-// SourceExhausted 表示当前结果之后已确认没有更多候选。
+// SourceExhausted 表示当前请求固定的候选快照已经扫描完毕。
 func (result Result) SourceExhausted() bool {
 	return result.sourceExhausted
 }
@@ -185,9 +159,23 @@ type Recruiter struct {
 	candidates  CandidateSource
 	runtime     RuntimeEligibilitySource
 	credentials CredentialResolver
+	scheduler   *FairRoundRobinScheduler
 }
 
-// NewRecruiter 创建不持有账号池、不缓存凭据的无状态征召器。
+// RecruitmentSession 固定一次请求的候选快照、轮转起点和扫描位置。
+//
+// 一个 Session 最多访问快照中的每个位置一次，因此无需请求级 Map 或 Set
+// 也能保证同一请求不会重复调用同一账号。
+type RecruitmentSession struct {
+	recruiter  *Recruiter
+	request    Request
+	transport  CredentialTransportPolicy
+	candidates *accountapp.RoutingCandidates
+	start      int
+	offset     int
+}
+
+// NewRecruiter 创建不缓存凭据、共享公平票号的账号征召器。
 func NewRecruiter(dependencies Dependencies) (*Recruiter, error) {
 	if dependencies.Candidates == nil ||
 		dependencies.Runtime == nil ||
@@ -198,10 +186,57 @@ func NewRecruiter(dependencies Dependencies) (*Recruiter, error) {
 		candidates:  dependencies.Candidates,
 		runtime:     dependencies.Runtime,
 		credentials: dependencies.Credentials,
+		scheduler:   &FairRoundRobinScheduler{},
 	}, nil
 }
 
-// Recruit 返回本地倒排中首个运行态、凭据和传输方式均可用的账号。
+// Begin 固定当前路由快照并为本请求分配公平的环形扫描起点。
+func (recruiter *Recruiter) Begin(
+	ctx context.Context,
+	request Request,
+	transport CredentialTransportPolicy,
+) (*RecruitmentSession, error) {
+	if recruiter == nil ||
+		recruiter.candidates == nil ||
+		recruiter.runtime == nil ||
+		recruiter.credentials == nil ||
+		recruiter.scheduler == nil {
+		return nil, ErrInvalidDependencies
+	}
+	if ctx == nil || !request.isValid() {
+		return nil, ErrInvalidRequest
+	}
+	if transport == nil {
+		return nil, ErrInvalidCredentialTransport
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	candidates, err := recruiter.candidates.LoadRoutingCandidates(
+		ctx,
+		request.ProviderID(),
+		request.ModelID(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("读取账号征召候选失败: %w", err)
+	}
+	if candidates == nil {
+		return nil, ErrInvalidCandidateSnapshot
+	}
+	return &RecruitmentSession{
+		recruiter:  recruiter,
+		request:    request,
+		transport:  transport,
+		candidates: candidates,
+		start: recruiter.scheduler.NextStart(
+			request.ProviderID(),
+			request.ModelID(),
+			candidates.Len(),
+		),
+	}, nil
+}
+
+// Recruit 从新建会话中返回首个当前可用账号。
 //
 // 单账号缺失凭据、需要重新认证、刷新被拒绝或刷新暂时失败时继续检查下一候选；
 // 凭据不能由当前 Adapter 承载时也只跳过该账号，不写入 cooldown 或硬阻塞；
@@ -211,53 +246,51 @@ func (recruiter *Recruiter) Recruit(
 	request Request,
 	transport CredentialTransportPolicy,
 ) (Result, error) {
-	if recruiter == nil ||
-		recruiter.candidates == nil ||
-		recruiter.runtime == nil ||
-		recruiter.credentials == nil {
-		return Result{}, ErrInvalidDependencies
+	session, err := recruiter.Begin(ctx, request, transport)
+	if err != nil {
+		return Result{}, err
 	}
-	if ctx == nil || !request.isValid() {
+	return session.Next(ctx)
+}
+
+// Next 从固定快照的上次位置继续，返回下一个可直接调用的不同账号。
+func (session *RecruitmentSession) Next(ctx context.Context) (Result, error) {
+	if session == nil ||
+		session.recruiter == nil ||
+		session.transport == nil ||
+		session.candidates == nil ||
+		!session.request.isValid() ||
+		ctx == nil {
 		return Result{}, ErrInvalidRequest
-	}
-	if transport == nil {
-		return Result{}, ErrInvalidCredentialTransport
 	}
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
 	}
-	candidates, err := recruiter.candidates.ListRoutingCandidates(
-		ctx,
-		request.query,
-	)
-	if err != nil {
-		return Result{}, fmt.Errorf("读取账号征召候选失败: %w", err)
-	}
-	if len(candidates) > request.Limit() {
-		return Result{}, ErrInvalidCandidatePage
-	}
-	progress := Result{
-		nextAfterRef:    request.AfterRef(),
-		sourceExhausted: len(candidates) < request.Limit(),
-	}
-	for index, candidate := range candidates {
-		progress.examined++
-		progress.nextAfterRef = candidate.Ref()
-		if !validCandidate(candidate, request.ProviderID()) {
-			return progress, ErrInvalidCandidatePage
+	progress := Result{}
+	for session.offset < session.candidates.Len() {
+		index := (session.start + session.offset) % session.candidates.Len()
+		candidate, found := session.candidates.At(index)
+		if !found {
+			return progress, ErrInvalidCandidateSnapshot
 		}
-		route, routeErr := candidateModelRoute(candidate, request.ModelID())
+		session.offset++
+		progress.examined++
+		progress.sourceExhausted = session.offset == session.candidates.Len()
+		if !validCandidate(candidate, session.request.ProviderID()) {
+			return progress, ErrInvalidCandidateSnapshot
+		}
+		route, routeErr := candidateModelRoute(candidate, session.request.ModelID())
 		if routeErr != nil {
 			return progress, routeErr
 		}
-		eligible, eligibilityErr := recruiter.isRuntimeEligible(ctx, route)
+		eligible, eligibilityErr := session.recruiter.isRuntimeEligible(ctx, route)
 		if eligibilityErr != nil {
 			return progress, eligibilityErr
 		}
 		if !eligible {
 			continue
 		}
-		credential, resolveErr := recruiter.credentials.ResolveCredential(
+		credential, resolveErr := session.recruiter.credentials.ResolveCredential(
 			ctx,
 			candidate.Ref(),
 		)
@@ -276,15 +309,14 @@ func (recruiter *Recruiter) Recruit(
 		if !credentialMatchesCandidate(candidate, credential) {
 			return progress, ErrInvalidResolvedCredential
 		}
-		if !transport.SupportsCredential(credential) {
+		if !session.transport.SupportsCredential(credential) {
 			continue
 		}
 		progress.account = candidate
 		progress.credential = credential
-		progress.sourceExhausted = progress.sourceExhausted &&
-			index == len(candidates)-1
 		return progress, nil
 	}
+	progress.sourceExhausted = true
 	return progress, ErrNoRoutableAccount
 }
 
@@ -316,7 +348,7 @@ func candidateModelRoute(
 		modelID.String(),
 	)
 	if err != nil {
-		return runtimecore.ModelRoute{}, ErrInvalidCandidatePage
+		return runtimecore.ModelRoute{}, ErrInvalidCandidateSnapshot
 	}
 	return route, nil
 }

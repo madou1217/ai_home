@@ -300,6 +300,116 @@ func TestHandlerDeletesAccountWithNoResponseBody(t *testing.T) {
 	assertAPIError(t, missing, http.StatusNotFound, "account_not_found")
 }
 
+// TestHandlerExportsOneAccountAsSub2APIData 验证单账号导出的路由、附件头和原始 JSON。
+func TestHandlerExportsOneAccountAsSub2APIData(t *testing.T) {
+	t.Parallel()
+
+	service := newAccountServiceStub(t)
+	overview := newTestOverview(t, service.catalog, 9, "http-export-account")
+	service.exportDocument = []byte(
+		`{"type":"sub2api-data","exported_at":"2026-07-31T08:09:10Z",` +
+			`"proxies":[],"accounts":[{"credentials":{"api_key":` +
+			`"synthetic-http-export-key"}}]}`,
+	)
+	handler := newTestHandler(t, service)
+	path := accountsapi.CollectionPath + "/" +
+		overview.Account().Ref().String() + "/export"
+
+	unauthorized := httptest.NewRecorder()
+	handler.ServeHTTP(
+		unauthorized,
+		httptest.NewRequest(http.MethodGet, path, nil),
+	)
+	assertAPIError(t, unauthorized, http.StatusUnauthorized, "unauthorized")
+	if service.exportCalls != 0 {
+		t.Fatalf("未授权导出进入应用层: calls=%d", service.exportCalls)
+	}
+
+	response := performAuthorizedRequest(
+		t,
+		handler,
+		http.MethodGet,
+		path,
+		nil,
+	)
+	if response.Code != http.StatusOK ||
+		service.exportCalls != 1 ||
+		service.exportRef != overview.Account().Ref() {
+		t.Fatalf(
+			"GET export status=%d calls=%d ref=%s body=%s",
+			response.Code,
+			service.exportCalls,
+			service.exportRef,
+			response.Body,
+		)
+	}
+	if response.Header().Get("Content-Disposition") !=
+		`attachment; filename="sub2api-data.json"` {
+		t.Fatalf(
+			"Content-Disposition = %q",
+			response.Header().Get("Content-Disposition"),
+		)
+	}
+	if response.Header().Get("Cache-Control") != "no-store" ||
+		response.Header().Get("Content-Type") !=
+			"application/json; charset=utf-8" {
+		t.Fatalf("导出安全响应头 = %#v", response.Header())
+	}
+	if response.Body.String() != string(service.exportDocument)+"\n" {
+		t.Fatalf("导出 body = %q", response.Body.String())
+	}
+}
+
+// TestHandlerMapsAccountExportErrors 验证缺账号、缺凭据和不支持类型使用稳定 HTTP 语义。
+func TestHandlerMapsAccountExportErrors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		err    error
+		status int
+		code   string
+	}{
+		{
+			name:   "account not found",
+			err:    accountapp.ErrAccountNotFound,
+			status: http.StatusNotFound,
+			code:   "account_not_found",
+		},
+		{
+			name:   "credential missing",
+			err:    accountapp.ErrCredentialNotFound,
+			status: http.StatusConflict,
+			code:   "credential_not_found",
+		},
+		{
+			name:   "unsupported credential",
+			err:    accountapp.ErrUnsupportedAccountExport,
+			status: http.StatusUnprocessableEntity,
+			code:   "account_export_unsupported",
+		},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			service := newAccountServiceStub(t)
+			service.exportErr = test.err
+			handler := newTestHandler(t, service)
+			response := performAuthorizedRequest(
+				t,
+				handler,
+				http.MethodGet,
+				accountsapi.CollectionPath+
+					"/acct_a6624a747e4ccf287aa3/export",
+				nil,
+			)
+			assertAPIError(t, response, test.status, test.code)
+		})
+	}
+}
+
 // TestHandlerManagesAccountModels 验证模型查询、人工策略和显式刷新 HTTP 合同。
 func TestHandlerManagesAccountModels(t *testing.T) {
 	t.Parallel()
@@ -690,6 +800,10 @@ type accountServiceStub struct {
 	deleteRef            accountcore.AccountRef
 	deleteErr            error
 	deleteCalls          int
+	exportDocument       []byte
+	exportRef            accountcore.AccountRef
+	exportErr            error
+	exportCalls          int
 }
 
 // newAccountServiceStub 创建使用内置 Provider Catalog 的应用服务替身。
@@ -869,6 +983,16 @@ func (service *accountServiceStub) DeleteAccount(
 	return service.deleteErr
 }
 
+// ExportAccount 记录单账号导出并返回预设 JSON 文档。
+func (service *accountServiceStub) ExportAccount(
+	_ context.Context,
+	accountRef accountcore.AccountRef,
+) ([]byte, error) {
+	service.exportCalls++
+	service.exportRef = accountRef
+	return service.exportDocument, service.exportErr
+}
+
 // credentialKind 返回测试凭据对应的公开认证类型。
 func credentialKind(credential accountapp.Credential) string {
 	switch credential.(type) {
@@ -944,6 +1068,7 @@ func newTestHandler(t *testing.T, service *accountServiceStub) http.Handler {
 		Models:         service,
 		Usage:          service,
 		Deletion:       service,
+		Exporter:       service,
 		Registrar:      service,
 		APIKeys:        accountsapi.NewBuiltinAPIKeyCredentialFactory(),
 		NativeAccounts: nativeaccount.NewDecoder(),

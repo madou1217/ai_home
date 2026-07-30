@@ -25,6 +25,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/codexoauth"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
+	"github.com/madou1217/ai_home/internal/adapters/accounts/sub2api"
 	"github.com/madou1217/ai_home/internal/testsupport/accountmodels"
 	"github.com/madou1217/ai_home/internal/transport/http/accountauthapi"
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
@@ -524,6 +525,14 @@ func newLiveManagementHandler(
 	if err != nil {
 		t.Fatalf("accounts.NewManagement() error = %v", err)
 	}
+	exportReader, err := accountapp.NewExportReader(store, store, store)
+	if err != nil {
+		t.Fatalf("accounts.NewExportReader() error = %v", err)
+	}
+	exporter, err := sub2api.NewExporter(exportReader, clock)
+	if err != nil {
+		t.Fatalf("sub2api.NewExporter() error = %v", err)
+	}
 	modelManagement, err := accountapp.NewModelManagement(
 		store,
 		store,
@@ -590,6 +599,7 @@ func newLiveManagementHandler(
 		Models:         modelManagement,
 		Usage:          usage,
 		Deletion:       deleter,
+		Exporter:       exporter,
 		Registrar:      registrar,
 		APIKeys:        accountsapi.NewBuiltinAPIKeyCredentialFactory(),
 		NativeAccounts: decoder,

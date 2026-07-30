@@ -81,6 +81,15 @@ type AccountDeletion interface {
 	) error
 }
 
+// AccountExporter 是账号成员导出资源依赖的标准 JSON 输出端口。
+type AccountExporter interface {
+	// ExportAccount 返回一个账号的完整标准导出文档。
+	ExportAccount(
+		ctx context.Context,
+		accountRef accountcore.AccountRef,
+	) ([]byte, error)
+}
+
 // Registrar 是 HTTP API Key 创建入口依赖的最小注册端口。
 type Registrar interface {
 	Register(
@@ -105,6 +114,7 @@ type Dependencies struct {
 	Models         ModelManagement
 	Usage          UsageManagement
 	Deletion       AccountDeletion
+	Exporter       AccountExporter
 	Registrar      Registrar
 	APIKeys        APIKeyCredentialFactory
 	NativeAccounts NativeAccountDecoder
@@ -117,6 +127,7 @@ type Handler struct {
 	models     ModelManagement
 	usage      UsageManagement
 	deletion   AccountDeletion
+	exporter   AccountExporter
 	registrar  Registrar
 	apiKeys    APIKeyCredentialFactory
 	native     NativeAccountDecoder
@@ -129,6 +140,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		dependencies.Models == nil ||
 		dependencies.Usage == nil ||
 		dependencies.Deletion == nil ||
+		dependencies.Exporter == nil ||
 		dependencies.Registrar == nil ||
 		dependencies.APIKeys == nil ||
 		dependencies.NativeAccounts == nil ||
@@ -140,6 +152,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		models:     dependencies.Models,
 		usage:      dependencies.Usage,
 		deletion:   dependencies.Deletion,
+		exporter:   dependencies.Exporter,
 		registrar:  dependencies.Registrar,
 		apiKeys:    dependencies.APIKeys,
 		native:     dependencies.NativeAccounts,
@@ -224,6 +237,8 @@ func (handler *Handler) handleMember(
 		handler.handleAccountUsage(response, request, accountRef)
 	case memberResourceUsageRefresh:
 		handler.handleAccountUsageRefresh(response, request, accountRef)
+	case memberResourceExport:
+		handler.handleAccountExport(response, request, accountRef)
 	default:
 		writeAPIError(
 			response,
@@ -232,6 +247,32 @@ func (handler *Handler) handleMember(
 			"请求的账号资源不存在",
 		)
 	}
+}
+
+// handleAccountExport 返回一个不缓存、不包含本地身份的标准附件。
+func (handler *Handler) handleAccountExport(
+	response http.ResponseWriter,
+	request *http.Request,
+	accountRef accountcore.AccountRef,
+) {
+	if request.Method != http.MethodGet {
+		response.Header().Set("Allow", http.MethodGet)
+		writeMethodNotAllowed(response)
+		return
+	}
+	if rejectUnexpectedQuery(response, request) ||
+		rejectUnexpectedBody(response, request) {
+		return
+	}
+	document, err := handler.exporter.ExportAccount(
+		request.Context(),
+		accountRef,
+	)
+	if err != nil {
+		writeApplicationError(response, err)
+		return
+	}
+	writeExportJSON(response, document)
 }
 
 // handleAccountUsage 只允许离线读取最近一次成功快照。

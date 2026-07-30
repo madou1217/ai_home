@@ -16,6 +16,7 @@ import (
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
+	"github.com/madou1217/ai_home/internal/adapters/accounts/sub2api"
 	"github.com/madou1217/ai_home/internal/testsupport/accountmodels"
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
 )
@@ -61,6 +62,17 @@ func TestAccountsAPILiveSmoke(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManagement() error = %v", err)
 	}
+	exportReader, err := accountapp.NewExportReader(store, store, store)
+	if err != nil {
+		t.Fatalf("NewExportReader() error = %v", err)
+	}
+	exporter, err := sub2api.NewExporter(
+		exportReader,
+		func() time.Time { return registeredAt.Add(15 * time.Minute) },
+	)
+	if err != nil {
+		t.Fatalf("sub2api.NewExporter() error = %v", err)
+	}
 	deleter, err := accountapp.NewDeleter(store, liveDeletionCleanup{})
 	if err != nil {
 		t.Fatalf("NewDeleter() error = %v", err)
@@ -85,6 +97,7 @@ func TestAccountsAPILiveSmoke(t *testing.T) {
 		Models:         modelManagement,
 		Usage:          newAccountServiceStub(t),
 		Deletion:       deleter,
+		Exporter:       exporter,
 		Registrar:      registrar,
 		APIKeys:        accountsapi.NewBuiltinAPIKeyCredentialFactory(),
 		NativeAccounts: nativeaccount.NewDecoder(),
@@ -181,6 +194,26 @@ func TestAccountsAPILiveSmoke(t *testing.T) {
 	)
 	logLiveExchange(t, detail)
 	assertLiveStatus(t, detail, http.StatusOK)
+
+	exported := performLiveRequest(
+		t,
+		server.Client(),
+		http.MethodGet,
+		detailURL+"/export",
+		nil,
+	)
+	if exported.status != http.StatusOK {
+		t.Fatalf("GET export status=%d", exported.status)
+	}
+	if exported.responseHeaders.Get("Content-Disposition") !=
+		`attachment; filename="sub2api-data.json"` ||
+		exported.responseHeaders.Get("Cache-Control") != "no-store" {
+		t.Fatalf("GET export headers=%#v", exported.responseHeaders)
+	}
+	assertLiveAccountExport(t, exported.responseBody, codexSecret)
+	redactedExport := exported
+	redactedExport.responseBody = redactSub2ApiExport(exported.responseBody)
+	logLiveExchange(t, redactedExport)
 
 	modelsURL := detailURL + "/models"
 	models := performLiveRequest(
@@ -330,11 +363,12 @@ func assertLiveModelPolicy(
 
 // liveExchange 保存真实 HTTP smoke 的请求和响应证据。
 type liveExchange struct {
-	method       string
-	url          string
-	requestBody  string
-	status       int
-	responseBody string
+	method          string
+	url             string
+	requestBody     string
+	status          int
+	responseHeaders http.Header
+	responseBody    string
 }
 
 // performLiveRequest 使用真实 HTTP Client 调用本地 Listener。
@@ -372,11 +406,12 @@ func performLiveRequest(
 		t.Fatalf("io.ReadAll() error = %v", err)
 	}
 	return liveExchange{
-		method:       method,
-		url:          url,
-		requestBody:  redactAPIKeyFromJSON(body),
-		status:       response.StatusCode,
-		responseBody: strings.TrimSpace(string(responseBody)),
+		method:          method,
+		url:             url,
+		requestBody:     redactAPIKeyFromJSON(body),
+		status:          response.StatusCode,
+		responseHeaders: response.Header.Clone(),
+		responseBody:    strings.TrimSpace(string(responseBody)),
 	}
 }
 
@@ -402,6 +437,107 @@ func redactAPIKeyFromJSON(body []byte) string {
 		return "(json omitted)"
 	}
 	return strings.TrimSpace(redacted.String())
+}
+
+// redactSub2ApiExport 隐藏标准导出响应中的全部凭据值。
+func redactSub2ApiExport(body string) string {
+	var document struct {
+		Type       string `json:"type"`
+		ExportedAt string `json:"exported_at"`
+		Proxies    []any  `json:"proxies"`
+		Accounts   []struct {
+			Name        string `json:"name"`
+			Platform    string `json:"platform"`
+			Type        string `json:"type"`
+			Concurrency int    `json:"concurrency"`
+			Priority    int    `json:"priority"`
+		} `json:"accounts"`
+	}
+	if err := json.Unmarshal([]byte(body), &document); err != nil {
+		return "(export json omitted)"
+	}
+	safe := map[string]any{
+		"type":        document.Type,
+		"exported_at": document.ExportedAt,
+		"proxies":     document.Proxies,
+		"accounts":    make([]map[string]any, 0, len(document.Accounts)),
+	}
+	accounts := safe["accounts"].([]map[string]any)
+	for _, account := range document.Accounts {
+		accounts = append(accounts, map[string]any{
+			"name":        account.Name,
+			"platform":    account.Platform,
+			"type":        account.Type,
+			"credentials": "<redacted>",
+			"concurrency": account.Concurrency,
+			"priority":    account.Priority,
+		})
+	}
+	safe["accounts"] = accounts
+	encoded, err := json.Marshal(safe)
+	if err != nil {
+		return "(export json omitted)"
+	}
+	return string(encoded)
+}
+
+// assertLiveAccountExport 校验真实 TCP 导出包含合成凭据且没有本地或版本字段。
+func assertLiveAccountExport(
+	t *testing.T,
+	body string,
+	expectedSecret string,
+) {
+	t.Helper()
+
+	var root map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(body), &root); err != nil {
+		t.Fatalf("export json.Unmarshal() error = %v", err)
+	}
+	if _, found := root["version"]; found {
+		t.Fatal("真实导出仍包含 version")
+	}
+	var accounts []struct {
+		Name        string `json:"name"`
+		Platform    string `json:"platform"`
+		Type        string `json:"type"`
+		Credentials struct {
+			APIKey  string `json:"api_key"`
+			BaseURL string `json:"base_url"`
+		} `json:"credentials"`
+	}
+	if err := json.Unmarshal(root["accounts"], &accounts); err != nil {
+		t.Fatalf("export accounts decode error = %v", err)
+	}
+	platform := ""
+	credentialType := ""
+	if len(accounts) > 0 {
+		platform = accounts[0].Platform
+		credentialType = accounts[0].Type
+	}
+	if len(accounts) != 1 ||
+		accounts[0].Platform != "openai" ||
+		accounts[0].Type != "apikey" ||
+		accounts[0].Credentials.APIKey != expectedSecret ||
+		accounts[0].Credentials.BaseURL != "https://api.openai.com/v1" {
+		t.Fatalf(
+			"真实导出合同错误: count=%d platform=%q type=%q",
+			len(accounts),
+			platform,
+			credentialType,
+		)
+	}
+	for _, forbidden := range []string{
+		`"account_ref"`,
+		`"cli_account_id"`,
+		`"models"`,
+		`"usage"`,
+		`"runtime"`,
+		`"cooldown"`,
+	} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("真实导出包含禁止字段 %s", forbidden)
+		}
+	}
 }
 
 // logLiveExchange 输出用户可以直接核对的地址、payload 和 response。

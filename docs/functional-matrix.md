@@ -149,6 +149,7 @@
 | XFER-020 | 导入分阶段进度 | CLI/Web | hash、解压、provider/account 处理和汇总均有可观察进度 | 稳定 | `renderStageProgress`、`unified-import.js` |
 | XFER-021 | Codex bulk token/importer | 统一导入内部路径 | 支持 Codex 特定批量源并并入统一统计 | 受限 | `lib/cli/services/ai-cli/codex-bulk-import.js` |
 | XFER-022 | age/RSA/password/legacy crypto | 当前只有 service 与测试接线 | 加解密函数、age 安装提示和旧 envelope 解密存在，但普通 export 当前只生成 ZIP，未确认公开参数入口 | 未暴露/兼容 | `lib/cli/services/backup/crypto.js`、`test/backup.crypto.password-file.test.js` |
+| XFER-023 | Go 单账号 sub2api 导出 | `GET /v1/management/accounts/{account_ref}/export` | 只导出 Codex/Claude 当前账号凭据和可选公开资料；不含 `version`、本地 ID、模型、usage 或运行态 | 已实现（重构路径） | `application/accounts/export.go`、`internal/adapters/accounts/sub2api/`、`internal/transport/http/accountsapi/handler.go` |
 
 ## 5. CLI 启动、PTY 与持久会话
 

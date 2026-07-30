@@ -117,6 +117,13 @@ func writeApplicationError(response http.ResponseWriter, err error) {
 			"credential_not_found",
 			"账号缺少可用凭据",
 		)
+	case errors.Is(err, accountapp.ErrUnsupportedAccountExport):
+		writeAPIError(
+			response,
+			http.StatusUnprocessableEntity,
+			"account_export_unsupported",
+			"当前账号凭据不支持标准导出",
+		)
 	case errors.Is(err, accountapp.ErrModelDiscoveryUnsupported):
 		writeAPIError(
 			response,

@@ -20,6 +20,7 @@ import (
 	runtimeinmemory "github.com/madou1217/ai_home/internal/adapters/accountruntime/inmemory"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
+	"github.com/madou1217/ai_home/internal/adapters/accounts/sub2api"
 	claudemessages "github.com/madou1217/ai_home/internal/adapters/claude/messages"
 	codexresponses "github.com/madou1217/ai_home/internal/adapters/codex/responses"
 	"github.com/madou1217/ai_home/internal/host/inferenceruntime"
@@ -145,6 +146,14 @@ func newHandlers(
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建账号管理用例失败: %w", err)
 	}
+	exportReader, err := accountapp.NewExportReader(store, store, store)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建账号导出读取器失败: %w", err)
+	}
+	accountExporter, err := sub2api.NewExporter(exportReader, time.Now)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建账号标准导出器失败: %w", err)
+	}
 	modelManagement, err := accountapp.NewModelManagement(
 		store,
 		store,
@@ -253,6 +262,7 @@ func newHandlers(
 		Models:         recoveringModelManagement,
 		Usage:          usage.service,
 		Deletion:       deleter,
+		Exporter:       accountExporter,
 		Registrar:      scheduledRegistrar,
 		APIKeys:        accountsapi.NewBuiltinAPIKeyCredentialFactory(),
 		NativeAccounts: decoder,

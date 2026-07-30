@@ -59,15 +59,32 @@ func TestLiveCodexRouteCatalogSmoke(t *testing.T) {
 	if model == "" {
 		model = realCodexSmokeModel
 	}
+	modelCatalog, err := fetchRealCodexModelCatalog(
+		ctx,
+		newRealCodexHTTPClient(),
+		credential,
+	)
+	if err != nil {
+		t.Fatalf("真实 Codex 模型目录预检失败: %v", err)
+	}
+	if err := modelCatalog.require(model); err != nil {
+		t.Fatalf(
+			"真实 Codex 目标模型预检失败: %v catalog_count=%d catalog_models=%v",
+			err,
+			modelCatalog.count(),
+			modelCatalog.diagnosticModels(),
+		)
+	}
 	coordinator, recorder, transport := newRealCodexCoordinator(
 		t,
 		credential,
 		model,
+		modelCatalog,
 	)
 	request := newRealCodexRequest(t)
 	events := make([]inference.StreamEvent, 0, 16)
 
-	err := coordinator.Execute(
+	err = coordinator.Execute(
 		ctx,
 		request,
 		func(event inference.StreamEvent) error {
@@ -106,11 +123,12 @@ func TestLiveCodexRouteCatalogSmoke(t *testing.T) {
 		)
 	}
 	t.Logf(
-		"real_codex_route_smoke model=%s auth=%s expires_at=%s refreshed=%t events=%v output=%q",
+		"real_codex_route_smoke model=%s auth=%s expires_at=%s refreshed=%t catalog_count=%d events=%v output=%q",
 		model,
 		credential.Kind().String(),
 		formatRealCodexExpiry(status.expiresAt),
 		status.refreshed,
+		modelCatalog.count(),
 		eventKindsForAdapter(events),
 		output,
 	)
@@ -284,6 +302,7 @@ func newRealCodexCoordinator(
 	t *testing.T,
 	credential accountapp.Credential,
 	model string,
+	modelCatalog realCodexModelCatalog,
 ) (
 	*inferencegateway.Coordinator,
 	*adapterAttemptRecorder,
@@ -322,6 +341,7 @@ func newRealCodexCoordinator(
 				accountRef: accountRef,
 				credential: credential,
 			},
+			Models: realCodexModelAvailability{catalog: modelCatalog},
 		},
 	)
 	if err != nil {

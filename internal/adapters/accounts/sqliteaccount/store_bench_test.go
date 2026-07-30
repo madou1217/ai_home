@@ -11,6 +11,7 @@ import (
 	"github.com/madou1217/ai_home/application/accountrouting"
 	runtimeapp "github.com/madou1217/ai_home/application/accountruntime"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/accounts/codex"
 	"github.com/madou1217/ai_home/core/providers"
@@ -196,6 +197,7 @@ func prepareRecruitmentBenchmark(
 			Candidates:  store,
 			Runtime:     runtimeRegistry,
 			Credentials: resolver,
+			Models:      benchmarkAvailableModels{},
 		},
 	)
 	if err != nil {
@@ -213,6 +215,18 @@ func prepareRecruitmentBenchmark(
 		benchmark.Fatalf("NewRequest() error = %v", err)
 	}
 	return recruiter, request
+}
+
+// benchmarkAvailableModels 隔离模型目录 I/O，保持征召 benchmark 可重复。
+type benchmarkAvailableModels struct{}
+
+// CheckAvailability 允许 benchmark 已固定的 Codex 目标模型。
+func (benchmarkAvailableModels) CheckAvailability(
+	context.Context,
+	runtimecore.ModelRoute,
+	accountapp.Credential,
+) (bool, error) {
+	return true, nil
 }
 
 // previousAccountRef 返回字典序紧邻目标之前的合法 AccountRef。

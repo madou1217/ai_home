@@ -83,20 +83,36 @@ func buildHTTPRequest(
 	if err != nil {
 		return nil, ErrInvalidInvocation
 	}
-	request.Header.Set("Authorization", "Bearer "+auth.token)
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "text/event-stream")
+	if err := applyAuthenticationHeaders(request, auth); err != nil {
+		return nil, err
+	}
+	profile.applyHeaders(request.Header)
+	return request, nil
+}
+
+// applyAuthenticationHeaders 统一投影 Codex OAuth/API Key 的认证与客户端身份 Header。
+//
+// 凭据只进入目标请求的 Header，不进入 URL、日志或错误文本。
+func applyAuthenticationHeaders(
+	request *http.Request,
+	auth authProjection,
+) error {
+	if request == nil || auth.token == "" {
+		return ErrInvalidInvocation
+	}
+	request.Header.Set("Authorization", "Bearer "+auth.token)
 	request.Header.Set("Originator", codexOriginator)
 	request.Header.Set("User-Agent", codexUserAgent)
 	request.Header.Set("Version", codexProtocolVersion)
-	profile.applyHeaders(request.Header)
 	if auth.accountID != "" {
 		request.Header.Set("ChatGPT-Account-ID", auth.accountID)
 	}
 	if auth.fedRAMP {
 		request.Header.Set("X-OpenAI-Fedramp", "true")
 	}
-	return request, nil
+	return nil
 }
 
 // responsesEndpoint 在账号级 Base URL 后精确追加一次 responses。

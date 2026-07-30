@@ -4,7 +4,7 @@ package responses
 import "errors"
 
 var (
-	// ErrInvalidDependencies 表示 Adapter 缺少 HTTP 客户端或时钟。
+	// ErrInvalidDependencies 表示 Adapter 或账号模型权限源缺少必要依赖。
 	ErrInvalidDependencies = errors.New("Codex Responses Adapter 依赖无效")
 	// ErrInvalidInvocation 表示调用不属于 Codex Responses 或凭据类型不受支持。
 	ErrInvalidInvocation = errors.New("Codex Responses 调用无效")
@@ -12,6 +12,10 @@ var (
 	ErrUnsupportedRequest = errors.New("Codex Responses 不支持该 Canonical 请求")
 	// ErrInvalidUpstreamResponse 表示成功状态响应违反 Responses 协议合同。
 	ErrInvalidUpstreamResponse = errors.New("Codex Responses 上游响应无效")
+	// ErrModelCatalogUnavailable 表示账号模型目录暂时无法取得可信结果。
+	ErrModelCatalogUnavailable = errors.New("Codex 账号模型目录暂不可用")
+	// ErrInvalidModelCatalog 表示成功响应不符合账号模型目录合同。
+	ErrInvalidModelCatalog = errors.New("Codex 账号模型目录无效")
 )
 
 // eventSinkError 保留调用方背压错误身份，但不改变其对外文本。

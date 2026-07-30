@@ -11,6 +11,7 @@ import (
 	"github.com/madou1217/ai_home/application/accountrouting"
 	runtimeapp "github.com/madou1217/ai_home/application/accountruntime"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/accounts/codex"
 	"github.com/madou1217/ai_home/core/providers"
@@ -115,6 +116,7 @@ func TestRecruiterUsesSQLiteAndProductionCredentialResolver(t *testing.T) {
 			Candidates:  store,
 			Runtime:     runtimeRegistry,
 			Credentials: credentialResolver,
+			Models:      integrationAvailableModels{},
 		},
 	)
 	if err != nil {
@@ -149,6 +151,18 @@ func TestRecruiterUsesSQLiteAndProductionCredentialResolver(t *testing.T) {
 		result.Account().CLIAccountID().Int64(),
 		result.Account().Ref(),
 	)
+}
+
+// integrationAvailableModels 让集成测试聚焦数据库、运行态与凭据链路。
+type integrationAvailableModels struct{}
+
+// CheckAvailability 明确允许集成测试构造的目标模型。
+func (integrationAvailableModels) CheckAvailability(
+	context.Context,
+	runtimecore.ModelRoute,
+	accountapp.Credential,
+) (bool, error) {
+	return true, nil
 }
 
 // integrationIdentitySource 是创建无凭据基础账号所需的测试身份。

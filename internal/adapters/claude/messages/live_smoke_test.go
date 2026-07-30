@@ -334,6 +334,7 @@ func newRealClaudeCoordinator(
 				accountRef: accountRef,
 				credential: credential,
 			},
+			Models: claudeAvailableModels{},
 		},
 	)
 	if err != nil {

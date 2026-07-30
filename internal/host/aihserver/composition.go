@@ -257,16 +257,18 @@ func newHandlers(
 		return serverHandlers{}, nil, fmt.Errorf("创建客户端鉴权失败: %w", err)
 	}
 	decoder := nativeaccount.NewDecoder()
+	sub2APIDecoder := sub2api.NewDecoder()
 	accountsHandler, err := accountsapi.NewHandler(accountsapi.Dependencies{
-		Management:     management,
-		Models:         recoveringModelManagement,
-		Usage:          usage.service,
-		Deletion:       deleter,
-		Exporter:       accountExporter,
-		Registrar:      scheduledRegistrar,
-		APIKeys:        accountsapi.NewBuiltinAPIKeyCredentialFactory(),
-		NativeAccounts: decoder,
-		Authorizer:     authorizer,
+		Management:      management,
+		Models:          recoveringModelManagement,
+		Usage:           usage.service,
+		Deletion:        deleter,
+		Exporter:        accountExporter,
+		Registrar:       scheduledRegistrar,
+		APIKeys:         accountsapi.NewBuiltinAPIKeyCredentialFactory(),
+		NativeAccounts:  decoder,
+		Sub2APIAccounts: sub2APIDecoder,
+		Authorizer:      authorizer,
 	})
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建账号 HTTP Handler 失败: %w", err)

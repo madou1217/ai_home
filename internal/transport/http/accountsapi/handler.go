@@ -20,7 +20,9 @@ const (
 	CollectionPath = "/v1/management/accounts"
 	// NativeImportPath 是 Codex、Claude 官方 artifact 导入资源的规范路径。
 	NativeImportPath = "/v1/management/account-imports"
-	apiMaxPageSize   = accountapp.MaxOverviewLimit - 1
+	// Sub2APIImportPath 是单账号 sub2api 迁移文档导入资源的规范路径。
+	Sub2APIImportPath = "/v1/management/account-imports/sub2api"
+	apiMaxPageSize    = accountapp.MaxOverviewLimit - 1
 )
 
 // ErrInvalidDependencies 表示 Handler 缺少应用服务、凭据工厂或鉴权策略。
@@ -108,17 +110,25 @@ type NativeAccountDecoder interface {
 	) (accountapp.Credential, accountapp.PublicProfile, error)
 }
 
+// Sub2APIAccountDecoder 是标准迁移 JSON 导入依赖的最小反腐端口。
+type Sub2APIAccountDecoder interface {
+	DecodeAccount(
+		documentJSON []byte,
+	) (accountapp.Credential, accountapp.PublicProfile, error)
+}
+
 // Dependencies 集中声明账号 HTTP 入站适配器的依赖。
 type Dependencies struct {
-	Management     Management
-	Models         ModelManagement
-	Usage          UsageManagement
-	Deletion       AccountDeletion
-	Exporter       AccountExporter
-	Registrar      Registrar
-	APIKeys        APIKeyCredentialFactory
-	NativeAccounts NativeAccountDecoder
-	Authorizer     Authorizer
+	Management      Management
+	Models          ModelManagement
+	Usage           UsageManagement
+	Deletion        AccountDeletion
+	Exporter        AccountExporter
+	Registrar       Registrar
+	APIKeys         APIKeyCredentialFactory
+	NativeAccounts  NativeAccountDecoder
+	Sub2APIAccounts Sub2APIAccountDecoder
+	Authorizer      Authorizer
 }
 
 // Handler 是可挂载到未来 Go Server Composition Root 的账号管理路由。
@@ -131,6 +141,7 @@ type Handler struct {
 	registrar  Registrar
 	apiKeys    APIKeyCredentialFactory
 	native     NativeAccountDecoder
+	sub2api    Sub2APIAccountDecoder
 	authorizer Authorizer
 }
 
@@ -144,6 +155,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		dependencies.Registrar == nil ||
 		dependencies.APIKeys == nil ||
 		dependencies.NativeAccounts == nil ||
+		dependencies.Sub2APIAccounts == nil ||
 		dependencies.Authorizer == nil {
 		return nil, ErrInvalidDependencies
 	}
@@ -156,6 +168,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		registrar:  dependencies.Registrar,
 		apiKeys:    dependencies.APIKeys,
 		native:     dependencies.NativeAccounts,
+		sub2api:    dependencies.Sub2APIAccounts,
 		authorizer: dependencies.Authorizer,
 	}, nil
 }
@@ -178,6 +191,8 @@ func (handler *Handler) ServeHTTP(
 		return
 	}
 	switch {
+	case request.URL.Path == Sub2APIImportPath:
+		handler.handleSub2APIImport(response, request)
 	case request.URL.Path == NativeImportPath:
 		handler.handleNativeImport(response, request)
 	case request.URL.Path == CollectionPath:

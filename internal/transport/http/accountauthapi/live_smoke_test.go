@@ -595,15 +595,16 @@ func newLiveManagementHandler(
 		t.Fatalf("accountauthapi.NewHandler() error = %v", err)
 	}
 	accountsHandler, err := accountsapi.NewHandler(accountsapi.Dependencies{
-		Management:     management,
-		Models:         modelManagement,
-		Usage:          usage,
-		Deletion:       deleter,
-		Exporter:       exporter,
-		Registrar:      registrar,
-		APIKeys:        accountsapi.NewBuiltinAPIKeyCredentialFactory(),
-		NativeAccounts: decoder,
-		Authorizer:     authorizer,
+		Management:      management,
+		Models:          modelManagement,
+		Usage:           usage,
+		Deletion:        deleter,
+		Exporter:        exporter,
+		Registrar:       registrar,
+		APIKeys:         accountsapi.NewBuiltinAPIKeyCredentialFactory(),
+		NativeAccounts:  decoder,
+		Sub2APIAccounts: sub2api.NewDecoder(),
+		Authorizer:      authorizer,
 	})
 	if err != nil {
 		t.Fatalf("accountsapi.NewHandler() error = %v", err)

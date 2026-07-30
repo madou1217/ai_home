@@ -1,6 +1,8 @@
 package sub2api
 
 import (
+	"strings"
+
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/core/accounts/claude"
 	"github.com/madou1217/ai_home/core/accounts/codex"
@@ -10,6 +12,7 @@ const (
 	codexPlatform  = "openai"
 	claudePlatform = "anthropic"
 	oauthType      = "oauth"
+	setupTokenType = "setup-token"
 	apiKeyType     = "apikey"
 )
 
@@ -64,11 +67,11 @@ func (claudeStrategy) encode(
 		return newAccountDocument(
 			exportName(snapshot),
 			claudePlatform,
-			oauthType,
+			setupTokenType,
 			claudeOAuthCredentials{
 				AccessToken: auth.AccessToken(),
 				BaseURL:     auth.BaseURL(),
-				Scopes:      auth.Scopes(),
+				Scope:       strings.Join(auth.Scopes(), " "),
 			},
 		), nil
 	case *claude.APIKeyAuth:
@@ -92,28 +95,34 @@ func encodeClaudeRefreshableOAuth(
 	auth *claude.OAuthAuth,
 ) accountDocument {
 	credentials := claudeOAuthCredentials{
-		AccessToken:           auth.AccessToken(),
-		RefreshToken:          auth.RefreshToken(),
-		ExpiresAt:             auth.ExpiresAtMS(),
-		RefreshTokenExpiresAt: auth.RefreshTokenExpiresAtMS(),
-		ClientID:              auth.ClientID(),
-		Scopes:                auth.Scopes(),
+		AccessToken:  auth.AccessToken(),
+		RefreshToken: auth.RefreshToken(),
+		ExpiresAt:    auth.ExpiresAtMS() / 1_000,
+		Scope:        strings.Join(auth.Scopes(), " "),
+		AccountUUID:  auth.AccountUUID(),
 	}
+	extra := claudeAccountExtra{AccountUUID: auth.AccountUUID()}
 	if profile, found := snapshot.Profile(); found {
-		credentials.Email = profile.Email()
 		if claudeProfile, valid := profile.(claude.AccountProfile); valid {
-			credentials.SubscriptionType =
-				claudeProfile.Subscription().RawType()
-			credentials.RateLimitTier =
-				claudeProfile.Subscription().RateLimitTier()
+			oauthProfile := claudeProfile.OAuthProfile()
+			credentials.OrgUUID = oauthProfile.OrganizationUUID()
+			credentials.Email = oauthProfile.Email()
+			extra.OrgUUID = oauthProfile.OrganizationUUID()
+			extra.Email = oauthProfile.Email()
 		}
 	}
-	return newAccountDocument(
+	accountType := oauthType
+	if !auth.HasScope("user:profile") {
+		accountType = setupTokenType
+	}
+	document := newAccountDocument(
 		exportName(snapshot),
 		claudePlatform,
-		oauthType,
+		accountType,
 		credentials,
 	)
+	document.Extra = extra
+	return document
 }
 
 // newAccountDocument 固定当前业务尚未配置的并发和优先级默认值。

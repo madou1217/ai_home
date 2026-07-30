@@ -25,89 +25,8 @@ import (
 func TestAccountsAPILiveSmoke(t *testing.T) {
 	t.Parallel()
 
-	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
-	if err != nil {
-		t.Fatalf("NewCatalog() error = %v", err)
-	}
-	store, err := sqliteaccount.Open(context.Background(), sqliteaccount.OpenOptions{
-		AIHomeDir: t.TempDir(),
-		Catalog:   catalog,
-	})
-	if err != nil {
-		t.Fatalf("sqliteaccount.Open() error = %v", err)
-	}
-	t.Cleanup(func() {
-		_ = store.Close()
-	})
-
 	registeredAt := time.Date(2026, time.July, 27, 19, 0, 0, 0, time.UTC)
-	modelDiscovery, err := accountmodels.NewDiscovery(catalog)
-	if err != nil {
-		t.Fatalf("accountmodels.NewDiscovery() error = %v", err)
-	}
-	registrar, err := accountapp.NewRegistrar(
-		catalog,
-		store,
-		modelDiscovery,
-		func() time.Time { return registeredAt },
-	)
-	if err != nil {
-		t.Fatalf("NewRegistrar() error = %v", err)
-	}
-	management, err := accountapp.NewManagement(
-		store,
-		store,
-		func() time.Time { return registeredAt.Add(5 * time.Minute) },
-	)
-	if err != nil {
-		t.Fatalf("NewManagement() error = %v", err)
-	}
-	exportReader, err := accountapp.NewExportReader(store, store, store)
-	if err != nil {
-		t.Fatalf("NewExportReader() error = %v", err)
-	}
-	exporter, err := sub2api.NewExporter(
-		exportReader,
-		func() time.Time { return registeredAt.Add(15 * time.Minute) },
-	)
-	if err != nil {
-		t.Fatalf("sub2api.NewExporter() error = %v", err)
-	}
-	deleter, err := accountapp.NewDeleter(store, liveDeletionCleanup{})
-	if err != nil {
-		t.Fatalf("NewDeleter() error = %v", err)
-	}
-	modelManagement, err := accountapp.NewModelManagement(
-		store,
-		store,
-		modelDiscovery,
-		func() time.Time { return registeredAt.Add(10 * time.Minute) },
-	)
-	if err != nil {
-		t.Fatalf("NewModelManagement() error = %v", err)
-	}
-	authorizer, err := accountsapi.NewBearerAuthorizer(
-		func() string { return testManagementKey },
-	)
-	if err != nil {
-		t.Fatalf("NewBearerAuthorizer() error = %v", err)
-	}
-	handler, err := accountsapi.NewHandler(accountsapi.Dependencies{
-		Management:     management,
-		Models:         modelManagement,
-		Usage:          newAccountServiceStub(t),
-		Deletion:       deleter,
-		Exporter:       exporter,
-		Registrar:      registrar,
-		APIKeys:        accountsapi.NewBuiltinAPIKeyCredentialFactory(),
-		NativeAccounts: nativeaccount.NewDecoder(),
-		Authorizer:     authorizer,
-	})
-	if err != nil {
-		t.Fatalf("NewHandler() error = %v", err)
-	}
-	server := httptest.NewServer(handler)
-	t.Cleanup(server.Close)
+	server := newAccountsLiveServer(t, registeredAt)
 
 	codexSecret := "synthetic-codex-live-http-key"
 	codexPayload := marshalRequestJSON(t, map[string]any{
@@ -168,6 +87,7 @@ func TestAccountsAPILiveSmoke(t *testing.T) {
 		t.Fatalf("live account count = %d, want 2", len(listDocument.Data))
 	}
 	codexRef := ""
+	claudeRef := ""
 	for _, account := range listDocument.Data {
 		if account.CLIAccountID != 1 {
 			t.Fatalf(
@@ -179,9 +99,12 @@ func TestAccountsAPILiveSmoke(t *testing.T) {
 		if account.ProviderID == "codex" {
 			codexRef = account.AccountRef
 		}
+		if account.ProviderID == "claude" {
+			claudeRef = account.AccountRef
+		}
 	}
-	if codexRef == "" {
-		t.Fatal("live account list missing Codex")
+	if codexRef == "" || claudeRef == "" {
+		t.Fatal("live account list missing Codex or Claude")
 	}
 
 	detailURL := server.URL + accountsapi.CollectionPath + "/" + codexRef
@@ -210,10 +133,74 @@ func TestAccountsAPILiveSmoke(t *testing.T) {
 		exported.responseHeaders.Get("Cache-Control") != "no-store" {
 		t.Fatalf("GET export headers=%#v", exported.responseHeaders)
 	}
-	assertLiveAccountExport(t, exported.responseBody, codexSecret)
+	assertLiveAccountExport(
+		t,
+		exported.responseBody,
+		"openai",
+		codexSecret,
+		"https://api.openai.com/v1",
+	)
 	redactedExport := exported
 	redactedExport.responseBody = redactSub2ApiExport(exported.responseBody)
 	logLiveExchange(t, redactedExport)
+
+	claudeExported := performLiveRequest(
+		t,
+		server.Client(),
+		http.MethodGet,
+		server.URL+accountsapi.CollectionPath+"/"+claudeRef+"/export",
+		nil,
+	)
+	assertLiveStatus(t, claudeExported, http.StatusOK)
+	assertLiveAccountExport(
+		t,
+		claudeExported.responseBody,
+		"anthropic",
+		claudeSecret,
+		"https://api.anthropic.com",
+	)
+	redactedClaudeExport := claudeExported
+	redactedClaudeExport.responseBody = redactSub2ApiExport(
+		claudeExported.responseBody,
+	)
+	logLiveExchange(t, redactedClaudeExport)
+
+	targetServer := newAccountsLiveServer(t, registeredAt.Add(24*time.Hour))
+	importedCodex := importLiveSub2APIAccount(
+		t,
+		targetServer,
+		exported,
+		"openai",
+		codexSecret,
+		"https://api.openai.com/v1",
+	)
+	importedClaude := importLiveSub2APIAccount(
+		t,
+		targetServer,
+		claudeExported,
+		"anthropic",
+		claudeSecret,
+		"https://api.anthropic.com",
+	)
+	targetList := performLiveRequest(
+		t,
+		targetServer.Client(),
+		http.MethodGet,
+		targetServer.URL+accountsapi.CollectionPath+"?limit=50",
+		nil,
+	)
+	logLiveExchange(t, targetList)
+	assertLiveStatus(t, targetList, http.StatusOK)
+	var targetListDocument struct {
+		Data []any `json:"data"`
+	}
+	decodeLiveBody(t, targetList.responseBody, &targetListDocument)
+	if len(targetListDocument.Data) != 2 {
+		t.Fatalf(
+			"sub2api round-trip target account count=%d, want 2",
+			len(targetListDocument.Data),
+		)
+	}
 
 	modelsURL := detailURL + "/models"
 	models := performLiveRequest(
@@ -316,6 +303,9 @@ func TestAccountsAPILiveSmoke(t *testing.T) {
 		models,
 		modelPolicy,
 		modelRefresh,
+		importedCodex,
+		importedClaude,
+		targetList,
 		disabled,
 		deleted,
 		deletedDetail,
@@ -327,6 +317,160 @@ func TestAccountsAPILiveSmoke(t *testing.T) {
 			t.Fatalf("%s smoke evidence leaked API Key", exchange.method)
 		}
 	}
+}
+
+// newAccountsLiveServer 创建使用真实 TCP、临时 SQLite 和离线模型目录的账号服务。
+func newAccountsLiveServer(
+	t *testing.T,
+	registeredAt time.Time,
+) *httptest.Server {
+	t.Helper()
+
+	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
+	if err != nil {
+		t.Fatalf("NewCatalog() error = %v", err)
+	}
+	store, err := sqliteaccount.Open(
+		context.Background(),
+		sqliteaccount.OpenOptions{
+			AIHomeDir: t.TempDir(),
+			Catalog:   catalog,
+		},
+	)
+	if err != nil {
+		t.Fatalf("sqliteaccount.Open() error = %v", err)
+	}
+	t.Cleanup(func() {
+		_ = store.Close()
+	})
+	modelDiscovery, err := accountmodels.NewDiscovery(catalog)
+	if err != nil {
+		t.Fatalf("accountmodels.NewDiscovery() error = %v", err)
+	}
+	registrar, err := accountapp.NewRegistrar(
+		catalog,
+		store,
+		modelDiscovery,
+		func() time.Time { return registeredAt },
+	)
+	if err != nil {
+		t.Fatalf("NewRegistrar() error = %v", err)
+	}
+	management, err := accountapp.NewManagement(
+		store,
+		store,
+		func() time.Time { return registeredAt.Add(5 * time.Minute) },
+	)
+	if err != nil {
+		t.Fatalf("NewManagement() error = %v", err)
+	}
+	exportReader, err := accountapp.NewExportReader(store, store, store)
+	if err != nil {
+		t.Fatalf("NewExportReader() error = %v", err)
+	}
+	exporter, err := sub2api.NewExporter(
+		exportReader,
+		func() time.Time { return registeredAt.Add(15 * time.Minute) },
+	)
+	if err != nil {
+		t.Fatalf("sub2api.NewExporter() error = %v", err)
+	}
+	deleter, err := accountapp.NewDeleter(store, liveDeletionCleanup{})
+	if err != nil {
+		t.Fatalf("NewDeleter() error = %v", err)
+	}
+	modelManagement, err := accountapp.NewModelManagement(
+		store,
+		store,
+		modelDiscovery,
+		func() time.Time { return registeredAt.Add(10 * time.Minute) },
+	)
+	if err != nil {
+		t.Fatalf("NewModelManagement() error = %v", err)
+	}
+	authorizer, err := accountsapi.NewBearerAuthorizer(
+		func() string { return testManagementKey },
+	)
+	if err != nil {
+		t.Fatalf("NewBearerAuthorizer() error = %v", err)
+	}
+	handler, err := accountsapi.NewHandler(accountsapi.Dependencies{
+		Management:      management,
+		Models:          modelManagement,
+		Usage:           newAccountServiceStub(t),
+		Deletion:        deleter,
+		Exporter:        exporter,
+		Registrar:       registrar,
+		APIKeys:         accountsapi.NewBuiltinAPIKeyCredentialFactory(),
+		NativeAccounts:  nativeaccount.NewDecoder(),
+		Sub2APIAccounts: sub2api.NewDecoder(),
+		Authorizer:      authorizer,
+	})
+	if err != nil {
+		t.Fatalf("NewHandler() error = %v", err)
+	}
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	return server
+}
+
+// importLiveSub2APIAccount 验证标准导出进入另一 SQLite 后仍能再次完整导出。
+func importLiveSub2APIAccount(
+	t *testing.T,
+	target *httptest.Server,
+	sourceExport liveExchange,
+	expectedPlatform string,
+	expectedSecret string,
+	expectedBaseURL string,
+) liveExchange {
+	t.Helper()
+
+	imported := performLiveRequest(
+		t,
+		target.Client(),
+		http.MethodPost,
+		target.URL+accountsapi.Sub2APIImportPath,
+		[]byte(sourceExport.responseBody),
+	)
+	assertLiveStatus(t, imported, http.StatusCreated)
+	if strings.Contains(imported.responseBody, expectedSecret) {
+		t.Fatal("sub2api 导入响应泄漏凭据")
+	}
+	var importedDocument struct {
+		Data struct {
+			AccountRef string `json:"account_ref"`
+			ProviderID string `json:"provider_id"`
+		} `json:"data"`
+	}
+	decodeLiveBody(t, imported.responseBody, &importedDocument)
+	if importedDocument.Data.AccountRef == "" ||
+		importedDocument.Data.ProviderID == "" {
+		t.Fatalf("sub2api 导入响应缺少账号身份: %#v", importedDocument.Data)
+	}
+	reexported := performLiveRequest(
+		t,
+		target.Client(),
+		http.MethodGet,
+		target.URL+accountsapi.CollectionPath+"/"+
+			importedDocument.Data.AccountRef+"/export",
+		nil,
+	)
+	assertLiveStatus(t, reexported, http.StatusOK)
+	assertLiveAccountExport(
+		t,
+		reexported.responseBody,
+		expectedPlatform,
+		expectedSecret,
+		expectedBaseURL,
+	)
+
+	safeImported := imported
+	safeImported.requestBody = redactSub2ApiExport(imported.requestBody)
+	logLiveExchange(t, safeImported)
+	safeReexported := reexported
+	safeReexported.responseBody = redactSub2ApiExport(reexported.responseBody)
+	logLiveExchange(t, safeReexported)
+	return safeImported
 }
 
 // liveDeletionCleanup 是真实 TCP smoke 使用的无状态幂等清理端口。
@@ -485,7 +629,9 @@ func redactSub2ApiExport(body string) string {
 func assertLiveAccountExport(
 	t *testing.T,
 	body string,
+	expectedPlatform string,
 	expectedSecret string,
+	expectedBaseURL string,
 ) {
 	t.Helper()
 
@@ -515,10 +661,10 @@ func assertLiveAccountExport(
 		credentialType = accounts[0].Type
 	}
 	if len(accounts) != 1 ||
-		accounts[0].Platform != "openai" ||
+		accounts[0].Platform != expectedPlatform ||
 		accounts[0].Type != "apikey" ||
 		accounts[0].Credentials.APIKey != expectedSecret ||
-		accounts[0].Credentials.BaseURL != "https://api.openai.com/v1" {
+		accounts[0].Credentials.BaseURL != expectedBaseURL {
 		t.Fatalf(
 			"真实导出合同错误: count=%d platform=%q type=%q",
 			len(accounts),

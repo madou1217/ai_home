@@ -98,15 +98,16 @@ func TestExporterEncodesCodexAndClaudeAccounts(t *testing.T) {
 					"platform":"anthropic",
 					"type":"oauth",
 					"credentials":{
-						"accessToken":"synthetic-claude-export-access",
-						"refreshToken":"synthetic-claude-export-refresh",
-						"expiresAt":4102444800000,
-						"refreshTokenExpiresAt":4105036800000,
-						"clientId":"claude-export-client",
-						"scopes":["user:inference","user:profile"],
-						"subscriptionType":"max",
-						"rateLimitTier":"default_claude_max_20x",
-						"email":"claude-export@example.invalid"
+						"access_token":"synthetic-claude-export-access",
+						"refresh_token":"synthetic-claude-export-refresh",
+						"expires_at":4102444800,
+						"scope":"user:inference user:profile",
+						"account_uuid":"123e4567-e89b-12d3-a456-426614174777",
+						"email_address":"claude-export@example.invalid"
+					},
+					"extra":{
+						"account_uuid":"123e4567-e89b-12d3-a456-426614174777",
+						"email_address":"claude-export@example.invalid"
 					},
 					"concurrency":0,
 					"priority":0
@@ -150,11 +151,11 @@ func TestExporterEncodesCodexAndClaudeAccounts(t *testing.T) {
 				"accounts":[{
 					"name":"claude-https://api.anthropic.com",
 					"platform":"anthropic",
-					"type":"oauth",
+					"type":"setup-token",
 					"credentials":{
-						"accessToken":"synthetic-claude-export-oauth-token",
+						"access_token":"synthetic-claude-export-oauth-token",
 						"base_url":"https://api.anthropic.com",
-						"scopes":["user:inference"]
+						"scope":"user:inference"
 					},
 					"concurrency":0,
 					"priority":0

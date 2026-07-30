@@ -19,6 +19,7 @@ import (
 	usagecore "github.com/madou1217/ai_home/core/accountusage"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
+	"github.com/madou1217/ai_home/internal/adapters/accounts/sub2api"
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
 )
 
@@ -1064,15 +1065,16 @@ func newTestHandler(t *testing.T, service *accountServiceStub) http.Handler {
 		t.Fatalf("NewBearerAuthorizer() error = %v", err)
 	}
 	handler, err := accountsapi.NewHandler(accountsapi.Dependencies{
-		Management:     service,
-		Models:         service,
-		Usage:          service,
-		Deletion:       service,
-		Exporter:       service,
-		Registrar:      service,
-		APIKeys:        accountsapi.NewBuiltinAPIKeyCredentialFactory(),
-		NativeAccounts: nativeaccount.NewDecoder(),
-		Authorizer:     authorizer,
+		Management:      service,
+		Models:          service,
+		Usage:           service,
+		Deletion:        service,
+		Exporter:        service,
+		Registrar:       service,
+		APIKeys:         accountsapi.NewBuiltinAPIKeyCredentialFactory(),
+		NativeAccounts:  nativeaccount.NewDecoder(),
+		Sub2APIAccounts: sub2api.NewDecoder(),
+		Authorizer:      authorizer,
 	})
 	if err != nil {
 		t.Fatalf("NewHandler() error = %v", err)

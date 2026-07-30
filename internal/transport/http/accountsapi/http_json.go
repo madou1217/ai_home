@@ -10,6 +10,7 @@ import (
 const (
 	maxRequestBodyBytes             int64 = 64 * 1024
 	maxNativeImportRequestBodyBytes int64 = 1024 * 1024
+	maxSub2APIImportBodyBytes       int64 = 1024 * 1024
 )
 
 var (

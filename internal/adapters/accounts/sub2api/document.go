@@ -21,6 +21,7 @@ type accountDocument struct {
 	Platform    string `json:"platform"`
 	Type        string `json:"type"`
 	Credentials any    `json:"credentials"`
+	Extra       any    `json:"extra,omitempty"`
 	Concurrency int    `json:"concurrency"`
 	Priority    int    `json:"priority"`
 }
@@ -41,16 +42,21 @@ type codexOAuthCredentials struct {
 	Email            string `json:"email,omitempty"`
 }
 
-// claudeOAuthCredentials 保持 Claude Code 官方 camelCase OAuth 字段。
+// claudeOAuthCredentials 对齐当前 sub2api Anthropic 账号的 snake_case 字段。
 type claudeOAuthCredentials struct {
-	AccessToken           string   `json:"accessToken"`
-	RefreshToken          string   `json:"refreshToken,omitempty"`
-	ExpiresAt             int64    `json:"expiresAt,omitempty"`
-	RefreshTokenExpiresAt int64    `json:"refreshTokenExpiresAt,omitempty"`
-	ClientID              string   `json:"clientId,omitempty"`
-	BaseURL               string   `json:"base_url,omitempty"`
-	Scopes                []string `json:"scopes"`
-	SubscriptionType      string   `json:"subscriptionType,omitempty"`
-	RateLimitTier         string   `json:"rateLimitTier,omitempty"`
-	Email                 string   `json:"email,omitempty"`
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token,omitempty"`
+	ExpiresAt    int64  `json:"expires_at,omitempty"`
+	Scope        string `json:"scope,omitempty"`
+	AccountUUID  string `json:"account_uuid,omitempty"`
+	OrgUUID      string `json:"org_uuid,omitempty"`
+	Email        string `json:"email_address,omitempty"`
+	BaseURL      string `json:"base_url,omitempty"`
+}
+
+// claudeAccountExtra 保存 sub2api 当前放在 extra 中的 Claude 稳定公开身份。
+type claudeAccountExtra struct {
+	AccountUUID string `json:"account_uuid,omitempty"`
+	OrgUUID     string `json:"org_uuid,omitempty"`
+	Email       string `json:"email_address,omitempty"`
 }

@@ -133,6 +133,7 @@ func handleReadiness(
 		Ready:   status.ready,
 		Capabilities: []string{
 			"account_management_v1",
+			"account_usage_v1",
 			"account_auth_jobs_v1",
 			"local_model_catalog_v1",
 			"canonical_inference_v1",

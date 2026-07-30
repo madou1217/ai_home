@@ -192,6 +192,45 @@ func (runtime *Runtime) ClearModelBlocks(
 	return nil
 }
 
+// ReplaceUsageProjection 原子替换一个账号由最新额度快照拥有的全部阻塞位。
+//
+// 该操作只修改 blockUsageSnapshot，不会清除凭据、账单、策略或 cooldown 状态。
+func (runtime *Runtime) ReplaceUsageProjection(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+	accountBlocked bool,
+	modelIDs []runtimecore.ModelID,
+) error {
+	if err := runtime.validateUsageProjection(
+		ctx,
+		accountRef,
+		modelIDs,
+	); err != nil {
+		return err
+	}
+
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	accountBlocks := runtime.accountBlocks[accountRef].clear(blockUsageSnapshot)
+	if accountBlocked {
+		accountBlocks = accountBlocks.add(blockUsageSnapshot)
+	}
+	runtime.replaceAccountBlocks(accountRef, accountBlocks)
+
+	for route, blocks := range runtime.modelBlocks {
+		if route.AccountRef() != accountRef {
+			continue
+		}
+		runtime.replaceModelBlocks(route, blocks.clear(blockUsageSnapshot))
+	}
+	for _, modelID := range modelIDs {
+		route, _ := runtimecore.NewModelRoute(accountRef, modelID.String())
+		blocks := runtime.modelBlocks[route].add(blockUsageSnapshot)
+		runtime.replaceModelBlocks(route, blocks)
+	}
+	return nil
+}
+
 // recordBlock 校验 Provider 指令后保存最小作用域的恢复位。
 func (runtime *Runtime) recordBlock(
 	route runtimecore.ModelRoute,
@@ -302,6 +341,34 @@ func (runtime *Runtime) validateModelRecoveryBatch(
 		previous = modelID
 	}
 	return definition.block, nil
+}
+
+// validateUsageProjection 校验完整模型阻塞集合严格排序且去重。
+func (runtime *Runtime) validateUsageProjection(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+	modelIDs []runtimecore.ModelID,
+) error {
+	if runtime == nil ||
+		runtime.cooldowns == nil ||
+		runtime.accountBlocks == nil ||
+		runtime.modelBlocks == nil ||
+		ctx == nil ||
+		!accountRef.IsValid() {
+		return ErrInvalidRequest
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	var previous runtimecore.ModelID
+	for index, modelID := range modelIDs {
+		if !modelID.IsValid() ||
+			index > 0 && modelID.String() <= previous.String() {
+			return ErrInvalidRequest
+		}
+		previous = modelID
+	}
+	return nil
 }
 
 // replaceAccountBlocks 保持账号级硬阻塞索引稀疏。

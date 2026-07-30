@@ -44,13 +44,14 @@ func TestServerMountsSystemAndAccountRoutes(t *testing.T) {
 	}
 	decodeJSON(t, ready.body, &readiness)
 	if !readiness.Ready ||
-		len(readiness.Capabilities) != 6 ||
+		len(readiness.Capabilities) != 7 ||
 		readiness.Capabilities[0] != "account_management_v1" ||
-		readiness.Capabilities[1] != "account_auth_jobs_v1" ||
-		readiness.Capabilities[2] != "local_model_catalog_v1" ||
-		readiness.Capabilities[3] != "canonical_inference_v1" ||
-		readiness.Capabilities[4] != "claude_relay_leases_v1" ||
-		readiness.Capabilities[5] != "claude_native_relay_v1" {
+		readiness.Capabilities[1] != "account_usage_v1" ||
+		readiness.Capabilities[2] != "account_auth_jobs_v1" ||
+		readiness.Capabilities[3] != "local_model_catalog_v1" ||
+		readiness.Capabilities[4] != "canonical_inference_v1" ||
+		readiness.Capabilities[5] != "claude_relay_leases_v1" ||
+		readiness.Capabilities[6] != "claude_native_relay_v1" {
 		t.Fatalf("readyz response = %#v", readiness)
 	}
 
@@ -193,6 +194,48 @@ func TestServerMountsSystemAndAccountRoutes(t *testing.T) {
 		nativeDocument.Data.SubscriptionKind != "pro" {
 		t.Fatalf("Go Server 原生导入响应错误: %#v", nativeDocument.Data)
 	}
+	usageRefreshURL := baseURL + accountsapi.CollectionPath + "/" +
+		nativeDocument.Data.AccountRef + "/usage/refresh"
+	refreshedUsage := performRequest(
+		t,
+		client,
+		http.MethodPost,
+		usageRefreshURL,
+		testManagementKey,
+		nil,
+	)
+	assertStatus(t, refreshedUsage, http.StatusOK)
+	if !strings.Contains(refreshedUsage.body, `"bucket":"five_hour"`) ||
+		!strings.Contains(refreshedUsage.body, `"remaining_basis_points":7500`) ||
+		!strings.Contains(refreshedUsage.body, `"stale":false`) ||
+		strings.Contains(refreshedUsage.body, nativeAccessToken) ||
+		strings.Contains(refreshedUsage.body, nativeRefreshToken) {
+		t.Fatalf("Go Server 额度刷新响应错误: %s", refreshedUsage.body)
+	}
+	usageURL := baseURL + accountsapi.CollectionPath + "/" +
+		nativeDocument.Data.AccountRef + "/usage"
+	readUsage := performRequest(
+		t,
+		client,
+		http.MethodGet,
+		usageURL,
+		testManagementKey,
+		nil,
+	)
+	assertStatus(t, readUsage, http.StatusOK)
+	if readUsage.body != refreshedUsage.body {
+		t.Fatalf(
+			"离线 usage 与刷新结果不一致:\nrefresh=%s\nget=%s",
+			refreshedUsage.body,
+			readUsage.body,
+		)
+	}
+	t.Logf(
+		"POST %s\npayload:\n(none)\nstatus: %d\nresponse:\n%s",
+		usageRefreshURL,
+		refreshedUsage.status,
+		refreshedUsage.body,
+	)
 	leasePayload := []byte(
 		`{"account_ref":"` + nativeDocument.Data.AccountRef + `"}`,
 	)
@@ -420,6 +463,7 @@ func startTestServerWithInferenceClient(
 		ClientKey:           func() string { return testClientKey },
 		ModelDiscoverers:    accountmodels.NewDiscoverers(),
 		InferenceHTTPClient: inferenceClient,
+		UsageHTTPClient:     syntheticUsageHTTPClient{},
 	})
 	if err != nil {
 		t.Fatalf("aihserver.New() error = %v", err)
@@ -449,6 +493,43 @@ func startTestServerWithInferenceClient(
 	return "http://" + listener.Addr().String(), &http.Client{
 		Timeout: 3 * time.Second,
 	}
+}
+
+// syntheticUsageHTTPClient 返回不访问网络的 Claude 当前额度响应。
+type syntheticUsageHTTPClient struct{}
+
+func (syntheticUsageHTTPClient) Do(
+	request *http.Request,
+) (*http.Response, error) {
+	if request == nil ||
+		request.Method != http.MethodGet ||
+		!strings.HasSuffix(request.URL.Path, "/api/oauth/usage") {
+		return &http.Response{
+			StatusCode: http.StatusBadRequest,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{"error":"unexpected_request"}`)),
+		}, nil
+	}
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     make(http.Header),
+		Body: io.NopCloser(strings.NewReader(`{
+			"five_hour": {
+				"utilization": 25,
+				"resets_at": "2026-08-01T00:00:00Z"
+			},
+			"seven_day_opus": {
+				"utilization": 100,
+				"resets_at": "2026-08-07T00:00:00Z"
+			},
+			"extra_usage": {
+				"is_enabled": false,
+				"monthly_limit": null,
+				"used_credits": null,
+				"utilization": null
+			}
+		}`)),
+	}, nil
 }
 
 // performRequest 执行真实 TCP 请求并读取完整响应。

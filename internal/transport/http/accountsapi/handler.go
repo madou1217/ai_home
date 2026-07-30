@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	usageapp "github.com/madou1217/ai_home/application/accountusage"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 )
 
@@ -60,6 +61,18 @@ type ModelManagement interface {
 	) ([]accountapp.AccountModel, error)
 }
 
+// UsageManagement 是账号额度子资源依赖的离线读取和显式刷新端口。
+type UsageManagement interface {
+	GetUsage(
+		ctx context.Context,
+		accountRef accountcore.AccountRef,
+	) (usageapp.ReadResult, error)
+	RefreshUsage(
+		ctx context.Context,
+		accountRef accountcore.AccountRef,
+	) (usageapp.ReadResult, error)
+}
+
 // Registrar 是 HTTP API Key 创建入口依赖的最小注册端口。
 type Registrar interface {
 	Register(
@@ -82,6 +95,7 @@ type NativeAccountDecoder interface {
 type Dependencies struct {
 	Management     Management
 	Models         ModelManagement
+	Usage          UsageManagement
 	Registrar      Registrar
 	APIKeys        APIKeyCredentialFactory
 	NativeAccounts NativeAccountDecoder
@@ -92,6 +106,7 @@ type Dependencies struct {
 type Handler struct {
 	management Management
 	models     ModelManagement
+	usage      UsageManagement
 	registrar  Registrar
 	apiKeys    APIKeyCredentialFactory
 	native     NativeAccountDecoder
@@ -102,6 +117,7 @@ type Handler struct {
 func NewHandler(dependencies Dependencies) (*Handler, error) {
 	if dependencies.Management == nil ||
 		dependencies.Models == nil ||
+		dependencies.Usage == nil ||
 		dependencies.Registrar == nil ||
 		dependencies.APIKeys == nil ||
 		dependencies.NativeAccounts == nil ||
@@ -111,6 +127,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	return &Handler{
 		management: dependencies.Management,
 		models:     dependencies.Models,
+		usage:      dependencies.Usage,
 		registrar:  dependencies.Registrar,
 		apiKeys:    dependencies.APIKeys,
 		native:     dependencies.NativeAccounts,
@@ -191,6 +208,10 @@ func (handler *Handler) handleMember(
 		handler.handleAccountModels(response, request, accountRef)
 	case memberResourceModelRefresh:
 		handler.handleAccountModelRefresh(response, request, accountRef)
+	case memberResourceUsage:
+		handler.handleAccountUsage(response, request, accountRef)
+	case memberResourceUsageRefresh:
+		handler.handleAccountUsageRefresh(response, request, accountRef)
 	default:
 		writeAPIError(
 			response,
@@ -199,6 +220,51 @@ func (handler *Handler) handleMember(
 			"请求的账号资源不存在",
 		)
 	}
+}
+
+// handleAccountUsage 只允许离线读取最近一次成功快照。
+func (handler *Handler) handleAccountUsage(
+	response http.ResponseWriter,
+	request *http.Request,
+	accountRef accountcore.AccountRef,
+) {
+	if request.Method != http.MethodGet {
+		response.Header().Set("Allow", http.MethodGet)
+		writeMethodNotAllowed(response)
+		return
+	}
+	if rejectUnexpectedQuery(response, request) {
+		return
+	}
+	result, err := handler.usage.GetUsage(request.Context(), accountRef)
+	if err != nil {
+		writeApplicationError(response, err)
+		return
+	}
+	writeJSON(response, http.StatusOK, newAccountUsageResponse(result))
+}
+
+// handleAccountUsageRefresh 显式请求一次上游刷新并返回已持久化快照。
+func (handler *Handler) handleAccountUsageRefresh(
+	response http.ResponseWriter,
+	request *http.Request,
+	accountRef accountcore.AccountRef,
+) {
+	if request.Method != http.MethodPost {
+		response.Header().Set("Allow", http.MethodPost)
+		writeMethodNotAllowed(response)
+		return
+	}
+	if rejectUnexpectedQuery(response, request) ||
+		rejectUnexpectedBody(response, request) {
+		return
+	}
+	result, err := handler.usage.RefreshUsage(request.Context(), accountRef)
+	if err != nil {
+		writeApplicationError(response, err)
+		return
+	}
+	writeJSON(response, http.StatusOK, newAccountUsageResponse(result))
 }
 
 // handleAccountMember 分发账号基础详情和启停操作。

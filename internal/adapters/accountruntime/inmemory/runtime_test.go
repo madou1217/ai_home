@@ -323,6 +323,118 @@ func TestRuntimeRecoveryIsIdempotentAndKeepsHealthyStateSparse(t *testing.T) {
 	}
 }
 
+// TestRuntimeReplacesAuthoritativeUsageProjection 验证新快照精确替换账号级和模型级额度阻塞。
+func TestRuntimeReplacesAuthoritativeUsageProjection(t *testing.T) {
+	t.Parallel()
+
+	runtime := newTestRuntime(t, runtimeTestTime)
+	accountRef := newTestRoute(t, 9, "claude-opus-5").AccountRef()
+	opus := mustUsageModelID(t, "claude-opus-5")
+	sonnet := mustUsageModelID(t, "claude-sonnet-4-6")
+	if err := runtime.ReplaceUsageProjection(
+		context.Background(),
+		accountRef,
+		true,
+		[]runtimecore.ModelID{opus},
+	); err != nil {
+		t.Fatalf("ReplaceUsageProjection(block) error = %v", err)
+	}
+	for _, model := range []runtimecore.ModelID{opus, sonnet} {
+		route, _ := runtimecore.NewModelRoute(accountRef, model.String())
+		eligibility, err := runtime.CheckEligibility(context.Background(), route)
+		if err != nil || eligibility.Status() != runtimecore.EligibilityQuotaBlocked {
+			t.Fatalf(
+				"account blocked model=%s eligibility=%#v error=%v",
+				model,
+				eligibility,
+				err,
+			)
+		}
+	}
+
+	if err := runtime.ReplaceUsageProjection(
+		context.Background(),
+		accountRef,
+		false,
+		[]runtimecore.ModelID{sonnet},
+	); err != nil {
+		t.Fatalf("ReplaceUsageProjection(replace) error = %v", err)
+	}
+	opusRoute, _ := runtimecore.NewModelRoute(accountRef, opus.String())
+	sonnetRoute, _ := runtimecore.NewModelRoute(accountRef, sonnet.String())
+	opusEligibility, _ := runtime.CheckEligibility(context.Background(), opusRoute)
+	sonnetEligibility, _ := runtime.CheckEligibility(context.Background(), sonnetRoute)
+	if !opusEligibility.Eligible() ||
+		sonnetEligibility.Status() != runtimecore.EligibilityQuotaBlocked {
+		t.Fatalf(
+			"replaced usage opus=%#v sonnet=%#v",
+			opusEligibility,
+			sonnetEligibility,
+		)
+	}
+
+	if err := runtime.ReplaceUsageProjection(
+		context.Background(),
+		accountRef,
+		false,
+		nil,
+	); err != nil {
+		t.Fatalf("ReplaceUsageProjection(clear) error = %v", err)
+	}
+	sonnetEligibility, _ = runtime.CheckEligibility(context.Background(), sonnetRoute)
+	if !sonnetEligibility.Eligible() {
+		t.Fatalf("cleared usage eligibility = %#v", sonnetEligibility)
+	}
+}
+
+// TestRuntimeUsageProjectionPreservesOtherBlocks 验证额度恢复不会清除凭据或策略阻塞。
+func TestRuntimeUsageProjectionPreservesOtherBlocks(t *testing.T) {
+	t.Parallel()
+
+	runtime := newTestRuntime(t, runtimeTestTime)
+	route := newTestRoute(t, 8, "gpt-5.6-sol")
+	failure := newBlockingFailure(
+		t,
+		runtimecore.FailureCredentialRejected,
+		runtimecore.BlockScopeAccount,
+	)
+	if err := runtime.RecordFailure(context.Background(), route, failure); err != nil {
+		t.Fatalf("RecordFailure() error = %v", err)
+	}
+	if err := runtime.ReplaceUsageProjection(
+		context.Background(),
+		route.AccountRef(),
+		true,
+		nil,
+	); err != nil {
+		t.Fatalf("ReplaceUsageProjection(block) error = %v", err)
+	}
+	if err := runtime.ReplaceUsageProjection(
+		context.Background(),
+		route.AccountRef(),
+		false,
+		nil,
+	); err != nil {
+		t.Fatalf("ReplaceUsageProjection(clear) error = %v", err)
+	}
+	eligibility, err := runtime.CheckEligibility(context.Background(), route)
+	if err != nil ||
+		eligibility.Status() != runtimecore.EligibilityCredentialBlocked {
+		t.Fatalf("credential block lost: eligibility=%#v error=%v", eligibility, err)
+	}
+}
+
+// mustUsageModelID 创建额度投影测试使用的真实模型 ID。
+func mustUsageModelID(t *testing.T, value string) runtimecore.ModelID {
+	t.Helper()
+
+	modelID, err := runtimecore.NewModelID(value)
+	if err != nil {
+		t.Fatalf("NewModelID(%q) error = %v", value, err)
+	}
+	return modelID
+}
+
 // TestRuntimeRejectsInvalidAttemptFailure 验证零值或跨层损坏的失败
 // 不会进入 cooldown 或硬阻塞索引。
 func TestRuntimeRejectsInvalidAttemptFailure(t *testing.T) {

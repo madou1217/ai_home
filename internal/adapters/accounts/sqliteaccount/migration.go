@@ -49,6 +49,21 @@ var expectedSchemaColumns = map[string][]string{
 		"manual_policy",
 		"updated_at_ms",
 	},
+	"account_usage": {
+		"account_ref",
+		"limit_id",
+		"limit_name",
+		"bucket",
+		"kind",
+		"scope",
+		"scope_key",
+		"remaining_bps",
+		"availability",
+		"window_seconds",
+		"reset_at_ms",
+		"source",
+		"captured_at_ms",
+	},
 }
 
 // initialize 校验数据库身份、执行首次 migration 并启用 WAL。
@@ -95,7 +110,7 @@ func inspectDatabase(ctx context.Context, connection *sql.Conn) (int, int, int, 
 	return applicationID, schemaVersion, objectCount, nil
 }
 
-// migrateConnection 在立即事务中创建最新结构或把规范 v1 前向迁移到 v2。
+// migrateConnection 在立即事务中创建最新结构或逐版执行前向 migration。
 func migrateConnection(ctx context.Context, connection *sql.Conn) (resultErr error) {
 	if _, err := connection.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
 		return fmt.Errorf("开始账号数据库 migration 失败: %w", err)
@@ -117,6 +132,15 @@ func migrateConnection(ctx context.Context, connection *sql.Conn) (resultErr err
 		if _, err := connection.ExecContext(ctx, SchemaV2); err != nil {
 			return fmt.Errorf("迁移账号数据库到 v2 失败: %w", err)
 		}
+		if _, err := connection.ExecContext(ctx, SchemaV3); err != nil {
+			return fmt.Errorf("迁移账号数据库到 v3 失败: %w", err)
+		}
+		return commitMigration(ctx, connection)
+	}
+	if applicationID == ApplicationID && schemaVersion == 2 {
+		if _, err := connection.ExecContext(ctx, SchemaV3); err != nil {
+			return fmt.Errorf("迁移账号数据库到 v3 失败: %w", err)
+		}
 		return commitMigration(ctx, connection)
 	}
 	if applicationID != 0 || schemaVersion != 0 || objectCount != 0 {
@@ -127,6 +151,9 @@ func migrateConnection(ctx context.Context, connection *sql.Conn) (resultErr err
 	}
 	if _, err := connection.ExecContext(ctx, SchemaV2); err != nil {
 		return fmt.Errorf("创建账号数据库 v2 失败: %w", err)
+	}
+	if _, err := connection.ExecContext(ctx, SchemaV3); err != nil {
+		return fmt.Errorf("创建账号数据库 v3 失败: %w", err)
 	}
 	return commitMigration(ctx, connection)
 }

@@ -16,6 +16,7 @@ import (
 
 	"github.com/madou1217/ai_home/application/accountauth"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	usageapp "github.com/madou1217/ai_home/application/accountusage"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/accounts/claude"
 	"github.com/madou1217/ai_home/core/accounts/codex"
@@ -582,6 +583,7 @@ func newLiveManagementHandler(
 	accountsHandler, err := accountsapi.NewHandler(accountsapi.Dependencies{
 		Management:     management,
 		Models:         modelManagement,
+		Usage:          liveUsageManagementStub{},
 		Registrar:      registrar,
 		APIKeys:        accountsapi.NewBuiltinAPIKeyCredentialFactory(),
 		NativeAccounts: decoder,
@@ -596,6 +598,25 @@ func newLiveManagementHandler(
 	mux.Handle(accountsapi.CollectionPath, accountsHandler)
 	mux.Handle(accountsapi.CollectionPath+"/", accountsHandler)
 	return mux, store
+}
+
+// liveUsageManagementStub 满足账号 Handler 的额度端口；本 OAuth smoke 不访问额度子资源。
+type liveUsageManagementStub struct{}
+
+// GetUsage 明确表示合成 OAuth 账号尚无额度快照。
+func (liveUsageManagementStub) GetUsage(
+	context.Context,
+	accountcore.AccountRef,
+) (usageapp.ReadResult, error) {
+	return usageapp.ReadResult{}, usageapp.ErrSnapshotNotFound
+}
+
+// RefreshUsage 明确表示合成 OAuth 账号尚无额度快照。
+func (liveUsageManagementStub) RefreshUsage(
+	context.Context,
+	accountcore.AccountRef,
+) (usageapp.ReadResult, error) {
+	return usageapp.ReadResult{}, usageapp.ErrSnapshotNotFound
 }
 
 // rewriteTransport 把官方 OAuth 请求透明转发到本地 fake upstream。

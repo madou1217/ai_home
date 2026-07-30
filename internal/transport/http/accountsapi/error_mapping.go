@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	usageapp "github.com/madou1217/ai_home/application/accountusage"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 )
 
@@ -67,6 +68,27 @@ func writeCredentialInputError(response http.ResponseWriter, err error) {
 // writeApplicationError 把领域和持久化错误收敛为无内部细节的 HTTP 错误。
 func writeApplicationError(response http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, usageapp.ErrSnapshotNotFound):
+		writeAPIError(
+			response,
+			http.StatusNotFound,
+			"usage_not_found",
+			"账号还没有成功额度快照",
+		)
+	case errors.Is(err, usageapp.ErrUsageUnsupported):
+		writeAPIError(
+			response,
+			http.StatusUnprocessableEntity,
+			"usage_refresh_unsupported",
+			"当前凭据没有可信额度接口",
+		)
+	case errors.Is(err, usageapp.ErrRefreshFailed):
+		writeAPIError(
+			response,
+			http.StatusBadGateway,
+			"usage_refresh_failed",
+			"Provider 额度刷新失败，未改写当前快照",
+		)
 	case errors.Is(err, accountapp.ErrAccountNotFound):
 		writeAPIError(
 			response,
@@ -93,7 +115,7 @@ func writeApplicationError(response http.ResponseWriter, err error) {
 			response,
 			http.StatusConflict,
 			"credential_not_found",
-			"账号缺少可用于模型刷新的凭据",
+			"账号缺少可用凭据",
 		)
 	case errors.Is(err, accountapp.ErrModelDiscoveryUnsupported):
 		writeAPIError(

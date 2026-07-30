@@ -5,6 +5,8 @@ import (
 	"time"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	usageapp "github.com/madou1217/ai_home/application/accountusage"
+	usagecore "github.com/madou1217/ai_home/core/accountusage"
 )
 
 // nativeImportRequest 是 Provider 原生认证 artifact 导入 DTO。
@@ -81,6 +83,35 @@ type accountModelListResponse struct {
 	Data []accountModelView `json:"data"`
 }
 
+// accountUsageView 是账号最近一次成功额度快照的完整非敏感投影。
+type accountUsageView struct {
+	AccountRef string                  `json:"account_ref"`
+	ProviderID string                  `json:"provider_id"`
+	Source     string                  `json:"source"`
+	CapturedAt string                  `json:"captured_at"`
+	Stale      bool                    `json:"stale"`
+	Entries    []accountUsageEntryView `json:"entries"`
+}
+
+// accountUsageEntryView 保留 Provider 额度维度和显式可空数值。
+type accountUsageEntryView struct {
+	LimitID              string  `json:"limit_id"`
+	LimitName            string  `json:"limit_name"`
+	Bucket               string  `json:"bucket"`
+	Kind                 string  `json:"kind"`
+	Scope                string  `json:"scope"`
+	ScopeKey             string  `json:"scope_key"`
+	RemainingBasisPoints *uint16 `json:"remaining_basis_points"`
+	Availability         string  `json:"availability"`
+	WindowSeconds        *int64  `json:"window_seconds"`
+	ResetAt              *string `json:"reset_at"`
+}
+
+// accountUsageResponse 是额度查询和刷新共享的成功 envelope。
+type accountUsageResponse struct {
+	Data accountUsageView `json:"data"`
+}
+
 // pageView 明确下一页游标是否仍然有效。
 type pageView struct {
 	Limit        int    `json:"limit"`
@@ -143,6 +174,50 @@ func newAccountModelViews(models []accountapp.AccountModel) []accountModelView {
 		})
 	}
 	return views
+}
+
+// newAccountUsageResponse 从领域快照选择公开额度字段。
+func newAccountUsageResponse(result usageapp.ReadResult) accountUsageResponse {
+	snapshot := result.Snapshot()
+	entries := snapshot.Entries()
+	views := make([]accountUsageEntryView, 0, len(entries))
+	for _, entry := range entries {
+		views = append(views, newAccountUsageEntryView(entry))
+	}
+	return accountUsageResponse{Data: accountUsageView{
+		AccountRef: snapshot.AccountRef().String(),
+		ProviderID: snapshot.ProviderID(),
+		Source:     snapshot.Source(),
+		CapturedAt: formatTime(snapshot.CapturedAt()),
+		Stale:      result.Stale(),
+		Entries:    views,
+	}}
+}
+
+// newAccountUsageEntryView 保留未知值为 JSON null，而不是伪造零。
+func newAccountUsageEntryView(
+	entry usagecore.Entry,
+) accountUsageEntryView {
+	view := accountUsageEntryView{
+		LimitID:      entry.LimitID(),
+		LimitName:    entry.LimitName(),
+		Bucket:       entry.Bucket(),
+		Kind:         string(entry.Kind()),
+		Scope:        string(entry.Scope()),
+		ScopeKey:     entry.ScopeKey(),
+		Availability: string(entry.Availability()),
+	}
+	if remaining, known := entry.RemainingBasisPoints(); known {
+		view.RemainingBasisPoints = &remaining
+	}
+	if windowSeconds := entry.WindowSeconds(); windowSeconds > 0 {
+		view.WindowSeconds = &windowSeconds
+	}
+	if resetAt := entry.ResetAt(); !resetAt.IsZero() {
+		formatted := formatTime(resetAt)
+		view.ResetAt = &formatted
+	}
+	return view
 }
 
 // formatTime 输出跨语言稳定的 UTC RFC3339 时间。

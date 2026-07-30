@@ -78,6 +78,7 @@ func TestAccountsAPILiveSmoke(t *testing.T) {
 	handler, err := accountsapi.NewHandler(accountsapi.Dependencies{
 		Management:     management,
 		Models:         modelManagement,
+		Usage:          newAccountServiceStub(t),
 		Registrar:      registrar,
 		APIKeys:        accountsapi.NewBuiltinAPIKeyCredentialFactory(),
 		NativeAccounts: nativeaccount.NewDecoder(),

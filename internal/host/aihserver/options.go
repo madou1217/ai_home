@@ -17,6 +17,11 @@ type InferenceHTTPClient interface {
 	Do(request *http.Request) (*http.Response, error)
 }
 
+// UsageHTTPClient 是账号额度 Adapter 使用的独立最小传输端口。
+type UsageHTTPClient interface {
+	Do(request *http.Request) (*http.Response, error)
+}
+
 const (
 	// MinServerKeyLength 是 Client 与 Management Key 共用的最小长度。
 	MinServerKeyLength = 32
@@ -49,6 +54,8 @@ type Options struct {
 	ModelDiscoverers []accountapp.ProviderModelDiscoverer
 	// InferenceHTTPClient 允许测试注入合成上游；生产必须留空。
 	InferenceHTTPClient InferenceHTTPClient
+	// UsageHTTPClient 允许测试注入合成额度上游；生产留空时创建独立安全客户端。
+	UsageHTTPClient UsageHTTPClient
 }
 
 // ValidateManagementKey 校验 Bearer 请求头可安全表达的 Management Key。

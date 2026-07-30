@@ -11,6 +11,7 @@ import (
 	"github.com/madou1217/ai_home/application/accountauth"
 	"github.com/madou1217/ai_home/application/accountcredentials"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	usageapp "github.com/madou1217/ai_home/application/accountusage"
 	"github.com/madou1217/ai_home/application/clauderelay"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/claudeoauth"
@@ -51,6 +52,7 @@ type serverHandlers struct {
 type serverAccountRuntime interface {
 	accountrecovery.Runtime
 	inferenceruntime.AccountRuntime
+	usageapp.RuntimeProjection
 }
 
 // New 装配 Provider Catalog、aih.db、账号用例、OAuth Strategy 和 HTTP 入站适配器。
@@ -88,6 +90,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		options.ManagementKey,
 		options.ClientKey,
 		options.InferenceHTTPClient,
+		options.UsageHTTPClient,
 	)
 	if err != nil {
 		_ = store.Close()
@@ -111,7 +114,14 @@ func newHandlers(
 	managementKey func() string,
 	clientKey func() string,
 	inferenceClient InferenceHTTPClient,
-) (serverHandlers, []io.Closer, error) {
+	usageClient UsageHTTPClient,
+) (_ serverHandlers, _ []io.Closer, resultErr error) {
+	var usage *usageComposition
+	defer func() {
+		if resultErr != nil && usage != nil {
+			_ = usage.Close()
+		}
+	}()
 	registrar, err := accountapp.NewRegistrar(
 		catalog,
 		store,
@@ -165,26 +175,6 @@ func newHandlers(
 			err,
 		)
 	}
-	authorizer, err := accountsapi.NewBearerAuthorizer(managementKey)
-	if err != nil {
-		return serverHandlers{}, nil, fmt.Errorf("创建账号管理鉴权失败: %w", err)
-	}
-	clientAuthorizer, err := clientauth.NewAuthorizer(clientKey)
-	if err != nil {
-		return serverHandlers{}, nil, fmt.Errorf("创建客户端鉴权失败: %w", err)
-	}
-	decoder := nativeaccount.NewDecoder()
-	accountsHandler, err := accountsapi.NewHandler(accountsapi.Dependencies{
-		Management:     management,
-		Models:         recoveringModelManagement,
-		Registrar:      registrar,
-		APIKeys:        accountsapi.NewBuiltinAPIKeyCredentialFactory(),
-		NativeAccounts: decoder,
-		Authorizer:     authorizer,
-	})
-	if err != nil {
-		return serverHandlers{}, nil, fmt.Errorf("创建账号 HTTP Handler 失败: %w", err)
-	}
 	oauthClient := &http.Client{
 		Timeout:       oauthHTTPTimeout,
 		CheckRedirect: rejectOAuthRedirect,
@@ -197,14 +187,78 @@ func newHandlers(
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建 Claude OAuth Strategy 失败: %w", err)
 	}
+	credentials, err := accountcredentials.NewResolver(
+		accountcredentials.Dependencies{
+			Store: store,
+			Strategies: []accountcredentials.RefreshStrategy{
+				codexProvider,
+				claudeProvider,
+			},
+			Clock: time.Now,
+		},
+	)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建账号凭据解析器失败: %w", err)
+	}
+	usage, err = newUsageComposition(
+		ctx,
+		usageCompositionDependencies{
+			catalog:     catalog,
+			store:       store,
+			credentials: credentials,
+			models:      store,
+			runtime:     accountRuntime,
+			httpClient:  usageClient,
+			clock:       time.Now,
+		},
+	)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建账号额度组合失败: %w", err)
+	}
+	scheduledRegistrar, err := usageapp.NewRegistrationDecorator(
+		registrar,
+		usage.coordinator,
+	)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建注册额度刷新边界失败: %w", err)
+	}
+	scheduledReauthenticator, err :=
+		usageapp.NewReauthenticationDecorator(
+			recoveringReauthenticator,
+			usage.coordinator,
+		)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建重登额度刷新边界失败: %w", err)
+	}
+	authorizer, err := accountsapi.NewBearerAuthorizer(managementKey)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建账号管理鉴权失败: %w", err)
+	}
+	clientAuthorizer, err := clientauth.NewAuthorizer(clientKey)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建客户端鉴权失败: %w", err)
+	}
+	decoder := nativeaccount.NewDecoder()
+	accountsHandler, err := accountsapi.NewHandler(accountsapi.Dependencies{
+		Management:     management,
+		Models:         recoveringModelManagement,
+		Usage:          usage.service,
+		Registrar:      scheduledRegistrar,
+		APIKeys:        accountsapi.NewBuiltinAPIKeyCredentialFactory(),
+		NativeAccounts: decoder,
+		Authorizer:     authorizer,
+	})
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建账号 HTTP Handler 失败: %w", err)
+	}
 	jobs, err := accountauth.NewService(accountauth.Dependencies{
 		Providers: []accountauth.OAuthProvider{
 			codexProvider,
 			claudeProvider,
 		},
 		Decoder:    decoder,
-		Registrar:  registrar,
-		Reauth:     recoveringReauthenticator,
+		Registrar:  scheduledRegistrar,
+		Reauth:     scheduledReauthenticator,
 		Clock:      time.Now,
 		GenerateID: accountauth.NewRandomJobID,
 	})
@@ -219,16 +273,6 @@ func newHandlers(
 	)
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建 OAuth Job HTTP Handler 失败: %w", err)
-	}
-	credentials, err := accountcredentials.NewResolver(
-		accountcredentials.Dependencies{
-			Store:      store,
-			Strategies: []accountcredentials.RefreshStrategy{claudeProvider},
-			Clock:      time.Now,
-		},
-	)
-	if err != nil {
-		return serverHandlers{}, nil, fmt.Errorf("创建 Claude 凭据解析器失败: %w", err)
 	}
 	relayLeases, err := clauderelay.NewLeaseRegistry(
 		clauderelay.Dependencies{
@@ -312,7 +356,7 @@ func newHandlers(
 				routeCount: status.RouteCount,
 			}
 		},
-	}, []io.Closer{inference}, nil
+	}, []io.Closer{inference, usage}, nil
 }
 
 // newModelDiscovery 创建生产 Codex/Claude 目录源，或使用测试显式注入的策略。

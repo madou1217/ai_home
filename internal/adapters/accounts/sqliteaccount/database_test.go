@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	usageapp "github.com/madou1217/ai_home/application/accountusage"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/accounts/codex"
 	"github.com/madou1217/ai_home/core/providers"
@@ -145,7 +146,7 @@ func TestOpenReusesCanonicalDatabaseAfterRestart(t *testing.T) {
 	}
 }
 
-// TestOpenMigratesV1WithoutLosingAccountData 验证前向 migration 只增加模型关系。
+// TestOpenMigratesV1WithoutLosingAccountData 验证跨两版前向 migration 保留账号和凭据。
 func TestOpenMigratesV1WithoutLosingAccountData(t *testing.T) {
 	t.Parallel()
 
@@ -243,6 +244,116 @@ func TestOpenMigratesV1WithoutLosingAccountData(t *testing.T) {
 	}
 	if schemaVersion != SchemaVersion {
 		t.Fatalf("schema version = %d, want %d", schemaVersion, SchemaVersion)
+	}
+}
+
+// TestOpenMigratesV2WithoutLosingAccountData 验证新增额度表不改写既有账号、凭据和模型。
+func TestOpenMigratesV2WithoutLosingAccountData(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	aiHomeDir := t.TempDir()
+	databasePath := filepath.Join(aiHomeDir, DatabaseFileName)
+	credential, err := codex.NewAPIKeyAuth(codex.APIKeyInput{
+		APIKey: "synthetic-v2-migration-key",
+	})
+	if err != nil {
+		t.Fatalf("codex.NewAPIKeyAuth() error = %v", err)
+	}
+	accountRef, err := accountcore.DeriveAccountRef(credential)
+	if err != nil {
+		t.Fatalf("DeriveAccountRef() error = %v", err)
+	}
+	credentialJSON, err := json.Marshal(map[string]string{
+		"api_key":  credential.APIKey(),
+		"base_url": credential.BaseURL(),
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	v2 := openRawSQLite(t, databasePath)
+	if _, err := v2.ExecContext(ctx, SchemaV1); err != nil {
+		t.Fatalf("create v1 schema error = %v", err)
+	}
+	if _, err := v2.ExecContext(ctx, SchemaV2); err != nil {
+		t.Fatalf("migrate raw database to v2 error = %v", err)
+	}
+	createdAt := time.Date(2026, time.July, 27, 1, 0, 0, 0, time.UTC)
+	if _, err := v2.ExecContext(
+		ctx,
+		`INSERT INTO accounts (
+			account_ref, provider_id, cli_account_id, enabled,
+			created_at_ms, updated_at_ms
+		) VALUES (?, 'codex', 9, 1, ?, ?)`,
+		accountRef.String(),
+		createdAt.UnixMilli(),
+		createdAt.UnixMilli(),
+	); err != nil {
+		t.Fatalf("insert v2 account error = %v", err)
+	}
+	if _, err := v2.ExecContext(
+		ctx,
+		`INSERT INTO account_credentials (
+			account_ref, auth_kind, auth_mode, format_version,
+			credential_json, updated_at_ms
+		) VALUES (?, 'api_key', '', 1, ?, ?)`,
+		accountRef.String(),
+		string(credentialJSON),
+		createdAt.UnixMilli(),
+	); err != nil {
+		t.Fatalf("insert v2 credential error = %v", err)
+	}
+	if _, err := v2.ExecContext(
+		ctx,
+		`INSERT INTO account_models (
+			account_ref, model_id, upstream_available, manual_policy,
+			updated_at_ms
+		) VALUES (?, 'gpt-5.6-sol', 1, 'inherit', ?)`,
+		accountRef.String(),
+		createdAt.UnixMilli(),
+	); err != nil {
+		t.Fatalf("insert v2 model error = %v", err)
+	}
+	if err := v2.Close(); err != nil {
+		t.Fatalf("close v2 database error = %v", err)
+	}
+
+	store, err := Open(ctx, OpenOptions{
+		AIHomeDir: aiHomeDir,
+		Catalog:   newTestCatalog(t),
+	})
+	if err != nil {
+		t.Fatalf("Open(v2) error = %v", err)
+	}
+	t.Cleanup(func() {
+		_ = store.Close()
+	})
+	account, err := store.GetByRef(ctx, accountRef)
+	if err != nil {
+		t.Fatalf("GetByRef() error = %v", err)
+	}
+	restored, err := store.GetCredential(ctx, accountRef)
+	if err != nil {
+		t.Fatalf("GetCredential() error = %v", err)
+	}
+	models, err := store.ListAccountModels(ctx, accountRef)
+	if err != nil {
+		t.Fatalf("ListAccountModels() error = %v", err)
+	}
+	_, usageErr := store.GetUsageSnapshot(ctx, accountRef)
+	if account.Ref() != accountRef ||
+		restored.IdentitySeed() != credential.IdentitySeed() ||
+		len(models) != 1 ||
+		models[0].ModelID().String() != "gpt-5.6-sol" ||
+		!models[0].Effective() ||
+		!errors.Is(usageErr, usageapp.ErrSnapshotNotFound) {
+		t.Fatalf(
+			"v2 migration account=%#v credential=%T models=%#v usageErr=%v",
+			account,
+			restored,
+			models,
+			usageErr,
+		)
 	}
 }
 

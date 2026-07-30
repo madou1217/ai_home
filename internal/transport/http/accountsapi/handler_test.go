@@ -12,9 +12,11 @@ import (
 	"time"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	usageapp "github.com/madou1217/ai_home/application/accountusage"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/accounts/claude"
 	"github.com/madou1217/ai_home/core/accounts/codex"
+	usagecore "github.com/madou1217/ai_home/core/accountusage"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
@@ -92,6 +94,100 @@ func TestHandlerListsAccountsWithStableCursor(t *testing.T) {
 		t.Fatalf("账号分页响应错误: %#v", document.Page)
 	}
 	assertSafeResponseHeaders(t, response)
+}
+
+// TestHandlerReadsAndRefreshesAccountUsage 验证额度子资源路径、null 数值和显式刷新命令。
+func TestHandlerReadsAndRefreshesAccountUsage(t *testing.T) {
+	t.Parallel()
+
+	service := newAccountServiceStub(t)
+	overview := newTestOverview(t, service.catalog, 1, "http-usage-account")
+	snapshot, err := usagecore.NewSnapshot(usagecore.SnapshotInput{
+		AccountRef: overview.Account().Ref(),
+		ProviderID: "codex",
+		Source:     "codex_wham_usage",
+		CapturedAt: testHTTPTime(),
+		Entries: []usagecore.EntryInput{
+			{
+				Bucket:       "credits",
+				Kind:         usagecore.KindCredits,
+				Scope:        usagecore.ScopeAccount,
+				Availability: usagecore.AvailabilityUnlimited,
+			},
+			{
+				Bucket:               "primary",
+				Kind:                 usagecore.KindWindow,
+				Scope:                usagecore.ScopeAccount,
+				HasRemaining:         true,
+				RemainingBasisPoints: 7_500,
+				WindowSeconds:        18_000,
+				ResetAt:              testHTTPTime().Add(time.Hour),
+				Availability:         usagecore.AvailabilityAvailable,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewSnapshot() error = %v", err)
+	}
+	service.usageResult, err = usageapp.NewReadResult(snapshot, true)
+	if err != nil {
+		t.Fatalf("NewReadResult() error = %v", err)
+	}
+	handler := newTestHandler(t, service)
+	path := accountsapi.CollectionPath + "/" +
+		overview.Account().Ref().String() + "/usage"
+
+	getResponse := httptest.NewRecorder()
+	getRequest := httptest.NewRequest(http.MethodGet, path, nil)
+	getRequest.Header.Set("Authorization", "Bearer "+testManagementKey)
+	handler.ServeHTTP(getResponse, getRequest)
+	if getResponse.Code != http.StatusOK {
+		t.Fatalf("GET usage status=%d body=%s", getResponse.Code, getResponse.Body)
+	}
+	var document struct {
+		Data struct {
+			AccountRef string `json:"account_ref"`
+			Stale      bool   `json:"stale"`
+			Entries    []struct {
+				Bucket               string  `json:"bucket"`
+				RemainingBasisPoints *uint16 `json:"remaining_basis_points"`
+				WindowSeconds        *int64  `json:"window_seconds"`
+				ResetAt              *string `json:"reset_at"`
+			} `json:"entries"`
+		} `json:"data"`
+	}
+	decodeResponseJSON(t, getResponse, &document)
+	if document.Data.AccountRef != overview.Account().Ref().String() ||
+		!document.Data.Stale ||
+		len(document.Data.Entries) != 2 ||
+		document.Data.Entries[0].Bucket != "credits" ||
+		document.Data.Entries[0].RemainingBasisPoints != nil ||
+		document.Data.Entries[0].WindowSeconds != nil ||
+		document.Data.Entries[0].ResetAt != nil ||
+		document.Data.Entries[1].RemainingBasisPoints == nil ||
+		*document.Data.Entries[1].RemainingBasisPoints != 7_500 {
+		t.Fatalf("GET usage response = %#v", document.Data)
+	}
+
+	refreshResponse := httptest.NewRecorder()
+	refreshRequest := httptest.NewRequest(
+		http.MethodPost,
+		path+"/refresh",
+		nil,
+	)
+	refreshRequest.Header.Set("Authorization", "Bearer "+testManagementKey)
+	handler.ServeHTTP(refreshResponse, refreshRequest)
+	if refreshResponse.Code != http.StatusOK ||
+		service.getUsageCalls != 1 ||
+		service.refreshUsageCalls != 1 {
+		t.Fatalf(
+			"POST usage refresh status=%d get=%d refresh=%d body=%s",
+			refreshResponse.Code,
+			service.getUsageCalls,
+			service.refreshUsageCalls,
+			refreshResponse.Body,
+		)
+	}
 }
 
 // TestBearerAuthorizerRejectsAmbiguousHeaders 验证动态密钥和多值请求头始终失败关闭。
@@ -529,6 +625,10 @@ type accountServiceStub struct {
 	setModelCalls        int
 	refreshModelRef      accountcore.AccountRef
 	refreshModelCalls    int
+	usageResult          usageapp.ReadResult
+	usageErr             error
+	getUsageCalls        int
+	refreshUsageCalls    int
 }
 
 // newAccountServiceStub 创建使用内置 Provider Catalog 的应用服务替身。
@@ -680,6 +780,24 @@ func (service *accountServiceStub) RefreshAccountModels(
 	return service.modelResult, service.modelErr
 }
 
+// GetUsage 返回预设的离线额度结果。
+func (service *accountServiceStub) GetUsage(
+	_ context.Context,
+	_ accountcore.AccountRef,
+) (usageapp.ReadResult, error) {
+	service.getUsageCalls++
+	return service.usageResult, service.usageErr
+}
+
+// RefreshUsage 返回预设的显式刷新结果。
+func (service *accountServiceStub) RefreshUsage(
+	_ context.Context,
+	_ accountcore.AccountRef,
+) (usageapp.ReadResult, error) {
+	service.refreshUsageCalls++
+	return service.usageResult, service.usageErr
+}
+
 // credentialKind 返回测试凭据对应的公开认证类型。
 func credentialKind(credential accountapp.Credential) string {
 	switch credential.(type) {
@@ -753,6 +871,7 @@ func newTestHandler(t *testing.T, service *accountServiceStub) http.Handler {
 	handler, err := accountsapi.NewHandler(accountsapi.Dependencies{
 		Management:     service,
 		Models:         service,
+		Usage:          service,
 		Registrar:      service,
 		APIKeys:        accountsapi.NewBuiltinAPIKeyCredentialFactory(),
 		NativeAccounts: nativeaccount.NewDecoder(),

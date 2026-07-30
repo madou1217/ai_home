@@ -12,8 +12,8 @@ func TestSchemaV1DeclaresExpectedDatabaseIdentity(t *testing.T) {
 	if ApplicationID != 0x41494831 {
 		t.Fatalf("ApplicationID = %#x, want %#x", ApplicationID, 0x41494831)
 	}
-	if SchemaVersion != 2 {
-		t.Fatalf("SchemaVersion = %d, want 2", SchemaVersion)
+	if SchemaVersion != 3 {
+		t.Fatalf("SchemaVersion = %d, want 3", SchemaVersion)
 	}
 	if !strings.Contains(SchemaV1, fmt.Sprintf("PRAGMA application_id = %d;", ApplicationID)) {
 		t.Fatal("SchemaV1 缺少规范 application_id")
@@ -21,8 +21,11 @@ func TestSchemaV1DeclaresExpectedDatabaseIdentity(t *testing.T) {
 	if !strings.Contains(SchemaV1, "PRAGMA user_version = 1;") {
 		t.Fatal("SchemaV1 缺少固定 v1 user_version")
 	}
-	if !strings.Contains(SchemaV2, fmt.Sprintf("PRAGMA user_version = %d;", SchemaVersion)) {
-		t.Fatal("SchemaV2 缺少规范 user_version")
+	if !strings.Contains(SchemaV2, "PRAGMA user_version = 2;") {
+		t.Fatal("SchemaV2 缺少固定 v2 user_version")
+	}
+	if !strings.Contains(SchemaV3, fmt.Sprintf("PRAGMA user_version = %d;", SchemaVersion)) {
+		t.Fatal("SchemaV3 缺少规范 user_version")
 	}
 }
 
@@ -90,5 +93,36 @@ func TestSchemaV1DefinesCoveringRoutingIndex(t *testing.T) {
   WHERE enabled = 1;`
 	if !strings.Contains(SchemaV1, expected) {
 		t.Fatal("SchemaV1 缺少账号征召 covering partial index")
+	}
+}
+
+func TestSchemaV3AddsOnlyCurrentAccountUsageSnapshot(t *testing.T) {
+	t.Parallel()
+
+	if strings.Count(SchemaV3, "CREATE TABLE account_usage ") != 1 {
+		t.Fatal("SchemaV3 应且只应声明一次 account_usage")
+	}
+	for _, required := range []string{
+		"PRIMARY KEY (account_ref, limit_id, bucket)",
+		"REFERENCES accounts(account_ref) ON DELETE CASCADE",
+		"remaining_bps INTEGER",
+		"availability TEXT NOT NULL",
+		"captured_at_ms INTEGER NOT NULL",
+		"kind IN ('window', 'credits')",
+		"scope IN ('account', 'model_family')",
+	} {
+		if !strings.Contains(SchemaV3, required) {
+			t.Fatalf("SchemaV3 缺少账号额度合同 %q", required)
+		}
+	}
+	for _, forbidden := range []string{
+		"usage_json",
+		"account_usage_history",
+		"schema_migrations",
+		"CREATE INDEX",
+	} {
+		if strings.Contains(SchemaV3, forbidden) {
+			t.Fatalf("SchemaV3 不应包含无查询依据的结构 %q", forbidden)
+		}
 	}
 }

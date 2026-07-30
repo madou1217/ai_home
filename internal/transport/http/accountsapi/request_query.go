@@ -71,13 +71,15 @@ func parsePageSize(value string, present bool) (int, error) {
 	return limit, nil
 }
 
-// memberResourceKind 区分账号基础资源、模型集合和显式刷新命令。
+// memberResourceKind 区分账号基础、模型和额度子资源。
 type memberResourceKind uint8
 
 const (
 	memberResourceAccount memberResourceKind = iota + 1
 	memberResourceModels
 	memberResourceModelRefresh
+	memberResourceUsage
+	memberResourceUsageRefresh
 )
 
 // memberResource 是完成 AccountRef 校验后的成员路由。
@@ -86,7 +88,7 @@ type memberResource struct {
 	kind       memberResourceKind
 }
 
-// parseMemberResource 严格解析当前声明的三种账号成员路径。
+// parseMemberResource 严格解析当前声明的账号成员路径。
 func parseMemberResource(path string) (memberResource, error) {
 	value := strings.TrimPrefix(path, CollectionPath+"/")
 	parts := strings.Split(value, "/")
@@ -104,6 +106,10 @@ func parseMemberResource(path string) (memberResource, error) {
 		kind = memberResourceModels
 	case len(parts) == 3 && parts[1] == "models" && parts[2] == "refresh":
 		kind = memberResourceModelRefresh
+	case len(parts) == 2 && parts[1] == "usage":
+		kind = memberResourceUsage
+	case len(parts) == 3 && parts[1] == "usage" && parts[2] == "refresh":
+		kind = memberResourceUsageRefresh
 	default:
 		return memberResource{}, accountcore.ErrInvalidAccountRef
 	}

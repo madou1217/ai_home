@@ -51,6 +51,8 @@ const (
 	FailureModelUnsupported FailureKind = "model_unsupported"
 	// FailureRegionUnsupported 表示当前地区不允许调用目标能力。
 	FailureRegionUnsupported FailureKind = "region_unsupported"
+	// FailurePermissionDenied 表示凭据有效，但无权访问当前资源或能力。
+	FailurePermissionDenied FailureKind = "permission_denied"
 	// FailureInvalidRequest 表示当前请求参数或上下文无效。
 	FailureInvalidRequest FailureKind = "invalid_request"
 	// FailureNotFound 表示当前请求访问的上游资源不存在。
@@ -108,7 +110,8 @@ func PolicyFor(kind FailureKind) (FailurePolicy, error) {
 		return blockingPolicy(ActionQuotaBlock), nil
 	case FailureWorkspaceDeactivated,
 		FailureModelUnsupported,
-		FailureRegionUnsupported:
+		FailureRegionUnsupported,
+		FailurePermissionDenied:
 		return blockingPolicy(ActionPolicyBlock), nil
 	case FailureInvalidRequest,
 		FailureNotFound,
@@ -145,6 +148,16 @@ func (policy FailurePolicy) FailureWindow() time.Duration {
 // EntersCooldown 判断该策略是否属于有限时间自动恢复。
 func (policy FailurePolicy) EntersCooldown() bool {
 	return policy.action == ActionModelCooldown
+}
+
+// BlocksRouting 判断失败是否必须由显式硬阻塞边界处理。
+func (policy FailurePolicy) BlocksRouting() bool {
+	switch policy.action {
+	case ActionCredentialBlock, ActionQuotaBlock, ActionPolicyBlock:
+		return true
+	default:
+		return false
+	}
 }
 
 // modelCooldownPolicy 创建只作用于账号与模型元组的瞬态策略。

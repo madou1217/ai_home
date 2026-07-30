@@ -93,6 +93,41 @@ func TestNewClassificationRejectsInvalidCooldownHint(t *testing.T) {
 	}
 }
 
+// TestBlockingClassificationCarriesExplicitScope 验证歧义硬阻塞必须由
+// Provider 提供作用域，而固定硬阻塞可以使用领域默认合同。
+func TestBlockingClassificationCarriesExplicitScope(t *testing.T) {
+	t.Parallel()
+
+	quota, err := NewBlockingClassification(
+		runtimecore.FailureQuotaExhausted,
+		runtimecore.BlockScopeAccount,
+	)
+	if err != nil ||
+		quota.BlockDirective().Scope() != runtimecore.BlockScopeAccount ||
+		quota.BlockDirective().RecoveryTrigger() !=
+			runtimecore.RecoveryUsageSnapshot ||
+		!quota.IsValid() {
+		t.Fatalf("NewBlockingClassification(quota) = %#v, %v", quota, err)
+	}
+	model, err := NewClassification(
+		runtimecore.FailureModelUnsupported,
+		0,
+	)
+	if err != nil ||
+		model.BlockDirective().Scope() !=
+			runtimecore.BlockScopeAccountModel ||
+		model.BlockDirective().RecoveryTrigger() !=
+			runtimecore.RecoveryModelCatalog {
+		t.Fatalf("NewClassification(model) = %#v, %v", model, err)
+	}
+	if _, err := NewClassification(
+		runtimecore.FailureQuotaExhausted,
+		0,
+	); err == nil {
+		t.Fatal("NewClassification(quota without scope) error = nil")
+	}
+}
+
 // TestNormalizeResponseInputCreatesLowSensitivityProjection 验证标识规范化且长窗口保留给 Provider 判断。
 func TestNormalizeResponseInputCreatesLowSensitivityProjection(t *testing.T) {
 	t.Parallel()

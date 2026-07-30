@@ -131,11 +131,73 @@ func TestRuntimeSchedulesModelRefreshAfterUnsupportedFailure(t *testing.T) {
 			fixture.refreshes.CallCount(),
 		)
 	}
+	siblingEvents, err := executeRequest(
+		runtime,
+		newTextRequest(t, siblingModel),
+	)
+	if err != nil ||
+		len(siblingEvents) == 0 ||
+		siblingEvents[len(siblingEvents)-1].Kind() !=
+			inference.EventResponseCompleted ||
+		fixture.store.CredentialReadCount() != 2 ||
+		fixture.upstream.CallCount() != 2 {
+		t.Fatalf(
+			"model scope sibling events=%#v error=%v upstream=%d credentials=%d",
+			siblingEvents,
+			err,
+			fixture.upstream.CallCount(),
+			fixture.store.CredentialReadCount(),
+		)
+	}
 	t.Logf(
-		"策略阻塞效果: 首次 model_unsupported 调度刷新=%d, 第二次凭据读取=%d, 上游调用=%d",
+		"模型策略阻塞效果: refresh=%d, 同模型被排除, 兄弟模型完成, 凭据读取=%d, 上游调用=%d",
 		fixture.refreshes.CallCount(),
 		fixture.store.CredentialReadCount(),
 		fixture.upstream.CallCount(),
+	)
+}
+
+// TestRuntimeAppliesCredentialBlockAtAccountScope 验证凭据失败会排除账号的
+// 所有模型，而不是只阻塞发生失败的模型元组。
+func TestRuntimeAppliesCredentialBlockAtAccountScope(t *testing.T) {
+	t.Parallel()
+
+	fixture := newRuntimeFixture(t)
+	fixture.upstream.failureKind = runtimecore.FailureCredentialRejected
+	runtime, err := New(fixture.dependencies())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	firstEvents, err := executeRequest(
+		runtime,
+		newTextRequest(t, overloadedModel),
+	)
+	if err != nil ||
+		len(firstEvents) != 1 ||
+		firstEvents[0].Kind() != inference.EventResponseFailed {
+		t.Fatalf("credential failure events=%#v error=%v", firstEvents, err)
+	}
+	siblingEvents, err := executeRequest(
+		runtime,
+		newTextRequest(t, siblingModel),
+	)
+	if !errors.Is(err, inferencegateway.ErrNoRoutableAccount) ||
+		len(siblingEvents) != 0 ||
+		fixture.store.CredentialReadCount() != 1 ||
+		fixture.upstream.CallCount() != 1 {
+		t.Fatalf(
+			"account block events=%#v error=%v upstream=%d credentials=%d",
+			siblingEvents,
+			err,
+			fixture.upstream.CallCount(),
+			fixture.store.CredentialReadCount(),
+		)
+	}
+	t.Logf(
+		"凭据阻塞效果: %s 失败后 %s 在凭据读取前被排除",
+		overloadedModel,
+		siblingModel,
 	)
 }
 
@@ -317,8 +379,9 @@ func newRuntimeFixture(t *testing.T) *runtimeFixture {
 		upstream:  &scriptedUpstream{failureKind: runtimecore.FailureModelOverloaded},
 		refreshes: &refreshScheduler{},
 		runtime: &runtimeState{
-			models: modelRuntime,
-			blocks: make(map[runtimecore.ModelRoute]runtimecore.Eligibility),
+			models:        modelRuntime,
+			accountBlocks: make(map[accountcore.AccountRef]runtimecore.Eligibility),
+			modelBlocks:   make(map[runtimecore.ModelRoute]runtimecore.Eligibility),
 		},
 		account: account,
 		clock:   clock,
@@ -404,9 +467,10 @@ func (store *runtimeStore) CredentialReadCount() int {
 
 // runtimeState 在测试中显式分发全部失败动作，避免把硬阻塞误当作 cooldown。
 type runtimeState struct {
-	mu     sync.RWMutex
-	models *runtimeapp.Registry
-	blocks map[runtimecore.ModelRoute]runtimecore.Eligibility
+	mu            sync.RWMutex
+	models        *runtimeapp.Registry
+	accountBlocks map[accountcore.AccountRef]runtimecore.Eligibility
+	modelBlocks   map[runtimecore.ModelRoute]runtimecore.Eligibility
 }
 
 // CheckEligibility 原子读取硬阻塞，并回退到模型级稀疏 cooldown 索引。
@@ -416,24 +480,23 @@ func (state *runtimeState) CheckEligibility(
 ) (runtimecore.Eligibility, error) {
 	state.mu.RLock()
 	defer state.mu.RUnlock()
-	if eligibility, found := state.blocks[route]; found {
+	if eligibility, found := state.accountBlocks[route.AccountRef()]; found {
+		return eligibility, nil
+	}
+	if eligibility, found := state.modelBlocks[route]; found {
 		return eligibility, nil
 	}
 	return state.models.CheckEligibility(ctx, route)
 }
 
-// RecordSuccess 清理当前测试元组的硬阻塞与瞬态模型状态。
+// RecordSuccess 只清理当前模型瞬态状态；硬阻塞必须等待对应外部真相源更新。
 func (state *runtimeState) RecordSuccess(
 	ctx context.Context,
 	route runtimecore.ModelRoute,
 ) error {
 	state.mu.Lock()
 	defer state.mu.Unlock()
-	if err := state.models.RecordSuccess(ctx, route); err != nil {
-		return err
-	}
-	delete(state.blocks, route)
-	return nil
+	return state.models.RecordSuccess(ctx, route)
 }
 
 // RecordFailure 根据领域 Transition 把失败交给唯一状态边界。
@@ -458,13 +521,48 @@ func (state *runtimeState) RecordFailure(
 		runtimecore.ActionModelCooldown:
 		return nil
 	case runtimecore.ActionCredentialBlock:
-		state.blocks[route] = runtimecore.CredentialBlockedEligibility()
+		return state.recordBlock(
+			route,
+			failure.RuntimeKind(),
+			failure.BlockDirective(),
+			runtimecore.CredentialBlockedEligibility(),
+		)
 	case runtimecore.ActionQuotaBlock:
-		state.blocks[route] = runtimecore.QuotaBlockedEligibility()
+		return state.recordBlock(
+			route,
+			failure.RuntimeKind(),
+			failure.BlockDirective(),
+			runtimecore.QuotaBlockedEligibility(),
+		)
 	case runtimecore.ActionPolicyBlock:
-		state.blocks[route] = runtimecore.PolicyBlockedEligibility()
+		return state.recordBlock(
+			route,
+			failure.RuntimeKind(),
+			failure.BlockDirective(),
+			runtimecore.PolicyBlockedEligibility(),
+		)
 	default:
 		return errors.New("测试运行态收到未知失败动作")
+	}
+}
+
+// recordBlock 按 Provider 已确认的最小作用域保存测试硬阻塞。
+func (state *runtimeState) recordBlock(
+	route runtimecore.ModelRoute,
+	kind runtimecore.FailureKind,
+	directive runtimecore.BlockDirective,
+	eligibility runtimecore.Eligibility,
+) error {
+	if !directive.IsValidFor(kind) {
+		return errors.New("测试运行态收到无效硬阻塞指令")
+	}
+	switch directive.Scope() {
+	case runtimecore.BlockScopeAccount:
+		state.accountBlocks[route.AccountRef()] = eligibility
+	case runtimecore.BlockScopeAccountModel:
+		state.modelBlocks[route] = eligibility
+	default:
+		return errors.New("测试运行态收到未知硬阻塞作用域")
 	}
 	return nil
 }

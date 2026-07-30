@@ -109,8 +109,9 @@ func (response Response) RetryAfter() time.Duration {
 
 // Classification 是 Provider 语义映射后的不可变运行态分类。
 type Classification struct {
-	kind       runtimecore.FailureKind
-	retryAfter time.Duration
+	kind           runtimecore.FailureKind
+	retryAfter     time.Duration
+	blockDirective runtimecore.BlockDirective
 }
 
 // NewClassification 创建不能绕过领域 cooldown 上限的分类结果。
@@ -119,16 +120,50 @@ func NewClassification(
 	retryAfter time.Duration,
 ) (Classification, error) {
 	policy, err := runtimecore.PolicyFor(kind)
+	if err != nil {
+		return Classification{}, ErrInvalidClassification
+	}
+	var directive runtimecore.BlockDirective
+	if policy.BlocksRouting() {
+		directive, err = runtimecore.DefaultBlockDirective(kind)
+		if err != nil {
+			return Classification{}, ErrInvalidClassification
+		}
+	}
+	return newClassification(kind, retryAfter, directive)
+}
+
+// NewBlockingClassification 创建带 Provider 明确作用域的硬阻塞分类。
+func NewBlockingClassification(
+	kind runtimecore.FailureKind,
+	scope runtimecore.BlockScope,
+) (Classification, error) {
+	directive, err := runtimecore.NewBlockDirective(kind, scope)
+	if err != nil {
+		return Classification{}, ErrInvalidClassification
+	}
+	return newClassification(kind, 0, directive)
+}
+
+// newClassification 统一校验 cooldown 提示与硬阻塞指令互斥。
+func newClassification(
+	kind runtimecore.FailureKind,
+	retryAfter time.Duration,
+	directive runtimecore.BlockDirective,
+) (Classification, error) {
+	policy, err := runtimecore.PolicyFor(kind)
 	if err != nil ||
 		retryAfter < 0 ||
 		retryAfter > runtimecore.MaxCooldownHint ||
 		retryAfter%time.Millisecond != 0 ||
-		retryAfter > 0 && !policy.EntersCooldown() {
+		retryAfter > 0 && !policy.EntersCooldown() ||
+		!validBlockDirective(policy, kind, directive) {
 		return Classification{}, ErrInvalidClassification
 	}
 	return Classification{
-		kind:       kind,
-		retryAfter: retryAfter,
+		kind:           kind,
+		retryAfter:     retryAfter,
+		blockDirective: directive,
 	}, nil
 }
 
@@ -162,13 +197,31 @@ func (classification Classification) RetryAfter() time.Duration {
 	return classification.retryAfter
 }
 
+// BlockDirective 返回硬阻塞作用域和解除信号；非阻塞分类返回零值。
+func (classification Classification) BlockDirective() runtimecore.BlockDirective {
+	return classification.blockDirective
+}
+
 // IsValid 判断分类是否能安全提交给运行态 Registry。
 func (classification Classification) IsValid() bool {
-	_, err := NewClassification(
+	_, err := newClassification(
 		classification.kind,
 		classification.retryAfter,
+		classification.blockDirective,
 	)
 	return err == nil
+}
+
+// validBlockDirective 验证硬阻塞必须带指令，其他动作必须保持零值。
+func validBlockDirective(
+	policy runtimecore.FailurePolicy,
+	kind runtimecore.FailureKind,
+	directive runtimecore.BlockDirective,
+) bool {
+	if policy.BlocksRouting() {
+		return directive.IsValidFor(kind)
+	}
+	return directive.IsZero()
 }
 
 // normalizeToken 校验稳定标识并拒绝空格、换行和原始错误正文。

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
+	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
 )
 
 // TestClassifyCodexResponse 固化 Codex 结构化错误到运行态动作的映射。
@@ -16,6 +17,7 @@ func TestClassifyCodexResponse(t *testing.T) {
 		input     Input
 		want      runtimecore.FailureKind
 		wantRetry time.Duration
+		wantScope runtimecore.BlockScope
 	}{
 		{
 			name: "普通模型限流",
@@ -34,7 +36,8 @@ func TestClassifyCodexResponse(t *testing.T) {
 				ErrorCode:  "rate_limit_exceeded",
 				RetryAfter: runtimecore.MaxCooldownHint + time.Hour,
 			},
-			want: runtimecore.FailureQuotaExhausted,
+			want:      runtimecore.FailureQuotaExhausted,
+			wantScope: runtimecore.BlockScopeAccountModel,
 		},
 		{
 			name: "明确额度耗尽",
@@ -42,7 +45,8 @@ func TestClassifyCodexResponse(t *testing.T) {
 				StatusCode: 429,
 				ErrorCode:  "insufficient_quota",
 			},
-			want: runtimecore.FailureQuotaExhausted,
+			want:      runtimecore.FailureQuotaExhausted,
+			wantScope: runtimecore.BlockScopeAccount,
 		},
 		{
 			name: "账单不可用",
@@ -50,7 +54,8 @@ func TestClassifyCodexResponse(t *testing.T) {
 				StatusCode: 402,
 				ErrorCode:  "billing_not_active",
 			},
-			want: runtimecore.FailureBillingBlocked,
+			want:      runtimecore.FailureBillingBlocked,
+			wantScope: runtimecore.BlockScopeAccount,
 		},
 		{
 			name: "凭据拒绝",
@@ -58,7 +63,16 @@ func TestClassifyCodexResponse(t *testing.T) {
 				StatusCode: 401,
 				ErrorCode:  "invalid_api_key",
 			},
-			want: runtimecore.FailureCredentialRejected,
+			want:      runtimecore.FailureCredentialRejected,
+			wantScope: runtimecore.BlockScopeAccount,
+		},
+		{
+			name: "泛化权限不足",
+			input: Input{
+				StatusCode: 403,
+			},
+			want:      runtimecore.FailurePermissionDenied,
+			wantScope: runtimecore.BlockScopeAccountModel,
 		},
 		{
 			name: "工作区停用",
@@ -66,7 +80,8 @@ func TestClassifyCodexResponse(t *testing.T) {
 				StatusCode: 402,
 				ErrorCode:  "deactivated_workspace",
 			},
-			want: runtimecore.FailureWorkspaceDeactivated,
+			want:      runtimecore.FailureWorkspaceDeactivated,
+			wantScope: runtimecore.BlockScopeAccount,
 		},
 		{
 			name: "HTTP 模型过载",
@@ -97,7 +112,8 @@ func TestClassifyCodexResponse(t *testing.T) {
 				StatusCode: 404,
 				ErrorCode:  "model_not_found",
 			},
-			want: runtimecore.FailureModelUnsupported,
+			want:      runtimecore.FailureModelUnsupported,
+			wantScope: runtimecore.BlockScopeAccountModel,
 		},
 		{
 			name: "普通资源不存在",
@@ -157,11 +173,28 @@ func TestClassifyCodexResponse(t *testing.T) {
 			}
 			if classification.Kind() != test.want ||
 				classification.RetryAfter() != test.wantRetry ||
+				!classificationMatchesScope(
+					classification,
+					test.wantScope,
+				) ||
 				!classification.IsValid() {
 				t.Fatalf("Classify() = %#v", classification)
 			}
 		})
 	}
+}
+
+// classificationMatchesScope 验证非阻塞分类保持零指令，硬阻塞精确匹配作用域。
+func classificationMatchesScope(
+	classification sharedfailure.Classification,
+	scope runtimecore.BlockScope,
+) bool {
+	directive := classification.BlockDirective()
+	if scope == "" {
+		return directive.IsZero()
+	}
+	return directive.Scope() == scope &&
+		directive.IsValidFor(classification.Kind())
 }
 
 // TestClassifyCodexResponseRejectsUnsafeInput 验证分类器不会接收错误正文或非法等待时间。

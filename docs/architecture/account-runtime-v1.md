@@ -11,10 +11,11 @@ SQLite schema，也不读取旧 Node `runtime_state`。Codex / Claude HTTP、SSE
 transport Observer 已经接入结构化分类器，但 Go Server 还没有上游执行器调用它们；
 不能把本阶段解释成旧 Node Gateway 已经完成切换。
 
-运行态固定按 `(account_ref, effective_model_id)` 隔离。`effective_model_id` 是完成模型
-别名解析后的真实上游模型 ID；客户端别名不能作为 cooldown 键。v1 不提供账号级请求
-cooldown：所有已确认的 Server 瞬态失败都缩小到模型元组，不能因为缺少模型上下文而
-退化成全账号处罚。
+模型 cooldown 固定按 `(account_ref, effective_model_id)` 隔离。`effective_model_id`
+是完成模型别名解析后的真实上游模型 ID；客户端别名不能作为 cooldown 键。v1 不提供
+账号级请求 cooldown：所有已确认的 Server 瞬态失败都缩小到模型元组，不能因为缺少
+模型上下文而退化成全账号处罚。硬阻塞使用独立 `BlockDirective` 明确账号级或账号模型
+级作用域，不能复用 cooldown 键推断。
 
 OAuth refresh 的临时网络失败也不进入模型运行态。它属于凭据刷新边界，当前征召器只
 跳过本次候选；后续若真实压力证明需要抑制重复刷新，应在 `accountcredentials` 内实现
@@ -33,13 +34,14 @@ Provider Adapter 必须先把 HTTP、SDK 或 streaming 结果映射为稳定 `Fa
 | `request_timeout` | 非用户取消的上游请求超时 | `model_cooldown` | 同类连续 2 次 | 30 秒 | 到期或当前模型成功 |
 | `connection_reset` | `ECONNRESET`、等价连接中断 | `model_cooldown` | 同类连续 2 次 | 30 秒 | 到期或当前模型成功 |
 | `stream_disconnected` | 缺少正常完成事件的真实流中断 | `model_cooldown` | 同类连续 2 次 | 30 秒 | 到期或当前模型成功 |
-| `credential_rejected` | 401/403、invalid API key | `credential_block` | 不适用 | 不适用 | 凭据版本更新 |
+| `credential_rejected` | 401、invalid API key | `credential_block` | 不适用 | 不适用 | 凭据版本更新 |
 | `reauthentication_required` | Refresh Token 失效或明确 revoked | `credential_block` | 不适用 | 不适用 | reauth 写入新凭据 |
 | `quota_exhausted` | 明确 usage window / quota 已耗尽 | `quota_block` | 不适用 | 不适用 | 新 usage 快照确认恢复 |
 | `billing_blocked` | 明确 billing 不可用 | `quota_block` | 不适用 | 不适用 | 新账单/usage 快照确认恢复 |
 | `workspace_deactivated` | `deactivated_workspace` | `policy_block` | 不适用 | 不适用 | Provider 账号状态重新确认 |
 | `model_unsupported` | 账号或 Provider 明确不支持目标模型 | `policy_block` | 不适用 | 不适用 | 模型能力快照更新 |
 | `region_unsupported` | Provider 明确拒绝当前地区 | `policy_block` | 不适用 | 不适用 | 地区或策略状态更新 |
+| `permission_denied` | 凭据有效但无权访问当前资源或能力 | `policy_block` | 不适用 | 不适用 | 权限或策略快照更新 |
 | `invalid_request` | 400/422 请求参数或上下文错误 | `no_state_change` | 不适用 | 不适用 | 当前请求结束 |
 | `not_found` | 404，且没有模型能力变化证据 | `no_state_change` | 不适用 | 不适用 | 当前请求结束 |
 | `safety_rejected` | 内容或安全策略拒绝 | `no_state_change` | 不适用 | 不适用 | 当前请求结束 |
@@ -72,7 +74,8 @@ Codex 分类器使用以下稳定证据：
 | 普通 429、`rate_limit_error`、`rate_limit_exceeded` | `rate_limited` |
 | 限流恢复提示超过 24 小时、`insufficient_quota` | `quota_exhausted` |
 | `billing_not_active` | `billing_blocked` |
-| 401/403、`invalid_api_key` | `credential_rejected` |
+| 401、`invalid_api_key` | `credential_rejected` |
+| 无明确 code 的 403 | `permission_denied` |
 | `deactivated_workspace` | `workspace_deactivated` |
 | 529、`model_at_capacity` | `model_overloaded` |
 | `model_not_found` | `model_unsupported` |
@@ -93,7 +96,8 @@ Claude 分类器使用以下稳定证据：
 | 普通 429、`rate_limit_error` | `rate_limited` |
 | 明确统一额度窗口、限流恢复提示超过 24 小时、`quota_error` | `quota_exhausted` |
 | 529、`overloaded_error` | `model_overloaded` |
-| 401/403、`authentication_error`、`permission_error` | `credential_rejected` |
+| 401、`authentication_error` | `credential_rejected` |
+| 403、`permission_error` | `permission_denied` |
 | `oauth_token_revoked` | `reauthentication_required` |
 | `billing_error` | `billing_blocked` |
 | `deactivated_workspace` | `workspace_deactivated` |
@@ -109,8 +113,38 @@ Claude 统一额度只在 `anthropic-ratelimit-unified-status=rejected` 且 over
 
 明确错误 code/type 的优先级高于宽泛 HTTP 状态。例如 429 +
 `insufficient_quota` 不能降级为普通限流；403 + `oauth_token_revoked` 不能降级为普通
-凭据拒绝。硬阻塞分类不允许携带 `Retry-After`，避免调用方误把 quota 或 policy 当成
-自动恢复 cooldown。
+权限不足。泛化 403 或 `permission_error` 也不能升级成账号级凭据失效。硬阻塞分类
+不允许携带 `Retry-After`，避免调用方误把 quota 或 policy 当成自动恢复 cooldown。
+
+### 2.2 硬阻塞作用域与解除信号
+
+`FailureKind` 只说明失败语义，不能单独决定所有硬阻塞作用域。Provider 分类器必须把
+结构化证据转换为低敏 `BlockDirective(scope, recovery_trigger)`，随后由
+`AttemptFailure` 原样传给生产账号运行态端口。
+
+| FailureKind | 允许作用域 | 解除信号 | 作用域证据 |
+| --- | --- | --- | --- |
+| `credential_rejected` | `account` | `credential_version` | 凭据属于账号，兄弟模型共享同一版本 |
+| `reauthentication_required` | `account` | `credential_version` | reauth 写入新凭据版本 |
+| `quota_exhausted` | `account` 或 `account_model` | `usage_snapshot` | 必须由 Provider 的统一额度或当前模型长窗口证据明确选择 |
+| `billing_blocked` | `account` | `billing_snapshot` | 账单状态属于账号 |
+| `workspace_deactivated` | `account` | `account_status` | 工作区状态属于账号 |
+| `model_unsupported` | `account_model` | `model_catalog` | 模型目录只修正指定账号模型关系 |
+| `region_unsupported` | `account` 或 `account_model` | `policy_snapshot` | 必须由 Provider 明确地区策略作用域 |
+| `permission_denied` | `account` 或 `account_model` | `policy_snapshot` | 必须由 Provider 明确资源权限作用域 |
+
+`quota_exhausted`、`region_unsupported` 和 `permission_denied` 没有共享默认作用域；
+缺少 Provider 证据时构造分类直接失败。当前已确认的差异为：
+
+- Codex `insufficient_quota` 是账号级；仅由超长模型限流窗口推导时是账号模型级；
+- Claude unified rate-limit 或 `quota_error` 是账号级；非 unified 的超长窗口是账号
+  模型级；
+- Codex/Claude 泛化 403 或 Claude `permission_error` 当前使用最小账号模型级作用域；
+- 凭据、billing、workspace 和 model-not-found 使用上表固定作用域。
+
+`RecoveryTrigger` 只声明哪个外部真相源有资格重新判断阻塞，不表示收到任意更新就无条件
+清除。后续生产状态实现仍必须比较失败时版本和新快照版本，避免旧请求迟到后封锁已经更新
+的凭据或模型目录。
 
 ## 3. 连续失败规则
 
@@ -139,13 +173,13 @@ internal/adapters/upstreamfailure
     有界 JSON + Retry-After + transport 低敏投影
         ↓
 internal/adapters/{codex,claude}/upstreamfailure observer + classifier
-    Provider envelope / safe Header -> 稳定 FailureKind
+    Provider envelope / safe Header -> FailureKind + BlockDirective
         ↓
 core/accountruntime
-    FailurePolicy + ModelState + Eligibility + ModelRoute
+    FailurePolicy + BlockDirective + ModelState + Eligibility + ModelRoute
         ↓
 application/accountruntime
-    线程安全稀疏 Registry，只保存出现过失败的模型元组
+    线程安全稀疏 Registry，只保存出现过失败的模型 cooldown 元组
         ↓
 application/accountrouting
     enabled 候选 -> runtime eligibility -> credential resolver
@@ -156,8 +190,9 @@ application/accountrouting
 运行态对象。健康读取使用读锁，过期或失败更新才进入写锁。
 
 征召器必须先检查运行态资格，再读取凭据。`available` 才进入 Credential Resolver；
-`credential_blocked`、`quota_blocked`、`policy_blocked`、`model_cooldown` 都只跳过
-当前候选。运行态端口异常或返回非法零值时失败关闭，不能把系统错误当成账号不可用。
+`credential_blocked`、`quota_blocked`、`policy_blocked`、`model_cooldown` 都会跳过
+当前候选。账号级硬阻塞会让该账号的所有模型都返回不可用；账号模型级阻塞不影响兄弟
+模型。运行态端口异常或返回非法零值时失败关闭，不能把系统错误当成账号不可用。
 
 ## 5. 当前持久化决定
 
@@ -168,7 +203,8 @@ v1 的模型 cooldown 是进程内瞬态索引，不新增数据库字段或表�
 - 凭据、quota、policy 各有独立解除条件，不能为了“一张运行态表”重新混在一起。
 
 如果后续确认存在多个 Go Server 进程同时征召同一账号池，再基于真实一致性需求决定
-共享存储；届时持久化合同必须保持当前稳定分类和模型元组作用域，不能退回万能 JSON。
+共享存储；届时持久化合同必须保持当前稳定分类和 `BlockDirective` 作用域，不能退回
+万能 JSON。
 
 ## 6. 当前验证
 

@@ -222,9 +222,11 @@ func TestAttemptFailureRequiresConsistentRuntimeHint(t *testing.T) {
 		t.Fatalf("NewResponseFailure() error = %v", err)
 	}
 	failure, err := inferencegateway.NewAttemptFailure(
-		responseFailure,
-		runtimecore.FailureRateLimited,
-		1500*time.Millisecond,
+		inferencegateway.AttemptFailureInput{
+			ResponseFailure: responseFailure,
+			RuntimeKind:     runtimecore.FailureRateLimited,
+			RetryAfter:      1500 * time.Millisecond,
+		},
 	)
 	if err != nil {
 		t.Fatalf("NewAttemptFailure() error = %v", err)
@@ -232,7 +234,8 @@ func TestAttemptFailureRequiresConsistentRuntimeHint(t *testing.T) {
 	if !failure.IsValid() ||
 		failure.ResponseFailure().Code() != responseFailure.Code() ||
 		failure.RuntimeKind() != runtimecore.FailureRateLimited ||
-		failure.RetryAfter() != 1500*time.Millisecond {
+		failure.RetryAfter() != 1500*time.Millisecond ||
+		!failure.BlockDirective().IsZero() {
 		t.Fatalf("failure = %#v", failure)
 	}
 	if !inferencegateway.FailedAttempt(failure).IsValid() ||
@@ -241,34 +244,63 @@ func TestAttemptFailureRequiresConsistentRuntimeHint(t *testing.T) {
 		t.Fatal("AttemptResult 终态有效性错误")
 	}
 
+	modelBlock, err := runtimecore.NewBlockDirective(
+		runtimecore.FailureModelUnsupported,
+		runtimecore.BlockScopeAccountModel,
+	)
+	if err != nil {
+		t.Fatalf("NewBlockDirective() error = %v", err)
+	}
 	invalidFailures := []struct {
-		name       string
-		response   inference.ResponseFailure
-		kind       runtimecore.FailureKind
-		retryAfter time.Duration
+		name  string
+		input inferencegateway.AttemptFailureInput
 	}{
 		{
-			name:       "公开失败为空",
-			kind:       runtimecore.FailureRateLimited,
-			retryAfter: time.Second,
+			name: "公开失败为空",
+			input: inferencegateway.AttemptFailureInput{
+				RuntimeKind: runtimecore.FailureRateLimited,
+				RetryAfter:  time.Second,
+			},
 		},
 		{
-			name:       "失败分类未知",
-			response:   responseFailure,
-			kind:       runtimecore.FailureKind("future"),
-			retryAfter: time.Second,
+			name: "失败分类未知",
+			input: inferencegateway.AttemptFailureInput{
+				ResponseFailure: responseFailure,
+				RuntimeKind:     runtimecore.FailureKind("future"),
+				RetryAfter:      time.Second,
+			},
 		},
 		{
-			name:       "硬阻塞携带 cooldown",
-			response:   responseFailure,
-			kind:       runtimecore.FailureCredentialRejected,
-			retryAfter: time.Second,
+			name: "硬阻塞携带 cooldown",
+			input: inferencegateway.AttemptFailureInput{
+				ResponseFailure: responseFailure,
+				RuntimeKind:     runtimecore.FailureCredentialRejected,
+				RetryAfter:      time.Second,
+			},
 		},
 		{
-			name:       "恢复提示超过上限",
-			response:   responseFailure,
-			kind:       runtimecore.FailureRateLimited,
-			retryAfter: runtimecore.MaxCooldownHint + time.Second,
+			name: "恢复提示超过上限",
+			input: inferencegateway.AttemptFailureInput{
+				ResponseFailure: responseFailure,
+				RuntimeKind:     runtimecore.FailureRateLimited,
+				RetryAfter: runtimecore.MaxCooldownHint +
+					time.Second,
+			},
+		},
+		{
+			name: "quota 缺少作用域",
+			input: inferencegateway.AttemptFailureInput{
+				ResponseFailure: responseFailure,
+				RuntimeKind:     runtimecore.FailureQuotaExhausted,
+			},
+		},
+		{
+			name: "阻塞指令属于其他失败",
+			input: inferencegateway.AttemptFailureInput{
+				ResponseFailure: responseFailure,
+				RuntimeKind:     runtimecore.FailureCredentialRejected,
+				BlockDirective:  modelBlock,
+			},
 		},
 	}
 	for _, test := range invalidFailures {
@@ -277,9 +309,7 @@ func TestAttemptFailureRequiresConsistentRuntimeHint(t *testing.T) {
 			t.Parallel()
 
 			if _, err := inferencegateway.NewAttemptFailure(
-				test.response,
-				test.kind,
-				test.retryAfter,
+				test.input,
 			); !errors.Is(err, inferencegateway.ErrInvalidAttemptFailure) {
 				t.Fatalf("NewAttemptFailure() error = %v", err)
 			}

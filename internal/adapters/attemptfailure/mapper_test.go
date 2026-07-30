@@ -27,10 +27,40 @@ func TestNewBuildsSafeCanonicalFailure(t *testing.T) {
 	}
 	if failure.RuntimeKind() != runtimecore.FailureRateLimited ||
 		failure.RetryAfter() != 2*time.Second ||
+		!failure.BlockDirective().IsZero() ||
 		failure.ResponseFailure().Code() != "rate_limited" ||
 		failure.ResponseFailure().SafeMessage() != "上游请求频率受限" ||
 		!failure.ResponseFailure().Retryable() {
 		t.Fatalf("failure = %#v", failure)
+	}
+}
+
+// TestNewPreservesProviderBlockDirective 验证 quota 的账号或模型作用域
+// 从 Provider 分类结果原样传到生产运行态记录端口。
+func TestNewPreservesProviderBlockDirective(t *testing.T) {
+	t.Parallel()
+
+	classification, err := sharedfailure.NewBlockingClassification(
+		runtimecore.FailureQuotaExhausted,
+		runtimecore.BlockScopeAccountModel,
+	)
+	if err != nil {
+		t.Fatalf("NewBlockingClassification() error = %v", err)
+	}
+	failure, err := New(classification)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	directive := failure.BlockDirective()
+	if failure.RuntimeKind() != runtimecore.FailureQuotaExhausted ||
+		directive.Scope() != runtimecore.BlockScopeAccountModel ||
+		directive.RecoveryTrigger() != runtimecore.RecoveryUsageSnapshot ||
+		!directive.IsValidFor(failure.RuntimeKind()) {
+		t.Fatalf("failure = %#v", failure)
+	}
+	if SafeMessage(runtimecore.FailurePermissionDenied) !=
+		"当前账号无权访问目标能力" {
+		t.Fatal("permission_denied 安全文本错误")
 	}
 }
 

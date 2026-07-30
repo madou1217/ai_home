@@ -189,6 +189,7 @@ func TestModelStateKeepsNonCooldownFailuresOut(t *testing.T) {
 		{FailureCredentialRejected, ActionCredentialBlock},
 		{FailureQuotaExhausted, ActionQuotaBlock},
 		{FailureWorkspaceDeactivated, ActionPolicyBlock},
+		{FailurePermissionDenied, ActionPolicyBlock},
 		{FailureInvalidRequest, ActionNoStateChange},
 		{FailureUnclassified, ActionNoStateChange},
 	}

@@ -30,8 +30,8 @@ type AccountStore interface {
 
 // AccountRuntime 是账号征召与推理终态共享的完整运行态边界。
 //
-// 实现必须处理全部 FailureAction；只保存模型 cooldown、却忽略 credential、
-// quota 或 policy 阻塞的实现不满足该端口的语义。
+// 实现必须处理全部 FailureAction，并使用 AttemptFailure.BlockDirective 决定硬阻塞
+// 作用域；只保存模型 cooldown，或重新按 FailureKind 猜测作用域，都不满足该端口语义。
 type AccountRuntime interface {
 	accountrouting.RuntimeEligibilitySource
 	inferencegateway.AttemptRecorder

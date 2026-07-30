@@ -5,6 +5,7 @@ import (
 	"time"
 
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
+	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
 )
 
 // TestClassifyClaudeResponse 固化 Claude 结构化错误到运行态动作的映射。
@@ -16,6 +17,7 @@ func TestClassifyClaudeResponse(t *testing.T) {
 		input     Input
 		want      runtimecore.FailureKind
 		wantRetry time.Duration
+		wantScope runtimecore.BlockScope
 	}{
 		{
 			name: "普通模型限流",
@@ -35,7 +37,8 @@ func TestClassifyClaudeResponse(t *testing.T) {
 				UnifiedRateLimit: true,
 				RetryAfter:       5 * time.Hour,
 			},
-			want: runtimecore.FailureQuotaExhausted,
+			want:      runtimecore.FailureQuotaExhausted,
+			wantScope: runtimecore.BlockScopeAccount,
 		},
 		{
 			name: "长窗口限流",
@@ -44,7 +47,8 @@ func TestClassifyClaudeResponse(t *testing.T) {
 				ErrorType:  "rate_limit_error",
 				RetryAfter: runtimecore.MaxCooldownHint + time.Hour,
 			},
-			want: runtimecore.FailureQuotaExhausted,
+			want:      runtimecore.FailureQuotaExhausted,
+			wantScope: runtimecore.BlockScopeAccountModel,
 		},
 		{
 			name: "流内过载",
@@ -75,7 +79,17 @@ func TestClassifyClaudeResponse(t *testing.T) {
 				StatusCode: 401,
 				ErrorType:  "authentication_error",
 			},
-			want: runtimecore.FailureCredentialRejected,
+			want:      runtimecore.FailureCredentialRejected,
+			wantScope: runtimecore.BlockScopeAccount,
+		},
+		{
+			name: "资源权限不足",
+			input: Input{
+				StatusCode: 403,
+				ErrorType:  "permission_error",
+			},
+			want:      runtimecore.FailurePermissionDenied,
+			wantScope: runtimecore.BlockScopeAccountModel,
 		},
 		{
 			name: "Token 撤销",
@@ -83,7 +97,8 @@ func TestClassifyClaudeResponse(t *testing.T) {
 				StatusCode: 403,
 				ErrorCode:  "oauth_token_revoked",
 			},
-			want: runtimecore.FailureReauthenticationRequired,
+			want:      runtimecore.FailureReauthenticationRequired,
+			wantScope: runtimecore.BlockScopeAccount,
 		},
 		{
 			name: "账单失败",
@@ -91,7 +106,8 @@ func TestClassifyClaudeResponse(t *testing.T) {
 				StatusCode: 402,
 				ErrorType:  "billing_error",
 			},
-			want: runtimecore.FailureBillingBlocked,
+			want:      runtimecore.FailureBillingBlocked,
+			wantScope: runtimecore.BlockScopeAccount,
 		},
 		{
 			name: "额度失败",
@@ -99,7 +115,8 @@ func TestClassifyClaudeResponse(t *testing.T) {
 				StatusCode: 429,
 				ErrorType:  "quota_error",
 			},
-			want: runtimecore.FailureQuotaExhausted,
+			want:      runtimecore.FailureQuotaExhausted,
+			wantScope: runtimecore.BlockScopeAccount,
 		},
 		{
 			name: "工作区停用",
@@ -107,7 +124,8 @@ func TestClassifyClaudeResponse(t *testing.T) {
 				StatusCode: 402,
 				ErrorCode:  "deactivated_workspace",
 			},
-			want: runtimecore.FailureWorkspaceDeactivated,
+			want:      runtimecore.FailureWorkspaceDeactivated,
+			wantScope: runtimecore.BlockScopeAccount,
 		},
 		{
 			name: "模型不支持",
@@ -115,7 +133,8 @@ func TestClassifyClaudeResponse(t *testing.T) {
 				StatusCode: 404,
 				ErrorCode:  "model_not_found",
 			},
-			want: runtimecore.FailureModelUnsupported,
+			want:      runtimecore.FailureModelUnsupported,
+			wantScope: runtimecore.BlockScopeAccountModel,
 		},
 		{
 			name: "请求错误",
@@ -169,11 +188,28 @@ func TestClassifyClaudeResponse(t *testing.T) {
 			}
 			if classification.Kind() != test.want ||
 				classification.RetryAfter() != test.wantRetry ||
+				!classificationMatchesScope(
+					classification,
+					test.wantScope,
+				) ||
 				!classification.IsValid() {
 				t.Fatalf("Classify() = %#v", classification)
 			}
 		})
 	}
+}
+
+// classificationMatchesScope 验证非阻塞分类保持零指令，硬阻塞精确匹配作用域。
+func classificationMatchesScope(
+	classification sharedfailure.Classification,
+	scope runtimecore.BlockScope,
+) bool {
+	directive := classification.BlockDirective()
+	if scope == "" {
+		return directive.IsZero()
+	}
+	return directive.Scope() == scope &&
+		directive.IsValidFor(classification.Kind())
 }
 
 // TestClassifyClaudeResponseRejectsUnsafeInput 验证分类入口拒绝消息文本。

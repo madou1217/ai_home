@@ -40,7 +40,29 @@ func Classify(input Input) (sharedfailure.Classification, error) {
 		response.RetryAfter() <= runtimecore.MaxCooldownHint {
 		retryAfter = response.RetryAfter()
 	}
+	if kind == runtimecore.FailureQuotaExhausted {
+		return sharedfailure.NewBlockingClassification(
+			kind,
+			codexQuotaScope(response),
+		)
+	}
+	if kind == runtimecore.FailurePermissionDenied {
+		return sharedfailure.NewBlockingClassification(
+			kind,
+			runtimecore.BlockScopeAccountModel,
+		)
+	}
 	return sharedfailure.NewClassification(kind, retryAfter)
+}
+
+// codexQuotaScope 区分明确账号额度与仅有当前模型长窗口的证据。
+func codexQuotaScope(
+	response sharedfailure.Response,
+) runtimecore.BlockScope {
+	if response.ErrorCode() == "insufficient_quota" {
+		return runtimecore.BlockScopeAccount
+	}
+	return runtimecore.BlockScopeAccountModel
 }
 
 // classifyResponse 先处理明确业务代码，再使用 HTTP 状态作为保守兜底。
@@ -70,8 +92,10 @@ func classifyResponse(
 		return runtimecore.FailureQuotaExhausted, false
 	case isRateLimit(response.StatusCode(), errorType, errorCode):
 		return runtimecore.FailureRateLimited, true
-	case response.StatusCode() == 401 || response.StatusCode() == 403:
+	case response.StatusCode() == 401:
 		return runtimecore.FailureCredentialRejected, false
+	case response.StatusCode() == 403:
+		return runtimecore.FailurePermissionDenied, false
 	case response.StatusCode() == 529:
 		return runtimecore.FailureModelOverloaded, true
 	case response.StatusCode() == 408:

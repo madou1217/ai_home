@@ -84,27 +84,44 @@ type AttemptFailure struct {
 	responseFailure inference.ResponseFailure
 	runtimeKind     runtimecore.FailureKind
 	retryAfter      time.Duration
+	blockDirective  runtimecore.BlockDirective
+}
+
+// AttemptFailureInput 集中声明公开失败、运行态分类与硬阻塞证据。
+type AttemptFailureInput struct {
+	// ResponseFailure 是交给客户端 Renderer 的低敏失败。
+	ResponseFailure inference.ResponseFailure
+	// RuntimeKind 是账号运行态识别的稳定失败类型。
+	RuntimeKind runtimecore.FailureKind
+	// RetryAfter 只允许用于有限时间自动恢复的模型 cooldown。
+	RetryAfter time.Duration
+	// BlockDirective 只允许用于 credential、quota 或 policy 硬阻塞。
+	BlockDirective runtimecore.BlockDirective
 }
 
 // NewAttemptFailure 创建不包含 Provider 原文或请求内容的失败结果。
 func NewAttemptFailure(
-	responseFailure inference.ResponseFailure,
-	runtimeKind runtimecore.FailureKind,
-	retryAfter time.Duration,
+	input AttemptFailureInput,
 ) (AttemptFailure, error) {
-	policy, err := runtimecore.PolicyFor(runtimeKind)
+	policy, err := runtimecore.PolicyFor(input.RuntimeKind)
 	if err != nil ||
-		!responseFailure.IsValid() ||
-		retryAfter < 0 ||
-		retryAfter > runtimecore.MaxCooldownHint ||
-		retryAfter%time.Millisecond != 0 ||
-		retryAfter > 0 && !policy.EntersCooldown() {
+		!input.ResponseFailure.IsValid() ||
+		input.RetryAfter < 0 ||
+		input.RetryAfter > runtimecore.MaxCooldownHint ||
+		input.RetryAfter%time.Millisecond != 0 ||
+		input.RetryAfter > 0 && !policy.EntersCooldown() ||
+		!validAttemptBlockDirective(
+			policy,
+			input.RuntimeKind,
+			input.BlockDirective,
+		) {
 		return AttemptFailure{}, ErrInvalidAttemptFailure
 	}
 	return AttemptFailure{
-		responseFailure: responseFailure,
-		runtimeKind:     runtimeKind,
-		retryAfter:      retryAfter,
+		responseFailure: input.ResponseFailure,
+		runtimeKind:     input.RuntimeKind,
+		retryAfter:      input.RetryAfter,
+		blockDirective:  input.BlockDirective,
 	}, nil
 }
 
@@ -123,14 +140,34 @@ func (failure AttemptFailure) RetryAfter() time.Duration {
 	return failure.retryAfter
 }
 
+// BlockDirective 返回硬阻塞作用域和解除信号；非阻塞失败返回零值。
+func (failure AttemptFailure) BlockDirective() runtimecore.BlockDirective {
+	return failure.blockDirective
+}
+
 // IsValid 重新检查跨 Adapter 传递后的失败不变量。
 func (failure AttemptFailure) IsValid() bool {
 	restored, err := NewAttemptFailure(
-		failure.responseFailure,
-		failure.runtimeKind,
-		failure.retryAfter,
+		AttemptFailureInput{
+			ResponseFailure: failure.responseFailure,
+			RuntimeKind:     failure.runtimeKind,
+			RetryAfter:      failure.retryAfter,
+			BlockDirective:  failure.blockDirective,
+		},
 	)
 	return err == nil && restored == failure
+}
+
+// validAttemptBlockDirective 验证硬阻塞必须带指令，其他失败必须保持零值。
+func validAttemptBlockDirective(
+	policy runtimecore.FailurePolicy,
+	kind runtimecore.FailureKind,
+	directive runtimecore.BlockDirective,
+) bool {
+	if policy.BlocksRouting() {
+		return directive.IsValidFor(kind)
+	}
+	return directive.IsZero()
 }
 
 // retriesAnotherAccount 判断失败是否只影响当前账号或账号模型元组。
@@ -246,7 +283,7 @@ func (registry *UpstreamRegistry) Resolve(
 	return adapter, nil
 }
 
-// AttemptRecorder 在终态提交客户端前更新账号运行态边界。
+// AttemptRecorder 在终态提交客户端前按完整 BlockDirective 更新账号运行态边界。
 type AttemptRecorder interface {
 	RecordSuccess(
 		ctx context.Context,

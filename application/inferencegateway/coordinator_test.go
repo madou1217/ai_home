@@ -1646,10 +1646,23 @@ func newAttemptFailure(
 	if err != nil {
 		t.Fatalf("NewResponseFailure() error = %v", err)
 	}
+	var blockDirective runtimecore.BlockDirective
+	policy, err := runtimecore.PolicyFor(runtimeKind)
+	if err != nil {
+		t.Fatalf("PolicyFor() error = %v", err)
+	}
+	if policy.BlocksRouting() {
+		blockDirective, err = runtimecore.DefaultBlockDirective(runtimeKind)
+		if err != nil {
+			t.Fatalf("DefaultBlockDirective() error = %v", err)
+		}
+	}
 	attemptFailure, err := inferencegateway.NewAttemptFailure(
-		publicFailure,
-		runtimeKind,
-		0,
+		inferencegateway.AttemptFailureInput{
+			ResponseFailure: publicFailure,
+			RuntimeKind:     runtimeKind,
+			BlockDirective:  blockDirective,
+		},
 	)
 	if err != nil {
 		t.Fatalf("NewAttemptFailure() error = %v", err)

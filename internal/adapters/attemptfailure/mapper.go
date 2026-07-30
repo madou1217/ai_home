@@ -32,9 +32,12 @@ func New(
 			sharedfailure.ErrInvalidClassification
 	}
 	failure, err := inferencegateway.NewAttemptFailure(
-		responseFailure,
-		kind,
-		classification.RetryAfter(),
+		inferencegateway.AttemptFailureInput{
+			ResponseFailure: responseFailure,
+			RuntimeKind:     kind,
+			RetryAfter:      classification.RetryAfter(),
+			BlockDirective:  classification.BlockDirective(),
+		},
 	)
 	if err != nil {
 		return inferencegateway.AttemptFailure{},
@@ -110,6 +113,8 @@ func SafeMessage(kind runtimecore.FailureKind) string {
 		return "当前账号不支持目标模型"
 	case runtimecore.FailureRegionUnsupported:
 		return "当前地区不支持目标能力"
+	case runtimecore.FailurePermissionDenied:
+		return "当前账号无权访问目标能力"
 	case runtimecore.FailureInvalidRequest:
 		return "上游拒绝当前请求参数"
 	case runtimecore.FailureNotFound:

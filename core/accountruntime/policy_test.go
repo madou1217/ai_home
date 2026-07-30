@@ -29,6 +29,7 @@ func TestFailurePolicyMatrix(t *testing.T) {
 		{"工作区停用", FailureWorkspaceDeactivated, ActionPolicyBlock, 0, 0},
 		{"模型不支持", FailureModelUnsupported, ActionPolicyBlock, 0, 0},
 		{"地区不支持", FailureRegionUnsupported, ActionPolicyBlock, 0, 0},
+		{"权限不足", FailurePermissionDenied, ActionPolicyBlock, 0, 0},
 		{"请求参数错误", FailureInvalidRequest, ActionNoStateChange, 0, 0},
 		{"资源不存在", FailureNotFound, ActionNoStateChange, 0, 0},
 		{"内容策略拒绝", FailureSafetyRejected, ActionNoStateChange, 0, 0},
@@ -63,6 +64,16 @@ func TestFailurePolicyMatrix(t *testing.T) {
 					"PolicyFor(%q).EntersCooldown() = %t",
 					test.kind,
 					policy.EntersCooldown(),
+				)
+			}
+			blocking := test.action == ActionCredentialBlock ||
+				test.action == ActionQuotaBlock ||
+				test.action == ActionPolicyBlock
+			if policy.BlocksRouting() != blocking {
+				t.Fatalf(
+					"PolicyFor(%q).BlocksRouting() = %t",
+					test.kind,
+					policy.BlocksRouting(),
 				)
 			}
 		})

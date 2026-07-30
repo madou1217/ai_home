@@ -45,7 +45,30 @@ func Classify(input Input) (sharedfailure.Classification, error) {
 		response.RetryAfter() <= runtimecore.MaxCooldownHint {
 		retryAfter = response.RetryAfter()
 	}
+	if kind == runtimecore.FailureQuotaExhausted {
+		return sharedfailure.NewBlockingClassification(
+			kind,
+			claudeQuotaScope(response, input.UnifiedRateLimit),
+		)
+	}
+	if kind == runtimecore.FailurePermissionDenied {
+		return sharedfailure.NewBlockingClassification(
+			kind,
+			runtimecore.BlockScopeAccountModel,
+		)
+	}
 	return sharedfailure.NewClassification(kind, retryAfter)
+}
+
+// claudeQuotaScope 区分统一账号额度与只有当前模型长窗口的证据。
+func claudeQuotaScope(
+	response sharedfailure.Response,
+	unifiedRateLimit bool,
+) runtimecore.BlockScope {
+	if unifiedRateLimit || response.ErrorType() == "quota_error" {
+		return runtimecore.BlockScopeAccount
+	}
+	return runtimecore.BlockScopeAccountModel
 }
 
 // classifyResponse 先处理 Claude 明确信号，再使用 HTTP 状态保守归类。
@@ -80,10 +103,11 @@ func classifyResponse(
 		response.StatusCode() == 529:
 		return runtimecore.FailureModelOverloaded, true
 	case errorType == "authentication_error" ||
-		errorType == "permission_error" ||
-		response.StatusCode() == 401 ||
-		response.StatusCode() == 403:
+		response.StatusCode() == 401:
 		return runtimecore.FailureCredentialRejected, false
+	case errorType == "permission_error" ||
+		response.StatusCode() == 403:
+		return runtimecore.FailurePermissionDenied, false
 	case errorType == "invalid_request_error" ||
 		response.StatusCode() == 400 ||
 		response.StatusCode() == 422:

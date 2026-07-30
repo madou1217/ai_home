@@ -8,6 +8,7 @@ import (
 	"math"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 )
 
@@ -35,6 +36,8 @@ func (store *Store) RegisterNew(
 		}
 	}
 
+	store.routingWrites.Lock()
+	defer store.routingWrites.Unlock()
 	transaction, err := store.db.BeginTx(ctx, nil)
 	if err != nil {
 		return accountcore.Account{}, fmt.Errorf("开始新账号注册事务失败: %w", err)
@@ -80,12 +83,27 @@ func (store *Store) RegisterNew(
 			return accountcore.Account{}, err
 		}
 	}
+	models := request.Models()
+	if err := insertInitialDiscoveredModels(
+		ctx,
+		transaction,
+		request.AccountRef(),
+		models,
+		request.RegisteredAt().UnixMilli(),
+	); err != nil {
+		return accountcore.Account{}, err
+	}
 	if err := transaction.Commit(); err != nil {
 		if isConstraintError(err) {
 			return accountcore.Account{}, accountapp.ErrAccountConflict
 		}
 		return accountcore.Account{}, fmt.Errorf("提交新账号注册事务失败: %w", err)
 	}
+	routingAccount, err := store.newRoutingAccount(account)
+	if err != nil {
+		return accountcore.Account{}, err
+	}
+	store.routes.replaceAccount(routingAccount, account.Enabled(), models)
 	return account, nil
 }
 
@@ -187,4 +205,36 @@ type statementExecutor interface {
 		query string,
 		args ...any,
 	) (sql.Result, error)
+}
+
+// insertInitialDiscoveredModels 把注册时已发现的完整模型集合写入同一事务。
+func insertInitialDiscoveredModels(
+	ctx context.Context,
+	executor statementExecutor,
+	accountRef accountcore.AccountRef,
+	models []runtimecore.ModelID,
+	updatedAtMS int64,
+) error {
+	if !accountapp.ValidDiscoveredModelIDs(models) {
+		return accountapp.ErrInvalidDiscoveredModels
+	}
+	const statement = `
+		INSERT INTO account_models (
+			account_ref, model_id, upstream_available, manual_policy, updated_at_ms
+		) VALUES (?, ?, 1, 'inherit', ?)`
+	for _, modelID := range models {
+		if _, err := executor.ExecContext(
+			ctx,
+			statement,
+			accountRef.String(),
+			modelID.String(),
+			updatedAtMS,
+		); err != nil {
+			if isConstraintError(err) {
+				return accountapp.ErrAccountConflict
+			}
+			return fmt.Errorf("写入注册账号模型失败: %w", err)
+		}
+	}
+	return nil
 }

@@ -42,6 +42,13 @@ var expectedSchemaColumns = map[string][]string{
 		"profile_json",
 		"updated_at_ms",
 	},
+	"account_models": {
+		"account_ref",
+		"model_id",
+		"upstream_available",
+		"manual_policy",
+		"updated_at_ms",
+	},
 }
 
 // initialize 校验数据库身份、执行首次 migration 并启用 WAL。
@@ -88,7 +95,7 @@ func inspectDatabase(ctx context.Context, connection *sql.Conn) (int, int, int, 
 	return applicationID, schemaVersion, objectCount, nil
 }
 
-// migrateConnection 在立即事务中串行校验或创建 v1，不接收任何旧结构。
+// migrateConnection 在立即事务中创建最新结构或把规范 v1 前向迁移到 v2。
 func migrateConnection(ctx context.Context, connection *sql.Conn) (resultErr error) {
 	if _, err := connection.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
 		return fmt.Errorf("开始账号数据库 migration 失败: %w", err)
@@ -106,11 +113,20 @@ func migrateConnection(ctx context.Context, connection *sql.Conn) (resultErr err
 	if applicationID == ApplicationID && schemaVersion == SchemaVersion {
 		return commitMigration(ctx, connection)
 	}
+	if applicationID == ApplicationID && schemaVersion == 1 {
+		if _, err := connection.ExecContext(ctx, SchemaV2); err != nil {
+			return fmt.Errorf("迁移账号数据库到 v2 失败: %w", err)
+		}
+		return commitMigration(ctx, connection)
+	}
 	if applicationID != 0 || schemaVersion != 0 || objectCount != 0 {
 		return ErrIncompatibleDatabase
 	}
 	if _, err := connection.ExecContext(ctx, SchemaV1); err != nil {
 		return fmt.Errorf("创建账号数据库 v1 失败: %w", err)
+	}
+	if _, err := connection.ExecContext(ctx, SchemaV2); err != nil {
+		return fmt.Errorf("创建账号数据库 v2 失败: %w", err)
 	}
 	return commitMigration(ctx, connection)
 }
@@ -175,7 +191,7 @@ func waitForJournalModeRetry(ctx context.Context, attempt int) error {
 	}
 }
 
-// validateConnection 确保连接级外键和 v1 表结构完整。
+// validateConnection 确保连接级外键和最新表、索引结构完整。
 func validateConnection(ctx context.Context, connection *sql.Conn) error {
 	applicationID, schemaVersion, _, err := inspectDatabase(ctx, connection)
 	if err != nil {
@@ -200,16 +216,21 @@ func validateConnection(ctx context.Context, connection *sql.Conn) error {
 			return fmt.Errorf("%w: table=%s", ErrIncompatibleDatabase, tableName)
 		}
 	}
-	var routingIndexCount int
-	const routingIndexSQL = `
-		SELECT COUNT(*)
-		FROM sqlite_schema
-		WHERE type = 'index' AND name = 'idx_accounts_routing'`
-	if err := connection.QueryRowContext(ctx, routingIndexSQL).Scan(&routingIndexCount); err != nil {
-		return fmt.Errorf("检查账号征召索引失败: %w", err)
-	}
-	if routingIndexCount != 1 {
-		return ErrIncompatibleDatabase
+	for _, indexName := range []string{
+		"idx_accounts_routing",
+		"idx_account_models_effective",
+	} {
+		var indexCount int
+		const indexSQL = `
+			SELECT COUNT(*)
+			FROM sqlite_schema
+			WHERE type = 'index' AND name = ?`
+		if err := connection.QueryRowContext(ctx, indexSQL, indexName).Scan(&indexCount); err != nil {
+			return fmt.Errorf("检查账号索引失败: %w", err)
+		}
+		if indexCount != 1 {
+			return ErrIncompatibleDatabase
+		}
 	}
 	return nil
 }

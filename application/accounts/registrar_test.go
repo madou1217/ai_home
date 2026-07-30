@@ -9,6 +9,7 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/accounts/codex"
+	"github.com/madou1217/ai_home/core/providers"
 )
 
 // TestRegistrarBuildsIdentityBoundRequest 验证注册用例只向持久化端口提交规范命令。
@@ -34,9 +35,11 @@ func TestRegistrarBuildsIdentityBoundRequest(t *testing.T) {
 	expectedTime := time.Date(2026, time.July, 27, 9, 1, 2, 345_000_000, time.UTC)
 	store := &registrationStoreStub{}
 	clockCalls := 0
+	catalog := testCatalog(t)
 	registrar, err := accountapp.NewRegistrar(
-		testCatalog(t),
+		catalog,
 		store,
+		newTestModelDiscovery(t, catalog),
 		func() time.Time {
 			clockCalls++
 			return observedAt
@@ -94,9 +97,12 @@ func TestRegistrarRejectsMismatchedProfileBeforePersistence(t *testing.T) {
 		t.Fatalf("NewAccountProfile() error = %v", err)
 	}
 	store := &registrationStoreStub{}
+	catalog := testCatalog(t)
+	discoveryCalls := 0
 	registrar, err := accountapp.NewRegistrar(
-		testCatalog(t),
+		catalog,
 		store,
+		newObservedModelDiscovery(t, catalog, &discoveryCalls),
 		func() time.Time {
 			return time.Date(2026, time.July, 27, 0, 0, 0, 0, time.UTC)
 		},
@@ -112,8 +118,12 @@ func TestRegistrarRejectsMismatchedProfileBeforePersistence(t *testing.T) {
 	); !errors.Is(err, accountapp.ErrInvalidRegistration) {
 		t.Fatalf("Register() error = %v, want ErrInvalidRegistration", err)
 	}
-	if store.calls != 0 {
-		t.Fatalf("mismatched profile reached persistence: calls=%d", store.calls)
+	if store.calls != 0 || discoveryCalls != 0 {
+		t.Fatalf(
+			"mismatched profile reached external port: store=%d discovery=%d",
+			store.calls,
+			discoveryCalls,
+		)
 	}
 }
 
@@ -127,11 +137,13 @@ func TestRegistrarRejectsInvalidDependencies(t *testing.T) {
 		name    string
 		catalog bool
 		store   accountapp.RegistrationStore
+		models  bool
 		clock   accountapp.Clock
 	}{
-		{name: "missing catalog", store: store, clock: clock},
-		{name: "missing store", catalog: true, clock: clock},
-		{name: "missing clock", catalog: true, store: store},
+		{name: "missing catalog", store: store, models: true, clock: clock},
+		{name: "missing store", catalog: true, models: true, clock: clock},
+		{name: "missing models", catalog: true, store: store, clock: clock},
+		{name: "missing clock", catalog: true, store: store, models: true},
 	}
 	for _, test := range tests {
 		test := test
@@ -142,7 +154,16 @@ func TestRegistrarRejectsInvalidDependencies(t *testing.T) {
 			if !test.catalog {
 				catalog = nil
 			}
-			_, err := accountapp.NewRegistrar(catalog, test.store, test.clock)
+			var models *accountapp.ModelDiscovery
+			if test.models && catalog != nil {
+				models = newTestModelDiscovery(t, catalog)
+			}
+			_, err := accountapp.NewRegistrar(
+				catalog,
+				test.store,
+				models,
+				test.clock,
+			)
 			if !errors.Is(err, accountapp.ErrInvalidRegistrarDependencies) {
 				t.Fatalf(
 					"NewRegistrar() error = %v, want ErrInvalidRegistrarDependencies",
@@ -151,6 +172,73 @@ func TestRegistrarRejectsInvalidDependencies(t *testing.T) {
 			}
 		})
 	}
+}
+
+// newTestModelDiscovery 创建 Codex、Claude 共用的无网络目录策略。
+func newTestModelDiscovery(
+	t *testing.T,
+	catalog *providers.Catalog,
+) *accountapp.ModelDiscovery {
+	t.Helper()
+
+	discovery, err := accountapp.NewModelDiscovery(
+		catalog,
+		[]accountapp.ProviderModelDiscoverer{
+			testProviderModelDiscoverer{providerID: "codex"},
+			testProviderModelDiscoverer{providerID: "claude"},
+		},
+	)
+	if err != nil {
+		t.Fatalf("NewModelDiscovery() error = %v", err)
+	}
+	return discovery
+}
+
+// newObservedModelDiscovery 创建可验证无效输入不会访问目录的测试注册表。
+func newObservedModelDiscovery(
+	t *testing.T,
+	catalog *providers.Catalog,
+	calls *int,
+) *accountapp.ModelDiscovery {
+	t.Helper()
+
+	discovery, err := accountapp.NewModelDiscovery(
+		catalog,
+		[]accountapp.ProviderModelDiscoverer{
+			testProviderModelDiscoverer{
+				providerID: "codex",
+				calls:      calls,
+			},
+			testProviderModelDiscoverer{
+				providerID: "claude",
+				calls:      calls,
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("NewModelDiscovery() error = %v", err)
+	}
+	return discovery
+}
+
+// testProviderModelDiscoverer 返回确定性的账号管理阶段模型目录。
+type testProviderModelDiscoverer struct {
+	providerID string
+	calls      *int
+}
+
+func (discoverer testProviderModelDiscoverer) ProviderID() string {
+	return discoverer.providerID
+}
+
+func (discoverer testProviderModelDiscoverer) DiscoverModels(
+	context.Context,
+	accountapp.Credential,
+) ([]string, error) {
+	if discoverer.calls != nil {
+		*discoverer.calls++
+	}
+	return []string{"test-model"}, nil
 }
 
 // registrationStoreStub 是注册应用用例的可观察持久化替身。

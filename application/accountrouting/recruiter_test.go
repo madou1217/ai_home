@@ -107,110 +107,6 @@ func TestRecruiterSkipsRuntimeBlockedAccountBeforeCredential(t *testing.T) {
 	}
 }
 
-// TestRecruiterSkipsAccountWithoutTargetModel 验证模型权限不足不会污染运行态，
-// 且不会阻止后续账号继续参与同一真实模型征召。
-func TestRecruiterSkipsAccountWithoutTargetModel(t *testing.T) {
-	t.Parallel()
-
-	unsupported, unsupportedCredential := newRecruitmentCandidate(
-		t,
-		"codex",
-		1,
-		"model-unsupported",
-	)
-	ready, readyCredential := newRecruitmentCandidate(
-		t,
-		"codex",
-		2,
-		"model-ready",
-	)
-	source := &recruitmentCandidateSource{
-		candidates: []accountapp.RoutingAccount{unsupported, ready},
-	}
-	models := &recruitmentModelAvailabilitySource{
-		availability: map[accountcore.AccountRef]bool{
-			unsupported.Ref(): false,
-			ready.Ref():       true,
-		},
-	}
-	resolver := newRecruitmentCredentialResolver(
-		map[accountcore.AccountRef]credentialResolution{
-			unsupported.Ref(): {credential: unsupportedCredential},
-			ready.Ref():       {credential: readyCredential},
-		},
-	)
-	recruiter := newTestRecruiterWithFilters(
-		t,
-		source,
-		&recruitmentEligibilitySource{},
-		models,
-		resolver,
-	)
-	request := newTestRequest(t, "codex", "", 2)
-
-	result, err := recruiter.Recruit(context.Background(), request)
-	if err != nil {
-		t.Fatalf("Recruit() error = %v", err)
-	}
-	if result.Account().Ref() != ready.Ref() ||
-		result.Examined() != 2 ||
-		resolver.CallCount() != 2 {
-		t.Fatalf(
-			"Recruit() result=%#v credentialCalls=%d",
-			result,
-			resolver.CallCount(),
-		)
-	}
-	routes := models.Routes()
-	if len(routes) != 2 ||
-		routes[0].AccountRef() != unsupported.Ref() ||
-		routes[1].AccountRef() != ready.Ref() ||
-		routes[0].ModelID() != request.ModelID() ||
-		routes[1].ModelID() != request.ModelID() {
-		t.Fatalf("CheckAvailability() routes = %#v", routes)
-	}
-}
-
-// TestRecruiterFailsClosedOnModelAvailabilityError 验证目录或缓存错误不会被
-// 误判为账号不支持模型，也不会继续发送上游请求。
-func TestRecruiterFailsClosedOnModelAvailabilityError(t *testing.T) {
-	t.Parallel()
-
-	candidate, credential := newRecruitmentCandidate(
-		t,
-		"codex",
-		1,
-		"model-check-failure",
-	)
-	source := &recruitmentCandidateSource{
-		candidates: []accountapp.RoutingAccount{candidate},
-	}
-	expected := errors.New("synthetic model catalog failure")
-	models := &recruitmentModelAvailabilitySource{err: expected}
-	resolver := newRecruitmentCredentialResolver(
-		map[accountcore.AccountRef]credentialResolution{
-			candidate.Ref(): {credential: credential},
-		},
-	)
-	recruiter := newTestRecruiterWithFilters(
-		t,
-		source,
-		&recruitmentEligibilitySource{},
-		models,
-		resolver,
-	)
-
-	result, err := recruiter.Recruit(
-		context.Background(),
-		newTestRequest(t, "codex", "", 1),
-	)
-	if !errors.Is(err, ErrModelAvailabilityCheck) ||
-		!errors.Is(err, expected) ||
-		result.Examined() != 1 {
-		t.Fatalf("Recruit() result=%#v error=%v", result, err)
-	}
-}
-
 // TestRecruiterFailsClosedOnInvalidRuntimeEligibility 验证非法运行态投影不会被当成可用。
 func TestRecruiterFailsClosedOnInvalidRuntimeEligibility(t *testing.T) {
 	t.Parallel()
@@ -450,30 +346,10 @@ func newTestRecruiterWithRuntime(
 ) *Recruiter {
 	t.Helper()
 
-	return newTestRecruiterWithFilters(
-		t,
-		source,
-		runtimeSource,
-		&recruitmentModelAvailabilitySource{},
-		resolver,
-	)
-}
-
-// newTestRecruiterWithFilters 创建可分别注入运行态和模型权限端口的征召器。
-func newTestRecruiterWithFilters(
-	t *testing.T,
-	source CandidateSource,
-	runtimeSource RuntimeEligibilitySource,
-	models ModelAvailabilitySource,
-	resolver CredentialResolver,
-) *Recruiter {
-	t.Helper()
-
 	recruiter, err := NewRecruiter(Dependencies{
 		Candidates:  source,
 		Runtime:     runtimeSource,
 		Credentials: resolver,
-		Models:      models,
 	})
 	if err != nil {
 		t.Fatalf("NewRecruiter() error = %v", err)
@@ -686,40 +562,6 @@ func (source *recruitmentEligibilitySource) CheckEligibility(
 
 // Routes 返回资格端口收到的独立路由键快照。
 func (source *recruitmentEligibilitySource) Routes() []runtimecore.ModelRoute {
-	source.mu.Lock()
-	defer source.mu.Unlock()
-	return append([]runtimecore.ModelRoute(nil), source.routes...)
-}
-
-// recruitmentModelAvailabilitySource 是按 AccountRef 返回模型权限的测试端口。
-type recruitmentModelAvailabilitySource struct {
-	mu           sync.Mutex
-	availability map[accountcore.AccountRef]bool
-	err          error
-	routes       []runtimecore.ModelRoute
-}
-
-// CheckAvailability 返回账号的预设模型权限，未配置时默认允许。
-func (source *recruitmentModelAvailabilitySource) CheckAvailability(
-	_ context.Context,
-	route runtimecore.ModelRoute,
-	_ accountapp.Credential,
-) (bool, error) {
-	source.mu.Lock()
-	defer source.mu.Unlock()
-	source.routes = append(source.routes, route)
-	if source.err != nil {
-		return false, source.err
-	}
-	available, found := source.availability[route.AccountRef()]
-	if !found {
-		return true, nil
-	}
-	return available, nil
-}
-
-// Routes 返回模型权限端口收到的独立路由键快照。
-func (source *recruitmentModelAvailabilitySource) Routes() []runtimecore.ModelRoute {
 	source.mu.Lock()
 	defer source.mu.Unlock()
 	return append([]runtimecore.ModelRoute(nil), source.routes...)

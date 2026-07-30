@@ -567,7 +567,6 @@ func newClaudeAdapterFixtureWithCredential(
 				accountRef: accountRef,
 				credential: credential,
 			},
-			Models: claudeAvailableModels{},
 		},
 	)
 	if err != nil {
@@ -747,18 +746,6 @@ func (claudeAvailableRuntime) CheckEligibility(
 	runtimecore.ModelRoute,
 ) (runtimecore.Eligibility, error) {
 	return runtimecore.AvailableEligibility(), nil
-}
-
-// claudeAvailableModels 让合成 Adapter 测试只验证协议与编排合同。
-type claudeAvailableModels struct{}
-
-// CheckAvailability 明确允许测试 RouteCatalog 已解析的模型。
-func (claudeAvailableModels) CheckAvailability(
-	context.Context,
-	runtimecore.ModelRoute,
-	accountapp.Credential,
-) (bool, error) {
-	return true, nil
 }
 
 // claudeCredentialResolver 返回与账号身份绑定的合成凭据。

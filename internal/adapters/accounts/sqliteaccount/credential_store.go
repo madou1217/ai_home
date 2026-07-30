@@ -36,6 +36,8 @@ func (store *Store) Register(
 	if err != nil {
 		return err
 	}
+	store.routingWrites.Lock()
+	defer store.routingWrites.Unlock()
 	transaction, err := store.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("开始账号注册事务失败: %w", err)
@@ -62,6 +64,11 @@ func (store *Store) Register(
 		}
 		return fmt.Errorf("提交账号注册事务失败: %w", err)
 	}
+	routingAccount, err := store.newRoutingAccount(account)
+	if err != nil {
+		return err
+	}
+	store.routes.setAccount(routingAccount, account.Enabled())
 	return nil
 }
 

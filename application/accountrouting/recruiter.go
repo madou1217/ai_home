@@ -17,7 +17,7 @@ import (
 )
 
 var (
-	// ErrInvalidDependencies 表示征召器缺少候选、运行态、凭据或模型权限端口。
+	// ErrInvalidDependencies 表示征召器缺少模型候选、运行态或凭据端口。
 	ErrInvalidDependencies = errors.New("账号征召器依赖无效")
 	// ErrInvalidRequest 表示 Provider、游标、扫描上限或上下文无效。
 	ErrInvalidRequest = errors.New("账号征召请求无效")
@@ -27,8 +27,6 @@ var (
 	ErrInvalidResolvedCredential = errors.New("账号征召凭据无效")
 	// ErrInvalidRuntimeEligibility 表示运行态端口返回了不完整的资格值。
 	ErrInvalidRuntimeEligibility = errors.New("账号征召运行态资格无效")
-	// ErrModelAvailabilityCheck 表示账号模型权限端口无法给出可信结论。
-	ErrModelAvailabilityCheck = errors.New("账号模型权限检查失败")
 	// ErrNoRoutableAccount 表示当前候选页没有可直接交给上游的账号。
 	ErrNoRoutableAccount = errors.New("没有可征召账号")
 )
@@ -60,29 +58,14 @@ type RuntimeEligibilitySource interface {
 	) (runtimecore.Eligibility, error)
 }
 
-// ModelAvailabilitySource 提供账号凭据对真实模型的账号级权限判断。
-//
-// 该端口不表达 cooldown、额度或健康状态；这些易变运行态只属于
-// RuntimeEligibilitySource。
-type ModelAvailabilitySource interface {
-	// CheckAvailability 在凭据可用化后判断账号是否拥有目标模型权限。
-	CheckAvailability(
-		ctx context.Context,
-		route runtimecore.ModelRoute,
-		credential accountapp.Credential,
-	) (bool, error)
-}
-
-// Dependencies 声明征召器所需的四个最小应用端口。
+// Dependencies 声明征召器所需的三个最小应用端口。
 type Dependencies struct {
-	// Candidates 负责有界读取启用账号的紧凑投影。
+	// Candidates 负责从本地模型倒排有界读取启用账号的紧凑投影。
 	Candidates CandidateSource
 	// Runtime 负责在敏感凭据读取前排除运行态不可用元组。
 	Runtime RuntimeEligibilitySource
 	// Credentials 负责单账号凭据读取和必要刷新。
 	Credentials CredentialResolver
-	// Models 负责区分 Provider 模型存在性与账号实际模型权限。
-	Models ModelAvailabilitySource
 }
 
 // Request 是经过 Provider 注册表校验的有界征召请求。
@@ -101,16 +84,17 @@ func NewRequest(
 	afterRef accountcore.AccountRef,
 	limit int,
 ) (Request, error) {
-	query, err := accountapp.NewRoutingQuery(
-		catalog,
-		providerID,
-		afterRef,
-		limit,
-	)
+	runtimeModelID, err := runtimecore.NewModelID(modelID)
 	if err != nil {
 		return Request{}, errors.Join(ErrInvalidRequest, err)
 	}
-	runtimeModelID, err := runtimecore.NewModelID(modelID)
+	query, err := accountapp.NewRoutingQuery(
+		catalog,
+		providerID,
+		runtimeModelID.String(),
+		afterRef,
+		limit,
+	)
 	if err != nil {
 		return Request{}, errors.Join(ErrInvalidRequest, err)
 	}
@@ -186,31 +170,28 @@ func (result Result) SourceExhausted() bool {
 	return result.sourceExhausted
 }
 
-// Recruiter 编排有界候选、运行态、凭据和账号模型权限检查。
+// Recruiter 编排本地模型候选、运行态和凭据可用化。
 type Recruiter struct {
 	candidates  CandidateSource
 	runtime     RuntimeEligibilitySource
 	credentials CredentialResolver
-	models      ModelAvailabilitySource
 }
 
 // NewRecruiter 创建不持有账号池、不缓存凭据的无状态征召器。
 func NewRecruiter(dependencies Dependencies) (*Recruiter, error) {
 	if dependencies.Candidates == nil ||
 		dependencies.Runtime == nil ||
-		dependencies.Credentials == nil ||
-		dependencies.Models == nil {
+		dependencies.Credentials == nil {
 		return nil, ErrInvalidDependencies
 	}
 	return &Recruiter{
 		candidates:  dependencies.Candidates,
 		runtime:     dependencies.Runtime,
 		credentials: dependencies.Credentials,
-		models:      dependencies.Models,
 	}, nil
 }
 
-// Recruit 返回当前页首个运行态、凭据和模型权限均可用的账号。
+// Recruit 返回本地倒排中首个运行态和凭据均可用的账号。
 //
 // 单账号缺失凭据、需要重新认证、刷新被拒绝或刷新暂时失败时继续检查下一候选；
 // 未分类的存储、解码和合同错误立即失败，避免静默掩盖系统问题。
@@ -221,8 +202,7 @@ func (recruiter *Recruiter) Recruit(
 	if recruiter == nil ||
 		recruiter.candidates == nil ||
 		recruiter.runtime == nil ||
-		recruiter.credentials == nil ||
-		recruiter.models == nil {
+		recruiter.credentials == nil {
 		return Result{}, ErrInvalidDependencies
 	}
 	if ctx == nil || !request.isValid() {
@@ -280,24 +260,6 @@ func (recruiter *Recruiter) Recruit(
 		}
 		if !credentialMatchesCandidate(candidate, credential) {
 			return progress, ErrInvalidResolvedCredential
-		}
-		available, availabilityErr := recruiter.models.CheckAvailability(
-			ctx,
-			route,
-			credential,
-		)
-		if availabilityErr != nil {
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				return progress, ctxErr
-			}
-			return progress, fmt.Errorf(
-				"%w: %w",
-				ErrModelAvailabilityCheck,
-				availabilityErr,
-			)
-		}
-		if !available {
-			continue
 		}
 		progress.account = candidate
 		progress.credential = credential

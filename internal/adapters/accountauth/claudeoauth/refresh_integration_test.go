@@ -13,6 +13,7 @@ import (
 	"github.com/madou1217/ai_home/core/accounts/claude"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
+	"github.com/madou1217/ai_home/internal/testsupport/accountmodels"
 )
 
 // TestCredentialResolverRefreshesClaudeThroughSQLiteIntegration 验证 Claude 刷新落盘闭环。
@@ -51,7 +52,16 @@ func TestCredentialResolverRefreshesClaudeThroughSQLiteIntegration(
 		_ = store.Close()
 	}()
 	initial := claudeRefreshCredential(t)
-	registrar, err := accountapp.NewRegistrar(catalog, store, testClock)
+	modelDiscovery, err := accountmodels.NewDiscovery(catalog)
+	if err != nil {
+		t.Fatalf("accountmodels.NewDiscovery() error = %v", err)
+	}
+	registrar, err := accountapp.NewRegistrar(
+		catalog,
+		store,
+		modelDiscovery,
+		testClock,
+	)
 	if err != nil {
 		t.Fatalf("accounts.NewRegistrar() error = %v", err)
 	}

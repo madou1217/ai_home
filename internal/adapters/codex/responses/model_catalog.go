@@ -20,7 +20,7 @@ import (
 const (
 	// maxModelCatalogBytes 限制单次模型目录响应占用的内存。
 	maxModelCatalogBytes = 8 * 1024 * 1024
-	// maxModelCatalogModels 限制单个账号可缓存的模型数量。
+	// maxModelCatalogModels 限制单次账号管理刷新可接收的模型数量。
 	maxModelCatalogModels = 1024
 	// maxModelCatalogErrorDrainBytes 有界排空小型错误响应以复用连接。
 	maxModelCatalogErrorDrainBytes = 64 * 1024
@@ -35,7 +35,7 @@ var (
 
 // modelCatalog 保存排序、去重后的账号模型标识。
 //
-// 排序切片比 map 更节省热账号缓存内存，并允许使用二分查找。
+// 排序切片让管理写侧可直接持久化稳定快照，并允许测试执行二分校验。
 type modelCatalog struct {
 	models []string
 }

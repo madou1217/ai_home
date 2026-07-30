@@ -534,7 +534,6 @@ func newAdapterCoordinatorFixture(
 				accountRef: accountRef,
 				credential: credential,
 			},
-			Models: adapterAvailableModels{},
 		},
 	)
 	if err != nil {
@@ -695,18 +694,6 @@ func (adapterAvailableRuntime) CheckEligibility(
 	runtimecore.ModelRoute,
 ) (runtimecore.Eligibility, error) {
 	return runtimecore.AvailableEligibility(), nil
-}
-
-// adapterAvailableModels 让合成 Adapter 测试只验证协议与编排合同。
-type adapterAvailableModels struct{}
-
-// CheckAvailability 明确允许测试 RouteCatalog 已解析的模型。
-func (adapterAvailableModels) CheckAvailability(
-	context.Context,
-	runtimecore.ModelRoute,
-	accountapp.Credential,
-) (bool, error) {
-	return true, nil
 }
 
 // adapterCredentialResolver 返回与账号身份绑定的合成凭据。

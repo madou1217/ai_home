@@ -11,7 +11,6 @@ import (
 	"github.com/madou1217/ai_home/application/accountrouting"
 	runtimeapp "github.com/madou1217/ai_home/application/accountruntime"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
-	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/accounts/codex"
 	"github.com/madou1217/ai_home/core/providers"
@@ -31,6 +30,7 @@ func BenchmarkStoreQueries(benchmark *testing.B) {
 			firstPageQuery, err := accountapp.NewRoutingQuery(
 				store.catalog,
 				"codex",
+				"gpt-5.6-sol",
 				"",
 				accountapp.DefaultRoutingLimit,
 			)
@@ -172,6 +172,18 @@ func prepareRecruitmentBenchmark(
 	if err := store.Register(context.Background(), registration); err != nil {
 		benchmark.Fatalf("Register() error = %v", err)
 	}
+	models, err := accountapp.NormalizeDiscoveredModels([]string{"gpt-5.6-sol"})
+	if err != nil {
+		benchmark.Fatalf("NormalizeDiscoveredModels() error = %v", err)
+	}
+	if _, err := store.ReplaceDiscoveredModels(
+		context.Background(),
+		account.Ref(),
+		models,
+		testAccountTime(),
+	); err != nil {
+		benchmark.Fatalf("ReplaceDiscoveredModels() error = %v", err)
+	}
 	provider, err := codexoauth.New(&http.Client{}, testAccountTime)
 	if err != nil {
 		benchmark.Fatalf("codexoauth.New() error = %v", err)
@@ -197,7 +209,6 @@ func prepareRecruitmentBenchmark(
 			Candidates:  store,
 			Runtime:     runtimeRegistry,
 			Credentials: resolver,
-			Models:      benchmarkAvailableModels{},
 		},
 	)
 	if err != nil {
@@ -215,18 +226,6 @@ func prepareRecruitmentBenchmark(
 		benchmark.Fatalf("NewRequest() error = %v", err)
 	}
 	return recruiter, request
-}
-
-// benchmarkAvailableModels 隔离模型目录 I/O，保持征召 benchmark 可重复。
-type benchmarkAvailableModels struct{}
-
-// CheckAvailability 允许 benchmark 已固定的 Codex 目标模型。
-func (benchmarkAvailableModels) CheckAvailability(
-	context.Context,
-	runtimecore.ModelRoute,
-	accountapp.Credential,
-) (bool, error) {
-	return true, nil
 }
 
 // previousAccountRef 返回字典序紧邻目标之前的合法 AccountRef。
@@ -271,7 +270,7 @@ func openBenchmarkStore(benchmark *testing.B) *Store {
 	return store
 }
 
-// seedBenchmarkAccounts 在计时前批量写入满足 v1 约束的紧凑账号行。
+// seedBenchmarkAccounts 在计时前批量写入账号和有效模型关系。
 func seedBenchmarkAccounts(
 	benchmark *testing.B,
 	store *Store,
@@ -298,19 +297,34 @@ func seedBenchmarkAccounts(
 	defer func() {
 		_ = statement.Close()
 	}()
+	modelStatement, err := transaction.Prepare(`
+		INSERT INTO account_models (
+			account_ref, model_id, upstream_available, manual_policy, updated_at_ms
+		) VALUES (?, 'gpt-5.6-sol', 1, 'inherit', 1785110400000)`)
+	if err != nil {
+		benchmark.Fatalf("Prepare(model) error = %v", err)
+	}
+	defer func() {
+		_ = modelStatement.Close()
+	}()
 
 	for index := 0; index < accountCount; index++ {
 		accountRef := fmt.Sprintf("acct_%020x", index+1)
 		if _, err := statement.Exec(accountRef, index+1); err != nil {
 			benchmark.Fatalf("insert account %d error = %v", index, err)
 		}
+		if _, err := modelStatement.Exec(accountRef); err != nil {
+			benchmark.Fatalf("insert account model %d error = %v", index, err)
+		}
 	}
 	if err := transaction.Commit(); err != nil {
 		benchmark.Fatalf("Commit() error = %v", err)
 	}
-	if _, err := store.db.Exec("ANALYZE accounts"); err != nil {
-		benchmark.Fatalf("ANALYZE accounts error = %v", err)
+	routes, err := store.loadRoutingIndex(context.Background())
+	if err != nil {
+		benchmark.Fatalf("loadRoutingIndex() error = %v", err)
 	}
+	store.routes = routes
 }
 
 // benchmarkAccountRef 返回基准数据中已经存在的稳定账号身份。
@@ -340,6 +354,7 @@ func loadAllBenchmarkCandidates(
 		query, err := accountapp.NewRoutingQuery(
 			store.catalog,
 			"codex",
+			"gpt-5.6-sol",
 			afterRef,
 			accountapp.MaxRoutingLimit,
 		)

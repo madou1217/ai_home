@@ -14,6 +14,7 @@ import (
 
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	"github.com/madou1217/ai_home/internal/host/aihserver"
+	"github.com/madou1217/ai_home/internal/testsupport/accountmodels"
 	"github.com/madou1217/ai_home/internal/transport/http/accountauthapi"
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/claudenativerelay"
@@ -335,6 +336,7 @@ func startTestServer(t *testing.T) (string, *http.Client) {
 	server, err := aihserver.New(context.Background(), aihserver.Options{
 		AIHomeDir:     t.TempDir(),
 		ManagementKey: func() string { return testManagementKey },
+		ModelDiscoverers: accountmodels.NewDiscoverers(),
 	})
 	if err != nil {
 		t.Fatalf("aihserver.New() error = %v", err)

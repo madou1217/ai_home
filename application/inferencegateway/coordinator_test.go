@@ -1035,7 +1035,6 @@ func newCoordinatorFixture(
 			Candidates:  source,
 			Runtime:     availableRuntime{},
 			Credentials: credentialResolver{credentials: credentials},
-			Models:      availableModels{},
 		},
 	)
 	if err != nil {
@@ -1178,18 +1177,6 @@ func (availableRuntime) CheckEligibility(
 	runtimecore.ModelRoute,
 ) (runtimecore.Eligibility, error) {
 	return runtimecore.AvailableEligibility(), nil
-}
-
-// availableModels 让 Coordinator 测试只验证编排与终态语义。
-type availableModels struct{}
-
-// CheckAvailability 明确允许测试 RouteCatalog 已解析的真实模型。
-func (availableModels) CheckAvailability(
-	context.Context,
-	runtimecore.ModelRoute,
-	accountapp.Credential,
-) (bool, error) {
-	return true, nil
 }
 
 // credentialResolver 按稳定账号身份返回合成凭据。

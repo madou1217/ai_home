@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/madou1217/ai_home/core/providers"
 	_ "modernc.org/sqlite"
@@ -34,6 +35,11 @@ type Store struct {
 	catalog     *providers.Catalog
 	credentials credentialRegistry
 	profiles    profileRegistry
+	routes      *routingIndex
+	// routingWrites 串行化会同时改变 SQLite 路由事实和内存物化索引的管理写操作。
+	//
+	// 该锁不参与账号征召或 /v1/models 读取，只保证事务提交顺序与索引发布顺序一致。
+	routingWrites sync.Mutex
 }
 
 // Open 创建或校验 aih.db，并返回可并发使用的账号 Store。
@@ -59,6 +65,12 @@ func Open(ctx context.Context, options OpenOptions) (*Store, error) {
 		_ = db.Close()
 		return nil, err
 	}
+	routes, err := store.loadRoutingIndex(ctx)
+	if err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	store.routes = routes
 	if err := os.Chmod(databasePath, databaseFileMode); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("收紧账号数据库权限失败: %w", err)

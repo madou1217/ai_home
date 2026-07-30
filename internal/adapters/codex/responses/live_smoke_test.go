@@ -79,7 +79,6 @@ func TestLiveCodexRouteCatalogSmoke(t *testing.T) {
 		t,
 		credential,
 		model,
-		modelCatalog,
 	)
 	request := newRealCodexRequest(t)
 	events := make([]inference.StreamEvent, 0, 16)
@@ -302,7 +301,6 @@ func newRealCodexCoordinator(
 	t *testing.T,
 	credential accountapp.Credential,
 	model string,
-	modelCatalog realCodexModelCatalog,
 ) (
 	*inferencegateway.Coordinator,
 	*adapterAttemptRecorder,
@@ -341,7 +339,6 @@ func newRealCodexCoordinator(
 				accountRef: accountRef,
 				credential: credential,
 			},
-			Models: realCodexModelAvailability{catalog: modelCatalog},
 		},
 	)
 	if err != nil {

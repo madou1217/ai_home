@@ -5,6 +5,8 @@ import (
 	"log"
 	"strings"
 	"unicode"
+
+	accountapp "github.com/madou1217/ai_home/application/accounts"
 )
 
 const (
@@ -29,6 +31,8 @@ type Options struct {
 	ManagementKey func() string
 	// ErrorLog 接收 net/http 连接级错误，不记录请求体或凭据。
 	ErrorLog *log.Logger
+	// ModelDiscoverers 允许嵌入方注入无网络测试策略；生产留空时装配 Codex/Claude。
+	ModelDiscoverers []accountapp.ProviderModelDiscoverer
 }
 
 // ValidateManagementKey 校验 Bearer 请求头可安全表达的 Management Key。

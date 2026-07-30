@@ -13,30 +13,31 @@ import (
 
 const maxLifecycleUpdateAttempts = 4
 
-// routingCandidatesSQL 是账号征召热路径及其查询计划验证的单一 SQL 合同。
-const routingCandidatesSQL = `
-	SELECT account_ref, cli_account_id
-	FROM accounts
-	WHERE provider_id = ?
-	  AND enabled = 1
-	  AND account_ref > ?
-	ORDER BY account_ref
-	LIMIT ?`
-
 var _ accountapp.Store = (*Store)(nil)
+var _ accountapp.RoutableModelReader = (*Store)(nil)
 
 // Create 创建一个不含凭据的基础账号，适用于尚未完成认证的账号生命周期。
 func (store *Store) Create(ctx context.Context, account accountcore.Account) error {
 	if !store.acceptsAccount(account) {
 		return accountcore.ErrInvalidAccount
 	}
+	store.routingWrites.Lock()
+	defer store.routingWrites.Unlock()
 	const statement = `
 		INSERT INTO accounts (
 			account_ref, provider_id, cli_account_id, enabled,
 			created_at_ms, updated_at_ms
 		) VALUES (?, ?, ?, ?, ?, ?)`
 	_, err := store.db.ExecContext(ctx, statement, accountRowArguments(account)...)
-	return mapAccountWriteError(err)
+	if err := mapAccountWriteError(err); err != nil {
+		return err
+	}
+	routingAccount, err := store.newRoutingAccount(account)
+	if err != nil {
+		return err
+	}
+	store.routes.setAccount(routingAccount, account.Enabled())
+	return nil
 }
 
 // GetByRef 按稳定账号身份读取基础账号快照。
@@ -87,6 +88,8 @@ func (store *Store) SetEnabled(
 	enabled bool,
 	changedAt time.Time,
 ) (accountcore.Account, error) {
+	store.routingWrites.Lock()
+	defer store.routingWrites.Unlock()
 	for range maxLifecycleUpdateAttempts {
 		current, err := store.GetByRef(ctx, accountRef)
 		if err != nil {
@@ -101,43 +104,36 @@ func (store *Store) SetEnabled(
 			return accountcore.Account{}, err
 		}
 		if saved {
+			routingAccount, routeErr := store.newRoutingAccount(updated)
+			if routeErr != nil {
+				return accountcore.Account{}, routeErr
+			}
+			store.routes.setAccount(routingAccount, updated.Enabled())
 			return updated, nil
 		}
 	}
 	return accountcore.Account{}, accountapp.ErrAccountConflict
 }
 
-// ListRoutingCandidates 使用 covering index 返回紧凑账号征召投影。
+// ListRoutingCandidates 从进程内模型倒排返回紧凑账号征召投影。
 func (store *Store) ListRoutingCandidates(
 	ctx context.Context,
 	query accountapp.RoutingQuery,
 ) ([]accountapp.RoutingAccount, error) {
-	rows, err := store.db.QueryContext(
-		ctx,
-		routingCandidatesSQL,
-		query.ProviderID(),
-		query.AfterRef().String(),
-		query.Limit(),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("查询账号征召投影失败: %w", err)
+	if store == nil || store.routes == nil {
+		return nil, accountapp.ErrInvalidRoutingQuery
 	}
-	defer func() {
-		_ = rows.Close()
-	}()
+	return store.routes.list(ctx, query)
+}
 
-	candidates := make([]accountapp.RoutingAccount, 0, query.Limit())
-	for rows.Next() {
-		candidate, err := store.scanRoutingAccount(rows, query.ProviderID())
-		if err != nil {
-			return nil, err
-		}
-		candidates = append(candidates, candidate)
+// ListRoutableModels 从进程内倒排索引返回当前可征召模型，不访问 SQLite。
+func (store *Store) ListRoutableModels(
+	ctx context.Context,
+) ([]accountapp.RoutableModel, error) {
+	if store == nil || store.routes == nil || store.catalog == nil {
+		return nil, accountapp.ErrInvalidRoutableModel
 	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("遍历账号征召投影失败: %w", err)
-	}
-	return candidates, nil
+	return store.routes.listModels(ctx, store.catalog)
 }
 
 // acceptsAccount 校验账号快照和当前 Provider 注册表。
@@ -228,6 +224,24 @@ func (store *Store) scanRoutingAccount(
 		return accountapp.RoutingAccount{}, ErrIncompatibleDatabase
 	}
 	return account, nil
+}
+
+// newRoutingAccount 从已经恢复的基础账号创建本地索引使用的紧凑投影。
+func (store *Store) newRoutingAccount(
+	account accountcore.Account,
+) (accountapp.RoutingAccount, error) {
+	routingAccount, err := accountapp.NewRoutingAccount(
+		store.catalog,
+		accountapp.RoutingAccountInput{
+			Ref:          account.Ref(),
+			ProviderID:   account.ProviderID(),
+			CLIAccountID: account.CLIAccountID(),
+		},
+	)
+	if err != nil {
+		return accountapp.RoutingAccount{}, ErrIncompatibleDatabase
+	}
+	return routingAccount, nil
 }
 
 // compareAndSwapAccount 只在账号版本未变化时写入新生命周期。

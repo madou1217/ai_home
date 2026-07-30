@@ -24,6 +24,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/codexoauth"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
+	"github.com/madou1217/ai_home/internal/testsupport/accountmodels"
 	"github.com/madou1217/ai_home/internal/transport/http/accountauthapi"
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
 )
@@ -496,13 +497,23 @@ func newLiveManagementHandler(
 			t.Errorf("store.Close() error = %v", err)
 		}
 	})
-	registrar, err := accountapp.NewRegistrar(catalog, store, clock)
+	modelDiscovery, err := accountmodels.NewDiscovery(catalog)
+	if err != nil {
+		t.Fatalf("accountmodels.NewDiscovery() error = %v", err)
+	}
+	registrar, err := accountapp.NewRegistrar(
+		catalog,
+		store,
+		modelDiscovery,
+		clock,
+	)
 	if err != nil {
 		t.Fatalf("accounts.NewRegistrar() error = %v", err)
 	}
 	reauthenticator, err := accountapp.NewReauthenticator(
 		catalog,
 		store,
+		modelDiscovery,
 		clock,
 	)
 	if err != nil {

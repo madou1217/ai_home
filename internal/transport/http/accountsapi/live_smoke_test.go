@@ -15,6 +15,7 @@ import (
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
+	"github.com/madou1217/ai_home/internal/testsupport/accountmodels"
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
 )
 
@@ -38,9 +39,14 @@ func TestAccountsAPILiveSmoke(t *testing.T) {
 	})
 
 	registeredAt := time.Date(2026, time.July, 27, 19, 0, 0, 0, time.UTC)
+	modelDiscovery, err := accountmodels.NewDiscovery(catalog)
+	if err != nil {
+		t.Fatalf("accountmodels.NewDiscovery() error = %v", err)
+	}
 	registrar, err := accountapp.NewRegistrar(
 		catalog,
 		store,
+		modelDiscovery,
 		func() time.Time { return registeredAt },
 	)
 	if err != nil {

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/accounts/codex"
 )
@@ -75,6 +76,7 @@ func TestReauthenticateAtomicallyReplacesCredentialProfileAndAccountVersion(
 		t.Fatalf("GetProfile() = %#v", storedProfile)
 	}
 	assertReauthenticationVersions(t, store, account.Ref(), updatedAt.UnixMilli())
+	assertStoredModelIDs(t, store, account.Ref(), "replacement-model")
 }
 
 // TestGetReauthenticationTargetRejectsTokenBoundCredentials 验证静态身份不进入 OAuth 流程。
@@ -296,12 +298,26 @@ func newReauthenticationCommand(
 		accountRef,
 		credential,
 		profile,
+		reauthenticationDiscoveredModels(t),
 		updatedAt,
 	)
 	if err != nil {
 		t.Fatalf("NewReauthentication() error = %v", err)
 	}
 	return command
+}
+
+// reauthenticationDiscoveredModels 返回用于证明模型原子替换的不同快照。
+func reauthenticationDiscoveredModels(t *testing.T) []runtimecore.ModelID {
+	t.Helper()
+
+	models, err := accountapp.NormalizeDiscoveredModels(
+		[]string{"replacement-model"},
+	)
+	if err != nil {
+		t.Fatalf("NormalizeDiscoveredModels() error = %v", err)
+	}
+	return models
 }
 
 // newCodexReauthenticationValues 创建稳定身份相同但 Token 和套餐不同的测试值。
@@ -373,6 +389,30 @@ func assertStoredReauthenticationFixture(
 	}
 	if profile.Profile().SubscriptionKind() != expectedSubscription {
 		t.Fatalf("GetProfile() = %#v", profile)
+	}
+	assertStoredModelIDs(t, store, expectedAccount.Ref(), "test-model")
+}
+
+// assertStoredModelIDs 验证事务成功或回滚后的模型快照。
+func assertStoredModelIDs(
+	t *testing.T,
+	store *Store,
+	accountRef accountcore.AccountRef,
+	expected ...string,
+) {
+	t.Helper()
+
+	models, err := store.ListAccountModels(context.Background(), accountRef)
+	if err != nil {
+		t.Fatalf("ListAccountModels() error = %v", err)
+	}
+	if len(models) != len(expected) {
+		t.Fatalf("model count=%d want=%d models=%#v", len(models), len(expected), models)
+	}
+	for index, modelID := range expected {
+		if models[index].ModelID().String() != modelID {
+			t.Fatalf("model[%d]=%s want=%s", index, models[index].ModelID(), modelID)
+		}
 	}
 }
 

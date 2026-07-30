@@ -3,6 +3,7 @@ package accounts
 import (
 	"errors"
 
+	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
 )
@@ -24,6 +25,7 @@ var (
 // RoutingQuery 是按 Provider 使用 AccountRef 稳定游标分页的账号征召查询。
 type RoutingQuery struct {
 	providerID string
+	modelID    runtimecore.ModelID
 	afterRef   accountcore.AccountRef
 	limit      int
 }
@@ -32,6 +34,7 @@ type RoutingQuery struct {
 func NewRoutingQuery(
 	catalog *providers.Catalog,
 	providerID string,
+	modelID string,
 	afterRef accountcore.AccountRef,
 	limit int,
 ) (RoutingQuery, error) {
@@ -40,6 +43,10 @@ func NewRoutingQuery(
 	}
 	canonicalProviderID, found := catalog.CanonicalID(providerID)
 	if !found {
+		return RoutingQuery{}, ErrInvalidRoutingQuery
+	}
+	runtimeModelID, err := runtimecore.NewModelID(modelID)
+	if err != nil {
 		return RoutingQuery{}, ErrInvalidRoutingQuery
 	}
 	if afterRef != "" && !afterRef.IsValid() {
@@ -53,6 +60,7 @@ func NewRoutingQuery(
 	}
 	return RoutingQuery{
 		providerID: canonicalProviderID,
+		modelID:    runtimeModelID,
 		afterRef:   afterRef,
 		limit:      limit,
 	}, nil
@@ -61,6 +69,11 @@ func NewRoutingQuery(
 // ProviderID 返回规范 Provider ID。
 func (query RoutingQuery) ProviderID() string {
 	return query.providerID
+}
+
+// ModelID 返回别名解析后的真实上游模型 ID。
+func (query RoutingQuery) ModelID() runtimecore.ModelID {
+	return query.modelID
 }
 
 // AfterRef 返回不包含在下一页结果中的 AccountRef 游标。

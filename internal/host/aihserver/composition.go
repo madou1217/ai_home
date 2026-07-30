@@ -16,6 +16,8 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/codexoauth"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
+	claudemessages "github.com/madou1217/ai_home/internal/adapters/claude/messages"
+	codexresponses "github.com/madou1217/ai_home/internal/adapters/codex/responses"
 	"github.com/madou1217/ai_home/internal/transport/http/accountauthapi"
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/claudenativerelay"
@@ -23,8 +25,9 @@ import (
 )
 
 const (
-	oauthHTTPTimeout       = 10 * time.Second
-	claudeRelayHTTPTimeout = 10 * time.Minute
+	oauthHTTPTimeout        = 10 * time.Second
+	claudeRelayHTTPTimeout  = 10 * time.Minute
+	modelCatalogHTTPTimeout = 15 * time.Second
 )
 
 // serverHandlers 保存 Composition Root 创建的四个独立 HTTP 边界。
@@ -51,9 +54,15 @@ func New(ctx context.Context, options Options) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("打开账号数据库失败: %w", err)
 	}
+	modelDiscovery, err := newModelDiscovery(catalog, options.ModelDiscoverers)
+	if err != nil {
+		_ = store.Close()
+		return nil, err
+	}
 	handlers, err := newHandlers(
 		catalog,
 		store,
+		modelDiscovery,
 		options.ManagementKey,
 	)
 	if err != nil {
@@ -71,15 +80,22 @@ func New(ctx context.Context, options Options) (*Server, error) {
 func newHandlers(
 	catalog *providers.Catalog,
 	store *sqliteaccount.Store,
+	modelDiscovery *accountapp.ModelDiscovery,
 	managementKey func() string,
 ) (serverHandlers, error) {
-	registrar, err := accountapp.NewRegistrar(catalog, store, time.Now)
+	registrar, err := accountapp.NewRegistrar(
+		catalog,
+		store,
+		modelDiscovery,
+		time.Now,
+	)
 	if err != nil {
 		return serverHandlers{}, fmt.Errorf("创建账号注册用例失败: %w", err)
 	}
 	reauthenticator, err := accountapp.NewReauthenticator(
 		catalog,
 		store,
+		modelDiscovery,
 		time.Now,
 	)
 	if err != nil {
@@ -194,6 +210,37 @@ func newHandlers(
 		claudeRelayLeases: relayLeaseHandler,
 		claudeNativeRelay: nativeRelayHandler,
 	}, nil
+}
+
+// newModelDiscovery 创建生产 Codex/Claude 目录源，或使用测试显式注入的策略。
+func newModelDiscovery(
+	catalog *providers.Catalog,
+	injected []accountapp.ProviderModelDiscoverer,
+) (*accountapp.ModelDiscovery, error) {
+	strategies := injected
+	if len(strategies) == 0 {
+		client := &http.Client{
+			Timeout:       modelCatalogHTTPTimeout,
+			CheckRedirect: rejectOAuthRedirect,
+		}
+		codexSource, err := codexresponses.NewModelCatalogSource(client)
+		if err != nil {
+			return nil, fmt.Errorf("创建 Codex 模型目录源失败: %w", err)
+		}
+		claudeSource, err := claudemessages.NewModelCatalogSource(client)
+		if err != nil {
+			return nil, fmt.Errorf("创建 Claude 模型目录源失败: %w", err)
+		}
+		strategies = []accountapp.ProviderModelDiscoverer{
+			codexSource,
+			claudeSource,
+		}
+	}
+	discovery, err := accountapp.NewModelDiscovery(catalog, strategies)
+	if err != nil {
+		return nil, fmt.Errorf("创建账号模型发现注册表失败: %w", err)
+	}
+	return discovery, nil
 }
 
 // rejectOAuthRedirect 防止 Token 或 Profile 请求被重定向到未审计主机。

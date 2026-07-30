@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/madou1217/ai_home/internal/testsupport/accountmodels"
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
 )
 
@@ -34,6 +35,7 @@ func TestRunServesAccountsAndShutsDownCleanly(t *testing.T) {
 	)
 	runtime.stdout = &stdout
 	runtime.stderr = &stderr
+	runtime.models = accountmodels.NewDiscoverers()
 	runtime.listen = func(
 		ctx context.Context,
 		network string,

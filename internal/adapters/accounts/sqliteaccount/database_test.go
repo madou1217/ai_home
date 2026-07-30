@@ -3,13 +3,17 @@ package sqliteaccount
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
 	"sync"
 	"testing"
+	"time"
 
+	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/core/accounts/codex"
 	"github.com/madou1217/ai_home/core/providers"
 )
 
@@ -138,6 +142,107 @@ func TestOpenReusesCanonicalDatabaseAfterRestart(t *testing.T) {
 	}
 	if err := second.Close(); err != nil {
 		t.Fatalf("second Close() error = %v", err)
+	}
+}
+
+// TestOpenMigratesV1WithoutLosingAccountData 验证前向 migration 只增加模型关系。
+func TestOpenMigratesV1WithoutLosingAccountData(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	aiHomeDir := t.TempDir()
+	databasePath := filepath.Join(aiHomeDir, DatabaseFileName)
+	credential, err := codex.NewAPIKeyAuth(codex.APIKeyInput{
+		APIKey: "synthetic-v1-migration-key",
+	})
+	if err != nil {
+		t.Fatalf("codex.NewAPIKeyAuth() error = %v", err)
+	}
+	accountRef, err := accountcore.DeriveAccountRef(credential)
+	if err != nil {
+		t.Fatalf("DeriveAccountRef() error = %v", err)
+	}
+	credentialJSON, err := json.Marshal(map[string]string{
+		"api_key":  credential.APIKey(),
+		"base_url": credential.BaseURL(),
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	v1 := openRawSQLite(t, databasePath)
+	if _, err := v1.ExecContext(ctx, SchemaV1); err != nil {
+		t.Fatalf("create v1 schema error = %v", err)
+	}
+	createdAt := time.Date(2026, time.July, 27, 0, 0, 0, 0, time.UTC)
+	if _, err := v1.ExecContext(
+		ctx,
+		`INSERT INTO accounts (
+			account_ref, provider_id, cli_account_id, enabled,
+			created_at_ms, updated_at_ms
+		) VALUES (?, 'codex', 1, 1, ?, ?)`,
+		accountRef.String(),
+		createdAt.UnixMilli(),
+		createdAt.UnixMilli(),
+	); err != nil {
+		t.Fatalf("insert v1 account error = %v", err)
+	}
+	if _, err := v1.ExecContext(
+		ctx,
+		`INSERT INTO account_credentials (
+			account_ref, auth_kind, auth_mode, format_version,
+			credential_json, updated_at_ms
+		) VALUES (?, 'api_key', '', 1, ?, ?)`,
+		accountRef.String(),
+		string(credentialJSON),
+		createdAt.UnixMilli(),
+	); err != nil {
+		t.Fatalf("insert v1 credential error = %v", err)
+	}
+	if err := v1.Close(); err != nil {
+		t.Fatalf("close v1 database error = %v", err)
+	}
+
+	store, err := Open(ctx, OpenOptions{
+		AIHomeDir: aiHomeDir,
+		Catalog:   newTestCatalog(t),
+	})
+	if err != nil {
+		t.Fatalf("Open(v1) error = %v", err)
+	}
+	t.Cleanup(func() {
+		_ = store.Close()
+	})
+	account, err := store.GetByRef(ctx, accountRef)
+	if err != nil {
+		t.Fatalf("GetByRef() error = %v", err)
+	}
+	restored, err := store.GetCredential(ctx, accountRef)
+	if err != nil {
+		t.Fatalf("GetCredential() error = %v", err)
+	}
+	models, err := store.ListAccountModels(ctx, accountRef)
+	if err != nil {
+		t.Fatalf("ListAccountModels() error = %v", err)
+	}
+	if account.Ref() != accountRef ||
+		restored.IdentitySeed() != credential.IdentitySeed() ||
+		len(models) != 0 {
+		t.Fatalf(
+			"migration result account=%#v credential=%T models=%#v",
+			account,
+			restored,
+			models,
+		)
+	}
+	var schemaVersion int
+	if err := store.db.QueryRowContext(
+		ctx,
+		"PRAGMA user_version",
+	).Scan(&schemaVersion); err != nil {
+		t.Fatalf("PRAGMA user_version error = %v", err)
+	}
+	if schemaVersion != SchemaVersion {
+		t.Fatalf("schema version = %d, want %d", schemaVersion, SchemaVersion)
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	"os"
 	"time"
 
+	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/internal/host/aihserver"
 )
 
@@ -23,6 +24,7 @@ type commandRuntime struct {
 	listen      func(context.Context, string, string) (net.Listener, error)
 	stdout      io.Writer
 	stderr      io.Writer
+	models      []accountapp.ProviderModelDiscoverer
 }
 
 // defaultCommandRuntime 返回生产命令使用的操作系统适配器。
@@ -57,6 +59,7 @@ func run(
 	server, err := aihserver.New(ctx, aihserver.Options{
 		AIHomeDir:     config.aiHomeDir,
 		ManagementKey: func() string { return managementKey },
+		ModelDiscoverers: runtime.models,
 		ErrorLog: log.New(
 			runtime.stderr,
 			"aih-server http: ",

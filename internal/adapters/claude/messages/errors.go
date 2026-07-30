@@ -14,6 +14,10 @@ var (
 	ErrUnsupportedRequest = errors.New("Claude Messages 不支持该 Canonical 请求")
 	// ErrInvalidUpstreamResponse 表示成功状态响应违反 Messages 协议合同。
 	ErrInvalidUpstreamResponse = errors.New("Claude Messages 上游响应无效")
+	// ErrModelCatalogUnavailable 表示账号模型目录暂时无法取得可信结果。
+	ErrModelCatalogUnavailable = errors.New("Claude 账号模型目录暂不可用")
+	// ErrInvalidModelCatalog 表示成功响应不符合 Claude 模型目录合同。
+	ErrInvalidModelCatalog = errors.New("Claude 账号模型目录无效")
 )
 
 // eventSinkError 保留调用方背压错误身份，不把实现细节写入普通日志。

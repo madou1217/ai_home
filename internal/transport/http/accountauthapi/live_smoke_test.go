@@ -523,6 +523,15 @@ func newLiveManagementHandler(
 	if err != nil {
 		t.Fatalf("accounts.NewManagement() error = %v", err)
 	}
+	modelManagement, err := accountapp.NewModelManagement(
+		store,
+		store,
+		modelDiscovery,
+		clock,
+	)
+	if err != nil {
+		t.Fatalf("accounts.NewModelManagement() error = %v", err)
+	}
 	authorizer, err := accountsapi.NewBearerAuthorizer(
 		func() string { return smokeManagementKey },
 	)
@@ -572,6 +581,7 @@ func newLiveManagementHandler(
 	}
 	accountsHandler, err := accountsapi.NewHandler(accountsapi.Dependencies{
 		Management:     management,
+		Models:         modelManagement,
 		Registrar:      registrar,
 		APIKeys:        accountsapi.NewBuiltinAPIKeyCredentialFactory(),
 		NativeAccounts: decoder,

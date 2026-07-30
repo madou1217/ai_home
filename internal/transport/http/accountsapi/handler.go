@@ -42,6 +42,24 @@ type Management interface {
 	) (accountcore.Account, error)
 }
 
+// ModelManagement 是账号模型子资源依赖的最小查询和命令端口。
+type ModelManagement interface {
+	ListAccountModels(
+		ctx context.Context,
+		accountRef accountcore.AccountRef,
+	) ([]accountapp.AccountModel, error)
+	SetManualModelPolicy(
+		ctx context.Context,
+		accountRef accountcore.AccountRef,
+		modelID string,
+		policy accountapp.ModelManualPolicy,
+	) ([]accountapp.AccountModel, error)
+	RefreshAccountModels(
+		ctx context.Context,
+		accountRef accountcore.AccountRef,
+	) ([]accountapp.AccountModel, error)
+}
+
 // Registrar 是 HTTP API Key 创建入口依赖的最小注册端口。
 type Registrar interface {
 	Register(
@@ -63,6 +81,7 @@ type NativeAccountDecoder interface {
 // Dependencies 集中声明账号 HTTP 入站适配器的依赖。
 type Dependencies struct {
 	Management     Management
+	Models         ModelManagement
 	Registrar      Registrar
 	APIKeys        APIKeyCredentialFactory
 	NativeAccounts NativeAccountDecoder
@@ -72,6 +91,7 @@ type Dependencies struct {
 // Handler 是可挂载到未来 Go Server Composition Root 的账号管理路由。
 type Handler struct {
 	management Management
+	models     ModelManagement
 	registrar  Registrar
 	apiKeys    APIKeyCredentialFactory
 	native     NativeAccountDecoder
@@ -81,6 +101,7 @@ type Handler struct {
 // NewHandler 创建依赖完整且默认失败关闭的账号 HTTP Handler。
 func NewHandler(dependencies Dependencies) (*Handler, error) {
 	if dependencies.Management == nil ||
+		dependencies.Models == nil ||
 		dependencies.Registrar == nil ||
 		dependencies.APIKeys == nil ||
 		dependencies.NativeAccounts == nil ||
@@ -89,6 +110,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	}
 	return &Handler{
 		management: dependencies.Management,
+		models:     dependencies.Models,
 		registrar:  dependencies.Registrar,
 		apiKeys:    dependencies.APIKeys,
 		native:     dependencies.NativeAccounts,
@@ -151,7 +173,7 @@ func (handler *Handler) handleMember(
 	response http.ResponseWriter,
 	request *http.Request,
 ) {
-	accountRef, err := parseMemberAccountRef(request.URL.Path)
+	resource, err := parseMemberResource(request.URL.Path)
 	if err != nil {
 		writeAPIError(
 			response,
@@ -161,6 +183,30 @@ func (handler *Handler) handleMember(
 		)
 		return
 	}
+	accountRef := resource.accountRef
+	switch resource.kind {
+	case memberResourceAccount:
+		handler.handleAccountMember(response, request, accountRef)
+	case memberResourceModels:
+		handler.handleAccountModels(response, request, accountRef)
+	case memberResourceModelRefresh:
+		handler.handleAccountModelRefresh(response, request, accountRef)
+	default:
+		writeAPIError(
+			response,
+			http.StatusNotFound,
+			"route_not_found",
+			"请求的账号资源不存在",
+		)
+	}
+}
+
+// handleAccountMember 分发账号基础详情和启停操作。
+func (handler *Handler) handleAccountMember(
+	response http.ResponseWriter,
+	request *http.Request,
+	accountRef accountcore.AccountRef,
+) {
 	switch request.Method {
 	case http.MethodGet:
 		handler.getAccount(response, request, accountRef)
@@ -170,6 +216,37 @@ func (handler *Handler) handleMember(
 		response.Header().Set("Allow", http.MethodGet+", "+http.MethodPatch)
 		writeMethodNotAllowed(response)
 	}
+}
+
+// handleAccountModels 分发账号模型列表和人工策略维护。
+func (handler *Handler) handleAccountModels(
+	response http.ResponseWriter,
+	request *http.Request,
+	accountRef accountcore.AccountRef,
+) {
+	switch request.Method {
+	case http.MethodGet:
+		handler.listAccountModels(response, request, accountRef)
+	case http.MethodPatch:
+		handler.updateAccountModel(response, request, accountRef)
+	default:
+		response.Header().Set("Allow", http.MethodGet+", "+http.MethodPatch)
+		writeMethodNotAllowed(response)
+	}
+}
+
+// handleAccountModelRefresh 执行显式 Provider 目录刷新。
+func (handler *Handler) handleAccountModelRefresh(
+	response http.ResponseWriter,
+	request *http.Request,
+	accountRef accountcore.AccountRef,
+) {
+	if request.Method != http.MethodPost {
+		response.Header().Set("Allow", http.MethodPost)
+		writeMethodNotAllowed(response)
+		return
+	}
+	handler.refreshAccountModels(response, request, accountRef)
 }
 
 // listAccounts 执行有界 keyset 查询并准确计算下一页。
@@ -332,4 +409,85 @@ func (handler *Handler) updateAccount(
 		http.StatusOK,
 		accountResponse{Data: newAccountView(overview)},
 	)
+}
+
+// listAccountModels 返回自动发现、人工策略和最终有效性快照。
+func (handler *Handler) listAccountModels(
+	response http.ResponseWriter,
+	request *http.Request,
+	accountRef accountcore.AccountRef,
+) {
+	if rejectUnexpectedQuery(response, request) {
+		return
+	}
+	models, err := handler.models.ListAccountModels(request.Context(), accountRef)
+	if err != nil {
+		writeApplicationError(response, err)
+		return
+	}
+	writeJSON(response, http.StatusOK, accountModelListResponse{
+		Data: newAccountModelViews(models),
+	})
+}
+
+// updateAccountModel 设置一个真实模型的人工覆盖策略并返回完整快照。
+func (handler *Handler) updateAccountModel(
+	response http.ResponseWriter,
+	request *http.Request,
+	accountRef accountcore.AccountRef,
+) {
+	if rejectUnexpectedQuery(response, request) {
+		return
+	}
+	var input updateAccountModelRequest
+	if err := decodeJSONRequest(response, request, &input); err != nil {
+		writeRequestDecodeError(response, err)
+		return
+	}
+	policy, err := accountapp.ParseModelManualPolicy(input.ManualPolicy)
+	if err != nil {
+		writeAPIError(
+			response,
+			http.StatusUnprocessableEntity,
+			"invalid_model_policy",
+			"model_id 或 manual_policy 无效",
+		)
+		return
+	}
+	models, err := handler.models.SetManualModelPolicy(
+		request.Context(),
+		accountRef,
+		input.ModelID,
+		policy,
+	)
+	if err != nil {
+		writeApplicationError(response, err)
+		return
+	}
+	writeJSON(response, http.StatusOK, accountModelListResponse{
+		Data: newAccountModelViews(models),
+	})
+}
+
+// refreshAccountModels 同步刷新一次完整上游目录，失败时保留旧快照。
+func (handler *Handler) refreshAccountModels(
+	response http.ResponseWriter,
+	request *http.Request,
+	accountRef accountcore.AccountRef,
+) {
+	if rejectUnexpectedQuery(response, request) ||
+		rejectUnexpectedBody(response, request) {
+		return
+	}
+	models, err := handler.models.RefreshAccountModels(
+		request.Context(),
+		accountRef,
+	)
+	if err != nil {
+		writeApplicationError(response, err)
+		return
+	}
+	writeJSON(response, http.StatusOK, accountModelListResponse{
+		Data: newAccountModelViews(models),
+	})
 }

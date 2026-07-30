@@ -15,6 +15,7 @@ import (
 
 	"github.com/madou1217/ai_home/internal/testsupport/accountmodels"
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
+	"github.com/madou1217/ai_home/internal/transport/http/modelsapi"
 )
 
 // TestRunServesAccountsAndShutsDownCleanly 验证命令装配、真实监听和信号关闭链路。
@@ -23,6 +24,7 @@ func TestRunServesAccountsAndShutsDownCleanly(t *testing.T) {
 
 	aiHomeDir := t.TempDir()
 	managementKey := "synthetic-run-management-key-2026"
+	clientKey := "synthetic-run-client-key-for-tests-2026"
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	listening := make(chan net.Addr, 1)
@@ -30,6 +32,7 @@ func TestRunServesAccountsAndShutsDownCleanly(t *testing.T) {
 		map[string]string{
 			"AIH_HOME":                  aiHomeDir,
 			"AIH_SERVER_MANAGEMENT_KEY": managementKey,
+			"AIH_SERVER_CLIENT_KEY":     clientKey,
 		},
 		t.TempDir(),
 	)
@@ -110,6 +113,18 @@ func TestRunServesAccountsAndShutsDownCleanly(t *testing.T) {
 		listDocument.Data[0].ProviderID != "codex" {
 		t.Fatalf("账号列表错误: %#v", listDocument.Data)
 	}
+	models := commandRequest(
+		t,
+		client,
+		http.MethodGet,
+		baseURL+modelsapi.Path,
+		clientKey,
+		nil,
+	)
+	if models.status != http.StatusOK ||
+		!strings.Contains(models.body, `"id":"gpt-5.6-sol"`) {
+		t.Fatalf("本地模型目录错误: %#v", models)
+	}
 
 	cancel()
 	select {
@@ -122,6 +137,8 @@ func TestRunServesAccountsAndShutsDownCleanly(t *testing.T) {
 	}
 	if strings.Contains(stdout.String(), managementKey) ||
 		strings.Contains(stderr.String(), managementKey) ||
+		strings.Contains(stdout.String(), clientKey) ||
+		strings.Contains(stderr.String(), clientKey) ||
 		strings.Contains(stdout.String(), secret) ||
 		strings.Contains(stderr.String(), secret) {
 		t.Fatal("命令输出泄漏凭据")

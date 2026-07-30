@@ -8,6 +8,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/claudenativerelay"
 	"github.com/madou1217/ai_home/internal/transport/http/clauderelayleaseapi"
+	"github.com/madou1217/ai_home/internal/transport/http/modelsapi"
 )
 
 // systemStatusResponse 是公开存活和就绪检查的稳定响应。
@@ -37,6 +38,7 @@ func newRouter(handlers serverHandlers) http.Handler {
 	mux.Handle(accountsapi.NativeImportPath, handlers.accounts)
 	mux.Handle(accountsapi.CollectionPath, handlers.accounts)
 	mux.Handle(accountsapi.CollectionPath+"/", handlers.accounts)
+	mux.Handle(modelsapi.Path, handlers.models)
 	mux.Handle(accountauthapi.CollectionPath, handlers.accountAuth)
 	mux.Handle(accountauthapi.CollectionPath+"/", handlers.accountAuth)
 	mux.Handle(
@@ -71,6 +73,7 @@ func handleReadiness(response http.ResponseWriter, request *http.Request) {
 		Capabilities: []string{
 			"account_management_v1",
 			"account_auth_jobs_v1",
+			"local_model_catalog_v1",
 			"claude_relay_leases_v1",
 			"claude_native_relay_v1",
 		},

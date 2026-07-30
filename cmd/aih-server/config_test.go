@@ -14,6 +14,7 @@ import (
 )
 
 const configTestManagementKey = "synthetic-config-management-key-2026"
+const configTestClientKey = "synthetic-config-client-key-2026"
 
 // TestLoadCommandConfigUsesCanonicalDefaults 验证默认地址、数据目录和正式密钥环境名。
 func TestLoadCommandConfigUsesCanonicalDefaults(t *testing.T) {
@@ -23,6 +24,7 @@ func TestLoadCommandConfigUsesCanonicalDefaults(t *testing.T) {
 	runtime := newConfigTestRuntime(
 		map[string]string{
 			"AIH_SERVER_MANAGEMENT_KEY": configTestManagementKey,
+			"AIH_SERVER_CLIENT_KEY":     configTestClientKey,
 			"AI_HOME":                   "/legacy-must-not-be-used",
 		},
 		userHome,
@@ -34,7 +36,8 @@ func TestLoadCommandConfigUsesCanonicalDefaults(t *testing.T) {
 	if config.host != defaultServerHost ||
 		config.port != defaultServerPort ||
 		config.aiHomeDir != filepath.Join(userHome, ".ai_home") ||
-		config.managementKey != configTestManagementKey {
+		config.managementKey != configTestManagementKey ||
+		config.clientKey != configTestClientKey {
 		t.Fatalf(
 			"默认配置错误: host=%q port=%d aiHomeDir=%q",
 			config.host,
@@ -55,6 +58,7 @@ func TestLoadCommandConfigLetsCLIOverrideLoopbackEnvironment(t *testing.T) {
 			"AIH_SERVER_HOST":           "127.0.0.2",
 			"AIH_SERVER_PORT":           "9000",
 			"AIH_SERVER_MANAGEMENT_KEY": configTestManagementKey,
+			"AIH_SERVER_CLIENT_KEY":     configTestClientKey,
 		},
 		t.TempDir(),
 	)
@@ -98,6 +102,37 @@ func TestLoadCommandConfigFailsClosed(t *testing.T) {
 				"AIH_SERVER_MANAGEMENT_KEY": "too-short",
 			},
 			wantErr: aihserver.ErrInvalidManagementKey,
+		},
+		{
+			name: "missing client key",
+			env: map[string]string{
+				"AIH_SERVER_MANAGEMENT_KEY": configTestManagementKey,
+			},
+			wantErr: aihserver.ErrInvalidClientKey,
+		},
+		{
+			name: "weak client key",
+			env: map[string]string{
+				"AIH_SERVER_MANAGEMENT_KEY": configTestManagementKey,
+				"AIH_SERVER_CLIENT_KEY":     "too-short",
+			},
+			wantErr: aihserver.ErrInvalidClientKey,
+		},
+		{
+			name: "client key with whitespace",
+			env: map[string]string{
+				"AIH_SERVER_MANAGEMENT_KEY": configTestManagementKey,
+				"AIH_SERVER_CLIENT_KEY":     "synthetic client key that is long enough",
+			},
+			wantErr: aihserver.ErrInvalidClientKey,
+		},
+		{
+			name: "server key collision",
+			env: map[string]string{
+				"AIH_SERVER_MANAGEMENT_KEY": configTestManagementKey,
+				"AIH_SERVER_CLIENT_KEY":     configTestManagementKey,
+			},
+			wantErr: aihserver.ErrServerKeyCollision,
 		},
 		{
 			name: "management key with whitespace",
@@ -191,7 +226,8 @@ func TestLoadCommandConfigPrintsHelpWithoutManagementKey(t *testing.T) {
 		t.Fatalf("loadCommandConfig(--help) error = %v", err)
 	}
 	if output.String() == "" ||
-		bytes.Contains(output.Bytes(), []byte(configTestManagementKey)) {
+		bytes.Contains(output.Bytes(), []byte(configTestManagementKey)) ||
+		bytes.Contains(output.Bytes(), []byte(configTestClientKey)) {
 		t.Fatalf("帮助输出错误: %q", output.String())
 	}
 }

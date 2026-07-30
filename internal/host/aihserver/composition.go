@@ -22,6 +22,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/claudenativerelay"
 	"github.com/madou1217/ai_home/internal/transport/http/clauderelayleaseapi"
+	"github.com/madou1217/ai_home/internal/transport/http/modelsapi"
 )
 
 const (
@@ -30,10 +31,11 @@ const (
 	modelCatalogHTTPTimeout = 15 * time.Second
 )
 
-// serverHandlers 保存 Composition Root 创建的四个独立 HTTP 边界。
+// serverHandlers 保存 Composition Root 创建的五个独立 HTTP 边界。
 type serverHandlers struct {
 	accounts          http.Handler
 	accountAuth       http.Handler
+	models            http.Handler
 	claudeRelayLeases http.Handler
 	claudeNativeRelay http.Handler
 }
@@ -64,6 +66,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		store,
 		modelDiscovery,
 		options.ManagementKey,
+		options.ClientKey,
 	)
 	if err != nil {
 		_ = store.Close()
@@ -76,12 +79,13 @@ func New(ctx context.Context, options Options) (*Server, error) {
 	), nil
 }
 
-// newHandlers 共享数据库、凭据刷新和鉴权端口，并保持四个 HTTP 边界隔离。
+// newHandlers 共享数据库、凭据刷新和鉴权端口，并保持五个 HTTP 边界隔离。
 func newHandlers(
 	catalog *providers.Catalog,
 	store *sqliteaccount.Store,
 	modelDiscovery *accountapp.ModelDiscovery,
 	managementKey func() string,
+	clientKey func() string,
 ) (serverHandlers, error) {
 	registrar, err := accountapp.NewRegistrar(
 		catalog,
@@ -105,13 +109,34 @@ func newHandlers(
 	if err != nil {
 		return serverHandlers{}, fmt.Errorf("创建账号管理用例失败: %w", err)
 	}
+	modelManagement, err := accountapp.NewModelManagement(
+		store,
+		store,
+		modelDiscovery,
+		time.Now,
+	)
+	if err != nil {
+		return serverHandlers{}, fmt.Errorf("创建账号模型管理用例失败: %w", err)
+	}
 	authorizer, err := accountsapi.NewBearerAuthorizer(managementKey)
 	if err != nil {
 		return serverHandlers{}, fmt.Errorf("创建账号管理鉴权失败: %w", err)
 	}
+	clientAuthorizer, err := accountsapi.NewBearerAuthorizer(clientKey)
+	if err != nil {
+		return serverHandlers{}, fmt.Errorf("创建客户端鉴权失败: %w", err)
+	}
+	modelsHandler, err := modelsapi.NewHandler(modelsapi.Dependencies{
+		Models:     store,
+		Authorizer: clientAuthorizer,
+	})
+	if err != nil {
+		return serverHandlers{}, fmt.Errorf("创建本地模型目录 Handler 失败: %w", err)
+	}
 	decoder := nativeaccount.NewDecoder()
 	accountsHandler, err := accountsapi.NewHandler(accountsapi.Dependencies{
 		Management:     management,
+		Models:         modelManagement,
 		Registrar:      registrar,
 		APIKeys:        accountsapi.NewBuiltinAPIKeyCredentialFactory(),
 		NativeAccounts: decoder,
@@ -207,6 +232,7 @@ func newHandlers(
 	return serverHandlers{
 		accounts:          accountsHandler,
 		accountAuth:       accountAuthHandler,
+		models:            modelsHandler,
 		claudeRelayLeases: relayLeaseHandler,
 		claudeNativeRelay: nativeRelayHandler,
 	}, nil

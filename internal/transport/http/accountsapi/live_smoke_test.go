@@ -60,6 +60,15 @@ func TestAccountsAPILiveSmoke(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManagement() error = %v", err)
 	}
+	modelManagement, err := accountapp.NewModelManagement(
+		store,
+		store,
+		modelDiscovery,
+		func() time.Time { return registeredAt.Add(10 * time.Minute) },
+	)
+	if err != nil {
+		t.Fatalf("NewModelManagement() error = %v", err)
+	}
 	authorizer, err := accountsapi.NewBearerAuthorizer(
 		func() string { return testManagementKey },
 	)
@@ -68,6 +77,7 @@ func TestAccountsAPILiveSmoke(t *testing.T) {
 	}
 	handler, err := accountsapi.NewHandler(accountsapi.Dependencies{
 		Management:     management,
+		Models:         modelManagement,
 		Registrar:      registrar,
 		APIKeys:        accountsapi.NewBuiltinAPIKeyCredentialFactory(),
 		NativeAccounts: nativeaccount.NewDecoder(),
@@ -165,6 +175,55 @@ func TestAccountsAPILiveSmoke(t *testing.T) {
 	logLiveExchange(t, detail)
 	assertLiveStatus(t, detail, http.StatusOK)
 
+	modelsURL := detailURL + "/models"
+	models := performLiveRequest(
+		t,
+		server.Client(),
+		http.MethodGet,
+		modelsURL,
+		nil,
+	)
+	logLiveExchange(t, models)
+	assertLiveStatus(t, models, http.StatusOK)
+	assertLiveModelPolicy(t, models, "gpt-5.6-sol", "inherit", true)
+
+	modelPolicyPayload := []byte(
+		`{"model_id":"gpt-5.6-sol","manual_policy":"force_disable"}`,
+	)
+	modelPolicy := performLiveRequest(
+		t,
+		server.Client(),
+		http.MethodPatch,
+		modelsURL,
+		modelPolicyPayload,
+	)
+	logLiveExchange(t, modelPolicy)
+	assertLiveStatus(t, modelPolicy, http.StatusOK)
+	assertLiveModelPolicy(
+		t,
+		modelPolicy,
+		"gpt-5.6-sol",
+		"force_disable",
+		false,
+	)
+
+	modelRefresh := performLiveRequest(
+		t,
+		server.Client(),
+		http.MethodPost,
+		modelsURL+"/refresh",
+		nil,
+	)
+	logLiveExchange(t, modelRefresh)
+	assertLiveStatus(t, modelRefresh, http.StatusOK)
+	assertLiveModelPolicy(
+		t,
+		modelRefresh,
+		"gpt-5.6-sol",
+		"force_disable",
+		false,
+	)
+
 	disablePayload := []byte(`{"enabled":false}`)
 	disabled := performLiveRequest(
 		t,
@@ -192,6 +251,9 @@ func TestAccountsAPILiveSmoke(t *testing.T) {
 		claudeCreate,
 		list,
 		detail,
+		models,
+		modelPolicy,
+		modelRefresh,
 		disabled,
 	} {
 		if strings.Contains(exchange.requestBody, codexSecret) ||
@@ -200,6 +262,32 @@ func TestAccountsAPILiveSmoke(t *testing.T) {
 			strings.Contains(exchange.responseBody, claudeSecret) {
 			t.Fatalf("%s smoke evidence leaked API Key", exchange.method)
 		}
+	}
+}
+
+// assertLiveModelPolicy 校验真实 HTTP 模型关系和人工覆盖结果。
+func assertLiveModelPolicy(
+	t *testing.T,
+	exchange liveExchange,
+	modelID string,
+	policy string,
+	effective bool,
+) {
+	t.Helper()
+
+	var document struct {
+		Data []struct {
+			ModelID      string `json:"model_id"`
+			ManualPolicy string `json:"manual_policy"`
+			Effective    bool   `json:"effective"`
+		} `json:"data"`
+	}
+	decodeLiveBody(t, exchange.responseBody, &document)
+	if len(document.Data) != 1 ||
+		document.Data[0].ModelID != modelID ||
+		document.Data[0].ManualPolicy != policy ||
+		document.Data[0].Effective != effective {
+		t.Fatalf("live model response = %#v", document.Data)
 	}
 }
 

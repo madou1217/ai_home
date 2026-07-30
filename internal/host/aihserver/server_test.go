@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -19,9 +20,11 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/claudenativerelay"
 	"github.com/madou1217/ai_home/internal/transport/http/clauderelayleaseapi"
+	"github.com/madou1217/ai_home/internal/transport/http/modelsapi"
 )
 
 const testManagementKey = "synthetic-go-server-management-key-2026"
+const testClientKey = "synthetic-go-server-client-key-2026"
 
 // TestServerMountsSystemAndAccountRoutes 验证 Host 到 aih.db 的真实 TCP 完整链路。
 func TestServerMountsSystemAndAccountRoutes(t *testing.T) {
@@ -41,11 +44,12 @@ func TestServerMountsSystemAndAccountRoutes(t *testing.T) {
 	}
 	decodeJSON(t, ready.body, &readiness)
 	if !readiness.Ready ||
-		len(readiness.Capabilities) != 4 ||
+		len(readiness.Capabilities) != 5 ||
 		readiness.Capabilities[0] != "account_management_v1" ||
 		readiness.Capabilities[1] != "account_auth_jobs_v1" ||
-		readiness.Capabilities[2] != "claude_relay_leases_v1" ||
-		readiness.Capabilities[3] != "claude_native_relay_v1" {
+		readiness.Capabilities[2] != "local_model_catalog_v1" ||
+		readiness.Capabilities[3] != "claude_relay_leases_v1" ||
+		readiness.Capabilities[4] != "claude_native_relay_v1" {
 		t.Fatalf("readyz response = %#v", readiness)
 	}
 
@@ -117,6 +121,33 @@ func TestServerMountsSystemAndAccountRoutes(t *testing.T) {
 	if strings.Contains(created.body, secret) {
 		t.Fatal("Go Server 创建响应泄漏 API Key")
 	}
+	unauthorizedModels := performRequest(
+		t,
+		client,
+		http.MethodGet,
+		baseURL+modelsapi.Path,
+		testManagementKey,
+		nil,
+	)
+	assertStatus(t, unauthorizedModels, http.StatusUnauthorized)
+	models := performRequest(
+		t,
+		client,
+		http.MethodGet,
+		baseURL+modelsapi.Path,
+		testClientKey,
+		nil,
+	)
+	assertStatus(t, models, http.StatusOK)
+	if !strings.Contains(models.body, `"id":"gpt-5.6-sol"`) {
+		t.Fatalf("本地模型目录缺少已注册账号模型: %s", models.body)
+	}
+	t.Logf(
+		"GET %s\npayload:\n(none)\nstatus: %d\nresponse:\n%s",
+		baseURL+modelsapi.Path,
+		models.status,
+		models.body,
+	)
 
 	nativeAccessToken := "sk-ant-oat01-mounted-native-access"
 	nativeRefreshToken := "sk-ant-ort01-mounted-native-refresh"
@@ -301,24 +332,61 @@ func claudeNativeImportBody(
 	return document
 }
 
-// TestNewRejectsInvalidManagementKeyBeforeCreatingDatabase 验证错误密钥不会产生数据库副作用。
-func TestNewRejectsInvalidManagementKeyBeforeCreatingDatabase(t *testing.T) {
+// TestNewRejectsInvalidServerKeysBeforeCreatingDatabase 验证错误或重叠密钥不会产生数据库副作用。
+func TestNewRejectsInvalidServerKeysBeforeCreatingDatabase(t *testing.T) {
 	t.Parallel()
 
-	aiHomeDir := t.TempDir()
-	_, err := aihserver.New(context.Background(), aihserver.Options{
-		AIHomeDir:     aiHomeDir,
-		ManagementKey: func() string { return "too-short" },
-	})
-	if err == nil {
-		t.Fatal("弱 Management Key 未被拒绝")
+	tests := []struct {
+		name          string
+		managementKey string
+		clientKey     string
+		wantErr       error
+	}{
+		{
+			name:          "weak management",
+			managementKey: "too-short",
+			clientKey:     testClientKey,
+			wantErr:       aihserver.ErrInvalidManagementKey,
+		},
+		{
+			name:          "weak client",
+			managementKey: testManagementKey,
+			clientKey:     "too-short",
+			wantErr:       aihserver.ErrInvalidClientKey,
+		},
+		{
+			name:          "same key",
+			managementKey: testManagementKey,
+			clientKey:     testManagementKey,
+			wantErr:       aihserver.ErrServerKeyCollision,
+		},
 	}
-	databasePath, pathErr := sqliteaccount.DatabasePath(aiHomeDir)
-	if pathErr != nil {
-		t.Fatalf("DatabasePath() error = %v", pathErr)
-	}
-	if _, statErr := os.Stat(databasePath); !os.IsNotExist(statErr) {
-		t.Fatalf("无效配置创建了数据库: stat error=%v", statErr)
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			aiHomeDir := t.TempDir()
+			_, err := aihserver.New(context.Background(), aihserver.Options{
+				AIHomeDir: aiHomeDir,
+				ManagementKey: func() string {
+					return test.managementKey
+				},
+				ClientKey: func() string {
+					return test.clientKey
+				},
+			})
+			if !errors.Is(err, test.wantErr) {
+				t.Fatalf("aihserver.New() error = %v, want %v", err, test.wantErr)
+			}
+			databasePath, pathErr := sqliteaccount.DatabasePath(aiHomeDir)
+			if pathErr != nil {
+				t.Fatalf("DatabasePath() error = %v", pathErr)
+			}
+			if _, statErr := os.Stat(databasePath); !os.IsNotExist(statErr) {
+				t.Fatalf("无效配置创建了数据库: stat error=%v", statErr)
+			}
+		})
 	}
 }
 
@@ -334,8 +402,9 @@ func startTestServer(t *testing.T) (string, *http.Client) {
 	t.Helper()
 
 	server, err := aihserver.New(context.Background(), aihserver.Options{
-		AIHomeDir:     t.TempDir(),
-		ManagementKey: func() string { return testManagementKey },
+		AIHomeDir:        t.TempDir(),
+		ManagementKey:    func() string { return testManagementKey },
+		ClientKey:        func() string { return testClientKey },
 		ModelDiscoverers: accountmodels.NewDiscoverers(),
 	})
 	if err != nil {

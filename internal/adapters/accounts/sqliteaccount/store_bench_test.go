@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"math/big"
 	"net/http"
+	"net/http/httptest"
+	"sync"
 	"testing"
 
 	"github.com/madou1217/ai_home/application/accountcredentials"
@@ -15,6 +17,7 @@ import (
 	"github.com/madou1217/ai_home/core/accounts/codex"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/codexoauth"
+	"github.com/madou1217/ai_home/internal/transport/http/modelsapi"
 )
 
 func BenchmarkStoreQueries(benchmark *testing.B) {
@@ -112,6 +115,62 @@ func BenchmarkStoreQueries(benchmark *testing.B) {
 			})
 		})
 	}
+}
+
+// BenchmarkModelsAPIWithTenThousandAccounts 测量 1000 并发标准目录请求的本地读路径。
+func BenchmarkModelsAPIWithTenThousandAccounts(benchmark *testing.B) {
+	const (
+		accountCount = 10_000
+		concurrency  = 1_000
+	)
+	store := openBenchmarkStore(benchmark)
+	seedBenchmarkAccounts(benchmark, store, accountCount)
+	handler, err := modelsapi.NewHandler(modelsapi.Dependencies{
+		Models:     store,
+		Authorizer: benchmarkModelAuthorizer{},
+	})
+	if err != nil {
+		benchmark.Fatalf("modelsapi.NewHandler() error = %v", err)
+	}
+	benchmark.ReportAllocs()
+	benchmark.ResetTimer()
+	for range benchmark.N {
+		var waitGroup sync.WaitGroup
+		errorsByRequest := make(chan error, concurrency)
+		waitGroup.Add(concurrency)
+		for range concurrency {
+			go func() {
+				defer waitGroup.Done()
+				request := httptest.NewRequest(
+					http.MethodGet,
+					modelsapi.Path,
+					nil,
+				)
+				response := httptest.NewRecorder()
+				handler.ServeHTTP(response, request)
+				if response.Code != http.StatusOK {
+					errorsByRequest <- fmt.Errorf(
+						"models status=%d",
+						response.Code,
+					)
+				}
+			}()
+		}
+		waitGroup.Wait()
+		close(errorsByRequest)
+		for requestErr := range errorsByRequest {
+			benchmark.Fatal(requestErr)
+		}
+	}
+	benchmark.ReportMetric(accountCount, "accounts")
+	benchmark.ReportMetric(concurrency, "requests/batch")
+}
+
+// benchmarkModelAuthorizer 避免鉴权实现影响本地模型目录并发测量。
+type benchmarkModelAuthorizer struct{}
+
+func (benchmarkModelAuthorizer) Authorized(*http.Request) bool {
+	return true
 }
 
 // prepareRecruitmentBenchmark 在普通账号之外注册一个可稳定点查的真实凭据账号。

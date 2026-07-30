@@ -88,6 +88,35 @@ func writeApplicationError(response http.ResponseWriter, err error) {
 			"cli_account_id_exhausted",
 			"Provider 数字别名已经耗尽",
 		)
+	case errors.Is(err, accountapp.ErrCredentialNotFound):
+		writeAPIError(
+			response,
+			http.StatusConflict,
+			"credential_not_found",
+			"账号缺少可用于模型刷新的凭据",
+		)
+	case errors.Is(err, accountapp.ErrModelDiscoveryUnsupported):
+		writeAPIError(
+			response,
+			http.StatusUnprocessableEntity,
+			"model_refresh_unsupported",
+			"当前 Provider 不支持模型刷新",
+		)
+	case errors.Is(err, accountapp.ErrModelDiscoveryFailed):
+		writeAPIError(
+			response,
+			http.StatusBadGateway,
+			"model_refresh_failed",
+			"Provider 模型目录刷新失败",
+		)
+	case errors.Is(err, accountapp.ErrInvalidAccountModel),
+		errors.Is(err, accountapp.ErrInvalidDiscoveredModels):
+		writeAPIError(
+			response,
+			http.StatusUnprocessableEntity,
+			"invalid_model",
+			"账号模型数据无效",
+		)
 	case errors.Is(err, accountapp.ErrInvalidRegistration),
 		errors.Is(err, accountapp.ErrInvalidOverview),
 		errors.Is(err, accountcore.ErrInvalidAccount):

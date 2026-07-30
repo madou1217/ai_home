@@ -31,6 +31,12 @@ type updateAccountRequest struct {
 	Enabled *bool `json:"enabled"`
 }
 
+// updateAccountModelRequest 是单个账号模型人工策略更新 DTO。
+type updateAccountModelRequest struct {
+	ModelID      string `json:"model_id"`
+	ManualPolicy string `json:"manual_policy"`
+}
+
 // accountView 是管理 API 允许公开的无敏感账号投影。
 type accountView struct {
 	AccountRef       string `json:"account_ref"`
@@ -59,6 +65,20 @@ type accountResponse struct {
 type accountListResponse struct {
 	Data []accountView `json:"data"`
 	Page pageView      `json:"page"`
+}
+
+// accountModelView 是账号模型管理 API 的完整非敏感关系。
+type accountModelView struct {
+	ModelID           string `json:"model_id"`
+	UpstreamAvailable bool   `json:"upstream_available"`
+	ManualPolicy      string `json:"manual_policy"`
+	Effective         bool   `json:"effective"`
+	UpdatedAt         string `json:"updated_at"`
+}
+
+// accountModelListResponse 是查询、人工维护和刷新共享的成功 envelope。
+type accountModelListResponse struct {
+	Data []accountModelView `json:"data"`
 }
 
 // pageView 明确下一页游标是否仍然有效。
@@ -106,6 +126,21 @@ func newAccountViews(overviews []accountapp.AccountOverview) []accountView {
 	views := make([]accountView, 0, len(overviews))
 	for _, overview := range overviews {
 		views = append(views, newAccountView(overview))
+	}
+	return views
+}
+
+// newAccountModelViews 保留应用层按模型 ID 排序的完整关系快照。
+func newAccountModelViews(models []accountapp.AccountModel) []accountModelView {
+	views := make([]accountModelView, 0, len(models))
+	for _, model := range models {
+		views = append(views, accountModelView{
+			ModelID:           model.ModelID().String(),
+			UpstreamAvailable: model.UpstreamAvailable(),
+			ManualPolicy:      model.ManualPolicy().String(),
+			Effective:         model.Effective(),
+			UpdatedAt:         formatTime(model.UpdatedAt()),
+		})
 	}
 	return views
 }

@@ -31,6 +31,7 @@ type commandConfig struct {
 	port          int
 	aiHomeDir     string
 	managementKey string
+	clientKey     string
 }
 
 // listenAddress 返回 IPv4、IPv6 都可安全使用的监听地址。
@@ -74,7 +75,8 @@ func loadCommandConfig(
 		return commandConfig{}, err
 	}
 	managementKey, _ := runtime.lookupEnv("AIH_SERVER_MANAGEMENT_KEY")
-	if err := aihserver.ValidateManagementKey(managementKey); err != nil {
+	clientKey, _ := runtime.lookupEnv("AIH_SERVER_CLIENT_KEY")
+	if err := aihserver.ValidateServerKeys(managementKey, clientKey); err != nil {
 		return commandConfig{}, err
 	}
 	return commandConfig{
@@ -82,6 +84,7 @@ func loadCommandConfig(
 		port:          port,
 		aiHomeDir:     aiHomeDir,
 		managementKey: managementKey,
+		clientKey:     clientKey,
 	}, nil
 }
 
@@ -150,5 +153,6 @@ func writeUsage(output io.Writer, flags *flag.FlagSet) {
 	_, _ = fmt.Fprintln(output, "  AIH_HOME")
 	_, _ = fmt.Fprintln(output, "  AIH_SERVER_HOST")
 	_, _ = fmt.Fprintln(output, "  AIH_SERVER_PORT")
+	_, _ = fmt.Fprintln(output, "  AIH_SERVER_CLIENT_KEY（必填，不接受命令行传入）")
 	_, _ = fmt.Fprintln(output, "  AIH_SERVER_MANAGEMENT_KEY（必填，不接受命令行传入）")
 }

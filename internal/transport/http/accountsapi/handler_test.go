@@ -161,6 +161,73 @@ func TestHandlerGetsAndDisablesAccount(t *testing.T) {
 	}
 }
 
+// TestHandlerManagesAccountModels 验证模型查询、人工策略和显式刷新 HTTP 合同。
+func TestHandlerManagesAccountModels(t *testing.T) {
+	t.Parallel()
+
+	service := newAccountServiceStub(t)
+	overview := newTestOverview(t, service.catalog, 11, "http-model-account")
+	service.overview = &overview
+	service.modelResult = []accountapp.AccountModel{
+		newHTTPAccountModel(
+			t,
+			overview.Account().Ref(),
+			"gpt-5.6-sol",
+			true,
+			accountapp.ModelPolicyInherit,
+		),
+	}
+	handler := newTestHandler(t, service)
+	path := "/v1/management/accounts/" +
+		overview.Account().Ref().String() +
+		"/models"
+
+	listed := performAuthorizedRequest(t, handler, http.MethodGet, path, nil)
+	assertAccountModelResponse(t, listed, "gpt-5.6-sol", "inherit", true)
+
+	updated := performAuthorizedRequest(
+		t,
+		handler,
+		http.MethodPatch,
+		path,
+		[]byte(
+			`{"model_id":"gpt-5.6-sol","manual_policy":"force_disable"}`,
+		),
+	)
+	assertAccountModelResponse(
+		t,
+		updated,
+		"gpt-5.6-sol",
+		"force_disable",
+		false,
+	)
+	if service.setModelCalls != 1 ||
+		service.setModelRef != overview.Account().Ref() ||
+		service.setModelID != "gpt-5.6-sol" ||
+		service.setModelPolicy != accountapp.ModelPolicyForceDisable {
+		t.Fatalf("set model command = %#v", service)
+	}
+
+	refreshed := performAuthorizedRequest(
+		t,
+		handler,
+		http.MethodPost,
+		path+"/refresh",
+		nil,
+	)
+	assertAccountModelResponse(
+		t,
+		refreshed,
+		"gpt-5.6-sol",
+		"force_disable",
+		false,
+	)
+	if service.refreshModelCalls != 1 ||
+		service.refreshModelRef != overview.Account().Ref() {
+		t.Fatalf("refresh model command = %#v", service)
+	}
+}
+
 // TestHandlerRegistersBuiltinAPIKeysWithoutEchoingSecret 验证 Codex、Claude 共用注册合同且不泄漏密钥。
 func TestHandlerRegistersBuiltinAPIKeysWithoutEchoingSecret(t *testing.T) {
 	t.Parallel()
@@ -453,6 +520,15 @@ type accountServiceStub struct {
 	registeredCredential accountapp.Credential
 	registeredProfile    accountapp.PublicProfile
 	registerCalls        int
+	modelResult          []accountapp.AccountModel
+	modelErr             error
+	listModelCalls       int
+	setModelRef          accountcore.AccountRef
+	setModelID           string
+	setModelPolicy       accountapp.ModelManualPolicy
+	setModelCalls        int
+	refreshModelRef      accountcore.AccountRef
+	refreshModelCalls    int
 }
 
 // newAccountServiceStub 创建使用内置 Provider Catalog 的应用服务替身。
@@ -557,6 +633,53 @@ func (service *accountServiceStub) Register(
 	return account, nil
 }
 
+// ListAccountModels 返回预设的账号模型管理快照。
+func (service *accountServiceStub) ListAccountModels(
+	_ context.Context,
+	_ accountcore.AccountRef,
+) ([]accountapp.AccountModel, error) {
+	service.listModelCalls++
+	return service.modelResult, service.modelErr
+}
+
+// SetManualModelPolicy 记录人工策略命令并返回预设快照。
+func (service *accountServiceStub) SetManualModelPolicy(
+	_ context.Context,
+	accountRef accountcore.AccountRef,
+	modelID string,
+	policy accountapp.ModelManualPolicy,
+) ([]accountapp.AccountModel, error) {
+	service.setModelCalls++
+	service.setModelRef = accountRef
+	service.setModelID = modelID
+	service.setModelPolicy = policy
+	if len(service.modelResult) == 1 &&
+		service.modelResult[0].ModelID().String() == modelID {
+		model, err := accountapp.NewAccountModel(accountapp.AccountModelInput{
+			AccountRef:        accountRef,
+			ModelID:           modelID,
+			UpstreamAvailable: service.modelResult[0].UpstreamAvailable(),
+			ManualPolicy:      policy,
+			UpdatedAt:         testHTTPTime().Add(time.Minute),
+		})
+		if err != nil {
+			service.t.Fatalf("NewAccountModel(update) error = %v", err)
+		}
+		service.modelResult = []accountapp.AccountModel{model}
+	}
+	return service.modelResult, service.modelErr
+}
+
+// RefreshAccountModels 记录显式刷新命令并返回预设快照。
+func (service *accountServiceStub) RefreshAccountModels(
+	_ context.Context,
+	accountRef accountcore.AccountRef,
+) ([]accountapp.AccountModel, error) {
+	service.refreshModelCalls++
+	service.refreshModelRef = accountRef
+	return service.modelResult, service.modelErr
+}
+
 // credentialKind 返回测试凭据对应的公开认证类型。
 func credentialKind(credential accountapp.Credential) string {
 	switch credential.(type) {
@@ -629,6 +752,7 @@ func newTestHandler(t *testing.T, service *accountServiceStub) http.Handler {
 	}
 	handler, err := accountsapi.NewHandler(accountsapi.Dependencies{
 		Management:     service,
+		Models:         service,
 		Registrar:      service,
 		APIKeys:        accountsapi.NewBuiltinAPIKeyCredentialFactory(),
 		NativeAccounts: nativeaccount.NewDecoder(),
@@ -638,6 +762,58 @@ func newTestHandler(t *testing.T, service *accountServiceStub) http.Handler {
 		t.Fatalf("NewHandler() error = %v", err)
 	}
 	return handler
+}
+
+// newHTTPAccountModel 创建账号模型 HTTP 测试使用的完整领域关系。
+func newHTTPAccountModel(
+	t *testing.T,
+	accountRef accountcore.AccountRef,
+	modelID string,
+	upstream bool,
+	policy accountapp.ModelManualPolicy,
+) accountapp.AccountModel {
+	t.Helper()
+
+	model, err := accountapp.NewAccountModel(accountapp.AccountModelInput{
+		AccountRef:        accountRef,
+		ModelID:           modelID,
+		UpstreamAvailable: upstream,
+		ManualPolicy:      policy,
+		UpdatedAt:         testHTTPTime(),
+	})
+	if err != nil {
+		t.Fatalf("NewAccountModel() error = %v", err)
+	}
+	return model
+}
+
+// assertAccountModelResponse 校验模型管理接口的公开关系字段。
+func assertAccountModelResponse(
+	t *testing.T,
+	response *httptest.ResponseRecorder,
+	modelID string,
+	policy string,
+	effective bool,
+) {
+	t.Helper()
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("model response status=%d body=%s", response.Code, response.Body)
+	}
+	var document struct {
+		Data []struct {
+			ModelID      string `json:"model_id"`
+			ManualPolicy string `json:"manual_policy"`
+			Effective    bool   `json:"effective"`
+		} `json:"data"`
+	}
+	decodeResponseJSON(t, response, &document)
+	if len(document.Data) != 1 ||
+		document.Data[0].ModelID != modelID ||
+		document.Data[0].ManualPolicy != policy ||
+		document.Data[0].Effective != effective {
+		t.Fatalf("model response = %#v", document.Data)
+	}
 }
 
 // newTestOverview 创建不含敏感字段的 Codex API Key 管理投影。

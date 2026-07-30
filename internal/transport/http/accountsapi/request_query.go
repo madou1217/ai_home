@@ -71,13 +71,43 @@ func parsePageSize(value string, present bool) (int, error) {
 	return limit, nil
 }
 
-// parseMemberAccountRef 拒绝空成员、尾斜杠和嵌套资源。
-func parseMemberAccountRef(path string) (accountcore.AccountRef, error) {
+// memberResourceKind 区分账号基础资源、模型集合和显式刷新命令。
+type memberResourceKind uint8
+
+const (
+	memberResourceAccount memberResourceKind = iota + 1
+	memberResourceModels
+	memberResourceModelRefresh
+)
+
+// memberResource 是完成 AccountRef 校验后的成员路由。
+type memberResource struct {
+	accountRef accountcore.AccountRef
+	kind       memberResourceKind
+}
+
+// parseMemberResource 严格解析当前声明的三种账号成员路径。
+func parseMemberResource(path string) (memberResource, error) {
 	value := strings.TrimPrefix(path, CollectionPath+"/")
-	if value == "" || strings.Contains(value, "/") {
-		return "", accountcore.ErrInvalidAccountRef
+	parts := strings.Split(value, "/")
+	if len(parts) == 0 || len(parts) > 3 || parts[0] == "" {
+		return memberResource{}, accountcore.ErrInvalidAccountRef
 	}
-	return accountcore.ParseAccountRef(value)
+	accountRef, err := accountcore.ParseAccountRef(parts[0])
+	if err != nil {
+		return memberResource{}, err
+	}
+	kind := memberResourceAccount
+	switch {
+	case len(parts) == 1:
+	case len(parts) == 2 && parts[1] == "models":
+		kind = memberResourceModels
+	case len(parts) == 3 && parts[1] == "models" && parts[2] == "refresh":
+		kind = memberResourceModelRefresh
+	default:
+		return memberResource{}, accountcore.ErrInvalidAccountRef
+	}
+	return memberResource{accountRef: accountRef, kind: kind}, nil
 }
 
 // rejectUnexpectedQuery 拒绝没有声明查询参数的资源操作。
@@ -89,5 +119,24 @@ func rejectUnexpectedQuery(
 		return false
 	}
 	writeInvalidQuery(response)
+	return true
+}
+
+// rejectUnexpectedBody 拒绝声明为空请求体的命令携带任意字节。
+func rejectUnexpectedBody(
+	response http.ResponseWriter,
+	request *http.Request,
+) bool {
+	if request.Body == nil ||
+		request.Body == http.NoBody ||
+		(request.ContentLength == 0 && len(request.TransferEncoding) == 0) {
+		return false
+	}
+	writeAPIError(
+		response,
+		http.StatusBadRequest,
+		"invalid_request",
+		"该操作不接受请求体",
+	)
 	return true
 }

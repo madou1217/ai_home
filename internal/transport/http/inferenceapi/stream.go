@@ -65,13 +65,15 @@ func (stream *SSEStream) Write(
 	return nil
 }
 
-// writeSSEFrame 写入构造时已保证单行的 JSON 数据。
+// writeSSEFrame 写入构造时已保证单行的数据，并省略 data-only 帧的 event 字段。
 func writeSSEFrame(
 	output io.Writer,
 	frame clientprotocol.RenderedEvent,
 ) error {
-	if _, err := io.WriteString(output, "event: "+frame.Name()+"\n"); err != nil {
-		return err
+	if frame.Name() != "" {
+		if _, err := io.WriteString(output, "event: "+frame.Name()+"\n"); err != nil {
+			return err
+		}
 	}
 	if _, err := io.WriteString(output, "data: "); err != nil {
 		return err

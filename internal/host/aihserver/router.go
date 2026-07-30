@@ -6,6 +6,8 @@ import (
 
 	"github.com/madou1217/ai_home/internal/transport/http/accountauthapi"
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
+	"github.com/madou1217/ai_home/internal/transport/http/claudenativerelay"
+	"github.com/madou1217/ai_home/internal/transport/http/clauderelayleaseapi"
 )
 
 // systemStatusResponse 是公开存活和就绪检查的稳定响应。
@@ -27,19 +29,21 @@ type systemErrorView struct {
 	Message string `json:"message"`
 }
 
-// newRouter 只挂载当前确认的系统、账号管理和 OAuth Job 路由。
-func newRouter(
-	accountsHandler http.Handler,
-	accountAuthHandler http.Handler,
-) http.Handler {
+// newRouter 挂载系统、账号管理、OAuth Job 和 Claude Native Relay 路由。
+func newRouter(handlers serverHandlers) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", handleHealth)
 	mux.HandleFunc("/readyz", handleReadiness)
-	mux.Handle(accountsapi.NativeImportPath, accountsHandler)
-	mux.Handle(accountsapi.CollectionPath, accountsHandler)
-	mux.Handle(accountsapi.CollectionPath+"/", accountsHandler)
-	mux.Handle(accountauthapi.CollectionPath, accountAuthHandler)
-	mux.Handle(accountauthapi.CollectionPath+"/", accountAuthHandler)
+	mux.Handle(accountsapi.NativeImportPath, handlers.accounts)
+	mux.Handle(accountsapi.CollectionPath, handlers.accounts)
+	mux.Handle(accountsapi.CollectionPath+"/", handlers.accounts)
+	mux.Handle(accountauthapi.CollectionPath, handlers.accountAuth)
+	mux.Handle(accountauthapi.CollectionPath+"/", handlers.accountAuth)
+	mux.Handle(
+		clauderelayleaseapi.Path,
+		handlers.claudeRelayLeases,
+	)
+	mux.Handle(claudenativerelay.Path, handlers.claudeNativeRelay)
 	mux.HandleFunc("/", handleRouteNotFound)
 	return mux
 }
@@ -55,7 +59,7 @@ func handleHealth(response http.ResponseWriter, request *http.Request) {
 	})
 }
 
-// handleReadiness 明确当前进程提供账号管理和 OAuth Job v1 能力。
+// handleReadiness 明确当前进程已经装配的稳定能力。
 func handleReadiness(response http.ResponseWriter, request *http.Request) {
 	if !requireGet(response, request) {
 		return
@@ -67,6 +71,8 @@ func handleReadiness(response http.ResponseWriter, request *http.Request) {
 		Capabilities: []string{
 			"account_management_v1",
 			"account_auth_jobs_v1",
+			"claude_relay_leases_v1",
+			"claude_native_relay_v1",
 		},
 	})
 }

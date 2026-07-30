@@ -1,4 +1,4 @@
-package responses
+package messages
 
 import (
 	"github.com/madou1217/ai_home/application/inferencegateway"
@@ -7,7 +7,7 @@ import (
 	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
 )
 
-// newAttemptFailure 保留 Codex 包内错误边界并复用共享失败映射。
+// newAttemptFailure 保留 Claude 包内错误边界并复用共享失败映射。
 func newAttemptFailure(
 	classification sharedfailure.Classification,
 ) (inferencegateway.AttemptFailure, error) {
@@ -18,7 +18,7 @@ func newAttemptFailure(
 	return failure, nil
 }
 
-// newClassifiedFailure 创建不携带 Provider 正文的本地稳定失败。
+// newClassifiedFailure 创建不携带 Claude 正文的本地稳定失败。
 func newClassifiedFailure(
 	kind runtimecore.FailureKind,
 ) (inferencegateway.AttemptFailure, error) {
@@ -40,7 +40,7 @@ func newTransportFailure(
 	return failure, nil
 }
 
-// newIncompleteStreamFailure 分类提前断流并保留 Codex 包错误边界。
+// newIncompleteStreamFailure 分类提前断流并保留 Claude 包错误边界。
 func newIncompleteStreamFailure(
 	err error,
 ) (inferencegateway.AttemptFailure, error) {

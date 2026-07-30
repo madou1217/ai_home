@@ -2,12 +2,15 @@ package aihserver
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/madou1217/ai_home/application/accountauth"
+	"github.com/madou1217/ai_home/application/accountcredentials"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	"github.com/madou1217/ai_home/application/clauderelay"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/claudeoauth"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/codexoauth"
@@ -15,9 +18,22 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	"github.com/madou1217/ai_home/internal/transport/http/accountauthapi"
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
+	"github.com/madou1217/ai_home/internal/transport/http/claudenativerelay"
+	"github.com/madou1217/ai_home/internal/transport/http/clauderelayleaseapi"
 )
 
-const oauthHTTPTimeout = 10 * time.Second
+const (
+	oauthHTTPTimeout       = 10 * time.Second
+	claudeRelayHTTPTimeout = 10 * time.Minute
+)
+
+// serverHandlers 保存 Composition Root 创建的四个独立 HTTP 边界。
+type serverHandlers struct {
+	accounts          http.Handler
+	accountAuth       http.Handler
+	claudeRelayLeases http.Handler
+	claudeNativeRelay http.Handler
+}
 
 // New 装配 Provider Catalog、aih.db、账号用例、OAuth Strategy 和 HTTP 入站适配器。
 func New(ctx context.Context, options Options) (*Server, error) {
@@ -35,7 +51,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("打开账号数据库失败: %w", err)
 	}
-	accountsHandler, accountAuthHandler, err := newManagementHandlers(
+	handlers, err := newHandlers(
 		catalog,
 		store,
 		options.ManagementKey,
@@ -45,21 +61,21 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		return nil, err
 	}
 	return newServer(
-		newRouter(accountsHandler, accountAuthHandler),
+		newRouter(handlers),
 		store,
 		options,
 	), nil
 }
 
-// newManagementHandlers 共享 Registrar、Decoder 和鉴权策略，并保持两个 HTTP 接口隔离。
-func newManagementHandlers(
+// newHandlers 共享数据库、凭据刷新和鉴权端口，并保持四个 HTTP 边界隔离。
+func newHandlers(
 	catalog *providers.Catalog,
 	store *sqliteaccount.Store,
 	managementKey func() string,
-) (http.Handler, http.Handler, error) {
+) (serverHandlers, error) {
 	registrar, err := accountapp.NewRegistrar(catalog, store, time.Now)
 	if err != nil {
-		return nil, nil, fmt.Errorf("创建账号注册用例失败: %w", err)
+		return serverHandlers{}, fmt.Errorf("创建账号注册用例失败: %w", err)
 	}
 	reauthenticator, err := accountapp.NewReauthenticator(
 		catalog,
@@ -67,15 +83,15 @@ func newManagementHandlers(
 		time.Now,
 	)
 	if err != nil {
-		return nil, nil, fmt.Errorf("创建账号重新认证用例失败: %w", err)
+		return serverHandlers{}, fmt.Errorf("创建账号重新认证用例失败: %w", err)
 	}
 	management, err := accountapp.NewManagement(store, store, time.Now)
 	if err != nil {
-		return nil, nil, fmt.Errorf("创建账号管理用例失败: %w", err)
+		return serverHandlers{}, fmt.Errorf("创建账号管理用例失败: %w", err)
 	}
 	authorizer, err := accountsapi.NewBearerAuthorizer(managementKey)
 	if err != nil {
-		return nil, nil, fmt.Errorf("创建账号管理鉴权失败: %w", err)
+		return serverHandlers{}, fmt.Errorf("创建账号管理鉴权失败: %w", err)
 	}
 	decoder := nativeaccount.NewDecoder()
 	accountsHandler, err := accountsapi.NewHandler(accountsapi.Dependencies{
@@ -86,7 +102,7 @@ func newManagementHandlers(
 		Authorizer:     authorizer,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("创建账号 HTTP Handler 失败: %w", err)
+		return serverHandlers{}, fmt.Errorf("创建账号 HTTP Handler 失败: %w", err)
 	}
 	oauthClient := &http.Client{
 		Timeout:       oauthHTTPTimeout,
@@ -94,11 +110,11 @@ func newManagementHandlers(
 	}
 	codexProvider, err := codexoauth.New(oauthClient, time.Now)
 	if err != nil {
-		return nil, nil, fmt.Errorf("创建 Codex OAuth Strategy 失败: %w", err)
+		return serverHandlers{}, fmt.Errorf("创建 Codex OAuth Strategy 失败: %w", err)
 	}
 	claudeProvider, err := claudeoauth.New(oauthClient, time.Now)
 	if err != nil {
-		return nil, nil, fmt.Errorf("创建 Claude OAuth Strategy 失败: %w", err)
+		return serverHandlers{}, fmt.Errorf("创建 Claude OAuth Strategy 失败: %w", err)
 	}
 	jobs, err := accountauth.NewService(accountauth.Dependencies{
 		Providers: []accountauth.OAuthProvider{
@@ -112,7 +128,7 @@ func newManagementHandlers(
 		GenerateID: accountauth.NewRandomJobID,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("创建 OAuth Job 服务失败: %w", err)
+		return serverHandlers{}, fmt.Errorf("创建 OAuth Job 服务失败: %w", err)
 	}
 	accountAuthHandler, err := accountauthapi.NewHandler(
 		accountauthapi.Dependencies{
@@ -121,9 +137,63 @@ func newManagementHandlers(
 		},
 	)
 	if err != nil {
-		return nil, nil, fmt.Errorf("创建 OAuth Job HTTP Handler 失败: %w", err)
+		return serverHandlers{}, fmt.Errorf("创建 OAuth Job HTTP Handler 失败: %w", err)
 	}
-	return accountsHandler, accountAuthHandler, nil
+	credentials, err := accountcredentials.NewResolver(
+		accountcredentials.Dependencies{
+			Store:      store,
+			Strategies: []accountcredentials.RefreshStrategy{claudeProvider},
+			Clock:      time.Now,
+		},
+	)
+	if err != nil {
+		return serverHandlers{}, fmt.Errorf("创建 Claude 凭据解析器失败: %w", err)
+	}
+	relayLeases, err := clauderelay.NewLeaseRegistry(
+		clauderelay.Dependencies{
+			Random: rand.Reader,
+			Clock:  time.Now,
+		},
+	)
+	if err != nil {
+		return serverHandlers{}, fmt.Errorf("创建 Claude Relay 租约注册表失败: %w", err)
+	}
+	relayAuthorizer, err := claudenativerelay.NewScopedTokenAuthorizer(
+		relayLeases,
+	)
+	if err != nil {
+		return serverHandlers{}, fmt.Errorf("创建 Claude Relay 鉴权失败: %w", err)
+	}
+	relayLeaseHandler, err := clauderelayleaseapi.NewHandler(
+		clauderelayleaseapi.Dependencies{
+			Authorizer:  authorizer,
+			Credentials: credentials,
+			Leases:      relayLeases,
+		},
+	)
+	if err != nil {
+		return serverHandlers{}, fmt.Errorf("创建 Claude Relay 租约 Handler 失败: %w", err)
+	}
+	relayClient := &http.Client{
+		Timeout:       claudeRelayHTTPTimeout,
+		CheckRedirect: rejectOAuthRedirect,
+	}
+	nativeRelayHandler, err := claudenativerelay.NewHandler(
+		claudenativerelay.Dependencies{
+			Authorizer:  relayAuthorizer,
+			Credentials: credentials,
+			Client:      relayClient,
+		},
+	)
+	if err != nil {
+		return serverHandlers{}, fmt.Errorf("创建 Claude Native Relay Handler 失败: %w", err)
+	}
+	return serverHandlers{
+		accounts:          accountsHandler,
+		accountAuth:       accountAuthHandler,
+		claudeRelayLeases: relayLeaseHandler,
+		claudeNativeRelay: nativeRelayHandler,
+	}, nil
 }
 
 // rejectOAuthRedirect 防止 Token 或 Profile 请求被重定向到未审计主机。

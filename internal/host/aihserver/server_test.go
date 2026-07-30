@@ -16,6 +16,8 @@ import (
 	"github.com/madou1217/ai_home/internal/host/aihserver"
 	"github.com/madou1217/ai_home/internal/transport/http/accountauthapi"
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
+	"github.com/madou1217/ai_home/internal/transport/http/claudenativerelay"
+	"github.com/madou1217/ai_home/internal/transport/http/clauderelayleaseapi"
 )
 
 const testManagementKey = "synthetic-go-server-management-key-2026"
@@ -38,9 +40,11 @@ func TestServerMountsSystemAndAccountRoutes(t *testing.T) {
 	}
 	decodeJSON(t, ready.body, &readiness)
 	if !readiness.Ready ||
-		len(readiness.Capabilities) != 2 ||
+		len(readiness.Capabilities) != 4 ||
 		readiness.Capabilities[0] != "account_management_v1" ||
-		readiness.Capabilities[1] != "account_auth_jobs_v1" {
+		readiness.Capabilities[1] != "account_auth_jobs_v1" ||
+		readiness.Capabilities[2] != "claude_relay_leases_v1" ||
+		readiness.Capabilities[3] != "claude_native_relay_v1" {
 		t.Fatalf("readyz response = %#v", readiness)
 	}
 
@@ -135,6 +139,7 @@ func TestServerMountsSystemAndAccountRoutes(t *testing.T) {
 	}
 	var nativeDocument struct {
 		Data struct {
+			AccountRef       string `json:"account_ref"`
 			ProviderID       string `json:"provider_id"`
 			CLIAccountID     int64  `json:"cli_account_id"`
 			AuthKind         string `json:"auth_kind"`
@@ -146,6 +151,7 @@ func TestServerMountsSystemAndAccountRoutes(t *testing.T) {
 	}
 	decodeJSON(t, nativeCreated.body, &nativeDocument)
 	if nativeDocument.Data.ProviderID != "claude" ||
+		nativeDocument.Data.AccountRef == "" ||
 		nativeDocument.Data.CLIAccountID != 1 ||
 		nativeDocument.Data.AuthKind != "oauth" ||
 		nativeDocument.Data.AuthMode != "refreshable" ||
@@ -154,6 +160,43 @@ func TestServerMountsSystemAndAccountRoutes(t *testing.T) {
 		nativeDocument.Data.SubscriptionKind != "pro" {
 		t.Fatalf("Go Server 原生导入响应错误: %#v", nativeDocument.Data)
 	}
+	leasePayload := []byte(
+		`{"account_ref":"` + nativeDocument.Data.AccountRef + `"}`,
+	)
+	issuedLease := performRequest(
+		t,
+		client,
+		http.MethodPost,
+		baseURL+clauderelayleaseapi.Path,
+		testManagementKey,
+		leasePayload,
+	)
+	assertStatus(t, issuedLease, http.StatusCreated)
+	var leaseDocument struct {
+		Data struct {
+			Token      string `json:"token"`
+			AccountRef string `json:"account_ref"`
+			ExpiresAt  string `json:"expires_at"`
+		} `json:"data"`
+	}
+	decodeJSON(t, issuedLease.body, &leaseDocument)
+	if leaseDocument.Data.Token == "" ||
+		leaseDocument.Data.AccountRef != nativeDocument.Data.AccountRef ||
+		leaseDocument.Data.ExpiresAt == "" ||
+		strings.Contains(issuedLease.body, nativeAccessToken) ||
+		strings.Contains(issuedLease.body, nativeRefreshToken) {
+		t.Fatalf("Go Server Relay 租约响应错误: %#v", leaseDocument.Data)
+	}
+	unauthorizedRelay := performRequest(
+		t,
+		client,
+		http.MethodPost,
+		baseURL+claudenativerelay.Path,
+		"",
+		[]byte(`{"model":"claude-opus-5"}`),
+	)
+	assertStatus(t, unauthorizedRelay, http.StatusUnauthorized)
+	assertJSONErrorCode(t, unauthorizedRelay.body, "unauthorized")
 	duplicateNative := performRequest(
 		t,
 		client,

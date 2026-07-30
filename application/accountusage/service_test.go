@@ -2,6 +2,7 @@ package accountusage_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -181,6 +182,79 @@ func TestServiceCoalescesConcurrentRefreshAndKeepsReadSideOffline(t *testing.T) 
 	}
 }
 
+// TestServiceForgetAccountCancelsAndDetachesOldRefresh 验证删除取消旧请求且新代次不会等待旧请求退出。
+func TestServiceForgetAccountCancelsAndDetachesOldRefresh(t *testing.T) {
+	t.Parallel()
+
+	now := serviceTestTime()
+	credential := serviceCredential{
+		providerID: "codex",
+		identity:   "oauth:codex:usage-forget",
+	}
+	accountRef := deriveServiceRef(t, credential)
+	store := &serviceStore{}
+	strategy := &cancelableStrategy{
+		accountRef:    accountRef,
+		firstStarted:  make(chan struct{}),
+		firstCanceled: make(chan struct{}),
+		releaseFirst:  make(chan struct{}),
+	}
+	service := newServiceSubject(
+		t,
+		store,
+		credentialResolverStub{credential: credential},
+		modelReaderStub{},
+		&runtimeProjectionStub{},
+		strategy,
+		func() time.Time { return now },
+	)
+
+	firstDone := make(chan error, 1)
+	go func() {
+		_, err := service.RefreshUsage(context.Background(), accountRef)
+		firstDone <- err
+	}()
+	select {
+	case <-strategy.firstStarted:
+	case <-time.After(time.Second):
+		t.Fatal("等待旧额度刷新启动超时")
+	}
+	service.ForgetAccount(accountRef)
+	select {
+	case <-strategy.firstCanceled:
+	case <-time.After(time.Second):
+		t.Fatal("ForgetAccount() 没有取消旧额度刷新")
+	}
+
+	second, err := service.RefreshUsage(context.Background(), accountRef)
+	if err != nil ||
+		!second.Snapshot().IsValid() ||
+		store.replaceCalls.Load() != 1 {
+		t.Fatalf(
+			"second refresh result=%#v replace=%d error=%v",
+			second,
+			store.replaceCalls.Load(),
+			err,
+		)
+	}
+	close(strategy.releaseFirst)
+	select {
+	case err := <-firstDone:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("first refresh error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("等待旧额度刷新退出超时")
+	}
+	if strategy.calls.Load() != 2 || store.replaceCalls.Load() != 1 {
+		t.Fatalf(
+			"fetch=%d replace=%d",
+			strategy.calls.Load(),
+			store.replaceCalls.Load(),
+		)
+	}
+}
+
 // TestServiceMarksSnapshotStaleAtFiveMinutes 验证陈旧边界使用采集时间而非读取时间续期。
 func TestServiceMarksSnapshotStaleAtFiveMinutes(t *testing.T) {
 	t.Parallel()
@@ -313,6 +387,56 @@ type strategyStub struct {
 	providerID string
 	build      func(time.Time) usagecore.Snapshot
 	calls      atomic.Int64
+}
+
+// cancelableStrategy 让第一代刷新等待取消，第二代刷新返回有效快照。
+type cancelableStrategy struct {
+	accountRef    accountcore.AccountRef
+	firstStarted  chan struct{}
+	firstCanceled chan struct{}
+	releaseFirst  chan struct{}
+	calls         atomic.Int64
+}
+
+// ProviderID 返回测试策略支持的规范 Provider。
+func (*cancelableStrategy) ProviderID() string { return "codex" }
+
+// FetchUsage 暴露旧代次取消事实，并为新代次生成确定快照。
+func (strategy *cancelableStrategy) FetchUsage(
+	ctx context.Context,
+	_ accountcore.AccountRef,
+	_ accountapp.Credential,
+	capturedAt time.Time,
+) (usagecore.Snapshot, error) {
+	call := strategy.calls.Add(1)
+	if call == 1 {
+		close(strategy.firstStarted)
+		<-ctx.Done()
+		close(strategy.firstCanceled)
+		<-strategy.releaseFirst
+		return usagecore.Snapshot{}, ctx.Err()
+	}
+	snapshot, err := usagecore.NewSnapshot(usagecore.SnapshotInput{
+		AccountRef: strategy.accountRef,
+		ProviderID: "codex",
+		Source:     "codex_wham_usage",
+		CapturedAt: capturedAt,
+		Entries: []usagecore.EntryInput{{
+			Bucket:       "primary",
+			Kind:         usagecore.KindWindow,
+			Scope:        usagecore.ScopeAccount,
+			Availability: usagecore.AvailabilityUnknown,
+		}},
+	})
+	return snapshot, err
+}
+
+// MatchesModelFamily 表示该测试不使用模型族投影。
+func (*cancelableStrategy) MatchesModelFamily(
+	string,
+	runtimecore.ModelID,
+) bool {
+	return false
 }
 
 func (stub *strategyStub) ProviderID() string { return stub.providerID }

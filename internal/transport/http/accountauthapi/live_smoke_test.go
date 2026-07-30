@@ -533,6 +533,11 @@ func newLiveManagementHandler(
 	if err != nil {
 		t.Fatalf("accounts.NewModelManagement() error = %v", err)
 	}
+	usage := liveUsageManagementStub{}
+	deleter, err := accountapp.NewDeleter(store, usage)
+	if err != nil {
+		t.Fatalf("accounts.NewDeleter() error = %v", err)
+	}
 	authorizer, err := accountsapi.NewBearerAuthorizer(
 		func() string { return smokeManagementKey },
 	)
@@ -583,7 +588,8 @@ func newLiveManagementHandler(
 	accountsHandler, err := accountsapi.NewHandler(accountsapi.Dependencies{
 		Management:     management,
 		Models:         modelManagement,
-		Usage:          liveUsageManagementStub{},
+		Usage:          usage,
+		Deletion:       deleter,
 		Registrar:      registrar,
 		APIKeys:        accountsapi.NewBuiltinAPIKeyCredentialFactory(),
 		NativeAccounts: decoder,
@@ -618,6 +624,9 @@ func (liveUsageManagementStub) RefreshUsage(
 ) (usageapp.ReadResult, error) {
 	return usageapp.ReadResult{}, usageapp.ErrSnapshotNotFound
 }
+
+// ForgetAccount 在 OAuth smoke 中不保存额度或运行态派生数据。
+func (liveUsageManagementStub) ForgetAccount(accountcore.AccountRef) {}
 
 // rewriteTransport 把官方 OAuth 请求透明转发到本地 fake upstream。
 type rewriteTransport struct {

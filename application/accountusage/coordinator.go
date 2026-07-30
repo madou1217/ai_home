@@ -83,11 +83,12 @@ type scheduledRefresh struct {
 	index      int
 	running    bool
 	rerun      bool
+	cancel     context.CancelFunc
 }
 
 // providerQueue 保存单 Provider 已到期任务和唤醒信号。
 type providerQueue struct {
-	tasks  []accountcore.AccountRef
+	tasks  []*scheduledRefresh
 	head   int
 	notify chan struct{}
 }
@@ -144,6 +145,33 @@ func (coordinator *Coordinator) ScheduleInitialUsageRefresh(
 	providerID string,
 ) error {
 	return coordinator.scheduleRefresh(ctx, accountRef, providerID, true)
+}
+
+// ForgetAccount 移除待调度任务，并取消已经开始的旧账号任务。
+//
+// 队列中的任务对象依靠指针身份延迟失效，允许同一 AccountRef 被快速重新导入。
+func (coordinator *Coordinator) ForgetAccount(
+	accountRef accountcore.AccountRef,
+) {
+	if coordinator == nil || !accountRef.IsValid() {
+		return
+	}
+	coordinator.mu.Lock()
+	task := coordinator.tasks[accountRef]
+	if task == nil {
+		coordinator.mu.Unlock()
+		return
+	}
+	delete(coordinator.tasks, accountRef)
+	if task.index >= 0 {
+		heap.Remove(&coordinator.schedule, task.index)
+		coordinator.signalScheduler()
+	}
+	cancel := task.cancel
+	coordinator.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
 }
 
 // scheduleRefresh 校验任务，并更新同账号唯一堆节点。
@@ -261,7 +289,7 @@ func (coordinator *Coordinator) runScheduler() {
 			task := heap.Pop(&coordinator.schedule).(*scheduledRefresh)
 			task.running = true
 			queue := coordinator.providers[task.providerID]
-			queue.tasks = append(queue.tasks, task.accountRef)
+			queue.tasks = append(queue.tasks, task)
 			signals[queue] = struct{}{}
 		}
 		for queue := range signals {
@@ -278,39 +306,50 @@ func (coordinator *Coordinator) runProviderWorker(
 ) {
 	defer coordinator.workers.Done()
 	for {
-		accountRef, available := coordinator.nextProviderTask(queue)
+		task, refreshCtx, available := coordinator.nextProviderTask(queue)
 		if !available {
 			return
 		}
-		refreshCtx, cancel := context.WithTimeout(
-			coordinator.ctx,
-			coordinator.timeout,
+		_, err := coordinator.refresher.RefreshUsage(
+			refreshCtx,
+			task.accountRef,
 		)
-		_, err := coordinator.refresher.RefreshUsage(refreshCtx, accountRef)
-		cancel()
-		coordinator.finishRefresh(providerID, accountRef, err)
+		coordinator.finishRefresh(providerID, task, err)
 	}
 }
 
 // nextProviderTask 等待并弹出一个已到期账号。
 func (coordinator *Coordinator) nextProviderTask(
 	queue *providerQueue,
-) (accountcore.AccountRef, bool) {
+) (*scheduledRefresh, context.Context, bool) {
 	for {
 		coordinator.mu.Lock()
 		if coordinator.closed {
 			coordinator.mu.Unlock()
-			return "", false
+			return nil, nil, false
 		}
-		if accountRef, available := popProviderTask(queue); available {
+		for {
+			task, available := popProviderTask(queue)
+			if !available {
+				break
+			}
+			if coordinator.tasks[task.accountRef] != task ||
+				!task.running {
+				continue
+			}
+			refreshCtx, cancel := context.WithTimeout(
+				coordinator.ctx,
+				coordinator.timeout,
+			)
+			task.cancel = cancel
 			coordinator.mu.Unlock()
-			return accountRef, true
+			return task, refreshCtx, true
 		}
 		notify := queue.notify
 		coordinator.mu.Unlock()
 		select {
 		case <-coordinator.ctx.Done():
-			return "", false
+			return nil, nil, false
 		case <-notify:
 		}
 	}
@@ -319,17 +358,17 @@ func (coordinator *Coordinator) nextProviderTask(
 // popProviderTask 使用游标均摊 O(1) 出队，并周期压缩长期繁忙队列。
 func popProviderTask(
 	queue *providerQueue,
-) (accountcore.AccountRef, bool) {
+) (*scheduledRefresh, bool) {
 	if queue == nil || queue.head >= len(queue.tasks) {
-		return "", false
+		return nil, false
 	}
-	accountRef := queue.tasks[queue.head]
-	queue.tasks[queue.head] = ""
+	task := queue.tasks[queue.head]
+	queue.tasks[queue.head] = nil
 	queue.head++
 	if queue.head == len(queue.tasks) {
 		queue.tasks = queue.tasks[:0]
 		queue.head = 0
-		return accountRef, true
+		return task, true
 	}
 	const compactThreshold = 1_024
 	if queue.head >= compactThreshold &&
@@ -339,24 +378,33 @@ func popProviderTask(
 		queue.tasks = queue.tasks[:remaining]
 		queue.head = 0
 	}
-	return accountRef, true
+	return task, true
 }
 
 // finishRefresh 计算下一周期或账号级有界退避，并重新放回最小堆。
 func (coordinator *Coordinator) finishRefresh(
 	providerID string,
-	accountRef accountcore.AccountRef,
+	task *scheduledRefresh,
 	refreshErr error,
 ) {
 	coordinator.mu.Lock()
-	task := coordinator.tasks[accountRef]
-	if task == nil || task.providerID != providerID {
+	var cancel context.CancelFunc
+	if task != nil && task.cancel != nil {
+		cancel = task.cancel
+		task.cancel = nil
+	}
+	if task == nil ||
+		coordinator.tasks[task.accountRef] != task ||
+		task.providerID != providerID {
 		coordinator.mu.Unlock()
+		if cancel != nil {
+			cancel()
+		}
 		return
 	}
 	task.running = false
 	if coordinator.closed || errors.Is(refreshErr, ErrUsageUnsupported) {
-		delete(coordinator.tasks, accountRef)
+		delete(coordinator.tasks, task.accountRef)
 	} else {
 		now := coordinator.clock()
 		switch {
@@ -375,9 +423,12 @@ func (coordinator *Coordinator) finishRefresh(
 	}
 	observer := coordinator.observer
 	coordinator.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
 	if observer != nil {
 		observer(RefreshResult{
-			AccountRef: accountRef,
+			AccountRef: task.accountRef,
 			ProviderID: providerID,
 			Err:        refreshErr,
 		})

@@ -323,6 +323,93 @@ func TestRuntimeRecoveryIsIdempotentAndKeepsHealthyStateSparse(t *testing.T) {
 	}
 }
 
+// TestRuntimeForgetsAllTargetAccountState 验证删除清理账号阻塞、模型阻塞和 cooldown。
+func TestRuntimeForgetsAllTargetAccountState(t *testing.T) {
+	t.Parallel()
+
+	runtime := newTestRuntime(t, runtimeTestTime)
+	accountRoute := newTestRoute(t, 6, "gpt-5.6-sol")
+	modelRoute := newTestRoute(t, 6, "gpt-5.4")
+	cooldownRoute := newTestRoute(t, 6, "gpt-5.3")
+	otherRoute := newTestRoute(t, 7, "gpt-5.6-sol")
+	failures := []struct {
+		route   runtimecore.ModelRoute
+		failure inferencegateway.AttemptFailure
+	}{
+		{
+			route: accountRoute,
+			failure: newBlockingFailure(
+				t,
+				runtimecore.FailureCredentialRejected,
+				runtimecore.BlockScopeAccount,
+			),
+		},
+		{
+			route: modelRoute,
+			failure: newBlockingFailure(
+				t,
+				runtimecore.FailureModelUnsupported,
+				runtimecore.BlockScopeAccountModel,
+			),
+		},
+		{
+			route: cooldownRoute,
+			failure: newCooldownFailure(
+				t,
+				runtimecore.FailureRateLimited,
+				time.Minute,
+			),
+		},
+		{
+			route: otherRoute,
+			failure: newCooldownFailure(
+				t,
+				runtimecore.FailureRateLimited,
+				time.Minute,
+			),
+		},
+	}
+	for _, item := range failures {
+		if err := runtime.RecordFailure(
+			context.Background(),
+			item.route,
+			item.failure,
+		); err != nil {
+			t.Fatalf("RecordFailure(%v) error = %v", item.route, err)
+		}
+	}
+
+	runtime.ForgetAccount(accountRoute.AccountRef())
+	for _, route := range []runtimecore.ModelRoute{
+		accountRoute,
+		modelRoute,
+		cooldownRoute,
+	} {
+		assertEligibilityStatus(
+			t,
+			runtime,
+			route,
+			runtimecore.EligibilityAvailable,
+		)
+	}
+	assertEligibilityStatus(
+		t,
+		runtime,
+		otherRoute,
+		runtimecore.EligibilityModelCooldown,
+	)
+	if len(runtime.accountBlocks) != 0 ||
+		len(runtime.modelBlocks) != 0 ||
+		runtime.cooldowns.Len() != 1 {
+		t.Fatalf(
+			"remaining account=%d model=%d cooldown=%d",
+			len(runtime.accountBlocks),
+			len(runtime.modelBlocks),
+			runtime.cooldowns.Len(),
+		)
+	}
+}
+
 // TestRuntimeReplacesAuthoritativeUsageProjection 验证新快照精确替换账号级和模型级额度阻塞。
 func TestRuntimeReplacesAuthoritativeUsageProjection(t *testing.T) {
 	t.Parallel()

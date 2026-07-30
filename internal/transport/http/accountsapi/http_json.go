@@ -68,6 +68,13 @@ func writeJSON(
 	_, _ = response.Write(append(document, '\n'))
 }
 
+// writeNoContent 使用与 JSON 响应一致的安全缓存头返回空成功响应。
+func writeNoContent(response http.ResponseWriter) {
+	response.Header().Set("Cache-Control", "no-store")
+	response.Header().Set("X-Content-Type-Options", "nosniff")
+	response.WriteHeader(http.StatusNoContent)
+}
+
 // writeAPIError 写入不包含内部错误文本的稳定失败响应。
 func writeAPIError(
 	response http.ResponseWriter,

@@ -13,7 +13,7 @@ func TestProviderQueuePopsInOrderAndCompacts(t *testing.T) {
 
 	const taskCount = 2_050
 	queue := &providerQueue{
-		tasks: make([]accountcore.AccountRef, 0, taskCount),
+		tasks: make([]*scheduledRefresh, 0, taskCount),
 	}
 	for index := 1; index <= taskCount; index++ {
 		accountRef, err := accountcore.ParseAccountRef(
@@ -22,16 +22,18 @@ func TestProviderQueuePopsInOrderAndCompacts(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ParseAccountRef(%d) error = %v", index, err)
 		}
-		queue.tasks = append(queue.tasks, accountRef)
+		queue.tasks = append(queue.tasks, &scheduledRefresh{
+			accountRef: accountRef,
+		})
 	}
 	for index := 1; index <= taskCount; index++ {
-		accountRef, available := popProviderTask(queue)
+		task, available := popProviderTask(queue)
 		if !available ||
-			accountRef.String() != fmt.Sprintf("acct_%020x", index) {
+			task.accountRef.String() != fmt.Sprintf("acct_%020x", index) {
 			t.Fatalf(
 				"pop(%d) = (%s, %t)",
 				index,
-				accountRef,
+				task.accountRef,
 				available,
 			)
 		}

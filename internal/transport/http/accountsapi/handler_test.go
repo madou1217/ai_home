@@ -257,6 +257,49 @@ func TestHandlerGetsAndDisablesAccount(t *testing.T) {
 	}
 }
 
+// TestHandlerDeletesAccountWithNoResponseBody 验证成员 DELETE 的状态、空响应体和应用调用。
+func TestHandlerDeletesAccountWithNoResponseBody(t *testing.T) {
+	t.Parallel()
+
+	service := newAccountServiceStub(t)
+	overview := newTestOverview(t, service.catalog, 8, "http-delete-account")
+	handler := newTestHandler(t, service)
+	path := accountsapi.CollectionPath + "/" + overview.Account().Ref().String()
+
+	response := performAuthorizedRequest(
+		t,
+		handler,
+		http.MethodDelete,
+		path,
+		nil,
+	)
+	if response.Code != http.StatusNoContent ||
+		response.Body.Len() != 0 ||
+		service.deleteCalls != 1 ||
+		service.deleteRef != overview.Account().Ref() {
+		t.Fatalf(
+			"DELETE status=%d body=%q calls=%d ref=%s",
+			response.Code,
+			response.Body.String(),
+			service.deleteCalls,
+			service.deleteRef,
+		)
+	}
+	if response.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("DELETE Cache-Control = %q", response.Header().Get("Cache-Control"))
+	}
+
+	service.deleteErr = accountapp.ErrAccountNotFound
+	missing := performAuthorizedRequest(
+		t,
+		handler,
+		http.MethodDelete,
+		path,
+		nil,
+	)
+	assertAPIError(t, missing, http.StatusNotFound, "account_not_found")
+}
+
 // TestHandlerManagesAccountModels 验证模型查询、人工策略和显式刷新 HTTP 合同。
 func TestHandlerManagesAccountModels(t *testing.T) {
 	t.Parallel()
@@ -448,6 +491,21 @@ func TestHandlerRejectsInvalidHTTPInputs(t *testing.T) {
 			code:   "invalid_query",
 		},
 		{
+			name:   "delete query",
+			method: http.MethodDelete,
+			path:   "/v1/management/accounts/acct_a6624a747e4ccf287aa3?force=true",
+			status: http.StatusBadRequest,
+			code:   "invalid_query",
+		},
+		{
+			name:   "delete body",
+			method: http.MethodDelete,
+			path:   "/v1/management/accounts/acct_a6624a747e4ccf287aa3",
+			body:   []byte(`{}`),
+			status: http.StatusBadRequest,
+			code:   "invalid_request",
+		},
+		{
 			name:        "wrong media type",
 			method:      http.MethodPost,
 			path:        "/v1/management/accounts",
@@ -518,7 +576,7 @@ func TestHandlerRejectsInvalidHTTPInputs(t *testing.T) {
 		},
 		{
 			name:   "method not allowed",
-			method: http.MethodDelete,
+			method: http.MethodPut,
 			path:   "/v1/management/accounts/acct_a6624a747e4ccf287aa3",
 			status: http.StatusMethodNotAllowed,
 			code:   "method_not_allowed",
@@ -629,6 +687,9 @@ type accountServiceStub struct {
 	usageErr             error
 	getUsageCalls        int
 	refreshUsageCalls    int
+	deleteRef            accountcore.AccountRef
+	deleteErr            error
+	deleteCalls          int
 }
 
 // newAccountServiceStub 创建使用内置 Provider Catalog 的应用服务替身。
@@ -798,6 +859,16 @@ func (service *accountServiceStub) RefreshUsage(
 	return service.usageResult, service.usageErr
 }
 
+// DeleteAccount 记录账号删除命令并返回预设结果。
+func (service *accountServiceStub) DeleteAccount(
+	_ context.Context,
+	accountRef accountcore.AccountRef,
+) error {
+	service.deleteCalls++
+	service.deleteRef = accountRef
+	return service.deleteErr
+}
+
 // credentialKind 返回测试凭据对应的公开认证类型。
 func credentialKind(credential accountapp.Credential) string {
 	switch credential.(type) {
@@ -872,6 +943,7 @@ func newTestHandler(t *testing.T, service *accountServiceStub) http.Handler {
 		Management:     service,
 		Models:         service,
 		Usage:          service,
+		Deletion:       service,
 		Registrar:      service,
 		APIKeys:        accountsapi.NewBuiltinAPIKeyCredentialFactory(),
 		NativeAccounts: nativeaccount.NewDecoder(),

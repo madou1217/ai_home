@@ -50,6 +50,7 @@ type serverHandlers struct {
 
 // serverAccountRuntime 是账号恢复、征召读取和推理终态共享的唯一运行态。
 type serverAccountRuntime interface {
+	accountapp.DeletionCleanup
 	accountrecovery.Runtime
 	inferenceruntime.AccountRuntime
 	usageapp.RuntimeProjection
@@ -215,6 +216,14 @@ func newHandlers(
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建账号额度组合失败: %w", err)
 	}
+	deleter, err := accountapp.NewDeleter(
+		store,
+		usage,
+		accountRuntime,
+	)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建账号删除用例失败: %w", err)
+	}
 	scheduledRegistrar, err := usageapp.NewRegistrationDecorator(
 		registrar,
 		usage.coordinator,
@@ -243,6 +252,7 @@ func newHandlers(
 		Management:     management,
 		Models:         recoveringModelManagement,
 		Usage:          usage.service,
+		Deletion:       deleter,
 		Registrar:      scheduledRegistrar,
 		APIKeys:        accountsapi.NewBuiltinAPIKeyCredentialFactory(),
 		NativeAccounts: decoder,

@@ -73,6 +73,14 @@ type UsageManagement interface {
 	) (usageapp.ReadResult, error)
 }
 
+// AccountDeletion 是账号成员资源依赖的独立删除用例端口。
+type AccountDeletion interface {
+	DeleteAccount(
+		ctx context.Context,
+		accountRef accountcore.AccountRef,
+	) error
+}
+
 // Registrar 是 HTTP API Key 创建入口依赖的最小注册端口。
 type Registrar interface {
 	Register(
@@ -96,6 +104,7 @@ type Dependencies struct {
 	Management     Management
 	Models         ModelManagement
 	Usage          UsageManagement
+	Deletion       AccountDeletion
 	Registrar      Registrar
 	APIKeys        APIKeyCredentialFactory
 	NativeAccounts NativeAccountDecoder
@@ -107,6 +116,7 @@ type Handler struct {
 	management Management
 	models     ModelManagement
 	usage      UsageManagement
+	deletion   AccountDeletion
 	registrar  Registrar
 	apiKeys    APIKeyCredentialFactory
 	native     NativeAccountDecoder
@@ -118,6 +128,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	if dependencies.Management == nil ||
 		dependencies.Models == nil ||
 		dependencies.Usage == nil ||
+		dependencies.Deletion == nil ||
 		dependencies.Registrar == nil ||
 		dependencies.APIKeys == nil ||
 		dependencies.NativeAccounts == nil ||
@@ -128,6 +139,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		management: dependencies.Management,
 		models:     dependencies.Models,
 		usage:      dependencies.Usage,
+		deletion:   dependencies.Deletion,
 		registrar:  dependencies.Registrar,
 		apiKeys:    dependencies.APIKeys,
 		native:     dependencies.NativeAccounts,
@@ -267,7 +279,7 @@ func (handler *Handler) handleAccountUsageRefresh(
 	writeJSON(response, http.StatusOK, newAccountUsageResponse(result))
 }
 
-// handleAccountMember 分发账号基础详情和启停操作。
+// handleAccountMember 分发账号基础详情、启停和删除操作。
 func (handler *Handler) handleAccountMember(
 	response http.ResponseWriter,
 	request *http.Request,
@@ -278,8 +290,13 @@ func (handler *Handler) handleAccountMember(
 		handler.getAccount(response, request, accountRef)
 	case http.MethodPatch:
 		handler.updateAccount(response, request, accountRef)
+	case http.MethodDelete:
+		handler.deleteAccount(response, request, accountRef)
 	default:
-		response.Header().Set("Allow", http.MethodGet+", "+http.MethodPatch)
+		response.Header().Set(
+			"Allow",
+			http.MethodGet+", "+http.MethodPatch+", "+http.MethodDelete,
+		)
 		writeMethodNotAllowed(response)
 	}
 }
@@ -475,6 +492,26 @@ func (handler *Handler) updateAccount(
 		http.StatusOK,
 		accountResponse{Data: newAccountView(overview)},
 	)
+}
+
+// deleteAccount 拒绝额外输入并返回无响应体的标准删除结果。
+func (handler *Handler) deleteAccount(
+	response http.ResponseWriter,
+	request *http.Request,
+	accountRef accountcore.AccountRef,
+) {
+	if rejectUnexpectedQuery(response, request) ||
+		rejectUnexpectedBody(response, request) {
+		return
+	}
+	if err := handler.deletion.DeleteAccount(
+		request.Context(),
+		accountRef,
+	); err != nil {
+		writeApplicationError(response, err)
+		return
+	}
+	writeNoContent(response)
 }
 
 // listAccountModels 返回自动发现、人工策略和最终有效性快照。

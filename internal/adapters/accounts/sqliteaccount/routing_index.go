@@ -279,6 +279,42 @@ func (index *routingIndex) setAccount(
 	index.notifyRoutableModelsChanged()
 }
 
+// deleteAccount 删除账号正排，并原子发布其全部受影响倒排快照。
+func (index *routingIndex) deleteAccount(
+	accountRef accountcore.AccountRef,
+) {
+	if index == nil || !accountRef.IsValid() {
+		return
+	}
+	index.mu.Lock()
+	current, found := index.accounts[accountRef]
+	if !found {
+		index.mu.Unlock()
+		return
+	}
+	affected := make(map[routingIndexKey]struct{}, len(current.models))
+	if current.enabled {
+		for _, modelID := range current.models {
+			key := routingIndexKey{
+				providerID: current.account.ProviderID(),
+				modelID:    modelID,
+			}
+			affected[key] = struct{}{}
+			index.reverse[key] = removeRoutingAccount(
+				index.reverse[key],
+				accountRef,
+			)
+			if len(index.reverse[key]) == 0 {
+				delete(index.reverse, key)
+			}
+		}
+	}
+	delete(index.accounts, accountRef)
+	index.publishSnapshotsLocked(affected)
+	index.mu.Unlock()
+	index.notifyRoutableModelsChanged()
+}
+
 // publishAllSnapshots 在启动加载完成后一次性发布全部路由，避免逐账号复制大切片。
 func (index *routingIndex) publishAllSnapshots() {
 	if index == nil {

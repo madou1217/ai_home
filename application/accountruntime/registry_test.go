@@ -126,6 +126,52 @@ func TestRegistryPrunesExpiredState(t *testing.T) {
 	}
 }
 
+// TestRegistryForgetsOnlyTargetAccount 验证账号删除会清理其全部模型 cooldown 且不影响其他账号。
+func TestRegistryForgetsOnlyTargetAccount(t *testing.T) {
+	t.Parallel()
+
+	registry := newRegistryTestSubject(t, registryTestTime())
+	first := registryTestRoute(t, 1, "gpt-5.6-sol")
+	second := registryTestRoute(t, 1, "gpt-5.4")
+	other := registryTestRoute(t, 2, "gpt-5.6-sol")
+	for _, route := range []runtimecore.ModelRoute{first, second, other} {
+		if _, err := registry.RecordFailure(
+			context.Background(),
+			route,
+			runtimecore.FailureRateLimited,
+			time.Minute,
+		); err != nil {
+			t.Fatalf("RecordFailure() error = %v", err)
+		}
+	}
+
+	registry.ForgetAccount(first.AccountRef())
+	if registry.Len() != 1 {
+		t.Fatalf("ForgetAccount() len = %d, want 1", registry.Len())
+	}
+	for _, route := range []runtimecore.ModelRoute{first, second} {
+		eligibility, err := registry.CheckEligibility(context.Background(), route)
+		if err != nil || !eligibility.Eligible() {
+			t.Fatalf(
+				"target eligibility=%#v error=%v",
+				eligibility,
+				err,
+			)
+		}
+	}
+	otherEligibility, err := registry.CheckEligibility(
+		context.Background(),
+		other,
+	)
+	if err != nil || otherEligibility.Eligible() {
+		t.Fatalf(
+			"other eligibility=%#v error=%v",
+			otherEligibility,
+			err,
+		)
+	}
+}
+
 // TestRegistrySerializesConcurrentFailures 验证并发同类故障不会丢失 streak。
 func TestRegistrySerializesConcurrentFailures(t *testing.T) {
 	t.Parallel()

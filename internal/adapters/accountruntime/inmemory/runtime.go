@@ -231,6 +231,28 @@ func (runtime *Runtime) ReplaceUsageProjection(
 	return nil
 }
 
+// ForgetAccount 原子清理账号级阻塞、模型级阻塞和全部模型 cooldown。
+func (runtime *Runtime) ForgetAccount(
+	accountRef accountcore.AccountRef,
+) {
+	if runtime == nil ||
+		runtime.cooldowns == nil ||
+		runtime.accountBlocks == nil ||
+		runtime.modelBlocks == nil ||
+		!accountRef.IsValid() {
+		return
+	}
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	delete(runtime.accountBlocks, accountRef)
+	for route := range runtime.modelBlocks {
+		if route.AccountRef() == accountRef {
+			delete(runtime.modelBlocks, route)
+		}
+	}
+	runtime.cooldowns.ForgetAccount(accountRef)
+}
+
 // recordBlock 校验 Provider 指令后保存最小作用域的恢复位。
 func (runtime *Runtime) recordBlock(
 	route runtimecore.ModelRoute,

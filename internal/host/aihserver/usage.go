@@ -134,6 +134,21 @@ func (composition *usageComposition) Close() error {
 	return err
 }
 
+// ForgetAccount 同时取消额度刷新执行和周期调度中的旧账号代次。
+func (composition *usageComposition) ForgetAccount(
+	accountRef accountcore.AccountRef,
+) {
+	if composition == nil || !accountRef.IsValid() {
+		return
+	}
+	if composition.service != nil {
+		composition.service.ForgetAccount(accountRef)
+	}
+	if composition.coordinator != nil {
+		composition.coordinator.ForgetAccount(accountRef)
+	}
+}
+
 // seedUsageRefreshes 使用稳定 keyset 分页为已有凭据账号安排错峰刷新。
 func seedUsageRefreshes(
 	ctx context.Context,

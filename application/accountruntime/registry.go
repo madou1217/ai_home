@@ -11,6 +11,7 @@ import (
 	"time"
 
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
+	accountcore "github.com/madou1217/ai_home/core/accounts"
 )
 
 var (
@@ -120,6 +121,22 @@ func (registry *Registry) Len() int {
 	registry.mu.RLock()
 	defer registry.mu.RUnlock()
 	return len(registry.states)
+}
+
+// ForgetAccount 删除一个账号全部模型的稀疏 cooldown 状态。
+func (registry *Registry) ForgetAccount(
+	accountRef accountcore.AccountRef,
+) {
+	if registry == nil || registry.states == nil || !accountRef.IsValid() {
+		return
+	}
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+	for route := range registry.states {
+		if route.AccountRef() == accountRef {
+			delete(registry.states, route)
+		}
+	}
 }
 
 // validateRequest 在加锁和访问时钟前拒绝无效输入。

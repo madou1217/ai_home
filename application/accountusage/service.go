@@ -238,9 +238,21 @@ func (service *Service) RefreshUsage(
 	if err := service.validateRequest(ctx, accountRef); err != nil {
 		return ReadResult{}, err
 	}
-	return service.flights.Do(ctx, accountRef, func() (ReadResult, error) {
-		return service.refreshCurrent(ctx, accountRef)
+	return service.flights.Do(ctx, accountRef, func(
+		refreshCtx context.Context,
+	) (ReadResult, error) {
+		return service.refreshCurrent(refreshCtx, accountRef)
 	})
+}
+
+// ForgetAccount 取消并分离账号当前刷新，使同身份重导入可以创建新一代任务。
+func (service *Service) ForgetAccount(
+	accountRef accountcore.AccountRef,
+) {
+	if service == nil || !accountRef.IsValid() {
+		return
+	}
+	service.flights.Forget(accountRef)
 }
 
 // refreshCurrent 解析当前凭据、选择 Strategy 并按保存后投影的顺序提交。
@@ -384,6 +396,7 @@ func (service *Service) validateRequest(
 // refreshCall 保存同账号正在执行的唯一刷新结果。
 type refreshCall struct {
 	done   chan struct{}
+	cancel context.CancelFunc
 	result ReadResult
 	err    error
 }
@@ -398,23 +411,48 @@ type refreshFlightGroup struct {
 func (group *refreshFlightGroup) Do(
 	ctx context.Context,
 	accountRef accountcore.AccountRef,
-	operation func() (ReadResult, error),
+	operation func(context.Context) (ReadResult, error),
 ) (ReadResult, error) {
 	group.mu.Lock()
 	if call := group.active[accountRef]; call != nil {
 		group.mu.Unlock()
 		return waitForRefresh(ctx, call)
 	}
-	call := &refreshCall{done: make(chan struct{})}
+	operationCtx, cancel := context.WithCancel(ctx)
+	call := &refreshCall{
+		done:   make(chan struct{}),
+		cancel: cancel,
+	}
 	group.active[accountRef] = call
 	group.mu.Unlock()
 
-	call.result, call.err = operation()
+	call.result, call.err = operation(operationCtx)
+	cancel()
 	group.mu.Lock()
-	delete(group.active, accountRef)
+	if group.active[accountRef] == call {
+		delete(group.active, accountRef)
+	}
 	close(call.done)
 	group.mu.Unlock()
 	return call.result, call.err
+}
+
+// Forget 取消并从新请求可见索引中分离一个活动刷新代次。
+func (group *refreshFlightGroup) Forget(
+	accountRef accountcore.AccountRef,
+) {
+	if group == nil || group.active == nil || !accountRef.IsValid() {
+		return
+	}
+	group.mu.Lock()
+	call := group.active[accountRef]
+	if call != nil {
+		delete(group.active, accountRef)
+	}
+	group.mu.Unlock()
+	if call != nil {
+		call.cancel()
+	}
 }
 
 // waitForRefresh 允许等待者独立取消，不终止已经发出的 Provider 请求。

@@ -40,14 +40,12 @@ func TestCoordinatorCoalescesAccountsAndIsolatesProviders(t *testing.T) {
 	t.Cleanup(func() {
 		_ = coordinator.Close()
 	})
-	for range 100 {
-		if err := coordinator.ScheduleUsageRefresh(
-			context.Background(),
-			codexRef,
-			"codex",
-		); err != nil {
-			t.Fatalf("ScheduleUsageRefresh(codex) error = %v", err)
-		}
+	if err := coordinator.ScheduleUsageRefresh(
+		context.Background(),
+		codexRef,
+		"codex",
+	); err != nil {
+		t.Fatalf("ScheduleUsageRefresh(codex) error = %v", err)
 	}
 	if err := coordinator.ScheduleUsageRefresh(
 		context.Background(),
@@ -63,13 +61,26 @@ func TestCoordinatorCoalescesAccountsAndIsolatesProviders(t *testing.T) {
 		(first != claudeRef && second != claudeRef) {
 		t.Fatalf("provider-isolated starts = (%s, %s)", first, second)
 	}
+	for range 100 {
+		if err := coordinator.ScheduleUsageRefresh(
+			context.Background(),
+			codexRef,
+			"codex",
+		); err != nil {
+			t.Fatalf("ScheduleUsageRefresh(codex rerun) error = %v", err)
+		}
+	}
 	select {
 	case unexpected := <-started:
 		t.Fatalf("同账号重复进入 Provider 队列: %s", unexpected)
 	case <-time.After(20 * time.Millisecond):
 	}
 	close(release)
-	for range 2 {
+	rerun := receiveCoordinatorRef(t, started)
+	if rerun != codexRef {
+		t.Fatalf("合并后的 rerun account = %s, want %s", rerun, codexRef)
+	}
+	for range 3 {
 		select {
 		case result := <-results:
 			if result.Err != nil {
@@ -79,8 +90,8 @@ func TestCoordinatorCoalescesAccountsAndIsolatesProviders(t *testing.T) {
 			t.Fatal("等待刷新结果超时")
 		}
 	}
-	if refresher.calls.Load() != 2 {
-		t.Fatalf("RefreshUsage() calls = %d, want 2", refresher.calls.Load())
+	if refresher.calls.Load() != 3 {
+		t.Fatalf("RefreshUsage() calls = %d, want 3", refresher.calls.Load())
 	}
 }
 
@@ -183,10 +194,95 @@ func TestCoordinatorSafelyClosesDuringConcurrentSchedules(t *testing.T) {
 	}
 }
 
+// TestCoordinatorForgetAccountCancelsOldGenerationAndAllowsReschedule 验证删除中的旧任务不会污染重导入任务。
+func TestCoordinatorForgetAccountCancelsOldGenerationAndAllowsReschedule(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	accountRef := coordinatorAccountRef(t, 5)
+	firstStarted := make(chan struct{})
+	firstCanceled := make(chan struct{})
+	secondStarted := make(chan struct{})
+	refresher := &generationAwareRefresher{
+		firstStarted:  firstStarted,
+		firstCanceled: firstCanceled,
+		secondStarted: secondStarted,
+	}
+	coordinator := newCoordinatorSubject(
+		t,
+		refresher,
+		time.Hour,
+		nil,
+	)
+	t.Cleanup(func() {
+		_ = coordinator.Close()
+	})
+	if err := coordinator.ScheduleUsageRefresh(
+		context.Background(),
+		accountRef,
+		"codex",
+	); err != nil {
+		t.Fatalf("ScheduleUsageRefresh(first) error = %v", err)
+	}
+	select {
+	case <-firstStarted:
+	case <-time.After(time.Second):
+		t.Fatal("等待旧任务启动超时")
+	}
+
+	coordinator.ForgetAccount(accountRef)
+	select {
+	case <-firstCanceled:
+	case <-time.After(time.Second):
+		t.Fatal("删除没有取消正在运行的旧任务")
+	}
+	if err := coordinator.ScheduleUsageRefresh(
+		context.Background(),
+		accountRef,
+		"codex",
+	); err != nil {
+		t.Fatalf("ScheduleUsageRefresh(second) error = %v", err)
+	}
+	select {
+	case <-secondStarted:
+	case <-time.After(time.Second):
+		t.Fatal("重导入后的新任务没有执行")
+	}
+	time.Sleep(20 * time.Millisecond)
+	if refresher.calls.Load() != 2 {
+		t.Fatalf("RefreshUsage() calls = %d, want 2", refresher.calls.Load())
+	}
+}
+
 // coordinatorRefresher 记录后台调用并执行可控函数。
 type coordinatorRefresher struct {
 	calls   atomic.Int64
 	execute func(accountcore.AccountRef) error
+}
+
+// generationAwareRefresher 让首代任务等待取消、次代任务立即完成。
+type generationAwareRefresher struct {
+	calls         atomic.Int64
+	firstStarted  chan<- struct{}
+	firstCanceled chan<- struct{}
+	secondStarted chan<- struct{}
+}
+
+// RefreshUsage 按调用代次暴露取消与重新调度事实。
+func (refresher *generationAwareRefresher) RefreshUsage(
+	ctx context.Context,
+	_ accountcore.AccountRef,
+) (usageapp.ReadResult, error) {
+	call := refresher.calls.Add(1)
+	if call == 1 {
+		close(refresher.firstStarted)
+		<-ctx.Done()
+		close(refresher.firstCanceled)
+		return usageapp.ReadResult{}, ctx.Err()
+	}
+	close(refresher.secondStarted)
+	return usageapp.ReadResult{}, nil
 }
 
 func (refresher *coordinatorRefresher) RefreshUsage(

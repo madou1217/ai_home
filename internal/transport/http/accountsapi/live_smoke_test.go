@@ -12,6 +12,7 @@ import (
 	"time"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
@@ -60,6 +61,10 @@ func TestAccountsAPILiveSmoke(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManagement() error = %v", err)
 	}
+	deleter, err := accountapp.NewDeleter(store, liveDeletionCleanup{})
+	if err != nil {
+		t.Fatalf("NewDeleter() error = %v", err)
+	}
 	modelManagement, err := accountapp.NewModelManagement(
 		store,
 		store,
@@ -79,6 +84,7 @@ func TestAccountsAPILiveSmoke(t *testing.T) {
 		Management:     management,
 		Models:         modelManagement,
 		Usage:          newAccountServiceStub(t),
+		Deletion:       deleter,
 		Registrar:      registrar,
 		APIKeys:        accountsapi.NewBuiltinAPIKeyCredentialFactory(),
 		NativeAccounts: nativeaccount.NewDecoder(),
@@ -247,6 +253,28 @@ func TestAccountsAPILiveSmoke(t *testing.T) {
 		t.Fatalf("live disable response = %#v", disabledDocument.Data)
 	}
 
+	deleted := performLiveRequest(
+		t,
+		server.Client(),
+		http.MethodDelete,
+		detailURL,
+		nil,
+	)
+	logLiveExchange(t, deleted)
+	assertLiveStatus(t, deleted, http.StatusNoContent)
+	if deleted.responseBody != "" {
+		t.Fatalf("live DELETE body = %q", deleted.responseBody)
+	}
+	deletedDetail := performLiveRequest(
+		t,
+		server.Client(),
+		http.MethodGet,
+		detailURL,
+		nil,
+	)
+	logLiveExchange(t, deletedDetail)
+	assertLiveStatus(t, deletedDetail, http.StatusNotFound)
+
 	for _, exchange := range []liveExchange{
 		codexCreate,
 		claudeCreate,
@@ -256,6 +284,8 @@ func TestAccountsAPILiveSmoke(t *testing.T) {
 		modelPolicy,
 		modelRefresh,
 		disabled,
+		deleted,
+		deletedDetail,
 	} {
 		if strings.Contains(exchange.requestBody, codexSecret) ||
 			strings.Contains(exchange.requestBody, claudeSecret) ||
@@ -265,6 +295,12 @@ func TestAccountsAPILiveSmoke(t *testing.T) {
 		}
 	}
 }
+
+// liveDeletionCleanup 是真实 TCP smoke 使用的无状态幂等清理端口。
+type liveDeletionCleanup struct{}
+
+// ForgetAccount 在 smoke 中不保存任何派生运行态。
+func (liveDeletionCleanup) ForgetAccount(accountcore.AccountRef) {}
 
 // assertLiveModelPolicy 校验真实 HTTP 模型关系和人工覆盖结果。
 func assertLiveModelPolicy(

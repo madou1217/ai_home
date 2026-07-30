@@ -68,3 +68,55 @@ func TestNewMarshaledEventTakesOwnershipWithoutChangingOutput(t *testing.T) {
 		t.Fatalf("NewMarshaledEvent(multiline) error = %v", err)
 	}
 }
+
+// TestDataOnlyRenderedEventsKeepJSONAndLiteralContractsSeparate 验证 OpenAI
+// data-only JSON 帧和 `[DONE]` 字面量不能互相绕过校验。
+func TestDataOnlyRenderedEventsKeepJSONAndLiteralContractsSeparate(t *testing.T) {
+	t.Parallel()
+
+	jsonEvent, err := NewDataEvent([]byte("{\n\"value\": true\n}"))
+	if err != nil {
+		t.Fatalf("NewDataEvent() error = %v", err)
+	}
+	if jsonEvent.Name() != "" || string(jsonEvent.Data()) != `{"value":true}` {
+		t.Fatalf("NewDataEvent() = name=%q data=%s", jsonEvent.Name(), jsonEvent.Data())
+	}
+	marshaledEvent, err := NewMarshaledDataEvent([]byte(`{"value":true}`))
+	if err != nil {
+		t.Fatalf("NewMarshaledDataEvent() error = %v", err)
+	}
+	if marshaledEvent.Name() != "" ||
+		string(marshaledEvent.Data()) != `{"value":true}` {
+		t.Fatalf(
+			"NewMarshaledDataEvent() = name=%q data=%s",
+			marshaledEvent.Name(),
+			marshaledEvent.Data(),
+		)
+	}
+	done, err := NewLiteralDataEvent("[DONE]")
+	if err != nil {
+		t.Fatalf("NewLiteralDataEvent() error = %v", err)
+	}
+	if done.Name() != "" || string(done.Data()) != "[DONE]" {
+		t.Fatalf("NewLiteralDataEvent() = name=%q data=%s", done.Name(), done.Data())
+	}
+
+	for _, data := range [][]byte{
+		[]byte("[DONE]"),
+		[]byte("{\n}"),
+		[]byte("not-json"),
+	} {
+		if _, err := NewMarshaledDataEvent(data); !errors.Is(
+			err,
+			ErrInvalidRenderedEvent,
+		) {
+			t.Fatalf("NewMarshaledDataEvent(%q) error = %v", data, err)
+		}
+	}
+	if _, err := NewLiteralDataEvent("[DONE]\n"); !errors.Is(
+		err,
+		ErrInvalidRenderedEvent,
+	) {
+		t.Fatalf("NewLiteralDataEvent(multiline) error = %v", err)
+	}
+}

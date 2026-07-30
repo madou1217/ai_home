@@ -8,6 +8,7 @@ import (
 	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/internal/adapters/clientprotocol"
 	"github.com/madou1217/ai_home/internal/adapters/clientprotocol/anthropicmessages"
+	"github.com/madou1217/ai_home/internal/adapters/clientprotocol/openaichatcompletions"
 	"github.com/madou1217/ai_home/internal/adapters/clientprotocol/openairesponses"
 )
 
@@ -21,9 +22,16 @@ func TestRegistryResolvesRealProtocolAdapters(t *testing.T) {
 	if err != nil {
 		t.Fatalf("openairesponses.NewAdapter() error = %v", err)
 	}
+	chatAdapter, err := openaichatcompletions.NewAdapter(func() time.Time {
+		return time.Unix(1_700_000_000, 0)
+	})
+	if err != nil {
+		t.Fatalf("openaichatcompletions.NewAdapter() error = %v", err)
+	}
 	registry, err := clientprotocol.NewRegistry(
 		anthropicmessages.NewAdapter(),
 		responsesAdapter,
+		chatAdapter,
 	)
 	if err != nil {
 		t.Fatalf("NewRegistry() error = %v", err)
@@ -63,6 +71,22 @@ func TestRegistryResolvesRealProtocolAdapters(t *testing.T) {
 		responses.NewStreamRenderer(responsesRequest).Terminal() {
 		t.Fatalf("Responses Adapter 返回错误协议或提前终止")
 	}
+
+	chat, err := registry.Resolve(inference.ClientProtocolOpenAIChatCompletions)
+	if err != nil {
+		t.Fatalf("Resolve(Chat Completions) error = %v", err)
+	}
+	chatRequest, err := chat.Decode([]byte(`{
+		"model":"gpt-5.6-sol",
+		"messages":[{"role":"user","content":"你好"}]
+	}`))
+	if err != nil {
+		t.Fatalf("Chat Decode() error = %v", err)
+	}
+	if chatRequest.ClientProtocol() != inference.ClientProtocolOpenAIChatCompletions ||
+		chat.NewStreamRenderer(chatRequest).Terminal() {
+		t.Fatal("Chat Adapter 返回错误协议或提前终止")
+	}
 }
 
 // TestRegistryRejectsMissingDuplicateAndUnknownProtocols 验证 Registry 不做隐式回退。
@@ -96,5 +120,11 @@ func TestRegistryRejectsMissingDuplicateAndUnknownProtocols(t *testing.T) {
 		clientprotocol.ErrInvalidAdapter,
 	) {
 		t.Fatalf("NewAdapter(nil) error = %v", err)
+	}
+	if _, err := openaichatcompletions.NewAdapter(nil); !errors.Is(
+		err,
+		clientprotocol.ErrInvalidAdapter,
+	) {
+		t.Fatalf("Chat NewAdapter(nil) error = %v", err)
 	}
 }

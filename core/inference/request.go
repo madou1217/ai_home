@@ -487,6 +487,8 @@ type RequestInput struct {
 	StructuredOutput *StructuredOutput
 	// Stream 表示客户端需要真实增量事件。
 	Stream bool
+	// IncludeUsageInStream 表示客户端要求在流结束前接收独立 usage 快照。
+	IncludeUsageInStream bool
 	// MaxOutputTokens 是可选的最大输出 token，零表示未指定。
 	MaxOutputTokens uint64
 	// Temperature 是可选采样温度。
@@ -526,6 +528,7 @@ type Request struct {
 	reasoning         *ReasoningConfig
 	structuredOutput  *StructuredOutput
 	stream            bool
+	includeUsage      bool
 	maxOutputTokens   uint64
 	temperature       *float64
 	topP              *float64
@@ -574,6 +577,7 @@ func NewRequest(input RequestInput) (Request, error) {
 		reasoning:         cloneReasoning(input.Reasoning),
 		structuredOutput:  cloneStructuredOutput(input.StructuredOutput),
 		stream:            input.Stream,
+		includeUsage:      input.IncludeUsageInStream,
 		maxOutputTokens:   input.MaxOutputTokens,
 		temperature:       cloneFloat(input.Temperature),
 		topP:              cloneFloat(input.TopP),
@@ -653,6 +657,11 @@ func (request Request) StructuredOutput() (StructuredOutput, bool) {
 // Stream 返回客户端是否需要真实增量输出。
 func (request Request) Stream() bool {
 	return request.stream
+}
+
+// IncludeUsageInStream 返回是否需要在流结束前输出独立 usage 快照。
+func (request Request) IncludeUsageInStream() bool {
+	return request.includeUsage
 }
 
 // MaxOutputTokens 返回最大输出 token，零表示客户端未指定。
@@ -764,6 +773,9 @@ func cloneAndValidateTools(tools []ToolDefinition) ([]ToolDefinition, error) {
 
 // validateRequestOptions 校验所有可选配置不会形成无意义组合。
 func validateRequestOptions(input RequestInput, tools []ToolDefinition) error {
+	if input.IncludeUsageInStream && !input.Stream {
+		return ErrInvalidRequest
+	}
 	if input.ToolChoice != nil {
 		if !input.ToolChoice.IsValid() {
 			return ErrInvalidRequest

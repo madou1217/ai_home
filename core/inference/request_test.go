@@ -73,6 +73,42 @@ func TestRequestDerivesRequiredCapabilitiesInOneCanonicalPlace(t *testing.T) {
 	}
 }
 
+// TestRequestPreservesStreamUsageIntent 验证客户端流式 usage 需求被保留，
+// 且不会在非流式请求中形成无意义配置。
+func TestRequestPreservesStreamUsageIntent(t *testing.T) {
+	t.Parallel()
+
+	text, err := NewTextContent("hello")
+	if err != nil {
+		t.Fatalf("NewTextContent() error = %v", err)
+	}
+	message, err := NewMessage(RoleUser, text)
+	if err != nil {
+		t.Fatalf("NewMessage() error = %v", err)
+	}
+	request, err := NewRequest(RequestInput{
+		ClientProtocol:       ClientProtocolOpenAIChatCompletions,
+		Model:                "gpt-5.6-sol",
+		Messages:             []Message{message},
+		Stream:               true,
+		IncludeUsageInStream: true,
+	})
+	if err != nil {
+		t.Fatalf("NewRequest() error = %v", err)
+	}
+	if !request.IncludeUsageInStream() {
+		t.Fatal("IncludeUsageInStream() = false, want true")
+	}
+	if _, err := NewRequest(RequestInput{
+		ClientProtocol:       ClientProtocolOpenAIChatCompletions,
+		Model:                "gpt-5.6-sol",
+		Messages:             []Message{message},
+		IncludeUsageInStream: true,
+	}); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("NewRequest(non-stream usage) error = %v", err)
+	}
+}
+
 // TestCapabilitySetUsesExactSubsetMatching 验证账号征召可用常数时间位图判断，
 // 不会把缺失图片或流式能力的账号加入候选集。
 func TestCapabilitySetUsesExactSubsetMatching(t *testing.T) {

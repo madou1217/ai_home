@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"strings"
+	"unicode/utf8"
 )
 
 // ErrInvalidRenderedEvent 表示 SSE 事件名或 JSON 数据不满足共享输出合同。
@@ -44,6 +46,39 @@ func NewMarshaledEvent(name string, data []byte) (RenderedEvent, error) {
 		return RenderedEvent{}, ErrInvalidRenderedEvent
 	}
 	return RenderedEvent{name: name, data: data}, nil
+}
+
+// NewDataEvent 校验并复制 data-only SSE 使用的 JSON 数据。
+func NewDataEvent(data []byte) (RenderedEvent, error) {
+	var compact bytes.Buffer
+	if json.Compact(&compact, data) != nil {
+		return RenderedEvent{}, ErrInvalidRenderedEvent
+	}
+	return RenderedEvent{data: compact.Bytes()}, nil
+}
+
+// NewMarshaledDataEvent 接管 json.Marshal 结果，供 data-only SSE 热路径使用。
+//
+// 调用方交出后不得继续修改 data。
+func NewMarshaledDataEvent(data []byte) (RenderedEvent, error) {
+	if len(data) == 0 ||
+		bytes.ContainsAny(data, "\r\n") ||
+		!json.Valid(data) {
+		return RenderedEvent{}, ErrInvalidRenderedEvent
+	}
+	return RenderedEvent{data: data}, nil
+}
+
+// NewLiteralDataEvent 创建不含换行的 UTF-8 data-only SSE 字面量。
+//
+// 它只用于类似 OpenAI `[DONE]` 的非 JSON 协议终止标记。
+func NewLiteralDataEvent(data string) (RenderedEvent, error) {
+	if data == "" ||
+		!utf8.ValidString(data) ||
+		strings.ContainsAny(data, "\r\n") {
+		return RenderedEvent{}, ErrInvalidRenderedEvent
+	}
+	return RenderedEvent{data: []byte(data)}, nil
 }
 
 // Name 返回 SSE event 字段。

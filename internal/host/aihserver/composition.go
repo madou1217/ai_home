@@ -147,6 +147,10 @@ func newHandlers(
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建账号管理用例失败: %w", err)
 	}
+	providerDefaults, err := accountapp.NewProviderDefaults(catalog, store, time.Now)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建 Provider 默认账号用例失败: %w", err)
+	}
 	exportReader, err := accountapp.NewExportReader(store, store, store)
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建账号导出读取器失败: %w", err)
@@ -283,6 +287,7 @@ func newHandlers(
 		Models:              recoveringModelManagement,
 		Usage:               usage.service,
 		Deletion:            deleter,
+		Defaults:            providerDefaults,
 		CredentialRotation:  credentialRotator,
 		Sub2APIExporter:     accountExporter,
 		CLIProxyAPIExporter: cliProxyAPIExporter,

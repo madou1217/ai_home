@@ -107,6 +107,59 @@ func TestAccountsAPILiveSmoke(t *testing.T) {
 	if codexRef == "" || claudeRef == "" {
 		t.Fatal("live account list missing Codex or Claude")
 	}
+	codexDefaultURL := server.URL + accountsapi.DefaultsPath + "/codex"
+	codexDefaultPayload := marshalRequestJSON(t, map[string]string{
+		"account_ref": codexRef,
+	})
+	codexDefault := performLiveRequest(
+		t,
+		server.Client(),
+		http.MethodPut,
+		codexDefaultURL,
+		codexDefaultPayload,
+	)
+	logLiveExchange(t, codexDefault)
+	assertLiveStatus(t, codexDefault, http.StatusOK)
+	assertLiveProviderDefault(
+		t,
+		codexDefault,
+		"codex",
+		codexRef,
+		"2026-07-27T19:25:00Z",
+	)
+	codexDefaultRead := performLiveRequest(
+		t,
+		server.Client(),
+		http.MethodGet,
+		codexDefaultURL,
+		nil,
+	)
+	logLiveExchange(t, codexDefaultRead)
+	assertLiveStatus(t, codexDefaultRead, http.StatusOK)
+	if codexDefaultRead.responseBody != codexDefault.responseBody {
+		t.Fatalf(
+			"默认账号写读不一致: put=%s get=%s",
+			codexDefault.responseBody,
+			codexDefaultRead.responseBody,
+		)
+	}
+	claudeDefaultURL := server.URL + accountsapi.DefaultsPath + "/claude"
+	claudeDefault := performLiveRequest(
+		t,
+		server.Client(),
+		http.MethodPut,
+		claudeDefaultURL,
+		marshalRequestJSON(t, map[string]string{"account_ref": claudeRef}),
+	)
+	logLiveExchange(t, claudeDefault)
+	assertLiveStatus(t, claudeDefault, http.StatusOK)
+	assertLiveProviderDefault(
+		t,
+		claudeDefault,
+		"claude",
+		claudeRef,
+		"2026-07-27T19:25:00Z",
+	)
 
 	detailURL := server.URL + accountsapi.CollectionPath + "/" + codexRef
 	detail := performLiveRequest(
@@ -232,6 +285,22 @@ func TestAccountsAPILiveSmoke(t *testing.T) {
 		claudeRotatedDocument.Data.AuthKind != "auth_token" {
 		t.Fatalf("live Claude rotation response = %#v", claudeRotatedDocument.Data)
 	}
+	claudeDefaultAfterRotation := performLiveRequest(
+		t,
+		server.Client(),
+		http.MethodGet,
+		claudeDefaultURL,
+		nil,
+	)
+	logLiveExchange(t, claudeDefaultAfterRotation)
+	assertLiveStatus(t, claudeDefaultAfterRotation, http.StatusOK)
+	if claudeDefaultAfterRotation.responseBody != claudeDefault.responseBody {
+		t.Fatalf(
+			"静态凭据轮换改变默认账号: before=%s after=%s",
+			claudeDefault.responseBody,
+			claudeDefaultAfterRotation.responseBody,
+		)
+	}
 
 	modelsURL := detailURL + "/models"
 	models := performLiveRequest(
@@ -302,6 +371,21 @@ func TestAccountsAPILiveSmoke(t *testing.T) {
 	if disabledDocument.Data.Enabled ||
 		disabledDocument.Data.UpdatedAt != "2026-07-27T19:05:00Z" {
 		t.Fatalf("live disable response = %#v", disabledDocument.Data)
+	}
+	codexDefaultAfterDisable := performLiveRequest(
+		t,
+		server.Client(),
+		http.MethodGet,
+		codexDefaultURL,
+		nil,
+	)
+	logLiveExchange(t, codexDefaultAfterDisable)
+	assertLiveStatus(t, codexDefaultAfterDisable, http.StatusNotFound)
+	if !strings.Contains(
+		codexDefaultAfterDisable.responseBody,
+		`"code":"default_account_not_found"`,
+	) {
+		t.Fatalf("停用后默认账号响应错误: %s", codexDefaultAfterDisable.responseBody)
 	}
 
 	rotatedSecret := "synthetic-codex-live-rotated-key"
@@ -399,11 +483,15 @@ func TestAccountsAPILiveSmoke(t *testing.T) {
 		codexCreate,
 		claudeCreate,
 		list,
+		codexDefault,
+		codexDefaultRead,
+		claudeDefault,
 		detail,
 		models,
 		modelPolicy,
 		modelRefresh,
 		claudeRotated,
+		claudeDefaultAfterRotation,
 		rotated,
 		rotatedModels,
 		redactedRotatedExport,
@@ -411,6 +499,7 @@ func TestAccountsAPILiveSmoke(t *testing.T) {
 		importedClaude,
 		targetList,
 		disabled,
+		codexDefaultAfterDisable,
 		deleted,
 		deletedDetail,
 	} {
@@ -424,6 +513,31 @@ func TestAccountsAPILiveSmoke(t *testing.T) {
 			strings.Contains(exchange.responseBody, claudeAuthToken) {
 			t.Fatalf("%s smoke evidence leaked API Key", exchange.method)
 		}
+	}
+}
+
+// assertLiveProviderDefault 校验真实 HTTP 默认账号响应的三字段最小合同。
+func assertLiveProviderDefault(
+	t *testing.T,
+	exchange liveExchange,
+	providerID string,
+	accountRef string,
+	updatedAt string,
+) {
+	t.Helper()
+
+	var document struct {
+		Data struct {
+			ProviderID string `json:"provider_id"`
+			AccountRef string `json:"account_ref"`
+			UpdatedAt  string `json:"updated_at"`
+		} `json:"data"`
+	}
+	decodeLiveBody(t, exchange.responseBody, &document)
+	if document.Data.ProviderID != providerID ||
+		document.Data.AccountRef != accountRef ||
+		document.Data.UpdatedAt != updatedAt {
+		t.Fatalf("live provider default response = %#v", document.Data)
 	}
 }
 
@@ -471,6 +585,14 @@ func newAccountsLiveServer(
 	)
 	if err != nil {
 		t.Fatalf("NewManagement() error = %v", err)
+	}
+	providerDefaults, err := accountapp.NewProviderDefaults(
+		catalog,
+		store,
+		func() time.Time { return registeredAt.Add(25 * time.Minute) },
+	)
+	if err != nil {
+		t.Fatalf("NewProviderDefaults() error = %v", err)
 	}
 	exportReader, err := accountapp.NewExportReader(store, store, store)
 	if err != nil {
@@ -522,6 +644,7 @@ func newAccountsLiveServer(
 		Models:              modelManagement,
 		Usage:               newAccountServiceStub(t),
 		Deletion:            deleter,
+		Defaults:            providerDefaults,
 		CredentialRotation:  credentialRotator,
 		Sub2APIExporter:     exporter,
 		CLIProxyAPIExporter: cliProxyAPIExporter,

@@ -12,8 +12,8 @@ func TestSchemaV1DeclaresExpectedDatabaseIdentity(t *testing.T) {
 	if ApplicationID != 0x41494831 {
 		t.Fatalf("ApplicationID = %#x, want %#x", ApplicationID, 0x41494831)
 	}
-	if SchemaVersion != 4 {
-		t.Fatalf("SchemaVersion = %d, want 4", SchemaVersion)
+	if SchemaVersion != 5 {
+		t.Fatalf("SchemaVersion = %d, want 5", SchemaVersion)
 	}
 	if !strings.Contains(SchemaV1, fmt.Sprintf("PRAGMA application_id = %d;", ApplicationID)) {
 		t.Fatal("SchemaV1 缺少规范 application_id")
@@ -24,8 +24,11 @@ func TestSchemaV1DeclaresExpectedDatabaseIdentity(t *testing.T) {
 	if !strings.Contains(SchemaV2, "PRAGMA user_version = 2;") {
 		t.Fatal("SchemaV2 缺少固定 v2 user_version")
 	}
-	if !strings.Contains(SchemaV4, fmt.Sprintf("PRAGMA user_version = %d;", SchemaVersion)) {
-		t.Fatal("SchemaV4 缺少规范 user_version")
+	if !strings.Contains(SchemaV4, "PRAGMA user_version = 4;") {
+		t.Fatal("SchemaV4 缺少固定 v4 user_version")
+	}
+	if !strings.Contains(SchemaV5, fmt.Sprintf("PRAGMA user_version = %d;", SchemaVersion)) {
+		t.Fatal("SchemaV5 缺少规范 user_version")
 	}
 }
 
@@ -77,10 +80,44 @@ func TestSchemaV1KeepsMinimalAccountBoundary(t *testing.T) {
 		"account_models",
 		"account_jobs",
 		"account_outbox",
+		"account_defaults",
 		"schema_migrations",
 	} {
 		if strings.Contains(SchemaV1, forbidden) {
 			t.Fatalf("SchemaV1 不应包含未获当前需求支持的结构 %q", forbidden)
+		}
+	}
+}
+
+// TestSchemaV5AddsOnlyProviderDefaultSelection 验证默认关系保持三字段最小结构和生命周期联动。
+func TestSchemaV5AddsOnlyProviderDefaultSelection(t *testing.T) {
+	t.Parallel()
+
+	for _, required := range []string{
+		"CREATE TABLE account_defaults",
+		"provider_id TEXT NOT NULL PRIMARY KEY",
+		"account_ref TEXT NOT NULL",
+		"updated_at_ms INTEGER NOT NULL",
+		"REFERENCES accounts(account_ref) ON DELETE CASCADE",
+		"CREATE TRIGGER trg_account_defaults_clear_disabled",
+		"AFTER UPDATE OF enabled ON accounts",
+		"DELETE FROM account_defaults WHERE account_ref = NEW.account_ref",
+	} {
+		if !strings.Contains(SchemaV5, required) {
+			t.Fatalf("SchemaV5 缺少默认账号合同 %q", required)
+		}
+	}
+	for _, forbidden := range []string{
+		"runtime",
+		"cooldown",
+		"usage",
+		"model_id",
+		"credential_json",
+		"account_roles",
+		"CREATE INDEX",
+	} {
+		if strings.Contains(SchemaV5, forbidden) {
+			t.Fatalf("SchemaV5 不应包含默认选择之外的结构 %q", forbidden)
 		}
 	}
 }

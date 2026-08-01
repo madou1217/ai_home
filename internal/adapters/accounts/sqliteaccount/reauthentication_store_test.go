@@ -30,6 +30,18 @@ func TestReauthenticateAtomicallyReplacesCredentialProfileAndAccountVersion(
 		originalCredential,
 		originalProfile,
 	)
+	providerDefault := newProviderDefault(
+		t,
+		"codex",
+		account.Ref(),
+		testAccountTime().Add(time.Second),
+	)
+	if _, err := store.SetProviderDefault(
+		context.Background(),
+		providerDefault,
+	); err != nil {
+		t.Fatalf("SetProviderDefault() error = %v", err)
+	}
 	replacementCredential, replacementProfile := newCodexReauthenticationValues(
 		t,
 		"replacement",
@@ -77,6 +89,17 @@ func TestReauthenticateAtomicallyReplacesCredentialProfileAndAccountVersion(
 	}
 	assertReauthenticationVersions(t, store, account.Ref(), updatedAt.UnixMilli())
 	assertStoredModelIDs(t, store, account.Ref(), "replacement-model")
+	defaultAfterReauthentication, err := store.GetProviderDefault(
+		context.Background(),
+		"codex",
+	)
+	if err != nil || defaultAfterReauthentication != providerDefault {
+		t.Fatalf(
+			"GetProviderDefault(after reauthentication) = (%#v, %v)",
+			defaultAfterReauthentication,
+			err,
+		)
+	}
 }
 
 // TestGetReauthenticationTargetRejectsTokenBoundCredentials 验证静态身份不进入 OAuth 流程。

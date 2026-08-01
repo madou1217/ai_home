@@ -89,6 +89,7 @@ func TestStoreDeletesAccountGraphAndPublishesRoutingSnapshot(t *testing.T) {
 		"account_profiles",
 		"account_models",
 		"account_usage",
+		"account_defaults",
 	} {
 		assertDeletedAccountRows(t, store, table, account.Ref().String())
 	}

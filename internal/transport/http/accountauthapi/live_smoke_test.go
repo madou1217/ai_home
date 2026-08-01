@@ -614,6 +614,10 @@ func newLiveManagementHandler(
 	if err != nil {
 		t.Fatalf("accounts.NewManagement() error = %v", err)
 	}
+	providerDefaults, err := accountapp.NewProviderDefaults(catalog, store, clock)
+	if err != nil {
+		t.Fatalf("accounts.NewProviderDefaults() error = %v", err)
+	}
 	exportReader, err := accountapp.NewExportReader(store, store, store)
 	if err != nil {
 		t.Fatalf("accounts.NewExportReader() error = %v", err)
@@ -703,6 +707,7 @@ func newLiveManagementHandler(
 		Models:              modelManagement,
 		Usage:               usage,
 		Deletion:            deleter,
+		Defaults:            providerDefaults,
 		CredentialRotation:  credentialRotator,
 		Sub2APIExporter:     exporter,
 		CLIProxyAPIExporter: cliProxyAPIExporter,
@@ -721,6 +726,7 @@ func newLiveManagementHandler(
 	mux.Handle(accountauthapi.CollectionPath+"/", authHandler)
 	mux.Handle(accountsapi.CollectionPath, accountsHandler)
 	mux.Handle(accountsapi.CollectionPath+"/", accountsHandler)
+	mux.Handle(accountsapi.DefaultsPath+"/", accountsHandler)
 	return mux, store
 }
 

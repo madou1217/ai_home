@@ -97,6 +97,154 @@ func TestHandlerListsAccountsWithStableCursor(t *testing.T) {
 	assertSafeResponseHeaders(t, response)
 }
 
+// TestHandlerManagesProviderDefaultResource 验证默认账号 PUT、GET 和幂等 DELETE 合同。
+func TestHandlerManagesProviderDefaultResource(t *testing.T) {
+	t.Parallel()
+
+	service := newAccountServiceStub(t)
+	overview := newTestOverview(t, service.catalog, 1, "http-provider-default")
+	handler := newTestHandler(t, service)
+	path := accountsapi.DefaultsPath + "/codex"
+	payload := marshalRequestJSON(t, map[string]string{
+		"account_ref": overview.Account().Ref().String(),
+	})
+
+	set := performAuthorizedRequest(t, handler, http.MethodPut, path, payload)
+	if set.Code != http.StatusOK {
+		t.Fatalf("PUT default status=%d body=%s", set.Code, set.Body)
+	}
+	setBody := set.Body.String()
+	var setDocument struct {
+		Data struct {
+			ProviderID string `json:"provider_id"`
+			AccountRef string `json:"account_ref"`
+			UpdatedAt  string `json:"updated_at"`
+		} `json:"data"`
+	}
+	decodeResponseJSON(t, set, &setDocument)
+	if setDocument.Data.ProviderID != "codex" ||
+		setDocument.Data.AccountRef != overview.Account().Ref().String() ||
+		setDocument.Data.UpdatedAt != "2026-07-27T18:00:00Z" ||
+		service.setDefaultCalls != 1 ||
+		service.defaultAccountRef != overview.Account().Ref() {
+		t.Fatalf("PUT default response=%#v service=%#v", setDocument.Data, service)
+	}
+
+	get := performAuthorizedRequest(t, handler, http.MethodGet, path, nil)
+	if get.Code != http.StatusOK || get.Body.String() != setBody ||
+		service.getDefaultCalls != 1 {
+		t.Fatalf("GET default status=%d body=%s", get.Code, get.Body)
+	}
+	cleared := performAuthorizedRequest(t, handler, http.MethodDelete, path, nil)
+	if cleared.Code != http.StatusNoContent || cleared.Body.Len() != 0 ||
+		service.clearDefaultCalls != 1 || service.defaultProviderID != "codex" {
+		t.Fatalf(
+			"DELETE default status=%d body=%q service=%#v",
+			cleared.Code,
+			cleared.Body.String(),
+			service,
+		)
+	}
+	assertSafeResponseHeaders(t, set)
+	assertSafeResponseHeaders(t, get)
+}
+
+// TestHandlerRejectsInvalidOrIneligibleProviderDefaults 验证入站格式和应用错误映射稳定。
+func TestHandlerRejectsInvalidOrIneligibleProviderDefaults(t *testing.T) {
+	t.Parallel()
+
+	validRef := newTestOverview(
+		t,
+		newAccountServiceStub(t).catalog,
+		1,
+		"http-provider-default-errors",
+	).Account().Ref().String()
+	tests := []struct {
+		name   string
+		path   string
+		body   string
+		err    error
+		status int
+		code   string
+	}{
+		{
+			name:   "账号引用格式无效",
+			path:   accountsapi.DefaultsPath + "/codex",
+			body:   `{"account_ref":"invalid"}`,
+			status: http.StatusBadRequest,
+			code:   "invalid_account_ref",
+		},
+		{
+			name:   "账号已停用",
+			path:   accountsapi.DefaultsPath + "/codex",
+			body:   `{"account_ref":"` + validRef + `"}`,
+			err:    accountapp.ErrProviderDefaultDisabled,
+			status: http.StatusUnprocessableEntity,
+			code:   "default_account_disabled",
+		},
+		{
+			name:   "账号未配置",
+			path:   accountsapi.DefaultsPath + "/claude",
+			body:   `{"account_ref":"` + validRef + `"}`,
+			err:    accountapp.ErrProviderDefaultUnconfigured,
+			status: http.StatusUnprocessableEntity,
+			code:   "default_account_unconfigured",
+		},
+		{
+			name:   "Provider 不匹配",
+			path:   accountsapi.DefaultsPath + "/claude",
+			body:   `{"account_ref":"` + validRef + `"}`,
+			err:    accountapp.ErrProviderDefaultMismatch,
+			status: http.StatusUnprocessableEntity,
+			code:   "default_account_provider_mismatch",
+		},
+		{
+			name:   "本阶段不支持其他 Provider",
+			path:   accountsapi.DefaultsPath + "/gemini",
+			body:   `{"account_ref":"` + validRef + `"}`,
+			err:    accountapp.ErrInvalidProviderDefault,
+			status: http.StatusUnprocessableEntity,
+			code:   "invalid_provider_default",
+		},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			service := newAccountServiceStub(t)
+			service.defaultErr = test.err
+			handler := newTestHandler(t, service)
+			response := performAuthorizedRequest(
+				t,
+				handler,
+				http.MethodPut,
+				test.path,
+				[]byte(test.body),
+			)
+			assertAPIError(t, response, test.status, test.code)
+			wantCalls := 1
+			if test.err == nil {
+				wantCalls = 0
+			}
+			if service.setDefaultCalls != wantCalls {
+				t.Fatalf("set default calls=%d, want %d", service.setDefaultCalls, wantCalls)
+			}
+		})
+	}
+
+	service := newAccountServiceStub(t)
+	service.defaultErr = accountapp.ErrProviderDefaultNotFound
+	notFound := performAuthorizedRequest(
+		t,
+		newTestHandler(t, service),
+		http.MethodGet,
+		accountsapi.DefaultsPath+"/codex",
+		nil,
+	)
+	assertAPIError(t, notFound, http.StatusNotFound, "default_account_not_found")
+}
+
 // TestHandlerRotatesStaticCredentialWithoutChangingPublicAccountRef 验证 PUT 子资源不会泄漏或替换账号身份。
 func TestHandlerRotatesStaticCredentialWithoutChangingPublicAccountRef(t *testing.T) {
 	t.Parallel()
@@ -1016,6 +1164,13 @@ type accountServiceStub struct {
 	deleteRef            accountcore.AccountRef
 	deleteErr            error
 	deleteCalls          int
+	defaultValue         accountcore.ProviderDefault
+	defaultErr           error
+	defaultProviderID    string
+	defaultAccountRef    accountcore.AccountRef
+	getDefaultCalls      int
+	setDefaultCalls      int
+	clearDefaultCalls    int
 	rotationRef          accountcore.AccountRef
 	rotationCredential   accountapp.Credential
 	rotationErr          error
@@ -1221,6 +1376,53 @@ func (service *accountServiceStub) DeleteAccount(
 	return service.deleteErr
 }
 
+// Get 返回预设的 Provider 默认启动账号。
+func (service *accountServiceStub) Get(
+	_ context.Context,
+	providerID string,
+) (accountcore.ProviderDefault, error) {
+	service.getDefaultCalls++
+	service.defaultProviderID = providerID
+	return service.defaultValue, service.defaultErr
+}
+
+// Set 记录并返回 Provider 默认启动账号。
+func (service *accountServiceStub) Set(
+	_ context.Context,
+	providerID string,
+	accountRef accountcore.AccountRef,
+) (accountcore.ProviderDefault, error) {
+	service.setDefaultCalls++
+	service.defaultProviderID = providerID
+	service.defaultAccountRef = accountRef
+	if service.defaultErr != nil {
+		return accountcore.ProviderDefault{}, service.defaultErr
+	}
+	providerDefault, err := accountcore.NewProviderDefault(
+		providerID,
+		accountRef,
+		testHTTPTime(),
+	)
+	if err != nil {
+		return accountcore.ProviderDefault{}, err
+	}
+	service.defaultValue = providerDefault
+	return providerDefault, nil
+}
+
+// Clear 记录并清除 Provider 默认启动账号。
+func (service *accountServiceStub) Clear(
+	_ context.Context,
+	providerID string,
+) error {
+	service.clearDefaultCalls++
+	service.defaultProviderID = providerID
+	if service.defaultErr == nil {
+		service.defaultValue = accountcore.ProviderDefault{}
+	}
+	return service.defaultErr
+}
+
 // Rotate 记录静态凭据轮换并保持测试账号引用和数字别名不变。
 func (service *accountServiceStub) Rotate(
 	_ context.Context,
@@ -1357,6 +1559,7 @@ func newTestHandlerWithCLIProxyAPIExporter(
 		Models:              service,
 		Usage:               service,
 		Deletion:            service,
+		Defaults:            service,
 		CredentialRotation:  service,
 		Sub2APIExporter:     service,
 		CLIProxyAPIExporter: cliProxyAPIExporter,

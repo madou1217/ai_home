@@ -65,6 +65,11 @@ var expectedSchemaColumns = map[string][]string{
 		"source",
 		"captured_at_ms",
 	},
+	"account_defaults": {
+		"provider_id",
+		"account_ref",
+		"updated_at_ms",
+	},
 }
 
 // initialize 校验数据库身份、执行首次 migration 并启用 WAL。
@@ -139,6 +144,9 @@ func migrateConnection(ctx context.Context, connection *sql.Conn) (resultErr err
 		if _, err := connection.ExecContext(ctx, SchemaV4); err != nil {
 			return fmt.Errorf("迁移账号数据库到 v4 失败: %w", err)
 		}
+		if _, err := connection.ExecContext(ctx, SchemaV5); err != nil {
+			return fmt.Errorf("迁移账号数据库到 v5 失败: %w", err)
+		}
 		return commitMigration(ctx, connection)
 	}
 	if applicationID == ApplicationID && schemaVersion == 2 {
@@ -148,11 +156,23 @@ func migrateConnection(ctx context.Context, connection *sql.Conn) (resultErr err
 		if _, err := connection.ExecContext(ctx, SchemaV4); err != nil {
 			return fmt.Errorf("迁移账号数据库到 v4 失败: %w", err)
 		}
+		if _, err := connection.ExecContext(ctx, SchemaV5); err != nil {
+			return fmt.Errorf("迁移账号数据库到 v5 失败: %w", err)
+		}
 		return commitMigration(ctx, connection)
 	}
 	if applicationID == ApplicationID && schemaVersion == 3 {
 		if _, err := connection.ExecContext(ctx, SchemaV4); err != nil {
 			return fmt.Errorf("迁移账号数据库到 v4 失败: %w", err)
+		}
+		if _, err := connection.ExecContext(ctx, SchemaV5); err != nil {
+			return fmt.Errorf("迁移账号数据库到 v5 失败: %w", err)
+		}
+		return commitMigration(ctx, connection)
+	}
+	if applicationID == ApplicationID && schemaVersion == 4 {
+		if _, err := connection.ExecContext(ctx, SchemaV5); err != nil {
+			return fmt.Errorf("迁移账号数据库到 v5 失败: %w", err)
 		}
 		return commitMigration(ctx, connection)
 	}
@@ -170,6 +190,9 @@ func migrateConnection(ctx context.Context, connection *sql.Conn) (resultErr err
 	}
 	if _, err := connection.ExecContext(ctx, SchemaV4); err != nil {
 		return fmt.Errorf("创建账号数据库 v4 失败: %w", err)
+	}
+	if _, err := connection.ExecContext(ctx, SchemaV5); err != nil {
+		return fmt.Errorf("创建账号数据库 v5 失败: %w", err)
 	}
 	return commitMigration(ctx, connection)
 }
@@ -275,6 +298,17 @@ func validateConnection(ctx context.Context, connection *sql.Conn) error {
 		if indexCount != 1 {
 			return ErrIncompatibleDatabase
 		}
+	}
+	var triggerCount int
+	const triggerSQL = `
+		SELECT COUNT(*)
+		FROM sqlite_schema
+		WHERE type = 'trigger' AND name = 'trg_account_defaults_clear_disabled'`
+	if err := connection.QueryRowContext(ctx, triggerSQL).Scan(&triggerCount); err != nil {
+		return fmt.Errorf("检查账号默认关系触发器失败: %w", err)
+	}
+	if triggerCount != 1 {
+		return ErrIncompatibleDatabase
 	}
 	return nil
 }

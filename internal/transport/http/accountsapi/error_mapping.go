@@ -123,6 +123,48 @@ func writeApplicationError(response http.ResponseWriter, err error) {
 			"account_not_found",
 			"账号不存在",
 		)
+	case errors.Is(err, accountapp.ErrProviderDefaultNotFound):
+		writeAPIError(
+			response,
+			http.StatusNotFound,
+			"default_account_not_found",
+			"Provider 当前没有默认账号",
+		)
+	case errors.Is(err, accountapp.ErrProviderDefaultMismatch):
+		writeAPIError(
+			response,
+			http.StatusUnprocessableEntity,
+			"default_account_provider_mismatch",
+			"目标账号不属于指定 Provider",
+		)
+	case errors.Is(err, accountapp.ErrProviderDefaultDisabled):
+		writeAPIError(
+			response,
+			http.StatusUnprocessableEntity,
+			"default_account_disabled",
+			"已停用账号不能设为默认账号",
+		)
+	case errors.Is(err, accountapp.ErrProviderDefaultUnconfigured):
+		writeAPIError(
+			response,
+			http.StatusUnprocessableEntity,
+			"default_account_unconfigured",
+			"未配置账号不能设为默认账号",
+		)
+	case errors.Is(err, accountapp.ErrProviderDefaultConflict):
+		writeAPIError(
+			response,
+			http.StatusConflict,
+			"default_account_conflict",
+			"默认账号已被并发修改",
+		)
+	case errors.Is(err, accountapp.ErrInvalidProviderDefault):
+		writeAPIError(
+			response,
+			http.StatusUnprocessableEntity,
+			"invalid_provider_default",
+			"Provider 或默认账号数据无效",
+		)
 	case errors.Is(err, accountapp.ErrAccountConflict):
 		writeAPIError(
 			response,

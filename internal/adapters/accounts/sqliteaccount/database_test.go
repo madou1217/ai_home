@@ -146,7 +146,7 @@ func TestOpenReusesCanonicalDatabaseAfterRestart(t *testing.T) {
 	}
 }
 
-// TestOpenMigratesV1WithoutLosingAccountData 验证跨两版前向 migration 保留账号和凭据。
+// TestOpenMigratesV1WithoutLosingAccountData 验证多版前向 migration 保留账号和凭据。
 func TestOpenMigratesV1WithoutLosingAccountData(t *testing.T) {
 	t.Parallel()
 
@@ -456,6 +456,101 @@ func TestOpenMigratesV3AndBackfillsCurrentCredentialRef(t *testing.T) {
 			persistedCredentialRef,
 			expectedCredentialRef,
 		)
+	}
+}
+
+// TestOpenMigratesV4AndEnablesProviderDefaults 验证现有单库只前向增加默认关系且账号数据不变。
+func TestOpenMigratesV4AndEnablesProviderDefaults(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	aiHomeDir := t.TempDir()
+	databasePath := filepath.Join(aiHomeDir, DatabaseFileName)
+	credential, err := codex.NewAPIKeyAuth(codex.APIKeyInput{
+		APIKey: "synthetic-v4-default-migration-key",
+	})
+	if err != nil {
+		t.Fatalf("codex.NewAPIKeyAuth() error = %v", err)
+	}
+	accountRef, err := accountcore.DeriveAccountRef(credential)
+	if err != nil {
+		t.Fatalf("DeriveAccountRef() error = %v", err)
+	}
+	credentialRef, err := accountcore.DeriveCredentialRef(credential)
+	if err != nil {
+		t.Fatalf("DeriveCredentialRef() error = %v", err)
+	}
+	credentialJSON, err := json.Marshal(map[string]string{
+		"api_key":  credential.APIKey(),
+		"base_url": credential.BaseURL(),
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	v4 := openRawSQLite(t, databasePath)
+	for version, migration := range []string{SchemaV1, SchemaV2, SchemaV3, SchemaV4} {
+		if _, err := v4.ExecContext(ctx, migration); err != nil {
+			t.Fatalf("apply raw schema v%d error = %v", version+1, err)
+		}
+	}
+	createdAt := time.Date(2026, time.July, 27, 3, 0, 0, 0, time.UTC)
+	if _, err := v4.ExecContext(
+		ctx,
+		`INSERT INTO accounts (
+			account_ref, provider_id, cli_account_id, enabled,
+			created_at_ms, updated_at_ms
+		) VALUES (?, 'codex', 4, 1, ?, ?)`,
+		accountRef.String(),
+		createdAt.UnixMilli(),
+		createdAt.UnixMilli(),
+	); err != nil {
+		t.Fatalf("insert v4 account error = %v", err)
+	}
+	if _, err := v4.ExecContext(
+		ctx,
+		`INSERT INTO account_credentials (
+			account_ref, credential_ref, auth_kind, auth_mode,
+			format_version, credential_json, updated_at_ms
+		) VALUES (?, ?, 'api_key', '', 1, ?, ?)`,
+		accountRef.String(),
+		credentialRef.String(),
+		string(credentialJSON),
+		createdAt.UnixMilli(),
+	); err != nil {
+		t.Fatalf("insert v4 credential error = %v", err)
+	}
+	if err := v4.Close(); err != nil {
+		t.Fatalf("close v4 database error = %v", err)
+	}
+
+	store, err := Open(ctx, OpenOptions{
+		AIHomeDir: aiHomeDir,
+		Catalog:   newTestCatalog(t),
+	})
+	if err != nil {
+		t.Fatalf("Open(v4) error = %v", err)
+	}
+	t.Cleanup(func() {
+		_ = store.Close()
+	})
+	restored, err := store.GetCredential(ctx, accountRef)
+	if err != nil || restored.IdentitySeed() != credential.IdentitySeed() {
+		t.Fatalf("GetCredential(v4 migrated) = (%T, %v)", restored, err)
+	}
+	providerDefault, err := accountcore.NewProviderDefault(
+		"codex",
+		accountRef,
+		createdAt.Add(time.Minute),
+	)
+	if err != nil {
+		t.Fatalf("NewProviderDefault() error = %v", err)
+	}
+	if _, err := store.SetProviderDefault(ctx, providerDefault); err != nil {
+		t.Fatalf("SetProviderDefault(v4 migrated) error = %v", err)
+	}
+	got, err := store.GetProviderDefault(ctx, "codex")
+	if err != nil || got != providerDefault {
+		t.Fatalf("GetProviderDefault(v4 migrated) = (%#v, %v)", got, err)
 	}
 }
 

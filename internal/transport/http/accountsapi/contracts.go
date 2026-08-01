@@ -6,6 +6,7 @@ import (
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	usageapp "github.com/madou1217/ai_home/application/accountusage"
+	accountcore "github.com/madou1217/ai_home/core/accounts"
 	usagecore "github.com/madou1217/ai_home/core/accountusage"
 )
 
@@ -31,6 +32,11 @@ type createAccountAuthDTO struct {
 // updateAccountRequest 是账号基础资源当前允许修改的字段。
 type updateAccountRequest struct {
 	Enabled *bool `json:"enabled"`
+}
+
+// updateProviderDefaultRequest 是完整替换 Provider 默认账号的 DTO。
+type updateProviderDefaultRequest struct {
+	AccountRef string `json:"account_ref"`
 }
 
 // updateCredentialRequest 是静态凭据子资源的完整替换 DTO。
@@ -74,6 +80,18 @@ type accountView struct {
 // accountResponse 是详情、创建和修改共享的成功 envelope。
 type accountResponse struct {
 	Data accountView `json:"data"`
+}
+
+// providerDefaultView 是默认启动账号允许公开的完整关系。
+type providerDefaultView struct {
+	ProviderID string `json:"provider_id"`
+	AccountRef string `json:"account_ref"`
+	UpdatedAt  string `json:"updated_at"`
+}
+
+// providerDefaultResponse 是默认账号查询和替换共享的成功 envelope。
+type providerDefaultResponse struct {
+	Data providerDefaultView `json:"data"`
 }
 
 // accountListResponse 是账号列表及 keyset 分页信息。
@@ -172,6 +190,17 @@ func newAccountViews(overviews []accountapp.AccountOverview) []accountView {
 		views = append(views, newAccountView(overview))
 	}
 	return views
+}
+
+// newProviderDefaultResponse 从领域值对象选择公开字段。
+func newProviderDefaultResponse(
+	providerDefault accountcore.ProviderDefault,
+) providerDefaultResponse {
+	return providerDefaultResponse{Data: providerDefaultView{
+		ProviderID: providerDefault.ProviderID(),
+		AccountRef: providerDefault.AccountRef().String(),
+		UpdatedAt:  formatTime(providerDefault.UpdatedAt()),
+	}}
 }
 
 // newAccountModelViews 保留应用层按模型 ID 排序的完整关系快照。

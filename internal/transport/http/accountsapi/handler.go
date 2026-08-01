@@ -22,7 +22,9 @@ const (
 	NativeImportPath = "/v1/management/account-imports"
 	// Sub2APIImportPath 是单账号 sub2api 迁移文档导入资源的规范路径。
 	Sub2APIImportPath = "/v1/management/account-imports/sub2api"
-	apiMaxPageSize    = accountapp.MaxOverviewLimit - 1
+	// DefaultsPath 是 Provider 默认启动账号资源的规范集合前缀。
+	DefaultsPath   = "/v1/management/account-defaults"
+	apiMaxPageSize = accountapp.MaxOverviewLimit - 1
 )
 
 // ErrInvalidDependencies 表示 Handler 缺少应用服务、凭据工厂或鉴权策略。
@@ -83,6 +85,20 @@ type AccountDeletion interface {
 	) error
 }
 
+// ProviderDefaultManagement 是默认启动账号资源依赖的独立应用端口。
+type ProviderDefaultManagement interface {
+	Get(
+		ctx context.Context,
+		providerID string,
+	) (accountcore.ProviderDefault, error)
+	Set(
+		ctx context.Context,
+		providerID string,
+		accountRef accountcore.AccountRef,
+	) (accountcore.ProviderDefault, error)
+	Clear(ctx context.Context, providerID string) error
+}
+
 // StaticCredentialRotation 是静态凭据子资源依赖的原地轮换用例端口。
 type StaticCredentialRotation interface {
 	Rotate(
@@ -132,6 +148,7 @@ type Dependencies struct {
 	Models              ModelManagement
 	Usage               UsageManagement
 	Deletion            AccountDeletion
+	Defaults            ProviderDefaultManagement
 	CredentialRotation  StaticCredentialRotation
 	Sub2APIExporter     AccountExporter
 	CLIProxyAPIExporter AccountExporter
@@ -149,6 +166,7 @@ type Handler struct {
 	models              ModelManagement
 	usage               UsageManagement
 	deletion            AccountDeletion
+	defaults            ProviderDefaultManagement
 	credentialRotation  StaticCredentialRotation
 	sub2apiExporter     AccountExporter
 	cliProxyAPIExporter AccountExporter
@@ -166,6 +184,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		dependencies.Models == nil ||
 		dependencies.Usage == nil ||
 		dependencies.Deletion == nil ||
+		dependencies.Defaults == nil ||
 		dependencies.CredentialRotation == nil ||
 		dependencies.Sub2APIExporter == nil ||
 		dependencies.CLIProxyAPIExporter == nil ||
@@ -182,6 +201,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		models:              dependencies.Models,
 		usage:               dependencies.Usage,
 		deletion:            dependencies.Deletion,
+		defaults:            dependencies.Defaults,
 		credentialRotation:  dependencies.CredentialRotation,
 		sub2apiExporter:     dependencies.Sub2APIExporter,
 		cliProxyAPIExporter: dependencies.CLIProxyAPIExporter,
@@ -218,6 +238,8 @@ func (handler *Handler) ServeHTTP(
 		handler.handleNativeImport(response, request)
 	case request.URL.Path == CollectionPath:
 		handler.handleCollection(response, request)
+	case strings.HasPrefix(request.URL.Path, DefaultsPath+"/"):
+		handler.handleProviderDefault(response, request)
 	case strings.HasPrefix(request.URL.Path, CollectionPath+"/"):
 		handler.handleMember(response, request)
 	default:

@@ -1571,16 +1571,20 @@ type credentialResolver struct {
 	credentials map[accountcore.AccountRef]accountapp.Credential
 }
 
-// ResolveCredential 返回与候选身份绑定的凭据。
-func (resolver credentialResolver) ResolveCredential(
+// ResolveCredentialBinding 返回与候选身份绑定的凭据。
+func (resolver credentialResolver) ResolveCredentialBinding(
 	_ context.Context,
 	accountRef accountcore.AccountRef,
-) (accountapp.Credential, error) {
+) (accountapp.CredentialBinding, error) {
 	credential, found := resolver.credentials[accountRef]
 	if !found {
-		return nil, accountapp.ErrCredentialNotFound
+		return accountapp.CredentialBinding{}, accountapp.ErrCredentialNotFound
 	}
-	return credential, nil
+	return accountapp.NewCredentialBinding(
+		accountRef,
+		credential.ProviderID(),
+		credential,
+	)
 }
 
 // countingCredentialResolver 记录不应发生的敏感凭据读取。
@@ -1589,15 +1593,15 @@ type countingCredentialResolver struct {
 	calls int
 }
 
-// ResolveCredential 记录调用并返回缺失，供全阻塞边界测试发现越层读取。
-func (resolver *countingCredentialResolver) ResolveCredential(
+// ResolveCredentialBinding 记录调用并返回缺失，供全阻塞边界测试发现越层读取。
+func (resolver *countingCredentialResolver) ResolveCredentialBinding(
 	context.Context,
 	accountcore.AccountRef,
-) (accountapp.Credential, error) {
+) (accountapp.CredentialBinding, error) {
 	resolver.mu.Lock()
 	resolver.calls++
 	resolver.mu.Unlock()
-	return nil, accountapp.ErrCredentialNotFound
+	return accountapp.CredentialBinding{}, accountapp.ErrCredentialNotFound
 }
 
 // CallCount 返回敏感凭据读取次数。

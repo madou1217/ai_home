@@ -33,6 +33,19 @@ type updateAccountRequest struct {
 	Enabled *bool `json:"enabled"`
 }
 
+// updateCredentialRequest 是静态凭据子资源的完整替换 DTO。
+type updateCredentialRequest struct {
+	Auth updateCredentialAuthDTO `json:"auth"`
+}
+
+// updateCredentialAuthDTO 显式区分 API Key 和 Claude Auth Token。
+type updateCredentialAuthDTO struct {
+	Kind      string `json:"kind"`
+	APIKey    string `json:"api_key"`
+	AuthToken string `json:"auth_token"`
+	BaseURL   string `json:"base_url"`
+}
+
 // updateAccountModelRequest 是单个账号模型人工策略更新 DTO。
 type updateAccountModelRequest struct {
 	ModelID      string `json:"model_id"`

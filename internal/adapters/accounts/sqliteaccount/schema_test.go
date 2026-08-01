@@ -12,8 +12,8 @@ func TestSchemaV1DeclaresExpectedDatabaseIdentity(t *testing.T) {
 	if ApplicationID != 0x41494831 {
 		t.Fatalf("ApplicationID = %#x, want %#x", ApplicationID, 0x41494831)
 	}
-	if SchemaVersion != 3 {
-		t.Fatalf("SchemaVersion = %d, want 3", SchemaVersion)
+	if SchemaVersion != 4 {
+		t.Fatalf("SchemaVersion = %d, want 4", SchemaVersion)
 	}
 	if !strings.Contains(SchemaV1, fmt.Sprintf("PRAGMA application_id = %d;", ApplicationID)) {
 		t.Fatal("SchemaV1 缺少规范 application_id")
@@ -24,8 +24,8 @@ func TestSchemaV1DeclaresExpectedDatabaseIdentity(t *testing.T) {
 	if !strings.Contains(SchemaV2, "PRAGMA user_version = 2;") {
 		t.Fatal("SchemaV2 缺少固定 v2 user_version")
 	}
-	if !strings.Contains(SchemaV3, fmt.Sprintf("PRAGMA user_version = %d;", SchemaVersion)) {
-		t.Fatal("SchemaV3 缺少规范 user_version")
+	if !strings.Contains(SchemaV4, fmt.Sprintf("PRAGMA user_version = %d;", SchemaVersion)) {
+		t.Fatal("SchemaV4 缺少规范 user_version")
 	}
 }
 
@@ -123,6 +123,36 @@ func TestSchemaV3AddsOnlyCurrentAccountUsageSnapshot(t *testing.T) {
 	} {
 		if strings.Contains(SchemaV3, forbidden) {
 			t.Fatalf("SchemaV3 不应包含无查询依据的结构 %q", forbidden)
+		}
+	}
+}
+
+// TestSchemaV4SeparatesCurrentCredentialDedupFromStableAccountRef 验证轮换只增加一个查重索引。
+func TestSchemaV4SeparatesCurrentCredentialDedupFromStableAccountRef(t *testing.T) {
+	t.Parallel()
+
+	for _, required := range []string{
+		"CREATE TABLE account_credentials_v4",
+		"credential_ref TEXT NOT NULL",
+		"'cred_' || substr(account_ref, 6)",
+		"DROP TABLE account_credentials",
+		"ALTER TABLE account_credentials_v4 RENAME TO account_credentials",
+		"CREATE UNIQUE INDEX idx_account_credentials_credential_ref",
+		"ON account_credentials (credential_ref)",
+	} {
+		if !strings.Contains(SchemaV4, required) {
+			t.Fatalf("SchemaV4 缺少凭据轮换合同 %q", required)
+		}
+	}
+	for _, forbidden := range []string{
+		"ALTER TABLE accounts",
+		"UPDATE accounts",
+		"DROP TABLE accounts",
+		"account_versions",
+		"credential_history",
+	} {
+		if strings.Contains(SchemaV4, forbidden) {
+			t.Fatalf("SchemaV4 不应扩展账号主键或历史结构 %q", forbidden)
 		}
 	}
 }

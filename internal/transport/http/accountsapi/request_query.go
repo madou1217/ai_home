@@ -76,6 +76,7 @@ type memberResourceKind uint8
 
 const (
 	memberResourceAccount memberResourceKind = iota + 1
+	memberResourceCredential
 	memberResourceModels
 	memberResourceModelRefresh
 	memberResourceUsage
@@ -104,6 +105,8 @@ func parseMemberResource(path string) (memberResource, error) {
 	kind := memberResourceAccount
 	switch {
 	case len(parts) == 1:
+	case len(parts) == 2 && parts[1] == "credential":
+		kind = memberResourceCredential
 	case len(parts) == 2 && parts[1] == "models":
 		kind = memberResourceModels
 	case len(parts) == 3 && parts[1] == "models" && parts[2] == "refresh":

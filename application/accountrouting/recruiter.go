@@ -45,11 +45,11 @@ type CandidateSource interface {
 
 // CredentialResolver 把候选账号凭据解析为当前可直接使用的版本。
 type CredentialResolver interface {
-	// ResolveCredential 延迟读取凭据，并在需要时完成 OAuth 刷新。
-	ResolveCredential(
+	// ResolveCredentialBinding 延迟读取凭据，并返回稳定账号绑定。
+	ResolveCredentialBinding(
 		ctx context.Context,
 		accountRef accountcore.AccountRef,
-	) (accountapp.Credential, error)
+	) (accountapp.CredentialBinding, error)
 }
 
 // CredentialTransportPolicy 判断领域凭据能否由当前上游协议安全承载。
@@ -290,7 +290,7 @@ func (session *RecruitmentSession) Next(ctx context.Context) (Result, error) {
 		if !eligible {
 			continue
 		}
-		credential, resolveErr := session.recruiter.credentials.ResolveCredential(
+		binding, resolveErr := session.recruiter.credentials.ResolveCredentialBinding(
 			ctx,
 			candidate.Ref(),
 		)
@@ -306,9 +306,10 @@ func (session *RecruitmentSession) Next(ctx context.Context) (Result, error) {
 				resolveErr,
 			)
 		}
-		if !credentialMatchesCandidate(candidate, credential) {
+		if !credentialMatchesCandidate(candidate, binding) {
 			return progress, ErrInvalidResolvedCredential
 		}
+		credential := binding.Credential()
 		if !session.transport.SupportsCredential(credential) {
 			continue
 		}
@@ -366,13 +367,11 @@ func validCandidate(
 // credentialMatchesCandidate 防止错误缓存或适配器把其他账号凭据交给当前请求。
 func credentialMatchesCandidate(
 	candidate accountapp.RoutingAccount,
-	credential accountapp.Credential,
+	binding accountapp.CredentialBinding,
 ) bool {
-	if credential == nil || credential.ProviderID() != candidate.ProviderID() {
-		return false
-	}
-	accountRef, err := accountcore.DeriveAccountRef(credential)
-	return err == nil && accountRef == candidate.Ref()
+	return binding.IsValid() &&
+		binding.AccountRef() == candidate.Ref() &&
+		binding.ProviderID() == candidate.ProviderID()
 }
 
 // isAccountUnavailable 只允许明确的单账号凭据故障进入候选降级。

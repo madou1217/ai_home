@@ -64,13 +64,18 @@ type Dependencies struct {
 
 // Result 返回当前可用凭据以及本次是否执行了真实刷新。
 type Result struct {
-	credential accountapp.Credential
-	refreshed  bool
+	binding   accountapp.CredentialBinding
+	refreshed bool
 }
 
 // Credential 返回当前可直接交给上游适配器的领域凭据。
 func (result Result) Credential() accountapp.Credential {
-	return result.credential
+	return result.binding.Credential()
+}
+
+// Binding 返回凭据和稳定账号引用之间经过持久化层验证的绑定。
+func (result Result) Binding() accountapp.CredentialBinding {
+	return result.binding
 }
 
 // Refreshed 表示当前调用是否完成并持久化了新 OAuth Token。
@@ -156,6 +161,18 @@ func (resolver *Resolver) ResolveCredential(
 		return nil, err
 	}
 	return result.Credential(), nil
+}
+
+// ResolveCredentialBinding 返回可用凭据及其稳定账号绑定，供账号征召复核来源。
+func (resolver *Resolver) ResolveCredentialBinding(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+) (accountapp.CredentialBinding, error) {
+	result, err := resolver.Resolve(ctx, accountRef)
+	if err != nil {
+		return accountapp.CredentialBinding{}, err
+	}
+	return result.Binding(), nil
 }
 
 // readResolutionState 读取最新凭据，并选择唯一 Provider 刷新策略。
@@ -245,7 +262,15 @@ func (resolver *Resolver) refreshCurrent(
 		}
 		return Result{}, err
 	}
-	return Result{credential: credential, refreshed: true}, nil
+	binding, err := accountapp.NewCredentialBinding(
+		accountRef,
+		credential.ProviderID(),
+		credential,
+	)
+	if err != nil {
+		return Result{}, ErrInvalidRefreshResult
+	}
+	return Result{binding: binding, refreshed: true}, nil
 }
 
 // resolveCredentialConflict 接受其他进程已经成功写入的可用新版本。
@@ -265,7 +290,7 @@ func (resolver *Resolver) resolveCredentialConflict(
 
 // currentResult 把不需要刷新或已由其他进程刷新的快照转成结果。
 func currentResult(snapshot accountapp.CredentialSnapshot) Result {
-	return Result{credential: snapshot.Credential()}
+	return Result{binding: snapshot.Binding()}
 }
 
 // currentTime 拒绝无法形成持久化毫秒版本的应用时钟。

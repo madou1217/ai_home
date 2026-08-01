@@ -353,6 +353,7 @@ func newRuntimeFixture(t *testing.T) *runtimeFixture {
 	clock := time.Date(2026, time.July, 30, 8, 0, 0, 0, time.UTC)
 	snapshot, err := accountapp.NewCredentialSnapshot(
 		accountRef,
+		credential.ProviderID(),
 		credential,
 		clock.Add(-time.Hour),
 	)

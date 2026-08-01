@@ -19,38 +19,51 @@ var (
 
 // CredentialSnapshot 是带持久化版本的已校验凭据快照。
 type CredentialSnapshot struct {
-	accountRef accountcore.AccountRef
-	credential Credential
-	updatedAt  time.Time
+	binding   CredentialBinding
+	updatedAt time.Time
 }
 
 // NewCredentialSnapshot 校验凭据身份和毫秒精度版本后创建快照。
 func NewCredentialSnapshot(
 	accountRef accountcore.AccountRef,
+	providerID string,
 	credential Credential,
 	updatedAt time.Time,
 ) (CredentialSnapshot, error) {
 	normalizedTime, err := normalizePersistedTime(updatedAt)
-	if err != nil ||
-		!accountRef.IsValid() ||
-		!credentialMatchesAccount(accountRef, credential) {
+	binding, bindingErr := NewCredentialBinding(
+		accountRef,
+		providerID,
+		credential,
+	)
+	if err != nil || bindingErr != nil {
 		return CredentialSnapshot{}, ErrInvalidCredentialSnapshot
 	}
 	return CredentialSnapshot{
-		accountRef: accountRef,
-		credential: credential,
-		updatedAt:  normalizedTime,
+		binding:   binding,
+		updatedAt: normalizedTime,
 	}, nil
 }
 
 // AccountRef 返回快照绑定的稳定账号身份。
 func (snapshot CredentialSnapshot) AccountRef() accountcore.AccountRef {
-	return snapshot.accountRef
+	return snapshot.binding.AccountRef()
+}
+
+// ProviderID 返回快照绑定的规范 Provider。
+func (snapshot CredentialSnapshot) ProviderID() string {
+	return snapshot.binding.ProviderID()
 }
 
 // Credential 返回经过 Provider 领域构造器校验的凭据。
 func (snapshot CredentialSnapshot) Credential() Credential {
-	return snapshot.credential
+	return snapshot.binding.Credential()
+
+}
+
+// Binding 返回不依赖当前密钥派生账号主键的绑定值。
+func (snapshot CredentialSnapshot) Binding() CredentialBinding {
+	return snapshot.binding
 }
 
 // UpdatedAt 返回凭据当前的 UTC 毫秒精度版本。
@@ -63,8 +76,7 @@ func (snapshot CredentialSnapshot) IsValid() bool {
 	normalizedTime, err := normalizePersistedTime(snapshot.updatedAt)
 	return err == nil &&
 		normalizedTime.Equal(snapshot.updatedAt) &&
-		snapshot.accountRef.IsValid() &&
-		credentialMatchesAccount(snapshot.accountRef, snapshot.credential)
+		snapshot.binding.IsValid()
 }
 
 // CredentialReplacement 是一次保持账号身份不变的 CAS 凭据替换命令。
@@ -84,7 +96,9 @@ func NewCredentialReplacement(
 	normalizedTime, err := normalizePersistedTime(updatedAt)
 	if err != nil ||
 		!current.IsValid() ||
+		!credentialMatchesAccount(current.AccountRef(), current.Credential()) ||
 		!credentialMatchesAccount(current.AccountRef(), credential) ||
+		credential.ProviderID() != current.ProviderID() ||
 		!normalizedTime.After(current.UpdatedAt()) {
 		return CredentialReplacement{}, ErrInvalidCredentialReplacement
 	}
@@ -120,6 +134,7 @@ func (replacement CredentialReplacement) UpdatedAt() time.Time {
 func (replacement CredentialReplacement) IsValid() bool {
 	current, err := NewCredentialSnapshot(
 		replacement.accountRef,
+		replacement.credential.ProviderID(),
 		replacement.credential,
 		replacement.expectedUpdatedAt,
 	)

@@ -636,6 +636,16 @@ func newLiveManagementHandler(
 		t.Fatalf("accounts.NewModelManagement() error = %v", err)
 	}
 	usage := liveUsageManagementStub{}
+	credentialRotator, err := accountapp.NewStaticCredentialRotator(
+		catalog,
+		store,
+		modelDiscovery,
+		clock,
+		usage,
+	)
+	if err != nil {
+		t.Fatalf("accounts.NewStaticCredentialRotator() error = %v", err)
+	}
 	deleter, err := accountapp.NewDeleter(store, usage)
 	if err != nil {
 		t.Fatalf("accounts.NewDeleter() error = %v", err)
@@ -687,15 +697,18 @@ func newLiveManagementHandler(
 	if err != nil {
 		t.Fatalf("accountauthapi.NewHandler() error = %v", err)
 	}
+	credentialFactory := accountsapi.NewBuiltinAPIKeyCredentialFactory()
 	accountsHandler, err := accountsapi.NewHandler(accountsapi.Dependencies{
 		Management:          management,
 		Models:              modelManagement,
 		Usage:               usage,
 		Deletion:            deleter,
+		CredentialRotation:  credentialRotator,
 		Sub2APIExporter:     exporter,
 		CLIProxyAPIExporter: cliProxyAPIExporter,
 		Registrar:           registrar,
-		APIKeys:             accountsapi.NewBuiltinAPIKeyCredentialFactory(),
+		APIKeys:             credentialFactory,
+		StaticCredentials:   credentialFactory,
 		NativeAccounts:      decoder,
 		Sub2APIAccounts:     sub2api.NewDecoder(),
 		Authorizer:          authorizer,

@@ -233,6 +233,17 @@ func newHandlers(
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建账号额度组合失败: %w", err)
 	}
+	credentialRotator, err := accountapp.NewStaticCredentialRotator(
+		catalog,
+		store,
+		modelDiscovery,
+		time.Now,
+		usage,
+		accountRuntime,
+	)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建静态账号凭据轮换用例失败: %w", err)
+	}
 	deleter, err := accountapp.NewDeleter(
 		store,
 		usage,
@@ -266,15 +277,18 @@ func newHandlers(
 	}
 	decoder := nativeaccount.NewDecoder()
 	sub2APIDecoder := sub2api.NewDecoder()
+	credentialFactory := accountsapi.NewBuiltinAPIKeyCredentialFactory()
 	accountsHandler, err := accountsapi.NewHandler(accountsapi.Dependencies{
 		Management:          management,
 		Models:              recoveringModelManagement,
 		Usage:               usage.service,
 		Deletion:            deleter,
+		CredentialRotation:  credentialRotator,
 		Sub2APIExporter:     accountExporter,
 		CLIProxyAPIExporter: cliProxyAPIExporter,
 		Registrar:           scheduledRegistrar,
-		APIKeys:             accountsapi.NewBuiltinAPIKeyCredentialFactory(),
+		APIKeys:             credentialFactory,
+		StaticCredentials:   credentialFactory,
 		NativeAccounts:      decoder,
 		Sub2APIAccounts:     sub2APIDecoder,
 		Authorizer:          authorizer,

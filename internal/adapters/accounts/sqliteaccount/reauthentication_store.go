@@ -273,7 +273,7 @@ func replaceCredential(
 ) error {
 	const statement = `
 		UPDATE account_credentials
-		SET auth_kind = ?, auth_mode = ?, format_version = ?,
+		SET credential_ref = ?, auth_kind = ?, auth_mode = ?, format_version = ?,
 		    credential_json = ?, updated_at_ms = ?
 		WHERE account_ref = ?
 		  AND auth_kind = ?
@@ -282,6 +282,7 @@ func replaceCredential(
 	result, err := connection.ExecContext(
 		ctx,
 		statement,
+		document.credentialRef.String(),
 		document.authKind,
 		document.authMode,
 		credentialFormatVersion,

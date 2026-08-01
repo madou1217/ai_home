@@ -65,6 +65,33 @@ func writeCredentialInputError(response http.ResponseWriter, err error) {
 	)
 }
 
+// writeStaticCredentialInputError 区分 Provider、凭据类型和字段组合错误。
+func writeStaticCredentialInputError(response http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, ErrUnsupportedProvider):
+		writeAPIError(
+			response,
+			http.StatusUnprocessableEntity,
+			"unsupported_provider",
+			"当前只支持 Codex 和 Claude",
+		)
+	case errors.Is(err, ErrUnsupportedStaticAuthKind):
+		writeAPIError(
+			response,
+			http.StatusUnprocessableEntity,
+			"unsupported_auth_kind",
+			"目标 Provider 不支持该静态凭据类型",
+		)
+	default:
+		writeAPIError(
+			response,
+			http.StatusUnprocessableEntity,
+			"invalid_static_credential",
+			"静态凭据字段或 Base URL 无效",
+		)
+	}
+}
+
 // writeApplicationError 把领域和持久化错误收敛为无内部细节的 HTTP 错误。
 func writeApplicationError(response http.ResponseWriter, err error) {
 	switch {
@@ -117,6 +144,20 @@ func writeApplicationError(response http.ResponseWriter, err error) {
 			"credential_not_found",
 			"账号缺少可用凭据",
 		)
+	case errors.Is(err, accountapp.ErrStaticCredentialRotationUnsupported):
+		writeAPIError(
+			response,
+			http.StatusUnprocessableEntity,
+			"static_credential_rotation_unsupported",
+			"OAuth 或当前凭据类型不能通过该接口轮换",
+		)
+	case errors.Is(err, accountapp.ErrStaticCredentialRotationConflict):
+		writeAPIError(
+			response,
+			http.StatusConflict,
+			"static_credential_rotation_conflict",
+			"账号已变化或当前凭据已被其他账号使用",
+		)
 	case errors.Is(err, accountapp.ErrUnsupportedAccountExport):
 		writeAPIError(
 			response,
@@ -147,6 +188,7 @@ func writeApplicationError(response http.ResponseWriter, err error) {
 			"账号模型数据无效",
 		)
 	case errors.Is(err, accountapp.ErrInvalidRegistration),
+		errors.Is(err, accountapp.ErrInvalidStaticCredentialRotation),
 		errors.Is(err, accountapp.ErrInvalidOverview),
 		errors.Is(err, accountcore.ErrInvalidAccount):
 		writeAPIError(

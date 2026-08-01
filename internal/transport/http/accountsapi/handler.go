@@ -83,6 +83,15 @@ type AccountDeletion interface {
 	) error
 }
 
+// StaticCredentialRotation 是静态凭据子资源依赖的原地轮换用例端口。
+type StaticCredentialRotation interface {
+	Rotate(
+		ctx context.Context,
+		accountRef accountcore.AccountRef,
+		replacement accountapp.Credential,
+	) (accountcore.Account, error)
+}
+
 // AccountExporter 是账号成员导出资源依赖的单账号 JSON 输出端口。
 type AccountExporter interface {
 	// ExportAccount 返回一个账号在目标外部合同中的完整文档。
@@ -123,10 +132,12 @@ type Dependencies struct {
 	Models              ModelManagement
 	Usage               UsageManagement
 	Deletion            AccountDeletion
+	CredentialRotation  StaticCredentialRotation
 	Sub2APIExporter     AccountExporter
 	CLIProxyAPIExporter AccountExporter
 	Registrar           Registrar
 	APIKeys             APIKeyCredentialFactory
+	StaticCredentials   StaticCredentialFactory
 	NativeAccounts      NativeAccountDecoder
 	Sub2APIAccounts     Sub2APIAccountDecoder
 	Authorizer          Authorizer
@@ -138,10 +149,12 @@ type Handler struct {
 	models              ModelManagement
 	usage               UsageManagement
 	deletion            AccountDeletion
+	credentialRotation  StaticCredentialRotation
 	sub2apiExporter     AccountExporter
 	cliProxyAPIExporter AccountExporter
 	registrar           Registrar
 	apiKeys             APIKeyCredentialFactory
+	staticCredentials   StaticCredentialFactory
 	native              NativeAccountDecoder
 	sub2api             Sub2APIAccountDecoder
 	authorizer          Authorizer
@@ -153,10 +166,12 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		dependencies.Models == nil ||
 		dependencies.Usage == nil ||
 		dependencies.Deletion == nil ||
+		dependencies.CredentialRotation == nil ||
 		dependencies.Sub2APIExporter == nil ||
 		dependencies.CLIProxyAPIExporter == nil ||
 		dependencies.Registrar == nil ||
 		dependencies.APIKeys == nil ||
+		dependencies.StaticCredentials == nil ||
 		dependencies.NativeAccounts == nil ||
 		dependencies.Sub2APIAccounts == nil ||
 		dependencies.Authorizer == nil {
@@ -167,10 +182,12 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		models:              dependencies.Models,
 		usage:               dependencies.Usage,
 		deletion:            dependencies.Deletion,
+		credentialRotation:  dependencies.CredentialRotation,
 		sub2apiExporter:     dependencies.Sub2APIExporter,
 		cliProxyAPIExporter: dependencies.CLIProxyAPIExporter,
 		registrar:           dependencies.Registrar,
 		apiKeys:             dependencies.APIKeys,
+		staticCredentials:   dependencies.StaticCredentials,
 		native:              dependencies.NativeAccounts,
 		sub2api:             dependencies.Sub2APIAccounts,
 		authorizer:          dependencies.Authorizer,
@@ -248,6 +265,8 @@ func (handler *Handler) handleMember(
 	switch resource.kind {
 	case memberResourceAccount:
 		handler.handleAccountMember(response, request, accountRef)
+	case memberResourceCredential:
+		handler.handleAccountCredential(response, request, accountRef)
 	case memberResourceModels:
 		handler.handleAccountModels(response, request, accountRef)
 	case memberResourceModelRefresh:
@@ -280,6 +299,67 @@ func (handler *Handler) handleMember(
 			"请求的账号资源不存在",
 		)
 	}
+}
+
+// handleAccountCredential 使用完整 PUT 语义轮换静态凭据并返回同一账号投影。
+func (handler *Handler) handleAccountCredential(
+	response http.ResponseWriter,
+	request *http.Request,
+	accountRef accountcore.AccountRef,
+) {
+	if request.Method != http.MethodPut {
+		response.Header().Set("Allow", http.MethodPut)
+		writeMethodNotAllowed(response)
+		return
+	}
+	if rejectUnexpectedQuery(response, request) {
+		return
+	}
+	var input updateCredentialRequest
+	if err := decodeJSONRequest(response, request, &input); err != nil {
+		writeRequestDecodeError(response, err)
+		return
+	}
+	current, err := handler.management.GetAccountOverview(
+		request.Context(),
+		accountRef,
+	)
+	if err != nil {
+		writeApplicationError(response, err)
+		return
+	}
+	credential, err := handler.staticCredentials.BuildStatic(
+		current.Account().ProviderID(),
+		input.Auth.Kind,
+		input.Auth.APIKey,
+		input.Auth.AuthToken,
+		input.Auth.BaseURL,
+	)
+	if err != nil {
+		writeStaticCredentialInputError(response, err)
+		return
+	}
+	if _, err := handler.credentialRotation.Rotate(
+		request.Context(),
+		accountRef,
+		credential,
+	); err != nil {
+		writeApplicationError(response, err)
+		return
+	}
+	updated, err := handler.management.GetAccountOverview(
+		request.Context(),
+		accountRef,
+	)
+	if err != nil {
+		writeApplicationError(response, err)
+		return
+	}
+	writeJSON(
+		response,
+		http.StatusOK,
+		accountResponse{Data: newAccountView(updated)},
+	)
 }
 
 // handleAccountExport 返回一个不缓存、不包含本地身份的标准附件。

@@ -441,13 +441,16 @@ func TestRecruiterRejectsCredentialBoundToAnotherAccount(t *testing.T) {
 	t.Parallel()
 
 	candidate, _ := newRecruitmentCandidate(t, "claude", 1, "candidate")
-	_, foreignCredential := newRecruitmentCandidate(t, "claude", 2, "foreign")
+	foreign, foreignCredential := newRecruitmentCandidate(t, "claude", 2, "foreign")
 	source := &recruitmentCandidateSource{
 		candidates: []accountapp.RoutingAccount{candidate},
 	}
 	resolver := newRecruitmentCredentialResolver(
 		map[accountcore.AccountRef]credentialResolution{
-			candidate.Ref(): {credential: foreignCredential},
+			candidate.Ref(): {
+				bindingRef: foreign.Ref(),
+				credential: foreignCredential,
+			},
 		},
 	)
 	recruiter := newTestRecruiter(t, source, resolver)
@@ -715,6 +718,7 @@ func (source *recruitmentCandidateSource) SetCandidates(
 
 // credentialResolution 保存单账号解析结果。
 type credentialResolution struct {
+	bindingRef accountcore.AccountRef
 	credential accountapp.Credential
 	err        error
 }
@@ -733,19 +737,34 @@ func newRecruitmentCredentialResolver(
 	return &recruitmentCredentialResolver{resolutions: resolutions}
 }
 
-// ResolveCredential 返回目标账号预设的凭据或错误。
-func (resolver *recruitmentCredentialResolver) ResolveCredential(
+// ResolveCredentialBinding 返回目标账号预设的凭据绑定或错误。
+func (resolver *recruitmentCredentialResolver) ResolveCredentialBinding(
 	_ context.Context,
 	accountRef accountcore.AccountRef,
-) (accountapp.Credential, error) {
+) (accountapp.CredentialBinding, error) {
 	resolver.mu.Lock()
 	defer resolver.mu.Unlock()
 	resolver.calls++
 	resolution, found := resolver.resolutions[accountRef]
 	if !found {
-		return nil, accountapp.ErrCredentialNotFound
+		return accountapp.CredentialBinding{}, accountapp.ErrCredentialNotFound
 	}
-	return resolution.credential, resolution.err
+	if resolution.err != nil {
+		return accountapp.CredentialBinding{}, resolution.err
+	}
+	bindingRef := resolution.bindingRef
+	if !bindingRef.IsValid() {
+		bindingRef = accountRef
+	}
+	binding, err := accountapp.NewCredentialBinding(
+		bindingRef,
+		resolution.credential.ProviderID(),
+		resolution.credential,
+	)
+	if err != nil {
+		return accountapp.CredentialBinding{}, err
+	}
+	return binding, nil
 }
 
 // CallCount 返回凭据解析调用次数。

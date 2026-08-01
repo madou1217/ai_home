@@ -266,12 +266,16 @@ func (source *exportSource) GetByRef(
 	return source.account, nil
 }
 
-// GetCredential 返回测试领域凭据。
-func (source *exportSource) GetCredential(
-	context.Context,
-	accountcore.AccountRef,
-) (accountapp.Credential, error) {
-	return source.credential, nil
+// GetCredentialBinding 返回测试账号与领域凭据的稳定绑定。
+func (source *exportSource) GetCredentialBinding(
+	_ context.Context,
+	accountRef accountcore.AccountRef,
+) (accountapp.CredentialBinding, error) {
+	return accountapp.NewCredentialBinding(
+		accountRef,
+		source.credential.ProviderID(),
+		source.credential,
+	)
 }
 
 // GetProfile 返回测试公开资料或明确的资料不存在。

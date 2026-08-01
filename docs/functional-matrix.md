@@ -92,8 +92,8 @@
 | ACC-016 | 安装缺失原生 CLI 后继续 | Web | 明示安装确认，安装完成后继续同一授权作业；不静默全局安装 | 受限 | `POST /v0/webui/accounts/add/jobs/:id/install`、`lib/runtime/native-cli-installer.js` |
 | ACC-017 | 手工提交 Browser callback | Web | OAuth 自动回调不可用时粘贴 callback URL 完成作业 | 受限 | `POST /v0/webui/accounts/add/jobs/:id/callback` |
 | ACC-018 | 重新认证 | Web、Fabric 远程账号命令 | 对已有账号启动新的 auth job，保留稳定 `accountRef` | 稳定/高级 | `POST /v0/webui/accounts/:provider/:accountRef/reauth` |
-| ACC-019 | 编辑密钥/Token/Base URL | Web | 只允许适用的密钥/令牌账号编辑；OAuth 账号提示使用重新登录 | 稳定 | `POST /v0/webui/accounts/:provider/:accountRef/update` |
-| ACC-020 | 编辑 Claude credential type | Web | API Key 与 auth-token 可显式切换并保持字段语义 | 稳定 | `lib/server/webui-account-routes.js` |
+| ACC-019 | 编辑密钥/Token/Base URL | Web、Go Management API | 静态账号原地轮换并保持 `accountRef`、数字别名和用户启停；OAuth 账号必须重新登录 | 稳定/重构中 | `POST /v0/webui/accounts/:provider/:accountRef/update`、`PUT /v1/management/accounts/{account_ref}/credential` |
+| ACC-020 | 编辑 Claude credential type | Web、Go Management API | API Key 与 auth-token 可显式双向切换；Go 路径同步刷新模型、清理旧 usage/runtime 派生状态并保留人工模型策略 | 稳定/重构中 | `lib/server/webui-account-routes.js`、`application/accounts/static_credential_rotation.go` |
 | ACC-021 | 启用/关闭账号 | Web | 修改账号可调度状态；关闭后不进入正常路由选择 | 稳定 | `POST /v0/webui/accounts/:provider/:accountRef/status` |
 | ACC-022 | 删除单账号 | Web/CLI | Web 按 `provider + accountRef`；CLI 可按数字别名 | 稳定 | `DELETE /v0/webui/accounts/:provider/:accountRef` |
 | ACC-023 | 批量 selector 删除 | `aih <provider> delete <selectors>` | 支持 `1,2,3`、`1-9` 等选择器 | 稳定 | `lib/cli/commands/ai-cli/router.js` |

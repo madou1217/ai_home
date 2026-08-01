@@ -25,13 +25,13 @@ type ExportAccountStore interface {
 	) (accountcore.Account, error)
 }
 
-// ExportCredentialStore 是单账号导出读取领域凭据所需的最小端口。
+// ExportCredentialStore 是单账号导出读取稳定账号凭据绑定所需的最小端口。
 type ExportCredentialStore interface {
-	// GetCredential 按稳定账号身份读取已校验凭据。
-	GetCredential(
+	// GetCredentialBinding 按稳定账号身份读取已校验凭据绑定。
+	GetCredentialBinding(
 		ctx context.Context,
 		accountRef accountcore.AccountRef,
-	) (Credential, error)
+	) (CredentialBinding, error)
 }
 
 // ExportProfileStore 是单账号导出读取可选公开资料所需的最小端口。
@@ -111,14 +111,16 @@ func (reader *ExportReader) ReadAccountExport(
 	if !account.IsValid() || account.Ref() != accountRef {
 		return ExportSnapshot{}, ErrInvalidAccountExport
 	}
-	credential, err := reader.credentials.GetCredential(ctx, accountRef)
+	binding, err := reader.credentials.GetCredentialBinding(ctx, accountRef)
 	if err != nil {
 		return ExportSnapshot{}, err
 	}
-	if !credentialMatchesAccount(accountRef, credential) ||
-		credential.ProviderID() != account.ProviderID() {
+	if !binding.IsValid() ||
+		binding.AccountRef() != accountRef ||
+		binding.ProviderID() != account.ProviderID() {
 		return ExportSnapshot{}, ErrInvalidAccountExport
 	}
+	credential := binding.Credential()
 	profile, err := reader.readOptionalProfile(ctx, account)
 	if err != nil {
 		return ExportSnapshot{}, err

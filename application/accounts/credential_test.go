@@ -10,6 +10,43 @@ import (
 	"github.com/madou1217/ai_home/core/accounts/codex"
 )
 
+// TestCredentialBindingUsesPersistedAccountIdentity 验证当前密钥变化后仍使用存储绑定的账号引用。
+func TestCredentialBindingUsesPersistedAccountIdentity(t *testing.T) {
+	t.Parallel()
+
+	accountRef, err := accountcore.ParseAccountRef("acct_0123456789abcdef0123")
+	if err != nil {
+		t.Fatalf("ParseAccountRef() error = %v", err)
+	}
+	credential, err := codex.NewAPIKeyAuth(codex.APIKeyInput{
+		APIKey: "synthetic-rotated-binding-key",
+	})
+	if err != nil {
+		t.Fatalf("NewAPIKeyAuth() error = %v", err)
+	}
+	binding, err := accountapp.NewCredentialBinding(
+		accountRef,
+		codex.ProviderID,
+		credential,
+	)
+	if err != nil {
+		t.Fatalf("NewCredentialBinding() error = %v", err)
+	}
+	if !binding.IsValid() ||
+		binding.AccountRef() != accountRef ||
+		binding.ProviderID() != codex.ProviderID ||
+		binding.Credential() != credential {
+		t.Fatalf("CredentialBinding = %#v", binding)
+	}
+	if _, err := accountapp.NewCredentialBinding(
+		accountRef,
+		"claude",
+		credential,
+	); !errors.Is(err, accountapp.ErrInvalidCredentialBinding) {
+		t.Fatalf("NewCredentialBinding(mismatch) error = %v", err)
+	}
+}
+
 func TestRegistrationBindsAccountAndCredentialIdentity(t *testing.T) {
 	t.Parallel()
 

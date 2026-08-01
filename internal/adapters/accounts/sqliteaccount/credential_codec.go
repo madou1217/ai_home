@@ -7,6 +7,7 @@ import (
 	"io"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	accountcore "github.com/madou1217/ai_home/core/accounts"
 )
 
 const (
@@ -18,9 +19,10 @@ var errInvalidJSONDocument = errors.New("持久化 JSON 文档无效")
 
 // encodedCredential 是写入 account_credentials 的版本化凭据文档。
 type encodedCredential struct {
-	authKind string
-	authMode string
-	json     []byte
+	credentialRef accountcore.CredentialRef
+	authKind      string
+	authMode      string
+	json          []byte
 }
 
 // credentialCodec 是 Provider 专属凭据序列化策略。
@@ -61,6 +63,11 @@ func (registry credentialRegistry) Encode(
 	if err != nil || len(document.json) == 0 || len(document.json) > maxCredentialJSONBytes {
 		return encodedCredential{}, ErrInvalidCredential
 	}
+	credentialRef, err := accountcore.DeriveCredentialRef(credential)
+	if err != nil {
+		return encodedCredential{}, ErrInvalidCredential
+	}
+	document.credentialRef = credentialRef
 	return document, nil
 }
 

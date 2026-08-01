@@ -97,6 +97,175 @@ func TestHandlerListsAccountsWithStableCursor(t *testing.T) {
 	assertSafeResponseHeaders(t, response)
 }
 
+// TestHandlerRotatesStaticCredentialWithoutChangingPublicAccountRef 验证 PUT 子资源不会泄漏或替换账号身份。
+func TestHandlerRotatesStaticCredentialWithoutChangingPublicAccountRef(t *testing.T) {
+	t.Parallel()
+
+	service := newAccountServiceStub(t)
+	overview := newTestOverview(t, service.catalog, 7, "http-rotation-old-key")
+	service.overview = &overview
+	handler := newTestHandler(t, service)
+	path := accountsapi.CollectionPath + "/" +
+		overview.Account().Ref().String() + "/credential"
+	secret := "http-rotation-new-key-must-not-leak"
+	request := httptest.NewRequest(
+		http.MethodPut,
+		path,
+		strings.NewReader(`{"auth":{"kind":"api_key","api_key":"`+secret+`",`+
+			`"base_url":"https://api.openai.com/v1"}}`),
+	)
+	request.Header.Set("Authorization", "Bearer "+testManagementKey)
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("PUT credential status=%d body=%s", response.Code, response.Body)
+	}
+	if service.rotationCalls != 1 ||
+		service.rotationRef != overview.Account().Ref() ||
+		service.rotationCredential == nil ||
+		service.rotationCredential.ProviderID() != codex.ProviderID ||
+		strings.Contains(response.Body.String(), secret) {
+		t.Fatalf(
+			"rotation calls=%d ref=%s credential=%T body=%s",
+			service.rotationCalls,
+			service.rotationRef,
+			service.rotationCredential,
+			response.Body,
+		)
+	}
+	var document struct {
+		Data struct {
+			AccountRef   string `json:"account_ref"`
+			CLIAccountID int64  `json:"cli_account_id"`
+			AuthKind     string `json:"auth_kind"`
+		} `json:"data"`
+	}
+	decodeResponseJSON(t, response, &document)
+	if document.Data.AccountRef != overview.Account().Ref().String() ||
+		document.Data.CLIAccountID != 7 ||
+		document.Data.AuthKind != "api_key" {
+		t.Fatalf("rotation response = %#v", document.Data)
+	}
+	assertSafeResponseHeaders(t, response)
+}
+
+// TestBuiltinStaticCredentialFactorySupportsOnlyDeclaredProviderKinds 验证 Claude 类型切换和 Codex 拒绝边界。
+func TestBuiltinStaticCredentialFactorySupportsOnlyDeclaredProviderKinds(t *testing.T) {
+	t.Parallel()
+
+	factory := accountsapi.NewBuiltinAPIKeyCredentialFactory()
+	credential, err := factory.BuildStatic(
+		claude.ProviderID,
+		"auth_token",
+		"",
+		"synthetic-claude-auth-token",
+		"",
+	)
+	if err != nil {
+		t.Fatalf("BuildStatic(claude auth token) error = %v", err)
+	}
+	if _, ok := credential.(*claude.AuthTokenAuth); !ok {
+		t.Fatalf("credential type = %T", credential)
+	}
+	_, err = factory.BuildStatic(
+		codex.ProviderID,
+		"auth_token",
+		"",
+		"unsupported-codex-token",
+		"",
+	)
+	if !errors.Is(err, accountsapi.ErrUnsupportedStaticAuthKind) {
+		t.Fatalf("BuildStatic(codex auth token) error = %v", err)
+	}
+	_, err = factory.BuildStatic(
+		claude.ProviderID,
+		"api_key",
+		"synthetic-key",
+		"unexpected-token",
+		"",
+	)
+	if !errors.Is(err, accountsapi.ErrInvalidStaticCredentialInput) {
+		t.Fatalf("BuildStatic(mixed fields) error = %v", err)
+	}
+}
+
+// TestHandlerRejectsUnsafeStaticCredentialRotations 验证 HTTP 边界保留稳定错误且不泄漏凭据。
+func TestHandlerRejectsUnsafeStaticCredentialRotations(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		body          string
+		rotationErr   error
+		status        int
+		code          string
+		rotationCalls int
+	}{
+		{
+			name: "OAuth 账号拒绝静态轮换",
+			body: `{"auth":{"kind":"api_key",` +
+				`"api_key":"oauth-replacement-must-not-leak"}}`,
+			rotationErr:   accountapp.ErrStaticCredentialRotationUnsupported,
+			status:        http.StatusUnprocessableEntity,
+			code:          "static_credential_rotation_unsupported",
+			rotationCalls: 1,
+		},
+		{
+			name: "当前凭据被其他账号占用",
+			body: `{"auth":{"kind":"api_key",` +
+				`"api_key":"conflicting-key-must-not-leak"}}`,
+			rotationErr:   accountapp.ErrStaticCredentialRotationConflict,
+			status:        http.StatusConflict,
+			code:          "static_credential_rotation_conflict",
+			rotationCalls: 1,
+		},
+		{
+			name: "Codex 拒绝 auth token",
+			body: `{"auth":{"kind":"auth_token",` +
+				`"auth_token":"codex-token-must-not-leak"}}`,
+			status:        http.StatusUnprocessableEntity,
+			code:          "unsupported_auth_kind",
+			rotationCalls: 0,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			service := newAccountServiceStub(t)
+			overview := newTestOverview(t, service.catalog, 8, "rotation-guard-old-key")
+			service.overview = &overview
+			service.rotationErr = test.rotationErr
+			handler := newTestHandler(t, service)
+			path := accountsapi.CollectionPath + "/" +
+				overview.Account().Ref().String() + "/credential"
+			response := performAuthorizedRequest(
+				t,
+				handler,
+				http.MethodPut,
+				path,
+				[]byte(test.body),
+			)
+
+			assertAPIError(t, response, test.status, test.code)
+			if service.rotationCalls != test.rotationCalls {
+				t.Fatalf(
+					"rotation calls=%d, want %d",
+					service.rotationCalls,
+					test.rotationCalls,
+				)
+			}
+			if strings.Contains(response.Body.String(), "must-not-leak") {
+				t.Fatalf("HTTP 错误响应泄漏凭据: %s", response.Body)
+			}
+			assertSafeResponseHeaders(t, response)
+		})
+	}
+}
+
 // TestHandlerReadsAndRefreshesAccountUsage 验证额度子资源路径、null 数值和显式刷新命令。
 func TestHandlerReadsAndRefreshesAccountUsage(t *testing.T) {
 	t.Parallel()
@@ -847,6 +1016,10 @@ type accountServiceStub struct {
 	deleteRef            accountcore.AccountRef
 	deleteErr            error
 	deleteCalls          int
+	rotationRef          accountcore.AccountRef
+	rotationCredential   accountapp.Credential
+	rotationErr          error
+	rotationCalls        int
 	exportDocument       []byte
 	exportRef            accountcore.AccountRef
 	exportErr            error
@@ -1048,6 +1221,45 @@ func (service *accountServiceStub) DeleteAccount(
 	return service.deleteErr
 }
 
+// Rotate 记录静态凭据轮换并保持测试账号引用和数字别名不变。
+func (service *accountServiceStub) Rotate(
+	_ context.Context,
+	accountRef accountcore.AccountRef,
+	replacement accountapp.Credential,
+) (accountcore.Account, error) {
+	service.rotationCalls++
+	service.rotationRef = accountRef
+	service.rotationCredential = replacement
+	if service.rotationErr != nil {
+		return accountcore.Account{}, service.rotationErr
+	}
+	if service.overview == nil || service.overview.Account().Ref() != accountRef {
+		return accountcore.Account{}, accountapp.ErrAccountNotFound
+	}
+	current := service.overview.Account()
+	updated, err := accountcore.RestoreAccount(service.catalog, accountcore.RestoreAccountInput{
+		Ref:          current.Ref(),
+		ProviderID:   current.ProviderID(),
+		CLIAccountID: current.CLIAccountID(),
+		Enabled:      current.Enabled(),
+		CreatedAt:    current.CreatedAt(),
+		UpdatedAt:    current.UpdatedAt().Add(time.Minute),
+	})
+	if err != nil {
+		return accountcore.Account{}, err
+	}
+	overview, err := accountapp.NewAccountOverview(accountapp.AccountOverviewInput{
+		Account:       updated,
+		HasCredential: true,
+		AuthKind:      credentialKind(replacement),
+	})
+	if err != nil {
+		return accountcore.Account{}, err
+	}
+	service.overview = &overview
+	return updated, nil
+}
+
 // ExportAccount 记录单账号导出并返回预设 JSON 文档。
 func (service *accountServiceStub) ExportAccount(
 	_ context.Context,
@@ -1065,6 +1277,8 @@ func credentialKind(credential accountapp.Credential) string {
 		return "oauth"
 	case *codex.APIKeyAuth, *claude.APIKeyAuth:
 		return "api_key"
+	case *claude.AuthTokenAuth:
+		return "auth_token"
 	default:
 		return ""
 	}
@@ -1137,15 +1351,18 @@ func newTestHandlerWithCLIProxyAPIExporter(
 	if err != nil {
 		t.Fatalf("NewBearerAuthorizer() error = %v", err)
 	}
+	credentialFactory := accountsapi.NewBuiltinAPIKeyCredentialFactory()
 	handler, err := accountsapi.NewHandler(accountsapi.Dependencies{
 		Management:          service,
 		Models:              service,
 		Usage:               service,
 		Deletion:            service,
+		CredentialRotation:  service,
 		Sub2APIExporter:     service,
 		CLIProxyAPIExporter: cliProxyAPIExporter,
 		Registrar:           service,
-		APIKeys:             accountsapi.NewBuiltinAPIKeyCredentialFactory(),
+		APIKeys:             credentialFactory,
+		StaticCredentials:   credentialFactory,
 		NativeAccounts:      nativeaccount.NewDecoder(),
 		Sub2APIAccounts:     sub2api.NewDecoder(),
 		Authorizer:          authorizer,

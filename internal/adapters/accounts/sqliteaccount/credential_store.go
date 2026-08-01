@@ -16,7 +16,7 @@ var _ accountapp.CredentialVersionStore = (*Store)(nil)
 
 // credentialSnapshotQuery 是按 AccountRef 读取凭据及其 CAS 版本的唯一查询。
 const credentialSnapshotQuery = `
-	SELECT a.provider_id, c.auth_kind, c.auth_mode,
+	SELECT a.provider_id, c.credential_ref, c.auth_kind, c.auth_mode,
 	       c.format_version, c.credential_json, c.updated_at_ms
 	FROM account_credentials AS c
 	INNER JOIN accounts AS a ON a.account_ref = c.account_ref
@@ -84,6 +84,18 @@ func (store *Store) GetCredential(
 	return snapshot.Credential(), nil
 }
 
+// GetCredentialBinding 按账号身份返回不依赖当前密钥反推主键的凭据绑定。
+func (store *Store) GetCredentialBinding(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+) (accountapp.CredentialBinding, error) {
+	snapshot, err := store.GetCredentialSnapshot(ctx, accountRef)
+	if err != nil {
+		return accountapp.CredentialBinding{}, err
+	}
+	return snapshot.Binding(), nil
+}
+
 // GetCredentialSnapshot 按账号身份读取凭据及其毫秒精度 CAS 版本。
 func (store *Store) GetCredentialSnapshot(
 	ctx context.Context,
@@ -92,7 +104,7 @@ func (store *Store) GetCredentialSnapshot(
 	if !accountRef.IsValid() {
 		return accountapp.CredentialSnapshot{}, accountcore.ErrInvalidAccountRef
 	}
-	var providerID, authKind, authMode string
+	var providerID, credentialRefText, authKind, authMode string
 	var formatVersion int
 	var updatedAtMS int64
 	var payload []byte
@@ -102,6 +114,7 @@ func (store *Store) GetCredentialSnapshot(
 		accountRef.String(),
 	).Scan(
 		&providerID,
+		&credentialRefText,
 		&authKind,
 		&authMode,
 		&formatVersion,
@@ -124,12 +137,17 @@ func (store *Store) GetCredentialSnapshot(
 	if err != nil {
 		return accountapp.CredentialSnapshot{}, err
 	}
-	derivedRef, err := accountcore.DeriveAccountRef(credential)
-	if err != nil || derivedRef != accountRef {
+	credentialRef, err := accountcore.ParseCredentialRef(credentialRefText)
+	if err != nil {
+		return accountapp.CredentialSnapshot{}, ErrInvalidCredential
+	}
+	derivedCredentialRef, err := accountcore.DeriveCredentialRef(credential)
+	if err != nil || derivedCredentialRef != credentialRef {
 		return accountapp.CredentialSnapshot{}, ErrInvalidCredential
 	}
 	snapshot, err := accountapp.NewCredentialSnapshot(
 		accountRef,
+		providerID,
 		credential,
 		time.UnixMilli(updatedAtMS).UTC(),
 	)
@@ -155,12 +173,13 @@ func (store *Store) ReplaceCredential(
 	}
 	const statement = `
 		UPDATE account_credentials
-		SET auth_kind = ?, auth_mode = ?, format_version = ?,
+		SET credential_ref = ?, auth_kind = ?, auth_mode = ?, format_version = ?,
 		    credential_json = ?, updated_at_ms = ?
 		WHERE account_ref = ? AND updated_at_ms = ?`
 	result, err := store.db.ExecContext(
 		ctx,
 		statement,
+		document.credentialRef.String(),
 		document.authKind,
 		document.authMode,
 		credentialFormatVersion,
@@ -169,6 +188,9 @@ func (store *Store) ReplaceCredential(
 		replacement.AccountRef().String(),
 		replacement.ExpectedUpdatedAt().UnixMilli(),
 	)
+	if isConstraintError(err) {
+		return accountapp.ErrCredentialConflict
+	}
 	if err != nil {
 		return fmt.Errorf("替换账号凭据失败: %w", err)
 	}
@@ -207,13 +229,14 @@ func insertCredential(
 ) error {
 	const statement = `
 		INSERT INTO account_credentials (
-			account_ref, auth_kind, auth_mode, format_version,
+			account_ref, credential_ref, auth_kind, auth_mode, format_version,
 			credential_json, updated_at_ms
-		) VALUES (?, ?, ?, ?, ?, ?)`
+		) VALUES (?, ?, ?, ?, ?, ?, ?)`
 	_, err := transaction.ExecContext(
 		ctx,
 		statement,
 		accountRef.String(),
+		document.credentialRef.String(),
 		document.authKind,
 		document.authMode,
 		credentialFormatVersion,

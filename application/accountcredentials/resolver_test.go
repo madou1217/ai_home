@@ -350,6 +350,7 @@ func newResolverTestStore(
 	}
 	snapshot, err := accountapp.NewCredentialSnapshot(
 		accountRef,
+		credential.ProviderID(),
 		credential,
 		updatedAt,
 	)
@@ -388,6 +389,7 @@ func (store *resolverTestStore) ReplaceCredential(
 	}
 	next, err := accountapp.NewCredentialSnapshot(
 		replacement.AccountRef(),
+		replacement.Credential().ProviderID(),
 		replacement.Credential(),
 		replacement.UpdatedAt(),
 	)

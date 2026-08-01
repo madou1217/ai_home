@@ -14,11 +14,15 @@ Composition Root 挂载。该命令直接装配 Provider Catalog、账号应用�
 - Codex 官方 `auth.json` 原生账号导入；
 - Claude 官方 secure storage 与 `oauthAccount` 原生账号导入；
 - 无敏感字段的账号列表和详情；
-- 用户启用或关闭账号。
+- 用户启用、关闭和删除账号；
+- Codex API Key、Claude API Key/Auth Token 静态凭据原地轮换；
+- 账号模型查询、人工策略与显式刷新；
+- usage 最近快照查询与显式刷新；
+- 单账号 sub2api / CLIProxyAPI 导入导出。
 
-本阶段明确不覆盖 OAuth 发起、回调、刷新、删除、标准迁移格式导入导出、usage、
-模型运行态和 Provider 运行健康。原生导入只消费用户已经拥有的官方登录 artifact，
-不执行 OAuth 流程，也不与 API Key 凭据创建混成一个请求。
+OAuth 发起、回调和重新认证由独立的 `accountauthapi` 作业接口负责，不与账号资源或
+静态凭据 PUT 混成一个请求。原生导入只消费用户已经拥有的官方登录 artifact；模型
+cooldown 和 Provider 运行健康仍属于独立 runtime 边界。
 
 ## 2. 分层
 
@@ -99,8 +103,17 @@ Authorization: Bearer <Management Key>
 | `GET` | `/v1/management/accounts` | keyset 分页列出账号 | `200` |
 | `POST` | `/v1/management/accounts` | 创建 Codex/Claude API Key 账号 | `201` |
 | `POST` | `/v1/management/account-imports` | 导入 Codex/Claude 官方认证 artifact | `201` |
+| `POST` | `/v1/management/account-imports/sub2api` | 导入单个 sub2api 文档 | `201` |
 | `GET` | `/v1/management/accounts/{account_ref}` | AccountRef 点查 | `200` |
 | `PATCH` | `/v1/management/accounts/{account_ref}` | 幂等设置用户启停 | `200` |
+| `DELETE` | `/v1/management/accounts/{account_ref}` | 删除账号及其持久化从属数据 | `204` |
+| `PUT` | `/v1/management/accounts/{account_ref}/credential` | 原地轮换静态凭据 | `200` |
+| `GET/PATCH` | `/v1/management/accounts/{account_ref}/models` | 查询或维护账号模型 | `200` |
+| `POST` | `/v1/management/accounts/{account_ref}/models/refresh` | 显式刷新账号模型 | `200` |
+| `GET` | `/v1/management/accounts/{account_ref}/usage` | 读取最近 usage 快照 | `200` |
+| `POST` | `/v1/management/accounts/{account_ref}/usage/refresh` | 显式刷新 usage | `200` |
+| `GET` | `/v1/management/accounts/{account_ref}/export` | 导出单账号 sub2api 文档 | `200` |
+| `GET` | `/v1/management/accounts/{account_ref}/export/cliproxyapi` | 导出 CPA auth 文档 | `200` |
 
 集合列表只接受 `after_ref` 和 `limit`。其他操作不接受 query 参数。未知参数、
 重复参数、显式空值和 malformed query 均返回 `400 invalid_query`。
@@ -316,7 +329,58 @@ Content-Type: application/json
 PATCH 只允许 `enabled`，不接受隐含的 `status`、Provider、别名、凭据或 Profile
 修改。成功后返回与详情相同的公开账号投影。
 
-## 9. 错误码
+## 9. 静态凭据原地轮换
+
+请求：
+
+```http
+PUT /v1/management/accounts/acct_ad95f22070cc1ca83830/credential
+Authorization: Bearer <Management Key>
+Content-Type: application/json
+```
+
+Codex API Key payload：
+
+```json
+{
+  "auth": {
+    "kind": "api_key",
+    "api_key": "<new Codex API Key>",
+    "base_url": "https://api.openai.com/v1"
+  }
+}
+```
+
+Claude Auth Token payload：
+
+```json
+{
+  "auth": {
+    "kind": "auth_token",
+    "auth_token": "<new Claude Auth Token>",
+    "base_url": "https://api.anthropic.com"
+  }
+}
+```
+
+Codex 只允许 `api_key → api_key`。Claude 允许 `api_key ↔ auth_token`，并严格拒绝
+两个敏感字段混用。OAuth 账号返回
+`422 static_credential_rotation_unsupported`，必须走重新认证作业。
+
+`account_ref` 是稳定逻辑账号身份，不会因 Key、Token、认证类型或 Base URL 改变；
+响应继续返回原 `account_ref`、`provider_id`、`cli_account_id` 和 `enabled`，且不包含
+新旧凭据。应用层先使用新凭据刷新 Provider 模型目录；目录失败时不写数据库。成功后
+SQLite 单事务执行以下动作：
+
+1. compare-and-swap 替换当前凭据，并通过 `credential_ref` 唯一约束查重；
+2. 保持账号主键、数字别名、启停和人工模型策略，更新自动发现模型；
+3. 删除可能属于旧凭据主体的 usage；
+4. 提交后清理进程内 usage/runtime 派生状态。
+
+并发修改、SQLite 锁冲突或新凭据已被其他账号占用统一返回
+`409 static_credential_rotation_conflict`，整笔事务回滚。
+
+## 10. 错误码
 
 | HTTP | code | 含义 |
 | ---: | --- | --- |
@@ -329,16 +393,19 @@ PATCH 只允许 `enabled`，不接受隐含的 `status`、Provider、别名、�
 | `405` | `method_not_allowed` | HTTP 方法不受支持，并返回 `Allow` |
 | `409` | `account_conflict` | 稳定身份或 Provider 数字别名冲突 |
 | `409` | `cli_account_id_exhausted` | Provider 数字别名耗尽 |
+| `409` | `static_credential_rotation_conflict` | 账号已并发变化或新凭据已被占用 |
 | `413` | `request_too_large` | 普通请求超过 `64 KiB`，或原生导入超过 `1 MiB` |
 | `415` | `unsupported_media_type` | 写请求不是 JSON |
 | `422` | `unsupported_provider` | 不是当前确认的 Codex/Claude |
 | `422` | `unsupported_auth_kind` | 创建接口收到非 API Key 认证 |
 | `422` | `invalid_api_key` | API Key 或 Base URL 未通过领域校验 |
+| `422` | `invalid_static_credential` | 静态凭据字段组合或 Base URL 无效 |
+| `422` | `static_credential_rotation_unsupported` | OAuth 或当前凭据类型不能静态轮换 |
 | `422` | `invalid_native_artifacts` | Provider 官方 artifact 缺失、混用或无效 |
 | `422` | `invalid_account` | 应用层账号数据违反领域不变量 |
 | `500` | `internal_error` | 未公开内部细节的服务错误 |
 
-## 10. 验证命令
+## 11. 验证命令
 
 ```bash
 go test ./internal/transport/http/accountsapi
@@ -349,15 +416,17 @@ go test -run '^TestAccountsAPILiveSmoke$' -v \
 ```
 
 真实 TCP 和命令级 smoke 使用临时 `aih.db` 完成 API Key 创建、Claude 原生 OAuth
-导入、重复导入冲突、列表、详情、关闭账号及优雅退出的完整链路。自动化测试只使用
-合成凭据；日志和响应不包含原始 Key 或 Token。
+导入、重复导入冲突、Codex/Claude 静态凭据轮换、列表、详情、关闭账号及优雅退出。
+自动化测试只使用合成凭据和合成 Provider HTTP Client；日志和响应不包含原始 Key
+或 Token，也不请求外部 Provider。
 
-## 11. 设计模式
+## 12. 设计模式
 
 | 模块 | 模式 | 目的 |
 | --- | --- | --- |
 | `Handler` + 细粒度端口 | Ports and Adapters | HTTP 只依赖应用能力，不依赖 SQLite 实现 |
-| `APIKeyCredentialFactory` | Strategy + Registry | Provider 构造差异集中扩展，不增长路由分支 |
+| `BuiltinAPIKeyCredentialFactory` | Strategy + Registry | Provider 与静态认证类型构造差异集中扩展，不增长路由分支 |
+| `StaticCredentialRotation` 端口 | Ports and Adapters | HTTP 不依赖 SQLite 事务或 Provider 模型目录实现 |
 | `NativeAccountDecoder` | Strategy | HTTP 不认识 Codex/Claude 官方认证内部结构 |
 | `nativeaccount.Decoder` | Anti-Corruption Layer + Facade | 组合现有 Provider codec，输出稳定应用合同 |
 | `Authorizer` | Strategy | 鉴权策略与账号路由解耦，默认失败关闭 |

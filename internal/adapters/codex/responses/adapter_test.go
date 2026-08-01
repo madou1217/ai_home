@@ -705,15 +705,19 @@ type adapterCredentialResolver struct {
 	credential accountapp.Credential
 }
 
-// ResolveCredential 拒绝其他账号身份。
-func (resolver adapterCredentialResolver) ResolveCredential(
+// ResolveCredentialBinding 拒绝其他账号身份并返回稳定账号绑定。
+func (resolver adapterCredentialResolver) ResolveCredentialBinding(
 	_ context.Context,
 	accountRef accountcore.AccountRef,
-) (accountapp.Credential, error) {
+) (accountapp.CredentialBinding, error) {
 	if accountRef != resolver.accountRef {
-		return nil, accountapp.ErrCredentialNotFound
+		return accountapp.CredentialBinding{}, accountapp.ErrCredentialNotFound
 	}
-	return resolver.credential, nil
+	return accountapp.NewCredentialBinding(
+		accountRef,
+		resolver.credential.ProviderID(),
+		resolver.credential,
+	)
 }
 
 // adapterRouteResolver 返回固定的显式 Codex 路由。

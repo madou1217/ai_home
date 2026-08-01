@@ -26,6 +26,7 @@ var expectedSchemaColumns = map[string][]string{
 	},
 	"account_credentials": {
 		"account_ref",
+		"credential_ref",
 		"auth_kind",
 		"auth_mode",
 		"format_version",
@@ -135,11 +136,23 @@ func migrateConnection(ctx context.Context, connection *sql.Conn) (resultErr err
 		if _, err := connection.ExecContext(ctx, SchemaV3); err != nil {
 			return fmt.Errorf("迁移账号数据库到 v3 失败: %w", err)
 		}
+		if _, err := connection.ExecContext(ctx, SchemaV4); err != nil {
+			return fmt.Errorf("迁移账号数据库到 v4 失败: %w", err)
+		}
 		return commitMigration(ctx, connection)
 	}
 	if applicationID == ApplicationID && schemaVersion == 2 {
 		if _, err := connection.ExecContext(ctx, SchemaV3); err != nil {
 			return fmt.Errorf("迁移账号数据库到 v3 失败: %w", err)
+		}
+		if _, err := connection.ExecContext(ctx, SchemaV4); err != nil {
+			return fmt.Errorf("迁移账号数据库到 v4 失败: %w", err)
+		}
+		return commitMigration(ctx, connection)
+	}
+	if applicationID == ApplicationID && schemaVersion == 3 {
+		if _, err := connection.ExecContext(ctx, SchemaV4); err != nil {
+			return fmt.Errorf("迁移账号数据库到 v4 失败: %w", err)
 		}
 		return commitMigration(ctx, connection)
 	}
@@ -154,6 +167,9 @@ func migrateConnection(ctx context.Context, connection *sql.Conn) (resultErr err
 	}
 	if _, err := connection.ExecContext(ctx, SchemaV3); err != nil {
 		return fmt.Errorf("创建账号数据库 v3 失败: %w", err)
+	}
+	if _, err := connection.ExecContext(ctx, SchemaV4); err != nil {
+		return fmt.Errorf("创建账号数据库 v4 失败: %w", err)
 	}
 	return commitMigration(ctx, connection)
 }
@@ -245,6 +261,7 @@ func validateConnection(ctx context.Context, connection *sql.Conn) error {
 	}
 	for _, indexName := range []string{
 		"idx_accounts_routing",
+		"idx_account_credentials_credential_ref",
 		"idx_account_models_effective",
 	} {
 		var indexCount int

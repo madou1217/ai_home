@@ -6,13 +6,15 @@
 `app-state.db`，也不为 Gemini、runtime、usage、模型 cooldown、OAuth 登录作业、
 历史记录或 outbox 预建结构。
 
-数据库固定为 `$AIH_HOME/aih.db`。v1 只包含三个存在当前查询依据的表：
+数据库固定为 `$AIH_HOME/aih.db`。当前只包含五个存在真实读写依据的表：
 
 | 表 | 责任 | 热路径 |
 | --- | --- | --- |
 | `accounts` | 稳定身份、Provider 内 CLI 别名、用户启停和生命周期时间 | Server 账号征召 |
-| `account_credentials` | 当前可用凭据的版本化 Provider JSON | 选中账号后按需读取 |
+| `account_credentials` | 当前可用凭据、独立查重引用和 Provider JSON | 选中账号后按需读取 |
 | `account_profiles` | 不含凭据的公开资料与订阅快照 | 账号列表和详情 |
+| `account_models` | 账号模型正排事实、上游发现标记和人工策略 | 管理写时维护并发布内存倒排 |
+| `account_usage` | 最近一次成功额度快照 | 管理查询；不参与账号身份 |
 
 OAuth refresh token 是长期账号凭据，属于 `account_credentials`。OAuth 登录过程中的
 `state`、PKCE verifier、device code 和进度不是账号凭据，v1 不持久化这些临时作业。
@@ -41,8 +43,8 @@ Provider 凭据和公开资料分别使用 codec strategy 注册到 SQLite Adapt
 SQL。账号管理列表使用独立只读投影端口，不让管理查询依赖或反序列化凭据。
 
 `application/accounts.Management` 当前只编排有界列表、AccountRef 详情和用户启停。
-读取端口与生命周期写入端口保持独立，启停时间通过应用时钟注入。注册、凭据刷新、
-删除、导入导出不得继续堆入该类型。
+读取端口与生命周期写入端口保持独立，启停时间通过应用时钟注入。注册、OAuth 刷新、
+静态凭据轮换、删除、模型和导入导出各自使用独立用例，不继续堆入该类型。
 
 `application/accounts.Registrar` 只负责构造新账号注册命令：从经过 Provider
 领域校验的 Credential 派生 `account_ref`，校验可选 Profile 属于同一身份，并注入
@@ -89,6 +91,7 @@ Codex 与 Claude 独立从 `1` 开始；不新增 sequence 表，也不在 Go �
 | 字段 | SQLite 类型 | 约束与含义 |
 | --- | --- | --- |
 | `account_ref` | `TEXT` | 主键及 `accounts` 外键；账号删除时级联删除 |
+| `credential_ref` | `TEXT` | 唯一；固定 `cred_` + 20 位小写十六进制，只用于当前凭据查重 |
 | `auth_kind` | `TEXT` | `oauth`、`api_key`、`auth_token` 等 Provider 领域认证类型 |
 | `auth_mode` | `TEXT` | Claude OAuth 使用 `refreshable`/`access_token`；其他类型为空 |
 | `format_version` | `INTEGER` | v1 固定为 `1` |
@@ -98,6 +101,17 @@ Codex 与 Claude 独立从 `1` 开始；不新增 sequence 表，也不在 Go �
 数据库文件必须创建为 `0600`。凭据 JSON 不进入日志、错误、`String()`、账号列表或
 RoutingAccount。加密密钥若与数据库同文件保存没有安全收益，因此 v1 不实现伪加密；
 后续只有在确定 OS Keychain/TPM/用户主密钥来源后才增加真正的 envelope encryption。
+
+`account_ref` 是注册时确定一次的逻辑账号身份，静态 Key、Token、认证类型或 Base URL
+变化时保持不变。`credential_ref` 从当前凭据身份种子派生，随上述字段变化而变化，
+只负责唯一查重，不能被 Server、Web、Runtime 或 Usage 当成账号主键。该设计避免轮换
+静态凭据时删除并新建账号，同时仍阻止两个账号占用同一份当前凭据。
+
+静态凭据轮换使用 `accounts.updated_at_ms`、`account_credentials.updated_at_ms` 和旧
+`credential_ref` 做单事务 compare-and-swap；这些是并发写前置条件，不是业务版本号，
+也不需要账号版本表或历史表。事务保持 `account_ref`、`provider_id`、
+`cli_account_id`、`enabled` 和人工模型策略，替换凭据与自动发现模型，并清除属于旧
+凭据主体的 usage；提交后再清理进程内 usage/runtime 派生状态。
 
 ### 4.1 Codex OAuth
 
@@ -247,6 +261,7 @@ Token、API Key 或 Auth Token。
 | CLI 别名点查 | `WHERE provider_id = ? AND cli_account_id = ?` | 唯一约束自动索引 |
 | 账号征召 | 原子读取 `(provider_id, model_id)` 的不可变 `RoutingCandidates` | 进程内模型倒排 |
 | 按需读取凭据 | `WHERE account_ref = ?` | `account_credentials` 主键 |
+| 当前凭据查重 | `WHERE credential_ref = ?` / 唯一写约束 | `idx_account_credentials_credential_ref` |
 | 按需读取资料 | `WHERE account_ref = ?` | `account_profiles` 主键 |
 | 账号管理列表 | 三表按主键 `LEFT JOIN`，`account_ref > ? ORDER BY account_ref LIMIT ?` | 三张表主键 |
 | 账号管理详情 | 三表按主键 `LEFT JOIN`，`account_ref = ? LIMIT 1` | 三张表主键 |
@@ -282,9 +297,13 @@ Token、API Key 或 Auth Token。
 ## 7. Migration 与打开数据库
 
 - `PRAGMA application_id=0x41494831`，用于拒绝误打开其他 SQLite 文件。
-- `PRAGMA user_version=1`，不创建额外 migration 账本表。
-- 只允许从空数据库创建 v1；不扫描、不复制、不修改旧 `app-state.db`。
-- 打开已有数据库时，`application_id` 或 `user_version` 不匹配必须失败关闭。
+- `PRAGMA user_version=4` 只表示内部 DDL 迁移位置，不是账号或凭据业务版本；不创建
+  额外 migration 账本表。
+- 空数据库按 v1→v4 建立当前结构；已有本数据库只允许 v1/v2/v3 前向迁移，不扫描、
+  不复制、不修改旧 `app-state.db`。
+- v4 只重建 `account_credentials`、增加 `credential_ref` 唯一索引，并从既有
+  `account_ref` 后缀无损回填；不修改任何 `account_ref`。
+- 打开其他 `application_id`、未知 `user_version` 或非空未标识数据库时失败关闭。
 - migration 使用 `BEGIN IMMEDIATE` 串行检查和创建；竞争者获得锁后重新检查版本，失败
   后数据库不得处于半结构状态。
 - 每个连接固定启用 `foreign_keys=ON`、`busy_timeout=5000`、
@@ -301,7 +320,7 @@ Token、API Key 或 Auth Token。
 
 ### 8.1 正确性和并发
 
-- DDL 原子创建三个 `STRICT, WITHOUT ROWID` 表，非法字段和非法 JSON 均被拒绝。
+- DDL 原子创建五个 `STRICT, WITHOUT ROWID` 表，非法字段和非法 JSON 均被拒绝。
 - `EXPLAIN QUERY PLAN` 明确使用
   `USING COVERING INDEX idx_accounts_routing`。
 - Codex 两种、Claude 四种凭据 round-trip 后均重新进入 Provider 领域构造器；
@@ -310,6 +329,10 @@ Token、API Key 或 Auth Token。
   重复字段、尾随 JSON、旧快照、同版本不同内容以及被篡改的资料身份均失败关闭。
 - 账号管理列表只读取基础账号、认证类型和公开资料标量；查询计划对三张表都使用主键，
   SQL 自动化测试禁止选择两个 JSON 文档。
+- Codex API Key 与 Claude API Key/Auth Token 原地轮换保持 `account_ref`、数字别名和
+  用户启停不变；凭据冲突完整回滚，OAuth 与跨 Provider 轮换在目录请求前被拒绝。
+- 轮换事务同步更新当前凭据与自动模型、保留人工模型策略并删除旧 usage；v3→v4
+  migration 保持既有账号主键并回填可验证的 `credential_ref`。
 - 64 个不同账号并发自动分配别名、16 路同身份竞争、Provider 内别名冲突、跨
   Provider 同别名、别名耗尽、Profile 写入失败整笔回滚、关闭重开恢复均有自动化测试。
 - 8 路并发首次打开同一个空数据库连续运行 50 轮通过。

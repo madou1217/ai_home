@@ -106,6 +106,12 @@ func TestExportReaderStopsAtTheFirstSourceError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseAccountRef() error = %v", err)
 	}
+	foreignCredential, err := codex.NewAPIKeyAuth(codex.APIKeyInput{
+		APIKey: "synthetic-export-foreign-binding",
+	})
+	if err != nil {
+		t.Fatalf("NewAPIKeyAuth(foreign) error = %v", err)
+	}
 	tests := []struct {
 		name       string
 		source     *exportReaderSource
@@ -125,6 +131,16 @@ func TestExportReaderStopsAtTheFirstSourceError(t *testing.T) {
 				credentialErr: accountapp.ErrCredentialNotFound,
 			},
 			expected:   accountapp.ErrCredentialNotFound,
+			credential: 1,
+		},
+		{
+			name: "credential bound to another account",
+			source: &exportReaderSource{
+				account:    newExportReaderAccountWithRef(t, accountRef),
+				credential: foreignCredential,
+				bindingRef: accountcore.AccountRef("acct_fedcba9876543210fedc"),
+			},
+			expected:   accountapp.ErrInvalidAccountExport,
 			credential: 1,
 		},
 	}
@@ -191,6 +207,7 @@ type exportReaderSource struct {
 	account         accountcore.Account
 	accountErr      error
 	credential      accountapp.Credential
+	bindingRef      accountcore.AccountRef
 	credentialErr   error
 	credentialCalls int
 	profile         accountapp.ProfileSnapshot
@@ -206,13 +223,24 @@ func (source *exportReaderSource) GetByRef(
 	return source.account, source.accountErr
 }
 
-// GetCredential 返回预设领域凭据。
-func (source *exportReaderSource) GetCredential(
-	context.Context,
-	accountcore.AccountRef,
-) (accountapp.Credential, error) {
+// GetCredentialBinding 返回预设领域凭据及其账号绑定。
+func (source *exportReaderSource) GetCredentialBinding(
+	_ context.Context,
+	accountRef accountcore.AccountRef,
+) (accountapp.CredentialBinding, error) {
 	source.credentialCalls++
-	return source.credential, source.credentialErr
+	if source.credentialErr != nil {
+		return accountapp.CredentialBinding{}, source.credentialErr
+	}
+	bindingRef := source.bindingRef
+	if !bindingRef.IsValid() {
+		bindingRef = accountRef
+	}
+	return accountapp.NewCredentialBinding(
+		bindingRef,
+		source.credential.ProviderID(),
+		source.credential,
+	)
 }
 
 // GetProfile 返回预设公开资料快照。

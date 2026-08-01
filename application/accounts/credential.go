@@ -14,6 +14,8 @@ const maxPersistedUnixMillis int64 = 253_402_300_799_999
 var (
 	// ErrInvalidRegistration 表示账号与凭据不属于同一个稳定业务身份。
 	ErrInvalidRegistration = errors.New("账号注册数据无效")
+	// ErrInvalidCredentialBinding 表示凭据没有绑定到有效账号或规范 Provider。
+	ErrInvalidCredentialBinding = errors.New("账号凭据绑定无效")
 	// ErrCredentialNotFound 表示账号没有可用的持久化凭据。
 	ErrCredentialNotFound = errors.New("账号凭据不存在")
 )
@@ -25,6 +27,58 @@ type Credential interface {
 	accountcore.IdentitySource
 	fmt.Stringer
 	GoString() string
+}
+
+// CredentialBinding 把当前凭据绑定到稳定账号和规范 Provider。
+//
+// 账号引用不会随静态凭据轮换改变；调用方必须通过该值复核凭据来源，不能再从
+// 当前密钥反推账号主键。
+type CredentialBinding struct {
+	accountRef accountcore.AccountRef
+	providerID string
+	credential Credential
+}
+
+// NewCredentialBinding 创建不暴露凭据内容的账号凭据绑定。
+func NewCredentialBinding(
+	accountRef accountcore.AccountRef,
+	providerID string,
+	credential Credential,
+) (CredentialBinding, error) {
+	if !accountRef.IsValid() ||
+		providerID == "" ||
+		credential == nil ||
+		credential.ProviderID() != providerID {
+		return CredentialBinding{}, ErrInvalidCredentialBinding
+	}
+	return CredentialBinding{
+		accountRef: accountRef,
+		providerID: providerID,
+		credential: credential,
+	}, nil
+}
+
+// AccountRef 返回凭据所属的稳定账号引用。
+func (binding CredentialBinding) AccountRef() accountcore.AccountRef {
+	return binding.accountRef
+}
+
+// ProviderID 返回凭据所属的规范 Provider。
+func (binding CredentialBinding) ProviderID() string {
+	return binding.providerID
+}
+
+// Credential 返回经过 Provider 领域构造器校验的当前凭据。
+func (binding CredentialBinding) Credential() Credential {
+	return binding.credential
+}
+
+// IsValid 重新检查跨层传递后的账号、Provider 和凭据绑定。
+func (binding CredentialBinding) IsValid() bool {
+	return binding.accountRef.IsValid() &&
+		binding.providerID != "" &&
+		binding.credential != nil &&
+		binding.credential.ProviderID() == binding.providerID
 }
 
 // Registration 是经过校验的账号与凭据原子注册命令。

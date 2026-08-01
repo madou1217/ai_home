@@ -13,6 +13,10 @@ var (
 	ErrUnsupportedProvider = errors.New("账号 HTTP Provider 不支持")
 	// ErrInvalidAPIKeyInput 表示 API Key 或 Base URL 未通过 Provider 领域校验。
 	ErrInvalidAPIKeyInput = errors.New("账号 HTTP API Key 输入无效")
+	// ErrUnsupportedStaticAuthKind 表示 Provider 不支持请求中的静态凭据类型。
+	ErrUnsupportedStaticAuthKind = errors.New("账号 HTTP 静态凭据类型不支持")
+	// ErrInvalidStaticCredentialInput 表示静态凭据字段组合或领域值无效。
+	ErrInvalidStaticCredentialInput = errors.New("账号 HTTP 静态凭据输入无效")
 )
 
 // APIKeyCredentialFactory 把 HTTP API Key 输入转换为 Provider 领域凭据。
@@ -20,6 +24,17 @@ type APIKeyCredentialFactory interface {
 	Build(
 		providerID string,
 		apiKey string,
+		baseURL string,
+	) (accountapp.Credential, error)
+}
+
+// StaticCredentialFactory 把完整静态凭据 DTO 转换为 Provider 领域值。
+type StaticCredentialFactory interface {
+	BuildStatic(
+		providerID string,
+		kind string,
+		apiKey string,
+		authToken string,
 		baseURL string,
 	) (accountapp.Credential, error)
 }
@@ -63,6 +78,53 @@ func (factory *BuiltinAPIKeyCredentialFactory) Build(
 		return nil, ErrInvalidAPIKeyInput
 	}
 	return credential, nil
+}
+
+// BuildStatic 严格区分 API Key 与 Claude Auth Token 字段。
+func (factory *BuiltinAPIKeyCredentialFactory) BuildStatic(
+	providerID string,
+	kind string,
+	apiKey string,
+	authToken string,
+	baseURL string,
+) (accountapp.Credential, error) {
+	if factory == nil {
+		return nil, ErrUnsupportedProvider
+	}
+	switch kind {
+	case "api_key":
+		if authToken != "" {
+			return nil, ErrInvalidStaticCredentialInput
+		}
+		credential, err := factory.Build(providerID, apiKey, baseURL)
+		if errors.Is(err, ErrUnsupportedProvider) {
+			return nil, err
+		}
+		if err != nil {
+			return nil, ErrInvalidStaticCredentialInput
+		}
+		return credential, nil
+	case "auth_token":
+		if providerID != claude.ProviderID {
+			if providerID == codex.ProviderID {
+				return nil, ErrUnsupportedStaticAuthKind
+			}
+			return nil, ErrUnsupportedProvider
+		}
+		if apiKey != "" {
+			return nil, ErrInvalidStaticCredentialInput
+		}
+		credential, err := claude.NewAuthTokenAuth(claude.AuthTokenInput{
+			AuthToken: authToken,
+			BaseURL:   baseURL,
+		})
+		if err != nil {
+			return nil, ErrInvalidStaticCredentialInput
+		}
+		return credential, nil
+	default:
+		return nil, ErrUnsupportedStaticAuthKind
+	}
 }
 
 // buildCodexAPIKeyCredential 通过 Codex 领域构造器校验 API Key。

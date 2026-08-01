@@ -62,6 +62,40 @@ func TestDeriveAccountRefMatchesBusinessContract(t *testing.T) {
 	}
 }
 
+// TestDeriveCredentialRefSharesDigestButNotAccountNamespace 验证查重引用不能冒充账号主键。
+func TestDeriveCredentialRefSharesDigestButNotAccountNamespace(t *testing.T) {
+	t.Parallel()
+
+	source := testIdentitySource{
+		providerID:   "codex",
+		identitySeed: "api_key:codex:https://api.openai.com/v1:synthetic-fingerprint",
+	}
+	accountRef, err := accounts.DeriveAccountRef(source)
+	if err != nil {
+		t.Fatalf("DeriveAccountRef() error = %v", err)
+	}
+	credentialRef, err := accounts.DeriveCredentialRef(source)
+	if err != nil {
+		t.Fatalf("DeriveCredentialRef() error = %v", err)
+	}
+	if credentialRef.String()[:len(accounts.CredentialRefPrefix)] != accounts.CredentialRefPrefix ||
+		credentialRef.String()[len(accounts.CredentialRefPrefix):] !=
+			accountRef.String()[len(accounts.AccountRefPrefix):] ||
+		!credentialRef.IsValid() {
+		t.Fatalf("accountRef=%s credentialRef=%s", accountRef, credentialRef)
+	}
+	parsed, err := accounts.ParseCredentialRef(credentialRef.String())
+	if err != nil || parsed != credentialRef {
+		t.Fatalf("ParseCredentialRef() ref=%s error=%v", parsed, err)
+	}
+	if _, err := accounts.ParseCredentialRef(accountRef.String()); !errors.Is(
+		err,
+		accounts.ErrInvalidCredentialRef,
+	) {
+		t.Fatalf("ParseCredentialRef(accountRef) error = %v", err)
+	}
+}
+
 func TestDeriveAccountRefRejectsInvalidIdentity(t *testing.T) {
 	t.Parallel()
 

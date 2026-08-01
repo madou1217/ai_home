@@ -13,8 +13,13 @@
 - `POST /v1/responses`、`POST /v1/chat/completions`、`POST /v1/messages`；
 - Claude Native Relay 租约和同路径透传。
 
-Go Host 已装配账号模型倒排、原子 Route Catalog、账号征召、进程内 Runtime 和
-Codex/Claude Adapter。它仍不提供 usage、WebUI 或 Fabric。
+Go Host 已装配账号模型倒排、原子 Route Catalog、账号征召、进程内 Runtime、usage
+管理和 Codex/Claude Adapter。它仍不提供 WebUI 或 Fabric。
+
+账号管理包含静态凭据原地轮换：Codex 只允许 API Key，Claude 允许 API Key 与
+Auth Token 双向切换。Host 在管理写路径调用 Provider 模型目录，成功后以同一事务
+替换当前凭据、自动模型和旧 usage，再清理进程内 usage/runtime 派生状态；OAuth
+继续使用重新认证作业，不能走静态轮换接口。
 
 Canonical 账号征召会使用目标 Adapter 的凭据传输策略。Claude 官方 OAuth 只允许
 Native Relay；普通 `/v1/messages` 会跳过它并继续征召 API Key/Auth Token 账号，
@@ -184,8 +189,8 @@ go build ./cmd/aih-server
 
 测试包含真实 TCP Listener、Codex/Claude API Key 推理、三种客户端协议、Claude
 原生 OAuth 导入与 Relay 分流、OAuth 在前而 API Key 在后的 Canonical 征召、
-重复导入、账号列表、权限域拒绝、health/ready、临时 `aih.db` 和优雅关闭。上游由
-合成 HTTP Client 提供，不使用真实凭据或网络。
+重复导入、静态凭据轮换、账号列表、权限域拒绝、health/ready、临时 `aih.db` 和
+优雅关闭。上游由合成 HTTP Client 提供，不使用真实凭据或外部网络。
 
 ## 8. 设计模式
 
@@ -197,6 +202,7 @@ go build ./cmd/aih-server
 | `RefreshCoordinator` | Coalescing Worker | 合并账号写入触发的目录刷新 |
 | `ProviderRouteFactory` | Strategy + Registry | Provider 自己声明协议和能力 |
 | `CredentialTransportPolicy` | Strategy | Adapter 决定当前线协议支持哪些凭据，征召器保持 Provider 无关 |
+| `StaticCredentialRotator` | Application Service + Unit of Work | 编排凭据校验、远端模型发现、SQLite 原子替换和提交后派生状态清理 |
 | `accountsapi.Management` / `Registrar` | Ports and Adapters | Host 依赖应用端口，不把 SQL 放入路由 |
 | `ManagementKeyProvider` | Strategy | 鉴权读取与密钥来源解耦 |
 | `commandRuntime` | Dependency Injection | 测试不读取真实环境，也不占用固定端口 |

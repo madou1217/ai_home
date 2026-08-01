@@ -202,6 +202,36 @@ func TestAccountsAPILiveSmoke(t *testing.T) {
 			len(targetListDocument.Data),
 		)
 	}
+	claudeAuthToken := "synthetic-claude-live-auth-token"
+	claudeRotationPayload := marshalRequestJSON(t, map[string]any{
+		"auth": map[string]any{
+			"kind":       "auth_token",
+			"auth_token": claudeAuthToken,
+			"base_url":   "https://api.anthropic.com",
+		},
+	})
+	claudeRotated := performLiveRequest(
+		t,
+		server.Client(),
+		http.MethodPut,
+		server.URL+accountsapi.CollectionPath+"/"+claudeRef+"/credential",
+		claudeRotationPayload,
+	)
+	logLiveExchange(t, claudeRotated)
+	assertLiveStatus(t, claudeRotated, http.StatusOK)
+	var claudeRotatedDocument struct {
+		Data struct {
+			AccountRef   string `json:"account_ref"`
+			CLIAccountID int64  `json:"cli_account_id"`
+			AuthKind     string `json:"auth_kind"`
+		} `json:"data"`
+	}
+	decodeLiveBody(t, claudeRotated.responseBody, &claudeRotatedDocument)
+	if claudeRotatedDocument.Data.AccountRef != claudeRef ||
+		claudeRotatedDocument.Data.CLIAccountID != 1 ||
+		claudeRotatedDocument.Data.AuthKind != "auth_token" {
+		t.Fatalf("live Claude rotation response = %#v", claudeRotatedDocument.Data)
+	}
 
 	modelsURL := detailURL + "/models"
 	models := performLiveRequest(
@@ -274,6 +304,75 @@ func TestAccountsAPILiveSmoke(t *testing.T) {
 		t.Fatalf("live disable response = %#v", disabledDocument.Data)
 	}
 
+	rotatedSecret := "synthetic-codex-live-rotated-key"
+	rotationPayload := marshalRequestJSON(t, map[string]any{
+		"auth": map[string]any{
+			"kind":     "api_key",
+			"api_key":  rotatedSecret,
+			"base_url": "https://api.openai.com/v1",
+		},
+	})
+	rotated := performLiveRequest(
+		t,
+		server.Client(),
+		http.MethodPut,
+		detailURL+"/credential",
+		rotationPayload,
+	)
+	logLiveExchange(t, rotated)
+	assertLiveStatus(t, rotated, http.StatusOK)
+	var rotatedDocument struct {
+		Data struct {
+			AccountRef   string `json:"account_ref"`
+			CLIAccountID int64  `json:"cli_account_id"`
+			Enabled      bool   `json:"enabled"`
+			UpdatedAt    string `json:"updated_at"`
+		} `json:"data"`
+	}
+	decodeLiveBody(t, rotated.responseBody, &rotatedDocument)
+	if rotatedDocument.Data.AccountRef != codexRef ||
+		rotatedDocument.Data.CLIAccountID != 1 ||
+		rotatedDocument.Data.Enabled ||
+		rotatedDocument.Data.UpdatedAt != "2026-07-27T19:20:00Z" {
+		t.Fatalf("live rotation response = %#v", rotatedDocument.Data)
+	}
+	rotatedModels := performLiveRequest(
+		t,
+		server.Client(),
+		http.MethodGet,
+		modelsURL,
+		nil,
+	)
+	logLiveExchange(t, rotatedModels)
+	assertLiveStatus(t, rotatedModels, http.StatusOK)
+	assertLiveModelPolicy(
+		t,
+		rotatedModels,
+		"gpt-5.6-sol",
+		"force_disable",
+		false,
+	)
+	rotatedExport := performLiveRequest(
+		t,
+		server.Client(),
+		http.MethodGet,
+		detailURL+"/export",
+		nil,
+	)
+	assertLiveStatus(t, rotatedExport, http.StatusOK)
+	assertLiveAccountExport(
+		t,
+		rotatedExport.responseBody,
+		"openai",
+		rotatedSecret,
+		"https://api.openai.com/v1",
+	)
+	redactedRotatedExport := rotatedExport
+	redactedRotatedExport.responseBody = redactSub2ApiExport(
+		rotatedExport.responseBody,
+	)
+	logLiveExchange(t, redactedRotatedExport)
+
 	deleted := performLiveRequest(
 		t,
 		server.Client(),
@@ -304,6 +403,10 @@ func TestAccountsAPILiveSmoke(t *testing.T) {
 		models,
 		modelPolicy,
 		modelRefresh,
+		claudeRotated,
+		rotated,
+		rotatedModels,
+		redactedRotatedExport,
 		importedCodex,
 		importedClaude,
 		targetList,
@@ -313,8 +416,12 @@ func TestAccountsAPILiveSmoke(t *testing.T) {
 	} {
 		if strings.Contains(exchange.requestBody, codexSecret) ||
 			strings.Contains(exchange.requestBody, claudeSecret) ||
+			strings.Contains(exchange.requestBody, rotatedSecret) ||
+			strings.Contains(exchange.requestBody, claudeAuthToken) ||
 			strings.Contains(exchange.responseBody, codexSecret) ||
-			strings.Contains(exchange.responseBody, claudeSecret) {
+			strings.Contains(exchange.responseBody, claudeSecret) ||
+			strings.Contains(exchange.responseBody, rotatedSecret) ||
+			strings.Contains(exchange.responseBody, claudeAuthToken) {
 			t.Fatalf("%s smoke evidence leaked API Key", exchange.method)
 		}
 	}
@@ -393,21 +500,34 @@ func newAccountsLiveServer(
 	if err != nil {
 		t.Fatalf("NewModelManagement() error = %v", err)
 	}
+	credentialRotator, err := accountapp.NewStaticCredentialRotator(
+		catalog,
+		store,
+		modelDiscovery,
+		func() time.Time { return registeredAt.Add(20 * time.Minute) },
+		liveDeletionCleanup{},
+	)
+	if err != nil {
+		t.Fatalf("NewStaticCredentialRotator() error = %v", err)
+	}
 	authorizer, err := accountsapi.NewBearerAuthorizer(
 		func() string { return testManagementKey },
 	)
 	if err != nil {
 		t.Fatalf("NewBearerAuthorizer() error = %v", err)
 	}
+	credentialFactory := accountsapi.NewBuiltinAPIKeyCredentialFactory()
 	handler, err := accountsapi.NewHandler(accountsapi.Dependencies{
 		Management:          management,
 		Models:              modelManagement,
 		Usage:               newAccountServiceStub(t),
 		Deletion:            deleter,
+		CredentialRotation:  credentialRotator,
 		Sub2APIExporter:     exporter,
 		CLIProxyAPIExporter: cliProxyAPIExporter,
 		Registrar:           registrar,
-		APIKeys:             accountsapi.NewBuiltinAPIKeyCredentialFactory(),
+		APIKeys:             credentialFactory,
+		StaticCredentials:   credentialFactory,
 		NativeAccounts:      nativeaccount.NewDecoder(),
 		Sub2APIAccounts:     sub2api.NewDecoder(),
 		Authorizer:          authorizer,
@@ -578,6 +698,9 @@ func redactAPIKeyFromJSON(body []byte) string {
 	if found {
 		if _, containsAPIKey := auth["api_key"]; containsAPIKey {
 			auth["api_key"] = "<redacted>"
+		}
+		if _, containsAuthToken := auth["auth_token"]; containsAuthToken {
+			auth["auth_token"] = "<redacted>"
 		}
 	}
 	var redacted bytes.Buffer

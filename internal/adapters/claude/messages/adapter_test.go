@@ -1003,27 +1003,35 @@ type claudeCredentialPoolResolver struct {
 	credentials map[accountcore.AccountRef]accountapp.Credential
 }
 
-// ResolveCredential 返回账号绑定的 Claude 凭据。
-func (resolver claudeCredentialPoolResolver) ResolveCredential(
+// ResolveCredentialBinding 返回账号绑定的 Claude 凭据。
+func (resolver claudeCredentialPoolResolver) ResolveCredentialBinding(
 	_ context.Context,
 	accountRef accountcore.AccountRef,
-) (accountapp.Credential, error) {
+) (accountapp.CredentialBinding, error) {
 	credential, found := resolver.credentials[accountRef]
 	if !found {
-		return nil, accountapp.ErrCredentialNotFound
+		return accountapp.CredentialBinding{}, accountapp.ErrCredentialNotFound
 	}
-	return credential, nil
+	return accountapp.NewCredentialBinding(
+		accountRef,
+		credential.ProviderID(),
+		credential,
+	)
 }
 
-// ResolveCredential 拒绝其他账号身份。
-func (resolver claudeCredentialResolver) ResolveCredential(
+// ResolveCredentialBinding 拒绝其他账号身份并返回稳定账号绑定。
+func (resolver claudeCredentialResolver) ResolveCredentialBinding(
 	_ context.Context,
 	accountRef accountcore.AccountRef,
-) (accountapp.Credential, error) {
+) (accountapp.CredentialBinding, error) {
 	if accountRef != resolver.accountRef {
-		return nil, accountapp.ErrCredentialNotFound
+		return accountapp.CredentialBinding{}, accountapp.ErrCredentialNotFound
 	}
-	return resolver.credential, nil
+	return accountapp.NewCredentialBinding(
+		accountRef,
+		resolver.credential.ProviderID(),
+		resolver.credential,
+	)
 }
 
 // claudeRouteResolver 返回固定的显式 Claude 路由。

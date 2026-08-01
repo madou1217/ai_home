@@ -357,6 +357,108 @@ func TestOpenMigratesV2WithoutLosingAccountData(t *testing.T) {
 	}
 }
 
+// TestOpenMigratesV3AndBackfillsCurrentCredentialRef 验证现行数据库升级不修改 AccountRef。
+func TestOpenMigratesV3AndBackfillsCurrentCredentialRef(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	aiHomeDir := t.TempDir()
+	databasePath := filepath.Join(aiHomeDir, DatabaseFileName)
+	credential, err := codex.NewAPIKeyAuth(codex.APIKeyInput{
+		APIKey: "synthetic-v3-migration-key",
+	})
+	if err != nil {
+		t.Fatalf("codex.NewAPIKeyAuth() error = %v", err)
+	}
+	accountRef, err := accountcore.DeriveAccountRef(credential)
+	if err != nil {
+		t.Fatalf("DeriveAccountRef() error = %v", err)
+	}
+	expectedCredentialRef, err := accountcore.DeriveCredentialRef(credential)
+	if err != nil {
+		t.Fatalf("DeriveCredentialRef() error = %v", err)
+	}
+	credentialJSON, err := json.Marshal(map[string]string{
+		"api_key":  credential.APIKey(),
+		"base_url": credential.BaseURL(),
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	v3 := openRawSQLite(t, databasePath)
+	for version, migration := range []string{SchemaV1, SchemaV2, SchemaV3} {
+		if _, err := v3.ExecContext(ctx, migration); err != nil {
+			t.Fatalf("apply raw schema v%d error = %v", version+1, err)
+		}
+	}
+	createdAt := time.Date(2026, time.July, 27, 2, 0, 0, 0, time.UTC)
+	if _, err := v3.ExecContext(
+		ctx,
+		`INSERT INTO accounts (
+			account_ref, provider_id, cli_account_id, enabled,
+			created_at_ms, updated_at_ms
+		) VALUES (?, 'codex', 3, 1, ?, ?)`,
+		accountRef.String(),
+		createdAt.UnixMilli(),
+		createdAt.UnixMilli(),
+	); err != nil {
+		t.Fatalf("insert v3 account error = %v", err)
+	}
+	if _, err := v3.ExecContext(
+		ctx,
+		`INSERT INTO account_credentials (
+			account_ref, auth_kind, auth_mode, format_version,
+			credential_json, updated_at_ms
+		) VALUES (?, 'api_key', '', 1, ?, ?)`,
+		accountRef.String(),
+		string(credentialJSON),
+		createdAt.UnixMilli(),
+	); err != nil {
+		t.Fatalf("insert v3 credential error = %v", err)
+	}
+	if err := v3.Close(); err != nil {
+		t.Fatalf("close v3 database error = %v", err)
+	}
+
+	store, err := Open(ctx, OpenOptions{
+		AIHomeDir: aiHomeDir,
+		Catalog:   newTestCatalog(t),
+	})
+	if err != nil {
+		t.Fatalf("Open(v3) error = %v", err)
+	}
+	t.Cleanup(func() {
+		_ = store.Close()
+	})
+	account, err := store.GetByRef(ctx, accountRef)
+	if err != nil {
+		t.Fatalf("GetByRef() error = %v", err)
+	}
+	restored, err := store.GetCredential(ctx, accountRef)
+	if err != nil {
+		t.Fatalf("GetCredential() error = %v", err)
+	}
+	var persistedCredentialRef string
+	if err := store.db.QueryRowContext(
+		ctx,
+		"SELECT credential_ref FROM account_credentials WHERE account_ref = ?",
+		accountRef.String(),
+	).Scan(&persistedCredentialRef); err != nil {
+		t.Fatalf("read credential_ref error = %v", err)
+	}
+	if account.Ref() != accountRef ||
+		restored.IdentitySeed() != credential.IdentitySeed() ||
+		persistedCredentialRef != expectedCredentialRef.String() {
+		t.Fatalf(
+			"v3 migration account=%s credential=%T credentialRef=%s want=%s",
+			account.Ref(),
+			restored,
+			persistedCredentialRef,
+			expectedCredentialRef,
+		)
+	}
+}
+
 func TestOpenSerializesConcurrentInitialMigration(t *testing.T) {
 	t.Parallel()
 

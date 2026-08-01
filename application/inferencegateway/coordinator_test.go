@@ -131,6 +131,46 @@ func TestCoordinatorDistributesHealthyRequestsFairly(t *testing.T) {
 	t.Logf("requests=%d accounts=%d distribution=%v", requestCount, len(counts), counts)
 }
 
+// TestCoordinatorHonorsPinnedAccountContext 验证请求级固定账号进入征召器且不调用其他账号。
+func TestCoordinatorHonorsPinnedAccountContext(t *testing.T) {
+	t.Parallel()
+
+	fixture := newCoordinatorFixture(t, "codex", 3)
+	target := fixture.accounts[2]
+	upstream := newScriptedUpstream(
+		inference.ProtocolCodexResponses,
+		func(
+			_ context.Context,
+			_ inferencegateway.Invocation,
+			emit inferencegateway.EventSink,
+		) (inferencegateway.AttemptResult, error) {
+			for _, event := range successfulEvents(t, "resp_pinned") {
+				if err := emit(event); err != nil {
+					return inferencegateway.AttemptResult{}, err
+				}
+			}
+			return inferencegateway.CompletedAttempt(), nil
+		},
+	)
+	coordinator := fixture.newCoordinator(t, upstream, &attemptRecorder{})
+	ctx, err := inferencegateway.WithPinnedAccount(context.Background(), target.Ref())
+	if err != nil {
+		t.Fatalf("WithPinnedAccount() error = %v", err)
+	}
+
+	if err := coordinator.Execute(
+		ctx,
+		newTextRequest(t, "gpt-5.6-sol", false),
+		func(inference.StreamEvent) error { return nil },
+	); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	invocations := upstream.Invocations()
+	if len(invocations) != 1 || invocations[0].Account().Ref() != target.Ref() {
+		t.Fatalf("Invocations() = %#v", invocations)
+	}
+}
+
 // TestCoordinatorDistributesConcurrentHealthyRequestsFairly 验证并发请求仍按原子票号
 // 均匀分配，不会因竞争丢票或集中到少数账号。
 func TestCoordinatorDistributesConcurrentHealthyRequestsFairly(t *testing.T) {

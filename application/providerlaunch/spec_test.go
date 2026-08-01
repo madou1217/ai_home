@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/madou1217/ai_home/application/providerlaunch"
-	accountcore "github.com/madou1217/ai_home/core/accounts"
 )
 
 const specSecret = "provider-launch-secret-must-not-leak"
@@ -61,88 +60,19 @@ func TestEnvironmentPatchRejectsInvalidInputs(t *testing.T) {
 	}
 }
 
-// TestProjectionRequestProtectsFilesAndOwnership 验证投影路径、0600 权限、账号归属和内容副本。
-func TestProjectionRequestProtectsFilesAndOwnership(t *testing.T) {
-	accountRef := mustAccountRef(t, "acct_0123456789abcdef0123")
-	content := []byte(specSecret)
-	file, err := providerlaunch.NewProjectionFile("auth.json", content)
-	if err != nil {
-		t.Fatalf("NewProjectionFile() error = %v", err)
-	}
-	content[0] = 'X'
-	request, err := providerlaunch.NewProjectionRequest(
-		providerlaunch.ProjectionRequestInput{
-			OwnerAccountRef:     accountRef,
-			EnvironmentKey:      "CODEX_HOME",
-			PreserveNativeState: true,
-			Files:               []providerlaunch.ProjectionFile{file},
-		},
-	)
-	if err != nil {
-		t.Fatalf("NewProjectionRequest() error = %v", err)
-	}
-	files := request.Files()
-	if len(files) != 1 || files[0].Mode() != 0o600 ||
-		string(files[0].RevealContent()) != specSecret {
-		t.Fatalf("投影文件错误: %#v", files)
-	}
-	mutated := files[0].RevealContent()
-	mutated[0] = 'Y'
-	if string(request.Files()[0].RevealContent()) != specSecret {
-		t.Fatal("投影文件内容被外部修改")
-	}
-	if request.OwnerAccountRef() != accountRef ||
-		request.EnvironmentKey() != "CODEX_HOME" ||
-		!request.PreserveNativeState() {
-		t.Fatalf("投影合同错误: %v", request)
-	}
-	assertRedacted(t, request, specSecret)
-	assertRedacted(t, file, specSecret)
-}
-
-// TestProjectionRequestRejectsUnsafePathsAndAmbiguousFiles 验证路径穿越和重复目标不能进入 Runtime。
-func TestProjectionRequestRejectsUnsafePathsAndAmbiguousFiles(t *testing.T) {
-	for _, relativePath := range []string{"", "/auth.json", "../auth.json", "dir/../auth.json", `dir\auth.json`} {
-		t.Run(relativePath, func(t *testing.T) {
-			if _, err := providerlaunch.NewProjectionFile(relativePath, []byte("secret")); err == nil {
-				t.Fatal("不安全投影路径应被拒绝")
-			}
-		})
-	}
-	file, err := providerlaunch.NewProjectionFile("auth.json", []byte("secret"))
-	if err != nil {
-		t.Fatalf("NewProjectionFile() error = %v", err)
-	}
-	if _, err := providerlaunch.NewProjectionRequest(
-		providerlaunch.ProjectionRequestInput{
-			OwnerAccountRef:     mustAccountRef(t, "acct_0123456789abcdef0123"),
-			EnvironmentKey:      "CODEX_HOME",
-			PreserveNativeState: true,
-			Files:               []providerlaunch.ProjectionFile{file, file},
-		},
-	); err == nil {
-		t.Fatal("重复投影文件应被拒绝")
-	}
-}
-
-// TestStrategyResultCopiesArgumentsAndProjection 验证 Strategy 输出不能通过切片或指针修改。
-func TestStrategyResultCopiesArgumentsAndProjection(t *testing.T) {
+// TestStrategyResultCopiesArgumentsAndRuntime 验证 Strategy 输出不能通过切片或 Runtime 副本修改。
+func TestStrategyResultCopiesArgumentsAndRuntime(t *testing.T) {
 	environment, err := providerlaunch.NewEnvironmentPatch(map[string]string{"TOKEN": specSecret}, nil)
 	if err != nil {
 		t.Fatalf("NewEnvironmentPatch() error = %v", err)
 	}
-	file, err := providerlaunch.NewProjectionFile("auth.json", []byte(specSecret))
+	runtime, err := providerlaunch.NewCodexExternalAuthRuntime(
+		specSecret,
+		"workspace-test",
+		"plus",
+	)
 	if err != nil {
-		t.Fatalf("NewProjectionFile() error = %v", err)
-	}
-	projection, err := providerlaunch.NewProjectionRequest(providerlaunch.ProjectionRequestInput{
-		OwnerAccountRef:     mustAccountRef(t, "acct_0123456789abcdef0123"),
-		EnvironmentKey:      "CODEX_HOME",
-		PreserveNativeState: true,
-		Files:               []providerlaunch.ProjectionFile{file},
-	})
-	if err != nil {
-		t.Fatalf("NewProjectionRequest() error = %v", err)
+		t.Fatalf("NewCodexExternalAuthRuntime() error = %v", err)
 	}
 	descriptor, err := providerlaunch.NewCredentialDescriptor("oauth", "refreshable")
 	if err != nil {
@@ -156,7 +86,7 @@ func TestStrategyResultCopiesArgumentsAndProjection(t *testing.T) {
 		Arguments:                 arguments,
 		ArgumentsAfterSubcommands: afterSubcommands,
 		Environment:               environment,
-		Projection:                &projection,
+		Runtime:                   runtime,
 		Credential:                descriptor,
 	})
 	if err != nil {
@@ -166,6 +96,11 @@ func TestStrategyResultCopiesArgumentsAndProjection(t *testing.T) {
 	afterSubcommands[0] = "mutated"
 	if !result.IsValid() {
 		t.Fatal("外部修改影响了 Strategy 结果")
+	}
+	revealedRuntime := result.Runtime().RevealParameters()
+	revealedRuntime["access_token"] = "mutated"
+	if result.Runtime().RevealParameters()["access_token"] != specSecret {
+		t.Fatal("Runtime 敏感参数被外部修改")
 	}
 	resolved, err := result.ResolveArguments([]string{"exec", "--json"})
 	if err != nil {
@@ -180,16 +115,55 @@ func TestStrategyResultCopiesArgumentsAndProjection(t *testing.T) {
 	) {
 		t.Fatalf("ResolveArguments(NUL) error = %v", err)
 	}
+	assertRedacted(t, result, specSecret, "workspace-test", "plus")
+	assertRedacted(t, result.Runtime(), specSecret, "workspace-test", "plus")
 }
 
-// mustAccountRef 创建测试使用的规范稳定账号引用。
-func mustAccountRef(t *testing.T, value string) accountcore.AccountRef {
-	t.Helper()
-	accountRef, err := accountcore.ParseAccountRef(value)
+// TestStrategyResultRejectsAccountScopedHomes 验证任何 Strategy 都不能切换共享状态根。
+func TestStrategyResultRejectsAccountScopedHomes(t *testing.T) {
+	descriptor, err := providerlaunch.NewCredentialDescriptor("oauth", "refreshable")
 	if err != nil {
-		t.Fatalf("ParseAccountRef() error = %v", err)
+		t.Fatalf("NewCredentialDescriptor() error = %v", err)
 	}
-	return accountRef
+	for _, key := range []string{
+		"HOME",
+		"USERPROFILE",
+		"XDG_CONFIG_HOME",
+		"CODEX_HOME",
+		"CODEX_SQLITE_HOME",
+		"CLAUDE_CONFIG_DIR",
+	} {
+		t.Run(key+" set", func(t *testing.T) {
+			environment, patchErr := providerlaunch.NewEnvironmentPatch(map[string]string{key: "/tmp/account-home"}, nil)
+			if patchErr != nil {
+				t.Fatalf("NewEnvironmentPatch() error = %v", patchErr)
+			}
+			if _, strategyErr := providerlaunch.NewStrategyResult(providerlaunch.StrategyResultInput{
+				ProviderID:  "codex",
+				Binary:      "codex",
+				Environment: environment,
+				Runtime:     providerlaunch.NewDirectProcessRuntime(),
+				Credential:  descriptor,
+			}); !errors.Is(strategyErr, providerlaunch.ErrInvalidStrategyResult) {
+				t.Fatalf("NewStrategyResult(%s set) error = %v", key, strategyErr)
+			}
+		})
+		t.Run(key+" unset", func(t *testing.T) {
+			environment, patchErr := providerlaunch.NewEnvironmentPatch(nil, []string{key})
+			if patchErr != nil {
+				t.Fatalf("NewEnvironmentPatch() error = %v", patchErr)
+			}
+			if _, strategyErr := providerlaunch.NewStrategyResult(providerlaunch.StrategyResultInput{
+				ProviderID:  "claude",
+				Binary:      "claude",
+				Environment: environment,
+				Runtime:     providerlaunch.NewDirectProcessRuntime(),
+				Credential:  descriptor,
+			}); !errors.Is(strategyErr, providerlaunch.ErrInvalidStrategyResult) {
+				t.Fatalf("NewStrategyResult(%s unset) error = %v", key, strategyErr)
+			}
+		})
+	}
 }
 
 // assertRedacted 验证所有常用 fmt 路径均不会输出指定秘密。

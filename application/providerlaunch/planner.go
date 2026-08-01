@@ -55,9 +55,9 @@ type Dependencies struct {
 	Strategies []Strategy
 }
 
-// Planner 按固定主链生成 Provider CLI 启动描述。
+// Planner 按固定主链生成 Native Direct Provider CLI 启动描述。
 //
-// 主链为账号选择 -> 凭据解析 -> Provider Strategy；Planner 不包含 Provider 分支。
+// 主链为显式账号选择 -> 凭据解析 -> Provider Strategy；Gateway Relay 不进入本规划器。
 type Planner struct {
 	accounts    AccountSelector
 	credentials CredentialResolver
@@ -89,7 +89,7 @@ func NewPlanner(dependencies Dependencies) (*Planner, error) {
 	}, nil
 }
 
-// Build 解析账号、取得当前凭据并生成一次不可变启动描述。
+// Build 解析显式账号、取得当前凭据并生成一次不可变 Native 启动描述。
 func (planner *Planner) Build(
 	ctx context.Context,
 	request accountapp.LaunchSelectionRequest,
@@ -104,6 +104,10 @@ func (planner *Planner) Build(
 	if err := ctx.Err(); err != nil {
 		return LaunchSpec{}, err
 	}
+	if (!request.AccountRef.IsValid() && !request.CLIAccountID.IsValid()) ||
+		(request.AccountRef.IsValid() && request.CLIAccountID.IsValid()) {
+		return LaunchSpec{}, ErrInvalidBuildRequest
+	}
 
 	selection, err := planner.accounts.Resolve(ctx, request)
 	if err != nil {
@@ -114,6 +118,9 @@ func (planner *Planner) Build(
 	}
 	account := selection.Account()
 	if !account.Enabled() || account.ProviderID() != request.ProviderID {
+		return LaunchSpec{}, ErrInvalidLaunchSpec
+	}
+	if !isExplicitSelectionSource(selection.Source()) {
 		return LaunchSpec{}, ErrInvalidLaunchSpec
 	}
 	strategy, found := planner.strategies[account.ProviderID()]

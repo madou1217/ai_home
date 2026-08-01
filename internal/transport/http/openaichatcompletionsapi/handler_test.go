@@ -115,6 +115,53 @@ func TestHandlerServesNonStreamCompletionOverRealHTTP(t *testing.T) {
 	)
 }
 
+// TestHandlerPropagatesAndValidatesPinnedAccountHeader 验证 Chat 入站保留固定账号约束。
+func TestHandlerPropagatesAndValidatesPinnedAccountHeader(t *testing.T) {
+	t.Parallel()
+
+	payload := `{"model":"gpt-5.6-sol","messages":[{"role":"user","content":"pin"}],"stream":false}`
+	t.Run("valid", func(t *testing.T) {
+		executor := newScriptedExecutor(completeChatEvents(t), nil)
+		baseURL, client := startChatServer(t, executor, 0)
+		request, err := http.NewRequest(http.MethodPost, baseURL+Path, strings.NewReader(payload))
+		if err != nil {
+			t.Fatalf("http.NewRequest() error = %v", err)
+		}
+		request.Header.Set("Authorization", "Bearer "+testBearerToken)
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("X-Account-Ref", "acct_0123456789abcdef0123")
+		response, err := client.Do(request)
+		if err != nil {
+			t.Fatalf("client.Do() error = %v", err)
+		}
+		defer func() { _ = response.Body.Close() }()
+		if response.StatusCode != http.StatusOK || executor.LastPinnedAccount() != "acct_0123456789abcdef0123" {
+			t.Fatalf("status=%d pinned=%q", response.StatusCode, executor.LastPinnedAccount())
+		}
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		executor := newScriptedExecutor(completeChatEvents(t), nil)
+		baseURL, client := startChatServer(t, executor, 0)
+		request, err := http.NewRequest(http.MethodPost, baseURL+Path, strings.NewReader(payload))
+		if err != nil {
+			t.Fatalf("http.NewRequest() error = %v", err)
+		}
+		request.Header.Set("Authorization", "Bearer "+testBearerToken)
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Add("X-Account-Ref", "acct_0123456789abcdef0123")
+		request.Header.Add("X-Account-Ref", "acct_1234567890abcdef1234")
+		response, err := client.Do(request)
+		if err != nil {
+			t.Fatalf("client.Do() error = %v", err)
+		}
+		defer func() { _ = response.Body.Close() }()
+		if response.StatusCode != http.StatusBadRequest || executor.CallCount() != 0 {
+			t.Fatalf("status=%d executorCalls=%d", response.StatusCode, executor.CallCount())
+		}
+	})
+}
+
 // TestHandlerStreamsDataOnlyChatLifecycleOverRealHTTP 验证真实 TCP SSE 不写
 // event 字段，并按 role、reasoning、content、tool、finish、usage、DONE 输出。
 func TestHandlerStreamsDataOnlyChatLifecycleOverRealHTTP(t *testing.T) {
@@ -595,6 +642,7 @@ type scriptedExecutor struct {
 	err         error
 	callCount   int
 	lastRequest inference.Request
+	lastPinned  string
 }
 
 // newScriptedExecutor 创建不会持有请求正文或凭据的测试执行器。
@@ -610,13 +658,18 @@ func newScriptedExecutor(
 
 // Execute 记录请求并同步传播 EventSink 背压。
 func (executor *scriptedExecutor) Execute(
-	_ context.Context,
+	ctx context.Context,
 	request inference.Request,
 	emit inferencegateway.EventSink,
 ) error {
 	executor.mu.Lock()
 	executor.callCount++
 	executor.lastRequest = request
+	if accountRef, found := inferencegateway.PinnedAccount(ctx); found {
+		executor.lastPinned = accountRef.String()
+	} else {
+		executor.lastPinned = ""
+	}
 	events := append([]inference.StreamEvent(nil), executor.events...)
 	executionErr := executor.err
 	executor.mu.Unlock()
@@ -626,6 +679,13 @@ func (executor *scriptedExecutor) Execute(
 		}
 	}
 	return executionErr
+}
+
+// LastPinnedAccount 返回执行器收到的固定账号，不包含任何凭据。
+func (executor *scriptedExecutor) LastPinnedAccount() string {
+	executor.mu.Lock()
+	defer executor.mu.Unlock()
+	return executor.lastPinned
 }
 
 // LastRequest 返回最后一个 Canonical 请求快照。

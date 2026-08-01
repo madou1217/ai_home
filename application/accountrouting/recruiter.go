@@ -81,8 +81,9 @@ type Dependencies struct {
 
 // Request 是经过 Provider 注册表校验的征召请求。
 type Request struct {
-	providerID string
-	modelID    runtimecore.ModelID
+	providerID    string
+	modelID       runtimecore.ModelID
+	pinnedAccount accountcore.AccountRef
 }
 
 // NewRequest 规范化 Provider，并校验别名解析后的真实模型。
@@ -92,6 +93,32 @@ func NewRequest(
 	catalog *providers.Catalog,
 	providerID string,
 	modelID string,
+) (Request, error) {
+	return newRequest(catalog, providerID, modelID, "")
+}
+
+// NewPinnedRequest 创建只允许征召指定稳定账号的请求。
+//
+// 固定账号仍必须存在于目标 Provider、模型的启用候选快照中，并继续经过运行态、
+// 凭据和传输能力校验；任何失败都不得回退到同池其他账号。
+func NewPinnedRequest(
+	catalog *providers.Catalog,
+	providerID string,
+	modelID string,
+	accountRef accountcore.AccountRef,
+) (Request, error) {
+	if !accountRef.IsValid() {
+		return Request{}, ErrInvalidRequest
+	}
+	return newRequest(catalog, providerID, modelID, accountRef)
+}
+
+// newRequest 统一普通征召和固定账号征召的 Provider、模型校验。
+func newRequest(
+	catalog *providers.Catalog,
+	providerID string,
+	modelID string,
+	pinnedAccount accountcore.AccountRef,
 ) (Request, error) {
 	if catalog == nil {
 		return Request{}, ErrInvalidRequest
@@ -105,8 +132,9 @@ func NewRequest(
 		return Request{}, errors.Join(ErrInvalidRequest, err)
 	}
 	return Request{
-		providerID: canonicalProviderID,
-		modelID:    runtimeModelID,
+		providerID:    canonicalProviderID,
+		modelID:       runtimeModelID,
+		pinnedAccount: pinnedAccount,
 	}, nil
 }
 
@@ -120,10 +148,16 @@ func (request Request) ModelID() runtimecore.ModelID {
 	return request.modelID
 }
 
+// PinnedAccount 返回请求唯一允许的账号；普通公平征召返回 false。
+func (request Request) PinnedAccount() (accountcore.AccountRef, bool) {
+	return request.pinnedAccount, request.pinnedAccount.IsValid()
+}
+
 // isValid 防止零值或跨层篡改请求进入候选端口。
 func (request Request) isValid() bool {
 	return request.ProviderID() != "" &&
-		request.ModelID().IsValid()
+		request.ModelID().IsValid() &&
+		(request.pinnedAccount == "" || request.pinnedAccount.IsValid())
 }
 
 // Result 保存一次征召的账号、凭据和本次扫描进度。
@@ -167,12 +201,15 @@ type Recruiter struct {
 // 一个 Session 最多访问快照中的每个位置一次，因此无需请求级 Map 或 Set
 // 也能保证同一请求不会重复调用同一账号。
 type RecruitmentSession struct {
-	recruiter  *Recruiter
-	request    Request
-	transport  CredentialTransportPolicy
-	candidates *accountapp.RoutingCandidates
-	start      int
-	offset     int
+	recruiter       *Recruiter
+	request         Request
+	transport       CredentialTransportPolicy
+	candidates      *accountapp.RoutingCandidates
+	pinned          bool
+	pinnedCandidate accountapp.RoutingAccount
+	pinnedFound     bool
+	start           int
+	offset          int
 }
 
 // NewRecruiter 创建不缓存凭据、共享公平票号的账号征召器。
@@ -223,17 +260,23 @@ func (recruiter *Recruiter) Begin(
 	if candidates == nil {
 		return nil, ErrInvalidCandidateSnapshot
 	}
-	return &RecruitmentSession{
+	session := &RecruitmentSession{
 		recruiter:  recruiter,
 		request:    request,
 		transport:  transport,
 		candidates: candidates,
-		start: recruiter.scheduler.NextStart(
-			request.ProviderID(),
-			request.ModelID(),
-			candidates.Len(),
-		),
-	}, nil
+	}
+	if accountRef, pinned := request.PinnedAccount(); pinned {
+		session.pinned = true
+		session.pinnedCandidate, session.pinnedFound = candidates.FindByRef(accountRef)
+		return session, nil
+	}
+	session.start = recruiter.scheduler.NextStart(
+		request.ProviderID(),
+		request.ModelID(),
+		candidates.Len(),
+	)
+	return session, nil
 }
 
 // Recruit 从新建会话中返回首个当前可用账号。
@@ -267,15 +310,14 @@ func (session *RecruitmentSession) Next(ctx context.Context) (Result, error) {
 		return Result{}, err
 	}
 	progress := Result{}
-	for session.offset < session.candidates.Len() {
-		index := (session.start + session.offset) % session.candidates.Len()
-		candidate, found := session.candidates.At(index)
+	for session.offset < session.candidateCount() {
+		candidate, found := session.candidateAt(session.offset)
 		if !found {
 			return progress, ErrInvalidCandidateSnapshot
 		}
 		session.offset++
 		progress.examined++
-		progress.sourceExhausted = session.offset == session.candidates.Len()
+		progress.sourceExhausted = session.offset == session.candidateCount()
 		if !validCandidate(candidate, session.request.ProviderID()) {
 			return progress, ErrInvalidCandidateSnapshot
 		}
@@ -319,6 +361,26 @@ func (session *RecruitmentSession) Next(ctx context.Context) (Result, error) {
 	}
 	progress.sourceExhausted = true
 	return progress, ErrNoRoutableAccount
+}
+
+// candidateCount 返回当前会话可检查的候选数量；固定账号最多为一。
+func (session *RecruitmentSession) candidateCount() int {
+	if session.pinned {
+		if session.pinnedFound {
+			return 1
+		}
+		return 0
+	}
+	return session.candidates.Len()
+}
+
+// candidateAt 统一普通环形快照和固定账号单元素视图，不复制候选切片。
+func (session *RecruitmentSession) candidateAt(offset int) (accountapp.RoutingAccount, bool) {
+	if session.pinned {
+		return session.pinnedCandidate, session.pinnedFound && offset == 0
+	}
+	index := (session.start + offset) % session.candidates.Len()
+	return session.candidates.At(index)
 }
 
 // isRuntimeEligible 在读取敏感凭据前检查账号与真实模型元组。

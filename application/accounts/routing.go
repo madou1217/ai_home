@@ -113,6 +113,7 @@ type RoutingAccount struct {
 // 账号管理写路径发布新快照后，已经开始的请求仍安全地使用旧快照完成本轮征召。
 type RoutingCandidates struct {
 	accounts []RoutingAccount
+	sorted   bool
 }
 
 // NewRoutingAccount 校验持久化字段并创建紧凑账号征召投影。
@@ -180,6 +181,7 @@ func NewRoutingCandidates(accounts []RoutingAccount) *RoutingCandidates {
 	}
 	return &RoutingCandidates{
 		accounts: snapshot[:write],
+		sorted:   sorted,
 	}
 }
 
@@ -207,4 +209,37 @@ func (candidates *RoutingCandidates) At(index int) (RoutingAccount, bool) {
 		return RoutingAccount{}, false
 	}
 	return candidates.accounts[index], true
+}
+
+// FindByRef 在生产有序快照中使用二分查找，测试或外部无序快照回退为线性查找。
+func (candidates *RoutingCandidates) FindByRef(
+	accountRef accountcore.AccountRef,
+) (RoutingAccount, bool) {
+	if candidates == nil || !accountRef.IsValid() || len(candidates.accounts) == 0 {
+		return RoutingAccount{}, false
+	}
+	if candidates.sorted {
+		low := 0
+		high := len(candidates.accounts)
+		target := accountRef.String()
+		for low < high {
+			middle := low + (high-low)/2
+			current := candidates.accounts[middle].Ref().String()
+			if current < target {
+				low = middle + 1
+				continue
+			}
+			high = middle
+		}
+		if low < len(candidates.accounts) && candidates.accounts[low].Ref() == accountRef {
+			return candidates.accounts[low], true
+		}
+		return RoutingAccount{}, false
+	}
+	for _, account := range candidates.accounts {
+		if account.Ref() == accountRef {
+			return account, true
+		}
+	}
+	return RoutingAccount{}, false
 }

@@ -69,6 +69,65 @@ func TestResolverReturnsFreshOAuthCredentialWithoutRefresh(t *testing.T) {
 	}
 }
 
+// TestResolverForceRefreshesFreshOAuth 验证上游 401 可以绕过本地到期窗口刷新。
+func TestResolverForceRefreshesFreshOAuth(t *testing.T) {
+	t.Parallel()
+
+	now := resolverTestTime()
+	credential := resolverTestCredential{
+		providerID:   "codex",
+		identitySeed: "oauth:codex:server-rejected",
+		expiresAt:    now.Add(time.Hour),
+	}
+	store := newResolverTestStore(t, credential, now.Add(-time.Hour))
+	strategy := &resolverTestStrategy{
+		providerID: "codex",
+		nextExpiry: now.Add(2 * time.Hour),
+	}
+	resolver := newResolverTestResolver(t, store, strategy, now)
+
+	binding, err := resolver.ForceRefreshCredentialBinding(
+		context.Background(),
+		store.accountRef,
+	)
+	if err != nil {
+		t.Fatalf("ForceRefreshCredentialBinding() error = %v", err)
+	}
+	if !binding.IsValid() || strategy.refreshCalls.Load() != 1 {
+		t.Fatalf(
+			"ForceRefreshCredentialBinding() binding=%#v refreshCalls=%d",
+			binding,
+			strategy.refreshCalls.Load(),
+		)
+	}
+}
+
+// TestResolverRejectsForcedRefreshForStaticCredential 验证静态账号不会伪造刷新能力。
+func TestResolverRejectsForcedRefreshForStaticCredential(t *testing.T) {
+	t.Parallel()
+
+	now := resolverTestTime()
+	credential := resolverTestCredential{
+		providerID:   "claude",
+		identitySeed: "api_key:claude:static-force",
+	}
+	store := newResolverTestStore(t, credential, now.Add(-time.Hour))
+	strategy := &resolverTestStrategy{providerID: "claude"}
+	resolver := newResolverTestResolver(t, store, strategy, now)
+
+	_, err := resolver.ForceRefreshCredentialBinding(context.Background(), store.accountRef)
+	if !errors.Is(err, accountcredentials.ErrCredentialNotRefreshable) {
+		t.Fatalf("ForceRefreshCredentialBinding() error = %v", err)
+	}
+	if strategy.refreshCalls.Load() != 0 || store.replaceCalls.Load() != 0 {
+		t.Fatalf(
+			"静态凭据发生刷新副作用: refresh=%d replace=%d",
+			strategy.refreshCalls.Load(),
+			store.replaceCalls.Load(),
+		)
+	}
+}
+
 // TestResolverRefreshesDueCredentialAndPersistsNewVersion 验证到期凭据刷新并推进版本。
 func TestResolverRefreshesDueCredentialAndPersistsNewVersion(t *testing.T) {
 	t.Parallel()

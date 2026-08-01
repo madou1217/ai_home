@@ -7,17 +7,13 @@ import (
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/providerlaunch"
-	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/accounts/codex"
-	"github.com/madou1217/ai_home/internal/adapters/codex/authfile"
 )
 
 const (
 	binaryName       = "codex"
 	apiProviderKey   = "aih_account"
 	apiProviderLabel = "AIH Account"
-	authFileName     = "auth.json"
-	codexHomeKey     = "CODEX_HOME"
 )
 
 var (
@@ -38,12 +34,12 @@ var inheritedCredentialKeys = []string{
 }
 
 // configScopedSubcommands 要求 -c 参数跟随子命令，其他入口仍把参数放在根命令前。
-var configScopedSubcommands = []string{"exec", "resume", "app-server"}
+var configScopedSubcommands = []string{"exec", "resume", "fork", "review", "app-server"}
 
 // 编译期确认 Codex Strategy 满足应用层窄接口。
 var _ providerlaunch.Strategy = (*Strategy)(nil)
 
-// Strategy 负责 Codex OAuth 文件投影和 API Key model_provider 参数。
+// Strategy 负责 Codex OAuth 外部认证 Runtime 和 API Key model_provider 参数。
 type Strategy struct{}
 
 // NewStrategy 创建无状态 Codex CLI 启动策略。
@@ -68,7 +64,7 @@ func (*Strategy) Build(
 		if auth == nil {
 			return providerlaunch.StrategyResult{}, ErrInvalidBinding
 		}
-		return buildOAuth(binding.AccountRef(), auth)
+		return buildOAuth(auth)
 	case *codex.APIKeyAuth:
 		if auth == nil {
 			return providerlaunch.StrategyResult{}, ErrInvalidBinding
@@ -79,29 +75,22 @@ func (*Strategy) Build(
 	}
 }
 
-// buildOAuth 生成不分配路径的 auth.json 投影请求。
-func buildOAuth(
-	accountRef accountcore.AccountRef,
-	auth *codex.OAuthAuth,
-) (providerlaunch.StrategyResult, error) {
-	encoded, err := authfile.Encode(auth)
-	if err != nil {
-		return providerlaunch.StrategyResult{}, fmt.Errorf("%w: OAuth 编码失败", ErrBuildLaunchContext)
+// buildOAuth 生成不写 auth.json 的官方 app-server 外部 Token Runtime。
+func buildOAuth(auth *codex.OAuthAuth) (providerlaunch.StrategyResult, error) {
+	accountID := auth.UpstreamAccountID()
+	if accountID == "" {
+		return providerlaunch.StrategyResult{}, fmt.Errorf(
+			"%w: OAuth 缺少可注入的 ChatGPT Account ID",
+			ErrBuildLaunchContext,
+		)
 	}
-	file, err := providerlaunch.NewProjectionFile(authFileName, encoded)
-	if err != nil {
-		return providerlaunch.StrategyResult{}, fmt.Errorf("%w: OAuth 投影文件无效", ErrBuildLaunchContext)
-	}
-	projection, err := providerlaunch.NewProjectionRequest(
-		providerlaunch.ProjectionRequestInput{
-			OwnerAccountRef:     accountRef,
-			EnvironmentKey:      codexHomeKey,
-			PreserveNativeState: true,
-			Files:               []providerlaunch.ProjectionFile{file},
-		},
+	runtime, err := providerlaunch.NewCodexExternalAuthRuntime(
+		auth.AccessToken(),
+		accountID,
+		auth.PlanType(),
 	)
 	if err != nil {
-		return providerlaunch.StrategyResult{}, fmt.Errorf("%w: OAuth 投影请求无效", ErrBuildLaunchContext)
+		return providerlaunch.StrategyResult{}, fmt.Errorf("%w: OAuth Runtime 无效", ErrBuildLaunchContext)
 	}
 	environment, err := providerlaunch.NewEnvironmentPatch(nil, inheritedCredentialKeys)
 	if err != nil {
@@ -115,11 +104,13 @@ func buildOAuth(
 		return providerlaunch.StrategyResult{}, fmt.Errorf("%w: OAuth 摘要无效", ErrBuildLaunchContext)
 	}
 	return providerlaunch.NewStrategyResult(providerlaunch.StrategyResultInput{
-		ProviderID:  codex.ProviderID,
-		Binary:      binaryName,
-		Environment: environment,
-		Projection:  &projection,
-		Credential:  descriptor,
+		ProviderID:                codex.ProviderID,
+		Binary:                    binaryName,
+		Arguments:                 []string{"-c", `model_provider="openai"`},
+		ArgumentsAfterSubcommands: configScopedSubcommands,
+		Environment:               environment,
+		Runtime:                   runtime,
+		Credential:                descriptor,
 	})
 }
 
@@ -152,6 +143,7 @@ func buildAPIKey(auth *codex.APIKeyAuth) (providerlaunch.StrategyResult, error) 
 		Arguments:                 arguments,
 		ArgumentsAfterSubcommands: configScopedSubcommands,
 		Environment:               environment,
+		Runtime:                   providerlaunch.NewDirectProcessRuntime(),
 		Credential:                descriptor,
 	})
 }

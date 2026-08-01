@@ -235,15 +235,32 @@ func (coordinator *Coordinator) beginRecruitment(
 	route Route,
 	transport accountrouting.CredentialTransportPolicy,
 ) (*accountrouting.RecruitmentSession, error) {
-	request, err := accountrouting.NewRequest(
-		coordinator.catalog,
-		string(route.ProviderID()),
-		route.EffectiveModel(),
-	)
+	request, err := coordinator.newRecruitmentRequest(ctx, route)
 	if err != nil {
 		return nil, err
 	}
 	return coordinator.recruiter.Begin(ctx, request, transport)
+}
+
+// newRecruitmentRequest 把 HTTP/CLI Gateway 的请求级账号约束下沉到征召边界。
+func (coordinator *Coordinator) newRecruitmentRequest(
+	ctx context.Context,
+	route Route,
+) (accountrouting.Request, error) {
+	accountRef, pinned := PinnedAccount(ctx)
+	if pinned {
+		return accountrouting.NewPinnedRequest(
+			coordinator.catalog,
+			string(route.ProviderID()),
+			route.EffectiveModel(),
+			accountRef,
+		)
+	}
+	return accountrouting.NewRequest(
+		coordinator.catalog,
+		string(route.ProviderID()),
+		route.EffectiveModel(),
+	)
 }
 
 // executeAttempt 执行单账号调用并返回尚未对客户端可见的可重试失败。

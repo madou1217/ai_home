@@ -10,9 +10,9 @@ import (
 	"testing"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	"github.com/madou1217/ai_home/application/providerlaunch"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/accounts/codex"
-	"github.com/madou1217/ai_home/internal/adapters/codex/authfile"
 	"github.com/madou1217/ai_home/internal/adapters/codex/clilaunch"
 )
 
@@ -20,10 +20,79 @@ const (
 	codexAccessSecret  = "codex-access-secret-must-not-leak"
 	codexRefreshSecret = "codex-refresh-secret-must-not-leak"
 	codexAPIKeySecret  = "codex-api-key-secret-must-not-leak"
+	codexGatewayKey    = "codex-gateway-client-key-must-not-leak-32"
 )
 
-// TestStrategyBuildsOAuthProjection 验证 OAuth 使用官方 auth.json 且投影保持共享原生状态。
-func TestStrategyBuildsOAuthProjection(t *testing.T) {
+// TestGatewayStrategyBuildsPoolAndPinnedResponsesProviders 验证 Gateway 只使用 Server Key。
+func TestGatewayStrategyBuildsPoolAndPinnedResponsesProviders(t *testing.T) {
+	endpoint, err := providerlaunch.NewGatewayEndpoint(
+		"http://127.0.0.1:9527",
+		codexGatewayKey,
+	)
+	if err != nil {
+		t.Fatalf("NewGatewayEndpoint() error = %v", err)
+	}
+	accountRef, err := accountcore.ParseAccountRef("acct_0123456789abcdef0123")
+	if err != nil {
+		t.Fatalf("ParseAccountRef() error = %v", err)
+	}
+	for _, test := range []struct {
+		name       string
+		accountRef accountcore.AccountRef
+		pinned     bool
+	}{
+		{name: "账号池"},
+		{name: "固定账号", accountRef: accountRef, pinned: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			target, err := providerlaunch.NewGatewayTarget(endpoint, test.accountRef)
+			if err != nil {
+				t.Fatalf("NewGatewayTarget() error = %v", err)
+			}
+			result, err := clilaunch.NewGatewayStrategy().Build(target)
+			if err != nil {
+				t.Fatalf("Build() error = %v", err)
+			}
+			if !result.IsValid() || result.ProviderID() != codex.ProviderID || result.Binary() != "codex" {
+				t.Fatalf("GatewayStrategyResult = %#v", result)
+			}
+			arguments := strings.Join(result.Arguments(), "\n")
+			for _, expected := range []string{
+				`model_provider="aih_gateway"`,
+				`model_providers.aih_gateway.base_url="http://127.0.0.1:9527/v1"`,
+				`model_providers.aih_gateway.wire_api="responses"`,
+				`model_providers.aih_gateway.env_key="AIH_GATEWAY_CLIENT_KEY"`,
+				`model_providers.aih_gateway.request_max_retries=0`,
+				`model_providers.aih_gateway.stream_max_retries=0`,
+			} {
+				if !strings.Contains(arguments, expected) {
+					t.Fatalf("Gateway 参数缺少 %q: %v", expected, result.Arguments())
+				}
+			}
+			values := result.Environment().RevealSet()
+			if values["AIH_GATEWAY_CLIENT_KEY"] != codexGatewayKey ||
+				slices.Contains(result.Environment().UnsetNames(), "CODEX_HOME") {
+				t.Fatalf("Gateway 环境错误: %v", result.Environment())
+			}
+			if test.pinned {
+				if values["AIH_GATEWAY_ACCOUNT_REF"] != accountRef.String() ||
+					!strings.Contains(arguments, `env_http_headers={"X-Account-Ref"="AIH_GATEWAY_ACCOUNT_REF"}`) {
+					t.Fatalf("固定账号映射错误: args=%v env=%v", result.Arguments(), result.Environment())
+				}
+			} else if _, found := values["AIH_GATEWAY_ACCOUNT_REF"]; found ||
+				!slices.Contains(result.Environment().UnsetNames(), "AIH_GATEWAY_ACCOUNT_REF") {
+				t.Fatalf("账号池残留固定账号: %v", result.Environment())
+			}
+			formatted := fmt.Sprintf("%v\n%+v\n%#v", result, result, result)
+			if strings.Contains(formatted, codexGatewayKey) {
+				t.Fatalf("Gateway Key 泄漏到格式化结果: %s", formatted)
+			}
+		})
+	}
+}
+
+// TestStrategyBuildsOAuthExternalAuthRuntime 验证 OAuth 使用官方 app-server 外部 Token 且不切换 HOME。
+func TestStrategyBuildsOAuthExternalAuthRuntime(t *testing.T) {
 	auth := mustOAuth(t)
 	binding := mustBinding(t, auth)
 	result, err := clilaunch.NewStrategy().Build(binding)
@@ -33,41 +102,31 @@ func TestStrategyBuildsOAuthProjection(t *testing.T) {
 	if result.ProviderID() != codex.ProviderID || !result.IsValid() {
 		t.Fatalf("StrategyResult 无效: provider=%s", result.ProviderID())
 	}
-	projectionInput, exists := result.Projection()
-	if !exists {
-		t.Fatal("缺少 OAuth 投影")
+	runtime := result.Runtime()
+	if runtime.Kind() != providerlaunch.RuntimeKindCodexExternalAuth {
+		t.Fatalf("OAuth Runtime 错误: %v", runtime)
 	}
-	if projectionInput.OwnerAccountRef() != binding.AccountRef() ||
-		projectionInput.EnvironmentKey() != "CODEX_HOME" ||
-		!projectionInput.PreserveNativeState() {
-		t.Fatalf("OAuth 投影合同错误: %v", projectionInput)
-	}
-	files := projectionInput.Files()
-	if len(files) != 1 || files[0].RelativePath() != "auth.json" || files[0].Mode() != 0o600 {
-		t.Fatalf("OAuth 投影文件错误: %#v", files)
-	}
-	decoded, err := authfile.Decode(files[0].RevealContent(), authfile.DecodeOptions{})
-	if err != nil {
-		t.Fatalf("投影 auth.json 不能重新解析: %v", err)
-	}
-	decodedOAuth, ok := decoded.(*codex.OAuthAuth)
-	if !ok ||
-		decodedOAuth.AccessToken() != auth.AccessToken() ||
-		decodedOAuth.RefreshToken() != auth.RefreshToken() ||
-		decodedOAuth.IDToken() != auth.IDToken() {
-		t.Fatal("OAuth 投影没有无损保存官方凭据")
+	parameters := runtime.RevealParameters()
+	if parameters["access_token"] != auth.AccessToken() ||
+		parameters["chatgpt_account_id"] != auth.UpstreamAccountID() ||
+		parameters["chatgpt_plan_type"] != auth.PlanType() {
+		t.Fatal("OAuth Runtime 没有无损保存外部认证输入")
 	}
 	if resultCredential := result.Credential(); resultCredential.Kind() != "oauth" ||
 		resultCredential.Mode() != "refreshable" {
 		t.Fatalf("OAuth 摘要错误: %v", resultCredential)
 	}
+	if !slices.Equal(result.Arguments(), []string{"-c", `model_provider="openai"`}) {
+		t.Fatalf("OAuth 必须强制使用官方 OpenAI Provider: %v", result.Arguments())
+	}
 	environment := result.Environment()
 	if len(environment.RevealSet()) != 0 ||
 		!slices.Contains(environment.UnsetNames(), "OPENAI_API_KEY") ||
-		!slices.Contains(environment.UnsetNames(), "CODEX_ACCESS_TOKEN") {
+		!slices.Contains(environment.UnsetNames(), "CODEX_ACCESS_TOKEN") ||
+		slices.Contains(environment.UnsetNames(), "CODEX_HOME") {
 		t.Fatalf("OAuth 环境隔离错误: %v", environment)
 	}
-	assertNoSecrets(t, result, projectionInput, files[0])
+	assertNoSecrets(t, result, runtime)
 }
 
 // TestStrategyBuildsAPIKeyProviderArgs 验证 API Key endpoint 进入 Responses model_provider 而非无效环境别名。
@@ -83,8 +142,8 @@ func TestStrategyBuildsAPIKeyProviderArgs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Build() error = %v", err)
 	}
-	if _, exists := result.Projection(); exists {
-		t.Fatal("API Key 不应创建 auth.json 投影")
+	if result.Runtime().Kind() != providerlaunch.RuntimeKindDirectProcess {
+		t.Fatalf("API Key Runtime 错误: %v", result.Runtime())
 	}
 	arguments := result.Arguments()
 	wantArguments := []string{
@@ -99,7 +158,7 @@ func TestStrategyBuildsAPIKeyProviderArgs(t *testing.T) {
 	}
 	if !slices.Equal(
 		result.ArgumentsAfterSubcommands(),
-		[]string{"exec", "resume", "app-server"},
+		[]string{"exec", "resume", "fork", "review", "app-server"},
 	) {
 		t.Fatalf("Codex 参数插入策略错误: %v", result.ArgumentsAfterSubcommands())
 	}
@@ -139,6 +198,10 @@ func TestStrategyBuildsAPIKeyProviderArgs(t *testing.T) {
 		!slices.Contains(environment.UnsetNames(), "OPENAI_BASE_URL") {
 		t.Fatalf("API Key 环境错误: %v", environment)
 	}
+	if slices.Contains(environment.SetNames(), "CODEX_HOME") ||
+		slices.Contains(environment.UnsetNames(), "CODEX_HOME") {
+		t.Fatal("API Key 不得改变共享 CODEX_HOME")
+	}
 	credential := result.Credential()
 	if credential.Kind() != "api_key" || credential.Mode() != "" {
 		t.Fatalf("API Key 摘要错误: %v", credential)
@@ -166,7 +229,7 @@ func TestStrategyRejectsInvalidAndForeignBindings(t *testing.T) {
 	}
 }
 
-// mustOAuth 创建可被官方 auth.json 编码器往返的测试 OAuth。
+// mustOAuth 创建带真实工作区和套餐 claim 的测试 OAuth。
 func mustOAuth(t *testing.T) *codex.OAuthAuth {
 	t.Helper()
 	idToken := buildJWT(t, map[string]any{

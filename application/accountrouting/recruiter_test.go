@@ -51,6 +51,150 @@ func TestRecruiterReturnsFirstUsableCandidate(t *testing.T) {
 	}
 }
 
+// TestRecruiterPinnedRequestUsesOnlyTargetAccount 验证固定账号只检查目标，不受公平起点影响。
+func TestRecruiterPinnedRequestUsesOnlyTargetAccount(t *testing.T) {
+	t.Parallel()
+
+	first, firstCredential := newRecruitmentCandidate(t, "codex", 1, "pin-first")
+	target, targetCredential := newRecruitmentCandidate(t, "codex", 2, "pin-target")
+	resolver := newRecruitmentCredentialResolver(
+		map[accountcore.AccountRef]credentialResolution{
+			first.Ref():  {credential: firstCredential},
+			target.Ref(): {credential: targetCredential},
+		},
+	)
+	runtimeSource := &recruitmentEligibilitySource{}
+	recruiter := newTestRecruiterWithRuntime(
+		t,
+		&recruitmentCandidateSource{
+			candidates: []accountapp.RoutingAccount{first, target},
+		},
+		runtimeSource,
+		resolver,
+	)
+	request, err := NewPinnedRequest(
+		testRecruitmentCatalog(t),
+		"codex",
+		testModelID("codex"),
+		target.Ref(),
+	)
+	if err != nil {
+		t.Fatalf("NewPinnedRequest() error = %v", err)
+	}
+
+	result, err := recruiter.Recruit(
+		context.Background(),
+		request,
+		allowAllCredentialTransport{},
+	)
+	if err != nil {
+		t.Fatalf("Recruit() error = %v", err)
+	}
+	if result.Account().Ref() != target.Ref() ||
+		result.Examined() != 1 ||
+		!result.SourceExhausted() ||
+		resolver.CallCount() != 1 {
+		t.Fatalf("Recruit() result=%#v credentialCalls=%d", result, resolver.CallCount())
+	}
+	routes := runtimeSource.Routes()
+	if len(routes) != 1 || routes[0].AccountRef() != target.Ref() {
+		t.Fatalf("CheckEligibility() routes = %#v", routes)
+	}
+}
+
+// TestRecruiterPinnedRequestNeverFallsBack 验证目标账号不可用时不会读取池内其他凭据。
+func TestRecruiterPinnedRequestNeverFallsBack(t *testing.T) {
+	t.Parallel()
+
+	target, _ := newRecruitmentCandidate(t, "claude", 1, "pin-unavailable")
+	other, otherCredential := newRecruitmentCandidate(t, "claude", 2, "pin-other")
+	resolver := newRecruitmentCredentialResolver(
+		map[accountcore.AccountRef]credentialResolution{
+			target.Ref(): {err: accountcredentials.ErrReauthenticationRequired},
+			other.Ref():  {credential: otherCredential},
+		},
+	)
+	recruiter := newTestRecruiter(
+		t,
+		&recruitmentCandidateSource{
+			candidates: []accountapp.RoutingAccount{target, other},
+		},
+		resolver,
+	)
+	request, err := NewPinnedRequest(
+		testRecruitmentCatalog(t),
+		"claude",
+		testModelID("claude"),
+		target.Ref(),
+	)
+	if err != nil {
+		t.Fatalf("NewPinnedRequest() error = %v", err)
+	}
+
+	result, err := recruiter.Recruit(
+		context.Background(),
+		request,
+		allowAllCredentialTransport{},
+	)
+	if !errors.Is(err, ErrNoRoutableAccount) ||
+		result.Examined() != 1 ||
+		!result.SourceExhausted() ||
+		resolver.CallCount() != 1 {
+		t.Fatalf(
+			"Recruit() result=%#v error=%v credentialCalls=%d",
+			result,
+			err,
+			resolver.CallCount(),
+		)
+	}
+}
+
+// TestRecruiterPinnedRequestDoesNotConsumeFairnessTicket 验证固定账号调用不扰动账号池轮询。
+func TestRecruiterPinnedRequestDoesNotConsumeFairnessTicket(t *testing.T) {
+	t.Parallel()
+
+	first, firstCredential := newRecruitmentCandidate(t, "codex", 1, "fair-first")
+	second, secondCredential := newRecruitmentCandidate(t, "codex", 2, "fair-second")
+	resolver := newRecruitmentCredentialResolver(
+		map[accountcore.AccountRef]credentialResolution{
+			first.Ref():  {credential: firstCredential},
+			second.Ref(): {credential: secondCredential},
+		},
+	)
+	recruiter := newTestRecruiter(
+		t,
+		&recruitmentCandidateSource{
+			candidates: []accountapp.RoutingAccount{first, second},
+		},
+		resolver,
+	)
+	pinned, err := NewPinnedRequest(
+		testRecruitmentCatalog(t),
+		"codex",
+		testModelID("codex"),
+		second.Ref(),
+	)
+	if err != nil {
+		t.Fatalf("NewPinnedRequest() error = %v", err)
+	}
+	if _, err := recruiter.Recruit(
+		context.Background(),
+		pinned,
+		allowAllCredentialTransport{},
+	); err != nil {
+		t.Fatalf("Recruit(pinned) error = %v", err)
+	}
+
+	result, err := recruiter.Recruit(
+		context.Background(),
+		newTestRequest(t, "codex", "", 1),
+		allowAllCredentialTransport{},
+	)
+	if err != nil || result.Account().Ref() != first.Ref() {
+		t.Fatalf("Recruit(pool) result=%#v error=%v", result, err)
+	}
+}
+
 // TestRecruitmentSessionReturnsEachAccountAtMostOnce 验证环形扫描不会在同一请求内重复账号。
 func TestRecruitmentSessionReturnsEachAccountAtMostOnce(t *testing.T) {
 	t.Parallel()

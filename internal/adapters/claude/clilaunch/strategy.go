@@ -24,12 +24,18 @@ var (
 
 // inheritedCredentialKeys 列出 Claude Code 当前可能从父进程继承的其他认证来源。
 var inheritedCredentialKeys = []string{
+	"ANTHROPIC_UNIX_SOCKET",
 	"ANTHROPIC_API_KEY",
 	"ANTHROPIC_AUTH_TOKEN",
 	"ANTHROPIC_BASE_URL",
+	"ANTHROPIC_CUSTOM_HEADERS",
+	"CLAUDE_CODE_USE_BEDROCK",
+	"CLAUDE_CODE_USE_VERTEX",
+	"CLAUDE_CODE_USE_FOUNDRY",
 	"CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR",
 	"CLAUDE_CODE_OAUTH_TOKEN",
 	"CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR",
+	"CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST",
 }
 
 // 编译期确认 Claude Strategy 满足应用层窄接口。
@@ -62,6 +68,7 @@ func (*Strategy) Build(
 	var kind string
 	var mode string
 	var err error
+	runtime := providerlaunch.NewDirectProcessRuntime()
 	switch auth := binding.Credential().(type) {
 	case *claude.APIKeyAuth:
 		if auth == nil {
@@ -86,16 +93,23 @@ func (*Strategy) Build(
 		if auth == nil {
 			return providerlaunch.StrategyResult{}, ErrInvalidBinding
 		}
-		// Resolver 已在进入 Strategy 前刷新即将过期的 OAuth。这里故意只注入当前
-		// access token，避免用账号级 CLAUDE_CONFIG_DIR 切断共享 sessions/history/trust。
-		values = map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": auth.AccessToken()}
+		// Claude Code 原生 Unix Socket 模式只需要一个 OAuth 占位值来启用订阅认证
+		// 协议；真实 Token 仅保留在 Go 代理内存，不进入官方 CLI 子进程环境。
+		values = map[string]string{
+			"CLAUDE_CODE_OAUTH_TOKEN":              "aih-managed-oauth",
+			"CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST": "1",
+		}
 		kind = claude.AuthKindOAuth.String()
 		mode = claude.OAuthModeRefreshable.String()
+		runtime, err = providerlaunch.NewClaudeOAuthProxyRuntime(auth.AccessToken())
 	default:
 		return providerlaunch.StrategyResult{}, ErrUnsupportedCredential
 	}
 	if err != nil {
-		return providerlaunch.StrategyResult{}, fmt.Errorf("%w: 原生环境编码失败", ErrBuildLaunchContext)
+		return providerlaunch.StrategyResult{}, fmt.Errorf("%w: 原生认证运行时编码失败", ErrBuildLaunchContext)
+	}
+	if runtime.Kind() == providerlaunch.RuntimeKindDirectProcess {
+		values["CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST"] = "1"
 	}
 	patch, err := providerlaunch.NewEnvironmentPatch(
 		values,
@@ -112,6 +126,7 @@ func (*Strategy) Build(
 		ProviderID:  claude.ProviderID,
 		Binary:      binaryName,
 		Environment: patch,
+		Runtime:     runtime,
 		Credential:  descriptor,
 	})
 }

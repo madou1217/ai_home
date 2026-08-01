@@ -19,6 +19,7 @@ var (
 
 // LaunchSpec 是完成账号选择、凭据刷新和 Provider 适配后的最终启动描述。
 type LaunchSpec struct {
+	mode                      LaunchMode
 	providerID                string
 	accountRef                accountcore.AccountRef
 	cliAccountID              accountcore.CLIAccountID
@@ -27,7 +28,7 @@ type LaunchSpec struct {
 	arguments                 []string
 	argumentsAfterSubcommands []string
 	environment               EnvironmentPatch
-	projection                *ProjectionRequest
+	runtime                   RuntimeDirective
 	credential                CredentialDescriptor
 }
 
@@ -41,10 +42,11 @@ func newLaunchSpec(
 	}
 	account := selection.Account()
 	if account.ProviderID() != result.providerID ||
-		(result.projection != nil && result.projection.OwnerAccountRef() != account.Ref()) {
+		!isExplicitSelectionSource(selection.Source()) {
 		return LaunchSpec{}, ErrInvalidLaunchSpec
 	}
 	return LaunchSpec{
+		mode:                      LaunchModeNativeDirect,
 		providerID:                account.ProviderID(),
 		accountRef:                account.Ref(),
 		cliAccountID:              account.CLIAccountID(),
@@ -53,9 +55,14 @@ func newLaunchSpec(
 		arguments:                 append([]string(nil), result.arguments...),
 		argumentsAfterSubcommands: append([]string(nil), result.argumentsAfterSubcommands...),
 		environment:               cloneEnvironmentPatch(result.environment),
-		projection:                cloneOptionalProjection(result.projection),
+		runtime:                   cloneRuntimeDirective(result.runtime),
 		credential:                result.credential,
 	}, nil
+}
+
+// Mode 返回本描述唯一允许的 Native Direct 模式。
+func (spec LaunchSpec) Mode() LaunchMode {
+	return spec.mode
 }
 
 // ProviderID 返回目标 Provider 的规范标识。
@@ -107,12 +114,9 @@ func (spec LaunchSpec) Environment() EnvironmentPatch {
 	return cloneEnvironmentPatch(spec.environment)
 }
 
-// Projection 返回临时认证投影副本和是否存在投影。
-func (spec LaunchSpec) Projection() (ProjectionRequest, bool) {
-	if spec.projection == nil {
-		return ProjectionRequest{}, false
-	}
-	return cloneProjectionRequest(*spec.projection), true
+// Runtime 返回官方 CLI 的进程拓扑和敏感输入副本。
+func (spec LaunchSpec) Runtime() RuntimeDirective {
+	return cloneRuntimeDirective(spec.runtime)
 }
 
 // Credential 返回不包含任何凭据内容的认证类型摘要。
@@ -122,29 +126,28 @@ func (spec LaunchSpec) Credential() CredentialDescriptor {
 
 // IsValid 判断跨层传递后的启动描述是否仍满足账号和 Provider 不变量。
 func (spec LaunchSpec) IsValid() bool {
-	if !isDescriptorToken(spec.providerID) ||
+	if spec.mode != LaunchModeNativeDirect ||
+		!isDescriptorToken(spec.providerID) ||
 		!spec.accountRef.IsValid() ||
 		!spec.cliAccountID.IsValid() ||
-		!isSelectionSource(spec.selectionSource) ||
+		!isExplicitSelectionSource(spec.selectionSource) ||
 		!isBinaryName(spec.binary) ||
 		!validSubcommands(spec.argumentsAfterSubcommands) ||
 		(len(spec.arguments) == 0 && len(spec.argumentsAfterSubcommands) > 0) ||
 		!spec.environment.IsValid() ||
+		!preservesSharedNativeState(spec.environment) ||
+		!spec.runtime.IsValid() ||
 		!spec.credential.IsValid() {
-		return false
-	}
-	if spec.projection != nil &&
-		(!spec.projection.IsValid() || spec.projection.OwnerAccountRef() != spec.accountRef) {
 		return false
 	}
 	return true
 }
 
-// String 返回不含参数正文、环境值和投影内容的安全启动摘要。
+// String 返回不含参数正文、环境值和 Runtime 敏感输入的安全启动摘要。
 func (spec LaunchSpec) String() string {
-	_, hasProjection := spec.Projection()
 	return fmt.Sprintf(
-		"providerlaunch.LaunchSpec{provider=%s,account=%s,cli_id=%d,source=%s,binary=%s,args=%d,args_after=%v,env_set=%v,env_unset=%v,projection=%t,credential=%s}",
+		"providerlaunch.LaunchSpec{mode=%s,provider=%s,account=%s,cli_id=%d,source=%s,binary=%s,args=%d,args_after=%v,env_set=%v,env_unset=%v,runtime=%s,credential=%s}",
+		spec.mode,
 		spec.providerID,
 		spec.accountRef,
 		spec.cliAccountID,
@@ -154,7 +157,7 @@ func (spec LaunchSpec) String() string {
 		spec.argumentsAfterSubcommands,
 		spec.environment.SetNames(),
 		spec.environment.UnsetNames(),
-		hasProjection,
+		spec.runtime.Kind(),
 		spec.credential,
 	)
 }
@@ -169,9 +172,8 @@ func (spec LaunchSpec) Format(state fmt.State, _ rune) {
 	_, _ = state.Write([]byte(spec.String()))
 }
 
-// isSelectionSource 限定当前账号选择用例明确声明的三种来源。
-func isSelectionSource(source accountapp.LaunchSelectionSource) bool {
+// isExplicitSelectionSource 限定 Native Direct 只能使用显式稳定引用或数字别名。
+func isExplicitSelectionSource(source accountapp.LaunchSelectionSource) bool {
 	return source == accountapp.LaunchSelectionSourceAccountRef ||
-		source == accountapp.LaunchSelectionSourceCLIAccountID ||
-		source == accountapp.LaunchSelectionSourceProviderDefault
+		source == accountapp.LaunchSelectionSourceCLIAccountID
 }

@@ -120,6 +120,17 @@ func (handler *Handler) ServeHTTP(
 		)
 		return
 	}
+	ctx, err := inferenceapi.ContextWithPinnedAccount(request)
+	if err != nil {
+		writeAPIError(
+			response,
+			http.StatusBadRequest,
+			"invalid_request_error",
+			"Invalid account reference",
+		)
+		return
+	}
+	request = request.WithContext(ctx)
 
 	body, err := readJSONBody(response, request, handler.maxBodyBytes)
 	if err != nil {

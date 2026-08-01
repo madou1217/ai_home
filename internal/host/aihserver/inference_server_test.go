@@ -15,9 +15,69 @@ import (
 	"github.com/madou1217/ai_home/internal/host/aihserver"
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/anthropicmessagesapi"
+	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
 	"github.com/madou1217/ai_home/internal/transport/http/openaichatcompletionsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/openairesponsesapi"
 )
+
+// TestServerPinnedAccountNeverFallsBack 验证真实 HTTP Header 固定账号且停用后不换号。
+func TestServerPinnedAccountNeverFallsBack(t *testing.T) {
+	t.Parallel()
+
+	const (
+		firstKey  = "sk-codex-pinned-first"
+		secondKey = "sk-codex-pinned-second"
+	)
+	upstream := &syntheticInferenceHTTPClient{}
+	baseURL, client := startTestServerWithInferenceClient(t, upstream)
+	firstRef := registerAPIKeyAccount(t, client, baseURL, "codex", firstKey)
+	_ = registerAPIKeyAccount(t, client, baseURL, "codex", secondKey)
+	waitForServerModels(t, client, baseURL, []string{"gpt-5.6-sol"})
+	payload := `{"model":"gpt-5.6-sol","input":"pinned-host-smoke"}`
+	headers := map[string]string{
+		"Authorization":               "Bearer " + testClientKey,
+		inferenceapi.AccountRefHeader: firstRef,
+	}
+
+	exchange := performRequestWithHeaders(
+		t,
+		client,
+		http.MethodPost,
+		baseURL+openairesponsesapi.Path,
+		headers,
+		[]byte(payload),
+	)
+	assertStatus(t, exchange, http.StatusOK)
+	if upstream.LastAuthorization() != "Bearer "+firstKey || upstream.CallCount() != 1 {
+		t.Fatalf(
+			"固定账号未命中: authorization=%q calls=%d",
+			upstream.LastAuthorization(),
+			upstream.CallCount(),
+		)
+	}
+
+	setAccountEnabled(t, client, baseURL, firstRef, false)
+	exchange = performRequestWithHeaders(
+		t,
+		client,
+		http.MethodPost,
+		baseURL+openairesponsesapi.Path,
+		headers,
+		[]byte(payload),
+	)
+	assertStatus(t, exchange, http.StatusServiceUnavailable)
+	if upstream.CallCount() != 1 {
+		t.Fatalf("固定账号停用后错误换号: upstream calls=%d", upstream.CallCount())
+	}
+	t.Logf(
+		"POST %s\nheaders: %s=<account_ref>\npayload: %s\nstatus: %d\nresponse: %s",
+		baseURL+openairesponsesapi.Path,
+		inferenceapi.AccountRefHeader,
+		payload,
+		exchange.status,
+		exchange.body,
+	)
+}
 
 // TestServerRoutesThreeClientProtocolsThroughProductionCatalog 验证账号注册、
 // 原子路由目录、账号征召、真实 Adapter 和三个 HTTP 入口的完整本地 TCP 链路。
@@ -173,6 +233,7 @@ type syntheticInferenceHTTPClient struct {
 	mu             sync.Mutex
 	calls          int
 	lastAuthHeader string
+	lastAuthValue  string
 }
 
 func (client *syntheticInferenceHTTPClient) Do(
@@ -198,6 +259,9 @@ func (client *syntheticInferenceHTTPClient) Do(
 	client.mu.Lock()
 	client.calls++
 	client.lastAuthHeader = authHeader
+	if authHeader != "" {
+		client.lastAuthValue = request.Header.Get(authHeader)
+	}
 	client.mu.Unlock()
 	stream := codexSyntheticStream(payload.Model)
 	if strings.Contains(request.URL.Host, "anthropic.com") {
@@ -210,6 +274,13 @@ func (client *syntheticInferenceHTTPClient) Do(
 		},
 		Body: io.NopCloser(strings.NewReader(stream)),
 	}, nil
+}
+
+// LastAuthorization 返回最近一次合成上游认证值，仅供测试验证账号绑定。
+func (client *syntheticInferenceHTTPClient) LastAuthorization() string {
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	return client.lastAuthValue
 }
 
 func (client *syntheticInferenceHTTPClient) CallCount() int {

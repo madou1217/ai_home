@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	"github.com/madou1217/ai_home/application/providerlaunch"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/accounts/claude"
 	"github.com/madou1217/ai_home/internal/adapters/claude/clilaunch"
@@ -19,7 +20,78 @@ const (
 	claudeSetupTokenSecret  = "claude-setup-token-secret-must-not-leak"
 	claudeAccessTokenSecret = "claude-access-token-secret-must-not-leak"
 	claudeRefreshSecret     = "claude-refresh-token-secret-must-not-leak"
+	claudeGatewayKey        = "claude-gateway-client-key-must-not-leak-32"
 )
+
+// TestGatewayStrategyBuildsPoolAndPinnedMessagesEnvironment 验证 Claude 只连接 AIH Server。
+func TestGatewayStrategyBuildsPoolAndPinnedMessagesEnvironment(t *testing.T) {
+	endpoint, err := providerlaunch.NewGatewayEndpoint(
+		"http://127.0.0.1:9527/",
+		claudeGatewayKey,
+	)
+	if err != nil {
+		t.Fatalf("NewGatewayEndpoint() error = %v", err)
+	}
+	accountRef, err := accountcore.ParseAccountRef("acct_0123456789abcdef0123")
+	if err != nil {
+		t.Fatalf("ParseAccountRef() error = %v", err)
+	}
+	for _, test := range []struct {
+		name       string
+		accountRef accountcore.AccountRef
+		pinned     bool
+	}{
+		{name: "账号池"},
+		{name: "固定账号", accountRef: accountRef, pinned: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			target, err := providerlaunch.NewGatewayTarget(endpoint, test.accountRef)
+			if err != nil {
+				t.Fatalf("NewGatewayTarget() error = %v", err)
+			}
+			result, err := clilaunch.NewGatewayStrategy().Build(target)
+			if err != nil {
+				t.Fatalf("Build() error = %v", err)
+			}
+			if !result.IsValid() || result.ProviderID() != claude.ProviderID ||
+				result.Binary() != "claude" || len(result.Arguments()) != 0 {
+				t.Fatalf("GatewayStrategyResult = %#v", result)
+			}
+			environment := result.Environment()
+			values := environment.RevealSet()
+			if values["ANTHROPIC_API_KEY"] != claudeGatewayKey ||
+				values["ANTHROPIC_BASE_URL"] != "http://127.0.0.1:9527" ||
+				slices.Contains(environment.SetNames(), "CLAUDE_CONFIG_DIR") ||
+				slices.Contains(environment.UnsetNames(), "CLAUDE_CONFIG_DIR") {
+				t.Fatalf("Gateway 环境错误: %v", environment)
+			}
+			for _, inherited := range []string{
+				"ANTHROPIC_AUTH_TOKEN",
+				"CLAUDE_CODE_OAUTH_TOKEN",
+				"CLAUDE_CODE_USE_BEDROCK",
+				"CLAUDE_CODE_USE_VERTEX",
+				"CLAUDE_CODE_USE_FOUNDRY",
+			} {
+				if !slices.Contains(environment.UnsetNames(), inherited) {
+					t.Fatalf("Gateway 没有清除继承来源 %s: %v", inherited, environment)
+				}
+			}
+			if test.pinned {
+				if values["ANTHROPIC_CUSTOM_HEADERS"] !=
+					"X-Account-Ref: "+accountRef.String() {
+					t.Fatalf("固定账号 Header 错误: %v", environment)
+				}
+			} else if _, found := values["ANTHROPIC_CUSTOM_HEADERS"]; found ||
+				!slices.Contains(environment.UnsetNames(), "ANTHROPIC_CUSTOM_HEADERS") {
+				t.Fatalf("账号池残留固定账号 Header: %v", environment)
+			}
+			formatted := fmt.Sprintf("%v\n%+v\n%#v", result, result, result)
+			if strings.Contains(formatted, claudeGatewayKey) {
+				t.Fatalf("Gateway Key 泄漏到格式化结果: %s", formatted)
+			}
+		})
+	}
+}
 
 // TestStrategyBuildsAllClaudeCredentialModes 验证四种领域凭据映射到唯一原生环境来源。
 func TestStrategyBuildsAllClaudeCredentialModes(t *testing.T) {
@@ -45,40 +117,55 @@ func TestStrategyBuildsAllClaudeCredentialModes(t *testing.T) {
 	refreshable := mustRefreshableOAuth(t)
 
 	tests := []struct {
-		name       string
-		credential accountapp.Credential
-		wantSet    map[string]string
-		wantKind   string
-		wantMode   string
+		name        string
+		credential  accountapp.Credential
+		wantSet     map[string]string
+		wantKind    string
+		wantMode    string
+		wantRuntime providerlaunch.RuntimeKind
 	}{
 		{
 			name:       "API Key",
 			credential: apiKey,
 			wantSet: map[string]string{
-				"ANTHROPIC_API_KEY":  claudeAPIKeySecret,
-				"ANTHROPIC_BASE_URL": "https://api.example.test/anthropic",
+				"ANTHROPIC_API_KEY":                    claudeAPIKeySecret,
+				"ANTHROPIC_BASE_URL":                   "https://api.example.test/anthropic",
+				"CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST": "1",
 			},
-			wantKind: "api_key",
+			wantKind:    "api_key",
+			wantRuntime: providerlaunch.RuntimeKindDirectProcess,
 		},
 		{
 			name:       "Auth Token",
 			credential: authToken,
-			wantSet:    map[string]string{"ANTHROPIC_AUTH_TOKEN": claudeAuthTokenSecret},
-			wantKind:   "auth_token",
+			wantSet: map[string]string{
+				"ANTHROPIC_AUTH_TOKEN":                 claudeAuthTokenSecret,
+				"CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST": "1",
+			},
+			wantKind:    "auth_token",
+			wantRuntime: providerlaunch.RuntimeKindDirectProcess,
 		},
 		{
 			name:       "setup-token OAuth",
 			credential: setupToken,
-			wantSet:    map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": claudeSetupTokenSecret},
-			wantKind:   "oauth",
-			wantMode:   "access_token",
+			wantSet: map[string]string{
+				"CLAUDE_CODE_OAUTH_TOKEN":              claudeSetupTokenSecret,
+				"CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST": "1",
+			},
+			wantKind:    "oauth",
+			wantMode:    "access_token",
+			wantRuntime: providerlaunch.RuntimeKindDirectProcess,
 		},
 		{
 			name:       "refreshable OAuth",
 			credential: refreshable,
-			wantSet:    map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": claudeAccessTokenSecret},
-			wantKind:   "oauth",
-			wantMode:   "refreshable",
+			wantSet: map[string]string{
+				"CLAUDE_CODE_OAUTH_TOKEN":              "aih-managed-oauth",
+				"CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST": "1",
+			},
+			wantKind:    "oauth",
+			wantMode:    "refreshable",
+			wantRuntime: providerlaunch.RuntimeKindClaudeOAuthProxy,
 		},
 	}
 
@@ -92,8 +179,8 @@ func TestStrategyBuildsAllClaudeCredentialModes(t *testing.T) {
 				result.Binary() != "claude" || len(result.Arguments()) != 0 {
 				t.Fatalf("StrategyResult 错误: provider=%s binary=%s", result.ProviderID(), result.Binary())
 			}
-			if _, exists := result.Projection(); exists {
-				t.Fatal("Claude 正常启动不应拆分 CLAUDE_CONFIG_DIR")
+			if result.Runtime().Kind() != test.wantRuntime {
+				t.Fatalf("Claude Runtime 错误: %v", result.Runtime())
 			}
 			environment := result.Environment()
 			if !mapsEqual(environment.RevealSet(), test.wantSet) {
@@ -102,6 +189,16 @@ func TestStrategyBuildsAllClaudeCredentialModes(t *testing.T) {
 			if slices.Contains(environment.SetNames(), "CLAUDE_CONFIG_DIR") ||
 				slices.Contains(environment.UnsetNames(), "CLAUDE_CONFIG_DIR") {
 				t.Fatal("策略不得修改共享 CLAUDE_CONFIG_DIR")
+			}
+			for _, inherited := range []string{
+				"ANTHROPIC_CUSTOM_HEADERS",
+				"CLAUDE_CODE_USE_BEDROCK",
+				"CLAUDE_CODE_USE_VERTEX",
+				"CLAUDE_CODE_USE_FOUNDRY",
+			} {
+				if !slices.Contains(environment.UnsetNames(), inherited) {
+					t.Fatalf("原生策略没有清除继承来源 %s: %v", inherited, environment)
+				}
 			}
 			for name := range test.wantSet {
 				if slices.Contains(environment.UnsetNames(), name) {
@@ -125,14 +222,17 @@ func TestRefreshableOAuthDoesNotProjectSecureStorage(t *testing.T) {
 		t.Fatalf("Build() error = %v", err)
 	}
 	values := result.Environment().RevealSet()
-	if values["CLAUDE_CODE_OAUTH_TOKEN"] != auth.AccessToken() {
-		t.Fatal("refreshable OAuth 没有注入当前 Access Token")
+	if values["CLAUDE_CODE_OAUTH_TOKEN"] != "aih-managed-oauth" {
+		t.Fatal("refreshable OAuth 没有使用非敏感占位值")
+	}
+	if result.Runtime().RevealParameters()["access_token"] != auth.AccessToken() {
+		t.Fatal("refreshable OAuth Runtime 没有持有当前 Access Token")
 	}
 	if strings.Contains(fmt.Sprint(values), claudeRefreshSecret) {
 		t.Fatal("Refresh Token 不得进入子进程环境")
 	}
-	if _, exists := result.Projection(); exists {
-		t.Fatal("refreshable OAuth 不得创建 .credentials.json 投影")
+	if result.Runtime().Kind() != providerlaunch.RuntimeKindClaudeOAuthProxy {
+		t.Fatalf("refreshable OAuth Runtime 错误: %v", result.Runtime())
 	}
 }
 

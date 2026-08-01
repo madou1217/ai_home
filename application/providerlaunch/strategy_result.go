@@ -25,8 +25,8 @@ type StrategyResultInput struct {
 	ArgumentsAfterSubcommands []string
 	// Environment 是只对目标子进程生效的凭据环境补丁。
 	Environment EnvironmentPatch
-	// Projection 是可选的临时认证投影；nil 表示不需要文件凭据。
-	Projection *ProjectionRequest
+	// Runtime 描述直接进程或受控辅助进程拓扑。
+	Runtime RuntimeDirective
 	// Credential 是不含凭据内容的认证类型摘要。
 	Credential CredentialDescriptor
 }
@@ -38,7 +38,7 @@ type StrategyResult struct {
 	arguments                 []string
 	argumentsAfterSubcommands []string
 	environment               EnvironmentPatch
-	projection                *ProjectionRequest
+	runtime                   RuntimeDirective
 	credential                CredentialDescriptor
 }
 
@@ -47,26 +47,18 @@ func NewStrategyResult(input StrategyResultInput) (StrategyResult, error) {
 	if !isDescriptorToken(input.ProviderID) ||
 		!isBinaryName(input.Binary) ||
 		!input.Environment.IsValid() ||
+		!preservesSharedNativeState(input.Environment) ||
+		!input.Runtime.IsValid() ||
 		!input.Credential.IsValid() {
 		return StrategyResult{}, ErrInvalidStrategyResult
 	}
-	arguments := append([]string(nil), input.Arguments...)
-	for _, argument := range arguments {
-		if argument == "" || strings.ContainsRune(argument, '\x00') {
-			return StrategyResult{}, ErrInvalidStrategyResult
-		}
+	arguments, err := validateArguments(input.Arguments)
+	if err != nil {
+		return StrategyResult{}, ErrInvalidStrategyResult
 	}
 	argumentsAfterSubcommands, err := validateSubcommands(input.ArgumentsAfterSubcommands)
 	if err != nil || (len(arguments) == 0 && len(argumentsAfterSubcommands) > 0) {
 		return StrategyResult{}, ErrInvalidStrategyResult
-	}
-	var projection *ProjectionRequest
-	if input.Projection != nil {
-		if !input.Projection.IsValid() {
-			return StrategyResult{}, ErrInvalidStrategyResult
-		}
-		cloned := cloneProjectionRequest(*input.Projection)
-		projection = &cloned
 	}
 	return StrategyResult{
 		providerID:                input.ProviderID,
@@ -74,9 +66,20 @@ func NewStrategyResult(input StrategyResultInput) (StrategyResult, error) {
 		arguments:                 arguments,
 		argumentsAfterSubcommands: argumentsAfterSubcommands,
 		environment:               cloneEnvironmentPatch(input.Environment),
-		projection:                projection,
+		runtime:                   cloneRuntimeDirective(input.Runtime),
 		credential:                input.Credential,
 	}, nil
+}
+
+// validateArguments 校验并复制 Strategy 固定参数，供 Native 与 Gateway 复用。
+func validateArguments(values []string) ([]string, error) {
+	arguments := append([]string(nil), values...)
+	for _, argument := range arguments {
+		if argument == "" || strings.ContainsRune(argument, '\x00') {
+			return nil, ErrInvalidProcessArguments
+		}
+	}
+	return arguments, nil
 }
 
 // ProviderID 返回 Strategy 结果所属的规范 Provider。
@@ -113,12 +116,9 @@ func (result StrategyResult) Environment() EnvironmentPatch {
 	return cloneEnvironmentPatch(result.environment)
 }
 
-// Projection 返回 Strategy 临时认证投影副本和是否存在投影。
-func (result StrategyResult) Projection() (ProjectionRequest, bool) {
-	if result.projection == nil {
-		return ProjectionRequest{}, false
-	}
-	return cloneProjectionRequest(*result.projection), true
+// Runtime 返回进程拓扑和敏感输入的深副本。
+func (result StrategyResult) Runtime() RuntimeDirective {
+	return cloneRuntimeDirective(result.runtime)
 }
 
 // Credential 返回 Strategy 的脱敏认证类型摘要。
@@ -126,18 +126,17 @@ func (result StrategyResult) Credential() CredentialDescriptor {
 	return result.credential
 }
 
-// String 返回不含参数正文、环境值和投影内容的安全 Strategy 摘要。
+// String 返回不含参数正文、环境值和 Runtime 敏感输入的安全 Strategy 摘要。
 func (result StrategyResult) String() string {
-	_, hasProjection := result.Projection()
 	return fmt.Sprintf(
-		"providerlaunch.StrategyResult{provider=%s,binary=%s,args=%d,args_after=%v,env_set=%v,env_unset=%v,projection=%t,credential=%s}",
+		"providerlaunch.StrategyResult{provider=%s,binary=%s,args=%d,args_after=%v,env_set=%v,env_unset=%v,runtime=%s,credential=%s}",
 		result.providerID,
 		result.binary,
 		len(result.arguments),
 		result.argumentsAfterSubcommands,
 		result.environment.SetNames(),
 		result.environment.UnsetNames(),
-		hasProjection,
+		result.runtime.Kind(),
 		result.credential,
 	)
 }
@@ -160,10 +159,38 @@ func (result StrategyResult) IsValid() bool {
 		Arguments:                 result.arguments,
 		ArgumentsAfterSubcommands: result.argumentsAfterSubcommands,
 		Environment:               result.environment,
-		Projection:                result.projection,
+		Runtime:                   result.runtime,
 		Credential:                result.credential,
 	})
 	return err == nil
+}
+
+// sharedNativeStateKeys 是账号启动绝不能设置或删除的 Provider 状态根。
+//
+// 凭据隔离只能发生在目标子进程或受控 Runtime 通道；修改这些变量会拆分会话、
+// 历史、trust、插件或用户配置。
+var sharedNativeStateKeys = map[string]struct{}{
+	"HOME":              {},
+	"USERPROFILE":       {},
+	"XDG_CONFIG_HOME":   {},
+	"CODEX_HOME":        {},
+	"CODEX_SQLITE_HOME": {},
+	"CLAUDE_CONFIG_DIR": {},
+}
+
+// preservesSharedNativeState 拒绝任何改变 Provider 共享状态根的 Strategy。
+func preservesSharedNativeState(environment EnvironmentPatch) bool {
+	for _, name := range environment.SetNames() {
+		if _, forbidden := sharedNativeStateKeys[name]; forbidden {
+			return false
+		}
+	}
+	for _, name := range environment.UnsetNames() {
+		if _, forbidden := sharedNativeStateKeys[name]; forbidden {
+			return false
+		}
+	}
+	return true
 }
 
 // validateSubcommands 校验、去重并复制 Strategy 声明的子命令集合。

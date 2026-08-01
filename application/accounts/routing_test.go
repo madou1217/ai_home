@@ -190,7 +190,72 @@ func TestRoutingCandidatesCopiesInputAndRejectsOutOfRangeRead(t *testing.T) {
 	}
 }
 
-func testCatalog(t *testing.T) *providers.Catalog {
+// TestRoutingCandidatesFindByRefSupportsOrderedAndUnorderedSnapshots 验证生产二分路径
+// 与测试适配器无序回退都返回同一个稳定账号。
+func TestRoutingCandidatesFindByRefSupportsOrderedAndUnorderedSnapshots(t *testing.T) {
+	t.Parallel()
+
+	accounts := []accountapp.RoutingAccount{
+		newRoutingTestAccount(t, 1, "acct_11111111111111111111"),
+		newRoutingTestAccount(t, 2, "acct_22222222222222222222"),
+		newRoutingTestAccount(t, 3, "acct_33333333333333333333"),
+	}
+	tests := []struct {
+		name     string
+		accounts []accountapp.RoutingAccount
+	}{
+		{name: "ordered", accounts: accounts},
+		{name: "unordered", accounts: []accountapp.RoutingAccount{accounts[2], accounts[0], accounts[1]}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			snapshot := accountapp.NewRoutingCandidates(test.accounts)
+			got, found := snapshot.FindByRef(accounts[1].Ref())
+			if !found || got.Ref() != accounts[1].Ref() || got.CLIAccountID() != accounts[1].CLIAccountID() {
+				t.Fatalf("FindByRef() account=%#v found=%t", got, found)
+			}
+			missing, err := accountcore.ParseAccountRef("acct_99999999999999999999")
+			if err != nil {
+				t.Fatalf("ParseAccountRef(missing) error = %v", err)
+			}
+			if _, found := snapshot.FindByRef(missing); found {
+				t.Fatal("FindByRef(missing) found = true")
+			}
+		})
+	}
+}
+
+// newRoutingTestAccount 创建具有可控稳定引用的紧凑账号投影。
+func newRoutingTestAccount(
+	t *testing.T,
+	alias int64,
+	accountRefText string,
+) accountapp.RoutingAccount {
+	t.Helper()
+
+	accountRef, err := accountcore.ParseAccountRef(accountRefText)
+	if err != nil {
+		t.Fatalf("ParseAccountRef() error = %v", err)
+	}
+	cliAccountID, err := accountcore.NewCLIAccountID(alias)
+	if err != nil {
+		t.Fatalf("NewCLIAccountID() error = %v", err)
+	}
+	account, err := accountapp.NewRoutingAccount(
+		testCatalog(t),
+		accountapp.RoutingAccountInput{
+			Ref:          accountRef,
+			ProviderID:   "codex",
+			CLIAccountID: cliAccountID,
+		},
+	)
+	if err != nil {
+		t.Fatalf("NewRoutingAccount() error = %v", err)
+	}
+	return account
+}
+
+func testCatalog(t testing.TB) *providers.Catalog {
 	t.Helper()
 
 	catalog, err := providers.NewCatalog(providers.BuiltinManifest())

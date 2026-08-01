@@ -34,6 +34,8 @@ var (
 	ErrReauthenticationRequired = errors.New("账号需要重新认证")
 	// ErrInvalidRefreshResult 表示 Provider 返回的凭据不完整或改变了账号身份。
 	ErrInvalidRefreshResult = errors.New("账号 OAuth 刷新结果无效")
+	// ErrCredentialNotRefreshable 表示静态凭据或长效 Token 没有官方刷新协议。
+	ErrCredentialNotRefreshable = errors.New("账号凭据不可刷新")
 )
 
 // RefreshStrategy 封装一个 Provider 的可刷新凭据识别、过期时间和官方刷新协议。
@@ -147,7 +149,7 @@ func (resolver *Resolver) Resolve(
 		return currentResult(snapshot), nil
 	}
 	return resolver.flights.Do(ctx, accountRef.String(), func() (Result, error) {
-		return resolver.refreshCurrent(ctx, accountRef, strategy)
+		return resolver.refreshCurrent(ctx, accountRef, strategy, false)
 	})
 }
 
@@ -169,6 +171,39 @@ func (resolver *Resolver) ResolveCredentialBinding(
 	accountRef accountcore.AccountRef,
 ) (accountapp.CredentialBinding, error) {
 	result, err := resolver.Resolve(ctx, accountRef)
+	if err != nil {
+		return accountapp.CredentialBinding{}, err
+	}
+	return result.Binding(), nil
+}
+
+// ForceRefreshCredentialBinding 在上游明确拒绝当前 OAuth 后强制刷新并返回新绑定。
+//
+// 它只服务常驻 Provider Runtime 的 401 恢复；普通启动和路由仍使用 Resolve 的
+// 到期窗口，避免无意义刷新。静态凭据会明确返回 ErrCredentialNotRefreshable。
+func (resolver *Resolver) ForceRefreshCredentialBinding(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+) (accountapp.CredentialBinding, error) {
+	if resolver == nil ||
+		resolver.store == nil ||
+		ctx == nil ||
+		!accountRef.IsValid() {
+		return accountapp.CredentialBinding{}, ErrInvalidResolveRequest
+	}
+	if err := ctx.Err(); err != nil {
+		return accountapp.CredentialBinding{}, err
+	}
+	snapshot, strategy, _, err := resolver.readResolutionState(ctx, accountRef)
+	if err != nil {
+		return accountapp.CredentialBinding{}, err
+	}
+	if _, refreshable := strategy.ExpiresAt(snapshot.Credential()); !refreshable {
+		return accountapp.CredentialBinding{}, ErrCredentialNotRefreshable
+	}
+	result, err := resolver.flights.Do(ctx, accountRef.String(), func() (Result, error) {
+		return resolver.refreshCurrent(ctx, accountRef, strategy, true)
+	})
 	if err != nil {
 		return accountapp.CredentialBinding{}, err
 	}
@@ -221,6 +256,7 @@ func (resolver *Resolver) refreshCurrent(
 	ctx context.Context,
 	accountRef accountcore.AccountRef,
 	expectedStrategy RefreshStrategy,
+	force bool,
 ) (Result, error) {
 	snapshot, strategy, due, err := resolver.readResolutionState(
 		ctx,
@@ -232,7 +268,11 @@ func (resolver *Resolver) refreshCurrent(
 	if strategy.ProviderID() != expectedStrategy.ProviderID() {
 		return Result{}, ErrInvalidRefreshResult
 	}
-	if !due {
+	_, refreshable := strategy.ExpiresAt(snapshot.Credential())
+	if force && !refreshable {
+		return Result{}, ErrCredentialNotRefreshable
+	}
+	if !force && !due {
 		return currentResult(snapshot), nil
 	}
 	now, err := resolver.currentTime()
@@ -258,7 +298,7 @@ func (resolver *Resolver) refreshCurrent(
 	}
 	if err := resolver.store.ReplaceCredential(ctx, replacement); err != nil {
 		if errors.Is(err, accountapp.ErrCredentialConflict) {
-			return resolver.resolveCredentialConflict(ctx, accountRef)
+			return resolver.resolveCredentialConflict(ctx, accountRef, snapshot.UpdatedAt())
 		}
 		return Result{}, err
 	}
@@ -277,12 +317,13 @@ func (resolver *Resolver) refreshCurrent(
 func (resolver *Resolver) resolveCredentialConflict(
 	ctx context.Context,
 	accountRef accountcore.AccountRef,
+	rejectedVersion time.Time,
 ) (Result, error) {
-	snapshot, _, due, err := resolver.readResolutionState(ctx, accountRef)
+	snapshot, _, _, err := resolver.readResolutionState(ctx, accountRef)
 	if err != nil {
 		return Result{}, err
 	}
-	if due {
+	if !snapshot.UpdatedAt().After(rejectedVersion) {
 		return Result{}, accountapp.ErrCredentialConflict
 	}
 	return currentResult(snapshot), nil

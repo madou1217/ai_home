@@ -245,6 +245,193 @@ func TestHandlerRejectsInvalidOrIneligibleProviderDefaults(t *testing.T) {
 	assertAPIError(t, notFound, http.StatusNotFound, "default_account_not_found")
 }
 
+// TestHandlerResolvesLaunchAccountSelection 验证显式身份和 Provider 默认选择共享非敏感响应合同。
+func TestHandlerResolvesLaunchAccountSelection(t *testing.T) {
+	t.Parallel()
+
+	service := newAccountServiceStub(t)
+	overview := newTestOverview(t, service.catalog, 7, "http-launch-selection")
+	account := overview.Account()
+	selection, err := accountapp.NewLaunchSelection(
+		account,
+		accountapp.LaunchSelectionSourceAccountRef,
+	)
+	if err != nil {
+		t.Fatalf("NewLaunchSelection() error = %v", err)
+	}
+	service.selectionResult = selection
+	response := performAuthorizedRequest(
+		t,
+		newTestHandler(t, service),
+		http.MethodPost,
+		accountsapi.SelectionPath,
+		marshalRequestJSON(t, map[string]any{
+			"provider_id": "codex",
+			"account_ref": account.Ref().String(),
+		}),
+	)
+	if response.Code != http.StatusOK {
+		t.Fatalf("POST selection status=%d body=%s", response.Code, response.Body)
+	}
+	var document struct {
+		Data struct {
+			ProviderID   string `json:"provider_id"`
+			AccountRef   string `json:"account_ref"`
+			CLIAccountID int64  `json:"cli_account_id"`
+			Source       string `json:"selection_source"`
+		} `json:"data"`
+	}
+	decodeResponseJSON(t, response, &document)
+	if document.Data.ProviderID != "codex" ||
+		document.Data.AccountRef != account.Ref().String() ||
+		document.Data.CLIAccountID != 7 ||
+		document.Data.Source != "account_ref" ||
+		service.selectionCalls != 1 ||
+		service.selectionRequest.ProviderID != "codex" ||
+		service.selectionRequest.AccountRef != account.Ref() ||
+		service.selectionRequest.CLIAccountID != 0 {
+		t.Fatalf(
+			"selection response=%#v calls=%d request=%#v",
+			document.Data,
+			service.selectionCalls,
+			service.selectionRequest,
+		)
+	}
+	assertSafeResponseHeaders(t, response)
+}
+
+// TestHandlerParsesCLIAndDefaultLaunchSelections 验证数字别名与未指定账号的输入不会混淆。
+func TestHandlerParsesCLIAndDefaultLaunchSelections(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		body      string
+		wantAlias int64
+	}{
+		{
+			name:      "cli account id",
+			body:      `{"provider_id":"claude","cli_account_id":9}`,
+			wantAlias: 9,
+		},
+		{
+			name: "provider default",
+			body: `{"provider_id":"claude"}`,
+		},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			service := newAccountServiceStub(t)
+			service.selectionErr = accountapp.ErrProviderDefaultNotFound
+			response := performAuthorizedRequest(
+				t,
+				newTestHandler(t, service),
+				http.MethodPost,
+				accountsapi.SelectionPath,
+				[]byte(test.body),
+			)
+			assertAPIError(
+				t,
+				response,
+				http.StatusNotFound,
+				"default_account_not_found",
+			)
+			if service.selectionCalls != 1 ||
+				service.selectionRequest.ProviderID != "claude" ||
+				service.selectionRequest.CLIAccountID.Int64() != test.wantAlias ||
+				service.selectionRequest.AccountRef != "" {
+				t.Fatalf("selection request = %#v", service.selectionRequest)
+			}
+		})
+	}
+}
+
+// TestHandlerRejectsInvalidOrIneligibleLaunchSelections 验证启动选择的格式和状态错误映射稳定。
+func TestHandlerRejectsInvalidOrIneligibleLaunchSelections(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		body      string
+		err       error
+		status    int
+		code      string
+		wantCalls int
+	}{
+		{
+			name:   "invalid account ref",
+			body:   `{"provider_id":"codex","account_ref":"invalid"}`,
+			status: http.StatusBadRequest,
+			code:   "invalid_account_ref",
+		},
+		{
+			name:   "invalid cli account id",
+			body:   `{"provider_id":"codex","cli_account_id":0}`,
+			status: http.StatusBadRequest,
+			code:   "invalid_cli_account_id",
+		},
+		{
+			name:      "ambiguous target",
+			body:      `{"provider_id":"codex","account_ref":"acct_0123456789abcdef0123","cli_account_id":1}`,
+			err:       accountapp.ErrInvalidLaunchSelection,
+			status:    http.StatusUnprocessableEntity,
+			code:      "invalid_account_selection",
+			wantCalls: 1,
+		},
+		{
+			name:      "provider mismatch",
+			body:      `{"provider_id":"codex","account_ref":"acct_0123456789abcdef0123"}`,
+			err:       accountapp.ErrLaunchSelectionProviderMismatch,
+			status:    http.StatusUnprocessableEntity,
+			code:      "account_selection_provider_mismatch",
+			wantCalls: 1,
+		},
+		{
+			name:      "disabled",
+			body:      `{"provider_id":"codex","cli_account_id":1}`,
+			err:       accountapp.ErrLaunchSelectionDisabled,
+			status:    http.StatusConflict,
+			code:      "account_selection_disabled",
+			wantCalls: 1,
+		},
+		{
+			name:      "unconfigured",
+			body:      `{"provider_id":"codex"}`,
+			err:       accountapp.ErrLaunchSelectionUnconfigured,
+			status:    http.StatusConflict,
+			code:      "account_selection_unconfigured",
+			wantCalls: 1,
+		},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			service := newAccountServiceStub(t)
+			service.selectionErr = test.err
+			response := performAuthorizedRequest(
+				t,
+				newTestHandler(t, service),
+				http.MethodPost,
+				accountsapi.SelectionPath,
+				[]byte(test.body),
+			)
+			assertAPIError(t, response, test.status, test.code)
+			if service.selectionCalls != test.wantCalls {
+				t.Fatalf(
+					"selection calls=%d, want %d",
+					service.selectionCalls,
+					test.wantCalls,
+				)
+			}
+		})
+	}
+}
+
 // TestHandlerRotatesStaticCredentialWithoutChangingPublicAccountRef 验证 PUT 子资源不会泄漏或替换账号身份。
 func TestHandlerRotatesStaticCredentialWithoutChangingPublicAccountRef(t *testing.T) {
 	t.Parallel()
@@ -1171,6 +1358,10 @@ type accountServiceStub struct {
 	getDefaultCalls      int
 	setDefaultCalls      int
 	clearDefaultCalls    int
+	selectionResult      accountapp.LaunchSelection
+	selectionErr         error
+	selectionRequest     accountapp.LaunchSelectionRequest
+	selectionCalls       int
 	rotationRef          accountcore.AccountRef
 	rotationCredential   accountapp.Credential
 	rotationErr          error
@@ -1423,6 +1614,16 @@ func (service *accountServiceStub) Clear(
 	return service.defaultErr
 }
 
+// Resolve 记录启动账号解析命令并返回预设非敏感结果。
+func (service *accountServiceStub) Resolve(
+	_ context.Context,
+	request accountapp.LaunchSelectionRequest,
+) (accountapp.LaunchSelection, error) {
+	service.selectionCalls++
+	service.selectionRequest = request
+	return service.selectionResult, service.selectionErr
+}
+
 // Rotate 记录静态凭据轮换并保持测试账号引用和数字别名不变。
 func (service *accountServiceStub) Rotate(
 	_ context.Context,
@@ -1560,6 +1761,7 @@ func newTestHandlerWithCLIProxyAPIExporter(
 		Usage:               service,
 		Deletion:            service,
 		Defaults:            service,
+		Selections:          service,
 		CredentialRotation:  service,
 		Sub2APIExporter:     service,
 		CLIProxyAPIExporter: cliProxyAPIExporter,

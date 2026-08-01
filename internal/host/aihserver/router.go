@@ -59,6 +59,7 @@ func newRouter(handlers serverHandlers) http.Handler {
 	mux.Handle(accountsapi.Sub2APIImportPath, handlers.accounts)
 	mux.Handle(accountsapi.CollectionPath, handlers.accounts)
 	mux.Handle(accountsapi.CollectionPath+"/", handlers.accounts)
+	mux.Handle(accountsapi.SelectionPath, handlers.accounts)
 	mux.Handle(accountsapi.DefaultsPath+"/", handlers.accounts)
 	mux.Handle(modelsapi.Path, handlers.models)
 	mux.Handle(accountauthapi.CollectionPath, handlers.accountAuth)

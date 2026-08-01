@@ -618,6 +618,10 @@ func newLiveManagementHandler(
 	if err != nil {
 		t.Fatalf("accounts.NewProviderDefaults() error = %v", err)
 	}
+	launchAccountSelector, err := accountapp.NewLaunchAccountSelector(catalog, store)
+	if err != nil {
+		t.Fatalf("accounts.NewLaunchAccountSelector() error = %v", err)
+	}
 	exportReader, err := accountapp.NewExportReader(store, store, store)
 	if err != nil {
 		t.Fatalf("accounts.NewExportReader() error = %v", err)
@@ -708,6 +712,7 @@ func newLiveManagementHandler(
 		Usage:               usage,
 		Deletion:            deleter,
 		Defaults:            providerDefaults,
+		Selections:          launchAccountSelector,
 		CredentialRotation:  credentialRotator,
 		Sub2APIExporter:     exporter,
 		CLIProxyAPIExporter: cliProxyAPIExporter,

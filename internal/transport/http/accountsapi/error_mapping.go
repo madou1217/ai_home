@@ -130,6 +130,34 @@ func writeApplicationError(response http.ResponseWriter, err error) {
 			"default_account_not_found",
 			"Provider 当前没有默认账号",
 		)
+	case errors.Is(err, accountapp.ErrLaunchSelectionProviderMismatch):
+		writeAPIError(
+			response,
+			http.StatusUnprocessableEntity,
+			"account_selection_provider_mismatch",
+			"目标账号不属于指定 Provider",
+		)
+	case errors.Is(err, accountapp.ErrLaunchSelectionDisabled):
+		writeAPIError(
+			response,
+			http.StatusConflict,
+			"account_selection_disabled",
+			"目标账号已被用户停用",
+		)
+	case errors.Is(err, accountapp.ErrLaunchSelectionUnconfigured):
+		writeAPIError(
+			response,
+			http.StatusConflict,
+			"account_selection_unconfigured",
+			"目标账号缺少可用凭据",
+		)
+	case errors.Is(err, accountapp.ErrInvalidLaunchSelection):
+		writeAPIError(
+			response,
+			http.StatusUnprocessableEntity,
+			"invalid_account_selection",
+			"Provider 或启动账号选择无效",
+		)
 	case errors.Is(err, accountapp.ErrProviderDefaultMismatch):
 		writeAPIError(
 			response,

@@ -39,6 +39,13 @@ type updateProviderDefaultRequest struct {
 	AccountRef string `json:"account_ref"`
 }
 
+// resolveLaunchSelectionRequest 是一次 Provider CLI 启动账号解析命令。
+type resolveLaunchSelectionRequest struct {
+	ProviderID   string `json:"provider_id"`
+	AccountRef   string `json:"account_ref,omitempty"`
+	CLIAccountID *int64 `json:"cli_account_id,omitempty"`
+}
+
 // updateCredentialRequest 是静态凭据子资源的完整替换 DTO。
 type updateCredentialRequest struct {
 	Auth updateCredentialAuthDTO `json:"auth"`
@@ -92,6 +99,19 @@ type providerDefaultView struct {
 // providerDefaultResponse 是默认账号查询和替换共享的成功 envelope。
 type providerDefaultResponse struct {
 	Data providerDefaultView `json:"data"`
+}
+
+// launchSelectionView 是启动账号解析允许公开的非敏感结果。
+type launchSelectionView struct {
+	ProviderID   string `json:"provider_id"`
+	AccountRef   string `json:"account_ref"`
+	CLIAccountID int64  `json:"cli_account_id"`
+	Source       string `json:"selection_source"`
+}
+
+// launchSelectionResponse 是启动账号解析的成功 envelope。
+type launchSelectionResponse struct {
+	Data launchSelectionView `json:"data"`
 }
 
 // accountListResponse 是账号列表及 keyset 分页信息。
@@ -200,6 +220,19 @@ func newProviderDefaultResponse(
 		ProviderID: providerDefault.ProviderID(),
 		AccountRef: providerDefault.AccountRef().String(),
 		UpdatedAt:  formatTime(providerDefault.UpdatedAt()),
+	}}
+}
+
+// newLaunchSelectionResponse 只公开账号稳定身份、数字别名和选择来源。
+func newLaunchSelectionResponse(
+	selection accountapp.LaunchSelection,
+) launchSelectionResponse {
+	account := selection.Account()
+	return launchSelectionResponse{Data: launchSelectionView{
+		ProviderID:   account.ProviderID(),
+		AccountRef:   account.Ref().String(),
+		CLIAccountID: account.CLIAccountID().Int64(),
+		Source:       string(selection.Source()),
 	}}
 }
 

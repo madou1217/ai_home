@@ -23,7 +23,9 @@ const (
 	// Sub2APIImportPath 是单账号 sub2api 迁移文档导入资源的规范路径。
 	Sub2APIImportPath = "/v1/management/account-imports/sub2api"
 	// DefaultsPath 是 Provider 默认启动账号资源的规范集合前缀。
-	DefaultsPath   = "/v1/management/account-defaults"
+	DefaultsPath = "/v1/management/account-defaults"
+	// SelectionPath 是启动账号解析命令的规范路径。
+	SelectionPath  = "/v1/management/account-selections/resolve"
 	apiMaxPageSize = accountapp.MaxOverviewLimit - 1
 )
 
@@ -99,6 +101,14 @@ type ProviderDefaultManagement interface {
 	Clear(ctx context.Context, providerID string) error
 }
 
+// LaunchAccountSelection 是 Provider CLI 启动账号解析依赖的应用端口。
+type LaunchAccountSelection interface {
+	Resolve(
+		ctx context.Context,
+		request accountapp.LaunchSelectionRequest,
+	) (accountapp.LaunchSelection, error)
+}
+
 // StaticCredentialRotation 是静态凭据子资源依赖的原地轮换用例端口。
 type StaticCredentialRotation interface {
 	Rotate(
@@ -149,6 +159,7 @@ type Dependencies struct {
 	Usage               UsageManagement
 	Deletion            AccountDeletion
 	Defaults            ProviderDefaultManagement
+	Selections          LaunchAccountSelection
 	CredentialRotation  StaticCredentialRotation
 	Sub2APIExporter     AccountExporter
 	CLIProxyAPIExporter AccountExporter
@@ -167,6 +178,7 @@ type Handler struct {
 	usage               UsageManagement
 	deletion            AccountDeletion
 	defaults            ProviderDefaultManagement
+	selections          LaunchAccountSelection
 	credentialRotation  StaticCredentialRotation
 	sub2apiExporter     AccountExporter
 	cliProxyAPIExporter AccountExporter
@@ -185,6 +197,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		dependencies.Usage == nil ||
 		dependencies.Deletion == nil ||
 		dependencies.Defaults == nil ||
+		dependencies.Selections == nil ||
 		dependencies.CredentialRotation == nil ||
 		dependencies.Sub2APIExporter == nil ||
 		dependencies.CLIProxyAPIExporter == nil ||
@@ -202,6 +215,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		usage:               dependencies.Usage,
 		deletion:            dependencies.Deletion,
 		defaults:            dependencies.Defaults,
+		selections:          dependencies.Selections,
 		credentialRotation:  dependencies.CredentialRotation,
 		sub2apiExporter:     dependencies.Sub2APIExporter,
 		cliProxyAPIExporter: dependencies.CLIProxyAPIExporter,
@@ -238,6 +252,8 @@ func (handler *Handler) ServeHTTP(
 		handler.handleNativeImport(response, request)
 	case request.URL.Path == CollectionPath:
 		handler.handleCollection(response, request)
+	case request.URL.Path == SelectionPath:
+		handler.handleLaunchSelection(response, request)
 	case strings.HasPrefix(request.URL.Path, DefaultsPath+"/"):
 		handler.handleProviderDefault(response, request)
 	case strings.HasPrefix(request.URL.Path, CollectionPath+"/"):

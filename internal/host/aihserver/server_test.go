@@ -123,6 +123,39 @@ func TestServerMountsSystemAndAccountRoutes(t *testing.T) {
 	if strings.Contains(created.body, secret) {
 		t.Fatal("Go Server 创建响应泄漏 API Key")
 	}
+	var createdDocument struct {
+		Data struct {
+			AccountRef   string `json:"account_ref"`
+			CLIAccountID int64  `json:"cli_account_id"`
+		} `json:"data"`
+	}
+	decodeJSON(t, created.body, &createdDocument)
+	selectionPayload := []byte(
+		`{"provider_id":"codex","account_ref":"` +
+			createdDocument.Data.AccountRef + `"}`,
+	)
+	selection := performRequest(
+		t,
+		client,
+		http.MethodPost,
+		baseURL+accountsapi.SelectionPath,
+		testManagementKey,
+		selectionPayload,
+	)
+	assertStatus(t, selection, http.StatusOK)
+	if !strings.Contains(selection.body, `"selection_source":"account_ref"`) ||
+		!strings.Contains(selection.body, createdDocument.Data.AccountRef) ||
+		createdDocument.Data.CLIAccountID != 1 ||
+		strings.Contains(selection.body, secret) {
+		t.Fatalf("Go Server 启动账号选择响应错误: %s", selection.body)
+	}
+	t.Logf(
+		"POST %s\npayload:\n%s\nstatus: %d\nresponse:\n%s",
+		baseURL+accountsapi.SelectionPath,
+		selectionPayload,
+		selection.status,
+		selection.body,
+	)
 	unauthorizedModels := performRequest(
 		t,
 		client,

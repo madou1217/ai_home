@@ -160,6 +160,64 @@ func TestAccountsAPILiveSmoke(t *testing.T) {
 		claudeRef,
 		"2026-07-27T19:25:00Z",
 	)
+	selectionURL := server.URL + accountsapi.SelectionPath
+	explicitRefSelection := performLiveRequest(
+		t,
+		server.Client(),
+		http.MethodPost,
+		selectionURL,
+		marshalRequestJSON(t, map[string]any{
+			"provider_id": "codex",
+			"account_ref": codexRef,
+		}),
+	)
+	logLiveExchange(t, explicitRefSelection)
+	assertLiveStatus(t, explicitRefSelection, http.StatusOK)
+	assertLiveLaunchSelection(
+		t,
+		explicitRefSelection,
+		"codex",
+		codexRef,
+		1,
+		"account_ref",
+	)
+	explicitAliasSelection := performLiveRequest(
+		t,
+		server.Client(),
+		http.MethodPost,
+		selectionURL,
+		marshalRequestJSON(t, map[string]any{
+			"provider_id":    "claude",
+			"cli_account_id": 1,
+		}),
+	)
+	logLiveExchange(t, explicitAliasSelection)
+	assertLiveStatus(t, explicitAliasSelection, http.StatusOK)
+	assertLiveLaunchSelection(
+		t,
+		explicitAliasSelection,
+		"claude",
+		claudeRef,
+		1,
+		"cli_account_id",
+	)
+	defaultSelection := performLiveRequest(
+		t,
+		server.Client(),
+		http.MethodPost,
+		selectionURL,
+		marshalRequestJSON(t, map[string]string{"provider_id": "codex"}),
+	)
+	logLiveExchange(t, defaultSelection)
+	assertLiveStatus(t, defaultSelection, http.StatusOK)
+	assertLiveLaunchSelection(
+		t,
+		defaultSelection,
+		"codex",
+		codexRef,
+		1,
+		"provider_default",
+	)
 
 	detailURL := server.URL + accountsapi.CollectionPath + "/" + codexRef
 	detail := performLiveRequest(
@@ -387,6 +445,24 @@ func TestAccountsAPILiveSmoke(t *testing.T) {
 	) {
 		t.Fatalf("停用后默认账号响应错误: %s", codexDefaultAfterDisable.responseBody)
 	}
+	disabledSelection := performLiveRequest(
+		t,
+		server.Client(),
+		http.MethodPost,
+		selectionURL,
+		marshalRequestJSON(t, map[string]string{
+			"provider_id": "codex",
+			"account_ref": codexRef,
+		}),
+	)
+	logLiveExchange(t, disabledSelection)
+	assertLiveStatus(t, disabledSelection, http.StatusConflict)
+	if !strings.Contains(
+		disabledSelection.responseBody,
+		`"code":"account_selection_disabled"`,
+	) {
+		t.Fatalf("停用账号选择响应错误: %s", disabledSelection.responseBody)
+	}
 
 	rotatedSecret := "synthetic-codex-live-rotated-key"
 	rotationPayload := marshalRequestJSON(t, map[string]any{
@@ -486,6 +562,9 @@ func TestAccountsAPILiveSmoke(t *testing.T) {
 		codexDefault,
 		codexDefaultRead,
 		claudeDefault,
+		explicitRefSelection,
+		explicitAliasSelection,
+		defaultSelection,
 		detail,
 		models,
 		modelPolicy,
@@ -500,6 +579,7 @@ func TestAccountsAPILiveSmoke(t *testing.T) {
 		targetList,
 		disabled,
 		codexDefaultAfterDisable,
+		disabledSelection,
 		deleted,
 		deletedDetail,
 	} {
@@ -538,6 +618,34 @@ func assertLiveProviderDefault(
 		document.Data.AccountRef != accountRef ||
 		document.Data.UpdatedAt != updatedAt {
 		t.Fatalf("live provider default response = %#v", document.Data)
+	}
+}
+
+// assertLiveLaunchSelection 校验真实 HTTP 启动选择只返回非敏感账号身份和来源。
+func assertLiveLaunchSelection(
+	t *testing.T,
+	exchange liveExchange,
+	providerID string,
+	accountRef string,
+	cliAccountID int64,
+	source string,
+) {
+	t.Helper()
+
+	var document struct {
+		Data struct {
+			ProviderID   string `json:"provider_id"`
+			AccountRef   string `json:"account_ref"`
+			CLIAccountID int64  `json:"cli_account_id"`
+			Source       string `json:"selection_source"`
+		} `json:"data"`
+	}
+	decodeLiveBody(t, exchange.responseBody, &document)
+	if document.Data.ProviderID != providerID ||
+		document.Data.AccountRef != accountRef ||
+		document.Data.CLIAccountID != cliAccountID ||
+		document.Data.Source != source {
+		t.Fatalf("live launch selection response = %#v", document.Data)
 	}
 }
 
@@ -594,6 +702,10 @@ func newAccountsLiveServer(
 	if err != nil {
 		t.Fatalf("NewProviderDefaults() error = %v", err)
 	}
+	launchAccountSelector, err := accountapp.NewLaunchAccountSelector(catalog, store)
+	if err != nil {
+		t.Fatalf("NewLaunchAccountSelector() error = %v", err)
+	}
 	exportReader, err := accountapp.NewExportReader(store, store, store)
 	if err != nil {
 		t.Fatalf("NewExportReader() error = %v", err)
@@ -645,6 +757,7 @@ func newAccountsLiveServer(
 		Usage:               newAccountServiceStub(t),
 		Deletion:            deleter,
 		Defaults:            providerDefaults,
+		Selections:          launchAccountSelector,
 		CredentialRotation:  credentialRotator,
 		Sub2APIExporter:     exporter,
 		CLIProxyAPIExporter: cliProxyAPIExporter,

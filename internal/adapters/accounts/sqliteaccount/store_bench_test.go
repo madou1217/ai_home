@@ -30,6 +30,11 @@ func BenchmarkStoreQueries(benchmark *testing.B) {
 			if err != nil {
 				benchmark.Fatalf("NewCLIAccountID() error = %v", err)
 			}
+			launchSelector := prepareLaunchSelectionBenchmark(
+				benchmark,
+				store,
+				middleAccountRef,
+			)
 			firstPageQuery, err := accountapp.NewRoutingQuery(
 				store.catalog,
 				"codex",
@@ -67,6 +72,48 @@ func BenchmarkStoreQueries(benchmark *testing.B) {
 						middleAlias,
 					); err != nil {
 						benchmark.Fatalf("GetByCLIAccountID() error = %v", err)
+					}
+				}
+			})
+			benchmark.Run("launch_account_ref", func(benchmark *testing.B) {
+				benchmark.ReportAllocs()
+				request := accountapp.LaunchSelectionRequest{
+					ProviderID: "codex",
+					AccountRef: middleAccountRef,
+				}
+				for range benchmark.N {
+					if _, err := launchSelector.Resolve(
+						context.Background(),
+						request,
+					); err != nil {
+						benchmark.Fatalf("Resolve(account ref) error = %v", err)
+					}
+				}
+			})
+			benchmark.Run("launch_cli_alias", func(benchmark *testing.B) {
+				benchmark.ReportAllocs()
+				request := accountapp.LaunchSelectionRequest{
+					ProviderID:   "codex",
+					CLIAccountID: middleAlias,
+				}
+				for range benchmark.N {
+					if _, err := launchSelector.Resolve(
+						context.Background(),
+						request,
+					); err != nil {
+						benchmark.Fatalf("Resolve(cli alias) error = %v", err)
+					}
+				}
+			})
+			benchmark.Run("launch_provider_default", func(benchmark *testing.B) {
+				benchmark.ReportAllocs()
+				request := accountapp.LaunchSelectionRequest{ProviderID: "codex"}
+				for range benchmark.N {
+					if _, err := launchSelector.Resolve(
+						context.Background(),
+						request,
+					); err != nil {
+						benchmark.Fatalf("Resolve(default) error = %v", err)
 					}
 				}
 			})
@@ -140,6 +187,58 @@ func BenchmarkStoreQueries(benchmark *testing.B) {
 			})
 		})
 	}
+}
+
+// prepareLaunchSelectionBenchmark 为一个合成账号补齐有效凭据和 Provider 默认关系。
+func prepareLaunchSelectionBenchmark(
+	benchmark *testing.B,
+	store *Store,
+	accountRef accountcore.AccountRef,
+) *accountapp.LaunchAccountSelector {
+	benchmark.Helper()
+
+	credential, err := codex.NewAPIKeyAuth(codex.APIKeyInput{
+		APIKey: "synthetic-launch-selection-benchmark-key",
+	})
+	if err != nil {
+		benchmark.Fatalf("codex.NewAPIKeyAuth() error = %v", err)
+	}
+	document, err := store.credentials.Encode(credential)
+	if err != nil {
+		benchmark.Fatalf("credentials.Encode() error = %v", err)
+	}
+	if _, err := store.db.Exec(
+		`INSERT INTO account_credentials (
+			account_ref, credential_ref, auth_kind, auth_mode, format_version,
+			credential_json, updated_at_ms
+		) VALUES (?, ?, ?, ?, 1, ?, 1785110400000)`,
+		accountRef.String(),
+		document.credentialRef.String(),
+		document.authKind,
+		document.authMode,
+		string(document.json),
+	); err != nil {
+		benchmark.Fatalf("insert launch credential error = %v", err)
+	}
+	providerDefault, err := accountcore.NewProviderDefault(
+		"codex",
+		accountRef,
+		testAccountTime(),
+	)
+	if err != nil {
+		benchmark.Fatalf("NewProviderDefault() error = %v", err)
+	}
+	if _, err := store.SetProviderDefault(
+		context.Background(),
+		providerDefault,
+	); err != nil {
+		benchmark.Fatalf("SetProviderDefault() error = %v", err)
+	}
+	selector, err := accountapp.NewLaunchAccountSelector(store.catalog, store)
+	if err != nil {
+		benchmark.Fatalf("NewLaunchAccountSelector() error = %v", err)
+	}
+	return selector
 }
 
 // benchmarkCredentialTransport 接受基准中已经构造成功的 Codex API Key。

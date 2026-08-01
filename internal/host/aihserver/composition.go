@@ -151,6 +151,10 @@ func newHandlers(
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建 Provider 默认账号用例失败: %w", err)
 	}
+	launchAccountSelector, err := accountapp.NewLaunchAccountSelector(catalog, store)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建启动账号解析用例失败: %w", err)
+	}
 	exportReader, err := accountapp.NewExportReader(store, store, store)
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建账号导出读取器失败: %w", err)
@@ -288,6 +292,7 @@ func newHandlers(
 		Usage:               usage.service,
 		Deletion:            deleter,
 		Defaults:            providerDefaults,
+		Selections:          launchAccountSelector,
 		CredentialRotation:  credentialRotator,
 		Sub2APIExporter:     accountExporter,
 		CLIProxyAPIExporter: cliProxyAPIExporter,

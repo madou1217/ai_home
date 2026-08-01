@@ -104,22 +104,19 @@ func (store *Store) GetCredentialSnapshot(
 	if !accountRef.IsValid() {
 		return accountapp.CredentialSnapshot{}, accountcore.ErrInvalidAccountRef
 	}
-	var providerID, credentialRefText, authKind, authMode string
-	var formatVersion int
-	var updatedAtMS int64
-	var payload []byte
+	var record credentialRecord
 	err := store.db.QueryRowContext(
 		ctx,
 		credentialSnapshotQuery,
 		accountRef.String(),
 	).Scan(
-		&providerID,
-		&credentialRefText,
-		&authKind,
-		&authMode,
-		&formatVersion,
-		&payload,
-		&updatedAtMS,
+		&record.providerID,
+		&record.credentialRef,
+		&record.authKind,
+		&record.authMode,
+		&record.formatVersion,
+		&record.payload,
+		&record.updatedAtMS,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return accountapp.CredentialSnapshot{}, accountapp.ErrCredentialNotFound
@@ -130,14 +127,27 @@ func (store *Store) GetCredentialSnapshot(
 			err,
 		)
 	}
-	if formatVersion != credentialFormatVersion {
+	return store.restoreCredentialSnapshot(accountRef, record)
+}
+
+// restoreCredentialSnapshot 统一验证凭据格式、引用摘要和账号绑定。
+func (store *Store) restoreCredentialSnapshot(
+	accountRef accountcore.AccountRef,
+	record credentialRecord,
+) (accountapp.CredentialSnapshot, error) {
+	if record.formatVersion != credentialFormatVersion {
 		return accountapp.CredentialSnapshot{}, ErrInvalidCredential
 	}
-	credential, err := store.credentials.Decode(providerID, authKind, authMode, payload)
+	credential, err := store.credentials.Decode(
+		record.providerID,
+		record.authKind,
+		record.authMode,
+		record.payload,
+	)
 	if err != nil {
 		return accountapp.CredentialSnapshot{}, err
 	}
-	credentialRef, err := accountcore.ParseCredentialRef(credentialRefText)
+	credentialRef, err := accountcore.ParseCredentialRef(record.credentialRef)
 	if err != nil {
 		return accountapp.CredentialSnapshot{}, ErrInvalidCredential
 	}
@@ -147,14 +157,25 @@ func (store *Store) GetCredentialSnapshot(
 	}
 	snapshot, err := accountapp.NewCredentialSnapshot(
 		accountRef,
-		providerID,
+		record.providerID,
 		credential,
-		time.UnixMilli(updatedAtMS).UTC(),
+		time.UnixMilli(record.updatedAtMS).UTC(),
 	)
 	if err != nil {
 		return accountapp.CredentialSnapshot{}, ErrInvalidCredential
 	}
 	return snapshot, nil
+}
+
+// credentialRecord 是持久化凭据恢复使用的内部扫描结构。
+type credentialRecord struct {
+	providerID    string
+	credentialRef string
+	authKind      string
+	authMode      string
+	formatVersion int
+	payload       []byte
+	updatedAtMS   int64
 }
 
 // ReplaceCredential 使用 updated_at_ms compare-and-swap 原子替换凭据文档。

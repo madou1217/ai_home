@@ -18,6 +18,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/codexoauth"
 	"github.com/madou1217/ai_home/internal/adapters/accountruntime/accountrecovery"
 	runtimeinmemory "github.com/madou1217/ai_home/internal/adapters/accountruntime/inmemory"
+	"github.com/madou1217/ai_home/internal/adapters/accounts/cliproxyapi"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sub2api"
@@ -154,6 +155,13 @@ func newHandlers(
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建账号标准导出器失败: %w", err)
 	}
+	cliProxyAPIExporter, err := cliproxyapi.NewExporter(exportReader)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf(
+			"创建 CLIProxyAPI 账号导出器失败: %w",
+			err,
+		)
+	}
 	modelManagement, err := accountapp.NewModelManagement(
 		store,
 		store,
@@ -259,16 +267,17 @@ func newHandlers(
 	decoder := nativeaccount.NewDecoder()
 	sub2APIDecoder := sub2api.NewDecoder()
 	accountsHandler, err := accountsapi.NewHandler(accountsapi.Dependencies{
-		Management:      management,
-		Models:          recoveringModelManagement,
-		Usage:           usage.service,
-		Deletion:        deleter,
-		Exporter:        accountExporter,
-		Registrar:       scheduledRegistrar,
-		APIKeys:         accountsapi.NewBuiltinAPIKeyCredentialFactory(),
-		NativeAccounts:  decoder,
-		Sub2APIAccounts: sub2APIDecoder,
-		Authorizer:      authorizer,
+		Management:          management,
+		Models:              recoveringModelManagement,
+		Usage:               usage.service,
+		Deletion:            deleter,
+		Sub2APIExporter:     accountExporter,
+		CLIProxyAPIExporter: cliProxyAPIExporter,
+		Registrar:           scheduledRegistrar,
+		APIKeys:             accountsapi.NewBuiltinAPIKeyCredentialFactory(),
+		NativeAccounts:      decoder,
+		Sub2APIAccounts:     sub2APIDecoder,
+		Authorizer:          authorizer,
 	})
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建账号 HTTP Handler 失败: %w", err)

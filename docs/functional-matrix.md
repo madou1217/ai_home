@@ -151,11 +151,14 @@
 | XFER-022 | age/RSA/password/legacy crypto | 当前只有 service 与测试接线 | 加解密函数、age 安装提示和旧 envelope 解密存在，但普通 export 当前只生成 ZIP，未确认公开参数入口 | 未暴露/兼容 | `lib/cli/services/backup/crypto.js`、`test/backup.crypto.password-file.test.js` |
 | XFER-023 | Go 单账号 sub2api 导出 | `GET /v1/management/accounts/{account_ref}/export` | 只导出 Codex/Claude 当前账号凭据和可选公开资料；不含 `version`、本地 ID、模型、usage 或运行态 | 已实现（重构路径） | `application/accounts/export.go`、`internal/adapters/accounts/sub2api/`、`internal/transport/http/accountsapi/handler.go` |
 | XFER-024 | Go 单账号 sub2api 导入 | `POST /v1/management/account-imports/sub2api` | 直接接收一个 `sub2api-data` 文档；只允许 Codex/Claude，不接受批量、代理、格式版本或本地身份，并复用统一原子注册与模型维护链 | 已实现（重构路径） | `internal/adapters/accounts/sub2api/decoder.go`、`internal/transport/http/accountsapi/sub2api_import.go` |
+| XFER-025 | Go 单账号 CLIProxyAPI auth 导出 | `GET /v1/management/accounts/{account_ref}/export/cliproxyapi` | 直接输出可放入 CPA `auth-dir` 的 Codex/Claude 单 OAuth JSON；API Key 属于 CPA 配置而非 auth 文件，Claude setup-token/Auth Token 也不伪装成该格式 | 已实现（重构路径） | `internal/adapters/accounts/cliproxyapi/`、`internal/transport/http/accountsapi/handler.go` |
 
-Go 重构路径在 2026-07-31 实时核对的外部合同基准为 sub2api
+Go 重构路径实时核对的外部合同基准为 sub2api
 `5a6143097db142b72a6fc848c214e97214470bdd` 与 CLIProxyAPI
-`4a315136730baa8b3a436d12b74e5a702c70be5c`。当前 Go 单账号迁移路径只实现
-sub2api；CPA 仅作为最新合同参考，尚未暴露新的 Go CPA 导入/导出能力。
+`d9460a8df6c15175342ede3dc5c423eb2df11f58`。CPA 官方交换单位是一个
+`auth-dir` JSON 文件而非批量 envelope。当前只暴露无损的 CPA OAuth 导出；Codex
+文件可从 ID Token 恢复稳定身份，但 Claude 官方文件不保存 AIH 领域要求的
+`account_uuid/scopes`，因此尚未提供会丢失或猜测身份的 CPA Claude 导入。
 
 ## 5. CLI 启动、PTY 与持久会话
 

@@ -83,9 +83,9 @@ type AccountDeletion interface {
 	) error
 }
 
-// AccountExporter 是账号成员导出资源依赖的标准 JSON 输出端口。
+// AccountExporter 是账号成员导出资源依赖的单账号 JSON 输出端口。
 type AccountExporter interface {
-	// ExportAccount 返回一个账号的完整标准导出文档。
+	// ExportAccount 返回一个账号在目标外部合同中的完整文档。
 	ExportAccount(
 		ctx context.Context,
 		accountRef accountcore.AccountRef,
@@ -119,30 +119,32 @@ type Sub2APIAccountDecoder interface {
 
 // Dependencies 集中声明账号 HTTP 入站适配器的依赖。
 type Dependencies struct {
-	Management      Management
-	Models          ModelManagement
-	Usage           UsageManagement
-	Deletion        AccountDeletion
-	Exporter        AccountExporter
-	Registrar       Registrar
-	APIKeys         APIKeyCredentialFactory
-	NativeAccounts  NativeAccountDecoder
-	Sub2APIAccounts Sub2APIAccountDecoder
-	Authorizer      Authorizer
+	Management          Management
+	Models              ModelManagement
+	Usage               UsageManagement
+	Deletion            AccountDeletion
+	Sub2APIExporter     AccountExporter
+	CLIProxyAPIExporter AccountExporter
+	Registrar           Registrar
+	APIKeys             APIKeyCredentialFactory
+	NativeAccounts      NativeAccountDecoder
+	Sub2APIAccounts     Sub2APIAccountDecoder
+	Authorizer          Authorizer
 }
 
 // Handler 是可挂载到未来 Go Server Composition Root 的账号管理路由。
 type Handler struct {
-	management Management
-	models     ModelManagement
-	usage      UsageManagement
-	deletion   AccountDeletion
-	exporter   AccountExporter
-	registrar  Registrar
-	apiKeys    APIKeyCredentialFactory
-	native     NativeAccountDecoder
-	sub2api    Sub2APIAccountDecoder
-	authorizer Authorizer
+	management          Management
+	models              ModelManagement
+	usage               UsageManagement
+	deletion            AccountDeletion
+	sub2apiExporter     AccountExporter
+	cliProxyAPIExporter AccountExporter
+	registrar           Registrar
+	apiKeys             APIKeyCredentialFactory
+	native              NativeAccountDecoder
+	sub2api             Sub2APIAccountDecoder
+	authorizer          Authorizer
 }
 
 // NewHandler 创建依赖完整且默认失败关闭的账号 HTTP Handler。
@@ -151,7 +153,8 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		dependencies.Models == nil ||
 		dependencies.Usage == nil ||
 		dependencies.Deletion == nil ||
-		dependencies.Exporter == nil ||
+		dependencies.Sub2APIExporter == nil ||
+		dependencies.CLIProxyAPIExporter == nil ||
 		dependencies.Registrar == nil ||
 		dependencies.APIKeys == nil ||
 		dependencies.NativeAccounts == nil ||
@@ -160,16 +163,17 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		return nil, ErrInvalidDependencies
 	}
 	return &Handler{
-		management: dependencies.Management,
-		models:     dependencies.Models,
-		usage:      dependencies.Usage,
-		deletion:   dependencies.Deletion,
-		exporter:   dependencies.Exporter,
-		registrar:  dependencies.Registrar,
-		apiKeys:    dependencies.APIKeys,
-		native:     dependencies.NativeAccounts,
-		sub2api:    dependencies.Sub2APIAccounts,
-		authorizer: dependencies.Authorizer,
+		management:          dependencies.Management,
+		models:              dependencies.Models,
+		usage:               dependencies.Usage,
+		deletion:            dependencies.Deletion,
+		sub2apiExporter:     dependencies.Sub2APIExporter,
+		cliProxyAPIExporter: dependencies.CLIProxyAPIExporter,
+		registrar:           dependencies.Registrar,
+		apiKeys:             dependencies.APIKeys,
+		native:              dependencies.NativeAccounts,
+		sub2api:             dependencies.Sub2APIAccounts,
+		authorizer:          dependencies.Authorizer,
 	}, nil
 }
 
@@ -253,7 +257,21 @@ func (handler *Handler) handleMember(
 	case memberResourceUsageRefresh:
 		handler.handleAccountUsageRefresh(response, request, accountRef)
 	case memberResourceExport:
-		handler.handleAccountExport(response, request, accountRef)
+		handler.handleAccountExport(
+			response,
+			request,
+			accountRef,
+			handler.sub2apiExporter,
+			"sub2api-data.json",
+		)
+	case memberResourceCLIProxyAPIExport:
+		handler.handleAccountExport(
+			response,
+			request,
+			accountRef,
+			handler.cliProxyAPIExporter,
+			"cliproxyapi-auth.json",
+		)
 	default:
 		writeAPIError(
 			response,
@@ -269,6 +287,8 @@ func (handler *Handler) handleAccountExport(
 	response http.ResponseWriter,
 	request *http.Request,
 	accountRef accountcore.AccountRef,
+	exporter AccountExporter,
+	fileName string,
 ) {
 	if request.Method != http.MethodGet {
 		response.Header().Set("Allow", http.MethodGet)
@@ -279,7 +299,7 @@ func (handler *Handler) handleAccountExport(
 		rejectUnexpectedBody(response, request) {
 		return
 	}
-	document, err := handler.exporter.ExportAccount(
+	document, err := exporter.ExportAccount(
 		request.Context(),
 		accountRef,
 	)
@@ -287,7 +307,7 @@ func (handler *Handler) handleAccountExport(
 		writeApplicationError(response, err)
 		return
 	}
-	writeExportJSON(response, document)
+	writeExportJSON(response, document, fileName)
 }
 
 // handleAccountUsage 只允许离线读取最近一次成功快照。

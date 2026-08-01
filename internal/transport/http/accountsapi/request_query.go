@@ -81,6 +81,7 @@ const (
 	memberResourceUsage
 	memberResourceUsageRefresh
 	memberResourceExport
+	memberResourceCLIProxyAPIExport
 )
 
 // memberResource 是完成 AccountRef 校验后的成员路由。
@@ -113,6 +114,8 @@ func parseMemberResource(path string) (memberResource, error) {
 		kind = memberResourceUsageRefresh
 	case len(parts) == 2 && parts[1] == "export":
 		kind = memberResourceExport
+	case len(parts) == 3 && parts[1] == "export" && parts[2] == "cliproxyapi":
+		kind = memberResourceCLIProxyAPIExport
 	default:
 		return memberResource{}, accountcore.ErrInvalidAccountRef
 	}

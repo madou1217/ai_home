@@ -361,6 +361,52 @@ func TestHandlerExportsOneAccountAsSub2APIData(t *testing.T) {
 	}
 }
 
+// TestHandlerExportsOneAccountAsCLIProxyAPIAuth 验证独立 CPA 路径和导出器接线。
+func TestHandlerExportsOneAccountAsCLIProxyAPIAuth(t *testing.T) {
+	t.Parallel()
+
+	service := newAccountServiceStub(t)
+	overview := newTestOverview(t, service.catalog, 10, "http-cpa-export-account")
+	exporter := &accountExporterStub{
+		document: []byte(
+			`{"id_token":"synthetic-id","access_token":"synthetic-access",` +
+				`"refresh_token":"synthetic-refresh","account_id":"workspace",` +
+				`"last_refresh":"2026-08-01T01:02:03Z",` +
+				`"email":"account@example.invalid","type":"codex",` +
+				`"expired":"2026-08-01T03:02:03Z","disabled":false}`,
+		),
+	}
+	handler := newTestHandlerWithCLIProxyAPIExporter(t, service, exporter)
+	path := accountsapi.CollectionPath + "/" +
+		overview.Account().Ref().String() + "/export/cliproxyapi"
+
+	response := performAuthorizedRequest(t, handler, http.MethodGet, path, nil)
+	if response.Code != http.StatusOK ||
+		exporter.calls != 1 ||
+		exporter.accountRef != overview.Account().Ref() ||
+		service.exportCalls != 0 {
+		t.Fatalf(
+			"GET CPA export status=%d calls=%d ref=%s sub2api_calls=%d body=%s",
+			response.Code,
+			exporter.calls,
+			exporter.accountRef,
+			service.exportCalls,
+			response.Body,
+		)
+	}
+	if response.Header().Get("Content-Disposition") !=
+		`attachment; filename="cliproxyapi-auth.json"` {
+		t.Fatalf(
+			"Content-Disposition = %q",
+			response.Header().Get("Content-Disposition"),
+		)
+	}
+	if response.Header().Get("Cache-Control") != "no-store" ||
+		response.Body.String() != string(exporter.document)+"\n" {
+		t.Fatalf("CPA export headers=%#v body=%q", response.Header(), response.Body)
+	}
+}
+
 // TestHandlerMapsAccountExportErrors 验证缺账号、缺凭据和不支持类型使用稳定 HTTP 语义。
 func TestHandlerMapsAccountExportErrors(t *testing.T) {
 	t.Parallel()
@@ -807,6 +853,24 @@ type accountServiceStub struct {
 	exportCalls          int
 }
 
+// accountExporterStub 记录独立外部格式导出端口的调用。
+type accountExporterStub struct {
+	document   []byte
+	accountRef accountcore.AccountRef
+	err        error
+	calls      int
+}
+
+// ExportAccount 返回预设文档并记录目标账号。
+func (exporter *accountExporterStub) ExportAccount(
+	_ context.Context,
+	accountRef accountcore.AccountRef,
+) ([]byte, error) {
+	exporter.calls++
+	exporter.accountRef = accountRef
+	return exporter.document, exporter.err
+}
+
 // newAccountServiceStub 创建使用内置 Provider Catalog 的应用服务替身。
 func newAccountServiceStub(t *testing.T) *accountServiceStub {
 	t.Helper()
@@ -1056,6 +1120,15 @@ func profileUpdatedAt(profile accountapp.PublicProfile) time.Time {
 
 // newTestHandler 创建使用真实 Bearer 校验与内置凭据工厂的 HTTP Handler。
 func newTestHandler(t *testing.T, service *accountServiceStub) http.Handler {
+	return newTestHandlerWithCLIProxyAPIExporter(t, service, service)
+}
+
+// newTestHandlerWithCLIProxyAPIExporter 允许测试观察两个导出格式的依赖隔离。
+func newTestHandlerWithCLIProxyAPIExporter(
+	t *testing.T,
+	service *accountServiceStub,
+	cliProxyAPIExporter accountsapi.AccountExporter,
+) http.Handler {
 	t.Helper()
 
 	authorizer, err := accountsapi.NewBearerAuthorizer(
@@ -1065,16 +1138,17 @@ func newTestHandler(t *testing.T, service *accountServiceStub) http.Handler {
 		t.Fatalf("NewBearerAuthorizer() error = %v", err)
 	}
 	handler, err := accountsapi.NewHandler(accountsapi.Dependencies{
-		Management:      service,
-		Models:          service,
-		Usage:           service,
-		Deletion:        service,
-		Exporter:        service,
-		Registrar:       service,
-		APIKeys:         accountsapi.NewBuiltinAPIKeyCredentialFactory(),
-		NativeAccounts:  nativeaccount.NewDecoder(),
-		Sub2APIAccounts: sub2api.NewDecoder(),
-		Authorizer:      authorizer,
+		Management:          service,
+		Models:              service,
+		Usage:               service,
+		Deletion:            service,
+		Sub2APIExporter:     service,
+		CLIProxyAPIExporter: cliProxyAPIExporter,
+		Registrar:           service,
+		APIKeys:             accountsapi.NewBuiltinAPIKeyCredentialFactory(),
+		NativeAccounts:      nativeaccount.NewDecoder(),
+		Sub2APIAccounts:     sub2api.NewDecoder(),
+		Authorizer:          authorizer,
 	})
 	if err != nil {
 		t.Fatalf("NewHandler() error = %v", err)

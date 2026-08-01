@@ -14,6 +14,7 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/adapters/accounts/cliproxyapi"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sub2api"
@@ -375,6 +376,10 @@ func newAccountsLiveServer(
 	if err != nil {
 		t.Fatalf("sub2api.NewExporter() error = %v", err)
 	}
+	cliProxyAPIExporter, err := cliproxyapi.NewExporter(exportReader)
+	if err != nil {
+		t.Fatalf("cliproxyapi.NewExporter() error = %v", err)
+	}
 	deleter, err := accountapp.NewDeleter(store, liveDeletionCleanup{})
 	if err != nil {
 		t.Fatalf("NewDeleter() error = %v", err)
@@ -395,16 +400,17 @@ func newAccountsLiveServer(
 		t.Fatalf("NewBearerAuthorizer() error = %v", err)
 	}
 	handler, err := accountsapi.NewHandler(accountsapi.Dependencies{
-		Management:      management,
-		Models:          modelManagement,
-		Usage:           newAccountServiceStub(t),
-		Deletion:        deleter,
-		Exporter:        exporter,
-		Registrar:       registrar,
-		APIKeys:         accountsapi.NewBuiltinAPIKeyCredentialFactory(),
-		NativeAccounts:  nativeaccount.NewDecoder(),
-		Sub2APIAccounts: sub2api.NewDecoder(),
-		Authorizer:      authorizer,
+		Management:          management,
+		Models:              modelManagement,
+		Usage:               newAccountServiceStub(t),
+		Deletion:            deleter,
+		Sub2APIExporter:     exporter,
+		CLIProxyAPIExporter: cliProxyAPIExporter,
+		Registrar:           registrar,
+		APIKeys:             accountsapi.NewBuiltinAPIKeyCredentialFactory(),
+		NativeAccounts:      nativeaccount.NewDecoder(),
+		Sub2APIAccounts:     sub2api.NewDecoder(),
+		Authorizer:          authorizer,
 	})
 	if err != nil {
 		t.Fatalf("NewHandler() error = %v", err)

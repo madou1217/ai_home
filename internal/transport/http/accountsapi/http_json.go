@@ -76,8 +76,12 @@ func writeNoContent(response http.ResponseWriter) {
 	response.WriteHeader(http.StatusNoContent)
 }
 
-// writeExportJSON 校验可信输出端口并写入固定文件名的附件响应。
-func writeExportJSON(response http.ResponseWriter, document []byte) {
+// writeExportJSON 校验可信输出端口并写入已声明文件名的附件响应。
+func writeExportJSON(
+	response http.ResponseWriter,
+	document []byte,
+	fileName string,
+) {
 	if !json.Valid(document) {
 		writeAPIError(
 			response,
@@ -90,7 +94,7 @@ func writeExportJSON(response http.ResponseWriter, document []byte) {
 	response.Header().Set("Cache-Control", "no-store")
 	response.Header().Set(
 		"Content-Disposition",
-		`attachment; filename="sub2api-data.json"`,
+		`attachment; filename="`+fileName+`"`,
 	)
 	response.Header().Set("Content-Type", "application/json; charset=utf-8")
 	response.Header().Set("X-Content-Type-Options", "nosniff")

@@ -23,6 +23,7 @@ import (
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/claudeoauth"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/codexoauth"
+	"github.com/madou1217/ai_home/internal/adapters/accounts/cliproxyapi"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sub2api"
@@ -220,6 +221,22 @@ func TestOAuthJobLiveSmoke(t *testing.T) {
 		found["claude"].plan != "pro" {
 		t.Fatalf("账号列表 Provider 结果错误: %#v", found)
 	}
+	assertLiveCLIProxyAPIExport(
+		t,
+		server,
+		codexAccount,
+		smokeCodexReauth,
+		smokeCodexReauthRT,
+		"oauth-live-codex-reauth@example.invalid",
+	)
+	assertLiveCLIProxyAPIExport(
+		t,
+		server,
+		claudeAccount,
+		smokeClaudeReauth,
+		smokeClaudeReauthRT,
+		"oauth-live-claude-reauth@example.invalid",
+	)
 
 	for _, secret := range []string{
 		smokeCodexAccess,
@@ -245,6 +262,78 @@ func TestOAuthJobLiveSmoke(t *testing.T) {
 			t.Fatalf("公开 API 响应泄漏 OAuth 私有值")
 		}
 	}
+}
+
+// assertLiveCLIProxyAPIExport 验证 OAuth 最新快照经过真实 HTTP 与 SQLite 导出。
+func assertLiveCLIProxyAPIExport(
+	t *testing.T,
+	server *httptest.Server,
+	account completedLiveAccount,
+	accessToken string,
+	refreshToken string,
+	email string,
+) {
+	t.Helper()
+
+	exchange := performLiveRequest(
+		t,
+		server.Client(),
+		http.MethodGet,
+		server.URL+accountsapi.CollectionPath+"/"+account.accountRef+
+			"/export/cliproxyapi",
+		nil,
+	)
+	if exchange.status != http.StatusOK ||
+		exchange.responseHeaders.Get("Content-Disposition") !=
+			`attachment; filename="cliproxyapi-auth.json"` ||
+		exchange.responseHeaders.Get("Cache-Control") != "no-store" {
+		t.Fatalf(
+			"%s CPA export status=%d headers=%#v",
+			account.providerID,
+			exchange.status,
+			exchange.responseHeaders,
+		)
+	}
+	var document struct {
+		Type         string `json:"type"`
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+		Email        string `json:"email"`
+		Disabled     bool   `json:"disabled"`
+	}
+	decodeLiveJSON(t, exchange.responseBody, &document)
+	if document.Type != account.providerID ||
+		document.AccessToken != accessToken ||
+		document.RefreshToken != refreshToken ||
+		document.Email != email ||
+		document.Disabled {
+		t.Fatalf("%s CPA export document mismatch", account.providerID)
+	}
+	redacted := exchange
+	redacted.responseBody = redactCLIProxyAPIAuth(t, exchange.responseBody)
+	logLiveExchange(t, redacted)
+}
+
+// redactCLIProxyAPIAuth 隐藏 CPA auth 文件中的所有 OAuth 私有值。
+func redactCLIProxyAPIAuth(t *testing.T, body string) string {
+	t.Helper()
+
+	var document map[string]any
+	decodeLiveJSON(t, body, &document)
+	for _, field := range []string{
+		"id_token",
+		"access_token",
+		"refresh_token",
+	} {
+		if value, found := document[field].(string); found && value != "" {
+			document[field] = "<redacted>"
+		}
+	}
+	encoded, err := json.Marshal(document)
+	if err != nil {
+		t.Fatalf("json.Marshal(redacted CPA auth) error = %v", err)
+	}
+	return string(encoded)
 }
 
 // liveJob 保存 smoke 提交回调所需但不会写入日志的短期值。
@@ -533,6 +622,10 @@ func newLiveManagementHandler(
 	if err != nil {
 		t.Fatalf("sub2api.NewExporter() error = %v", err)
 	}
+	cliProxyAPIExporter, err := cliproxyapi.NewExporter(exportReader)
+	if err != nil {
+		t.Fatalf("cliproxyapi.NewExporter() error = %v", err)
+	}
 	modelManagement, err := accountapp.NewModelManagement(
 		store,
 		store,
@@ -595,16 +688,17 @@ func newLiveManagementHandler(
 		t.Fatalf("accountauthapi.NewHandler() error = %v", err)
 	}
 	accountsHandler, err := accountsapi.NewHandler(accountsapi.Dependencies{
-		Management:      management,
-		Models:          modelManagement,
-		Usage:           usage,
-		Deletion:        deleter,
-		Exporter:        exporter,
-		Registrar:       registrar,
-		APIKeys:         accountsapi.NewBuiltinAPIKeyCredentialFactory(),
-		NativeAccounts:  decoder,
-		Sub2APIAccounts: sub2api.NewDecoder(),
-		Authorizer:      authorizer,
+		Management:          management,
+		Models:              modelManagement,
+		Usage:               usage,
+		Deletion:            deleter,
+		Sub2APIExporter:     exporter,
+		CLIProxyAPIExporter: cliProxyAPIExporter,
+		Registrar:           registrar,
+		APIKeys:             accountsapi.NewBuiltinAPIKeyCredentialFactory(),
+		NativeAccounts:      decoder,
+		Sub2APIAccounts:     sub2api.NewDecoder(),
+		Authorizer:          authorizer,
 	})
 	if err != nil {
 		t.Fatalf("accountsapi.NewHandler() error = %v", err)
@@ -868,11 +962,12 @@ func liveCodexJWT(
 
 // liveExchange 保存真实 HTTP 请求和响应证据。
 type liveExchange struct {
-	method       string
-	url          string
-	requestBody  string
-	status       int
-	responseBody string
+	method          string
+	url             string
+	requestBody     string
+	status          int
+	responseHeaders http.Header
+	responseBody    string
 }
 
 // performLiveRequest 使用真实 HTTP Client 调用本地 Listener。
@@ -910,11 +1005,12 @@ func performLiveRequest(
 		t.Fatalf("io.ReadAll() error = %v", err)
 	}
 	return liveExchange{
-		method:       method,
-		url:          requestURL,
-		requestBody:  strings.TrimSpace(string(body)),
-		status:       response.StatusCode,
-		responseBody: strings.TrimSpace(string(responseBody)),
+		method:          method,
+		url:             requestURL,
+		requestBody:     strings.TrimSpace(string(body)),
+		status:          response.StatusCode,
+		responseHeaders: response.Header.Clone(),
+		responseBody:    strings.TrimSpace(string(responseBody)),
 	}
 }
 

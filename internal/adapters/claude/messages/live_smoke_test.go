@@ -19,6 +19,7 @@ import (
 	claudeauth "github.com/madou1217/ai_home/core/accounts/claude"
 	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	"github.com/madou1217/ai_home/internal/adapters/claude/nativeauth"
 	"github.com/madou1217/ai_home/internal/adapters/clientprotocol/openairesponses"
 )
@@ -32,10 +33,16 @@ const (
 	realClaudeCredentialsEnv = "AIH_REAL_CLAUDE_CREDENTIALS_FILE"
 	// realClaudeConfigEnv 显式选择包含 oauthAccount 的官方全局配置。
 	realClaudeConfigEnv = "AIH_REAL_CLAUDE_CONFIG_FILE"
+	// realClaudeAccountHomeEnv 显式选择只用于真实测试的隔离 AIH 数据目录。
+	realClaudeAccountHomeEnv = "AIH_REAL_CLAUDE_ACCOUNT_HOME"
+	// realClaudeAccountIDEnv 显式选择隔离数据库中的 Claude CLI 账号 ID。
+	realClaudeAccountIDEnv = "AIH_REAL_CLAUDE_ACCOUNT_ID"
 	// realClaudeOAuthSmokeEnv 显式授权一次官方 OAuth 真实诊断请求。
 	realClaudeOAuthSmokeEnv = "AIH_REAL_CLAUDE_OAUTH_SMOKE"
 	// realClaudeReasoningSmokeEnv 显式授权两轮 reasoning 连续性真实请求。
 	realClaudeReasoningSmokeEnv = "AIH_REAL_CLAUDE_REASONING_SMOKE"
+	// realClaudeToolSmokeEnv 显式授权一次只返回客户端工具调用的真实请求。
+	realClaudeToolSmokeEnv = "AIH_REAL_CLAUDE_TOOL_SMOKE"
 	// realClaudeRedactedThinkingSmokeEnv 显式授权一次 redacted thinking 请求。
 	realClaudeRedactedThinkingSmokeEnv = "AIH_REAL_CLAUDE_REDACTED_THINKING_SMOKE"
 	// maxRealClaudeArtifactBytes 限制每个本地 artifact 的读取量。
@@ -317,6 +324,98 @@ func TestLiveClaudeReasoningContinuitySmoke(t *testing.T) {
 	)
 }
 
+// TestLiveClaudeToolUseSmoke 使用显式账号要求模型只返回一次工具调用，
+// 验证真实 tool_use SSE 能无损进入 Canonical 事件，而不执行任何本地工具。
+func TestLiveClaudeToolUseSmoke(t *testing.T) {
+	if os.Getenv(realClaudeToolSmokeEnv) != "1" {
+		t.Skip("设置 AIH_REAL_CLAUDE_TOOL_SMOKE=1 后才允许真实工具请求")
+	}
+
+	credential := loadRealClaudeCredential(t)
+	model := os.Getenv("AIH_REAL_CLAUDE_MODEL")
+	if model == "" {
+		model = realClaudeReasoningModel
+	}
+	tool, err := inference.NewToolDefinition(
+		"aih_probe",
+		"Return the requested fixed probe value",
+		[]byte(`{"type":"object","properties":{"value":{"type":"string"}},"required":["value"],"additionalProperties":false}`),
+	)
+	if err != nil {
+		t.Fatalf("创建真实工具定义失败: %v", err)
+	}
+	toolChoice, err := inference.NewNamedToolChoice("aih_probe")
+	if err != nil {
+		t.Fatalf("创建真实工具选择失败: %v", err)
+	}
+	request, err := inference.NewRequest(inference.RequestInput{
+		ClientProtocol: inference.ClientProtocolAnthropicMessages,
+		Model:          realClaudeSmokeAlias,
+		Messages: []inference.Message{mustMessage(
+			t,
+			inference.RoleUser,
+			mustText(t, "Call aih_probe with value AIH_TOOL_ARGUMENT_OK. Do not return text."),
+		)},
+		Tools:           []inference.ToolDefinition{tool},
+		ToolChoice:      &toolChoice,
+		Stream:          true,
+		MaxOutputTokens: 256,
+	})
+	if err != nil {
+		t.Fatalf("创建真实工具请求失败: %v", err)
+	}
+
+	events, recorder, transport, executeErr := executeRealClaudeRequest(
+		t,
+		credential,
+		model,
+		request,
+	)
+	fingerprint := strings.Join(transport.fingerprint(), "|")
+	toolCompleted := false
+	argumentsMatch := false
+	stopReason := inference.StopReason("")
+	for _, event := range events {
+		switch typed := event.(type) {
+		case inference.ToolCallCompletedEvent:
+			var arguments struct {
+				Value string `json:"value"`
+			}
+			argumentsErr := json.Unmarshal(typed.Arguments(), &arguments)
+			toolCompleted = typed.Name() == "aih_probe"
+			argumentsMatch = argumentsErr == nil &&
+				arguments.Value == "AIH_TOOL_ARGUMENT_OK"
+		case inference.ResponseCompletedEvent:
+			stopReason = typed.StopReason()
+		}
+	}
+	t.Logf(
+		"real_claude_tool_use method=%s endpoint=%s model=%s max_tokens=256 stream=true http_status=%d media_type=%s successes=%d failures=%d events=%s fingerprint=%s tool_completed=%t arguments_match=%t stop_reason=%s",
+		transport.method,
+		transport.endpoint,
+		model,
+		transport.statusCode,
+		transport.mediaType,
+		recorder.successes,
+		len(recorder.failures),
+		eventKinds(events),
+		fingerprint,
+		toolCompleted,
+		argumentsMatch,
+		stopReason,
+	)
+	if executeErr != nil {
+		t.Fatalf("真实 Claude tool_use 请求失败: %v", executeErr)
+	}
+	if recorder.successes != 1 ||
+		len(recorder.failures) != 0 ||
+		!toolCompleted ||
+		!argumentsMatch ||
+		stopReason != inference.StopReasonToolUse {
+		t.Fatal("真实 Claude tool_use 未满足成功合同")
+	}
+}
+
 // TestLiveClaudeRedactedThinkingSmoke 使用官方 OAuth artifact 发起一次
 // omitted thinking 请求，验证真实上游返回独立 redacted_thinking 块。
 func TestLiveClaudeRedactedThinkingSmoke(t *testing.T) {
@@ -448,6 +547,9 @@ func loadRealClaudeAPIKeyCredential(t *testing.T) *claudeauth.APIKeyAuth {
 func loadRealClaudeCredential(t *testing.T) *claudeauth.OAuthAuth {
 	t.Helper()
 
+	if aiHomeDir := os.Getenv(realClaudeAccountHomeEnv); aiHomeDir != "" {
+		return loadRealClaudeAccountCredential(t, aiHomeDir)
+	}
 	if !hasRealClaudeArtifacts() {
 		t.Fatalf(
 			"%s 和 %s 必须同时指定",
@@ -475,6 +577,54 @@ func loadRealClaudeCredential(t *testing.T) *claudeauth.OAuthAuth {
 		t.Fatalf("解码 Claude 官方 artifact 失败: %v", err)
 	}
 	return decoded.Auth
+}
+
+// loadRealClaudeAccountCredential 通过正式 SQLite Store 读取显式账号，
+// 凭据只保留在测试进程内存中，不导出到文件或命令行参数。
+func loadRealClaudeAccountCredential(
+	t *testing.T,
+	aiHomeDir string,
+) *claudeauth.OAuthAuth {
+	t.Helper()
+
+	rawAccountID := os.Getenv(realClaudeAccountIDEnv)
+	accountID, err := strconv.ParseInt(rawAccountID, 10, 64)
+	if err != nil || accountID <= 0 {
+		t.Fatalf("%s 必须是正整数", realClaudeAccountIDEnv)
+	}
+	alias, err := accountcore.NewCLIAccountID(accountID)
+	if err != nil {
+		t.Fatalf("创建真实测试账号 ID 失败: %v", err)
+	}
+	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
+	if err != nil {
+		t.Fatalf("创建真实测试 Provider Catalog 失败: %v", err)
+	}
+	store, err := sqliteaccount.Open(context.Background(), sqliteaccount.OpenOptions{
+		AIHomeDir: aiHomeDir,
+		Catalog:   catalog,
+	})
+	if err != nil {
+		t.Fatalf("打开真实测试账号数据库失败: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	account, err := store.GetByCLIAccountID(
+		context.Background(),
+		"claude",
+		alias,
+	)
+	if err != nil {
+		t.Fatalf("读取真实 Claude 测试账号失败: %v", err)
+	}
+	credential, err := store.GetCredential(context.Background(), account.Ref())
+	if err != nil {
+		t.Fatalf("读取真实 Claude 测试凭据失败: %v", err)
+	}
+	oauth, ok := credential.(*claudeauth.OAuthAuth)
+	if !ok {
+		t.Fatalf("真实 Claude 测试账号不是 OAuth: %T", credential)
+	}
+	return oauth
 }
 
 // realClaudeOAuthProjection 只声明官方 secure storage 的 Canonical 字段。
@@ -516,8 +666,11 @@ func canonicalizeRealClaudeCredentials(data []byte) ([]byte, error) {
 
 // hasRealClaudeArtifacts 判断调用者是否显式选择了完整凭据来源。
 func hasRealClaudeArtifacts() bool {
-	return os.Getenv(realClaudeCredentialsEnv) != "" &&
+	accountSelected := os.Getenv(realClaudeAccountHomeEnv) != "" &&
+		os.Getenv(realClaudeAccountIDEnv) != ""
+	officialArtifactsSelected := os.Getenv(realClaudeCredentialsEnv) != "" &&
 		os.Getenv(realClaudeConfigEnv) != ""
+	return accountSelected || officialArtifactsSelected
 }
 
 // readRealClaudeArtifact 有界读取单个普通文件。
@@ -638,6 +791,7 @@ func newRealClaudeRouteCatalog(
 		inference.CapabilityTextGeneration,
 		inference.CapabilityStreaming,
 		inference.CapabilityReasoning,
+		inference.CapabilityTools,
 	)
 	if err != nil {
 		t.Fatalf("inference.NewCapabilitySet() error = %v", err)

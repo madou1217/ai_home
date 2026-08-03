@@ -502,7 +502,9 @@ func (decoder *responseDecoder) appendToolArguments(
 	value string,
 ) error {
 	if value == "" {
-		return ErrInvalidUpstreamResponse
+		// Claude Code 对每个 input_json_delta 直接做字符串拼接；真实上游
+		// 允许发送空分片。空分片不改变参数，也不应伪造 Canonical 增量事件。
+		return nil
 	}
 	event, err := inference.NewToolArgumentsDeltaEvent(
 		decoder.nextSequence,

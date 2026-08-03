@@ -34,21 +34,31 @@ type Clock func() time.Time
 
 // Adapter 实现 Claude 原生 Messages 上游协议。
 type Adapter struct {
-	client HTTPClient
-	clock  Clock
+	client       HTTPClient
+	clock        Clock
+	decodeErrors func(error)
 }
 
 // 编译期确认 Adapter 完整实现上游端口。
 var _ inferencegateway.UpstreamAdapter = (*Adapter)(nil)
 
 // NewAdapter 创建显式注入 HTTP Client 和时钟的 Adapter。
-func NewAdapter(client HTTPClient, clock Clock) (*Adapter, error) {
-	if client == nil || clock == nil {
+func NewAdapter(
+	client HTTPClient,
+	clock Clock,
+	decodeErrorObservers ...func(error),
+) (*Adapter, error) {
+	if client == nil || clock == nil || len(decodeErrorObservers) > 1 {
 		return nil, ErrInvalidDependencies
 	}
+	var decodeErrors func(error)
+	if len(decodeErrorObservers) == 1 {
+		decodeErrors = decodeErrorObservers[0]
+	}
 	return &Adapter{
-		client: client,
-		clock:  clock,
+		client:       client,
+		clock:        clock,
+		decodeErrors: decodeErrors,
 	}, nil
 }
 
@@ -254,6 +264,9 @@ func (adapter *Adapter) executeEventStream(
 					sinkErr.Cause()
 			}
 			if errors.Is(err, ErrInvalidUpstreamResponse) {
+				adapter.observeDecodeError(
+					newDecodeDiagnosticError(decoder, event.Type(), event.Data()),
+				)
 				return malformedAttempt()
 			}
 			return inferencegateway.AttemptResult{}, err
@@ -304,6 +317,9 @@ func (adapter *Adapter) executeJSONResponse(
 			return inferencegateway.AttemptResult{}, sinkErr.Cause()
 		}
 		if errors.Is(err, ErrInvalidUpstreamResponse) {
+			adapter.observeDecodeError(
+				newDecodeDiagnosticError(decoder, "message", payload),
+			)
 			return malformedAttempt()
 		}
 		return inferencegateway.AttemptResult{}, err
@@ -312,6 +328,13 @@ func (adapter *Adapter) executeJSONResponse(
 		return incompleteStreamAttempt(io.EOF)
 	}
 	return inferencegateway.CompletedAttempt(), nil
+}
+
+// observeDecodeError 把已经脱敏的上游结构诊断交给可选 Host 观察者。
+func (adapter *Adapter) observeDecodeError(err error) {
+	if adapter != nil && adapter.decodeErrors != nil && err != nil {
+		adapter.decodeErrors(err)
+	}
 }
 
 // observeSSEFailure 复用 Claude 低敏 Observer，普通内容事件不产生结果。

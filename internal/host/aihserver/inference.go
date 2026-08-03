@@ -40,15 +40,16 @@ type inferenceComposition struct {
 
 // inferenceCompositionDependencies 集中声明生产推理组合所需的窄端口。
 type inferenceCompositionDependencies struct {
-	catalog           *providers.Catalog
-	store             *sqliteaccount.Store
-	runtime           inferenceruntime.AccountRuntime
-	models            accountapp.AccountModelRefresher
-	credentialRefresh []accountcredentials.RefreshStrategy
-	authorizer        inferencehttp.Authorizer
-	httpClient        InferenceHTTPClient
-	decodeErrors      func(error)
-	clock             func() time.Time
+	catalog              *providers.Catalog
+	store                *sqliteaccount.Store
+	runtime              inferenceruntime.AccountRuntime
+	models               accountapp.AccountModelRefresher
+	credentialRefresh    []accountcredentials.RefreshStrategy
+	authorizer           inferencehttp.Authorizer
+	httpClient           InferenceHTTPClient
+	decodeErrors         func(error)
+	upstreamDecodeErrors func(error)
+	clock                func() time.Time
 }
 
 // newInferenceComposition 装配模型快照、异步模型刷新、Canonical Runtime 和 HTTP。
@@ -77,7 +78,11 @@ func newInferenceComposition(
 	if err != nil {
 		return nil, err
 	}
-	claudeAdapter, err := claudemessages.NewAdapter(client, dependencies.clock)
+	claudeAdapter, err := claudemessages.NewAdapter(
+		client,
+		dependencies.clock,
+		dependencies.upstreamDecodeErrors,
+	)
 	if err != nil {
 		return nil, err
 	}

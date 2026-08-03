@@ -34,6 +34,7 @@ func TestResponseDecoderPreservesClaudeLifecycle(t *testing.T) {
 		`{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"CLAUDE_OK"}}`,
 		`{"type":"content_block_stop","index":1}`,
 		`{"type":"content_block_start","index":2,"content_block":{"type":"tool_use","id":"toolu_123","name":"weather","input":{}}}`,
+		`{"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":""}}`,
 		`{"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":"{\"city\":"}}`,
 		`{"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":"\"Shanghai\"}"}}`,
 		`{"type":"content_block_stop","index":2}`,

@@ -96,6 +96,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		options.InferenceHTTPClient,
 		options.UsageHTTPClient,
 		newMessagesDecodeErrorObserver(options.ErrorLog),
+		newClaudeUpstreamDecodeErrorObserver(options.ErrorLog),
 	)
 	if err != nil {
 		_ = store.Close()
@@ -121,6 +122,7 @@ func newHandlers(
 	inferenceClient InferenceHTTPClient,
 	usageClient UsageHTTPClient,
 	decodeErrors func(error),
+	upstreamDecodeErrors func(error),
 ) (_ serverHandlers, _ []io.Closer, resultErr error) {
 	var usage *usageComposition
 	defer func() {
@@ -382,10 +384,11 @@ func newHandlers(
 				codexProvider,
 				claudeProvider,
 			},
-			authorizer:   clientAuthorizer,
-			httpClient:   inferenceClient,
-			decodeErrors: decodeErrors,
-			clock:        time.Now,
+			authorizer:           clientAuthorizer,
+			httpClient:           inferenceClient,
+			decodeErrors:         decodeErrors,
+			upstreamDecodeErrors: upstreamDecodeErrors,
+			clock:                time.Now,
 		},
 	)
 	if err != nil {
@@ -416,6 +419,16 @@ func newHandlers(
 			}
 		},
 	}, []io.Closer{inference, usage}, nil
+}
+
+// newClaudeUpstreamDecodeErrorObserver 只记录上游事件类型、字段形状和状态机位置。
+func newClaudeUpstreamDecodeErrorObserver(logger *log.Logger) func(error) {
+	if logger == nil {
+		return nil
+	}
+	return func(err error) {
+		logger.Printf("%v", err)
+	}
 }
 
 // newMessagesDecodeErrorObserver 只记录 Decoder 已脱敏的错误类别和字段路径。

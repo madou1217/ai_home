@@ -277,7 +277,7 @@ func TestServerMountsSystemAndAccountRoutes(t *testing.T) {
 		client,
 		http.MethodPost,
 		baseURL+clauderelayleaseapi.Path,
-		testManagementKey,
+		testClientKey,
 		leasePayload,
 	)
 	assertStatus(t, issuedLease, http.StatusCreated)

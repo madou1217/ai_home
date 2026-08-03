@@ -3,8 +3,6 @@ package messages
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"net/http"
 	"net/url"
 	"strings"
@@ -19,10 +17,6 @@ const (
 	anthropicVersion = "2023-06-01"
 	// betaOAuth 是 Claude.ai OAuth Bearer 认证所需的官方 beta。
 	betaOAuth = "oauth-2025-04-20"
-	// nativeClaudeUserAgent 与本机已验证的官方 Claude Code 2.1.220 合同一致。
-	nativeClaudeUserAgent = "claude-cli/2.1.220 (external, cli)"
-	// nativeBetaQuery 与官方 Claude Code beta Messages 请求一致。
-	nativeBetaQuery = "beta=true"
 )
 
 // authProfile 是单次请求所需的最小认证和端点投影。
@@ -31,24 +25,21 @@ type authProfile struct {
 	headerName  string
 	headerValue string
 	oauthBeta   bool
-	nativeOAuth bool
 }
 
 // authSummary 是不含凭据的测试与诊断投影。
 type authSummary struct {
-	Endpoint    string
-	HeaderName  string
-	OAuthBeta   bool
-	NativeOAuth bool
+	Endpoint   string
+	HeaderName string
+	OAuthBeta  bool
 }
 
 // safeSummary 返回不会泄漏 Token 或 API Key 的认证摘要。
 func (profile authProfile) safeSummary() authSummary {
 	return authSummary{
-		Endpoint:    profile.endpoint,
-		HeaderName:  profile.headerName,
-		OAuthBeta:   profile.oauthBeta,
-		NativeOAuth: profile.nativeOAuth,
+		Endpoint:   profile.endpoint,
+		HeaderName: profile.headerName,
+		OAuthBeta:  profile.oauthBeta,
 	}
 }
 
@@ -56,19 +47,16 @@ func (profile authProfile) safeSummary() authSummary {
 func projectAuth(credential accountapp.Credential) (authProfile, error) {
 	switch auth := credential.(type) {
 	case *claudeauth.OAuthAuth:
-		if auth == nil {
-			return authProfile{}, ErrInvalidInvocation
+		if auth != nil {
+			return authProfile{}, ErrNativeTransportRequired
 		}
-		return newNativeOAuthProfile(
-			claudeauth.DefaultAPIBaseURL,
-			auth.AccessToken(),
-		)
+		return authProfile{}, ErrInvalidInvocation
 	case *claudeauth.OAuthTokenAuth:
 		if auth == nil {
 			return authProfile{}, ErrInvalidInvocation
 		}
 		if transportpolicy.RequiresNativeOAuth(auth) {
-			return newNativeOAuthProfile(auth.BaseURL(), auth.AccessToken())
+			return authProfile{}, ErrNativeTransportRequired
 		}
 		return newBearerProfile(auth.BaseURL(), auth.AccessToken(), true)
 	case *claudeauth.APIKeyAuth:
@@ -89,16 +77,6 @@ func projectAuth(credential accountapp.Credential) (authProfile, error) {
 	default:
 		return authProfile{}, ErrInvalidInvocation
 	}
-}
-
-// newNativeOAuthProfile 创建保留 Claude Code 原生请求外层合同的认证投影。
-func newNativeOAuthProfile(baseURL string, token string) (authProfile, error) {
-	profile, err := newBearerProfile(baseURL, token, true)
-	if err != nil {
-		return authProfile{}, err
-	}
-	profile.nativeOAuth = true
-	return profile, nil
 }
 
 // newBearerProfile 创建 Authorization Bearer 投影。
@@ -183,16 +161,6 @@ func buildHTTPRequest(
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("anthropic-version", anthropicVersion)
 	request.Header.Set(auth.headerName, auth.headerValue)
-	if auth.nativeOAuth {
-		sessionID, sessionErr := newNativeSessionID()
-		if sessionErr != nil {
-			return nil, ErrInvalidInvocation
-		}
-		request.Header.Set("x-app", "cli")
-		request.Header.Set("User-Agent", nativeClaudeUserAgent)
-		request.Header.Set("X-Claude-Code-Session-Id", sessionID)
-		request.URL.RawQuery = nativeBetaQuery
-	}
 
 	betas := append([]string(nil), encoded.betaHeaders...)
 	if auth.oauthBeta {
@@ -205,25 +173,4 @@ func buildHTTPRequest(
 		request.Header.Set("anthropic-beta", strings.Join(betas, ","))
 	}
 	return request, nil
-}
-
-// newNativeSessionID 创建符合 Claude Code 请求合同的随机 UUID 形态标识。
-func newNativeSessionID() (string, error) {
-	value := make([]byte, 16)
-	if _, err := rand.Read(value); err != nil {
-		return "", err
-	}
-	value[6] = value[6]&0x0f | 0x40
-	value[8] = value[8]&0x3f | 0x80
-	encoded := make([]byte, 36)
-	hex.Encode(encoded[0:8], value[0:4])
-	encoded[8] = '-'
-	hex.Encode(encoded[9:13], value[4:6])
-	encoded[13] = '-'
-	hex.Encode(encoded[14:18], value[6:8])
-	encoded[18] = '-'
-	hex.Encode(encoded[19:23], value[8:10])
-	encoded[23] = '-'
-	hex.Encode(encoded[24:36], value[10:16])
-	return string(encoded), nil
 }

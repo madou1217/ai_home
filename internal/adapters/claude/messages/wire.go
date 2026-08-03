@@ -93,7 +93,7 @@ type toolChoiceDTO struct {
 	DisableParallelToolUse *bool  `json:"disable_parallel_tool_use,omitempty"`
 }
 
-// thinkingDTO 表达 disabled、enabled 和 adaptive 三种 thinking 配置。
+// thinkingDTO 表达 Claude Code 当前发送的 disabled、enabled 和 adaptive 配置。
 type thinkingDTO struct {
 	Type         string  `json:"type"`
 	BudgetTokens *uint64 `json:"budget_tokens,omitempty"`

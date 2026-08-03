@@ -290,9 +290,9 @@ func TestServerReplaysResponsesReasoningThroughClaude(t *testing.T) {
 	}
 }
 
-// TestServerRoutesCanonicalMessagesThroughClaudeOAuth 验证同一模型的官方
-// OAuth 候选排序在前时，由 Go Messages Adapter 直接使用原生 OAuth 合同完成请求。
-func TestServerRoutesCanonicalMessagesThroughClaudeOAuth(t *testing.T) {
+// TestServerSkipsClaudeOAuthAndFallsBackToAPIKey 验证同一模型的官方 OAuth
+// 候选排序在前时，Canonical Adapter 跳过它并使用可直连的 API Key。
+func TestServerSkipsClaudeOAuthAndFallsBackToAPIKey(t *testing.T) {
 	t.Parallel()
 
 	upstream := &syntheticInferenceHTTPClient{}
@@ -326,12 +326,14 @@ func TestServerRoutesCanonicalMessagesThroughClaudeOAuth(t *testing.T) {
 	assertStatus(t, exchange, http.StatusOK)
 	if !strings.Contains(exchange.body, "host-claude-ok") ||
 		upstream.CallCount() != 1 ||
-		upstream.LastAuthHeader() != "authorization" {
+		upstream.LastAuthHeader() != "x-api-key" ||
+		upstream.LastAuthorization() != apiKey {
 		t.Fatalf(
-			"response=%s calls=%d auth=%s",
+			"response=%s calls=%d auth=%s credential_match=%t",
 			exchange.body,
 			upstream.CallCount(),
 			upstream.LastAuthHeader(),
+			upstream.LastAuthorization() == apiKey,
 		)
 	}
 	t.Logf(
@@ -343,6 +345,100 @@ func TestServerRoutesCanonicalMessagesThroughClaudeOAuth(t *testing.T) {
 	)
 }
 
+// TestServerProjectsRedactedThinkingToClaudeAPIKeyShape 验证客户端的
+// omitted 意图经可直连 API Key 请求投影为 display 和对应 beta。
+func TestServerProjectsRedactedThinkingToClaudeAPIKeyShape(t *testing.T) {
+	t.Parallel()
+
+	upstream := &syntheticInferenceHTTPClient{}
+	baseURL, client := startTestServerWithInferenceClient(t, upstream)
+	_ = registerAPIKeyAccount(
+		t,
+		client,
+		baseURL,
+		"claude",
+		"sk-ant-redacted-shape-smoke",
+	)
+	waitForServerModels(t, client, baseURL, []string{"claude-sonnet-4"})
+
+	payload := `{"model":"claude-sonnet-4","max_tokens":8000,` +
+		`"thinking":{"type":"adaptive","display":"omitted"},` +
+		`"messages":[{"role":"user","content":"redacted-shape-contract"}]}`
+	exchange := performRequestWithHeaders(
+		t,
+		client,
+		http.MethodPost,
+		baseURL+anthropicmessagesapi.Path,
+		map[string]string{"x-api-key": testClientKey},
+		[]byte(payload),
+	)
+	assertStatus(t, exchange, http.StatusOK)
+
+	_, upstreamBody := upstream.LastRequest()
+	var document struct {
+		Thinking map[string]json.RawMessage `json:"thinking"`
+	}
+	if err := json.Unmarshal(upstreamBody, &document); err != nil {
+		t.Fatalf("Claude API Key request json.Unmarshal() error = %v", err)
+	}
+	if string(document.Thinking["type"]) != `"adaptive"` ||
+		string(document.Thinking["display"]) != `"omitted"` ||
+		!strings.Contains(
+			upstream.LastAnthropicBeta(),
+			"redact-thinking-2026-02-12",
+		) ||
+		upstream.LastAuthHeader() != "x-api-key" {
+		t.Fatalf(
+			"Claude API Key redacted shape thinking=%s beta=%q auth=%s",
+			upstreamBody,
+			upstream.LastAnthropicBeta(),
+			upstream.LastAuthHeader(),
+		)
+	}
+}
+
+// TestServerRejectsCanonicalClaudeOAuthWithoutNativeTransport 验证只有官方
+// OAuth 候选时，Server 在本地返回不可用且绝不发起缺少原生证明的上游请求。
+func TestServerRejectsCanonicalClaudeOAuthWithoutNativeTransport(t *testing.T) {
+	t.Parallel()
+
+	upstream := &syntheticInferenceHTTPClient{}
+	baseURL, client := startTestServerWithInferenceClient(t, upstream)
+	_ = registerNativeClaudeOAuthAccount(t, client, baseURL)
+	waitForServerModels(t, client, baseURL, []string{"claude-sonnet-4"})
+
+	payload := `{"model":"claude-sonnet-4","max_tokens":8000,` +
+		`"messages":[{"role":"user","content":"rate-limit-contract"}]}`
+	exchange := performRequestWithHeaders(
+		t,
+		client,
+		http.MethodPost,
+		baseURL+anthropicmessagesapi.Path,
+		map[string]string{"x-api-key": testClientKey},
+		[]byte(payload),
+	)
+
+	if exchange.status != http.StatusServiceUnavailable ||
+		!strings.Contains(exchange.body, `"type":"api_error"`) ||
+		!strings.Contains(exchange.body, `"message":"Inference service is unavailable"`) ||
+		upstream.CallCount() != 0 {
+		t.Fatalf(
+			"Claude OAuth transport boundary status=%d body=%s calls=%d",
+			exchange.status,
+			exchange.body,
+			upstream.CallCount(),
+		)
+	}
+	t.Logf(
+		"POST %s payload=%s status=%d response=%s upstream_calls=%d",
+		baseURL+anthropicmessagesapi.Path,
+		payload,
+		exchange.status,
+		exchange.body,
+		upstream.CallCount(),
+	)
+}
+
 // syntheticInferenceHTTPClient 根据真实 Adapter 的目标主机返回确定性 SSE。
 type syntheticInferenceHTTPClient struct {
 	mu             sync.Mutex
@@ -351,6 +447,7 @@ type syntheticInferenceHTTPClient struct {
 	lastAuthValue  string
 	lastURL        string
 	lastBody       []byte
+	lastBeta       string
 	claudeStream   func(model string) string
 }
 
@@ -379,6 +476,7 @@ func (client *syntheticInferenceHTTPClient) Do(
 	client.lastAuthHeader = authHeader
 	client.lastURL = request.URL.String()
 	client.lastBody = append(client.lastBody[:0], body...)
+	client.lastBeta = request.Header.Get("anthropic-beta")
 	if authHeader != "" {
 		client.lastAuthValue = request.Header.Get(authHeader)
 	}
@@ -425,6 +523,13 @@ func (client *syntheticInferenceHTTPClient) LastRequest() (string, []byte) {
 	client.mu.Lock()
 	defer client.mu.Unlock()
 	return client.lastURL, append([]byte(nil), client.lastBody...)
+}
+
+// LastAnthropicBeta 返回最近一次请求的脱敏 beta 能力列表。
+func (client *syntheticInferenceHTTPClient) LastAnthropicBeta() string {
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	return client.lastBeta
 }
 
 // chatClaudeReasoningToolPayload 创建包含历史工具结果的 Chat 请求。

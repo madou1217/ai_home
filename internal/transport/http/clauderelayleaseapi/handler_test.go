@@ -17,9 +17,9 @@ import (
 	claudeauth "github.com/madou1217/ai_home/core/accounts/claude"
 )
 
-const testManagementKey = "management-key-for-claude-relay-tests"
+const testClientKey = "client-key-for-claude-relay-tests"
 
-// TestHandlerIssuesAccountBoundLeaseOverRealHTTP 验证管理鉴权、OAuth
+// TestHandlerIssuesAccountBoundLeaseOverRealHTTP 验证推理客户端鉴权、OAuth
 // 预检和短期 Token 签发形成完整 HTTP 合同。
 func TestHandlerIssuesAccountBoundLeaseOverRealHTTP(t *testing.T) {
 	t.Parallel()
@@ -58,7 +58,7 @@ func TestHandlerIssuesAccountBoundLeaseOverRealHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("http.NewRequest() error = %v", err)
 	}
-	request.Header.Set("Authorization", "Bearer "+testManagementKey)
+	request.Header.Set("Authorization", "Bearer "+testClientKey)
 	request.Header.Set("Content-Type", "application/json")
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
@@ -95,8 +95,8 @@ func TestHandlerIssuesAccountBoundLeaseOverRealHTTP(t *testing.T) {
 	)
 }
 
-// TestHandlerRejectsUnauthorizedAndNonOAuthAccountsBeforeIssue 验证管理面与
-// 凭据类型两层失败关闭。
+// TestHandlerRejectsUnauthorizedAndNonOAuthAccountsBeforeIssue 验证客户端
+// 鉴权与凭据类型两层失败关闭。
 func TestHandlerRejectsUnauthorizedAndNonOAuthAccountsBeforeIssue(
 	t *testing.T,
 ) {
@@ -143,7 +143,7 @@ func TestHandlerRejectsUnauthorizedAndNonOAuthAccountsBeforeIssue(
 		Path,
 		strings.NewReader(payload),
 	)
-	unsupported.Header.Set("Authorization", "Bearer "+testManagementKey)
+	unsupported.Header.Set("Authorization", "Bearer "+testClientKey)
 	unsupported.Header.Set("Content-Type", "application/json")
 	unsupportedResponse := httptest.NewRecorder()
 	handler.ServeHTTP(unsupportedResponse, unsupported)
@@ -158,14 +158,14 @@ func TestHandlerRejectsUnauthorizedAndNonOAuthAccountsBeforeIssue(
 	}
 }
 
-// leaseAuthorizer 只接受固定测试 Management Key。
+// leaseAuthorizer 只接受固定测试 Server Client Key。
 type leaseAuthorizer struct{}
 
-// Authorized 验证管理面 Bearer Header。
+// Authorized 验证推理客户端 Bearer Header。
 func (leaseAuthorizer) Authorized(request *http.Request) bool {
 	return request != nil &&
 		request.Header.Get("Authorization") ==
-			"Bearer "+testManagementKey
+			"Bearer "+testClientKey
 }
 
 // leaseCredentialResolver 返回唯一测试账号的凭据。

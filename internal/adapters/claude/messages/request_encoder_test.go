@@ -77,6 +77,91 @@ func TestEncodeRequestPreservesClaudeMessagesSemantics(t *testing.T) {
 	}
 }
 
+// TestEncodeRequestUsesClaudeCodeModelDefaultWhenClientOmitsMaxTokens 验证
+// 跨协议客户端未声明输出上限时，Claude Adapter 使用当前模型策略，绝不回退到
+// 一个跨模型共享的历史常量。
+func TestEncodeRequestUsesClaudeCodeModelDefaultWhenClientOmitsMaxTokens(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		model    string
+		expected uint64
+	}{
+		{name: "opus 5", model: "claude-opus-5", expected: 64_000},
+		{name: "sonnet 5", model: "claude-sonnet-5", expected: 64_000},
+		{name: "fable 5", model: "claude-fable-5", expected: 64_000},
+		{name: "opus 4.6", model: "claude-opus-4-6", expected: 64_000},
+		{name: "opus 4.7", model: "claude-opus-4-7", expected: 64_000},
+		{name: "opus 4.8", model: "claude-opus-4-8", expected: 64_000},
+		{name: "sonnet 4.6", model: "claude-sonnet-4-6", expected: 32_000},
+		{name: "haiku 4.5", model: "claude-haiku-4-5-20251001", expected: 32_000},
+		{name: "legacy sonnet 3.5", model: "claude-3-5-sonnet-20241022", expected: 8_192},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			request, err := inference.NewRequest(inference.RequestInput{
+				ClientProtocol: inference.ClientProtocolOpenAIResponses,
+				Model:          "claude-alias",
+				Messages: []inference.Message{
+					mustMessage(t, inference.RoleUser, mustText(t, "reply")),
+				},
+			})
+			if err != nil {
+				t.Fatalf("inference.NewRequest() error = %v", err)
+			}
+			encoded, err := encodeRequest(request, test.model)
+			if err != nil {
+				t.Fatalf("encodeRequest() error = %v", err)
+			}
+			var payload struct {
+				MaxTokens uint64 `json:"max_tokens"`
+			}
+			if err := json.Unmarshal(encoded.payload, &payload); err != nil {
+				t.Fatalf("json.Unmarshal() error = %v", err)
+			}
+			if payload.MaxTokens != test.expected {
+				t.Fatalf("max_tokens = %d, want %d", payload.MaxTokens, test.expected)
+			}
+		})
+	}
+}
+
+// TestEncodeRequestRejectsBudgetThatExceedsModelDefault 验证 Adapter 不会为
+// 容纳 thinking budget 而静默放大客户端未声明的输出上限。
+func TestEncodeRequestRejectsBudgetThatExceedsModelDefault(t *testing.T) {
+	t.Parallel()
+
+	reasoning, err := inference.NewBudgetReasoning(
+		32_000,
+		inference.ReasoningSummaryAuto,
+	)
+	if err != nil {
+		t.Fatalf("inference.NewBudgetReasoning() error = %v", err)
+	}
+	request, err := inference.NewRequest(inference.RequestInput{
+		ClientProtocol: inference.ClientProtocolOpenAIResponses,
+		Model:          "claude-alias",
+		Messages: []inference.Message{
+			mustMessage(t, inference.RoleUser, mustText(t, "think")),
+		},
+		Reasoning: &reasoning,
+	})
+	if err != nil {
+		t.Fatalf("inference.NewRequest() error = %v", err)
+	}
+	if _, err := encodeRequest(request, "claude-sonnet-4-6"); !errors.Is(
+		err,
+		ErrUnsupportedRequest,
+	) {
+		t.Fatalf("encodeRequest() error = %v", err)
+	}
+}
+
 // TestEncodeEffortReasoningEnablesAdaptiveThinking 验证 Responses effort
 // 不会退化为只有强度参数、实际未启用 Claude thinking 的请求。
 func TestEncodeEffortReasoningEnablesAdaptiveThinking(t *testing.T) {
@@ -108,8 +193,8 @@ func TestEncodeEffortReasoningEnablesAdaptiveThinking(t *testing.T) {
 
 	var payload struct {
 		Thinking struct {
-			Type    string `json:"type"`
-			Display string `json:"display"`
+			Type    string  `json:"type"`
+			Display *string `json:"display"`
 		} `json:"thinking"`
 		OutputConfig struct {
 			Effort string `json:"effort"`
@@ -119,7 +204,7 @@ func TestEncodeEffortReasoningEnablesAdaptiveThinking(t *testing.T) {
 		t.Fatalf("json.Unmarshal() error = %v", err)
 	}
 	if payload.Thinking.Type != "adaptive" ||
-		payload.Thinking.Display != "summarized" ||
+		payload.Thinking.Display != nil ||
 		payload.OutputConfig.Effort != "high" ||
 		!containsBeta(encoded.betaHeaders, betaInterleavedThinking) ||
 		!containsBeta(encoded.betaHeaders, betaEffort) {
@@ -162,15 +247,16 @@ func TestEncodeOmittedReasoningEnablesRedactThinking(t *testing.T) {
 
 	var payload struct {
 		Thinking struct {
-			Type    string `json:"type"`
-			Display string `json:"display"`
+			Type    string  `json:"type"`
+			Display *string `json:"display"`
 		} `json:"thinking"`
 	}
 	if err := json.Unmarshal(encoded.payload, &payload); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v", err)
 	}
 	if payload.Thinking.Type != "adaptive" ||
-		payload.Thinking.Display != "omitted" ||
+		payload.Thinking.Display == nil ||
+		*payload.Thinking.Display != "omitted" ||
 		!containsBeta(encoded.betaHeaders, betaInterleavedThinking) ||
 		!containsBeta(encoded.betaHeaders, betaRedactThinking) {
 		t.Fatalf(
@@ -368,8 +454,7 @@ func TestProjectAuthUsesExactClaudeCredentialHeaders(t *testing.T) {
 					request.Header.Get("Authorization") != "" {
 				t.Fatalf("认证 Header 混用: %v", request.Header)
 			}
-			if profile.nativeOAuth ||
-				request.Header.Get("x-app") != "" ||
+			if request.Header.Get("x-app") != "" ||
 				request.Header.Get("User-Agent") != "" ||
 				request.Header.Get("X-Claude-Code-Session-Id") != "" ||
 				request.URL.RawQuery != "" {
@@ -535,9 +620,9 @@ func TestAnthropicEffortMapsCodexBoundaryLevels(t *testing.T) {
 	}
 }
 
-// TestProjectAuthPreservesNativeOfficialOAuthContract 验证官方 OAuth 使用
-// Claude Code 的 Bearer、beta、客户端身份、会话 ID 和 beta query 合同。
-func TestProjectAuthPreservesNativeOfficialOAuthContract(t *testing.T) {
+// TestProjectAuthRejectsOfficialOAuthWithoutNativeRuntime 验证官方 OAuth
+// 不会由普通 Go HTTP 请求伪造 Claude Code 原生客户端证明。
+func TestProjectAuthRejectsOfficialOAuthWithoutNativeRuntime(t *testing.T) {
 	t.Parallel()
 
 	refreshable, err := claudeauth.NewOAuthAuth(claudeauth.OAuthInput{
@@ -573,33 +658,11 @@ func TestProjectAuthPreservesNativeOfficialOAuthContract(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			profile, err := projectAuth(test.credential)
-			if err != nil {
+			if _, err := projectAuth(test.credential); !errors.Is(
+				err,
+				ErrNativeTransportRequired,
+			) {
 				t.Fatalf("projectAuth() error = %v", err)
-			}
-			request, err := buildHTTPRequest(
-				t.Context(),
-				profile,
-				encodedRequest{payload: []byte(`{}`)},
-			)
-			if err != nil {
-				t.Fatalf("buildHTTPRequest() error = %v", err)
-			}
-			betas := strings.Split(request.Header.Get("anthropic-beta"), ",")
-			if !profile.nativeOAuth ||
-				request.Header.Get("Authorization") == "" ||
-				request.Header.Get("x-api-key") != "" ||
-				!containsBeta(betas, betaOAuth) ||
-				!containsBeta(betas, betaClaudeCode) ||
-				request.Header.Get("x-app") != "cli" ||
-				request.Header.Get("User-Agent") != nativeClaudeUserAgent ||
-				len(request.Header.Get("X-Claude-Code-Session-Id")) != 36 ||
-				request.URL.Query().Get("beta") != "true" {
-				t.Fatalf(
-					"native OAuth request = url:%s headers:%v",
-					request.URL,
-					request.Header,
-				)
 			}
 		})
 	}

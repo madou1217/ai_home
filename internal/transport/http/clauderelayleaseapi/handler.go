@@ -1,4 +1,4 @@
-// Package clauderelayleaseapi 提供 Claude Native Relay 短期租约的管理入口。
+// Package clauderelayleaseapi 提供 Claude Native Relay 短期租约入口。
 package clauderelayleaseapi
 
 import (
@@ -16,8 +16,8 @@ import (
 )
 
 const (
-	// Path 是管理面签发 Claude Relay 租约的唯一入口。
-	Path = "/v1/management/claude-relay-leases"
+	// Path 是已认证推理客户端签发 Claude Relay 租约的唯一入口。
+	Path = "/v1/claude-relay-leases"
 	// maxRequestBodyBytes 限制只含 AccountRef 的小型命令。
 	maxRequestBodyBytes int64 = 4 * 1024
 )
@@ -25,7 +25,7 @@ const (
 // ErrInvalidDependencies 表示 Handler 缺少管理鉴权、凭据或租约端口。
 var ErrInvalidDependencies = errors.New("Claude Relay 租约 HTTP 依赖无效")
 
-// Authorizer 复用管理面 Bearer 鉴权语义。
+// Authorizer 复用推理客户端的 Bearer 和 x-api-key 鉴权语义。
 type Authorizer interface {
 	Authorized(request *http.Request) bool
 }
@@ -71,7 +71,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	}, nil
 }
 
-// ServeHTTP 先校验 Management Key，再签发账号绑定租约。
+// ServeHTTP 先校验 Server Client Key，再签发账号绑定租约。
 func (handler *Handler) ServeHTTP(
 	response http.ResponseWriter,
 	request *http.Request,
@@ -86,7 +86,7 @@ func (handler *Handler) ServeHTTP(
 			response,
 			http.StatusUnauthorized,
 			"unauthorized",
-			"需要有效的 Management Key",
+			"需要有效的 Server Client Key",
 		)
 		return
 	}

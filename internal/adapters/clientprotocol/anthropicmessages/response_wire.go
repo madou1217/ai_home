@@ -3,6 +3,7 @@ package anthropicmessages
 import (
 	"encoding/json"
 
+	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/internal/adapters/clientprotocol"
 )
@@ -302,8 +303,9 @@ func optionalString(value string) *string {
 	return &value
 }
 
-// newErrorWire 把 Canonical 失败分类收敛到 Anthropic 公开错误类型。
-func newErrorWire(failure inference.ResponseFailure) errorWireDTO {
+// ErrorTypeForFailure 把 Canonical 失败分类收敛到 Anthropic 公开错误类型。
+// Canonical 运行态名称不会直接泄漏到客户端协议，也不会被误判为 overloaded。
+func ErrorTypeForFailure(failure inference.ResponseFailure) string {
 	errorType := failure.Code()
 	switch errorType {
 	case "invalid_request_error",
@@ -314,6 +316,11 @@ func newErrorWire(failure inference.ResponseFailure) errorWireDTO {
 		"rate_limit_error",
 		"api_error",
 		"overloaded_error":
+	case string(runtimecore.FailureRateLimited),
+		string(runtimecore.FailureQuotaExhausted):
+		errorType = "rate_limit_error"
+	case string(runtimecore.FailureModelOverloaded):
+		errorType = "overloaded_error"
 	default:
 		if failure.Retryable() {
 			errorType = "overloaded_error"
@@ -321,6 +328,12 @@ func newErrorWire(failure inference.ResponseFailure) errorWireDTO {
 			errorType = "api_error"
 		}
 	}
+	return errorType
+}
+
+// newErrorWire 组合 Anthropic 错误类型和低敏说明。
+func newErrorWire(failure inference.ResponseFailure) errorWireDTO {
+	errorType := ErrorTypeForFailure(failure)
 	message := failure.SafeMessage()
 	if message == "" {
 		message = "request failed"

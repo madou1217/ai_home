@@ -351,7 +351,7 @@ func newHandlers(
 	}
 	relayLeaseHandler, err := clauderelayleaseapi.NewHandler(
 		clauderelayleaseapi.Dependencies{
-			Authorizer:  authorizer,
+			Authorizer:  clientAuthorizer,
 			Credentials: credentials,
 			Leases:      relayLeases,
 		},

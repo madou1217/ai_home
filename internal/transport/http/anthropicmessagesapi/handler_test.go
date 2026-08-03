@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/madou1217/ai_home/application/inferencegateway"
+	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/internal/adapters/clientprotocol"
 	"github.com/madou1217/ai_home/internal/adapters/clientprotocol/anthropicmessages"
@@ -345,6 +346,45 @@ func TestHandlerReturnsCanonicalFailureForNonStreamRequest(t *testing.T) {
 		!strings.Contains(response.body, `"type":"rate_limit_error"`) ||
 		!strings.Contains(response.body, `"message":"Please retry later"`) {
 		t.Fatalf("failure response = %#v", response)
+	}
+}
+
+// TestHandlerMapsCanonicalRateLimitToAnthropic429 验证真实 Adapter 使用的
+// rate_limited 分类在 Messages HTTP 边界恢复为 429 rate_limit_error。
+func TestHandlerMapsCanonicalRateLimitToAnthropic429(t *testing.T) {
+	t.Parallel()
+
+	failure, err := inference.NewResponseFailure(
+		string(runtimecore.FailureRateLimited),
+		"上游请求频率受限",
+		true,
+	)
+	if err != nil {
+		t.Fatalf("NewResponseFailure() error = %v", err)
+	}
+	failed, err := inference.NewResponseFailedEvent(0, failure)
+	if err != nil {
+		t.Fatalf("NewResponseFailedEvent() error = %v", err)
+	}
+	baseURL, client := startMessagesServer(
+		t,
+		newScriptedExecutor([]inference.StreamEvent{failed}, nil),
+		0,
+	)
+	response := performMessagesRequest(
+		t,
+		client,
+		http.MethodPost,
+		baseURL+Path,
+		testAPIKey,
+		minimalRequestBody(true),
+	)
+
+	if response.status != http.StatusTooManyRequests ||
+		!strings.Contains(response.body, `"type":"rate_limit_error"`) ||
+		!strings.Contains(response.body, `"message":"上游请求频率受限"`) ||
+		strings.Contains(response.body, "overloaded_error") {
+		t.Fatalf("rate limit response = %#v", response)
 	}
 }
 

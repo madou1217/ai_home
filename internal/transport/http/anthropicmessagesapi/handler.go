@@ -169,14 +169,31 @@ func (handler *Handler) executeNonStream(
 	var sinkErr error
 	var failure inference.ResponseFailure
 	var failed bool
+	var observed bool
 	executionErr := handler.executor.Execute(
 		request.Context(),
 		canonicalRequest,
 		func(event inference.StreamEvent) error {
-			if eventFailure, ok := event.(inference.ResponseFailedEvent); ok {
+			eventFailure, isFailure := event.(inference.ResponseFailedEvent)
+			if isFailure {
+				if !observed {
+					failure = eventFailure.Failure()
+					if event.Sequence() != 0 || !failure.IsValid() {
+						sinkErr = errInvalidPreCommitFailure
+						return sinkErr
+					}
+					observed = true
+					failed = true
+					return nil
+				}
 				failure = eventFailure.Failure()
 				failed = true
 			}
+			if failed && !isFailure {
+				sinkErr = errInvalidPreCommitFailure
+				return sinkErr
+			}
+			observed = true
 			if err := aggregator.Add(event); err != nil {
 				sinkErr = err
 				return err

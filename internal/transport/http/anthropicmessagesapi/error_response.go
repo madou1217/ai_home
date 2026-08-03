@@ -102,7 +102,7 @@ func writeCanonicalFailure(
 
 // failureHTTPStatus 将公开 Anthropic 错误类别映射为 HTTP 状态。
 func failureHTTPStatus(failure inference.ResponseFailure) int {
-	switch failure.Code() {
+	switch anthropicmessages.ErrorTypeForFailure(failure) {
 	case "invalid_request_error":
 		return http.StatusBadRequest
 	case "authentication_error":

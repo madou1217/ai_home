@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"io"
@@ -249,38 +250,144 @@ func TestClaudeOAuthProxyRejectsUnexpectedConnectTarget(t *testing.T) {
 	}
 }
 
-// TestClaudeGatewayProxyForcesPinnedAccountAndSecret 验证用户 Header 不能覆盖固定账号和 Server Key。
-func TestClaudeGatewayProxyForcesPinnedAccountAndSecret(t *testing.T) {
+// TestClaudeGatewayProxyForcesSelectedTransportAuthorization 验证用户 Header
+// 不能覆盖 Server 选择的 Native Relay 或 Canonical 固定账号认证。
+func TestClaudeGatewayProxyForcesSelectedTransportAuthorization(t *testing.T) {
 	accountRef, err := accountcore.ParseAccountRef("acct_0123456789abcdef0123")
 	if err != nil {
 		t.Fatalf("ParseAccountRef() error = %v", err)
 	}
-	var gotKey, gotAccount, gotAuthorization string
-	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		gotKey = request.Header.Get("x-api-key")
-		gotAccount = request.Header.Get(pinnedAccountHeader)
-		gotAuthorization = request.Header.Get("Authorization")
-		writer.WriteHeader(http.StatusOK)
-		_, _ = io.WriteString(writer, "ok")
-	}))
-	defer upstream.Close()
-	target, _ := url.Parse(upstream.URL)
-	proxy := &claudeGatewayProxy{
-		target:      target,
-		clientKey:   testGatewayKey,
-		accountRef:  accountRef,
-		localSecret: "local-random-secret",
-		client:      upstream.Client(),
+	for _, test := range []struct {
+		name        string
+		relayToken  string
+		wantKey     string
+		wantAccount string
+		wantRelay   string
+	}{
+		{
+			name:        "canonical api key",
+			wantKey:     testGatewayKey,
+			wantAccount: accountRef.String(),
+		},
+		{
+			name:       "native oauth relay",
+			relayToken: "relay-token-selected-by-server",
+			wantRelay:  "relay-token-selected-by-server",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var gotKey, gotAccount, gotAuthorization, gotRelay string
+			upstream := httptest.NewServer(http.HandlerFunc(func(
+				writer http.ResponseWriter,
+				request *http.Request,
+			) {
+				gotKey = request.Header.Get("x-api-key")
+				gotAccount = request.Header.Get(pinnedAccountHeader)
+				gotAuthorization = request.Header.Get("Authorization")
+				gotRelay = request.Header.Get(claudeRelayTokenHeader)
+				writer.WriteHeader(http.StatusOK)
+				_, _ = io.WriteString(writer, "ok")
+			}))
+			defer upstream.Close()
+			target, _ := url.Parse(upstream.URL)
+			proxy := &claudeGatewayProxy{
+				target:      target,
+				clientKey:   testGatewayKey,
+				relayToken:  test.relayToken,
+				accountRef:  accountRef,
+				localSecret: "local-random-secret",
+				client:      upstream.Client(),
+			}
+			request := httptest.NewRequest(
+				http.MethodPost,
+				"/v1/messages",
+				strings.NewReader("{}"),
+			)
+			request.Header.Set("x-api-key", "local-random-secret")
+			request.Header.Set("Authorization", "Bearer forged")
+			request.Header.Set(pinnedAccountHeader, "acct_ffffffffffffffffffff")
+			request.Header.Set(claudeRelayTokenHeader, "forged-relay-token")
+			recorder := httptest.NewRecorder()
+			proxy.ServeHTTP(recorder, request)
+			if recorder.Code != http.StatusOK ||
+				gotKey != test.wantKey ||
+				gotAccount != test.wantAccount ||
+				gotRelay != test.wantRelay ||
+				gotAuthorization != "" {
+				t.Fatalf(
+					"forwarded headers: status=%d key=%q account=%q relay=%q authorization=%q",
+					recorder.Code,
+					gotKey,
+					gotAccount,
+					gotRelay,
+					gotAuthorization,
+				)
+			}
+		})
 	}
-	request := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader("{}"))
-	request.Header.Set("x-api-key", "local-random-secret")
-	request.Header.Set("Authorization", "Bearer forged")
-	request.Header.Set(pinnedAccountHeader, "acct_ffffffffffffffffffff")
-	recorder := httptest.NewRecorder()
-	proxy.ServeHTTP(recorder, request)
-	if recorder.Code != http.StatusOK || gotKey != testGatewayKey ||
-		gotAccount != accountRef.String() || gotAuthorization != "" {
-		t.Fatalf("forwarded headers: status=%d key=%q account=%q authorization=%q", recorder.Code, gotKey, gotAccount, gotAuthorization)
+}
+
+// TestIssueClaudeRelayLeaseSelectsNativeOrCanonicalTransport 验证 Server
+// 对真实账号凭据的判断是唯一传输选择来源。
+func TestIssueClaudeRelayLeaseSelectsNativeOrCanonicalTransport(t *testing.T) {
+	accountRef, err := accountcore.ParseAccountRef("acct_0123456789abcdef0123")
+	if err != nil {
+		t.Fatalf("ParseAccountRef() error = %v", err)
+	}
+	for _, test := range []struct {
+		name      string
+		status    int
+		response  map[string]any
+		wantToken string
+	}{
+		{
+			name:   "native oauth",
+			status: http.StatusCreated,
+			response: map[string]any{"data": map[string]string{
+				"token":       "relay-token-bound-by-go-server",
+				"account_ref": accountRef.String(),
+			}},
+			wantToken: "relay-token-bound-by-go-server",
+		},
+		{
+			name:   "canonical credential",
+			status: http.StatusUnprocessableEntity,
+			response: map[string]any{"error": map[string]string{
+				"code": unsupportedRelayCredential,
+			}},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(
+				writer http.ResponseWriter,
+				request *http.Request,
+			) {
+				if request.URL.Path != claudeRelayLeasePath ||
+					request.Header.Get("Authorization") != "Bearer "+testGatewayKey {
+					t.Errorf("lease request path=%q authorization=%q", request.URL.Path, request.Header.Get("Authorization"))
+				}
+				var input map[string]string
+				if err := json.NewDecoder(request.Body).Decode(&input); err != nil ||
+					input["account_ref"] != accountRef.String() {
+					t.Errorf("lease input=%v error=%v", input, err)
+				}
+				writer.Header().Set("Content-Type", "application/json")
+				writer.WriteHeader(test.status)
+				_ = json.NewEncoder(writer).Encode(test.response)
+			}))
+			defer server.Close()
+			target, _ := url.Parse(server.URL)
+			token, err := issueClaudeRelayLease(
+				t.Context(),
+				server.Client(),
+				target,
+				testGatewayKey,
+				accountRef,
+			)
+			if err != nil || token != test.wantToken {
+				t.Fatalf("issueClaudeRelayLease() token=%q error=%v", token, err)
+			}
+		})
 	}
 }
 
@@ -352,9 +459,28 @@ func TestClaudeProxyRuntimesKeepRealSecretsOutOfChildEnvironment(t *testing.T) {
 	})
 
 	t.Run("Pinned Gateway", func(t *testing.T) {
-		spec := buildClaudeGatewaySpec(t)
+		var accountRef string
+		leaseServer := httptest.NewServer(http.HandlerFunc(func(
+			writer http.ResponseWriter,
+			request *http.Request,
+		) {
+			var input map[string]string
+			_ = json.NewDecoder(request.Body).Decode(&input)
+			accountRef = input["account_ref"]
+			writer.Header().Set("Content-Type", "application/json")
+			writer.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(writer).Encode(map[string]any{
+				"data": map[string]string{
+					"token":       "runtime-relay-token-from-server",
+					"account_ref": accountRef,
+				},
+			})
+		}))
+		defer leaseServer.Close()
+		spec := buildClaudeGatewaySpec(t, leaseServer.URL)
 		processes := newCapturingProcessFactory()
 		runner := newTestRunner(t, &recordingCredentialRefresher{}, processes)
+		runner.httpClient = leaseServer.Client()
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
 		go func() { done <- runner.runClaudePinnedGateway(ctx, spec, nil) }()
@@ -482,7 +608,10 @@ func buildClaudeNativeSpec(t *testing.T, credential accountapp.Credential) provi
 	return spec
 }
 
-func buildClaudeGatewaySpec(t *testing.T) providerlaunch.GatewayLaunchSpec {
+func buildClaudeGatewaySpec(
+	t *testing.T,
+	baseURL string,
+) providerlaunch.GatewayLaunchSpec {
 	t.Helper()
 	catalog := testProviderCatalog(t)
 	auth := newClaudeOAuthFixture(t, initialClaudeToken)
@@ -501,7 +630,7 @@ func buildClaudeGatewaySpec(t *testing.T) providerlaunch.GatewayLaunchSpec {
 		t.Fatalf("NewGatewayPlanner() error = %v", err)
 	}
 	intent, _ := providerlaunch.ParseLaunchIntent(catalog, claude.ProviderID, []string{"relay", "9"})
-	endpoint, _ := providerlaunch.NewGatewayEndpoint("http://127.0.0.1:9527", testGatewayKey)
+	endpoint, _ := providerlaunch.NewGatewayEndpoint(baseURL, testGatewayKey)
 	spec, err := planner.Build(context.Background(), intent, endpoint)
 	if err != nil {
 		t.Fatalf("GatewayPlanner.Build() error = %v", err)

@@ -424,9 +424,9 @@ func TestNewAdapterRejectsMissingDependencies(t *testing.T) {
 	}
 }
 
-// TestCoordinatorExecutesOfficialOAuthWithNativeContract 验证官方 OAuth 可由
-// Go Messages Adapter 直接执行，且不会退化成 API Key 合同。
-func TestCoordinatorExecutesOfficialOAuthWithNativeContract(t *testing.T) {
+// TestAdapterRequiresNativeRuntimeForOfficialOAuth 验证普通 Messages Adapter
+// 不会把缺少原生客户端证明的官方 OAuth 请求发送到 Anthropic。
+func TestAdapterRequiresNativeRuntimeForOfficialOAuth(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -472,55 +472,25 @@ func TestCoordinatorExecutesOfficialOAuthWithNativeContract(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			client := &claudeRecordingHTTPClient{
-				response: claudeHTTPResponse(
-					http.StatusOK,
-					"text/event-stream; charset=utf-8",
-					successfulClaudeStream(),
-				),
+			credential := test.credential(t)
+			client := &claudeRecordingHTTPClient{}
+			adapter, err := NewAdapter(client, time.Now)
+			if err != nil {
+				t.Fatalf("NewAdapter() error = %v", err)
 			}
-			fixture := newClaudeAdapterFixtureWithCredential(
-				t,
-				client,
-				test.credential(t),
-			)
-			var events []inference.StreamEvent
-
-			err := fixture.coordinator.Execute(
-				t.Context(),
-				newClaudeAdapterRequest(t, true),
-				func(event inference.StreamEvent) error {
-					events = append(events, event)
-					return nil
-				},
-			)
-			if err != nil ||
-				client.calls != 1 ||
-				fixture.recorder.successes != 1 ||
-				len(fixture.recorder.failures) != 0 ||
-				completedClaudeText(events) != "adapter-ok" ||
-				client.request == nil ||
-				client.request.Header.Get("Authorization") == "" ||
-				client.request.Header.Get("x-api-key") != "" ||
-				client.request.Header.Get("x-app") != "cli" ||
-				client.request.Header.Get("User-Agent") != nativeClaudeUserAgent ||
-				client.request.URL.Query().Get("beta") != "true" {
+			if adapter.SupportsCredential(credential) || client.calls != 0 {
 				t.Fatalf(
-					"error=%v calls=%d successes=%d failures=%d events=%s",
-					err,
+					"SupportsCredential() = true 或发生网络调用: calls=%d",
 					client.calls,
-					fixture.recorder.successes,
-					len(fixture.recorder.failures),
-					eventKinds(events),
 				)
 			}
 		})
 	}
 }
 
-// TestCoordinatorFairlyRotatesOAuthAndAPIKeys 验证混合账号池中的四个账号
-// 都进入公平轮转，同时认证 Header 保持互斥。
-func TestCoordinatorFairlyRotatesOAuthAndAPIKeys(t *testing.T) {
+// TestCoordinatorSkipsNativeOAuthAndFairlyRotatesAPIKeys 验证混合账号池中
+// 官方 OAuth 交给 Native Relay，Canonical Adapter 只公平轮转可直连 API Key。
+func TestCoordinatorSkipsNativeOAuthAndFairlyRotatesAPIKeys(t *testing.T) {
 	t.Parallel()
 
 	coordinator, client, recorder := newClaudeFairCoordinator(t)
@@ -535,9 +505,9 @@ func TestCoordinatorFairlyRotatesOAuthAndAPIKeys(t *testing.T) {
 	}
 	counts := client.APIKeyCounts()
 	if client.CallCount() != 20 ||
-		client.BearerCount() != 10 ||
-		counts["synthetic-claude-fair-key-1"] != 5 ||
-		counts["synthetic-claude-fair-key-2"] != 5 ||
+		client.BearerCount() != 0 ||
+		counts["synthetic-claude-fair-key-1"] != 10 ||
+		counts["synthetic-claude-fair-key-2"] != 10 ||
 		len(counts) != 2 ||
 		recorder.successes != 20 ||
 		len(recorder.failures) != 0 {
@@ -550,7 +520,7 @@ func TestCoordinatorFairlyRotatesOAuthAndAPIKeys(t *testing.T) {
 		)
 	}
 	t.Logf(
-		"requests=%d api_key_distribution=%v oauth_upstream_calls=%d",
+		"requests=%d api_key_distribution=%v native_oauth_canonical_calls=%d",
 		20,
 		counts,
 		client.BearerCount(),

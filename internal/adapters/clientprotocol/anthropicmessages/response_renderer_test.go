@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	"github.com/madou1217/ai_home/core/inference"
 )
 
@@ -344,6 +345,33 @@ func TestResponseFailureUsesAnthropicErrorEvent(t *testing.T) {
 	}
 	if _, err := aggregator.Marshal(); !errors.Is(err, ErrResponseFailed) {
 		t.Fatalf("Marshal() error = %v, want ErrResponseFailed", err)
+	}
+}
+
+// TestRateLimitedFailureUsesAnthropicRateLimitType 验证 Canonical 运行态名称
+// 在 Messages 边界恢复为公开协议类型，不会伪装成模型过载。
+func TestRateLimitedFailureUsesAnthropicRateLimitType(t *testing.T) {
+	t.Parallel()
+
+	failure, err := inference.NewResponseFailure(
+		string(runtimecore.FailureRateLimited),
+		"上游请求频率受限",
+		true,
+	)
+	if err != nil {
+		t.Fatalf("NewResponseFailure() error = %v", err)
+	}
+	data, err := MarshalErrorResponse(failure)
+	if err != nil {
+		t.Fatalf("MarshalErrorResponse() error = %v", err)
+	}
+	var response errorResponseWireDTO
+	if err := json.Unmarshal(data, &response); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if response.Error.Type != "rate_limit_error" ||
+		response.Error.Message != "上游请求频率受限" {
+		t.Fatalf("error = %#v", response.Error)
 	}
 }
 

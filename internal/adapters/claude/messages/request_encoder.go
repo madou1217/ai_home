@@ -2,15 +2,11 @@ package messages
 
 import (
 	"encoding/json"
-	"math"
 
 	"github.com/madou1217/ai_home/core/inference"
 )
 
 const (
-	// defaultMaxTokens 是客户端未指定上限时发送给 Anthropic 的显式值。
-	defaultMaxTokens = 8192
-
 	// 下列 beta 名称来自当前 vendored Claude Code 的线协议常量。
 	betaClaudeCode          = "claude-code-20250219"
 	betaInterleavedThinking = "interleaved-thinking-2025-05-14"
@@ -46,10 +42,10 @@ func encodeRequest(
 	request inference.Request,
 	effectiveModel string,
 ) (encodedRequest, error) {
-	maxTokens, err := resolveMaxTokens(request)
-	if err != nil || effectiveModel == "" {
+	if effectiveModel == "" {
 		return encodedRequest{}, ErrUnsupportedRequest
 	}
+	maxTokens := resolveMaxTokens(request, effectiveModel)
 	cacheBreakpoints, err := projectPromptCacheBreakpoints(request)
 	if err != nil {
 		return encodedRequest{}, err
@@ -122,21 +118,13 @@ func hasRequestCacheBreakpoint(values []inference.PromptCacheBreakpoint) bool {
 	return false
 }
 
-// resolveMaxTokens 为 Messages 必填字段选择明确上限。
-func resolveMaxTokens(request inference.Request) (uint64, error) {
-	maxTokens := request.MaxOutputTokens()
-	if maxTokens == 0 {
-		maxTokens = defaultMaxTokens
-		if reasoning, found := request.Reasoning(); found &&
-			reasoning.Mode() == inference.ReasoningModeBudget &&
-			reasoning.BudgetTokens() >= maxTokens {
-			if reasoning.BudgetTokens() == math.MaxUint64 {
-				return 0, ErrUnsupportedRequest
-			}
-			maxTokens = reasoning.BudgetTokens() + 1
-		}
+// resolveMaxTokens 优先保留客户端上限；仅当源协议没有该字段时，才使用
+// Claude Code 对当前模型的兼容策略补齐 Messages 必填字段。
+func resolveMaxTokens(request inference.Request, effectiveModel string) uint64 {
+	if maxTokens := request.MaxOutputTokens(); maxTokens != 0 {
+		return maxTokens
 	}
-	return maxTokens, nil
+	return claudeCodeDefaultMaxOutputTokens(effectiveModel)
 }
 
 // validateRequest 拒绝 Messages 没有等价表达的 Provider 状态选项。
@@ -458,10 +446,6 @@ func (encoder *requestEncoder) encodeReasoningAndOutput() (
 func (encoder *requestEncoder) encodeReasoning(
 	reasoning inference.ReasoningConfig,
 ) (*thinkingDTO, string, error) {
-	display, err := reasoningDisplay(reasoning.Summary())
-	if err != nil {
-		return nil, "", err
-	}
 	effort, err := anthropicEffort(reasoning.Effort())
 	if err != nil {
 		return nil, "", err
@@ -485,13 +469,13 @@ func (encoder *requestEncoder) encodeReasoning(
 		return &thinkingDTO{
 			Type:         "enabled",
 			BudgetTokens: &budget,
-			Display:      display,
+			Display:      anthropicThinkingDisplay(reasoning.Summary()),
 		}, effort, nil
 	case inference.ReasoningModeAdaptive:
 		encoder.addThinkingBetas(reasoning.Summary())
 		return &thinkingDTO{
 			Type:    "adaptive",
-			Display: display,
+			Display: anthropicThinkingDisplay(reasoning.Summary()),
 		}, effort, nil
 	case inference.ReasoningModeEffort:
 		if reasoning.Effort() == inference.ReasoningEffortNone {
@@ -502,11 +486,20 @@ func (encoder *requestEncoder) encodeReasoning(
 		encoder.addThinkingBetas(reasoning.Summary())
 		return &thinkingDTO{
 			Type:    "adaptive",
-			Display: display,
+			Display: anthropicThinkingDisplay(reasoning.Summary()),
 		}, effort, nil
 	default:
 		return nil, "", ErrUnsupportedRequest
 	}
+}
+
+// anthropicThinkingDisplay 把客户端明确的不显示意图投影为 Claude Code
+// redact-thinking 合同要求的 omitted 值；其他摘要模式不发送 Provider 私有字段。
+func anthropicThinkingDisplay(summary inference.ReasoningSummaryMode) string {
+	if summary == inference.ReasoningSummaryNone {
+		return "omitted"
+	}
+	return ""
 }
 
 // addThinkingBetas 为已启用的 thinking 添加精确 beta。
@@ -519,20 +512,6 @@ func (encoder *requestEncoder) addThinkingBetas(
 	encoder.addBeta(betaInterleavedThinking)
 	if summary == inference.ReasoningSummaryNone {
 		encoder.addBeta(betaRedactThinking)
-	}
-}
-
-// reasoningDisplay 映射 Anthropic 当前公开的 summarized/omitted 两档。
-func reasoningDisplay(
-	summary inference.ReasoningSummaryMode,
-) (string, error) {
-	switch summary {
-	case "", inference.ReasoningSummaryAuto:
-		return "summarized", nil
-	case inference.ReasoningSummaryNone:
-		return "omitted", nil
-	default:
-		return "", ErrUnsupportedRequest
 	}
 }
 

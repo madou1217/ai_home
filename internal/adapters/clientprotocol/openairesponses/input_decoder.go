@@ -280,11 +280,22 @@ func decodeFunctionCall(
 		(wireCall.Status != "" && wireCall.Status != "completed") {
 		return inference.Message{}, "", invalidField(field)
 	}
-	call, callErr := inference.NewToolCallContent(
-		wireCall.CallID,
-		wireCall.Name,
-		[]byte(wireCall.Arguments),
-	)
+	var call inference.ToolCallContent
+	var callErr error
+	if wireCall.Namespace == "" {
+		call, callErr = inference.NewToolCallContent(
+			wireCall.CallID,
+			wireCall.Name,
+			[]byte(wireCall.Arguments),
+		)
+	} else {
+		call, callErr = inference.NewNamespacedToolCallContent(
+			wireCall.CallID,
+			wireCall.Namespace,
+			wireCall.Name,
+			[]byte(wireCall.Arguments),
+		)
+	}
 	if callErr != nil {
 		return inference.Message{}, "", invalidField(field)
 	}

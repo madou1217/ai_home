@@ -42,8 +42,10 @@ type requestDTO struct {
 	Background *bool `json:"background"`
 	// ContextManagement 是尚待与 Claude 共同建模的上下文管理配置。
 	ContextManagement json.RawMessage `json:"context_management"`
-	// PromptCacheKey 是尚待共同建模的缓存路由键。
+	// PromptCacheKey 是跨上游转换时保留的缓存亲和键。
 	PromptCacheKey *string `json:"prompt_cache_key"`
+	// ClientMetadata 是 Codex 客户端的非语义诊断元数据。
+	ClientMetadata map[string]string `json:"client_metadata"`
 	// PromptCacheOptions 是尚待共同建模的缓存策略。
 	PromptCacheOptions json.RawMessage `json:"prompt_cache_options"`
 	// PromptCacheRetention 是已弃用但仍需显式识别的缓存保留策略。
@@ -154,6 +156,8 @@ type functionCallDTO struct {
 	CallID string `json:"call_id"`
 	// Name 是函数工具名。
 	Name string `json:"name"`
+	// Namespace 是函数工具所属的可选命名空间。
+	Namespace string `json:"namespace"`
 	// Arguments 是 JSON Object 编码字符串。
 	Arguments string `json:"arguments"`
 	// Status 是历史调用状态。
@@ -212,12 +216,56 @@ type functionToolDTO struct {
 	Strict *bool `json:"strict"`
 }
 
+// namespaceToolDTO 是 Responses namespace 及其函数子工具集合。
+type namespaceToolDTO struct {
+	// Type 固定为 namespace。
+	Type string `json:"type"`
+	// Name 是 namespace 身份。
+	Name string `json:"name"`
+	// Description 是 namespace 的可选公共说明。
+	Description string `json:"description"`
+	// Tools 是 namespace 内的函数工具。
+	Tools []json.RawMessage `json:"tools"`
+}
+
+// webSearchToolDTO 是 Responses 服务器侧 web_search 配置。
+type webSearchToolDTO struct {
+	// Type 固定为 web_search。
+	Type string `json:"type"`
+	// ExternalWebAccess 表示是否允许实时外网内容。
+	ExternalWebAccess *bool `json:"external_web_access"`
+	// Filters 是可选结果来源过滤器。
+	Filters json.RawMessage `json:"filters"`
+	// UserLocation 是可选近似用户位置。
+	UserLocation json.RawMessage `json:"user_location"`
+	// SearchContextSize 是 Claude 当前没有等价控制的搜索上下文大小。
+	SearchContextSize string `json:"search_context_size"`
+	// SearchContentTypes 是 Claude 当前没有等价控制的内容类型列表。
+	SearchContentTypes []string `json:"search_content_types"`
+}
+
+// webSearchFiltersDTO 保存可跨协议映射的允许域名列表。
+type webSearchFiltersDTO struct {
+	AllowedDomains []string `json:"allowed_domains"`
+}
+
+// webSearchLocationDTO 保存 Responses approximate 位置字段。
+type webSearchLocationDTO struct {
+	Type     string `json:"type"`
+	Country  string `json:"country"`
+	Region   string `json:"region"`
+	City     string `json:"city"`
+	Timezone string `json:"timezone"`
+}
+
 // toolChoiceObjectDTO 是命名函数工具选择对象。
 type toolChoiceObjectDTO struct {
 	// Type 固定为 function。
 	Type string `json:"type"`
 	// Name 是必须调用的工具名。
 	Name string `json:"name"`
+	// Namespace 是命名工具所属的可选 namespace。
+	Namespace string `json:"namespace"`
 }
 
 // reasoningConfigDTO 是 Responses reasoning 请求配置。

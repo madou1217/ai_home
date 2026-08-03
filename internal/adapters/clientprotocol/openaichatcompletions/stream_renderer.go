@@ -119,6 +119,9 @@ func (renderer *StreamRenderer) renderApplied(
 			},
 		)
 	case inference.ReasoningDeltaEvent:
+		if typed.DeltaKind() == inference.ReasoningDeltaSignature {
+			return nil, nil
+		}
 		return renderer.renderDelta(chatDeltaWire{
 			ReasoningContent: typed.Delta(),
 		})

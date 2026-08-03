@@ -20,12 +20,14 @@ const (
 	betaPromptCachingScope  = "prompt-caching-scope-2026-01-05"
 	betaFilesAPI            = "files-api-2025-04-14"
 	betaRedactThinking      = "redact-thinking-2026-02-12"
+	betaWebSearch           = "web-search-2025-03-05"
 )
 
 // encodedRequest 保存 JSON 正文及其功能所需的 beta Header。
 type encodedRequest struct {
 	payload     []byte
 	betaHeaders []string
+	toolNames   toolNameMapper
 }
 
 // requestEncoder 把一次 Canonical Request 转换为 Messages 请求。
@@ -34,6 +36,7 @@ type requestEncoder struct {
 	effectiveModel string
 	maxTokens      uint64
 	cache          cacheLayout
+	toolNames      toolNameMapper
 	betas          []string
 }
 
@@ -46,7 +49,15 @@ func encodeRequest(
 	if err != nil || effectiveModel == "" {
 		return encodedRequest{}, ErrUnsupportedRequest
 	}
-	cache, err := newCacheLayout(request.PromptCacheBreakpoints())
+	cacheBreakpoints, err := projectPromptCacheBreakpoints(request)
+	if err != nil {
+		return encodedRequest{}, err
+	}
+	cache, err := newCacheLayout(cacheBreakpoints)
+	if err != nil {
+		return encodedRequest{}, err
+	}
+	toolNames, err := newToolNameMapper(request)
 	if err != nil {
 		return encodedRequest{}, err
 	}
@@ -55,6 +66,7 @@ func encodeRequest(
 		effectiveModel: effectiveModel,
 		maxTokens:      maxTokens,
 		cache:          cache,
+		toolNames:      toolNames,
 	}
 	if err := encoder.validateRequest(); err != nil {
 		return encodedRequest{}, err
@@ -70,7 +82,43 @@ func encodeRequest(
 	return encodedRequest{
 		payload:     payload,
 		betaHeaders: append([]string(nil), encoder.betas...),
+		toolNames:   toolNames,
 	}, nil
+}
+
+// projectPromptCacheBreakpoints 把 Responses 缓存亲和键转成 Claude 请求级缓存意图。
+//
+// Anthropic 不接收任意缓存键，而是按完整提示前缀复用缓存；因此仅在客户端没有
+// 更精确断点时增加默认 request 断点，不把键值泄漏到模型输入或上游 metadata。
+func projectPromptCacheBreakpoints(
+	request inference.Request,
+) ([]inference.PromptCacheBreakpoint, error) {
+	breakpoints := request.PromptCacheBreakpoints()
+	if _, found := request.PromptCacheKey(); !found || hasRequestCacheBreakpoint(breakpoints) {
+		return breakpoints, nil
+	}
+	control, err := inference.NewPromptCacheControl(
+		inference.PromptCacheTTLDefault,
+		inference.PromptCacheScopeDefault,
+	)
+	if err != nil {
+		return nil, ErrUnsupportedRequest
+	}
+	breakpoint, err := inference.NewRequestPromptCacheBreakpoint(control)
+	if err != nil {
+		return nil, ErrUnsupportedRequest
+	}
+	return append(breakpoints, breakpoint), nil
+}
+
+// hasRequestCacheBreakpoint 判断客户端是否已经声明请求级缓存控制。
+func hasRequestCacheBreakpoint(values []inference.PromptCacheBreakpoint) bool {
+	for _, value := range values {
+		if value.Target() == inference.PromptCacheTargetRequest {
+			return true
+		}
+	}
+	return false
 }
 
 // resolveMaxTokens 为 Messages 必填字段选择明确上限。
@@ -127,10 +175,6 @@ func (encoder *requestEncoder) encode() (requestDTO, error) {
 	rootCache := encodeCacheControl(encoder.cache.request)
 	if rootCache != nil && rootCache.Scope != "" {
 		encoder.addBeta(betaPromptCachingScope)
-	}
-	if encoder.request.IncludeEncryptedReasoning() {
-		// Claude 通过 redacted_thinking 块返回不可读但可续接的 reasoning。
-		encoder.addBeta(betaRedactThinking)
 	}
 	return requestDTO{
 		Model:         encoder.effectiveModel,
@@ -189,7 +233,7 @@ func (encoder *requestEncoder) encodeMessages() (
 		if wireRole != "user" && wireRole != "assistant" {
 			return nil, nil, ErrUnsupportedRequest
 		}
-		conversation = append(conversation, messageDTO{
+		conversation = appendClaudeConversationMessage(conversation, messageDTO{
 			Role:    wireRole,
 			Content: contents,
 		})
@@ -200,15 +244,37 @@ func (encoder *requestEncoder) encodeMessages() (
 	return system, conversation, nil
 }
 
+// appendClaudeConversationMessage 合并相邻同角色历史项，与 Claude Messages
+// 服务端语义一致，并保证 Responses reasoning 与随后 assistant 输出同块回放。
+func appendClaudeConversationMessage(
+	conversation []messageDTO,
+	message messageDTO,
+) []messageDTO {
+	if len(message.Content) == 0 {
+		return conversation
+	}
+	if len(conversation) == 0 ||
+		conversation[len(conversation)-1].Role != message.Role {
+		return append(conversation, message)
+	}
+	last := &conversation[len(conversation)-1]
+	last.Content = append(last.Content, message.Content...)
+	return conversation
+}
+
 // encodeTools 编码工具定义及工具级缓存断点。
-func (encoder *requestEncoder) encodeTools() ([]toolDTO, error) {
+func (encoder *requestEncoder) encodeTools() ([]json.RawMessage, error) {
 	tools := encoder.request.Tools()
-	wireTools := make([]toolDTO, len(tools))
+	wireTools := make([]json.RawMessage, 0, len(tools)+1)
 	for index, tool := range tools {
+		wireName, err := encoder.toolNames.encode(tool.Identity())
+		if err != nil {
+			return nil, err
+		}
 		wire := toolDTO{
 			Type:        "custom",
-			Name:        tool.Name(),
-			Description: tool.Description(),
+			Name:        wireName,
+			Description: claudeToolDescription(tool),
 			InputSchema: json.RawMessage(tool.InputSchema()),
 			CacheControl: encodeCacheControl(
 				encoder.cache.toolCacheControlAt(uint32(index)),
@@ -246,9 +312,49 @@ func (encoder *requestEncoder) encodeTools() ([]toolDTO, error) {
 		if wire.CacheControl != nil && wire.CacheControl.Scope != "" {
 			encoder.addBeta(betaPromptCachingScope)
 		}
-		wireTools[index] = wire
+		encoded, err := json.Marshal(wire)
+		if err != nil {
+			return nil, ErrUnsupportedRequest
+		}
+		wireTools = append(wireTools, encoded)
+	}
+	if webSearch, found := encoder.request.WebSearch(); found {
+		wire, err := encodeWebSearchTool(webSearch)
+		if err != nil {
+			return nil, err
+		}
+		encoded, err := json.Marshal(wire)
+		if err != nil {
+			return nil, ErrUnsupportedRequest
+		}
+		wireTools = append(wireTools, encoded)
+		encoder.addBeta(betaWebSearch)
 	}
 	return wireTools, nil
+}
+
+// encodeWebSearchTool 把共同搜索配置映射到 Claude Code 当前使用的工具版本。
+func encodeWebSearchTool(
+	tool inference.WebSearchTool,
+) (webSearchToolDTO, error) {
+	if external, specified := tool.ExternalWebAccess(); specified && !external {
+		return webSearchToolDTO{}, ErrUnsupportedRequest
+	}
+	wire := webSearchToolDTO{
+		Type:           "web_search_20250305",
+		Name:           "web_search",
+		AllowedDomains: tool.AllowedDomains(),
+	}
+	if location, found := tool.Location(); found {
+		wire.UserLocation = &webSearchUserLocationDTO{
+			Type:     "approximate",
+			Country:  location.Country(),
+			Region:   location.Region(),
+			City:     location.City(),
+			Timezone: location.Timezone(),
+		}
+	}
+	return wire, nil
 }
 
 // encodeToolChoice 反转 Anthropic disable_parallel_tool_use 语义。
@@ -269,7 +375,10 @@ func (encoder *requestEncoder) encodeToolChoice() (*toolChoiceDTO, error) {
 			wire.Type = "any"
 		case inference.ToolChoiceNamed:
 			wire.Type = "tool"
-			wire.Name = choice.Name()
+			wire.Name, _ = encoder.toolNames.encode(choice.Identity())
+			if wire.Name == "" {
+				return nil, ErrUnsupportedRequest
+			}
 		default:
 			return nil, ErrUnsupportedRequest
 		}
@@ -282,6 +391,22 @@ func (encoder *requestEncoder) encodeToolChoice() (*toolChoiceDTO, error) {
 		wire.DisableParallelToolUse = &disabled
 	}
 	return &wire, nil
+}
+
+// claudeToolDescription 把 namespace 公共说明显式投影到扁平 Claude 工具。
+func claudeToolDescription(tool inference.ToolDefinition) string {
+	namespace, namespaced := tool.Namespace()
+	if !namespaced {
+		return tool.Description()
+	}
+	prefix := "Namespace: " + namespace
+	if description := tool.NamespaceDescription(); description != "" {
+		prefix += ". " + description
+	}
+	if description := tool.Description(); description != "" {
+		return prefix + "\n\n" + description
+	}
+	return prefix
 }
 
 // encodeReasoningAndOutput 合并 thinking、effort 和结构化输出。
@@ -342,14 +467,14 @@ func (encoder *requestEncoder) encodeReasoning(
 		if budget < 1024 || budget >= encoder.maxTokens {
 			return nil, "", ErrUnsupportedRequest
 		}
-		encoder.addBeta(betaInterleavedThinking)
+		encoder.addThinkingBetas(reasoning.Summary())
 		return &thinkingDTO{
 			Type:         "enabled",
 			BudgetTokens: &budget,
 			Display:      display,
 		}, effort, nil
 	case inference.ReasoningModeAdaptive:
-		encoder.addBeta(betaInterleavedThinking)
+		encoder.addThinkingBetas(reasoning.Summary())
 		return &thinkingDTO{
 			Type:    "adaptive",
 			Display: display,
@@ -358,9 +483,28 @@ func (encoder *requestEncoder) encodeReasoning(
 		if reasoning.Effort() == inference.ReasoningEffortNone {
 			return &thinkingDTO{Type: "disabled"}, "", nil
 		}
-		return nil, effort, nil
+		// Responses 的 effort 表达“启用并控制 reasoning 强度”；Claude 的
+		// output_config.effort 只调节强度，不能代替 thinking 开关。
+		encoder.addThinkingBetas(reasoning.Summary())
+		return &thinkingDTO{
+			Type:    "adaptive",
+			Display: display,
+		}, effort, nil
 	default:
 		return nil, "", ErrUnsupportedRequest
+	}
+}
+
+// addThinkingBetas 为已启用的 thinking 添加精确 beta。
+//
+// redact-thinking 只由客户端明确的 omitted 摘要意图驱动；Responses 的
+// encrypted_content include 仅控制下游输出，不能改变 Claude 上游形态。
+func (encoder *requestEncoder) addThinkingBetas(
+	summary inference.ReasoningSummaryMode,
+) {
+	encoder.addBeta(betaInterleavedThinking)
+	if summary == inference.ReasoningSummaryNone {
+		encoder.addBeta(betaRedactThinking)
 	}
 }
 
@@ -385,11 +529,17 @@ func anthropicEffort(
 	switch effort {
 	case "", inference.ReasoningEffortNone:
 		return "", nil
+	case inference.ReasoningEffortMinimal:
+		// Claude 没有 minimal 档，向上收敛到最低可用的 low。
+		return string(inference.ReasoningEffortLow), nil
 	case inference.ReasoningEffortLow,
 		inference.ReasoningEffortMedium,
 		inference.ReasoningEffortHigh,
 		inference.ReasoningEffortMax:
 		return string(effort), nil
+	case inference.ReasoningEffortXHigh:
+		// Codex xhigh 与 Claude max 都表示高于 high 的最高公开档位。
+		return string(inference.ReasoningEffortMax), nil
 	default:
 		return "", ErrUnsupportedRequest
 	}

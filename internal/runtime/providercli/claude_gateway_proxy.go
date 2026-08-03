@@ -67,7 +67,7 @@ func (runner *Runner) runClaudePinnedGateway(
 		ctx,
 		listener,
 		proxy,
-		spec.ProviderID(),
+		spec.ClientProviderID(),
 		spec.Binary(),
 		arguments,
 		environment,

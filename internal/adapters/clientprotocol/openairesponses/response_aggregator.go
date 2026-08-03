@@ -26,6 +26,9 @@ func NewResponseAggregator(
 
 // Add 按严格连续序号把一个 Canonical 事件加入聚合状态。
 func (aggregator *ResponseAggregator) Add(event inference.StreamEvent) error {
+	if err := validateSupportedResponseEvent(event); err != nil {
+		return err
+	}
 	return aggregator.state.apply(event)
 }
 

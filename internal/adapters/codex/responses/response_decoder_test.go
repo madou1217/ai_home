@@ -84,6 +84,64 @@ func TestResponseDecoderPreservesFullResponsesLifecycle(t *testing.T) {
 	)
 }
 
+// TestResponseDecoderPreservesNamespaceAndWebSearchActions 验证 Codex 返回的
+// namespaced function_call 与 search/open/find 动作不会被扁平化或丢弃。
+func TestResponseDecoderPreservesNamespaceAndWebSearchActions(t *testing.T) {
+	t.Parallel()
+
+	var events []inference.StreamEvent
+	decoder, err := newResponseDecoder(
+		"gpt-5.6-sol",
+		func(event inference.StreamEvent) error {
+			events = append(events, event)
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("newResponseDecoder() error = %v", err)
+	}
+	stream := []string{
+		`{"type":"response.created","response":{"id":"resp_tools","model":"gpt-5.6-sol"}}`,
+		`{"type":"response.output_item.added","output_index":0,"item":{"id":"fc_mail","type":"function_call","status":"in_progress","call_id":"call_mail","namespace":"gmail","name":"search","arguments":""}}`,
+		`{"type":"response.function_call_arguments.done","output_index":0,"item_id":"fc_mail","call_id":"call_mail","arguments":"{\"query\":\"AIH\"}"}`,
+		`{"type":"response.output_item.done","output_index":0,"item":{"id":"fc_mail","type":"function_call","status":"completed","call_id":"call_mail","namespace":"gmail","name":"search","arguments":"{\"query\":\"AIH\"}"}}`,
+		`{"type":"response.output_item.added","output_index":1,"item":{"id":"ws_search","type":"web_search_call","status":"searching"}}`,
+		`{"type":"response.output_item.done","output_index":1,"item":{"id":"ws_search","type":"web_search_call","status":"completed","action":{"type":"search","query":"AIH","queries":["AIH latest"],"sources":[{"type":"url","url":"https://example.com/aih"}]}}}`,
+		`{"type":"response.output_item.added","output_index":2,"item":{"id":"ws_open","type":"web_search_call","status":"in_progress"}}`,
+		`{"type":"response.output_item.done","output_index":2,"item":{"id":"ws_open","type":"web_search_call","status":"completed","action":{"type":"open_page","url":"https://example.com/aih"}}}`,
+		`{"type":"response.output_item.added","output_index":3,"item":{"id":"ws_find","type":"web_search_call","status":"in_progress"}}`,
+		`{"type":"response.output_item.done","output_index":3,"item":{"id":"ws_find","type":"web_search_call","status":"completed","action":{"type":"find_in_page","url":"https://example.com/aih","pattern":"adapter"}}}`,
+		`{"type":"response.completed","response":{"id":"resp_tools","model":"gpt-5.6-sol","status":"completed","output":[],"usage":{"input_tokens":2,"output_tokens":3,"total_tokens":5}}}`,
+	}
+	for index, payload := range stream {
+		var wire streamEventDTO
+		if err := json.Unmarshal([]byte(payload), &wire); err != nil {
+			t.Fatalf("json.Unmarshal(%d) error = %v", index, err)
+		}
+		if err := decoder.Apply(wire); err != nil {
+			t.Fatalf("Apply(%d, %s) error = %v", index, wire.Type, err)
+		}
+	}
+	var toolIdentity inference.ToolIdentity
+	var actions []inference.WebSearchAction
+	for _, event := range events {
+		switch typed := event.(type) {
+		case inference.ToolCallCompletedEvent:
+			toolIdentity = typed.Identity()
+		case inference.WebSearchCompletedEvent:
+			actions = append(actions, typed.Action())
+		}
+	}
+	namespace, namespaced := toolIdentity.Namespace()
+	if !namespaced || namespace != "gmail" || toolIdentity.Name() != "search" ||
+		len(actions) != 3 ||
+		actions[0].Kind() != inference.WebSearchActionSearch ||
+		actions[1].Kind() != inference.WebSearchActionOpenPage ||
+		actions[2].Kind() != inference.WebSearchActionFindInPage {
+		t.Fatalf("tool=%#v actions=%#v", toolIdentity, actions)
+	}
+}
+
 // TestResponseDecoderReconstructsNonStreamIncomplete 验证完整 JSON
 // 响应复用同一状态机，并把 max_output_tokens 映射为规范终态。
 func TestResponseDecoderReconstructsNonStreamIncomplete(t *testing.T) {

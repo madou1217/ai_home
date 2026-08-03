@@ -2,6 +2,7 @@ package messages
 
 import (
 	"encoding/json"
+	"strings"
 
 	"github.com/madou1217/ai_home/core/inference"
 )
@@ -11,8 +12,20 @@ func (encoder *requestEncoder) encodeContents(
 	messageIndex uint32,
 	contents []inference.Content,
 ) ([]contentDTO, error) {
-	wireContents := make([]contentDTO, len(contents))
-	for contentIndex, content := range contents {
+	wireContents := make([]contentDTO, 0, len(contents))
+	for contentIndex := 0; contentIndex < len(contents); {
+		projected, consumed, handled := encoder.projectCompatibleThinking(
+			contents[contentIndex:],
+		)
+		if handled {
+			if projected != nil {
+				wireContents = append(wireContents, *projected)
+			}
+			contentIndex += consumed
+			continue
+		}
+
+		content := contents[contentIndex]
 		cacheControl := encoder.cache.cacheControlAt(
 			messageIndex,
 			uint32(contentIndex),
@@ -24,9 +37,53 @@ func (encoder *requestEncoder) encodeContents(
 		if wire.CacheControl != nil && wire.CacheControl.Scope != "" {
 			encoder.addBeta(betaPromptCachingScope)
 		}
-		wireContents[contentIndex] = wire
+		wireContents = append(wireContents, wire)
+		contentIndex++
 	}
 	return wireContents, nil
+}
+
+// projectCompatibleThinking 把相邻 summary 和 opaque carrier 作为一个整体处理；
+// 只有可验证的 Claude signature 才能重建原生 thinking。
+func (encoder *requestEncoder) projectCompatibleThinking(
+	contents []inference.Content,
+) (*contentDTO, int, bool) {
+	var thinking strings.Builder
+	consumed := 0
+	for consumed < len(contents) {
+		reasoning, ok := contents[consumed].(inference.ReasoningContent)
+		if !ok || reasoning.ReasoningKind() != inference.ReasoningSummary {
+			break
+		}
+		thinking.WriteString(reasoning.Text())
+		consumed++
+	}
+
+	if consumed < len(contents) {
+		reasoning, ok := contents[consumed].(inference.ReasoningContent)
+		if ok && reasoning.ReasoningKind() == inference.ReasoningEncrypted {
+			consumed++
+			signature, compatible := normalizeClaudeThinkingSignature(
+				reasoning.EncryptedData(),
+			)
+			if !compatible {
+				return nil, consumed, true
+			}
+			encoder.addBeta(betaInterleavedThinking)
+			text := thinking.String()
+			return &contentDTO{
+				Type:      "thinking",
+				Thinking:  &text,
+				Signature: signature,
+			}, consumed, true
+		}
+	}
+	if consumed > 0 {
+		// 可见摘要本身不是 Claude 可回放 thinking；缺少原生签名时交给
+		// 严格编码路径显式拒绝，避免静默丢失客户端历史。
+		return nil, 0, false
+	}
+	return nil, 0, false
 }
 
 // encodeContent 分派封闭 Canonical Content 联合类型。
@@ -57,10 +114,14 @@ func (encoder *requestEncoder) encodeContent(
 		encoder.addMediaSourceBeta(typed.Source())
 		return encodeDocumentContent(typed, wireCache)
 	case inference.ToolCallContent:
+		wireName, err := encoder.toolNames.encode(typed.Identity())
+		if err != nil {
+			return contentDTO{}, err
+		}
 		return contentDTO{
 			Type:         "tool_use",
 			ID:           typed.CallID(),
-			Name:         typed.Name(),
+			Name:         wireName,
 			Input:        json.RawMessage(typed.Arguments()),
 			CacheControl: wireCache,
 		}, nil
@@ -244,15 +305,16 @@ func (encoder *requestEncoder) encodeReasoningContent(
 	encoder.addBeta(betaInterleavedThinking)
 	switch content.ReasoningKind() {
 	case inference.ReasoningThinking:
+		thinking := content.Text()
 		return contentDTO{
 			Type:      "thinking",
-			Thinking:  content.Text(),
+			Thinking:  &thinking,
 			Signature: content.Signature(),
 		}, nil
-	case inference.ReasoningEncrypted:
+	case inference.ReasoningRedacted:
 		return contentDTO{
 			Type: "redacted_thinking",
-			Data: content.EncryptedData(),
+			Data: content.RedactedData(),
 		}, nil
 	default:
 		return contentDTO{}, ErrUnsupportedRequest

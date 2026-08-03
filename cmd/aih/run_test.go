@@ -24,7 +24,8 @@ func TestRunPrintsRootUsageWithoutOpeningDatabase(t *testing.T) {
 		t.Fatalf("run() error = %v", err)
 	}
 	if !bytes.Contains(output.Bytes(), []byte("Gateway 账号池")) ||
-		!bytes.Contains(output.Bytes(), []byte("Native Direct")) {
+		!bytes.Contains(output.Bytes(), []byte("Native Direct")) ||
+		!bytes.Contains(output.Bytes(), []byte("aih codex relay claude 9 --model claude-opus-5")) {
 		t.Fatalf("usage = %q", output.String())
 	}
 }
@@ -46,6 +47,17 @@ func TestRunPassesNativeAndGatewayInputsWithoutModeGuessing(t *testing.T) {
 			wantProvider:  "codex",
 			wantArguments: []string{"9", "resume", "abc"},
 			wantBaseURL:   defaultGatewayBaseURL,
+		},
+		{
+			name:      "Gateway 跨 Provider 固定账号",
+			arguments: []string{"codex", "relay", "claude", "9", "--model", "claude-opus-5"},
+			environment: map[string]string{
+				"AIH_SERVER_CLIENT_KEY": "client-key-with-at-least-thirty-two-characters",
+			},
+			wantProvider:  "codex",
+			wantArguments: []string{"relay", "claude", "9", "--model", "claude-opus-5"},
+			wantBaseURL:   defaultGatewayBaseURL,
+			wantKey:       "client-key-with-at-least-thirty-two-characters",
 		},
 		{
 			name:      "Gateway 固定账号",

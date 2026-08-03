@@ -172,3 +172,25 @@ func TestToolResultAllowsExplicitEmptyContent(t *testing.T) {
 		t.Fatalf("result = %#v, want empty error result", result)
 	}
 }
+
+// TestNamespacedToolIdentityDistinguishesSameLocalName 验证 namespace 是工具
+// 身份的一部分，同名子工具不会在正排、选择或历史调用中发生碰撞。
+func TestNamespacedToolIdentityDistinguishesSameLocalName(t *testing.T) {
+	t.Parallel()
+
+	gmail, err := NewNamespacedToolIdentity("gmail", "search")
+	if err != nil {
+		t.Fatalf("NewNamespacedToolIdentity(gmail) error = %v", err)
+	}
+	calendar, err := NewNamespacedToolIdentity("calendar", "search")
+	if err != nil {
+		t.Fatalf("NewNamespacedToolIdentity(calendar) error = %v", err)
+	}
+	if gmail == calendar || gmail.Name() != calendar.Name() {
+		t.Fatalf("identities = (%#v, %#v), want distinct namespace and same local name", gmail, calendar)
+	}
+	index := map[ToolIdentity]string{gmail: "mail", calendar: "event"}
+	if index[gmail] != "mail" || index[calendar] != "event" {
+		t.Fatalf("identity index = %#v", index)
+	}
+}

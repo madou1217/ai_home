@@ -101,6 +101,130 @@ func TestStreamRendererProducesResponsesLifecycle(t *testing.T) {
 	t.Logf("completed SSE data: %s", frames[len(frames)-1].Data())
 }
 
+// TestStreamRendererEmitsURLCitationAnnotations 验证 Canonical 网页引用同时
+// 出现在流式 annotation.added 与最终 output_text.annotations 中。
+func TestStreamRendererEmitsURLCitationAnnotations(t *testing.T) {
+	t.Parallel()
+
+	renderer := NewStreamRenderer(
+		newRendererTestRequest(t, true),
+		time.Unix(1_700_000_000, 0),
+	)
+	citation, err := inference.NewURLCitation(
+		4,
+		4,
+		"AIH",
+		"https://example.com/aih",
+	)
+	if err != nil {
+		t.Fatalf("NewURLCitation() error = %v", err)
+	}
+	started, _ := inference.NewResponseStartedEvent(0, "resp_citation", "claude-opus-5")
+	itemStarted, _ := inference.NewOutputItemStartedEvent(1, 0, "msg_citation", inference.OutputItemMessage)
+	blockStarted, _ := inference.NewContentBlockStartedEvent(2, 0, 0, inference.ContentText)
+	delta, _ := inference.NewTextDeltaEvent(3, 0, 0, "根据资料")
+	citationAdded, _ := inference.NewURLCitationAddedEvent(4, 0, 0, citation)
+	textCompleted, _ := inference.NewTextCompletedEvent(5, 0, 0, "根据资料")
+	blockCompleted := inference.NewContentBlockCompletedEvent(6, 0, 0)
+	itemCompleted, _ := inference.NewOutputItemCompletedEvent(7, 0, "msg_citation")
+	usage, _ := inference.NewUsage(inference.UsageInput{InputTokens: 1, OutputTokens: 1})
+	completed, _ := inference.NewResponseCompletedEvent(8, inference.StopReasonEndTurn, "", usage)
+	events := []inference.StreamEvent{
+		started,
+		itemStarted,
+		blockStarted,
+		delta,
+		citationAdded,
+		textCompleted,
+		blockCompleted,
+		itemCompleted,
+		completed,
+	}
+	var frames []RenderedEvent
+	for _, event := range events {
+		rendered, renderErr := renderer.Render(event)
+		if renderErr != nil {
+			t.Fatalf("Render(%s) error = %v", event.Kind(), renderErr)
+		}
+		frames = append(frames, rendered...)
+	}
+	var annotationFrames int
+	for _, frame := range frames {
+		if frame.Name() != "response.output_text.annotation.added" {
+			continue
+		}
+		annotationFrames++
+		var payload struct {
+			AnnotationIndex uint32             `json:"annotation_index"`
+			Annotation      urlCitationWireDTO `json:"annotation"`
+		}
+		if err := json.Unmarshal(frame.Data(), &payload); err != nil {
+			t.Fatalf("json.Unmarshal(annotation) error = %v", err)
+		}
+		if payload.AnnotationIndex != 0 ||
+			payload.Annotation.Type != "url_citation" ||
+			payload.Annotation.StartIndex != 4 ||
+			payload.Annotation.URL != "https://example.com/aih" {
+			t.Fatalf("annotation = %#v", payload)
+		}
+	}
+	if annotationFrames != 1 {
+		t.Fatalf("annotation frames = %d, want 1", annotationFrames)
+	}
+	var terminal struct {
+		Response struct {
+			Output []struct {
+				Content []struct {
+					Annotations []urlCitationWireDTO `json:"annotations"`
+				} `json:"content"`
+			} `json:"output"`
+		} `json:"response"`
+	}
+	if err := json.Unmarshal(frames[len(frames)-1].Data(), &terminal); err != nil {
+		t.Fatalf("json.Unmarshal(terminal) error = %v", err)
+	}
+	if len(terminal.Response.Output) != 1 ||
+		len(terminal.Response.Output[0].Content) != 1 ||
+		len(terminal.Response.Output[0].Content[0].Annotations) != 1 {
+		t.Fatalf("terminal = %#v", terminal)
+	}
+}
+
+// TestRenderersOmitEncryptedReasoningUnlessRequested 验证 include 只控制
+// Responses 输出投影；未请求时仍保留摘要，但不泄漏 opaque continuity。
+func TestRenderersOmitEncryptedReasoningUnlessRequested(t *testing.T) {
+	t.Parallel()
+
+	request := newRendererReasoningTestRequest(t, false, false)
+	events := newSignedReasoningResponseEvents(t)
+	aggregator := NewResponseAggregator(
+		request,
+		time.Unix(1_700_000_000, 0),
+	)
+	for _, event := range events {
+		if err := aggregator.Add(event); err != nil {
+			t.Fatalf("Add(%q) error = %v", event.Kind(), err)
+		}
+	}
+	body, err := aggregator.Marshal()
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	var response struct {
+		Output []reasoningItemWireDTO `json:"output"`
+	}
+	if err := json.Unmarshal(body, &response); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if len(response.Output) != 1 ||
+		len(response.Output[0].Summary) != 1 ||
+		response.Output[0].Summary[0].Text != "可继续" ||
+		response.Output[0].EncryptedContent != "" ||
+		strings.Contains(string(body), "opaque-signature") {
+		t.Fatalf("reasoning response = %s", body)
+	}
+}
+
 // TestResponseAggregatorBuildsNonStreamingResponseFromSameEvents 验证非流式输出只聚合
 // 同一 Canonical 事件，不维护第二套 Provider 响应转换逻辑。
 func TestResponseAggregatorBuildsNonStreamingResponseFromSameEvents(t *testing.T) {
@@ -711,31 +835,18 @@ func TestRejectedEventDoesNotAdvanceCanonicalSequence(t *testing.T) {
 	assertRenderedNames(t, frames, []string{"response.output_item.added"})
 }
 
-// TestStreamRendererRejectsReasoningSignatureBeforeMutation 验证 Responses 无法表达的
-// Claude signature 会显式失败，而且不会消费 Canonical 序号。
-func TestStreamRendererRejectsReasoningSignatureBeforeMutation(t *testing.T) {
+// TestStreamRendererConsumesReasoningSignatureWithoutFabricatedDelta 验证
+// Claude signature 只进入 reasoning 终态，不会生成 Responses 不存在的增量事件。
+func TestStreamRendererConsumesReasoningSignatureWithoutFabricatedDelta(t *testing.T) {
 	t.Parallel()
 
 	renderer := NewStreamRenderer(
-		newRendererTestRequest(t, true),
+		newRendererReasoningTestRequest(t, true, true),
 		time.Unix(1_700_000_000, 0),
 	)
 	events := newReasoningPrefixEvents(t)
 	renderTestEvents(t, renderer, events)
 
-	signature, err := inference.NewReasoningDeltaEvent(
-		3,
-		0,
-		0,
-		inference.ReasoningDeltaSignature,
-		"opaque-signature",
-	)
-	if err != nil {
-		t.Fatalf("NewReasoningDeltaEvent(signature) error = %v", err)
-	}
-	if _, err := renderer.Render(signature); !errors.Is(err, ErrUnsupportedResponseEvent) {
-		t.Fatalf("Render(signature) error = %v, want ErrUnsupportedResponseEvent", err)
-	}
 	thinking, err := inference.NewReasoningDeltaEvent(
 		3,
 		0,
@@ -754,4 +865,99 @@ func TestStreamRendererRejectsReasoningSignatureBeforeMutation(t *testing.T) {
 		"response.reasoning_summary_part.added",
 		"response.reasoning_summary_text.delta",
 	})
+
+	signature, err := inference.NewReasoningDeltaEvent(
+		4,
+		0,
+		0,
+		inference.ReasoningDeltaSignature,
+		"opaque-signature",
+	)
+	if err != nil {
+		t.Fatalf("NewReasoningDeltaEvent(signature) error = %v", err)
+	}
+	frames, err = renderer.Render(signature)
+	if err != nil {
+		t.Fatalf("Render(signature) error = %v", err)
+	}
+	assertRenderedNames(t, frames, nil)
+
+	content, err := inference.NewThinkingContent("可继续", "opaque-signature")
+	if err != nil {
+		t.Fatalf("NewThinkingContent() error = %v", err)
+	}
+	completed, err := inference.NewReasoningCompletedEvent(5, 0, 0, content)
+	if err != nil {
+		t.Fatalf("NewReasoningCompletedEvent() error = %v", err)
+	}
+	if _, err := renderer.Render(completed); err != nil {
+		t.Fatalf("Render(completed) error = %v", err)
+	}
+	if _, err := renderer.Render(inference.NewContentBlockCompletedEvent(6, 0, 0)); err != nil {
+		t.Fatalf("Render(block completed) error = %v", err)
+	}
+	itemCompleted, err := inference.NewOutputItemCompletedEvent(7, 0, "rs_reasoning_1")
+	if err != nil {
+		t.Fatalf("NewOutputItemCompletedEvent() error = %v", err)
+	}
+	frames, err = renderer.Render(itemCompleted)
+	if err != nil {
+		t.Fatalf("Render(item completed) error = %v", err)
+	}
+	var payload struct {
+		Item reasoningItemWireDTO `json:"item"`
+	}
+	if len(frames) != 1 || json.Unmarshal(frames[0].Data(), &payload) != nil ||
+		payload.Item.EncryptedContent != "opaque-signature" {
+		t.Fatalf("output_item.done frames = %#v", frames)
+	}
+}
+
+// TestRenderersRejectClaudeRedactedThinking 验证 Claude redacted_thinking 没有
+// Responses 原生 carrier 时会显式拒绝，而不是冒充 encrypted_content。
+func TestRenderersRejectClaudeRedactedThinking(t *testing.T) {
+	t.Parallel()
+
+	request := newRendererTestRequest(t, true)
+	started, _ := inference.NewResponseStartedEvent(0, "resp_redacted_1", "claude-opus-5")
+	itemStarted, _ := inference.NewOutputItemStartedEvent(
+		1,
+		0,
+		"rs_redacted_1",
+		inference.OutputItemReasoning,
+	)
+	blockStarted, _ := inference.NewContentBlockStartedEvent(
+		2,
+		0,
+		0,
+		inference.ContentReasoning,
+	)
+	redacted, err := inference.NewRedactedReasoningContent("claude-redacted-exact")
+	if err != nil {
+		t.Fatalf("NewRedactedReasoningContent() error = %v", err)
+	}
+	completed, err := inference.NewReasoningCompletedEvent(3, 0, 0, redacted)
+	if err != nil {
+		t.Fatalf("NewReasoningCompletedEvent() error = %v", err)
+	}
+
+	renderer := NewStreamRenderer(request, time.Unix(1_700_000_000, 0))
+	for _, event := range []inference.StreamEvent{started, itemStarted, blockStarted} {
+		if _, err := renderer.Render(event); err != nil {
+			t.Fatalf("Render(%q) error = %v", event.Kind(), err)
+		}
+	}
+	if _, err := renderer.Render(completed); !errors.Is(err, ErrUnsupportedResponseEvent) {
+		t.Fatalf("Render(redacted) error = %v, want ErrUnsupportedResponseEvent", err)
+	}
+
+	aggregator := NewResponseAggregator(request, time.Unix(1_700_000_000, 0))
+	for _, event := range []inference.StreamEvent{started, itemStarted, blockStarted} {
+		if err := aggregator.Add(event); err != nil {
+			t.Fatalf("Add(%q) error = %v", event.Kind(), err)
+		}
+	}
+	if err := aggregator.Add(completed); !errors.Is(err, ErrUnsupportedResponseEvent) {
+		t.Fatalf("Add(redacted) error = %v, want ErrUnsupportedResponseEvent", err)
+	}
 }

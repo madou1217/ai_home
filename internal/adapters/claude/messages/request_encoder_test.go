@@ -72,8 +72,180 @@ func TestEncodeRequestPreservesClaudeMessagesSemantics(t *testing.T) {
 	if !containsBeta(encoded.betaHeaders, betaStructuredOutputs) ||
 		!containsBeta(encoded.betaHeaders, betaEffort) ||
 		!containsBeta(encoded.betaHeaders, betaPromptCachingScope) ||
-		!containsBeta(encoded.betaHeaders, betaRedactThinking) {
+		containsBeta(encoded.betaHeaders, "redact-thinking-2026-02-12") {
 		t.Fatalf("beta headers = %#v", encoded.betaHeaders)
+	}
+}
+
+// TestEncodeEffortReasoningEnablesAdaptiveThinking 验证 Responses effort
+// 不会退化为只有强度参数、实际未启用 Claude thinking 的请求。
+func TestEncodeEffortReasoningEnablesAdaptiveThinking(t *testing.T) {
+	t.Parallel()
+
+	reasoning, err := inference.NewEffortReasoning(
+		inference.ReasoningEffortHigh,
+		inference.ReasoningSummaryAuto,
+	)
+	if err != nil {
+		t.Fatalf("NewEffortReasoning() error = %v", err)
+	}
+	request, err := inference.NewRequest(inference.RequestInput{
+		ClientProtocol: inference.ClientProtocolOpenAIResponses,
+		Model:          "claude-alias",
+		Messages: []inference.Message{
+			mustMessage(t, inference.RoleUser, mustText(t, "分析后回答")),
+		},
+		Reasoning:       &reasoning,
+		MaxOutputTokens: 256,
+	})
+	if err != nil {
+		t.Fatalf("inference.NewRequest() error = %v", err)
+	}
+	encoded, err := encodeRequest(request, "claude-sonnet-5")
+	if err != nil {
+		t.Fatalf("encodeRequest() error = %v", err)
+	}
+
+	var payload struct {
+		Thinking struct {
+			Type    string `json:"type"`
+			Display string `json:"display"`
+		} `json:"thinking"`
+		OutputConfig struct {
+			Effort string `json:"effort"`
+		} `json:"output_config"`
+	}
+	if err := json.Unmarshal(encoded.payload, &payload); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if payload.Thinking.Type != "adaptive" ||
+		payload.Thinking.Display != "summarized" ||
+		payload.OutputConfig.Effort != "high" ||
+		!containsBeta(encoded.betaHeaders, betaInterleavedThinking) ||
+		!containsBeta(encoded.betaHeaders, betaEffort) {
+		t.Fatalf(
+			"effort reasoning payload = %#v betas=%#v",
+			payload,
+			encoded.betaHeaders,
+		)
+	}
+}
+
+// TestEncodeOmittedReasoningEnablesRedactThinking 验证明确的 omitted 摘要
+// 意图才开启 Claude redact-thinking，不依赖 Responses 输出 include。
+func TestEncodeOmittedReasoningEnablesRedactThinking(t *testing.T) {
+	t.Parallel()
+
+	reasoning, err := inference.NewEffortReasoning(
+		inference.ReasoningEffortLow,
+		inference.ReasoningSummaryNone,
+	)
+	if err != nil {
+		t.Fatalf("NewEffortReasoning() error = %v", err)
+	}
+	request, err := inference.NewRequest(inference.RequestInput{
+		ClientProtocol: inference.ClientProtocolAnthropicMessages,
+		Model:          "claude-alias",
+		Messages: []inference.Message{
+			mustMessage(t, inference.RoleUser, mustText(t, "分析后回答")),
+		},
+		Reasoning:       &reasoning,
+		MaxOutputTokens: 512,
+	})
+	if err != nil {
+		t.Fatalf("inference.NewRequest() error = %v", err)
+	}
+	encoded, err := encodeRequest(request, "claude-sonnet-5")
+	if err != nil {
+		t.Fatalf("encodeRequest() error = %v", err)
+	}
+
+	var payload struct {
+		Thinking struct {
+			Type    string `json:"type"`
+			Display string `json:"display"`
+		} `json:"thinking"`
+	}
+	if err := json.Unmarshal(encoded.payload, &payload); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if payload.Thinking.Type != "adaptive" ||
+		payload.Thinking.Display != "omitted" ||
+		!containsBeta(encoded.betaHeaders, betaInterleavedThinking) ||
+		!containsBeta(encoded.betaHeaders, betaRedactThinking) {
+		t.Fatalf(
+			"omitted reasoning payload = %#v betas=%#v",
+			payload,
+			encoded.betaHeaders,
+		)
+	}
+}
+
+// TestEncodeRequestReplaysRedactedThinking 验证 Claude redacted 连续性只按原生
+// redacted_thinking 回放，不经过 signature 或 Responses carrier。
+func TestEncodeRequestReplaysRedactedThinking(t *testing.T) {
+	t.Parallel()
+
+	redacted, err := inference.NewRedactedReasoningContent("redacted-exact-1")
+	if err != nil {
+		t.Fatalf("NewRedactedReasoningContent() error = %v", err)
+	}
+	request, err := inference.NewRequest(inference.RequestInput{
+		ClientProtocol:  inference.ClientProtocolAnthropicMessages,
+		Model:           "claude-opus-5",
+		Messages:        []inference.Message{mustMessage(t, inference.RoleAssistant, redacted)},
+		MaxOutputTokens: 1024,
+	})
+	if err != nil {
+		t.Fatalf("NewRequest() error = %v", err)
+	}
+	encoded, err := encodeRequest(request, "claude-opus-5")
+	if err != nil {
+		t.Fatalf("encodeRequest() error = %v", err)
+	}
+	var payload struct {
+		Messages []struct {
+			Content []struct {
+				Type      string `json:"type"`
+				Data      string `json:"data"`
+				Signature string `json:"signature"`
+			} `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(encoded.payload, &payload); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if len(payload.Messages) != 1 || len(payload.Messages[0].Content) != 1 {
+		t.Fatalf("messages = %#v", payload.Messages)
+	}
+	content := payload.Messages[0].Content[0]
+	if content.Type != "redacted_thinking" ||
+		content.Data != "redacted-exact-1" ||
+		content.Signature != "" {
+		t.Fatalf("redacted content = %#v", content)
+	}
+}
+
+// TestEncodeRequestRejectsSummaryWithoutClaudeSignature 验证可见摘要缺少可验证
+// Claude signature 时不会被静默丢弃或伪装成 thinking。
+func TestEncodeRequestRejectsSummaryWithoutClaudeSignature(t *testing.T) {
+	t.Parallel()
+
+	summary, err := inference.NewReasoningSummaryContent("只有摘要")
+	if err != nil {
+		t.Fatalf("NewReasoningSummaryContent() error = %v", err)
+	}
+	request, err := inference.NewRequest(inference.RequestInput{
+		ClientProtocol:  inference.ClientProtocolOpenAIResponses,
+		Model:           "claude-opus-5",
+		Messages:        []inference.Message{mustMessage(t, inference.RoleAssistant, summary)},
+		MaxOutputTokens: 1024,
+	})
+	if err != nil {
+		t.Fatalf("NewRequest() error = %v", err)
+	}
+	if _, err := encodeRequest(request, "claude-opus-5"); !errors.Is(err, ErrUnsupportedRequest) {
+		t.Fatalf("encodeRequest() error = %v, want ErrUnsupportedRequest", err)
 	}
 }
 
@@ -196,13 +368,176 @@ func TestProjectAuthUsesExactClaudeCredentialHeaders(t *testing.T) {
 					request.Header.Get("Authorization") != "" {
 				t.Fatalf("认证 Header 混用: %v", request.Header)
 			}
+			if profile.nativeOAuth ||
+				request.Header.Get("x-app") != "" ||
+				request.Header.Get("User-Agent") != "" ||
+				request.Header.Get("X-Claude-Code-Session-Id") != "" ||
+				request.URL.RawQuery != "" {
+				t.Fatalf(
+					"非原生 OAuth 凭据携带了 Claude Code 专属外层: url=%s headers=%v",
+					request.URL,
+					request.Header,
+				)
+			}
 		})
 	}
 }
 
-// TestProjectAuthRequiresNativeTransportForOfficialOAuth 验证官方 OAuth
-// 不会被误投影为普通 Bearer 请求。
-func TestProjectAuthRequiresNativeTransportForOfficialOAuth(t *testing.T) {
+// TestEncodeRequestMapsNamespacedToolsReversibly 验证 Claude 扁平工具名同时
+// 保留 namespace 身份、历史调用和指定工具选择，且同名子工具不会碰撞。
+func TestEncodeRequestMapsNamespacedToolsReversibly(t *testing.T) {
+	t.Parallel()
+
+	gmailTool := mustNamespacedToolDefinition(t, "gmail", "Gmail", "search")
+	calendarTool := mustNamespacedToolDefinition(t, "calendar", "Calendar", "search")
+	calendarCall := mustNamespacedToolCall(
+		t,
+		"call_calendar",
+		"calendar",
+		"search",
+		`{"query":"AIH"}`,
+	)
+	calendarResult, err := inference.NewToolResultContent(
+		"call_calendar",
+		false,
+		mustText(t, "found"),
+	)
+	if err != nil {
+		t.Fatalf("inference.NewToolResultContent() error = %v", err)
+	}
+	choice, err := inference.NewNamespacedToolChoice("calendar", "search")
+	if err != nil {
+		t.Fatalf("inference.NewNamespacedToolChoice() error = %v", err)
+	}
+	request, err := inference.NewRequest(inference.RequestInput{
+		ClientProtocol: inference.ClientProtocolOpenAIResponses,
+		Model:          "claude",
+		Messages: []inference.Message{
+			mustMessage(t, inference.RoleUser, mustText(t, "search")),
+			mustMessage(t, inference.RoleAssistant, calendarCall),
+			mustMessage(t, inference.RoleUser, calendarResult),
+		},
+		Tools:      []inference.ToolDefinition{gmailTool, calendarTool},
+		ToolChoice: &choice,
+	})
+	if err != nil {
+		t.Fatalf("inference.NewRequest() error = %v", err)
+	}
+	encoded, err := encodeRequest(request, "claude-opus-5")
+	if err != nil {
+		t.Fatalf("encodeRequest() error = %v", err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(encoded.payload, &payload); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	tools := payload["tools"].([]any)
+	if len(tools) != 2 ||
+		tools[0].(map[string]any)["name"] != "gmail__search" ||
+		tools[1].(map[string]any)["name"] != "calendar__search" {
+		t.Fatalf("tools = %#v", tools)
+	}
+	messages := payload["messages"].([]any)
+	historyCall := messages[1].(map[string]any)["content"].([]any)[0].(map[string]any)
+	toolChoice := payload["tool_choice"].(map[string]any)
+	if historyCall["name"] != "calendar__search" ||
+		toolChoice["name"] != "calendar__search" {
+		t.Fatalf("history=%#v choice=%#v", historyCall, toolChoice)
+	}
+	gmailIdentity, err := encoded.toolNames.decode("gmail__search")
+	if err != nil {
+		t.Fatalf("decode(gmail) error = %v", err)
+	}
+	calendarIdentity, err := encoded.toolNames.decode("calendar__search")
+	if err != nil {
+		t.Fatalf("decode(calendar) error = %v", err)
+	}
+	if gmailIdentity == calendarIdentity ||
+		gmailIdentity != gmailTool.Identity() ||
+		calendarIdentity != calendarTool.Identity() {
+		t.Fatalf(
+			"identity mapping gmail=%#v calendar=%#v",
+			gmailIdentity,
+			calendarIdentity,
+		)
+	}
+}
+
+// TestEncodeRequestKeepsPromptCacheKeyOutOfClaudeMetadata 验证 Responses 的
+// 缓存亲和键只转换为缓存意图，诊断 metadata 也不会泄漏到 Claude 请求。
+func TestEncodeRequestKeepsPromptCacheKeyOutOfClaudeMetadata(t *testing.T) {
+	t.Parallel()
+
+	promptCacheKey := "cache_private_affinity"
+	userID := "user-visible"
+	request, err := inference.NewRequest(inference.RequestInput{
+		ClientProtocol: inference.ClientProtocolOpenAIResponses,
+		Model:          "claude",
+		Messages: []inference.Message{
+			mustMessage(t, inference.RoleUser, mustText(t, "hello")),
+		},
+		PromptCacheKey: &promptCacheKey,
+		ClientMetadata: map[string]string{
+			"session_id": "session_private_diagnostic",
+		},
+		UserID: &userID,
+	})
+	if err != nil {
+		t.Fatalf("inference.NewRequest() error = %v", err)
+	}
+	encoded, err := encodeRequest(request, "claude-opus-5")
+	if err != nil {
+		t.Fatalf("encodeRequest() error = %v", err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(encoded.payload, &payload); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	metadata := payload["metadata"].(map[string]any)
+	if len(metadata) != 1 || metadata["user_id"] != userID {
+		t.Fatalf("metadata = %#v", metadata)
+	}
+	if strings.Contains(string(encoded.payload), promptCacheKey) ||
+		strings.Contains(string(encoded.payload), "session_private_diagnostic") {
+		t.Fatalf("Claude payload 泄漏非语义字段: %s", encoded.payload)
+	}
+	cacheControl := payload["cache_control"].(map[string]any)
+	if cacheControl["type"] != "ephemeral" {
+		t.Fatalf("cache_control = %#v", cacheControl)
+	}
+}
+
+// TestAnthropicEffortMapsCodexBoundaryLevels 验证两端不同的最低和最高
+// reasoning 档位按明确规则收敛，不静默落到无关等级。
+func TestAnthropicEffortMapsCodexBoundaryLevels(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		input    inference.ReasoningEffort
+		expected string
+	}{
+		{name: "minimal to low", input: inference.ReasoningEffortMinimal, expected: "low"},
+		{name: "xhigh to max", input: inference.ReasoningEffortXHigh, expected: "max"},
+		{name: "max stays max", input: inference.ReasoningEffortMax, expected: "max"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			actual, err := anthropicEffort(test.input)
+			if err != nil || actual != test.expected {
+				t.Fatalf("anthropicEffort(%q) = (%q, %v)", test.input, actual, err)
+			}
+		})
+	}
+}
+
+// TestProjectAuthPreservesNativeOfficialOAuthContract 验证官方 OAuth 使用
+// Claude Code 的 Bearer、beta、客户端身份、会话 ID 和 beta query 合同。
+func TestProjectAuthPreservesNativeOfficialOAuthContract(t *testing.T) {
 	t.Parallel()
 
 	refreshable, err := claudeauth.NewOAuthAuth(claudeauth.OAuthInput{
@@ -238,11 +573,33 @@ func TestProjectAuthRequiresNativeTransportForOfficialOAuth(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			if _, err := projectAuth(test.credential); !errors.Is(
-				err,
-				ErrNativeTransportRequired,
-			) {
+			profile, err := projectAuth(test.credential)
+			if err != nil {
 				t.Fatalf("projectAuth() error = %v", err)
+			}
+			request, err := buildHTTPRequest(
+				t.Context(),
+				profile,
+				encodedRequest{payload: []byte(`{}`)},
+			)
+			if err != nil {
+				t.Fatalf("buildHTTPRequest() error = %v", err)
+			}
+			betas := strings.Split(request.Header.Get("anthropic-beta"), ",")
+			if !profile.nativeOAuth ||
+				request.Header.Get("Authorization") == "" ||
+				request.Header.Get("x-api-key") != "" ||
+				!containsBeta(betas, betaOAuth) ||
+				!containsBeta(betas, betaClaudeCode) ||
+				request.Header.Get("x-app") != "cli" ||
+				request.Header.Get("User-Agent") != nativeClaudeUserAgent ||
+				len(request.Header.Get("X-Claude-Code-Session-Id")) != 36 ||
+				request.URL.Query().Get("beta") != "true" {
+				t.Fatalf(
+					"native OAuth request = url:%s headers:%v",
+					request.URL,
+					request.Header,
+				)
 			}
 		})
 	}
@@ -563,4 +920,47 @@ func mustMessage(
 		t.Fatalf("inference.NewMessage() error = %v", err)
 	}
 	return message
+}
+
+// mustNamespacedToolDefinition 创建测试用 namespaced 工具定义。
+func mustNamespacedToolDefinition(
+	t *testing.T,
+	namespace string,
+	namespaceDescription string,
+	name string,
+) inference.ToolDefinition {
+	t.Helper()
+	tool, err := inference.NewNamespacedToolDefinitionWithOptions(
+		namespace,
+		namespaceDescription,
+		name,
+		"Search records",
+		[]byte(`{"type":"object"}`),
+		inference.ToolDefinitionOptions{},
+	)
+	if err != nil {
+		t.Fatalf("inference.NewNamespacedToolDefinitionWithOptions() error = %v", err)
+	}
+	return tool
+}
+
+// mustNamespacedToolCall 创建测试用 namespaced 历史工具调用。
+func mustNamespacedToolCall(
+	t *testing.T,
+	callID string,
+	namespace string,
+	name string,
+	arguments string,
+) inference.ToolCallContent {
+	t.Helper()
+	content, err := inference.NewNamespacedToolCallContent(
+		callID,
+		namespace,
+		name,
+		[]byte(arguments),
+	)
+	if err != nil {
+		t.Fatalf("inference.NewNamespacedToolCallContent() error = %v", err)
+	}
+	return content
 }

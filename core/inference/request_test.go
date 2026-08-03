@@ -151,7 +151,7 @@ func TestNewCapabilitySetBuildsValidatedPublicCapabilityMask(t *testing.T) {
 	for _, capabilities := range [][]Capability{
 		nil,
 		{Capability(0)},
-		{CapabilityStreaming + 1},
+		{CapabilityWebSearch + 1},
 	} {
 		if _, err := NewCapabilitySet(capabilities...); !errors.Is(
 			err,

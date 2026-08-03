@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/madou1217/ai_home/core/inference"
 )
@@ -33,10 +34,11 @@ type outputItemState struct {
 	completed        bool
 	blocks           []*contentBlockState
 	callID           string
-	toolName         string
+	toolIdentity     inference.ToolIdentity
 	toolArguments    string
 	toolCallStarted  bool
 	toolCallComplete bool
+	webSearchAction  *inference.WebSearchAction
 	encryptedContent string
 }
 
@@ -47,6 +49,7 @@ type contentBlockState struct {
 	text          string
 	signature     string
 	reasoningKind inference.ReasoningKind
+	citations     []inference.URLCitation
 }
 
 // newResponseState 创建共享状态机并固定响应时间。
@@ -98,6 +101,10 @@ func (state *responseState) apply(event inference.StreamEvent) error {
 		err = state.appendToolArguments(typed)
 	case inference.ToolCallCompletedEvent:
 		err = state.completeToolCall(typed)
+	case inference.WebSearchCompletedEvent:
+		err = state.completeWebSearch(typed)
+	case inference.URLCitationAddedEvent:
+		err = state.addURLCitation(typed)
 	case inference.ContentBlockCompletedEvent:
 		err = state.completeContentBlock(typed)
 	case inference.OutputItemCompletedEvent:
@@ -117,6 +124,37 @@ func (state *responseState) apply(event inference.StreamEvent) error {
 		return err
 	}
 	state.lastSequence = event.Sequence()
+	return nil
+}
+
+// addURLCitation 把引用绑定到尚未结束的文本块并校验字符区间。
+func (state *responseState) addURLCitation(event inference.URLCitationAddedEvent) error {
+	block, err := state.openBlock(
+		event.OutputIndex(),
+		event.BlockIndex(),
+		inference.ContentText,
+	)
+	if err != nil {
+		return ErrInvalidEventSequence
+	}
+	citation := event.Citation()
+	if citation.EndIndex() > uint32(utf8.RuneCountInString(block.text)) {
+		return ErrInvalidEventSequence
+	}
+	block.citations = append(block.citations, citation)
+	return nil
+}
+
+// completeWebSearch 保存服务器侧实际执行的查询。
+func (state *responseState) completeWebSearch(
+	event inference.WebSearchCompletedEvent,
+) error {
+	item, err := state.openItem(event.OutputIndex())
+	if err != nil || item.kind != inference.OutputItemWebSearch || item.webSearchAction != nil {
+		return ErrInvalidEventSequence
+	}
+	action := event.Action()
+	item.webSearchAction = &action
 	return nil
 }
 
@@ -276,9 +314,14 @@ func (state *responseState) completeReasoning(event inference.ReasoningCompleted
 			!strings.HasPrefix(content.Signature(), block.signature) {
 			return ErrInvalidEventSequence
 		}
+		item, itemErr := state.openItem(event.OutputIndex())
+		if itemErr != nil {
+			return ErrInvalidEventSequence
+		}
 		block.text = content.Text()
 		block.signature = content.Signature()
 		block.reasoningKind = inference.ReasoningThinking
+		item.encryptedContent = content.Signature()
 	case inference.ReasoningEncrypted:
 		item, itemErr := state.openItem(event.OutputIndex())
 		if itemErr != nil || block.text != "" || block.signature != "" {
@@ -302,7 +345,7 @@ func (state *responseState) startToolCall(event inference.ToolCallStartedEvent) 
 		return ErrInvalidEventSequence
 	}
 	item.callID = event.CallID()
-	item.toolName = event.Name()
+	item.toolIdentity = event.Identity()
 	item.toolCallStarted = true
 	return nil
 }
@@ -322,7 +365,7 @@ func (state *responseState) completeToolCall(event inference.ToolCallCompletedEv
 	item, err := state.openToolCall(event.OutputIndex(), event.CallID())
 	if err != nil ||
 		event.BlockIndex() != 0 ||
-		event.Name() != item.toolName ||
+		event.Identity() != item.toolIdentity ||
 		!bytes.HasPrefix(event.Arguments(), []byte(item.toolArguments)) {
 		return ErrInvalidEventSequence
 	}
@@ -361,6 +404,10 @@ func (state *responseState) completeOutputItem(event inference.OutputItemComplet
 	}
 	if item.kind == inference.OutputItemToolCall {
 		if !item.toolCallComplete {
+			return ErrInvalidEventSequence
+		}
+	} else if item.kind == inference.OutputItemWebSearch {
+		if item.webSearchAction == nil || len(item.blocks) != 0 {
 			return ErrInvalidEventSequence
 		}
 	} else {

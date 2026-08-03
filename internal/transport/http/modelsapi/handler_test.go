@@ -68,6 +68,86 @@ func TestHandlerReturnsUniqueLocalModels(t *testing.T) {
 	}
 }
 
+// TestHandlerProjectsCodexCatalogWithoutRefreshing 验证 client_version 只选择
+// Codex envelope，且每个模型都从同一次本地物化目录读取中生成完整投影。
+func TestHandlerProjectsCodexCatalogWithoutRefreshing(t *testing.T) {
+	t.Parallel()
+
+	reader := &modelReaderStub{
+		models: []accountapp.RoutableModel{
+			newRoutableModel(t, "claude", "claude-opus-5"),
+			newRoutableModel(t, "codex", "gpt-5.6-sol"),
+		},
+	}
+	handler := newTestHandler(t, reader)
+	request := httptest.NewRequest(
+		http.MethodGet,
+		modelsapi.Path+"?client_version=future-client",
+		nil,
+	)
+	request.Header.Set("Authorization", "Bearer local-model-key")
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK || reader.calls != 1 {
+		t.Fatalf(
+			"status=%d reader_calls=%d body=%s",
+			response.Code,
+			reader.calls,
+			response.Body,
+		)
+	}
+	var document struct {
+		Models []struct {
+			Slug                              string `json:"slug"`
+			DisplayName                       string `json:"display_name"`
+			SupportedReasoningLevels          []any  `json:"supported_reasoning_levels"`
+			ShellType                         string `json:"shell_type"`
+			Visibility                        string `json:"visibility"`
+			SupportedInAPI                    bool   `json:"supported_in_api"`
+			Priority                          int    `json:"priority"`
+			BaseInstructions                  string `json:"base_instructions"`
+			SupportsReasoningSummaryParameter bool   `json:"supports_reasoning_summary_parameter"`
+			TruncationPolicy                  struct {
+				Mode  string `json:"mode"`
+				Limit int    `json:"limit"`
+			} `json:"truncation_policy"`
+			SupportsParallelToolCalls  bool     `json:"supports_parallel_tool_calls"`
+			ExperimentalSupportedTools []string `json:"experimental_supported_tools"`
+			InputModalities            []string `json:"input_modalities"`
+			SupportsSearchTool         bool     `json:"supports_search_tool"`
+		} `json:"models"`
+		Object string `json:"object"`
+		Data   []any  `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &document); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if document.Object != "" || document.Data != nil || len(document.Models) != 2 {
+		t.Fatalf("codex envelope = %#v", document)
+	}
+	first := document.Models[0]
+	if first.Slug != "claude-opus-5" ||
+		first.DisplayName != first.Slug ||
+		first.SupportedReasoningLevels == nil ||
+		first.ShellType != "shell_command" ||
+		first.Visibility != "list" ||
+		!first.SupportedInAPI ||
+		first.Priority != 1 ||
+		first.BaseInstructions == "" ||
+		!first.SupportsReasoningSummaryParameter ||
+		first.TruncationPolicy.Mode != "bytes" ||
+		first.TruncationPolicy.Limit != 10_000 ||
+		!first.SupportsParallelToolCalls ||
+		first.ExperimentalSupportedTools == nil ||
+		len(first.InputModalities) != 2 ||
+		!first.SupportsSearchTool ||
+		document.Models[1].Priority != 2 {
+		t.Fatalf("codex models = %#v", document.Models)
+	}
+}
+
 // TestHandlerRejectsUnsupportedRequestsAndHidesReaderErrors 验证输入和内部错误合同。
 func TestHandlerRejectsUnsupportedRequestsAndHidesReaderErrors(t *testing.T) {
 	t.Parallel()

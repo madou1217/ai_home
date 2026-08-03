@@ -52,8 +52,8 @@ type responseWireDTO struct {
 	Text textConfigWireDTO `json:"text"`
 	// ToolChoice 是客户端提供的可选工具选择。
 	ToolChoice json.RawMessage `json:"tool_choice,omitempty"`
-	// Tools 是客户端声明的函数工具。
-	Tools []functionToolWireDTO `json:"tools"`
+	// Tools 是客户端声明的普通函数或 namespace 工具。
+	Tools []json.RawMessage `json:"tools"`
 }
 
 // responseErrorWireDTO 是失败响应中的低敏错误对象。
@@ -148,8 +148,34 @@ type functionCallItemWireDTO struct {
 	CallID string `json:"call_id"`
 	// Name 是函数工具名。
 	Name string `json:"name"`
+	// Namespace 是函数工具所属的可选命名空间。
+	Namespace *string `json:"namespace,omitempty"`
 	// Arguments 是完整或当前累计 JSON 参数字符串。
 	Arguments string `json:"arguments"`
+}
+
+// webSearchCallItemWireDTO 是 Responses web_search_call 输出项。
+type webSearchCallItemWireDTO struct {
+	ID     string                  `json:"id"`
+	Type   string                  `json:"type"`
+	Status string                  `json:"status"`
+	Action *webSearchActionWireDTO `json:"action,omitempty"`
+}
+
+// webSearchActionWireDTO 是当前 Claude 搜索可映射的 search 动作。
+type webSearchActionWireDTO struct {
+	Type    string                         `json:"type"`
+	Query   string                         `json:"query,omitempty"`
+	Queries []string                       `json:"queries,omitempty"`
+	Sources []webSearchActionSourceWireDTO `json:"sources,omitempty"`
+	URL     string                         `json:"url,omitempty"`
+	Pattern string                         `json:"pattern,omitempty"`
+}
+
+// webSearchActionSourceWireDTO 是搜索动作公开的 URL 来源。
+type webSearchActionSourceWireDTO struct {
+	Type string `json:"type"`
+	URL  string `json:"url"`
 }
 
 // outputTextWireDTO 是 Responses output_text 内容块。
@@ -158,8 +184,17 @@ type outputTextWireDTO struct {
 	Type string `json:"type"`
 	// Text 是当前累计或完整文本。
 	Text string `json:"text"`
-	// Annotations 是当前尚无引用时的空数组。
+	// Annotations 是按上游事件顺序排列的文本引用。
 	Annotations []json.RawMessage `json:"annotations"`
+}
+
+// urlCitationWireDTO 是 Responses output_text 的网页引用。
+type urlCitationWireDTO struct {
+	Type       string `json:"type"`
+	StartIndex uint32 `json:"start_index"`
+	EndIndex   uint32 `json:"end_index"`
+	Title      string `json:"title"`
+	URL        string `json:"url"`
 }
 
 // refusalWireDTO 是 Responses refusal 内容块。
@@ -212,12 +247,48 @@ type functionToolWireDTO struct {
 	Strict *bool `json:"strict,omitempty"`
 }
 
+// namespaceToolWireDTO 是 Responses namespace 及其函数子工具。
+type namespaceToolWireDTO struct {
+	// Type 固定为 namespace。
+	Type string `json:"type"`
+	// Name 是 namespace 身份。
+	Name string `json:"name"`
+	// Description 是 namespace 的公共说明。
+	Description string `json:"description"`
+	// Tools 是 namespace 内按原始顺序排列的函数工具。
+	Tools []functionToolWireDTO `json:"tools"`
+}
+
+// webSearchToolWireDTO 是 Responses 服务器侧网络搜索配置。
+type webSearchToolWireDTO struct {
+	Type              string                    `json:"type"`
+	ExternalWebAccess *bool                     `json:"external_web_access,omitempty"`
+	Filters           *webSearchFiltersWireDTO  `json:"filters,omitempty"`
+	UserLocation      *webSearchLocationWireDTO `json:"user_location,omitempty"`
+}
+
+// webSearchFiltersWireDTO 保存允许搜索的来源域名。
+type webSearchFiltersWireDTO struct {
+	AllowedDomains []string `json:"allowed_domains"`
+}
+
+// webSearchLocationWireDTO 保存 approximate 位置。
+type webSearchLocationWireDTO struct {
+	Type     string `json:"type"`
+	Country  string `json:"country,omitempty"`
+	Region   string `json:"region,omitempty"`
+	City     string `json:"city,omitempty"`
+	Timezone string `json:"timezone,omitempty"`
+}
+
 // namedToolChoiceWireDTO 是 Responses 命名函数工具选择。
 type namedToolChoiceWireDTO struct {
 	// Type 固定为 function。
 	Type string `json:"type"`
 	// Name 是必须调用的工具名。
 	Name string `json:"name"`
+	// Namespace 是命名工具所属的可选命名空间。
+	Namespace *string `json:"namespace,omitempty"`
 }
 
 // streamEventWireDTO 是 Responses SSE 事件的类型化字段并集。
@@ -250,6 +321,12 @@ type streamEventWireDTO struct {
 	Arguments string `json:"arguments,omitempty"`
 	// Name 是 function_call_arguments.done 携带的工具名。
 	Name string `json:"name,omitempty"`
+	// Namespace 是函数工具所属的可选命名空间。
+	Namespace *string `json:"namespace,omitempty"`
+	// AnnotationIndex 是内容块内的引用索引。
+	AnnotationIndex *uint32 `json:"annotation_index,omitempty"`
+	// Annotation 是新增引用对象。
+	Annotation json.RawMessage `json:"annotation,omitempty"`
 }
 
 // buildResponseWire 从共享状态构建指定状态的 Responses 对象。
@@ -277,6 +354,10 @@ func (state *responseState) buildResponseWireWithOutputCount(
 	if err != nil {
 		return responseWireDTO{}, err
 	}
+	tools, err := newToolsWire(state.request)
+	if err != nil {
+		return responseWireDTO{}, err
+	}
 
 	output := make([]json.RawMessage, outputCount)
 	for index, item := range state.items[:outputCount] {
@@ -284,7 +365,11 @@ func (state *responseState) buildResponseWireWithOutputCount(
 		if item.completed {
 			itemStatus = "completed"
 		}
-		encoded, err := marshalOutputItem(item, itemStatus)
+		encoded, err := marshalOutputItem(
+			item,
+			itemStatus,
+			state.request.IncludeEncryptedReasoning(),
+		)
 		if err != nil {
 			return responseWireDTO{}, err
 		}
@@ -308,7 +393,7 @@ func (state *responseState) buildResponseWireWithOutputCount(
 		Reasoning:          reasoning,
 		Text:               textConfig,
 		ToolChoice:         toolChoice,
-		Tools:              newFunctionToolsWire(state.request),
+		Tools:              tools,
 	}
 	if status == "completed" {
 		completedAt := state.createdAt
@@ -371,46 +456,144 @@ func newToolChoiceWire(request inference.Request) (json.RawMessage, error) {
 	}
 	if choice.Mode() == inference.ToolChoiceNamed {
 		return json.Marshal(namedToolChoiceWireDTO{
-			Type: "function",
-			Name: choice.Name(),
+			Type:      "function",
+			Name:      choice.Name(),
+			Namespace: optionalToolNamespace(choice.Identity()),
 		})
 	}
 	return json.Marshal(string(choice.Mode()))
 }
 
-// newFunctionToolsWire 编码请求中全部函数工具及显式 strict 值。
-func newFunctionToolsWire(request inference.Request) []functionToolWireDTO {
+// newToolsWire 按 namespace 首次出现顺序重建 Responses 工具层级。
+func newToolsWire(request inference.Request) ([]json.RawMessage, error) {
 	definitions := request.Tools()
-	tools := make([]functionToolWireDTO, len(definitions))
-	for index, definition := range definitions {
+	items := make([]any, 0, len(definitions)+1)
+	namespaceIndexes := make(map[string]int)
+	for _, definition := range definitions {
 		strict, specified := definition.Strict()
 		var strictValue *bool
 		if specified {
 			strictValue = &strict
 		}
-		tools[index] = functionToolWireDTO{
+		wireFunction := functionToolWireDTO{
 			Type:        "function",
 			Name:        definition.Name(),
 			Description: definition.Description(),
 			Parameters:  json.RawMessage(definition.InputSchema()),
 			Strict:      strictValue,
 		}
+		namespace, namespaced := definition.Namespace()
+		if !namespaced {
+			items = append(items, wireFunction)
+			continue
+		}
+		itemIndex, exists := namespaceIndexes[namespace]
+		if !exists {
+			itemIndex = len(items)
+			namespaceIndexes[namespace] = itemIndex
+			items = append(items, &namespaceToolWireDTO{
+				Type:        "namespace",
+				Name:        namespace,
+				Description: definition.NamespaceDescription(),
+			})
+		}
+		group, ok := items[itemIndex].(*namespaceToolWireDTO)
+		if !ok || group.Description != definition.NamespaceDescription() {
+			return nil, ErrUnsupportedResponseEvent
+		}
+		group.Tools = append(group.Tools, wireFunction)
 	}
-	return tools
+	if webSearch, found := request.WebSearch(); found {
+		items = append(items, newWebSearchToolWire(webSearch))
+	}
+	tools := make([]json.RawMessage, len(items))
+	for index, item := range items {
+		encoded, err := json.Marshal(item)
+		if err != nil {
+			return nil, ErrUnsupportedResponseEvent
+		}
+		tools[index] = encoded
+	}
+	return tools, nil
+}
+
+// newWebSearchToolWire 把 Canonical 搜索配置投影回 Responses 线协议。
+func newWebSearchToolWire(tool inference.WebSearchTool) webSearchToolWireDTO {
+	wire := webSearchToolWireDTO{Type: "web_search"}
+	if external, specified := tool.ExternalWebAccess(); specified {
+		wire.ExternalWebAccess = &external
+	}
+	if domains := tool.AllowedDomains(); len(domains) > 0 {
+		wire.Filters = &webSearchFiltersWireDTO{AllowedDomains: domains}
+	}
+	if location, found := tool.Location(); found {
+		wire.UserLocation = &webSearchLocationWireDTO{
+			Type:     "approximate",
+			Country:  location.Country(),
+			Region:   location.Region(),
+			City:     location.City(),
+			Timezone: location.Timezone(),
+		}
+	}
+	return wire
 }
 
 // marshalOutputItem 将单个聚合输出项编码为严格 wire DTO。
-func marshalOutputItem(item *outputItemState, status string) (json.RawMessage, error) {
+func marshalOutputItem(
+	item *outputItemState,
+	status string,
+	includeEncryptedReasoning bool,
+) (json.RawMessage, error) {
 	switch item.kind {
 	case inference.OutputItemMessage:
 		return marshalMessageItem(item, status)
 	case inference.OutputItemReasoning:
-		return marshalReasoningItem(item, status)
+		return marshalReasoningItem(item, status, includeEncryptedReasoning)
 	case inference.OutputItemToolCall:
 		return marshalFunctionCallItem(item, status)
+	case inference.OutputItemWebSearch:
+		return marshalWebSearchCallItem(item, status)
 	default:
 		return nil, ErrUnsupportedResponseEvent
 	}
+}
+
+// marshalWebSearchCallItem 编码搜索调用的进行中或完成快照。
+func marshalWebSearchCallItem(
+	item *outputItemState,
+	status string,
+) (json.RawMessage, error) {
+	if status == "completed" && item.webSearchAction == nil {
+		return nil, ErrInvalidEventSequence
+	}
+	var action *webSearchActionWireDTO
+	if item.webSearchAction != nil {
+		action = newWebSearchActionWire(*item.webSearchAction)
+	}
+	return json.Marshal(webSearchCallItemWireDTO{
+		ID:     item.id,
+		Type:   "web_search_call",
+		Status: status,
+		Action: action,
+	})
+}
+
+// newWebSearchActionWire 把 Canonical 搜索动作投影为 Responses 联合结构。
+func newWebSearchActionWire(action inference.WebSearchAction) *webSearchActionWireDTO {
+	wire := &webSearchActionWireDTO{
+		Type:    string(action.Kind()),
+		Query:   action.Query(),
+		Queries: action.Queries(),
+		URL:     action.URL(),
+		Pattern: action.Pattern(),
+	}
+	for _, source := range action.Sources() {
+		wire.Sources = append(wire.Sources, webSearchActionSourceWireDTO{
+			Type: "url",
+			URL:  source,
+		})
+	}
+	return wire
 }
 
 // marshalMessageItem 编码文本或 refusal 消息内容。
@@ -437,10 +620,14 @@ func marshalMessageItem(item *outputItemState, status string) (json.RawMessage, 
 func marshalMessagePart(block *contentBlockState) (json.RawMessage, error) {
 	switch block.kind {
 	case inference.ContentText:
+		annotations, err := marshalURLCitations(block.citations)
+		if err != nil {
+			return nil, err
+		}
 		return json.Marshal(outputTextWireDTO{
 			Type:        "output_text",
 			Text:        block.text,
-			Annotations: []json.RawMessage{},
+			Annotations: annotations,
 		})
 	case inference.ContentRefusal:
 		return json.Marshal(refusalWireDTO{
@@ -452,12 +639,44 @@ func marshalMessagePart(block *contentBlockState) (json.RawMessage, error) {
 	}
 }
 
+// marshalURLCitations 编码一个文本块中的全部网页引用。
+func marshalURLCitations(citations []inference.URLCitation) ([]json.RawMessage, error) {
+	encoded := make([]json.RawMessage, len(citations))
+	for index, citation := range citations {
+		value, err := json.Marshal(newURLCitationWire(citation))
+		if err != nil {
+			return nil, ErrUnsupportedResponseEvent
+		}
+		encoded[index] = value
+	}
+	return encoded, nil
+}
+
+// newURLCitationWire 补齐 Responses 必填 title，同时保留原始 URL。
+func newURLCitationWire(citation inference.URLCitation) urlCitationWireDTO {
+	title := citation.Title()
+	if title == "" {
+		title = citation.URL()
+	}
+	return urlCitationWireDTO{
+		Type:       "url_citation",
+		StartIndex: citation.StartIndex(),
+		EndIndex:   citation.EndIndex(),
+		Title:      title,
+		URL:        citation.URL(),
+	}
+}
+
 // marshalReasoningItem 编码 reasoning 摘要、状态和加密连续性。
-func marshalReasoningItem(item *outputItemState, status string) (json.RawMessage, error) {
+func marshalReasoningItem(
+	item *outputItemState,
+	status string,
+	includeEncryptedReasoning bool,
+) (json.RawMessage, error) {
 	summaries := make([]reasoningSummaryWireDTO, 0, len(item.blocks))
 	for _, block := range item.blocks {
-		if block.signature != "" {
-			return nil, ErrUnsupportedResponseEvent
+		if block.signature != "" && item.encryptedContent != block.signature {
+			return nil, ErrInvalidEventSequence
 		}
 		switch block.reasoningKind {
 		case inference.ReasoningSummary, inference.ReasoningThinking:
@@ -474,12 +693,16 @@ func marshalReasoningItem(item *outputItemState, status string) (json.RawMessage
 			return nil, ErrUnsupportedResponseEvent
 		}
 	}
+	encryptedContent := ""
+	if includeEncryptedReasoning {
+		encryptedContent = item.encryptedContent
+	}
 	return json.Marshal(reasoningItemWireDTO{
 		ID:               item.id,
 		Type:             "reasoning",
 		Status:           status,
 		Summary:          summaries,
-		EncryptedContent: item.encryptedContent,
+		EncryptedContent: encryptedContent,
 	})
 }
 
@@ -493,9 +716,19 @@ func marshalFunctionCallItem(item *outputItemState, status string) (json.RawMess
 		Type:      "function_call",
 		Status:    status,
 		CallID:    item.callID,
-		Name:      item.toolName,
+		Name:      item.toolIdentity.Name(),
+		Namespace: optionalToolNamespace(item.toolIdentity),
 		Arguments: item.toolArguments,
 	})
+}
+
+// optionalToolNamespace 返回可被 omitempty 正确处理的 namespace 指针。
+func optionalToolNamespace(identity inference.ToolIdentity) *string {
+	namespace, found := identity.Namespace()
+	if !found {
+		return nil
+	}
+	return &namespace
 }
 
 // newUsageWire 将 Canonical usage 转换为 Responses token 明细。

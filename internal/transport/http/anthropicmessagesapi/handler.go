@@ -218,29 +218,24 @@ func (handler *Handler) executeStream(
 		return
 	}
 	renderer := handler.adapter.NewStreamRenderer(canonicalRequest)
-	var sinkErr error
-	var writeErr error
+	execution := newResponseStream(stream, renderer)
 	executionErr := handler.executor.Execute(
 		request.Context(),
 		canonicalRequest,
-		func(event inference.StreamEvent) error {
-			frames, renderErr := renderer.Render(event)
-			if renderErr != nil {
-				sinkErr = renderErr
-				return renderErr
-			}
-			if streamErr := stream.Write(frames); streamErr != nil {
-				writeErr = streamErr
-				return streamErr
-			}
-			return nil
-		},
+		execution.Accept,
 	)
-	if writeErr != nil || renderer.Terminal() {
+	if execution.WriteFailed() {
+		return
+	}
+	if failure, found := execution.PreCommitFailure(); found {
+		writeCanonicalFailure(response, failure)
+		return
+	}
+	if execution.Terminal() {
 		return
 	}
 	switch {
-	case sinkErr != nil:
+	case execution.RenderFailed():
 		writeStreamFailure(
 			stream,
 			response,

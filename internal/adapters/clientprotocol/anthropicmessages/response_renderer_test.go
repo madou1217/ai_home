@@ -226,8 +226,8 @@ func TestRenderersPreserveThinkingTextAndToolOrder(t *testing.T) {
 	}
 }
 
-// TestRenderersPreserveRedactedThinkingAndPauseTurn 验证加密 reasoning 不会被
-// 转成普通文本，pause_turn 也不会被降级为 end_turn。
+// TestRenderersPreserveRedactedThinkingAndPauseTurn 验证 Claude redacted reasoning
+// 不会被转成普通文本，pause_turn 也不会被降级为 end_turn。
 func TestRenderersPreserveRedactedThinkingAndPauseTurn(t *testing.T) {
 	t.Parallel()
 
@@ -393,6 +393,55 @@ func TestRenderersRejectUnrepresentableReasoningSummary(t *testing.T) {
 	}
 	if err := aggregator.Add(completed); !errors.Is(err, ErrUnsupportedResponseEvent) {
 		t.Fatalf("Add(summary) error = %v, want ErrUnsupportedResponseEvent", err)
+	}
+}
+
+// TestRenderersRejectResponsesEncryptedReasoning 验证 Codex/Responses opaque
+// 数据不会被伪装成 Claude redacted_thinking。
+func TestRenderersRejectResponsesEncryptedReasoning(t *testing.T) {
+	t.Parallel()
+
+	request := newRendererTestRequest(t)
+	started, _ := inference.NewResponseStartedEvent(0, "msg_encrypted_1", "gpt-5.4")
+	itemStarted, _ := inference.NewOutputItemStartedEvent(
+		1,
+		0,
+		"reasoning_encrypted_1",
+		inference.OutputItemReasoning,
+	)
+	blockStarted, _ := inference.NewContentBlockStartedEvent(
+		2,
+		0,
+		0,
+		inference.ContentReasoning,
+	)
+	encrypted, err := inference.NewEncryptedReasoningContent("gAAAAABresponses-opaque")
+	if err != nil {
+		t.Fatalf("NewEncryptedReasoningContent() error = %v", err)
+	}
+	completed, err := inference.NewReasoningCompletedEvent(3, 0, 0, encrypted)
+	if err != nil {
+		t.Fatalf("NewReasoningCompletedEvent() error = %v", err)
+	}
+
+	renderer := NewStreamRenderer(request)
+	for _, event := range []inference.StreamEvent{started, itemStarted, blockStarted} {
+		if _, err := renderer.Render(event); err != nil {
+			t.Fatalf("Render(%q) error = %v", event.Kind(), err)
+		}
+	}
+	if _, err := renderer.Render(completed); !errors.Is(err, ErrUnsupportedResponseEvent) {
+		t.Fatalf("Render(encrypted) error = %v, want ErrUnsupportedResponseEvent", err)
+	}
+
+	aggregator := NewResponseAggregator(request)
+	for _, event := range []inference.StreamEvent{started, itemStarted, blockStarted} {
+		if err := aggregator.Add(event); err != nil {
+			t.Fatalf("Add(%q) error = %v", event.Kind(), err)
+		}
+	}
+	if err := aggregator.Add(completed); !errors.Is(err, ErrUnsupportedResponseEvent) {
+		t.Fatalf("Add(encrypted) error = %v, want ErrUnsupportedResponseEvent", err)
 	}
 }
 

@@ -28,7 +28,7 @@ func (RequestDecoder) Decode(body []byte) (inference.Request, error) {
 	if err != nil {
 		return inference.Request{}, err
 	}
-	tools, err := decodeTools(wireRequest.Tools)
+	tools, webSearch, err := decodeTools(wireRequest.Tools)
 	if err != nil {
 		return inference.Request{}, err
 	}
@@ -63,6 +63,7 @@ func (RequestDecoder) Decode(body []byte) (inference.Request, error) {
 		Model:                     wireRequest.Model,
 		Messages:                  messages,
 		Tools:                     tools,
+		WebSearch:                 webSearch,
 		ToolChoice:                toolChoice,
 		ParallelToolCalls:         wireRequest.ParallelToolCalls,
 		Reasoning:                 reasoning,
@@ -71,6 +72,8 @@ func (RequestDecoder) Decode(body []byte) (inference.Request, error) {
 		MaxOutputTokens:           valueOrZero(wireRequest.MaxOutputTokens),
 		Temperature:               wireRequest.Temperature,
 		TopP:                      wireRequest.TopP,
+		PromptCacheKey:            wireRequest.PromptCacheKey,
+		ClientMetadata:            wireRequest.ClientMetadata,
 		Store:                     wireRequest.Store,
 		IncludeEncryptedReasoning: includeEncryptedReasoning,
 		Truncation:                truncation,
@@ -129,8 +132,6 @@ func validateSupportedRootFields(wireRequest requestDTO) error {
 	switch {
 	case hasJSONValue(wireRequest.ContextManagement):
 		return unsupportedField("context_management")
-	case wireRequest.PromptCacheKey != nil:
-		return unsupportedField("prompt_cache_key")
 	case hasJSONValue(wireRequest.PromptCacheOptions):
 		return unsupportedField("prompt_cache_options")
 	case wireRequest.PromptCacheRetention != nil:

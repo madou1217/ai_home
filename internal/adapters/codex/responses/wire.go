@@ -4,30 +4,31 @@ import "encoding/json"
 
 // requestDTO 只描述 Codex Responses 请求线协议。
 type requestDTO struct {
-	Model             string            `json:"model"`
-	Instructions      string            `json:"instructions,omitempty"`
-	Input             []inputItemDTO    `json:"input"`
-	Tools             *[]toolDTO        `json:"tools,omitempty"`
-	ToolChoice        any               `json:"tool_choice"`
-	ParallelToolCalls bool              `json:"parallel_tool_calls"`
-	Reasoning         *reasoningDTO     `json:"reasoning"`
-	Store             bool              `json:"store"`
-	Stream            bool              `json:"stream"`
-	Include           []string          `json:"include"`
-	ServiceTier       *string           `json:"service_tier,omitempty"`
-	PromptCacheKey    *string           `json:"prompt_cache_key,omitempty"`
-	Text              *textControlDTO   `json:"text,omitempty"`
-	ClientMetadata    map[string]string `json:"client_metadata,omitempty"`
+	Model             string             `json:"model"`
+	Instructions      string             `json:"instructions,omitempty"`
+	Input             []inputItemDTO     `json:"input"`
+	Tools             *[]json.RawMessage `json:"tools,omitempty"`
+	ToolChoice        any                `json:"tool_choice"`
+	ParallelToolCalls bool               `json:"parallel_tool_calls"`
+	Reasoning         *reasoningDTO      `json:"reasoning"`
+	Store             bool               `json:"store"`
+	Stream            bool               `json:"stream"`
+	Include           []string           `json:"include"`
+	ServiceTier       *string            `json:"service_tier,omitempty"`
+	PromptCacheKey    *string            `json:"prompt_cache_key,omitempty"`
+	Text              *textControlDTO    `json:"text,omitempty"`
+	ClientMetadata    map[string]string  `json:"client_metadata,omitempty"`
 }
 
 // inputItemDTO 覆盖当前 Canonical Request 能产生的 Responses 输入项。
 type inputItemDTO struct {
 	Type             string                `json:"type"`
 	Role             string                `json:"role,omitempty"`
-	AdditionalTools  *[]toolDTO            `json:"tools,omitempty"`
+	AdditionalTools  *[]json.RawMessage    `json:"tools,omitempty"`
 	Content          []contentItemDTO      `json:"content,omitempty"`
 	Phase            string                `json:"phase,omitempty"`
 	Name             string                `json:"name,omitempty"`
+	Namespace        string                `json:"namespace,omitempty"`
 	Arguments        string                `json:"arguments,omitempty"`
 	CallID           string                `json:"call_id,omitempty"`
 	Output           any                   `json:"output,omitempty"`
@@ -54,7 +55,7 @@ type reasoningSummaryDTO struct {
 	Text string `json:"text"`
 }
 
-// toolDTO 是当前只允许的 function 工具定义。
+// toolDTO 是 Codex function 工具定义。
 type toolDTO struct {
 	Type         string          `json:"type"`
 	Name         string          `json:"name"`
@@ -64,10 +65,41 @@ type toolDTO struct {
 	Parameters   json.RawMessage `json:"parameters"`
 }
 
+// namespaceToolDTO 保留 namespace 与其局部函数列表的层级关系。
+type namespaceToolDTO struct {
+	Type        string    `json:"type"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	Tools       []toolDTO `json:"tools"`
+}
+
+// webSearchToolDTO 是 Codex 服务器侧网络搜索配置。
+type webSearchToolDTO struct {
+	Type              string                    `json:"type"`
+	ExternalWebAccess *bool                     `json:"external_web_access,omitempty"`
+	Filters           *webSearchFiltersDTO      `json:"filters,omitempty"`
+	UserLocation      *webSearchUserLocationDTO `json:"user_location,omitempty"`
+}
+
+// webSearchFiltersDTO 保存允许搜索的来源域名。
+type webSearchFiltersDTO struct {
+	AllowedDomains []string `json:"allowed_domains,omitempty"`
+}
+
+// webSearchUserLocationDTO 保存不含精确坐标的近似位置。
+type webSearchUserLocationDTO struct {
+	Type     string `json:"type"`
+	Country  string `json:"country,omitempty"`
+	Region   string `json:"region,omitempty"`
+	City     string `json:"city,omitempty"`
+	Timezone string `json:"timezone,omitempty"`
+}
+
 // namedToolChoiceDTO 是必须调用指定 function 的选择合同。
 type namedToolChoiceDTO struct {
-	Type string `json:"type"`
-	Name string `json:"name"`
+	Type      string `json:"type"`
+	Name      string `json:"name"`
+	Namespace string `json:"namespace,omitempty"`
 }
 
 // reasoningDTO 是 Codex 支持的 effort/summary 推理控制。
@@ -101,6 +133,7 @@ type streamEventDTO struct {
 	ItemID       string          `json:"item_id"`
 	CallID       string          `json:"call_id"`
 	Name         string          `json:"name"`
+	Namespace    string          `json:"namespace"`
 	Delta        string          `json:"delta"`
 	Text         string          `json:"text"`
 	Refusal      string          `json:"refusal"`
@@ -137,11 +170,29 @@ type outputItemDTO struct {
 	Phase            string                `json:"phase"`
 	Content          []outputContentDTO    `json:"content"`
 	Name             string                `json:"name"`
+	Namespace        string                `json:"namespace"`
 	Arguments        string                `json:"arguments"`
 	Input            string                `json:"input"`
 	CallID           string                `json:"call_id"`
 	Summary          []reasoningSummaryDTO `json:"summary"`
 	EncryptedContent string                `json:"encrypted_content"`
+	Action           *webSearchActionDTO   `json:"action"`
+}
+
+// webSearchActionDTO 覆盖 Responses 当前公开的搜索动作联合类型。
+type webSearchActionDTO struct {
+	Type    string                     `json:"type"`
+	Query   string                     `json:"query"`
+	Queries []string                   `json:"queries"`
+	Sources []webSearchActionSourceDTO `json:"sources"`
+	URL     string                     `json:"url"`
+	Pattern string                     `json:"pattern"`
+}
+
+// webSearchActionSourceDTO 是搜索动作返回的公开 URL 来源。
+type webSearchActionSourceDTO struct {
+	Type string `json:"type"`
+	URL  string `json:"url"`
 }
 
 // outputContentDTO 是 Assistant 消息中的完整文本或拒绝块。

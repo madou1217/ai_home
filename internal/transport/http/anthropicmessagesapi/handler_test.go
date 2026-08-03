@@ -234,6 +234,142 @@ func TestHandlerReturnsCanonicalFailureForNonStreamRequest(t *testing.T) {
 	}
 }
 
+// TestHandlerReturnsCanonicalFailureBeforeStreamStarts 验证上游在任何
+// message_start 之前失败时，客户端收到真实 Messages HTTP 错误而不是 502。
+func TestHandlerReturnsCanonicalFailureBeforeStreamStarts(t *testing.T) {
+	t.Parallel()
+
+	failure, err := inference.NewResponseFailure(
+		"rate_limit_error",
+		"Please retry later",
+		true,
+	)
+	if err != nil {
+		t.Fatalf("NewResponseFailure() error = %v", err)
+	}
+	failed, err := inference.NewResponseFailedEvent(0, failure)
+	if err != nil {
+		t.Fatalf("NewResponseFailedEvent() error = %v", err)
+	}
+	executor := newScriptedExecutor(
+		[]inference.StreamEvent{failed},
+		nil,
+	)
+	baseURL, client := startMessagesServer(t, executor, 0)
+	payload := minimalRequestBody(true)
+	response := performMessagesRequest(
+		t,
+		client,
+		http.MethodPost,
+		baseURL+Path,
+		testAPIKey,
+		payload,
+	)
+
+	if response.status != http.StatusTooManyRequests ||
+		!strings.HasPrefix(response.header.Get("Content-Type"), "application/json") ||
+		!strings.Contains(response.body, `"type":"error"`) ||
+		!strings.Contains(response.body, `"type":"rate_limit_error"`) ||
+		!strings.Contains(response.body, `"message":"Please retry later"`) ||
+		strings.Contains(response.body, "event:") {
+		t.Fatalf("pre-stream failure response = %#v", response)
+	}
+	t.Logf(
+		"真实启动前失败 HTTP smoke: POST %s%s payload=%s response=%s",
+		baseURL,
+		Path,
+		payload,
+		response.body,
+	)
+}
+
+// TestHandlerKeepsCanonicalFailureInsideStartedStream 验证 Messages SSE
+// 已提交后不能改写 HTTP 状态，而是保留合法 error 终态。
+func TestHandlerKeepsCanonicalFailureInsideStartedStream(t *testing.T) {
+	t.Parallel()
+
+	started, err := inference.NewResponseStartedEvent(
+		0,
+		"msg_failed_stream",
+		"claude-opus-4-6",
+	)
+	if err != nil {
+		t.Fatalf("NewResponseStartedEvent() error = %v", err)
+	}
+	failure, err := inference.NewResponseFailure(
+		"rate_limit_error",
+		"Please retry later",
+		true,
+	)
+	if err != nil {
+		t.Fatalf("NewResponseFailure() error = %v", err)
+	}
+	failed, err := inference.NewResponseFailedEvent(1, failure)
+	if err != nil {
+		t.Fatalf("NewResponseFailedEvent() error = %v", err)
+	}
+	executor := newScriptedExecutor(
+		[]inference.StreamEvent{started, failed},
+		nil,
+	)
+	baseURL, client := startMessagesServer(t, executor, 0)
+	response := performMessagesRequest(
+		t,
+		client,
+		http.MethodPost,
+		baseURL+Path,
+		testAPIKey,
+		minimalRequestBody(true),
+	)
+
+	names := parseSSEEventNames(response.body)
+	if response.status != http.StatusOK ||
+		response.header.Get("Content-Type") != "text/event-stream" ||
+		strings.Join(names, ",") != "message_start,error" ||
+		!strings.Contains(response.body, `"type":"rate_limit_error"`) ||
+		!strings.Contains(response.body, `"message":"Please retry later"`) {
+		t.Fatalf("started stream failure response = %#v", response)
+	}
+}
+
+// TestHandlerRejectsInvalidFailureBeforeStreamStarts 验证非零起始序号不会
+// 被误认成可信业务失败，仍按损坏的 Canonical 事件流返回 502。
+func TestHandlerRejectsInvalidFailureBeforeStreamStarts(t *testing.T) {
+	t.Parallel()
+
+	failure, err := inference.NewResponseFailure(
+		"rate_limit_error",
+		"Please retry later",
+		true,
+	)
+	if err != nil {
+		t.Fatalf("NewResponseFailure() error = %v", err)
+	}
+	failed, err := inference.NewResponseFailedEvent(1, failure)
+	if err != nil {
+		t.Fatalf("NewResponseFailedEvent() error = %v", err)
+	}
+	executor := newScriptedExecutor(
+		[]inference.StreamEvent{failed},
+		nil,
+	)
+	baseURL, client := startMessagesServer(t, executor, 0)
+	response := performMessagesRequest(
+		t,
+		client,
+		http.MethodPost,
+		baseURL+Path,
+		testAPIKey,
+		minimalRequestBody(true),
+	)
+
+	if response.status != http.StatusBadGateway ||
+		!strings.Contains(response.body, `"type":"api_error"`) ||
+		strings.Contains(response.body, `"type":"rate_limit_error"`) {
+		t.Fatalf("invalid pre-stream failure response = %#v", response)
+	}
+}
+
 // TestHandlerClosesStartedStreamWithErrorWhenTerminalIsMissing 验证断流不会静默成功。
 func TestHandlerClosesStartedStreamWithErrorWhenTerminalIsMissing(t *testing.T) {
 	t.Parallel()

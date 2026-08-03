@@ -40,7 +40,7 @@ type chatMessageWire struct {
 	Role string `json:"role"`
 	// Content 在没有可见文本时显式为 null。
 	Content *string `json:"content"`
-	// ReasoningContent 是可见 reasoning 摘要。
+	// ReasoningContent 是可见 reasoning 摘要或 thinking 文本。
 	ReasoningContent string `json:"reasoning_content,omitempty"`
 	// Refusal 是策略拒绝内容。
 	Refusal string `json:"refusal,omitempty"`

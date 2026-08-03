@@ -21,21 +21,22 @@ type responseDecoder struct {
 
 // decodedItem 保存输出项已经向 Canonical 流提交的状态。
 type decodedItem struct {
-	id             string
-	wireType       string
-	kind           inference.OutputItemKind
-	phase          inference.MessagePhase
-	completed      bool
-	blocks         []*decodedBlock
-	blockBySource  map[string]uint32
-	callID         string
-	name           string
-	arguments      string
-	toolCompleted  bool
-	custom         bool
-	customStarted  bool
-	customInput    string
-	customFinished bool
+	id              string
+	wireType        string
+	kind            inference.OutputItemKind
+	phase           inference.MessagePhase
+	completed       bool
+	blocks          []*decodedBlock
+	blockBySource   map[string]uint32
+	callID          string
+	identity        inference.ToolIdentity
+	arguments       string
+	toolCompleted   bool
+	webSearchAction *inference.WebSearchAction
+	custom          bool
+	customStarted   bool
+	customInput     string
+	customFinished  bool
 }
 
 // decodedBlock 保存一个内容块的累计值和完成状态。

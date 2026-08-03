@@ -12,12 +12,12 @@ import (
 )
 
 const (
-	// chatGPTCodexBaseURL 与官方 Codex rust-v0.145.0 的 OAuth Provider 基址一致。
+	// chatGPTCodexBaseURL 与官方 Codex rust-v0.146.0 的 OAuth Provider 基址一致。
 	chatGPTCodexBaseURL = "https://chatgpt.com/backend-api/codex"
 	// responsesPath 是官方 ResponsesClient 使用的相对端点。
 	responsesPath = "responses"
 	// codexProtocolVersion 固定当前 Adapter 对照过的 Codex Responses 合同版本。
-	codexProtocolVersion = "0.145.0"
+	codexProtocolVersion = "0.146.0"
 	// codexOriginator 与官方 Codex HTTP Client 的默认调用来源一致。
 	codexOriginator = "codex_cli_rs"
 	// codexUserAgent 让上游能够按已验证的协议版本诊断兼容性。

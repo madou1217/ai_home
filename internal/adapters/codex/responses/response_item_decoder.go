@@ -43,12 +43,11 @@ func (decoder *responseDecoder) startItem(
 	}
 	decoder.items = append(decoder.items, item)
 	if item.kind == inference.OutputItemToolCall {
-		toolStarted, toolErr := inference.NewToolCallStartedEvent(
+		toolStarted, toolErr := newCanonicalToolCallStartedEvent(
 			decoder.nextSequence,
 			outputIndex,
-			0,
 			item.callID,
-			item.name,
+			item.identity,
 		)
 		if toolErr != nil {
 			return nil, ErrInvalidUpstreamResponse
@@ -96,6 +95,11 @@ func (decoder *responseDecoder) applyAddedItemSnapshot(
 			item,
 			wire.Arguments,
 		)
+	case inference.OutputItemWebSearch:
+		if wire.Action == nil {
+			return nil
+		}
+		return decoder.completeWebSearchAction(outputIndex, item, *wire.Action)
 	default:
 		return ErrInvalidUpstreamResponse
 	}
@@ -128,8 +132,18 @@ func newDecodedItem(wire outputItemDTO) (*decodedItem, error) {
 		}
 		item.kind = inference.OutputItemToolCall
 		item.callID = wire.CallID
-		item.name = wire.Name
+		identity, err := newResponseToolIdentity(wire.Namespace, wire.Name)
+		if err != nil {
+			return nil, err
+		}
+		item.identity = identity
 		item.custom = wire.Type == "custom_tool_call"
+	case "web_search_call":
+		if wire.Status != "in_progress" && wire.Status != "searching" &&
+			wire.Status != "completed" {
+			return nil, ErrInvalidUpstreamResponse
+		}
+		item.kind = inference.OutputItemWebSearch
 	default:
 		return nil, ErrInvalidUpstreamResponse
 	}
@@ -208,6 +222,12 @@ func (decoder *responseDecoder) reconcileItem(
 		} else {
 			err = decoder.finalizeToolArguments(outputIndex, item, wire.Arguments)
 		}
+	case inference.OutputItemWebSearch:
+		if wire.Status != "completed" || wire.Action == nil {
+			err = ErrInvalidUpstreamResponse
+		} else {
+			err = decoder.completeWebSearchAction(outputIndex, item, *wire.Action)
+		}
 	default:
 		err = ErrInvalidUpstreamResponse
 	}
@@ -239,6 +259,10 @@ func (decoder *responseDecoder) finishItem(
 	}
 	if item.kind == inference.OutputItemToolCall {
 		if !item.toolCompleted {
+			return ErrInvalidUpstreamResponse
+		}
+	} else if item.kind == inference.OutputItemWebSearch {
+		if item.webSearchAction == nil {
 			return ErrInvalidUpstreamResponse
 		}
 	} else if err := decoder.ensureAllBlocksCompleted(item); err != nil {
@@ -274,6 +298,15 @@ func (decoder *responseDecoder) verifyCompletedItem(
 		return verifyCompletedMessageItem(item, wire)
 	case inference.OutputItemReasoning:
 		return verifyCompletedReasoningItem(item, wire)
+	case inference.OutputItemWebSearch:
+		if wire.Status != "completed" || wire.Action == nil {
+			return ErrInvalidUpstreamResponse
+		}
+		action, err := decodeWebSearchAction(*wire.Action)
+		if err != nil || item.webSearchAction == nil || !item.webSearchAction.Equal(action) {
+			return ErrInvalidUpstreamResponse
+		}
+		return nil
 	default:
 		return ErrInvalidUpstreamResponse
 	}
@@ -284,7 +317,8 @@ func verifyCompletedToolItem(
 	item *decodedItem,
 	wire outputItemDTO,
 ) error {
-	if item.callID != wire.CallID || item.name != wire.Name {
+	identity, err := newResponseToolIdentity(wire.Namespace, wire.Name)
+	if err != nil || item.callID != wire.CallID || item.identity != identity {
 		return ErrInvalidUpstreamResponse
 	}
 	expected := wire.Arguments
@@ -299,6 +333,109 @@ func verifyCompletedToolItem(
 		return ErrInvalidUpstreamResponse
 	}
 	return nil
+}
+
+// completeWebSearchAction 提交一次完整搜索动作并保证重复快照一致。
+func (decoder *responseDecoder) completeWebSearchAction(
+	outputIndex uint32,
+	item *decodedItem,
+	wire webSearchActionDTO,
+) error {
+	action, err := decodeWebSearchAction(wire)
+	if err != nil {
+		return err
+	}
+	if item.webSearchAction != nil {
+		if !item.webSearchAction.Equal(action) {
+			return ErrInvalidUpstreamResponse
+		}
+		return nil
+	}
+	event, err := inference.NewWebSearchActionCompletedEvent(
+		decoder.nextSequence,
+		outputIndex,
+		action,
+	)
+	if err != nil {
+		return ErrInvalidUpstreamResponse
+	}
+	if err := decoder.emitEvent(event); err != nil {
+		return err
+	}
+	item.webSearchAction = &action
+	return nil
+}
+
+// decodeWebSearchAction 解码 Responses 公开的 search/open/find 联合类型。
+func decodeWebSearchAction(wire webSearchActionDTO) (inference.WebSearchAction, error) {
+	var (
+		action inference.WebSearchAction
+		err    error
+	)
+	switch wire.Type {
+	case "search":
+		sources := make([]string, len(wire.Sources))
+		for index, source := range wire.Sources {
+			if source.Type != "url" {
+				return inference.WebSearchAction{}, ErrInvalidUpstreamResponse
+			}
+			sources[index] = source.URL
+		}
+		action, err = inference.NewWebSearchAction(wire.Query, wire.Queries, sources)
+	case "open_page":
+		action, err = inference.NewWebOpenPageAction(wire.URL)
+	case "find_in_page":
+		action, err = inference.NewWebFindInPageAction(wire.URL, wire.Pattern)
+	default:
+		err = ErrInvalidUpstreamResponse
+	}
+	if err != nil {
+		return inference.WebSearchAction{}, ErrInvalidUpstreamResponse
+	}
+	return action, nil
+}
+
+// newResponseToolIdentity 从 Responses 可选 namespace 恢复完整工具身份。
+func newResponseToolIdentity(namespace string, name string) (inference.ToolIdentity, error) {
+	var (
+		identity inference.ToolIdentity
+		err      error
+	)
+	if namespace == "" {
+		identity, err = inference.NewToolIdentity(name)
+	} else {
+		identity, err = inference.NewNamespacedToolIdentity(namespace, name)
+	}
+	if err != nil {
+		return inference.ToolIdentity{}, ErrInvalidUpstreamResponse
+	}
+	return identity, nil
+}
+
+// newCanonicalToolCallStartedEvent 用完整身份选择普通或 namespaced 构造器。
+func newCanonicalToolCallStartedEvent(
+	sequence uint64,
+	outputIndex uint32,
+	callID string,
+	identity inference.ToolIdentity,
+) (inference.ToolCallStartedEvent, error) {
+	if namespace, found := identity.Namespace(); found {
+		return inference.NewNamespacedToolCallStartedEvent(
+			sequence,
+			outputIndex,
+			0,
+			callID,
+			namespace,
+			identity.Name(),
+		)
+	}
+	return inference.NewToolCallStartedEvent(
+		sequence,
+		outputIndex,
+		0,
+		callID,
+		identity.Name(),
+	)
 }
 
 // verifyCompletedBlock 校验终态快照中的已知块没有改变。

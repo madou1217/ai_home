@@ -424,9 +424,9 @@ func TestNewAdapterRejectsMissingDependencies(t *testing.T) {
 	}
 }
 
-// TestCoordinatorSkipsOfficialOAuthBeforeAdapter 验证错误的 Go 直连路径
-// 在账号征召阶段停止，不触网、不产出事件，也不写账号运行态。
-func TestCoordinatorSkipsOfficialOAuthBeforeAdapter(t *testing.T) {
+// TestCoordinatorExecutesOfficialOAuthWithNativeContract 验证官方 OAuth 可由
+// Go Messages Adapter 直接执行，且不会退化成 API Key 合同。
+func TestCoordinatorExecutesOfficialOAuthWithNativeContract(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -472,7 +472,13 @@ func TestCoordinatorSkipsOfficialOAuthBeforeAdapter(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			client := &claudeRecordingHTTPClient{}
+			client := &claudeRecordingHTTPClient{
+				response: claudeHTTPResponse(
+					http.StatusOK,
+					"text/event-stream; charset=utf-8",
+					successfulClaudeStream(),
+				),
+			}
 			fixture := newClaudeAdapterFixtureWithCredential(
 				t,
 				client,
@@ -488,11 +494,17 @@ func TestCoordinatorSkipsOfficialOAuthBeforeAdapter(t *testing.T) {
 					return nil
 				},
 			)
-			if !errors.Is(err, inferencegateway.ErrNoRoutableAccount) ||
-				client.calls != 0 ||
-				fixture.recorder.successes != 0 ||
+			if err != nil ||
+				client.calls != 1 ||
+				fixture.recorder.successes != 1 ||
 				len(fixture.recorder.failures) != 0 ||
-				len(events) != 0 {
+				completedClaudeText(events) != "adapter-ok" ||
+				client.request == nil ||
+				client.request.Header.Get("Authorization") == "" ||
+				client.request.Header.Get("x-api-key") != "" ||
+				client.request.Header.Get("x-app") != "cli" ||
+				client.request.Header.Get("User-Agent") != nativeClaudeUserAgent ||
+				client.request.URL.Query().Get("beta") != "true" {
 				t.Fatalf(
 					"error=%v calls=%d successes=%d failures=%d events=%s",
 					err,
@@ -506,9 +518,9 @@ func TestCoordinatorSkipsOfficialOAuthBeforeAdapter(t *testing.T) {
 	}
 }
 
-// TestCoordinatorSkipsOAuthAndFairlyRotatesAPIKeys 验证混合账号池中官方 OAuth
-// 不进入 Messages 直连，同时两个 API Key 在连续请求中公平轮转。
-func TestCoordinatorSkipsOAuthAndFairlyRotatesAPIKeys(t *testing.T) {
+// TestCoordinatorFairlyRotatesOAuthAndAPIKeys 验证混合账号池中的四个账号
+// 都进入公平轮转，同时认证 Header 保持互斥。
+func TestCoordinatorFairlyRotatesOAuthAndAPIKeys(t *testing.T) {
 	t.Parallel()
 
 	coordinator, client, recorder := newClaudeFairCoordinator(t)
@@ -523,8 +535,9 @@ func TestCoordinatorSkipsOAuthAndFairlyRotatesAPIKeys(t *testing.T) {
 	}
 	counts := client.APIKeyCounts()
 	if client.CallCount() != 20 ||
-		counts["synthetic-claude-fair-key-1"] != 10 ||
-		counts["synthetic-claude-fair-key-2"] != 10 ||
+		client.BearerCount() != 10 ||
+		counts["synthetic-claude-fair-key-1"] != 5 ||
+		counts["synthetic-claude-fair-key-2"] != 5 ||
 		len(counts) != 2 ||
 		recorder.successes != 20 ||
 		len(recorder.failures) != 0 {
@@ -536,7 +549,12 @@ func TestCoordinatorSkipsOAuthAndFairlyRotatesAPIKeys(t *testing.T) {
 			len(recorder.failures),
 		)
 	}
-	t.Logf("requests=%d api_key_distribution=%v oauth_upstream_calls=0", 20, counts)
+	t.Logf(
+		"requests=%d api_key_distribution=%v oauth_upstream_calls=%d",
+		20,
+		counts,
+		client.BearerCount(),
+	)
 }
 
 // claudeAdapterFixture 保存真实 Coordinator 和测试记录端口。
@@ -839,9 +857,10 @@ type claudeRecordingHTTPClient struct {
 
 // claudeFairHTTPClient 为每次调用创建独立成功响应并统计实际 API Key。
 type claudeFairHTTPClient struct {
-	mu      sync.Mutex
-	calls   int
-	apiKeys map[string]int
+	mu          sync.Mutex
+	calls       int
+	bearerCalls int
+	apiKeys     map[string]int
 }
 
 // Do 记录真正越过传输策略的凭据并返回可重复消费的成功流。
@@ -851,7 +870,11 @@ func (client *claudeFairHTTPClient) Do(request *http.Request) (*http.Response, e
 	if client.apiKeys == nil {
 		client.apiKeys = make(map[string]int)
 	}
-	client.apiKeys[request.Header.Get("x-api-key")]++
+	if apiKey := request.Header.Get("x-api-key"); apiKey != "" {
+		client.apiKeys[apiKey]++
+	} else if request.Header.Get("Authorization") != "" {
+		client.bearerCalls++
+	}
 	client.mu.Unlock()
 	return claudeHTTPResponse(
 		http.StatusOK,
@@ -865,6 +888,13 @@ func (client *claudeFairHTTPClient) CallCount() int {
 	client.mu.Lock()
 	defer client.mu.Unlock()
 	return client.calls
+}
+
+// BearerCount 返回官方 OAuth 进入原生 Bearer 合同的次数。
+func (client *claudeFairHTTPClient) BearerCount() int {
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	return client.bearerCalls
 }
 
 // APIKeyCounts 返回不暴露内部 Map 的 API Key 命中分布。

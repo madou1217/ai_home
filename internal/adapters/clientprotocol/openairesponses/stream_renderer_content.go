@@ -83,6 +83,33 @@ func (renderer *StreamRenderer) renderTextCompleted(
 	return append(frames, done...), err
 }
 
+// renderURLCitationAdded 生成 Responses 标准的网页引用增量事件。
+func (renderer *StreamRenderer) renderURLCitationAdded(
+	event inference.URLCitationAddedEvent,
+) ([]RenderedEvent, error) {
+	item, err := renderer.state.openItem(event.OutputIndex())
+	if err != nil {
+		return nil, err
+	}
+	block, err := renderer.state.block(event.OutputIndex(), event.BlockIndex())
+	if err != nil || len(block.citations) == 0 {
+		return nil, ErrInvalidEventSequence
+	}
+	annotationIndex := uint32(len(block.citations) - 1)
+	annotation, err := json.Marshal(newURLCitationWire(event.Citation()))
+	if err != nil {
+		return nil, ErrUnsupportedResponseEvent
+	}
+	return renderer.renderMany(streamEventWireDTO{
+		Type:            "response.output_text.annotation.added",
+		OutputIndex:     uint32Pointer(event.OutputIndex()),
+		ContentIndex:    uint32Pointer(event.BlockIndex()),
+		ItemID:          item.id,
+		AnnotationIndex: uint32Pointer(annotationIndex),
+		Annotation:      annotation,
+	})
+}
+
 // renderRefusalDelta 生成一个 refusal 增量事件。
 func (renderer *StreamRenderer) renderRefusalDelta(
 	event inference.RefusalDeltaEvent,

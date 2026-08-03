@@ -73,23 +73,31 @@ func (state *responseState) completeBlockText(
 func (state *responseState) appendReasoning(
 	event inference.ReasoningDeltaEvent,
 ) error {
-	if event.DeltaKind() != inference.ReasoningDeltaThinking {
+	switch event.DeltaKind() {
+	case inference.ReasoningDeltaSignature:
+		// 签名由 Canonical 终值校验，Chat 线协议没有对应公开字段。
+		return nil
+	case inference.ReasoningDeltaThinking:
+		return state.appendBlockText(
+			event.OutputIndex(),
+			event.BlockIndex(),
+			inference.ContentReasoning,
+			event.Delta(),
+		)
+	default:
 		return ErrUnsupportedResponseEvent
 	}
-	return state.appendBlockText(
-		event.OutputIndex(),
-		event.BlockIndex(),
-		inference.ContentReasoning,
-		event.Delta(),
-	)
 }
 
-// completeReasoning 只接受可见摘要，拒绝签名或加密连续性。
+// completeReasoning 投影可见摘要或 thinking 文本，拒绝不可读加密连续性。
+// Chat 没有签名字段，因此只输出其公开 reasoning_content 文本。
 func (state *responseState) completeReasoning(
 	event inference.ReasoningCompletedEvent,
 ) error {
 	content := event.Content()
-	if content.ReasoningKind() != inference.ReasoningSummary {
+	kind := content.ReasoningKind()
+	if kind != inference.ReasoningSummary &&
+		kind != inference.ReasoningThinking {
 		return ErrUnsupportedResponseEvent
 	}
 	return state.completeBlockText(

@@ -234,6 +234,9 @@ func (app *App) Run(
 	if err != nil {
 		return fmt.Errorf("解析 Provider CLI 命令失败: %w", err)
 	}
+	if !supportedCLIProvider(intent.RelayProviderID()) {
+		return fmt.Errorf("%w: 当前 Relay 只支持 codex 和 claude", ErrInvalidRunRequest)
+	}
 	var endpoint providerlaunch.GatewayEndpoint
 	if intent.Mode() == providerlaunch.LaunchModeGatewayRelay {
 		endpoint, err = providerlaunch.NewGatewayEndpoint(gateway.BaseURL, gateway.ClientKey)

@@ -57,9 +57,8 @@ func (*Adapter) ProtocolID() inference.ProtocolID {
 	return inference.ProtocolClaudeMessages
 }
 
-// SupportsCredential 只接受能够由 Go Messages 协议直接承载的 Claude 凭据。
-//
-// 官方订阅 OAuth 必须继续走 Native Relay，不能被降级成普通 Bearer 请求。
+// SupportsCredential 只接受能够由 Go Messages Adapter 精确承载的 Claude 凭据。
+// 官方订阅 OAuth 通过原生 Claude Code HTTP 外层合同发送。
 func (adapter *Adapter) SupportsCredential(
 	credential accountapp.Credential,
 ) bool {
@@ -139,6 +138,7 @@ func (adapter *Adapter) Execute(
 			observedAt,
 			effectiveModel,
 			emit,
+			encoded.toolNames,
 		)
 	}
 	mediaType, _, err := mime.ParseMediaType(rawMediaType)
@@ -152,6 +152,7 @@ func (adapter *Adapter) Execute(
 			observedAt,
 			effectiveModel,
 			emit,
+			encoded.toolNames,
 		)
 	case "application/json":
 		return adapter.executeJSONResponse(
@@ -159,6 +160,7 @@ func (adapter *Adapter) Execute(
 			observedAt,
 			effectiveModel,
 			emit,
+			encoded.toolNames,
 		)
 	default:
 		if isJSONMediaType(mediaType) {
@@ -167,6 +169,7 @@ func (adapter *Adapter) Execute(
 				observedAt,
 				effectiveModel,
 				emit,
+				encoded.toolNames,
 			)
 		}
 		return malformedAttempt()
@@ -203,8 +206,9 @@ func (adapter *Adapter) executeEventStream(
 	observedAt time.Time,
 	effectiveModel string,
 	emit inferencegateway.EventSink,
+	toolNames toolNameMapper,
 ) (inferencegateway.AttemptResult, error) {
-	decoder, err := newResponseDecoder(effectiveModel, emit)
+	decoder, err := newResponseDecoder(effectiveModel, emit, toolNames)
 	if err != nil {
 		return inferencegateway.AttemptResult{}, err
 	}
@@ -266,6 +270,7 @@ func (adapter *Adapter) executeJSONResponse(
 	observedAt time.Time,
 	effectiveModel string,
 	emit inferencegateway.EventSink,
+	toolNames toolNameMapper,
 ) (inferencegateway.AttemptResult, error) {
 	payload, err := readBoundedJSON(response.Body)
 	if err != nil {
@@ -289,7 +294,7 @@ func (adapter *Adapter) executeJSONResponse(
 	if !errors.Is(observeErr, sharedfailure.ErrNoFailureEvidence) {
 		return malformedAttempt()
 	}
-	decoder, err := newResponseDecoder(effectiveModel, emit)
+	decoder, err := newResponseDecoder(effectiveModel, emit, toolNames)
 	if err != nil {
 		return inferencegateway.AttemptResult{}, err
 	}

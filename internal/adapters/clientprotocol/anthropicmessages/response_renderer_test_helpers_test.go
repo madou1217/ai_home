@@ -261,11 +261,11 @@ func newRedactedResponseEvents(t *testing.T) []inference.StreamEvent {
 	if err != nil {
 		t.Fatalf("NewContentBlockStartedEvent() error = %v", err)
 	}
-	encrypted, err := inference.NewEncryptedReasoningContent("encrypted_exact_1")
+	redacted, err := inference.NewRedactedReasoningContent("encrypted_exact_1")
 	if err != nil {
-		t.Fatalf("NewEncryptedReasoningContent() error = %v", err)
+		t.Fatalf("NewRedactedReasoningContent() error = %v", err)
 	}
-	reasoningCompleted, err := inference.NewReasoningCompletedEvent(3, 0, 0, encrypted)
+	reasoningCompleted, err := inference.NewReasoningCompletedEvent(3, 0, 0, redacted)
 	if err != nil {
 		t.Fatalf("NewReasoningCompletedEvent() error = %v", err)
 	}

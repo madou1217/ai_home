@@ -30,14 +30,16 @@ const (
 // LaunchIntent 是 CLI 路由层解析后的不可变命令意图。
 //
 // 命令合同：
-//   - aih <provider>                     -> Gateway 账号池
-//   - aih <provider> relay <account_id>  -> Gateway 固定账号
-//   - aih <provider> <account_id>        -> Native Direct
+//   - aih <client_provider>                                  -> Gateway 账号池
+//   - aih <client_provider> relay <account_id>               -> Gateway 同 Provider 固定账号
+//   - aih <client_provider> relay <relay_provider> <account_id> -> Gateway 跨 Provider 固定账号
+//   - aih <client_provider> <account_id>                     -> Native Direct
 type LaunchIntent struct {
-	mode         LaunchMode
-	providerID   string
-	cliAccountID accountcore.CLIAccountID
-	arguments    []string
+	mode             LaunchMode
+	clientProviderID string
+	relayProviderID  string
+	cliAccountID     accountcore.CLIAccountID
+	arguments        []string
 }
 
 // ParseLaunchIntent 使用首个业务 token 一次性区分 Gateway 与 Native，避免下层重新猜测。
@@ -60,10 +62,21 @@ func ParseLaunchIntent(
 	}
 
 	mode := LaunchModeGatewayRelay
+	relayProviderID := providerID
 	var cliAccountID accountcore.CLIAccountID
 	forwardArguments := arguments
 	if len(arguments) > 0 && arguments[0] == "relay" {
 		forwardArguments = arguments[1:]
+		if len(forwardArguments) > 0 && isCanonicalProviderToken(catalog, forwardArguments[0]) {
+			relayProviderID = forwardArguments[0]
+			forwardArguments = forwardArguments[1:]
+			if len(forwardArguments) == 0 || !isDecimalAccountID(forwardArguments[0]) {
+				return LaunchIntent{}, ErrInvalidLaunchIntent
+			}
+		} else if len(forwardArguments) > 1 && isDecimalAccountID(forwardArguments[1]) {
+			// “Provider + 数字别名”形态只能使用目录中的规范 Provider，禁止把拼写错误降级为 CLI 参数。
+			return LaunchIntent{}, ErrInvalidLaunchIntent
+		}
 		if len(forwardArguments) > 0 && isDecimalAccountID(forwardArguments[0]) {
 			parsed, err := accountcore.ParseCLIAccountID(forwardArguments[0])
 			if err != nil {
@@ -83,10 +96,11 @@ func ParseLaunchIntent(
 	}
 
 	intent := LaunchIntent{
-		mode:         mode,
-		providerID:   providerID,
-		cliAccountID: cliAccountID,
-		arguments:    append([]string(nil), forwardArguments...),
+		mode:             mode,
+		clientProviderID: providerID,
+		relayProviderID:  relayProviderID,
+		cliAccountID:     cliAccountID,
+		arguments:        append([]string(nil), forwardArguments...),
 	}
 	if !intent.IsValid() {
 		return LaunchIntent{}, ErrInvalidLaunchIntent
@@ -99,9 +113,14 @@ func (intent LaunchIntent) Mode() LaunchMode {
 	return intent.mode
 }
 
-// ProviderID 返回规范 Provider 标识。
-func (intent LaunchIntent) ProviderID() string {
-	return intent.providerID
+// ClientProviderID 返回决定官方 CLI 和下游协议的 Provider。
+func (intent LaunchIntent) ClientProviderID() string {
+	return intent.clientProviderID
+}
+
+// RelayProviderID 返回决定账号归属和上游 Adapter 的 Provider。
+func (intent LaunchIntent) RelayProviderID() string {
+	return intent.relayProviderID
 }
 
 // CLIAccountID 返回显式账号别名；Gateway 账号池模式返回零值。
@@ -125,18 +144,23 @@ func (intent LaunchIntent) NativeSelectionRequest() (accountapp.LaunchSelectionR
 		return accountapp.LaunchSelectionRequest{}, ErrLaunchModeMismatch
 	}
 	return accountapp.LaunchSelectionRequest{
-		ProviderID:   intent.providerID,
+		ProviderID:   intent.clientProviderID,
 		CLIAccountID: intent.cliAccountID,
 	}, nil
 }
 
 // IsValid 验证两种模式各自的账号约束和参数安全性。
 func (intent LaunchIntent) IsValid() bool {
-	if !isDescriptorToken(intent.providerID) ||
+	if !isDescriptorToken(intent.clientProviderID) ||
+		!isDescriptorToken(intent.relayProviderID) ||
 		(intent.mode != LaunchModeGatewayRelay && intent.mode != LaunchModeNativeDirect) {
 		return false
 	}
-	if intent.mode == LaunchModeNativeDirect && !intent.cliAccountID.IsValid() {
+	if intent.mode == LaunchModeNativeDirect {
+		if !intent.cliAccountID.IsValid() || intent.relayProviderID != intent.clientProviderID {
+			return false
+		}
+	} else if !intent.cliAccountID.IsValid() && intent.relayProviderID != intent.clientProviderID {
 		return false
 	}
 	for _, argument := range intent.arguments {
@@ -150,13 +174,20 @@ func (intent LaunchIntent) IsValid() bool {
 // String 返回不含用户 prompt 和 Provider 参数正文的安全意图摘要。
 func (intent LaunchIntent) String() string {
 	return fmt.Sprintf(
-		"providerlaunch.LaunchIntent{mode=%s,provider=%s,cli_id=%d,pinned=%t,args=%d}",
+		"providerlaunch.LaunchIntent{mode=%s,client_provider=%s,relay_provider=%s,cli_id=%d,pinned=%t,args=%d}",
 		intent.mode,
-		intent.providerID,
+		intent.clientProviderID,
+		intent.relayProviderID,
 		intent.cliAccountID,
 		intent.HasPinnedAccount(),
 		len(intent.arguments),
 	)
+}
+
+// isCanonicalProviderToken 只把目录中的规范 ID 解释为 Relay Provider。
+func isCanonicalProviderToken(catalog *providers.Catalog, value string) bool {
+	canonical, found := catalog.CanonicalID(value)
+	return found && canonical == value
 }
 
 // GoString 确保 %#v 不会反射用户参数。

@@ -28,6 +28,7 @@ import (
 	"github.com/madou1217/ai_home/core/accounts/claude"
 	"github.com/madou1217/ai_home/core/providers"
 	claudecli "github.com/madou1217/ai_home/internal/adapters/claude/clilaunch"
+	codexcli "github.com/madou1217/ai_home/internal/adapters/codex/clilaunch"
 )
 
 const (
@@ -374,6 +375,68 @@ func TestClaudeProxyRuntimesKeepRealSecretsOutOfChildEnvironment(t *testing.T) {
 	})
 }
 
+// TestRunnerUsesClientProviderForCrossProviderRelay 验证 Codex 到 Claude 的 Relay 仍启动 Codex，并保留 Claude 固定账号。
+func TestRunnerUsesClientProviderForCrossProviderRelay(t *testing.T) {
+	catalog := testProviderCatalog(t)
+	auth, err := claude.NewAPIKeyAuth(claude.APIKeyInput{APIKey: "synthetic-cross-provider-key"})
+	if err != nil {
+		t.Fatalf("NewAPIKeyAuth() error = %v", err)
+	}
+	accountID, err := accountcore.NewCLIAccountID(9)
+	if err != nil {
+		t.Fatalf("NewCLIAccountID() error = %v", err)
+	}
+	account, err := accountcore.NewAccount(catalog, accountcore.NewAccountInput{
+		Identity: auth, CLIAccountID: accountID, CreatedAt: time.UnixMilli(1_700_000_000_000).UTC(),
+	})
+	if err != nil {
+		t.Fatalf("NewAccount() error = %v", err)
+	}
+	gateway, err := providerlaunch.NewGatewayPlanner(providerlaunch.GatewayDependencies{
+		Accounts:   fixedGatewayAccountResolver{account: account},
+		Strategies: []providerlaunch.GatewayStrategy{codexcli.NewGatewayStrategy()},
+	})
+	if err != nil {
+		t.Fatalf("NewGatewayPlanner() error = %v", err)
+	}
+	service, err := providerlaunch.NewService(providerlaunch.ServiceDependencies{
+		Native:  unreachableNativeBuilder{},
+		Gateway: gateway,
+	})
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	intent, err := providerlaunch.ParseLaunchIntent(
+		catalog,
+		"codex",
+		[]string{"relay", "claude", "9", "--model", "claude-opus-5"},
+	)
+	if err != nil {
+		t.Fatalf("ParseLaunchIntent() error = %v", err)
+	}
+	endpoint, err := providerlaunch.NewGatewayEndpoint("http://127.0.0.1:9527", testGatewayKey)
+	if err != nil {
+		t.Fatalf("NewGatewayEndpoint() error = %v", err)
+	}
+	plan, err := service.Plan(context.Background(), intent, endpoint)
+	if err != nil {
+		t.Fatalf("Plan() error = %v", err)
+	}
+
+	processes := &completedProcessFactory{}
+	runner := newTestRunner(t, &recordingCredentialRefresher{}, processes)
+	if err := runner.Run(context.Background(), plan, intent.Arguments()); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	environment := environmentMap(processes.spec.env)
+	if processes.calls != 1 || processes.spec.path != "/official/codex" ||
+		!containsArgumentPair(processes.spec.args, "--model", "claude-opus-5") ||
+		environment["AIH_GATEWAY_ACCOUNT_REF"] != account.Ref().String() ||
+		environment["CODEX_HOME"] != "/shared/codex" {
+		t.Fatalf("process path=%q args=%v envKeys=%v", processes.spec.path, processes.spec.args, environmentKeys(environment))
+	}
+}
+
 func newClaudeOAuthFixture(t *testing.T, accessToken string) *claude.OAuthAuth {
 	t.Helper()
 	auth, err := claude.NewOAuthAuth(claude.OAuthInput{
@@ -464,6 +527,13 @@ func (resolver fixedGatewayAccountResolver) GetByCLIAccountID(context.Context, s
 	return resolver.account, nil
 }
 
+// unreachableNativeBuilder 保证跨 Provider Gateway 测试不会越界进入 Native 分支。
+type unreachableNativeBuilder struct{}
+
+func (unreachableNativeBuilder) Build(context.Context, accountapp.LaunchSelectionRequest) (providerlaunch.LaunchSpec, error) {
+	return providerlaunch.LaunchSpec{}, errors.New("不应调用 Native 规划器")
+}
+
 func testProviderCatalog(t *testing.T) *providers.Catalog {
 	t.Helper()
 	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
@@ -486,6 +556,25 @@ func (factory *capturingProcessFactory) Start(_ context.Context, spec processSpe
 	factory.started <- spec
 	return newBlockingProcess(), nil
 }
+
+// completedProcessFactory 同步捕获一次直接进程启动。
+type completedProcessFactory struct {
+	spec  processSpec
+	calls int
+}
+
+func (factory *completedProcessFactory) Start(_ context.Context, spec processSpec) (processHandle, error) {
+	factory.calls++
+	factory.spec = spec
+	return completedProcess{}, nil
+}
+
+// completedProcess 表示已正常退出的官方 CLI 测试进程。
+type completedProcess struct{}
+
+func (completedProcess) Wait() error            { return nil }
+func (completedProcess) Signal(os.Signal) error { return nil }
+func (completedProcess) Kill() error            { return nil }
 
 // blockingProcess 模拟持续运行直到收到 Signal 或 Kill 的官方 CLI。
 type blockingProcess struct {
@@ -543,4 +632,14 @@ func environmentKeys(values map[string]string) []string {
 		result = append(result, name)
 	}
 	return result
+}
+
+// containsArgumentPair 判断官方参数中是否存在相邻的名称和值。
+func containsArgumentPair(arguments []string, name string, value string) bool {
+	for index := 0; index+1 < len(arguments); index++ {
+		if arguments[index] == name && arguments[index+1] == value {
+			return true
+		}
+	}
+	return false
 }

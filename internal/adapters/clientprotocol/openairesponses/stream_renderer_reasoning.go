@@ -6,6 +6,11 @@ import "github.com/madou1217/ai_home/core/inference"
 func (renderer *StreamRenderer) renderReasoningDelta(
 	event inference.ReasoningDeltaEvent,
 ) ([]RenderedEvent, error) {
+	if event.DeltaKind() == inference.ReasoningDeltaSignature {
+		// Responses 没有签名增量事件；签名已进入聚合状态，
+		// 并将在终态 reasoning item 中作为 encrypted_content 输出。
+		return nil, nil
+	}
 	frames, err := renderer.ensureReasoningSummaryAdded(
 		event.OutputIndex(),
 		event.BlockIndex(),

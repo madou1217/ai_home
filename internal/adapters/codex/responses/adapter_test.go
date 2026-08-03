@@ -62,7 +62,7 @@ func TestAdapterExecutesThroughCoordinator(t *testing.T) {
 		request.URL.String() != "https://upstream.example/v1/responses" ||
 		request.Header.Get("Authorization") !=
 			"Bearer synthetic-adapter-api-key" ||
-		request.Header.Get("Version") != "0.145.0" ||
+		request.Header.Get("Version") != "0.146.0" ||
 		request.Header.Get(responsesLiteHeader) != "true" {
 		t.Fatalf("upstream request = %#v", request)
 	}

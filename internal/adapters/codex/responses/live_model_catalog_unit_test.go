@@ -38,7 +38,7 @@ func TestBuildRealCodexModelsRequestProjectsOAuthContract(t *testing.T) {
 	}
 	if request.Method != http.MethodGet ||
 		request.URL.String() !=
-			"https://chatgpt.com/backend-api/codex/models?client_version=0.145.0" ||
+			"https://chatgpt.com/backend-api/codex/models?client_version=0.146.0" ||
 		request.Header.Get("Authorization") != "Bearer oauth-secret" ||
 		request.Header.Get("ChatGPT-Account-ID") != "workspace-1" ||
 		request.Header.Get("X-OpenAI-Fedramp") != "true" ||

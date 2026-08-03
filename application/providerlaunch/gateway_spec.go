@@ -117,7 +117,8 @@ func (result GatewayStrategyResult) IsValid() bool {
 
 // GatewayLaunchSpec 是账号池或固定账号最终不可变启动描述。
 type GatewayLaunchSpec struct {
-	providerID                string
+	clientProviderID          string
+	relayProviderID           string
 	accountRef                accountcore.AccountRef
 	cliAccountID              accountcore.CLIAccountID
 	binary                    string
@@ -133,12 +134,13 @@ func newGatewayLaunchSpec(
 	result GatewayStrategyResult,
 ) (GatewayLaunchSpec, error) {
 	if !intent.IsValid() || intent.Mode() != LaunchModeGatewayRelay ||
-		!result.IsValid() || intent.ProviderID() != result.providerID ||
+		!result.IsValid() || intent.ClientProviderID() != result.providerID ||
 		(intent.HasPinnedAccount() != accountRef.IsValid()) {
 		return GatewayLaunchSpec{}, ErrInvalidGatewayLaunchSpec
 	}
 	spec := GatewayLaunchSpec{
-		providerID:                intent.ProviderID(),
+		clientProviderID:          intent.ClientProviderID(),
+		relayProviderID:           intent.RelayProviderID(),
 		accountRef:                accountRef,
 		cliAccountID:              intent.CLIAccountID(),
 		binary:                    result.binary,
@@ -157,9 +159,14 @@ func (spec GatewayLaunchSpec) Mode() LaunchMode {
 	return LaunchModeGatewayRelay
 }
 
-// ProviderID 返回官方 CLI Provider。
-func (spec GatewayLaunchSpec) ProviderID() string {
-	return spec.providerID
+// ClientProviderID 返回决定官方 CLI 和下游协议的 Provider。
+func (spec GatewayLaunchSpec) ClientProviderID() string {
+	return spec.clientProviderID
+}
+
+// RelayProviderID 返回固定账号所属的上游 Provider。
+func (spec GatewayLaunchSpec) RelayProviderID() string {
+	return spec.relayProviderID
 }
 
 // PinnedAccount 返回固定账号身份；账号池模式返回 false。
@@ -190,8 +197,10 @@ func (spec GatewayLaunchSpec) Environment() EnvironmentPatch {
 // IsValid 判断账号池和固定账号字段是否成对，并复核共享状态不变量。
 func (spec GatewayLaunchSpec) IsValid() bool {
 	pinned := spec.accountRef.IsValid()
-	return isDescriptorToken(spec.providerID) &&
+	return isDescriptorToken(spec.clientProviderID) &&
+		isDescriptorToken(spec.relayProviderID) &&
 		pinned == spec.cliAccountID.IsValid() &&
+		(pinned || spec.clientProviderID == spec.relayProviderID) &&
 		(spec.accountRef == "" || pinned) &&
 		isBinaryName(spec.binary) &&
 		validSubcommands(spec.argumentsAfterSubcommands) &&
@@ -203,9 +212,10 @@ func (spec GatewayLaunchSpec) IsValid() bool {
 // String 返回不含客户端密钥和参数正文的安全摘要。
 func (spec GatewayLaunchSpec) String() string {
 	return fmt.Sprintf(
-		"providerlaunch.GatewayLaunchSpec{mode=%s,provider=%s,account=%s,cli_id=%d,pinned=%t,binary=%s,args=%d,args_after=%v,env_set=%v,env_unset=%v}",
+		"providerlaunch.GatewayLaunchSpec{mode=%s,client_provider=%s,relay_provider=%s,account=%s,cli_id=%d,pinned=%t,binary=%s,args=%d,args_after=%v,env_set=%v,env_unset=%v}",
 		LaunchModeGatewayRelay,
-		spec.providerID,
+		spec.clientProviderID,
+		spec.relayProviderID,
 		spec.accountRef,
 		spec.cliAccountID,
 		spec.accountRef.IsValid(),

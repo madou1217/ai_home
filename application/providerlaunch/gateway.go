@@ -190,7 +190,7 @@ func (planner *GatewayPlanner) Build(
 	if err := ctx.Err(); err != nil {
 		return GatewayLaunchSpec{}, err
 	}
-	strategy, found := planner.strategies[intent.ProviderID()]
+	strategy, found := planner.strategies[intent.ClientProviderID()]
 	if !found {
 		return GatewayLaunchSpec{}, ErrStrategyNotFound
 	}
@@ -199,14 +199,14 @@ func (planner *GatewayPlanner) Build(
 	if intent.HasPinnedAccount() {
 		account, err := planner.accounts.GetByCLIAccountID(
 			ctx,
-			intent.ProviderID(),
+			intent.RelayProviderID(),
 			intent.CLIAccountID(),
 		)
 		if err != nil {
 			return GatewayLaunchSpec{}, err
 		}
 		if !account.IsValid() ||
-			account.ProviderID() != intent.ProviderID() ||
+			account.ProviderID() != intent.RelayProviderID() ||
 			account.CLIAccountID() != intent.CLIAccountID() {
 			return GatewayLaunchSpec{}, ErrGatewayAccountMismatch
 		}
@@ -223,7 +223,7 @@ func (planner *GatewayPlanner) Build(
 	if err != nil {
 		return GatewayLaunchSpec{}, err
 	}
-	if result.ProviderID() != intent.ProviderID() {
+	if result.ProviderID() != intent.ClientProviderID() {
 		return GatewayLaunchSpec{}, ErrInvalidGatewayStrategyResult
 	}
 	return newGatewayLaunchSpec(intent, accountRef, result)

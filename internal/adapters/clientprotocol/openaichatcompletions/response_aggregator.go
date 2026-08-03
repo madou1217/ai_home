@@ -48,12 +48,10 @@ func (aggregator *ResponseAggregator) Marshal() ([]byte, error) {
 // validateSupportedResponseEvent 在修改状态前拒绝无法无损表达的事件。
 func validateSupportedResponseEvent(event inference.StreamEvent) error {
 	switch typed := event.(type) {
-	case inference.ReasoningDeltaEvent:
-		if typed.DeltaKind() != inference.ReasoningDeltaThinking {
-			return ErrUnsupportedResponseEvent
-		}
 	case inference.ReasoningCompletedEvent:
-		if typed.Content().ReasoningKind() != inference.ReasoningSummary {
+		kind := typed.Content().ReasoningKind()
+		if kind != inference.ReasoningSummary &&
+			kind != inference.ReasoningThinking {
 			return ErrUnsupportedResponseEvent
 		}
 	case inference.ResponseCompletedEvent:

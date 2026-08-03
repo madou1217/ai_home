@@ -8,43 +8,165 @@ import (
 	"github.com/madou1217/ai_home/core/inference"
 )
 
-// decodeTools 只接受可无损映射到 Codex 和 Claude 的 function 工具。
-func decodeTools(rawTools []json.RawMessage) ([]inference.ToolDefinition, error) {
-	tools := make([]inference.ToolDefinition, len(rawTools))
+// decodeTools 把普通函数和 namespace 内函数展开为带稳定身份的 Canonical 工具。
+func decodeTools(
+	rawTools []json.RawMessage,
+) ([]inference.ToolDefinition, *inference.WebSearchTool, error) {
+	tools := make([]inference.ToolDefinition, 0, len(rawTools))
+	var webSearch *inference.WebSearchTool
 	for index, rawTool := range rawTools {
 		field := "tools[" + strconv.Itoa(index) + "]"
 		header, err := decodeHeader[contentHeaderDTO](rawTool, field)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		if header.Type != "function" {
-			return nil, unsupportedField(field + ".type")
+		switch header.Type {
+		case "function":
+			tool, decodeErr := decodeFunctionTool(rawTool, field, "", "")
+			if decodeErr != nil {
+				return nil, nil, decodeErr
+			}
+			tools = append(tools, tool)
+		case "namespace":
+			wireNamespace, decodeErr := decodeStrict[namespaceToolDTO](rawTool, field)
+			if decodeErr != nil {
+				return nil, nil, decodeErr
+			}
+			if wireNamespace.Type != "namespace" ||
+				wireNamespace.Name == "" ||
+				len(wireNamespace.Tools) == 0 {
+				return nil, nil, invalidField(field)
+			}
+			for childIndex, rawChild := range wireNamespace.Tools {
+				childField := field + ".tools[" + strconv.Itoa(childIndex) + "]"
+				childHeader, headerErr := decodeHeader[contentHeaderDTO](rawChild, childField)
+				if headerErr != nil {
+					return nil, nil, headerErr
+				}
+				if childHeader.Type != "function" {
+					return nil, nil, unsupportedField(childField + ".type")
+				}
+				tool, childErr := decodeFunctionTool(
+					rawChild,
+					childField,
+					wireNamespace.Name,
+					wireNamespace.Description,
+				)
+				if childErr != nil {
+					return nil, nil, childErr
+				}
+				tools = append(tools, tool)
+			}
+		case "web_search":
+			if webSearch != nil {
+				return nil, nil, invalidField(field)
+			}
+			decoded, decodeErr := decodeWebSearchTool(rawTool, field)
+			if decodeErr != nil {
+				return nil, nil, decodeErr
+			}
+			webSearch = &decoded
+		default:
+			return nil, nil, unsupportedField(field + ".type")
 		}
-		wireTool, err := decodeStrict[functionToolDTO](rawTool, field)
-		if err != nil {
-			return nil, err
-		}
-		var tool inference.ToolDefinition
-		if wireTool.Strict == nil {
-			tool, err = inference.NewToolDefinition(
-				wireTool.Name,
-				wireTool.Description,
-				wireTool.Parameters,
-			)
-		} else {
-			tool, err = inference.NewToolDefinitionWithStrict(
-				wireTool.Name,
-				wireTool.Description,
-				wireTool.Parameters,
-				*wireTool.Strict,
-			)
-		}
-		if err != nil {
-			return nil, invalidField(field)
-		}
-		tools[index] = tool
 	}
-	return tools, nil
+	return tools, webSearch, nil
+}
+
+// decodeWebSearchTool 解析 Responses 与 Claude 共同支持的搜索配置交集。
+func decodeWebSearchTool(
+	raw json.RawMessage,
+	field string,
+) (inference.WebSearchTool, error) {
+	wire, err := decodeStrict[webSearchToolDTO](raw, field)
+	if err != nil {
+		return inference.WebSearchTool{}, err
+	}
+	if wire.Type != "web_search" {
+		return inference.WebSearchTool{}, invalidField(field + ".type")
+	}
+	if wire.SearchContextSize != "" {
+		return inference.WebSearchTool{}, unsupportedField(field + ".search_context_size")
+	}
+	if len(wire.SearchContentTypes) != 0 {
+		return inference.WebSearchTool{}, unsupportedField(field + ".search_content_types")
+	}
+	var allowedDomains []string
+	if hasJSONValue(wire.Filters) {
+		filters, decodeErr := decodeStrict[webSearchFiltersDTO](wire.Filters, field+".filters")
+		if decodeErr != nil {
+			return inference.WebSearchTool{}, decodeErr
+		}
+		allowedDomains = filters.AllowedDomains
+	}
+	var location *inference.WebSearchLocation
+	if hasJSONValue(wire.UserLocation) {
+		wireLocation, decodeErr := decodeStrict[webSearchLocationDTO](
+			wire.UserLocation,
+			field+".user_location",
+		)
+		if decodeErr != nil {
+			return inference.WebSearchTool{}, decodeErr
+		}
+		if wireLocation.Type != "approximate" {
+			return inference.WebSearchTool{}, unsupportedField(field + ".user_location.type")
+		}
+		decodedLocation, locationErr := inference.NewWebSearchLocation(
+			wireLocation.Country,
+			wireLocation.Region,
+			wireLocation.City,
+			wireLocation.Timezone,
+		)
+		if locationErr != nil {
+			return inference.WebSearchTool{}, invalidField(field + ".user_location")
+		}
+		location = &decodedLocation
+	}
+	tool, toolErr := inference.NewWebSearchTool(inference.WebSearchOptions{
+		ExternalWebAccess: wire.ExternalWebAccess,
+		AllowedDomains:    allowedDomains,
+		Location:          location,
+	})
+	if toolErr != nil {
+		return inference.WebSearchTool{}, invalidField(field)
+	}
+	return tool, nil
+}
+
+// decodeFunctionTool 解码普通或 namespace 内的单个函数定义。
+func decodeFunctionTool(
+	raw json.RawMessage,
+	field string,
+	namespace string,
+	namespaceDescription string,
+) (inference.ToolDefinition, error) {
+	wireTool, err := decodeStrict[functionToolDTO](raw, field)
+	if err != nil {
+		return inference.ToolDefinition{}, err
+	}
+	options := inference.ToolDefinitionOptions{Strict: wireTool.Strict}
+	var tool inference.ToolDefinition
+	if namespace == "" {
+		tool, err = inference.NewToolDefinitionWithOptions(
+			wireTool.Name,
+			wireTool.Description,
+			wireTool.Parameters,
+			options,
+		)
+	} else {
+		tool, err = inference.NewNamespacedToolDefinitionWithOptions(
+			namespace,
+			namespaceDescription,
+			wireTool.Name,
+			wireTool.Description,
+			wireTool.Parameters,
+			options,
+		)
+	}
+	if err != nil {
+		return inference.ToolDefinition{}, invalidField(field)
+	}
+	return tool, nil
 }
 
 // decodeToolChoice 解析字符串模式或明确命名的 function 工具。
@@ -71,7 +193,16 @@ func decodeToolChoice(raw json.RawMessage) (*inference.ToolChoice, error) {
 	if wireChoice.Type != "function" {
 		return nil, unsupportedField("tool_choice.type")
 	}
-	choice, choiceErr := inference.NewNamedToolChoice(wireChoice.Name)
+	var choice inference.ToolChoice
+	var choiceErr error
+	if wireChoice.Namespace == "" {
+		choice, choiceErr = inference.NewNamedToolChoice(wireChoice.Name)
+	} else {
+		choice, choiceErr = inference.NewNamespacedToolChoice(
+			wireChoice.Namespace,
+			wireChoice.Name,
+		)
+	}
 	if choiceErr != nil {
 		return nil, invalidField("tool_choice")
 	}

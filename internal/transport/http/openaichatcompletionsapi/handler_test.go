@@ -281,6 +281,147 @@ func TestHandlerReturnsCanonicalFailureForNonStreamRequest(t *testing.T) {
 	}
 }
 
+// TestHandlerReturnsCanonicalFailureBeforeStreamStarts 验证上游在任何 Chat
+// chunk 之前失败时，客户端收到真实 HTTP 错误而不是伪造 502。
+func TestHandlerReturnsCanonicalFailureBeforeStreamStarts(t *testing.T) {
+	t.Parallel()
+
+	failure, err := inference.NewResponseFailure(
+		string(runtimecore.FailureRateLimited),
+		"Please retry later",
+		true,
+	)
+	if err != nil {
+		t.Fatalf("NewResponseFailure() error = %v", err)
+	}
+	failed, err := inference.NewResponseFailedEvent(0, failure)
+	if err != nil {
+		t.Fatalf("NewResponseFailedEvent() error = %v", err)
+	}
+	executor := newScriptedExecutor(
+		[]inference.StreamEvent{failed},
+		nil,
+	)
+	baseURL, client := startChatServer(t, executor, 0)
+	payload := minimalChatRequestBody(true)
+	response := performChatRequest(
+		t,
+		client,
+		http.MethodPost,
+		baseURL+Path,
+		testBearerToken,
+		"application/json",
+		payload,
+	)
+
+	if response.status != http.StatusTooManyRequests ||
+		!strings.HasPrefix(response.header.Get("Content-Type"), "application/json") ||
+		!strings.Contains(response.body, `"type":"rate_limit_error"`) ||
+		!strings.Contains(response.body, `"code":"rate_limited"`) ||
+		!strings.Contains(response.body, `"message":"Please retry later"`) ||
+		strings.Contains(response.body, "data:") {
+		t.Fatalf("pre-stream failure response = %#v", response)
+	}
+	t.Logf(
+		"真实启动前失败 HTTP smoke: POST %s%s payload=%s response=%s",
+		baseURL,
+		Path,
+		payload,
+		response.body,
+	)
+}
+
+// TestHandlerKeepsCanonicalFailureInsideStartedStream 验证 Chat SSE 已提交后
+// 不能改写 HTTP 状态，而是输出低敏错误帧和 DONE 终态。
+func TestHandlerKeepsCanonicalFailureInsideStartedStream(t *testing.T) {
+	t.Parallel()
+
+	started, err := inference.NewResponseStartedEvent(
+		0,
+		"resp_chat_failed_stream",
+		"gpt-5.6-sol",
+	)
+	if err != nil {
+		t.Fatalf("NewResponseStartedEvent() error = %v", err)
+	}
+	failure, err := inference.NewResponseFailure(
+		string(runtimecore.FailureRateLimited),
+		"Please retry later",
+		true,
+	)
+	if err != nil {
+		t.Fatalf("NewResponseFailure() error = %v", err)
+	}
+	failed, err := inference.NewResponseFailedEvent(1, failure)
+	if err != nil {
+		t.Fatalf("NewResponseFailedEvent() error = %v", err)
+	}
+	executor := newScriptedExecutor(
+		[]inference.StreamEvent{started, failed},
+		nil,
+	)
+	baseURL, client := startChatServer(t, executor, 0)
+	response := performChatRequest(
+		t,
+		client,
+		http.MethodPost,
+		baseURL+Path,
+		testBearerToken,
+		"application/json",
+		minimalChatRequestBody(true),
+	)
+
+	frames := parseSSEData(response.body)
+	if response.status != http.StatusOK ||
+		response.header.Get("Content-Type") != "text/event-stream" ||
+		len(frames) != 3 ||
+		!strings.Contains(frames[0], `"role":"assistant"`) ||
+		!strings.Contains(frames[1], `"code":"rate_limited"`) ||
+		!strings.Contains(frames[1], `"message":"Please retry later"`) ||
+		frames[2] != "[DONE]" {
+		t.Fatalf("started stream failure response = %#v", response)
+	}
+}
+
+// TestHandlerRejectsInvalidFailureBeforeStreamStarts 验证非零起始序号不会
+// 被误认成可信业务失败，仍按损坏的 Canonical 事件流返回 502。
+func TestHandlerRejectsInvalidFailureBeforeStreamStarts(t *testing.T) {
+	t.Parallel()
+
+	failure, err := inference.NewResponseFailure(
+		string(runtimecore.FailureRateLimited),
+		"Please retry later",
+		true,
+	)
+	if err != nil {
+		t.Fatalf("NewResponseFailure() error = %v", err)
+	}
+	failed, err := inference.NewResponseFailedEvent(1, failure)
+	if err != nil {
+		t.Fatalf("NewResponseFailedEvent() error = %v", err)
+	}
+	executor := newScriptedExecutor(
+		[]inference.StreamEvent{failed},
+		nil,
+	)
+	baseURL, client := startChatServer(t, executor, 0)
+	response := performChatRequest(
+		t,
+		client,
+		http.MethodPost,
+		baseURL+Path,
+		testBearerToken,
+		"application/json",
+		minimalChatRequestBody(true),
+	)
+
+	if response.status != http.StatusBadGateway ||
+		!strings.Contains(response.body, `"code":"invalid_upstream_response"`) ||
+		strings.Contains(response.body, `"code":"rate_limited"`) {
+		t.Fatalf("invalid pre-stream failure response = %#v", response)
+	}
+}
+
 // TestHandlerTerminatesCommittedBrokenStreamSafely 验证已经提交的 Chat SSE
 // 在执行器异常退出时追加安全错误帧和 DONE，且不泄漏内部错误。
 func TestHandlerTerminatesCommittedBrokenStreamSafely(t *testing.T) {

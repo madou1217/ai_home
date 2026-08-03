@@ -117,6 +117,58 @@ func TestRequestDecoderPreservesSupportedResponsesSemantics(t *testing.T) {
 	}
 }
 
+// TestRequestDecoderPreservesNamespaceWebSearchAndMetadata 验证 Codex 0.146.0
+// 的 namespace、网络搜索和请求亲和元数据不会在入站层被扁平化或删除。
+func TestRequestDecoderPreservesNamespaceWebSearchAndMetadata(t *testing.T) {
+	t.Parallel()
+
+	request, err := NewRequestDecoder().Decode([]byte(`{
+		"model":"gpt-5.6-sol",
+		"input":"检查邮件",
+		"tools":[
+			{"type":"namespace","name":"gmail","description":"邮箱工具","tools":[
+				{"type":"function","name":"search","description":"搜索邮件","parameters":{"type":"object"},"strict":true}
+			]},
+			{"type":"namespace","name":"calendar","description":"日历工具","tools":[
+				{"type":"function","name":"search","description":"搜索日程","parameters":{"type":"object"},"strict":false}
+			]},
+			{"type":"web_search","external_web_access":true,"filters":{"allowed_domains":["example.com"]},"user_location":{"type":"approximate","country":"CN","city":"上海","timezone":"Asia/Shanghai"}}
+		],
+		"tool_choice":{"type":"function","namespace":"gmail","name":"search"},
+		"prompt_cache_key":"cache_turn_1",
+		"client_metadata":{"turn_id":"turn_1","session_id":"session_1"}
+	}`))
+	if err != nil {
+		t.Fatalf("Decode() error = %v", err)
+	}
+	tools := request.Tools()
+	if len(tools) != 2 || tools[0].Identity() == tools[1].Identity() {
+		t.Fatalf("Request.Tools() = %#v, want distinct namespaced identities", tools)
+	}
+	for index, namespace := range []string{"gmail", "calendar"} {
+		actual, found := tools[index].Namespace()
+		if !found || actual != namespace || tools[index].Name() != "search" {
+			t.Fatalf("tools[%d] = (%q, %q, %t)", index, actual, tools[index].Name(), found)
+		}
+	}
+	choice, found := request.ToolChoice()
+	namespace, namespaced := choice.Namespace()
+	if !found || !namespaced || namespace != "gmail" || choice.Name() != "search" {
+		t.Fatalf("ToolChoice = (%#v, %t), want gmail.search", choice, found)
+	}
+	webSearch, found := request.WebSearch()
+	if !found || len(webSearch.AllowedDomains()) != 1 {
+		t.Fatalf("WebSearch = (%#v, %t)", webSearch, found)
+	}
+	if promptCacheKey, found := request.PromptCacheKey(); !found || promptCacheKey != "cache_turn_1" {
+		t.Fatalf("PromptCacheKey = (%q, %t)", promptCacheKey, found)
+	}
+	metadata := request.ClientMetadata()
+	if metadata["turn_id"] != "turn_1" || metadata["session_id"] != "session_1" {
+		t.Fatalf("ClientMetadata = %#v", metadata)
+	}
+}
+
 // TestRequestDecoderSupportsPreviousResponseToolOutput 验证 previous_response_id
 // 允许精确引用历史 call ID，但不会生成或猜测调用标识。
 func TestRequestDecoderSupportsPreviousResponseToolOutput(t *testing.T) {
@@ -187,10 +239,6 @@ func TestRequestDecoderRejectsUnsupportedSemanticsExplicitly(t *testing.T) {
 		name string
 		body string
 	}{
-		{
-			name: "built-in tool",
-			body: `{"model":"gpt-5.6-sol","input":"x","tools":[{"type":"web_search"}]}`,
-		},
 		{
 			name: "prompt cache options",
 			body: `{"model":"gpt-5.6-sol","input":"x","prompt_cache_options":{"mode":"explicit","ttl":"30m"}}`,

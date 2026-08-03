@@ -44,5 +44,6 @@ func codexRouteCapabilities() (inference.CapabilitySet, error) {
 		inference.CapabilityReasoning,
 		inference.CapabilityStructuredOutput,
 		inference.CapabilityStreaming,
+		inference.CapabilityWebSearch,
 	)
 }

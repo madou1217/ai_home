@@ -157,8 +157,69 @@ func TestEncodeRequestPreservesCodexResponsesInputs(t *testing.T) {
 	)
 }
 
+// TestEncodeRequestRestoresNamespaceWebSearchAndMetadata 验证 Canonical
+// namespace、历史调用、搜索配置与 Codex 元数据可以对称恢复到 Responses。
+func TestEncodeRequestRestoresNamespaceWebSearchAndMetadata(t *testing.T) {
+	t.Parallel()
+
+	request := decodeResponsesRequest(t, `{
+		"model":"client-alias",
+		"input":[
+			{"type":"function_call","call_id":"call_mail","namespace":"gmail","name":"search","arguments":"{\"query\":\"AIH\"}"},
+			{"type":"function_call_output","call_id":"call_mail","output":"找到一封邮件"},
+			{"role":"user","content":[{"type":"input_text","text":"继续"}]}
+		],
+		"tools":[
+			{"type":"namespace","name":"gmail","description":"邮箱工具","tools":[
+				{"type":"function","name":"search","description":"搜索邮件","parameters":{"type":"object"},"strict":true},
+				{"type":"function","name":"open","description":"打开邮件","parameters":{"type":"object"},"strict":false}
+			]},
+			{"type":"namespace","name":"calendar","description":"日历工具","tools":[
+				{"type":"function","name":"search","description":"搜索日程","parameters":{"type":"object"},"strict":true}
+			]},
+			{"type":"web_search","external_web_access":true,"filters":{"allowed_domains":["example.com"]},"user_location":{"type":"approximate","country":"CN","city":"上海"}}
+		],
+		"tool_choice":{"type":"function","namespace":"gmail","name":"search"},
+		"prompt_cache_key":"cache_turn_1",
+		"client_metadata":{"turn_id":"turn_1"}
+	}`)
+	payload, err := encodeRequest(
+		request,
+		"gpt-5.4",
+		codexauth.AuthKindAPIKey,
+		requestProfileForModel("gpt-5.4"),
+	)
+	if err != nil {
+		t.Fatalf("encodeRequest() error = %v", err)
+	}
+	var wire struct {
+		Input          []map[string]any  `json:"input"`
+		Tools          []map[string]any  `json:"tools"`
+		ToolChoice     map[string]any    `json:"tool_choice"`
+		PromptCacheKey string            `json:"prompt_cache_key"`
+		ClientMetadata map[string]string `json:"client_metadata"`
+	}
+	if err := json.Unmarshal(payload, &wire); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if wire.Input[0]["namespace"] != "gmail" ||
+		wire.ToolChoice["namespace"] != "gmail" ||
+		wire.PromptCacheKey != "cache_turn_1" ||
+		wire.ClientMetadata["turn_id"] != "turn_1" ||
+		len(wire.Tools) != 3 {
+		t.Fatalf("wire = %#v", wire)
+	}
+	if wire.Tools[0]["type"] != "namespace" ||
+		wire.Tools[0]["name"] != "gmail" ||
+		len(wire.Tools[0]["tools"].([]any)) != 2 ||
+		wire.Tools[1]["name"] != "calendar" ||
+		wire.Tools[2]["type"] != "web_search" {
+		t.Fatalf("tools = %#v", wire.Tools)
+	}
+}
+
 // TestEncodeRequestAppliesResponsesLiteProfile 验证 Lite 模型的工具、
-// reasoning、include 和并行调用形态与官方 Codex rust-v0.145.0 一致。
+// reasoning、include 和并行调用形态与官方 Codex rust-v0.146.0 一致。
 func TestEncodeRequestAppliesResponsesLiteProfile(t *testing.T) {
 	t.Parallel()
 
@@ -225,9 +286,9 @@ func TestEncodeRequestAppliesResponsesLiteProfile(t *testing.T) {
 	}
 }
 
-// TestRequestProfileForModelMatchesCodex0145 固化当前官方模型清单中的
+// TestRequestProfileForModelMatchesCodex0146 固化当前官方模型清单中的
 // Lite 模型与默认 reasoning effort，未知模型回退标准合同。
-func TestRequestProfileForModelMatchesCodex0145(t *testing.T) {
+func TestRequestProfileForModelMatchesCodex0146(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -376,6 +437,39 @@ func TestEncodeRequestRejectsUnsupportedFieldsBeforeTransport(t *testing.T) {
 	}
 }
 
+// TestEncodeRequestRejectsClaudeRedactedThinking 验证 Claude 私有 redacted 数据
+// 不会被编码为 Codex reasoning.encrypted_content。
+func TestEncodeRequestRejectsClaudeRedactedThinking(t *testing.T) {
+	t.Parallel()
+
+	redacted, err := inference.NewRedactedReasoningContent("claude-redacted-exact")
+	if err != nil {
+		t.Fatalf("NewRedactedReasoningContent() error = %v", err)
+	}
+	message, err := inference.NewMessage(inference.RoleAssistant, redacted)
+	if err != nil {
+		t.Fatalf("NewMessage() error = %v", err)
+	}
+	request, err := inference.NewRequest(inference.RequestInput{
+		ClientProtocol: inference.ClientProtocolAnthropicMessages,
+		Model:          "gpt-5.4",
+		Messages:       []inference.Message{message},
+	})
+	if err != nil {
+		t.Fatalf("NewRequest() error = %v", err)
+	}
+	_, err = encodeRequest(
+		request,
+		"gpt-5.4",
+		codexauth.AuthKindAPIKey,
+		requestProfileForModel("gpt-5.4"),
+	)
+	if !errors.Is(err, ErrUnsupportedRequest) ||
+		!strings.Contains(err.Error(), "reasoning.redacted_thinking") {
+		t.Fatalf("encodeRequest() error = %v", err)
+	}
+}
+
 // TestBuildHTTPRequestUsesCredentialSpecificEndpointAndHeaders 验证 API Key、
 // OAuth 工作区和 personal 账号不会共享错误的 Header。
 func TestBuildHTTPRequestUsesCredentialSpecificEndpointAndHeaders(t *testing.T) {
@@ -479,8 +573,8 @@ func TestBuildHTTPRequestUsesCredentialSpecificEndpointAndHeaders(t *testing.T) 
 			}
 		})
 	}
-	if codexProtocolVersion != "0.145.0" ||
-		codexUserAgent != "codex_cli_rs/0.145.0" {
+	if codexProtocolVersion != "0.146.0" ||
+		codexUserAgent != "codex_cli_rs/0.146.0" {
 		t.Fatalf(
 			"version=%s user_agent=%s",
 			codexProtocolVersion,

@@ -63,7 +63,9 @@ func (renderer *StreamRenderer) Terminal() bool {
 func validateSupportedResponseEvent(event inference.StreamEvent) error {
 	switch typed := event.(type) {
 	case inference.ReasoningCompletedEvent:
-		if typed.Content().ReasoningKind() == inference.ReasoningSummary {
+		kind := typed.Content().ReasoningKind()
+		if kind == inference.ReasoningSummary ||
+			kind == inference.ReasoningEncrypted {
 			return ErrUnsupportedResponseEvent
 		}
 	case inference.ResponseCompletedEvent:
@@ -298,14 +300,14 @@ func (renderer *StreamRenderer) renderReasoningCompleted(
 		blockIndex:  event.BlockIndex(),
 	}
 	content := event.Content()
-	if content.ReasoningKind() == inference.ReasoningEncrypted {
+	if content.ReasoningKind() == inference.ReasoningRedacted {
 		index, err := renderer.allocateBlock(position)
 		if err != nil {
 			return nil, err
 		}
 		contentBlock, err := marshalRaw(redactedThinkingBlockWireDTO{
 			Type: "redacted_thinking",
-			Data: content.EncryptedData(),
+			Data: content.RedactedData(),
 		})
 		if err != nil {
 			return nil, err

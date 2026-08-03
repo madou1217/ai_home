@@ -193,6 +193,34 @@ func TestRequestDecoderPreservesCompleteMessagesRequest(t *testing.T) {
 	}
 }
 
+// TestRequestDecoderKeepsRedactedThinkingDistinct 验证 Claude 私有 redacted 数据
+// 不会进入通用 Responses encrypted_content 语义。
+func TestRequestDecoderKeepsRedactedThinkingDistinct(t *testing.T) {
+	t.Parallel()
+
+	request, err := NewRequestDecoder().Decode([]byte(`{
+		"model":"claude-opus-5",
+		"max_tokens":1024,
+		"messages":[
+			{"role":"assistant","content":[
+				{"type":"redacted_thinking","data":"redacted-exact-1"},
+				{"type":"text","text":"历史回答"}
+			]},
+			{"role":"user","content":"继续"}
+		]
+	}`))
+	if err != nil {
+		t.Fatalf("Decode() error = %v", err)
+	}
+	content, ok := request.Messages()[0].Contents()[0].(inference.ReasoningContent)
+	if !ok ||
+		content.ReasoningKind() != inference.ReasoningRedacted ||
+		content.RedactedData() != "redacted-exact-1" ||
+		content.EncryptedData() != "" {
+		t.Fatalf("redacted content = %#v", request.Messages()[0].Contents()[0])
+	}
+}
+
 // TestRequestDecoderPreservesBudgetThinkingAndNamedToolChoice 验证预算 thinking
 // 与命名工具选择不会被压缩为 auto。
 func TestRequestDecoderPreservesBudgetThinkingAndNamedToolChoice(t *testing.T) {

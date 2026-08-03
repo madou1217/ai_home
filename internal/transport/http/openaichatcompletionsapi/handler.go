@@ -240,7 +240,14 @@ func (handler *Handler) executeStream(
 		canonicalRequest,
 		execution.Accept,
 	)
-	if execution.WriteFailed() || execution.Terminal() {
+	if execution.WriteFailed() {
+		return
+	}
+	if failure, found := execution.PreCommitFailure(); found {
+		writeCanonicalFailure(response, failure)
+		return
+	}
+	if execution.Terminal() {
 		return
 	}
 	if errors.Is(request.Context().Err(), context.Canceled) {

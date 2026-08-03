@@ -5,9 +5,9 @@ import (
 	"testing"
 )
 
-// TestReasoningContinuityKeepsThinkingSignatureAndEncryptedDataDistinct 验证可见思考、
-// 签名和加密连续性不会被合并成普通文本。
-func TestReasoningContinuityKeepsThinkingSignatureAndEncryptedDataDistinct(t *testing.T) {
+// TestReasoningContinuityKeepsProviderDataDistinct 验证可见思考、签名、Responses
+// 加密连续性和 Claude redacted 数据不会被合并成普通文本。
+func TestReasoningContinuityKeepsProviderDataDistinct(t *testing.T) {
 	t.Parallel()
 
 	thinking, err := NewThinkingContent("先检查协议状态。", "signature_exact_1")
@@ -18,12 +18,24 @@ func TestReasoningContinuityKeepsThinkingSignatureAndEncryptedDataDistinct(t *te
 	if err != nil {
 		t.Fatalf("NewEncryptedReasoningContent() error = %v", err)
 	}
+	redacted, err := NewRedactedReasoningContent("redacted_exact_1")
+	if err != nil {
+		t.Fatalf("NewRedactedReasoningContent() error = %v", err)
+	}
 
 	if thinking.Kind() != ContentReasoning || thinking.ReasoningKind() != ReasoningThinking {
 		t.Fatalf("thinking = %#v, want reasoning thinking", thinking)
 	}
-	if thinking.Signature() != "signature_exact_1" || encrypted.EncryptedData() != "encrypted_exact_1" {
-		t.Fatalf("reasoning continuity lost: thinking=%#v encrypted=%#v", thinking, encrypted)
+	if thinking.Signature() != "signature_exact_1" ||
+		encrypted.EncryptedData() != "encrypted_exact_1" ||
+		redacted.ReasoningKind() != ReasoningRedacted ||
+		redacted.RedactedData() != "redacted_exact_1" {
+		t.Fatalf(
+			"reasoning continuity lost: thinking=%#v encrypted=%#v redacted=%#v",
+			thinking,
+			encrypted,
+			redacted,
+		)
 	}
 	if _, ok := Content(thinking).(TextContent); ok {
 		t.Fatal("thinking 不应能断言为 TextContent")
@@ -40,5 +52,8 @@ func TestReasoningContinuityRejectsIncompleteValues(t *testing.T) {
 	}
 	if _, err := NewEncryptedReasoningContent(""); !errors.Is(err, ErrInvalidReasoning) {
 		t.Fatalf("missing encrypted data error = %v, want ErrInvalidReasoning", err)
+	}
+	if _, err := NewRedactedReasoningContent(""); !errors.Is(err, ErrInvalidReasoning) {
+		t.Fatalf("missing redacted data error = %v, want ErrInvalidReasoning", err)
 	}
 }

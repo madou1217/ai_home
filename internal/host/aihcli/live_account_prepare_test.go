@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -20,7 +21,9 @@ const (
 	realCLIPrepareEnv  = "AIH_REAL_CLI_PREPARE"
 	realCLIProviderEnv = "AIH_REAL_CLI_PROVIDER"
 	realCLIHomeEnv     = "AIH_REAL_CLI_HOME"
-	maxRealArtifact    = 1 << 20
+	// realCLIAccountIDEnv 显式保留人工验收所针对的 Provider 内数字别名。
+	realCLIAccountIDEnv = "AIH_REAL_CLI_ACCOUNT_ID"
+	maxRealArtifact     = 1 << 20
 )
 
 // TestPrepareRealAccountDatabase 把显式 stdin 官方 artifact 注册到一个空临时 aih.db。
@@ -45,10 +48,7 @@ func TestPrepareRealAccountDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建 Provider Catalog 失败: %v", err)
 	}
-	cliAccountID, err := accountcore.NewCLIAccountID(1)
-	if err != nil {
-		t.Fatalf("创建临时账号别名失败: %v", err)
-	}
+	cliAccountID := resolveRealCLIAccountID(t)
 	registeredAt := time.Now().UTC().Truncate(time.Millisecond)
 	account, err := accountcore.NewAccount(catalog, accountcore.NewAccountInput{
 		Identity:     credential,
@@ -85,6 +85,25 @@ func TestPrepareRealAccountDatabase(t *testing.T) {
 		account.Ref(),
 		filepath.Join(aiHomeDir, sqliteaccount.DatabaseFileName),
 	)
+}
+
+// resolveRealCLIAccountID 解析人工验收账号别名；缺省保持原有账号 1 行为。
+func resolveRealCLIAccountID(t *testing.T) accountcore.CLIAccountID {
+	t.Helper()
+
+	rawValue := os.Getenv(realCLIAccountIDEnv)
+	if rawValue == "" {
+		rawValue = "1"
+	}
+	value, err := strconv.ParseInt(rawValue, 10, 64)
+	if err != nil || strconv.FormatInt(value, 10) != rawValue {
+		t.Fatalf("%s 必须是规范正整数", realCLIAccountIDEnv)
+	}
+	cliAccountID, err := accountcore.NewCLIAccountID(value)
+	if err != nil {
+		t.Fatalf("创建临时账号别名失败: %v", err)
+	}
+	return cliAccountID
 }
 
 // requireEmptyRealCLIHome 只接受调用方新建的空目录，避免覆盖任何现有数据库。

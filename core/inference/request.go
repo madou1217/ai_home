@@ -22,6 +22,8 @@ const (
 	CapabilityStructuredOutput
 	// CapabilityStreaming 表示可以向客户端提供真实增量事件。
 	CapabilityStreaming
+	// CapabilityWebSearch 表示上游能够执行服务器侧网络搜索。
+	CapabilityWebSearch
 )
 
 // String 返回能力的稳定日志与测试名称。
@@ -41,6 +43,8 @@ func (capability Capability) String() string {
 		return "structured_output"
 	case CapabilityStreaming:
 		return "streaming"
+	case CapabilityWebSearch:
+		return "web_search"
 	default:
 		return "unknown"
 	}
@@ -48,7 +52,7 @@ func (capability Capability) String() string {
 
 // IsValid 判断能力是否已经注册。
 func (capability Capability) IsValid() bool {
-	return capability >= CapabilityTextGeneration && capability <= CapabilityStreaming
+	return capability >= CapabilityTextGeneration && capability <= CapabilityWebSearch
 }
 
 // CapabilitySet 使用位图保存小而稳定的能力集合。
@@ -89,7 +93,7 @@ func (set CapabilitySet) ContainsAll(required CapabilitySet) bool {
 // IsValid 判断位图非空且没有未注册能力位。
 func (set CapabilitySet) IsValid() bool {
 	knownMask := CapabilitySet(
-		(1 << uint(CapabilityStreaming)) - 1,
+		(1 << uint(CapabilityWebSearch)) - 1,
 	)
 	return set != 0 && set&^knownMask == 0
 }
@@ -368,8 +372,8 @@ const (
 
 // ToolChoice 是工具选择模式和可选精确工具名的值对象。
 type ToolChoice struct {
-	mode ToolChoiceMode
-	name string
+	mode     ToolChoiceMode
+	identity ToolIdentity
 }
 
 // NewToolChoice 创建自动、禁止或必须调用模式。
@@ -382,10 +386,20 @@ func NewToolChoice(mode ToolChoiceMode) (ToolChoice, error) {
 
 // NewNamedToolChoice 创建必须调用指定工具的选择意图。
 func NewNamedToolChoice(name string) (ToolChoice, error) {
-	if !isToolName(name) {
-		return ToolChoice{}, ErrInvalidToolName
+	identity, err := NewToolIdentity(name)
+	if err != nil {
+		return ToolChoice{}, err
 	}
-	return ToolChoice{mode: ToolChoiceNamed, name: name}, nil
+	return ToolChoice{mode: ToolChoiceNamed, identity: identity}, nil
+}
+
+// NewNamespacedToolChoice 创建必须调用指定 namespaced 工具的选择意图。
+func NewNamespacedToolChoice(namespace string, name string) (ToolChoice, error) {
+	identity, err := NewNamespacedToolIdentity(namespace, name)
+	if err != nil {
+		return ToolChoice{}, err
+	}
+	return ToolChoice{mode: ToolChoiceNamed, identity: identity}, nil
 }
 
 // Mode 返回工具选择模式。
@@ -395,15 +409,25 @@ func (choice ToolChoice) Mode() ToolChoiceMode {
 
 // Name 返回命名模式的精确工具名，其他模式返回空值。
 func (choice ToolChoice) Name() string {
-	return choice.name
+	return choice.identity.Name()
+}
+
+// Identity 返回命名模式的稳定工具身份，其他模式返回零值。
+func (choice ToolChoice) Identity() ToolIdentity {
+	return choice.identity
+}
+
+// Namespace 返回命名模式的可选 namespace。
+func (choice ToolChoice) Namespace() (string, bool) {
+	return choice.identity.Namespace()
 }
 
 // IsValid 判断工具选择模式与名称组合是否合法。
 func (choice ToolChoice) IsValid() bool {
 	if choice.mode == ToolChoiceNamed {
-		return isToolName(choice.name)
+		return choice.identity.IsValid()
 	}
-	return choice.name == "" &&
+	return choice.identity == (ToolIdentity{}) &&
 		(choice.mode == ToolChoiceAuto || choice.mode == ToolChoiceNone || choice.mode == ToolChoiceRequired)
 }
 
@@ -477,6 +501,8 @@ type RequestInput struct {
 	Messages []Message
 	// Tools 是当前请求允许模型调用的工具定义。
 	Tools []ToolDefinition
+	// WebSearch 是可选服务器侧网络搜索配置。
+	WebSearch *WebSearchTool
 	// ToolChoice 是可选的工具选择意图。
 	ToolChoice *ToolChoice
 	// ParallelToolCalls 表示客户端是否明确允许并行工具调用。
@@ -499,6 +525,12 @@ type RequestInput struct {
 	TopK *uint64
 	// UserID 是客户端提供的低敏最终用户或会话标识。
 	UserID *string
+	// PromptCacheKey 是客户端用于稳定复用提示前缀的缓存亲和键。
+	PromptCacheKey *string
+	// ClientMetadata 是客户端传入的非语义诊断元数据。
+	//
+	// 该数据可以供网关观测使用，但不得自动转发到不同 Provider。
+	ClientMetadata map[string]string
 	// PromptCacheBreakpoints 是请求级、消息内容级或工具级缓存断点。
 	PromptCacheBreakpoints []PromptCacheBreakpoint
 	// StopSequences 是必须原样保留的非空停止序列。
@@ -523,6 +555,7 @@ type Request struct {
 	model             string
 	messages          []Message
 	tools             []ToolDefinition
+	webSearch         *WebSearchTool
 	toolChoice        *ToolChoice
 	parallelToolCalls *bool
 	reasoning         *ReasoningConfig
@@ -534,6 +567,8 @@ type Request struct {
 	topP              *float64
 	topK              *uint64
 	userID            *string
+	promptCacheKey    *string
+	clientMetadata    map[string]string
 	cacheBreakpoints  []PromptCacheBreakpoint
 	stopSequences     []string
 	store             *bool
@@ -572,6 +607,7 @@ func NewRequest(input RequestInput) (Request, error) {
 		model:             input.Model,
 		messages:          messages,
 		tools:             tools,
+		webSearch:         cloneWebSearchTool(input.WebSearch),
 		toolChoice:        cloneToolChoice(input.ToolChoice),
 		parallelToolCalls: cloneBool(input.ParallelToolCalls),
 		reasoning:         cloneReasoning(input.Reasoning),
@@ -583,6 +619,8 @@ func NewRequest(input RequestInput) (Request, error) {
 		topP:              cloneFloat(input.TopP),
 		topK:              cloneUint64(input.TopK),
 		userID:            cloneString(input.UserID),
+		promptCacheKey:    cloneString(input.PromptCacheKey),
+		clientMetadata:    cloneStringMap(input.ClientMetadata),
 		cacheBreakpoints:  append([]PromptCacheBreakpoint(nil), input.PromptCacheBreakpoints...),
 		stopSequences:     append([]string(nil), input.StopSequences...),
 		store:             cloneBool(input.Store),
@@ -620,6 +658,14 @@ func (request Request) Tools() []ToolDefinition {
 		tools[index] = tool.clone()
 	}
 	return tools
+}
+
+// WebSearch 返回可选服务器侧网络搜索配置。
+func (request Request) WebSearch() (WebSearchTool, bool) {
+	if request.webSearch == nil {
+		return WebSearchTool{}, false
+	}
+	return request.webSearch.clone(), true
 }
 
 // ToolChoice 返回可选工具选择意图。
@@ -701,6 +747,19 @@ func (request Request) UserID() (string, bool) {
 	return *request.userID, true
 }
 
+// PromptCacheKey 返回可选缓存亲和键。
+func (request Request) PromptCacheKey() (string, bool) {
+	if request.promptCacheKey == nil {
+		return "", false
+	}
+	return *request.promptCacheKey, true
+}
+
+// ClientMetadata 返回不能修改请求内部状态的诊断元数据副本。
+func (request Request) ClientMetadata() map[string]string {
+	return cloneStringMap(request.clientMetadata)
+}
+
 // PromptCacheBreakpoints 返回不能修改请求内部状态的缓存断点副本。
 func (request Request) PromptCacheBreakpoints() []PromptCacheBreakpoint {
 	return append([]PromptCacheBreakpoint(nil), request.cacheBreakpoints...)
@@ -757,15 +816,15 @@ func cloneAndValidateMessages(messages []Message) ([]Message, error) {
 // cloneAndValidateTools 验证工具定义、拒绝重名并深拷贝切片。
 func cloneAndValidateTools(tools []ToolDefinition) ([]ToolDefinition, error) {
 	cloned := make([]ToolDefinition, len(tools))
-	names := make(map[string]struct{}, len(tools))
+	identities := make(map[ToolIdentity]struct{}, len(tools))
 	for index, tool := range tools {
 		if !tool.IsValid() {
 			return nil, ErrInvalidRequest
 		}
-		if _, exists := names[tool.name]; exists {
+		if _, exists := identities[tool.identity]; exists {
 			return nil, ErrInvalidRequest
 		}
-		names[tool.name] = struct{}{}
+		identities[tool.identity] = struct{}{}
 		cloned[index] = tool.clone()
 	}
 	return cloned, nil
@@ -780,14 +839,21 @@ func validateRequestOptions(input RequestInput, tools []ToolDefinition) error {
 		if !input.ToolChoice.IsValid() {
 			return ErrInvalidRequest
 		}
-		if len(tools) == 0 && input.ToolChoice.mode != ToolChoiceNone {
+		if len(tools) == 0 && input.WebSearch == nil &&
+			input.ToolChoice.mode != ToolChoiceNone {
 			return ErrInvalidRequest
 		}
-		if input.ToolChoice.mode == ToolChoiceNamed && !hasToolNamed(tools, input.ToolChoice.name) {
+		if input.ToolChoice.mode == ToolChoiceNamed &&
+			!hasToolIdentity(tools, input.ToolChoice.identity) {
 			return ErrInvalidRequest
 		}
 	}
 	if input.ParallelToolCalls != nil && len(tools) == 0 {
+		if input.WebSearch == nil {
+			return ErrInvalidRequest
+		}
+	}
+	if input.WebSearch != nil && !input.WebSearch.IsValid() {
 		return ErrInvalidRequest
 	}
 	if input.Reasoning != nil && !input.Reasoning.IsValid() {
@@ -797,6 +863,12 @@ func validateRequestOptions(input RequestInput, tools []ToolDefinition) error {
 		return ErrInvalidRequest
 	}
 	if input.UserID != nil && !isValidRequestUserID(*input.UserID) {
+		return ErrInvalidRequest
+	}
+	if input.PromptCacheKey != nil && !isCanonicalOpaqueID(*input.PromptCacheKey) {
+		return ErrInvalidRequest
+	}
+	if !isValidClientMetadata(input.ClientMetadata) {
 		return ErrInvalidRequest
 	}
 	if !areValidPromptCacheBreakpoints(
@@ -821,12 +893,37 @@ func validateRequestOptions(input RequestInput, tools []ToolDefinition) error {
 	return nil
 }
 
-// hasToolNamed 以线性扫描检查命名工具。
+// isValidClientMetadata 限制诊断元数据数量和单值大小，避免非语义字段占用无界内存。
+func isValidClientMetadata(values map[string]string) bool {
+	if len(values) > 32 {
+		return false
+	}
+	for key, value := range values {
+		if !isCanonicalOpaqueID(key) || len(value) > 4096 || !isNonBlankText(value) {
+			return false
+		}
+	}
+	return true
+}
+
+// cloneStringMap 复制诊断元数据，避免调用方修改领域快照。
+func cloneStringMap(values map[string]string) map[string]string {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make(map[string]string, len(values))
+	for key, value := range values {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+// hasToolIdentity 以线性扫描检查完整工具身份。
 //
 // 单请求工具数量通常很小，避免为一次选择额外分配 map。
-func hasToolNamed(tools []ToolDefinition, name string) bool {
+func hasToolIdentity(tools []ToolDefinition, identity ToolIdentity) bool {
 	for _, tool := range tools {
-		if tool.name == name {
+		if tool.identity == identity {
 			return true
 		}
 	}
@@ -876,6 +973,9 @@ func deriveRequiredCapabilities(request Request) CapabilitySet {
 	if len(request.tools) > 0 {
 		required = required.with(CapabilityTools)
 	}
+	if request.webSearch != nil {
+		required = required.with(CapabilityWebSearch)
+	}
 	if request.reasoning != nil &&
 		!(request.reasoning.mode == ReasoningModeEffort &&
 			request.reasoning.effort == ReasoningEffortNone) {
@@ -893,6 +993,15 @@ func deriveRequiredCapabilities(request Request) CapabilitySet {
 		}
 	}
 	return required
+}
+
+// cloneWebSearchTool 复制可选服务器侧搜索配置。
+func cloneWebSearchTool(value *WebSearchTool) *WebSearchTool {
+	if value == nil {
+		return nil
+	}
+	cloned := value.clone()
+	return &cloned
 }
 
 // addContentCapabilities 把一个内容块及工具结果嵌套内容加入能力位图。

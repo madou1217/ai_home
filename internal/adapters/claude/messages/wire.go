@@ -4,21 +4,21 @@ import "encoding/json"
 
 // requestDTO 只描述 Anthropic Messages create 请求线协议。
 type requestDTO struct {
-	Model         string           `json:"model"`
-	MaxTokens     uint64           `json:"max_tokens"`
-	Messages      []messageDTO     `json:"messages"`
-	System        []contentDTO     `json:"system,omitempty"`
-	Stream        bool             `json:"stream"`
-	Temperature   *float64         `json:"temperature,omitempty"`
-	TopP          *float64         `json:"top_p,omitempty"`
-	TopK          *uint64          `json:"top_k,omitempty"`
-	StopSequences []string         `json:"stop_sequences,omitempty"`
-	Tools         []toolDTO        `json:"tools,omitempty"`
-	ToolChoice    *toolChoiceDTO   `json:"tool_choice,omitempty"`
-	Thinking      *thinkingDTO     `json:"thinking,omitempty"`
-	OutputConfig  *outputConfigDTO `json:"output_config,omitempty"`
-	Metadata      *metadataDTO     `json:"metadata,omitempty"`
-	CacheControl  *cacheControlDTO `json:"cache_control,omitempty"`
+	Model         string            `json:"model"`
+	MaxTokens     uint64            `json:"max_tokens"`
+	Messages      []messageDTO      `json:"messages"`
+	System        []contentDTO      `json:"system,omitempty"`
+	Stream        bool              `json:"stream"`
+	Temperature   *float64          `json:"temperature,omitempty"`
+	TopP          *float64          `json:"top_p,omitempty"`
+	TopK          *uint64           `json:"top_k,omitempty"`
+	StopSequences []string          `json:"stop_sequences,omitempty"`
+	Tools         []json.RawMessage `json:"tools,omitempty"`
+	ToolChoice    *toolChoiceDTO    `json:"tool_choice,omitempty"`
+	Thinking      *thinkingDTO      `json:"thinking,omitempty"`
+	OutputConfig  *outputConfigDTO  `json:"output_config,omitempty"`
+	Metadata      *metadataDTO      `json:"metadata,omitempty"`
+	CacheControl  *cacheControlDTO  `json:"cache_control,omitempty"`
 }
 
 // messageDTO 是 Anthropic 只允许的 user 或 assistant 历史消息。
@@ -33,7 +33,7 @@ type contentDTO struct {
 	Text         string           `json:"text,omitempty"`
 	Source       *sourceDTO       `json:"source,omitempty"`
 	Title        string           `json:"title,omitempty"`
-	Thinking     string           `json:"thinking,omitempty"`
+	Thinking     *string          `json:"thinking,omitempty"`
 	Signature    string           `json:"signature,omitempty"`
 	Data         string           `json:"data,omitempty"`
 	ID           string           `json:"id,omitempty"`
@@ -66,6 +66,23 @@ type toolDTO struct {
 	EagerInputStreaming *bool             `json:"eager_input_streaming,omitempty"`
 	InputExamples       []json.RawMessage `json:"input_examples,omitempty"`
 	CacheControl        *cacheControlDTO  `json:"cache_control,omitempty"`
+}
+
+// webSearchToolDTO 是 Claude 服务器侧网络搜索工具。
+type webSearchToolDTO struct {
+	Type           string                    `json:"type"`
+	Name           string                    `json:"name"`
+	AllowedDomains []string                  `json:"allowed_domains,omitempty"`
+	UserLocation   *webSearchUserLocationDTO `json:"user_location,omitempty"`
+}
+
+// webSearchUserLocationDTO 是 Anthropic approximate 搜索位置。
+type webSearchUserLocationDTO struct {
+	Type     string `json:"type"`
+	Country  string `json:"country,omitempty"`
+	Region   string `json:"region,omitempty"`
+	City     string `json:"city,omitempty"`
+	Timezone string `json:"timezone,omitempty"`
 }
 
 // toolChoiceDTO 统一表达 auto、any、none 和指定 tool。
@@ -138,16 +155,43 @@ type outputContentDTO struct {
 	ID        string          `json:"id"`
 	Name      string          `json:"name"`
 	Input     json.RawMessage `json:"input"`
+	ToolUseID string          `json:"tool_use_id"`
+	Content   json.RawMessage `json:"content"`
 	Citations json.RawMessage `json:"citations"`
 }
 
 // contentDeltaDTO 覆盖文本、thinking、signature 和工具参数增量。
 type contentDeltaDTO struct {
-	Type        string `json:"type"`
-	Text        string `json:"text"`
-	Thinking    string `json:"thinking"`
-	Signature   string `json:"signature"`
-	PartialJSON string `json:"partial_json"`
+	Type        string          `json:"type"`
+	Text        string          `json:"text"`
+	Thinking    string          `json:"thinking"`
+	Signature   string          `json:"signature"`
+	PartialJSON string          `json:"partial_json"`
+	Citation    json.RawMessage `json:"citation"`
+}
+
+// webSearchCitationDTO 是 Claude web_search_result_location 引用。
+type webSearchCitationDTO struct {
+	Type           string  `json:"type"`
+	CitedText      string  `json:"cited_text"`
+	EncryptedIndex string  `json:"encrypted_index"`
+	Title          *string `json:"title"`
+	URL            string  `json:"url"`
+}
+
+// webSearchResultDTO 是隐藏结果块中的单条服务器搜索结果。
+type webSearchResultDTO struct {
+	Type             string  `json:"type"`
+	EncryptedContent string  `json:"encrypted_content"`
+	PageAge          *string `json:"page_age"`
+	Title            string  `json:"title"`
+	URL              string  `json:"url"`
+}
+
+// webSearchResultErrorDTO 是服务器搜索失败结果。
+type webSearchResultErrorDTO struct {
+	Type      string `json:"type"`
+	ErrorCode string `json:"error_code"`
 }
 
 // messageDeltaDTO 保存响应终态原因。

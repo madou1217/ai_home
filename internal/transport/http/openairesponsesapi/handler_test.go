@@ -246,6 +246,145 @@ func TestHandlerReturnsCanonicalFailureForNonStreamRequest(t *testing.T) {
 	}
 }
 
+// TestHandlerReturnsCanonicalFailureBeforeStreamStarts 验证上游在任何
+// response.created 之前失败时，流式客户端收到真实 HTTP 错误而不是伪造 502。
+func TestHandlerReturnsCanonicalFailureBeforeStreamStarts(t *testing.T) {
+	t.Parallel()
+
+	failure, err := inference.NewResponseFailure(
+		string(runtimecore.FailureRateLimited),
+		"Please retry later",
+		true,
+	)
+	if err != nil {
+		t.Fatalf("NewResponseFailure() error = %v", err)
+	}
+	failed, err := inference.NewResponseFailedEvent(0, failure)
+	if err != nil {
+		t.Fatalf("NewResponseFailedEvent() error = %v", err)
+	}
+	executor := newScriptedExecutor(
+		[]inference.StreamEvent{failed},
+		nil,
+	)
+	baseURL, client := startResponsesServer(t, executor, 0)
+	payload := minimalRequestBody(true)
+	response := performResponsesRequest(
+		t,
+		client,
+		http.MethodPost,
+		baseURL+Path,
+		testBearerToken,
+		"application/json",
+		payload,
+	)
+
+	if response.status != http.StatusTooManyRequests ||
+		!strings.HasPrefix(response.header.Get("Content-Type"), "application/json") ||
+		!strings.Contains(response.body, `"type":"rate_limit_error"`) ||
+		!strings.Contains(response.body, `"code":"rate_limited"`) ||
+		!strings.Contains(response.body, `"message":"Please retry later"`) ||
+		strings.Contains(response.body, "event:") {
+		t.Fatalf("pre-stream failure response = %#v", response)
+	}
+	t.Logf(
+		"真实启动前失败 HTTP smoke: POST %s%s payload=%s response=%s",
+		baseURL,
+		Path,
+		payload,
+		response.body,
+	)
+}
+
+// TestHandlerKeepsCanonicalFailureInsideStartedStream 验证 SSE 已提交后不能
+// 改写 HTTP 状态，而是使用标准 response.failed 终态保留失败分类。
+func TestHandlerKeepsCanonicalFailureInsideStartedStream(t *testing.T) {
+	t.Parallel()
+
+	started, err := inference.NewResponseStartedEvent(
+		0,
+		"resp_failed_stream_1",
+		"claude-opus-5",
+	)
+	if err != nil {
+		t.Fatalf("NewResponseStartedEvent() error = %v", err)
+	}
+	failure, err := inference.NewResponseFailure(
+		string(runtimecore.FailureRateLimited),
+		"Please retry later",
+		true,
+	)
+	if err != nil {
+		t.Fatalf("NewResponseFailure() error = %v", err)
+	}
+	failed, err := inference.NewResponseFailedEvent(1, failure)
+	if err != nil {
+		t.Fatalf("NewResponseFailedEvent() error = %v", err)
+	}
+	executor := newScriptedExecutor(
+		[]inference.StreamEvent{started, failed},
+		nil,
+	)
+	baseURL, client := startResponsesServer(t, executor, 0)
+	response := performResponsesRequest(
+		t,
+		client,
+		http.MethodPost,
+		baseURL+Path,
+		testBearerToken,
+		"application/json",
+		minimalRequestBody(true),
+	)
+
+	names := parseSSEEventNames(response.body)
+	if response.status != http.StatusOK ||
+		response.header.Get("Content-Type") != "text/event-stream" ||
+		strings.Join(names, ",") !=
+			"response.created,response.in_progress,response.failed" ||
+		!strings.Contains(response.body, `"code":"rate_limited"`) {
+		t.Fatalf("started stream failure response = %#v", response)
+	}
+}
+
+// TestHandlerRejectsInvalidFailureBeforeStreamStarts 验证非零起始序号不会
+// 被误认成可信业务失败，仍然按损坏的上游事件流返回 502。
+func TestHandlerRejectsInvalidFailureBeforeStreamStarts(t *testing.T) {
+	t.Parallel()
+
+	failure, err := inference.NewResponseFailure(
+		string(runtimecore.FailureRateLimited),
+		"Please retry later",
+		true,
+	)
+	if err != nil {
+		t.Fatalf("NewResponseFailure() error = %v", err)
+	}
+	failed, err := inference.NewResponseFailedEvent(1, failure)
+	if err != nil {
+		t.Fatalf("NewResponseFailedEvent() error = %v", err)
+	}
+	executor := newScriptedExecutor(
+		[]inference.StreamEvent{failed},
+		nil,
+	)
+	baseURL, client := startResponsesServer(t, executor, 0)
+	response := performResponsesRequest(
+		t,
+		client,
+		http.MethodPost,
+		baseURL+Path,
+		testBearerToken,
+		"application/json",
+		minimalRequestBody(true),
+	)
+
+	if response.status != http.StatusBadGateway ||
+		!strings.Contains(response.body, `"code":"invalid_upstream_response"`) ||
+		strings.Contains(response.body, `"code":"rate_limited"`) {
+		t.Fatalf("invalid pre-stream failure response = %#v", response)
+	}
+}
+
 // TestHandlerClosesStartedStreamWithFailedResponse 验证缺失终态时不会静默结束 SSE。
 func TestHandlerClosesStartedStreamWithFailedResponse(t *testing.T) {
 	t.Parallel()

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 )
@@ -55,7 +56,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	}, nil
 }
 
-// ServeHTTP 完成客户端鉴权，并仅允许无查询参数的 GET 或 HEAD。
+// ServeHTTP 完成客户端鉴权，并按请求形态选择标准 OpenAI 或 Codex 目录投影。
 func (handler *Handler) ServeHTTP(
 	response http.ResponseWriter,
 	request *http.Request,
@@ -76,7 +77,8 @@ func (handler *Handler) ServeHTTP(
 		writeError(response, http.StatusMethodNotAllowed, "method_not_allowed")
 		return
 	}
-	if request.URL.RawQuery != "" {
+	protocol, valid := parseCatalogProtocol(request.URL.RawQuery)
+	if !valid {
 		writeError(response, http.StatusBadRequest, "invalid_query")
 		return
 	}
@@ -90,15 +92,46 @@ func (handler *Handler) ServeHTTP(
 		writeError(response, http.StatusInternalServerError, "internal_error")
 		return
 	}
-	payload := modelList{
-		Object: "list",
-		Data:   views,
-	}
 	if request.Method == http.MethodHead {
 		writeJSONHeaders(response, http.StatusOK)
 		return
 	}
-	writeJSON(response, http.StatusOK, payload)
+	switch protocol {
+	case catalogProtocolOpenAI:
+		writeJSON(response, http.StatusOK, modelList{
+			Object: "list",
+			Data:   views,
+		})
+	case catalogProtocolCodex:
+		writeJSON(response, http.StatusOK, newCodexModelList(views))
+	}
+}
+
+// catalogProtocol 表示同一路径上的客户端目录合同。
+type catalogProtocol uint8
+
+const (
+	// catalogProtocolOpenAI 是标准 object/data 模型列表。
+	catalogProtocolOpenAI catalogProtocol = iota
+	// catalogProtocolCodex 是 Codex ModelsClient 使用的 models 列表。
+	catalogProtocolCodex
+)
+
+// parseCatalogProtocol 只把 client_version 的存在视为 Codex 协议标志。
+// 参数值不比较、不参与目录计算，也不会触发上游刷新。
+func parseCatalogProtocol(rawQuery string) (catalogProtocol, bool) {
+	if rawQuery == "" {
+		return catalogProtocolOpenAI, true
+	}
+	values, err := url.ParseQuery(rawQuery)
+	if err != nil || len(values) != 1 {
+		return 0, false
+	}
+	_, found := values["client_version"]
+	if !found {
+		return 0, false
+	}
+	return catalogProtocolCodex, true
 }
 
 // modelList 是 OpenAI 兼容模型列表 envelope。

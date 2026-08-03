@@ -116,11 +116,16 @@ const (
 	OutputItemReasoning OutputItemKind = "reasoning"
 	// OutputItemToolCall 表示函数工具调用输出项。
 	OutputItemToolCall OutputItemKind = "tool_call"
+	// OutputItemWebSearch 表示服务器侧网络搜索输出项。
+	OutputItemWebSearch OutputItemKind = "web_search"
 )
 
 // IsValid 判断输出项类别是否已经注册。
 func (kind OutputItemKind) IsValid() bool {
-	return kind == OutputItemMessage || kind == OutputItemReasoning || kind == OutputItemToolCall
+	return kind == OutputItemMessage ||
+		kind == OutputItemReasoning ||
+		kind == OutputItemToolCall ||
+		kind == OutputItemWebSearch
 }
 
 // OutputItemStartedEvent 表示顶层输出项拥有明确身份并开始生成。
@@ -595,8 +600,8 @@ func (ReasoningCompletedEvent) isStreamEvent() {}
 type ToolCallStartedEvent struct {
 	eventBase
 	eventPosition
-	callID string
-	name   string
+	callID   string
+	identity ToolIdentity
 }
 
 // NewToolCallStartedEvent 创建工具调用开始事件。
@@ -607,14 +612,45 @@ func NewToolCallStartedEvent(
 	callID string,
 	name string,
 ) (ToolCallStartedEvent, error) {
-	if !isCanonicalOpaqueID(callID) || !isToolName(name) {
+	identity, err := NewToolIdentity(name)
+	if err != nil {
+		return ToolCallStartedEvent{}, ErrInvalidEvent
+	}
+	return newToolCallStartedEvent(sequence, outputIndex, blockIndex, callID, identity)
+}
+
+// NewNamespacedToolCallStartedEvent 创建保留 namespace 的工具调用开始事件。
+func NewNamespacedToolCallStartedEvent(
+	sequence uint64,
+	outputIndex uint32,
+	blockIndex uint32,
+	callID string,
+	namespace string,
+	name string,
+) (ToolCallStartedEvent, error) {
+	identity, err := NewNamespacedToolIdentity(namespace, name)
+	if err != nil {
+		return ToolCallStartedEvent{}, ErrInvalidEvent
+	}
+	return newToolCallStartedEvent(sequence, outputIndex, blockIndex, callID, identity)
+}
+
+// newToolCallStartedEvent 统一校验普通与 namespaced 工具事件。
+func newToolCallStartedEvent(
+	sequence uint64,
+	outputIndex uint32,
+	blockIndex uint32,
+	callID string,
+	identity ToolIdentity,
+) (ToolCallStartedEvent, error) {
+	if !isCanonicalOpaqueID(callID) || !identity.IsValid() {
 		return ToolCallStartedEvent{}, ErrInvalidEvent
 	}
 	return ToolCallStartedEvent{
 		eventBase:     eventBase{sequence: sequence},
 		eventPosition: eventPosition{outputIndex: outputIndex, blockIndex: blockIndex},
 		callID:        callID,
-		name:          name,
+		identity:      identity,
 	}, nil
 }
 
@@ -640,7 +676,17 @@ func (event ToolCallStartedEvent) CallID() string {
 
 // Name 返回调用的精确工具名。
 func (event ToolCallStartedEvent) Name() string {
-	return event.name
+	return event.identity.Name()
+}
+
+// Identity 返回工具调用的稳定身份。
+func (event ToolCallStartedEvent) Identity() ToolIdentity {
+	return event.identity
+}
+
+// Namespace 返回可选 namespace 及其是否存在。
+func (event ToolCallStartedEvent) Namespace() (string, bool) {
+	return event.identity.Namespace()
 }
 
 // isStreamEvent 将 ToolCallStartedEvent 限制在 Canonical 事件联合类型内。
@@ -706,7 +752,7 @@ type ToolCallCompletedEvent struct {
 	eventBase
 	eventPosition
 	callID    string
-	name      string
+	identity  ToolIdentity
 	arguments []byte
 }
 
@@ -719,14 +765,61 @@ func NewToolCallCompletedEvent(
 	name string,
 	arguments []byte,
 ) (ToolCallCompletedEvent, error) {
-	if !isCanonicalOpaqueID(callID) || !isToolName(name) || !isJSONObject(arguments) {
+	identity, err := NewToolIdentity(name)
+	if err != nil {
+		return ToolCallCompletedEvent{}, ErrInvalidEvent
+	}
+	return newToolCallCompletedEvent(
+		sequence,
+		outputIndex,
+		blockIndex,
+		callID,
+		identity,
+		arguments,
+	)
+}
+
+// NewNamespacedToolCallCompletedEvent 创建保留 namespace 的完整工具调用事件。
+func NewNamespacedToolCallCompletedEvent(
+	sequence uint64,
+	outputIndex uint32,
+	blockIndex uint32,
+	callID string,
+	namespace string,
+	name string,
+	arguments []byte,
+) (ToolCallCompletedEvent, error) {
+	identity, err := NewNamespacedToolIdentity(namespace, name)
+	if err != nil {
+		return ToolCallCompletedEvent{}, ErrInvalidEvent
+	}
+	return newToolCallCompletedEvent(
+		sequence,
+		outputIndex,
+		blockIndex,
+		callID,
+		identity,
+		arguments,
+	)
+}
+
+// newToolCallCompletedEvent 统一校验普通与 namespaced 工具完成事件。
+func newToolCallCompletedEvent(
+	sequence uint64,
+	outputIndex uint32,
+	blockIndex uint32,
+	callID string,
+	identity ToolIdentity,
+	arguments []byte,
+) (ToolCallCompletedEvent, error) {
+	if !isCanonicalOpaqueID(callID) || !identity.IsValid() || !isJSONObject(arguments) {
 		return ToolCallCompletedEvent{}, ErrInvalidEvent
 	}
 	return ToolCallCompletedEvent{
 		eventBase:     eventBase{sequence: sequence},
 		eventPosition: eventPosition{outputIndex: outputIndex, blockIndex: blockIndex},
 		callID:        callID,
-		name:          name,
+		identity:      identity,
 		arguments:     cloneBytes(arguments),
 	}, nil
 }
@@ -753,7 +846,17 @@ func (event ToolCallCompletedEvent) CallID() string {
 
 // Name 返回完成调用的工具名。
 func (event ToolCallCompletedEvent) Name() string {
-	return event.name
+	return event.identity.Name()
+}
+
+// Identity 返回工具调用的稳定身份。
+func (event ToolCallCompletedEvent) Identity() ToolIdentity {
+	return event.identity
+}
+
+// Namespace 返回可选 namespace 及其是否存在。
+func (event ToolCallCompletedEvent) Namespace() (string, bool) {
+	return event.identity.Namespace()
 }
 
 // Arguments 返回不能修改事件内部状态的完整 JSON Object 副本。

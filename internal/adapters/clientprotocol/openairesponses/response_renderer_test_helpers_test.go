@@ -9,6 +9,15 @@ import (
 
 // newRendererTestRequest 创建 Renderer 测试共用的最小 Canonical Request。
 func newRendererTestRequest(t testing.TB, stream bool) inference.Request {
+	return newRendererReasoningTestRequest(t, stream, false)
+}
+
+// newRendererReasoningTestRequest 创建可显式控制 opaque continuity 输出的请求。
+func newRendererReasoningTestRequest(
+	t testing.TB,
+	stream bool,
+	includeEncryptedReasoning bool,
+) inference.Request {
 	t.Helper()
 
 	content, err := inference.NewTextContent("你好")
@@ -20,10 +29,11 @@ func newRendererTestRequest(t testing.TB, stream bool) inference.Request {
 		t.Fatalf("NewMessage() error = %v", err)
 	}
 	request, err := inference.NewRequest(inference.RequestInput{
-		ClientProtocol: inference.ClientProtocolOpenAIResponses,
-		Model:          "gpt-5.6-sol",
-		Messages:       []inference.Message{message},
-		Stream:         stream,
+		ClientProtocol:            inference.ClientProtocolOpenAIResponses,
+		Model:                     "gpt-5.6-sol",
+		Messages:                  []inference.Message{message},
+		Stream:                    stream,
+		IncludeEncryptedReasoning: includeEncryptedReasoning,
 	})
 	if err != nil {
 		t.Fatalf("NewRequest() error = %v", err)
@@ -307,6 +317,76 @@ func newReasoningResponseEvents(t testing.TB) []inference.StreamEvent {
 		blockCompleted,
 		itemCompleted,
 		completed,
+	)
+}
+
+// newSignedReasoningResponseEvents 创建包含真实 Claude 形态签名的完整事件流。
+func newSignedReasoningResponseEvents(t testing.TB) []inference.StreamEvent {
+	t.Helper()
+
+	events := newReasoningPrefixEvents(t)
+	thinking, err := inference.NewReasoningDeltaEvent(
+		3,
+		0,
+		0,
+		inference.ReasoningDeltaThinking,
+		"可继续",
+	)
+	if err != nil {
+		t.Fatalf("NewReasoningDeltaEvent(thinking) error = %v", err)
+	}
+	signature, err := inference.NewReasoningDeltaEvent(
+		4,
+		0,
+		0,
+		inference.ReasoningDeltaSignature,
+		"opaque-signature",
+	)
+	if err != nil {
+		t.Fatalf("NewReasoningDeltaEvent(signature) error = %v", err)
+	}
+	content, err := inference.NewThinkingContent("可继续", "opaque-signature")
+	if err != nil {
+		t.Fatalf("NewThinkingContent() error = %v", err)
+	}
+	completed, err := inference.NewReasoningCompletedEvent(5, 0, 0, content)
+	if err != nil {
+		t.Fatalf("NewReasoningCompletedEvent() error = %v", err)
+	}
+	blockCompleted := inference.NewContentBlockCompletedEvent(6, 0, 0)
+	itemCompleted, err := inference.NewOutputItemCompletedEvent(
+		7,
+		0,
+		"rs_reasoning_1",
+	)
+	if err != nil {
+		t.Fatalf("NewOutputItemCompletedEvent() error = %v", err)
+	}
+	usage, err := inference.NewUsage(inference.UsageInput{
+		InputTokens:     5,
+		OutputTokens:    4,
+		ReasoningTokens: 3,
+	})
+	if err != nil {
+		t.Fatalf("NewUsage() error = %v", err)
+	}
+	responseCompleted, err := inference.NewResponseCompletedEvent(
+		8,
+		inference.StopReasonEndTurn,
+		"",
+		usage,
+	)
+	if err != nil {
+		t.Fatalf("NewResponseCompletedEvent() error = %v", err)
+	}
+	return append(
+		events,
+		thinking,
+		signature,
+		completed,
+		blockCompleted,
+		itemCompleted,
+		responseCompleted,
 	)
 }
 

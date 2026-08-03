@@ -1,6 +1,9 @@
 package responses
 
-import "net/http"
+import (
+	"encoding/json"
+	"net/http"
+)
 
 const (
 	// responsesLiteHeader 是 Codex 上游识别 Responses Lite 合同的显式标记。
@@ -24,7 +27,7 @@ type requestProfile struct {
 	defaultVerbosity       string
 }
 
-// requestProfileForModel 返回与 Codex rust-v0.145.0 模型清单一致的请求策略。
+// requestProfileForModel 返回与 Codex rust-v0.146.0 模型清单一致的请求策略。
 //
 // 未知模型保守使用标准 Responses；新增 Lite 模型只需更新这一处映射。
 func requestProfileForModel(model string) requestProfile {
@@ -49,13 +52,13 @@ func requestProfileForModel(model string) requestProfile {
 // projectRequest 按 Profile 投影顶层工具、并行调用、reasoning 和 include。
 func (profile requestProfile) projectRequest(
 	input []inputItemDTO,
-	tools []toolDTO,
+	tools []json.RawMessage,
 	parallelToolCalls bool,
 	reasoning *reasoningDTO,
 	include []string,
 ) (
 	[]inputItemDTO,
-	*[]toolDTO,
+	*[]json.RawMessage,
 	bool,
 	*reasoningDTO,
 	[]string,

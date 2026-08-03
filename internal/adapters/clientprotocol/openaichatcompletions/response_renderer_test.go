@@ -343,9 +343,9 @@ func completeChatEvents(t *testing.T) []inference.StreamEvent {
 	if err != nil {
 		t.Fatalf("NewUsage() error = %v", err)
 	}
-	reasoning, err := inference.NewReasoningSummaryContent("先分析")
+	reasoning, err := inference.NewThinkingContent("先分析", "claude-signature-exact")
 	if err != nil {
-		t.Fatalf("NewReasoningSummaryContent() error = %v", err)
+		t.Fatalf("NewThinkingContent() error = %v", err)
 	}
 
 	events := make([]inference.StreamEvent, 0, 20)

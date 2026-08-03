@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/madou1217/ai_home/application/providerlaunch"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/core/accounts/claude"
 	"github.com/madou1217/ai_home/core/accounts/codex"
 )
 
@@ -37,7 +39,8 @@ func TestGatewayPlannerBuildsPoolWithoutAccountRead(t *testing.T) {
 	}
 	if !spec.IsValid() ||
 		spec.Mode() != providerlaunch.LaunchModeGatewayRelay ||
-		spec.ProviderID() != codex.ProviderID ||
+		spec.ClientProviderID() != codex.ProviderID ||
+		spec.RelayProviderID() != codex.ProviderID ||
 		spec.CLIAccountID().IsValid() ||
 		resolver.calls != 0 ||
 		strategy.calls != 1 {
@@ -47,6 +50,51 @@ func TestGatewayPlannerBuildsPoolWithoutAccountRead(t *testing.T) {
 		t.Fatal("账号池模式被错误固定")
 	}
 	assertGatewayRedacted(t, endpoint, spec)
+}
+
+// TestGatewayPlannerSeparatesClientStrategyAndRelayAccount 验证跨 Provider 只用客户端 Strategy，并从 Relay Provider 解析账号。
+func TestGatewayPlannerSeparatesClientStrategyAndRelayAccount(t *testing.T) {
+	auth, err := claude.NewAPIKeyAuth(claude.APIKeyInput{APIKey: "synthetic-cross-provider-secret"})
+	if err != nil {
+		t.Fatalf("NewAPIKeyAuth() error = %v", err)
+	}
+	accountID, err := accountcore.NewCLIAccountID(9)
+	if err != nil {
+		t.Fatalf("NewCLIAccountID() error = %v", err)
+	}
+	account, err := accountcore.NewAccount(mustProviderCatalog(t), accountcore.NewAccountInput{
+		Identity:     auth,
+		CLIAccountID: accountID,
+		CreatedAt:    time.UnixMilli(1_700_000_000_000).UTC(),
+	})
+	if err != nil {
+		t.Fatalf("NewAccount() error = %v", err)
+	}
+	resolver := &gatewayAccountResolver{account: account}
+	strategy := &gatewayStrategy{
+		providerID: codex.ProviderID,
+		result:     gatewayTestStrategyResult(t, codex.ProviderID),
+	}
+	planner := newGatewayTestPlanner(t, resolver, strategy)
+	intent, err := providerlaunch.ParseLaunchIntent(
+		mustProviderCatalog(t),
+		codex.ProviderID,
+		[]string{"relay", claude.ProviderID, "9", "--model", "claude-opus-5"},
+	)
+	if err != nil {
+		t.Fatalf("ParseLaunchIntent() error = %v", err)
+	}
+
+	spec, err := planner.Build(context.Background(), intent, gatewayTestEndpoint(t))
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+	if !spec.IsValid() || spec.ClientProviderID() != codex.ProviderID ||
+		spec.RelayProviderID() != claude.ProviderID ||
+		resolver.lastProvider != claude.ProviderID || strategy.calls != 1 ||
+		spec.Binary() != codex.ProviderID {
+		t.Fatalf("spec=%v resolver=%+v strategyCalls=%d", spec, resolver, strategy.calls)
+	}
 }
 
 // TestGatewayPlannerResolvesPinnedPublicAccount 验证数字别名只读取基础账号并绑定 AccountRef。

@@ -199,12 +199,11 @@ func (decoder *responseDecoder) emitToolCompleted(
 	outputIndex uint32,
 	item *decodedItem,
 ) error {
-	event, err := inference.NewToolCallCompletedEvent(
+	event, err := newCanonicalToolCallCompletedEvent(
 		decoder.nextSequence,
 		outputIndex,
-		0,
 		item.callID,
-		item.name,
+		item.identity,
 		[]byte(item.arguments),
 	)
 	if err != nil {
@@ -215,6 +214,35 @@ func (decoder *responseDecoder) emitToolCompleted(
 	}
 	item.toolCompleted = true
 	return nil
+}
+
+// newCanonicalToolCallCompletedEvent 用完整身份选择普通或 namespaced 构造器。
+func newCanonicalToolCallCompletedEvent(
+	sequence uint64,
+	outputIndex uint32,
+	callID string,
+	identity inference.ToolIdentity,
+	arguments []byte,
+) (inference.ToolCallCompletedEvent, error) {
+	if namespace, found := identity.Namespace(); found {
+		return inference.NewNamespacedToolCallCompletedEvent(
+			sequence,
+			outputIndex,
+			0,
+			callID,
+			namespace,
+			identity.Name(),
+			arguments,
+		)
+	}
+	return inference.NewToolCallCompletedEvent(
+		sequence,
+		outputIndex,
+		0,
+		callID,
+		identity.Name(),
+		arguments,
+	)
 }
 
 // toolItem 根据 output_index 和可选 call_id 查找未完成工具项。

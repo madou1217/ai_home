@@ -127,8 +127,12 @@ func isRootHelp(argument string) bool {
 func writeUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "用法:")
 	_, _ = fmt.Fprintln(output, "  aih <codex|claude> [provider_args...]                  # Gateway 账号池")
-	_, _ = fmt.Fprintln(output, "  aih <codex|claude> relay [account_id] [provider_args...] # Gateway 固定账号")
+	_, _ = fmt.Fprintln(output, "  aih <codex|claude> relay [account_id] [provider_args...] # Gateway 同 Provider 固定账号")
+	_, _ = fmt.Fprintln(output, "  aih <client> relay <provider> <account_id> [provider_args...] # Gateway 跨 Provider 固定账号")
 	_, _ = fmt.Fprintln(output, "  aih <codex|claude> <account_id> [provider_args...]       # Native Direct")
+	_, _ = fmt.Fprintln(output)
+	_, _ = fmt.Fprintln(output, "示例:")
+	_, _ = fmt.Fprintln(output, "  aih codex relay claude 9 --model claude-opus-5")
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "共享状态:")
 	_, _ = fmt.Fprintln(output, "  Codex 继承官方 CODEX_HOME；Claude 继承官方 CLAUDE_CONFIG_DIR。")

@@ -39,6 +39,7 @@ func (renderer *StreamRenderer) renderToolCallCompleted(
 		OutputIndex: uint32Pointer(event.OutputIndex()),
 		ItemID:      item.id,
 		Name:        event.Name(),
+		Namespace:   optionalToolNamespace(event.Identity()),
 		Arguments:   string(event.Arguments()),
 	})
 	return append(frames, done...), err

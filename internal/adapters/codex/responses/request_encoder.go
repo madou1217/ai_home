@@ -23,7 +23,7 @@ func encodeRequest(
 	if err != nil {
 		return nil, err
 	}
-	tools, err := encodeTools(request.Tools())
+	tools, err := encodeTools(request)
 	if err != nil {
 		return nil, err
 	}
@@ -67,7 +67,11 @@ func encodeRequest(
 		Store:             store,
 		Stream:            true,
 		Include:           include,
+		ClientMetadata:    request.ClientMetadata(),
 		Text:              text,
+	}
+	if promptCacheKey, found := request.PromptCacheKey(); found {
+		wireRequest.PromptCacheKey = &promptCacheKey
 	}
 	payload, err := json.Marshal(wireRequest)
 	if err != nil {
@@ -188,6 +192,7 @@ func encodeMessage(message inference.Message) ([]inputItemDTO, error) {
 			items = append(items, inputItemDTO{
 				Type:      "function_call",
 				Name:      content.Name(),
+				Namespace: toolNamespace(content.Identity()),
 				Arguments: string(content.Arguments()),
 				CallID:    content.CallID(),
 			})
@@ -263,6 +268,8 @@ func encodeReasoningContents(
 			item.EncryptedContent = content.EncryptedData()
 		case inference.ReasoningThinking:
 			return inputItemDTO{}, 0, unsupported("reasoning.thinking")
+		case inference.ReasoningRedacted:
+			return inputItemDTO{}, 0, unsupported("reasoning.redacted_thinking")
 		default:
 			return inputItemDTO{}, 0, ErrUnsupportedRequest
 		}
@@ -366,37 +373,99 @@ func dataURL(mediaType string, data string) string {
 	return "data:" + mediaType + ";base64," + data
 }
 
-// encodeTools 编码 function 工具并拒绝 Codex 无法表达的 Claude 执行提示。
+// encodeTools 按首次出现顺序编码普通函数、namespace 和服务器侧搜索工具。
 func encodeTools(
-	definitions []inference.ToolDefinition,
-) ([]toolDTO, error) {
-	tools := make([]toolDTO, len(definitions))
-	for index, definition := range definitions {
-		if len(definition.AllowedCallers()) != 0 {
-			return nil, unsupported("tools.allowed_callers")
+	request inference.Request,
+) ([]json.RawMessage, error) {
+	definitions := request.Tools()
+	items := make([]any, 0, len(definitions)+1)
+	namespaceIndexes := make(map[string]int)
+	for _, definition := range definitions {
+		wireTool, err := encodeFunctionTool(definition)
+		if err != nil {
+			return nil, err
 		}
-		if _, found := definition.EagerInputStreaming(); found {
-			return nil, unsupported("tools.eager_input_streaming")
+		namespace, namespaced := definition.Namespace()
+		if !namespaced {
+			items = append(items, wireTool)
+			continue
 		}
-		if len(definition.InputExamples()) != 0 {
-			return nil, unsupported("tools.input_examples")
+		itemIndex, found := namespaceIndexes[namespace]
+		if !found {
+			itemIndex = len(items)
+			namespaceIndexes[namespace] = itemIndex
+			items = append(items, &namespaceToolDTO{
+				Type:        "namespace",
+				Name:        namespace,
+				Description: definition.NamespaceDescription(),
+			})
 		}
-		strict, _ := definition.Strict()
-		deferLoading, deferSpecified := definition.DeferLoading()
-		var deferValue *bool
-		if deferSpecified {
-			deferValue = &deferLoading
+		group, ok := items[itemIndex].(*namespaceToolDTO)
+		if !ok || group.Description != definition.NamespaceDescription() {
+			return nil, unsupported("tools.namespace.description")
 		}
-		tools[index] = toolDTO{
-			Type:         "function",
-			Name:         definition.Name(),
-			Description:  definition.Description(),
-			Strict:       strict,
-			DeferLoading: deferValue,
-			Parameters:   definition.InputSchema(),
+		group.Tools = append(group.Tools, wireTool)
+	}
+	if webSearch, found := request.WebSearch(); found {
+		items = append(items, encodeWebSearchTool(webSearch))
+	}
+	tools := make([]json.RawMessage, len(items))
+	for index, item := range items {
+		encoded, err := json.Marshal(item)
+		if err != nil {
+			return nil, ErrUnsupportedRequest
 		}
+		tools[index] = encoded
 	}
 	return tools, nil
+}
+
+// encodeFunctionTool 编码一个函数工具并拒绝 Codex 无法表达的 Claude 执行提示。
+func encodeFunctionTool(definition inference.ToolDefinition) (toolDTO, error) {
+	if len(definition.AllowedCallers()) != 0 {
+		return toolDTO{}, unsupported("tools.allowed_callers")
+	}
+	if _, found := definition.EagerInputStreaming(); found {
+		return toolDTO{}, unsupported("tools.eager_input_streaming")
+	}
+	if len(definition.InputExamples()) != 0 {
+		return toolDTO{}, unsupported("tools.input_examples")
+	}
+	strict, _ := definition.Strict()
+	deferLoading, deferSpecified := definition.DeferLoading()
+	var deferValue *bool
+	if deferSpecified {
+		deferValue = &deferLoading
+	}
+	return toolDTO{
+		Type:         "function",
+		Name:         definition.Name(),
+		Description:  definition.Description(),
+		Strict:       strict,
+		DeferLoading: deferValue,
+		Parameters:   definition.InputSchema(),
+	}, nil
+}
+
+// encodeWebSearchTool 保留 Codex Responses 可以直接表达的搜索配置。
+func encodeWebSearchTool(tool inference.WebSearchTool) webSearchToolDTO {
+	wire := webSearchToolDTO{Type: "web_search"}
+	if externalWebAccess, specified := tool.ExternalWebAccess(); specified {
+		wire.ExternalWebAccess = &externalWebAccess
+	}
+	if allowedDomains := tool.AllowedDomains(); len(allowedDomains) != 0 {
+		wire.Filters = &webSearchFiltersDTO{AllowedDomains: allowedDomains}
+	}
+	if location, found := tool.Location(); found {
+		wire.UserLocation = &webSearchUserLocationDTO{
+			Type:     "approximate",
+			Country:  location.Country(),
+			Region:   location.Region(),
+			City:     location.City(),
+			Timezone: location.Timezone(),
+		}
+	}
+	return wire
 }
 
 // encodeToolChoice 映射默认 auto、字符串模式或命名 function。
@@ -412,12 +481,19 @@ func encodeToolChoice(request inference.Request) (any, error) {
 		return string(choice.Mode()), nil
 	case inference.ToolChoiceNamed:
 		return namedToolChoiceDTO{
-			Type: "function",
-			Name: choice.Name(),
+			Type:      "function",
+			Name:      choice.Name(),
+			Namespace: toolNamespace(choice.Identity()),
 		}, nil
 	default:
 		return nil, ErrUnsupportedRequest
 	}
+}
+
+// toolNamespace 返回可直接用于 omitempty 的 namespace 字符串。
+func toolNamespace(identity inference.ToolIdentity) string {
+	namespace, _ := identity.Namespace()
+	return namespace
 }
 
 // encodeReasoning 只接受 Codex 原生 effort 模式。

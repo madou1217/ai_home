@@ -18,34 +18,54 @@ func TestParseLaunchIntentSeparatesGatewayAndNative(t *testing.T) {
 		name       string
 		arguments  []string
 		wantMode   providerlaunch.LaunchMode
+		wantClient string
+		wantRelay  string
 		wantID     int64
 		wantArgs   []string
 		wantPinned bool
 	}{
 		{
-			name:      "默认 Gateway 账号池",
-			arguments: []string{"resume", "thread-1"},
-			wantMode:  providerlaunch.LaunchModeGatewayRelay,
-			wantArgs:  []string{"resume", "thread-1"},
+			name:       "默认 Gateway 账号池",
+			arguments:  []string{"resume", "thread-1"},
+			wantMode:   providerlaunch.LaunchModeGatewayRelay,
+			wantClient: "codex",
+			wantRelay:  "codex",
+			wantArgs:   []string{"resume", "thread-1"},
 		},
 		{
-			name:      "显式 Gateway 账号池",
-			arguments: []string{"relay", "--version"},
-			wantMode:  providerlaunch.LaunchModeGatewayRelay,
-			wantArgs:  []string{"--version"},
+			name:       "显式 Gateway 账号池",
+			arguments:  []string{"relay", "--version"},
+			wantMode:   providerlaunch.LaunchModeGatewayRelay,
+			wantClient: "codex",
+			wantRelay:  "codex",
+			wantArgs:   []string{"--version"},
 		},
 		{
 			name:       "Gateway 固定账号",
 			arguments:  []string{"relay", "8", "--model", "opus"},
 			wantMode:   providerlaunch.LaunchModeGatewayRelay,
+			wantClient: "codex",
+			wantRelay:  "codex",
 			wantID:     8,
 			wantArgs:   []string{"--model", "opus"},
+			wantPinned: true,
+		},
+		{
+			name:       "Gateway 跨 Provider 固定账号",
+			arguments:  []string{"relay", "claude", "9", "--model", "claude-opus-5"},
+			wantMode:   providerlaunch.LaunchModeGatewayRelay,
+			wantClient: "codex",
+			wantRelay:  "claude",
+			wantID:     9,
+			wantArgs:   []string{"--model", "claude-opus-5"},
 			wantPinned: true,
 		},
 		{
 			name:       "Native 指定账号",
 			arguments:  []string{"9", "resume", "thread-2"},
 			wantMode:   providerlaunch.LaunchModeNativeDirect,
+			wantClient: "codex",
+			wantRelay:  "codex",
 			wantID:     9,
 			wantArgs:   []string{"resume", "thread-2"},
 			wantPinned: true,
@@ -58,6 +78,8 @@ func TestParseLaunchIntentSeparatesGatewayAndNative(t *testing.T) {
 				t.Fatalf("ParseLaunchIntent() error = %v", err)
 			}
 			if intent.Mode() != test.wantMode ||
+				intent.ClientProviderID() != test.wantClient ||
+				intent.RelayProviderID() != test.wantRelay ||
 				intent.CLIAccountID().Int64() != test.wantID ||
 				intent.HasPinnedAccount() != test.wantPinned ||
 				!slices.Equal(intent.Arguments(), test.wantArgs) {
@@ -77,6 +99,9 @@ func TestParseLaunchIntentRejectsAmbiguousAccountIDs(t *testing.T) {
 		{"9223372036854775808"},
 		{"relay", "0"},
 		{"relay", "01"},
+		{"relay", "claude"},
+		{"relay", "claude", "--model", "opus"},
+		{"relay", "unknown", "9"},
 		{"--model", "bad\x00value"},
 	} {
 		if _, err := providerlaunch.ParseLaunchIntent(catalog, "claude", arguments); !errors.Is(

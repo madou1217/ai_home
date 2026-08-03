@@ -94,19 +94,19 @@ func (runner *Runner) Run(
 		if !ok {
 			return ErrInvalidRunRequest
 		}
-		if err := validateManagedArguments(spec.ProviderID(), arguments); err != nil {
+		if err := validateManagedArguments(spec.ClientProviderID(), arguments); err != nil {
 			return err
 		}
 		resolved, err := spec.ResolveArguments(arguments)
 		if err != nil {
 			return err
 		}
-		if _, pinned := spec.PinnedAccount(); pinned && spec.ProviderID() == "claude" {
+		if _, pinned := spec.PinnedAccount(); pinned && spec.ClientProviderID() == "claude" {
 			return runner.runClaudePinnedGateway(ctx, spec, resolved)
 		}
 		return runner.runDirect(
 			ctx,
-			spec.ProviderID(),
+			spec.ClientProviderID(),
 			spec.Binary(),
 			resolved,
 			spec.Environment(),

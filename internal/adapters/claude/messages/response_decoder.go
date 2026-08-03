@@ -1,11 +1,14 @@
 package messages
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
+	"unicode/utf8"
 
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	"github.com/madou1217/ai_home/core/inference"
@@ -13,45 +16,55 @@ import (
 
 // responseDecoder 把一个 Claude Message 生命周期转换为 Canonical 事件。
 type responseDecoder struct {
-	emit           inferencegateway.EventSink
-	effectiveModel string
-	responseID     string
-	nextSequence   uint64
-	started        bool
-	terminal       bool
-	blocks         []*decodedBlock
-	usage          usageState
-	stopReason     inference.StopReason
-	stopSequence   string
-	stopObserved   bool
+	emit            inferencegateway.EventSink
+	effectiveModel  string
+	responseID      string
+	nextSequence    uint64
+	nextOutputIndex uint32
+	started         bool
+	terminal        bool
+	blocks          []*decodedBlock
+	usage           usageState
+	stopReason      inference.StopReason
+	stopSequence    string
+	stopObserved    bool
+	toolNames       toolNameMapper
 }
 
 // decodedBlock 保存一个 Anthropic 内容块及其 Canonical 输出项状态。
 type decodedBlock struct {
-	wireIndex   uint32
-	outputIndex uint32
-	itemID      string
-	wireType    string
-	completed   bool
-	text        string
-	signature   string
-	data        string
-	callID      string
-	name        string
-	arguments   string
+	wireIndex       uint32
+	outputIndex     uint32
+	itemID          string
+	wireType        string
+	completed       bool
+	text            string
+	signature       string
+	data            string
+	callID          string
+	identity        inference.ToolIdentity
+	arguments       string
+	emitsOutput     bool
+	hasSearchResult bool
 }
 
 // newResponseDecoder 创建只依赖事件输出端口的响应状态机。
 func newResponseDecoder(
 	effectiveModel string,
 	emit inferencegateway.EventSink,
+	toolMappings ...toolNameMapper,
 ) (*responseDecoder, error) {
-	if effectiveModel == "" || emit == nil {
+	if effectiveModel == "" || emit == nil || len(toolMappings) > 1 {
 		return nil, ErrInvalidDependencies
+	}
+	var toolNames toolNameMapper
+	if len(toolMappings) == 1 {
+		toolNames = toolMappings[0]
 	}
 	return &responseDecoder{
 		emit:           emit,
 		effectiveModel: effectiveModel,
+		toolNames:      toolNames,
 	}, nil
 }
 
@@ -191,20 +204,12 @@ func (decoder *responseDecoder) startContentBlock(
 		return ErrInvalidUpstreamResponse
 	}
 	block := &decodedBlock{
-		wireIndex:   *index,
-		outputIndex: uint32(len(decoder.blocks)),
-		wireType:    wire.Type,
+		wireIndex: *index,
+		wireType:  wire.Type,
 	}
-	block.itemID = canonicalItemID(
-		decoder.responseID,
-		block.outputIndex,
-		wire.Type,
-	)
 	switch wire.Type {
 	case "text":
-		if hasNonEmptyJSONArray(wire.Citations) {
-			return ErrInvalidUpstreamResponse
-		}
+		decoder.assignOutput(block, wire.Type)
 		if err := decoder.startValueBlock(
 			block,
 			inference.OutputItemMessage,
@@ -217,7 +222,11 @@ func (decoder *responseDecoder) startContentBlock(
 				return err
 			}
 		}
+		if err := decoder.appendInitialCitations(block, wire.Citations); err != nil {
+			return err
+		}
 	case "thinking":
+		decoder.assignOutput(block, wire.Type)
 		if err := decoder.startValueBlock(
 			block,
 			inference.OutputItemReasoning,
@@ -239,6 +248,7 @@ func (decoder *responseDecoder) startContentBlock(
 		if wire.Data == "" {
 			return ErrInvalidUpstreamResponse
 		}
+		decoder.assignOutput(block, wire.Type)
 		if err := decoder.startValueBlock(
 			block,
 			inference.OutputItemReasoning,
@@ -252,17 +262,49 @@ func (decoder *responseDecoder) startContentBlock(
 			!isEmptyJSONObject(wire.Input) {
 			return ErrInvalidUpstreamResponse
 		}
+		identity, err := decoder.toolNames.decode(wire.Name)
+		if err != nil {
+			return err
+		}
 		block.itemID = wire.ID
 		block.callID = wire.ID
-		block.name = wire.Name
+		block.identity = identity
+		decoder.assignOutput(block, wire.Type)
+		block.itemID = wire.ID
 		if err := decoder.startToolBlock(block); err != nil {
 			return err
 		}
+	case "server_tool_use":
+		if wire.ID == "" || wire.Name != "web_search" ||
+			!isEmptyJSONObject(wire.Input) {
+			return ErrInvalidUpstreamResponse
+		}
+		decoder.assignOutput(block, wire.Type)
+		block.itemID = wire.ID
+		block.callID = wire.ID
+		if err := decoder.startWebSearchBlock(block); err != nil {
+			return err
+		}
+	case "web_search_tool_result":
+		if wire.ToolUseID == "" || len(wire.Content) == 0 ||
+			!json.Valid(wire.Content) ||
+			decoder.bindWebSearchResult(wire.ToolUseID, wire.Content) != nil {
+			return ErrInvalidUpstreamResponse
+		}
+		block.callID = wire.ToolUseID
 	default:
 		return ErrInvalidUpstreamResponse
 	}
 	decoder.blocks = append(decoder.blocks, block)
 	return nil
+}
+
+// assignOutput 为会向客户端暴露的 Claude 内容块分配连续输出索引。
+func (decoder *responseDecoder) assignOutput(block *decodedBlock, wireType string) {
+	block.outputIndex = decoder.nextOutputIndex
+	block.emitsOutput = true
+	block.itemID = canonicalItemID(decoder.responseID, block.outputIndex, wireType)
+	decoder.nextOutputIndex++
 }
 
 // startValueBlock 提交消息或 reasoning 输出项及其唯一内容块。
@@ -311,17 +353,30 @@ func (decoder *responseDecoder) startToolBlock(
 	if err := decoder.emitEvent(item); err != nil {
 		return err
 	}
-	started, err := inference.NewToolCallStartedEvent(
+	started, err := newCanonicalToolCallStartedEvent(
 		decoder.nextSequence,
 		block.outputIndex,
-		0,
 		block.callID,
-		block.name,
+		block.identity,
 	)
 	if err != nil {
 		return ErrInvalidUpstreamResponse
 	}
 	return decoder.emitEvent(started)
+}
+
+// startWebSearchBlock 提交服务器侧搜索输出项开始事件。
+func (decoder *responseDecoder) startWebSearchBlock(block *decodedBlock) error {
+	item, err := inference.NewOutputItemStartedEvent(
+		decoder.nextSequence,
+		block.outputIndex,
+		block.itemID,
+		inference.OutputItemWebSearch,
+	)
+	if err != nil {
+		return ErrInvalidUpstreamResponse
+	}
+	return decoder.emitEvent(item)
 }
 
 // applyContentDelta 将增量交给当前唯一开放内容块。
@@ -354,10 +409,18 @@ func (decoder *responseDecoder) applyContentDelta(
 		}
 		return decoder.appendSignature(block, delta.Signature)
 	case "input_json_delta":
-		if block.wireType != "tool_use" {
+		if block.wireType != "tool_use" && block.wireType != "server_tool_use" {
 			return ErrInvalidUpstreamResponse
 		}
+		if block.wireType == "server_tool_use" {
+			return decoder.appendWebSearchArguments(block, delta.PartialJSON)
+		}
 		return decoder.appendToolArguments(block, delta.PartialJSON)
+	case "citations_delta":
+		if block.wireType != "text" || len(delta.Citation) == 0 {
+			return ErrInvalidUpstreamResponse
+		}
+		return decoder.appendWebSearchCitation(block, delta.Citation)
 	default:
 		return ErrInvalidUpstreamResponse
 	}
@@ -369,7 +432,7 @@ func (decoder *responseDecoder) appendText(
 	value string,
 ) error {
 	if value == "" {
-		return ErrInvalidUpstreamResponse
+		return nil
 	}
 	event, err := inference.NewTextDeltaEvent(
 		decoder.nextSequence,
@@ -458,6 +521,74 @@ func (decoder *responseDecoder) appendToolArguments(
 	return nil
 }
 
+// appendWebSearchArguments 只在 Decoder 内累计服务器工具参数。
+func (decoder *responseDecoder) appendWebSearchArguments(
+	block *decodedBlock,
+	value string,
+) error {
+	if value == "" {
+		return nil
+	}
+	block.arguments += value
+	return nil
+}
+
+// appendInitialCitations 解码完整 Message 文本块中已有的引用数组。
+func (decoder *responseDecoder) appendInitialCitations(
+	block *decodedBlock,
+	raw json.RawMessage,
+) error {
+	if len(raw) == 0 || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return nil
+	}
+	var citations []json.RawMessage
+	if err := json.Unmarshal(raw, &citations); err != nil {
+		return ErrInvalidUpstreamResponse
+	}
+	for _, citation := range citations {
+		if err := decoder.appendWebSearchCitation(block, citation); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// appendWebSearchCitation 把 Claude 无区间引用锚定在当前文本末尾。
+// Claude 不提供输出字符区间，因此使用零宽锚点保留 URL 与标题而不伪造文本范围。
+func (decoder *responseDecoder) appendWebSearchCitation(
+	block *decodedBlock,
+	raw json.RawMessage,
+) error {
+	var wire webSearchCitationDTO
+	jsonDecoder := json.NewDecoder(bytes.NewReader(raw))
+	jsonDecoder.DisallowUnknownFields()
+	if err := jsonDecoder.Decode(&wire); err != nil ||
+		jsonDecoder.Decode(&struct{}{}) != io.EOF ||
+		wire.Type != "web_search_result_location" ||
+		wire.CitedText == "" || wire.EncryptedIndex == "" {
+		return ErrInvalidUpstreamResponse
+	}
+	title := ""
+	if wire.Title != nil {
+		title = *wire.Title
+	}
+	anchor := uint32(utf8.RuneCountInString(block.text))
+	citation, err := inference.NewURLCitation(anchor, anchor, title, wire.URL)
+	if err != nil {
+		return ErrInvalidUpstreamResponse
+	}
+	event, err := inference.NewURLCitationAddedEvent(
+		decoder.nextSequence,
+		block.outputIndex,
+		0,
+		citation,
+	)
+	if err != nil {
+		return ErrInvalidUpstreamResponse
+	}
+	return decoder.emitEvent(event)
+}
+
 // completeContentBlock 生成内容终值、块终态和输出项终态。
 func (decoder *responseDecoder) completeContentBlock(
 	index *uint32,
@@ -483,11 +614,43 @@ func (decoder *responseDecoder) completeContentBlock(
 		if err := decoder.completeTool(block); err != nil {
 			return err
 		}
+	case "server_tool_use":
+		if err := decoder.completeWebSearch(block); err != nil {
+			return err
+		}
+	case "web_search_tool_result":
+		block.completed = true
+		return nil
 	default:
 		return ErrInvalidUpstreamResponse
 	}
 	block.completed = true
 	return decoder.completeOutputItem(block)
+}
+
+// completeWebSearch 解析 Claude 搜索参数并提交可被 Responses 渲染的动作。
+func (decoder *responseDecoder) completeWebSearch(block *decodedBlock) error {
+	if block.arguments == "" {
+		return ErrInvalidUpstreamResponse
+	}
+	var input struct {
+		Query string `json:"query"`
+	}
+	jsonDecoder := json.NewDecoder(bytes.NewReader([]byte(block.arguments)))
+	jsonDecoder.DisallowUnknownFields()
+	if err := jsonDecoder.Decode(&input); err != nil ||
+		jsonDecoder.Decode(&struct{}{}) != io.EOF {
+		return ErrInvalidUpstreamResponse
+	}
+	event, err := inference.NewWebSearchCompletedEvent(
+		decoder.nextSequence,
+		block.outputIndex,
+		input.Query,
+	)
+	if err != nil {
+		return ErrInvalidUpstreamResponse
+	}
+	return decoder.emitEvent(event)
 }
 
 // completeText 提交完整文本和内容块终态。
@@ -537,7 +700,7 @@ func (decoder *responseDecoder) completeThinking(
 func (decoder *responseDecoder) completeRedactedThinking(
 	block *decodedBlock,
 ) error {
-	content, err := inference.NewEncryptedReasoningContent(block.data)
+	content, err := inference.NewRedactedReasoningContent(block.data)
 	if err != nil {
 		return ErrInvalidUpstreamResponse
 	}
@@ -563,18 +726,72 @@ func (decoder *responseDecoder) completeTool(
 	if block.arguments == "" {
 		block.arguments = "{}"
 	}
-	event, err := inference.NewToolCallCompletedEvent(
+	event, err := newCanonicalToolCallCompletedEvent(
 		decoder.nextSequence,
 		block.outputIndex,
-		0,
 		block.callID,
-		block.name,
+		block.identity,
 		[]byte(block.arguments),
 	)
 	if err != nil {
 		return ErrInvalidUpstreamResponse
 	}
 	return decoder.emitEvent(event)
+}
+
+// newCanonicalToolCallStartedEvent 根据完整身份选择普通或 namespaced 构造器。
+func newCanonicalToolCallStartedEvent(
+	sequence uint64,
+	outputIndex uint32,
+	callID string,
+	identity inference.ToolIdentity,
+) (inference.ToolCallStartedEvent, error) {
+	if namespace, namespaced := identity.Namespace(); namespaced {
+		return inference.NewNamespacedToolCallStartedEvent(
+			sequence,
+			outputIndex,
+			0,
+			callID,
+			namespace,
+			identity.Name(),
+		)
+	}
+	return inference.NewToolCallStartedEvent(
+		sequence,
+		outputIndex,
+		0,
+		callID,
+		identity.Name(),
+	)
+}
+
+// newCanonicalToolCallCompletedEvent 根据完整身份创建工具完成事件。
+func newCanonicalToolCallCompletedEvent(
+	sequence uint64,
+	outputIndex uint32,
+	callID string,
+	identity inference.ToolIdentity,
+	arguments []byte,
+) (inference.ToolCallCompletedEvent, error) {
+	if namespace, namespaced := identity.Namespace(); namespaced {
+		return inference.NewNamespacedToolCallCompletedEvent(
+			sequence,
+			outputIndex,
+			0,
+			callID,
+			namespace,
+			identity.Name(),
+			arguments,
+		)
+	}
+	return inference.NewToolCallCompletedEvent(
+		sequence,
+		outputIndex,
+		0,
+		callID,
+		identity.Name(),
+		arguments,
+	)
 }
 
 // completeCanonicalContentBlock 提交普通或 reasoning 块结束。
@@ -602,6 +819,76 @@ func (decoder *responseDecoder) completeOutputItem(
 		return ErrInvalidUpstreamResponse
 	}
 	return decoder.emitEvent(event)
+}
+
+// bindWebSearchResult 校验隐藏结果并与唯一已完成搜索调用配对。
+func (decoder *responseDecoder) bindWebSearchResult(
+	callID string,
+	raw json.RawMessage,
+) error {
+	if err := validateWebSearchResult(raw); err != nil {
+		return err
+	}
+	for _, block := range decoder.blocks {
+		if block.wireType == "server_tool_use" &&
+			block.callID == callID &&
+			block.completed &&
+			!block.hasSearchResult {
+			block.hasSearchResult = true
+			return nil
+		}
+	}
+	return ErrInvalidUpstreamResponse
+}
+
+// validateWebSearchResult 接受结果数组或 Anthropic 明确的搜索错误对象。
+func validateWebSearchResult(raw json.RawMessage) error {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
+		return ErrInvalidUpstreamResponse
+	}
+	if trimmed[0] == '[' {
+		var results []webSearchResultDTO
+		if err := json.Unmarshal(trimmed, &results); err != nil {
+			return ErrInvalidUpstreamResponse
+		}
+		for _, result := range results {
+			if result.Type != "web_search_result" ||
+				result.EncryptedContent == "" || result.Title == "" {
+				return ErrInvalidUpstreamResponse
+			}
+			if _, err := inference.NewURLCitation(
+				0,
+				0,
+				result.Title,
+				result.URL,
+			); err != nil {
+				return ErrInvalidUpstreamResponse
+			}
+		}
+		return nil
+	}
+	var resultError webSearchResultErrorDTO
+	jsonDecoder := json.NewDecoder(bytes.NewReader(trimmed))
+	jsonDecoder.DisallowUnknownFields()
+	if err := jsonDecoder.Decode(&resultError); err != nil ||
+		jsonDecoder.Decode(&struct{}{}) != io.EOF ||
+		resultError.Type != "web_search_tool_result_error" ||
+		!isWebSearchResultErrorCode(resultError.ErrorCode) {
+		return ErrInvalidUpstreamResponse
+	}
+	return nil
+}
+
+// isWebSearchResultErrorCode 只接受 Anthropic 公开的搜索失败枚举。
+func isWebSearchResultErrorCode(value string) bool {
+	switch value {
+	case "invalid_tool_input", "unavailable", "max_uses_exceeded",
+		"too_many_requests", "query_too_long", "request_too_large":
+		return true
+	default:
+		return false
+	}
 }
 
 // applyMessageDelta 合并最终 usage 和停止原因。
@@ -642,7 +929,8 @@ func (decoder *responseDecoder) completeMessage() error {
 		return ErrInvalidUpstreamResponse
 	}
 	for _, block := range decoder.blocks {
-		if !block.completed {
+		if !block.completed ||
+			block.wireType == "server_tool_use" && !block.hasSearchResult {
 			return ErrInvalidUpstreamResponse
 		}
 	}
@@ -679,10 +967,13 @@ func (decoder *responseDecoder) decodeCompletedBlock(
 	switch wire.Type {
 	case "text":
 		startWire.Text = ""
+		startWire.Citations = nil
 	case "thinking":
 		startWire.Thinking = ""
 		startWire.Signature = ""
 	case "tool_use":
+		startWire.Input = json.RawMessage(`{}`)
+	case "server_tool_use":
 		startWire.Input = json.RawMessage(`{}`)
 	}
 	startRaw, err := json.Marshal(startWire)
@@ -696,6 +987,9 @@ func (decoder *responseDecoder) decodeCompletedBlock(
 	switch wire.Type {
 	case "text":
 		if err := decoder.appendText(block, wire.Text); err != nil {
+			return err
+		}
+		if err := decoder.appendInitialCitations(block, wire.Citations); err != nil {
 			return err
 		}
 	case "thinking":
@@ -715,6 +1009,12 @@ func (decoder *responseDecoder) decodeCompletedBlock(
 		if err := decoder.appendToolArguments(block, arguments); err != nil {
 			return err
 		}
+	case "server_tool_use":
+		arguments := string(wire.Input)
+		if err := decoder.appendWebSearchArguments(block, arguments); err != nil {
+			return err
+		}
+	case "web_search_tool_result":
 	default:
 		return ErrInvalidUpstreamResponse
 	}
@@ -820,15 +1120,6 @@ func isEmptyJSONObject(raw json.RawMessage) bool {
 	}
 	var value map[string]json.RawMessage
 	return json.Unmarshal(raw, &value) == nil && len(value) == 0
-}
-
-// hasNonEmptyJSONArray 只把包含真实引用的 citations 视为不支持。
-func hasNonEmptyJSONArray(raw json.RawMessage) bool {
-	if len(raw) == 0 {
-		return false
-	}
-	var values []json.RawMessage
-	return json.Unmarshal(raw, &values) != nil || len(values) > 0
 }
 
 // checkedAddUsage 防止上游 token 分项求和溢出。

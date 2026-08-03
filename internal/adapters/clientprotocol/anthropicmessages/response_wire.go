@@ -230,10 +230,10 @@ func marshalContentBlock(block *contentBlockState) (json.RawMessage, error) {
 				Thinking:  block.text,
 				Signature: block.signature,
 			})
-		case inference.ReasoningEncrypted:
+		case inference.ReasoningRedacted:
 			return json.Marshal(redactedThinkingBlockWireDTO{
 				Type: "redacted_thinking",
-				Data: block.encryptedData,
+				Data: block.redactedData,
 			})
 		default:
 			return nil, ErrUnsupportedResponseEvent

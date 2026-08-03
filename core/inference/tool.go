@@ -40,15 +40,16 @@ type ToolDefinitionOptions struct {
 
 // ToolDefinition 是不携带 Provider 私有字段的函数工具定义。
 type ToolDefinition struct {
-	name                string
-	description         string
-	inputSchema         []byte
-	strict              bool
-	strictSpecified     bool
-	allowedCallers      []ToolCaller
-	deferLoading        *bool
-	eagerInputStreaming *bool
-	inputExamples       [][]byte
+	identity             ToolIdentity
+	namespaceDescription string
+	description          string
+	inputSchema          []byte
+	strict               bool
+	strictSpecified      bool
+	allowedCallers       []ToolCaller
+	deferLoading         *bool
+	eagerInputStreaming  *bool
+	inputExamples        [][]byte
 }
 
 // NewToolDefinition 创建名称稳定且 Schema 为 JSON Object 的工具定义。
@@ -83,8 +84,54 @@ func NewToolDefinitionWithOptions(
 	inputSchema []byte,
 	options ToolDefinitionOptions,
 ) (ToolDefinition, error) {
-	if !isToolName(name) {
+	identity, err := NewToolIdentity(name)
+	if err != nil {
+		return ToolDefinition{}, err
+	}
+	return newToolDefinition(
+		identity,
+		"",
+		description,
+		inputSchema,
+		options,
+	)
+}
+
+// NewNamespacedToolDefinitionWithOptions 创建保留 namespace 身份和说明的工具定义。
+func NewNamespacedToolDefinitionWithOptions(
+	namespace string,
+	namespaceDescription string,
+	name string,
+	description string,
+	inputSchema []byte,
+	options ToolDefinitionOptions,
+) (ToolDefinition, error) {
+	identity, err := NewNamespacedToolIdentity(namespace, name)
+	if err != nil {
+		return ToolDefinition{}, err
+	}
+	return newToolDefinition(
+		identity,
+		namespaceDescription,
+		description,
+		inputSchema,
+		options,
+	)
+}
+
+// newToolDefinition 统一校验普通和 namespaced 函数工具定义。
+func newToolDefinition(
+	identity ToolIdentity,
+	namespaceDescription string,
+	description string,
+	inputSchema []byte,
+	options ToolDefinitionOptions,
+) (ToolDefinition, error) {
+	if !identity.IsValid() {
 		return ToolDefinition{}, ErrInvalidToolName
+	}
+	if namespaceDescription != "" && !isNonBlankText(namespaceDescription) {
+		return ToolDefinition{}, ErrInvalidContent
 	}
 	if description != "" && !isNonBlankText(description) {
 		return ToolDefinition{}, ErrInvalidContent
@@ -96,13 +143,14 @@ func NewToolDefinitionWithOptions(
 		return ToolDefinition{}, ErrInvalidRequest
 	}
 	definition := ToolDefinition{
-		name:                name,
-		description:         description,
-		inputSchema:         cloneBytes(inputSchema),
-		allowedCallers:      append([]ToolCaller(nil), options.AllowedCallers...),
-		deferLoading:        cloneBool(options.DeferLoading),
-		eagerInputStreaming: cloneBool(options.EagerInputStreaming),
-		inputExamples:       cloneByteSlices(options.InputExamples),
+		identity:             identity,
+		namespaceDescription: namespaceDescription,
+		description:          description,
+		inputSchema:          cloneBytes(inputSchema),
+		allowedCallers:       append([]ToolCaller(nil), options.AllowedCallers...),
+		deferLoading:         cloneBool(options.DeferLoading),
+		eagerInputStreaming:  cloneBool(options.EagerInputStreaming),
+		inputExamples:        cloneByteSlices(options.InputExamples),
 	}
 	if options.Strict != nil {
 		definition.strict = *options.Strict
@@ -133,7 +181,22 @@ func areValidToolOptions(options ToolDefinitionOptions) bool {
 
 // Name 返回跨协议使用的精确工具名。
 func (definition ToolDefinition) Name() string {
-	return definition.name
+	return definition.identity.Name()
+}
+
+// Identity 返回 namespace 与局部名称组成的稳定工具身份。
+func (definition ToolDefinition) Identity() ToolIdentity {
+	return definition.identity
+}
+
+// Namespace 返回可选 namespace 及其是否存在。
+func (definition ToolDefinition) Namespace() (string, bool) {
+	return definition.identity.Namespace()
+}
+
+// NamespaceDescription 返回 namespace 的可选说明。
+func (definition ToolDefinition) NamespaceDescription() string {
+	return definition.namespaceDescription
 }
 
 // Description 返回工具的可选说明。
@@ -184,8 +247,9 @@ func (definition ToolDefinition) IsValid() bool {
 		value := definition.strict
 		strict = &value
 	}
-	_, err := NewToolDefinitionWithOptions(
-		definition.name,
+	_, err := newToolDefinition(
+		definition.identity,
+		definition.namespaceDescription,
 		definition.description,
 		definition.inputSchema,
 		ToolDefinitionOptions{
@@ -202,15 +266,16 @@ func (definition ToolDefinition) IsValid() bool {
 // clone 返回工具定义及其 JSON Schema 的独立快照。
 func (definition ToolDefinition) clone() ToolDefinition {
 	return ToolDefinition{
-		name:                definition.name,
-		description:         definition.description,
-		inputSchema:         cloneBytes(definition.inputSchema),
-		strict:              definition.strict,
-		strictSpecified:     definition.strictSpecified,
-		allowedCallers:      append([]ToolCaller(nil), definition.allowedCallers...),
-		deferLoading:        cloneBool(definition.deferLoading),
-		eagerInputStreaming: cloneBool(definition.eagerInputStreaming),
-		inputExamples:       cloneByteSlices(definition.inputExamples),
+		identity:             definition.identity,
+		namespaceDescription: definition.namespaceDescription,
+		description:          definition.description,
+		inputSchema:          cloneBytes(definition.inputSchema),
+		strict:               definition.strict,
+		strictSpecified:      definition.strictSpecified,
+		allowedCallers:       append([]ToolCaller(nil), definition.allowedCallers...),
+		deferLoading:         cloneBool(definition.deferLoading),
+		eagerInputStreaming:  cloneBool(definition.eagerInputStreaming),
+		inputExamples:        cloneByteSlices(definition.inputExamples),
 	}
 }
 
@@ -226,16 +291,43 @@ func cloneByteSlices(values [][]byte) [][]byte {
 // ToolCallContent 是 Assistant 发起的完整工具调用。
 type ToolCallContent struct {
 	callID    string
-	name      string
+	identity  ToolIdentity
 	arguments []byte
 }
 
 // NewToolCallContent 创建拥有明确 call ID 和完整 JSON Object 参数的工具调用。
 func NewToolCallContent(callID string, name string, arguments []byte) (ToolCallContent, error) {
+	identity, err := NewToolIdentity(name)
+	if err != nil {
+		return ToolCallContent{}, err
+	}
+	return newToolCallContent(callID, identity, arguments)
+}
+
+// NewNamespacedToolCallContent 创建保留 namespace 的完整工具调用。
+func NewNamespacedToolCallContent(
+	callID string,
+	namespace string,
+	name string,
+	arguments []byte,
+) (ToolCallContent, error) {
+	identity, err := NewNamespacedToolIdentity(namespace, name)
+	if err != nil {
+		return ToolCallContent{}, err
+	}
+	return newToolCallContent(callID, identity, arguments)
+}
+
+// newToolCallContent 统一校验普通与 namespaced 历史工具调用。
+func newToolCallContent(
+	callID string,
+	identity ToolIdentity,
+	arguments []byte,
+) (ToolCallContent, error) {
 	if !isCanonicalOpaqueID(callID) {
 		return ToolCallContent{}, ErrInvalidToolCallID
 	}
-	if !isToolName(name) {
+	if !identity.IsValid() {
 		return ToolCallContent{}, ErrInvalidToolName
 	}
 	if !isJSONObject(arguments) {
@@ -243,7 +335,7 @@ func NewToolCallContent(callID string, name string, arguments []byte) (ToolCallC
 	}
 	return ToolCallContent{
 		callID:    callID,
-		name:      name,
+		identity:  identity,
 		arguments: cloneBytes(arguments),
 	}, nil
 }
@@ -260,7 +352,17 @@ func (content ToolCallContent) CallID() string {
 
 // Name 返回调用的精确工具名。
 func (content ToolCallContent) Name() string {
-	return content.name
+	return content.identity.Name()
+}
+
+// Identity 返回工具调用的稳定身份。
+func (content ToolCallContent) Identity() ToolIdentity {
+	return content.identity
+}
+
+// Namespace 返回可选 namespace 及其是否存在。
+func (content ToolCallContent) Namespace() (string, bool) {
+	return content.identity.Namespace()
 }
 
 // Arguments 返回不能修改内部调用的 JSON Object 副本。
@@ -270,7 +372,7 @@ func (content ToolCallContent) Arguments() []byte {
 
 // IsValid 判断完整工具调用仍满足构造不变量。
 func (content ToolCallContent) IsValid() bool {
-	_, err := NewToolCallContent(content.callID, content.name, content.arguments)
+	_, err := newToolCallContent(content.callID, content.identity, content.arguments)
 	return err == nil
 }
 
@@ -278,7 +380,7 @@ func (content ToolCallContent) IsValid() bool {
 func (content ToolCallContent) cloneContent() Content {
 	return ToolCallContent{
 		callID:    content.callID,
-		name:      content.name,
+		identity:  content.identity,
 		arguments: cloneBytes(content.arguments),
 	}
 }

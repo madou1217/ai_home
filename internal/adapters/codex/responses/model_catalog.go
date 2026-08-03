@@ -139,7 +139,7 @@ func drainModelCatalogResponse(body io.Reader) {
 	)
 }
 
-// buildModelsRequest 对齐官方 Codex rust-v0.145.0 ModelsClient 请求合同。
+// buildModelsRequest 对齐官方 Codex rust-v0.146.0 ModelsClient 请求合同。
 func buildModelsRequest(
 	ctx context.Context,
 	auth authProjection,

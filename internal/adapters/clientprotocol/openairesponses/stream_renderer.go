@@ -38,7 +38,7 @@ func NewStreamRenderer(
 func (renderer *StreamRenderer) Render(
 	event inference.StreamEvent,
 ) ([]RenderedEvent, error) {
-	if err := renderer.validateSupportedEvent(event); err != nil {
+	if err := validateSupportedResponseEvent(event); err != nil {
 		return nil, err
 	}
 	frames, err := renderer.prepareFrames(event)
@@ -49,6 +49,16 @@ func (renderer *StreamRenderer) Render(
 		return nil, err
 	}
 	return renderer.renderPreparedFrames(event, frames)
+}
+
+// validateSupportedResponseEvent 在修改状态前拒绝 Responses 没有原生 carrier 的
+// Claude redacted_thinking，避免把 Provider 私有数据伪装成 encrypted_content。
+func validateSupportedResponseEvent(event inference.StreamEvent) error {
+	completed, ok := event.(inference.ReasoningCompletedEvent)
+	if ok && completed.Content().ReasoningKind() == inference.ReasoningRedacted {
+		return ErrUnsupportedResponseEvent
+	}
+	return nil
 }
 
 // Terminal 表示 Renderer 已收到成功或失败终态。
@@ -101,26 +111,13 @@ func (renderer *StreamRenderer) prepareFrames(
 			typed.Arguments(),
 		)
 		return preparedFrames{argumentsSuffix: suffix}, err
+	case inference.WebSearchCompletedEvent:
+		return preparedFrames{}, nil
+	case inference.URLCitationAddedEvent:
+		return preparedFrames{}, nil
 	default:
 		return preparedFrames{}, nil
 	}
-}
-
-// validateSupportedEvent 在修改状态前拒绝 Responses 无法无损表达的事件。
-func (renderer *StreamRenderer) validateSupportedEvent(
-	event inference.StreamEvent,
-) error {
-	switch typed := event.(type) {
-	case inference.ReasoningDeltaEvent:
-		if typed.DeltaKind() == inference.ReasoningDeltaSignature {
-			return ErrUnsupportedResponseEvent
-		}
-	case inference.ReasoningCompletedEvent:
-		if typed.Content().Signature() != "" {
-			return ErrUnsupportedResponseEvent
-		}
-	}
-	return nil
 }
 
 // renderPreparedFrames 根据已经应用的状态生成对应 Responses 事件。
@@ -153,6 +150,10 @@ func (renderer *StreamRenderer) renderPreparedFrames(
 		return renderer.renderToolArgumentsDelta(typed, typed.Delta())
 	case inference.ToolCallCompletedEvent:
 		return renderer.renderToolCallCompleted(typed, prepared.argumentsSuffix)
+	case inference.WebSearchCompletedEvent:
+		return nil, nil
+	case inference.URLCitationAddedEvent:
+		return renderer.renderURLCitationAdded(typed)
 	case inference.ContentBlockCompletedEvent:
 		return renderer.renderContentBlockCompleted(typed)
 	case inference.OutputItemCompletedEvent:
@@ -201,7 +202,11 @@ func (renderer *StreamRenderer) renderOutputItemAdded(
 	if err != nil {
 		return nil, err
 	}
-	encoded, err := marshalOutputItem(item, "in_progress")
+	encoded, err := marshalOutputItem(
+		item,
+		"in_progress",
+		renderer.state.request.IncludeEncryptedReasoning(),
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -228,7 +233,11 @@ func (renderer *StreamRenderer) renderOutputItemCompleted(
 	if err != nil {
 		return nil, err
 	}
-	encoded, err := marshalOutputItem(item, "completed")
+	encoded, err := marshalOutputItem(
+		item,
+		"completed",
+		renderer.state.request.IncludeEncryptedReasoning(),
+	)
 	if err != nil {
 		return nil, err
 	}

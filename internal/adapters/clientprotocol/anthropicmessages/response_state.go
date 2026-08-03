@@ -45,7 +45,7 @@ type contentBlockState struct {
 	completed     bool
 	text          string
 	signature     string
-	encryptedData string
+	redactedData  string
 	reasoningKind inference.ReasoningKind
 }
 
@@ -301,12 +301,12 @@ func (state *responseState) completeReasoning(event inference.ReasoningCompleted
 		block.text = content.Text()
 		block.signature = content.Signature()
 		block.reasoningKind = inference.ReasoningThinking
-	case inference.ReasoningEncrypted:
+	case inference.ReasoningRedacted:
 		if block.text != "" || block.signature != "" {
 			return ErrInvalidEventSequence
 		}
-		block.encryptedData = content.EncryptedData()
-		block.reasoningKind = inference.ReasoningEncrypted
+		block.redactedData = content.RedactedData()
+		block.reasoningKind = inference.ReasoningRedacted
 	default:
 		return ErrUnsupportedResponseEvent
 	}

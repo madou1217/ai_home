@@ -81,6 +81,19 @@ func TestRunRequiresGatewayKeyOnlyForRelayMode(t *testing.T) {
 		planner.intent.CLIAccountID().Int64() != 9 {
 		t.Fatalf("Gateway intent = %v, calls=%d", planner.intent, planner.calls)
 	}
+	if err := app.Run(context.Background(), "codex", []string{
+		"relay", "claude", "9", "--model", "claude-opus-5",
+	}, GatewayConfig{
+		BaseURL:   "http://127.0.0.1:9527",
+		ClientKey: "client-key-with-at-least-thirty-two-characters",
+	}); !errors.Is(err, plannerError) {
+		t.Fatalf("Run(cross-provider gateway) error = %v", err)
+	}
+	if planner.calls != 3 || planner.intent.ClientProviderID() != "codex" ||
+		planner.intent.RelayProviderID() != "claude" ||
+		planner.intent.CLIAccountID().Int64() != 9 {
+		t.Fatalf("Cross-provider intent = %v, calls=%d", planner.intent, planner.calls)
+	}
 	if runner.calls != 0 {
 		t.Fatal("规划失败不得执行 Runtime")
 	}
@@ -95,6 +108,9 @@ func TestRunRejectsProvidersWithoutRegisteredStrategies(t *testing.T) {
 	}
 	if err := app.Run(context.Background(), "gemini", nil, GatewayConfig{}); !errors.Is(err, ErrInvalidRunRequest) {
 		t.Fatalf("Run(gemini) error = %v", err)
+	}
+	if err := app.Run(context.Background(), "codex", []string{"relay", "gemini", "9"}, GatewayConfig{}); !errors.Is(err, ErrInvalidRunRequest) {
+		t.Fatalf("Run(codex relay gemini) error = %v", err)
 	}
 }
 

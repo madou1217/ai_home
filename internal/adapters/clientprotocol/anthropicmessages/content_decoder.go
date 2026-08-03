@@ -281,7 +281,7 @@ func decodeRedactedThinkingContent(raw json.RawMessage, field string) (decodedCo
 	if wireContent.Type != "redacted_thinking" {
 		return decodedContent{}, invalidField(field + ".type")
 	}
-	content, contentErr := inference.NewEncryptedReasoningContent(wireContent.Data)
+	content, contentErr := inference.NewRedactedReasoningContent(wireContent.Data)
 	if contentErr != nil {
 		return decodedContent{}, invalidField(field + ".data")
 	}

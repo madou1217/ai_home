@@ -32,6 +32,8 @@ type Dependencies struct {
 	Authorizer Authorizer
 	// Clock 为 OpenAI 响应生成稳定创建时间。
 	Clock func() time.Time
+	// MessagesDecodeErrorObserver 接收不含字段值的 Anthropic Decoder 诊断。
+	MessagesDecodeErrorObserver func(error)
 	// MaxBodyBytes 为零时由各协议 Handler 使用安全默认值。
 	MaxBodyBytes int64
 }
@@ -71,10 +73,11 @@ func New(dependencies Dependencies) (http.Handler, error) {
 	}
 	messages, err := anthropicmessagesapi.NewHandler(
 		anthropicmessagesapi.Dependencies{
-			Protocols:    protocols,
-			Executor:     dependencies.Executor,
-			Authorizer:   dependencies.Authorizer,
-			MaxBodyBytes: dependencies.MaxBodyBytes,
+			Protocols:           protocols,
+			Executor:            dependencies.Executor,
+			Authorizer:          dependencies.Authorizer,
+			DecodeErrorObserver: dependencies.MessagesDecodeErrorObserver,
+			MaxBodyBytes:        dependencies.MaxBodyBytes,
 		},
 	)
 	if err != nil {

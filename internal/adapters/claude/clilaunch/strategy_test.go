@@ -61,6 +61,7 @@ func TestGatewayStrategyBuildsPoolAndPinnedMessagesEnvironment(t *testing.T) {
 			values := environment.RevealSet()
 			if values["ANTHROPIC_API_KEY"] != claudeGatewayKey ||
 				values["ANTHROPIC_BASE_URL"] != "http://127.0.0.1:9527" ||
+				values["CLAUDE_CODE_DISABLE_ADVISOR_TOOL"] != "1" ||
 				slices.Contains(environment.SetNames(), "CLAUDE_CONFIG_DIR") ||
 				slices.Contains(environment.UnsetNames(), "CLAUDE_CONFIG_DIR") {
 				t.Fatalf("Gateway 环境错误: %v", environment)

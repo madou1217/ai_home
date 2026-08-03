@@ -6,7 +6,7 @@ import (
 )
 
 // TestRequestDerivesRequiredCapabilitiesInOneCanonicalPlace 验证图片、文档、工具、
-// reasoning、结构化输出和真实流式需求都从 Canonical Request 统一推导。
+// reasoning、结构化输出、上下文编辑和真实流式需求都统一推导。
 func TestRequestDerivesRequiredCapabilitiesInOneCanonicalPlace(t *testing.T) {
 	t.Parallel()
 
@@ -44,13 +44,14 @@ func TestRequestDerivesRequiredCapabilitiesInOneCanonicalPlace(t *testing.T) {
 	}
 
 	request, err := NewRequest(RequestInput{
-		ClientProtocol:   ClientProtocolAnthropicMessages,
-		Model:            "claude-opus-4-1",
-		Messages:         []Message{message},
-		Tools:            []ToolDefinition{tool},
-		Reasoning:        &reasoning,
-		StructuredOutput: &output,
-		Stream:           true,
+		ClientProtocol:    ClientProtocolAnthropicMessages,
+		Model:             "claude-opus-4-1",
+		Messages:          []Message{message},
+		Tools:             []ToolDefinition{tool},
+		Reasoning:         &reasoning,
+		StructuredOutput:  &output,
+		ContextManagement: mustTestContextManagement(t),
+		Stream:            true,
 	})
 	if err != nil {
 		t.Fatalf("NewRequest() error = %v", err)
@@ -65,6 +66,7 @@ func TestRequestDerivesRequiredCapabilitiesInOneCanonicalPlace(t *testing.T) {
 		CapabilityReasoning,
 		CapabilityStructuredOutput,
 		CapabilityStreaming,
+		CapabilityContextManagement,
 	}
 	for _, capability := range expected {
 		if !required.Has(capability) {
@@ -151,7 +153,7 @@ func TestNewCapabilitySetBuildsValidatedPublicCapabilityMask(t *testing.T) {
 	for _, capabilities := range [][]Capability{
 		nil,
 		{Capability(0)},
-		{CapabilityWebSearch + 1},
+		{CapabilityContextManagement + 1},
 	} {
 		if _, err := NewCapabilitySet(capabilities...); !errors.Is(
 			err,

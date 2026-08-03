@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"time"
 
@@ -94,6 +95,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		options.ClientKey,
 		options.InferenceHTTPClient,
 		options.UsageHTTPClient,
+		newMessagesDecodeErrorObserver(options.ErrorLog),
 	)
 	if err != nil {
 		_ = store.Close()
@@ -118,6 +120,7 @@ func newHandlers(
 	clientKey func() string,
 	inferenceClient InferenceHTTPClient,
 	usageClient UsageHTTPClient,
+	decodeErrors func(error),
 ) (_ serverHandlers, _ []io.Closer, resultErr error) {
 	var usage *usageComposition
 	defer func() {
@@ -379,9 +382,10 @@ func newHandlers(
 				codexProvider,
 				claudeProvider,
 			},
-			authorizer: clientAuthorizer,
-			httpClient: inferenceClient,
-			clock:      time.Now,
+			authorizer:   clientAuthorizer,
+			httpClient:   inferenceClient,
+			decodeErrors: decodeErrors,
+			clock:        time.Now,
 		},
 	)
 	if err != nil {
@@ -412,6 +416,16 @@ func newHandlers(
 			}
 		},
 	}, []io.Closer{inference, usage}, nil
+}
+
+// newMessagesDecodeErrorObserver 只记录 Decoder 已脱敏的错误类别和字段路径。
+func newMessagesDecodeErrorObserver(logger *log.Logger) func(error) {
+	if logger == nil {
+		return nil
+	}
+	return func(err error) {
+		logger.Printf("Anthropic Messages decode rejected: %v", err)
+	}
 }
 
 // newModelDiscovery 创建生产 Codex/Claude 目录源，或使用测试显式注入的策略。

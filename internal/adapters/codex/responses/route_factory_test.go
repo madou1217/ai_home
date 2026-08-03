@@ -9,7 +9,7 @@ import (
 )
 
 // TestAdapterBuildRouteDeclaresCompleteCodexContract 验证目录路由身份、
-// 真实模型和七项双向协议能力全部来自 Adapter 自身。
+// 真实模型和八项双向协议能力全部来自 Adapter 自身。
 func TestAdapterBuildRouteDeclaresCompleteCodexContract(t *testing.T) {
 	t.Parallel()
 
@@ -35,6 +35,9 @@ func TestAdapterBuildRouteDeclaresCompleteCodexContract(t *testing.T) {
 			t.Errorf("route capabilities missing %q", capability)
 		}
 	}
+	if route.Capabilities().Has(inference.CapabilityContextManagement) {
+		t.Error("Codex route unexpectedly declares context_management")
+	}
 }
 
 // allRouteCapabilities 返回当前 Canonical 路由注册的完整能力列表。
@@ -47,5 +50,6 @@ func allRouteCapabilities() []inference.Capability {
 		inference.CapabilityReasoning,
 		inference.CapabilityStructuredOutput,
 		inference.CapabilityStreaming,
+		inference.CapabilityWebSearch,
 	}
 }

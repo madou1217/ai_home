@@ -21,6 +21,7 @@ const (
 	betaFilesAPI            = "files-api-2025-04-14"
 	betaRedactThinking      = "redact-thinking-2026-02-12"
 	betaWebSearch           = "web-search-2025-03-05"
+	betaContextManagement   = "context-management-2025-06-27"
 )
 
 // encodedRequest 保存 JSON 正文及其功能所需的 beta Header。
@@ -172,26 +173,31 @@ func (encoder *requestEncoder) encode() (requestDTO, error) {
 		return requestDTO{}, err
 	}
 	metadata := encoder.encodeMetadata()
+	contextManagement, err := encoder.encodeContextManagement()
+	if err != nil {
+		return requestDTO{}, err
+	}
 	rootCache := encodeCacheControl(encoder.cache.request)
 	if rootCache != nil && rootCache.Scope != "" {
 		encoder.addBeta(betaPromptCachingScope)
 	}
 	return requestDTO{
-		Model:         encoder.effectiveModel,
-		MaxTokens:     encoder.maxTokens,
-		Messages:      messages,
-		System:        system,
-		Stream:        true,
-		Temperature:   optionalFloat(encoder.request.Temperature()),
-		TopP:          optionalFloat(encoder.request.TopP()),
-		TopK:          optionalUint64(encoder.request.TopK()),
-		StopSequences: encoder.request.StopSequences(),
-		Tools:         tools,
-		ToolChoice:    toolChoice,
-		Thinking:      thinking,
-		OutputConfig:  outputConfig,
-		Metadata:      metadata,
-		CacheControl:  rootCache,
+		Model:             encoder.effectiveModel,
+		MaxTokens:         encoder.maxTokens,
+		Messages:          messages,
+		System:            system,
+		Stream:            true,
+		Temperature:       optionalFloat(encoder.request.Temperature()),
+		TopP:              optionalFloat(encoder.request.TopP()),
+		TopK:              optionalUint64(encoder.request.TopK()),
+		StopSequences:     encoder.request.StopSequences(),
+		Tools:             tools,
+		ToolChoice:        toolChoice,
+		Thinking:          thinking,
+		OutputConfig:      outputConfig,
+		Metadata:          metadata,
+		CacheControl:      rootCache,
+		ContextManagement: contextManagement,
 	}, nil
 }
 
@@ -208,9 +214,6 @@ func (encoder *requestEncoder) encodeMessages() (
 	for messageIndex, message := range messages {
 		role := message.Role()
 		if role == inference.RoleSystem || role == inference.RoleDeveloper {
-			if conversationStarted {
-				return nil, nil, ErrUnsupportedRequest
-			}
 			contents, err := encoder.encodeContents(
 				uint32(messageIndex),
 				message.Contents(),
@@ -218,7 +221,18 @@ func (encoder *requestEncoder) encodeMessages() (
 			if err != nil {
 				return nil, nil, err
 			}
-			system = append(system, contents...)
+			if !conversationStarted {
+				system = append(system, contents...)
+				continue
+			}
+			if role != inference.RoleSystem {
+				return nil, nil, ErrUnsupportedRequest
+			}
+			conversation = appendClaudeConversationMessage(
+				conversation,
+				messageDTO{Role: "system", Content: contents},
+			)
+			encoder.addBeta(betaClaudeCode)
 			continue
 		}
 		conversationStarted = true

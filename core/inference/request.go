@@ -24,6 +24,8 @@ const (
 	CapabilityStreaming
 	// CapabilityWebSearch 表示上游能够执行服务器侧网络搜索。
 	CapabilityWebSearch
+	// CapabilityContextManagement 表示上游能执行请求级上下文编辑。
+	CapabilityContextManagement
 )
 
 // String 返回能力的稳定日志与测试名称。
@@ -45,6 +47,8 @@ func (capability Capability) String() string {
 		return "streaming"
 	case CapabilityWebSearch:
 		return "web_search"
+	case CapabilityContextManagement:
+		return "context_management"
 	default:
 		return "unknown"
 	}
@@ -52,7 +56,7 @@ func (capability Capability) String() string {
 
 // IsValid 判断能力是否已经注册。
 func (capability Capability) IsValid() bool {
-	return capability >= CapabilityTextGeneration && capability <= CapabilityWebSearch
+	return capability >= CapabilityTextGeneration && capability <= CapabilityContextManagement
 }
 
 // CapabilitySet 使用位图保存小而稳定的能力集合。
@@ -93,7 +97,7 @@ func (set CapabilitySet) ContainsAll(required CapabilitySet) bool {
 // IsValid 判断位图非空且没有未注册能力位。
 func (set CapabilitySet) IsValid() bool {
 	knownMask := CapabilitySet(
-		(1 << uint(CapabilityWebSearch)) - 1,
+		(1 << uint(CapabilityContextManagement)) - 1,
 	)
 	return set != 0 && set&^knownMask == 0
 }
@@ -511,6 +515,8 @@ type RequestInput struct {
 	Reasoning *ReasoningConfig
 	// StructuredOutput 是可选的 JSON Schema 输出合同。
 	StructuredOutput *StructuredOutput
+	// ContextManagement 是可选的请求级上下文编辑策略。
+	ContextManagement *ContextManagement
 	// Stream 表示客户端需要真实增量事件。
 	Stream bool
 	// IncludeUsageInStream 表示客户端要求在流结束前接收独立 usage 快照。
@@ -560,6 +566,7 @@ type Request struct {
 	parallelToolCalls *bool
 	reasoning         *ReasoningConfig
 	structuredOutput  *StructuredOutput
+	contextManagement *ContextManagement
 	stream            bool
 	includeUsage      bool
 	maxOutputTokens   uint64
@@ -612,6 +619,7 @@ func NewRequest(input RequestInput) (Request, error) {
 		parallelToolCalls: cloneBool(input.ParallelToolCalls),
 		reasoning:         cloneReasoning(input.Reasoning),
 		structuredOutput:  cloneStructuredOutput(input.StructuredOutput),
+		contextManagement: cloneContextManagement(input.ContextManagement),
 		stream:            input.Stream,
 		includeUsage:      input.IncludeUsageInStream,
 		maxOutputTokens:   input.MaxOutputTokens,
@@ -698,6 +706,14 @@ func (request Request) StructuredOutput() (StructuredOutput, bool) {
 		return StructuredOutput{}, false
 	}
 	return request.structuredOutput.clone(), true
+}
+
+// ContextManagement 返回可选上下文编辑策略的深拷贝。
+func (request Request) ContextManagement() (ContextManagement, bool) {
+	if request.contextManagement == nil {
+		return ContextManagement{}, false
+	}
+	return request.contextManagement.clone(), true
 }
 
 // Stream 返回客户端是否需要真实增量输出。
@@ -881,6 +897,9 @@ func validateRequestOptions(input RequestInput, tools []ToolDefinition) error {
 	if input.StructuredOutput != nil && !input.StructuredOutput.IsValid() {
 		return ErrInvalidRequest
 	}
+	if input.ContextManagement != nil && !input.ContextManagement.IsValid() {
+		return ErrInvalidRequest
+	}
 	if input.Continuation != nil && !input.Continuation.IsValid() {
 		return ErrInvalidRequest
 	}
@@ -987,6 +1006,9 @@ func deriveRequiredCapabilities(request Request) CapabilitySet {
 	if request.structuredOutput != nil {
 		required = required.with(CapabilityStructuredOutput)
 	}
+	if request.contextManagement != nil {
+		required = required.with(CapabilityContextManagement)
+	}
 	for _, message := range request.messages {
 		for _, content := range message.contents {
 			required = addContentCapabilities(required, content)
@@ -997,6 +1019,15 @@ func deriveRequiredCapabilities(request Request) CapabilitySet {
 
 // cloneWebSearchTool 复制可选服务器侧搜索配置。
 func cloneWebSearchTool(value *WebSearchTool) *WebSearchTool {
+	if value == nil {
+		return nil
+	}
+	cloned := value.clone()
+	return &cloned
+}
+
+// cloneContextManagement 深拷贝可选上下文管理策略。
+func cloneContextManagement(value *ContextManagement) *ContextManagement {
 	if value == nil {
 		return nil
 	}

@@ -19,6 +19,8 @@ const (
 	DefaultMaxBodyBytes int64 = 32 * 1024 * 1024
 	// MaxBodyBytesLimit 防止 Composition Root 意外关闭请求体边界。
 	MaxBodyBytesLimit int64 = 256 * 1024 * 1024
+	// claudeCodeBetaQuery 是 Claude Code 2.1.220 固定发送的原生 Messages 查询串。
+	claudeCodeBetaQuery = "beta=true"
 )
 
 var (
@@ -35,18 +37,20 @@ type Authorizer interface {
 
 // Dependencies 集中声明 Messages HTTP 入站适配器依赖。
 type Dependencies struct {
-	Protocols    *clientprotocol.Registry
-	Executor     inferencegateway.Executor
-	Authorizer   Authorizer
-	MaxBodyBytes int64
+	Protocols           *clientprotocol.Registry
+	Executor            inferencegateway.Executor
+	Authorizer          Authorizer
+	DecodeErrorObserver func(error)
+	MaxBodyBytes        int64
 }
 
 // Handler 负责鉴权、请求解码、Canonical 执行和 Messages 响应渲染。
 type Handler struct {
-	adapter      clientprotocol.Adapter
-	executor     inferencegateway.Executor
-	authorizer   Authorizer
-	maxBodyBytes int64
+	adapter             clientprotocol.Adapter
+	executor            inferencegateway.Executor
+	authorizer          Authorizer
+	decodeErrorObserver func(error)
+	maxBodyBytes        int64
 }
 
 // NewHandler 解析一次协议注册并创建默认失败关闭的 Messages Handler。
@@ -68,10 +72,11 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		return nil, ErrInvalidDependencies
 	}
 	return &Handler{
-		adapter:      adapter,
-		executor:     dependencies.Executor,
-		authorizer:   dependencies.Authorizer,
-		maxBodyBytes: maxBodyBytes,
+		adapter:             adapter,
+		executor:            dependencies.Executor,
+		authorizer:          dependencies.Authorizer,
+		decodeErrorObserver: dependencies.DecodeErrorObserver,
+		maxBodyBytes:        maxBodyBytes,
 	}, nil
 }
 
@@ -111,7 +116,9 @@ func (handler *Handler) ServeHTTP(
 		)
 		return
 	}
-	if request.URL.RawQuery != "" {
+	if request.URL.ForceQuery ||
+		request.URL.RawQuery != "" &&
+			request.URL.RawQuery != claudeCodeBetaQuery {
 		writeAPIError(
 			response,
 			http.StatusBadRequest,
@@ -139,6 +146,9 @@ func (handler *Handler) ServeHTTP(
 	}
 	canonicalRequest, err := handler.adapter.Decode(body)
 	if err != nil {
+		if handler.decodeErrorObserver != nil {
+			handler.decodeErrorObserver(err)
+		}
 		writeDecodeError(response, err)
 		return
 	}

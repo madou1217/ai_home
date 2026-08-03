@@ -47,6 +47,7 @@ type inferenceCompositionDependencies struct {
 	credentialRefresh []accountcredentials.RefreshStrategy
 	authorizer        inferencehttp.Authorizer
 	httpClient        InferenceHTTPClient
+	decodeErrors      func(error)
 	clock             func() time.Time
 }
 
@@ -146,9 +147,10 @@ func newInferenceComposition(
 		return nil, err
 	}
 	handler, err := inferencehttp.New(inferencehttp.Dependencies{
-		Executor:   executor,
-		Authorizer: dependencies.authorizer,
-		Clock:      dependencies.clock,
+		Executor:                    executor,
+		Authorizer:                  dependencies.authorizer,
+		Clock:                       dependencies.clock,
+		MessagesDecodeErrorObserver: dependencies.decodeErrors,
 	})
 	if err != nil {
 		return nil, err

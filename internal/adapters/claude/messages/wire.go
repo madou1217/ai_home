@@ -4,24 +4,25 @@ import "encoding/json"
 
 // requestDTO 只描述 Anthropic Messages create 请求线协议。
 type requestDTO struct {
-	Model         string            `json:"model"`
-	MaxTokens     uint64            `json:"max_tokens"`
-	Messages      []messageDTO      `json:"messages"`
-	System        []contentDTO      `json:"system,omitempty"`
-	Stream        bool              `json:"stream"`
-	Temperature   *float64          `json:"temperature,omitempty"`
-	TopP          *float64          `json:"top_p,omitempty"`
-	TopK          *uint64           `json:"top_k,omitempty"`
-	StopSequences []string          `json:"stop_sequences,omitempty"`
-	Tools         []json.RawMessage `json:"tools,omitempty"`
-	ToolChoice    *toolChoiceDTO    `json:"tool_choice,omitempty"`
-	Thinking      *thinkingDTO      `json:"thinking,omitempty"`
-	OutputConfig  *outputConfigDTO  `json:"output_config,omitempty"`
-	Metadata      *metadataDTO      `json:"metadata,omitempty"`
-	CacheControl  *cacheControlDTO  `json:"cache_control,omitempty"`
+	Model             string                `json:"model"`
+	MaxTokens         uint64                `json:"max_tokens"`
+	Messages          []messageDTO          `json:"messages"`
+	System            []contentDTO          `json:"system,omitempty"`
+	Stream            bool                  `json:"stream"`
+	Temperature       *float64              `json:"temperature,omitempty"`
+	TopP              *float64              `json:"top_p,omitempty"`
+	TopK              *uint64               `json:"top_k,omitempty"`
+	StopSequences     []string              `json:"stop_sequences,omitempty"`
+	Tools             []json.RawMessage     `json:"tools,omitempty"`
+	ToolChoice        *toolChoiceDTO        `json:"tool_choice,omitempty"`
+	Thinking          *thinkingDTO          `json:"thinking,omitempty"`
+	OutputConfig      *outputConfigDTO      `json:"output_config,omitempty"`
+	Metadata          *metadataDTO          `json:"metadata,omitempty"`
+	CacheControl      *cacheControlDTO      `json:"cache_control,omitempty"`
+	ContextManagement *contextManagementDTO `json:"context_management,omitempty"`
 }
 
-// messageDTO 是 Anthropic 只允许的 user 或 assistant 历史消息。
+// messageDTO 是 Anthropic Beta Messages 的 user、assistant 或 system 历史消息。
 type messageDTO struct {
 	Role    string       `json:"role"`
 	Content []contentDTO `json:"content"`
@@ -121,6 +122,33 @@ type cacheControlDTO struct {
 	Type  string `json:"type"`
 	TTL   string `json:"ttl,omitempty"`
 	Scope string `json:"scope,omitempty"`
+}
+
+// contextManagementDTO 是 Anthropic 请求级上下文编辑集合。
+type contextManagementDTO struct {
+	Edits []json.RawMessage `json:"edits"`
+}
+
+// contextMetricDTO 是带明确单位的上下文阈值或保留数量。
+type contextMetricDTO struct {
+	Type  string `json:"type"`
+	Value uint64 `json:"value"`
+}
+
+// clearThinkingEditDTO 是 clear_thinking_20251015 的线协议结构。
+type clearThinkingEditDTO struct {
+	Type string          `json:"type"`
+	Keep json.RawMessage `json:"keep,omitempty"`
+}
+
+// clearToolUsesEditDTO 是 clear_tool_uses_20250919 的线协议结构。
+type clearToolUsesEditDTO struct {
+	Type            string            `json:"type"`
+	Trigger         *contextMetricDTO `json:"trigger,omitempty"`
+	Keep            *contextMetricDTO `json:"keep,omitempty"`
+	ClearAtLeast    *contextMetricDTO `json:"clear_at_least,omitempty"`
+	ClearToolInputs json.RawMessage   `json:"clear_tool_inputs,omitempty"`
+	ExcludeTools    []string          `json:"exclude_tools,omitempty"`
 }
 
 // streamEventDTO 是 Claude SSE 事件的有界判别结构。

@@ -7,7 +7,12 @@ import (
 	"github.com/madou1217/ai_home/core/accounts/claude"
 )
 
-const gatewayPinnedHeader = "X-Account-Ref"
+const (
+	gatewayPinnedHeader = "X-Account-Ref"
+	// gatewayDisableAdvisorEnv 使用 Claude Code 官方开关关闭尚无 Canonical
+	// 输出语义的实验性 Advisor server tool，避免 Relay 在入站层硬失败。
+	gatewayDisableAdvisorEnv = "CLAUDE_CODE_DISABLE_ADVISOR_TOOL"
+)
 
 // 编译期确认 Claude Gateway Strategy 满足不读取上游凭据的应用层接口。
 var _ providerlaunch.GatewayStrategy = (*GatewayStrategy)(nil)
@@ -37,6 +42,7 @@ func (*GatewayStrategy) Build(
 		"ANTHROPIC_API_KEY":                    endpoint.RevealClientKey(),
 		"ANTHROPIC_BASE_URL":                   endpoint.BaseURL(),
 		"CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST": "1",
+		gatewayDisableAdvisorEnv:               "1",
 	}
 	if accountRef, pinned := target.PinnedAccount(); pinned {
 		values["ANTHROPIC_CUSTOM_HEADERS"] = fmt.Sprintf(

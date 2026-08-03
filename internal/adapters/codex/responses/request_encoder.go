@@ -106,6 +106,9 @@ func rejectUnsupportedRequest(
 	if len(request.PromptCacheBreakpoints()) != 0 {
 		return unsupported("prompt_cache_breakpoints")
 	}
+	if _, found := request.ContextManagement(); found {
+		return unsupported("context_management")
+	}
 	if _, found := request.Truncation(); found {
 		return unsupported("truncation")
 	}

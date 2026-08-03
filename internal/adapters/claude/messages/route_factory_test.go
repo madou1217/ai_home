@@ -9,7 +9,7 @@ import (
 )
 
 // TestAdapterBuildRouteDeclaresCompleteClaudeContract 验证目录路由身份、
-// 真实模型和七项双向协议能力全部来自 Adapter 自身。
+// 真实模型和九项双向协议能力全部来自 Adapter 自身。
 func TestAdapterBuildRouteDeclaresCompleteClaudeContract(t *testing.T) {
 	t.Parallel()
 
@@ -47,5 +47,7 @@ func allRouteCapabilities() []inference.Capability {
 		inference.CapabilityReasoning,
 		inference.CapabilityStructuredOutput,
 		inference.CapabilityStreaming,
+		inference.CapabilityWebSearch,
+		inference.CapabilityContextManagement,
 	}
 }

@@ -4,24 +4,25 @@ import "encoding/json"
 
 // requestDTO 是 Messages create 请求的严格根 DTO。
 type requestDTO struct {
-	Model         string            `json:"model"`
-	MaxTokens     *uint64           `json:"max_tokens"`
-	Messages      []json.RawMessage `json:"messages"`
-	System        json.RawMessage   `json:"system"`
-	Stream        bool              `json:"stream"`
-	Temperature   *float64          `json:"temperature"`
-	TopP          *float64          `json:"top_p"`
-	TopK          *uint64           `json:"top_k"`
-	StopSequences []string          `json:"stop_sequences"`
-	Tools         []json.RawMessage `json:"tools"`
-	ToolChoice    json.RawMessage   `json:"tool_choice"`
-	Thinking      json.RawMessage   `json:"thinking"`
-	OutputConfig  json.RawMessage   `json:"output_config"`
-	Metadata      json.RawMessage   `json:"metadata"`
-	ServiceTier   *string           `json:"service_tier"`
-	CacheControl  json.RawMessage   `json:"cache_control"`
-	Container     json.RawMessage   `json:"container"`
-	InferenceGeo  json.RawMessage   `json:"inference_geo"`
+	Model             string            `json:"model"`
+	MaxTokens         *uint64           `json:"max_tokens"`
+	Messages          []json.RawMessage `json:"messages"`
+	System            json.RawMessage   `json:"system"`
+	Stream            bool              `json:"stream"`
+	Temperature       *float64          `json:"temperature"`
+	TopP              *float64          `json:"top_p"`
+	TopK              *uint64           `json:"top_k"`
+	StopSequences     []string          `json:"stop_sequences"`
+	Tools             []json.RawMessage `json:"tools"`
+	ToolChoice        json.RawMessage   `json:"tool_choice"`
+	Thinking          json.RawMessage   `json:"thinking"`
+	OutputConfig      json.RawMessage   `json:"output_config"`
+	Metadata          json.RawMessage   `json:"metadata"`
+	ServiceTier       *string           `json:"service_tier"`
+	CacheControl      json.RawMessage   `json:"cache_control"`
+	ContextManagement json.RawMessage   `json:"context_management"`
+	Container         json.RawMessage   `json:"container"`
+	InferenceGeo      json.RawMessage   `json:"inference_geo"`
 }
 
 // messageDTO 是 user 或 assistant 历史消息。
@@ -194,4 +195,36 @@ type cacheControlDTO struct {
 	Type  string  `json:"type"`
 	TTL   *string `json:"ttl"`
 	Scope *string `json:"scope"`
+}
+
+// contextManagementDTO 是 Anthropic 请求级上下文编辑集合。
+type contextManagementDTO struct {
+	Edits []json.RawMessage `json:"edits"`
+}
+
+// contextEditHeaderDTO 只读取上下文编辑的联合类型判别字段。
+type contextEditHeaderDTO struct {
+	Type string `json:"type"`
+}
+
+// clearThinkingEditDTO 是 clear_thinking_20251015 的严格线协议结构。
+type clearThinkingEditDTO struct {
+	Type string          `json:"type"`
+	Keep json.RawMessage `json:"keep"`
+}
+
+// clearToolUsesEditDTO 是 clear_tool_uses_20250919 的严格线协议结构。
+type clearToolUsesEditDTO struct {
+	Type            string          `json:"type"`
+	Trigger         json.RawMessage `json:"trigger"`
+	Keep            json.RawMessage `json:"keep"`
+	ClearAtLeast    json.RawMessage `json:"clear_at_least"`
+	ClearToolInputs json.RawMessage `json:"clear_tool_inputs"`
+	ExcludeTools    []string        `json:"exclude_tools"`
+}
+
+// contextMetricDTO 用 type 明确区分 token、tool use 和 thinking turn。
+type contextMetricDTO struct {
+	Type  string  `json:"type"`
+	Value *uint64 `json:"value"`
 }

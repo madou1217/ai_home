@@ -138,6 +138,120 @@ func TestHandlerPropagatesAndValidatesPinnedAccountHeader(t *testing.T) {
 	})
 }
 
+// TestHandlerAcceptsOnlyClaudeCodeBetaQuery 验证 Claude Code 固定查询串可进入
+// Canonical 主链，同时继续拒绝任意客户端查询参数。
+func TestHandlerAcceptsOnlyClaudeCodeBetaQuery(t *testing.T) {
+	t.Parallel()
+
+	payload := minimalRequestBody(false)
+	t.Run("Claude Code beta 查询", func(t *testing.T) {
+		executor := newScriptedExecutor(newTextEvents(t), nil)
+		baseURL, client := startMessagesServer(t, executor, 0)
+		response := performMessagesRequest(
+			t,
+			client,
+			http.MethodPost,
+			baseURL+Path+"?"+claudeCodeBetaQuery,
+			testAPIKey,
+			payload,
+		)
+		if response.status != http.StatusOK || executor.CallCount() != 1 {
+			t.Fatalf(
+				"Claude Code beta response=%#v executorCalls=%d",
+				response,
+				executor.CallCount(),
+			)
+		}
+	})
+
+	for _, rawQuery := range []string{
+		"beta=false",
+		"beta=true&debug=true",
+		"beta=%74rue",
+	} {
+		rawQuery := rawQuery
+		t.Run("拒绝_"+rawQuery, func(t *testing.T) {
+			executor := newScriptedExecutor(nil, errors.New("不应调用执行器"))
+			baseURL, client := startMessagesServer(t, executor, 0)
+			response := performMessagesRequest(
+				t,
+				client,
+				http.MethodPost,
+				baseURL+Path+"?"+rawQuery,
+				testAPIKey,
+				payload,
+			)
+			if response.status != http.StatusBadRequest ||
+				executor.CallCount() != 0 ||
+				!strings.Contains(response.body, "Query parameters are not supported") {
+				t.Fatalf(
+					"unsupported query response=%#v executorCalls=%d",
+					response,
+					executor.CallCount(),
+				)
+			}
+		})
+	}
+}
+
+// TestHandlerObservesOnlySafeDecodeError 验证生产诊断能定位字段路径，
+// 同时客户端响应和观察者都不会收到请求字段值。
+func TestHandlerObservesOnlySafeDecodeError(t *testing.T) {
+	t.Parallel()
+
+	const secret = "must-not-enter-decode-diagnostic"
+	registry, err := clientprotocol.NewRegistry(anthropicmessages.NewAdapter())
+	if err != nil {
+		t.Fatalf("NewRegistry() error = %v", err)
+	}
+	executor := newScriptedExecutor(nil, errors.New("不应调用执行器"))
+	observedErrors := make(chan error, 1)
+	handler, err := NewHandler(Dependencies{
+		Protocols:  registry,
+		Executor:   executor,
+		Authorizer: apiKeyAuthorizer{},
+		DecodeErrorObserver: func(err error) {
+			observedErrors <- err
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewHandler() error = %v", err)
+	}
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	response := performMessagesRequest(
+		t,
+		server.Client(),
+		http.MethodPost,
+		server.URL+Path,
+		testAPIKey,
+		[]byte(`{
+			"model":"claude-sonnet-5",
+			"max_tokens":128,
+			"messages":[{"role":"user","content":"hello"}],
+			"metadata":{"unknown":"`+secret+`"}
+		}`),
+	)
+	var observed error
+	select {
+	case observed = <-observedErrors:
+	default:
+	}
+	if response.status != http.StatusBadRequest ||
+		observed == nil ||
+		!strings.Contains(observed.Error(), "metadata") ||
+		strings.Contains(observed.Error(), secret) ||
+		strings.Contains(response.body, secret) ||
+		executor.CallCount() != 0 {
+		t.Fatalf(
+			"response=%#v observed=%v executorCalls=%d",
+			response,
+			observed,
+			executor.CallCount(),
+		)
+	}
+}
+
 // TestHandlerStreamsExactAnthropicLifecycleOverRealHTTP 验证 SSE 生命周期和即时协议头。
 func TestHandlerStreamsExactAnthropicLifecycleOverRealHTTP(t *testing.T) {
 	t.Parallel()

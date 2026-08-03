@@ -45,5 +45,6 @@ func claudeRouteCapabilities() (inference.CapabilitySet, error) {
 		inference.CapabilityStructuredOutput,
 		inference.CapabilityStreaming,
 		inference.CapabilityWebSearch,
+		inference.CapabilityContextManagement,
 	)
 }

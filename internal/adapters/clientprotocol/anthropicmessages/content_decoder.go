@@ -114,15 +114,31 @@ func decodeMessages(
 	return messages, breakpoints, nil
 }
 
-// decodeRole 只接受 Anthropic Messages 公开的两个历史角色。
+// decodeRole 接受 Beta Messages 当前公开的 user、assistant 和 system 角色。
 func decodeRole(value string, field string) (inference.Role, error) {
 	switch value {
 	case "user":
 		return inference.RoleUser, nil
 	case "assistant":
 		return inference.RoleAssistant, nil
+	case "system":
+		return inference.RoleSystem, nil
 	default:
-		return "", invalidField(field)
+		return "", invalidField(field + "." + safeInvalidRoleCategory(value))
+	}
+}
+
+// safeInvalidRoleCategory 只返回固定类别，避免诊断日志回显任意请求值。
+func safeInvalidRoleCategory(value string) string {
+	switch value {
+	case "":
+		return "missing"
+	case "developer":
+		return "developer"
+	case "tool":
+		return "tool"
+	default:
+		return "unknown"
 	}
 }
 

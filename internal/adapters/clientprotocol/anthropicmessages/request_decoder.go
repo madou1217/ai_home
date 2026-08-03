@@ -61,6 +61,10 @@ func (RequestDecoder) Decode(body []byte) (inference.Request, error) {
 	if err != nil {
 		return inference.Request{}, err
 	}
+	contextManagement, err := decodeContextManagement(wireRequest.ContextManagement)
+	if err != nil {
+		return inference.Request{}, err
+	}
 	cacheBreakpoints := make(
 		[]inference.PromptCacheBreakpoint,
 		0,
@@ -97,6 +101,7 @@ func (RequestDecoder) Decode(body []byte) (inference.Request, error) {
 		ParallelToolCalls:      parallelToolCalls,
 		Reasoning:              reasoning,
 		StructuredOutput:       structuredOutput,
+		ContextManagement:      contextManagement,
 		Stream:                 wireRequest.Stream,
 		MaxOutputTokens:        *wireRequest.MaxTokens,
 		Temperature:            wireRequest.Temperature,

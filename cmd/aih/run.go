@@ -63,7 +63,19 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	}
 	providerID := arguments[0]
 	if providerID == "help" {
+		if len(arguments) == 2 && isCLIProvider(arguments[1]) {
+			writeProviderUsage(runtime.stdout, arguments[1])
+			return nil
+		}
+		if len(arguments) != 1 {
+			return errInvalidCommand
+		}
 		writeUsage(runtime.stdout)
+		return nil
+	}
+	if len(arguments) == 2 && isCLIProvider(providerID) &&
+		isRootHelp(arguments[1]) {
+		writeProviderUsage(runtime.stdout, providerID)
 		return nil
 	}
 	aiHomeDir, err := resolveAIHomeDir(runtime)
@@ -123,6 +135,11 @@ func isRootHelp(argument string) bool {
 	return argument == "-h" || argument == "--help"
 }
 
+// isCLIProvider 与当前 Go CLI 实际开放的官方客户端保持一致。
+func isCLIProvider(providerID string) bool {
+	return providerID == "codex" || providerID == "claude"
+}
+
 // writeUsage 说明当前已实现的双模式命令和共享状态约束。
 func writeUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "用法:")
@@ -143,4 +160,40 @@ func writeUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "  AIH_SERVER_BASE_URL（默认 http://127.0.0.1:9527）")
 	_, _ = fmt.Fprintln(output, "  AIH_SERVER_CLIENT_KEY（仅 Gateway 模式必需）")
 	_, _ = fmt.Fprintln(output, "  AIH_CODEX_BINARY / AIH_CLAUDE_BINARY（可选官方 CLI 路径）")
+}
+
+// writeProviderUsage 在打开数据库或连接 Server 前说明 AIH 模式边界。
+func writeProviderUsage(output io.Writer, providerID string) {
+	if providerID == "claude" {
+		_, _ = fmt.Fprintln(output, "AIH Claude 用法:")
+		_, _ = fmt.Fprintln(output, "  aih claude [claude_args...]                    # Gateway 账号池")
+		_, _ = fmt.Fprintln(output, "  aih claude relay <account_id> [claude_args...] # Gateway 固定账号")
+		_, _ = fmt.Fprintln(output, "  aih claude <account_id> [claude_args...]       # Native Direct")
+		_, _ = fmt.Fprintln(output)
+		_, _ = fmt.Fprintln(output, "模式说明:")
+		_, _ = fmt.Fprintln(output, "  Gateway 账号池按请求中的真实模型公平征召账号；OAuth 走原生 Relay，API Key/Auth Token 走 Canonical Adapter。")
+		_, _ = fmt.Fprintln(output, "  Gateway 固定账号仍经 Server Relay，但不会失败换号。")
+		_, _ = fmt.Fprintln(output, "  Native Direct 使用指定账号的原生 OAuth、API Key 或 Auth Token 直连上游。")
+		_, _ = fmt.Fprintln(output)
+		_, _ = fmt.Fprintln(output, "示例:")
+		_, _ = fmt.Fprintln(output, "  aih claude --model claude-opus-5")
+		_, _ = fmt.Fprintln(output, "  aih claude relay 9 --model claude-opus-5")
+		_, _ = fmt.Fprintln(output, "  aih claude 9 --model claude-opus-5")
+		_, _ = fmt.Fprintln(output, "  aih codex relay claude 9 --model claude-opus-5")
+		_, _ = fmt.Fprintln(output)
+		_, _ = fmt.Fprintln(output, "参数规则:")
+		_, _ = fmt.Fprintln(output, "  AIH 模式/账号 token 必须放在前面；其后的参数原样交给官方 Claude CLI。")
+		_, _ = fmt.Fprintln(output, "  查看官方 Claude CLI 参数请直接运行: claude --help")
+		_, _ = fmt.Fprintln(output)
+		_, _ = fmt.Fprintln(output, "共享状态:")
+		_, _ = fmt.Fprintln(output, "  所有模式继承同一个 CLAUDE_CONFIG_DIR；AIH 不创建账号级 HOME，会话、信任和插件配置保持共享。")
+		return
+	}
+
+	_, _ = fmt.Fprintln(output, "AIH Codex 用法:")
+	_, _ = fmt.Fprintln(output, "  aih codex [codex_args...]                    # Gateway 账号池")
+	_, _ = fmt.Fprintln(output, "  aih codex relay <account_id> [codex_args...] # Gateway 固定账号")
+	_, _ = fmt.Fprintln(output, "  aih codex <account_id> [codex_args...]       # Native Direct")
+	_, _ = fmt.Fprintln(output)
+	_, _ = fmt.Fprintln(output, "查看官方 Codex CLI 参数请直接运行: codex --help")
 }

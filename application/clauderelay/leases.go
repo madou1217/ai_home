@@ -12,12 +12,13 @@ import (
 	"sync"
 	"time"
 
+	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 )
 
 const (
-	// DefaultLeaseTTL 让单次 CLI 会话可长期运行，同时限制泄漏窗口。
-	DefaultLeaseTTL = 24 * time.Hour
+	// DefaultLeaseTTL 只覆盖选择成功但请求尚未到达 Relay 的短暂窗口。
+	DefaultLeaseTTL = 5 * time.Minute
 	// DefaultMaxLeases 限制单进程租约内存占用。
 	DefaultMaxLeases = 10_000
 	relayTokenBytes  = 32
@@ -27,8 +28,8 @@ const (
 var (
 	// ErrInvalidDependencies 表示 Registry 缺少随机源、时钟或边界无效。
 	ErrInvalidDependencies = errors.New("Claude Relay 租约依赖无效")
-	// ErrInvalidAccountRef 表示调用方没有提供稳定账号身份。
-	ErrInvalidAccountRef = errors.New("Claude Relay 租约账号无效")
+	// ErrInvalidLeaseBinding 表示调用方没有提供稳定账号和真实模型。
+	ErrInvalidLeaseBinding = errors.New("Claude Relay 租约绑定无效")
 	// ErrLeaseCapacity 表示清理过期项后仍达到租约上限。
 	ErrLeaseCapacity = errors.New("Claude Relay 租约容量已满")
 	// ErrTokenGeneration 表示安全随机源无法生成唯一 Token。
@@ -43,14 +44,15 @@ type Dependencies struct {
 	MaxLeases int
 }
 
-// Lease 是只向可信本地调用方交付一次的账号绑定结果。
+// Lease 是只向可信调用方交付一次的账号模型绑定结果。
 type Lease struct {
 	token      string
 	accountRef accountcore.AccountRef
+	modelID    runtimecore.ModelID
 	expiresAt  time.Time
 }
 
-// Token 返回应只投影到目标 Claude 进程环境的短期密钥。
+// Token 返回只允许进入本地代理到 Server 请求 Header 的短期密钥。
 func (lease Lease) Token() string {
 	return lease.token
 }
@@ -58,6 +60,11 @@ func (lease Lease) Token() string {
 // AccountRef 返回 Token 在服务端绑定的稳定账号身份。
 func (lease Lease) AccountRef() accountcore.AccountRef {
 	return lease.accountRef
+}
+
+// ModelID 返回 Token 唯一允许调用的真实模型。
+func (lease Lease) ModelID() runtimecore.ModelID {
+	return lease.modelID
 }
 
 // ExpiresAt 返回租约的绝对 UTC 到期时间。
@@ -69,6 +76,7 @@ func (lease Lease) ExpiresAt() time.Time {
 func (lease Lease) IsValid() bool {
 	return lease.token != "" &&
 		lease.accountRef.IsValid() &&
+		lease.modelID.IsValid() &&
 		!lease.expiresAt.IsZero() &&
 		lease.expiresAt.Location() == time.UTC
 }
@@ -76,6 +84,7 @@ func (lease Lease) IsValid() bool {
 // leaseRecord 只保存 Token 摘要，避免内存快照直接暴露原文。
 type leaseRecord struct {
 	accountRef accountcore.AccountRef
+	modelID    runtimecore.ModelID
 	expiresAt  time.Time
 }
 
@@ -159,15 +168,16 @@ func NewLeaseRegistry(
 	}, nil
 }
 
-// Issue 为一个稳定 AccountRef 创建不可转移的随机租约。
+// Issue 为一个稳定账号模型组合创建不可转移的随机租约。
 func (registry *LeaseRegistry) Issue(
 	accountRef accountcore.AccountRef,
+	modelID runtimecore.ModelID,
 ) (Lease, error) {
 	if registry == nil ||
 		registry.random == nil ||
 		registry.clock == nil ||
-		!accountRef.IsValid() {
-		return Lease{}, ErrInvalidAccountRef
+		!accountRef.IsValid() || !modelID.IsValid() {
+		return Lease{}, ErrInvalidLeaseBinding
 	}
 	now, err := registry.currentTime()
 	if err != nil {
@@ -191,6 +201,7 @@ func (registry *LeaseRegistry) Issue(
 		expiresAt := now.Add(registry.ttl).UTC()
 		registry.leases[digest] = leaseRecord{
 			accountRef: accountRef,
+			modelID:    modelID,
 			expiresAt:  expiresAt,
 		}
 		heap.Push(&registry.expiries, leaseExpiry{
@@ -201,22 +212,23 @@ func (registry *LeaseRegistry) Issue(
 		return Lease{
 			token:      token,
 			accountRef: accountRef,
+			modelID:    modelID,
 			expiresAt:  expiresAt,
 		}, nil
 	}
 	return Lease{}, ErrTokenGeneration
 }
 
-// ResolveRelayToken 返回仍有效的服务端账号绑定。
-func (registry *LeaseRegistry) ResolveRelayToken(
+// ConsumeRelayToken 原子消费仍有效的账号模型绑定，防止请求级租约重放。
+func (registry *LeaseRegistry) ConsumeRelayToken(
 	token string,
-) (accountcore.AccountRef, bool) {
+) (accountcore.AccountRef, runtimecore.ModelID, bool) {
 	if registry == nil || registry.clock == nil || token == "" {
-		return "", false
+		return "", "", false
 	}
 	now, err := registry.currentTime()
 	if err != nil {
-		return "", false
+		return "", "", false
 	}
 	digest := sha256.Sum256([]byte(token))
 	registry.mu.Lock()
@@ -224,13 +236,16 @@ func (registry *LeaseRegistry) ResolveRelayToken(
 
 	record, found := registry.leases[digest]
 	if !found {
-		return "", false
+		return "", "", false
 	}
+	delete(registry.leases, digest)
+	registry.compactExpiriesLocked()
 	if !record.expiresAt.After(now) {
-		delete(registry.leases, digest)
-		return "", false
+		return "", "", false
 	}
-	return record.accountRef, record.accountRef.IsValid()
+	return record.accountRef,
+		record.modelID,
+		record.accountRef.IsValid() && record.modelID.IsValid()
 }
 
 // Revoke 立即移除目标进程持有的单个 Token。

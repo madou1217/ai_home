@@ -30,6 +30,42 @@ func TestRunPrintsRootUsageWithoutOpeningDatabase(t *testing.T) {
 	}
 }
 
+// TestRunPrintsClaudeUsageWithoutOpeningDatabase 验证两种 Provider help 入口
+// 都明确区分账号池、固定 Relay 和 Native Direct。
+func TestRunPrintsClaudeUsageWithoutOpeningDatabase(t *testing.T) {
+	for _, arguments := range [][]string{
+		{"claude", "--help"},
+		{"help", "claude"},
+	} {
+		output := &bytes.Buffer{}
+		runtime := testCommandRuntime(t, nil)
+		runtime.stdout = output
+		runtime.newApp = func(
+			context.Context,
+			aihcli.Options,
+		) (providerApplication, error) {
+			t.Fatal("Claude help 不得打开数据库或创建 App")
+			return nil, nil
+		}
+		if err := run(context.Background(), arguments, runtime); err != nil {
+			t.Fatalf("run(%v) error = %v", arguments, err)
+		}
+		usage := output.String()
+		for _, expected := range []string{
+			"aih claude [claude_args...]",
+			"aih claude relay <account_id>",
+			"aih claude <account_id>",
+			"OAuth 走原生 Relay",
+			"API Key/Auth Token 走 Canonical Adapter",
+			"claude --help",
+		} {
+			if !bytes.Contains(output.Bytes(), []byte(expected)) {
+				t.Fatalf("usage 缺少 %q: %s", expected, usage)
+			}
+		}
+	}
+}
+
 // TestRunPassesNativeAndGatewayInputsWithoutModeGuessing 验证根命令保持双模式 token 合同。
 func TestRunPassesNativeAndGatewayInputsWithoutModeGuessing(t *testing.T) {
 	tests := []struct {

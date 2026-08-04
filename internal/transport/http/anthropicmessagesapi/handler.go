@@ -19,7 +19,7 @@ const (
 	DefaultMaxBodyBytes int64 = 32 * 1024 * 1024
 	// MaxBodyBytesLimit 防止 Composition Root 意外关闭请求体边界。
 	MaxBodyBytesLimit int64 = 256 * 1024 * 1024
-	// claudeCodeBetaQuery 是 Claude Code 2.1.220 固定发送的原生 Messages 查询串。
+	// claudeCodeBetaQuery 是当前官方 Claude Code/SDK 的 Messages 查询合同。
 	claudeCodeBetaQuery = "beta=true"
 )
 

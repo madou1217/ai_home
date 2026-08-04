@@ -270,7 +270,8 @@ func TestServerMountsSystemAndAccountRoutes(t *testing.T) {
 		refreshedUsage.body,
 	)
 	leasePayload := []byte(
-		`{"account_ref":"` + nativeDocument.Data.AccountRef + `"}`,
+		`{"model":"claude-sonnet-4","account_ref":"` +
+			nativeDocument.Data.AccountRef + `"}`,
 	)
 	issuedLease := performRequest(
 		t,
@@ -283,13 +284,15 @@ func TestServerMountsSystemAndAccountRoutes(t *testing.T) {
 	assertStatus(t, issuedLease, http.StatusCreated)
 	var leaseDocument struct {
 		Data struct {
+			Transport  string `json:"transport"`
 			Token      string `json:"token"`
 			AccountRef string `json:"account_ref"`
 			ExpiresAt  string `json:"expires_at"`
 		} `json:"data"`
 	}
 	decodeJSON(t, issuedLease.body, &leaseDocument)
-	if leaseDocument.Data.Token == "" ||
+	if leaseDocument.Data.Transport != "native_oauth" ||
+		leaseDocument.Data.Token == "" ||
 		leaseDocument.Data.AccountRef != nativeDocument.Data.AccountRef ||
 		leaseDocument.Data.ExpiresAt == "" ||
 		strings.Contains(issuedLease.body, nativeAccessToken) ||

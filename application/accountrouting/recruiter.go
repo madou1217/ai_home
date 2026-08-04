@@ -16,6 +16,11 @@ import (
 	"github.com/madou1217/ai_home/core/providers"
 )
 
+const (
+	// MaxExcludedAccounts 限制跨尝试排除集合，固定小数组避免热路径 Map。
+	MaxExcludedAccounts = 4
+)
+
 var (
 	// ErrInvalidDependencies 表示征召器缺少模型候选、运行态或凭据端口。
 	ErrInvalidDependencies = errors.New("账号征召器依赖无效")
@@ -84,6 +89,8 @@ type Request struct {
 	providerID    string
 	modelID       runtimecore.ModelID
 	pinnedAccount accountcore.AccountRef
+	excluded      [MaxExcludedAccounts]accountcore.AccountRef
+	excludedCount uint8
 }
 
 // NewRequest 规范化 Provider，并校验别名解析后的真实模型。
@@ -94,7 +101,20 @@ func NewRequest(
 	providerID string,
 	modelID string,
 ) (Request, error) {
-	return newRequest(catalog, providerID, modelID, "")
+	return newRequest(catalog, providerID, modelID, "", nil)
+}
+
+// NewRequestExcluding 创建普通公平征召请求，并跳过当前调用已经尝试的账号。
+//
+// 排除集合有固定上限且必须去重；该能力只用于响应尚未提交前的失败换号，
+// 不能与固定账号请求组合。
+func NewRequestExcluding(
+	catalog *providers.Catalog,
+	providerID string,
+	modelID string,
+	excluded []accountcore.AccountRef,
+) (Request, error) {
+	return newRequest(catalog, providerID, modelID, "", excluded)
 }
 
 // NewPinnedRequest 创建只允许征召指定稳定账号的请求。
@@ -110,7 +130,7 @@ func NewPinnedRequest(
 	if !accountRef.IsValid() {
 		return Request{}, ErrInvalidRequest
 	}
-	return newRequest(catalog, providerID, modelID, accountRef)
+	return newRequest(catalog, providerID, modelID, accountRef, nil)
 }
 
 // newRequest 统一普通征召和固定账号征召的 Provider、模型校验。
@@ -119,6 +139,7 @@ func newRequest(
 	providerID string,
 	modelID string,
 	pinnedAccount accountcore.AccountRef,
+	excluded []accountcore.AccountRef,
 ) (Request, error) {
 	if catalog == nil {
 		return Request{}, ErrInvalidRequest
@@ -131,11 +152,23 @@ func newRequest(
 	if err != nil {
 		return Request{}, errors.Join(ErrInvalidRequest, err)
 	}
-	return Request{
+	if len(excluded) > MaxExcludedAccounts ||
+		(pinnedAccount.IsValid() && len(excluded) > 0) {
+		return Request{}, ErrInvalidRequest
+	}
+	request := Request{
 		providerID:    canonicalProviderID,
 		modelID:       runtimeModelID,
 		pinnedAccount: pinnedAccount,
-	}, nil
+		excludedCount: uint8(len(excluded)),
+	}
+	for index, accountRef := range excluded {
+		if !accountRef.IsValid() || request.excludesBefore(accountRef, index) {
+			return Request{}, ErrInvalidRequest
+		}
+		request.excluded[index] = accountRef
+	}
+	return request, nil
 }
 
 // ProviderID 返回规范 Provider ID。
@@ -155,9 +188,38 @@ func (request Request) PinnedAccount() (accountcore.AccountRef, bool) {
 
 // isValid 防止零值或跨层篡改请求进入候选端口。
 func (request Request) isValid() bool {
-	return request.ProviderID() != "" &&
-		request.ModelID().IsValid() &&
-		(request.pinnedAccount == "" || request.pinnedAccount.IsValid())
+	if request.ProviderID() == "" ||
+		!request.ModelID().IsValid() ||
+		request.excludedCount > MaxExcludedAccounts ||
+		(request.pinnedAccount != "" && !request.pinnedAccount.IsValid()) ||
+		(request.pinnedAccount.IsValid() && request.excludedCount > 0) {
+		return false
+	}
+	for index := 0; index < int(request.excludedCount); index++ {
+		accountRef := request.excluded[index]
+		if !accountRef.IsValid() || request.excludesBefore(accountRef, index) {
+			return false
+		}
+	}
+	return true
+}
+
+// excludesBefore 在线性固定小数组中检查重复或候选排除。
+func (request Request) excludesBefore(
+	accountRef accountcore.AccountRef,
+	limit int,
+) bool {
+	for index := 0; index < limit; index++ {
+		if request.excluded[index] == accountRef {
+			return true
+		}
+	}
+	return false
+}
+
+// excludes 判断当前候选是否已经在同一调用中失败过。
+func (request Request) excludes(accountRef accountcore.AccountRef) bool {
+	return request.excludesBefore(accountRef, int(request.excludedCount))
 }
 
 // Result 保存一次征召的账号、凭据和本次扫描进度。
@@ -320,6 +382,9 @@ func (session *RecruitmentSession) Next(ctx context.Context) (Result, error) {
 		progress.sourceExhausted = session.offset == session.candidateCount()
 		if !validCandidate(candidate, session.request.ProviderID()) {
 			return progress, ErrInvalidCandidateSnapshot
+		}
+		if session.request.excludes(candidate.Ref()) {
+			continue
 		}
 		route, routeErr := candidateModelRoute(candidate, session.request.ModelID())
 		if routeErr != nil {

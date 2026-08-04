@@ -52,7 +52,8 @@ func copyResponseHeaders(destination, source http.Header) {
 	}
 	for name, values := range source {
 		canonical := textproto.CanonicalMIMEHeaderKey(name)
-		if _, found := excluded[canonical]; found {
+		if _, found := excluded[canonical]; found ||
+			strings.HasPrefix(canonical, "X-Aih-") {
 			continue
 		}
 		for _, value := range values {

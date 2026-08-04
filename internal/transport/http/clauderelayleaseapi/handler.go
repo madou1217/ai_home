@@ -1,4 +1,4 @@
-// Package clauderelayleaseapi 提供 Claude Native Relay 短期租约入口。
+// Package clauderelayleaseapi 提供 Claude Gateway 请求级账号与传输选择入口。
 package clauderelayleaseapi
 
 import (
@@ -8,78 +8,68 @@ import (
 	"net/http"
 	"time"
 
-	accountapp "github.com/madou1217/ai_home/application/accounts"
-	"github.com/madou1217/ai_home/application/clauderelay"
+	"github.com/madou1217/ai_home/application/accountrouting"
+	"github.com/madou1217/ai_home/application/claudegateway"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
-	"github.com/madou1217/ai_home/internal/adapters/claude/transportpolicy"
+	gatewaycontract "github.com/madou1217/ai_home/internal/contracts/claudegateway"
 	"github.com/madou1217/ai_home/internal/transport/http/httpjson"
 )
 
 const (
-	// Path 是已认证推理客户端签发 Claude Relay 租约的唯一入口。
-	Path = "/v1/claude-relay-leases"
-	// maxRequestBodyBytes 限制只含 AccountRef 的小型命令。
+	// Path 是已认证 Claude CLI 代理获取请求级传输决策的唯一入口。
+	Path = gatewaycontract.SelectionPath
+	// maxRequestBodyBytes 限制只含模型和 AccountRef 的小型命令。
 	maxRequestBodyBytes int64 = 4 * 1024
 )
 
-// ErrInvalidDependencies 表示 Handler 缺少管理鉴权、凭据或租约端口。
-var ErrInvalidDependencies = errors.New("Claude Relay 租约 HTTP 依赖无效")
+// ErrInvalidDependencies 表示 Handler 缺少客户端鉴权或传输选择端口。
+var ErrInvalidDependencies = errors.New("Claude Gateway 选择 HTTP 依赖无效")
 
 // Authorizer 复用推理客户端的 Bearer 和 x-api-key 鉴权语义。
 type Authorizer interface {
 	Authorized(request *http.Request) bool
 }
 
-// CredentialResolver 在签发前验证目标账号当前可用且属于官方 OAuth。
-type CredentialResolver interface {
-	ResolveCredential(
+// Selector 按真实模型复用统一 Recruiter 选择账号和传输方式。
+type Selector interface {
+	Select(
 		ctx context.Context,
-		accountRef accountcore.AccountRef,
-	) (accountapp.Credential, error)
+		request claudegateway.Request,
+	) (claudegateway.Decision, error)
 }
 
-// LeaseIssuer 为经过管理鉴权的稳定账号签发短期租约。
-type LeaseIssuer interface {
-	Issue(accountRef accountcore.AccountRef) (clauderelay.Lease, error)
-}
-
-// Dependencies 集中声明租约管理入口的最小外部端口。
+// Dependencies 集中声明传输选择入口的最小外部端口。
 type Dependencies struct {
-	Authorizer  Authorizer
-	Credentials CredentialResolver
-	Leases      LeaseIssuer
+	Authorizer Authorizer
+	Selector   Selector
 }
 
-// Handler 负责编码管理命令，不读取或返回账号长期凭据。
+// Handler 负责编码选择命令，不读取或返回账号长期凭据。
 type Handler struct {
-	authorizer  Authorizer
-	credentials CredentialResolver
-	leases      LeaseIssuer
+	authorizer Authorizer
+	selector   Selector
 }
 
-// NewHandler 创建依赖完整且默认失败关闭的租约 Handler。
+// NewHandler 创建依赖完整且默认失败关闭的选择 Handler。
 func NewHandler(dependencies Dependencies) (*Handler, error) {
 	if dependencies.Authorizer == nil ||
-		dependencies.Credentials == nil ||
-		dependencies.Leases == nil {
+		dependencies.Selector == nil {
 		return nil, ErrInvalidDependencies
 	}
 	return &Handler{
-		authorizer:  dependencies.Authorizer,
-		credentials: dependencies.Credentials,
-		leases:      dependencies.Leases,
+		authorizer: dependencies.Authorizer,
+		selector:   dependencies.Selector,
 	}, nil
 }
 
-// ServeHTTP 先校验 Server Client Key，再签发账号绑定租约。
+// ServeHTTP 先校验 Server Client Key，再按正文模型生成账号绑定决策。
 func (handler *Handler) ServeHTTP(
 	response http.ResponseWriter,
 	request *http.Request,
 ) {
 	if handler == nil ||
 		handler.authorizer == nil ||
-		handler.credentials == nil ||
-		handler.leases == nil ||
+		handler.selector == nil ||
 		!handler.authorizer.Authorized(request) {
 		response.Header().Set("WWW-Authenticate", "Bearer")
 		writeError(
@@ -95,7 +85,7 @@ func (handler *Handler) ServeHTTP(
 			response,
 			http.StatusNotFound,
 			"route_not_found",
-			"Claude Relay 租约资源不存在",
+			"Claude Gateway 选择资源不存在",
 		)
 		return
 	}
@@ -105,20 +95,20 @@ func (handler *Handler) ServeHTTP(
 			response,
 			http.StatusMethodNotAllowed,
 			"method_not_allowed",
-			"Claude Relay 租约只接受 POST",
+			"Claude Gateway 选择只接受 POST",
 		)
 		return
 	}
-	if request.URL.RawQuery != "" {
+	if request.URL.ForceQuery || request.URL.RawQuery != "" {
 		writeError(
 			response,
 			http.StatusBadRequest,
 			"unexpected_query",
-			"Claude Relay 租约不接受查询参数",
+			"Claude Gateway 选择不接受查询参数",
 		)
 		return
 	}
-	var input createLeaseRequest
+	var input gatewaycontract.SelectionRequest
 	if err := httpjson.DecodeRequest(
 		response,
 		request,
@@ -128,83 +118,84 @@ func (handler *Handler) ServeHTTP(
 		writeDecodeError(response, err)
 		return
 	}
-	accountRef, err := accountcore.ParseAccountRef(input.AccountRef)
-	if err != nil {
+	var accountRef accountcore.AccountRef
+	if input.AccountRef != "" {
+		var err error
+		accountRef, err = accountcore.ParseAccountRef(input.AccountRef)
+		if err != nil {
+			writeError(
+				response,
+				http.StatusUnprocessableEntity,
+				"invalid_account_ref",
+				"账号引用格式无效",
+			)
+			return
+		}
+	}
+	if len(input.ExcludedAccountRefs) > accountrouting.MaxExcludedAccounts {
 		writeError(
 			response,
 			http.StatusUnprocessableEntity,
-			"invalid_account_ref",
-			"账号引用格式无效",
+			"too_many_excluded_accounts",
+			"排除账号数量超过单次换号上限",
 		)
 		return
 	}
-	credential, err := handler.credentials.ResolveCredential(
-		request.Context(),
-		accountRef,
+	excludedAccounts := make(
+		[]accountcore.AccountRef,
+		0,
+		len(input.ExcludedAccountRefs),
 	)
-	if err != nil {
-		writeError(
-			response,
-			http.StatusUnprocessableEntity,
-			"relay_account_unavailable",
-			"Claude Relay 账号当前不可用",
-		)
-		return
+	for _, value := range input.ExcludedAccountRefs {
+		excluded, parseErr := accountcore.ParseAccountRef(value)
+		if parseErr != nil {
+			writeError(
+				response,
+				http.StatusUnprocessableEntity,
+				"invalid_excluded_account_ref",
+				"排除账号引用格式无效",
+			)
+			return
+		}
+		excludedAccounts = append(excludedAccounts, excluded)
 	}
-	if !transportpolicy.RequiresNativeOAuth(credential) {
-		writeError(
-			response,
-			http.StatusUnprocessableEntity,
-			"unsupported_relay_credential",
-			"Claude Relay 账号必须使用官方 OAuth",
-		)
-		return
-	}
-	lease, err := handler.leases.Issue(accountRef)
-	if err != nil || !lease.IsValid() {
-		writeError(
-			response,
-			http.StatusServiceUnavailable,
-			"relay_lease_unavailable",
-			"Claude Relay 租约暂时无法签发",
-		)
-		return
-	}
-	writeJSON(response, http.StatusCreated, createLeaseResponse{
-		Data: leaseView{
-			Token:      lease.Token(),
-			AccountRef: lease.AccountRef().String(),
-			ExpiresAt:  lease.ExpiresAt().Format(time.RFC3339Nano),
+	decision, err := handler.selector.Select(
+		request.Context(),
+		claudegateway.Request{
+			ModelID:          input.Model,
+			AccountRef:       accountRef,
+			ExcludedAccounts: excludedAccounts,
 		},
+	)
+	if err != nil || !decision.IsValid() {
+		status := http.StatusServiceUnavailable
+		code := "relay_selection_unavailable"
+		message := "Claude Gateway 当前没有可用账号"
+		if errors.Is(err, claudegateway.ErrInvalidRequest) ||
+			errors.Is(err, accountrouting.ErrInvalidRequest) {
+			status = http.StatusUnprocessableEntity
+			code = "invalid_selection_request"
+			message = "Claude 模型或账号排除集合无效"
+		}
+		writeError(
+			response,
+			status,
+			code,
+			message,
+		)
+		return
+	}
+	view := gatewaycontract.SelectionView{
+		Transport:  string(decision.Transport()),
+		AccountRef: decision.AccountRef().String(),
+	}
+	if lease, leased := decision.Lease(); leased {
+		view.Token = lease.Token()
+		view.ExpiresAt = lease.ExpiresAt().Format(time.RFC3339Nano)
+	}
+	writeJSON(response, http.StatusCreated, gatewaycontract.SelectionResponse{
+		Data: view,
 	})
-}
-
-// createLeaseRequest 是签发命令的严格 JSON 输入。
-type createLeaseRequest struct {
-	AccountRef string `json:"account_ref"`
-}
-
-// createLeaseResponse 包装一次性短期 Token。
-type createLeaseResponse struct {
-	Data leaseView `json:"data"`
-}
-
-// leaseView 是不包含账号长期凭据的租约投影。
-type leaseView struct {
-	Token      string `json:"token"`
-	AccountRef string `json:"account_ref"`
-	ExpiresAt  string `json:"expires_at"`
-}
-
-// errorResponse 是租约管理入口的稳定失败结构。
-type errorResponse struct {
-	Error errorView `json:"error"`
-}
-
-// errorView 只暴露固定错误码和安全消息。
-type errorView struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
 }
 
 // writeDecodeError 精确区分媒体类型、上限和 JSON 合同错误。
@@ -222,14 +213,14 @@ func writeDecodeError(response http.ResponseWriter, err error) {
 			response,
 			http.StatusRequestEntityTooLarge,
 			"request_too_large",
-			"Claude Relay 租约请求体超过上限",
+			"Claude Gateway 选择请求体超过上限",
 		)
 	default:
 		writeError(
 			response,
 			http.StatusBadRequest,
 			"invalid_request",
-			"Claude Relay 租约请求无效",
+			"Claude Gateway 选择请求无效",
 		)
 	}
 }
@@ -241,8 +232,8 @@ func writeError(
 	code string,
 	message string,
 ) {
-	writeJSON(response, status, errorResponse{
-		Error: errorView{
+	writeJSON(response, status, gatewaycontract.ErrorResponse{
+		Error: gatewaycontract.ErrorView{
 			Code:    code,
 			Message: message,
 		},

@@ -10,12 +10,16 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	"github.com/madou1217/ai_home/application/inferencegateway"
+	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	claudeauth "github.com/madou1217/ai_home/core/accounts/claude"
+	gatewaycontract "github.com/madou1217/ai_home/internal/contracts/claudegateway"
 )
 
 const (
@@ -130,7 +134,7 @@ func TestHandlerPreservesNativeRequestAndReplacesOnlyCredential(
 		"Bearer "+testAccessToken ||
 		captured.headers.Get("x-app") != "cli" ||
 		captured.headers.Get("User-Agent") !=
-			"claude-cli/2.1.207 (external, cli)" ||
+			"claude-cli/2.1.220 (external, cli)" ||
 		captured.headers.Get("X-Claude-Code-Session-Id") == "" ||
 		!containsHeaderToken(
 			captured.headers.Values("anthropic-beta"),
@@ -148,6 +152,240 @@ func TestHandlerPreservesNativeRequestAndReplacesOnlyCredential(
 		response.StatusCode,
 		responseBody,
 	)
+}
+
+// TestHandlerRecordsPreCommitFailureAndSignalsAccountRetry 验证 Native OAuth
+// 在 HTTP 响应提交前记录精确模型 cooldown，并向本地代理显式允许换号。
+func TestHandlerRecordsPreCommitFailureAndSignalsAccountRetry(t *testing.T) {
+	t.Parallel()
+
+	accountRef, credential := newRelayOAuthCredential(t)
+	recorder := &relayAttemptRecorder{}
+	refreshes := &relayModelRefreshScheduler{}
+	authorizer, err := NewScopedTokenAuthorizer(relayTokenResolver{
+		token:      testRelayToken,
+		accountRef: accountRef,
+	})
+	if err != nil {
+		t.Fatalf("NewScopedTokenAuthorizer() error = %v", err)
+	}
+	client := &relayFailureClient{
+		status: http.StatusText(http.StatusServiceUnavailable),
+		code:   529,
+		body:   `{"type":"error","error":{"type":"overloaded_error"}}`,
+	}
+	handler, err := NewHandler(Dependencies{
+		Authorizer: authorizer,
+		Credentials: &relayCredentialResolver{
+			accountRef: accountRef,
+			credential: credential,
+		},
+		Client:         client,
+		Attempts:       recorder,
+		ModelRefreshes: refreshes,
+		Clock:          relayTestClock,
+	})
+	if err != nil {
+		t.Fatalf("NewHandler() error = %v", err)
+	}
+	request := httptest.NewRequest(
+		http.MethodPost,
+		Path,
+		strings.NewReader(`{"model":"claude-opus-5"}`),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	setNativeRelayHeaders(request)
+	request.Header.Set(RelayTokenHeader, testRelayToken)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != 529 ||
+		response.Header().Get(gatewaycontract.RetryAccountHeader) !=
+			gatewaycontract.RetryAccountValue ||
+		response.Body.String() != client.body ||
+		len(recorder.failures) != 1 ||
+		recorder.failures[0].RuntimeKind() !=
+			runtimecore.FailureModelOverloaded ||
+		refreshes.calls != 0 {
+		t.Fatalf(
+			"status=%d retry=%q body=%q failures=%v refreshes=%d",
+			response.Code,
+			response.Header().Get(gatewaycontract.RetryAccountHeader),
+			response.Body.String(),
+			recorder.failures,
+			refreshes.calls,
+		)
+	}
+}
+
+// TestHandlerRejectsSpoofedUpstreamRetryHeader 验证只有 Server 自己的
+// 失败分类可以生成换号标记，上游同名 Header 不能越权控制账号池。
+func TestHandlerRejectsSpoofedUpstreamRetryHeader(t *testing.T) {
+	t.Parallel()
+
+	accountRef, credential := newRelayOAuthCredential(t)
+	recorder := &relayAttemptRecorder{}
+	handler := newRelayHandlerWithRecorder(
+		t,
+		accountRef,
+		credential,
+		&relayFailureClient{
+			status: http.StatusText(http.StatusBadRequest),
+			code:   http.StatusBadRequest,
+			body:   `{"type":"error","error":{"type":"invalid_request_error"}}`,
+			header: http.Header{
+				gatewaycontract.RetryAccountHeader: []string{
+					gatewaycontract.RetryAccountValue,
+				},
+			},
+		},
+		recorder,
+	)
+	request := newNativeRelayRequest(
+		t,
+		`{"model":"claude-opus-5"}`,
+	)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusBadRequest ||
+		response.Header().Get(gatewaycontract.RetryAccountHeader) != "" ||
+		len(recorder.failures) != 1 ||
+		recorder.failures[0].RuntimeKind() != runtimecore.FailureInvalidRequest {
+		t.Fatalf(
+			"status=%d retry=%q failures=%v",
+			response.Code,
+			response.Header().Get(gatewaycontract.RetryAccountHeader),
+			recorder.failures,
+		)
+	}
+}
+
+// TestHandlerRecordsTransportFailureBeforeResponse 验证未收到 HTTP 响应时
+// 仍按稳定 Go 错误身份记录运行态，并只在响应未提交时允许换号。
+func TestHandlerRecordsTransportFailureBeforeResponse(t *testing.T) {
+	t.Parallel()
+
+	accountRef, credential := newRelayOAuthCredential(t)
+	recorder := &relayAttemptRecorder{}
+	handler := newRelayHandlerWithRecorder(
+		t,
+		accountRef,
+		credential,
+		relayTransportFailureClient{err: syscall.ECONNRESET},
+		recorder,
+	)
+	request := newNativeRelayRequest(
+		t,
+		`{"model":"claude-opus-5"}`,
+	)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusBadGateway ||
+		response.Header().Get(gatewaycontract.RetryAccountHeader) !=
+			gatewaycontract.RetryAccountValue ||
+		len(recorder.failures) != 1 ||
+		recorder.failures[0].RuntimeKind() !=
+			runtimecore.FailureConnectionReset {
+		t.Fatalf(
+			"status=%d retry=%q failures=%v",
+			response.Code,
+			response.Header().Get(gatewaycontract.RetryAccountHeader),
+			recorder.failures,
+		)
+	}
+}
+
+// TestHandlerObservesNativeStreamTerminalStateWithoutReencoding 验证原始 SSE
+// 字节保持不变，同时 error、断流和 message_stop 精确写入运行态。
+func TestHandlerObservesNativeStreamTerminalStateWithoutReencoding(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		body        string
+		failureKind runtimecore.FailureKind
+		wantSuccess int
+	}{
+		{
+			name: "upstream error event",
+			body: "event: error\n" +
+				`data: {"type":"error","error":{"type":"overloaded_error"}}` +
+				"\n\n",
+			failureKind: runtimecore.FailureModelOverloaded,
+		},
+		{
+			name: "stream disconnected before message stop",
+			body: "event: message_delta\n" +
+				`data: {"type":"message_delta","delta":{"stop_reason":null}}` +
+				"\n\n",
+			failureKind: runtimecore.FailureStreamDisconnected,
+		},
+		{
+			name:        "message stop",
+			body:        "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+			wantSuccess: 1,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			accountRef, credential := newRelayOAuthCredential(t)
+			recorder := &relayAttemptRecorder{}
+			handler := newRelayHandlerWithRecorder(
+				t,
+				accountRef,
+				credential,
+				&relayFailureClient{
+					status: http.StatusText(http.StatusOK),
+					code:   http.StatusOK,
+					body:   test.body,
+					header: http.Header{
+						"Content-Type": []string{"text/event-stream"},
+					},
+				},
+				recorder,
+			)
+			request := newNativeRelayRequest(
+				t,
+				`{"model":"claude-opus-5","stream":true}`,
+			)
+			response := httptest.NewRecorder()
+
+			handler.ServeHTTP(response, request)
+
+			if response.Code != http.StatusOK ||
+				response.Body.String() != test.body ||
+				recorder.successes != test.wantSuccess {
+				t.Fatalf(
+					"status=%d body=%q successes=%d failures=%v",
+					response.Code,
+					response.Body.String(),
+					recorder.successes,
+					recorder.failures,
+				)
+			}
+			if test.failureKind == "" {
+				if len(recorder.failures) != 0 {
+					t.Fatalf("unexpected failures=%v", recorder.failures)
+				}
+				return
+			}
+			if len(recorder.failures) != 1 ||
+				recorder.failures[0].RuntimeKind() != test.failureKind {
+				t.Fatalf(
+					"failure=%v want=%s",
+					recorder.failures,
+					test.failureKind,
+				)
+			}
+		})
+	}
 }
 
 // TestHandlerRejectsUnknownNativeQueryBeforeCredential 验证 Relay 只放行
@@ -169,9 +407,12 @@ func TestHandlerRejectsUnknownNativeQueryBeforeCredential(t *testing.T) {
 		t.Fatalf("NewScopedTokenAuthorizer() error = %v", err)
 	}
 	handler, err := NewHandler(Dependencies{
-		Authorizer:  authorizer,
-		Credentials: resolver,
-		Client:      client,
+		Authorizer:     authorizer,
+		Credentials:    resolver,
+		Client:         client,
+		Attempts:       &relayAttemptRecorder{},
+		ModelRefreshes: &relayModelRefreshScheduler{},
+		Clock:          relayTestClock,
 	})
 	if err != nil {
 		t.Fatalf("NewHandler() error = %v", err)
@@ -237,9 +478,12 @@ func TestHandlerRejectsUntrustedAccountSelection(t *testing.T) {
 		t.Fatalf("NewScopedTokenAuthorizer() error = %v", err)
 	}
 	handler, err := NewHandler(Dependencies{
-		Authorizer:  authorizer,
-		Credentials: resolver,
-		Client:      client,
+		Authorizer:     authorizer,
+		Credentials:    resolver,
+		Client:         client,
+		Attempts:       &relayAttemptRecorder{},
+		ModelRefreshes: &relayModelRefreshScheduler{},
+		Clock:          relayTestClock,
 	})
 	if err != nil {
 		t.Fatalf("NewHandler() error = %v", err)
@@ -408,9 +652,12 @@ func TestHandlerRejectsMissingNativeClientHeadersBeforeCredential(
 		t.Fatalf("NewScopedTokenAuthorizer() error = %v", err)
 	}
 	handler, err := NewHandler(Dependencies{
-		Authorizer:  authorizer,
-		Credentials: resolver,
-		Client:      client,
+		Authorizer:     authorizer,
+		Credentials:    resolver,
+		Client:         client,
+		Attempts:       &relayAttemptRecorder{},
+		ModelRefreshes: &relayModelRefreshScheduler{},
+		Clock:          relayTestClock,
 	})
 	if err != nil {
 		t.Fatalf("NewHandler() error = %v", err)
@@ -458,7 +705,10 @@ func TestNewHandlerRejectsIncompleteDependencies(t *testing.T) {
 			accountRef: accountRef,
 			credential: credential,
 		},
-		Client: &relayRecordingClient{},
+		Client:         &relayRecordingClient{},
+		Attempts:       &relayAttemptRecorder{},
+		ModelRefreshes: &relayModelRefreshScheduler{},
+		Clock:          relayTestClock,
 	}
 	tests := []Dependencies{
 		{Credentials: dependencies.Credentials, Client: dependencies.Client},
@@ -466,6 +716,27 @@ func TestNewHandlerRejectsIncompleteDependencies(t *testing.T) {
 		{
 			Authorizer:  dependencies.Authorizer,
 			Credentials: dependencies.Credentials,
+		},
+		{
+			Authorizer:     dependencies.Authorizer,
+			Credentials:    dependencies.Credentials,
+			Client:         dependencies.Client,
+			ModelRefreshes: dependencies.ModelRefreshes,
+			Clock:          dependencies.Clock,
+		},
+		{
+			Authorizer:  dependencies.Authorizer,
+			Credentials: dependencies.Credentials,
+			Client:      dependencies.Client,
+			Attempts:    dependencies.Attempts,
+			Clock:       dependencies.Clock,
+		},
+		{
+			Authorizer:     dependencies.Authorizer,
+			Credentials:    dependencies.Credentials,
+			Client:         dependencies.Client,
+			Attempts:       dependencies.Attempts,
+			ModelRefreshes: dependencies.ModelRefreshes,
 		},
 	}
 	for index, current := range tests {
@@ -517,6 +788,23 @@ func newRelayTestHandler(
 	credential accountapp.Credential,
 	client HTTPClient,
 ) *Handler {
+	return newRelayHandlerWithRecorder(
+		t,
+		accountRef,
+		credential,
+		client,
+		&relayAttemptRecorder{},
+	)
+}
+
+// newRelayHandlerWithRecorder 装配可断言运行态终态的测试 Handler。
+func newRelayHandlerWithRecorder(
+	t *testing.T,
+	accountRef accountcore.AccountRef,
+	credential accountapp.Credential,
+	client HTTPClient,
+	recorder *relayAttemptRecorder,
+) *Handler {
 	t.Helper()
 
 	authorizer, err := NewScopedTokenAuthorizer(relayTokenResolver{
@@ -532,12 +820,25 @@ func newRelayTestHandler(
 			accountRef: accountRef,
 			credential: credential,
 		},
-		Client: client,
+		Client:         client,
+		Attempts:       recorder,
+		ModelRefreshes: &relayModelRefreshScheduler{},
+		Clock:          relayTestClock,
 	})
 	if err != nil {
 		t.Fatalf("NewHandler() error = %v", err)
 	}
 	return handler
+}
+
+// newNativeRelayRequest 创建带一次性租约和官方外层标识的 Messages 请求。
+func newNativeRelayRequest(t *testing.T, body string) *http.Request {
+	t.Helper()
+	request := httptest.NewRequest(http.MethodPost, Path, strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set(RelayTokenHeader, testRelayToken)
+	setNativeRelayHeaders(request)
+	return request
 }
 
 // setNativeRelayHeaders 添加官方 Claude Runtime 的稳定外层标识。
@@ -548,7 +849,7 @@ func setNativeRelayHeaders(request *http.Request) {
 		"claude-code-20250219,interleaved-thinking-2025-05-14",
 	)
 	request.Header.Set("x-app", "cli")
-	request.Header.Set("User-Agent", "claude-cli/2.1.207 (external, cli)")
+	request.Header.Set("User-Agent", "claude-cli/2.1.220 (external, cli)")
 	request.Header.Set(
 		"X-Claude-Code-Session-Id",
 		"123e4567-e89b-12d3-a456-426614174111",
@@ -561,11 +862,13 @@ type relayTokenResolver struct {
 	accountRef accountcore.AccountRef
 }
 
-// ResolveRelayToken 返回 Token 在服务端绑定的账号。
-func (resolver relayTokenResolver) ResolveRelayToken(
+// ConsumeRelayToken 返回 Token 在服务端绑定的账号模型。
+func (resolver relayTokenResolver) ConsumeRelayToken(
 	token string,
-) (accountcore.AccountRef, bool) {
-	return resolver.accountRef, token == resolver.token
+) (accountcore.AccountRef, runtimecore.ModelID, bool) {
+	return resolver.accountRef,
+		runtimecore.ModelID("claude-opus-5"),
+		token == resolver.token
 }
 
 // relayCredentialResolver 记录凭据解析是否发生。
@@ -587,6 +890,51 @@ func (resolver *relayCredentialResolver) ResolveCredential(
 	return resolver.credential, nil
 }
 
+// relayAttemptRecorder 记录 Native Relay 是否提交了运行态终态。
+type relayAttemptRecorder struct {
+	successes int
+	failures  []inferencegateway.AttemptFailure
+}
+
+// RecordSuccess 记录完整成功响应。
+func (recorder *relayAttemptRecorder) RecordSuccess(
+	context.Context,
+	runtimecore.ModelRoute,
+) error {
+	recorder.successes++
+	return nil
+}
+
+// RecordFailure 记录分类后的上游 HTTP 失败。
+func (recorder *relayAttemptRecorder) RecordFailure(
+	_ context.Context,
+	_ runtimecore.ModelRoute,
+	failure inferencegateway.AttemptFailure,
+) error {
+	recorder.failures = append(recorder.failures, failure)
+	return nil
+}
+
+// relayModelRefreshScheduler 记录模型不支持后的旁路刷新请求。
+type relayModelRefreshScheduler struct {
+	calls int
+}
+
+// ScheduleModelRefresh 实现无网络测试端口。
+func (scheduler *relayModelRefreshScheduler) ScheduleModelRefresh(
+	context.Context,
+	accountcore.AccountRef,
+	string,
+) error {
+	scheduler.calls++
+	return nil
+}
+
+// relayTestClock 返回失败分类使用的确定时间。
+func relayTestClock() time.Time {
+	return time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
+}
+
 // relayRecordingClient 记录是否越过了触网边界。
 type relayRecordingClient struct {
 	calls int
@@ -602,6 +950,38 @@ func (client *relayRecordingClient) Do(
 		Header:     make(http.Header),
 		Body:       io.NopCloser(strings.NewReader(`{"ok":true}`)),
 	}, nil
+}
+
+// relayFailureClient 返回正文可回放的合成 Claude HTTP 失败。
+type relayFailureClient struct {
+	status string
+	code   int
+	body   string
+	header http.Header
+}
+
+// Do 返回预设失败，不访问网络。
+func (client *relayFailureClient) Do(
+	*http.Request,
+) (*http.Response, error) {
+	return &http.Response{
+		Status:     client.status,
+		StatusCode: client.code,
+		Header:     client.header.Clone(),
+		Body:       io.NopCloser(strings.NewReader(client.body)),
+	}, nil
+}
+
+// relayTransportFailureClient 在收到 HTTP 响应前返回稳定传输错误。
+type relayTransportFailureClient struct {
+	err error
+}
+
+// Do 返回预设错误，不访问网络。
+func (client relayTransportFailureClient) Do(
+	*http.Request,
+) (*http.Response, error) {
+	return nil, client.err
 }
 
 // observedUpstreamRequest 保存 fake 上游实际收到的低敏证据。

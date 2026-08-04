@@ -195,6 +195,67 @@ func TestRecruiterPinnedRequestDoesNotConsumeFairnessTicket(t *testing.T) {
 	}
 }
 
+// TestRecruiterSkipsExplicitlyExcludedAccountsBeforeRuntimeAndCredential 验证
+// Gateway 失败换号不会在同一客户端请求中再次调用已尝试账号。
+func TestRecruiterSkipsExplicitlyExcludedAccountsBeforeRuntimeAndCredential(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	first, firstCredential := newRecruitmentCandidate(t, "claude", 1, "excluded-first")
+	second, secondCredential := newRecruitmentCandidate(t, "claude", 2, "excluded-second")
+	resolver := newRecruitmentCredentialResolver(
+		map[accountcore.AccountRef]credentialResolution{
+			first.Ref():  {credential: firstCredential},
+			second.Ref(): {credential: secondCredential},
+		},
+	)
+	runtimeSource := &recruitmentEligibilitySource{}
+	recruiter := newTestRecruiterWithRuntime(
+		t,
+		&recruitmentCandidateSource{
+			candidates: []accountapp.RoutingAccount{first, second},
+		},
+		runtimeSource,
+		resolver,
+	)
+	request, err := NewRequestExcluding(
+		testRecruitmentCatalog(t),
+		"claude",
+		testModelID("claude"),
+		[]accountcore.AccountRef{first.Ref()},
+	)
+	if err != nil {
+		t.Fatalf("NewRequestExcluding() error = %v", err)
+	}
+	result, err := recruiter.Recruit(
+		context.Background(),
+		request,
+		allowAllCredentialTransport{},
+	)
+	if err != nil || result.Account().Ref() != second.Ref() ||
+		result.Examined() != 2 || resolver.CallCount() != 1 {
+		t.Fatalf(
+			"result=%#v error=%v credential_calls=%d",
+			result,
+			err,
+			resolver.CallCount(),
+		)
+	}
+	routes := runtimeSource.Routes()
+	if len(routes) != 1 || routes[0].AccountRef() != second.Ref() {
+		t.Fatalf("runtime routes=%#v", routes)
+	}
+	if _, err := NewRequestExcluding(
+		testRecruitmentCatalog(t),
+		"claude",
+		testModelID("claude"),
+		[]accountcore.AccountRef{first.Ref(), first.Ref()},
+	); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("NewRequestExcluding(duplicate) error = %v", err)
+	}
+}
+
 // TestRecruitmentSessionReturnsEachAccountAtMostOnce 验证环形扫描不会在同一请求内重复账号。
 func TestRecruitmentSessionReturnsEachAccountAtMostOnce(t *testing.T) {
 	t.Parallel()

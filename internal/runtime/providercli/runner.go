@@ -101,8 +101,8 @@ func (runner *Runner) Run(
 		if err != nil {
 			return err
 		}
-		if _, pinned := spec.PinnedAccount(); pinned && spec.ClientProviderID() == "claude" {
-			return runner.runClaudePinnedGateway(ctx, spec, resolved)
+		if spec.ClientProviderID() == "claude" {
+			return runner.runClaudeGateway(ctx, spec, resolved)
 		}
 		return runner.runDirect(
 			ctx,

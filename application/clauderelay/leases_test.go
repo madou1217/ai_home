@@ -8,10 +8,13 @@ import (
 	"time"
 
 	"github.com/madou1217/ai_home/application/clauderelay"
+	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 )
 
-// TestLeaseRegistryBindsExpiresAndRevokesTokens 验证租约只解析到签发账号。
+const leaseModel = "claude-opus-5"
+
+// TestLeaseRegistryBindsExpiresAndRevokesTokens 验证租约只解析到签发账号模型。
 func TestLeaseRegistryBindsExpiresAndRevokesTokens(t *testing.T) {
 	t.Parallel()
 
@@ -21,15 +24,18 @@ func TestLeaseRegistryBindsExpiresAndRevokesTokens(t *testing.T) {
 	registry := newLeaseRegistry(t, clock, 2)
 	accountRef := mustLeaseAccountRef(t, "acct_1234567890abcdef1234")
 
-	lease, err := registry.Issue(accountRef)
+	modelID := mustLeaseModelID(t)
+	lease, err := registry.Issue(accountRef, modelID)
 	if err != nil {
 		t.Fatalf("Issue() error = %v", err)
 	}
-	resolved, found := registry.ResolveRelayToken(lease.Token())
+	resolved, resolvedModel, found := registry.ConsumeRelayToken(lease.Token())
 	if !lease.IsValid() ||
 		!found ||
 		resolved != accountRef ||
+		resolvedModel != modelID ||
 		lease.AccountRef() != accountRef ||
+		lease.ModelID() != modelID ||
 		lease.ExpiresAt() != clock.now.Add(time.Hour) {
 		t.Fatalf(
 			"lease=%#v resolved=%s found=%t",
@@ -38,21 +44,19 @@ func TestLeaseRegistryBindsExpiresAndRevokesTokens(t *testing.T) {
 			found,
 		)
 	}
-	if _, found := registry.ResolveRelayToken("unknown-token"); found {
+	if _, _, found := registry.ConsumeRelayToken("unknown-token"); found {
 		t.Fatal("未知 Token 被错误解析")
 	}
-
-	registry.Revoke(lease.Token())
-	if _, found := registry.ResolveRelayToken(lease.Token()); found {
-		t.Fatal("撤销后的 Token 仍然有效")
+	if _, _, found := registry.ConsumeRelayToken(lease.Token()); found {
+		t.Fatal("已经消费的 Token 仍然有效")
 	}
 
-	expiring, err := registry.Issue(accountRef)
+	expiring, err := registry.Issue(accountRef, modelID)
 	if err != nil {
 		t.Fatalf("Issue(expiring) error = %v", err)
 	}
 	clock.advance(time.Hour)
-	if _, found := registry.ResolveRelayToken(expiring.Token()); found {
+	if _, _, found := registry.ConsumeRelayToken(expiring.Token()); found {
 		t.Fatal("到期 Token 仍然有效")
 	}
 }
@@ -66,17 +70,18 @@ func TestLeaseRegistryPrunesBeforeCapacityCheck(t *testing.T) {
 	}
 	registry := newLeaseRegistry(t, clock, 1)
 	accountRef := mustLeaseAccountRef(t, "acct_1234567890abcdef1234")
-	if _, err := registry.Issue(accountRef); err != nil {
+	modelID := mustLeaseModelID(t)
+	if _, err := registry.Issue(accountRef, modelID); err != nil {
 		t.Fatalf("Issue(first) error = %v", err)
 	}
-	if _, err := registry.Issue(accountRef); !errors.Is(
+	if _, err := registry.Issue(accountRef, modelID); !errors.Is(
 		err,
 		clauderelay.ErrLeaseCapacity,
 	) {
 		t.Fatalf("Issue(capacity) error = %v", err)
 	}
 	clock.advance(time.Hour)
-	if _, err := registry.Issue(accountRef); err != nil {
+	if _, err := registry.Issue(accountRef, modelID); err != nil {
 		t.Fatalf("Issue(after expiry) error = %v", err)
 	}
 }
@@ -90,9 +95,10 @@ func TestLeaseRegistrySupportsConcurrentResolution(t *testing.T) {
 	}
 	registry := newLeaseRegistry(t, clock, 128)
 	accountRef := mustLeaseAccountRef(t, "acct_1234567890abcdef1234")
+	modelID := mustLeaseModelID(t)
 	leases := make([]clauderelay.Lease, 32)
 	for index := range leases {
-		lease, err := registry.Issue(accountRef)
+		lease, err := registry.Issue(accountRef, modelID)
 		if err != nil {
 			t.Fatalf("Issue(%d) error = %v", index, err)
 		}
@@ -105,27 +111,37 @@ func TestLeaseRegistrySupportsConcurrentResolution(t *testing.T) {
 		wait.Add(2)
 		go func() {
 			defer wait.Done()
-			for range 100 {
-				resolved, found := registry.ResolveRelayToken(lease.Token())
-				if !found || resolved != accountRef {
-					t.Errorf(
-						"ResolveRelayToken()=%s,%t",
-						resolved,
-						found,
-					)
-					return
-				}
+			resolved, resolvedModel, found := registry.ConsumeRelayToken(
+				lease.Token(),
+			)
+			if !found || resolved != accountRef || resolvedModel != modelID {
+				t.Errorf(
+					"ConsumeRelayToken()=%s,%s,%t",
+					resolved,
+					resolvedModel,
+					found,
+				)
 			}
 		}()
 		go func() {
 			defer wait.Done()
-			reissued, err := registry.Issue(accountRef)
+			reissued, err := registry.Issue(accountRef, modelID)
 			if err == nil {
 				registry.Revoke(reissued.Token())
 			}
 		}()
 	}
 	wait.Wait()
+}
+
+// mustLeaseModelID 创建请求级租约绑定的真实模型。
+func mustLeaseModelID(t *testing.T) runtimecore.ModelID {
+	t.Helper()
+	modelID, err := runtimecore.NewModelID(leaseModel)
+	if err != nil {
+		t.Fatalf("NewModelID() error = %v", err)
+	}
+	return modelID
 }
 
 // TestNewLeaseRegistryRejectsInvalidDependencies 验证边界不会被绕过。

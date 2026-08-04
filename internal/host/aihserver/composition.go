@@ -13,6 +13,7 @@ import (
 	"github.com/madou1217/ai_home/application/accountcredentials"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	usageapp "github.com/madou1217/ai_home/application/accountusage"
+	"github.com/madou1217/ai_home/application/claudegateway"
 	"github.com/madou1217/ai_home/application/clauderelay"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/claudeoauth"
@@ -24,6 +25,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sub2api"
 	claudemessages "github.com/madou1217/ai_home/internal/adapters/claude/messages"
+	"github.com/madou1217/ai_home/internal/adapters/claude/transportpolicy"
 	codexresponses "github.com/madou1217/ai_home/internal/adapters/codex/responses"
 	"github.com/madou1217/ai_home/internal/host/inferenceruntime"
 	"github.com/madou1217/ai_home/internal/transport/http/accountauthapi"
@@ -349,29 +351,9 @@ func newHandlers(
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建 Claude Relay 鉴权失败: %w", err)
 	}
-	relayLeaseHandler, err := clauderelayleaseapi.NewHandler(
-		clauderelayleaseapi.Dependencies{
-			Authorizer:  clientAuthorizer,
-			Credentials: credentials,
-			Leases:      relayLeases,
-		},
-	)
-	if err != nil {
-		return serverHandlers{}, nil, fmt.Errorf("创建 Claude Relay 租约 Handler 失败: %w", err)
-	}
 	relayClient := &http.Client{
 		Timeout:       claudeRelayHTTPTimeout,
 		CheckRedirect: rejectOAuthRedirect,
-	}
-	nativeRelayHandler, err := claudenativerelay.NewHandler(
-		claudenativerelay.Dependencies{
-			Authorizer:  relayAuthorizer,
-			Credentials: credentials,
-			Client:      relayClient,
-		},
-	)
-	if err != nil {
-		return serverHandlers{}, nil, fmt.Errorf("创建 Claude Native Relay Handler 失败: %w", err)
 	}
 	inference, err := newInferenceComposition(
 		ctx,
@@ -393,6 +375,61 @@ func newHandlers(
 	)
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建生产推理组合失败: %w", err)
+	}
+	claudeGatewayPolicy, err := transportpolicy.NewGatewayPolicy(
+		inference.claudeUpstream,
+	)
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf(
+			"创建 Claude Gateway 传输策略失败: %w",
+			err,
+		)
+	}
+	claudeGatewaySelector, err := claudegateway.NewSelector(
+		claudegateway.Dependencies{
+			Catalog:    catalog,
+			Recruiter:  inference.recruiter,
+			Transports: claudeGatewayPolicy,
+			Leases:     relayLeases,
+		},
+	)
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf(
+			"创建 Claude Gateway 账号选择器失败: %w",
+			err,
+		)
+	}
+	relayLeaseHandler, err := clauderelayleaseapi.NewHandler(
+		clauderelayleaseapi.Dependencies{
+			Authorizer: clientAuthorizer,
+			Selector:   claudeGatewaySelector,
+		},
+	)
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf(
+			"创建 Claude Relay 租约 Handler 失败: %w",
+			err,
+		)
+	}
+	nativeRelayHandler, err := claudenativerelay.NewHandler(
+		claudenativerelay.Dependencies{
+			Authorizer:     relayAuthorizer,
+			Credentials:    credentials,
+			Client:         relayClient,
+			Attempts:       accountRuntime,
+			ModelRefreshes: inference.modelRefreshes,
+			Clock:          time.Now,
+		},
+	)
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf(
+			"创建 Claude Native Relay Handler 失败: %w",
+			err,
+		)
 	}
 	modelsHandler, err := modelsapi.NewHandler(modelsapi.Dependencies{
 		Models:     inference.models,

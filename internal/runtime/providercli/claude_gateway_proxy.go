@@ -17,50 +17,40 @@ import (
 
 	"github.com/madou1217/ai_home/application/providerlaunch"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	gatewaycontract "github.com/madou1217/ai_home/internal/contracts/claudegateway"
 )
 
 const (
-	pinnedAccountHeader        = "X-Account-Ref"
-	claudeRelayTokenHeader     = "X-AIH-Relay-Token"
-	claudeRelayLeasePath       = "/v1/claude-relay-leases"
-	maxClaudeRelayLeaseBytes   = 16 * 1024
-	unsupportedRelayCredential = "unsupported_relay_credential"
+	pinnedAccountHeader          = "X-Account-Ref"
+	claudeRelayTokenHeader       = "X-AIH-Relay-Token"
+	maxClaudeRelaySelectionBytes = 16 * 1024
+	maxClaudeGatewayAttempts     = 4
 )
 
-var errClaudeRelayLease = errors.New("Claude Gateway Relay 租约失败")
+var errClaudeGatewaySelection = errors.New("Claude Gateway 账号选择失败")
 
-// claudeGatewayProxy 把固定账号约束绑定在本地进程边界，避免共享 settings 覆盖 Header。
+// claudeGatewayProxy 在本地进程边界隔离 Server Key，并执行请求级账号选择。
 type claudeGatewayProxy struct {
 	target      *url.URL
 	clientKey   string
-	relayToken  string
 	accountRef  accountcore.AccountRef
 	localSecret string
 	client      *http.Client
 }
 
-// runClaudePinnedGateway 用随机本地 Key 隔离真实 Server Key 并强制固定账号。
-func (runner *Runner) runClaudePinnedGateway(
+// runClaudeGateway 用随机本地 Key 隔离真实 Server Key，并让 Server 按模型征召账号。
+func (runner *Runner) runClaudeGateway(
 	ctx context.Context,
 	spec providerlaunch.GatewayLaunchSpec,
 	arguments []string,
 ) error {
 	accountRef, pinned := spec.PinnedAccount()
 	values := spec.Environment().RevealSet()
-	if !pinned || values["ANTHROPIC_BASE_URL"] == "" || values["ANTHROPIC_API_KEY"] == "" {
+	if values["ANTHROPIC_BASE_URL"] == "" || values["ANTHROPIC_API_KEY"] == "" ||
+		(pinned && !accountRef.IsValid()) {
 		return ErrInvalidRunRequest
 	}
 	target, err := url.Parse(values["ANTHROPIC_BASE_URL"])
-	if err != nil {
-		return err
-	}
-	relayToken, err := issueClaudeRelayLease(
-		ctx,
-		runner.httpClient,
-		target,
-		values["ANTHROPIC_API_KEY"],
-		accountRef,
-	)
 	if err != nil {
 		return err
 	}
@@ -75,7 +65,6 @@ func (runner *Runner) runClaudePinnedGateway(
 	proxy := &claudeGatewayProxy{
 		target:      target,
 		clientKey:   values["ANTHROPIC_API_KEY"],
-		relayToken:  relayToken,
 		accountRef:  accountRef,
 		localSecret: localSecret,
 		client:      runner.httpClient,
@@ -99,7 +88,7 @@ func (runner *Runner) runClaudePinnedGateway(
 	)
 }
 
-// ServeHTTP 校验随机本地 Key，覆盖伪造 Header 后转发到 AIH Server。
+// ServeHTTP 校验随机本地 Key，并按正文真实模型执行 Server 的稳定传输决策。
 func (proxy *claudeGatewayProxy) ServeHTTP(writer http.ResponseWriter, incoming *http.Request) {
 	if !constantTimeEqual(incoming.Header.Get("x-api-key"), proxy.localSecret) {
 		writeProxyError(writer, http.StatusUnauthorized, "local proxy authentication failed")
@@ -110,56 +99,179 @@ func (proxy *claudeGatewayProxy) ServeHTTP(writer http.ResponseWriter, incoming 
 		writeProxyError(writer, http.StatusRequestEntityTooLarge, "request body is too large")
 		return
 	}
+	if incoming.URL.Path != "/v1/messages" || incoming.Method != http.MethodPost {
+		proxy.forwardNonMessage(writer, incoming, body)
+		return
+	}
+	model, err := claudeRequestModel(body)
+	if err != nil {
+		writeProxyError(writer, http.StatusBadRequest, "invalid Claude model")
+		return
+	}
+	attemptedAccounts := make(
+		[]accountcore.AccountRef,
+		0,
+		maxClaudeGatewayAttempts,
+	)
+	decision, selectErr := selectClaudeGatewayTransport(
+		incoming.Context(),
+		proxy.client,
+		proxy.target,
+		proxy.clientKey,
+		model,
+		proxy.accountRef,
+		attemptedAccounts,
+	)
+	if selectErr != nil {
+		writeProxyError(writer, http.StatusServiceUnavailable, "no Claude account is available")
+		return
+	}
+	for attempt := 0; attempt < maxClaudeGatewayAttempts; attempt++ {
+		if containsAccountRef(attemptedAccounts, decision.accountRef) {
+			writeProxyError(writer, http.StatusBadGateway, "gateway selected a repeated account")
+			return
+		}
+		attemptedAccounts = append(attemptedAccounts, decision.accountRef)
+		request, buildErr := newForwardRequest(
+			incoming.Context(),
+			incoming,
+			proxy.target,
+			body,
+		)
+		if buildErr != nil {
+			writeProxyError(writer, http.StatusBadGateway, "gateway request build failed")
+			return
+		}
+		if projectErr := proxy.projectServerAuthorization(
+			request.Header,
+			decision,
+		); projectErr != nil {
+			writeProxyError(writer, http.StatusBadGateway, "invalid gateway transport")
+			return
+		}
+		response, forwardErr := proxy.client.Do(request)
+		if forwardErr != nil {
+			closeProviderResponse(response)
+			writeProxyError(writer, http.StatusBadGateway, "gateway request failed")
+			return
+		}
+		retry := shouldRetryClaudeAccount(response) &&
+			!proxy.accountRef.IsValid() &&
+			attempt+1 < maxClaudeGatewayAttempts
+		response.Header.Del(gatewaycontract.RetryAccountHeader)
+		if retry {
+			nextDecision, nextErr := selectClaudeGatewayTransport(
+				incoming.Context(),
+				proxy.client,
+				proxy.target,
+				proxy.clientKey,
+				model,
+				proxy.accountRef,
+				attemptedAccounts,
+			)
+			if nextErr != nil {
+				// 没有下一账号时保留最后一个真实上游错误，避免伪造 503。
+				writeForwardResponse(writer, response)
+				return
+			}
+			if containsAccountRef(attemptedAccounts, nextDecision.accountRef) {
+				closeProviderResponse(response)
+				writeProxyError(writer, http.StatusBadGateway, "gateway selected a repeated account")
+				return
+			}
+			closeProviderResponse(response)
+			decision = nextDecision
+			continue
+		}
+		writeForwardResponse(writer, response)
+		return
+	}
+	writeProxyError(writer, http.StatusServiceUnavailable, "no Claude account is available")
+}
+
+// forwardNonMessage 保持未知路径由 Server 统一返回合同错误，不参与账号征召。
+func (proxy *claudeGatewayProxy) forwardNonMessage(
+	writer http.ResponseWriter,
+	incoming *http.Request,
+	body []byte,
+) {
 	request, err := newForwardRequest(incoming.Context(), incoming, proxy.target, body)
 	if err != nil {
 		writeProxyError(writer, http.StatusBadGateway, "gateway request build failed")
 		return
 	}
-	proxy.projectServerAuthorization(request.Header)
+	request.Header.Del("Authorization")
+	request.Header.Set("x-api-key", proxy.clientKey)
+	request.Header.Del(claudeRelayTokenHeader)
+	request.Header.Del(pinnedAccountHeader)
+	if proxy.accountRef.IsValid() {
+		request.Header.Set(pinnedAccountHeader, proxy.accountRef.String())
+	}
 	response, err := proxy.client.Do(request)
 	if err != nil {
+		closeProviderResponse(response)
 		writeProxyError(writer, http.StatusBadGateway, "gateway request failed")
 		return
 	}
+	response.Header.Del(gatewaycontract.RetryAccountHeader)
 	writeForwardResponse(writer, response)
 }
 
-// projectServerAuthorization 根据服务端确认的凭据类型选择互斥传输合同。
-// OAuth 使用账号绑定租约进入 Native Relay；其他凭据继续使用 Canonical API。
-func (proxy *claudeGatewayProxy) projectServerAuthorization(header http.Header) {
+// projectServerAuthorization 根据 Server 决策选择互斥传输合同。
+func (proxy *claudeGatewayProxy) projectServerAuthorization(
+	header http.Header,
+	decision claudeGatewayDecision,
+) error {
 	header.Del("Authorization")
 	header.Del("x-api-key")
 	header.Del(pinnedAccountHeader)
 	header.Del(claudeRelayTokenHeader)
-	if proxy.relayToken != "" {
-		header.Set(claudeRelayTokenHeader, proxy.relayToken)
-		return
+	switch decision.transport {
+	case gatewaycontract.TransportNativeOAuth:
+		header.Set(claudeRelayTokenHeader, decision.relayToken)
+	case gatewaycontract.TransportCanonical:
+		header.Set("x-api-key", proxy.clientKey)
+		header.Set(pinnedAccountHeader, decision.accountRef.String())
+	default:
+		return errClaudeGatewaySelection
 	}
-	header.Set("x-api-key", proxy.clientKey)
-	header.Set(pinnedAccountHeader, proxy.accountRef.String())
+	return nil
 }
 
-// issueClaudeRelayLease 让 Server 以当前账号真实凭据选择传输方式。
-// 非 OAuth 账号以明确 422 回到 Canonical；其他失败一律关闭而不猜测。
-func issueClaudeRelayLease(
+// selectClaudeGatewayTransport 让 Server 按模型、运行态和公平票号选择账号。
+func selectClaudeGatewayTransport(
 	ctx context.Context,
 	client *http.Client,
 	target *url.URL,
 	clientKey string,
+	model string,
 	accountRef accountcore.AccountRef,
-) (string, error) {
+	excludedAccounts []accountcore.AccountRef,
+) (claudeGatewayDecision, error) {
 	if ctx == nil || client == nil || target == nil || clientKey == "" ||
-		!accountRef.IsValid() {
-		return "", errClaudeRelayLease
+		model == "" || (accountRef != "" && !accountRef.IsValid()) ||
+		len(excludedAccounts) > maxClaudeGatewayAttempts ||
+		(accountRef.IsValid() && len(excludedAccounts) > 0) {
+		return claudeGatewayDecision{}, errClaudeGatewaySelection
 	}
-	payload, err := json.Marshal(map[string]string{
-		"account_ref": accountRef.String(),
+	excluded := make([]string, 0, len(excludedAccounts))
+	for index, excludedAccount := range excludedAccounts {
+		if !excludedAccount.IsValid() ||
+			containsAccountRef(excludedAccounts[:index], excludedAccount) {
+			return claudeGatewayDecision{}, errClaudeGatewaySelection
+		}
+		excluded = append(excluded, excludedAccount.String())
+	}
+	payload, err := json.Marshal(gatewaycontract.SelectionRequest{
+		Model:               model,
+		AccountRef:          accountRef.String(),
+		ExcludedAccountRefs: excluded,
 	})
 	if err != nil {
-		return "", errClaudeRelayLease
+		return claudeGatewayDecision{}, errClaudeGatewaySelection
 	}
 	leaseURL := *target
-	leaseURL.Path = joinURLPath(target.Path, claudeRelayLeasePath)
+	leaseURL.Path = joinURLPath(target.Path, gatewaycontract.SelectionPath)
 	leaseURL.RawPath = ""
 	leaseURL.RawQuery = ""
 	leaseURL.Fragment = ""
@@ -170,7 +282,7 @@ func issueClaudeRelayLease(
 		bytes.NewReader(payload),
 	)
 	if err != nil {
-		return "", errClaudeRelayLease
+		return claudeGatewayDecision{}, errClaudeGatewaySelection
 	}
 	request.Header.Set("Authorization", "Bearer "+clientKey)
 	request.Header.Set("Content-Type", "application/json")
@@ -185,34 +297,91 @@ func issueClaudeRelayLease(
 	response, err := noRedirectClient.Do(request)
 	if err != nil || response == nil || response.Body == nil {
 		closeProviderResponse(response)
-		return "", errClaudeRelayLease
+		return claudeGatewayDecision{}, errClaudeGatewaySelection
 	}
 	defer response.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(
 		response.Body,
-		maxClaudeRelayLeaseBytes+1,
+		maxClaudeRelaySelectionBytes+1,
 	))
-	if err != nil || len(body) > maxClaudeRelayLeaseBytes {
-		return "", errClaudeRelayLease
-	}
-	if response.StatusCode == http.StatusUnprocessableEntity {
-		var document claudeRelayLeaseError
-		if json.Unmarshal(body, &document) == nil &&
-			document.Error.Code == unsupportedRelayCredential {
-			return "", nil
-		}
-		return "", errClaudeRelayLease
+	if err != nil || len(body) > maxClaudeRelaySelectionBytes {
+		return claudeGatewayDecision{}, errClaudeGatewaySelection
 	}
 	if response.StatusCode != http.StatusCreated {
-		return "", errClaudeRelayLease
+		return claudeGatewayDecision{}, errClaudeGatewaySelection
 	}
-	var document claudeRelayLeaseResponse
-	if json.Unmarshal(body, &document) != nil ||
-		document.Data.AccountRef != accountRef.String() ||
-		!validClaudeRelayToken(document.Data.Token) {
-		return "", errClaudeRelayLease
+	var document gatewaycontract.SelectionResponse
+	if json.Unmarshal(body, &document) != nil {
+		return claudeGatewayDecision{}, errClaudeGatewaySelection
 	}
-	return document.Data.Token, nil
+	selectedAccount, err := accountcore.ParseAccountRef(document.Data.AccountRef)
+	if err != nil || (accountRef.IsValid() && selectedAccount != accountRef) {
+		return claudeGatewayDecision{}, errClaudeGatewaySelection
+	}
+	decision := claudeGatewayDecision{
+		transport:  document.Data.Transport,
+		accountRef: selectedAccount,
+		relayToken: document.Data.Token,
+	}
+	if !decision.IsValid() {
+		return claudeGatewayDecision{}, errClaudeGatewaySelection
+	}
+	return decision, nil
+}
+
+// containsAccountRef 在线性固定上限切片中检查同一请求是否已经调用过账号。
+func containsAccountRef(
+	accounts []accountcore.AccountRef,
+	target accountcore.AccountRef,
+) bool {
+	for _, accountRef := range accounts {
+		if accountRef == target {
+			return true
+		}
+	}
+	return false
+}
+
+// claudeGatewayDecision 是代理内存中的最小传输投影。
+type claudeGatewayDecision struct {
+	transport  string
+	accountRef accountcore.AccountRef
+	relayToken string
+}
+
+// IsValid 校验 Canonical 与 Native OAuth Header 所需字段互斥。
+func (decision claudeGatewayDecision) IsValid() bool {
+	if !decision.accountRef.IsValid() {
+		return false
+	}
+	switch decision.transport {
+	case gatewaycontract.TransportCanonical:
+		return decision.relayToken == ""
+	case gatewaycontract.TransportNativeOAuth:
+		return validClaudeRelayToken(decision.relayToken)
+	default:
+		return false
+	}
+}
+
+// claudeRequestModel 只读取顶层 model，不重编码或修改 Claude Code 原始请求。
+func claudeRequestModel(body []byte) (string, error) {
+	var envelope struct {
+		Model string `json:"model"`
+	}
+	if len(body) == 0 || json.Unmarshal(body, &envelope) != nil ||
+		envelope.Model == "" || envelope.Model != strings.TrimSpace(envelope.Model) ||
+		strings.ContainsRune(envelope.Model, '\x00') {
+		return "", ErrInvalidRunRequest
+	}
+	return envelope.Model, nil
+}
+
+// shouldRetryClaudeAccount 只相信 Server 在响应提交前生成的显式换号标记。
+func shouldRetryClaudeAccount(response *http.Response) bool {
+	return response != nil && response.Header.Get(
+		gatewaycontract.RetryAccountHeader,
+	) == gatewaycontract.RetryAccountValue
 }
 
 // validClaudeRelayToken 拒绝无法安全进入单值 Header 的服务端响应。
@@ -228,21 +397,6 @@ func closeProviderResponse(response *http.Response) {
 	if response != nil && response.Body != nil {
 		_ = response.Body.Close()
 	}
-}
-
-// claudeRelayLeaseResponse 是租约入口的最小成功投影。
-type claudeRelayLeaseResponse struct {
-	Data struct {
-		Token      string `json:"token"`
-		AccountRef string `json:"account_ref"`
-	} `json:"data"`
-}
-
-// claudeRelayLeaseError 是可安全用于传输选择的稳定错误码投影。
-type claudeRelayLeaseError struct {
-	Error struct {
-		Code string `json:"code"`
-	} `json:"error"`
 }
 
 // newLocalProxySecret 生成只存在于单次父子进程环境的高熵本地密钥。

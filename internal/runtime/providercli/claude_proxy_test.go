@@ -30,6 +30,7 @@ import (
 	"github.com/madou1217/ai_home/core/providers"
 	claudecli "github.com/madou1217/ai_home/internal/adapters/claude/clilaunch"
 	codexcli "github.com/madou1217/ai_home/internal/adapters/codex/clilaunch"
+	gatewaycontract "github.com/madou1217/ai_home/internal/contracts/claudegateway"
 )
 
 const (
@@ -259,6 +260,7 @@ func TestClaudeGatewayProxyForcesSelectedTransportAuthorization(t *testing.T) {
 	}
 	for _, test := range []struct {
 		name        string
+		transport   string
 		relayToken  string
 		wantKey     string
 		wantAccount string
@@ -266,11 +268,13 @@ func TestClaudeGatewayProxyForcesSelectedTransportAuthorization(t *testing.T) {
 	}{
 		{
 			name:        "canonical api key",
+			transport:   gatewaycontract.TransportCanonical,
 			wantKey:     testGatewayKey,
 			wantAccount: accountRef.String(),
 		},
 		{
 			name:       "native oauth relay",
+			transport:  gatewaycontract.TransportNativeOAuth,
 			relayToken: "relay-token-selected-by-server",
 			wantRelay:  "relay-token-selected-by-server",
 		},
@@ -281,6 +285,20 @@ func TestClaudeGatewayProxyForcesSelectedTransportAuthorization(t *testing.T) {
 				writer http.ResponseWriter,
 				request *http.Request,
 			) {
+				if request.URL.Path == gatewaycontract.SelectionPath {
+					writer.Header().Set("Content-Type", "application/json")
+					writer.WriteHeader(http.StatusCreated)
+					_ = json.NewEncoder(writer).Encode(
+						gatewaycontract.SelectionResponse{
+							Data: gatewaycontract.SelectionView{
+								Transport:  test.transport,
+								AccountRef: accountRef.String(),
+								Token:      test.relayToken,
+							},
+						},
+					)
+					return
+				}
 				gotKey = request.Header.Get("x-api-key")
 				gotAccount = request.Header.Get(pinnedAccountHeader)
 				gotAuthorization = request.Header.Get("Authorization")
@@ -293,15 +311,13 @@ func TestClaudeGatewayProxyForcesSelectedTransportAuthorization(t *testing.T) {
 			proxy := &claudeGatewayProxy{
 				target:      target,
 				clientKey:   testGatewayKey,
-				relayToken:  test.relayToken,
-				accountRef:  accountRef,
 				localSecret: "local-random-secret",
 				client:      upstream.Client(),
 			}
 			request := httptest.NewRequest(
 				http.MethodPost,
 				"/v1/messages",
-				strings.NewReader("{}"),
+				strings.NewReader(`{"model":"claude-opus-5"}`),
 			)
 			request.Header.Set("x-api-key", "local-random-secret")
 			request.Header.Set("Authorization", "Bearer forged")
@@ -327,34 +343,206 @@ func TestClaudeGatewayProxyForcesSelectedTransportAuthorization(t *testing.T) {
 	}
 }
 
-// TestIssueClaudeRelayLeaseSelectsNativeOrCanonicalTransport 验证 Server
+// TestClaudeGatewayProxyRetriesAnotherAccountBeforeResponseCommit 验证 Server
+// 明确标记可换号时重新征召，且不会把内部控制 Header 暴露给 Claude CLI。
+func TestClaudeGatewayProxyRetriesAnotherAccountBeforeResponseCommit(
+	t *testing.T,
+) {
+	firstRef, err := accountcore.ParseAccountRef("acct_0123456789abcdef0123")
+	if err != nil {
+		t.Fatalf("ParseAccountRef(first) error = %v", err)
+	}
+	secondRef, err := accountcore.ParseAccountRef("acct_abcdef0123456789abcd")
+	if err != nil {
+		t.Fatalf("ParseAccountRef(second) error = %v", err)
+	}
+	selectionCalls := 0
+	messageCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(
+		writer http.ResponseWriter,
+		request *http.Request,
+	) {
+		if request.URL.Path == gatewaycontract.SelectionPath {
+			var input gatewaycontract.SelectionRequest
+			if err := json.NewDecoder(request.Body).Decode(&input); err != nil {
+				t.Errorf("selection decode error=%v", err)
+			}
+			accountRef := firstRef
+			if selectionCalls > 0 {
+				if len(input.ExcludedAccountRefs) != 1 ||
+					input.ExcludedAccountRefs[0] != firstRef.String() {
+					t.Errorf(
+						"second exclusions=%v",
+						input.ExcludedAccountRefs,
+					)
+				}
+				accountRef = secondRef
+			}
+			selectionCalls++
+			writer.Header().Set("Content-Type", "application/json")
+			writer.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(writer).Encode(
+				gatewaycontract.SelectionResponse{
+					Data: gatewaycontract.SelectionView{
+						Transport:  gatewaycontract.TransportCanonical,
+						AccountRef: accountRef.String(),
+					},
+				},
+			)
+			return
+		}
+		messageCalls++
+		if messageCalls == 1 {
+			writer.Header().Set(
+				gatewaycontract.RetryAccountHeader,
+				gatewaycontract.RetryAccountValue,
+			)
+			writer.WriteHeader(529)
+			_, _ = io.WriteString(writer, `{"type":"error"}`)
+			return
+		}
+		if request.Header.Get(pinnedAccountHeader) != secondRef.String() {
+			t.Errorf(
+				"second account header=%q",
+				request.Header.Get(pinnedAccountHeader),
+			)
+		}
+		writer.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(writer, `{"ok":true}`)
+	}))
+	defer server.Close()
+	target, _ := url.Parse(server.URL)
+	proxy := &claudeGatewayProxy{
+		target:      target,
+		clientKey:   testGatewayKey,
+		localSecret: "local-random-secret",
+		client:      server.Client(),
+	}
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/messages",
+		strings.NewReader(`{"model":"claude-opus-5","stream":true}`),
+	)
+	request.Header.Set("x-api-key", "local-random-secret")
+	response := httptest.NewRecorder()
+
+	proxy.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK ||
+		response.Body.String() != `{"ok":true}` ||
+		response.Header().Get(gatewaycontract.RetryAccountHeader) != "" ||
+		selectionCalls != 2 || messageCalls != 2 {
+		t.Fatalf(
+			"status=%d body=%q retry=%q selections=%d messages=%d",
+			response.Code,
+			response.Body.String(),
+			response.Header().Get(gatewaycontract.RetryAccountHeader),
+			selectionCalls,
+			messageCalls,
+		)
+	}
+}
+
+// TestClaudeGatewayProxyPreservesLastUpstreamFailureWithoutAnotherAccount 验证
+// 排除失败账号后无候选时返回真实 529，而不是制造本地 503。
+func TestClaudeGatewayProxyPreservesLastUpstreamFailureWithoutAnotherAccount(
+	t *testing.T,
+) {
+	accountRef, err := accountcore.ParseAccountRef(
+		"acct_0123456789abcdef0123",
+	)
+	if err != nil {
+		t.Fatalf("ParseAccountRef() error = %v", err)
+	}
+	selectionCalls := 0
+	messageCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(
+		writer http.ResponseWriter,
+		request *http.Request,
+	) {
+		if request.URL.Path == gatewaycontract.SelectionPath {
+			selectionCalls++
+			if selectionCalls > 1 {
+				writer.WriteHeader(http.StatusServiceUnavailable)
+				_, _ = io.WriteString(writer, `{"error":{"code":"no_account"}}`)
+				return
+			}
+			writer.Header().Set("Content-Type", "application/json")
+			writer.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(writer).Encode(
+				gatewaycontract.SelectionResponse{
+					Data: gatewaycontract.SelectionView{
+						Transport:  gatewaycontract.TransportCanonical,
+						AccountRef: accountRef.String(),
+					},
+				},
+			)
+			return
+		}
+		messageCalls++
+		writer.Header().Set(
+			gatewaycontract.RetryAccountHeader,
+			gatewaycontract.RetryAccountValue,
+		)
+		writer.WriteHeader(529)
+		_, _ = io.WriteString(
+			writer,
+			`{"type":"error","error":{"type":"overloaded_error"}}`,
+		)
+	}))
+	defer server.Close()
+	target, _ := url.Parse(server.URL)
+	proxy := &claudeGatewayProxy{
+		target:      target,
+		clientKey:   testGatewayKey,
+		localSecret: "local-random-secret",
+		client:      server.Client(),
+	}
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/messages",
+		strings.NewReader(`{"model":"claude-opus-5","stream":true}`),
+	)
+	request.Header.Set("x-api-key", "local-random-secret")
+	response := httptest.NewRecorder()
+
+	proxy.ServeHTTP(response, request)
+
+	if response.Code != 529 ||
+		!strings.Contains(response.Body.String(), "overloaded_error") ||
+		response.Header().Get(gatewaycontract.RetryAccountHeader) != "" ||
+		selectionCalls != 2 || messageCalls != 1 {
+		t.Fatalf(
+			"status=%d body=%q retry=%q selections=%d messages=%d",
+			response.Code,
+			response.Body.String(),
+			response.Header().Get(gatewaycontract.RetryAccountHeader),
+			selectionCalls,
+			messageCalls,
+		)
+	}
+}
+
+// TestSelectClaudeGatewayTransportSelectsNativeOrCanonicalTransport 验证 Server
 // 对真实账号凭据的判断是唯一传输选择来源。
-func TestIssueClaudeRelayLeaseSelectsNativeOrCanonicalTransport(t *testing.T) {
+func TestSelectClaudeGatewayTransportSelectsNativeOrCanonicalTransport(t *testing.T) {
 	accountRef, err := accountcore.ParseAccountRef("acct_0123456789abcdef0123")
 	if err != nil {
 		t.Fatalf("ParseAccountRef() error = %v", err)
 	}
 	for _, test := range []struct {
 		name      string
-		status    int
-		response  map[string]any
+		transport string
 		wantToken string
 	}{
 		{
-			name:   "native oauth",
-			status: http.StatusCreated,
-			response: map[string]any{"data": map[string]string{
-				"token":       "relay-token-bound-by-go-server",
-				"account_ref": accountRef.String(),
-			}},
+			name:      "native oauth",
+			transport: gatewaycontract.TransportNativeOAuth,
 			wantToken: "relay-token-bound-by-go-server",
 		},
 		{
-			name:   "canonical credential",
-			status: http.StatusUnprocessableEntity,
-			response: map[string]any{"error": map[string]string{
-				"code": unsupportedRelayCredential,
-			}},
+			name:      "canonical credential",
+			transport: gatewaycontract.TransportCanonical,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -362,30 +550,43 @@ func TestIssueClaudeRelayLeaseSelectsNativeOrCanonicalTransport(t *testing.T) {
 				writer http.ResponseWriter,
 				request *http.Request,
 			) {
-				if request.URL.Path != claudeRelayLeasePath ||
+				if request.URL.Path != gatewaycontract.SelectionPath ||
 					request.Header.Get("Authorization") != "Bearer "+testGatewayKey {
 					t.Errorf("lease request path=%q authorization=%q", request.URL.Path, request.Header.Get("Authorization"))
 				}
 				var input map[string]string
 				if err := json.NewDecoder(request.Body).Decode(&input); err != nil ||
-					input["account_ref"] != accountRef.String() {
+					input["account_ref"] != accountRef.String() ||
+					input["model"] != "claude-opus-5" {
 					t.Errorf("lease input=%v error=%v", input, err)
 				}
 				writer.Header().Set("Content-Type", "application/json")
-				writer.WriteHeader(test.status)
-				_ = json.NewEncoder(writer).Encode(test.response)
+				writer.WriteHeader(http.StatusCreated)
+				_ = json.NewEncoder(writer).Encode(
+					gatewaycontract.SelectionResponse{
+						Data: gatewaycontract.SelectionView{
+							Transport:  test.transport,
+							AccountRef: accountRef.String(),
+							Token:      test.wantToken,
+						},
+					},
+				)
 			}))
 			defer server.Close()
 			target, _ := url.Parse(server.URL)
-			token, err := issueClaudeRelayLease(
+			decision, err := selectClaudeGatewayTransport(
 				t.Context(),
 				server.Client(),
 				target,
 				testGatewayKey,
+				"claude-opus-5",
 				accountRef,
+				nil,
 			)
-			if err != nil || token != test.wantToken {
-				t.Fatalf("issueClaudeRelayLease() token=%q error=%v", token, err)
+			if err != nil || decision.transport != test.transport ||
+				decision.relayToken != test.wantToken ||
+				decision.accountRef != accountRef {
+				t.Fatalf("selectClaudeGatewayTransport() decision=%#v error=%v", decision, err)
 			}
 		})
 	}
@@ -459,22 +660,11 @@ func TestClaudeProxyRuntimesKeepRealSecretsOutOfChildEnvironment(t *testing.T) {
 	})
 
 	t.Run("Pinned Gateway", func(t *testing.T) {
-		var accountRef string
 		leaseServer := httptest.NewServer(http.HandlerFunc(func(
 			writer http.ResponseWriter,
-			request *http.Request,
+			_ *http.Request,
 		) {
-			var input map[string]string
-			_ = json.NewDecoder(request.Body).Decode(&input)
-			accountRef = input["account_ref"]
-			writer.Header().Set("Content-Type", "application/json")
-			writer.WriteHeader(http.StatusCreated)
-			_ = json.NewEncoder(writer).Encode(map[string]any{
-				"data": map[string]string{
-					"token":       "runtime-relay-token-from-server",
-					"account_ref": accountRef,
-				},
-			})
+			writer.WriteHeader(http.StatusNotFound)
 		}))
 		defer leaseServer.Close()
 		spec := buildClaudeGatewaySpec(t, leaseServer.URL)
@@ -483,7 +673,7 @@ func TestClaudeProxyRuntimesKeepRealSecretsOutOfChildEnvironment(t *testing.T) {
 		runner.httpClient = leaseServer.Client()
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
-		go func() { done <- runner.runClaudePinnedGateway(ctx, spec, nil) }()
+		go func() { done <- runner.runClaudeGateway(ctx, spec, nil) }()
 		started := <-processes.started
 		environment := environmentMap(started.env)
 		if strings.Contains(strings.Join(started.env, "\n"), testGatewayKey) ||
@@ -496,7 +686,7 @@ func TestClaudeProxyRuntimesKeepRealSecretsOutOfChildEnvironment(t *testing.T) {
 		}
 		cancel()
 		if err := <-done; !errors.Is(err, context.Canceled) {
-			t.Fatalf("runClaudePinnedGateway() error = %v", err)
+			t.Fatalf("runClaudeGateway() error = %v", err)
 		}
 	})
 }

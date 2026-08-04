@@ -59,8 +59,42 @@ type Dependencies struct {
 	UpstreamAttemptLimit int
 }
 
+// Components 保存 Canonical Executor 与其共享的账号征召器。
+//
+// Host 可以把同一个 Recruiter 注入需要保留原生请求证明的旁路传输，确保
+// Canonical 与 Native Relay 使用同一份公平票号、模型倒排和运行态资格。
+type Components struct {
+	executor  *inferencegateway.Coordinator
+	recruiter *accountrouting.Recruiter
+}
+
+// Executor 返回已经完成上游协议注册的 Canonical 执行器。
+func (components *Components) Executor() *inferencegateway.Coordinator {
+	if components == nil {
+		return nil
+	}
+	return components.executor
+}
+
+// Recruiter 返回与 Executor 共用的账号征召器。
+func (components *Components) Recruiter() *accountrouting.Recruiter {
+	if components == nil {
+		return nil
+	}
+	return components.recruiter
+}
+
 // New 创建共享同一账号运行态和凭据解析器的 Canonical Executor。
 func New(dependencies Dependencies) (*inferencegateway.Coordinator, error) {
+	components, err := NewComponents(dependencies)
+	if err != nil {
+		return nil, err
+	}
+	return components.Executor(), nil
+}
+
+// NewComponents 创建可由 Canonical 与原生旁路共同复用的推理组件。
+func NewComponents(dependencies Dependencies) (*Components, error) {
 	if err := validateDependencies(dependencies); err != nil {
 		return nil, err
 	}
@@ -104,7 +138,10 @@ func New(dependencies Dependencies) (*inferencegateway.Coordinator, error) {
 	if err != nil {
 		return nil, wrapDependencyError("创建 Canonical Coordinator 失败", err)
 	}
-	return coordinator, nil
+	return &Components{
+		executor:  coordinator,
+		recruiter: recruiter,
+	}, nil
 }
 
 // validateDependencies 在创建任何有状态子组件前拒绝不完整组合。

@@ -9,6 +9,7 @@ import (
 	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/internal/adapters/clientprotocol"
 	"github.com/madou1217/ai_home/internal/adapters/clientprotocol/anthropicmessages"
+	gatewaycontract "github.com/madou1217/ai_home/internal/contracts/claudegateway"
 )
 
 // apiErrorResponse 是 Messages 非流式错误的稳定外层结构。
@@ -96,6 +97,12 @@ func writeCanonicalFailure(
 			"Invalid upstream failure",
 		)
 		return
+	}
+	if failure.Retryable() {
+		response.Header().Set(
+			gatewaycontract.RetryAccountHeader,
+			gatewaycontract.RetryAccountValue,
+		)
 	}
 	writeJSON(response, failureHTTPStatus(failure), data)
 }

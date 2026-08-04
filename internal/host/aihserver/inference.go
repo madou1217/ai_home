@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/madou1217/ai_home/application/accountcredentials"
+	"github.com/madou1217/ai_home/application/accountrouting"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/inferencecatalog"
 	"github.com/madou1217/ai_home/application/inferencegateway"
@@ -33,9 +34,12 @@ const (
 
 // inferenceComposition 保存推理 HTTP、原子模型目录和后台刷新生命周期。
 type inferenceComposition struct {
-	handler http.Handler
-	models  *inferencecatalog.AtomicCatalog
-	closers []io.Closer
+	handler        http.Handler
+	models         *inferencecatalog.AtomicCatalog
+	recruiter      *accountrouting.Recruiter
+	claudeUpstream *claudemessages.Adapter
+	modelRefreshes inferencegateway.ModelRefreshScheduler
+	closers        []io.Closer
 }
 
 // inferenceCompositionDependencies 集中声明生产推理组合所需的窄端口。
@@ -135,7 +139,7 @@ func newInferenceComposition(
 		return nil, err
 	}
 	composition.closers = append(composition.closers, modelRefresh)
-	executor, err := inferenceruntime.New(inferenceruntime.Dependencies{
+	runtimeComponents, err := inferenceruntime.NewComponents(inferenceruntime.Dependencies{
 		Catalog:              dependencies.catalog,
 		Store:                dependencies.store,
 		Runtime:              dependencies.runtime,
@@ -152,7 +156,7 @@ func newInferenceComposition(
 		return nil, err
 	}
 	handler, err := inferencehttp.New(inferencehttp.Dependencies{
-		Executor:                    executor,
+		Executor:                    runtimeComponents.Executor(),
 		Authorizer:                  dependencies.authorizer,
 		Clock:                       dependencies.clock,
 		MessagesDecodeErrorObserver: dependencies.decodeErrors,
@@ -162,6 +166,9 @@ func newInferenceComposition(
 	}
 	composition.handler = handler
 	composition.models = activeCatalog
+	composition.recruiter = runtimeComponents.Recruiter()
+	composition.claudeUpstream = claudeAdapter
+	composition.modelRefreshes = modelRefresh
 	return composition, nil
 }
 

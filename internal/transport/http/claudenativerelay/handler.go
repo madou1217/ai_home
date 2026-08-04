@@ -4,7 +4,9 @@
 package claudenativerelay
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -14,9 +16,14 @@ import (
 	"time"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	"github.com/madou1217/ai_home/application/inferencegateway"
+	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	claudeauth "github.com/madou1217/ai_home/core/accounts/claude"
+	"github.com/madou1217/ai_home/internal/adapters/attemptfailure"
 	"github.com/madou1217/ai_home/internal/adapters/claude/transportpolicy"
+	claudefailure "github.com/madou1217/ai_home/internal/adapters/claude/upstreamfailure"
+	gatewaycontract "github.com/madou1217/ai_home/internal/contracts/claudegateway"
 )
 
 const (
@@ -28,14 +35,14 @@ const (
 	officialMessagesEndpoint = claudeauth.DefaultAPIBaseURL + Path
 	// oauthBeta 是 Relay 根据数据库官方 OAuth 凭据补充的稳定认证 beta。
 	oauthBeta = "oauth-2025-04-20"
-	// nativeBetaQuery 是 Claude Code 2.1.220 为原生 Messages 请求追加的固定查询串。
+	// nativeBetaQuery 是当前官方 Claude Code/SDK 的原生 Messages 查询合同。
 	nativeBetaQuery = "beta=true"
 	// maxRelayDuration 与官方 Claude Client 的长请求上限保持同一量级。
 	maxRelayDuration = 10 * time.Minute
 )
 
 var (
-	// ErrInvalidDependencies 表示 Handler 缺少鉴权、凭据或 HTTP Client。
+	// ErrInvalidDependencies 表示 Handler 缺少任一必需外部端口或时钟。
 	ErrInvalidDependencies = errors.New("Claude Native Relay 依赖无效")
 	// ErrUnsupportedCredential 表示目标账号不是官方 Claude OAuth。
 	ErrUnsupportedCredential = errors.New("Claude Native Relay 凭据不受支持")
@@ -43,7 +50,9 @@ var (
 
 // Authorizer 从本地可信租约中解析唯一 AccountRef。
 type Authorizer interface {
-	Authorize(request *http.Request) (accountcore.AccountRef, bool)
+	Authorize(
+		request *http.Request,
+	) (accountcore.AccountRef, runtimecore.ModelID, bool)
 }
 
 // CredentialResolver 延迟读取并刷新目标账号凭据。
@@ -59,31 +68,43 @@ type HTTPClient interface {
 	Do(request *http.Request) (*http.Response, error)
 }
 
-// Dependencies 集中声明 Native Relay 的三个外部端口。
+// Dependencies 集中声明 Native Relay 的鉴权、凭据、传输和运行态端口。
 type Dependencies struct {
-	Authorizer  Authorizer
-	Credentials CredentialResolver
-	Client      HTTPClient
+	Authorizer     Authorizer
+	Credentials    CredentialResolver
+	Client         HTTPClient
+	Attempts       inferencegateway.AttemptRecorder
+	ModelRefreshes inferencegateway.ModelRefreshScheduler
+	Clock          func() time.Time
 }
 
 // Handler 编排可信账号绑定、原始请求透传和响应流回写。
 type Handler struct {
-	authorizer  Authorizer
-	credentials CredentialResolver
-	client      HTTPClient
+	authorizer     Authorizer
+	credentials    CredentialResolver
+	client         HTTPClient
+	attempts       inferencegateway.AttemptRecorder
+	modelRefreshes inferencegateway.ModelRefreshScheduler
+	clock          func() time.Time
 }
 
 // NewHandler 创建默认失败关闭的 Claude Native Relay。
 func NewHandler(dependencies Dependencies) (*Handler, error) {
 	if dependencies.Authorizer == nil ||
 		dependencies.Credentials == nil ||
-		dependencies.Client == nil {
+		dependencies.Client == nil ||
+		dependencies.Attempts == nil ||
+		dependencies.ModelRefreshes == nil ||
+		dependencies.Clock == nil {
 		return nil, ErrInvalidDependencies
 	}
 	return &Handler{
-		authorizer:  dependencies.Authorizer,
-		credentials: dependencies.Credentials,
-		client:      dependencies.Client,
+		authorizer:     dependencies.Authorizer,
+		credentials:    dependencies.Credentials,
+		client:         dependencies.Client,
+		attempts:       dependencies.Attempts,
+		modelRefreshes: dependencies.ModelRefreshes,
+		clock:          dependencies.Clock,
 	}, nil
 }
 
@@ -95,7 +116,10 @@ func (handler *Handler) ServeHTTP(
 	if handler == nil ||
 		handler.authorizer == nil ||
 		handler.credentials == nil ||
-		handler.client == nil {
+		handler.client == nil ||
+		handler.attempts == nil ||
+		handler.modelRefreshes == nil ||
+		handler.clock == nil {
 		writeRelayError(
 			response,
 			http.StatusServiceUnavailable,
@@ -104,7 +128,7 @@ func (handler *Handler) ServeHTTP(
 		)
 		return
 	}
-	accountRef, authorized := handler.authorizer.Authorize(request)
+	accountRef, leasedModel, authorized := handler.authorizer.Authorize(request)
 	if !authorized {
 		writeRelayError(
 			response,
@@ -117,6 +141,17 @@ func (handler *Handler) ServeHTTP(
 	if !validRelayRequest(response, request) {
 		return
 	}
+	body, modelID, stream, err := readNativeRequest(request)
+	if err != nil || modelID != leasedModel {
+		writeRelayError(
+			response,
+			http.StatusBadRequest,
+			"invalid_relay_request",
+			"Claude Relay 请求模型与租约不匹配",
+		)
+		return
+	}
+	request.Body = io.NopCloser(bytes.NewReader(body))
 	credential, err := handler.credentials.ResolveCredential(
 		request.Context(),
 		accountRef,
@@ -150,6 +185,16 @@ func (handler *Handler) ServeHTTP(
 		)
 		return
 	}
+	route, err := runtimecore.NewModelRoute(accountRef, modelID.String())
+	if err != nil {
+		writeRelayError(
+			response,
+			http.StatusBadGateway,
+			"relay_state_unavailable",
+			"Claude Relay 运行态不可用",
+		)
+		return
+	}
 	// Native SSE 可能跨越 Host 默认写超时；只为当前已鉴权 Relay 请求延长。
 	_ = http.NewResponseController(response).SetWriteDeadline(
 		time.Now().Add(maxRelayDuration),
@@ -157,6 +202,16 @@ func (handler *Handler) ServeHTTP(
 	upstreamResponse, err := handler.client.Do(upstream)
 	if err != nil || upstreamResponse == nil || upstreamResponse.Body == nil {
 		closeUpstreamResponse(upstreamResponse)
+		if err != nil && handler.recordTransportFailure(
+			request.Context(),
+			route,
+			err,
+		) {
+			response.Header().Set(
+				gatewaycontract.RetryAccountHeader,
+				gatewaycontract.RetryAccountValue,
+			)
+		}
 		writeRelayError(
 			response,
 			http.StatusBadGateway,
@@ -166,10 +221,172 @@ func (handler *Handler) ServeHTTP(
 		return
 	}
 	defer upstreamResponse.Body.Close()
+	retryAccount := false
+	if upstreamResponse.StatusCode < http.StatusOK ||
+		upstreamResponse.StatusCode >= http.StatusMultipleChoices {
+		retryAccount = handler.recordHTTPFailure(
+			request.Context(),
+			route,
+			upstreamResponse,
+		)
+	}
 
 	copyResponseHeaders(response.Header(), upstreamResponse.Header)
+	if retryAccount {
+		// 内部换号标记只能由当前 Server 分类生成，不能信任上游同名 Header。
+		response.Header().Set(
+			gatewaycontract.RetryAccountHeader,
+			gatewaycontract.RetryAccountValue,
+		)
+	}
 	response.WriteHeader(upstreamResponse.StatusCode)
-	_ = copyResponseBody(response, upstreamResponse.Body)
+	copyResult := responseCopyResult{}
+	streamObservation := nativeStreamObservation{}
+	if shouldObserveNativeStream(upstreamResponse.Header, stream) &&
+		upstreamResponse.StatusCode >= http.StatusOK &&
+		upstreamResponse.StatusCode < http.StatusMultipleChoices {
+		copyResult, streamObservation = copyAndObserveNativeStream(
+			response,
+			upstreamResponse.Body,
+			upstreamResponse.Header,
+			handler.clock(),
+		)
+	} else {
+		copyResult = copyResponseBody(response, upstreamResponse.Body)
+	}
+	if upstreamResponse.StatusCode < http.StatusOK ||
+		upstreamResponse.StatusCode >= http.StatusMultipleChoices ||
+		copyResult.downstreamErr != nil {
+		return
+	}
+	if streamObservation.failed {
+		handler.recordFailure(
+			request.Context(),
+			route,
+			streamObservation.failure,
+		)
+		return
+	}
+	if copyResult.upstreamErr != nil && !streamObservation.completed {
+		handler.recordIncompleteStreamFailure(
+			request.Context(),
+			route,
+			copyResult.upstreamErr,
+		)
+		return
+	}
+	_ = handler.attempts.RecordSuccess(request.Context(), route)
+}
+
+// readNativeRequest 有界保存原始 JSON，并只解析顶层真实模型用于租约复核。
+func readNativeRequest(
+	request *http.Request,
+) ([]byte, runtimecore.ModelID, bool, error) {
+	if request == nil || request.Body == nil {
+		return nil, "", false, ErrUnsupportedCredential
+	}
+	body, err := io.ReadAll(io.LimitReader(
+		request.Body,
+		MaxRequestBodyBytes+1,
+	))
+	_ = request.Body.Close()
+	if err != nil || len(body) == 0 || int64(len(body)) > MaxRequestBodyBytes {
+		return nil, "", false, ErrUnsupportedCredential
+	}
+	var envelope struct {
+		Model  string `json:"model"`
+		Stream bool   `json:"stream"`
+	}
+	if json.Unmarshal(body, &envelope) != nil {
+		return nil, "", false, ErrUnsupportedCredential
+	}
+	modelID, err := runtimecore.NewModelID(envelope.Model)
+	if err != nil {
+		return nil, "", false, err
+	}
+	return body, modelID, envelope.Stream, nil
+}
+
+// recordHTTPFailure 保留原始错误正文，同时记录精确账号模型运行态。
+func (handler *Handler) recordHTTPFailure(
+	ctx context.Context,
+	route runtimecore.ModelRoute,
+	response *http.Response,
+) bool {
+	if ctx == nil || response == nil || response.Body == nil {
+		return false
+	}
+	originalBody := response.Body
+	var captured bytes.Buffer
+	observation := *response
+	observation.Body = io.NopCloser(io.TeeReader(originalBody, &captured))
+	classification, err := claudefailure.ObserveHTTP(
+		&observation,
+		handler.clock(),
+	)
+	response.Body = &replayReadCloser{
+		Reader: io.MultiReader(bytes.NewReader(captured.Bytes()), originalBody),
+		Closer: originalBody,
+	}
+	if err != nil {
+		return false
+	}
+	failure, err := attemptfailure.New(classification)
+	if err != nil {
+		return false
+	}
+	return handler.recordFailure(ctx, route, failure)
+}
+
+// recordTransportFailure 使用稳定 Go 错误身份记录尚未收到响应的失败。
+func (handler *Handler) recordTransportFailure(
+	ctx context.Context,
+	route runtimecore.ModelRoute,
+	err error,
+) bool {
+	failure, classifyErr := attemptfailure.NewTransport(err)
+	if classifyErr != nil {
+		return false
+	}
+	return handler.recordFailure(ctx, route, failure)
+}
+
+// recordIncompleteStreamFailure 记录上游在完成事件前断开的流。
+func (handler *Handler) recordIncompleteStreamFailure(
+	ctx context.Context,
+	route runtimecore.ModelRoute,
+	err error,
+) {
+	failure, classifyErr := attemptfailure.NewIncompleteStream(err)
+	if classifyErr == nil {
+		handler.recordFailure(ctx, route, failure)
+	}
+}
+
+// recordFailure 统一提交运行态，并在模型不支持时旁路刷新模型目录。
+func (handler *Handler) recordFailure(
+	ctx context.Context,
+	route runtimecore.ModelRoute,
+	failure inferencegateway.AttemptFailure,
+) bool {
+	if !failure.IsValid() ||
+		handler.attempts.RecordFailure(ctx, route, failure) != nil {
+		return false
+	}
+	if failure.RuntimeKind() == runtimecore.FailureModelUnsupported {
+		_ = handler.modelRefreshes.ScheduleModelRefresh(
+			ctx,
+			route.AccountRef(),
+			claudeauth.ProviderID,
+		)
+	}
+	return failure.ResponseFailure().Retryable()
+}
+
+// replayReadCloser 先回放 Observer 已读取的前缀，再继续读取原始响应。
+type replayReadCloser struct {
+	io.Reader
+	io.Closer
 }
 
 // validRelayRequest 校验不会改变原始正文的 HTTP 外层合同。
@@ -338,32 +555,6 @@ func ensureOAuthBeta(header http.Header) {
 		return
 	}
 	header.Add("anthropic-beta", oauthBeta)
-}
-
-// copyResponseBody 逐块刷新 SSE，也兼容普通 JSON 错误响应。
-func copyResponseBody(
-	response http.ResponseWriter,
-	body io.Reader,
-) error {
-	buffer := make([]byte, 32*1024)
-	flusher, canFlush := response.(http.Flusher)
-	for {
-		read, readErr := body.Read(buffer)
-		if read > 0 {
-			if _, writeErr := response.Write(buffer[:read]); writeErr != nil {
-				return writeErr
-			}
-			if canFlush {
-				flusher.Flush()
-			}
-		}
-		if readErr != nil {
-			if errors.Is(readErr, io.EOF) {
-				return nil
-			}
-			return readErr
-		}
-	}
 }
 
 // closeUpstreamResponse 关闭错误路径中非空的上游响应。

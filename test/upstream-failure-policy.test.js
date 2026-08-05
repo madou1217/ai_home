@@ -149,6 +149,41 @@ test('failure policy treats 401 as reauth-required account failure', () => {
   assert.equal(policy.cooldownMs > 300 * 24 * 60 * 60 * 1000, true);
 });
 
+test('failure policy treats a subscription-locked model 403 as model-scoped, not account auth failure', () => {
+  const policy = classifyUpstreamFailure({
+    provider: 'codex',
+    statusCode: 403,
+    body: JSON.stringify({
+      error: {
+        message: 'this model requires a subscription, upgrade for access: https://ollama.com/upgrade (ref: 7563e0c3)',
+        type: 'api_error'
+      }
+    }),
+    detail: 'upstream_403_account_acct_52facbdf93d7161b990d',
+    defaultCooldownMs: 1000
+  });
+  assert.equal(policy.kind, 'model_entitlement_required');
+  assert.equal(policy.scope, 'model');
+  assert.equal(policy.failureReason, 'model_requires_subscription');
+  assert.equal(policy.shouldRetryAnotherAccount, true);
+  assert.equal(policy.clientStatusCode, 403);
+  // A day, not the auth_invalid year: entitlement changes when the plan does.
+  assert.equal(policy.cooldownMs, 24 * 60 * 60 * 1000);
+});
+
+test('failure policy still treats an ordinary 403 as an account-scoped auth failure', () => {
+  const policy = classifyUpstreamFailure({
+    provider: 'codex',
+    statusCode: 403,
+    body: JSON.stringify({ error: { message: 'invalid api key' } }),
+    detail: 'upstream_403_account_10025',
+    defaultCooldownMs: 1000
+  });
+  assert.equal(policy.kind, 'auth_invalid');
+  assert.equal(policy.scope, 'account');
+  assert.equal(policy.failureReason, 'auth_invalid_reauth_required');
+});
+
 test('failure policy treats selected model capacity 400 as model-scoped retry', () => {
   const policy = classifyUpstreamFailure({
     provider: 'claude',

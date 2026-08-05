@@ -292,6 +292,53 @@ test('configureApiKeyAccount writes provider credentials to DB without profile f
   assert.equal(fs.existsSync(path.join(root, 'profiles')), false);
 });
 
+test('configureApiKeyAccount persists a relay upstream profile for codex accounts', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-account-auth-relay-'));
+
+  const result = configureApiKeyAccount({
+    fs,
+    provider: 'codex',
+    aiHomeDir: root,
+    config: {
+      apiKey: 'sk-relay-123456',
+      baseUrl: 'https://relay.example.com/api/v1',
+      wireApi: 'chat/completions',
+      headerOverrides: { 'X-Client-Type': 'relay-cli' }
+    }
+  });
+
+  const envJson = readAccountCredentials(fs, root, result.accountRef);
+
+  assert.equal(envJson.OPENAI_WIRE_API, 'chat');
+  assert.deepEqual(JSON.parse(envJson.AIH_UPSTREAM_HEADERS), { 'x-client-type': 'relay-cli' });
+});
+
+test('configureApiKeyAccount leaves the upstream profile absent when nothing is declared', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-account-auth-plain-'));
+
+  const codex = configureApiKeyAccount({
+    fs,
+    provider: 'codex',
+    aiHomeDir: root,
+    config: { apiKey: 'sk-plain-123456', baseUrl: 'https://example.com/v1' }
+  });
+  const codexEnv = readAccountCredentials(fs, root, codex.accountRef);
+  assert.equal(Object.prototype.hasOwnProperty.call(codexEnv, 'OPENAI_WIRE_API'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(codexEnv, 'AIH_UPSTREAM_HEADERS'), false);
+
+  // Only codex consumes the profile, so another provider must not carry it even
+  // when a caller supplies one.
+  const gemini = configureApiKeyAccount({
+    fs,
+    provider: 'gemini',
+    aiHomeDir: root,
+    config: { apiKey: 'gm-plain-123456', wireApi: 'chat', headerOverrides: { 'x-a': 'b' } }
+  });
+  const geminiEnv = readAccountCredentials(fs, root, gemini.accountRef);
+  assert.equal(Object.prototype.hasOwnProperty.call(geminiEnv, 'OPENAI_WIRE_API'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(geminiEnv, 'AIH_UPSTREAM_HEADERS'), false);
+});
+
 test('configureApiKeyAccount writes Claude auth-token credentials to DB', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-account-auth-token-'));
 

@@ -10,6 +10,25 @@ const {
 const {
   parseWindowsProxyServer
 } = require('../lib/runtime/windows-system-proxy');
+const { CODEX_MANAGED_LAUNCH_ENV } = require('../lib/runtime/codex-launch-context');
+
+test('provider runtime env marks codex launches managed and clears the marker elsewhere', () => {
+  // 单一装配线保证：任何经 buildProviderRuntimeEnv 组出来的 codex env（PTY /
+  // WebUI 原生会话 / 登录 / 用量采集）都带 managed-launch 标记，全局 codex hook
+  // 因此透传本账号鉴权，而不是回落到 `codex set-default` 账号重新推导。
+  const codexEnv = buildProviderRuntimeEnv('codex', '/home/u/.ai_home/run/auth-projections/codex/acct_0123456789abcdef0123', {
+    HOME: '/home/u',
+    PATH: '/usr/bin'
+  }, { fs, path, platform: 'linux' });
+  assert.equal(codexEnv[CODEX_MANAGED_LAUNCH_ENV], '1');
+
+  const claudeEnv = buildProviderRuntimeEnv('claude', '/home/u/.ai_home/run/auth-projections/claude/acct_0123456789abcdef0123', {
+    HOME: '/home/u',
+    PATH: '/usr/bin',
+    [CODEX_MANAGED_LAUNCH_ENV]: '1'
+  }, { fs, path, platform: 'linux' });
+  assert.equal(claudeEnv[CODEX_MANAGED_LAUNCH_ENV], undefined);
+});
 
 test('provider runtime env prepends project-local runtime tool paths', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-runtime-tools-path-'));

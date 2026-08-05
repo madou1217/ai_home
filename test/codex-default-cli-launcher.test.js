@@ -157,6 +157,49 @@ test('AIH-managed Codex launches preserve the authentication selected by the cal
   }
 });
 
+test('an OAuth default account never strips a managed launch API key', (t) => {
+  // 线上故障形状：`codex set-default` 指向 OAuth 账号，而本次 run 用的是另一个
+  // api-key 账号。没有标记时 hook 会删掉 key（config.toml 声明了
+  // env_key = "OPENAI_API_KEY"，于是 codex 报 Missing environment variable）。
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-codex-oauth-default-'));
+  const aiHomeDir = path.join(homeDir, '.ai_home');
+  t.after(() => fs.rmSync(homeDir, { recursive: true, force: true }));
+
+  const oauthDefaultRef = registerCodexAccount(
+    aiHomeDir,
+    '1',
+    'oauth:codex:oauth-default@example.test'
+  );
+  writeAccountNativeAuth(fs, aiHomeDir, oauthDefaultRef, {
+    auth: { auth_mode: 'chatgpt', tokens: { refresh_token: 'oauth-refresh-token' } }
+  });
+  writeDefaultAccountRef(fs, aiHomeDir, 'codex', oauthDefaultRef);
+
+  const runEnv = {
+    HOME: homeDir,
+    OPENAI_API_KEY: 'sk-run-scoped-account-key',
+    OPENAI_BASE_URL: 'https://relay.example.test/v1'
+  };
+
+  const unmarked = buildCodexDefaultCliEnv(fs, {
+    aiHomeDir,
+    processObj: { platform: 'darwin', env: { ...runEnv } }
+  });
+  assert.equal(unmarked.authMode, 'oauth');
+  assert.equal(unmarked.env.OPENAI_API_KEY, undefined);
+
+  const managed = buildCodexDefaultCliEnv(fs, {
+    aiHomeDir,
+    processObj: {
+      platform: 'darwin',
+      env: { ...runEnv, [CODEX_MANAGED_LAUNCH_ENV]: '1' }
+    }
+  });
+  assert.equal(managed.authMode, 'apikey');
+  assert.equal(managed.env.OPENAI_API_KEY, 'sk-run-scoped-account-key');
+  assert.equal(managed.env.OPENAI_BASE_URL, 'https://relay.example.test/v1');
+});
+
 test('default Codex CLI passes the API key only through the child environment', (t) => {
   const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-codex-default-spawn-'));
   const aiHomeDir = path.join(homeDir, '.ai_home');

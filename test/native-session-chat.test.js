@@ -34,6 +34,7 @@ const {
   writeAccountNativeAuth
 } = require('../lib/server/account-credential-store');
 const { writeServerConfig } = require('../lib/server/server-config-store');
+const { CODEX_MANAGED_LAUNCH_ENV } = require('../lib/runtime/codex-launch-context');
 
 function createDeferred() {
   let resolve;
@@ -945,6 +946,55 @@ test('buildProviderEnv loads API-key credentials only from the accountRef DB rec
   assert.equal(env.OPENAI_BASE_URL, 'https://account.example.com/v1');
   assert.equal(env.CODEX_HOME, path.join(hostHome, '.codex'));
   assert.equal(fs.existsSync(runtimeDir), false);
+});
+
+test('buildProviderEnv marks codex native runs as AIH-managed so the CLI hook passes through', (t) => {
+  // 回归：WebUI 原生会话把账号 key 装配对了，但没打 managed-launch 标记，全局
+  // codex hook 于是回到 `codex set-default` 账号重新推导鉴权；默认账号是 OAuth 时
+  // 它会 delete OPENAI_API_KEY，codex 直接报 `Missing environment variable`。
+  const hostHome = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-native-codex-managed-'));
+  t.after(() => fs.rmSync(hostHome, { recursive: true, force: true }));
+  const aiHomeDir = path.join(hostHome, '.ai_home');
+  const accountRef = registerAccountIdentity(fs, aiHomeDir, {
+    provider: 'codex',
+    cliAccountId: '7',
+    identitySeed: 'api_key:codex:https://relay.example.com/v1:managed-key'
+  }).accountRef;
+  writeAccountCredentials(fs, aiHomeDir, accountRef, {
+    OPENAI_API_KEY: 'relay-key',
+    OPENAI_BASE_URL: 'https://relay.example.com/v1'
+  });
+  const runtimeDir = path.join(aiHomeDir, 'run', 'auth-projections', 'codex', accountRef);
+
+  const env = buildProviderEnv('codex', runtimeDir, { HOME: hostHome }, { aiHomeDir, accountRef });
+
+  assert.equal(env.OPENAI_API_KEY, 'relay-key');
+  assert.equal(env.OPENAI_BASE_URL, 'https://relay.example.com/v1');
+  assert.equal(env[CODEX_MANAGED_LAUNCH_ENV], '1');
+});
+
+test('buildProviderEnv drops an inherited codex managed-launch marker for other providers', (t) => {
+  const hostHome = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-native-gemini-managed-'));
+  t.after(() => fs.rmSync(hostHome, { recursive: true, force: true }));
+  const aiHomeDir = path.join(hostHome, '.ai_home');
+  const accountRef = registerAccountIdentity(fs, aiHomeDir, {
+    provider: 'gemini',
+    cliAccountId: '4',
+    identitySeed: 'oauth:gemini:managed-marker@example.com'
+  }).accountRef;
+  writeAccountNativeAuth(fs, aiHomeDir, accountRef, {
+    oauthCreds: { refresh_token: 'refresh-token' }
+  });
+  const runtimeDir = path.join(aiHomeDir, 'run', 'auth-projections', 'gemini', accountRef);
+
+  const env = buildProviderEnv('gemini', runtimeDir, {
+    HOME: hostHome,
+    [CODEX_MANAGED_LAUNCH_ENV]: '1'
+  }, { aiHomeDir, accountRef });
+
+  // 该标记只对本次 codex 启动有效；继承给别的 provider 会让它们再拉起 codex 时
+  // 带着一份没有 codex 凭据的 env 直接透传。
+  assert.equal(env[CODEX_MANAGED_LAUNCH_ENV], undefined);
 });
 
 test('buildProviderEnv relays Claude OAuth by accountRef and keeps ~/.claude authoritative', (t) => {

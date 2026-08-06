@@ -620,9 +620,9 @@ func TestAnthropicEffortMapsCodexBoundaryLevels(t *testing.T) {
 	}
 }
 
-// TestProjectAuthRejectsOfficialOAuthWithoutNativeRuntime 验证官方 OAuth
-// 不会由普通 Go HTTP 请求伪造 Claude Code 原生客户端证明。
-func TestProjectAuthRejectsOfficialOAuthWithoutNativeRuntime(t *testing.T) {
+// TestProjectAuthCarriesSubscriptionOAuthOnCanonical 验证订阅 OAuth 能被
+// Canonical Adapter 精确投影为官方 Bearer 合同，跨协议客户端才可固定订阅账号。
+func TestProjectAuthCarriesSubscriptionOAuthOnCanonical(t *testing.T) {
 	t.Parallel()
 
 	refreshable, err := claudeauth.NewOAuthAuth(claudeauth.OAuthInput{
@@ -658,11 +658,15 @@ func TestProjectAuthRejectsOfficialOAuthWithoutNativeRuntime(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			if _, err := projectAuth(test.credential); !errors.Is(
-				err,
-				ErrNativeTransportRequired,
-			) {
+			profile, err := projectAuth(test.credential)
+			if err != nil {
 				t.Fatalf("projectAuth() error = %v", err)
+			}
+			summary := profile.safeSummary()
+			if summary.Endpoint != "https://api.anthropic.com/v1/messages" ||
+				summary.HeaderName != "Authorization" ||
+				!summary.OAuthBeta {
+				t.Fatalf("订阅 OAuth 认证投影错误: %+v", summary)
 			}
 		})
 	}

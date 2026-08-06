@@ -68,7 +68,8 @@ func (*Adapter) ProtocolID() inference.ProtocolID {
 }
 
 // SupportsCredential 只接受能够由 Go Messages Adapter 精确承载的 Claude 凭据。
-// 官方订阅 OAuth 必须由 Native Relay 保留 Claude Code 原生请求证明。
+// 订阅 OAuth 也在其中：官方客户端仍优先走 Native Relay，但跨协议客户端只能
+// 由 Canonical 承载，能力边界因此不再按凭据类型排除订阅账号。
 func (adapter *Adapter) SupportsCredential(
 	credential accountapp.Credential,
 ) bool {

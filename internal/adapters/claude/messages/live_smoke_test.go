@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -129,8 +128,8 @@ func TestLiveClaudeRouteCatalogSmoke(t *testing.T) {
 	)
 }
 
-// TestLiveClaudeOAuthRouteCatalogDiagnostic 验证真实官方 OAuth 账号不会进入
-// 丢失 Claude Code 原生证明的 Canonical HTTP Adapter，也不会产生上游请求。
+// TestLiveClaudeOAuthRouteCatalogDiagnostic 验证真实订阅 OAuth 账号可被
+// Canonical Adapter 投影为官方 Bearer 合同，且能力判定不产生任何上游请求。
 func TestLiveClaudeOAuthRouteCatalogDiagnostic(t *testing.T) {
 	if os.Getenv(realClaudeOAuthSmokeEnv) != "1" {
 		t.Skip("设置 AIH_REAL_CLAUDE_OAUTH_SMOKE=1 后检查真实 OAuth 传输边界")
@@ -142,20 +141,27 @@ func TestLiveClaudeOAuthRouteCatalogDiagnostic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewAdapter() error = %v", err)
 	}
-	_, projectErr := projectAuth(selection.credential)
-	if adapter.SupportsCredential(selection.credential) ||
-		!errors.Is(projectErr, ErrNativeTransportRequired) ||
+	profile, projectErr := projectAuth(selection.credential)
+	summary := profile.safeSummary()
+	if !adapter.SupportsCredential(selection.credential) ||
+		projectErr != nil ||
+		summary.HeaderName != "Authorization" ||
+		!summary.OAuthBeta ||
 		client.calls != 0 {
 		t.Fatalf(
-			"官方 OAuth 传输边界错误: supported=%t error=%v calls=%d",
+			"订阅 OAuth 传输边界错误: supported=%t error=%v summary=%+v calls=%d",
 			adapter.SupportsCredential(selection.credential),
 			projectErr,
+			summary,
 			client.calls,
 		)
 	}
 	t.Logf(
-		"real_claude_oauth_transport model=%s native_transport_required=true canonical_upstream_calls=%d",
+		"real_claude_oauth_transport model=%s endpoint=%s auth_header=%s oauth_beta=%t canonical_upstream_calls=%d",
 		selection.model,
+		summary.Endpoint,
+		summary.HeaderName,
+		summary.OAuthBeta,
 		client.calls,
 	)
 }
@@ -654,6 +660,14 @@ func loadRealClaudeOAuthSelection(
 	if !ok {
 		t.Fatalf("真实 Claude 测试账号不是 OAuth: %T", selection.credential)
 	}
+	requireUnexpiredClaudeOAuth(t, oauth)
+	return selection
+}
+
+// requireUnexpiredClaudeOAuth 在发出任何真实请求前排除过期 Access Token。
+func requireUnexpiredClaudeOAuth(t *testing.T, oauth *claudeauth.OAuthAuth) {
+	t.Helper()
+
 	expiresAt := time.UnixMilli(oauth.ExpiresAtMS())
 	if !expiresAt.After(time.Now().Add(time.Minute)) {
 		t.Fatalf(
@@ -661,11 +675,10 @@ func loadRealClaudeOAuthSelection(
 			expiresAt.UTC().Format(time.RFC3339),
 		)
 	}
-	return selection
 }
 
-// loadRealClaudeCanonicalSelection 只允许普通 Messages Adapter 能够直接
-// 承载的凭据；官方 OAuth 必须改走保留原生客户端证明的 Native Relay。
+// loadRealClaudeCanonicalSelection 只允许 Canonical Adapter 能够精确承载的
+// 凭据；订阅 OAuth 额外要求 Access Token 仍在有效期内，避免把过期当成协议缺陷。
 func loadRealClaudeCanonicalSelection(
 	t *testing.T,
 	preferredModel string,
@@ -673,9 +686,18 @@ func loadRealClaudeCanonicalSelection(
 	t.Helper()
 
 	selection := loadRealClaudeAccountSelection(t, preferredModel)
-	if _, ok := selection.credential.(*claudeauth.APIKeyAuth); !ok {
+	if oauth, ok := selection.credential.(*claudeauth.OAuthAuth); ok {
+		requireUnexpiredClaudeOAuth(t, oauth)
+		return selection
+	}
+	client := &claudeRecordingHTTPClient{}
+	adapter, err := NewAdapter(client, time.Now)
+	if err != nil {
+		t.Fatalf("NewAdapter() error = %v", err)
+	}
+	if !adapter.SupportsCredential(selection.credential) {
 		t.Fatalf(
-			"Canonical Claude 真实验收需要 API Key 账号，当前凭据为 %T；官方 OAuth 请使用 Go Native Runtime smoke",
+			"Canonical Claude 真实验收不支持该凭据类型: %T",
 			selection.credential,
 		)
 	}

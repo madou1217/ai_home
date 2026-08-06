@@ -424,9 +424,9 @@ func TestNewAdapterRejectsMissingDependencies(t *testing.T) {
 	}
 }
 
-// TestAdapterRequiresNativeRuntimeForOfficialOAuth 验证普通 Messages Adapter
-// 不会把缺少原生客户端证明的官方 OAuth 请求发送到 Anthropic。
-func TestAdapterRequiresNativeRuntimeForOfficialOAuth(t *testing.T) {
+// TestAdapterSupportsSubscriptionOAuthWithoutNetwork 验证 Messages Adapter
+// 把订阅 OAuth 纳入能力边界，且能力判定本身不产生任何上游请求。
+func TestAdapterSupportsSubscriptionOAuthWithoutNetwork(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -478,9 +478,9 @@ func TestAdapterRequiresNativeRuntimeForOfficialOAuth(t *testing.T) {
 			if err != nil {
 				t.Fatalf("NewAdapter() error = %v", err)
 			}
-			if adapter.SupportsCredential(credential) || client.calls != 0 {
+			if !adapter.SupportsCredential(credential) || client.calls != 0 {
 				t.Fatalf(
-					"SupportsCredential() = true 或发生网络调用: calls=%d",
+					"SupportsCredential() = false 或发生网络调用: calls=%d",
 					client.calls,
 				)
 			}
@@ -488,9 +488,9 @@ func TestAdapterRequiresNativeRuntimeForOfficialOAuth(t *testing.T) {
 	}
 }
 
-// TestCoordinatorSkipsNativeOAuthAndFairlyRotatesAPIKeys 验证混合账号池中
-// 官方 OAuth 交给 Native Relay，Canonical Adapter 只公平轮转可直连 API Key。
-func TestCoordinatorSkipsNativeOAuthAndFairlyRotatesAPIKeys(t *testing.T) {
+// TestCoordinatorFairlyRotatesMixedCredentialPool 验证混合账号池中订阅 OAuth
+// 与 API Key 一起被 Canonical Adapter 公平轮转，不会因凭据类型被整类跳过。
+func TestCoordinatorFairlyRotatesMixedCredentialPool(t *testing.T) {
 	t.Parallel()
 
 	coordinator, client, recorder := newClaudeFairCoordinator(t)
@@ -505,22 +505,23 @@ func TestCoordinatorSkipsNativeOAuthAndFairlyRotatesAPIKeys(t *testing.T) {
 	}
 	counts := client.APIKeyCounts()
 	if client.CallCount() != 20 ||
-		client.BearerCount() != 0 ||
-		counts["synthetic-claude-fair-key-1"] != 10 ||
-		counts["synthetic-claude-fair-key-2"] != 10 ||
+		client.BearerCount() != 10 ||
+		counts["synthetic-claude-fair-key-1"] != 5 ||
+		counts["synthetic-claude-fair-key-2"] != 5 ||
 		len(counts) != 2 ||
 		recorder.successes != 20 ||
 		len(recorder.failures) != 0 {
 		t.Fatalf(
-			"calls=%d keys=%v successes=%d failures=%d",
+			"calls=%d keys=%v bearer=%d successes=%d failures=%d",
 			client.CallCount(),
 			counts,
+			client.BearerCount(),
 			recorder.successes,
 			len(recorder.failures),
 		)
 	}
 	t.Logf(
-		"requests=%d api_key_distribution=%v native_oauth_canonical_calls=%d",
+		"requests=%d api_key_distribution=%v subscription_oauth_calls=%d",
 		20,
 		counts,
 		client.BearerCount(),

@@ -9,7 +9,6 @@ import (
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	claudeauth "github.com/madou1217/ai_home/core/accounts/claude"
-	"github.com/madou1217/ai_home/internal/adapters/claude/transportpolicy"
 )
 
 const (
@@ -43,20 +42,27 @@ func (profile authProfile) safeSummary() authSummary {
 	}
 }
 
-// projectAuth 把允许 Go 直连的 Claude 凭据投影为精确 HTTP 认证合同。
+// projectAuth 把 Claude 凭据投影为精确 HTTP 认证合同。
+//
+// 订阅 OAuth 仍然优先由 Native Relay 保留官方客户端字节证明，但那条通道只对
+// Claude 官方客户端存在。Codex 等其他客户端只能经 Canonical 转码，因此本投影
+// 必须能承载订阅 OAuth，否则跨协议固定账号（aih codex relay claude N）无法成立。
+// 传输选择由 transportpolicy.GatewayPolicy 决定，本函数只负责能力投影。
 func projectAuth(credential accountapp.Credential) (authProfile, error) {
 	switch auth := credential.(type) {
 	case *claudeauth.OAuthAuth:
-		if auth != nil {
-			return authProfile{}, ErrNativeTransportRequired
-		}
-		return authProfile{}, ErrInvalidInvocation
-	case *claudeauth.OAuthTokenAuth:
 		if auth == nil {
 			return authProfile{}, ErrInvalidInvocation
 		}
-		if transportpolicy.RequiresNativeOAuth(auth) {
-			return authProfile{}, ErrNativeTransportRequired
+		// 可刷新订阅 OAuth 没有独立 Base URL，始终指向官方 Messages 端点。
+		return newBearerProfile(
+			claudeauth.DefaultAPIBaseURL,
+			auth.AccessToken(),
+			true,
+		)
+	case *claudeauth.OAuthTokenAuth:
+		if auth == nil {
+			return authProfile{}, ErrInvalidInvocation
 		}
 		return newBearerProfile(auth.BaseURL(), auth.AccessToken(), true)
 	case *claudeauth.APIKeyAuth:
@@ -165,7 +171,8 @@ func buildHTTPRequest(
 	betas := append([]string(nil), encoded.betaHeaders...)
 	if auth.oauthBeta {
 		// Claude.ai OAuth 是 Claude Code 订阅调用合同，不是通用 API Key。
-		// 官方客户端对 agentic Messages 同时声明客户端和 OAuth 两个 beta。
+		// 两个 beta 值均取自官方 claude 二进制（非自造），但"官方是否在每次
+		// OAuth 请求上同时声明二者"尚未经真实上游验证，属于待验收项。
 		betas = appendUniqueBeta(betas, betaClaudeCode)
 		betas = appendUniqueBeta(betas, betaOAuth)
 	}

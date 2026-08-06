@@ -886,3 +886,230 @@ test('resident client rejects an API-key result without execution-credential ass
   client.destroy();
   await mock.close();
 });
+
+test('app-server turn：上游一直不回话 → 看门狗主动熔断并中断该轮', async () => {
+  __resetClientsForTest();
+  // turn 起来了但上游一个 notification 都不给：老行为是干等到用户自己关页面。
+  const mock = await createMockAppServer(({ send }) => {
+    send({ method: 'turn/started', params: { threadId: THREAD_ID, turn: { id: 'turn-1' } } });
+  });
+
+  const events = [];
+  const handle = startCodexAppServerTurn({
+    accountRef: 'acct_55555555555555555555',
+    accountIdentityValidator: async () => verifiedOAuthIdentity(),
+    getProfileDir: () => '/tmp/aih-ut-profiles/codex/ut-watchdog',
+    endpoint: mock.endpoint,
+    prompt: 'hello',
+    approvalMode: 'confirm',
+    projectPath: '/tmp/watchdog-work',
+    watchdogEnv: {},
+    // 预算要盖过握手(initialize/account/read/thread/turn start)，否则测的是握手而非静默。
+    firstProgressTimeoutMs: 1500,
+    onEvent: (event) => events.push(event)
+  });
+
+  await assert.rejects(
+    handle.done,
+    (error) => error.code === 'native_session_timeout'
+      && error.timeoutReason === 'no_first_progress'
+  );
+  assert.ok(events.some((event) => event.type === 'error' && event.code === 'native_session_timeout'));
+  // 熔断要把上游那轮也停掉，不能只在本地丢掉句柄。
+  await waitFor(
+    () => mock.received.some((message) => message.method === 'turn/interrupt'),
+    5000,
+    'turn/interrupt 下发'
+  );
+
+  await mock.close();
+});
+
+test('app-server turn：turn/start 还没返回就熔断 → turnId 落地后补发 interrupt', async (t) => {
+  __resetClientsForTest();
+  const received = [];
+  let pendingTurnStart = null;
+  const wss = new WebSocket.Server({ port: 0, host: '127.0.0.1' });
+  wss.on('connection', (ws) => {
+    const send = (message) => ws.send(JSON.stringify({ jsonrpc: '2.0', ...message }));
+    ws.on('message', (data) => {
+      const message = JSON.parse(String(data));
+      received.push(message);
+      if (message.method === 'initialize') {
+        send({ id: message.id, result: { userAgent: 'mock/1.0' } });
+      } else if (message.method === 'account/read') {
+        send({ id: message.id, result: { account: { type: 'chatgpt' } } });
+      } else if (message.method === 'thread/resume') {
+        send({ id: message.id, result: { thread: { id: THREAD_ID, turns: [] } } });
+      } else if (message.method === 'turn/start') {
+        // 卡住不回:熔断窗口正好落在「turn 已在上游起飞、本地还不知道 turnId」的缝里。
+        pendingTurnStart = { id: message.id, send };
+      } else if (message.method === 'turn/interrupt') {
+        send({ id: message.id, result: {} });
+      }
+    });
+  });
+  await new Promise((resolve) => wss.once('listening', resolve));
+  t.after(async () => {
+    __resetClientsForTest();
+    for (const socket of wss.clients) socket.terminate();
+    await new Promise((resolve) => wss.close(resolve));
+  });
+
+  const handle = startCodexAppServerTurn({
+    accountRef: 'acct_77777777777777777777',
+    accountIdentityValidator: async () => verifiedOAuthIdentity(),
+    getProfileDir: () => '/tmp/aih-ut-profiles/codex/ut-watchdog-race',
+    endpoint: `ws://127.0.0.1:${wss.address().port}`,
+    sessionId: THREAD_ID,
+    prompt: 'hello',
+    approvalMode: 'confirm',
+    watchdogEnv: {},
+    firstProgressTimeoutMs: 1500,
+    onEvent: (event) => {
+      // 熔断事件是同步发出的:借它精确复现「turnId 恰好在熔断之后才回来」。
+      if (event.type !== 'error' || event.code !== 'native_session_timeout') return;
+      if (!pendingTurnStart) return;
+      pendingTurnStart.send({
+        id: pendingTurnStart.id,
+        result: { turn: { id: 'turn-late', status: 'inProgress' } }
+      });
+      pendingTurnStart = null;
+    }
+  });
+
+  await assert.rejects(
+    handle.done,
+    (error) => error.code === 'native_session_timeout'
+      && error.timeoutReason === 'no_first_progress'
+  );
+  // 只熔断本地句柄而不 interrupt,上游那轮就成了没人收尸的孤儿。
+  const interrupt = await waitFor(
+    () => received.find((message) => message.method === 'turn/interrupt'),
+    2000,
+    '延迟 turnId 落地后补发 turn/interrupt'
+  );
+  assert.deepStrictEqual(interrupt.params, { threadId: THREAD_ID, turnId: 'turn-late' });
+});
+
+test('app-server turn：并行审批时先回的那个不能提前恢复看门狗计时', async () => {
+  __resetClientsForTest();
+  const decisions = [];
+  // 一轮里并行两个工具审批：停表若不计数,第一个决策就会把表重新启动。
+  const mock = await createMockAppServer(({ send }) => {
+    send({ method: 'turn/started', params: { threadId: THREAD_ID, turn: { id: 'turn-1' } } });
+    for (const [id, itemId] of [[0, 'call-1'], [1, 'call-2']]) {
+      send({
+        id,
+        method: 'item/commandExecution/requestApproval',
+        params: {
+          threadId: THREAD_ID,
+          itemId,
+          command: `sh -c "echo ${itemId}"`,
+          cwd: '/tmp/watchdog-work',
+          availableDecisions: ['accept', 'decline']
+        }
+      });
+    }
+  });
+  mock.wss.onApprovalDecision = (message) => {
+    decisions.push(message);
+    if (decisions.length < 2) return;
+    const client = [...mock.wss.clients][0];
+    const send = (payload) => client.send(JSON.stringify({ jsonrpc: '2.0', ...payload }));
+    send({
+      method: 'item/completed',
+      params: { threadId: THREAD_ID, item: { type: 'agentMessage', id: 'msg-1', text: '两步都执行了。' } }
+    });
+    send({
+      method: 'turn/completed',
+      params: { threadId: THREAD_ID, turn: { id: 'turn-1', status: 'completed', error: null } }
+    });
+  };
+
+  const handle = startCodexAppServerTurn({
+    accountRef: 'acct_88888888888888888888',
+    accountIdentityValidator: async () => verifiedOAuthIdentity(),
+    getProfileDir: () => '/tmp/aih-ut-profiles/codex/ut-watchdog-parallel',
+    endpoint: mock.endpoint,
+    prompt: 'hello',
+    approvalMode: 'confirm',
+    projectPath: '/tmp/watchdog-work',
+    watchdogEnv: {},
+    firstProgressTimeoutMs: 300,
+    onEvent: () => {}
+  });
+
+  const first = await waitFor(() => getPendingApprovalPromptForRun(handle.runId), 5000, '第一张审批卡');
+  decideApproval(first.approvalId, 'allow');
+  // 第二张卡还挂着,这段等待依旧是「等用户」,远超 300ms 预算也不能熔断。
+  // 必须等过 300ms 预算 + 1s interrupt 宽限窗,否则熔断还没落到 done 上就被第二次决策抢先了。
+  await new Promise((resolve) => setTimeout(resolve, 1600));
+  const second = await waitFor(() => getPendingApprovalPromptForRun(handle.runId), 5000, '第二张审批卡');
+  assert.notStrictEqual(second.approvalId, first.approvalId);
+  decideApproval(second.approvalId, 'allow');
+
+  const result = await handle.done;
+  assert.strictEqual(result.content, '两步都执行了。');
+  assert.strictEqual(decisions.length, 2);
+
+  await mock.close();
+});
+
+test('app-server turn：等用户审批的时间不计入看门狗预算', async () => {
+  __resetClientsForTest();
+  const decisions = [];
+  // 首个上游事件就是审批请求（没有任何 delta）：停表失效的话这一轮必被误杀。
+  const mock = await createMockAppServer(({ send }) => {
+    send({ method: 'turn/started', params: { threadId: THREAD_ID, turn: { id: 'turn-1' } } });
+    send({
+      id: 0,
+      method: 'item/commandExecution/requestApproval',
+      params: {
+        threadId: THREAD_ID,
+        itemId: 'call-1',
+        command: 'sh -c "echo watchdog"',
+        cwd: '/tmp/watchdog-work',
+        availableDecisions: ['accept', 'decline']
+      }
+    });
+  });
+  mock.wss.onApprovalDecision = (message) => {
+    decisions.push(message);
+    const client = [...mock.wss.clients][0];
+    const send = (payload) => client.send(JSON.stringify({ jsonrpc: '2.0', ...payload }));
+    send({ method: 'serverRequest/resolved', params: { threadId: THREAD_ID, requestId: message.id } });
+    send({
+      method: 'item/completed',
+      params: { threadId: THREAD_ID, item: { type: 'agentMessage', id: 'msg-1', text: '已执行。' } }
+    });
+    send({
+      method: 'turn/completed',
+      params: { threadId: THREAD_ID, turn: { id: 'turn-1', status: 'completed', error: null } }
+    });
+  };
+
+  const handle = startCodexAppServerTurn({
+    accountRef: 'acct_66666666666666666666',
+    accountIdentityValidator: async () => verifiedOAuthIdentity(),
+    getProfileDir: () => '/tmp/aih-ut-profiles/codex/ut-watchdog-approval',
+    endpoint: mock.endpoint,
+    prompt: 'hello',
+    approvalMode: 'confirm',
+    projectPath: '/tmp/watchdog-work',
+    watchdogEnv: {},
+    firstProgressTimeoutMs: 300,
+    onEvent: () => {}
+  });
+
+  const prompt = await waitFor(() => getPendingApprovalPromptForRun(handle.runId), 5000, '审批挂账');
+  // 用户去泡杯咖啡：远超 300ms 预算，但这段等待不是上游慢。
+  await new Promise((resolve) => setTimeout(resolve, 900));
+  decideApproval(prompt.approvalId, 'allow');
+
+  const result = await handle.done;
+  assert.strictEqual(result.content, '已执行。');
+  assert.strictEqual(decisions.length, 1);
+
+  await mock.close();
+});

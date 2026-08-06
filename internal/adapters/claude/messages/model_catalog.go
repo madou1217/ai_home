@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"mime"
 	"net/http"
@@ -220,11 +221,22 @@ func fetchModelCatalogPage(
 	if response.StatusCode < http.StatusOK ||
 		response.StatusCode >= http.StatusMultipleChoices {
 		drainModelCatalogResponse(response.Body)
-		return modelCatalogPageDTO{}, ErrModelCatalogUnavailable
+		// 只带状态码与分类后的媒体类型：账号导入失败时必须能区分
+		// 401/403/429/5xx，同时不把上游错误正文写进错误链。
+		return modelCatalogPageDTO{}, fmt.Errorf(
+			"%w: status=%d media_type=%s",
+			ErrModelCatalogUnavailable,
+			response.StatusCode,
+			mediaType,
+		)
 	}
 	if mediaType != "application/json" {
 		drainModelCatalogResponse(response.Body)
-		return modelCatalogPageDTO{}, ErrInvalidModelCatalog
+		return modelCatalogPageDTO{}, fmt.Errorf(
+			"%w: media_type=%s",
+			ErrInvalidModelCatalog,
+			mediaType,
+		)
 	}
 	payload, err := io.ReadAll(io.LimitReader(
 		response.Body,

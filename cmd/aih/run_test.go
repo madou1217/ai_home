@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/madou1217/ai_home/internal/host/aihaccount"
 	"github.com/madou1217/ai_home/internal/host/aihcli"
 )
 
@@ -56,8 +57,46 @@ func TestRunPrintsClaudeUsageWithoutOpeningDatabase(t *testing.T) {
 			"aih claude relay <account_id>",
 			"aih claude <account_id>",
 			"OAuth 走原生 Relay",
-			"API Key/Auth Token 走 Canonical Adapter",
+			"Canonical Adapter",
+			"aih codex relay claude 9 --model claude-opus-5",
 			"claude --help",
+		} {
+			if !bytes.Contains(output.Bytes(), []byte(expected)) {
+				t.Fatalf("usage 缺少 %q: %s", expected, usage)
+			}
+		}
+	}
+}
+
+// TestRunPrintsCodexUsageWithCrossProviderRelay 验证 Codex help 同样公开
+// 跨 Provider 固定账号形式，用法文档与实际支持的命令保持一致。
+func TestRunPrintsCodexUsageWithCrossProviderRelay(t *testing.T) {
+	for _, arguments := range [][]string{
+		{"codex", "--help"},
+		{"help", "codex"},
+	} {
+		output := &bytes.Buffer{}
+		runtime := testCommandRuntime(t, nil)
+		runtime.stdout = output
+		runtime.newApp = func(
+			context.Context,
+			aihcli.Options,
+		) (providerApplication, error) {
+			t.Fatal("Codex help 不得打开数据库或创建 App")
+			return nil, nil
+		}
+		if err := run(context.Background(), arguments, runtime); err != nil {
+			t.Fatalf("run(%v) error = %v", arguments, err)
+		}
+		usage := output.String()
+		for _, expected := range []string{
+			"aih codex [codex_args...]",
+			"aih codex relay <account_id>",
+			"aih codex relay <provider> <account_id>",
+			"aih codex <account_id>",
+			"aih codex relay claude 9 --model claude-opus-5",
+			"Canonical Adapter 转码到目标 Provider",
+			"codex --help",
 		} {
 			if !bytes.Contains(output.Bytes(), []byte(expected)) {
 				t.Fatalf("usage 缺少 %q: %s", expected, usage)
@@ -191,6 +230,12 @@ func testCommandRuntime(t *testing.T, environment map[string]string) commandRunt
 		stderr:      io.Discard,
 		newApp: func(context.Context, aihcli.Options) (providerApplication, error) {
 			return &recordingApplication{}, nil
+		},
+		newAccountApp: func(
+			context.Context,
+			aihaccount.Options,
+		) (accountApplication, error) {
+			return &recordingAccountApplication{}, nil
 		},
 	}
 }

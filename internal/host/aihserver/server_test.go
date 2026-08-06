@@ -26,6 +26,10 @@ import (
 const testManagementKey = "synthetic-go-server-management-key-2026"
 const testClientKey = "synthetic-go-server-client-key-2026"
 
+// testClaudeOAuthAccessToken 是合成订阅 OAuth 账号的 Access Token，
+// 供 Canonical 传输断言核对上游 Authorization 是否使用了该账号凭据。
+const testClaudeOAuthAccessToken = "sk-ant-oat01-canonical-skip"
+
 // TestServerMountsSystemAndAccountRoutes 验证 Host 到 aih.db 的真实 TCP 完整链路。
 func TestServerMountsSystemAndAccountRoutes(t *testing.T) {
 	t.Parallel()

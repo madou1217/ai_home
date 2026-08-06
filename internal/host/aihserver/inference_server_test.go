@@ -280,6 +280,11 @@ func TestServerReplaysResponsesReasoningThroughClaude(t *testing.T) {
 			)
 		}
 		assertResponsesClaudeReasoningRequest(t, upstream, signature)
+		if stream {
+			assertClaudeStreamRenderedAsResponses(t, exchange.body)
+		} else {
+			assertClaudeAggregateRenderedAsResponses(t, exchange.body)
+		}
 		t.Logf(
 			"POST %s\npayload:\n%s\nstatus: %d\nresponse:\n%s",
 			baseURL+openairesponsesapi.Path,
@@ -290,9 +295,9 @@ func TestServerReplaysResponsesReasoningThroughClaude(t *testing.T) {
 	}
 }
 
-// TestServerSkipsClaudeOAuthAndFallsBackToAPIKey 验证同一模型的官方 OAuth
-// 候选排序在前时，Canonical Adapter 跳过它并使用可直连的 API Key。
-func TestServerSkipsClaudeOAuthAndFallsBackToAPIKey(t *testing.T) {
+// TestServerRotatesClaudeOAuthAndAPIKeyOnCanonical 验证同一模型的订阅 OAuth
+// 与 API Key 在 Canonical Adapter 上按公平票号轮转，两类凭据都真实发出。
+func TestServerRotatesClaudeOAuthAndAPIKeyOnCanonical(t *testing.T) {
 	t.Parallel()
 
 	upstream := &syntheticInferenceHTTPClient{}
@@ -315,34 +320,45 @@ func TestServerSkipsClaudeOAuthAndFallsBackToAPIKey(t *testing.T) {
 
 	payload := `{"model":"claude-sonnet-4","max_tokens":32,` +
 		`"messages":[{"role":"user","content":"transport-fallback"}]}`
-	exchange := performRequestWithHeaders(
-		t,
-		client,
-		http.MethodPost,
-		baseURL+anthropicmessagesapi.Path,
-		map[string]string{"x-api-key": testClientKey},
-		[]byte(payload),
-	)
-	assertStatus(t, exchange, http.StatusOK)
-	if !strings.Contains(exchange.body, "host-claude-ok") ||
-		upstream.CallCount() != 1 ||
-		upstream.LastAuthHeader() != "x-api-key" ||
-		upstream.LastAuthorization() != apiKey {
-		t.Fatalf(
-			"response=%s calls=%d auth=%s credential_match=%t",
-			exchange.body,
-			upstream.CallCount(),
+	// account_ref 排序保证订阅 OAuth 先被征召，第二轮才轮到 API Key。
+	expected := []struct {
+		authHeader string
+		authValue  string
+	}{
+		{authHeader: "authorization", authValue: "Bearer " + testClaudeOAuthAccessToken},
+		{authHeader: "x-api-key", authValue: apiKey},
+	}
+	for index, want := range expected {
+		exchange := performRequestWithHeaders(
+			t,
+			client,
+			http.MethodPost,
+			baseURL+anthropicmessagesapi.Path,
+			map[string]string{"x-api-key": testClientKey},
+			[]byte(payload),
+		)
+		assertStatus(t, exchange, http.StatusOK)
+		if !strings.Contains(exchange.body, "host-claude-ok") ||
+			upstream.CallCount() != index+1 ||
+			upstream.LastAuthHeader() != want.authHeader ||
+			upstream.LastAuthorization() != want.authValue {
+			t.Fatalf(
+				"round=%d response=%s calls=%d auth=%s credential_match=%t",
+				index+1,
+				exchange.body,
+				upstream.CallCount(),
+				upstream.LastAuthHeader(),
+				upstream.LastAuthorization() == want.authValue,
+			)
+		}
+		t.Logf(
+			"POST %s round=%d status=%d auth_header=%s",
+			baseURL+anthropicmessagesapi.Path,
+			index+1,
+			exchange.status,
 			upstream.LastAuthHeader(),
-			upstream.LastAuthorization() == apiKey,
 		)
 	}
-	t.Logf(
-		"POST %s\npayload:\n%s\nstatus: %d\nresponse:\n%s",
-		baseURL+anthropicmessagesapi.Path,
-		payload,
-		exchange.status,
-		exchange.body,
-	)
 }
 
 // TestServerProjectsRedactedThinkingToClaudeAPIKeyShape 验证客户端的
@@ -397,9 +413,9 @@ func TestServerProjectsRedactedThinkingToClaudeAPIKeyShape(t *testing.T) {
 	}
 }
 
-// TestServerRejectsCanonicalClaudeOAuthWithoutNativeTransport 验证只有官方
-// OAuth 候选时，Server 在本地返回不可用且绝不发起缺少原生证明的上游请求。
-func TestServerRejectsCanonicalClaudeOAuthWithoutNativeTransport(t *testing.T) {
+// TestServerCarriesClaudeOAuthOnCanonicalTransport 验证只有订阅 OAuth 候选时，
+// Canonical Adapter 按官方合同发出 Bearer + OAuth beta 请求，而不是本地判不可用。
+func TestServerCarriesClaudeOAuthOnCanonicalTransport(t *testing.T) {
 	t.Parallel()
 
 	upstream := &syntheticInferenceHTTPClient{}
@@ -418,25 +434,237 @@ func TestServerRejectsCanonicalClaudeOAuthWithoutNativeTransport(t *testing.T) {
 		[]byte(payload),
 	)
 
-	if exchange.status != http.StatusServiceUnavailable ||
-		!strings.Contains(exchange.body, `"type":"api_error"`) ||
-		!strings.Contains(exchange.body, `"message":"Inference service is unavailable"`) ||
-		upstream.CallCount() != 0 {
+	if exchange.status != http.StatusOK ||
+		!strings.Contains(exchange.body, "host-claude-ok") ||
+		upstream.CallCount() != 1 ||
+		upstream.LastAuthHeader() != "authorization" ||
+		upstream.LastAuthorization() != "Bearer "+testClaudeOAuthAccessToken ||
+		!strings.Contains(upstream.LastAnthropicBeta(), "oauth-2025-04-20") ||
+		!strings.Contains(upstream.LastAnthropicBeta(), "claude-code-20250219") {
 		t.Fatalf(
-			"Claude OAuth transport boundary status=%d body=%s calls=%d",
+			"Claude OAuth canonical transport status=%d body=%s calls=%d auth=%s beta=%q",
 			exchange.status,
 			exchange.body,
 			upstream.CallCount(),
+			upstream.LastAuthHeader(),
+			upstream.LastAnthropicBeta(),
 		)
 	}
 	t.Logf(
-		"POST %s payload=%s status=%d response=%s upstream_calls=%d",
+		"POST %s payload=%s status=%d upstream_calls=%d auth_header=%s beta=%q",
 		baseURL+anthropicmessagesapi.Path,
 		payload,
 		exchange.status,
-		exchange.body,
 		upstream.CallCount(),
+		upstream.LastAuthHeader(),
+		upstream.LastAnthropicBeta(),
 	)
+}
+
+// TestServerRelaysCodexResponsesToPinnedClaudeOAuthAccount 覆盖
+// `aih codex relay claude <id>` 的完整线上形状：Codex 客户端继续发 Responses
+// 请求，X-Account-Ref 固定到一个订阅 OAuth 的 Claude 账号，Server 必须用
+// Canonical Adapter 转码成 Anthropic Messages 线协议并原样带上该账号凭据。
+//
+// 这条用例同时锁定三件跨协议合同：Codex 真实发出的 store/include/instructions
+// 不会污染上游正文；Responses 省略输出上限时 max_tokens 由 Claude Code 的每模型
+// 默认值补齐；instructions 投影为 system，而不是被替换成伪造的客户端身份。
+func TestServerRelaysCodexResponsesToPinnedClaudeOAuthAccount(t *testing.T) {
+	t.Parallel()
+
+	const instructions = "你是跨协议验收使用的助手。"
+	upstream := &syntheticInferenceHTTPClient{}
+	baseURL, client := startTestServerWithInferenceClient(t, upstream)
+	claudeRef := registerNativeClaudeOAuthAccount(t, client, baseURL)
+	waitForServerModels(t, client, baseURL, []string{"claude-sonnet-4"})
+
+	payload := codexResponsesPayload(t, instructions)
+	exchange := performRequestWithHeaders(
+		t,
+		client,
+		http.MethodPost,
+		baseURL+openairesponsesapi.Path,
+		map[string]string{
+			"Authorization":               "Bearer " + testClientKey,
+			inferenceapi.AccountRefHeader: claudeRef,
+		},
+		payload,
+	)
+
+	upstreamURL, upstreamBody := upstream.LastRequest()
+	if exchange.status != http.StatusOK ||
+		!strings.Contains(exchange.body, "host-claude-ok") ||
+		upstream.CallCount() != 1 {
+		t.Fatalf(
+			"跨协议固定账号 status=%d body=%s calls=%d upstream_url=%s upstream_body=%s",
+			exchange.status,
+			exchange.body,
+			upstream.CallCount(),
+			upstreamURL,
+			upstreamBody,
+		)
+	}
+	if upstream.LastAuthHeader() != "authorization" ||
+		upstream.LastAuthorization() != "Bearer "+testClaudeOAuthAccessToken ||
+		!strings.Contains(upstream.LastAnthropicBeta(), "oauth-2025-04-20") ||
+		!strings.Contains(upstream.LastAnthropicBeta(), "claude-code-20250219") {
+		t.Fatalf(
+			"跨协议未使用固定账号订阅 OAuth: auth_header=%s beta=%q",
+			upstream.LastAuthHeader(),
+			upstream.LastAnthropicBeta(),
+		)
+	}
+	if !strings.HasSuffix(upstreamURL, "/v1/messages") {
+		t.Fatalf("跨协议上游端点错误: %s", upstreamURL)
+	}
+	assertCodexResponsesToClaudeWire(t, upstreamBody, instructions)
+	assertClaudeStreamRenderedAsResponses(t, exchange.body)
+	t.Logf(
+		"POST %s\nheaders: %s=<claude_account_ref>\npayload:\n%s\n"+
+			"status: %d\nupstream_url: %s\nupstream_body:\n%s\nresponse:\n%s",
+		baseURL+openairesponsesapi.Path,
+		inferenceapi.AccountRefHeader,
+		payload,
+		exchange.status,
+		upstreamURL,
+		upstreamBody,
+		exchange.body,
+	)
+}
+
+// codexResponsesPayload 复刻官方 Codex 对非 Azure 端点真实发出的请求形状：
+// store 恒为 false、include 只含加密 reasoning、且不携带任何输出上限。
+func codexResponsesPayload(t *testing.T, instructions string) []byte {
+	t.Helper()
+
+	store := false
+	payload, err := json.Marshal(map[string]any{
+		"model":        "claude-sonnet-4",
+		"instructions": instructions,
+		"input": []map[string]any{{
+			"type": "message",
+			"role": "user",
+			"content": []map[string]string{{
+				"type": "input_text",
+				"text": "跨协议固定账号验收",
+			}},
+		}},
+		"stream":    true,
+		"store":     store,
+		"include":   []string{"reasoning.encrypted_content"},
+		"reasoning": map[string]string{"effort": "medium", "summary": "auto"},
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	return payload
+}
+
+// assertCodexResponsesToClaudeWire 校验转码结果符合 Anthropic Messages 合同，
+// 并且没有夹带 Responses 独有字段或伪造的客户端身份。
+func assertCodexResponsesToClaudeWire(
+	t *testing.T,
+	upstreamBody []byte,
+	instructions string,
+) {
+	t.Helper()
+
+	var request struct {
+		Model     string `json:"model"`
+		MaxTokens uint64 `json:"max_tokens"`
+		Stream    bool   `json:"stream"`
+		System    []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"system"`
+		Messages []struct {
+			Role string `json:"role"`
+		} `json:"messages"`
+	}
+	decodeJSON(t, string(upstreamBody), &request)
+	// claude-sonnet-4 落在 Claude Code 现代模型默认值上；跨协议客户端省略输出
+	// 上限时必须由该默认值补齐，Anthropic Messages 的 max_tokens 是必填字段。
+	if request.Model != "claude-sonnet-4" ||
+		request.MaxTokens != 32_000 ||
+		!request.Stream ||
+		len(request.Messages) != 1 ||
+		request.Messages[0].Role != "user" {
+		t.Fatalf("跨协议转码正文错误: %s", upstreamBody)
+	}
+	if len(request.System) != 1 ||
+		request.System[0].Type != "text" ||
+		request.System[0].Text != instructions {
+		t.Fatalf("instructions 未原样投影为 system: %s", upstreamBody)
+	}
+	for _, leaked := range []string{
+		`"store"`,
+		`"include"`,
+		`"instructions"`,
+		`"input"`,
+		`"reasoning"`,
+	} {
+		if strings.Contains(string(upstreamBody), leaked) {
+			t.Fatalf("上游正文夹带 Responses 独有字段 %s: %s", leaked, upstreamBody)
+		}
+	}
+}
+
+// assertClaudeStreamRenderedAsResponses 校验回程方向：上游 Anthropic 帧必须被
+// 渲染成 Responses 事件流。跨协议只转码请求不转码响应，Codex 客户端会在
+// content_block_delta 上解析失败，因此这里同时正向断言 Responses 事件名、
+// 反向断言 Anthropic 帧名不得穿透到客户端。
+func assertClaudeStreamRenderedAsResponses(t *testing.T, body string) {
+	t.Helper()
+
+	for _, expected := range []string{
+		"response.created",
+		"response.in_progress",
+		"response.output_text.delta",
+		"response.output_text.done",
+		"response.completed",
+	} {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("回程缺少 Responses 事件 %s: %s", expected, body)
+		}
+	}
+	for _, leaked := range []string{
+		"message_start",
+		"content_block_start",
+		"content_block_delta",
+		"content_block_stop",
+		"message_delta",
+		"message_stop",
+		"text_delta",
+	} {
+		if strings.Contains(body, leaked) {
+			t.Fatalf("Anthropic 帧 %s 穿透到 Responses 客户端: %s", leaked, body)
+		}
+	}
+	// 正文本身必须完成投递，而不是只剩下事件骨架。
+	if !strings.Contains(body, "host-claude-ok") {
+		t.Fatalf("回程未投递上游正文: %s", body)
+	}
+}
+
+// assertClaudeAggregateRenderedAsResponses 校验非流式回程同样被聚合成
+// Responses 响应对象，而不是把 Anthropic Messages 的响应体原样透出。
+func assertClaudeAggregateRenderedAsResponses(t *testing.T, body string) {
+	t.Helper()
+
+	var response struct {
+		Object string            `json:"object"`
+		Status string            `json:"status"`
+		Output []json.RawMessage `json:"output"`
+	}
+	decodeJSON(t, body, &response)
+	if response.Object != "response" ||
+		response.Status != "completed" ||
+		len(response.Output) == 0 {
+		t.Fatalf("非流式回程不是 Responses 响应对象: %s", body)
+	}
+	if !strings.Contains(body, "host-claude-ok") {
+		t.Fatalf("非流式回程未投递上游正文: %s", body)
+	}
 }
 
 // syntheticInferenceHTTPClient 根据真实 Adapter 的目标主机返回确定性 SSE。
@@ -923,7 +1151,7 @@ func registerNativeClaudeOAuthAccount(
 		testManagementKey,
 		claudeNativeImportBody(
 			t,
-			"sk-ant-oat01-canonical-skip",
+			testClaudeOAuthAccessToken,
 			"sk-ant-ort01-canonical-skip",
 		),
 	)

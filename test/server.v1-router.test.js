@@ -4072,6 +4072,109 @@ test('v1 router reports global pool miss when claude alias targets unavailable c
   assert.equal(body.availability.provider, 'catalog');
 });
 
+test('v1 router does not deny an alias target when the model catalog is empty', async () => {
+  // 复现真实故障：模型目录被清空（webUiModelsCache 空 + 账号无 availableModels），
+  // 目标模型又刚被 429 打了 (账号,模型) 冷却，快路径查不到可调度账号 → 落到能力索引慢路径。
+  // 修复前这里会把「目录空」当成「模型不存在」，报 503 alias_target_model_not_in_catalog。
+  const res = createResCapture();
+  const claudeAccount = {
+    id: 'cl1',
+    accountRef: V1_CLAUDE_REF_1,
+    provider: 'claude',
+    accessToken: 'claude-token',
+    modelCooldowns: { 'claude-opus-5': Date.now() + 60_000 }
+  };
+  // 启动时建立的倒排索引仍是热的（快照里有 claude-opus-5），目录缓存却已经被清空。
+  const modelAccountIndex = buildModelAccountIndex({
+    accounts: { claude: [claudeAccount] },
+    webUiModelsCache: { byAccount: { [V1_CLAUDE_REF_1]: ['claude-opus-5'] } }
+  }, {});
+  let seenModel = '';
+
+  const handled = await handleV1Request({
+    req: { headers: {}, url: '/v1/messages' },
+    res,
+    method: 'POST',
+    pathname: '/v1/messages',
+    options: { backend: 'codex-adapter', provider: 'auto' },
+    state: {
+      modelAliases: {
+        aliases: [{
+          id: 'alias-claude-opus-5',
+          alias: 'claude-*',
+          target: 'claude-opus-5',
+          provider: 'claude',
+          targetProvider: 'claude',
+          enabled: true
+        }]
+      },
+      metrics: { totalRequests: 0, routeCounts: {}, totalSuccess: 0, providerCounts: {}, providerSuccess: {}, providerFailures: {} },
+      cursors: { claude: 0 },
+      modelAccountIndex,
+      webUiModelsCache: {
+        updatedAt: 0,
+        ids: [],
+        byAccount: {},
+        byProvider: {},
+        scannedAccounts: 0,
+        source: 'empty'
+      },
+      accounts: {
+        codex: [],
+        gemini: [],
+        claude: [claudeAccount]
+      }
+    },
+    requiredClientKey: '',
+    cooldownMs: 1000,
+    maxRequestBodyBytes: 1024 * 1024,
+    requestMeta: {},
+    deps: {
+      parseAuthorizationBearer: () => '',
+      writeJson: (r, code, payload) => { r.statusCode = code; r.end(JSON.stringify(payload)); },
+      readRequestBody: async () => Buffer.from(JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        stream: false,
+        max_tokens: 128,
+        messages: [{ role: 'user', content: 'ping' }]
+      })),
+      buildOpenAIModelsList: () => ({ object: 'list', data: [] }),
+      resolveRequestProvider: (options, requestJson, headers, state) => require('../lib/server/router').resolveRequestProvider(options, requestJson, headers, state),
+      handleCodexModels: async () => {},
+      handleCodexChatCompletions: async () => {
+        throw new Error('claude alias should not use codex chat');
+      },
+      handleUpstreamModels: async () => {},
+      handleUpstreamPassthrough: async (ctx) => {
+        seenModel = String(ctx.requestJson && ctx.requestJson.model || '');
+        ctx.res.statusCode = 200;
+        ctx.res.end(JSON.stringify({
+          id: 'msg_catalog_unknown',
+          type: 'message',
+          role: 'assistant',
+          model: 'claude-opus-5',
+          content: [{ type: 'text', text: 'pong' }],
+          stop_reason: 'end_turn',
+          usage: { input_tokens: 1, output_tokens: 1 }
+        }));
+      },
+      chooseServerAccount: () => null,
+      markProxyAccountSuccess: () => {},
+      markProxyAccountFailure: () => {},
+      pushMetricError: () => {},
+      appendProxyRequestLog: () => {},
+      fetchModelsForAccount: async () => [],
+      FALLBACK_MODELS: [],
+      fetchWithTimeout: async () => ({})
+    }
+  });
+
+  assert.equal(handled, true);
+  assert.equal(seenModel, 'claude-opus-5');
+  assert.equal(res.statusCode, 200);
+  assert.doesNotMatch(String(res.body), /alias_target_model_not_in_catalog/);
+});
+
 test('v1 router lets claude client use gemini account through exact model alias', async () => {
   const res = createResCapture();
   let seenUrl = '';

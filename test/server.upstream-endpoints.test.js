@@ -4490,6 +4490,8 @@ test('sole-account 429 surfaces the upstream status instead of no_available_acco
   assert.match(String(body.detail || ''), /rate_limit_error/);
   assert.doesNotMatch(String(res.body), /no schedulable claude account/);
   assert.doesNotMatch(String(res.body), /no_available_account/);
+  // 上游说了要等多久，客户端就该看到多久：JSON 兜底不能把 retry-after 一起丢掉。
+  assert.equal(res.headers['retry-after'], '300');
   assert.equal(state.metrics.totalFailures, 1);
 });
 

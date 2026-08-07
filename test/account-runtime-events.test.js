@@ -107,6 +107,50 @@ test('server pool listener applies blocking runtime state and clears sticky sess
   assert.equal(state.webUiModelsCache.updatedAt, 0);
 });
 
+test('server pool listener keeps the model catalog when an account is only rate limited', () => {
+  // 429 只说明「现在别打这个账号」，不说明它有哪些模型；清空目录会让别名预检
+  // 无据可依，把正常的别名目标判成 alias_target_model_not_in_catalog。
+  const now = Date.now();
+  const limitedRef = 'acct_10017000000000000000';
+  const state = {
+    accounts: {
+      codex: [],
+      gemini: [],
+      claude: [{ accountRef: limitedRef, provider: 'claude', email: 'rate@example.com' }]
+    },
+    sessionAffinity: {
+      codex: new Map(),
+      gemini: new Map(),
+      claude: new Map([['thread-a', { accountRef: limitedRef, expiresAt: now + 60_000 }]])
+    },
+    webUiModelsCache: {
+      signature: 'warm',
+      updatedAt: now,
+      byProvider: { claude: ['claude-opus-5'] }
+    }
+  };
+  const listener = createServerPoolSyncListener({ state });
+
+  const changed = listener({
+    provider: 'claude',
+    accountRef: limitedRef,
+    nextStatus: 'rate_limited',
+    runtimeState: {
+      rateLimitUntil: now + 60_000,
+      lastFailureKind: 'rate_limited',
+      lastFailureReason: 'upstream_429'
+    }
+  });
+
+  assert.equal(changed, true);
+  // 会话粘性照旧要解绑：账号确实暂时不能用。
+  assert.equal(state.sessionAffinity.claude.has('thread-a'), false);
+  // 模型目录必须原封不动。
+  assert.equal(state.webUiModelsCache.signature, 'warm');
+  assert.equal(state.webUiModelsCache.updatedAt, now);
+  assert.deepEqual(state.webUiModelsCache.byProvider, { claude: ['claude-opus-5'] });
+});
+
 test('server pool listener reloads runtime pool when event requests recovery reload', () => {
   const accountRef = 'acct_10022000000000000000';
   const state = {

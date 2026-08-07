@@ -591,10 +591,18 @@ func assertCodexResponsesToClaudeWire(
 		request.Messages[0].Role != "user" {
 		t.Fatalf("跨协议转码正文错误: %s", upstreamBody)
 	}
-	if len(request.System) != 1 ||
+	// 订阅 OAuth 按 Claude Code 客户端合同调用：官方身份块必须排在最前，
+	// 客户端自己的 instructions 原样跟在其后，不被覆盖也不被改写。
+	if len(request.System) != 2 ||
 		request.System[0].Type != "text" ||
-		request.System[0].Text != instructions {
-		t.Fatalf("instructions 未原样投影为 system: %s", upstreamBody)
+		request.System[0].Text !=
+			"You are Claude Code, Anthropic's official CLI for Claude." ||
+		request.System[1].Type != "text" ||
+		request.System[1].Text != instructions {
+		t.Fatalf(
+			"订阅 OAuth system 未按官方客户端合同投影: %s",
+			upstreamBody,
+		)
 	}
 	for _, leaked := range []string{
 		`"store"`,

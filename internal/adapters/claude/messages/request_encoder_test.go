@@ -18,7 +18,7 @@ func TestEncodeRequestPreservesClaudeMessagesSemantics(t *testing.T) {
 	t.Parallel()
 
 	request := newCompleteClaudeRequest(t)
-	encoded, err := encodeRequest(request, "claude-sonnet-4-6")
+	encoded, err := encodeRequest(request, "claude-sonnet-4-6", false)
 	if err != nil {
 		t.Fatalf("encodeRequest() error = %v", err)
 	}
@@ -114,7 +114,7 @@ func TestEncodeRequestUsesClaudeCodeModelDefaultWhenClientOmitsMaxTokens(
 			if err != nil {
 				t.Fatalf("inference.NewRequest() error = %v", err)
 			}
-			encoded, err := encodeRequest(request, test.model)
+			encoded, err := encodeRequest(request, test.model, false)
 			if err != nil {
 				t.Fatalf("encodeRequest() error = %v", err)
 			}
@@ -154,7 +154,7 @@ func TestEncodeRequestRejectsBudgetThatExceedsModelDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("inference.NewRequest() error = %v", err)
 	}
-	if _, err := encodeRequest(request, "claude-sonnet-4-6"); !errors.Is(
+	if _, err := encodeRequest(request, "claude-sonnet-4-6", false); !errors.Is(
 		err,
 		ErrUnsupportedRequest,
 	) {
@@ -186,7 +186,7 @@ func TestEncodeEffortReasoningEnablesAdaptiveThinking(t *testing.T) {
 	if err != nil {
 		t.Fatalf("inference.NewRequest() error = %v", err)
 	}
-	encoded, err := encodeRequest(request, "claude-sonnet-5")
+	encoded, err := encodeRequest(request, "claude-sonnet-5", false)
 	if err != nil {
 		t.Fatalf("encodeRequest() error = %v", err)
 	}
@@ -240,7 +240,7 @@ func TestEncodeOmittedReasoningEnablesRedactThinking(t *testing.T) {
 	if err != nil {
 		t.Fatalf("inference.NewRequest() error = %v", err)
 	}
-	encoded, err := encodeRequest(request, "claude-sonnet-5")
+	encoded, err := encodeRequest(request, "claude-sonnet-5", false)
 	if err != nil {
 		t.Fatalf("encodeRequest() error = %v", err)
 	}
@@ -285,7 +285,7 @@ func TestEncodeRequestReplaysRedactedThinking(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRequest() error = %v", err)
 	}
-	encoded, err := encodeRequest(request, "claude-opus-5")
+	encoded, err := encodeRequest(request, "claude-opus-5", false)
 	if err != nil {
 		t.Fatalf("encodeRequest() error = %v", err)
 	}
@@ -330,7 +330,7 @@ func TestEncodeRequestRejectsSummaryWithoutClaudeSignature(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRequest() error = %v", err)
 	}
-	if _, err := encodeRequest(request, "claude-opus-5"); !errors.Is(err, ErrUnsupportedRequest) {
+	if _, err := encodeRequest(request, "claude-opus-5", false); !errors.Is(err, ErrUnsupportedRequest) {
 		t.Fatalf("encodeRequest() error = %v, want ErrUnsupportedRequest", err)
 	}
 }
@@ -508,7 +508,7 @@ func TestEncodeRequestMapsNamespacedToolsReversibly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("inference.NewRequest() error = %v", err)
 	}
-	encoded, err := encodeRequest(request, "claude-opus-5")
+	encoded, err := encodeRequest(request, "claude-opus-5", false)
 	if err != nil {
 		t.Fatalf("encodeRequest() error = %v", err)
 	}
@@ -571,7 +571,7 @@ func TestEncodeRequestKeepsPromptCacheKeyOutOfClaudeMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("inference.NewRequest() error = %v", err)
 	}
-	encoded, err := encodeRequest(request, "claude-opus-5")
+	encoded, err := encodeRequest(request, "claude-opus-5", false)
 	if err != nil {
 		t.Fatalf("encodeRequest() error = %v", err)
 	}
@@ -697,7 +697,7 @@ func TestEncodeRequestRejectsUnrepresentableOptionsBeforeNetwork(
 	if err != nil {
 		t.Fatalf("inference.NewRequest() error = %v", err)
 	}
-	if _, err := encodeRequest(request, "claude-sonnet-4-6"); !errors.Is(
+	if _, err := encodeRequest(request, "claude-sonnet-4-6", false); !errors.Is(
 		err,
 		ErrUnsupportedRequest,
 	) {
@@ -746,7 +746,7 @@ func TestEncodeRequestDeclaresFilesBetaForFileReferences(t *testing.T) {
 	if err != nil {
 		t.Fatalf("inference.NewRequest() error = %v", err)
 	}
-	encoded, err := encodeRequest(request, "claude-sonnet-4-6")
+	encoded, err := encodeRequest(request, "claude-sonnet-4-6", false)
 	if err != nil {
 		t.Fatalf("encodeRequest() error = %v", err)
 	}
@@ -789,7 +789,7 @@ func TestEncodeRequestRejectsNonDefaultTemperatureWithThinking(
 	if err != nil {
 		t.Fatalf("inference.NewRequest() error = %v", err)
 	}
-	if _, err := encodeRequest(request, "claude-sonnet-4-6"); !errors.Is(
+	if _, err := encodeRequest(request, "claude-sonnet-4-6", false); !errors.Is(
 		err,
 		ErrUnsupportedRequest,
 	) {

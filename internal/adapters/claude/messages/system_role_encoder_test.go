@@ -25,7 +25,7 @@ func TestEncodeRequestPreservesMidConversationSystemRole(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRequest() error = %v", err)
 	}
-	encoded, err := encodeRequest(request, "claude-sonnet-5")
+	encoded, err := encodeRequest(request, "claude-sonnet-5", false)
 	if err != nil {
 		t.Fatalf("encodeRequest() error = %v", err)
 	}

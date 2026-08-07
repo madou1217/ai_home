@@ -26,7 +26,7 @@ func TestAnthropicRedactedThinkingRoundTripsToClaude(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Decode() error = %v", err)
 	}
-	encoded, err := encodeRequest(request, "claude-opus-5")
+	encoded, err := encodeRequest(request, "claude-opus-5", false)
 	if err != nil {
 		t.Fatalf("encodeRequest() error = %v", err)
 	}

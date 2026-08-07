@@ -55,7 +55,7 @@ func TestResponsesReasoningRoundTripsToClaudeThinking(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Decode() error = %v", err)
 	}
-	encoded, err := encodeRequest(request, "claude-sonnet-4-6")
+	encoded, err := encodeRequest(request, "claude-sonnet-4-6", false)
 	if err != nil {
 		t.Fatalf("encodeRequest() error = %v", err)
 	}
@@ -116,7 +116,7 @@ func TestClaudeReasoningProjectionDoesNotDependOnClientProtocol(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRequest() error = %v", err)
 	}
-	encoded, err := encodeRequest(request, "claude-opus-5")
+	encoded, err := encodeRequest(request, "claude-opus-5", false)
 	if err != nil {
 		t.Fatalf("encodeRequest() error = %v", err)
 	}
@@ -167,7 +167,7 @@ func TestResponsesReasoningDropsIncompatibleSignature(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Decode() error = %v", err)
 	}
-	encoded, err := encodeRequest(request, "claude-sonnet-4-6")
+	encoded, err := encodeRequest(request, "claude-sonnet-4-6", false)
 	if err != nil {
 		t.Fatalf("encodeRequest() error = %v", err)
 	}
@@ -229,7 +229,7 @@ func TestResponsesSignatureOnlyReasoningKeepsEmptyThinking(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Decode() error = %v", err)
 	}
-	encoded, err := encodeRequest(request, "claude-sonnet-4-6")
+	encoded, err := encodeRequest(request, "claude-sonnet-4-6", false)
 	if err != nil {
 		t.Fatalf("encodeRequest() error = %v", err)
 	}

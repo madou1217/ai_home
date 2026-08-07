@@ -35,12 +35,15 @@ type requestEncoder struct {
 	cache          cacheLayout
 	toolNames      toolNameMapper
 	betas          []string
+	// officialClient 表示本次调用使用订阅 OAuth，须按 Claude Code 客户端合同发送。
+	officialClient bool
 }
 
 // encodeRequest 在创建网络请求前完成全部可表达性检查。
 func encodeRequest(
 	request inference.Request,
 	effectiveModel string,
+	officialClient bool,
 ) (encodedRequest, error) {
 	if effectiveModel == "" {
 		return encodedRequest{}, ErrUnsupportedRequest
@@ -64,6 +67,7 @@ func encodeRequest(
 		maxTokens:      maxTokens,
 		cache:          cache,
 		toolNames:      toolNames,
+		officialClient: officialClient,
 	}
 	if err := encoder.validateRequest(); err != nil {
 		return encodedRequest{}, err
@@ -173,7 +177,7 @@ func (encoder *requestEncoder) encode() (requestDTO, error) {
 		Model:             encoder.effectiveModel,
 		MaxTokens:         encoder.maxTokens,
 		Messages:          messages,
-		System:            system,
+		System:            prependClaudeCodeSystem(system, encoder.officialClient),
 		Stream:            true,
 		Temperature:       optionalFloat(encoder.request.Temperature()),
 		TopP:              optionalFloat(encoder.request.TopP()),

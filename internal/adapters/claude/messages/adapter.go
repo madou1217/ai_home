@@ -102,7 +102,11 @@ func (adapter *Adapter) Execute(
 		return inferencegateway.AttemptResult{}, err
 	}
 	effectiveModel := invocation.Route().EffectiveModel()
-	encoded, err := encodeRequest(invocation.Request(), effectiveModel)
+	encoded, err := encodeRequest(
+		invocation.Request(),
+		effectiveModel,
+		auth.officialClient,
+	)
 	if err != nil {
 		return inferencegateway.AttemptResult{}, err
 	}

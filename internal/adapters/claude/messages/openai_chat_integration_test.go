@@ -23,7 +23,7 @@ func TestClaudeReasoningAndToolRendersAsChat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Chat Decode() error = %v", err)
 	}
-	encoded, err := encodeRequest(request, request.Model())
+	encoded, err := encodeRequest(request, request.Model(), false)
 	if err != nil {
 		t.Fatalf("encodeRequest() error = %v", err)
 	}

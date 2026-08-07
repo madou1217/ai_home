@@ -24,6 +24,11 @@ type authProfile struct {
 	headerName  string
 	headerValue string
 	oauthBeta   bool
+	// officialClient 仅对官方端点上的订阅 OAuth 为真。
+	//
+	// 它与 oauthBeta 不是一回事：第三方 OAuth-token 中转端点同样需要 oauth beta，
+	// 但那不是 Claude Code 订阅通道，按官方客户端合同发送既无依据也可能被代理拒绝。
+	officialClient bool
 }
 
 // authSummary 是不含凭据的测试与诊断投影。
@@ -55,11 +60,17 @@ func projectAuth(credential accountapp.Credential) (authProfile, error) {
 			return authProfile{}, ErrInvalidInvocation
 		}
 		// 可刷新订阅 OAuth 没有独立 Base URL，始终指向官方 Messages 端点。
-		return newBearerProfile(
+		profile, err := newBearerProfile(
 			claudeauth.DefaultAPIBaseURL,
 			auth.AccessToken(),
 			true,
 		)
+		if err != nil {
+			return authProfile{}, err
+		}
+		// 只有这一条分支是官方端点上的订阅 OAuth。
+		profile.officialClient = true
+		return profile, nil
 	case *claudeauth.OAuthTokenAuth:
 		if auth == nil {
 			return authProfile{}, ErrInvalidInvocation
@@ -167,6 +178,7 @@ func buildHTTPRequest(
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("anthropic-version", anthropicVersion)
 	request.Header.Set(auth.headerName, auth.headerValue)
+	applyClaudeCodeIdentity(request.Header, auth.officialClient)
 
 	betas := append([]string(nil), encoded.betaHeaders...)
 	if auth.oauthBeta {

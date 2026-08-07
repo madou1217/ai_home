@@ -526,7 +526,7 @@ func TestRealClaudeLiveRequestsEncodeCurrentModelMaxTokens(t *testing.T) {
 		),
 	}
 	for name, request := range requests {
-		encoded, encodeErr := encodeRequest(request, model)
+		encoded, encodeErr := encodeRequest(request, model, false)
 		if encodeErr != nil {
 			t.Fatalf("%s encodeRequest() error = %v", name, encodeErr)
 		}

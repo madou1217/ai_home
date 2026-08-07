@@ -59,6 +59,8 @@ func TestDecodeAcceptsMissingOrNullOptionalOAuthMetadata(t *testing.T) {
 			mutate: func(payload map[string]any) {
 				delete(payload, "refreshTokenExpiresAt")
 				delete(payload, "clientId")
+				delete(payload, "subscriptionType")
+				delete(payload, "rateLimitTier")
 			},
 		},
 		{
@@ -66,6 +68,8 @@ func TestDecodeAcceptsMissingOrNullOptionalOAuthMetadata(t *testing.T) {
 			mutate: func(payload map[string]any) {
 				payload["refreshTokenExpiresAt"] = nil
 				payload["clientId"] = nil
+				payload["subscriptionType"] = nil
+				payload["rateLimitTier"] = nil
 			},
 		},
 	}
@@ -83,6 +87,31 @@ func TestDecodeAcceptsMissingOrNullOptionalOAuthMetadata(t *testing.T) {
 				t.Fatal("缺失或 null 的可选 OAuth 元数据应映射为领域零值")
 			}
 		})
+	}
+}
+
+// TestDecodeAcceptsOfficialCredentialsWithExtraFields 验证官方 credentials 包含
+// snake_case 双写、lastRefresh/expiry/account 等额外字段时仍然正常解码。
+func TestDecodeAcceptsOfficialCredentialsWithExtraFields(t *testing.T) {
+	payload := validOAuthPayload()
+	// 官方 credentials 包含 camelCase 与 snake_case 双写
+	payload["access_token"] = testAccessToken
+	payload["refresh_token"] = testRefreshToken
+	payload["expires_at"] = int64(4_102_444_800_000)
+	payload["last_refresh"] = "2026-08-07T00:00:00.000Z"
+	// 官方额外字段
+	payload["lastRefresh"] = "2026-08-07T00:00:00.000Z"
+	payload["expiry"] = "2026-08-07T00:00:00.000Z"
+	payload["account"] = map[string]any{
+		"emailAddress": "test@example.com",
+		"uuid":         "123e4567-e89b-12d3-a456-426614174000",
+	}
+	decoded, err := Decode(mustJSON(t, map[string]any{"claudeAiOauth": payload}), validDecodeOptions())
+	if err != nil {
+		t.Fatalf("解析含额外字段的官方 credentials 失败: %v", err)
+	}
+	if decoded.Auth.AccessToken() != testAccessToken {
+		t.Fatal("额外字段干扰了正常凭据解析")
 	}
 }
 
@@ -141,8 +170,6 @@ func TestDecodeRejectsNonCanonicalOAuth(t *testing.T) {
 		{name: "缺少 OAuth", data: []byte(`{}`)},
 		{name: "OAuth 为 null", data: []byte(`{"claudeAiOauth":null}`)},
 		{name: "snake_case 容器", data: mustJSON(t, map[string]any{"claude_ai_oauth": valid})},
-		{name: "未知 OAuth 字段", data: mutateOAuth(t, valid, "account", map[string]any{"uuid": "123"})},
-		{name: "snake_case Token", data: mutateOAuth(t, valid, "access_token", testAccessToken)},
 		{name: "缺少 Access Token", data: removeOAuthField(t, valid, "accessToken")},
 		{name: "Access Token 为 null", data: mutateOAuth(t, valid, "accessToken", nil)},
 		{name: "缺少 Refresh Token", data: removeOAuthField(t, valid, "refreshToken")},
@@ -151,8 +178,6 @@ func TestDecodeRejectsNonCanonicalOAuth(t *testing.T) {
 		{name: "RefreshTokenExpiresAt 为小数", data: mutateOAuth(t, valid, "refreshTokenExpiresAt", 1.5)},
 		{name: "ClientID 为数字", data: mutateOAuth(t, valid, "clientId", 123)},
 		{name: "Scopes 为字符串", data: mutateOAuth(t, valid, "scopes", "user:inference")},
-		{name: "缺少套餐字段", data: removeOAuthField(t, valid, "subscriptionType")},
-		{name: "缺少额度层级字段", data: removeOAuthField(t, valid, "rateLimitTier")},
 		{name: "重复顶层字段", data: []byte(`{"claudeAiOauth":{},"claudeAiOauth":{}}`)},
 		{name: "重复 OAuth 字段", data: []byte(`{"claudeAiOauth":{"accessToken":"first","accessToken":"second","refreshToken":"refresh","expiresAt":4102444800000,"scopes":["user:inference"],"subscriptionType":null,"rateLimitTier":null}}`)},
 	}

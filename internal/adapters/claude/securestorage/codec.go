@@ -68,19 +68,9 @@ func Decode(data []byte, options DecodeOptions) (DecodedOAuth, error) {
 	if !exists || jsonobject.IsNull(rawOAuth) {
 		return DecodedOAuth{}, invalidCredentials("claudeAiOauth 缺失")
 	}
-	oauthFields, err := jsonobject.DecodeShape(
-		rawOAuth,
-		[]string{
-			"accessToken",
-			"refreshToken",
-			"expiresAt",
-			"scopes",
-			"subscriptionType",
-			"rateLimitTier",
-		},
-		"refreshTokenExpiresAt",
-		"clientId",
-	)
+	// 官方 credentials 包含 camelCase 与 snake_case 双写、lastRefresh/expiry/account
+	// 等未来或内部字段。只取 AIH 需要的字段，忽略其余——不用 DecodeShape 白名单。
+	oauthFields, err := jsonobject.Decode(rawOAuth)
 	if err != nil {
 		return DecodedOAuth{}, invalidCredentials("claudeAiOauth 结构错误")
 	}
@@ -109,11 +99,12 @@ func Decode(data []byte, options DecodeOptions) (DecodedOAuth, error) {
 	if err != nil {
 		return DecodedOAuth{}, invalidCredentials("scopes 无效")
 	}
-	subscriptionType, err := decodeNullableMetadata(oauthFields["subscriptionType"])
+	// subscriptionType 和 rateLimitTier 在新版官方 credentials 中可能不存在。
+	subscriptionType, err := decodeOptionalMetadata(oauthFields["subscriptionType"])
 	if err != nil {
 		return DecodedOAuth{}, invalidCredentials("subscriptionType 无效")
 	}
-	rateLimitTier, err := decodeNullableMetadata(oauthFields["rateLimitTier"])
+	rateLimitTier, err := decodeOptionalMetadata(oauthFields["rateLimitTier"])
 	if err != nil {
 		return DecodedOAuth{}, invalidCredentials("rateLimitTier 无效")
 	}

@@ -134,6 +134,34 @@ test('keychain projection failure fails closed on macOS', () => {
   assert.equal(result.reason, 'keychain_write_failed');
 });
 
+test('host projection targets the default keychain service used by native Claude', () => {
+  const databaseCredentials = credentials('selected@example.com', 'selected-token');
+  const readOptions = [];
+  const writeOptions = [];
+  const reconcile = createClaudeHostCredentialReconciler({
+    processObj: { platform: 'darwin' },
+    hostHomeDir: '/Users/model',
+    readClaudeKeychainCredentialRecord: (options) => {
+      readOptions.push(options);
+      return null;
+    },
+    writeClaudeKeychainCredentials: (_value, options) => {
+      writeOptions.push(options);
+      return { ok: true };
+    },
+    writeAccountNativeAuth: () => assert.fail('must not rewrite DB credentials')
+  });
+
+  const result = reconcile(credentialRecord(databaseCredentials, 100));
+
+  assert.equal(result.ok, true);
+  assert.equal(result.keychainUpdated, true);
+  assert.equal(readOptions.length, 1);
+  assert.equal(writeOptions.length, 1);
+  assert.equal(Object.hasOwn(readOptions[0], 'configDir'), false);
+  assert.equal(Object.hasOwn(writeOptions[0], 'configDir'), false);
+});
+
 test('non-macOS hosts keep the DB credentials without touching keychain', () => {
   const databaseCredentials = credentials('selected@example.com', 'selected-token');
   const reconcile = createClaudeHostCredentialReconciler({

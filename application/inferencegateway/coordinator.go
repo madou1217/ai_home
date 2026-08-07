@@ -154,17 +154,39 @@ func (coordinator *Coordinator) executePlan(
 			route,
 			emit,
 		)
-		if err != nil || execution.terminal {
-			return err
-		}
 		if execution.pendingFailure != nil {
 			pendingFailure = execution.pendingFailure
+		}
+		if err != nil {
+			return finishInterruptedPlan(pendingFailure, err)
+		}
+		if execution.terminal {
+			return nil
 		}
 	}
 	if !supported {
 		return ErrUnsupportedRouteCapabilities
 	}
 	return finishExhaustedPlan(pendingFailure)
+}
+
+// finishInterruptedPlan 在编排被内部故障中断时优先交付已经记录的真实上游失败。
+//
+// 内部故障只说明「不能再试下一个账号」，并不否定上游已经给出的裁决。把它写成
+// 通用的服务不可用会抹掉真实状态码：客户端把限流当成网关故障，于是立即重试，
+// 与退避语义正好相反。因此终态成功送达后按正常编排返回，只有无失败可交付或
+// 交付本身失败时才上抛原始故障。
+func finishInterruptedPlan(
+	pendingFailure *attemptStream,
+	cause error,
+) error {
+	if pendingFailure == nil {
+		return cause
+	}
+	if err := pendingFailure.FlushTerminal(); err != nil {
+		return cause
+	}
+	return nil
 }
 
 // executeCandidate 解析精确协议 Adapter 后执行一个路由候选。
@@ -202,7 +224,8 @@ func (coordinator *Coordinator) executeRoute(
 					pendingFailure: pendingFailure,
 				}, nil
 			}
-			return routeExecution{}, err
+			// 征召中断发生在任何写出之前，已记录的真实上游失败仍然可交付。
+			return routeExecution{pendingFailure: pendingFailure}, err
 		}
 		invocation, err := newInvocation(
 			request,
@@ -211,20 +234,25 @@ func (coordinator *Coordinator) executeRoute(
 			recruited.Credential(),
 		)
 		if err != nil {
-			return routeExecution{}, err
+			return routeExecution{pendingFailure: pendingFailure}, err
 		}
-		pendingFailure, err = coordinator.executeAttempt(
+		outcome, err := coordinator.executeAttempt(
 			ctx,
 			invocation,
 			upstream,
 			emit,
 		)
 		if err != nil {
-			return routeExecution{}, err
+			if outcome.Visible() {
+				// 本次调用已经写出事件，补发更早的失败会破坏事件序列。
+				return routeExecution{}, err
+			}
+			return routeExecution{pendingFailure: pendingFailure}, err
 		}
-		if pendingFailure == nil {
+		if !outcome.retry {
 			return routeExecution{terminal: true}, nil
 		}
+		pendingFailure = outcome.stream
 	}
 	return routeExecution{pendingFailure: pendingFailure}, nil
 }
@@ -269,27 +297,28 @@ func (coordinator *Coordinator) executeAttempt(
 	invocation Invocation,
 	upstream UpstreamAdapter,
 	emit EventSink,
-) (*attemptStream, error) {
+) (attemptOutcome, error) {
 	stream := newAttemptStream(emit)
+	outcome := newAttemptOutcome(stream, false)
 	result, executeErr := upstream.Execute(ctx, invocation, stream.Accept)
 	if stream.Err() != nil {
-		return nil, stream.Err()
+		return outcome, stream.Err()
 	}
 	if executeErr != nil {
-		return nil, fmt.Errorf("执行上游推理失败: %w", executeErr)
+		return outcome, fmt.Errorf("执行上游推理失败: %w", executeErr)
 	}
 	if !result.IsValid() {
-		return nil, ErrInvalidAttemptResult
+		return outcome, ErrInvalidAttemptResult
 	}
 	route, err := runtimecore.NewModelRoute(
 		invocation.Account().Ref(),
 		invocation.Route().EffectiveModel(),
 	)
 	if err != nil {
-		return nil, ErrInvalidInvocation
+		return outcome, ErrInvalidInvocation
 	}
 	if result.Completed() {
-		return nil, coordinator.completeAttempt(ctx, route, stream)
+		return outcome, coordinator.completeAttempt(ctx, route, stream)
 	}
 	retry, err := coordinator.failAttempt(
 		ctx,
@@ -298,10 +327,10 @@ func (coordinator *Coordinator) executeAttempt(
 		result.Failure(),
 		stream,
 	)
-	if err != nil || !retry {
-		return nil, err
+	if err != nil {
+		return outcome, err
 	}
-	return stream, nil
+	return newAttemptOutcome(stream, retry), nil
 }
 
 // completeAttempt 先清理当前元组状态，再提交成功终态。

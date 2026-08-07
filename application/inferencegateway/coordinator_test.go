@@ -1377,12 +1377,13 @@ func TestCoordinatorRejectsMismatchedFailureTerminal(t *testing.T) {
 
 // coordinatorFixture 保存执行器测试共用的真实 Recruiter 和显式 Route。
 type coordinatorFixture struct {
-	catalog   *providers.Catalog
-	accounts  []accountapp.RoutingAccount
-	source    *candidateSource
-	recruit   *accountrouting.Recruiter
-	route     inferencegateway.Route
-	refreshes *modelRefreshScheduler
+	catalog     *providers.Catalog
+	accounts    []accountapp.RoutingAccount
+	credentials map[accountcore.AccountRef]accountapp.Credential
+	source      *candidateSource
+	recruit     *accountrouting.Recruiter
+	route       inferencegateway.Route
+	refreshes   *modelRefreshScheduler
 }
 
 // newCoordinatorFixture 创建按 AccountRef 排序的合成账号征召边界。
@@ -1469,13 +1470,38 @@ func newCoordinatorFixture(
 		t.Fatalf("NewRoute() error = %v", err)
 	}
 	return &coordinatorFixture{
-		catalog:   catalog,
-		accounts:  accounts,
-		source:    source,
-		recruit:   recruiter,
-		route:     route,
-		refreshes: &modelRefreshScheduler{},
+		catalog:     catalog,
+		accounts:    accounts,
+		credentials: credentials,
+		source:      source,
+		recruit:     recruiter,
+		route:       route,
+		refreshes:   &modelRefreshScheduler{},
 	}
+}
+
+// newCoordinatorWithCredentials 用显式凭据解析器重建征召边界。
+// 只有需要制造凭据仓库级故障的用例才需要它，其余用例仍走 fixture 默认解析器。
+func (fixture *coordinatorFixture) newCoordinatorWithCredentials(
+	t testing.TB,
+	upstream inferencegateway.UpstreamAdapter,
+	recorder inferencegateway.AttemptRecorder,
+	credentials accountrouting.CredentialResolver,
+) *inferencegateway.Coordinator {
+	t.Helper()
+
+	recruiter, err := accountrouting.NewRecruiter(
+		accountrouting.Dependencies{
+			Candidates:  fixture.source,
+			Runtime:     availableRuntime{},
+			Credentials: credentials,
+		},
+	)
+	if err != nil {
+		t.Fatalf("NewRecruiter() error = %v", err)
+	}
+	fixture.recruit = recruiter
+	return fixture.newCoordinator(t, upstream, recorder)
 }
 
 // newCoordinator 使用真实 Recruiter 和精确上游 Registry 创建执行器。

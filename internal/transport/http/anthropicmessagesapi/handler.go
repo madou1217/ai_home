@@ -166,43 +166,15 @@ func (handler *Handler) executeNonStream(
 	canonicalRequest inference.Request,
 ) {
 	aggregator := handler.adapter.NewResponseAggregator(canonicalRequest)
-	var sinkErr error
-	var failure inference.ResponseFailure
-	var failed bool
-	var observed bool
+	sink := inferenceapi.NewNonStreamSink(aggregator)
 	executionErr := handler.executor.Execute(
 		request.Context(),
 		canonicalRequest,
-		func(event inference.StreamEvent) error {
-			eventFailure, isFailure := event.(inference.ResponseFailedEvent)
-			if isFailure {
-				if !observed {
-					failure = eventFailure.Failure()
-					if event.Sequence() != 0 || !failure.IsValid() {
-						sinkErr = errInvalidPreCommitFailure
-						return sinkErr
-					}
-					observed = true
-					failed = true
-					return nil
-				}
-				failure = eventFailure.Failure()
-				failed = true
-			}
-			if failed && !isFailure {
-				sinkErr = errInvalidPreCommitFailure
-				return sinkErr
-			}
-			observed = true
-			if err := aggregator.Add(event); err != nil {
-				sinkErr = err
-				return err
-			}
-			return nil
-		},
+		sink.Accept,
 	)
+	failure, failed := sink.Failure()
 	switch {
-	case sinkErr != nil:
+	case sink.Err() != nil:
 		writeAPIError(
 			response,
 			http.StatusBadGateway,

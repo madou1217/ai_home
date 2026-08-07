@@ -136,10 +136,6 @@ func validateSupportedRootFields(wireRequest requestDTO) error {
 		return unsupportedField("prompt_cache_options")
 	case wireRequest.PromptCacheRetention != nil:
 		return unsupportedField("prompt_cache_retention")
-	case hasJSONValue(wireRequest.Metadata):
-		return unsupportedField("metadata")
-	case wireRequest.ServiceTier != nil:
-		return unsupportedField("service_tier")
 	case wireRequest.SafetyIdentifier != nil:
 		return unsupportedField("safety_identifier")
 	case wireRequest.TopLogprobs != nil:
@@ -149,6 +145,8 @@ func validateSupportedRootFields(wireRequest requestDTO) error {
 	case wireRequest.MaxOutputTokens != nil && *wireRequest.MaxOutputTokens == 0:
 		return invalidField("max_output_tokens")
 	default:
+		// service_tier / metadata 是 OpenAI 特有的调度或透传提示，
+		// 跨协议转码时静默丢弃——不进入 Canonical Request，也不拒绝客户端。
 		return nil
 	}
 }

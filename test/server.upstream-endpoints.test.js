@@ -4423,3 +4423,141 @@ test('Gemini Code Assist 401 blocks account and returns pool unavailable', async
   assert.match(String(body.detail || ''), /auth_invalid_reauth_required/);
   assert.equal(Number(account.cooldownUntil || 0) > Date.now(), true);
 });
+
+// 池子里只剩一个账号时，真实的上游 429 会先冷却该 (账号,模型) 再请求换号；换不出账号
+// 不代表没打过上游——客户端必须看到 429，而不是被粉饰成「无可调度账号」的 503。
+test('sole-account 429 surfaces the upstream status instead of no_available_account', async () => {
+  const res = createResCapture();
+  const accounts = [
+    { accountRef: accountRef('solo-429'), email: 'solo@example.com', accessToken: 'tok-solo', cooldownUntil: 0 }
+  ];
+  const state = {
+    accounts: { claude: accounts },
+    cursors: { claude: 0 },
+    metrics: { totalFailures: 0, totalSuccess: 0, totalTimeouts: 0, providerFailures: {}, providerSuccess: {} }
+  };
+  let upstreamCalls = 0;
+
+  await handleUpstreamPassthrough({
+    options: {
+      provider: 'claude',
+      claudeBaseUrl: 'https://example.com',
+      upstreamTimeoutMs: 3000,
+      maxAttempts: 3,
+      failureThreshold: 2,
+      logRequests: false
+    },
+    state,
+    req: { url: '/v1/messages', headers: { 'content-type': 'application/json' } },
+    res,
+    method: 'POST',
+    bodyBuffer: Buffer.from('{"model":"claude-opus-5","messages":[]}'),
+    requestJson: { model: 'claude-opus-5', messages: [] },
+    routeKey: 'POST /v1/messages',
+    requestStartedAt: Date.now(),
+    cooldownMs: 1000,
+    requestMeta: { requestId: 'solo-429' },
+    deps: {
+      chooseServerAccount: chooseAvailableAccount,
+      resolveRequestProvider: () => 'claude',
+      pushMetricError: () => {},
+      writeJson: (r, code, payload) => {
+        r.statusCode = code;
+        r.setHeader('content-type', 'application/json');
+        r.end(JSON.stringify(payload));
+      },
+      fetchWithTimeout: async () => {
+        upstreamCalls += 1;
+        return {
+          status: 429,
+          headers: new Map([['content-type', 'application/json'], ['retry-after', '300']]),
+          arrayBuffer: async () => Buffer.from('{"type":"error","error":{"type":"rate_limit_error","message":"Error"}}')
+        };
+      },
+      markProxyAccountFailure: markFailureWithCooldown,
+      markProxyAccountSuccess: () => {},
+      // 真实网关注入了 token 刷新器，编排器因此多出 1 次鉴权重试预算：429 之后还会再要
+      // 一个账号，要不到就落到 no_account——正是把 429 洗成 503 的那条路径。
+      refreshClaudeAccessToken: async () => null,
+      appendProxyRequestLog: () => {}
+    }
+  });
+
+  assert.equal(upstreamCalls, 1);
+  assert.equal(res.statusCode, 429);
+  const body = JSON.parse(String(res.body));
+  assert.equal(body.error, 'upstream_failed');
+  assert.match(String(body.detail || ''), /rate_limit_error/);
+  assert.doesNotMatch(String(res.body), /no schedulable claude account/);
+  assert.doesNotMatch(String(res.body), /no_available_account/);
+  assert.equal(state.metrics.totalFailures, 1);
+});
+
+// 别名还有下一个候选时，延迟结果同样要带上真实的上游状态码，否则换成 alias 分支之后
+// 「429 被吞掉」会原样复现。
+test('sole-account 429 keeps the upstream status when deferring to the next alias candidate', async () => {
+  const res = createResCapture();
+  const accounts = [
+    { accountRef: accountRef('solo-429-alias'), email: 'solo@example.com', accessToken: 'tok-solo', cooldownUntil: 0 }
+  ];
+  const state = {
+    accounts: { claude: accounts },
+    cursors: { claude: 0 },
+    metrics: { totalFailures: 0, totalSuccess: 0, totalTimeouts: 0, providerFailures: {}, providerSuccess: {} }
+  };
+
+  const result = await handleUpstreamPassthrough({
+    options: {
+      provider: 'claude',
+      claudeBaseUrl: 'https://example.com',
+      upstreamTimeoutMs: 3000,
+      maxAttempts: 3,
+      failureThreshold: 2,
+      logRequests: false
+    },
+    state,
+    req: { url: '/v1/messages', headers: { 'content-type': 'application/json' } },
+    res,
+    method: 'POST',
+    bodyBuffer: Buffer.from('{"model":"claude-opus-5","messages":[]}'),
+    requestJson: { model: 'claude-opus-5', messages: [] },
+    requestMeta: {
+      requestId: 'solo-429-alias',
+      aliasRuntimeFallback: { enabled: true },
+      aliasResolution: {
+        aliasMatched: true,
+        aliasId: 'alias-gpt-to-opus',
+        requestedModel: 'gpt-5.5',
+        aliasTarget: 'claude-opus-5'
+      }
+    },
+    routeKey: 'POST /v1/messages',
+    requestStartedAt: Date.now(),
+    cooldownMs: 1000,
+    deps: {
+      chooseServerAccount: chooseAvailableAccount,
+      resolveRequestProvider: () => 'claude',
+      pushMetricError: () => {},
+      writeJson: (r, code, payload) => {
+        r.statusCode = code;
+        r.setHeader('content-type', 'application/json');
+        r.end(JSON.stringify(payload));
+      },
+      fetchWithTimeout: async () => ({
+        status: 429,
+        headers: new Map([['content-type', 'application/json'], ['retry-after', '300']]),
+        arrayBuffer: async () => Buffer.from('{"type":"error","error":{"type":"rate_limit_error","message":"Error"}}')
+      }),
+      markProxyAccountFailure: markFailureWithCooldown,
+      markProxyAccountSuccess: () => {},
+      refreshClaudeAccessToken: async () => null,
+      appendProxyRequestLog: () => {}
+    }
+  });
+
+  assert.equal(result.retryAliasCandidate, true);
+  assert.equal(result.statusCode, 429);
+  assert.equal(result.error, 'upstream_failed');
+  assert.match(String(result.detail || ''), /rate_limit_error/);
+  assert.equal(res.statusCode, 0);
+});

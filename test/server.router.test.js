@@ -457,6 +457,50 @@ test('no available account response uses 401 when every account is auth invalid'
   assert.equal(response.payload.availability.available, 0);
 });
 
+// 只是被上游限流冷却时，真相是 429 而不是「网关没有可调度账号」。报 503 会让 codex 之类的
+// 客户端把它当成网关故障；429 + Retry-After 才是它能按限流退避的语义。
+test('no available account response uses 429 when every account is only rate-limit cooled', () => {
+  const now = Date.now();
+  const response = buildNoAvailableAccountResponse('claude', [
+    {
+      accountRef: accountRef('1'),
+      schedulableStatus: 'schedulable',
+      cooldownUntil: 0,
+      modelCooldowns: {
+        'claude-opus-5': now + 300_000
+      },
+      lastError: 'upstream_429: {"type":"error","error":{"type":"rate_limit_error"}}'
+    }
+  ], {
+    model: 'claude-opus-5',
+    now
+  });
+
+  assert.equal(response.statusCode, 429);
+  assert.equal(response.payload.error, 'upstream_rate_limited');
+  assert.equal(response.retryAfterSeconds, 300);
+  assert.equal(response.payload.retryAfterSeconds, 300);
+  assert.match(response.payload.detail, /model_cooldown:claude-opus-5/);
+});
+
+// 非限流原因的冷却（网络抖动、5xx）不能被说成限流，仍旧是 503。
+test('no available account response stays 503 when the cooldown is not a rate limit', () => {
+  const now = Date.now();
+  const response = buildNoAvailableAccountResponse('claude', [
+    {
+      accountRef: accountRef('1'),
+      schedulableStatus: 'schedulable',
+      cooldownUntil: now + 30_000,
+      lastError: 'upstream_502'
+    }
+  ], {
+    now
+  });
+
+  assert.equal(response.statusCode, 503);
+  assert.equal(response.payload.error, 'no_available_account');
+});
+
 test('mark success/failure updates account runtime fields', () => {
   const acc = { consecutiveFailures: 1, successCount: 0, failCount: 0, lastError: 'x', cooldownUntil: 0 };
   markProxyAccountSuccess(acc);

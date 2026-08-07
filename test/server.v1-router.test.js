@@ -11,6 +11,8 @@ const {
 } = require('../lib/server/upstream-endpoints');
 const { loadAliases, saveAliases } = require('../lib/server/model-alias-store');
 const { SUPPORTED_SERVER_PROVIDERS } = require('../lib/server/providers');
+const { buildModelAccountIndex } = require('../lib/server/model-account-index');
+const { applyReloadState } = require('../lib/server/management');
 
 const V1_CODEX_REF_1 = 'acct_0123456789abcdefabcd';
 const V1_CODEX_REF_2 = 'acct_abcdefabcdefabcdefab';
@@ -3156,6 +3158,110 @@ test('v1 router last-resorts to a soft-cooled alias target instead of 503ing the
   const body = JSON.parse(res.body);
   assert.notEqual(body.error, 'no_available_account');
   assert.doesNotMatch(JSON.stringify(body), /temporarily rate-limited\/cooling down/);
+});
+
+test('v1 router last-resorts a single-candidate alias after an account reload replaced the pool', async () => {
+  // Production shape of the gpt-* → claude-opus-5 503: the inverted index is built
+  // once at startup and holds Object.create() wrappers over the startup account
+  // objects. A later reload swaps state.accounts for brand-new objects carrying the
+  // post-429 (account, model) cooldown. If the index is not rebound, alias pre-check
+  // reads the frozen "not cooled" snapshot, takes the warm-index fast path, and drops
+  // lastResort — so allowModelCooled stays false and downstream pool filtering (which
+  // sees the fresh objects) empties out into `no schedulable claude account`.
+  const res = createResCapture();
+  const until = Date.now() + 300000;
+  let passthroughCalled = false;
+  let sawAllowModelCooled = false;
+
+  const startupAccount = {
+    accountRef: V1_CLAUDE_REF_1,
+    provider: 'claude',
+    accessToken: 'claude-token',
+    authType: 'oauth',
+    configured: true,
+    availableModels: ['claude-opus-5', 'claude-haiku-4-5-20251001'],
+    modelCooldowns: {}
+  };
+  const state = {
+    accounts: { codex: [], gemini: [], agy: [], claude: [startupAccount] },
+    cursors: { claude: 0 },
+    sessionAffinity: {},
+    modelAliases: {
+      aliases: [
+        {
+          id: 'alias-gpt-to-opus',
+          alias: 'gpt-*',
+          target: 'claude-opus-5',
+          provider: 'codex',
+          targetProvider: 'claude',
+          priority: 0,
+          enabled: true
+        }
+      ]
+    },
+    metrics: { totalRequests: 0, routeCounts: {}, totalSuccess: 0, providerCounts: {}, providerSuccess: {}, providerFailures: {} }
+  };
+  state.modelAccountIndex = buildModelAccountIndex(state, {});
+  applyReloadState(state, {
+    codex: [],
+    gemini: [],
+    agy: [],
+    claude: [{ ...startupAccount, modelCooldowns: { 'claude-opus-5': until } }]
+  });
+
+  const handled = await handleV1Request({
+    req: { headers: {}, url: '/v1/responses' },
+    res,
+    method: 'POST',
+    pathname: '/v1/responses',
+    options: { backend: 'codex-adapter', provider: 'auto' },
+    state,
+    requiredClientKey: '',
+    cooldownMs: 1000,
+    maxRequestBodyBytes: 1024 * 1024,
+    requestMeta: {},
+    deps: {
+      parseAuthorizationBearer: () => '',
+      writeJson: (r, code, payload) => { r.statusCode = code; r.end(JSON.stringify(payload)); },
+      readRequestBody: async () => Buffer.from(JSON.stringify({
+        model: 'gpt-5.5',
+        stream: false,
+        input: [{ role: 'user', content: [{ type: 'input_text', text: 'ping' }] }]
+      })),
+      buildOpenAIModelsList: () => ({ object: 'list', data: [] }),
+      resolveRequestProvider: (options, requestJson, headers, s) => require('../lib/server/router').resolveRequestProvider(options, requestJson, headers, s),
+      handleCodexModels: async () => {},
+      handleCodexChatCompletions: async (ctx) => {
+        passthroughCalled = true;
+        sawAllowModelCooled = Boolean(ctx && ctx.requestMeta && ctx.requestMeta.allowModelCooled);
+        ctx.res.statusCode = 200;
+        ctx.res.end(JSON.stringify({ ok: true, via: 'codex-adapter' }));
+      },
+      handleUpstreamModels: async () => {},
+      handleUpstreamPassthrough: async (ctx) => {
+        passthroughCalled = true;
+        sawAllowModelCooled = Boolean(ctx && ctx.requestMeta && ctx.requestMeta.allowModelCooled);
+        ctx.res.statusCode = 200;
+        ctx.res.end(JSON.stringify({ ok: true, via: 'passthrough' }));
+      },
+      chooseServerAccount: () => null,
+      markProxyAccountSuccess: () => {},
+      markProxyAccountFailure: () => {},
+      pushMetricError: () => {},
+      appendProxyRequestLog: () => {},
+      fetchModelsForAccount: async () => [],
+      FALLBACK_MODELS: [],
+      fetchWithTimeout: async () => ({})
+    }
+  });
+
+  assert.equal(handled, true);
+  assert.equal(passthroughCalled, true);
+  // The decisive assertion: the cooled sole candidate must be attempted as a last
+  // resort, which is exactly what account selection needs to serve the cooled model.
+  assert.equal(sawAllowModelCooled, true);
+  assert.doesNotMatch(res.body, /no schedulable claude account/);
+  assert.doesNotMatch(res.body, /model_cooldown:claude-opus-5/);
 });
 
 test('v1 router still 503s when alias targets only have hard-down (auth) accounts', async () => {

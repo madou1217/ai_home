@@ -182,9 +182,48 @@ Go 多出 `completed_at`、`error`、`text.format`、`tools`，以及
 
 - 1：不照抄，按 opt-in 重新设计；模态数据源仍要补。
 - 2：待对照 OpenAI 契约定论，未定不动。
-- 3：(A) 已修；(B) 四个字段是切流硬门。
+- 3：(A) 已修；(B) 见下节——它不是「给 Canonical 加四个字段」的问题。
 
 影子比对应在每次改动 Canonical 编解码后重跑。
+
+## (B) 的正确解法：不是扩 Canonical，是让同协议走透传
+
+直觉做法是把 `stop_details`、`usage.service_tier`、`usage.inference_geo`、
+`usage.cache_creation` 加进 `core/inference.Usage`。**这个做法是错的**，两条依据：
+
+1. **违反依赖内向。** 这四个都是 Anthropic 特有词汇：`service_tier` 是 Anthropic
+   的调度层级，`inference_geo` 是它的地域标识，`cache_creation` 的 1h/5m 分项是
+   它的 TTL taxonomy，`stop_details` 是它的 refusal 分类。让协议中立的 core 认识
+   某一家 provider 的词汇，就是「依赖外向」（AGENTS.md 架构原则）。
+
+2. **与请求方向的既定原则冲突。** `f162be1` 已经定过一次：`service_tier` 和
+   `metadata` 是 provider 特有提示，跨协议转码时**静默丢弃，不进 Canonical**。
+   响应方向若一致适用，这四个字段同样不该进 Canonical。
+
+那么信息丢失说明的是另一件事：**claude 客户端调 claude 账号，本就不该走
+Canonical。** 同协议时这些信息是 1:1 的，重建一遍只会丢；跨协议时它们在目标
+协议里根本没有等价物，丢弃才是正确语义。无损通道已经存在——Native Relay。
+
+真正的缺口在分发层：`internal/host/aihserver/router.go:93-103` 的
+`claudeMessagesDispatcher` **只按 Relay Token 头决定是否透传**，也就是只有官方
+Claude Code 托管启动才走无损路径；其它任何客户端打 `/v1/messages`，即使上游就是
+claude 账号，也被送进 Canonical 重建。
+
+而 `transportpolicy.GatewayPolicy` 其实**已经**表达了「官方 OAuth 优先保留原生
+证明」这个策略（`TransportNativeOAuth` / `TransportCanonical`），只是 HTTP 入口
+没有消费它。
+
+### 下一步的实际工作
+
+让 `/v1/messages` 的分发消费 `GatewayPolicy`，而不是只看 Relay Token。
+
+已知障碍（不是拍脑袋能绕过的）：Native Relay 现在从**可信租约**解析 AccountRef
+（`claudenativerelay.Authorizer`），而普通客户端只有网关 client key，没有租约。
+所以需要一个由**调度器**而非租约提供账号的 relay 变体，且仍要保留冷却、别名解析
+与多账号轮转。
+
+这条路走通后，(B) 的四个字段自然无损，不需要污染 Canonical；Canonical 回归它真正
+该负责的场景——跨协议。
 
 ## 维护
 

@@ -49,6 +49,18 @@ Fuller layer map:
   change a human should decide to record.
 - `npm run models:check`: report how far behind upstream the submodule is and exit
   non-zero when stale. Intended for CI so the gap cannot drift silently.
+- `npm run gateway:routes`: read-only scan of both gateways' HTTP paths and their
+  data-plane diff. Backs `docs/architecture/go-node-parity-matrix.md`; `--json`
+  for CI. Note it collects path literals, so router scope guards (`/v1/`,
+  `/v1beta/`) show up as if they were endpoints — the matrix records which are.
+- `npm run gateway:shadow -- --node <url> --go <url> [--include-inference]`:
+  send the same requests to both gateways and diff status plus response
+  structure. Read-only probes by default (no token cost); `--include-inference`
+  adds one minimal request per client protocol. Keys come from flags or
+  `AIH_SHADOW_NODE_KEY` / `AIH_SHADOW_GO_KEY` and are never written to disk or
+  printed. This is the only evidence that Go can replace Node — unit tests cannot
+  see upstream behaviour differences. Re-run it after any change to Canonical
+  encode/decode.
 
 ## Coding Style & Naming Conventions
 - Main body (`lib/`): Node.js CommonJS (`require`, `module.exports`).

@@ -97,6 +97,53 @@ Node 9527 探测，`/v1beta/models` 与 `/v1/unknown-endpoint` 均返回 404，�
 - `/v1/blobs/{id}`：依赖 Go 侧尚不存在的 vision-guard blob 链路，独立课题。
 - `/v1beta/`、`/v1/` 兜底：不是端点（见 A 档说明）。
 
+## 第三步：影子比对结果（2026-08-08 首轮）
+
+同一账号、同一时刻、同一请求分别发给 Node 9527 与 Go，比状态码与响应结构。
+5 条探针全部 200，**3 条结构不一致**。
+
+```bash
+node scripts/gateway-shadow-compare.js \
+  --node http://127.0.0.1:9527 --go http://127.0.0.1:19550 \
+  --include-inference
+```
+
+### 1. `/v1/models`：Go 缺 `aih_modalities`
+
+Node 每个模型附带输入/输出模态（`lib/server/models.js:81`），让客户端不必逐个探测
+就能挑出支持视觉/出图的模型，数据源是 models.dev 元数据加保守家族兜底。
+
+Go 侧没有 models.dev 集成，字段整体缺失。**这是切流的真实阻塞**：依赖该字段做
+能力路由的客户端在 Go 上会退化成「所有模型都不支持视觉」。补齐需要在 Go 侧引入
+模态索引，不是加个字段那么简单。
+
+### 2. `/v1/responses`：Go 比 Node 多发字段
+
+Go 多出 `completed_at`、`error`、`text.format`、`tools`，以及
+`usage.input_tokens_details` / `usage.output_tokens_details`。方向与 1 相反——
+Go 更贴近 OpenAI Responses 完整形状，Node 更精简。
+
+严格客户端两个方向都可能出问题：多字段可能被 schema 校验拒绝，少字段可能触发
+空指针。需要按真实客户端逐一确认取舍，不能想当然认为「多即更好」。
+
+### 3. `/v1/messages`：Go 的重建丢了上游真实字段
+
+**这条最关键，因为 Node 在这条路径上是字节透传，它的形状就是上游真相。**
+
+Node（= Anthropic 原样）有而 Go 没有：`stop_details`、`usage.service_tier`、
+`usage.cache_creation`（细分 1h/5m）、`usage.inference_geo`（真实取值）。
+
+Go 有而上游没有：`container`、`content[].citations`、`usage.server_tool_use`，
+且 `cache_creation` / `inference_geo` 恒为 `null`。
+
+即 Canonical 重建既**丢了**上游真实信息，又**注入了**上游没发的空字段。计费与
+缓存可观测性依赖 `usage.*`，这条必须在切流前对齐。
+
+### 结论
+
+切流前必须解决 1 与 3；2 需要按客户端确认。影子比对应在每次改动 Canonical
+编解码后重跑。
+
 ## 维护
 
 路径清单会随开发漂移。重新采集：

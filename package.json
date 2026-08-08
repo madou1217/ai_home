@@ -9,6 +9,8 @@
     "providers:check": "go run ./cmd/provider-manifest --check",
     "models:sync": "node scripts/sync-models-dev.js",
     "models:check": "node scripts/sync-models-dev.js --check",
+    "gateway:routes": "node scripts/collect-gateway-routes.js",
+    "gateway:shadow": "node scripts/gateway-shadow-compare.js",
     "test:providers": "go test ./core/providers ./cmd/provider-manifest && npm run providers:check && node --test test/provider-contract.test.js test/provider-catalog.test.js test/accounts-provider-auth-options.test.js test/native-capability-registry.test.js test/provider-session-hook-config.test.js",
     "test:desktop-portable": "node --test scripts/desktop/desktop-harness.test.js test/active-control-plane.test.js test/control-plane-api-client.test.js test/control-plane-endpoints.test.js test/control-plane-profiles.test.js test/control-plane-selection.test.js test/desktop-menu-model.test.js test/desktop-renderer-config.test.js test/fabric-profile-gate.test.js test/management-key-auth.test.js test/management-key-rotation.test.js test/management-key-rotation-web.test.js test/native-axios-adapter.test.js test/native-control-plane-profiles.test.js test/open-external-url.test.js test/server-profile-command.test.js test/server-transport-browser-adapter.test.js test/server-transport-native-error.test.js test/server-transport-sse-parser.test.js test/server-transport-tauri-adapter.test.js test/server.management-router.test.js test/web.load-failure-message.test.js test/web.session-history-window.test.js test/webui-auth-transport.test.js",
     "postinstall": "node scripts/postinstall.js",

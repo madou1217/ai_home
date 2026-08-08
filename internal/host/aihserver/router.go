@@ -9,6 +9,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/anthropicmessagesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/claudenativerelay"
 	"github.com/madou1217/ai_home/internal/transport/http/clauderelayleaseapi"
+	"github.com/madou1217/ai_home/internal/transport/http/clientpropsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/modelsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/openaichatcompletionsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/openairesponsesapi"
@@ -62,6 +63,7 @@ func newRouter(handlers serverHandlers) http.Handler {
 	mux.Handle(accountsapi.SelectionPath, handlers.accounts)
 	mux.Handle(accountsapi.DefaultsPath+"/", handlers.accounts)
 	mux.Handle(modelsapi.Path, handlers.models)
+	mux.Handle(clientpropsapi.Path, clientpropsapi.NewHandler())
 	mux.Handle(accountauthapi.CollectionPath, handlers.accountAuth)
 	mux.Handle(accountauthapi.CollectionPath+"/", handlers.accountAuth)
 	mux.Handle(

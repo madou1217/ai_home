@@ -100,6 +100,107 @@ test('codex adapter applies provider protocol parameter policy to native respons
   assert.equal(Object.hasOwn(payload, 'temperature'), false);
 });
 
+test('codex adapter removes response item ids with prefixes that do not match their types', () => {
+  const request = {
+    model: 'gpt-5.6-sol',
+    input: [
+      {
+        type: 'reasoning',
+        id: 'item_dab9d262cf10a9470f013136',
+        summary: [{ type: 'summary_text', text: 'previous reasoning' }],
+        encrypted_content: null
+      },
+      {
+        type: 'reasoning',
+        id: 'rs_valid_reasoning_id',
+        summary: [],
+        encrypted_content: 'opaque'
+      },
+      {
+        type: 'message',
+        id: 'item_invalid_message',
+        role: 'assistant',
+        content: [{ type: 'output_text', text: 'previous response' }]
+      },
+      {
+        type: 'message',
+        id: 'msg_previous',
+        role: 'user',
+        content: [{ type: 'input_text', text: 'continue' }]
+      },
+      {
+        type: 'function_call',
+        id: 'item_invalid_function_call',
+        call_id: 'call_invalid',
+        name: 'lookup',
+        arguments: '{}'
+      },
+      {
+        type: 'function_call',
+        id: 'fc_valid_function_call',
+        call_id: 'call_valid',
+        name: 'lookup',
+        arguments: '{}'
+      },
+      {
+        type: 'function_call_output',
+        id: 'item_invalid_function_call_output',
+        call_id: 'call_valid',
+        output: 'ok'
+      },
+      {
+        type: 'function_call_output',
+        id: 'fco_valid_function_call_output',
+        call_id: 'call_valid',
+        output: 'ok'
+      },
+      {
+        type: 'custom_tool_call',
+        id: 'item_invalid_custom_tool_call',
+        call_id: 'call_custom',
+        name: 'exec',
+        input: '{}'
+      },
+      {
+        type: 'custom_tool_call',
+        id: 'ctc_valid_custom_tool_call',
+        call_id: 'call_custom',
+        name: 'exec',
+        input: '{}'
+      },
+      {
+        type: 'custom_tool_call_output',
+        id: 'item_invalid_custom_tool_call_output',
+        call_id: 'call_custom',
+        output: 'ok'
+      },
+      {
+        type: 'custom_tool_call_output',
+        id: 'ctco_valid_custom_tool_call_output',
+        call_id: 'call_custom',
+        output: 'ok'
+      }
+    ]
+  };
+
+  const payload = __private.convertOpenAIResponsesToCodexPayload(request, 'gpt-5.6-sol');
+
+  assert.equal(Object.hasOwn(payload.input[0], 'id'), false);
+  assert.equal(payload.input[1].id, 'rs_valid_reasoning_id');
+  assert.equal(Object.hasOwn(payload.input[2], 'id'), false);
+  assert.equal(payload.input[3].id, 'msg_previous');
+  assert.equal(Object.hasOwn(payload.input[4], 'id'), false);
+  assert.equal(payload.input[5].id, 'fc_valid_function_call');
+  assert.equal(Object.hasOwn(payload.input[6], 'id'), false);
+  assert.equal(payload.input[7].id, 'fco_valid_function_call_output');
+  assert.equal(Object.hasOwn(payload.input[8], 'id'), false);
+  assert.equal(payload.input[9].id, 'ctc_valid_custom_tool_call');
+  assert.equal(Object.hasOwn(payload.input[10], 'id'), false);
+  assert.equal(payload.input[11].id, 'ctco_valid_custom_tool_call_output');
+  assert.equal(request.input[0].id, 'item_dab9d262cf10a9470f013136');
+  assert.equal(request.input[2].id, 'item_invalid_message');
+});
+
 test('codex adapter rebuilds native non-stream output from output_item.done events', () => {
   const sse = [
     'data: {"type":"response.created","response":{"id":"resp_native","created_at":1700000000,"model":"gpt-5.5","output":[]}}',
@@ -703,6 +804,90 @@ test('codex adapter returns openai error shape for native responses upstream err
   assert.equal(body.error.type, 'invalid_request_error');
   assert.match(body.error.message, /No tool call found/);
   assert.equal(body.ok, undefined);
+});
+
+test('codex adapter returns SSE invalid_request_error without retrying or cooling the account', async () => {
+  const res = createResCapture();
+  const account = {
+    accountRef: accountRef('invalid-sse'),
+    accessToken: 'sk-live',
+    apiKeyMode: true,
+    authType: 'api-key',
+    openaiBaseUrl: 'https://proxy.example.com/v1'
+  };
+  const state = {
+    accounts: { codex: [account] },
+    cursors: { codex: 0 },
+    metrics: { totalFailures: 0, totalSuccess: 0, totalTimeouts: 0 }
+  };
+  const failures = [];
+  const requestLogs = [];
+  let upstreamCalls = 0;
+
+  await handleCodexChatCompletions({
+    options: {
+      codexBaseUrl: 'https://chatgpt.com/backend-api/codex',
+      upstreamTimeoutMs: 3000,
+      maxAttempts: 2,
+      failureThreshold: 1,
+      logRequests: true
+    },
+    state,
+    req: { headers: { 'content-type': 'application/json' } },
+    res,
+    requestJson: {
+      model: 'gpt-5.6-sol',
+      stream: true,
+      input: [{ type: 'reasoning', id: 'item_invalid', summary: [] }]
+    },
+    routeKey: 'POST /v1/responses',
+    requestStartedAt: Date.now(),
+    cooldownMs: 1000,
+    requestMeta: { sessionKey: 'invalid-sse', clientProtocol: 'openai_responses' },
+    deps: {
+      chooseServerAccount: (pool) => pool[0],
+      pushMetricError: () => {},
+      writeJson: (r, code, payload) => {
+        r.statusCode = code;
+        r.setHeader('content-type', 'application/json');
+        r.end(JSON.stringify(payload));
+      },
+      refreshCodexAccessToken: async () => ({ ok: true, refreshed: false, reason: 'api_key_mode' }),
+      fetchWithTimeout: async () => {
+        upstreamCalls += 1;
+        return {
+          ok: true,
+          status: 200,
+          headers: new Map(),
+          text: async () => [
+            'event: error',
+            'data: {"type":"error","code":"invalid_request_error","message":"[ApiIdParam] invalid reasoning id","sequence_number":0}',
+            ''
+          ].join('\n')
+        };
+      },
+      markProxyAccountFailure: (failedAccount) => failures.push(failedAccount.accountRef),
+      markProxyAccountSuccess: () => {},
+      appendProxyRequestLog: (entry) => {
+        failures.push(entry.kind || 'request');
+        if (!entry.kind) requestLogs.push(entry);
+      }
+    }
+  });
+
+  assert.equal(upstreamCalls, 1);
+  assert.deepEqual(failures, ['request']);
+  assert.equal(res.statusCode, 400);
+  const body = JSON.parse(String(res.body));
+  assert.equal(body.error.type, 'invalid_request_error');
+  assert.equal(body.error.message, '[ApiIdParam] invalid reasoning id');
+  assert.equal(Number(account.cooldownUntil || 0), 0);
+  assert.equal(Number(account.consecutiveFailures || 0), 0);
+  assert.equal(requestLogs[0].accountRef, account.accountRef);
+  assert.equal(requestLogs[0].accountAuthType, 'api-key');
+  assert.equal(requestLogs[0].apiKeyMode, true);
+  assert.equal(requestLogs[0].openaiBaseUrl, 'https://proxy.example.com/v1');
+  assert.equal(requestLogs[0].upstreamUrl, 'https://proxy.example.com/v1/responses');
 });
 
 test('codex adapter forces stream=true for upstream protocol', () => {

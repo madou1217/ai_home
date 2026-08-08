@@ -188,13 +188,20 @@ Go 多出 `completed_at`、`error`、`text.format`、`tools`，以及
 
 ## (B) 的正确解法：不是扩 Canonical，是让同协议走透传
 
-直觉做法是把 `stop_details`、`usage.service_tier`、`usage.inference_geo`、
-`usage.cache_creation` 加进 `core/inference.Usage`。**这个做法是错的**，两条依据：
+> **先修正一处归类错误。** 本节初版把四个字段一并归为「provider 特有、应丢弃」。
+> 复查后 `stop_details` 不属于此类，见下方「例外」。其余三个的论证成立。
 
-1. **违反依赖内向。** 这四个都是 Anthropic 特有词汇：`service_tier` 是 Anthropic
+直觉做法是把 `usage.service_tier`、`usage.inference_geo`、`usage.cache_creation`
+加进 `core/inference.Usage`。**这个做法是错的**，两条依据：
+
+1. **违反依赖内向。** 这三个都是 Anthropic 特有词汇：`service_tier` 是 Anthropic
    的调度层级，`inference_geo` 是它的地域标识，`cache_creation` 的 1h/5m 分项是
-   它的 TTL taxonomy，`stop_details` 是它的 refusal 分类。让协议中立的 core 认识
-   某一家 provider 的词汇，就是「依赖外向」（AGENTS.md 架构原则）。
+   它的 TTL taxonomy。让协议中立的 core 认识某一家 provider 的词汇，就是
+   「依赖外向」（AGENTS.md 架构原则）。
+
+   它们描述的是「这次请求怎么被服务的」，不是「模型做了什么」，因此丢弃**不影响
+   任务产出**，只影响计费精度与合规举证。跨协议时 OpenAI 客户端也没有字段可装。
+   注意 `cache_creation_input_tokens` 总量是带着的，丢的只是 TTL 拆分。
 
 2. **与请求方向的既定原则冲突。** `f162be1` 已经定过一次：`service_tier` 和
    `metadata` 是 provider 特有提示，跨协议转码时**静默丢弃，不进 Canonical**。
@@ -222,8 +229,32 @@ claude 账号，也被送进 Canonical 重建。
 所以需要一个由**调度器**而非租约提供账号的 relay 变体，且仍要保留冷却、别名解析
 与多账号轮转。
 
-这条路走通后，(B) 的四个字段自然无损，不需要污染 Canonical；Canonical 回归它真正
+这条路走通后，上述三个字段自然无损，不需要污染 Canonical；Canonical 回归它真正
 该负责的场景——跨协议。
+
+## 例外：`stop_details` 应该进 Canonical
+
+按语义而不是按它在 Anthropic 响应里的位置重新归类，`stop_details` 与上面三个不同。
+
+**现状**：refusal 这件事本身没丢——`response_decoder.go:1108` 把 Anthropic 的
+`stop_reason: "refusal"` 映射为 `inference.StopReasonContentFilter`，Canonical 也有
+`ContentRefusal` / `EventRefusalDelta`。丢的是**类别**（`cyber` / `bio` /
+`reasoning_extraction` / `frontier_llm` 等），Go 侧完全没有解码也没有建模。
+
+**为什么这会影响任务效果**：refusal 的类别决定该回退到哪个模型（例如 cyber 类
+拒绝的推荐落点是 Opus 4.8）。类别丢失后，客户端只知道「被拒了」不知道为什么，
+无法选择正确 fallback——本可换模型继续的任务直接失败；也无法向用户说明原因。
+跨协议更糟：OpenAI 形状的客户端会看到一个 `completed` 但内容异常的响应。
+
+**为什么它不属于「provider 特有词汇」**：「终态为什么发生」本就是 Canonical 的
+职责，它已经有 `ResponseFailure` 失败码体系与 `StopReason` 分类，refusal 类别只是
+同一件事的更细粒度。把它排除在外是按字段位置而非语义归类，归错了。
+
+同源问题：`refusal → StopReasonContentFilter` 这个映射本身也是有损的——Anthropic
+的 refusal 与通用「内容过滤」不是一回事。
+
+**结论**：`stop_details` 独立于分发改造，即使同协议走了透传，跨协议路径仍然需要
+它。应作为 refusal 分类的细化进入 Canonical。
 
 ## 维护
 

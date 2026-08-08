@@ -97,6 +97,20 @@ Node 9527 探测，`/v1beta/models` 与 `/v1/unknown-endpoint` 均返回 404，�
 - `/v1/blobs/{id}`：依赖 Go 侧尚不存在的 vision-guard blob 链路，独立课题。
 - `/v1beta/`、`/v1/` 兜底：不是端点（见 A 档说明）。
 
+## 判定原则：权威是 provider 契约，不是 Node
+
+本文档前几版把「与 Node 一致」当成目标，这是错的——Node 正是因为有问题才要被
+替换。影子比对给出的是**差异**，不是**判决**。每条差异必须回到权威来源判断谁对：
+
+| 场景 | 权威 |
+| --- | --- |
+| `/v1/messages` | Anthropic 真实响应。Node 在这条路径是字节透传，所以它的输出**恰好**等于权威——权威性来自透传，不来自 Node |
+| `/v1/responses`、`/v1/chat/completions` | OpenAI 对应 API 契约 |
+| `aih_*` 自定义字段 | 没有 provider 权威，属本仓设计决策，必须单独论证 |
+
+推论：**Node 的行为不构成 Go 的验收标准。** 三种可能结论都要允许出现——Go 错、
+Node 错、两边都要改。
+
 ## 第三步：影子比对结果（2026-08-08 首轮）
 
 同一账号、同一时刻、同一请求分别发给 Node 9527 与 Go，比状态码与响应结构。
@@ -108,41 +122,69 @@ node scripts/gateway-shadow-compare.js \
   --include-inference
 ```
 
-### 1. `/v1/models`：Go 缺 `aih_modalities`
+### 1. `/v1/models` 的 `aih_modalities`：不照抄 Node 的做法
 
-Node 每个模型附带输入/输出模态（`lib/server/models.js:81`），让客户端不必逐个探测
-就能挑出支持视觉/出图的模型，数据源是 models.dev 元数据加保守家族兜底。
+Node 给每个模型对象内联一个 `aih_modalities`（`lib/server/models.js:81`），数据源
+是 models.dev 元数据加家族兜底。
 
-Go 侧没有 models.dev 集成，字段整体缺失。**这是切流的真实阻塞**：依赖该字段做
-能力路由的客户端在 Go 上会退化成「所有模型都不支持视觉」。补齐需要在 Go 侧引入
-模态索引，不是加个字段那么简单。
+查证后有两点让「Go 照抄」不成立：
 
-### 2. `/v1/responses`：Go 比 Node 多发字段
+- **今天没有任何消费者。** 全仓（`lib/`、`web/src/`、skills）唯一引用它的是
+  `lib/server/models.js` 自己和它的测试。`docs/aih-skills-roadmap.md` 里两个尚未
+  实现的 skill 计划依赖它。
+- **Node 自己承认这有兼容风险。** 同文件注释写明：除 `aih_modalities` 外其余自定义
+  字段都被剥掉，因为 Claude Code 这类严格客户端可能拒绝带未知字段的模型对象。
+
+也就是说 Node 为一个还没人用的字段，在「所有客户端都会调用」的最热路径上长期
+担着 schema 风险。这是本仓的设计选择，不是 provider 契约，没有理由继承。
+
+**Go 侧的目标设计：`/v1/models` 默认严格标准形状，模态经显式 opt-in 暴露**
+（`?include=modalities`，与 Node 已有的 `?capability=` 过滤同一风格）。默认响应
+零风险，需要能力发现的调用方明确要求才拿到扩展数据，roadmap 里的
+`aih_context_length` 也能挂在同一机制上而不再加一个内联字段。
+
+数据源仍需在 Go 侧引入模态索引（models.dev），这部分工作量不变。
+
+### 2. `/v1/responses`：谁更贴近 OpenAI 契约要按契约判，不按 Node 判
 
 Go 多出 `completed_at`、`error`、`text.format`、`tools`，以及
-`usage.input_tokens_details` / `usage.output_tokens_details`。方向与 1 相反——
-Go 更贴近 OpenAI Responses 完整形状，Node 更精简。
+`usage.input_tokens_details` / `usage.output_tokens_details`；Node 更精简。
 
-严格客户端两个方向都可能出问题：多字段可能被 schema 校验拒绝，少字段可能触发
-空指针。需要按真实客户端逐一确认取舍，不能想当然认为「多即更好」。
+**不能因为 Node 少发就认定 Go 多余。** 判据是 OpenAI Responses API 契约与真实
+客户端的解析行为，两种结论都可能成立（Node 漏发 / Go 冗余）。此项待逐字段对照
+契约后定论，未定之前不改任何一侧。
 
-### 3. `/v1/messages`：Go 的重建丢了上游真实字段
+### 3. `/v1/messages`：分成两类，一类已修
 
-**这条最关键，因为 Node 在这条路径上是字节透传，它的形状就是上游真相。**
+权威是 Anthropic 真实响应（Node 在这条路径是字节透传，其输出恰好等于权威）。
+首轮差异混着两类问题，分开后结论完全不同：
 
-Node（= Anthropic 原样）有而 Go 没有：`stop_details`、`usage.service_tier`、
-`usage.cache_creation`（细分 1h/5m）、`usage.inference_geo`（真实取值）。
+**(A) 序列化缺陷——已修。** `container`、`content[].citations`、
+`usage.server_tool_use` 都是 Anthropic 的真实可选字段，Go 并没有自造数据；问题是
+这些指针字段缺 `omitempty`，nil 被序列化成显式 `null`，而 Anthropic 缺省时是
+**省略**。加上 `omitempty` 后三个幽灵字段消失，`content[]` 与上游逐字段一致。
 
-Go 有而上游没有：`container`、`content[].citations`、`usage.server_tool_use`，
-且 `cache_creation` / `inference_geo` 恒为 `null`。
+首轮把这一类描述成「Go 注入了上游没发的字段」是不准确的，已纠正。
 
-即 Canonical 重建既**丢了**上游真实信息，又**注入了**上游没发的空字段。计费与
-缓存可观测性依赖 `usage.*`，这条必须在切流前对齐。
+**(B) Canonical 模型的信息丢失——未修，切流硬门。** 剩余差异全部属于此类：
+
+| 字段 | 上游 | Go |
+| --- | --- | --- |
+| `stop_details` | `null`（refusal 时有值） | 模型里没有该字段 |
+| `usage.service_tier` | 字符串 | 模型里没有该字段 |
+| `usage.inference_geo` | 字符串 | 恒 `null` |
+| `usage.cache_creation` | 对象（1h/5m 分项） | 恒 `null` |
+
+这四个不是打 tag 能解决的，需要 Canonical 响应模型承载它们。计费与缓存可观测性
+依赖 `usage.*`，`stop_details` 是 refusal 分类的唯一出口。
 
 ### 结论
 
-切流前必须解决 1 与 3；2 需要按客户端确认。影子比对应在每次改动 Canonical
-编解码后重跑。
+- 1：不照抄，按 opt-in 重新设计；模态数据源仍要补。
+- 2：待对照 OpenAI 契约定论，未定不动。
+- 3：(A) 已修；(B) 四个字段是切流硬门。
+
+影子比对应在每次改动 Canonical 编解码后重跑。
 
 ## 维护
 

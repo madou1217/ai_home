@@ -21,7 +21,7 @@ type messageWireDTO struct {
 	StopReason   *string             `json:"stop_reason"`
 	StopSequence *string             `json:"stop_sequence"`
 	Usage        messageUsageWireDTO `json:"usage"`
-	Container    *containerWireDTO   `json:"container"`
+	Container    *containerWireDTO   `json:"container,omitempty"`
 }
 
 // containerWireDTO 只作为 null 类型边界，当前 Canonical 响应没有容器状态。
@@ -37,7 +37,7 @@ type messageUsageWireDTO struct {
 	CacheReadInputTokens     uint64                `json:"cache_read_input_tokens"`
 	OutputTokens             uint64                `json:"output_tokens"`
 	CacheCreation            *cacheCreationWireDTO `json:"cache_creation"`
-	ServerToolUse            *serverToolUseWireDTO `json:"server_tool_use"`
+	ServerToolUse            *serverToolUseWireDTO `json:"server_tool_use,omitempty"`
 	InferenceGeo             *string               `json:"inference_geo"`
 }
 
@@ -47,7 +47,7 @@ type messageDeltaUsageWireDTO struct {
 	CacheCreationInputTokens uint64                `json:"cache_creation_input_tokens"`
 	CacheReadInputTokens     uint64                `json:"cache_read_input_tokens"`
 	OutputTokens             uint64                `json:"output_tokens"`
-	ServerToolUse            *serverToolUseWireDTO `json:"server_tool_use"`
+	ServerToolUse            *serverToolUseWireDTO `json:"server_tool_use,omitempty"`
 }
 
 // cacheCreationWireDTO 为当前尚无 TTL 分项的可选字段保留类型。
@@ -66,7 +66,7 @@ type serverToolUseWireDTO struct {
 type textBlockWireDTO struct {
 	Type      string            `json:"type"`
 	Text      string            `json:"text"`
-	Citations []json.RawMessage `json:"citations"`
+	Citations []json.RawMessage `json:"citations,omitempty"`
 }
 
 // thinkingBlockWireDTO 是 signed thinking 输出块。

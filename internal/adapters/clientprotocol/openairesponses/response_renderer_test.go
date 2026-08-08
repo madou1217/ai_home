@@ -374,6 +374,9 @@ func TestStreamRendererRejectsOutOfOrderEvents(t *testing.T) {
 
 // TestStreamRendererProducesRefusalLifecycle 验证 refusal 使用独立事件，并在
 // Provider 终值比已收到增量更长时补发缺失后缀。
+//
+// 终态是 response.incomplete 而非 completed：内容被安全策略拦截时输出并不完整，
+// 渲染成 completed 会让客户端把拦截结果当成最终答案。
 func TestStreamRendererProducesRefusalLifecycle(t *testing.T) {
 	t.Parallel()
 
@@ -392,7 +395,7 @@ func TestStreamRendererProducesRefusalLifecycle(t *testing.T) {
 		"response.refusal.done",
 		"response.content_part.done",
 		"response.output_item.done",
-		"response.completed",
+		"response.incomplete",
 	})
 
 	var suffix struct {

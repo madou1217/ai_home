@@ -161,9 +161,11 @@ func (renderer *StreamRenderer) renderPreparedFrames(
 	case inference.UsageUpdatedEvent:
 		return nil, nil
 	case inference.ResponseCompletedEvent:
-		return renderer.renderResponseTerminal("response.completed", "completed")
+		// 终态事件带着 Canonical 停止原因，截断与自然结束必须区分：
+		// 渲染成 completed 会让客户端把半截回答当成最终结果。
+		return renderer.renderCompletedTerminal(typed.StopReason())
 	case inference.ResponseFailedEvent:
-		return renderer.renderResponseTerminal("response.failed", "failed")
+		return renderer.renderResponseTerminal("response.failed", statusFailed)
 	default:
 		return nil, ErrUnsupportedResponseEvent
 	}
@@ -248,6 +250,28 @@ func (renderer *StreamRenderer) renderOutputItemCompleted(
 	})
 }
 
+// renderCompletedTerminal 按停止原因生成 completed 或 incomplete 终态。
+func (renderer *StreamRenderer) renderCompletedTerminal(
+	reason inference.StopReason,
+) ([]RenderedEvent, error) {
+	status, _ := terminalStatusFor(reason)
+	eventType := "response.completed"
+	if status == statusIncomplete {
+		eventType = "response.incomplete"
+	}
+	response, err := renderer.state.buildTerminalResponseWire(
+		reason,
+		len(renderer.state.items),
+	)
+	if err != nil {
+		return nil, err
+	}
+	return renderer.renderMany(streamEventWireDTO{
+		Type:     eventType,
+		Response: &response,
+	})
+}
+
 // renderResponseTerminal 生成 completed 或 failed 响应终态。
 func (renderer *StreamRenderer) renderResponseTerminal(
 	eventType string,
@@ -261,7 +285,12 @@ func (renderer *StreamRenderer) renderResponseTerminal(
 		}
 		outputCount = visibleCount
 	}
-	response, err := renderer.state.buildResponseWireWithOutputCount(status, outputCount)
+	// 该路径只服务 failed 终态，没有截断原因可填。
+	response, err := renderer.state.buildResponseWireWithOutputCount(
+		status,
+		outputCount,
+		"",
+	)
 	if err != nil {
 		return nil, err
 	}

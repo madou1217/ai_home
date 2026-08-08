@@ -24,6 +24,8 @@ type responseState struct {
 	usage        inference.Usage
 	failure      inference.ResponseFailure
 	hasFailure   bool
+	// stopReason 决定终态渲染成 completed 还是 incomplete，必须留存。
+	stopReason inference.StopReason
 }
 
 // outputItemState 保存一个 Responses 顶层输出项的完整聚合状态。
@@ -429,6 +431,7 @@ func (state *responseState) completeResponse(event inference.ResponseCompletedEv
 		}
 	}
 	state.usage = event.Usage()
+	state.stopReason = event.StopReason()
 	state.completed = true
 	state.terminal = true
 	return nil

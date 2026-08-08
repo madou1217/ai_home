@@ -331,13 +331,27 @@ type streamEventWireDTO struct {
 
 // buildResponseWire 从共享状态构建指定状态的 Responses 对象。
 func (state *responseState) buildResponseWire(status string) (responseWireDTO, error) {
-	return state.buildResponseWireWithOutputCount(status, len(state.items))
+	return state.buildResponseWireWithOutputCount(status, len(state.items), "")
+}
+
+// buildTerminalResponseWire 按 Canonical 停止原因决定终态与截断原因。
+func (state *responseState) buildTerminalResponseWire(
+	reason inference.StopReason,
+	outputCount int,
+) (responseWireDTO, error) {
+	status, incompleteReason := terminalStatusFor(reason)
+	return state.buildResponseWireWithOutputCount(
+		status,
+		outputCount,
+		incompleteReason,
+	)
 }
 
 // buildResponseWireWithOutputCount 构建只包含连续已曝光输出项的响应对象。
 func (state *responseState) buildResponseWireWithOutputCount(
 	status string,
 	outputCount int,
+	incompleteReason string,
 ) (responseWireDTO, error) {
 	if outputCount < 0 || outputCount > len(state.items) {
 		return responseWireDTO{}, ErrInvalidEventSequence
@@ -395,7 +409,14 @@ func (state *responseState) buildResponseWireWithOutputCount(
 		ToolChoice:         toolChoice,
 		Tools:              tools,
 	}
-	if status == "completed" {
+	// incomplete 与 completed 共享同一套输出与 usage，仅多一个截断原因；
+	// 客户端据此判断是否应把输出当成最终答案。
+	if incompleteReason != "" {
+		response.IncompleteDetails = &incompleteDetailsWireDTO{
+			Reason: incompleteReason,
+		}
+	}
+	if status == statusCompleted || status == statusIncomplete {
 		completedAt := state.createdAt
 		response.CompletedAt = &completedAt
 		usage := newUsageWire(state.usage)

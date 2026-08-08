@@ -40,7 +40,11 @@ func (aggregator *ResponseAggregator) Marshal() ([]byte, error) {
 	case !aggregator.state.completed:
 		return nil, ErrResponseNotCompleted
 	}
-	response, err := aggregator.state.buildResponseWire("completed")
+	// 非流式同样要区分截断与自然结束：客户端只有 status 一个判据。
+	response, err := aggregator.state.buildTerminalResponseWire(
+		aggregator.state.stopReason,
+		len(aggregator.state.items),
+	)
 	if err != nil {
 		return nil, err
 	}

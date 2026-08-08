@@ -151,7 +151,19 @@ func (handler *Handler) ServeHTTP(
 		)
 		return
 	}
+	// 订阅额度按 Claude Code 客户端判定，缺身份的请求会被上游按限流拒绝。
+	//
+	// 但补齐只对**非原生客户端**做：入站门禁当前只放真实 Claude Code 通过，
+	// 它们自带身份，对其正文做任何序列化往返都会改变字段顺序与数值表示，把
+	// 「透传」偷换成「重建」——那正是 Relay 存在的意义所在。等门禁放宽到普通
+	// 客户端时，这里才会真正生效。
+	//
+	// ContentLength 必须同步：改写后长度变化，沿用旧值会让上游读到截断正文。
+	if !hasNativeClaudeHeaders(request.Header) {
+		body = ensureOfficialIdentityBody(body)
+	}
 	request.Body = io.NopCloser(bytes.NewReader(body))
+	request.ContentLength = int64(len(body))
 	credential, err := handler.credentials.ResolveCredential(
 		request.Context(),
 		accountRef,

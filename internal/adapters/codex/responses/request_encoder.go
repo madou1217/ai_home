@@ -85,7 +85,16 @@ func rejectUnsupportedRequest(
 	request inference.Request,
 	authKind codexauth.AuthKind,
 ) error {
-	if request.MaxOutputTokens() != 0 {
+	// Codex Responses 线协议没有输出上限字段，无法无损表达。
+	//
+	// 但 Anthropic Messages 的 max_tokens 是**必填**：claude 客户端没有「不发」
+	// 这个选项。继续按不支持拒绝，等于 claude 客户端永远无法使用 codex 账号——
+	// 整条跨协议路径不可用，代价远大于丢一个上限。
+	//
+	// 因此沿用 f162be1 的既定处理：目标协议无法表达的字段，跨协议时静默丢弃、
+	// 不拒绝客户端。同协议（codex 客户端）仍然拒绝——它本可以不发。
+	if request.MaxOutputTokens() != 0 &&
+		request.ClientProtocol() == inference.ClientProtocolOpenAIResponses {
 		return unsupported("max_output_tokens")
 	}
 	if _, found := request.Temperature(); found {
@@ -499,17 +508,23 @@ func toolNamespace(identity inference.ToolIdentity) string {
 	return namespace
 }
 
-// encodeReasoning 只接受 Codex 原生 effort 模式。
+// encodeReasoning 把任意 Canonical reasoning 模式投影为 Codex effort。
+//
+// 此前只接受 effort 模式，其余一律 unsupported，导致 claude 客户端带 thinking
+// 调 codex 账号时整个请求失败——而真实 Claude Code 每次都发
+// thinking:{type:"adaptive"}，即这条路径此前完全不可用。budget 与 adaptive 都
+// 携带抽象 effort，投影不需要猜，见 projectReasoningEffort。
 func encodeReasoning(request inference.Request) (*reasoningDTO, error) {
 	config, found := request.Reasoning()
 	if !found {
 		return nil, nil
 	}
-	if config.Mode() != inference.ReasoningModeEffort {
-		return nil, unsupported("reasoning.mode")
+	effort := projectReasoningEffort(config)
+	if effort == "" && config.Summary() == "" {
+		return nil, nil
 	}
 	return &reasoningDTO{
-		Effort:  string(config.Effort()),
+		Effort:  string(effort),
 		Summary: string(config.Summary()),
 	}, nil
 }

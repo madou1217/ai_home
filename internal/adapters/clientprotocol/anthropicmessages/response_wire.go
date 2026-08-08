@@ -20,8 +20,18 @@ type messageWireDTO struct {
 	Content      []json.RawMessage   `json:"content"`
 	StopReason   *string             `json:"stop_reason"`
 	StopSequence *string             `json:"stop_sequence"`
+	StopDetails  *stopDetailsWireDTO `json:"stop_details,omitempty"`
 	Usage        messageUsageWireDTO `json:"usage"`
 	Container    *containerWireDTO   `json:"container,omitempty"`
+}
+
+// stopDetailsWireDTO 回传内容被拒绝的类别。
+//
+// 客户端据此选择回退模型：只知道「被拒了」而不知道原因时，本可换模型继续的
+// 任务只能直接失败。
+type stopDetailsWireDTO struct {
+	Type     string `json:"type"`
+	Category string `json:"category"`
 }
 
 // containerWireDTO 只作为 null 类型边界，当前 Canonical 响应没有容器状态。
@@ -178,9 +188,20 @@ func (state *responseState) buildCompletedMessageWire() (messageWireDTO, error) 
 		Content:      content,
 		StopReason:   &stopReason,
 		StopSequence: optionalString(state.stopSequence),
+		StopDetails:  newStopDetailsWire(state.refusalCategory),
 		Usage:        newMessageUsageWire(state.usage),
 		Container:    nil,
 	}, nil
+}
+
+// newStopDetailsWire 仅在上游给出类别时生成 stop_details。
+//
+// 上游未给出类别是合法情况，此时省略该字段而不是发空对象。
+func newStopDetailsWire(category string) *stopDetailsWireDTO {
+	if category == "" {
+		return nil
+	}
+	return &stopDetailsWireDTO{Type: "refusal", Category: category}
 }
 
 // marshalContent 按 Canonical output_index 和 block_index 展平 Messages 内容块。

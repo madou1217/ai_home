@@ -974,7 +974,17 @@ type ResponseCompletedEvent struct {
 	eventBase
 	stopReason   StopReason
 	stopSequence string
-	usage        Usage
+	// refusalCategory 是内容被拒绝时 Provider 给出的稳定类别标识。
+	//
+	// 它只在 StopReasonContentFilter 下合法，与 stopSequence 只在
+	// StopReasonStopSequence 下合法完全对称——「终态为什么发生」本就是
+	// Canonical 的职责，类别只是同一分类的更细粒度，不是外挂的 Provider 字段。
+	//
+	// 客户端据此选择回退模型：不同拒绝类别的推荐落点不同，只知道「被拒了」
+	// 而不知道原因时，本可换模型继续的任务只能直接失败。
+	// Canonical 不解释具体取值，只保证它不丢失。
+	refusalCategory string
+	usage           Usage
 }
 
 // NewResponseCompletedEvent 创建不会由缺失输出伪造的明确完成事件。
@@ -1002,6 +1012,31 @@ func NewResponseCompletedEvent(
 	}, nil
 }
 
+// NewRefusedResponseCompletedEvent 创建带拒绝类别的完成事件。
+//
+// 类别为空时等价于 NewResponseCompletedEvent：上游未给出类别是合法情况，
+// 不应因此拒绝整个响应。
+func NewRefusedResponseCompletedEvent(
+	sequence uint64,
+	refusalCategory string,
+	usage Usage,
+) (ResponseCompletedEvent, error) {
+	event, err := NewResponseCompletedEvent(
+		sequence,
+		StopReasonContentFilter,
+		"",
+		usage,
+	)
+	if err != nil {
+		return ResponseCompletedEvent{}, err
+	}
+	if refusalCategory != "" && !isNonBlankText(refusalCategory) {
+		return ResponseCompletedEvent{}, ErrInvalidEvent
+	}
+	event.refusalCategory = refusalCategory
+	return event, nil
+}
+
 // Kind 返回响应完成类别。
 func (ResponseCompletedEvent) Kind() EventKind {
 	return EventResponseCompleted
@@ -1015,6 +1050,11 @@ func (event ResponseCompletedEvent) StopReason() StopReason {
 // StopSequence 返回命中的停止序列，非对应原因时为空。
 func (event ResponseCompletedEvent) StopSequence() string {
 	return event.stopSequence
+}
+
+// RefusalCategory 返回内容被拒绝的类别，非拒绝终态或上游未给出时为空。
+func (event ResponseCompletedEvent) RefusalCategory() string {
+	return event.refusalCategory
 }
 
 // Usage 返回最终累计 token 快照。

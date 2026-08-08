@@ -170,7 +170,17 @@ type messageResponseDTO struct {
 	Content      []json.RawMessage `json:"content"`
 	StopReason   *string           `json:"stop_reason"`
 	StopSequence *string           `json:"stop_sequence"`
+	StopDetails  *stopDetailsDTO   `json:"stop_details"`
 	Usage        json.RawMessage   `json:"usage"`
+}
+
+// stopDetailsDTO 承载内容被拒绝时的类别。
+//
+// 类别决定客户端该回退到哪个模型，丢失后只知道「被拒了」不知道为什么，
+// 本可换模型继续的任务只能直接失败。
+type stopDetailsDTO struct {
+	Type     string `json:"type"`
+	Category string `json:"category"`
 }
 
 // outputContentDTO 覆盖 Claude 当前可产生的客户端输出块。
@@ -224,8 +234,9 @@ type webSearchResultErrorDTO struct {
 
 // messageDeltaDTO 保存响应终态原因。
 type messageDeltaDTO struct {
-	StopReason   string  `json:"stop_reason"`
-	StopSequence *string `json:"stop_sequence"`
+	StopReason   string          `json:"stop_reason"`
+	StopSequence *string         `json:"stop_sequence"`
+	StopDetails  *stopDetailsDTO `json:"stop_details"`
 }
 
 // usageDTO 使用指针区分 SSE 中缺省字段与明确的零值。

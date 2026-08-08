@@ -20,9 +20,11 @@ type responseState struct {
 	itemIDs      map[string]struct{}
 	usage        inference.Usage
 	stopReason   inference.StopReason
-	stopSequence string
-	failure      inference.ResponseFailure
-	hasFailure   bool
+	// refusalCategory 是上游给出的拒绝类别，需原样回传给 Messages 客户端。
+	refusalCategory string
+	stopSequence    string
+	failure         inference.ResponseFailure
+	hasFailure      bool
 }
 
 // outputItemState 保存一个 Canonical 顶层输出项的聚合状态。
@@ -423,6 +425,7 @@ func (state *responseState) completeResponse(event inference.ResponseCompletedEv
 		return err
 	}
 	state.stopReason = event.StopReason()
+	state.refusalCategory = event.RefusalCategory()
 	state.stopSequence = event.StopSequence()
 	state.completed = true
 	state.terminal = true

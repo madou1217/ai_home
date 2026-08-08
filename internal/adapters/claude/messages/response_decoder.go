@@ -27,6 +27,7 @@ type responseDecoder struct {
 	usage           usageState
 	stopReason      inference.StopReason
 	stopSequence    string
+	refusalCategory string
 	stopObserved    bool
 	toolNames       toolNameMapper
 }
@@ -143,6 +144,7 @@ func (decoder *responseDecoder) DecodeMessage(data []byte) error {
 	}
 	decoder.stopReason = stopReason
 	decoder.stopSequence = stopSequence
+	decoder.refusalCategory = refusalCategoryOf(message.StopDetails)
 	decoder.stopObserved = true
 	return decoder.completeMessage()
 }
@@ -919,6 +921,7 @@ func (decoder *responseDecoder) applyMessageDelta(
 	}
 	decoder.stopReason = stopReason
 	decoder.stopSequence = stopSequence
+	decoder.refusalCategory = refusalCategoryOf(delta.StopDetails)
 	decoder.stopObserved = true
 	return nil
 }
@@ -940,12 +943,7 @@ func (decoder *responseDecoder) completeMessage() error {
 	if err != nil {
 		return err
 	}
-	event, err := inference.NewResponseCompletedEvent(
-		decoder.nextSequence,
-		decoder.stopReason,
-		decoder.stopSequence,
-		usage,
-	)
+	event, err := decoder.newCompletedEvent(usage)
 	if err != nil {
 		return ErrInvalidUpstreamResponse
 	}
@@ -954,6 +952,35 @@ func (decoder *responseDecoder) completeMessage() error {
 	}
 	decoder.terminal = true
 	return nil
+}
+
+// newCompletedEvent 在拒绝终态下附带类别，其余终态沿用通用构造。
+func (decoder *responseDecoder) newCompletedEvent(
+	usage inference.Usage,
+) (inference.ResponseCompletedEvent, error) {
+	if decoder.stopReason == inference.StopReasonContentFilter {
+		return inference.NewRefusedResponseCompletedEvent(
+			decoder.nextSequence,
+			decoder.refusalCategory,
+			usage,
+		)
+	}
+	return inference.NewResponseCompletedEvent(
+		decoder.nextSequence,
+		decoder.stopReason,
+		decoder.stopSequence,
+		usage,
+	)
+}
+
+// refusalCategoryOf 读取上游拒绝类别，缺省时返回空字符串。
+//
+// 上游未给出类别是合法情况（stop_details 可为 null），不因此判定响应无效。
+func refusalCategoryOf(details *stopDetailsDTO) string {
+	if details == nil {
+		return ""
+	}
+	return details.Category
 }
 
 // decodeCompletedBlock 让非流式 Message 复用同一状态推进方法。

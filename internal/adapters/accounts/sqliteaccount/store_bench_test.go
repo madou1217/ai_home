@@ -17,6 +17,7 @@ import (
 	"github.com/madou1217/ai_home/core/accounts/codex"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/codexoauth"
+	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 	"github.com/madou1217/ai_home/internal/transport/http/modelsapi"
 )
 
@@ -251,7 +252,7 @@ func (benchmarkCredentialTransport) SupportsCredential(
 	return credential != nil
 }
 
-// BenchmarkModelsAPIWithTenThousandAccounts 测量 1000 并发标准目录请求的本地读路径。
+// BenchmarkModelsAPIWithTenThousandAccounts 测量 1000 并发默认和模态目录请求。
 func BenchmarkModelsAPIWithTenThousandAccounts(benchmark *testing.B) {
 	const (
 		accountCount = 10_000
@@ -259,45 +260,54 @@ func BenchmarkModelsAPIWithTenThousandAccounts(benchmark *testing.B) {
 	)
 	store := openBenchmarkStore(benchmark)
 	seedBenchmarkAccounts(benchmark, store, accountCount)
+	modalities, err := modelsdev.New()
+	if err != nil {
+		benchmark.Fatalf("modelsdev.New() error = %v", err)
+	}
 	handler, err := modelsapi.NewHandler(modelsapi.Dependencies{
 		Models:     store,
+		Modalities: modalities,
 		Authorizer: benchmarkModelAuthorizer{},
 	})
 	if err != nil {
 		benchmark.Fatalf("modelsapi.NewHandler() error = %v", err)
 	}
-	benchmark.ReportAllocs()
-	benchmark.ResetTimer()
-	for range benchmark.N {
-		var waitGroup sync.WaitGroup
-		errorsByRequest := make(chan error, concurrency)
-		waitGroup.Add(concurrency)
-		for range concurrency {
-			go func() {
-				defer waitGroup.Done()
-				request := httptest.NewRequest(
-					http.MethodGet,
-					modelsapi.Path,
-					nil,
-				)
-				response := httptest.NewRecorder()
-				handler.ServeHTTP(response, request)
-				if response.Code != http.StatusOK {
-					errorsByRequest <- fmt.Errorf(
-						"models status=%d",
-						response.Code,
-					)
-				}
-			}()
-		}
-		waitGroup.Wait()
-		close(errorsByRequest)
-		for requestErr := range errorsByRequest {
-			benchmark.Fatal(requestErr)
-		}
+	targets := map[string]string{
+		"standard":   modelsapi.Path,
+		"modalities": modelsapi.Path + "?include=modalities",
 	}
-	benchmark.ReportMetric(accountCount, "accounts")
-	benchmark.ReportMetric(concurrency, "requests/batch")
+	for name, target := range targets {
+		benchmark.Run(name, func(benchmark *testing.B) {
+			benchmark.ReportAllocs()
+			benchmark.ResetTimer()
+			for range benchmark.N {
+				var waitGroup sync.WaitGroup
+				errorsByRequest := make(chan error, concurrency)
+				waitGroup.Add(concurrency)
+				for range concurrency {
+					go func() {
+						defer waitGroup.Done()
+						request := httptest.NewRequest(http.MethodGet, target, nil)
+						response := httptest.NewRecorder()
+						handler.ServeHTTP(response, request)
+						if response.Code != http.StatusOK {
+							errorsByRequest <- fmt.Errorf(
+								"models status=%d",
+								response.Code,
+							)
+						}
+					}()
+				}
+				waitGroup.Wait()
+				close(errorsByRequest)
+				for requestErr := range errorsByRequest {
+					benchmark.Fatal(requestErr)
+				}
+			}
+			benchmark.ReportMetric(accountCount, "accounts")
+			benchmark.ReportMetric(concurrency, "requests/batch")
+		})
+	}
 }
 
 // benchmarkModelAuthorizer 避免鉴权实现影响本地模型目录并发测量。

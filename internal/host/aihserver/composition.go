@@ -27,6 +27,7 @@ import (
 	claudemessages "github.com/madou1217/ai_home/internal/adapters/claude/messages"
 	"github.com/madou1217/ai_home/internal/adapters/claude/transportpolicy"
 	codexresponses "github.com/madou1217/ai_home/internal/adapters/codex/responses"
+	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 	"github.com/madou1217/ai_home/internal/host/inferenceruntime"
 	"github.com/madou1217/ai_home/internal/transport/http/accountauthapi"
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
@@ -451,8 +452,17 @@ func newHandlers(
 			err,
 		)
 	}
+	modelModalities, err := modelsdev.New()
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf(
+			"创建 models.dev 模态索引失败: %w",
+			err,
+		)
+	}
 	modelsHandler, err := modelsapi.NewHandler(modelsapi.Dependencies{
 		Models:     inference.models,
+		Modalities: modelModalities,
 		Authorizer: clientAuthorizer,
 	})
 	if err != nil {

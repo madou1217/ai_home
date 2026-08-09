@@ -9,6 +9,7 @@ import (
 	"net/url"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	"github.com/madou1217/ai_home/application/modelmetadata"
 )
 
 const (
@@ -36,22 +37,27 @@ type ModelReader interface {
 // Dependencies 声明标准模型目录的只读依赖。
 type Dependencies struct {
 	Models     ModelReader
+	Modalities modelmetadata.Reader
 	Authorizer Authorizer
 }
 
 // Handler 把本地 Provider 模型元组渲染为 OpenAI 模型列表。
 type Handler struct {
 	models     ModelReader
+	modalities modelmetadata.Reader
 	authorizer Authorizer
 }
 
 // NewHandler 创建不会访问 SQLite、凭据或上游的标准模型目录 Handler。
 func NewHandler(dependencies Dependencies) (*Handler, error) {
-	if dependencies.Models == nil || dependencies.Authorizer == nil {
+	if dependencies.Models == nil ||
+		dependencies.Modalities == nil ||
+		dependencies.Authorizer == nil {
 		return nil, ErrInvalidDependencies
 	}
 	return &Handler{
 		models:     dependencies.Models,
+		modalities: dependencies.Modalities,
 		authorizer: dependencies.Authorizer,
 	}, nil
 }
@@ -77,7 +83,7 @@ func (handler *Handler) ServeHTTP(
 		writeError(response, http.StatusMethodNotAllowed, "method_not_allowed")
 		return
 	}
-	protocol, valid := parseCatalogProtocol(request.URL.RawQuery)
+	options, valid := parseCatalogOptions(request.URL.RawQuery)
 	if !valid {
 		writeError(response, http.StatusBadRequest, "invalid_query")
 		return
@@ -87,7 +93,11 @@ func (handler *Handler) ServeHTTP(
 		writeError(response, http.StatusInternalServerError, "internal_error")
 		return
 	}
-	views, err := newModelViews(models)
+	views, err := newModelViews(
+		models,
+		handler.modalities,
+		options.includeModalities,
+	)
 	if err != nil {
 		writeError(response, http.StatusInternalServerError, "internal_error")
 		return
@@ -96,7 +106,7 @@ func (handler *Handler) ServeHTTP(
 		writeJSONHeaders(response, http.StatusOK)
 		return
 	}
-	switch protocol {
+	switch options.protocol {
 	case catalogProtocolOpenAI:
 		writeJSON(response, http.StatusOK, modelList{
 			Object: "list",
@@ -105,6 +115,12 @@ func (handler *Handler) ServeHTTP(
 	case catalogProtocolCodex:
 		writeJSON(response, http.StatusOK, newCodexModelList(views))
 	}
+}
+
+// catalogOptions 保存一次请求选择的目录协议和显式扩展。
+type catalogOptions struct {
+	protocol          catalogProtocol
+	includeModalities bool
 }
 
 // catalogProtocol 表示同一路径上的客户端目录合同。
@@ -117,21 +133,26 @@ const (
 	catalogProtocolCodex
 )
 
-// parseCatalogProtocol 只把 client_version 的存在视为 Codex 协议标志。
-// 参数值不比较、不参与目录计算，也不会触发上游刷新。
-func parseCatalogProtocol(rawQuery string) (catalogProtocol, bool) {
+// parseCatalogOptions 严格区分标准扩展与 Codex 目录，不接受重复或混合参数。
+// client_version 的值不比较、不参与目录计算，也不会触发上游刷新。
+func parseCatalogOptions(rawQuery string) (catalogOptions, bool) {
 	if rawQuery == "" {
-		return catalogProtocolOpenAI, true
+		return catalogOptions{protocol: catalogProtocolOpenAI}, true
 	}
 	values, err := url.ParseQuery(rawQuery)
 	if err != nil || len(values) != 1 {
-		return 0, false
+		return catalogOptions{}, false
 	}
-	_, found := values["client_version"]
-	if !found {
-		return 0, false
+	if clientVersions, found := values["client_version"]; found && len(clientVersions) == 1 {
+		return catalogOptions{protocol: catalogProtocolCodex}, true
 	}
-	return catalogProtocolCodex, true
+	if includes, found := values["include"]; found && len(includes) == 1 && includes[0] == "modalities" {
+		return catalogOptions{
+			protocol:          catalogProtocolOpenAI,
+			includeModalities: true,
+		}, true
+	}
+	return catalogOptions{}, false
 }
 
 // modelList 是 OpenAI 兼容模型列表 envelope。
@@ -142,16 +163,28 @@ type modelList struct {
 
 // modelView 是不会暴露账号数量或身份的标准模型项。
 type modelView struct {
-	ID      string `json:"id"`
-	Object  string `json:"object"`
-	Created int64  `json:"created"`
-	OwnedBy string `json:"owned_by"`
+	ID            string               `json:"id"`
+	Object        string               `json:"object"`
+	Created       int64                `json:"created"`
+	OwnedBy       string               `json:"owned_by"`
+	AIHModalities *modelModalitiesView `json:"aih_modalities,omitempty"`
+}
+
+// modelModalitiesView 是显式 opt-in 才输出的 AIH 模态扩展。
+type modelModalitiesView struct {
+	Input  []string `json:"input"`
+	Output []string `json:"output"`
 }
 
 // newModelViews 校验有序唯一元组并按模型 ID 去重；跨 Provider 同名归属显示为 aih。
 func newModelViews(
 	models []accountapp.RoutableModel,
+	modalities modelmetadata.Reader,
+	includeModalities bool,
 ) ([]modelView, error) {
+	if modalities == nil {
+		return nil, errInvalidModelSnapshot
+	}
 	views := make([]modelView, 0, len(models))
 	previousProviderID := ""
 	for _, model := range models {
@@ -172,15 +205,39 @@ func newModelViews(
 		if len(views) > 0 && modelID < views[len(views)-1].ID {
 			return nil, errInvalidModelSnapshot
 		}
-		views = append(views, modelView{
+		view := modelView{
 			ID:      modelID,
 			Object:  "model",
 			Created: 0,
 			OwnedBy: model.ProviderID(),
-		})
+		}
+		if includeModalities {
+			view.AIHModalities = newModelModalitiesView(
+				modalities,
+				model.ProviderID(),
+				modelID,
+			)
+		}
+		views = append(views, view)
 		previousProviderID = model.ProviderID()
 	}
 	return views, nil
+}
+
+// newModelModalitiesView 从本地索引读取能力，未命中时明确降级为纯文本。
+func newModelModalitiesView(
+	reader modelmetadata.Reader,
+	providerID string,
+	modelID string,
+) *modelModalitiesView {
+	modalities, found := reader.LookupModalities(providerID, modelID)
+	if !found {
+		modalities = modelmetadata.TextOnly()
+	}
+	return &modelModalitiesView{
+		Input:  modalities.Input(),
+		Output: modalities.Output(),
+	}
 }
 
 // writeError 输出不包含内部错误文本的标准错误 envelope。

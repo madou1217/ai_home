@@ -138,12 +138,27 @@ Node 给每个模型对象内联一个 `aih_modalities`（`lib/server/models.js:
 也就是说 Node 为一个还没人用的字段，在「所有客户端都会调用」的最热路径上长期
 担着 schema 风险。这是本仓的设计选择，不是 provider 契约，没有理由继承。
 
-**Go 侧的目标设计：`/v1/models` 默认严格标准形状，模态经显式 opt-in 暴露**
-（`?include=modalities`，与 Node 已有的 `?capability=` 过滤同一风格）。默认响应
-零风险，需要能力发现的调用方明确要求才拿到扩展数据，roadmap 里的
-`aih_context_length` 也能挂在同一机制上而不再加一个内联字段。
+**Go 侧已实现：`/v1/models` 默认严格标准形状，模态经显式 opt-in 暴露。**
 
-数据源仍需在 Go 侧引入模态索引（models.dev），这部分工作量不变。
+- `GET /v1/models` 仍只返回 `id/object/created/owned_by`，不会泄漏自定义字段。
+- `GET /v1/models?include=modalities` 才为每项增加
+  `aih_modalities: {input,output}`。
+- `client_version` 继续选择 Codex 目录合同；它不能与 `include` 混用。未知、重复或混合
+  query 一律返回 `400 invalid_query`，避免客户端意图被静默误判。
+- 权威数据由 `internal/tools/modelsdevmodalities` 从固定子模块指针生成，299 个基础模型
+  被嵌入 Go 二进制。服务启动时只解码和校验一次，HTTP 热路径是 O(1) 只读 map，
+  不访问 SQLite、文件系统或上游。
+- 只映射当前重构范围内的 `codex -> openai`、`claude -> anthropic`。权威快照未命中时
+  明确降级为 `{input:["text"],output:["text"]}`，不靠模型名猜测能力。
+
+同步 `third_party/models.dev` 后运行：
+
+```bash
+go generate ./internal/adapters/modelmetadata/modelsdev
+```
+
+roadmap 里的 `aih_context_length` 可以沿用显式 `include` 机制，但当前没有实现，避免把
+modalities 交付扩大为尚无消费者的 context/pricing 设计。
 
 ### 2. `/v1/responses`：谁更贴近 OpenAI 契约要按契约判，不按 Node 判
 

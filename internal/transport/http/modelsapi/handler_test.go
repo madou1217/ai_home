@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	"github.com/madou1217/ai_home/application/modelmetadata"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/transport/http/modelsapi"
 )
@@ -66,6 +67,82 @@ func TestHandlerReturnsUniqueLocalModels(t *testing.T) {
 		document.Data[1].OwnedBy != "aih" {
 		t.Fatalf("models response = %#v", document)
 	}
+	var rawDocument struct {
+		Data []map[string]json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &rawDocument); err != nil {
+		t.Fatalf("json.Unmarshal(raw) error = %v", err)
+	}
+	if _, found := rawDocument.Data[0]["aih_modalities"]; found {
+		t.Fatalf("default model leaked aih_modalities: %s", response.Body)
+	}
+}
+
+// TestHandlerIncludesModalitiesOnlyWhenRequested 验证扩展字段显式 opt-in，未知模型保守降级。
+func TestHandlerIncludesModalitiesOnlyWhenRequested(t *testing.T) {
+	t.Parallel()
+
+	reader := &modelReaderStub{
+		models: []accountapp.RoutableModel{
+			newRoutableModel(t, "claude", "claude-opus-5"),
+			newRoutableModel(t, "codex", "future-unknown-model"),
+		},
+	}
+	known, err := modelmetadata.NewModalities(
+		[]string{"text", "image", "pdf"},
+		[]string{"text"},
+	)
+	if err != nil {
+		t.Fatalf("modelmetadata.NewModalities() error = %v", err)
+	}
+	handler := newTestHandlerWithModalities(t, reader, &modalityReaderStub{
+		models: map[string]modelmetadata.Modalities{
+			"claude/claude-opus-5": known,
+		},
+	})
+	request := httptest.NewRequest(
+		http.MethodGet,
+		modelsapi.Path+"?include=modalities",
+		nil,
+	)
+	request.Header.Set("Authorization", "Bearer local-model-key")
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK || reader.calls != 1 {
+		t.Fatalf(
+			"status=%d reader_calls=%d body=%s",
+			response.Code,
+			reader.calls,
+			response.Body,
+		)
+	}
+	var document struct {
+		Data []struct {
+			ID         string `json:"id"`
+			Modalities struct {
+				Input  []string `json:"input"`
+				Output []string `json:"output"`
+			} `json:"aih_modalities"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &document); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if len(document.Data) != 2 {
+		t.Fatalf("models response = %s", response.Body)
+	}
+	if document.Data[0].ID != "claude-opus-5" {
+		t.Fatalf("first model = %#v", document.Data[0])
+	}
+	assertStringSlice(t, document.Data[0].Modalities.Input, []string{"text", "image", "pdf"})
+	assertStringSlice(t, document.Data[0].Modalities.Output, []string{"text"})
+	if document.Data[1].ID != "future-unknown-model" {
+		t.Fatalf("second model = %#v", document.Data[1])
+	}
+	assertStringSlice(t, document.Data[1].Modalities.Input, []string{"text"})
+	assertStringSlice(t, document.Data[1].Modalities.Output, []string{"text"})
 }
 
 // TestHandlerProjectsCodexCatalogWithoutRefreshing 验证 client_version 只选择
@@ -169,6 +246,34 @@ func TestHandlerRejectsUnsupportedRequestsAndHidesReaderErrors(t *testing.T) {
 			code:   "invalid_query",
 		},
 		{
+			name:   "unknown include",
+			method: http.MethodGet,
+			target: modelsapi.Path + "?include=pricing",
+			status: http.StatusBadRequest,
+			code:   "invalid_query",
+		},
+		{
+			name:   "repeated include",
+			method: http.MethodGet,
+			target: modelsapi.Path + "?include=modalities&include=modalities",
+			status: http.StatusBadRequest,
+			code:   "invalid_query",
+		},
+		{
+			name:   "repeated client version",
+			method: http.MethodGet,
+			target: modelsapi.Path + "?client_version=0.146.0&client_version=0.145.0",
+			status: http.StatusBadRequest,
+			code:   "invalid_query",
+		},
+		{
+			name:   "mixed protocol query",
+			method: http.MethodGet,
+			target: modelsapi.Path + "?client_version=0.146.0&include=modalities",
+			status: http.StatusBadRequest,
+			code:   "invalid_query",
+		},
+		{
 			name:   "method",
 			method: http.MethodPost,
 			target: modelsapi.Path,
@@ -235,6 +340,20 @@ type modelReaderStub struct {
 	calls  int
 }
 
+// modalityReaderStub 返回按 Provider 和真实模型 ID 索引的测试模态。
+type modalityReaderStub struct {
+	models map[string]modelmetadata.Modalities
+}
+
+// LookupModalities 返回不可变测试值；未命中由 Handler 采用文本兜底。
+func (reader *modalityReaderStub) LookupModalities(
+	providerID string,
+	modelID string,
+) (modelmetadata.Modalities, bool) {
+	modalities, found := reader.models[providerID+"/"+modelID]
+	return modalities, found
+}
+
 func (reader *modelReaderStub) ListRoutableModels(
 	context.Context,
 ) ([]accountapp.RoutableModel, error) {
@@ -252,9 +371,20 @@ func (bearerAuthorizerStub) Authorized(request *http.Request) bool {
 // newTestHandler 创建使用本地 Reader 的模型目录 Handler。
 func newTestHandler(t *testing.T, reader modelsapi.ModelReader) http.Handler {
 	t.Helper()
+	return newTestHandlerWithModalities(t, reader, &modalityReaderStub{})
+}
+
+// newTestHandlerWithModalities 创建可控制元数据命中的模型目录 Handler。
+func newTestHandlerWithModalities(
+	t *testing.T,
+	reader modelsapi.ModelReader,
+	modalities modelmetadata.Reader,
+) http.Handler {
+	t.Helper()
 
 	handler, err := modelsapi.NewHandler(modelsapi.Dependencies{
 		Models:     reader,
+		Modalities: modalities,
 		Authorizer: bearerAuthorizerStub{},
 	})
 	if err != nil {
@@ -280,4 +410,17 @@ func newRoutableModel(
 		t.Fatalf("accounts.NewRoutableModel() error = %v", err)
 	}
 	return model
+}
+
+// assertStringSlice 验证 HTTP 传输数组保持数据源的稳定顺序。
+func assertStringSlice(t *testing.T, got []string, want []string) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("strings = %#v, want %#v", got, want)
+	}
+	for index := range want {
+		if got[index] != want[index] {
+			t.Fatalf("strings = %#v, want %#v", got, want)
+		}
+	}
 }

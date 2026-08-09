@@ -178,7 +178,8 @@ func TestServerMountsSystemAndAccountRoutes(t *testing.T) {
 		nil,
 	)
 	assertStatus(t, models, http.StatusOK)
-	if !strings.Contains(models.body, `"id":"gpt-5.6-sol"`) {
+	if !strings.Contains(models.body, `"id":"gpt-5.6-sol"`) ||
+		strings.Contains(models.body, `"aih_modalities"`) {
 		t.Fatalf("本地模型目录缺少已注册账号模型: %s", models.body)
 	}
 	t.Logf(
@@ -186,6 +187,27 @@ func TestServerMountsSystemAndAccountRoutes(t *testing.T) {
 		baseURL+modelsapi.Path,
 		models.status,
 		models.body,
+	)
+	modelsWithModalities := performRequest(
+		t,
+		client,
+		http.MethodGet,
+		baseURL+modelsapi.Path+"?include=modalities",
+		testClientKey,
+		nil,
+	)
+	assertStatus(t, modelsWithModalities, http.StatusOK)
+	if !strings.Contains(
+		modelsWithModalities.body,
+		`"aih_modalities":{"input":["text","image","pdf"],"output":["text"]}`,
+	) {
+		t.Fatalf("本地模型目录缺少 models.dev 模态: %s", modelsWithModalities.body)
+	}
+	t.Logf(
+		"GET %s?include=modalities\npayload:\n(none)\nstatus: %d\nresponse:\n%s",
+		baseURL+modelsapi.Path,
+		modelsWithModalities.status,
+		modelsWithModalities.body,
 	)
 
 	nativeAccessToken := "sk-ant-oat01-mounted-native-access"

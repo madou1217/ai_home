@@ -66,6 +66,47 @@ test('registry preserves the inner supervisor cleanup owner marker', () => {
   assert.equal(entry.supervisorManaged, true);
 });
 
+test('registry binds a Codex native session through its launch correlation', () => {
+  const home = makeAihHome();
+  const codexSocket = persistentSession.deriveSocket('codex', ACCOUNT_REF);
+  registry.writeEntry(home, sampleEntry({
+    provider: 'codex',
+    socket: codexSocket,
+    correlationId: 'launch-correlation-1'
+  }), { now: 1000 });
+
+  const bound = registry.bindNativeSessionByCorrelation(
+    home,
+    'codex',
+    'launch-correlation-1',
+    '019f97d8-2007-7f90-8f8b-d627bd6b0327',
+    { now: 2000 }
+  );
+
+  assert.ok(bound);
+  assert.equal(bound.nativeSessionId, '019f97d8-2007-7f90-8f8b-d627bd6b0327');
+  assert.equal(bound.createdAt, 1000);
+  assert.equal(bound.updatedAt, 2000);
+  assert.equal(registry.listEntries(home)[0].nativeSessionId, bound.nativeSessionId);
+});
+
+test('registry binds a discovered native session by exact tmux address', () => {
+  const home = makeAihHome();
+  registry.writeEntry(home, sampleEntry(), { now: 1000 });
+
+  const bound = registry.bindNativeSession(
+    home,
+    ACCOUNT_SOCKET,
+    'p-alpha-abc123',
+    '019f9899-873d-77b1-ba91-4a07e555bb59',
+    { now: 3000 }
+  );
+
+  assert.ok(bound);
+  assert.equal(bound.nativeSessionId, '019f9899-873d-77b1-ba91-4a07e555bb59');
+  assert.equal(bound.updatedAt, 3000);
+});
+
 test('touchEntry only refreshes updatedAt for existing entries', () => {
   const home = makeAihHome();
   registry.writeEntry(home, sampleEntry(), { now: 1000 });

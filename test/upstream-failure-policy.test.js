@@ -324,21 +324,18 @@ test('failure policy classifies timeout errors as retryable transient failures',
   assert.equal(policy.clientStatusCode, 504);
 });
 
-test('failure policy gives transient network blips a consecutive-failure threshold and a short cooldown', () => {
+test('failure policy retries transport errors without poisoning account schedulability', () => {
   const err = new Error('fetch failed');
   err.code = 'UND_ERR_SOCKET';
   const policy = classifyUpstreamFailure({
     provider: 'agy',
     error: err,
-    // Even with a large configured default, a single network blip must not earn
-    // a long cooldown; it should self-heal in seconds. Model-scoped so a blip on
-    // one model never blocks the account's other models.
     defaultCooldownMs: 5 * 60 * 1000
   });
   assert.equal(policy.kind, 'network_error');
-  assert.equal(policy.scope, 'model');
+  assert.equal(policy.shouldMarkFailure, false);
   assert.equal(policy.failureThreshold, 2);
-  assert.equal(policy.cooldownMs, 30000);
+  assert.equal(policy.cooldownMs, 0);
   assert.equal(policy.shouldRetryAnotherAccount, true);
 });
 
@@ -351,8 +348,9 @@ test('failure policy treats undici socket termination as transient network failu
   });
   assert.equal(policy.kind, 'network_error');
   assert.equal(policy.scope, 'model');
+  assert.equal(policy.shouldMarkFailure, false);
   assert.equal(policy.failureThreshold, 2);
-  assert.equal(policy.cooldownMs, 30000);
+  assert.equal(policy.cooldownMs, 0);
   assert.equal(policy.shouldRetryAnotherAccount, true);
 });
 

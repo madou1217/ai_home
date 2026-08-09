@@ -19,6 +19,8 @@ const ACCOUNT_REF_1 = 'acct_00000000000000000001';
 const ACCOUNT_REF_2 = 'acct_00000000000000000002';
 const CLAUDE_SOCKET = persistentSession.deriveSocket('claude', ACCOUNT_REF_1);
 const CODEX_SOCKET = persistentSession.deriveSocket('codex', ACCOUNT_REF_2);
+const CODEX_THREAD_ID = '019f97d8-2007-7f90-8f8b-d627bd6b0327';
+const CODEX_THREAD_ID_2 = '019f9899-873d-77b1-ba91-4a07e555bb59';
 
 function makeAihHome() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'aih-restore-'));
@@ -51,11 +53,19 @@ function registerRestoreAccount(aiHomeDir, provider, accountRef, cliAccountId) {
   }
 }
 
-test('buildRestoreForwardArgs picks provider-native resume', () => {
-  assert.deepEqual(buildRestoreForwardArgs('codex'), ['/resume']);
-  assert.deepEqual(buildRestoreForwardArgs('claude'), ['--continue']);
-  assert.deepEqual(buildRestoreForwardArgs('gemini'), []);
-  assert.deepEqual(buildRestoreForwardArgs('agy'), []);
+test('buildRestoreForwardArgs restores Codex only by exact native identity', () => {
+  assert.deepEqual(buildRestoreForwardArgs({
+    provider: 'codex',
+    nativeSessionId: CODEX_THREAD_ID
+  }), ['resume', CODEX_THREAD_ID]);
+  assert.deepEqual(buildRestoreForwardArgs({
+    provider: 'codex',
+    forwardArgs: ['resume', '-m', 'gpt-5.6-sol', CODEX_THREAD_ID_2]
+  }), ['resume', CODEX_THREAD_ID_2]);
+  assert.deepEqual(buildRestoreForwardArgs({ provider: 'codex' }), []);
+  assert.deepEqual(buildRestoreForwardArgs({ provider: 'claude' }), ['--continue']);
+  assert.deepEqual(buildRestoreForwardArgs({ provider: 'gemini' }), []);
+  assert.deepEqual(buildRestoreForwardArgs({ provider: 'agy' }), []);
 });
 
 test('buildRestoreChildEnv sets detached target and strips interactive session flags', () => {
@@ -99,6 +109,77 @@ test('planRestoreActions: no server + updatedAt before boot => reboot victim to 
   );
   assert.equal(plan.restore.length, 1);
   assert.equal(plan.drop.length, 0);
+});
+
+test('planRestoreActions fails closed for an unbound Codex reboot victim', () => {
+  const probeBySocket = { [CODEX_SOCKET]: { trusted: true, noServer: true, aliveNames: new Set() } };
+  const plan = planRestoreActions(
+    [entry({
+      provider: 'codex',
+      runtimeScope: ACCOUNT_REF_2,
+      accountRef: ACCOUNT_REF_2,
+      socket: CODEX_SOCKET,
+      updatedAt: 1000
+    })],
+    probeBySocket,
+    { bootTimeMs: 2000, cwdExists: () => true }
+  );
+  assert.equal(plan.restore.length, 0);
+  assert.equal(plan.unrecoverable.length, 1);
+  assert.equal(plan.unrecoverable[0].unrecoverable, 'codex-thread-unbound');
+});
+
+test('planRestoreActions selects one reboot owner per Codex thread', () => {
+  const probeBySocket = { [CODEX_SOCKET]: { trusted: true, noServer: true, aliveNames: new Set() } };
+  const plan = planRestoreActions(
+    [
+      entry({
+        provider: 'codex', runtimeScope: ACCOUNT_REF_2, accountRef: ACCOUNT_REF_2,
+        socket: CODEX_SOCKET, session: 'p-old', nativeSessionId: CODEX_THREAD_ID,
+        createdAt: 500, updatedAt: 1000
+      }),
+      entry({
+        provider: 'codex', runtimeScope: ACCOUNT_REF_2, accountRef: ACCOUNT_REF_2,
+        socket: CODEX_SOCKET, session: 'p-new', nativeSessionId: CODEX_THREAD_ID,
+        createdAt: 700, updatedAt: 1500
+      })
+    ],
+    probeBySocket,
+    { bootTimeMs: 2000, cwdExists: () => true }
+  );
+  assert.deepEqual(plan.restore.map((item) => item.session), ['p-new']);
+  assert.equal(plan.unrecoverable.length, 1);
+  assert.equal(plan.unrecoverable[0].session, 'p-old');
+  assert.equal(plan.unrecoverable[0].unrecoverable, 'codex-thread-duplicate');
+});
+
+test('planRestoreActions keeps distinct Codex threads in the same cwd separate', () => {
+  const probeBySocket = { [CODEX_SOCKET]: { trusted: true, noServer: true, aliveNames: new Set() } };
+  const plan = planRestoreActions(
+    [
+      entry({
+        provider: 'codex', runtimeScope: ACCOUNT_REF_2, accountRef: ACCOUNT_REF_2,
+        socket: CODEX_SOCKET, session: 'p-thread-one', nativeSessionId: CODEX_THREAD_ID,
+        createdAt: 500, updatedAt: 1000
+      }),
+      entry({
+        provider: 'codex', runtimeScope: ACCOUNT_REF_2, accountRef: ACCOUNT_REF_2,
+        socket: CODEX_SOCKET, session: 'p-thread-two', nativeSessionId: CODEX_THREAD_ID_2,
+        createdAt: 700, updatedAt: 1500
+      })
+    ],
+    probeBySocket,
+    { bootTimeMs: 2000, cwdExists: () => true }
+  );
+
+  assert.deepEqual(
+    plan.restore.map((item) => [item.session, buildRestoreForwardArgs(item)]),
+    [
+      ['p-thread-one', ['resume', CODEX_THREAD_ID]],
+      ['p-thread-two', ['resume', CODEX_THREAD_ID_2]]
+    ]
+  );
+  assert.equal(plan.unrecoverable.length, 0);
 });
 
 test('planRestoreActions: no server + updatedAt after boot => ended this boot, dropped', () => {
@@ -149,7 +230,8 @@ test('restorePersistentSessions spawns detached aih children with resume args fo
     accountRef: ACCOUNT_REF_2,
     socket: CODEX_SOCKET,
     session: 's-work',
-    cwd
+    cwd,
+    nativeSessionId: CODEX_THREAD_ID
   }), { now: 1000 });
 
   const spawned = [];
@@ -183,7 +265,7 @@ test('restorePersistentSessions spawns detached aih children with resume args fo
   assert.equal(claudeChild.options.env[persistentSession.TARGET_ENV], 'p-alpha-abc123');
 
   const codexChild = spawned.find((c) => c.args.includes('codex'));
-  assert.deepEqual(codexChild.args, ['/repo/bin/ai-home.js', 'codex', '2', '/resume']);
+  assert.deepEqual(codexChild.args, ['/repo/bin/ai-home.js', 'codex', '2', 'resume', CODEX_THREAD_ID]);
   assert.equal(codexChild.options.env[persistentSession.TARGET_ENV], 's-work');
 
   // Lock is released so a subsequent run re-plans (children were spawned but
@@ -203,7 +285,8 @@ test('restorePersistentSessions restores gateway targets without a synthetic acc
     accountRef: '',
     socket,
     session: 's-gateway',
-    cwd
+    cwd,
+    nativeSessionId: CODEX_THREAD_ID
   }), { now: 1000 });
 
   const spawned = [];
@@ -227,7 +310,7 @@ test('restorePersistentSessions restores gateway targets without a synthetic acc
 
   const result = restorePersistentSessions({ now: 10000, bootTimeMs: 5000 });
   assert.equal(result.restored, 1);
-  assert.deepEqual(spawned[0].args, ['/repo/bin/ai-home.js', 'codex', '/resume']);
+  assert.deepEqual(spawned[0].args, ['/repo/bin/ai-home.js', 'codex', 'resume', CODEX_THREAD_ID]);
   assert.equal(result.restoredSessions[0].gateway, true);
   assert.equal(Object.hasOwn(result.restoredSessions[0], 'cliAccountId'), false);
 });

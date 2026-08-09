@@ -1772,6 +1772,231 @@ test('codex adapter retries the only account once after a stream disconnect', as
   assert.equal(account.modelFailureStreaks && account.modelFailureStreaks['gpt-5.6-sol'], undefined);
 });
 
+test('codex adapter backs off and preserves upstream semantics after repeated ECONNREFUSED', async () => {
+  const res = createResCapture();
+  const account = {
+    accountRef: accountRef('1'),
+    email: 'a@example.com',
+    accessToken: 'single-token',
+    apiKeyMode: true,
+    schedulableStatus: 'schedulable'
+  };
+  const state = {
+    accounts: { codex: [account] },
+    cursors: { codex: 0 },
+    metrics: { totalFailures: 0, totalSuccess: 0, totalTimeouts: 0 }
+  };
+  const retryDelays = [];
+  let fetchCalls = 0;
+
+  await handleCodexChatCompletions({
+    options: {
+      codexBaseUrl: 'https://chatgpt.com/backend-api/codex',
+      upstreamTimeoutMs: 3000,
+      maxAttempts: 1,
+      failureThreshold: 1,
+      logRequests: false
+    },
+    state,
+    req: { headers: { 'content-type': 'application/json' } },
+    res,
+    requestJson: {
+      model: 'gpt-5.6-sol',
+      stream: true,
+      input: 'hello'
+    },
+    routeKey: 'POST /v1/responses',
+    requestStartedAt: Date.now(),
+    cooldownMs: 60_000,
+    requestMeta: {
+      requestId: 'network-refused',
+      sessionKey: 's',
+      clientProtocol: 'openai_responses'
+    },
+    deps: {
+      chooseServerAccount,
+      pushMetricError: () => {},
+      writeJson: (r, code, payload) => {
+        r.statusCode = code;
+        r.setHeader('content-type', 'application/json');
+        r.end(JSON.stringify(payload));
+      },
+      fetchWithTimeout: async () => {
+        fetchCalls += 1;
+        const error = new Error('fetch failed');
+        error.cause = { code: 'ECONNREFUSED' };
+        throw error;
+      },
+      waitForTransientRetry: async (delayMs) => {
+        retryDelays.push(delayMs);
+      },
+      markProxyAccountFailure,
+      markProxyAccountSuccess,
+      appendProxyRequestLog: () => {}
+    }
+  });
+
+  assert.equal(fetchCalls, 2);
+  assert.deepEqual(retryDelays, [250]);
+  assert.equal(res.statusCode, 502);
+  const body = JSON.parse(String(res.body));
+  assert.equal(body.error, 'upstream_temporarily_unavailable');
+  assert.equal(getAccountModelCooldownUntil(account, 'gpt-5.6-sol'), 0);
+  assert.equal(account.modelFailureStreaks && account.modelFailureStreaks['gpt-5.6-sol'], undefined);
+});
+
+test('codex adapter does not turn the attachment ECONNREFUSED pool into no_available_account', async () => {
+  const res = createResCapture();
+  const transportAccounts = [
+    {
+      accountRef: 'acct_4c8fc2a7052fbb33d50d',
+      accessToken: 'first-token',
+      apiKeyMode: true,
+      schedulableStatus: 'schedulable'
+    },
+    {
+      accountRef: 'acct_6576e98b2b025cc545cb',
+      accessToken: 'second-token',
+      apiKeyMode: true,
+      schedulableStatus: 'schedulable'
+    }
+  ];
+  const quotaExhaustedAccount = {
+    accountRef: 'acct_a336311cae816e12b741',
+    accessToken: 'exhausted-token',
+    apiKeyMode: false,
+    remainingPct: 0,
+    schedulableStatus: 'schedulable'
+  };
+  const state = {
+    accounts: { codex: [...transportAccounts, quotaExhaustedAccount] },
+    cursors: { codex: 0 },
+    metrics: { totalFailures: 0, totalSuccess: 0, totalTimeouts: 0 }
+  };
+  const attemptedAccountRefs = [];
+
+  await handleCodexChatCompletions({
+    options: {
+      codexBaseUrl: 'https://chatgpt.com/backend-api/codex',
+      upstreamTimeoutMs: 3000,
+      maxAttempts: 3,
+      failureThreshold: 2,
+      logRequests: false
+    },
+    state,
+    req: { headers: { 'content-type': 'application/json' } },
+    res,
+    requestJson: {
+      model: 'gpt-5.6-sol',
+      stream: true,
+      input: 'hello'
+    },
+    routeKey: 'POST /v1/responses',
+    requestStartedAt: Date.now(),
+    cooldownMs: 60_000,
+    requestMeta: {
+      requestId: 'attachment-network-refused-pool',
+      sessionKey: 'attachment-session',
+      clientProtocol: 'openai_responses'
+    },
+    deps: {
+      chooseServerAccount,
+      pushMetricError: () => {},
+      writeJson: (r, code, payload) => {
+        r.statusCode = code;
+        r.setHeader('content-type', 'application/json');
+        r.end(JSON.stringify(payload));
+      },
+      fetchWithTimeout: async (_url, init) => {
+        const authorization = String(init && init.headers && init.headers.authorization || '');
+        const account = transportAccounts.find((item) => authorization.includes(item.accessToken));
+        attemptedAccountRefs.push(account && account.accountRef || 'unexpected-account');
+        const error = new Error('fetch failed');
+        error.cause = { code: 'ECONNREFUSED' };
+        throw error;
+      },
+      waitForTransientRetry: async () => {},
+      markProxyAccountFailure,
+      markProxyAccountSuccess,
+      appendProxyRequestLog: () => {}
+    }
+  });
+
+  assert.equal(res.statusCode, 502);
+  const body = JSON.parse(String(res.body));
+  assert.equal(body.error, 'upstream_temporarily_unavailable');
+  assert.equal(String(res.body).includes('no_available_account'), false);
+  assert.equal(attemptedAccountRefs.includes(quotaExhaustedAccount.accountRef), false);
+  assert.deepEqual(new Set(attemptedAccountRefs), new Set(transportAccounts.map((item) => item.accountRef)));
+  for (const account of transportAccounts) {
+    assert.equal(getAccountModelCooldownUntil(account, 'gpt-5.6-sol'), 0);
+    assert.equal(account.modelFailureStreaks && account.modelFailureStreaks['gpt-5.6-sol'], undefined);
+  }
+});
+
+test('codex adapter counts same-request timeout retries as one failure streak event', async () => {
+  const res = createResCapture();
+  const account = {
+    accountRef: accountRef('1'),
+    email: 'a@example.com',
+    accessToken: 'single-token',
+    apiKeyMode: true,
+    schedulableStatus: 'schedulable'
+  };
+  const state = {
+    accounts: { codex: [account] },
+    cursors: { codex: 0 },
+    metrics: { totalFailures: 0, totalSuccess: 0, totalTimeouts: 0 }
+  };
+
+  await handleCodexChatCompletions({
+    options: {
+      codexBaseUrl: 'https://chatgpt.com/backend-api/codex',
+      upstreamTimeoutMs: 3000,
+      maxAttempts: 1,
+      failureThreshold: 1,
+      logRequests: false
+    },
+    state,
+    req: { headers: { 'content-type': 'application/json' } },
+    res,
+    requestJson: {
+      model: 'gpt-5.6-sol',
+      stream: false,
+      messages: [{ role: 'user', content: 'hello' }]
+    },
+    routeKey: 'POST /v1/chat/completions',
+    requestStartedAt: Date.now(),
+    cooldownMs: 60_000,
+    requestMeta: { requestId: 'same-request-timeout', sessionKey: 's' },
+    deps: {
+      chooseServerAccount,
+      pushMetricError: () => {},
+      writeJson: (r, code, payload) => {
+        r.statusCode = code;
+        r.setHeader('content-type', 'application/json');
+        r.end(JSON.stringify(payload));
+      },
+      fetchWithTimeout: async () => {
+        const error = new Error('request timeout');
+        error.code = 'ETIMEDOUT';
+        throw error;
+      },
+      waitForTransientRetry: async () => {},
+      markProxyAccountFailure,
+      markProxyAccountSuccess,
+      appendProxyRequestLog: () => {}
+    }
+  });
+
+  assert.equal(res.statusCode, 504);
+  const body = JSON.parse(String(res.body));
+  assert.equal(body.error, 'upstream_temporarily_unavailable');
+  assert.equal(getAccountModelCooldownUntil(account, 'gpt-5.6-sol'), 0);
+  assert.equal(account.modelFailureStreaks['gpt-5.6-sol'].kind, 'timeout');
+  assert.equal(account.modelFailureStreaks['gpt-5.6-sol'].count, 1);
+});
+
 test('codex adapter reports temporary upstream failure when mixed transient retries exhaust without cooldown', async () => {
   const res = createResCapture();
   const account = {
@@ -1845,7 +2070,7 @@ test('codex adapter reports temporary upstream failure when mixed transient retr
   const body = JSON.parse(String(res.body));
   assert.equal(body.error, 'upstream_temporarily_unavailable');
   assert.equal(getAccountModelCooldownUntil(account, 'gpt-5.6-sol'), 0);
-  assert.equal(account.modelFailureStreaks['gpt-5.6-sol'].kind, 'network_error');
+  assert.equal(account.modelFailureStreaks['gpt-5.6-sol'].kind, 'service_unavailable');
   assert.equal(account.modelFailureStreaks['gpt-5.6-sol'].count, 1);
 });
 

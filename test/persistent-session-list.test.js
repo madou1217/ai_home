@@ -1163,7 +1163,10 @@ test('runGlobalPersistentSessionsCommand uses registry targets before scanning e
       error: (msg) => logs.push(`error:${msg}\n`)
     },
     resolveCliPath: (name) => (name === 'psmux' ? 'psmux.exe' : ''),
-    agentSessionTitleResolver: (_cliName, sessions) => sessions,
+    agentSessionTitleResolver: (_cliName, sessions) => sessions.map((session) => ({
+      ...session,
+      agentSessionId: '019f97d8-2007-7f90-8f8b-d627bd6b0327'
+    })),
     spawnSync: (_command, args) => {
       spawnOps.push(args.find((arg) => /^(?:set-environment|source-file|list-sessions|capture-pane)$/.test(arg)) || '');
       if (args.includes('list-sessions')) {
@@ -1199,6 +1202,10 @@ test('runGlobalPersistentSessionsCommand uses registry targets before scanning e
   assert.equal(spawnOps.includes('set-environment'), false);
   assert.equal(spawnOps.includes('source-file'), false);
   assert.equal(logs.join('').includes('fast session'), true);
+  assert.equal(
+    persistentSessionRegistry.listEntries(root)[0].nativeSessionId,
+    '019f97d8-2007-7f90-8f8b-d627bd6b0327'
+  );
 });
 
 test('runGlobalPersistentSessionsCommand skips reboot restore when live sessions are already visible', (t) => {

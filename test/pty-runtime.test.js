@@ -1129,7 +1129,7 @@ test('runtime bare launch creates a fresh strict tmux session when a project ses
   const cwd = '/tmp/aih-parallel-project';
   const baseSession = persistentSession.deriveSessionName({ cwd });
   const spawnSyncCalls = [];
-  const { runtime, proc, spawns, rawModeCalls } = createRuntimeHarness({
+  const { runtime, proc, spawns, rawModeCalls, aiHomeDir } = createRuntimeHarness({
     AIH_RUNTIME_SHOW_USAGE: '0'
   }, {
     cwd,
@@ -1151,6 +1151,9 @@ test('runtime bare launch creates a fresh strict tmux session when a project ses
   const sessionName = assertStrictFreshSessionLaunch(spawns[0], baseSession);
   const correlationId = spawns[0].options.env.AIH_PROVIDER_SESSION_CORRELATION_ID;
   assert.match(correlationId, /^[0-9a-f-]{36}$/);
+  const [registryEntry] = persistentSessionRegistry.listEntries(aiHomeDir);
+  assert.equal(registryEntry.session, sessionName);
+  assert.equal(registryEntry.correlationId, correlationId);
   assert.deepEqual(spawnSyncCalls.map((call) => call.args[3]), [
     'set-environment',
     'set-environment',
@@ -2061,6 +2064,180 @@ test('runtime explicit resume selects the newest existing project session', () =
   assert.deepEqual(spawns[0].args.slice(-4), ['attach-session', '-d', '-t', newestSession]);
   assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
   assert.deepEqual(rawModeCalls, [true, false]);
+});
+
+test('runtime explicit Codex thread resume attaches its existing persistent owner', () => {
+  const cwd = '/tmp/aih-codex-thread-owner-project';
+  const threadId = '019f97d8-2007-7f90-8f8b-d627bd6b0327';
+  const ownerSession = `${persistentSession.deriveSessionName({ cwd })}-owner`;
+  const separator = persistentSession.SESSION_LIST_SEPARATOR;
+  const harness = createRuntimeHarness({
+    AIH_RUNTIME_SHOW_USAGE: '0'
+  }, {
+    cwd,
+    stdoutIsTTY: true,
+    resolveCliPath: (name) => (name === 'tmux' ? '/usr/bin/tmux' : '/usr/bin/codex'),
+    spawnSync: (_command, args) => {
+      if (args.includes('list-sessions')) {
+        return {
+          status: 0,
+          stdout: [
+            ownerSession,
+            '1',
+            '100',
+            cwd,
+            'codex',
+            'codex',
+            'node',
+            '123',
+            persistentSession.UTF8_RUNTIME_MARKER_VALUE,
+            '',
+            '0',
+            '',
+            cwd,
+            persistentSession.PROVIDER_SUPERVISOR_RUNTIME_MARKER_VALUE
+          ].join(separator)
+        };
+      }
+      return { status: 0, stdout: '' };
+    }
+  });
+  const accountRef = harness.resolveHarnessAccountRef('codex', '10086');
+  persistentSessionRegistry.writeEntry(harness.aiHomeDir, {
+    provider: 'codex',
+    runtimeScope: accountRef,
+    gateway: false,
+    accountRef,
+    socket: persistentSession.deriveSocket('codex', accountRef),
+    session: ownerSession,
+    cwd,
+    forwardArgs: ['resume', threadId],
+    nativeSessionId: threadId
+  }, { now: 1000 });
+
+  harness.runtime.runCliPtyTracked('codex', '10086', ['resume', threadId], false);
+
+  assert.equal(harness.spawns.length, 1);
+  assert.equal(harness.spawns[0].args.includes('new-session'), false);
+  assert.deepEqual(
+    harness.spawns[0].args.slice(-4),
+    ['attach-session', '-d', '-t', ownerSession]
+  );
+  assert.throws(() => harness.proc.emit('SIGINT'), /EXIT:0/);
+  assert.deepEqual(harness.rawModeCalls, [true, false]);
+});
+
+test('runtime explicit Codex thread resume attaches an owner from another persistent socket', () => {
+  const cwd = '/tmp/aih-codex-cross-socket-owner-project';
+  const threadId = '019f97d8-2007-7f90-8f8b-d627bd6b0327';
+  const ownerSession = `${persistentSession.deriveSessionName({ cwd })}-gateway-owner`;
+  const separator = persistentSession.SESSION_LIST_SEPARATOR;
+  const gatewaySocket = persistentSession.deriveSocket('codex', 'gateway');
+  const harness = createRuntimeHarness({
+    AIH_RUNTIME_SHOW_USAGE: '0'
+  }, {
+    cwd,
+    stdoutIsTTY: true,
+    resolveCliPath: (name) => (name === 'tmux' ? '/usr/bin/tmux' : '/usr/bin/codex'),
+    spawnSync: (_command, args) => {
+      if (!args.includes('list-sessions')) return { status: 0, stdout: '' };
+      const socket = args[args.indexOf('-L') + 1];
+      if (socket !== gatewaySocket) {
+        return { status: 1, stdout: '', stderr: 'no server running' };
+      }
+      return {
+        status: 0,
+        stdout: [
+          ownerSession,
+          '1',
+          '100',
+          cwd,
+          'codex',
+          'codex',
+          'node',
+          '123',
+          persistentSession.UTF8_RUNTIME_MARKER_VALUE,
+          '',
+          '0',
+          '',
+          cwd,
+          persistentSession.PROVIDER_SUPERVISOR_RUNTIME_MARKER_VALUE
+        ].join(separator)
+      };
+    }
+  });
+  persistentSessionRegistry.writeEntry(harness.aiHomeDir, {
+    provider: 'codex',
+    runtimeScope: 'gateway',
+    gateway: true,
+    accountRef: '',
+    socket: gatewaySocket,
+    session: ownerSession,
+    cwd,
+    forwardArgs: ['resume', threadId],
+    nativeSessionId: threadId
+  }, { now: 1000 });
+
+  harness.runtime.runCliPtyTracked('codex', '10086', ['resume', threadId], false);
+
+  assert.equal(harness.spawns.length, 1);
+  assert.equal(harness.spawns[0].args.includes('new-session'), false);
+  assert.equal(
+    harness.spawns[0].args[harness.spawns[0].args.indexOf('-L') + 1],
+    gatewaySocket
+  );
+  assert.deepEqual(
+    harness.spawns[0].args.slice(-4),
+    ['attach-session', '-d', '-t', ownerSession]
+  );
+  const [registryEntry] = persistentSessionRegistry.listEntries(harness.aiHomeDir);
+  assert.equal(registryEntry.socket, gatewaySocket);
+  assert.equal(registryEntry.runtimeScope, 'gateway');
+  assert.equal(registryEntry.accountRef, '');
+  assert.throws(() => harness.proc.emit('SIGINT'), /EXIT:0/);
+  assert.deepEqual(harness.rawModeCalls, [true, false]);
+});
+
+test('runtime explicit Codex thread resume fails closed to its registered owner when probe is unavailable', () => {
+  const cwd = '/tmp/aih-codex-thread-owner-probe-fail-project';
+  const threadId = '019f97d8-2007-7f90-8f8b-d627bd6b0327';
+  const ownerSession = `${persistentSession.deriveSessionName({ cwd })}-owner`;
+  const harness = createRuntimeHarness({
+    AIH_RUNTIME_SHOW_USAGE: '0'
+  }, {
+    cwd,
+    stdoutIsTTY: true,
+    resolveCliPath: (name) => (name === 'tmux' ? '/usr/bin/tmux' : '/usr/bin/codex'),
+    spawnSync: (_command, args) => {
+      if (args.includes('list-sessions')) {
+        return { status: 2, stdout: '', stderr: 'tmux list failed unexpectedly' };
+      }
+      return { status: 0, stdout: '' };
+    }
+  });
+  const accountRef = harness.resolveHarnessAccountRef('codex', '10086');
+  persistentSessionRegistry.writeEntry(harness.aiHomeDir, {
+    provider: 'codex',
+    runtimeScope: accountRef,
+    gateway: false,
+    accountRef,
+    socket: persistentSession.deriveSocket('codex', accountRef),
+    session: ownerSession,
+    cwd,
+    forwardArgs: ['resume', threadId],
+    nativeSessionId: threadId
+  }, { now: 1000 });
+
+  harness.runtime.runCliPtyTracked('codex', '10086', ['resume', threadId], false);
+
+  assert.equal(harness.spawns.length, 1);
+  assert.equal(harness.spawns[0].args.includes('new-session'), false);
+  assert.deepEqual(
+    harness.spawns[0].args.slice(-4),
+    ['attach-session', '-d', '-t', ownerSession]
+  );
+  assert.throws(() => harness.proc.emit('SIGINT'), /EXIT:0/);
+  assert.deepEqual(harness.rawModeCalls, [true, false]);
 });
 
 test('runtime explicit resume breaks same-second tmux creation ties with the fresh-name timestamp', () => {

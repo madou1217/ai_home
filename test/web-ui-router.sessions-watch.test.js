@@ -10,6 +10,7 @@ const { createSessionEventBus } = require('../lib/server/session-event-bus');
 const {
   createProviderSessionCorrelationRegistry
 } = require('../lib/server/provider-session-correlation-registry');
+const persistentSessionRegistry = require('../lib/runtime/persistent-session-registry');
 
 function createStreamResCapture() {
   return {
@@ -273,6 +274,63 @@ test('web ui provider hook endpoint publishes session watch update', async (t) =
   assert.match(res.body, /"phase":"turn-completed"/);
   assert.match(res.body, /"projectPath":"\/repo"/);
   req.emit('close');
+});
+
+test('Codex SessionStart hook binds the native thread to its persistent launch', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-hook-persistent-bind-'));
+  const sessionEventBus = createSessionEventBus({
+    fs,
+    resolveSessionFilePath() { return ''; }
+  });
+  t.after(() => {
+    sessionEventBus.close();
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+  });
+  persistentSessionRegistry.writeEntry(aiHomeDir, {
+    provider: 'codex',
+    runtimeScope: 'gateway',
+    gateway: true,
+    accountRef: '',
+    socket: 'aih-codex-gateway',
+    session: 'p-hook-bind',
+    cwd: '/repo',
+    forwardArgs: [],
+    correlationId: 'codex-launch-correlation'
+  }, { now: 1000 });
+  const payload = {
+    provider: 'codex',
+    eventName: 'SessionStart',
+    correlationId: 'codex-launch-correlation',
+    payload: {
+      session_id: '019f97d8-2007-7f90-8f8b-d627bd6b0327',
+      cwd: '/repo'
+    }
+  };
+  const req = new EventEmitter();
+  req.headers = {};
+  const res = createStreamResCapture();
+
+  await handleWebUIRequest({
+    method: 'POST',
+    pathname: '/v0/webui/session-events/provider-hook',
+    url: new URL('http://localhost/v0/webui/session-events/provider-hook'),
+    req,
+    res,
+    options: {},
+    state: {},
+    deps: createBaseDeps({
+      aiHomeDir,
+      sessionEventBus,
+      providerSessionCorrelationRegistry: createProviderSessionCorrelationRegistry(),
+      readRequestBody: async () => Buffer.from(JSON.stringify(payload), 'utf8')
+    })
+  });
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(
+    persistentSessionRegistry.listEntries(aiHomeDir)[0].nativeSessionId,
+    '019f97d8-2007-7f90-8f8b-d627bd6b0327'
+  );
 });
 
 test('Claude CLI retry events resolve their exact hook session and stream immediately', async (t) => {

@@ -10,7 +10,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -20,7 +19,6 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	codexauth "github.com/madou1217/ai_home/core/accounts/codex"
 	"github.com/madou1217/ai_home/internal/adapters/codex/authfile"
-	codexresponses "github.com/madou1217/ai_home/internal/adapters/codex/responses"
 	"github.com/madou1217/ai_home/internal/host/aihserver"
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/modelsapi"
@@ -61,8 +59,10 @@ type realCodexRequestCounts struct {
 // 意外重试，第三次请求也只会在本地失败，不会继续触达真实上游。
 type realCodexRequestBudget struct {
 	client *http.Client
-	mu     sync.Mutex
-	counts realCodexRequestCounts
+	// maxResponses 是当前真实场景明确批准的推理次数；零沿用两次缺省预算。
+	maxResponses int
+	mu           sync.Mutex
+	counts       realCodexRequestCounts
 }
 
 // Do 校验请求目标、协议头和固定测试正文后，原样委托给标准库客户端。
@@ -112,7 +112,7 @@ func (budget *realCodexRequestBudget) reserve(request *http.Request) error {
 		request.URL.RawQuery == "" &&
 		request.Header.Get("Content-Type") == "application/json" &&
 		request.Header.Get("Accept") == "text/event-stream" &&
-		budget.counts.responses < 2:
+		budget.counts.responses < budget.responseLimit():
 		if err := validateRealCodexUpstreamBody(request); err != nil {
 			budget.counts.unexpected++
 			return err
@@ -123,6 +123,14 @@ func (budget *realCodexRequestBudget) reserve(request *http.Request) error {
 		budget.counts.unexpected++
 		return errUnexpectedRealCodexRequest
 	}
+}
+
+// responseLimit 返回场景预算；默认值保持原有 Responses 验收的两次请求。
+func (budget *realCodexRequestBudget) responseLimit() int {
+	if budget.maxResponses > 0 {
+		return budget.maxResponses
+	}
+	return 2
 }
 
 // snapshot 返回与并发后台任务隔离的计数副本。
@@ -235,6 +243,44 @@ func TestRealCodexRequestBudgetBlocksExtraNetworkCalls(t *testing.T) {
 	}
 }
 
+// TestRealCodexRequestBudgetAllowsConfiguredResponseCount 验证不同真实验收场景
+// 可以显式收紧或放宽固定次数，同时第一个超额请求仍在本地失败。
+func TestRealCodexRequestBudgetAllowsConfiguredResponseCount(t *testing.T) {
+	transportCalls := 0
+	budget := &realCodexRequestBudget{
+		maxResponses: 4,
+		client: &http.Client{Transport: realCodexRoundTripperFunc(func(
+			_ *http.Request,
+		) (*http.Response, error) {
+			transportCalls++
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader("{}")),
+			}, nil
+		})},
+	}
+
+	for attempt := 0; attempt < 5; attempt++ {
+		response, err := budget.Do(newBudgetTestResponsesRequest(t))
+		if attempt < 4 {
+			if err != nil || response == nil {
+				t.Fatalf("预算内请求 %d 被拒绝: %v", attempt+1, err)
+			}
+			_ = response.Body.Close()
+			continue
+		}
+		if !errors.Is(err, errUnexpectedRealCodexRequest) || response != nil {
+			t.Fatalf("第五次真实请求没有在本地被拒绝: response=%v err=%v", response, err)
+		}
+	}
+
+	want := realCodexRequestCounts{responses: 4, unexpected: 1}
+	if got := budget.snapshot(); got != want || transportCalls != 4 {
+		t.Fatalf("可配置真实请求预算失效: counts=%+v transport_calls=%d", got, transportCalls)
+	}
+}
+
 // TestRealCodexRequestBudgetPreservesRequestBody 验证安全检查不会修改随后真正发送的
 // JSON；白名单只能观察请求，不能把测试本身变成上游格式错误的来源。
 func TestRealCodexRequestBudgetPreservesRequestBody(t *testing.T) {
@@ -289,78 +335,9 @@ func TestRealCodexResponsesEndToEnd(t *testing.T) {
 	defer clear(authJSON)
 	authExpiresAt := assertRealCodexAuthReady(t, authJSON)
 
-	upstream := &realCodexRequestBudget{client: &http.Client{
-		Timeout: realCodexUpstreamTimeout,
-		CheckRedirect: func(
-			_ *http.Request,
-			_ []*http.Request,
-		) error {
-			return http.ErrUseLastResponse
-		},
-	}}
-	codexModels, err := codexresponses.NewModelCatalogSource(upstream)
-	if err != nil {
-		t.Fatalf("创建真实 Codex 模型目录源失败: %v", err)
-	}
-	aiHomeDir := newDisposableRealCodexHome(t)
-	baseURL, client := startRealCodexServer(
-		t,
-		aiHomeDir,
-		upstream,
-		[]accountapp.ProviderModelDiscoverer{codexModels},
-	)
-
-	importPayload, err := json.Marshal(map[string]any{
-		"provider_id": "codex",
-		"artifacts": map[string]json.RawMessage{
-			"auth_json": authJSON,
-		},
-	})
-	if err != nil {
-		t.Fatalf("构造真实 Codex 导入命令失败: %v", err)
-	}
-	imported := performRequest(
-		t,
-		client,
-		http.MethodPost,
-		baseURL+accountsapi.NativeImportPath,
-		testManagementKey,
-		importPayload,
-	)
-	clear(importPayload)
-	assertStatus(t, imported, http.StatusCreated)
-	var importDocument struct {
-		Data struct {
-			AuthKind string `json:"auth_kind"`
-			AuthMode string `json:"auth_mode"`
-		} `json:"data"`
-	}
-	decodeJSON(t, imported.body, &importDocument)
-	// Codex 只有 OAuth/API Key 两种认证类型，不像 Claude 还需要区分
-	// refreshable/access_token 生命周期，因此公开 auth_mode 按领域合同保持为空。
-	if importDocument.Data.AuthKind != "oauth" || importDocument.Data.AuthMode != "" {
-		t.Fatalf(
-			"真实账号认证投影错误: kind=%q mode=%q",
-			importDocument.Data.AuthKind,
-			importDocument.Data.AuthMode,
-		)
-	}
-	if counts := upstream.snapshot(); counts != (realCodexRequestCounts{
-		models: 1,
-	}) {
-		t.Fatalf("导入阶段真实请求计数错误: %+v", counts)
-	}
-
-	models := performRequest(
-		t,
-		client,
-		http.MethodGet,
-		baseURL+modelsapi.Path,
-		testClientKey,
-		nil,
-	)
-	assertStatus(t, models, http.StatusOK)
-	modelCount := assertRealCodexModelAvailable(t, models.body)
+	upstream := newRealCodexUpstreamBudget(2)
+	fixture := startRealCodexFixture(t, authJSON, upstream)
+	baseURL, client := fixture.baseURL, fixture.client
 
 	basePayload := map[string]any{
 		"model":        realCodexModel,
@@ -402,7 +379,7 @@ func TestRealCodexResponsesEndToEnd(t *testing.T) {
 	if counts := upstream.snapshot(); counts != wantCounts {
 		t.Fatalf("真实请求预算错误: got=%+v want=%+v", counts, wantCounts)
 	}
-	databasePath := filepath.Join(aiHomeDir, "aih.db")
+	databasePath := fixture.databasePath()
 	if info, statErr := os.Stat(databasePath); statErr != nil || info.IsDir() {
 		t.Fatalf("临时 aih.db 未创建: %v", statErr)
 	}
@@ -422,11 +399,11 @@ func TestRealCodexResponsesEndToEnd(t *testing.T) {
 		}, "\n"),
 		baseURL,
 		baseURL+accountsapi.NativeImportPath,
-		imported.status,
-		importDocument.Data.AuthKind,
+		fixture.importStatus,
+		fixture.authKind,
 		baseURL+modelsapi.Path,
-		models.status,
-		modelCount,
+		fixture.modelsStatus,
+		fixture.modelCount,
 		realCodexModel,
 		baseURL+openairesponsesapi.Path,
 		string(marshalRealCodexPayload(t, basePayload, false)),

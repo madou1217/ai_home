@@ -225,8 +225,14 @@ func (handler *Handler) ServeHTTP(
 	}
 	if outcome.response == nil {
 		if !leased && outcome.credentialUnfit {
-			// 该模型的账号用的不是官方 OAuth，透传承载不了，交回 Canonical。
-			handler.delegate(response, request, body)
+			// 该账号不是官方端点上的订阅 OAuth，透传承载不了；连同账号选择
+			// 一起交回 Canonical，避免重新征召打乱公平轮转。
+			handler.delegatePinned(
+				response,
+				request,
+				body,
+				outcome.route.AccountRef(),
+			)
 			return
 		}
 		failure := outcome.failure
@@ -256,6 +262,11 @@ func (handler *Handler) ServeHTTP(
 		time.Now().Add(maxRelayDuration),
 	)
 	copyResponseHeaders(response.Header(), upstreamResponse.Header)
+	// 模型输出不得被中间代理缓存。这是网关对所有出站响应的安全保证，与是否
+	// 透传无关；上游已声明时尊重上游。
+	if response.Header().Get("Cache-Control") == "" {
+		response.Header().Set("Cache-Control", "no-store")
+	}
 	if retryAccount {
 		// 内部换号标记只能由当前 Server 分类生成，不能信任上游同名 Header。
 		response.Header().Set(

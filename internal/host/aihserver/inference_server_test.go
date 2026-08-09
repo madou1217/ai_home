@@ -413,9 +413,13 @@ func TestServerProjectsRedactedThinkingToClaudeAPIKeyShape(t *testing.T) {
 	}
 }
 
-// TestServerCarriesClaudeOAuthOnCanonicalTransport 验证只有订阅 OAuth 候选时，
-// Canonical Adapter 按官方合同发出 Bearer + OAuth beta 请求，而不是本地判不可用。
-func TestServerCarriesClaudeOAuthOnCanonicalTransport(t *testing.T) {
+// TestServerCarriesClaudeOAuthOnNativeTransport 验证只有订阅 OAuth 候选时，
+// Messages 客户端按官方合同发出 Bearer + OAuth beta 请求，而不是本地判不可用。
+//
+// 该路径现由透传承载：客户端协议与上游协议一致时字节转发，不再经 Canonical
+// 重建，因此响应是上游原始 SSE 而非重建后的 JSON。官方合同（Bearer 认证、
+// oauth 与 claude-code beta）仍必须完整发出——缺任一项都会被上游按非订阅调用拒绝。
+func TestServerCarriesClaudeOAuthOnNativeTransport(t *testing.T) {
 	t.Parallel()
 
 	upstream := &syntheticInferenceHTTPClient{}
@@ -442,7 +446,7 @@ func TestServerCarriesClaudeOAuthOnCanonicalTransport(t *testing.T) {
 		!strings.Contains(upstream.LastAnthropicBeta(), "oauth-2025-04-20") ||
 		!strings.Contains(upstream.LastAnthropicBeta(), "claude-code-20250219") {
 		t.Fatalf(
-			"Claude OAuth canonical transport status=%d body=%s calls=%d auth=%s beta=%q",
+			"Claude OAuth native transport status=%d body=%s calls=%d auth=%s beta=%q",
 			exchange.status,
 			exchange.body,
 			upstream.CallCount(),

@@ -97,6 +97,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		options.ClientKey,
 		options.InferenceHTTPClient,
 		options.UsageHTTPClient,
+		options.RelayHTTPClient,
 		newMessagesDecodeErrorObserver(options.ErrorLog),
 		newClaudeUpstreamDecodeErrorObserver(options.ErrorLog),
 	)
@@ -123,6 +124,7 @@ func newHandlers(
 	clientKey func() string,
 	inferenceClient InferenceHTTPClient,
 	usageClient UsageHTTPClient,
+	relayHTTPClient InferenceHTTPClient,
 	decodeErrors func(error),
 	upstreamDecodeErrors func(error),
 ) (_ serverHandlers, _ []io.Closer, resultErr error) {
@@ -351,9 +353,13 @@ func newHandlers(
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建 Claude Relay 鉴权失败: %w", err)
 	}
-	relayClient := &http.Client{
+	// 生产默认使用拒绝重定向的独立客户端；仅测试可注入替身。
+	var relayClient claudenativerelay.HTTPClient = &http.Client{
 		Timeout:       claudeRelayHTTPTimeout,
 		CheckRedirect: rejectOAuthRedirect,
+	}
+	if relayHTTPClient != nil {
+		relayClient = relayHTTPClient
 	}
 	inference, err := newInferenceComposition(
 		ctx,

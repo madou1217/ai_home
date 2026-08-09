@@ -72,13 +72,14 @@ func newRouter(handlers serverHandlers) http.Handler {
 	)
 	mux.Handle(openairesponsesapi.Path, handlers.inference)
 	mux.Handle(openaichatcompletionsapi.Path, handlers.inference)
-	mux.Handle(
-		anthropicmessagesapi.Path,
-		claudeMessagesDispatcher{
-			canonical: handlers.inference,
-			relay:     handlers.claudeNativeRelay,
-		},
-	)
+	// /v1/messages 统一进入透传入口：能无损透传的走字节转发，其余（跨协议、
+	// 非 claude 模型、非官方端点凭据、不满足透传合同）由它自行交回 Canonical。
+	//
+	// 此前按 Relay Token 分流，等于只有官方 Claude Code 能用无损路径；其它
+	// 客户端即使上游就是 claude 账号也被迫走 Canonical 重建——那是丢字段
+	// （stop_details / service_tier / inference_geo / cache_creation）与错状态
+	// 的来源，且同协议下这些信息本来是 1:1 的。
+	mux.Handle(anthropicmessagesapi.Path, handlers.claudeNativeRelay)
 	mux.HandleFunc("/", handleRouteNotFound)
 	return mux
 }

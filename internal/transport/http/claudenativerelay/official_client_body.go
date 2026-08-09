@@ -3,6 +3,7 @@ package claudenativerelay
 import (
 	"bytes"
 	"encoding/json"
+	"net/http"
 	"strings"
 )
 
@@ -19,7 +20,52 @@ const (
 	officialSystemIdentity = "You are Claude Code, Anthropic's official CLI for Claude."
 	// systemField 是 Messages 请求体里承载系统提示的字段名。
 	systemField = "system"
+	// officialClientUserAgent 是官方 CLI 自报的客户端身份。
+	//
+	// 与 Header/beta 一并取自本机回环抓包：正式 Claude Code 2.1.224 实发。
+	officialClientUserAgent = "claude-cli/2.1.224 (external, sdk-cli)"
+	// officialClientBeta 是官方 CLI 每次请求声明的 Claude Code beta。
+	officialClientBeta = "claude-code-20250219"
+	// officialAnthropicVersion 是 Messages 公共 API 的稳定版本。
+	officialAnthropicVersion = "2023-06-01"
 )
+
+// applyOfficialClientHeaders 为非原生客户端补齐官方客户端 Header。
+//
+// 补 system 身份还不够：订阅额度判定同时看外层标识。原生客户端自带这些值，
+// 此处只对缺失者补齐，且不覆盖客户端自报值——它比抓包快照更准确。
+func applyOfficialClientHeaders(header http.Header) {
+	if header == nil {
+		return
+	}
+	// anthropic-version 是 Messages API 的必填头。原生客户端自带，普通客户端
+	// 通常不发；透传只转发不补齐会让上游直接 400，整条通道对普通客户端不可用。
+	if strings.TrimSpace(header.Get("anthropic-version")) == "" {
+		header.Set("anthropic-version", officialAnthropicVersion)
+	}
+	if strings.TrimSpace(header.Get("User-Agent")) == "" {
+		header.Set("User-Agent", officialClientUserAgent)
+	}
+	if strings.TrimSpace(header.Get("x-app")) == "" {
+		header.Set("x-app", "cli")
+	}
+	if strings.TrimSpace(
+		header.Get("anthropic-dangerous-direct-browser-access"),
+	) == "" {
+		header.Set("anthropic-dangerous-direct-browser-access", "true")
+	}
+	if containsHeaderToken(header.Values("anthropic-beta"), officialClientBeta) {
+		return
+	}
+	// 追加到同一行而不是新增一行：官方客户端发的是单行逗号分隔（回环抓包证实），
+	// 且多行时 Header.Get 只返回第一行，下游按单值读取会漏掉后加的 beta。
+	existing := strings.TrimSpace(header.Get("anthropic-beta"))
+	if existing == "" {
+		header.Set("anthropic-beta", officialClientBeta)
+		return
+	}
+	header.Set("anthropic-beta", existing+","+officialClientBeta)
+}
 
 // systemBlockDTO 是 system 数组元素的最小形状。
 type systemBlockDTO struct {

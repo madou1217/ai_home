@@ -7,6 +7,7 @@ import (
 
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/internal/adapters/claude/transportpolicy"
 )
 
 // attemptOutcome 描述一次上游尝试对编排的影响。
@@ -86,24 +87,35 @@ func (handler *Handler) attemptRelay(
 			},
 		}, true
 	}
+	// 透传只允许打官方 Messages 端点（officialMessagesEndpoint 是安全属性），
+	// 因此只有「官方端点上的订阅 OAuth」才适用。指向第三方中转的凭据即使也是
+	// OAuth 形态，也必须交回 Canonical——那里才尊重账号自带的 Base URL。
 	accessToken, err := nativeOAuthAccessToken(credential)
-	if err != nil {
-		// 凭据类型不符是账号的确定性属性，换号可能成功；但绝不能触网。
+	if err != nil || !transportpolicy.RequiresNativeOAuth(credential) {
+		// 凭据不适配是账号的确定性属性，换号可能成功；但绝不能触网。
+		// 不换号：透传是传输优化，不该改变调度选中的账号。若因凭据不适配就
+		// 跳到下一个，透传会系统性偏向 OAuth 账号，让 API Key 账号在 Messages
+		// 流量上被饿死，公平轮转失效。正确做法是把这一次交给能服务它的
+		// Canonical，账号选择保持不变。
 		return attemptOutcome{
 			route:           route,
-			retryAccount:    true,
 			credentialUnfit: true,
 			failure: relayFailure{
 				status:  http.StatusUnprocessableEntity,
 				code:    "unsupported_relay_credential",
 				message: "Claude Relay 账号必须使用官方 OAuth",
 			},
-		}, true
+		}, false
 	}
 
 	request.Body = io.NopCloser(bytes.NewReader(body))
 	request.ContentLength = int64(len(body))
 	upstream, err := buildUpstreamRequest(request, accessToken)
+	if err == nil && !hasNativeClaudeHeaders(request.Header) {
+		// 非原生客户端：正文身份已在入口补齐，外层标识在此补齐，两者缺一
+		// 都会被上游按非订阅调用拒绝。
+		applyOfficialClientHeaders(upstream.Header)
+	}
 	if err != nil {
 		// 请求本身无法构造，换号不会改变结果。
 		return attemptOutcome{

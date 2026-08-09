@@ -504,6 +504,9 @@ func startTestServerWithInferenceClient(
 		ModelDiscoverers:    accountmodels.NewDiscoverers(),
 		InferenceHTTPClient: inferenceClient,
 		UsageHTTPClient:     syntheticUsageHTTPClient{},
+		// 透传与 Canonical 在现实中指向同一个 Anthropic，测试同样共用替身；
+		// 生产仍是两个独立客户端，透传那个拒绝重定向。
+		RelayHTTPClient: inferenceClient,
 	})
 	if err != nil {
 		t.Fatalf("aihserver.New() error = %v", err)

@@ -56,6 +56,11 @@ type Options struct {
 	InferenceHTTPClient InferenceHTTPClient
 	// UsageHTTPClient 允许测试注入合成额度上游；生产留空时创建独立安全客户端。
 	UsageHTTPClient UsageHTTPClient
+	// RelayHTTPClient 允许测试注入透传上游；生产必须留空。
+	//
+	// 透传与 Canonical 用各自的客户端：透传只允许打官方 Messages 端点并拒绝
+	// 重定向，这条安全属性不能因为共用客户端而被稀释。
+	RelayHTTPClient InferenceHTTPClient
 }
 
 // ValidateManagementKey 校验 Bearer 请求头可安全表达的 Management Key。

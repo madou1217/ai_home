@@ -69,7 +69,7 @@
 
 | 编号 | 功能点 | 入口 | 当前行为/边界 | 状态 | 主要证据 |
 |---|---|---|---|---|---|
-| ACC-001 | 全局账号列表 | `aih ls`、Web `/accounts` | 聚合全部 provider、账号状态、plan/额度/运行态；Web 支持 provider 与状态筛选 | 稳定 | `lib/cli/commands/root/router.js`、`web/src/pages/Accounts.tsx` |
+| ACC-001 | 全局账号列表 | `aih ls`、`aih account list`、Web `/accounts` | 旧入口聚合运行态；Go 入口用 AccountRef keyset 分页只读基础信息、认证类型和公开资料，不加载凭据正文、模型、usage 或运行态 | 稳定/重构中 | `cmd/aih/account.go`、`internal/host/aihaccount/app.go`、`lib/cli/commands/root/router.js`、`web/src/pages/Accounts.tsx` |
 | ACC-002 | Provider 账号列表/单 ID 过滤 | `aih <provider> ls [id]` | 只列指定 provider；可进一步只看一个数字别名，支持列表帮助与分页行为 | 稳定 | `lib/cli/commands/ai-cli/router.js` |
 | ACC-003 | 账号详情/配置状态 | Web 账号表、Management API | 展示公开身份、认证类型、配置、调度、额度、模型探测和最后使用时间，不回传原始 secret | 稳定 | `lib/server/webui-account-live.js`、`lib/server/management-router.js` |
 | ACC-004 | 稳定账号身份 | 全链路 | `accountRef` 是 DB/Server/Web/runtime/event/usage 唯一身份；`cliAccountId` 只是可变 CLI 数字别名 | 稳定 | `lib/account/account-registration.js`、`lib/server/account-ref-store.js` |

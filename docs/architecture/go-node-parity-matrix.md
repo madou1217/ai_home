@@ -1,7 +1,8 @@
 # Go / Node 网关功能矩阵
 
 > 目的：把「Go 什么时候能取代 Node 9527」从感觉变成账。
-> 采集日期：2026-08-08。Node 侧 106 条路径 / 35 组，Go 侧 13 条。
+> 初次采集日期：2026-08-08；当前复核日期：2026-08-09。Node 侧 106 条路径 /
+> 35 组，Go 侧按业务入口归并为 14 条。
 > 采集方式：只读扫描 `lib/server/{server,v1-router,web-ui-router,webui-*-routes}.js`
 > 与 `internal/host/aihserver/router.go` 的路径字面量，未启动服务。
 
@@ -30,7 +31,7 @@ Go 的必做清单是把重构范围放大了一个数量级。
 | `/v1/messages` | ✅ 已有 | Canonical + Native Relay 双路分发 |
 | `/v1/models` | ✅ 已有 | 模型目录 |
 | `/healthz` `/readyz` | ✅ 已有 | 存活/就绪 |
-| `/v1/props` | ❌ **缺失** | 客户端能力协商。Node 返回 `{object:"props",data:{}}` |
+| `/v1/props` | ✅ 已有 | 客户端能力协商，返回 `{object:"props",data:{}}` |
 | `/v1/blobs/{id}` | ❌ **缺失** | 视觉 blob 句柄，见下方说明 |
 | ~~`/v1/`~~ | — | **不是端点**：`v1-router.js:592` 的作用域守卫 |
 | ~~`/v1beta/`~~ | — | **不是端点**：同上。全仓 `/v1beta` 只出现在该守卫里，无任何处理器 |
@@ -39,10 +40,9 @@ Go 的必做清单是把重构范围放大了一个数量级。
 Node 9527 探测，`/v1beta/models` 与 `/v1/unknown-endpoint` 均返回 404，而
 `/v1/props` 返回 200。
 
-所以数据面真实缺口是 **2 条**，不是 4 条：
+所以数据面剩余缺口是 **1 条**，不是 4 条：
 
-1. `/v1/props` —— 常量响应，工作量近似为零。
-2. `/v1/blobs/{id}` —— 依赖 vision-image-guard 的 blob 存储：非视觉模型收到图片时
+1. `/v1/blobs/{id}` —— 依赖 vision-image-guard 的 blob 存储：非视觉模型收到图片时
    网关剥图存 blob、正文留句柄，视觉子代理再回来取。Go 侧没有这条链路，补端点
    而不补链路没有意义。**归入「Go 支持视觉借用」的独立课题，不算切流阻塞。**
 
@@ -50,12 +50,13 @@ Node 9527 探测，`/v1beta/models` 与 `/v1/unknown-endpoint` 均返回 404，�
 
 | 组 | Node | Go | 决策点 |
 | --- | --- | --- | --- |
-| 管理面账号 | `/v0/webui/management/accounts` 等 11 条 | `/v1/management/*` 5 条 | **命名空间不同**：Go 用 `/v1/management`，Node 用 `/v0/webui/management`。切流时 WebUI 会打不中 Go。要么 Go 加别名，要么 WebUI 改调用。 |
+| 管理面账号 | `/v0/webui/management/accounts` 等 11 条 | `/v1/management/*` | **语义不同，不做别名**：旧路径是 Node WebUI 运维 facade；Go 路径是账号领域 API。后续 TypeScript 客户端直接使用 `/v1/management`。 |
 | `/v0/management` | ✅ | ❌ | 控制面入口，是否由 Go 承载 |
 | `/v0/node-rpc/status` | ✅ | ❌ | Fabric 节点 RPC |
 | `/v0/webui/nodes/*`（6） | ✅ | ❌ | 远程节点编排，属 Fabric 主线 |
 
-**命名空间冲突是 B 档里唯一的硬伤**，其余三项取决于 Fabric 是否也迁 Go。
+管理面命名空间已经定案：不把旧 WebUI facade 伪装成 Go 账号 API，也不在 Go 中增加
+`/v0` 兼容层。前端迁移属于消费者改造；其余三项取决于 Fabric 是否也迁 Go。
 
 ## C 档：WebUI 后端，不阻塞
 
@@ -70,12 +71,13 @@ Node 9527 探测，`/v1beta/models` 与 `/v1/unknown-endpoint` 均返回 404，�
 
 ---
 
-## Go 侧完整路由清单（13）
+## Go 侧完整路由清单（14）
 
 ```
 /healthz
 /readyz
 /v1/models
+/v1/props
 /v1/responses
 /v1/chat/completions
 /v1/messages                              (Canonical / Native Relay 分发)

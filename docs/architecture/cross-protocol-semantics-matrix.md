@@ -1,6 +1,7 @@
 # 跨协议语义矩阵（codex ↔ claude）
 
-> 采集日期：2026-08-08。全部结论来自源码，标注了文件与行号，可复核。
+> 初次采集日期：2026-08-08；当前复核日期：2026-08-09。结论来自当前源码、
+> 自动测试与显式授权的真实账号验收，关键实现均标注文件，可复核。
 > 范围：Canonical 网关承载的两个客户端协议（OpenAI Responses / Anthropic Messages）
 > 与两个上游协议（Codex Responses / Claude Messages）之间的语义传递。
 >
@@ -35,7 +36,7 @@
 
 ## 二、请求方向：推理 / 思考（用户重点问的一项）
 
-**结论：不是双向对齐，是单向可用。**
+**结论：两个方向均可用；Claude 的 budget/adaptive 到 Codex 是显式投影。**
 
 Canonical `ReasoningConfig` 有四个维度：`mode`（budget / adaptive / effort）、
 `effort`、`budgetTokens`、`summary`。
@@ -43,13 +44,13 @@ Canonical `ReasoningConfig` 有四个维度：`mode`（budget / adaptive / effor
 | 方向 | 行为 | 状态 | 依据 |
 | --- | --- | --- | --- |
 | codex→claude | Responses 的 `reasoning.effort` → Canonical `ModeEffort` → Claude `thinking:{type:"adaptive"}` + `output_config.effort` | 🔁 **可转换，已实现** | `request_encoder.go:480-490` |
-| claude→codex（客户端发 `thinking:{type:"adaptive"}`） | Canonical `ModeAdaptive` → codex 编码器 **⛔ 报 unsupported** | **未实现** | `codex/responses/request_encoder.go:508`：`if config.Mode() != ReasoningModeEffort { return unsupported("reasoning.mode") }` |
-| claude→codex（客户端发 `thinking:{type:"enabled",budget_tokens}`） | 同上 ⛔ | **未实现** | 同上 |
+| claude→codex（客户端发 `thinking:{type:"adaptive"}`） | Canonical `ModeAdaptive` → 优先保留显式 effort；未声明时投影为 `high` | 🔁 **已实现** | `codex/responses/reasoning_projection.go` |
+| claude→codex（客户端发 `thinking:{type:"enabled",budget_tokens}`） | Canonical `ModeBudget` → 优先保留显式 effort；否则按 `<=8k / <=32k / >32k` 映射 low/medium/high | ⚠️ **有损但可用** | `codex/responses/reasoning_projection.go` |
 
-**处理意见**：codex 编码器应把 `ModeAdaptive` 与 `ModeBudget` 映射到
-`reasoning.effort` 的合理档位，而不是拒绝。adaptive 无固定预算，最接近的表达是
-`effort: high`；budget 可按 token 数分档。**当前 claude 客户端带 thinking 调 codex
-账号会整个请求失败**，这是比字段丢失严重得多的问题。
+实现遵守“显式意图优先”：Claude Code 同时发送 `adaptive + output_config.effort` 时直接
+使用客户端 effort，不用网关猜测覆盖。只有旧式请求只给 `budget_tokens` 时才按稳定阈值
+降维。2026-08-09 真实 `gpt-5.6-sol` 验收已证明 Adapter 单次调用以及 Server
+`/v1/messages` 非流式、流式调用均成功，且上游请求为 `reasoning=low/auto`。
 
 补充：`thinking.summary`（Claude 的 `display`）与 Responses 的 `reasoning.summary`
 在 Canonical 里是同一个 `summary` 维度，双向已通。
@@ -107,26 +108,15 @@ Canonical `StopReason` 七个取值。两侧映射：
 依据：`anthropicmessages/response_wire.go:279-296`（Canonical→Claude）、
 `claude/messages/response_decoder.go:1077-1115`（Claude→Canonical）。
 
-**问题 1：OpenAI 侧永远不发 `incomplete`（已验证）。**
+**截断终态已修复。** `openairesponses/terminal_status.go` 让 `max_tokens` 与
+`content_filter` 生成 `status:"incomplete"` 和对应 `incomplete_details.reason`；
+`pause_turn` 表示可续跑的完整服务端工具轮次，保持 `completed`。流式和非流式共享
+`buildTerminalResponseWire`，不会再把半截回答冒充完整结果。
 
-代码层面确认，非流式与流式两条路径都只可能产出两种状态：
-- 非流式：`response_aggregator.go:43` 硬编码 `buildResponseWire("completed")`
-- 流式：`stream_renderer.go:164-166` 只传 `"completed"` 与 `"failed"`
-- `IncompleteDetails` 字段全仓无任何赋值点，`response_wire.go:27` 注释自陈
-  「当前成功或失败终态均为空」
-
-即 codex 客户端调 claude 账号、命中 `max_tokens` 截断时，收到的是
-`status:"completed"` + `incomplete_details:null`——**客户端会把被截断的半截回答当成
-完整回答**，既不会重试也不会提示用户。这是本矩阵里最容易直接造成错误任务结果的
-一条，危害高于任何字段丢失。
-
-**意见**：`max_tokens`、`content_filter`、`pause_turn` 三种终态应渲染为
-`status:"incomplete"` + `incomplete_details.reason`，而不是 `completed`。
-
-**问题 2：`stop_details` 类别丢失（已单独立项）。**
-Claude 的 refusal 类别（`cyber` / `bio` / `reasoning_extraction` / `frontier_llm`）
-在 Go 侧未解码未建模。类别决定 fallback 落点，丢失后客户端无法选对回退模型。
-详见 `go-node-parity-matrix.md` 的「例外」一节。
+**`stop_details` 已修复。** Claude Decoder 把 refusal category 放入 Canonical
+`ResponseCompletedEvent`，Anthropic Renderer 只在真实存在类别时重建 `stop_details`；
+未提供类别时省略字段，不生成空对象。见 `claude/messages/refusal_category_test.go` 和
+`clientprotocol/anthropicmessages/refusal_category_test.go`。
 
 ## 七、响应方向：内容块
 
@@ -140,18 +130,18 @@ Claude 的 refusal 类别（`cyber` / `bio` / `reasoning_extraction` / `frontier
 | `tool_result` | ✅ | ✅ | ✅ | ✅ | **已对齐** |
 | `reasoning` | ✅ | ✅ | ✅ | ✅ | **已对齐**，但签名/加密见下 |
 
-**推理内容的可信凭证不同源，且已正确处理（已验证）**：Claude 用
-`thinking.signature` + `redacted_thinking`，Codex 用 `encrypted_content`。两者都是
-「上游签发、原样回传才有效」的凭证，跨协议无法互认——把 Codex 的
-`encrypted_content` 塞进 Claude 的 `signature` 会被上游判为伪造。
+**推理内容的可信凭证不同源，且已正确分型（已验证）**：Canonical 现在明确区分
+`ReasoningSummary`、Claude `ReasoningThinking(text+signature)`、Codex
+`ReasoningEncrypted` 与 Claude `ReasoningRedacted`，流式增量也区分 summary、thinking
+和 signature。Claude signed thinking 在同协议 Canonical 路径可原样两轮回放；Codex
+summary/encrypted data 渲染到 Anthropic 时被省略，不会伪造成 thinking 或
+redacted_thinking。旧 Responses carrier 的兼容输入仍需经过
+`reasoning_signature.go` 的 Claude 指纹校验。
 
-实现已按签名**指纹**判定来源而不是无脑透传：
-`reasoning_signature.go:25 normalizeClaudeThinkingSignature` 解包后按首字节分流，
-`C` 走 CAIS 校验、`E` 走经典 Claude 校验、`R` 解 base64 后再校验内层，任何一项不符
-即返回 `false`，调用方（`content_encoder.go:64-77`）随之不带 signature 回传。
-
-也就是说**非 Claude 来源的凭证会被自动识别并剥离**，不会伪造成 Claude 签名。
-**状态：✅ 已处理，无需动作。**
+真实 signed thinking 两轮回放已通过。真实 redact-thinking 请求在 opus-5 与
+sonnet-5 上均为 HTTP 200，Header 和请求正文符合 Claude Code 2.1.225 源码，但当前
+账号的上游仍返回 `thinking_delta + signature_delta`，没有返回 `redacted_thinking`。
+因此 redacted 解码/回放已有自动测试，**真实上游验收仍未通过，不能伪造完成**。
 
 ## 八、响应方向：usage
 
@@ -176,10 +166,10 @@ Claude 的 refusal 类别（`cyber` / `bio` / `reasoning_extraction` / `frontier
 
 | # | 问题 | 危害 | 已处理 |
 | --- | --- | --- | --- |
-| 1 | claude 客户端带 `thinking` 调 codex 账号 → 整个请求 ⛔ 失败 | **请求不可用** | ❌ |
-| 2 | `max_tokens` / `content_filter` 截断在 OpenAI 侧渲染成 `completed` | **客户端把半截答案当完整答案** | ❌ |
-| 3 | `stop_details` 类别丢失 → 无法选对 fallback | 本可继续的任务失败 | ❌ |
-| 4 | 推理凭证跨协议降级 | 可能被上游判伪造 | ✅ 已按签名指纹识别并剥离 |
+| 1 | claude 客户端带 `thinking` 调 codex 账号 | **请求不可用** | ✅ 已投影并真实验收 |
+| 2 | `max_tokens` / `content_filter` 截断在 OpenAI 侧渲染成 `completed` | **客户端把半截答案当完整答案** | ✅ 已修复 |
+| 3 | `stop_details` 类别丢失 → 无法选对 fallback | 本可继续的任务失败 | ✅ 已修复 |
+| 4 | 推理凭证跨协议降级 | 可能被上游判伪造 | ✅ 已按 Provider 类型隔离；兼容 carrier 继续做签名指纹校验 |
 | 5 | `cache_creation` TTL 分项（请求侧 + 响应侧） | 计费精度 | ❌（决定：靠透传） |
 | 6 | `service_tier` / `inference_geo` 响应侧 | 可观测性 / 合规举证 | ❌（决定：靠透传） |
 | 7 | `container` / `citations` / `server_tool_use` 发 `null` | 与上游形状不一致 | ✅ `b319f3a` |

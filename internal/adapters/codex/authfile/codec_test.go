@@ -62,6 +62,168 @@ func TestDecodeOAuthAuthFile(t *testing.T) {
 	}
 }
 
+func TestDecodeInfersOfficialAuthMode(t *testing.T) {
+	// 官方 Codex 在 auth_mode 缺失或为 null 时，根据实际认证材料推导模式。
+	idToken := buildJWT(map[string]any{"sub": "inferred-user"})
+	tests := []struct {
+		name     string
+		document map[string]any
+		wantKind codex.AuthKind
+	}{
+		{
+			name: "缺少模式时由 tokens 推导 ChatGPT",
+			document: map[string]any{
+				"tokens": map[string]any{
+					"id_token":      idToken,
+					"access_token":  testAccessToken,
+					"refresh_token": testRefreshToken,
+				},
+				"last_refresh": "2023-11-14T22:13:20Z",
+			},
+			wantKind: codex.AuthKindOAuth,
+		},
+		{
+			name: "缺少模式时由 API Key 推导",
+			document: map[string]any{
+				"OPENAI_API_KEY": testAPIKey,
+			},
+			wantKind: codex.AuthKindAPIKey,
+		},
+		{
+			name: "null 模式仍由 API Key 推导",
+			document: map[string]any{
+				"auth_mode":      nil,
+				"OPENAI_API_KEY": testAPIKey,
+			},
+			wantKind: codex.AuthKindAPIKey,
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			auth, err := Decode(mustJSON(t, testCase.document), DecodeOptions{})
+			if err != nil {
+				t.Fatalf("按官方规则推导认证模式失败: %v", err)
+			}
+			if got := auth.Kind(); got != testCase.wantKind {
+				t.Fatalf("认证类型错误: got=%q want=%q", got, testCase.wantKind)
+			}
+		})
+	}
+}
+
+func TestDecodeIgnoresUnknownOfficialExtensions(t *testing.T) {
+	// 官方 Serde 允许新增字段；AIH 只读取已支持认证所需的固定子集。
+	data := mustJSON(t, map[string]any{
+		"tokens": map[string]any{
+			"id_token":        buildJWT(map[string]any{"sub": "extended-user"}),
+			"access_token":    testAccessToken,
+			"refresh_token":   testRefreshToken,
+			"future_metadata": map[string]any{"generation": 2},
+		},
+		"last_refresh":   "2023-11-14T22:13:20Z",
+		"expired":        "legacy-export-metadata",
+		"future_storage": map[string]any{"enabled": true},
+	})
+
+	auth, err := Decode(data, DecodeOptions{})
+	if err != nil {
+		t.Fatalf("新增可选字段破坏了 OAuth 解码: %v", err)
+	}
+	if auth.Kind() != codex.AuthKindOAuth {
+		t.Fatalf("认证类型错误: %q", auth.Kind())
+	}
+}
+
+func TestDecodeOAuthAllowsMissingOptionalMetadata(t *testing.T) {
+	// 官方 TokenData.account_id 与 AuthDotJson.last_refresh 都是 Option。
+	data := mustJSON(t, map[string]any{
+		"auth_mode": "chatgpt",
+		"tokens": map[string]any{
+			"id_token":      buildJWT(map[string]any{"sub": "optional-user"}),
+			"access_token":  testAccessToken,
+			"refresh_token": testRefreshToken,
+		},
+	})
+
+	auth, err := Decode(data, DecodeOptions{})
+	if err != nil {
+		t.Fatalf("可选 OAuth 元数据缺失时解码失败: %v", err)
+	}
+	oauth := auth.(*codex.OAuthAuth)
+	if oauth.RefreshedAtMS() != 0 || oauth.AccountID() != codex.PersonalAccountID {
+		t.Fatalf(
+			"可选元数据语义错误: refreshed_at_ms=%d account_id=%q",
+			oauth.RefreshedAtMS(),
+			oauth.AccountID(),
+		)
+	}
+	encoded, err := Encode(oauth)
+	if err != nil {
+		t.Fatalf("未知刷新时间无法重新编码: %v", err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(encoded, &fields); err != nil {
+		t.Fatalf("重新编码结果不是 JSON: %v", err)
+	}
+	if _, found := fields["last_refresh"]; found {
+		t.Fatalf("未知刷新时间不应伪造成 last_refresh: %s", encoded)
+	}
+}
+
+func TestDecodeAPIKeyAllowsOfficialNullableMetadata(t *testing.T) {
+	// API Key 文件可以保留合法 last_refresh，null tokens 不构成混合凭据。
+	data := mustJSON(t, map[string]any{
+		"auth_mode":      "apikey",
+		"OPENAI_API_KEY": testAPIKey,
+		"tokens":         nil,
+		"last_refresh":   "2023-11-14T22:13:20Z",
+	})
+
+	auth, err := Decode(data, DecodeOptions{})
+	if err != nil {
+		t.Fatalf("解析官方 API Key 元数据失败: %v", err)
+	}
+	if auth.Kind() != codex.AuthKindAPIKey {
+		t.Fatalf("认证类型错误: %q", auth.Kind())
+	}
+}
+
+func TestDecodeRejectsUnsupportedOfficialAuthModes(t *testing.T) {
+	// AIH 当前只实现 ChatGPT OAuth 与 API Key，不把其他官方模式误判成已支持。
+	for _, mode := range []string{
+		"chatgptAuthTokens",
+		"headers",
+		"agentIdentity",
+		"personalAccessToken",
+		"bedrockApiKey",
+	} {
+		t.Run(mode, func(t *testing.T) {
+			_, err := Decode(mustJSON(t, map[string]any{"auth_mode": mode}), DecodeOptions{})
+			if !errors.Is(err, ErrInvalidAuthFile) {
+				t.Fatalf("不支持模式错误不稳定: %v", err)
+			}
+		})
+	}
+
+	for _, document := range []map[string]any{
+		{"personal_access_token": "pat-secret-that-must-not-leak"},
+		{"bedrock_api_key": map[string]any{"secret": "bedrock-secret-that-must-not-leak"}},
+		{
+			"personal_access_token": "pat-secret-that-must-not-leak",
+			"OPENAI_API_KEY":        testAPIKey,
+		},
+	} {
+		_, err := Decode(mustJSON(t, document), DecodeOptions{})
+		if !errors.Is(err, ErrInvalidAuthFile) {
+			t.Fatalf("推导出的不支持模式错误不稳定: %v", err)
+		}
+		if !strings.Contains(err.Error(), "auth_mode 不受支持") {
+			t.Fatalf("不支持模式被误判为结构错误: %v", err)
+		}
+	}
+}
+
 func TestDecodePersonalOAuthAuthFile(t *testing.T) {
 	// account_id=null 且 ID Token 也没有工作区时，领域身份才回落到 personal。
 	data := mustJSON(t, map[string]any{
@@ -248,7 +410,7 @@ func TestEncodeAPIKeyAuthFileOmitsEndpoint(t *testing.T) {
 }
 
 func TestDecodeRejectsInvalidAndMixedAuthFiles(t *testing.T) {
-	// 严格适配器不推断模式，也不吸收旧字段或混合凭证。
+	// 严格适配器拒绝已知字段拼写错误、重复字段和混合凭证。
 	validIDToken := buildJWT(map[string]any{"sub": "user-123"})
 	validTokens := map[string]any{
 		"id_token":      validIDToken,
@@ -263,29 +425,29 @@ func TestDecodeRejectsInvalidAndMixedAuthFiles(t *testing.T) {
 		{name: "畸形 JSON", data: []byte(`{"auth_mode":`)},
 		{name: "非法 UTF-8", data: []byte{'{', '"', 0xff, '"', ':', '1', '}'}},
 		{name: "尾随 JSON", data: []byte(`{"auth_mode":"apikey","OPENAI_API_KEY":"key"}{}`)},
-		{name: "缺少认证模式", data: mustJSON(t, map[string]any{"OPENAI_API_KEY": testAPIKey})},
-		{name: "认证模式为 null", data: mustJSON(t, map[string]any{"auth_mode": nil, "OPENAI_API_KEY": testAPIKey})},
 		{name: "未知模式", data: mustJSON(t, map[string]any{"auth_mode": "oauth", "OPENAI_API_KEY": nil})},
-		{name: "未知顶层字段", data: mustJSON(t, map[string]any{"auth_mode": "apikey", "OPENAI_API_KEY": "key", "expired": 1})},
 		{name: "顶层字段大小写不匹配", data: []byte(`{"AUTH_MODE":"apikey","OPENAI_API_KEY":"key"}`)},
 		{name: "重复认证模式", data: []byte(`{"auth_mode":"apikey","auth_mode":"chatgpt","OPENAI_API_KEY":"key"}`)},
 		{name: "OAuth 混入 API Key", data: mustJSON(t, map[string]any{"auth_mode": "chatgpt", "OPENAI_API_KEY": testAPIKey, "tokens": validTokens, "last_refresh": "2023-11-14T22:13:20Z"})},
+		{name: "OAuth 混入 Agent Identity", data: mustJSON(t, map[string]any{"auth_mode": "chatgpt", "agent_identity": "agent-secret", "tokens": validTokens, "last_refresh": "2023-11-14T22:13:20Z"})},
+		{name: "OAuth 混入 PAT", data: mustJSON(t, map[string]any{"auth_mode": "chatgpt", "personal_access_token": "pat-secret", "tokens": validTokens, "last_refresh": "2023-11-14T22:13:20Z"})},
+		{name: "OAuth 混入 Bedrock Key", data: mustJSON(t, map[string]any{"auth_mode": "chatgpt", "bedrock_api_key": map[string]any{"secret": "bedrock-secret"}, "tokens": validTokens, "last_refresh": "2023-11-14T22:13:20Z"})},
 		{name: "OAuth 缺少 tokens", data: mustJSON(t, map[string]any{"auth_mode": "chatgpt", "OPENAI_API_KEY": nil, "last_refresh": "2023-11-14T22:13:20Z"})},
 		{name: "OAuth tokens 为 null", data: mustJSON(t, map[string]any{"auth_mode": "chatgpt", "OPENAI_API_KEY": nil, "tokens": nil, "last_refresh": "2023-11-14T22:13:20Z"})},
-		{name: "OAuth 未知 token 字段", data: mustJSON(t, map[string]any{"auth_mode": "chatgpt", "OPENAI_API_KEY": nil, "tokens": map[string]any{"id_token": validIDToken, "access_token": testAccessToken, "refresh_token": testRefreshToken, "account_id": nil, "expired": 1}, "last_refresh": "2023-11-14T22:13:20Z"})},
 		{name: "OAuth token 字段大小写不匹配", data: []byte(`{"auth_mode":"chatgpt","OPENAI_API_KEY":null,"tokens":{"ID_TOKEN":"` + validIDToken + `","access_token":"token","refresh_token":"refresh","account_id":null},"last_refresh":"2023-11-14T22:13:20Z"}`)},
 		{name: "OAuth 重复 access token", data: []byte(`{"auth_mode":"chatgpt","OPENAI_API_KEY":null,"tokens":{"id_token":"` + validIDToken + `","access_token":"first","access_token":"second","refresh_token":"refresh","account_id":null},"last_refresh":"2023-11-14T22:13:20Z"}`)},
 		{name: "OAuth 空 token", data: mustJSON(t, map[string]any{"auth_mode": "chatgpt", "OPENAI_API_KEY": nil, "tokens": map[string]any{"id_token": validIDToken, "access_token": "", "refresh_token": testRefreshToken, "account_id": nil}, "last_refresh": "2023-11-14T22:13:20Z"})},
-		{name: "OAuth 缺少 account_id", data: mustJSON(t, map[string]any{"auth_mode": "chatgpt", "OPENAI_API_KEY": nil, "tokens": map[string]any{"id_token": validIDToken, "access_token": testAccessToken, "refresh_token": testRefreshToken}, "last_refresh": "2023-11-14T22:13:20Z"})},
 		{name: "OAuth 空 account_id", data: mustJSON(t, map[string]any{"auth_mode": "chatgpt", "OPENAI_API_KEY": nil, "tokens": map[string]any{"id_token": validIDToken, "access_token": testAccessToken, "refresh_token": testRefreshToken, "account_id": ""}, "last_refresh": "2023-11-14T22:13:20Z"})},
 		{name: "OAuth 非法刷新时间", data: mustJSON(t, map[string]any{"auth_mode": "chatgpt", "OPENAI_API_KEY": nil, "tokens": validTokens, "last_refresh": "yesterday"})},
-		{name: "OAuth 刷新时间为 null", data: mustJSON(t, map[string]any{"auth_mode": "chatgpt", "OPENAI_API_KEY": nil, "tokens": validTokens, "last_refresh": nil})},
 		{name: "API Key 缺失", data: mustJSON(t, map[string]any{"auth_mode": "apikey"})},
 		{name: "API Key 为 null", data: mustJSON(t, map[string]any{"auth_mode": "apikey", "OPENAI_API_KEY": nil})},
 		{name: "API Key 为空", data: mustJSON(t, map[string]any{"auth_mode": "apikey", "OPENAI_API_KEY": ""})},
 		{name: "API Key 包含未配对代理项", data: []byte(`{"auth_mode":"apikey","OPENAI_API_KEY":"\ud800"}`)},
-		{name: "API Key 混入 tokens", data: mustJSON(t, map[string]any{"auth_mode": "apikey", "OPENAI_API_KEY": testAPIKey, "tokens": nil})},
-		{name: "API Key 混入 last_refresh", data: mustJSON(t, map[string]any{"auth_mode": "apikey", "OPENAI_API_KEY": testAPIKey, "last_refresh": nil})},
+		{name: "API Key 混入 tokens", data: mustJSON(t, map[string]any{"auth_mode": "apikey", "OPENAI_API_KEY": testAPIKey, "tokens": validTokens})},
+		{name: "API Key 混入 Agent Identity", data: mustJSON(t, map[string]any{"auth_mode": "apikey", "OPENAI_API_KEY": testAPIKey, "agent_identity": "agent-secret"})},
+		{name: "API Key 混入 PAT", data: mustJSON(t, map[string]any{"auth_mode": "apikey", "OPENAI_API_KEY": testAPIKey, "personal_access_token": "pat-secret"})},
+		{name: "API Key 混入 Bedrock Key", data: mustJSON(t, map[string]any{"auth_mode": "apikey", "OPENAI_API_KEY": testAPIKey, "bedrock_api_key": map[string]any{"secret": "bedrock-secret"}})},
+		{name: "API Key 非法刷新时间", data: mustJSON(t, map[string]any{"auth_mode": "apikey", "OPENAI_API_KEY": testAPIKey, "last_refresh": "yesterday"})},
 	}
 
 	for _, testCase := range tests {

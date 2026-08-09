@@ -74,6 +74,23 @@ func TestNewOAuthAuthParsesCanonicalIdentity(t *testing.T) {
 	}
 }
 
+func TestOAuthAuthAllowsUnknownRefreshTime(t *testing.T) {
+	// 官方 auth.json 的 last_refresh 是可选字段；零值明确表示未知而不是伪造时间。
+	auth, err := NewOAuthAuth(OAuthInput{
+		AccessToken:  testAccessSecret,
+		RefreshToken: testRefreshSecret,
+		IDToken: buildTestJWT(map[string]any{
+			"sub": "unknown-refresh-user",
+		}),
+	})
+	if err != nil {
+		t.Fatalf("未知刷新时间不应破坏 OAuth 凭据: %v", err)
+	}
+	if auth.RefreshedAtMS() != 0 {
+		t.Fatalf("未知刷新时间被伪造: %d", auth.RefreshedAtMS())
+	}
+}
+
 func TestOAuthAuthUsesOnlyAccessTokenExpiry(t *testing.T) {
 	// 已过期的 ID Token 仍提供身份资料；Access Token 只能贡献 exp，不能覆盖资料。
 	auth, err := NewOAuthAuth(OAuthInput{
@@ -286,7 +303,7 @@ func TestNewOAuthAuthValidatesRequiredFields(t *testing.T) {
 		{name: "缺少 access token", input: OAuthInput{RefreshToken: testRefreshSecret, IDToken: validIDToken, RefreshedAtMS: 1}},
 		{name: "缺少 refresh token", input: OAuthInput{AccessToken: testAccessSecret, IDToken: validIDToken, RefreshedAtMS: 1}},
 		{name: "缺少 id token", input: OAuthInput{AccessToken: testAccessSecret, RefreshToken: testRefreshSecret, RefreshedAtMS: 1}},
-		{name: "刷新时间为零", input: OAuthInput{AccessToken: testAccessSecret, RefreshToken: testRefreshSecret, IDToken: validIDToken}},
+		{name: "刷新时间为负数", input: OAuthInput{AccessToken: testAccessSecret, RefreshToken: testRefreshSecret, IDToken: validIDToken, RefreshedAtMS: -1}},
 		{name: "ID Token 非法", input: OAuthInput{AccessToken: testAccessSecret, RefreshToken: testRefreshSecret, IDToken: "invalid-token", RefreshedAtMS: 1}},
 		{name: "缺少稳定用户", input: OAuthInput{AccessToken: testAccessSecret, RefreshToken: testRefreshSecret, IDToken: buildTestJWT(map[string]any{"email": "person@example.com"}), RefreshedAtMS: 1}},
 		{name: "access token 尾随换行", input: OAuthInput{AccessToken: testAccessSecret + "\r\n", RefreshToken: testRefreshSecret, IDToken: validIDToken, RefreshedAtMS: 1}},

@@ -34,6 +34,7 @@ type OAuthInput struct {
 	// 调用方必须保证它来自可信 OAuth 登录边界；领域层只解析 claim，不证明 Token 真实性。
 	IDToken string
 	// RefreshedAtMS 是最近一次成功取得或刷新凭证的毫秒时间戳。
+	// 零表示官方 auth.json 没有记录该可选时间。
 	RefreshedAtMS int64
 	// ExplicitAccountID 是调用方明确选择的 ChatGPT 工作区 ID；空表示未指定。
 	ExplicitAccountID string
@@ -66,7 +67,7 @@ func NewOAuthAuth(input OAuthInput) (*OAuthAuth, error) {
 	if err != nil {
 		return nil, err
 	}
-	if input.RefreshedAtMS <= 0 || input.RefreshedAtMS > maxRFC3339UnixMillis {
+	if input.RefreshedAtMS < 0 || input.RefreshedAtMS > maxRFC3339UnixMillis {
 		return nil, errInvalidOAuthRefreshTime
 	}
 
@@ -132,7 +133,7 @@ func (auth *OAuthAuth) IDToken() string {
 	return auth.idToken.reveal()
 }
 
-// RefreshedAtMS 返回最近成功取得或刷新凭证的毫秒时间戳。
+// RefreshedAtMS 返回最近成功取得或刷新凭证的毫秒时间戳；零表示未知。
 func (auth *OAuthAuth) RefreshedAtMS() int64 {
 	if auth == nil {
 		return 0

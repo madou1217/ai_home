@@ -18,8 +18,10 @@ import (
 )
 
 const (
-	authModeChatGPT = "chatgpt"
-	authModeAPIKey  = "apikey"
+	authModeChatGPT             = "chatgpt"
+	authModeAPIKey              = "apikey"
+	authModePersonalAccessToken = "personalAccessToken"
+	authModeBedrockAPIKey       = "bedrockApiKey"
 )
 
 // ErrInvalidAuthFile 表示输入不是受支持的 Codex 官方认证文件。
@@ -35,10 +37,13 @@ type DecodeOptions struct {
 
 // authDocument 保留顶层模式字段，并用 RawMessage 区分缺失、null 和实际值。
 type authDocument struct {
-	AuthMode     string
-	OpenAIAPIKey json.RawMessage
-	Tokens       json.RawMessage
-	LastRefresh  json.RawMessage
+	AuthMode            json.RawMessage
+	OpenAIAPIKey        json.RawMessage
+	Tokens              json.RawMessage
+	LastRefresh         json.RawMessage
+	AgentIdentity       json.RawMessage
+	PersonalAccessToken json.RawMessage
+	BedrockAPIKey       json.RawMessage
 }
 
 // tokenDocument 描述 OAuth 模式下官方 tokens 对象的唯一允许字段。
@@ -54,7 +59,7 @@ type oauthOutput struct {
 	AuthMode     string           `json:"auth_mode"`
 	OpenAIAPIKey *string          `json:"OPENAI_API_KEY"`
 	Tokens       oauthTokenOutput `json:"tokens"`
-	LastRefresh  string           `json:"last_refresh"`
+	LastRefresh  *string          `json:"last_refresh,omitempty"`
 }
 
 // oauthTokenOutput 保留 account_id=null 的“未显式声明工作区”语义。
@@ -82,7 +87,12 @@ func Decode(data []byte, options DecodeOptions) (codex.Auth, error) {
 		return nil, invalidAuthFile("JSON 结构错误")
 	}
 
-	switch document.AuthMode {
+	authMode, err := resolveAuthMode(document)
+	if err != nil {
+		return nil, err
+	}
+
+	switch authMode {
 	case authModeChatGPT:
 		return decodeOAuth(document)
 	case authModeAPIKey:
@@ -116,13 +126,12 @@ func decodeOAuth(document authDocument) (codex.Auth, error) {
 	if len(document.OpenAIAPIKey) != 0 && !isJSONNull(document.OpenAIAPIKey) {
 		return nil, invalidAuthFile("OAuth OPENAI_API_KEY 必须缺失或为 null")
 	}
+	if hasAlternativeAuthMaterial(document) {
+		return nil, invalidAuthFile("OAuth 不能包含其他认证材料")
+	}
 	if len(document.Tokens) == 0 || isJSONNull(document.Tokens) {
 		return nil, invalidAuthFile("OAuth tokens 缺失")
 	}
-	if len(document.LastRefresh) == 0 || isJSONNull(document.LastRefresh) {
-		return nil, invalidAuthFile("OAuth last_refresh 缺失")
-	}
-
 	tokens, err := decodeTokenDocument(document.Tokens)
 	if err != nil {
 		return nil, invalidAuthFile("OAuth tokens 结构错误")
@@ -156,8 +165,11 @@ func decodeOAuth(document authDocument) (codex.Auth, error) {
 
 // decodeAPIKey 拒绝任何 OAuth 字段，并显式注入文件外的 endpoint。
 func decodeAPIKey(document authDocument, options DecodeOptions) (codex.Auth, error) {
-	if len(document.Tokens) != 0 || len(document.LastRefresh) != 0 {
-		return nil, invalidAuthFile("API Key 模式不能包含 OAuth 字段")
+	if hasJSONValue(document.Tokens) || hasAlternativeAuthMaterial(document) {
+		return nil, invalidAuthFile("API Key 模式不能包含其他认证材料")
+	}
+	if _, err := decodeRefreshTime(document.LastRefresh); err != nil {
+		return nil, err
 	}
 	apiKey, err := decodeRequiredString(document.OpenAIAPIKey)
 	if err != nil || strings.TrimSpace(apiKey) == "" {
@@ -174,12 +186,9 @@ func decodeAPIKey(document authDocument, options DecodeOptions) (codex.Auth, err
 	return auth, nil
 }
 
-// decodeAccountID 要求 account_id 字段存在；null 表示未显式声明，空字符串无业务含义。
+// decodeAccountID 把缺失或 null 解释为未显式声明；空字符串没有业务含义。
 func decodeAccountID(raw json.RawMessage) (string, error) {
-	if len(raw) == 0 {
-		return "", invalidAuthFile("OAuth account_id 缺失")
-	}
-	if isJSONNull(raw) {
+	if len(raw) == 0 || isJSONNull(raw) {
 		return "", nil
 	}
 	accountID, err := decodeRequiredString(raw)
@@ -189,8 +198,11 @@ func decodeAccountID(raw json.RawMessage) (string, error) {
 	return strings.TrimSpace(accountID), nil
 }
 
-// decodeRefreshTime 把 RFC3339 last_refresh 转成领域统一使用的毫秒时间戳。
+// decodeRefreshTime 把可选 RFC3339 last_refresh 转成毫秒时间戳；零表示未知。
 func decodeRefreshTime(raw json.RawMessage) (int64, error) {
+	if len(raw) == 0 || isJSONNull(raw) {
+		return 0, nil
+	}
 	value, err := decodeRequiredString(raw)
 	if err != nil {
 		return 0, invalidAuthFile("last_refresh 必须是 RFC3339 字符串")
@@ -214,7 +226,7 @@ func encodeOAuth(auth *codex.OAuthAuth) ([]byte, error) {
 	if err != nil {
 		return nil, invalidAuthFile("OAuth 认证对象无效")
 	}
-	lastRefresh, err := encodeRefreshTime(validated.RefreshedAtMS())
+	lastRefresh, err := encodeOptionalRefreshTime(validated.RefreshedAtMS())
 	if err != nil {
 		return nil, err
 	}
@@ -236,6 +248,18 @@ func encodeOAuth(auth *codex.OAuthAuth) ([]byte, error) {
 		LastRefresh: lastRefresh,
 	}
 	return marshalOfficial(document)
+}
+
+// encodeOptionalRefreshTime 保留官方 last_refresh 的可选语义，不用当前时间填空。
+func encodeOptionalRefreshTime(milliseconds int64) (*string, error) {
+	if milliseconds == 0 {
+		return nil, nil
+	}
+	value, err := encodeRefreshTime(milliseconds)
+	if err != nil {
+		return nil, err
+	}
+	return &value, nil
 }
 
 // encodeRefreshTime 只输出 RFC3339 能表示的时间范围，拒绝极端领域零值。
@@ -278,27 +302,63 @@ func decodeRequiredString(raw json.RawMessage) (string, error) {
 	return value, nil
 }
 
-// decodeAuthDocument 精确解析顶层键，不接受 encoding/json 的大小写宽松匹配。
+// decodeAuthDocument 解析当前官方字段，同时允许未来新增互不冲突的扩展字段。
 func decodeAuthDocument(data []byte) (authDocument, error) {
-	fields, err := decodeExactObject(data, "auth_mode", "OPENAI_API_KEY", "tokens", "last_refresh")
-	if err != nil {
-		return authDocument{}, err
-	}
-	authMode, err := decodeRequiredString(fields["auth_mode"])
+	fields, err := decodeKnownObject(
+		data,
+		"auth_mode",
+		"OPENAI_API_KEY",
+		"tokens",
+		"last_refresh",
+		"agent_identity",
+		"personal_access_token",
+		"bedrock_api_key",
+	)
 	if err != nil {
 		return authDocument{}, err
 	}
 	return authDocument{
-		AuthMode:     authMode,
-		OpenAIAPIKey: fields["OPENAI_API_KEY"],
-		Tokens:       fields["tokens"],
-		LastRefresh:  fields["last_refresh"],
+		AuthMode:            fields["auth_mode"],
+		OpenAIAPIKey:        fields["OPENAI_API_KEY"],
+		Tokens:              fields["tokens"],
+		LastRefresh:         fields["last_refresh"],
+		AgentIdentity:       fields["agent_identity"],
+		PersonalAccessToken: fields["personal_access_token"],
+		BedrockAPIKey:       fields["bedrock_api_key"],
 	}, nil
+}
+
+// hasAlternativeAuthMaterial 检查 AIH 尚未实现的互斥认证材料。
+func hasAlternativeAuthMaterial(document authDocument) bool {
+	return hasJSONValue(document.AgentIdentity) ||
+		hasJSONValue(document.PersonalAccessToken) ||
+		hasJSONValue(document.BedrockAPIKey)
+}
+
+// resolveAuthMode 对齐 Codex 官方缺省模式推导，并显式保留不支持模式。
+func resolveAuthMode(document authDocument) (string, error) {
+	if hasJSONValue(document.AuthMode) {
+		authMode, err := decodeRequiredString(document.AuthMode)
+		if err != nil {
+			return "", invalidAuthFile("auth_mode 无效")
+		}
+		return authMode, nil
+	}
+	if hasJSONValue(document.PersonalAccessToken) {
+		return authModePersonalAccessToken, nil
+	}
+	if hasJSONValue(document.BedrockAPIKey) {
+		return authModeBedrockAPIKey, nil
+	}
+	if hasJSONValue(document.OpenAIAPIKey) {
+		return authModeAPIKey, nil
+	}
+	return authModeChatGPT, nil
 }
 
 // decodeTokenDocument 精确解析 OAuth token 键，并保留 account_id 的存在状态。
 func decodeTokenDocument(data []byte) (tokenDocument, error) {
-	fields, err := decodeExactObject(data, "id_token", "access_token", "refresh_token", "account_id")
+	fields, err := decodeKnownObject(data, "id_token", "access_token", "refresh_token", "account_id")
 	if err != nil {
 		return tokenDocument{}, err
 	}
@@ -322,11 +382,12 @@ func decodeTokenDocument(data []byte) (tokenDocument, error) {
 	}, nil
 }
 
-// decodeExactObject 以 token 流解析对象，拒绝未知键、大小写变体、重复键和尾随值。
-func decodeExactObject(data []byte, allowedKeys ...string) (map[string]json.RawMessage, error) {
-	allowed := make(map[string]struct{}, len(allowedKeys))
-	for _, key := range allowedKeys {
-		allowed[key] = struct{}{}
+// decodeKnownObject 以 token 流解析对象：保留已知键，忽略未来扩展键，
+// 同时拒绝已知键的大小写变体、重复定义和尾随值。
+func decodeKnownObject(data []byte, knownKeys ...string) (map[string]json.RawMessage, error) {
+	known := make(map[string]struct{}, len(knownKeys))
+	for _, key := range knownKeys {
+		known[key] = struct{}{}
 	}
 
 	decoder := json.NewDecoder(bytes.NewReader(data))
@@ -334,7 +395,7 @@ func decodeExactObject(data []byte, allowedKeys ...string) (map[string]json.RawM
 	if err != nil || opening != json.Delim('{') {
 		return nil, errors.New("JSON 值不是对象")
 	}
-	fields := make(map[string]json.RawMessage, len(allowedKeys))
+	fields := make(map[string]json.RawMessage, len(knownKeys))
 	for decoder.More() {
 		keyToken, err := decoder.Token()
 		if err != nil {
@@ -344,15 +405,18 @@ func decodeExactObject(data []byte, allowedKeys ...string) (map[string]json.RawM
 		if !ok {
 			return nil, errors.New("JSON 对象键类型无效")
 		}
-		if _, ok := allowed[key]; !ok {
-			return nil, errors.New("JSON 对象包含未知键")
-		}
-		if _, duplicated := fields[key]; duplicated {
-			return nil, errors.New("JSON 对象包含重复键")
-		}
 		var value json.RawMessage
 		if err := decoder.Decode(&value); err != nil {
 			return nil, errors.New("JSON 对象值无效")
+		}
+		if _, ok := known[key]; !ok {
+			if matchesKnownKeyIgnoringCase(key, knownKeys) {
+				return nil, errors.New("JSON 已知键大小写错误")
+			}
+			continue
+		}
+		if _, duplicated := fields[key]; duplicated {
+			return nil, errors.New("JSON 对象包含重复键")
 		}
 		fields[key] = value
 	}
@@ -367,6 +431,16 @@ func decodeExactObject(data []byte, allowedKeys ...string) (map[string]json.RawM
 	return fields, nil
 }
 
+// matchesKnownKeyIgnoringCase 识别会被 encoding/json 宽松匹配的危险拼写变体。
+func matchesKnownKeyIgnoringCase(key string, knownKeys []string) bool {
+	for _, knownKey := range knownKeys {
+		if strings.EqualFold(key, knownKey) {
+			return true
+		}
+	}
+	return false
+}
+
 // marshalOfficial 使用与官方文件一致的两空格缩进，不在错误中包含待编码内容。
 func marshalOfficial(document any) ([]byte, error) {
 	data, err := json.MarshalIndent(document, "", "  ")
@@ -379,6 +453,11 @@ func marshalOfficial(document any) ([]byte, error) {
 // isJSONNull 判断字段是否显式写成 JSON null。
 func isJSONNull(raw json.RawMessage) bool {
 	return bytes.Equal(bytes.TrimSpace(raw), []byte("null"))
+}
+
+// hasJSONValue 判断 Option 形态字段是否包含非 null 值。
+func hasJSONValue(raw json.RawMessage) bool {
+	return len(raw) != 0 && !isJSONNull(raw)
 }
 
 // invalidAuthFile 只接受代码内常量原因，禁止拼接外部输入和底层错误文本。

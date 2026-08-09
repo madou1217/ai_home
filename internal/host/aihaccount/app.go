@@ -23,12 +23,8 @@ import (
 // modelCatalogHTTPTimeout 限制账号管理阶段一次模型目录请求的等待时间。
 const modelCatalogHTTPTimeout = 60 * time.Second
 
-var (
-	// ErrInvalidOptions 表示账号管理组合根缺少唯一数据目录。
-	ErrInvalidOptions = errors.New("AIH 账号管理组合配置无效")
-	// ErrInvalidImportRequest 表示导入请求的 Context 或 Provider 无效。
-	ErrInvalidImportRequest = errors.New("AIH 账号导入请求无效")
-)
+// ErrInvalidOptions 表示账号管理组合根缺少唯一数据目录。
+var ErrInvalidOptions = errors.New("AIH 账号管理组合配置无效")
 
 // Options 是账号管理组合根唯一允许的外部依赖。
 type Options struct {
@@ -57,20 +53,23 @@ type accountModelReader interface {
 	) ([]accountapp.AccountModel, error)
 }
 
-// ImportResult 是一次官方登录态导入的公开结果，绝不包含任何凭据。
-type ImportResult struct {
-	// ProviderID 是导入账号所属的规范 Provider。
-	ProviderID string
-	// CLIAccountID 是持久化层原子分配的 Provider 内数字别名。
-	CLIAccountID int64
-	// AccountRef 是由凭据派生的稳定账号身份。
-	AccountRef string
-	// Email 是官方公开资料中的登录邮箱，用于确认导入的是哪个登录。
-	Email string
-	// Models 是本次在账号管理阶段物化的真实可用模型。
-	Models []string
-	// Sources 是本次读取的官方 artifact 文件路径。
-	Sources []string
+// accountReader 聚合账号管理 Host 当前需要的只读端口。
+// 所有查询都由同一个 SQLite Store 实现，不引入第二份账号状态。
+type accountReader interface {
+	accountModelReader
+	ListAccountOverviews(
+		ctx context.Context,
+		query accountapp.OverviewQuery,
+	) ([]accountapp.AccountOverview, error)
+	GetAccountOverview(
+		ctx context.Context,
+		accountRef accountcore.AccountRef,
+	) (accountapp.AccountOverview, error)
+	GetByCLIAccountID(
+		ctx context.Context,
+		providerID string,
+		cliAccountID accountcore.CLIAccountID,
+	) (accountcore.Account, error)
 }
 
 // App 持有一次账号管理进程生命周期内的单库与用例装配。
@@ -78,7 +77,7 @@ type App struct {
 	decoder   *nativeaccount.Decoder
 	reader    *nativeartifact.Reader
 	registrar accountRegistrar
-	models    accountModelReader
+	accounts  accountReader
 	resources []io.Closer
 }
 
@@ -141,10 +140,10 @@ func newApp(
 	decoder *nativeaccount.Decoder,
 	reader *nativeartifact.Reader,
 	registrar accountRegistrar,
-	models accountModelReader,
+	accounts accountReader,
 	resources ...io.Closer,
 ) (*App, error) {
-	if decoder == nil || reader == nil || registrar == nil || models == nil {
+	if decoder == nil || reader == nil || registrar == nil || accounts == nil {
 		return nil, ErrInvalidOptions
 	}
 	for _, resource := range resources {
@@ -156,76 +155,9 @@ func newApp(
 		decoder:   decoder,
 		reader:    reader,
 		registrar: registrar,
-		models:    models,
+		accounts:  accounts,
 		resources: append([]io.Closer(nil), resources...),
 	}, nil
-}
-
-// ImportOfficialLogin 把该 Provider 官方 CLI 当前登录态注册成一个 AIH 账号。
-//
-// 导入阶段会按账号管理契约拉取一次该账号真实可用的模型目录并落库，
-// 运行期不再实时查询上游目录。
-func (app *App) ImportOfficialLogin(
-	ctx context.Context,
-	providerID string,
-) (ImportResult, error) {
-	if app == nil || ctx == nil {
-		return ImportResult{}, ErrInvalidImportRequest
-	}
-	if err := ctx.Err(); err != nil {
-		return ImportResult{}, err
-	}
-	if !app.decoder.Supports(providerID) || !app.reader.Supports(providerID) {
-		return ImportResult{}, fmt.Errorf(
-			"%w: 当前只支持 codex 和 claude",
-			ErrInvalidImportRequest,
-		)
-	}
-	artifacts, err := app.reader.Read(providerID)
-	if err != nil {
-		return ImportResult{}, fmt.Errorf("读取 %s 官方登录态失败: %w", providerID, err)
-	}
-	defer clear(artifacts.Envelope)
-
-	credential, profile, err := app.decoder.Decode(providerID, artifacts.Envelope)
-	if err != nil {
-		return ImportResult{}, fmt.Errorf("解码 %s 官方登录态失败: %w", providerID, err)
-	}
-	account, err := app.registrar.Register(ctx, credential, profile)
-	if err != nil {
-		return ImportResult{}, fmt.Errorf("注册 %s 账号失败: %w", providerID, err)
-	}
-	models, err := app.models.ListAccountModels(ctx, account.Ref())
-	if err != nil {
-		return ImportResult{}, fmt.Errorf("读取账号模型目录失败: %w", err)
-	}
-	return ImportResult{
-		ProviderID:   account.ProviderID(),
-		CLIAccountID: account.CLIAccountID().Int64(),
-		AccountRef:   account.Ref().String(),
-		Email:        profileEmail(profile),
-		Models:       effectiveModelIDs(models),
-		Sources:      artifacts.Sources,
-	}, nil
-}
-
-// profileEmail 只在存在官方公开资料时回显登录邮箱。
-func profileEmail(profile accountapp.PublicProfile) string {
-	if profile == nil {
-		return ""
-	}
-	return profile.Email()
-}
-
-// effectiveModelIDs 只返回当前真实生效的模型，供调用方选择验收模型。
-func effectiveModelIDs(models []accountapp.AccountModel) []string {
-	values := make([]string, 0, len(models))
-	for _, model := range models {
-		if model.Effective() {
-			values = append(values, model.ModelID().String())
-		}
-	}
-	return values
 }
 
 // Close 逆序释放单库等组合资源。

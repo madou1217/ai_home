@@ -67,12 +67,153 @@ func TestAccountImportPassesProviderAndPrintsPublicResult(t *testing.T) {
 	}
 }
 
+// TestAccountListPassesStablePageAndPrintsPublicRows 验证账号列表只把稳定游标
+// 和有界页大小交给 Host，并且输出不包含任何凭据内容。
+func TestAccountListPassesStablePageAndPrintsPublicRows(t *testing.T) {
+	output := &bytes.Buffer{}
+	application := &recordingAccountApplication{
+		listResult: aihaccount.ListResult{
+			Accounts: []aihaccount.AccountView{
+				{
+					ProviderID:       "claude",
+					CLIAccountID:     9,
+					AccountRef:       "acct_11111111111111111111",
+					Enabled:          true,
+					HasCredential:    true,
+					AuthKind:         "oauth",
+					AuthMode:         "subscription",
+					Email:            "someone@example.com",
+					SubscriptionKind: "plus",
+				},
+			},
+			Limit:        20,
+			HasMore:      true,
+			NextAfterRef: "acct_11111111111111111111",
+		},
+	}
+	runtime := testCommandRuntime(t, map[string]string{"AIH_HOME": "/test-user/.ai_home"})
+	runtime.stdout = output
+	runtime.newAccountApp = func(
+		_ context.Context,
+		options aihaccount.Options,
+	) (accountApplication, error) {
+		application.options = options
+		return application, nil
+	}
+
+	if err := run(
+		context.Background(),
+		[]string{
+			"account",
+			"list",
+			"--limit",
+			"20",
+			"--after",
+			"acct_00000000000000000000",
+		},
+		runtime,
+	); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+	if application.listOptions.AfterRef != "acct_00000000000000000000" ||
+		application.listOptions.Limit != 20 ||
+		application.options.AIHomeDir != "/test-user/.ai_home" ||
+		application.closeCalls != 1 {
+		t.Fatalf(
+			"list_options=%+v ai_home=%s close_calls=%d",
+			application.listOptions,
+			application.options.AIHomeDir,
+			application.closeCalls,
+		)
+	}
+	rendered := output.String()
+	for _, expected := range []string{
+		"claude",
+		"9",
+		"oauth/subscription",
+		"plus",
+		"someone@example.com",
+		"aih account list --limit 20 --after acct_11111111111111111111",
+	} {
+		if !strings.Contains(rendered, expected) {
+			t.Fatalf("账号列表输出缺少 %q: %s", expected, rendered)
+		}
+	}
+}
+
+// TestAccountShowPassesExplicitTargetAndPrintsPublicDetail 验证详情命令支持
+// Provider 数字别名，并且只输出账号管理公开投影。
+func TestAccountShowPassesExplicitTargetAndPrintsPublicDetail(t *testing.T) {
+	output := &bytes.Buffer{}
+	application := &recordingAccountApplication{
+		showResult: aihaccount.AccountView{
+			ProviderID:       "claude",
+			CLIAccountID:     9,
+			AccountRef:       "acct_11111111111111111111",
+			Enabled:          false,
+			HasCredential:    true,
+			AuthKind:         "oauth",
+			AuthMode:         "refreshable",
+			HasProfile:       true,
+			DisplayName:      "测试账号",
+			Email:            "someone@example.com",
+			SubscriptionKind: "max",
+			SubscriptionRaw:  "max_20x",
+		},
+	}
+	runtime := testCommandRuntime(t, map[string]string{"AIH_HOME": "/test-user/.ai_home"})
+	runtime.stdout = output
+	runtime.newAccountApp = func(
+		_ context.Context,
+		options aihaccount.Options,
+	) (accountApplication, error) {
+		application.options = options
+		return application, nil
+	}
+
+	if err := run(
+		context.Background(),
+		[]string{"account", "show", "claude:9"},
+		runtime,
+	); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+	if application.showTarget.ProviderID != "claude" ||
+		application.showTarget.CLIAccountID != 9 ||
+		application.options.AIHomeDir != "/test-user/.ai_home" ||
+		application.closeCalls != 1 {
+		t.Fatalf(
+			"show_target=%+v ai_home=%s close_calls=%d",
+			application.showTarget,
+			application.options.AIHomeDir,
+			application.closeCalls,
+		)
+	}
+	rendered := output.String()
+	for _, expected := range []string{
+		"账号详情:",
+		"claude",
+		"disabled",
+		"oauth/refreshable",
+		"测试账号",
+		"someone@example.com",
+		"max",
+		"max_20x",
+	} {
+		if !strings.Contains(rendered, expected) {
+			t.Fatalf("账号详情输出缺少 %q: %s", expected, rendered)
+		}
+	}
+}
+
 // TestAccountImportHelpDoesNotOpenDatabase 验证子命令帮助不创建组合根、不读凭据。
 func TestAccountImportHelpDoesNotOpenDatabase(t *testing.T) {
 	for _, arguments := range [][]string{
 		{"account"},
 		{"account", "--help"},
 		{"account", "import", "--help"},
+		{"account", "list", "--help"},
+		{"account", "show", "--help"},
 		{"help", "account"},
 	} {
 		output := &bytes.Buffer{}
@@ -88,7 +229,7 @@ func TestAccountImportHelpDoesNotOpenDatabase(t *testing.T) {
 		if err := run(context.Background(), arguments, runtime); err != nil {
 			t.Fatalf("run(%v) error = %v", arguments, err)
 		}
-		if !strings.Contains(output.String(), "aih account import") {
+		if !strings.Contains(output.String(), "aih account") {
 			t.Fatalf("run(%v) usage = %q", arguments, output.String())
 		}
 	}
@@ -97,10 +238,18 @@ func TestAccountImportHelpDoesNotOpenDatabase(t *testing.T) {
 // TestAccountRejectsUnknownSubcommandAndProvider 验证账号命令不猜测意图。
 func TestAccountRejectsUnknownSubcommandAndProvider(t *testing.T) {
 	for _, arguments := range [][]string{
-		{"account", "list"},
+		{"account", "remove"},
 		{"account", "import"},
 		{"account", "import", "gemini"},
 		{"account", "import", "claude", "9"},
+		{"account", "list", "--limit"},
+		{"account", "list", "--limit", "0"},
+		{"account", "list", "--limit", "10", "--limit", "20"},
+		{"account", "list", "--after", ""},
+		{"account", "list", "--unknown", "value"},
+		{"account", "show"},
+		{"account", "show", "claude:01"},
+		{"account", "show", "claude:1", "extra"},
 	} {
 		runtime := testCommandRuntime(t, nil)
 		runtime.newAccountApp = func(
@@ -137,14 +286,63 @@ func TestAccountImportJoinsImportAndCloseErrors(t *testing.T) {
 	}
 }
 
+// TestAccountListJoinsListAndCloseErrors 验证列表失败也必须释放数据库资源，
+// 并且调用方可以分别识别查询错误和关闭错误。
+func TestAccountListJoinsListAndCloseErrors(t *testing.T) {
+	listErr := errors.New("列表失败")
+	closeErr := errors.New("关闭失败")
+	application := &recordingAccountApplication{listErr: listErr, closeErr: closeErr}
+	runtime := testCommandRuntime(t, nil)
+	runtime.newAccountApp = func(
+		context.Context,
+		aihaccount.Options,
+	) (accountApplication, error) {
+		return application, nil
+	}
+
+	err := run(context.Background(), []string{"account", "list"}, runtime)
+	if !errors.Is(err, listErr) ||
+		!errors.Is(err, closeErr) ||
+		application.closeCalls != 1 {
+		t.Fatalf("error = %v close_calls=%d", err, application.closeCalls)
+	}
+}
+
+// TestAccountShowJoinsShowAndCloseErrors 验证详情读取失败也必须释放数据库资源。
+func TestAccountShowJoinsShowAndCloseErrors(t *testing.T) {
+	showErr := errors.New("详情失败")
+	closeErr := errors.New("关闭失败")
+	application := &recordingAccountApplication{showErr: showErr, closeErr: closeErr}
+	runtime := testCommandRuntime(t, nil)
+	runtime.newAccountApp = func(
+		context.Context,
+		aihaccount.Options,
+	) (accountApplication, error) {
+		return application, nil
+	}
+
+	err := run(context.Background(), []string{"account", "show", "claude:1"}, runtime)
+	if !errors.Is(err, showErr) ||
+		!errors.Is(err, closeErr) ||
+		application.closeCalls != 1 {
+		t.Fatalf("error = %v close_calls=%d", err, application.closeCalls)
+	}
+}
+
 // recordingAccountApplication 记录账号命令交给 Host 的原始输入。
 type recordingAccountApplication struct {
-	options    aihaccount.Options
-	providerID string
-	result     aihaccount.ImportResult
-	importErr  error
-	closeErr   error
-	closeCalls int
+	options     aihaccount.Options
+	providerID  string
+	result      aihaccount.ImportResult
+	importErr   error
+	listOptions aihaccount.ListOptions
+	listResult  aihaccount.ListResult
+	listErr     error
+	showTarget  aihaccount.AccountTarget
+	showResult  aihaccount.AccountView
+	showErr     error
+	closeErr    error
+	closeCalls  int
 }
 
 // ImportOfficialLogin 保存 Provider 并返回预设结果。
@@ -154,6 +352,24 @@ func (application *recordingAccountApplication) ImportOfficialLogin(
 ) (aihaccount.ImportResult, error) {
 	application.providerID = providerID
 	return application.result, application.importErr
+}
+
+// ListAccounts 保存分页输入并返回预设公开账号列表。
+func (application *recordingAccountApplication) ListAccounts(
+	_ context.Context,
+	options aihaccount.ListOptions,
+) (aihaccount.ListResult, error) {
+	application.listOptions = options
+	return application.listResult, application.listErr
+}
+
+// ShowAccount 保存显式账号目标并返回预设公开详情。
+func (application *recordingAccountApplication) ShowAccount(
+	_ context.Context,
+	target aihaccount.AccountTarget,
+) (aihaccount.AccountView, error) {
+	application.showTarget = target
+	return application.showResult, application.showErr
 }
 
 // Close 记录资源释放并返回预设错误。

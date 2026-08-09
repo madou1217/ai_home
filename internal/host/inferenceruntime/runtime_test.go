@@ -27,6 +27,10 @@ const (
 
 // TestRuntimeKeepsCooldownAtAccountModelGranularity 验证生产组合使用同一个
 // 稀疏运行态索引完成征召资格和失败记录，不会把模型故障扩大为账号故障。
+//
+// 不变量由 sibling 断言承担：overloadedModel 冷却后，同一账号的 siblingModel 仍
+// 能正常完成。冷却的作用是排序（干净账号优先），不是把整池落空变成一条与账号
+// 无关的调度错误——软冷却记录的是上一次请求的遭遇，不是这一次的判决。
 func TestRuntimeKeepsCooldownAtAccountModelGranularity(t *testing.T) {
 	t.Parallel()
 
@@ -49,13 +53,23 @@ func TestRuntimeKeepsCooldownAtAccountModelGranularity(t *testing.T) {
 		t.Fatalf("failure = %#v", failed.Failure())
 	}
 
+	// 池内只剩被软冷却的账号时，宁可再打一次上游拿回真实原因，也不合成一个
+	// 「没有可征召账号」——后者与账号无关，客户端也无从据以退避。冷却本身仍在
+	// （它决定了顺序：干净账号优先），只是不再让整池落空变成谎报。
 	secondEvents, err := executeRequest(runtime, newTextRequest(t, overloadedModel))
-	if !errors.Is(err, inferencegateway.ErrNoRoutableAccount) ||
-		len(secondEvents) != 0 {
-		t.Fatalf("second execute events=%#v error=%v", secondEvents, err)
+	if err != nil {
+		t.Fatalf("second execute error = %v", err)
 	}
-	if fixture.upstream.CallCount() != 1 {
-		t.Fatalf("cooldown 后 upstream calls = %d, want 1", fixture.upstream.CallCount())
+	if len(secondEvents) != 1 ||
+		secondEvents[0].Kind() != inference.EventResponseFailed {
+		t.Fatalf("second execute events = %#v", secondEvents)
+	}
+	secondFailed := secondEvents[0].(inference.ResponseFailedEvent)
+	if secondFailed.Failure().Code() != string(runtimecore.FailureModelOverloaded) {
+		t.Fatalf("second failure = %#v，真实上游原因被盖掉了", secondFailed.Failure())
+	}
+	if fixture.upstream.CallCount() != 2 {
+		t.Fatalf("cooldown 后 upstream calls = %d, want 2", fixture.upstream.CallCount())
 	}
 
 	siblingEvents, err := executeRequest(runtime, newTextRequest(t, siblingModel))
@@ -67,10 +81,10 @@ func TestRuntimeKeepsCooldownAtAccountModelGranularity(t *testing.T) {
 			inference.EventResponseCompleted {
 		t.Fatalf("sibling events = %#v", siblingEvents)
 	}
-	if fixture.upstream.CallCount() != 2 ||
-		fixture.store.CredentialReadCount() != 2 {
+	if fixture.upstream.CallCount() != 3 ||
+		fixture.store.CredentialReadCount() != 3 {
 		t.Fatalf(
-			"calls upstream=%d credentials=%d, want 2/2",
+			"calls upstream=%d credentials=%d, want 3/3",
 			fixture.upstream.CallCount(),
 			fixture.store.CredentialReadCount(),
 		)

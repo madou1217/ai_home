@@ -272,6 +272,7 @@ type RecruitmentSession struct {
 	pinnedFound     bool
 	start           int
 	offset          int
+	softCooldown    softCooldownFallback
 }
 
 // NewRecruiter 创建不缓存凭据、共享公平票号的账号征召器。
@@ -372,14 +373,17 @@ func (session *RecruitmentSession) Next(ctx context.Context) (Result, error) {
 		return Result{}, err
 	}
 	progress := Result{}
-	for session.offset < session.candidateCount() {
-		candidate, found := session.candidateAt(session.offset)
+	for {
+		offset, scanning := session.nextScanPosition()
+		if !scanning {
+			break
+		}
+		candidate, found := session.candidateAt(offset)
 		if !found {
 			return progress, ErrInvalidCandidateSnapshot
 		}
-		session.offset++
 		progress.examined++
-		progress.sourceExhausted = session.offset == session.candidateCount()
+		progress.sourceExhausted = session.scanExhausted()
 		if !validCandidate(candidate, session.request.ProviderID()) {
 			return progress, ErrInvalidCandidateSnapshot
 		}
@@ -390,11 +394,11 @@ func (session *RecruitmentSession) Next(ctx context.Context) (Result, error) {
 		if routeErr != nil {
 			return progress, routeErr
 		}
-		eligible, eligibilityErr := session.recruiter.isRuntimeEligible(ctx, route)
+		eligibility, eligibilityErr := session.recruiter.runtimeEligibility(ctx, route)
 		if eligibilityErr != nil {
 			return progress, eligibilityErr
 		}
-		if !eligible {
+		if !session.admits(eligibility, offset) {
 			continue
 		}
 		binding, resolveErr := session.recruiter.credentials.ResolveCredentialBinding(
@@ -448,22 +452,61 @@ func (session *RecruitmentSession) candidateAt(offset int) (accountapp.RoutingAc
 	return session.candidates.At(index)
 }
 
-// isRuntimeEligible 在读取敏感凭据前检查账号与真实模型元组。
-func (recruiter *Recruiter) isRuntimeEligible(
+// runtimeEligibility 在读取敏感凭据前检查账号与真实模型元组。
+//
+// 返回完整资格值而非布尔：调用方必须能区分「软冷却」与凭据/额度/策略硬阻塞，
+// 只有前者可以被逃生阀放行。
+func (recruiter *Recruiter) runtimeEligibility(
 	ctx context.Context,
 	route runtimecore.ModelRoute,
-) (bool, error) {
+) (runtimecore.Eligibility, error) {
 	eligibility, err := recruiter.runtime.CheckEligibility(ctx, route)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
-			return false, ctxErr
+			return runtimecore.Eligibility{}, ctxErr
 		}
-		return false, fmt.Errorf("读取账号征召运行态失败: %w", err)
+		return runtimecore.Eligibility{}, fmt.Errorf("读取账号征召运行态失败: %w", err)
 	}
 	if !eligibility.IsValid() {
-		return false, ErrInvalidRuntimeEligibility
+		return runtimecore.Eligibility{}, ErrInvalidRuntimeEligibility
 	}
-	return eligibility.Eligible(), nil
+	return eligibility, nil
+}
+
+// admits 判定该候选能否继续解析凭据。
+//
+// 仅因软冷却被拦下的候选会被记入逃生阀，等整轮扫描落空后重放；硬阻塞直接跳过。
+func (session *RecruitmentSession) admits(
+	eligibility runtimecore.Eligibility,
+	offset int,
+) bool {
+	if eligibility.Eligible() {
+		return true
+	}
+	if eligibility.Status() != runtimecore.EligibilityModelCooldown {
+		return false
+	}
+	if session.softCooldown.bypassesCooldown() {
+		return true
+	}
+	session.softCooldown.deferCandidate(offset)
+	return false
+}
+
+// nextScanPosition 先按公平起点走完快照，再重放被软冷却延后的位置。
+func (session *RecruitmentSession) nextScanPosition() (int, bool) {
+	if session.offset < session.candidateCount() {
+		offset := session.offset
+		session.offset++
+		return offset, true
+	}
+	return session.softCooldown.nextDeferred()
+}
+
+// scanExhausted 表示快照已走完且没有待重放的候选。
+func (session *RecruitmentSession) scanExhausted() bool {
+	return session.offset >= session.candidateCount() &&
+		!session.softCooldown.hasPending()
 }
 
 // candidateModelRoute 创建运行态和模型权限端口共享的精确元组键。

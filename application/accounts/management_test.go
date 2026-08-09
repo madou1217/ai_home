@@ -59,6 +59,17 @@ func TestManagementDelegatesBoundedOverviewQueries(t *testing.T) {
 			overviewStore,
 		)
 	}
+	byAlias, err := management.GetAccountOverviewByCLIAccountID(
+		context.Background(),
+		account.ProviderID(),
+		account.CLIAccountID(),
+	)
+	if err != nil ||
+		byAlias.Account() != account ||
+		overviewStore.aliasProviderID != account.ProviderID() ||
+		overviewStore.aliasAccountID != account.CLIAccountID() {
+		t.Fatalf("alias overview=%#v store=%#v error=%v", byAlias, overviewStore, err)
+	}
 }
 
 // TestManagementSetEnabledUsesInjectedClock 验证启停命令只读取一次应用时钟。
@@ -174,13 +185,31 @@ func TestManagementRejectsInvalidDependenciesAndIdentity(t *testing.T) {
 
 // managementOverviewStore 是账号管理查询用例的可观察测试替身。
 type managementOverviewStore struct {
-	listQuery  accountapp.OverviewQuery
-	listResult []accountapp.AccountOverview
-	listErr    error
-	listCalls  int
-	getRef     accountcore.AccountRef
-	getResult  accountapp.AccountOverview
-	getErr     error
+	listQuery       accountapp.OverviewQuery
+	listResult      []accountapp.AccountOverview
+	listErr         error
+	listCalls       int
+	getRef          accountcore.AccountRef
+	getResult       accountapp.AccountOverview
+	getErr          error
+	aliasProviderID string
+	aliasAccountID  accountcore.CLIAccountID
+	aliasResult     accountapp.AccountOverview
+	aliasErr        error
+}
+
+// GetAccountOverviewByCLIAccountID 记录 Provider 数字别名并返回预设投影。
+func (store *managementOverviewStore) GetAccountOverviewByCLIAccountID(
+	_ context.Context,
+	providerID string,
+	cliAccountID accountcore.CLIAccountID,
+) (accountapp.AccountOverview, error) {
+	store.aliasProviderID = providerID
+	store.aliasAccountID = cliAccountID
+	if store.aliasResult.Account().IsValid() || store.aliasErr != nil {
+		return store.aliasResult, store.aliasErr
+	}
+	return store.getResult, store.getErr
 }
 
 // ListAccountOverviews 记录分页查询并返回预设结果。

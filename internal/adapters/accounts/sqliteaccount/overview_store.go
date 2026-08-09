@@ -38,6 +38,11 @@ const accountOverviewByRefSQL = accountOverviewSelectSQL + `
 	WHERE a.account_ref = ?
 	LIMIT 1`
 
+// accountOverviewByAliasSQL 使用账号表唯一索引点查 Provider 内数字别名。
+const accountOverviewByAliasSQL = accountOverviewSelectSQL + `
+	WHERE a.provider_id = ? AND a.cli_account_id = ?
+	LIMIT 1`
+
 var _ accountapp.AccountOverviewStore = (*Store)(nil)
 
 // ListAccountOverviews 使用 keyset pagination 返回无敏感数据的账号管理投影。
@@ -87,6 +92,24 @@ func (store *Store) GetAccountOverview(
 		ctx,
 		accountOverviewByRefSQL,
 		accountRef.String(),
+	))
+}
+
+// GetAccountOverviewByCLIAccountID 按 Provider 内数字别名点查无敏感投影。
+func (store *Store) GetAccountOverviewByCLIAccountID(
+	ctx context.Context,
+	providerID string,
+	cliAccountID accountcore.CLIAccountID,
+) (accountapp.AccountOverview, error) {
+	canonicalProviderID, found := store.catalog.CanonicalID(providerID)
+	if !found || canonicalProviderID != providerID || !cliAccountID.IsValid() {
+		return accountapp.AccountOverview{}, accountapp.ErrInvalidOverview
+	}
+	return store.scanAccountOverview(store.db.QueryRowContext(
+		ctx,
+		accountOverviewByAliasSQL,
+		canonicalProviderID,
+		cliAccountID.Int64(),
 	))
 }
 

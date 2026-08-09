@@ -762,6 +762,60 @@ func TestHandlerGetsAndDisablesAccount(t *testing.T) {
 	}
 }
 
+// TestHandlerResolvesAccountAliasWithoutApplyingLaunchEligibility 验证已停用
+// 账号仍可通过 Provider 数字别名解析，供后续 enable 命令使用。
+func TestHandlerResolvesAccountAliasWithoutApplyingLaunchEligibility(t *testing.T) {
+	t.Parallel()
+
+	service := newAccountServiceStub(t)
+	overview := newTestOverview(t, service.catalog, 7, "http-alias-account")
+	disabled, err := overview.Account().WithEnabled(
+		false,
+		overview.Account().UpdatedAt().Add(time.Minute),
+	)
+	if err != nil {
+		t.Fatalf("WithEnabled(false) error = %v", err)
+	}
+	disabledOverview := cloneOverviewWithAccount(t, overview, disabled)
+	service.overview = &disabledOverview
+	handler := newTestHandler(t, service)
+	path := accountsapi.AliasesPath + "/codex/7"
+
+	response := performAuthorizedRequest(t, handler, http.MethodGet, path, nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("GET alias status = %d body=%s", response.Code, response.Body)
+	}
+	var document struct {
+		Data struct {
+			AccountRef string `json:"account_ref"`
+			Enabled    bool   `json:"enabled"`
+		} `json:"data"`
+	}
+	decodeResponseJSON(t, response, &document)
+	if document.Data.Enabled ||
+		document.Data.AccountRef != overview.Account().Ref().String() {
+		t.Fatalf("alias response = %+v", document.Data)
+	}
+
+	for _, invalidPath := range []string{
+		accountsapi.AliasesPath + "/Codex/7",
+		accountsapi.AliasesPath + "/codex/07",
+		accountsapi.AliasesPath + "/codex/7/extra",
+	} {
+		invalid := performAuthorizedRequest(
+			t,
+			handler,
+			http.MethodGet,
+			invalidPath,
+			nil,
+		)
+		if invalid.Code != http.StatusBadRequest ||
+			!strings.Contains(invalid.Body.String(), `"code":"invalid_account_alias"`) {
+			t.Fatalf("invalid alias %s status=%d body=%s", invalidPath, invalid.Code, invalid.Body)
+		}
+	}
+}
+
 // TestHandlerDeletesAccountWithNoResponseBody 验证成员 DELETE 的状态、空响应体和应用调用。
 func TestHandlerDeletesAccountWithNoResponseBody(t *testing.T) {
 	t.Parallel()
@@ -1420,6 +1474,23 @@ func (service *accountServiceStub) GetAccountOverview(
 		return accountapp.AccountOverview{}, service.overviewErr
 	}
 	if service.overview == nil {
+		return accountapp.AccountOverview{}, accountapp.ErrAccountNotFound
+	}
+	return *service.overview, nil
+}
+
+// GetAccountOverviewByCLIAccountID 按预设账号严格匹配 Provider 数字别名。
+func (service *accountServiceStub) GetAccountOverviewByCLIAccountID(
+	_ context.Context,
+	providerID string,
+	cliAccountID accountcore.CLIAccountID,
+) (accountapp.AccountOverview, error) {
+	if service.overviewErr != nil {
+		return accountapp.AccountOverview{}, service.overviewErr
+	}
+	if service.overview == nil ||
+		service.overview.Account().ProviderID() != providerID ||
+		service.overview.Account().CLIAccountID() != cliAccountID {
 		return accountapp.AccountOverview{}, accountapp.ErrAccountNotFound
 	}
 	return *service.overview, nil

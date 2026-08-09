@@ -5,15 +5,21 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"github.com/madou1217/ai_home/internal/adapters/accounts/managementapi"
 	"github.com/madou1217/ai_home/internal/host/aihaccount"
 	"github.com/madou1217/ai_home/internal/host/aihcli"
 )
 
-const defaultGatewayBaseURL = "http://127.0.0.1:9527"
+const (
+	defaultGatewayBaseURL = "http://127.0.0.1:9527"
+	managementHTTPTimeout = 10 * time.Second
+)
 
 var errInvalidCommand = errors.New("aih 命令无效")
 
@@ -35,6 +41,7 @@ type commandRuntime struct {
 	stdin         io.Reader
 	stdout        io.Writer
 	stderr        io.Writer
+	managementAPI managementapi.HTTPClient
 	newApp        func(context.Context, aihcli.Options) (providerApplication, error)
 	newAccountApp func(context.Context, aihaccount.Options) (accountApplication, error)
 }
@@ -47,6 +54,9 @@ func defaultCommandRuntime() commandRuntime {
 		stdin:       os.Stdin,
 		stdout:      os.Stdout,
 		stderr:      os.Stderr,
+		managementAPI: &http.Client{
+			Timeout: managementHTTPTimeout,
+		},
 		newApp: func(ctx context.Context, options aihcli.Options) (providerApplication, error) {
 			return aihcli.New(ctx, options)
 		},
@@ -63,6 +73,7 @@ func defaultCommandRuntime() commandRuntime {
 func run(ctx context.Context, arguments []string, runtime commandRuntime) error {
 	if ctx == nil || runtime.lookupEnv == nil || runtime.userHomeDir == nil ||
 		runtime.stdin == nil || runtime.stdout == nil || runtime.stderr == nil ||
+		runtime.managementAPI == nil ||
 		runtime.newApp == nil || runtime.newAccountApp == nil {
 		return errInvalidCommand
 	}
@@ -176,6 +187,7 @@ func writeUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "  AIH_HOME")
 	_, _ = fmt.Fprintln(output, "  AIH_SERVER_BASE_URL（默认 http://127.0.0.1:9527）")
 	_, _ = fmt.Fprintln(output, "  AIH_SERVER_CLIENT_KEY（仅 Gateway 模式必需）")
+	_, _ = fmt.Fprintln(output, "  AIH_SERVER_MANAGEMENT_KEY（账号写命令必需）")
 	_, _ = fmt.Fprintln(output, "  AIH_CODEX_BINARY / AIH_CLAUDE_BINARY（可选官方 CLI 路径）")
 }
 

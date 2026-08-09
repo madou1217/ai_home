@@ -141,6 +141,37 @@ func TestStoreGetsAccountOverviewByRef(t *testing.T) {
 	}
 }
 
+// TestStoreGetsAccountOverviewByAlias 验证 Provider 数字别名使用唯一索引
+// 点查完整公开投影，不扫描凭据或资料 JSON。
+func TestStoreGetsAccountOverviewByAlias(t *testing.T) {
+	t.Parallel()
+
+	store := openTestStore(t)
+	credential := newTestCodexOAuth(t)
+	account := newAccountForCredential(t, store, credential, 7)
+	registerAccountWithCredential(t, store, account, credential)
+	overview, err := store.GetAccountOverviewByCLIAccountID(
+		context.Background(),
+		"codex",
+		account.CLIAccountID(),
+	)
+	if err != nil {
+		t.Fatalf("GetAccountOverviewByCLIAccountID() error = %v", err)
+	}
+	if overview.Account() != account ||
+		!overview.HasCredential() ||
+		overview.AuthKind() != "oauth" {
+		t.Fatalf("alias overview invalid: %#v", overview)
+	}
+	if _, err := store.GetAccountOverviewByCLIAccountID(
+		context.Background(),
+		"CODEX",
+		account.CLIAccountID(),
+	); !errors.Is(err, accountapp.ErrInvalidOverview) {
+		t.Fatalf("non-canonical provider error = %v", err)
+	}
+}
+
 // TestStoreGetAccountOverviewRejectsInvalidAndMissingRefs 验证无效或不存在身份不会降级查询。
 func TestStoreGetAccountOverviewRejectsInvalidAndMissingRefs(t *testing.T) {
 	t.Parallel()
@@ -216,6 +247,11 @@ func TestStoreAccountOverviewQueryUsesPrimaryKeys(t *testing.T) {
 			statement: accountOverviewByRefSQL,
 			arguments: []any{"acct_4a6fd2d115fe1edacb4a"},
 		},
+		{
+			name:      "alias point lookup",
+			statement: accountOverviewByAliasSQL,
+			arguments: []any{"codex", 7},
+		},
 	}
 	for _, test := range tests {
 		test := test
@@ -246,8 +282,12 @@ func TestStoreAccountOverviewQueryUsesPrimaryKeys(t *testing.T) {
 				t.Fatalf("iterate query plan error = %v", err)
 			}
 			queryPlan := strings.Join(details, "\n")
+			accountLookup := "SEARCH a USING PRIMARY KEY"
+			if test.name == "alias point lookup" {
+				accountLookup = "SEARCH a USING INDEX sqlite_autoindex_accounts_2"
+			}
 			for _, expected := range []string{
-				"SEARCH a USING PRIMARY KEY",
+				accountLookup,
 				"SEARCH c USING PRIMARY KEY",
 				"SEARCH p USING PRIMARY KEY",
 			} {

@@ -5,8 +5,10 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/http"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/madou1217/ai_home/internal/host/aihaccount"
 	"github.com/madou1217/ai_home/internal/host/aihcli"
@@ -228,6 +230,9 @@ func testCommandRuntime(t *testing.T, environment map[string]string) commandRunt
 		stdin:       bytes.NewReader(nil),
 		stdout:      io.Discard,
 		stderr:      io.Discard,
+		managementAPI: &http.Client{
+			Timeout: time.Second,
+		},
 		newApp: func(context.Context, aihcli.Options) (providerApplication, error) {
 			return &recordingApplication{}, nil
 		},

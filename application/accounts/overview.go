@@ -168,6 +168,11 @@ type AccountOverviewStore interface {
 		ctx context.Context,
 		accountRef accountcore.AccountRef,
 	) (AccountOverview, error)
+	GetAccountOverviewByCLIAccountID(
+		ctx context.Context,
+		providerID string,
+		cliAccountID accountcore.CLIAccountID,
+	) (AccountOverview, error)
 }
 
 // validCredentialOverview 校验凭据存在标记和公开认证类型的一致性。

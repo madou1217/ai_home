@@ -13,11 +13,14 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	usageapp "github.com/madou1217/ai_home/application/accountusage"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	accountcontract "github.com/madou1217/ai_home/internal/contracts/accountmanagement"
 )
 
 const (
 	// CollectionPath 是账号管理 v1 集合资源的规范路径。
-	CollectionPath = "/v1/management/accounts"
+	CollectionPath = accountcontract.AccountsPath
+	// AliasesPath 是 Provider 数字别名只读解析资源的规范集合前缀。
+	AliasesPath = accountcontract.AccountAliasesPath
 	// NativeImportPath 是 Codex、Claude 官方 artifact 导入资源的规范路径。
 	NativeImportPath = "/v1/management/account-imports"
 	// Sub2APIImportPath 是单账号 sub2api 迁移文档导入资源的规范路径。
@@ -41,6 +44,11 @@ type Management interface {
 	GetAccountOverview(
 		ctx context.Context,
 		accountRef accountcore.AccountRef,
+	) (accountapp.AccountOverview, error)
+	GetAccountOverviewByCLIAccountID(
+		ctx context.Context,
+		providerID string,
+		cliAccountID accountcore.CLIAccountID,
 	) (accountapp.AccountOverview, error)
 	SetAccountEnabled(
 		ctx context.Context,
@@ -252,6 +260,8 @@ func (handler *Handler) ServeHTTP(
 		handler.handleNativeImport(response, request)
 	case request.URL.Path == CollectionPath:
 		handler.handleCollection(response, request)
+	case strings.HasPrefix(request.URL.Path, AliasesPath+"/"):
+		handler.handleAccountAlias(response, request)
 	case request.URL.Path == SelectionPath:
 		handler.handleLaunchSelection(response, request)
 	case strings.HasPrefix(request.URL.Path, DefaultsPath+"/"):

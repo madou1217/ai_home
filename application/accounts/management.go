@@ -71,6 +71,32 @@ func (management *Management) GetAccountOverview(
 	return management.overviews.GetAccountOverview(ctx, accountRef)
 }
 
+// GetAccountOverviewByCLIAccountID 按 Provider 内数字别名返回无敏感管理投影。
+func (management *Management) GetAccountOverviewByCLIAccountID(
+	ctx context.Context,
+	providerID string,
+	cliAccountID accountcore.CLIAccountID,
+) (AccountOverview, error) {
+	if providerID == "" || !cliAccountID.IsValid() {
+		return AccountOverview{}, ErrInvalidOverview
+	}
+	overview, err := management.overviews.GetAccountOverviewByCLIAccountID(
+		ctx,
+		providerID,
+		cliAccountID,
+	)
+	if err != nil {
+		return AccountOverview{}, err
+	}
+	account := overview.Account()
+	if !account.IsValid() ||
+		account.ProviderID() != providerID ||
+		account.CLIAccountID() != cliAccountID {
+		return AccountOverview{}, ErrInvalidOverview
+	}
+	return overview, nil
+}
+
 // SetAccountEnabled 使用应用时钟原子更新用户启停状态。
 func (management *Management) SetAccountEnabled(
 	ctx context.Context,

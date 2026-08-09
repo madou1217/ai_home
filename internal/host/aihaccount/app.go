@@ -53,6 +53,20 @@ type accountModelReader interface {
 	) ([]accountapp.AccountModel, error)
 }
 
+// accountModelManager 隔离刷新目录与人工策略两个账号模型写端口。
+type accountModelManager interface {
+	RefreshAccountModels(
+		ctx context.Context,
+		accountRef accountcore.AccountRef,
+	) ([]accountapp.AccountModel, error)
+	SetManualModelPolicy(
+		ctx context.Context,
+		accountRef accountcore.AccountRef,
+		modelID string,
+		policy accountapp.ModelManualPolicy,
+	) ([]accountapp.AccountModel, error)
+}
+
 // accountReader 聚合账号管理 Host 当前需要的只读端口。
 // 所有查询都由同一个 SQLite Store 实现，不引入第二份账号状态。
 type accountReader interface {
@@ -78,6 +92,7 @@ type App struct {
 	reader    *nativeartifact.Reader
 	registrar accountRegistrar
 	accounts  accountReader
+	models    accountModelManager
 	resources []io.Closer
 }
 
@@ -128,11 +143,27 @@ func New(ctx context.Context, options Options) (*App, error) {
 	if err != nil {
 		return fail("创建账号注册用例失败", err)
 	}
+	modelManagement, err := accountapp.NewModelManagement(
+		store,
+		store,
+		discovery,
+		time.Now,
+	)
+	if err != nil {
+		return fail("创建账号模型管理用例失败", err)
+	}
 	reader := options.ArtifactReader
 	if reader == nil {
 		reader = nativeartifact.New(nativeartifact.Options{})
 	}
-	return newApp(nativeaccount.NewDecoder(), reader, registrar, store, store)
+	return newApp(
+		nativeaccount.NewDecoder(),
+		reader,
+		registrar,
+		store,
+		modelManagement,
+		store,
+	)
 }
 
 // newApp 统一生产和包内测试的不变量校验。
@@ -141,9 +172,14 @@ func newApp(
 	reader *nativeartifact.Reader,
 	registrar accountRegistrar,
 	accounts accountReader,
+	models accountModelManager,
 	resources ...io.Closer,
 ) (*App, error) {
-	if decoder == nil || reader == nil || registrar == nil || accounts == nil {
+	if decoder == nil ||
+		reader == nil ||
+		registrar == nil ||
+		accounts == nil ||
+		models == nil {
 		return nil, ErrInvalidOptions
 	}
 	for _, resource := range resources {
@@ -156,6 +192,7 @@ func newApp(
 		reader:    reader,
 		registrar: registrar,
 		accounts:  accounts,
+		models:    models,
 		resources: append([]io.Closer(nil), resources...),
 	}, nil
 }

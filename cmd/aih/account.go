@@ -26,6 +26,18 @@ type accountApplication interface {
 		ctx context.Context,
 		target aihaccount.AccountTarget,
 	) (aihaccount.AccountView, error)
+	ListAccountModels(
+		ctx context.Context,
+		target aihaccount.AccountTarget,
+	) (aihaccount.AccountModelsResult, error)
+	RefreshAccountModels(
+		ctx context.Context,
+		target aihaccount.AccountTarget,
+	) (aihaccount.AccountModelsResult, error)
+	SetAccountModelPolicy(
+		ctx context.Context,
+		command aihaccount.AccountModelPolicyCommand,
+	) (aihaccount.AccountModelsResult, error)
 	Close() error
 }
 
@@ -76,6 +88,8 @@ func runAccount(
 			return fmt.Errorf("%w: 账号目标必须是 account_ref 或 provider:id", errInvalidCommand)
 		}
 		return runAccountShow(ctx, target, runtime)
+	case "models":
+		return runAccountModels(ctx, arguments[1:], runtime)
 	default:
 		return fmt.Errorf("%w: 未知账号子命令 %s", errInvalidCommand, arguments[0])
 	}
@@ -86,17 +100,21 @@ func writeAccountUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "用法:")
 	_, _ = fmt.Fprintln(output, "  aih account list [--limit N] [--after account_ref] # 分页列出公开账号信息")
 	_, _ = fmt.Fprintln(output, "  aih account show <account_ref|provider:id>          # 查看一个公开账号详情")
+	_, _ = fmt.Fprintln(output, "  aih account models list <account_ref|provider:id>   # 查看已物化账号模型")
+	_, _ = fmt.Fprintln(output, "  aih account models refresh <account_ref|provider:id> # 刷新账号模型目录")
+	_, _ = fmt.Fprintln(output, "  aih account models set-policy <target> <model> <policy> # 设置人工模型策略")
 	_, _ = fmt.Fprintln(output, "  aih account import <codex|claude>   # 导入该 Provider 官方 CLI 当前登录态")
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "查看子命令说明:")
 	_, _ = fmt.Fprintln(output, "  aih account list --help")
 	_, _ = fmt.Fprintln(output, "  aih account show --help")
+	_, _ = fmt.Fprintln(output, "  aih account models --help")
 	_, _ = fmt.Fprintln(output, "  aih account import --help")
 }
 
 // accountUsageLine 供根帮助复用，保持两处命令描述一致。
 func accountUsageLine() string {
 	return strings.TrimSpace(
-		"aih account <list|show|import> [args...]                 # Go 账号管理",
+		"aih account <list|show|models|import> [args...]          # Go 账号管理",
 	)
 }

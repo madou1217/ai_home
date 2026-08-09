@@ -214,6 +214,11 @@ func TestAccountImportHelpDoesNotOpenDatabase(t *testing.T) {
 		{"account", "import", "--help"},
 		{"account", "list", "--help"},
 		{"account", "show", "--help"},
+		{"account", "models"},
+		{"account", "models", "--help"},
+		{"account", "models", "list", "--help"},
+		{"account", "models", "refresh", "--help"},
+		{"account", "models", "set-policy", "--help"},
 		{"help", "account"},
 	} {
 		output := &bytes.Buffer{}
@@ -250,6 +255,19 @@ func TestAccountRejectsUnknownSubcommandAndProvider(t *testing.T) {
 		{"account", "show"},
 		{"account", "show", "claude:01"},
 		{"account", "show", "claude:1", "extra"},
+		{"account", "models", "remove", "claude:1"},
+		{"account", "models", "list"},
+		{"account", "models", "list", "claude:01"},
+		{"account", "models", "list", "claude:1", "extra"},
+		{"account", "models", "refresh"},
+		{"account", "models", "refresh", "claude:01"},
+		{"account", "models", "refresh", "claude:1", "extra"},
+		{"account", "models", "set-policy"},
+		{"account", "models", "set-policy", "claude:1"},
+		{"account", "models", "set-policy", "claude:01", "claude-opus-5", "inherit"},
+		{"account", "models", "set-policy", "claude:1", "bad model", "inherit"},
+		{"account", "models", "set-policy", "claude:1", "claude-opus-5", "unknown"},
+		{"account", "models", "set-policy", "claude:1", "claude-opus-5", "inherit", "extra"},
 	} {
 		runtime := testCommandRuntime(t, nil)
 		runtime.newAccountApp = func(
@@ -331,18 +349,27 @@ func TestAccountShowJoinsShowAndCloseErrors(t *testing.T) {
 
 // recordingAccountApplication 记录账号命令交给 Host 的原始输入。
 type recordingAccountApplication struct {
-	options     aihaccount.Options
-	providerID  string
-	result      aihaccount.ImportResult
-	importErr   error
-	listOptions aihaccount.ListOptions
-	listResult  aihaccount.ListResult
-	listErr     error
-	showTarget  aihaccount.AccountTarget
-	showResult  aihaccount.AccountView
-	showErr     error
-	closeErr    error
-	closeCalls  int
+	options       aihaccount.Options
+	providerID    string
+	result        aihaccount.ImportResult
+	importErr     error
+	listOptions   aihaccount.ListOptions
+	listResult    aihaccount.ListResult
+	listErr       error
+	showTarget    aihaccount.AccountTarget
+	showResult    aihaccount.AccountView
+	showErr       error
+	modelsTarget  aihaccount.AccountTarget
+	modelsResult  aihaccount.AccountModelsResult
+	modelsErr     error
+	refreshTarget aihaccount.AccountTarget
+	refreshResult aihaccount.AccountModelsResult
+	refreshErr    error
+	policyCommand aihaccount.AccountModelPolicyCommand
+	policyResult  aihaccount.AccountModelsResult
+	policyErr     error
+	closeErr      error
+	closeCalls    int
 }
 
 // ImportOfficialLogin 保存 Provider 并返回预设结果。
@@ -370,6 +397,33 @@ func (application *recordingAccountApplication) ShowAccount(
 ) (aihaccount.AccountView, error) {
 	application.showTarget = target
 	return application.showResult, application.showErr
+}
+
+// ListAccountModels 保存显式账号目标并返回预设物化模型快照。
+func (application *recordingAccountApplication) ListAccountModels(
+	_ context.Context,
+	target aihaccount.AccountTarget,
+) (aihaccount.AccountModelsResult, error) {
+	application.modelsTarget = target
+	return application.modelsResult, application.modelsErr
+}
+
+// RefreshAccountModels 保存显式账号目标并返回预设刷新快照。
+func (application *recordingAccountApplication) RefreshAccountModels(
+	_ context.Context,
+	target aihaccount.AccountTarget,
+) (aihaccount.AccountModelsResult, error) {
+	application.refreshTarget = target
+	return application.refreshResult, application.refreshErr
+}
+
+// SetAccountModelPolicy 保存人工模型策略命令并返回预设快照。
+func (application *recordingAccountApplication) SetAccountModelPolicy(
+	_ context.Context,
+	command aihaccount.AccountModelPolicyCommand,
+) (aihaccount.AccountModelsResult, error) {
+	application.policyCommand = command
+	return application.policyResult, application.policyErr
 }
 
 // Close 记录资源释放并返回预设错误。

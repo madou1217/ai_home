@@ -122,6 +122,9 @@
 | ACC-041 | Provider skill 安装 | 启动/能力初始化 | 将 AI Home provider skill 安装到目标工具支持的目录 | 受限 | `lib/cli/services/ai-cli/provider-skill-installer.js`、`assets/provider-skills/` |
 | ACC-042 | 会话 hook 状态与修复 | Settings/Web API | 显示全部 provider 的 hook/轮询/不可用三态；支持一键安装/修复官方 hook | 稳定/受限 | `web/src/components/settings/RealtimeSyncCard.tsx` |
 | ACC-043 | Provider HOME/config 诊断 | `aih <provider> home [id]` | 不启动 CLI，只显示实际 HOME、config 与账号投影路径 | 稳定 | `lib/cli/commands/ai-cli/router.js` |
+| ACC-044 | Go 账号物化模型列表 | `aih account models list <account_ref\|provider:id>` | 只读 `aih.db` 中已物化正排，展示上游可见性、人工策略和最终有效性；不实时请求 Provider、不读取凭据或运行态 | 已实现（重构路径） | `cmd/aih/account_models.go`、`internal/host/aihaccount/account_models.go` |
+| ACC-045 | Go 单账号模型刷新 | `aih account models refresh <account_ref\|provider:id>` | 使用当前规范凭据读取完整 Provider 模型目录；成功后原子替换上游发现部分并保留人工策略，发现失败时保留旧快照 | 已实现（重构路径） | `application/accounts/model_management.go`、`cmd/aih/account_models.go` |
+| ACC-046 | Go 单模型人工策略 | `aih account models set-policy <target> <model_id> <policy>` | 精确设置 `inherit`、`force_enable` 或 `force_disable`，原子更新物化正排/倒排并返回完整快照；不访问 Provider | 已实现（重构路径） | `application/accounts/model_management.go`、`internal/host/aihaccount/account_models.go` |
 
 ## 4. 导入、导出与迁移
 

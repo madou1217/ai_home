@@ -42,6 +42,7 @@ func TestImportOfficialLoginRegistersAndReportsRealCatalog(t *testing.T) {
 		syntheticClaudeReader(),
 		registrar,
 		models,
+		models,
 	)
 	if err != nil {
 		t.Fatalf("newApp() error = %v", err)
@@ -95,6 +96,7 @@ func TestListAccountsUsesBoundedKeysetAndReturnsNextCursor(t *testing.T) {
 		syntheticClaudeReader(),
 		&recordingRegistrar{t: t},
 		reader,
+		reader,
 	)
 	if err != nil {
 		t.Fatalf("newApp() error = %v", err)
@@ -132,6 +134,7 @@ func TestListAccountsRejectsInvalidBoundsBeforeQuery(t *testing.T) {
 		nativeaccount.NewDecoder(),
 		syntheticClaudeReader(),
 		&recordingRegistrar{t: t},
+		reader,
 		reader,
 	)
 	if err != nil {
@@ -197,6 +200,7 @@ func TestShowAccountResolvesStableRefAndProviderAlias(t *testing.T) {
 		syntheticClaudeReader(),
 		&recordingRegistrar{t: t},
 		reader,
+		reader,
 	)
 	if err != nil {
 		t.Fatalf("newApp() error = %v", err)
@@ -242,11 +246,13 @@ func TestImportOfficialLoginRejectsUnsupportedProvider(t *testing.T) {
 	t.Parallel()
 
 	registrar := &recordingRegistrar{t: t}
+	models := &stubModelReader{}
 	app, err := newApp(
 		nativeaccount.NewDecoder(),
 		syntheticClaudeReader(),
 		registrar,
-		&stubModelReader{},
+		models,
+		models,
 	)
 	if err != nil {
 		t.Fatalf("newApp() error = %v", err)
@@ -273,7 +279,14 @@ func TestImportOfficialLoginPropagatesMissingLogin(t *testing.T) {
 		UserHomeDir: func() (string, error) { return "/home/import-case", nil },
 		ReadFile:    func(string) ([]byte, error) { return nil, os.ErrNotExist },
 	})
-	app, err := newApp(nativeaccount.NewDecoder(), reader, registrar, &stubModelReader{})
+	models := &stubModelReader{}
+	app, err := newApp(
+		nativeaccount.NewDecoder(),
+		reader,
+		registrar,
+		models,
+		models,
+	)
 	if err != nil {
 		t.Fatalf("newApp() error = %v", err)
 	}
@@ -349,6 +362,8 @@ func (registrar *recordingRegistrar) Register(
 type modelSpec struct {
 	modelID           string
 	upstreamAvailable bool
+	manualPolicy      accountapp.ModelManualPolicy
+	updatedAt         time.Time
 }
 
 // stubModelReader 按注册返回的真实账号身份回读已物化模型关系。
@@ -363,6 +378,17 @@ type stubModelReader struct {
 	overviewCalls  int
 	aliasCalls     int
 	detailCalls    int
+	modelCalls     int
+	modelRef       accountcore.AccountRef
+	modelErr       error
+	refreshCalls   int
+	refreshRef     accountcore.AccountRef
+	refreshErr     error
+	policyCalls    int
+	policyRef      accountcore.AccountRef
+	policyModelID  string
+	policyValue    accountapp.ModelManualPolicy
+	policyErr      error
 }
 
 // ListAccountModels 用调用方传入的账号身份构造模型关系，保持身份一致。
@@ -370,14 +396,27 @@ func (reader *stubModelReader) ListAccountModels(
 	_ context.Context,
 	accountRef accountcore.AccountRef,
 ) ([]accountapp.AccountModel, error) {
+	reader.modelCalls++
+	reader.modelRef = accountRef
+	if reader.modelErr != nil {
+		return nil, reader.modelErr
+	}
 	models := make([]accountapp.AccountModel, 0, len(reader.specs))
 	for _, spec := range reader.specs {
+		policy := spec.manualPolicy
+		if policy == "" {
+			policy = accountapp.ModelPolicyInherit
+		}
+		updatedAt := spec.updatedAt
+		if updatedAt.IsZero() {
+			updatedAt = time.Date(2026, 8, 6, 0, 0, 0, 0, time.UTC)
+		}
 		model, err := accountapp.NewAccountModel(accountapp.AccountModelInput{
 			AccountRef:        accountRef,
 			ModelID:           spec.modelID,
 			UpstreamAvailable: spec.upstreamAvailable,
-			ManualPolicy:      accountapp.ModelPolicyInherit,
-			UpdatedAt:         time.Date(2026, 8, 6, 0, 0, 0, 0, time.UTC),
+			ManualPolicy:      policy,
+			UpdatedAt:         updatedAt,
 		})
 		if err != nil {
 			reader.t.Fatalf("NewAccountModel(%s) error = %v", spec.modelID, err)
@@ -385,6 +424,36 @@ func (reader *stubModelReader) ListAccountModels(
 		models = append(models, model)
 	}
 	return models, nil
+}
+
+// RefreshAccountModels 记录刷新目标并返回同一组预设物化模型关系。
+func (reader *stubModelReader) RefreshAccountModels(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+) ([]accountapp.AccountModel, error) {
+	reader.refreshCalls++
+	reader.refreshRef = accountRef
+	if reader.refreshErr != nil {
+		return nil, reader.refreshErr
+	}
+	return reader.ListAccountModels(ctx, accountRef)
+}
+
+// SetManualModelPolicy 记录人工策略并返回同一组预设模型关系。
+func (reader *stubModelReader) SetManualModelPolicy(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+	modelID string,
+	policy accountapp.ModelManualPolicy,
+) ([]accountapp.AccountModel, error) {
+	reader.policyCalls++
+	reader.policyRef = accountRef
+	reader.policyModelID = modelID
+	reader.policyValue = policy
+	if reader.policyErr != nil {
+		return nil, reader.policyErr
+	}
+	return reader.ListAccountModels(ctx, accountRef)
 }
 
 // ListAccountOverviews 返回预设的公开投影，并记录应用层生成的稳定查询。

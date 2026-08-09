@@ -76,7 +76,12 @@ type HTTPClient interface {
 type Dependencies struct {
 	Authorizer Authorizer
 	// Accounts 在没有租约时按调度顺序提供账号；为空表示只服务租约调用方。
-	Accounts       AccountSource
+	Accounts AccountSource
+	// Fallback 承接透传服务不了的请求，通常是 Canonical 推理入口。
+	//
+	// 没有它就必须在此拒绝，而跨协议请求（Messages 客户端 + 非 claude 模型）
+	// 本就该由 Canonical 承载——透传只会说 Anthropic 一种线协议。
+	Fallback       http.Handler
 	Credentials    CredentialResolver
 	Client         HTTPClient
 	Attempts       inferencegateway.AttemptRecorder
@@ -88,6 +93,7 @@ type Dependencies struct {
 type Handler struct {
 	authorizer     Authorizer
 	accounts       AccountSource
+	fallback       http.Handler
 	credentials    CredentialResolver
 	client         HTTPClient
 	attempts       inferencegateway.AttemptRecorder
@@ -108,6 +114,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	return &Handler{
 		authorizer:     dependencies.Authorizer,
 		accounts:       dependencies.Accounts,
+		fallback:       dependencies.Fallback,
 		credentials:    dependencies.Credentials,
 		client:         dependencies.Client,
 		attempts:       dependencies.Attempts,
@@ -136,8 +143,9 @@ func (handler *Handler) ServeHTTP(
 		)
 		return
 	}
-	source, authorized := handler.resolveAccountSource(request)
-	if !authorized {
+	source, leased := handler.resolveAccountSource(request)
+	if source == nil {
+		// 既无租约也无调度来源：保持既有契约，明确要求 Relay Token。
 		writeRelayError(
 			response,
 			http.StatusUnauthorized,
@@ -146,11 +154,23 @@ func (handler *Handler) ServeHTTP(
 		)
 		return
 	}
-	if !validRelayRequest(response, request) {
+	// 无租约调用方走的是「能透传就透传」，不满足合同时交回 Canonical，而不是
+	// 拒绝——跨协议请求（Messages 客户端 + 非 claude 模型）本就该由 Canonical
+	// 承载，透传只会说 Anthropic 一种线协议。
+	if leased {
+		if !validRelayRequest(response, request) {
+			return
+		}
+	} else if !relayContractSatisfied(request) {
+		handler.delegate(response, request, nil)
 		return
 	}
 	body, modelID, stream, err := readNativeRequest(request)
 	if err != nil {
+		if !leased {
+			handler.delegate(response, request, body)
+			return
+		}
 		writeRelayError(
 			response,
 			http.StatusBadRequest,
@@ -169,6 +189,11 @@ func (handler *Handler) ServeHTTP(
 	}
 	cursor, err := source.Accounts(request.Context(), modelID)
 	if err != nil || cursor == nil {
+		if !leased {
+			// 该模型没有可透传的 claude 账号，交回 Canonical 按跨协议处理。
+			handler.delegate(response, request, body)
+			return
+		}
 		writeRelayError(
 			response,
 			http.StatusServiceUnavailable,
@@ -199,6 +224,11 @@ func (handler *Handler) ServeHTTP(
 		}
 	}
 	if outcome.response == nil {
+		if !leased && outcome.credentialUnfit {
+			// 该模型的账号用的不是官方 OAuth，透传承载不了，交回 Canonical。
+			handler.delegate(response, request, body)
+			return
+		}
 		failure := outcome.failure
 		if !failure.hasFailure() {
 			failure = relayFailure{
@@ -291,12 +321,14 @@ func readNativeRequest(
 		Model  string `json:"model"`
 		Stream bool   `json:"stream"`
 	}
+	// 解析失败时仍返回原始正文：调用方可能要把请求交回 Canonical，
+	// 丢掉正文会让下游读到空请求体，错误从「模型无效」变成「请求为空」。
 	if json.Unmarshal(body, &envelope) != nil {
-		return nil, "", false, ErrUnsupportedCredential
+		return body, "", false, ErrUnsupportedCredential
 	}
 	modelID, err := runtimecore.NewModelID(envelope.Model)
 	if err != nil {
-		return nil, "", false, err
+		return body, "", false, err
 	}
 	return body, modelID, envelope.Stream, nil
 }

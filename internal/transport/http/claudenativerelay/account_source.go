@@ -74,18 +74,26 @@ func (cursor *singleAccountCursor) Next(
 	return cursor.accountRef, true, nil
 }
 
-// resolveAccountSource 决定本次请求的账号来源。
+// resolveAccountSource 决定本次请求的账号来源，并报告是否来自租约。
 //
 // 携带有效租约时用租约账号；否则交给调度器。两者互斥：租约存在即表示调用方
 // 已经指定账号，不应再被网关改派。
+//
+// 是否租约决定失败语义：租约调用方明确要求透传，不满足合同应当报错；无租约
+// 调用方只是恰好打到这个路径，不满足合同应当交回 Canonical。
 func (handler *Handler) resolveAccountSource(
 	request *http.Request,
 ) (AccountSource, bool) {
 	if accountRef, model, ok := handler.authorizer.Authorize(request); ok {
 		return newLeaseAccountSource(accountRef, model), true
 	}
+	// 声明了 Relay Token 却没通过鉴权，必须按租约调用方拒绝，不能降级成普通
+	// 客户端——否则无效 Token 会静默获得普通客户端权限，造成权限域混淆。
+	if len(request.Header.Values(RelayTokenHeader)) > 0 {
+		return nil, true
+	}
 	if handler.accounts == nil {
 		return nil, false
 	}
-	return handler.accounts, true
+	return handler.accounts, false
 }

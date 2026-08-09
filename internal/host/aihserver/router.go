@@ -87,6 +87,12 @@ func newRouter(handlers serverHandlers) http.Handler {
 //
 // 只要请求声明 Relay Token 就必须进入 Relay 自身鉴权；无效 Token 不能降级为
 // 普通客户端请求，避免权限域混淆。
+//
+// 尚未按「同协议一律透传」放宽，阻碍是 Relay 硬编码只打官方 Messages 端点
+// （officialMessagesEndpoint，订阅 OAuth 唯一允许的真实目标，属安全属性）。
+// 把全部 Messages 流量导入透传会让原本经 Canonical、可指向其它端点的请求改道，
+// 包括测试替身上游。放宽前需先让透传按凭据判定是否适用，且给出可注入的上游
+// 客户端边界；Relay 侧的调度取号、多账号轮转与委派回 Canonical 已经就位。
 type claudeMessagesDispatcher struct {
 	canonical http.Handler
 	relay     http.Handler

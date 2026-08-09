@@ -414,9 +414,23 @@ func newHandlers(
 			err,
 		)
 	}
+	relayAccounts, err := newRelayAccountSource(
+		catalog,
+		inference.recruiter,
+		claudeGatewayPolicy,
+	)
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf(
+			"创建 Claude Relay 账号来源失败: %w",
+			err,
+		)
+	}
 	nativeRelayHandler, err := claudenativerelay.NewHandler(
 		claudenativerelay.Dependencies{
 			Authorizer:     relayAuthorizer,
+			Accounts:       relayAccounts,
+			Fallback:       inference.handler,
 			Credentials:    credentials,
 			Client:         relayClient,
 			Attempts:       accountRuntime,

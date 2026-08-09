@@ -19,6 +19,11 @@ type attemptOutcome struct {
 	response *http.Response
 	// route 是本次尝试的账号模型元组，用于记录运行态。
 	route runtimecore.ModelRoute
+	// credentialUnfit 表示账号凭据无法由透传承载（非官方 OAuth）。
+	//
+	// 无租约调用方遇到这种账号应交回 Canonical——它能承载 API Key 等凭据；
+	// 在此拒绝等于让本可服务的请求失败。
+	credentialUnfit bool
 	// retryAccount 表示该失败已被分类为可换号重试。
 	//
 	// 必须由失败分类给出，不能从状态码反推：上游可能伪造换号 Header，而部分
@@ -81,11 +86,13 @@ func (handler *Handler) attemptRelay(
 			},
 		}, true
 	}
-	if _, err := nativeOAuthAccessToken(credential); err != nil {
+	accessToken, err := nativeOAuthAccessToken(credential)
+	if err != nil {
 		// 凭据类型不符是账号的确定性属性，换号可能成功；但绝不能触网。
 		return attemptOutcome{
-			route:        route,
-			retryAccount: true,
+			route:           route,
+			retryAccount:    true,
+			credentialUnfit: true,
 			failure: relayFailure{
 				status:  http.StatusUnprocessableEntity,
 				code:    "unsupported_relay_credential",
@@ -93,7 +100,6 @@ func (handler *Handler) attemptRelay(
 			},
 		}, true
 	}
-	accessToken, _ := nativeOAuthAccessToken(credential)
 
 	request.Body = io.NopCloser(bytes.NewReader(body))
 	request.ContentLength = int64(len(body))

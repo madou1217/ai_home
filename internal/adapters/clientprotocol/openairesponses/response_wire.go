@@ -18,9 +18,9 @@ type responseWireDTO struct {
 	Object string `json:"object"`
 	// CreatedAt 是响应创建 Unix 秒。
 	CreatedAt int64 `json:"created_at"`
-	// CompletedAt 是响应完成 Unix 秒。
+	// CompletedAt 是仅 completed 终态携带的真实响应完成 Unix 秒。
 	CompletedAt *int64 `json:"completed_at,omitempty"`
-	// Status 是 in_progress、completed 或 failed。
+	// Status 是 in_progress、completed、incomplete 或 failed。
 	Status string `json:"status"`
 	// Error 是失败终态的低敏错误。
 	Error *responseErrorWireDTO `json:"error"`
@@ -416,9 +416,14 @@ func (state *responseState) buildResponseWireWithOutputCount(
 			Reason: incompleteReason,
 		}
 	}
-	if status == statusCompleted || status == statusIncomplete {
-		completedAt := state.createdAt
+	if status == statusCompleted {
+		if state.completedAt == nil {
+			return responseWireDTO{}, ErrInvalidEventSequence
+		}
+		completedAt := *state.completedAt
 		response.CompletedAt = &completedAt
+	}
+	if status == statusCompleted || status == statusIncomplete {
 		usage := newUsageWire(state.usage)
 		response.Usage = &usage
 	}

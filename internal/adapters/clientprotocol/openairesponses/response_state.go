@@ -11,19 +11,21 @@ import (
 
 // responseState 是流式和非流式 Renderer 共享的唯一响应状态机。
 type responseState struct {
-	request      inference.Request
-	createdAt    int64
-	started      bool
-	terminal     bool
-	completed    bool
-	responseID   string
-	model        string
-	lastSequence uint64
-	items        []*outputItemState
-	itemIDs      map[string]struct{}
-	usage        inference.Usage
-	failure      inference.ResponseFailure
-	hasFailure   bool
+	request         inference.Request
+	createdAt       int64
+	completedAt     *int64
+	completionClock func() time.Time
+	started         bool
+	terminal        bool
+	completed       bool
+	responseID      string
+	model           string
+	lastSequence    uint64
+	items           []*outputItemState
+	itemIDs         map[string]struct{}
+	usage           inference.Usage
+	failure         inference.ResponseFailure
+	hasFailure      bool
 	// stopReason 决定终态渲染成 completed 还是 incomplete，必须留存。
 	stopReason inference.StopReason
 }
@@ -54,12 +56,17 @@ type contentBlockState struct {
 	citations     []inference.URLCitation
 }
 
-// newResponseState 创建共享状态机并固定响应时间。
-func newResponseState(request inference.Request, createdAt time.Time) *responseState {
+// newResponseState 创建共享状态机并固定创建时刻与完成时钟。
+func newResponseState(
+	request inference.Request,
+	createdAt time.Time,
+	completionClock func() time.Time,
+) *responseState {
 	return &responseState{
-		request:   request,
-		createdAt: createdAt.Unix(),
-		itemIDs:   make(map[string]struct{}),
+		request:         request,
+		createdAt:       createdAt.Unix(),
+		completionClock: completionClock,
+		itemIDs:         make(map[string]struct{}),
 	}
 }
 
@@ -432,6 +439,11 @@ func (state *responseState) completeResponse(event inference.ResponseCompletedEv
 	}
 	state.usage = event.Usage()
 	state.stopReason = event.StopReason()
+	status, _ := terminalStatusFor(state.stopReason)
+	if status == statusCompleted {
+		completedAt := state.completionClock().Unix()
+		state.completedAt = &completedAt
+	}
 	state.completed = true
 	state.terminal = true
 	return nil

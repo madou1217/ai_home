@@ -12,7 +12,7 @@ type Adapter struct {
 	clock func() time.Time
 }
 
-// NewAdapter 创建固定从注入时钟读取响应创建时间的 Responses Adapter。
+// NewAdapter 创建从注入时钟读取响应创建和完成时间的 Responses Adapter。
 func NewAdapter(clock func() time.Time) (Adapter, error) {
 	if clock == nil {
 		return Adapter{}, clientprotocol.ErrInvalidAdapter
@@ -30,16 +30,18 @@ func (Adapter) Decode(body []byte) (inference.Request, error) {
 	return NewRequestDecoder().Decode(body)
 }
 
-// NewStreamRenderer 创建固定响应创建时间的 Responses SSE Renderer。
+// NewStreamRenderer 创建共享同一生命周期时钟的 Responses SSE Renderer。
 func (adapter Adapter) NewStreamRenderer(
 	request inference.Request,
 ) clientprotocol.StreamRenderer {
-	return NewStreamRenderer(request, adapter.clock())
+	createdAt := adapter.clock()
+	return newStreamRenderer(request, createdAt, adapter.clock)
 }
 
-// NewResponseAggregator 创建固定响应创建时间的 Responses 非流式聚合器。
+// NewResponseAggregator 创建共享同一生命周期时钟的 Responses 非流式聚合器。
 func (adapter Adapter) NewResponseAggregator(
 	request inference.Request,
 ) clientprotocol.ResponseAggregator {
-	return NewResponseAggregator(request, adapter.clock())
+	createdAt := adapter.clock()
+	return newResponseAggregator(request, createdAt, adapter.clock)
 }

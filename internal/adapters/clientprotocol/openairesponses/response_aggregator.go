@@ -19,8 +19,19 @@ func NewResponseAggregator(
 	request inference.Request,
 	createdAt time.Time,
 ) *ResponseAggregator {
+	return newResponseAggregator(request, createdAt, func() time.Time {
+		return createdAt
+	})
+}
+
+// newResponseAggregator 创建由生命周期时钟记录真实完成时间的非流式聚合器。
+func newResponseAggregator(
+	request inference.Request,
+	createdAt time.Time,
+	completionClock func() time.Time,
+) *ResponseAggregator {
 	return &ResponseAggregator{
-		state: newResponseState(request, createdAt),
+		state: newResponseState(request, createdAt, completionClock),
 	}
 }
 

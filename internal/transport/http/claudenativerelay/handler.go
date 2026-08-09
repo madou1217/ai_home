@@ -39,6 +39,10 @@ const (
 	nativeBetaQuery = "beta=true"
 	// maxRelayDuration 与官方 Claude Client 的长请求上限保持同一量级。
 	maxRelayDuration = 10 * time.Minute
+	// maxRelayAttempts 与 Canonical 编排的上游尝试上限保持一致。
+	//
+	// 账号池很大时不设上限会让单个请求长时间打转，客户端只观察到超时。
+	maxRelayAttempts = 4
 )
 
 var (
@@ -70,7 +74,9 @@ type HTTPClient interface {
 
 // Dependencies 集中声明 Native Relay 的鉴权、凭据、传输和运行态端口。
 type Dependencies struct {
-	Authorizer     Authorizer
+	Authorizer Authorizer
+	// Accounts 在没有租约时按调度顺序提供账号；为空表示只服务租约调用方。
+	Accounts       AccountSource
 	Credentials    CredentialResolver
 	Client         HTTPClient
 	Attempts       inferencegateway.AttemptRecorder
@@ -81,6 +87,7 @@ type Dependencies struct {
 // Handler 编排可信账号绑定、原始请求透传和响应流回写。
 type Handler struct {
 	authorizer     Authorizer
+	accounts       AccountSource
 	credentials    CredentialResolver
 	client         HTTPClient
 	attempts       inferencegateway.AttemptRecorder
@@ -100,6 +107,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	}
 	return &Handler{
 		authorizer:     dependencies.Authorizer,
+		accounts:       dependencies.Accounts,
 		credentials:    dependencies.Credentials,
 		client:         dependencies.Client,
 		attempts:       dependencies.Attempts,
@@ -128,7 +136,7 @@ func (handler *Handler) ServeHTTP(
 		)
 		return
 	}
-	accountRef, leasedModel, authorized := handler.authorizer.Authorize(request)
+	source, authorized := handler.resolveAccountSource(request)
 	if !authorized {
 		writeRelayError(
 			response,
@@ -142,52 +150,6 @@ func (handler *Handler) ServeHTTP(
 		return
 	}
 	body, modelID, stream, err := readNativeRequest(request)
-	if err != nil || modelID != leasedModel {
-		writeRelayError(
-			response,
-			http.StatusBadRequest,
-			"invalid_relay_request",
-			"Claude Relay 请求模型与租约不匹配",
-		)
-		return
-	}
-	// 订阅额度按 Claude Code 客户端判定，缺身份的请求会被上游按限流拒绝。
-	//
-	// 但补齐只对**非原生客户端**做：入站门禁当前只放真实 Claude Code 通过，
-	// 它们自带身份，对其正文做任何序列化往返都会改变字段顺序与数值表示，把
-	// 「透传」偷换成「重建」——那正是 Relay 存在的意义所在。等门禁放宽到普通
-	// 客户端时，这里才会真正生效。
-	//
-	// ContentLength 必须同步：改写后长度变化，沿用旧值会让上游读到截断正文。
-	if !hasNativeClaudeHeaders(request.Header) {
-		body = ensureOfficialIdentityBody(body)
-	}
-	request.Body = io.NopCloser(bytes.NewReader(body))
-	request.ContentLength = int64(len(body))
-	credential, err := handler.credentials.ResolveCredential(
-		request.Context(),
-		accountRef,
-	)
-	if err != nil {
-		writeRelayError(
-			response,
-			http.StatusServiceUnavailable,
-			"relay_account_unavailable",
-			"Claude Relay 账号当前不可用",
-		)
-		return
-	}
-	accessToken, err := nativeOAuthAccessToken(credential)
-	if err != nil {
-		writeRelayError(
-			response,
-			http.StatusUnprocessableEntity,
-			"unsupported_relay_credential",
-			"Claude Relay 账号必须使用官方 OAuth",
-		)
-		return
-	}
-	upstream, err := buildUpstreamRequest(request, accessToken)
 	if err != nil {
 		writeRelayError(
 			response,
@@ -197,52 +159,72 @@ func (handler *Handler) ServeHTTP(
 		)
 		return
 	}
-	route, err := runtimecore.NewModelRoute(accountRef, modelID.String())
-	if err != nil {
+	// 订阅额度按 Claude Code 客户端判定，缺身份的请求会被上游按限流拒绝。
+	//
+	// 但补齐只对**非原生客户端**做：真实 Claude Code 自带身份，对其正文做任何
+	// 序列化往返都会改变字段顺序与数值表示，把「透传」偷换成「重建」——那正是
+	// Relay 存在的意义所在。
+	if !hasNativeClaudeHeaders(request.Header) {
+		body = ensureOfficialIdentityBody(body)
+	}
+	cursor, err := source.Accounts(request.Context(), modelID)
+	if err != nil || cursor == nil {
 		writeRelayError(
 			response,
-			http.StatusBadGateway,
-			"relay_state_unavailable",
-			"Claude Relay 运行态不可用",
+			http.StatusServiceUnavailable,
+			"relay_account_unavailable",
+			"Claude Relay 账号当前不可用",
 		)
 		return
 	}
-	// Native SSE 可能跨越 Host 默认写超时；只为当前已鉴权 Relay 请求延长。
-	_ = http.NewResponseController(response).SetWriteDeadline(
-		time.Now().Add(maxRelayDuration),
-	)
-	upstreamResponse, err := handler.client.Do(upstream)
-	if err != nil || upstreamResponse == nil || upstreamResponse.Body == nil {
-		closeUpstreamResponse(upstreamResponse)
-		if err != nil && handler.recordTransportFailure(
-			request.Context(),
-			route,
-			err,
-		) {
+
+	// 尝试循环：只要客户端还没收到任何字节，可重试失败就换号重发。
+	//
+	// 每次只保留最新一次结果，被取代的上游连接立即关闭；耗尽时把最后一次真实
+	// 上游响应原样交付，绝不合成网关自有错误——把真实 429/529 洗成 502 会让
+	// 客户端按「网关故障」立即重试，与限流要求的退避语义相反。
+	outcome := attemptOutcome{}
+	attempted := false
+	for range maxRelayAttempts {
+		accountRef, found, nextErr := cursor.Next(request.Context())
+		if nextErr != nil || !found {
+			break
+		}
+		attempted = true
+		next, retry := handler.attemptRelay(request, accountRef, modelID, body)
+		outcome.closeResponse()
+		outcome = next
+		if !retry {
+			break
+		}
+	}
+	if outcome.response == nil {
+		failure := outcome.failure
+		if !failure.hasFailure() {
+			failure = relayFailure{
+				status:  http.StatusServiceUnavailable,
+				code:    "relay_account_unavailable",
+				message: "Claude Relay 账号当前不可用",
+			}
+		}
+		if attempted && outcome.retryAccount {
 			response.Header().Set(
 				gatewaycontract.RetryAccountHeader,
 				gatewaycontract.RetryAccountValue,
 			)
 		}
-		writeRelayError(
-			response,
-			http.StatusBadGateway,
-			"relay_upstream_unavailable",
-			"Claude 上游暂时不可用",
-		)
+		writeRelayError(response, failure.status, failure.code, failure.message)
 		return
 	}
+	upstreamResponse := outcome.response
+	route := outcome.route
 	defer upstreamResponse.Body.Close()
-	retryAccount := false
-	if upstreamResponse.StatusCode < http.StatusOK ||
-		upstreamResponse.StatusCode >= http.StatusMultipleChoices {
-		retryAccount = handler.recordHTTPFailure(
-			request.Context(),
-			route,
-			upstreamResponse,
-		)
-	}
+	retryAccount := outcome.retryAccount
 
+	// Native SSE 可能跨越 Host 默认写超时；只为当前已鉴权 Relay 请求延长。
+	_ = http.NewResponseController(response).SetWriteDeadline(
+		time.Now().Add(maxRelayDuration),
+	)
 	copyResponseHeaders(response.Header(), upstreamResponse.Header)
 	if retryAccount {
 		// 内部换号标记只能由当前 Server 分类生成，不能信任上游同名 Header。

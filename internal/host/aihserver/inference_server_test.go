@@ -138,6 +138,15 @@ func TestServerRoutesThreeClientProtocolsThroughProductionCatalog(
 			output:  "host-codex-ok",
 		},
 		{
+			name: "messages to codex",
+			path: anthropicmessagesapi.Path,
+			headers: map[string]string{
+				"x-api-key": testClientKey,
+			},
+			payload: `{"model":"gpt-5.6-sol","max_tokens":32,"messages":[{"role":"user","content":"host-smoke"}]}`,
+			output:  "host-codex-ok",
+		},
+		{
 			name: "chat to claude",
 			path: openaichatcompletionsapi.Path,
 			headers: map[string]string{

@@ -179,6 +179,9 @@ func (handler *Handler) ServeHTTP(
 		)
 		return
 	}
+	// Canonical 回退必须使用客户端原文；透传所需的 Claude Code
+	// 身份只属于 Native OAuth 线协议，不能污染其它 Provider。
+	canonicalBody := body
 	// 订阅额度按 Claude Code 客户端判定，缺身份的请求会被上游按限流拒绝。
 	//
 	// 但补齐只对**非原生客户端**做：真实 Claude Code 自带身份，对其正文做任何
@@ -191,7 +194,7 @@ func (handler *Handler) ServeHTTP(
 	if err != nil || cursor == nil {
 		if !leased {
 			// 该模型没有可透传的 claude 账号，交回 Canonical 按跨协议处理。
-			handler.delegate(response, request, body)
+			handler.delegate(response, request, canonicalBody)
 			return
 		}
 		writeRelayError(
@@ -224,13 +227,19 @@ func (handler *Handler) ServeHTTP(
 		}
 	}
 	if outcome.response == nil {
+		if !leased && !attempted {
+			// 调度器可能返回一个空游标（例如模型只由 Codex
+			// 提供）；这不是 Relay 失败，应该交回 Canonical 选路。
+			handler.delegate(response, request, canonicalBody)
+			return
+		}
 		if !leased && outcome.credentialUnfit {
 			// 该账号不是官方端点上的订阅 OAuth，透传承载不了；连同账号选择
 			// 一起交回 Canonical，避免重新征召打乱公平轮转。
 			handler.delegatePinned(
 				response,
 				request,
-				body,
+				canonicalBody,
 				outcome.route.AccountRef(),
 			)
 			return

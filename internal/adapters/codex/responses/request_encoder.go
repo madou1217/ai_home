@@ -166,7 +166,7 @@ func encodeMessage(message inference.Message) ([]inputItemDTO, error) {
 		}
 		items = append(items, inputItemDTO{
 			Type:    "message",
-			Role:    string(message.Role()),
+			Role:    encodeMessageRole(message.Role()),
 			Content: buffered,
 			Phase:   string(message.Phase()),
 		})
@@ -236,6 +236,15 @@ func encodeMessage(message inference.Message) ([]inputItemDTO, error) {
 	}
 	flushMessage()
 	return items, nil
+}
+
+// encodeMessageRole 把 Canonical system 约束投影为 Codex 接受的 developer
+// 角色；真实 ChatGPT Codex 端点会明确拒绝 input 中的 system 消息。
+func encodeMessageRole(role inference.Role) string {
+	if role == inference.RoleSystem {
+		return string(inference.RoleDeveloper)
+	}
+	return string(role)
 }
 
 // encodeTextContent 根据历史角色选择 input_text 或 output_text。

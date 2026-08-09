@@ -374,7 +374,7 @@ func newRealCodexCoordinator(
 	return coordinator, recorder, transport
 }
 
-// newRealCodexRouteCatalog 创建 alias 到真实 Codex 模型的唯一规则。
+// newRealCodexRouteCatalog 创建跨客户端协议 alias 到真实 Codex 模型的唯一规则。
 func newRealCodexRouteCatalog(
 	t *testing.T,
 	model string,
@@ -400,7 +400,7 @@ func newRealCodexRouteCatalog(
 	rule, err := inferencegateway.NewRouteRule(
 		inferencegateway.RouteRuleInput{
 			Pattern:  realCodexSmokeAlias,
-			Scope:    inferencegateway.RouteScopeCodex,
+			Scope:    inferencegateway.RouteScopeAll,
 			Route:    route,
 			Priority: 0,
 		},

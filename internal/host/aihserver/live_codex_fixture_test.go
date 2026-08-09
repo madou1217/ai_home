@@ -12,6 +12,8 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/modelsapi"
 )
 
+const realCodexToolName = "get_weather"
+
 // realCodexFixture 保存一次真实 Codex 验收共享的本地 Server 与公开结果。
 // 它不保存认证正文，避免测试辅助对象延长真实凭据的生命周期。
 type realCodexFixture struct {

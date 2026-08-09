@@ -13,8 +13,6 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/openaichatcompletionsapi"
 )
 
-const realCodexChatToolName = "get_weather"
-
 // realChatCompletion 是真实非流式 Chat Completion 的最小公开合同。
 type realChatCompletion struct {
 	ID      string           `json:"id"`
@@ -225,7 +223,7 @@ func marshalRealChatToolPayload(t *testing.T, stream bool) []byte {
 		"tools": []map[string]any{{
 			"type": "function",
 			"function": map[string]any{
-				"name":        realCodexChatToolName,
+				"name":        realCodexToolName,
 				"description": "Return weather for the requested city.",
 				"parameters": map[string]any{
 					"type": "object",
@@ -243,7 +241,7 @@ func marshalRealChatToolPayload(t *testing.T, stream bool) []byte {
 		"tool_choice": map[string]any{
 			"type": "function",
 			"function": map[string]string{
-				"name": realCodexChatToolName,
+				"name": realCodexToolName,
 			},
 		},
 		"parallel_tool_calls": false,
@@ -332,7 +330,7 @@ func assertRealChatToolCall(t *testing.T, toolCall realChatToolCall) {
 
 	if toolCall.ID == "" ||
 		toolCall.Type != "function" ||
-		toolCall.Function.Name != realCodexChatToolName {
+		toolCall.Function.Name != realCodexToolName {
 		t.Fatalf("真实 Chat 工具身份无效: %+v", toolCall)
 	}
 	var arguments struct {

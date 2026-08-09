@@ -291,6 +291,8 @@ func classifyRealCodexDiagnosticError(payload json.RawMessage) string {
 		return "none"
 	case strings.Contains(text, "malformed response"):
 		return "malformed_response"
+	case isUnsupportedSystemRoleDiagnostic(text):
+		return "unsupported_system_role"
 	case strings.Contains(text, "required") ||
 		strings.Contains(text, "missing"):
 		return "missing_required_field"
@@ -305,6 +307,9 @@ func classifyRealCodexDiagnosticError(payload json.RawMessage) string {
 // findRealCodexDiagnosticField 只返回已知协议字段名，避免泄露正文。
 func findRealCodexDiagnosticField(payload json.RawMessage) string {
 	text := realCodexDiagnosticText(payload)
+	if isUnsupportedSystemRoleDiagnostic(text) {
+		return "role"
+	}
 	fields := []string{
 		"client_metadata",
 		"prompt_cache_key",
@@ -325,6 +330,16 @@ func findRealCodexDiagnosticField(payload json.RawMessage) string {
 		}
 	}
 	return "none"
+}
+
+// isUnsupportedSystemRoleDiagnostic 只识别已经由真实上游或固定测试确认的
+// system 角色拒绝签名，不返回 Provider 任意错误正文。
+func isUnsupportedSystemRoleDiagnostic(text string) bool {
+	return text == "system messages are not allowed" ||
+		strings.Contains(text, "system") &&
+			strings.Contains(text, "developer") &&
+			(strings.Contains(text, "supported") ||
+				strings.Contains(text, "unsupported"))
 }
 
 // realCodexDiagnosticText 只在内存解码字符串并统一大小写。
@@ -410,6 +425,30 @@ func TestRealCodexDiagnosticFingerprintAcceptsStringDetail(t *testing.T) {
 		!strings.Contains(fingerprint, "error_field=prompt_cache_key") ||
 		strings.Contains(fingerprint, "Missing required parameter") {
 		t.Fatalf("字符串 detail 指纹错误: %s", fingerprint)
+	}
+}
+
+// TestRealCodexDiagnosticFingerprintClassifiesUnsupportedSystemRole 验证诊断
+// 只暴露固定角色类别，不回显上游任意错误正文。
+func TestRealCodexDiagnosticFingerprintClassifiesUnsupportedSystemRole(
+	t *testing.T,
+) {
+	for _, detail := range []string{
+		"System messages are not allowed",
+		"Unsupported value: 'system'. Supported values are: 'user', 'assistant', and 'developer'.",
+	} {
+		payload, err := json.Marshal(map[string]string{"detail": detail})
+		if err != nil {
+			t.Fatalf("json.Marshal() error = %v", err)
+		}
+		fingerprint := fingerprintRealCodexJSON(payload)
+		if !strings.Contains(
+			fingerprint,
+			"error_class=unsupported_system_role",
+		) || !strings.Contains(fingerprint, "error_field=role") ||
+			strings.Contains(fingerprint, detail) {
+			t.Fatalf("system 角色诊断指纹错误: %s", fingerprint)
+		}
 	}
 }
 

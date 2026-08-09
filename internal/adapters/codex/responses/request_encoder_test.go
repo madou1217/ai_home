@@ -10,8 +10,64 @@ import (
 
 	codexauth "github.com/madou1217/ai_home/core/accounts/codex"
 	"github.com/madou1217/ai_home/core/inference"
+	"github.com/madou1217/ai_home/internal/adapters/clientprotocol/anthropicmessages"
 	"github.com/madou1217/ai_home/internal/adapters/clientprotocol/openairesponses"
 )
+
+// TestEncodeRequestProjectsAnthropicEnvelopeToCodexLite 验证 Messages 必填
+// max_tokens 不会泄漏到 Codex OAuth，同时保留 system 和用户正文。
+func TestEncodeRequestProjectsAnthropicEnvelopeToCodexLite(t *testing.T) {
+	t.Parallel()
+
+	request, err := anthropicmessages.NewAdapter().Decode([]byte(`{
+		"model":"gpt-5.6-sol",
+		"max_tokens":4096,
+		"system":"Return only the exact marker requested by the user.",
+		"messages":[{"role":"user","content":"Reply with exactly: AIH_REAL_ROUTE_OK"}],
+		"stream":false
+	}`))
+	if err != nil {
+		t.Fatalf("Messages Decode() error = %v", err)
+	}
+	payload, err := encodeRequest(
+		request,
+		"gpt-5.6-sol",
+		codexauth.AuthKindOAuth,
+		requestProfileForModel("gpt-5.6-sol"),
+	)
+	if err != nil {
+		t.Fatalf("encodeRequest() error = %v", err)
+	}
+	var document map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &document); err != nil {
+		t.Fatalf("上游 JSON 无效: %v payload=%s", err, payload)
+	}
+	var input []struct {
+		Type    string          `json:"type"`
+		Role    string          `json:"role"`
+		Content json.RawMessage `json:"content"`
+	}
+	if err := json.Unmarshal(document["input"], &input); err != nil {
+		t.Fatalf("上游 input 无效: %v payload=%s", err, payload)
+	}
+	if _, found := document["max_output_tokens"]; found ||
+		string(document["model"]) != `"gpt-5.6-sol"` ||
+		string(document["stream"]) != "true" ||
+		len(input) != 3 ||
+		input[0].Type != "additional_tools" ||
+		input[0].Role != "developer" ||
+		input[1].Type != "message" ||
+		input[1].Role != "developer" ||
+		input[2].Type != "message" ||
+		input[2].Role != "user" ||
+		!strings.Contains(string(input[2].Content), "AIH_REAL_ROUTE_OK") ||
+		!strings.Contains(
+			string(input[1].Content),
+			"Return only the exact marker requested by the user.",
+		) {
+		t.Fatalf("Messages→Codex 投影错误: %s", payload)
+	}
+}
 
 // TestEncodeRequestPreservesCodexResponsesInputs 验证输入、工具、reasoning、
 // structured output 和非流式客户端请求均无损进入上游合同。

@@ -11,6 +11,7 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	claudeauth "github.com/madou1217/ai_home/core/accounts/claude"
 	gatewaycontract "github.com/madou1217/ai_home/internal/contracts/claudegateway"
 )
 
@@ -47,6 +48,61 @@ type scriptedRelayClient struct {
 	statuses []int
 	bodies   []string
 	calls    int
+}
+
+// TestRelayDelegatesUnchangedBodyWhenScheduledSourceIsEmpty 验证模型没有
+// Claude 透传候选时交回 Canonical，且不注入 Claude Code 身份。
+func TestRelayDelegatesUnchangedBodyWhenScheduledSourceIsEmpty(t *testing.T) {
+	t.Parallel()
+
+	_, credential := newRelayOAuthCredential(t)
+	response, delegatedBody, clientCalls := serveScheduledFallbackRequest(
+		t,
+		nil,
+		credential,
+	)
+	if response.Code != http.StatusAccepted ||
+		delegatedBody != scheduledFallbackBody ||
+		clientCalls != 0 {
+		t.Fatalf(
+			"status=%d delegated=%s client_calls=%d",
+			response.Code,
+			delegatedBody,
+			clientCalls,
+		)
+	}
+}
+
+// TestRelayDelegatesUnchangedBodyForUnfitCredential 验证调度到 API Key
+// 时保留该账号绑定交回 Canonical，且不泄漏透传身份补丁。
+func TestRelayDelegatesUnchangedBodyForUnfitCredential(t *testing.T) {
+	t.Parallel()
+
+	credential, err := claudeauth.NewAPIKeyAuth(claudeauth.APIKeyInput{
+		APIKey: "sk-ant-api03-scheduled-fallback",
+	})
+	if err != nil {
+		t.Fatalf("claude.NewAPIKeyAuth() error = %v", err)
+	}
+	accountRef, err := accountcore.DeriveAccountRef(credential)
+	if err != nil {
+		t.Fatalf("accounts.DeriveAccountRef() error = %v", err)
+	}
+	response, delegatedBody, clientCalls := serveScheduledFallbackRequest(
+		t,
+		[]accountcore.AccountRef{accountRef},
+		credential,
+	)
+	if response.Code != http.StatusAccepted ||
+		delegatedBody != scheduledFallbackBody ||
+		clientCalls != 0 {
+		t.Fatalf(
+			"status=%d delegated=%s client_calls=%d",
+			response.Code,
+			delegatedBody,
+			clientCalls,
+		)
+	}
 }
 
 func (client *scriptedRelayClient) Do(*http.Request) (*http.Response, error) {
@@ -175,6 +231,52 @@ func serveRotationRequest(
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	return response, recorder
+}
+
+const scheduledFallbackBody = `{"model":"gpt-5.6-sol","max_tokens":32,"system":"client-system","messages":[{"role":"user","content":"fallback"}]}`
+
+// serveScheduledFallbackRequest 用无租约调度路径观察 Canonical 回退正文。
+func serveScheduledFallbackRequest(
+	t *testing.T,
+	refs []accountcore.AccountRef,
+	credential accountapp.Credential,
+) (*httptest.ResponseRecorder, string, int) {
+	t.Helper()
+
+	var delegatedBody string
+	client := &relayRecordingClient{}
+	handler, err := NewHandler(Dependencies{
+		Authorizer:  &rotationDenyAuthorizer{},
+		Accounts:    &rotationAccountSource{refs: refs},
+		Credentials: &rotationCredentialResolver{credential: credential},
+		Fallback: http.HandlerFunc(func(
+			response http.ResponseWriter,
+			request *http.Request,
+		) {
+			body, readErr := io.ReadAll(request.Body)
+			if readErr != nil {
+				t.Errorf("io.ReadAll() error = %v", readErr)
+			}
+			delegatedBody = string(body)
+			response.WriteHeader(http.StatusAccepted)
+		}),
+		Client:         client,
+		Attempts:       &relayAttemptRecorder{},
+		ModelRefreshes: &relayModelRefreshScheduler{},
+		Clock:          relayTestClock,
+	})
+	if err != nil {
+		t.Fatalf("NewHandler() error = %v", err)
+	}
+	request := httptest.NewRequest(
+		http.MethodPost,
+		Path,
+		strings.NewReader(scheduledFallbackBody),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	return response, delegatedBody, client.calls
 }
 
 // rotationDenyAuthorizer 始终拒绝租约，迫使请求走调度器账号来源。

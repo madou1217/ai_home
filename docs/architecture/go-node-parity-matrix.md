@@ -162,12 +162,26 @@ modalities 交付扩大为尚无消费者的 context/pricing 设计。
 
 ### 2. `/v1/responses`：谁更贴近 OpenAI 契约要按契约判，不按 Node 判
 
-Go 多出 `completed_at`、`error`、`text.format`、`tools`，以及
-`usage.input_tokens_details` / `usage.output_tokens_details`；Node 更精简。
+已按 [OpenAI Responses Create 官方合同](https://developers.openai.com/api/reference/resources/responses/methods/create)
+逐字段复核。Go 原先多出的 `completed_at`、`error`、`text.format`、`tools`，以及
+`usage.input_tokens_details` / `usage.output_tokens_details` 都是正式 Response 对象成员，
+不能为追平 Node 的精简形状而删除。
 
-**不能因为 Node 少发就认定 Go 多余。** 判据是 OpenAI Responses API 契约与真实
-客户端的解析行为，两种结论都可能成立（Node 漏发 / Go 冗余）。此项待逐字段对照
-契约后定论，未定之前不改任何一侧。
+复核同时确认 Go 最小响应原先漏了六个正式成员：`instructions`、`metadata`、
+`parallel_tool_calls`、`temperature`、`tool_choice`、`top_p`。当前实现已经补齐：
+
+- `instructions`、`metadata` 由单次 `clientprotocol.Exchange` 私有绑定并原样回显，
+  不进入 Canonical、账号征召或 Provider 编码。
+- 未声明时返回诚实且符合 schema 的值：`instructions: null`、`metadata: {}`、
+  `parallel_tool_calls: true`、`temperature: null`、`tool_choice: "auto"`、`top_p: null`。
+- `metadata` 按官方合同限制为最多 16 个字符串键值对，键最多 64 个字符、值最多
+  512 个字符；重复键和越界输入直接拒绝。
+- 非流式 JSON 和 SSE `response.completed` 共用同一投影与状态机，HTTP 入口不会
+  二次解析请求，也不会因 Canonical 转换丢失客户端回显。
+
+这里的 `null` 不是猜测上游实际采样值：Responses schema 明确允许
+`temperature/top_p` 为 `number | null`；客户端未声明且 Canonical 没有事实时，AIH
+不伪造某个 Provider 的有效默认值。
 
 ### 3. `/v1/messages`：分成两类，一类已修
 
@@ -196,7 +210,7 @@ Go 多出 `completed_at`、`error`、`text.format`、`tools`，以及
 ### 结论
 
 - 1：不照抄，按 opt-in 重新设计；模态数据源仍要补。
-- 2：待对照 OpenAI 契约定论，未定不动。
+- 2：已按 OpenAI 契约收口；Go 必需字段补齐，协议私有回显保持在 Exchange 边界。
 - 3：(A) 已修；(B) 见下节——它不是「给 Canonical 加四个字段」的问题。
 
 影子比对应在每次改动 Canonical 编解码后重跑。

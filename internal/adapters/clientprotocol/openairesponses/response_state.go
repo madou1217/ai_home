@@ -12,6 +12,7 @@ import (
 // responseState 是流式和非流式 Renderer 共享的唯一响应状态机。
 type responseState struct {
 	request         inference.Request
+	projection      responseProjection
 	createdAt       int64
 	completedAt     *int64
 	completionClock func() time.Time
@@ -59,11 +60,13 @@ type contentBlockState struct {
 // newResponseState 创建共享状态机并固定创建时刻与完成时钟。
 func newResponseState(
 	request inference.Request,
+	projection responseProjection,
 	createdAt time.Time,
 	completionClock func() time.Time,
 ) *responseState {
 	return &responseState{
 		request:         request,
+		projection:      projection,
 		createdAt:       createdAt.Unix(),
 		completionClock: completionClock,
 		itemIDs:         make(map[string]struct{}),

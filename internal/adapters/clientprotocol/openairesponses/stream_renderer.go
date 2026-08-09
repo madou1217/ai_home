@@ -27,7 +27,7 @@ func NewStreamRenderer(
 	request inference.Request,
 	createdAt time.Time,
 ) *StreamRenderer {
-	return newStreamRenderer(request, createdAt, func() time.Time {
+	return newStreamRenderer(request, defaultResponseProjection(), createdAt, func() time.Time {
 		return createdAt
 	})
 }
@@ -35,11 +35,17 @@ func NewStreamRenderer(
 // newStreamRenderer 创建由生命周期时钟记录真实完成时间的流式 Renderer。
 func newStreamRenderer(
 	request inference.Request,
+	projection responseProjection,
 	createdAt time.Time,
 	completionClock func() time.Time,
 ) *StreamRenderer {
 	return &StreamRenderer{
-		state:                 newResponseState(request, createdAt, completionClock),
+		state: newResponseState(
+			request,
+			projection,
+			createdAt,
+			completionClock,
+		),
 		addedItems:            make(map[uint32]struct{}),
 		addedReasoningSummary: make(map[streamPosition]struct{}),
 	}

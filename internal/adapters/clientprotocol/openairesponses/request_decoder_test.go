@@ -2,6 +2,7 @@ package openairesponses
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/madou1217/ai_home/core/inference"
@@ -167,6 +168,61 @@ func TestRequestDecoderPreservesNamespaceWebSearchAndMetadata(t *testing.T) {
 	if metadata["turn_id"] != "turn_1" || metadata["session_id"] != "session_1" {
 		t.Fatalf("ClientMetadata = %#v", metadata)
 	}
+}
+
+// TestRequestDecoderRejectsInvalidResponseMetadata 验证公开 metadata 必须符合
+// OpenAI Responses 的有界字符串映射合同，不能因为它不进入 Canonical 就跳过校验。
+func TestRequestDecoderRejectsInvalidResponseMetadata(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		metadata string
+	}{
+		{name: "数组", metadata: `[]`},
+		{name: "非字符串值", metadata: `{"ticket":42}`},
+		{name: "键过长", metadata: `{"` + strings.Repeat("k", 65) + `":"value"}`},
+		{name: "值过长", metadata: `{"ticket":"` + strings.Repeat("v", 513) + `"}`},
+		{name: "超过十六个条目", metadata: metadataObject(17)},
+		{name: "重复键", metadata: `{"ticket":"first","ticket":"second"}`},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := NewRequestDecoder().Decode([]byte(
+				`{"model":"gpt-5.6-sol","input":"hello","metadata":` +
+					testCase.metadata + `}`,
+			))
+			if !errors.Is(err, ErrInvalidResponsesRequest) {
+				t.Fatalf("非法 metadata 错误不稳定: %v", err)
+			}
+		})
+	}
+}
+
+// TestRequestDecoderAcceptsNullableResponseMetadata 验证空对象和显式 null 都是
+// OpenAI Responses 允许的 metadata 表达。
+func TestRequestDecoderAcceptsNullableResponseMetadata(t *testing.T) {
+	t.Parallel()
+
+	for _, metadata := range []string{`{}`, `null`} {
+		_, err := NewRequestDecoder().Decode([]byte(
+			`{"model":"gpt-5.6-sol","input":"hello","metadata":` + metadata + `}`,
+		))
+		if err != nil {
+			t.Fatalf("合法 metadata=%s 被拒绝: %v", metadata, err)
+		}
+	}
+}
+
+// metadataObject 创建指定条目数的合法字符串映射。
+func metadataObject(entries int) string {
+	pairs := make([]string, 0, entries)
+	for index := 0; index < entries; index++ {
+		pairs = append(pairs, `"key`+string(rune('a'+index))+`":"value"`)
+	}
+	return `{` + strings.Join(pairs, ",") + `}`
 }
 
 // TestRequestDecoderSupportsPreviousResponseToolOutput 验证 previous_response_id

@@ -27,9 +27,20 @@ type ResponseAggregator interface {
 	Marshal() ([]byte, error)
 }
 
+// Exchange 把一次客户端请求与它专属的响应策略绑定。
+//
+// CanonicalRequest 只携带跨协议语义；协议特有的回显数据由具体 Adapter 私有保存，
+// 避免并发请求共享状态或把客户端线协议字段泄漏到 core。
+type Exchange interface {
+	CanonicalRequest() inference.Request
+	NewStreamRenderer() StreamRenderer
+	NewResponseAggregator() ResponseAggregator
+}
+
 // Adapter 是单一客户端协议的完整请求和响应边界。
 type Adapter interface {
 	ProtocolID() inference.ClientProtocolID
+	Bind([]byte) (Exchange, error)
 	Decode([]byte) (inference.Request, error)
 	NewStreamRenderer(inference.Request) StreamRenderer
 	NewResponseAggregator(inference.Request) ResponseAggregator

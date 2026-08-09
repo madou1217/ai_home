@@ -9,6 +9,12 @@ import (
 // RequestDecoder 将 OpenAI Responses 请求 DTO 转换为 Canonical Request。
 type RequestDecoder struct{}
 
+// decodedRequest 同时保存 Canonical 请求和仅供 Responses 回程使用的协议投影。
+type decodedRequest struct {
+	canonical  inference.Request
+	projection responseProjection
+}
+
 // NewRequestDecoder 创建无状态、可并发复用的 Responses Request Decoder。
 func NewRequestDecoder() RequestDecoder {
 	return RequestDecoder{}
@@ -16,45 +22,58 @@ func NewRequestDecoder() RequestDecoder {
 
 // Decode 严格解析一个完整 Responses JSON 请求。
 func (RequestDecoder) Decode(body []byte) (inference.Request, error) {
-	wireRequest, err := decodeStrict[requestDTO](body, "$")
+	decoded, err := RequestDecoder{}.decode(body)
 	if err != nil {
 		return inference.Request{}, err
 	}
+	return decoded.canonical, nil
+}
+
+// decode 只解析一次请求，同时建立 Canonical 与协议回显两个互不污染的投影。
+func (RequestDecoder) decode(body []byte) (decodedRequest, error) {
+	wireRequest, err := decodeStrict[requestDTO](body, "$")
+	if err != nil {
+		return decodedRequest{}, err
+	}
 	if err := validateSupportedRootFields(wireRequest); err != nil {
-		return inference.Request{}, err
+		return decodedRequest{}, err
+	}
+	projection, err := newResponseProjection(wireRequest)
+	if err != nil {
+		return decodedRequest{}, err
 	}
 
 	messages, decodedInput, err := decodeRequestMessages(wireRequest)
 	if err != nil {
-		return inference.Request{}, err
+		return decodedRequest{}, err
 	}
 	tools, webSearch, err := decodeTools(wireRequest.Tools)
 	if err != nil {
-		return inference.Request{}, err
+		return decodedRequest{}, err
 	}
 	toolChoice, err := decodeToolChoice(wireRequest.ToolChoice)
 	if err != nil {
-		return inference.Request{}, err
+		return decodedRequest{}, err
 	}
 	reasoning, err := decodeReasoning(wireRequest.Reasoning)
 	if err != nil {
-		return inference.Request{}, err
+		return decodedRequest{}, err
 	}
 	structuredOutput, err := decodeTextConfig(wireRequest.Text)
 	if err != nil {
-		return inference.Request{}, err
+		return decodedRequest{}, err
 	}
 	continuation, err := decodeContinuation(wireRequest)
 	if err != nil {
-		return inference.Request{}, err
+		return decodedRequest{}, err
 	}
 	includeEncryptedReasoning, err := decodeIncludes(wireRequest.Include)
 	if err != nil {
-		return inference.Request{}, err
+		return decodedRequest{}, err
 	}
 	truncation, err := decodeTruncation(wireRequest.Truncation)
 	if err != nil {
-		return inference.Request{}, err
+		return decodedRequest{}, err
 	}
 
 	externalCallIDs := decodedInput.externalToolCallIDs(continuation != nil)
@@ -81,9 +100,12 @@ func (RequestDecoder) Decode(body []byte) (inference.Request, error) {
 		ExternalToolCallIDs:       externalCallIDs,
 	})
 	if err != nil {
-		return inference.Request{}, invalidField("$")
+		return decodedRequest{}, invalidField("$")
 	}
-	return request, nil
+	return decodedRequest{
+		canonical:  request,
+		projection: projection,
+	}, nil
 }
 
 // decodeRequestMessages 合并 instructions 和 input，同时保留输入工具配对证据。

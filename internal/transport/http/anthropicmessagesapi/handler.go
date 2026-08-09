@@ -144,7 +144,7 @@ func (handler *Handler) ServeHTTP(
 		writeRequestError(response, err)
 		return
 	}
-	canonicalRequest, err := handler.adapter.Decode(body)
+	exchange, err := handler.adapter.Bind(body)
 	if err != nil {
 		if handler.decodeErrorObserver != nil {
 			handler.decodeErrorObserver(err)
@@ -152,11 +152,22 @@ func (handler *Handler) ServeHTTP(
 		writeDecodeError(response, err)
 		return
 	}
+	canonicalRequest := exchange.CanonicalRequest()
 	if canonicalRequest.Stream() {
-		handler.executeStream(response, request, canonicalRequest)
+		handler.executeStream(
+			response,
+			request,
+			canonicalRequest,
+			exchange.NewStreamRenderer(),
+		)
 		return
 	}
-	handler.executeNonStream(response, request, canonicalRequest)
+	handler.executeNonStream(
+		response,
+		request,
+		canonicalRequest,
+		exchange.NewResponseAggregator(),
+	)
 }
 
 // executeNonStream 聚合完整 Canonical 事件流后一次写入 JSON。
@@ -164,8 +175,8 @@ func (handler *Handler) executeNonStream(
 	response http.ResponseWriter,
 	request *http.Request,
 	canonicalRequest inference.Request,
+	aggregator clientprotocol.ResponseAggregator,
 ) {
-	aggregator := handler.adapter.NewResponseAggregator(canonicalRequest)
 	sink := inferenceapi.NewNonStreamSink(aggregator)
 	executionErr := handler.executor.Execute(
 		request.Context(),
@@ -205,6 +216,7 @@ func (handler *Handler) executeStream(
 	response http.ResponseWriter,
 	request *http.Request,
 	canonicalRequest inference.Request,
+	renderer clientprotocol.StreamRenderer,
 ) {
 	stream, err := newSSEStream(response)
 	if err != nil {
@@ -216,7 +228,6 @@ func (handler *Handler) executeStream(
 		)
 		return
 	}
-	renderer := handler.adapter.NewStreamRenderer(canonicalRequest)
 	execution := newResponseStream(stream, renderer)
 	executionErr := handler.executor.Execute(
 		request.Context(),

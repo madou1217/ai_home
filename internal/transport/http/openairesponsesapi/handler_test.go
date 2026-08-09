@@ -97,6 +97,57 @@ func TestHandlerServesNonStreamResponseOverRealHTTP(t *testing.T) {
 	)
 }
 
+// TestHandlerPreservesResponsesProjectionOverHTTP 验证真实 HTTP 入口使用同一次
+// Adapter Exchange 渲染响应，不能在 Canonical 执行后丢失客户端回显字段。
+func TestHandlerPreservesResponsesProjectionOverHTTP(t *testing.T) {
+	t.Parallel()
+
+	for _, testCase := range []struct {
+		name   string
+		stream bool
+	}{
+		{name: "非流式", stream: false},
+		{name: "流式终态", stream: true},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			executor := newScriptedExecutor(newTextEvents(t), nil)
+			baseURL, client := startResponsesServer(t, executor, 0)
+			payload, err := json.Marshal(map[string]any{
+				"model":        "gpt-5.6-sol",
+				"instructions": "只返回最终答案",
+				"input":        "你好",
+				"metadata": map[string]string{
+					"ticket": "AIH-42",
+				},
+				"stream": testCase.stream,
+			})
+			if err != nil {
+				t.Fatalf("json.Marshal() error = %v", err)
+			}
+			response := performResponsesRequest(
+				t,
+				client,
+				http.MethodPost,
+				baseURL+Path,
+				testBearerToken,
+				"application/json",
+				payload,
+			)
+			if response.status != http.StatusOK {
+				t.Fatalf("status=%d body=%s", response.status, response.body)
+			}
+
+			body := []byte(response.body)
+			if testCase.stream {
+				body = responseCompletedPayload(t, response.body)
+			}
+			assertResponsesHTTPProjection(t, body)
+		})
+	}
+}
+
 // TestHandlerPropagatesAndValidatesPinnedAccountHeader 验证固定账号头只以请求 Context 进入执行器。
 func TestHandlerPropagatesAndValidatesPinnedAccountHeader(t *testing.T) {
 	t.Parallel()
@@ -796,6 +847,59 @@ func parseSSEEventNames(body string) []string {
 		}
 	}
 	return names
+}
+
+// responseCompletedPayload 返回 response.completed 事件中的完整 Response 对象。
+func responseCompletedPayload(t *testing.T, body string) []byte {
+	t.Helper()
+
+	for _, block := range strings.Split(body, "\n\n") {
+		if !strings.Contains(block, "event: response.completed\n") {
+			continue
+		}
+		for _, line := range strings.Split(block, "\n") {
+			data, found := strings.CutPrefix(line, "data: ")
+			if !found {
+				continue
+			}
+			var envelope struct {
+				Response json.RawMessage `json:"response"`
+			}
+			if err := json.Unmarshal([]byte(data), &envelope); err != nil {
+				t.Fatalf("response.completed data 无效: %v", err)
+			}
+			if len(envelope.Response) == 0 {
+				t.Fatalf("response.completed 缺少 response: %s", data)
+			}
+			return envelope.Response
+		}
+	}
+	t.Fatalf("SSE 缺少 response.completed: %s", body)
+	return nil
+}
+
+// assertResponsesHTTPProjection 校验 Responses 对象必需的协议回显字段。
+func assertResponsesHTTPProjection(t *testing.T, body []byte) {
+	t.Helper()
+
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(body, &fields); err != nil {
+		t.Fatalf("Responses JSON 无效: %v body=%s", err, body)
+	}
+	want := map[string]string{
+		"instructions":        `"只返回最终答案"`,
+		"metadata":            `{"ticket":"AIH-42"}`,
+		"parallel_tool_calls": `true`,
+		"temperature":         `null`,
+		"tool_choice":         `"auto"`,
+		"top_p":               `null`,
+	}
+	for field, expected := range want {
+		actual, found := fields[field]
+		if !found || !bytes.Equal(actual, []byte(expected)) {
+			t.Fatalf("%s=%s want=%s body=%s", field, actual, expected, body)
+		}
+	}
 }
 
 // decodeResponseJSON 解码测试响应。

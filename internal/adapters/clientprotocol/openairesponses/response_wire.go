@@ -26,6 +26,10 @@ type responseWireDTO struct {
 	Error *responseErrorWireDTO `json:"error"`
 	// IncompleteDetails 当前成功或失败终态均为空。
 	IncompleteDetails *incompleteDetailsWireDTO `json:"incomplete_details"`
+	// Instructions 是客户端在当前 Responses 请求中提供的指令，缺省为 null。
+	Instructions json.RawMessage `json:"instructions"`
+	// Metadata 是只供 Responses 对象回显的客户端元数据。
+	Metadata json.RawMessage `json:"metadata"`
 	// Model 是上游确认使用的真实模型。
 	Model string `json:"model"`
 	// Output 是按 output_index 排列的完整输出项。
@@ -34,16 +38,16 @@ type responseWireDTO struct {
 	Usage *usageWireDTO `json:"usage"`
 	// MaxOutputTokens 是客户端提供的可选输出上限。
 	MaxOutputTokens *uint64 `json:"max_output_tokens,omitempty"`
-	// ParallelToolCalls 是客户端提供的可选并行工具意图。
-	ParallelToolCalls *bool `json:"parallel_tool_calls,omitempty"`
+	// ParallelToolCalls 是客户端意图或官方缺省 true。
+	ParallelToolCalls bool `json:"parallel_tool_calls"`
 	// PreviousResponseID 是可选 Responses 历史响应引用。
 	PreviousResponseID *string `json:"previous_response_id,omitempty"`
 	// Store 是客户端提供的可选响应存储意图。
 	Store *bool `json:"store,omitempty"`
-	// Temperature 是客户端提供的可选采样温度。
-	Temperature *float64 `json:"temperature,omitempty"`
-	// TopP 是客户端提供的可选 nucleus sampling 概率。
-	TopP *float64 `json:"top_p,omitempty"`
+	// Temperature 是客户端采样温度；未声明时保留官方允许的 null。
+	Temperature *float64 `json:"temperature"`
+	// TopP 是客户端 nucleus sampling 概率；未声明时保留 null。
+	TopP *float64 `json:"top_p"`
 	// Truncation 是客户端提供的可选截断策略。
 	Truncation *string `json:"truncation,omitempty"`
 	// Reasoning 是客户端提供的可选 reasoning 配置。
@@ -51,7 +55,7 @@ type responseWireDTO struct {
 	// Text 是普通文本或 JSON Schema 输出配置。
 	Text textConfigWireDTO `json:"text"`
 	// ToolChoice 是客户端提供的可选工具选择。
-	ToolChoice json.RawMessage `json:"tool_choice,omitempty"`
+	ToolChoice json.RawMessage `json:"tool_choice"`
 	// Tools 是客户端声明的普通函数或 namespace 工具。
 	Tools []json.RawMessage `json:"tools"`
 }
@@ -395,10 +399,12 @@ func (state *responseState) buildResponseWireWithOutputCount(
 		Object:             "response",
 		CreatedAt:          state.createdAt,
 		Status:             status,
+		Instructions:       cloneRawMessage(state.projection.instructions),
+		Metadata:           cloneRawMessage(state.projection.metadata),
 		Model:              state.model,
 		Output:             output,
 		MaxOutputTokens:    optionalUint64(state.request.MaxOutputTokens()),
-		ParallelToolCalls:  optionalParallelToolCalls(state.request),
+		ParallelToolCalls:  effectiveParallelToolCalls(state.request),
 		PreviousResponseID: previousResponseID(state.request),
 		Store:              optionalStore(state.request),
 		Temperature:        optionalTemperature(state.request),
@@ -478,7 +484,7 @@ func newTextConfigWire(request inference.Request) (textConfigWireDTO, error) {
 func newToolChoiceWire(request inference.Request) (json.RawMessage, error) {
 	choice, found := request.ToolChoice()
 	if !found {
-		return nil, nil
+		return json.RawMessage(`"auto"`), nil
 	}
 	if choice.Mode() == inference.ToolChoiceNamed {
 		return json.Marshal(namedToolChoiceWireDTO{
@@ -781,13 +787,18 @@ func optionalUint64(value uint64) *uint64 {
 	return &value
 }
 
-// optionalParallelToolCalls 返回请求中的可选并行工具意图。
-func optionalParallelToolCalls(request inference.Request) *bool {
+// effectiveParallelToolCalls 返回请求值或 OpenAI/Codex 共同使用的 true 缺省。
+func effectiveParallelToolCalls(request inference.Request) bool {
 	value, found := request.ParallelToolCalls()
 	if !found {
-		return nil
+		return true
 	}
-	return &value
+	return value
+}
+
+// cloneRawMessage 复制协议投影，避免 Renderer 暴露内部缓冲区。
+func cloneRawMessage(value json.RawMessage) json.RawMessage {
+	return append(json.RawMessage(nil), value...)
 }
 
 // previousResponseID 只返回 Responses previous_response continuation。

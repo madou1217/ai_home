@@ -266,7 +266,7 @@ func newReasoningResponseEvents(t testing.TB) []inference.StreamEvent {
 		3,
 		0,
 		0,
-		inference.ReasoningDeltaThinking,
+		inference.ReasoningDeltaSummary,
 		"先",
 	)
 	if err != nil {

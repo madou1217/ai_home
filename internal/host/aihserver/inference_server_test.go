@@ -371,7 +371,7 @@ func TestServerRotatesClaudeOAuthAndAPIKeyOnCanonical(t *testing.T) {
 }
 
 // TestServerProjectsRedactedThinkingToClaudeAPIKeyShape 验证客户端的
-// omitted 意图经可直连 API Key 请求投影为 display 和对应 beta。
+// omitted 意图经可直连 API Key 请求只投影为官方 beta，不添加 display。
 func TestServerProjectsRedactedThinkingToClaudeAPIKeyShape(t *testing.T) {
 	t.Parallel()
 
@@ -406,8 +406,9 @@ func TestServerProjectsRedactedThinkingToClaudeAPIKeyShape(t *testing.T) {
 	if err := json.Unmarshal(upstreamBody, &document); err != nil {
 		t.Fatalf("Claude API Key request json.Unmarshal() error = %v", err)
 	}
+	_, hasDisplay := document.Thinking["display"]
 	if string(document.Thinking["type"]) != `"adaptive"` ||
-		string(document.Thinking["display"]) != `"omitted"` ||
+		hasDisplay ||
 		!strings.Contains(
 			upstream.LastAnthropicBeta(),
 			"redact-thinking-2026-02-12",

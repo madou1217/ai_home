@@ -211,6 +211,9 @@ func (state *responseState) marshalContent() ([]json.RawMessage, error) {
 		switch item.kind {
 		case inference.OutputItemMessage, inference.OutputItemReasoning:
 			for _, block := range item.blocks {
+				if shouldOmitReasoningBlock(block) {
+					continue
+				}
 				encoded, err := marshalContentBlock(block)
 				if err != nil {
 					return nil, err
@@ -233,6 +236,14 @@ func (state *responseState) marshalContent() ([]json.RawMessage, error) {
 		}
 	}
 	return content, nil
+}
+
+// shouldOmitReasoningBlock 判断当前块是否只属于其他 Provider 的私有语义。
+// 省略比伪造 Claude signature 或 redacted data 更安全，也不会破坏主结果。
+func shouldOmitReasoningBlock(block *contentBlockState) bool {
+	return block.kind == inference.ContentReasoning &&
+		(block.reasoningKind == inference.ReasoningSummary ||
+			block.reasoningKind == inference.ReasoningEncrypted)
 }
 
 // marshalContentBlock 编码文本、signed thinking 或 redacted thinking。

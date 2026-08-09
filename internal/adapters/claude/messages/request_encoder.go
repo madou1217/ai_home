@@ -473,13 +473,11 @@ func (encoder *requestEncoder) encodeReasoning(
 		return &thinkingDTO{
 			Type:         "enabled",
 			BudgetTokens: &budget,
-			Display:      anthropicThinkingDisplay(reasoning.Summary()),
 		}, effort, nil
 	case inference.ReasoningModeAdaptive:
 		encoder.addThinkingBetas(reasoning.Summary())
 		return &thinkingDTO{
-			Type:    "adaptive",
-			Display: anthropicThinkingDisplay(reasoning.Summary()),
+			Type: "adaptive",
 		}, effort, nil
 	case inference.ReasoningModeEffort:
 		if reasoning.Effort() == inference.ReasoningEffortNone {
@@ -489,21 +487,11 @@ func (encoder *requestEncoder) encodeReasoning(
 		// output_config.effort 只调节强度，不能代替 thinking 开关。
 		encoder.addThinkingBetas(reasoning.Summary())
 		return &thinkingDTO{
-			Type:    "adaptive",
-			Display: anthropicThinkingDisplay(reasoning.Summary()),
+			Type: "adaptive",
 		}, effort, nil
 	default:
 		return nil, "", ErrUnsupportedRequest
 	}
-}
-
-// anthropicThinkingDisplay 把客户端明确的不显示意图投影为 Claude Code
-// redact-thinking 合同要求的 omitted 值；其他摘要模式不发送 Provider 私有字段。
-func anthropicThinkingDisplay(summary inference.ReasoningSummaryMode) string {
-	if summary == inference.ReasoningSummaryNone {
-		return "omitted"
-	}
-	return ""
 }
 
 // addThinkingBetas 为已启用的 thinking 添加精确 beta。

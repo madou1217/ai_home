@@ -479,10 +479,12 @@ func (event RefusalCompletedEvent) Refusal() string {
 // isStreamEvent 将 RefusalCompletedEvent 限制在 Canonical 事件联合类型内。
 func (RefusalCompletedEvent) isStreamEvent() {}
 
-// ReasoningDeltaKind 区分可见 thinking 与不可见签名的增量。
+// ReasoningDeltaKind 区分可见摘要、Claude thinking 与不可见签名增量。
 type ReasoningDeltaKind string
 
 const (
+	// ReasoningDeltaSummary 表示不携带 Claude 签名的可见 reasoning 摘要。
+	ReasoningDeltaSummary ReasoningDeltaKind = "summary"
 	// ReasoningDeltaThinking 表示可见 thinking 文本增量。
 	ReasoningDeltaThinking ReasoningDeltaKind = "thinking"
 	// ReasoningDeltaSignature 表示必须原样保留的签名增量。
@@ -491,10 +493,12 @@ const (
 
 // IsValid 判断 reasoning 增量类别是否已经注册。
 func (kind ReasoningDeltaKind) IsValid() bool {
-	return kind == ReasoningDeltaThinking || kind == ReasoningDeltaSignature
+	return kind == ReasoningDeltaSummary ||
+		kind == ReasoningDeltaThinking ||
+		kind == ReasoningDeltaSignature
 }
 
-// ReasoningDeltaEvent 是 thinking 或 signature 的类型化增量。
+// ReasoningDeltaEvent 是摘要、thinking 或 signature 的类型化增量。
 type ReasoningDeltaEvent struct {
 	eventBase
 	eventPosition
@@ -536,7 +540,7 @@ func (event ReasoningDeltaEvent) BlockIndex() uint32 {
 	return event.blockIndex
 }
 
-// DeltaKind 返回 thinking 或 signature 类型。
+// DeltaKind 返回摘要、thinking 或 signature 类型。
 func (event ReasoningDeltaEvent) DeltaKind() ReasoningDeltaKind {
 	return event.deltaKind
 }

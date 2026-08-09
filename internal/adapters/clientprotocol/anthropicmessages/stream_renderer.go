@@ -59,15 +59,10 @@ func (renderer *StreamRenderer) Terminal() bool {
 		renderer.state.terminal
 }
 
-// validateSupportedResponseEvent 在修改状态前拒绝 Messages 无法无损表达的事件。
+// validateSupportedResponseEvent 在修改状态前拒绝 Messages 无法表达的终态。
+// Provider 私有 reasoning 由 Renderer 省略，不能伪造成 Claude 内容块。
 func validateSupportedResponseEvent(event inference.StreamEvent) error {
 	switch typed := event.(type) {
-	case inference.ReasoningCompletedEvent:
-		kind := typed.Content().ReasoningKind()
-		if kind == inference.ReasoningSummary ||
-			kind == inference.ReasoningEncrypted {
-			return ErrUnsupportedResponseEvent
-		}
 	case inference.ResponseCompletedEvent:
 		if _, err := mapStopReason(typed.StopReason()); err != nil {
 			return err
@@ -248,10 +243,13 @@ func (renderer *StreamRenderer) renderTextDelta(
 	})
 }
 
-// renderReasoningDelta 输出 thinking 或 signature 增量。
+// renderReasoningDelta 输出 Claude thinking/signature，省略无签名摘要。
 func (renderer *StreamRenderer) renderReasoningDelta(
 	event inference.ReasoningDeltaEvent,
 ) ([]RenderedEvent, error) {
+	if event.DeltaKind() == inference.ReasoningDeltaSummary {
+		return nil, nil
+	}
 	position := streamPosition{
 		outputIndex: event.OutputIndex(),
 		blockIndex:  event.BlockIndex(),
@@ -300,6 +298,10 @@ func (renderer *StreamRenderer) renderReasoningCompleted(
 		blockIndex:  event.BlockIndex(),
 	}
 	content := event.Content()
+	if content.ReasoningKind() == inference.ReasoningSummary ||
+		content.ReasoningKind() == inference.ReasoningEncrypted {
+		return nil, nil
+	}
 	if content.ReasoningKind() == inference.ReasoningRedacted {
 		index, err := renderer.allocateBlock(position)
 		if err != nil {
@@ -452,6 +454,15 @@ func (renderer *StreamRenderer) renderToolArgumentsDelta(
 func (renderer *StreamRenderer) renderContentBlockCompleted(
 	event inference.ContentBlockCompletedEvent,
 ) ([]RenderedEvent, error) {
+	block, err := renderer.state.block(event.OutputIndex(), event.BlockIndex())
+	if err != nil {
+		return nil, err
+	}
+	if block.kind == inference.ContentReasoning &&
+		(block.reasoningKind == inference.ReasoningSummary ||
+			block.reasoningKind == inference.ReasoningEncrypted) {
+		return nil, nil
+	}
 	index, err := renderer.blockIndex(streamPosition{
 		outputIndex: event.OutputIndex(),
 		blockIndex:  event.BlockIndex(),

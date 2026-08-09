@@ -19,15 +19,19 @@ func TestStreamEventsPreserveTypedDeltasAndCompletion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewTextDeltaEvent() error = %v", err)
 	}
-	thinkingDelta, err := NewReasoningDeltaEvent(2, 0, 1, ReasoningDeltaThinking, "先检查")
+	summaryDelta, err := NewReasoningDeltaEvent(2, 0, 1, ReasoningDeltaSummary, "摘要")
 	if err != nil {
 		t.Fatalf("NewReasoningDeltaEvent() error = %v", err)
 	}
-	signatureDelta, err := NewReasoningDeltaEvent(3, 0, 1, ReasoningDeltaSignature, "sig_")
+	thinkingDelta, err := NewReasoningDeltaEvent(3, 0, 1, ReasoningDeltaThinking, "先检查")
+	if err != nil {
+		t.Fatalf("NewReasoningDeltaEvent() error = %v", err)
+	}
+	signatureDelta, err := NewReasoningDeltaEvent(4, 0, 1, ReasoningDeltaSignature, "sig_")
 	if err != nil {
 		t.Fatalf("NewReasoningDeltaEvent() signature error = %v", err)
 	}
-	argumentsDelta, err := NewToolArgumentsDeltaEvent(4, 0, 2, "call_exact_1", `{"query"`)
+	argumentsDelta, err := NewToolArgumentsDeltaEvent(5, 0, 2, "call_exact_1", `{"query"`)
 	if err != nil {
 		t.Fatalf("NewToolArgumentsDeltaEvent() error = %v", err)
 	}
@@ -35,15 +39,24 @@ func TestStreamEventsPreserveTypedDeltasAndCompletion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewUsage() error = %v", err)
 	}
-	completed, err := NewResponseCompletedEvent(5, StopReasonEndTurn, "", usage)
+	completed, err := NewResponseCompletedEvent(6, StopReasonEndTurn, "", usage)
 	if err != nil {
 		t.Fatalf("NewResponseCompletedEvent() error = %v", err)
 	}
 
-	events := []StreamEvent{start, textDelta, thinkingDelta, signatureDelta, argumentsDelta, completed}
+	events := []StreamEvent{
+		start,
+		textDelta,
+		summaryDelta,
+		thinkingDelta,
+		signatureDelta,
+		argumentsDelta,
+		completed,
+	}
 	expectedKinds := []EventKind{
 		EventResponseStarted,
 		EventTextDelta,
+		EventReasoningDelta,
 		EventReasoningDelta,
 		EventReasoningDelta,
 		EventToolArgumentsDelta,
@@ -54,8 +67,9 @@ func TestStreamEventsPreserveTypedDeltasAndCompletion(t *testing.T) {
 			t.Fatalf("event[%d] = (%q, %d), want (%q, %d)", index, event.Kind(), event.Sequence(), expectedKinds[index], index)
 		}
 	}
-	if thinkingDelta.DeltaKind() == signatureDelta.DeltaKind() {
-		t.Fatal("thinking delta 与 signature delta 必须保持不同类型")
+	if summaryDelta.DeltaKind() == thinkingDelta.DeltaKind() ||
+		thinkingDelta.DeltaKind() == signatureDelta.DeltaKind() {
+		t.Fatal("summary、thinking 与 signature delta 必须保持不同类型")
 	}
 }
 

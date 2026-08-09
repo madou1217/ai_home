@@ -383,6 +383,7 @@ func newRealCodexRouteCatalog(
 
 	capabilities, err := inference.NewCapabilitySet(
 		inference.CapabilityTextGeneration,
+		inference.CapabilityReasoning,
 		inference.CapabilityStreaming,
 	)
 	if err != nil {

@@ -375,9 +375,9 @@ func TestRateLimitedFailureUsesAnthropicRateLimitType(t *testing.T) {
 	}
 }
 
-// TestRenderersRejectUnrepresentableReasoningSummary 验证无签名 summary 不会被
-// 冒充为可回传的 Claude thinking。
-func TestRenderersRejectUnrepresentableReasoningSummary(t *testing.T) {
+// TestRenderersOmitUnrepresentableReasoningSummary 验证无签名 summary 不会被
+// 冒充为 Claude thinking，也不会让后续可表达的响应整体失败。
+func TestRenderersOmitUnrepresentableReasoningSummary(t *testing.T) {
 	t.Parallel()
 
 	request := newRendererTestRequest(t)
@@ -409,8 +409,9 @@ func TestRenderersRejectUnrepresentableReasoningSummary(t *testing.T) {
 			t.Fatalf("Render(%q) error = %v", event.Kind(), err)
 		}
 	}
-	if _, err := renderer.Render(completed); !errors.Is(err, ErrUnsupportedResponseEvent) {
-		t.Fatalf("Render(summary) error = %v, want ErrUnsupportedResponseEvent", err)
+	frames, err := renderer.Render(completed)
+	if err != nil || len(frames) != 0 {
+		t.Fatalf("Render(summary) = (%d frames, %v), want omitted", len(frames), err)
 	}
 
 	aggregator := NewResponseAggregator(request)
@@ -419,14 +420,14 @@ func TestRenderersRejectUnrepresentableReasoningSummary(t *testing.T) {
 			t.Fatalf("Add(%q) error = %v", event.Kind(), err)
 		}
 	}
-	if err := aggregator.Add(completed); !errors.Is(err, ErrUnsupportedResponseEvent) {
-		t.Fatalf("Add(summary) error = %v, want ErrUnsupportedResponseEvent", err)
+	if err := aggregator.Add(completed); err != nil {
+		t.Fatalf("Add(summary) error = %v, want omitted", err)
 	}
 }
 
-// TestRenderersRejectResponsesEncryptedReasoning 验证 Codex/Responses opaque
-// 数据不会被伪装成 Claude redacted_thinking。
-func TestRenderersRejectResponsesEncryptedReasoning(t *testing.T) {
+// TestRenderersOmitResponsesEncryptedReasoning 验证 Codex/Responses opaque
+// 数据不会被伪装成 Claude redacted_thinking，也不会破坏响应主结果。
+func TestRenderersOmitResponsesEncryptedReasoning(t *testing.T) {
 	t.Parallel()
 
 	request := newRendererTestRequest(t)
@@ -458,8 +459,9 @@ func TestRenderersRejectResponsesEncryptedReasoning(t *testing.T) {
 			t.Fatalf("Render(%q) error = %v", event.Kind(), err)
 		}
 	}
-	if _, err := renderer.Render(completed); !errors.Is(err, ErrUnsupportedResponseEvent) {
-		t.Fatalf("Render(encrypted) error = %v, want ErrUnsupportedResponseEvent", err)
+	frames, err := renderer.Render(completed)
+	if err != nil || len(frames) != 0 {
+		t.Fatalf("Render(encrypted) = (%d frames, %v), want omitted", len(frames), err)
 	}
 
 	aggregator := NewResponseAggregator(request)
@@ -468,8 +470,56 @@ func TestRenderersRejectResponsesEncryptedReasoning(t *testing.T) {
 			t.Fatalf("Add(%q) error = %v", event.Kind(), err)
 		}
 	}
-	if err := aggregator.Add(completed); !errors.Is(err, ErrUnsupportedResponseEvent) {
-		t.Fatalf("Add(encrypted) error = %v, want ErrUnsupportedResponseEvent", err)
+	if err := aggregator.Add(completed); err != nil {
+		t.Fatalf("Add(encrypted) error = %v, want omitted", err)
+	}
+}
+
+// TestRenderersKeepPublicResultWhenPrivateReasoningIsOmitted 验证流式与非流式
+// Renderer 都能跳过 Codex 私有 reasoning，同时完整交付后续公开文本和终态。
+func TestRenderersKeepPublicResultWhenPrivateReasoningIsOmitted(t *testing.T) {
+	t.Parallel()
+
+	request := newRendererTestRequest(t)
+	events := newPrivateReasoningTextResponseEvents(t)
+	frames := renderAll(t, NewStreamRenderer(request), events)
+	assertEventNames(t, frames, []string{
+		"message_start",
+		"content_block_start",
+		"content_block_delta",
+		"content_block_stop",
+		"message_delta",
+		"message_stop",
+	})
+	for _, frame := range frames {
+		data := string(frame.Data())
+		if strings.Contains(data, "私有摘要") ||
+			strings.Contains(data, "codex-private-continuity") ||
+			strings.Contains(data, "redacted_thinking") {
+			t.Fatalf("SSE 泄漏或伪造私有 reasoning: %s", data)
+		}
+	}
+
+	aggregator := NewResponseAggregator(request)
+	for _, event := range events {
+		if err := aggregator.Add(event); err != nil {
+			t.Fatalf("Add(%q) error = %v", event.Kind(), err)
+		}
+	}
+	data, err := aggregator.Marshal()
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	var message messageWireDTO
+	if err := json.Unmarshal(data, &message); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if len(message.Content) != 1 ||
+		!strings.Contains(string(message.Content[0]), "公开回答") ||
+		strings.Contains(string(data), "私有摘要") ||
+		strings.Contains(string(data), "codex-private-continuity") ||
+		strings.Contains(string(data), "redacted_thinking") {
+		t.Fatalf("非流式私有 reasoning 投影错误: %s", data)
 	}
 }
 

@@ -291,6 +291,9 @@ func (state *responseState) appendReasoningDelta(event inference.ReasoningDeltaE
 		return err
 	}
 	switch event.DeltaKind() {
+	case inference.ReasoningDeltaSummary:
+		block.text += event.Delta()
+		block.reasoningKind = inference.ReasoningSummary
 	case inference.ReasoningDeltaThinking:
 		block.text += event.Delta()
 		block.reasoningKind = inference.ReasoningThinking

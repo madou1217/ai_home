@@ -475,7 +475,9 @@ func (decoder *responseDecoder) appendReasoning(
 	value string,
 ) error {
 	if value == "" {
-		return ErrInvalidUpstreamResponse
+		// Claude 官方客户端按字符串拼接处理 reasoning 分片，真实上游允许
+		// 发送空分片。空值不改变连续性，也不应伪造 Canonical 增量事件。
+		return nil
 	}
 	event, err := inference.NewReasoningDeltaEvent(
 		decoder.nextSequence,

@@ -97,7 +97,6 @@ type toolChoiceDTO struct {
 type thinkingDTO struct {
 	Type         string  `json:"type"`
 	BudgetTokens *uint64 `json:"budget_tokens,omitempty"`
-	Display      string  `json:"display,omitempty"`
 }
 
 // outputConfigDTO 同时承载 effort 和 JSON Schema 输出。

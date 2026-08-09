@@ -301,3 +301,112 @@ func newRedactedResponseEvents(t *testing.T) []inference.StreamEvent {
 		completed,
 	}
 }
+
+// newPrivateReasoningTextResponseEvents 创建 Codex 摘要、加密连续性和公开文本
+// 混合响应，验证 Anthropic 边界只省略不可表达的 Provider 私有块。
+func newPrivateReasoningTextResponseEvents(t testing.TB) []inference.StreamEvent {
+	t.Helper()
+
+	events := make([]inference.StreamEvent, 0, 17)
+	appendEvent := func(event inference.StreamEvent, err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatalf("create event error = %v", err)
+		}
+		events = append(events, event)
+	}
+
+	started, err := inference.NewResponseStartedEvent(0, "msg_private_1", "gpt-5.6-sol")
+	appendEvent(started, err)
+	reasoningItem, err := inference.NewOutputItemStartedEvent(
+		1,
+		0,
+		"reasoning_private_1",
+		inference.OutputItemReasoning,
+	)
+	appendEvent(reasoningItem, err)
+	summaryBlock, err := inference.NewContentBlockStartedEvent(
+		2,
+		0,
+		0,
+		inference.ContentReasoning,
+	)
+	appendEvent(summaryBlock, err)
+	summaryDelta, err := inference.NewReasoningDeltaEvent(
+		3,
+		0,
+		0,
+		inference.ReasoningDeltaSummary,
+		"私有摘要",
+	)
+	appendEvent(summaryDelta, err)
+	summary, err := inference.NewReasoningSummaryContent("私有摘要完整")
+	if err != nil {
+		t.Fatalf("NewReasoningSummaryContent() error = %v", err)
+	}
+	summaryCompleted, err := inference.NewReasoningCompletedEvent(4, 0, 0, summary)
+	appendEvent(summaryCompleted, err)
+	events = append(events, inference.NewContentBlockCompletedEvent(5, 0, 0))
+	encryptedBlock, err := inference.NewContentBlockStartedEvent(
+		6,
+		0,
+		1,
+		inference.ContentReasoning,
+	)
+	appendEvent(encryptedBlock, err)
+	encrypted, err := inference.NewEncryptedReasoningContent("codex-private-continuity")
+	if err != nil {
+		t.Fatalf("NewEncryptedReasoningContent() error = %v", err)
+	}
+	encryptedCompleted, err := inference.NewReasoningCompletedEvent(7, 0, 1, encrypted)
+	appendEvent(encryptedCompleted, err)
+	events = append(events, inference.NewContentBlockCompletedEvent(8, 0, 1))
+	reasoningItemCompleted, err := inference.NewOutputItemCompletedEvent(
+		9,
+		0,
+		"reasoning_private_1",
+	)
+	appendEvent(reasoningItemCompleted, err)
+
+	messageItem, err := inference.NewPhasedOutputItemStartedEvent(
+		10,
+		1,
+		"message_private_1",
+		inference.MessagePhaseFinalAnswer,
+	)
+	appendEvent(messageItem, err)
+	textBlock, err := inference.NewContentBlockStartedEvent(
+		11,
+		1,
+		0,
+		inference.ContentText,
+	)
+	appendEvent(textBlock, err)
+	textDelta, err := inference.NewTextDeltaEvent(12, 1, 0, "公开回答")
+	appendEvent(textDelta, err)
+	textCompleted, err := inference.NewTextCompletedEvent(13, 1, 0, "公开回答")
+	appendEvent(textCompleted, err)
+	events = append(events, inference.NewContentBlockCompletedEvent(14, 1, 0))
+	messageItemCompleted, err := inference.NewOutputItemCompletedEvent(
+		15,
+		1,
+		"message_private_1",
+	)
+	appendEvent(messageItemCompleted, err)
+	usage, err := inference.NewUsage(inference.UsageInput{
+		InputTokens:     10,
+		OutputTokens:    6,
+		ReasoningTokens: 4,
+	})
+	if err != nil {
+		t.Fatalf("NewUsage() error = %v", err)
+	}
+	completed, err := inference.NewResponseCompletedEvent(
+		16,
+		inference.StopReasonEndTurn,
+		"",
+		usage,
+	)
+	appendEvent(completed, err)
+	return events
+}

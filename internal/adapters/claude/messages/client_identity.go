@@ -6,12 +6,12 @@ import "net/http"
 // 客户端身份判定订阅额度是否可用。Canonical 转码路径从零构造请求，若不声明这组身份，
 // 同一账号、同一时刻、同一模型下原生 relay 成功而 Canonical 被限流。
 //
-// 下列三个值全部来自本机回环抓包（假 Key 打 127.0.0.1，未连接 Anthropic）：
-// 正式 Claude Code 2.1.224 对 POST /v1/messages 实际发送。不含任何 SDK 遥测字段
+// 下列三个值来自本机 Claude Code 2.1.225 源码与回环抓包（假 Key 打
+// 127.0.0.1，未连接 Anthropic）对 POST /v1/messages 的实际合同。不含 SDK 遥测字段
 // （x-stainless-*），那些只描述运行环境，不参与身份判定。
 const (
 	// clientUserAgent 是官方 CLI 自报的客户端身份。
-	clientUserAgent = "claude-cli/2.1.224 (external, sdk-cli)"
+	clientUserAgent = "claude-cli/2.1.225 (external, sdk-cli)"
 	// clientAppHeader 声明调用方是 CLI 形态的 Claude Code。
 	clientAppHeader = "x-app"
 	// clientAppValue 是官方 CLI 在该 Header 上发送的唯一取值。

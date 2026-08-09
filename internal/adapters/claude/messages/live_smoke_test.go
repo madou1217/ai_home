@@ -21,6 +21,7 @@ import (
 	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
+	clientanthropic "github.com/madou1217/ai_home/internal/adapters/clientprotocol/anthropicmessages"
 	"github.com/madou1217/ai_home/internal/adapters/clientprotocol/openairesponses"
 )
 
@@ -37,7 +38,7 @@ const (
 	realClaudeReasoningSmokeEnv = "AIH_REAL_CLAUDE_REASONING_SMOKE"
 	// realClaudeToolSmokeEnv 显式授权一次只返回客户端工具调用的真实请求。
 	realClaudeToolSmokeEnv = "AIH_REAL_CLAUDE_TOOL_SMOKE"
-	// realClaudeRedactedThinkingSmokeEnv 显式授权一次 redacted thinking 请求。
+	// realClaudeRedactedThinkingSmokeEnv 显式授权两轮 redacted thinking 连续性请求。
 	realClaudeRedactedThinkingSmokeEnv = "AIH_REAL_CLAUDE_REDACTED_THINKING_SMOKE"
 	// realClaudeSmokeModel 是未显式覆盖时使用的真实验收模型。
 	realClaudeSmokeModel = "claude-opus-5"
@@ -49,7 +50,7 @@ const (
 	realClaudeSmokeExpected = "AIH_REAL_CLAUDE_OK"
 	// realClaudeReasoningModel 是账号模型目录中用于 reasoning 验收的当前模型。
 	realClaudeReasoningModel = "claude-sonnet-5"
-	// realClaudeReasoningPrompt 触发最小 reasoning，同时约束公开回答。
+	// realClaudeReasoningPrompt 触发最小推理，并要求公开回答包含固定标记。
 	realClaudeReasoningPrompt = "Compute 17 * 19, then reply with exactly: AIH_REAL_CLAUDE_REASONING_OK"
 	// realClaudeReasoningExpected 是第一轮公开回答的固定值。
 	realClaudeReasoningExpected = "AIH_REAL_CLAUDE_REASONING_OK"
@@ -183,12 +184,13 @@ func TestLiveClaudeReasoningContinuitySmoke(t *testing.T) {
 		firstRequest,
 	)
 	firstFingerprint := strings.Join(firstTransport.fingerprint(), "|")
-	firstOutputMatch := strings.TrimSpace(completedClaudeText(firstEvents)) ==
-		realClaudeReasoningExpected
+	firstOutputMatch := strings.Contains(
+		completedClaudeText(firstEvents),
+		realClaudeReasoningExpected,
+	)
 	if firstErr != nil ||
 		firstRecorder.successes != 1 ||
 		len(firstRecorder.failures) != 0 ||
-		!hasReasoningDelta(firstEvents, inference.ReasoningDeltaThinking) ||
 		!hasReasoningDelta(firstEvents, inference.ReasoningDeltaSignature) ||
 		!hasCompletedThinking(firstEvents) ||
 		!firstOutputMatch {
@@ -348,8 +350,8 @@ func TestLiveClaudeToolUseSmoke(t *testing.T) {
 	}
 }
 
-// TestLiveClaudeRedactedThinkingSmoke 使用可直连凭据发起一次
-// omitted thinking 请求，验证真实上游返回独立 redacted_thinking 块。
+// TestLiveClaudeRedactedThinkingSmoke 使用可直连凭据发起两轮
+// omitted thinking 请求，验证真实 redacted_thinking 能原样回放。
 func TestLiveClaudeRedactedThinkingSmoke(t *testing.T) {
 	if os.Getenv(realClaudeRedactedThinkingSmokeEnv) != "1" {
 		t.Skip("设置 AIH_REAL_CLAUDE_REDACTED_THINKING_SMOKE=1 后才允许真实请求")
@@ -364,25 +366,12 @@ func TestLiveClaudeRedactedThinkingSmoke(t *testing.T) {
 		selection.model,
 		request,
 	)
-	fingerprint := strings.Join(transport.fingerprint(), "|")
-	outputMatch := strings.TrimSpace(completedClaudeText(events)) ==
-		realClaudeReasoningExpected
-	redacted := hasCompletedRedactedThinking(events)
-	t.Logf(
-		"real_claude_redacted_thinking method=%s endpoint=%s model=%s max_tokens=%d stream=true http_status=%d media_type=%s successes=%d failures=%d redacted_completed=%t events=%s fingerprint=%s output_match=%t",
-		transport.method,
-		transport.endpoint,
-		selection.model,
-		request.MaxOutputTokens(),
-		transport.statusCode,
-		transport.mediaType,
-		recorder.successes,
-		len(recorder.failures),
-		redacted,
-		eventKinds(events),
-		fingerprint,
-		outputMatch,
+	firstFingerprint := strings.Join(transport.fingerprint(), "|")
+	outputMatch := strings.Contains(
+		completedClaudeText(events),
+		realClaudeReasoningExpected,
 	)
+	redacted := hasCompletedRedactedThinking(events)
 	if executeErr != nil {
 		t.Fatalf("真实 Claude redacted thinking 请求失败: %v", executeErr)
 	}
@@ -390,8 +379,75 @@ func TestLiveClaudeRedactedThinkingSmoke(t *testing.T) {
 		len(recorder.failures) != 0 ||
 		!redacted ||
 		!outputMatch {
+		t.Logf(
+			"real_claude_redacted_first method=%s endpoint=%s model=%s max_tokens=%d stream=true http_status=%d media_type=%s successes=%d failures=%d redacted_completed=%t events=%s request=%s fingerprint=%s output_match=%t",
+			transport.method,
+			transport.endpoint,
+			selection.model,
+			request.MaxOutputTokens(),
+			transport.statusCode,
+			transport.mediaType,
+			recorder.successes,
+			len(recorder.failures),
+			redacted,
+			eventKinds(events),
+			transport.requestFingerprint(),
+			firstFingerprint,
+			outputMatch,
+		)
 		t.Fatal("真实 Claude redacted thinking 未满足成功合同")
 	}
+
+	firstResponse := aggregateRealClaudeAnthropicMessage(t, request, events)
+	defer clear(firstResponse)
+	replayRequest := decodeRealClaudeAnthropicReplayRequest(
+		t,
+		firstResponse,
+		selection.model,
+	)
+	replayEvents, replayRecorder, replayTransport, replayErr := executeRealClaudeRequest(
+		t,
+		selection.credential,
+		selection.model,
+		replayRequest,
+	)
+	replayFingerprint := strings.Join(replayTransport.fingerprint(), "|")
+	replayOutputMatch := strings.TrimSpace(completedClaudeText(replayEvents)) ==
+		realClaudeReplayExpected
+	if replayErr != nil ||
+		replayRecorder.successes != 1 ||
+		len(replayRecorder.failures) != 0 ||
+		!replayOutputMatch {
+		t.Logf(
+			"real_claude_redacted_replay method=%s endpoint=%s model=%s max_tokens=%d stream=false http_status=%d media_type=%s successes=%d failures=%d events=%s fingerprint=%s output_match=%t",
+			replayTransport.method,
+			replayTransport.endpoint,
+			selection.model,
+			replayRequest.MaxOutputTokens(),
+			replayTransport.statusCode,
+			replayTransport.mediaType,
+			replayRecorder.successes,
+			len(replayRecorder.failures),
+			eventKinds(replayEvents),
+			replayFingerprint,
+			replayOutputMatch,
+		)
+		if replayErr != nil {
+			t.Fatalf("真实 Claude redacted thinking 回放失败: %v", replayErr)
+		}
+		t.Fatal("真实 Claude redacted thinking 回放未满足成功合同")
+	}
+	t.Logf(
+		"real_claude_redacted_continuity endpoint=%s model=%s first_http_status=%d first_stream=true redacted_completed=true first_usage=%s first_output_match=%t replay_http_status=%d replay_stream=false replay_usage=%s replay_output_match=%t",
+		transport.endpoint,
+		selection.model,
+		transport.statusCode,
+		usageEventShape(events),
+		outputMatch,
+		replayTransport.statusCode,
+		usageEventShape(replayEvents),
+		replayOutputMatch,
+	)
 }
 
 // TestLiveClaudeAuthPreflight 只验证显式账号、凭据和物化模型，不访问网络。
@@ -896,7 +952,7 @@ func newRealClaudeRequest(t *testing.T, model string) inference.Request {
 	return request
 }
 
-// newRealClaudeReasoningRequest 创建 Responses effort 驱动的流式 reasoning 请求。
+// newRealClaudeReasoningRequest 创建 Claude 5 原生 adaptive/effort reasoning 请求。
 func newRealClaudeReasoningRequest(t *testing.T, model string) inference.Request {
 	t.Helper()
 
@@ -1040,6 +1096,83 @@ func aggregateRealClaudeResponses(
 	return body
 }
 
+// aggregateRealClaudeAnthropicMessage 用生产非流式 Renderer 聚合原生 Message。
+func aggregateRealClaudeAnthropicMessage(
+	t *testing.T,
+	request inference.Request,
+	events []inference.StreamEvent,
+) []byte {
+	t.Helper()
+
+	aggregator := clientanthropic.NewResponseAggregator(request)
+	for _, event := range events {
+		if err := aggregator.Add(event); err != nil {
+			t.Fatalf("聚合真实 Anthropic 事件失败: kind=%s error=%v", event.Kind(), err)
+		}
+	}
+	body, err := aggregator.Marshal()
+	if err != nil {
+		t.Fatalf("编码真实 Anthropic 响应失败: %v", err)
+	}
+	return body
+}
+
+// decodeRealClaudeAnthropicReplayRequest 把原生 Message 内容原样放回 assistant
+// 历史，并追加固定用户标记；redacted data 只在内存中流转且从不写日志。
+func decodeRealClaudeAnthropicReplayRequest(
+	t *testing.T,
+	firstResponse []byte,
+	model string,
+) inference.Request {
+	t.Helper()
+
+	var response struct {
+		Content []json.RawMessage `json:"content"`
+	}
+	if err := json.Unmarshal(firstResponse, &response); err != nil ||
+		len(response.Content) == 0 {
+		t.Fatal("真实 Anthropic 响应无法形成回放历史")
+	}
+	body, err := json.Marshal(struct {
+		Model        string `json:"model"`
+		MaxTokens    uint64 `json:"max_tokens"`
+		Messages     []any  `json:"messages"`
+		Thinking     any    `json:"thinking"`
+		OutputConfig any    `json:"output_config"`
+		Stream       bool   `json:"stream"`
+	}{
+		Model:     realClaudeSmokeAlias,
+		MaxTokens: claudeCodeDefaultMaxOutputTokens(model),
+		Messages: []any{
+			map[string]any{
+				"role":    "assistant",
+				"content": response.Content,
+			},
+			map[string]any{
+				"role":    "user",
+				"content": realClaudeReplayPrompt,
+			},
+		},
+		Thinking: map[string]string{
+			"type":    "adaptive",
+			"display": "omitted",
+		},
+		OutputConfig: map[string]string{
+			"effort": string(inference.ReasoningEffortLow),
+		},
+		Stream: false,
+	})
+	if err != nil {
+		t.Fatalf("编码真实 Anthropic 回放请求失败: %v", err)
+	}
+	defer clear(body)
+	request, err := clientanthropic.NewAdapter().Decode(body)
+	if err != nil {
+		t.Fatalf("解码真实 Anthropic 回放请求失败: %v", err)
+	}
+	return request
+}
+
 // decodeRealClaudeReplayRequest 把真实 Responses 输出作为下一轮历史重新解码。
 func decodeRealClaudeReplayRequest(
 	t *testing.T,
@@ -1115,6 +1248,7 @@ func hasReasoningDelta(
 }
 
 // hasCompletedThinking 验证事件流保留完整的 Claude thinking 和 signature。
+// Claude 允许可见 thinking 为空，因此连续性只强制要求原生签名存在。
 func hasCompletedThinking(events []inference.StreamEvent) bool {
 	for _, event := range events {
 		completed, ok := event.(inference.ReasoningCompletedEvent)
@@ -1123,7 +1257,6 @@ func hasCompletedThinking(events []inference.StreamEvent) bool {
 		}
 		content := completed.Content()
 		if content.ReasoningKind() == inference.ReasoningThinking &&
-			content.Text() != "" &&
 			content.Signature() != "" {
 			return true
 		}

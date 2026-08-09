@@ -711,11 +711,20 @@ func marshalReasoningItem(
 			return nil, ErrInvalidEventSequence
 		}
 		switch block.reasoningKind {
-		case inference.ReasoningSummary, inference.ReasoningThinking:
+		case inference.ReasoningSummary:
 			summaries = append(summaries, reasoningSummaryWireDTO{
 				Type: "summary_text",
 				Text: block.text,
 			})
+		case inference.ReasoningThinking:
+			// Claude 允许只有 signature 的空 thinking；此时只保留经过验证的
+			// opaque carrier，不生成 Responses Decoder 会拒绝的空 summary_text。
+			if block.text != "" {
+				summaries = append(summaries, reasoningSummaryWireDTO{
+					Type: "summary_text",
+					Text: block.text,
+				})
+			}
 		case inference.ReasoningEncrypted:
 		case "":
 			if status != "in_progress" {

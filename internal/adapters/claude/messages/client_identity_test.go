@@ -8,6 +8,17 @@ import (
 	claudeauth "github.com/madou1217/ai_home/core/accounts/claude"
 )
 
+// TestClaudeClientIdentityMatchesInstalledSource 验证订阅请求身份与本机当前
+// Claude Code 源码中的 MACRO.VERSION 保持一致。
+func TestClaudeClientIdentityMatchesInstalledSource(t *testing.T) {
+	t.Parallel()
+
+	const expected = "claude-cli/2.1.225 (external, sdk-cli)"
+	if clientUserAgent != expected {
+		t.Fatalf("clientUserAgent = %q, want %q", clientUserAgent, expected)
+	}
+}
+
 // TestSubscriptionOAuthSendsOfficialClientContract 锁定订阅 OAuth 的官方客户端合同。
 //
 // 真实验收结论：同一账号、同一时刻、同一模型下，原生 Relay（字节转发官方客户端

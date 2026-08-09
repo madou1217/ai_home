@@ -118,7 +118,7 @@ func (decoder *responseDecoder) appendReasoningDelta(
 		decoder.nextSequence,
 		*event.OutputIndex,
 		blockIndex,
-		inference.ReasoningDeltaThinking,
+		inference.ReasoningDeltaSummary,
 		event.Delta,
 	)
 	if err != nil {
@@ -207,7 +207,7 @@ func (decoder *responseDecoder) finalizeReasoningBlock(
 			decoder.nextSequence,
 			outputIndex,
 			blockIndex,
-			inference.ReasoningDeltaThinking,
+			inference.ReasoningDeltaSummary,
 			suffix,
 		)
 		if constructErr != nil {

@@ -216,8 +216,8 @@ func TestEncodeEffortReasoningEnablesAdaptiveThinking(t *testing.T) {
 	}
 }
 
-// TestEncodeOmittedReasoningEnablesRedactThinking 验证明确的 omitted 摘要
-// 意图才开启 Claude redact-thinking，不依赖 Responses 输出 include。
+// TestEncodeOmittedReasoningEnablesRedactThinking 验证明确的不显示意图只开启
+// Claude Code 官方 redact-thinking beta，不向 thinking 正文添加私有 display。
 func TestEncodeOmittedReasoningEnablesRedactThinking(t *testing.T) {
 	t.Parallel()
 
@@ -255,8 +255,7 @@ func TestEncodeOmittedReasoningEnablesRedactThinking(t *testing.T) {
 		t.Fatalf("json.Unmarshal() error = %v", err)
 	}
 	if payload.Thinking.Type != "adaptive" ||
-		payload.Thinking.Display == nil ||
-		*payload.Thinking.Display != "omitted" ||
+		payload.Thinking.Display != nil ||
 		!containsBeta(encoded.betaHeaders, betaInterleavedThinking) ||
 		!containsBeta(encoded.betaHeaders, betaRedactThinking) {
 		t.Fatalf(

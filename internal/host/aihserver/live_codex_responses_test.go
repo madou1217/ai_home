@@ -48,9 +48,10 @@ func (function realCodexRoundTripperFunc) RoundTrip(
 
 // realCodexRequestCounts 是不会携带 URL、凭据或正文的真实请求计数快照。
 type realCodexRequestCounts struct {
-	models     int
-	responses  int
-	unexpected int
+	models              int
+	responses           int
+	summarizedReasoning int
+	unexpected          int
 }
 
 // realCodexRequestBudget 在发出网络请求前同时执行目标白名单和次数预算。
@@ -113,11 +114,15 @@ func (budget *realCodexRequestBudget) reserve(request *http.Request) error {
 		request.Header.Get("Content-Type") == "application/json" &&
 		request.Header.Get("Accept") == "text/event-stream" &&
 		budget.counts.responses < budget.responseLimit():
-		if err := validateRealCodexUpstreamBody(request); err != nil {
+		hasSummarizedReasoning, err := validateRealCodexUpstreamBody(request)
+		if err != nil {
 			budget.counts.unexpected++
 			return err
 		}
 		budget.counts.responses++
+		if hasSummarizedReasoning {
+			budget.counts.summarizedReasoning++
+		}
 		return nil
 	default:
 		budget.counts.unexpected++
@@ -142,9 +147,9 @@ func (budget *realCodexRequestBudget) snapshot() realCodexRequestCounts {
 
 // validateRealCodexUpstreamBody 保证两次真实推理都使用已确认的模型、标记和
 // Provider 原生 stream=true，同时不私自添加 max_output_tokens。
-func validateRealCodexUpstreamBody(request *http.Request) error {
+func validateRealCodexUpstreamBody(request *http.Request) (bool, error) {
 	if request.Body == nil {
-		return errUnexpectedRealCodexRequest
+		return false, errUnexpectedRealCodexRequest
 	}
 	payload, err := io.ReadAll(io.LimitReader(
 		request.Body,
@@ -153,7 +158,7 @@ func validateRealCodexUpstreamBody(request *http.Request) error {
 	_ = request.Body.Close()
 	if err != nil || len(payload) > realCodexMaxAuthFileBytes {
 		clear(payload)
-		return errUnexpectedRealCodexRequest
+		return false, errUnexpectedRealCodexRequest
 	}
 	// 恢复正文必须使用独立副本；下方清理观察缓冲区时不能影响真正发送的数据。
 	request.Body = io.NopCloser(bytes.NewReader(append([]byte(nil), payload...)))
@@ -164,12 +169,19 @@ func validateRealCodexUpstreamBody(request *http.Request) error {
 		string(document["model"]) != `"`+realCodexModel+`"` ||
 		string(document["stream"]) != "true" ||
 		!bytes.Contains(payload, []byte(realCodexMarker)) {
-		return errUnexpectedRealCodexRequest
+		return false, errUnexpectedRealCodexRequest
 	}
 	if _, found := document["max_output_tokens"]; found {
-		return errUnexpectedRealCodexRequest
+		return false, errUnexpectedRealCodexRequest
 	}
-	return nil
+	var reasoning struct {
+		Summary string `json:"summary"`
+	}
+	if raw := document["reasoning"]; len(raw) != 0 &&
+		json.Unmarshal(raw, &reasoning) != nil {
+		return false, errUnexpectedRealCodexRequest
+	}
+	return reasoning.Summary == "auto", nil
 }
 
 // realResponsesDocument 是验收需要的最小 Responses 公开投影。

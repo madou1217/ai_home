@@ -42,6 +42,23 @@ func TestReasoningContinuityKeepsProviderDataDistinct(t *testing.T) {
 	}
 }
 
+// TestThinkingContinuityAllowsEmptyVisibleText 验证 Claude 可以只返回签名；
+// 空 thinking 文本仍需连同签名原样保留，供下一轮回放使用。
+func TestThinkingContinuityAllowsEmptyVisibleText(t *testing.T) {
+	t.Parallel()
+
+	thinking, err := NewThinkingContent("", "signature_without_visible_text")
+	if err != nil {
+		t.Fatalf("NewThinkingContent() error = %v", err)
+	}
+	if !thinking.IsValid() ||
+		thinking.ReasoningKind() != ReasoningThinking ||
+		thinking.Text() != "" ||
+		thinking.Signature() != "signature_without_visible_text" {
+		t.Fatalf("thinking = %#v", thinking)
+	}
+}
+
 // TestReasoningContinuityRejectsIncompleteValues 验证带签名思考和加密连续性必须完整，
 // 防止 Adapter 静默丢失 Provider 要求的连续性数据。
 func TestReasoningContinuityRejectsIncompleteValues(t *testing.T) {

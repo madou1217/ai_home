@@ -35,8 +35,9 @@ func NewReasoningSummaryContent(text string) (ReasoningContent, error) {
 }
 
 // NewThinkingContent 创建必须原样回传文本和签名的 thinking 内容。
+// Claude 允许 thinking 文本为空，但签名始终必须完整存在。
 func NewThinkingContent(text string, signature string) (ReasoningContent, error) {
-	if !isNonBlankText(text) || !isOpaqueContinuityData(signature) {
+	if !isValidThinkingText(text) || !isOpaqueContinuityData(signature) {
 		return ReasoningContent{}, ErrInvalidReasoning
 	}
 	return ReasoningContent{
@@ -107,7 +108,7 @@ func (content ReasoningContent) IsValid() bool {
 			content.encryptedData == "" &&
 			content.redactedData == ""
 	case ReasoningThinking:
-		return isNonBlankText(content.text) &&
+		return isValidThinkingText(content.text) &&
 			isOpaqueContinuityData(content.signature) &&
 			content.encryptedData == "" &&
 			content.redactedData == ""
@@ -124,6 +125,11 @@ func (content ReasoningContent) IsValid() bool {
 	default:
 		return false
 	}
+}
+
+// isValidThinkingText 接受 Claude 合法的空文本，并保留非空分片的原始空白。
+func isValidThinkingText(text string) bool {
+	return text == "" || isValidDelta(text)
 }
 
 // cloneContent 返回 reasoning 连续性值对象的独立语义快照。

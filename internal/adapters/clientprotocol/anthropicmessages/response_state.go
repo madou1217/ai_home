@@ -265,6 +265,9 @@ func (state *responseState) appendReasoningDelta(event inference.ReasoningDeltaE
 		return err
 	}
 	switch event.DeltaKind() {
+	case inference.ReasoningDeltaSummary:
+		block.text += event.Delta()
+		block.reasoningKind = inference.ReasoningSummary
 	case inference.ReasoningDeltaThinking:
 		block.text += event.Delta()
 		block.reasoningKind = inference.ReasoningThinking
@@ -309,6 +312,11 @@ func (state *responseState) completeReasoning(event inference.ReasoningCompleted
 		}
 		block.redactedData = content.RedactedData()
 		block.reasoningKind = inference.ReasoningRedacted
+	case inference.ReasoningEncrypted:
+		if block.text != "" || block.signature != "" || block.redactedData != "" {
+			return ErrInvalidEventSequence
+		}
+		block.reasoningKind = inference.ReasoningEncrypted
 	default:
 		return ErrUnsupportedResponseEvent
 	}

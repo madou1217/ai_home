@@ -462,7 +462,12 @@ func assertDecodedReasoning(
 
 	var summary string
 	var encrypted string
+	var summaryDelta bool
 	for _, event := range events {
+		if delta, ok := event.(inference.ReasoningDeltaEvent); ok &&
+			delta.DeltaKind() == inference.ReasoningDeltaSummary {
+			summaryDelta = true
+		}
 		completed, ok := event.(inference.ReasoningCompletedEvent)
 		if !ok {
 			continue
@@ -474,8 +479,13 @@ func assertDecodedReasoning(
 			encrypted = completed.Content().EncryptedData()
 		}
 	}
-	if summary != "先分析" || encrypted != "encrypted_state" {
-		t.Fatalf("reasoning summary=%q encrypted=%q", summary, encrypted)
+	if summary != "先分析" || encrypted != "encrypted_state" || !summaryDelta {
+		t.Fatalf(
+			"reasoning summary=%q encrypted=%q summary_delta=%t",
+			summary,
+			encrypted,
+			summaryDelta,
+		)
 	}
 }
 

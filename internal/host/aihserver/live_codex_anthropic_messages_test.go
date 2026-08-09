@@ -150,6 +150,84 @@ func TestRealCodexAnthropicMessagesEndToEnd(t *testing.T) {
 	)
 }
 
+// TestRealCodexAnthropicThinkingEndToEnd 使用真实 Plus OAuth 验证 thinking
+// 请求的 JSON/SSE 主结果。Codex 私有摘要和密文不会伪造成 Claude 内容块。
+func TestRealCodexAnthropicThinkingEndToEnd(t *testing.T) {
+	authJSON := readRealCodexAuthFromEnvironment(t)
+	defer clear(authJSON)
+	authExpiresAt := assertRealCodexAuthReady(t, authJSON)
+
+	upstream := newRealCodexUpstreamBudget(2)
+	fixture := startRealCodexFixture(t, authJSON, upstream)
+
+	nonStreamPayload := marshalRealAnthropicThinkingPayload(t, false)
+	nonStream := performRealAnthropicRequest(t, fixture, nonStreamPayload, false)
+	nonStreamDocument := decodeRealAnthropicMessage(t, nonStream.body)
+	assertRealAnthropicText(t, nonStreamDocument)
+	clear(nonStreamPayload)
+
+	streamPayload := marshalRealAnthropicThinkingPayload(t, true)
+	stream := performRealAnthropicRequest(t, fixture, streamPayload, true)
+	streamDocument := decodeRealAnthropicStream(t, stream)
+	assertRealAnthropicStreamText(t, streamDocument)
+	clear(streamPayload)
+
+	wantCounts := realCodexRequestCounts{
+		models:              1,
+		responses:           2,
+		summarizedReasoning: 2,
+	}
+	if counts := upstream.snapshot(); counts != wantCounts {
+		t.Fatalf("真实 Messages thinking 请求预算错误: got=%+v want=%+v", counts, wantCounts)
+	}
+
+	t.Logf(
+		strings.Join([]string{
+			"真实 Codex Anthropic thinking 验收通过",
+			"api_base: %s",
+			"authentication: x-api-key <local-test-key-redacted>",
+			"thinking_non_stream: POST %s payload=%s status=%d response=%s",
+			"thinking_stream: POST %s payload=%s status=%d result=%s",
+			"upstream_requests: models=1 responses=2 summarized_reasoning=2 unexpected=0",
+			"oauth_access_expires_at: %s refresh_due=false",
+			"temporary_database: created=true cleanup=registered",
+		}, "\n"),
+		fixture.baseURL,
+		fixture.baseURL+anthropicmessagesapi.Path,
+		string(marshalRealAnthropicThinkingPayload(t, false)),
+		nonStream.status,
+		nonStream.body,
+		fixture.baseURL+anthropicmessagesapi.Path,
+		string(marshalRealAnthropicThinkingPayload(t, true)),
+		stream.status,
+		marshalRealAnthropicStreamResult(t, streamDocument),
+		authExpiresAt.Format(time.RFC3339),
+	)
+}
+
+// marshalRealAnthropicThinkingPayload 创建带显式预算和摘要意图的请求。
+// Codex 可执行 reasoning，但 Responses 私有连续性不能伪造成 Claude 内容块。
+func marshalRealAnthropicThinkingPayload(t *testing.T, stream bool) []byte {
+	t.Helper()
+
+	return marshalRealAnthropicPayload(t, map[string]any{
+		"model":      realCodexModel,
+		"max_tokens": realAnthropicMaxTokens,
+		"system":     "Return only the exact marker requested by the user.",
+		"messages": []map[string]string{{
+			"role":    "user",
+			"content": "Think carefully, then reply with exactly: " + realCodexMarker,
+		}},
+		"thinking": map[string]any{
+			"type":          "enabled",
+			"budget_tokens": 1_024,
+			"display":       "summarized",
+		},
+		"output_config": map[string]string{"effort": "low"},
+		"stream":        stream,
+	})
+}
+
 // performRealAnthropicRequest 用 Anthropic 公开鉴权头调用临时 Server。
 func performRealAnthropicRequest(
 	t *testing.T,

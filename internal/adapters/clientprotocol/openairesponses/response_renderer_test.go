@@ -916,6 +916,91 @@ func TestStreamRendererConsumesReasoningSignatureWithoutFabricatedDelta(t *testi
 	}
 }
 
+// TestResponseAggregatorOmitsEmptyClaudeThinkingSummary 验证只有 signature 的
+// Claude thinking 仍保留 opaque carrier，但不生成非法空 summary_text。
+func TestResponseAggregatorOmitsEmptyClaudeThinkingSummary(t *testing.T) {
+	t.Parallel()
+
+	request := newRendererReasoningTestRequest(t, true, true)
+	events := newReasoningPrefixEvents(t)
+	signature, err := inference.NewReasoningDeltaEvent(
+		3,
+		0,
+		0,
+		inference.ReasoningDeltaSignature,
+		"opaque-signature",
+	)
+	if err != nil {
+		t.Fatalf("NewReasoningDeltaEvent() error = %v", err)
+	}
+	content, err := inference.NewThinkingContent("", "opaque-signature")
+	if err != nil {
+		t.Fatalf("NewThinkingContent() error = %v", err)
+	}
+	completed, err := inference.NewReasoningCompletedEvent(4, 0, 0, content)
+	if err != nil {
+		t.Fatalf("NewReasoningCompletedEvent() error = %v", err)
+	}
+	itemCompleted, err := inference.NewOutputItemCompletedEvent(
+		6,
+		0,
+		"rs_reasoning_1",
+	)
+	if err != nil {
+		t.Fatalf("NewOutputItemCompletedEvent() error = %v", err)
+	}
+	usage, err := inference.NewUsage(inference.UsageInput{
+		InputTokens:     2,
+		OutputTokens:    1,
+		ReasoningTokens: 1,
+	})
+	if err != nil {
+		t.Fatalf("NewUsage() error = %v", err)
+	}
+	responseCompleted, err := inference.NewResponseCompletedEvent(
+		7,
+		inference.StopReasonEndTurn,
+		"",
+		usage,
+	)
+	if err != nil {
+		t.Fatalf("NewResponseCompletedEvent() error = %v", err)
+	}
+	events = append(
+		events,
+		signature,
+		completed,
+		inference.NewContentBlockCompletedEvent(5, 0, 0),
+		itemCompleted,
+		responseCompleted,
+	)
+
+	aggregator := NewResponseAggregator(
+		request,
+		time.Unix(1_700_000_000, 0),
+	)
+	for _, event := range events {
+		if err := aggregator.Add(event); err != nil {
+			t.Fatalf("Add(%s) error = %v", event.Kind(), err)
+		}
+	}
+	body, err := aggregator.Marshal()
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	var response struct {
+		Output []reasoningItemWireDTO `json:"output"`
+	}
+	if err := json.Unmarshal(body, &response); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if len(response.Output) != 1 ||
+		len(response.Output[0].Summary) != 0 ||
+		response.Output[0].EncryptedContent != "opaque-signature" {
+		t.Fatalf("response = %s", body)
+	}
+}
+
 // TestRenderersRejectClaudeRedactedThinking 验证 Claude redacted_thinking 没有
 // Responses 原生 carrier 时会显式拒绝，而不是冒充 encrypted_content。
 func TestRenderersRejectClaudeRedactedThinking(t *testing.T) {

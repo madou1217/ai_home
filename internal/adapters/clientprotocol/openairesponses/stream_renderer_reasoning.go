@@ -7,8 +7,7 @@ func (renderer *StreamRenderer) renderReasoningDelta(
 	event inference.ReasoningDeltaEvent,
 ) ([]RenderedEvent, error) {
 	if event.DeltaKind() == inference.ReasoningDeltaSignature {
-		// Responses 没有签名增量事件；签名已进入聚合状态，
-		// 并将在终态 reasoning item 中作为 encrypted_content 输出。
+		// Responses 没有签名增量事件；原始签名只进入终态 opaque carrier。
 		return nil, nil
 	}
 	frames, err := renderer.ensureReasoningSummaryAdded(
@@ -32,7 +31,8 @@ func (renderer *StreamRenderer) renderReasoningCompleted(
 	suffix string,
 ) ([]RenderedEvent, error) {
 	content := event.Content()
-	if content.ReasoningKind() == inference.ReasoningEncrypted {
+	if content.ReasoningKind() == inference.ReasoningEncrypted ||
+		content.ReasoningKind() == inference.ReasoningThinking && content.Text() == "" {
 		return nil, nil
 	}
 	frames, err := renderer.ensureReasoningSummaryAdded(
@@ -123,7 +123,8 @@ func (renderer *StreamRenderer) renderReasoningSummaryPartDone(
 	item *outputItemState,
 	block *contentBlockState,
 ) ([]RenderedEvent, error) {
-	if block.reasoningKind == inference.ReasoningEncrypted {
+	if block.reasoningKind == inference.ReasoningEncrypted ||
+		block.reasoningKind == inference.ReasoningThinking && block.text == "" {
 		return nil, nil
 	}
 	position := streamPosition{

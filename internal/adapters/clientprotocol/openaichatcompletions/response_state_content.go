@@ -77,7 +77,7 @@ func (state *responseState) appendReasoning(
 	case inference.ReasoningDeltaSignature:
 		// 签名由 Canonical 终值校验，Chat 线协议没有对应公开字段。
 		return nil
-	case inference.ReasoningDeltaThinking:
+	case inference.ReasoningDeltaSummary, inference.ReasoningDeltaThinking:
 		return state.appendBlockText(
 			event.OutputIndex(),
 			event.BlockIndex(),

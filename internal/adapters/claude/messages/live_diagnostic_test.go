@@ -24,12 +24,17 @@ const (
 
 // realClaudeTransportDiagnostic 只保留 HTTP 摘要和有界内存指纹源。
 type realClaudeTransportDiagnostic struct {
-	client     *http.Client
-	method     string
-	endpoint   string
-	statusCode int
-	mediaType  string
-	body       realClaudeBodyCapture
+	client                  *http.Client
+	method                  string
+	endpoint                string
+	statusCode              int
+	mediaType               string
+	redactThinkingBeta      bool
+	interleavedThinkingBeta bool
+	requestThinkingType     string
+	requestThinkingDisplay  string
+	requestReasoningEffort  string
+	body                    realClaudeBodyCapture
 }
 
 // Do 透传真实请求，并让 Adapter 消费正文时同步复制有限字节。
@@ -38,6 +43,7 @@ func (transport *realClaudeTransportDiagnostic) Do(
 ) (*http.Response, error) {
 	transport.method = request.Method
 	transport.endpoint = request.URL.String()
+	transport.captureRequestShape(request)
 	response, err := transport.client.Do(request)
 	if response != nil {
 		transport.statusCode = response.StatusCode
@@ -52,6 +58,65 @@ func (transport *realClaudeTransportDiagnostic) Do(
 		}
 	}
 	return response, err
+}
+
+// requestFingerprint 只返回已知 beta 和 reasoning 枚举，不读取提示或凭据。
+func (transport *realClaudeTransportDiagnostic) requestFingerprint() string {
+	return fmt.Sprintf(
+		"redact_beta=%t,interleaved_beta=%t,thinking_type=%s,thinking_display=%s,effort=%s",
+		transport.redactThinkingBeta,
+		transport.interleavedThinkingBeta,
+		normalizeRealClaudeDiagnosticToken(transport.requestThinkingType),
+		normalizeRealClaudeDiagnosticToken(transport.requestThinkingDisplay),
+		normalizeRealClaudeDiagnosticToken(transport.requestReasoningEffort),
+	)
+}
+
+// captureRequestShape 从可重放 Body 投影低敏请求形态，不消费真实网络正文。
+func (transport *realClaudeTransportDiagnostic) captureRequestShape(
+	request *http.Request,
+) {
+	betas := strings.Split(request.Header.Get("anthropic-beta"), ",")
+	transport.redactThinkingBeta = hasRealClaudeBeta(betas, betaRedactThinking)
+	transport.interleavedThinkingBeta = hasRealClaudeBeta(
+		betas,
+		betaInterleavedThinking,
+	)
+	if request.GetBody == nil {
+		return
+	}
+	body, err := request.GetBody()
+	if err != nil {
+		return
+	}
+	defer func() { _ = body.Close() }()
+	var payload struct {
+		Thinking struct {
+			Type    string `json:"type"`
+			Display string `json:"display"`
+		} `json:"thinking"`
+		OutputConfig struct {
+			Effort string `json:"effort"`
+		} `json:"output_config"`
+	}
+	if json.NewDecoder(io.LimitReader(body, maxRealClaudeDiagnosticBytes)).Decode(
+		&payload,
+	) != nil {
+		return
+	}
+	transport.requestThinkingType = payload.Thinking.Type
+	transport.requestThinkingDisplay = payload.Thinking.Display
+	transport.requestReasoningEffort = payload.OutputConfig.Effort
+}
+
+// hasRealClaudeBeta 对逗号分隔的官方 beta 做精确匹配。
+func hasRealClaudeBeta(values []string, expected string) bool {
+	for _, value := range values {
+		if strings.TrimSpace(value) == expected {
+			return true
+		}
+	}
+	return false
 }
 
 // fingerprint 把响应压缩为固定字段，并立即清零正文副本。
@@ -301,6 +366,38 @@ func TestRealClaudeDiagnosticFingerprintDropsSensitiveValues(t *testing.T) {
 		strings.Contains(fingerprint, "secret-signature") ||
 		strings.Contains(fingerprint, "secret-text") {
 		t.Fatalf("低敏 Claude 指纹错误: %s", fingerprint)
+	}
+}
+
+// TestRealClaudeRequestFingerprintKeepsOnlyKnownShape 验证真实请求诊断不会
+// 输出提示、认证 Header 或任意正文值。
+func TestRealClaudeRequestFingerprintKeepsOnlyKnownShape(t *testing.T) {
+	t.Parallel()
+
+	request, err := http.NewRequest(
+		http.MethodPost,
+		"https://api.anthropic.com/v1/messages",
+		strings.NewReader(`{
+			"messages":[{"role":"user","content":"secret-prompt"}],
+			"thinking":{"type":"adaptive","display":"omitted"},
+			"output_config":{"effort":"low"}
+		}`),
+	)
+	if err != nil {
+		t.Fatalf("http.NewRequest() error = %v", err)
+	}
+	request.Header.Set("Authorization", "Bearer secret-access-token")
+	request.Header.Set(
+		"anthropic-beta",
+		betaInterleavedThinking+","+betaRedactThinking,
+	)
+	diagnostic := &realClaudeTransportDiagnostic{}
+	diagnostic.captureRequestShape(request)
+	fingerprint := diagnostic.requestFingerprint()
+	if fingerprint != "redact_beta=true,interleaved_beta=true,thinking_type=adaptive,thinking_display=omitted,effort=low" ||
+		strings.Contains(fingerprint, "secret-prompt") ||
+		strings.Contains(fingerprint, "secret-access-token") {
+		t.Fatalf("request fingerprint = %s", fingerprint)
 	}
 }
 

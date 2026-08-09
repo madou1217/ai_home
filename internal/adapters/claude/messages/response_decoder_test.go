@@ -89,6 +89,62 @@ func TestResponseDecoderPreservesClaudeLifecycle(t *testing.T) {
 	}
 }
 
+// TestResponseDecoderIgnoresEmptyReasoningDeltas 验证 Claude 官方流允许空的
+// thinking/signature 分片；空分片不产生 Canonical 事件，也不终止后续连续性。
+func TestResponseDecoderIgnoresEmptyReasoningDeltas(t *testing.T) {
+	t.Parallel()
+
+	var events []inference.StreamEvent
+	decoder, err := newResponseDecoder(
+		"claude-sonnet-5",
+		func(event inference.StreamEvent) error {
+			events = append(events, event)
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("newResponseDecoder() error = %v", err)
+	}
+	frames := []string{
+		`{"type":"message_start","message":{"id":"msg_empty_reasoning","type":"message","role":"assistant","model":"claude-sonnet-5","content":[],"usage":{"input_tokens":2,"output_tokens":0}}}`,
+		`{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}}`,
+		`{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":""}}`,
+		`{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"reason"}}`,
+		`{"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":""}}`,
+		`{"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"signed"}}`,
+		`{"type":"content_block_stop","index":0}`,
+		`{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":1}}`,
+		`{"type":"message_stop"}`,
+	}
+	for index, frame := range frames {
+		if err := decoder.Apply("", []byte(frame)); err != nil {
+			t.Fatalf("Apply(frame=%d) error = %v", index, err)
+		}
+	}
+
+	var reasoning inference.ReasoningContent
+	deltaCount := 0
+	for _, event := range events {
+		switch typed := event.(type) {
+		case inference.ReasoningDeltaEvent:
+			deltaCount++
+		case inference.ReasoningCompletedEvent:
+			reasoning = typed.Content()
+		}
+	}
+	if deltaCount != 2 ||
+		reasoning.Text() != "reason" ||
+		reasoning.Signature() != "signed" ||
+		!decoder.Terminal() {
+		t.Fatalf(
+			"delta_count=%d reasoning=%#v terminal=%t",
+			deltaCount,
+			reasoning,
+			decoder.Terminal(),
+		)
+	}
+}
+
 // TestResponseDecoderKeepsRedactedThinkingDistinct 验证 Claude 上游
 // redacted_thinking 不会被误标为 Responses encrypted_content。
 func TestResponseDecoderKeepsRedactedThinkingDistinct(t *testing.T) {

@@ -105,6 +105,8 @@ func runAccount(
 		return runAccountSetEnabled(ctx, target, arguments[0] == "enable", runtime)
 	case "models":
 		return runAccountModels(ctx, arguments[1:], runtime)
+	case "usage":
+		return runAccountUsage(ctx, arguments[1:], runtime)
 	default:
 		return fmt.Errorf("%w: 未知账号子命令 %s", errInvalidCommand, arguments[0])
 	}
@@ -120,6 +122,8 @@ func writeAccountUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "  aih account models list <account_ref|provider:id>   # 查看已物化账号模型")
 	_, _ = fmt.Fprintln(output, "  aih account models refresh <account_ref|provider:id> # 刷新账号模型目录")
 	_, _ = fmt.Fprintln(output, "  aih account models set-policy <target> <model> <policy> # 设置人工模型策略")
+	_, _ = fmt.Fprintln(output, "  aih account usage show <account_ref|provider:id>     # 查看最近额度快照")
+	_, _ = fmt.Fprintln(output, "  aih account usage refresh <account_ref|provider:id>  # 真实刷新账号额度")
 	_, _ = fmt.Fprintln(output, "  aih account import <codex|claude>   # 导入该 Provider 官方 CLI 当前登录态")
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "查看子命令说明:")
@@ -127,12 +131,13 @@ func writeAccountUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "  aih account show --help")
 	_, _ = fmt.Fprintln(output, "  aih account enable --help")
 	_, _ = fmt.Fprintln(output, "  aih account models --help")
+	_, _ = fmt.Fprintln(output, "  aih account usage --help")
 	_, _ = fmt.Fprintln(output, "  aih account import --help")
 }
 
 // accountUsageLine 供根帮助复用，保持两处命令描述一致。
 func accountUsageLine() string {
 	return strings.TrimSpace(
-		"aih account <list|show|enable|disable|models|import> [args...] # Go 账号管理",
+		"aih account <list|show|enable|disable|models|usage|import> [args...] # Go 账号管理",
 	)
 }

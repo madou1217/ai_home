@@ -18,10 +18,30 @@ func runAccountSetEnabled(
 	enabled bool,
 	runtime commandRuntime,
 ) error {
+	client, err := newAccountManagementClient(runtime)
+	if err != nil {
+		return err
+	}
+	accountRef, err := resolveManagementAccountRef(ctx, client, target)
+	if err != nil {
+		return fmt.Errorf("解析 Server 账号目标失败: %w", err)
+	}
+	result, err := client.SetEnabled(ctx, accountRef, enabled)
+	if err != nil {
+		return fmt.Errorf("更新 Server 账号状态失败: %w", err)
+	}
+	writeAccountStateResult(runtime.stdout, result)
+	return nil
+}
+
+// newAccountManagementClient 使用统一 Server 根地址和管理凭据创建出站适配器。
+func newAccountManagementClient(
+	runtime commandRuntime,
+) (*managementapi.Client, error) {
 	managementKey, found := runtime.lookupEnv("AIH_SERVER_MANAGEMENT_KEY")
 	if !found || strings.TrimSpace(managementKey) == "" {
-		return fmt.Errorf(
-			"%w: enable/disable 需要 AIH_SERVER_MANAGEMENT_KEY",
+		return nil, fmt.Errorf(
+			"%w: Go 账号管理命令需要 AIH_SERVER_MANAGEMENT_KEY",
 			errInvalidCommand,
 		)
 	}
@@ -37,18 +57,9 @@ func runAccountSetEnabled(
 		},
 	)
 	if err != nil {
-		return fmt.Errorf("初始化账号管理 API 失败: %w", err)
+		return nil, fmt.Errorf("初始化账号管理 API 失败: %w", err)
 	}
-	accountRef, err := resolveManagementAccountRef(ctx, client, target)
-	if err != nil {
-		return fmt.Errorf("解析 Server 账号目标失败: %w", err)
-	}
-	result, err := client.SetEnabled(ctx, accountRef, enabled)
-	if err != nil {
-		return fmt.Errorf("更新 Server 账号状态失败: %w", err)
-	}
-	writeAccountStateResult(runtime.stdout, result)
-	return nil
+	return client, nil
 }
 
 // resolveManagementAccountRef 保持 AccountRef 直达，数字别名只在目标 Server 解析。

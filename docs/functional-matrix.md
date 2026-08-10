@@ -126,6 +126,7 @@
 | ACC-045 | Go 单账号模型刷新 | `aih account models refresh <account_ref\|provider:id>` | 使用当前规范凭据读取完整 Provider 模型目录；成功后原子替换上游发现部分并保留人工策略，发现失败时保留旧快照 | 已实现（重构路径） | `application/accounts/model_management.go`、`cmd/aih/account_models.go` |
 | ACC-046 | Go 单模型人工策略 | `aih account models set-policy <target> <model_id> <policy>` | 精确设置 `inherit`、`force_enable` 或 `force_disable`，原子更新物化正排/倒排并返回完整快照；不访问 Provider | 已实现（重构路径） | `application/accounts/model_management.go`、`internal/host/aihaccount/account_models.go` |
 | ACC-047 | Go 账号启用/停用 | `aih account enable\|disable <account_ref\|provider:id>`、`PATCH /v1/management/accounts/{account_ref}` | 数字别名在目标 Server 通过唯一索引解析；启停事务、账号模型正排/倒排和 `/v1/models` 刷新在同一进程提交，不由独立 CLI 直写 SQLite | 已实现（重构路径） | `cmd/aih/account_state.go`、`internal/adapters/accounts/managementapi/client.go`、`internal/transport/http/accountsapi/account_alias.go` |
+| ACC-048 | Go 单账号额度查看/刷新 | `aih account usage show\|refresh <account_ref\|provider:id>`、`GET/POST /v1/management/accounts/{account_ref}/usage[/refresh]` | `show` 只读取 Go Server 的 last-known-good 快照；`refresh` 使用 Server 当前规范凭据真实访问 Provider 并持久化。CLI 不直读 SQLite、不输出凭据，百分比按整数基点精确展示 | 已实现（重构路径） | `cmd/aih/account_usage.go`、`internal/adapters/accounts/managementapi/usage.go`、`application/accountusage/service.go` |
 
 ## 4. 导入、导出与迁移
 

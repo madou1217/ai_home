@@ -197,7 +197,21 @@ func (client *Client) doAccountRequest(
 	method string,
 	requestURL string,
 	payload []byte,
-) (_ AccountSnapshot, resultErr error) {
+) (AccountSnapshot, error) {
+	body, err := client.doDocumentRequest(ctx, method, requestURL, payload)
+	if err != nil {
+		return AccountSnapshot{}, err
+	}
+	return decodeAccountSnapshot(body)
+}
+
+// doDocumentRequest 统一认证、响应上限和稳定远端错误合同。
+func (client *Client) doDocumentRequest(
+	ctx context.Context,
+	method string,
+	requestURL string,
+	payload []byte,
+) (_ []byte, resultErr error) {
 	request, err := http.NewRequestWithContext(
 		ctx,
 		method,
@@ -205,7 +219,7 @@ func (client *Client) doAccountRequest(
 		bytes.NewReader(payload),
 	)
 	if err != nil {
-		return AccountSnapshot{}, fmt.Errorf("创建账号管理请求失败: %w", err)
+		return nil, fmt.Errorf("创建账号管理请求失败: %w", err)
 	}
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Authorization", "Bearer "+client.managementKey)
@@ -214,25 +228,25 @@ func (client *Client) doAccountRequest(
 	}
 	response, err := client.httpClient.Do(request)
 	if err != nil {
-		return AccountSnapshot{}, fmt.Errorf("执行账号管理请求失败: %w", err)
+		return nil, fmt.Errorf("执行账号管理请求失败: %w", err)
 	}
 	if response == nil || response.Body == nil {
-		return AccountSnapshot{}, ErrInvalidResponse
+		return nil, ErrInvalidResponse
 	}
 	defer func() {
 		resultErr = errors.Join(resultErr, response.Body.Close())
 	}()
 	body, err := io.ReadAll(io.LimitReader(response.Body, maxResponseBytes+1))
 	if err != nil {
-		return AccountSnapshot{}, fmt.Errorf("读取账号管理响应失败: %w", err)
+		return nil, fmt.Errorf("读取账号管理响应失败: %w", err)
 	}
 	if len(body) > maxResponseBytes {
-		return AccountSnapshot{}, ErrInvalidResponse
+		return nil, ErrInvalidResponse
 	}
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return AccountSnapshot{}, newRemoteError(response.StatusCode, body)
+		return nil, newRemoteError(response.StatusCode, body)
 	}
-	return decodeAccountSnapshot(body)
+	return body, nil
 }
 
 // decodeAccountSnapshot 校验公开响应没有错账号、非法别名或非规范时间。

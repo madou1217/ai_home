@@ -15,6 +15,7 @@ import (
 	usageapp "github.com/madou1217/ai_home/application/accountusage"
 	"github.com/madou1217/ai_home/application/claudegateway"
 	"github.com/madou1217/ai_home/application/clauderelay"
+	"github.com/madou1217/ai_home/application/codexwebsocket"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/claudeoauth"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/codexoauth"
@@ -27,6 +28,7 @@ import (
 	claudemessages "github.com/madou1217/ai_home/internal/adapters/claude/messages"
 	"github.com/madou1217/ai_home/internal/adapters/claude/transportpolicy"
 	codexresponses "github.com/madou1217/ai_home/internal/adapters/codex/responses"
+	"github.com/madou1217/ai_home/internal/adapters/codex/responseswebsocket"
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 	"github.com/madou1217/ai_home/internal/host/inferenceruntime"
 	"github.com/madou1217/ai_home/internal/transport/http/accountauthapi"
@@ -34,6 +36,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/claudenativerelay"
 	"github.com/madou1217/ai_home/internal/transport/http/clauderelayleaseapi"
 	"github.com/madou1217/ai_home/internal/transport/http/clientauth"
+	"github.com/madou1217/ai_home/internal/transport/http/codexresponsesws"
 	"github.com/madou1217/ai_home/internal/transport/http/modelsapi"
 )
 
@@ -49,6 +52,7 @@ type serverHandlers struct {
 	accountAuth       http.Handler
 	models            http.Handler
 	inference         http.Handler
+	codexResponsesWS  http.Handler
 	claudeRelayLeases http.Handler
 	claudeNativeRelay http.Handler
 	catalogStatus     func() catalogReadiness
@@ -452,6 +456,48 @@ func newHandlers(
 			err,
 		)
 	}
+	webSocketDialer, err := responseswebsocket.NewDialer(&http.Client{
+		CheckRedirect: rejectOAuthRedirect,
+	})
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf(
+			"创建 Codex Responses WebSocket Dialer 失败: %w",
+			err,
+		)
+	}
+	webSocketSelector, err := codexwebsocket.NewSelector(
+		codexwebsocket.Dependencies{
+			Catalog:    catalog,
+			Routes:     inference.models,
+			Recruiter:  inference.recruiter,
+			Transports: webSocketDialer,
+		},
+	)
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf(
+			"创建 Codex Responses WebSocket 选择器失败: %w",
+			err,
+		)
+	}
+	webSocketHandler, err := codexresponsesws.NewHandler(
+		codexresponsesws.Dependencies{
+			Authorizer:     clientAuthorizer,
+			Selector:       webSocketSelector,
+			Upstream:       webSocketDialer,
+			Attempts:       accountRuntime,
+			ModelRefreshes: inference.modelRefreshes,
+			Clock:          time.Now,
+		},
+	)
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf(
+			"创建 Codex Responses WebSocket Handler 失败: %w",
+			err,
+		)
+	}
 	modelModalities, err := modelsdev.New()
 	if err != nil {
 		_ = inference.Close()
@@ -474,6 +520,7 @@ func newHandlers(
 		accountAuth:       accountAuthHandler,
 		models:            modelsHandler,
 		inference:         inference.handler,
+		codexResponsesWS:  webSocketHandler,
 		claudeRelayLeases: relayLeaseHandler,
 		claudeNativeRelay: nativeRelayHandler,
 		catalogStatus: func() catalogReadiness {
@@ -485,7 +532,7 @@ func newHandlers(
 				routeCount: status.RouteCount,
 			}
 		},
-	}, []io.Closer{inference, usage}, nil
+	}, []io.Closer{webSocketHandler, inference, usage}, nil
 }
 
 // newClaudeUpstreamDecodeErrorObserver 只记录上游事件类型、字段形状和状态机位置。

@@ -180,6 +180,54 @@ func TestObserveCodexSSEClassifiesMalformedExplicitFailure(t *testing.T) {
 	}
 }
 
+// TestObserveWebSocketUsesWrappedStatusAndRetryAfter 验证 WS 错误帧中的状态与
+// headers 参与低敏分类，而不是把所有 error 都猜成同一种失败。
+func TestObserveWebSocketUsesWrappedStatusAndRetryAfter(t *testing.T) {
+	t.Parallel()
+
+	classification, observed, err := ObserveWebSocket(sharedfailure.SSEInput{
+		EventType: "error",
+		Data: strings.NewReader(`{
+			"type":"error",
+			"status":429,
+			"error":{"code":"rate_limit_exceeded","message":"sensitive"},
+			"headers":{"retry-after":"7"}
+		}`),
+		ObservedAt: time.Date(2026, 8, 10, 8, 0, 0, 0, time.UTC),
+	})
+	if err != nil || !observed {
+		t.Fatalf("ObserveWebSocket() observed=%v error=%v", observed, err)
+	}
+	if classification.Kind() != runtimecore.FailureRateLimited ||
+		classification.RetryAfter() != 7*time.Second {
+		t.Fatalf("classification = %#v", classification)
+	}
+}
+
+// TestObserveWebSocketConnectionStateErrorsDoNotBlockAccount 验证连接寿命和
+// previous_response_id 错误不会污染账号与模型运行态。
+func TestObserveWebSocketConnectionStateErrorsDoNotBlockAccount(t *testing.T) {
+	t.Parallel()
+
+	for _, code := range []string{
+		"websocket_connection_limit_reached",
+		"previous_response_not_found",
+	} {
+		classification, observed, err := ObserveWebSocket(sharedfailure.SSEInput{
+			EventType: "error",
+			Data: strings.NewReader(`{"type":"error","status":429,"error":{"code":"` +
+				code + `"}}`),
+			ObservedAt: time.Date(2026, 8, 10, 8, 0, 0, 0, time.UTC),
+		})
+		if err != nil || !observed {
+			t.Fatalf("ObserveWebSocket(%q) observed=%v error=%v", code, observed, err)
+		}
+		if classification.Kind() != runtimecore.FailureUnclassified {
+			t.Fatalf("ObserveWebSocket(%q) = %#v", code, classification)
+		}
+	}
+}
+
 // TestObserveCodexHTTPRejectsSuccessWithoutFailure 验证成功响应不能伪造失败状态。
 func TestObserveCodexHTTPRejectsSuccessWithoutFailure(t *testing.T) {
 	t.Parallel()

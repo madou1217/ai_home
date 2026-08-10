@@ -10,6 +10,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/claudenativerelay"
 	"github.com/madou1217/ai_home/internal/transport/http/clauderelayleaseapi"
 	"github.com/madou1217/ai_home/internal/transport/http/clientpropsapi"
+	"github.com/madou1217/ai_home/internal/transport/http/codexresponsesws"
 	"github.com/madou1217/ai_home/internal/transport/http/modelsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/openaichatcompletionsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/openairesponsesapi"
@@ -71,7 +72,10 @@ func newRouter(handlers serverHandlers) http.Handler {
 		clauderelayleaseapi.Path,
 		handlers.claudeRelayLeases,
 	)
-	mux.Handle(openairesponsesapi.Path, handlers.inference)
+	mux.Handle(openairesponsesapi.Path, responsesDispatcher{
+		canonical: handlers.inference,
+		websocket: handlers.codexResponsesWS,
+	})
 	mux.Handle(openaichatcompletionsapi.Path, handlers.inference)
 	// /v1/messages 统一进入透传入口：能无损透传的走字节转发，其余（跨协议、
 	// 非 claude 模型、非官方端点凭据、不满足透传合同）由它自行交回 Canonical。
@@ -150,6 +154,7 @@ func handleReadiness(
 			"account_auth_jobs_v1",
 			"local_model_catalog_v1",
 			"canonical_inference_v1",
+			"codex_responses_websocket_v1",
 			"claude_relay_leases_v1",
 			"claude_native_relay_v1",
 		},
@@ -158,6 +163,33 @@ func handleReadiness(
 		ModelCount:            status.modelCount,
 		RouteCount:            status.routeCount,
 	})
+}
+
+// responsesDispatcher 让同一个标准路径按 HTTP 或 WebSocket 传输分流。
+//
+// 普通 POST 继续进入 Canonical；只有明确的 RFC 6455 Upgrade 才进入原生 WS。
+type responsesDispatcher struct {
+	canonical http.Handler
+	websocket http.Handler
+}
+
+func (dispatcher responsesDispatcher) ServeHTTP(
+	response http.ResponseWriter,
+	request *http.Request,
+) {
+	if codexresponsesws.IsUpgradeRequest(request) {
+		if dispatcher.websocket == nil {
+			handleRouteNotFound(response, request)
+			return
+		}
+		dispatcher.websocket.ServeHTTP(response, request)
+		return
+	}
+	if dispatcher.canonical == nil {
+		handleRouteNotFound(response, request)
+		return
+	}
+	dispatcher.canonical.ServeHTTP(response, request)
 }
 
 // handleRouteNotFound 返回 JSON 404，避免标准库默认纯文本泄漏合同差异。

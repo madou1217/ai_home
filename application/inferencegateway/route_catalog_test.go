@@ -46,6 +46,68 @@ func TestRouteCatalogOrdersExactAndWildcardCandidates(t *testing.T) {
 	assertRouteOrder(t, plan.Candidates(), expected)
 }
 
+// TestRouteCatalogResolvesExactNativeProtocolWithoutCanonicalCapabilities 验证原生
+// 协议查询只选择目标 Provider/协议，同时沿用作用域和优先级规则。
+func TestRouteCatalogResolvesExactNativeProtocolWithoutCanonicalCapabilities(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	textOnly := testRouteCapabilities(t, inference.CapabilityTextGeneration)
+	claudeRoute := testRoute(
+		t,
+		inference.ProviderClaude,
+		"claude-opus-5",
+		textOnly,
+	)
+	codexRoute := testRoute(
+		t,
+		inference.ProviderCodex,
+		"gpt-5.6-sol",
+		textOnly,
+	)
+	catalog := testRouteCatalog(
+		t,
+		testRouteRule(
+			t,
+			"shared-model",
+			inferencegateway.RouteScopeAll,
+			claudeRoute,
+			100,
+		),
+		testRouteRule(
+			t,
+			"shared-model",
+			inferencegateway.RouteScopeCodex,
+			codexRoute,
+			10,
+		),
+	)
+
+	resolved, err := catalog.ResolveProtocolRoute(
+		context.Background(),
+		inference.ClientProtocolOpenAIResponses,
+		"shared-model",
+		inference.ProviderCodex,
+		inference.ProtocolCodexResponses,
+	)
+	if err != nil {
+		t.Fatalf("ResolveProtocolRoute() error = %v", err)
+	}
+	if resolved != codexRoute {
+		t.Fatalf("ResolveProtocolRoute() = %#v, want %#v", resolved, codexRoute)
+	}
+	if _, err := catalog.ResolveProtocolRoute(
+		context.Background(),
+		inference.ClientProtocolAnthropicMessages,
+		"shared-model",
+		inference.ProviderCodex,
+		inference.ProtocolCodexResponses,
+	); !errors.Is(err, inferencegateway.ErrRouteNotFound) {
+		t.Fatalf("ResolveProtocolRoute(wrong scope) error = %v", err)
+	}
+}
+
 // TestRouteCatalogKeepsStableOrderAndDeduplicatesTargets 验证同 priority 保持声明
 // 顺序，并且重叠规则不会让同一真实模型被重复执行。
 func TestRouteCatalogKeepsStableOrderAndDeduplicatesTargets(t *testing.T) {

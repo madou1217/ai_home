@@ -1,7 +1,7 @@
 # Go / Node 网关功能矩阵
 
 > 目的：把「Go 什么时候能取代 Node 9527」从感觉变成账。
-> 初次采集日期：2026-08-08；当前复核日期：2026-08-09。Node 侧 106 条路径 /
+> 初次采集日期：2026-08-08；当前复核日期：2026-08-10。Node 侧 106 条路径 /
 > 35 组，Go 侧按业务入口归并为 14 条。
 > 采集方式：只读扫描 `lib/server/{server,v1-router,web-ui-router,webui-*-routes}.js`
 > 与 `internal/host/aihserver/router.go` 的路径字面量，未启动服务。
@@ -26,7 +26,7 @@ Go 的必做清单是把重构范围放大了一个数量级。
 
 | Node 路径 | Go 现状 | 说明 |
 | --- | --- | --- |
-| `/v1/responses` | ✅ 已有 | OpenAI Responses 入口 |
+| `/v1/responses` | ✅ 已有 | OpenAI Responses HTTP/SSE + Codex Responses WebSocket；WS 在首帧读取 model 后征召账号，保持原生文本帧 |
 | `/v1/chat/completions` | ✅ 已有 | OpenAI Chat 入口 |
 | `/v1/messages` | ✅ 已有 | Canonical + Native Relay 双路分发 |
 | `/v1/models` | ✅ 已有 | 模型目录 |

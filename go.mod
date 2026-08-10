@@ -2,7 +2,10 @@ module github.com/madou1217/ai_home
 
 go 1.26
 
-require modernc.org/sqlite v1.42.2
+require (
+	github.com/coder/websocket v1.8.15
+	modernc.org/sqlite v1.42.2
+)
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect

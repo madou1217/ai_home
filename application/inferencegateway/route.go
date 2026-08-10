@@ -137,6 +137,20 @@ type RouteResolver interface {
 	) (RoutePlan, error)
 }
 
+// ProtocolRouteResolver 为保持原生线协议的传输查询单一精确路由。
+//
+// 该端口只做模型别名和作用域解析，不构造虚假的 Canonical Request，也不按
+// Canonical 能力位过滤原生协议字段。
+type ProtocolRouteResolver interface {
+	ResolveProtocolRoute(
+		ctx context.Context,
+		clientProtocol inference.ClientProtocolID,
+		model string,
+		providerID inference.ProviderID,
+		protocolID inference.ProtocolID,
+	) (Route, error)
+}
+
 // validRouteCandidates 验证候选上限、路由不变量和真实目标唯一性。
 func validRouteCandidates(routes []Route) bool {
 	if len(routes) == 0 || len(routes) > MaxRouteCandidates {

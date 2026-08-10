@@ -122,6 +122,7 @@ type AtomicCatalog struct {
 
 // 编译期确认同一生产快照同时满足推理和 /v1/models 读取端口。
 var _ inferencegateway.RouteResolver = (*AtomicCatalog)(nil)
+var _ inferencegateway.ProtocolRouteResolver = (*AtomicCatalog)(nil)
 var _ accountapp.RoutableModelReader = (*AtomicCatalog)(nil)
 
 // NewAtomicCatalog 创建尚未发布快照的失败关闭目录。
@@ -182,6 +183,30 @@ func (catalog *AtomicCatalog) Resolve(
 		return inferencegateway.RoutePlan{}, ErrRouteCatalogUnavailable
 	}
 	return snapshot.Resolve(ctx, request)
+}
+
+// ResolveProtocolRoute 从同一个原子快照解析原生线协议路由。
+func (catalog *AtomicCatalog) ResolveProtocolRoute(
+	ctx context.Context,
+	clientProtocol inference.ClientProtocolID,
+	model string,
+	providerID inference.ProviderID,
+	protocolID inference.ProtocolID,
+) (inferencegateway.Route, error) {
+	if catalog == nil {
+		return inferencegateway.Route{}, ErrRouteCatalogUnavailable
+	}
+	snapshot := catalog.current.Load()
+	if snapshot == nil || snapshot.routes == nil || !snapshot.isValid() {
+		return inferencegateway.Route{}, ErrRouteCatalogUnavailable
+	}
+	return snapshot.routes.ResolveProtocolRoute(
+		ctx,
+		clientProtocol,
+		model,
+		providerID,
+		protocolID,
+	)
 }
 
 // ListRoutableModels 从当前发布快照返回模型副本。

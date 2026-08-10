@@ -48,14 +48,15 @@ func TestServerMountsSystemAndAccountRoutes(t *testing.T) {
 	}
 	decodeJSON(t, ready.body, &readiness)
 	if !readiness.Ready ||
-		len(readiness.Capabilities) != 7 ||
+		len(readiness.Capabilities) != 8 ||
 		readiness.Capabilities[0] != "account_management_v1" ||
 		readiness.Capabilities[1] != "account_usage_v1" ||
 		readiness.Capabilities[2] != "account_auth_jobs_v1" ||
 		readiness.Capabilities[3] != "local_model_catalog_v1" ||
 		readiness.Capabilities[4] != "canonical_inference_v1" ||
-		readiness.Capabilities[5] != "claude_relay_leases_v1" ||
-		readiness.Capabilities[6] != "claude_native_relay_v1" {
+		readiness.Capabilities[5] != "codex_responses_websocket_v1" ||
+		readiness.Capabilities[6] != "claude_relay_leases_v1" ||
+		readiness.Capabilities[7] != "claude_native_relay_v1" {
 		t.Fatalf("readyz response = %#v", readiness)
 	}
 

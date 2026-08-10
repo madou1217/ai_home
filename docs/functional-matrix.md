@@ -212,6 +212,7 @@ Go 重构路径实时核对的外部合同基准为 sub2api
 | GW-002 | `GET /v1/models/:id` | 查询单模型可见性/描述 | 稳定 | `getModelIdFromModelsPath` |
 | GW-003 | `POST /v1/chat/completions` | OpenAI Chat Completions，支持 stream/tool/usage 适配 | 稳定 | `v1-router.js`、`protocol-openai-*` |
 | GW-004 | `POST /v1/responses` | OpenAI Responses/Codex adapter 路径，支持 stream 与 canonical bridge | 稳定/受限 | `v1-router.js`、`codex-adapter.js` |
+| GW-004-WS | `GET /v1/responses` + WebSocket Upgrade | Go Gateway 原生 Codex Responses-over-WebSocket：首帧按真实模型公平征召账号，单连接固定 `(accountRef, model)`，文本帧双向原样转发，支持同连接 `previous_response_id` 双轮、`generate:false` 预热、permessage-deflate、16 MiB 消息上限、终态/cooldown 旁路观察和 Server.Close 清理；模型别名需要改写时明确拒绝并要求使用精确模型 | 已实现（重构路径） | `application/codexwebsocket`、`internal/adapters/codex/responseswebsocket`、`internal/transport/http/codexresponsesws` |
 | GW-005 | `POST /v1/messages` | Anthropic Messages，按 provider 能力直通或跨协议适配 | 稳定 | `protocol-anthropic-*` |
 | GW-006 | `POST /v1/messages/count_tokens` | 本地 token count 响应，不发起上游推理 | 稳定 | `detectClientProtocol`、`createAnthropicTokenCountResponse` |
 | GW-007 | `/v1beta/models/*:generateContent` | Gemini generateContent | 稳定/受限 | `protocol-gemini-*`、`v1-router.js` |

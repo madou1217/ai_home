@@ -4,6 +4,7 @@ import (
 	"context"
 	"sort"
 
+	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	"github.com/madou1217/ai_home/core/inference"
 )
 
@@ -15,6 +16,7 @@ type RouteCatalog struct {
 
 // 编译期确认生产目录完整实现路由解析端口。
 var _ RouteResolver = (*RouteCatalog)(nil)
+var _ ProtocolRouteResolver = (*RouteCatalog)(nil)
 
 // NewRouteCatalog 构建只读索引，并拒绝空、无界或重复规则集合。
 func NewRouteCatalog(rules ...RouteRule) (*RouteCatalog, error) {
@@ -61,6 +63,74 @@ func (catalog *RouteCatalog) Resolve(
 		)
 	}
 	return collector.plan()
+}
+
+// ResolveProtocolRoute 为原生同协议传输返回第一个精确 Provider/协议路由。
+//
+// 查询沿用普通目录的精确匹配、最长前缀、优先级和客户端作用域顺序；区别是
+// 原生传输保留 Provider 全量字段，因此不使用 Canonical 能力集合做筛选。
+func (catalog *RouteCatalog) ResolveProtocolRoute(
+	ctx context.Context,
+	clientProtocol inference.ClientProtocolID,
+	model string,
+	providerID inference.ProviderID,
+	protocolID inference.ProtocolID,
+) (Route, error) {
+	modelID, modelErr := runtimecore.NewModelID(model)
+	if catalog == nil ||
+		len(catalog.exact)+len(catalog.wildcards) == 0 ||
+		ctx == nil ||
+		!clientProtocol.IsValid() ||
+		modelErr != nil ||
+		modelID.String() != model ||
+		!providerID.IsValid() ||
+		!protocolID.IsValid() ||
+		!providerOwnsProtocol(providerID, protocolID) {
+		return Route{}, ErrInvalidRouteResolution
+	}
+	if err := ctx.Err(); err != nil {
+		return Route{}, err
+	}
+	if route, found := resolveProtocolRules(
+		catalog.exact[model],
+		model,
+		clientProtocol,
+		providerID,
+		protocolID,
+	); found {
+		return route, nil
+	}
+	if route, found := resolveProtocolRules(
+		catalog.wildcards,
+		model,
+		clientProtocol,
+		providerID,
+		protocolID,
+	); found {
+		return route, nil
+	}
+	return Route{}, ErrRouteNotFound
+}
+
+// resolveProtocolRules 在构造期排好序的规则中完成无分配精确传输查询。
+func resolveProtocolRules(
+	rules []RouteRule,
+	model string,
+	clientProtocol inference.ClientProtocolID,
+	providerID inference.ProviderID,
+	protocolID inference.ProtocolID,
+) (Route, bool) {
+	for _, rule := range rules {
+		if !rule.matches(model, clientProtocol) {
+			continue
+		}
+		route := rule.Route()
+		if route.ProviderID() == providerID &&
+			route.ProtocolID() == protocolID {
+			return route, true
+		}
+	}
+	return Route{}, false
 }
 
 // routeRuleIdentity 标识不能在目录中重复声明的匹配目标。

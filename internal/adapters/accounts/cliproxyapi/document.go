@@ -15,12 +15,15 @@ type codexAuthFile struct {
 
 // claudeAuthFile 对齐 CLIProxyAPI ClaudeTokenStorage 的单 auth 文件字段。
 type claudeAuthFile struct {
-	IDToken      string `json:"id_token"`
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
-	LastRefresh  string `json:"last_refresh"`
-	Email        string `json:"email"`
-	Type         string `json:"type"`
-	Expired      string `json:"expired"`
-	Disabled     bool   `json:"disabled"`
+	IDToken          string `json:"id_token"`
+	AccessToken      string `json:"access_token"`
+	RefreshToken     string `json:"refresh_token"`
+	LastRefresh      string `json:"last_refresh"`
+	Email            string `json:"email"`
+	AccountUUID      string `json:"account_uuid,omitempty"`
+	OrganizationUUID string `json:"organization_uuid,omitempty"`
+	OrganizationName string `json:"organization_name,omitempty"`
+	Type             string `json:"type"`
+	Expired          string `json:"expired"`
+	Disabled         bool   `json:"disabled"`
 }

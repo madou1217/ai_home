@@ -11,6 +11,10 @@ aih <codex|claude> relay [account_id] [provider_args...]        # Gateway 同 Pr
 aih <client> relay <provider> <account_id> [provider_args...]   # Gateway 跨 Provider 固定账号
 aih <codex|claude> <account_id> [provider_args...]              # Native Direct
 aih account import <codex|claude>                               # 导入官方 CLI 登录态
+aih account transfer export <target> --format sub2api --output <file>
+aih account transfer import --format sub2api --input <file>
+aih account transfer export <target> --format cliproxyapi --output <file>
+aih account credential update <target> --from-env
 ```
 
 约束：AIH 模式与账号 token 必须放在最前面，其后的参数原样交给官方 CLI，AIH 不解释、
@@ -101,7 +105,48 @@ AIH_SERVER_CLIENT_KEY=<同上> \
 go run ./cmd/aih codex relay claude <别名> --model <真实模型>
 ```
 
-## 5. 环境变量
+## 5. 单账号迁移
+
+sub2api 双向迁移：
+
+```text
+aih account transfer export claude:9 --format sub2api --output ./claude-9.json
+aih account transfer import --format sub2api --input ./claude-9.json
+```
+
+CLIProxyAPI OAuth auth-file 导出：
+
+```text
+aih account transfer export claude:9 --format cliproxyapi --output ./claude-9-cpa.json
+```
+
+三条命令只访问 `AIH_SERVER_BASE_URL` 指定的 Management API，不打开本地 SQLite。
+导出必须使用显式文件，独占创建为 `0600`，已有文件和 `-` 均拒绝；导入只接受一个
+最大 `1 MiB` 的显式 sub2api JSON 文件。终端仅显示 Provider、数字别名、AccountRef、
+格式和文件路径，不显示凭据正文。
+
+sub2api 不携带来源机器的 AccountRef 或数字别名，目标 Server 根据 Provider 稳定身份
+注册并重新分配别名。CLIProxyAPI 当前只导出官方单 OAuth auth-file：API Key 属于 CPA
+配置，Claude Auth Token 不是 OAuth auth-file，二者都不会被伪装导出。
+
+## 6. 静态凭据更新
+
+```text
+# Codex API Key
+OPENAI_API_KEY=<new-key> OPENAI_BASE_URL=https://api.openai.com/v1 \
+  aih account credential update codex:1 --from-env
+
+# Claude API Key 或 Auth Token，必须二选一
+ANTHROPIC_AUTH_TOKEN=<new-token> ANTHROPIC_BASE_URL=https://api.anthropic.com \
+  aih account credential update claude:9 --from-env
+```
+
+CLI 先通过目标 Server 把 `provider:id` 解析为 AccountRef，再把官方环境变量映射成
+`PUT /v1/management/accounts/{account_ref}/credential`。Server 使用新凭据刷新模型后才
+提交轮换；成功时保持账号身份、数字别名、启停和默认关系，并清理旧 usage、runtime
+与 cooldown 派生状态。OAuth 账号必须走重新授权，不允许用本命令伪装成静态账号。
+
+## 7. 环境变量
 
 | 变量 | 作用 |
 | --- | --- |
@@ -112,3 +157,5 @@ go run ./cmd/aih codex relay claude <别名> --model <真实模型>
 | `AIH_SERVER_HOST` / `AIH_SERVER_PORT` | Server 监听地址与端口，只允许 loopback |
 | `AIH_CODEX_BINARY` / `AIH_CLAUDE_BINARY` | 可选官方 CLI 路径 |
 | `CODEX_HOME` / `CLAUDE_CONFIG_DIR` | 官方 CLI 自己的配置目录，AIH 原样继承 |
+| `OPENAI_API_KEY` / `OPENAI_BASE_URL` | Codex 静态凭据更新输入；Base URL 可选 |
+| `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_BASE_URL` | Claude 静态凭据更新输入；Key 与 Token 必须二选一 |

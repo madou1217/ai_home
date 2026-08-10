@@ -7,7 +7,6 @@ import (
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
-	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/inference"
 )
 
@@ -39,23 +38,20 @@ func newInvocation(
 	request inference.Request,
 	route Route,
 	account accountapp.RoutingAccount,
-	credential accountapp.Credential,
+	binding accountapp.CredentialBinding,
 ) (Invocation, error) {
 	if !route.IsValid() ||
 		account.ProviderID() != string(route.ProviderID()) ||
-		credential == nil ||
-		credential.ProviderID() != account.ProviderID() {
-		return Invocation{}, ErrInvalidInvocation
-	}
-	accountRef, err := accountcore.DeriveAccountRef(credential)
-	if err != nil || accountRef != account.Ref() {
+		!binding.IsValid() ||
+		binding.AccountRef() != account.Ref() ||
+		binding.ProviderID() != account.ProviderID() {
 		return Invocation{}, ErrInvalidInvocation
 	}
 	return Invocation{
 		request:    request,
 		route:      route,
 		account:    account,
-		credential: credential,
+		credential: binding.Credential(),
 	}, nil
 }
 

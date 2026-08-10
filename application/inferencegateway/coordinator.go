@@ -231,7 +231,7 @@ func (coordinator *Coordinator) executeRoute(
 			request,
 			route,
 			recruited.Account(),
-			recruited.Credential(),
+			recruited.Binding(),
 		)
 		if err != nil {
 			return routeExecution{pendingFailure: pendingFailure}, err

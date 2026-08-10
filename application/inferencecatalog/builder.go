@@ -20,8 +20,6 @@ var (
 	ErrInvalidBuilder = errors.New("生产路由目录 Builder 配置无效")
 	// ErrInvalidModelSnapshot 表示本地模型快照无效、重复或未按合同排序。
 	ErrInvalidModelSnapshot = errors.New("生产路由模型快照无效")
-	// ErrAmbiguousModelRoute 表示同一外部模型名指向多个 Provider 且没有显式策略。
-	ErrAmbiguousModelRoute = errors.New("生产路由模型存在跨 Provider 歧义")
 	// ErrProviderRouteFactoryNotFound 表示本地模型所属 Provider 没有路由策略。
 	ErrProviderRouteFactoryNotFound = errors.New("Provider 路由 Factory 不存在")
 	// ErrInvalidProviderRoute 表示 Factory 返回了不属于当前模型的路由。
@@ -89,6 +87,7 @@ func (builder *Builder) Build(ctx context.Context) (*Snapshot, error) {
 	if err := validateModelSnapshot(models); err != nil {
 		return nil, err
 	}
+	models = unambiguousModels(models)
 	if len(models) == 0 {
 		return newSnapshot(nil, nil, 0), nil
 	}
@@ -146,7 +145,7 @@ func (builder *Builder) buildRule(
 	return rule, nil
 }
 
-// validateModelSnapshot 确保模型按 model/provider 排序且不会隐式跨 Provider fallback。
+// validateModelSnapshot 确保模型按 model/provider 排序且同一 Provider 不重复。
 func validateModelSnapshot(models []accountapp.RoutableModel) error {
 	for index, model := range models {
 		if !model.IsValid() {
@@ -163,9 +162,27 @@ func validateModelSnapshot(models []accountapp.RoutableModel) error {
 				model.ProviderID() <= previous.ProviderID()) {
 			return ErrInvalidModelSnapshot
 		}
-		if currentModelID == previousModelID {
-			return ErrAmbiguousModelRoute
-		}
 	}
 	return nil
+}
+
+// unambiguousModels 在线性有序快照中隔离同名跨 Provider 关系。
+//
+// 没有显式路由策略时不能猜测 Provider，但一个歧义模型也不应阻断其他独立模型。
+func unambiguousModels(
+	models []accountapp.RoutableModel,
+) []accountapp.RoutableModel {
+	filtered := make([]accountapp.RoutableModel, 0, len(models))
+	for start := 0; start < len(models); {
+		end := start + 1
+		modelID := models[start].ModelID()
+		for end < len(models) && models[end].ModelID() == modelID {
+			end++
+		}
+		if end == start+1 {
+			filtered = append(filtered, models[start])
+		}
+		start = end
+	}
+	return filtered
 }

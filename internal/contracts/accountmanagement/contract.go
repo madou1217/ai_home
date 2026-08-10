@@ -8,6 +8,14 @@ const (
 	AccountAliasesPath = "/v1/management/account-aliases"
 	// ProviderDefaultsPath 是 Provider 默认启动账号关系的规范集合路径。
 	ProviderDefaultsPath = "/v1/management/account-defaults"
+	// Sub2APIImportsPath 是单账号 sub2api-data 文档导入资源的规范路径。
+	Sub2APIImportsPath = "/v1/management/account-imports/sub2api"
+	// AccountCredentialSuffix 是账号成员下静态凭据完整替换资源的后缀。
+	AccountCredentialSuffix = "/credential"
+	// AccountSub2APIExportSuffix 是账号成员下 sub2api-data 导出资源的后缀。
+	AccountSub2APIExportSuffix = "/export"
+	// AccountCLIProxyAPIExportSuffix 是账号成员下 CLIProxyAPI auth-file 导出资源的后缀。
+	AccountCLIProxyAPIExportSuffix = "/export/cliproxyapi"
 	// AccountUsageSuffix 是账号成员下最近一次成功额度快照的资源后缀。
 	AccountUsageSuffix = "/usage"
 	// AccountUsageRefreshSuffix 是显式刷新账号额度快照的动作资源后缀。

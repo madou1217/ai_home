@@ -65,6 +65,9 @@ func TestExporterEncodesCurrentCLIProxyAPIAuthFiles(t *testing.T) {
 				"refresh_token":"synthetic-cpa-claude-refresh",
 				"last_refresh":"",
 				"email":"cpa-claude@example.invalid",
+				"account_uuid":"123e4567-e89b-12d3-a456-426614174999",
+				"organization_uuid":"223e4567-e89b-12d3-a456-426614174999",
+				"organization_name":"CPA Claude Org",
 				"type":"claude",
 				"expired":"2026-08-02T01:02:03Z",
 				"disabled":true
@@ -275,9 +278,11 @@ func newClaudeOAuth(t *testing.T) (*claude.OAuthAuth, claude.AccountProfile) {
 		t.Fatalf("claude.NewOAuthAuth() error = %v", err)
 	}
 	oauthProfile, err := claude.NewOAuthProfile(claude.OAuthProfileInput{
-		AccountUUID: accountUUID,
-		Email:       "cpa-claude@example.invalid",
-		DisplayName: "CPA Claude",
+		AccountUUID:      accountUUID,
+		Email:            "cpa-claude@example.invalid",
+		OrganizationUUID: "223e4567-e89b-12d3-a456-426614174999",
+		OrganizationName: "CPA Claude Org",
+		DisplayName:      "CPA Claude",
 	})
 	if err != nil {
 		t.Fatalf("claude.NewOAuthProfile() error = %v", err)
@@ -352,7 +357,6 @@ func assertNoPrivateFields(t *testing.T, document []byte) {
 		"models",
 		"usage",
 		"runtime",
-		"account_uuid",
 		"scopes",
 	} {
 		if strings.Contains(string(document), `"`+field+`"`) {

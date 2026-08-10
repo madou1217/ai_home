@@ -129,6 +129,7 @@
 | ACC-048 | Go 单账号额度查看/刷新 | `aih account usage show\|refresh <account_ref\|provider:id>`、`GET/POST /v1/management/accounts/{account_ref}/usage[/refresh]` | `show` 只读取 Go Server 的 last-known-good 快照；`refresh` 使用 Server 当前规范凭据真实访问 Provider 并持久化。CLI 不直读 SQLite、不输出凭据，百分比按整数基点精确展示 | 已实现（重构路径） | `cmd/aih/account_usage.go`、`internal/adapters/accounts/managementapi/usage.go`、`application/accountusage/service.go` |
 | ACC-049 | Go 单账号删除 | `aih account delete <account_ref\|provider:id> --yes`、`DELETE /v1/management/accounts/{account_ref}` | 必须显式 `--yes`；数字别名在目标 Server 解析为稳定 `AccountRef`。Server 级联删除凭据、资料、模型、usage、默认关系，并立即清理额度任务、运行状态和路由候选；CLI 不直写 SQLite、不访问 Provider | 已实现（重构路径） | `cmd/aih/account_delete.go`、`internal/adapters/accounts/managementapi/client.go`、`application/accounts/deletion.go` |
 | ACC-050 | Go Provider 默认账号管理 | `aih account default show\|set\|clear ...`、`GET/PUT/DELETE /v1/management/account-defaults/{provider}` | 数字别名在目标 Server 解析；只允许 Codex/Claude 已启用且有凭据的同 Provider 账号。关系跨重启持久化，clear 幂等且不影响账号模型、usage 或 Gateway 公平征召 | 已实现（重构路径） | `cmd/aih/account_default.go`、`internal/adapters/accounts/managementapi/defaults.go`、`application/accounts/provider_defaults.go` |
+| ACC-051 | Go 静态凭据更新 CLI | `aih account credential update <account_ref\|provider:id> --from-env` | CLI 只从 Codex/Claude 官方环境变量读取新 Key/Token，经目标 Server 原地轮换；不直写 SQLite、不回显凭据。保持 AccountRef、数字别名、启停和默认关系，刷新模型并清理旧 usage/runtime/cooldown 派生状态；OAuth 账号明确拒绝 | 已实现（重构路径） | `cmd/aih/account_credential.go`、`internal/adapters/accounts/managementapi/transfer.go`、`application/accounts/static_credential_rotation.go` |
 
 ## 4. 导入、导出与迁移
 
@@ -159,13 +160,18 @@
 | XFER-023 | Go 单账号 sub2api 导出 | `GET /v1/management/accounts/{account_ref}/export` | 只导出 Codex/Claude 当前账号凭据和可选公开资料；不含 `version`、本地 ID、模型、usage 或运行态 | 已实现（重构路径） | `application/accounts/export.go`、`internal/adapters/accounts/sub2api/`、`internal/transport/http/accountsapi/handler.go` |
 | XFER-024 | Go 单账号 sub2api 导入 | `POST /v1/management/account-imports/sub2api` | 直接接收一个 `sub2api-data` 文档；只允许 Codex/Claude，不接受批量、代理、格式版本或本地身份，并复用统一原子注册与模型维护链 | 已实现（重构路径） | `internal/adapters/accounts/sub2api/decoder.go`、`internal/transport/http/accountsapi/sub2api_import.go` |
 | XFER-025 | Go 单账号 CLIProxyAPI auth 导出 | `GET /v1/management/accounts/{account_ref}/export/cliproxyapi` | 直接输出可放入 CPA `auth-dir` 的 Codex/Claude 单 OAuth JSON；API Key 属于 CPA 配置而非 auth 文件，Claude setup-token/Auth Token 也不伪装成该格式 | 已实现（重构路径） | `internal/adapters/accounts/cliproxyapi/`、`internal/transport/http/accountsapi/handler.go` |
+| XFER-026 | Go CLI 单账号 sub2api 导出 | `aih account transfer export <target> --format sub2api --output <file>` | 账号目标在目标 Server 解析；必须显式输出文件，使用 `O_EXCL + 0600`，不覆盖、不走 stdout、不打印凭据 | 已实现（重构路径） | `cmd/aih/account_transfer.go`、`cmd/aih/account_transfer_file.go`、`internal/adapters/accounts/managementapi/transfer.go` |
+| XFER-027 | Go CLI 单账号 sub2api 导入 | `aih account transfer import --format sub2api --input <file>` | 只接受一个最大 `1 MiB` 的显式 JSON 文件并提交目标 Server；不接受 stdin、批量 envelope 或 AIH 私有格式 | 已实现（重构路径） | `cmd/aih/account_transfer.go`、`cmd/aih/account_transfer_options.go`、`internal/adapters/accounts/managementapi/transfer.go` |
+| XFER-028 | Go CLI 单账号 CPA auth-file 导出 | `aih account transfer export <target> --format cliproxyapi --output <file>` | 只导出官方单 OAuth auth-file；与 sub2api 共用安全文件写入策略，不制造 CPA 批量 envelope 或有损导入 | 已实现（重构路径） | `cmd/aih/account_transfer.go`、`internal/adapters/accounts/cliproxyapi/` |
 
 Go 重构路径实时核对的外部合同基准为 sub2api
-`5a6143097db142b72a6fc848c214e97214470bdd` 与 CLIProxyAPI
-`d9460a8df6c15175342ede3dc5c423eb2df11f58`。CPA 官方交换单位是一个
+`10a4c6e3ad319587e817109c071259269855ec30` 与 CLIProxyAPI
+`ecc9aa72b32f34b680d03b0724b531a21ae74472`（`v7.2.127`）。CPA 官方交换单位是一个
 `auth-dir` JSON 文件而非批量 envelope。当前只暴露无损的 CPA OAuth 导出；Codex
-文件可从 ID Token 恢复稳定身份，但 Claude 官方文件不保存 AIH 领域要求的
-`account_uuid/scopes`，因此尚未提供会丢失或猜测身份的 CPA Claude 导入。
+文件可从 ID Token 恢复稳定身份；当前 CPA Claude 文件已保存 `account_uuid`、
+`organization_uuid` 和 `organization_name`，缺失 `claude_device_ids` 时 CPA 会自行生成并
+持久化。它仍不保存 AIH Claude OAuth 领域要求的原始 `scopes`，因此本阶段不猜测权限，
+也不提供可能丢失权限语义的 CPA Claude 导入。
 
 ## 5. CLI 启动、PTY 与持久会话
 

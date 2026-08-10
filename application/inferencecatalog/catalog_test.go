@@ -80,9 +80,56 @@ func TestBuilderCreatesExactCrossClientRoutes(t *testing.T) {
 	}
 }
 
-// TestBuilderRejectsAmbiguousOrInvalidSnapshots 验证同名跨 Provider 模型、
-// 无序输入和未注册 Factory 不会产生隐式 fallback。
-func TestBuilderRejectsAmbiguousOrInvalidSnapshots(t *testing.T) {
+// TestBuilderQuarantinesAmbiguousModelsWithoutDisablingCatalog 验证同名跨
+// Provider 模型只退出当前快照，其他无歧义路由仍可发布和执行。
+func TestBuilderQuarantinesAmbiguousModelsWithoutDisablingCatalog(t *testing.T) {
+	t.Parallel()
+
+	catalog := newProviderCatalog(t)
+	builder := newBuilder(t, &modelReader{models: []accountapp.RoutableModel{
+		newRoutableModel(t, catalog, "claude", "shared-model"),
+		newRoutableModel(t, catalog, "codex", "shared-model"),
+		newRoutableModel(t, catalog, "codex", "unique-codex-model"),
+	}})
+	snapshot, err := builder.Build(context.Background())
+	if err != nil {
+		t.Fatalf("Builder.Build() error = %v", err)
+	}
+	if snapshot.ModelCount() != 1 || snapshot.RouteCount() != 1 ||
+		snapshot.Models()[0].ModelID().String() != "unique-codex-model" {
+		t.Fatalf(
+			"snapshot models=%#v model_count=%d route_count=%d",
+			snapshot.Models(),
+			snapshot.ModelCount(),
+			snapshot.RouteCount(),
+		)
+	}
+	request := newTextRequest(
+		t,
+		inference.ClientProtocolOpenAIResponses,
+		"unique-codex-model",
+	)
+	plan, err := snapshot.Resolve(context.Background(), request)
+	if err != nil || len(plan.Candidates()) != 1 ||
+		plan.Candidates()[0].ProviderID() != inference.ProviderCodex {
+		t.Fatalf("Resolve(unique) plan=%#v error=%v", plan, err)
+	}
+	ambiguous := newTextRequest(
+		t,
+		inference.ClientProtocolOpenAIResponses,
+		"shared-model",
+	)
+	if _, err := snapshot.Resolve(context.Background(), ambiguous); !errors.Is(
+		err,
+		inferencegateway.ErrRouteNotFound,
+	) {
+		t.Fatalf("Resolve(shared-model) error=%v", err)
+	}
+}
+
+// TestBuilderRejectsInvalidSnapshots 验证无序输入和未注册 Factory 不会
+// 产生不完整路由快照。
+func TestBuilderRejectsInvalidSnapshots(t *testing.T) {
 	t.Parallel()
 
 	catalog := newProviderCatalog(t)
@@ -92,15 +139,6 @@ func TestBuilderRejectsAmbiguousOrInvalidSnapshots(t *testing.T) {
 		factory []inferencecatalog.ProviderRouteFactory
 		wantErr error
 	}{
-		{
-			name: "ambiguous provider",
-			models: []accountapp.RoutableModel{
-				newRoutableModel(t, catalog, "claude", "shared-model"),
-				newRoutableModel(t, catalog, "codex", "shared-model"),
-			},
-			factory: testFactories(t),
-			wantErr: inferencecatalog.ErrAmbiguousModelRoute,
-		},
 		{
 			name: "unordered snapshot",
 			models: []accountapp.RoutableModel{

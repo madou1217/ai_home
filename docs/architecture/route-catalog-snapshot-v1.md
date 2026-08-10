@@ -53,7 +53,8 @@ CredentialTransportPolicy -> Adapter`。传输策略由目标 Adapter 声明，�
 - 第一阶段只生成 `RouteScopeAll` 的精确模型规则；
 - 客户端协议不决定上游 Provider，Responses、Chat Completions 和 Messages 都可以
   请求任意明确模型；
-- 同名模型不能自动形成跨 Provider fallback；没有显式策略时整次构建失败；
+- 同名跨 Provider 模型不能自动形成 fallback；没有显式策略时只隔离该模型，其他
+  无歧义模型仍形成可发布快照，避免单个聚合上游拖垮全局目录；
 - alias、prefix、wildcard 和跨 Provider fallback 不根据模型名字猜测。
 
 空模型集合是有效快照：`/v1/models` 返回空数组，推理解析返回 route not found。构建
@@ -130,7 +131,7 @@ Canonical 征召遇到官方 OAuth 时只推进稳定账号游标并继续下一
 | 模块 | 模式 | 目的 |
 | --- | --- | --- |
 | `ProviderRouteFactory` | Strategy + Registry | Provider 自己声明协议和经验证能力，Builder 不使用 Provider switch |
-| `Builder` | Builder | 集中校验排序、唯一性、歧义和 RouteRule 不变量 |
+| `Builder` | Builder | 集中校验排序、唯一性和 RouteRule 不变量，并线性隔离跨 Provider 歧义模型 |
 | `Snapshot` / `AtomicCatalog` | Immutable Snapshot | 模型展示和路由解析一次性发布，读取无锁 |
 | `RefreshCoordinator` | Coalescing Worker | 合并刷新风暴并保证最终变化不会丢失 |
 | `RoutableModelObserver` | Observer | 写事务成功后从统一索引边界发送目录变化 |

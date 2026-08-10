@@ -225,7 +225,7 @@ func (request Request) excludes(accountRef accountcore.AccountRef) bool {
 // Result 保存一次征召的账号、凭据和本次扫描进度。
 type Result struct {
 	account         accountapp.RoutingAccount
-	credential      accountapp.Credential
+	binding         accountapp.CredentialBinding
 	examined        int
 	sourceExhausted bool
 }
@@ -235,9 +235,14 @@ func (result Result) Account() accountapp.RoutingAccount {
 	return result.account
 }
 
-// Credential 返回已经刷新且身份经过复核的 Provider 凭据。
+// Binding 返回已经按候选账号复核的稳定凭据绑定。
+func (result Result) Binding() accountapp.CredentialBinding {
+	return result.binding
+}
+
+// Credential 返回稳定绑定中的当前 Provider 凭据。
 func (result Result) Credential() accountapp.Credential {
-	return result.credential
+	return result.binding.Credential()
 }
 
 // Examined 返回本次实际尝试解析凭据的候选数量。
@@ -425,7 +430,7 @@ func (session *RecruitmentSession) Next(ctx context.Context) (Result, error) {
 			continue
 		}
 		progress.account = candidate
-		progress.credential = credential
+		progress.binding = binding
 		return progress, nil
 	}
 	progress.sourceExhausted = true

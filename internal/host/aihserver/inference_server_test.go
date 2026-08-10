@@ -81,6 +81,55 @@ func TestServerPinnedAccountNeverFallsBack(t *testing.T) {
 	)
 }
 
+// TestServerUsesRotatedStaticCredentialWithStableAccountRef 验证静态密钥身份变化后，
+// 固定账号推理仍以历史 AccountRef 路由，并且只把轮换后的密钥发送给上游。
+func TestServerUsesRotatedStaticCredentialWithStableAccountRef(t *testing.T) {
+	t.Parallel()
+
+	const (
+		initialKey     = "sk-codex-rotation-host-initial"
+		replacementKey = "sk-codex-rotation-host-replacement"
+	)
+	upstream := &syntheticInferenceHTTPClient{}
+	baseURL, client := startTestServerWithInferenceClient(t, upstream)
+	accountRef := registerAPIKeyAccount(t, client, baseURL, "codex", initialKey)
+	waitForServerModels(t, client, baseURL, []string{"gpt-5.6-sol"})
+
+	rotation := []byte(`{"auth":{"kind":"api_key","api_key":"` +
+		replacementKey + `","base_url":"https://api.openai.com/v1"}}`)
+	exchange := performRequest(
+		t,
+		client,
+		http.MethodPut,
+		baseURL+accountsapi.CollectionPath+"/"+accountRef+"/credential",
+		testManagementKey,
+		rotation,
+	)
+	assertStatus(t, exchange, http.StatusOK)
+	waitForServerModels(t, client, baseURL, []string{"gpt-5.6-sol"})
+
+	exchange = performRequestWithHeaders(
+		t,
+		client,
+		http.MethodPost,
+		baseURL+openairesponsesapi.Path,
+		map[string]string{
+			"Authorization":               "Bearer " + testClientKey,
+			inferenceapi.AccountRefHeader: accountRef,
+		},
+		[]byte(`{"model":"gpt-5.6-sol","input":"rotated-host-smoke"}`),
+	)
+	assertStatus(t, exchange, http.StatusOK)
+	if upstream.CallCount() != 1 ||
+		upstream.LastAuthorization() != "Bearer "+replacementKey {
+		t.Fatalf(
+			"轮换后固定账号未使用新凭据: calls=%d credential_match=%t",
+			upstream.CallCount(),
+			upstream.LastAuthorization() == "Bearer "+replacementKey,
+		)
+	}
+}
+
 // TestServerRoutesThreeClientProtocolsThroughProductionCatalog 验证账号注册、
 // 原子路由目录、账号征召、真实 Adapter 和三个 HTTP 入口的完整本地 TCP 链路。
 func TestServerRoutesThreeClientProtocolsThroughProductionCatalog(

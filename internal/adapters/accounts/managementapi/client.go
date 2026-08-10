@@ -94,6 +94,13 @@ type Client struct {
 	managementKey string
 }
 
+// responseResult 保留需要由具体公开合同校验的状态、响应头和有界正文。
+type responseResult struct {
+	statusCode int
+	header     http.Header
+	body       []byte
+}
+
 // New 创建不会把 Management Key 放入 URL、日志或错误文本的客户端。
 func New(httpClient HTTPClient, config Config) (*Client, error) {
 	baseURL, err := normalizeBaseURL(config.BaseURL)
@@ -281,7 +288,18 @@ func (client *Client) doRequest(
 	method string,
 	requestURL string,
 	payload []byte,
-) (_ int, _ []byte, resultErr error) {
+) (int, []byte, error) {
+	result, err := client.doResponseRequest(ctx, method, requestURL, payload)
+	return result.statusCode, result.body, err
+}
+
+// doResponseRequest 统一认证、响应读取上限和稳定远端错误，并保留响应元数据。
+func (client *Client) doResponseRequest(
+	ctx context.Context,
+	method string,
+	requestURL string,
+	payload []byte,
+) (_ responseResult, resultErr error) {
 	request, err := http.NewRequestWithContext(
 		ctx,
 		method,
@@ -289,7 +307,7 @@ func (client *Client) doRequest(
 		bytes.NewReader(payload),
 	)
 	if err != nil {
-		return 0, nil, fmt.Errorf("创建账号管理请求失败: %w", err)
+		return responseResult{}, fmt.Errorf("创建账号管理请求失败: %w", err)
 	}
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Authorization", "Bearer "+client.managementKey)
@@ -298,25 +316,29 @@ func (client *Client) doRequest(
 	}
 	response, err := client.httpClient.Do(request)
 	if err != nil {
-		return 0, nil, fmt.Errorf("执行账号管理请求失败: %w", err)
+		return responseResult{}, fmt.Errorf("执行账号管理请求失败: %w", err)
 	}
 	if response == nil || response.Body == nil {
-		return 0, nil, ErrInvalidResponse
+		return responseResult{}, ErrInvalidResponse
 	}
 	defer func() {
 		resultErr = errors.Join(resultErr, response.Body.Close())
 	}()
 	body, err := io.ReadAll(io.LimitReader(response.Body, maxResponseBytes+1))
 	if err != nil {
-		return 0, nil, fmt.Errorf("读取账号管理响应失败: %w", err)
+		return responseResult{}, fmt.Errorf("读取账号管理响应失败: %w", err)
 	}
 	if len(body) > maxResponseBytes {
-		return 0, nil, ErrInvalidResponse
+		return responseResult{}, ErrInvalidResponse
 	}
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return 0, nil, newRemoteError(response.StatusCode, body)
+		return responseResult{}, newRemoteError(response.StatusCode, body)
 	}
-	return response.StatusCode, body, nil
+	return responseResult{
+		statusCode: response.StatusCode,
+		header:     response.Header.Clone(),
+		body:       body,
+	}, nil
 }
 
 // decodeAccountSnapshot 校验公开响应没有错账号、非法别名或非规范时间。

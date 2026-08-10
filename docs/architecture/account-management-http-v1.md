@@ -380,7 +380,66 @@ SQLite 单事务执行以下动作：
 并发修改、SQLite 锁冲突或新凭据已被其他账号占用统一返回
 `409 static_credential_rotation_conflict`，整笔事务回滚。
 
-## 10. 错误码
+## 10. 单账号 sub2api 迁移
+
+导出：
+
+```http
+GET /v1/management/accounts/acct_ad95f22070cc1ca83830/export
+Authorization: Bearer <Management Key>
+```
+
+成功返回 `200`、`Content-Type: application/json; charset=utf-8` 和
+`Content-Disposition: attachment; filename="sub2api-data.json"`。正文是单账号标准
+`sub2api-data` 文档，不携带来源 AccountRef、数字别名、模型、usage、运行状态或格式
+版本。
+
+导入：
+
+```http
+POST /v1/management/account-imports/sub2api
+Authorization: Bearer <Management Key>
+Content-Type: application/json
+
+{
+  "type": "sub2api-data",
+  "exported_at": "2026-08-10T08:00:00Z",
+  "proxies": [],
+  "accounts": [
+    {
+      "name": "codex-account",
+      "platform": "openai",
+      "type": "apikey",
+      "credentials": {"api_key": "<Codex API Key>"},
+      "concurrency": 0,
+      "priority": 0
+    }
+  ]
+}
+```
+
+只允许一个 Codex 或 Claude 账号；批量账号、代理、本地身份或未知字段均拒绝。成功
+返回 `201` 和第 5 节相同的无敏感账号投影。导入复用统一 Registrar 和模型维护链，
+目标 Server 依据稳定 Provider 身份生成 AccountRef 并分配数字别名。
+
+## 11. CLIProxyAPI OAuth auth-file 导出
+
+```http
+GET /v1/management/accounts/acct_ad95f22070cc1ca83830/export/cliproxyapi
+Authorization: Bearer <Management Key>
+```
+
+成功返回 `200`、JSON 媒体类型和
+`Content-Disposition: attachment; filename="cliproxyapi-auth.json"`。正文可直接放入
+CLIProxyAPI `auth-dir`，没有 AIH 私有 envelope。只支持 Codex/Claude OAuth；API Key、
+Claude Auth Token 和不可刷新的 OAuth 明确返回 `422 unsupported_account_export`。
+
+当前合同按 sub2api `10a4c6e3ad319587e817109c071259269855ec30` 与 CLIProxyAPI
+`ecc9aa72b32f34b680d03b0724b531a21ae74472`（`v7.2.127`）源码核对。CPA Claude
+auth-file 保留账号/组织 UUID 与组织名；`claude_device_ids` 缺失时由 CPA 自行生成并
+持久化，AIH 不伪造设备身份。
+
+## 12. 错误码
 
 | HTTP | code | 含义 |
 | ---: | --- | --- |
@@ -402,10 +461,11 @@ SQLite 单事务执行以下动作：
 | `422` | `invalid_static_credential` | 静态凭据字段组合或 Base URL 无效 |
 | `422` | `static_credential_rotation_unsupported` | OAuth 或当前凭据类型不能静态轮换 |
 | `422` | `invalid_native_artifacts` | Provider 官方 artifact 缺失、混用或无效 |
+| `422` | `unsupported_account_export` | 账号认证类型不能无损导出为目标格式 |
 | `422` | `invalid_account` | 应用层账号数据违反领域不变量 |
 | `500` | `internal_error` | 未公开内部细节的服务错误 |
 
-## 11. 验证命令
+## 13. 验证命令
 
 ```bash
 go test ./internal/transport/http/accountsapi
@@ -416,11 +476,12 @@ go test -run '^TestAccountsAPILiveSmoke$' -v \
 ```
 
 真实 TCP 和命令级 smoke 使用临时 `aih.db` 完成 API Key 创建、Claude 原生 OAuth
-导入、重复导入冲突、Codex/Claude 静态凭据轮换、列表、详情、关闭账号及优雅退出。
+导入、重复导入冲突、Codex/Claude 静态凭据轮换、sub2api 导入导出、CLIProxyAPI
+auth-file 导出、列表、详情、关闭账号及优雅退出。
 自动化测试只使用合成凭据和合成 Provider HTTP Client；日志和响应不包含原始 Key
 或 Token，也不请求外部 Provider。
 
-## 12. 设计模式
+## 14. 设计模式
 
 | 模块 | 模式 | 目的 |
 | --- | --- | --- |
@@ -429,6 +490,7 @@ go test -run '^TestAccountsAPILiveSmoke$' -v \
 | `StaticCredentialRotation` 端口 | Ports and Adapters | HTTP 不依赖 SQLite 事务或 Provider 模型目录实现 |
 | `NativeAccountDecoder` | Strategy | HTTP 不认识 Codex/Claude 官方认证内部结构 |
 | `nativeaccount.Decoder` | Anti-Corruption Layer + Facade | 组合现有 Provider codec，输出稳定应用合同 |
+| `sub2api.Decoder/Exporter`、`cliproxyapi.Exporter` | Anti-Corruption Layer + Strategy | 外部迁移格式差异留在边界适配器，不污染账号领域 |
 | `Authorizer` | Strategy | 鉴权策略与账号路由解耦，默认失败关闭 |
 | request/response DTO | Anti-Corruption Layer | 阻止 HTTP JSON 形状进入领域对象和凭据内部 |
 

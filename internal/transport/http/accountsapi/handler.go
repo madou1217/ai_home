@@ -24,7 +24,7 @@ const (
 	// NativeImportPath 是 Codex、Claude 官方 artifact 导入资源的规范路径。
 	NativeImportPath = "/v1/management/account-imports"
 	// Sub2APIImportPath 是单账号 sub2api 迁移文档导入资源的规范路径。
-	Sub2APIImportPath = "/v1/management/account-imports/sub2api"
+	Sub2APIImportPath = accountcontract.Sub2APIImportsPath
 	// DefaultsPath 是 Provider 默认启动账号资源的规范集合前缀。
 	DefaultsPath = accountcontract.ProviderDefaultsPath
 	// SelectionPath 是启动账号解析命令的规范路径。

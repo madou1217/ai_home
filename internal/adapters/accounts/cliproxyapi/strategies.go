@@ -40,7 +40,7 @@ func (codexStrategy) encode(
 // claudeStrategy 只编码 CLIProxyAPI auth-dir 原生支持的可刷新 Claude OAuth。
 type claudeStrategy struct{}
 
-// encode 不输出 CPA 官方文件没有定义的 account UUID、scope 或本地身份。
+// encode 只输出 CPA 官方文件定义的账号、组织字段，不附加 scope 或 AIH 本地身份。
 func (claudeStrategy) encode(
 	snapshot accountapp.ExportSnapshot,
 ) (any, error) {
@@ -48,27 +48,31 @@ func (claudeStrategy) encode(
 	if !supported {
 		return nil, accountapp.ErrUnsupportedAccountExport
 	}
+	profile := claudeProfile(snapshot)
 	return claudeAuthFile{
-		AccessToken:  auth.AccessToken(),
-		RefreshToken: auth.RefreshToken(),
-		Email:        claudeProfileEmail(snapshot),
-		Type:         claudeType,
-		Expired:      formatUnixMillis(auth.ExpiresAtMS()),
-		Disabled:     !snapshot.Account().Enabled(),
+		AccessToken:      auth.AccessToken(),
+		RefreshToken:     auth.RefreshToken(),
+		Email:            profile.Email(),
+		AccountUUID:      auth.AccountUUID(),
+		OrganizationUUID: profile.OrganizationUUID(),
+		OrganizationName: profile.OrganizationName(),
+		Type:             claudeType,
+		Expired:          formatUnixMillis(auth.ExpiresAtMS()),
+		Disabled:         !snapshot.Account().Enabled(),
 	}, nil
 }
 
-// claudeProfileEmail 从可选公开资料读取 CPA 用作标签的邮箱。
-func claudeProfileEmail(snapshot accountapp.ExportSnapshot) string {
+// claudeProfile 从可选公开资料读取 CPA 最新 auth-file 支持的公开身份。
+func claudeProfile(snapshot accountapp.ExportSnapshot) claude.OAuthProfile {
 	profile, found := snapshot.Profile()
 	if !found {
-		return ""
+		return claude.OAuthProfile{}
 	}
 	claudeProfile, valid := profile.(claude.AccountProfile)
 	if !valid {
-		return ""
+		return claude.OAuthProfile{}
 	}
-	return claudeProfile.Email()
+	return claudeProfile.OAuthProfile()
 }
 
 // formatUnixMillis 把领域毫秒时间转换为 CPA 使用的 RFC3339；零表示未知。

@@ -142,10 +142,123 @@ func TestClientRejectsInvalidConfigRemoteErrorsAndMismatchedSnapshots(t *testing
 	}
 }
 
+// TestClientGetsAndDeletesAccountWithStrictNoContentContract 验证删除前读取公开
+// 快照，并且 DELETE 只接受 204 与空响应体。
+func TestClientGetsAndDeletesAccountWithStrictNoContentContract(t *testing.T) {
+	t.Parallel()
+
+	transport := &accountDeletionHTTPClient{t: t}
+	client, err := managementapi.New(transport, managementapi.Config{
+		BaseURL:       "http://127.0.0.1:9527",
+		ManagementKey: testManagementKey,
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	accountRef, err := accountcore.ParseAccountRef("acct_11111111111111111111")
+	if err != nil {
+		t.Fatalf("ParseAccountRef() error = %v", err)
+	}
+	snapshot, err := client.GetAccount(context.Background(), accountRef)
+	if err != nil {
+		t.Fatalf("GetAccount() error = %v", err)
+	}
+	if snapshot.AccountRef != accountRef || snapshot.ProviderID != "claude" ||
+		snapshot.CLIAccountID.String() != "9" {
+		t.Fatalf("GetAccount() = %+v", snapshot)
+	}
+	if err := client.DeleteAccount(context.Background(), accountRef); err != nil {
+		t.Fatalf("DeleteAccount() error = %v", err)
+	}
+	if transport.calls != 2 {
+		t.Fatalf("calls = %d, want 2", transport.calls)
+	}
+}
+
+// TestClientRejectsInvalidDeleteResponses 验证 200 空响应和 204 非空响应都不
+// 会被误认为删除成功。
+func TestClientRejectsInvalidDeleteResponses(t *testing.T) {
+	t.Parallel()
+
+	accountRef, err := accountcore.ParseAccountRef("acct_11111111111111111111")
+	if err != nil {
+		t.Fatalf("ParseAccountRef() error = %v", err)
+	}
+	for _, response := range []struct {
+		name   string
+		status int
+		body   string
+	}{
+		{name: "错误成功状态", status: http.StatusOK},
+		{name: "非空响应体", status: http.StatusNoContent, body: `{}`},
+	} {
+		t.Run(response.name, func(t *testing.T) {
+			t.Parallel()
+			client, newErr := managementapi.New(&staticHTTPClient{
+				status: response.status,
+				body:   response.body,
+			}, managementapi.Config{
+				BaseURL:       "http://127.0.0.1:9527",
+				ManagementKey: testManagementKey,
+			})
+			if newErr != nil {
+				t.Fatalf("New() error = %v", newErr)
+			}
+			if deleteErr := client.DeleteAccount(
+				context.Background(),
+				accountRef,
+			); !errors.Is(deleteErr, managementapi.ErrInvalidResponse) {
+				t.Fatalf("DeleteAccount() error = %v", deleteErr)
+			}
+		})
+	}
+}
+
 // recordingHTTPClient 断言两步账号管理请求的完整 HTTP 合同。
 type recordingHTTPClient struct {
 	t     *testing.T
 	calls int
+}
+
+// accountDeletionHTTPClient 断言详情读取与删除共享同一稳定成员资源。
+type accountDeletionHTTPClient struct {
+	t     *testing.T
+	calls int
+}
+
+// Do 返回公开快照和严格空的 204 删除响应。
+func (client *accountDeletionHTTPClient) Do(request *http.Request) (*http.Response, error) {
+	client.t.Helper()
+	body, err := io.ReadAll(request.Body)
+	if err != nil {
+		client.t.Fatalf("ReadAll(request body) error = %v", err)
+	}
+	if request.URL.Path != accountcontract.AccountsPath+"/acct_11111111111111111111" ||
+		request.Header.Get("Authorization") != "Bearer "+testManagementKey ||
+		len(body) != 0 {
+		client.t.Fatalf("account deletion request = %s %s %s", request.Method, request.URL, body)
+	}
+	client.calls++
+	switch client.calls {
+	case 1:
+		if request.Method != http.MethodGet {
+			client.t.Fatalf("detail method = %s", request.Method)
+		}
+		return jsonResponse(http.StatusOK, accountDocument(
+			"acct_11111111111111111111",
+			"claude",
+			9,
+			true,
+		)), nil
+	case 2:
+		if request.Method != http.MethodDelete {
+			client.t.Fatalf("delete method = %s", request.Method)
+		}
+		return jsonResponse(http.StatusNoContent, ""), nil
+	default:
+		client.t.Fatalf("unexpected request count %d", client.calls)
+		return nil, nil
+	}
 }
 
 // Do 返回两步顺序响应，并拒绝密钥进入 URL 或正文。

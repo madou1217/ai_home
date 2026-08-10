@@ -156,6 +156,29 @@ func (client *Client) ResolveAlias(
 	return snapshot, nil
 }
 
+// GetAccount 读取一个稳定账号的最小公开快照，不返回凭据或派生状态。
+func (client *Client) GetAccount(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+) (AccountSnapshot, error) {
+	if !client.isValid() {
+		return AccountSnapshot{}, ErrInvalidConfig
+	}
+	if ctx == nil || !accountRef.IsValid() {
+		return AccountSnapshot{}, ErrInvalidRequest
+	}
+	requestURL := client.baseURL + accountcontract.AccountsPath + "/" +
+		url.PathEscape(accountRef.String())
+	snapshot, err := client.doAccountRequest(ctx, http.MethodGet, requestURL, nil)
+	if err != nil {
+		return AccountSnapshot{}, err
+	}
+	if snapshot.AccountRef != accountRef {
+		return AccountSnapshot{}, ErrInvalidResponse
+	}
+	return snapshot, nil
+}
+
 // SetEnabled 通过 Server 原子修改账号启停状态并返回提交后的公开快照。
 func (client *Client) SetEnabled(
 	ctx context.Context,
@@ -191,6 +214,42 @@ func (client *Client) SetEnabled(
 	return snapshot, nil
 }
 
+// DeleteAccount 删除一个稳定账号，只接受标准 204 空响应合同。
+func (client *Client) DeleteAccount(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+) error {
+	if !client.isValid() {
+		return ErrInvalidConfig
+	}
+	if ctx == nil || !accountRef.IsValid() {
+		return ErrInvalidRequest
+	}
+	requestURL := client.baseURL + accountcontract.AccountsPath + "/" +
+		url.PathEscape(accountRef.String())
+	return client.doNoContentRequest(
+		ctx,
+		http.MethodDelete,
+		requestURL,
+	)
+}
+
+// doNoContentRequest 只接受标准 204 和空响应体的成功合同。
+func (client *Client) doNoContentRequest(
+	ctx context.Context,
+	method string,
+	requestURL string,
+) error {
+	statusCode, body, err := client.doRequest(ctx, method, requestURL, nil)
+	if err != nil {
+		return err
+	}
+	if statusCode != http.StatusNoContent || len(body) != 0 {
+		return ErrInvalidResponse
+	}
+	return nil
+}
+
 // doAccountRequest 统一认证、响应上限、错误合同和快照校验。
 func (client *Client) doAccountRequest(
 	ctx context.Context,
@@ -211,7 +270,18 @@ func (client *Client) doDocumentRequest(
 	method string,
 	requestURL string,
 	payload []byte,
-) (_ []byte, resultErr error) {
+) ([]byte, error) {
+	_, body, err := client.doRequest(ctx, method, requestURL, payload)
+	return body, err
+}
+
+// doRequest 统一认证、响应读取上限和稳定远端错误合同，并保留成功状态码。
+func (client *Client) doRequest(
+	ctx context.Context,
+	method string,
+	requestURL string,
+	payload []byte,
+) (_ int, _ []byte, resultErr error) {
 	request, err := http.NewRequestWithContext(
 		ctx,
 		method,
@@ -219,7 +289,7 @@ func (client *Client) doDocumentRequest(
 		bytes.NewReader(payload),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("创建账号管理请求失败: %w", err)
+		return 0, nil, fmt.Errorf("创建账号管理请求失败: %w", err)
 	}
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Authorization", "Bearer "+client.managementKey)
@@ -228,25 +298,25 @@ func (client *Client) doDocumentRequest(
 	}
 	response, err := client.httpClient.Do(request)
 	if err != nil {
-		return nil, fmt.Errorf("执行账号管理请求失败: %w", err)
+		return 0, nil, fmt.Errorf("执行账号管理请求失败: %w", err)
 	}
 	if response == nil || response.Body == nil {
-		return nil, ErrInvalidResponse
+		return 0, nil, ErrInvalidResponse
 	}
 	defer func() {
 		resultErr = errors.Join(resultErr, response.Body.Close())
 	}()
 	body, err := io.ReadAll(io.LimitReader(response.Body, maxResponseBytes+1))
 	if err != nil {
-		return nil, fmt.Errorf("读取账号管理响应失败: %w", err)
+		return 0, nil, fmt.Errorf("读取账号管理响应失败: %w", err)
 	}
 	if len(body) > maxResponseBytes {
-		return nil, ErrInvalidResponse
+		return 0, nil, ErrInvalidResponse
 	}
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return nil, newRemoteError(response.StatusCode, body)
+		return 0, nil, newRemoteError(response.StatusCode, body)
 	}
-	return body, nil
+	return response.StatusCode, body, nil
 }
 
 // decodeAccountSnapshot 校验公开响应没有错账号、非法别名或非规范时间。

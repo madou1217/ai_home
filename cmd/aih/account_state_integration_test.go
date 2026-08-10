@@ -27,19 +27,7 @@ const (
 // SQLite 和运行中倒排形成闭环：按别名停用后模型消失，按 AccountRef 启用后恢复。
 func TestAccountStateCommandUpdatesRunningServerRoutes(t *testing.T) {
 	server, baseURL, client, serveErrors := startAccountStateServer(t)
-	defer func() {
-		if err := server.Close(); err != nil {
-			t.Errorf("Server.Close() error = %v", err)
-		}
-		select {
-		case err := <-serveErrors:
-			if err != nil {
-				t.Errorf("Server.Serve() error = %v", err)
-			}
-		case <-time.After(time.Second):
-			t.Error("等待 Server.Serve() 退出超时")
-		}
-	}()
+	defer stopAccountIntegrationServer(t, server, serveErrors)
 	accountRef := createIntegrationAccount(t, client, baseURL)
 	waitForIntegrationModel(t, client, baseURL, true)
 
@@ -95,8 +83,17 @@ func startAccountStateServer(
 	t *testing.T,
 ) (*aihserver.Server, string, *http.Client, <-chan error) {
 	t.Helper()
+	return startAccountIntegrationServer(t, t.TempDir())
+}
+
+// startAccountIntegrationServer 使用指定临时目录启动可重启的真实 Go Server。
+func startAccountIntegrationServer(
+	t *testing.T,
+	aiHomeDir string,
+) (*aihserver.Server, string, *http.Client, <-chan error) {
+	t.Helper()
 	server, err := aihserver.New(context.Background(), aihserver.Options{
-		AIHomeDir:     t.TempDir(),
+		AIHomeDir:     aiHomeDir,
 		ManagementKey: func() string { return integrationManagementKey },
 		ClientKey:     func() string { return integrationClientKey },
 		ModelDiscoverers: []accountapp.ProviderModelDiscoverer{
@@ -119,6 +116,26 @@ func startAccountStateServer(
 	return server, "http://" + listener.Addr().String(), &http.Client{
 		Timeout: 5 * time.Second,
 	}, serveErrors
+}
+
+// stopAccountIntegrationServer 关闭 HTTP、后台任务和 SQLite，并确认 Serve 正常退出。
+func stopAccountIntegrationServer(
+	t *testing.T,
+	server *aihserver.Server,
+	serveErrors <-chan error,
+) {
+	t.Helper()
+	if err := server.Close(); err != nil {
+		t.Fatalf("Server.Close() error = %v", err)
+	}
+	select {
+	case err := <-serveErrors:
+		if err != nil {
+			t.Fatalf("Server.Serve() error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("等待 Server.Serve() 退出超时")
+	}
 }
 
 // createIntegrationAccount 通过正式管理 API 注册一个合成 Codex API Key 账号。

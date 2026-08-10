@@ -6,6 +6,8 @@ const (
 	AccountsPath = "/v1/management/accounts"
 	// AccountAliasesPath 是 Provider 数字别名只读解析资源的规范路径。
 	AccountAliasesPath = "/v1/management/account-aliases"
+	// ProviderDefaultsPath 是 Provider 默认启动账号关系的规范集合路径。
+	ProviderDefaultsPath = "/v1/management/account-defaults"
 	// AccountUsageSuffix 是账号成员下最近一次成功额度快照的资源后缀。
 	AccountUsageSuffix = "/usage"
 	// AccountUsageRefreshSuffix 是显式刷新账号额度快照的动作资源后缀。

@@ -3,450 +3,200 @@ package main
 import (
 	"bytes"
 	"context"
-	"errors"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	accountcontract "github.com/madou1217/ai_home/internal/contracts/accountmanagement"
 	"github.com/madou1217/ai_home/internal/host/aihaccount"
 )
 
-// TestAccountImportPassesProviderAndPrintsPublicResult 验证导入命令把 Provider
-// 原样交给账号管理 Host，并且只回显公开账号信息与真实模型目录。
-func TestAccountImportPassesProviderAndPrintsPublicResult(t *testing.T) {
+const remoteAccountJSON = `{"data":{"account_ref":"acct_11111111111111111111","provider_id":"claude","cli_account_id":9,"enabled":true,"has_credential":true,"auth_kind":"oauth","auth_mode":"subscription","has_profile":true,"display_name":"测试账号","email":"someone@example.com","subscription_kind":"plus","subscription_raw":"plus","profile_updated_at":"2026-08-10T08:00:00Z","created_at":"2026-08-09T08:00:00Z","updated_at":"2026-08-10T08:00:00Z"}}`
+
+// TestAccountListUsesTargetServerAndPrintsPublicRows 验证列表只访问目标 Server，
+// 不打开本地账号数据库，并保留稳定游标分页。
+func TestAccountListUsesTargetServerAndPrintsPublicRows(t *testing.T) {
 	output := &bytes.Buffer{}
-	application := &recordingAccountApplication{
-		result: aihaccount.ImportResult{
-			ProviderID:   "claude",
-			CLIAccountID: 3,
-			AccountRef:   "claude:11111111-2222-3333-4444-555555555555",
-			Email:        "someone@example.com",
-			Models:       []string{"claude-opus-4-1", "claude-sonnet-4"},
-			Sources:      []string{"/test-user/.claude/.credentials.json", "/test-user/.claude.json"},
-		},
+	transport := &accountCatalogCommandHTTPClient{
+		t:         t,
+		responses: []string{`{"data":[{"account_ref":"acct_11111111111111111111","provider_id":"claude","cli_account_id":9,"enabled":true,"has_credential":true,"auth_kind":"oauth","auth_mode":"subscription","has_profile":true,"display_name":"测试账号","email":"someone@example.com","subscription_kind":"plus","subscription_raw":"plus","profile_updated_at":"2026-08-10T08:00:00Z","created_at":"2026-08-09T08:00:00Z","updated_at":"2026-08-10T08:00:00Z"}],"page":{"limit":20,"has_more":true,"next_after_ref":"acct_11111111111111111111"}}`},
 	}
-	runtime := testCommandRuntime(t, map[string]string{"AIH_HOME": "/test-user/.ai_home"})
+	runtime := testCommandRuntime(t, map[string]string{
+		"AIH_SERVER_BASE_URL":       "http://127.0.0.1:19527",
+		"AIH_SERVER_MANAGEMENT_KEY": commandTestManagementKey,
+	})
 	runtime.stdout = output
-	runtime.newAccountApp = func(
-		_ context.Context,
-		options aihaccount.Options,
-	) (accountApplication, error) {
-		application.options = options
-		return application, nil
+	runtime.managementAPI = transport
+	runtime.newAccountApp = func(context.Context, aihaccount.Options) (accountApplication, error) {
+		t.Fatal("账号列表不得打开本地数据库")
+		return nil, nil
 	}
 
-	if err := run(
-		context.Background(),
-		[]string{"account", "import", "claude"},
-		runtime,
-	); err != nil {
+	if err := run(context.Background(), []string{
+		"account", "list", "--limit", "20", "--after", "acct_00000000000000000000",
+	}, runtime); err != nil {
 		t.Fatalf("run() error = %v", err)
 	}
-	if application.providerID != "claude" ||
-		application.options.AIHomeDir != "/test-user/.ai_home" ||
-		application.closeCalls != 1 {
-		t.Fatalf(
-			"provider=%s ai_home=%s close_calls=%d",
-			application.providerID,
-			application.options.AIHomeDir,
-			application.closeCalls,
-		)
+	if transport.calls != 1 || transport.paths[0] != accountcontract.AccountsPath+
+		"?after_ref=acct_00000000000000000000&limit=20" {
+		t.Fatalf("远端列表请求 = %#v", transport.paths)
 	}
-	rendered := output.String()
 	for _, expected := range []string{
-		"账号别名   3",
-		"claude:11111111-2222-3333-4444-555555555555",
-		"someone@example.com",
-		"/test-user/.claude/.credentials.json",
-		"claude-opus-4-1",
-		"claude-sonnet-4",
-		"aih claude 3 --model",
-	} {
-		if !strings.Contains(rendered, expected) {
-			t.Fatalf("导入输出缺少 %q: %s", expected, rendered)
-		}
-	}
-}
-
-// TestAccountListPassesStablePageAndPrintsPublicRows 验证账号列表只把稳定游标
-// 和有界页大小交给 Host，并且输出不包含任何凭据内容。
-func TestAccountListPassesStablePageAndPrintsPublicRows(t *testing.T) {
-	output := &bytes.Buffer{}
-	application := &recordingAccountApplication{
-		listResult: aihaccount.ListResult{
-			Accounts: []aihaccount.AccountView{
-				{
-					ProviderID:       "claude",
-					CLIAccountID:     9,
-					AccountRef:       "acct_11111111111111111111",
-					Enabled:          true,
-					HasCredential:    true,
-					AuthKind:         "oauth",
-					AuthMode:         "subscription",
-					Email:            "someone@example.com",
-					SubscriptionKind: "plus",
-				},
-			},
-			Limit:        20,
-			HasMore:      true,
-			NextAfterRef: "acct_11111111111111111111",
-		},
-	}
-	runtime := testCommandRuntime(t, map[string]string{"AIH_HOME": "/test-user/.ai_home"})
-	runtime.stdout = output
-	runtime.newAccountApp = func(
-		_ context.Context,
-		options aihaccount.Options,
-	) (accountApplication, error) {
-		application.options = options
-		return application, nil
-	}
-
-	if err := run(
-		context.Background(),
-		[]string{
-			"account",
-			"list",
-			"--limit",
-			"20",
-			"--after",
-			"acct_00000000000000000000",
-		},
-		runtime,
-	); err != nil {
-		t.Fatalf("run() error = %v", err)
-	}
-	if application.listOptions.AfterRef != "acct_00000000000000000000" ||
-		application.listOptions.Limit != 20 ||
-		application.options.AIHomeDir != "/test-user/.ai_home" ||
-		application.closeCalls != 1 {
-		t.Fatalf(
-			"list_options=%+v ai_home=%s close_calls=%d",
-			application.listOptions,
-			application.options.AIHomeDir,
-			application.closeCalls,
-		)
-	}
-	rendered := output.String()
-	for _, expected := range []string{
-		"claude",
-		"9",
-		"oauth/subscription",
-		"plus",
-		"someone@example.com",
+		"claude", "9", "oauth/subscription", "plus", "someone@example.com",
 		"aih account list --limit 20 --after acct_11111111111111111111",
 	} {
-		if !strings.Contains(rendered, expected) {
-			t.Fatalf("账号列表输出缺少 %q: %s", expected, rendered)
+		if !strings.Contains(output.String(), expected) {
+			t.Fatalf("账号列表输出缺少 %q: %s", expected, output.String())
 		}
 	}
 }
 
-// TestAccountShowPassesExplicitTargetAndPrintsPublicDetail 验证详情命令支持
-// Provider 数字别名，并且只输出账号管理公开投影。
-func TestAccountShowPassesExplicitTargetAndPrintsPublicDetail(t *testing.T) {
+// TestAccountShowUsesServerAliasAndFullProjection 验证 provider:id 先由目标
+// Server 解析，再读取同一 Server 的完整公开详情。
+func TestAccountShowUsesServerAliasAndFullProjection(t *testing.T) {
 	output := &bytes.Buffer{}
-	application := &recordingAccountApplication{
-		showResult: aihaccount.AccountView{
-			ProviderID:       "claude",
-			CLIAccountID:     9,
-			AccountRef:       "acct_11111111111111111111",
-			Enabled:          false,
-			HasCredential:    true,
-			AuthKind:         "oauth",
-			AuthMode:         "refreshable",
-			HasProfile:       true,
-			DisplayName:      "测试账号",
-			Email:            "someone@example.com",
-			SubscriptionKind: "max",
-			SubscriptionRaw:  "max_20x",
-		},
-	}
-	runtime := testCommandRuntime(t, map[string]string{"AIH_HOME": "/test-user/.ai_home"})
+	transport := &accountCatalogCommandHTTPClient{t: t, responses: []string{
+		`{"data":{"account_ref":"acct_11111111111111111111","provider_id":"claude","cli_account_id":9,"enabled":true,"updated_at":"2026-08-10T08:00:00Z"}}`,
+		remoteAccountJSON,
+	}}
+	runtime := testCommandRuntime(t, map[string]string{
+		"AIH_SERVER_BASE_URL":       "http://127.0.0.1:19527",
+		"AIH_SERVER_MANAGEMENT_KEY": commandTestManagementKey,
+	})
 	runtime.stdout = output
-	runtime.newAccountApp = func(
-		_ context.Context,
-		options aihaccount.Options,
-	) (accountApplication, error) {
-		application.options = options
-		return application, nil
+	runtime.managementAPI = transport
+	runtime.newAccountApp = func(context.Context, aihaccount.Options) (accountApplication, error) {
+		t.Fatal("账号详情不得打开本地数据库")
+		return nil, nil
 	}
 
-	if err := run(
-		context.Background(),
-		[]string{"account", "show", "claude:9"},
-		runtime,
-	); err != nil {
+	if err := run(context.Background(), []string{"account", "show", "claude:9"}, runtime); err != nil {
 		t.Fatalf("run() error = %v", err)
 	}
-	if application.showTarget.ProviderID != "claude" ||
-		application.showTarget.CLIAccountID != 9 ||
-		application.options.AIHomeDir != "/test-user/.ai_home" ||
-		application.closeCalls != 1 {
-		t.Fatalf(
-			"show_target=%+v ai_home=%s close_calls=%d",
-			application.showTarget,
-			application.options.AIHomeDir,
-			application.closeCalls,
-		)
+	if transport.calls != 2 || transport.paths[0] != accountcontract.AccountAliasesPath+"/claude/9" ||
+		transport.paths[1] != accountcontract.AccountsPath+"/acct_11111111111111111111" {
+		t.Fatalf("账号详情请求 = %#v", transport.paths)
 	}
-	rendered := output.String()
 	for _, expected := range []string{
-		"账号详情:",
-		"claude",
-		"disabled",
-		"oauth/refreshable",
-		"测试账号",
-		"someone@example.com",
-		"max",
-		"max_20x",
+		"账号详情:", "claude", "enabled", "oauth/subscription", "测试账号", "someone@example.com", "plus",
 	} {
-		if !strings.Contains(rendered, expected) {
-			t.Fatalf("账号详情输出缺少 %q: %s", expected, rendered)
+		if !strings.Contains(output.String(), expected) {
+			t.Fatalf("账号详情输出缺少 %q: %s", expected, output.String())
 		}
 	}
 }
 
-// TestAccountImportHelpDoesNotOpenDatabase 验证子命令帮助不创建组合根、不读凭据。
-func TestAccountImportHelpDoesNotOpenDatabase(t *testing.T) {
-	for _, arguments := range [][]string{
-		{"account"},
-		{"account", "--help"},
-		{"account", "import", "--help"},
-		{"account", "list", "--help"},
-		{"account", "show", "--help"},
-		{"account", "enable", "--help"},
-		{"account", "disable", "--help"},
-		{"account", "delete", "--help"},
-		{"account", "transfer", "--help"},
-		{"account", "transfer", "export", "--help"},
-		{"account", "transfer", "import", "--help"},
-		{"account", "credential", "--help"},
-		{"account", "credential", "update", "--help"},
-		{"account", "default"},
-		{"account", "default", "--help"},
-		{"account", "default", "show", "--help"},
-		{"account", "default", "set", "--help"},
-		{"account", "default", "clear", "--help"},
-		{"account", "models"},
-		{"account", "models", "--help"},
-		{"account", "models", "list", "--help"},
-		{"account", "models", "refresh", "--help"},
-		{"account", "models", "set-policy", "--help"},
-		{"help", "account"},
+// TestAccountImportReadsLocalArtifactThenSubmitsToServer 验证导入只从本机官方
+// artifact 读取凭据，随后把原生 envelope 发送到目标 Server，并从 Server 取回模型。
+func TestAccountImportReadsLocalArtifactThenSubmitsToServer(t *testing.T) {
+	output := &bytes.Buffer{}
+	codexHome := t.TempDir()
+	if err := os.WriteFile(filepath.Join(codexHome, "auth.json"), []byte(`{"tokens":{"id_token":"synthetic"}}`), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	transport := &accountCatalogCommandHTTPClient{t: t, responses: []string{
+		`{"data":{"account_ref":"acct_11111111111111111111","provider_id":"codex","cli_account_id":9,"enabled":true,"has_credential":true,"auth_kind":"oauth","auth_mode":"refreshable","has_profile":false,"created_at":"2026-08-10T08:00:00Z","updated_at":"2026-08-10T08:00:00Z"}}`,
+		`{"data":[{"model_id":"gpt-5.4","upstream_available":true,"manual_policy":"inherit","effective":true,"updated_at":"2026-08-10T08:00:00Z"}]}`,
+	}}
+	runtime := testCommandRuntime(t, map[string]string{
+		"CODEX_HOME":                codexHome,
+		"AIH_SERVER_BASE_URL":       "http://127.0.0.1:19527",
+		"AIH_SERVER_MANAGEMENT_KEY": commandTestManagementKey,
+	})
+	runtime.stdout = output
+	runtime.managementAPI = transport
+	runtime.newAccountApp = func(context.Context, aihaccount.Options) (accountApplication, error) {
+		t.Fatal("账号导入不得打开本地数据库")
+		return nil, nil
+	}
+
+	if err := run(context.Background(), []string{"account", "import", "codex"}, runtime); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+	if transport.calls != 2 || transport.methods[0] != http.MethodPost ||
+		transport.paths[0] != accountcontract.NativeImportsPath ||
+		transport.methods[1] != http.MethodGet ||
+		transport.paths[1] != accountcontract.AccountsPath+
+			"/acct_11111111111111111111"+accountcontract.AccountModelsSuffix {
+		t.Fatalf("导入请求 = methods=%v paths=%v", transport.methods, transport.paths)
+	}
+	if !strings.Contains(transport.bodies[0], `"provider_id":"codex"`) ||
+		!strings.Contains(transport.bodies[0], `"auth_json"`) {
+		t.Fatalf("原生导入正文不是官方 envelope: %s", transport.bodies[0])
+	}
+	for _, expected := range []string{
+		"已导入 codex 官方登录态", "账号别名   9", "gpt-5.4", "auth.json",
 	} {
-		output := &bytes.Buffer{}
-		runtime := testCommandRuntime(t, nil)
-		runtime.stdout = output
-		runtime.newAccountApp = func(
-			context.Context,
-			aihaccount.Options,
-		) (accountApplication, error) {
-			t.Fatalf("帮助不得创建账号管理 App: %v", arguments)
-			return nil, nil
-		}
-		if err := run(context.Background(), arguments, runtime); err != nil {
-			t.Fatalf("run(%v) error = %v", arguments, err)
-		}
-		if !strings.Contains(output.String(), "aih account") {
-			t.Fatalf("run(%v) usage = %q", arguments, output.String())
+		if !strings.Contains(output.String(), expected) {
+			t.Fatalf("导入输出缺少 %q: %s", expected, output.String())
 		}
 	}
 }
 
-// TestAccountRejectsUnknownSubcommandAndProvider 验证账号命令不猜测意图。
-func TestAccountRejectsUnknownSubcommandAndProvider(t *testing.T) {
-	for _, arguments := range [][]string{
-		{"account", "remove"},
-		{"account", "import"},
-		{"account", "import", "gemini"},
-		{"account", "import", "claude", "9"},
-		{"account", "list", "--limit"},
-		{"account", "list", "--limit", "0"},
-		{"account", "list", "--limit", "10", "--limit", "20"},
-		{"account", "list", "--after", ""},
-		{"account", "list", "--unknown", "value"},
-		{"account", "show"},
-		{"account", "show", "claude:01"},
-		{"account", "show", "claude:1", "extra"},
-		{"account", "enable"},
-		{"account", "enable", "claude:01"},
-		{"account", "enable", "claude:1", "extra"},
-		{"account", "disable"},
-		{"account", "disable", "acct_invalid"},
-		{"account", "disable", "claude:1", "extra"},
-		{"account", "models", "remove", "claude:1"},
-		{"account", "models", "list"},
-		{"account", "models", "list", "claude:01"},
-		{"account", "models", "list", "claude:1", "extra"},
-		{"account", "models", "refresh"},
-		{"account", "models", "refresh", "claude:01"},
-		{"account", "models", "refresh", "claude:1", "extra"},
-		{"account", "models", "set-policy"},
-		{"account", "models", "set-policy", "claude:1"},
-		{"account", "models", "set-policy", "claude:01", "claude-opus-5", "inherit"},
-		{"account", "models", "set-policy", "claude:1", "bad model", "inherit"},
-		{"account", "models", "set-policy", "claude:1", "claude-opus-5", "unknown"},
-		{"account", "models", "set-policy", "claude:1", "claude-opus-5", "inherit", "extra"},
-	} {
-		runtime := testCommandRuntime(t, nil)
-		runtime.newAccountApp = func(
-			context.Context,
-			aihaccount.Options,
-		) (accountApplication, error) {
-			t.Fatalf("无效账号命令不得创建 App: %v", arguments)
-			return nil, nil
-		}
-		if err := run(context.Background(), arguments, runtime); !errors.Is(err, errInvalidCommand) {
-			t.Fatalf("run(%v) error = %v", arguments, err)
-		}
+// TestAccountManagementRequiresManagementKeyBeforeLocalImportRead 验证没有目标
+// Server 管理凭据时，导入不会先触碰本机 artifact。
+func TestAccountManagementRequiresManagementKeyBeforeLocalImportRead(t *testing.T) {
+	readPath := filepath.Join(t.TempDir(), "auth.json")
+	runtime := testCommandRuntime(t, map[string]string{"CODEX_HOME": filepath.Dir(readPath)})
+	runtime.managementAPI = &unexpectedAccountCatalogHTTPClient{t: t}
+	if err := run(context.Background(), []string{"account", "import", "codex"}, runtime); err == nil ||
+		!strings.Contains(err.Error(), "AIH_SERVER_MANAGEMENT_KEY") {
+		t.Fatalf("run() error = %v", err)
 	}
 }
 
-// TestAccountImportJoinsImportAndCloseErrors 验证导入失败也必须释放数据库资源。
-func TestAccountImportJoinsImportAndCloseErrors(t *testing.T) {
-	importErr := errors.New("导入失败")
-	closeErr := errors.New("关闭失败")
-	application := &recordingAccountApplication{importErr: importErr, closeErr: closeErr}
-	runtime := testCommandRuntime(t, nil)
-	runtime.newAccountApp = func(
-		context.Context,
-		aihaccount.Options,
-	) (accountApplication, error) {
-		return application, nil
+// accountCatalogCommandHTTPClient 提供命令级管理 API 合同的顺序响应。
+type accountCatalogCommandHTTPClient struct {
+	t         *testing.T
+	responses []string
+	calls     int
+	methods   []string
+	paths     []string
+	bodies    []string
+}
+
+// Do 校验所有请求都带管理凭据且没有把凭据放入 URL。
+func (client *accountCatalogCommandHTTPClient) Do(request *http.Request) (*http.Response, error) {
+	client.t.Helper()
+	body, err := io.ReadAll(request.Body)
+	if err != nil {
+		client.t.Fatalf("ReadAll() error = %v", err)
 	}
-
-	err := run(context.Background(), []string{"account", "import", "codex"}, runtime)
-	if !errors.Is(err, importErr) ||
-		!errors.Is(err, closeErr) ||
-		application.closeCalls != 1 {
-		t.Fatalf("error = %v close_calls=%d", err, application.closeCalls)
+	if request.Header.Get("Authorization") != "Bearer "+commandTestManagementKey ||
+		strings.Contains(request.URL.String(), commandTestManagementKey) {
+		client.t.Fatalf("管理 API 鉴权或 URL 无效: %s", request.URL)
 	}
-}
-
-// TestAccountListJoinsListAndCloseErrors 验证列表失败也必须释放数据库资源，
-// 并且调用方可以分别识别查询错误和关闭错误。
-func TestAccountListJoinsListAndCloseErrors(t *testing.T) {
-	listErr := errors.New("列表失败")
-	closeErr := errors.New("关闭失败")
-	application := &recordingAccountApplication{listErr: listErr, closeErr: closeErr}
-	runtime := testCommandRuntime(t, nil)
-	runtime.newAccountApp = func(
-		context.Context,
-		aihaccount.Options,
-	) (accountApplication, error) {
-		return application, nil
+	if client.calls >= len(client.responses) {
+		client.t.Fatalf("unexpected management request %d", client.calls+1)
 	}
+	client.methods = append(client.methods, request.Method)
+	client.paths = append(client.paths, request.URL.RequestURI())
+	client.bodies = append(client.bodies, string(body))
+	document := client.responses[client.calls]
+	client.calls++
+	return &http.Response{
+		StatusCode: responseStatusForPath(request.URL.Path),
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(document)),
+	}, nil
+}
 
-	err := run(context.Background(), []string{"account", "list"}, runtime)
-	if !errors.Is(err, listErr) ||
-		!errors.Is(err, closeErr) ||
-		application.closeCalls != 1 {
-		t.Fatalf("error = %v close_calls=%d", err, application.closeCalls)
+// responseStatusForPath 区分原生导入创建和其他 JSON 查询响应。
+func responseStatusForPath(path string) int {
+	if path == accountcontract.NativeImportsPath {
+		return http.StatusCreated
 	}
+	return http.StatusOK
 }
 
-// TestAccountShowJoinsShowAndCloseErrors 验证详情读取失败也必须释放数据库资源。
-func TestAccountShowJoinsShowAndCloseErrors(t *testing.T) {
-	showErr := errors.New("详情失败")
-	closeErr := errors.New("关闭失败")
-	application := &recordingAccountApplication{showErr: showErr, closeErr: closeErr}
-	runtime := testCommandRuntime(t, nil)
-	runtime.newAccountApp = func(
-		context.Context,
-		aihaccount.Options,
-	) (accountApplication, error) {
-		return application, nil
-	}
+// unexpectedAccountCatalogHTTPClient 确保失败关闭路径不会产生网络调用。
+type unexpectedAccountCatalogHTTPClient struct{ t *testing.T }
 
-	err := run(context.Background(), []string{"account", "show", "claude:1"}, runtime)
-	if !errors.Is(err, showErr) ||
-		!errors.Is(err, closeErr) ||
-		application.closeCalls != 1 {
-		t.Fatalf("error = %v close_calls=%d", err, application.closeCalls)
-	}
-}
-
-// recordingAccountApplication 记录账号命令交给 Host 的原始输入。
-type recordingAccountApplication struct {
-	options       aihaccount.Options
-	providerID    string
-	result        aihaccount.ImportResult
-	importErr     error
-	listOptions   aihaccount.ListOptions
-	listResult    aihaccount.ListResult
-	listErr       error
-	showTarget    aihaccount.AccountTarget
-	showResult    aihaccount.AccountView
-	showErr       error
-	modelsTarget  aihaccount.AccountTarget
-	modelsResult  aihaccount.AccountModelsResult
-	modelsErr     error
-	refreshTarget aihaccount.AccountTarget
-	refreshResult aihaccount.AccountModelsResult
-	refreshErr    error
-	policyCommand aihaccount.AccountModelPolicyCommand
-	policyResult  aihaccount.AccountModelsResult
-	policyErr     error
-	closeErr      error
-	closeCalls    int
-}
-
-// ImportOfficialLogin 保存 Provider 并返回预设结果。
-func (application *recordingAccountApplication) ImportOfficialLogin(
-	_ context.Context,
-	providerID string,
-) (aihaccount.ImportResult, error) {
-	application.providerID = providerID
-	return application.result, application.importErr
-}
-
-// ListAccounts 保存分页输入并返回预设公开账号列表。
-func (application *recordingAccountApplication) ListAccounts(
-	_ context.Context,
-	options aihaccount.ListOptions,
-) (aihaccount.ListResult, error) {
-	application.listOptions = options
-	return application.listResult, application.listErr
-}
-
-// ShowAccount 保存显式账号目标并返回预设公开详情。
-func (application *recordingAccountApplication) ShowAccount(
-	_ context.Context,
-	target aihaccount.AccountTarget,
-) (aihaccount.AccountView, error) {
-	application.showTarget = target
-	return application.showResult, application.showErr
-}
-
-// ListAccountModels 保存显式账号目标并返回预设物化模型快照。
-func (application *recordingAccountApplication) ListAccountModels(
-	_ context.Context,
-	target aihaccount.AccountTarget,
-) (aihaccount.AccountModelsResult, error) {
-	application.modelsTarget = target
-	return application.modelsResult, application.modelsErr
-}
-
-// RefreshAccountModels 保存显式账号目标并返回预设刷新快照。
-func (application *recordingAccountApplication) RefreshAccountModels(
-	_ context.Context,
-	target aihaccount.AccountTarget,
-) (aihaccount.AccountModelsResult, error) {
-	application.refreshTarget = target
-	return application.refreshResult, application.refreshErr
-}
-
-// SetAccountModelPolicy 保存人工模型策略命令并返回预设快照。
-func (application *recordingAccountApplication) SetAccountModelPolicy(
-	_ context.Context,
-	command aihaccount.AccountModelPolicyCommand,
-) (aihaccount.AccountModelsResult, error) {
-	application.policyCommand = command
-	return application.policyResult, application.policyErr
-}
-
-// Close 记录资源释放并返回预设错误。
-func (application *recordingAccountApplication) Close() error {
-	application.closeCalls++
-	return application.closeErr
+// Do 标记不应到达目标 Server 的请求。
+func (client *unexpectedAccountCatalogHTTPClient) Do(*http.Request) (*http.Response, error) {
+	client.t.Fatal("缺少 Management Key 时发生了网络请求")
+	return nil, nil
 }

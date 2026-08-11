@@ -116,3 +116,21 @@ test('orderByAccountRefs 保留倒排索引给出的账号优先级', () => {
   });
   assert.deepEqual(result.pool.map((item) => item.accountRef), [RELAY, OAUTH_A]);
 });
+
+// 倒排索引路径没有 provider 级目录佐证，原实现「查不到绑定 → unchecked」永远不合成 503。
+// 收窄策略统一后必须保住这条语义，否则模型刚上线、账号目录还没收录时会被判成没账号。
+test('allowNoAccountVerdict=false 时永不判定无可用账号', () => {
+  const result = narrow({
+    accountRefs: [],
+    accountCatalogs: new Map([
+      [OAUTH_A, new Set(['gpt-5.5'])],
+      [OAUTH_B, new Set(['gpt-5.5'])],
+      [RELAY, new Set(['gpt-5.5'])]
+    ]),
+    providerCatalog: null,
+    allowNoAccountVerdict: false
+  });
+  assert.equal(result.filtered, false);
+  assert.equal(result.unchecked, true);
+  assert.equal(result.pool.length, 3);
+});

@@ -382,3 +382,45 @@ test('failure policy treats AbortError as transient timeout instead of account p
   assert.equal(policy.cooldownMs, 30000);
   assert.equal(policy.shouldRetryAnotherAccount, true);
 });
+
+// 中转账号/官方账号都会用 400/404 说「我这儿没有这个模型」。这类错误绑在
+// (账号, 模型) 上：换个账号很可能就能服务，所以必须换号重试并冷却这对组合，
+// 而不是把 400 直接甩给客户端（用户看到的就是那条 Invalid model name）。
+const MODEL_MISSING_DETAILS = [
+  ['litellm 中转', 400, '/responses: Invalid model name passed in model=gpt-5.6-luna. Call `/v1/models` to view available models for your key.'],
+  ['new-api 中转', 404, '{"error":{"message":"Model \\"gpt-5.6-luna\\" is not supported by any configured account in this group","type":"model_not_found"}}'],
+  ['官方 ChatGPT 账号', 400, "The 'gpt-5.3-codex' model is not supported when using Codex with a ChatGPT account."],
+  ['OpenAI 经典文案', 404, 'The model `gpt-9` does not exist or you do not have access to it.']
+];
+
+MODEL_MISSING_DETAILS.forEach(([label, statusCode, detail]) => {
+  test(`模型不在该端点上(${label}) 换账号重试而不是甩 4xx 给客户端`, () => {
+    const policy = classifyUpstreamFailure({
+      provider: 'codex',
+      statusCode,
+      body: detail,
+      detail,
+      defaultCooldownMs: 60000
+    });
+    assert.equal(policy.kind, 'model_not_available_on_endpoint');
+    assert.equal(policy.shouldRetryAnotherAccount, true);
+    assert.equal(policy.shouldPassthroughToClient, false);
+    // 只冷却这一对 (账号, 模型)，账号本身还要继续服务它支持的模型
+    assert.equal(policy.scope, 'model');
+    assert.equal(policy.cooldownMs, 30 * 60 * 1000);
+  });
+});
+
+test('普通 400 参数错误仍然直接回客户端，不换账号空跑', () => {
+  const detail = "Missing required parameter: 'input'.";
+  const policy = classifyUpstreamFailure({
+    provider: 'codex',
+    statusCode: 400,
+    body: detail,
+    detail,
+    defaultCooldownMs: 60000
+  });
+  assert.equal(policy.kind, 'invalid_request');
+  assert.equal(policy.shouldPassthroughToClient, true);
+  assert.equal(policy.shouldRetryAnotherAccount, false);
+});

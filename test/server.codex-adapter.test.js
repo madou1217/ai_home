@@ -2225,3 +2225,98 @@ test('codex adapter does not synthesize 503 when the account model catalog is on
   assert.notEqual(res.statusCode, 503);
   assert.doesNotMatch(String(res.body), /no_available_account/);
 });
+
+// 回归：中转账号回 400「Invalid model name」时，必须换到真正能服务该模型的账号，
+// 而不是把这条 400 甩给客户端；同时给 (中转账号, 模型) 打冷却，后续请求不再空跑它。
+test('codex adapter fails over when an account reports the model is not available', async () => {
+  const res = createResCapture();
+  const relayRef = accountRef('c33');
+  const oauthRef = accountRef('d44');
+  const state = {
+    accounts: {
+      codex: [
+        {
+          accountRef: relayRef,
+          accessToken: 'relay-key',
+          apiKeyMode: true,
+          openaiBaseUrl: 'https://relay.example.com/v1',
+          schedulableStatus: 'schedulable'
+        },
+        {
+          accountRef: oauthRef,
+          email: 'oauth@example.com',
+          upstreamAccountId: 'acc_oauth',
+          accessToken: 'oauth-token',
+          schedulableStatus: 'schedulable',
+          remainingPct: 92
+        }
+      ]
+    },
+    cursors: { codex: 0 },
+    metrics: { totalFailures: 0, totalSuccess: 0, totalTimeouts: 0 }
+  };
+
+  const tried = [];
+  await handleCodexChatCompletions({
+    options: {
+      codexBaseUrl: 'https://chatgpt.com/backend-api/codex',
+      upstreamTimeoutMs: 3000,
+      maxAttempts: 3,
+      failureThreshold: 1,
+      logRequests: false
+    },
+    state,
+    req: { headers: { 'content-type': 'application/json' } },
+    res,
+    requestJson: {
+      model: 'gpt-5.6-luna',
+      stream: false,
+      messages: [{ role: 'user', content: 'hello' }]
+    },
+    routeKey: 'POST /v1/responses',
+    requestStartedAt: Date.now(),
+    cooldownMs: 1000,
+    requestMeta: { requestId: 'model-failover', sessionKey: 's' },
+    deps: {
+      chooseServerAccount: (pool) => pool.find((item) => !tried.includes(item.accountRef)) || null,
+      pushMetricError: () => {},
+      writeJson: (r, code, payload) => {
+        r.statusCode = code;
+        r.setHeader('content-type', 'application/json');
+        r.end(JSON.stringify(payload));
+      },
+      refreshCodexAccessToken: async () => ({ ok: true, refreshed: false, reason: 'not_due' }),
+      fetchWithTimeout: async (url) => {
+        const isRelay = String(url).includes('relay.example.com');
+        tried.push(isRelay ? relayRef : oauthRef);
+        if (isRelay) {
+          return {
+            ok: false,
+            status: 400,
+            headers: new Map(),
+            text: async () => JSON.stringify({
+              error: {
+                message: '/responses: Invalid model name passed in model=gpt-5.6-luna. Call `/v1/models` to view available models for your key.',
+                type: 'None',
+                code: '400'
+              }
+            })
+          };
+        }
+        return createCompletedUpstreamResponse('luna ok');
+      },
+      markProxyAccountFailure,
+      markProxyAccountSuccess: () => {},
+      appendProxyRequestLog: () => {}
+    }
+  });
+
+  assert.deepEqual(tried, [relayRef, oauthRef], 'must move on to the next account');
+  assert.equal(res.statusCode, 200);
+  assert.doesNotMatch(String(res.body), /Invalid model name/);
+  assert.match(String(res.body), /luna ok/);
+  // 中转账号只对这个模型冷却，账号本身仍可服务它支持的模型
+  const relay = state.accounts.codex[0];
+  assert.equal(getAccountModelCooldownUntil(relay, 'gpt-5.6-luna') > Date.now(), true);
+  assert.equal(Number(relay.cooldownUntil || 0), 0);
+});

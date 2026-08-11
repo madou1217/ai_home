@@ -43,6 +43,7 @@ type commandRuntime struct {
 	stderr        io.Writer
 	managementAPI managementapi.HTTPClient
 	newApp        func(context.Context, aihcli.Options) (providerApplication, error)
+	// newAccountApp 仅为旧测试替身保留；生产账号命令全部使用 Management API。
 	newAccountApp func(context.Context, aihaccount.Options) (accountApplication, error)
 }
 
@@ -60,12 +61,6 @@ func defaultCommandRuntime() commandRuntime {
 		newApp: func(ctx context.Context, options aihcli.Options) (providerApplication, error) {
 			return aihcli.New(ctx, options)
 		},
-		newAccountApp: func(
-			ctx context.Context,
-			options aihaccount.Options,
-		) (accountApplication, error) {
-			return aihaccount.New(ctx, options)
-		},
 	}
 }
 
@@ -74,7 +69,7 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	if ctx == nil || runtime.lookupEnv == nil || runtime.userHomeDir == nil ||
 		runtime.stdin == nil || runtime.stdout == nil || runtime.stderr == nil ||
 		runtime.managementAPI == nil ||
-		runtime.newApp == nil || runtime.newAccountApp == nil {
+		runtime.newApp == nil {
 		return errInvalidCommand
 	}
 	if len(arguments) == 0 || isRootHelp(arguments[0]) {

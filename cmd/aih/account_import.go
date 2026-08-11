@@ -2,40 +2,60 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 
+	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeartifact"
 	"github.com/madou1217/ai_home/internal/host/aihaccount"
 )
 
-// runAccountImport 把 Provider 官方 CLI 当前登录态导入唯一业务数据库。
+// runAccountImport 从本机官方 artifact 读取登录态并提交到当前目标 Server。
 func runAccountImport(
 	ctx context.Context,
 	providerID string,
 	runtime commandRuntime,
 ) error {
-	aiHomeDir, err := resolveAIHomeDir(runtime)
+	client, err := newAccountManagementClient(runtime)
 	if err != nil {
 		return err
 	}
-	app, err := runtime.newAccountApp(ctx, aihaccount.Options{AIHomeDir: aiHomeDir})
+	reader := nativeartifact.New(nativeartifact.Options{
+		LookupEnv:   runtime.lookupEnv,
+		UserHomeDir: runtime.userHomeDir,
+	})
+	artifacts, err := reader.Read(providerID)
 	if err != nil {
-		return fmt.Errorf("初始化账号管理失败: %w", err)
+		return err
 	}
-	result, importErr := app.ImportOfficialLogin(ctx, providerID)
-	closeErr := app.Close()
-	if importErr != nil || closeErr != nil {
-		return errors.Join(importErr, closeErr)
+	defer clear(artifacts.Envelope)
+	account, err := client.ImportNative(ctx, providerID, artifacts.Envelope)
+	if err != nil {
+		return fmt.Errorf("导入官方登录态到 Server 失败: %w", err)
 	}
-	writeImportResult(runtime.stdout, aiHomeDir, result)
+	models, err := client.ListAccountModels(ctx, account.AccountRef)
+	if err != nil {
+		return fmt.Errorf("读取 Server 账号模型目录失败: %w", err)
+	}
+	modelIDs := make([]string, 0, len(models.Models))
+	for _, model := range models.Models {
+		if model.Effective {
+			modelIDs = append(modelIDs, model.ModelID)
+		}
+	}
+	writeImportResult(runtime.stdout, aihaccount.ImportResult{
+		ProviderID:   account.ProviderID,
+		CLIAccountID: account.CLIAccountID.Int64(),
+		AccountRef:   account.AccountRef.String(),
+		Email:        account.Email,
+		Models:       modelIDs,
+		Sources:      append([]string(nil), artifacts.Sources...),
+	})
 	return nil
 }
 
 // writeImportResult 只输出公开账号信息，绝不回显任何凭据。
 func writeImportResult(
 	output io.Writer,
-	aiHomeDir string,
 	result aihaccount.ImportResult,
 ) {
 	_, _ = fmt.Fprintf(output, "已导入 %s 官方登录态:\n", result.ProviderID)
@@ -44,7 +64,6 @@ func writeImportResult(
 	if result.Email != "" {
 		_, _ = fmt.Fprintf(output, "  登录邮箱   %s\n", result.Email)
 	}
-	_, _ = fmt.Fprintf(output, "  数据目录   %s\n", aiHomeDir)
 	for index, source := range result.Sources {
 		label := "  官方来源  "
 		if index > 0 {
@@ -72,19 +91,20 @@ func writeAccountImportUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "  aih account import <codex|claude>")
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "行为:")
-	_, _ = fmt.Fprintln(output, "  读取该 Provider 官方 CLI 的当前登录 artifact，注册成一个 AIH 账号并分配数字别名。")
-	_, _ = fmt.Fprintln(output, "  导入时向上游拉取一次该账号真实可用的模型目录并落库；运行期不再实时查询目录。")
-	_, _ = fmt.Fprintln(output, "  只读取官方文件，不修改官方登录态，也不创建任何 Provider 或账号级 HOME。")
+	_, _ = fmt.Fprintln(output, "  从本机官方 CLI 读取 artifact，再提交到 AIH_SERVER_BASE_URL 注册账号并分配数字别名。")
+	_, _ = fmt.Fprintln(output, "  Server 在导入事务中发现并物化一次真实模型目录；运行期不再实时查询目录。")
+	_, _ = fmt.Fprintln(output, "  只读取官方 artifact，不修改官方登录态，也不创建任何 Provider 或账号级 HOME。")
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "官方来源:")
-	_, _ = fmt.Fprintln(output, "  claude: $CLAUDE_CONFIG_DIR/.credentials.json 与 .claude.json 的 oauthAccount")
+	_, _ = fmt.Fprintln(output, "  claude: macOS Keychain（优先）或 $CLAUDE_CONFIG_DIR/.credentials.json，以及 .claude.json 的 oauthAccount")
 	_, _ = fmt.Fprintln(output, "  codex:  $CODEX_HOME/auth.json")
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "环境变量:")
-	_, _ = fmt.Fprintln(output, "  AIH_HOME（账号写入该目录下的 aih.db，默认 ~/.ai_home）")
+	_, _ = fmt.Fprintln(output, "  AIH_SERVER_BASE_URL（账号写入目标 Go Server，默认 http://127.0.0.1:9527）")
+	_, _ = fmt.Fprintln(output, "  AIH_SERVER_MANAGEMENT_KEY（必填）")
 	_, _ = fmt.Fprintln(output, "  CLAUDE_CONFIG_DIR / CODEX_HOME（官方 CLI 自己的配置目录）")
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "示例:")
 	_, _ = fmt.Fprintln(output, "  aih account import claude")
-	_, _ = fmt.Fprintln(output, "  AIH_HOME=/tmp/aih-verify aih account import claude")
+	_, _ = fmt.Fprintln(output, "  AIH_SERVER_BASE_URL=http://127.0.0.1:9527 aih account import claude")
 }

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -11,26 +10,25 @@ import (
 	"github.com/madou1217/ai_home/internal/host/aihaccount"
 )
 
-// runAccountShow 从唯一业务数据库读取一个公开账号详情。
+// runAccountShow 从当前目标 Server 读取一个公开账号详情。
 func runAccountShow(
 	ctx context.Context,
 	target aihaccount.AccountTarget,
 	runtime commandRuntime,
 ) error {
-	aiHomeDir, err := resolveAIHomeDir(runtime)
+	client, err := newAccountManagementClient(runtime)
 	if err != nil {
 		return err
 	}
-	app, err := runtime.newAccountApp(ctx, aihaccount.Options{AIHomeDir: aiHomeDir})
+	accountRef, err := resolveManagementAccountRef(ctx, client, target)
 	if err != nil {
-		return fmt.Errorf("初始化账号管理失败: %w", err)
+		return fmt.Errorf("解析 Server 账号目标失败: %w", err)
 	}
-	account, showErr := app.ShowAccount(ctx, target)
-	closeErr := app.Close()
-	if showErr != nil || closeErr != nil {
-		return errors.Join(showErr, closeErr)
+	account, err := client.GetAccountView(ctx, accountRef)
+	if err != nil {
+		return fmt.Errorf("读取 Server 账号详情失败: %w", err)
 	}
-	writeAccountDetail(runtime.stdout, account)
+	writeAccountDetail(runtime.stdout, newHostAccountView(account))
 	return nil
 }
 
@@ -92,8 +90,9 @@ func writeAccountShowUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "  provider:id Provider 内数字别名，例如 claude:1 或 codex:2")
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "行为:")
-	_, _ = fmt.Fprintln(output, "  返回基础账号、用户启停状态、认证类型、公开资料和时间戳。")
+	_, _ = fmt.Fprintln(output, "  通过 AIH_SERVER_BASE_URL 返回基础账号、用户启停状态、认证类型、公开资料和时间戳。")
 	_, _ = fmt.Fprintln(output, "  不读取或输出凭据正文、usage、模型或运行态；停用账号仍可查看。")
+	_, _ = fmt.Fprintln(output, "  AIH_SERVER_MANAGEMENT_KEY 必填；AIH_HOME 不参与查询。")
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "示例:")
 	_, _ = fmt.Fprintln(output, "  aih account show claude:1")

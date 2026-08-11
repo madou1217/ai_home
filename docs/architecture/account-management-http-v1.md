@@ -46,6 +46,24 @@ Transport 不打开数据库、不读取文件路径、不执行 Provider OAuth�
 Server 或 WebUI。原生 JSON 只传给 Provider codec；`internal/host/aihserver` 负责
 Composition Root 和进程生命周期。
 
+### 2.1 CLI 控制面
+
+```text
+aih account list/show/models
+aih account import <provider>
+        │
+        ├─ list/show/models：Management API Client → 当前 AIH_SERVER_BASE_URL
+        └─ import：本机官方 CODEX_HOME/CLAUDE_CONFIG_DIR artifact
+                   → Management API Client → 当前 AIH_SERVER_BASE_URL
+                                      ↓
+                                  目标 Server 的 aih.db
+```
+
+账号管理 CLI 不再打开本机 `aih.db`，也不把远端 Server 的 `AIH_HOME` 当作共享文件系统。
+`AIH_HOME` 仅由 Native Direct 和 Server 自身作为本地运行态目录使用；Gateway Relay
+的账号事实始终由目标 Server 决定。导入命令只读取本机官方登录 artifact，不创建
+Provider 或账号级 HOME，不修改官方登录态。
+
 ## 3. 通用合同
 
 ### 3.1 基础地址
@@ -391,8 +409,8 @@ Authorization: Bearer <Management Key>
 
 成功返回 `200`、`Content-Type: application/json; charset=utf-8` 和
 `Content-Disposition: attachment; filename="sub2api-data.json"`。正文是单账号标准
-`sub2api-data` 文档，不携带来源 AccountRef、数字别名、模型、usage、运行状态或格式
-版本。
+`sub2api-data` 文档，固定输出 `version: 1`，不携带来源 AccountRef、数字别名、模型、
+usage 或运行状态。
 
 导入：
 
@@ -403,6 +421,7 @@ Content-Type: application/json
 
 {
   "type": "sub2api-data",
+  "version": 1,
   "exported_at": "2026-08-10T08:00:00Z",
   "proxies": [],
   "accounts": [
@@ -418,9 +437,14 @@ Content-Type: application/json
 }
 ```
 
-只允许一个 Codex 或 Claude 账号；批量账号、代理、本地身份或未知字段均拒绝。成功
-返回 `201` 和第 5 节相同的无敏感账号投影。导入复用统一 Registrar 和模型维护链，
-目标 Server 依据稳定 Provider 身份生成 AccountRef 并分配数字别名。
+只允许一个 Codex 或 Claude 账号；接受 sub2api 现行 `version: 1` 与未声明版本的标准
+文档，未知版本、批量账号、代理、本地身份或未知字段均拒绝。Codex/Claude 已确认的
+snake_case 与官方 camelCase 同义字段在边界归一化；同义字段同时出现但值不一致时
+拒绝导入，空字符串不会覆盖同组非空值。Claude OAuth 的 `expires_at`、`expiresAt`、
+`expiry` 统一为 Unix 毫秒，`last_refresh` 与 `lastRefresh` 只在导入边界验证格式和
+一致性，不进入账号领域。成功返回 `201` 和第 5 节相同的无敏感账号投影。导入复用
+统一 Registrar 和模型维护链，目标 Server 依据稳定 Provider 身份生成 AccountRef 并
+分配数字别名。
 
 ## 11. CLIProxyAPI OAuth auth-file 导出
 
@@ -434,8 +458,9 @@ Authorization: Bearer <Management Key>
 CLIProxyAPI `auth-dir`，没有 AIH 私有 envelope。只支持 Codex/Claude OAuth；API Key、
 Claude Auth Token 和不可刷新的 OAuth 明确返回 `422 unsupported_account_export`。
 
-当前合同按 sub2api `10a4c6e3ad319587e817109c071259269855ec30` 与 CLIProxyAPI
-`ecc9aa72b32f34b680d03b0724b531a21ae74472`（`v7.2.127`）源码核对。CPA Claude
+当前合同按 sub2api `1e618dbc299fc0a82e9a690bcf2d5843be817113` 与 CLIProxyAPI
+`bd34ceca04209ef0460f4b05e3a1a047fb7fad2a`（`v7.2.128`）源码核对。
+CPA Claude
 auth-file 保留账号/组织 UUID 与组织名；`claude_device_ids` 缺失时由 CPA 自行生成并
 持久化，AIH 不伪造设备身份。
 

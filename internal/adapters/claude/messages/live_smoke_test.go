@@ -60,7 +60,7 @@ const (
 	realClaudeReplayExpected = "AIH_REAL_CLAUDE_REPLAY_OK"
 )
 
-// TestLiveClaudeRouteCatalogSmoke 使用显式选择的 Claude API Key 账号，
+// TestLiveClaudeRouteCatalogSmoke 使用显式选择的 Claude OAuth 或 API Key 账号，
 // 先验证账号物化模型目录，再贯通真实 Messages API。
 func TestLiveClaudeRouteCatalogSmoke(t *testing.T) {
 	if os.Getenv("AIH_REAL_CLAUDE_SMOKE") != "1" {
@@ -91,6 +91,10 @@ func TestLiveClaudeRouteCatalogSmoke(t *testing.T) {
 		t.Fatalf("真实 Claude Execute() error = %v", err)
 	}
 	output := completedClaudeText(events)
+	authKind := "unknown"
+	if auth, ok := selection.credential.(claudeauth.Auth); ok {
+		authKind = auth.Kind().String()
+	}
 	if recorder.successes != 1 ||
 		len(recorder.failures) != 0 ||
 		len(events) == 0 ||
@@ -117,13 +121,14 @@ func TestLiveClaudeRouteCatalogSmoke(t *testing.T) {
 		)
 	}
 	t.Logf(
-		"real_claude_route_smoke method=%s endpoint=%s model=%s max_tokens=%d stream=true http_status=%d media_type=%s auth=api_key events=%s output=%q",
+		"real_claude_route_smoke method=%s endpoint=%s model=%s max_tokens=%d stream=true http_status=%d media_type=%s auth=%s events=%s output=%q",
 		transport.method,
 		transport.endpoint,
 		selection.model,
 		request.MaxOutputTokens(),
 		transport.statusCode,
 		transport.mediaType,
+		authKind,
 		eventKinds(events),
 		output,
 	)

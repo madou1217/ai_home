@@ -42,6 +42,7 @@ func TestExporterEncodesCodexAndClaudeAccounts(t *testing.T) {
 			profile:    codexProfile,
 			expected: `{
 				"type":"sub2api-data",
+				"version":1,
 				"exported_at":"2026-07-31T08:09:10Z",
 				"proxies":[],
 				"accounts":[{
@@ -70,6 +71,7 @@ func TestExporterEncodesCodexAndClaudeAccounts(t *testing.T) {
 			),
 			expected: `{
 				"type":"sub2api-data",
+				"version":1,
 				"exported_at":"2026-07-31T08:09:10Z",
 				"proxies":[],
 				"accounts":[{
@@ -91,6 +93,7 @@ func TestExporterEncodesCodexAndClaudeAccounts(t *testing.T) {
 			profile:    claudeProfile,
 			expected: `{
 				"type":"sub2api-data",
+				"version":1,
 				"exported_at":"2026-07-31T08:09:10Z",
 				"proxies":[],
 				"accounts":[{
@@ -101,9 +104,13 @@ func TestExporterEncodesCodexAndClaudeAccounts(t *testing.T) {
 						"access_token":"synthetic-claude-export-access",
 						"refresh_token":"synthetic-claude-export-refresh",
 						"expires_at":4102444800,
+						"refresh_token_expires_at":4105036800,
+						"client_id":"claude-export-client",
 						"scope":"user:inference user:profile",
 						"account_uuid":"123e4567-e89b-12d3-a456-426614174777",
-						"email_address":"claude-export@example.invalid"
+						"email_address":"claude-export@example.invalid",
+						"subscription_type":"max",
+						"rate_limit_tier":"default_claude_max_20x"
 					},
 					"extra":{
 						"account_uuid":"123e4567-e89b-12d3-a456-426614174777",
@@ -123,6 +130,7 @@ func TestExporterEncodesCodexAndClaudeAccounts(t *testing.T) {
 			),
 			expected: `{
 				"type":"sub2api-data",
+				"version":1,
 				"exported_at":"2026-07-31T08:09:10Z",
 				"proxies":[],
 				"accounts":[{
@@ -146,6 +154,7 @@ func TestExporterEncodesCodexAndClaudeAccounts(t *testing.T) {
 			),
 			expected: `{
 				"type":"sub2api-data",
+				"version":1,
 				"exported_at":"2026-07-31T08:09:10Z",
 				"proxies":[],
 				"accounts":[{
@@ -189,7 +198,7 @@ func TestExporterEncodesCodexAndClaudeAccounts(t *testing.T) {
 				t.Fatalf("ExportAccount() error = %v", err)
 			}
 			assertJSONEqual(t, document, []byte(test.expected))
-			assertNoLocalOrVersionFields(t, document)
+			assertStandardTransferFields(t, document)
 		})
 	}
 }
@@ -499,15 +508,18 @@ func assertJSONEqual(t *testing.T, actual []byte, expected []byte) {
 	}
 }
 
-// assertNoLocalOrVersionFields 验证外部文档没有本地身份、运行数据或格式版本。
-func assertNoLocalOrVersionFields(t *testing.T, document []byte) {
+// assertStandardTransferFields 验证标准版本存在且文档没有本地身份或运行数据。
+func assertStandardTransferFields(t *testing.T, document []byte) {
 	t.Helper()
 
 	var root map[string]any
 	if err := json.Unmarshal(document, &root); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v", err)
 	}
-	for _, key := range []string{"version", "account_ref", "cli_account_id", "models", "usage", "runtime", "cooldown"} {
+	if root["version"] != float64(1) {
+		t.Fatalf("导出缺少标准 version=1: %s", document)
+	}
+	for _, key := range []string{"account_ref", "cli_account_id", "models", "usage", "runtime", "cooldown"} {
 		if containsExportKey(root, key) {
 			t.Fatalf("导出包含禁止字段 %q: %s", key, document)
 		}

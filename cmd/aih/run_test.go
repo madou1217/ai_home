@@ -240,7 +240,7 @@ func testCommandRuntime(t *testing.T, environment map[string]string) commandRunt
 			context.Context,
 			aihaccount.Options,
 		) (accountApplication, error) {
-			return &recordingAccountApplication{}, nil
+			return nil, nil
 		},
 	}
 }

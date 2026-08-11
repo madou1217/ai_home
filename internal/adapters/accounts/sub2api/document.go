@@ -1,12 +1,14 @@
 package sub2api
 
-const dataType = "sub2api-data"
+const (
+	dataType    = "sub2api-data"
+	dataVersion = 1
+)
 
 // exportDocument 是单账号导出的顶层 sub2api-data 合同。
-//
-// 它故意没有 version 字段；HTTP /v1 只是 API 命名空间。
 type exportDocument struct {
 	Type       string            `json:"type"`
+	Version    int               `json:"version"`
 	ExportedAt string            `json:"exported_at"`
 	Proxies    []proxyDocument   `json:"proxies"`
 	Accounts   []accountDocument `json:"accounts"`
@@ -44,14 +46,18 @@ type codexOAuthCredentials struct {
 
 // claudeOAuthCredentials 对齐当前 sub2api Anthropic 账号的 snake_case 字段。
 type claudeOAuthCredentials struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token,omitempty"`
-	ExpiresAt    int64  `json:"expires_at,omitempty"`
-	Scope        string `json:"scope,omitempty"`
-	AccountUUID  string `json:"account_uuid,omitempty"`
-	OrgUUID      string `json:"org_uuid,omitempty"`
-	Email        string `json:"email_address,omitempty"`
-	BaseURL      string `json:"base_url,omitempty"`
+	AccessToken           string `json:"access_token"`
+	RefreshToken          string `json:"refresh_token,omitempty"`
+	ExpiresAt             int64  `json:"expires_at,omitempty"`
+	RefreshTokenExpiresAt int64  `json:"refresh_token_expires_at,omitempty"`
+	ClientID              string `json:"client_id,omitempty"`
+	Scope                 string `json:"scope,omitempty"`
+	AccountUUID           string `json:"account_uuid,omitempty"`
+	OrgUUID               string `json:"org_uuid,omitempty"`
+	Email                 string `json:"email_address,omitempty"`
+	SubscriptionType      string `json:"subscription_type,omitempty"`
+	RateLimitTier         string `json:"rate_limit_tier,omitempty"`
+	BaseURL               string `json:"base_url,omitempty"`
 }
 
 // claudeAccountExtra 保存 sub2api 当前放在 extra 中的 Claude 稳定公开身份。

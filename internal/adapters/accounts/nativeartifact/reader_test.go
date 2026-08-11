@@ -82,6 +82,37 @@ func TestReadClaudePrefersConfigDirGlobalConfig(t *testing.T) {
 	}
 }
 
+// TestReadClaudePrefersOfficialKeychain 验证 macOS secure storage 可读时不会回退
+// 到可能过期的 .credentials.json，并且仍与 oauthAccount 原子组合。
+func TestReadClaudePrefersOfficialKeychain(t *testing.T) {
+	t.Parallel()
+
+	files := map[string]string{
+		"/home/user/.claude/.credentials.json": `{"stale":true}`,
+		"/home/user/.claude.json":              `{"oauthAccount":{"accountUuid":"u"}}`,
+	}
+	options := fakeOptions(files, nil)
+	options.ReadClaudeSecureStorage = func(configDir string, scoped bool) ([]byte, string, error) {
+		if configDir != "/home/user/.claude" || scoped {
+			t.Fatalf("config_dir=%q scoped=%v", configDir, scoped)
+		}
+		return []byte(`{"claudeAiOauth":{"accessToken":"from-keychain"}}`),
+			"macOS Keychain: Claude Code-credentials",
+			nil
+	}
+	artifacts, err := nativeartifact.New(options).Read("claude")
+	if err != nil {
+		t.Fatalf("Read(claude) error = %v", err)
+	}
+	if strings.Contains(string(artifacts.Envelope), "stale") ||
+		!strings.Contains(string(artifacts.Envelope), "from-keychain") {
+		t.Fatalf("envelope 未使用 Keychain: %s", artifacts.Envelope)
+	}
+	if artifacts.Sources[0] != "macOS Keychain: Claude Code-credentials" {
+		t.Fatalf("sources = %v", artifacts.Sources)
+	}
+}
+
 // TestReadCodexUsesCodexHome 验证 Codex envelope 只包含官方 auth.json 单字段。
 func TestReadCodexUsesCodexHome(t *testing.T) {
 	t.Parallel()
@@ -173,6 +204,9 @@ func fakeOptions(
 				return nil, os.ErrNotExist
 			}
 			return []byte(content), nil
+		},
+		ReadClaudeSecureStorage: func(string, bool) ([]byte, string, error) {
+			return nil, "", errors.New("测试未提供 Keychain 登录态")
 		},
 	}
 }

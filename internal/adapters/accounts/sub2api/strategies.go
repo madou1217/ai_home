@@ -95,11 +95,13 @@ func encodeClaudeRefreshableOAuth(
 	auth *claude.OAuthAuth,
 ) accountDocument {
 	credentials := claudeOAuthCredentials{
-		AccessToken:  auth.AccessToken(),
-		RefreshToken: auth.RefreshToken(),
-		ExpiresAt:    auth.ExpiresAtMS() / 1_000,
-		Scope:        strings.Join(auth.Scopes(), " "),
-		AccountUUID:  auth.AccountUUID(),
+		AccessToken:           auth.AccessToken(),
+		RefreshToken:          auth.RefreshToken(),
+		ExpiresAt:             auth.ExpiresAtMS() / 1_000,
+		RefreshTokenExpiresAt: auth.RefreshTokenExpiresAtMS() / 1_000,
+		ClientID:              auth.ClientID(),
+		Scope:                 strings.Join(auth.Scopes(), " "),
+		AccountUUID:           auth.AccountUUID(),
 	}
 	extra := claudeAccountExtra{AccountUUID: auth.AccountUUID()}
 	if profile, found := snapshot.Profile(); found {
@@ -107,6 +109,8 @@ func encodeClaudeRefreshableOAuth(
 			oauthProfile := claudeProfile.OAuthProfile()
 			credentials.OrgUUID = oauthProfile.OrganizationUUID()
 			credentials.Email = oauthProfile.Email()
+			credentials.SubscriptionType = claudeProfile.SubscriptionRaw()
+			credentials.RateLimitTier = claudeProfile.Subscription().RateLimitTier()
 			extra.OrgUUID = oauthProfile.OrganizationUUID()
 			extra.Email = oauthProfile.Email()
 		}

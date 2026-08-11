@@ -51,22 +51,28 @@ type Options struct {
 	UserHomeDir func() (string, error)
 	// ReadFile 读取官方 artifact 文件原始字节。
 	ReadFile func(string) ([]byte, error)
+	// ReadClaudeSecureStorage 读取 Claude Code 的平台原生 secure storage。
+	//
+	// 生产环境缺省使用 macOS Keychain；测试可注入替身，避免接触真实登录态。
+	ReadClaudeSecureStorage func(configDir string, scoped bool) ([]byte, string, error)
 }
 
 // Reader 按 Provider 选择官方 artifact 定位策略。
 type Reader struct {
-	lookupEnv   func(string) (string, bool)
-	userHomeDir func() (string, error)
-	readFile    func(string) ([]byte, error)
-	sources     map[string]sourceStrategy
+	lookupEnv               func(string) (string, bool)
+	userHomeDir             func() (string, error)
+	readFile                func(string) ([]byte, error)
+	readClaudeSecureStorage func(string, bool) ([]byte, string, error)
+	sources                 map[string]sourceStrategy
 }
 
 // New 创建绑定真实操作系统边界或测试替身的官方 artifact 读取器。
 func New(options Options) *Reader {
 	reader := &Reader{
-		lookupEnv:   options.LookupEnv,
-		userHomeDir: options.UserHomeDir,
-		readFile:    options.ReadFile,
+		lookupEnv:               options.LookupEnv,
+		userHomeDir:             options.UserHomeDir,
+		readFile:                options.ReadFile,
+		readClaudeSecureStorage: options.ReadClaudeSecureStorage,
 	}
 	if reader.lookupEnv == nil {
 		reader.lookupEnv = os.LookupEnv
@@ -76,6 +82,9 @@ func New(options Options) *Reader {
 	}
 	if reader.readFile == nil {
 		reader.readFile = os.ReadFile
+	}
+	if reader.readClaudeSecureStorage == nil {
+		reader.readClaudeSecureStorage = readClaudeKeychain
 	}
 	reader.sources = map[string]sourceStrategy{
 		"claude": (*Reader).readClaude,
@@ -103,14 +112,25 @@ func (reader *Reader) Read(providerID string) (Artifacts, error) {
 
 // readClaude 组装官方 secure storage 与全局身份配置的双文件 envelope。
 func (reader *Reader) readClaude() (Artifacts, error) {
-	configDir, err := reader.claudeConfigDir()
+	configDir, scoped, err := reader.claudeConfigDir()
 	if err != nil {
 		return Artifacts{}, err
 	}
 	credentialsPath := filepath.Join(configDir, claudeCredentialsFileName)
-	credentials, err := reader.readArtifactFile(credentialsPath)
-	if err != nil {
-		return Artifacts{}, err
+	credentials, credentialsSource, secureStorageErr := reader.readClaudeSecureStorage(
+		configDir,
+		scoped,
+	)
+	if secureStorageErr != nil {
+		credentials, err = reader.readArtifactFile(credentialsPath)
+		if err != nil {
+			return Artifacts{}, fmt.Errorf(
+				"%w: Claude 官方 secure storage 不可读取（macOS Keychain 或 %s）",
+				ErrInvalidArtifactSource,
+				credentialsPath,
+			)
+		}
+		credentialsSource = credentialsPath
 	}
 	defer clear(credentials)
 
@@ -132,7 +152,7 @@ func (reader *Reader) readClaude() (Artifacts, error) {
 	}
 	return Artifacts{
 		Envelope: envelope,
-		Sources:  []string{credentialsPath, globalConfigPath},
+		Sources:  []string{credentialsSource, globalConfigPath},
 	}, nil
 }
 
@@ -159,16 +179,16 @@ func (reader *Reader) readCodex() (Artifacts, error) {
 }
 
 // claudeConfigDir 遵循官方 CLAUDE_CONFIG_DIR，缺省回落到 ~/.claude。
-func (reader *Reader) claudeConfigDir() (string, error) {
+func (reader *Reader) claudeConfigDir() (string, bool, error) {
 	if value, found := reader.lookupEnv("CLAUDE_CONFIG_DIR"); found &&
 		strings.TrimSpace(value) != "" {
-		return filepath.Clean(value), nil
+		return filepath.Clean(value), true, nil
 	}
 	home, err := reader.homeDir()
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
-	return filepath.Join(home, ".claude"), nil
+	return filepath.Join(home, ".claude"), false, nil
 }
 
 // readClaudeGlobalConfig 兼容官方两种放置方式：配置目录内优先，其次用户主目录。

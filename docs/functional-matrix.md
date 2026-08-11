@@ -69,7 +69,7 @@
 
 | 编号 | 功能点 | 入口 | 当前行为/边界 | 状态 | 主要证据 |
 |---|---|---|---|---|---|
-| ACC-001 | 全局账号列表 | `aih ls`、`aih account list`、Web `/accounts` | 旧入口聚合运行态；Go 入口用 AccountRef keyset 分页只读基础信息、认证类型和公开资料，不加载凭据正文、模型、usage 或运行态 | 稳定/重构中 | `cmd/aih/account.go`、`internal/host/aihaccount/app.go`、`lib/cli/commands/root/router.js`、`web/src/pages/Accounts.tsx` |
+| ACC-001 | 全局账号列表 | `aih ls`、`aih account list`、Web `/accounts` | 旧入口聚合运行态；Go 入口通过当前目标 Server 的 Management API 使用 AccountRef keyset 分页，只读基础信息、认证类型和公开资料，不加载凭据正文、模型、usage 或运行态 | 稳定/单控制面 | `cmd/aih/account_list.go`、`internal/adapters/accounts/managementapi/catalog.go`、`lib/cli/commands/root/router.js`、`web/src/pages/Accounts.tsx` |
 | ACC-002 | Provider 账号列表/单 ID 过滤 | `aih <provider> ls [id]` | 只列指定 provider；可进一步只看一个数字别名，支持列表帮助与分页行为 | 稳定 | `lib/cli/commands/ai-cli/router.js` |
 | ACC-003 | 账号详情/配置状态 | Web 账号表、Management API | 展示公开身份、认证类型、配置、调度、额度、模型探测和最后使用时间，不回传原始 secret | 稳定 | `lib/server/webui-account-live.js`、`lib/server/management-router.js` |
 | ACC-004 | 稳定账号身份 | 全链路 | `accountRef` 是 DB/Server/Web/runtime/event/usage 唯一身份；`cliAccountId` 只是可变 CLI 数字别名 | 稳定 | `lib/account/account-registration.js`、`lib/server/account-ref-store.js` |
@@ -122,14 +122,15 @@
 | ACC-041 | Provider skill 安装 | 启动/能力初始化 | 将 AI Home provider skill 安装到目标工具支持的目录 | 受限 | `lib/cli/services/ai-cli/provider-skill-installer.js`、`assets/provider-skills/` |
 | ACC-042 | 会话 hook 状态与修复 | Settings/Web API | 显示全部 provider 的 hook/轮询/不可用三态；支持一键安装/修复官方 hook | 稳定/受限 | `web/src/components/settings/RealtimeSyncCard.tsx` |
 | ACC-043 | Provider HOME/config 诊断 | `aih <provider> home [id]` | 不启动 CLI，只显示实际 HOME、config 与账号投影路径 | 稳定 | `lib/cli/commands/ai-cli/router.js` |
-| ACC-044 | Go 账号物化模型列表 | `aih account models list <account_ref\|provider:id>` | 只读 `aih.db` 中已物化正排，展示上游可见性、人工策略和最终有效性；不实时请求 Provider、不读取凭据或运行态 | 已实现（重构路径） | `cmd/aih/account_models.go`、`internal/host/aihaccount/account_models.go` |
-| ACC-045 | Go 单账号模型刷新 | `aih account models refresh <account_ref\|provider:id>` | 使用当前规范凭据读取完整 Provider 模型目录；成功后原子替换上游发现部分并保留人工策略，发现失败时保留旧快照 | 已实现（重构路径） | `application/accounts/model_management.go`、`cmd/aih/account_models.go` |
-| ACC-046 | Go 单模型人工策略 | `aih account models set-policy <target> <model_id> <policy>` | 精确设置 `inherit`、`force_enable` 或 `force_disable`，原子更新物化正排/倒排并返回完整快照；不访问 Provider | 已实现（重构路径） | `application/accounts/model_management.go`、`internal/host/aihaccount/account_models.go` |
+| ACC-044 | Go 账号物化模型列表 | `aih account models list <account_ref\|provider:id>` | 只读目标 Server 已物化的模型正排，展示上游可见性、人工策略和最终有效性；CLI 不打开本地 `aih.db`，不实时请求 Provider、不读取凭据或运行态 | 已实现（单控制面） | `cmd/aih/account_models.go`、`internal/adapters/accounts/managementapi/catalog.go` |
+| ACC-045 | Go 单账号模型刷新 | `aih account models refresh <account_ref\|provider:id>` | 由目标 Server 使用当前规范凭据读取完整 Provider 模型目录；成功后原子替换上游发现部分并保留人工策略，发现失败时保留旧快照 | 已实现（单控制面） | `application/accounts/model_management.go`、`cmd/aih/account_models.go` |
+| ACC-046 | Go 单模型人工策略 | `aih account models set-policy <target> <model_id> <policy>` | 通过目标 Server 精确设置 `inherit`、`force_enable` 或 `force_disable`，原子更新物化正排/倒排并返回完整快照；CLI 不访问 Provider | 已实现（单控制面） | `application/accounts/model_management.go`、`internal/adapters/accounts/managementapi/catalog.go` |
 | ACC-047 | Go 账号启用/停用 | `aih account enable\|disable <account_ref\|provider:id>`、`PATCH /v1/management/accounts/{account_ref}` | 数字别名在目标 Server 通过唯一索引解析；启停事务、账号模型正排/倒排和 `/v1/models` 刷新在同一进程提交，不由独立 CLI 直写 SQLite | 已实现（重构路径） | `cmd/aih/account_state.go`、`internal/adapters/accounts/managementapi/client.go`、`internal/transport/http/accountsapi/account_alias.go` |
 | ACC-048 | Go 单账号额度查看/刷新 | `aih account usage show\|refresh <account_ref\|provider:id>`、`GET/POST /v1/management/accounts/{account_ref}/usage[/refresh]` | `show` 只读取 Go Server 的 last-known-good 快照；`refresh` 使用 Server 当前规范凭据真实访问 Provider 并持久化。CLI 不直读 SQLite、不输出凭据，百分比按整数基点精确展示 | 已实现（重构路径） | `cmd/aih/account_usage.go`、`internal/adapters/accounts/managementapi/usage.go`、`application/accountusage/service.go` |
 | ACC-049 | Go 单账号删除 | `aih account delete <account_ref\|provider:id> --yes`、`DELETE /v1/management/accounts/{account_ref}` | 必须显式 `--yes`；数字别名在目标 Server 解析为稳定 `AccountRef`。Server 级联删除凭据、资料、模型、usage、默认关系，并立即清理额度任务、运行状态和路由候选；CLI 不直写 SQLite、不访问 Provider | 已实现（重构路径） | `cmd/aih/account_delete.go`、`internal/adapters/accounts/managementapi/client.go`、`application/accounts/deletion.go` |
 | ACC-050 | Go Provider 默认账号管理 | `aih account default show\|set\|clear ...`、`GET/PUT/DELETE /v1/management/account-defaults/{provider}` | 数字别名在目标 Server 解析；只允许 Codex/Claude 已启用且有凭据的同 Provider 账号。关系跨重启持久化，clear 幂等且不影响账号模型、usage 或 Gateway 公平征召 | 已实现（重构路径） | `cmd/aih/account_default.go`、`internal/adapters/accounts/managementapi/defaults.go`、`application/accounts/provider_defaults.go` |
 | ACC-051 | Go 静态凭据更新 CLI | `aih account credential update <account_ref\|provider:id> --from-env` | CLI 只从 Codex/Claude 官方环境变量读取新 Key/Token，经目标 Server 原地轮换；不直写 SQLite、不回显凭据。保持 AccountRef、数字别名、启停和默认关系，刷新模型并清理旧 usage/runtime/cooldown 派生状态；OAuth 账号明确拒绝 | 已实现（重构路径） | `cmd/aih/account_credential.go`、`internal/adapters/accounts/managementapi/transfer.go`、`application/accounts/static_credential_rotation.go` |
+| ACC-052 | Go 官方登录态导入 | `aih account import <codex\|claude>` | 本机只读 Codex `auth.json`；Claude 在 macOS 优先读取官方 Keychain、其他平台或缺失时读取 `.credentials.json`，并与 `.claude.json` 的 `oauthAccount` 组合；随后通过 Management API 提交到目标 Server 并物化真实模型，不修改官方登录态、不创建 Provider HOME | 已实现（单控制面） | `cmd/aih/account_import.go`、`internal/adapters/accounts/managementapi/catalog.go`、`internal/adapters/accounts/nativeartifact/` |
 
 ## 4. 导入、导出与迁移
 
@@ -157,16 +158,16 @@
 | XFER-020 | 导入分阶段进度 | CLI/Web | hash、解压、provider/account 处理和汇总均有可观察进度 | 稳定 | `renderStageProgress`、`unified-import.js` |
 | XFER-021 | Codex bulk token/importer | 统一导入内部路径 | 支持 Codex 特定批量源并并入统一统计 | 受限 | `lib/cli/services/ai-cli/codex-bulk-import.js` |
 | XFER-022 | age/RSA/password/legacy crypto | 当前只有 service 与测试接线 | 加解密函数、age 安装提示和旧 envelope 解密存在，但普通 export 当前只生成 ZIP，未确认公开参数入口 | 未暴露/兼容 | `lib/cli/services/backup/crypto.js`、`test/backup.crypto.password-file.test.js` |
-| XFER-023 | Go 单账号 sub2api 导出 | `GET /v1/management/accounts/{account_ref}/export` | 只导出 Codex/Claude 当前账号凭据和可选公开资料；不含 `version`、本地 ID、模型、usage 或运行态 | 已实现（重构路径） | `application/accounts/export.go`、`internal/adapters/accounts/sub2api/`、`internal/transport/http/accountsapi/handler.go` |
-| XFER-024 | Go 单账号 sub2api 导入 | `POST /v1/management/account-imports/sub2api` | 直接接收一个 `sub2api-data` 文档；只允许 Codex/Claude，不接受批量、代理、格式版本或本地身份，并复用统一原子注册与模型维护链 | 已实现（重构路径） | `internal/adapters/accounts/sub2api/decoder.go`、`internal/transport/http/accountsapi/sub2api_import.go` |
+| XFER-023 | Go 单账号 sub2api 导出 | `GET /v1/management/accounts/{account_ref}/export` | 只导出 Codex/Claude 当前账号凭据和可选公开资料；固定 `version: 1`，不含本地 ID、模型、usage 或运行态 | 已实现（重构路径） | `application/accounts/export.go`、`internal/adapters/accounts/sub2api/`、`internal/transport/http/accountsapi/handler.go` |
+| XFER-024 | Go 单账号 sub2api 导入 | `POST /v1/management/account-imports/sub2api` | 直接接收一个 `sub2api-data` 文档；只允许 Codex/Claude，接受现行版本与已确认的 snake/camel 同义字段，忽略同组空值并拒绝非空冲突；Claude 三种 expiry 统一为毫秒，last-refresh 只校验不持久化；不接受未知版本、字段、批量、代理或本地身份，并复用统一原子注册与模型维护链 | 已实现（重构路径） | `internal/adapters/accounts/sub2api/decoder.go`、`internal/adapters/accounts/sub2api/credential_input.go`、`internal/transport/http/accountsapi/sub2api_import.go` |
 | XFER-025 | Go 单账号 CLIProxyAPI auth 导出 | `GET /v1/management/accounts/{account_ref}/export/cliproxyapi` | 直接输出可放入 CPA `auth-dir` 的 Codex/Claude 单 OAuth JSON；API Key 属于 CPA 配置而非 auth 文件，Claude setup-token/Auth Token 也不伪装成该格式 | 已实现（重构路径） | `internal/adapters/accounts/cliproxyapi/`、`internal/transport/http/accountsapi/handler.go` |
 | XFER-026 | Go CLI 单账号 sub2api 导出 | `aih account transfer export <target> --format sub2api --output <file>` | 账号目标在目标 Server 解析；必须显式输出文件，使用 `O_EXCL + 0600`，不覆盖、不走 stdout、不打印凭据 | 已实现（重构路径） | `cmd/aih/account_transfer.go`、`cmd/aih/account_transfer_file.go`、`internal/adapters/accounts/managementapi/transfer.go` |
 | XFER-027 | Go CLI 单账号 sub2api 导入 | `aih account transfer import --format sub2api --input <file>` | 只接受一个最大 `1 MiB` 的显式 JSON 文件并提交目标 Server；不接受 stdin、批量 envelope 或 AIH 私有格式 | 已实现（重构路径） | `cmd/aih/account_transfer.go`、`cmd/aih/account_transfer_options.go`、`internal/adapters/accounts/managementapi/transfer.go` |
 | XFER-028 | Go CLI 单账号 CPA auth-file 导出 | `aih account transfer export <target> --format cliproxyapi --output <file>` | 只导出官方单 OAuth auth-file；与 sub2api 共用安全文件写入策略，不制造 CPA 批量 envelope 或有损导入 | 已实现（重构路径） | `cmd/aih/account_transfer.go`、`internal/adapters/accounts/cliproxyapi/` |
 
 Go 重构路径实时核对的外部合同基准为 sub2api
-`10a4c6e3ad319587e817109c071259269855ec30` 与 CLIProxyAPI
-`ecc9aa72b32f34b680d03b0724b531a21ae74472`（`v7.2.127`）。CPA 官方交换单位是一个
+`1e618dbc299fc0a82e9a690bcf2d5843be817113` 与 CLIProxyAPI
+`bd34ceca04209ef0460f4b05e3a1a047fb7fad2a`（`v7.2.128`）。CPA 官方交换单位是一个
 `auth-dir` JSON 文件而非批量 envelope。当前只暴露无损的 CPA OAuth 导出；Codex
 文件可从 ID Token 恢复稳定身份；当前 CPA Claude 文件已保存 `account_uuid`、
 `organization_uuid` 和 `organization_name`，缺失 `claude_device_ids` 时 CPA 会自行生成并

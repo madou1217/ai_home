@@ -22,7 +22,7 @@ const (
 	// AliasesPath 是 Provider 数字别名只读解析资源的规范集合前缀。
 	AliasesPath = accountcontract.AccountAliasesPath
 	// NativeImportPath 是 Codex、Claude 官方 artifact 导入资源的规范路径。
-	NativeImportPath = "/v1/management/account-imports"
+	NativeImportPath = accountcontract.NativeImportsPath
 	// Sub2APIImportPath 是单账号 sub2api 迁移文档导入资源的规范路径。
 	Sub2APIImportPath = accountcontract.Sub2APIImportsPath
 	// DefaultsPath 是 Provider 默认启动账号资源的规范集合前缀。

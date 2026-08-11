@@ -55,7 +55,7 @@ func NewExporter(reader SnapshotReader, clock Clock) (*Exporter, error) {
 	}, nil
 }
 
-// ExportAccount 读取一个账号并输出无本地身份、无格式版本的 sub2api-data JSON。
+// ExportAccount 读取一个账号并输出无本地身份的标准 sub2api-data JSON。
 func (exporter *Exporter) ExportAccount(
 	ctx context.Context,
 	accountRef accountcore.AccountRef,
@@ -83,6 +83,7 @@ func (exporter *Exporter) ExportAccount(
 	}
 	document := exportDocument{
 		Type:       dataType,
+		Version:    dataVersion,
 		ExportedAt: exportedAt.Format(time.RFC3339Nano),
 		Proxies:    []proxyDocument{},
 		Accounts:   []accountDocument{account},

@@ -2,12 +2,12 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"strconv"
 	"text/tabwriter"
 
+	"github.com/madou1217/ai_home/internal/adapters/accounts/managementapi"
 	"github.com/madou1217/ai_home/internal/host/aihaccount"
 )
 
@@ -51,26 +51,24 @@ func parseAccountListOptions(arguments []string) (aihaccount.ListOptions, error)
 	return options, nil
 }
 
-// runAccountList 从唯一业务数据库读取一页公开账号投影。
+// runAccountList 从当前目标 Server 读取一页公开账号投影。
 func runAccountList(
 	ctx context.Context,
 	options aihaccount.ListOptions,
 	runtime commandRuntime,
 ) error {
-	aiHomeDir, err := resolveAIHomeDir(runtime)
+	client, err := newAccountManagementClient(runtime)
 	if err != nil {
 		return err
 	}
-	app, err := runtime.newAccountApp(ctx, aihaccount.Options{AIHomeDir: aiHomeDir})
+	result, err := client.ListAccounts(ctx, managementapi.ListOptions{
+		AfterRef: options.AfterRef,
+		Limit:    options.Limit,
+	})
 	if err != nil {
-		return fmt.Errorf("初始化账号管理失败: %w", err)
+		return fmt.Errorf("读取 Server 账号列表失败: %w", err)
 	}
-	result, listErr := app.ListAccounts(ctx, options)
-	closeErr := app.Close()
-	if listErr != nil || closeErr != nil {
-		return errors.Join(listErr, closeErr)
-	}
-	writeAccountListResult(runtime.stdout, result)
+	writeAccountListResult(runtime.stdout, newHostAccountListResult(result))
 	return nil
 }
 
@@ -118,8 +116,9 @@ func writeAccountListUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "  --after account_ref  从上一页最后一个稳定 AccountRef 之后继续")
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "行为:")
-	_, _ = fmt.Fprintln(output, "  使用 AccountRef keyset 分页；不做 OFFSET 全表扫描。")
-	_, _ = fmt.Fprintln(output, "  只读取账号基础信息、认证类型和公开资料，不读取或输出凭据正文、usage、模型或运行态。")
+	_, _ = fmt.Fprintln(output, "  通过 AIH_SERVER_BASE_URL 使用 AccountRef keyset 分页；不做 OFFSET 全表扫描。")
+	_, _ = fmt.Fprintln(output, "  只读取目标 Server 的账号基础信息、认证类型和公开资料，不读取或输出凭据正文、usage、模型或运行态。")
+	_, _ = fmt.Fprintln(output, "  AIH_SERVER_BASE_URL 默认 http://127.0.0.1:9527；AIH_SERVER_MANAGEMENT_KEY 必填。")
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "示例:")
 	_, _ = fmt.Fprintln(output, "  aih account list")

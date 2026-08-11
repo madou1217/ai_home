@@ -20,6 +20,7 @@ type realCodexFixture struct {
 	aiHomeDir    string
 	baseURL      string
 	client       *http.Client
+	accountRef   string
 	importStatus int
 	authKind     string
 	modelsStatus int
@@ -83,8 +84,9 @@ func startRealCodexFixture(
 	assertStatus(t, imported, http.StatusCreated)
 	var importDocument struct {
 		Data struct {
-			AuthKind string `json:"auth_kind"`
-			AuthMode string `json:"auth_mode"`
+			AccountRef string `json:"account_ref"`
+			AuthKind   string `json:"auth_kind"`
+			AuthMode   string `json:"auth_mode"`
 		} `json:"data"`
 	}
 	decodeJSON(t, imported.body, &importDocument)
@@ -113,6 +115,7 @@ func startRealCodexFixture(
 		aiHomeDir:    aiHomeDir,
 		baseURL:      baseURL,
 		client:       client,
+		accountRef:   importDocument.Data.AccountRef,
 		importStatus: imported.status,
 		authKind:     importDocument.Data.AuthKind,
 		modelsStatus: models.status,

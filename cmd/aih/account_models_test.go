@@ -3,304 +3,142 @@ package main
 import (
 	"bytes"
 	"context"
-	"errors"
+	"io"
+	"net/http"
 	"strings"
 	"testing"
-	"time"
 
+	accountcontract "github.com/madou1217/ai_home/internal/contracts/accountmanagement"
 	"github.com/madou1217/ai_home/internal/host/aihaccount"
 )
 
-// TestAccountModelsListPrintsMaterializedSnapshot 验证模型命令只把显式账号
-// 目标交给 Host，并完整展示已物化模型的来源、人工策略和最终有效性。
-func TestAccountModelsListPrintsMaterializedSnapshot(t *testing.T) {
-	output := &bytes.Buffer{}
-	application := &recordingAccountApplication{
-		modelsResult: aihaccount.AccountModelsResult{
-			AccountRef: "acct_11111111111111111111",
-			Models: []aihaccount.AccountModelView{
-				{
-					ModelID:           "claude-opus-5",
-					UpstreamAvailable: true,
-					ManualPolicy:      "inherit",
-					Effective:         true,
-					UpdatedAt:         time.Date(2026, 8, 9, 8, 30, 0, 0, time.UTC),
-				},
-				{
-					ModelID:           "claude-retired",
-					UpstreamAvailable: false,
-					ManualPolicy:      "force_enable",
-					Effective:         true,
-					UpdatedAt:         time.Date(2026, 8, 9, 8, 31, 0, 0, time.UTC),
-				},
-			},
-		},
-	}
-	runtime := testCommandRuntime(t, map[string]string{"AIH_HOME": "/test-user/.ai_home"})
-	runtime.stdout = output
-	runtime.newAccountApp = func(
-		_ context.Context,
-		options aihaccount.Options,
-	) (accountApplication, error) {
-		application.options = options
-		return application, nil
-	}
+const remoteModelsJSON = `{"data":[{"model_id":"claude-opus-5","upstream_available":true,"manual_policy":"inherit","effective":true,"updated_at":"2026-08-10T08:00:00Z"},{"model_id":"claude-retired","upstream_available":false,"manual_policy":"force_enable","effective":true,"updated_at":"2026-08-10T08:01:00Z"}]}`
 
-	if err := run(
-		context.Background(),
-		[]string{"account", "models", "list", "claude:9"},
-		runtime,
-	); err != nil {
+// TestAccountModelsListUsesServerSnapshot 验证模型列表只读取目标 Server 的
+// 已物化快照，并把 provider:id 解析交给目标 Server。
+func TestAccountModelsListUsesServerSnapshot(t *testing.T) {
+	output := &bytes.Buffer{}
+	transport := &accountCatalogCommandHTTPClient{t: t, responses: []string{
+		`{"data":{"account_ref":"acct_11111111111111111111","provider_id":"claude","cli_account_id":9,"enabled":true,"updated_at":"2026-08-10T08:00:00Z"}}`,
+		remoteModelsJSON,
+	}}
+	runtime := remoteAccountCommandRuntime(t, output, transport)
+	if err := run(context.Background(), []string{"account", "models", "list", "claude:9"}, runtime); err != nil {
 		t.Fatalf("run() error = %v", err)
 	}
-	if application.modelsTarget.ProviderID != "claude" ||
-		application.modelsTarget.CLIAccountID != 9 ||
-		application.options.AIHomeDir != "/test-user/.ai_home" ||
-		application.closeCalls != 1 {
-		t.Fatalf(
-			"target=%+v ai_home=%s close_calls=%d",
-			application.modelsTarget,
-			application.options.AIHomeDir,
-			application.closeCalls,
-		)
+	if transport.paths[0] != accountcontract.AccountAliasesPath+"/claude/9" ||
+		transport.paths[1] != accountcontract.AccountsPath+
+			"/acct_11111111111111111111"+accountcontract.AccountModelsSuffix {
+		t.Fatalf("模型列表请求 = %#v", transport.paths)
 	}
-	rendered := output.String()
 	for _, expected := range []string{
-		"acct_11111111111111111111",
-		"claude-opus-5",
-		"available",
-		"inherit",
-		"enabled",
-		"claude-retired",
-		"missing",
-		"force_enable",
+		"acct_11111111111111111111", "claude-opus-5", "available", "inherit", "enabled",
+		"claude-retired", "missing", "force_enable",
 	} {
-		if !strings.Contains(rendered, expected) {
-			t.Fatalf("账号模型输出缺少 %q: %s", expected, rendered)
+		if !strings.Contains(output.String(), expected) {
+			t.Fatalf("账号模型输出缺少 %q: %s", expected, output.String())
 		}
 	}
 }
 
-// TestAccountModelsListJoinsQueryAndCloseErrors 验证模型读取失败时仍释放
-// 单库资源，并保留查询错误与关闭错误两条因果链。
-func TestAccountModelsListJoinsQueryAndCloseErrors(t *testing.T) {
-	modelsErr := errors.New("模型读取失败")
-	closeErr := errors.New("关闭失败")
-	application := &recordingAccountApplication{
-		modelsErr: modelsErr,
-		closeErr:  closeErr,
-	}
-	runtime := testCommandRuntime(t, nil)
-	runtime.newAccountApp = func(
-		context.Context,
-		aihaccount.Options,
-	) (accountApplication, error) {
-		return application, nil
-	}
-
-	err := run(
-		context.Background(),
-		[]string{"account", "models", "list", "acct_11111111111111111111"},
-		runtime,
-	)
-	if !errors.Is(err, modelsErr) ||
-		!errors.Is(err, closeErr) ||
-		application.closeCalls != 1 {
-		t.Fatalf("error=%v close_calls=%d", err, application.closeCalls)
-	}
-}
-
-// TestAccountModelsRefreshPrintsFreshSnapshot 验证刷新命令把显式账号目标交给
-// Host，并明确区分刷新成功与普通只读列表。
-func TestAccountModelsRefreshPrintsFreshSnapshot(t *testing.T) {
+// TestAccountModelsRefreshUsesServerAction 验证 refresh 是目标 Server 上的
+// 显式动作，不在 CLI 进程中读取凭据或实时访问 Provider。
+func TestAccountModelsRefreshUsesServerAction(t *testing.T) {
 	output := &bytes.Buffer{}
-	application := &recordingAccountApplication{
-		refreshResult: aihaccount.AccountModelsResult{
-			AccountRef: "acct_11111111111111111111",
-			Models: []aihaccount.AccountModelView{{
-				ModelID:           "claude-opus-5",
-				UpstreamAvailable: true,
-				ManualPolicy:      "inherit",
-				Effective:         true,
-				UpdatedAt:         time.Date(2026, 8, 9, 9, 0, 0, 0, time.UTC),
-			}},
-		},
-	}
-	runtime := testCommandRuntime(t, map[string]string{"AIH_HOME": "/test-user/.ai_home"})
-	runtime.stdout = output
-	runtime.newAccountApp = func(
-		_ context.Context,
-		options aihaccount.Options,
-	) (accountApplication, error) {
-		application.options = options
-		return application, nil
-	}
-
-	if err := run(
-		context.Background(),
-		[]string{
-			"account",
-			"models",
-			"refresh",
-			"acct_11111111111111111111",
-		},
-		runtime,
-	); err != nil {
+	transport := &accountCatalogCommandHTTPClient{t: t, responses: []string{remoteModelsJSON}}
+	runtime := remoteAccountCommandRuntime(t, output, transport)
+	if err := run(context.Background(), []string{
+		"account", "models", "refresh", "acct_11111111111111111111",
+	}, runtime); err != nil {
 		t.Fatalf("run() error = %v", err)
 	}
-	if application.refreshTarget.AccountRef != "acct_11111111111111111111" ||
-		application.options.AIHomeDir != "/test-user/.ai_home" ||
-		application.closeCalls != 1 {
-		t.Fatalf(
-			"target=%+v ai_home=%s close_calls=%d",
-			application.refreshTarget,
-			application.options.AIHomeDir,
-			application.closeCalls,
-		)
+	if transport.methods[0] != http.MethodPost || transport.paths[0] !=
+		accountcontract.AccountsPath+"/acct_11111111111111111111"+
+			accountcontract.AccountModelsRefreshSuffix || transport.bodies[0] != "" {
+		t.Fatalf("模型刷新请求 = methods=%v paths=%v bodies=%v", transport.methods, transport.paths, transport.bodies)
 	}
-	rendered := output.String()
-	for _, expected := range []string{
-		"模型刷新完成",
-		"acct_11111111111111111111",
-		"claude-opus-5",
-		"available",
-		"inherit",
-		"enabled",
-	} {
-		if !strings.Contains(rendered, expected) {
-			t.Fatalf("模型刷新输出缺少 %q: %s", expected, rendered)
-		}
+	if !strings.Contains(output.String(), "模型刷新完成") ||
+		!strings.Contains(output.String(), "claude-opus-5") {
+		t.Fatalf("模型刷新输出无效: %s", output.String())
 	}
 }
 
-// TestAccountModelsRefreshJoinsRefreshAndCloseErrors 验证远端刷新失败时仍释放
-// 单库资源，并保留刷新错误与关闭错误两条因果链。
-func TestAccountModelsRefreshJoinsRefreshAndCloseErrors(t *testing.T) {
-	refreshErr := errors.New("模型刷新失败")
-	closeErr := errors.New("关闭失败")
-	application := &recordingAccountApplication{
-		refreshErr: refreshErr,
-		closeErr:   closeErr,
-	}
-	runtime := testCommandRuntime(t, nil)
-	runtime.newAccountApp = func(
-		context.Context,
-		aihaccount.Options,
-	) (accountApplication, error) {
-		return application, nil
-	}
-
-	err := run(
-		context.Background(),
-		[]string{"account", "models", "refresh", "claude:1"},
-		runtime,
-	)
-	if !errors.Is(err, refreshErr) ||
-		!errors.Is(err, closeErr) ||
-		application.closeCalls != 1 {
-		t.Fatalf("error=%v close_calls=%d", err, application.closeCalls)
-	}
-}
-
-// TestAccountModelsSetPolicyPrintsUpdatedSnapshot 验证人工策略命令使用规范
-// 模型 ID 和策略，并在成功后展示最终路由有效性。
-func TestAccountModelsSetPolicyPrintsUpdatedSnapshot(t *testing.T) {
+// TestAccountModelsSetPolicyUsesServerPatch 验证人工策略通过精确模型 PATCH
+// 写入目标 Server，且输出服务端返回的完整快照。
+func TestAccountModelsSetPolicyUsesServerPatch(t *testing.T) {
 	output := &bytes.Buffer{}
-	application := &recordingAccountApplication{
-		policyResult: aihaccount.AccountModelsResult{
-			AccountRef: "acct_11111111111111111111",
-			Models: []aihaccount.AccountModelView{{
-				ModelID:           "claude-opus-5",
-				UpstreamAvailable: true,
-				ManualPolicy:      "force_disable",
-				Effective:         false,
-				UpdatedAt:         time.Date(2026, 8, 9, 9, 30, 0, 0, time.UTC),
-			}},
-		},
-	}
-	runtime := testCommandRuntime(t, map[string]string{"AIH_HOME": "/test-user/.ai_home"})
-	runtime.stdout = output
-	runtime.newAccountApp = func(
-		_ context.Context,
-		options aihaccount.Options,
-	) (accountApplication, error) {
-		application.options = options
-		return application, nil
-	}
-
-	if err := run(
-		context.Background(),
-		[]string{
-			"account",
-			"models",
-			"set-policy",
-			"claude:9",
-			"claude-opus-5",
-			"force_disable",
-		},
-		runtime,
-	); err != nil {
+	transport := &accountCatalogCommandHTTPClient{t: t, responses: []string{
+		`{"data":[{"model_id":"claude-opus-5","upstream_available":true,"manual_policy":"force_disable","effective":false,"updated_at":"2026-08-10T08:00:00Z"}]}`,
+	}}
+	runtime := remoteAccountCommandRuntime(t, output, transport)
+	if err := run(context.Background(), []string{
+		"account", "models", "set-policy", "acct_11111111111111111111", "claude-opus-5", "force_disable",
+	}, runtime); err != nil {
 		t.Fatalf("run() error = %v", err)
 	}
-	command := application.policyCommand
-	if command.Target.ProviderID != "claude" ||
-		command.Target.CLIAccountID != 9 ||
-		command.ModelID != "claude-opus-5" ||
-		command.ManualPolicy != "force_disable" ||
-		application.options.AIHomeDir != "/test-user/.ai_home" ||
-		application.closeCalls != 1 {
-		t.Fatalf(
-			"command=%+v ai_home=%s close_calls=%d",
-			command,
-			application.options.AIHomeDir,
-			application.closeCalls,
-		)
+	if transport.methods[0] != http.MethodPatch || transport.paths[0] !=
+		accountcontract.AccountsPath+"/acct_11111111111111111111"+accountcontract.AccountModelsSuffix ||
+		transport.bodies[0] != `{"model_id":"claude-opus-5","manual_policy":"force_disable"}` {
+		t.Fatalf("模型策略请求 = methods=%v paths=%v bodies=%v", transport.methods, transport.paths, transport.bodies)
 	}
-	rendered := output.String()
-	for _, expected := range []string{
-		"模型策略已更新",
-		"claude-opus-5",
-		"force_disable",
-		"disabled",
-	} {
-		if !strings.Contains(rendered, expected) {
-			t.Fatalf("模型策略输出缺少 %q: %s", expected, rendered)
-		}
+	if !strings.Contains(output.String(), "模型策略已更新") ||
+		!strings.Contains(output.String(), "force_disable") ||
+		!strings.Contains(output.String(), "disabled") {
+		t.Fatalf("模型策略输出无效: %s", output.String())
 	}
 }
 
-// TestAccountModelsSetPolicyJoinsOperationAndCloseErrors 验证人工策略写入
-// 失败时仍关闭单库，并保留操作错误与关闭错误。
-func TestAccountModelsSetPolicyJoinsOperationAndCloseErrors(t *testing.T) {
-	policyErr := errors.New("模型策略写入失败")
-	closeErr := errors.New("关闭失败")
-	application := &recordingAccountApplication{
-		policyErr: policyErr,
-		closeErr:  closeErr,
+// TestAccountModelsRejectsRemoteFailureWithoutOpeningLocalDatabase 验证 Server
+// 刷新失败时保留远端错误边界，且不退回本地 SQLite。
+func TestAccountModelsRejectsRemoteFailureWithoutOpeningLocalDatabase(t *testing.T) {
+	runtime := remoteAccountCommandRuntime(t, &bytes.Buffer{}, &staticCatalogHTTPClient{
+		status: http.StatusBadGateway,
+		body:   `{"error":{"code":"upstream_temporarily_unavailable","message":"temporary"}}`,
+	})
+	runtime.newAccountApp = func(context.Context, aihaccount.Options) (accountApplication, error) {
+		t.Fatal("模型命令不得退回本地数据库")
+		return nil, nil
 	}
-	runtime := testCommandRuntime(t, nil)
-	runtime.newAccountApp = func(
-		context.Context,
-		aihaccount.Options,
-	) (accountApplication, error) {
-		return application, nil
+	err := run(context.Background(), []string{
+		"account", "models", "refresh", "acct_11111111111111111111",
+	}, runtime)
+	if err == nil || !strings.Contains(err.Error(), "upstream_temporarily_unavailable") {
+		t.Fatalf("run() error = %v", err)
 	}
+}
 
-	err := run(
-		context.Background(),
-		[]string{
-			"account",
-			"models",
-			"set-policy",
-			"claude:1",
-			"claude-opus-5",
-			"inherit",
-		},
-		runtime,
-	)
-	if !errors.Is(err, policyErr) ||
-		!errors.Is(err, closeErr) ||
-		application.closeCalls != 1 {
-		t.Fatalf("error=%v close_calls=%d", err, application.closeCalls)
+// remoteAccountCommandRuntime 创建只允许访问合成目标 Server 的命令边界。
+func remoteAccountCommandRuntime(
+	t *testing.T,
+	output *bytes.Buffer,
+	transport interface {
+		Do(*http.Request) (*http.Response, error)
+	},
+) commandRuntime {
+	runtime := testCommandRuntime(t, map[string]string{
+		"AIH_SERVER_BASE_URL":       "http://127.0.0.1:19527",
+		"AIH_SERVER_MANAGEMENT_KEY": commandTestManagementKey,
+	})
+	runtime.stdout = output
+	runtime.managementAPI = transport
+	runtime.newAccountApp = func(context.Context, aihaccount.Options) (accountApplication, error) {
+		t.Fatal("账号模型命令不得打开本地数据库")
+		return nil, nil
 	}
+	return runtime
+}
+
+// staticCatalogHTTPClient 返回固定远端错误，避免测试连接真实上游。
+type staticCatalogHTTPClient struct {
+	status int
+	body   string
+}
+
+// Do 返回固定错误响应并保留 JSON 错误合同。
+func (client *staticCatalogHTTPClient) Do(request *http.Request) (*http.Response, error) {
+	return &http.Response{
+		StatusCode: client.status,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(client.body)),
+	}, nil
 }

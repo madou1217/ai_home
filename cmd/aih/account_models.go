@@ -2,11 +2,11 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"text/tabwriter"
 
+	"github.com/madou1217/ai_home/internal/adapters/accounts/managementapi"
 	"github.com/madou1217/ai_home/internal/host/aihaccount"
 )
 
@@ -77,33 +77,39 @@ type accountModelsInvocation struct {
 	policyCommand aihaccount.AccountModelPolicyCommand
 }
 
-// runAccountModelsCommand 统一账号模型命令的数据库生命周期和结果输出。
+// runAccountModelsCommand 统一账号模型命令的 Server 解析、HTTP 操作和结果输出。
 func runAccountModelsCommand(
 	ctx context.Context,
 	invocation accountModelsInvocation,
 	runtime commandRuntime,
 ) error {
-	aiHomeDir, err := resolveAIHomeDir(runtime)
+	client, err := newAccountManagementClient(runtime)
 	if err != nil {
 		return err
 	}
-	app, err := runtime.newAccountApp(ctx, aihaccount.Options{AIHomeDir: aiHomeDir})
-	if err != nil {
-		return fmt.Errorf("初始化账号管理失败: %w", err)
-	}
 	var (
-		result       aihaccount.AccountModelsResult
+		result       managementapi.AccountModelsResult
 		operationErr error
 	)
+	target := invocation.target
+	if invocation.name == "set-policy" {
+		target = invocation.policyCommand.Target
+	}
+	accountRef, err := resolveManagementAccountRef(ctx, client, target)
+	if err != nil {
+		return fmt.Errorf("解析 Server 账号模型目标失败: %w", err)
+	}
 	switch invocation.name {
 	case "list":
-		result, operationErr = app.ListAccountModels(ctx, invocation.target)
+		result, operationErr = client.ListAccountModels(ctx, accountRef)
 	case "refresh":
-		result, operationErr = app.RefreshAccountModels(ctx, invocation.target)
+		result, operationErr = client.RefreshAccountModels(ctx, accountRef)
 	case "set-policy":
-		result, operationErr = app.SetAccountModelPolicy(
+		result, operationErr = client.SetAccountModelPolicy(
 			ctx,
-			invocation.policyCommand,
+			accountRef,
+			invocation.policyCommand.ModelID,
+			invocation.policyCommand.ManualPolicy,
 		)
 	default:
 		operationErr = fmt.Errorf(
@@ -112,16 +118,15 @@ func runAccountModelsCommand(
 			invocation.name,
 		)
 	}
-	closeErr := app.Close()
-	if operationErr != nil || closeErr != nil {
-		return errors.Join(operationErr, closeErr)
+	if operationErr != nil {
+		return fmt.Errorf("执行 Server 账号模型操作失败: %w", operationErr)
 	}
 	if invocation.name == "refresh" {
 		_, _ = fmt.Fprintln(runtime.stdout, "模型刷新完成。")
 	} else if invocation.name == "set-policy" {
 		_, _ = fmt.Fprintln(runtime.stdout, "模型策略已更新。")
 	}
-	writeAccountModelsResult(runtime.stdout, result)
+	writeAccountModelsResult(runtime.stdout, newHostAccountModelsResult(result))
 	return nil
 }
 
@@ -193,11 +198,12 @@ func writeAccountModelsUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "  EFFECTIVE 合并上游目录和人工策略后的最终路由状态")
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "行为:")
-	_, _ = fmt.Fprintln(output, "  只读取 aih.db 中已物化的账号模型快照，不实时请求 Provider。")
-	_, _ = fmt.Fprintln(output, "  refresh 使用当前凭据读取完整 Provider 目录，成功后原子替换上游发现部分。")
+	_, _ = fmt.Fprintln(output, "  list 只读取目标 Server 中已物化的账号模型快照，不实时请求 Provider。")
+	_, _ = fmt.Fprintln(output, "  refresh 由目标 Server 使用规范凭据读取完整 Provider 目录，成功后原子替换上游发现部分。")
 	_, _ = fmt.Fprintln(output, "  refresh 失败时保留旧快照；人工 force_enable/force_disable 策略不被覆盖。")
 	_, _ = fmt.Fprintln(output, "  set-policy 只修改一个精确模型，不访问 Provider；inherit 恢复跟随上游目录。")
 	_, _ = fmt.Fprintln(output, "  两个命令都不输出凭据正文、usage 或运行态。")
+	_, _ = fmt.Fprintln(output, "  AIH_HOME 不参与这些查询；账号事实以 AIH_SERVER_BASE_URL 为准。")
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "示例:")
 	_, _ = fmt.Fprintln(output, "  aih account models list claude:1")

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"strings"
 	"time"
 
@@ -25,6 +24,7 @@ var (
 // importDocument 是当前 sub2api-data 单账号导入接受的顶层合同。
 type importDocument struct {
 	Type           string            `json:"type"`
+	Version        int               `json:"version,omitempty"`
 	ExportedAt     string            `json:"exported_at"`
 	Proxies        []json.RawMessage `json:"proxies"`
 	Accounts       []importAccount   `json:"accounts"`
@@ -77,7 +77,7 @@ func NewDecoder() *Decoder {
 	}
 }
 
-// DecodeAccount 严格读取一个 sub2api 账号，不接受批量、代理或格式版本。
+// DecodeAccount 严格读取一个 sub2api 账号，不接受批量、代理或未知格式版本。
 func (decoder *Decoder) DecodeAccount(
 	documentJSON []byte,
 ) (accountapp.Credential, accountapp.PublicProfile, error) {
@@ -115,6 +115,9 @@ func validateImportDocument(document importDocument) (time.Time, error) {
 	if document.Type != "" && document.Type != dataType {
 		return time.Time{}, invalidDocument("数据类型不受支持")
 	}
+	if document.Version != 0 && document.Version != dataVersion {
+		return time.Time{}, invalidDocument("数据版本不受支持")
+	}
 	exportedAt, err := time.Parse(time.RFC3339Nano, document.ExportedAt)
 	if err != nil || exportedAt.IsZero() {
 		return time.Time{}, invalidDocument("导出时间无效")
@@ -139,46 +142,13 @@ func validateImportDocument(document importDocument) (time.Time, error) {
 	return exportedAt.UTC(), nil
 }
 
-// codexOAuthInput 是 sub2api 当前 OpenAI OAuth 凭据的必要字段。
-type codexOAuthInput struct {
-	AccessToken      string `json:"access_token"`
-	RefreshToken     string `json:"refresh_token"`
-	IDToken          string `json:"id_token"`
-	ChatGPTAccountID string `json:"chatgpt_account_id,omitempty"`
-}
-
-// apiKeyInput 是 OpenAI 与 Anthropic API Key 的公共凭据字段。
-type apiKeyInput struct {
-	APIKey  string `json:"api_key"`
-	BaseURL string `json:"base_url,omitempty"`
-}
-
-// claudeOAuthInput 是 sub2api 当前 Anthropic OAuth 与 setup-token 字段。
-type claudeOAuthInput struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token,omitempty"`
-	ExpiresAt    int64  `json:"expires_at,omitempty"`
-	Scope        string `json:"scope,omitempty"`
-	AccountUUID  string `json:"account_uuid,omitempty"`
-	OrgUUID      string `json:"org_uuid,omitempty"`
-	Email        string `json:"email_address,omitempty"`
-	BaseURL      string `json:"base_url,omitempty"`
-}
-
-// claudeExtraInput 只从开放 extra 对象提取稳定公开身份，不向领域层传递任意 map。
-type claudeExtraInput struct {
-	AccountUUID string `json:"account_uuid,omitempty"`
-	OrgUUID     string `json:"org_uuid,omitempty"`
-	Email       string `json:"email_address,omitempty"`
-}
-
 // decodeCodexOAuth 通过 ID Token 领域构造器恢复稳定 Codex 身份。
 func decodeCodexOAuth(
 	account importAccount,
 	exportedAt time.Time,
 ) (accountapp.Credential, accountapp.PublicProfile, error) {
-	var input codexOAuthInput
-	if err := decodeCredentialObject(account.Credentials, &input); err != nil {
+	input, err := decodeCodexOAuthCredential(account.Credentials)
+	if err != nil {
 		return nil, nil, invalidDocument("Codex OAuth 凭据无效")
 	}
 	auth, err := codex.NewOAuthAuth(codex.OAuthInput{
@@ -190,6 +160,12 @@ func decodeCodexOAuth(
 	})
 	if err != nil {
 		return nil, nil, invalidDocument("Codex OAuth 凭据无效")
+	}
+	if input.PlanType != "" && input.PlanType != auth.PlanType() {
+		return nil, nil, invalidDocument("Codex OAuth plan_type 冲突")
+	}
+	if input.Email != "" && !strings.EqualFold(input.Email, auth.Email()) {
+		return nil, nil, invalidDocument("Codex OAuth email 冲突")
 	}
 	profile, err := codex.NewAccountProfile(auth.Profile())
 	if err != nil {
@@ -203,8 +179,8 @@ func decodeCodexAPIKey(
 	account importAccount,
 	_ time.Time,
 ) (accountapp.Credential, accountapp.PublicProfile, error) {
-	var input apiKeyInput
-	if err := decodeCredentialObject(account.Credentials, &input); err != nil {
+	input, err := decodeAPIKeyCredential(account.Credentials)
+	if err != nil {
 		return nil, nil, invalidDocument("Codex API Key 无效")
 	}
 	auth, err := codex.NewAPIKeyAuth(codex.APIKeyInput{
@@ -226,10 +202,10 @@ func decodeClaudeOAuth(
 	if err != nil {
 		return nil, nil, err
 	}
-	if input.RefreshToken == "" || input.ExpiresAt <= 0 {
+	if input.RefreshToken == "" || input.ExpiresAtMS <= 0 {
 		return nil, nil, invalidDocument("Claude OAuth 缺少刷新字段")
 	}
-	scopes := strings.Fields(input.Scope)
+	scopes := input.Scopes
 	if !containsScope(scopes, "user:profile") {
 		return nil, nil, invalidDocument("Claude OAuth 类型与 scope 不一致")
 	}
@@ -245,11 +221,11 @@ func decodeClaudeSetupToken(
 	if err != nil {
 		return nil, nil, err
 	}
-	if input.RefreshToken != "" || input.ExpiresAt != 0 {
-		if input.RefreshToken == "" || input.ExpiresAt <= 0 {
+	if input.RefreshToken != "" || input.ExpiresAtMS != 0 {
+		if input.RefreshToken == "" || input.ExpiresAtMS <= 0 {
 			return nil, nil, invalidDocument("Claude setup-token 刷新字段不完整")
 		}
-		scopes := strings.Fields(input.Scope)
+		scopes := input.Scopes
 		if containsScope(scopes, "user:profile") {
 			return nil, nil, invalidDocument("Claude setup-token scope 无效")
 		}
@@ -260,8 +236,18 @@ func decodeClaudeSetupToken(
 		input.OrgUUID != "" ||
 		extra.OrgUUID != "" ||
 		input.Email != "" ||
-		extra.Email != "" {
+		extra.Email != "" ||
+		input.RefreshTokenExpiresAtMS != 0 ||
+		input.ClientID != "" ||
+		input.SubscriptionType != "" ||
+		extra.SubscriptionType != "" ||
+		input.RateLimitTier != "" ||
+		extra.RateLimitTier != "" {
 		return nil, nil, invalidDocument("Claude access-only Token 携带无法绑定的 OAuth 身份")
+	}
+	if len(input.Scopes) > 0 &&
+		(len(input.Scopes) != 1 || input.Scopes[0] != claude.InferenceScope) {
+		return nil, nil, invalidDocument("Claude access-only Token scope 无效")
 	}
 	auth, err := claude.NewOAuthTokenAuth(claude.OAuthTokenInput{
 		AccessToken: input.AccessToken,
@@ -278,8 +264,8 @@ func decodeClaudeAPIKey(
 	account importAccount,
 	_ time.Time,
 ) (accountapp.Credential, accountapp.PublicProfile, error) {
-	var input apiKeyInput
-	if err := decodeCredentialObject(account.Credentials, &input); err != nil {
+	input, err := decodeAPIKeyCredential(account.Credentials)
+	if err != nil {
 		return nil, nil, invalidDocument("Claude API Key 无效")
 	}
 	auth, err := claude.NewAPIKeyAuth(claude.APIKeyInput{
@@ -296,14 +282,15 @@ func decodeClaudeAPIKey(
 func decodeClaudeInputs(
 	account importAccount,
 ) (claudeOAuthInput, claudeExtraInput, error) {
-	var input claudeOAuthInput
-	if err := decodeCredentialObject(account.Credentials, &input); err != nil {
+	input, err := decodeClaudeOAuthCredential(account.Credentials)
+	if err != nil {
 		return claudeOAuthInput{}, claudeExtraInput{},
 			invalidDocument("Claude OAuth 凭据无效")
 	}
 	var extra claudeExtraInput
 	if len(account.Extra) > 0 && string(account.Extra) != "null" {
-		if err := decodeCredentialObject(account.Extra, &extra); err != nil {
+		extra, err = decodeClaudeExtra(account.Extra)
+		if err != nil {
 			return claudeOAuthInput{}, claudeExtraInput{},
 				invalidDocument("Claude extra 无效")
 		}
@@ -329,15 +316,25 @@ func newClaudeRefreshable(
 	if err != nil {
 		return nil, nil, invalidDocument("Claude OAuth email_address 冲突")
 	}
-	expiresAtMS, err := unixSecondsToMillis(input.ExpiresAt)
+	organizationName, err := mergeExact(input.OrganizationName, extra.OrganizationName)
 	if err != nil {
-		return nil, nil, invalidDocument("Claude OAuth expires_at 无效")
+		return nil, nil, invalidDocument("Claude OAuth organization_name 冲突")
+	}
+	subscriptionType, err := mergeExact(input.SubscriptionType, extra.SubscriptionType)
+	if err != nil {
+		return nil, nil, invalidDocument("Claude OAuth subscription_type 冲突")
+	}
+	rateLimitTier, err := mergeExact(input.RateLimitTier, extra.RateLimitTier)
+	if err != nil {
+		return nil, nil, invalidDocument("Claude OAuth rate_limit_tier 冲突")
 	}
 	auth, err := claude.NewOAuthAuth(claude.OAuthInput{
-		AccessToken:  input.AccessToken,
-		RefreshToken: input.RefreshToken,
-		ExpiresAtMS:  expiresAtMS,
-		Scopes:       scopes,
+		AccessToken:             input.AccessToken,
+		RefreshToken:            input.RefreshToken,
+		ExpiresAtMS:             input.ExpiresAtMS,
+		RefreshTokenExpiresAtMS: input.RefreshTokenExpiresAtMS,
+		ClientID:                input.ClientID,
+		Scopes:                  scopes,
 		Identity: claude.OAuthIdentity{
 			AccountUUID: accountUUID,
 		},
@@ -352,11 +349,12 @@ func newClaudeRefreshable(
 		AccountUUID:      accountUUID,
 		Email:            email,
 		OrganizationUUID: orgUUID,
+		OrganizationName: organizationName,
 	})
 	if err != nil {
 		return nil, nil, invalidDocument("Claude OAuth 公开资料无效")
 	}
-	subscription, err := claude.NewSubscription("", "")
+	subscription, err := claude.NewSubscription(subscriptionType, rateLimitTier)
 	if err != nil {
 		return nil, nil, invalidDocument("Claude OAuth 订阅资料无效")
 	}
@@ -384,12 +382,12 @@ func decodeStrictJSON(document []byte, target any) error {
 	return nil
 }
 
-// decodeCredentialObject 只把开放 JSON 对象投影到类型化 Provider DTO。
+// decodeCredentialObject 严格把 JSON 对象投影到已确认的 Provider DTO。
 func decodeCredentialObject(document json.RawMessage, target any) error {
 	if !isJSONObject(document) || target == nil {
 		return ErrInvalidDocument
 	}
-	if err := json.Unmarshal(document, target); err != nil {
+	if err := decodeStrictJSON(document, target); err != nil {
 		return ErrInvalidDocument
 	}
 	return nil
@@ -431,6 +429,20 @@ func mergeEmail(primary string, secondary string) (string, error) {
 	}
 }
 
+// mergeExact 合并两个可选官方文本字段，并拒绝不同值。
+func mergeExact(primary string, secondary string) (string, error) {
+	switch {
+	case primary == "":
+		return secondary, nil
+	case secondary == "":
+		return primary, nil
+	case primary == secondary:
+		return primary, nil
+	default:
+		return "", ErrInvalidDocument
+	}
+}
+
 // containsScope 判断外部 scope 列表是否包含精确权限。
 func containsScope(scopes []string, expected string) bool {
 	for _, scope := range scopes {
@@ -439,14 +451,6 @@ func containsScope(scopes []string, expected string) bool {
 		}
 	}
 	return false
-}
-
-// unixSecondsToMillis 做有界换算，避免恶意整数溢出。
-func unixSecondsToMillis(seconds int64) (int64, error) {
-	if seconds <= 0 || seconds > math.MaxInt64/1_000 {
-		return 0, ErrInvalidDocument
-	}
-	return seconds * 1_000, nil
 }
 
 // invalidDocument 只附加代码内固定原因，不包含外部凭据值。

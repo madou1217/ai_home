@@ -952,6 +952,7 @@ func redactAPIKeyFromJSON(body []byte) string {
 func redactSub2ApiExport(body string) string {
 	var document struct {
 		Type       string `json:"type"`
+		Version    int    `json:"version"`
 		ExportedAt string `json:"exported_at"`
 		Proxies    []any  `json:"proxies"`
 		Accounts   []struct {
@@ -967,6 +968,7 @@ func redactSub2ApiExport(body string) string {
 	}
 	safe := map[string]any{
 		"type":        document.Type,
+		"version":     document.Version,
 		"exported_at": document.ExportedAt,
 		"proxies":     document.Proxies,
 		"accounts":    make([]map[string]any, 0, len(document.Accounts)),
@@ -990,7 +992,7 @@ func redactSub2ApiExport(body string) string {
 	return string(encoded)
 }
 
-// assertLiveAccountExport 校验真实 TCP 导出包含合成凭据且没有本地或版本字段。
+// assertLiveAccountExport 校验真实 TCP 导出包含标准版本、合成凭据且没有本地字段。
 func assertLiveAccountExport(
 	t *testing.T,
 	body string,
@@ -1004,8 +1006,9 @@ func assertLiveAccountExport(
 	if err := json.Unmarshal([]byte(body), &root); err != nil {
 		t.Fatalf("export json.Unmarshal() error = %v", err)
 	}
-	if _, found := root["version"]; found {
-		t.Fatal("真实导出仍包含 version")
+	var version int
+	if err := json.Unmarshal(root["version"], &version); err != nil || version != 1 {
+		t.Fatalf("真实导出 version=%d error=%v", version, err)
 	}
 	var accounts []struct {
 		Name        string `json:"name"`

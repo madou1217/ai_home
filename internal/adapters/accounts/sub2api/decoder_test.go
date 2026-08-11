@@ -64,8 +64,8 @@ func TestDecoderDecodesCurrentCodexAndClaudeContracts(t *testing.T) {
 		{
 			name: "codex api key",
 			document: newSub2APIDocument(t, "openai", "apikey", map[string]any{
-				"api_key":  "synthetic-sub2api-codex-key",
-				"base_url": "https://openai-compatible.example.invalid/v1/",
+				"apiKey":  "test-codex-key",
+				"baseUrl": "https://openai-compatible.example.invalid/v1/",
 			}, nil),
 			assertValue: func(
 				t *testing.T,
@@ -75,7 +75,7 @@ func TestDecoderDecodesCurrentCodexAndClaudeContracts(t *testing.T) {
 				t.Helper()
 				auth, valid := credential.(*codex.APIKeyAuth)
 				if !valid ||
-					auth.APIKey() != "synthetic-sub2api-codex-key" ||
+					auth.APIKey() != "test-codex-key" ||
 					auth.BaseURL() != "https://openai-compatible.example.invalid/v1" ||
 					profile != nil {
 					t.Fatalf("Codex API Key 解码结果错误: credential=%T profile=%T", credential, profile)
@@ -87,7 +87,7 @@ func TestDecoderDecodesCurrentCodexAndClaudeContracts(t *testing.T) {
 			document: newSub2APIDocument(t, "anthropic", "oauth", map[string]any{
 				"access_token":  "synthetic-sub2api-claude-access",
 				"refresh_token": "synthetic-sub2api-claude-refresh",
-				"expires_at":    int64(4_102_444_800),
+				"expires_at":    "4102444800",
 				"scope":         "user:inference user:profile",
 				"account_uuid":  "123e4567-e89b-12d3-a456-426614174301",
 				"org_uuid":      "123e4567-e89b-12d3-a456-426614174302",
@@ -119,13 +119,30 @@ func TestDecoderDecodesCurrentCodexAndClaudeContracts(t *testing.T) {
 			},
 		},
 		{
-			name: "claude refreshable setup token",
-			document: newSub2APIDocument(t, "anthropic", "setup-token", map[string]any{
-				"access_token":  "synthetic-sub2api-setup-access",
-				"refresh_token": "synthetic-sub2api-setup-refresh",
-				"expires_at":    int64(4_102_444_800),
-				"scope":         "user:inference",
-				"account_uuid":  "123e4567-e89b-12d3-a456-426614174303",
+			name: "claude node mixed oauth aliases",
+			document: newSub2APIDocument(t, "anthropic", "oauth", map[string]any{
+				"access_token":          "synthetic-sub2api-node-access",
+				"accessToken":           "",
+				"refresh_token":         "synthetic-sub2api-node-refresh",
+				"refreshToken":          "",
+				"expires_at":            "4102444800000",
+				"expiresAt":             int64(4_102_444_800_000),
+				"expiry":                "2100-01-01T00:00:00Z",
+				"last_refresh":          "2026-08-10T04:27:29.587Z",
+				"lastRefresh":           "2026-08-10T04:27:29.587Z",
+				"scope":                 "user:profile user:inference",
+				"refreshTokenExpiresAt": int64(4_105_036_800_000),
+				"clientId":              "claude-code-official-client",
+				"scopes":                []string{"user:inference", "user:profile"},
+				"account_uuid":          "123E4567-E89B-12D3-A456-426614174305",
+				"email_address":         "NODE-STANDARD@example.invalid",
+				"subscriptionType":      "max",
+				"rateLimitTier":         "default_claude_max_20x",
+				"account": map[string]any{
+					"uuid":             "123e4567-e89b-12d3-a456-426614174305",
+					"emailAddress":     "node-standard@example.invalid",
+					"organizationUuid": "123e4567-e89b-12d3-a456-426614174306",
+				},
 			}, nil),
 			assertValue: func(
 				t *testing.T,
@@ -133,12 +150,50 @@ func TestDecoderDecodesCurrentCodexAndClaudeContracts(t *testing.T) {
 				profile accountapp.PublicProfile,
 			) {
 				t.Helper()
-				assertClaudeRefreshable(
+				auth, valid := credential.(*claude.OAuthAuth)
+				if !valid ||
+					auth.RefreshTokenExpiresAtMS() != 4_105_036_800_000 ||
+					auth.ClientID() != "claude-code-official-client" {
+					t.Fatalf("Claude Node 标准凭据解码错误: %T %v", credential, credential)
+				}
+				claudeProfile, valid := profile.(claude.AccountProfile)
+				if !valid ||
+					claudeProfile.Email() != "node-standard@example.invalid" ||
+					claudeProfile.OAuthProfile().OrganizationUUID() !=
+						"123e4567-e89b-12d3-a456-426614174306" ||
+					claudeProfile.SubscriptionRaw() != "max" ||
+					claudeProfile.Subscription().RateLimitTier() != "default_claude_max_20x" {
+					t.Fatalf("Claude Node 标准资料解码错误: %T %v", profile, profile)
+				}
+			},
+		},
+		{
+			name: "claude refreshable setup token",
+			document: newSub2APIDocument(t, "anthropic", "setup-token", map[string]any{
+				"accessToken":           "synthetic-sub2api-setup-access",
+				"refreshToken":          "synthetic-sub2api-setup-refresh",
+				"expiresAt":             int64(4_102_444_800_000),
+				"refreshTokenExpiresAt": int64(4_105_036_800_000),
+				"clientId":              "claude-code-official-client",
+				"scopes":                []string{"user:inference"},
+				"accountUuid":           "123e4567-e89b-12d3-a456-426614174303",
+			}, nil),
+			assertValue: func(
+				t *testing.T,
+				credential accountapp.Credential,
+				profile accountapp.PublicProfile,
+			) {
+				t.Helper()
+				auth := assertClaudeRefreshable(
 					t,
 					credential,
 					"123e4567-e89b-12d3-a456-426614174303",
 					[]string{"user:inference"},
 				)
+				if auth.RefreshTokenExpiresAtMS() != 4_105_036_800_000 ||
+					auth.ClientID() != "claude-code-official-client" {
+					t.Fatalf("Claude setup-token 官方可选字段错误: %v", auth)
+				}
 				if profile != nil {
 					t.Fatalf("无邮箱 setup-token 不应构造资料: %T", profile)
 				}
@@ -169,8 +224,8 @@ func TestDecoderDecodesCurrentCodexAndClaudeContracts(t *testing.T) {
 		{
 			name: "claude api key",
 			document: newSub2APIDocument(t, "anthropic", "apikey", map[string]any{
-				"api_key":  "synthetic-sub2api-claude-key",
-				"base_url": "https://anthropic-compatible.example.invalid/",
+				"api_key": "test-claude-key",
+				"baseUrl": "https://anthropic-compatible.example.invalid/",
 			}, nil),
 			assertValue: func(
 				t *testing.T,
@@ -180,7 +235,7 @@ func TestDecoderDecodesCurrentCodexAndClaudeContracts(t *testing.T) {
 				t.Helper()
 				auth, valid := credential.(*claude.APIKeyAuth)
 				if !valid ||
-					auth.APIKey() != "synthetic-sub2api-claude-key" ||
+					auth.APIKey() != "test-claude-key" ||
 					auth.BaseURL() != "https://anthropic-compatible.example.invalid" ||
 					profile != nil {
 					t.Fatalf("Claude API Key 解码结果错误: credential=%T profile=%T", credential, profile)
@@ -297,7 +352,7 @@ func TestDecoderRejectsUnsupportedOrUnsafeDocuments(t *testing.T) {
 			target: sub2api.ErrInvalidDocument,
 		},
 		{
-			name: "format version",
+			name: "unsupported format version",
 			document: func(t *testing.T) []byte {
 				var document map[string]any
 				decodeTestJSON(t, newSub2APIDocument(
@@ -307,7 +362,7 @@ func TestDecoderRejectsUnsupportedOrUnsafeDocuments(t *testing.T) {
 					map[string]any{"api_key": secret},
 					nil,
 				), &document)
-				document["version"] = 1
+				document["version"] = 2
 				return marshalTestJSON(t, document)
 			},
 			target: sub2api.ErrInvalidDocument,
@@ -332,6 +387,75 @@ func TestDecoderRejectsUnsupportedOrUnsafeDocuments(t *testing.T) {
 					"access_token": secret,
 					"account_uuid": "123e4567-e89b-12d3-a456-426614174315",
 				}, nil)
+			},
+			target: sub2api.ErrInvalidDocument,
+		},
+		{
+			name: "credential alias conflict",
+			document: func(t *testing.T) []byte {
+				return newSub2APIDocument(t, "openai", "apikey", map[string]any{
+					"api_key": "test-key-one",
+					"apiKey":  "test-key-two",
+				}, nil)
+			},
+			target: sub2api.ErrInvalidDocument,
+		},
+		{
+			name: "claude expiry alias conflict",
+			document: func(t *testing.T) []byte {
+				return newSub2APIDocument(t, "anthropic", "oauth", map[string]any{
+					"access_token":  "synthetic-claude-access",
+					"refresh_token": "synthetic-claude-refresh",
+					"expires_at":    int64(4_102_444_800_000),
+					"expiry":        "2099-12-31T23:59:59Z",
+					"account_uuid":  "123e4567-e89b-12d3-a456-426614174399",
+				}, nil)
+			},
+			target: sub2api.ErrInvalidDocument,
+		},
+		{
+			name: "claude last refresh alias conflict",
+			document: func(t *testing.T) []byte {
+				return newSub2APIDocument(t, "anthropic", "oauth", map[string]any{
+					"access_token":  "synthetic-claude-access",
+					"refresh_token": "synthetic-claude-refresh",
+					"expires_at":    int64(4_102_444_800_000),
+					"last_refresh":  "2026-08-10T04:27:29.587Z",
+					"lastRefresh":   "2026-08-10T04:27:30.587Z",
+					"account_uuid":  "123e4567-e89b-12d3-a456-426614174399",
+				}, nil)
+			},
+			target: sub2api.ErrInvalidDocument,
+		},
+		{
+			name: "claude invalid last refresh",
+			document: func(t *testing.T) []byte {
+				return newSub2APIDocument(t, "anthropic", "oauth", map[string]any{
+					"access_token":  "synthetic-claude-access",
+					"refresh_token": "synthetic-claude-refresh",
+					"expires_at":    int64(4_102_444_800_000),
+					"last_refresh":  "not-a-timestamp",
+					"account_uuid":  "123e4567-e89b-12d3-a456-426614174399",
+				}, nil)
+			},
+			target: sub2api.ErrInvalidDocument,
+		},
+		{
+			name: "unknown credential field",
+			document: func(t *testing.T) []byte {
+				return newSub2APIDocument(t, "openai", "apikey", map[string]any{
+					"api_key":         secret,
+					"ai_home_private": true,
+				}, nil)
+			},
+			target: sub2api.ErrInvalidDocument,
+		},
+		{
+			name: "unknown extra field",
+			document: func(t *testing.T) []byte {
+				return newSub2APIDocument(t, "anthropic", "oauth", validClaude, map[string]any{
+					"runtime": "must-not-import",
+				})
 			},
 			target: sub2api.ErrInvalidDocument,
 		},
@@ -360,7 +484,7 @@ func assertClaudeRefreshable(
 	credential accountapp.Credential,
 	accountUUID string,
 	scopes []string,
-) {
+) *claude.OAuthAuth {
 	t.Helper()
 
 	auth, valid := credential.(*claude.OAuthAuth)
@@ -370,6 +494,7 @@ func assertClaudeRefreshable(
 		strings.Join(auth.Scopes(), " ") != strings.Join(scopes, " ") {
 		t.Fatalf("Claude 可刷新凭据解码结果错误: %T %v", credential, credential)
 	}
+	return auth
 }
 
 // newSub2APIDocument 创建一个不含真实凭据的现行单账号迁移文档。
@@ -395,6 +520,7 @@ func newSub2APIDocument(
 	}
 	return marshalTestJSON(t, map[string]any{
 		"type":        "sub2api-data",
+		"version":     1,
 		"exported_at": "2026-07-31T08:09:10Z",
 		"proxies":     []any{},
 		"accounts":    []any{account},

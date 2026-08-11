@@ -817,3 +817,37 @@ test('management restart endpoint returns deterministic payload', async () => {
     }
   });
 });
+
+// 回归：reload 必须把 aiHomeDir 传给账号加载器。漏传时凭据目录一条都读不到，
+// 整个账号池会被替换成空池，网关随后全线 no_available_account，只能重启恢复。
+test('management router reload passes aiHomeDir to the runtime account loader', async () => {
+  const res = createResCapture();
+  const state = { accounts: { codex: [{ accountRef: MANAGEMENT_CODEX_ACCOUNT_REF }] } };
+  let seenArgs = null;
+  await handleManagementRequest({
+    method: 'POST',
+    pathname: '/v0/management/reload',
+    url: new URL('http://localhost/v0/management/reload'),
+    req: { headers: {} },
+    res,
+    options: {},
+    state,
+    requiredManagementKey: '',
+    deps: {
+      parseAuthorizationBearer: () => '',
+      writeJson: (r, code, payload) => { r.statusCode = code; r.end(JSON.stringify(payload)); },
+      loadServerRuntimeAccounts: (args) => {
+        seenArgs = args;
+        return { codex: [{ accountRef: MANAGEMENT_CODEX_ACCOUNT_REF }] };
+      },
+      applyReloadState: (s, runtimeAccounts) => { s.accounts = runtimeAccounts; },
+      fs: {},
+      aiHomeDir: '/tmp/ai-home-fixture',
+      getProfileDir: () => '',
+      checkStatus: () => ({ configured: true })
+    }
+  });
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(seenArgs && seenArgs.aiHomeDir, '/tmp/ai-home-fixture');
+});

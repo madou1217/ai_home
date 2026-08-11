@@ -2141,3 +2141,87 @@ test('codex adapter hides stream disconnect detail when all account attempts are
   assert.doesNotMatch(String(body.detail || ''), /help\.openai\.com/);
   assert.doesNotMatch(String(body.detail || ''), /4d251fd0-862a-4b1f-90a3-fb3ed9629f18/);
 });
+
+// 线上 503 回归：账号级模型目录只探测到一部分账号（探测预算有限、账号重载还会整体
+// 失效缓存），健康的 OAuth 账号因此在目录里查不到该模型。以前会被判成
+// "no available codex account can serve model ..." 直接合成 503，
+// 现在必须放行整池，让请求真的打到账号上。
+test('codex adapter does not synthesize 503 when the account model catalog is only partially probed', async () => {
+  const res = createResCapture();
+  const oauthRef = accountRef('a11');
+  const relayRef = accountRef('b22');
+  const state = {
+    accounts: {
+      codex: [
+        {
+          accountRef: oauthRef,
+          email: 'oauth@example.com',
+          upstreamAccountId: 'acc_oauth',
+          accessToken: 'oauth-token',
+          schedulableStatus: 'schedulable',
+          remainingPct: 92
+        },
+        {
+          accountRef: relayRef,
+          email: '',
+          accessToken: 'relay-key',
+          apiKeyMode: true,
+          openaiBaseUrl: 'https://relay.example.com/v1',
+          schedulableStatus: 'schedulable'
+        }
+      ]
+    },
+    // 只有中转账号被探测过，OAuth 账号的目录还是空白。
+    webUiModelsCache: {
+      updatedAt: Date.now(),
+      byAccount: { [relayRef]: ['gpt-5.5'] },
+      byProvider: {}
+    },
+    cursors: { codex: 0 },
+    metrics: { totalFailures: 0, totalSuccess: 0, totalTimeouts: 0 }
+  };
+
+  const attempted = [];
+  await handleCodexChatCompletions({
+    options: {
+      codexBaseUrl: 'https://chatgpt.com/backend-api/codex',
+      upstreamTimeoutMs: 3000,
+      maxAttempts: 1,
+      failureThreshold: 1,
+      logRequests: false
+    },
+    state,
+    req: { headers: { 'content-type': 'application/json' } },
+    res,
+    requestJson: {
+      model: 'gpt-5.6-luna',
+      stream: false,
+      messages: [{ role: 'user', content: 'hello' }]
+    },
+    routeKey: 'POST /v1/responses',
+    requestStartedAt: Date.now(),
+    cooldownMs: 1000,
+    requestMeta: { requestId: 'partial-catalog', sessionKey: 's' },
+    deps: {
+      chooseServerAccount: (pool) => pool[0] || null,
+      pushMetricError: () => {},
+      writeJson: (r, code, payload) => {
+        r.statusCode = code;
+        r.setHeader('content-type', 'application/json');
+        r.end(JSON.stringify(payload));
+      },
+      refreshCodexAccessToken: async () => ({ ok: true, refreshed: false, reason: 'not_due' }),
+      fetchWithTimeout: async (url, init) => {
+        attempted.push(String(url));
+        return createCompletedUpstreamResponse('luna ok');
+      },
+      markProxyAccountFailure: () => {},
+      markProxyAccountSuccess: () => {},
+      appendProxyRequestLog: () => {}
+    }
+  });
+
+  assert.equal(attempted.length > 0, true, 'request must reach upstream instead of being refused locally');
+  assert.notEqual(res.statusCode, 503);
+  assert.doesNotMatch(String(res.body), /no_available_account/);
+});

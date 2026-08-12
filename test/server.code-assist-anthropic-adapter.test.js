@@ -1824,7 +1824,9 @@ test('Code Assist Anthropic adapter sends Claude custom tools to AGY direct rout
   assert.equal(diagnostics[0].requestSummary.toolNames[11], 'JS');
 });
 
-test('Code Assist Anthropic adapter omits AGY Claude TaskUpdate tool declaration', async (t) => {
+// TaskUpdate 过去被按名字整个摘掉，用来绕开「联合类型 schema 被上游 400」。
+// 联合类型现在统一在发出前折叠，工具必须完整送到上游，不能再凭空少一个。
+test('Code Assist Anthropic adapter keeps AGY Claude TaskUpdate tool declaration', async (t) => {
   t.mock.method(global, 'fetch', async (url) => {
     const safeUrl = String(url || '');
     if (safeUrl.includes(':loadCodeAssist')) {
@@ -1864,7 +1866,12 @@ test('Code Assist Anthropic adapter omits AGY Claude TaskUpdate tool declaration
             type: 'object',
             properties: {
               taskId: { type: 'string' },
-              status: { type: 'string', enum: ['pending', 'in_progress', 'completed', 'deleted'] }
+              status: {
+                anyOf: [
+                  { type: 'string', enum: ['pending', 'in_progress', 'completed'] },
+                  { type: 'string', const: 'deleted' }
+                ]
+              }
             },
             required: ['taskId']
           }
@@ -1881,13 +1888,20 @@ test('Code Assist Anthropic adapter omits AGY Claude TaskUpdate tool declaration
   );
 
   const declarations = context.payload.request.tools[0].functionDeclarations;
-  assert.deepEqual(declarations.map((item) => item.name), ['Read', 'Write']);
+  assert.deepEqual(declarations.map((item) => item.name), ['Read', 'TaskUpdate', 'Write']);
+  const taskUpdate = declarations.find((item) => item.name === 'TaskUpdate');
+  // 折叠掉联合类型，但 `deleted` 仍然是合法取值：另一分支不带 enum，
+  // 说明取值集合是开放的，不能拿其中一支的 enum 去封死它。
+  assert.equal(JSON.stringify(taskUpdate.parameters).includes('anyOf'), false);
+  assert.equal(taskUpdate.parameters.properties.status.type, 'string');
+  assert.equal(taskUpdate.parameters.properties.status.enum, undefined);
+  // 工具还在，tool_choice 指名它就能落到 allowedFunctionNames；
+  // 过去这个名字会因为工具被摘掉而被一起过滤走。
   assert.deepEqual(context.payload.request.toolConfig, {
-    functionCallingConfig: { mode: 'AUTO' }
+    functionCallingConfig: { mode: 'AUTO', allowedFunctionNames: ['TaskUpdate'] }
   });
-  assert.equal(context.diagnostic.requestSummary.toolDeclarationCount, 2);
-  assert.deepEqual(context.diagnostic.requestSummary.omittedToolNames, ['TaskUpdate']);
-  assert.equal(context.diagnostic.requestSummary.allowedFunctionNames, undefined);
+  assert.equal(context.diagnostic.requestSummary.toolDeclarationCount, 3);
+  assert.deepEqual(context.diagnostic.requestSummary.omittedToolNames, undefined);
 });
 
 test('Code Assist Anthropic adapter sends provider descriptor wire model ids', async (t) => {

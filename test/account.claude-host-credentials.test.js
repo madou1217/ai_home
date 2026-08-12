@@ -362,3 +362,122 @@ test('unknown keychain timestamp cannot retain a conflicting account', () => {
   assert.equal(result.reason, 'database_selected_account');
   assert.deepEqual(keychainWrites, [databaseCredentials]);
 });
+
+// 宿主自己刷新/重新登录时，新 token 先落在 ~/.claude/.credentials.json。
+// 过去 reconciler 只读 keychain，看不到这份更新，就会拿旧的数据库快照把它盖掉，
+// 于是非 aih 的 claude 报 `Login expired · Please run /login`。
+test('a newer host credentials file wins over the stale database snapshot', () => {
+  const databaseCredentials = credentials('same@example.com', 'stale-db-token');
+  const hostFileCredentials = credentials('same@example.com', 'fresh-host-token');
+  const databaseWrites = [];
+  const keychainWrites = [];
+  const reconcile = createClaudeHostCredentialReconciler({
+    processObj: { platform: 'darwin' },
+    hostHomeDir: '/Users/model',
+    readClaudeKeychainCredentialRecord: () => ({
+      credentials: databaseCredentials,
+      modifiedAtMs: 100
+    }),
+    readClaudeHostCredentialFileRecord: () => ({
+      credentials: hostFileCredentials,
+      modifiedAtMs: 900
+    }),
+    writeClaudeKeychainCredentials: (value) => {
+      keychainWrites.push(value);
+      return { ok: true };
+    },
+    writeAccountNativeAuth: (_fs, _aiHomeDir, accountRef, nativeAuth) => {
+      databaseWrites.push({ accountRef, nativeAuth });
+      return true;
+    }
+  });
+
+  const result = reconcile(credentialRecord(databaseCredentials, 100));
+
+  assert.equal(result.ok, true);
+  assert.equal(result.source, 'host_file');
+  assert.equal(result.reason, 'host_file_newer');
+  assert.deepEqual(result.credentials, hostFileCredentials);
+  assert.equal(result.databaseUpdated, true);
+  // 哈希槽要跟着走，否则下一轮又拿旧 keychain 去比。
+  assert.deepEqual(keychainWrites, [hostFileCredentials]);
+  assert.equal(databaseWrites.length, 1);
+  assert.deepEqual(databaseWrites[0].nativeAuth.credentials, hostFileCredentials);
+});
+
+test('an older host credentials file never displaces the database snapshot', () => {
+  const databaseCredentials = credentials('same@example.com', 'db-token');
+  const keychainWrites = [];
+  const databaseWrites = [];
+  const reconcile = createClaudeHostCredentialReconciler({
+    processObj: { platform: 'darwin' },
+    hostHomeDir: '/Users/model',
+    readClaudeKeychainCredentialRecord: () => null,
+    readClaudeHostCredentialFileRecord: () => ({
+      credentials: credentials('same@example.com', 'ancient-token'),
+      modifiedAtMs: 50
+    }),
+    writeClaudeKeychainCredentials: (value) => {
+      keychainWrites.push(value);
+      return { ok: true };
+    },
+    writeAccountNativeAuth: (_fs, _aiHomeDir, accountRef, nativeAuth) => {
+      databaseWrites.push({ accountRef, nativeAuth });
+      return true;
+    }
+  });
+
+  const result = reconcile(credentialRecord(databaseCredentials, 500));
+
+  assert.equal(result.source, 'database');
+  assert.deepEqual(databaseWrites, []);
+  assert.deepEqual(keychainWrites, [databaseCredentials]);
+});
+
+// 宿主文件属于别的账号 = 账号切换，不是同账号 token 轮换，不能回灌。
+test('a host credentials file for another account is not adopted', () => {
+  const databaseCredentials = credentials('selected@example.com', 'db-token');
+  const databaseWrites = [];
+  const reconcile = createClaudeHostCredentialReconciler({
+    processObj: { platform: 'darwin' },
+    hostHomeDir: '/Users/model',
+    readClaudeKeychainCredentialRecord: () => null,
+    readClaudeHostCredentialFileRecord: () => ({
+      credentials: credentials('other@example.com', 'other-token'),
+      modifiedAtMs: 9000
+    }),
+    writeClaudeKeychainCredentials: () => ({ ok: true }),
+    writeAccountNativeAuth: (_fs, _aiHomeDir, accountRef, nativeAuth) => {
+      databaseWrites.push({ accountRef, nativeAuth });
+      return true;
+    }
+  });
+
+  const result = reconcile(credentialRecord(databaseCredentials, 100));
+
+  assert.equal(result.source, 'database');
+  assert.deepEqual(databaseWrites, []);
+});
+
+// 读不到 mtime 就无法证明宿主更新，保持原有判定，不要瞎猜。
+test('a host credentials file without a usable timestamp is ignored', () => {
+  const databaseCredentials = credentials('same@example.com', 'db-token');
+  const databaseWrites = [];
+  const reconcile = createClaudeHostCredentialReconciler({
+    processObj: { platform: 'darwin' },
+    hostHomeDir: '/Users/model',
+    readClaudeKeychainCredentialRecord: () => null,
+    readClaudeHostCredentialFileRecord: () => ({
+      credentials: credentials('same@example.com', 'unstamped-token'),
+      modifiedAtMs: 0
+    }),
+    writeClaudeKeychainCredentials: () => ({ ok: true }),
+    writeAccountNativeAuth: (_fs, _aiHomeDir, accountRef, nativeAuth) => {
+      databaseWrites.push({ accountRef, nativeAuth });
+      return true;
+    }
+  });
+
+  assert.equal(reconcile(credentialRecord(databaseCredentials, 100)).source, 'database');
+  assert.deepEqual(databaseWrites, []);
+});

@@ -221,4 +221,41 @@ describe('claude keychain bridge', () => {
     assert.equal(result.reason, 'verification_failed');
   });
 
+  // 空信封写进去，Claude Code 读到就是「已登录但没凭据」→ Login expired。
+  // 宁可写失败，也不能覆盖掉还能用的登录。
+  it('refuses to overwrite a working login with a token-less envelope', () => {
+    const attempted = [];
+    const result = writeClaudeKeychainCredentials(
+      { claudeAiOauth: { accessToken: '', refreshToken: '', subscriptionType: 'pro' } },
+      {
+        processObj: { platform: 'darwin' },
+        account: 'model',
+        configDir: '/Users/model/.claude',
+        execFileSync: (_bin, args) => {
+          attempted.push(args[0]);
+          return '';
+        }
+      }
+    );
+
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, 'unusable_credentials');
+    assert.deepEqual(attempted, []);
+  });
+
+  it('refuses an envelope that carries only an access token', () => {
+    const result = writeClaudeKeychainCredentials(
+      { claudeAiOauth: { accessToken: 'sk-ant-oat01-ONLY' } },
+      {
+        processObj: { platform: 'darwin' },
+        account: 'model',
+        configDir: '/Users/model/.claude',
+        execFileSync: () => ''
+      }
+    );
+
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, 'unusable_credentials');
+  });
+
 });

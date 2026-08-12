@@ -459,3 +459,33 @@ test('account reload keeps catalogs for accounts that still exist', () => {
     '账号没了,它的目录才该丢'
   );
 });
+
+// 回归：本轮没探测到的账号，旧的空目录不该被带下去——否则「已知为空」这个
+// 错误状态会永远续命，页面一直显示不出模型。
+test('a stale empty catalog is not carried forward as known-empty', async () => {
+  const probed = 'acct_66666666666666666666';
+  const untouched = 'acct_77777777777777777777';
+  const state = {
+    accounts: { codex: [{ id: '1', accountRef: probed, provider: 'codex', accessToken: 't', availableModels: [] }] },
+    modelRegistry: { providers: {} },
+    webUiModelsCache: {
+      updatedAt: Date.now(),
+      byAccount: { [untouched]: [] },
+      byProvider: {},
+      errorsByAccount: {},
+      labels: {}
+    }
+  };
+
+  const result = await getWebUiModelsCache(state, { provider: 'auto' }, {
+    forceRefresh: true,
+    fetchModelsForAccount: async () => ['gpt-5.5']
+  });
+
+  assert.deepEqual(result.byAccount[probed], ['gpt-5.5']);
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(result.byAccount, untouched),
+    false,
+    '旧的空目录应被当成未知丢掉,而不是原样带下去'
+  );
+});

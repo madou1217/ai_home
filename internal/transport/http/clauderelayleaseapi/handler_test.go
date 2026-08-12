@@ -64,7 +64,7 @@ func TestHandlerIssuesAccountBoundLeaseOverRealHTTP(t *testing.T) {
 	server := httptest.NewServer(handler)
 	defer server.Close()
 
-	payload := []byte(`{"model":"claude-opus-5","account_ref":"` + accountRef.String() + `"}`)
+	payload := []byte(`{"provider_id":"claude","model":"claude-opus-5","account_ref":"` + accountRef.String() + `"}`)
 	request, err := http.NewRequest(
 		http.MethodPost,
 		server.URL+Path,
@@ -97,6 +97,7 @@ func TestHandlerIssuesAccountBoundLeaseOverRealHTTP(t *testing.T) {
 		resolved != accountRef ||
 		resolvedModel != modelID ||
 		selector.calls != 1 ||
+		selector.request.ProviderID != claudeauth.ProviderID ||
 		selector.request.ModelID != modelID.String() ||
 		selector.request.AccountRef != accountRef {
 		t.Fatalf(
@@ -150,7 +151,7 @@ func TestHandlerRejectsUnauthorizedAndReturnsCanonicalDecision(
 	if err != nil {
 		t.Fatalf("NewHandler() error = %v", err)
 	}
-	payload := `{"model":"claude-opus-5","account_ref":"` + accountRef.String() + `"}`
+	payload := `{"provider_id":"claude","model":"claude-opus-5","account_ref":"` + accountRef.String() + `"}`
 
 	unauthorized := httptest.NewRequest(
 		http.MethodPost,

@@ -26,13 +26,15 @@ func TestSelectorSharesFairRecruitmentAcrossNativeAndCanonical(t *testing.T) {
 
 	fixture := newSelectorFixture(t)
 	first, err := fixture.selector.Select(t.Context(), claudegateway.Request{
-		ModelID: selectorModel,
+		ProviderID: claudeauth.ProviderID,
+		ModelID:    selectorModel,
 	})
 	if err != nil {
 		t.Fatalf("Select(first) error = %v", err)
 	}
 	second, err := fixture.selector.Select(t.Context(), claudegateway.Request{
-		ModelID: selectorModel,
+		ProviderID: claudeauth.ProviderID,
+		ModelID:    selectorModel,
 	})
 	if err != nil {
 		t.Fatalf("Select(second) error = %v", err)
@@ -70,6 +72,7 @@ func TestSelectorHonorsPinnedAccountWithoutChangingCredentialTransport(
 
 	fixture := newSelectorFixture(t)
 	decision, err := fixture.selector.Select(t.Context(), claudegateway.Request{
+		ProviderID: claudeauth.ProviderID,
 		ModelID:    selectorModel,
 		AccountRef: fixture.apiKeyRef,
 	})
@@ -85,6 +88,7 @@ func TestSelectorHonorsPinnedAccountWithoutChangingCredentialTransport(
 		)
 	}
 	if _, err := fixture.selector.Select(t.Context(), claudegateway.Request{
+		ProviderID: claudeauth.ProviderID,
 		ModelID:    selectorModel,
 		AccountRef: "acct_ffffffffffffffffffff",
 	}); !errors.Is(err, accountrouting.ErrNoRoutableAccount) {
@@ -180,10 +184,12 @@ func newSelectorFixture(t *testing.T) selectorFixture {
 		t.Fatalf("clauderelay.NewLeaseRegistry() error = %v", err)
 	}
 	selector, err := claudegateway.NewSelector(claudegateway.Dependencies{
-		Catalog:    catalog,
-		Recruiter:  recruiter,
-		Transports: selectorTransportPolicy{},
-		Leases:     leases,
+		Catalog:   catalog,
+		Recruiter: recruiter,
+		Transports: map[string]claudegateway.TransportPolicy{
+			claudeauth.ProviderID: selectorTransportPolicy{},
+		},
+		Leases: leases,
 	})
 	if err != nil {
 		t.Fatalf("claudegateway.NewSelector() error = %v", err)

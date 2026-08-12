@@ -355,8 +355,10 @@ func TestLiveClaudeToolUseSmoke(t *testing.T) {
 	}
 }
 
-// TestLiveClaudeRedactedThinkingSmoke 使用可直连凭据发起两轮
-// omitted thinking 请求，验证真实 redacted_thinking 能原样回放。
+// TestLiveClaudeRedactedThinkingSmoke 使用可直连凭据观察两轮
+// omitted thinking 请求：请求形状必须满足 Claude Code 合同；只有上游实际
+// 下发 redacted_thinking 时才执行原样回放断言。上游可能因账号、模型或实验
+// 开关返回普通 signed thinking，此时记录观测结果，不把服务端能力误报为适配器失败。
 func TestLiveClaudeRedactedThinkingSmoke(t *testing.T) {
 	if os.Getenv(realClaudeRedactedThinkingSmokeEnv) != "1" {
 		t.Skip("设置 AIH_REAL_CLAUDE_REDACTED_THINKING_SMOKE=1 后才允许真实请求")
@@ -372,20 +374,22 @@ func TestLiveClaudeRedactedThinkingSmoke(t *testing.T) {
 		request,
 	)
 	firstFingerprint := strings.Join(transport.fingerprint(), "|")
+	requestFingerprint := transport.requestFingerprint()
 	outputMatch := strings.Contains(
 		completedClaudeText(events),
 		realClaudeReasoningExpected,
 	)
 	redacted := hasCompletedRedactedThinking(events)
+	visibleThinking := hasCompletedThinking(events)
 	if executeErr != nil {
 		t.Fatalf("真实 Claude redacted thinking 请求失败: %v", executeErr)
 	}
 	if recorder.successes != 1 ||
 		len(recorder.failures) != 0 ||
-		!redacted ||
+		transport.statusCode != http.StatusOK ||
 		!outputMatch {
 		t.Logf(
-			"real_claude_redacted_first method=%s endpoint=%s model=%s max_tokens=%d stream=true http_status=%d media_type=%s successes=%d failures=%d redacted_completed=%t events=%s request=%s fingerprint=%s output_match=%t",
+			"real_claude_redacted_first method=%s endpoint=%s model=%s max_tokens=%d stream=true http_status=%d media_type=%s successes=%d failures=%d redacted_completed=%t visible_thinking=%t events=%s request=%s fingerprint=%s output_match=%t",
 			transport.method,
 			transport.endpoint,
 			selection.model,
@@ -395,12 +399,38 @@ func TestLiveClaudeRedactedThinkingSmoke(t *testing.T) {
 			recorder.successes,
 			len(recorder.failures),
 			redacted,
+			visibleThinking,
 			eventKinds(events),
-			transport.requestFingerprint(),
+			requestFingerprint,
 			firstFingerprint,
 			outputMatch,
 		)
-		t.Fatal("真实 Claude redacted thinking 未满足成功合同")
+		t.Fatal("真实 Claude omitted thinking 请求未满足成功合同")
+	}
+	// 请求 beta、thinking 形状和 effort 是适配器必须负责的部分；服务端是否
+	// 选择 redacted_thinking 不由客户端声明单独决定，因此不能省略这组断言。
+	// display=none 表示没有向上游添加未经官方确认的私有 display 字段。
+	if !strings.Contains(requestFingerprint, "redact_beta=true") ||
+		!strings.Contains(requestFingerprint, "interleaved_beta=true") ||
+		!strings.Contains(requestFingerprint, "thinking_type=adaptive") ||
+		!strings.Contains(requestFingerprint, "thinking_display=none") ||
+		!strings.Contains(requestFingerprint, "effort=low") {
+		t.Fatalf("真实 Claude omitted thinking 请求形状错误: %s", requestFingerprint)
+	}
+	if !redacted {
+		if !visibleThinking {
+			t.Fatalf("真实 Claude 未返回 redacted_thinking，也未返回 signed thinking: events=%s", eventKinds(events))
+		}
+		t.Logf(
+			"real_claude_redacted_observed endpoint=%s model=%s http_status=%d request=%s response=%s redacted_available=false visible_signed_thinking=true output_match=%t; upstream did not enable redacted_thinking",
+			transport.endpoint,
+			selection.model,
+			transport.statusCode,
+			requestFingerprint,
+			firstFingerprint,
+			outputMatch,
+		)
+		return
 	}
 
 	firstResponse := aggregateRealClaudeAnthropicMessage(t, request, events)

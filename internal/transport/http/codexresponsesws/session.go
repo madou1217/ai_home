@@ -222,7 +222,8 @@ func pumpUpstreamToClient(
 			}
 			return
 		}
-		if err := observer.ObserveUpstream(payload); err != nil {
+		terminal, err := observer.ObserveUpstream(payload)
+		if err != nil {
 			results <- pumpResult{
 				source:      pumpSourceUpstream,
 				err:         err,
@@ -238,6 +239,17 @@ func pumpUpstreamToClient(
 			payload,
 		); err != nil {
 			results <- resultFromRead(pumpSourceClient, err, false)
+			return
+		}
+		if terminal {
+			// 官方 Codex 客户端在失败或 incomplete 终态后丢弃当前
+			// Responses WS；不能让客户端误以为还能安全复用这条连接。
+			results <- pumpResult{
+				source:           pumpSourceUpstream,
+				closeCode:        websocket.StatusInternalError,
+				closeReason:      "upstream response terminal",
+				recordIncomplete: false,
+			}
 			return
 		}
 	}

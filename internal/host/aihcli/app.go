@@ -34,8 +34,10 @@ var (
 
 // Options 是生产组合根唯一允许的外部依赖。
 type Options struct {
-	// AIHomeDir 是唯一业务数据库 aih.db 的数据根，不是 Provider HOME。
+	// AIHomeDir 是 Native Direct 使用的本地业务数据库根；Gateway Relay 可以为空。
 	AIHomeDir string
+	// GatewayAccounts 是目标 Server 的固定账号解析端口；账号池模式不需要它。
+	GatewayAccounts providerlaunch.GatewayAccountResolver
 	// Stdin、Stdout、Stderr 原样连接当前前台官方 CLI。
 	Stdin  io.Reader
 	Stdout io.Writer
@@ -97,8 +99,7 @@ type App struct {
 
 // New 装配 Provider Catalog、aih.db、OAuth 刷新、双模式 Strategy 和官方 CLI Runtime。
 func New(ctx context.Context, options Options) (*App, error) {
-	if ctx == nil || strings.TrimSpace(options.AIHomeDir) == "" ||
-		options.Stdin == nil || options.Stdout == nil || options.Stderr == nil {
+	if ctx == nil || options.Stdin == nil || options.Stdout == nil || options.Stderr == nil {
 		return nil, ErrInvalidOptions
 	}
 	if err := ctx.Err(); err != nil {
@@ -108,61 +109,74 @@ func New(ctx context.Context, options Options) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("创建 Provider Catalog 失败: %w", err)
 	}
-	store, err := sqliteaccount.Open(ctx, sqliteaccount.OpenOptions{
-		AIHomeDir: options.AIHomeDir,
-		Catalog:   catalog,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("打开账号数据库失败: %w", err)
+	var store *sqliteaccount.Store
+	if strings.TrimSpace(options.AIHomeDir) != "" {
+		store, err = sqliteaccount.Open(ctx, sqliteaccount.OpenOptions{
+			AIHomeDir: options.AIHomeDir,
+			Catalog:   catalog,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("打开账号数据库失败: %w", err)
+		}
 	}
 	fail := func(message string, cause error) (*App, error) {
-		_ = store.Close()
+		if store != nil {
+			_ = store.Close()
+		}
 		return nil, fmt.Errorf("%s: %w", message, cause)
 	}
 
-	oauthClient := options.OAuthHTTPClient
-	if oauthClient == nil {
-		oauthClient = &http.Client{
-			Timeout:       oauthHTTPTimeout,
-			CheckRedirect: rejectOAuthRedirect,
+	var credentials *accountcredentials.Resolver
+	var nativePlanner providerlaunch.NativePlanBuilder
+	if store != nil {
+		oauthClient := options.OAuthHTTPClient
+		if oauthClient == nil {
+			oauthClient = &http.Client{
+				Timeout:       oauthHTTPTimeout,
+				CheckRedirect: rejectOAuthRedirect,
+			}
+		}
+		codexOAuth, err := codexoauth.New(oauthClient, time.Now)
+		if err != nil {
+			return fail("创建 Codex OAuth 刷新策略失败", err)
+		}
+		claudeOAuth, err := claudeoauth.New(oauthClient, time.Now)
+		if err != nil {
+			return fail("创建 Claude OAuth 刷新策略失败", err)
+		}
+		credentials, err = accountcredentials.NewResolver(accountcredentials.Dependencies{
+			Store: store,
+			Strategies: []accountcredentials.RefreshStrategy{
+				codexOAuth,
+				claudeOAuth,
+			},
+			Clock: time.Now,
+		})
+		if err != nil {
+			return fail("创建账号凭据解析器失败", err)
+		}
+		selector, err := accountapp.NewLaunchAccountSelector(catalog, store)
+		if err != nil {
+			return fail("创建 CLI 账号选择器失败", err)
+		}
+		nativePlanner, err = providerlaunch.NewPlanner(providerlaunch.Dependencies{
+			Accounts:    selector,
+			Credentials: credentials,
+			Strategies: []providerlaunch.Strategy{
+				codexcli.NewStrategy(),
+				claudecli.NewStrategy(),
+			},
+		})
+		if err != nil {
+			return fail("创建 Native Direct 规划器失败", err)
 		}
 	}
-	codexOAuth, err := codexoauth.New(oauthClient, time.Now)
-	if err != nil {
-		return fail("创建 Codex OAuth 刷新策略失败", err)
-	}
-	claudeOAuth, err := claudeoauth.New(oauthClient, time.Now)
-	if err != nil {
-		return fail("创建 Claude OAuth 刷新策略失败", err)
-	}
-	credentials, err := accountcredentials.NewResolver(accountcredentials.Dependencies{
-		Store: store,
-		Strategies: []accountcredentials.RefreshStrategy{
-			codexOAuth,
-			claudeOAuth,
-		},
-		Clock: time.Now,
-	})
-	if err != nil {
-		return fail("创建账号凭据解析器失败", err)
-	}
-	selector, err := accountapp.NewLaunchAccountSelector(catalog, store)
-	if err != nil {
-		return fail("创建 CLI 账号选择器失败", err)
-	}
-	nativePlanner, err := providerlaunch.NewPlanner(providerlaunch.Dependencies{
-		Accounts:    selector,
-		Credentials: credentials,
-		Strategies: []providerlaunch.Strategy{
-			codexcli.NewStrategy(),
-			claudecli.NewStrategy(),
-		},
-	})
-	if err != nil {
-		return fail("创建 Native Direct 规划器失败", err)
+	gatewayAccounts := options.GatewayAccounts
+	if gatewayAccounts == nil {
+		gatewayAccounts = store
 	}
 	gatewayPlanner, err := providerlaunch.NewGatewayPlanner(providerlaunch.GatewayDependencies{
-		Accounts: store,
+		Accounts: gatewayAccounts,
 		Strategies: []providerlaunch.GatewayStrategy{
 			codexcli.NewGatewayStrategy(),
 			claudecli.NewGatewayStrategy(),
@@ -187,6 +201,9 @@ func New(ctx context.Context, options Options) (*App, error) {
 	})
 	if err != nil {
 		return fail("创建 Provider CLI Runtime 失败", err)
+	}
+	if store == nil {
+		return newApp(catalog, planner, runner)
 	}
 	return newApp(catalog, planner, runner, store)
 }

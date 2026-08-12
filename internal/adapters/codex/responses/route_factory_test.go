@@ -35,8 +35,8 @@ func TestAdapterBuildRouteDeclaresCompleteCodexContract(t *testing.T) {
 			t.Errorf("route capabilities missing %q", capability)
 		}
 	}
-	if route.Capabilities().Has(inference.CapabilityContextManagement) {
-		t.Error("Codex route unexpectedly declares context_management")
+	if !route.Capabilities().Has(inference.CapabilityContextManagement) {
+		t.Error("Codex route must accept the explicit cross-protocol context projection")
 	}
 }
 
@@ -51,5 +51,6 @@ func allRouteCapabilities() []inference.Capability {
 		inference.CapabilityStructuredOutput,
 		inference.CapabilityStreaming,
 		inference.CapabilityWebSearch,
+		inference.CapabilityContextManagement,
 	}
 }

@@ -309,10 +309,11 @@ func TestClaudeGatewayProxyForcesSelectedTransportAuthorization(t *testing.T) {
 			defer upstream.Close()
 			target, _ := url.Parse(upstream.URL)
 			proxy := &claudeGatewayProxy{
-				target:      target,
-				clientKey:   testGatewayKey,
-				localSecret: "local-random-secret",
-				client:      upstream.Client(),
+				target:          target,
+				clientKey:       testGatewayKey,
+				relayProviderID: "claude",
+				localSecret:     "local-random-secret",
+				client:          upstream.Client(),
 			}
 			request := httptest.NewRequest(
 				http.MethodPost,
@@ -413,10 +414,11 @@ func TestClaudeGatewayProxyRetriesAnotherAccountBeforeResponseCommit(
 	defer server.Close()
 	target, _ := url.Parse(server.URL)
 	proxy := &claudeGatewayProxy{
-		target:      target,
-		clientKey:   testGatewayKey,
-		localSecret: "local-random-secret",
-		client:      server.Client(),
+		target:          target,
+		clientKey:       testGatewayKey,
+		relayProviderID: "claude",
+		localSecret:     "local-random-secret",
+		client:          server.Client(),
 	}
 	request := httptest.NewRequest(
 		http.MethodPost,
@@ -493,10 +495,11 @@ func TestClaudeGatewayProxyPreservesLastUpstreamFailureWithoutAnotherAccount(
 	defer server.Close()
 	target, _ := url.Parse(server.URL)
 	proxy := &claudeGatewayProxy{
-		target:      target,
-		clientKey:   testGatewayKey,
-		localSecret: "local-random-secret",
-		client:      server.Client(),
+		target:          target,
+		clientKey:       testGatewayKey,
+		relayProviderID: "claude",
+		localSecret:     "local-random-secret",
+		client:          server.Client(),
 	}
 	request := httptest.NewRequest(
 		http.MethodPost,
@@ -556,6 +559,7 @@ func TestSelectClaudeGatewayTransportSelectsNativeOrCanonicalTransport(t *testin
 				}
 				var input map[string]string
 				if err := json.NewDecoder(request.Body).Decode(&input); err != nil ||
+					input["provider_id"] != "claude" ||
 					input["account_ref"] != accountRef.String() ||
 					input["model"] != "claude-opus-5" {
 					t.Errorf("lease input=%v error=%v", input, err)
@@ -579,6 +583,7 @@ func TestSelectClaudeGatewayTransportSelectsNativeOrCanonicalTransport(t *testin
 				server.Client(),
 				target,
 				testGatewayKey,
+				"claude",
 				"claude-opus-5",
 				accountRef,
 				nil,

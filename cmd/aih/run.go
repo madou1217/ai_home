@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/madou1217/ai_home/application/providerlaunch"
+	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/managementapi"
 	"github.com/madou1217/ai_home/internal/host/aihaccount"
 	"github.com/madou1217/ai_home/internal/host/aihcli"
@@ -100,26 +102,56 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 		writeProviderUsage(runtime.stdout, providerID)
 		return nil
 	}
-	aiHomeDir, err := resolveAIHomeDir(runtime)
-	if err != nil {
-		return err
+	baseURL := lookupOrDefault(runtime.lookupEnv, "AIH_SERVER_BASE_URL", defaultGatewayBaseURL)
+	clientKey := lookupOrDefault(runtime.lookupEnv, "AIH_SERVER_CLIENT_KEY", "")
+	managementKey := lookupOrDefault(runtime.lookupEnv, "AIH_SERVER_MANAGEMENT_KEY", "")
+	needsNativeStore := commandNeedsNativeStore(providerID, arguments[1:])
+	var err error
+	var aiHomeDir string
+	if needsNativeStore {
+		aiHomeDir, err = resolveAIHomeDir(runtime)
+		if err != nil {
+			return err
+		}
+	}
+	var gatewayAccounts providerlaunch.GatewayAccountResolver
+	if !needsNativeStore {
+		gatewayAccounts, err = newManagementGatewayAccountResolver(
+			runtime.managementAPI,
+			baseURL,
+			managementKey,
+		)
+		if err != nil {
+			return fmt.Errorf("初始化远端 Gateway 账号解析器失败: %w", err)
+		}
 	}
 	app, err := runtime.newApp(ctx, aihcli.Options{
-		AIHomeDir: aiHomeDir,
-		Stdin:     runtime.stdin,
-		Stdout:    runtime.stdout,
-		Stderr:    runtime.stderr,
+		AIHomeDir:       aiHomeDir,
+		GatewayAccounts: gatewayAccounts,
+		Stdin:           runtime.stdin,
+		Stdout:          runtime.stdout,
+		Stderr:          runtime.stderr,
 	})
 	if err != nil {
 		return fmt.Errorf("初始化 Go CLI 失败: %w", err)
 	}
 	gateway := aihcli.GatewayConfig{
-		BaseURL:   lookupOrDefault(runtime.lookupEnv, "AIH_SERVER_BASE_URL", defaultGatewayBaseURL),
-		ClientKey: lookupOrDefault(runtime.lookupEnv, "AIH_SERVER_CLIENT_KEY", ""),
+		BaseURL:   baseURL,
+		ClientKey: clientKey,
 	}
 	runErr := app.Run(ctx, providerID, arguments[1:], gateway)
 	closeErr := app.Close()
 	return errors.Join(runErr, closeErr)
+}
+
+// commandNeedsNativeStore 使用同一套 LaunchIntent 解析，避免命令入口重新猜测模式。
+func commandNeedsNativeStore(providerID string, arguments []string) bool {
+	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
+	if err != nil {
+		return true
+	}
+	intent, err := providerlaunch.ParseLaunchIntent(catalog, providerID, arguments)
+	return err == nil && intent.Mode() == providerlaunch.LaunchModeNativeDirect
 }
 
 // resolveAIHomeDir 复用全局 AIH_HOME；不创建任何 Provider 或账号级 HOME。
@@ -176,13 +208,13 @@ func writeUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "共享状态:")
 	_, _ = fmt.Fprintln(output, "  Codex 继承官方 CODEX_HOME；Claude 继承官方 CLAUDE_CONFIG_DIR。")
-	_, _ = fmt.Fprintln(output, "  AIH 不创建 Provider 或账号级 HOME，会话、信任和插件配置保持共享。")
+	_, _ = fmt.Fprintln(output, "  AIH 不创建 Provider 或账号级 HOME；Native Direct 只读本地 AIH_HOME，Gateway Relay 只连接目标 Server。")
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "环境变量:")
 	_, _ = fmt.Fprintln(output, "  AIH_HOME")
 	_, _ = fmt.Fprintln(output, "  AIH_SERVER_BASE_URL（默认 http://127.0.0.1:9527）")
 	_, _ = fmt.Fprintln(output, "  AIH_SERVER_CLIENT_KEY（仅 Gateway 模式必需）")
-	_, _ = fmt.Fprintln(output, "  AIH_SERVER_MANAGEMENT_KEY（账号写命令必需）")
+	_, _ = fmt.Fprintln(output, "  AIH_SERVER_MANAGEMENT_KEY（账号管理和固定 Relay 数字别名解析必需）")
 	_, _ = fmt.Fprintln(output, "  AIH_CODEX_BINARY / AIH_CLAUDE_BINARY（可选官方 CLI 路径）")
 }
 
@@ -212,6 +244,7 @@ func writeProviderUsage(output io.Writer, providerID string) {
 		_, _ = fmt.Fprintln(output)
 		_, _ = fmt.Fprintln(output, "共享状态:")
 		_, _ = fmt.Fprintln(output, "  所有模式继承同一个 CLAUDE_CONFIG_DIR；AIH 不创建账号级 HOME，会话、信任和插件配置保持共享。")
+		_, _ = fmt.Fprintln(output, "  Native Direct 读取本地 AIH_HOME；Gateway Relay 不打开本地 AIH_HOME，固定数字别名由目标 Server 解析。")
 		return
 	}
 
@@ -240,4 +273,5 @@ func writeProviderUsage(output io.Writer, providerID string) {
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "共享状态:")
 	_, _ = fmt.Fprintln(output, "  所有模式继承同一个 CODEX_HOME；AIH 不创建账号级 HOME，会话、信任和 MCP 配置保持共享。")
+	_, _ = fmt.Fprintln(output, "  Native Direct 读取本地 AIH_HOME；Gateway Relay 不打开本地 AIH_HOME，固定数字别名由目标 Server 解析。")
 }

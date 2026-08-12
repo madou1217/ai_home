@@ -296,6 +296,9 @@ func (controller *codexExternalAuthController) handleRefresh(
 	ctx context.Context,
 	envelope rpcEnvelope,
 ) error {
+	if controller.credentials == nil {
+		return controller.writeRPCError(envelope.ID, -32000, "AIH 未配置本地 Codex 凭据刷新器")
+	}
 	var params struct {
 		PreviousAccountID *string `json:"previousAccountId"`
 		Reason            string  `json:"reason"`

@@ -1,8 +1,8 @@
 # Go / Node 网关功能矩阵
 
 > 目的：把「Go 什么时候能取代 Node 9527」从感觉变成账。
-> 初次采集日期：2026-08-08；当前复核日期：2026-08-10。Node 侧 106 条路径 /
-> 35 组，Go 侧按业务入口归并为 14 条。
+> 初次采集日期：2026-08-08；当前复核日期：2026-08-11。Node 侧 106 条路径 /
+> 35 组，Go 侧当前扫描到 15 条路径。
 > 采集方式：只读扫描 `lib/server/{server,v1-router,web-ui-router,webui-*-routes}.js`
 > 与 `internal/host/aihserver/router.go` 的路径字面量，未启动服务。
 
@@ -71,7 +71,7 @@ Node 9527 探测，`/v1beta/models` 与 `/v1/unknown-endpoint` 均返回 404，�
 
 ---
 
-## Go 侧完整路由清单（14）
+## Go 侧完整路由清单（15）
 
 ```
 /healthz
@@ -83,6 +83,7 @@ Node 9527 探测，`/v1beta/models` 与 `/v1/unknown-endpoint` 均返回 404，�
 /v1/messages                              (Canonical / Native Relay 分发)
 /v1/claude-relay-leases
 /v1/management/accounts        (+ /)
+/v1/management/account-aliases (+ /)
 /v1/management/account-imports (+ /sub2api)
 /v1/management/account-defaults/
 /v1/management/account-selections/resolve
@@ -197,7 +198,8 @@ modalities 交付扩大为尚无消费者的 context/pricing 设计。
 
 首轮把这一类描述成「Go 注入了上游没发的字段」是不准确的，已纠正。
 
-**(B) Canonical 模型的信息丢失——未修，切流硬门。** 剩余差异全部属于此类：
+**(B) Canonical 模型的信息丢失——同协议已由 Native Relay 绕开，跨协议仍按能力边界处理。**
+剩余差异全部属于此类：
 
 | 字段 | 上游 | Go |
 | --- | --- | --- |
@@ -209,11 +211,17 @@ modalities 交付扩大为尚无消费者的 context/pricing 设计。
 这四个不是打 tag 能解决的，需要 Canonical 响应模型承载它们。计费与缓存可观测性
 依赖 `usage.*`，`stop_details` 是 refusal 分类的唯一出口。
 
+同协议的 Claude Messages 请求现在统一进入 Native Relay：官方端点 OAuth 且满足
+请求合同时字节透传，`stop_details`、`service_tier`、`inference_geo` 和
+`cache_creation` 不再经过 Canonical 因而不会丢失；非官方端点凭据、跨协议模型或
+不满足透传合同的请求才交回 Canonical。跨协议没有等价字段时继续丢弃是有意的，
+`stop_details` 的跨协议细化仍是独立的 Canonical 课题。
+
 ### 结论
 
 - 1：不照抄，按 opt-in 重新设计；模态数据源仍要补。
 - 2：已按 OpenAI 契约收口；Go 必需字段补齐，协议私有回显保持在 Exchange 边界。
-- 3：(A) 已修；(B) 见下节——它不是「给 Canonical 加四个字段」的问题。
+- 3：(A) 已修；(B) 同协议 Native Relay 已修；跨协议的 `stop_details` 细化仍待独立建模。
 
 影子比对应在每次改动 Canonical 编解码后重跑。
 
@@ -242,26 +250,15 @@ modalities 交付扩大为尚无消费者的 context/pricing 设计。
 Canonical。** 同协议时这些信息是 1:1 的，重建一遍只会丢；跨协议时它们在目标
 协议里根本没有等价物，丢弃才是正确语义。无损通道已经存在——Native Relay。
 
-真正的缺口在分发层：`internal/host/aihserver/router.go:93-103` 的
-`claudeMessagesDispatcher` **只按 Relay Token 头决定是否透传**，也就是只有官方
-Claude Code 托管启动才走无损路径；其它任何客户端打 `/v1/messages`，即使上游就是
-claude 账号，也被送进 Canonical 重建。
+当前入口已由 `internal/host/aihserver/router.go` 统一挂载
+`handlers.claudeNativeRelay`。有可信租约时，Relay 严格使用租约账号；普通客户端
+由调度器提供账号并保留模型筛选、冷却、别名解析和公平轮转。满足官方端点 OAuth
+与 Messages 请求合同时字节透传，否则将原始正文和已选 `AccountRef` 交回 Canonical，
+避免为了传输降级重新征召账号。
 
-而 `transportpolicy.GatewayPolicy` 其实**已经**表达了「官方 OAuth 优先保留原生
-证明」这个策略（`TransportNativeOAuth` / `TransportCanonical`），只是 HTTP 入口
-没有消费它。
-
-### 下一步的实际工作
-
-让 `/v1/messages` 的分发消费 `GatewayPolicy`，而不是只看 Relay Token。
-
-已知障碍（不是拍脑袋能绕过的）：Native Relay 现在从**可信租约**解析 AccountRef
-（`claudenativerelay.Authorizer`），而普通客户端只有网关 client key，没有租约。
-所以需要一个由**调度器**而非租约提供账号的 relay 变体，且仍要保留冷却、别名解析
-与多账号轮转。
-
-这条路走通后，上述三个字段自然无损，不需要污染 Canonical；Canonical 回归它真正
-该负责的场景——跨协议。
+`transportpolicy.GatewayPolicy` 仍是凭据能力的策略边界；Relay 使用
+`RequiresNativeOAuth` 判定是否可以保留官方证明，第三方 Base URL 的 OAuth 形态
+凭据不会被错误地送往官方端点。
 
 ## 例外：`stop_details` 应该进 Canonical
 

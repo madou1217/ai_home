@@ -166,6 +166,9 @@ func (proxy *claudeOAuthProxy) refreshRejected(
 	ctx context.Context,
 	rejectedToken string,
 ) error {
+	if proxy.credentials == nil {
+		return ErrClaudeOAuthProxy
+	}
 	proxy.refreshMu.Lock()
 	defer proxy.refreshMu.Unlock()
 	if proxy.currentToken() != rejectedToken {

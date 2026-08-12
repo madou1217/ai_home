@@ -6,13 +6,13 @@ package claudegateway
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/madou1217/ai_home/application/accountrouting"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/clauderelay"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
-	claudeauth "github.com/madou1217/ai_home/core/accounts/claude"
 	"github.com/madou1217/ai_home/core/providers"
 )
 
@@ -58,16 +58,20 @@ type LeaseIssuer interface {
 	) (clauderelay.Lease, error)
 }
 
-// Dependencies 声明请求级选择所需的四个稳定端口。
+// Dependencies 声明请求级选择所需的目录、征召、传输策略和租约端口。
 type Dependencies struct {
-	Catalog    *providers.Catalog
-	Recruiter  AccountRecruiter
-	Transports TransportPolicy
+	Catalog   *providers.Catalog
+	Recruiter AccountRecruiter
+	// Transports 按目标账号 Provider 注册策略；不同 Provider 的凭据与上游线协议
+	// 不同，不能复用一个 Claude 专用策略。
+	Transports map[string]TransportPolicy
 	Leases     LeaseIssuer
 }
 
 // Request 只包含正文中的真实模型和可选固定账号。
 type Request struct {
+	// ProviderID 是目标账号所属的规范 Provider，而不是客户端线协议。
+	ProviderID       string
 	ModelID          string
 	AccountRef       accountcore.AccountRef
 	ExcludedAccounts []accountcore.AccountRef
@@ -132,7 +136,7 @@ func (decision Decision) IsValid() bool {
 type Selector struct {
 	catalog    *providers.Catalog
 	recruiter  AccountRecruiter
-	transports TransportPolicy
+	transports map[string]TransportPolicy
 	leases     LeaseIssuer
 }
 
@@ -140,14 +144,22 @@ type Selector struct {
 func NewSelector(dependencies Dependencies) (*Selector, error) {
 	if dependencies.Catalog == nil ||
 		dependencies.Recruiter == nil ||
-		dependencies.Transports == nil ||
+		len(dependencies.Transports) == 0 ||
 		dependencies.Leases == nil {
 		return nil, ErrInvalidDependencies
+	}
+	transports := make(map[string]TransportPolicy, len(dependencies.Transports))
+	for providerID, policy := range dependencies.Transports {
+		canonicalProviderID, found := dependencies.Catalog.CanonicalID(providerID)
+		if !found || canonicalProviderID != providerID || policy == nil {
+			return nil, ErrInvalidDependencies
+		}
+		transports[providerID] = policy
 	}
 	return &Selector{
 		catalog:    dependencies.Catalog,
 		recruiter:  dependencies.Recruiter,
-		transports: dependencies.Transports,
+		transports: transports,
 		leases:     dependencies.Leases,
 	}, nil
 }
@@ -158,7 +170,7 @@ func (selector *Selector) Select(
 	request Request,
 ) (Decision, error) {
 	if selector == nil || selector.catalog == nil ||
-		selector.recruiter == nil || selector.transports == nil ||
+		selector.recruiter == nil || len(selector.transports) == 0 ||
 		selector.leases == nil || ctx == nil ||
 		(request.AccountRef != "" && !request.AccountRef.IsValid()) ||
 		(request.AccountRef.IsValid() && len(request.ExcludedAccounts) > 0) {
@@ -167,6 +179,11 @@ func (selector *Selector) Select(
 	if err := ctx.Err(); err != nil {
 		return Decision{}, err
 	}
+	providerID, policy, err := selector.transportPolicy(request.ProviderID)
+	if err != nil {
+		return Decision{}, err
+	}
+	request.ProviderID = providerID
 	recruitment, err := selector.newRecruitmentRequest(request)
 	if err != nil {
 		return Decision{}, err
@@ -174,12 +191,12 @@ func (selector *Selector) Select(
 	result, err := selector.recruiter.Recruit(
 		ctx,
 		recruitment,
-		selector.transports,
+		policy,
 	)
 	if err != nil {
 		return Decision{}, err
 	}
-	transport, err := selector.transports.TransportFor(result.Credential())
+	transport, err := policy.TransportFor(result.Credential())
 	if err != nil {
 		return Decision{}, errors.Join(ErrInvalidTransport, err)
 	}
@@ -207,15 +224,33 @@ func (selector *Selector) newRecruitmentRequest(
 	if request.AccountRef.IsValid() {
 		return accountrouting.NewPinnedRequest(
 			selector.catalog,
-			claudeauth.ProviderID,
+			request.ProviderID,
 			request.ModelID,
 			request.AccountRef,
 		)
 	}
 	return accountrouting.NewRequestExcluding(
 		selector.catalog,
-		claudeauth.ProviderID,
+		request.ProviderID,
 		request.ModelID,
 		request.ExcludedAccounts,
 	)
+}
+
+// transportPolicy 按规范 Provider 返回唯一传输策略，避免请求隐式落到 Claude。
+func (selector *Selector) transportPolicy(
+	providerID string,
+) (string, TransportPolicy, error) {
+	if selector == nil || selector.catalog == nil || len(selector.transports) == 0 {
+		return "", nil, ErrInvalidRequest
+	}
+	canonicalProviderID, found := selector.catalog.CanonicalID(providerID)
+	if !found || canonicalProviderID != providerID {
+		return "", nil, fmt.Errorf("%w: Provider 无效", ErrInvalidRequest)
+	}
+	policy := selector.transports[providerID]
+	if policy == nil {
+		return "", nil, fmt.Errorf("%w: Provider 未注册传输策略", ErrInvalidRequest)
+	}
+	return providerID, policy, nil
 }

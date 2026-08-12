@@ -27,6 +27,15 @@ func decodeTools(
 				return nil, nil, decodeErr
 			}
 			tools = append(tools, tool)
+		case "tool_search":
+			// Codex CLI 的 tool_search 是客户端执行的工具发现元工具，
+			// 不是交给模型或上游 Provider 执行的函数。严格验证后留在
+			// 客户端边界，不能伪造为 Canonical function tool；否则 Claude
+			// 可能返回普通 function_call，Codex 也无法按 tool_search_call
+			// 语义消费。
+			if decodeErr := decodeClientToolSearch(rawTool, field); decodeErr != nil {
+				return nil, nil, decodeErr
+			}
 		case "namespace":
 			wireNamespace, decodeErr := decodeStrict[namespaceToolDTO](rawTool, field)
 			if decodeErr != nil {
@@ -71,6 +80,35 @@ func decodeTools(
 		}
 	}
 	return tools, webSearch, nil
+}
+
+// decodeClientToolSearch 校验 Codex 官方客户端元工具的稳定外形。
+//
+// 该工具只用于客户端延迟发现工具，不进入 Canonical Request；只有明确声明
+// execution=client 的当前公开形态允许被忽略。未知字段和其它执行方仍失败关闭，
+// 避免把未来 Provider 私有工具静默吞掉。
+func decodeClientToolSearch(raw json.RawMessage, field string) error {
+	wire, err := decodeStrict[clientToolSearchDTO](raw, field)
+	if err != nil {
+		return err
+	}
+	if wire.Type != "tool_search" ||
+		wire.Execution != "client" ||
+		strings.TrimSpace(wire.Description) == "" ||
+		!isJSONSchemaObject(wire.Parameters) {
+		return invalidField(field)
+	}
+	return nil
+}
+
+// isJSONSchemaObject 只接受 tool_search 参数的 JSON Object 外形。
+func isJSONSchemaObject(raw json.RawMessage) bool {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || !strings.HasPrefix(trimmed, "{") {
+		return false
+	}
+	var object map[string]json.RawMessage
+	return json.Unmarshal(raw, &object) == nil
 }
 
 // decodeWebSearchTool 解析 Responses 与 Claude 共同支持的搜索配置交集。

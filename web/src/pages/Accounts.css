@@ -86,6 +86,24 @@
 .account-mobile-usage > div {
   min-width: 0 !important;
 }
+.account-mobile-token-usage {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--m-line);
+}
+.account-mobile-token-usage-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  color: var(--m-ink-3);
+  font-size: 12px;
+  font-weight: 600;
+}
+.account-mobile-token-usage .token-usage-cell {
+  min-width: 156px !important;
+}
 /* 命中路由高亮的卡片 */
 .account-mobile-card.accounts-row-target {
   border-color: var(--color-info, #1677ff);

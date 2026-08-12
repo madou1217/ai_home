@@ -69,6 +69,43 @@ func TestEncodeRequestProjectsAnthropicEnvelopeToCodexLite(t *testing.T) {
 	}
 }
 
+// TestEncodeRequestProjectsClaudeCodeXHighToCodex 验证 Claude Code 的
+// output_config.effort=xhigh 经 Canonical 后仍投影为 Codex xhigh，而不是
+// 被降级或误写成 Claude 专属的 max。
+func TestEncodeRequestProjectsClaudeCodeXHighToCodex(t *testing.T) {
+	t.Parallel()
+
+	request, err := anthropicmessages.NewAdapter().Decode([]byte(`{
+		"model":"gpt-5.6-sol",
+		"max_tokens":4096,
+		"messages":[{"role":"user","content":"只返回固定标记。"}],
+		"thinking":{"type":"adaptive"},
+		"output_config":{"effort":"xhigh"},
+		"stream":true
+	}`))
+	if err != nil {
+		t.Fatalf("Messages Decode() error = %v", err)
+	}
+	payload, err := encodeRequest(
+		request,
+		"gpt-5.6-sol",
+		codexauth.AuthKindOAuth,
+		requestProfileForModel("gpt-5.6-sol"),
+	)
+	if err != nil {
+		t.Fatalf("encodeRequest() error = %v", err)
+	}
+	var wire struct {
+		Reasoning reasoningDTO `json:"reasoning"`
+	}
+	if err := json.Unmarshal(payload, &wire); err != nil {
+		t.Fatalf("Codex payload JSON 无效: %v", err)
+	}
+	if wire.Reasoning.Effort != string(inference.ReasoningEffortXHigh) {
+		t.Fatalf("Codex reasoning.effort = %q, want xhigh; payload=%s", wire.Reasoning.Effort, payload)
+	}
+}
+
 // TestEncodeRequestPreservesCodexResponsesInputs 验证输入、工具、reasoning、
 // structured output 和非流式客户端请求均无损进入上游合同。
 func TestEncodeRequestPreservesCodexResponsesInputs(t *testing.T) {

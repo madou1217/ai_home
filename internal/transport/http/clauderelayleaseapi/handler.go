@@ -162,6 +162,7 @@ func (handler *Handler) ServeHTTP(
 	decision, err := handler.selector.Select(
 		request.Context(),
 		claudegateway.Request{
+			ProviderID:       input.ProviderID,
 			ModelID:          input.Model,
 			AccountRef:       accountRef,
 			ExcludedAccounts: excludedAccounts,

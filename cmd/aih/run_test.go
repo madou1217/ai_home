@@ -117,6 +117,7 @@ func TestRunPassesNativeAndGatewayInputsWithoutModeGuessing(t *testing.T) {
 		wantArguments []string
 		wantBaseURL   string
 		wantKey       string
+		wantAIHomeDir string
 	}{
 		{
 			name:          "Native 无 Server Key",
@@ -124,6 +125,7 @@ func TestRunPassesNativeAndGatewayInputsWithoutModeGuessing(t *testing.T) {
 			wantProvider:  "codex",
 			wantArguments: []string{"9", "resume", "abc"},
 			wantBaseURL:   defaultGatewayBaseURL,
+			wantAIHomeDir: filepath.Join("/test-user", ".ai_home"),
 		},
 		{
 			name:      "Gateway 跨 Provider 固定账号",
@@ -135,6 +137,7 @@ func TestRunPassesNativeAndGatewayInputsWithoutModeGuessing(t *testing.T) {
 			wantArguments: []string{"relay", "claude", "9", "--model", "claude-opus-5"},
 			wantBaseURL:   defaultGatewayBaseURL,
 			wantKey:       "client-key-with-at-least-thirty-two-characters",
+			wantAIHomeDir: "",
 		},
 		{
 			name:      "Gateway 固定账号",
@@ -147,6 +150,7 @@ func TestRunPassesNativeAndGatewayInputsWithoutModeGuessing(t *testing.T) {
 			wantArguments: []string{"relay", "7", "--model", "opus"},
 			wantBaseURL:   "http://127.0.0.1:19527",
 			wantKey:       "client-key-with-at-least-thirty-two-characters",
+			wantAIHomeDir: "",
 		},
 	}
 	for _, test := range tests {
@@ -166,7 +170,7 @@ func TestRunPassesNativeAndGatewayInputsWithoutModeGuessing(t *testing.T) {
 				application.gateway.ClientKey != test.wantKey || application.closeCalls != 1 {
 				t.Fatalf("application = %#v", application)
 			}
-			if application.options.AIHomeDir != filepath.Join("/test-user", ".ai_home") {
+			if application.options.AIHomeDir != test.wantAIHomeDir {
 				t.Fatalf("AIHomeDir = %q", application.options.AIHomeDir)
 			}
 		})

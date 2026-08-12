@@ -67,7 +67,9 @@ type AccountSnapshot struct {
 	ProviderID   string
 	CLIAccountID accountcore.CLIAccountID
 	Enabled      bool
-	UpdatedAt    time.Time
+	// CreatedAt 由账号别名解析返回；缺失时解码器回退到 UpdatedAt。
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // RemoteError 是 Server 返回的稳定 HTTP 错误，不包含请求或凭据正文。
@@ -349,6 +351,7 @@ func decodeAccountSnapshot(document []byte) (AccountSnapshot, error) {
 			ProviderID   string `json:"provider_id"`
 			CLIAccountID int64  `json:"cli_account_id"`
 			Enabled      bool   `json:"enabled"`
+			CreatedAt    string `json:"created_at"`
 			UpdatedAt    string `json:"updated_at"`
 		} `json:"data"`
 	}
@@ -357,10 +360,16 @@ func decodeAccountSnapshot(document []byte) (AccountSnapshot, error) {
 	}
 	accountRef, refErr := accountcore.ParseAccountRef(response.Data.AccountRef)
 	cliAccountID, aliasErr := accountcore.NewCLIAccountID(response.Data.CLIAccountID)
-	updatedAt, timeErr := time.Parse(time.RFC3339Nano, response.Data.UpdatedAt)
+	updatedAt, updatedAtErr := time.Parse(time.RFC3339Nano, response.Data.UpdatedAt)
+	createdAt := updatedAt
+	var createdAtErr error
+	if response.Data.CreatedAt != "" {
+		createdAt, createdAtErr = time.Parse(time.RFC3339Nano, response.Data.CreatedAt)
+	}
 	if refErr != nil ||
 		aliasErr != nil ||
-		timeErr != nil ||
+		updatedAtErr != nil ||
+		createdAtErr != nil ||
 		response.Data.ProviderID == "" ||
 		response.Data.ProviderID != strings.TrimSpace(response.Data.ProviderID) ||
 		response.Data.ProviderID != strings.ToLower(response.Data.ProviderID) {
@@ -371,6 +380,7 @@ func decodeAccountSnapshot(document []byte) (AccountSnapshot, error) {
 		ProviderID:   response.Data.ProviderID,
 		CLIAccountID: cliAccountID,
 		Enabled:      response.Data.Enabled,
+		CreatedAt:    createdAt.UTC(),
 		UpdatedAt:    updatedAt.UTC(),
 	}, nil
 }

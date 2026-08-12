@@ -209,13 +209,17 @@ func decodeOutputConfig(
 	return &output, effort, nil
 }
 
-// decodeEffort 将 Anthropic 当前四档 effort 保留为 Canonical 等级。
+// decodeEffort 将 Claude Code 当前公开的 effort 保留为 Canonical 等级。
+//
+// xhigh 不能在客户端边界被压缩成 max：Codex Responses 和部分 Claude
+// 模型都把它作为独立的公开档位，后续 Adapter 应按目标模型能力投影。
 func decodeEffort(value string, field string) (inference.ReasoningEffort, error) {
 	effort := inference.ReasoningEffort(value)
 	switch effort {
 	case inference.ReasoningEffortLow,
 		inference.ReasoningEffortMedium,
 		inference.ReasoningEffortHigh,
+		inference.ReasoningEffortXHigh,
 		inference.ReasoningEffortMax:
 		return effort, nil
 	default:

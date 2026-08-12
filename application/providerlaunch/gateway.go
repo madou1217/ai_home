@@ -28,6 +28,8 @@ var (
 	ErrGatewayAccountMismatch = errors.New("Gateway 固定账号不匹配")
 	// ErrGatewayAccountDisabled 表示固定账号已被用户关闭。
 	ErrGatewayAccountDisabled = errors.New("Gateway 固定账号已停用")
+	// ErrGatewayAccountResolverUnavailable 表示固定账号需要目标 Server 的账号解析端口。
+	ErrGatewayAccountResolverUnavailable = errors.New("Gateway 固定账号解析端口不可用")
 	// ErrInvalidGatewayStrategyResult 表示 Provider Strategy 返回了不安全的进程描述。
 	ErrInvalidGatewayStrategyResult = errors.New("Gateway Strategy 结果无效")
 )
@@ -160,7 +162,8 @@ type GatewayPlanner struct {
 
 // NewGatewayPlanner 创建只读 Strategy 注册表。
 func NewGatewayPlanner(dependencies GatewayDependencies) (*GatewayPlanner, error) {
-	if dependencies.Accounts == nil || len(dependencies.Strategies) == 0 {
+	// 账号池模式不需要读取任何账号；只有固定账号才要求 Accounts。
+	if len(dependencies.Strategies) == 0 {
 		return nil, ErrInvalidGatewayDependencies
 	}
 	strategies := make(map[string]GatewayStrategy, len(dependencies.Strategies))
@@ -182,7 +185,7 @@ func (planner *GatewayPlanner) Build(
 	intent LaunchIntent,
 	endpoint GatewayEndpoint,
 ) (GatewayLaunchSpec, error) {
-	if planner == nil || planner.accounts == nil || len(planner.strategies) == 0 ||
+	if planner == nil || len(planner.strategies) == 0 ||
 		ctx == nil || !intent.IsValid() || intent.Mode() != LaunchModeGatewayRelay ||
 		!endpoint.IsValid() {
 		return GatewayLaunchSpec{}, ErrInvalidGatewayBuildRequest
@@ -197,6 +200,9 @@ func (planner *GatewayPlanner) Build(
 
 	var accountRef accountcore.AccountRef
 	if intent.HasPinnedAccount() {
+		if planner.accounts == nil {
+			return GatewayLaunchSpec{}, ErrGatewayAccountResolverUnavailable
+		}
 		account, err := planner.accounts.GetByCLIAccountID(
 			ctx,
 			intent.RelayProviderID(),

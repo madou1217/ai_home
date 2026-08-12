@@ -31,11 +31,12 @@ var errClaudeGatewaySelection = errors.New("Claude Gateway 账号选择失败")
 
 // claudeGatewayProxy 在本地进程边界隔离 Server Key，并执行请求级账号选择。
 type claudeGatewayProxy struct {
-	target      *url.URL
-	clientKey   string
-	accountRef  accountcore.AccountRef
-	localSecret string
-	client      *http.Client
+	target          *url.URL
+	clientKey       string
+	relayProviderID string
+	accountRef      accountcore.AccountRef
+	localSecret     string
+	client          *http.Client
 }
 
 // runClaudeGateway 用随机本地 Key 隔离真实 Server Key，并让 Server 按模型征召账号。
@@ -63,11 +64,12 @@ func (runner *Runner) runClaudeGateway(
 		return err
 	}
 	proxy := &claudeGatewayProxy{
-		target:      target,
-		clientKey:   values["ANTHROPIC_API_KEY"],
-		accountRef:  accountRef,
-		localSecret: localSecret,
-		client:      runner.httpClient,
+		target:          target,
+		clientKey:       values["ANTHROPIC_API_KEY"],
+		relayProviderID: spec.RelayProviderID(),
+		accountRef:      accountRef,
+		localSecret:     localSecret,
+		client:          runner.httpClient,
 	}
 	environment := applyEnvironment(runner.environ(), spec.Environment())
 	environment = unsetEnvironmentValue(environment, "ANTHROPIC_CUSTOM_HEADERS")
@@ -118,6 +120,7 @@ func (proxy *claudeGatewayProxy) ServeHTTP(writer http.ResponseWriter, incoming 
 		proxy.client,
 		proxy.target,
 		proxy.clientKey,
+		proxy.relayProviderID,
 		model,
 		proxy.accountRef,
 		attemptedAccounts,
@@ -165,6 +168,7 @@ func (proxy *claudeGatewayProxy) ServeHTTP(writer http.ResponseWriter, incoming 
 				proxy.client,
 				proxy.target,
 				proxy.clientKey,
+				proxy.relayProviderID,
 				model,
 				proxy.accountRef,
 				attemptedAccounts,
@@ -244,12 +248,14 @@ func selectClaudeGatewayTransport(
 	client *http.Client,
 	target *url.URL,
 	clientKey string,
+	providerID string,
 	model string,
 	accountRef accountcore.AccountRef,
 	excludedAccounts []accountcore.AccountRef,
 ) (claudeGatewayDecision, error) {
 	if ctx == nil || client == nil || target == nil || clientKey == "" ||
-		model == "" || (accountRef != "" && !accountRef.IsValid()) ||
+		!isProviderToken(providerID) || model == "" ||
+		(accountRef != "" && !accountRef.IsValid()) ||
 		len(excludedAccounts) > maxClaudeGatewayAttempts ||
 		(accountRef.IsValid() && len(excludedAccounts) > 0) {
 		return claudeGatewayDecision{}, errClaudeGatewaySelection
@@ -263,6 +269,7 @@ func selectClaudeGatewayTransport(
 		excluded = append(excluded, excludedAccount.String())
 	}
 	payload, err := json.Marshal(gatewaycontract.SelectionRequest{
+		ProviderID:          providerID,
 		Model:               model,
 		AccountRef:          accountRef.String(),
 		ExcludedAccountRefs: excluded,
@@ -327,6 +334,19 @@ func selectClaudeGatewayTransport(
 		return claudeGatewayDecision{}, errClaudeGatewaySelection
 	}
 	return decision, nil
+}
+
+// isProviderToken 只允许本地启动规划器传入的小写 Provider 标识。
+func isProviderToken(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, character := range value {
+		if character < 'a' || character > 'z' {
+			return false
+		}
+	}
+	return true
 }
 
 // containsAccountRef 在线性固定上限切片中检查同一请求是否已经调用过账号。

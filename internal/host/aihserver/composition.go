@@ -397,12 +397,26 @@ func newHandlers(
 			err,
 		)
 	}
+	codexGatewayPolicy, err := claudegateway.NewCanonicalPolicy(
+		"codex",
+		inference.codexUpstream,
+	)
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf(
+			"创建 Codex Gateway Canonical 策略失败: %w",
+			err,
+		)
+	}
 	claudeGatewaySelector, err := claudegateway.NewSelector(
 		claudegateway.Dependencies{
-			Catalog:    catalog,
-			Recruiter:  inference.recruiter,
-			Transports: claudeGatewayPolicy,
-			Leases:     relayLeases,
+			Catalog:   catalog,
+			Recruiter: inference.recruiter,
+			Transports: map[string]claudegateway.TransportPolicy{
+				"claude": claudeGatewayPolicy,
+				"codex":  codexGatewayPolicy,
+			},
+			Leases: relayLeases,
 		},
 	)
 	if err != nil {

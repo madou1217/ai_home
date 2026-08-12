@@ -34,7 +34,7 @@ func (adapter *Adapter) BuildRoute(
 	)
 }
 
-// codexRouteCapabilities 返回 Encoder 与 Decoder 已完整覆盖的 Canonical 能力。
+// codexRouteCapabilities 返回 Encoder 已覆盖或有明确跨协议投影的 Canonical 能力。
 func codexRouteCapabilities() (inference.CapabilitySet, error) {
 	return inference.NewCapabilitySet(
 		inference.CapabilityTextGeneration,
@@ -45,5 +45,8 @@ func codexRouteCapabilities() (inference.CapabilitySet, error) {
 		inference.CapabilityStructuredOutput,
 		inference.CapabilityStreaming,
 		inference.CapabilityWebSearch,
+		// Claude context_management 在 Codex 上游没有等价字段；跨协议时由
+		// Encoder 丢弃，必须仍进入路由候选，不能在能力筛选阶段制造 503。
+		inference.CapabilityContextManagement,
 	)
 }

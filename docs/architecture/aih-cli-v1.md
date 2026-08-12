@@ -24,8 +24,8 @@ aih account credential update <target> --from-env
 
 四种启动模式都继承同一个官方配置目录（`CODEX_HOME` / `CLAUDE_CONFIG_DIR`）。
 AIH **不创建** Provider 级或账号级 HOME，会话、信任、MCP 与插件配置全部共享，
-多个账号并发使用互不干扰。唯一属于 AIH 的数据是 `AIH_HOME/aih.db`（默认
-`~/.ai_home/aih.db`），只存账号、凭据、模型目录与路由。
+多个账号并发使用互不干扰。Native Direct 只在本机读取 `AIH_HOME/aih.db`；Gateway
+Relay 不打开本机 `AIH_HOME`，账号、凭据、模型目录与路由全部由目标 Server 管理。
 
 ## 3. 跨 Provider 固定账号
 
@@ -82,9 +82,10 @@ aih account import <codex|claude>
 
 ### 隔离验收
 
-导入写入 `AIH_HOME` 指向的库，因此真实验收可以完全不碰正式数据。
-注意跨 Provider relay 属于 Gateway 模式，**必须先起一个指向同一个 `AIH_HOME`
-的 Server**，且端口要避开 legacy Node 常驻的 9527：
+导入写入 `AIH_HOME` 指向的库，因此 Native Direct 真实验收可以完全不碰正式数据。
+Gateway Relay 不要求客户端与 Server 共享 `AIH_HOME`；它只需要目标 Server URL 和客户端密钥。
+固定数字别名还需要目标 Server 的 Management Key，用于远端别名解析。端口要避开 legacy
+Node 常驻的 9527：
 
 ```
 mkdir -p /tmp/aih-verify
@@ -98,10 +99,10 @@ AIH_SERVER_CLIENT_KEY=<本次验收随机串> \
 AIH_SERVER_MANAGEMENT_KEY=<本次验收随机串> \
 go run ./cmd/aih-server --port 9531
 
-# 3. 跨 Provider 固定账号真实调用，--model 只能取第 1 步输出里的模型
-AIH_HOME=/tmp/aih-verify \
+# 3. 跨 Provider 固定账号真实调用，--model 只能取目标 Server 返回的真实模型
 AIH_SERVER_BASE_URL=http://127.0.0.1:9531 \
 AIH_SERVER_CLIENT_KEY=<同上> \
+AIH_SERVER_MANAGEMENT_KEY=<Server 管理密钥> \
 go run ./cmd/aih codex relay claude <别名> --model <真实模型>
 ```
 
@@ -153,7 +154,7 @@ CLI 先通过目标 Server 把 `provider:id` 解析为 AccountRef，再把官方
 | `AIH_HOME` | 唯一业务数据库所在目录，默认 `~/.ai_home` |
 | `AIH_SERVER_BASE_URL` | Gateway 模式的 Server 地址，默认 `http://127.0.0.1:9527` |
 | `AIH_SERVER_CLIENT_KEY` | Gateway 模式必需的客户端密钥，CLI 与 Server 两侧都要 |
-| `AIH_SERVER_MANAGEMENT_KEY` | Server 启动必需的管理密钥，只从环境变量读取 |
+| `AIH_SERVER_MANAGEMENT_KEY` | 固定 Relay 数字别名解析和账号管理所需的管理密钥，只从环境变量读取 |
 | `AIH_SERVER_HOST` / `AIH_SERVER_PORT` | Server 监听地址与端口，只允许 loopback |
 | `AIH_CODEX_BINARY` / `AIH_CLAUDE_BINARY` | 可选官方 CLI 路径 |
 | `CODEX_HOME` / `CLAUDE_CONFIG_DIR` | 官方 CLI 自己的配置目录，AIH 原样继承 |

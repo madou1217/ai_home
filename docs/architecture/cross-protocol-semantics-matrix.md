@@ -55,6 +55,11 @@ Canonical `ReasoningConfig` 有四个维度：`mode`（budget / adaptive / effor
 补充：`thinking.summary`（Claude 的 `display`）与 Responses 的 `reasoning.summary`
 在 Canonical 里是同一个 `summary` 维度，双向已通。
 
+2026-08-11 官方 Codex CLI 0.147.0 → Claude `claude-sonnet-5` 真实验收还覆盖了
+流式请求、`reasoning.effort=max`、`include=reasoning.encrypted_content`、14 个工具
+（含客户端 `tool_search` 和服务器侧 `web_search`），以及一次真实 `get_goal`
+function call 往返；marker 最终返回，退出码为 0。
+
 ## 三、请求方向：工具
 
 | 概念 | codex→claude | claude→codex | 状态 | 依据 / 处理意见 |
@@ -63,6 +68,7 @@ Canonical `ReasoningConfig` 有四个维度：`mode`（budget / adaptive / effor
 | `strict` | ✅ | ✅ | **已对齐** | 两侧线协议都有 |
 | `defer_loading` | ✅ | ✅ | **已对齐** | 两侧都有 |
 | `tool_choice` auto/any/none/具名 | ✅ | ✅ | **已对齐** | Canonical `ToolChoice` |
+| Codex `tool_search`（`execution=client`） | ✅ | — | **客户端边界** | 官方 Codex CLI 的延迟工具发现元工具只由客户端执行；Responses Decoder 严格校验后不进入 Canonical，避免伪造为可调用 function。 |
 | `allowed_callers`（Claude 程序化调用） | 🗑️ | — | **丢弃** | Claude wire 有、Responses 无。**意见**：正确，OpenAI 无等价概念 |
 | `input_examples`（Claude） | 🗑️ | — | **丢弃** | 同上 |
 | `eager_input_streaming`（Claude 细粒度工具流） | 🗑️ | — | **丢弃** | 同上 |
@@ -138,10 +144,13 @@ summary/encrypted data 渲染到 Anthropic 时被省略，不会伪造成 thinki
 redacted_thinking。旧 Responses carrier 的兼容输入仍需经过
 `reasoning_signature.go` 的 Claude 指纹校验。
 
-真实 signed thinking 两轮回放已通过。真实 redact-thinking 请求在 opus-5 与
-sonnet-5 上均为 HTTP 200，Header 和请求正文符合 Claude Code 2.1.225 源码，但当前
-账号的上游仍返回 `thinking_delta + signature_delta`，没有返回 `redacted_thinking`。
-因此 redacted 解码/回放已有自动测试，**真实上游验收仍未通过，不能伪造完成**。
+真实 signed thinking 两轮回放已通过。真实 redact-thinking 测试分成两层：请求 beta、
+`thinking` 形状、effort、HTTP 状态和事件解析是适配器必须满足的硬断言；只有上游实际
+返回 `redacted_thinking` 时，测试才继续做原样两轮回放。真实请求在 opus-5 与 sonnet-5
+上均为 HTTP 200，Header 和请求正文符合 Claude Code 2.1.225 源码，但当前账号的上游
+仍返回 `thinking_delta + signature_delta`，没有返回 `redacted_thinking`。测试会明确记录
+`redacted_available=false`，不会把普通 signed thinking 伪报为 redacted，也不会把上游
+实验开关缺失误判为适配器故障；redacted 解码/回放仍由自动测试覆盖。
 
 ## 八、响应方向：usage
 

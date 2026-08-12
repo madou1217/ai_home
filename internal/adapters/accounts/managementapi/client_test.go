@@ -142,6 +142,33 @@ func TestClientRejectsInvalidConfigRemoteErrorsAndMismatchedSnapshots(t *testing
 	}
 }
 
+// TestClientRejectsInvalidUpdatedAtWhenCreatedAtIsValid 防止新增 created_at 后
+// 覆盖 updated_at 的解析错误，确保远端账号快照的两个时间字段都严格有效。
+func TestClientRejectsInvalidUpdatedAtWhenCreatedAtIsValid(t *testing.T) {
+	t.Parallel()
+
+	client, err := managementapi.New(&staticHTTPClient{
+		status: http.StatusOK,
+		body:   `{"data":{"account_ref":"acct_11111111111111111111","provider_id":"claude","cli_account_id":9,"enabled":true,"created_at":"2026-08-01T00:00:00Z","updated_at":"not-a-timestamp"}}`,
+	}, managementapi.Config{
+		BaseURL:       "http://127.0.0.1:9527",
+		ManagementKey: testManagementKey,
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	alias, err := accountcore.NewCLIAccountID(9)
+	if err != nil {
+		t.Fatalf("NewCLIAccountID() error = %v", err)
+	}
+	if _, err := client.ResolveAlias(context.Background(), "claude", alias); !errors.Is(
+		err,
+		managementapi.ErrInvalidResponse,
+	) {
+		t.Fatalf("ResolveAlias() error = %v, want invalid response", err)
+	}
+}
+
 // TestClientGetsAndDeletesAccountWithStrictNoContentContract 验证删除前读取公开
 // 快照，并且 DELETE 只接受 204 与空响应体。
 func TestClientGetsAndDeletesAccountWithStrictNoContentContract(t *testing.T) {

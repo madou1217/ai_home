@@ -65,29 +65,31 @@ func (observer *turnObserver) Begin(payload []byte) error {
 	return nil
 }
 
-// ObserveUpstream 在终态转发给客户端前提交低敏运行态。
-func (observer *turnObserver) ObserveUpstream(payload []byte) error {
+// ObserveUpstream 在终态转发给客户端前提交低敏运行态，并返回是否应结束
+// 当前 WebSocket 连接。Codex 官方实现把 response.failed、response.incomplete
+// 和 error 都视为当前响应流的终态；只有 response.completed 可以复用连接。
+func (observer *turnObserver) ObserveUpstream(payload []byte) (bool, error) {
 	if observer == nil || observer.attempts == nil ||
 		observer.modelRefreshes == nil || observer.clock == nil {
-		return ErrInvalidObserverState
+		return false, ErrInvalidObserverState
 	}
 	var event struct {
 		Type string `json:"type"`
 	}
 	if json.Unmarshal(payload, &event) != nil || event.Type == "" {
 		// 未知未来事件仍原样透传；只有明确终态才影响状态机。
-		return nil
+		return false, nil
 	}
 	switch event.Type {
 	case "response.completed":
 		generate, err := observer.finishTurn()
 		if err != nil {
-			return err
+			return false, err
 		}
 		if !generate {
-			return nil
+			return false, nil
 		}
-		return observer.attempts.RecordSuccess(
+		return false, observer.attempts.RecordSuccess(
 			context.Background(),
 			observer.route,
 		)
@@ -95,14 +97,14 @@ func (observer *turnObserver) ObserveUpstream(payload []byte) error {
 		generate, err := observer.finishTurn()
 		if err != nil {
 			// 连接级 error 可以出现在两轮之间，例如 60 分钟连接寿命结束；
-			// 它需要透传，但没有可归属的账号请求终态。
-			if event.Type == "error" {
-				return nil
+			// 它没有可归属的账号请求，但仍必须结束这条上游连接。
+			if event.Type != "error" {
+				return true, err
 			}
-			return err
+			return true, nil
 		}
 		if !generate {
-			return nil
+			return true, nil
 		}
 		classification, observed, err := codexfailure.ObserveWebSocket(
 			sharedfailure.SSEInput{
@@ -112,18 +114,18 @@ func (observer *turnObserver) ObserveUpstream(payload []byte) error {
 			},
 		)
 		if err != nil || !observed {
-			return ErrInvalidObserverState
+			return true, ErrInvalidObserverState
 		}
 		failure, err := attemptfailure.New(classification)
 		if err != nil {
-			return ErrInvalidObserverState
+			return true, ErrInvalidObserverState
 		}
 		if err := observer.attempts.RecordFailure(
 			context.Background(),
 			observer.route,
 			failure,
 		); err != nil {
-			return err
+			return true, err
 		}
 		if failure.RuntimeKind() == runtimecore.FailureModelUnsupported {
 			_ = observer.modelRefreshes.ScheduleModelRefresh(
@@ -132,12 +134,12 @@ func (observer *turnObserver) ObserveUpstream(payload []byte) error {
 				"codex",
 			)
 		}
-		return nil
+		return true, nil
 	case "response.incomplete":
 		_, err := observer.finishTurn()
-		return err
+		return true, err
 	default:
-		return nil
+		return false, nil
 	}
 }
 

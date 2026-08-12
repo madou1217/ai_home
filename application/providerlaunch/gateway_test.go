@@ -52,6 +52,59 @@ func TestGatewayPlannerBuildsPoolWithoutAccountRead(t *testing.T) {
 	assertGatewayRedacted(t, endpoint, spec)
 }
 
+// TestGatewayPlannerBuildsPoolWithoutAccountResolver 验证远端账号池完全不依赖本地账号库。
+func TestGatewayPlannerBuildsPoolWithoutAccountResolver(t *testing.T) {
+	strategy := &gatewayStrategy{
+		providerID: codex.ProviderID,
+		result:     gatewayTestStrategyResult(t, codex.ProviderID),
+	}
+	planner, err := providerlaunch.NewGatewayPlanner(providerlaunch.GatewayDependencies{
+		Strategies: []providerlaunch.GatewayStrategy{strategy},
+	})
+	if err != nil {
+		t.Fatalf("NewGatewayPlanner() error = %v", err)
+	}
+	intent, err := providerlaunch.ParseLaunchIntent(
+		mustProviderCatalog(t),
+		codex.ProviderID,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("ParseLaunchIntent() error = %v", err)
+	}
+	if _, err := planner.Build(context.Background(), intent, gatewayTestEndpoint(t)); err != nil {
+		t.Fatalf("Build(pool without resolver) error = %v", err)
+	}
+}
+
+// TestGatewayPlannerRejectsPinnedWithoutAccountResolver 验证固定 Relay 没有目标 Server 解析端口时失败关闭。
+func TestGatewayPlannerRejectsPinnedWithoutAccountResolver(t *testing.T) {
+	strategy := &gatewayStrategy{
+		providerID: codex.ProviderID,
+		result:     gatewayTestStrategyResult(t, codex.ProviderID),
+	}
+	planner, err := providerlaunch.NewGatewayPlanner(providerlaunch.GatewayDependencies{
+		Strategies: []providerlaunch.GatewayStrategy{strategy},
+	})
+	if err != nil {
+		t.Fatalf("NewGatewayPlanner() error = %v", err)
+	}
+	intent, err := providerlaunch.ParseLaunchIntent(
+		mustProviderCatalog(t),
+		codex.ProviderID,
+		[]string{"relay", "9"},
+	)
+	if err != nil {
+		t.Fatalf("ParseLaunchIntent() error = %v", err)
+	}
+	if _, err := planner.Build(context.Background(), intent, gatewayTestEndpoint(t)); !errors.Is(
+		err,
+		providerlaunch.ErrGatewayAccountResolverUnavailable,
+	) {
+		t.Fatalf("Build(pinned without resolver) error = %v", err)
+	}
+}
+
 // TestGatewayPlannerSeparatesClientStrategyAndRelayAccount 验证跨 Provider 只用客户端 Strategy，并从 Relay Provider 解析账号。
 func TestGatewayPlannerSeparatesClientStrategyAndRelayAccount(t *testing.T) {
 	auth, err := claude.NewAPIKeyAuth(claude.APIKeyInput{APIKey: "synthetic-cross-provider-secret"})

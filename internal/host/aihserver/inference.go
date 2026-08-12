@@ -37,6 +37,7 @@ type inferenceComposition struct {
 	handler        http.Handler
 	models         *inferencecatalog.AtomicCatalog
 	recruiter      *accountrouting.Recruiter
+	codexUpstream  *codexresponses.Adapter
 	claudeUpstream *claudemessages.Adapter
 	modelRefreshes inferencegateway.ModelRefreshScheduler
 	closers        []io.Closer
@@ -167,6 +168,7 @@ func newInferenceComposition(
 	composition.handler = handler
 	composition.models = activeCatalog
 	composition.recruiter = runtimeComponents.Recruiter()
+	composition.codexUpstream = codexAdapter
 	composition.claudeUpstream = claudeAdapter
 	composition.modelRefreshes = modelRefresh
 	return composition, nil

@@ -297,7 +297,7 @@ func TestServerMountsSystemAndAccountRoutes(t *testing.T) {
 		refreshedUsage.body,
 	)
 	leasePayload := []byte(
-		`{"model":"claude-sonnet-4","account_ref":"` +
+		`{"provider_id":"claude","model":"claude-sonnet-4","account_ref":"` +
 			nativeDocument.Data.AccountRef + `"}`,
 	)
 	issuedLease := performRequest(

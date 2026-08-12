@@ -263,6 +263,30 @@ func TestRequestDecoderPreservesBudgetThinkingAndNamedToolChoice(t *testing.T) {
 	}
 }
 
+// TestRequestDecoderAcceptsClaudeCodeXHighEffort 锁定 Claude Code 当前公开的
+// xhigh effort 不会在 Messages 边界被错误拒绝或改写成 max。
+func TestRequestDecoderAcceptsClaudeCodeXHighEffort(t *testing.T) {
+	t.Parallel()
+
+	request, err := NewRequestDecoder().Decode([]byte(`{
+		"model":"gpt-5.6-sol",
+		"max_tokens":4096,
+		"messages":[{"role":"user","content":"只返回固定标记。"}],
+		"thinking":{"type":"adaptive"},
+		"output_config":{"effort":"xhigh"},
+		"stream":true
+	}`))
+	if err != nil {
+		t.Fatalf("Decode() error = %v", err)
+	}
+	reasoning, found := request.Reasoning()
+	if !found ||
+		reasoning.Mode() != inference.ReasoningModeAdaptive ||
+		reasoning.Effort() != inference.ReasoningEffortXHigh {
+		t.Fatalf("Reasoning() = (%#v, %t), want adaptive xhigh", reasoning, found)
+	}
+}
+
 // TestRequestDecoderAcceptsEmptyToolResult 验证 Messages 合法的缺省 content
 // 不会被适配器伪造成占位字符串。
 func TestRequestDecoderAcceptsEmptyToolResult(t *testing.T) {

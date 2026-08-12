@@ -85,6 +85,9 @@ func rejectUnsupportedRequest(
 	request inference.Request,
 	authKind codexauth.AuthKind,
 ) error {
+	allowCrossProtocolProjection := isCrossProtocolClient(
+		request.ClientProtocol(),
+	)
 	// Codex Responses 线协议没有输出上限字段，无法无损表达。
 	//
 	// 但 Anthropic Messages 的 max_tokens 是**必填**：claude 客户端没有「不发」
@@ -93,8 +96,7 @@ func rejectUnsupportedRequest(
 	//
 	// 因此沿用 f162be1 的既定处理：目标协议无法表达的字段，跨协议时静默丢弃、
 	// 不拒绝客户端。同协议（codex 客户端）仍然拒绝——它本可以不发。
-	if request.MaxOutputTokens() != 0 &&
-		request.ClientProtocol() == inference.ClientProtocolOpenAIResponses {
+	if request.MaxOutputTokens() != 0 && !allowCrossProtocolProjection {
 		return unsupported("max_output_tokens")
 	}
 	if _, found := request.Temperature(); found {
@@ -106,16 +108,24 @@ func rejectUnsupportedRequest(
 	if _, found := request.TopK(); found {
 		return unsupported("top_k")
 	}
-	if _, found := request.UserID(); found {
+	// user_id 只用于客户端侧会话/计费关联，Codex Responses 没有等价字段。
+	// Claude、Chat 两个跨协议入口明确允许丢弃；未知或 Codex 同协议入口拒绝，
+	// 防止未来新增客户端协议未经审查就获得有损投影。
+	if _, found := request.UserID(); found && !allowCrossProtocolProjection {
 		return unsupported("user_id")
 	}
 	if len(request.StopSequences()) != 0 {
 		return unsupported("stop_sequences")
 	}
-	if len(request.PromptCacheBreakpoints()) != 0 {
+	// Claude cache_control 只影响 Anthropic 的提示缓存布局，Codex Responses
+	// 没有等价断点；跨协议时保留正文、丢弃控制标记。
+	if len(request.PromptCacheBreakpoints()) != 0 &&
+		!allowCrossProtocolProjection {
 		return unsupported("prompt_cache_breakpoints")
 	}
-	if _, found := request.ContextManagement(); found {
+	// context_management 是 Claude 客户端控制字段，Codex 上游不能执行；跨协议
+	// 时由本 Adapter 明确丢弃，原生 Codex 请求仍保持严格边界。
+	if _, found := request.ContextManagement(); found && !allowCrossProtocolProjection {
 		return unsupported("context_management")
 	}
 	if _, found := request.Truncation(); found {
@@ -130,6 +140,17 @@ func rejectUnsupportedRequest(
 		return unsupported("store")
 	}
 	return nil
+}
+
+// isCrossProtocolClient 只识别已经完成字段投影审查的客户端协议。
+func isCrossProtocolClient(protocol inference.ClientProtocolID) bool {
+	switch protocol {
+	case inference.ClientProtocolAnthropicMessages,
+		inference.ClientProtocolOpenAIChatCompletions:
+		return true
+	default:
+		return false
+	}
 }
 
 // encodeMessages 保持消息和内容块顺序，并在 Responses 顶层拆开工具与 reasoning 项。

@@ -44,6 +44,43 @@ func TestNewCreatesSingleDatabaseAndClosesIdempotently(t *testing.T) {
 	}
 }
 
+// TestNewGatewayOnlyDoesNotCreateLocalDatabase 验证远端 Gateway 不要求本机 AIH_HOME。
+func TestNewGatewayOnlyDoesNotCreateLocalDatabase(t *testing.T) {
+	app, err := New(context.Background(), Options{
+		Stdin:  bytes.NewReader(nil),
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+	})
+	if err != nil {
+		t.Fatalf("New(gateway-only) error = %v", err)
+	}
+	if err := app.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+}
+
+// TestGatewayOnlyRejectsNativeWithoutLocalDatabase 验证没有本地库时不会伪造 Native 凭据路径。
+func TestGatewayOnlyRejectsNativeWithoutLocalDatabase(t *testing.T) {
+	app, err := New(context.Background(), Options{
+		Stdin:  bytes.NewReader(nil),
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+	})
+	if err != nil {
+		t.Fatalf("New(gateway-only) error = %v", err)
+	}
+	defer app.Close()
+	err = app.Run(
+		context.Background(),
+		"codex",
+		[]string{"1"},
+		GatewayConfig{},
+	)
+	if !errors.Is(err, providerlaunch.ErrNativePlannerUnavailable) {
+		t.Fatalf("Run(native without local database) error = %v", err)
+	}
+}
+
 // TestRunRequiresGatewayKeyOnlyForRelayMode 验证 Native 指定账号不会读取 Server Key。
 func TestRunRequiresGatewayKeyOnlyForRelayMode(t *testing.T) {
 	catalog, err := providers.NewCatalog(providers.BuiltinManifest())

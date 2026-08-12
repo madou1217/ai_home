@@ -56,8 +56,8 @@ type Runner struct {
 
 // NewRunner 创建只依赖标准库操作系统边界的生产 Runtime。
 func NewRunner(options Options) (*Runner, error) {
-	if options.Credentials == nil ||
-		options.Stdin == nil || options.Stdout == nil || options.Stderr == nil {
+	// Gateway 与静态 API Key 不需要本地凭据刷新器；OAuth Runtime 在真正刷新时再失败关闭。
+	if options.Stdin == nil || options.Stdout == nil || options.Stderr == nil {
 		return nil, ErrInvalidRunnerOptions
 	}
 	client := options.HTTPClient

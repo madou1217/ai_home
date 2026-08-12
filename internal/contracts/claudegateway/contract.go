@@ -14,8 +14,9 @@ const (
 	TransportNativeOAuth = "native_oauth"
 )
 
-// SelectionRequest 携带真实模型和可选固定账号，不包含 Prompt 或凭据。
+// SelectionRequest 携带目标 Provider、真实模型和可选固定账号，不包含 Prompt 或凭据。
 type SelectionRequest struct {
+	ProviderID          string   `json:"provider_id"`
 	Model               string   `json:"model"`
 	AccountRef          string   `json:"account_ref,omitempty"`
 	ExcludedAccountRefs []string `json:"excluded_account_refs,omitempty"`

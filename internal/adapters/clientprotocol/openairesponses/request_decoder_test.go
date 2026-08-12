@@ -253,6 +253,50 @@ func TestRequestDecoderSupportsPreviousResponseToolOutput(t *testing.T) {
 	}
 }
 
+// TestRequestDecoderAcceptsCodexClientToolSearch 验证官方 Codex CLI 自动附带的
+// 客户端 tool_search 元工具停留在客户端边界，不会被伪造为上游 function tool。
+func TestRequestDecoderAcceptsCodexClientToolSearch(t *testing.T) {
+	t.Parallel()
+
+	request, err := NewRequestDecoder().Decode([]byte(`{
+		"model":"claude-sonnet-5",
+		"input":"只返回文本",
+		"tools":[
+			{"type":"tool_search","execution":"client","description":"发现可用工具","parameters":{"type":"object","properties":{"query":{"type":"string"}}}},
+			{"type":"function","name":"lookup","description":"查询","parameters":{"type":"object"}},
+			{"type":"web_search","external_web_access":true}
+		],
+		"tool_choice":"auto",
+		"parallel_tool_calls":true,
+		"stream":true
+	}`))
+	if err != nil {
+		t.Fatalf("Decode() error = %v", err)
+	}
+	tools := request.Tools()
+	if len(tools) != 1 || tools[0].Name() != "lookup" {
+		t.Fatalf("Request.Tools() = %#v, want only portable lookup", tools)
+	}
+	if _, found := request.WebSearch(); !found {
+		t.Fatal("Request.WebSearch() 未保留服务器侧搜索工具")
+	}
+}
+
+// TestRequestDecoderRejectsNonClientToolSearch 验证同名 Provider 私有工具不会被
+// 误吞，只有官方 execution=client 形态可以越过客户端协议边界。
+func TestRequestDecoderRejectsNonClientToolSearch(t *testing.T) {
+	t.Parallel()
+
+	_, err := NewRequestDecoder().Decode([]byte(`{
+		"model":"gpt-5.6-sol",
+		"input":"x",
+		"tools":[{"type":"tool_search","execution":"server","description":"发现工具","parameters":{"type":"object"}}]
+	}`))
+	if !errors.Is(err, ErrInvalidResponsesRequest) {
+		t.Fatalf("Decode() error = %v, want invalid request", err)
+	}
+}
+
 // TestRequestDecoderSupportsStringAndDataURLInput 验证 Responses 简写文本和 data URL
 // 图片都转换为类型化内容，不保留裸 data URL。
 func TestRequestDecoderSupportsStringAndDataURLInput(t *testing.T) {

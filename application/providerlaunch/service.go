@@ -13,6 +13,8 @@ var (
 	ErrInvalidServiceDependencies = errors.New("Provider 启动服务依赖无效")
 	// ErrInvalidServiceRequest 表示上下文或启动意图无效。
 	ErrInvalidServiceRequest = errors.New("Provider 启动服务请求无效")
+	// ErrNativePlannerUnavailable 表示当前 CLI 进程没有本地账号库，不能走 Native Direct。
+	ErrNativePlannerUnavailable = errors.New("Native Direct 需要本地 AIH_HOME")
 )
 
 // NativePlanBuilder 是 Native Direct 分支唯一允许读取上游凭据的端口。
@@ -46,7 +48,8 @@ type Service struct {
 
 // NewService 创建 Provider CLI 双模式应用服务。
 func NewService(dependencies ServiceDependencies) (*Service, error) {
-	if dependencies.Native == nil || dependencies.Gateway == nil {
+	// Gateway 账号池可以完全脱离本地库；Native 规划器按请求模式懒性要求。
+	if dependencies.Gateway == nil {
 		return nil, ErrInvalidServiceDependencies
 	}
 	return &Service{native: dependencies.Native, gateway: dependencies.Gateway}, nil
@@ -65,8 +68,7 @@ func (service *Service) Plan(
 	intent LaunchIntent,
 	endpoint GatewayEndpoint,
 ) (LaunchPlan, error) {
-	if service == nil || service.native == nil || service.gateway == nil ||
-		ctx == nil || !intent.IsValid() {
+	if service == nil || service.gateway == nil || ctx == nil || !intent.IsValid() {
 		return LaunchPlan{}, ErrInvalidServiceRequest
 	}
 	if err := ctx.Err(); err != nil {
@@ -74,6 +76,9 @@ func (service *Service) Plan(
 	}
 	switch intent.Mode() {
 	case LaunchModeNativeDirect:
+		if service.native == nil {
+			return LaunchPlan{}, ErrNativePlannerUnavailable
+		}
 		request, err := intent.NativeSelectionRequest()
 		if err != nil {
 			return LaunchPlan{}, err

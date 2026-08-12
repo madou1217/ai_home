@@ -216,6 +216,20 @@ type functionToolDTO struct {
 	Strict *bool `json:"strict"`
 }
 
+// clientToolSearchDTO 是 Codex CLI 客户端执行的延迟工具发现元工具。
+//
+// 它只在客户端边界出现，不能被误编码成上游可执行的 function tool。
+type clientToolSearchDTO struct {
+	// Type 固定为 tool_search。
+	Type string `json:"type"`
+	// Execution 固定为 client，表示由 Codex 客户端执行。
+	Execution string `json:"execution"`
+	// Description 是客户端展示给模型的工具发现说明。
+	Description string `json:"description"`
+	// Parameters 是 Codex 当前请求的工具发现参数 Schema。
+	Parameters json.RawMessage `json:"parameters"`
+}
+
 // namespaceToolDTO 是 Responses namespace 及其函数子工具集合。
 type namespaceToolDTO struct {
 	// Type 固定为 namespace。

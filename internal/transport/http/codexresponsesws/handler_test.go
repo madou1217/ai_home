@@ -84,6 +84,78 @@ func TestHandlerRelaysTwoTurnsWithoutReencodingFrames(t *testing.T) {
 	waitForAttempts(t, recorder, 2, 0)
 }
 
+// TestHandlerRelaysToolCallAndFunctionCallOutput 验证工具事件和下一轮
+// function_call_output 在同一连接内双向透传，不由网关重编码或吞掉。
+func TestHandlerRelaysToolCallAndFunctionCallOutput(t *testing.T) {
+	t.Parallel()
+
+	requests := make(chan []byte, 2)
+	expectedEvents := [][]string{
+		{
+			`{"type":"response.created","response":{"id":"resp_tool"}}`,
+			`{"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"item_tool","call_id":"call_tool","name":"lookup","arguments":""}}`,
+			`{"type":"response.function_call_arguments.delta","item_id":"item_tool","output_index":0,"delta":"{\"q\":\"go\"}"}`,
+			`{"type":"response.function_call_arguments.done","item_id":"item_tool","output_index":0,"arguments":"{\"q\":\"go\"}"}`,
+			`{"type":"response.output_item.done","output_index":0,"item":{"type":"function_call","id":"item_tool","call_id":"call_tool","name":"lookup","arguments":"{\"q\":\"go\"}"}}`,
+			`{"type":"response.completed","response":{"id":"resp_tool"}}`,
+		},
+		{
+			`{"type":"response.created","response":{"id":"resp_after_tool"}}`,
+			`{"type":"response.output_text.delta","item_id":"msg_after_tool","output_index":0,"content_index":0,"delta":"done"}`,
+			`{"type":"response.completed","response":{"id":"resp_after_tool"}}`,
+		},
+	}
+	upstream := newWebSocketUpstream(t, func(connection *websocket.Conn) {
+		for _, events := range expectedEvents {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			messageType, payload, err := connection.Read(ctx)
+			cancel()
+			if err != nil || messageType != websocket.MessageText {
+				t.Errorf("upstream.Read() type=%v error=%v", messageType, err)
+				return
+			}
+			requests <- append([]byte(nil), payload...)
+			for _, event := range events {
+				writeUpstreamText(t, connection, event)
+			}
+		}
+	})
+	recorder := &attemptRecorder{}
+	handler := newTestHandler(t, upstream.URL, recorder)
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	client, _ := dialGateway(t, server.URL, nil)
+	defer client.CloseNow()
+
+	first := []byte(`{"type":"response.create","model":"gpt-5.6-sol","input":[],"tools":[{"type":"function","name":"lookup","parameters":{"type":"object"}}],"future":{"preserve":true}}`)
+	second := []byte(`{"type":"response.create","model":"gpt-5.6-sol","previous_response_id":"resp_tool","input":[{"type":"function_call_output","call_id":"call_tool","output":"{\"value\":42}"}],"future":{"preserve":true}}`)
+	writeClientText(t, client, first)
+	firstRelayed := readUntilCompleted(t, client)
+	writeClientText(t, client, second)
+	secondRelayed := readUntilCompleted(t, client)
+	if len(firstRelayed) != len(expectedEvents[0]) ||
+		len(secondRelayed) != len(expectedEvents[1]) {
+		t.Fatalf("tool event counts first=%d second=%d", len(firstRelayed), len(secondRelayed))
+	}
+	for index, want := range expectedEvents[0] {
+		if firstRelayed[index] != want {
+			t.Fatalf("first event[%d] = %s, want %s", index, firstRelayed[index], want)
+		}
+	}
+	for index, want := range expectedEvents[1] {
+		if secondRelayed[index] != want {
+			t.Fatalf("second event[%d] = %s, want %s", index, secondRelayed[index], want)
+		}
+	}
+	if got := <-requests; string(got) != string(first) {
+		t.Fatalf("first tool request = %s", got)
+	}
+	if got := <-requests; string(got) != string(second) {
+		t.Fatalf("function_call_output request = %s", got)
+	}
+	waitForAttempts(t, recorder, 2, 0)
+}
+
 // TestHandlerClassifiesWrapped429BeforeRelaying 验证真实 WS error 帧在客户端
 // 可见前写入账号模型级限流状态，正文仍保持原样。
 func TestHandlerClassifiesWrapped429BeforeRelaying(t *testing.T) {
@@ -113,6 +185,103 @@ func TestHandlerClassifiesWrapped429BeforeRelaying(t *testing.T) {
 		failure.RetryAfter() != 3*time.Second {
 		t.Fatalf("failure = %#v", failure)
 	}
+}
+
+// TestHandlerClosesAfterUpstreamTerminalFailure 验证失败终态先透传给客户端，
+// 再关闭当前连接，避免把已失败的 Responses 会话当作可复用连接。
+func TestHandlerClosesAfterUpstreamTerminalFailure(t *testing.T) {
+	for _, testCase := range []struct {
+		name         string
+		frame        string
+		wantFailures int
+		wantFailure  runtimecore.FailureKind
+	}{
+		{
+			name:         "response.failed",
+			frame:        `{"type":"response.failed","response":{"id":"resp_failed","error":{"code":"rate_limit_exceeded"}}}`,
+			wantFailures: 1,
+			wantFailure:  runtimecore.FailureRateLimited,
+		},
+		{
+			name:         "response.incomplete",
+			frame:        `{"type":"response.incomplete","response":{"id":"resp_incomplete","status":"incomplete","incomplete_details":{"reason":"max_output_tokens"}}}`,
+			wantFailures: 0,
+		},
+		{
+			name:         "connection error",
+			frame:        `{"type":"error","status":429,"error":{"code":"rate_limit_exceeded"}}`,
+			wantFailures: 1,
+			wantFailure:  runtimecore.FailureRateLimited,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			upstream := newWebSocketUpstream(t, func(connection *websocket.Conn) {
+				readOneUpstreamRequest(t, connection)
+				writeUpstreamText(t, connection, testCase.frame)
+			})
+			recorder := &attemptRecorder{}
+			handler := newTestHandler(t, upstream.URL, recorder)
+			server := httptest.NewServer(handler)
+			defer server.Close()
+			client, _ := dialGateway(t, server.URL, nil)
+			defer client.CloseNow()
+			writeClientText(t, client, []byte(
+				`{"type":"response.create","model":"gpt-5.6-sol","input":[]}`,
+			))
+			messageType, payload, err := readClientMessage(t, client)
+			if err != nil || messageType != websocket.MessageText ||
+				string(payload) != testCase.frame {
+				t.Fatalf("terminal relay type=%v payload=%s error=%v", messageType, payload, err)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_, _, err = client.Read(ctx)
+			if websocket.CloseStatus(err) != websocket.StatusInternalError {
+				t.Fatalf("terminal close error=%v status=%v", err, websocket.CloseStatus(err))
+			}
+			waitForAttempts(t, recorder, 0, testCase.wantFailures)
+			if testCase.wantFailures == 1 &&
+				recorder.Failures()[0].RuntimeKind() != testCase.wantFailure {
+				t.Fatalf("terminal failure = %#v", recorder.Failures()[0])
+			}
+		})
+	}
+}
+
+// TestHandlerRefreshesModelAfterUnsupportedFailure 验证明确的模型不支持事件
+// 只刷新该账号 Provider 的物化模型目录，同时关闭当前失败连接。
+func TestHandlerRefreshesModelAfterUnsupportedFailure(t *testing.T) {
+	t.Parallel()
+
+	refreshes := &modelRefreshRecorder{}
+	upstream := newWebSocketUpstream(t, func(connection *websocket.Conn) {
+		readOneUpstreamRequest(t, connection)
+		writeUpstreamText(t, connection, `{"type":"response.failed","response":{"id":"resp_missing_model","error":{"code":"model_not_found"}}}`)
+	})
+	recorder := &attemptRecorder{}
+	handler := newTestHandlerWithRefresh(t, upstream.URL, recorder, refreshes)
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	client, _ := dialGateway(t, server.URL, nil)
+	defer client.CloseNow()
+	writeClientText(t, client, []byte(
+		`{"type":"response.create","model":"gpt-5.6-sol","input":[]}`,
+	))
+	_, payload, err := readClientMessage(t, client)
+	if err != nil || string(payload) != `{"type":"response.failed","response":{"id":"resp_missing_model","error":{"code":"model_not_found"}}}` {
+		t.Fatalf("unsupported model terminal payload=%s error=%v", payload, err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, _, err = client.Read(ctx)
+	if websocket.CloseStatus(err) != websocket.StatusInternalError {
+		t.Fatalf("unsupported model close error=%v status=%v", err, websocket.CloseStatus(err))
+	}
+	waitForAttempts(t, recorder, 0, 1)
+	if recorder.Failures()[0].RuntimeKind() != runtimecore.FailureModelUnsupported {
+		t.Fatalf("unsupported model failure=%#v", recorder.Failures()[0])
+	}
+	waitForRefresh(t, refreshes, "acct_0123456789abcdef0123", "codex")
 }
 
 // TestHandlerDoesNotRecordWarmupFailure 验证 generate:false 预热不改变账号运行态。
@@ -384,6 +553,16 @@ func newTestHandler(
 	recorder *attemptRecorder,
 ) *codexresponsesws.Handler {
 	t.Helper()
+	return newTestHandlerWithRefresh(t, upstreamBaseURL, recorder, modelRefreshStub{})
+}
+
+func newTestHandlerWithRefresh(
+	t *testing.T,
+	upstreamBaseURL string,
+	recorder *attemptRecorder,
+	modelRefreshes inferencegateway.ModelRefreshScheduler,
+) *codexresponsesws.Handler {
+	t.Helper()
 	credential, err := codexauth.NewAPIKeyAuth(codexauth.APIKeyInput{
 		APIKey:  "synthetic-upstream-key",
 		BaseURL: upstreamBaseURL,
@@ -428,7 +607,7 @@ func newTestHandler(
 		Selector:       selectionStub{selection: selection},
 		Upstream:       dialer,
 		Attempts:       recorder,
-		ModelRefreshes: modelRefreshStub{},
+		ModelRefreshes: modelRefreshes,
 		Clock: func() time.Time {
 			return time.Date(2026, 8, 10, 8, 0, 0, 0, time.UTC)
 		},
@@ -622,6 +801,52 @@ func (modelRefreshStub) ScheduleModelRefresh(
 	string,
 ) error {
 	return nil
+}
+
+type modelRefreshRecorder struct {
+	calls chan modelRefreshCall
+}
+
+type modelRefreshCall struct {
+	accountRef string
+	provider   string
+}
+
+func (recorder *modelRefreshRecorder) ScheduleModelRefresh(
+	_ context.Context,
+	accountRef accountcore.AccountRef,
+	provider string,
+) error {
+	if recorder.calls == nil {
+		recorder.calls = make(chan modelRefreshCall, 1)
+	}
+	recorder.calls <- modelRefreshCall{
+		accountRef: accountRef.String(),
+		provider:   provider,
+	}
+	return nil
+}
+
+func waitForRefresh(
+	t *testing.T,
+	recorder *modelRefreshRecorder,
+	wantAccountRef string,
+	wantProvider string,
+) {
+	t.Helper()
+	if recorder == nil || recorder.calls == nil {
+		t.Fatal("model refresh recorder was not initialized")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	select {
+	case call := <-recorder.calls:
+		if call.accountRef != wantAccountRef || call.provider != wantProvider {
+			t.Fatalf("model refresh call=%#v want account=%s provider=%s", call, wantAccountRef, wantProvider)
+		}
+	case <-ctx.Done():
+		t.Fatal("model refresh was not scheduled")
+	}
 }
 
 type attemptRecorder struct {

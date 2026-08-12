@@ -50,8 +50,10 @@ func (function realCodexRoundTripperFunc) RoundTrip(
 type realCodexRequestCounts struct {
 	models              int
 	responses           int
+	websocketHandshakes int
 	summarizedReasoning int
 	unexpected          int
+	lastStatus          int
 }
 
 // realCodexRequestBudget 在发出网络请求前同时执行目标白名单和次数预算。
@@ -62,8 +64,22 @@ type realCodexRequestBudget struct {
 	client *http.Client
 	// maxResponses 是当前真实场景明确批准的推理次数；零沿用两次缺省预算。
 	maxResponses int
-	mu           sync.Mutex
-	counts       realCodexRequestCounts
+	// expectedModel 在目录请求完成后由真实测试写入，避免把某个历史模型名
+	// 错当成当前 OAuth 账号实际可用的模型。
+	expectedModel string
+	mu            sync.Mutex
+	counts        realCodexRequestCounts
+}
+
+// SetExpectedModel 固定本次真实验收随后允许发送的精确模型。
+// 模型必须先来自本地物化目录，不能由测试夹具凭空指定。
+func (budget *realCodexRequestBudget) SetExpectedModel(model string) {
+	if budget == nil {
+		return
+	}
+	budget.mu.Lock()
+	budget.expectedModel = strings.TrimSpace(model)
+	budget.mu.Unlock()
 }
 
 // Do 校验请求目标、协议头和固定测试正文后，原样委托给标准库客户端。
@@ -76,7 +92,56 @@ func (budget *realCodexRequestBudget) Do(
 	if err := budget.reserve(request); err != nil {
 		return nil, err
 	}
-	return budget.client.Do(request)
+	response, err := budget.client.Do(request)
+	budget.recordResponse(response)
+	return response, err
+}
+
+// RoundTrip 让同一请求预算可以注入 WebSocket 握手使用的 http.Client，避免
+// WebSocket 旁路绕过真实测试的目标白名单和次数上限。
+func (budget *realCodexRequestBudget) RoundTrip(
+	request *http.Request,
+) (*http.Response, error) {
+	if budget == nil || budget.client == nil || request == nil {
+		return nil, errUnexpectedRealCodexRequest
+	}
+	if err := budget.reserve(request); err != nil {
+		return nil, err
+	}
+	// WebSocket 升级响应的 Body 必须同时实现 io.Reader/io.Writer/io.Closer。
+	// 这里不能再次调用 http.Client.Do：Client 会为超时和取消包装响应 Body，
+	// 包装后通常只保留 io.ReadCloser，coder/websocket 会因此在已经收到 101
+	// 之后错误地报告“response body is not a io.ReadWriteCloser”。测试预算只
+	// 负责白名单和计数，实际升级必须直接交给底层 RoundTripper。
+	transport := budget.client.Transport
+	if transport == nil {
+		transport = http.DefaultTransport
+	}
+	response, err := transport.RoundTrip(request)
+	budget.recordResponse(response)
+	return response, err
+}
+
+// recordResponse 只记录上游 HTTP 状态码，便于失败验收定位，不保存正文或 URL。
+func (budget *realCodexRequestBudget) recordResponse(response *http.Response) {
+	if budget == nil || response == nil {
+		return
+	}
+	budget.mu.Lock()
+	budget.counts.lastStatus = response.StatusCode
+	budget.mu.Unlock()
+}
+
+// WebSocketHTTPClient 返回只复用本预算传输、但不共享请求级超时的握手客户端。
+func (budget *realCodexRequestBudget) WebSocketHTTPClient() *http.Client {
+	if budget == nil {
+		return nil
+	}
+	return &http.Client{
+		Timeout:       realCodexUpstreamTimeout,
+		Transport:     budget,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
 }
 
 // reserve 原子预留一次真实请求；任何异常都只增加本地拒绝计数。
@@ -89,6 +154,7 @@ func (budget *realCodexRequestBudget) reserve(request *http.Request) error {
 		"Bearer ",
 	) && request.Header.Get("Authorization") != "Bearer "
 	validIdentity := request.Header.Get("Originator") == "codex_cli_rs" &&
+		request.Header.Get("User-Agent") != "" &&
 		request.Header.Get("Version") == "0.146.0"
 	if request.URL == nil ||
 		request.URL.Scheme != "https" ||
@@ -100,6 +166,14 @@ func (budget *realCodexRequestBudget) reserve(request *http.Request) error {
 	}
 
 	switch {
+	case request.Method == http.MethodGet &&
+		request.URL.Path == "/backend-api/codex/responses" &&
+		request.URL.RawQuery == "" &&
+		request.Header.Get("Upgrade") == "websocket" &&
+		request.Header.Get("Connection") != "" &&
+		budget.counts.websocketHandshakes == 0:
+		budget.counts.websocketHandshakes++
+		return nil
 	case request.Method == http.MethodGet &&
 		request.URL.Path == "/backend-api/codex/models" &&
 		request.URL.Query().Get("client_version") == "0.146.0" &&
@@ -114,7 +188,14 @@ func (budget *realCodexRequestBudget) reserve(request *http.Request) error {
 		request.Header.Get("Content-Type") == "application/json" &&
 		request.Header.Get("Accept") == "text/event-stream" &&
 		budget.counts.responses < budget.responseLimit():
-		hasSummarizedReasoning, err := validateRealCodexUpstreamBody(request)
+		expectedModel := budget.expectedModel
+		if expectedModel == "" {
+			expectedModel = realCodexModel
+		}
+		hasSummarizedReasoning, err := validateRealCodexUpstreamBody(
+			request,
+			expectedModel,
+		)
 		if err != nil {
 			budget.counts.unexpected++
 			return err
@@ -147,7 +228,10 @@ func (budget *realCodexRequestBudget) snapshot() realCodexRequestCounts {
 
 // validateRealCodexUpstreamBody 保证两次真实推理都使用已确认的模型、标记和
 // Provider 原生 stream=true，同时不私自添加 max_output_tokens。
-func validateRealCodexUpstreamBody(request *http.Request) (bool, error) {
+func validateRealCodexUpstreamBody(
+	request *http.Request,
+	expectedModel string,
+) (bool, error) {
 	if request.Body == nil {
 		return false, errUnexpectedRealCodexRequest
 	}
@@ -166,7 +250,7 @@ func validateRealCodexUpstreamBody(request *http.Request) (bool, error) {
 
 	var document map[string]json.RawMessage
 	if json.Unmarshal(payload, &document) != nil ||
-		string(document["model"]) != `"`+realCodexModel+`"` ||
+		string(document["model"]) != `"`+expectedModel+`"` ||
 		string(document["stream"]) != "true" ||
 		!bytes.Contains(payload, []byte(realCodexMarker)) {
 		return false, errUnexpectedRealCodexRequest
@@ -249,7 +333,7 @@ func TestRealCodexRequestBudgetBlocksExtraNetworkCalls(t *testing.T) {
 		}
 	}
 
-	want := realCodexRequestCounts{responses: 2, unexpected: 1}
+	want := realCodexRequestCounts{responses: 2, unexpected: 1, lastStatus: http.StatusOK}
 	if got := budget.snapshot(); got != want || transportCalls != 2 {
 		t.Fatalf("真实请求预算失效: counts=%+v transport_calls=%d", got, transportCalls)
 	}
@@ -287,7 +371,7 @@ func TestRealCodexRequestBudgetAllowsConfiguredResponseCount(t *testing.T) {
 		}
 	}
 
-	want := realCodexRequestCounts{responses: 4, unexpected: 1}
+	want := realCodexRequestCounts{responses: 4, unexpected: 1, lastStatus: http.StatusOK}
 	if got := budget.snapshot(); got != want || transportCalls != 4 {
 		t.Fatalf("可配置真实请求预算失效: counts=%+v transport_calls=%d", got, transportCalls)
 	}
@@ -482,6 +566,7 @@ func newBudgetTestResponsesRequest(t *testing.T) *http.Request {
 	}
 	request.Header.Set("Authorization", "Bearer synthetic-real-test-token")
 	request.Header.Set("Originator", "codex_cli_rs")
+	request.Header.Set("User-Agent", "codex_cli_rs/0.146.0")
 	request.Header.Set("Version", "0.146.0")
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "text/event-stream")
@@ -561,9 +646,10 @@ func startRealCodexServer(
 	aiHomeDir string,
 	upstream aihserver.InferenceHTTPClient,
 	discoverers []accountapp.ProviderModelDiscoverer,
+	webSocketHTTPClient ...*http.Client,
 ) (string, *http.Client) {
 	t.Helper()
-	server, err := aihserver.New(context.Background(), aihserver.Options{
+	options := aihserver.Options{
 		AIHomeDir:           aiHomeDir,
 		ManagementKey:       func() string { return testManagementKey },
 		ClientKey:           func() string { return testClientKey },
@@ -571,7 +657,11 @@ func startRealCodexServer(
 		InferenceHTTPClient: upstream,
 		UsageHTTPClient:     syntheticUsageHTTPClient{},
 		RelayHTTPClient:     nil,
-	})
+	}
+	if len(webSocketHTTPClient) > 0 {
+		options.WebSocketHTTPClient = webSocketHTTPClient[0]
+	}
+	server, err := aihserver.New(context.Background(), options)
 	if err != nil {
 		t.Fatalf("创建真实 Codex 测试 Server 失败: %v", err)
 	}

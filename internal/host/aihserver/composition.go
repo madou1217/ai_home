@@ -101,6 +101,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		options.ManagementKey,
 		options.ClientKey,
 		options.InferenceHTTPClient,
+		options.WebSocketHTTPClient,
 		options.UsageHTTPClient,
 		options.RelayHTTPClient,
 		newMessagesDecodeErrorObserver(options.ErrorLog),
@@ -128,6 +129,7 @@ func newHandlers(
 	managementKey func() string,
 	clientKey func() string,
 	inferenceClient InferenceHTTPClient,
+	webSocketHTTPClient *http.Client,
 	usageClient UsageHTTPClient,
 	relayHTTPClient InferenceHTTPClient,
 	decodeErrors func(error),
@@ -470,9 +472,12 @@ func newHandlers(
 			err,
 		)
 	}
-	webSocketDialer, err := responseswebsocket.NewDialer(&http.Client{
-		CheckRedirect: rejectOAuthRedirect,
-	})
+	if webSocketHTTPClient == nil {
+		webSocketHTTPClient = &http.Client{
+			CheckRedirect: rejectOAuthRedirect,
+		}
+	}
+	webSocketDialer, err := responseswebsocket.NewDialer(webSocketHTTPClient)
 	if err != nil {
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf(

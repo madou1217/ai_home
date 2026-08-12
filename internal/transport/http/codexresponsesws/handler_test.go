@@ -412,6 +412,50 @@ func TestHandlerPropagatesUpstreamCloseAndRecordsIncomplete(t *testing.T) {
 	waitForAttempts(t, recorder, 0, 1)
 }
 
+// TestHandlerDoesNotRecordClientDisconnect 验证调用方主动结束连接不会把未完成
+// 的客户端请求误记为账号断流失败；失败归因只适用于上游方向的异常结束。
+func TestHandlerDoesNotRecordClientDisconnect(t *testing.T) {
+	t.Parallel()
+
+	requestSeen := make(chan struct{}, 1)
+	upstreamClosed := make(chan struct{}, 1)
+	upstream := newWebSocketUpstream(t, func(connection *websocket.Conn) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		messageType, _, err := connection.Read(ctx)
+		if err != nil || messageType != websocket.MessageText {
+			t.Errorf("upstream.Read(request) type=%v error=%v", messageType, err)
+			return
+		}
+		requestSeen <- struct{}{}
+		_, _, _ = connection.Read(ctx)
+		upstreamClosed <- struct{}{}
+	})
+	recorder := &attemptRecorder{}
+	handler := newTestHandler(t, upstream.URL, recorder)
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	client, _ := dialGateway(t, server.URL, nil)
+	defer client.CloseNow()
+	writeClientText(t, client, []byte(
+		`{"type":"response.create","model":"gpt-5.6-sol","input":[]}`,
+	))
+	select {
+	case <-requestSeen:
+	case <-time.After(5 * time.Second):
+		t.Fatal("上游没有收到客户端请求")
+	}
+	if err := client.Close(websocket.StatusNormalClosure, "client done"); err != nil {
+		t.Fatalf("client.Close() error = %v", err)
+	}
+	select {
+	case <-upstreamClosed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("客户端关闭没有传播到上游")
+	}
+	waitForAttempts(t, recorder, 0, 0)
+}
+
 // TestHandlerRejectsConcurrentTurnsWithoutBlamingAccount 验证同连接并发
 // response.create 属于客户端协议错误，不写账号 cooldown。
 func TestHandlerRejectsConcurrentTurnsWithoutBlamingAccount(t *testing.T) {

@@ -54,6 +54,9 @@ type Options struct {
 	ModelDiscoverers []accountapp.ProviderModelDiscoverer
 	// InferenceHTTPClient 允许测试注入合成上游；生产必须留空。
 	InferenceHTTPClient InferenceHTTPClient
+	// WebSocketHTTPClient 允许测试为 Codex Responses WebSocket 注入受预算约束的
+	// HTTP Client；生产留空时使用拒绝重定向的独立客户端。
+	WebSocketHTTPClient *http.Client
 	// UsageHTTPClient 允许测试注入合成额度上游；生产留空时创建独立安全客户端。
 	UsageHTTPClient UsageHTTPClient
 	// RelayHTTPClient 允许测试注入透传上游；生产必须留空。

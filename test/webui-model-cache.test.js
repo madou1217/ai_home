@@ -378,3 +378,84 @@ test('webui scoped model cache keeps account metadata after another scoped refre
   assert.equal(cached.scannedAccounts, 1);
   assert.deepEqual(cached.byAccount[OPENCODE_ACCOUNT_REF], ['openai/gpt-5.1-codex']);
 });
+
+// 回归：探测失败绝不能覆盖已缓存的模型目录。用户可见症状是账号模型页
+// 「可见模型 8」但列表空白——失败的探测把好目录写成了 [],还持久化了。
+test('failed probe must not overwrite a cached model catalog', async () => {
+  const accountRef = 'acct_8e69ffb20d4fe2ce055e';
+  const account = { id: '1', accountRef, provider: 'codex', accessToken: 'token', availableModels: [] };
+  const state = { accounts: { codex: [account] }, modelRegistry: { providers: {} } };
+
+  const first = await getWebUiModelsCache(state, { provider: 'auto' }, {
+    forceRefresh: true,
+    fetchModelsForAccount: async () => ['gpt-5.5', 'gpt-5.6-luna']
+  });
+  assert.deepEqual(first.byAccount[accountRef], ['gpt-5.5', 'gpt-5.6-luna']);
+
+  // 探测超时/中断:抛错 → 该轮该账号没有模型可写
+  const second = await getWebUiModelsCache(state, { provider: 'auto' }, {
+    forceRefresh: true,
+    fetchModelsForAccount: async () => {
+      throw new Error('This operation was aborted');
+    }
+  });
+  assert.deepEqual(
+    second.byAccount[accountRef],
+    ['gpt-5.5', 'gpt-5.6-luna'],
+    '探测失败必须保留上一次成功拿到的目录'
+  );
+});
+
+test('failed first probe records unknown, not an empty catalog', async () => {
+  const accountRef = 'acct_1111111111111111aaaa';
+  const account = { id: '2', accountRef, provider: 'codex', accessToken: 'token', availableModels: [] };
+  const state = { accounts: { codex: [account] }, modelRegistry: { providers: {} } };
+
+  const result = await getWebUiModelsCache(state, { provider: 'auto' }, {
+    forceRefresh: true,
+    fetchModelsForAccount: async () => {
+      throw new Error('This operation was aborted');
+    }
+  });
+
+  // 从来没成功探测过 → 该 ref 不该出现在 byAccount 里。
+  // 写成 [] 会被读成「已知为空」,页面和路由都会当成这个账号什么模型都不支持。
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(result.byAccount, accountRef),
+    false,
+    '从未成功探测的账号应记为「未知」而不是「已知为空」'
+  );
+});
+
+// 回归：账号重载不该清掉仍然存在的账号的模型目录。以前 applyReloadState 会
+// invalidate 整个缓存,于是重载后第一次探测一旦失败,账号模型页就空了。
+test('account reload keeps catalogs for accounts that still exist', () => {
+  const { applyReloadState } = require('../lib/server/management');
+  const keptRef = 'acct_44444444444444444444';
+  const goneRef = 'acct_55555555555555555555';
+  const state = {
+    accounts: { codex: [{ accountRef: keptRef }] },
+    webUiModelsCache: {
+      updatedAt: Date.now(),
+      byAccount: { [keptRef]: ['gpt-5.5'], [goneRef]: ['gpt-5.4'] },
+      byProvider: {},
+      errorsByAccount: {},
+      labels: {}
+    },
+    cursors: {},
+    modelAccountIndex: null
+  };
+
+  applyReloadState(state, { codex: [{ accountRef: keptRef }] });
+
+  assert.deepEqual(
+    state.webUiModelsCache.byAccount[keptRef],
+    ['gpt-5.5'],
+    '账号还在,目录就该留着'
+  );
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(state.webUiModelsCache.byAccount, goneRef),
+    false,
+    '账号没了,它的目录才该丢'
+  );
+});

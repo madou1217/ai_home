@@ -30,6 +30,7 @@ const {
 } = require('../lib/server/account-credential-store');
 const { upsertAccountRef } = require('../lib/server/account-ref-store');
 const { writeAccountUsageSnapshot } = require('../lib/account/usage-snapshot-store');
+const { writeAccountTokenUsageCache } = require('../lib/server/webui-account-token-usage-cache');
 const {
   readDefaultAccountRef,
   writeDefaultAccountRef
@@ -589,6 +590,49 @@ test('web ui accounts list prefers DB usage snapshot capturedAt for updatedAt', 
   });
   const { body } = await requestAccounts(fixture);
   assert.equal(body.accounts[0].updatedAt, capturedAt);
+});
+
+test('web ui accounts list preserves Codex Free usage windows outside the standard 5h/7days pair', async (t) => {
+  const fixture = createAccountFixture(t);
+  const accountRef = fixture.register('codex', '53', {
+    usageSnapshot: {
+      schemaVersion: 2,
+      kind: 'codex_oauth_status',
+      source: 'codex_app_server',
+      capturedAt: Date.now(),
+      account: { planType: 'free', email: 'free@example.com' },
+      entries: [
+        { window: '30days', windowMinutes: 43200, remainingPct: 100, resetIn: '720h' }
+      ]
+    },
+    state: { configured: true, apiKeyMode: false, remainingPct: 100, updatedAt: 123 }
+  });
+
+  const { body } = await requestAccounts(fixture);
+  const account = body.accounts.find((candidate) => candidate.accountRef === accountRef);
+
+  assert.equal(account.remainingPct, 100);
+  assert.deepEqual(
+    account.usageSnapshot.entries.map((entry) => [entry.window, entry.remainingPct]),
+    [['30days', 100]]
+  );
+});
+
+test('web ui accounts list reads token usage from the persistent cache', async (t) => {
+  const fixture = createAccountFixture(t);
+  const accountRef = fixture.register('codex', '123');
+  writeAccountTokenUsageCache({ fs, aiHomeDir: fixture.aiHomeDir }, {
+    [accountRef]: { day: 500_000_000, week: 1_000_000_000, month: 10_000_000_000 }
+  }, { generatedAt: 1234 });
+
+  const { body } = await requestAccounts(fixture);
+  const account = body.accounts.find((candidate) => candidate.accountRef === accountRef);
+
+  assert.deepEqual(account.tokenUsage, {
+    day: 500_000_000,
+    week: 1_000_000_000,
+    month: 10_000_000_000
+  });
 });
 
 test('web ui accounts list falls back to latest probe checkedAt for updatedAt when snapshot is missing', async (t) => {

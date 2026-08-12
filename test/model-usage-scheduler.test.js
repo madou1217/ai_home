@@ -32,6 +32,7 @@ test('model usage scan scheduler runs startup and interval scans without overlap
   const cleared = [];
   const calls = [];
   const logs = [];
+  const tokenUsageUpdates = [];
 
   const scheduler = createModelUsageScanScheduler({
     config: {
@@ -45,7 +46,14 @@ test('model usage scan scheduler runs startup and interval scans without overlap
       scan: () => {
         calls.push('scan');
         return { files: 1, records: 2 };
+      },
+      getAccountTokenUsageAsync: async (options) => {
+        calls.push(`token:${options.dimensions.join(',')}`);
+        return { acct_0123456789abcdefabcd: { day: 500 } };
       }
+    },
+    onTokenUsageUpdated: (usage, options) => {
+      tokenUsageUpdates.push({ usage, options });
     },
     setTimeoutFn: (fn, ms) => {
       const timer = { fn, ms, unrefCalled: false, unref() { this.unrefCalled = true; } };
@@ -73,12 +81,24 @@ test('model usage scan scheduler runs startup and interval scans without overlap
   assert.equal(intervals[0].unrefCalled, true);
 
   await timeouts[0].fn();
-  assert.deepEqual(calls, ['scan', 'pricing']);
+  assert.deepEqual(calls, ['scan', 'pricing', 'token:day,week,month']);
+  assert.deepEqual(tokenUsageUpdates[0].usage, {
+    acct_0123456789abcdefabcd: { day: 500 }
+  });
+  assert.deepEqual(tokenUsageUpdates[0].options.dimensions, ['day', 'week', 'month']);
   assert.equal(scheduler.getState().scanCount, 1);
   assert.equal(logs.some((line) => line.includes('startup')), true);
 
   await intervals[0].fn();
-  assert.deepEqual(calls, ['scan', 'pricing', 'scan', 'pricing']);
+  assert.deepEqual(calls, [
+    'scan',
+    'pricing',
+    'token:day,week,month',
+    'scan',
+    'pricing',
+    'token:day,week,month'
+  ]);
+  assert.equal(tokenUsageUpdates.length, 2);
   assert.equal(scheduler.getState().scanCount, 2);
 
   scheduler.stop();

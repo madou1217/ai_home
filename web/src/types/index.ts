@@ -24,6 +24,12 @@ export interface GeminiUsageModel {
   maxOutputTokens?: number | null;
 }
 
+export interface AccountTokenUsage {
+  day: number;
+  week: number;
+  month: number;
+}
+
 export type AccountUsageSnapshot =
   | {
       kind: 'codex_oauth_status';
@@ -88,6 +94,7 @@ export interface Account {
   runtimeUntil?: number;
   runtimeReason?: string;
   usageSnapshot?: AccountUsageSnapshot | null;
+  tokenUsage?: AccountTokenUsage | null;
 }
 
 export type GatewayAccount = Omit<Account, 'accountRef' | 'gateway'> & {

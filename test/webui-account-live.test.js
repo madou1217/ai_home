@@ -21,6 +21,7 @@ const {
   refreshLiveAccountRecord,
   removeLiveAccountRecord,
   emitAccountsAuthJobEvent,
+  updateCachedAccountTokenUsage,
   __private
 } = require('../lib/server/webui-account-live');
 
@@ -223,6 +224,74 @@ test('removeLiveAccountRecord broadcasts account-removed over SSE and WebSocket 
   assert.equal(wsClient.frames.length, 1);
   assert.equal(JSON.parse(wsClient.frames[0]).type, 'account-removed');
   assert.equal(JSON.parse(wsClient.frames[0]).accountRef, accountRef);
+});
+
+test('token usage cache refresh updates account records and broadcasts token usage', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-account-token-usage-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const accountRef = 'acct_0c000000000000000000';
+  const account = {
+    provider: 'codex',
+    accountRef,
+    status: 'up',
+    displayName: 'token@example.com',
+    configured: true,
+    apiKeyMode: false,
+    remainingPct: 100,
+    updatedAt: 1,
+    planType: 'pro',
+    email: 'token@example.com',
+    tokenUsage: null
+  };
+  const sseRes = {
+    body: '',
+    write(chunk = '') {
+      this.body += String(chunk);
+      return true;
+    }
+  };
+  const wsClient = {
+    readyState: 1,
+    frames: [],
+    send(frame) {
+      this.frames.push(String(frame));
+    }
+  };
+  const liveState = {
+    records: new Map([[accountRef, account]]),
+    metadata: new Map(),
+    usageSnapshots: new Map(),
+    watchers: new Set([{ res: sseRes, heartbeat: null }]),
+    webSocketWatchers: new Set([{ client: wsClient, heartbeat: null }]),
+    webSocketServer: null,
+    loadedFromDisk: true,
+    hydrating: false,
+    queued: false,
+    revision: 1,
+    fastSnapshot: null,
+    fastSnapshotAt: 0
+  };
+  const state = { __webUiAccountsLive: liveState };
+
+  const cache = updateCachedAccountTokenUsage({ state, fs, aiHomeDir: root }, {
+    [accountRef]: { day: 500_000_000, week: 1_000_000_000, month: 10_000_000_000 }
+  }, { generatedAt: 1234 });
+
+  assert.equal(cache.generatedAt, 1234);
+  assert.deepEqual(liveState.records.get(accountRef).tokenUsage, {
+    day: 500_000_000,
+    week: 1_000_000_000,
+    month: 10_000_000_000
+  });
+  assert.match(sseRes.body, /"type":"account"/);
+  assert.match(sseRes.body, /"tokenUsage":\{"day":500000000,"week":1000000000,"month":10000000000\}/);
+  assert.equal(wsClient.frames.length, 1);
+  assert.deepEqual(JSON.parse(wsClient.frames[0]).account.tokenUsage, {
+    day: 500_000_000,
+    week: 1_000_000_000,
+    month: 10_000_000_000
+  });
 });
 
 test('accountRef-keyed live records remove stale entries without parsing composite keys', () => {

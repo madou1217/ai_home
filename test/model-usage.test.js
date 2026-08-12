@@ -163,6 +163,73 @@ test('model usage records accept only accountRef as the runtime account key', ()
   });
 });
 
+test('model usage aggregates account tokens by local day, Monday week, and calendar month', (t) => {
+  const fixture = makeService(t, { enableAsyncQueries: false });
+  if (!fixture) return;
+  const { service } = fixture;
+  const accountA = 'acct_0123456789abcdefabcd';
+  const accountB = 'acct_abcdef0123456789abcd';
+  const nowMs = new Date(2026, 7, 12, 10, 0, 0, 0).getTime();
+  const timestamp = (year, month, day, hour = 10) => new Date(year, month, day, hour, 0, 0, 0).getTime();
+
+  service.recordUsageBatch([
+    {
+      eventKey: 'account-token-usage-a-today',
+      provider: 'codex',
+      accountRef: accountA,
+      model: 'gpt-5.1',
+      totalTokens: 500,
+      timestampMs: timestamp(2026, 7, 12, 9)
+    },
+    {
+      eventKey: 'account-token-usage-a-week',
+      provider: 'codex',
+      accountRef: accountA,
+      model: 'gpt-5.1',
+      totalTokens: 1_000,
+      timestampMs: timestamp(2026, 7, 10, 9)
+    },
+    {
+      eventKey: 'account-token-usage-a-month',
+      provider: 'codex',
+      accountRef: accountA,
+      model: 'gpt-5.1',
+      totalTokens: 2_000,
+      timestampMs: timestamp(2026, 7, 1, 9)
+    },
+    {
+      eventKey: 'account-token-usage-a-old',
+      provider: 'codex',
+      accountRef: accountA,
+      model: 'gpt-5.1',
+      totalTokens: 4_000,
+      timestampMs: timestamp(2026, 6, 31, 9)
+    },
+    {
+      eventKey: 'account-token-usage-b-today',
+      provider: 'claude',
+      accountRef: accountB,
+      model: 'claude-sonnet',
+      totalTokens: 3_000,
+      timestampMs: timestamp(2026, 7, 12, 8)
+    }
+  ]);
+
+  assert.deepEqual(service.getAccountTokenUsage({ nowMs }), {
+    [accountA]: { day: 500, week: 1_500, month: 3_500 },
+    [accountB]: { day: 3_000, week: 3_000, month: 3_000 }
+  });
+
+  assert.deepEqual(service.getAccountTokenUsage({ dimensions: ['day'], nowMs }), {
+    [accountA]: { day: 500 },
+    [accountB]: { day: 3_000 }
+  });
+  assert.deepEqual(service.getAccountTokenUsage({ dimensions: ['week', 'day'], nowMs }), {
+    [accountA]: { day: 500, week: 1_500 },
+    [accountB]: { day: 3_000, week: 3_000 }
+  });
+});
+
 test('model usage records reject events without a model identity', () => {
   assert.equal(normalizeUsageRecord({
     eventKey: 'usage-without-model',
@@ -1216,6 +1283,32 @@ test('model usage worker reads preserve synchronous projection results', async (
   ]);
 
   assert.deepEqual({ dashboard, stats, models, sessions, detail }, expected);
+});
+
+test('model usage worker reads account token usage through the same dimensioned service', async (t) => {
+  const fixture = makeService(t);
+  if (!fixture) return;
+  const { root, service } = fixture;
+  t.after(() => {
+    service.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  const accountRef = 'acct_0123456789abcdefabcd';
+  const nowMs = new Date(2026, 7, 12, 10, 0, 0, 0).getTime();
+  service.recordUsage({
+    eventKey: 'async-account-token-usage',
+    provider: 'codex',
+    accountRef,
+    model: 'gpt-5.1',
+    totalTokens: 5_000,
+    timestampMs: new Date(2026, 7, 12, 9, 0, 0, 0).getTime()
+  });
+
+  assert.deepEqual(
+    await service.getAccountTokenUsageAsync({ dimensions: ['day'], nowMs }),
+    { [accountRef]: { day: 5_000 } }
+  );
 });
 
 test('model usage exposes the canonical native model timeline for one session', (t) => {

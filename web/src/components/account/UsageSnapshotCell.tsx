@@ -6,6 +6,7 @@ import type {
   GeminiUsageModel
 } from '@/types';
 import Button from '@/components/ui/AppButton';
+import { formatResetAt, formatResetIn, formatWindowDuration } from './usage-snapshot-format';
 
 interface UsageRecordLike {
   configured?: boolean;
@@ -28,24 +29,14 @@ function getUsageBarColor(value: number | null) {
 }
 
 function orderCodexEntries(entries: CodexUsageEntry[]) {
-  const priority = new Map([
-    ['5h', 0],
-    ['7days', 1]
-  ]);
   return [...entries].sort((a, b) => {
-    const aPriority = priority.has(a.window) ? priority.get(a.window)! : 99;
-    const bPriority = priority.has(b.window) ? priority.get(b.window)! : 99;
-    if (aPriority !== bPriority) return aPriority - bPriority;
-    const aWindow = Number(a.windowMinutes) || 0;
-    const bWindow = Number(b.windowMinutes) || 0;
+    const aWindowValue = Number(a.windowMinutes);
+    const bWindowValue = Number(b.windowMinutes);
+    const aWindow = Number.isFinite(aWindowValue) && aWindowValue > 0 ? aWindowValue : Number.POSITIVE_INFINITY;
+    const bWindow = Number.isFinite(bWindowValue) && bWindowValue > 0 ? bWindowValue : Number.POSITIVE_INFINITY;
     if (aWindow !== bWindow) return aWindow - bWindow;
     return String(a.window || '').localeCompare(String(b.window || ''));
   });
-}
-
-function isVisibleCodexWindow(entry: CodexUsageEntry) {
-  const label = String(entry.window || '').trim().toLowerCase();
-  return label === '5h' || label === '7days';
 }
 
 function orderGeminiModels(models: GeminiUsageModel[]) {
@@ -57,14 +48,29 @@ function orderGeminiModels(models: GeminiUsageModel[]) {
   });
 }
 
-function UsageMetaLine({ label, value, resetIn }: { label: string; value: number | null; resetIn?: string }) {
+function UsageMetaLine({
+  label,
+  value,
+  resetIn,
+  resetAtMs
+}: {
+  label: string;
+  value: number | null;
+  resetIn?: string;
+  resetAtMs?: number;
+}) {
+  const resetInLabel = formatResetIn(resetIn, resetAtMs);
+  const resetLabel = formatResetAt(resetAtMs);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
         <span style={{ color: '#595959', fontSize: 'clamp(12.5px, 3.2vw, 13.5px)', whiteSpace: 'nowrap' }}>{label}</span>
-        <span style={{ textAlign: 'right', minWidth: 0, color: '#8c8c8c', fontSize: 'clamp(11.5px, 3vw, 12.5px)' }}>
-          {resetIn || ''}
-        </span>
+        {resetInLabel ? (
+          <span style={{ textAlign: 'right', minWidth: 0, color: '#8c8c8c', fontSize: 'clamp(11.5px, 3vw, 12.5px)', whiteSpace: 'nowrap' }}>
+            {resetInLabel}
+          </span>
+        ) : null}
       </div>
       <Progress
         percent={Math.max(0, Math.min(100, Number(value || 0)))}
@@ -73,6 +79,11 @@ function UsageMetaLine({ label, value, resetIn }: { label: string; value: number
         trailColor="#f0f0f0"
         format={() => formatUsagePercent(value)}
       />
+      {resetLabel ? (
+        <div style={{ color: '#8c8c8c', fontSize: 'clamp(11.5px, 3vw, 12.5px)', whiteSpace: 'nowrap' }}>
+          {resetLabel}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -90,7 +101,10 @@ export default function UsageSnapshotCell({ record, hideModels = false }: { reco
     || (record.provider === 'claude' && snapshot?.kind === 'claude_oauth_usage')
   ) {
     const entries = orderCodexEntries(
-      (snapshot.entries || []).filter((entry) => entry.remainingPct != null && isVisibleCodexWindow(entry))
+      // The upstream snapshot is the source of truth: any window with a
+      // numeric remaining value is renderable, including provider-specific
+      // windows such as Codex Free's 30-day quota.
+      (snapshot.entries || []).filter((entry) => typeof entry.remainingPct === 'number' && Number.isFinite(entry.remainingPct))
     );
     if (entries.length === 0) {
       return record.usageRefreshing ? (
@@ -107,9 +121,10 @@ export default function UsageSnapshotCell({ record, hideModels = false }: { reco
           {visibleEntries.map((entry, index) => (
             <UsageMetaLine
               key={`${entry.window}-${index}`}
-              label={entry.window || entry.bucket || 'usage'}
+              label={formatWindowDuration(entry.windowMinutes, entry.window) || entry.bucket || 'usage'}
               value={entry.remainingPct}
               resetIn={entry.resetIn}
+              resetAtMs={entry.resetAtMs}
             />
           ))}
         </div>
@@ -149,6 +164,7 @@ export default function UsageSnapshotCell({ record, hideModels = false }: { reco
               label={model.model || 'model'}
               value={model.remainingPct}
               resetIn={model.resetIn}
+              resetAtMs={model.resetAtMs}
             />
           ))}
         </div>

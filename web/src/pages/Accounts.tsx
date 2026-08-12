@@ -76,6 +76,7 @@ import type {
 import ProviderIcon, { providerIds, providerNames } from '@/components/chat/ProviderIcon';
 import { PROVIDER_AUTH_OPTIONS } from '@/providers/catalog';
 import UsageSnapshotCell from '@/components/account/UsageSnapshotCell';
+import TokenUsageCell from '@/components/account/TokenUsageCell';
 import {
   getAccountIdentityLabel,
   getAccountSecondaryIdentity,
@@ -2392,6 +2393,15 @@ export default function Accounts() {
       )
     },
     {
+      title: 'Token 用量',
+      dataIndex: 'tokenUsage',
+      key: 'tokenUsage',
+      width: 176,
+      render: (_value: any, record: Account) => (
+        <TokenUsageCell usage={record.tokenUsage} />
+      )
+    },
+    {
       title: '额度更新时间',
       dataIndex: 'updatedAt',
       key: 'updatedAt',
@@ -2497,6 +2507,12 @@ export default function Accounts() {
         {/* 用量快照 */}
         <div className="account-mobile-usage">
           <UsageSnapshotCell record={record} />
+        </div>
+        <div className="account-mobile-token-usage">
+          <div className="account-mobile-token-usage-head">
+            <span>Token 用量</span>
+          </div>
+          <TokenUsageCell usage={record.tokenUsage} />
         </div>
 
         <div className="mobile-card-foot">

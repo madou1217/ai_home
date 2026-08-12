@@ -423,6 +423,7 @@ test('management router returns one usage dashboard snapshot through the async w
 
 test('management usage scan starts async job and streams progress', async () => {
   let releaseScan;
+  const tokenUsageUpdates = [];
   const state = {};
   const writes = [];
   const req = new EventEmitter();
@@ -485,7 +486,14 @@ test('management usage scan starts async job and streams progress', async () => 
               codex: { files: 3, records: 5, prompts: 2, skipped: 0 }
             }
           });
-        })
+        }),
+        getAccountTokenUsageAsync: async (options) => {
+          assert.deepEqual(options.dimensions, ['day', 'week', 'month']);
+          return { acct_0123456789abcdefabcd: { day: 500 } };
+        }
+      },
+      onTokenUsageUpdated: (usage, options) => {
+        tokenUsageUpdates.push({ usage, options });
       }
     }
   });
@@ -507,6 +515,10 @@ test('management usage scan starts async job and streams progress', async () => 
   assert.match(streamed, /"type":"usage-scan-job"/);
   assert.match(streamed, /"status":"succeeded"/);
   assert.match(streamed, /"records":5/);
+  assert.deepEqual(tokenUsageUpdates, [{
+    usage: { acct_0123456789abcdefabcd: { day: 500 } },
+    options: { dimensions: ['day', 'week', 'month'], generatedAt: tokenUsageUpdates[0].options.generatedAt }
+  }]);
   req.emit('close');
 });
 

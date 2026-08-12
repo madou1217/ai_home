@@ -1,0 +1,123 @@
+.token-usage-cell {
+  display: inline-flex;
+  width: 140px;
+  min-width: 140px;
+  flex-direction: column;
+  gap: 1px;
+  color: var(--color-text);
+  line-height: 1;
+  vertical-align: middle;
+}
+
+.token-usage-chart {
+  position: relative;
+  width: 100%;
+  height: 38px;
+}
+
+.token-usage-chart-svg {
+  display: block;
+  width: 100%;
+  height: 38px;
+  overflow: visible;
+}
+
+.token-usage-baseline {
+  stroke: var(--color-border-strong);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.token-usage-bar {
+  fill: var(--color-info);
+  opacity: 0.58;
+  transition: opacity var(--motion-fast) var(--ease-standard);
+}
+
+.token-usage-bar--peak {
+  opacity: 1;
+}
+
+.token-usage-bar--zero {
+  opacity: 0.34;
+}
+
+.token-usage-bar--unknown {
+  fill: var(--color-faint);
+  opacity: 0.64;
+}
+
+.token-usage-chart-hit-targets {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.token-usage-chart-hit-target {
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  cursor: help;
+  font: inherit;
+}
+
+.token-usage-chart-hit-target:hover,
+.token-usage-chart-hit-target:focus-visible {
+  outline: none;
+  background: var(--color-info-soft);
+}
+
+.token-usage-chart-hit-target:focus-visible {
+  box-shadow: var(--ring-focus-info);
+}
+
+.token-usage-values,
+.token-usage-labels {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  text-align: center;
+}
+
+.token-usage-values {
+  color: var(--color-muted-strong);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-tight);
+}
+
+.token-usage-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.token-usage-value--peak {
+  color: var(--color-info);
+}
+
+.token-usage-labels {
+  color: var(--color-faint);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-tight);
+}
+
+.token-usage-cell--empty {
+  display: inline-block;
+  min-width: 0;
+  color: var(--color-faint);
+  font-size: var(--text-sm);
+}
+
+@media (max-width: 768px) {
+  .token-usage-cell {
+    width: 156px;
+    min-width: 156px;
+  }
+}

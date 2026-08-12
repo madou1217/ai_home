@@ -33,6 +33,18 @@
   transition: opacity var(--motion-fast) var(--ease-standard);
 }
 
+.token-usage-bar--layer-back {
+  opacity: 0.62;
+}
+
+.token-usage-bar--layer-middle {
+  opacity: 0.78;
+}
+
+.token-usage-bar--layer-front {
+  opacity: 0.94;
+}
+
 .token-usage-bar--peak {
   opacity: 1;
 }

@@ -15,7 +15,9 @@ const TOKEN_USAGE_PERIODS: readonly {
   { key: 'month', label: '月', hint: '本月' }
 ];
 
+const TOKEN_CHART_BASELINE = 33;
 const TOKEN_CHART_MAX_HEIGHT = 28;
+const TOKEN_CHART_BAR_WIDTH = 14;
 const TOKEN_MODEL_COLOR_TOKENS = [
   'var(--c-info-600)',
   'var(--c-teal-500)',
@@ -82,7 +84,7 @@ function formatModelTooltip(
   return models.length > 0 ? ['暂无用量'] : [`总计 ${formatTokenAmount(total)}`];
 }
 
-function allocateSegmentHeights(
+function allocateLayerHeights(
   models: AccountTokenUsageModel[],
   dimension: TokenUsageDimension,
   total: number,
@@ -97,23 +99,34 @@ function allocateSegmentHeights(
     .filter(({ value }) => value > 0);
   if (used.length === 0 || total <= 0 || height <= 0) return [];
 
-  // 每个已使用模型至少保留一个像素，避免小用量模型因取整后完全不可见。
-  const minimumHeight = used.length <= height ? 1 : 0;
-  const distributableHeight = height - minimumHeight * used.length;
-  const rawHeights = used.map(({ value }) => (value / total) * distributableHeight);
-  const heights = rawHeights.map((rawHeight) => minimumHeight + Math.floor(rawHeight));
-  let remaining = height - heights.reduce((sum, segmentHeight) => sum + segmentHeight, 0);
-  const order = rawHeights
-    .map((rawHeight, index) => ({ index, fraction: rawHeight - Math.floor(rawHeight) }))
-    .sort((left, right) => right.fraction - left.fraction || left.index - right.index);
-  for (let index = 0; index < order.length && remaining > 0; index += 1, remaining -= 1) {
-    heights[order[index].index] += 1;
-  }
+  // 所有层都贴同一条基线，小用量层最后绘制，形成二维前后叠放而不是上下拼接。
+  const ordered = [...used].sort((left, right) => right.value - left.value || left.index - right.index);
+  const largestValue = ordered[0]?.value || 0;
+  const minimumHeight = Math.min(5, height);
 
-  return used.map((entry, index) => ({
+  return ordered.map((entry, layerIndex) => ({
     ...entry,
-    height: heights[index]
+    height: Math.max(
+      minimumHeight,
+      layerIndex === 0 ? height : Math.round((entry.value / largestValue) * height)
+    )
   }));
+}
+
+function getBarPath(x: number, y: number, width: number, height: number) {
+  const radius = Math.min(3.5, height / 2, width / 2);
+  const right = x + width;
+
+  // 底部保持水平且无间隙，保证每一层都从统一基线起步。
+  return [
+    `M ${x} ${TOKEN_CHART_BASELINE}`,
+    `L ${x} ${y + radius}`,
+    `Q ${x} ${y} ${x + radius} ${y}`,
+    `L ${right - radius} ${y}`,
+    `Q ${right} ${y} ${right} ${y + radius}`,
+    `L ${right} ${TOKEN_CHART_BASELINE}`,
+    'Z'
+  ].join(' ');
 }
 
 function getBarHeight(value: TokenUsageValue, maximum: number) {
@@ -153,46 +166,48 @@ export default function TokenUsageCell({ usage }: { usage?: AccountTokenUsage | 
           role="presentation"
           focusable="false"
         >
-          <line className="token-usage-baseline" x1="8" y1="33" x2="148" y2="33" />
+          <line
+            className="token-usage-baseline"
+            x1="8"
+            y1={TOKEN_CHART_BASELINE}
+            x2="148"
+            y2={TOKEN_CHART_BASELINE}
+          />
           {metrics.map(({ key, value }, index) => {
             const height = getBarHeight(value, maximum);
             const x = 19 + index * 52;
             const isPeak = value !== null && value === maximum && maximum > 0;
             const dimension = key;
             const tooltipLines = formatModelTooltip(dimension, usedModels, value);
-            const segments = allocateSegmentHeights(usedModels, dimension, value || 0, height);
-            let segmentOffset = 0;
+            const layers = allocateLayerHeights(usedModels, dimension, value || 0, height);
 
             return (
               <g key={key} className="token-usage-bar-group">
-                {segments.length > 0 ? segments.map(({ model, index: modelIndex, height: segmentHeight }, segmentIndex) => {
-                  const segmentY = 33 - segmentOffset - segmentHeight;
-                  segmentOffset += segmentHeight;
+                {layers.length > 0 ? layers.map(({ model, index: modelIndex, height: layerHeight }, layerIndex) => {
+                  const layerY = TOKEN_CHART_BASELINE - layerHeight;
                   return (
-                    <rect
-                      key={model.model}
-                      className="token-usage-bar"
-                      x={x}
-                      y={segmentY}
-                      width="14"
-                      height={segmentHeight}
-                      rx={segmentIndex === segments.length - 1 ? 5 : 0}
+                    <path
+                      key={`${model.model}-${modelIndex}`}
+                      className={[
+                        'token-usage-bar',
+                        'token-usage-bar--layer',
+                        layerIndex === 0 ? 'token-usage-bar--layer-back' : '',
+                        layerIndex > 0 && layerIndex < layers.length - 1 ? 'token-usage-bar--layer-middle' : '',
+                        layerIndex === layers.length - 1 ? 'token-usage-bar--layer-front' : ''
+                      ].filter(Boolean).join(' ')}
+                      d={getBarPath(x, layerY, TOKEN_CHART_BAR_WIDTH, layerHeight)}
                       fill={getModelColor(modelIndex)}
                     />
                   );
                 }) : (
-                  <rect
+                  <path
                     className={[
                       'token-usage-bar',
                       isPeak ? 'token-usage-bar--peak' : '',
                       value === null ? 'token-usage-bar--unknown' : '',
                       value === 0 ? 'token-usage-bar--zero' : ''
                     ].filter(Boolean).join(' ')}
-                    x={x}
-                    y={33 - height}
-                    width="14"
-                    height={height}
-                    rx="5"
+                    d={getBarPath(x, TOKEN_CHART_BASELINE - height, TOKEN_CHART_BAR_WIDTH, height)}
                     fill={value === null ? undefined : 'var(--color-info)'}
                   />
                 )}

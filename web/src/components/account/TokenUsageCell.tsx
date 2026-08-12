@@ -97,11 +97,14 @@ function allocateSegmentHeights(
     .filter(({ value }) => value > 0);
   if (used.length === 0 || total <= 0 || height <= 0) return [];
 
-  const rawHeights = used.map(({ value }) => (value / total) * height);
-  const heights = rawHeights.map((rawHeight) => Math.floor(rawHeight));
+  // 每个已使用模型至少保留一个像素，避免小用量模型因取整后完全不可见。
+  const minimumHeight = used.length <= height ? 1 : 0;
+  const distributableHeight = height - minimumHeight * used.length;
+  const rawHeights = used.map(({ value }) => (value / total) * distributableHeight);
+  const heights = rawHeights.map((rawHeight) => minimumHeight + Math.floor(rawHeight));
   let remaining = height - heights.reduce((sum, segmentHeight) => sum + segmentHeight, 0);
   const order = rawHeights
-    .map((rawHeight, index) => ({ index, fraction: rawHeight - heights[index] }))
+    .map((rawHeight, index) => ({ index, fraction: rawHeight - Math.floor(rawHeight) }))
     .sort((left, right) => right.fraction - left.fraction || left.index - right.index);
   for (let index = 0; index < order.length && remaining > 0; index += 1, remaining -= 1) {
     heights[order[index].index] += 1;
@@ -190,6 +193,7 @@ export default function TokenUsageCell({ usage }: { usage?: AccountTokenUsage | 
                     width="14"
                     height={height}
                     rx="5"
+                    fill={value === null ? undefined : 'var(--color-info)'}
                   />
                 )}
                 <title>{tooltipLines.join('\n')}</title>

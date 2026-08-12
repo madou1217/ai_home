@@ -29,7 +29,6 @@
 }
 
 .token-usage-bar {
-  fill: var(--color-info);
   opacity: 0.58;
   transition: opacity var(--motion-fast) var(--ease-standard);
 }

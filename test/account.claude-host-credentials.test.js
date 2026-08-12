@@ -18,6 +18,17 @@ function credentials(email, accessToken, refreshToken = `${accessToken}-refresh`
   };
 }
 
+function credentialsWithIdentity({ email, uuid, accessToken, refreshToken = `${accessToken}-refresh` }) {
+  return {
+    claudeAiOauth: {
+      email,
+      accessToken,
+      refreshToken,
+      ...(uuid ? { account: { emailAddress: email, uuid } } : {})
+    }
+  };
+}
+
 function credentialRecord(value, updatedAt) {
   return {
     provider: 'claude',
@@ -64,7 +75,7 @@ test('newer keychain credentials update the same DB account identity', () => {
   }]);
 });
 
-test('an unrelated shared keychain identity never overwrites the selected DB account', () => {
+test('selected DB account projects over an unrelated shared keychain identity', () => {
   const databaseCredentials = credentials('selected@example.com', 'selected-token');
   const keychainCredentials = credentials('other@example.com', 'other-token');
   const databaseWrites = [];
@@ -87,7 +98,7 @@ test('an unrelated shared keychain identity never overwrites the selected DB acc
 
   assert.equal(result.ok, true);
   assert.equal(result.source, 'database');
-  assert.equal(result.reason, 'keychain_identity_mismatch');
+  assert.equal(result.reason, 'database_selected_account');
   assert.deepEqual(databaseWrites, []);
   assert.deepEqual(keychainWrites, [databaseCredentials]);
 });
@@ -118,6 +129,43 @@ test('incomplete keychain OAuth data cannot replace usable DB credentials', () =
   assert.deepEqual(keychainWrites, [databaseCredentials]);
 });
 
+test('incomplete keychain credentials from another account are replaced by the selected DB account', () => {
+  const databaseCredentials = credentialsWithIdentity({
+    email: 'selected@example.com',
+    uuid: 'selected-uuid',
+    accessToken: 'selected-token'
+  });
+  const keychainWrites = [];
+  const reconcile = createClaudeHostCredentialReconciler({
+    processObj: { platform: 'darwin' },
+    fs: {
+      readFileSync: () => JSON.stringify({
+        oauthAccount: { accountUuid: 'other-uuid', emailAddress: 'other@example.com' }
+      })
+    },
+    hostHomeDir: '/Users/model',
+    readClaudeKeychainCredentialRecord: () => ({
+      credentials: {
+        claudeAiOauth: {
+          accessToken: 'other-token',
+          refreshToken: ''
+        }
+      },
+      modifiedAtMs: 999
+    }),
+    writeClaudeKeychainCredentials: (value) => {
+      keychainWrites.push(value);
+      return { ok: true };
+    }
+  });
+
+  const result = reconcile(credentialRecord(databaseCredentials, 100));
+
+  assert.equal(result.ok, true);
+  assert.equal(result.reason, 'database_selected_account');
+  assert.deepEqual(keychainWrites, [databaseCredentials]);
+});
+
 test('keychain projection failure fails closed on macOS', () => {
   const databaseCredentials = credentials('selected@example.com', 'selected-token');
   const reconcile = createClaudeHostCredentialReconciler({
@@ -134,7 +182,7 @@ test('keychain projection failure fails closed on macOS', () => {
   assert.equal(result.reason, 'keychain_write_failed');
 });
 
-test('host projection targets the default keychain service used by native Claude', () => {
+test('host projection targets the hashed keychain service used by AIH Claude', () => {
   const databaseCredentials = credentials('selected@example.com', 'selected-token');
   const readOptions = [];
   const writeOptions = [];
@@ -158,8 +206,10 @@ test('host projection targets the default keychain service used by native Claude
   assert.equal(result.keychainUpdated, true);
   assert.equal(readOptions.length, 1);
   assert.equal(writeOptions.length, 1);
-  assert.equal(Object.hasOwn(readOptions[0], 'configDir'), false);
-  assert.equal(Object.hasOwn(writeOptions[0], 'configDir'), false);
+  assert.equal(readOptions[0].configDir, '/Users/model/.claude');
+  assert.equal(readOptions[0].includeDefaultService, false);
+  assert.equal(writeOptions[0].configDir, '/Users/model/.claude');
+  assert.equal(writeOptions[0].includeDefaultService, false);
 });
 
 test('non-macOS hosts keep the DB credentials without touching keychain', () => {
@@ -177,4 +227,138 @@ test('non-macOS hosts keep the DB credentials without touching keychain', () => 
   assert.equal(result.ok, true);
   assert.equal(result.source, 'database');
   assert.equal(result.reason, 'keychain_not_applicable');
+});
+
+test('keychain envelope without account identity is accepted when host OAuth identity matches', () => {
+  const uuid = '1fb09d73-fc89-49ee-96a6-bd1260ab9ef5';
+  const databaseCredentials = credentialsWithIdentity({
+    email: 'same@example.com', uuid, accessToken: 'db-token'
+  });
+  const keychainCredentials = credentials('same@example.com', 'keychain-token');
+  const databaseWrites = [];
+  const reconcile = createClaudeHostCredentialReconciler({
+    processObj: { platform: 'darwin' },
+    fs: {
+      readFileSync: () => JSON.stringify({
+        oauthAccount: { accountUuid: uuid, emailAddress: 'same@example.com' }
+      })
+    },
+    hostHomeDir: '/Users/model',
+    readClaudeKeychainCredentialRecord: () => ({
+      credentials: keychainCredentials,
+      modifiedAtMs: 200
+    }),
+    writeClaudeKeychainCredentials: () => ({ ok: true }),
+    writeAccountNativeAuth: (_fs, _dir, accountRef, nativeAuth) => {
+      databaseWrites.push({ accountRef, nativeAuth });
+    }
+  });
+
+  const result = reconcile(credentialRecord(databaseCredentials, 100));
+
+  assert.equal(result.ok, true);
+  assert.equal(result.source, 'keychain');
+  assert.equal(result.credentials.claudeAiOauth.accessToken, keychainCredentials.claudeAiOauth.accessToken);
+  assert.equal(result.credentials.claudeAiOauth.account.uuid, uuid);
+  assert.equal(databaseWrites.length, 1);
+});
+
+test('host identity mismatch does not block an explicitly selected DB account', () => {
+  const databaseCredentials = credentialsWithIdentity({
+    email: 'selected@example.com',
+    uuid: 'selected-uuid',
+    accessToken: 'selected-token'
+  });
+  const keychainWrites = [];
+  const reconcile = createClaudeHostCredentialReconciler({
+    processObj: { platform: 'darwin' },
+    fs: {
+      readFileSync: () => JSON.stringify({
+        oauthAccount: { accountUuid: 'other-uuid', emailAddress: 'other@example.com' }
+      })
+    },
+    hostHomeDir: '/Users/model',
+    readClaudeKeychainCredentialRecord: () => ({
+      credentials: credentialsWithIdentity({
+        email: 'other@example.com',
+        uuid: 'other-uuid',
+        accessToken: 'other-token'
+      }),
+      modifiedAtMs: 200
+    }),
+    writeClaudeKeychainCredentials: (value) => {
+      keychainWrites.push(value);
+      return { ok: true };
+    }
+  });
+
+  const result = reconcile(credentialRecord(databaseCredentials, 100));
+
+  assert.equal(result.ok, true);
+  assert.equal(result.reason, 'database_selected_account');
+  assert.deepEqual(keychainWrites, [databaseCredentials]);
+});
+
+test('unknown identities never write the database snapshot back to shared keychain', () => {
+  const databaseCredentials = {
+    claudeAiOauth: {
+      accessToken: 'selected-token',
+      refreshToken: 'selected-refresh'
+    }
+  };
+  const keychainWrites = [];
+  const reconcile = createClaudeHostCredentialReconciler({
+    processObj: { platform: 'darwin' },
+    hostHomeDir: '/Users/model',
+    readClaudeKeychainCredentialRecord: () => ({
+      credentials: credentials('other@example.com', 'other-token'),
+      modifiedAtMs: 999
+    }),
+    writeClaudeKeychainCredentials: (value) => {
+      keychainWrites.push(value);
+      return { ok: true };
+    }
+  });
+
+  const result = reconcile(credentialRecord(databaseCredentials, 100));
+
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'database_identity_unverified');
+  assert.deepEqual(keychainWrites, []);
+});
+
+test('unknown keychain timestamp cannot retain a conflicting account', () => {
+  const databaseCredentials = credentialsWithIdentity({
+    email: 'selected@example.com',
+    uuid: 'selected-uuid',
+    accessToken: 'selected-token'
+  });
+  const keychainWrites = [];
+  const reconcile = createClaudeHostCredentialReconciler({
+    processObj: { platform: 'darwin' },
+    fs: {
+      readFileSync: () => JSON.stringify({
+        oauthAccount: { accountUuid: 'other-uuid', emailAddress: 'other@example.com' }
+      })
+    },
+    hostHomeDir: '/Users/model',
+    readClaudeKeychainCredentialRecord: () => ({
+      credentials: credentialsWithIdentity({
+        email: 'other@example.com',
+        uuid: 'other-uuid',
+        accessToken: 'other-token'
+      }),
+      modifiedAtMs: 0
+    }),
+    writeClaudeKeychainCredentials: (value) => {
+      keychainWrites.push(value);
+      return { ok: true };
+    }
+  });
+
+  const result = reconcile(credentialRecord(databaseCredentials, 100));
+
+  assert.equal(result.ok, true);
+  assert.equal(result.reason, 'database_selected_account');
+  assert.deepEqual(keychainWrites, [databaseCredentials]);
 });

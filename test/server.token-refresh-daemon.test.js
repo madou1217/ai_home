@@ -459,6 +459,73 @@ describe('createTokenRefreshDaemon', () => {
     assert.equal(daemon.getStats().totalAuthInvalid, 1);
   });
 
+  it('does not mark auth_invalid or repeat invalid_grant while access token remains present', async (t) => {
+    const fixture = createAccountFixture(t, 'aih-token-refresh-daemon-claude-live-access-db-');
+    const expiresAt = Date.now() - 60_000;
+    const accountRef = fixture.register('claude', '5', {
+      credentials: {
+        claudeAiOauth: {
+          accessToken: 'sk-ant-oat01-live',
+          refreshToken: 'sk-ant-ort01-revoked',
+          expiresAt
+        }
+      }
+    });
+    const account = {
+      accountRef,
+      provider: 'claude',
+      authType: 'oauth',
+      accessToken: 'sk-ant-oat01-live',
+      refreshToken: 'sk-ant-ort01-revoked',
+      tokenExpiresAt: expiresAt,
+      authInvalidUntil: 0
+    };
+    const state = { accounts: { codex: [], gemini: [], claude: [account], agy: [] } };
+    let refreshCalls = 0;
+
+    const daemon = createTokenRefreshDaemon(state, { tokenStartupRefreshBeforeExpiryMs: 5 * 60 * 1000 }, {
+      fs,
+      aiHomeDir: fixture.aiHomeDir,
+      fetchWithTimeout: async (url) => {
+        if (String(url).includes('oauth/token')) refreshCalls += 1;
+        return {
+          ok: false,
+          status: 400,
+          text: async () => '{"error":"invalid_grant"}'
+        };
+      },
+      logInfo: () => {},
+      logWarn: () => {},
+      logError: () => {}
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.equal(refreshCalls, 1);
+    assert.equal(account.authInvalidUntil, 0);
+
+    // 同一个 refresh token 在抑制窗口内不得再次撞击 OAuth endpoint。
+    await daemon.forceRefresh();
+    assert.equal(refreshCalls, 1);
+
+    // 新登录产生新的 refresh token 后，抑制自动解除；清理单账号节流时间
+    // 只为让测试立即验证新的 endpoint 请求，不改变生产节流策略。
+    writeAccountNativeAuth(fs, fixture.aiHomeDir, accountRef, {
+      credentials: {
+        claudeAiOauth: {
+          accessToken: 'sk-ant-oat01-live',
+          refreshToken: 'sk-ant-ort01-new',
+          expiresAt
+        }
+      }
+    });
+    account.refreshToken = 'sk-ant-ort01-new';
+    account._lastRefreshAttemptAt = 0;
+    await daemon.forceRefresh();
+    assert.equal(refreshCalls, 2);
+    assert.equal(account.authInvalidUntil, 0);
+    daemon.stop();
+  });
+
   it('does NOT demote on a transient refresh failure (network error)', async (t) => {
     const fixture = createAccountFixture(t, 'aih-token-refresh-daemon-claude-transient-db-');
     const expiresAt = Date.now() - 60_000;

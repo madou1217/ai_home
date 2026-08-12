@@ -134,3 +134,31 @@ test('allowNoAccountVerdict=false 时永不判定无可用账号', () => {
   assert.equal(result.unchecked, true);
   assert.equal(result.pool.length, 3);
 });
+
+// 回归：账号个个健康却一个都没选中，只可能是「按模型选账号」把它们滤光了。
+// 旧文案会说 "no schedulable X account: unknown"，把「没人支持这个模型」说成
+// 「没有可调度账号」，排障会一路找错方向。
+const { summarizeAccountAvailability } = require('../lib/server/account-availability');
+
+test('账号全健康但按模型选不出时，文案要说清是模型不支持', () => {
+  const healthy = [
+    { accountRef: OAUTH_A, accessToken: 't', schedulableStatus: 'schedulable' },
+    { accountRef: OAUTH_B, accessToken: 't', schedulableStatus: 'schedulable' }
+  ];
+  const summary = summarizeAccountAvailability(healthy, {
+    provider: 'agy',
+    model: 'claude-fable-5'
+  });
+  assert.equal(summary.available, 2);
+  assert.match(summary.detail, /no agy account can serve model claude-fable-5/);
+  assert.doesNotMatch(summary.detail, /unknown/);
+});
+
+test('确有不可用原因时保持原有诊断文案', () => {
+  const cooled = [
+    { accountRef: OAUTH_A, accessToken: 't', schedulableStatus: 'schedulable', cooldownUntil: Date.now() + 60000, lastError: 'rate_limited' }
+  ];
+  const summary = summarizeAccountAvailability(cooled, { provider: 'agy', model: 'x' });
+  assert.equal(summary.available, 0);
+  assert.match(summary.detail, /no schedulable agy account: cooldown:rate_limited=1/);
+});

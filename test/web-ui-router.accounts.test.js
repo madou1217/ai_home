@@ -622,7 +622,17 @@ test('web ui accounts list reads token usage from the persistent cache', async (
   const fixture = createAccountFixture(t);
   const accountRef = fixture.register('codex', '123');
   writeAccountTokenUsageCache({ fs, aiHomeDir: fixture.aiHomeDir }, {
-    [accountRef]: { day: 500_000_000, week: 1_000_000_000, month: 10_000_000_000 }
+    [accountRef]: {
+      day: 500_000_000,
+      week: 1_000_000_000,
+      month: 10_000_000_000,
+      models: [{
+        model: 'gpt-5.6-luna',
+        day: 500_000_000,
+        week: 1_000_000_000,
+        month: 10_000_000_000
+      }]
+    }
   }, { generatedAt: 1234 });
 
   const { body } = await requestAccounts(fixture);
@@ -631,7 +641,13 @@ test('web ui accounts list reads token usage from the persistent cache', async (
   assert.deepEqual(account.tokenUsage, {
     day: 500_000_000,
     week: 1_000_000_000,
-    month: 10_000_000_000
+    month: 10_000_000_000,
+    models: [{
+      model: 'gpt-5.6-luna',
+      day: 500_000_000,
+      week: 1_000_000_000,
+      month: 10_000_000_000
+    }]
   });
 });
 

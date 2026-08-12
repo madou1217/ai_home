@@ -47,6 +47,29 @@
   opacity: 0.64;
 }
 
+.token-usage-tooltip {
+  display: flex;
+  min-width: 150px;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.token-usage-tooltip-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.token-usage-tooltip-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  border-radius: 50%;
+}
+
 .token-usage-chart-hit-targets {
   position: absolute;
   inset: 0;

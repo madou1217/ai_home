@@ -275,22 +275,44 @@ test('token usage cache refresh updates account records and broadcasts token usa
   const state = { __webUiAccountsLive: liveState };
 
   const cache = updateCachedAccountTokenUsage({ state, fs, aiHomeDir: root }, {
-    [accountRef]: { day: 500_000_000, week: 1_000_000_000, month: 10_000_000_000 }
+    [accountRef]: {
+      day: 500_000_000,
+      week: 1_000_000_000,
+      month: 10_000_000_000,
+      models: [{
+        model: 'gpt-5.6-luna',
+        day: 500_000_000,
+        week: 1_000_000_000,
+        month: 10_000_000_000
+      }]
+    }
   }, { generatedAt: 1234 });
 
   assert.equal(cache.generatedAt, 1234);
   assert.deepEqual(liveState.records.get(accountRef).tokenUsage, {
     day: 500_000_000,
     week: 1_000_000_000,
-    month: 10_000_000_000
+    month: 10_000_000_000,
+    models: [{
+      model: 'gpt-5.6-luna',
+      day: 500_000_000,
+      week: 1_000_000_000,
+      month: 10_000_000_000
+    }]
   });
   assert.match(sseRes.body, /"type":"account"/);
-  assert.match(sseRes.body, /"tokenUsage":\{"day":500000000,"week":1000000000,"month":10000000000\}/);
+  assert.match(sseRes.body, /"tokenUsage":\{"day":500000000,"week":1000000000,"month":10000000000,"models":\[\{"model":"gpt-5\.6-luna"/);
   assert.equal(wsClient.frames.length, 1);
   assert.deepEqual(JSON.parse(wsClient.frames[0]).account.tokenUsage, {
     day: 500_000_000,
     week: 1_000_000_000,
-    month: 10_000_000_000
+    month: 10_000_000_000,
+    models: [{
+      model: 'gpt-5.6-luna',
+      day: 500_000_000,
+      week: 1_000_000_000,
+      month: 10_000_000_000
+    }]
   });
 });
 

@@ -489,7 +489,14 @@ test('management usage scan starts async job and streams progress', async () => 
         }),
         getAccountTokenUsageAsync: async (options) => {
           assert.deepEqual(options.dimensions, ['day', 'week', 'month']);
-          return { acct_0123456789abcdefabcd: { day: 500 } };
+          return {
+            acct_0123456789abcdefabcd: {
+              day: 500,
+              week: 500,
+              month: 500,
+              models: [{ model: 'gpt-5.1', day: 500, week: 500, month: 500 }]
+            }
+          };
         }
       },
       onTokenUsageUpdated: (usage, options) => {
@@ -516,7 +523,14 @@ test('management usage scan starts async job and streams progress', async () => 
   assert.match(streamed, /"status":"succeeded"/);
   assert.match(streamed, /"records":5/);
   assert.deepEqual(tokenUsageUpdates, [{
-    usage: { acct_0123456789abcdefabcd: { day: 500 } },
+    usage: {
+      acct_0123456789abcdefabcd: {
+        day: 500,
+        week: 500,
+        month: 500,
+        models: [{ model: 'gpt-5.1', day: 500, week: 500, month: 500 }]
+      }
+    },
     options: { dimensions: ['day', 'week', 'month'], generatedAt: tokenUsageUpdates[0].options.generatedAt }
   }]);
   req.emit('close');

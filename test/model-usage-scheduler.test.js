@@ -49,7 +49,14 @@ test('model usage scan scheduler runs startup and interval scans without overlap
       },
       getAccountTokenUsageAsync: async (options) => {
         calls.push(`token:${options.dimensions.join(',')}`);
-        return { acct_0123456789abcdefabcd: { day: 500 } };
+        return {
+          acct_0123456789abcdefabcd: {
+            day: 500,
+            week: 500,
+            month: 500,
+            models: [{ model: 'gpt-5.1', day: 500, week: 500, month: 500 }]
+          }
+        };
       }
     },
     onTokenUsageUpdated: (usage, options) => {
@@ -83,7 +90,12 @@ test('model usage scan scheduler runs startup and interval scans without overlap
   await timeouts[0].fn();
   assert.deepEqual(calls, ['scan', 'pricing', 'token:day,week,month']);
   assert.deepEqual(tokenUsageUpdates[0].usage, {
-    acct_0123456789abcdefabcd: { day: 500 }
+    acct_0123456789abcdefabcd: {
+      day: 500,
+      week: 500,
+      month: 500,
+      models: [{ model: 'gpt-5.1', day: 500, week: 500, month: 500 }]
+    }
   });
   assert.deepEqual(tokenUsageUpdates[0].options.dimensions, ['day', 'week', 'month']);
   assert.equal(scheduler.getState().scanCount, 1);

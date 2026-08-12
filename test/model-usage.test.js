@@ -198,6 +198,14 @@ test('model usage aggregates account tokens by local day, Monday week, and calen
       timestampMs: timestamp(2026, 7, 1, 9)
     },
     {
+      eventKey: 'account-token-usage-a-second-model',
+      provider: 'codex',
+      accountRef: accountA,
+      model: 'gpt-5.6-luna',
+      totalTokens: 2_500,
+      timestampMs: timestamp(2026, 7, 11, 9)
+    },
+    {
       eventKey: 'account-token-usage-a-old',
       provider: 'codex',
       accountRef: accountA,
@@ -216,17 +224,47 @@ test('model usage aggregates account tokens by local day, Monday week, and calen
   ]);
 
   assert.deepEqual(service.getAccountTokenUsage({ nowMs }), {
-    [accountA]: { day: 500, week: 1_500, month: 3_500 },
-    [accountB]: { day: 3_000, week: 3_000, month: 3_000 }
+    [accountA]: {
+      day: 500,
+      week: 4_000,
+      month: 6_000,
+      models: [
+        { model: 'gpt-5.1', day: 500, week: 1_500, month: 3_500 },
+        { model: 'gpt-5.6-luna', day: 0, week: 2_500, month: 2_500 }
+      ]
+    },
+    [accountB]: {
+      day: 3_000,
+      week: 3_000,
+      month: 3_000,
+      models: [{ model: 'claude-sonnet', day: 3_000, week: 3_000, month: 3_000 }]
+    }
   });
 
   assert.deepEqual(service.getAccountTokenUsage({ dimensions: ['day'], nowMs }), {
-    [accountA]: { day: 500 },
-    [accountB]: { day: 3_000 }
+    [accountA]: {
+      day: 500,
+      models: [{ model: 'gpt-5.1', day: 500 }]
+    },
+    [accountB]: {
+      day: 3_000,
+      models: [{ model: 'claude-sonnet', day: 3_000 }]
+    }
   });
   assert.deepEqual(service.getAccountTokenUsage({ dimensions: ['week', 'day'], nowMs }), {
-    [accountA]: { day: 500, week: 1_500 },
-    [accountB]: { day: 3_000, week: 3_000 }
+    [accountA]: {
+      day: 500,
+      week: 4_000,
+      models: [
+        { model: 'gpt-5.6-luna', day: 0, week: 2_500 },
+        { model: 'gpt-5.1', day: 500, week: 1_500 }
+      ]
+    },
+    [accountB]: {
+      day: 3_000,
+      week: 3_000,
+      models: [{ model: 'claude-sonnet', day: 3_000, week: 3_000 }]
+    }
   });
 });
 
@@ -1307,7 +1345,12 @@ test('model usage worker reads account token usage through the same dimensioned 
 
   assert.deepEqual(
     await service.getAccountTokenUsageAsync({ dimensions: ['day'], nowMs }),
-    { [accountRef]: { day: 5_000 } }
+    {
+      [accountRef]: {
+        day: 5_000,
+        models: [{ model: 'gpt-5.1', day: 5_000 }]
+      }
+    }
   );
 });
 

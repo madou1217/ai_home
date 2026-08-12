@@ -24,10 +24,18 @@ export interface GeminiUsageModel {
   maxOutputTokens?: number | null;
 }
 
+export interface AccountTokenUsageModel {
+  model: string;
+  day: number;
+  week: number;
+  month: number;
+}
+
 export interface AccountTokenUsage {
   day: number;
   week: number;
   month: number;
+  models: AccountTokenUsageModel[];
 }
 
 export type AccountUsageSnapshot =

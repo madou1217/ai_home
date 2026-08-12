@@ -1,0 +1,64 @@
+name: models.dev sync
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: models-dev-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    name: update models.dev and generated metadata
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository and submodules
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Synchronize models.dev and regenerate Go snapshot
+        run: npm run models:sync
+
+      - name: Verify generated snapshot and Go model metadata tests
+        run: |
+          npm run models:check
+          go test ./internal/adapters/modelmetadata/modelsdev ./internal/tools/modelsdevmodalities
+          git diff --check
+
+      - name: Open update pull request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: 'chore(models): sync models.dev metadata'
+          title: 'chore(models): sync models.dev metadata'
+          body: |
+            Automated update of the pinned `models.dev` commit and the generated Go modality snapshot.
+
+            Validation:
+            - `npm run models:check`
+            - `go test ./internal/adapters/modelmetadata/modelsdev ./internal/tools/modelsdevmodalities`
+            - `git diff --check`
+          branch: automation/models-dev-sync
+          delete-branch: true
+          base: main

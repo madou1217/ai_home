@@ -426,6 +426,16 @@
       "text"
     ]
   },
+  "anthropic/claude-mythos-5": {
+    "input": [
+      "text",
+      "image",
+      "pdf"
+    ],
+    "output": [
+      "text"
+    ]
+  },
   "anthropic/claude-opus-4-0": {
     "input": [
       "text",
@@ -586,6 +596,16 @@
       "text"
     ]
   },
+  "bytedance-seed/seed-2.0-code": {
+    "input": [
+      "text",
+      "image",
+      "video"
+    ],
+    "output": [
+      "text"
+    ]
+  },
   "cohere/c4ai-aya-expanse-32b": {
     "input": [
       "text"
@@ -741,6 +761,15 @@
   "deepseek/deepseek-chat": {
     "input": [
       "text"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "deepseek/deepseek-ocr-2": {
+    "input": [
+      "text",
+      "image"
     ],
     "output": [
       "text"
@@ -1272,6 +1301,14 @@
       "video"
     ]
   },
+  "ibm/granite-4-h-small": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ]
+  },
   "meituan/longcat-2.0": {
     "input": [
       "text"
@@ -1314,6 +1351,15 @@
     ]
   },
   "meta/llama-4-scout-17b-instruct": {
+    "input": [
+      "text",
+      "image"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "meta/muse-glimmer-30b": {
     "input": [
       "text",
       "image"
@@ -1570,6 +1616,15 @@
       "text"
     ]
   },
+  "mistral/mistral-small-3-1-24b-instruct-2503": {
+    "input": [
+      "text",
+      "image"
+    ],
+    "output": [
+      "text"
+    ]
+  },
   "mistral/mistral-small-latest": {
     "input": [
       "text",
@@ -1776,6 +1831,14 @@
     "input": [
       "text",
       "image"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "nvidia/nemotron-3.5-lightning": {
+    "input": [
+      "text"
     ],
     "output": [
       "text"
@@ -2466,6 +2529,14 @@
       "text",
       "image",
       "video"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "swiss-ai/apertus-70b": {
+    "input": [
+      "text"
     ],
     "output": [
       "text"

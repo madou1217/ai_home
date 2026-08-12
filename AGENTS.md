@@ -41,14 +41,15 @@ Fuller layer map:
 - `npm run build`: build the WebUI (`cd web && npm run build`, Umi Max/Webpack).
 - `cd web && npm run lint`: lint the WebUI.
 - `npm run models:sync`: update the `third_party/models.dev` submodule to upstream
-  `dev`. Model metadata (modalities, context window, pricing) comes from that
-  submodule, and a submodule is pinned to one commit — upstream ships new models
-  daily, so without syncing a newly released model has no metadata and falls back
-  to regex heuristics or shows as unknown. The command moves the submodule pointer
-  and prints a summary; it never commits, since the pointer change is a real repo
-  change a human should decide to record.
-- `npm run models:check`: report how far behind upstream the submodule is and exit
-  non-zero when stale. Intended for CI so the gap cannot drift silently.
+  `dev`, then regenerate the Go `modalities.json` snapshot atomically. Model metadata
+  (modalities, context window, pricing) comes from that submodule, and a submodule
+  is pinned to one commit — upstream ships new models daily, so without syncing a
+  newly released model has no metadata and falls back to regex heuristics or shows
+  as unknown. The command refuses to overwrite dirty sync inputs and never commits;
+  the pointer and generated snapshot remain a reviewable repository change.
+- `npm run models:check`: report how far behind upstream the submodule is and verify
+  that the generated Go snapshot matches the checked-out commit. It exits non-zero
+  when stale or mismatched, so CI can prevent silent metadata drift.
 - `npm run gateway:routes`: read-only scan of both gateways' HTTP paths and their
   data-plane diff. Backs `docs/architecture/go-node-parity-matrix.md`; `--json`
   for CI. Note it collects path literals, so router scope guards (`/v1/`,

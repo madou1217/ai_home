@@ -1158,6 +1158,18 @@
       "text"
     ]
   },
+  "google/gemini-3.7-flash": {
+    "input": [
+      "text",
+      "image",
+      "video",
+      "audio",
+      "pdf"
+    ],
+    "output": [
+      "text"
+    ]
+  },
   "google/gemini-embedding-001": {
     "input": [
       "text"

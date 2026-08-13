@@ -217,6 +217,14 @@ test('stripAnsi fully removes kitty keyboard protocol sequences from modern CLIs
   );
 });
 
+test('stripAnsi preserves OSC 8 hyperlink URLs', () => {
+  const url = 'https://example.com/oauth?state=chunked';
+  assert.equal(
+    stripAnsi(`\u001b]8;;${url}\u001b\\Label\u001b]8;;\u001b\\`),
+    ` ${url} Label`
+  );
+});
+
 test('stripAnsi unwraps OSC 8 hyperlinks so the wrapped url survives as plain text', () => {
   const url = 'https://claude.ai/oauth/authorize?code=true&state=abc';
   // OSC 8 form: ESC ]8;;URI ST  LABEL  ESC ]8;; ST  (ST = ESC backslash)
@@ -694,6 +702,59 @@ test('createAuthJobManager expires stale browser oauth jobs without provider sig
   assert.match(expired.error, /OAuth 授权已超时/);
   assert.equal(killed, true);
   assert.equal(manager.getRunningJob('opencode'), null);
+});
+
+test('createAuthJobManager terminates only the expired login PTY process group', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-oauth-expire-group-'));
+  const getProfileDir = (provider, accountId) => path.join(root, provider, String(accountId));
+  const getToolConfigDir = (provider, accountId) => path.join(getProfileDir(provider, accountId), `.${provider}`);
+  const ptySignals = [];
+  const processSignals = [];
+  let processAlive = true;
+
+  const manager = createAuthJobManager({
+    fs,
+    processObj: {
+      cwd: () => root,
+      env: { ...process.env },
+      platform: 'darwin',
+      kill(pid, signal) {
+        if (signal === 0) {
+          if (processAlive) return;
+          const error = new Error('process missing');
+          error.code = 'ESRCH';
+          throw error;
+        }
+        processSignals.push({ pid, signal });
+        if (signal === 'SIGTERM' && pid === -2345) processAlive = false;
+      }
+    },
+    ptyImpl: {
+      spawn() {
+        return {
+          pid: 2345,
+          onData() {},
+          onExit() {},
+          kill(signal) {
+            ptySignals.push(signal);
+          }
+        };
+      }
+    },
+    resolveCliPathImpl: () => '/usr/local/bin/gemini',
+    getToolAccountIds: () => [],
+    getProfileDir,
+    getToolConfigDir
+  });
+
+  const started = manager.startOauthJob('gemini', 'oauth-browser');
+  const running = manager.getJob(started.jobId);
+  running.createdAt = Date.now() - OAUTH_PENDING_FALLBACK_STALE_MS - 1;
+  running.expiresAt = 0;
+
+  assert.equal(manager.getJob(started.jobId).status, 'expired');
+  assert.deepEqual(ptySignals, ['SIGHUP']);
+  assert.deepEqual(processSignals, [{ pid: -2345, signal: 'SIGTERM' }]);
 });
 
 test('resolveOauthJobDeadline prefers provider expiresAt over fallback age', () => {
@@ -1520,6 +1581,7 @@ test('createAuthJobManager marks claude oauth job succeeded when .credentials fi
   const getProfileDir = (provider, accountId) => path.join(root, provider, String(accountId));
   const getToolConfigDir = (provider, accountId) => path.join(getProfileDir(provider, accountId), `.${provider}`);
 
+  let spawnCall = null;
   const manager = createAuthJobManager({
     fs,
     processObj: {
@@ -1532,7 +1594,8 @@ test('createAuthJobManager marks claude oauth job succeeded when .credentials fi
       }
     },
     ptyImpl: {
-      spawn() {
+      spawn(command, args, options) {
+        spawnCall = { command, args, options };
         return {
           pid: 2002,
           onData() {},
@@ -1560,6 +1623,114 @@ test('createAuthJobManager marks claude oauth job succeeded when .credentials fi
 
   const job = manager.getJob(started.jobId);
   assert.equal(job.status, 'succeeded');
+});
+
+test('createAuthJobManager marks gemini oauth job succeeded when oauth_creds file appears', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-oauth-gemini-complete-'));
+  const getProfileDir = (provider, accountId) => path.join(root, provider, String(accountId));
+  const getToolConfigDir = (provider, accountId) => path.join(getProfileDir(provider, accountId), `.${provider}`);
+
+  let spawnCall = null;
+  const manager = createAuthJobManager({
+    fs,
+    processObj: {
+      ...process,
+      cwd: () => root,
+      env: { ...process.env },
+      platform: process.platform,
+      kill() {
+        return;
+      }
+    },
+    ptyImpl: {
+      spawn(command, args, options) {
+        spawnCall = { command, args, options };
+        return {
+          pid: 2002,
+          onData() {},
+          onExit() {},
+          kill() {}
+        };
+      }
+    },
+    resolveCliPathImpl: () => '/usr/local/bin/gemini',
+    getToolAccountIds: () => ['1'],
+    getProfileDir,
+    getToolConfigDir
+  });
+
+  const started = manager.startOauthJob('gemini', 'oauth-browser');
+  const running = manager.getJob(started.jobId);
+  // Gemini OAuth 必须在账号 runtime 的 workspace 目录起 PTY，父目录信任才不会阻塞流程。
+  assert.equal(spawnCall.options.cwd, path.join(running.runtimeDir, 'workspace'));
+  assert.notEqual(spawnCall.options.cwd, root);
+  assert.equal(fs.existsSync(spawnCall.options.cwd), true);
+  const oauthPath = path.join(manager.getJob(started.jobId).configDir, 'oauth_creds.json');
+  fs.mkdirSync(path.dirname(oauthPath), { recursive: true });
+  fs.writeFileSync(oauthPath, JSON.stringify({
+    access_token: 'gemini-access-token',
+    refresh_token: 'gemini-refresh-token'
+  }));
+
+  const job = manager.getJob(started.jobId);
+  assert.equal(job.status, 'succeeded');
+});
+
+test('createAuthJobManager auto-selects Gemini parent-folder trust once', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-oauth-gemini-trust-'));
+  const getProfileDir = (provider, accountId) => path.join(root, provider, String(accountId));
+  const getToolConfigDir = (provider, accountId) => path.join(getProfileDir(provider, accountId), `.${provider}`);
+  let onDataHandler = null;
+  const writes = [];
+
+  const manager = createAuthJobManager({
+    fs,
+    processObj: {
+      ...process,
+      cwd: () => root,
+      env: { ...process.env },
+      platform: process.platform,
+      kill() {
+        return;
+      }
+    },
+    ptyImpl: {
+      spawn() {
+        return {
+          pid: 2003,
+          onData(handler) {
+            onDataHandler = handler;
+          },
+          onExit() {},
+          write(chunk) {
+            writes.push(chunk);
+          },
+          kill() {}
+        };
+      }
+    },
+    resolveCliPathImpl: () => '/usr/local/bin/gemini',
+    getToolAccountIds: () => [],
+    getProfileDir,
+    getToolConfigDir
+  });
+
+  const started = manager.startOauthJob('gemini', 'oauth-browser');
+  onDataHandler('\u001b[');
+  onDataHandler('97m');
+  onDataHandler('\u001b[>4');
+  onDataHandler(';?mDo you trust the files in this folder?\n'
+    + '1. Trust folder (/tmp/workspace)\n'
+    + '2. Trust parent folder (/tmp/runtime)\n'
+    + '3. Don\'t trust\n');
+  onDataHandler('Do you trust the files in this folder?\n2. Trust parent folder (/tmp/runtime)\n');
+
+  assert.deepEqual(writes, ['2\r']);
+  const job = manager.getJob(started.jobId);
+  assert.equal(job.authProgressState, 'folder_trust_selected');
+  assert.match(job.logs, /自动选择 2\. Trust parent folder/);
+  assert.doesNotMatch(job.logs, />4;\?m/);
+  assert.doesNotMatch(job.logs, /97m/);
 });
 
 test('missing Kimi CLI waits for confirmation then installs and continues OAuth with the same job id', async (t) => {

@@ -308,6 +308,32 @@ func newRealCodexCoordinator(
 ) {
 	t.Helper()
 
+	recorder := &adapterAttemptRecorder{}
+	coordinator, transport, _ := newRealCodexCoordinatorComponents(
+		t,
+		credential,
+		model,
+		adapterAvailableRuntime{},
+		recorder,
+	)
+	return coordinator, recorder, transport
+}
+
+// newRealCodexCoordinatorComponents 让成功 smoke 与真实失败验收复用同一
+// Canonical 装配；运行态读写端口由调用方注入，避免测试复制生产链路。
+func newRealCodexCoordinatorComponents(
+	t *testing.T,
+	credential accountapp.Credential,
+	model string,
+	runtime accountrouting.RuntimeEligibilitySource,
+	attempts inferencegateway.AttemptRecorder,
+) (
+	*inferencegateway.Coordinator,
+	*realCodexTransportDiagnostic,
+	accountcore.AccountRef,
+) {
+	t.Helper()
+
 	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
 	if err != nil {
 		t.Fatalf("providers.NewCatalog() error = %v", err)
@@ -334,7 +360,7 @@ func newRealCodexCoordinator(
 	recruiter, err := accountrouting.NewRecruiter(
 		accountrouting.Dependencies{
 			Candidates: adapterCandidateSource{account: account},
-			Runtime:    adapterAvailableRuntime{},
+			Runtime:    runtime,
 			Credentials: adapterCredentialResolver{
 				accountRef: accountRef,
 				credential: credential,
@@ -357,21 +383,22 @@ func newRealCodexCoordinator(
 	if err != nil {
 		t.Fatalf("NewUpstreamRegistry() error = %v", err)
 	}
-	recorder := &adapterAttemptRecorder{}
 	coordinator, err := inferencegateway.NewCoordinator(
 		inferencegateway.Dependencies{
 			Catalog:        catalog,
 			Routes:         resolver,
 			Recruiter:      recruiter,
 			Upstreams:      upstreams,
-			Attempts:       recorder,
+			Attempts:       attempts,
 			ModelRefreshes: adapterModelRefreshScheduler{},
+			// 真实 smoke 每次只允许调用一个账号，禁止测试代码自动重试。
+			UpstreamAttemptLimit: 1,
 		},
 	)
 	if err != nil {
 		t.Fatalf("NewCoordinator() error = %v", err)
 	}
-	return coordinator, recorder, transport
+	return coordinator, transport, accountRef
 }
 
 // newRealCodexRouteCatalog 创建跨客户端协议 alias 到真实 Codex 模型的唯一规则。

@@ -856,6 +856,32 @@ func newRealClaudeCoordinator(
 ) {
 	t.Helper()
 
+	recorder := &claudeAttemptRecorder{}
+	coordinator, transport, _ := newRealClaudeCoordinatorComponents(
+		t,
+		credential,
+		model,
+		claudeAvailableRuntime{},
+		recorder,
+	)
+	return coordinator, recorder, transport
+}
+
+// newRealClaudeCoordinatorComponents 让成功 smoke 与真实失败验收复用同一
+// Canonical 装配；运行态读写端口由调用方注入，避免测试复制生产链路。
+func newRealClaudeCoordinatorComponents(
+	t *testing.T,
+	credential accountapp.Credential,
+	model string,
+	runtime accountrouting.RuntimeEligibilitySource,
+	attempts inferencegateway.AttemptRecorder,
+) (
+	*inferencegateway.Coordinator,
+	*realClaudeTransportDiagnostic,
+	accountcore.AccountRef,
+) {
+	t.Helper()
+
 	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
 	if err != nil {
 		t.Fatalf("providers.NewCatalog() error = %v", err)
@@ -882,7 +908,7 @@ func newRealClaudeCoordinator(
 	recruiter, err := accountrouting.NewRecruiter(
 		accountrouting.Dependencies{
 			Candidates: claudeCandidateSource{account: account},
-			Runtime:    claudeAvailableRuntime{},
+			Runtime:    runtime,
 			Credentials: claudeCredentialResolver{
 				accountRef: accountRef,
 				credential: credential,
@@ -903,14 +929,13 @@ func newRealClaudeCoordinator(
 	if err != nil {
 		t.Fatalf("NewUpstreamRegistry() error = %v", err)
 	}
-	recorder := &claudeAttemptRecorder{}
 	coordinator, err := inferencegateway.NewCoordinator(
 		inferencegateway.Dependencies{
 			Catalog:        catalog,
 			Routes:         newRealClaudeRouteCatalog(t, model),
 			Recruiter:      recruiter,
 			Upstreams:      upstreams,
-			Attempts:       recorder,
+			Attempts:       attempts,
 			ModelRefreshes: claudeModelRefreshScheduler{},
 			// 真实 smoke 每次只允许调用一个账号，禁止测试代码自动重试。
 			UpstreamAttemptLimit: 1,
@@ -919,7 +944,7 @@ func newRealClaudeCoordinator(
 	if err != nil {
 		t.Fatalf("NewCoordinator() error = %v", err)
 	}
-	return coordinator, recorder, transport
+	return coordinator, transport, accountRef
 }
 
 // newRealClaudeRouteCatalog 创建 alias 到真实 Claude 模型的唯一规则。

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/inference"
+	"github.com/madou1217/ai_home/internal/adapters/attemptfailure"
 )
 
 // TestRuntimeCredentialBlockCoversSiblingModels 验证账号凭据阻塞会在凭据读取前
@@ -540,6 +542,105 @@ func TestRuntimeRejectsInvalidAttemptFailure(t *testing.T) {
 		t,
 		runtime,
 		route,
+		runtimecore.EligibilityAvailable,
+	)
+}
+
+// TestRuntimeRequiresMatchingTransientFailuresForModelCooldown 验证三类网络抖动
+// 只有同一账号模型连续出现两次才进入 cooldown，且始终不影响兄弟模型。
+func TestRuntimeRequiresMatchingTransientFailuresForModelCooldown(t *testing.T) {
+	t.Parallel()
+
+	tests := []runtimecore.FailureKind{
+		runtimecore.FailureRequestTimeout,
+		runtimecore.FailureConnectionReset,
+		runtimecore.FailureStreamDisconnected,
+	}
+	for _, kind := range tests {
+		kind := kind
+		t.Run(string(kind), func(t *testing.T) {
+			t.Parallel()
+
+			runtime := newTestRuntime(t, runtimeTestTime)
+			target := newTestRoute(t, 3, "gpt-5.6-sol")
+			sibling := newTestRoute(t, 3, "gpt-5.4")
+			failure := newCooldownFailure(t, kind, 0)
+
+			if err := runtime.RecordFailure(
+				context.Background(),
+				target,
+				failure,
+			); err != nil {
+				t.Fatalf("RecordFailure(first) error = %v", err)
+			}
+			assertEligibilityStatus(
+				t,
+				runtime,
+				target,
+				runtimecore.EligibilityAvailable,
+			)
+			assertEligibilityStatus(
+				t,
+				runtime,
+				sibling,
+				runtimecore.EligibilityAvailable,
+			)
+
+			if err := runtime.RecordFailure(
+				context.Background(),
+				target,
+				failure,
+			); err != nil {
+				t.Fatalf("RecordFailure(second) error = %v", err)
+			}
+			assertEligibilityStatus(
+				t,
+				runtime,
+				target,
+				runtimecore.EligibilityModelCooldown,
+			)
+			assertEligibilityStatus(
+				t,
+				runtime,
+				sibling,
+				runtimecore.EligibilityAvailable,
+			)
+		})
+	}
+}
+
+// TestRuntimeKeepsConnectionRefusedOutOfAccountHealth 验证请求端点不可达只形成
+// 无状态分类，不会创建模型 cooldown，更不会扩大成账号级硬阻塞。
+func TestRuntimeKeepsConnectionRefusedOutOfAccountHealth(t *testing.T) {
+	t.Parallel()
+
+	runtime := newTestRuntime(t, runtimeTestTime)
+	target := newTestRoute(t, 4, "gpt-5.6-sol")
+	sibling := newTestRoute(t, 4, "gpt-5.4")
+	failure, err := attemptfailure.NewTransport(syscall.ECONNREFUSED)
+	if err != nil {
+		t.Fatalf("NewTransport() error = %v", err)
+	}
+	if failure.RuntimeKind() != runtimecore.FailureUnclassified {
+		t.Fatalf("NewTransport() kind = %s", failure.RuntimeKind())
+	}
+	if err := runtime.RecordFailure(
+		context.Background(),
+		target,
+		failure,
+	); err != nil {
+		t.Fatalf("RecordFailure() error = %v", err)
+	}
+	assertEligibilityStatus(
+		t,
+		runtime,
+		target,
+		runtimecore.EligibilityAvailable,
+	)
+	assertEligibilityStatus(
+		t,
+		runtime,
+		sibling,
 		runtimecore.EligibilityAvailable,
 	)
 }

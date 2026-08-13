@@ -180,6 +180,11 @@ func TestClassifyTransportErrorUsesStableGoErrors(t *testing.T) {
 			want: runtimecore.FailureConnectionReset,
 		},
 		{
+			name: "连接被拒绝",
+			err:  fmt.Errorf("wrapped: %w", syscall.ECONNREFUSED),
+			want: runtimecore.FailureUnclassified,
+		},
+		{
 			name: "未知错误",
 			err:  errors.New("opaque transport failure"),
 			want: runtimecore.FailureUnclassified,

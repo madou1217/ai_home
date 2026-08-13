@@ -8,8 +8,9 @@
 
 因此，凭据失效、额度耗尽、工作区停用、模型或地区不支持都不是 cooldown。v1 不修改
 SQLite schema，也不读取旧 Node `runtime_state`。Codex / Claude HTTP、SSE 和 Go
-transport Observer 已经接入结构化分类器，但 Go Server 还没有上游执行器调用它们；
-不能把本阶段解释成旧 Node Gateway 已经完成切换。
+transport Observer 已经接入各自的 Go Adapter；Adapter 经 Canonical Coordinator 把
+成功或结构化失败写入与账号征召共享的进程级运行态。该接线已经生效，但不代表旧 Node
+Gateway 的全部管理面和数据面已经完成切换。
 
 模型 cooldown 固定按 `(account_ref, effective_model_id)` 隔离。`effective_model_id`
 是完成模型别名解析后的真实上游模型 ID；客户端别名不能作为 cooldown 键。v1 不提供
@@ -167,7 +168,7 @@ streak 尚未过期时才累加：
 ## 4. 分层与数据结构
 
 ```text
-Go Server 上游执行器（后续）
+Go Server Codex Responses / Claude Messages Adapter
     HTTP Response / 单个 SSE data payload / Go transport error
         ↓
 internal/adapters/upstreamfailure
@@ -184,7 +185,7 @@ application/accountruntime
         ↓
 internal/adapters/accountruntime/inmemory
     AccountRuntime Dispatcher + 账号/账号模型硬阻塞 bitset
-        ↓
+        ↕ 同一个进程级 Runtime
 application/accountrouting
     enabled 候选 -> runtime eligibility -> credential resolver
                     -> adapter credential transport policy
@@ -242,7 +243,7 @@ v1 的模型 cooldown 与硬阻塞都是进程内稀疏索引，不新增数据�
 
 ## 6. 当前验证
 
-验证环境：2026-07-30，Apple M4、darwin/arm64、Go 1.26.4。
+验证环境：2026-08-13，Apple M4、darwin/arm64、Go 1.26.4。
 
 ```text
 BenchmarkRegistryCheckEligibilityHealthy-10       84.24 ns/op   0 B/op   0 allocs/op
@@ -287,3 +288,28 @@ Hard block:
   model_unsupported -> 只排除发生失败的账号模型元组
   model_catalog -> 只恢复该账号模型元组
 ```
+
+真实上游失败验收使用单账号、单次 attempt，并让 Recruiter 与 Coordinator 共享同一个
+生产 `inmemory.Runtime`。凭据只从权限为 `0600` 的有界临时文件进入测试进程；正式账号
+数据库只读，不记录 Provider 正文、凭据、请求内容、账号身份或响应 ID。2026-08-13 的
+低敏结果为：
+
+```text
+Codex OAuth:
+  gpt-5.6-luna -> HTTP 503 -> upstream_unavailable
+  (account, gpt-5.6-luna) -> model_cooldown
+  同账号 gpt-5.4          -> available
+
+Claude auth-token:
+  glm-5.2 -> HTTP 429 -> rate_limited
+  (account, glm-5.2) -> model_cooldown
+  同账号 glm-5.1    -> available
+
+Codex API Key:
+  gpt-5.6-sol -> HTTP 200 但缺少成功终态 -> malformed_response
+  目标模型与同账号 gpt-5.4 均保持 available
+```
+
+这三条证据分别锁定直接 cooldown 的模型作用域和 `no_state_change` 边界。合成回归继续
+覆盖 timeout、`ECONNRESET`、断流必须同元组连续两次才 cooldown，以及
+`ECONNREFUSED` 只能进入 `unclassified`、不得写账号级健康状态。

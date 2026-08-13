@@ -292,6 +292,26 @@ test('configureApiKeyAccount writes provider credentials to DB without profile f
   assert.equal(fs.existsSync(path.join(root, 'profiles')), false);
 });
 
+test('configureApiKeyAccount writes Grok API credentials to the XAI environment keys', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-account-auth-grok-'));
+
+  const result = configureApiKeyAccount({
+    fs,
+    provider: 'grok',
+    aiHomeDir: root,
+    config: {
+      apiKey: 'xai-test-key',
+      baseUrl: 'https://api.x.ai/v1/'
+    }
+  });
+
+  const envJson = readAccountCredentials(fs, root, result.accountRef);
+
+  assert.equal(envJson.XAI_API_KEY, 'xai-test-key');
+  assert.equal(envJson.XAI_BASE_URL, 'https://api.x.ai/v1');
+  assert.equal(Object.prototype.hasOwnProperty.call(envJson, 'ANTHROPIC_API_KEY'), false);
+});
+
 test('configureApiKeyAccount persists a relay upstream profile for codex accounts', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-account-auth-relay-'));
 

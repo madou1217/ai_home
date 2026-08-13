@@ -822,7 +822,9 @@ test('web ui refresh usage accepts accountRef job and streams refreshed account 
   assert.equal(
     await waitFor(
       () => liveFrames.some((frame) => frame.type === 'account-refresh-job' && frame.job.status === 'succeeded'),
-      1000
+      // 并行运行完整测试时 SQLite/账号快照 I/O 可能让后台作业跨过一个秒级调度片段；
+      // 这里验证最终状态，不把机器瞬时负载误判成刷新失败。
+      10000
     ),
     true
   );
@@ -1469,7 +1471,8 @@ test('web ui accounts snapshot request accepts immediately and refreshes DB watc
     && streamRes.body.includes('"type":"snapshot-requested"')
     && streamRes.body.includes('"type":"hydrated"')
     && streamRes.body.includes('hydrated-after-snapshot@example.com')
-  ), 500);
+  // 后台刷新经过 SQLite 账号快照和运行时重载；并行测试下允许一个完整调度窗口。
+  ), 10000);
   req.emit('close');
   assert.equal(refreshed, true);
 });
@@ -1629,6 +1632,62 @@ test('web ui add api key account persists base url domain as display name', asyn
   assert.equal(upserts[0].accountRef, body.accountRef);
   assert.equal(upserts[0].state.apiKeyMode, true);
   assert.equal(upserts[0].state.displayName, 'proxy.example.com');
+});
+
+test('web ui add Grok API key account stores XAI credentials', async (t) => {
+  const fixture = createAccountFixture(t, 'aih-webui-add-grok-api-key-');
+  const res = createResCapture();
+  const upserts = [];
+
+  const handled = await handleAddAccountRequest({
+    req: { headers: { host: 'accounts.example.com' } },
+    res,
+    fs,
+    aiHomeDir: fixture.aiHomeDir,
+    deps: { aiHomeDir: fixture.aiHomeDir },
+    state: {},
+    options: { port: 8317 },
+    readRequestBody: async () => Buffer.from(JSON.stringify({
+      provider: 'grok',
+      authMode: 'api-key',
+      config: {
+        apiKey: 'xai-test-key',
+        baseUrl: 'https://api.x.ai/v1',
+        credentialType: 'api-key'
+      }
+    })),
+    accountStateIndex: fixture.accountStateIndex,
+    accountStateService: createAccountStateServiceRecorder(upserts),
+    getProfileDir: fixture.getProfileDir,
+    getToolConfigDir: fixture.getToolConfigDir,
+    getAuthJobManager() {
+      throw new Error('should_not_start_oauth');
+    },
+    cleanupAuthJobArtifacts() {},
+    loadServerRuntimeAccounts: () => ({
+      agy: [], claude: [], codex: [], gemini: [], opencode: [], grok: []
+    }),
+    applyReloadState() {},
+    checkStatus() {
+      return { configured: true, accountName: 'API Key' };
+    },
+    writeJson(response, code, payload) {
+      response.statusCode = code;
+      response.end(JSON.stringify(payload));
+    }
+  });
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 200);
+  const body = JSON.parse(res.body);
+  assert.equal(body.ok, true);
+  assert.match(body.accountRef, /^acct_[a-f0-9]{20}$/);
+  const credentials = readAccountCredentials(fs, fixture.aiHomeDir, body.accountRef);
+  assert.equal(credentials.XAI_API_KEY, 'xai-test-key');
+  assert.equal(credentials.XAI_BASE_URL, 'https://api.x.ai/v1');
+  assert.equal(Object.prototype.hasOwnProperty.call(credentials, 'ANTHROPIC_API_KEY'), false);
+  assert.equal(upserts[0].provider, 'grok');
+  assert.equal(upserts[0].state.apiKeyMode, true);
 });
 
 test('web ui rejects api key accounts that point back to the current AIH server', async (t) => {

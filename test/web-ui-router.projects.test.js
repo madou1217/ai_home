@@ -2021,7 +2021,8 @@ test('webui model cache keeps scanning provider accounts after the first catalog
     assert.equal(body.scannedAccounts, 2);
     assert.deepEqual(seenAccounts, ['a1', 'a2']);
     assert.deepEqual(body.models.agy, ['gemini-3.5-flash-high']);
-    assert.deepEqual(body.byAccount[WEBUI_AGY_REF_1], []);
+    // 失败探测不落空目录：缺少条目表示“未知”，而不是“已知为空”。
+    assert.equal(Object.prototype.hasOwnProperty.call(body.byAccount, WEBUI_AGY_REF_1), false);
     assert.deepEqual(body.byAccount[WEBUI_AGY_REF_2], ['gemini-3.5-flash-high']);
     assert.match(body.errorsByAccount[WEBUI_AGY_REF_1], /first account catalog failed/);
     assert.match(body.firstError, /first account catalog failed/);
@@ -2359,7 +2360,11 @@ test('web ui openai models manages model visibility per account', async () => {
     const accountsByRef = new Map(body.accounts.map((account) => [account.accountRef, account]));
     assert.deepEqual(body.byAccountRef[accountsByRef.get(WEBUI_CODEX_REF_1).accountRef], ['a', 'b', 'c', 'd']);
     assert.deepEqual(body.byAccountRef[accountsByRef.get(WEBUI_CODEX_REF_2).accountRef], ['a', 'c', 'e', 'f']);
-    assert.deepEqual(body.byAccountRef[accountsByRef.get(WEBUI_CODEX_REF_3).accountRef], []);
+    // 未探测到的账号不写入空数组，避免把“未知”误报成“没有模型”。
+    assert.equal(Object.prototype.hasOwnProperty.call(
+      body.byAccountRef,
+      accountsByRef.get(WEBUI_CODEX_REF_3).accountRef
+    ), false);
     assert.equal(Object.prototype.hasOwnProperty.call(body, 'byAccount'), false);
     const managedByRef = new Map(body.managedData.map((item) => [`${item.accountRef}:${item.id}`, item]));
     assert.equal(managedByRef.get(`${WEBUI_CODEX_REF_1}:c`).enabled, false);

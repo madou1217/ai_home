@@ -29,6 +29,9 @@ export interface AccountTokenUsageModel {
   day: number;
   week: number;
   month: number;
+  dayCostUsd: number | null;
+  weekCostUsd: number | null;
+  monthCostUsd: number | null;
 }
 
 export interface AccountTokenUsage {

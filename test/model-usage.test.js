@@ -229,26 +229,50 @@ test('model usage aggregates account tokens by local day, Monday week, and calen
       week: 4_000,
       month: 6_000,
       models: [
-        { model: 'gpt-5.1', day: 500, week: 1_500, month: 3_500 },
-        { model: 'gpt-5.6-luna', day: 0, week: 2_500, month: 2_500 }
+        {
+          model: 'gpt-5.1',
+          day: 500,
+          dayCostUsd: null,
+          week: 1_500,
+          weekCostUsd: null,
+          month: 3_500,
+          monthCostUsd: null
+        },
+        {
+          model: 'gpt-5.6-luna',
+          day: 0,
+          dayCostUsd: null,
+          week: 2_500,
+          weekCostUsd: null,
+          month: 2_500,
+          monthCostUsd: null
+        }
       ]
     },
     [accountB]: {
       day: 3_000,
       week: 3_000,
       month: 3_000,
-      models: [{ model: 'claude-sonnet', day: 3_000, week: 3_000, month: 3_000 }]
+      models: [{
+        model: 'claude-sonnet',
+        day: 3_000,
+        dayCostUsd: null,
+        week: 3_000,
+        weekCostUsd: null,
+        month: 3_000,
+        monthCostUsd: null
+      }]
     }
   });
 
   assert.deepEqual(service.getAccountTokenUsage({ dimensions: ['day'], nowMs }), {
     [accountA]: {
       day: 500,
-      models: [{ model: 'gpt-5.1', day: 500 }]
+      models: [{ model: 'gpt-5.1', day: 500, dayCostUsd: null }]
     },
     [accountB]: {
       day: 3_000,
-      models: [{ model: 'claude-sonnet', day: 3_000 }]
+      models: [{ model: 'claude-sonnet', day: 3_000, dayCostUsd: null }]
     }
   });
   assert.deepEqual(service.getAccountTokenUsage({ dimensions: ['week', 'day'], nowMs }), {
@@ -256,14 +280,122 @@ test('model usage aggregates account tokens by local day, Monday week, and calen
       day: 500,
       week: 4_000,
       models: [
-        { model: 'gpt-5.6-luna', day: 0, week: 2_500 },
-        { model: 'gpt-5.1', day: 500, week: 1_500 }
+        {
+          model: 'gpt-5.6-luna',
+          day: 0,
+          dayCostUsd: null,
+          week: 2_500,
+          weekCostUsd: null
+        },
+        {
+          model: 'gpt-5.1',
+          day: 500,
+          dayCostUsd: null,
+          week: 1_500,
+          weekCostUsd: null
+        }
       ]
     },
     [accountB]: {
       day: 3_000,
       week: 3_000,
-      models: [{ model: 'claude-sonnet', day: 3_000, week: 3_000 }]
+      models: [{
+        model: 'claude-sonnet',
+        day: 3_000,
+        dayCostUsd: null,
+        week: 3_000,
+        weekCostUsd: null
+      }]
+    }
+  });
+});
+
+test('model usage aggregates stored model costs and marks unpriced periods unavailable', async (t) => {
+  const fixture = makeService(t, {
+    pricingUrl: 'https://example.test/account-token-prices.json',
+    fetchImpl: async () => ({
+      ok: true,
+      async json() {
+        return {
+          'openai/gpt-priced': {
+            input_cost_per_token: 0.001,
+            output_cost_per_token: 0.002
+          }
+        };
+      }
+    }),
+    enableAsyncQueries: false
+  });
+  if (!fixture) return;
+  const { service } = fixture;
+  const accountRef = 'acct_1123456789abcdefabcd';
+  const nowMs = new Date(2026, 7, 12, 10, 0, 0, 0).getTime();
+  const timestamp = (day) => new Date(2026, 7, day, 9, 0, 0, 0).getTime();
+
+  const sync = await service.syncPricingIfStale({ force: true });
+  assert.equal(sync.ok, true);
+  service.recordUsageBatch([
+    {
+      eventKey: 'priced-today',
+      provider: 'codex',
+      accountRef,
+      model: 'gpt-priced',
+      inputTokens: 100,
+      outputTokens: 50,
+      timestampMs: timestamp(12)
+    },
+    {
+      eventKey: 'priced-week',
+      provider: 'codex',
+      accountRef,
+      model: 'gpt-priced',
+      inputTokens: 200,
+      timestampMs: timestamp(10)
+    },
+    {
+      eventKey: 'priced-month',
+      provider: 'codex',
+      accountRef,
+      model: 'gpt-priced',
+      outputTokens: 100,
+      timestampMs: timestamp(1)
+    },
+    {
+      eventKey: 'unpriced-today',
+      provider: 'codex',
+      accountRef,
+      model: 'gpt-unpriced',
+      inputTokens: 10,
+      costUsd: 9,
+      timestampMs: timestamp(12)
+    }
+  ]);
+
+  assert.deepEqual(service.getAccountTokenUsage({ nowMs }), {
+    [accountRef]: {
+      day: 160,
+      week: 360,
+      month: 460,
+      models: [
+        {
+          model: 'gpt-priced',
+          day: 150,
+          dayCostUsd: 0.2,
+          week: 350,
+          weekCostUsd: 0.4,
+          month: 450,
+          monthCostUsd: 0.6000000000000001
+        },
+        {
+          model: 'gpt-unpriced',
+          day: 10,
+          dayCostUsd: null,
+          week: 10,
+          weekCostUsd: null,
+          month: 10,
+          monthCostUsd: null
+        }
+      ]
     }
   });
 });
@@ -1348,7 +1480,7 @@ test('model usage worker reads account token usage through the same dimensioned 
     {
       [accountRef]: {
         day: 5_000,
-        models: [{ model: 'gpt-5.1', day: 5_000 }]
+        models: [{ model: 'gpt-5.1', day: 5_000, dayCostUsd: null }]
       }
     }
   );

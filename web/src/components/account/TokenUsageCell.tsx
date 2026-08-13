@@ -4,6 +4,7 @@ import './TokenUsageCell.css';
 
 type TokenUsageValue = number | null;
 type TokenUsageDimension = 'day' | 'week' | 'month';
+type TokenUsageCostKey = 'dayCostUsd' | 'weekCostUsd' | 'monthCostUsd';
 
 const TOKEN_USAGE_PERIODS: readonly {
   key: TokenUsageDimension;
@@ -28,6 +29,11 @@ const TOKEN_MODEL_COLOR_TOKENS = [
   'var(--c-grok)',
   'var(--c-claude)'
 ];
+const TOKEN_USAGE_COST_KEYS: Record<TokenUsageDimension, TokenUsageCostKey> = {
+  day: 'dayCostUsd',
+  week: 'weekCostUsd',
+  month: 'monthCostUsd'
+};
 
 function toTokenValue(value: unknown): TokenUsageValue {
   if (value === null || value === undefined || value === '') return null;
@@ -49,8 +55,30 @@ function formatTokenAmount(value: TokenUsageValue) {
   return String(Math.round(value));
 }
 
+function formatCostUsd(value: TokenUsageValue) {
+  if (value === null) return '-';
+  if (value === 0) return '$0';
+  if (value < 0.000001) return `$${value.toExponential(2)}`;
+  const minimumFractionDigits = value >= 0.01 ? 2 : 0;
+  const maximumFractionDigits = value >= 100
+    ? 2
+    : value >= 1
+      ? 3
+      : value >= 0.01
+        ? 4
+        : 6;
+  return `$${value.toLocaleString('en-US', {
+    minimumFractionDigits,
+    maximumFractionDigits
+  })}`;
+}
+
 function getModelUsageValue(model: AccountTokenUsageModel, dimension: TokenUsageDimension) {
   return toTokenValue(model[dimension]) || 0;
+}
+
+function getModelCostValue(model: AccountTokenUsageModel, dimension: TokenUsageDimension) {
+  return toTokenValue(model[TOKEN_USAGE_COST_KEYS[dimension]]);
 }
 
 function getModelColor(modelIndex: number) {
@@ -68,7 +96,8 @@ function getModelTooltipEntries(dimension: TokenUsageDimension, models: AccountT
     .map((model, modelIndex) => ({
       model,
       modelIndex,
-      value: getModelUsageValue(model, dimension)
+      value: getModelUsageValue(model, dimension),
+      costUsd: getModelCostValue(model, dimension)
     }))
     .filter(({ value }) => value > 0);
 }
@@ -79,7 +108,9 @@ function formatModelTooltip(
   total: TokenUsageValue
 ) {
   const lines = getModelTooltipEntries(dimension, models)
-    .map(({ model, value }) => `${model.model} ${formatTokenAmount(value)}`);
+    .map(({ model, value, costUsd }) => (
+      `${model.model} ${formatTokenAmount(value)} ${formatCostUsd(costUsd)}`
+    ));
   if (lines.length > 0) return lines;
   return models.length > 0 ? ['暂无用量'] : [`总计 ${formatTokenAmount(total)}`];
 }
@@ -220,19 +251,36 @@ export default function TokenUsageCell({ usage }: { usage?: AccountTokenUsage | 
           {metrics.map(({ key, hint, value }) => (
             <Tooltip
               key={key}
+              overlayClassName="token-usage-tooltip-overlay"
               title={(
                 <div className="token-usage-tooltip">
                   {getModelTooltipEntries(key, usedModels).length > 0 ? (
-                    getModelTooltipEntries(key, usedModels).map(({ model, modelIndex, value: modelValue }) => (
-                      <div key={model.model} className="token-usage-tooltip-row">
-                        <span
-                          className="token-usage-tooltip-dot"
-                          style={{ background: getModelColor(modelIndex) }}
-                          aria-hidden="true"
-                        />
-                        <span>{model.model} {formatTokenAmount(modelValue)}</span>
+                    <>
+                      <div className="token-usage-tooltip-row token-usage-tooltip-header" aria-hidden="true">
+                        <span>模型</span>
+                        <span>用量</span>
+                        <span>费用</span>
                       </div>
-                    ))
+                      {getModelTooltipEntries(key, usedModels).map(({
+                        model,
+                        modelIndex,
+                        value: modelValue,
+                        costUsd
+                      }) => (
+                        <div key={model.model} className="token-usage-tooltip-row">
+                          <span className="token-usage-tooltip-model">
+                            <span
+                              className="token-usage-tooltip-dot"
+                              style={{ background: getModelColor(modelIndex) }}
+                              aria-hidden="true"
+                            />
+                            <span title={model.model}>{model.model}</span>
+                          </span>
+                          <span className="token-usage-tooltip-number">{formatTokenAmount(modelValue)}</span>
+                          <span className="token-usage-tooltip-number">{formatCostUsd(costUsd)}</span>
+                        </div>
+                      ))}
+                    </>
                   ) : <div>{formatModelTooltip(key, usedModels, value)[0]}</div>}
                 </div>
               )}

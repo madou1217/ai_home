@@ -629,8 +629,11 @@ test('web ui accounts list reads token usage from the persistent cache', async (
       models: [{
         model: 'gpt-5.6-luna',
         day: 500_000_000,
+        dayCostUsd: 1.25,
         week: 1_000_000_000,
-        month: 10_000_000_000
+        weekCostUsd: 2.5,
+        month: 10_000_000_000,
+        monthCostUsd: null
       }]
     }
   }, { generatedAt: 1234 });
@@ -645,8 +648,11 @@ test('web ui accounts list reads token usage from the persistent cache', async (
     models: [{
       model: 'gpt-5.6-luna',
       day: 500_000_000,
+      dayCostUsd: 1.25,
       week: 1_000_000_000,
-      month: 10_000_000_000
+      weekCostUsd: 2.5,
+      month: 10_000_000_000,
+      monthCostUsd: null
     }]
   });
 });

@@ -59,19 +59,49 @@
 }
 
 .token-usage-tooltip {
-  display: flex;
-  min-width: 150px;
-  flex-direction: column;
+  display: grid;
+  min-width: 292px;
   gap: 4px;
 }
 
+.token-usage-tooltip-overlay {
+  max-width: none;
+}
+
 .token-usage-tooltip-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) 58px 72px;
   align-items: center;
-  gap: 7px;
+  gap: 10px;
   white-space: nowrap;
   font-family: var(--font-mono);
   font-size: var(--text-xs);
+}
+
+.token-usage-tooltip-header {
+  padding-bottom: 3px;
+  border-bottom: 1px solid rgb(255 255 255 / 18%);
+  color: rgb(255 255 255 / 62%);
+  font-family: var(--font-sans);
+  font-size: var(--text-2xs);
+}
+
+.token-usage-tooltip-header span:not(:first-child),
+.token-usage-tooltip-number {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.token-usage-tooltip-model {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+}
+
+.token-usage-tooltip-model > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .token-usage-tooltip-dot {

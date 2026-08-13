@@ -282,13 +282,17 @@ test('token usage cache refresh updates account records and broadcasts token usa
       models: [{
         model: 'gpt-5.6-luna',
         day: 500_000_000,
+        dayCostUsd: 1.25,
         week: 1_000_000_000,
-        month: 10_000_000_000
+        weekCostUsd: 2.5,
+        month: 10_000_000_000,
+        monthCostUsd: null
       }]
     }
   }, { generatedAt: 1234 });
 
   assert.equal(cache.generatedAt, 1234);
+  assert.equal(cache.schemaVersion, 2);
   assert.deepEqual(liveState.records.get(accountRef).tokenUsage, {
     day: 500_000_000,
     week: 1_000_000_000,
@@ -296,12 +300,16 @@ test('token usage cache refresh updates account records and broadcasts token usa
     models: [{
       model: 'gpt-5.6-luna',
       day: 500_000_000,
+      dayCostUsd: 1.25,
       week: 1_000_000_000,
-      month: 10_000_000_000
+      weekCostUsd: 2.5,
+      month: 10_000_000_000,
+      monthCostUsd: null
     }]
   });
   assert.match(sseRes.body, /"type":"account"/);
-  assert.match(sseRes.body, /"tokenUsage":\{"day":500000000,"week":1000000000,"month":10000000000,"models":\[\{"model":"gpt-5\.6-luna"/);
+  assert.match(sseRes.body, /"dayCostUsd":1\.25/);
+  assert.match(sseRes.body, /"monthCostUsd":null/);
   assert.equal(wsClient.frames.length, 1);
   assert.deepEqual(JSON.parse(wsClient.frames[0]).account.tokenUsage, {
     day: 500_000_000,
@@ -310,8 +318,11 @@ test('token usage cache refresh updates account records and broadcasts token usa
     models: [{
       model: 'gpt-5.6-luna',
       day: 500_000_000,
+      dayCostUsd: 1.25,
       week: 1_000_000_000,
-      month: 10_000_000_000
+      weekCostUsd: 2.5,
+      month: 10_000_000_000,
+      monthCostUsd: null
     }]
   });
 });

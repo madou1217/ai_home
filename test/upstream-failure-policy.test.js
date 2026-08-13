@@ -59,19 +59,44 @@ test('failure policy classifies 429 as immediate rate limit cooldown', () => {
   assert.equal(policy.scope, 'model');
 });
 
-test('failure policy treats AGY resource exhausted 429 as long model quota cooldown', () => {
+test('failure policy treats AGY resource exhausted 429 as short model rate-limit cooldown', () => {
   const policy = classifyUpstreamFailure({
     provider: 'agy',
     statusCode: 429,
     detail: 'HTTP 429 {"error":{"code":429,"message":"Resource has been exhausted (e.g. check quota).","status":"RESOURCE_EXHAUSTED"}}',
     defaultCooldownMs: 1000
   });
-  assert.equal(policy.kind, 'model_quota_exhausted');
+  assert.equal(policy.kind, 'rate_limited');
   assert.equal(policy.scope, 'model');
   assert.equal(policy.shouldMarkFailure, true);
   assert.equal(policy.shouldRetryAnotherAccount, true);
   assert.equal(policy.clientStatusCode, 429);
-  assert.equal(policy.cooldownMs >= 24 * 60 * 60 * 1000, true);
+  // agy/gemini RESOURCE_EXHAUSTED without a retryDelay hint is a transient
+  // rate limit, not a true 24h quota block. Cooldown must be short (5 min).
+  assert.equal(policy.cooldownMs, 5 * 60 * 1000);
+});
+
+test('failure policy treats AGY resource exhausted 429 with retryDelay as provider-hinted cooldown', () => {
+  const policy = classifyUpstreamFailure({
+    provider: 'agy',
+    statusCode: 429,
+    detail: 'HTTP 429 {"error":{"code":429,"message":"Resource has been exhausted (e.g. check quota).","status":"RESOURCE_EXHAUSTED"}}',
+    body: {
+      error: {
+        code: 429,
+        message: 'Resource has been exhausted (e.g. check quota).',
+        status: 'RESOURCE_EXHAUSTED',
+        details: [{
+          '@type': 'type.googleapis.com/google.rpc.RetryInfo',
+          retryDelay: '30s'
+        }]
+      }
+    },
+    defaultCooldownMs: 1000
+  });
+  assert.equal(policy.kind, 'model_quota_exhausted');
+  assert.equal(policy.scope, 'model');
+  assert.equal(policy.cooldownMs, 30000);
 });
 
 test('failure policy treats Gemini model capacity 429 as model-scoped without account cooldown', () => {

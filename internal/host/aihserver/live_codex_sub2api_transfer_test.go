@@ -37,7 +37,7 @@ func TestRealCodexSub2APITransferEndToEnd(t *testing.T) {
 		testManagementKey,
 		nil,
 	)
-	assertStatus(t, exported, http.StatusOK)
+	assertRealStatus(t, exported, http.StatusOK)
 	document := []byte(exported.body)
 	assertRealSub2APIDocument(t, document)
 	documentHash := sha256.Sum256(document)
@@ -72,7 +72,7 @@ func TestRealCodexSub2APITransferEndToEnd(t *testing.T) {
 		testManagementKey,
 		importDocument,
 	)
-	assertStatus(t, imported, http.StatusCreated)
+	assertRealStatus(t, imported, http.StatusCreated)
 	accountRef := decodeRealTransferAccountRef(t, imported.body)
 
 	models := performRequest(
@@ -83,7 +83,7 @@ func TestRealCodexSub2APITransferEndToEnd(t *testing.T) {
 		testClientKey,
 		nil,
 	)
-	assertStatus(t, models, http.StatusOK)
+	assertRealStatus(t, models, http.StatusOK)
 	modelCount := assertRealCodexModelAvailable(t, models.body)
 
 	requestPayload := marshalRealCodexPayload(t, map[string]any{
@@ -103,7 +103,7 @@ func TestRealCodexSub2APITransferEndToEnd(t *testing.T) {
 		requestPayload,
 	)
 	clear(requestPayload)
-	assertStatus(t, response, http.StatusOK)
+	assertRealStatus(t, response, http.StatusOK)
 	responseDocument := decodeRealResponsesDocument(t, []byte(response.body))
 	assertCompletedRealCodexResponse(t, responseDocument)
 	if !strings.Contains(response.body, realCodexMarker) {
@@ -118,17 +118,24 @@ func TestRealCodexSub2APITransferEndToEnd(t *testing.T) {
 		testManagementKey,
 		nil,
 	)
-	assertStatus(t, reexported, http.StatusOK)
+	assertRealStatus(t, reexported, http.StatusOK)
 	assertRealSub2APIDocument(t, []byte(reexported.body))
 	if got := sha256.Sum256(importDocument); got != documentHash {
 		t.Fatal("原始迁移文档在闭环期间发生变化")
 	}
 
-	wantSource := realCodexRequestCounts{models: 1}
+	wantSource := realCodexRequestCounts{
+		models:     1,
+		lastStatus: http.StatusOK,
+	}
 	if got := sourceUpstream.snapshot(); got != wantSource {
 		t.Fatalf("源 Server 真实请求预算错误: got=%+v want=%+v", got, wantSource)
 	}
-	wantTarget := realCodexRequestCounts{models: 1, responses: 1}
+	wantTarget := realCodexRequestCounts{
+		models:     1,
+		responses:  1,
+		lastStatus: http.StatusOK,
+	}
 	if got := targetUpstream.snapshot(); got != wantTarget {
 		t.Fatalf("目标 Server 真实请求预算错误: got=%+v want=%+v", got, wantTarget)
 	}

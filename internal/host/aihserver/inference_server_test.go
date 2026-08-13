@@ -395,7 +395,13 @@ func TestServerRotatesClaudeOAuthAndAPIKeyOnCanonical(t *testing.T) {
 			map[string]string{"x-api-key": testClientKey},
 			[]byte(payload),
 		)
-		assertStatus(t, exchange, http.StatusOK)
+		if want.authHeader == "authorization" {
+			// Claude OAuth 的 Native Relay 保持上游 SSE；API Key 走
+			// Canonical Adapter 并按客户端 stream=false 聚合成 JSON。
+			assertRealCodexStreamStatus(t, exchange)
+		} else {
+			assertStatus(t, exchange, http.StatusOK)
+		}
 		if !strings.Contains(exchange.body, "host-claude-ok") ||
 			upstream.CallCount() != index+1 ||
 			upstream.LastAuthHeader() != want.authHeader ||

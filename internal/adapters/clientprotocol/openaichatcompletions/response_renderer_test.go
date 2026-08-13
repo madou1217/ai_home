@@ -3,6 +3,7 @@ package openaichatcompletions
 import (
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -201,6 +202,85 @@ func TestRenderersRejectInvalidSequenceAndOpaqueReasoning(t *testing.T) {
 	) {
 		t.Fatalf("Render(encrypted) error = %v", err)
 	}
+}
+
+// TestResponseAggregatorAcceptsSignatureOnlyClaudeReasoning 验证 Claude 当前真实
+// “空 thinking + 非空 signature”不会让 Chat 丢失最终文本；Chat 无公开 opaque
+// carrier，因此只省略 reasoning_content，不能制造或泄漏 signature。
+func TestResponseAggregatorAcceptsSignatureOnlyClaudeReasoning(t *testing.T) {
+	t.Parallel()
+
+	request := mustChatRenderRequest(t, false, false)
+	aggregator := mustChatAdapter(t).NewResponseAggregator(request)
+	usage, err := inference.NewUsage(inference.UsageInput{
+		InputTokens:     8,
+		OutputTokens:    3,
+		ReasoningTokens: 1,
+	})
+	if err != nil {
+		t.Fatalf("NewUsage() error = %v", err)
+	}
+	reasoning, err := inference.NewThinkingContent("", "opaque-claude-signature")
+	if err != nil {
+		t.Fatalf("NewThinkingContent() error = %v", err)
+	}
+	events := signatureOnlyChatEvents(t, usage, reasoning)
+	for _, event := range events {
+		if err := aggregator.Add(event); err != nil {
+			t.Fatalf("Add(%s) error = %v", event.Kind(), err)
+		}
+	}
+	data, err := aggregator.Marshal()
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	var document struct {
+		Choices []struct {
+			Message struct {
+				Content          *string `json:"content"`
+				ReasoningContent string  `json:"reasoning_content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if json.Unmarshal(data, &document) != nil || len(document.Choices) != 1 ||
+		document.Choices[0].Message.Content == nil ||
+		*document.Choices[0].Message.Content != "最终回复" ||
+		document.Choices[0].Message.ReasoningContent != "" ||
+		strings.Contains(string(data), "opaque-claude-signature") {
+		t.Fatalf("signature-only Chat 投影错误: %s", data)
+	}
+}
+
+// signatureOnlyChatEvents 创建真实 Claude signature-only 形态的完整事件流。
+func signatureOnlyChatEvents(
+	t *testing.T,
+	usage inference.Usage,
+	reasoning inference.ReasoningContent,
+) []inference.StreamEvent {
+	t.Helper()
+	events := make([]inference.StreamEvent, 0, 14)
+	appendEvent := func(event inference.StreamEvent, err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatalf("创建事件失败: %v", err)
+		}
+		events = append(events, event)
+	}
+	appendEvent(inference.NewResponseStartedEvent(0, "resp_signature", "claude-sonnet-5"))
+	appendEvent(inference.NewOutputItemStartedEvent(1, 0, "reasoning_signature", inference.OutputItemReasoning))
+	appendEvent(inference.NewContentBlockStartedEvent(2, 0, 0, inference.ContentReasoning))
+	appendEvent(inference.NewReasoningDeltaEvent(3, 0, 0, inference.ReasoningDeltaSignature, "opaque-claude-signature"))
+	appendEvent(inference.NewReasoningCompletedEvent(4, 0, 0, reasoning))
+	events = append(events, inference.NewContentBlockCompletedEvent(5, 0, 0))
+	appendEvent(inference.NewOutputItemCompletedEvent(6, 0, "reasoning_signature"))
+	appendEvent(inference.NewOutputItemStartedEvent(7, 1, "message_signature", inference.OutputItemMessage))
+	appendEvent(inference.NewContentBlockStartedEvent(8, 1, 0, inference.ContentText))
+	appendEvent(inference.NewTextDeltaEvent(9, 1, 0, "最终回复"))
+	appendEvent(inference.NewTextCompletedEvent(10, 1, 0, "最终回复"))
+	events = append(events, inference.NewContentBlockCompletedEvent(11, 1, 0))
+	appendEvent(inference.NewOutputItemCompletedEvent(12, 1, "message_signature"))
+	appendEvent(inference.NewResponseCompletedEvent(13, inference.StopReasonEndTurn, "", usage))
+	return events
 }
 
 // TestStreamRendererEmitsCompletionSuffixAndFailureTerminal 验证上游只在完成

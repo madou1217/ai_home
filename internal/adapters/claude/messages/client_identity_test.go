@@ -13,7 +13,7 @@ import (
 func TestClaudeClientIdentityMatchesInstalledSource(t *testing.T) {
 	t.Parallel()
 
-	const expected = "claude-cli/2.1.225 (external, sdk-cli)"
+	const expected = "claude-cli/2.1.229 (external, sdk-cli)"
 	if clientUserAgent != expected {
 		t.Fatalf("clientUserAgent = %q, want %q", clientUserAgent, expected)
 	}

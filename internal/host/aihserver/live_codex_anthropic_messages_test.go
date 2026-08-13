@@ -99,7 +99,11 @@ func TestRealCodexAnthropicMessagesEndToEnd(t *testing.T) {
 	assertRealAnthropicStreamTool(t, streamToolDocument)
 	clear(streamToolPayload)
 
-	wantCounts := realCodexRequestCounts{models: 1, responses: 4}
+	wantCounts := realCodexRequestCounts{
+		models:     1,
+		responses:  4,
+		lastStatus: http.StatusOK,
+	}
 	if counts := upstream.snapshot(); counts != wantCounts {
 		t.Fatalf("真实 Messages 请求预算错误: got=%+v want=%+v", counts, wantCounts)
 	}
@@ -114,9 +118,9 @@ func TestRealCodexAnthropicMessagesEndToEnd(t *testing.T) {
 			"authentication: x-api-key <local-test-key-redacted>",
 			"import: POST %s status=%d auth_kind=%s auth_mode=<none>",
 			"models: GET %s status=%d count=%d contains_%s=true",
-			"text_non_stream: POST %s payload=%s status=%d response=%s",
+			"text_non_stream: POST %s payload=%s status=%d response={type:message,model:%s,stop_reason:end_turn,marker_present:true,usage_present:true}",
 			"text_stream: POST %s payload=%s status=%d result=%s",
-			"tool_non_stream: POST %s payload=%s status=%d response=%s",
+			"tool_non_stream: POST %s payload=%s status=%d response={type:message,model:%s,stop_reason:tool_use,tool_name:%s,input_valid:true,usage_present:true}",
 			"tool_stream: POST %s payload=%s status=%d result=%s",
 			"upstream_requests: models=1 responses=4 unexpected=0",
 			"oauth_access_expires_at: %s refresh_due=false",
@@ -133,7 +137,7 @@ func TestRealCodexAnthropicMessagesEndToEnd(t *testing.T) {
 		fixture.baseURL+anthropicmessagesapi.Path,
 		string(marshalRealAnthropicTextPayload(t, false)),
 		nonStreamText.status,
-		nonStreamText.body,
+		realCodexModel,
 		fixture.baseURL+anthropicmessagesapi.Path,
 		string(marshalRealAnthropicTextPayload(t, true)),
 		streamText.status,
@@ -141,7 +145,8 @@ func TestRealCodexAnthropicMessagesEndToEnd(t *testing.T) {
 		fixture.baseURL+anthropicmessagesapi.Path,
 		string(marshalRealAnthropicToolPayload(t, false)),
 		nonStreamTool.status,
-		nonStreamTool.body,
+		realCodexModel,
+		realCodexToolName,
 		fixture.baseURL+anthropicmessagesapi.Path,
 		string(marshalRealAnthropicToolPayload(t, true)),
 		streamTool.status,
@@ -176,6 +181,7 @@ func TestRealCodexAnthropicThinkingEndToEnd(t *testing.T) {
 		models:              1,
 		responses:           2,
 		summarizedReasoning: 2,
+		lastStatus:          http.StatusOK,
 	}
 	if counts := upstream.snapshot(); counts != wantCounts {
 		t.Fatalf("真实 Messages thinking 请求预算错误: got=%+v want=%+v", counts, wantCounts)
@@ -186,7 +192,7 @@ func TestRealCodexAnthropicThinkingEndToEnd(t *testing.T) {
 			"真实 Codex Anthropic thinking 验收通过",
 			"api_base: %s",
 			"authentication: x-api-key <local-test-key-redacted>",
-			"thinking_non_stream: POST %s payload=%s status=%d response=%s",
+			"thinking_non_stream: POST %s payload=%s status=%d response={type:message,model:%s,stop_reason:end_turn,marker_present:true,private_reasoning_not_exposed:true}",
 			"thinking_stream: POST %s payload=%s status=%d result=%s",
 			"upstream_requests: models=1 responses=2 summarized_reasoning=2 unexpected=0",
 			"oauth_access_expires_at: %s refresh_due=false",
@@ -196,7 +202,7 @@ func TestRealCodexAnthropicThinkingEndToEnd(t *testing.T) {
 		fixture.baseURL+anthropicmessagesapi.Path,
 		string(marshalRealAnthropicThinkingPayload(t, false)),
 		nonStream.status,
-		nonStream.body,
+		realCodexModel,
 		fixture.baseURL+anthropicmessagesapi.Path,
 		string(marshalRealAnthropicThinkingPayload(t, true)),
 		stream.status,
@@ -251,7 +257,7 @@ func performRealAnthropicRequest(
 	if stream {
 		assertRealCodexStreamStatus(t, exchange)
 	} else {
-		assertStatus(t, exchange, http.StatusOK)
+		assertRealStatus(t, exchange, http.StatusOK)
 	}
 	return exchange
 }
@@ -331,7 +337,11 @@ func decodeRealAnthropicMessage(t *testing.T, body string) realAnthropicMessage 
 
 	var message realAnthropicMessage
 	if err := json.Unmarshal([]byte(body), &message); err != nil {
-		t.Fatalf("真实 Messages JSON 无效: %v body=%s", err, body)
+		t.Fatalf(
+			"真实 Messages JSON 无效: %v body=%s",
+			err,
+			safeRealHTTPBodyDiagnostic(body),
+		)
 	}
 	return message
 }
@@ -351,7 +361,10 @@ func assertRealAnthropicEnvelope(
 		message.StopReason == nil ||
 		*message.StopReason != wantStopReason ||
 		message.StopSequence != nil {
-		t.Fatalf("真实 Messages envelope 无效: %+v", message)
+		t.Fatalf(
+			"真实 Messages envelope 无效: %s",
+			safeRealAnthropicMessageDiagnostic(message),
+		)
 	}
 	assertRealAnthropicUsage(t, message.Usage)
 }
@@ -362,7 +375,7 @@ func assertRealAnthropicText(t *testing.T, message realAnthropicMessage) {
 
 	assertRealAnthropicEnvelope(t, message, "end_turn")
 	if len(message.Content) != 1 {
-		t.Fatalf("真实 Messages 文本块数量错误: %s", message.Content)
+		t.Fatalf("真实 Messages 文本块数量错误: types=%v", safeRealRawContentTypes(message.Content))
 	}
 	var block struct {
 		Type string `json:"type"`
@@ -371,7 +384,7 @@ func assertRealAnthropicText(t *testing.T, message realAnthropicMessage) {
 	if err := json.Unmarshal(message.Content[0], &block); err != nil ||
 		block.Type != "text" ||
 		block.Text != realCodexMarker {
-		t.Fatalf("真实 Messages 文本块无效: block=%s err=%v", message.Content[0], err)
+		t.Fatalf("真实 Messages 文本块无效: type=%q err=%v", block.Type, err)
 	}
 }
 
@@ -381,7 +394,7 @@ func assertRealAnthropicTool(t *testing.T, message realAnthropicMessage) {
 
 	assertRealAnthropicEnvelope(t, message, "tool_use")
 	if len(message.Content) != 1 {
-		t.Fatalf("真实 Messages 工具块数量错误: %s", message.Content)
+		t.Fatalf("真实 Messages 工具块数量错误: types=%v", safeRealRawContentTypes(message.Content))
 	}
 	assertRealAnthropicToolBlock(t, message.Content[0])
 }
@@ -400,7 +413,14 @@ func assertRealAnthropicToolBlock(t *testing.T, data json.RawMessage) {
 		block.Type != "tool_use" ||
 		block.ID == "" ||
 		block.Name != realCodexToolName {
-		t.Fatalf("真实 Messages 工具身份无效: block=%s err=%v", data, err)
+		t.Fatalf(
+			"真实 Messages 工具身份无效: type=%q id=%t name=%q input_bytes=%d err=%v",
+			block.Type,
+			block.ID != "",
+			block.Name,
+			len(block.Input),
+			err,
+		)
 	}
 	assertRealAnthropicToolInput(t, block.Input)
 }
@@ -413,7 +433,7 @@ func assertRealAnthropicToolInput(t *testing.T, data json.RawMessage) {
 		City string `json:"city"`
 	}
 	if err := json.Unmarshal(data, &input); err != nil || input.City != "Shenzhen" {
-		t.Fatalf("真实 Messages 工具参数无效: input=%s err=%v", data, err)
+		t.Fatalf("真实 Messages 工具参数无效: bytes=%d err=%v", len(data), err)
 	}
 }
 
@@ -435,9 +455,22 @@ func decodeRealAnthropicStream(
 	exchange httpExchange,
 ) realAnthropicStreamResult {
 	t.Helper()
+	return decodeRealAnthropicStreamForModel(t, exchange, realCodexModel)
+}
+
+// decodeRealAnthropicStreamForModel 解析指定真实模型的 Messages SSE。
+func decodeRealAnthropicStreamForModel(
+	t *testing.T,
+	exchange httpExchange,
+	expectedModel string,
+) realAnthropicStreamResult {
+	t.Helper()
 
 	if !strings.HasPrefix(exchange.header.Get("Content-Type"), "text/event-stream") {
-		t.Fatalf("真实 Messages SSE Content-Type 错误: %#v", exchange)
+		t.Fatalf(
+			"真实 Messages SSE Content-Type 错误: %s",
+			safeRealHTTPExchangeDiagnostic(exchange),
+		)
 	}
 	var result realAnthropicStreamResult
 	var content strings.Builder
@@ -452,7 +485,7 @@ func decodeRealAnthropicStream(
 			eventName = strings.TrimPrefix(line, "event: ")
 		case strings.HasPrefix(line, "data: "):
 			if eventName == "" {
-				t.Fatalf("真实 Messages SSE data 缺少 event: %s", line)
+				t.Fatalf("真实 Messages SSE data 缺少 event: bytes=%d", len(line))
 			}
 			applyRealAnthropicEvent(
 				t,
@@ -461,6 +494,7 @@ func decodeRealAnthropicStream(
 				&arguments,
 				eventName,
 				[]byte(strings.TrimPrefix(line, "data: ")),
+				expectedModel,
 			)
 			eventName = ""
 		}
@@ -481,6 +515,7 @@ func applyRealAnthropicEvent(
 	arguments *strings.Builder,
 	eventName string,
 	data []byte,
+	expectedModel string,
 ) {
 	t.Helper()
 
@@ -493,20 +528,36 @@ func applyRealAnthropicEvent(
 		Usage        *realAnthropicUsage   `json:"usage"`
 	}
 	if err := json.Unmarshal(data, &event); err != nil {
-		t.Fatalf("真实 Messages SSE JSON 无效: %v data=%s", err, data)
+		t.Fatalf("真实 Messages SSE JSON 无效: %v data=%s", err, safeRealSSEDataDiagnostic(data))
 	}
 	if event.Type != eventName {
-		t.Fatalf("真实 Messages SSE event/type 漂移: event=%s data=%s", eventName, data)
+		t.Fatalf("真实 Messages SSE event/type 漂移: event=%q type=%q", eventName, event.Type)
 	}
 	result.events = append(result.events, eventName)
 
 	switch eventName {
+	case "ping":
+		// Anthropic Native SSE 可在长响应中插入无业务载荷的 keepalive。
+		return
 	case "message_start":
 		if event.Message == nil ||
 			event.Message.ID == "" ||
-			event.Message.Model != realCodexModel ||
+			event.Message.Model != expectedModel ||
 			event.Message.Role != "assistant" {
-			t.Fatalf("真实 Messages message_start 无效: %s", data)
+			messageModel := ""
+			messageRole := ""
+			messageIDPresent := false
+			if event.Message != nil {
+				messageModel = event.Message.Model
+				messageRole = event.Message.Role
+				messageIDPresent = event.Message.ID != ""
+			}
+			t.Fatalf(
+				"真实 Messages message_start 无效: id=%t model=%q role=%q",
+				messageIDPresent,
+				messageModel,
+				messageRole,
+			)
 		}
 		result.responseID = event.Message.ID
 		result.model = event.Message.Model
@@ -518,7 +569,7 @@ func applyRealAnthropicEvent(
 		applyRealAnthropicBlockDelta(t, content, arguments, event.Index, event.Delta)
 	case "content_block_stop":
 		if event.Index == nil || int(*event.Index) >= len(result.blockTypes) {
-			t.Fatalf("真实 Messages content_block_stop 索引无效: %s", data)
+			t.Fatalf("真实 Messages content_block_stop 索引无效: index=%v blocks=%d", event.Index, len(result.blockTypes))
 		}
 	case "message_delta":
 		var delta struct {
@@ -529,7 +580,13 @@ func applyRealAnthropicEvent(
 			delta.StopReason == "" ||
 			delta.StopSequence != nil ||
 			event.Usage == nil {
-			t.Fatalf("真实 Messages message_delta 无效: %s err=%v", data, err)
+			t.Fatalf(
+				"真实 Messages message_delta 无效: stop_reason=%q stop_sequence=%t usage=%t err=%v",
+				delta.StopReason,
+				delta.StopSequence != nil,
+				event.Usage != nil,
+				err,
+			)
 		}
 		result.stopReason = delta.StopReason
 		result.usage = *event.Usage
@@ -556,11 +613,13 @@ func applyRealAnthropicBlockStart(
 		Type string `json:"type"`
 	}
 	if err := json.Unmarshal(data, &header); err != nil {
-		t.Fatalf("真实 Messages 内容块头无效: data=%s err=%v", data, err)
+		t.Fatalf("真实 Messages 内容块头无效: data=%s err=%v", safeRealSSEDataDiagnostic(data), err)
 	}
 	result.blockTypes = append(result.blockTypes, header.Type)
 	switch header.Type {
-	case "text":
+	case "text", "thinking", "redacted_thinking":
+		// thinking/signature/data 只验证原生块类型并由透传响应原样交给客户端；
+		// 测试重组器不保存这些内容，避免 reasoning 进入日志或失败输出。
 		return
 	case "tool_use":
 		var block struct {
@@ -570,7 +629,13 @@ func applyRealAnthropicBlockStart(
 		if err := json.Unmarshal(data, &block); err != nil ||
 			block.ID == "" ||
 			block.Name != realCodexToolName {
-			t.Fatalf("真实 Messages 工具起始块无效: data=%s err=%v", data, err)
+			t.Fatalf(
+				"真实 Messages 工具起始块无效: type=%q id=%t name=%q err=%v",
+				header.Type,
+				block.ID != "",
+				block.Name,
+				err,
+			)
 		}
 		result.toolID = block.ID
 		result.toolName = block.Name
@@ -598,13 +663,16 @@ func applyRealAnthropicBlockDelta(
 		PartialJSON string `json:"partial_json"`
 	}
 	if err := json.Unmarshal(data, &delta); err != nil {
-		t.Fatalf("真实 Messages 内容块增量无效: data=%s err=%v", data, err)
+		t.Fatalf("真实 Messages 内容块增量无效: data=%s err=%v", safeRealSSEDataDiagnostic(data), err)
 	}
 	switch delta.Type {
 	case "text_delta":
 		content.WriteString(delta.Text)
 	case "input_json_delta":
 		arguments.WriteString(delta.PartialJSON)
+	case "thinking_delta", "signature_delta":
+		// 原生 reasoning 增量无需参与可见文本/工具重组，也不能进入测试日志。
+		return
 	default:
 		t.Fatalf("真实 Messages 增量类型无效: %s", delta.Type)
 	}
@@ -627,7 +695,7 @@ func assertRealAnthropicStreamEnvelope(
 		result.events[0] != "message_start" ||
 		result.events[len(result.events)-1] != "message_stop" ||
 		countRealAnthropicEvent(result.events, "message_delta") != 1 {
-		t.Fatalf("真实 Messages SSE envelope 无效: %+v", result)
+		t.Fatalf("真实 Messages SSE envelope 无效: %s", safeRealAnthropicStreamDiagnostic(result))
 	}
 	assertRealAnthropicUsage(t, result.usage)
 }
@@ -640,7 +708,7 @@ func assertRealAnthropicStreamText(t *testing.T, result realAnthropicStreamResul
 	if !slices.Equal(result.blockTypes, []string{"text"}) ||
 		result.content != realCodexMarker ||
 		result.toolID != "" {
-		t.Fatalf("真实 Messages 文本 SSE 无效: %+v", result)
+		t.Fatalf("真实 Messages 文本 SSE 无效: %s", safeRealAnthropicStreamDiagnostic(result))
 	}
 }
 
@@ -653,7 +721,7 @@ func assertRealAnthropicStreamTool(t *testing.T, result realAnthropicStreamResul
 		result.content != "" ||
 		result.toolID == "" ||
 		result.toolName != realCodexToolName {
-		t.Fatalf("真实 Messages 工具 SSE 无效: %+v", result)
+		t.Fatalf("真实 Messages 工具 SSE 无效: %s", safeRealAnthropicStreamDiagnostic(result))
 	}
 	assertRealAnthropicToolInput(t, json.RawMessage(result.toolArguments))
 }

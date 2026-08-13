@@ -164,6 +164,7 @@
 | XFER-026 | Go CLI 单账号 sub2api 导出 | `aih account transfer export <target> --format sub2api --output <file>` | 账号目标在目标 Server 解析；必须显式输出文件，使用 `O_EXCL + 0600`，不覆盖、不走 stdout、不打印凭据 | 已实现（重构路径） | `cmd/aih/account_transfer.go`、`cmd/aih/account_transfer_file.go`、`internal/adapters/accounts/managementapi/transfer.go` |
 | XFER-027 | Go CLI 单账号 sub2api 导入 | `aih account transfer import --format sub2api --input <file>` | 只接受一个最大 `1 MiB` 的显式 JSON 文件并提交目标 Server；不接受 stdin、批量 envelope 或 AIH 私有格式 | 已实现（重构路径） | `cmd/aih/account_transfer.go`、`cmd/aih/account_transfer_options.go`、`internal/adapters/accounts/managementapi/transfer.go` |
 | XFER-028 | Go CLI 单账号 CPA auth-file 导出 | `aih account transfer export <target> --format cliproxyapi --output <file>` | 只导出官方单 OAuth auth-file；与 sub2api 共用安全文件写入策略，不制造 CPA 批量 envelope 或有损导入 | 已实现（重构路径） | `cmd/aih/account_transfer.go`、`internal/adapters/accounts/cliproxyapi/` |
+| XFER-029 | Go sub2api 真实闭环验收 | 显式 live test | Codex/Claude 均以只读官方 artifact 导入一次性源 Server，经 Go Exporter 生成标准文档，再导入第二个一次性 Server并完成模型目录、真实推理和再导出；文档与临时库测试后清理，不写 CPA/sub2api 正式数据 | 已实现（开发验收） | `internal/host/aihserver/live_{codex,claude}_sub2api_transfer_test.go` |
 
 Go 重构路径实时核对的外部合同基准为 sub2api
 `1e618dbc299fc0a82e9a690bcf2d5843be817113` 与 CLIProxyAPI
@@ -219,10 +220,10 @@ Go 重构路径实时核对的外部合同基准为 sub2api
 |---|---|---|---|---|
 | GW-001 | `GET /v1/models` | 聚合启用账号模型、能力过滤、cache/SWR；不暴露通配 alias | 稳定 | `lib/server/v1-router.js` |
 | GW-002 | `GET /v1/models/:id` | 查询单模型可见性/描述 | 稳定 | `getModelIdFromModelsPath` |
-| GW-003 | `POST /v1/chat/completions` | OpenAI Chat Completions，支持 stream/tool/usage 适配 | 稳定 | `v1-router.js`、`protocol-openai-*` |
-| GW-004 | `POST /v1/responses` | OpenAI Responses/Codex adapter 路径，支持 stream 与 canonical bridge | 稳定/受限 | `v1-router.js`、`codex-adapter.js` |
-| GW-004-WS | `GET /v1/responses` + WebSocket Upgrade | Go Gateway 原生 Codex Responses-over-WebSocket：首帧按真实模型公平征召账号，单连接固定 `(accountRef, model)`，文本帧双向原样转发，支持同连接 `previous_response_id` 双轮、`generate:false` 预热、permessage-deflate、16 MiB 消息上限、终态/cooldown 旁路观察和 Server.Close 清理；模型别名需要改写时明确拒绝并要求使用精确模型 | 已实现（重构路径） | `application/codexwebsocket`、`internal/adapters/codex/responseswebsocket`、`internal/transport/http/codexresponsesws` |
-| GW-005 | `POST /v1/messages` | Anthropic Messages，按 provider 能力直通或跨协议适配 | 稳定 | `protocol-anthropic-*` |
+| GW-003 | `POST /v1/chat/completions` | OpenAI Chat Completions，支持 stream/tool/usage/reasoning 适配；Go 路径已对 Codex 与 Claude 真实账号完成流/非流验收 | 稳定/迁移中 | `internal/transport/http/openaichatcompletionsapi`、`internal/adapters/clientprotocol/openaichatcompletions` |
+| GW-004 | `POST /v1/responses` | OpenAI Responses，支持 stream、tool、reasoning 与 canonical bridge；Go 路径已对 Codex 与 Claude 真实账号完成验收 | 稳定/迁移中 | `internal/transport/http/openairesponsesapi`、`internal/adapters/clientprotocol/openairesponses` |
+| GW-004-WS | `GET /v1/responses` + WebSocket Upgrade | Go Gateway 原生 Codex Responses-over-WebSocket：首帧按真实模型公平征召账号，单连接固定 `(accountRef, model)`，文本帧双向原样转发，支持同连接 `previous_response_id` 双轮、`generate:false` 预热、permessage-deflate、16 MiB 消息上限、终态/cooldown 旁路观察和 Server.Close 清理；真实 OAuth 已完成工具调用→结果回放双轮及预热复用验收 | 已实现（真实验收） | `application/codexwebsocket`、`internal/adapters/codex/responseswebsocket`、`internal/transport/http/codexresponsesws` |
+| GW-005 | `POST /v1/messages` | Anthropic Messages，按 provider 能力选择 Native Relay 或 Canonical；Go 路径已对 Claude 原生文本/工具/签名回放与 Codex 跨协议文本/工具/thinking 完成流/非流真实验收 | 稳定/迁移中 | `internal/transport/http/{anthropicmessagesapi,claudenativerelay}`、`internal/adapters/clientprotocol/anthropicmessages` |
 | GW-006 | `POST /v1/messages/count_tokens` | 本地 token count 响应，不发起上游推理 | 稳定 | `detectClientProtocol`、`createAnthropicTokenCountResponse` |
 | GW-007 | `/v1beta/models/*:generateContent` | Gemini generateContent | 稳定/受限 | `protocol-gemini-*`、`v1-router.js` |
 | GW-008 | `/v1beta/models/*:streamGenerateContent` | Gemini streaming generateContent | 稳定/受限 | `protocol-gemini-*` |
@@ -263,6 +264,9 @@ Go 重构路径实时核对的外部合同基准为 sub2api
 | GW-038 | 请求/诊断日志 | 记录 request id、route、provider、失败类别和低敏诊断；带轮转 | 稳定 | `diagnostic-log.js`、`log-rotation.js` |
 | GW-039 | 敏感诊断清洗 | canonical error 不记录 token、Authorization、正文等敏感值 | 稳定 | `canonical-diagnostic-sanitizer.js` |
 | GW-040 | 反向 gateway | 本地 Server 主动连公网 broker；公网 Server 本地无可用账号时可转发 allowlist 请求 | 实验/高级 | `fabric-gateway-*`、`fabric-broker-*` |
+| GW-041 | Go 真实协议验收夹具 | 真实 TCP Server + 一次性 `aih.db` + 只读原生 OAuth artifact；严格限制上游端点、官方 Header、模型、固定 marker 和请求数，校验源文件哈希不变，不打印凭据/reasoning/signature | 已实现（开发验收） | `internal/host/aihserver/live_{codex,claude}_*_test.go` |
+| GW-042 | Claude Native SSE 代理控制 | Native Relay 保持上游 SSE 字节不重编码，同时强制 `no-cache`、禁用 Nginx 缓冲并设置 `nosniff`；官方 `ping` 与 reasoning 块透传 | 已实现（真实验收） | `internal/transport/http/claudenativerelay/handler.go`、`handler_test.go` |
+| GW-043 | Claude 非原生客户端身份投影 | 只有 Handler 已判定为非原生的官方 OAuth 请求才补官方 system/Header；统一使用本机已核对 Claude Code 2.1.229 身份，真实原生请求旁路投影并保持原始 Header | 已实现（真实验收） | `internal/transport/http/claudenativerelay/official_client_body.go`、`internal/adapters/claude/messages/client_identity.go` |
 
 ## 7. Server 生命周期、配置与运维
 

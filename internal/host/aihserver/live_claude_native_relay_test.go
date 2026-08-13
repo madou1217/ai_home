@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -15,7 +16,6 @@ import (
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/internal/host/aihserver"
-	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/claudenativerelay"
 	"github.com/madou1217/ai_home/internal/transport/http/clauderelayleaseapi"
 	"github.com/madou1217/ai_home/internal/transport/http/modelsapi"
@@ -28,19 +28,12 @@ const (
 	realClaudeNativeRelaySessionID = "aih-real-native-relay-session-20260811"
 )
 
-// TestRealClaudeNativeRelayEndToEnd 验证真实 OAuth 账号经过导入、租约和
+// TestRealClaudeNativeRelayEndToEnd 验证真实 OAuth 账号经过一次性导入、租约和
 // Native Messages 透传后仍能收到完整 SSE。请求最多触达一次目录和一次上游。
 func TestRealClaudeNativeRelayEndToEnd(t *testing.T) {
 	if strings.TrimSpace(os.Getenv(realClaudeNativeRelayEnv)) != "1" {
 		t.Skip("设置 AIH_REAL_CLAUDE_NATIVE_RELAY=1 后才允许真实 Claude Native Relay 请求")
 	}
-
-	externalDocument := readRealClaudeSub2APIDocument(t)
-	defer clear(externalDocument)
-	singleAccount := selectRealClaudeSub2APIAccount(t, externalDocument)
-	defer clear(singleAccount)
-	assertRealSub2APIDocument(t, singleAccount)
-	assertRealClaudeCredentialFresh(t, singleAccount)
 
 	budget := newRealClaudeRequestBudget(1)
 	models := newRealClaudeModelCatalog(t, budget)
@@ -50,15 +43,8 @@ func TestRealClaudeNativeRelayEndToEnd(t *testing.T) {
 		budget,
 		[]accountapp.ProviderModelDiscoverer{models},
 	)
-	imported := performRequest(
-		t,
-		client,
-		http.MethodPost,
-		serverURL+accountsapi.Sub2APIImportPath,
-		testManagementKey,
-		singleAccount,
-	)
-	assertStatus(t, imported, http.StatusCreated)
+	imported := importRealClaudeFixtureAccount(t, serverURL, client)
+	assertRealStatus(t, imported, http.StatusCreated)
 
 	modelDocument := performRequest(
 		t,
@@ -68,10 +54,11 @@ func TestRealClaudeNativeRelayEndToEnd(t *testing.T) {
 		testClientKey,
 		nil,
 	)
-	assertStatus(t, modelDocument, http.StatusOK)
+	assertRealStatus(t, modelDocument, http.StatusOK)
 	assertRealClaudeModelAvailable(t, modelDocument.body)
 
-	leasePayload := []byte(`{"model":"` + realClaudeTransferModel + `"}`)
+	leasePayload := []byte(`{"provider_id":"claude","model":"` +
+		realClaudeTransferModel + `"}`)
 	lease := performRequest(
 		t,
 		client,
@@ -81,7 +68,7 @@ func TestRealClaudeNativeRelayEndToEnd(t *testing.T) {
 		leasePayload,
 	)
 	clear(leasePayload)
-	assertStatus(t, lease, http.StatusCreated)
+	assertRealStatus(t, lease, http.StatusCreated)
 	relayToken := decodeRealClaudeRelayToken(t, lease.body)
 
 	body := []byte(`{"model":"` + realClaudeTransferModel + `","max_tokens":64000,` +
@@ -104,7 +91,7 @@ func TestRealClaudeNativeRelayEndToEnd(t *testing.T) {
 		"anthropic-beta",
 		"claude-code-20250219,oauth-2025-04-20",
 	)
-	request.Header.Set("User-Agent", "claude-cli/2.1.225 (external, sdk-cli)")
+	request.Header.Set("User-Agent", "claude-cli/2.1.229 (external, sdk-cli)")
 	request.Header.Set("x-app", "cli")
 	request.Header.Set("anthropic-dangerous-direct-browser-access", "true")
 	request.Header.Set("X-Claude-Code-Session-Id", realClaudeNativeRelaySessionID)
@@ -141,7 +128,12 @@ func TestRealClaudeNativeRelayEndToEnd(t *testing.T) {
 			safeErrorCode(responseText),
 		)
 	}
-	if got := budget.snapshot(); got != (realClaudeRequestCounts{models: 1, messages: 1}) {
+	if got := budget.snapshot(); got != (realClaudeRequestCounts{
+		models:         1,
+		messages:       1,
+		streamMessages: 1,
+		lastStatus:     http.StatusOK,
+	}) {
 		t.Fatalf("真实 Native Relay 请求预算错误: got=%+v", got)
 	}
 	t.Logf(
@@ -198,7 +190,7 @@ func safeErrorCode(body string) string {
 	if json.Unmarshal([]byte(body), &document) != nil {
 		return "unknown"
 	}
-	return document.Error.Code
+	return safeRealDiagnosticToken(document.Error.Code)
 }
 
 // startRealClaudeRelayServer 装配隔离数据库，并把 Canonical 与 Native Relay
@@ -214,10 +206,13 @@ func startRealClaudeRelayServer(
 		AIHomeDir:           aiHomeDir,
 		ManagementKey:       func() string { return testManagementKey },
 		ClientKey:           func() string { return testClientKey },
+		ErrorLog:            log.New(os.Stderr, "aih-real-claude: ", 0),
 		ModelDiscoverers:    discoverers,
 		InferenceHTTPClient: budget,
-		UsageHTTPClient:     syntheticUsageHTTPClient{},
-		RelayHTTPClient:     budget,
+		// 协议验收不伪造账号健康，也不把其它测试的“Opus 100%”快照
+		// 投影到运行态。额度未知时交给真实推理上游作最终裁决。
+		UsageHTTPClient: neutralRealClaudeUsageHTTPClient{},
+		RelayHTTPClient: budget,
 	})
 	if err != nil {
 		t.Fatalf("创建真实 Claude Native Relay Server 失败: %v", err)
@@ -248,6 +243,46 @@ func startRealClaudeRelayServer(
 	return "http://" + listener.Addr().String(), &http.Client{
 		Timeout: realClaudeTransferTimeout,
 	}
+}
+
+// neutralRealClaudeUsageHTTPClient 只为真实协议夹具返回“未知额度”。
+// 它不会把账号伪装成可用或耗尽，也不会访问第二个真实上游接口。
+type neutralRealClaudeUsageHTTPClient struct{}
+
+// Do 仅接受生产 Claude Usage Strategy 的只读 OAuth 请求。
+func (neutralRealClaudeUsageHTTPClient) Do(
+	request *http.Request,
+) (*http.Response, error) {
+	if request == nil ||
+		request.Method != http.MethodGet ||
+		request.URL == nil ||
+		request.URL.Scheme != "https" ||
+		request.URL.Host != "api.anthropic.com" ||
+		request.URL.Path != "/api/oauth/usage" ||
+		request.URL.RawQuery != "" ||
+		!strings.HasPrefix(request.Header.Get("Authorization"), "Bearer ") ||
+		request.Header.Get("Authorization") == "Bearer " ||
+		request.Header.Get("Accept") != "application/json" ||
+		!hasHeaderToken(request.Header.Get("Anthropic-Beta"), "oauth-2025-04-20") {
+		return &http.Response{
+			StatusCode: http.StatusBadRequest,
+			Header:     make(http.Header),
+			Body: io.NopCloser(strings.NewReader(
+				`{"error":"unexpected_usage_request"}`,
+			)),
+		}, nil
+	}
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body: io.NopCloser(strings.NewReader(`{
+			"five_hour":{"utilization":null,"resets_at":null},
+			"seven_day":{"utilization":null,"resets_at":null},
+			"seven_day_opus":{"utilization":null,"resets_at":null},
+			"seven_day_sonnet":{"utilization":null,"resets_at":null},
+			"extra_usage":{"is_enabled":false,"monthly_limit":null,"used_credits":null,"utilization":null}
+		}`)),
+	}, nil
 }
 
 // decodeRealClaudeRelayToken 只提取短期租约 Token，不记录其内容。

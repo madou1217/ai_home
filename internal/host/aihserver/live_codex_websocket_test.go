@@ -150,8 +150,8 @@ func TestRealCodexResponsesWebSocketEndToEnd(t *testing.T) {
 			"ws: %s",
 			"authorization: Bearer <local-test-key-redacted>",
 			"model_catalog: GET %s status=200 selected_model=%s",
-			"turn_1: payload={type:response.create,model:%s,tools:[%s],stream:true} response_id=%s function_call_id=%s events=%s",
-			"turn_2: payload={type:response.create,model:%s,previous_response_id:%s,input:function_call_output,stream:true} response_id=%s events=%s output=%q",
+			"turn_1: payload={type:response.create,model:%s,tools:[%s],stream:true} response_id_present=true function_call_id_present=true events=%s",
+			"turn_2: payload={type:response.create,model:%s,previous_response_id:<turn-1>,input:function_call_output,stream:true} response_id_present=true response_id_rotated=true events=%s marker_present=true",
 			"temporary_database: imported_from_auth_json=true cleanup=registered",
 		}, "\n"),
 		strings.Replace(baseURL, "http://", "ws://", 1)+
@@ -160,14 +160,9 @@ func TestRealCodexResponsesWebSocketEndToEnd(t *testing.T) {
 		model,
 		model,
 		realCodexWebSocketToolName,
-		first.responseID,
-		first.functionCallID,
 		strings.Join(first.eventTypes, " -> "),
 		model,
-		first.responseID,
-		second.responseID,
 		strings.Join(second.eventTypes, " -> "),
-		second.output,
 	)
 }
 
@@ -259,7 +254,7 @@ func TestRealCodexResponsesWebSocketPrewarmAndReuse(t *testing.T) {
 		upstream,
 	)
 	if second.responseID == first.responseID {
-		t.Fatalf("真实 Codex WS 预热续接复用了相同 response.id=%s", first.responseID)
+		t.Fatal("真实 Codex WS 预热续接复用了相同 response.id")
 	}
 	if counts := upstream.snapshot(); counts != (realCodexRequestCounts{
 		models:              1,
@@ -269,10 +264,8 @@ func TestRealCodexResponsesWebSocketPrewarmAndReuse(t *testing.T) {
 		t.Fatalf("真实 Codex WS 预热请求预算错误: %+v", counts)
 	}
 	t.Logf(
-		"真实 Codex WS 预热验收通过: model=%s warmup_response_id=%s turn_response_id=%s events=%s",
+		"真实 Codex WS 预热验收通过: model=%s warmup_response_id_present=true turn_response_id_present=true response_id_rotated=true events=%s",
 		model,
-		first.responseID,
-		second.responseID,
 		strings.Join(second.eventTypes, " -> "),
 	)
 }
@@ -476,7 +469,7 @@ func importRealCodexWebSocketAccount(t *testing.T, baseURL string, authJSON []by
 	response := performRequest(t, &http.Client{Timeout: 15 * time.Second}, http.MethodPost,
 		baseURL+accountsapi.NativeImportPath, testManagementKey, payload)
 	clear(payload)
-	assertStatus(t, response, http.StatusCreated)
+	assertRealStatus(t, response, http.StatusCreated)
 }
 
 // discoverRealCodexWebSocketModel 只从本地已物化目录选实际存在的 gpt 模型。
@@ -484,13 +477,13 @@ func discoverRealCodexWebSocketModel(t *testing.T, baseURL string) string {
 	t.Helper()
 	response := performRequest(t, &http.Client{Timeout: 15 * time.Second}, http.MethodGet,
 		baseURL+modelsapi.Path, testClientKey, nil)
-	assertStatus(t, response, http.StatusOK)
+	assertRealStatus(t, response, http.StatusOK)
 	var document struct {
 		Data []struct {
 			ID string `json:"id"`
 		} `json:"data"`
 	}
-	decodeJSON(t, response.body, &document)
+	decodeRealJSON(t, response.body, &document)
 	models := make([]string, 0, len(document.Data))
 	for _, item := range document.Data {
 		if strings.HasPrefix(item.ID, "gpt-") {
@@ -498,7 +491,7 @@ func discoverRealCodexWebSocketModel(t *testing.T, baseURL string) string {
 		}
 	}
 	if len(models) == 0 {
-		t.Fatalf("真实 Codex 模型目录没有可用 gpt 模型: %s", response.body)
+		t.Fatalf("真实 Codex 模型目录没有可用 gpt 模型: count=%d", len(document.Data))
 	}
 	preferred := []string{"gpt-5.6-sol", "gpt-5.5", "gpt-5.4", "gpt-5.3-codex", "gpt-5.2-codex", "gpt-5.1-codex"}
 	for _, candidate := range preferred {

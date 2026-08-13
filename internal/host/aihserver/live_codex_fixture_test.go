@@ -81,7 +81,7 @@ func startRealCodexFixture(
 		importPayload,
 	)
 	clear(importPayload)
-	assertStatus(t, imported, http.StatusCreated)
+	assertRealStatus(t, imported, http.StatusCreated)
 	var importDocument struct {
 		Data struct {
 			AccountRef string `json:"account_ref"`
@@ -89,7 +89,7 @@ func startRealCodexFixture(
 			AuthMode   string `json:"auth_mode"`
 		} `json:"data"`
 	}
-	decodeJSON(t, imported.body, &importDocument)
+	decodeRealJSON(t, imported.body, &importDocument)
 	if importDocument.Data.AuthKind != "oauth" || importDocument.Data.AuthMode != "" {
 		t.Fatalf(
 			"真实账号认证投影错误: kind=%q mode=%q",
@@ -97,7 +97,10 @@ func startRealCodexFixture(
 			importDocument.Data.AuthMode,
 		)
 	}
-	if counts := upstream.snapshot(); counts != (realCodexRequestCounts{models: 1}) {
+	if counts := upstream.snapshot(); counts != (realCodexRequestCounts{
+		models:     1,
+		lastStatus: http.StatusOK,
+	}) {
 		t.Fatalf("导入阶段真实请求计数错误: %+v", counts)
 	}
 
@@ -109,7 +112,7 @@ func startRealCodexFixture(
 		testClientKey,
 		nil,
 	)
-	assertStatus(t, models, http.StatusOK)
+	assertRealStatus(t, models, http.StatusOK)
 
 	return realCodexFixture{
 		aiHomeDir:    aiHomeDir,

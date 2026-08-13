@@ -388,6 +388,42 @@ func TestHandlerObservesNativeStreamTerminalStateWithoutReencoding(
 	}
 }
 
+// TestHandlerSetsStreamingProxyHeaders 验证 Native Relay 的原始 SSE 虽不重编码，
+// 仍落实网关防缓存、防代理缓冲和 MIME 嗅探边界。
+func TestHandlerSetsStreamingProxyHeaders(t *testing.T) {
+	t.Parallel()
+
+	accountRef, credential := newRelayOAuthCredential(t)
+	handler := newRelayHandlerWithRecorder(
+		t,
+		accountRef,
+		credential,
+		&relayFailureClient{
+			status: http.StatusText(http.StatusOK),
+			code:   http.StatusOK,
+			body:   "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+			header: http.Header{
+				"Content-Type": []string{"text/event-stream"},
+			},
+		},
+		&relayAttemptRecorder{},
+	)
+	request := newNativeRelayRequest(
+		t,
+		`{"model":"claude-opus-5","stream":true}`,
+	)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK ||
+		response.Header().Get("Cache-Control") != "no-cache" ||
+		response.Header().Get("X-Accel-Buffering") != "no" ||
+		response.Header().Get("X-Content-Type-Options") != "nosniff" {
+		t.Fatalf("Native SSE 响应头不完整: status=%d headers=%v", response.Code, response.Header())
+	}
+}
+
 // TestHandlerRejectsUnknownNativeQueryBeforeCredential 验证 Relay 只放行
 // Claude Code 已观察到的 beta=true，不把任意查询参数带到官方端点。
 func TestHandlerRejectsUnknownNativeQueryBeforeCredential(t *testing.T) {

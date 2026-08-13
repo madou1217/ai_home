@@ -452,7 +452,7 @@ func TestRealCodexResponsesEndToEnd(t *testing.T) {
 		testClientKey,
 		nonStreamPayload,
 	)
-	assertStatus(t, nonStream, http.StatusOK)
+	assertRealStatus(t, nonStream, http.StatusOK)
 	nonStreamDocument := decodeRealResponsesDocument(t, []byte(nonStream.body))
 	assertCompletedRealCodexResponse(t, nonStreamDocument)
 	clear(nonStreamPayload)
@@ -468,10 +468,14 @@ func TestRealCodexResponsesEndToEnd(t *testing.T) {
 	)
 	assertRealCodexStreamStatus(t, stream)
 	frames := decodeRealResponsesSSE(t, stream.body)
-	terminal := assertRealCodexStream(t, frames)
+	assertRealCodexStream(t, frames)
 	clear(streamPayload)
 
-	wantCounts := realCodexRequestCounts{models: 1, responses: 2}
+	wantCounts := realCodexRequestCounts{
+		models:     1,
+		responses:  2,
+		lastStatus: http.StatusOK,
+	}
 	if counts := upstream.snapshot(); counts != wantCounts {
 		t.Fatalf("真实请求预算错误: got=%+v want=%+v", counts, wantCounts)
 	}
@@ -487,8 +491,8 @@ func TestRealCodexResponsesEndToEnd(t *testing.T) {
 			"authorization: Bearer <local-test-key-redacted>",
 			"import: POST %s payload={\"provider_id\":\"codex\",\"artifacts\":{\"auth_json\":\"<redacted>\"}} status=%d auth_kind=%s auth_mode=<none>",
 			"models: GET %s status=%d count=%d contains_%s=true",
-			"non_stream: POST %s payload=%s status=%d response=%s",
-			"stream: POST %s payload=%s status=%d events=%s terminal=%s",
+			"non_stream: POST %s payload=%s status=%d response={object:response,status:completed,model:%s,marker_present:true,usage_present:true}",
+			"stream: POST %s payload=%s status=%d events=%s terminal={object:response,status:completed,model:%s,marker_present:true}",
 			"upstream_requests: models=1 responses=2 unexpected=0",
 			"oauth_access_expires_at: %s refresh_due=false",
 			"temporary_database: created=true cleanup=registered",
@@ -504,12 +508,12 @@ func TestRealCodexResponsesEndToEnd(t *testing.T) {
 		baseURL+openairesponsesapi.Path,
 		string(marshalRealCodexPayload(t, basePayload, false)),
 		nonStream.status,
-		nonStream.body,
+		realCodexModel,
 		baseURL+openairesponsesapi.Path,
 		string(marshalRealCodexPayload(t, basePayload, true)),
 		stream.status,
 		strings.Join(realSSEEventNames(frames), " -> "),
-		string(terminal),
+		realCodexModel,
 		authExpiresAt.Format(time.RFC3339),
 	)
 }
@@ -521,10 +525,10 @@ func assertRealCodexStreamStatus(t *testing.T, exchange httpExchange) {
 
 	if exchange.status != http.StatusOK {
 		t.Fatalf(
-			"status=%d want=%d body=%s",
+			"status=%d want=%d response=%s",
 			exchange.status,
 			http.StatusOK,
-			exchange.body,
+			safeRealHTTPExchangeDiagnostic(exchange),
 		)
 	}
 	if got := exchange.header.Get("Cache-Control"); got != "no-cache" {
@@ -702,7 +706,7 @@ func assertRealCodexModelAvailable(t *testing.T, body string) int {
 			ID string `json:"id"`
 		} `json:"data"`
 	}
-	decodeJSON(t, body, &document)
+	decodeRealJSON(t, body, &document)
 	if document.Object != "list" || len(document.Data) == 0 {
 		t.Fatalf("真实本地模型目录无效: object=%q count=%d", document.Object, len(document.Data))
 	}

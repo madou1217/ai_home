@@ -121,7 +121,7 @@ func TestOfficialClientHeadersCompleteTheContract(t *testing.T) {
 		t.Fatal("缺 anthropic-version，上游必然 400")
 	}
 	if header.Get("x-app") != "cli" ||
-		!strings.HasPrefix(header.Get("User-Agent"), "claude-cli/") {
+		header.Get("User-Agent") != "claude-cli/2.1.229 (external, sdk-cli)" {
 		t.Fatalf("官方客户端标识缺失: %v", header)
 	}
 	// 必须并入同一行：多行时 Header.Get 只返回第一行，按单值读取的下游会漏掉。
@@ -132,19 +132,36 @@ func TestOfficialClientHeadersCompleteTheContract(t *testing.T) {
 	}
 }
 
-// TestOfficialClientHeadersNeverOverrideClient 验证不覆盖客户端自报值。
-//
-// 真实 Claude Code 转发过来时自报版本比抓包快照更准确。
-func TestOfficialClientHeadersNeverOverrideClient(t *testing.T) {
+// TestOfficialClientHeadersReplaceGenericHTTPUserAgent 验证 Go、curl 等普通
+// 客户端自动注入的 UA 不会冒充“客户端自报的 Claude Code 版本”。
+func TestOfficialClientHeadersReplaceGenericHTTPUserAgent(t *testing.T) {
 	t.Parallel()
 
 	header := make(http.Header)
-	header.Set("User-Agent", "claude-cli/9.9.9 (external, sdk-cli)")
+	header.Set("User-Agent", "Go-http-client/1.1")
+	applyOfficialClientHeaders(header)
+
+	if header.Get("User-Agent") != officialClientUserAgent {
+		t.Fatalf("普通 HTTP UA 未被投影为官方客户端身份: %q", header.Get("User-Agent"))
+	}
+}
+
+// TestOfficialClientHeadersReplaceNonNativeIdentity 验证进入该函数的非原生请求
+// 不能用任意自报身份污染官方订阅合同；原生请求在 Handler 上游已旁路本函数。
+func TestOfficialClientHeadersReplaceNonNativeIdentity(t *testing.T) {
+	t.Parallel()
+
+	header := make(http.Header)
+	header.Set("User-Agent", "forged-client/9.9.9")
+	header.Set("x-app", "forged-app")
+	header.Set("anthropic-dangerous-direct-browser-access", "false")
 	header.Set("anthropic-version", "2099-01-01")
 	applyOfficialClientHeaders(header)
 
-	if header.Get("User-Agent") != "claude-cli/9.9.9 (external, sdk-cli)" ||
-		header.Get("anthropic-version") != "2099-01-01" {
-		t.Fatalf("覆盖了客户端自报值: %v", header)
+	if header.Get("User-Agent") != officialClientUserAgent ||
+		header.Get("x-app") != "cli" ||
+		header.Get("anthropic-dangerous-direct-browser-access") != "true" ||
+		header.Get("anthropic-version") != officialAnthropicVersion {
+		t.Fatalf("非原生客户端没有使用唯一官方身份: %v", header)
 	}
 }

@@ -108,12 +108,15 @@ func (state *responseState) completeReasoning(
 	)
 }
 
-// completeContentBlock 要求内容块存在、非空且尚未完成。
+// completeContentBlock 要求内容块存在且尚未完成。文本和拒绝必须非空；
+// reasoning 允许只有 Claude signature，因为 Chat 没有 opaque carrier，不能
+// 伪造 reasoning_content，也不能把合法的最终 Assistant 文本判成失败。
 func (state *responseState) completeContentBlock(
 	event inference.ContentBlockCompletedEvent,
 ) error {
 	block, err := state.block(event.OutputIndex(), event.BlockIndex())
-	if err != nil || block.completed || block.text == "" {
+	if err != nil || block.completed ||
+		block.kind != inference.ContentReasoning && block.text == "" {
 		return ErrInvalidEventSequence
 	}
 	block.completed = true

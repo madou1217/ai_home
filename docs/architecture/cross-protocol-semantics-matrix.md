@@ -1,6 +1,6 @@
 # 跨协议语义矩阵（codex ↔ claude）
 
-> 初次采集日期：2026-08-08；当前复核日期：2026-08-09。结论来自当前源码、
+> 初次采集日期：2026-08-08；当前复核日期：2026-08-13。结论来自当前源码、
 > 自动测试与显式授权的真实账号验收，关键实现均标注文件，可复核。
 > 范围：Canonical 网关承载的两个客户端协议（OpenAI Responses / Anthropic Messages）
 > 与两个上游协议（Codex Responses / Claude Messages）之间的语义传递。
@@ -147,10 +147,25 @@ redacted_thinking。旧 Responses carrier 的兼容输入仍需经过
 真实 signed thinking 两轮回放已通过。真实 redact-thinking 测试分成两层：请求 beta、
 `thinking` 形状、effort、HTTP 状态和事件解析是适配器必须满足的硬断言；只有上游实际
 返回 `redacted_thinking` 时，测试才继续做原样两轮回放。真实请求在 opus-5 与 sonnet-5
-上均为 HTTP 200，Header 和请求正文符合 Claude Code 2.1.225 源码，但当前账号的上游
+上均为 HTTP 200，Header 和请求正文符合当时 Claude Code 2.1.225 源码，但当前账号的上游
 仍返回 `thinking_delta + signature_delta`，没有返回 `redacted_thinking`。测试会明确记录
 `redacted_available=false`，不会把普通 signed thinking 伪报为 redacted，也不会把上游
 实验开关缺失误判为适配器故障；redacted 解码/回放仍由自动测试覆盖。
+
+2026-08-13 使用本机当前 Claude Code 2.1.229 身份合同重新完成真实 TCP Go Server
+验收。Claude 上游在本轮多次返回合法的 signature-only thinking：
+
+- Responses 用 `encrypted_content` 保存 opaque continuity；可见 summary 只在上游实际
+  返回 thinking 文本时产生。
+- Chat Completions 没有 opaque carrier，因此 signature-only 时省略
+  `reasoning_content`，仍保留最终回答；不伪造文本，也不泄漏 signature。
+- Native Messages 原样保留 `thinking` / `redacted_thinking`、signature 和官方 `ping`
+  keepalive；真实 signed thinking 内容块已完成两轮回放。
+
+同轮还验证了 Native Relay 的流式出站头：`Cache-Control: no-cache`、
+`X-Accel-Buffering: no`、`X-Content-Type-Options: nosniff`。普通 HTTP 客户端自动注入的
+通用或自报 User-Agent 不再污染订阅合同；Relay 对已判定为非原生的客户端投影唯一
+的 2.1.229 官方身份，真实 Claude Code 请求在调用点旁路投影并保留原始 Header。
 
 ## 八、响应方向：usage
 

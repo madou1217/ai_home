@@ -271,9 +271,14 @@ func (handler *Handler) ServeHTTP(
 		time.Now().Add(maxRelayDuration),
 	)
 	copyResponseHeaders(response.Header(), upstreamResponse.Header)
-	// 模型输出不得被中间代理缓存。这是网关对所有出站响应的安全保证，与是否
-	// 透传无关；上游已声明时尊重上游。
-	if response.Header().Get("Cache-Control") == "" {
+	if shouldObserveNativeStream(upstreamResponse.Header, stream) {
+		// Native SSE 字节保持透传，但代理控制属于网关出站边界：必须允许逐事件
+		// 交付，不能继承上游缺失或含糊的缓存策略。
+		response.Header().Set("Cache-Control", "no-cache")
+		response.Header().Set("X-Accel-Buffering", "no")
+		response.Header().Set("X-Content-Type-Options", "nosniff")
+	} else if response.Header().Get("Cache-Control") == "" {
+		// 非流式模型输出不得被中间代理缓存；上游已声明时尊重上游。
 		response.Header().Set("Cache-Control", "no-store")
 	}
 	if retryAccount {

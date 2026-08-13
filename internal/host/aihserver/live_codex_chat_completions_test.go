@@ -109,7 +109,11 @@ func TestRealCodexChatCompletionsEndToEnd(t *testing.T) {
 	assertRealChatStreamTool(t, streamToolDocument)
 	clear(streamToolPayload)
 
-	wantCounts := realCodexRequestCounts{models: 1, responses: 4}
+	wantCounts := realCodexRequestCounts{
+		models:     1,
+		responses:  4,
+		lastStatus: http.StatusOK,
+	}
 	if counts := upstream.snapshot(); counts != wantCounts {
 		t.Fatalf("真实 Chat 请求预算错误: got=%+v want=%+v", counts, wantCounts)
 	}
@@ -124,9 +128,9 @@ func TestRealCodexChatCompletionsEndToEnd(t *testing.T) {
 			"authorization: Bearer <local-test-key-redacted>",
 			"import: POST %s status=%d auth_kind=%s auth_mode=<none>",
 			"models: GET %s status=%d count=%d contains_%s=true",
-			"text_non_stream: POST %s payload=%s status=%d response=%s",
+			"text_non_stream: POST %s payload=%s status=%d response={object:chat.completion,model:%s,finish_reason:stop,marker_present:true,usage_present:true}",
 			"text_stream: POST %s payload=%s status=%d result=%s",
-			"tool_non_stream: POST %s payload=%s status=%d response=%s",
+			"tool_non_stream: POST %s payload=%s status=%d response={object:chat.completion,model:%s,finish_reason:tool_calls,tool_name:%s,arguments_valid:true,usage_present:true}",
 			"tool_stream: POST %s payload=%s status=%d result=%s",
 			"upstream_requests: models=1 responses=4 unexpected=0",
 			"oauth_access_expires_at: %s refresh_due=false",
@@ -143,7 +147,7 @@ func TestRealCodexChatCompletionsEndToEnd(t *testing.T) {
 		fixture.baseURL+openaichatcompletionsapi.Path,
 		string(marshalRealChatTextPayload(t, false)),
 		nonStreamText.status,
-		nonStreamText.body,
+		realCodexModel,
 		fixture.baseURL+openaichatcompletionsapi.Path,
 		string(marshalRealChatTextPayload(t, true)),
 		streamText.status,
@@ -151,7 +155,8 @@ func TestRealCodexChatCompletionsEndToEnd(t *testing.T) {
 		fixture.baseURL+openaichatcompletionsapi.Path,
 		string(marshalRealChatToolPayload(t, false)),
 		nonStreamTool.status,
-		nonStreamTool.body,
+		realCodexModel,
+		realCodexToolName,
 		fixture.baseURL+openaichatcompletionsapi.Path,
 		string(marshalRealChatToolPayload(t, true)),
 		streamTool.status,
@@ -180,7 +185,7 @@ func performRealChatRequest(
 	if stream {
 		assertRealCodexStreamStatus(t, exchange)
 	} else {
-		assertStatus(t, exchange, http.StatusOK)
+		assertRealStatus(t, exchange, http.StatusOK)
 	}
 	return exchange
 }
@@ -276,7 +281,11 @@ func decodeRealChatCompletion(t *testing.T, body string) realChatCompletion {
 
 	var document realChatCompletion
 	if err := json.Unmarshal([]byte(body), &document); err != nil {
-		t.Fatalf("真实 Chat Completion JSON 无效: %v body=%s", err, body)
+		t.Fatalf(
+			"真实 Chat Completion JSON 无效: %v body=%s",
+			err,
+			safeRealHTTPBodyDiagnostic(body),
+		)
 	}
 	return document
 }
@@ -292,7 +301,10 @@ func assertRealChatEnvelope(t *testing.T, document realChatCompletion) realChatC
 		len(document.Choices) != 1 ||
 		document.Choices[0].Index != 0 ||
 		document.Choices[0].Message.Role != "assistant" {
-		t.Fatalf("真实 Chat Completion envelope 无效: %+v", document)
+		t.Fatalf(
+			"真实 Chat Completion envelope 无效: %s",
+			safeRealChatCompletionDiagnostic(document),
+		)
 	}
 	assertRealChatUsage(t, document.Usage)
 	return document.Choices[0]
@@ -307,7 +319,10 @@ func assertRealChatText(t *testing.T, document realChatCompletion) {
 		*choice.Message.Content != realCodexMarker ||
 		len(choice.Message.ToolCalls) != 0 ||
 		choice.FinishReason != "stop" {
-		t.Fatalf("真实 Chat 文本响应无效: %+v", choice)
+		t.Fatalf(
+			"真实 Chat 文本响应无效: %s",
+			safeRealChatChoiceDiagnostic(choice),
+		)
 	}
 }
 
@@ -319,7 +334,10 @@ func assertRealChatTool(t *testing.T, document realChatCompletion) {
 	if choice.Message.Content != nil ||
 		choice.FinishReason != "tool_calls" ||
 		len(choice.Message.ToolCalls) != 1 {
-		t.Fatalf("真实 Chat 工具响应无效: %+v", choice)
+		t.Fatalf(
+			"真实 Chat 工具响应无效: %s",
+			safeRealChatChoiceDiagnostic(choice),
+		)
 	}
 	assertRealChatToolCall(t, choice.Message.ToolCalls[0])
 }
@@ -331,18 +349,20 @@ func assertRealChatToolCall(t *testing.T, toolCall realChatToolCall) {
 	if toolCall.ID == "" ||
 		toolCall.Type != "function" ||
 		toolCall.Function.Name != realCodexToolName {
-		t.Fatalf("真实 Chat 工具身份无效: %+v", toolCall)
+		t.Fatalf(
+			"真实 Chat 工具身份无效: id=%t type=%q name=%q arguments_bytes=%d",
+			toolCall.ID != "",
+			toolCall.Type,
+			toolCall.Function.Name,
+			len(toolCall.Function.Arguments),
+		)
 	}
 	var arguments struct {
 		City string `json:"city"`
 	}
 	if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &arguments); err != nil ||
 		arguments.City != "Shenzhen" {
-		t.Fatalf(
-			"真实 Chat 工具参数无效: arguments=%q err=%v",
-			toolCall.Function.Arguments,
-			err,
-		)
+		t.Fatalf("真实 Chat 工具参数无效: bytes=%d err=%v", len(toolCall.Function.Arguments), err)
 	}
 }
 
@@ -361,10 +381,23 @@ func assertRealChatUsage(t *testing.T, usage *realChatUsage) {
 // decodeRealChatStream 按 data-only SSE 合并文本和工具参数增量。
 func decodeRealChatStream(t *testing.T, exchange httpExchange) realChatStreamResult {
 	t.Helper()
+	return decodeRealChatStreamForModel(t, exchange, realCodexModel)
+}
+
+// decodeRealChatStreamForModel 解析指定真实模型的 Chat SSE。
+func decodeRealChatStreamForModel(
+	t *testing.T,
+	exchange httpExchange,
+	expectedModel string,
+) realChatStreamResult {
+	t.Helper()
 
 	if !strings.HasPrefix(exchange.header.Get("Content-Type"), "text/event-stream") ||
 		strings.Contains(exchange.body, "event:") {
-		t.Fatalf("真实 Chat SSE 响应头或帧格式错误: %#v", exchange)
+		t.Fatalf(
+			"真实 Chat SSE 响应头或帧格式错误: %s",
+			safeRealHTTPExchangeDiagnostic(exchange),
+		)
 	}
 	var result realChatStreamResult
 	var content strings.Builder
@@ -379,7 +412,14 @@ func decodeRealChatStream(t *testing.T, exchange httpExchange) realChatStreamRes
 			continue
 		}
 		result.chunks++
-		applyRealChatChunk(t, &result, &content, &arguments, []byte(data))
+		applyRealChatChunk(
+			t,
+			&result,
+			&content,
+			&arguments,
+			[]byte(data),
+			expectedModel,
+		)
 	}
 	result.content = content.String()
 	result.toolArguments = arguments.String()
@@ -393,6 +433,7 @@ func applyRealChatChunk(
 	content *strings.Builder,
 	arguments *strings.Builder,
 	data []byte,
+	expectedModel string,
 ) {
 	t.Helper()
 
@@ -421,28 +462,36 @@ func applyRealChatChunk(
 		Usage *realChatUsage `json:"usage"`
 	}
 	if err := json.Unmarshal(data, &chunk); err != nil {
-		t.Fatalf("真实 Chat SSE JSON 无效: %v data=%s", err, data)
+		t.Fatalf("真实 Chat SSE JSON 无效: %v data=%s", err, safeRealSSEDataDiagnostic(data))
 	}
 	if chunk.ID == "" ||
 		chunk.Object != "chat.completion.chunk" ||
 		chunk.Created <= 0 ||
-		chunk.Model != realCodexModel {
-		t.Fatalf("真实 Chat SSE envelope 无效: %+v", chunk)
+		chunk.Model != expectedModel {
+		t.Fatalf(
+			"真实 Chat SSE envelope 无效: id=%t object=%q created=%t model=%q choices=%d usage=%t",
+			chunk.ID != "",
+			chunk.Object,
+			chunk.Created > 0,
+			chunk.Model,
+			len(chunk.Choices),
+			chunk.Usage != nil,
+		)
 	}
 	if result.responseID == "" {
 		result.responseID, result.model = chunk.ID, chunk.Model
 	} else if result.responseID != chunk.ID || result.model != chunk.Model {
-		t.Fatalf("真实 Chat SSE 身份漂移: %+v", chunk)
+		t.Fatalf("真实 Chat SSE 身份漂移: id_present=%t model=%q", chunk.ID != "", chunk.Model)
 	}
 	if len(chunk.Choices) == 0 {
 		if chunk.Usage == nil {
-			t.Fatalf("真实 Chat SSE 空 choices 缺少 usage: %s", data)
+			t.Fatal("真实 Chat SSE 空 choices 缺少 usage")
 		}
 		result.usage = chunk.Usage
 		return
 	}
 	if len(chunk.Choices) != 1 || chunk.Choices[0].Index != 0 {
-		t.Fatalf("真实 Chat SSE choice 无效: %+v", chunk.Choices)
+		t.Fatalf("真实 Chat SSE choice 无效: count=%d", len(chunk.Choices))
 	}
 	choice := chunk.Choices[0]
 	if choice.Delta.Role != "" {
@@ -482,7 +531,7 @@ func assertRealChatStreamText(t *testing.T, result realChatStreamResult) {
 		result.finishReason != "stop" ||
 		!result.done ||
 		result.chunks < 3 {
-		t.Fatalf("真实 Chat 文本 SSE 无效: %+v", result)
+		t.Fatalf("真实 Chat 文本 SSE 无效: %s", safeRealChatStreamDiagnostic(result))
 	}
 	assertRealChatUsage(t, result.usage)
 }
@@ -497,7 +546,7 @@ func assertRealChatStreamTool(t *testing.T, result realChatStreamResult) {
 		result.finishReason != "tool_calls" ||
 		!result.done ||
 		result.chunks < 3 {
-		t.Fatalf("真实 Chat 工具 SSE 无效: %+v", result)
+		t.Fatalf("真实 Chat 工具 SSE 无效: %s", safeRealChatStreamDiagnostic(result))
 	}
 	assertRealChatToolCall(t, realChatToolCall{
 		ID:   result.toolID,

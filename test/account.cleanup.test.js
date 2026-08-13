@@ -411,16 +411,24 @@ test('deleteAccountByRef refuses to remove an account with persistent session wr
   const root = mkTmpDir();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const accountRef = registerAccount(root, 'codex', '11');
+  const sessionName = 'p-project-deadbeef';
   persistentSessionRegistry.writeEntry(root, {
     provider: 'codex',
     runtimeScope: accountRef,
     accountRef,
     socket: `aih-codex-${accountRef}`,
-    session: 'p-project-deadbeef',
+    session: sessionName,
     cwd: root
   }, { fs });
+  // Simulate a live tmux server that reports the session as alive.
+  const spawnSync = (cmd, args) => {
+    if (cmd === 'tmux' && args.includes('-V')) return { status: 0 };
+    if (args.includes('list-sessions')) return { status: 0, stdout: `${sessionName}\t1\t0\t${root}\t\t\t\t\t\t\t\t\t\t\t` };
+    return { status: 1 };
+  };
   const service = createService(root, [], {
-    ensureSessionStoreLinks: () => ({ migrated: 0, linked: 0 })
+    ensureSessionStoreLinks: () => ({ migrated: 0, linked: 0 }),
+    spawnSync
   });
 
   assert.throws(
@@ -428,6 +436,98 @@ test('deleteAccountByRef refuses to remove an account with persistent session wr
     (error) => error && error.code === 'account_runtime_active'
   );
   assert.notEqual(resolveAccountRef(fs, root, accountRef), null);
+});
+
+test('deleteAccountByRef succeeds when persistent session registry entry is stale', (t) => {
+  const root = mkTmpDir();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const accountRef = registerAccount(root, 'codex', '111');
+  const sessionName = 'p-project-stale';
+  persistentSessionRegistry.writeEntry(root, {
+    provider: 'codex',
+    runtimeScope: accountRef,
+    accountRef,
+    socket: `aih-codex-${accountRef}`,
+    session: sessionName,
+    cwd: root
+  }, { fs });
+  // Simulate tmux available but the server/session is gone (exit code 1).
+  const spawnSync = (cmd, args) => {
+    if (cmd === 'tmux' && args.includes('-V')) return { status: 0 };
+    if (args.includes('list-sessions')) return { status: 1, stderr: 'no server running' };
+    return { status: 1 };
+  };
+  const service = createService(root, [], {
+    ensureSessionStoreLinks: () => ({ migrated: 0, linked: 0 }),
+    spawnSync
+  });
+
+  const result = service.deleteAccountByRef('codex', accountRef);
+  assert.equal(result.deleted, true);
+  // Stale registry entry should have been cleaned up.
+  const remainingEntries = persistentSessionRegistry.listEntries(root, { fs })
+    .filter((e) => e.accountRef === accountRef);
+  assert.equal(remainingEntries.length, 0);
+});
+
+test('deleteAccountByRef fails closed when tmux availability cannot be verified', (t) => {
+  const root = mkTmpDir();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const accountRef = registerAccount(root, 'codex', '112');
+  persistentSessionRegistry.writeEntry(root, {
+    provider: 'codex',
+    runtimeScope: accountRef,
+    accountRef,
+    socket: `aih-codex-${accountRef}`,
+    session: 'p-project-unverified',
+    cwd: root
+  }, { fs });
+  const service = createService(root, [], {
+    ensureSessionStoreLinks: () => ({ migrated: 0, linked: 0 }),
+    spawnSync: () => ({ status: 1 })
+  });
+
+  assert.throws(
+    () => service.deleteAccountByRef('codex', accountRef),
+    /account_runtime_active:persistent_session/
+  );
+  assert.notEqual(resolveAccountRef(fs, root, accountRef), null);
+  assert.equal(
+    persistentSessionRegistry.listEntries(root, { fs }).some((entry) => entry.accountRef === accountRef),
+    true
+  );
+});
+
+test('deleteAccountByRef fails closed on an untrusted tmux list error', (t) => {
+  const root = mkTmpDir();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const accountRef = registerAccount(root, 'codex', '113');
+  persistentSessionRegistry.writeEntry(root, {
+    provider: 'codex',
+    runtimeScope: accountRef,
+    accountRef,
+    socket: `aih-codex-${accountRef}`,
+    session: 'p-project-probe-error',
+    cwd: root
+  }, { fs });
+  const spawnSync = (_cmd, args) => {
+    if (args.includes('-V')) return { status: 0 };
+    return { status: 2, stderr: 'permission denied' };
+  };
+  const service = createService(root, [], {
+    ensureSessionStoreLinks: () => ({ migrated: 0, linked: 0 }),
+    spawnSync
+  });
+
+  assert.throws(
+    () => service.deleteAccountByRef('codex', accountRef),
+    /account_runtime_active:persistent_session/
+  );
+  assert.notEqual(resolveAccountRef(fs, root, accountRef), null);
+  assert.equal(
+    persistentSessionRegistry.listEntries(root, { fs }).some((entry) => entry.accountRef === accountRef),
+    true
+  );
 });
 
 test('deleteAccountByRef keeps the account when runtime projection removal fails', (t) => {

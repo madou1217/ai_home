@@ -20,27 +20,31 @@ const (
 	realClaudeFailureSiblingEnv = "AIH_REAL_CLAUDE_FAILURE_SIBLING_MODEL"
 )
 
-// TestLiveClaudeFailureUpdatesProductionRuntime 从私有临时文件读取一次性 auth-token，
-// 发出一个真实请求，并验证 Adapter 分类实际写入生产内存运行态。
+// TestLiveClaudeFailureUpdatesProductionRuntime 从私有临时文件读取同一正式账号
+// 身份与 auth-token，发出一个真实请求，并验证分类实际写入生产内存运行态。
 func TestLiveClaudeFailureUpdatesProductionRuntime(t *testing.T) {
 	if strings.TrimSpace(os.Getenv(realClaudeFailureEnv)) != "1" {
 		t.Skip("设置 " + realClaudeFailureEnv + "=1 后才允许真实 Claude failure 请求")
 	}
 	model, sibling := requireRealClaudeFailureModels(t)
-	credential, err := realcredential.DecodeClaudeAuthTokenFile(
+	accountRef, credential, accountModels, err := realcredential.DecodeClaudeAccountFile(
 		strings.TrimSpace(os.Getenv(realClaudeFailureFileEnv)),
 	)
 	if err != nil {
 		t.Fatalf("解码真实 Claude failure 凭据失败: %v", err)
 	}
+	if !realcredential.ContainsModels(accountModels, model, sibling) {
+		t.Fatal("真实 failure 模型不属于该正式账号的远端目录快照")
+	}
 	runtime, err := runtimeprobe.New(time.Now)
 	if err != nil {
 		t.Fatalf("创建真实 Claude failure 运行态失败: %v", err)
 	}
-	coordinator, transport, _ := newRealClaudeCoordinatorComponents(
+	coordinator, transport := newRealClaudeCoordinatorComponents(
 		t,
 		credential,
 		model,
+		accountRef,
 		runtime,
 		runtime,
 	)
@@ -67,14 +71,20 @@ func TestLiveClaudeFailureUpdatesProductionRuntime(t *testing.T) {
 		)
 	}
 	observation := failures[0]
-	if observation.Route().ModelID().String() != model {
-		t.Fatalf("真实 Claude failure 写入模型=%s, want %s", observation.Route().ModelID(), model)
+	if observation.Route().AccountRef() != accountRef ||
+		observation.Route().ModelID().String() != model {
+		t.Fatalf(
+			"真实 Claude failure 写入身份 account_match=%t model=%s, want %s",
+			observation.Route().AccountRef() == accountRef,
+			observation.Route().ModelID(),
+			model,
+		)
 	}
 	targetStatus := assertClaudeFailureEligibility(t, runtime, observation, model, true)
 	siblingStatus := assertClaudeFailureEligibility(t, runtime, observation, sibling, false)
 	directive := observation.BlockDirective()
 	t.Logf(
-		"real_claude_failure http_status=%d endpoint=%s model=%s sibling_model=%s failure_kind=%s retry_after=%s block_scope=%s recovery_trigger=%s target_eligibility=%s sibling_eligibility=%s events=%s fingerprint=%s",
+		"real_claude_failure http_status=%d endpoint=%s account_match=true model=%s sibling_model=%s failure_kind=%s retry_after=%s block_scope=%s recovery_trigger=%s target_eligibility=%s sibling_eligibility=%s events=%s fingerprint=%s",
 		transport.statusCode,
 		transport.endpoint,
 		model,

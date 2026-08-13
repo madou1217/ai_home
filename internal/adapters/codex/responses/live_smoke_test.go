@@ -309,10 +309,15 @@ func newRealCodexCoordinator(
 	t.Helper()
 
 	recorder := &adapterAttemptRecorder{}
-	coordinator, transport, _ := newRealCodexCoordinatorComponents(
+	accountRef, err := accountcore.DeriveAccountRef(credential)
+	if err != nil {
+		t.Fatalf("accounts.DeriveAccountRef() error = %v", err)
+	}
+	coordinator, transport := newRealCodexCoordinatorComponents(
 		t,
 		credential,
 		model,
+		accountRef,
 		adapterAvailableRuntime{},
 		recorder,
 	)
@@ -325,12 +330,12 @@ func newRealCodexCoordinatorComponents(
 	t *testing.T,
 	credential accountapp.Credential,
 	model string,
+	accountRef accountcore.AccountRef,
 	runtime accountrouting.RuntimeEligibilitySource,
 	attempts inferencegateway.AttemptRecorder,
 ) (
 	*inferencegateway.Coordinator,
 	*realCodexTransportDiagnostic,
-	accountcore.AccountRef,
 ) {
 	t.Helper()
 
@@ -338,9 +343,8 @@ func newRealCodexCoordinatorComponents(
 	if err != nil {
 		t.Fatalf("providers.NewCatalog() error = %v", err)
 	}
-	accountRef, err := accountcore.DeriveAccountRef(credential)
-	if err != nil {
-		t.Fatalf("accounts.DeriveAccountRef() error = %v", err)
+	if !accountRef.IsValid() {
+		t.Fatal("真实 Codex Coordinator 缺少账号身份")
 	}
 	alias, err := accountcore.NewCLIAccountID(1)
 	if err != nil {
@@ -398,7 +402,7 @@ func newRealCodexCoordinatorComponents(
 	if err != nil {
 		t.Fatalf("NewCoordinator() error = %v", err)
 	}
-	return coordinator, transport, accountRef
+	return coordinator, transport
 }
 
 // newRealCodexRouteCatalog 创建跨客户端协议 alias 到真实 Codex 模型的唯一规则。

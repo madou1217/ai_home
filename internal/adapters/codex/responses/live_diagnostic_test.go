@@ -27,6 +27,7 @@ const (
 // realCodexTransportDiagnostic 只保留 HTTP 状态、媒体类型和有界内存指纹源。
 type realCodexTransportDiagnostic struct {
 	client     *http.Client
+	endpoint   string
 	statusCode int
 	mediaType  string
 	body       realCodexBodyCapture
@@ -36,6 +37,8 @@ type realCodexTransportDiagnostic struct {
 func (diagnostic *realCodexTransportDiagnostic) Do(
 	request *http.Request,
 ) (*http.Response, error) {
+	diagnostic.endpoint = request.URL.Scheme + "://" +
+		request.URL.Host + request.URL.EscapedPath()
 	response, err := diagnostic.client.Do(request)
 	if response == nil {
 		return response, err

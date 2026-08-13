@@ -258,7 +258,7 @@ Go 重构路径实时核对的外部合同基准为 sub2api
 | GW-032 | Provider 并发队列 | 每 provider 独立并发上限和有界 queue，满载返回明确错误 | 稳定 | `lib/server/local.js`、`server-runtime.js` |
 | GW-033 | `(account, model)` 熔断 | 429/配额/容量按模型冷却，不把账号所有模型一并锁死 | 稳定 | `account-model-cooldown.js`、`upstream-failure-policy.js` |
 | GW-034 | Account-wide hard block | auth invalid、整体 runtime 不健康、全账号 cooldown/策略阻塞仍会阻止调度 | 稳定 | `account-selector.js`、`account-capabilities.js` |
-| GW-035 | 失败分类 | Node 主链区分 rate limit、quota、overload、network、auth、location、server error；Go Codex/Claude Adapter 已把 HTTP、SSE 与 transport 结构化失败经 Coordinator 写入共享账号运行态。真实上游已验收 Codex 503、Claude 429 的账号模型级 cooldown，以及残缺终态不写状态 | 已实现（真实验收） | `upstream-failure-policy.js`、`internal/adapters/{codex,claude}/{upstreamfailure,responses,messages}`、`internal/adapters/accountruntime/inmemory` |
+| GW-035 | 失败分类 | Node 主链区分 rate limit、quota、overload、network、auth、location、server error；Go Codex/Claude Adapter 已把 HTTP、SSE 与 transport 结构化失败经 Coordinator 写入共享账号运行态。真实上游已验收 Codex 502/503、Claude 429 的账号模型级 cooldown，以及残缺终态不写状态 | 已实现（真实验收） | `upstream-failure-policy.js`、`internal/adapters/{codex,claude}/{upstreamfailure,responses,messages}`、`internal/adapters/accountruntime/inmemory` |
 | GW-036 | Retry/换账号 | 按 failure policy 决定当前账号重试、换账号、alias fallback 或停止 | 稳定/需持续回归 | `upstream-endpoints.js`、`codex-adapter.js` |
 | GW-037 | Token refresh daemon | Codex/Claude/AGY/Gemini 等按支持情况刷新 OAuth token | 稳定/受限 | `token-refresh-daemon.js`、provider token refresh modules |
 | GW-038 | 请求/诊断日志 | 记录 request id、route、provider、失败类别和低敏诊断；带轮转 | 稳定 | `diagnostic-log.js`、`log-rotation.js` |

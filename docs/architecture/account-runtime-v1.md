@@ -290,13 +290,15 @@ Hard block:
 ```
 
 真实上游失败验收使用单账号、单次 attempt，并让 Recruiter 与 Coordinator 共享同一个
-生产 `inmemory.Runtime`。凭据只从权限为 `0600` 的有界临时文件进入测试进程；正式账号
-数据库只读，不记录 Provider 正文、凭据、请求内容、账号身份或响应 ID。2026-08-13 的
-低敏结果为：
+生产 `inmemory.Runtime`。正式数据库通过一次只读查询把持久化 `accountRef`、同一行凭据
+和该账号的远端模型目录快照绑定到权限为 `0600` 的有界临时 envelope；测试不能另传
+任意身份拼接真实凭据，也不能调用目录外模型。不记录 Provider 正文、凭据、请求内容、
+账号身份或响应 ID。2026-08-13 的低敏结果为：
 
 ```text
-Codex OAuth:
-  gpt-5.6-luna -> HTTP 503 -> upstream_unavailable
+Codex API Key:
+  gpt-5.6-luna -> 两次独立复验分别为 HTTP 503、HTTP 502
+                 -> upstream_unavailable
   (account, gpt-5.6-luna) -> model_cooldown
   同账号 gpt-5.4          -> available
 

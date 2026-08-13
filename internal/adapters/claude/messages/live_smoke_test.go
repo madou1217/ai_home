@@ -857,10 +857,15 @@ func newRealClaudeCoordinator(
 	t.Helper()
 
 	recorder := &claudeAttemptRecorder{}
-	coordinator, transport, _ := newRealClaudeCoordinatorComponents(
+	accountRef, err := accountcore.DeriveAccountRef(credential)
+	if err != nil {
+		t.Fatalf("accounts.DeriveAccountRef() error = %v", err)
+	}
+	coordinator, transport := newRealClaudeCoordinatorComponents(
 		t,
 		credential,
 		model,
+		accountRef,
 		claudeAvailableRuntime{},
 		recorder,
 	)
@@ -873,12 +878,12 @@ func newRealClaudeCoordinatorComponents(
 	t *testing.T,
 	credential accountapp.Credential,
 	model string,
+	accountRef accountcore.AccountRef,
 	runtime accountrouting.RuntimeEligibilitySource,
 	attempts inferencegateway.AttemptRecorder,
 ) (
 	*inferencegateway.Coordinator,
 	*realClaudeTransportDiagnostic,
-	accountcore.AccountRef,
 ) {
 	t.Helper()
 
@@ -886,9 +891,8 @@ func newRealClaudeCoordinatorComponents(
 	if err != nil {
 		t.Fatalf("providers.NewCatalog() error = %v", err)
 	}
-	accountRef, err := accountcore.DeriveAccountRef(credential)
-	if err != nil {
-		t.Fatalf("accounts.DeriveAccountRef() error = %v", err)
+	if !accountRef.IsValid() {
+		t.Fatal("真实 Claude Coordinator 缺少账号身份")
 	}
 	alias, err := accountcore.NewCLIAccountID(1)
 	if err != nil {
@@ -944,7 +948,7 @@ func newRealClaudeCoordinatorComponents(
 	if err != nil {
 		t.Fatalf("NewCoordinator() error = %v", err)
 	}
-	return coordinator, transport, accountRef
+	return coordinator, transport
 }
 
 // newRealClaudeRouteCatalog 创建 alias 到真实 Claude 模型的唯一规则。

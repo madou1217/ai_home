@@ -42,7 +42,8 @@ func (transport *realClaudeTransportDiagnostic) Do(
 	request *http.Request,
 ) (*http.Response, error) {
 	transport.method = request.Method
-	transport.endpoint = request.URL.String()
+	transport.endpoint = request.URL.Scheme + "://" +
+		request.URL.Host + request.URL.EscapedPath()
 	transport.captureRequestShape(request)
 	response, err := transport.client.Do(request)
 	if response != nil {

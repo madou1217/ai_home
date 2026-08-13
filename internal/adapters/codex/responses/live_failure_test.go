@@ -21,8 +21,8 @@ const (
 	realCodexFailureSiblingEnv = "AIH_REAL_CODEX_FAILURE_SIBLING_MODEL"
 )
 
-// TestLiveCodexFailureUpdatesProductionRuntime 从私有临时文件读取一次性标准账号，
-// 发出一个真实请求，并验证 Adapter 分类实际写入生产内存运行态。
+// TestLiveCodexFailureUpdatesProductionRuntime 从私有临时文件读取同一正式账号
+// 身份与凭据，发出一个真实请求，并验证 Adapter 分类实际写入生产内存运行态。
 func TestLiveCodexFailureUpdatesProductionRuntime(t *testing.T) {
 	if strings.TrimSpace(os.Getenv(realCodexFailureEnv)) != "1" {
 		t.Skip("设置 " + realCodexFailureEnv + "=1 后才允许真实 Codex failure 请求")
@@ -32,20 +32,24 @@ func TestLiveCodexFailureUpdatesProductionRuntime(t *testing.T) {
 		realCodexFailureModelEnv,
 		realCodexFailureSiblingEnv,
 	)
-	credential, err := realcredential.DecodeCodexSub2APIFile(
+	accountRef, credential, accountModels, err := realcredential.DecodeCodexAccountFile(
 		strings.TrimSpace(os.Getenv(realCodexFailureFileEnv)),
 	)
 	if err != nil {
 		t.Fatalf("解码真实 Codex failure 凭据失败: %v", err)
 	}
+	if !realcredential.ContainsModels(accountModels, model, sibling) {
+		t.Fatal("真实 failure 模型不属于该正式账号的远端目录快照")
+	}
 	runtime, err := runtimeprobe.New(time.Now)
 	if err != nil {
 		t.Fatalf("创建真实 Codex failure 运行态失败: %v", err)
 	}
-	coordinator, transport, accountRef := newRealCodexCoordinatorComponents(
+	coordinator, transport := newRealCodexCoordinatorComponents(
 		t,
 		credential,
 		model,
+		accountRef,
 		runtime,
 		runtime,
 	)
@@ -108,7 +112,8 @@ func assertRealCodexFailureRuntime(
 	siblingStatus := assertRealFailureEligibility(t, runtime, observation, sibling, false)
 	directive := observation.BlockDirective()
 	t.Logf(
-		"real_codex_failure http_status=%d model=%s sibling_model=%s failure_kind=%s retry_after=%s block_scope=%s recovery_trigger=%s target_eligibility=%s sibling_eligibility=%s events=%v",
+		"real_codex_failure endpoint=%s http_status=%d account_match=true model=%s sibling_model=%s failure_kind=%s retry_after=%s block_scope=%s recovery_trigger=%s target_eligibility=%s sibling_eligibility=%s events=%v",
+		transport.endpoint,
 		transport.statusCode,
 		model,
 		sibling,

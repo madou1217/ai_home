@@ -596,6 +596,38 @@
       "text"
     ]
   },
+  "arcee-ai/trinity-large-preview": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "arcee-ai/trinity-large-thinking": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "arcee-ai/trinity-mini": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "arcee-ai/trinity-nano-preview": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ]
+  },
   "bytedance-seed/seed-2.0-code": {
     "input": [
       "text",
@@ -792,6 +824,14 @@
     ]
   },
   "deepseek/deepseek-v3": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "deepseek/deepseek-v3-0324": {
     "input": [
       "text"
     ],

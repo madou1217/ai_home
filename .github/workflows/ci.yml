@@ -36,7 +36,7 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Verify models.dev version and generated snapshot
+      - name: Verify pinned models.dev snapshot
         run: npm run models:check
 
       - name: Install dependencies

@@ -47,9 +47,13 @@ Fuller layer map:
   newly released model has no metadata and falls back to regex heuristics or shows
   as unknown. The command refuses to overwrite dirty sync inputs and never commits;
   the pointer and generated snapshot remain a reviewable repository change.
-- `npm run models:check`: report how far behind upstream the submodule is and verify
-  that the generated Go snapshot matches the checked-out commit. It exits non-zero
-  when stale or mismatched, so CI can prevent silent metadata drift.
+- `npm run models:check`: offline-verify that the generated Go snapshot matches the
+  pinned submodule commit. It never contacts upstream, so unrelated CI and runtime
+  work do not fail while the asynchronous updater is waiting for its next run.
+- `.github/workflows/models-dev-sync.yml`: every two hours, asynchronously sync the
+  pinned submodule and generated snapshot, verify both, and commit only those two
+  files to `main` when they changed. Runtime startup and inference requests always
+  use the last verified local snapshot and never wait for GitHub or upstream Git.
 - `npm run gateway:routes`: read-only scan of both gateways' HTTP paths and their
   data-plane diff. Backs `docs/architecture/go-node-parity-matrix.md`; `--json`
   for CI. Note it collects path literals, so router scope guards (`/v1/`,

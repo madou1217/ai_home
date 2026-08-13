@@ -10,10 +10,10 @@
  *
  * 用法:
  *   npm run models:sync            同步到上游最新并重新生成 Go 快照
- *   npm run models:sync -- --check 检查版本和快照是否对齐，不改动工作区（CI 用）
+ *   npm run models:sync -- --check 离线检查固定版本与快照是否对齐（CI 用）
  *
- * 同步只移动子模块指针并更新生成快照，不自动提交：这些变更属于本仓的一次真实
- * 改动，由人工审核或自动更新 PR 决定何时纳入版本历史。
+ * 同步只移动子模块指针并更新生成快照，不自动提交：本地调用由开发者决定是否提交，
+ * 定时 GitHub Actions 则在验证通过后负责把这两个固定输入原子提交到主分支。
  */
 
 const { execFileSync } = require('node:child_process');
@@ -168,21 +168,22 @@ function main() {
     process.exit(1);
   }
 
-  // --check 只读比较当前工作区；同步模式才需要保护待覆盖的快照。
-  if (!checkOnly) {
-    assertSyncInputsClean();
-  }
   const branch = resolveTrackedBranch();
   const before = git(['rev-parse', 'HEAD']);
+
+  // CI 只验证仓库内固定输入的一致性，不因上游在异步同步窗口内更新而阻塞。
+  if (checkOnly) {
+    assertSnapshotAligned();
+    console.log(`models.dev 固定版本与快照一致 (${branch} @ ${before.slice(0, 9)})`);
+    return;
+  }
+
+  assertSyncInputsClean();
   git(['fetch', 'origin', branch]);
   const target = git(['rev-parse', `origin/${branch}`]);
 
   if (before === target) {
-    if (checkOnly) {
-      assertSnapshotAligned();
-    } else {
-      generateSnapshot();
-    }
+    generateSnapshot();
     console.log(`models.dev 已是最新且快照已对齐 (${branch} @ ${before.slice(0, 9)})`);
     return;
   }
@@ -190,17 +191,6 @@ function main() {
   const behind = git(['rev-list', '--count', `HEAD..origin/${branch}`]);
   const targetDate = git(['log', '-1', '--format=%ad', '--date=short', target]);
   const currentDate = git(['log', '-1', '--format=%ad', '--date=short', before]);
-
-  if (checkOnly) {
-    // 版本落后时不生成快照，保持 --check 完全只读。
-    console.error(
-      `models.dev 落后上游 ${behind} 个提交`
-      + ` (本地 ${before.slice(0, 9)} ${currentDate}`
-      + ` → 上游 ${target.slice(0, 9)} ${targetDate})\n`
-      + '运行 npm run models:sync 同步。'
-    );
-    process.exit(1);
-  }
 
   const filesBefore = countProviderFiles();
   git(['checkout', '--detach', target]);
@@ -215,8 +205,7 @@ function main() {
   console.log(`  TOML 数据文件: ${filesBefore} → ${filesAfter}`);
   console.log(`  Go 模态快照: ${MODEL_SNAPSHOT_RELATIVE_PATH} 已重新生成`);
   console.log('');
-  console.log('子模块指针已变更但未提交，确认后执行:');
-  console.log(`  git add ${SUBMODULE_PATH} && git commit`);
+  console.log('子模块指针与 Go 快照已产生变更；提交由调用方负责。');
 }
 
 main();

@@ -839,6 +839,14 @@
       "text"
     ]
   },
+  "deepseek/deepseek-v4-pro-0813": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ]
+  },
   "google/deep-research-max-preview-04-2026": {
     "input": [
       "text",
@@ -1394,6 +1402,15 @@
   "microsoft/mai-code-1-flash": {
     "input": [
       "text"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "microsoft/mai-code-1.1-flash": {
+    "input": [
+      "text",
+      "image"
     ],
     "output": [
       "text"
@@ -2618,6 +2635,15 @@
     ]
   },
   "xai/grok-4.5": {
+    "input": [
+      "text",
+      "image"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "xai/grok-4.6": {
     "input": [
       "text",
       "image"

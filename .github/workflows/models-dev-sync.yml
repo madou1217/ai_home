@@ -2,7 +2,8 @@ name: models.dev sync
 
 on:
   schedule:
-    - cron: '17 3 * * *'
+    # 后台微轮询只更新仓库快照，不进入 Server 启动或请求热路径。
+    - cron: '37 */2 * * *'
   workflow_dispatch:
 
 concurrency:
@@ -11,10 +12,10 @@ concurrency:
 
 permissions:
   contents: write
-  pull-requests: write
 
 jobs:
   sync:
+    if: github.ref == 'refs/heads/main'
     name: update models.dev and generated metadata
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -40,25 +41,33 @@ jobs:
       - name: Synchronize models.dev and regenerate Go snapshot
         run: npm run models:sync
 
+      - name: Detect generated changes
+        id: changes
+        shell: bash
+        run: |
+          if git diff --quiet -- \
+            third_party/models.dev \
+            internal/adapters/modelmetadata/modelsdev/modalities.json; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Verify generated snapshot and Go model metadata tests
         run: |
           npm run models:check
           go test ./internal/adapters/modelmetadata/modelsdev ./internal/tools/modelsdevmodalities
           git diff --check
 
-      - name: Open update pull request
-        uses: peter-evans/create-pull-request@v7
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: 'chore(models): sync models.dev metadata'
-          title: 'chore(models): sync models.dev metadata'
-          body: |
-            Automated update of the pinned `models.dev` commit and the generated Go modality snapshot.
-
-            Validation:
-            - `npm run models:check`
-            - `go test ./internal/adapters/modelmetadata/modelsdev ./internal/tools/modelsdevmodalities`
-            - `git diff --check`
-          branch: automation/models-dev-sync
-          delete-branch: true
-          base: main
+      - name: Commit verified metadata to main
+        if: steps.changes.outputs.changed == 'true'
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- \
+            third_party/models.dev \
+            internal/adapters/modelmetadata/modelsdev/modalities.json
+          git diff --cached --check
+          git commit -m "chore(models): sync models.dev metadata"
+          git push origin HEAD:main

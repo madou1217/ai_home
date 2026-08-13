@@ -1240,10 +1240,10 @@ export default function Accounts() {
     setEditModalVisible(true);
   };
 
-  const handleEditSubmit = async () => {
+  const handleEditSubmit = async (): Promise<boolean> => {
     try {
       const values = await editForm.validateFields();
-      if (!editingAccount) return;
+      if (!editingAccount) return false;
       setSubmitting(true);
       const res = await accountsAPI.updateAccount(editingAccount.provider, editingAccount.accountRef, {
         apiKey: values.apiKey,
@@ -1259,10 +1259,13 @@ export default function Accounts() {
         message.success('更新成功');
         setAccounts((prev) => mergeSingleAccount(prev, res.account));
         setEditModalVisible(false);
+        return true;
       }
+      return false;
     } catch (error: any) {
-      if (error.errorFields) return;
+      if (error.errorFields) return false;
       message.error(error.response?.data?.message || '更新失败');
+      return false;
     } finally {
       setSubmitting(false);
     }
@@ -2946,9 +2949,9 @@ export default function Accounts() {
           }
         }}
         form={editForm}
+        layout="vertical"
         onFinish={async () => {
-          await handleEditSubmit();
-          return true;
+          return handleEditSubmit();
         }}
         submitter={{
           searchConfig: {
@@ -2957,7 +2960,6 @@ export default function Accounts() {
           },
         }}
       >
-        <Form form={editForm} layout="vertical" component={false}>
           {isEditingClaudeCredential ? (
             <Form.Item
               name="authMode"
@@ -2987,7 +2989,6 @@ export default function Accounts() {
           >
             <Input placeholder="https://api.openai.com/v1" />
           </Form.Item>
-        </Form>
       </ModalForm>
 
       <Modal

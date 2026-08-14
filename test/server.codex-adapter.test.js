@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const zlib = require('node:zlib');
 const { handleCodexModels, handleCodexChatCompletions, __private } = require('../lib/server/codex-adapter');
+const { buildModelAccountIndex } = require('../lib/server/model-account-index');
 const { getAccountModelCooldownUntil } = require('../lib/server/account-runtime-state');
 const { chooseServerAccount, markProxyAccountFailure, markProxyAccountSuccess } = require('../lib/server/router');
 
@@ -2504,3 +2505,117 @@ test('codex adapter fails over when an account reports the model is not availabl
   assert.equal(getAccountModelCooldownUntil(relay, 'gpt-5.6-luna') > Date.now(), true);
   assert.equal(Number(relay.cooldownUntil || 0), 0);
 });
+
+test('codex adapter selects only compatible accounts when model inverted index is available', async () => {
+  const res = createResCapture();
+  const ollamaRef = accountRef('011a011a');
+  const oauthRef = accountRef('0a020a02');
+  const relayRef = accountRef('0e1a0e1a');
+  const state = {
+    accounts: {
+      codex: [
+        {
+          accountRef: ollamaRef,
+          accessToken: 'ollama-key',
+          apiKeyMode: true,
+          openaiBaseUrl: 'https://ollama.com/v1',
+          schedulableStatus: 'schedulable'
+        },
+        {
+          accountRef: oauthRef,
+          email: 'oauth@example.com',
+          accessToken: 'oauth-token',
+          schedulableStatus: 'schedulable'
+        },
+        {
+          accountRef: relayRef,
+          accessToken: 'relay-key',
+          apiKeyMode: true,
+          openaiBaseUrl: 'https://relay.example.com/v1',
+          schedulableStatus: 'schedulable'
+        }
+      ]
+    },
+    webUiModelsCache: {
+      updatedAt: Date.now(),
+      byAccount: {
+        [ollamaRef]: ['deepseek-v4-pro', 'gemma-3-27b', 'kimi-k2.5'],
+        [oauthRef]: ['gpt-5.6-luna', 'gpt-5.5', 'gpt-5.3-codex'],
+        [relayRef]: ['gpt-5.6-luna', 'gpt-5.5']
+      },
+      byProvider: {}
+    },
+    cursors: { codex: 0 },
+    metrics: { totalFailures: 0, totalSuccess: 0, totalTimeouts: 0 }
+  };
+  state.modelAccountIndex = buildModelAccountIndex(state, {});
+
+  const attemptedAccountRefs = [];
+  await handleCodexChatCompletions({
+    options: {
+      codexBaseUrl: 'https://chatgpt.com/backend-api/codex',
+      upstreamTimeoutMs: 3000,
+      maxAttempts: 3,
+      failureThreshold: 1,
+      logRequests: false
+    },
+    state,
+    req: { headers: { 'content-type': 'application/json' } },
+    res,
+    requestJson: {
+      model: 'gpt-5.6-luna',
+      stream: false,
+      messages: [{ role: 'user', content: 'hello' }]
+    },
+    routeKey: 'POST /v1/responses',
+    requestStartedAt: Date.now(),
+    cooldownMs: 1000,
+    requestMeta: { requestId: 'model-inverted-index-check', sessionKey: 's', clientProtocol: 'openai_responses' },
+    deps: {
+      chooseServerAccount: (pool) => {
+        return pool.find((a) => !attemptedAccountRefs.includes(a.accountRef)) || null;
+      },
+      pushMetricError: () => {},
+      writeJson: (r, code, payload) => {
+        r.statusCode = code;
+        r.setHeader('content-type', 'application/json');
+        r.end(JSON.stringify(payload));
+      },
+      refreshCodexAccessToken: async () => ({ ok: true, refreshed: false, reason: 'not_due' }),
+      fetchWithTimeout: async (url, init) => {
+        const auth = String(init && init.headers && init.headers.authorization || '');
+        if (auth.includes('ollama-key')) {
+          attemptedAccountRefs.push(ollamaRef);
+          return {
+            ok: false,
+            status: 400,
+            headers: new Map(),
+            text: async () => JSON.stringify({
+              error: {
+                message: 'input[0]: unknown input item type: "additional_tools"',
+                type: 'invalid_request_error'
+              }
+            })
+          };
+        }
+        if (auth.includes('relay-key')) {
+          attemptedAccountRefs.push(relayRef);
+          return createCompletedUpstreamResponse('relay luna ok');
+        }
+        if (auth.includes('oauth-token')) {
+          attemptedAccountRefs.push(oauthRef);
+          return createCompletedUpstreamResponse('oauth luna ok');
+        }
+        return createCompletedUpstreamResponse('fallback ok');
+      },
+      markProxyAccountFailure,
+      markProxyAccountSuccess: () => {},
+      appendProxyRequestLog: () => {}
+    }
+  });
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(attemptedAccountRefs.includes(ollamaRef), false, 'Ollama account must NEVER be selected for gpt-5.6-luna');
+  assert.equal(attemptedAccountRefs.length > 0, true);
+});
+

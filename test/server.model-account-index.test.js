@@ -113,3 +113,13 @@ test('cache refresh patches only discovered account refs', () => {
   assert.deepEqual(findAccountsForModel(state.modelAccountIndex, 'glm-5.2-new'), [GLM_REF]);
   assert.deepEqual(findAccountsForModel(state.modelAccountIndex, 'deepseek-v4-pro'), [DEEPSEEK_REF]);
 });
+
+test('findAccountsForModel resolves model ids with dot/dash version variations', () => {
+  const state = createState();
+  state.webUiModelsCache.byAccount[GLM_REF] = ['gpt-5.6-luna'];
+  const index = buildModelAccountIndex(state, {});
+
+  assert.deepEqual(findAccountsForModel(index, 'gpt-5.6-luna'), [GLM_REF]);
+  assert.deepEqual(findAccountsForModel(index, 'gpt-5-6-luna'), [GLM_REF]);
+});
+

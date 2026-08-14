@@ -1,4 +1,12 @@
 {
+  "aisingapore/gemma-sea-lion-v4-27b-it": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ]
+  },
   "alibaba/qwen-flash": {
     "input": [
       "text"
@@ -78,6 +86,14 @@
       "text"
     ]
   },
+  "alibaba/qwen2.5-coder-32b-instruct": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ]
+  },
   "alibaba/qwen3-235b-a22b": {
     "input": [
       "text"
@@ -87,6 +103,14 @@
     ]
   },
   "alibaba/qwen3-235b-a22b-instruct-2507": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "alibaba/qwen3-30b-a3b": {
     "input": [
       "text"
     ],
@@ -343,6 +367,14 @@
       "text",
       "image",
       "video"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "alibaba/qwq-32b": {
+    "input": [
+      "text"
     ],
     "output": [
       "text"
@@ -808,6 +840,14 @@
     ]
   },
   "deepseek/deepseek-r1": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "deepseek/deepseek-r1-distill-qwen-32b": {
     "input": [
       "text"
     ],
@@ -1361,6 +1401,14 @@
       "video"
     ]
   },
+  "ibm/granite-4-h-micro": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ]
+  },
   "ibm/granite-4-h-small": {
     "input": [
       "text"
@@ -1372,6 +1420,23 @@
   "meituan/longcat-2.0": {
     "input": [
       "text"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "meta/llama-3.1-8b-instruct": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "meta/llama-3.2-11b-vision-instruct": {
+    "input": [
+      "text",
+      "image"
     ],
     "output": [
       "text"
@@ -1414,6 +1479,14 @@
     "input": [
       "text",
       "image"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "meta/llama-guard-3-8b": {
+    "input": [
+      "text"
     ],
     "output": [
       "text"
@@ -2220,6 +2293,16 @@
       "text"
     ]
   },
+  "openai/gpt-5.3-codex-spark": {
+    "input": [
+      "text",
+      "image",
+      "pdf"
+    ],
+    "output": [
+      "text"
+    ]
+  },
   "openai/gpt-5.4": {
     "input": [
       "text",
@@ -2880,6 +2963,14 @@
     ]
   },
   "zhipuai/glm-5.2": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "zhipuai/glm-5.3": {
     "input": [
       "text"
     ],

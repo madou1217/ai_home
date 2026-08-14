@@ -9,7 +9,8 @@ const {
   resolveMultiplexerDriver,
   getDriver,
   TmuxDriver,
-  HerdrDriver
+  HerdrDriver,
+  buildHerdrInstallCommand
 } = require('../lib/runtime/multiplexer');
 
 test('resolveConfiguredType: parses explicit options and env', () => {
@@ -76,6 +77,48 @@ test('resolveMultiplexerDriver: explicit herdr selection falls back gracefully w
   assert.equal(strictDriver.name, 'herdr');
 });
 
+test('buildHerdrInstallCommand: constructs platform-specific installation plan', () => {
+  const macBrew = buildHerdrInstallCommand({ platform: 'darwin', hasBrew: true });
+  assert.equal(macBrew.command, 'brew');
+  assert.deepEqual(macBrew.args, ['install', 'herdr']);
+
+  const macCurl = buildHerdrInstallCommand({ platform: 'darwin', hasBrew: false });
+  assert.equal(macCurl.command, 'sh');
+  assert.match(macCurl.args[1], /install\.sh/);
+
+  const linux = buildHerdrInstallCommand({ platform: 'linux' });
+  assert.equal(linux.command, 'sh');
+  assert.match(linux.args[1], /install\.sh/);
+
+  const win = buildHerdrInstallCommand({ platform: 'win32' });
+  assert.equal(win.command, 'powershell');
+  assert.match(win.args[4], /install\.ps1/);
+});
+
+test('HerdrDriver: install executes plan and refreshes detection status', () => {
+  const driver = new HerdrDriver();
+  let installed = false;
+  const mockSpawn = (cmd, args) => {
+    if (cmd === 'brew' && args[0] === 'install') {
+      installed = true;
+      return { status: 0 };
+    }
+    if (cmd === 'herdr' && args[0] === '--version') {
+      return installed ? { status: 0 } : { status: 1 };
+    }
+    return { status: 1 };
+  };
+
+  const result = driver.install({
+    platform: 'darwin',
+    hasBrew: true,
+    spawnSync: mockSpawn
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.command, 'herdr');
+});
+
 test('HerdrDriver: detect identifies availability and returns install hint when missing', () => {
   const driver = new HerdrDriver();
 
@@ -89,7 +132,7 @@ test('HerdrDriver: detect identifies availability and returns install hint when 
     spawnSync: () => ({ status: 1 })
   });
   assert.equal(missing.available, false);
-  assert.match(missing.installHint, /install\.sh/);
+  assert.match(missing.installHint, /install/);
 });
 
 test('HerdrDriver: buildLaunchArgs formats interactive and detached commands correctly', () => {

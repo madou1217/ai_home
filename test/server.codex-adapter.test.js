@@ -2826,3 +2826,113 @@ test('codex adapter still dials an account whose catalog is unknown', async () =
   assert.equal(res.statusCode, 200);
   assert.deepEqual(attemptedAccountRefs, [unprobedRef], 'unknown catalog must stay routable');
 });
+
+// 回归：WebUI 里把 (账号, 模型) 停用后，网关仍然把请求打到该账号。
+// 现场是 meadeodeo@gmail.com 上 gpt-5.6-sol 已停用，用量却还在涨。
+//
+// 停用只被 buildModelCapabilityIndex 认（addAccountModel 里查 isAccountModelEnabled），
+// 而倒排索引 buildModelAccountIndex 只读模型缓存、根本不看 modelCatalogSettings。
+// 选账号走倒排索引这一路时，停用开关等于不存在。
+//
+// 「用户明确停用」是最强的否定证据——比目录还硬，任何分支都不得再选中它。
+test('codex adapter never dials an account whose (account, model) pair is disabled', async () => {
+  const res = createResCapture();
+  const disabledRef = accountRef('0d150d15');
+  const enabledRef = accountRef('0e150e15');
+  const state = {
+    accounts: {
+      codex: [
+        {
+          accountRef: disabledRef,
+          accessToken: 'disabled-key',
+          apiKeyMode: true,
+          openaiBaseUrl: 'https://relay.example.com/v1',
+          schedulableStatus: 'schedulable'
+        },
+        {
+          accountRef: enabledRef,
+          accessToken: 'enabled-key',
+          apiKeyMode: true,
+          openaiBaseUrl: 'https://relay2.example.com/v1',
+          schedulableStatus: 'schedulable'
+        }
+      ]
+    },
+    // 两个账号的探测目录都有 gpt-5.6-sol —— 目录层面无从区分，
+    // 唯一的区别就是用户在 WebUI 上把其中一个停用了。
+    webUiModelsCache: {
+      updatedAt: Date.now(),
+      byAccount: {
+        [disabledRef]: ['gpt-5.6-sol', 'gpt-5.6-luna'],
+        [enabledRef]: ['gpt-5.6-sol', 'gpt-5.6-luna']
+      },
+      byProvider: {}
+    },
+    modelCatalogSettings: {
+      accountModels: [
+        {
+          id: 'gpt-5.6-sol',
+          provider: 'codex',
+          accountRef: disabledRef,
+          enabled: false
+        }
+      ]
+    },
+    cursors: { codex: 0 },
+    metrics: { totalFailures: 0, totalSuccess: 0, totalTimeouts: 0, lastErrors: [] }
+  };
+  state.modelAccountIndex = buildModelAccountIndex(state, {});
+
+  const attemptedAccountRefs = [];
+  await handleCodexChatCompletions({
+    options: {
+      codexBaseUrl: 'https://chatgpt.com/backend-api/codex',
+      upstreamTimeoutMs: 3000,
+      maxAttempts: 3,
+      failureThreshold: 1,
+      logRequests: false
+    },
+    state,
+    req: { headers: { 'content-type': 'application/json' } },
+    res,
+    requestJson: {
+      model: 'gpt-5.6-sol',
+      stream: false,
+      messages: [{ role: 'user', content: 'hello' }]
+    },
+    routeKey: 'POST /v1/responses',
+    requestStartedAt: Date.now(),
+    cooldownMs: 1000,
+    requestMeta: { requestId: 'account-model-disabled', sessionKey: 's', clientProtocol: 'openai_responses' },
+    deps: {
+      chooseServerAccount,
+      pushMetricError: () => {},
+      writeJson: (r, code, payload) => {
+        r.statusCode = code;
+        r.setHeader('content-type', 'application/json');
+        r.end(JSON.stringify(payload));
+      },
+      refreshCodexAccessToken: async () => ({ ok: true, refreshed: false, reason: 'not_due' }),
+      fetchWithTimeout: async (url, init) => {
+        const auth = String(init && init.headers && init.headers.authorization || '');
+        if (auth.includes('disabled-key')) {
+          attemptedAccountRefs.push(disabledRef);
+          return createCompletedUpstreamResponse('should never happen');
+        }
+        attemptedAccountRefs.push(enabledRef);
+        return createCompletedUpstreamResponse('enabled account ok');
+      },
+      markProxyAccountFailure,
+      markProxyAccountSuccess: () => {},
+      appendProxyRequestLog: () => {}
+    }
+  });
+
+  assert.equal(
+    attemptedAccountRefs.includes(disabledRef),
+    false,
+    'a disabled (account, model) pair must never be dialed'
+  );
+  assert.deepEqual(attemptedAccountRefs, [enabledRef]);
+  assert.equal(res.statusCode, 200);
+});

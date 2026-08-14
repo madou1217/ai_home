@@ -174,6 +174,9 @@ func seedUsageRefreshes(
 				continue
 			}
 			account := overview.Account()
+			if !service.SupportsProvider(account.ProviderID()) {
+				continue
+			}
 			if err := service.RestoreUsageProjection(
 				ctx,
 				account.Ref(),

@@ -9,6 +9,7 @@ import (
 	usageapp "github.com/madou1217/ai_home/application/accountusage"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	agyauth "github.com/madou1217/ai_home/core/accounts/agy"
 	claudeauth "github.com/madou1217/ai_home/core/accounts/claude"
 	usagecore "github.com/madou1217/ai_home/core/accountusage"
 	"github.com/madou1217/ai_home/core/providers"
@@ -71,6 +72,44 @@ func TestSeedUsageRefreshesRestoresPersistedBlockAfterRestart(t *testing.T) {
 	}
 	if err := first.Register(ctx, registration); err != nil {
 		t.Fatalf("Register() error = %v", err)
+	}
+	agyCredential, err := agyauth.NewOAuthAuth(agyauth.OAuthInput{
+		Email:         "usage-startup-agy@example.invalid",
+		AccessToken:   "agy-synthetic-usage-startup-access",
+		RefreshToken:  "agy-synthetic-usage-startup-refresh",
+		ExpiresAtMS:   capturedAt.Add(2 * time.Hour).UnixMilli(),
+		RefreshedAtMS: capturedAt.UnixMilli(),
+		TokenType:     "Bearer",
+		AuthMethod:    agyauth.AuthMethodConsumer,
+	})
+	if err != nil {
+		t.Fatalf("agyauth.NewOAuthAuth() error = %v", err)
+	}
+	agyAlias, err := accountcore.NewCLIAccountID(2)
+	if err != nil {
+		t.Fatalf("NewCLIAccountID(agy) error = %v", err)
+	}
+	agyAccount, err := accountcore.NewAccount(
+		catalog,
+		accountcore.NewAccountInput{
+			Identity:     agyCredential,
+			CLIAccountID: agyAlias,
+			CreatedAt:    capturedAt,
+		},
+	)
+	if err != nil {
+		t.Fatalf("NewAccount(agy) error = %v", err)
+	}
+	agyRegistration, err := accountapp.NewRegistration(
+		agyAccount,
+		agyCredential,
+		capturedAt,
+	)
+	if err != nil {
+		t.Fatalf("NewRegistration(agy) error = %v", err)
+	}
+	if err := first.Register(ctx, agyRegistration); err != nil {
+		t.Fatalf("Register(agy) error = %v", err)
 	}
 	snapshot, err := usagecore.NewSnapshot(usagecore.SnapshotInput{
 		AccountRef: account.Ref(),

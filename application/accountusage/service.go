@@ -183,6 +183,19 @@ func NewService(dependencies Dependencies) (*Service, error) {
 	}, nil
 }
 
+// SupportsProvider 判断当前进程是否为规范 Provider 注册了可信额度策略。
+// Provider catalog 描述产品能力；实际进程可能分阶段装配更窄的 Strategy 集合，
+// 启动恢复和后台调度必须以这里的运行时事实为准。
+func (service *Service) SupportsProvider(providerID string) bool {
+	if service == nil || service.catalog == nil {
+		return false
+	}
+	canonicalProviderID, found := service.catalog.CanonicalID(providerID)
+	return found &&
+		canonicalProviderID == providerID &&
+		service.strategies[providerID] != nil
+}
+
 // GetUsage 返回最近一次成功快照；读取不会隐式访问上游。
 func (service *Service) GetUsage(
 	ctx context.Context,

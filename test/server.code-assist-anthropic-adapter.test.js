@@ -28,6 +28,134 @@ const CLAUDE_GOAL_EVALUATOR_PROMPT = [
   'Make sure you output valid JSON. Do not output anything else.'
 ].join('\n');
 
+test('Code Assist Anthropic buffered alias response preserves the client requested model', async (t) => {
+  let generateBody = null;
+  t.mock.method(global, 'fetch', async (url, init) => {
+    const safeUrl = String(url || '');
+    if (safeUrl.includes(':loadCodeAssist')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ cloudaicompanionProject: 'projects/agy-test' })
+      };
+    }
+    if (safeUrl.includes(':streamGenerateContent')) {
+      generateBody = JSON.parse(String(init && init.body || '{}'));
+      return {
+        ok: true,
+        status: 200,
+        body: (async function* () {
+          yield Buffer.from([
+            'data: ',
+            JSON.stringify({
+              traceId: 'trace-alias-buffered',
+              modelVersion: 'claude-opus-4-6-thinking',
+              candidates: [{
+                finishReason: 'STOP',
+                content: { parts: [{ text: 'ok' }] }
+              }],
+              usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1, totalTokenCount: 2 }
+            }),
+            '\n\n'
+          ].join(''));
+        })()
+      };
+    }
+    throw new Error(`unexpected_url_${safeUrl}`);
+  });
+
+  const result = await fetchCodeAssistAnthropicMessage(
+    {
+      provider: 'agy',
+      agyBaseUrl: 'https://daily-cloudcode-pa.googleapis.com/v1internal',
+      providerProtocolRoute: resolveDirectProviderProtocolRoute('anthropic_messages', 'agy'),
+      clientProtocol: 'anthropic_messages',
+      responseModel: 'claude-opus-4-8'
+    },
+    {
+      id: 'agy-1',
+      provider: 'agy',
+      authType: 'oauth-personal',
+      accessToken: 'token-1'
+    },
+    {
+      model: 'claude-opus-4-6-thinking',
+      max_tokens: 16,
+      messages: [{ role: 'user', content: 'ping' }]
+    },
+    800
+  );
+
+  assert.equal(generateBody.model, 'claude-opus-4-6-thinking');
+  assert.equal(result.model, 'claude-opus-4-8');
+});
+
+test('Code Assist Anthropic streaming alias response preserves the client requested model', async (t) => {
+  let generateBody = null;
+  t.mock.method(global, 'fetch', async (url, init) => {
+    const safeUrl = String(url || '');
+    if (safeUrl.includes(':loadCodeAssist')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ cloudaicompanionProject: 'projects/agy-test' })
+      };
+    }
+    if (safeUrl.includes(':streamGenerateContent')) {
+      generateBody = JSON.parse(String(init && init.body || '{}'));
+      return {
+        ok: true,
+        status: 200,
+        body: (async function* () {
+          yield Buffer.from([
+            'data: ',
+            JSON.stringify({
+              traceId: 'trace-alias-stream',
+              modelVersion: 'claude-opus-4-6-thinking',
+              candidates: [{
+                finishReason: 'STOP',
+                content: { parts: [{ text: 'ok' }] }
+              }],
+              usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1, totalTokenCount: 2 }
+            }),
+            '\n\n'
+          ].join(''));
+        })()
+      };
+    }
+    throw new Error(`unexpected_url_${safeUrl}`);
+  });
+
+  const stream = await fetchCodeAssistAnthropicMessageStream(
+    {
+      provider: 'agy',
+      agyBaseUrl: 'https://daily-cloudcode-pa.googleapis.com/v1internal',
+      providerProtocolRoute: resolveDirectProviderProtocolRoute('anthropic_messages', 'agy'),
+      clientProtocol: 'anthropic_messages',
+      responseModel: 'claude-opus-4-8'
+    },
+    {
+      id: 'agy-1',
+      provider: 'agy',
+      authType: 'oauth-personal',
+      accessToken: 'token-1'
+    },
+    {
+      model: 'claude-opus-4-6-thinking',
+      stream: true,
+      max_tokens: 16,
+      messages: [{ role: 'user', content: 'ping' }]
+    },
+    800
+  );
+  const events = [];
+  for await (const event of stream) events.push(event);
+
+  assert.equal(generateBody.model, 'claude-opus-4-6-thinking');
+  assert.equal(events[0].type, 'message_start');
+  assert.equal(events[0].model, 'claude-opus-4-8');
+});
+
 test('Code Assist Anthropic adapter maps Claude tools and tool results without OpenAI chat shape', async (t) => {
   let generateBody = null;
   let seenHeaders = null;

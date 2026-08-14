@@ -2779,7 +2779,7 @@ test('Gemini Code Assist generateContent stream retries another account when ups
   assert.equal(state.metrics.totalFailures, 0);
 });
 
-test('upstream passthrough uses direct AGY Anthropic adapter for Claude client messages', async () => {
+test('upstream passthrough passes the client model separately from an AGY alias target', async () => {
   const res = createResCapture();
   const state = {
     accounts: {
@@ -2805,13 +2805,18 @@ test('upstream passthrough uses direct AGY Anthropic adapter for Claude client m
     res,
     method: 'POST',
     bodyBuffer: Buffer.from('{"x":"y"}'),
-    requestJson: { model: 'claude-4-6-thinking', messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }] },
+    requestJson: { model: 'claude-opus-4-6-thinking', messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }] },
     routeKey: 'POST /v1/messages',
     requestStartedAt: Date.now(),
     cooldownMs: 1000,
     requestMeta: {
       sessionKey: 'agy-claude-thread-1',
-      providerProtocolRoute: AGY_ANTHROPIC_MESSAGES_ROUTE
+      providerProtocolRoute: AGY_ANTHROPIC_MESSAGES_ROUTE,
+      aliasResolution: {
+        aliasMatched: true,
+        requestedModel: 'claude-opus-4-8',
+        effectiveModel: 'claude-opus-4-6-thinking'
+      }
     },
     deps: {
       chooseServerAccount: (pool) => pool[0],
@@ -2834,11 +2839,12 @@ test('upstream passthrough uses direct AGY Anthropic adapter for Claude client m
         assert.equal(String(callOptions.sessionKey || ''), 'agy-claude-thread-1');
         assert.ok(callOptions.geminiSessionIdMap instanceof Map);
         assert.equal(callOptions.geminiSessionIdMap, state.agySessionIdMap);
+        assert.equal(callOptions.responseModel, 'claude-opus-4-8');
         return {
           id: 'msg_agy_1',
           type: 'message',
           role: 'assistant',
-          model: 'claude-4-6-thinking',
+          model: 'claude-opus-4-8',
           content: [{ type: 'text', text: 'pong' }],
           stop_reason: 'end_turn',
           usage: { input_tokens: 1, output_tokens: 1 }
@@ -3118,7 +3124,7 @@ test('direct AGY Anthropic adapter can recover on the single bounded second pool
   assert.equal(JSON.parse(String(res.body)).id, 'msg_bounded_pool_retry');
 });
 
-test('AGY transient pool retry budget exhaustion defers to the next route source', async () => {
+test('AGY preserves the remaining request budget for the next route source', async () => {
   const res = createResCapture();
   const model = 'claude-opus-4-6-thinking';
   const accounts = [
@@ -3131,12 +3137,14 @@ test('AGY transient pool retry budget exhaustion defers to the next route source
     metrics: { totalFailures: 0, totalSuccess: 0, totalTimeouts: 0, providerFailures: {}, providerSuccess: {} }
   };
   let calls = 0;
+  let retryWaits = 0;
+  const attemptTimeouts = [];
 
   const result = await handleUpstreamPassthrough({
     options: {
       provider: 'agy',
       agyBaseUrl: 'https://daily-cloudcode-pa.googleapis.com/v1internal',
-      upstreamTimeoutMs: 3000,
+      upstreamTimeoutMs: 30_000,
       maxAttempts: 2,
       failureThreshold: 1,
       logRequests: false,
@@ -3149,7 +3157,7 @@ test('AGY transient pool retry budget exhaustion defers to the next route source
     bodyBuffer: Buffer.from(JSON.stringify({ model, messages: [{ role: 'user', content: 'ping' }] })),
     requestJson: { model, messages: [{ role: 'user', content: 'ping' }] },
     routeKey: 'POST /v1/messages',
-    requestStartedAt: Date.now() - 1000,
+    requestStartedAt: Date.now() - 20_000,
     cooldownMs: 1000,
     requestMeta: {
       requestId: 'agy-budget-fallback',
@@ -3174,26 +3182,118 @@ test('AGY transient pool retry budget exhaustion defers to the next route source
       fetchWithTimeout: async () => {
         throw new Error('should_not_call_raw_passthrough');
       },
-      fetchCodeAssistAnthropicMessage: async () => {
+      fetchCodeAssistAnthropicMessage: async (_options, _account, _request, timeoutMs) => {
         calls += 1;
+        attemptTimeouts.push(timeoutMs);
         const error = new Error(
           'HTTP 429 {"error":{"code":429,"message":"Resource has been exhausted (e.g. check quota).","status":"RESOURCE_EXHAUSTED"}}'
         );
         error.code = 'HTTP_429';
         throw error;
       },
-      waitForPoolRetry: async () => new Promise((resolve) => setTimeout(resolve, 2100)),
+      waitForPoolRetry: async () => {
+        retryWaits += 1;
+      },
       markProxyAccountFailure: () => {},
       markProxyAccountSuccess: () => {},
       appendProxyRequestLog: () => {}
     }
   });
 
-  assert.equal(calls, 2);
+  assert.equal(calls, 4);
+  assert.equal(retryWaits, 1);
+  assert.equal(attemptTimeouts.slice(2).every((timeoutMs) => (
+    timeoutMs > 0 && timeoutMs <= 5_000
+  )), true);
   assert.equal(result && result.retryAliasCandidate, true);
   assert.equal(result && result.statusCode, 429);
-  assert.equal(result && result.detail, 'transient_pool_retry_budget_exhausted');
+  assert.match(result && result.detail, /Resource has been exhausted/);
   assert.equal(res.headersSent, false);
+});
+
+test('structured sensitive-words rejection stops without account rotation or cooldown', async () => {
+  const res = createResCapture();
+  const account = {
+    accountRef: accountRef('codex-sensitive-rejection'),
+    provider: 'codex',
+    authType: 'api-key',
+    apiKeyMode: true,
+    accessToken: 'test-api-key',
+    baseUrl: 'https://relay.example/v1'
+  };
+  const state = {
+    accounts: { codex: [account] },
+    cursors: { codex: 0 },
+    metrics: {
+      totalFailures: 0,
+      totalSuccess: 0,
+      totalTimeouts: 0,
+      providerCounts: {},
+      providerSuccess: {},
+      providerFailures: {}
+    }
+  };
+  let upstreamCalls = 0;
+  let failureMarks = 0;
+
+  await handleUpstreamPassthrough({
+    options: {
+      provider: 'codex',
+      codexBaseUrl: 'https://relay.example/v1',
+      upstreamTimeoutMs: 3000,
+      maxAttempts: 3,
+      failureThreshold: 1,
+      logRequests: false
+    },
+    state,
+    req: {
+      url: '/v1/responses',
+      headers: { 'content-type': 'application/json' }
+    },
+    res,
+    method: 'POST',
+    bodyBuffer: Buffer.from('{"model":"gpt-5.6-sol","input":"ping"}'),
+    requestJson: { model: 'gpt-5.6-sol', input: 'ping' },
+    routeKey: 'POST /v1/responses',
+    requestStartedAt: Date.now(),
+    cooldownMs: 1000,
+    deps: {
+      chooseServerAccount: (pool) => pool[0],
+      resolveRequestProvider: () => 'codex',
+      pushMetricError: () => {},
+      writeJson: (response, code, payload) => {
+        response.statusCode = code;
+        response.setHeader('content-type', 'application/json');
+        response.end(JSON.stringify(payload));
+      },
+      fetchWithTimeout: async () => {
+        upstreamCalls += 1;
+        return {
+          status: 500,
+          headers: new Map([['content-type', 'application/json']]),
+          arrayBuffer: async () => Buffer.from(JSON.stringify({
+            error: {
+              message: 'sensitive words detected',
+              type: 'new_api_error',
+              code: 'sensitive_words_detected'
+            }
+          }))
+        };
+      },
+      markProxyAccountFailure: () => { failureMarks += 1; },
+      markProxyAccountSuccess: () => {},
+      appendProxyRequestLog: () => {}
+    }
+  });
+
+  assert.equal(upstreamCalls, 1);
+  assert.equal(failureMarks, 0);
+  assert.equal(res.statusCode, 403);
+  assert.deepEqual(JSON.parse(String(res.body)), {
+    ok: false,
+    error: 'upstream_failed',
+    detail: 'upstream_safety_rejected'
+  });
 });
 
 test('concurrent request success does not commit another request ambiguous account failures', async () => {

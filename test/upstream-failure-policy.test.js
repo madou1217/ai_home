@@ -320,6 +320,70 @@ test('failure policy treats generic upstream 5xx as model-scoped retry', () => {
   assert.equal(policy.shouldRetryAnotherAccount, true);
 });
 
+test('failure policy treats a structured sensitive-words code as request-scoped safety rejection', () => {
+  const policy = classifyUpstreamFailure({
+    provider: 'codex',
+    statusCode: 500,
+    body: JSON.stringify({
+      error: {
+        message: 'sensitive words detected',
+        type: 'new_api_error',
+        code: 'sensitive_words_detected'
+      }
+    }),
+    detail: 'upstream_500'
+  });
+
+  assert.equal(policy.kind, 'safety_rejected');
+  assert.equal(policy.scope, 'none');
+  assert.equal(policy.shouldMarkFailure, false);
+  assert.equal(policy.shouldRetryAnotherAccount, false);
+  assert.equal(policy.shouldPassthroughToClient, false);
+  assert.equal(policy.clientStatusCode, 403);
+  assert.equal(policy.detail, 'upstream_safety_rejected');
+});
+
+test('failure policy never infers safety rejection from free-form message text', () => {
+  const policy = classifyUpstreamFailure({
+    provider: 'codex',
+    statusCode: 500,
+    body: JSON.stringify({
+      error: {
+        message: 'a diagnostic mentioned sensitive_words_detected',
+        type: 'server_error',
+        code: 'upstream_failure'
+      }
+    }),
+    detail: 'upstream_500'
+  });
+
+  assert.equal(policy.kind, 'upstream_server_error');
+  assert.equal(policy.shouldRetryAnotherAccount, true);
+});
+
+test('failure policy recognizes a structured safety code inside a successful SSE failure envelope', () => {
+  const policy = classifyUpstreamFailure({
+    provider: 'codex',
+    statusCode: 0,
+    body: {
+      type: 'response.failed',
+      response: {
+        error: {
+          message: 'sensitive words detected',
+          code: 'sensitive_words_detected'
+        }
+      }
+    },
+    detail: 'structured response failure'
+  });
+
+  assert.equal(policy.kind, 'safety_rejected');
+  assert.equal(policy.scope, 'none');
+  assert.equal(policy.shouldMarkFailure, false);
+  assert.equal(policy.shouldRetryAnotherAccount, false);
+  assert.equal(policy.clientStatusCode, 403);
+});
+
 test('failure policy treats empty upstream model responses as model-scoped retry without account cooldown', () => {
   const err = new Error('empty_upstream_response');
   err.code = 'EMPTY_UPSTREAM_RESPONSE';

@@ -806,6 +806,190 @@ test('codex adapter returns openai error shape for native responses upstream err
   assert.equal(body.ok, undefined);
 });
 
+test('codex adapter preserves a structured safety rejection without rotating accounts', async () => {
+  const res = createResCapture();
+  const accounts = [
+    {
+      accountRef: accountRef('safety-1'),
+      accessToken: 'sk-live-1',
+      apiKeyMode: true,
+      authType: 'api-key',
+      openaiBaseUrl: 'https://relay-one.example.com/v1'
+    },
+    {
+      accountRef: accountRef('safety-2'),
+      accessToken: 'sk-live-2',
+      apiKeyMode: true,
+      authType: 'api-key',
+      openaiBaseUrl: 'https://relay-two.example.com/v1'
+    }
+  ];
+  const state = {
+    accounts: { codex: accounts },
+    cursors: { codex: 0 },
+    metrics: { totalFailures: 0, totalSuccess: 0, totalTimeouts: 0 }
+  };
+  let upstreamCalls = 0;
+  let failureMarks = 0;
+  const diagnosticLogs = [];
+
+  await handleCodexChatCompletions({
+    options: {
+      codexBaseUrl: 'https://chatgpt.com/backend-api/codex',
+      upstreamTimeoutMs: 3000,
+      maxAttempts: 3,
+      failureThreshold: 1,
+      logRequests: true
+    },
+    state,
+    req: { headers: { 'content-type': 'application/json' } },
+    res,
+    requestJson: {
+      model: 'gpt-5.6-sol',
+      stream: false,
+      input: 'ordinary product debugging request'
+    },
+    routeKey: 'POST /v1/responses',
+    requestStartedAt: Date.now(),
+    cooldownMs: 1000,
+    requestMeta: { sessionKey: 'safety', clientProtocol: 'openai_responses' },
+    deps: {
+      chooseServerAccount: (pool, _state, _key, selection = {}) => pool.find(
+        (account) => !selection.excludeAccountRefs.has(account.accountRef)
+      ) || null,
+      pushMetricError: () => {},
+      writeJson: (response, code, payload) => {
+        response.statusCode = code;
+        response.setHeader('content-type', 'application/json');
+        response.end(JSON.stringify(payload));
+      },
+      refreshCodexAccessToken: async () => ({ ok: true, refreshed: false, reason: 'api_key_mode' }),
+      fetchWithTimeout: async () => {
+        upstreamCalls += 1;
+        return {
+          ok: false,
+          status: 500,
+          headers: new Map([['content-type', 'application/json']]),
+          text: async () => JSON.stringify({
+            error: {
+              message: 'sensitive words detected',
+              type: 'new_api_error',
+              code: 'sensitive_words_detected'
+            }
+          })
+        };
+      },
+      markProxyAccountFailure: () => { failureMarks += 1; },
+      markProxyAccountSuccess: () => {},
+      appendProxyRequestLog: (entry) => diagnosticLogs.push(entry)
+    }
+  });
+
+  assert.equal(upstreamCalls, 1);
+  assert.equal(failureMarks, 0);
+  assert.equal(res.statusCode, 403);
+  const body = JSON.parse(String(res.body));
+  assert.deepEqual(body, {
+    error: {
+      message: 'The configured upstream rejected this request under its safety policy',
+      type: 'permission_error',
+      param: null,
+      code: 'upstream_safety_rejected'
+    }
+  });
+  assert.equal(String(res.body).includes('sensitive_words_detected'), false);
+  assert.equal(diagnosticLogs.length, 1);
+  assert.equal(diagnosticLogs[0].kind, 'request_safety_rejected');
+  assert.equal(diagnosticLogs[0].error, 'upstream_safety_rejected');
+  assert.equal(Object.hasOwn(diagnosticLogs[0], 'upstreamBody'), false);
+  assert.equal(Object.hasOwn(diagnosticLogs[0], 'upstreamError'), false);
+});
+
+test('codex adapter stops on a structured SSE safety rejection without rotating accounts', async () => {
+  const res = createResCapture();
+  const accounts = [
+    {
+      accountRef: accountRef('sse-safety-1'),
+      accessToken: 'sk-live-1',
+      apiKeyMode: true,
+      authType: 'api-key',
+      openaiBaseUrl: 'https://relay-one.example.com/v1'
+    },
+    {
+      accountRef: accountRef('sse-safety-2'),
+      accessToken: 'sk-live-2',
+      apiKeyMode: true,
+      authType: 'api-key',
+      openaiBaseUrl: 'https://relay-two.example.com/v1'
+    }
+  ];
+  const state = {
+    accounts: { codex: accounts },
+    cursors: { codex: 0 },
+    metrics: { totalFailures: 0, totalSuccess: 0, totalTimeouts: 0 }
+  };
+  let upstreamCalls = 0;
+  let failureMarks = 0;
+
+  await handleCodexChatCompletions({
+    options: {
+      codexBaseUrl: 'https://chatgpt.com/backend-api/codex',
+      upstreamTimeoutMs: 3000,
+      maxAttempts: 3,
+      failureThreshold: 1,
+      logRequests: false
+    },
+    state,
+    req: { headers: { 'content-type': 'application/json' } },
+    res,
+    requestJson: {
+      model: 'gpt-5.6-sol',
+      stream: false,
+      input: 'ordinary product debugging request'
+    },
+    routeKey: 'POST /v1/responses',
+    requestStartedAt: Date.now(),
+    cooldownMs: 1000,
+    requestMeta: { sessionKey: 'sse-safety', clientProtocol: 'openai_responses' },
+    deps: {
+      chooseServerAccount: (pool, _state, _key, selection = {}) => pool.find(
+        (account) => !selection.excludeAccountRefs.has(account.accountRef)
+      ) || null,
+      pushMetricError: () => {},
+      writeJson: (response, code, payload) => {
+        response.statusCode = code;
+        response.setHeader('content-type', 'application/json');
+        response.end(JSON.stringify(payload));
+      },
+      refreshCodexAccessToken: async () => ({ ok: true, refreshed: false, reason: 'api_key_mode' }),
+      fetchWithTimeout: async () => {
+        upstreamCalls += 1;
+        return {
+          ok: true,
+          status: 200,
+          headers: new Map([['content-type', 'text/event-stream']]),
+          text: async () => [
+            'data: {"type":"response.failed","response":{"error":{"message":"sensitive words detected","code":"sensitive_words_detected"}}}',
+            '',
+            'data: [DONE]',
+            ''
+          ].join('\n')
+        };
+      },
+      markProxyAccountFailure: () => { failureMarks += 1; },
+      markProxyAccountSuccess: () => {},
+      appendProxyRequestLog: () => {}
+    }
+  });
+
+  assert.equal(upstreamCalls, 1);
+  assert.equal(failureMarks, 0);
+  assert.equal(res.statusCode, 403);
+  const body = JSON.parse(String(res.body));
+  assert.equal(body.error.code, 'upstream_safety_rejected');
+  assert.equal(String(res.body).includes('sensitive_words_detected'), false);
+});
+
 test('codex adapter returns SSE invalid_request_error without retrying or cooling the account', async () => {
   const res = createResCapture();
   const account = {

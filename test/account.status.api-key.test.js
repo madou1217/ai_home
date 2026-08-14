@@ -257,6 +257,41 @@ test('Claude OAuth rejects only expired access tokens that cannot be refreshed',
   assert.equal(checkStatus('claude', activeRef).configured, true);
 });
 
+test('Kimi OAuth status is derived from DB-native credentials', (t) => {
+  // Regression guard: kimi once had no branch here, so every OAuth account
+  // silently fell through to configured=false ("no login state") at launch.
+  const { checkStatus, register } = createFixture(t);
+  const emptyRef = register('kimi', '60', {
+    nativeAuth: { credentials: {} }
+  });
+  const oauthRef = register('kimi', '61', {
+    nativeAuth: {
+      credentials: {
+        access_token: createJwt({ sub: 'd9v1ve1g4pngggebtacg', user_id: 'd9v1ve1g4pngggebtacg' }),
+        refresh_token: 'kimi-refresh',
+        token_type: 'Bearer',
+        scope: 'kimi-code'
+      }
+    }
+  });
+  // kimi access tokens live only minutes; a refresh token alone must count
+  const refreshOnlyRef = register('kimi', '62', {
+    nativeAuth: { credentials: { refresh_token: 'kimi-refresh-only' } }
+  });
+
+  assert.equal(checkStatus('kimi', emptyRef).configured, false);
+  assert.deepEqual(checkStatus('kimi', oauthRef), {
+    configured: true,
+    accountName: 'Kimi OAuth: d9v1...tacg',
+    source: 'app-state.db'
+  });
+  assert.deepEqual(checkStatus('kimi', refreshOnlyRef), {
+    configured: true,
+    accountName: 'Kimi OAuth',
+    source: 'app-state.db'
+  });
+});
+
 test('OpenCode auth status is derived from DB-native auth', (t) => {
   const { checkStatus, register } = createFixture(t);
   const accountRef = register('opencode', '50', {

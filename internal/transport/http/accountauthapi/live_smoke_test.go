@@ -595,7 +595,6 @@ func newLiveManagementHandler(
 	registrar, err := accountapp.NewRegistrar(
 		catalog,
 		store,
-		modelDiscovery,
 		clock,
 	)
 	if err != nil {
@@ -604,7 +603,6 @@ func newLiveManagementHandler(
 	reauthenticator, err := accountapp.NewReauthenticator(
 		catalog,
 		store,
-		modelDiscovery,
 		clock,
 	)
 	if err != nil {
@@ -647,7 +645,6 @@ func newLiveManagementHandler(
 	credentialRotator, err := accountapp.NewStaticCredentialRotator(
 		catalog,
 		store,
-		modelDiscovery,
 		clock,
 		usage,
 	)

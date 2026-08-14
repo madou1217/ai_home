@@ -93,17 +93,17 @@ func (discovery *ModelDiscovery) DiscoverModels(
 	return NormalizeDiscoveredModels(values)
 }
 
-// AccountCredentialReader 是模型刷新读取当前规范凭据的最小端口。
-type AccountCredentialReader interface {
-	GetCredential(
+// AccountCredentialSnapshotReader 是模型刷新读取当前规范凭据及 CAS 版本的最小端口。
+type AccountCredentialSnapshotReader interface {
+	GetCredentialSnapshot(
 		ctx context.Context,
 		accountRef accountcore.AccountRef,
-	) (Credential, error)
+	) (CredentialSnapshot, error)
 }
 
 // ModelManagement 编排查询、人工维护和显式远端刷新。
 type ModelManagement struct {
-	credentials AccountCredentialReader
+	credentials AccountCredentialSnapshotReader
 	models      AccountModelStore
 	discovery   *ModelDiscovery
 	clock       Clock
@@ -111,7 +111,7 @@ type ModelManagement struct {
 
 // NewModelManagement 创建只用于账号管理写路径的模型用例。
 func NewModelManagement(
-	credentials AccountCredentialReader,
+	credentials AccountCredentialSnapshotReader,
 	models AccountModelStore,
 	discovery *ModelDiscovery,
 	clock Clock,
@@ -146,15 +146,21 @@ func (management *ModelManagement) RefreshAccountModels(
 	if management == nil || !accountRef.IsValid() {
 		return nil, ErrInvalidAccountModel
 	}
-	credential, err := management.credentials.GetCredential(ctx, accountRef)
+	credentialSnapshot, err := management.credentials.GetCredentialSnapshot(
+		ctx,
+		accountRef,
+	)
 	if err != nil {
 		return nil, err
 	}
-	derivedRef, err := accountcore.DeriveAccountRef(credential)
-	if err != nil || derivedRef != accountRef {
+	if !credentialSnapshot.IsValid() ||
+		credentialSnapshot.AccountRef() != accountRef {
 		return nil, ErrInvalidAccountModel
 	}
-	models, err := management.discovery.DiscoverModels(ctx, credential)
+	models, err := management.discovery.DiscoverModels(
+		ctx,
+		credentialSnapshot.Credential(),
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -162,10 +168,11 @@ func (management *ModelManagement) RefreshAccountModels(
 	if err != nil {
 		return nil, err
 	}
-	return management.models.ReplaceDiscoveredModels(
+	return management.models.ReplaceDiscoveredModelsIfCredentialVersion(
 		ctx,
 		accountRef,
 		models,
+		credentialSnapshot.UpdatedAt(),
 		updatedAt,
 	)
 }

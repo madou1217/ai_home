@@ -57,6 +57,8 @@ type Dependencies struct {
 	Clock accountapp.Clock
 	// UpstreamAttemptLimit 为零时使用 Coordinator 的安全默认值。
 	UpstreamAttemptLimit int
+	// PoolRetries 是生产必需的 AGY 请求级有界第二轮策略。
+	PoolRetries *inferencegateway.RequestPoolRetryPolicy
 }
 
 // Components 保存 Canonical Executor 与其共享的账号征召器。
@@ -133,6 +135,7 @@ func NewComponents(dependencies Dependencies) (*Components, error) {
 			Attempts:             dependencies.Runtime,
 			ModelRefreshes:       dependencies.ModelRefreshes,
 			UpstreamAttemptLimit: dependencies.UpstreamAttemptLimit,
+			PoolRetries:          dependencies.PoolRetries,
 		},
 	)
 	if err != nil {
@@ -153,6 +156,7 @@ func validateDependencies(dependencies Dependencies) error {
 		len(dependencies.CredentialStrategies) == 0 ||
 		len(dependencies.Upstreams) == 0 ||
 		dependencies.ModelRefreshes == nil ||
+		dependencies.PoolRetries == nil ||
 		dependencies.Clock == nil {
 		return ErrInvalidDependencies
 	}

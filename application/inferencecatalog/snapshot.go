@@ -94,7 +94,7 @@ func (snapshot *Snapshot) isValid() bool {
 	if snapshot == nil ||
 		!snapshot.built ||
 		snapshot.routeCount < 0 ||
-		snapshot.routeCount != len(snapshot.models) {
+		snapshot.routeCount < len(snapshot.models) {
 		return false
 	}
 	if len(snapshot.models) == 0 {

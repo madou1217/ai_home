@@ -196,6 +196,75 @@ func TestModelRefreshCoordinatorBacksOffOnlyFailingProvider(t *testing.T) {
 	}
 }
 
+// TestModelRefreshCoordinatorRetriesFailedAccountAfterBackoff 验证瞬时存储或上游失败
+// 不会丢掉账号首次模型物化；同一代次必须在退避后自动重试直至成功。
+func TestModelRefreshCoordinatorRetriesFailedAccountAfterBackoff(t *testing.T) {
+	t.Parallel()
+
+	accountRef := testRefreshAccountRef(t, 13)
+	started := make(chan refreshInvocation, 2)
+	results := make(chan accountapp.ModelRefreshResult, 2)
+	var calls int
+	var callsMu sync.Mutex
+	refresher := &refreshCoordinatorStub{
+		execute: func(
+			_ context.Context,
+			actualRef accountcore.AccountRef,
+		) error {
+			started <- refreshInvocation{
+				accountRef: actualRef,
+				startedAt:  time.Now(),
+			}
+			callsMu.Lock()
+			defer callsMu.Unlock()
+			calls++
+			if calls == 1 {
+				return errors.New("synthetic transient model refresh failure")
+			}
+			return nil
+		},
+	}
+	baseBackoff := 40 * time.Millisecond
+	coordinator := newTestRefreshCoordinator(
+		t,
+		refresher,
+		map[string]int{"claude": 1},
+		baseBackoff,
+		func(result accountapp.ModelRefreshResult) {
+			results <- result
+		},
+	)
+	t.Cleanup(func() {
+		_ = coordinator.Close()
+	})
+	if err := coordinator.ScheduleModelRefresh(
+		context.Background(),
+		accountRef,
+		"claude",
+	); err != nil {
+		t.Fatalf("ScheduleModelRefresh() error = %v", err)
+	}
+
+	first := receiveRefreshInvocation(t, started)
+	firstResult := receiveRefreshResult(t, results)
+	if first.accountRef != accountRef || firstResult.Err == nil {
+		t.Fatalf("first=%#v result=%#v", first, firstResult)
+	}
+	second := receiveRefreshInvocation(t, started)
+	secondResult := receiveRefreshResult(t, results)
+	if second.accountRef != accountRef ||
+		second.startedAt.Sub(first.startedAt) < baseBackoff-10*time.Millisecond ||
+		secondResult.AccountRef != accountRef ||
+		secondResult.Err != nil {
+		t.Fatalf(
+			"second=%#v delay=%s result=%#v",
+			second,
+			second.startedAt.Sub(first.startedAt),
+			secondResult,
+		)
+	}
+}
+
 // TestModelRefreshCoordinatorTimesOutAndRejectsAfterClose 验证单任务超时和关闭边界。
 func TestModelRefreshCoordinatorTimesOutAndRejectsAfterClose(t *testing.T) {
 	t.Parallel()
@@ -260,6 +329,119 @@ func TestModelRefreshCoordinatorTimesOutAndRejectsAfterClose(t *testing.T) {
 		"codex",
 	); !errors.Is(err, accountapp.ErrModelRefreshCoordinatorClosed) {
 		t.Fatalf("closed ScheduleModelRefresh() error = %v", err)
+	}
+}
+
+// TestModelRefreshCoordinatorForgetAccountIsolatesOldGeneration 验证删除或凭据切换后，
+// 旧任务只能结束自己的代次，不能阻塞、清理或观测新任务。
+func TestModelRefreshCoordinatorForgetAccountIsolatesOldGeneration(
+	t *testing.T,
+) {
+	accountRef := testRefreshAccountRef(t, 30)
+	firstStarted := make(chan struct{})
+	firstCanceled := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	var releaseFirstOnce sync.Once
+	secondStarted := make(chan struct{})
+	releaseSecond := make(chan struct{})
+	var releaseSecondOnce sync.Once
+	var calls int
+	var callsMu sync.Mutex
+	refresher := &refreshCoordinatorStub{
+		execute: func(
+			ctx context.Context,
+			_ accountcore.AccountRef,
+		) error {
+			callsMu.Lock()
+			calls++
+			call := calls
+			callsMu.Unlock()
+			switch call {
+			case 1:
+				close(firstStarted)
+				<-ctx.Done()
+				close(firstCanceled)
+				<-releaseFirst
+				return ctx.Err()
+			case 2:
+				close(secondStarted)
+				<-releaseSecond
+				return nil
+			default:
+				return errors.New("旧任务清除了新任务的合并标记")
+			}
+		},
+	}
+	results := make(chan accountapp.ModelRefreshResult, 3)
+	coordinator := newTestRefreshCoordinator(
+		t,
+		refresher,
+		map[string]int{"codex": 2},
+		10*time.Millisecond,
+		func(result accountapp.ModelRefreshResult) {
+			results <- result
+		},
+	)
+	t.Cleanup(func() {
+		releaseSecondOnce.Do(func() { close(releaseSecond) })
+		releaseFirstOnce.Do(func() { close(releaseFirst) })
+		_ = coordinator.Close()
+	})
+	if err := coordinator.ScheduleModelRefresh(
+		context.Background(),
+		accountRef,
+		"codex",
+	); err != nil {
+		t.Fatalf("ScheduleModelRefresh(first) error = %v", err)
+	}
+	select {
+	case <-firstStarted:
+	case <-time.After(time.Second):
+		t.Fatal("等待旧模型刷新启动超时")
+	}
+
+	coordinator.ForgetAccount(accountRef)
+	select {
+	case <-firstCanceled:
+	case <-time.After(time.Second):
+		t.Fatal("ForgetAccount() 没有取消旧模型刷新")
+	}
+	if err := coordinator.ScheduleModelRefresh(
+		context.Background(),
+		accountRef,
+		"codex",
+	); err != nil {
+		t.Fatalf("ScheduleModelRefresh(second) error = %v", err)
+	}
+	select {
+	case <-secondStarted:
+	case <-time.After(time.Second):
+		t.Fatal("新代次模型刷新被旧任务占用阻塞")
+	}
+
+	releaseFirstOnce.Do(func() { close(releaseFirst) })
+	select {
+	case result := <-results:
+		t.Fatalf("旧代次产生了观察结果: %#v", result)
+	case <-time.After(20 * time.Millisecond):
+	}
+	if err := coordinator.ScheduleModelRefresh(
+		context.Background(),
+		accountRef,
+		"codex",
+	); err != nil {
+		t.Fatalf("ScheduleModelRefresh(coalesced second) error = %v", err)
+	}
+	releaseSecondOnce.Do(func() { close(releaseSecond) })
+	result := receiveRefreshResult(t, results)
+	if result.AccountRef != accountRef || result.Err != nil {
+		t.Fatalf("new generation result = %#v", result)
+	}
+	time.Sleep(20 * time.Millisecond)
+	callsMu.Lock()
+	defer callsMu.Unlock()
+	if calls != 2 {
+		t.Fatalf("RefreshAccountModels() calls = %d, want 2", calls)
 	}
 }
 

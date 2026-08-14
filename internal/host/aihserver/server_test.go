@@ -10,9 +10,11 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	"github.com/madou1217/ai_home/internal/host/aihserver"
 	"github.com/madou1217/ai_home/internal/testsupport/accountmodels"
@@ -135,6 +137,7 @@ func TestServerMountsSystemAndAccountRoutes(t *testing.T) {
 		} `json:"data"`
 	}
 	decodeJSON(t, created.body, &createdDocument)
+	waitForServerModels(t, client, baseURL, []string{"gpt-5.6-sol"})
 	selectionPayload := []byte(
 		`{"provider_id":"codex","account_ref":"` +
 			createdDocument.Data.AccountRef + `"}`,
@@ -254,6 +257,7 @@ func TestServerMountsSystemAndAccountRoutes(t *testing.T) {
 		nativeDocument.Data.SubscriptionKind != "pro" {
 		t.Fatalf("Go Server 原生导入响应错误: %#v", nativeDocument.Data)
 	}
+	waitForServerModels(t, client, baseURL, []string{"claude-sonnet-4"})
 	usageRefreshURL := baseURL + accountsapi.CollectionPath + "/" +
 		nativeDocument.Data.AccountRef + "/usage/refresh"
 	refreshedUsage := performRequest(
@@ -405,6 +409,76 @@ func TestServerMountsSystemAndAccountRoutes(t *testing.T) {
 	}
 }
 
+// TestServerDeletionDetachesPendingModelRefresh 验证删除提交后会取消模型刷新旧代次，
+// 相同业务身份重新导入时不会被旧 pending 合并掉。
+func TestServerDeletionDetachesPendingModelRefresh(t *testing.T) {
+	discoverer := &deletionAwareModelDiscoverer{
+		firstStarted:  make(chan struct{}),
+		firstCanceled: make(chan struct{}),
+		secondStarted: make(chan struct{}),
+	}
+	discoverers := accountmodels.NewDiscoverers()
+	discoverers[0] = discoverer
+	baseURL, client := startTestServerWithDiscoverers(t, discoverers)
+	apiKey := "synthetic-delete-refresh-generation-key"
+	accountRef := registerAPIKeyAccount(t, client, baseURL, "codex", apiKey)
+	select {
+	case <-discoverer.firstStarted:
+	case <-time.After(time.Second):
+		t.Fatal("等待删除前模型刷新启动超时")
+	}
+
+	deleted := performRequest(
+		t,
+		client,
+		http.MethodDelete,
+		baseURL+accountsapi.CollectionPath+"/"+accountRef,
+		testManagementKey,
+		nil,
+	)
+	assertStatus(t, deleted, http.StatusNoContent)
+	select {
+	case <-discoverer.firstCanceled:
+	case <-time.After(time.Second):
+		t.Fatal("删除账号没有取消模型刷新旧代次")
+	}
+	reimportedRef := registerAPIKeyAccount(t, client, baseURL, "codex", apiKey)
+	if reimportedRef != accountRef {
+		t.Fatalf("reimported account_ref = %s, want %s", reimportedRef, accountRef)
+	}
+	select {
+	case <-discoverer.secondStarted:
+	case <-time.After(time.Second):
+		t.Fatal("重导入模型刷新被删除前的 pending 任务吞掉")
+	}
+}
+
+// deletionAwareModelDiscoverer 暴露删除前后两个模型刷新代次。
+type deletionAwareModelDiscoverer struct {
+	calls         atomic.Int64
+	firstStarted  chan struct{}
+	firstCanceled chan struct{}
+	secondStarted chan struct{}
+}
+
+func (*deletionAwareModelDiscoverer) ProviderID() string {
+	return "codex"
+}
+
+func (discoverer *deletionAwareModelDiscoverer) DiscoverModels(
+	ctx context.Context,
+	_ accountapp.Credential,
+) ([]string, error) {
+	if discoverer.calls.Add(1) == 1 {
+		close(discoverer.firstStarted)
+		<-ctx.Done()
+		close(discoverer.firstCanceled)
+		return nil, ctx.Err()
+	}
+	close(discoverer.secondStarted)
+	return []string{"gpt-after-reimport"}, nil
+}
+
 // claudeNativeImportBody 创建 Host 完整链路使用的 Claude 官方 artifact。
 func claudeNativeImportBody(
 	t *testing.T,
@@ -519,12 +593,35 @@ func startTestServerWithInferenceClient(
 	inferenceClient aihserver.InferenceHTTPClient,
 ) (string, *http.Client) {
 	t.Helper()
+	return startTestServerWithOptions(
+		t,
+		accountmodels.NewDiscoverers(),
+		inferenceClient,
+	)
+}
+
+// startTestServerWithDiscoverers 创建可观察模型刷新生命周期的真实 Listener。
+func startTestServerWithDiscoverers(
+	t *testing.T,
+	discoverers []accountapp.ProviderModelDiscoverer,
+) (string, *http.Client) {
+	t.Helper()
+	return startTestServerWithOptions(t, discoverers, nil)
+}
+
+// startTestServerWithOptions 统一真实 Listener 的可注入测试依赖。
+func startTestServerWithOptions(
+	t *testing.T,
+	discoverers []accountapp.ProviderModelDiscoverer,
+	inferenceClient aihserver.InferenceHTTPClient,
+) (string, *http.Client) {
+	t.Helper()
 
 	server, err := aihserver.New(context.Background(), aihserver.Options{
 		AIHomeDir:           t.TempDir(),
 		ManagementKey:       func() string { return testManagementKey },
 		ClientKey:           func() string { return testClientKey },
-		ModelDiscoverers:    accountmodels.NewDiscoverers(),
+		ModelDiscoverers:    discoverers,
 		InferenceHTTPClient: inferenceClient,
 		UsageHTTPClient:     syntheticUsageHTTPClient{},
 		// 透传与 Canonical 在现实中指向同一个 Anthropic，测试同样共用替身；

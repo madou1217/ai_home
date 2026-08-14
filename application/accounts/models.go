@@ -29,11 +29,13 @@ type AccountModelStore interface {
 		ctx context.Context,
 		accountRef accountcore.AccountRef,
 	) ([]AccountModel, error)
-	// ReplaceDiscoveredModels 原子替换上游发现部分并保留人工覆盖。
-	ReplaceDiscoveredModels(
+	// ReplaceDiscoveredModelsIfCredentialVersion 仅在凭据版本未变化时原子替换
+	// 上游发现部分，并保留人工覆盖。
+	ReplaceDiscoveredModelsIfCredentialVersion(
 		ctx context.Context,
 		accountRef accountcore.AccountRef,
 		models []runtimecore.ModelID,
+		expectedCredentialUpdatedAt time.Time,
 		updatedAt time.Time,
 	) ([]AccountModel, error)
 	// SetManualModelPolicy 原子设置一个模型的人工覆盖策略。

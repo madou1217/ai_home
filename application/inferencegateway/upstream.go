@@ -77,10 +77,11 @@ func (invocation Invocation) Credential() accountapp.Credential {
 
 // AttemptFailure 同时保存客户端安全失败和运行态稳定分类。
 type AttemptFailure struct {
-	responseFailure inference.ResponseFailure
-	runtimeKind     runtimecore.FailureKind
-	retryAfter      time.Duration
-	blockDirective  runtimecore.BlockDirective
+	responseFailure                        inference.ResponseFailure
+	runtimeKind                            runtimecore.FailureKind
+	retryAfter                             time.Duration
+	blockDirective                         runtimecore.BlockDirective
+	deferAccountFailureUntilRequestOutcome bool
 }
 
 // AttemptFailureInput 集中声明公开失败、运行态分类与硬阻塞证据。
@@ -93,6 +94,9 @@ type AttemptFailureInput struct {
 	RetryAfter time.Duration
 	// BlockDirective 只允许用于 credential、quota 或 policy 硬阻塞。
 	BlockDirective runtimecore.BlockDirective
+	// DeferAccountFailureUntilRequestOutcome 表示当前失败可能属于请求或共享资源，
+	// Coordinator 必须等待同一请求的其他账号证据后再决定是否写账号运行态。
+	DeferAccountFailureUntilRequestOutcome bool
 }
 
 // NewAttemptFailure 创建不包含 Provider 原文或请求内容的失败结果。
@@ -106,6 +110,10 @@ func NewAttemptFailure(
 		input.RetryAfter > runtimecore.MaxCooldownHint ||
 		input.RetryAfter%time.Millisecond != 0 ||
 		input.RetryAfter > 0 && !policy.EntersCooldown() ||
+		input.DeferAccountFailureUntilRequestOutcome &&
+			(!input.ResponseFailure.Retryable() ||
+				policy.Action() == runtimecore.ActionNoStateChange ||
+				policy.BlocksRouting()) ||
 		!validAttemptBlockDirective(
 			policy,
 			input.RuntimeKind,
@@ -114,10 +122,11 @@ func NewAttemptFailure(
 		return AttemptFailure{}, ErrInvalidAttemptFailure
 	}
 	return AttemptFailure{
-		responseFailure: input.ResponseFailure,
-		runtimeKind:     input.RuntimeKind,
-		retryAfter:      input.RetryAfter,
-		blockDirective:  input.BlockDirective,
+		responseFailure:                        input.ResponseFailure,
+		runtimeKind:                            input.RuntimeKind,
+		retryAfter:                             input.RetryAfter,
+		blockDirective:                         input.BlockDirective,
+		deferAccountFailureUntilRequestOutcome: input.DeferAccountFailureUntilRequestOutcome,
 	}, nil
 }
 
@@ -141,14 +150,20 @@ func (failure AttemptFailure) BlockDirective() runtimecore.BlockDirective {
 	return failure.blockDirective
 }
 
+// DefersAccountFailureUntilRequestOutcome 判断账号状态是否需要请求内的兄弟账号证据。
+func (failure AttemptFailure) DefersAccountFailureUntilRequestOutcome() bool {
+	return failure.deferAccountFailureUntilRequestOutcome
+}
+
 // IsValid 重新检查跨 Adapter 传递后的失败不变量。
 func (failure AttemptFailure) IsValid() bool {
 	restored, err := NewAttemptFailure(
 		AttemptFailureInput{
-			ResponseFailure: failure.responseFailure,
-			RuntimeKind:     failure.runtimeKind,
-			RetryAfter:      failure.retryAfter,
-			BlockDirective:  failure.blockDirective,
+			ResponseFailure:                        failure.responseFailure,
+			RuntimeKind:                            failure.runtimeKind,
+			RetryAfter:                             failure.retryAfter,
+			BlockDirective:                         failure.blockDirective,
+			DeferAccountFailureUntilRequestOutcome: failure.deferAccountFailureUntilRequestOutcome,
 		},
 	)
 	return err == nil && restored == failure

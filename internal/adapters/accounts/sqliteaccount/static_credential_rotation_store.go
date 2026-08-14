@@ -46,11 +46,6 @@ func (store *Store) RotateStaticCredential(
 	if err != nil {
 		return accountcore.Account{}, accountapp.ErrInvalidStaticCredentialRotation
 	}
-	models := rotation.Models()
-	if !accountapp.ValidDiscoveredModelIDs(models) {
-		return accountcore.Account{}, accountapp.ErrInvalidStaticCredentialRotation
-	}
-
 	store.routingWrites.Lock()
 	defer store.routingWrites.Unlock()
 	connection, err := store.db.Conn(ctx)
@@ -126,31 +121,11 @@ func (store *Store) RotateStaticCredential(
 	); err != nil {
 		return accountcore.Account{}, err
 	}
-	if err := replaceDiscoveredModelRows(
-		ctx,
-		connection,
-		rotation.AccountRef(),
-		models,
-		updatedAtMS,
-	); err != nil {
-		return accountcore.Account{}, err
-	}
-	modelSnapshot, err := store.listAccountModels(
-		ctx,
-		connection,
-		rotation.AccountRef(),
-	)
-	if err != nil {
-		return accountcore.Account{}, err
-	}
 	if _, err := connection.ExecContext(ctx, "COMMIT"); err != nil {
 		if isBusyError(err) || isConstraintError(err) {
 			return accountcore.Account{}, accountapp.ErrStaticCredentialRotationConflict
 		}
 		return accountcore.Account{}, fmt.Errorf("提交静态凭据轮换事务失败: %w", err)
-	}
-	if err := store.publishAccountModels(rotation.AccountRef(), modelSnapshot); err != nil {
-		return accountcore.Account{}, err
 	}
 	record.account.updatedAtMS = updatedAtMS
 	return store.restoreAccount(record.account)

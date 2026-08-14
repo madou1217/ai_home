@@ -2,7 +2,6 @@ package aihserver
 
 import (
 	"context"
-	"crypto/rand"
 	"errors"
 	"io"
 	"net/http"
@@ -13,9 +12,9 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/inferencecatalog"
 	"github.com/madou1217/ai_home/application/inferencegateway"
-	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
+	agycodeassist "github.com/madou1217/ai_home/internal/adapters/agy/codeassist"
 	claudemessages "github.com/madou1217/ai_home/internal/adapters/claude/messages"
 	codexresponses "github.com/madou1217/ai_home/internal/adapters/codex/responses"
 	"github.com/madou1217/ai_home/internal/host/inferencehttp"
@@ -39,6 +38,7 @@ type inferenceComposition struct {
 	recruiter      *accountrouting.Recruiter
 	codexUpstream  *codexresponses.Adapter
 	claudeUpstream *claudemessages.Adapter
+	agyUpstream    *agycodeassist.Adapter
 	modelRefreshes inferencegateway.ModelRefreshScheduler
 	closers        []io.Closer
 }
@@ -49,6 +49,7 @@ type inferenceCompositionDependencies struct {
 	store                *sqliteaccount.Store
 	runtime              inferenceruntime.AccountRuntime
 	models               accountapp.AccountModelRefresher
+	modelRefreshes       inferencegateway.ModelRefreshScheduler
 	credentialRefresh    []accountcredentials.RefreshStrategy
 	authorizer           inferencehttp.Authorizer
 	httpClient           InferenceHTTPClient
@@ -91,6 +92,10 @@ func newInferenceComposition(
 	if err != nil {
 		return nil, err
 	}
+	agyAdapter, err := agycodeassist.NewAdapter(client, dependencies.clock)
+	if err != nil {
+		return nil, err
+	}
 	activeCatalog, err := inferencecatalog.NewAtomicCatalog(dependencies.clock)
 	if err != nil {
 		return nil, err
@@ -99,6 +104,7 @@ func newInferenceComposition(
 		dependencies.store,
 		codexAdapter,
 		claudeAdapter,
+		agyAdapter,
 	)
 	if err != nil {
 		return nil, err
@@ -120,26 +126,11 @@ func newInferenceComposition(
 	}
 	// 初次失败只关闭推理目录；账号管理仍可通过后续成功写入触发恢复。
 	_ = catalogRefresh.Refresh(ctx)
-
-	modelRefresh, err := accountapp.NewModelRefreshCoordinator(
-		accountapp.ModelRefreshCoordinatorOptions{
-			Catalog:   dependencies.catalog,
-			Refresher: dependencies.models,
-			ProviderConcurrency: map[string]int{
-				string(inference.ProviderCodex):  modelRefreshConcurrency,
-				string(inference.ProviderClaude): modelRefreshConcurrency,
-			},
-			RefreshTimeout: modelRefreshTimeout,
-			BaseBackoff:    modelRefreshBaseBackoff,
-			MaxBackoff:     modelRefreshMaxBackoff,
-			Clock:          dependencies.clock,
-			Random:         rand.Reader,
-		},
-	)
+	poolRetries, err := inferencegateway.NewDefaultRequestPoolRetryPolicy()
 	if err != nil {
 		return nil, err
 	}
-	composition.closers = append(composition.closers, modelRefresh)
+
 	runtimeComponents, err := inferenceruntime.NewComponents(inferenceruntime.Dependencies{
 		Catalog:              dependencies.catalog,
 		Store:                dependencies.store,
@@ -149,9 +140,11 @@ func newInferenceComposition(
 		Upstreams: []inferencegateway.UpstreamAdapter{
 			codexAdapter,
 			claudeAdapter,
+			agyAdapter,
 		},
-		ModelRefreshes: modelRefresh,
+		ModelRefreshes: dependencies.modelRefreshes,
 		Clock:          dependencies.clock,
+		PoolRetries:    poolRetries,
 	})
 	if err != nil {
 		return nil, err
@@ -170,7 +163,8 @@ func newInferenceComposition(
 	composition.recruiter = runtimeComponents.Recruiter()
 	composition.codexUpstream = codexAdapter
 	composition.claudeUpstream = claudeAdapter
-	composition.modelRefreshes = modelRefresh
+	composition.agyUpstream = agyAdapter
+	composition.modelRefreshes = dependencies.modelRefreshes
 	return composition, nil
 }
 
@@ -199,6 +193,7 @@ func validInferenceDependencies(
 		dependencies.store != nil &&
 		dependencies.runtime != nil &&
 		dependencies.models != nil &&
+		dependencies.modelRefreshes != nil &&
 		len(dependencies.credentialRefresh) > 0 &&
 		dependencies.authorizer != nil &&
 		dependencies.clock != nil

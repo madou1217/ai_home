@@ -184,5 +184,7 @@ func providerOwnsProtocol(
 	return (providerID == inference.ProviderCodex &&
 		protocolID == inference.ProtocolCodexResponses) ||
 		(providerID == inference.ProviderClaude &&
-			protocolID == inference.ProtocolClaudeMessages)
+			protocolID == inference.ProtocolClaudeMessages) ||
+		(providerID == inference.ProviderAgy &&
+			protocolID == inference.ProtocolAgyCodeAssist)
 }

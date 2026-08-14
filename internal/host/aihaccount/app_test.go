@@ -23,9 +23,9 @@ const (
 	syntheticEmail        = "import-case@example.invalid"
 )
 
-// TestImportOfficialLoginRegistersAndReportsRealCatalog 验证导入用例把官方登录态
-// 交给注册用例，并只回显公开账号信息与真实物化模型。
-func TestImportOfficialLoginRegistersAndReportsRealCatalog(t *testing.T) {
+// TestImportOfficialLoginRegistersWithoutWaitingForCatalog 验证导入用例把官方登录态
+// 交给注册用例，并允许模型目录由后台流程稍后物化。
+func TestImportOfficialLoginRegistersWithoutWaitingForCatalog(t *testing.T) {
 	t.Parallel()
 
 	registrar := &recordingRegistrar{t: t}
@@ -58,7 +58,6 @@ func TestImportOfficialLoginRegistersAndReportsRealCatalog(t *testing.T) {
 		result.AccountRef == "" {
 		t.Fatalf("result = %+v", result)
 	}
-	// 只有真实生效的模型才允许作为后续验收的候选模型。
 	if len(result.Models) != 2 ||
 		result.Models[0] != "claude-opus-4-1" ||
 		result.Models[1] != "claude-sonnet-4" {

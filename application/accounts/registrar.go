@@ -5,7 +5,6 @@ import (
 	"errors"
 	"time"
 
-	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
 )
@@ -24,7 +23,6 @@ type RegistrationRequest struct {
 	credential      Credential
 	profileSnapshot ProfileSnapshot
 	hasProfile      bool
-	models          []runtimecore.ModelID
 	registeredAt    time.Time
 }
 
@@ -33,10 +31,9 @@ func NewRegistrationRequest(
 	catalog *providers.Catalog,
 	credential Credential,
 	profile PublicProfile,
-	models []runtimecore.ModelID,
 	registeredAt time.Time,
 ) (RegistrationRequest, error) {
-	if catalog == nil || credential == nil || !ValidDiscoveredModelIDs(models) {
+	if catalog == nil || credential == nil {
 		return RegistrationRequest{}, ErrInvalidRegistration
 	}
 	providerID, found := catalog.CanonicalID(credential.ProviderID())
@@ -55,7 +52,6 @@ func NewRegistrationRequest(
 		accountRef:   accountRef,
 		providerID:   providerID,
 		credential:   credential,
-		models:       append([]runtimecore.ModelID(nil), models...),
 		registeredAt: normalizedTime,
 	}
 	if profile == nil {
@@ -92,11 +88,6 @@ func (request RegistrationRequest) HasProfile() bool {
 	return request.hasProfile
 }
 
-// Models 返回注册事务必须同时保存的排序模型发现结果副本。
-func (request RegistrationRequest) Models() []runtimecore.ModelID {
-	return append([]runtimecore.ModelID(nil), request.models...)
-}
-
 // ProfileSnapshot 返回需要与账号、凭据一起写入的公开资料快照。
 func (request RegistrationRequest) ProfileSnapshot() ProfileSnapshot {
 	return request.profileSnapshot
@@ -120,7 +111,6 @@ func (request RegistrationRequest) IsValid() bool {
 		timeErr != nil ||
 		accountRef != request.accountRef ||
 		request.credential.ProviderID() != request.providerID ||
-		!ValidDiscoveredModelIDs(request.models) ||
 		!normalizedTime.Equal(request.registeredAt) {
 		return false
 	}
@@ -147,7 +137,6 @@ type RegistrationStore interface {
 type Registrar struct {
 	catalog *providers.Catalog
 	store   RegistrationStore
-	models  *ModelDiscovery
 	clock   Clock
 }
 
@@ -155,16 +144,14 @@ type Registrar struct {
 func NewRegistrar(
 	catalog *providers.Catalog,
 	store RegistrationStore,
-	models *ModelDiscovery,
 	clock Clock,
 ) (*Registrar, error) {
-	if catalog == nil || store == nil || models == nil || clock == nil {
+	if catalog == nil || store == nil || clock == nil {
 		return nil, ErrInvalidRegistrarDependencies
 	}
 	return &Registrar{
 		catalog: catalog,
 		store:   store,
-		models:  models,
 		clock:   clock,
 	}, nil
 }
@@ -182,15 +169,10 @@ func (registrar *Registrar) Register(
 	); err != nil {
 		return accountcore.Account{}, err
 	}
-	models, err := registrar.models.DiscoverModels(ctx, credential)
-	if err != nil {
-		return accountcore.Account{}, err
-	}
 	request, err := NewRegistrationRequest(
 		registrar.catalog,
 		credential,
 		profile,
-		models,
 		registrar.clock(),
 	)
 	if err != nil {

@@ -39,7 +39,6 @@ func TestRegistrarBuildsIdentityBoundRequest(t *testing.T) {
 	registrar, err := accountapp.NewRegistrar(
 		catalog,
 		store,
-		newTestModelDiscovery(t, catalog),
 		func() time.Time {
 			clockCalls++
 			return observedAt
@@ -98,11 +97,9 @@ func TestRegistrarRejectsMismatchedProfileBeforePersistence(t *testing.T) {
 	}
 	store := &registrationStoreStub{}
 	catalog := testCatalog(t)
-	discoveryCalls := 0
 	registrar, err := accountapp.NewRegistrar(
 		catalog,
 		store,
-		newObservedModelDiscovery(t, catalog, &discoveryCalls),
 		func() time.Time {
 			return time.Date(2026, time.July, 27, 0, 0, 0, 0, time.UTC)
 		},
@@ -118,12 +115,8 @@ func TestRegistrarRejectsMismatchedProfileBeforePersistence(t *testing.T) {
 	); !errors.Is(err, accountapp.ErrInvalidRegistration) {
 		t.Fatalf("Register() error = %v, want ErrInvalidRegistration", err)
 	}
-	if store.calls != 0 || discoveryCalls != 0 {
-		t.Fatalf(
-			"mismatched profile reached external port: store=%d discovery=%d",
-			store.calls,
-			discoveryCalls,
-		)
+	if store.calls != 0 {
+		t.Fatalf("mismatched profile reached persistence: store=%d", store.calls)
 	}
 }
 
@@ -137,13 +130,11 @@ func TestRegistrarRejectsInvalidDependencies(t *testing.T) {
 		name    string
 		catalog bool
 		store   accountapp.RegistrationStore
-		models  bool
 		clock   accountapp.Clock
 	}{
-		{name: "missing catalog", store: store, models: true, clock: clock},
-		{name: "missing store", catalog: true, models: true, clock: clock},
-		{name: "missing models", catalog: true, store: store, clock: clock},
-		{name: "missing clock", catalog: true, store: store, models: true},
+		{name: "missing catalog", store: store, clock: clock},
+		{name: "missing store", catalog: true, clock: clock},
+		{name: "missing clock", catalog: true, store: store},
 	}
 	for _, test := range tests {
 		test := test
@@ -154,14 +145,9 @@ func TestRegistrarRejectsInvalidDependencies(t *testing.T) {
 			if !test.catalog {
 				catalog = nil
 			}
-			var models *accountapp.ModelDiscovery
-			if test.models && catalog != nil {
-				models = newTestModelDiscovery(t, catalog)
-			}
 			_, err := accountapp.NewRegistrar(
 				catalog,
 				test.store,
-				models,
 				test.clock,
 			)
 			if !errors.Is(err, accountapp.ErrInvalidRegistrarDependencies) {

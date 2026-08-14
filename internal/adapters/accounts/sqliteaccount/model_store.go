@@ -39,6 +39,44 @@ func (store *Store) ReplaceDiscoveredModels(
 	models []runtimecore.ModelID,
 	updatedAt time.Time,
 ) ([]accountapp.AccountModel, error) {
+	return store.replaceDiscoveredModels(
+		ctx,
+		accountRef,
+		models,
+		time.Time{},
+		updatedAt,
+	)
+}
+
+// ReplaceDiscoveredModelsIfCredentialVersion 仅在模型发现使用的凭据仍为当前版本时，
+// 原子替换上游发现标记，防止旧凭据结果覆盖轮换或重登后的模型快照。
+func (store *Store) ReplaceDiscoveredModelsIfCredentialVersion(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+	models []runtimecore.ModelID,
+	expectedCredentialUpdatedAt time.Time,
+	updatedAt time.Time,
+) ([]accountapp.AccountModel, error) {
+	if !validPersistedModelTime(expectedCredentialUpdatedAt) {
+		return nil, accountapp.ErrInvalidDiscoveredModels
+	}
+	return store.replaceDiscoveredModels(
+		ctx,
+		accountRef,
+		models,
+		expectedCredentialUpdatedAt,
+		updatedAt,
+	)
+}
+
+// replaceDiscoveredModels 复用同一模型替换事务；非零凭据版本启用 CAS 门禁。
+func (store *Store) replaceDiscoveredModels(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+	models []runtimecore.ModelID,
+	expectedCredentialUpdatedAt time.Time,
+	updatedAt time.Time,
+) ([]accountapp.AccountModel, error) {
 	if store == nil ||
 		store.db == nil ||
 		store.routes == nil ||
@@ -63,6 +101,20 @@ func (store *Store) ReplaceDiscoveredModels(
 	if !exists {
 		return nil, accountapp.ErrAccountNotFound
 	}
+	if !expectedCredentialUpdatedAt.IsZero() {
+		matched, err := matchesCredentialVersion(
+			ctx,
+			transaction,
+			accountRef,
+			expectedCredentialUpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if !matched {
+			return nil, accountapp.ErrCredentialConflict
+		}
+	}
 	if err := replaceDiscoveredModelRows(
 		ctx,
 		transaction,
@@ -83,6 +135,33 @@ func (store *Store) ReplaceDiscoveredModels(
 		return nil, err
 	}
 	return snapshot, nil
+}
+
+// matchesCredentialVersion 在当前写事务内锁定并核对凭据版本。
+func matchesCredentialVersion(
+	ctx context.Context,
+	executor statementExecutor,
+	accountRef accountcore.AccountRef,
+	expectedUpdatedAt time.Time,
+) (bool, error) {
+	const statement = `
+		UPDATE account_credentials
+		SET updated_at_ms = updated_at_ms
+		WHERE account_ref = ? AND updated_at_ms = ?`
+	result, err := executor.ExecContext(
+		ctx,
+		statement,
+		accountRef.String(),
+		expectedUpdatedAt.UnixMilli(),
+	)
+	if err != nil {
+		return false, fmt.Errorf("核对账号凭据版本失败: %w", err)
+	}
+	matched, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("读取账号凭据版本匹配结果失败: %w", err)
+	}
+	return matched == 1, nil
 }
 
 // replaceDiscoveredModelRows 在调用方事务内替换发现标记并保留人工覆盖。

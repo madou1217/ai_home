@@ -224,9 +224,10 @@ func TestAttemptFailureRequiresConsistentRuntimeHint(t *testing.T) {
 	}
 	failure, err := inferencegateway.NewAttemptFailure(
 		inferencegateway.AttemptFailureInput{
-			ResponseFailure: responseFailure,
-			RuntimeKind:     runtimecore.FailureRateLimited,
-			RetryAfter:      1500 * time.Millisecond,
+			ResponseFailure:                        responseFailure,
+			RuntimeKind:                            runtimecore.FailureRateLimited,
+			RetryAfter:                             1500 * time.Millisecond,
+			DeferAccountFailureUntilRequestOutcome: true,
 		},
 	)
 	if err != nil {
@@ -236,6 +237,7 @@ func TestAttemptFailureRequiresConsistentRuntimeHint(t *testing.T) {
 		failure.ResponseFailure().Code() != responseFailure.Code() ||
 		failure.RuntimeKind() != runtimecore.FailureRateLimited ||
 		failure.RetryAfter() != 1500*time.Millisecond ||
+		!failure.DefersAccountFailureUntilRequestOutcome() ||
 		!failure.BlockDirective().IsZero() {
 		t.Fatalf("failure = %#v", failure)
 	}

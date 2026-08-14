@@ -87,7 +87,6 @@ func (builder *Builder) Build(ctx context.Context) (*Snapshot, error) {
 	if err := validateModelSnapshot(models); err != nil {
 		return nil, err
 	}
-	models = unambiguousModels(models)
 	if len(models) == 0 {
 		return newSnapshot(nil, nil, 0), nil
 	}
@@ -103,7 +102,7 @@ func (builder *Builder) Build(ctx context.Context) (*Snapshot, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrInvalidProviderRoute, err)
 	}
-	return newSnapshot(routes, models, len(rules)), nil
+	return newSnapshot(routes, uniqueModels(models), len(rules)), nil
 }
 
 // buildRule 让 Provider Factory 决定上游协议和能力，Builder 只维护精确匹配。
@@ -166,23 +165,17 @@ func validateModelSnapshot(models []accountapp.RoutableModel) error {
 	return nil
 }
 
-// unambiguousModels 在线性有序快照中隔离同名跨 Provider 关系。
-//
-// 没有显式路由策略时不能猜测 Provider，但一个歧义模型也不应阻断其他独立模型。
-func unambiguousModels(
+// uniqueModels 对展示目录按模型去重；真实 route 仍保留每个 Provider 的候选。
+// RouteCatalog 已显式保存 Provider、协议和声明顺序，因此同名跨 Provider 不是
+// 猜测或歧义，而是 Coordinator 可顺序执行的候选池。
+func uniqueModels(
 	models []accountapp.RoutableModel,
 ) []accountapp.RoutableModel {
 	filtered := make([]accountapp.RoutableModel, 0, len(models))
-	for start := 0; start < len(models); {
-		end := start + 1
-		modelID := models[start].ModelID()
-		for end < len(models) && models[end].ModelID() == modelID {
-			end++
+	for _, model := range models {
+		if len(filtered) == 0 || filtered[len(filtered)-1].ModelID() != model.ModelID() {
+			filtered = append(filtered, model)
 		}
-		if end == start+1 {
-			filtered = append(filtered, models[start])
-		}
-		start = end
 	}
 	return filtered
 }

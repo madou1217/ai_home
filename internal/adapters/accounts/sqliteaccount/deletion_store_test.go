@@ -18,14 +18,9 @@ func TestStoreDeletesAccountGraphAndPublishesRoutingSnapshot(t *testing.T) {
 
 	ctx := context.Background()
 	store := openTestStore(t)
-	discovery, err := accountmodels.NewDiscovery(store.catalog)
-	if err != nil {
-		t.Fatalf("accountmodels.NewDiscovery() error = %v", err)
-	}
 	registrar, err := accountapp.NewRegistrar(
 		store.catalog,
 		store,
-		discovery,
 		testAccountTime,
 	)
 	if err != nil {
@@ -38,6 +33,17 @@ func TestStoreDeletesAccountGraphAndPublishesRoutingSnapshot(t *testing.T) {
 	)
 	if err != nil {
 		t.Fatalf("Register() error = %v", err)
+	}
+	discovery, err := accountmodels.NewDiscovery(store.catalog)
+	if err != nil {
+		t.Fatalf("accountmodels.NewDiscovery() error = %v", err)
+	}
+	modelManagement, err := accountapp.NewModelManagement(store, store, discovery, testAccountTime)
+	if err != nil {
+		t.Fatalf("NewModelManagement() error = %v", err)
+	}
+	if _, err := modelManagement.RefreshAccountModels(ctx, account.Ref()); err != nil {
+		t.Fatalf("RefreshAccountModels() error = %v", err)
 	}
 	snapshot := newUsageStoreSnapshot(
 		t,
@@ -107,14 +113,9 @@ func TestStoreDeletionAllowsCurrentMaxAliasReuse(t *testing.T) {
 
 	ctx := context.Background()
 	store := openTestStore(t)
-	discovery, err := accountmodels.NewDiscovery(store.catalog)
-	if err != nil {
-		t.Fatalf("accountmodels.NewDiscovery() error = %v", err)
-	}
 	registrar, err := accountapp.NewRegistrar(
 		store.catalog,
 		store,
-		discovery,
 		func() time.Time { return testAccountTime() },
 	)
 	if err != nil {

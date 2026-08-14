@@ -30,7 +30,7 @@ func TestProtocolIdentifiersKeepProviderAndWireProtocolIndependent(t *testing.T)
 func TestProtocolIdentifiersRejectNonCanonicalValues(t *testing.T) {
 	t.Parallel()
 
-	invalidProviders := []string{"", " Codex", "CODEX", "agy", "claude\n"}
+	invalidProviders := []string{"", " Codex", "CODEX", "antigravity", "claude\n"}
 	for _, value := range invalidProviders {
 		value := value
 		t.Run("provider_"+value, func(t *testing.T) {

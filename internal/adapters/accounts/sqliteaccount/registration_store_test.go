@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
-	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 )
 
@@ -259,24 +258,12 @@ func newRegistrationRequest(
 		store.catalog,
 		credential,
 		profile,
-		testDiscoveredModels(t),
 		testAccountTime(),
 	)
 	if err != nil {
 		t.Fatalf("NewRegistrationRequest() error = %v", err)
 	}
 	return request
-}
-
-// testDiscoveredModels 返回持久化事务测试使用的规范模型集合。
-func testDiscoveredModels(t *testing.T) []runtimecore.ModelID {
-	t.Helper()
-
-	models, err := accountapp.NormalizeDiscoveredModels([]string{"test-model"})
-	if err != nil {
-		t.Fatalf("NormalizeDiscoveredModels() error = %v", err)
-	}
-	return models
 }
 
 // registerNewConcurrently 让注册命令同时竞争 Provider 别名分配。

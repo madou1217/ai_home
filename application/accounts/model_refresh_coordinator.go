@@ -78,17 +78,25 @@ type ModelRefreshCoordinator struct {
 	ctx         context.Context
 	cancel      context.CancelFunc
 	providers   map[string]*modelRefreshProviderQueue
-	pending     map[accountcore.AccountRef]string
+	pending     map[accountcore.AccountRef]*modelRefreshTask
 	closed      bool
 	workers     sync.WaitGroup
 }
 
 // modelRefreshProviderQueue 保存一个 Provider 的队列、通知和共享退避状态。
 type modelRefreshProviderQueue struct {
-	tasks         []accountcore.AccountRef
+	tasks         []*modelRefreshTask
 	notify        chan struct{}
 	failures      uint32
 	nextAttemptAt time.Time
+}
+
+// modelRefreshTask 是一个账号刷新代次在队列和执行中的唯一身份。
+type modelRefreshTask struct {
+	accountRef accountcore.AccountRef
+	providerID string
+	cancel     context.CancelFunc
+	retrying   bool
 }
 
 // NewModelRefreshCoordinator 创建立即启动 Provider worker 的异步协调器。
@@ -111,7 +119,7 @@ func NewModelRefreshCoordinator(
 		ctx:         ctx,
 		cancel:      cancel,
 		providers:   make(map[string]*modelRefreshProviderQueue),
-		pending:     make(map[accountcore.AccountRef]string),
+		pending:     make(map[accountcore.AccountRef]*modelRefreshTask),
 	}
 	for providerID, concurrency := range options.ProviderConcurrency {
 		queue := &modelRefreshProviderQueue{notify: make(chan struct{})}
@@ -154,10 +162,55 @@ func (coordinator *ModelRefreshCoordinator) ScheduleModelRefresh(
 	if _, pending := coordinator.pending[accountRef]; pending {
 		return nil
 	}
-	coordinator.pending[accountRef] = providerID
-	queue.tasks = append(queue.tasks, accountRef)
+	task := &modelRefreshTask{
+		accountRef: accountRef,
+		providerID: providerID,
+	}
+	coordinator.pending[accountRef] = task
+	queue.tasks = insertFreshModelRefreshTask(queue.tasks, task)
 	signalModelRefreshQueue(queue)
 	return nil
+}
+
+// insertFreshModelRefreshTask 保持首次刷新 FIFO，并让新账号排在失败重试之前。
+func insertFreshModelRefreshTask(
+	tasks []*modelRefreshTask,
+	task *modelRefreshTask,
+) []*modelRefreshTask {
+	index := len(tasks)
+	for candidateIndex, candidate := range tasks {
+		if candidate != nil && candidate.retrying {
+			index = candidateIndex
+			break
+		}
+	}
+	tasks = append(tasks, nil)
+	copy(tasks[index+1:], tasks[index:])
+	tasks[index] = task
+	return tasks
+}
+
+// ForgetAccount 取消并分离账号当前刷新，使同身份重导入或凭据切换可以创建新代次。
+//
+// 队列和执行中的旧任务依靠指针身份延迟失效，不能清理或退避新代次。
+func (coordinator *ModelRefreshCoordinator) ForgetAccount(
+	accountRef accountcore.AccountRef,
+) {
+	if coordinator == nil || !accountRef.IsValid() {
+		return
+	}
+	coordinator.mu.Lock()
+	task := coordinator.pending[accountRef]
+	if task == nil {
+		coordinator.mu.Unlock()
+		return
+	}
+	delete(coordinator.pending, accountRef)
+	cancel := task.cancel
+	coordinator.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
 }
 
 // Close 停止接收新任务并等待所有 Provider worker 退出。
@@ -187,38 +240,33 @@ func (coordinator *ModelRefreshCoordinator) runProviderWorker(
 ) {
 	defer coordinator.workers.Done()
 	for {
-		accountRef, available := coordinator.nextModelRefreshTask(queue)
+		task, refreshCtx, available := coordinator.nextModelRefreshTask(queue)
 		if !available {
 			return
 		}
-		refreshCtx, cancel := context.WithTimeout(
-			coordinator.ctx,
-			coordinator.timeout,
-		)
 		_, err := coordinator.refresher.RefreshAccountModels(
 			refreshCtx,
-			accountRef,
+			task.accountRef,
 		)
-		cancel()
-		coordinator.finishModelRefresh(providerID, queue, accountRef, err)
+		coordinator.finishModelRefresh(providerID, queue, task, err)
 	}
 }
 
 // nextModelRefreshTask 等待队列或 Provider 退避截止，并弹出一个任务。
 func (coordinator *ModelRefreshCoordinator) nextModelRefreshTask(
 	queue *modelRefreshProviderQueue,
-) (accountcore.AccountRef, bool) {
+) (*modelRefreshTask, context.Context, bool) {
 	for {
 		coordinator.mu.Lock()
 		if coordinator.closed {
 			coordinator.mu.Unlock()
-			return "", false
+			return nil, nil, false
 		}
 		if len(queue.tasks) == 0 {
 			notify := queue.notify
 			coordinator.mu.Unlock()
 			if !waitForModelRefreshSignal(coordinator.ctx, notify, 0) {
-				return "", false
+				return nil, nil, false
 			}
 			continue
 		}
@@ -227,16 +275,25 @@ func (coordinator *ModelRefreshCoordinator) nextModelRefreshTask(
 			notify := queue.notify
 			coordinator.mu.Unlock()
 			if !waitForModelRefreshSignal(coordinator.ctx, notify, wait) {
-				return "", false
+				return nil, nil, false
 			}
 			continue
 		}
-		accountRef := queue.tasks[0]
+		task := queue.tasks[0]
 		copy(queue.tasks, queue.tasks[1:])
-		queue.tasks[len(queue.tasks)-1] = ""
+		queue.tasks[len(queue.tasks)-1] = nil
 		queue.tasks = queue.tasks[:len(queue.tasks)-1]
+		if task == nil || coordinator.pending[task.accountRef] != task {
+			coordinator.mu.Unlock()
+			continue
+		}
+		refreshCtx, cancel := context.WithTimeout(
+			coordinator.ctx,
+			coordinator.timeout,
+		)
+		task.cancel = cancel
 		coordinator.mu.Unlock()
-		return accountRef, true
+		return task, refreshCtx, true
 	}
 }
 
@@ -244,25 +301,44 @@ func (coordinator *ModelRefreshCoordinator) nextModelRefreshTask(
 func (coordinator *ModelRefreshCoordinator) finishModelRefresh(
 	providerID string,
 	queue *modelRefreshProviderQueue,
-	accountRef accountcore.AccountRef,
+	task *modelRefreshTask,
 	refreshErr error,
 ) {
 	coordinator.mu.Lock()
-	delete(coordinator.pending, accountRef)
+	var cancel context.CancelFunc
+	if task != nil && task.cancel != nil {
+		cancel = task.cancel
+		task.cancel = nil
+	}
+	if task == nil ||
+		task.providerID != providerID ||
+		coordinator.pending[task.accountRef] != task {
+		coordinator.mu.Unlock()
+		if cancel != nil {
+			cancel()
+		}
+		return
+	}
 	if refreshErr == nil {
+		delete(coordinator.pending, task.accountRef)
 		queue.failures = 0
 		queue.nextAttemptAt = time.Time{}
 	} else {
 		queue.failures++
 		delay := coordinator.modelRefreshBackoff(queue.failures)
 		queue.nextAttemptAt = coordinator.clock().Add(delay)
+		task.retrying = true
+		queue.tasks = append(queue.tasks, task)
 	}
 	signalModelRefreshQueue(queue)
 	observer := coordinator.observer
 	coordinator.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
 	if observer != nil {
 		observer(ModelRefreshResult{
-			AccountRef: accountRef,
+			AccountRef: task.accountRef,
 			ProviderID: providerID,
 			Err:        refreshErr,
 		})

@@ -16,7 +16,9 @@ import (
 	"github.com/madou1217/ai_home/application/claudegateway"
 	"github.com/madou1217/ai_home/application/clauderelay"
 	"github.com/madou1217/ai_home/application/codexwebsocket"
+	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/adapters/accountauth/agyoauth"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/claudeoauth"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/codexoauth"
 	"github.com/madou1217/ai_home/internal/adapters/accountruntime/accountrecovery"
@@ -25,6 +27,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sub2api"
+	agycodeassist "github.com/madou1217/ai_home/internal/adapters/agy/codeassist"
 	claudemessages "github.com/madou1217/ai_home/internal/adapters/claude/messages"
 	"github.com/madou1217/ai_home/internal/adapters/claude/transportpolicy"
 	codexresponses "github.com/madou1217/ai_home/internal/adapters/codex/responses"
@@ -136,15 +139,18 @@ func newHandlers(
 	upstreamDecodeErrors func(error),
 ) (_ serverHandlers, _ []io.Closer, resultErr error) {
 	var usage *usageComposition
+	var modelRefresh *accountapp.ModelRefreshCoordinator
 	defer func() {
 		if resultErr != nil && usage != nil {
 			_ = usage.Close()
+		}
+		if resultErr != nil && modelRefresh != nil {
+			_ = modelRefresh.Close()
 		}
 	}()
 	registrar, err := accountapp.NewRegistrar(
 		catalog,
 		store,
-		modelDiscovery,
 		time.Now,
 	)
 	if err != nil {
@@ -153,7 +159,6 @@ func newHandlers(
 	reauthenticator, err := accountapp.NewReauthenticator(
 		catalog,
 		store,
-		modelDiscovery,
 		time.Now,
 	)
 	if err != nil {
@@ -217,6 +222,25 @@ func newHandlers(
 			err,
 		)
 	}
+	modelRefresh, err = accountapp.NewModelRefreshCoordinator(
+		accountapp.ModelRefreshCoordinatorOptions{
+			Catalog:   catalog,
+			Refresher: recoveringModelManagement,
+			ProviderConcurrency: map[string]int{
+				string(inference.ProviderCodex):  modelRefreshConcurrency,
+				string(inference.ProviderClaude): modelRefreshConcurrency,
+				string(inference.ProviderAgy):    modelRefreshConcurrency,
+			},
+			RefreshTimeout: modelRefreshTimeout,
+			BaseBackoff:    modelRefreshBaseBackoff,
+			MaxBackoff:     modelRefreshMaxBackoff,
+			Clock:          time.Now,
+			Random:         rand.Reader,
+		},
+	)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建账号模型异步刷新协调器失败: %w", err)
+	}
 	oauthClient := &http.Client{
 		Timeout:       oauthHTTPTimeout,
 		CheckRedirect: rejectOAuthRedirect,
@@ -229,12 +253,17 @@ func newHandlers(
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建 Claude OAuth Strategy 失败: %w", err)
 	}
+	agyProvider, err := agyoauth.New(oauthClient)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建 AGY OAuth Refresh Strategy 失败: %w", err)
+	}
 	credentials, err := accountcredentials.NewResolver(
 		accountcredentials.Dependencies{
 			Store: store,
 			Strategies: []accountcredentials.RefreshStrategy{
 				codexProvider,
 				claudeProvider,
+				agyProvider,
 			},
 			Clock: time.Now,
 		},
@@ -260,7 +289,6 @@ func newHandlers(
 	credentialRotator, err := accountapp.NewStaticCredentialRotator(
 		catalog,
 		store,
-		modelDiscovery,
 		time.Now,
 		usage,
 		accountRuntime,
@@ -268,24 +296,48 @@ func newHandlers(
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建静态账号凭据轮换用例失败: %w", err)
 	}
+	modelRefreshingCredentialRotator, err :=
+		accountapp.NewStaticCredentialRotationModelRefreshDecorator(
+			credentialRotator,
+			modelRefresh,
+		)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建凭据轮换模型刷新边界失败: %w", err)
+	}
 	deleter, err := accountapp.NewDeleter(
 		store,
+		modelRefresh,
 		usage,
 		accountRuntime,
 	)
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建账号删除用例失败: %w", err)
 	}
-	scheduledRegistrar, err := usageapp.NewRegistrationDecorator(
+	modelRefreshingRegistrar, err := accountapp.NewRegistrationModelRefreshDecorator(
 		registrar,
+		modelRefresh,
+	)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建注册模型刷新边界失败: %w", err)
+	}
+	scheduledRegistrar, err := usageapp.NewRegistrationDecorator(
+		modelRefreshingRegistrar,
 		usage.coordinator,
 	)
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建注册额度刷新边界失败: %w", err)
 	}
+	modelRefreshingReauthenticator, err :=
+		accountapp.NewReauthenticationModelRefreshDecorator(
+			recoveringReauthenticator,
+			modelRefresh,
+		)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建重登模型刷新边界失败: %w", err)
+	}
 	scheduledReauthenticator, err :=
 		usageapp.NewReauthenticationDecorator(
-			recoveringReauthenticator,
+			modelRefreshingReauthenticator,
 			usage.coordinator,
 		)
 	if err != nil {
@@ -309,7 +361,7 @@ func newHandlers(
 		Deletion:            deleter,
 		Defaults:            providerDefaults,
 		Selections:          launchAccountSelector,
-		CredentialRotation:  credentialRotator,
+		CredentialRotation:  modelRefreshingCredentialRotator,
 		Sub2APIExporter:     accountExporter,
 		CLIProxyAPIExporter: cliProxyAPIExporter,
 		Registrar:           scheduledRegistrar,
@@ -371,13 +423,15 @@ func newHandlers(
 	inference, err := newInferenceComposition(
 		ctx,
 		inferenceCompositionDependencies{
-			catalog: catalog,
-			store:   store,
-			runtime: accountRuntime,
-			models:  recoveringModelManagement,
+			catalog:        catalog,
+			store:          store,
+			runtime:        accountRuntime,
+			models:         recoveringModelManagement,
+			modelRefreshes: modelRefresh,
 			credentialRefresh: []accountcredentials.RefreshStrategy{
 				codexProvider,
 				claudeProvider,
+				agyProvider,
 			},
 			authorizer:           clientAuthorizer,
 			httpClient:           inferenceClient,
@@ -551,7 +605,7 @@ func newHandlers(
 				routeCount: status.RouteCount,
 			}
 		},
-	}, []io.Closer{webSocketHandler, inference, usage}, nil
+	}, []io.Closer{webSocketHandler, inference, usage, modelRefresh}, nil
 }
 
 // newClaudeUpstreamDecodeErrorObserver 只记录上游事件类型、字段形状和状态机位置。
@@ -593,9 +647,14 @@ func newModelDiscovery(
 		if err != nil {
 			return nil, fmt.Errorf("创建 Claude 模型目录源失败: %w", err)
 		}
+		agySource, err := agycodeassist.NewModelCatalogSource(client)
+		if err != nil {
+			return nil, fmt.Errorf("创建 AGY 模型目录源失败: %w", err)
+		}
 		strategies = []accountapp.ProviderModelDiscoverer{
 			codexSource,
 			claudeSource,
+			agySource,
 		}
 	}
 	discovery, err := accountapp.NewModelDiscovery(catalog, strategies)

@@ -8,6 +8,8 @@ const (
 	ProviderCodex ProviderID = "codex"
 	// ProviderClaude 表示账号凭据和生命周期归属 Claude。
 	ProviderClaude ProviderID = "claude"
+	// ProviderAgy 表示账号凭据和生命周期归属 Antigravity。
+	ProviderAgy ProviderID = "agy"
 )
 
 // ParseProviderID 从未经改写的规范值创建当前阶段支持的 Provider ID。
@@ -21,7 +23,9 @@ func ParseProviderID(value string) (ProviderID, error) {
 
 // IsValid 判断 Provider ID 是否属于当前 Codex/Claude 重构范围。
 func (providerID ProviderID) IsValid() bool {
-	return providerID == ProviderCodex || providerID == ProviderClaude
+	return providerID == ProviderCodex ||
+		providerID == ProviderClaude ||
+		providerID == ProviderAgy
 }
 
 // ProtocolID 是 AI Home 调用上游时使用的真实线协议。
@@ -34,11 +38,15 @@ const (
 	ProtocolCodexResponses ProtocolID = "codex.responses"
 	// ProtocolClaudeMessages 表示 Claude 使用的 Messages 上游协议变体。
 	ProtocolClaudeMessages ProtocolID = "claude.messages"
+	// ProtocolAgyCodeAssist 表示 Antigravity 使用的 Code Assist agent envelope。
+	ProtocolAgyCodeAssist ProtocolID = "agy.code_assist"
 )
 
 // IsValid 判断上游线协议是否已有完整 Adapter。
 func (protocolID ProtocolID) IsValid() bool {
-	return protocolID == ProtocolCodexResponses || protocolID == ProtocolClaudeMessages
+	return protocolID == ProtocolCodexResponses ||
+		protocolID == ProtocolClaudeMessages ||
+		protocolID == ProtocolAgyCodeAssist
 }
 
 // ClientProtocolID 是进入 AI Home 的客户端请求和响应协议。

@@ -80,9 +80,40 @@ func TestBuilderCreatesExactCrossClientRoutes(t *testing.T) {
 	}
 }
 
-// TestBuilderQuarantinesAmbiguousModelsWithoutDisablingCatalog 验证同名跨
-// Provider 模型只退出当前快照，其他无歧义路由仍可发布和执行。
-func TestBuilderQuarantinesAmbiguousModelsWithoutDisablingCatalog(t *testing.T) {
+// TestBuilderKeepsSameModelAcrossProvidersInOneRoutePlan 验证 AGY 与 Claude
+// 同时发布同一 Claude 模型时，两条真实路由都进入同一执行计划。单个 Provider
+// 的账号池耗尽不能让另一个 Provider 从生产目录中消失。
+func TestBuilderKeepsSameModelAcrossProvidersInOneRoutePlan(t *testing.T) {
+	t.Parallel()
+
+	catalog := newProviderCatalog(t)
+	modelID := "claude-opus-4-6-thinking"
+	builder := newBuilder(t, &modelReader{models: []accountapp.RoutableModel{
+		newRoutableModel(t, catalog, "agy", modelID),
+		newRoutableModel(t, catalog, "claude", modelID),
+	}})
+	snapshot, err := builder.Build(context.Background())
+	if err != nil {
+		t.Fatalf("Builder.Build() error = %v", err)
+	}
+	plan, err := snapshot.Resolve(
+		context.Background(),
+		newTextRequest(t, inference.ClientProtocolAnthropicMessages, modelID),
+	)
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	routes := plan.Candidates()
+	if len(routes) != 2 ||
+		routes[0].ProviderID() != inference.ProviderAgy ||
+		routes[1].ProviderID() != inference.ProviderClaude {
+		t.Fatalf("Resolve() routes = %#v", routes)
+	}
+}
+
+// TestBuilderPublishesSharedModelsOnceWithEveryProviderRoute 验证同名跨
+// Provider 模型只展示一次，但所有真实 Provider route 都参与执行计划。
+func TestBuilderPublishesSharedModelsOnceWithEveryProviderRoute(t *testing.T) {
 	t.Parallel()
 
 	catalog := newProviderCatalog(t)
@@ -95,8 +126,9 @@ func TestBuilderQuarantinesAmbiguousModelsWithoutDisablingCatalog(t *testing.T) 
 	if err != nil {
 		t.Fatalf("Builder.Build() error = %v", err)
 	}
-	if snapshot.ModelCount() != 1 || snapshot.RouteCount() != 1 ||
-		snapshot.Models()[0].ModelID().String() != "unique-codex-model" {
+	if snapshot.ModelCount() != 2 || snapshot.RouteCount() != 3 ||
+		snapshot.Models()[0].ModelID().String() != "shared-model" ||
+		snapshot.Models()[1].ModelID().String() != "unique-codex-model" {
 		t.Fatalf(
 			"snapshot models=%#v model_count=%d route_count=%d",
 			snapshot.Models(),
@@ -114,16 +146,14 @@ func TestBuilderQuarantinesAmbiguousModelsWithoutDisablingCatalog(t *testing.T) 
 		plan.Candidates()[0].ProviderID() != inference.ProviderCodex {
 		t.Fatalf("Resolve(unique) plan=%#v error=%v", plan, err)
 	}
-	ambiguous := newTextRequest(
+	shared := newTextRequest(
 		t,
 		inference.ClientProtocolOpenAIResponses,
 		"shared-model",
 	)
-	if _, err := snapshot.Resolve(context.Background(), ambiguous); !errors.Is(
-		err,
-		inferencegateway.ErrRouteNotFound,
-	) {
-		t.Fatalf("Resolve(shared-model) error=%v", err)
+	sharedPlan, err := snapshot.Resolve(context.Background(), shared)
+	if err != nil || len(sharedPlan.Candidates()) != 2 {
+		t.Fatalf("Resolve(shared-model) plan=%#v error=%v", sharedPlan, err)
 	}
 }
 
@@ -435,7 +465,9 @@ func newRouteFactory(
 		t.Fatalf("inference.NewCapabilitySet() error = %v", err)
 	}
 	protocolID := inference.ProtocolCodexResponses
-	if providerID == inference.ProviderClaude {
+	if providerID == inference.ProviderAgy {
+		protocolID = inference.ProtocolAgyCodeAssist
+	} else if providerID == inference.ProviderClaude {
 		protocolID = inference.ProtocolClaudeMessages
 	}
 	return routeFactory{
@@ -448,6 +480,7 @@ func newRouteFactory(
 func testFactories(t testing.TB) []inferencecatalog.ProviderRouteFactory {
 	t.Helper()
 	return []inferencecatalog.ProviderRouteFactory{
+		newRouteFactory(t, inference.ProviderAgy),
 		newRouteFactory(t, inference.ProviderCodex),
 		newRouteFactory(t, inference.ProviderClaude),
 	}

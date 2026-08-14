@@ -40,6 +40,7 @@ func newCredentialRegistry() credentialRegistry {
 	codecs := []credentialCodec{
 		codexCredentialCodec{},
 		claudeCredentialCodec{},
+		agyCredentialCodec{},
 	}
 	registry := make(credentialRegistry, len(codecs))
 	for _, codec := range codecs {

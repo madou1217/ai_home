@@ -14,7 +14,7 @@ import (
 	usagecore "github.com/madou1217/ai_home/core/accountusage"
 )
 
-// TestStoreRotatesStaticCredentialWithoutChangingAccountRef 验证凭据、模型、usage 和路由在一个事务内切换。
+// TestStoreRotatesStaticCredentialWithoutChangingAccountRef 验证凭据和 usage 原子切换且模型快照保持可路由。
 func TestStoreRotatesStaticCredentialWithoutChangingAccountRef(t *testing.T) {
 	t.Parallel()
 
@@ -53,12 +53,10 @@ func TestStoreRotatesStaticCredentialWithoutChangingAccountRef(t *testing.T) {
 		t.Fatalf("GetCredentialSnapshot() error = %v", err)
 	}
 	replacement := mustCodexAPIKey(t, "static-rotation-new-key")
-	newModel := mustModelID(t, "gpt-new")
 	rotation, err := accountapp.NewStaticCredentialRotation(
 		account,
 		current,
 		replacement,
-		[]runtimecore.ModelID{newModel},
 		testAccountTime().Add(2*time.Second),
 	)
 	if err != nil {
@@ -98,7 +96,7 @@ func TestStoreRotatesStaticCredentialWithoutChangingAccountRef(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListAccountModels() error = %v", err)
 	}
-	assertRotatedStaticModels(t, models)
+	assertPreservedStaticModels(t, models)
 	if _, err := store.GetUsageSnapshot(ctx, account.Ref()); !errors.Is(
 		err,
 		usageapp.ErrSnapshotNotFound,
@@ -109,19 +107,14 @@ func TestStoreRotatesStaticCredentialWithoutChangingAccountRef(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadRoutingCandidates(old) error = %v", err)
 	}
-	newRoutes, err := store.LoadRoutingCandidates(ctx, codex.ProviderID, newModel)
-	if err != nil {
-		t.Fatalf("LoadRoutingCandidates(new) error = %v", err)
-	}
 	manualRoutes, err := store.LoadRoutingCandidates(ctx, codex.ProviderID, manualModel)
 	if err != nil {
 		t.Fatalf("LoadRoutingCandidates(manual) error = %v", err)
 	}
-	if oldRoutes.Len() != 0 || newRoutes.Len() != 1 || manualRoutes.Len() != 1 {
+	if oldRoutes.Len() != 1 || manualRoutes.Len() != 1 {
 		t.Fatalf(
-			"routing lengths old=%d new=%d manual=%d",
+			"routing lengths old=%d manual=%d",
 			oldRoutes.Len(),
-			newRoutes.Len(),
 			manualRoutes.Len(),
 		)
 	}
@@ -156,7 +149,6 @@ func TestStoreRejectsStaticCredentialAlreadyBoundToAnotherAccount(t *testing.T) 
 		first,
 		current,
 		secondCredential,
-		[]runtimecore.ModelID{model},
 		testAccountTime().Add(time.Second),
 	)
 	if err != nil {
@@ -179,6 +171,103 @@ func TestStoreRejectsStaticCredentialAlreadyBoundToAnotherAccount(t *testing.T) 
 	}
 }
 
+// TestStoreRejectsDiscoveredModelsFromStaleCredentialVersion 验证旧凭据完成的
+// 目录发现不能覆盖静态轮换后仍保留的最后成功模型快照。
+func TestStoreRejectsDiscoveredModelsFromStaleCredentialVersion(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := openTestStore(t)
+	oldModel := mustModelID(t, "gpt-before-credential-rotation")
+	account := registerStaticRotationAccount(
+		t,
+		store,
+		mustCodexAPIKey(t, "stale-model-refresh-old-key"),
+		[]runtimecore.ModelID{oldModel},
+	)
+	staleCredential, err := store.GetCredentialSnapshot(ctx, account.Ref())
+	if err != nil {
+		t.Fatalf("GetCredentialSnapshot(stale) error = %v", err)
+	}
+	rotation, err := accountapp.NewStaticCredentialRotation(
+		account,
+		staleCredential,
+		mustCodexAPIKey(t, "stale-model-refresh-new-key"),
+		testAccountTime().Add(2*time.Second),
+	)
+	if err != nil {
+		t.Fatalf("NewStaticCredentialRotation() error = %v", err)
+	}
+	if _, err := store.RotateStaticCredential(ctx, rotation); err != nil {
+		t.Fatalf("RotateStaticCredential() error = %v", err)
+	}
+	staleModels, err := accountapp.NormalizeDiscoveredModels(
+		[]string{"gpt-from-stale-credential"},
+	)
+	if err != nil {
+		t.Fatalf("NormalizeDiscoveredModels() error = %v", err)
+	}
+	_, err = store.ReplaceDiscoveredModelsIfCredentialVersion(
+		ctx,
+		account.Ref(),
+		staleModels,
+		staleCredential.UpdatedAt(),
+		testAccountTime().Add(3*time.Second),
+	)
+	if !errors.Is(err, accountapp.ErrCredentialConflict) {
+		t.Fatalf("ReplaceDiscoveredModelsIfCredentialVersion() error = %v", err)
+	}
+	models, err := store.ListAccountModels(ctx, account.Ref())
+	if err != nil {
+		t.Fatalf("ListAccountModels() error = %v", err)
+	}
+	if len(models) != 1 ||
+		models[0].ModelID() != oldModel ||
+		!models[0].UpstreamAvailable() {
+		t.Fatalf("stale discovery changed models = %#v", models)
+	}
+}
+
+// TestStoreReplacesDiscoveredModelsForCurrentCredentialVersion 验证当前凭据版本
+// 可以提交模型快照，CAS 门禁不会误伤正常目录刷新。
+func TestStoreReplacesDiscoveredModelsForCurrentCredentialVersion(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := openTestStore(t)
+	account := registerStaticRotationAccount(
+		t,
+		store,
+		mustCodexAPIKey(t, "current-model-refresh-key"),
+		[]runtimecore.ModelID{mustModelID(t, "gpt-before-current-refresh")},
+	)
+	credential, err := store.GetCredentialSnapshot(ctx, account.Ref())
+	if err != nil {
+		t.Fatalf("GetCredentialSnapshot() error = %v", err)
+	}
+	refreshed, err := accountapp.NormalizeDiscoveredModels(
+		[]string{"gpt-after-current-refresh"},
+	)
+	if err != nil {
+		t.Fatalf("NormalizeDiscoveredModels() error = %v", err)
+	}
+	models, err := store.ReplaceDiscoveredModelsIfCredentialVersion(
+		ctx,
+		account.Ref(),
+		refreshed,
+		credential.UpdatedAt(),
+		testAccountTime().Add(2*time.Second),
+	)
+	if err != nil {
+		t.Fatalf("ReplaceDiscoveredModelsIfCredentialVersion() error = %v", err)
+	}
+	if len(models) != 1 ||
+		models[0].ModelID().String() != "gpt-after-current-refresh" ||
+		!models[0].UpstreamAvailable() {
+		t.Fatalf("current credential models = %#v", models)
+	}
+}
+
 // registerStaticRotationAccount 使用生产注册事务创建带初始模型的静态账号。
 func registerStaticRotationAccount(
 	t *testing.T,
@@ -191,7 +280,6 @@ func registerStaticRotationAccount(
 		store.catalog,
 		credential,
 		nil,
-		models,
 		testAccountTime(),
 	)
 	if err != nil {
@@ -201,11 +289,19 @@ func registerStaticRotationAccount(
 	if err != nil {
 		t.Fatalf("RegisterNew() error = %v", err)
 	}
+	if _, err := store.ReplaceDiscoveredModels(
+		context.Background(),
+		account.Ref(),
+		models,
+		testAccountTime().Add(time.Millisecond),
+	); err != nil {
+		t.Fatalf("ReplaceDiscoveredModels() error = %v", err)
+	}
 	return account
 }
 
-// assertRotatedStaticModels 验证自动发现替换且人工启用策略保留。
-func assertRotatedStaticModels(t *testing.T, models []accountapp.AccountModel) {
+// assertPreservedStaticModels 验证轮换提交时保留最后一次成功目录和人工策略。
+func assertPreservedStaticModels(t *testing.T, models []accountapp.AccountModel) {
 	t.Helper()
 	if len(models) != 2 {
 		t.Fatalf("models = %#v", models)
@@ -214,14 +310,14 @@ func assertRotatedStaticModels(t *testing.T, models []accountapp.AccountModel) {
 	for _, model := range models {
 		byID[model.ModelID().String()] = model
 	}
-	newModel, newFound := byID["gpt-new"]
+	oldModel, oldFound := byID["gpt-old"]
 	manualModel, manualFound := byID["gpt-manual"]
-	if !newFound ||
-		!newModel.UpstreamAvailable() ||
-		newModel.ManualPolicy() != accountapp.ModelPolicyInherit ||
+	if !oldFound ||
+		!oldModel.UpstreamAvailable() ||
+		oldModel.ManualPolicy() != accountapp.ModelPolicyInherit ||
 		!manualFound ||
 		manualModel.UpstreamAvailable() ||
 		manualModel.ManualPolicy() != accountapp.ModelPolicyForceEnable {
-		t.Fatalf("rotated models = %#v", models)
+		t.Fatalf("preserved models = %#v", models)
 	}
 }

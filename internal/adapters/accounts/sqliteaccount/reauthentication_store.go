@@ -77,11 +77,6 @@ func (store *Store) Reauthenticate(
 	) {
 		return accountcore.Account{}, accountapp.ErrReauthenticationUnsupported
 	}
-	models := reauthentication.Models()
-	if !accountapp.ValidDiscoveredModelIDs(models) {
-		return accountcore.Account{}, accountapp.ErrInvalidReauthentication
-	}
-
 	store.routingWrites.Lock()
 	defer store.routingWrites.Unlock()
 	connection, err := store.db.Conn(ctx)
@@ -157,36 +152,12 @@ func (store *Store) Reauthenticate(
 	); err != nil {
 		return accountcore.Account{}, err
 	}
-	if err := replaceDiscoveredModelRows(
-		ctx,
-		connection,
-		reauthentication.AccountRef(),
-		models,
-		updatedAtMS,
-	); err != nil {
-		return accountcore.Account{}, err
-	}
-	modelSnapshot, err := store.listAccountModels(
-		ctx,
-		connection,
-		reauthentication.AccountRef(),
-	)
-	if err != nil {
-		return accountcore.Account{}, err
-	}
 	if _, err := connection.ExecContext(ctx, "COMMIT"); err != nil {
 		if isBusyError(err) {
 			return accountcore.Account{}, accountapp.ErrReauthenticationConflict
 		}
 		return accountcore.Account{}, fmt.Errorf("提交账号重新认证事务失败: %w", err)
 	}
-	if err := store.publishAccountModels(
-		reauthentication.AccountRef(),
-		modelSnapshot,
-	); err != nil {
-		return accountcore.Account{}, err
-	}
-
 	record.account.updatedAtMS = updatedAtMS
 	return store.restoreAccount(record.account)
 }

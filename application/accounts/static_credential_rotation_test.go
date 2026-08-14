@@ -32,7 +32,6 @@ func TestStaticCredentialRotatorKeepsAccountRefWhileChangingCredentialIdentity(t
 	rotator, err := accountapp.NewStaticCredentialRotator(
 		catalog,
 		store,
-		newTestModelDiscovery(t, catalog),
 		func() time.Time { return clock },
 		cleanup,
 	)
@@ -59,8 +58,6 @@ func TestStaticCredentialRotatorKeepsAccountRefWhileChangingCredentialIdentity(t
 		updated.CLIAccountID() != store.account.CLIAccountID() ||
 		store.rotation.AccountRef() != store.account.Ref() ||
 		store.rotation.Replacement() != replacement ||
-		len(store.rotation.Models()) != 1 ||
-		store.rotation.Models()[0].String() != "test-model" ||
 		cleanup.calls != 1 ||
 		cleanup.accountRef != store.account.Ref() {
 		t.Fatalf(
@@ -91,7 +88,6 @@ func TestStaticCredentialRotatorAllowsClaudeCredentialTypeSwitch(t *testing.T) {
 	rotator, err := accountapp.NewStaticCredentialRotator(
 		catalog,
 		store,
-		newTestModelDiscovery(t, catalog),
 		func() time.Time { return store.account.UpdatedAt().Add(time.Second) },
 		&staticRotationCleanup{},
 	)
@@ -120,11 +116,9 @@ func TestStaticCredentialRotatorRejectsOAuthAndCrossProviderBeforeDiscovery(t *t
 		t.Fatalf("codex.NewAPIKeyAuth() error = %v", err)
 	}
 	store := newStaticRotationStore(t, catalog, initial)
-	discoveryCalls := 0
 	rotator, err := accountapp.NewStaticCredentialRotator(
 		catalog,
 		store,
-		newObservedModelDiscovery(t, catalog, &discoveryCalls),
 		time.Now,
 		&staticRotationCleanup{},
 	)
@@ -151,7 +145,6 @@ func TestStaticCredentialRotatorRejectsOAuthAndCrossProviderBeforeDiscovery(t *t
 	oauthRotator, err := accountapp.NewStaticCredentialRotator(
 		catalog,
 		oauthStore,
-		newObservedModelDiscovery(t, catalog, &discoveryCalls),
 		time.Now,
 		&staticRotationCleanup{},
 	)
@@ -180,10 +173,9 @@ func TestStaticCredentialRotatorRejectsOAuthAndCrossProviderBeforeDiscovery(t *t
 	if !errors.Is(err, accountapp.ErrInvalidStaticCredentialRotation) {
 		t.Fatalf("Rotate(cross provider) error = %v", err)
 	}
-	if discoveryCalls != 0 || store.rotateCalls != 0 || oauthStore.rotateCalls != 0 {
+	if store.rotateCalls != 0 || oauthStore.rotateCalls != 0 {
 		t.Fatalf(
-			"invalid rotation reached ports: discovery=%d static=%d oauth=%d",
-			discoveryCalls,
+			"invalid rotation reached ports: static=%d oauth=%d",
 			store.rotateCalls,
 			oauthStore.rotateCalls,
 		)

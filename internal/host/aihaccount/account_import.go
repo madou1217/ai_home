@@ -21,7 +21,7 @@ type ImportResult struct {
 	AccountRef string
 	// Email 是官方公开资料中的登录邮箱，用于确认导入的是哪个登录。
 	Email string
-	// Models 是本次在账号管理阶段物化的真实可用模型。
+	// Models 是响应时已经物化的模型；首次异步刷新尚未完成时可以为空。
 	Models []string
 	// Sources 是本次读取的官方 artifact 文件路径。
 	Sources []string
@@ -29,8 +29,7 @@ type ImportResult struct {
 
 // ImportOfficialLogin 把该 Provider 官方 CLI 当前登录态注册成一个 AIH 账号。
 //
-// 导入阶段会按账号管理契约拉取一次该账号真实可用的模型目录并落库，
-// 运行期不再实时查询上游目录。
+// 正式 Server 会在注册事务提交后异步刷新模型；本方法不会以目录请求阻塞导入。
 func (app *App) ImportOfficialLogin(
 	ctx context.Context,
 	providerID string,

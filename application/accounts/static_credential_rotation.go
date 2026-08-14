@@ -5,7 +5,6 @@ import (
 	"errors"
 	"time"
 
-	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/accounts/claude"
 	"github.com/madou1217/ai_home/core/accounts/codex"
@@ -28,7 +27,6 @@ type StaticCredentialRotation struct {
 	account     accountcore.Account
 	current     CredentialSnapshot
 	replacement Credential
-	models      []runtimecore.ModelID
 	updatedAt   time.Time
 }
 
@@ -37,7 +35,6 @@ func NewStaticCredentialRotation(
 	account accountcore.Account,
 	current CredentialSnapshot,
 	replacement Credential,
-	models []runtimecore.ModelID,
 	updatedAt time.Time,
 ) (StaticCredentialRotation, error) {
 	normalizedTime, err := normalizePersistedTime(updatedAt)
@@ -46,7 +43,6 @@ func NewStaticCredentialRotation(
 			account,
 			current,
 			replacement,
-			models,
 			normalizedTime,
 		) {
 		return StaticCredentialRotation{}, ErrInvalidStaticCredentialRotation
@@ -55,7 +51,6 @@ func NewStaticCredentialRotation(
 		account:     account,
 		current:     current,
 		replacement: replacement,
-		models:      append([]runtimecore.ModelID(nil), models...),
 		updatedAt:   normalizedTime,
 	}, nil
 }
@@ -90,11 +85,6 @@ func (rotation StaticCredentialRotation) Replacement() Credential {
 	return rotation.replacement
 }
 
-// Models 返回新凭据发现到的完整模型集合副本。
-func (rotation StaticCredentialRotation) Models() []runtimecore.ModelID {
-	return append([]runtimecore.ModelID(nil), rotation.models...)
-}
-
 // UpdatedAt 返回账号、凭据和模型共同推进到的业务时间。
 func (rotation StaticCredentialRotation) UpdatedAt() time.Time {
 	return rotation.updatedAt
@@ -106,7 +96,6 @@ func (rotation StaticCredentialRotation) IsValid() bool {
 		rotation.account,
 		rotation.current,
 		rotation.replacement,
-		rotation.models,
 		rotation.updatedAt,
 	)
 }
@@ -116,7 +105,6 @@ func validStaticCredentialRotation(
 	account accountcore.Account,
 	current CredentialSnapshot,
 	replacement Credential,
-	models []runtimecore.ModelID,
 	updatedAt time.Time,
 ) bool {
 	normalizedTime, timeErr := normalizePersistedTime(updatedAt)
@@ -129,7 +117,6 @@ func validStaticCredentialRotation(
 		isRotatableStaticCredential(current.Credential()) &&
 		isRotatableStaticCredential(replacement) &&
 		replacement.ProviderID() == account.ProviderID() &&
-		ValidDiscoveredModelIDs(models) &&
 		updatedAt.After(account.UpdatedAt()) &&
 		updatedAt.After(current.UpdatedAt())
 }
@@ -164,7 +151,6 @@ type StaticCredentialRotationStore interface {
 type StaticCredentialRotator struct {
 	catalog  *providers.Catalog
 	store    StaticCredentialRotationStore
-	models   *ModelDiscovery
 	cleanups []DeletionCleanup
 	clock    Clock
 }
@@ -173,11 +159,10 @@ type StaticCredentialRotator struct {
 func NewStaticCredentialRotator(
 	catalog *providers.Catalog,
 	store StaticCredentialRotationStore,
-	models *ModelDiscovery,
 	clock Clock,
 	cleanups ...DeletionCleanup,
 ) (*StaticCredentialRotator, error) {
-	if catalog == nil || store == nil || models == nil || clock == nil || len(cleanups) == 0 {
+	if catalog == nil || store == nil || clock == nil || len(cleanups) == 0 {
 		return nil, ErrInvalidStaticCredentialRotatorDependencies
 	}
 	for _, cleanup := range cleanups {
@@ -188,7 +173,6 @@ func NewStaticCredentialRotator(
 	return &StaticCredentialRotator{
 		catalog:  catalog,
 		store:    store,
-		models:   models,
 		cleanups: append([]DeletionCleanup(nil), cleanups...),
 		clock:    clock,
 	}, nil
@@ -203,7 +187,6 @@ func (rotator *StaticCredentialRotator) Rotate(
 	if rotator == nil ||
 		rotator.catalog == nil ||
 		rotator.store == nil ||
-		rotator.models == nil ||
 		len(rotator.cleanups) == 0 ||
 		ctx == nil ||
 		!accountRef.IsValid() ||
@@ -224,10 +207,6 @@ func (rotator *StaticCredentialRotator) Rotate(
 	if replacement.ProviderID() != account.ProviderID() {
 		return accountcore.Account{}, ErrInvalidStaticCredentialRotation
 	}
-	models, err := rotator.models.DiscoverModels(ctx, replacement)
-	if err != nil {
-		return accountcore.Account{}, err
-	}
 	updatedAt, err := nextStaticCredentialRotationTime(
 		rotator.clock(),
 		account.UpdatedAt(),
@@ -240,7 +219,6 @@ func (rotator *StaticCredentialRotator) Rotate(
 		account,
 		current,
 		replacement,
-		models,
 		updatedAt,
 	)
 	if err != nil {

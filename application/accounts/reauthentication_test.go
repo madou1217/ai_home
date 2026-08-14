@@ -49,7 +49,6 @@ func TestReauthenticatorPreservesStableIdentity(t *testing.T) {
 	reauthenticator, err := accountapp.NewReauthenticator(
 		catalog,
 		store,
-		newTestModelDiscovery(t, catalog),
 		clock,
 	)
 	if err != nil {
@@ -105,11 +104,9 @@ func TestReauthenticatorRejectsDifferentAccount(t *testing.T) {
 	}
 	store := &reauthenticationStoreStub{}
 	catalog := testCatalog(t)
-	discoveryCalls := 0
 	reauthenticator, err := accountapp.NewReauthenticator(
 		catalog,
 		store,
-		newObservedModelDiscovery(t, catalog, &discoveryCalls),
 		time.Now,
 	)
 	if err != nil {
@@ -128,12 +125,8 @@ func TestReauthenticatorRejectsDifferentAccount(t *testing.T) {
 			err,
 		)
 	}
-	if store.calls != 0 || discoveryCalls != 0 {
-		t.Fatalf(
-			"身份不匹配仍访问外部端口: store=%d discovery=%d",
-			store.calls,
-			discoveryCalls,
-		)
+	if store.calls != 0 {
+		t.Fatalf("身份不匹配仍访问持久化端口: store=%d", store.calls)
 	}
 }
 
@@ -152,11 +145,9 @@ func TestReauthenticatorRejectsMissingProfile(t *testing.T) {
 	}
 	store := &reauthenticationStoreStub{}
 	catalog := testCatalog(t)
-	discoveryCalls := 0
 	reauthenticator, err := accountapp.NewReauthenticator(
 		catalog,
 		store,
-		newObservedModelDiscovery(t, catalog, &discoveryCalls),
 		time.Now,
 	)
 	if err != nil {
@@ -172,12 +163,8 @@ func TestReauthenticatorRejectsMissingProfile(t *testing.T) {
 	if !errors.Is(err, accountapp.ErrInvalidReauthentication) {
 		t.Fatalf("Reauthenticate() error = %v, want ErrInvalidReauthentication", err)
 	}
-	if store.calls != 0 || discoveryCalls != 0 {
-		t.Fatalf(
-			"缺少 Profile 仍访问外部端口: store=%d discovery=%d",
-			store.calls,
-			discoveryCalls,
-		)
+	if store.calls != 0 {
+		t.Fatalf("缺少 Profile 仍访问持久化端口: store=%d", store.calls)
 	}
 }
 
@@ -211,7 +198,6 @@ func TestReauthenticatorValidatesTargetBeforeOAuth(t *testing.T) {
 	reauthenticator, err := accountapp.NewReauthenticator(
 		catalog,
 		store,
-		newTestModelDiscovery(t, catalog),
 		time.Now,
 	)
 	if err != nil {
@@ -251,7 +237,6 @@ func TestReauthenticatorPropagatesUnsupportedTarget(t *testing.T) {
 	reauthenticator, err := accountapp.NewReauthenticator(
 		catalog,
 		store,
-		newTestModelDiscovery(t, catalog),
 		time.Now,
 	)
 	if err != nil {

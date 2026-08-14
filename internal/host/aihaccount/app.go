@@ -139,7 +139,7 @@ func New(ctx context.Context, options Options) (*App, error) {
 	if err != nil {
 		return fail("创建账号模型发现注册表失败", err)
 	}
-	registrar, err := accountapp.NewRegistrar(catalog, store, discovery, time.Now)
+	registrar, err := accountapp.NewRegistrar(catalog, store, time.Now)
 	if err != nil {
 		return fail("创建账号注册用例失败", err)
 	}

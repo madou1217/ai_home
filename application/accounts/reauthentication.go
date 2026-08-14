@@ -5,7 +5,6 @@ import (
 	"errors"
 	"time"
 
-	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
 )
@@ -29,7 +28,6 @@ type Reauthentication struct {
 	providerID string
 	credential Credential
 	profile    ProfileSnapshot
-	models     []runtimecore.ModelID
 	updatedAt  time.Time
 }
 
@@ -39,14 +37,12 @@ func NewReauthentication(
 	accountRef accountcore.AccountRef,
 	credential Credential,
 	profile PublicProfile,
-	models []runtimecore.ModelID,
 	updatedAt time.Time,
 ) (Reauthentication, error) {
 	if catalog == nil ||
 		!accountRef.IsValid() ||
 		credential == nil ||
-		profile == nil ||
-		!ValidDiscoveredModelIDs(models) {
+		profile == nil {
 		return Reauthentication{}, ErrInvalidReauthentication
 	}
 	providerID, found := catalog.CanonicalID(credential.ProviderID())
@@ -74,7 +70,6 @@ func NewReauthentication(
 		providerID: providerID,
 		credential: credential,
 		profile:    profileSnapshot,
-		models:     append([]runtimecore.ModelID(nil), models...),
 		updatedAt:  normalizedTime,
 	}, nil
 }
@@ -99,11 +94,6 @@ func (reauthentication Reauthentication) Profile() ProfileSnapshot {
 	return reauthentication.profile
 }
 
-// Models 返回重新认证事务必须同时保存的完整模型发现结果。
-func (reauthentication Reauthentication) Models() []runtimecore.ModelID {
-	return append([]runtimecore.ModelID(nil), reauthentication.models...)
-}
-
 // UpdatedAt 返回本次重新认证的 UTC 毫秒精度时间。
 func (reauthentication Reauthentication) UpdatedAt() time.Time {
 	return reauthentication.updatedAt
@@ -126,7 +116,6 @@ func (reauthentication Reauthentication) IsValid() bool {
 		timeErr == nil &&
 		credentialRef == reauthentication.accountRef &&
 		reauthentication.credential.ProviderID() == reauthentication.providerID &&
-		ValidDiscoveredModelIDs(reauthentication.models) &&
 		profile.AccountRef() == reauthentication.accountRef &&
 		profile.Profile().ProviderID() == reauthentication.providerID &&
 		profile.UpdatedAt().Equal(normalizedTime) &&
@@ -150,7 +139,6 @@ type ReauthenticationStore interface {
 type Reauthenticator struct {
 	catalog *providers.Catalog
 	store   ReauthenticationStore
-	models  *ModelDiscovery
 	clock   Clock
 }
 
@@ -158,16 +146,14 @@ type Reauthenticator struct {
 func NewReauthenticator(
 	catalog *providers.Catalog,
 	store ReauthenticationStore,
-	models *ModelDiscovery,
 	clock Clock,
 ) (*Reauthenticator, error) {
-	if catalog == nil || store == nil || models == nil || clock == nil {
+	if catalog == nil || store == nil || clock == nil {
 		return nil, ErrInvalidReauthenticatorDependencies
 	}
 	return &Reauthenticator{
 		catalog: catalog,
 		store:   store,
-		models:  models,
 		clock:   clock,
 	}, nil
 }
@@ -213,16 +199,11 @@ func (reauthenticator *Reauthenticator) Reauthenticate(
 	); err != nil {
 		return accountcore.Account{}, err
 	}
-	models, err := reauthenticator.models.DiscoverModels(ctx, credential)
-	if err != nil {
-		return accountcore.Account{}, err
-	}
 	reauthentication, err := NewReauthentication(
 		reauthenticator.catalog,
 		accountRef,
 		credential,
 		profile,
-		models,
 		reauthenticator.clock(),
 	)
 	if err != nil {

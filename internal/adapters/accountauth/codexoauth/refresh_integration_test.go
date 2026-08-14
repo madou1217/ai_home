@@ -14,7 +14,6 @@ import (
 	"github.com/madou1217/ai_home/core/accounts/codex"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
-	"github.com/madou1217/ai_home/internal/testsupport/accountmodels"
 )
 
 // TestCredentialResolverRefreshesCodexThroughSQLiteIntegration 验证 100 并发的完整持久化链。
@@ -56,14 +55,9 @@ func TestCredentialResolverRefreshesCodexThroughSQLiteIntegration(
 		t,
 		testClock().Add(-time.Minute).Unix(),
 	)
-	modelDiscovery, err := accountmodels.NewDiscovery(catalog)
-	if err != nil {
-		t.Fatalf("accountmodels.NewDiscovery() error = %v", err)
-	}
 	registrar, err := accountapp.NewRegistrar(
 		catalog,
 		store,
-		modelDiscovery,
 		testClock,
 	)
 	if err != nil {

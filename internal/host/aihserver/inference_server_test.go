@@ -22,6 +22,10 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/openairesponsesapi"
 )
 
+// hostAsyncStateWaitTimeout 与测试 HTTP 客户端边界一致，避免并行测试把
+// 提交后异步发布误判为业务失败。
+const hostAsyncStateWaitTimeout = 3 * time.Second
+
 // TestServerPinnedAccountNeverFallsBack 验证真实 HTTP Header 固定账号且停用后不换号。
 func TestServerPinnedAccountNeverFallsBack(t *testing.T) {
 	t.Parallel()
@@ -362,7 +366,7 @@ func TestServerRotatesClaudeOAuthAndAPIKeyOnCanonical(t *testing.T) {
 	baseURL, client := startTestServerWithInferenceClient(t, upstream)
 	oauthRef := registerNativeClaudeOAuthAccount(t, client, baseURL)
 	apiKey := claudeAPIKeyAfter(t, oauthRef)
-	_ = registerAPIKeyAccount(
+	apiKeyRef := registerAPIKeyAccount(
 		t,
 		client,
 		baseURL,
@@ -375,6 +379,8 @@ func TestServerRotatesClaudeOAuthAndAPIKeyOnCanonical(t *testing.T) {
 		baseURL,
 		[]string{"claude-sonnet-4"},
 	)
+	waitForAccountModels(t, client, baseURL, oauthRef, []string{"claude-sonnet-4"})
+	waitForAccountModels(t, client, baseURL, apiKeyRef, []string{"claude-sonnet-4"})
 
 	payload := `{"model":"claude-sonnet-4","max_tokens":32,` +
 		`"messages":[{"role":"user","content":"transport-fallback"}]}`
@@ -1345,7 +1351,7 @@ func waitForServerModels(
 ) {
 	t.Helper()
 
-	deadline := time.Now().Add(time.Second)
+	deadline := time.Now().Add(hostAsyncStateWaitTimeout)
 	for time.Now().Before(deadline) {
 		exchange := performRequest(
 			t,
@@ -1368,6 +1374,43 @@ func waitForServerModels(
 		time.Sleep(time.Millisecond)
 	}
 	t.Fatalf("等待模型目录发布超时: models=%v", models)
+}
+
+// waitForAccountModels 等待指定账号完成首次异步模型物化，避免只观察到其他账号的同名模型。
+func waitForAccountModels(
+	t *testing.T,
+	client *http.Client,
+	baseURL string,
+	accountRef string,
+	models []string,
+) {
+	t.Helper()
+
+	deadline := time.Now().Add(hostAsyncStateWaitTimeout)
+	for time.Now().Before(deadline) {
+		exchange := performRequest(
+			t,
+			client,
+			http.MethodGet,
+			baseURL+accountsapi.CollectionPath+"/"+accountRef+"/models",
+			testManagementKey,
+			nil,
+		)
+		if exchange.status == http.StatusOK {
+			complete := true
+			for _, model := range models {
+				complete = complete && strings.Contains(
+					exchange.body,
+					`"model_id":"`+model+`"`,
+				)
+			}
+			if complete {
+				return
+			}
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("等待账号模型目录发布超时: account_ref=%s models=%v", accountRef, models)
 }
 
 // assertCatalogReadiness 验证探针与当前发布快照使用同一计数事实。
@@ -1416,7 +1459,7 @@ func waitForServerModelVisibility(
 ) {
 	t.Helper()
 
-	deadline := time.Now().Add(time.Second)
+	deadline := time.Now().Add(hostAsyncStateWaitTimeout)
 	for time.Now().Before(deadline) {
 		exchange := performRequest(
 			t,

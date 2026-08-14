@@ -222,6 +222,7 @@ func TestNewRejectsIncompleteDependencies(t *testing.T) {
 
 	fixture := newRuntimeFixture(t)
 	valid := fixture.dependencies()
+	valid.PoolRetries = nil
 	testCases := []Dependencies{
 		{},
 		{
@@ -318,6 +319,19 @@ func TestNewRejectsIncompleteDependencies(t *testing.T) {
 	}
 }
 
+// TestNewRequiresConfiguredRequestPoolRetryPolicy 验证生产 Runtime 不会悄然关闭
+// AGY 请求级第二轮；只有显式不带策略的低层 Coordinator 测试可以保持旧行为。
+func TestNewRequiresConfiguredRequestPoolRetryPolicy(t *testing.T) {
+	t.Parallel()
+
+	fixture := newRuntimeFixture(t)
+	dependencies := fixture.dependencies()
+	dependencies.PoolRetries = nil
+	if _, err := New(dependencies); !errors.Is(err, ErrInvalidDependencies) {
+		t.Fatalf("New() error = %v, want ErrInvalidDependencies", err)
+	}
+}
+
 // runtimeFixture 保存一组只使用合成凭据和上游的完整生产应用组件。
 type runtimeFixture struct {
 	catalog   *providers.Catalog
@@ -401,6 +415,10 @@ func newRuntimeFixture(t *testing.T) *runtimeFixture {
 
 // dependencies 返回构造 Runtime 所需的全部显式端口。
 func (fixture *runtimeFixture) dependencies() Dependencies {
+	poolRetries, err := inferencegateway.NewDefaultRequestPoolRetryPolicy()
+	if err != nil {
+		panic(err)
+	}
 	return Dependencies{
 		Catalog: fixture.catalog,
 		Store:   fixture.store,
@@ -412,6 +430,7 @@ func (fixture *runtimeFixture) dependencies() Dependencies {
 		Upstreams:      []inferencegateway.UpstreamAdapter{fixture.upstream},
 		ModelRefreshes: fixture.refreshes,
 		Clock:          func() time.Time { return fixture.clock },
+		PoolRetries:    poolRetries,
 	}
 }
 

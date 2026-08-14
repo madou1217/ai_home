@@ -253,7 +253,6 @@ func TestNewWiresModelRefreshIntoSQLite(t *testing.T) {
 	transport := &modelCatalogTransport{
 		t: t,
 		payloads: []string{
-			modelCatalogPayload("claude-opus-4-6"),
 			modelCatalogPayload("claude-opus-5", "claude-sonnet-5"),
 		},
 	}
@@ -309,7 +308,7 @@ func TestNewWiresModelRefreshIntoSQLite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SetAccountModelPolicy(inherit) error = %v", err)
 	}
-	if transport.calls != 2 ||
+	if transport.calls != 1 ||
 		len(refreshed.Models) != 2 ||
 		refreshed.Models[0].ModelID != "claude-opus-5" ||
 		refreshed.Models[1].ModelID != "claude-sonnet-5" ||

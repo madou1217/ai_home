@@ -361,6 +361,15 @@ func TestAccountsAPILiveSmoke(t *testing.T) {
 	}
 
 	modelsURL := detailURL + "/models"
+	modelRefreshBeforeList := performLiveRequest(
+		t,
+		server.Client(),
+		http.MethodPost,
+		modelsURL+"/refresh",
+		nil,
+	)
+	logLiveExchange(t, modelRefreshBeforeList)
+	assertLiveStatus(t, modelRefreshBeforeList, http.StatusOK)
 	models := performLiveRequest(
 		t,
 		server.Client(),
@@ -680,7 +689,6 @@ func newAccountsLiveServer(
 	registrar, err := accountapp.NewRegistrar(
 		catalog,
 		store,
-		modelDiscovery,
 		func() time.Time { return registeredAt },
 	)
 	if err != nil {
@@ -737,7 +745,6 @@ func newAccountsLiveServer(
 	credentialRotator, err := accountapp.NewStaticCredentialRotator(
 		catalog,
 		store,
-		modelDiscovery,
 		func() time.Time { return registeredAt.Add(20 * time.Minute) },
 		liveDeletionCleanup{},
 	)

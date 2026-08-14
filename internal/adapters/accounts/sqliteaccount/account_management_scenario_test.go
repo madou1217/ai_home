@@ -7,7 +7,6 @@ import (
 	"time"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
-	"github.com/madou1217/ai_home/internal/testsupport/accountmodels"
 )
 
 // TestAccountManagementScenario 验证注册、列表、详情和停用组成的真实应用链路。
@@ -17,14 +16,9 @@ func TestAccountManagementScenario(t *testing.T) {
 	ctx := context.Background()
 	store := openTestStore(t)
 	registeredAt := time.Date(2026, time.July, 27, 10, 0, 0, 0, time.UTC)
-	modelDiscovery, err := accountmodels.NewDiscovery(store.catalog)
-	if err != nil {
-		t.Fatalf("accountmodels.NewDiscovery() error = %v", err)
-	}
 	registrar, err := accountapp.NewRegistrar(
 		store.catalog,
 		store,
-		modelDiscovery,
 		func() time.Time { return registeredAt },
 	)
 	if err != nil {

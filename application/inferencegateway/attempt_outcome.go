@@ -5,8 +5,18 @@ package inferencegateway
 // stream 始终非空，即使调用以内部故障结束。编排层据此判断客户端是否已经看到
 // 本次调用的事件：只有一个字节都没写出去时，补发更早记录的真实上游失败才是安全的。
 type attemptOutcome struct {
-	stream *attemptStream
-	retry  bool
+	stream  *attemptStream
+	retry   bool
+	failure AttemptFailure
+}
+
+// newFailedAttemptOutcome 保存本次结构化失败，供请求级策略判定是否全为模糊失败。
+func newFailedAttemptOutcome(
+	stream *attemptStream,
+	retry bool,
+	failure AttemptFailure,
+) attemptOutcome {
+	return attemptOutcome{stream: stream, retry: retry, failure: failure}
 }
 
 // newAttemptOutcome 创建保留事件边界的调用结果。

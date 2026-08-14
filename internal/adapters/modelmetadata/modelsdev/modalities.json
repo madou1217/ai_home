@@ -660,7 +660,110 @@
       "text"
     ]
   },
+  "bytedance-seed/seed-1-6": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "bytedance-seed/seed-1-6-flash": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "bytedance-seed/seed-1-6-vision": {
+    "input": [
+      "text",
+      "image"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "bytedance-seed/seed-1-8": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ]
+  },
   "bytedance-seed/seed-2.0-code": {
+    "input": [
+      "text",
+      "image",
+      "video"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "bytedance-seed/seed-2.0-lite": {
+    "input": [
+      "text",
+      "image",
+      "video"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "bytedance-seed/seed-2.0-mini": {
+    "input": [
+      "text",
+      "image",
+      "video"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "bytedance-seed/seed-2.0-pro": {
+    "input": [
+      "text",
+      "image",
+      "video"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "bytedance-seed/seed-2.1-pro": {
+    "input": [
+      "text",
+      "image",
+      "video"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "bytedance-seed/seed-2.1-turbo": {
+    "input": [
+      "text",
+      "image",
+      "video"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "bytedance-seed/seed-character": {
+    "input": [
+      "text",
+      "image",
+      "video"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "bytedance-seed/seed-evolving": {
     "input": [
       "text",
       "image",
@@ -1550,6 +1653,14 @@
     ]
   },
   "minimax/MiniMax-M2": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "minimax/MiniMax-M2-Her": {
     "input": [
       "text"
     ],

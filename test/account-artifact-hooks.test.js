@@ -174,6 +174,11 @@ test('default artifact hook registry routes shared auth handlers through provide
       provider: 'gemini',
       cliAccountId: '4',
       relativePath: path.join('.gemini', 'oauth_creds.json')
+    },
+    {
+      provider: 'kimi',
+      cliAccountId: '5',
+      relativePath: path.join('.kimi-code', 'credentials', 'kimi-code.json')
     }
   ];
 
@@ -202,8 +207,9 @@ test('default artifact hook registry routes shared auth handlers through provide
     assert.equal(result.dispatched, true);
   });
 
-  assert.deepEqual(events.map((event) => event.provider), ['claude', 'gemini']);
+  assert.deepEqual(events.map((event) => event.provider), ['claude', 'gemini', 'kimi']);
   assert.deepEqual(events.map((event) => event.type), [
+    'default_account_auth_updated',
     'default_account_auth_updated',
     'default_account_auth_updated'
   ]);

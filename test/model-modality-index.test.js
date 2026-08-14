@@ -4,7 +4,9 @@ const {
   getModelModalities,
   modelGeneratesImages,
   modelMatchesCapability,
-  modelSupportsVision
+  modelSupportsVision,
+  registerProbedModelModalities,
+  __private
 } = require('../lib/server/model-modality-index');
 
 test('glm-5.2 (bare and opencode-go prefixed) is text-only, no vision', () => {
@@ -65,4 +67,32 @@ test('modelMatchesCapability maps vision/image_out and fails open on unknown cap
   assert.equal(modelMatchesCapability('gemini-3-flash', 'image_out'), false);
   assert.equal(modelMatchesCapability('glm-5.2', ''), true);
   assert.equal(modelMatchesCapability('glm-5.2', 'not-a-capability'), true);
+});
+
+test('kimi coding models resolve vision via models.dev kimi-for-coding catalog', () => {
+  assert.equal(modelSupportsVision('kimi-for-coding'), true);
+  assert.equal(modelSupportsVision('kimi-for-coding-highspeed'), true);
+  assert.deepEqual(getModelModalities('k3'), { input: ['text', 'image', 'video'], output: ['text'] });
+  // k3-256k 按 models.dev 记录不接受 video 输入
+  assert.deepEqual(getModelModalities('k3-256k'), { input: ['text', 'image'], output: ['text'] });
+});
+
+test('probed modalities override models.dev and invalidate both cache key forms', () => {
+  // 先建立缓存:未知模型 → text-only 兜底
+  assert.deepEqual(getModelModalities('kimi-next-gen'), { input: ['text'], output: ['text'] });
+  assert.deepEqual(getModelModalities('kimi-next-gen', { provider: 'kimi' }), { input: ['text'], output: ['text'] });
+
+  registerProbedModelModalities([
+    { id: 'kimi-next-gen', modalities: { input: ['text', 'image', 'video'], output: ['text'] } },
+    { id: '', modalities: { input: ['image'] } },
+    { id: 'kimi-no-modality-descriptor' }
+  ]);
+
+  assert.deepEqual(getModelModalities('kimi-next-gen'), { input: ['text', 'image', 'video'], output: ['text'] });
+  assert.deepEqual(getModelModalities('kimi-next-gen', { provider: 'kimi' }), { input: ['text', 'image', 'video'], output: ['text'] });
+  // 缺 modalities 的 descriptor 不注册,仍走兜底
+  assert.deepEqual(getModelModalities('kimi-no-modality-descriptor'), { input: ['text'], output: ['text'] });
+
+  __private.resetModelModalityCache();
+  assert.deepEqual(getModelModalities('kimi-next-gen'), { input: ['text'], output: ['text'] });
 });

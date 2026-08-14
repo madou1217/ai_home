@@ -144,3 +144,12 @@ test('models.dev provider inference keeps AIH provider separate from catalog pro
   assert.deepEqual(inferModelsDevProviderIds('claude', 'claude-sonnet-4-5'), ['anthropic']);
   assert.deepEqual(inferModelsDevProviderIds('opencode', 'opencode-go/glm-5.2'), ['opencode-go', 'opencode']);
 });
+
+test('models.dev provider inference maps kimi to coding and moonshotai catalogs', () => {
+  assert.deepEqual(inferModelsDevProviderIds('kimi', 'kimi-k3'), ['kimi-for-coding', 'moonshotai-cn', 'moonshotai']);
+  assert.deepEqual(inferModelsDevProviderIds('kimi', 'k3'), ['kimi-for-coding', 'moonshotai-cn', 'moonshotai']);
+  // 请求路径没有 provider 上下文时按 id 前缀定位 kimi-for-coding provider 目录
+  assert.deepEqual(inferModelsDevProviderIds('', 'kimi-for-coding-highspeed'), ['kimi-for-coding']);
+  assert.deepEqual(inferModelsDevProviderIds('', 'k3-256k'), ['kimi-for-coding']);
+  assert.deepEqual(inferModelsDevProviderIds('', 'gpt-5'), []);
+});

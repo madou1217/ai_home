@@ -489,3 +489,35 @@ test('a stale empty catalog is not carried forward as known-empty', async () => 
     '旧的空目录应被当成未知丢掉,而不是原样带下去'
   );
 });
+
+test('webui model cache collects display labels from kimi probed modelDescriptors', async () => {
+  const account = {
+    id: '1',
+    accountRef: 'acct_33b6d72c47665c11d5ef',
+    provider: 'kimi',
+    accessToken: 'kimi-oauth-token',
+    availableModels: []
+  };
+  const state = {
+    accounts: { kimi: [account] },
+    modelRegistry: { providers: {} }
+  };
+
+  const result = await getWebUiModelsCache(state, { provider: 'auto' }, {
+    forceRefresh: true,
+    fetchModelsForAccount: async (_options, target) => {
+      // 模拟 kimi /models 探测写回 modelDescriptors(display_name 与 id 错位)
+      target.modelDescriptors = [
+        { id: 'kimi-for-coding', displayName: 'K2.7 Coding' },
+        { id: 'k3-256k', displayName: 'K3-256k' }
+      ];
+      return ['kimi-for-coding', 'k3-256k'];
+    }
+  });
+
+  assert.deepEqual(result.models.kimi, ['k3-256k', 'kimi-for-coding']);
+  assert.deepEqual(result.labels.kimi, {
+    'kimi-for-coding': 'K2.7 Coding',
+    'k3-256k': 'K3-256k'
+  });
+});

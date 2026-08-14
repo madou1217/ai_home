@@ -379,6 +379,88 @@ test('fetchModelsForAccount can ignore stale Gemini Code Assist model snapshots'
   assert.equal(seenUrls.some((url) => url.includes(':retrieveUserQuota')), false);
 });
 
+test('AGY Code Assist keeps Claude beta off discovery calls and on Claude inference', async (t) => {
+  const calls = [];
+  t.mock.method(global, 'fetch', async (url, init = {}) => {
+    const safeUrl = String(url || '');
+    calls.push({
+      url: safeUrl,
+      headers: init.headers || {}
+    });
+    if (safeUrl.includes(':loadCodeAssist')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ cloudaicompanionProject: 'projects/agy-header-scope' })
+      };
+    }
+    if (safeUrl.includes(':fetchAvailableModels')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          models: {
+            'claude-opus-4-6-thinking': {}
+          }
+        })
+      };
+    }
+    if (safeUrl.includes(':retrieveUserQuota')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          buckets: [{ modelId: 'claude-opus-4-6-thinking' }]
+        })
+      };
+    }
+    if (safeUrl.includes(':generateContent')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          traceId: 'trace-header-scope',
+          candidates: [{
+            finishReason: 'STOP',
+            content: { parts: [{ text: 'ok' }] }
+          }],
+          usageMetadata: {}
+        })
+      };
+    }
+    throw new Error(`unexpected_url_${safeUrl}`);
+  });
+
+  const options = {
+    agyBaseUrl: 'https://daily-cloudcode-pa.googleapis.com/v1internal',
+    ignoreAvailableModelsSnapshot: true,
+    agySessionIdMap: new Map()
+  };
+  const account = {
+    provider: 'agy',
+    id: 'agy-header-scope',
+    authType: 'oauth-personal',
+    accessToken: 'agy-token'
+  };
+
+  await __private.fetchGeminiCodeAssistProject(options, account, 500);
+  await __private.fetchGeminiCodeAssistAvailableModelDescriptors(options, account, 500);
+  await __private.fetchGeminiCodeAssistQuotaModelDescriptors(options, account, 500);
+  await fetchGeminiCodeAssistChatCompletion(options, account, {
+    model: 'claude-opus-4-6-thinking',
+    messages: [{ role: 'user', content: 'hi' }]
+  }, 500);
+
+  for (const method of ['loadCodeAssist', 'fetchAvailableModels', 'retrieveUserQuota']) {
+    const call = calls.find((item) => item.url.includes(`:${method}`));
+    assert.ok(call, `missing ${method} call`);
+    assert.equal(call.headers['anthropic-beta'], undefined);
+  }
+  const inferenceCall = calls.find((item) => item.url.includes(':generateContent'));
+  assert.ok(inferenceCall);
+  assert.equal(inferenceCall.headers['anthropic-beta'], 'claude-code-20250219');
+});
+
 test('fetchModelsForAccount falls back to Gemini quota models when catalog is permission denied', async (t) => {
   const seenCalls = [];
   t.mock.method(global, 'fetch', async (url, init = {}) => {
@@ -2282,4 +2364,81 @@ test('fetchModelsForAccount promotes tieredModelIds into the account model catal
   // high/low 档位必须作为独立模型进入账号目录
   assert.deepEqual(models, ['gemini-3.5-flash', 'gemini-3.5-flash-high', 'gemini-3.5-flash-low']);
   assert.deepEqual(account.availableModels, ['gemini-3.5-flash', 'gemini-3.5-flash-high', 'gemini-3.5-flash-low']);
+});
+
+test('fetchModelsForAccount writes kimi probe descriptors back to the account', async (t) => {
+  let seenUrl = '';
+  let seenAuthorization = '';
+  t.mock.method(global, 'fetch', async (url, init) => {
+    seenUrl = String(url || '');
+    seenAuthorization = String(init && init.headers && init.headers.authorization || '');
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        data: [
+          {
+            id: 'kimi-for-coding',
+            display_name: 'K2.7 Coding',
+            context_length: 262144,
+            supports_reasoning: true,
+            supports_image_in: true,
+            supports_video_in: true,
+            supports_thinking_type: 'only'
+          },
+          {
+            id: 'k3-256k',
+            display_name: 'K3-256k',
+            context_length: 262144,
+            supports_image_in: true
+          }
+        ]
+      })
+    };
+  });
+
+  const account = {
+    provider: 'kimi',
+    accountRef: 'acct_33b6d72c47665c11d5ef',
+    authType: 'oauth',
+    apiKeyMode: false,
+    accessToken: 'kimi-oauth-token',
+    openaiBaseUrl: 'https://api.kimi.com/coding/v1'
+  };
+  const models = await fetchModelsForAccount({}, account, 500);
+
+  assert.equal(seenUrl, 'https://api.kimi.com/coding/v1/models');
+  assert.equal(seenAuthorization, 'Bearer kimi-oauth-token');
+  assert.deepEqual(models, ['kimi-for-coding', 'k3-256k']);
+  assert.equal(account.modelDescriptors.length, 2);
+  assert.deepEqual(account.modelDescriptors[0], {
+    id: 'kimi-for-coding',
+    displayName: 'K2.7 Coding',
+    contextLength: 262144,
+    reasoning: true,
+    thinkingType: 'only',
+    modalities: { input: ['text', 'image', 'video'], output: ['text'] }
+  });
+  assert.deepEqual(account.modelDescriptors[1].modalities, { input: ['text', 'image'], output: ['text'] });
+  assert.equal(account.modelDescriptors[1].reasoning, false);
+});
+
+test('fetchModelsForAccount leaves kimi descriptors untouched when probe payload has no usable items', async (t) => {
+  t.mock.method(global, 'fetch', async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ data: [{ name: 'no-id-here' }] })
+  }));
+
+  const account = {
+    provider: 'kimi',
+    accountRef: 'acct_33b6d72c47665c11d5ef',
+    authType: 'oauth',
+    accessToken: 'kimi-oauth-token',
+    openaiBaseUrl: 'https://api.kimi.com/coding/v1',
+    modelDescriptors: [{ id: 'existing', displayName: 'Existing' }]
+  };
+  const models = await fetchModelsForAccount({}, account, 500);
+  assert.deepEqual(models, []);
+  assert.deepEqual(account.modelDescriptors, [{ id: 'existing', displayName: 'Existing' }]);
 });

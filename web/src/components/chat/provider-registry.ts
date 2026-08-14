@@ -15,6 +15,7 @@ import agyTerminalIcon from '../../../../assets/provider-icons/agy.png';
 import claudeTerminalIcon from '../../../../assets/provider-icons/claude.png';
 import codexTerminalIcon from '../../../../assets/provider-icons/codex.png';
 import geminiTerminalIcon from '../../../../assets/provider-icons/gemini.png';
+import kimiTerminalIcon from '../../../../assets/provider-icons/kimi.png';
 import opencodeTerminalIcon from '../../../../assets/provider-icons/opencode.png';
 import {
   PROVIDER_CATALOG,
@@ -73,10 +74,10 @@ const TERMINAL_ICON_ASSETS: Partial<Record<Provider, string>> = {
   claude: claudeTerminalIcon,
   agy: agyTerminalIcon,
   opencode: opencodeTerminalIcon,
+  kimi: kimiTerminalIcon,
   grok: aiHomeMark,
   qoder: aiHomeMark,
   qodercn: aiHomeMark,
-  kimi: aiHomeMark,
   kiro: aiHomeMark
 };
 

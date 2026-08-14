@@ -8,6 +8,7 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 
 const {
   buildIterm2SetProfileSequence,
+  buildAiHomeTerminalTitle,
   buildProviderTerminalTitle,
   buildTerminalTitleSequence,
   buildWindowsTerminalCommandLine,
@@ -106,11 +107,14 @@ test('terminal icon strategy detection prefers exact terminal environment marker
 test('provider terminal icon paths resolve to real PNG assets', () => {
   const codexIcon = resolveProviderTerminalIconPath('codex');
   const claudeIcon = resolveProviderTerminalIconPath('claude');
+  const kimiIcon = resolveProviderTerminalIconPath('kimi');
 
   assert.equal(path.basename(codexIcon), 'codex.png');
   assert.equal(path.basename(claudeIcon), 'claude.png');
+  assert.equal(path.basename(kimiIcon), 'kimi.png');
   assert.equal(fs.existsSync(codexIcon), true);
   assert.equal(fs.existsSync(claudeIcon), true);
+  assert.equal(fs.existsSync(kimiIcon), true);
 });
 
 test('windows terminal fragment uses provider profile icons', () => {
@@ -587,6 +591,36 @@ test('warp provider icon preparation auto-writes agent command mapping', (t) => 
   assert.equal(content.includes('"^aih\\\\s+agy(?:\\\\s|$).*" = "Gemini"'), true);
   assert.deepEqual(writes, []);
   assert.equal(env.AIH_WARP_PROVIDER_ICON, 'codex');
+});
+
+test('unsupported Warp provider uses the AIH title fallback without a fake native mapping', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-prepare-warp-kimi-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const env = {
+    HOME: root,
+    TERM_PROGRAM: 'WarpTerminal',
+    WARP_IS_LOCAL_SHELL_SESSION: '1'
+  };
+  const writes = [];
+
+  const result = prepareCurrentTerminalProviderIcon('kimi', {
+    fs,
+    path,
+    env,
+    processImpl: {
+      platform: 'darwin',
+      env,
+      stdout: {
+        isTTY: true,
+        write: (text) => writes.push(text)
+      }
+    }
+  });
+
+  assert.deepEqual(result, { applied: true, terminal: 'warp' });
+  assert.equal(fs.existsSync(resolveWarpSettingsPath({ path, platform: 'darwin', env })), false);
+  assert.deepEqual(writes, [buildTerminalTitleSequence(buildAiHomeTerminalTitle('kimi'))]);
+  assert.equal(env.AIH_TERMINAL_PROVIDER_TITLE, 'kimi');
 });
 
 test('terminal icon command auto-installs Warp mappings when Warp is detected', (t) => {

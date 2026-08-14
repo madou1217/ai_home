@@ -585,6 +585,194 @@ test('model usage scanner applies provider-specific Codex, Claude, and Gemini ru
   }
 });
 
+test('kimi scanner records turn-scope wire usage and filters non-user prompts', (t) => {
+  const fixture = makeService(t);
+  if (!fixture) return;
+  const { root, service } = fixture;
+  try {
+    const kimiFile = path.join(
+      root,
+      '.kimi-code',
+      'sessions',
+      'wd_kimi-project_abcd1234',
+      'session_kimi-1',
+      'agents',
+      'main',
+      'wire.jsonl'
+    );
+    writeJsonl(kimiFile, [
+      { type: 'metadata', protocol_version: '1.5', created_at: Date.parse('2026-06-04T11:00:00.000Z') },
+      {
+        type: 'profile.bind',
+        modelAlias: 'kimi-code/k3-256k',
+        environmentDisclosure: { cwd: '/work/kimi-project' },
+        time: Date.parse('2026-06-04T11:00:00.500Z')
+      },
+      {
+        type: 'turn.prompt',
+        origin: { kind: 'user' },
+        input: [{ type: 'text', text: 'real prompt' }],
+        time: Date.parse('2026-06-04T11:00:01.000Z')
+      },
+      {
+        type: 'turn.prompt',
+        origin: { kind: 'system_trigger', name: 'subagent' },
+        input: [{ type: 'text', text: 'delegated task' }],
+        time: Date.parse('2026-06-04T11:00:01.500Z')
+      },
+      {
+        type: 'turn.prompt',
+        origin: { kind: 'task', taskId: 'bash-1', status: 'completed' },
+        time: Date.parse('2026-06-04T11:00:01.600Z')
+      },
+      {
+        type: 'usage.record',
+        model: 'kimi-code/k3-256k',
+        usage: { inputOther: 100, output: 10, inputCacheRead: 40, inputCacheCreation: 5 },
+        usageScope: 'turn',
+        time: Date.parse('2026-06-04T11:00:02.000Z')
+      },
+      {
+        type: 'usage.record',
+        model: 'kimi-code/k3-256k',
+        usage: { inputOther: 80, output: 6, inputCacheRead: 120, inputCacheCreation: 0 },
+        usageScope: 'turn',
+        time: Date.parse('2026-06-04T11:00:03.000Z')
+      },
+      {
+        type: 'usage.record',
+        model: 'kimi-code/k3-256k',
+        usage: { inputOther: 999, output: 999, inputCacheRead: 999, inputCacheCreation: 999 },
+        usageScope: 'session',
+        time: Date.parse('2026-06-04T11:00:04.000Z')
+      }
+    ]);
+
+    const scan = service.scan();
+    assert.equal(scan.records, 2);
+    assert.equal(scan.prompts, 1);
+    assert.equal(scan.providers.kimi.files, 1);
+
+    const query = {
+      fromMs: new Date(2026, 5, 4).getTime(),
+      toMs: new Date(2026, 5, 5).getTime() - 1,
+      provider: 'kimi'
+    };
+    const stats = service.getStats(query);
+    assert.equal(stats.totalCalls, 2);
+    assert.equal(stats.totalPrompts, 1);
+    assert.equal(stats.totalTokens, 155 + 206);
+
+    const models = service.getCostByModel(query);
+    const kimi = models.find((item) => item.provider === 'kimi');
+    assert.deepEqual({
+      model: kimi.model,
+      input: kimi.inputTokens,
+      cache: kimi.cacheReadInputTokens,
+      cacheCreate: kimi.cacheCreationInputTokens,
+      output: kimi.outputTokens
+    }, {
+      model: 'kimi-code/k3-256k',
+      input: 180,
+      cache: 160,
+      cacheCreate: 5,
+      output: 16
+    });
+
+    const sessions = service.getSessions({ ...query, limit: 10 });
+    const session = sessions.find((item) => item.provider === 'kimi');
+    assert.equal(session.sessionId, 'session_kimi-1');
+    assert.equal(session.cwd, '/work/kimi-project');
+    assert.equal(session.project, 'kimi-project');
+    assert.equal(session.promptCount, 1);
+
+    // incremental rescan appends only new events without duplicating existing rows
+    fs.appendFileSync(kimiFile, `${JSON.stringify({
+      type: 'usage.record',
+      model: 'kimi-code/k3-256k',
+      usage: { inputOther: 7, output: 3, inputCacheRead: 2, inputCacheCreation: 0 },
+      usageScope: 'turn',
+      time: Date.parse('2026-06-04T11:00:05.000Z')
+    })}\n`, 'utf8');
+    const rescan = service.scan();
+    assert.equal(rescan.records, 1);
+    const restats = service.getStats(query);
+    assert.equal(restats.totalCalls, 3);
+    assert.equal(restats.totalTokens, 155 + 206 + 12);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('kimi scanner attributes sandbox wire usage to the owning account and backfills', (t) => {
+  const accountRef = 'acct_0123456789abcdef0123';
+  let attributedRef = '';
+  const fixture = makeService(t, {
+    resolveKimiAccountRef: (runtimeDir) => (runtimeDir.includes('auth-projections') ? attributedRef : '')
+  });
+  if (!fixture) return;
+  const { root, service } = fixture;
+  try {
+    const sandboxWire = path.join(
+      root,
+      '.ai_home',
+      'run',
+      'auth-projections',
+      'kimi',
+      accountRef,
+      '.kimi-code',
+      'sessions',
+      'wd_kimi-project_abcd1234',
+      'session_sandbox-1',
+      'agents',
+      'main',
+      'wire.jsonl'
+    );
+    writeJsonl(sandboxWire, [
+      { type: 'metadata', protocol_version: '1.5', created_at: Date.parse('2026-06-04T11:00:00.000Z') },
+      {
+        type: 'profile.bind',
+        modelAlias: 'kimi-code/k3-256k',
+        environmentDisclosure: { cwd: '/work/kimi-project' },
+        time: Date.parse('2026-06-04T11:00:00.500Z')
+      },
+      {
+        type: 'turn.prompt',
+        origin: { kind: 'user' },
+        input: [{ type: 'text', text: 'real prompt' }],
+        time: Date.parse('2026-06-04T11:00:01.000Z')
+      },
+      {
+        type: 'usage.record',
+        model: 'kimi-code/k3-256k',
+        usage: { inputOther: 100, output: 10, inputCacheRead: 40, inputCacheCreation: 5 },
+        usageScope: 'turn',
+        time: Date.parse('2026-06-04T11:00:02.000Z')
+      }
+    ]);
+    const nowMs = Date.parse('2026-06-04T12:00:00.000Z');
+
+    const first = service.scan();
+    assert.equal(first.records, 1);
+    assert.deepEqual(service.getAccountTokenUsage({ nowMs }), {});
+
+    // the account registers (or credentials appear) after the first scan: the
+    // next scan backfills the previously unattributed rows for the file
+    attributedRef = accountRef;
+    const second = service.scan();
+    assert.equal(second.records, 0);
+
+    const usage = service.getAccountTokenUsage({ nowMs });
+    assert.equal(usage[accountRef].month, 155);
+    assert.deepEqual(
+      usage[accountRef].models.map((row) => [row.model, row.month]),
+      [['kimi-code/k3-256k', 155]]
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('codex scanner excludes inherited fork history and keeps the child session identity', (t) => {
   const fixture = makeService(t);
   if (!fixture) return;

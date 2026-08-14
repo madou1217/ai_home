@@ -1453,8 +1453,22 @@ export interface ManagementMetrics {
   lastErrors: Array<{
     at?: string;
     provider?: string;
+    accountLabel?: string;
+    attemptedCount?: number;
     accountRef?: string;
     attemptedAccountRefs?: string[];
+    model?: string;
+    requestedModel?: string;
+    effectiveModel?: string;
+    clientProtocol?: string;
+    familyProvider?: string;
+    effectiveProvider?: string;
+    aliasTarget?: string;
+    aliasMatched?: boolean;
+    sessionId?: string;
+    sessionKey?: string;
+    projectPath?: string;
+    projectDirName?: string;
     route?: string;
     message?: string;
     error?: string;

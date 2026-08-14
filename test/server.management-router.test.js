@@ -37,6 +37,65 @@ test('management metric errors expose accountRef without deriving accountKey', (
   assert.equal(Object.prototype.hasOwnProperty.call(errors[1], 'accountKey'), false);
 });
 
+test('management metric errors format friendly account label and preserve project/session context', () => {
+  const mockAccounts = {
+    codex: [
+      { accountRef: 'acct_123', email: 'user@example.com' },
+      { accountRef: 'acct_456', apiKeyMode: true }
+    ]
+  };
+  const errors = normalizeMetricErrors([{
+    provider: 'codex',
+    accountRef: 'acct_123',
+    model: 'gpt-5',
+    sessionId: 'sess_abc',
+    projectPath: '/Users/test/projects/my-app',
+    projectDirName: 'my-app',
+    error: 'rate_limited'
+  }, {
+    provider: 'codex',
+    accountRef: 'acct_456',
+    error: 'auth_failed'
+  }, {
+    provider: 'codex',
+    attemptedAccountRefs: ['acct_1', 'acct_2'],
+    error: 'upstream_failed'
+  }], mockAccounts);
+
+  assert.equal(errors[0].accountLabel, 'user@example.com');
+  assert.equal(errors[0].model, 'gpt-5');
+  assert.equal(errors[0].sessionId, 'sess_abc');
+  assert.equal(errors[0].projectPath, '/Users/test/projects/my-app');
+  assert.equal(errors[0].projectDirName, 'my-app');
+  assert.equal(errors[1].accountLabel, 'CODEX 密钥账号');
+  assert.equal(errors[2].accountLabel, '尝试了 2 个账号');
+  assert.equal(errors[2].attemptedCount, 2);
+});
+
+test('management metric errors preserve cross-provider routing and model alias context', () => {
+  const errors = normalizeMetricErrors([{
+    provider: 'agy',
+    effectiveProvider: 'agy',
+    familyProvider: 'claude',
+    clientProtocol: 'anthropic_messages',
+    requestedModel: 'claude-3-7-sonnet',
+    effectiveModel: 'agy.gemini-2.5-flash',
+    aliasTarget: 'gemini-2.5-flash',
+    aliasMatched: true,
+    message: 'hit usage limit',
+    error: 'upstream_failed'
+  }]);
+
+  assert.equal(errors[0].provider, 'agy');
+  assert.equal(errors[0].effectiveProvider, 'agy');
+  assert.equal(errors[0].familyProvider, 'claude');
+  assert.equal(errors[0].clientProtocol, 'anthropic_messages');
+  assert.equal(errors[0].requestedModel, 'claude-3-7-sonnet');
+  assert.equal(errors[0].effectiveModel, 'agy.gemini-2.5-flash');
+  assert.equal(errors[0].aliasTarget, 'gemini-2.5-flash');
+  assert.equal(errors[0].aliasMatched, true);
+});
+
 function createResCapture() {
   return {
     statusCode: 0,

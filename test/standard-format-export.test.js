@@ -586,6 +586,50 @@ test('importStandardAccountRecords stores flat Gemini OAuth records in native cr
   }
 });
 
+test('importStandardAccountRecords stores flat Kimi OAuth credentials and device identity', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-standard-import-kimi-flat-'));
+  try {
+    const aiHomeDir = path.join(root, '.ai_home');
+    const records = parseStandardAccountRecordsFromJson({
+      platform: 'moonshot',
+      type: 'oauth',
+      credentials: {
+        access_token: 'kimi-access',
+        refresh_token: 'kimi-refresh',
+        expires_at: 1786657475,
+        expires_in: 900,
+        scope: 'kimi-code',
+        token_type: 'Bearer',
+        device_id: 'device-kimi-import'
+      }
+    });
+
+    const result = importStandardAccountRecords({
+      fs,
+      path,
+      aiHomeDir,
+      records
+    });
+    const accountRef = resolveTestAccountRef(aiHomeDir, 'kimi', '1');
+    const nativeAuth = readAccountNativeAuth(fs, aiHomeDir, accountRef);
+
+    assert.equal(result.imported, 1);
+    assert.deepEqual(nativeAuth, {
+      credentials: {
+        access_token: 'kimi-access',
+        refresh_token: 'kimi-refresh',
+        expires_at: 1786657475,
+        expires_in: 900,
+        scope: 'kimi-code',
+        token_type: 'Bearer'
+      },
+      deviceId: 'device-kimi-import'
+    });
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('importStandardAccountRecords stores flat Antigravity OAuth records in native credential layout', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-standard-import-agy-flat-'));
   try {

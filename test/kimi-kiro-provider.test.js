@@ -44,10 +44,133 @@ describe('kimi/kiro provider catalog', () => {
       KIMI_CODE_HOME: 'stale-home'
     }, { path, hostHomeDir, platform: 'win32' });
 
-    assert.equal(env.KIMI_CODE_HOME, sandboxDir);
+    assert.equal(env.KIMI_CODE_HOME, path.join(sandboxDir, '.kimi-code'));
     assert.equal(env.HOME, hostHomeDir);
     assert.equal(env.USERPROFILE, hostHomeDir);
     assert.equal(env.MOONSHOT_API_KEY, undefined);
+  });
+
+  it('kimi launch strategy preserves only the selected account API key', () => {
+    const { buildProviderRuntimeEnv } = require('../lib/cli/services/ai-cli/provider-runtime-env');
+    const sandboxDir = path.join(os.tmpdir(), 'kimi-api-runtime');
+    const hostHomeDir = path.join(os.tmpdir(), 'kimi-api-host-home');
+    const env = buildProviderRuntimeEnv('kimi', sandboxDir, {
+      HOME: hostHomeDir,
+      MOONSHOT_API_KEY: 'host-secret'
+    }, {
+      path,
+      hostHomeDir,
+      platform: 'darwin',
+      accountEnv: { MOONSHOT_API_KEY: 'account-secret' }
+    });
+
+    assert.equal(env.MOONSHOT_API_KEY, 'account-secret');
+    assert.equal(env.KIMI_CODE_HOME, path.join(sandboxDir, '.kimi-code'));
+  });
+
+  it('kimi launch preparation creates a sanitized native config under .kimi-code', () => {
+    const { prepareProviderRuntime } = require('../lib/cli/services/ai-cli/provider-runtime-env');
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-kimi-prepare-'));
+    try {
+      const hostHomeDir = path.join(root, 'host');
+      const sandboxDir = path.join(root, 'sandbox');
+      fs.mkdirSync(path.join(hostHomeDir, '.kimi-code'), { recursive: true });
+      fs.writeFileSync(
+        path.join(hostHomeDir, '.kimi-code', 'config.toml'),
+        '[providers."managed:kimi-code"]\napi_key = "host-secret"\nbase_url = "https://api.kimi.com/coding/v1"\n',
+        'utf8'
+      );
+
+      prepareProviderRuntime('kimi', sandboxDir, { HOME: hostHomeDir }, {
+        path,
+        fs,
+        hostHomeDir,
+        platform: 'darwin',
+        isLogin: true,
+        materializeAuth: false
+      });
+
+      const configPath = path.join(sandboxDir, '.kimi-code', 'config.toml');
+      assert.equal(fs.existsSync(configPath), true);
+      assert.match(fs.readFileSync(configPath, 'utf8'), /base_url/);
+      assert.doesNotMatch(fs.readFileSync(configPath, 'utf8'), /host-secret/);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('kimi launch adopts a newer standalone host OAuth snapshot before materialization', () => {
+    const { prepareProviderRuntime } = require('../lib/cli/services/ai-cli/provider-runtime-env');
+    const { registerAccountIdentity } = require('../lib/account/account-registration');
+    const { writeAccountNativeAuth, readAccountNativeAuth } = require('../lib/server/account-credential-store');
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-kimi-host-launch-'));
+    try {
+      const aiHomeDir = path.join(root, 'ai-home');
+      const hostHomeDir = path.join(root, 'host-home');
+      const sandboxDir = path.join(root, 'sandbox');
+      const account = registerAccountIdentity(fs, aiHomeDir, {
+        provider: 'kimi',
+        cliAccountId: '1',
+        identitySeed: 'oauth:kimi:host-launch'
+      });
+      const makeJwt = (payload) => [
+        Buffer.from('{}').toString('base64url'),
+        Buffer.from(JSON.stringify(payload)).toString('base64url'),
+        'signature'
+      ].join('.');
+      const databaseCredentials = {
+        access_token: makeJwt({ user_id: 'kimi-host-user', sub: 'kimi-host-user', device_id: 'old-device', exp: 1000 }),
+        refresh_token: makeJwt({ user_id: 'kimi-host-user', sub: 'kimi-host-user', device_id: 'old-device', exp: 2000 }),
+        expires_at: 1000,
+        expires_in: 900,
+        scope: 'kimi-code',
+        token_type: 'Bearer'
+      };
+      const hostCredentials = {
+        access_token: makeJwt({ user_id: 'kimi-host-user', sub: 'kimi-host-user', device_id: 'host-device', exp: 3000 }),
+        refresh_token: makeJwt({ user_id: 'kimi-host-user', sub: 'kimi-host-user', device_id: 'host-device', exp: 4000 }),
+        expires_at: 3000,
+        expires_in: 900,
+        scope: 'kimi-code',
+        token_type: 'Bearer'
+      };
+      writeAccountNativeAuth(fs, aiHomeDir, account.accountRef, {
+        credentials: databaseCredentials
+      });
+      const hostCredentialsPath = path.join(hostHomeDir, '.kimi-code', 'credentials', 'kimi-code.json');
+      const hostDevicePath = path.join(hostHomeDir, '.kimi-code', 'device_id');
+      fs.mkdirSync(path.dirname(hostCredentialsPath), { recursive: true });
+      fs.writeFileSync(hostCredentialsPath, `${JSON.stringify(hostCredentials)}\n`, 'utf8');
+      fs.writeFileSync(hostDevicePath, 'host-device\n', 'utf8');
+      const hostMtime = (Date.now() + 5000) / 1000;
+      fs.utimesSync(hostCredentialsPath, hostMtime, hostMtime);
+      fs.utimesSync(hostDevicePath, hostMtime, hostMtime);
+
+      prepareProviderRuntime('kimi', sandboxDir, { HOME: hostHomeDir }, {
+        path,
+        fs,
+        hostHomeDir,
+        aiHomeDir,
+        accountRef: account.accountRef,
+        platform: 'darwin',
+        installSkill: false
+      });
+
+      assert.deepEqual(readAccountNativeAuth(fs, aiHomeDir, account.accountRef), {
+        credentials: hostCredentials,
+        deviceId: 'host-device'
+      });
+      assert.deepEqual(
+        JSON.parse(fs.readFileSync(path.join(sandboxDir, '.kimi-code', 'credentials', 'kimi-code.json'), 'utf8')),
+        hostCredentials
+      );
+      assert.equal(
+        fs.readFileSync(path.join(sandboxDir, '.kimi-code', 'device_id'), 'utf8'),
+        'host-device'
+      );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('provider-registry exposes kiro CLI config', () => {
@@ -248,26 +371,96 @@ describe('loadKimiServerAccounts', () => {
     const reg = registerAccountIdentity(fs, aiHomeDir, {
       provider: 'kimi', cliAccountId: '4', identitySeed: 'test:kimi:4:oauth'
     });
-    writeAccountNativeAuth(fs, aiHomeDir, reg.accountRef, { auth: { access_token: 'oauth-tok-123' } });
+    writeAccountNativeAuth(fs, aiHomeDir, reg.accountRef, {
+      credentials: {
+        access_token: 'oauth-tok-123',
+        refresh_token: 'oauth-refresh-123'
+      }
+    });
     const accounts = loadKimiServerAccounts(deps());
     assert.equal(accounts.length, 1);
     assert.equal(accounts[0].authType, 'oauth');
     assert.equal(accounts[0].accessToken, 'oauth-tok-123');
+    assert.equal(accounts[0].openaiBaseUrl, 'https://api.kimi.com/coding/v1');
   });
 
-  it('loads kimi account with OAuth token stored under $.credentials (kimi-code layout)', () => {
-    // 回归：kimi-code 登录后凭证写在 native_auth_json 的 $.credentials，
-    // 早期实现只读 $.auth，导致 OAuth 账号取不到 token 被静默丢弃、进不了运行池。
+  it('loads kimi account with a legacy OAuth token stored under $.auth', () => {
+    // 回归：早期版本把凭证写在 native_auth_json 的 $.auth，加载端必须兼容，
+    // 否则老账号升级后会被静默丢弃、进不了运行池。
     const reg = registerAccountIdentity(fs, aiHomeDir, {
-      provider: 'kimi', cliAccountId: '5', identitySeed: 'test:kimi:5:credentials'
+      provider: 'kimi', cliAccountId: '8', identitySeed: 'test:kimi:8:legacy-auth'
     });
     writeAccountNativeAuth(fs, aiHomeDir, reg.accountRef, {
-      credentials: { access_token: 'cred-tok-456', refresh_token: 'cred-rt-456' }
+      auth: { access_token: 'legacy-auth-tok', refresh_token: 'legacy-auth-rt' }
     });
     const accounts = loadKimiServerAccounts(deps());
     assert.equal(accounts.length, 1);
     assert.equal(accounts[0].authType, 'oauth');
-    assert.equal(accounts[0].accessToken, 'cred-tok-456');
+    assert.equal(accounts[0].accessToken, 'legacy-auth-tok');
+  });
+
+  it('rejects incomplete Kimi OAuth credentials instead of treating access-only data as configured', () => {
+    const accessOnly = registerAccountIdentity(fs, aiHomeDir, {
+      provider: 'kimi', cliAccountId: '6', identitySeed: 'test:kimi:6:access-only'
+    });
+    writeAccountNativeAuth(fs, aiHomeDir, accessOnly.accountRef, {
+      credentials: { access_token: 'oauth-access-only' }
+    });
+
+    const refreshOnly = registerAccountIdentity(fs, aiHomeDir, {
+      provider: 'kimi', cliAccountId: '7', identitySeed: 'test:kimi:7:refresh-only'
+    });
+    writeAccountNativeAuth(fs, aiHomeDir, refreshOnly.accountRef, {
+      credentials: { refresh_token: 'oauth-refresh-only' }
+    });
+
+    const accounts = loadKimiServerAccounts(deps());
+    assert.equal(accounts.length, 0);
+  });
+
+  it('loads the newer standalone host OAuth snapshot into the gateway account', () => {
+    const makeJwt = (payload) => [
+      Buffer.from('{}').toString('base64url'),
+      Buffer.from(JSON.stringify(payload)).toString('base64url'),
+      'signature'
+    ].join('.');
+    const reg = registerAccountIdentity(fs, aiHomeDir, {
+      provider: 'kimi', cliAccountId: '5', identitySeed: 'oauth:kimi:5:host'
+    });
+    const oldCredentials = {
+      access_token: makeJwt({ user_id: 'kimi-user-host', sub: 'kimi-user-host', device_id: 'old-device' }),
+      refresh_token: makeJwt({ user_id: 'kimi-user-host', sub: 'kimi-user-host', device_id: 'old-device' }),
+      expires_at: 1000,
+      token_type: 'Bearer'
+    };
+    const hostCredentials = {
+      access_token: makeJwt({ user_id: 'kimi-user-host', sub: 'kimi-user-host', device_id: 'host-device' }),
+      refresh_token: makeJwt({ user_id: 'kimi-user-host', sub: 'kimi-user-host', device_id: 'host-device' }),
+      expires_at: 2000,
+      expires_in: 900,
+      scope: 'kimi-code',
+      token_type: 'Bearer'
+    };
+    writeAccountNativeAuth(fs, aiHomeDir, reg.accountRef, { credentials: oldCredentials });
+    const hostHomeDir = path.join(aiHomeDir, 'host-home');
+    const hostCredentialsPath = path.join(hostHomeDir, '.kimi-code', 'credentials', 'kimi-code.json');
+    const hostDevicePath = path.join(hostHomeDir, '.kimi-code', 'device_id');
+    fs.mkdirSync(path.dirname(hostCredentialsPath), { recursive: true });
+    fs.writeFileSync(hostCredentialsPath, `${JSON.stringify(hostCredentials)}\n`, 'utf8');
+    fs.writeFileSync(hostDevicePath, 'host-device\n', 'utf8');
+    const hostMtime = (Date.now() + 5000) / 1000;
+    fs.utimesSync(hostCredentialsPath, hostMtime, hostMtime);
+    fs.utimesSync(hostDevicePath, hostMtime, hostMtime);
+
+    const accounts = loadKimiServerAccounts({
+      ...deps(),
+      hostHomeDir
+    });
+
+    assert.equal(accounts.length, 1);
+    assert.equal(accounts[0].accessToken, hostCredentials.access_token);
+    assert.equal(accounts[0].refreshToken, hostCredentials.refresh_token);
+    assert.equal(accounts[0].deviceId, 'host-device');
   });
 });
 
@@ -328,9 +521,9 @@ describe('kimi/kiro upstream routing', () => {
   const { __private } = require('../lib/server/upstream-endpoints');
   const { resolveProviderUpstream, resolveProviderPath } = __private;
 
-  it('resolveProviderUpstream defaults kimi to api.moonshot.cn', () => {
+  it('resolveProviderUpstream defaults Kimi OAuth to the managed coding endpoint', () => {
     const result = resolveProviderUpstream({}, 'kimi', null);
-    assert.equal(result, 'https://api.moonshot.cn/v1');
+    assert.equal(result, 'https://api.kimi.com/coding/v1');
   });
 
   it('resolveProviderUpstream uses account baseUrl for kimi', () => {

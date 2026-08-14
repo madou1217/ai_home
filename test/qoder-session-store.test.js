@@ -60,3 +60,24 @@ test('qodercn host store root uses .qoder-cn not .qoder', () => {
   assert.ok(fs.existsSync(path.join(host, '.qoder-cn')));
   assert.equal(fs.existsSync(path.join(host, '.qoder')), false);
 });
+
+test('kimi configAtProjectionRoot never mirrors host HOME into the login projection', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-kimi-session-'));
+  fs.mkdirSync(path.join(root, 'host', '.kimi-code'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'host', 'projects'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'host', 'Library'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'host', '.kimi-code', 'config.toml'), 'host-config\n');
+  fs.writeFileSync(path.join(root, 'host', 'projects', 'history.jsonl'), 'host-history\n');
+  fs.writeFileSync(path.join(root, 'host', 'Library', 'state.txt'), 'host-state\n');
+  const projectionRoot = path.join(root, 'projection');
+  fs.mkdirSync(projectionRoot, { recursive: true });
+  const store = makeStore(root);
+
+  const result = store.ensureSessionStoreLinks('kimi', 'login-kimi', { projectionRoot });
+
+  assert.equal(result.unresolved, undefined);
+  assert.deepEqual(fs.readdirSync(projectionRoot), []);
+  assert.equal(fs.existsSync(path.join(projectionRoot, '.kimi-code')), false);
+  assert.equal(fs.existsSync(path.join(projectionRoot, 'projects')), false);
+  assert.equal(fs.existsSync(path.join(projectionRoot, 'Library')), false);
+});

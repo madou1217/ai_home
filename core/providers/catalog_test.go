@@ -22,8 +22,8 @@ func TestCatalogQueriesCapabilitiesAndLifecycle(t *testing.T) {
 	if !catalog.Supports(" CODEX ", CapabilityQuotaUsage) {
 		t.Fatal("Codex 应声明统一额度能力")
 	}
-	if catalog.Supports("kimi", CapabilityModelCatalog) {
-		t.Fatal("Kimi 当前不应声明统一模型目录能力")
+	if !catalog.Supports("kimi", CapabilityModelCatalog) {
+		t.Fatal("Kimi 应声明统一模型目录能力")
 	}
 	gemini, ok := catalog.Get("gemini")
 	if !ok || gemini.Gateway != GatewayDeprecated {

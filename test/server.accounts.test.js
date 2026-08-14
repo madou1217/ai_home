@@ -11,6 +11,7 @@ const {
   loadClaudeServerAccounts,
   loadCodexServerAccounts,
   loadGeminiServerAccounts,
+  loadKimiServerAccounts,
   loadOpenCodeServerAccounts,
   loadServerRuntimeAccounts,
   readTrustedUsageSnapshot
@@ -528,6 +529,29 @@ test('runtime buckets expose accountRef without CLI identity fields', (t) => {
   assert.equal(Object.hasOwn(accounts.opencode[0], 'accountId'), false);
   assert.equal(Object.hasOwn(accounts.opencode[0], 'account_id'), false);
   assert.equal(Object.hasOwn(accounts.opencode[0], 'cliAccountId'), false);
+});
+
+test('server runtime loader forwards Kimi host reconciliation into the Kimi bucket', (t) => {
+  const fixture = createFixture(t);
+  const accountRef = fixture.register('kimi', '1', {
+    nativeAuth: {
+      credentials: {
+        access_token: 'access-kimi-server-loader',
+        refresh_token: 'refresh-kimi-server-loader',
+        expires_at: Math.floor(Date.now() / 1000) + 3600
+      }
+    }
+  });
+  const calls = [];
+  const accounts = loadServerRuntimeAccounts(fixture.deps({
+    reconcileKimiHostCredentials(ref) {
+      calls.push(ref);
+      return { ok: true, adopted: false, reason: 'test_noop' };
+    }
+  }));
+
+  assert.deepEqual(calls, [accountRef]);
+  assert.deepEqual(accounts.kimi.map((account) => account.accountRef), [accountRef]);
 });
 
 test('runtime loading excludes accounts disabled in DB state', (t) => {

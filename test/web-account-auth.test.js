@@ -1678,6 +1678,59 @@ test('createAuthJobManager marks gemini oauth job succeeded when oauth_creds fil
   assert.equal(job.status, 'succeeded');
 });
 
+test('createAuthJobManager marks Kimi OAuth succeeded when its credential file appears', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-oauth-kimi-complete-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  let onExitHandler = null;
+  const manager = createAuthJobManager({
+    fs,
+    processObj: {
+      ...process,
+      cwd: () => root,
+      env: { ...process.env },
+      platform: process.platform,
+      kill() {}
+    },
+    ptyImpl: {
+      spawn() {
+        return {
+          pid: 2203,
+          onData() {},
+          onExit(handler) { onExitHandler = handler; },
+          kill() {}
+        };
+      }
+    },
+    resolveCliPathImpl: () => '/usr/local/bin/kimi'
+  });
+
+  const started = manager.startOauthJob('kimi', 'oauth-browser');
+  const running = manager.getJob(started.jobId);
+  const credentialsPath = path.join(running.configDir, 'credentials', 'kimi-code.json');
+  fs.mkdirSync(path.dirname(credentialsPath), { recursive: true });
+  fs.writeFileSync(credentialsPath, JSON.stringify({
+    access_token: 'kimi-access-token',
+    refresh_token: 'kimi-refresh-token',
+    expires_at: 1770000000000,
+    token_type: 'Bearer'
+  }));
+
+  onExitHandler({ exitCode: 0 });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  const completed = manager.getJob(started.jobId);
+  assert.equal(completed.status, 'succeeded');
+  assert.match(completed.accountRef, /^acct_/);
+  assert.deepEqual(readAccountNativeAuth(fs, root, completed.accountRef), {
+    credentials: {
+      access_token: 'kimi-access-token',
+      refresh_token: 'kimi-refresh-token',
+      expires_at: 1770000000000,
+      token_type: 'Bearer'
+    }
+  });
+});
+
 test('createAuthJobManager auto-selects Gemini parent-folder trust once', { skip: 'gemini oauth-browser disabled by product policy' }, () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-oauth-gemini-trust-'));
   const getProfileDir = (provider, accountId) => path.join(root, provider, String(accountId));

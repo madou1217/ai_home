@@ -71,6 +71,30 @@ test('derived state marks Codex account exhausted when any usage window is zero'
   assert.equal(state.remainingPct, 0);
 });
 
+test('derived state uses Kimi OAuth usage windows', () => {
+  const snapshot = {
+    kind: 'kimi_oauth_usage',
+    entries: [
+      { window: '7days', windowMinutes: 10080, remainingPct: 72 },
+      { window: '5h', windowMinutes: 300, remainingPct: 31 }
+    ]
+  };
+
+  assert.deepEqual(getUsageRemainingPctValues(snapshot), [72, 31]);
+  assert.equal(getMinRemainingPctFromUsageSnapshot(snapshot), 31);
+
+  const state = deriveQuotaState({
+    provider: 'kimi',
+    configured: true,
+    apiKeyMode: false,
+    usageSnapshot: snapshot
+  });
+
+  assert.equal(state.status, 'available');
+  assert.equal(state.remainingPct, 31);
+  assert.equal(state.hasNumericRemaining, true);
+});
+
 test('derived state treats OpenCode auth as not requiring quota collection', () => {
   const state = deriveQuotaState({
     provider: 'opencode',
@@ -104,4 +128,21 @@ test('derived state treats kimi as quota-capable (OAuth 配额探测已接入)',
   const available = deriveQuotaState({ provider: 'kimi', configured: true, apiKeyMode: false, remainingPct: 54 });
   assert.equal(available.status, 'available');
   assert.equal(available.remainingPct, 54);
+});
+
+test('derived state keeps Kimi OAuth quota pending until a usage snapshot exists', () => {
+  const quotaState = deriveQuotaState({
+    provider: 'kimi',
+    configured: true,
+    apiKeyMode: false
+  });
+  const schedulableState = deriveSchedulableState({
+    provider: 'kimi',
+    configured: true,
+    apiKeyMode: false,
+    quotaState
+  });
+
+  assert.equal(quotaState.status, 'pending');
+  assert.equal(schedulableState.status, 'schedulable');
 });

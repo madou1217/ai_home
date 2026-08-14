@@ -2153,6 +2153,63 @@ test('web ui cleanup removes only the OAuth login runtime and preserves DB accou
   assert.equal(reloaded, true);
 });
 
+test('web ui cleanup removes a legacy Kimi HOME link without touching its external target', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-kimi-link-cleanup-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const hostHomeDir = path.join(root, 'host-home');
+  const externalKimiHome = path.join(root, 'native-kimi-home');
+  const runtimeDir = path.join(root, 'run', 'login', 'kimi', 'job-cleanup');
+  fs.ensureDirSync(externalKimiHome);
+  fs.writeFileSync(path.join(externalKimiHome, 'sentinel.txt'), 'must-survive\n', 'utf8');
+  fs.ensureDirSync(runtimeDir);
+  fs.symlinkSync(externalKimiHome, path.join(runtimeDir, '.kimi-code'), 'dir');
+
+  const service = createSessionStoreService({
+    fs,
+    fse: fs,
+    path,
+    processObj: process,
+    hostHomeDir,
+    cliConfigs: { kimi: { globalDir: '.kimi-code' } },
+    getProfileDir: () => runtimeDir,
+    ensureDir: (directory) => fs.ensureDirSync(directory)
+  });
+  let reloaded = false;
+
+  cleanupAuthJobArtifacts({
+    id: 'job-kimi-link-cleanup',
+    provider: 'kimi',
+    accountRef: 'login-job-kimi-link-cleanup',
+    runtimeDir
+  }, {
+    fs,
+    aiHomeDir: root,
+    ensureSessionStoreLinks: service.ensureSessionStoreLinks,
+    loadServerRuntimeAccounts() {
+      return { kimi: [] };
+    },
+    applyReloadState() {
+      reloaded = true;
+    },
+    options: {}
+  }, {});
+
+  assert.equal(fs.existsSync(runtimeDir), false);
+  assert.equal(fs.readFileSync(path.join(externalKimiHome, 'sentinel.txt'), 'utf8'), 'must-survive\n');
+  const conflictPath = path.join(
+    hostHomeDir,
+    '.kimi-code',
+    '.aih-migration-conflicts',
+    'login-job-kimi-link-cleanup',
+    'legacy-kimi',
+    '.kimi-code'
+  );
+  assert.equal(fs.lstatSync(conflictPath).isSymbolicLink(), true);
+  assert.equal(fs.readlinkSync(conflictPath), externalKimiHome);
+  assert.equal(reloaded, true);
+});
+
 test('web ui cleanup preserves login runtime when resources cannot reconcile', (t) => {
   const fixture = createAccountFixture(t, 'aih-web-login-reconcile-fail-');
   const accountRef = fixture.register('agy', '2');

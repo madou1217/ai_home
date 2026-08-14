@@ -29,6 +29,7 @@ const WEBUI_GEMINI_REF_2 = 'acct_33333333333333333333';
 const WEBUI_CLAUDE_REF_1 = 'acct_44444444444444444444';
 const WEBUI_AGY_REF_1 = 'acct_55555555555555555555';
 const WEBUI_AGY_REF_2 = 'acct_66666666666666666666';
+const WEBUI_KIMI_REF_1 = 'acct_77777777777777777777';
 
 function createResCapture() {
   return {
@@ -2678,6 +2679,67 @@ test('web ui openai models refresh reloads runtime accounts for scoped accountRe
     assert.equal(job.catalog.firstError, '');
     assertNoInternalAccountKeys(job.catalog);
     req.emit('close');
+  } finally {
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+  }
+});
+
+test('web ui openai models refresh accepts a Kimi OAuth scoped account', async () => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-kimi-models-'));
+
+  try {
+    const state = {
+      accounts: {
+        kimi: [{
+          accountRef: WEBUI_KIMI_REF_1,
+          provider: 'kimi',
+          accessToken: 'access-kimi-test',
+          refreshToken: 'refresh-kimi-test',
+          authType: 'oauth',
+          apiKeyMode: false,
+          deviceId: 'device-kimi-test'
+        }]
+      },
+      modelRegistry: { providers: { kimi: new Set() } },
+      webUiModelsCache: {
+        updatedAt: 0,
+        byProvider: {},
+        byAccount: {},
+        errorsByAccount: {},
+        signature: '',
+        source: 'empty'
+      }
+    };
+    const postRes = createResCapture();
+    const handled = await handleWebUIRequest({
+      method: 'POST',
+      pathname: '/v0/webui/openai-models/refresh',
+      url: new URL(`http://localhost/v0/webui/openai-models/refresh?accountRef=${WEBUI_KIMI_REF_1}`),
+      req: { headers: {} },
+      res: postRes,
+      options: {},
+      state,
+      deps: {
+        ...createBaseDeps(aiHomeDir),
+        fetchModelsForAccount: async (_options, account) => {
+          assert.equal(account.accountRef, WEBUI_KIMI_REF_1);
+          return ['kimi-for-coding', 'k3'];
+        }
+      }
+    });
+
+    assert.equal(handled, true);
+    assert.equal(postRes.statusCode, 202);
+    assert.deepEqual(JSON.parse(postRes.body).job.accountScope, { accountRef: WEBUI_KIMI_REF_1 });
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const job = Array.from(state.modelCatalogLive.jobs.values())[0];
+      if (job && job.status === 'succeeded') break;
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    const job = Array.from(state.modelCatalogLive.jobs.values())[0];
+    assert.equal(job.status, 'succeeded');
+    assert.deepEqual(job.catalog.byAccountRef[WEBUI_KIMI_REF_1], ['k3', 'kimi-for-coding']);
+    assert.equal(job.catalog.firstError, '');
   } finally {
     fs.rmSync(aiHomeDir, { recursive: true, force: true });
   }

@@ -6,7 +6,12 @@ const path = require('node:path');
 const { createUnifiedImportService } = require('../lib/cli/services/import/unified-import');
 const { createCodexBulkImportService } = require('../lib/cli/services/ai-cli/codex-bulk-import');
 const { runGlobalAccountImport } = require('../lib/cli/services/ai-cli/account-import-orchestrator');
-const { listAccountCredentialRecords } = require('../lib/server/account-credential-store');
+const {
+  listAccountCredentialRecords,
+  readAccountNativeAuth,
+  writeAccountNativeAuth
+} = require('../lib/server/account-credential-store');
+const { registerAccountIdentity } = require('../lib/account/account-registration');
 const { readTransferMetadata } = require('../lib/account/transfer-metadata-store');
 
 function getSingleCredentialRecord(aiHomeDir, provider) {
@@ -1157,6 +1162,151 @@ test('runUnifiedImport imports agy credential layout from exported zip', async (
     assert.equal(agyRecord.nativeAuth.oauthToken.token.refresh_token, 'agy-refresh-token');
     assert.equal(agyRecord.nativeAuth.email, 'agy@example.com');
     assert.equal(fs.existsSync(path.join(aiHomeDir, 'profiles')), false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('runUnifiedImport dry-run detects an existing Kimi user despite rotated device tokens', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-unified-import-kimi-identity-'));
+  try {
+    const aiHomeDir = path.join(root, '.ai_home');
+    const sourceDir = path.join(root, 'accounts', 'kimi');
+    const sourceAccountDir = path.join(sourceDir, '1', '.kimi-code');
+    const makeJwt = (payload) => [
+      Buffer.from('{}').toString('base64url'),
+      Buffer.from(JSON.stringify(payload)).toString('base64url'),
+      'signature'
+    ].join('.');
+    const existingCredentials = {
+      access_token: makeJwt({ user_id: 'kimi-user-1', sub: 'kimi-user-1', device_id: 'old-device' }),
+      refresh_token: makeJwt({ user_id: 'kimi-user-1', sub: 'kimi-user-1', device_id: 'old-device' })
+    };
+    const importedCredentials = {
+      access_token: makeJwt({ user_id: 'kimi-user-1', sub: 'kimi-user-1', device_id: 'new-device' }),
+      refresh_token: makeJwt({ user_id: 'kimi-user-1', sub: 'kimi-user-1', device_id: 'new-device' })
+    };
+    const existing = registerAccountIdentity(fs, aiHomeDir, {
+      provider: 'kimi',
+      cliAccountId: '1',
+      identitySeed: 'oauth:kimi:token:legacy-refresh-token'
+    });
+    writeAccountNativeAuth(fs, aiHomeDir, existing.accountRef, { credentials: existingCredentials });
+    fs.mkdirSync(path.join(sourceAccountDir, 'credentials'), { recursive: true });
+    fs.writeFileSync(
+      path.join(sourceAccountDir, 'credentials', 'kimi-code.json'),
+      JSON.stringify(importedCredentials),
+      'utf8'
+    );
+    fs.writeFileSync(path.join(sourceAccountDir, 'device_id'), 'new-device\n', 'utf8');
+
+    const service = createUnifiedImportService({
+      fs,
+      path,
+      os,
+      fse: require('fs-extra'),
+      execSync: () => {},
+      spawnImpl: () => {},
+      processImpl: { platform: 'linux' },
+      cryptoImpl: require('node:crypto'),
+      aiHomeDir,
+      cliConfigs: { kimi: { globalDir: '.kimi-code' } },
+      runGlobalAccountImport: async () => ({ providers: [], failedProviders: [], providerResults: [] }),
+      importCliproxyapiCodexAuths: async () => ({
+        imported: 0,
+        duplicates: 0,
+        invalid: 0,
+        failed: 0
+      })
+    });
+
+    const result = await service.runUnifiedImport([sourceDir, '--dry-run'], {
+      provider: 'kimi',
+      log: () => {},
+      error: () => {}
+    });
+
+    assert.equal(result.failedSources.length, 0);
+    assert.equal(result.sourceResults.length, 1);
+    assert.equal(result.sourceResults[0].duplicates, 1);
+    assert.equal(result.sourceResults[0].imported, 0);
+    assert.equal(result.sourceResults[0].invalid, 0);
+    assert.equal(result.sourceResults[0].failed, 0);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('runUnifiedImport imports a standalone Kimi home and refreshes the matching accountRef', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-unified-import-kimi-native-home-'));
+  try {
+    const aiHomeDir = path.join(root, '.ai_home');
+    const nativeHome = path.join(root, '.kimi-code');
+    const credentialsPath = path.join(nativeHome, 'credentials', 'kimi-code.json');
+    const makeJwt = (payload) => [
+      Buffer.from('{}').toString('base64url'),
+      Buffer.from(JSON.stringify(payload)).toString('base64url'),
+      'signature'
+    ].join('.');
+    const oldCredentials = {
+      access_token: makeJwt({ user_id: 'standalone-kimi-user', sub: 'standalone-kimi-user' }),
+      refresh_token: makeJwt({ user_id: 'standalone-kimi-user', sub: 'standalone-kimi-user' }),
+      expires_at: 1000,
+      token_type: 'Bearer'
+    };
+    const newCredentials = {
+      access_token: makeJwt({ user_id: 'standalone-kimi-user', sub: 'standalone-kimi-user' }),
+      refresh_token: makeJwt({ user_id: 'standalone-kimi-user', sub: 'standalone-kimi-user' }),
+      expires_at: 2000,
+      token_type: 'Bearer'
+    };
+    const existing = registerAccountIdentity(fs, aiHomeDir, {
+      provider: 'kimi',
+      cliAccountId: '1',
+      identitySeed: 'oauth:kimi:token:legacy-standalone-token'
+    });
+    writeAccountNativeAuth(fs, aiHomeDir, existing.accountRef, {
+      credentials: oldCredentials,
+      deviceId: 'old-device'
+    });
+    fs.mkdirSync(path.dirname(credentialsPath), { recursive: true });
+    fs.writeFileSync(credentialsPath, JSON.stringify(newCredentials), 'utf8');
+    fs.writeFileSync(path.join(nativeHome, 'device_id'), 'new-device\n', 'utf8');
+
+    const service = createUnifiedImportService({
+      fs,
+      path,
+      os,
+      fse: require('fs-extra'),
+      execSync: () => {},
+      spawnImpl: () => {},
+      processImpl: { platform: 'linux' },
+      cryptoImpl: require('node:crypto'),
+      aiHomeDir,
+      cliConfigs: { kimi: { globalDir: '.kimi-code' } },
+      runGlobalAccountImport: async () => ({ providers: [], failedProviders: [], providerResults: [] }),
+      importCliproxyapiCodexAuths: async () => ({
+        imported: 0,
+        duplicates: 0,
+        invalid: 0,
+        failed: 0
+      })
+    });
+
+    const result = await service.runUnifiedImport([nativeHome], {
+      provider: 'kimi',
+      log: () => {},
+      error: () => {}
+    });
+
+    assert.equal(result.failedSources.length, 0);
+    assert.equal(result.sourceResults.length, 1);
+    assert.equal(result.sourceResults[0].imported, 1);
+    assert.equal(result.sourceResults[0].duplicates, 0);
+    assert.deepEqual(readAccountNativeAuth(fs, aiHomeDir, existing.accountRef), {
+      credentials: newCredentials,
+      deviceId: 'new-device'
+    });
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

@@ -119,6 +119,28 @@ test('Gemini OAuth status is derived from DB-native auth', (t) => {
   });
 });
 
+test('Kimi OAuth status is derived from DB-native credentials', (t) => {
+  const { checkStatus, register } = createFixture(t);
+  const emptyRef = register('kimi', '22', {
+    nativeAuth: { credentials: {} }
+  });
+  const oauthRef = register('kimi', '23', {
+    nativeAuth: {
+      credentials: {
+        access_token: 'kimi-access-token',
+        refresh_token: 'kimi-refresh-token'
+      }
+    }
+  });
+
+  assert.equal(checkStatus('kimi', emptyRef).configured, false);
+  assert.deepEqual(checkStatus('kimi', oauthRef), {
+    configured: true,
+    accountName: 'Kimi Code OAuth',
+    source: 'app-state.db'
+  });
+});
+
 test('AGY OAuth and token status are derived from DB credentials', (t) => {
   const { checkStatus, register } = createFixture(t);
   const oauthRef = register('agy', '30', {

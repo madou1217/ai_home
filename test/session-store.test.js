@@ -329,6 +329,242 @@ test('ensureSessionStoreLinks migrates sandbox codex tmp and cache into host sto
   assert.equal(fs.lstatSync(path.join(accountConfigDir, 'cache')).isSymbolicLink(), true);
 });
 
+test('ensureSessionStoreLinks migrates the legacy Kimi projection into .kimi-code', (t) => {
+  const root = mkTmpDir();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const hostHomeDir = path.join(root, 'home');
+  const accountRef = 'acct_aaaaaaaaaaaaaaaaaaaa';
+  const runtimeDir = path.join(root, 'run', 'auth-projections', 'kimi', accountRef);
+  const legacyCredentialsDir = path.join(runtimeDir, 'credentials');
+  fs.mkdirSync(legacyCredentialsDir, { recursive: true });
+  fs.writeFileSync(path.join(runtimeDir, 'config.toml'), 'legacy-config\n', 'utf8');
+  fs.writeFileSync(path.join(legacyCredentialsDir, 'kimi-code.json'), '{"access_token":"test"}\n', 'utf8');
+  fs.writeFileSync(path.join(runtimeDir, 'device_id'), 'legacy-device\n', 'utf8');
+  fs.mkdirSync(path.join(hostHomeDir, '.kimi-code', 'sessions'), { recursive: true });
+  fs.writeFileSync(path.join(hostHomeDir, '.kimi-code', 'sessions', 'session.json'), '{}\n', 'utf8');
+
+  const service = createSessionStoreService({
+    fs,
+    fse,
+    path,
+    processObj: process,
+    hostHomeDir,
+    cliConfigs: { kimi: { globalDir: '.kimi-code' } },
+    getProfileDir: () => runtimeDir,
+    ensureDir: (dir) => fs.mkdirSync(dir, { recursive: true })
+  });
+
+  const result = service.ensureSessionStoreLinks('kimi', accountRef);
+
+  assert.equal(Array.isArray(result.unresolved), false);
+  assert.equal(fs.existsSync(path.join(runtimeDir, 'config.toml')), false);
+  assert.equal(fs.existsSync(path.join(runtimeDir, 'credentials')), false);
+  assert.equal(fs.existsSync(path.join(runtimeDir, 'device_id')), false);
+  assert.equal(
+    fs.readFileSync(path.join(runtimeDir, '.kimi-code', 'config.toml'), 'utf8'),
+    'legacy-config\n'
+  );
+  assert.equal(
+    fs.readFileSync(path.join(runtimeDir, '.kimi-code', 'credentials', 'kimi-code.json'), 'utf8'),
+    '{"access_token":"test"}\n'
+  );
+  assert.equal(fs.readFileSync(path.join(runtimeDir, '.kimi-code', 'device_id'), 'utf8'), 'legacy-device\n');
+  assert.equal(
+    fs.lstatSync(path.join(runtimeDir, '.kimi-code', 'sessions')).isSymbolicLink(),
+    true
+  );
+});
+
+test('Kimi legacy migration preserves conflicting private files in migration-conflicts', (t) => {
+  const root = mkTmpDir();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const hostHomeDir = path.join(root, 'home');
+  const accountRef = 'acct_abbbbbbbbbbbbbbbbbb';
+  const runtimeDir = path.join(root, 'run', 'auth-projections', 'kimi', accountRef);
+  fs.mkdirSync(path.join(runtimeDir, '.kimi-code'), { recursive: true });
+  fs.writeFileSync(path.join(runtimeDir, 'config.toml'), 'legacy-config\n', 'utf8');
+  fs.writeFileSync(path.join(runtimeDir, '.kimi-code', 'config.toml'), 'canonical-config\n', 'utf8');
+
+  const service = createSessionStoreService({
+    fs,
+    fse,
+    path,
+    processObj: process,
+    hostHomeDir,
+    cliConfigs: { kimi: { globalDir: '.kimi-code' } },
+    getProfileDir: () => runtimeDir,
+    ensureDir: (dir) => fs.mkdirSync(dir, { recursive: true })
+  });
+
+  const result = service.ensureSessionStoreLinks('kimi', accountRef);
+  const conflictPath = path.join(
+    hostHomeDir,
+    '.kimi-code',
+    '.aih-migration-conflicts',
+    accountRef,
+    'legacy-kimi',
+    'config.toml'
+  );
+
+  assert.equal(Array.isArray(result.unresolved), false);
+  assert.equal(fs.readFileSync(path.join(runtimeDir, '.kimi-code', 'config.toml'), 'utf8'), 'canonical-config\n');
+  assert.equal(fs.readFileSync(conflictPath, 'utf8'), 'legacy-config\n');
+});
+
+test('Kimi migration moves an external .kimi-code link without touching its target', (t) => {
+  const root = mkTmpDir();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const hostHomeDir = path.join(root, 'home');
+  const externalKimiHome = path.join(root, 'external-kimi-home');
+  const accountRef = 'acct_cccccccccccccccccccc';
+  const runtimeDir = path.join(root, 'run', 'auth-projections', 'kimi', accountRef);
+  fs.mkdirSync(externalKimiHome, { recursive: true });
+  fs.writeFileSync(path.join(externalKimiHome, 'sentinel.txt'), 'must-survive\n', 'utf8');
+  fs.mkdirSync(path.join(runtimeDir, 'credentials'), { recursive: true });
+  fs.symlinkSync(externalKimiHome, path.join(runtimeDir, '.kimi-code'), 'dir');
+  fs.writeFileSync(path.join(runtimeDir, 'config.toml'), 'legacy-config\n', 'utf8');
+  fs.writeFileSync(path.join(runtimeDir, 'credentials', 'kimi-code.json'), '{"access_token":"test"}\n', 'utf8');
+
+  const service = createSessionStoreService({
+    fs,
+    fse,
+    path,
+    processObj: process,
+    hostHomeDir,
+    cliConfigs: { kimi: { globalDir: '.kimi-code' } },
+    getProfileDir: () => runtimeDir,
+    ensureDir: (dir) => fs.mkdirSync(dir, { recursive: true })
+  });
+
+  const result = service.ensureSessionStoreLinks('kimi', accountRef);
+  const conflictPath = path.join(
+    hostHomeDir,
+    '.kimi-code',
+    '.aih-migration-conflicts',
+    accountRef,
+    'legacy-kimi',
+    '.kimi-code'
+  );
+
+  assert.equal(Array.isArray(result.unresolved), false);
+  assert.equal(fs.lstatSync(path.join(runtimeDir, '.kimi-code')).isDirectory(), true);
+  assert.equal(fs.lstatSync(conflictPath).isSymbolicLink(), true);
+  assert.equal(fs.readlinkSync(conflictPath), externalKimiHome);
+  assert.equal(fs.readFileSync(path.join(externalKimiHome, 'sentinel.txt'), 'utf8'), 'must-survive\n');
+  assert.equal(fs.readFileSync(path.join(runtimeDir, '.kimi-code', 'config.toml'), 'utf8'), 'legacy-config\n');
+  assert.equal(
+    fs.readFileSync(path.join(runtimeDir, '.kimi-code', 'credentials', 'kimi-code.json'), 'utf8'),
+    '{"access_token":"test"}\n'
+  );
+});
+
+test('Kimi migration repairs a lone external .kimi-code link before normal reconciliation', (t) => {
+  const root = mkTmpDir();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const hostHomeDir = path.join(root, 'home');
+  const externalKimiHome = path.join(root, 'external-kimi-home');
+  const accountRef = 'acct_dddddddddddddddddddd';
+  const runtimeDir = path.join(root, 'run', 'auth-projections', 'kimi', accountRef);
+  fs.mkdirSync(externalKimiHome, { recursive: true });
+  fs.writeFileSync(path.join(externalKimiHome, 'sentinel.txt'), 'must-survive\n', 'utf8');
+  fs.mkdirSync(runtimeDir, { recursive: true });
+  fs.symlinkSync(externalKimiHome, path.join(runtimeDir, '.kimi-code'), 'dir');
+
+  const service = createSessionStoreService({
+    fs,
+    fse,
+    path,
+    processObj: process,
+    hostHomeDir,
+    cliConfigs: { kimi: { globalDir: '.kimi-code' } },
+    getProfileDir: () => runtimeDir,
+    ensureDir: (dir) => fs.mkdirSync(dir, { recursive: true })
+  });
+
+  const result = service.ensureSessionStoreLinks('kimi', accountRef);
+  const conflictPath = path.join(
+    hostHomeDir,
+    '.kimi-code',
+    '.aih-migration-conflicts',
+    accountRef,
+    'legacy-kimi',
+    '.kimi-code'
+  );
+
+  assert.equal(Array.isArray(result.unresolved), false);
+  assert.equal(fs.lstatSync(path.join(runtimeDir, '.kimi-code')).isDirectory(), true);
+  assert.equal(fs.lstatSync(conflictPath).isSymbolicLink(), true);
+  assert.equal(fs.readlinkSync(conflictPath), externalKimiHome);
+  assert.equal(fs.readFileSync(path.join(externalKimiHome, 'sentinel.txt'), 'utf8'), 'must-survive\n');
+});
+
+test('Kimi transient login projection ignores unrelated fake-home symlinks', (t) => {
+  const root = mkTmpDir();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const hostHomeDir = path.join(root, 'home');
+  const runtimeDir = path.join(root, 'run', 'login', 'kimi', 'auth-real-login');
+  const externalLibrary = path.join(root, 'external-library');
+  const externalDeviceId = path.join(root, 'external-device-id');
+  fs.mkdirSync(externalLibrary, { recursive: true });
+  fs.writeFileSync(path.join(externalLibrary, 'sentinel.txt'), 'must-survive\n', 'utf8');
+  fs.writeFileSync(externalDeviceId, 'host-device\n', 'utf8');
+  fs.mkdirSync(path.join(runtimeDir, 'credentials'), { recursive: true });
+  fs.writeFileSync(path.join(runtimeDir, 'config.toml'), 'legacy-config\n', 'utf8');
+  fs.writeFileSync(
+    path.join(runtimeDir, 'credentials', 'kimi-code.json'),
+    '{"access_token":"login-access"}\n',
+    'utf8'
+  );
+  fs.symlinkSync(externalDeviceId, path.join(runtimeDir, 'device_id'), 'file');
+  fs.symlinkSync(externalLibrary, path.join(runtimeDir, 'Library'), 'dir');
+
+  const service = createSessionStoreService({
+    fs,
+    fse,
+    path,
+    processObj: process,
+    hostHomeDir,
+    cliConfigs: { kimi: { globalDir: '.kimi-code' } },
+    getProfileDir: () => runtimeDir,
+    ensureDir: (dir) => fs.mkdirSync(dir, { recursive: true })
+  });
+
+  const result = service.ensureSessionStoreLinks('kimi', 'login-auth-real-login', {
+    projectionRoot: runtimeDir
+  });
+
+  assert.equal(Array.isArray(result.unresolved), false);
+  assert.equal(fs.lstatSync(path.join(runtimeDir, 'Library')).isSymbolicLink(), true);
+  assert.equal(fs.readFileSync(path.join(externalLibrary, 'sentinel.txt'), 'utf8'), 'must-survive\n');
+  assert.equal(fs.existsSync(path.join(runtimeDir, 'config.toml')), false);
+  assert.equal(fs.existsSync(path.join(runtimeDir, 'credentials')), false);
+  assert.equal(fs.existsSync(path.join(runtimeDir, 'device_id')), false);
+  const deviceConflictPath = path.join(
+    hostHomeDir,
+    '.kimi-code',
+    '.aih-migration-conflicts',
+    'login-auth-real-login',
+    'legacy-kimi',
+    'device_id'
+  );
+  assert.equal(fs.lstatSync(deviceConflictPath).isSymbolicLink(), true);
+  assert.equal(fs.readlinkSync(deviceConflictPath), externalDeviceId);
+  assert.equal(
+    fs.readFileSync(path.join(runtimeDir, '.kimi-code', 'config.toml'), 'utf8'),
+    'legacy-config\n'
+  );
+  assert.equal(
+    fs.readFileSync(path.join(runtimeDir, '.kimi-code', 'credentials', 'kimi-code.json'), 'utf8'),
+    '{"access_token":"login-access"}\n'
+  );
+  assert.equal(fs.readFileSync(externalDeviceId, 'utf8'), 'host-device\n');
+});
+
 test('Codex launch tmp stays projection-local and nested wrapper symlinks are ignored', (t) => {
   const root = mkTmpDir();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

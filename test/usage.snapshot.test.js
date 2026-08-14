@@ -263,6 +263,121 @@ test('claude OAuth usage snapshot preserves the explicit Max rate-limit tier', (
   }
 });
 
+test('kimi OAuth usage snapshot parses rolling limits and persists the trusted cache', async () => {
+  const root = mkTmpDir();
+  try {
+    const { aiHomeDir, getProfileDir, getToolConfigDir } = createUsagePaths(root);
+    const accountRef = registerUsageAccount(aiHomeDir, 'kimi', '1', {
+      nativeAuth: {
+        credentials: {
+          access_token: 'kimi-access-token',
+          refresh_token: 'kimi-refresh-token',
+          token_type: 'Bearer',
+          expires_at: Math.floor(Date.now() / 1000) + 3600
+        },
+        deviceId: 'kimi-device-id'
+      }
+    });
+    const cacheService = createUsageCacheService({
+      fs,
+      aiHomeDir,
+      path,
+      getProfileDir,
+      usageSnapshotSchemaVersion: 2,
+      usageSourceGemini: 'gemini_refresh_user_quota',
+      usageSourceCodex: 'codex_app_server',
+      usageSourceClaudeOauth: 'claude_oauth_usage_api',
+      usageSourceClaudeAuthToken: 'claude_auth_token_usage_api',
+      usageSourceKimiOauth: 'kimi_oauth_usage_api'
+    });
+    const calls = [];
+    const usageSnapshotService = createUsageSnapshotService({
+      fs,
+      path,
+      aiHomeDir,
+      processObj: {
+        execPath: process.execPath,
+        cwd: () => root,
+        env: {},
+        platform: process.platform
+      },
+      usageSnapshotSchemaVersion: 2,
+      usageRefreshStaleMs: 5 * 60 * 1000,
+      usageSourceGemini: 'gemini_refresh_user_quota',
+      usageSourceCodex: 'codex_app_server',
+      usageSourceClaudeOauth: 'claude_oauth_usage_api',
+      usageSourceClaudeAuthToken: 'claude_auth_token_usage_api',
+      usageSourceKimiOauth: 'kimi_oauth_usage_api',
+      getProfileDir,
+      getToolConfigDir,
+      writeUsageCache: cacheService.writeUsageCache,
+      readUsageCache: cacheService.readUsageCache,
+      fetchWithTimeout: async (url, options) => {
+        calls.push({ url, options });
+        if (String(url || '').endsWith('/me')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              nickname: '登月者2115',
+              phone: { country_code: '86', number: '186****2115' }
+            })
+          };
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            usage: {
+              limit: 100,
+              remaining: 60,
+              resetTime: '2030-01-08T00:00:00.000Z'
+            },
+            limits: [{
+              window: { duration: 5, timeUnit: 'TIME_UNIT_HOUR' },
+              detail: {
+                limit: 50,
+                used: 40,
+                resetTime: '2030-01-01T05:00:00.000Z'
+              }
+            }],
+            user: { membership: { level: 'LEVEL_MAX' } }
+          })
+        };
+      }
+    });
+
+    const snapshot = await usageSnapshotService.ensureUsageSnapshotAsync(
+      'kimi',
+      accountRef,
+      null,
+      { forceRefresh: true }
+    );
+
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].url, 'https://api.kimi.com/coding/v1/usages');
+    assert.equal(calls[0].options.method, 'GET');
+    assert.equal(calls[0].options.headers.authorization, 'Bearer kimi-access-token');
+    assert.equal(calls[1].url, 'https://api.kimi.com/coding/v1/me');
+    assert.equal(snapshot.kind, 'kimi_oauth_usage');
+    assert.equal(snapshot.source, 'kimi_oauth_usage_api');
+    assert.equal(snapshot.account.planType, 'max');
+    assert.equal(snapshot.account.displayName, '登月者2115');
+    assert.equal(snapshot.account.phone, '+86 186****2115');
+    assert.deepEqual(snapshot.entries.map((entry) => ({
+      bucket: entry.bucket,
+      windowMinutes: entry.windowMinutes,
+      remainingPct: entry.remainingPct
+    })), [
+      { bucket: 'weekly', windowMinutes: 10080, remainingPct: 60 },
+      { bucket: 'rolling_300m', windowMinutes: 300, remainingPct: 20 }
+    ]);
+    assert.deepEqual(cacheService.readUsageCache('kimi', accountRef), snapshot);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('agy usage snapshot reads Antigravity OAuth token and caches fetchAvailableModels quota', async () => {
   const root = mkTmpDir();
   try {
@@ -2209,6 +2324,196 @@ test('codex usage snapshot async tolerates app-server stdin EPIPE and returns ca
     assert.equal(snapshot, cache);
     assert.equal(spawnCalls >= 1, true);
     assert.equal(usageSnapshotService.getLastUsageProbeError('codex', accountRef), 'stdin_write_failed');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+function createKimiUsageFixture(root, options = {}) {
+  const { aiHomeDir, getProfileDir, getToolConfigDir } = createUsagePaths(root);
+  const accountRef = registerUsageAccount(aiHomeDir, 'kimi', '1', {
+    nativeAuth: options.skipCredentials ? {} : {
+      credentials: {
+        access_token: options.accessToken || 'kimi-access-token',
+        refresh_token: 'kimi-refresh-token',
+        token_type: 'Bearer',
+        expires_at: Math.floor(Date.now() / 1000) + 3600
+      },
+      deviceId: 'device-1'
+    }
+  });
+  const cacheService = createUsageCacheService({
+    fs,
+    aiHomeDir,
+    path,
+    getProfileDir,
+    usageSnapshotSchemaVersion: 2,
+    usageSourceKimiOauth: 'kimi_oauth_usage_api'
+  });
+  const calls = [];
+  const usageSnapshotService = createUsageSnapshotService({
+    fs,
+    path,
+    aiHomeDir,
+    processObj: { execPath: process.execPath, cwd: () => root, env: {}, platform: process.platform },
+    usageSnapshotSchemaVersion: 2,
+    usageRefreshStaleMs: 5 * 60 * 1000,
+    usageSourceKimiOauth: 'kimi_oauth_usage_api',
+    getProfileDir,
+    getToolConfigDir,
+    writeUsageCache: cacheService.writeUsageCache,
+    readUsageCache: cacheService.readUsageCache,
+    fetchWithTimeout: options.fetchWithTimeout || (async (url, init) => {
+      const target = String(url || '');
+      calls.push({
+        url: target,
+        authorization: String(init && init.headers && (init.headers.authorization || init.headers.Authorization) || '')
+      });
+      if (target.endsWith('/me')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            nickname: '登月者2115',
+            phone: { country_code: '86', number: '186****2115' }
+          })
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          user: { userId: 'u1', membership: { level: 'LEVEL_BASIC' } },
+          usage: { limit: '100', used: '49', remaining: '51', resetTime: '2026-08-20T20:16:10.385304Z' },
+          limits: [{
+            window: { duration: 300, timeUnit: 'TIME_UNIT_MINUTE' },
+            detail: { limit: '100', used: '42', remaining: '58', resetTime: '2026-08-14T11:16:10.385304Z' }
+          }]
+        })
+      };
+    })
+  });
+  return { aiHomeDir, accountRef, cacheService, usageSnapshotService, calls };
+}
+
+test('kimi usage snapshot maps /usages weekly and rolling windows into entries', async () => {
+  const root = mkTmpDir();
+  try {
+    const { accountRef, cacheService, usageSnapshotService, calls } = createKimiUsageFixture(root);
+
+    const snapshot = await usageSnapshotService.ensureUsageSnapshotAsync('kimi', accountRef, null, { forceRefresh: true });
+    assert.ok(snapshot);
+    assert.equal(snapshot.kind, 'kimi_oauth_usage');
+    assert.equal(snapshot.source, 'kimi_oauth_usage_api');
+    assert.equal(snapshot.entries.length, 2);
+    const weekly = snapshot.entries.find((entry) => entry.bucket === 'weekly');
+    assert.equal(weekly.windowMinutes, 10080);
+    assert.equal(weekly.remainingPct, 51);
+    const rolling = snapshot.entries.find((entry) => entry.bucket === 'rolling_300m');
+    assert.equal(rolling.windowMinutes, 300);
+    assert.equal(rolling.remainingPct, 58);
+    assert.equal(snapshot.account.planType, 'basic');
+    assert.equal(snapshot.account.displayName, '登月者2115');
+    assert.equal(snapshot.account.phone, '+86 186****2115');
+    // token 未到期时探测 /usages + /me,不触发 token 刷新
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].url, 'https://api.kimi.com/coding/v1/usages');
+    assert.equal(calls[0].authorization, 'Bearer kimi-access-token');
+    assert.equal(calls[1].url, 'https://api.kimi.com/coding/v1/me');
+
+    const cached = cacheService.readUsageCache('kimi', accountRef);
+    assert.ok(cached);
+    assert.equal(cached.kind, 'kimi_oauth_usage');
+    assert.equal(cached.entries.length, 2);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('kimi usage snapshot keeps quota when the /me identity probe fails', async () => {
+  const root = mkTmpDir();
+  try {
+    const { accountRef, usageSnapshotService } = createKimiUsageFixture(root, {
+      fetchWithTimeout: async (url) => {
+        const target = String(url || '');
+        if (target.endsWith('/me')) {
+          return { ok: false, status: 500, json: async () => ({}) };
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            user: { membership: { level: 'LEVEL_BASIC' } },
+            usage: { limit: '100', used: '49', remaining: '51', resetTime: '2026-08-20T20:16:10.385304Z' }
+          })
+        };
+      }
+    });
+
+    const snapshot = await usageSnapshotService.ensureUsageSnapshotAsync('kimi', accountRef, null, { forceRefresh: true });
+    assert.ok(snapshot);
+    assert.equal(snapshot.kind, 'kimi_oauth_usage');
+    assert.equal(snapshot.entries.length, 1);
+    assert.equal(snapshot.account.planType, 'basic');
+    assert.equal(snapshot.account.displayName, undefined);
+    assert.equal(snapshot.account.phone, undefined);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('kimi usage snapshot fails closed on missing oauth credentials', async () => {
+  const root = mkTmpDir();
+  try {
+    const { accountRef, usageSnapshotService, calls } = createKimiUsageFixture(root, { skipCredentials: true });
+
+    const snapshot = await usageSnapshotService.ensureUsageSnapshotAsync('kimi', accountRef, null, { forceRefresh: true });
+    assert.equal(snapshot, null);
+    assert.equal(calls.length, 0);
+    assert.equal(usageSnapshotService.getLastUsageProbeError('kimi', accountRef), 'missing_oauth_credentials');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('kimi usage snapshot force-refreshes the token once after a 401', async () => {
+  const root = mkTmpDir();
+  try {
+    const calls = [];
+    const fixture = createKimiUsageFixture(root, {
+      fetchWithTimeout: async (url, init) => {
+        const target = String(url || '');
+        const authorization = String(init && init.headers && (init.headers.authorization || init.headers.Authorization) || '');
+        calls.push({ url: target, authorization, method: String(init && init.method || 'GET') });
+        if (target === 'https://auth.kimi.com/api/oauth/token') {
+          const body = JSON.stringify({
+            access_token: 'kimi-access-token-v2',
+            refresh_token: 'kimi-refresh-token-v2',
+            token_type: 'Bearer',
+            expires_in: 3600
+          });
+          return { ok: true, status: 200, text: async () => body, json: async () => JSON.parse(body) };
+        }
+        if (authorization === 'Bearer kimi-access-token') {
+          const body = JSON.stringify({ error: 'invalid_token' });
+          return { ok: false, status: 401, text: async () => body, json: async () => JSON.parse(body) };
+        }
+        const body = JSON.stringify({
+          usage: { limit: '100', used: '10', remaining: '90', resetTime: '2026-08-20T20:16:10.385304Z' }
+        });
+        return { ok: true, status: 200, text: async () => body, json: async () => JSON.parse(body) };
+      }
+    });
+
+    const snapshot = await fixture.usageSnapshotService.ensureUsageSnapshotAsync('kimi', fixture.accountRef, null, { forceRefresh: true });
+    assert.ok(snapshot);
+    assert.equal(snapshot.entries.length, 1);
+    assert.equal(snapshot.entries[0].remainingPct, 90);
+    const usagesCalls = calls.filter((call) => call.url.endsWith('/usages'));
+    const tokenCalls = calls.filter((call) => call.url === 'https://auth.kimi.com/api/oauth/token');
+    assert.equal(usagesCalls.length, 2);
+    assert.equal(tokenCalls.length, 1);
+    assert.equal(usagesCalls[1].authorization, 'Bearer kimi-access-token-v2');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

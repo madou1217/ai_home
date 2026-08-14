@@ -47,6 +47,21 @@ function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
 }
 
+function makeTestJwt(payload) {
+  return [
+    Buffer.from('{}').toString('base64url'),
+    Buffer.from(JSON.stringify(payload)).toString('base64url'),
+    'signature'
+  ].join('.');
+}
+
+function writeKimiProjection(runtimeDir, credentials, deviceId) {
+  const credentialsPath = path.join(runtimeDir, '.kimi-code', 'credentials', 'kimi-code.json');
+  fs.mkdirSync(path.dirname(credentialsPath), { recursive: true });
+  fs.writeFileSync(credentialsPath, JSON.stringify(credentials), 'utf8');
+  fs.writeFileSync(path.join(runtimeDir, '.kimi-code', 'device_id'), `${deviceId}\n`, 'utf8');
+}
+
 test('Gemini auth materializes from DB and captures refreshed runtime artifacts', (t) => {
   const fixture = createProjectionFixture(t);
   const accountRef = registerAccount(fixture, 'gemini', '1');
@@ -301,10 +316,11 @@ test('Grok login registers mapped OAuth credentials by stable profile identity',
   });
 });
 
-test('Kimi login registers and materializes its device OAuth credential file', (t) => {
+test('Kimi login registers and materializes OAuth credentials with its device identity', (t) => {
   const fixture = createProjectionFixture(t);
   const runtimeDir = path.join(fixture.aiHomeDir, 'run', 'login', 'kimi', 'scoped');
-  const credentialsPath = path.join(runtimeDir, 'credentials', 'kimi-code.json');
+  const credentialsPath = path.join(runtimeDir, '.kimi-code', 'credentials', 'kimi-code.json');
+  const deviceIdPath = path.join(runtimeDir, '.kimi-code', 'device_id');
   const credentials = {
     access_token: 'kimi-access-token',
     refresh_token: 'kimi-refresh-token',
@@ -313,6 +329,7 @@ test('Kimi login registers and materializes its device OAuth credential file', (
   };
   fs.mkdirSync(path.dirname(credentialsPath), { recursive: true });
   fs.writeFileSync(credentialsPath, JSON.stringify(credentials), 'utf8');
+  fs.writeFileSync(deviceIdPath, 'device-kimi-1\n', 'utf8');
 
   const registration = registerProviderAuthProjection(fs, runtimeDir, 'kimi', {
     aiHomeDir: fixture.aiHomeDir,
@@ -322,7 +339,8 @@ test('Kimi login registers and materializes its device OAuth credential file', (
   assert.equal(registration.registered, true);
   assert.equal(registration.cliAccountId, '17');
   assert.deepEqual(readAccountNativeAuth(fs, fixture.aiHomeDir, registration.accountRef), {
-    credentials
+    credentials,
+    deviceId: 'device-kimi-1'
   });
 
   fs.rmSync(runtimeDir, { recursive: true, force: true });
@@ -332,11 +350,131 @@ test('Kimi login registers and materializes its device OAuth credential file', (
     'kimi',
     projectionOptions(fixture, registration.accountRef)
   ), {
-    materialized: 1,
+    materialized: 2,
     removed: 0,
     missing: false
   });
   assert.deepEqual(readJson(credentialsPath), credentials);
+  assert.equal(fs.readFileSync(deviceIdPath, 'utf8'), 'device-kimi-1');
+});
+
+test('Kimi projection reuses a legacy accountRef when the native user changes device', (t) => {
+  const fixture = createProjectionFixture(t);
+  const firstRuntime = path.join(fixture.aiHomeDir, 'run', 'login', 'kimi', 'first');
+  const secondRuntime = path.join(fixture.aiHomeDir, 'run', 'login', 'kimi', 'second');
+  const firstCredentials = {
+    access_token: makeTestJwt({ user_id: 'kimi-user-1', device_id: 'device-a' }),
+    refresh_token: makeTestJwt({ sub: 'kimi-user-1', device_id: 'device-a' })
+  };
+  const secondCredentials = {
+    access_token: makeTestJwt({ user_id: 'kimi-user-1', device_id: 'device-b' }),
+    refresh_token: makeTestJwt({ sub: 'kimi-user-1', device_id: 'device-b' })
+  };
+  for (const [runtimeDir, credentials, deviceId] of [
+    [firstRuntime, firstCredentials, 'device-a'],
+    [secondRuntime, secondCredentials, 'device-b']
+  ]) {
+    writeKimiProjection(runtimeDir, credentials, deviceId);
+  }
+
+  const first = registerProviderAuthProjection(fs, firstRuntime, 'kimi', {
+    aiHomeDir: fixture.aiHomeDir,
+    cliAccountId: '17'
+  });
+  const second = registerProviderAuthProjection(fs, secondRuntime, 'kimi', {
+    aiHomeDir: fixture.aiHomeDir
+  });
+
+  assert.equal(first.registered, true);
+  assert.equal(second.registered, true);
+  assert.equal(second.reason, 'existing_account');
+  assert.equal(second.accountRef, first.accountRef);
+  assert.deepEqual(readAccountNativeAuth(fs, fixture.aiHomeDir, first.accountRef), {
+    credentials: secondCredentials,
+    deviceId: 'device-b'
+  });
+});
+
+test('Kimi reauth does not overwrite a requested account with another native user', (t) => {
+  const fixture = createProjectionFixture(t);
+  const targetCredentials = {
+    access_token: makeTestJwt({ user_id: 'kimi-target-user', device_id: 'target-device' }),
+    refresh_token: makeTestJwt({ sub: 'kimi-target-user', device_id: 'target-device' })
+  };
+  const replacementCredentials = {
+    access_token: makeTestJwt({ user_id: 'kimi-other-user', device_id: 'other-device' }),
+    refresh_token: makeTestJwt({ sub: 'kimi-other-user', device_id: 'other-device' })
+  };
+  const targetRuntime = path.join(fixture.aiHomeDir, 'run', 'login', 'kimi', 'target');
+  const replacementRuntime = path.join(fixture.aiHomeDir, 'run', 'login', 'kimi', 'replacement');
+  writeKimiProjection(targetRuntime, targetCredentials, 'target-device');
+  writeKimiProjection(replacementRuntime, replacementCredentials, 'other-device');
+
+  const target = registerProviderAuthProjection(fs, targetRuntime, 'kimi', {
+    aiHomeDir: fixture.aiHomeDir,
+    cliAccountId: '19'
+  });
+  const replacement = registerProviderAuthProjection(fs, replacementRuntime, 'kimi', {
+    aiHomeDir: fixture.aiHomeDir,
+    accountRef: target.accountRef
+  });
+
+  assert.equal(replacement.registered, true);
+  assert.notEqual(replacement.accountRef, target.accountRef);
+  assert.deepEqual(readAccountNativeAuth(fs, fixture.aiHomeDir, target.accountRef), {
+    credentials: targetCredentials,
+    deviceId: 'target-device'
+  });
+  assert.deepEqual(readAccountNativeAuth(fs, fixture.aiHomeDir, replacement.accountRef), {
+    credentials: replacementCredentials,
+    deviceId: 'other-device'
+  });
+});
+
+test('Kimi reauth prefers another existing account with the new native identity', (t) => {
+  const fixture = createProjectionFixture(t);
+  const targetCredentials = {
+    access_token: makeTestJwt({ user_id: 'kimi-target-user', device_id: 'target-device' }),
+    refresh_token: makeTestJwt({ sub: 'kimi-target-user', device_id: 'target-device' })
+  };
+  const existingCredentials = {
+    access_token: makeTestJwt({ user_id: 'kimi-existing-user', device_id: 'existing-device' }),
+    refresh_token: makeTestJwt({ sub: 'kimi-existing-user', device_id: 'existing-device' })
+  };
+  const refreshedCredentials = {
+    access_token: makeTestJwt({ user_id: 'kimi-existing-user', device_id: 'refreshed-device' }),
+    refresh_token: makeTestJwt({ sub: 'kimi-existing-user', device_id: 'refreshed-device' })
+  };
+  const targetRuntime = path.join(fixture.aiHomeDir, 'run', 'login', 'kimi', 'target');
+  const existingRuntime = path.join(fixture.aiHomeDir, 'run', 'login', 'kimi', 'existing');
+  const refreshedRuntime = path.join(fixture.aiHomeDir, 'run', 'login', 'kimi', 'refreshed');
+  writeKimiProjection(targetRuntime, targetCredentials, 'target-device');
+  writeKimiProjection(existingRuntime, existingCredentials, 'existing-device');
+  writeKimiProjection(refreshedRuntime, refreshedCredentials, 'refreshed-device');
+
+  const target = registerProviderAuthProjection(fs, targetRuntime, 'kimi', {
+    aiHomeDir: fixture.aiHomeDir,
+    cliAccountId: '20'
+  });
+  const existing = registerProviderAuthProjection(fs, existingRuntime, 'kimi', {
+    aiHomeDir: fixture.aiHomeDir,
+    cliAccountId: '21'
+  });
+  const refreshed = registerProviderAuthProjection(fs, refreshedRuntime, 'kimi', {
+    aiHomeDir: fixture.aiHomeDir,
+    accountRef: target.accountRef
+  });
+
+  assert.equal(refreshed.registered, true);
+  assert.equal(refreshed.accountRef, existing.accountRef);
+  assert.deepEqual(readAccountNativeAuth(fs, fixture.aiHomeDir, target.accountRef), {
+    credentials: targetCredentials,
+    deviceId: 'target-device'
+  });
+  assert.deepEqual(readAccountNativeAuth(fs, fixture.aiHomeDir, existing.accountRef), {
+    credentials: refreshedCredentials,
+    deviceId: 'refreshed-device'
+  });
 });
 
 test('Kiro login extracts OAuth metadata from SQLite and registers the account', (t) => {

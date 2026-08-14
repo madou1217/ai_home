@@ -85,6 +85,22 @@ function formatCatalogProbeScope(job: WebUiOpenAIModelsJob | null) {
   return '后台调度';
 }
 
+// 账号级刷新任务的 catalog.data 会合并 alias 派生条目（网关出口口径），
+// 与下方账号模型列表（探测行）口径不同；卡片计数改为按 managedData 去重，保持同屏一致。
+function getCatalogJobVisibleCount(job: WebUiOpenAIModelsJob | null) {
+  const catalog = job?.catalog;
+  if (!catalog) return null;
+  if (!job?.accountScope) return Array.isArray(catalog.data) ? catalog.data.length : null;
+  const scopeRef = String(job.accountScope.accountRef || '').trim();
+  const ids = new Set(
+    (Array.isArray(catalog.managedData) ? catalog.managedData : [])
+      .filter((item) => !scopeRef || item.accountRef === scopeRef)
+      .map((item) => String(item.id || '').trim())
+      .filter(Boolean)
+  );
+  return ids.size;
+}
+
 function getModelRowKey(model: Pick<ManagedOpenAIModelItem, 'accountRef' | 'id'>) {
   return `${model.accountRef || 'global'}:${model.id}`;
 }
@@ -652,6 +668,14 @@ export default function Models() {
     }
   };
 
+  // 上游探测的 display_name(如 kimi 的 "K2.7 Coding")与模型 id 可能完全不同,
+  // 标题优先显示 displayName 与 CLI /model 选择器对齐,真实 id 收进副标题。
+  const getModelDisplayLabel = (provider: string, id: string) => {
+    const byModel = catalog?.labels?.[provider];
+    const label = byModel ? String(byModel[id] || '').trim() : '';
+    return label && label !== id ? label : '';
+  };
+
   const renderManualModelButton = () => (
     <Tooltip title={canCreateManualModel ? '' : manualModelUnavailableReason}>
       <span>
@@ -669,6 +693,7 @@ export default function Models() {
   const renderModelRow = (model: ManagedOpenAIModelItem) => {
     const enabled = model.enabled !== false;
     const rowKey = getModelRowKey(model);
+    const displayLabel = getModelDisplayLabel(model.provider, model.id);
     const defaultControlTip = model.defaultModel
       ? '当前账号默认模型；切换其他模型即可替换'
       : (enabled ? '设为此账号默认模型' : '启用模型后可设为默认');
@@ -676,7 +701,7 @@ export default function Models() {
       <div className={`models-model-row ${enabled ? '' : 'models-model-row--disabled'}`.trim()} key={rowKey}>
         <div className="models-model-row-main">
           <div className="models-model-title-line">
-            <h3 title={model.id}>{model.id}</h3>
+            <h3 title={model.id}>{displayLabel || model.id}</h3>
             <Tooltip title="复制模型 ID">
               <Button
                 className="copy-icon-btn"
@@ -692,7 +717,7 @@ export default function Models() {
             {model.defaultModel ? <Tag color="success">默认</Tag> : null}
             {!enabled ? <Tag>停用</Tag> : null}
           </div>
-          <p>{model.object} · {model.owned_by || 'aih'}{model.description ? ` · ${model.description}` : ''}</p>
+          <p>{displayLabel ? `${model.id} · ` : ''}{model.object} · {model.owned_by || 'aih'}{model.description ? ` · ${model.description}` : ''}</p>
         </div>
         {isMobile ? (
           /* 移动端:iOS 式带标签整行开关(标签在左、开关在右),不再把文字塞进胶囊、
@@ -779,11 +804,14 @@ export default function Models() {
 
   const renderGlobalModelRow = (model: GlobalModelRow) => {
     const visible = isGlobalModelVisible(model);
+    const displayLabel = model.providers
+      .map((provider) => getModelDisplayLabel(provider, model.id))
+      .find(Boolean) || '';
     return (
       <article className={`models-global-row ${visible ? '' : 'models-global-row--disabled'}`.trim()} key={model.id}>
         <div className="models-global-main">
           <div className="models-global-title-line">
-            <h3 title={model.id}>{model.id}</h3>
+            <h3 title={model.id}>{displayLabel || model.id}</h3>
             <Tooltip title="复制模型 ID">
               <Button
                 className="copy-icon-btn"
@@ -805,7 +833,7 @@ export default function Models() {
             </div>
           </div>
           <p>
-            {model.object} · {model.owned_by || 'aih'} · 启用账号 {model.enabledCount}
+            {displayLabel ? `${model.id} · ` : ''}{model.object} · {model.owned_by || 'aih'} · 启用账号 {model.enabledCount}
             {model.disabledCount > 0 ? ` · 停用账号 ${model.disabledCount}` : ''}
           </p>
         </div>
@@ -925,7 +953,7 @@ export default function Models() {
             </div>
             <div>
               <span>可见模型</span>
-              <strong>{catalogJob.catalog?.data.length ?? '-'}</strong>
+              <strong>{getCatalogJobVisibleCount(catalogJob) ?? '-'}</strong>
             </div>
             <div>
               <span>探测账号</span>

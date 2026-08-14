@@ -1224,3 +1224,55 @@ test('refreshLiveAccountRecord treats Grok as schedulable without usage collecti
   assert.equal(record.remainingPct, null);
   assert.equal(record.usageSnapshot, null);
 });
+
+test('refreshLiveAccountRecord surfaces kimi /me identity as nickname email and masked phone displayName', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-account-live-kimi-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const usageSnapshot = {
+    schemaVersion: 2,
+    kind: 'kimi_oauth_usage',
+    source: 'kimi_oauth_usage_api',
+    capturedAt: Date.now(),
+    account: {
+      planType: 'basic',
+      displayName: '登月者2115',
+      phone: '+86 186****2115'
+    },
+    entries: [
+      { bucket: 'weekly', windowMinutes: 10080, window: '7days', remainingPct: 51 }
+    ]
+  };
+  const accountRef = registerDbAccount(root, 'kimi', '1', {
+    nativeAuth: {
+      credentials: {
+        access_token: 'kimi-access-token',
+        refresh_token: 'kimi-refresh-token',
+        token_type: 'Bearer',
+        expires_at: Math.floor(Date.now() / 1000) + 3600
+      }
+    },
+    usageSnapshot
+  });
+  const ctx = buildRefreshContext({
+    aiHomeDir: root,
+    provider: 'kimi',
+    accountRef,
+    stateInfo: {
+      status: 'up',
+      configured: true,
+      apiKeyMode: false,
+      remainingPct: 51,
+      displayName: ''
+    },
+    status: { configured: true, accountName: '' }
+  });
+
+  const record = await refreshLiveAccountRecord(ctx, 'kimi', accountRef, {
+    skipUsageRefresh: true,
+    skipRuntimeReload: true
+  });
+
+  assert.equal(record.email, '登月者2115');
+  assert.equal(record.displayName, '+86 186****2115');
+  assert.equal(record.planType, 'basic');
+});

@@ -315,6 +315,7 @@ export interface WebUiOpenAIModelsResponse {
   data: OpenAIModelItem[];
   managedData?: ManagedOpenAIModelItem[];
   metadata?: Record<string, ModelMetadata>;
+  labels?: Record<string, Record<string, string>>;
   accounts?: WebUiOpenAIModelAccount[];
   byProvider: Record<string, string[]>;
   byAccountRef: Record<string, string[]>;
@@ -1269,6 +1270,13 @@ export interface ManagementRestartResponse {
   job: ManagementRestartEvent;
 }
 
+export interface ChatMessageMetrics {
+  durationMs?: number;
+  ttftMs?: number;
+  outputTokens?: number;
+  tokensPerSec?: number;
+}
+
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
@@ -1278,6 +1286,7 @@ export interface ChatMessage {
   timestamp?: string | number;
   model?: string;
   source?: 'codex-mobile';
+  metrics?: ChatMessageMetrics;
 }
 
 export interface QueuedChatMessage {

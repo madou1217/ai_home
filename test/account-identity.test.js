@@ -112,7 +112,7 @@ test('opencode OAuth identity hashes refresh credentials and ignores rotating ac
   assert.equal(first.degraded, false);
 });
 
-test('kimi OAuth identity hashes refresh credentials and ignores rotating access data', () => {
+test('kimi OAuth identity hashes opaque refresh credentials as a fallback', () => {
   const first = identity.resolveNativeAuthIdentitySeed('kimi', { credentials: {
     access_token: 'access-a',
     refresh_token: 'refresh-stable',
@@ -127,6 +127,32 @@ test('kimi OAuth identity hashes refresh credentials and ignores rotating access
   assert.equal(first.identitySeed, second.identitySeed);
   assert.match(first.identitySeed, /^oauth:kimi:token:[a-f0-9]{16}$/);
   assert.equal(first.identitySeed.includes('refresh-stable'), false);
+  assert.equal(first.degraded, false);
+});
+
+test('kimi OAuth identity uses stable user_id across rotating tokens and devices', () => {
+  const makeJwt = (payload) => [
+    Buffer.from(JSON.stringify({ alg: 'none' })).toString('base64url'),
+    Buffer.from(JSON.stringify(payload)).toString('base64url'),
+    'signature'
+  ].join('.');
+  const first = identity.resolveNativeAuthIdentitySeed('kimi', { credentials: {
+    access_token: makeJwt({ user_id: 'kimi-user-1', device_id: 'device-a', exp: 100 }),
+    refresh_token: makeJwt({ sub: 'kimi-user-1', device_id: 'device-a', exp: 200 })
+  } });
+  const second = identity.resolveNativeAuthIdentitySeed('kimi', { credentials: {
+    access_token: makeJwt({ user_id: 'kimi-user-1', device_id: 'device-b', exp: 300 }),
+    refresh_token: makeJwt({ sub: 'kimi-user-1', device_id: 'device-b', exp: 400 })
+  } });
+  const differentUser = identity.resolveNativeAuthIdentitySeed('kimi', { credentials: {
+    access_token: makeJwt({ user_id: 'kimi-user-2', device_id: 'device-c' }),
+    refresh_token: makeJwt({ sub: 'kimi-user-2', device_id: 'device-c' })
+  } });
+
+  assert.equal(first.identitySeed, second.identitySeed);
+  assert.match(first.identitySeed, /^oauth:kimi:user:[a-f0-9]{16}$/);
+  assert.notEqual(first.identitySeed, differentUser.identitySeed);
+  assert.equal(first.identitySeed.includes('device-a'), false);
   assert.equal(first.degraded, false);
 });
 

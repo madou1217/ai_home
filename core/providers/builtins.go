@@ -367,7 +367,7 @@ func builtinKimi() Definition {
 		ID:           "kimi",
 		Presentation: presentation("kimi", "Kimi", "KM", "☾", "geekblue"),
 		Gateway:      GatewayActive,
-		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityQuotaUsage},
+		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeAPIKey, "Moonshot 密钥", "绑定 MOONSHOT_API_KEY / KIMI_BASE_URL（支持 api.moonshot.cn 和 api.moonshot.ai 双端点）。"),
 			authOption(AuthModeOAuthBrowser, "Kimi Code 登录", "使用 Kimi Code CLI 原生 OAuth 设备码流程（需 Kimi 会员订阅）。"),

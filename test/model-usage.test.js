@@ -704,15 +704,21 @@ test('kimi scanner records turn-scope wire usage and filters non-user prompts', 
   }
 });
 
-test('kimi scanner attributes sandbox wire usage to the owning account and backfills', (t) => {
+test('kimi scanner attributes sandbox wire usage to the account named by its path', (t) => {
   const accountRef = 'acct_0123456789abcdef0123';
-  let attributedRef = '';
-  const fixture = makeService(t, {
-    resolveKimiAccountRef: (runtimeDir) => (runtimeDir.includes('auth-projections') ? attributedRef : '')
-  });
+  const fixture = makeService(t);
   if (!fixture) return;
   const { root, service } = fixture;
   try {
+    const wireRows = (time) => ([
+      {
+        type: 'usage.record',
+        model: 'kimi-code/k3-256k',
+        usage: { inputOther: 100, output: 10, inputCacheRead: 40, inputCacheCreation: 5 },
+        usageScope: 'turn',
+        time
+      }
+    ]);
     const sandboxWire = path.join(
       root,
       '.ai_home',
@@ -728,46 +734,33 @@ test('kimi scanner attributes sandbox wire usage to the owning account and backf
       'main',
       'wire.jsonl'
     );
-    writeJsonl(sandboxWire, [
-      { type: 'metadata', protocol_version: '1.5', created_at: Date.parse('2026-06-04T11:00:00.000Z') },
-      {
-        type: 'profile.bind',
-        modelAlias: 'kimi-code/k3-256k',
-        environmentDisclosure: { cwd: '/work/kimi-project' },
-        time: Date.parse('2026-06-04T11:00:00.500Z')
-      },
-      {
-        type: 'turn.prompt',
-        origin: { kind: 'user' },
-        input: [{ type: 'text', text: 'real prompt' }],
-        time: Date.parse('2026-06-04T11:00:01.000Z')
-      },
-      {
-        type: 'usage.record',
-        model: 'kimi-code/k3-256k',
-        usage: { inputOther: 100, output: 10, inputCacheRead: 40, inputCacheCreation: 5 },
-        usageScope: 'turn',
-        time: Date.parse('2026-06-04T11:00:02.000Z')
-      }
-    ]);
+    writeJsonl(sandboxWire, wireRows(Date.parse('2026-06-04T11:00:02.000Z')));
+    // host sessions are direct CLI runs, not account runs: never attributed
+    writeJsonl(
+      path.join(root, '.kimi-code', 'sessions', 'wd_host_h', 'session_host-1', 'agents', 'main', 'wire.jsonl'),
+      wireRows(Date.parse('2026-06-04T11:05:02.000Z'))
+    );
     const nowMs = Date.parse('2026-06-04T12:00:00.000Z');
 
-    const first = service.scan();
-    assert.equal(first.records, 1);
-    assert.deepEqual(service.getAccountTokenUsage({ nowMs }), {});
-
-    // the account registers (or credentials appear) after the first scan: the
-    // next scan backfills the previously unattributed rows for the file
-    attributedRef = accountRef;
-    const second = service.scan();
-    assert.equal(second.records, 0);
+    const scan = service.scan();
+    assert.equal(scan.records, 2);
+    assert.equal(scan.providers.kimi.files, 2);
 
     const usage = service.getAccountTokenUsage({ nowMs });
+    assert.equal(Object.keys(usage).length, 1);
     assert.equal(usage[accountRef].month, 155);
     assert.deepEqual(
       usage[accountRef].models.map((row) => [row.model, row.month]),
       [['kimi-code/k3-256k', 155]]
     );
+
+    const stats = service.getStats({
+      fromMs: new Date(2026, 5, 4).getTime(),
+      toMs: new Date(2026, 5, 5).getTime() - 1,
+      provider: 'kimi'
+    });
+    assert.equal(stats.totalCalls, 2);
+    assert.equal(stats.totalTokens, 310);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

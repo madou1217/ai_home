@@ -260,6 +260,101 @@ describe('createTokenRefreshDaemon', () => {
     }
   });
 
+  it('clears grok auth block after successful token refresh', async (t) => {
+    const fixture = createAccountFixture(t, 'aih-token-refresh-daemon-grok-db-');
+    const root = fixture.aiHomeDir;
+    try {
+      const oldExp = Math.floor((Date.now() - 60_000) / 1000);
+      const newExp = Math.floor((Date.now() + 21600_000) / 1000);
+      const oldJwt = `mock.eyJpc3MiOiJodHRwczovL2F1dGgueC5haSIsImV4cCI6${oldExp}}.mock`;
+      const newJwt = `mock.eyJpc3MiOiJodHRwczovL2F1dGgueC5haSIsImV4cCI6${newExp}}.mock`;
+
+      const accountRef = fixture.register('grok', '1', {
+        auth: {
+          'https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828': {
+            key: oldJwt,
+            refresh_token: 'grok-refresh-token',
+            email: 'grok@example.com',
+            expires_at: new Date(oldExp * 1000).toISOString()
+          }
+        }
+      });
+
+      const account = {
+        accountRef,
+        provider: 'grok',
+        authType: 'oauth',
+        accessToken: oldJwt,
+        refreshToken: 'grok-refresh-token',
+        tokenExpiresAt: oldExp * 1000,
+        email: 'grok@example.com',
+        authInvalidUntil: Date.now() + 60_000,
+        consecutiveFailures: 1,
+        lastError: 'token_refresh_invalid_grant'
+      };
+      const state = {
+        accounts: {
+          codex: [],
+          gemini: [],
+          claude: [],
+          agy: [],
+          grok: [account]
+        }
+      };
+      const clears = [];
+      const events = [];
+
+      const daemon = createTokenRefreshDaemon(state, {
+        tokenRefreshIntervalMs: 60000,
+        tokenRefreshBeforeExpiryMs: 5 * 60 * 1000,
+        tokenStartupRefreshBeforeExpiryMs: 5 * 60 * 1000
+      }, {
+        fs,
+        aiHomeDir: root,
+        fetchWithTimeout: async () => ({
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({
+            access_token: newJwt,
+            refresh_token: 'grok-refresh-token-new',
+            expires_in: 21600
+          })
+        }),
+        accountStateService: {
+          async clearRuntimeBlock(targetRef, targetProvider, options) {
+            clears.push({ accountRef: targetRef, provider: targetProvider, options });
+            return true;
+          }
+        },
+        hub: {
+          emit(name, event) {
+            events.push({ name, event });
+          }
+        },
+        logInfo: () => {},
+        logWarn: () => {},
+        logError: () => {}
+      });
+
+      await new Promise(resolve => setTimeout(resolve, 200));
+      daemon.stop();
+
+      assert.equal(account.accessToken, newJwt);
+      assert.equal(account.authInvalidUntil, 0);
+      assert.equal(account.consecutiveFailures, 0);
+      assert.equal(account.lastError, '');
+      assert.equal(clears.length, 1);
+      assert.equal(clears[0].provider, 'grok');
+      assert.equal(clears[0].accountRef, accountRef);
+      assert.equal(clears[0].options.evidence, 'token_refresh_success');
+      assert.equal(events.length, 1);
+      assert.equal(events[0].event.reason, 'token_refresh_success');
+      assert.equal(events[0].event.reloadPool, true);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('does not clear agy runtime memory when persisted clear is rejected', async (t) => {
     const fixture = createAccountFixture(t, 'aih-token-refresh-daemon-agy-rejected-db-');
     const root = fixture.aiHomeDir;

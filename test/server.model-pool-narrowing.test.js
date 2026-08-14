@@ -138,6 +138,25 @@ test('allowNoAccountVerdict=false 时永不判定无可用账号', () => {
   assert.equal(result.pool.length, 3);
 });
 
+test('provider 明确判定额度耗尽时，即使目录仍存在也不把账号放回上游池', () => {
+  const accountRef = 'acct_quota_exhausted';
+  const result = narrowPoolByModelCatalog({
+    pool: [account(accountRef)],
+    provider: 'agy',
+    model: 'claude-opus-4-6-thinking',
+    accountRefs: [],
+    knownAccountRefs: [accountRef],
+    blockedAccountRefs: [accountRef],
+    accountCatalogs: new Map([[accountRef, new Set(['claude-opus-4-6-thinking'])]]),
+    providerCatalog: new Set(['claude-opus-4-6-thinking']),
+    getAccountRef
+  });
+
+  assert.deepEqual(result.pool, []);
+  assert.equal(result.filtered, true);
+  assert.equal(result.blockedByUsage, true);
+});
+
 // 回归：账号个个健康却一个都没选中，只可能是「按模型选账号」把它们滤光了。
 // 旧文案会说 "no schedulable X account: unknown"，把「没人支持这个模型」说成
 // 「没有可调度账号」，排障会一路找错方向。

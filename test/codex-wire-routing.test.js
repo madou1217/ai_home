@@ -216,3 +216,38 @@ test('a request without a model keeps the existing adapter unless the whole pool
   const relayOnly = makeState({ accounts: { codex: [relayAccount] } });
   assert.equal(shouldRouteCodexViaChatCompletions({ state: relayOnly, requestJson: {} }), true);
 });
+
+// 目录已知且明确不含请求模型的中转账号，不得参与 wire api 的一致性表决。
+// 现场是 ollama（目录里只有开源模型）被算进候选，去左右 gpt-5.6-luna 该走哪套协议。
+test('a relay whose catalog is known to lack the model is not counted as a wire candidate', () => {
+  const state = {
+    accounts: { codex: [headerlessRelayAccount, officialAccount] },
+    modelCatalogSettings: { accountModels: [] },
+    webUiModelsCache: {
+      updatedAt: Date.now(),
+      byAccount: {
+        // ollama 中转：只有开源模型，没有 luna。
+        [HEADERLESS_RELAY_REF]: ['kimi-k3', 'qwen3.5:397b', 'glm-5.2'],
+        // 官方账号有 luna，但此刻不可调度（无 accessToken → 不进 routable 列表），
+        // 于是倒排索引查不到绑定，逻辑落到「整池放行」那条分支。
+        [OFFICIAL_REF]: ['gpt-5.6-luna']
+      },
+      byProvider: {}
+    }
+  };
+  state.modelAccountIndex = buildModelAccountIndex(state, {});
+
+  const candidates = resolveCodexWireApiCandidates({
+    state,
+    requestJson: { model: 'gpt-5.6-luna' }
+  });
+  assert.equal(
+    candidates.some((account) => account.accountRef === HEADERLESS_RELAY_REF),
+    false,
+    'ollama must not vote on the wire api for a model it does not have'
+  );
+  assert.equal(shouldRouteCodexViaChatCompletions({
+    state,
+    requestJson: { model: 'gpt-5.6-luna' }
+  }), false);
+});

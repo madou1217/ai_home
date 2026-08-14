@@ -3,7 +3,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { narrowPoolByModelCatalog } = require('../lib/server/model-pool-narrowing');
+const {
+  excludeAccountsWithoutModel,
+  narrowPoolByModelCatalog
+} = require('../lib/server/model-pool-narrowing');
 
 const OAUTH_A = 'acct_3306a0fb0bfb1c1127fb';
 const OAUTH_B = 'acct_c3ccfeed8592ee54aea8';
@@ -161,4 +164,61 @@ test('确有不可用原因时保持原有诊断文案', () => {
   const summary = summarizeAccountAvailability(cooled, { provider: 'agy', model: 'x' });
   assert.equal(summary.available, 0);
   assert.match(summary.detail, /no schedulable agy account: cooldown:rate_limited=1/);
+});
+
+const OLLAMA = 'acct_52facbdf93d7161b990d';
+
+function exclude(overrides = {}) {
+  return excludeAccountsWithoutModel({
+    pool: [account(OAUTH_A), account(OLLAMA)],
+    provider: 'codex',
+    model: 'gpt-5.6-luna',
+    accountCatalogs: new Map(),
+    getAccountRef,
+    ...overrides
+  });
+}
+
+test('目录已知且不含该模型的账号被剔除', () => {
+  const result = exclude({
+    accountCatalogs: new Map([
+      [OAUTH_A, new Set(['gpt-5.6-luna', 'gpt-5.5'])],
+      [OLLAMA, new Set(['kimi-k3', 'qwen3.5:397b', 'glm-5.2'])]
+    ])
+  });
+  assert.deepEqual(result.pool.map((item) => item.accountRef), [OAUTH_A]);
+  assert.deepEqual(result.excludedAccountRefs, [OLLAMA]);
+});
+
+test('目录未知或为空的账号一律放行——探测残缺不是否定证据', () => {
+  const result = exclude({
+    accountCatalogs: new Map([
+      [OAUTH_A, new Set()],
+      [RELAY, new Set(['gpt-5.5'])]
+    ])
+  });
+  assert.deepEqual(result.pool.map((item) => item.accountRef), [OAUTH_A, OLLAMA]);
+  assert.deepEqual(result.excludedAccountRefs, []);
+});
+
+test('版本分隔符变体不算不支持', () => {
+  const result = exclude({
+    model: 'gpt-5-6-luna',
+    accountCatalogs: new Map([
+      [OAUTH_A, new Set(['gpt-5.6-luna'])],
+      [OLLAMA, new Set(['kimi-k3'])]
+    ])
+  });
+  assert.deepEqual(result.pool.map((item) => item.accountRef), [OAUTH_A]);
+});
+
+test('全池目录都已知且都不含该模型时排空——由调用方给出终判', () => {
+  const result = exclude({
+    accountCatalogs: new Map([
+      [OAUTH_A, new Set(['gpt-5.5'])],
+      [OLLAMA, new Set(['kimi-k3'])]
+    ])
+  });
+  assert.deepEqual(result.pool, []);
+  assert.deepEqual(result.excludedAccountRefs, [OAUTH_A, OLLAMA]);
 });

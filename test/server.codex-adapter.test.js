@@ -2619,3 +2619,210 @@ test('codex adapter selects only compatible accounts when model inverted index i
   assert.equal(attemptedAccountRefs.length > 0, true);
 });
 
+
+// 回归：2026-08-14 11:57 的真实事故。codex CLI 请求 gpt-5.6-luna，网关却拨到了 ollama
+// 中转账号（acct_52facbdf93d7161b990d，目录里只有 18 个开源模型），上游回
+// 400 unknown input item type: "custom_tool_call"。
+//
+// 触发条件是「正向查不到绑定」：所有支持 luna 的账号当时都不可调度，倒排/正排索引
+// 都返回空 ref，收窄逻辑于是整池放行（探测残缺不能当否定证据），把明知不支持 luna 的
+// ollama 也放了回去，轮询正好拨中它。
+//
+// 目录已知且明确不含该模型，是强证据，任何放行分支都不得再把这种账号放回池子。
+test('codex adapter never dials an account whose catalog is known to lack the requested model', async () => {
+  const res = createResCapture();
+  const ollamaRef = accountRef('011a011a');
+  const lunaCooledRef = accountRef('0c010c01');
+  const lunaUnhealthyRef = accountRef('0c020c02');
+  const state = {
+    accounts: {
+      codex: [
+        {
+          accountRef: ollamaRef,
+          accessToken: 'ollama-key',
+          apiKeyMode: true,
+          openaiBaseUrl: 'https://ollama.com/v1',
+          schedulableStatus: 'schedulable'
+        },
+        {
+          accountRef: lunaCooledRef,
+          accessToken: 'luna-cooled-token',
+          schedulableStatus: 'cooling_down'
+        },
+        {
+          accountRef: lunaUnhealthyRef,
+          accessToken: 'luna-unhealthy-token',
+          schedulableStatus: 'cooling_down'
+        }
+      ]
+    },
+    webUiModelsCache: {
+      updatedAt: Date.now(),
+      byAccount: {
+        [ollamaRef]: [
+          'deepseek-v4-pro:preview', 'gemma4:31b', 'glm-5.2', 'gpt-oss:120b',
+          'kimi-k3', 'minimax-m3', 'nemotron-3-ultra', 'qwen3.5:397b'
+        ],
+        [lunaCooledRef]: ['gpt-5.6-luna', 'gpt-5.5'],
+        [lunaUnhealthyRef]: ['gpt-5.6-luna', 'gpt-5.3-codex']
+      },
+      byProvider: {}
+    },
+    cursors: { codex: 0 },
+    metrics: { totalFailures: 0, totalSuccess: 0, totalTimeouts: 0, lastErrors: [] }
+  };
+  state.modelAccountIndex = buildModelAccountIndex(state, {});
+
+  const attemptedAccountRefs = [];
+  await handleCodexChatCompletions({
+    options: {
+      codexBaseUrl: 'https://chatgpt.com/backend-api/codex',
+      upstreamTimeoutMs: 3000,
+      maxAttempts: 3,
+      failureThreshold: 1,
+      logRequests: false
+    },
+    state,
+    req: { headers: { 'content-type': 'application/json' } },
+    res,
+    requestJson: {
+      model: 'gpt-5.6-luna',
+      stream: false,
+      messages: [{ role: 'user', content: 'hello' }]
+    },
+    routeKey: 'POST /v1/responses',
+    requestStartedAt: Date.now(),
+    cooldownMs: 1000,
+    requestMeta: { requestId: 'known-negative-catalog', sessionKey: 's', clientProtocol: 'openai_responses' },
+    deps: {
+      chooseServerAccount,
+      pushMetricError: () => {},
+      writeJson: (r, code, payload) => {
+        r.statusCode = code;
+        r.setHeader('content-type', 'application/json');
+        r.end(JSON.stringify(payload));
+      },
+      refreshCodexAccessToken: async () => ({ ok: true, refreshed: false, reason: 'not_due' }),
+      fetchWithTimeout: async (url, init) => {
+        const auth = String(init && init.headers && init.headers.authorization || '');
+        if (auth.includes('ollama-key')) {
+          attemptedAccountRefs.push(ollamaRef);
+          return {
+            ok: false,
+            status: 400,
+            headers: new Map(),
+            text: async () => JSON.stringify({
+              error: {
+                message: 'input[20]: unknown input item type: "custom_tool_call"',
+                type: 'invalid_request_error'
+              }
+            })
+          };
+        }
+        attemptedAccountRefs.push('unexpected');
+        return createCompletedUpstreamResponse('unexpected');
+      },
+      markProxyAccountFailure,
+      markProxyAccountSuccess: () => {},
+      appendProxyRequestLog: () => {}
+    }
+  });
+
+  assert.deepEqual(
+    attemptedAccountRefs,
+    [],
+    'an account whose catalog is known to lack gpt-5.6-luna must never be dialed'
+  );
+  assert.equal(res.statusCode, 503);
+  const body = JSON.parse(res.body);
+  assert.equal(body.error, 'no_available_account');
+});
+
+// 反向不变量：目录未知（从未探测到）不等于不支持。排除只认「已知且不含」这一种强证据，
+// 否则探测残缺就会被读成否定证据，合成一堆假 503——这正是收窄模块开头警告的那种回归。
+test('codex adapter still dials an account whose catalog is unknown', async () => {
+  const res = createResCapture();
+  const ollamaRef = accountRef('011a011a');
+  const unprobedRef = accountRef('0u010u01');
+  const state = {
+    accounts: {
+      codex: [
+        {
+          accountRef: ollamaRef,
+          accessToken: 'ollama-key',
+          apiKeyMode: true,
+          openaiBaseUrl: 'https://ollama.com/v1',
+          schedulableStatus: 'schedulable'
+        },
+        {
+          accountRef: unprobedRef,
+          accessToken: 'unprobed-token',
+          schedulableStatus: 'schedulable'
+        }
+      ]
+    },
+    webUiModelsCache: {
+      updatedAt: Date.now(),
+      byAccount: {
+        [ollamaRef]: ['glm-5.2', 'kimi-k3', 'qwen3.5:397b']
+      },
+      byProvider: {}
+    },
+    cursors: { codex: 0 },
+    metrics: { totalFailures: 0, totalSuccess: 0, totalTimeouts: 0, lastErrors: [] }
+  };
+  state.modelAccountIndex = buildModelAccountIndex(state, {});
+
+  const attemptedAccountRefs = [];
+  await handleCodexChatCompletions({
+    options: {
+      codexBaseUrl: 'https://chatgpt.com/backend-api/codex',
+      upstreamTimeoutMs: 3000,
+      maxAttempts: 3,
+      failureThreshold: 1,
+      logRequests: false
+    },
+    state,
+    req: { headers: { 'content-type': 'application/json' } },
+    res,
+    requestJson: {
+      model: 'gpt-5.6-luna',
+      stream: false,
+      messages: [{ role: 'user', content: 'hello' }]
+    },
+    routeKey: 'POST /v1/responses',
+    requestStartedAt: Date.now(),
+    cooldownMs: 1000,
+    requestMeta: { requestId: 'unknown-catalog-passthrough', sessionKey: 's', clientProtocol: 'openai_responses' },
+    deps: {
+      chooseServerAccount,
+      pushMetricError: () => {},
+      writeJson: (r, code, payload) => {
+        r.statusCode = code;
+        r.setHeader('content-type', 'application/json');
+        r.end(JSON.stringify(payload));
+      },
+      refreshCodexAccessToken: async () => ({ ok: true, refreshed: false, reason: 'not_due' }),
+      fetchWithTimeout: async (url, init) => {
+        const auth = String(init && init.headers && init.headers.authorization || '');
+        if (auth.includes('ollama-key')) {
+          attemptedAccountRefs.push(ollamaRef);
+          return {
+            ok: false,
+            status: 400,
+            headers: new Map(),
+            text: async () => JSON.stringify({ error: { message: 'unknown input item type' } })
+          };
+        }
+        attemptedAccountRefs.push(unprobedRef);
+        return createCompletedUpstreamResponse('unprobed luna ok');
+      },
+      markProxyAccountFailure,
+      markProxyAccountSuccess: () => {},
+      appendProxyRequestLog: () => {}
+    }
+  });
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(attemptedAccountRefs, [unprobedRef], 'unknown catalog must stay routable');
+});

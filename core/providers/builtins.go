@@ -95,8 +95,14 @@ func builtinGemini() Definition {
 		Gateway:      GatewayDeprecated,
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage},
 		AuthOptions: []AuthOption{
-			authOption(AuthModeOAuthBrowser, "Google 登录", "使用 Gemini CLI 原生 Google 登录流程。"),
+			disabledAuthOption(
+				AuthModeOAuthBrowser,
+				"Google 登录 (已停用)",
+				"Google 已关闭 Gemini CLI 个人版登录，请改用 Gemini API Key 或 Antigravity。",
+				"Google 已关闭 Gemini CLI 个人版登录，请改用 Gemini API Key 或 Antigravity",
+			),
 			authOption(AuthModeAPIKey, "Gemini 密钥", "绑定 GEMINI_API_KEY 或 GOOGLE_API_KEY。"),
+			authOption(AuthModeVertexAI, "Vertex AI", "Google Cloud Vertex AI 认证 (暂未接入，先占位)。"),
 		},
 		SessionSync: SessionSync{
 			Mode:       SessionSyncHook,
@@ -416,6 +422,17 @@ func presentation(id, label, short, terminalIcon, tagColor string) Presentation 
 // authOption 统一构造 Client 认证选项。
 func authOption(value AuthMode, label, description string) AuthOption {
 	return AuthOption{Value: value, Label: label, Description: description}
+}
+
+// disabledAuthOption 构造已停用并带有停用原因的 Client 认证选项。
+func disabledAuthOption(value AuthMode, label, description, disabledReason string) AuthOption {
+	return AuthOption{
+		Value:          value,
+		Label:          label,
+		Description:    description,
+		Disabled:       true,
+		DisabledReason: disabledReason,
+	}
 }
 
 // desktopClient 统一构造结构相同的跨平台桌面客户端定义。

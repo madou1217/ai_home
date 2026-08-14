@@ -16,6 +16,7 @@ const {
   extractOAuthChallenge,
   extractBrowserOAuthHints,
   configureApiKeyAccount,
+  configureVertexAiAccount,
   serializeAuthJob,
   createAuthJobManager: createAuthJobManagerImpl
 } = require('../lib/server/web-account-auth');
@@ -101,12 +102,63 @@ test('normalizeAuthMode maps aliases to supported auth modes', () => {
   assert.equal(normalizeAuthMode('unknown'), '');
 });
 
-test('getDefaultAuthMode keeps codex browser oauth as the default login mode', () => {
+test('getDefaultAuthMode keeps appropriate default login mode per provider', () => {
   assert.equal(getDefaultAuthMode('codex'), 'oauth-browser');
   assert.equal(getDefaultAuthMode('claude'), 'oauth-browser');
-  assert.equal(getDefaultAuthMode('gemini'), 'oauth-browser');
+  assert.equal(getDefaultAuthMode('gemini'), 'api-key');
   assert.equal(getDefaultAuthMode('agy'), 'oauth-browser');
   assert.equal(getDefaultAuthMode('opencode'), 'oauth-browser');
+});
+
+test('gemini google oauth browser flow is short-circuited and disabled with explicit error', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-oauth-gemini-disabled-'));
+  const manager = createAuthJobManager({
+    fs,
+    processObj: {
+      ...process,
+      cwd: () => root,
+      env: { ...process.env },
+      platform: process.platform
+    },
+    getToolAccountIds: () => [],
+    getProfileDir: () => '',
+    getToolConfigDir: () => ''
+  });
+
+  assert.throws(
+    () => manager.startOauthJob('gemini', 'oauth-browser'),
+    (error) => {
+      assert.equal(error.code, 'gemini_google_oauth_disabled');
+      assert.match(error.message, /Google 登录已关闭/);
+      return true;
+    }
+  );
+});
+
+test('configureVertexAiAccount configures placeholder vertex ai credentials', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-vertex-ai-'));
+  const result = configureVertexAiAccount({
+    fs,
+    provider: 'gemini',
+    aiHomeDir: root,
+    config: {
+      projectId: 'my-gcp-project',
+      location: 'us-central1',
+      apiKey: 'test-vertex-key'
+    }
+  });
+
+  assert.equal(result.provider, 'gemini');
+  assert.equal(result.authMode, 'vertex-ai');
+  assert.equal(result.apiKeyMode, true);
+  assert.ok(result.accountRef);
+
+  const env = readAccountCredentials(fs, root, result.accountRef);
+  assert.equal(env.VERTEX_AI_PROJECT_ID, 'my-gcp-project');
+  assert.equal(env.VERTEX_AI_LOCATION, 'us-central1');
+  assert.equal(env.VERTEX_AI_PLACEHOLDER, 'true');
+  assert.equal(env.GEMINI_API_KEY, 'test-vertex-key');
+  assert.equal(env.GOOGLE_API_KEY, 'test-vertex-key');
 });
 
 test('server auth wiring and CLI help do not require node-pty at module load', () => {
@@ -626,9 +678,9 @@ test('createAuthJobManager expires stale browser oauth jobs without provider sig
     getToolConfigDir
   });
 
-  // gemini still spawns a CLI for browser oauth (no native loopback), so its job
+  // opencode spawns a CLI for browser oauth (no native loopback), so its job
   // starts without a provider-declared expiry and relies on the staleness fallback.
-  const started = manager.startOauthJob('gemini', 'oauth-browser');
+  const started = manager.startOauthJob('opencode', 'oauth-browser');
   const running = manager.getJob(started.jobId);
   assert.equal(running.status, 'running');
   assert.equal(running.expiresAt, null);
@@ -641,7 +693,7 @@ test('createAuthJobManager expires stale browser oauth jobs without provider sig
   assert.equal(expired.authProgressState, 'expired');
   assert.match(expired.error, /OAuth 授权已超时/);
   assert.equal(killed, true);
-  assert.equal(manager.getRunningJob('gemini'), null);
+  assert.equal(manager.getRunningJob('opencode'), null);
 });
 
 test('resolveOauthJobDeadline prefers provider expiresAt over fallback age', () => {
@@ -691,25 +743,25 @@ test('createAuthJobManager cancelJob releases provider lock for retry', () => {
         };
       }
     },
-    resolveCliPathImpl: () => '/usr/local/bin/gemini',
+    resolveCliPathImpl: () => '/usr/local/bin/opencode',
     getToolAccountIds: () => ['1'],
     getProfileDir,
     getToolConfigDir
   });
 
-  const started = manager.startOauthJob('gemini', 'oauth-browser');
-  assert.equal(manager.getRunningJob('gemini')?.id, started.jobId);
+  const started = manager.startOauthJob('opencode', 'oauth-browser');
+  assert.equal(manager.getRunningJob('opencode')?.id, started.jobId);
 
   const cancelled = manager.cancelJob(started.jobId);
   assert.equal(cancelled.ok, true);
   assert.equal(killed, true);
-  assert.equal(manager.getRunningJob('gemini'), null);
+  assert.equal(manager.getRunningJob('opencode'), null);
   assert.equal(manager.getJob(started.jobId)?.status, 'cancelled');
 
   onExitHandler({ exitCode: 130 });
   assert.equal(manager.getJob(started.jobId)?.status, 'cancelled');
 
-  const retried = manager.startOauthJob('gemini', 'oauth-browser');
+  const retried = manager.startOauthJob('opencode', 'oauth-browser');
   assert.notEqual(retried.jobId, started.jobId);
 });
 
@@ -1254,7 +1306,7 @@ test('createAuthJobManager marks claude oauth job succeeded when credentials fil
 });
 
 test('createAuthJobManager preserves succeeded status after oauth artifact completion triggers onExit', async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-oauth-claude-exit-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-oauth-opencode-exit-'));
   const getProfileDir = (provider, accountId) => path.join(root, provider, String(accountId));
   const getToolConfigDir = (provider, accountId) => path.join(getProfileDir(provider, accountId), `.${provider}`);
 
@@ -1283,7 +1335,7 @@ test('createAuthJobManager preserves succeeded status after oauth artifact compl
         };
       }
     },
-    resolveCliPathImpl: () => '/usr/local/bin/claude',
+    resolveCliPathImpl: () => '/usr/local/bin/opencode',
     getToolAccountIds: () => ['1'],
     getProfileDir,
     getToolConfigDir,
@@ -1292,15 +1344,16 @@ test('createAuthJobManager preserves succeeded status after oauth artifact compl
     }
   });
 
-  // gemini still spawns its CLI for browser oauth, so this exercises the PTY
-  // onExit path after completion artifacts (oauth_creds.json) appear.
-  const started = manager.startOauthJob('gemini', 'oauth-browser');
-  const credentialsPath = path.join(manager.getJob(started.jobId).configDir, 'oauth_creds.json');
+  // opencode spawns its CLI for browser oauth, so this exercises the PTY
+  // onExit path after completion artifacts (auth.json) appear.
+  const started = manager.startOauthJob('opencode', 'oauth-browser');
+  const credentialsPath = path.join(manager.getJob(started.jobId).runtimeDir, '.local', 'share', 'opencode', 'auth.json');
   fs.mkdirSync(path.dirname(credentialsPath), { recursive: true });
   fs.writeFileSync(credentialsPath, JSON.stringify({
-    access_token: 'gemini-access-token',
-    refresh_token: 'gemini-refresh-token',
-    email: 'gemini@example.com'
+    default: {
+      access_token: 'opencode-access-token',
+      refresh_token: 'opencode-refresh-token'
+    }
   }));
 
   assert.equal(manager.getJob(started.jobId).status, 'succeeded');
@@ -1462,8 +1515,8 @@ test('createAuthJobManager reauth preserves the target when OAuth returns a diff
   );
 });
 
-test('createAuthJobManager marks gemini oauth job succeeded when oauth_creds file appears', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-oauth-gemini-complete-'));
+test('createAuthJobManager marks claude oauth job succeeded when .credentials file appears', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-oauth-claude-complete-'));
   const getProfileDir = (provider, accountId) => path.join(root, provider, String(accountId));
   const getToolConfigDir = (provider, accountId) => path.join(getProfileDir(provider, accountId), `.${provider}`);
 
@@ -1488,19 +1541,21 @@ test('createAuthJobManager marks gemini oauth job succeeded when oauth_creds fil
         };
       }
     },
-    resolveCliPathImpl: () => '/usr/local/bin/gemini',
+    resolveCliPathImpl: () => '/usr/local/bin/claude',
     getToolAccountIds: () => ['1'],
     getProfileDir,
     getToolConfigDir
   });
 
-  const started = manager.startOauthJob('gemini', 'oauth-browser');
-  const oauthPath = path.join(manager.getJob(started.jobId).configDir, 'oauth_creds.json');
+  const started = manager.startOauthJob('claude', 'oauth-browser');
+  const oauthPath = path.join(manager.getJob(started.jobId).configDir, '.credentials.json');
   fs.mkdirSync(path.dirname(oauthPath), { recursive: true });
   fs.writeFileSync(oauthPath, JSON.stringify({
-    access_token: 'gemini-access-token',
-    refresh_token: 'gemini-refresh-token',
-    email: 'gemini-file@example.com'
+    claudeAiOauth: {
+      accessToken: 'claude-access-token',
+      refreshToken: 'claude-refresh-token',
+      email: 'claude-file@example.com'
+    }
   }));
 
   const job = manager.getJob(started.jobId);

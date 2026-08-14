@@ -156,6 +156,8 @@ func renderClientTypeScript(manifest providers.Manifest) ([]byte, error) {
 	output.WriteString("  readonly value: ProviderAuthMode;\n")
 	output.WriteString("  readonly label: string;\n")
 	output.WriteString("  readonly description: string;\n")
+	output.WriteString("  readonly disabled?: boolean;\n")
+	output.WriteString("  readonly disabledReason?: string;\n")
 	output.WriteString("}\n\n")
 	output.WriteString("/** Client 使用的 Provider 展示元数据。 */\n")
 	output.WriteString("export interface ProviderCatalogEntry {\n")

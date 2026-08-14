@@ -43,13 +43,20 @@ export const PROVIDER_DEFINITIONS = [
     "authOptions": [
       {
         "value": "oauth-browser",
-        "label": "Google 登录",
-        "description": "使用 Gemini CLI 原生 Google 登录流程。"
+        "label": "Google 登录 (已停用)",
+        "description": "Google 已关闭 Gemini CLI 个人版登录，请改用 Gemini API Key 或 Antigravity。",
+        "disabled": true,
+        "disabledReason": "Google 已关闭 Gemini CLI 个人版登录，请改用 Gemini API Key 或 Antigravity"
       },
       {
         "value": "api-key",
         "label": "Gemini 密钥",
         "description": "绑定 GEMINI_API_KEY 或 GOOGLE_API_KEY。"
+      },
+      {
+        "value": "vertex-ai",
+        "label": "Vertex AI",
+        "description": "Google Cloud Vertex AI 认证 (暂未接入，先占位)。"
       }
     ]
   },
@@ -232,6 +239,8 @@ export interface ProviderAuthOption {
   readonly value: ProviderAuthMode;
   readonly label: string;
   readonly description: string;
+  readonly disabled?: boolean;
+  readonly disabledReason?: string;
 }
 
 /** Client 使用的 Provider 展示元数据。 */

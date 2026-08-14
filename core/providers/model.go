@@ -40,6 +40,8 @@ const (
 	AuthModeOAuthBrowser AuthMode = "oauth-browser"
 	// AuthModeOAuthDevice 表示设备码 OAuth 流程。
 	AuthModeOAuthDevice AuthMode = "oauth-device"
+	// AuthModeVertexAI 表示 Google Cloud Vertex AI 认证流程。
+	AuthModeVertexAI AuthMode = "vertex-ai"
 )
 
 // SessionSyncMode 描述 Provider 会话变化如何同步到 AI Home。
@@ -88,9 +90,11 @@ type Presentation struct {
 
 // AuthOption 描述 Client 可以展示的账号认证选项。
 type AuthOption struct {
-	Value       AuthMode `json:"value"`
-	Label       string   `json:"label"`
-	Description string   `json:"description"`
+	Value          AuthMode `json:"value"`
+	Label          string   `json:"label"`
+	Description    string   `json:"description"`
+	Disabled       bool     `json:"disabled,omitempty"`
+	DisabledReason string   `json:"disabledReason,omitempty"`
 }
 
 // SessionSync 保存会话同步的声明，具体写文件或读数据库仍由 Integration Adapter 实现。

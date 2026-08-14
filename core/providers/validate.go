@@ -103,6 +103,7 @@ func validateAuthOptions(options []AuthOption) error {
 		AuthModeAuthToken:    {},
 		AuthModeOAuthBrowser: {},
 		AuthModeOAuthDevice:  {},
+		AuthModeVertexAI:     {},
 	}
 	seen := make(map[AuthMode]struct{}, len(options))
 	for _, option := range options {

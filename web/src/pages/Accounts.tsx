@@ -1714,8 +1714,9 @@ export default function Accounts() {
     }
     if (previousAddProviderRef.current === selectedProvider) return;
     previousAddProviderRef.current = selectedProvider;
-    const firstMode = (PROVIDER_AUTH_OPTIONS[selectedProvider] || [])[0]?.value;
-    form.setFieldValue('authMode', firstMode);
+    const availableOptions = PROVIDER_AUTH_OPTIONS[selectedProvider] || [];
+    const firstActiveMode = availableOptions.find((opt) => !opt.disabled)?.value || availableOptions[0]?.value;
+    form.setFieldValue('authMode', firstActiveMode);
   }, [form, selectedProvider]);
 
   const closeAuthProgress = async (forceCancel = false) => {
@@ -1870,16 +1871,24 @@ export default function Accounts() {
 
   const handleAdd = async (values: any) => {
     setSubmitting(true);
+    let configPayload: any = undefined;
+    if (values.authMode === 'api-key' || values.authMode === 'auth-token') {
+      configPayload = {
+        apiKey: values.apiKey,
+        baseUrl: values.baseUrl,
+        credentialType: values.authMode
+      };
+    } else if (values.authMode === 'vertex-ai') {
+      configPayload = {
+        projectId: values.projectId,
+        location: values.location,
+        apiKey: values.apiKey
+      };
+    }
     const requestPayload = {
       provider: values.provider as Provider,
       authMode: values.authMode as AccountAuthMode,
-      config: values.authMode === 'api-key' || values.authMode === 'auth-token'
-        ? {
-            apiKey: values.apiKey,
-            baseUrl: values.baseUrl,
-            credentialType: values.authMode
-          }
-        : undefined
+      config: configPayload
     };
     try {
       const result = await accountsAPI.add(requestPayload);
@@ -3035,11 +3044,22 @@ export default function Accounts() {
               <Radio.Group size="large">
                 <Space direction="vertical">
                   {providerAuthOptions.map((option) => (
-                    <Radio key={option.value} value={option.value}>
+                    <Radio
+                      key={option.value}
+                      value={option.value}
+                      disabled={Boolean(option.disabled)}
+                    >
                       <Space direction="vertical" size={0}>
-                        <span>{option.label}</span>
+                        <Space align="center" size={6}>
+                          <span>{option.label}</span>
+                          {option.disabled && (
+                            <Tag color="default" bordered={false} style={{ fontSize: 11, lineHeight: '18px', padding: '0 6px' }}>
+                              已停用
+                            </Tag>
+                          )}
+                        </Space>
                         <Text type="secondary" style={{ fontSize: 12 }}>
-                          {option.description}
+                          {option.disabledReason || option.description}
                         </Text>
                       </Space>
                     </Radio>
@@ -3053,8 +3073,9 @@ export default function Accounts() {
             <>
               <Form.Item
                 name="apiKey"
-                label={selectedAuthMode === 'auth-token' ? 'Auth Token' : '密钥'}
+                label={selectedAuthMode === 'auth-token' ? 'Auth Token' : (selectedProvider === 'gemini' ? 'Gemini API Key' : '密钥')}
                 rules={[{ required: true, message: '请输入密钥' }]}
+                help={selectedProvider === 'gemini' ? '填入 Google AI Studio 获取的 GEMINI_API_KEY 或 GOOGLE_API_KEY' : undefined}
               >
                 <Input.Password autoComplete="new-password" placeholder="请输入密钥" size="large" />
               </Form.Item>
@@ -3068,6 +3089,43 @@ export default function Accounts() {
                   <Input placeholder="https://api.example.com" size="large" />
                 </Form.Item>
               )}
+            </>
+          ) : null}
+
+          {selectedAuthMode === 'vertex-ai' ? (
+            <>
+              <Alert
+                type="info"
+                showIcon
+                style={{ marginBottom: 16 }}
+                message="Vertex AI 占位模式"
+                description="Google Cloud Vertex AI 认证暂未接入真实账号验证。提交后将创建占位账号记录，为后续接入打好基础。"
+              />
+              <Form.Item
+                name="projectId"
+                label="GCP Project ID"
+                rules={[{ required: true, message: '请输入 Google Cloud Project ID' }]}
+                initialValue="vertex-placeholder-project"
+              >
+                <Input placeholder="例如：my-gcp-project-123456" size="large" />
+              </Form.Item>
+
+              <Form.Item
+                name="location"
+                label="Region / Location"
+                rules={[{ required: true, message: '请输入 Region / Location' }]}
+                initialValue="us-central1"
+              >
+                <Input placeholder="例如：us-central1" size="large" />
+              </Form.Item>
+
+              <Form.Item
+                name="apiKey"
+                label="Service Account 凭据 / API Key（可选）"
+                help="服务账号密钥 JSON 或 Vertex API Key（可选占位）"
+              >
+                <Input.Password autoComplete="new-password" placeholder="可选凭据" size="large" />
+              </Form.Item>
             </>
           ) : null}
         </Form>

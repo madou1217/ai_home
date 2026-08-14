@@ -335,9 +335,11 @@ export interface AccountConfig {
   apiKey?: string;
   baseUrl?: string;
   credentialType?: AccountAuthMode;
+  projectId?: string;
+  location?: string;
 }
 
-export type AccountAuthMode = 'api-key' | 'auth-token' | 'oauth-browser' | 'oauth-device';
+export type AccountAuthMode = 'api-key' | 'auth-token' | 'oauth-browser' | 'oauth-device' | 'vertex-ai';
 
 export interface AddAccountRequest {
   provider: Provider;

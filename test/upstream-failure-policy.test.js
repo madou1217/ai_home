@@ -115,6 +115,7 @@ test('failure policy treats Gemini model capacity 429 as model-scoped without ac
   assert.equal(policy.shouldRetryAnotherAccount, true);
   assert.equal(policy.clientStatusCode, 429);
   assert.ok(policy.cooldownMs > 0);
+  assert.equal(policy.deferAccountFailureUntilRequestOutcome, true);
 });
 
 test('failure policy treats Gemini model quota reset 429 as model-scoped without account cooldown', () => {

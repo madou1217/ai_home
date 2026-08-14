@@ -5,6 +5,7 @@ const zlib = require('node:zlib');
 const { chooseServerAccount, markProxyAccountFailure } = require('../lib/server/router');
 const { handleUpstreamPassthrough } = require('../lib/server/upstream-endpoints');
 const { getAccountModelCooldownUntil } = require('../lib/server/account-runtime-state');
+const { buildModelAccountIndex } = require('../lib/server/model-account-index');
 const {
   createProviderProtocolRouteMeta,
   resolveDirectProviderProtocolRoute
@@ -1486,6 +1487,89 @@ test('upstream passthrough treats OpenCode AbortError as transient without first
   assert.equal(state.metrics.totalTimeouts, 1);
 });
 
+test('upstream passthrough preserves a real timeout after the selected account pool is exhausted', async () => {
+  const res = createResCapture();
+  const account = {
+    accountRef: accountRef('claude-timeout'),
+    provider: 'claude',
+    accessToken: 'test-api-key',
+    apiKeyMode: true,
+    authType: 'api-key',
+    baseUrl: 'https://claude.example.com/v1'
+  };
+  const state = {
+    accounts: { claude: [account] },
+    cursors: { claude: 0 },
+    metrics: {
+      totalFailures: 0,
+      totalSuccess: 0,
+      totalTimeouts: 0,
+      providerCounts: {},
+      providerSuccess: {},
+      providerFailures: {}
+    }
+  };
+
+  await handleUpstreamPassthrough({
+    options: {
+      provider: 'claude',
+      claudeBaseUrl: 'https://api.anthropic.com/v1',
+      upstreamTimeoutMs: 3000,
+      maxAttempts: 1,
+      failureThreshold: 2,
+      logRequests: false
+    },
+    state,
+    req: {
+      url: '/v1/messages',
+      headers: {
+        'content-type': 'application/json',
+        'x-account-ref': account.accountRef
+      }
+    },
+    res,
+    method: 'POST',
+    bodyBuffer: Buffer.from('{"model":"claude-opus-4-8","messages":[]}'),
+    requestJson: { model: 'claude-opus-4-8', messages: [] },
+    routeKey: 'POST /v1/messages',
+    requestStartedAt: Date.now(),
+    cooldownMs: 1000,
+    requestMeta: { requestId: 'claude-timeout-replay' },
+    deps: {
+      chooseServerAccount: chooseAvailableAccount,
+      resolveRequestProvider: () => 'claude',
+      pushMetricError: () => {},
+      writeJson: (response, code, payload) => {
+        response.statusCode = code;
+        response.setHeader('content-type', 'application/json');
+        response.end(JSON.stringify(payload));
+      },
+      fetchWithTimeout: async () => {
+        const error = new Error('This operation was aborted');
+        error.name = 'AbortError';
+        error.code = 20;
+        throw error;
+      },
+      refreshClaudeAccessToken: async () => ({
+        ok: true,
+        refreshed: false,
+        reason: 'api_key_account'
+      }),
+      markProxyAccountFailure: markFailureWithCooldown,
+      markProxyAccountSuccess: () => {},
+      appendProxyRequestLog: () => {}
+    }
+  });
+
+  assert.equal(res.statusCode, 504);
+  assert.deepEqual(JSON.parse(String(res.body)), {
+    ok: false,
+    error: 'upstream_failed',
+    detail: 'This operation was aborted [20]'
+  });
+  assert.equal(state.metrics.totalTimeouts, 1);
+});
+
 test('upstream passthrough returns clear invalid_request when claude account uses anthropic-compatible endpoint with chat completions path', async () => {
   const res = createResCapture();
   const state = {
@@ -2860,6 +2944,373 @@ test('direct AGY Anthropic adapter retries another account for model-scoped quot
   assert.equal(res.statusCode, 200);
   assert.equal(JSON.parse(res.body).id, 'msg_agy_retry_1');
   assert.equal(state.metrics.totalSuccess, 1);
+});
+
+test('direct AGY Anthropic adapter does not cool accounts when one request gets ambiguous resource exhaustion across the pool', async () => {
+  const res = createResCapture();
+  const model = 'claude-opus-4-6-thinking';
+  const accounts = [
+    { accountRef: accountRef('a1-ambiguous'), provider: 'agy', email: 'agy1@example.com', accessToken: 'tok-1', authType: 'oauth-personal', cooldownUntil: 0 },
+    { accountRef: accountRef('a2-ambiguous'), provider: 'agy', email: 'agy2@example.com', accessToken: 'tok-2', authType: 'oauth-personal', cooldownUntil: 0 }
+  ];
+  const state = {
+    accounts: { agy: accounts },
+    cursors: { agy: 0 },
+    metrics: { totalFailures: 0, totalSuccess: 0, totalTimeouts: 0, providerFailures: {}, providerSuccess: {} }
+  };
+  const attemptedAccountRefs = [];
+  const markedAccountRefs = [];
+
+  await handleUpstreamPassthrough({
+    options: {
+      provider: 'agy',
+      agyBaseUrl: 'https://daily-cloudcode-pa.googleapis.com/v1internal',
+      upstreamTimeoutMs: 3000,
+      maxAttempts: 3,
+      failureThreshold: 1,
+      logRequests: false
+    },
+    state,
+    req: { url: '/v1/messages', headers: { 'content-type': 'application/json' } },
+    res,
+    method: 'POST',
+    bodyBuffer: Buffer.from(JSON.stringify({ model, messages: [{ role: 'user', content: 'large repeated request' }] })),
+    requestJson: { model, messages: [{ role: 'user', content: 'large repeated request' }] },
+    routeKey: 'POST /v1/messages',
+    requestStartedAt: Date.now(),
+    cooldownMs: 1000,
+    requestMeta: {
+      requestId: 'agy-ambiguous-resource-exhausted',
+      providerProtocolRoute: AGY_ANTHROPIC_MESSAGES_ROUTE,
+      sourceClientProtocol: 'anthropic_messages'
+    },
+    deps: {
+      chooseServerAccount: chooseAvailableAccount,
+      pushMetricError: () => {},
+      writeJson: (response, code, payload) => {
+        response.statusCode = code;
+        response.setHeader('content-type', 'application/json');
+        response.end(JSON.stringify(payload));
+      },
+      fetchWithTimeout: async () => {
+        throw new Error('should_not_call_raw_passthrough');
+      },
+      fetchCodeAssistAnthropicMessage: async (_callOptions, account) => {
+        attemptedAccountRefs.push(account.accountRef);
+        const error = new Error(
+          'HTTP 429 {"error":{"code":429,"message":"Resource has been exhausted (e.g. check quota).","status":"RESOURCE_EXHAUSTED"}}'
+        );
+        error.code = 'HTTP_429';
+        throw error;
+      },
+      markProxyAccountFailure: (account, reason, cooldownMs, threshold, options) => {
+        markedAccountRefs.push(account.accountRef);
+        markProxyAccountFailure(account, reason, cooldownMs, threshold, options);
+      },
+      refreshAgyAccessToken: async () => ({ ok: true, refreshed: false }),
+      markProxyAccountSuccess: () => {},
+      appendProxyRequestLog: () => {}
+    }
+  });
+
+  assert.deepEqual(attemptedAccountRefs, [
+    ...accounts.map((account) => account.accountRef),
+    ...accounts.map((account) => account.accountRef)
+  ]);
+  assert.deepEqual(markedAccountRefs, []);
+  assert.equal(res.statusCode, 429);
+  assert.equal(JSON.parse(String(res.body)).error, 'upstream_failed');
+  for (const account of accounts) {
+    assert.equal(getAccountModelCooldownUntil(account, model), 0);
+  }
+});
+
+test('direct AGY Anthropic adapter can recover on the single bounded second pool round', async () => {
+  const res = createResCapture();
+  const model = 'claude-opus-4-6-thinking';
+  const accounts = [
+    { accountRef: accountRef('a1-bounded-retry'), provider: 'agy', email: 'agy1@example.com', accessToken: 'tok-1', authType: 'oauth-personal', cooldownUntil: 0 },
+    { accountRef: accountRef('a2-bounded-retry'), provider: 'agy', email: 'agy2@example.com', accessToken: 'tok-2', authType: 'oauth-personal', cooldownUntil: 0 }
+  ];
+  const state = {
+    accounts: { agy: accounts },
+    cursors: { agy: 0 },
+    metrics: { totalFailures: 0, totalSuccess: 0, totalTimeouts: 0, providerFailures: {}, providerSuccess: {} }
+  };
+  const attemptedAccountRefs = [];
+  const retryDelays = [];
+  const markedAccountRefs = [];
+
+  await handleUpstreamPassthrough({
+    options: {
+      provider: 'agy',
+      agyBaseUrl: 'https://daily-cloudcode-pa.googleapis.com/v1internal',
+      upstreamTimeoutMs: 3000,
+      maxAttempts: 2,
+      failureThreshold: 1,
+      logRequests: false,
+      transientPoolRetryDelayMs: 25
+    },
+    state,
+    req: { url: '/v1/messages', headers: { 'content-type': 'application/json' } },
+    res,
+    method: 'POST',
+    bodyBuffer: Buffer.from(JSON.stringify({ model, messages: [{ role: 'user', content: 'large request' }] })),
+    requestJson: { model, messages: [{ role: 'user', content: 'large request' }] },
+    routeKey: 'POST /v1/messages',
+    requestStartedAt: Date.now(),
+    cooldownMs: 1000,
+    requestMeta: {
+      requestId: 'agy-bounded-pool-retry',
+      providerProtocolRoute: AGY_ANTHROPIC_MESSAGES_ROUTE,
+      sourceClientProtocol: 'anthropic_messages'
+    },
+    deps: {
+      chooseServerAccount,
+      pushMetricError: () => {},
+      writeJson: (response, code, payload) => {
+        response.statusCode = code;
+        response.setHeader('content-type', 'application/json');
+        response.end(JSON.stringify(payload));
+      },
+      fetchWithTimeout: async () => {
+        throw new Error('should_not_call_raw_passthrough');
+      },
+      fetchCodeAssistAnthropicMessage: async (_callOptions, account) => {
+        attemptedAccountRefs.push(account.accountRef);
+        if (attemptedAccountRefs.length <= accounts.length) {
+          const error = new Error(
+            'HTTP 429 {"error":{"code":429,"message":"Resource has been exhausted (e.g. check quota).","status":"RESOURCE_EXHAUSTED"}}'
+          );
+          error.code = 'HTTP_429';
+          throw error;
+        }
+        return {
+          id: 'msg_bounded_pool_retry',
+          type: 'message',
+          role: 'assistant',
+          model,
+          content: [{ type: 'text', text: 'recovered' }],
+          stop_reason: 'end_turn',
+          usage: { input_tokens: 1, output_tokens: 1 }
+        };
+      },
+      waitForPoolRetry: async (delayMs) => {
+        retryDelays.push(delayMs);
+      },
+      markProxyAccountFailure: (account, reason, cooldownMs, threshold, options) => {
+        markedAccountRefs.push(account.accountRef);
+        markProxyAccountFailure(account, reason, cooldownMs, threshold, options);
+      },
+      markProxyAccountSuccess: () => {},
+      appendProxyRequestLog: () => {}
+    }
+  });
+
+  assert.deepEqual(attemptedAccountRefs, [
+    accounts[0].accountRef,
+    accounts[1].accountRef,
+    accounts[0].accountRef
+  ]);
+  assert.deepEqual(retryDelays, [25]);
+  assert.deepEqual(markedAccountRefs, [accounts[1].accountRef]);
+  assert.equal(res.statusCode, 200);
+  assert.equal(JSON.parse(String(res.body)).id, 'msg_bounded_pool_retry');
+});
+
+test('AGY transient pool retry budget exhaustion defers to the next route source', async () => {
+  const res = createResCapture();
+  const model = 'claude-opus-4-6-thinking';
+  const accounts = [
+    { accountRef: accountRef('a1-budget-fallback'), provider: 'agy', email: 'agy1@example.com', accessToken: 'tok-1', authType: 'oauth-personal', cooldownUntil: 0 },
+    { accountRef: accountRef('a2-budget-fallback'), provider: 'agy', email: 'agy2@example.com', accessToken: 'tok-2', authType: 'oauth-personal', cooldownUntil: 0 }
+  ];
+  const state = {
+    accounts: { agy: accounts },
+    cursors: { agy: 0 },
+    metrics: { totalFailures: 0, totalSuccess: 0, totalTimeouts: 0, providerFailures: {}, providerSuccess: {} }
+  };
+  let calls = 0;
+
+  const result = await handleUpstreamPassthrough({
+    options: {
+      provider: 'agy',
+      agyBaseUrl: 'https://daily-cloudcode-pa.googleapis.com/v1internal',
+      upstreamTimeoutMs: 3000,
+      maxAttempts: 2,
+      failureThreshold: 1,
+      logRequests: false,
+      transientPoolRetryDelayMs: 1
+    },
+    state,
+    req: { url: '/v1/messages', headers: { 'content-type': 'application/json' } },
+    res,
+    method: 'POST',
+    bodyBuffer: Buffer.from(JSON.stringify({ model, messages: [{ role: 'user', content: 'ping' }] })),
+    requestJson: { model, messages: [{ role: 'user', content: 'ping' }] },
+    routeKey: 'POST /v1/messages',
+    requestStartedAt: Date.now() - 1000,
+    cooldownMs: 1000,
+    requestMeta: {
+      requestId: 'agy-budget-fallback',
+      providerProtocolRoute: AGY_ANTHROPIC_MESSAGES_ROUTE,
+      sourceClientProtocol: 'anthropic_messages',
+      aliasRuntimeFallback: { enabled: true },
+      aliasResolution: {
+        aliasMatched: true,
+        aliasId: 'alias-agy-claude',
+        requestedModel: 'claude-opus-4-8',
+        aliasTarget: model
+      }
+    },
+    deps: {
+      chooseServerAccount,
+      pushMetricError: () => {},
+      writeJson: (response, code, payload) => {
+        response.statusCode = code;
+        response.setHeader('content-type', 'application/json');
+        response.end(JSON.stringify(payload));
+      },
+      fetchWithTimeout: async () => {
+        throw new Error('should_not_call_raw_passthrough');
+      },
+      fetchCodeAssistAnthropicMessage: async () => {
+        calls += 1;
+        const error = new Error(
+          'HTTP 429 {"error":{"code":429,"message":"Resource has been exhausted (e.g. check quota).","status":"RESOURCE_EXHAUSTED"}}'
+        );
+        error.code = 'HTTP_429';
+        throw error;
+      },
+      waitForPoolRetry: async () => new Promise((resolve) => setTimeout(resolve, 2100)),
+      markProxyAccountFailure: () => {},
+      markProxyAccountSuccess: () => {},
+      appendProxyRequestLog: () => {}
+    }
+  });
+
+  assert.equal(calls, 2);
+  assert.equal(result && result.retryAliasCandidate, true);
+  assert.equal(result && result.statusCode, 429);
+  assert.equal(result && result.detail, 'transient_pool_retry_budget_exhausted');
+  assert.equal(res.headersSent, false);
+});
+
+test('concurrent request success does not commit another request ambiguous account failures', async () => {
+  const model = 'claude-opus-4-6-thinking';
+  const accounts = [
+    { accountRef: accountRef('a1-concurrent-ambiguous'), provider: 'agy', email: 'agy1@example.com', accessToken: 'tok-1', authType: 'oauth-personal', cooldownUntil: 0 },
+    { accountRef: accountRef('a2-concurrent-ambiguous'), provider: 'agy', email: 'agy2@example.com', accessToken: 'tok-2', authType: 'oauth-personal', cooldownUntil: 0 }
+  ];
+  const state = {
+    accounts: { agy: accounts },
+    cursors: { agy: 0 },
+    metrics: { totalFailures: 0, totalSuccess: 0, totalTimeouts: 0, providerFailures: {}, providerSuccess: {} }
+  };
+  const failedRequestRes = createResCapture();
+  const successfulRequestRes = createResCapture();
+  const markedAccountRefs = [];
+  let releaseFailedRequest;
+  const failedRequestBlocked = new Promise((resolve) => {
+    releaseFailedRequest = resolve;
+  });
+  let notifyFailedRequestStarted;
+  const failedRequestStarted = new Promise((resolve) => {
+    notifyFailedRequestStarted = resolve;
+  });
+
+  const commonContext = {
+    options: {
+      provider: 'agy',
+      agyBaseUrl: 'https://daily-cloudcode-pa.googleapis.com/v1internal',
+      upstreamTimeoutMs: 3000,
+      failureThreshold: 1,
+      logRequests: false
+    },
+    state,
+    req: { url: '/v1/messages', headers: { 'content-type': 'application/json' } },
+    method: 'POST',
+    bodyBuffer: Buffer.from(JSON.stringify({ model, messages: [{ role: 'user', content: 'request-local outcome' }] })),
+    requestJson: { model, messages: [{ role: 'user', content: 'request-local outcome' }] },
+    routeKey: 'POST /v1/messages',
+    requestStartedAt: Date.now(),
+    cooldownMs: 1000
+  };
+  const commonDeps = {
+    chooseServerAccount: chooseAvailableAccount,
+    pushMetricError: () => {},
+    writeJson: (response, code, payload) => {
+      response.statusCode = code;
+      response.setHeader('content-type', 'application/json');
+      response.end(JSON.stringify(payload));
+    },
+    fetchWithTimeout: async () => {
+      throw new Error('should_not_call_raw_passthrough');
+    },
+    markProxyAccountSuccess: () => {},
+    appendProxyRequestLog: () => {}
+  };
+
+  const failedRequest = handleUpstreamPassthrough({
+    ...commonContext,
+    options: { ...commonContext.options, maxAttempts: 2 },
+    res: failedRequestRes,
+    requestMeta: {
+      requestId: 'agy-concurrent-ambiguous-failure',
+      providerProtocolRoute: AGY_ANTHROPIC_MESSAGES_ROUTE,
+      sourceClientProtocol: 'anthropic_messages'
+    },
+    deps: {
+      ...commonDeps,
+      fetchCodeAssistAnthropicMessage: async () => {
+        notifyFailedRequestStarted();
+        await failedRequestBlocked;
+        const error = new Error(
+          'HTTP 429 {"error":{"code":429,"message":"Resource has been exhausted (e.g. check quota).","status":"RESOURCE_EXHAUSTED"}}'
+        );
+        error.code = 'HTTP_429';
+        throw error;
+      },
+      markProxyAccountFailure: (account, reason, cooldownMs, threshold, options) => {
+        markedAccountRefs.push(account.accountRef);
+        markProxyAccountFailure(account, reason, cooldownMs, threshold, options);
+      }
+    }
+  });
+
+  await failedRequestStarted;
+  await handleUpstreamPassthrough({
+    ...commonContext,
+    options: { ...commonContext.options, maxAttempts: 1 },
+    res: successfulRequestRes,
+    requestMeta: {
+      requestId: 'agy-concurrent-success',
+      providerProtocolRoute: AGY_ANTHROPIC_MESSAGES_ROUTE,
+      sourceClientProtocol: 'anthropic_messages'
+    },
+    deps: {
+      ...commonDeps,
+      fetchCodeAssistAnthropicMessage: async () => ({
+        id: 'msg_concurrent_success',
+        type: 'message',
+        role: 'assistant',
+        model,
+        content: [{ type: 'text', text: 'pong' }],
+        stop_reason: 'end_turn',
+        usage: { input_tokens: 1, output_tokens: 1 }
+      }),
+      markProxyAccountFailure
+    }
+  });
+  releaseFailedRequest();
+  await failedRequest;
+
+  assert.equal(successfulRequestRes.statusCode, 200);
+  assert.equal(failedRequestRes.statusCode, 429);
+  assert.deepEqual(markedAccountRefs, []);
+  for (const account of accounts) {
+    assert.equal(getAccountModelCooldownUntil(account, model), 0);
+  }
 });
 
 test('direct AGY Anthropic adapter retries another account for model capacity without blocking account', async () => {
@@ -4562,4 +5013,96 @@ test('sole-account 429 keeps the upstream status when deferring to the next alia
   assert.equal(result.error, 'upstream_failed');
   assert.match(String(result.detail || ''), /rate_limit_error/);
   assert.equal(res.statusCode, 0);
+});
+
+test('model-filtered pool exhaustion reports the complete request account pool', async () => {
+  const res = createResCapture();
+  const model = 'claude-opus-4-6-thinking';
+  const accounts = Array.from({ length: 7 }, (_, index) => ({
+    accountRef: accountRef(`agy-pool-${index + 1}`),
+    provider: 'agy',
+    email: `agy-${index + 1}@example.com`,
+    accessToken: `tok-${index + 1}`,
+    authType: 'oauth-personal',
+    cooldownUntil: 0
+  }));
+  for (const account of accounts.slice(0, -1)) {
+    markProxyAccountFailure(account, 'rate_limited', 60000, 1, {
+      scope: 'model',
+      model,
+      kind: 'rate_limited'
+    });
+  }
+  const state = {
+    accounts: { agy: accounts },
+    cursors: { agy: 0 },
+    webUiModelsCache: {
+      byAccount: Object.fromEntries(accounts.map((account) => [account.accountRef, [model]]))
+    },
+    metrics: {
+      totalFailures: 0,
+      totalSuccess: 0,
+      totalTimeouts: 0,
+      providerFailures: {},
+      providerSuccess: {}
+    }
+  };
+  state.modelAccountIndex = buildModelAccountIndex(state, {});
+
+  await handleUpstreamPassthrough({
+    options: {
+      provider: 'agy',
+      agyBaseUrl: 'https://daily-cloudcode-pa.googleapis.com/v1internal',
+      upstreamTimeoutMs: 3000,
+      maxAttempts: 1,
+      failureThreshold: 1,
+      logRequests: false
+    },
+    state,
+    req: { url: '/v1/messages', headers: { 'content-type': 'application/json' } },
+    res,
+    method: 'POST',
+    bodyBuffer: Buffer.from(JSON.stringify({ model, messages: [] })),
+    requestJson: { model, messages: [] },
+    routeKey: 'POST /v1/messages',
+    requestStartedAt: Date.now(),
+    cooldownMs: 1000,
+    requestMeta: {
+      providerProtocolRoute: AGY_ANTHROPIC_MESSAGES_ROUTE,
+      sourceClientProtocol: 'anthropic_messages'
+    },
+    deps: {
+      chooseServerAccount: (pool) => {
+        const lastRoutableAccount = pool[0];
+        markProxyAccountFailure(lastRoutableAccount, 'rate_limited', 60000, 1, {
+          scope: 'model',
+          model,
+          kind: 'rate_limited'
+        });
+        return null;
+      },
+      pushMetricError: () => {},
+      writeJson: (response, code, payload) => {
+        response.statusCode = code;
+        response.setHeader('content-type', 'application/json');
+        response.end(JSON.stringify(payload));
+      },
+      fetchWithTimeout: async () => {
+        throw new Error('should_not_call_upstream');
+      },
+      markProxyAccountFailure,
+      markProxyAccountSuccess: () => {},
+      appendProxyRequestLog: () => {}
+    }
+  });
+
+  assert.equal(res.statusCode, 429);
+  const payload = JSON.parse(String(res.body));
+  assert.equal(payload.error, 'upstream_rate_limited');
+  assert.equal(payload.availability.total, 7);
+  assert.equal(payload.availability.unavailable, 7);
+  assert.equal(
+    payload.availability.reasons.reduce((total, entry) => total + entry.count, 0),
+    7
+  );
 });

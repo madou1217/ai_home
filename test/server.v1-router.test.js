@@ -2843,6 +2843,473 @@ test('v1 router retries AGY aliases then falls back across provider to Codex', a
   assert.deepEqual(body.content, [{ type: 'text', text: 'ok from codex' }]);
 });
 
+test('v1 router falls back from the only AGY alias route to the native Claude account pool', async () => {
+  const res = createResCapture();
+  const seenProviders = [];
+  const seenModels = [];
+  const seenFallbackCapture = [];
+
+  const handled = await handleV1Request({
+    req: { headers: {}, url: '/v1/messages' },
+    res,
+    method: 'POST',
+    pathname: '/v1/messages',
+    options: { backend: 'codex-adapter', provider: 'auto' },
+    state: {
+      modelAliases: {
+        aliases: [{
+          id: 'alias-agy-claude',
+          alias: 'claude-*',
+          target: 'claude-opus-4-6-thinking',
+          provider: 'all',
+          targetProvider: 'agy',
+          priority: 50,
+          enabled: true
+        }]
+      },
+      metrics: { totalRequests: 0, routeCounts: {}, totalSuccess: 0, providerCounts: {}, providerSuccess: {}, providerFailures: {} },
+      cursors: { agy: 0, claude: 0 },
+      webUiModelsCache: {
+        source: 'remote',
+        scannedAccounts: 2,
+        byProvider: {
+          agy: ['claude-opus-4-6-thinking'],
+          claude: ['claude-opus-4-8']
+        },
+        byAccount: {
+          [V1_AGY_REF_1]: ['claude-opus-4-6-thinking'],
+          [V1_CLAUDE_REF_1]: ['claude-opus-4-8']
+        }
+      },
+      accounts: {
+        codex: [],
+        gemini: [],
+        agy: [{
+          accountRef: V1_AGY_REF_1,
+          provider: 'agy',
+          accessToken: 'agy-token',
+          authType: 'oauth-personal',
+          availableModels: ['claude-opus-4-6-thinking']
+        }],
+        claude: [{
+          accountRef: V1_CLAUDE_REF_1,
+          provider: 'claude',
+          accessToken: 'claude-token',
+          availableModels: ['claude-opus-4-8']
+        }]
+      }
+    },
+    requiredClientKey: '',
+    cooldownMs: 1000,
+    maxRequestBodyBytes: 1024 * 1024,
+    requestMeta: {},
+    deps: {
+      parseAuthorizationBearer: () => '',
+      writeJson: (r, code, payload) => { r.statusCode = code; r.end(JSON.stringify(payload)); },
+      readRequestBody: async () => Buffer.from(JSON.stringify({
+        model: 'claude-opus-4-8',
+        stream: false,
+        max_tokens: 16,
+        messages: [{ role: 'user', content: [{ type: 'text', text: 'ping' }] }]
+      })),
+      buildOpenAIModelsList: () => ({ object: 'list', data: [] }),
+      resolveRequestProvider: (options, requestJson, headers, state) => require('../lib/server/router').resolveRequestProvider(options, requestJson, headers, state),
+      handleCodexModels: async () => {},
+      handleCodexChatCompletions: async () => {},
+      handleUpstreamModels: async () => {},
+      handleUpstreamPassthrough: async (ctx) => {
+        const provider = String(ctx.requestMeta && ctx.requestMeta.effectiveProvider || 'claude');
+        seenProviders.push(provider);
+        seenModels.push(String(ctx.requestJson && ctx.requestJson.model || ''));
+        seenFallbackCapture.push(Boolean(ctx.requestMeta && ctx.requestMeta.aliasRuntimeFallback));
+        if (provider === 'agy') {
+          return {
+            retryAliasCandidate: true,
+            statusCode: 504,
+            error: 'upstream_failed',
+            detail: 'transient_pool_retry_budget_exhausted',
+            provider: 'agy',
+            model: ctx.requestJson.model,
+            attemptedAccountRefs: [V1_AGY_REF_1],
+            alias: {
+              id: ctx.requestMeta.aliasResolution.aliasId,
+              requestedModel: ctx.requestMeta.aliasResolution.requestedModel,
+              target: ctx.requestMeta.aliasResolution.aliasTarget
+            }
+          };
+        }
+        ctx.res.statusCode = 200;
+        ctx.res.end(JSON.stringify({
+          type: 'message',
+          role: 'assistant',
+          model: ctx.requestJson.model,
+          content: [{ type: 'text', text: 'ok from native claude' }]
+        }));
+      },
+      chooseServerAccount: () => null,
+      markProxyAccountSuccess: () => {},
+      markProxyAccountFailure: () => {},
+      pushMetricError: () => {},
+      appendProxyRequestLog: () => {},
+      fetchModelsForAccount: async () => [],
+      FALLBACK_MODELS: [],
+      fetchWithTimeout: async () => ({}),
+      fetchCodeAssistAnthropicMessage: async () => ({}),
+      fetchCodeAssistAnthropicMessageStream: async function* () {}
+    }
+  });
+
+  assert.equal(handled, true);
+  assert.deepEqual(seenProviders, ['agy', 'claude']);
+  assert.deepEqual(seenModels, ['claude-opus-4-6-thinking', 'claude-opus-4-8']);
+  assert.deepEqual(seenFallbackCapture, [true, false]);
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(JSON.parse(res.body).content, [{ type: 'text', text: 'ok from native claude' }]);
+});
+
+test('v1 router falls back to native claude when the requested model is itself the agy alias target', async () => {
+  const res = createResCapture();
+  const seenProviders = [];
+  const seenModels = [];
+  const seenFallbackCapture = [];
+
+  const handled = await handleV1Request({
+    req: { headers: {}, url: '/v1/messages' },
+    res,
+    method: 'POST',
+    pathname: '/v1/messages',
+    options: { backend: 'codex-adapter', provider: 'auto' },
+    state: {
+      modelAliases: {
+        aliases: [{
+          id: 'alias-agy-claude',
+          alias: 'claude-*',
+          target: 'claude-opus-4-6-thinking',
+          provider: 'all',
+          targetProvider: 'agy',
+          priority: 50,
+          enabled: true
+        }]
+      },
+      metrics: { totalRequests: 0, routeCounts: {}, totalSuccess: 0, providerCounts: {}, providerSuccess: {}, providerFailures: {} },
+      cursors: { agy: 0, claude: 0 },
+      webUiModelsCache: {
+        source: 'remote',
+        scannedAccounts: 2,
+        byProvider: {
+          agy: ['claude-opus-4-6-thinking'],
+          claude: ['claude-opus-4-6-thinking', 'claude-opus-4-8']
+        },
+        byAccount: {
+          [V1_AGY_REF_1]: ['claude-opus-4-6-thinking'],
+          [V1_CLAUDE_REF_1]: ['claude-opus-4-6-thinking', 'claude-opus-4-8']
+        }
+      },
+      accounts: {
+        codex: [],
+        gemini: [],
+        agy: [{
+          accountRef: V1_AGY_REF_1,
+          provider: 'agy',
+          accessToken: 'agy-token',
+          authType: 'oauth-personal',
+          availableModels: ['claude-opus-4-6-thinking']
+        }],
+        claude: [{
+          accountRef: V1_CLAUDE_REF_1,
+          provider: 'claude',
+          accessToken: 'claude-token',
+          availableModels: ['claude-opus-4-6-thinking', 'claude-opus-4-8']
+        }]
+      }
+    },
+    requiredClientKey: '',
+    cooldownMs: 1000,
+    maxRequestBodyBytes: 1024 * 1024,
+    requestMeta: {},
+    deps: {
+      parseAuthorizationBearer: () => '',
+      writeJson: (r, code, payload) => { r.statusCode = code; r.end(JSON.stringify(payload)); },
+      readRequestBody: async () => Buffer.from(JSON.stringify({
+        model: 'claude-opus-4-6-thinking',
+        stream: false,
+        max_tokens: 16,
+        messages: [{ role: 'user', content: [{ type: 'text', text: 'ping' }] }]
+      })),
+      buildOpenAIModelsList: () => ({ object: 'list', data: [] }),
+      resolveRequestProvider: (options, requestJson, headers, state) => require('../lib/server/router').resolveRequestProvider(options, requestJson, headers, state),
+      handleCodexModels: async () => {},
+      handleCodexChatCompletions: async () => {},
+      handleUpstreamModels: async () => {},
+      handleUpstreamPassthrough: async (ctx) => {
+        const provider = String(ctx.requestMeta && ctx.requestMeta.effectiveProvider || 'claude');
+        seenProviders.push(provider);
+        seenModels.push(String(ctx.requestJson && ctx.requestJson.model || ''));
+        seenFallbackCapture.push(Boolean(ctx.requestMeta && ctx.requestMeta.aliasRuntimeFallback));
+        if (provider === 'agy') {
+          return {
+            retryAliasCandidate: true,
+            statusCode: 429,
+            error: 'upstream_rate_limited',
+            detail: 'no schedulable agy account: model_cooldown:claude-opus-4-6-thinking',
+            provider: 'agy',
+            model: ctx.requestJson.model,
+            attemptedAccountRefs: [V1_AGY_REF_1],
+            alias: {
+              id: ctx.requestMeta.aliasResolution.aliasId,
+              requestedModel: ctx.requestMeta.aliasResolution.requestedModel,
+              target: ctx.requestMeta.aliasResolution.aliasTarget
+            }
+          };
+        }
+        ctx.res.statusCode = 200;
+        ctx.res.end(JSON.stringify({
+          type: 'message',
+          role: 'assistant',
+          model: ctx.requestJson.model,
+          content: [{ type: 'text', text: 'ok from native claude' }]
+        }));
+      },
+      chooseServerAccount: () => null,
+      markProxyAccountSuccess: () => {},
+      markProxyAccountFailure: () => {},
+      pushMetricError: () => {},
+      appendProxyRequestLog: () => {},
+      fetchModelsForAccount: async () => [],
+      FALLBACK_MODELS: [],
+      fetchWithTimeout: async () => ({}),
+      fetchCodeAssistAnthropicMessage: async () => ({}),
+      fetchCodeAssistAnthropicMessageStream: async function* () {}
+    }
+  });
+
+  assert.equal(handled, true);
+  assert.deepEqual(seenProviders, ['agy', 'claude']);
+  assert.deepEqual(seenModels, ['claude-opus-4-6-thinking', 'claude-opus-4-6-thinking']);
+  assert.deepEqual(seenFallbackCapture, [true, false]);
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(JSON.parse(res.body).content, [{ type: 'text', text: 'ok from native claude' }]);
+});
+
+test('v1 router does not double-spend the agy pool as native fallback when claude accounts are unavailable', async () => {
+  const res = createResCapture();
+  const seenProviders = [];
+
+  const handled = await handleV1Request({
+    req: { headers: {}, url: '/v1/messages' },
+    res,
+    method: 'POST',
+    pathname: '/v1/messages',
+    options: { backend: 'codex-adapter', provider: 'auto' },
+    state: {
+      modelAliases: {
+        aliases: [{
+          id: 'alias-agy-claude',
+          alias: 'claude-*',
+          target: 'claude-opus-4-6-thinking',
+          provider: 'all',
+          targetProvider: 'agy',
+          priority: 50,
+          enabled: true
+        }]
+      },
+      metrics: { totalRequests: 0, routeCounts: {}, totalSuccess: 0, providerCounts: {}, providerSuccess: {}, providerFailures: {} },
+      cursors: { agy: 0, claude: 0 },
+      webUiModelsCache: {
+        source: 'remote',
+        scannedAccounts: 2,
+        byProvider: {
+          agy: ['claude-opus-4-6-thinking'],
+          claude: ['claude-opus-4-6-thinking']
+        },
+        byAccount: {
+          [V1_AGY_REF_1]: ['claude-opus-4-6-thinking'],
+          [V1_CLAUDE_REF_1]: ['claude-opus-4-6-thinking']
+        }
+      },
+      accounts: {
+        codex: [],
+        gemini: [],
+        agy: [{
+          accountRef: V1_AGY_REF_1,
+          provider: 'agy',
+          accessToken: 'agy-token',
+          authType: 'oauth-personal',
+          availableModels: ['claude-opus-4-6-thinking']
+        }],
+        claude: [{
+          accountRef: V1_CLAUDE_REF_1,
+          provider: 'claude',
+          accessToken: '',
+          availableModels: ['claude-opus-4-6-thinking']
+        }]
+      }
+    },
+    requiredClientKey: '',
+    cooldownMs: 1000,
+    maxRequestBodyBytes: 1024 * 1024,
+    requestMeta: {},
+    deps: {
+      parseAuthorizationBearer: () => '',
+      writeJson: (r, code, payload) => { r.statusCode = code; r.end(JSON.stringify(payload)); },
+      readRequestBody: async () => Buffer.from(JSON.stringify({
+        model: 'claude-opus-4-6-thinking',
+        stream: false,
+        max_tokens: 16,
+        messages: [{ role: 'user', content: [{ type: 'text', text: 'ping' }] }]
+      })),
+      buildOpenAIModelsList: () => ({ object: 'list', data: [] }),
+      resolveRequestProvider: (options, requestJson, headers, state) => require('../lib/server/router').resolveRequestProvider(options, requestJson, headers, state),
+      handleCodexModels: async () => {},
+      handleCodexChatCompletions: async () => {},
+      handleUpstreamModels: async () => {},
+      handleUpstreamPassthrough: async (ctx) => {
+        const provider = String(ctx.requestMeta && ctx.requestMeta.effectiveProvider || 'claude');
+        seenProviders.push(provider);
+        return {
+          retryAliasCandidate: true,
+          statusCode: 504,
+          error: 'upstream_failed',
+          detail: 'transient_pool_retry_budget_exhausted',
+          provider,
+          model: ctx.requestJson.model,
+          attemptedAccountRefs: [V1_AGY_REF_1],
+          alias: {
+            id: ctx.requestMeta.aliasResolution.aliasId,
+            requestedModel: ctx.requestMeta.aliasResolution.requestedModel,
+            target: ctx.requestMeta.aliasResolution.aliasTarget
+          }
+        };
+      },
+      chooseServerAccount: () => null,
+      markProxyAccountSuccess: () => {},
+      markProxyAccountFailure: () => {},
+      pushMetricError: () => {},
+      appendProxyRequestLog: () => {},
+      fetchModelsForAccount: async () => [],
+      FALLBACK_MODELS: [],
+      fetchWithTimeout: async () => ({}),
+      fetchCodeAssistAnthropicMessage: async () => ({}),
+      fetchCodeAssistAnthropicMessageStream: async function* () {}
+    }
+  });
+
+  assert.equal(handled, true);
+  assert.deepEqual(seenProviders, ['agy']);
+  assert.equal(res.statusCode, 504);
+  const body = JSON.parse(res.body);
+  assert.equal(body.error, 'upstream_failed');
+  assert.equal(body.alias.target, 'claude-opus-4-6-thinking');
+});
+
+test('v1 router fairly rotates alias and native route sources independently of random account strategy', async () => {
+  const seenProviders = [];
+  const state = {
+    modelAliases: {
+      aliases: [{
+        id: 'alias-agy-claude',
+        alias: 'claude-*',
+        target: 'claude-opus-4-6-thinking',
+        provider: 'all',
+        targetProvider: 'agy',
+        priority: 50,
+        enabled: true
+      }]
+    },
+    metrics: { totalRequests: 0, routeCounts: {}, totalSuccess: 0, providerCounts: {}, providerSuccess: {}, providerFailures: {} },
+    cursors: { agy: 0, claude: 0 },
+    routeSourceCursors: {},
+    webUiModelsCache: {
+      source: 'remote',
+      scannedAccounts: 2,
+      byProvider: {
+        agy: ['claude-opus-4-6-thinking'],
+        claude: ['claude-opus-4-8']
+      },
+      byAccount: {
+        [V1_AGY_REF_1]: ['claude-opus-4-6-thinking'],
+        [V1_CLAUDE_REF_1]: ['claude-opus-4-8']
+      }
+    },
+    accounts: {
+      codex: [],
+      gemini: [],
+      agy: [{
+        accountRef: V1_AGY_REF_1,
+        provider: 'agy',
+        accessToken: 'agy-token',
+        authType: 'oauth-personal',
+        availableModels: ['claude-opus-4-6-thinking']
+      }],
+      claude: [{
+        accountRef: V1_CLAUDE_REF_1,
+        provider: 'claude',
+        accessToken: 'claude-token',
+        availableModels: ['claude-opus-4-8']
+      }]
+    }
+  };
+  const deps = {
+    parseAuthorizationBearer: () => '',
+    writeJson: (r, code, payload) => { r.statusCode = code; r.end(JSON.stringify(payload)); },
+    readRequestBody: async () => Buffer.from(JSON.stringify({
+      model: 'claude-opus-4-8',
+      stream: false,
+      max_tokens: 16,
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'ping' }] }]
+    })),
+    buildOpenAIModelsList: () => ({ object: 'list', data: [] }),
+    resolveRequestProvider: (options, requestJson, headers, runtimeState) => require('../lib/server/router').resolveRequestProvider(options, requestJson, headers, runtimeState),
+    handleCodexModels: async () => {},
+    handleCodexChatCompletions: async () => {},
+    handleUpstreamModels: async () => {},
+    handleUpstreamPassthrough: async (ctx) => {
+      seenProviders.push(String(ctx.requestMeta && ctx.requestMeta.effectiveProvider || 'claude'));
+      ctx.res.statusCode = 200;
+      ctx.res.end(JSON.stringify({
+        type: 'message',
+        role: 'assistant',
+        model: ctx.requestJson.model,
+        content: [{ type: 'text', text: 'ok' }]
+      }));
+    },
+    chooseServerAccount: () => null,
+    markProxyAccountSuccess: () => {},
+    markProxyAccountFailure: () => {},
+    pushMetricError: () => {},
+    appendProxyRequestLog: () => {},
+    fetchModelsForAccount: async () => [],
+    FALLBACK_MODELS: [],
+    fetchWithTimeout: async () => ({}),
+    fetchCodeAssistAnthropicMessage: async () => ({}),
+    fetchCodeAssistAnthropicMessageStream: async function* () {}
+  };
+
+  for (let index = 0; index < 2; index += 1) {
+    const res = createResCapture();
+    const handled = await handleV1Request({
+      req: { headers: {}, url: '/v1/messages' },
+      res,
+      method: 'POST',
+      pathname: '/v1/messages',
+      options: { backend: 'codex-adapter', provider: 'auto', strategy: 'random' },
+      state,
+      requiredClientKey: '',
+      cooldownMs: 1000,
+      maxRequestBodyBytes: 1024 * 1024,
+      requestMeta: {},
+      deps
+    });
+    assert.equal(handled, true);
+    assert.equal(res.statusCode, 200);
+    if (index === 0) {
+      applyReloadState(state, state.accounts);
+    }
+  }
+
+  assert.deepEqual(seenProviders, ['agy', 'claude']);
+});
+
 test('v1 router reports all tried alias targets when every candidate is unavailable', async () => {
   const res = createResCapture();
 

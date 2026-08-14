@@ -117,3 +117,42 @@ test('有干净账号时优先用它，不提前打开逃生阀', async () => {
 
   assert.deepEqual(attempted, ['acct_healthy']);
 });
+
+test('显式策略允许时仅开启一轮有界全池重试', async () => {
+  const pool = [
+    { accountRef: 'acct_retry_1', apiKeyMode: true, schedulableStatus: 'schedulable' },
+    { accountRef: 'acct_retry_2', apiKeyMode: true, schedulableStatus: 'schedulable' }
+  ];
+  const attempted = [];
+  let prepareCalls = 0;
+  const orchestration = await runWithAccountAttempts({
+    pool,
+    maxAttempts: 2,
+    retryRoundMaxAttempts: 2,
+    chooseServerAccount,
+    selectionState: { cursors: {} },
+    cursorState: {},
+    cursorKey: 'agy',
+    provider: 'agy',
+    model: 'claude-opus-4-6-thinking',
+    prepareRetryRound: async ({ attemptedAccountRefs }) => {
+      prepareCalls += 1;
+      assert.deepEqual(new Set(attemptedAccountRefs), new Set(pool.map((account) => account.accountRef)));
+      return { retry: true };
+    },
+    onAttempt: async (account, control) => {
+      attempted.push(account.accountRef);
+      control.setLastError('transient capacity');
+      return { action: 'retry_next' };
+    }
+  });
+
+  assert.equal(prepareCalls, 1);
+  assert.deepEqual(attempted, [
+    'acct_retry_1',
+    'acct_retry_2',
+    'acct_retry_1',
+    'acct_retry_2'
+  ]);
+  assert.equal(orchestration.kind, 'attempts_exhausted');
+});

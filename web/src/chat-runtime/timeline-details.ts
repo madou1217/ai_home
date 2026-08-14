@@ -5,8 +5,15 @@ export interface PlanStep {
   readonly status: PlanStepStatus;
 }
 
+export interface TimelineMessageMetrics {
+  durationMs?: number;
+  ttftMs?: number;
+  outputTokens?: number;
+  tokensPerSec?: number;
+}
+
 export interface TimelineDetailByKind {
-  message: { role: 'user' | 'assistant' | 'system'; phase?: string; model?: string };
+  message: { role: 'user' | 'assistant' | 'system'; phase?: string; model?: string; metrics?: TimelineMessageMetrics };
   reasoning: { summary?: string; segments?: readonly string[] };
   plan: {
     state?: 'draft' | 'proposed' | 'accepted' | 'rejected';

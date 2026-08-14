@@ -22,5 +22,6 @@ export declare function applyStreamingAssistantEvent(
     thinkingStatusText?: string;
     processingStatusText?: string;
     generatingStatusText?: string;
+    metrics?: ChatMessage['metrics'];
   }
 ): ChatMessage[];

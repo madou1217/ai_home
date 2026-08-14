@@ -1545,6 +1545,12 @@
   white-space: nowrap;
 }
 
+.messageMetricItem {
+  font-variant-numeric: tabular-nums;
+  color: var(--color-faint);
+  white-space: nowrap;
+}
+
 .messageMetaActions {
   opacity: 0;
   pointer-events: none;

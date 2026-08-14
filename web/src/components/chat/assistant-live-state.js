@@ -20,6 +20,11 @@ function getModelPatch(message, options) {
   return model ? { model } : {};
 }
 
+function getMetricsPatch(message, options) {
+  const metrics = options?.metrics || message?.metrics;
+  return metrics ? { metrics } : {};
+}
+
 export function appendAssistantText(messages, text, options = {}) {
   const cleanText = String(text || '').trim();
   if (!cleanText) return cloneMessages(messages);
@@ -162,7 +167,8 @@ export function finalizeAssistantMessage(messages, content, options = {}) {
       content: finalContent,
       pending: false,
       timestamp: options.timestamp,
-      ...getModelPatch(null, options)
+      ...getModelPatch(null, options),
+      ...getMetricsPatch(null, options)
     });
     return next;
   }
@@ -178,7 +184,8 @@ export function finalizeAssistantMessage(messages, content, options = {}) {
     pending: false,
     statusText: undefined,
     timestamp: last.timestamp || options.timestamp,
-    ...getModelPatch(last, options)
+    ...getModelPatch(last, options),
+    ...getMetricsPatch(last, options)
   };
   return next;
 }
@@ -196,7 +203,8 @@ export function clearPendingAssistant(messages, options = {}) {
     pending: false,
     statusText: undefined,
     timestamp: last.timestamp || options.timestamp,
-    ...getModelPatch(last, options)
+    ...getModelPatch(last, options),
+    ...getMetricsPatch(last, options)
   };
   return next;
 }

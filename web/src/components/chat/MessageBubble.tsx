@@ -966,6 +966,7 @@ const MessageBubble = ({ message, provider, session, mobile = false }: Props) =>
           role={message.role}
           timestamp={message.timestamp}
           model={message.model}
+          metrics={message.metrics}
           copyText={messageText || message.content}
           actionsVisible={metaVisible}
         />

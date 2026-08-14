@@ -41,6 +41,7 @@ function TimelineItemView({ item, provider, projectPath, onOpenFile, mobile = fa
           content: item.content || '',
           timestamp: item.updatedAt || item.createdAt,
           model: item.detail.model,
+          metrics: item.detail.metrics,
         }}
         provider={provider}
         session={{ projectPath }}

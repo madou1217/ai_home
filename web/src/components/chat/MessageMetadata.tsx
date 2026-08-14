@@ -3,6 +3,11 @@ import { CheckOutlined, MobileOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import copyIcon from '@/assets/icons/copy.svg';
 import type { ChatMessage } from '@/types';
+import {
+  formatDurationLabel,
+  formatTtftLabel,
+  formatTokensPerSecLabel,
+} from './message-metrics-format';
 import styles from './chat.module.css';
 
 interface Props {
@@ -10,6 +15,7 @@ interface Props {
   timestamp?: ChatMessage['timestamp'];
   model?: ChatMessage['model'];
   source?: ChatMessage['source'];
+  metrics?: ChatMessage['metrics'];
   copyText: string;
   actionsVisible?: boolean;
 }
@@ -44,12 +50,17 @@ export default function MessageMetadata({
   timestamp,
   model,
   source,
+  metrics,
   copyText,
   actionsVisible = false,
 }: Props) {
   const timeLabel = formatMessageTime(timestamp);
   const modelLabel = String(model || '').trim();
   const isCodexMobile = source === 'codex-mobile';
+  const durationLabel = formatDurationLabel(metrics?.durationMs);
+  const ttftLabel = formatTtftLabel(metrics?.ttftMs);
+  const tpsLabel = formatTokensPerSecLabel(metrics?.tokensPerSec);
+
   const alignmentClass = role === 'user'
     ? styles.messageMetaRowUser
     : styles.messageMetaRowAssistant;
@@ -67,6 +78,30 @@ export default function MessageMetadata({
           <span className={styles.messageModel} title="来自 Codex Mobile">
             <MobileOutlined /> Codex Mobile
           </span>
+        ) : null}
+        {role === 'assistant' && durationLabel ? (
+          <>
+            <span aria-hidden="true">·</span>
+            <span className={styles.messageMetricItem} title={metrics?.durationMs ? `总用时 ${metrics.durationMs}ms` : undefined}>
+              用时 {durationLabel}
+            </span>
+          </>
+        ) : null}
+        {role === 'assistant' && ttftLabel ? (
+          <>
+            <span aria-hidden="true">·</span>
+            <span className={styles.messageMetricItem} title={metrics?.ttftMs ? `首 token 耗时 ${metrics.ttftMs}ms` : undefined}>
+              首 token {ttftLabel}
+            </span>
+          </>
+        ) : null}
+        {role === 'assistant' && tpsLabel ? (
+          <>
+            <span aria-hidden="true">·</span>
+            <span className={styles.messageMetricItem} title={metrics?.outputTokens ? `输出 ${metrics.outputTokens} tokens` : undefined}>
+              {tpsLabel}
+            </span>
+          </>
         ) : null}
       </div>
       <div className={`${styles.messageMetaActions} ${actionsVisible ? styles.messageMetaActionsVisible : ''}`}>

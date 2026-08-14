@@ -103,7 +103,8 @@ export function applyStreamingAssistantEvent(messages, event, options = {}) {
   if (type === 'result') {
     return finalizeAssistantMessage(messages, event.content || '', {
       timestamp: options.timestamp,
-      model
+      model,
+      metrics: options.metrics
     });
   }
 
@@ -111,12 +112,14 @@ export function applyStreamingAssistantEvent(messages, event, options = {}) {
     if (typeof event.content === 'string' && event.content) {
       return finalizeAssistantMessage(messages, event.content, {
         timestamp: options.timestamp,
-        model
+        model,
+        metrics: options.metrics
       });
     }
     return clearPendingAssistant(messages, {
       timestamp: options.timestamp,
-      model
+      model,
+      metrics: options.metrics
     });
   }
 

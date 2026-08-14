@@ -8,6 +8,7 @@ import {
 import { rememberSessionModel } from '@/components/chat/account-model-selection.js';
 import { isAihServerAccount } from '@/components/chat/aih-server-account';
 import { applyStreamingAssistantEvent } from '@/components/chat/assistant-event-adapter.js';
+import { calculateMessageMetrics } from '@/components/chat/message-metrics-format';
 import {
   getGeneratingStatusText,
   getProcessingStatusText,
@@ -144,6 +145,8 @@ export function useLegacyMessageRunner({
     requestPermission();
     terminal.clearRun(activeRunKey);
     let isTerminalRun = false;
+    const requestStartTime = Date.now();
+    let firstTokenTime: number | undefined;
 
     const applyRunMessages = (updater: (current: ChatMessage[]) => ChatMessage[]): void => {
       latestRunMessages = updater([...latestRunMessages]);
@@ -258,6 +261,7 @@ export function useLegacyMessageRunner({
           return;
         }
         if (event.type === 'thinking' && event.thinking) {
+          if (!firstTokenTime) firstTokenTime = Date.now();
           updateSelectedPendingStatus(getThinkingStatusText(requestSession.provider));
           applyRunMessages((next) => applyStreamingAssistantEvent(next, event, {
             timestamp: Date.now(),
@@ -268,6 +272,7 @@ export function useLegacyMessageRunner({
           return;
         }
         if (event.type === 'delta') {
+          if (!firstTokenTime) firstTokenTime = Date.now();
           updateSelectedPendingStatus(getGeneratingStatusText());
           applyRunMessages((next) => applyStreamingAssistantEvent(next, event, {
             timestamp: Date.now(),
@@ -278,6 +283,7 @@ export function useLegacyMessageRunner({
           return;
         }
         if (event.type === 'assistant_tool_call' || event.type === 'assistant_tool_result') {
+          if (!firstTokenTime) firstTokenTime = Date.now();
           applyRunMessages((next) => applyStreamingAssistantEvent(next, event, {
             timestamp: Date.now(),
             provider: requestSession.provider,
@@ -289,11 +295,19 @@ export function useLegacyMessageRunner({
         if (requestSession.draft && event.sessionId && !createdSessionId) {
           adoptCreatedSession(event.sessionId);
         }
+        const metrics = calculateMessageMetrics({
+          startTime: requestStartTime,
+          firstTokenTime,
+          completedTime: Date.now(),
+          outputTokens: (event as any).usage?.completion_tokens,
+          text: typeof event.content === 'string' ? event.content : undefined,
+        });
         if (typeof event.content === 'string' && event.content) {
           applyRunMessages((next) => applyStreamingAssistantEvent(next, event, {
             timestamp: Date.now(),
             provider: requestSession.provider,
             model,
+            metrics,
           }));
           notify(requestSession.provider, event.content);
         } else if (event.type === 'done') {
@@ -301,6 +315,7 @@ export function useLegacyMessageRunner({
             timestamp: Date.now(),
             provider: requestSession.provider,
             model,
+            metrics,
           }));
           notify(requestSession.provider, '');
         }

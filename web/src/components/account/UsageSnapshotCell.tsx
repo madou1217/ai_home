@@ -99,6 +99,7 @@ export default function UsageSnapshotCell({ record, hideModels = false }: { reco
   if (
     (record.provider === 'codex' && snapshot?.kind === 'codex_oauth_status')
     || (record.provider === 'claude' && snapshot?.kind === 'claude_oauth_usage')
+    || (record.provider === 'kimi' && snapshot?.kind === 'kimi_oauth_usage')
   ) {
     const entries = orderCodexEntries(
       // The upstream snapshot is the source of truth: any window with a

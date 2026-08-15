@@ -83,6 +83,33 @@ test('fast account snapshot rejects only irrecoverable expired Claude OAuth cred
   });
 });
 
+test('fast account snapshot recognizes kimi OAuth credentials under $.credentials', () => {
+  // 回归：kimi-code 凭证落在 native_auth_json 的 $.credentials；此前 fast 快照没有
+  // kimi 分支，configured 恒为 false，WebUI 连锁显示"未配置/授权超时/待探测"。
+  const withRefreshOnly = {
+    env: {},
+    nativeAuth: { credentials: { refresh_token: 'rt_kimi' } }
+  };
+  const withAccess = {
+    env: {},
+    nativeAuth: { credentials: { access_token: 'at_kimi', refresh_token: 'rt_kimi' } }
+  };
+  const empty = { env: {}, nativeAuth: { credentials: {} } };
+
+  assert.deepEqual(__private.readFastAccountPresence('kimi', withRefreshOnly, null), {
+    configured: true,
+    apiKeyMode: false
+  });
+  assert.deepEqual(__private.readFastAccountPresence('kimi', withAccess, null), {
+    configured: true,
+    apiKeyMode: false
+  });
+  assert.deepEqual(__private.readFastAccountPresence('kimi', empty, null), {
+    configured: false,
+    apiKeyMode: false
+  });
+});
+
 function buildRefreshContext(options) {
   const {
     aiHomeDir,

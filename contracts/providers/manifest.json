@@ -962,7 +962,8 @@
       },
       "gateway": "active",
       "capabilities": [
-        "api_key_account"
+        "api_key_account",
+        "quota_usage"
       ],
       "authOptions": [
         {

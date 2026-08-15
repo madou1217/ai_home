@@ -360,12 +360,14 @@ func builtinQoderCN() Definition {
 }
 
 // builtinKimi 定义 Kimi Code OAuth 和 Moonshot API Key 能力。
+// quota_usage：kimi OAuth 账号由 Node 侧 kimi-quota-probe 走
+// {KIMI_CODE_BASE_URL|api.kimi.com/coding/v1}/usages 拉取 5h/7days 配额窗口。
 func builtinKimi() Definition {
 	return Definition{
 		ID:           "kimi",
 		Presentation: presentation("kimi", "Kimi", "KM", "☾", "geekblue"),
 		Gateway:      GatewayActive,
-		Capabilities: []Capability{CapabilityAPIKeyAccount},
+		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityQuotaUsage},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeAPIKey, "Moonshot 密钥", "绑定 MOONSHOT_API_KEY / KIMI_BASE_URL（支持 api.moonshot.cn 和 api.moonshot.ai 双端点）。"),
 			authOption(AuthModeOAuthBrowser, "Kimi Code 登录", "使用 Kimi Code CLI 原生 OAuth 设备码流程（需 Kimi 会员订阅）。"),

@@ -413,6 +413,7 @@ function getUsageSnapshotRemainingPct(record: Pick<Account, 'provider' | 'usageS
   if (
     (record.provider === 'codex' && snapshot.kind === 'codex_oauth_status')
     || (record.provider === 'claude' && snapshot.kind === 'claude_oauth_usage')
+    || (record.provider === 'kimi' && snapshot.kind === 'kimi_oauth_usage')
   ) {
     values = (snapshot.entries || [])
       .map((entry) => Number(entry.remainingPct))

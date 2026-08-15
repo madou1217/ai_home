@@ -58,6 +58,17 @@ export type AccountUsageSnapshot =
       entries: CodexUsageEntry[];
     }
   | {
+      kind: 'kimi_oauth_usage';
+      capturedAt: number;
+      account?: {
+        displayName: string;
+        userId: string;
+        phone: string;
+        planType: string;
+      } | null;
+      entries: CodexUsageEntry[];
+    }
+  | {
       kind: 'gemini_oauth_stats';
       capturedAt: number;
       models: GeminiUsageModel[];

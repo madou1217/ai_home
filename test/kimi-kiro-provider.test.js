@@ -254,6 +254,21 @@ describe('loadKimiServerAccounts', () => {
     assert.equal(accounts[0].authType, 'oauth');
     assert.equal(accounts[0].accessToken, 'oauth-tok-123');
   });
+
+  it('loads kimi account with OAuth token stored under $.credentials (kimi-code layout)', () => {
+    // 回归：kimi-code 登录后凭证写在 native_auth_json 的 $.credentials，
+    // 早期实现只读 $.auth，导致 OAuth 账号取不到 token 被静默丢弃、进不了运行池。
+    const reg = registerAccountIdentity(fs, aiHomeDir, {
+      provider: 'kimi', cliAccountId: '5', identitySeed: 'test:kimi:5:credentials'
+    });
+    writeAccountNativeAuth(fs, aiHomeDir, reg.accountRef, {
+      credentials: { access_token: 'cred-tok-456', refresh_token: 'cred-rt-456' }
+    });
+    const accounts = loadKimiServerAccounts(deps());
+    assert.equal(accounts.length, 1);
+    assert.equal(accounts[0].authType, 'oauth');
+    assert.equal(accounts[0].accessToken, 'cred-tok-456');
+  });
 });
 
 describe('loadKiroServerAccounts', () => {

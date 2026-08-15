@@ -84,7 +84,7 @@ test('derived state treats OpenCode auth as not requiring quota collection', () 
 });
 
 test('derived state treats providers without quota usage as schedulable', () => {
-  for (const provider of ['opencode', 'grok', 'qoder', 'qodercn', 'kimi', 'kiro']) {
+  for (const provider of ['opencode', 'grok', 'qoder', 'qodercn', 'kiro']) {
     const quotaState = deriveQuotaState({ provider, configured: true, apiKeyMode: false });
     const schedulableState = deriveSchedulableState({
       provider,
@@ -95,4 +95,13 @@ test('derived state treats providers without quota usage as schedulable', () => 
     assert.equal(quotaState.status, 'not_applicable');
     assert.equal(schedulableState.status, 'schedulable');
   }
+});
+
+test('derived state treats kimi as quota-capable (OAuth 配额探测已接入)', () => {
+  // kimi 声明 quota_usage 能力后：无快照时 pending（等待探测），有数值时按额度调度。
+  const pending = deriveQuotaState({ provider: 'kimi', configured: true, apiKeyMode: false });
+  assert.equal(pending.status, 'pending');
+  const available = deriveQuotaState({ provider: 'kimi', configured: true, apiKeyMode: false, remainingPct: 54 });
+  assert.equal(available.status, 'available');
+  assert.equal(available.remainingPct, 54);
 });

@@ -9,6 +9,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/madou1217/ai_home/application/accountcredentials"
 	"github.com/madou1217/ai_home/application/accountrouting"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/inferencegateway"
@@ -143,10 +144,11 @@ func newAgyCoordinatorFixture(
 	if err != nil {
 		t.Fatalf("NewRoutingAccount() error = %v", err)
 	}
+	credentials := agyCredentialResolver{accountRef: accountRef, credential: credential}
 	recruiter, err := accountrouting.NewRecruiter(accountrouting.Dependencies{
 		Candidates:  agyCandidateSource{account: account},
 		Runtime:     agyAvailableRuntime{},
-		Credentials: agyCredentialResolver{accountRef: accountRef, credential: credential},
+		Credentials: credentials,
 	})
 	if err != nil {
 		t.Fatalf("NewRecruiter() error = %v", err)
@@ -163,13 +165,15 @@ func newAgyCoordinatorFixture(
 	registry, _ := inferencegateway.NewUpstreamRegistry(adapter)
 	recorder := &agyAttemptRecorder{}
 	coordinator, err := inferencegateway.NewCoordinator(inferencegateway.Dependencies{
-		Catalog:              catalog,
-		Routes:               agyRouteResolver{route: route},
-		Recruiter:            recruiter,
-		Upstreams:            registry,
-		Attempts:             recorder,
-		ModelRefreshes:       agyModelRefreshScheduler{},
-		UpstreamAttemptLimit: 1,
+		Catalog:                catalog,
+		Routes:                 agyRouteResolver{route: route},
+		Recruiter:              recruiter,
+		Upstreams:              registry,
+		Attempts:               recorder,
+		CredentialObservations: credentials,
+		Clock:                  fixedClock,
+		ModelRefreshes:         agyModelRefreshScheduler{},
+		UpstreamAttemptLimit:   1,
 	})
 	if err != nil {
 		t.Fatalf("NewCoordinator() error = %v", err)
@@ -222,6 +226,38 @@ func (resolver agyCredentialResolver) ResolveCredentialBinding(
 	return accountapp.NewCredentialBinding(accountRef, agy.ProviderID, resolver.credential)
 }
 
+func (resolver agyCredentialResolver) ResolveObservedCredentialBinding(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+) (
+	accountapp.CredentialBinding,
+	accountcredentials.CredentialObservation,
+	error,
+) {
+	binding, err := resolver.ResolveCredentialBinding(ctx, accountRef)
+	if err != nil {
+		return accountapp.CredentialBinding{}, accountcredentials.CredentialObservation{}, err
+	}
+	snapshot, err := accountapp.NewCredentialSnapshot(
+		binding.AccountRef(),
+		binding.ProviderID(),
+		binding.Credential(),
+		fixedClock(),
+	)
+	if err != nil {
+		return accountapp.CredentialBinding{}, accountcredentials.CredentialObservation{}, err
+	}
+	observation, err := accountcredentials.NewCredentialObservation(snapshot)
+	return binding, observation, err
+}
+
+func (agyCredentialResolver) IsCurrentCredentialObservation(
+	_ context.Context,
+	observation accountcredentials.CredentialObservation,
+) (bool, error) {
+	return observation.IsValid(), nil
+}
+
 type agyRouteResolver struct{ route inferencegateway.Route }
 
 func (resolver agyRouteResolver) Resolve(
@@ -239,6 +275,7 @@ type agyAttemptRecorder struct {
 func (recorder *agyAttemptRecorder) RecordSuccess(
 	context.Context,
 	runtimecore.ModelRoute,
+	inferencegateway.AttemptSuccess,
 ) error {
 	recorder.successes++
 	return nil

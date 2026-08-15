@@ -165,13 +165,15 @@ func TestLiveAgyCanonicalSmoke(t *testing.T) {
 		t.Fatalf("NewUpstreamRegistry() error = %v", err)
 	}
 	coordinator, err := inferencegateway.NewCoordinator(inferencegateway.Dependencies{
-		Catalog:              catalog,
-		Routes:               liveAgyRouteResolver{route: route},
-		Recruiter:            recruiter,
-		Upstreams:            upstreams,
-		Attempts:             runtime,
-		ModelRefreshes:       liveAgyNoopRefreshScheduler{},
-		UpstreamAttemptLimit: 1,
+		Catalog:                catalog,
+		Routes:                 liveAgyRouteResolver{route: route},
+		Recruiter:              recruiter,
+		Upstreams:              upstreams,
+		Attempts:               runtime,
+		CredentialObservations: credentials,
+		Clock:                  time.Now,
+		ModelRefreshes:         liveAgyNoopRefreshScheduler{},
+		UpstreamAttemptLimit:   1,
 	})
 	if err != nil {
 		t.Fatalf("inferencegateway.NewCoordinator() error = %v", err)

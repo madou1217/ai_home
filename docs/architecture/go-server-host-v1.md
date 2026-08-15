@@ -1,5 +1,11 @@
 # Go Server Host v1
 
+> **2026-08-15 运行边界勘误：** 本文中的默认 `9527` 启动命令只用于隔离开发和测试，
+> 不构成生产公开入口的切换授权。Go 上线门禁完成前，生产 `127.0.0.1:9527` 必须继续
+> 由 Node Host 持有，Go 只能绑定 supervisor 分配的私有 endpoint；门禁通过后若要改变
+> 公开端口所有者，仍须单独 ADR、兼容/回滚证据和显式切流确认。详见
+> [`product-direction-node-go-2026-08-15.md` 第 6.2 节](./product-direction-node-go-2026-08-15.md#62-go-上线前的公开端口禁令)。
+
 ## 1. 状态与范围
 
 `cmd/aih-server` 是当前 Go Server 的真实可执行 Composition Root。当前挂载：

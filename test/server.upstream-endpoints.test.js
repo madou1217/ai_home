@@ -1,9 +1,20 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const zlib = require('node:zlib');
 const { chooseServerAccount, markProxyAccountFailure } = require('../lib/server/router');
-const { handleUpstreamPassthrough } = require('../lib/server/upstream-endpoints');
+const { handleUpstreamModels, handleUpstreamPassthrough } = require('../lib/server/upstream-endpoints');
+const { buildOpenAIModelsList, FALLBACK_MODELS } = require('../lib/server/models');
+const {
+  registerProbedModelModalities,
+  __private: modelModalityPrivate
+} = require('../lib/server/model-modality-index');
+const { refreshKimiAccessToken } = require('../lib/server/kimi-token-refresh');
+const { upsertAccountRef } = require('../lib/server/account-ref-store');
+const { writeAccountNativeAuth } = require('../lib/server/account-credential-store');
 const { getAccountModelCooldownUntil } = require('../lib/server/account-runtime-state');
 const { buildModelAccountIndex } = require('../lib/server/model-account-index');
 const {
@@ -48,6 +59,94 @@ function createResCapture() {
     }
   };
 }
+
+test('upstream models retain the provider for probed modality resolution', async (t) => {
+  modelModalityPrivate.resetModelModalityCache();
+  t.after(() => modelModalityPrivate.resetModelModalityCache());
+  const model = 'kimi-runtime-only-vision';
+  const account = {
+    accountRef: accountRef('kimi-model-modalities'),
+    provider: 'kimi',
+    accessToken: 'kimi-token'
+  };
+  const state = {
+    accounts: { kimi: [account] },
+    modelRegistry: { providers: { kimi: new Set() } },
+    modelsCache: { updatedAt: 0, ids: [], byAccount: {}, sourceCount: 0 }
+  };
+  const res = createResCapture();
+
+  await handleUpstreamModels({
+    options: {
+      provider: 'kimi',
+      upstreamTimeoutMs: 500,
+      modelsProbeAccounts: 1
+    },
+    state,
+    res,
+    deps: {
+      buildOpenAIModelsList,
+      FALLBACK_MODELS,
+      fetchModelsForAccount: async () => {
+        registerProbedModelModalities('kimi', [{
+          id: model,
+          modalities: { input: ['text', 'image'], output: ['text'] }
+        }]);
+        return [model];
+      }
+    }
+  });
+
+  const payload = JSON.parse(res.body.toString('utf8'));
+  assert.deepEqual(payload.data[0].aih_modalities, {
+    input: ['text', 'image'],
+    output: ['text']
+  });
+});
+
+test('upstream models derive the auto-mode provider from the runtime accountRef', async (t) => {
+  modelModalityPrivate.resetModelModalityCache();
+  t.after(() => modelModalityPrivate.resetModelModalityCache());
+  const model = 'runtime-only-neutral-vision-model';
+  const account = {
+    accountRef: accountRef('auto-kimi-model-modalities'),
+    provider: 'kimi',
+    accessToken: 'kimi-token'
+  };
+  const state = {
+    accounts: { kimi: [account] },
+    modelRegistry: { providers: { kimi: new Set() } },
+    modelsCache: { updatedAt: 0, ids: [], byAccount: {}, sourceCount: 0 }
+  };
+  const res = createResCapture();
+
+  await handleUpstreamModels({
+    options: {
+      provider: 'auto',
+      upstreamTimeoutMs: 500,
+      modelsProbeAccounts: 1
+    },
+    state,
+    res,
+    deps: {
+      buildOpenAIModelsList,
+      FALLBACK_MODELS,
+      fetchModelsForAccount: async () => {
+        registerProbedModelModalities('kimi', [{
+          id: model,
+          modalities: { input: ['text', 'image'], output: ['text'] }
+        }]);
+        return [model];
+      }
+    }
+  });
+
+  const payload = JSON.parse(res.body.toString('utf8'));
+  assert.deepEqual(payload.data[0].aih_modalities, {
+    input: ['text', 'image'],
+    output: ['text']
+  });
+});
 
 function startUpstreamStream(options = {}) {
   const provider = String(options.provider || 'claude');
@@ -1632,6 +1731,87 @@ test('upstream passthrough returns clear invalid_request when claude account use
   assert.match(String(body.detail || ''), /Anthropic 兼容端点/);
 });
 
+test('upstream passthrough forwards the vision-guarded body for a non-vision Kimi model', async () => {
+  const res = createResCapture();
+  const account = {
+    accountRef: accountRef('kimi-vision-guard'),
+    provider: 'kimi',
+    accessToken: 'kimi-api-key',
+    apiKeyMode: true,
+    authType: 'api-key',
+    openaiBaseUrl: 'https://kimi.example.com/v1'
+  };
+  const state = {
+    accounts: { kimi: [account] },
+    cursors: { kimi: 0 },
+    metrics: {
+      totalFailures: 0,
+      totalSuccess: 0,
+      totalTimeouts: 0,
+      providerCounts: {},
+      providerSuccess: {},
+      providerFailures: {}
+    }
+  };
+  const requestJson = {
+    model: 'kimi-text-only-review-model',
+    messages: [{
+      role: 'user',
+      content: [{
+        type: 'image_url',
+        image_url: { url: 'https://example.com/review.png' }
+      }]
+    }]
+  };
+  let forwardedBody = null;
+
+  await handleUpstreamPassthrough({
+    options: {
+      provider: 'kimi',
+      upstreamTimeoutMs: 3000,
+      maxAttempts: 1,
+      failureThreshold: 1,
+      logRequests: false
+    },
+    state,
+    req: { url: '/v1/chat/completions', headers: { 'content-type': 'application/json' } },
+    res,
+    method: 'POST',
+    bodyBuffer: Buffer.from(JSON.stringify(requestJson)),
+    requestJson,
+    routeKey: 'POST /v1/chat/completions',
+    requestStartedAt: Date.now(),
+    cooldownMs: 1000,
+    requestMeta: { requestId: 'kimi-vision-guard' },
+    deps: {
+      chooseServerAccount: (pool) => pool[0],
+      resolveRequestProvider: () => 'kimi',
+      pushMetricError: () => {},
+      writeJson: (response, code, payload) => {
+        response.statusCode = code;
+        response.setHeader('content-type', 'application/json');
+        response.end(JSON.stringify(payload));
+      },
+      fetchWithTimeout: async (_url, init) => {
+        forwardedBody = JSON.parse(Buffer.from(init.body).toString('utf8'));
+        return {
+          status: 200,
+          headers: new Map([['content-type', 'application/json']]),
+          arrayBuffer: async () => Buffer.from('{"ok":true}')
+        };
+      },
+      markProxyAccountFailure: () => {},
+      markProxyAccountSuccess: () => {},
+      appendProxyRequestLog: () => {}
+    }
+  });
+
+  assert.ok(forwardedBody);
+  assert.equal(forwardedBody.messages[0].content[0].type, 'text');
+  assert.match(forwardedBody.messages[0].content[0].text, /image .* cannot see images/u);
+  assert.equal(JSON.stringify(forwardedBody).includes('image_url'), false);
+});
+
 test('upstream passthrough fast-fails on global network errors and surfaces error code', async () => {
   const res = createResCapture();
   const state = {
@@ -1734,6 +1914,75 @@ test('upstream passthrough 404 does not mark account success and returns raw ups
   assert.equal(failureCalls, 0);
   assert.equal(state.metrics.totalSuccess, 0);
   assert.equal(state.metrics.totalFailures, 1);
+});
+
+test('upstream passthrough keeps the selected account evidence on non-passthrough upstream errors', async () => {
+  const account = {
+    accountRef: accountRef('grok-error-account'),
+    provider: 'grok',
+    email: 'grok@example.com',
+    accessToken: 'grok-oauth-token',
+    cooldownUntil: 0
+  };
+  const res = createResCapture();
+  const state = {
+    accounts: { grok: [account] },
+    cursors: { grok: 0 },
+    metrics: {
+      totalFailures: 0,
+      totalSuccess: 0,
+      totalTimeouts: 0,
+      providerFailures: {},
+      providerSuccess: {}
+    }
+  };
+
+  await handleUpstreamPassthrough({
+    options: {
+      provider: 'grok',
+      grokBaseUrl: 'https://example.com/v1',
+      upstreamTimeoutMs: 3000,
+      maxAttempts: 1,
+      failureThreshold: 1,
+      logRequests: false
+    },
+    state,
+    req: {
+      url: '/v1/chat/completions',
+      headers: {
+        'content-type': 'application/json',
+        'x-account-ref': account.accountRef
+      }
+    },
+    res,
+    method: 'POST',
+    bodyBuffer: Buffer.from('{"model":"grok-4.6","messages":[]}'),
+    requestJson: { model: 'grok-4.6', messages: [] },
+    routeKey: 'POST /v1/chat/completions',
+    requestStartedAt: Date.now(),
+    cooldownMs: 1000,
+    deps: {
+      chooseServerAccount: (pool) => pool[0],
+      resolveRequestProvider: () => 'grok',
+      pushMetricError: () => {},
+      writeJson: (response, code, payload) => {
+        response.statusCode = code;
+        response.setHeader('content-type', 'application/json');
+        response.end(JSON.stringify(payload));
+      },
+      fetchWithTimeout: async () => ({
+        status: 402,
+        headers: new Map([['content-type', 'application/json']]),
+        arrayBuffer: async () => Buffer.from('{"error":"spending_limit"}')
+      }),
+      markProxyAccountFailure: () => {},
+      markProxyAccountSuccess: () => {},
+      appendProxyRequestLog: () => {}
+    }
+  });
+
+  assert.equal(res.statusCode, 402);
+  assert.equal(res.headers['x-aih-server-account-ref'], account.accountRef);
 });
 
 test('upstream passthrough 429 applies model cooldown and retries another account before any downstream bytes are sent', async () => {
@@ -2189,6 +2438,129 @@ test('upstream passthrough refreshes codex token on 401 and retries same account
 
   assert.equal(forcedRefreshCalls, 1);
   assert.equal(upstreamCalls, 2);
+  assert.equal(res.statusCode, 200);
+  assert.equal(String(res.body), '{"ok":true}');
+  assert.equal(state.metrics.totalSuccess, 1);
+});
+
+test('Kimi OAuth 401 refreshes once and retries the same account with the new token', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-kimi-upstream-refresh-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  const kimiAccountRef = upsertAccountRef(fs, aiHomeDir, {
+    provider: 'kimi',
+    cliAccountId: '1',
+    identitySeed: 'test:kimi:upstream-refresh'
+  });
+  writeAccountNativeAuth(fs, aiHomeDir, kimiAccountRef, {
+    deviceId: 'device-upstream-refresh',
+    credentials: {
+      access_token: 'rejected-kimi-token',
+      refresh_token: 'kimi-refresh-token',
+      expires_at: Math.floor(Date.now() / 1000) + 3600,
+      token_type: 'Bearer'
+    }
+  });
+  const account = {
+    accountRef: kimiAccountRef,
+    provider: 'kimi',
+    authType: 'oauth',
+    apiKeyMode: false,
+    accessToken: 'rejected-kimi-token',
+    refreshToken: 'kimi-refresh-token',
+    tokenExpiresAt: Date.now() + 3600_000,
+    deviceId: 'device-upstream-refresh',
+    openaiBaseUrl: 'https://api.kimi.com/coding/v1'
+  };
+  const state = {
+    accounts: { kimi: [account] },
+    cursors: { kimi: 0 },
+    metrics: {
+      totalFailures: 0,
+      totalSuccess: 0,
+      totalTimeouts: 0,
+      providerCounts: {},
+      providerSuccess: {},
+      providerFailures: {}
+    }
+  };
+  const res = createResCapture();
+  const upstreamAuthorizations = [];
+  let tokenRefreshCalls = 0;
+  const fetchWithTimeout = async (url, init) => {
+    if (String(url).endsWith('/api/oauth/token')) {
+      tokenRefreshCalls += 1;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          access_token: 'fresh-kimi-token',
+          refresh_token: 'kimi-refresh-token-v2',
+          expires_in: 900,
+          token_type: 'Bearer'
+        })
+      };
+    }
+    const authorization = String(init && init.headers && init.headers.authorization || '');
+    upstreamAuthorizations.push(authorization);
+    if (authorization === 'Bearer rejected-kimi-token') {
+      return {
+        status: 401,
+        headers: new Map([['content-type', 'application/json']]),
+        arrayBuffer: async () => Buffer.from('{"error":"expired"}')
+      };
+    }
+    return {
+      status: 200,
+      headers: new Map([['content-type', 'application/json']]),
+      arrayBuffer: async () => Buffer.from('{"ok":true}')
+    };
+  };
+
+  await handleUpstreamPassthrough({
+    options: {
+      provider: 'kimi',
+      upstreamTimeoutMs: 3000,
+      maxAttempts: 1,
+      failureThreshold: 1,
+      logRequests: false
+    },
+    state,
+    req: { url: '/v1/chat/completions', headers: { 'content-type': 'application/json' } },
+    res,
+    method: 'POST',
+    bodyBuffer: Buffer.from('{"model":"kimi-for-coding","messages":[]}'),
+    requestJson: { model: 'kimi-for-coding', messages: [] },
+    routeKey: 'POST /v1/chat/completions',
+    requestStartedAt: Date.now(),
+    cooldownMs: 1000,
+    deps: {
+      chooseServerAccount: (pool) => pool[0],
+      resolveRequestProvider: () => 'kimi',
+      pushMetricError: () => {},
+      writeJson: (response, code, payload) => {
+        response.statusCode = code;
+        response.setHeader('content-type', 'application/json');
+        response.end(JSON.stringify(payload));
+      },
+      refreshKimiAccessToken: (selectedAccount, refreshOptions, refreshDeps) => refreshKimiAccessToken(
+        selectedAccount,
+        refreshOptions,
+        { ...refreshDeps, fs, aiHomeDir }
+      ),
+      fetchWithTimeout,
+      markProxyAccountFailure: () => {},
+      markProxyAccountSuccess: () => {},
+      appendProxyRequestLog: () => {}
+    }
+  });
+
+  assert.equal(tokenRefreshCalls, 1);
+  assert.deepEqual(upstreamAuthorizations, [
+    'Bearer rejected-kimi-token',
+    'Bearer fresh-kimi-token'
+  ]);
+  assert.equal(account.accessToken, 'fresh-kimi-token');
+  assert.equal(account.refreshToken, 'kimi-refresh-token-v2');
   assert.equal(res.statusCode, 200);
   assert.equal(String(res.body), '{"ok":true}');
   assert.equal(state.metrics.totalSuccess, 1);

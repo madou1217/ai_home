@@ -10,6 +10,53 @@ const {
   writeAccountCredentials,
   writeAccountNativeAuth
 } = require('../lib/server/account-credential-store');
+const { setUsageConfig } = require('../lib/usage/config-store');
+
+test('getAccountQuotaState applies the configured Codex Free account-switch threshold', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-usage-account-runtime-threshold-'));
+  try {
+    const accountRef = registerAccountIdentity(fs, root, {
+      provider: 'codex',
+      cliAccountId: '1',
+      identitySeed: 'oauth:codex:threshold@example.com'
+    }).accountRef;
+    writeAccountNativeAuth(fs, root, accountRef, {
+      auth: { tokens: { refresh_token: 'refresh-token' } }
+    });
+    setUsageConfig({ fs, aiHomeDir: root }, { threshold_pct: 80 });
+
+    const service = createUsageAccountRuntimeService({
+      path,
+      fs,
+      aiHomeDir: root,
+      cliConfigs: { codex: {} },
+      createUsageScheduler: () => ({ start() {} }),
+      getAccountStateIndex: () => ({
+        getAccountState() {
+          return { status: 'up' };
+        }
+      }),
+      accountStateService: { pruneMissing() {} },
+      lastActiveAccountByCli: {},
+      usageIndexStaleRefreshMs: 60_000,
+      usageIndexBgRefreshLimit: 10,
+      checkStatus: () => ({ configured: true, accountName: 'threshold@example.com' }),
+      readUsageCache: () => ({
+        kind: 'codex_oauth_status',
+        account: { planType: 'free' },
+        entries: [{ window: '5h', remainingPct: 10 }]
+      }),
+      ensureUsageSnapshot: (_cliName, _id, cache) => cache
+    });
+
+    const result = service.getAccountQuotaState('codex', accountRef);
+
+    assert.equal(result.schedulableStatus, 'blocked_by_policy');
+    assert.equal(result.schedulableReason, 'codex_free_plan_below_server_min_remaining');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test('refreshIndexedStateForAccount preserves manually disabled status while updating usage fields', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-usage-account-runtime-'));

@@ -5,7 +5,8 @@ const {
   deriveQuotaState,
   deriveSchedulableState,
   getMinRemainingPctFromUsageSnapshot,
-  getUsageRemainingPctValues
+  getUsageRemainingPctValues,
+  resolveMinimumRemainingPct
 } = require('../lib/account/derived-state');
 
 test('derived state uses AGY Code Assist model quota snapshots', () => {
@@ -145,4 +146,40 @@ test('derived state keeps Kimi OAuth quota pending until a usage snapshot exists
 
   assert.equal(quotaState.status, 'pending');
   assert.equal(schedulableState.status, 'schedulable');
+});
+
+test('derived state blocks a non-exhausted Codex Free account at the configured switch threshold', () => {
+  const state = deriveSchedulableState({
+    provider: 'codex',
+    configured: true,
+    apiKeyMode: false,
+    planType: 'free',
+    remainingPct: 10,
+    usageThresholdPct: 80
+  });
+
+  assert.equal(state.status, 'blocked_by_policy');
+  assert.equal(state.reason, 'codex_free_plan_below_server_min_remaining');
+});
+
+test('derived state leaves a Codex Free account schedulable above the configured switch threshold', () => {
+  const state = deriveSchedulableState({
+    provider: 'codex',
+    configured: true,
+    apiKeyMode: false,
+    planType: 'free',
+    remainingPct: 10,
+    usageThresholdPct: 95
+  });
+
+  assert.equal(state.status, 'schedulable');
+  assert.equal(state.reason, '');
+});
+
+test('minimum remaining percentage is clamped to the inclusive 0..100 boundary', () => {
+  assert.equal(resolveMinimumRemainingPct(-1), 100);
+  assert.equal(resolveMinimumRemainingPct(0), 100);
+  assert.equal(resolveMinimumRemainingPct(100), 0);
+  assert.equal(resolveMinimumRemainingPct(101), 0);
+  assert.equal(resolveMinimumRemainingPct('invalid'), null);
 });

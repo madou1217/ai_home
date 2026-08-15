@@ -96,6 +96,27 @@ test('Gemini auth materializes from DB and captures refreshed runtime artifacts'
   });
 });
 
+test('auth projection rejects object runtime paths without materializing under their string form', (t) => {
+  const fixture = createProjectionFixture(t);
+  const accountRef = registerAccount(fixture, 'grok', '91');
+  const coercedRuntimeDir = path.join(fixture.aiHomeDir, '[object Object]');
+  writeAccountNativeAuth(fs, fixture.aiHomeDir, accountRef, {
+    auth: { access_token: 'test-access', refresh_token: 'test-refresh' }
+  });
+
+  const result = materializeProviderAuth(fs, {
+    toString: () => coercedRuntimeDir
+  }, 'grok', projectionOptions(fixture, accountRef));
+
+  assert.deepEqual(result, {
+    materialized: 0,
+    removed: 0,
+    missing: true,
+    reason: 'invalid_projection_context'
+  });
+  assert.equal(fs.existsSync(coercedRuntimeDir), false);
+});
+
 test('AGY and OpenCode projections round-trip through the account database', (t) => {
   const fixture = createProjectionFixture(t);
   const cases = [

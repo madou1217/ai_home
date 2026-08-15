@@ -30,6 +30,7 @@ const {
 } = require('../lib/server/account-credential-store');
 const { upsertAccountRef } = require('../lib/server/account-ref-store');
 const { writeAccountUsageSnapshot } = require('../lib/account/usage-snapshot-store');
+const { setUsageConfig } = require('../lib/usage/config-store');
 const { writeAccountTokenUsageCache } = require('../lib/server/webui-account-token-usage-cache');
 const {
   readDefaultAccountRef,
@@ -720,8 +721,9 @@ test('web ui accounts list exposes lastUsedAt for every server provider runtime 
   });
 });
 
-test('web ui accounts list marks free accounts below 20 percent as policy blocked', async (t) => {
+test('web ui accounts list applies the configured remaining-quota switch threshold to Free OAuth', async (t) => {
   const fixture = createAccountFixture(t);
+  setUsageConfig({ fs, aiHomeDir: fixture.aiHomeDir }, { threshold_pct: 80 });
   fixture.register('codex', '91', {
     usageSnapshot: {
       schemaVersion: 2,

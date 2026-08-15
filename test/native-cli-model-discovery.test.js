@@ -97,3 +97,15 @@ test('Qoder model discovery materializes account auth and invokes list-models', 
   assert.equal(invocation.options.env.NO_PROXY, '127.0.0.1,localhost');
   assert.equal(fs.existsSync(path.join(invocation.args[2], '.auth', 'user')), true);
 });
+
+test('native CLI discovery rejects an object aiHomeDir instead of coercing it into a path', async () => {
+  await assert.rejects(
+    discoverNativeCliModels({
+      aiHomeDir: { toString: () => '/tmp/[object Object]' }
+    }, {
+      provider: 'grok',
+      accountRef: 'acct_0123456789abcdef0123'
+    }),
+    /native_cli_model_discovery_invalid_ai_home/
+  );
+});

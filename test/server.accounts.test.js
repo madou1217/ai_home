@@ -172,6 +172,48 @@ test('Codex DB accounts remain visible while usage policy controls scheduling', 
   assert.equal(accounts[1].schedulableStatus, 'schedulable');
 });
 
+test('Codex Free OAuth accounts use the configured remaining-quota switch threshold', (t) => {
+  const fixture = createFixture(t);
+  setUsageConfig({ fs, aiHomeDir: fixture.aiHomeDir }, { threshold_pct: 80 });
+  const accountRef = fixture.register('codex', '99', {
+    nativeAuth: {
+      auth: createCodexAuth('99', {
+        planType: 'free',
+        email: 'free-low@example.com'
+      })
+    },
+    usage: codexUsage(10, { planType: 'free', email: 'free-low@example.com' })
+  });
+
+  const accounts = loadCodexServerAccounts(fixture.deps());
+
+  assert.equal(accounts[0].accountRef, accountRef);
+  assert.equal(accounts[0].remainingPct, 10);
+  assert.equal(accounts[0].schedulableStatus, 'blocked_by_policy');
+  assert.equal(accounts[0].schedulableReason, 'codex_usage_below_server_threshold');
+});
+
+test('Codex Free OAuth accounts stay schedulable above the configured remaining-quota threshold', (t) => {
+  const fixture = createFixture(t);
+  setUsageConfig({ fs, aiHomeDir: fixture.aiHomeDir }, { threshold_pct: 95 });
+  const accountRef = fixture.register('codex', '100', {
+    nativeAuth: {
+      auth: createCodexAuth('100', {
+        planType: 'free',
+        email: 'free-healthy@example.com'
+      })
+    },
+    usage: codexUsage(10, { planType: 'free', email: 'free-healthy@example.com' })
+  });
+
+  const accounts = loadCodexServerAccounts(fixture.deps());
+
+  assert.equal(accounts[0].accountRef, accountRef);
+  assert.equal(accounts[0].remainingPct, 10);
+  assert.equal(accounts[0].schedulableStatus, 'schedulable');
+  assert.equal(accounts[0].schedulableReason, '');
+});
+
 test('Codex token expiry uses the access token before stale auth metadata', (t) => {
   const fixture = createFixture(t);
   const exp = Math.floor(Date.now() / 1000) + 3600;

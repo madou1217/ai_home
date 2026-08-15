@@ -51,3 +51,12 @@ test('account reason formatter preserves existing known quota explanations', () 
   );
   assert.equal(formatAccountIssueReason('some_future_reason'), 'some_future_reason');
 });
+
+test('account reason formatter explains OpenCode model region restrictions without calling them auth failures', () => {
+  const { formatAccountIssueReason } = loadAccountReasons();
+
+  assert.equal(
+    formatAccountIssueReason('model_region_restricted'),
+    'OpenCode 当前模型受区域/托管范围限制，不是账号认证失效；请切换模型或完成 workspace opt-in。'
+  );
+});

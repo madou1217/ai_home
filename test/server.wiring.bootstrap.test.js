@@ -124,3 +124,40 @@ test('createServerWiring wires daemon and local runtime factories', () => {
   assert.equal(calls.localRuntimeArg.startLocalServerDeps.connectFabricBroker, deps.connectFabricBroker);
   assert.equal(typeof calls.localRuntimeArg.startLocalServerDeps.resolveCliPath, 'function');
 });
+
+test('createServerWiring keeps Go Core opt-in and passes a dedicated supervisor to Node', () => {
+  let supervisorOptions;
+  let daemonOptions;
+  const supervisor = {
+    status: () => ({ enabled: true, state: 'stopped', pid: 0, endpoint: '', error: '' }),
+    start: async () => ({ enabled: true, state: 'ready' }),
+    stop: async () => ({ enabled: true, state: 'stopped' })
+  };
+
+  createServerWiring({
+    goCoreEnabled: true,
+    goCoreHost: '127.0.0.1',
+    goCorePort: 19550,
+    goCoreManagementKey: () => 'management-secret',
+    goCoreClientKey: () => 'client-secret'
+  }, {
+    createGoCoreSupervisor: (options) => {
+      supervisorOptions = options;
+      return supervisor;
+    },
+    createServerDaemonService: (options) => {
+      daemonOptions = options;
+      return {};
+    },
+    createServerDaemonAdapter: () => ({}),
+    createServerLocalRuntimeService: () => ({}),
+    syncCodexAccountsToServerService: () => {}
+  });
+
+  assert.equal(supervisorOptions.enabled, true);
+  assert.equal(supervisorOptions.host, '127.0.0.1');
+  assert.equal(supervisorOptions.port, 19550);
+  assert.equal(supervisorOptions.managementKey(), 'management-secret');
+  assert.equal(supervisorOptions.clientKey(), 'client-secret');
+  assert.equal(daemonOptions.goCoreSupervisor, supervisor);
+});

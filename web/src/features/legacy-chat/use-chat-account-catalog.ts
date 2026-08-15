@@ -5,7 +5,7 @@ import type {
 } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { message } from 'antd';
-import { accountsAPI } from '@/services/api';
+import { legacyChatAccountCatalogAPI } from '@/services/legacy-chat-account-catalog';
 import {
   CHAT_ACCOUNT_LIST_LOAD_MESSAGE_KEY,
   clearLoadFailureMessage,
@@ -113,7 +113,7 @@ function useAccountCatalogLoader(dependencies: CatalogLoaderDependencies): () =>
     const snapshotReceivedAt = snapshotReceivedAtRef.current;
     if (cached.length) applyAccounts(cached);
     try {
-      const { accounts } = await accountsAPI.list();
+      const { accounts } = await legacyChatAccountCatalogAPI.list();
       if (isStaleRequest(dependencies, requestId, snapshotReceivedAt)) return;
       clearAccountLoadFailure();
       applyAccounts(accounts);
@@ -140,7 +140,7 @@ function useAccountCatalogWatch(dependencies: CatalogWatchDependencies): void {
       if (snapshotReceivedAtRef.current > 0) return;
       void loadAccounts();
     }, 2500);
-    const watcher = accountsAPI.watch({
+    const watcher = legacyChatAccountCatalogAPI.watch({
       onSnapshot: ({ accounts }) => {
         snapshotReceivedAtRef.current = Date.now();
         clearAccountLoadFailure();

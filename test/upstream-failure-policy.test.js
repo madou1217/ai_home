@@ -210,6 +210,27 @@ test('failure policy still treats an ordinary 403 as an account-scoped auth fail
   assert.equal(policy.failureReason, 'auth_invalid_reauth_required');
 });
 
+test('failure policy keeps OpenCode RegionError model-scoped instead of marking auth invalid', () => {
+  const policy = classifyUpstreamFailure({
+    provider: 'opencode',
+    statusCode: 403,
+    body: JSON.stringify({
+      type: 'error',
+      error: {
+        type: 'RegionError',
+        message: 'The latest version of this model is only available hosted in China and requires explicit opt in: https://opencode.ai/workspace/wrk/go'
+      }
+    }),
+    detail: 'HTTP 403 RegionError',
+    defaultCooldownMs: 1000
+  });
+  assert.equal(policy.kind, 'model_region_restricted');
+  assert.equal(policy.scope, 'model');
+  assert.equal(policy.failureReason, 'model_region_restricted');
+  assert.equal(policy.shouldRetryAnotherAccount, true);
+  assert.notEqual(policy.failureReason, 'auth_invalid_reauth_required');
+});
+
 test('failure policy treats selected model capacity 400 as model-scoped retry', () => {
   const policy = classifyUpstreamFailure({
     provider: 'claude',

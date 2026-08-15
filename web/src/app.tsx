@@ -23,6 +23,10 @@ import { startNativeRelayDiscovery } from "@/services/server-routes/native-relay
 import { startNativeLanRouteRefresh } from "@/services/server-routes/native-lan-route-refresh";
 import logo from "../../assets/brand/ai-home-app-icon.png";
 
+// Go 账号 Preview 使用独立的管理端口，不依赖正式 Node Server profile。
+// 该开关只由 scripts/go-accounts-preview.js 注入，正式 Web 构建保持原有门禁。
+const isGoAccountsPreview = process.env.AIH_GO_ACCOUNTS_PREVIEW === "1";
+
 function resolveCurrentServerProfileGate() {
   return resolveFabricProfileGateState(
     listControlPlaneProfiles(),
@@ -31,6 +35,7 @@ function resolveCurrentServerProfileGate() {
 }
 
 function enforceServerProfileGate() {
+  if (isGoAccountsPreview) return;
   const gate = resolveCurrentServerProfileGate();
   if (shouldRedirectToFabricServerSetup(gate, history.location.pathname, history.location.search)) {
     history.replace(FABRIC_SERVER_SETUP_TARGET);
@@ -69,14 +74,23 @@ export async function getInitialState(): Promise<{
 }
 
 export const layout = ({ initialState }: any) => {
+  if (isGoAccountsPreview) {
+    return {
+      logo,
+      title: "AI Home Go 账号 Preview",
+      menuDataRender: (menuData: any[]) => menuData,
+      childrenRender: (children: any) => children,
+      ...initialState?.settings,
+    };
+  }
   return {
     logo,
     title: "AI Home",
     onPageChange: enforceServerProfileGate,
     menuDataRender: (menuData: any[]) => (
-      resolveCurrentServerProfileGate().ready ? menuData : []
+      isGoAccountsPreview || resolveCurrentServerProfileGate().ready ? menuData : []
     ),
-    menuFooterRender: () => (
+    menuFooterRender: () => isGoAccountsPreview ? null : (
       <div style={{ padding: "8px 12px" }}>
         <ControlPlaneProfileSelect
           size="compact"
@@ -93,7 +107,7 @@ export const layout = ({ initialState }: any) => {
     // 移动端底部 TabBar：桌面隐藏、手机上承接跨页导航（见 mobile-shell.css）。
     // 挂在 children 之后，随各页内容一起铺，固定定位不参与布局流。
     childrenRender: (children: any) => {
-      const canRenderWorkspace = canRenderFabricWorkspace(
+      const canRenderWorkspace = isGoAccountsPreview || canRenderFabricWorkspace(
         resolveCurrentServerProfileGate(),
         history.location.pathname,
         history.location.search,

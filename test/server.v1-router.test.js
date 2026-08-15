@@ -5127,6 +5127,52 @@ test('v1 provider models honor capability filter through upstream handler', asyn
   assert.deepEqual(JSON.parse(visionRes.body).data.map((item) => item.id), ['claude-sonnet-4-6']);
 });
 
+test('v1 capability filter trusts the provider-resolved modalities attached to each model', async () => {
+  const res = createResCapture();
+  const handled = await handleV1Request({
+    req: { headers: {}, url: '/v1/models?capability=vision' },
+    res,
+    method: 'GET',
+    pathname: '/v1/models',
+    options: { backend: 'codex-adapter', provider: 'kimi' },
+    state: {
+      metrics: { totalRequests: 0, routeCounts: {}, totalSuccess: 0 },
+      accounts: {},
+      modelRegistry: { providers: {} }
+    },
+    requiredClientKey: '',
+    cooldownMs: 1000,
+    maxRequestBodyBytes: 1024 * 1024,
+    deps: {
+      parseAuthorizationBearer: () => '',
+      writeJson: (target, code, payload) => {
+        target.statusCode = code;
+        target.end(JSON.stringify(payload));
+      },
+      readRequestBody: async () => Buffer.from(''),
+      buildOpenAIModelsList,
+      handleCodexModels: async () => {},
+      handleUpstreamModels: async ({ res: target }) => {
+        target.statusCode = 200;
+        target.end(JSON.stringify({
+          object: 'list',
+          data: [{
+            id: 'gpt-4o',
+            object: 'model',
+            aih_modalities: { input: ['text'], output: ['text'] }
+          }]
+        }));
+      },
+      fetchModelsForAccount: async () => [],
+      FALLBACK_MODELS: []
+    }
+  });
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(JSON.parse(res.body).data, []);
+});
+
 test('v1 router adapts gemini generateContent requests through codex native responses and renders gemini response', async () => {
   const res = createResCapture();
   let seenRequest = null;

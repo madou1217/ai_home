@@ -445,6 +445,43 @@ test('runServerCommand restart rejects serve options', async () => {
   assert.deepEqual(calls, []);
 });
 
+test('runServerCommand accepts sanitized serve options for an internal source restart', async () => {
+  const calls = [];
+  const code = await runServerCommand([
+    'server',
+    'restart',
+    '--host',
+    '0.0.0.0',
+    '--port',
+    '9527',
+    '--proxy-url',
+    'http://127.0.0.1:6152'
+  ], {
+    processObj: { env: { AIH_SERVER_BACKGROUND_RESTART: '1' } },
+    showServerUsage() {},
+    serverDaemon: {
+      restart: async (rawServeArgs, restartOptions) => {
+        calls.push({ rawServeArgs, restartOptions });
+        return { alreadyRunning: false, started: true, ready: false, state: 'starting', pid: 5678 };
+      }
+    },
+    readServerConfig: () => ({ apiKey: 'client-secret' })
+  });
+
+  assert.equal(code, 0);
+  assert.deepEqual(calls, [{
+    rawServeArgs: [
+      '--host',
+      '0.0.0.0',
+      '--port',
+      '9527',
+      '--proxy-url',
+      'http://127.0.0.1:6152'
+    ],
+    restartOptions: { waitForReady: false, readyTimeoutMs: 7000, gracefulStopWaitMs: 500 }
+  }]);
+});
+
 test('runServerCommand status rejects serve options', async () => {
   const calls = [];
   const code = await runServerCommand(['server', 'status', '--port', '9527'], {

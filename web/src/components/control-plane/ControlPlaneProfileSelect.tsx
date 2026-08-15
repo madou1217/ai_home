@@ -39,6 +39,9 @@ interface ControlPlaneProfileSelectProps {
   onChange?: (profile: ControlPlaneProfile | null, profileId: string) => void;
 }
 
+// Go 账号 Preview 不应初始化正式 Node Server profile 同步器。
+const isGoAccountsPreview = process.env.AIH_GO_ACCOUNTS_PREVIEW === '1';
+
 function joinClassNames(...items: Array<string | undefined | false>) {
   return items.filter(Boolean).join(' ');
 }
@@ -91,7 +94,12 @@ function resolveProfileSelection(profiles: ControlPlaneProfile[], activeProfileI
     : resolveStoredActiveControlPlaneProfile(profiles).profileId;
 }
 
-export default function ControlPlaneProfileSelect({
+export default function ControlPlaneProfileSelect(props: ControlPlaneProfileSelectProps) {
+  if (isGoAccountsPreview) return null;
+  return <ControlPlaneProfileSelectBody {...props} />;
+}
+
+function ControlPlaneProfileSelectBody({
   activeProfileId = '',
   ariaLabel = '切换 Server',
   disabled = false,

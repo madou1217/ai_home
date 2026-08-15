@@ -451,7 +451,7 @@ function formatSchedulableReason(reason?: string) {
   const text = String(reason || '').trim();
   if (!text) return '';
   if (text === 'codex_free_plan_below_server_min_remaining') {
-    return 'Free 账号剩余额度低于 20%，已从 aih server 账号池排除，避免接近上限时继续使用导致会话中断。';
+    return 'Free 账号剩余额度已低于当前账号切换阈值（按配置计算），已从 aih server 账号池排除，避免接近上限时继续使用导致会话中断。';
   }
   if (text === 'codex_free_plan_missing_rate_limits') {
     return '当前账号已被判定为 Free，但 Codex 没返回可计算额度窗口；server 暂不把它放进账号池，建议重新登录确认。';
@@ -516,7 +516,7 @@ function renderPolicyBlockedBadge(record: Pick<Account, 'schedulableReason'>) {
   const reason = formatSchedulableReason(rawReason);
   const meta = (
     rawReason === 'codex_free_plan_below_server_min_remaining'
-      ? { status: 'warning' as const, label: 'Free <20% 停池' }
+      ? { status: 'warning' as const, label: 'Free 阈值停池' }
       : rawReason === 'codex_free_plan_missing_rate_limits'
         ? { status: 'warning' as const, label: 'Free 待确认' }
         : rawReason === 'codex_team_plan_missing_rate_limits'

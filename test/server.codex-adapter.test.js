@@ -569,6 +569,78 @@ test('codex adapter posts chat completions to account openai base url for api ke
   assert.match(String(res.body), /api key ok/);
 });
 
+test('codex adapter honors an explicit x-account-ref pin for Responses requests', async () => {
+  const firstAccount = {
+    accountRef: accountRef('pin-first'),
+    accessToken: 'sk-first',
+    apiKeyMode: true,
+    authType: 'api-key',
+    openaiBaseUrl: 'https://first.example.com/v1'
+  };
+  const pinnedAccount = {
+    accountRef: accountRef('pin-second'),
+    accessToken: 'sk-second',
+    apiKeyMode: true,
+    authType: 'api-key',
+    openaiBaseUrl: 'https://second.example.com/v1'
+  };
+  const state = {
+    accounts: { codex: [firstAccount, pinnedAccount] },
+    cursors: { codex: 0 },
+    metrics: { totalFailures: 0, totalSuccess: 0, totalTimeouts: 0 }
+  };
+  const res = createResCapture();
+  const seenPoolRefs = [];
+  let seenUpstreamAccount = '';
+
+  await handleCodexChatCompletions({
+    options: {
+      codexBaseUrl: 'https://chatgpt.com/backend-api/codex',
+      upstreamTimeoutMs: 3000,
+      maxAttempts: 1,
+      failureThreshold: 1,
+      logRequests: false
+    },
+    state,
+    req: { headers: { 'content-type': 'application/json', 'x-account-ref': pinnedAccount.accountRef } },
+    res,
+    requestJson: {
+      model: 'gpt-5.3-codex',
+      stream: false,
+      input: [{ role: 'user', content: [{ type: 'input_text', text: 'hello' }] }]
+    },
+    routeKey: 'POST /v1/responses',
+    requestStartedAt: Date.now(),
+    cooldownMs: 1000,
+    requestMeta: { sessionKey: 'pin', clientProtocol: 'openai_responses' },
+    deps: {
+      chooseServerAccount: (pool) => {
+        seenPoolRefs.push(...pool.map((account) => account.accountRef));
+        return pool[0];
+      },
+      pushMetricError: () => {},
+      writeJson: (response, code, payload) => {
+        response.statusCode = code;
+        response.setHeader('content-type', 'application/json');
+        response.end(JSON.stringify(payload));
+      },
+      refreshCodexAccessToken: async () => ({ ok: true, refreshed: false, reason: 'api_key_mode' }),
+      fetchWithTimeout: async (_url, init) => {
+        seenUpstreamAccount = init.headers['x-aih-account-ref'];
+        return createCompletedUpstreamResponse('pinned');
+      },
+      markProxyAccountFailure: () => {},
+      markProxyAccountSuccess: () => {},
+      appendProxyRequestLog: () => {}
+    }
+  });
+
+  assert.deepEqual(seenPoolRefs, [pinnedAccount.accountRef]);
+  assert.equal(seenUpstreamAccount, pinnedAccount.accountRef);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers['x-aih-server-account-ref'], pinnedAccount.accountRef);
+});
+
 test('codex adapter preserves native responses tool outputs for codex responses clients', async () => {
   const res = createResCapture();
   const state = {

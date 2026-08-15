@@ -146,7 +146,14 @@ test('source fingerprint includes canonical runtime composition and WebUI bounda
     'lib/server/codex-app-server-canonical.js',
     'lib/server/provider-runtime-metadata.js',
     'lib/server/webui-chat-runtime-routes.js',
-    'lib/server/webui-chat-runtime-sse.js'
+    'lib/server/webui-chat-runtime-sse.js',
+    'lib/server/webui-toolkit-routes.js',
+    'lib/cli/services/toolkit/app-manager.js',
+    'lib/cli/services/toolkit/config-editor.js',
+    'lib/cli/services/toolkit/frp-discovery.js',
+    'lib/cli/services/toolkit/host-runtime-discovery.js',
+    'lib/cli/services/toolkit/network-tool-discovery.js',
+    'lib/cli/services/toolkit/tool-manager.js'
   ].forEach((file) => {
     assert.equal(SOURCE_FINGERPRINT_FILES.includes(file), true);
   });
@@ -166,4 +173,8 @@ test('source fingerprint includes native WebUI session runtime files', () => {
   ].forEach((file) => {
     assert.equal(SOURCE_FINGERPRINT_FILES.includes(file), true);
   });
+});
+
+test('source fingerprint includes the server restart command contract', () => {
+  assert.equal(SOURCE_FINGERPRINT_FILES.includes('lib/server/command-handler.js'), true);
 });

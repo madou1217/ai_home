@@ -42,7 +42,6 @@ import PageScaffold from '@/components/ui/PageScaffold';
 import ModelAliases from './ModelAliases';
 import SshHostsPanel from './SshHostsPanel';
 import ControlPlaneProfileSelect from '@/components/control-plane/ControlPlaneProfileSelect';
-import RealtimeSyncCard from '@/components/settings/RealtimeSyncCard';
 import PublicServerEntryCard from '@/components/settings/PublicServerEntryCard';
 import ControlPlaneServerList from '@/components/settings/ControlPlaneServerList';
 import { rotateManagementKey as updateServerManagementKey } from '@/services/management-key-rotation';

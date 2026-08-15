@@ -31,6 +31,18 @@ test('provider runtime env marks codex launches managed and clears the marker el
   assert.equal(claudeEnv[CODEX_MANAGED_LAUNCH_ENV], undefined);
 });
 
+test('provider runtime env rejects empty and object profile paths before composing provider home paths', () => {
+  ['', null, { toString: () => '/tmp/[object Object]' }].forEach((profileDir) => {
+    assert.throws(
+      () => buildProviderRuntimeEnv('grok', profileDir, {
+        HOME: '/home/u',
+        PATH: '/usr/bin'
+      }, { fs, path, platform: 'linux' }),
+      /provider_runtime_profile_dir_invalid/
+    );
+  });
+});
+
 test('provider runtime env replaces inherited hook account context with the selected account', () => {
   const accountRef = 'acct_0123456789abcdef0123';
   const env = buildProviderRuntimeEnv('grok', '/home/u/.ai_home/run/auth-projections/grok/account', {

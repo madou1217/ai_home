@@ -64,6 +64,13 @@ test('AIH storage layout rejects traversal and compound path segments', () => {
   ));
 });
 
+test('AIH storage layout rejects object roots instead of stringifying them into relative paths', () => {
+  assert.equal(
+    resolveAccountRuntimeDir({}, 'grok', 'acct_0123456789abcdef0123'),
+    ''
+  );
+});
+
 test('AIH storage layout keeps Windows roots canonical on non-Windows hosts', () => {
   const aiHomeDir = 'C:\\Users\\alice\\.ai_home';
 

@@ -61,7 +61,7 @@ func builtinCodex() Definition {
 			EnvKeys:   []string{"OPENAI_API_KEY", "OPENAI_BASE_URL"},
 			DesktopClient: &DesktopClient{
 				MacOS: &DesktopPlatform{
-					ClientName:   "Codex",
+					ClientName:   "ChatGPT",
 					ExecNames:    []string{"ChatGPT", "Codex"},
 					PathIncludes: []string{"/ChatGPT.app/Contents/MacOS/", "/Codex.app/Contents/MacOS/"},
 					BundleID:     "com.openai.codex",
@@ -73,13 +73,13 @@ func builtinCodex() Definition {
 					},
 				},
 				Windows: &DesktopPlatform{
-					ClientName:   "Codex",
-					ProcessNames: []string{"Codex.exe"},
-					ExecNames:    []string{"Codex.exe"},
+					ClientName:   "ChatGPT",
+					ProcessNames: []string{"ChatGPT.exe", "Codex.exe"},
+					ExecNames:    []string{"ChatGPT.exe", "Codex.exe"},
 				},
 				Linux: &DesktopPlatform{
-					ClientName: "Codex",
-					ExecNames:  []string{"Codex", "codex-desktop", "codex-app"},
+					ClientName: "ChatGPT",
+					ExecNames:  []string{"ChatGPT", "chatgpt", "Codex", "codex-desktop", "codex-app"},
 				},
 			},
 		},

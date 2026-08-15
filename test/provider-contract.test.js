@@ -72,3 +72,13 @@ test('Qoder 桌面进程识别不会把命令行进程当作桌面客户端', ()
   assert.deepEqual(qoder.desktopClient.windows.processNames, ['Qoder.exe']);
   assert.deepEqual(qoder.desktopClient.windows.execNames, ['Qoder.exe', 'qodercli.exe']);
 });
+
+test('Codex Desktop contract recognizes the merged ChatGPT executable on Windows and Linux', () => {
+  const codex = AI_CLI_CONFIGS.codex;
+
+  assert.equal(codex.desktopClient.macos.clientName, 'ChatGPT');
+  assert.ok(codex.desktopClient.windows.processNames.includes('ChatGPT.exe'));
+  assert.ok(codex.desktopClient.windows.execNames.includes('ChatGPT.exe'));
+  assert.ok(codex.desktopClient.linux.execNames.includes('ChatGPT'));
+  assert.ok(codex.desktopClient.linux.execNames.includes('chatgpt'));
+});

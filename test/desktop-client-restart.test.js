@@ -69,7 +69,7 @@ test('desktop client restart relaunches matching macOS app bundle executable', (
   assert.equal(killCalls.filter((item) => item.signal === 0).length >= 2, true);
   assert.equal(result.detected, true);
   assert.equal(result.restarted, true);
-  assert.equal(result.clientName, 'Codex');
+  assert.equal(result.clientName, 'ChatGPT');
   assert.equal(result.cachedPathUpdated, true);
   assert.equal(result.stopMode, 'applescript');
   assert.equal(launches[0].command, 'open');

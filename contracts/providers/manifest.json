@@ -60,7 +60,7 @@
         ],
         "desktopClient": {
           "macos": {
-            "clientName": "Codex",
+            "clientName": "ChatGPT",
             "execNames": [
               "ChatGPT",
               "Codex"
@@ -78,17 +78,21 @@
             ]
           },
           "windows": {
-            "clientName": "Codex",
+            "clientName": "ChatGPT",
             "processNames": [
+              "ChatGPT.exe",
               "Codex.exe"
             ],
             "execNames": [
+              "ChatGPT.exe",
               "Codex.exe"
             ]
           },
           "linux": {
-            "clientName": "Codex",
+            "clientName": "ChatGPT",
             "execNames": [
+              "ChatGPT",
+              "chatgpt",
               "Codex",
               "codex-desktop",
               "codex-app"

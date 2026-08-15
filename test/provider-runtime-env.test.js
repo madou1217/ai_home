@@ -30,6 +30,40 @@ test('provider runtime env marks codex launches managed and clears the marker el
   assert.equal(claudeEnv[CODEX_MANAGED_LAUNCH_ENV], undefined);
 });
 
+test('provider runtime env strips the trailing /v1 the Anthropic SDK re-appends', () => {
+  // 中转常把 base 存成 `http://host:4000/v1`，而 Anthropic SDK 自己会再拼
+  // `/v1/messages` → `/v1/v1/messages` → 404，Claude Code 把任何 404 都渲染成
+  // 「模型不存在」，把问题甩给模型而不是 URL。原生 CLI 的 env 必须先去掉版本段。
+  const relayEnv = buildProviderRuntimeEnv('claude', '/home/u/.ai_home/run/auth-projections/claude/acct_0123456789abcdef0123', {
+    HOME: '/home/u',
+    PATH: '/usr/bin'
+  }, {
+    fs,
+    path,
+    platform: 'linux',
+    accountEnv: {
+      ANTHROPIC_API_KEY: 'sk-relay',
+      ANTHROPIC_BASE_URL: 'http://130.210.35.157:4000/v1'
+    }
+  });
+  assert.equal(relayEnv.ANTHROPIC_BASE_URL, 'http://130.210.35.157:4000');
+
+  // 不带版本段的第三方代理（GLM/…/anthropic）原样保留。
+  const glmEnv = buildProviderRuntimeEnv('claude', '/home/u/.ai_home/run/auth-projections/claude/acct_0123456789abcdef0123', {
+    HOME: '/home/u',
+    PATH: '/usr/bin'
+  }, {
+    fs,
+    path,
+    platform: 'linux',
+    accountEnv: {
+      ANTHROPIC_API_KEY: 'sk-glm',
+      ANTHROPIC_BASE_URL: 'https://open.bigmodel.cn/api/anthropic'
+    }
+  });
+  assert.equal(glmEnv.ANTHROPIC_BASE_URL, 'https://open.bigmodel.cn/api/anthropic');
+});
+
 test('provider runtime env prepends project-local runtime tool paths', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-runtime-tools-path-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

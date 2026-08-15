@@ -8,6 +8,7 @@ const {
   encodeProxyNode,
   parseSubscriptionContent
 } = require('../lib/cli/services/toolkit/proxy-pool/protocol-parsers');
+const { compileMihomoConfig } = require('../lib/cli/services/toolkit/proxy-pool/mihomo-config-compiler');
 
 test('parseProxyNode parses Shadowsocks SIP002 link', () => {
   const link = 'ss://YWVzLTI1Ni1nY206cGFzc3dvcmRAMTIz@198.51.100.1:8388#HongKong-01';
@@ -56,6 +57,13 @@ test('parseProxyNode parses VMess standard JSON link', () => {
 
   const reencoded = encodeProxyNode(node);
   assert.ok(reencoded.startsWith('vmess://'));
+
+  const withoutTls = parseProxyNode(`vmess://${Buffer.from(JSON.stringify({
+    ...jsonConfig,
+    ps: 'Tokyo-VMess-Plain',
+    tls: 'none'
+  })).toString('base64')}`);
+  assert.equal(withoutTls.tls, false);
 });
 
 test('parseProxyNode parses VLESS reality/grpc link', () => {
@@ -84,6 +92,38 @@ test('parseProxyNode parses Trojan and Hysteria2 links', () => {
   assert.equal(hy2Node.protocol, 'hysteria2');
   assert.equal(hy2Node.server, 'de.example.com');
   assert.equal(hy2Node.countryCode, 'DE');
+
+  const encodedPassword = encodeURIComponent('pa@ss:/?#%');
+  const encodedTrojan = parseProxyNode(`trojan://${encodedPassword}@sg.example.com:443#Encoded`);
+  const encodedHy2 = parseProxyNode(`hy2://${encodedPassword}@de.example.com:443#Encoded`);
+  assert.equal(encodedTrojan.password, 'pa@ss:/?#%');
+  assert.equal(encodedHy2.password, 'pa@ss:/?#%');
+  assert.match(encodeProxyNode(encodedTrojan), new RegExp(`^trojan://${encodedPassword}@`));
+  assert.match(encodeProxyNode(encodedHy2), new RegExp(`^hy2://${encodedPassword}@`));
+});
+
+test('proxy URI parsers store IPv6 hosts without brackets and restore brackets only when encoding', () => {
+  const userinfo = Buffer.from('aes-256-gcm:secret').toString('base64');
+  const links = [
+    `ss://${userinfo}@[2001:4860:4860::8888]:8388#IPv6-SS`,
+    'vless://e39b9866-51cf-4a41-b0e6-7ec9cf7bcfca@[2001:4860:4860::8888]:443?security=tls#IPv6-VLESS',
+    'socks5://user:pass@[2001:4860:4860::8888]:1080#IPv6-SOCKS'
+  ];
+  const nodes = links.map((link, index) => ({ ...parseProxyNode(link), id: `ipv6-${index}` }));
+
+  for (const node of nodes) {
+    assert.equal(node.server, '2001:4860:4860::8888');
+    assert.match(encodeProxyNode(node), /@\[2001:4860:4860::8888\]:/);
+  }
+  const compiled = compileMihomoConfig({
+    nodes,
+    routing: { mode: 'direct', activeOutboundNodeId: null, rules: [] }
+  });
+  assert.deepEqual(compiled.config.proxies.map((proxy) => proxy.server), [
+    '2001:4860:4860::8888',
+    '2001:4860:4860::8888',
+    '2001:4860:4860::8888'
+  ]);
 });
 
 test('parseSubscriptionContent parses mixed text and Clash YAML', () => {
@@ -108,4 +148,32 @@ proxies:
   assert.equal(nodes[0].name, 'HK-Node-01');
   assert.equal(nodes[1].protocol, 'trojan');
   assert.equal(nodes[1].name, 'US-Node-02');
+});
+
+test('parseSubscriptionContent parses quoted inline Clash maps and nested transport options', () => {
+  const clashYaml = `
+proxies:
+  - { name: "HK: node #1", type: ss, server: 198.51.100.10, port: 8388, cipher: aes-256-gcm, password: "p:a#s", plugin: v2ray-plugin, plugin-opts: { mode: websocket, tls: true } }
+  - name: "US WS"
+    type: vless
+    server: us.example.com
+    port: 443
+    uuid: e39b9866-51cf-4a41-b0e6-7ec9cf7bcfca
+    network: ws
+    tls: true
+    ws-opts:
+      path: "/proxy:v1"
+      headers:
+        Host: edge.example.com
+`;
+
+  const nodes = parseSubscriptionContent(clashYaml);
+
+  assert.equal(nodes.length, 2);
+  assert.equal(nodes[0].name, 'HK: node #1');
+  assert.equal(nodes[0].password, 'p:a#s');
+  assert.deepEqual(nodes[0].pluginOpts, { mode: 'websocket', tls: true });
+  assert.equal(nodes[1].network, 'ws');
+  assert.equal(nodes[1].path, '/proxy:v1');
+  assert.equal(nodes[1].host, 'edge.example.com');
 });

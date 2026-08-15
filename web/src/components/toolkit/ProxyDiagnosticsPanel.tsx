@@ -9,7 +9,7 @@ import {
 } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import { proxyPoolAPI, toolkitAPI } from '@/services/api';
-import type { ConnectivityResponse, ProxyCoreStatus, ProxyStatusResponse } from '@/types';
+import type { ConnectivityResponse, NetworkLayerStatus, ProxyCoreStatus, ProxyStatusResponse } from '@/types';
 import ToolkitStatusTrack from './ToolkitStatusTrack';
 
 type ProxyTarget = 'git' | 'npm';
@@ -74,6 +74,16 @@ function systemObservation(data: ProxyStatusResponse | null) {
 function apiError(error: unknown, fallback: string) {
   const candidate = error as { message?: string; response?: { data?: { message?: string; error?: string } } };
   return candidate.response?.data?.message || candidate.response?.data?.error || candidate.message || fallback;
+}
+
+function effectiveRouteLabel(networkLayer?: NetworkLayerStatus) {
+  if (!networkLayer) return '未读取网络层状态';
+  if (networkLayer.effectiveRoute === 'tun') {
+    return `实际网络层：TUN（${networkLayer.tun.owner || '未知所有者'}）`;
+  }
+  if (networkLayer.effectiveRoute === 'system-proxy') return '实际网络层：系统代理';
+  if (networkLayer.effectiveRoute === 'direct-unknown') return '未发现显式代理，透明网络层仍可能接管';
+  return '实际网络层：未知';
 }
 
 export default function ProxyDiagnosticsPanel() {
@@ -349,8 +359,17 @@ export default function ProxyDiagnosticsPanel() {
         </div>
         <p className="toolkit-section-note">
           当前路由：{connectivityData?.route || probeRoute}
-          {connectivityData?.proxyUsed ? ` · ${connectivityData.proxyUsed}` : ' · 未使用代理'}。结果只表示收到 HTTP 响应，不代表 API 鉴权成功或下载吞吐量。
+          {connectivityData?.proxyUsed ? ` · 显式代理 ${connectivityData.proxyUsed}` : ` · ${effectiveRouteLabel(connectivityData?.networkLayer)}`}。结果只表示收到 HTTP 响应，不代表 API 鉴权成功或下载吞吐量。
         </p>
+        {connectivityData?.route === 'direct' && connectivityData.networkLayer?.effectiveRoute === 'tun' && (
+          <Alert
+            type="info"
+            showIcon
+            message="直连探测仍可能经过 TUN"
+            description="直连仅表示本次请求没有显式使用 AIH HTTP 代理；系统 TUN、VPN 或透明代理仍可能接管实际网络路径。"
+            style={{ marginBottom: 12 }}
+          />
+        )}
         {connectivityError && <Alert type="error" showIcon message="连通性测试失败" description={connectivityError} />}
         {connectivityLoading && !connectivityData ? (
           <div className="toolkit-loading compact"><Spin tip="正在测试端点响应" /></div>

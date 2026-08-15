@@ -42,6 +42,12 @@ export interface AccountTokenUsage {
   models: AccountTokenUsageModel[];
 }
 
+export interface AccountModelSummary {
+  storedCount: number;
+  effectiveCount: number;
+  updatedAt: number;
+}
+
 export type AccountUsageSnapshot =
   | {
       kind: 'codex_oauth_status';
@@ -119,6 +125,7 @@ export interface Account {
   runtimeUntil?: number;
   runtimeReason?: string;
   usageSnapshot?: AccountUsageSnapshot | null;
+  modelSummary?: AccountModelSummary;
   tokenUsage?: AccountTokenUsage | null;
 }
 
@@ -1569,6 +1576,7 @@ export interface ConnectivityResponse {
   testedAt: number;
   route: 'direct' | 'proxy';
   proxyUsed: string | null;
+  networkLayer?: NetworkLayerStatus;
   error?: string;
   results: ConnectivityTargetResult[];
 }

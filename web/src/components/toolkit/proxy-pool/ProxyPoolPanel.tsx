@@ -1,791 +1,458 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Alert, Segmented, Select, Space, Spin, Tooltip, message } from 'antd';
 import {
-  Space,
-  Tag,
-  Segmented,
-  Tooltip,
-  message,
-  Modal,
-  Form,
-  Input,
-  InputNumber,
-  Select,
-  Switch,
-  Typography,
-  Spin,
-  Alert,
-  Popconfirm,
-  Badge,
-  Upload,
-  Divider,
-  Radio
-} from 'antd';
-import {
-  PlusOutlined,
-  ImportOutlined,
-  QrcodeOutlined,
-  ThunderboltOutlined,
+  ExportOutlined,
   ForkOutlined,
-  ApiOutlined,
-  DeleteOutlined,
-  EditOutlined,
-  SyncOutlined,
-  CheckCircleOutlined,
-  CloseCircleOutlined,
-  LinkOutlined,
-  CopyOutlined,
   GlobalOutlined,
+  ImportOutlined,
+  LinkOutlined,
+  PlusOutlined,
   SettingOutlined,
-  ShareAltOutlined,
-  UploadOutlined,
-  DownloadOutlined
+  ThunderboltOutlined
 } from '@ant-design/icons';
-import { ProCard, StatisticCard } from '@ant-design/pro-components';
+import { StatisticCard } from '@ant-design/pro-components';
 import Button from '@/components/ui/AppButton';
 import { proxyPoolAPI } from '@/services/api';
 import type {
+  DedicatedPortsResponse,
+  ProxyCoreActionResponse,
+  ProxyCoreStatus,
   ProxyNode,
   ProxyNodesResponse,
+  ProxyProtocol,
   ProxySubscription,
-  RoutingConfig,
-  DedicatedPortsConfig,
-  ProxyProtocol
+  RoutingResponse,
+  NetworkLayerStatus
 } from '@/types';
+import ProxyCoreStatusRail, { type CoreAction } from './ProxyCoreStatusRail';
+import ProxyNetworkIntegrationPanel from './ProxyNetworkIntegrationPanel';
+import ProxyExportModal from './ProxyExportModal';
+import ProxyImportModal from './ProxyImportModal';
+import ProxyNodeCard from './ProxyNodeCard';
+import ProxyNodeEditorModal from './ProxyNodeEditorModal';
+import ProxyRoutingModal from './ProxyRoutingModal';
+import ProxyShareModal from './ProxyShareModal';
+import ProxySubscriptionsModal from './ProxySubscriptionsModal';
+import {
+  FUNCTIONAL_GROUP_OPTIONS,
+  getErrorMessage,
+  getMutationMessage,
+  isMutationApplied,
+  PROTOCOL_OPTIONS
+} from './proxy-pool-utils';
 
-const { Text, Title, Paragraph } = Typography;
-const { Option } = Select;
-const { TextArea } = Input;
+const NEW_NODE: Partial<ProxyNode> = {
+  protocol: 'shadowsocks',
+  port: 8388
+};
 
 export default function ProxyPoolPanel() {
-  const [loading, setLoading] = useState<boolean>(false);
+  const [loading, setLoading] = useState(false);
+  const [loadErrors, setLoadErrors] = useState<string[]>([]);
   const [nodesData, setNodesData] = useState<ProxyNodesResponse | null>(null);
-  const [subsData, setSubsData] = useState<ProxySubscription[]>([]);
-  const [routingData, setRoutingData] = useState<RoutingConfig | null>(null);
-  const [dedicatedConfig, setDedicatedConfig] = useState<DedicatedPortsConfig | null>(null);
+  const [subscriptions, setSubscriptions] = useState<ProxySubscription[]>([]);
+  const [routingResponse, setRoutingResponse] = useState<RoutingResponse | null>(null);
+  const [portsData, setPortsData] = useState<DedicatedPortsResponse | null>(null);
+  const [coreStatus, setCoreStatus] = useState<ProxyCoreStatus | null>(null);
+  const [networkStatus, setNetworkStatus] = useState<NetworkLayerStatus | null>(null);
 
-  // Filter
-  const [groupFilter, setGroupFilter] = useState<string>('all');
-  const [protocolFilter, setProtocolFilter] = useState<string>('all');
-
-  // Action states
+  const [functionalGroup, setFunctionalGroup] = useState('all');
+  const [countryFilter, setCountryFilter] = useState<string>();
+  const [protocolFilter, setProtocolFilter] = useState<ProxyProtocol | 'all'>('all');
   const [pingingNodeId, setPingingNodeId] = useState<string | null>(null);
-  const [batchPinging, setBatchPinging] = useState<boolean>(false);
-  const [syncingSubId, setSyncingSubId] = useState<string | null>(null);
+  const [batchPinging, setBatchPinging] = useState(false);
+  const [coreAction, setCoreAction] = useState<CoreAction | null>(null);
+  const [installPending, setInstallPending] = useState(false);
 
-  // Modals
-  const [editNodeModalVisible, setEditNodeModalVisible] = useState<boolean>(false);
   const [editingNode, setEditingNode] = useState<Partial<ProxyNode> | null>(null);
+  const [nodeEditorOpen, setNodeEditorOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [subscriptionsOpen, setSubscriptionsOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [routingOpen, setRoutingOpen] = useState(false);
+  const [shareNode, setShareNode] = useState<ProxyNode | null>(null);
 
-  const [importModalVisible, setImportModalVisible] = useState<boolean>(false);
-  const [importContent, setImportContent] = useState<string>('');
-  const [importing, setImporting] = useState<boolean>(false);
-
-  const [subModalVisible, setSubModalVisible] = useState<boolean>(false);
-  const [editingSub, setEditingSub] = useState<Partial<ProxySubscription> | null>(null);
-
-  const [routingModalVisible, setRoutingModalVisible] = useState<boolean>(false);
-  const [qrModalVisible, setQrModalVisible] = useState<boolean>(false);
-  const [qrNode, setQrNode] = useState<ProxyNode | null>(null);
-
-  const [form] = Form.useForm();
-  const [subForm] = Form.useForm();
-
-  // Load Data
   const fetchData = useCallback(async () => {
     setLoading(true);
-    try {
-      const [nodesRes, subsRes, routingRes, portsRes] = await Promise.all([
-        proxyPoolAPI.listNodes(),
-        proxyPoolAPI.listSubscriptions(),
-        proxyPoolAPI.getRouting(),
-        proxyPoolAPI.getDedicatedPorts()
-      ]);
+    setLoadErrors([]);
+    const results = await Promise.allSettled([
+      proxyPoolAPI.listNodes(),
+      proxyPoolAPI.listSubscriptions(),
+      proxyPoolAPI.getRouting(),
+      proxyPoolAPI.getDedicatedPorts(),
+      proxyPoolAPI.getCoreStatus(),
+      proxyPoolAPI.getNetworkStatus()
+    ] as const);
 
-      if (nodesRes.ok) setNodesData(nodesRes);
-      if (subsRes.ok) setSubsData(subsRes.subscriptions);
-      if (routingRes.ok) setRoutingData(routingRes.routing);
-      if (portsRes.ok) setDedicatedConfig(portsRes.config);
-    } catch (e: any) {
-      message.error(e.message || '加载代理池数据失败');
-    } finally {
-      setLoading(false);
+    const errors: string[] = [];
+    const [nodesResult, subsResult, routingResult, portsResult, coreResult, networkResult] = results;
+    if (nodesResult.status === 'fulfilled' && nodesResult.value.ok) {
+      setNodesData(nodesResult.value);
+    } else {
+      setNodesData(null);
+      errors.push(`节点列表：${nodesResult.status === 'rejected' ? getErrorMessage(nodesResult.reason, '读取失败') : '响应无效'}`);
     }
+    if (subsResult.status === 'fulfilled' && subsResult.value.ok) {
+      setSubscriptions(subsResult.value.subscriptions);
+    } else {
+      setSubscriptions([]);
+      errors.push(`订阅源：${subsResult.status === 'rejected' ? getErrorMessage(subsResult.reason, '读取失败') : '响应无效'}`);
+    }
+    if (routingResult.status === 'fulfilled' && routingResult.value.ok) {
+      setRoutingResponse(routingResult.value);
+    } else {
+      setRoutingResponse(null);
+      errors.push(`分流状态：${routingResult.status === 'rejected' ? getErrorMessage(routingResult.reason, '读取失败') : '响应无效'}`);
+    }
+    if (portsResult.status === 'fulfilled' && portsResult.value.ok) {
+      setPortsData(portsResult.value);
+    } else {
+      setPortsData(null);
+      errors.push(`独立端口：${portsResult.status === 'rejected' ? getErrorMessage(portsResult.reason, '读取失败') : '响应无效'}`);
+    }
+    if (coreResult.status === 'fulfilled' && coreResult.value.ok) {
+      setCoreStatus(coreResult.value.core);
+    } else {
+      setCoreStatus(null);
+      errors.push(`代理核心：${coreResult.status === 'rejected' ? getErrorMessage(coreResult.reason, '读取失败') : '响应无效'}`);
+    }
+    if (networkResult.status === 'fulfilled' && networkResult.value.ok) {
+      setNetworkStatus(networkResult.value);
+    } else {
+      setNetworkStatus(null);
+      errors.push(`网络层：${networkResult.status === 'rejected' ? getErrorMessage(networkResult.reason, '读取失败') : '响应无效'}`);
+    }
+    setLoadErrors(errors);
+    setLoading(false);
   }, []);
 
   useEffect(() => {
-    fetchData();
+    void fetchData();
   }, [fetchData]);
 
-  // Filtered nodes
-  const filteredNodes = useMemo(() => {
-    if (!nodesData?.nodes) return [];
-    let list = nodesData.nodes;
+  const activePortByNode = useMemo(() => new Map(
+    (portsData?.active || [])
+      .filter((item) => item.listening)
+      .map((item) => [item.nodeId, item])
+  ), [portsData]);
 
-    if (groupFilter === 'dedicated') {
-      list = list.filter((n) => Boolean(n.dedicatedPort));
-    } else if (groupFilter === 'ai') {
-      list = list.filter((n) => n.group === 'ai' || (n.tags && n.tags.includes('ai')) || ['US', 'JP', 'SG', 'GB', 'DE'].includes(n.countryCode || ''));
-    } else if (groupFilter !== 'all') {
-      list = list.filter((n) => n.countryCode === groupFilter || n.group === groupFilter);
+  const countryGroups = useMemo(() => (nodesData?.groups || []).filter((group) => (
+    group.kind === 'country' || /^[A-Z]{2}$/.test(group.id)
+  )), [nodesData]);
+
+  const filteredNodes = useMemo(() => (nodesData?.nodes || []).filter((node) => {
+    if (functionalGroup === 'dedicated' && !activePortByNode.has(node.id)) return false;
+    if (functionalGroup === 'ai' && !node.tags?.includes('ai')) return false;
+    if (functionalGroup === 'dev' && !node.tags?.includes('dev')) return false;
+    if (countryFilter && node.countryCode !== countryFilter && node.group !== countryFilter) return false;
+    return protocolFilter === 'all' || node.protocol === protocolFilter;
+  }), [activePortByNode, countryFilter, functionalGroup, nodesData, protocolFilter]);
+
+  const dataPlaneReady = coreStatus?.dataPlaneReady === true;
+  const routing = routingResponse?.routing;
+
+  const runCoreAction = async (action: CoreAction) => {
+    setCoreAction(action);
+    try {
+      const handlers: Record<CoreAction, () => Promise<ProxyCoreActionResponse>> = {
+        start: proxyPoolAPI.startCore,
+        stop: proxyPoolAPI.stopCore,
+        reload: proxyPoolAPI.reloadCore
+      };
+      const result = await handlers[action]();
+      setCoreStatus(result.core);
+      if (isMutationApplied(result)) {
+        message.success(action === 'stop' ? '代理核心已停止' : '代理核心配置已应用');
+        await fetchData();
+      } else {
+        message.error(result.message || result.error || '代理核心操作未生效');
+      }
+    } catch (error) {
+      const response = (error as { response?: { data?: ProxyCoreActionResponse } })?.response?.data;
+      if (response?.core) setCoreStatus(response.core);
+      message.error(getErrorMessage(error, '代理核心操作失败'));
+    } finally {
+      setCoreAction(null);
     }
+  };
 
-    if (protocolFilter !== 'all') {
-      list = list.filter((n) => n.protocol === protocolFilter);
+  const installCore = async () => {
+    if (installPending) return;
+    setInstallPending(true);
+    try {
+      const planned = await proxyPoolAPI.planCoreInstall();
+      if (!planned.ok || !planned.plan) {
+        message.error(planned.message || planned.error || '无法生成 Mihomo 安装计划');
+        return;
+      }
+      const accepted = window.confirm(
+        `将从官方 Mihomo 发布源下载并校验 ${planned.plan.version}（${planned.plan.assetName}）。\n\n` +
+        `文件摘要：${planned.plan.digest}\n安装到 AIH 托管目录。是否继续？`
+      );
+      if (!accepted) return;
+      const result = await proxyPoolAPI.executeCoreInstall(planned.plan.planId, true);
+      if (!result.ok) {
+        message.error(result.message || result.error || 'Mihomo 安装失败');
+        return;
+      }
+      message.success(`Mihomo ${result.version || planned.plan.version} 已安装，可启动核心`);
+      await fetchData();
+    } catch (error) {
+      message.error(getErrorMessage(error, 'Mihomo 安装失败'));
+    } finally {
+      setInstallPending(false);
     }
+  };
 
-    return list;
-  }, [nodesData, groupFilter, protocolFilter]);
-
-  // Ping single node
-  const handlePingNode = async (nodeId: string) => {
+  const pingNode = async (nodeId: string) => {
+    if (!dataPlaneReady) return;
     setPingingNodeId(nodeId);
     try {
-      const res = await proxyPoolAPI.pingNode(nodeId);
-      if (res.ok) {
-        setNodesData((prev) => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            nodes: prev.nodes.map((n) => (n.id === nodeId ? { ...n, latencyMs: res.latencyMs } : n))
-          };
-        });
-        if (res.reachable) {
-          message.success(`节点延迟: ${res.latencyMs}ms`);
-        } else {
-          message.warning('节点连接超时或不可达');
-        }
+      const result = await proxyPoolAPI.pingNode(nodeId);
+      setNodesData((previous) => previous ? {
+        ...previous,
+        nodes: previous.nodes.map((node) => node.id === nodeId
+          ? { ...node, latencyMs: result.reachable ? result.latencyMs : -1 }
+          : node)
+      } : previous);
+      if (result.ok && result.reachable) {
+        message.success(`真实代理延迟：${result.latencyMs} ms`);
+      } else {
+        message.warning(result.error || '节点未通过代理核心健康检查');
       }
-    } catch (e: any) {
-      message.error(e.message || '测速失败');
+    } catch (error) {
+      message.error(getErrorMessage(error, '测速失败'));
     } finally {
       setPingingNodeId(null);
     }
   };
 
-  // Ping all nodes
-  const handlePingAll = async () => {
+  const pingAll = async () => {
+    if (!dataPlaneReady) return;
     setBatchPinging(true);
     try {
-      const res = await proxyPoolAPI.pingAllNodes({ group: groupFilter !== 'all' ? groupFilter : undefined });
-      if (res.ok) {
-        message.success(`已完成 ${res.testedCount} 个节点测速`);
-        fetchData();
+      const result = await proxyPoolAPI.pingAllNodes({
+        group: countryFilter || (functionalGroup !== 'all' ? functionalGroup : undefined),
+        protocol: protocolFilter !== 'all' ? protocolFilter : undefined
+      });
+      if (result.ok) {
+        message.success(`完成 ${result.testedCount} 个节点的代理核心健康检查`);
+        await fetchData();
       }
-    } catch (e: any) {
-      message.error(e.message || '批量测速失败');
+    } catch (error) {
+      message.error(getErrorMessage(error, '批量测速失败'));
     } finally {
       setBatchPinging(false);
     }
   };
 
-  // Toggle dedicated port
-  const handleToggleDedicatedPort = async (node: ProxyNode) => {
-    const isRunning = Boolean(node.dedicatedPort);
+  const togglePort = async (node: ProxyNode) => {
+    const active = activePortByNode.has(node.id);
     try {
-      const res = await proxyPoolAPI.toggleDedicatedPort(node.id, !isRunning);
-      if (res.ok) {
-        message.success(isRunning ? '已停止独立端口监听' : `已启动本地独立端口: 127.0.0.1:${res.port}`);
-        fetchData();
-      } else {
-        message.error(res.error || '操作独立端口失败');
+      const result = await proxyPoolAPI.toggleDedicatedPort(node.id, !active);
+      if (!isMutationApplied(result)) {
+        message.warning(getMutationMessage(result, '独立端口操作未应用，原配置已保留'));
+        return;
       }
-    } catch (e: any) {
-      message.error(e.message || '请求失败');
+      message.success(active
+        ? '独立 mixed 端口已停止'
+        : `独立 mixed 端口已监听 127.0.0.1:${result.port}`);
+      await fetchData();
+    } catch (error) {
+      message.error(getErrorMessage(error, '独立端口操作失败'));
     }
   };
 
-  // Delete node
-  const handleDeleteNode = async (nodeId: string) => {
+  const deleteNode = async (nodeId: string) => {
     try {
-      const res = await proxyPoolAPI.deleteNode(nodeId);
-      if (res.ok) {
-        message.success('节点已删除');
-        fetchData();
+      const result = await proxyPoolAPI.deleteNode(nodeId);
+      if (!isMutationApplied(result)) {
+        message.warning(getMutationMessage(result, '删除未应用，原节点已保留'));
+        return;
       }
-    } catch (e: any) {
-      message.error(e.message || '删除失败');
+      message.success('节点已删除');
+      await fetchData();
+    } catch (error) {
+      message.error(getErrorMessage(error, '删除节点失败'));
     }
   };
-
-  // Save node
-  const handleSaveNode = async () => {
-    try {
-      const values = await form.validateFields();
-      const res = await proxyPoolAPI.upsertNode({
-        ...editingNode,
-        ...values
-      });
-      if (res.ok) {
-        message.success('节点已保存');
-        setEditNodeModalVisible(false);
-        fetchData();
-      }
-    } catch (e: any) {
-      message.error(e.message || '保存节点失败');
-    }
-  };
-
-  // Import nodes
-  const handleImport = async () => {
-    if (!importContent.trim()) {
-      message.warning('请输入订阅链接、Base64 或节点配置');
-      return;
-    }
-    setImporting(true);
-    try {
-      const res = await proxyPoolAPI.importNodes(importContent);
-      if (res.ok && res.count > 0) {
-        message.success(`成功导入 ${res.count} 个节点`);
-        setImportModalVisible(false);
-        setImportContent('');
-        fetchData();
-      } else {
-        message.error(res.error || '未识别到有效节点');
-      }
-    } catch (e: any) {
-      message.error(e.message || '导入失败');
-    } finally {
-      setImporting(false);
-    }
-  };
-
-  // Sync subscription
-  const handleSyncSub = async (subId: string) => {
-    setSyncingSubId(subId);
-    try {
-      const res = await proxyPoolAPI.syncSubscription(subId);
-      if (res.ok) {
-        message.success(`订阅已更新，同步到 ${res.count} 个节点`);
-        fetchData();
-      } else {
-        message.error(res.error || '同步订阅失败');
-      }
-    } catch (e: any) {
-      message.error(e.message || '同步失败');
-    } finally {
-      setSyncingSubId(null);
-    }
-  };
-
-  // Delete subscription
-  const handleDeleteSub = async (subId: string) => {
-    try {
-      const res = await proxyPoolAPI.deleteSubscription(subId);
-      if (res.ok) {
-        message.success('订阅及下属节点已清理');
-        fetchData();
-      }
-    } catch (e: any) {
-      message.error(e.message || '删除订阅失败');
-    }
-  };
-
-  // Set Routing Mode
-  const handleSetRoutingMode = async (mode: 'global' | 'rule' | 'direct', activeOutboundNodeId?: string) => {
-    try {
-      const res = await proxyPoolAPI.setRouting({ mode, activeOutboundNodeId });
-      if (res.ok) {
-        message.success(`分流模式已切换为: ${mode.toUpperCase()}`);
-        setRoutingData(res.routing);
-      }
-    } catch (e: any) {
-      message.error(e.message || '切换分流模式失败');
-    }
-  };
-
-  // Helper render latency
-  const renderLatencyBadge = (latency: number | null | undefined) => {
-    if (latency === undefined || latency === null) return <Tag>未测速</Tag>;
-    if (latency < 0) return <Tag color="error">超时/失败</Tag>;
-    if (latency < 180) return <Tag color="success">{latency}ms 极速</Tag>;
-    if (latency < 400) return <Tag color="warning">{latency}ms 良好</Tag>;
-    return <Tag color="error">{latency}ms 较慢</Tag>;
-  };
-
-  const dedicatedPortCount = Object.keys(dedicatedConfig?.mappings || {}).length;
 
   return (
     <div className="proxy-pool-panel">
-      {/* 顶部统计卡片 */}
+      <ProxyCoreStatusRail
+        core={coreStatus}
+        pendingAction={coreAction}
+        onAction={(action) => void runCoreAction(action)}
+        onInstall={() => void installCore()}
+        installPending={installPending}
+      />
+
+      <ProxyNetworkIntegrationPanel status={networkStatus} core={coreStatus} onRefresh={fetchData} />
+
+      {loadErrors.length > 0 && (
+        <Alert
+          className="toolkit-load-errors"
+          type="warning"
+          showIcon
+          message="部分状态读取失败"
+          description={loadErrors.join('；')}
+          action={<Button onClick={() => void fetchData()}>重试</Button>}
+        />
+      )}
+
       <div className="toolkit-stat-row">
         <StatisticCard.Group direction="row">
-          <StatisticCard
-            statistic={{
-              title: '代理节点总数',
-              value: nodesData?.total || 0,
-              icon: <GlobalOutlined style={{ color: '#1677ff', fontSize: 24 }} />
-            }}
-          />
-          <StatisticCard
-            statistic={{
-              title: '订阅源数量',
-              value: subsData.length,
-              icon: <LinkOutlined style={{ color: '#722ed1', fontSize: 24 }} />
-            }}
-          />
-          <StatisticCard
-            statistic={{
-              title: '独立端口运行中',
-              value: `${dedicatedPortCount} / ${dedicatedConfig?.maxPorts || 32}`,
-              valueStyle: { color: dedicatedPortCount > 0 ? '#52c41a' : '#8c8c8c' },
-              icon: <ForkOutlined style={{ color: '#52c41a', fontSize: 24 }} />
-            }}
-          />
-          <StatisticCard
-            statistic={{
-              title: '当前分流模式',
-              value: routingData?.mode?.toUpperCase() || 'RULE',
-              valueStyle: { color: '#13c2c2', fontSize: 20 },
-              icon: <SettingOutlined style={{ color: '#13c2c2', fontSize: 24 }} />
-            }}
-          />
+          <StatisticCard statistic={{
+            title: '代理节点',
+            value: nodesData?.total || 0,
+            icon: <GlobalOutlined aria-hidden style={{ color: '#1677ff', fontSize: 24 }} />
+          }} />
+          <StatisticCard statistic={{
+            title: '订阅源（手动同步）',
+            value: subscriptions.length,
+            icon: <LinkOutlined aria-hidden style={{ color: '#722ed1', fontSize: 24 }} />
+          }} />
+          <StatisticCard statistic={{
+            title: '真实监听端口',
+            value: `${activePortByNode.size} / ${portsData?.config.maxPorts || 32}`,
+            valueStyle: { color: activePortByNode.size > 0 ? '#237804' : '#595959' },
+            icon: <ForkOutlined aria-hidden style={{ color: '#389e0d', fontSize: 24 }} />
+          }} />
+          <StatisticCard statistic={{
+            title: '数据面',
+            value: dataPlaneReady ? 'READY' : 'OFFLINE',
+            valueStyle: { color: dataPlaneReady ? '#237804' : '#cf1322', fontSize: 20 },
+            icon: <SettingOutlined aria-hidden style={{ color: dataPlaneReady ? '#389e0d' : '#cf1322', fontSize: 24 }} />
+          }} />
         </StatisticCard.Group>
       </div>
 
-      {/* 控制栏与快捷操作 */}
-      <div className="toolkit-category-bar">
+      <div className="toolkit-category-bar proxy-pool-toolbar">
         <Space size={12} wrap>
           <Segmented
-            value={groupFilter}
-            onChange={(val) => setGroupFilter(val as string)}
-            options={[
-              { label: '全部 (ALL)', value: 'all' },
-              { label: '🤖 AI 专线', value: 'ai' },
-              { label: '🔌 独立端口', value: 'dedicated' },
-              { label: '🇭🇰 香港', value: 'HK' },
-              { label: '🇯🇵 日本', value: 'JP' },
-              { label: '🇺🇸 美国', value: 'US' },
-              { label: '🇸🇬 新加坡', value: 'SG' }
-            ]}
+            aria-label="功能分组"
+            value={functionalGroup}
+            onChange={(value) => setFunctionalGroup(String(value))}
+            options={FUNCTIONAL_GROUP_OPTIONS}
           />
-
           <Select
+            aria-label="国家或地区筛选"
+            allowClear
+            value={countryFilter}
+            placeholder="国家 / 地区"
+            onChange={setCountryFilter}
+            style={{ minWidth: 150 }}
+            options={countryGroups.map((group) => ({
+              label: `${group.icon || ''} ${group.name} (${group.count})`.trim(),
+              value: group.id
+            }))}
+          />
+          <Select
+            aria-label="代理协议筛选"
             value={protocolFilter}
             onChange={setProtocolFilter}
-            style={{ width: 140 }}
-            options={[
-              { label: '全部协议', value: 'all' },
-              { label: 'Shadowsocks', value: 'shadowsocks' },
-              { label: 'VMess', value: 'vmess' },
-              { label: 'VLESS', value: 'vless' },
-              { label: 'Trojan', value: 'trojan' },
-              { label: 'Hysteria2', value: 'hysteria2' },
-              { label: 'SOCKS5/HTTP', value: 'socks5' }
-            ]}
+            style={{ minWidth: 150 }}
+            options={PROTOCOL_OPTIONS}
           />
         </Space>
-
         <Space size={8} wrap>
-          <Button
-            icon={<ThunderboltOutlined />}
-            loading={batchPinging}
-            onClick={handlePingAll}
-          >
-            批量测速
+          <Tooltip title={dataPlaneReady ? '通过 Mihomo API 测量真实代理延迟' : '代理核心未就绪'}>
+            <Button
+              icon={<ThunderboltOutlined />}
+              loading={batchPinging}
+              disabled={!dataPlaneReady}
+              onClick={() => void pingAll()}
+            >
+              批量实测
+            </Button>
+          </Tooltip>
+          <Button icon={<ForkOutlined />} onClick={() => setRoutingOpen(true)}>分流与出口</Button>
+          <Button icon={<ExportOutlined />} onClick={() => setExportOpen(true)}>配置导出</Button>
+          <Button icon={<LinkOutlined />} onClick={() => setSubscriptionsOpen(true)}>
+            订阅源 ({subscriptions.length})
           </Button>
-
-          <Button
-            icon={<ForkOutlined />}
-            onClick={() => setRoutingModalVisible(true)}
-          >
-            分流规则
-          </Button>
-
-          <Button
-            icon={<LinkOutlined />}
-            onClick={() => setSubModalVisible(true)}
-          >
-            订阅管理 ({subsData.length})
-          </Button>
-
-          <Button
-            icon={<ImportOutlined />}
-            onClick={() => setImportModalVisible(true)}
-          >
-            导入订阅 / 二维码
-          </Button>
-
+          <Button icon={<ImportOutlined />} onClick={() => setImportOpen(true)}>导入</Button>
           <Button
             type="primary"
             icon={<PlusOutlined />}
             onClick={() => {
-              setEditingNode({ protocol: 'shadowsocks', port: 8388, network: 'tcp' });
-              form.resetFields();
-              form.setFieldsValue({ protocol: 'shadowsocks', port: 8388, network: 'tcp' });
-              setEditNodeModalVisible(true);
+              setEditingNode(NEW_NODE);
+              setNodeEditorOpen(true);
             }}
           >
-            手动添加节点
+            添加节点
           </Button>
         </Space>
       </div>
 
-      {/* 节点列表网格 */}
+      {(functionalGroup === 'ai' || functionalGroup === 'dev' || countryFilter) && (
+        <Alert
+          className="proxy-group-source"
+          type="info"
+          showIcon
+          message="分组来源说明"
+          description={functionalGroup === 'ai' || functionalGroup === 'dev'
+            ? 'AI / 开发分组来自节点名称与标签的启发式分类，不代表订阅商原生线路能力。'
+            : '国家分组优先使用节点显式地区字段；缺失时可能来自名称或服务器域名推断。'}
+        />
+      )}
+
       {loading && !nodesData ? (
-        <div style={{ textAlign: 'center', padding: '60px 0' }}>
-          <Spin size="large" />
-        </div>
+        <div className="toolkit-loading" role="status" aria-label="正在加载代理池"><Spin size="large" /></div>
       ) : filteredNodes.length === 0 ? (
         <Alert
           type="info"
           showIcon
-          message="当前分组暂无代理节点"
-          description="您可以点击「手动添加节点」或「导入订阅 / 二维码」一键导入外部节点与订阅。"
-          action={
-            <Button type="primary" onClick={() => setImportModalVisible(true)}>
-              立即导入
-            </Button>
-          }
+          message="当前筛选条件下没有节点"
+          description="可以导入订阅 URL、节点配置文本或二维码图片，也可以手动添加节点。"
+          action={<Button type="primary" onClick={() => setImportOpen(true)}>立即导入</Button>}
         />
       ) : (
-        <div className="toolkit-grid">
-          {filteredNodes.map((node) => {
-            const isDedicatedRunning = Boolean(node.dedicatedPort);
-            const isPinging = pingingNodeId === node.id;
-            const isCurrentOutbound = routingData?.activeOutboundNodeId === node.id;
-
-            return (
-              <div
-                key={node.id}
-                className={`toolkit-app-card ${isDedicatedRunning ? 'installed' : ''}`}
-                style={{ borderColor: isCurrentOutbound ? '#1677ff' : undefined }}
-              >
-                <div>
-                  <div className="toolkit-card-header">
-                    <div className="toolkit-card-title-group">
-                      <span style={{ fontSize: 24 }}>{node.countryFlag || '🌐'}</span>
-                      <div>
-                        <h3 className="toolkit-card-title" title={node.name}>
-                          {node.name}
-                        </h3>
-                        <Space size={4} style={{ marginTop: 2 }}>
-                          <Tag color="blue">{node.protocol.toUpperCase()}</Tag>
-                          {renderLatencyBadge(node.latencyMs)}
-                          {isCurrentOutbound && <Tag color="gold">当前出口</Tag>}
-                        </Space>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="toolkit-card-body">
-                    <div className="toolkit-detail-row">
-                      <span className="toolkit-detail-label">服务器地址:</span>
-                      <span className="toolkit-detail-value">{node.server}:{node.port}</span>
-                    </div>
-                    {node.cipher && (
-                      <div className="toolkit-detail-row">
-                        <span className="toolkit-detail-label">加密方式:</span>
-                        <span className="toolkit-detail-value">{node.cipher}</span>
-                      </div>
-                    )}
-                    {node.sni && (
-                      <div className="toolkit-detail-row">
-                        <span className="toolkit-detail-label">SNI / 伪装:</span>
-                        <span className="toolkit-detail-value">{node.sni}</span>
-                      </div>
-                    )}
-                    {isDedicatedRunning && (
-                      <div className="toolkit-detail-row">
-                        <span className="toolkit-detail-label">本地独立端口:</span>
-                        <Tag color="green" style={{ fontFamily: 'monospace' }}>
-                          127.0.0.1:{node.dedicatedPort}
-                        </Tag>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="toolkit-card-actions">
-                  <Space size={6} wrap>
-                    <Button
-                      size="small"
-                      loading={isPinging}
-                      icon={<ThunderboltOutlined />}
-                      onClick={() => handlePingNode(node.id)}
-                    >
-                      测速
-                    </Button>
-
-                    <Button
-                      size="small"
-                      type={isDedicatedRunning ? 'default' : 'dashed'}
-                      icon={<ForkOutlined />}
-                      onClick={() => handleToggleDedicatedPort(node)}
-                    >
-                      {isDedicatedRunning ? '关闭端口' : '独立端口'}
-                    </Button>
-
-                    <Button
-                      size="small"
-                      icon={<QrcodeOutlined />}
-                      onClick={() => {
-                        setQrNode(node);
-                        setQrModalVisible(true);
-                      }}
-                    >
-                      分享
-                    </Button>
-                  </Space>
-
-                  <Space size={4}>
-                    <Button
-                      size="small"
-                      icon={<EditOutlined />}
-                      onClick={() => {
-                        setEditingNode(node);
-                        form.setFieldsValue(node);
-                        setEditNodeModalVisible(true);
-                      }}
-                    />
-                    <Popconfirm
-                      title="确定删除此节点？"
-                      onConfirm={() => handleDeleteNode(node.id)}
-                      okText="删除"
-                      cancelText="取消"
-                    >
-                      <Button size="small" danger icon={<DeleteOutlined />} />
-                    </Popconfirm>
-                  </Space>
-                </div>
-              </div>
-            );
-          })}
+        <div className="toolkit-grid proxy-node-grid">
+          {filteredNodes.map((node) => (
+            <ProxyNodeCard
+              key={node.id}
+              node={node}
+              activePort={activePortByNode.get(node.id)}
+              currentOutbound={routing?.activeOutboundNodeId === node.id}
+              dataPlaneReady={dataPlaneReady}
+              pinging={pingingNodeId === node.id}
+              onPing={() => void pingNode(node.id)}
+              onTogglePort={() => void togglePort(node)}
+              onEdit={() => {
+                setEditingNode(node);
+                setNodeEditorOpen(true);
+              }}
+              onDelete={() => void deleteNode(node.id)}
+              onShare={() => setShareNode(node)}
+            />
+          ))}
         </div>
       )}
 
-      {/* 手动添加/编辑节点弹窗 */}
-      <Modal
-        title={editingNode?.id ? '编辑代理节点' : '添加代理节点'}
-        open={editNodeModalVisible}
-        onOk={handleSaveNode}
-        onCancel={() => setEditNodeModalVisible(false)}
-        width={560}
-      >
-        <Form form={form} layout="vertical" initialValues={editingNode || {}}>
-          <Form.Item label="节点名称" name="name" rules={[{ required: true, message: '请输入节点名称' }]}>
-            <Input placeholder="香港-BGP专线 01" />
-          </Form.Item>
-
-          <Form.Item label="协议类型" name="protocol" rules={[{ required: true }]}>
-            <Select>
-              <Option value="shadowsocks">Shadowsocks (SS)</Option>
-              <Option value="vmess">VMess</Option>
-              <Option value="vless">VLESS</Option>
-              <Option value="trojan">Trojan</Option>
-              <Option value="hysteria2">Hysteria 2 (HY2)</Option>
-              <Option value="socks5">SOCKS5</Option>
-              <Option value="http">HTTP / HTTPS</Option>
-            </Select>
-          </Form.Item>
-
-          <Space style={{ display: 'flex', width: '100%' }} size={12}>
-            <Form.Item label="服务器地址" name="server" rules={[{ required: true, message: '请输入服务器IP或域名' }]} style={{ flex: 1 }}>
-              <Input placeholder="hk.node.com 或 1.2.3.4" />
-            </Form.Item>
-            <Form.Item label="端口" name="port" rules={[{ required: true, message: '请输入端口' }]} style={{ width: 140 }}>
-              <InputNumber min={1} max={65535} style={{ width: '100%' }} />
-            </Form.Item>
-          </Space>
-
-          <Form.Item label="密码 / 密钥 / UUID" name="password">
-            <Input.Password placeholder="密码或 UUID" />
-          </Form.Item>
-
-          <Space style={{ display: 'flex', width: '100%' }} size={12}>
-            <Form.Item label="加密方式 (Cipher)" name="cipher" style={{ flex: 1 }}>
-              <Input placeholder="aes-256-gcm / auto / chacha20-ietf-poly1305" />
-            </Form.Item>
-            <Form.Item label="传输网络 (Network)" name="network" style={{ flex: 1 }}>
-              <Select defaultValue="tcp">
-                <Option value="tcp">TCP</Option>
-                <Option value="ws">WebSocket</Option>
-                <Option value="grpc">gRPC</Option>
-                <Option value="h2">HTTP/2</Option>
-              </Select>
-            </Form.Item>
-          </Space>
-
-          <Space style={{ display: 'flex', width: '100%' }} size={12}>
-            <Form.Item label="SNI / 伪装域名" name="sni" style={{ flex: 1 }}>
-              <Input placeholder="apple.com 或 cloudflare.com" />
-            </Form.Item>
-            <Form.Item label="路径 (Path)" name="path" style={{ flex: 1 }}>
-              <Input placeholder="/ws 或 /graphql" />
-            </Form.Item>
-          </Space>
-        </Form>
-      </Modal>
-
-      {/* 导入订阅/二维码弹窗 */}
-      <Modal
-        title="导入订阅链接 / 节点文本 / 二维码"
-        open={importModalVisible}
-        onOk={handleImport}
-        confirmLoading={importing}
-        onCancel={() => setImportModalVisible(false)}
-        width={580}
-      >
-        <div style={{ marginBottom: 16 }}>
-          <Paragraph type="secondary">
-            支持 <code>ss://</code>, <code>vmess://</code>, <code>vless://</code>, <code>trojan://</code>, <code>hy2://</code> 单节点链接；支持 Base64 订阅文本、Clash YAML、Sing-box JSON 配置。
-          </Paragraph>
-          <TextArea
-            rows={8}
-            placeholder="粘贴订阅链接、Clash YAML、或 ss://, vmess:// 节点分享链接（每行一个）"
-            value={importContent}
-            onChange={(e) => setImportContent(e.target.value)}
-          />
-        </div>
-      </Modal>
-
-      {/* 订阅管理弹窗 */}
-      <Modal
-        title="订阅源管理"
-        open={subModalVisible}
-        onCancel={() => setSubModalVisible(false)}
-        footer={null}
-        width={620}
-      >
-        <div style={{ marginBottom: 16 }}>
-          <Form
-            form={subForm}
-            layout="inline"
-            onFinish={async (values) => {
-              const res = await proxyPoolAPI.upsertSubscription(values);
-              if (res.ok) {
-                message.success('订阅已添加');
-                subForm.resetFields();
-                fetchData();
-              }
-            }}
-          >
-            <Form.Item name="name" rules={[{ required: true, message: '订阅名称' }]}>
-              <Input placeholder="订阅名称 (如: 机场A)" style={{ width: 140 }} />
-            </Form.Item>
-            <Form.Item name="url" rules={[{ required: true, message: '订阅链接' }]} style={{ flex: 1 }}>
-              <Input placeholder="https://domain.com/api/v1/client/subscribe?token=..." />
-            </Form.Item>
-            <Form.Item>
-              <Button type="primary" htmlType="submit">添加</Button>
-            </Form.Item>
-          </Form>
-        </div>
-
-        <Divider />
-
-        <div style={{ maxHeight: 360, overflowY: 'auto' }}>
-          {subsData.map((sub) => (
-            <div key={sub.id} className="toolkit-mirror-row">
-              <div>
-                <strong>{sub.name}</strong>
-                <Tag color="blue" style={{ marginLeft: 8 }}>{sub.nodeCount} 个节点</Tag>
-                <div style={{ marginTop: 4 }}>
-                  <Text type="secondary" code style={{ fontSize: 11 }}>{sub.url}</Text>
-                </div>
-              </div>
-
-              <Space>
-                <Button
-                  size="small"
-                  icon={<SyncOutlined />}
-                  loading={syncingSubId === sub.id}
-                  onClick={() => handleSyncSub(sub.id)}
-                >
-                  刷新节点
-                </Button>
-                <Popconfirm
-                  title="删除该订阅及所属节点？"
-                  onConfirm={() => handleDeleteSub(sub.id)}
-                >
-                  <Button size="small" danger icon={<DeleteOutlined />} />
-                </Popconfirm>
-              </Space>
-            </div>
-          ))}
-        </div>
-      </Modal>
-
-      {/* 分流规则弹窗 */}
-      <Modal
-        title="智能规则分流与出口设置"
-        open={routingModalVisible}
-        onCancel={() => setRoutingModalVisible(false)}
-        footer={null}
-        width={680}
-      >
-        <div style={{ marginBottom: 20 }}>
-          <Title level={5}>出站分流模式</Title>
-          <Radio.Group
-            value={routingData?.mode || 'rule'}
-            onChange={(e) => handleSetRoutingMode(e.target.value)}
-          >
-            <Radio.Button value="rule">智能规则分流 (Rule)</Radio.Button>
-            <Radio.Button value="global">全局代理模式 (Global)</Radio.Button>
-            <Radio.Button value="direct">全局直连模式 (Direct)</Radio.Button>
-          </Radio.Group>
-        </div>
-
-        <div style={{ marginBottom: 20 }}>
-          <Title level={5}>默认出站代理节点</Title>
-          <Select
-            style={{ width: '100%' }}
-            value={routingData?.activeOutboundNodeId || undefined}
-            placeholder="选择全局或规则代理的默认出站节点"
-            onChange={(val) => handleSetRoutingMode(routingData?.mode || 'rule', val)}
-            options={nodesData?.nodes.map((n) => ({
-              label: `${n.countryFlag || '🌐'} ${n.name} (${n.server}:${n.port})`,
-              value: n.id
-            }))}
-          />
-        </div>
-
-        <Title level={5}>内置分流策略规则</Title>
-        <Space orientation="vertical" style={{ width: '100%' }}>
-          {routingData?.rules.map((r) => (
-            <div key={r.id} className="toolkit-mirror-row">
-              <div>
-                <strong>{r.name}</strong>
-                <Tag color={r.outbound === 'proxy' ? 'blue' : 'green'} style={{ marginLeft: 8 }}>
-                  {r.outbound === 'proxy' ? '走代理节点' : '国内直连'}
-                </Tag>
-                <div style={{ marginTop: 4 }}>
-                  <Text type="secondary" style={{ fontSize: 12 }}>
-                    匹配域名: {r.domains?.slice(0, 4).join(', ')} ...
-                  </Text>
-                </div>
-              </div>
-            </div>
-          ))}
-        </Space>
-      </Modal>
-
-      {/* 二维码与链接导出弹窗 */}
-      <Modal
-        title="节点分享链接 / 二维码"
-        open={qrModalVisible}
-        onCancel={() => setQrModalVisible(false)}
-        footer={null}
-      >
-        {qrNode && (
-          <div style={{ textAlign: 'center', padding: '16px 0' }}>
-            <Title level={4}>{qrNode.countryFlag} {qrNode.name}</Title>
-            <div style={{ background: '#f5f5f5', padding: 12, borderRadius: 8, margin: '16px 0', wordBreak: 'break-all', fontFamily: 'monospace', fontSize: 12 }}>
-              {qrNode.rawUri || `${qrNode.protocol}://${qrNode.server}:${qrNode.port}`}
-            </div>
-            <Button
-              type="primary"
-              icon={<CopyOutlined />}
-              onClick={() => {
-                const text = qrNode.rawUri || `${qrNode.protocol}://${qrNode.server}:${qrNode.port}`;
-                navigator.clipboard.writeText(text);
-                message.success('已复制到剪贴板');
-              }}
-            >
-              复制分享链接
-            </Button>
-          </div>
-        )}
-      </Modal>
+      <ProxyNodeEditorModal
+        open={nodeEditorOpen}
+        node={editingNode}
+        onClose={() => setNodeEditorOpen(false)}
+        onSaved={fetchData}
+      />
+      <ProxyImportModal open={importOpen} onClose={() => setImportOpen(false)} onImported={fetchData} />
+      <ProxyExportModal open={exportOpen} onClose={() => setExportOpen(false)} />
+      <ProxySubscriptionsModal
+        open={subscriptionsOpen}
+        subscriptions={subscriptions}
+        onClose={() => setSubscriptionsOpen(false)}
+        onChanged={fetchData}
+      />
+      <ProxyRoutingModal
+        open={routingOpen}
+        dataPlaneReady={dataPlaneReady}
+        nodes={nodesData?.nodes || []}
+        routingResponse={routingResponse}
+        onClose={() => setRoutingOpen(false)}
+        onChanged={setRoutingResponse}
+      />
+      <ProxyShareModal open={Boolean(shareNode)} node={shareNode} onClose={() => setShareNode(null)} />
     </div>
   );
 }

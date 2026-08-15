@@ -85,10 +85,20 @@ import type {
   ProxyNode,
   ProxySubscriptionsResponse,
   ProxySubscription,
+  ProxyMutationResponse,
+  ProxySubscriptionSyncResponse,
   NodePingResponse,
   RoutingResponse,
   RoutingRule,
   DedicatedPortsResponse,
+  DedicatedPortMutationResponse,
+  AggregateExportResponse,
+  ProxyCoreStatusResponse,
+  ProxyCoreActionResponse,
+  NetworkStatusResponse,
+  NetworkPlanResponse,
+  NetworkApplyResponse,
+  ProxyTunConfig,
   AggregatedProject,
   ArchivedSession,
   ArchivedSessionsResponse,
@@ -1533,8 +1543,8 @@ export const proxyPoolAPI = {
     const response = await api.post<{ ok: boolean; node: ProxyNode; uri?: string }>('/webui/toolkit/proxy-pool/nodes', node);
     return response.data;
   },
-  deleteNode: async (nodeId: string): Promise<{ ok: boolean }> => {
-    const response = await api.delete<{ ok: boolean }>(`/webui/toolkit/proxy-pool/nodes/${encodeURIComponent(nodeId)}`);
+  deleteNode: async (nodeId: string): Promise<ProxyMutationResponse> => {
+    const response = await api.delete<ProxyMutationResponse>(`/webui/toolkit/proxy-pool/nodes/${encodeURIComponent(nodeId)}`);
     return response.data;
   },
   importNodes: async (content: string, subscriptionId?: string): Promise<{ ok: boolean; count: number; nodes: ProxyNode[]; error?: string }> => {
@@ -1549,12 +1559,12 @@ export const proxyPoolAPI = {
     const response = await api.post<{ ok: boolean; subscription: ProxySubscription }>('/webui/toolkit/proxy-pool/subscriptions', sub);
     return response.data;
   },
-  syncSubscription: async (id: string): Promise<{ ok: boolean; count?: number; error?: string }> => {
-    const response = await api.post<{ ok: boolean; count?: number; error?: string }>('/webui/toolkit/proxy-pool/subscriptions/sync', { id });
+  syncSubscription: async (id: string): Promise<ProxySubscriptionSyncResponse> => {
+    const response = await api.post<ProxySubscriptionSyncResponse>('/webui/toolkit/proxy-pool/subscriptions/sync', { id });
     return response.data;
   },
-  deleteSubscription: async (id: string): Promise<{ ok: boolean }> => {
-    const response = await api.delete<{ ok: boolean }>(`/webui/toolkit/proxy-pool/subscriptions/${encodeURIComponent(id)}`);
+  deleteSubscription: async (id: string): Promise<ProxyMutationResponse> => {
+    const response = await api.delete<ProxyMutationResponse>(`/webui/toolkit/proxy-pool/subscriptions/${encodeURIComponent(id)}`);
     return response.data;
   },
   pingNode: async (nodeId: string): Promise<NodePingResponse> => {
@@ -1577,8 +1587,73 @@ export const proxyPoolAPI = {
     const response = await api.get<DedicatedPortsResponse>('/webui/toolkit/proxy-pool/dedicated-ports');
     return response.data;
   },
-  toggleDedicatedPort: async (nodeId: string, enabled: boolean, requestedPort?: number): Promise<{ ok: boolean; port?: number; error?: string }> => {
-    const response = await api.post<{ ok: boolean; port?: number; error?: string }>('/webui/toolkit/proxy-pool/dedicated-ports/toggle', { nodeId, enabled, requestedPort });
+  toggleDedicatedPort: async (nodeId: string, enabled: boolean, requestedPort?: number): Promise<DedicatedPortMutationResponse> => {
+    const response = await api.post<DedicatedPortMutationResponse>('/webui/toolkit/proxy-pool/dedicated-ports/toggle', { nodeId, enabled, requestedPort });
+    return response.data;
+  },
+  exportAggregate: async (params: { format?: 'mihomo' | 'base64'; group?: string; raw?: boolean } = {}): Promise<AggregateExportResponse> => {
+    const response = await api.get<AggregateExportResponse>('/webui/toolkit/proxy-pool/export', { params });
+    return response.data;
+  },
+  getCoreStatus: async (): Promise<ProxyCoreStatusResponse> => {
+    const response = await api.get<ProxyCoreStatusResponse>('/webui/toolkit/proxy-pool/core');
+    return response.data;
+  },
+  startCore: async (): Promise<ProxyCoreActionResponse> => {
+    const response = await api.post<ProxyCoreActionResponse>('/webui/toolkit/proxy-pool/core/start');
+    return response.data;
+  },
+  stopCore: async (): Promise<ProxyCoreActionResponse> => {
+    const response = await api.post<ProxyCoreActionResponse>('/webui/toolkit/proxy-pool/core/stop');
+    return response.data;
+  },
+  reloadCore: async (): Promise<ProxyCoreActionResponse> => {
+    const response = await api.post<ProxyCoreActionResponse>('/webui/toolkit/proxy-pool/core/reload');
+    return response.data;
+  },
+  planCoreInstall: async (input: { platform?: string; arch?: string } = {}): Promise<{
+    ok: boolean;
+    plan?: { planId: string; version: string; platform: string; arch: string; assetName: string; digest: string; size: number; official: boolean; managed: boolean };
+    error?: string;
+    message?: string;
+  }> => {
+    const response = await api.post('/webui/toolkit/proxy-pool/core/install/plan', input);
+    return response.data;
+  },
+  executeCoreInstall: async (planId: string, confirmed: boolean): Promise<{
+    ok: boolean;
+    version?: string;
+    digest?: string;
+    error?: string;
+    message?: string;
+  }> => {
+    const response = await api.post('/webui/toolkit/proxy-pool/core/install/execute', { planId, confirmed });
+    return response.data;
+  },
+  uninstallManagedCore: async (confirmed: boolean): Promise<{ ok: boolean; removed?: boolean; error?: string }> => {
+    const response = await api.post('/webui/toolkit/proxy-pool/core/uninstall', { confirmed });
+    return response.data;
+  },
+  getNetworkStatus: async (): Promise<NetworkStatusResponse> => {
+    const response = await api.get<NetworkStatusResponse>('/webui/toolkit/proxy-pool/network/status');
+    return response.data;
+  },
+  planNetwork: async (input: {
+    kind?: 'system-proxy' | 'tun';
+    action: 'enable' | 'disable' | 'restore';
+    service?: string;
+    proxyUrl?: string;
+    tun?: Partial<ProxyTunConfig>;
+  }): Promise<NetworkPlanResponse> => {
+    const response = await api.post<NetworkPlanResponse>('/webui/toolkit/proxy-pool/network/plan', input);
+    return response.data;
+  },
+  applyNetwork: async (planId: string, snapshotHash: string, confirmed: boolean): Promise<NetworkApplyResponse> => {
+    const response = await api.post<NetworkApplyResponse>('/webui/toolkit/proxy-pool/network/apply', {
+      planId,
+      expectedSnapshotHash: snapshotHash,
+      confirmed
+    });
     return response.data;
   }
 };

@@ -400,7 +400,9 @@ test('webui toolkit connectivity accepts an explicit local proxy route through i
       requestAdapter: async (request) => {
         seen.push(request);
         return { statusCode: 401 };
-      }
+      },
+      systemProxy: { enabled: false, probeStatus: 'unset', source: 'test' },
+      tun: { state: 'active', owner: 'clash-verge', interfaceDetected: true, routeDetected: true, evidence: ['test'] }
     }
   });
 
@@ -408,5 +410,7 @@ test('webui toolkit connectivity accepts an explicit local proxy route through i
   assert.equal(result.data.route, 'proxy');
   assert.equal(result.data.proxyUsed, 'http://localhost:7890/');
   assert.equal(result.data.results[0].statusCode, 401);
+  assert.equal(result.data.networkLayer.effectiveRoute, 'tun');
+  assert.equal(result.data.networkLayer.tun.owner, 'clash-verge');
   assert.equal(seen[0].route, 'proxy');
 });

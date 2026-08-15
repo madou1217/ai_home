@@ -76,6 +76,8 @@ import type {
   ToolkitToolConfigResponse,
   ManagedAppsResponse,
   EnvironmentsResponse,
+  EnvironmentActionInput,
+  EnvironmentActionResponse,
   MirrorsResponse,
   ProxyStatusResponse,
   ConnectivityResponse,
@@ -1476,15 +1478,24 @@ export const toolkitAPI = {
     const response = await api.get<ToolkitToolConfigResponse>(`/webui/toolkit/tools/${encodeURIComponent(toolId)}/config`);
     return response.data;
   },
-  saveToolConfig: async (toolId: string, content: string, revision: string): Promise<ToolkitToolConfigResponse> => {
+  saveToolConfig: async (toolId: string, content: string, revision: string, targetRevision: string): Promise<ToolkitToolConfigResponse> => {
     const response = await api.put<ToolkitToolConfigResponse>(`/webui/toolkit/tools/${encodeURIComponent(toolId)}/config`, {
       content,
-      revision
+      revision,
+      targetRevision
     });
     return response.data;
   },
   getEnvironments: async (): Promise<EnvironmentsResponse> => {
     const response = await api.get<EnvironmentsResponse>('/webui/toolkit/environments');
+    return response.data;
+  },
+  planEnvironmentAction: async (input: EnvironmentActionInput): Promise<EnvironmentActionResponse> => {
+    const response = await api.post<EnvironmentActionResponse>('/webui/toolkit/environments/plan', input);
+    return response.data;
+  },
+  executeEnvironmentAction: async (input: EnvironmentActionInput): Promise<EnvironmentActionResponse> => {
+    const response = await api.post<EnvironmentActionResponse>('/webui/toolkit/environments/execute', input);
     return response.data;
   },
   getMirrors: async (): Promise<MirrorsResponse> => {
@@ -1495,7 +1506,7 @@ export const toolkitAPI = {
     const response = await api.post<{ ok: boolean; registry?: string; indexUrl?: string; error?: string }>('/webui/toolkit/mirrors/set', { type, url });
     return response.data;
   },
-  pingMirror: async (url: string): Promise<{ ok: boolean; latencyMs: number; error?: string }> => {
+  pingMirror: async (url: string): Promise<{ ok: boolean; latencyMs: number; statusCode?: number | null; measurement?: 'ttfb'; route?: 'direct'; error?: string | null }> => {
     const response = await api.post<{ ok: boolean; latencyMs: number; error?: string }>('/webui/toolkit/mirrors/ping', { url });
     return response.data;
   },
@@ -1503,12 +1514,12 @@ export const toolkitAPI = {
     const response = await api.get<ProxyStatusResponse>('/webui/toolkit/proxy');
     return response.data;
   },
-  setProxy: async (target: 'git' | 'npm', proxyUrl: string): Promise<{ ok: boolean }> => {
+  setProxy: async (target: 'git' | 'npm', proxyUrl: string): Promise<{ ok: boolean; error?: string | null; message?: string; operations?: Array<{ key: string; ok: boolean; exitCode: number | null; stderr: string }> }> => {
     const response = await api.post<{ ok: boolean }>('/webui/toolkit/proxy/set', { target, proxyUrl });
     return response.data;
   },
-  testConnectivity: async (): Promise<ConnectivityResponse> => {
-    const response = await api.get<ConnectivityResponse>('/webui/toolkit/connectivity');
+  testConnectivity: async (params: { route?: 'direct' | 'proxy'; proxyUrl?: string } = {}): Promise<ConnectivityResponse> => {
+    const response = await api.get<ConnectivityResponse>('/webui/toolkit/connectivity', { params });
     return response.data;
   }
 };

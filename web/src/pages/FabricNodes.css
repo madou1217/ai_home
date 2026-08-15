@@ -69,9 +69,8 @@
   background: var(--app-surface-raised);
 }
 .fabric-node-item--active {
-  background: var(--app-surface-raised);
+  background: color-mix(in srgb, var(--app-primary) 6%, var(--app-surface-raised));
   border-color: var(--app-border-strong);
-  box-shadow: inset 2px 0 0 var(--app-primary);
 }
 .fabric-node-item__text {
   display: flex;

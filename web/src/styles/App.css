@@ -115,9 +115,44 @@ button {
   border-radius: 12px 0 0 12px;
 }
 
-/* 全局 Alert 圆角 */
+/* 全局反馈采用紧凑行内状态：保留 Ant Design Alert 的语义与图标，不使用大面积提示容器。 */
 .ant-alert {
-  border-radius: 8px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-block: 4px;
+  padding: 4px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.ant-alert.ant-alert-with-description {
+  padding: 4px 0;
+}
+
+.ant-alert .ant-alert-icon {
+  flex: 0 0 auto;
+  margin-inline-end: 0;
+  margin-top: 2px;
+}
+
+.ant-alert-content {
+  min-width: 0;
+}
+
+.ant-alert-message {
+  color: var(--color-heading, var(--app-heading));
+  font-weight: 600;
+}
+
+.ant-alert-description {
+  margin-top: 2px;
+  color: var(--color-muted-strong, var(--app-text-secondary));
+}
+
+.ant-alert-action {
+  margin-inline-start: auto;
 }
 
 /* 移动端底部 TabBar 已迁至 MobileTabBar 组件 + styles/mobile-shell.css（承接跨页导航）。 */

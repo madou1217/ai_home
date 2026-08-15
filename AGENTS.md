@@ -75,6 +75,11 @@ Fuller layer map:
 - `cli/`: TypeScript ESM, run by Bun (vendored Claude Code source — do not modify unless necessary).
 - `web/`: TypeScript + React 18 + Ant Design + Umi Max (Webpack build), ESM.
 
+## UI Visual Constraints
+- 全局禁止使用大面积的告警/提示块作为页面主内容，包括黄色、蓝色或灰色的整块 `Alert` 卡片；保留无障碍语义，但统一使用紧凑的行内状态、标签或操作旁说明。
+- 全局禁止在卡片、状态项、导航项和列表项上使用粗左侧彩色竖条、`border-left` 装饰条或等价的 `inset` 强调条；状态应通过背景、完整边框、图标、标签或留白表达。
+- 新增或修改页面必须遵守上述规则，并通过真实页面检查确认不存在大块提示容器和左侧粗竖条。1px 的功能性分隔线仅可用于明确的控件分界，不得作为状态装饰。
+
 ## Architecture & Layering Principles
 - Enforce separation of concerns: each module should have one clear responsibility (composition, domain logic, integration, or I/O).
 - Keep orchestration and business logic separate. Flow control modules should delegate behavior to focused service modules.

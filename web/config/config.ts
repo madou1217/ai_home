@@ -1,4 +1,5 @@
 import { defineConfig } from "@umijs/max";
+import MonacoEditorWebpackPlugin from "monaco-editor-webpack-plugin";
 import routes from "./routes";
 
 const isDesktopBuild = process.env.AIH_DESKTOP_BUILD === "1";
@@ -56,6 +57,30 @@ export default defineConfig({
       '@xterm/xterm$',
       require.resolve('@xterm/xterm/lib/xterm.js')
     );
+    memo.plugin('monaco-editor').use(MonacoEditorWebpackPlugin, [{
+      languages: ['json'],
+      features: [
+        'bracketMatching',
+        'clipboard',
+        'codeEditor',
+        'codicon',
+        'comment',
+        'contextmenu',
+        'find',
+        'folding',
+        'gotoError',
+        'gotoLine',
+        'hover',
+        'indentation',
+        'lineSelection',
+        'linesOperations',
+        'multicursor',
+        'placeholderText',
+        'tokenization',
+        'wordOperations'
+      ],
+      filename: 'static/[name].[contenthash:8].worker.js'
+    }]);
   },
   layout: {
     title: "AI Home",

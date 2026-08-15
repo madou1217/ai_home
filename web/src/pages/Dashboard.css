@@ -31,17 +31,10 @@
   box-shadow: var(--d-sh);
   padding: 18px 20px 20px;
 }
-/* 左缘健康色条:一眼看出整体状态 */
-.dash-hero::before {
-  content: '';
-  position: absolute;
-  left: 0; top: 0; bottom: 0;
-  width: 4px;
-  background: var(--d-run);
-}
-.dash-hero--degraded::before { background: var(--d-warn); }
-.dash-hero--critical::before { background: var(--d-crit); }
-.dash-hero--loading::before { background: var(--d-ink-3); }
+.dash-hero--healthy { border-color: color-mix(in srgb, var(--d-run) 35%, var(--d-line)); }
+.dash-hero--degraded { border-color: color-mix(in srgb, var(--d-warn) 45%, var(--d-line)); }
+.dash-hero--critical { border-color: color-mix(in srgb, var(--d-crit) 45%, var(--d-line)); }
+.dash-hero--loading { border-color: var(--d-ink-3); }
 .dash-hero--healthy { background: linear-gradient(180deg, color-mix(in srgb, var(--d-run) 5%, #fff), #fff 60%); }
 .dash-hero--degraded { background: linear-gradient(180deg, color-mix(in srgb, var(--d-warn) 7%, #fff), #fff 60%); }
 .dash-hero--critical { background: linear-gradient(180deg, color-mix(in srgb, var(--d-crit) 7%, #fff), #fff 60%); }
@@ -221,7 +214,7 @@
 .dash-error-list { display: flex; flex-direction: column; gap: 12px; }
 .dash-error-item {
   border: 1px solid var(--d-line);
-  border-left: 4px solid var(--d-crit);
+  border-color: color-mix(in srgb, var(--d-crit) 35%, var(--d-line));
   border-radius: 14px;
   background: var(--d-surface);
   box-shadow: var(--d-sh);

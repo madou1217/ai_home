@@ -1342,8 +1342,17 @@ export interface ManagedToolItem {
   version: string;
   serviceManager: string;
   capabilities: string[];
+  runtimeInspectable: boolean;
+  running: boolean;
+  runningCount: number;
+  startupManaged: boolean;
+  startupSources: string[];
   configName: string;
   configFormat: string;
+  configSource: string;
+  configCount: number;
+  configAmbiguous: boolean;
+  configState: 'none' | 'single' | 'multiple' | 'unresolved' | 'token-managed';
   configExists: boolean;
   configWritable: boolean;
   requiresElevation: boolean;
@@ -1361,10 +1370,35 @@ export interface ManagedToolsResponse {
 
 export interface ToolkitToolConfigResponse extends ToolkitAppConfigResponse {
   toolId: string;
+  targetRevision: string;
+}
+
+export interface EnvironmentCheatsheetCommand {
+  desc?: string;
+  label?: string;
+  cmd: string;
+  platform?: string;
+  method?: string;
+}
+
+export interface EnvironmentToolCheatsheet {
+  id: string;
+  name: string;
+  statusCmd?: string;
+  installGuide?: string;
+  recommended?: boolean;
+  platforms?: string[];
+  commands?: EnvironmentCheatsheetCommand[];
+  installCommands?: Array<{ platform?: string; method?: string; cmd: string }>;
+  uninstallCommands?: Array<{ method?: string; cmd: string }>;
+  commonCommands?: EnvironmentCheatsheetCommand[];
 }
 
 export interface EnvironmentInfo {
   name: string;
+  scope?: string;
+  source?: string;
+  probeStatus?: 'available' | 'unavailable' | 'unset' | 'error';
   currentVersion: string;
   activePath: string;
   packageManagers?: {
@@ -1374,14 +1408,60 @@ export interface EnvironmentInfo {
     bun?: string | null;
   };
   pip?: string | null;
+  tools?: {
+    uv?: string | null;
+    poetry?: string | null;
+  };
   versionManagers?: Array<{
     name: string;
+    displayName?: string;
     installed: boolean;
     version?: string;
     path?: string;
     versions?: string[];
   }>;
   installedVersions?: string[];
+  cheatsheet?: {
+    versionManagers?: EnvironmentToolCheatsheet[];
+    packageManagers?: EnvironmentToolCheatsheet[];
+    virtualEnvironments?: EnvironmentToolCheatsheet[];
+  };
+}
+
+export interface EnvironmentActionInput {
+  manager: 'nvm' | 'fnm' | 'pyenv' | 'conda' | 'venv';
+  action: 'install' | 'uninstall' | 'default' | 'global' | 'create' | 'remove';
+  version?: string;
+  pythonVersion?: string;
+  name?: string;
+  path?: string;
+  confirmed?: boolean;
+}
+
+export interface EnvironmentActionPlan {
+  manager: EnvironmentActionInput['manager'];
+  action: EnvironmentActionInput['action'];
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+  cwd: string | null;
+  scope: string;
+  effect: string;
+  requiresConfirmation: boolean;
+  changesCallerShell: boolean;
+}
+
+export interface EnvironmentActionResponse {
+  ok: boolean;
+  error?: string | null;
+  message?: string;
+  plan?: EnvironmentActionPlan;
+  stdout?: string;
+  stderr?: string;
+  exitCode?: number | null;
+  signal?: string | null;
+  timedOut?: boolean;
+  outputTruncated?: boolean;
 }
 
 export interface EnvironmentsResponse {
@@ -1398,6 +1478,20 @@ export interface MirrorPreset {
   url: string;
   official: boolean;
   active?: boolean;
+  speed?: string;
+  desc?: string;
+  guides?: MirrorGuide;
+}
+
+export interface MirrorGuide {
+  title: string;
+  sourceUrl?: string;
+  sourceHost?: string;
+  commands: Array<{
+    platform: string;
+    label: string;
+    cmd: string;
+  }>;
 }
 
 export interface MirrorsResponse {
@@ -1405,27 +1499,52 @@ export interface MirrorsResponse {
   npm: {
     current: string;
     presets: MirrorPreset[];
+    guides?: MirrorGuide;
   };
   pip: {
     current: string;
     presets: MirrorPreset[];
+    guides?: MirrorGuide;
   };
+}
+
+export interface SystemProxyInfo {
+  platform: string;
+  scope?: string;
+  source?: string;
+  probeStatus?: 'available' | 'unset' | 'error' | 'unsupported';
+  enabled: boolean;
+  httpProxy: string;
+  httpsProxy: string;
+  socksProxy: string;
+  bypassList?: string[];
 }
 
 export interface ProxyStatusResponse {
   ok: boolean;
   env: {
+    scope?: string;
+    source?: string;
+    probeStatus?: 'available' | 'unset';
     httpProxy: string;
     httpsProxy: string;
     allProxy: string;
     noProxy: string;
   };
+  system?: SystemProxyInfo;
   tools: {
     git: {
+      scope?: string;
+      source?: string;
+      probeStatus?: 'available' | 'unset' | 'error';
       httpProxy: string;
       httpsProxy: string;
+      scopedProxies?: Array<{ key: string; value: string }>;
     };
     npm: {
+      scope?: string;
+      source?: string;
+      probeStatus?: 'available' | 'unset' | 'error';
       httpProxy: string;
       httpsProxy: string;
     };
@@ -1439,12 +1558,18 @@ export interface ConnectivityTargetResult {
   host: string;
   reachable: boolean;
   latencyMs: number;
+  statusCode?: number | null;
+  route?: 'direct' | 'proxy';
+  proxyUsed?: string | null;
   error?: string | null;
 }
 
 export interface ConnectivityResponse {
   ok: boolean;
   testedAt: number;
+  route: 'direct' | 'proxy';
+  proxyUsed: string | null;
+  error?: string;
   results: ConnectivityTargetResult[];
 }
 

@@ -30,6 +30,14 @@ test('config editor resolves a Codex Desktop alias without exposing a path contr
   assert.equal(Object.prototype.hasOwnProperty.call(data, 'path'), false);
 });
 
+test('config editor rejects tool IDs unless tool discovery supplied an explicit target', () => {
+  const home = createHome();
+  assert.throws(
+    () => readManagedAppConfig('frpc', { hostHomeDir: home, platform: 'linux' }),
+    (error) => error instanceof ToolkitConfigError && error.code === 'unsupported_app'
+  );
+});
+
 test('config editor saves with an optimistic revision check', () => {
   const home = createHome();
   const configDir = path.join(home, '.codex');
@@ -100,6 +108,10 @@ test('config editor falls back to Linux privilege elevation after EACCES', () =>
   assert.equal(result.elevated, true);
   assert.equal(calls[0].command, 'pkexec');
   assert.ok(calls[0].args.includes('/bin/sh'));
+  const elevatedCommand = calls[0].args[calls[0].args.indexOf('-c') + 1];
+  assert.match(elevatedCommand, /\/usr\/bin\/install -m 600 --/);
+  assert.match(elevatedCommand, /config\.toml\.aih-edit-\d+-[0-9a-f]+/);
+  assert.match(elevatedCommand, /\/bin\/mv -f --/);
 });
 
 test('config editor uses Windows UAC elevation after EACCES', () => {
@@ -140,5 +152,123 @@ test('config editor uses Windows UAC elevation after EACCES', () => {
   assert.equal(result.elevated, true);
   assert.equal(calls[0].command, 'powershell.exe');
   assert.ok(calls[0].args.includes('-EncodedCommand'));
+  const outerEncoded = calls[0].args[calls[0].args.indexOf('-EncodedCommand') + 1];
+  const outerScript = Buffer.from(outerEncoded, 'base64').toString('utf16le');
+  const innerEncoded = outerScript.match(/\$innerEncoded = '([^']+)'/)?.[1] || '';
+  const innerScript = Buffer.from(innerEncoded, 'base64').toString('utf16le');
+  assert.match(innerScript, /Copy-Item -LiteralPath/);
+  assert.match(innerScript, /\.aih-edit-\d+-[0-9a-f]+/);
+  assert.match(innerScript, /\[IO\.File\]::Replace\(/);
+  assert.match(innerScript, /\[IO\.File\]::Move\(/);
+  assert.match(innerScript, /Remove-Item -LiteralPath/);
   assert.equal(files.size, 1);
+});
+
+test('config editor does not expose a config path through read failures', () => {
+  const home = '/private/example-user';
+  const targetPath = path.join(home, '.codex', 'config.toml');
+  assert.throws(
+    () => readManagedAppConfig('codex', {
+      hostHomeDir: home,
+      platform: 'linux',
+      fs: {
+        existsSync(candidate) { return candidate === targetPath; },
+        realpathSync(candidate) { return candidate; },
+        accessSync() {},
+        readFileSync() {
+          throw Object.assign(new Error(`I/O failure at ${targetPath}`), { code: 'EIO' });
+        }
+      }
+    }),
+    (error) => error instanceof ToolkitConfigError
+      && error.code === 'config_read_failed'
+      && !error.message.includes(targetPath)
+  );
+});
+
+test('config editor does not expose a config path through save failures', () => {
+  const home = '/private/example-user';
+  const targetPath = path.join(home, '.codex', 'config.toml');
+  assert.throws(
+    () => saveManagedAppConfig('codex', 'model = "example"\n', {
+      hostHomeDir: home,
+      platform: 'linux',
+      fs: {
+        existsSync() { return false; },
+        mkdirSync() {},
+        statSync() { throw Object.assign(new Error('missing'), { code: 'ENOENT' }); },
+        writeFileSync() {
+          throw Object.assign(new Error(`I/O failure at ${targetPath}`), { code: 'EIO' });
+        },
+        unlinkSync() {}
+      }
+    }),
+    (error) => error instanceof ToolkitConfigError
+      && error.code === 'config_save_failed'
+      && !error.message.includes(targetPath)
+  );
+});
+
+test('config editor preserves an existing config symlink during atomic save', (t) => {
+  if (process.platform === 'win32') return;
+  const home = createHome();
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const configDir = path.join(home, '.codex');
+  const targetDir = path.join(home, 'shared');
+  const linkPath = path.join(configDir, 'config.toml');
+  const targetPath = path.join(targetDir, 'codex.toml');
+  fs.mkdirSync(configDir, { recursive: true });
+  fs.mkdirSync(targetDir, { recursive: true });
+  fs.writeFileSync(targetPath, 'model = "before"\n', 'utf8');
+  fs.symlinkSync(targetPath, linkPath);
+
+  const before = readManagedAppConfig('codex', { hostHomeDir: home, platform: 'linux' });
+  saveManagedAppConfig('codex', 'model = "after"\n', {
+    hostHomeDir: home,
+    platform: 'linux',
+    expectedRevision: before.revision
+  });
+
+  assert.equal(fs.lstatSync(linkPath).isSymbolicLink(), true);
+  assert.equal(fs.readFileSync(targetPath, 'utf8'), 'model = "after"\n');
+});
+
+test('config editor never unlinks the original file when atomic rename is denied', () => {
+  const home = createHome();
+  const configDir = path.join(home, '.codex');
+  const configPath = path.join(configDir, 'config.toml');
+  fs.mkdirSync(configDir, { recursive: true });
+  fs.writeFileSync(configPath, 'model = "original"\n', 'utf8');
+  let originalUnlinked = false;
+  const fsImpl = new Proxy(fs, {
+    get(target, property) {
+      if (property === 'renameSync') {
+        return () => {
+          const error = new Error('rename denied');
+          error.code = 'EPERM';
+          throw error;
+        };
+      }
+      if (property === 'unlinkSync') {
+        return (candidate) => {
+          if (candidate === configPath) originalUnlinked = true;
+          else target.unlinkSync(candidate);
+        };
+      }
+      return Reflect.get(target, property, target);
+    }
+  });
+
+  const result = saveManagedAppConfig('codex', 'model = "replacement"\n', {
+    fs: fsImpl,
+    hostHomeDir: home,
+    platform: 'linux',
+    spawnSync() {
+      return { status: 0, stdout: '', stderr: '' };
+    }
+  });
+
+  assert.equal(result.elevated, true);
+  assert.equal(originalUnlinked, false);
+  assert.equal(fs.readFileSync(configPath, 'utf8'), 'model = "original"\n');
 });

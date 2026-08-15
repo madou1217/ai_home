@@ -111,3 +111,24 @@ test('webui toolkit config routes read and save an allowlisted config without re
   assert.equal(JSON.parse(saveRes.body).ok, true);
   assert.equal(fs.readFileSync(configPath, 'utf8'), 'model = "gpt-5.5"\n');
 });
+
+test('webui toolkit app config routes cannot bypass discovered tool targets', async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-toolkit-tool-bypass-'));
+  const url = new URL('http://localhost/v0/webui/toolkit/apps/frpc/config');
+  const res = createResCapture();
+  const handled = await handleWebUIRequest({
+    method: 'GET',
+    pathname: url.pathname,
+    url,
+    req: createRequest('GET', url.pathname),
+    res,
+    deps: createDeps(home),
+    options: {},
+    state: {}
+  });
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 400);
+  assert.equal(JSON.parse(res.body).error, 'unsupported_app');
+  assert.equal(fs.existsSync(path.join(home, '.config', 'frp', 'frpc.toml')), false);
+});

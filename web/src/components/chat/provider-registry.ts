@@ -17,6 +17,7 @@ import codexTerminalIcon from '../../../../assets/provider-icons/codex.png';
 import geminiTerminalIcon from '../../../../assets/provider-icons/gemini.png';
 import kimiTerminalIcon from '../../../../assets/provider-icons/kimi.png';
 import opencodeTerminalIcon from '../../../../assets/provider-icons/opencode.png';
+import grokTerminalIcon from '../../../../assets/provider-icons/grok.png';
 import {
   PROVIDER_CATALOG,
   PROVIDER_FALLBACK,
@@ -75,7 +76,7 @@ const TERMINAL_ICON_ASSETS: Partial<Record<Provider, string>> = {
   agy: agyTerminalIcon,
   opencode: opencodeTerminalIcon,
   kimi: kimiTerminalIcon,
-  grok: aiHomeMark,
+  grok: grokTerminalIcon,
   qoder: aiHomeMark,
   qodercn: aiHomeMark,
   kiro: aiHomeMark

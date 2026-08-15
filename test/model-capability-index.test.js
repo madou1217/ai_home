@@ -172,6 +172,42 @@ test('model capability index applies model catalog settings per account', () => 
   assert.equal(modelHasAvailableProvider(index, 'g', 'codex'), true);
 });
 
+test('model capability index routes an OAuth Codex account through a manually added model', () => {
+  const oauthAccount = {
+    id: 'oauth',
+    accountRef: CODEX_ACCOUNT_REF,
+    provider: 'codex',
+    accessToken: 'oauth-token',
+    apiKeyMode: false,
+    authType: 'oauth'
+  };
+  const state = {
+    accounts: {
+      codex: [oauthAccount],
+      gemini: [],
+      claude: [],
+      agy: []
+    },
+    modelCatalogSettings: {
+      accountModels: [{
+        id: 'gpt-5.6-sol-wm',
+        provider: 'codex',
+        accountRef: CODEX_ACCOUNT_REF,
+        enabled: true,
+        manual: true
+      }]
+    }
+  };
+
+  const index = buildModelCapabilityIndex(state, { provider: 'auto' });
+
+  assert.deepEqual(
+    listAvailableAccountRefsForModelProvider(index, 'gpt-5.6-sol-wm', 'codex'),
+    [CODEX_ACCOUNT_REF]
+  );
+  assert.equal(modelHasAvailableProvider(index, 'gpt-5.6-sol-wm', 'codex'), true);
+});
+
 test('modelHasRoutableProvider excludes per-model-cooled accounts (drives alias fallback)', () => {
   // One agy account that serves BOTH the claude alias target and a gemini model.
   const account = { id: 'a1', accountRef: AGY_ACCOUNT_REF, provider: 'agy', accessToken: 'token-1', apiKeyMode: false, schedulableStatus: 'schedulable', availableModels: ['claude-opus-4-6-thinking', 'gemini-3.5-flash-low'] };

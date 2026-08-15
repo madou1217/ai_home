@@ -2383,7 +2383,7 @@ test('web ui openai models manages model visibility per account', async () => {
   }
 });
 
-test('web ui openai models rejects manual models for oauth accounts', async () => {
+test('web ui openai models allows manual models for oauth and credential accounts', async () => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-openai-models-oauth-manual-'));
 
   try {
@@ -2439,12 +2439,14 @@ test('web ui openai models rejects manual models for oauth accounts', async () =
     };
 
     const oauthResult = await postManualModel({
-      id: 'custom-oauth-model',
+      id: 'gpt-5.6-sol-wm',
       provider: 'codex',
       accountRef: WEBUI_CODEX_REF_1
     });
-    assert.equal(oauthResult.statusCode, 403);
-    assert.equal(oauthResult.body.error, 'manual_model_requires_api_key_account');
+    assert.equal(oauthResult.statusCode, 200);
+    assert.equal(oauthResult.body.model.id, 'gpt-5.6-sol-wm');
+    assert.equal(oauthResult.body.model.accountRef, WEBUI_CODEX_REF_1);
+    assert.equal(oauthResult.body.model.manual, true);
 
     const apiKeyResult = await postManualModel({
       id: 'custom-api-model',
@@ -2461,6 +2463,14 @@ test('web ui openai models rejects manual models for oauth accounts', async () =
     });
     assert.equal(authTokenResult.statusCode, 200);
     assert.equal(authTokenResult.body.model.accountRef, WEBUI_CLAUDE_REF_1);
+
+    const missingAccountResult = await postManualModel({
+      id: 'missing-account-model',
+      provider: 'codex',
+      accountRef: 'acct_0000000000000000dead'
+    });
+    assert.equal(missingAccountResult.statusCode, 404);
+    assert.equal(missingAccountResult.body.error, 'account_not_found');
   } finally {
     fs.rmSync(aiHomeDir, { recursive: true, force: true });
   }

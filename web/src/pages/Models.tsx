@@ -121,22 +121,6 @@ function getAccountLabel(account: Pick<WebUiOpenAIModelAccount, 'displayName' | 
   return account.accountRef;
 }
 
-function normalizeModelAccountAuthType(value?: string) {
-  const authType = String(value || '').trim().toLowerCase().replace(/_/g, '-');
-  if (authType === 'apikey') return 'api-key';
-  if (authType === 'authtoken' || authType === 'claude-code-token') return 'auth-token';
-  return authType;
-}
-
-function isApiCredentialModelAccount(account?: Pick<WebUiOpenAIModelAccount, 'apiKeyMode' | 'authType'> | null) {
-  const authType = normalizeModelAccountAuthType(account?.authType);
-  return Boolean(account && (
-    account.apiKeyMode === true
-    || authType === 'api-key'
-    || authType === 'auth-token'
-  ));
-}
-
 function normalizeProvider(value: string | null): ProviderFilter {
   return value && PROVIDERS.includes(value as Provider) ? value as Provider : 'all';
 }
@@ -365,10 +349,10 @@ export default function Models() {
     const provider = manualProvider || 'codex';
     const currentAccountRef = String(manualForm.getFieldValue('accountRef') || '');
     const currentAccount = accountByRef.get(currentAccountRef);
-    if (currentAccount && isApiCredentialModelAccount(currentAccount) && currentAccount.provider === provider) return;
-    const source = accountScoped && scopedAccount && isApiCredentialModelAccount(scopedAccount)
+    if (currentAccount && currentAccount.provider === provider) return;
+    const source = accountScoped && scopedAccount
       ? [scopedAccount]
-      : accountOptions.filter(isApiCredentialModelAccount);
+      : accountOptions;
     const nextAccount = source.find((account) => account.provider === provider);
     manualForm.setFieldsValue({ accountRef: nextAccount?.accountRef });
   }, [accountByRef, accountOptions, accountScoped, manualForm, manualModalOpen, manualProvider, scopedAccount]);
@@ -377,21 +361,16 @@ export default function Models() {
     const selectedAccount = accountScoped
       ? accountByRef.get(scopedAccountRef)
       : accountFilter !== 'all' ? accountByRef.get(accountFilter) : null;
-    if (accountScoped && !isApiCredentialModelAccount(selectedAccount)) {
-      message.warning('OAuth 账号不能新增自定义模型');
-      return;
-    }
-    const eligibleAccounts = accountOptions.filter(isApiCredentialModelAccount);
-    if (eligibleAccounts.length < 1) {
-      message.warning('没有可新增自定义模型的密钥/令牌账号');
+    if (accountOptions.length < 1) {
+      message.warning('没有可添加模型的账号');
       return;
     }
     const preferredProvider = accountScoped && scopedProvider
       ? scopedProvider
       : selectedAccount?.provider || (providerFilter === 'all' ? 'codex' : providerFilter);
-    const account = selectedAccount && isApiCredentialModelAccount(selectedAccount) && selectedAccount.provider === preferredProvider
+    const account = selectedAccount && selectedAccount.provider === preferredProvider
       ? selectedAccount
-      : eligibleAccounts.find((item) => item.provider === preferredProvider) || eligibleAccounts[0];
+      : accountOptions.find((item) => item.provider === preferredProvider) || accountOptions[0];
     manualForm.setFieldsValue({
       provider: account?.provider || preferredProvider,
       accountRef: account?.accountRef,
@@ -405,8 +384,8 @@ export default function Models() {
       ? submittedValues
       : await manualForm.validateFields();
     const account = accountByRef.get(values.accountRef);
-    if (!isApiCredentialModelAccount(account)) {
-      message.error('OAuth 账号不能新增自定义模型，请选择密钥/令牌账号');
+    if (!account) {
+      message.error('请选择有效账号');
       return false;
     }
     try {
@@ -643,21 +622,20 @@ export default function Models() {
     : globalModelRows.filter(isGlobalModelVisible).length;
   const manualCount = metricSource.filter((model) => model.manual).length;
   const globalProbeError = getVisibleModelProbeError(catalog);
-  const credentialAccountOptions = accountOptions.filter(isApiCredentialModelAccount);
-  const manualAccountOptionSource = accountScoped && scopedAccount && isApiCredentialModelAccount(scopedAccount)
+  const manualAccountOptionSource = accountScoped && scopedAccount
     ? [scopedAccount]
-    : credentialAccountOptions.filter((account) => account.provider === (manualProvider || 'codex'));
+    : accountOptions.filter((account) => account.provider === (manualProvider || 'codex'));
   const manualAccountOptions = manualAccountOptionSource
     .map((account) => ({
-      label: `${getAccountLabel(account)} · 密钥/令牌账号`,
+      label: getAccountLabel(account),
       value: account.accountRef
     }));
   const canCreateManualModel = accountScoped
-    ? isApiCredentialModelAccount(scopedAccount)
-    : credentialAccountOptions.length > 0;
+    ? Boolean(scopedAccount)
+    : accountOptions.length > 0;
   const manualModelUnavailableReason = accountScoped
-    ? 'OAuth 账号不能新增自定义模型'
-    : '没有可新增自定义模型的密钥/令牌账号';
+    ? '未找到当前账号'
+    : '没有可添加模型的账号';
 
   const copyModelId = async (modelId: string) => {
     try {
@@ -1106,7 +1084,7 @@ export default function Models() {
               options={PROVIDERS.map((provider) => ({
                 label: providerNames[provider],
                 value: provider,
-                disabled: !credentialAccountOptions.some((account) => account.provider === provider)
+                disabled: !accountOptions.some((account) => account.provider === provider)
               }))}
             />
           </Form.Item>
@@ -1115,14 +1093,14 @@ export default function Models() {
             label="账号"
             rules={[{ required: true, message: '请选择账号' }]}
           >
-            <Select disabled={accountScoped} options={manualAccountOptions} placeholder="选择密钥/令牌账号" />
+            <Select disabled={accountScoped} options={manualAccountOptions} placeholder="选择账号" />
           </Form.Item>
           <Form.Item
             name="id"
             label="模型 ID"
             rules={[{ required: true, message: '请输入模型 ID' }]}
           >
-            <Input placeholder="例如 gpt-5.4 或 provider-custom-model" autoFocus />
+            <Input placeholder="例如 gpt-5.6-sol-wm 或 provider-custom-model" autoFocus />
           </Form.Item>
           <Form.Item name="description" label="备注">
             <Input placeholder="可选，用于区分手动补充来源" />

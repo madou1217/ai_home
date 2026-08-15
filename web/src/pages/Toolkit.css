@@ -1,0 +1,157 @@
+.toolkit-page {
+  padding: 0;
+}
+
+.toolkit-stat-row {
+  margin-bottom: 16px;
+}
+
+.toolkit-category-bar {
+  margin-bottom: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.toolkit-category-intro {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.toolkit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+.toolkit-app-card {
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 12px;
+  padding: 16px;
+  background: var(--component-bg, #ffffff);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  transition: all 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.toolkit-app-card:hover {
+  border-color: var(--ant-primary-color, #1677ff);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.toolkit-app-card.installed {
+  border-left: 4px solid #52c41a;
+}
+
+.toolkit-app-card.uninstalled {
+  border-left: 4px solid #d9d9d9;
+}
+
+.toolkit-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.toolkit-card-title-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.toolkit-card-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-color, #1f2937);
+  margin: 0;
+}
+
+.toolkit-card-body {
+  font-size: 12px;
+  color: var(--text-secondary, #6b7280);
+  margin-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.toolkit-detail-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.toolkit-detail-label {
+  color: var(--text-tertiary, #9ca3af);
+  flex-shrink: 0;
+}
+
+.toolkit-detail-value {
+  font-family: monospace;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary, #374151);
+}
+
+.toolkit-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-color-split, #f3f4f6);
+  gap: 8px;
+}
+
+.toolkit-env-card {
+  border-radius: 12px;
+  margin-bottom: 16px;
+}
+
+.toolkit-mirror-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  background: var(--bg-secondary, #fafafa);
+  border: 1px solid var(--border-color, #f0f0f0);
+}
+
+.toolkit-mirror-row.active {
+  background: rgba(22, 119, 255, 0.04);
+  border-color: #91caff;
+}
+
+.toolkit-latency-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-family: monospace;
+}
+
+.toolkit-latency-fast {
+  color: #52c41a;
+}
+
+.toolkit-latency-medium {
+  color: #faad14;
+}
+
+.toolkit-latency-slow {
+  color: #ff4d4f;
+}

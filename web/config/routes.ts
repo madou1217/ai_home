@@ -34,6 +34,12 @@ export default [
     icon: "database",
   },
   {
+    name: "开发工具",
+    path: "/toolkit",
+    component: "./Toolkit",
+    icon: "tool",
+  },
+  {
     name: "Server",
     path: "/fabric",
     icon: "cluster",

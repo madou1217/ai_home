@@ -1,4 +1,5 @@
 import type { ProviderId } from '@/providers/catalog';
+export * from './proxy-pool';
 
 // Provider 类型由 Go 核心生成，新增 Provider 不再手工修改 TypeScript 联合类型。
 export type Provider = ProviderId;
@@ -1277,6 +1278,174 @@ export interface ChatMessageMetrics {
   ttftMs?: number;
   outputTokens?: number;
   tokensPerSec?: number;
+}
+
+// Toolkit Types
+export interface ManagedAppItem {
+  id: string;
+  name: string;
+  provider: string;
+  type: 'cli' | 'desktop' | 'ide';
+  categories: string[];
+  binaryName: string;
+  cliPath: string;
+  configName: string;
+  configFormat: string;
+  configExists: boolean;
+  installed: boolean;
+  version: string;
+  pkg: string;
+  defaultModel: string;
+  supportedModels: string[];
+  hookSupported: boolean;
+  hookInstalled: boolean;
+  syncMode: 'hook' | 'polling' | 'unavailable';
+}
+
+export interface ManagedAppsResponse {
+  ok: boolean;
+  total: number;
+  installedCount: number;
+  apps: ManagedAppItem[];
+}
+
+export interface ToolkitAppConfigResponse {
+  ok: boolean;
+  appId: string;
+  configName: string;
+  configFormat: string;
+  exists: boolean;
+  content: string;
+  revision: string;
+  writable: boolean;
+  requiresElevation: boolean;
+  elevated?: boolean;
+  size?: number;
+}
+
+export type ToolkitToolCategoryId = 'session-runtimes' | 'network-access';
+
+export interface ToolkitToolCategory {
+  id: ToolkitToolCategoryId;
+  label: string;
+  description: string;
+}
+
+export interface ManagedToolItem {
+  id: string;
+  category: ToolkitToolCategoryId;
+  name: string;
+  role: string;
+  supported: boolean;
+  installed: boolean;
+  binaryName: string;
+  version: string;
+  serviceManager: string;
+  capabilities: string[];
+  configName: string;
+  configFormat: string;
+  configExists: boolean;
+  configWritable: boolean;
+  requiresElevation: boolean;
+  configEditable: boolean;
+}
+
+export interface ManagedToolsResponse {
+  ok: boolean;
+  platform: string;
+  categories: ToolkitToolCategory[];
+  total: number;
+  installedCount: number;
+  tools: ManagedToolItem[];
+}
+
+export interface ToolkitToolConfigResponse extends ToolkitAppConfigResponse {
+  toolId: string;
+}
+
+export interface EnvironmentInfo {
+  name: string;
+  currentVersion: string;
+  activePath: string;
+  packageManagers?: {
+    npm?: string | null;
+    pnpm?: string | null;
+    yarn?: string | null;
+    bun?: string | null;
+  };
+  pip?: string | null;
+  versionManagers?: Array<{
+    name: string;
+    installed: boolean;
+    version?: string;
+    path?: string;
+    versions?: string[];
+  }>;
+  installedVersions?: string[];
+}
+
+export interface EnvironmentsResponse {
+  ok: boolean;
+  environments: {
+    node: EnvironmentInfo;
+    python: EnvironmentInfo;
+  };
+}
+
+export interface MirrorPreset {
+  id: string;
+  name: string;
+  url: string;
+  official: boolean;
+  active?: boolean;
+}
+
+export interface MirrorsResponse {
+  ok: boolean;
+  npm: {
+    current: string;
+    presets: MirrorPreset[];
+  };
+  pip: {
+    current: string;
+    presets: MirrorPreset[];
+  };
+}
+
+export interface ProxyStatusResponse {
+  ok: boolean;
+  env: {
+    httpProxy: string;
+    httpsProxy: string;
+    allProxy: string;
+    noProxy: string;
+  };
+  tools: {
+    git: {
+      httpProxy: string;
+      httpsProxy: string;
+    };
+    npm: {
+      httpProxy: string;
+      httpsProxy: string;
+    };
+  };
+}
+
+export interface ConnectivityTargetResult {
+  id: string;
+  name: string;
+  url: string;
+  host: string;
+  reachable: boolean;
+  latencyMs: number;
+  error?: string | null;
+}
+
+export interface ConnectivityResponse {
+  ok: boolean;
+  testedAt: number;
+  results: ConnectivityTargetResult[];
 }
 
 export interface ChatMessage {

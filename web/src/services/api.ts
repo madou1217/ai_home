@@ -71,6 +71,22 @@ import type {
   WebUiOpenAIModelsJob,
   WebUiOpenAIModelsRefreshResponse,
   WebUiModelsResponse,
+  ToolkitAppConfigResponse,
+  ManagedToolsResponse,
+  ToolkitToolConfigResponse,
+  ManagedAppsResponse,
+  EnvironmentsResponse,
+  MirrorsResponse,
+  ProxyStatusResponse,
+  ConnectivityResponse,
+  ProxyNodesResponse,
+  ProxyNode,
+  ProxySubscriptionsResponse,
+  ProxySubscription,
+  NodePingResponse,
+  RoutingResponse,
+  RoutingRule,
+  DedicatedPortsResponse,
   AggregatedProject,
   ArchivedSession,
   ArchivedSessionsResponse,
@@ -1424,6 +1440,134 @@ export const sshHostsAPI = {
   },
   browseSshDirectory: async (payload: { connectionId: string; subDir: string }): Promise<any> => {
     const response = await api.post<{ ok: boolean; currentDir: string; parentDir: string; directories: any[] }>('/webui/ssh-hosts/browse', payload);
+    return response.data;
+  }
+};
+
+export const toolkitAPI = {
+  listApps: async (): Promise<ManagedAppsResponse> => {
+    const response = await api.get<ManagedAppsResponse>('/webui/toolkit/apps');
+    return response.data;
+  },
+  installApp: async (provider: string): Promise<{ ok: boolean; result: any }> => {
+    const response = await api.post<{ ok: boolean; result: any }>('/webui/toolkit/apps/install', { provider });
+    return response.data;
+  },
+  installHooks: async (providers: string[]): Promise<{ ok: boolean; results: any[] }> => {
+    const response = await api.post<{ ok: boolean; results: any[] }>('/webui/toolkit/apps/hooks', { providers });
+    return response.data;
+  },
+  getAppConfig: async (appId: string): Promise<ToolkitAppConfigResponse> => {
+    const response = await api.get<ToolkitAppConfigResponse>(`/webui/toolkit/apps/${encodeURIComponent(appId)}/config`);
+    return response.data;
+  },
+  saveAppConfig: async (appId: string, content: string, revision: string): Promise<ToolkitAppConfigResponse> => {
+    const response = await api.put<ToolkitAppConfigResponse>(`/webui/toolkit/apps/${encodeURIComponent(appId)}/config`, {
+      content,
+      revision
+    });
+    return response.data;
+  },
+  listTools: async (): Promise<ManagedToolsResponse> => {
+    const response = await api.get<ManagedToolsResponse>('/webui/toolkit/tools');
+    return response.data;
+  },
+  getToolConfig: async (toolId: string): Promise<ToolkitToolConfigResponse> => {
+    const response = await api.get<ToolkitToolConfigResponse>(`/webui/toolkit/tools/${encodeURIComponent(toolId)}/config`);
+    return response.data;
+  },
+  saveToolConfig: async (toolId: string, content: string, revision: string): Promise<ToolkitToolConfigResponse> => {
+    const response = await api.put<ToolkitToolConfigResponse>(`/webui/toolkit/tools/${encodeURIComponent(toolId)}/config`, {
+      content,
+      revision
+    });
+    return response.data;
+  },
+  getEnvironments: async (): Promise<EnvironmentsResponse> => {
+    const response = await api.get<EnvironmentsResponse>('/webui/toolkit/environments');
+    return response.data;
+  },
+  getMirrors: async (): Promise<MirrorsResponse> => {
+    const response = await api.get<MirrorsResponse>('/webui/toolkit/mirrors');
+    return response.data;
+  },
+  setMirror: async (type: 'npm' | 'pip', url: string): Promise<{ ok: boolean; registry?: string; indexUrl?: string; error?: string }> => {
+    const response = await api.post<{ ok: boolean; registry?: string; indexUrl?: string; error?: string }>('/webui/toolkit/mirrors/set', { type, url });
+    return response.data;
+  },
+  pingMirror: async (url: string): Promise<{ ok: boolean; latencyMs: number; error?: string }> => {
+    const response = await api.post<{ ok: boolean; latencyMs: number; error?: string }>('/webui/toolkit/mirrors/ping', { url });
+    return response.data;
+  },
+  getProxy: async (): Promise<ProxyStatusResponse> => {
+    const response = await api.get<ProxyStatusResponse>('/webui/toolkit/proxy');
+    return response.data;
+  },
+  setProxy: async (target: 'git' | 'npm', proxyUrl: string): Promise<{ ok: boolean }> => {
+    const response = await api.post<{ ok: boolean }>('/webui/toolkit/proxy/set', { target, proxyUrl });
+    return response.data;
+  },
+  testConnectivity: async (): Promise<ConnectivityResponse> => {
+    const response = await api.get<ConnectivityResponse>('/webui/toolkit/connectivity');
+    return response.data;
+  }
+};
+
+export const proxyPoolAPI = {
+  listNodes: async (params: { group?: string; protocol?: string } = {}): Promise<ProxyNodesResponse> => {
+    const response = await api.get<ProxyNodesResponse>('/webui/toolkit/proxy-pool/nodes', { params });
+    return response.data;
+  },
+  upsertNode: async (node: Partial<ProxyNode>): Promise<{ ok: boolean; node: ProxyNode; uri?: string }> => {
+    const response = await api.post<{ ok: boolean; node: ProxyNode; uri?: string }>('/webui/toolkit/proxy-pool/nodes', node);
+    return response.data;
+  },
+  deleteNode: async (nodeId: string): Promise<{ ok: boolean }> => {
+    const response = await api.delete<{ ok: boolean }>(`/webui/toolkit/proxy-pool/nodes/${encodeURIComponent(nodeId)}`);
+    return response.data;
+  },
+  importNodes: async (content: string, subscriptionId?: string): Promise<{ ok: boolean; count: number; nodes: ProxyNode[]; error?: string }> => {
+    const response = await api.post<{ ok: boolean; count: number; nodes: ProxyNode[]; error?: string }>('/webui/toolkit/proxy-pool/import', { content, subscriptionId });
+    return response.data;
+  },
+  listSubscriptions: async (): Promise<ProxySubscriptionsResponse> => {
+    const response = await api.get<ProxySubscriptionsResponse>('/webui/toolkit/proxy-pool/subscriptions');
+    return response.data;
+  },
+  upsertSubscription: async (sub: Partial<ProxySubscription>): Promise<{ ok: boolean; subscription: ProxySubscription }> => {
+    const response = await api.post<{ ok: boolean; subscription: ProxySubscription }>('/webui/toolkit/proxy-pool/subscriptions', sub);
+    return response.data;
+  },
+  syncSubscription: async (id: string): Promise<{ ok: boolean; count?: number; error?: string }> => {
+    const response = await api.post<{ ok: boolean; count?: number; error?: string }>('/webui/toolkit/proxy-pool/subscriptions/sync', { id });
+    return response.data;
+  },
+  deleteSubscription: async (id: string): Promise<{ ok: boolean }> => {
+    const response = await api.delete<{ ok: boolean }>(`/webui/toolkit/proxy-pool/subscriptions/${encodeURIComponent(id)}`);
+    return response.data;
+  },
+  pingNode: async (nodeId: string): Promise<NodePingResponse> => {
+    const response = await api.post<NodePingResponse>('/webui/toolkit/proxy-pool/ping', { nodeId });
+    return response.data;
+  },
+  pingAllNodes: async (filter: { group?: string; protocol?: string } = {}): Promise<{ ok: boolean; testedCount: number; results: Record<string, { ok: boolean; latencyMs: number }> }> => {
+    const response = await api.post<{ ok: boolean; testedCount: number; results: Record<string, { ok: boolean; latencyMs: number }> }>('/webui/toolkit/proxy-pool/ping', { filter });
+    return response.data;
+  },
+  getRouting: async (): Promise<RoutingResponse> => {
+    const response = await api.get<RoutingResponse>('/webui/toolkit/proxy-pool/routing');
+    return response.data;
+  },
+  setRouting: async (payload: { mode?: 'global' | 'rule' | 'direct'; activeOutboundNodeId?: string | null; rules?: RoutingRule[] }): Promise<RoutingResponse> => {
+    const response = await api.post<RoutingResponse>('/webui/toolkit/proxy-pool/routing', payload);
+    return response.data;
+  },
+  getDedicatedPorts: async (): Promise<DedicatedPortsResponse> => {
+    const response = await api.get<DedicatedPortsResponse>('/webui/toolkit/proxy-pool/dedicated-ports');
+    return response.data;
+  },
+  toggleDedicatedPort: async (nodeId: string, enabled: boolean, requestedPort?: number): Promise<{ ok: boolean; port?: number; error?: string }> => {
+    const response = await api.post<{ ok: boolean; port?: number; error?: string }>('/webui/toolkit/proxy-pool/dedicated-ports/toggle', { nodeId, enabled, requestedPort });
     return response.data;
   }
 };

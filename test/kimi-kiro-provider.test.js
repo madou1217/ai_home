@@ -212,6 +212,34 @@ describe('kimi/kiro model prefix routing', () => {
     assert.equal(inferProviderFromModel('moonshot-v1-128k'), 'kimi');
   });
 
+  it('inferProviderFromModel routes native Kimi k3 model ids to kimi before catalogs warm', () => {
+    const { inferProviderFromModel } = require('../lib/server/providers');
+    const { resolveRequestProvider } = require('../lib/server/provider-routing');
+
+    for (const model of ['k3', 'k3-256k']) {
+      assert.equal(inferProviderFromModel(model), 'kimi');
+      assert.equal(resolveRequestProvider({ provider: 'auto' }, { model }, {}, null), 'kimi');
+    }
+  });
+
+  it('Kimi model family wins an equal availability tie instead of provider order', () => {
+    const { resolveRequestProvider } = require('../lib/server/provider-routing');
+    const state = {
+      accounts: {},
+      webUiModelsCache: {
+        byProvider: {
+          codex: ['k3'],
+          kimi: ['k3']
+        }
+      }
+    };
+
+    assert.equal(
+      resolveRequestProvider({ provider: 'auto' }, { model: 'k3' }, {}, state),
+      'kimi'
+    );
+  });
+
   it('inferProviderFromModel routes kiro/kr prefix to kiro', () => {
     const { inferProviderFromModel } = require('../lib/server/providers');
     assert.equal(inferProviderFromModel('kiro-auto'), 'kiro');
@@ -377,11 +405,16 @@ describe('loadKimiServerAccounts', () => {
         refresh_token: 'oauth-refresh-123'
       }
     });
-    const accounts = loadKimiServerAccounts(deps());
+    const expectedDisplayName = `Kimi OAuth (${reg.accountRef.slice(-8)})`;
+    const accounts = loadKimiServerAccounts({
+      ...deps(),
+      checkStatus: () => ({ configured: true, accountName: expectedDisplayName })
+    });
     assert.equal(accounts.length, 1);
     assert.equal(accounts[0].authType, 'oauth');
     assert.equal(accounts[0].accessToken, 'oauth-tok-123');
     assert.equal(accounts[0].openaiBaseUrl, 'https://api.kimi.com/coding/v1');
+    assert.equal(accounts[0].displayName, expectedDisplayName);
   });
 
   it('loads kimi account with a legacy OAuth token stored under $.auth', () => {
@@ -399,7 +432,29 @@ describe('loadKimiServerAccounts', () => {
     assert.equal(accounts[0].accessToken, 'legacy-auth-tok');
   });
 
-  it('rejects incomplete Kimi OAuth credentials instead of treating access-only data as configured', () => {
+  it('loads the device claim from the selected OAuth snapshot before a stale top-level device', () => {
+    const makeJwt = (payload) => [
+      Buffer.from('{}').toString('base64url'),
+      Buffer.from(JSON.stringify(payload)).toString('base64url'),
+      'signature'
+    ].join('.');
+    const reg = registerAccountIdentity(fs, aiHomeDir, {
+      provider: 'kimi', cliAccountId: '9', identitySeed: 'test:kimi:9:device-pair'
+    });
+    writeAccountNativeAuth(fs, aiHomeDir, reg.accountRef, {
+      credentials: {
+        access_token: makeJwt({ user_id: 'kimi-device-user', device_id: 'selected-device' }),
+        refresh_token: 'device-pair-refresh'
+      },
+      deviceId: 'stale-top-level-device'
+    });
+
+    const accounts = loadKimiServerAccounts(deps());
+    assert.equal(accounts.length, 1);
+    assert.equal(accounts[0].deviceId, 'selected-device');
+  });
+
+  it('rejects access-only Kimi OAuth but admits refresh-only accounts to the refresh daemon', async () => {
     const accessOnly = registerAccountIdentity(fs, aiHomeDir, {
       provider: 'kimi', cliAccountId: '6', identitySeed: 'test:kimi:6:access-only'
     });
@@ -415,7 +470,45 @@ describe('loadKimiServerAccounts', () => {
     });
 
     const accounts = loadKimiServerAccounts(deps());
-    assert.equal(accounts.length, 0);
+    assert.equal(accounts.length, 1);
+    assert.equal(accounts[0].accountRef, refreshOnly.accountRef);
+    assert.equal(accounts[0].accessToken, '');
+    assert.equal(accounts[0].refreshToken, 'oauth-refresh-only');
+
+    const { createTokenRefreshDaemon } = require('../lib/server/token-refresh-daemon');
+    let refreshRequests = 0;
+    const daemon = createTokenRefreshDaemon({
+      accounts: { kimi: accounts }
+    }, {
+      tokenRefreshIntervalMs: 60_000
+    }, {
+      fs,
+      aiHomeDir,
+      fetchWithTimeout: async () => {
+        refreshRequests += 1;
+        return {
+          status: 200,
+          json: async () => ({
+            access_token: 'oauth-access-refreshed',
+            refresh_token: 'oauth-refresh-rotated',
+            expires_in: 900,
+            token_type: 'Bearer'
+          })
+        };
+      },
+      logInfo: () => {},
+      logWarn: () => {},
+      logError: () => {}
+    });
+    try {
+      await daemon.forceRefresh();
+    } finally {
+      daemon.stop();
+    }
+
+    assert.equal(refreshRequests, 1);
+    assert.equal(accounts[0].accessToken, 'oauth-access-refreshed');
+    assert.equal(accounts[0].refreshToken, 'oauth-refresh-rotated');
   });
 
   it('loads the newer standalone host OAuth snapshot into the gateway account', () => {

@@ -372,6 +372,26 @@ test('configureApiKeyAccount writes Grok API credentials to the XAI environment 
   assert.equal(Object.prototype.hasOwnProperty.call(envJson, 'ANTHROPIC_API_KEY'), false);
 });
 
+test('configureApiKeyAccount writes Kimi API credentials to the Moonshot environment keys', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-account-auth-kimi-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const result = configureApiKeyAccount({
+    fs,
+    provider: 'kimi',
+    aiHomeDir: root,
+    config: {
+      apiKey: 'moonshot-test-key',
+      baseUrl: 'https://api.moonshot.ai/v1/'
+    }
+  });
+
+  const envJson = readAccountCredentials(fs, root, result.accountRef);
+
+  assert.equal(envJson.MOONSHOT_API_KEY, 'moonshot-test-key');
+  assert.equal(envJson.KIMI_BASE_URL, 'https://api.moonshot.ai/v1');
+});
+
 test('configureApiKeyAccount persists a relay upstream profile for codex accounts', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-account-auth-relay-'));
 

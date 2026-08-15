@@ -511,6 +511,64 @@ test('syncGlobalConfigToHost preserves a newer standalone Kimi OAuth snapshot', 
   assert.equal(fs.readFileSync(path.join(fixture.hostHomeDir, '.kimi-code', 'device_id'), 'utf8'), 'host-device\n');
 });
 
+test('syncGlobalConfigToHost projects a newer legacy Kimi snapshot behind an empty canonical shell', (t) => {
+  const fixture = createFixture(t);
+  const makeJwt = (payload) => [
+    Buffer.from('{}').toString('base64url'),
+    Buffer.from(JSON.stringify(payload)).toString('base64url'),
+    'signature'
+  ].join('.');
+  const account = registerAccountIdentity(fs, fixture.aiHomeDir, {
+    provider: 'kimi',
+    cliAccountId: '2',
+    identitySeed: 'test:host-sync:kimi:legacy'
+  });
+  const legacyCredentials = {
+    access_token: makeJwt({ user_id: 'kimi-legacy-host-user' }),
+    refresh_token: makeJwt({ sub: 'kimi-legacy-host-user' }),
+    expires_at: 3000,
+    token_type: 'Bearer'
+  };
+  const olderHostCredentials = {
+    access_token: makeJwt({ user_id: 'kimi-legacy-host-user' }),
+    refresh_token: makeJwt({ sub: 'kimi-legacy-host-user' }),
+    expires_at: 2000,
+    token_type: 'Bearer'
+  };
+  writeAccountNativeAuth(fs, fixture.aiHomeDir, account.accountRef, {
+    credentials: {},
+    auth: legacyCredentials,
+    deviceId: 'legacy-db-device'
+  });
+  const hostCredentialsPath = path.join(
+    fixture.hostHomeDir,
+    '.kimi-code',
+    'credentials',
+    'kimi-code.json'
+  );
+  fs.mkdirSync(path.dirname(hostCredentialsPath), { recursive: true });
+  fs.writeFileSync(hostCredentialsPath, JSON.stringify(olderHostCredentials), 'utf8');
+  fs.writeFileSync(path.join(fixture.hostHomeDir, '.kimi-code', 'device_id'), 'legacy-host-device\n', 'utf8');
+
+  const sync = createHostConfigSyncer({
+    fs,
+    fse,
+    ensureDir: (dir) => fs.mkdirSync(dir, { recursive: true }),
+    aiHomeDir: fixture.aiHomeDir,
+    hostHomeDir: fixture.hostHomeDir,
+    cliConfigs: { kimi: { globalDir: '.kimi-code' } }
+  });
+  const result = sync('kimi', account.accountRef);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.authSync.updated, true);
+  assert.deepEqual(JSON.parse(fs.readFileSync(hostCredentialsPath, 'utf8')), legacyCredentials);
+  assert.equal(
+    fs.readFileSync(path.join(fixture.hostHomeDir, '.kimi-code', 'device_id'), 'utf8'),
+    'legacy-db-device'
+  );
+});
+
 test('syncGlobalConfigToHost decodes Kiro database into its native host data root', (t) => {
   const fixture = createFixture(t);
   const registration = registerAccountIdentity(fs, fixture.aiHomeDir, {

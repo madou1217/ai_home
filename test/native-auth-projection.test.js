@@ -358,6 +358,100 @@ test('Kimi login registers and materializes OAuth credentials with its device id
   assert.equal(fs.readFileSync(deviceIdPath, 'utf8'), 'device-kimi-1');
 });
 
+test('Kimi materialization falls back to a refreshable legacy auth snapshot behind an empty canonical shell', (t) => {
+  const fixture = createProjectionFixture(t);
+  const accountRef = registerAccount(fixture, 'kimi', '18');
+  const runtimeDir = fixture.runtimeDir('kimi', accountRef);
+  const credentialsPath = path.join(runtimeDir, '.kimi-code', 'credentials', 'kimi-code.json');
+  const deviceIdPath = path.join(runtimeDir, '.kimi-code', 'device_id');
+  const legacyCredentials = {
+    access_token: makeTestJwt({ sub: 'kimi-legacy-projection-user' }),
+    refresh_token: 'kimi-legacy-projection-refresh',
+    token_type: 'Bearer'
+  };
+  writeAccountNativeAuth(fs, fixture.aiHomeDir, accountRef, {
+    credentials: {},
+    auth: legacyCredentials,
+    deviceId: 'kimi-legacy-projection-device'
+  });
+
+  assert.deepEqual(materializeProviderAuth(
+    fs,
+    runtimeDir,
+    'kimi',
+    projectionOptions(fixture, accountRef)
+  ), {
+    materialized: 2,
+    removed: 0,
+    missing: false
+  });
+  assert.deepEqual(readJson(credentialsPath), legacyCredentials);
+  assert.equal(fs.readFileSync(deviceIdPath, 'utf8'), 'kimi-legacy-projection-device');
+});
+
+test('Kimi materialization pairs the selected token snapshot with its own device claim', (t) => {
+  const fixture = createProjectionFixture(t);
+  const accountRef = registerAccount(fixture, 'kimi', '20');
+  const runtimeDir = fixture.runtimeDir('kimi', accountRef);
+  const credentials = {
+    access_token: makeTestJwt({
+      user_id: 'kimi-device-pair-user',
+      device_id: 'selected-token-device'
+    }),
+    refresh_token: 'kimi-device-pair-refresh'
+  };
+  writeAccountNativeAuth(fs, fixture.aiHomeDir, accountRef, {
+    credentials,
+    deviceId: 'stale-top-level-device'
+  });
+
+  assert.equal(materializeProviderAuth(
+    fs,
+    runtimeDir,
+    'kimi',
+    projectionOptions(fixture, accountRef)
+  ).missing, false);
+  assert.equal(
+    fs.readFileSync(path.join(runtimeDir, '.kimi-code', 'device_id'), 'utf8'),
+    'selected-token-device'
+  );
+  assert.equal(
+    readAccountNativeAuth(fs, fixture.aiHomeDir, accountRef).deviceId,
+    'selected-token-device'
+  );
+});
+
+test('Kimi capture replaces a legacy auth snapshot with one canonical credential generation', (t) => {
+  const fixture = createProjectionFixture(t);
+  const accountRef = registerAccount(fixture, 'kimi', '19');
+  const runtimeDir = fixture.runtimeDir('kimi', accountRef);
+  const freshCredentials = {
+    access_token: makeTestJwt({ user_id: 'kimi-capture-user', device_id: 'fresh-device' }),
+    refresh_token: makeTestJwt({ sub: 'kimi-capture-user', device_id: 'fresh-device' })
+  };
+  writeAccountNativeAuth(fs, fixture.aiHomeDir, accountRef, {
+    credentials: {},
+    auth: {
+      access_token: makeTestJwt({ user_id: 'kimi-capture-user', device_id: 'legacy-device' }),
+      refresh_token: makeTestJwt({ sub: 'kimi-capture-user', device_id: 'legacy-device' })
+    },
+    deviceId: 'legacy-device'
+  });
+  writeKimiProjection(runtimeDir, freshCredentials, 'fresh-device');
+
+  const captured = captureProviderAuth(
+    fs,
+    runtimeDir,
+    'kimi',
+    projectionOptions(fixture, accountRef)
+  );
+  assert.equal(captured.captured, true);
+  assert.deepEqual(readAccountNativeAuth(fs, fixture.aiHomeDir, accountRef), {
+    credentials: freshCredentials,
+    deviceId: 'fresh-device'
+  });
+});
+
 test('Kimi projection reuses a legacy accountRef when the native user changes device', (t) => {
   const fixture = createProjectionFixture(t);
   const firstRuntime = path.join(fixture.aiHomeDir, 'run', 'login', 'kimi', 'first');
@@ -380,6 +474,11 @@ test('Kimi projection reuses a legacy accountRef when the native user changes de
   const first = registerProviderAuthProjection(fs, firstRuntime, 'kimi', {
     aiHomeDir: fixture.aiHomeDir,
     cliAccountId: '17'
+  });
+  writeAccountNativeAuth(fs, fixture.aiHomeDir, first.accountRef, {
+    credentials: {},
+    auth: firstCredentials,
+    deviceId: 'device-a'
   });
   const second = registerProviderAuthProjection(fs, secondRuntime, 'kimi', {
     aiHomeDir: fixture.aiHomeDir

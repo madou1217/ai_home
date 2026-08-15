@@ -25,7 +25,10 @@ const {
   hashApiKeySecret,
   normalizeIdentitySeed
 } = require('../lib/account/account-identity');
-const { buildApiKeyIdentity } = require('../lib/account/transfer-core');
+const {
+  buildApiKeyIdentity,
+  readAccountExportRecord
+} = require('../lib/account/transfer-core');
 const { resolveAccountRefByCliId } = require('../lib/server/account-ref-store');
 const {
   readTransferMetadata,
@@ -196,6 +199,98 @@ test('buildFlatAccountExportEntries exports opencode auth with stable public ide
     assert.equal(result.entries[0].payload.platform, 'opencode');
     assert.equal(result.entries[0].payload.type, 'oauth');
     assert.deepEqual(Object.keys(result.entries[0].payload.credentials).sort(), ['anthropic', 'openai']);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('buildFlatAccountExportEntries exports a refreshable legacy Kimi snapshot behind an empty canonical shell', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-flat-export-kimi-legacy-'));
+  try {
+    const aiHomeDir = path.join(root, '.ai_home');
+    const accountRef = registerTestAccount(
+      aiHomeDir,
+      'kimi',
+      '1',
+      'oauth:kimi:token:legacy-export'
+    );
+    const legacyCredentials = {
+      access_token: 'kimi-legacy-export-access',
+      refresh_token: 'kimi-legacy-export-refresh',
+      expires_at: 1786657475,
+      token_type: 'Bearer'
+    };
+    writeAccountNativeAuth(fs, aiHomeDir, accountRef, {
+      credentials: {},
+      auth: legacyCredentials,
+      deviceId: 'kimi-legacy-export-device'
+    });
+
+    const result = buildFlatAccountExportEntries({
+      fs,
+      path,
+      aiHomeDir,
+      accounts: [{ provider: 'kimi', accountRef }]
+    });
+
+    assert.deepEqual(result.skipped, []);
+    assert.equal(result.entries.length, 1);
+    assert.deepEqual(result.entries[0].payload.credentials, {
+      ...legacyCredentials,
+      device_id: 'kimi-legacy-export-device'
+    });
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('readAccountExportRecord normalizes Kimi expiry aliases without multiplying millisecond epochs', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-standard-kimi-expiry-'));
+  try {
+    const aiHomeDir = path.join(root, '.ai_home');
+    const millisecondExpiry = 1_900_000_000_000;
+    const millisecondRef = registerTestAccount(
+      aiHomeDir,
+      'kimi',
+      '91',
+      'oauth:kimi:standard-expiry-milliseconds'
+    );
+    writeAccountNativeAuth(fs, aiHomeDir, millisecondRef, {
+      credentials: {
+        access_token: 'kimi-expiry-ms-access',
+        refresh_token: 'kimi-expiry-ms-refresh',
+        expires_at: millisecondExpiry,
+        device_id: 'selected-export-device'
+      },
+      deviceId: 'stale-export-device'
+    });
+    const aliasRef = registerTestAccount(
+      aiHomeDir,
+      'kimi',
+      '92',
+      'oauth:kimi:standard-expiry-alias'
+    );
+    writeAccountNativeAuth(fs, aiHomeDir, aliasRef, {
+      credentials: {
+        access_token: 'kimi-expiry-alias-access',
+        refresh_token: 'kimi-expiry-alias-refresh',
+        expires_at: 0,
+        expiresAt: millisecondExpiry
+      }
+    });
+
+    assert.equal(
+      readAccountExportRecord({ fs, aiHomeDir, provider: 'kimi', accountRef: millisecondRef }).meta.expiresAt,
+      millisecondExpiry
+    );
+    assert.equal(
+      readAccountExportRecord({ fs, aiHomeDir, provider: 'kimi', accountRef: millisecondRef }).auth.device_id,
+      'selected-export-device'
+    );
+    assert.equal(
+      readAccountExportRecord({ fs, aiHomeDir, provider: 'kimi', accountRef: aliasRef }).meta.expiresAt,
+      millisecondExpiry
+    );
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -596,7 +691,8 @@ test('importStandardAccountRecords stores flat Kimi OAuth credentials and device
       credentials: {
         access_token: 'kimi-access',
         refresh_token: 'kimi-refresh',
-        expires_at: 1786657475,
+        expires_at: 0,
+        expiresAt: 1786657475,
         expires_in: 900,
         scope: 'kimi-code',
         token_type: 'Bearer',
@@ -624,6 +720,86 @@ test('importStandardAccountRecords stores flat Kimi OAuth credentials and device
         token_type: 'Bearer'
       },
       deviceId: 'device-kimi-import'
+    });
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('importStandardAccountRecords selects one complete Kimi OAuth snapshot instead of mixing credential generations', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-standard-import-kimi-snapshot-'));
+  try {
+    const aiHomeDir = path.join(root, '.ai_home');
+    const records = parseStandardAccountRecordsFromJson({
+      platform: 'moonshot',
+      type: 'oauth',
+      credentials: {
+        access_token: 'canonical-access-without-refresh',
+        device_id: 'canonical-device'
+      },
+      auth: {
+        access_token: 'legacy-access',
+        refresh_token: 'legacy-refresh',
+        expires_at: 1786657475,
+        token_type: 'Bearer',
+        device_id: 'legacy-device'
+      }
+    });
+
+    const result = importStandardAccountRecords({
+      fs,
+      path,
+      aiHomeDir,
+      records
+    });
+    const accountRef = resolveTestAccountRef(aiHomeDir, 'kimi', '1');
+
+    assert.equal(result.imported, 1);
+    assert.deepEqual(readAccountNativeAuth(fs, aiHomeDir, accountRef), {
+      credentials: {
+        access_token: 'legacy-access',
+        refresh_token: 'legacy-refresh',
+        expires_at: 1786657475,
+        token_type: 'Bearer'
+      },
+      deviceId: 'legacy-device'
+    });
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('importStandardAccountRecords persists Kimi API-key records before reporting them created', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-standard-import-kimi-key-'));
+  try {
+    const aiHomeDir = path.join(root, '.ai_home');
+    const records = parseStandardAccountRecordsFromJson({
+      platform: 'moonshot',
+      type: 'apikey',
+      credentials: {
+        api_key: 'moonshot-import-key',
+        base_url: 'https://api.moonshot.ai/v1/'
+      }
+    });
+
+    const result = importStandardAccountRecords({
+      fs,
+      path,
+      aiHomeDir,
+      records
+    });
+    const accountRef = resolveTestAccountRef(aiHomeDir, 'kimi', '1');
+
+    assert.equal(result.imported, 1);
+    assert.deepEqual(result.accounts, [{
+      provider: 'kimi',
+      accountRef,
+      status: 'created',
+      authMode: 'api-key'
+    }]);
+    assert.deepEqual(readAccountCredentials(fs, aiHomeDir, accountRef), {
+      MOONSHOT_API_KEY: 'moonshot-import-key',
+      KIMI_BASE_URL: 'https://api.moonshot.ai/v1'
     });
   } finally {
     fs.rmSync(root, { recursive: true, force: true });

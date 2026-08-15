@@ -119,7 +119,7 @@ test('Gemini OAuth status is derived from DB-native auth', (t) => {
   });
 });
 
-test('Kimi OAuth status is derived from DB-native credentials', (t) => {
+test('Kimi OAuth status uses one refreshable contract across current and legacy credentials', (t) => {
   const { checkStatus, register } = createFixture(t);
   const emptyRef = register('kimi', '22', {
     nativeAuth: { credentials: {} }
@@ -127,16 +127,76 @@ test('Kimi OAuth status is derived from DB-native credentials', (t) => {
   const oauthRef = register('kimi', '23', {
     nativeAuth: {
       credentials: {
-        access_token: 'kimi-access-token',
+        access_token: createJwt({ user_id: 'kimi-user-0001' }),
         refresh_token: 'kimi-refresh-token'
       }
     }
+  });
+  const refreshOnlyRef = register('kimi', '24', {
+    nativeAuth: { credentials: { refreshToken: 'kimi-refresh-only' } }
+  });
+  const secondRefreshOnlyRef = register('kimi', '28', {
+    nativeAuth: { credentials: { refreshToken: 'kimi-refresh-only-second-account' } }
+  });
+  const legacyRef = register('kimi', '25', {
+    nativeAuth: {
+      auth: {
+        accessToken: createJwt({ sub: 'kimi-user-0002' }),
+        refreshToken: 'kimi-legacy-refresh'
+      }
+    }
+  });
+  const legacyBehindEmptyCanonicalRef = register('kimi', '27', {
+    nativeAuth: {
+      credentials: {},
+      auth: {
+        accessToken: createJwt({ sub: 'kimi-user-0003' }),
+        refreshToken: 'kimi-legacy-behind-empty-canonical'
+      }
+    }
+  });
+  const accessOnlyRef = register('kimi', '26', {
+    nativeAuth: { credentials: { access_token: 'kimi-access-only' } }
+  });
+  const baseUrlOnlyAccessRef = register('kimi', '29', {
+    env: { KIMI_BASE_URL: 'https://api.moonshot.ai/v1' },
+    nativeAuth: { credentials: { access_token: 'kimi-access-only-behind-base-url' } }
   });
 
   assert.equal(checkStatus('kimi', emptyRef).configured, false);
   assert.deepEqual(checkStatus('kimi', oauthRef), {
     configured: true,
-    accountName: 'Kimi Code OAuth',
+    accountName: 'Kimi OAuth: kimi...0001',
+    source: 'app-state.db'
+  });
+  assert.deepEqual(checkStatus('kimi', refreshOnlyRef), {
+    configured: true,
+    accountName: `Kimi OAuth (${refreshOnlyRef.slice(-8)})`,
+    source: 'app-state.db'
+  });
+  assert.deepEqual(checkStatus('kimi', secondRefreshOnlyRef), {
+    configured: true,
+    accountName: `Kimi OAuth (${secondRefreshOnlyRef.slice(-8)})`,
+    source: 'app-state.db'
+  });
+  assert.notEqual(
+    checkStatus('kimi', refreshOnlyRef).accountName,
+    checkStatus('kimi', secondRefreshOnlyRef).accountName
+  );
+  assert.deepEqual(checkStatus('kimi', legacyRef), {
+    configured: true,
+    accountName: 'Kimi OAuth: kimi...0002',
+    source: 'app-state.db'
+  });
+  assert.deepEqual(checkStatus('kimi', legacyBehindEmptyCanonicalRef), {
+    configured: true,
+    accountName: 'Kimi OAuth: kimi...0003',
+    source: 'app-state.db'
+  });
+  assert.equal(checkStatus('kimi', accessOnlyRef).configured, false);
+  assert.deepEqual(checkStatus('kimi', baseUrlOnlyAccessRef), {
+    configured: false,
+    accountName: 'Unknown',
     source: 'app-state.db'
   });
 });
@@ -277,41 +337,6 @@ test('Claude OAuth rejects only expired access tokens that cannot be refreshed',
   });
   assert.equal(checkStatus('claude', refreshableRef).configured, true);
   assert.equal(checkStatus('claude', activeRef).configured, true);
-});
-
-test('Kimi OAuth status is derived from DB-native credentials', (t) => {
-  // Regression guard: kimi once had no branch here, so every OAuth account
-  // silently fell through to configured=false ("no login state") at launch.
-  const { checkStatus, register } = createFixture(t);
-  const emptyRef = register('kimi', '60', {
-    nativeAuth: { credentials: {} }
-  });
-  const oauthRef = register('kimi', '61', {
-    nativeAuth: {
-      credentials: {
-        access_token: createJwt({ sub: 'd9v1ve1g4pngggebtacg', user_id: 'd9v1ve1g4pngggebtacg' }),
-        refresh_token: 'kimi-refresh',
-        token_type: 'Bearer',
-        scope: 'kimi-code'
-      }
-    }
-  });
-  // kimi access tokens live only minutes; a refresh token alone must count
-  const refreshOnlyRef = register('kimi', '62', {
-    nativeAuth: { credentials: { refresh_token: 'kimi-refresh-only' } }
-  });
-
-  assert.equal(checkStatus('kimi', emptyRef).configured, false);
-  assert.deepEqual(checkStatus('kimi', oauthRef), {
-    configured: true,
-    accountName: 'Kimi Code OAuth',
-    source: 'app-state.db'
-  });
-  assert.deepEqual(checkStatus('kimi', refreshOnlyRef), {
-    configured: true,
-    accountName: 'Kimi Code OAuth',
-    source: 'app-state.db'
-  });
 });
 
 test('OpenCode auth status is derived from DB-native auth', (t) => {

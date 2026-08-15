@@ -2355,7 +2355,12 @@ function createKimiUsageFixture(root, options = {}) {
     fs,
     path,
     aiHomeDir,
-    processObj: { execPath: process.execPath, cwd: () => root, env: {}, platform: process.platform },
+    processObj: {
+      execPath: process.execPath,
+      cwd: () => root,
+      env: options.processEnv || {},
+      platform: process.platform
+    },
     usageSnapshotSchemaVersion: 2,
     usageRefreshStaleMs: 5 * 60 * 1000,
     usageSourceKimiOauth: 'kimi_oauth_usages_api',
@@ -2363,6 +2368,7 @@ function createKimiUsageFixture(root, options = {}) {
     getToolConfigDir,
     writeUsageCache: cacheService.writeUsageCache,
     readUsageCache: cacheService.readUsageCache,
+    accountArtifactHooks: options.accountArtifactHooks,
     fetchWithTimeout: options.fetchWithTimeout || (async (url, init) => {
       const target = String(url || '');
       calls.push({
@@ -2435,6 +2441,49 @@ test('kimi usage snapshot maps /usages weekly and rolling windows into entries',
   }
 });
 
+test('kimi usage snapshot wires server proxy settings into quota transport', async () => {
+  const root = mkTmpDir();
+  const calls = [];
+  try {
+    const fixture = createKimiUsageFixture(root, {
+      processEnv: {
+        AIH_SERVER_PROXY_URL: 'http://127.0.0.1:7892',
+        AIH_SERVER_NO_PROXY: 'kimi.internal'
+      },
+      fetchWithTimeout: async (url, init, timeoutMs, proxyOptions) => {
+        calls.push({ url: String(url), init, timeoutMs, proxyOptions });
+        if (String(url).endsWith('/me')) {
+          return { ok: true, status: 200, json: async () => ({}) };
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ usage: { used: 5, limit: 100 } })
+        };
+      }
+    });
+
+    const snapshot = await fixture.usageSnapshotService.ensureUsageSnapshotAsync(
+      'kimi',
+      fixture.accountRef,
+      null,
+      { forceRefresh: true, probeTimeoutMs: 7123 }
+    );
+
+    assert.ok(snapshot);
+    assert.equal(calls.length, 2);
+    for (const call of calls) {
+      assert.equal(call.timeoutMs, 7123);
+      assert.deepEqual(call.proxyOptions, {
+        proxyUrl: 'http://127.0.0.1:7892',
+        noProxy: 'kimi.internal'
+      });
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('kimi usage snapshot keeps quota when the /me identity probe fails', async () => {
   const root = mkTmpDir();
   try {
@@ -2485,7 +2534,11 @@ test('kimi usage snapshot force-refreshes the token once after a 401', async () 
   const root = mkTmpDir();
   try {
     const calls = [];
+    const hookEvents = [];
     const fixture = createKimiUsageFixture(root, {
+      accountArtifactHooks: {
+        notifyDefaultAccountAuthUpdated: (event) => hookEvents.push(event)
+      },
       fetchWithTimeout: async (url, init) => {
         const target = String(url || '');
         const authorization = String(init && init.headers && (init.headers.authorization || init.headers.Authorization) || '');
@@ -2519,6 +2572,13 @@ test('kimi usage snapshot force-refreshes the token once after a 401', async () 
     assert.equal(usagesCalls.length, 2);
     assert.equal(tokenCalls.length, 1);
     assert.equal(usagesCalls[1].authorization, 'Bearer kimi-access-token-v2');
+    assert.deepEqual(hookEvents, [{
+      provider: 'kimi',
+      accountRef: fixture.accountRef,
+      artifactPath: 'app-state.db',
+      source: 'token_refresh',
+      reason: 'kimi_oauth_token_refreshed'
+    }]);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

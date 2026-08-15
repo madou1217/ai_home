@@ -77,22 +77,64 @@ test('kimi coding models resolve vision via models.dev kimi-for-coding catalog',
   assert.deepEqual(getModelModalities('k3-256k'), { input: ['text', 'image'], output: ['text'] });
 });
 
-test('probed modalities override models.dev and invalidate both cache key forms', () => {
+test('probed modalities override models.dev only for the probed provider', () => {
   // 先建立缓存:未知模型 → text-only 兜底
   assert.deepEqual(getModelModalities('kimi-next-gen'), { input: ['text'], output: ['text'] });
   assert.deepEqual(getModelModalities('kimi-next-gen', { provider: 'kimi' }), { input: ['text'], output: ['text'] });
 
-  registerProbedModelModalities([
+  registerProbedModelModalities('kimi', [
     { id: 'kimi-next-gen', modalities: { input: ['text', 'image', 'video'], output: ['text'] } },
     { id: '', modalities: { input: ['image'] } },
     { id: 'kimi-no-modality-descriptor' }
   ]);
 
-  assert.deepEqual(getModelModalities('kimi-next-gen'), { input: ['text', 'image', 'video'], output: ['text'] });
+  assert.deepEqual(getModelModalities('kimi-next-gen'), { input: ['text'], output: ['text'] });
   assert.deepEqual(getModelModalities('kimi-next-gen', { provider: 'kimi' }), { input: ['text', 'image', 'video'], output: ['text'] });
   // 缺 modalities 的 descriptor 不注册,仍走兜底
   assert.deepEqual(getModelModalities('kimi-no-modality-descriptor'), { input: ['text'], output: ['text'] });
 
   __private.resetModelModalityCache();
   assert.deepEqual(getModelModalities('kimi-next-gen'), { input: ['text'], output: ['text'] });
+});
+
+test('probed modalities are isolated by provider when model ids overlap', () => {
+  __private.resetModelModalityCache();
+
+  registerProbedModelModalities('kimi', [
+    { id: 'gpt-4o', modalities: { input: ['text'], output: ['text'] } }
+  ]);
+
+  assert.deepEqual(
+    getModelModalities('gpt-4o', { provider: 'kimi' }),
+    { input: ['text'], output: ['text'] }
+  );
+  assert.deepEqual(
+    getModelModalities('gpt-4o', { provider: 'codex' }),
+    { input: ['text', 'image', 'pdf'], output: ['text'] }
+  );
+  assert.deepEqual(
+    getModelModalities('gpt-4o'),
+    { input: ['text', 'image', 'pdf'], output: ['text'] }
+  );
+
+  __private.resetModelModalityCache();
+});
+
+test('probed modalities cover equivalent model version separator keys', () => {
+  __private.resetModelModalityCache();
+  assert.deepEqual(
+    getModelModalities('kimi-next-2-7', { provider: 'kimi' }),
+    { input: ['text'], output: ['text'] }
+  );
+
+  registerProbedModelModalities('kimi', [{
+    id: 'kimi-next-2.7',
+    modalities: { input: ['text', 'image'], output: ['text'] }
+  }]);
+
+  assert.deepEqual(
+    getModelModalities('kimi-next-2-7', { provider: 'kimi' }),
+    { input: ['text', 'image'], output: ['text'] }
+  );
+  __private.resetModelModalityCache();
 });

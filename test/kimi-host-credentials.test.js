@@ -85,6 +85,34 @@ test('Kimi reconciler adopts a newer non-AIH host token for the same user and de
   });
 });
 
+test('Kimi reconciler adopts over a refreshable legacy DB snapshot behind an empty canonical shell', (t) => {
+  const databaseCredentials = makeCredentials('kimi-user-legacy', 'legacy-db-device', 1000);
+  const hostCredentials = makeCredentials('kimi-user-legacy', 'legacy-host-device', 2000);
+  const fixture = createFixture(t, databaseCredentials);
+  writeAccountNativeAuth(fs, fixture.aiHomeDir, fixture.accountRef, {
+    credentials: {},
+    auth: databaseCredentials,
+    deviceId: 'legacy-db-device'
+  });
+  writeHostSnapshot(fixture, hostCredentials, 'legacy-host-device');
+
+  const reconcile = createKimiHostCredentialReconciler({
+    fs,
+    path,
+    aiHomeDir: fixture.aiHomeDir,
+    hostHomeDir: fixture.hostHomeDir
+  });
+  const result = reconcile(fixture.accountRef);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.adopted, true);
+  assert.equal(result.reason, 'host_credentials_newer');
+  assert.deepEqual(readAccountNativeAuth(fs, fixture.aiHomeDir, fixture.accountRef), {
+    credentials: hostCredentials,
+    deviceId: 'legacy-host-device'
+  });
+});
+
 test('Kimi reconciler rejects a host snapshot belonging to another user', (t) => {
   const databaseCredentials = makeCredentials('kimi-user-1', 'ai-h-device', 2000);
   const hostCredentials = makeCredentials('kimi-user-2', 'host-device', 3000);

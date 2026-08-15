@@ -123,8 +123,17 @@ test('kimi OAuth identity hashes opaque refresh credentials as a fallback', () =
     refresh_token: 'refresh-stable',
     expires_at: 200
   } });
+  const legacyBehindEmptyCanonical = identity.resolveNativeAuthIdentitySeed('kimi', {
+    credentials: {},
+    auth: {
+      access_token: 'legacy-access',
+      refresh_token: 'refresh-stable',
+      expires_at: 300
+    }
+  });
 
   assert.equal(first.identitySeed, second.identitySeed);
+  assert.equal(first.identitySeed, legacyBehindEmptyCanonical.identitySeed);
   assert.match(first.identitySeed, /^oauth:kimi:token:[a-f0-9]{16}$/);
   assert.equal(first.identitySeed.includes('refresh-stable'), false);
   assert.equal(first.degraded, false);

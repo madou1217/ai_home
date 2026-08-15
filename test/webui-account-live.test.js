@@ -18,6 +18,7 @@ const {
 } = require('../lib/server/webui-accounts-cache');
 
 const {
+  readAccountsFastSnapshot,
   refreshLiveAccountRecord,
   removeLiveAccountRecord,
   emitAccountsAuthJobEvent,
@@ -94,6 +95,28 @@ test('fast account snapshot recognizes kimi OAuth credentials under $.credential
     env: {},
     nativeAuth: { credentials: { access_token: 'at_kimi', refresh_token: 'rt_kimi' } }
   };
+  const accessOnly = {
+    env: {},
+    nativeAuth: { credentials: { access_token: 'at_kimi_expiring' } }
+  };
+  const baseUrlOnlyAccess = {
+    env: { KIMI_BASE_URL: 'https://api.moonshot.ai/v1' },
+    nativeAuth: { credentials: { access_token: 'at_kimi_behind_base_url' } }
+  };
+  const apiKey = {
+    env: {
+      KIMI_BASE_URL: 'https://api.moonshot.ai/v1',
+      MOONSHOT_API_KEY: 'sk-kimi'
+    },
+    nativeAuth: { credentials: {} }
+  };
+  const legacyBehindEmptyCanonical = {
+    env: {},
+    nativeAuth: {
+      credentials: {},
+      auth: { access_token: 'at_kimi_legacy', refresh_token: 'rt_kimi_legacy' }
+    }
+  };
   const empty = { env: {}, nativeAuth: { credentials: {} } };
 
   assert.deepEqual(__private.readFastAccountPresence('kimi', withRefreshOnly, null), {
@@ -101,6 +124,22 @@ test('fast account snapshot recognizes kimi OAuth credentials under $.credential
     apiKeyMode: false
   });
   assert.deepEqual(__private.readFastAccountPresence('kimi', withAccess, null), {
+    configured: true,
+    apiKeyMode: false
+  });
+  assert.deepEqual(__private.readFastAccountPresence('kimi', accessOnly, null), {
+    configured: false,
+    apiKeyMode: false
+  });
+  assert.deepEqual(__private.readFastAccountPresence('kimi', baseUrlOnlyAccess, null), {
+    configured: false,
+    apiKeyMode: false
+  });
+  assert.deepEqual(__private.readFastAccountPresence('kimi', apiKey, null), {
+    configured: true,
+    apiKeyMode: true
+  });
+  assert.deepEqual(__private.readFastAccountPresence('kimi', legacyBehindEmptyCanonical, null), {
     configured: true,
     apiKeyMode: false
   });
@@ -1276,5 +1315,55 @@ test('refreshLiveAccountRecord surfaces kimi /me identity as nickname email and 
   assert.equal(record.email, '登月者2115');
   assert.equal(record.displayName, '+86 186****2115');
   assert.equal(record.planType, 'basic');
+  assert.equal(record.planName, 'Allegretto');
+});
+
+test('fast account snapshot preserves the Kimi public subscription name', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-account-fast-kimi-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const usageSnapshot = {
+    schemaVersion: 2,
+    kind: 'kimi_oauth_usage',
+    source: 'kimi_oauth_usages_api',
+    capturedAt: Date.now(),
+    account: {
+      planType: 'intermediate',
+      planName: 'Allegretto',
+      displayName: '登月者2115',
+      phone: '+86 186****2115'
+    },
+    entries: [
+      { bucket: 'weekly', windowMinutes: 10080, window: '7days', remainingPct: 51 }
+    ]
+  };
+  const accountRef = registerDbAccount(root, 'kimi', '1', {
+    nativeAuth: {
+      credentials: {
+        access_token: 'kimi-access-token',
+        refresh_token: 'kimi-refresh-token',
+        expires_at: Math.floor(Date.now() / 1000) + 3600
+      }
+    },
+    usageSnapshot
+  });
+  const ctx = buildRefreshContext({
+    aiHomeDir: root,
+    provider: 'kimi',
+    accountRef,
+    stateInfo: {
+      status: 'up',
+      configured: true,
+      apiKeyMode: false,
+      remainingPct: 51,
+      displayName: ''
+    },
+    status: { configured: true, accountName: '' }
+  });
+
+  const snapshot = readAccountsFastSnapshot(ctx);
+  const record = snapshot.accounts.find((item) => item.accountRef === accountRef);
+
+  assert.ok(record);
+  assert.equal(record.planType, 'intermediate');
   assert.equal(record.planName, 'Allegretto');
 });

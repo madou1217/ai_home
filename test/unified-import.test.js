@@ -1312,6 +1312,83 @@ test('runUnifiedImport imports a standalone Kimi home and refreshes the matching
   }
 });
 
+test('runUnifiedImport compares an incoming Kimi snapshot with the selected legacy DB snapshot', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-unified-import-kimi-legacy-newness-'));
+  try {
+    const aiHomeDir = path.join(root, '.ai_home');
+    const nativeHome = path.join(root, '.kimi-code');
+    const credentialsPath = path.join(nativeHome, 'credentials', 'kimi-code.json');
+    const makeJwt = (payload) => [
+      Buffer.from('{}').toString('base64url'),
+      Buffer.from(JSON.stringify(payload)).toString('base64url'),
+      'signature'
+    ].join('.');
+    const legacyCredentials = {
+      access_token: makeJwt({ user_id: 'legacy-newness-user', device_id: 'legacy-device' }),
+      refresh_token: makeJwt({ sub: 'legacy-newness-user', device_id: 'legacy-device' }),
+      expires_at: 3000,
+      token_type: 'Bearer'
+    };
+    const olderIncomingCredentials = {
+      access_token: makeJwt({ user_id: 'legacy-newness-user', device_id: 'incoming-device' }),
+      refresh_token: makeJwt({ sub: 'legacy-newness-user', device_id: 'incoming-device' }),
+      expires_at: 2000,
+      token_type: 'Bearer'
+    };
+    const existing = registerAccountIdentity(fs, aiHomeDir, {
+      provider: 'kimi',
+      cliAccountId: '1',
+      identitySeed: 'oauth:kimi:token:legacy-newness-account'
+    });
+    const originalNativeAuth = {
+      credentials: {},
+      auth: legacyCredentials,
+      deviceId: 'legacy-device'
+    };
+    writeAccountNativeAuth(fs, aiHomeDir, existing.accountRef, originalNativeAuth);
+    fs.mkdirSync(path.dirname(credentialsPath), { recursive: true });
+    fs.writeFileSync(credentialsPath, JSON.stringify(olderIncomingCredentials), 'utf8');
+    fs.writeFileSync(path.join(nativeHome, 'device_id'), 'incoming-device\n', 'utf8');
+
+    const service = createUnifiedImportService({
+      fs,
+      path,
+      os,
+      fse: require('fs-extra'),
+      execSync: () => {},
+      spawnImpl: () => {},
+      processImpl: { platform: 'linux' },
+      cryptoImpl: require('node:crypto'),
+      aiHomeDir,
+      cliConfigs: { kimi: { globalDir: '.kimi-code' } },
+      runGlobalAccountImport: async () => ({ providers: [], failedProviders: [], providerResults: [] }),
+      importCliproxyapiCodexAuths: async () => ({
+        imported: 0,
+        duplicates: 0,
+        invalid: 0,
+        failed: 0
+      })
+    });
+
+    const result = await service.runUnifiedImport([nativeHome], {
+      provider: 'kimi',
+      log: () => {},
+      error: () => {}
+    });
+
+    assert.equal(result.failedSources.length, 0);
+    assert.equal(result.sourceResults.length, 1);
+    assert.equal(result.sourceResults[0].imported, 0);
+    assert.equal(result.sourceResults[0].duplicates, 1);
+    assert.deepEqual(
+      readAccountNativeAuth(fs, aiHomeDir, existing.accountRef),
+      originalNativeAuth
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('runUnifiedImport keeps updating progress after cached zip extraction during import stage', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-unified-import-cache-progress-'));
   try {

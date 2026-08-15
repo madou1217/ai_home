@@ -8,6 +8,7 @@ const { createModelUsageService } = require('../lib/usage/model-usage-service');
 const { buildApiUsageRecord } = require('../lib/usage/model-usage-api-record');
 const { matchModelPricing } = require('../lib/usage/model-usage-pricing');
 const {
+  openModelUsageStore,
   normalizeUsageRecord,
   __private: modelUsageStorePrivate
 } = require('../lib/usage/model-usage-store');
@@ -59,6 +60,172 @@ function makeService(t, overrides = {}) {
       ...overrides
     })
   };
+}
+
+function createKimiSharedSessionFixture(root, options = {}) {
+  const accountRefs = Array.isArray(options.accountRefs) ? options.accountRefs : [];
+  const sessions = Array.isArray(options.sessions) ? options.sessions : [];
+  const kimiHome = path.join(root, '.kimi-code');
+  const hostSessionsRoot = path.join(kimiHome, 'sessions');
+  fs.mkdirSync(hostSessionsRoot, { recursive: true });
+
+  const projectionRoots = new Map();
+  accountRefs.forEach((accountRef) => {
+    const nativeRoot = path.join(
+      root,
+      '.ai_home',
+      'run',
+      'auth-projections',
+      'kimi',
+      accountRef,
+      '.kimi-code'
+    );
+    fs.mkdirSync(nativeRoot, { recursive: true });
+    const sessionsLink = path.join(nativeRoot, 'sessions');
+    fs.symlinkSync(
+      hostSessionsRoot,
+      sessionsLink,
+      process.platform === 'win32' ? 'junction' : 'dir'
+    );
+    projectionRoots.set(accountRef, sessionsLink);
+  });
+
+  const indexRows = [];
+  const sessionFiles = new Map();
+  sessions.forEach((session, sessionIndex) => {
+    const sessionId = String(session.sessionId || `session_shared-${sessionIndex + 1}`);
+    const projectDir = String(session.projectDir || `wd_project_${sessionIndex + 1}`);
+    const relativeSessionDir = path.join(projectDir, sessionId);
+    const hostSessionDir = path.join(hostSessionsRoot, relativeSessionDir);
+    const wirePath = path.join(hostSessionDir, 'agents', 'main', 'wire.jsonl');
+    const promptCount = Number(session.promptCount) || 1;
+    const baseTime = Number(session.baseTime) || Date.parse('2026-06-04T11:00:00.000Z');
+    const rows = [
+      { type: 'metadata', protocol_version: '1.5', created_at: baseTime },
+      {
+        type: 'profile.bind',
+        modelAlias: 'kimi-code/k3-256k',
+        environmentDisclosure: { cwd: `/work/${sessionId}` },
+        time: baseTime + 1
+      },
+      ...Array.from({ length: promptCount }, (_unused, promptIndex) => ({
+        type: 'turn.prompt',
+        origin: { kind: 'user' },
+        input: [{ type: 'text', text: `prompt ${promptIndex + 1}` }],
+        time: baseTime + 10 + promptIndex
+      })),
+      {
+        type: 'usage.record',
+        model: 'kimi-code/k3-256k',
+        usage: { inputOther: 100, output: 10, inputCacheRead: 40, inputCacheCreation: 5 },
+        usageScope: 'turn',
+        time: baseTime + 100
+      }
+    ];
+    writeJsonl(wirePath, rows);
+    sessionFiles.set(sessionId, {
+      hostSessionDir,
+      wirePath,
+      projectionWirePaths: new Map(accountRefs.map((accountRef) => [
+        accountRef,
+        path.join(projectionRoots.get(accountRef), relativeSessionDir, 'agents', 'main', 'wire.jsonl')
+      ]))
+    });
+
+    const ownerRef = String(session.accountRef || '');
+    const indexedSessionDir = ownerRef && projectionRoots.has(ownerRef)
+      ? path.join(projectionRoots.get(ownerRef), relativeSessionDir)
+      : hostSessionDir;
+    indexRows.push({ sessionId, sessionDir: indexedSessionDir, workDir: `/work/${sessionId}` });
+  });
+  writeJsonl(path.join(kimiHome, 'session_index.jsonl'), indexRows);
+
+  return { hostSessionsRoot, projectionRoots, sessionFiles };
+}
+
+function seedLegacyDuplicatedKimiProjection({ root, accountRef, sessionId, hostWire, projectionWire }) {
+  const DatabaseSync = require('node:sqlite').DatabaseSync;
+  const store = openModelUsageStore({
+    fs,
+    path,
+    aiHomeDir: path.join(root, '.ai_home'),
+    DatabaseSync
+  });
+  assert.ok(store);
+  const timestampMs = Date.parse('2026-06-04T11:00:00.000Z');
+  try {
+    store.insertUsageBatch([hostWire, projectionWire].map((filePath, index) => ({
+      eventKey: modelUsageScannerPrivate.buildFileEventKey('kimi', filePath, 100, 'usage'),
+      provider: 'kimi',
+      accountRef: index === 0 ? '' : accountRef,
+      sessionId,
+      sourceKind: 'session_jsonl',
+      model: 'kimi-code/k3-256k',
+      inputTokens: 100,
+      outputTokens: 10,
+      cacheReadInputTokens: 40,
+      cacheCreationInputTokens: 5,
+      totalTokens: 155,
+      timestampMs
+    })));
+    store.insertPromptEvents([hostWire, projectionWire].flatMap((filePath) => (
+      Array.from({ length: 25 }, (_unused, index) => ({
+        eventKey: modelUsageScannerPrivate.buildFileEventKey('kimi', filePath, 200 + index, 'prompt'),
+        provider: 'kimi',
+        sessionId,
+        timestampMs: timestampMs + index
+      }))
+    )));
+    store.upsertSessions([{
+      provider: 'kimi',
+      sessionId,
+      project: 'legacy-project',
+      cwd: '/work/legacy-project',
+      startedAtMs: timestampMs,
+      updatedAtMs: timestampMs + 100,
+      promptCount: 50
+    }]);
+    [hostWire, projectionWire].forEach((filePath) => {
+      const size = fs.statSync(filePath).size;
+      store.setFileState(filePath, {
+        size,
+        offset: size,
+        scanContext: { sessionId }
+      });
+    });
+    store.insertUsage({
+      eventKey: 'kimi:gateway:preserve-during-rebuild',
+      provider: 'kimi',
+      accountRef,
+      sessionId: 'gateway-request',
+      sourceKind: 'gateway',
+      model: 'kimi-code/k3-256k',
+      totalTokens: 9,
+      timestampMs: timestampMs + 200
+    });
+  } finally {
+    store.close();
+  }
+}
+
+function readKimiSessionAccountRefs(root, sessionId) {
+  const DatabaseSync = require('node:sqlite').DatabaseSync;
+  const db = new DatabaseSync(path.join(root, '.ai_home', 'app-state.db'));
+  try {
+    return db.prepare(`
+      SELECT DISTINCT account_ref
+      FROM model_usage_records
+      WHERE provider = 'kimi' AND source_kind = 'session_jsonl' AND session_id = ?
+      ORDER BY account_ref
+    `).all(sessionId).map((row) => String(row.account_ref || ''));
+  } finally {
+    db.close();
+  }
+}
+
+function kimiIndexedSessionDir(shared, sessionId, accountRef) {
+  const projectionWire = shared.sessionFiles.get(sessionId).projectionWirePaths.get(accountRef);
+  return path.dirname(path.dirname(path.dirname(projectionWire)));
 }
 
 test('model usage schema rejects local account_id instead of migrating it', (t) => {
@@ -704,7 +871,332 @@ test('kimi scanner records turn-scope wire usage and filters non-user prompts', 
   }
 });
 
-test('kimi scanner attributes sandbox wire usage to the account named by its path', (t) => {
+test('kimi scanner counts 25 indexed prompts once across a host and projection symlink', (t) => {
+  const accountRef = 'acct_0123456789abcdef0123';
+  const fixture = makeService(t);
+  if (!fixture) return;
+  const { root, service } = fixture;
+  try {
+    createKimiSharedSessionFixture(root, {
+      accountRefs: [accountRef],
+      sessions: [{
+        sessionId: 'session_shared-prompts',
+        accountRef,
+        promptCount: 25
+      }]
+    });
+
+    const scan = service.scan({ provider: 'kimi' });
+    const stats = service.getStats({
+      fromMs: new Date(2026, 5, 4).getTime(),
+      toMs: new Date(2026, 5, 5).getTime() - 1,
+      provider: 'kimi'
+    });
+    const sessions = service.getSessions({
+      fromMs: new Date(2026, 5, 4).getTime(),
+      toMs: new Date(2026, 5, 5).getTime() - 1,
+      provider: 'kimi',
+      limit: 10
+    });
+
+    assert.equal(scan.providers.kimi.files, 1);
+    assert.equal(scan.records, 1);
+    assert.equal(scan.prompts, 25);
+    assert.equal(stats.totalCalls, 1);
+    assert.equal(stats.totalPrompts, 25);
+    assert.equal(stats.totalTokens, 155);
+    assert.equal(sessions.find((item) => item.sessionId === 'session_shared-prompts').promptCount, 25);
+
+    const usage = service.getAccountTokenUsage({ nowMs: Date.parse('2026-06-04T12:00:00.000Z') });
+    assert.deepEqual(Object.keys(usage), [accountRef]);
+    assert.equal(usage[accountRef].month, 155);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('kimi scanner attributes shared physical sessions only to their native index owners', (t) => {
+  const firstRef = 'acct_0123456789abcdef0123';
+  const secondRef = 'acct_fedcba98765432100123';
+  const fixture = makeService(t);
+  if (!fixture) return;
+  const { root, service } = fixture;
+  try {
+    createKimiSharedSessionFixture(root, {
+      accountRefs: [firstRef, secondRef],
+      sessions: [
+        {
+          sessionId: 'session_first-owner',
+          accountRef: firstRef,
+          baseTime: Date.parse('2026-06-04T11:00:00.000Z')
+        },
+        {
+          sessionId: 'session_second-owner',
+          accountRef: secondRef,
+          baseTime: Date.parse('2026-06-04T11:10:00.000Z')
+        }
+      ]
+    });
+
+    const scan = service.scan({ provider: 'kimi' });
+    const usage = service.getAccountTokenUsage({ nowMs: Date.parse('2026-06-04T12:00:00.000Z') });
+    const stats = service.getStats({
+      fromMs: new Date(2026, 5, 4).getTime(),
+      toMs: new Date(2026, 5, 5).getTime() - 1,
+      provider: 'kimi'
+    });
+
+    assert.equal(scan.providers.kimi.files, 2);
+    assert.equal(scan.records, 2);
+    assert.equal(scan.prompts, 2);
+    assert.deepEqual(Object.keys(usage).sort(), [firstRef, secondRef].sort());
+    assert.equal(usage[firstRef].month, 155);
+    assert.equal(usage[secondRef].month, 155);
+    assert.equal(stats.totalCalls, 2);
+    assert.equal(stats.totalTokens, 310);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('kimi scanner aggregates main and subagent wires into one owned session', (t) => {
+  const accountRef = 'acct_0123456789abcdef0123';
+  const sessionId = 'session_multi-agent-wires';
+  const fixture = makeService(t);
+  if (!fixture) return;
+  const { root, service } = fixture;
+  try {
+    const shared = createKimiSharedSessionFixture(root, {
+      accountRefs: [accountRef],
+      sessions: [{ sessionId, accountRef, promptCount: 2 }]
+    });
+    const mainWire = shared.sessionFiles.get(sessionId).wirePath;
+    const agentWire = path.join(path.dirname(path.dirname(mainWire)), 'agent-0', 'wire.jsonl');
+    writeJsonl(agentWire, [
+      { type: 'metadata', protocol_version: '1.5', created_at: Date.parse('2026-06-04T11:01:00.000Z') },
+      {
+        type: 'profile.bind',
+        environmentDisclosure: { cwd: `/work/${sessionId}` },
+        time: Date.parse('2026-06-04T11:01:00.001Z')
+      },
+      {
+        type: 'turn.prompt',
+        origin: { kind: 'user' },
+        input: [{ type: 'text', text: 'subagent prompt' }],
+        time: Date.parse('2026-06-04T11:01:01.000Z')
+      },
+      {
+        type: 'usage.record',
+        model: 'kimi-code/k3-256k',
+        usage: { inputOther: 20, output: 5, inputCacheRead: 3, inputCacheCreation: 2 },
+        usageScope: 'turn',
+        time: Date.parse('2026-06-04T11:01:02.000Z')
+      }
+    ]);
+
+    const scan = service.scan({ provider: 'kimi' });
+    const sessions = service.getSessions({
+      fromMs: new Date(2026, 5, 4).getTime(),
+      toMs: new Date(2026, 5, 5).getTime() - 1,
+      provider: 'kimi',
+      limit: 10
+    });
+    const usage = service.getAccountTokenUsage({ nowMs: Date.parse('2026-06-04T12:00:00.000Z') });
+    const preview = service.rebuildKimiUsageProjection();
+
+    assert.equal(scan.providers.kimi.files, 2);
+    assert.equal(scan.records, 2);
+    assert.equal(scan.prompts, 3);
+    assert.equal(sessions.length, 1);
+    assert.equal(sessions[0].sessionId, sessionId);
+    assert.equal(sessions[0].promptCount, 3);
+    assert.equal(usage[accountRef].month, 185);
+    assert.equal(preview.sessions, 1);
+    assert.equal(preview.prompts, 3);
+    assert.equal(preview.records, 2);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('kimi scanner transactionally reprojects a physical file when its native owner changes', (t) => {
+  const firstRef = 'acct_0123456789abcdef0123';
+  const secondRef = 'acct_fedcba98765432100123';
+  const sessionId = 'session_owner-arrives-late';
+  const fixture = makeService(t);
+  if (!fixture) return;
+  const { root, service } = fixture;
+  try {
+    const shared = createKimiSharedSessionFixture(root, {
+      accountRefs: [firstRef, secondRef],
+      sessions: [{ sessionId, accountRef: firstRef, promptCount: 2 }]
+    });
+    const indexPath = path.join(root, '.kimi-code', 'session_index.jsonl');
+    const files = shared.sessionFiles.get(sessionId);
+    fs.unlinkSync(indexPath);
+
+    const firstScan = service.scan({ provider: 'kimi' });
+    assert.equal(firstScan.records, 1);
+    assert.equal(firstScan.prompts, 2);
+    assert.deepEqual(
+      service.getAccountTokenUsage({ nowMs: Date.parse('2026-06-04T12:00:00.000Z') }),
+      {}
+    );
+
+    const writeOwnerIndex = (accountRef) => {
+      const projectionWire = files.projectionWirePaths.get(accountRef);
+      const projectedSessionDir = path.dirname(path.dirname(path.dirname(projectionWire)));
+      writeJsonl(indexPath, [{
+        sessionId,
+        sessionDir: projectedSessionDir,
+        workDir: `/work/${sessionId}`
+      }]);
+    };
+    const assertStoredProjection = (accountRef) => {
+      const DatabaseSync = require('node:sqlite').DatabaseSync;
+      const db = new DatabaseSync(path.join(root, '.ai_home', 'app-state.db'));
+      try {
+        const usageRows = db.prepare(`
+          SELECT account_ref FROM model_usage_records
+          WHERE provider = 'kimi' AND source_kind = 'session_jsonl' AND session_id = ?
+        `).all(sessionId);
+        assert.deepEqual(usageRows.map((row) => row.account_ref), [accountRef]);
+        assert.equal(db.prepare(`
+          SELECT COUNT(*) AS count FROM model_usage_prompt_events
+          WHERE provider = 'kimi' AND session_id = ?
+        `).get(sessionId).count, 2);
+        assert.equal(db.prepare(`
+          SELECT prompt_count FROM model_usage_sessions
+          WHERE provider = 'kimi' AND session_id = ?
+        `).get(sessionId).prompt_count, 2);
+        const fileState = db.prepare(`
+          SELECT scan_context FROM model_usage_file_state WHERE path = ?
+        `).get(fs.realpathSync(files.wirePath));
+        assert.equal(
+          String(JSON.parse(fileState.scan_context).attributedAccountRef || ''),
+          accountRef
+        );
+      } finally {
+        db.close();
+      }
+    };
+
+    writeOwnerIndex(firstRef);
+    const DatabaseSync = require('node:sqlite').DatabaseSync;
+    const failingDb = new DatabaseSync(path.join(root, '.ai_home', 'app-state.db'));
+    failingDb.exec(`
+      CREATE TRIGGER fail_kimi_owner_reprojection
+      BEFORE INSERT ON model_usage_records
+      WHEN NEW.provider = 'kimi'
+        AND NEW.source_kind = 'session_jsonl'
+        AND NEW.account_ref = '${firstRef}'
+      BEGIN
+        SELECT RAISE(ABORT, 'forced_kimi_owner_reprojection_failure');
+      END;
+    `);
+    failingDb.close();
+
+    const failedOwnerArrivalScan = service.scan({ provider: 'kimi' });
+    assert.equal(failedOwnerArrivalScan.skipped, 1);
+    assertStoredProjection('');
+
+    const repairDb = new DatabaseSync(path.join(root, '.ai_home', 'app-state.db'));
+    repairDb.exec('DROP TRIGGER fail_kimi_owner_reprojection');
+    repairDb.close();
+
+    const ownerArrivalScan = service.scan({ provider: 'kimi' });
+    assert.equal(ownerArrivalScan.records, 1);
+    assert.equal(ownerArrivalScan.prompts, 2);
+    assertStoredProjection(firstRef);
+
+    writeOwnerIndex(secondRef);
+    const ownerChangeScan = service.scan({ provider: 'kimi' });
+    assert.equal(ownerChangeScan.records, 1);
+    assert.equal(ownerChangeScan.prompts, 2);
+    assertStoredProjection(secondRef);
+
+    const stableScan = service.scan({ provider: 'kimi' });
+    assert.equal(stableScan.records, 0);
+    assert.equal(stableScan.prompts, 0);
+    assertStoredProjection(secondRef);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('kimi scanner preserves an existing owner while the native index is temporarily missing', (t) => {
+  const accountRef = 'acct_0123456789abcdef0123';
+  const sessionId = 'session_owner-index-missing';
+  const fixture = makeService(t);
+  if (!fixture) return;
+  const { root, service } = fixture;
+  try {
+    createKimiSharedSessionFixture(root, {
+      accountRefs: [accountRef],
+      sessions: [{ sessionId, accountRef }]
+    });
+    service.scan({ provider: 'kimi' });
+    assert.deepEqual(readKimiSessionAccountRefs(root, sessionId), [accountRef]);
+
+    fs.unlinkSync(path.join(root, '.kimi-code', 'session_index.jsonl'));
+    service.scan({ provider: 'kimi' });
+
+    assert.deepEqual(readKimiSessionAccountRefs(root, sessionId), [accountRef]);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('kimi scanner preserves an existing owner while the native index is invalid', (t) => {
+  const accountRef = 'acct_0123456789abcdef0123';
+  const sessionId = 'session_owner-index-invalid';
+  const fixture = makeService(t);
+  if (!fixture) return;
+  const { root, service } = fixture;
+  try {
+    createKimiSharedSessionFixture(root, {
+      accountRefs: [accountRef],
+      sessions: [{ sessionId, accountRef }]
+    });
+    service.scan({ provider: 'kimi' });
+    writeTextFile(path.join(root, '.kimi-code', 'session_index.jsonl'), '{"sessionId":');
+
+    service.scan({ provider: 'kimi' });
+
+    assert.deepEqual(readKimiSessionAccountRefs(root, sessionId), [accountRef]);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('kimi scanner preserves an existing owner while the native index is ambiguous', (t) => {
+  const firstRef = 'acct_0123456789abcdef0123';
+  const secondRef = 'acct_fedcba98765432100123';
+  const sessionId = 'session_owner-index-ambiguous';
+  const fixture = makeService(t);
+  if (!fixture) return;
+  const { root, service } = fixture;
+  try {
+    const shared = createKimiSharedSessionFixture(root, {
+      accountRefs: [firstRef, secondRef],
+      sessions: [{ sessionId, accountRef: firstRef }]
+    });
+    service.scan({ provider: 'kimi' });
+    writeJsonl(path.join(root, '.kimi-code', 'session_index.jsonl'), [firstRef, secondRef].map((accountRef) => ({
+      sessionId,
+      sessionDir: kimiIndexedSessionDir(shared, sessionId, accountRef),
+      workDir: `/work/${sessionId}`
+    })));
+
+    service.scan({ provider: 'kimi' });
+
+    assert.deepEqual(readKimiSessionAccountRefs(root, sessionId), [firstRef]);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('kimi scanner does not infer an unindexed session owner from its projection path', (t) => {
   const accountRef = 'acct_0123456789abcdef0123';
   const fixture = makeService(t);
   if (!fixture) return;
@@ -747,12 +1239,7 @@ test('kimi scanner attributes sandbox wire usage to the account named by its pat
     assert.equal(scan.providers.kimi.files, 2);
 
     const usage = service.getAccountTokenUsage({ nowMs });
-    assert.equal(Object.keys(usage).length, 1);
-    assert.equal(usage[accountRef].month, 155);
-    assert.deepEqual(
-      usage[accountRef].models.map((row) => [row.model, row.month]),
-      [['kimi-code/k3-256k', 155]]
-    );
+    assert.deepEqual(usage, {});
 
     const stats = service.getStats({
       fromMs: new Date(2026, 5, 4).getTime(),
@@ -762,6 +1249,994 @@ test('kimi scanner attributes sandbox wire usage to the account named by its pat
     assert.equal(stats.totalCalls, 2);
     assert.equal(stats.totalTokens, 310);
   } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('kimi usage rebuild previews then atomically replaces legacy duplicate transcript rows', (t) => {
+  const accountRef = 'acct_0123456789abcdef0123';
+  const sessionId = 'session_rebuild-duplicates';
+  const fixture = makeService(t);
+  if (!fixture) return;
+  const { root, service } = fixture;
+  try {
+    const shared = createKimiSharedSessionFixture(root, {
+      accountRefs: [accountRef],
+      sessions: [{ sessionId, accountRef, promptCount: 25 }]
+    });
+    const files = shared.sessionFiles.get(sessionId);
+    const projectionWire = files.projectionWirePaths.get(accountRef);
+    seedLegacyDuplicatedKimiProjection({
+      root,
+      accountRef,
+      sessionId,
+      hostWire: files.wirePath,
+      projectionWire
+    });
+    const DatabaseSync = require('node:sqlite').DatabaseSync;
+    const preservedStore = openModelUsageStore({
+      fs,
+      path,
+      aiHomeDir: path.join(root, '.ai_home'),
+      DatabaseSync
+    });
+    try {
+      preservedStore.insertPromptEvents([{
+        eventKey: 'kimi:gateway:preserve-same-session-prompt',
+        provider: 'kimi',
+        sessionId,
+        timestampMs: Date.parse('2026-06-04T11:30:00.000Z')
+      }]);
+      preservedStore.upsertSessions([{ provider: 'kimi', sessionId, promptCount: 1 }]);
+    } finally {
+      preservedStore.close();
+    }
+
+    assert.equal(
+      typeof service.rebuildKimiUsageProjection,
+      'function',
+      'model usage service must expose an explicit Kimi rebuild entry'
+    );
+    const preview = service.rebuildKimiUsageProjection();
+    assert.equal(preview.applied, false);
+    assert.equal(preview.files, 1);
+    assert.equal(preview.records, 1);
+    assert.equal(preview.prompts, 25);
+
+    const db = new DatabaseSync(path.join(root, '.ai_home', 'app-state.db'));
+    try {
+      assert.equal(db.prepare(`
+        SELECT COUNT(*) AS count FROM model_usage_records
+        WHERE provider = 'kimi' AND source_kind = 'session_jsonl'
+      `).get().count, 2);
+      assert.equal(db.prepare(`
+        SELECT COUNT(*) AS count FROM model_usage_prompt_events WHERE provider = 'kimi'
+      `).get().count, 51);
+    } finally {
+      db.close();
+    }
+
+    const rebuilt = service.rebuildKimiUsageProjection({ apply: true });
+    assert.equal(rebuilt.applied, true);
+    assert.equal(rebuilt.deleted.records, 2);
+    assert.equal(rebuilt.deleted.prompts, 50);
+    assert.equal(rebuilt.records, 1);
+    assert.equal(rebuilt.prompts, 25);
+
+    const rebuiltDb = new DatabaseSync(path.join(root, '.ai_home', 'app-state.db'));
+    try {
+      assert.equal(rebuiltDb.prepare(`
+        SELECT COUNT(*) AS count FROM model_usage_records
+        WHERE provider = 'kimi' AND source_kind = 'session_jsonl'
+      `).get().count, 1);
+      assert.equal(rebuiltDb.prepare(`
+        SELECT COUNT(*) AS count FROM model_usage_records
+        WHERE event_key = 'kimi:gateway:preserve-during-rebuild'
+      `).get().count, 1);
+      assert.equal(rebuiltDb.prepare(`
+        SELECT COUNT(*) AS count FROM model_usage_prompt_events WHERE provider = 'kimi'
+      `).get().count, 26);
+      assert.equal(rebuiltDb.prepare(`
+        SELECT COUNT(*) AS count FROM model_usage_prompt_events
+        WHERE event_key = 'kimi:gateway:preserve-same-session-prompt'
+      `).get().count, 1);
+      assert.equal(rebuiltDb.prepare(`
+        SELECT prompt_count FROM model_usage_sessions
+        WHERE provider = 'kimi' AND session_id = ?
+      `).get(sessionId).prompt_count, 26);
+      assert.equal(rebuiltDb.prepare(`
+        SELECT COUNT(*) AS count FROM model_usage_file_state
+        WHERE instr(replace(path, char(92), '/'), '/.kimi-code/sessions/') > 0
+      `).get().count, 1);
+      assert.equal(rebuiltDb.prepare(`
+        SELECT account_ref FROM model_usage_records
+        WHERE provider = 'kimi' AND source_kind = 'session_jsonl'
+      `).get().account_ref, accountRef);
+    } finally {
+      rebuiltDb.close();
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('kimi usage rebuild rolls back legacy rows when replacement insertion fails', (t) => {
+  const accountRef = 'acct_0123456789abcdef0123';
+  const sessionId = 'session_rebuild-rollback';
+  const fixture = makeService(t);
+  if (!fixture) return;
+  const { root, service } = fixture;
+  try {
+    const shared = createKimiSharedSessionFixture(root, {
+      accountRefs: [accountRef],
+      sessions: [{ sessionId, accountRef, promptCount: 25 }]
+    });
+    const files = shared.sessionFiles.get(sessionId);
+    seedLegacyDuplicatedKimiProjection({
+      root,
+      accountRef,
+      sessionId,
+      hostWire: files.wirePath,
+      projectionWire: files.projectionWirePaths.get(accountRef)
+    });
+
+    const DatabaseSync = require('node:sqlite').DatabaseSync;
+    const db = new DatabaseSync(path.join(root, '.ai_home', 'app-state.db'));
+    db.exec(`
+      CREATE TRIGGER fail_kimi_projection_rebuild
+      BEFORE INSERT ON model_usage_records
+      WHEN NEW.provider = 'kimi' AND NEW.source_kind = 'session_jsonl'
+      BEGIN
+        SELECT RAISE(ABORT, 'forced_kimi_projection_failure');
+      END;
+    `);
+    db.close();
+
+    assert.equal(typeof service.rebuildKimiUsageProjection, 'function');
+    assert.throws(
+      () => service.rebuildKimiUsageProjection({ apply: true }),
+      /forced_kimi_projection_failure/
+    );
+
+    const verifyDb = new DatabaseSync(path.join(root, '.ai_home', 'app-state.db'));
+    try {
+      assert.equal(verifyDb.prepare(`
+        SELECT COUNT(*) AS count FROM model_usage_records
+        WHERE provider = 'kimi' AND source_kind = 'session_jsonl'
+      `).get().count, 2);
+      assert.equal(verifyDb.prepare(`
+        SELECT COUNT(*) AS count FROM model_usage_prompt_events WHERE provider = 'kimi'
+      `).get().count, 50);
+      assert.equal(verifyDb.prepare(`
+        SELECT prompt_count FROM model_usage_sessions
+        WHERE provider = 'kimi' AND session_id = ?
+      `).get(sessionId).prompt_count, 50);
+      assert.equal(verifyDb.prepare(`
+        SELECT COUNT(*) AS count FROM model_usage_file_state
+        WHERE instr(replace(path, char(92), '/'), '/.kimi-code/sessions/') > 0
+      `).get().count, 2);
+    } finally {
+      verifyDb.close();
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('kimi usage rebuild converges every discovered physical transcript in one apply', (t) => {
+  const firstRef = 'acct_0123456789abcdef0123';
+  const secondRef = 'acct_fedcba98765432100123';
+  const sessions = [
+    { sessionId: 'session_rebuild-all-first', accountRef: firstRef, promptCount: 1 },
+    { sessionId: 'session_rebuild-all-second', accountRef: secondRef, promptCount: 2 }
+  ];
+  const fixture = makeService(t);
+  if (!fixture) return;
+  const { root, service } = fixture;
+  try {
+    const shared = createKimiSharedSessionFixture(root, {
+      accountRefs: [firstRef, secondRef],
+      sessions
+    });
+    sessions.forEach(({ sessionId, accountRef }) => {
+      const files = shared.sessionFiles.get(sessionId);
+      seedLegacyDuplicatedKimiProjection({
+        root,
+        accountRef,
+        sessionId,
+        hostWire: files.wirePath,
+        projectionWire: files.projectionWirePaths.get(accountRef)
+      });
+    });
+
+    const preview = service.rebuildKimiUsageProjection();
+    assert.deepEqual({
+      canApply: preview.canApply,
+      files: preview.files,
+      records: preview.records,
+      prompts: preview.prompts,
+      sessions: preview.sessions
+    }, {
+      canApply: true,
+      files: 2,
+      records: 2,
+      prompts: 3,
+      sessions: 2
+    });
+
+    const rebuilt = service.rebuildKimiUsageProjection({ apply: true });
+    assert.equal(rebuilt.deleted.records, 4);
+    assert.equal(rebuilt.deleted.prompts, 100);
+
+    const DatabaseSync = require('node:sqlite').DatabaseSync;
+    const db = new DatabaseSync(path.join(root, '.ai_home', 'app-state.db'));
+    try {
+      assert.equal(db.prepare(`
+        SELECT COUNT(*) AS count FROM model_usage_records
+        WHERE provider = 'kimi' AND source_kind = 'session_jsonl'
+      `).get().count, 2);
+      assert.equal(db.prepare(`
+        SELECT COUNT(*) AS count FROM model_usage_prompt_events
+        WHERE provider = 'kimi' AND event_key GLOB 'kimi:file:*:prompt'
+      `).get().count, 3);
+      assert.equal(db.prepare(`
+        SELECT COUNT(*) AS count FROM model_usage_file_state
+        WHERE instr(replace(path, char(92), '/'), '/.kimi-code/sessions/') > 0
+      `).get().count, 2);
+      assert.deepEqual(db.prepare(`
+        SELECT account_ref, COUNT(*) AS count FROM model_usage_records
+        WHERE provider = 'kimi' AND source_kind = 'session_jsonl'
+        GROUP BY account_ref ORDER BY account_ref
+      `).all().map((row) => [row.account_ref, row.count]), [
+        [firstRef, 1],
+        [secondRef, 1]
+      ]);
+    } finally {
+      db.close();
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('kimi usage rebuild fails closed for missing, invalid, and ambiguous ownership indexes', (t) => {
+  const firstRef = 'acct_0123456789abcdef0123';
+  const secondRef = 'acct_fedcba98765432100123';
+  const cases = [
+    {
+      name: 'missing',
+      expectedReason: 'kimi_usage_index_unavailable',
+      mutate(root) {
+        fs.unlinkSync(path.join(root, '.kimi-code', 'session_index.jsonl'));
+      }
+    },
+    {
+      name: 'invalid',
+      expectedReason: 'kimi_usage_index_invalid',
+      mutate(root) {
+        writeTextFile(path.join(root, '.kimi-code', 'session_index.jsonl'), '{"sessionId":');
+      }
+    },
+    {
+      name: 'ambiguous',
+      expectedReason: 'kimi_usage_index_ambiguous',
+      mutate(root, shared, sessionId) {
+        writeJsonl(path.join(root, '.kimi-code', 'session_index.jsonl'), [firstRef, secondRef].map((accountRef) => ({
+          sessionId,
+          sessionDir: kimiIndexedSessionDir(shared, sessionId, accountRef),
+          workDir: `/work/${sessionId}`
+        })));
+      }
+    }
+  ];
+
+  cases.forEach((testCase) => {
+    const fixture = makeService(t);
+    if (!fixture) return;
+    const { root, service } = fixture;
+    try {
+      const sessionId = `session_rebuild-index-${testCase.name}`;
+      const shared = createKimiSharedSessionFixture(root, {
+        accountRefs: [firstRef, secondRef],
+        sessions: [{ sessionId, accountRef: firstRef }]
+      });
+      testCase.mutate(root, shared, sessionId);
+
+      const preview = service.rebuildKimiUsageProjection();
+      assert.equal(preview.canApply, false, testCase.name);
+      assert.ok(preview.blockingReasons.includes(testCase.expectedReason), testCase.name);
+      assert.throws(
+        () => service.rebuildKimiUsageProjection({ apply: true }),
+        /kimi_usage_rebuild_preflight_failed/,
+        testCase.name
+      );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+test('kimi usage rebuild preserves history outside the trusted physical transcript scope', (t) => {
+  const accountRef = 'acct_0123456789abcdef0123';
+  const liveSessionId = 'session_rebuild-live-scope';
+  const archivedSessionId = 'session_rebuild-archived-scope';
+  const fixture = makeService(t);
+  if (!fixture) return;
+  const { root, service } = fixture;
+  try {
+    const shared = createKimiSharedSessionFixture(root, {
+      accountRefs: [accountRef],
+      sessions: [{ sessionId: liveSessionId, accountRef }]
+    });
+    const liveFiles = shared.sessionFiles.get(liveSessionId);
+    seedLegacyDuplicatedKimiProjection({
+      root,
+      accountRef,
+      sessionId: liveSessionId,
+      hostWire: liveFiles.wirePath,
+      projectionWire: liveFiles.projectionWirePaths.get(accountRef)
+    });
+
+    const archivedWire = path.join(
+      root,
+      'offline-archive',
+      '.kimi-code',
+      'sessions',
+      'wd_archive',
+      archivedSessionId,
+      'agents',
+      'main',
+      'wire.jsonl'
+    );
+    const externalStatePath = path.join(
+      root,
+      'external-state',
+      '.kimi-code',
+      'sessions',
+      'wd_external',
+      'session_external',
+      'agents',
+      'main',
+      'wire.jsonl'
+    );
+    const timestampMs = Date.parse('2026-06-04T11:30:00.000Z');
+    const DatabaseSync = require('node:sqlite').DatabaseSync;
+    const store = openModelUsageStore({
+      fs,
+      path,
+      aiHomeDir: path.join(root, '.ai_home'),
+      DatabaseSync
+    });
+    try {
+      store.insertUsage({
+        eventKey: modelUsageScannerPrivate.buildFileEventKey('kimi', archivedWire, 10, 'usage'),
+        provider: 'kimi',
+        accountRef,
+        sessionId: archivedSessionId,
+        sourceKind: 'session_jsonl',
+        model: 'kimi-code/k3-256k',
+        totalTokens: 17,
+        timestampMs
+      });
+      store.insertPromptEvents([
+        {
+          eventKey: modelUsageScannerPrivate.buildFileEventKey('kimi', archivedWire, 20, 'prompt'),
+          provider: 'kimi',
+          sessionId: archivedSessionId,
+          timestampMs
+        },
+        {
+          eventKey: 'kimi:gateway:preserve-non-transcript-prompt',
+          provider: 'kimi',
+          sessionId: 'gateway-session',
+          timestampMs
+        }
+      ]);
+      store.upsertSessions([
+        {
+          provider: 'kimi',
+          sessionId: archivedSessionId,
+          promptCount: 1,
+          updatedAtMs: timestampMs
+        },
+        {
+          provider: 'kimi',
+          sessionId: 'gateway-session',
+          promptCount: 1,
+          updatedAtMs: timestampMs
+        }
+      ]);
+      store.setFileState(externalStatePath, {
+        size: 10,
+        offset: 10,
+        scanContext: { sessionId: 'session_external' }
+      });
+    } finally {
+      store.close();
+    }
+
+    const rebuilt = service.rebuildKimiUsageProjection({ apply: true });
+    assert.equal(rebuilt.applied, true);
+
+    const db = new DatabaseSync(path.join(root, '.ai_home', 'app-state.db'));
+    try {
+      assert.equal(db.prepare(`
+        SELECT COUNT(*) AS count FROM model_usage_records WHERE event_key = ?
+      `).get(modelUsageScannerPrivate.buildFileEventKey('kimi', archivedWire, 10, 'usage')).count, 1);
+      assert.equal(db.prepare(`
+        SELECT COUNT(*) AS count FROM model_usage_prompt_events WHERE event_key = ?
+      `).get(modelUsageScannerPrivate.buildFileEventKey('kimi', archivedWire, 20, 'prompt')).count, 1);
+      assert.equal(db.prepare(`
+        SELECT COUNT(*) AS count FROM model_usage_prompt_events
+        WHERE event_key = 'kimi:gateway:preserve-non-transcript-prompt'
+      `).get().count, 1);
+      assert.equal(db.prepare(`
+        SELECT COUNT(*) AS count FROM model_usage_sessions
+        WHERE provider = 'kimi' AND session_id IN (?, ?)
+      `).get(archivedSessionId, 'gateway-session').count, 2);
+      assert.equal(db.prepare(`
+        SELECT COUNT(*) AS count FROM model_usage_file_state WHERE path = ?
+      `).get(externalStatePath).count, 1);
+    } finally {
+      db.close();
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('kimi usage discovery rejects an account projection symlink outside trusted roots', (t) => {
+  const accountRef = 'acct_0123456789abcdef0123';
+  const fixture = makeService(t);
+  if (!fixture) return;
+  const { root, service } = fixture;
+  try {
+    createKimiSharedSessionFixture(root, {
+      sessions: [{ sessionId: 'session_trusted-host' }]
+    });
+    const externalWire = path.join(
+      root,
+      'untrusted-external-sessions',
+      'wd_external',
+      'session_external',
+      'agents',
+      'main',
+      'wire.jsonl'
+    );
+    writeJsonl(externalWire, [{
+      type: 'usage.record',
+      model: 'kimi-code/k3-256k',
+      usage: { inputOther: 5, output: 1 },
+      usageScope: 'turn',
+      time: Date.parse('2026-06-04T11:00:00.000Z')
+    }]);
+    const projectionHome = path.join(
+      root,
+      '.ai_home',
+      'run',
+      'auth-projections',
+      'kimi',
+      accountRef,
+      '.kimi-code'
+    );
+    fs.mkdirSync(projectionHome, { recursive: true });
+    fs.symlinkSync(
+      path.join(root, 'untrusted-external-sessions'),
+      path.join(projectionHome, 'sessions'),
+      process.platform === 'win32' ? 'junction' : 'dir'
+    );
+
+    const preview = service.rebuildKimiUsageProjection();
+    assert.equal(preview.canApply, false);
+    assert.ok(preview.blockingReasons.includes('kimi_usage_discovery_incomplete'));
+    assert.equal(preview.files, 1);
+    assert.throws(
+      () => service.rebuildKimiUsageProjection({ apply: true }),
+      /kimi_usage_rebuild_preflight_failed/
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('kimi usage discovery rejects a symlinked account runtime outside the projection root', (t) => {
+  const accountRef = 'acct_0123456789abcdef0123';
+  const fixture = makeService(t);
+  if (!fixture) return;
+  const { root, service } = fixture;
+  try {
+    createKimiSharedSessionFixture(root, {
+      sessions: [{ sessionId: 'session_trusted-runtime-host' }]
+    });
+    const externalRuntime = path.join(root, 'untrusted-kimi-runtime');
+    writeJsonl(path.join(
+      externalRuntime,
+      'sessions',
+      'wd_external',
+      'session_external-runtime',
+      'agents',
+      'main',
+      'wire.jsonl'
+    ), [{
+      type: 'usage.record',
+      model: 'kimi-code/k3-256k',
+      usage: { inputOther: 5, output: 1 },
+      usageScope: 'turn',
+      time: Date.parse('2026-06-04T11:00:00.000Z')
+    }]);
+    const accountProjectionRoot = path.join(
+      root,
+      '.ai_home',
+      'run',
+      'auth-projections',
+      'kimi',
+      accountRef
+    );
+    fs.mkdirSync(accountProjectionRoot, { recursive: true });
+    fs.symlinkSync(
+      externalRuntime,
+      path.join(accountProjectionRoot, '.kimi-code'),
+      process.platform === 'win32' ? 'junction' : 'dir'
+    );
+
+    const preview = service.rebuildKimiUsageProjection();
+    assert.equal(preview.canApply, false);
+    assert.ok(preview.blockingReasons.includes('kimi_usage_discovery_incomplete'));
+    assert.equal(preview.files, 1);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('kimi usage rebuild rejects an incomplete projection-root enumeration', (t) => {
+  let blockedRoot = '';
+  const failingFs = new Proxy(fs, {
+    get(target, property) {
+      if (property === 'readdirSync') {
+        return (targetPath, options) => {
+          if (blockedRoot && path.resolve(targetPath) === blockedRoot) {
+            const error = new Error('forced_projection_root_failure');
+            error.code = 'EACCES';
+            throw error;
+          }
+          return fs.readdirSync(targetPath, options);
+        };
+      }
+      const value = Reflect.get(target, property);
+      return typeof value === 'function' ? value.bind(target) : value;
+    }
+  });
+  const fixture = makeService(t, { fs: failingFs });
+  if (!fixture) return;
+  const { root, service } = fixture;
+  try {
+    createKimiSharedSessionFixture(root, {
+      sessions: [{ sessionId: 'session_projection-list-failure' }]
+    });
+    blockedRoot = path.resolve(
+      root,
+      '.ai_home',
+      'run',
+      'auth-projections',
+      'kimi'
+    );
+    fs.mkdirSync(blockedRoot, { recursive: true });
+
+    const preview = service.rebuildKimiUsageProjection();
+
+    assert.equal(preview.canApply, false);
+    assert.ok(preview.blockingReasons.includes('kimi_usage_discovery_incomplete'));
+    assert.throws(
+      () => service.rebuildKimiUsageProjection({ apply: true }),
+      /kimi_usage_rebuild_preflight_failed/
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('kimi ownership rejects a projection index symlink outside the host or account runtime', (t) => {
+  const accountRef = 'acct_0123456789abcdef0123';
+  const sessionId = 'session_untrusted-index-link';
+  const fixture = makeService(t);
+  if (!fixture) return;
+  const { root, service } = fixture;
+  try {
+    createKimiSharedSessionFixture(root, {
+      accountRefs: [accountRef],
+      sessions: [{ sessionId, accountRef }]
+    });
+    const hostIndexPath = path.join(root, '.kimi-code', 'session_index.jsonl');
+    const externalIndexPath = path.join(root, 'untrusted-index', 'session_index.jsonl');
+    writeTextFile(externalIndexPath, fs.readFileSync(hostIndexPath, 'utf8'));
+    fs.unlinkSync(hostIndexPath);
+    const projectionIndexPath = path.join(
+      root,
+      '.ai_home',
+      'run',
+      'auth-projections',
+      'kimi',
+      accountRef,
+      '.kimi-code',
+      'session_index.jsonl'
+    );
+    fs.symlinkSync(externalIndexPath, projectionIndexPath);
+
+    service.scan({ provider: 'kimi' });
+    const preview = service.rebuildKimiUsageProjection();
+
+    assert.deepEqual(readKimiSessionAccountRefs(root, sessionId), ['']);
+    assert.equal(preview.canApply, false);
+    assert.ok(preview.blockingReasons.includes('kimi_usage_index_unavailable'));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('kimi ownership rejects a host index file symlink outside the host runtime', (t) => {
+  const accountRef = 'acct_0123456789abcdef0123';
+  const sessionId = 'session_untrusted-host-index-link';
+  const fixture = makeService(t);
+  if (!fixture) return;
+  const { root, service } = fixture;
+  try {
+    createKimiSharedSessionFixture(root, {
+      accountRefs: [accountRef],
+      sessions: [{ sessionId, accountRef }]
+    });
+    const hostIndexPath = path.join(root, '.kimi-code', 'session_index.jsonl');
+    const externalIndexPath = path.join(root, 'untrusted-host-index', 'session_index.jsonl');
+    writeTextFile(externalIndexPath, fs.readFileSync(hostIndexPath, 'utf8'));
+    fs.unlinkSync(hostIndexPath);
+    fs.symlinkSync(externalIndexPath, hostIndexPath);
+
+    service.scan({ provider: 'kimi' });
+    const preview = service.rebuildKimiUsageProjection();
+
+    assert.deepEqual(readKimiSessionAccountRefs(root, sessionId), ['']);
+    assert.equal(preview.canApply, false);
+    assert.ok(preview.blockingReasons.includes('kimi_usage_index_unavailable'));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('kimi usage discovery traverses one shared physical sessions root once', (t) => {
+  const firstRef = 'acct_0123456789abcdef0123';
+  const secondRef = 'acct_fedcba98765432100123';
+  let physicalSessionsRoot = '';
+  let rootReads = 0;
+  const countingFs = new Proxy(fs, {
+    get(target, property) {
+      if (property === 'readdirSync') {
+        return (targetPath, options) => {
+          if (
+            physicalSessionsRoot
+            && fs.existsSync(targetPath)
+            && fs.realpathSync(targetPath) === physicalSessionsRoot
+          ) {
+            rootReads += 1;
+          }
+          return fs.readdirSync(targetPath, options);
+        };
+      }
+      const value = Reflect.get(target, property);
+      return typeof value === 'function' ? value.bind(target) : value;
+    }
+  });
+  const fixture = makeService(t, { fs: countingFs });
+  if (!fixture) return;
+  const { root, service } = fixture;
+  try {
+    const shared = createKimiSharedSessionFixture(root, {
+      accountRefs: [firstRef, secondRef],
+      sessions: [{ sessionId: 'session_shared-root-once', accountRef: firstRef }]
+    });
+    physicalSessionsRoot = fs.realpathSync(shared.hostSessionsRoot);
+
+    const scan = service.scan({ provider: 'kimi' });
+
+    assert.equal(scan.providers.kimi.files, 1);
+    assert.equal(rootReads, 1);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('kimi usage rebuild rejects a transcript that changes while its snapshot is read', (t) => {
+  const accountRef = 'acct_0123456789abcdef0123';
+  let targetWirePath = '';
+  let appendCount = 0;
+  const targetFds = new Set();
+  const mutatedFds = new Set();
+  const racingFs = new Proxy(fs, {
+    get(target, property) {
+      if (property === 'openSync') {
+        return (targetPath, flags) => {
+          const fd = fs.openSync(targetPath, flags);
+          if (targetWirePath && fs.realpathSync(targetPath) === targetWirePath) targetFds.add(fd);
+          return fd;
+        };
+      }
+      if (property === 'readSync') {
+        return (fd, buffer, offset, length, position) => {
+          const bytesRead = fs.readSync(fd, buffer, offset, length, position);
+          if (targetFds.has(fd) && !mutatedFds.has(fd)) {
+            appendCount += 1;
+            fs.appendFileSync(targetWirePath, `${JSON.stringify({
+              type: 'usage.record',
+              model: 'kimi-code/k3-256k',
+              usage: { inputOther: 9, output: 1 },
+              usageScope: 'turn',
+              time: Date.parse('2026-06-04T11:10:00.000Z') + appendCount
+            })}\n`, 'utf8');
+            mutatedFds.add(fd);
+          }
+          return bytesRead;
+        };
+      }
+      if (property === 'closeSync') {
+        return (fd) => {
+          targetFds.delete(fd);
+          mutatedFds.delete(fd);
+          return fs.closeSync(fd);
+        };
+      }
+      const value = Reflect.get(target, property);
+      return typeof value === 'function' ? value.bind(target) : value;
+    }
+  });
+  const fixture = makeService(t, { fs: racingFs });
+  if (!fixture) return;
+  const { root, service } = fixture;
+  try {
+    const shared = createKimiSharedSessionFixture(root, {
+      accountRefs: [accountRef],
+      sessions: [{ sessionId: 'session_source-change', accountRef }]
+    });
+    targetWirePath = fs.realpathSync(shared.sessionFiles.get('session_source-change').wirePath);
+
+    const preview = service.rebuildKimiUsageProjection();
+
+    assert.equal(appendCount, 1);
+    assert.equal(preview.canApply, false);
+    assert.ok(preview.blockingReasons.includes('kimi_usage_source_changed'));
+    assert.throws(
+      () => service.rebuildKimiUsageProjection({ apply: true }),
+      /kimi_usage_rebuild_preflight_failed/
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('kimi incremental scan rolls back records and session state when file-state commit fails', (t) => {
+  const accountRef = 'acct_0123456789abcdef0123';
+  const sessionId = 'session_incremental-transaction';
+  const fixture = makeService(t);
+  if (!fixture) return;
+  const { root, service } = fixture;
+  try {
+    const shared = createKimiSharedSessionFixture(root, {
+      accountRefs: [accountRef],
+      sessions: [{ sessionId, accountRef, promptCount: 2 }]
+    });
+    const wirePath = fs.realpathSync(shared.sessionFiles.get(sessionId).wirePath);
+    const DatabaseSync = require('node:sqlite').DatabaseSync;
+    const initializedStore = openModelUsageStore({
+      fs,
+      path,
+      aiHomeDir: path.join(root, '.ai_home'),
+      DatabaseSync
+    });
+    initializedStore.close();
+    const db = new DatabaseSync(path.join(root, '.ai_home', 'app-state.db'));
+    db.exec(`
+      CREATE TRIGGER fail_kimi_file_state_commit
+      BEFORE INSERT ON model_usage_file_state
+      WHEN NEW.path = '${wirePath.replaceAll("'", "''")}'
+      BEGIN
+        SELECT RAISE(ABORT, 'forced_kimi_file_state_failure');
+      END;
+    `);
+    db.close();
+
+    const scan = service.scan({ provider: 'kimi' });
+    assert.equal(scan.skipped, 1);
+
+    const verifyDb = new DatabaseSync(path.join(root, '.ai_home', 'app-state.db'));
+    try {
+      assert.equal(verifyDb.prepare(`
+        SELECT COUNT(*) AS count FROM model_usage_records WHERE provider = 'kimi'
+      `).get().count, 0);
+      assert.equal(verifyDb.prepare(`
+        SELECT COUNT(*) AS count FROM model_usage_prompt_events WHERE provider = 'kimi'
+      `).get().count, 0);
+      assert.equal(verifyDb.prepare(`
+        SELECT COUNT(*) AS count FROM model_usage_sessions WHERE provider = 'kimi'
+      `).get().count, 0);
+    } finally {
+      verifyDb.close();
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('kimi incremental scan retries an unterminated JSONL tail after the writer completes it', (t) => {
+  const accountRef = 'acct_0123456789abcdef0123';
+  const sessionId = 'session_incremental-partial-tail';
+  const fixture = makeService(t);
+  if (!fixture) return;
+  const { root, service } = fixture;
+  try {
+    const shared = createKimiSharedSessionFixture(root, {
+      accountRefs: [accountRef],
+      sessions: [{ sessionId, accountRef }]
+    });
+    const wirePath = shared.sessionFiles.get(sessionId).wirePath;
+    const nextRow = `${JSON.stringify({
+      type: 'usage.record',
+      model: 'kimi-code/k3-256k',
+      usage: { inputOther: 7, output: 3 },
+      usageScope: 'turn',
+      time: Date.parse('2026-06-04T11:10:00.000Z')
+    })}\n`;
+    const splitAt = Math.floor(nextRow.length / 2);
+    fs.appendFileSync(wirePath, nextRow.slice(0, splitAt), 'utf8');
+
+    const firstScan = service.scan({ provider: 'kimi' });
+    assert.equal(firstScan.records, 1);
+    fs.appendFileSync(wirePath, nextRow.slice(splitAt), 'utf8');
+
+    const secondScan = service.scan({ provider: 'kimi' });
+    const stats = service.getStats({
+      fromMs: new Date(2026, 5, 4).getTime(),
+      toMs: new Date(2026, 5, 5).getTime() - 1,
+      provider: 'kimi'
+    });
+    assert.equal(secondScan.records, 1);
+    assert.equal(stats.totalCalls, 2);
+    assert.equal(stats.totalTokens, 165);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('kimi incremental scan scoped-replaces a truncated or rotated wire', (t) => {
+  const accountRef = 'acct_0123456789abcdef0123';
+  const sessionId = 'session_wire-replaced';
+  const fixture = makeService(t);
+  if (!fixture) return;
+  const { root, service } = fixture;
+  try {
+    const shared = createKimiSharedSessionFixture(root, {
+      accountRefs: [accountRef],
+      sessions: [{ sessionId, accountRef, promptCount: 2 }]
+    });
+    const wirePath = shared.sessionFiles.get(sessionId).wirePath;
+    const DatabaseSync = require('node:sqlite').DatabaseSync;
+    const readProjection = () => {
+      const db = new DatabaseSync(path.join(root, '.ai_home', 'app-state.db'));
+      try {
+        const recordRow = db.prepare(`
+          SELECT COUNT(*) AS count, COALESCE(SUM(total_tokens), 0) AS tokens
+          FROM model_usage_records
+          WHERE provider = 'kimi' AND source_kind = 'session_jsonl' AND session_id = ?
+        `).get(sessionId);
+        return {
+          records: {
+            count: Number(recordRow.count) || 0,
+            tokens: Number(recordRow.tokens) || 0
+          },
+          prompts: db.prepare(`
+            SELECT COUNT(*) AS count FROM model_usage_prompt_events
+            WHERE provider = 'kimi' AND session_id = ?
+          `).get(sessionId).count,
+          sessionPrompts: db.prepare(`
+            SELECT prompt_count FROM model_usage_sessions
+            WHERE provider = 'kimi' AND session_id = ?
+          `).get(sessionId).prompt_count,
+          fileState: db.prepare(`
+            SELECT size, offset FROM model_usage_file_state WHERE path = ?
+          `).get(fs.realpathSync(wirePath))
+        };
+      } finally {
+        db.close();
+      }
+    };
+    const replacementRows = (inputTokens, promptText = 'replacement') => [{
+      type: 'turn.prompt',
+      origin: { kind: 'user' },
+      input: [{ type: 'text', text: promptText }],
+      time: Date.parse('2026-06-04T11:10:00.000Z') + inputTokens
+    }, {
+      type: 'usage.record',
+      model: 'kimi-code/k3-256k',
+      usage: { inputOther: inputTokens, output: 1 },
+      usageScope: 'turn',
+      time: Date.parse('2026-06-04T11:11:00.000Z') + inputTokens
+    }];
+
+    service.scan({ provider: 'kimi' });
+    assert.deepEqual(readProjection().records, { count: 1, tokens: 155 });
+
+    writeJsonl(wirePath, replacementRows(7));
+    assert.equal(service.scan({ provider: 'kimi' }).skipped, 0);
+    let projection = readProjection();
+    assert.deepEqual(projection.records, { count: 1, tokens: 8 });
+    assert.equal(projection.prompts, 1);
+    assert.equal(projection.sessionPrompts, 1);
+    assert.equal(projection.fileState.size, fs.statSync(wirePath).size);
+    assert.equal(projection.fileState.offset, fs.statSync(wirePath).size);
+
+    const previousWirePath = `${wirePath}.previous`;
+    fs.renameSync(wirePath, previousWirePath);
+    const previousOffset = projection.fileState.offset;
+    writeJsonl(wirePath, replacementRows(13, 'x'.repeat(previousOffset + 100)));
+    assert.ok(fs.statSync(wirePath).size > previousOffset);
+    assert.equal(service.scan({ provider: 'kimi' }).skipped, 0);
+    projection = readProjection();
+    assert.deepEqual(projection.records, { count: 1, tokens: 14 });
+    assert.equal(projection.prompts, 1);
+    assert.equal(projection.sessionPrompts, 1);
+    assert.equal(projection.fileState.size, fs.statSync(wirePath).size);
+    assert.equal(projection.fileState.offset, fs.statSync(wirePath).size);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('kimi incremental scan rejects a stale file-state snapshot before owner persistence', (t) => {
+  const firstRef = 'acct_0123456789abcdef0123';
+  const secondRef = 'acct_fedcba98765432100123';
+  const sessionId = 'session_stale-owner-snapshot';
+  const fixture = makeService(t);
+  if (!fixture) return;
+  const { root, service } = fixture;
+  let staleStore = null;
+  try {
+    const shared = createKimiSharedSessionFixture(root, {
+      accountRefs: [firstRef, secondRef],
+      sessions: [{ sessionId, accountRef: firstRef }]
+    });
+    const wirePath = fs.realpathSync(shared.sessionFiles.get(sessionId).wirePath);
+    service.scan({ provider: 'kimi' });
+
+    const DatabaseSync = require('node:sqlite').DatabaseSync;
+    staleStore = openModelUsageStore({
+      fs,
+      path,
+      aiHomeDir: path.join(root, '.ai_home'),
+      DatabaseSync
+    });
+    const staleState = staleStore.getFileState(wirePath);
+    const secondProjectionWire = shared.sessionFiles.get(sessionId).projectionWirePaths.get(secondRef);
+    writeJsonl(path.join(root, '.kimi-code', 'session_index.jsonl'), [{
+      sessionId,
+      sessionDir: path.dirname(path.dirname(path.dirname(secondProjectionWire))),
+      workDir: `/work/${sessionId}`
+    }]);
+    service.scan({ provider: 'kimi' });
+
+    assert.throws(
+      () => modelUsageScannerPrivate.scanKimiFile({
+        fs,
+        path,
+        filePath: wirePath,
+        accountRef: '',
+        ownerAuthoritative: false,
+        store: {
+          getFileState: () => staleState,
+          appendKimiFileProjection: staleStore.appendKimiFileProjection,
+          replaceKimiFileProjection: staleStore.replaceKimiFileProjection
+        }
+      }),
+      /model_usage_kimi_file_projection_stale/
+    );
+    assert.deepEqual(readKimiSessionAccountRefs(root, sessionId), [secondRef]);
+  } finally {
+    if (staleStore) staleStore.close();
     fs.rmSync(root, { recursive: true, force: true });
   }
 });

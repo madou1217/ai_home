@@ -30,7 +30,8 @@ const ACCOUNT_IDENTITIES = Object.freeze({
   claudeFour: { provider: 'claude', cliAccountId: '4', identitySeed: 'oauth:claude:chat-four@example.com' },
   agyTwo: { provider: 'agy', cliAccountId: '2', identitySeed: 'oauth:agy:chat-two@example.com' },
   agyThree: { provider: 'agy', cliAccountId: '3', identitySeed: 'oauth:agy:chat-three@example.com' },
-  opencodeOne: { provider: 'opencode', cliAccountId: '1', identitySeed: 'oauth:opencode:chat-one@example.com' }
+  opencodeOne: { provider: 'opencode', cliAccountId: '1', identitySeed: 'oauth:opencode:chat-one@example.com' },
+  grokOne: { provider: 'grok', cliAccountId: '1', identitySeed: 'oauth:grok:chat-one@example.com' }
 });
 const ACCOUNT_REFS = Object.freeze(Object.fromEntries(
   Object.entries(ACCOUNT_IDENTITIES).map(([key, identity]) => [
@@ -3331,3 +3332,65 @@ test('web ui chat emits thinking events for codex reasoning deltas in api proxy 
     fs.rmSync(aiHomeDir, { recursive: true, force: true });
   }
 });
+
+test('web ui chat routes grok session prompt through headless stream mode', async () => {
+  const originalSpawn = nativeSessionChat.spawnNativeSessionStream;
+  let seenOptions = null;
+  nativeSessionChat.spawnNativeSessionStream = (options = {}) => {
+    seenOptions = options;
+    return {
+      runId: 'native-run-grok-1',
+      abort() {},
+      done: new Promise((resolve) => {
+        setTimeout(() => {
+          options.onEvent({ type: 'delta', delta: 'Hello from Grok' });
+          resolve({ content: 'Hello from Grok', sessionId: 'grok-session-1' });
+        }, 0);
+      })
+    };
+  };
+
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-chat-grok-'));
+  try {
+    registerChatAccount(aiHomeDir, 'grokOne');
+
+    const req = new EventEmitter();
+    req.headers = {};
+    const res = createStreamResCapture();
+    const payload = {
+      provider: 'grok',
+      accountRef: ACCOUNT_REFS.grokOne,
+      createSession: true,
+      projectPath: '/Users/model/projects/feature/ai_home',
+      prompt: 'Hello Grok',
+      stream: true,
+      messages: [{ role: 'user', content: 'Hello Grok' }]
+    };
+
+    const handled = await handleWebUIRequest({
+      method: 'POST',
+      pathname: '/v0/webui/chat',
+      url: new URL('http://localhost/v0/webui/chat'),
+      req,
+      res,
+      options: { port: 8317 },
+      state: {},
+      deps: {
+        ...createBaseDeps({ aiHomeDir }),
+        readRequestBody: async () => Buffer.from(JSON.stringify(payload), 'utf8')
+      }
+    });
+
+    assert.equal(handled, true);
+    await waitForStreamEnd(res);
+    assert.equal(seenOptions.provider, 'grok');
+    assert.equal(seenOptions.interactiveCli, false);
+    assert.match(res.body, /"type":"ready","mode":"native-session"/);
+    assert.match(res.body, /"type":"delta","delta":"Hello from Grok"/);
+    assert.match(res.body, /"type":"done","mode":"native-session"/);
+  } finally {
+    nativeSessionChat.spawnNativeSessionStream = originalSpawn;
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+  }
+});
+

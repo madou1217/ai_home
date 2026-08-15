@@ -62,7 +62,8 @@ test('grok refresh posts the official contract and persists refreshed auth to DB
     fs,
     aiHomeDir,
     fetchWithTimeout: async (url, options) => {
-      calls.push({ url, body: JSON.parse(options.body) });
+      const parsedBody = Object.fromEntries(new URLSearchParams(options.body).entries());
+      calls.push({ url, body: parsedBody, headers: options.headers });
       return {
         ok: true,
         status: 200,
@@ -80,6 +81,7 @@ test('grok refresh posts the official contract and persists refreshed auth to DB
   assert.equal(result.persisted, true);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, 'https://auth.x.ai/oauth2/token');
+  assert.equal(calls[0].headers['content-type'], 'application/x-www-form-urlencoded');
   assert.equal(calls[0].body.grant_type, 'refresh_token');
   assert.equal(calls[0].body.refresh_token, 'grok-refresh-token-1');
   assert.equal(calls[0].body.client_id, 'b1a00492-073a-47ea-816f-4c329264a828');

@@ -59,3 +59,16 @@ web/src/.umi-production/
 
 # WebUI 终端运行时生成的 aih shim（见 webui-terminal-routes.js）
 .runtime-bin/
+
+# Local AIH/Grok runtime state and generated artifacts.
+/.config-init.lock
+/.metadata_version
+/active_sessions.json
+/active_sessions.lock
+/agent_id
+/config.toml
+/managed_config.lock
+/bin/native/
+/sessions/
+/docs/user-guide/
+/[[]object Object[]]/

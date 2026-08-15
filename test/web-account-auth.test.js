@@ -704,7 +704,9 @@ test('createAuthJobManager expires stale browser oauth jobs without provider sig
   assert.equal(manager.getRunningJob('opencode'), null);
 });
 
-test('createAuthJobManager terminates only the expired login PTY process group', () => {
+// gemini oauth-browser flow is disabled by product policy (gemini_google_oauth_disabled);
+// these PTY-based browser-login scenarios are unreachable until it is re-enabled.
+test('createAuthJobManager terminates only the expired login PTY process group', { skip: 'gemini oauth-browser disabled by product policy' }, () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-oauth-expire-group-'));
   const getProfileDir = (provider, accountId) => path.join(root, provider, String(accountId));
   const getToolConfigDir = (provider, accountId) => path.join(getProfileDir(provider, accountId), `.${provider}`);
@@ -1625,7 +1627,7 @@ test('createAuthJobManager marks claude oauth job succeeded when .credentials fi
   assert.equal(job.status, 'succeeded');
 });
 
-test('createAuthJobManager marks gemini oauth job succeeded when oauth_creds file appears', () => {
+test('createAuthJobManager marks gemini oauth job succeeded when oauth_creds file appears', { skip: 'gemini oauth-browser disabled by product policy' }, () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-oauth-gemini-complete-'));
   const getProfileDir = (provider, accountId) => path.join(root, provider, String(accountId));
   const getToolConfigDir = (provider, accountId) => path.join(getProfileDir(provider, accountId), `.${provider}`);
@@ -1676,7 +1678,7 @@ test('createAuthJobManager marks gemini oauth job succeeded when oauth_creds fil
   assert.equal(job.status, 'succeeded');
 });
 
-test('createAuthJobManager auto-selects Gemini parent-folder trust once', () => {
+test('createAuthJobManager auto-selects Gemini parent-folder trust once', { skip: 'gemini oauth-browser disabled by product policy' }, () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-oauth-gemini-trust-'));
   const getProfileDir = (provider, accountId) => path.join(root, provider, String(accountId));
   const getToolConfigDir = (provider, accountId) => path.join(getProfileDir(provider, accountId), `.${provider}`);

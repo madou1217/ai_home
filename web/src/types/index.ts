@@ -65,6 +65,7 @@ export type AccountUsageSnapshot =
         userId: string;
         phone: string;
         planType: string;
+        planName?: string; // 订阅页品牌档：Andante/Moderato/Allegretto/Allegro
       } | null;
       entries: CodexUsageEntry[];
     }
@@ -106,6 +107,7 @@ export interface Account {
   updatedAt: number;
   lastUsedAt?: number | null;
   planType: string; // free/pro/ultra/plus/team/business/api-key/oauth
+  planName?: string; // 订阅品牌档（如 kimi 的 Allegretto），展示优先于 planType
   email: string;
   baseUrl?: string;
   quotaStatus?: string;

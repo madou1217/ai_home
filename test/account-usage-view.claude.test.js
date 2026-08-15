@@ -66,7 +66,7 @@ test('normalizeAccountUsageSnapshot keeps kimi_oauth_usage entries for the WebUI
     kind: 'kimi_oauth_usage',
     capturedAt: 1700000000000,
     source: 'kimi_oauth_usages_api',
-    account: { planType: 'basic', displayName: '登月者2115', phone: '+86 186****2115' },
+    account: { planType: 'basic', planName: 'Allegretto', displayName: '登月者2115', phone: '+86 186****2115' },
     entries: [
       { bucket: 'weekly', windowMinutes: 10080, window: '7days', remainingPct: 51, resetIn: '6d', resetAtMs: 111 },
       { bucket: 'rolling_300m', windowMinutes: 300, window: '', remainingPct: 58, resetIn: '5h', resetAtMs: 222 }
@@ -76,6 +76,7 @@ test('normalizeAccountUsageSnapshot keeps kimi_oauth_usage entries for the WebUI
   assert.equal(normalized.capturedAt, 1700000000000);
   assert.deepEqual(normalized.account, {
     planType: 'basic',
+    planName: 'Allegretto',
     displayName: '登月者2115',
     userId: '',
     phone: '+86 186****2115'

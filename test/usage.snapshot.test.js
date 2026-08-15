@@ -2375,7 +2375,9 @@ function createKimiUsageFixture(root, options = {}) {
           status: 200,
           json: async () => ({
             nickname: '登月者2115',
-            phone: { country_code: '86', number: '186****2115' }
+            phone: { country_code: '86', number: '186****2115' },
+            user_level: 25,
+            user_level_name: 'Allegretto'
           })
         };
       }
@@ -2413,6 +2415,9 @@ test('kimi usage snapshot maps /usages weekly and rolling windows into entries',
     assert.equal(rolling.windowMinutes, 300);
     assert.equal(rolling.remainingPct, 58);
     assert.equal(snapshot.account.planType, 'basic');
+    // 订阅页品牌档来自 /me 的 user_level_name,与 LEVEL_* 内部枚举分开保留
+    assert.equal(snapshot.account.planName, 'Allegretto');
+    assert.equal(snapshot.account.planLevel, 25);
     assert.equal(snapshot.account.displayName, '登月者2115');
     assert.equal(snapshot.account.phone, '+86 186****2115');
     // token 未到期时探测 /usages + /me,不触发 token 刷新

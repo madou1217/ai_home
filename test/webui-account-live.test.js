@@ -1235,6 +1235,7 @@ test('refreshLiveAccountRecord surfaces kimi /me identity as nickname email and 
     capturedAt: Date.now(),
     account: {
       planType: 'basic',
+      planName: 'Allegretto',
       displayName: '登月者2115',
       phone: '+86 186****2115'
     },
@@ -1275,4 +1276,5 @@ test('refreshLiveAccountRecord surfaces kimi /me identity as nickname email and 
   assert.equal(record.email, '登月者2115');
   assert.equal(record.displayName, '+86 186****2115');
   assert.equal(record.planType, 'basic');
+  assert.equal(record.planName, 'Allegretto');
 });

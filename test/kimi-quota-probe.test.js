@@ -297,7 +297,9 @@ test('kimi probe attaches nickname, masked phone, and membership level to the sn
       if (url.endsWith('/me')) {
         return makeOkResponse({
           nickname: '登月者2115',
-          phone: { country_code: '86', number: '186****2115' }
+          phone: { country_code: '86', number: '186****2115' },
+          user_level: 25,
+          user_level_name: 'Allegretto'
         });
       }
       return makeOkResponse({
@@ -311,6 +313,8 @@ test('kimi probe attaches nickname, masked phone, and membership level to the sn
     assert.deepEqual(result.snapshot.account, {
       displayName: '登月者2115',
       phone: '+86 186****2115',
+      planName: 'Allegretto',
+      planLevel: 25,
       planType: 'intermediate'
     });
   }).finally(() => {

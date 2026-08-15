@@ -668,14 +668,21 @@ function renderAccountRoleIcons(record: Pick<Account, 'isDefault' | 'isMobile'>)
   );
 }
 
-function getPlanTagLabel(record: Pick<Account, 'apiKeyMode' | 'planType'>) {
+function getPlanTagLabel(record: Pick<Account, 'apiKeyMode' | 'planType' | 'planName'>) {
   // 认证方式只展示一次，避免密钥模式在账号行里重复出现。
   if (record.apiKeyMode) return '密钥';
-  return record.planType || 'free';
+  // kimi 等 provider 有订阅页品牌档（Allegretto 等），优先于 LEVEL_* 枚举值。
+  return record.planName || record.planType || 'free';
 }
 
-function getPlanTagColor(record: Pick<Account, 'apiKeyMode' | 'planType'>) {
+function getPlanTagColor(record: Pick<Account, 'apiKeyMode' | 'planType' | 'planName'>) {
   if (record.apiKeyMode) return 'cyan';
+  // kimi 订阅档位（按速度术语递增）：Andante < Moderato < Allegretto < Allegro
+  const planName = String(record.planName || '').toLowerCase();
+  if (planName === 'andante') return 'default';
+  if (planName === 'moderato') return 'green';
+  if (planName === 'allegretto') return 'geekblue';
+  if (planName === 'allegro') return 'gold';
   if (record.planType === 'free') return 'default';
   if (record.planType === 'pro') return 'green';
   if (record.planType === 'ultra') return 'purple';

@@ -288,7 +288,7 @@ test('kimi OAuth usage snapshot parses rolling limits and persists the trusted c
       usageSourceCodex: 'codex_app_server',
       usageSourceClaudeOauth: 'claude_oauth_usage_api',
       usageSourceClaudeAuthToken: 'claude_auth_token_usage_api',
-      usageSourceKimiOauth: 'kimi_oauth_usage_api'
+      usageSourceKimiOauth: 'kimi_oauth_usages_api'
     });
     const calls = [];
     const usageSnapshotService = createUsageSnapshotService({
@@ -307,7 +307,7 @@ test('kimi OAuth usage snapshot parses rolling limits and persists the trusted c
       usageSourceCodex: 'codex_app_server',
       usageSourceClaudeOauth: 'claude_oauth_usage_api',
       usageSourceClaudeAuthToken: 'claude_auth_token_usage_api',
-      usageSourceKimiOauth: 'kimi_oauth_usage_api',
+      usageSourceKimiOauth: 'kimi_oauth_usages_api',
       getProfileDir,
       getToolConfigDir,
       writeUsageCache: cacheService.writeUsageCache,
@@ -357,10 +357,10 @@ test('kimi OAuth usage snapshot parses rolling limits and persists the trusted c
     assert.equal(calls.length, 2);
     assert.equal(calls[0].url, 'https://api.kimi.com/coding/v1/usages');
     assert.equal(calls[0].options.method, 'GET');
-    assert.equal(calls[0].options.headers.authorization, 'Bearer kimi-access-token');
+    assert.equal(calls[0].options.headers.Authorization, 'Bearer kimi-access-token');
     assert.equal(calls[1].url, 'https://api.kimi.com/coding/v1/me');
     assert.equal(snapshot.kind, 'kimi_oauth_usage');
-    assert.equal(snapshot.source, 'kimi_oauth_usage_api');
+    assert.equal(snapshot.source, 'kimi_oauth_usages_api');
     assert.equal(snapshot.account.planType, 'max');
     assert.equal(snapshot.account.displayName, '登月者2115');
     assert.equal(snapshot.account.phone, '+86 186****2115');
@@ -2348,7 +2348,7 @@ function createKimiUsageFixture(root, options = {}) {
     path,
     getProfileDir,
     usageSnapshotSchemaVersion: 2,
-    usageSourceKimiOauth: 'kimi_oauth_usage_api'
+    usageSourceKimiOauth: 'kimi_oauth_usages_api'
   });
   const calls = [];
   const usageSnapshotService = createUsageSnapshotService({
@@ -2358,7 +2358,7 @@ function createKimiUsageFixture(root, options = {}) {
     processObj: { execPath: process.execPath, cwd: () => root, env: {}, platform: process.platform },
     usageSnapshotSchemaVersion: 2,
     usageRefreshStaleMs: 5 * 60 * 1000,
-    usageSourceKimiOauth: 'kimi_oauth_usage_api',
+    usageSourceKimiOauth: 'kimi_oauth_usages_api',
     getProfileDir,
     getToolConfigDir,
     writeUsageCache: cacheService.writeUsageCache,
@@ -2404,7 +2404,7 @@ test('kimi usage snapshot maps /usages weekly and rolling windows into entries',
     const snapshot = await usageSnapshotService.ensureUsageSnapshotAsync('kimi', accountRef, null, { forceRefresh: true });
     assert.ok(snapshot);
     assert.equal(snapshot.kind, 'kimi_oauth_usage');
-    assert.equal(snapshot.source, 'kimi_oauth_usage_api');
+    assert.equal(snapshot.source, 'kimi_oauth_usages_api');
     assert.equal(snapshot.entries.length, 2);
     const weekly = snapshot.entries.find((entry) => entry.bucket === 'weekly');
     assert.equal(weekly.windowMinutes, 10080);

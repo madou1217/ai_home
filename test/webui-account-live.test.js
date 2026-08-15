@@ -1231,7 +1231,7 @@ test('refreshLiveAccountRecord surfaces kimi /me identity as nickname email and 
   const usageSnapshot = {
     schemaVersion: 2,
     kind: 'kimi_oauth_usage',
-    source: 'kimi_oauth_usage_api',
+    source: 'kimi_oauth_usages_api',
     capturedAt: Date.now(),
     account: {
       planType: 'basic',

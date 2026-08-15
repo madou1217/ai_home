@@ -65,7 +65,7 @@ test('normalizeAccountUsageSnapshot keeps kimi_oauth_usage entries for the WebUI
   const normalized = normalizeAccountUsageSnapshot({
     kind: 'kimi_oauth_usage',
     capturedAt: 1700000000000,
-    source: 'kimi_oauth_usage_api',
+    source: 'kimi_oauth_usages_api',
     account: { planType: 'basic', displayName: '登月者2115', phone: '+86 186****2115' },
     entries: [
       { bucket: 'weekly', windowMinutes: 10080, window: '7days', remainingPct: 51, resetIn: '6d', resetAtMs: 111 },
@@ -77,6 +77,7 @@ test('normalizeAccountUsageSnapshot keeps kimi_oauth_usage entries for the WebUI
   assert.deepEqual(normalized.account, {
     planType: 'basic',
     displayName: '登月者2115',
+    userId: '',
     phone: '+86 186****2115'
   });
   assert.deepEqual(normalized.entries[0], {

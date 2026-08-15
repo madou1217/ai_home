@@ -304,12 +304,12 @@ test('Kimi OAuth status is derived from DB-native credentials', (t) => {
   assert.equal(checkStatus('kimi', emptyRef).configured, false);
   assert.deepEqual(checkStatus('kimi', oauthRef), {
     configured: true,
-    accountName: 'Kimi OAuth: d9v1...tacg',
+    accountName: 'Kimi Code OAuth',
     source: 'app-state.db'
   });
   assert.deepEqual(checkStatus('kimi', refreshOnlyRef), {
     configured: true,
-    accountName: 'Kimi OAuth',
+    accountName: 'Kimi Code OAuth',
     source: 'app-state.db'
   });
 });

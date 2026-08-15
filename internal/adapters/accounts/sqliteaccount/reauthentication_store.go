@@ -18,7 +18,8 @@ var _ accountapp.ReauthenticationStore = (*Store)(nil)
 const reauthenticationTargetSQL = `
 	SELECT a.account_ref, a.provider_id, a.cli_account_id, a.enabled,
 	       a.created_at_ms, a.updated_at_ms,
-	       c.auth_kind, c.auth_mode, c.updated_at_ms,
+	       c.auth_kind, c.auth_mode, c.format_version, c.credential_json,
+	       c.updated_at_ms,
 	       p.updated_at_ms
 	FROM accounts AS a
 	LEFT JOIN account_credentials AS c ON c.account_ref = a.account_ref
@@ -50,7 +51,7 @@ func (store *Store) GetReauthenticationTarget(
 	return account, nil
 }
 
-// Reauthenticate 在立即事务中原子替换凭据、公开资料和账号更新时间。
+// Reauthenticate 在立即事务中原子替换凭据、公开资料、账号时间并清除旧额度。
 func (store *Store) Reauthenticate(
 	ctx context.Context,
 	reauthentication accountapp.Reauthentication,
@@ -64,11 +65,14 @@ func (store *Store) Reauthenticate(
 	if err != nil {
 		return accountcore.Account{}, err
 	}
-	profileDocument, err := store.profiles.Encode(
-		reauthentication.Profile().Profile(),
-	)
-	if err != nil {
-		return accountcore.Account{}, err
+	var profileDocument encodedProfile
+	if reauthentication.HasProfile() {
+		profileDocument, err = store.profiles.Encode(
+			reauthentication.Profile().Profile(),
+		)
+		if err != nil {
+			return accountcore.Account{}, err
+		}
 	}
 	if !supportsReauthentication(
 		reauthentication.ProviderID(),
@@ -118,6 +122,25 @@ func (store *Store) Reauthenticate(
 	) {
 		return accountcore.Account{}, accountapp.ErrReauthenticationUnsupported
 	}
+	currentCredential, err := store.credentials.Decode(
+		current.ProviderID(),
+		record.authKind.String,
+		record.authMode.String,
+		[]byte(record.credentialJSON.String),
+	)
+	if err != nil {
+		return accountcore.Account{}, err
+	}
+	shouldReplace, err := reauthentication.ShouldReplaceCredential(currentCredential)
+	if err != nil {
+		return accountcore.Account{}, err
+	}
+	if !shouldReplace {
+		if err := commitReauthentication(ctx, connection); err != nil {
+			return accountcore.Account{}, err
+		}
+		return current, nil
+	}
 
 	updatedAtMS := reauthentication.UpdatedAt().UnixMilli()
 	if !record.canReplaceAt(updatedAtMS) {
@@ -133,13 +156,22 @@ func (store *Store) Reauthenticate(
 	); err != nil {
 		return accountcore.Account{}, err
 	}
-	if err := replaceProfile(
+	if reauthentication.HasProfile() {
+		if err := replaceProfile(
+			ctx,
+			connection,
+			reauthentication.AccountRef(),
+			record,
+			profileDocument,
+			updatedAtMS,
+		); err != nil {
+			return accountcore.Account{}, err
+		}
+	}
+	if err := clearCredentialUsage(
 		ctx,
 		connection,
 		reauthentication.AccountRef(),
-		record,
-		profileDocument,
-		updatedAtMS,
 	); err != nil {
 		return accountcore.Account{}, err
 	}
@@ -152,11 +184,8 @@ func (store *Store) Reauthenticate(
 	); err != nil {
 		return accountcore.Account{}, err
 	}
-	if _, err := connection.ExecContext(ctx, "COMMIT"); err != nil {
-		if isBusyError(err) {
-			return accountcore.Account{}, accountapp.ErrReauthenticationConflict
-		}
-		return accountcore.Account{}, fmt.Errorf("提交账号重新认证事务失败: %w", err)
+	if err := commitReauthentication(ctx, connection); err != nil {
+		return accountcore.Account{}, err
 	}
 	record.account.updatedAtMS = updatedAtMS
 	return store.restoreAccount(record.account)
@@ -192,6 +221,8 @@ func (store *Store) readReauthenticationTarget(
 		&record.account.updatedAtMS,
 		&record.authKind,
 		&record.authMode,
+		&record.credentialFormatVersion,
+		&record.credentialJSON,
 		&record.credentialUpdatedAtMS,
 		&record.profileUpdatedAtMS,
 	)
@@ -206,6 +237,9 @@ func (store *Store) readReauthenticationTarget(
 	}
 	if !record.authKind.Valid ||
 		!record.authMode.Valid ||
+		!record.credentialFormatVersion.Valid ||
+		record.credentialFormatVersion.Int64 != credentialFormatVersion ||
+		!record.credentialJSON.Valid ||
 		!record.credentialUpdatedAtMS.Valid {
 		return reauthenticationRecord{}, accountcore.Account{}, accountapp.ErrCredentialNotFound
 	}
@@ -214,6 +248,17 @@ func (store *Store) readReauthenticationTarget(
 		return reauthenticationRecord{}, accountcore.Account{}, err
 	}
 	return record, account, nil
+}
+
+// commitReauthentication 统一有写和幂等无写路径的事务提交错误。
+func commitReauthentication(ctx context.Context, connection *sql.Conn) error {
+	if _, err := connection.ExecContext(ctx, "COMMIT"); err != nil {
+		if isBusyError(err) {
+			return accountapp.ErrReauthenticationConflict
+		}
+		return fmt.Errorf("提交账号重新认证事务失败: %w", err)
+	}
+	return nil
 }
 
 // supportsReauthentication 只允许身份不依赖当前 Token 的 OAuth 凭据形态。
@@ -353,11 +398,13 @@ func requireSingleReauthenticationWrite(
 
 // reauthenticationRecord 保存同一事务中读取的账号和凭据版本。
 type reauthenticationRecord struct {
-	account               accountRecord
-	authKind              sql.NullString
-	authMode              sql.NullString
-	credentialUpdatedAtMS sql.NullInt64
-	profileUpdatedAtMS    sql.NullInt64
+	account                 accountRecord
+	authKind                sql.NullString
+	authMode                sql.NullString
+	credentialFormatVersion sql.NullInt64
+	credentialJSON          sql.NullString
+	credentialUpdatedAtMS   sql.NullInt64
+	profileUpdatedAtMS      sql.NullInt64
 }
 
 // canReplaceAt 确保凭据、资料和基础账号版本统一单调推进。

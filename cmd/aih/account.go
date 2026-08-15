@@ -52,6 +52,20 @@ func runAccount(
 		return nil
 	}
 	switch arguments[0] {
+	case "add":
+		if len(arguments) == 2 && isRootHelp(arguments[1]) {
+			writeAccountAddUsage(runtime.stdout)
+			return nil
+		}
+		if len(arguments) != 3 || !isCLIProvider(arguments[1]) ||
+			arguments[2] != "--from-env" {
+			writeAccountAddUsage(runtime.stderr)
+			return fmt.Errorf(
+				"%w: add 需要 <codex|claude> --from-env",
+				errInvalidCommand,
+			)
+		}
+		return runAccountAdd(ctx, arguments[1], runtime)
 	case "import":
 		if len(arguments) == 2 && isRootHelp(arguments[1]) {
 			writeAccountImportUsage(runtime.stdout)
@@ -139,6 +153,7 @@ func runAccount(
 // writeAccountUsage 说明当前已实现的账号管理命令。
 func writeAccountUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "用法:")
+	_, _ = fmt.Fprintln(output, "  aih account add <codex|claude> --from-env             # 从环境变量添加静态账号")
 	_, _ = fmt.Fprintln(output, "  aih account list [--limit N] [--after account_ref] # 分页列出公开账号信息")
 	_, _ = fmt.Fprintln(output, "  aih account show <account_ref|provider:id>          # 查看一个公开账号详情")
 	_, _ = fmt.Fprintln(output, "  aih account enable <account_ref|provider:id>        # 启用账号并加入 Server 路由")
@@ -155,6 +170,7 @@ func writeAccountUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "  aih account import <codex|claude>   # 导入该 Provider 官方 CLI 当前登录态")
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "查看子命令说明:")
+	_, _ = fmt.Fprintln(output, "  aih account add --help")
 	_, _ = fmt.Fprintln(output, "  aih account list --help")
 	_, _ = fmt.Fprintln(output, "  aih account show --help")
 	_, _ = fmt.Fprintln(output, "  aih account enable --help")
@@ -167,7 +183,8 @@ func writeAccountUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "  aih account import --help")
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "账号管理边界:")
-	_, _ = fmt.Fprintln(output, "  list/show/models/import 通过 AIH_SERVER_BASE_URL 使用目标 Go Server；不打开本地 aih.db。")
+	_, _ = fmt.Fprintln(output, "  add/list/show/models/import 通过 AIH_SERVER_BASE_URL 使用目标 Go Server；不打开本地 aih.db。")
+	_, _ = fmt.Fprintln(output, "  add 只从官方环境变量读取静态凭据；Server 提交账号后异步刷新模型目录。")
 	_, _ = fmt.Fprintln(output, "  import 只从本机 CODEX_HOME/CLAUDE_CONFIG_DIR 读取官方 artifact，再上传到目标 Server。")
 	_, _ = fmt.Fprintln(output, "  AIH_SERVER_MANAGEMENT_KEY 是账号管理命令的必填凭据；AIH_HOME 不参与远端查询。")
 }
@@ -175,6 +192,6 @@ func writeAccountUsage(output io.Writer) {
 // accountUsageLine 供根帮助复用，保持两处命令描述一致。
 func accountUsageLine() string {
 	return strings.TrimSpace(
-		"aih account <list|show|enable|disable|delete|transfer|credential|default|models|usage|import> [args...] # Go 账号管理",
+		"aih account <add|list|show|enable|disable|delete|transfer|credential|default|models|usage|import> [args...] # Go 账号管理",
 	)
 }

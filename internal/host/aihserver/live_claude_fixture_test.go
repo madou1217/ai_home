@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -34,14 +35,19 @@ const (
 	realClaudeHTTPNativeConfigEnv = "AIH_REAL_CLAUDE_NATIVE_CONFIG_FILE"
 	// realClaudeContinuityMarker 是两轮连续性请求唯一允许新增的低敏文本。
 	realClaudeContinuityMarker = "AIH_REAL_CLAUDE_CONTINUITY_OK"
-	// realClaudeReasoningModel 是账号目录中已确认支持真实 thinking 的模型。
-	realClaudeReasoningModel = "claude-sonnet-5"
 	// realClaudeToolName 是三种客户端协议共享的固定函数工具。
 	realClaudeToolName = "get_weather"
 	// realClaudeSourceDatabaseMaxBytes 限制测试只读复制的数据库大小。
 	realClaudeSourceDatabaseMaxBytes = 64 * 1024 * 1024
 	// realClaudeSourceArtifactMaxBytes 限制单个官方认证 artifact 的读取大小。
 	realClaudeSourceArtifactMaxBytes = 1024 * 1024
+)
+
+var (
+	// realClaudeTransferModel 是真实账号目录经过校验后选出的普通请求模型。
+	realClaudeTransferModel = "claude-opus-5"
+	// realClaudeReasoningModel 与普通请求共用真实目录中的模型，避免凭空假设 thinking 模型。
+	realClaudeReasoningModel = "claude-sonnet-5"
 )
 
 // realClaudeFixture 保存临时 Server 的公开地址和非敏感导入结果。
@@ -76,16 +82,10 @@ func startRealClaudeFixture(
 	assertRealStatus(t, imported, http.StatusCreated)
 	accountRef := decodeRealTransferAccountRef(t, imported.body)
 
-	modelDocument := performRequest(
-		t,
-		client,
-		http.MethodGet,
-		baseURL+modelsapi.Path,
-		testClientKey,
-		nil,
-	)
-	assertRealStatus(t, modelDocument, http.StatusOK)
-	modelCount := assertRealClaudeModelAvailable(t, modelDocument.body)
+	modelDocument := waitForRealModelCatalog(t, client, baseURL+modelsapi.Path)
+	selectedModel, modelCount := selectRealClaudeModelFromCatalog(t, modelDocument.body)
+	realClaudeTransferModel = selectedModel
+	realClaudeReasoningModel = selectedModel
 	if counts := budget.snapshot(); counts != (realClaudeRequestCounts{
 		models:     1,
 		lastStatus: http.StatusOK,
@@ -103,6 +103,47 @@ func startRealClaudeFixture(
 		modelsStatus: modelDocument.status,
 		modelCount:   modelCount,
 	}
+}
+
+// selectRealClaudeModelFromCatalog 只从真实 Claude 目录选择 claude-* 模型。
+// 偏好列表不构成能力事实，最终模型必须来自本次账号返回的目录。
+func selectRealClaudeModelFromCatalog(t *testing.T, body string) (string, int) {
+	t.Helper()
+	var document struct {
+		Object string `json:"object"`
+		Data   []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	decodeRealJSON(t, body, &document)
+	if document.Object != "list" || len(document.Data) == 0 {
+		t.Fatalf("真实 Claude 本地模型目录无效: object=%q count=%d", document.Object, len(document.Data))
+	}
+	models := make([]string, 0, len(document.Data))
+	for _, item := range document.Data {
+		modelID := strings.TrimSpace(item.ID)
+		if strings.HasPrefix(modelID, "claude-") {
+			models = append(models, modelID)
+		}
+	}
+	if len(models) == 0 {
+		t.Fatalf("真实 Claude 模型目录没有可用于协议验收的 claude 模型: count=%d", len(document.Data))
+	}
+	preferred := []string{
+		"claude-opus-5",
+		"claude-sonnet-5",
+		"claude-3-7-sonnet",
+		"claude-3-5-sonnet",
+	}
+	for _, candidate := range preferred {
+		for _, modelID := range models {
+			if modelID == candidate {
+				return candidate, len(document.Data)
+			}
+		}
+	}
+	sort.Strings(models)
+	return models[0], len(document.Data)
 }
 
 // importRealClaudeFixtureAccount 选择一个明确来源导入一次性 Server。原生
@@ -339,13 +380,12 @@ func exportRealClaudeAccountFromDatabaseCopy(t *testing.T) []byte {
 	if err != nil {
 		t.Fatalf("读取 Claude 账号模型目录失败: %v", err)
 	}
-	if err := requireRealClaudeMaterializedModels(
-		models,
-		realClaudeTransferModel,
-		realClaudeReasoningModel,
-	); err != nil {
+	selectedModel, err := selectRealClaudeModelFromAccountModels(models)
+	if err != nil {
 		t.Fatal(err)
 	}
+	realClaudeTransferModel = selectedModel
+	realClaudeReasoningModel = selectedModel
 	reader, err := accountapp.NewExportReader(store, store, store)
 	if err != nil {
 		t.Fatalf("创建 Claude 导出读取器失败: %v", err)
@@ -370,26 +410,38 @@ func exportRealClaudeAccountFromDatabaseCopy(t *testing.T) []byte {
 	return document
 }
 
-// requireRealClaudeMaterializedModels 要求每个真实验收模型均来自账号正排目录。
-func requireRealClaudeMaterializedModels(
-	models []accountapp.AccountModel,
-	required ...string,
-) error {
-	available := make(map[string]struct{}, len(models))
+// selectRealClaudeModelFromAccountModels 只从源账号已有的有效正排模型中选择模型。
+func selectRealClaudeModelFromAccountModels(models []accountapp.AccountModel) (string, error) {
+	available := make([]string, 0, len(models))
 	for _, model := range models {
 		if !model.IsValid() {
-			return accountapp.ErrInvalidAccountModel
+			return "", accountapp.ErrInvalidAccountModel
 		}
 		if model.UpstreamAvailable() && model.Effective() {
-			available[model.ModelID().String()] = struct{}{}
+			modelID := model.ModelID().String()
+			if strings.HasPrefix(modelID, "claude-") {
+				available = append(available, modelID)
+			}
 		}
 	}
-	for _, modelID := range required {
-		if _, found := available[modelID]; !found {
-			return accountapp.ErrInvalidAccountModel
+	if len(available) == 0 {
+		return "", accountapp.ErrInvalidAccountModel
+	}
+	preferred := []string{
+		"claude-opus-5",
+		"claude-sonnet-5",
+		"claude-3-7-sonnet",
+		"claude-3-5-sonnet",
+	}
+	for _, candidate := range preferred {
+		for _, modelID := range available {
+			if modelID == candidate {
+				return candidate, nil
+			}
 		}
 	}
-	return nil
+	sort.Strings(available)
+	return available[0], nil
 }
 
 // readBoundedPrivateClaudeDatabase 有界读取权限为 0600 的普通 SQLite 文件。
@@ -407,22 +459,6 @@ func readBoundedPrivateClaudeDatabase(t *testing.T, path string) []byte {
 		t.Fatalf("读取 Claude 源数据库失败: %v", err)
 	}
 	return payload
-}
-
-// selectRealClaudeMaterializedModel 要求真实账号的正排目录明确包含本次模型。
-func selectRealClaudeMaterializedModel(
-	models []accountapp.AccountModel,
-) (string, error) {
-	for _, model := range models {
-		if !model.IsValid() {
-			return "", accountapp.ErrInvalidAccountModel
-		}
-		if model.ModelID().String() == realClaudeTransferModel &&
-			model.UpstreamAvailable() && model.Effective() {
-			return realClaudeTransferModel, nil
-		}
-	}
-	return "", accountapp.ErrInvalidAccountModel
 }
 
 // marshalRealClaudePayload 编码固定请求并拒绝测试夹具写入本协议之外的模型。

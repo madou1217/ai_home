@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	accountapp "github.com/madou1217/ai_home/application/accounts"
 	usageapp "github.com/madou1217/ai_home/application/accountusage"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	usagecore "github.com/madou1217/ai_home/core/accountusage"
@@ -19,6 +20,32 @@ func (store *Store) ReplaceUsageSnapshot(
 	ctx context.Context,
 	snapshot usagecore.Snapshot,
 ) error {
+	return store.replaceUsageSnapshot(ctx, snapshot, time.Time{})
+}
+
+// ReplaceUsageSnapshotIfCredentialVersion 仅在采集使用的凭据仍是当前版本时，
+// 原子替换额度快照，防止旧凭据的延迟结果覆盖重登或轮换后的状态。
+func (store *Store) ReplaceUsageSnapshotIfCredentialVersion(
+	ctx context.Context,
+	snapshot usagecore.Snapshot,
+	expectedCredentialUpdatedAt time.Time,
+) error {
+	if !validPersistedTimestamp(expectedCredentialUpdatedAt) {
+		return usageapp.ErrInvalidSnapshot
+	}
+	return store.replaceUsageSnapshot(
+		ctx,
+		snapshot,
+		expectedCredentialUpdatedAt,
+	)
+}
+
+// replaceUsageSnapshot 复用同一额度替换事务；非零凭据时间启用 CAS 门禁。
+func (store *Store) replaceUsageSnapshot(
+	ctx context.Context,
+	snapshot usagecore.Snapshot,
+	expectedCredentialUpdatedAt time.Time,
+) error {
 	if store == nil ||
 		store.db == nil ||
 		ctx == nil ||
@@ -28,6 +55,11 @@ func (store *Store) ReplaceUsageSnapshot(
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	// 模型异步刷新和额度刷新都会执行“先校验账号、再替换快照”的事务。
+	// 共用写入锁可避免两个 deferred transaction 同时从读锁升级为写锁而
+	// 触发 SQLITE_BUSY；账号读取和内存路由征召不经过此锁。
+	store.routingWrites.Lock()
+	defer store.routingWrites.Unlock()
 	transaction, err := store.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("开始账号额度替换事务失败: %w", err)
@@ -45,6 +77,20 @@ func (store *Store) ReplaceUsageSnapshot(
 	}
 	if providerID != snapshot.ProviderID() {
 		return usageapp.ErrInvalidSnapshot
+	}
+	if !expectedCredentialUpdatedAt.IsZero() {
+		matched, err := matchesCredentialVersion(
+			ctx,
+			transaction,
+			snapshot.AccountRef(),
+			expectedCredentialUpdatedAt,
+		)
+		if err != nil {
+			return err
+		}
+		if !matched {
+			return accountapp.ErrCredentialConflict
+		}
 	}
 	if _, err := transaction.ExecContext(
 		ctx,
@@ -203,6 +249,22 @@ func readUsageAccountProvider(
 		return "", fmt.Errorf("读取账号额度所属 Provider 失败: %w", err)
 	}
 	return providerID, nil
+}
+
+// clearCredentialUsage 在凭据切换事务内清除属于旧凭据主体的额度快照。
+func clearCredentialUsage(
+	ctx context.Context,
+	connection *sql.Conn,
+	accountRef accountcore.AccountRef,
+) error {
+	if _, err := connection.ExecContext(
+		ctx,
+		"DELETE FROM account_usage WHERE account_ref = ?",
+		accountRef.String(),
+	); err != nil {
+		return fmt.Errorf("清理旧凭据额度快照失败: %w", err)
+	}
+	return nil
 }
 
 // insertUsageEntries 使用一条预编译语句写入完整排序快照。

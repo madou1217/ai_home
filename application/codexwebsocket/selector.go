@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/madou1217/ai_home/application/accountcredentials"
 	"github.com/madou1217/ai_home/application/accountrouting"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/inferencegateway"
@@ -55,9 +56,10 @@ type Request struct {
 //
 // 凭据只在当前调用链内存中流转，不得记录、序列化或持久化。
 type Selection struct {
-	route      inferencegateway.Route
-	accountRef accountcore.AccountRef
-	credential accountapp.Credential
+	route       inferencegateway.Route
+	accountRef  accountcore.AccountRef
+	credential  accountapp.Credential
+	observation accountcredentials.CredentialObservation
 }
 
 // NewSelection 创建经过 Provider、协议、账号和凭据复核的连接级选择。
@@ -65,11 +67,13 @@ func NewSelection(
 	route inferencegateway.Route,
 	accountRef accountcore.AccountRef,
 	credential accountapp.Credential,
+	observation accountcredentials.CredentialObservation,
 ) (Selection, error) {
 	selection := Selection{
-		route:      route,
-		accountRef: accountRef,
-		credential: credential,
+		route:       route,
+		accountRef:  accountRef,
+		credential:  credential,
+		observation: observation,
 	}
 	if !selection.IsValid() {
 		return Selection{}, ErrInvalidSelection
@@ -92,6 +96,11 @@ func (selection Selection) Credential() accountapp.Credential {
 	return selection.credential
 }
 
+// CredentialObservation 返回连接建连时读取凭据的低敏持久化观察。
+func (selection Selection) CredentialObservation() accountcredentials.CredentialObservation {
+	return selection.observation
+}
+
 // IsValid 复核路由、账号和凭据仍属于同一个 Codex 域。
 func (selection Selection) IsValid() bool {
 	return selection.route.IsValid() &&
@@ -99,7 +108,10 @@ func (selection Selection) IsValid() bool {
 		selection.route.ProtocolID() == inference.ProtocolCodexResponses &&
 		selection.accountRef.IsValid() &&
 		selection.credential != nil &&
-		selection.credential.ProviderID() == codexauth.ProviderID
+		selection.credential.ProviderID() == codexauth.ProviderID &&
+		selection.observation.IsValid() &&
+		selection.observation.AccountRef() == selection.accountRef &&
+		selection.observation.ProviderID() == codexauth.ProviderID
 }
 
 // Selector 使用同一生产路由快照和 Recruiter 生成连接级固定选择。
@@ -179,5 +191,6 @@ func (selector *Selector) Select(
 		route,
 		result.Account().Ref(),
 		result.Credential(),
+		result.CredentialObservation(),
 	)
 }

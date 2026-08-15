@@ -6,6 +6,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/madou1217/ai_home/application/accountcredentials"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
@@ -26,19 +27,25 @@ type interruptingCredentialResolver struct {
 	calls    int
 }
 
-// ResolveCredentialBinding 按调用序号决定是正常解析还是抛出仓库级故障。
-func (resolver *interruptingCredentialResolver) ResolveCredentialBinding(
+// ResolveObservedCredentialBinding 按调用序号决定是正常解析还是抛出仓库级故障。
+func (resolver *interruptingCredentialResolver) ResolveObservedCredentialBinding(
 	ctx context.Context,
 	accountRef accountcore.AccountRef,
-) (accountapp.CredentialBinding, error) {
+) (
+	accountapp.CredentialBinding,
+	accountcredentials.CredentialObservation,
+	error,
+) {
 	resolver.mu.Lock()
 	resolver.calls++
 	failing := resolver.calls == resolver.failAt
 	resolver.mu.Unlock()
 	if failing {
-		return accountapp.CredentialBinding{}, errCredentialStoreUnavailable
+		return accountapp.CredentialBinding{},
+			accountcredentials.CredentialObservation{},
+			errCredentialStoreUnavailable
 	}
-	return resolver.delegate.ResolveCredentialBinding(ctx, accountRef)
+	return resolver.delegate.ResolveObservedCredentialBinding(ctx, accountRef)
 }
 
 // TestCoordinatorCommitsRecordedFailureWhenRecruitmentIsInterrupted 验证编排被

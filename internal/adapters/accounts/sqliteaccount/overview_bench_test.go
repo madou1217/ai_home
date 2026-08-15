@@ -82,7 +82,7 @@ func BenchmarkAccountReadModels(benchmark *testing.B) {
 	}
 }
 
-// seedBenchmarkAccountProfiles 写入身份一致的 Codex 合成账号和公开资料。
+// seedBenchmarkAccountProfiles 写入身份一致的 Codex 账号、资料及派生快照。
 func seedBenchmarkAccountProfiles(
 	benchmark *testing.B,
 	store *Store,
@@ -120,6 +120,29 @@ func seedBenchmarkAccountProfiles(
 	defer func() {
 		_ = profileStatement.Close()
 	}()
+	modelStatement, err := transaction.Prepare(`
+		INSERT INTO account_models (
+			account_ref, model_id, upstream_available, manual_policy, updated_at_ms
+		) VALUES (?, 'gpt-benchmark', 1, 'inherit', 1785110400000)`)
+	if err != nil {
+		benchmark.Fatalf("prepare model insert error = %v", err)
+	}
+	defer func() {
+		_ = modelStatement.Close()
+	}()
+	usageStatement, err := transaction.Prepare(`
+		INSERT INTO account_usage (
+			account_ref, limit_id, limit_name, bucket, kind, scope, scope_key,
+			remaining_bps, availability, window_seconds, reset_at_ms,
+			source, captured_at_ms
+		) VALUES (?, '', '', 'primary', 'window', 'account', '',
+			7500, 'available', 18000, NULL, 'codex_wham_usage', 1785110400000)`)
+	if err != nil {
+		benchmark.Fatalf("prepare usage insert error = %v", err)
+	}
+	defer func() {
+		_ = usageStatement.Close()
+	}()
 
 	var targetRef accountcore.AccountRef
 	for index := 0; index < accountCount; index++ {
@@ -152,6 +175,12 @@ func seedBenchmarkAccountProfiles(
 			string(document.json),
 		); err != nil {
 			benchmark.Fatalf("insert profile %d error = %v", index, err)
+		}
+		if _, err := modelStatement.Exec(accountRef.String()); err != nil {
+			benchmark.Fatalf("insert model %d error = %v", index, err)
+		}
+		if _, err := usageStatement.Exec(accountRef.String()); err != nil {
+			benchmark.Fatalf("insert usage %d error = %v", index, err)
 		}
 		if index == accountCount/2 {
 			targetRef = accountRef

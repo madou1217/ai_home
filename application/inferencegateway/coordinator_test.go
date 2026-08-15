@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/madou1217/ai_home/application/accountcredentials"
 	"github.com/madou1217/ai_home/application/accountrouting"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/inferencecatalog"
@@ -79,6 +80,131 @@ func TestCoordinatorCommitsSuccessTerminalAfterStateRecord(t *testing.T) {
 		invocation.Route().EffectiveModel() != "gpt-5.6-sol" ||
 		invocation.Credential().ProviderID() != "codex" {
 		t.Fatalf("Invocation = %#v", invocation)
+	}
+}
+
+// TestCoordinatorDoesNotClearRuntimeWithStaleCredentialSuccess 验证旧凭据请求在途时
+// 完成轮换后，即使旧请求迟到成功也只提交真实响应，不清除新凭据运行态。
+func TestCoordinatorDoesNotClearRuntimeWithStaleCredentialSuccess(t *testing.T) {
+	t.Parallel()
+
+	fixture := newCoordinatorFixture(t, "codex", 1)
+	recorder := &attemptRecorder{}
+	observations := &coordinatorObservationVerifier{current: true}
+	upstream := newScriptedUpstream(
+		inference.ProtocolCodexResponses,
+		func(
+			_ context.Context,
+			_ inferencegateway.Invocation,
+			emit inferencegateway.EventSink,
+		) (inferencegateway.AttemptResult, error) {
+			for _, event := range successfulEvents(t, "resp_stale_success") {
+				if err := emit(event); err != nil {
+					return inferencegateway.AttemptResult{}, err
+				}
+			}
+			observations.SetCurrent(false)
+			return inferencegateway.CompletedAttempt(), nil
+		},
+	)
+	registry, err := inferencegateway.NewUpstreamRegistry(upstream)
+	if err != nil {
+		t.Fatalf("NewUpstreamRegistry() error = %v", err)
+	}
+	coordinator, err := inferencegateway.NewCoordinator(
+		inferencegateway.Dependencies{
+			Catalog:                fixture.catalog,
+			Routes:                 staticRouteResolver{routes: []inferencegateway.Route{fixture.route}},
+			Recruiter:              fixture.recruit,
+			Upstreams:              registry,
+			Attempts:               recorder,
+			CredentialObservations: observations,
+			Clock:                  coordinatorCredentialObservedAt,
+			ModelRefreshes:         fixture.refreshes,
+		},
+	)
+	if err != nil {
+		t.Fatalf("NewCoordinator() error = %v", err)
+	}
+	events := make([]inference.StreamEvent, 0, 2)
+	if err = coordinator.Execute(
+		context.Background(),
+		newTextRequest(t, "gpt-5.6-sol", false),
+		func(event inference.StreamEvent) error {
+			events = append(events, event)
+			return nil
+		},
+	); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if recorder.SuccessCount() != 0 ||
+		observations.CallCount() != 1 ||
+		len(events) != 2 ||
+		events[1].Kind() != inference.EventResponseCompleted {
+		t.Fatalf(
+			"successes=%d verification_calls=%d events=%v",
+			recorder.SuccessCount(),
+			observations.CallCount(),
+			eventKinds(events),
+		)
+	}
+}
+
+// TestCoordinatorCapturesSuccessAtTerminalObservation 验证 Adapter 在完成事件后
+// 继续收尾不会把成功时间推迟，从而错误清除这段收尾期间写入的新失败。
+func TestCoordinatorCapturesSuccessAtTerminalObservation(t *testing.T) {
+	t.Parallel()
+
+	fixture := newCoordinatorFixture(t, "codex", 1)
+	recorder := &attemptRecorder{}
+	terminalAt := coordinatorCredentialObservedAt().Add(time.Second)
+	afterReturn := terminalAt.Add(time.Second)
+	current := terminalAt
+	upstream := newScriptedUpstream(
+		inference.ProtocolCodexResponses,
+		func(
+			_ context.Context,
+			_ inferencegateway.Invocation,
+			emit inferencegateway.EventSink,
+		) (inferencegateway.AttemptResult, error) {
+			for _, event := range successfulEvents(t, "resp_terminal_time") {
+				if err := emit(event); err != nil {
+					return inferencegateway.AttemptResult{}, err
+				}
+			}
+			current = afterReturn
+			return inferencegateway.CompletedAttempt(), nil
+		},
+	)
+	registry, err := inferencegateway.NewUpstreamRegistry(upstream)
+	if err != nil {
+		t.Fatalf("NewUpstreamRegistry() error = %v", err)
+	}
+	coordinator, err := inferencegateway.NewCoordinator(
+		inferencegateway.Dependencies{
+			Catalog:                fixture.catalog,
+			Routes:                 staticRouteResolver{routes: []inferencegateway.Route{fixture.route}},
+			Recruiter:              fixture.recruit,
+			Upstreams:              registry,
+			Attempts:               recorder,
+			CredentialObservations: alwaysCurrentCredentialObservations{},
+			Clock:                  func() time.Time { return current },
+			ModelRefreshes:         fixture.refreshes,
+		},
+	)
+	if err != nil {
+		t.Fatalf("NewCoordinator() error = %v", err)
+	}
+	if err = coordinator.Execute(
+		context.Background(),
+		newTextRequest(t, "gpt-5.6-sol", false),
+		func(inference.StreamEvent) error { return nil },
+	); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	successes := recorder.Successes()
+	if len(successes) != 1 || !successes[0].HappenedAt().Equal(terminalAt) {
+		t.Fatalf("successes=%#v want happened_at=%s", successes, terminalAt)
 	}
 }
 
@@ -202,12 +328,14 @@ func TestCoordinatorDistributesSameModelAcrossProviderRoutesFairly(t *testing.T)
 	}
 	coordinator, err := inferencegateway.NewCoordinator(
 		inferencegateway.Dependencies{
-			Catalog:        agy.catalog,
-			Routes:         staticRouteResolver{routes: []inferencegateway.Route{agy.route, claudeRoute}},
-			Recruiter:      recruiter,
-			Upstreams:      upstreams,
-			Attempts:       &attemptRecorder{},
-			ModelRefreshes: agy.refreshes,
+			Catalog:                agy.catalog,
+			Routes:                 staticRouteResolver{routes: []inferencegateway.Route{agy.route, claudeRoute}},
+			Recruiter:              recruiter,
+			Upstreams:              upstreams,
+			Attempts:               &attemptRecorder{},
+			CredentialObservations: alwaysCurrentCredentialObservations{},
+			Clock:                  coordinatorCredentialObservedAt,
+			ModelRefreshes:         agy.refreshes,
 		},
 	)
 	if err != nil {
@@ -304,12 +432,14 @@ func TestCoordinatorDistributesAliasAndNativeRouteSourcesFairly(t *testing.T) {
 	}
 	coordinator, err := inferencegateway.NewCoordinator(
 		inferencegateway.Dependencies{
-			Catalog:        agy.catalog,
-			Routes:         staticRouteResolver{routes: []inferencegateway.Route{agy.route, nativeRoute}},
-			Recruiter:      recruiter,
-			Upstreams:      upstreams,
-			Attempts:       &attemptRecorder{},
-			ModelRefreshes: agy.refreshes,
+			Catalog:                agy.catalog,
+			Routes:                 staticRouteResolver{routes: []inferencegateway.Route{agy.route, nativeRoute}},
+			Recruiter:              recruiter,
+			Upstreams:              upstreams,
+			Attempts:               &attemptRecorder{},
+			CredentialObservations: alwaysCurrentCredentialObservations{},
+			Clock:                  coordinatorCredentialObservedAt,
+			ModelRefreshes:         agy.refreshes,
 		},
 	)
 	if err != nil {
@@ -431,12 +561,14 @@ func TestCoordinatorPreservesProviderRouteCursorAcrossCatalogPublish(t *testing.
 	}
 	coordinator, err := inferencegateway.NewCoordinator(
 		inferencegateway.Dependencies{
-			Catalog:        agy.catalog,
-			Routes:         activeCatalog,
-			Recruiter:      recruiter,
-			Upstreams:      upstreams,
-			Attempts:       &attemptRecorder{},
-			ModelRefreshes: agy.refreshes,
+			Catalog:                agy.catalog,
+			Routes:                 activeCatalog,
+			Recruiter:              recruiter,
+			Upstreams:              upstreams,
+			Attempts:               &attemptRecorder{},
+			CredentialObservations: alwaysCurrentCredentialObservations{},
+			Clock:                  coordinatorCredentialObservedAt,
+			ModelRefreshes:         agy.refreshes,
 		},
 	)
 	if err != nil {
@@ -1183,13 +1315,15 @@ func TestCoordinatorFallsBackToClaudeWhenAgyRetryBudgetExpires(t *testing.T) {
 	}
 	coordinator, err := inferencegateway.NewCoordinator(
 		inferencegateway.Dependencies{
-			Catalog:        agy.catalog,
-			Routes:         staticRouteResolver{routes: []inferencegateway.Route{agy.route, claudeRoute}},
-			Recruiter:      recruiter,
-			Upstreams:      upstreams,
-			Attempts:       &attemptRecorder{},
-			ModelRefreshes: agy.refreshes,
-			PoolRetries:    poolRetries,
+			Catalog:                agy.catalog,
+			Routes:                 staticRouteResolver{routes: []inferencegateway.Route{agy.route, claudeRoute}},
+			Recruiter:              recruiter,
+			Upstreams:              upstreams,
+			Attempts:               &attemptRecorder{},
+			CredentialObservations: alwaysCurrentCredentialObservations{},
+			Clock:                  coordinatorCredentialObservedAt,
+			ModelRefreshes:         agy.refreshes,
+			PoolRetries:            poolRetries,
 		},
 	)
 	if err != nil {
@@ -1259,13 +1393,15 @@ func TestCoordinatorSharesAgyPoolRetryAcrossRouteCandidates(t *testing.T) {
 	}
 	coordinator, err := inferencegateway.NewCoordinator(
 		inferencegateway.Dependencies{
-			Catalog:        fixture.catalog,
-			Routes:         staticRouteResolver{routes: []inferencegateway.Route{fixture.route, secondRoute}},
-			Recruiter:      fixture.recruit,
-			Upstreams:      registry,
-			Attempts:       recorder,
-			ModelRefreshes: fixture.refreshes,
-			PoolRetries:    newTestRequestPoolRetryPolicy(t, sleeper),
+			Catalog:                fixture.catalog,
+			Routes:                 staticRouteResolver{routes: []inferencegateway.Route{fixture.route, secondRoute}},
+			Recruiter:              fixture.recruit,
+			Upstreams:              registry,
+			Attempts:               recorder,
+			CredentialObservations: alwaysCurrentCredentialObservations{},
+			Clock:                  coordinatorCredentialObservedAt,
+			ModelRefreshes:         fixture.refreshes,
+			PoolRetries:            newTestRequestPoolRetryPolicy(t, sleeper),
 		},
 	)
 	if err != nil {
@@ -1996,13 +2132,15 @@ func TestCoordinatorFinalizesSingleDeferredFailurePerFallbackModel(t *testing.T)
 	}
 	coordinator, err := inferencegateway.NewCoordinator(
 		inferencegateway.Dependencies{
-			Catalog:              fixture.catalog,
-			Routes:               staticRouteResolver{routes: []inferencegateway.Route{fixture.route, secondRoute}},
-			Recruiter:            fixture.recruit,
-			Upstreams:            registry,
-			Attempts:             recorder,
-			ModelRefreshes:       fixture.refreshes,
-			UpstreamAttemptLimit: 1,
+			Catalog:                fixture.catalog,
+			Routes:                 staticRouteResolver{routes: []inferencegateway.Route{fixture.route, secondRoute}},
+			Recruiter:              fixture.recruit,
+			Upstreams:              registry,
+			Attempts:               recorder,
+			CredentialObservations: alwaysCurrentCredentialObservations{},
+			Clock:                  coordinatorCredentialObservedAt,
+			ModelRefreshes:         fixture.refreshes,
+			UpstreamAttemptLimit:   1,
 		},
 	)
 	if err != nil {
@@ -2855,12 +2993,14 @@ func (fixture *coordinatorFixture) newCoordinatorWithResolver(
 	}
 	coordinator, err := inferencegateway.NewCoordinator(
 		inferencegateway.Dependencies{
-			Catalog:        fixture.catalog,
-			Routes:         resolver,
-			Recruiter:      fixture.recruit,
-			Upstreams:      registry,
-			Attempts:       recorder,
-			ModelRefreshes: fixture.refreshes,
+			Catalog:                fixture.catalog,
+			Routes:                 resolver,
+			Recruiter:              fixture.recruit,
+			Upstreams:              registry,
+			Attempts:               recorder,
+			CredentialObservations: alwaysCurrentCredentialObservations{},
+			Clock:                  coordinatorCredentialObservedAt,
+			ModelRefreshes:         fixture.refreshes,
 		},
 	)
 	if err != nil {
@@ -2883,13 +3023,15 @@ func (fixture *coordinatorFixture) newCoordinatorWithPoolRetryPolicy(
 	}
 	coordinator, err := inferencegateway.NewCoordinator(
 		inferencegateway.Dependencies{
-			Catalog:        fixture.catalog,
-			Routes:         staticRouteResolver{routes: []inferencegateway.Route{fixture.route}},
-			Recruiter:      fixture.recruit,
-			Upstreams:      registry,
-			Attempts:       recorder,
-			ModelRefreshes: fixture.refreshes,
-			PoolRetries:    policy,
+			Catalog:                fixture.catalog,
+			Routes:                 staticRouteResolver{routes: []inferencegateway.Route{fixture.route}},
+			Recruiter:              fixture.recruit,
+			Upstreams:              registry,
+			Attempts:               recorder,
+			CredentialObservations: alwaysCurrentCredentialObservations{},
+			Clock:                  coordinatorCredentialObservedAt,
+			ModelRefreshes:         fixture.refreshes,
+			PoolRetries:            policy,
 		},
 	)
 	if err != nil {
@@ -3047,6 +3189,46 @@ func (availableRuntime) CheckEligibility(
 	return runtimecore.AvailableEligibility(), nil
 }
 
+// alwaysCurrentCredentialObservations 保持既有 Coordinator 测试聚焦原行为；
+// 凭据代次变化由专门的请求失败观察测试覆盖。
+type alwaysCurrentCredentialObservations struct{}
+
+func (alwaysCurrentCredentialObservations) IsCurrentCredentialObservation(
+	_ context.Context,
+	observation accountcredentials.CredentialObservation,
+) (bool, error) {
+	return observation.IsValid(), nil
+}
+
+// coordinatorObservationVerifier 模拟上游请求在途期间发生凭据轮换。
+type coordinatorObservationVerifier struct {
+	mu      sync.Mutex
+	current bool
+	calls   int
+}
+
+func (verifier *coordinatorObservationVerifier) IsCurrentCredentialObservation(
+	_ context.Context,
+	observation accountcredentials.CredentialObservation,
+) (bool, error) {
+	verifier.mu.Lock()
+	defer verifier.mu.Unlock()
+	verifier.calls++
+	return verifier.current && observation.IsValid(), nil
+}
+
+func (verifier *coordinatorObservationVerifier) SetCurrent(current bool) {
+	verifier.mu.Lock()
+	verifier.current = current
+	verifier.mu.Unlock()
+}
+
+func (verifier *coordinatorObservationVerifier) CallCount() int {
+	verifier.mu.Lock()
+	defer verifier.mu.Unlock()
+	return verifier.calls
+}
+
 // blockedRuntime 统计全量本地资格扫描并把每个模型元组标记为 quota block。
 type blockedRuntime struct {
 	mu    sync.Mutex
@@ -3076,6 +3258,32 @@ type credentialResolver struct {
 	credentials map[accountcore.AccountRef]accountapp.Credential
 }
 
+// ResolveObservedCredentialBinding 返回与候选身份绑定的凭据及同一次测试快照观察。
+func (resolver credentialResolver) ResolveObservedCredentialBinding(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+) (
+	accountapp.CredentialBinding,
+	accountcredentials.CredentialObservation,
+	error,
+) {
+	binding, err := resolver.ResolveCredentialBinding(ctx, accountRef)
+	if err != nil {
+		return accountapp.CredentialBinding{}, accountcredentials.CredentialObservation{}, err
+	}
+	snapshot, err := accountapp.NewCredentialSnapshot(
+		accountRef,
+		binding.ProviderID(),
+		binding.Credential(),
+		coordinatorCredentialObservedAt(),
+	)
+	if err != nil {
+		return accountapp.CredentialBinding{}, accountcredentials.CredentialObservation{}, err
+	}
+	observation, err := accountcredentials.NewCredentialObservation(snapshot)
+	return binding, observation, err
+}
+
 // ResolveCredentialBinding 返回与候选身份绑定的凭据。
 func (resolver credentialResolver) ResolveCredentialBinding(
 	_ context.Context,
@@ -3096,6 +3304,23 @@ func (resolver credentialResolver) ResolveCredentialBinding(
 type countingCredentialResolver struct {
 	mu    sync.Mutex
 	calls int
+}
+
+// ResolveObservedCredentialBinding 记录调用并返回缺失，供全阻塞边界测试发现越层读取。
+func (resolver *countingCredentialResolver) ResolveObservedCredentialBinding(
+	context.Context,
+	accountcore.AccountRef,
+) (
+	accountapp.CredentialBinding,
+	accountcredentials.CredentialObservation,
+	error,
+) {
+	resolver.mu.Lock()
+	resolver.calls++
+	resolver.mu.Unlock()
+	return accountapp.CredentialBinding{},
+		accountcredentials.CredentialObservation{},
+		accountapp.ErrCredentialNotFound
 }
 
 // ResolveCredentialBinding 记录调用并返回缺失，供全阻塞边界测试发现越层读取。
@@ -3140,6 +3365,10 @@ func (credential coordinatorCredential) String() string {
 // GoString 复用安全摘要。
 func (credential coordinatorCredential) GoString() string {
 	return credential.String()
+}
+
+func coordinatorCredentialObservedAt() time.Time {
+	return time.Date(2026, 8, 15, 7, 0, 0, 0, time.UTC)
 }
 
 // staticRouteResolver 返回测试显式指定的 Provider、协议和真实模型。
@@ -3233,11 +3462,12 @@ type recordedFailure struct {
 
 // attemptRecorder 保存测试需要的成功和失败事实。
 type attemptRecorder struct {
-	mu        sync.Mutex
-	successes []runtimecore.ModelRoute
-	failures  []recordedFailure
-	onSuccess func(runtimecore.ModelRoute) error
-	onFailure func(
+	mu            sync.Mutex
+	successes     []runtimecore.ModelRoute
+	successEvents []inferencegateway.AttemptSuccess
+	failures      []recordedFailure
+	onSuccess     func(runtimecore.ModelRoute) error
+	onFailure     func(
 		runtimecore.ModelRoute,
 		inferencegateway.AttemptFailure,
 	) error
@@ -3281,6 +3511,7 @@ func (scheduler *modelRefreshScheduler) Schedules() []modelRefreshSchedule {
 func (recorder *attemptRecorder) RecordSuccess(
 	_ context.Context,
 	route runtimecore.ModelRoute,
+	success inferencegateway.AttemptSuccess,
 ) error {
 	if recorder.onSuccess != nil {
 		if err := recorder.onSuccess(route); err != nil {
@@ -3290,6 +3521,7 @@ func (recorder *attemptRecorder) RecordSuccess(
 	recorder.mu.Lock()
 	defer recorder.mu.Unlock()
 	recorder.successes = append(recorder.successes, route)
+	recorder.successEvents = append(recorder.successEvents, success)
 	return nil
 }
 
@@ -3318,6 +3550,13 @@ func (recorder *attemptRecorder) SuccessCount() int {
 	recorder.mu.Lock()
 	defer recorder.mu.Unlock()
 	return len(recorder.successes)
+}
+
+// Successes 返回按发生顺序保存的低敏成功事件副本。
+func (recorder *attemptRecorder) Successes() []inferencegateway.AttemptSuccess {
+	recorder.mu.Lock()
+	defer recorder.mu.Unlock()
+	return append([]inferencegateway.AttemptSuccess(nil), recorder.successEvents...)
 }
 
 // FailureCount 返回失败记录数。

@@ -1,6 +1,10 @@
 package inferencegateway
 
-import "github.com/madou1217/ai_home/core/inference"
+import (
+	"time"
+
+	"github.com/madou1217/ai_home/core/inference"
+)
 
 // attemptStream 顺序转发非终态并暂存唯一终态。
 type attemptStream struct {
@@ -9,12 +13,14 @@ type attemptStream struct {
 	hasSequence  bool
 	lastSequence uint64
 	terminal     inference.StreamEvent
+	terminalAt   time.Time
+	clock        func() time.Time
 	err          error
 }
 
 // newAttemptStream 创建同步传播背压的单次调用事件边界。
-func newAttemptStream(emit EventSink) *attemptStream {
-	return &attemptStream{emit: emit}
+func newAttemptStream(emit EventSink, clock func() time.Time) *attemptStream {
+	return &attemptStream{emit: emit, clock: clock}
 }
 
 // Accept 校验连续序号，立即转发非终态并暂存终态。
@@ -37,7 +43,12 @@ func (stream *attemptStream) Accept(
 	switch event.Kind() {
 	case inference.EventResponseCompleted,
 		inference.EventResponseFailed:
+		if stream.clock == nil {
+			stream.err = ErrInvalidUpstreamEventStream
+			return stream.err
+		}
 		stream.terminal = event
+		stream.terminalAt = stream.clock()
 		return nil
 	default:
 		if err := stream.emit(event); err != nil {
@@ -47,6 +58,14 @@ func (stream *attemptStream) Accept(
 		stream.visible = true
 		return nil
 	}
+}
+
+// TerminalAt 返回上游终态进入 Coordinator 的发生时间。
+func (stream *attemptStream) TerminalAt() time.Time {
+	if stream == nil {
+		return time.Time{}
+	}
+	return stream.terminalAt
 }
 
 // Visible 表示至少一个非终态事件已经交给客户端。

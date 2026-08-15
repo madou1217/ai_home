@@ -75,7 +75,7 @@ func runAccountTransferExport(
 	return nil
 }
 
-// runAccountTransferImport 读取有界标准文件并交给目标 Server 注册。
+// runAccountTransferImport 读取有界标准文件并交给目标 Server 导入或匹配。
 func runAccountTransferImport(
 	ctx context.Context,
 	options transferImportOptions,
@@ -89,11 +89,16 @@ func runAccountTransferImport(
 	if err != nil {
 		return err
 	}
-	account, err := client.ImportSub2API(ctx, document)
+	result, err := client.ImportSub2API(ctx, document)
 	if err != nil {
 		return fmt.Errorf("导入 sub2api Server 账号失败: %w", err)
 	}
-	writeAccountTransferImportResult(runtime.stdout, account, options.inputPath)
+	writeAccountTransferImportResult(
+		runtime.stdout,
+		result.Account,
+		result.Created,
+		options.inputPath,
+	)
 	return nil
 }
 
@@ -137,13 +142,18 @@ func writeAccountTransferExportResult(
 	writeAccountDetailField(output, "权限", "0600")
 }
 
-// writeAccountTransferImportResult 只输出注册后的公开身份和输入来源。
+// writeAccountTransferImportResult 只输出导入后的公开身份、结果语义和来源。
 func writeAccountTransferImportResult(
 	output io.Writer,
-	account managementapi.AccountSnapshot,
+	account managementapi.AccountView,
+	created bool,
 	inputPath string,
 ) {
-	_, _ = fmt.Fprintln(output, "账号已导入。")
+	if created {
+		_, _ = fmt.Fprintln(output, "账号已导入。")
+	} else {
+		_, _ = fmt.Fprintln(output, "账号已匹配（未新建）。")
+	}
 	writeAccountDetailField(output, "Provider", account.ProviderID)
 	writeAccountDetailField(output, "账号别名", account.CLIAccountID.String())
 	writeAccountDetailField(output, "AccountRef", account.AccountRef.String())

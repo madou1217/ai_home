@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/madou1217/ai_home/application/accountcredentials"
 	"github.com/madou1217/ai_home/application/accountrouting"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/inferencegateway"
@@ -549,10 +550,11 @@ func newClaudeFairCoordinator(
 		t.Fatalf("providers.NewCatalog() error = %v", err)
 	}
 	accounts, credentials := newClaudeFairAccountPool(t, catalog)
+	credentialResolver := claudeCredentialPoolResolver{credentials: credentials}
 	recruiter, err := accountrouting.NewRecruiter(accountrouting.Dependencies{
 		Candidates:  claudeCandidatePoolSource{accounts: accounts},
 		Runtime:     claudeAvailableRuntime{},
-		Credentials: claudeCredentialPoolResolver{credentials: credentials},
+		Credentials: credentialResolver,
 	})
 	if err != nil {
 		t.Fatalf("accountrouting.NewRecruiter() error = %v", err)
@@ -587,12 +589,14 @@ func newClaudeFairCoordinator(
 	recorder := &claudeAttemptRecorder{}
 	coordinator, err := inferencegateway.NewCoordinator(
 		inferencegateway.Dependencies{
-			Catalog:        catalog,
-			Routes:         claudeRouteResolver{route: route},
-			Recruiter:      recruiter,
-			Upstreams:      registry,
-			Attempts:       recorder,
-			ModelRefreshes: claudeModelRefreshScheduler{},
+			Catalog:                catalog,
+			Routes:                 claudeRouteResolver{route: route},
+			Recruiter:              recruiter,
+			Upstreams:              registry,
+			Attempts:               recorder,
+			CredentialObservations: credentialResolver,
+			Clock:                  time.Now,
+			ModelRefreshes:         claudeModelRefreshScheduler{},
 		},
 	)
 	if err != nil {
@@ -731,14 +735,15 @@ func newClaudeAdapterFixtureWithCredential(
 	if err != nil {
 		t.Fatalf("accounts.NewRoutingAccount() error = %v", err)
 	}
+	credentialResolver := claudeCredentialResolver{
+		accountRef: accountRef,
+		credential: credential,
+	}
 	recruiter, err := accountrouting.NewRecruiter(
 		accountrouting.Dependencies{
-			Candidates: claudeCandidateSource{account: account},
-			Runtime:    claudeAvailableRuntime{},
-			Credentials: claudeCredentialResolver{
-				accountRef: accountRef,
-				credential: credential,
-			},
+			Candidates:  claudeCandidateSource{account: account},
+			Runtime:     claudeAvailableRuntime{},
+			Credentials: credentialResolver,
 		},
 	)
 	if err != nil {
@@ -776,12 +781,14 @@ func newClaudeAdapterFixtureWithCredential(
 	recorder := &claudeAttemptRecorder{}
 	coordinator, err := inferencegateway.NewCoordinator(
 		inferencegateway.Dependencies{
-			Catalog:        catalog,
-			Routes:         claudeRouteResolver{route: route},
-			Recruiter:      recruiter,
-			Upstreams:      registry,
-			Attempts:       recorder,
-			ModelRefreshes: claudeModelRefreshScheduler{},
+			Catalog:                catalog,
+			Routes:                 claudeRouteResolver{route: route},
+			Recruiter:              recruiter,
+			Upstreams:              registry,
+			Attempts:               recorder,
+			CredentialObservations: credentialResolver,
+			Clock:                  time.Now,
+			ModelRefreshes:         claudeModelRefreshScheduler{},
 		},
 	)
 	if err != nil {
@@ -1020,6 +1027,28 @@ func (resolver claudeCredentialPoolResolver) ResolveCredentialBinding(
 	)
 }
 
+func (resolver claudeCredentialPoolResolver) ResolveObservedCredentialBinding(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+) (
+	accountapp.CredentialBinding,
+	accountcredentials.CredentialObservation,
+	error,
+) {
+	binding, err := resolver.ResolveCredentialBinding(ctx, accountRef)
+	if err != nil {
+		return accountapp.CredentialBinding{}, accountcredentials.CredentialObservation{}, err
+	}
+	return newClaudeTestCredentialObservation(binding)
+}
+
+func (claudeCredentialPoolResolver) IsCurrentCredentialObservation(
+	_ context.Context,
+	observation accountcredentials.CredentialObservation,
+) (bool, error) {
+	return observation.IsValid(), nil
+}
+
 // ResolveCredentialBinding 拒绝其他账号身份并返回稳定账号绑定。
 func (resolver claudeCredentialResolver) ResolveCredentialBinding(
 	_ context.Context,
@@ -1033,6 +1062,48 @@ func (resolver claudeCredentialResolver) ResolveCredentialBinding(
 		resolver.credential.ProviderID(),
 		resolver.credential,
 	)
+}
+
+func (resolver claudeCredentialResolver) ResolveObservedCredentialBinding(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+) (
+	accountapp.CredentialBinding,
+	accountcredentials.CredentialObservation,
+	error,
+) {
+	binding, err := resolver.ResolveCredentialBinding(ctx, accountRef)
+	if err != nil {
+		return accountapp.CredentialBinding{}, accountcredentials.CredentialObservation{}, err
+	}
+	return newClaudeTestCredentialObservation(binding)
+}
+
+func (claudeCredentialResolver) IsCurrentCredentialObservation(
+	_ context.Context,
+	observation accountcredentials.CredentialObservation,
+) (bool, error) {
+	return observation.IsValid(), nil
+}
+
+func newClaudeTestCredentialObservation(
+	binding accountapp.CredentialBinding,
+) (
+	accountapp.CredentialBinding,
+	accountcredentials.CredentialObservation,
+	error,
+) {
+	snapshot, err := accountapp.NewCredentialSnapshot(
+		binding.AccountRef(),
+		binding.ProviderID(),
+		binding.Credential(),
+		time.Date(2026, 8, 15, 7, 0, 0, 0, time.UTC),
+	)
+	if err != nil {
+		return accountapp.CredentialBinding{}, accountcredentials.CredentialObservation{}, err
+	}
+	observation, err := accountcredentials.NewCredentialObservation(snapshot)
+	return binding, observation, err
 }
 
 // claudeRouteResolver 返回固定的显式 Claude 路由。
@@ -1069,6 +1140,7 @@ func (claudeModelRefreshScheduler) ScheduleModelRefresh(
 func (recorder *claudeAttemptRecorder) RecordSuccess(
 	context.Context,
 	runtimecore.ModelRoute,
+	inferencegateway.AttemptSuccess,
 ) error {
 	recorder.successes++
 	return nil

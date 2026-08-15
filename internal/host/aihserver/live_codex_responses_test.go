@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -27,12 +26,15 @@ import (
 
 const (
 	realCodexAuthFileEnvironment = "AIH_REAL_CODEX_AUTH_FILE"
-	realCodexModel               = "gpt-5.6-sol"
 	realCodexMarker              = "AIH_REAL_ROUTE_OK"
 	realCodexInstructions        = "Return only the exact marker requested by the user."
 	realCodexMaxAuthFileBytes    = 1024 * 1024
 	realCodexUpstreamTimeout     = 2 * time.Minute
 )
+
+// realCodexModel 是真实账号目录经过校验后选出的本次模型。
+// 默认值只用于离线预算测试；真实夹具会在第一次本地目录响应后覆盖它。
+var realCodexModel = "gpt-5.6-sol"
 
 var errUnexpectedRealCodexRequest = errors.New("真实 Codex 请求超出验收白名单或预算")
 
@@ -695,29 +697,6 @@ func startRealCodexServer(
 	return "http://" + listener.Addr().String(), &http.Client{
 		Timeout: realCodexUpstreamTimeout,
 	}
-}
-
-// assertRealCodexModelAvailable 校验本地快照来自导入时维护的真实远端目录。
-func assertRealCodexModelAvailable(t *testing.T, body string) int {
-	t.Helper()
-	var document struct {
-		Object string `json:"object"`
-		Data   []struct {
-			ID string `json:"id"`
-		} `json:"data"`
-	}
-	decodeRealJSON(t, body, &document)
-	if document.Object != "list" || len(document.Data) == 0 {
-		t.Fatalf("真实本地模型目录无效: object=%q count=%d", document.Object, len(document.Data))
-	}
-	for _, model := range document.Data {
-		if model.ID == realCodexModel {
-			return len(document.Data)
-		}
-	}
-	countsMessage := fmt.Sprintf("真实账号目录不包含 %s", realCodexModel)
-	t.Fatal(countsMessage)
-	return 0
 }
 
 // marshalRealCodexPayload 创建操作者已经确认、且没有输出上限的固定请求。

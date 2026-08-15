@@ -277,8 +277,8 @@ func TestImportOfficialLoginPropagatesMissingLogin(t *testing.T) {
 		LookupEnv:   func(string) (string, bool) { return "", false },
 		UserHomeDir: func() (string, error) { return "/home/import-case", nil },
 		ReadFile:    func(string) ([]byte, error) { return nil, os.ErrNotExist },
-		ReadClaudeSecureStorage: func(string, bool) ([]byte, string, error) {
-			return nil, "", os.ErrNotExist
+		ReadClaudeSecureStorage: func(string, bool) (nativeartifact.ClaudeSecureStorageRecord, error) {
+			return nativeartifact.ClaudeSecureStorageRecord{}, os.ErrNotExist
 		},
 	})
 	models := &stubModelReader{}
@@ -323,8 +323,8 @@ func syntheticClaudeReader() *nativeartifact.Reader {
 			}
 			return []byte(content), nil
 		},
-		ReadClaudeSecureStorage: func(string, bool) ([]byte, string, error) {
-			return nil, "", os.ErrNotExist
+		ReadClaudeSecureStorage: func(string, bool) (nativeartifact.ClaudeSecureStorageRecord, error) {
+			return nativeartifact.ClaudeSecureStorageRecord{}, os.ErrNotExist
 		},
 	})
 }

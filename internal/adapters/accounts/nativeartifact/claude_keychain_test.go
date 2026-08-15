@@ -7,6 +7,7 @@ import (
 	"errors"
 	"slices"
 	"testing"
+	"time"
 )
 
 // TestBuildClaudeKeychainServiceMatchesOfficialAddressing 验证默认目录与显式
@@ -30,18 +31,22 @@ func TestBuildClaudeKeychainServiceMatchesOfficialAddressing(t *testing.T) {
 func TestReadClaudeKeychainUsesExactOfficialLookup(t *testing.T) {
 	t.Parallel()
 
-	credentialJSON := []byte(`{"claudeAiOauth":{"accessToken":"synthetic"}}`)
-	var commandName string
-	var commandArguments []string
-	data, source, err := readClaudeKeychainWith(
+	credentialJSON := completeClaudeKeychainCredentials("synthetic")
+	var commands [][]string
+	record, err := readClaudeKeychainWith(
 		"/Users/test/.claude",
 		false,
 		"darwin",
 		"test-user",
 		func(_ context.Context, name string, arguments ...string) ([]byte, error) {
-			commandName = name
-			commandArguments = append([]string(nil), arguments...)
-			return append([]byte(nil), credentialJSON...), nil
+			if name != "security" {
+				t.Fatalf("command = %s", name)
+			}
+			commands = append(commands, append([]string(nil), arguments...))
+			if slices.Contains(arguments, "-w") {
+				return append([]byte(nil), credentialJSON...), nil
+			}
+			return []byte(`keychain: "mdat"<timedate>=0x32303236303732343134313031355A00 "20260724141015Z"`), nil
 		},
 	)
 	if err != nil {
@@ -55,11 +60,15 @@ func TestReadClaudeKeychainUsesExactOfficialLookup(t *testing.T) {
 		"-s",
 		claudeKeychainService,
 	}
-	if commandName != "security" || !slices.Equal(commandArguments, expectedArguments) {
-		t.Fatalf("command = %s %v", commandName, commandArguments)
+	if len(commands) != 2 || !slices.Equal(commands[0], expectedArguments) {
+		t.Fatalf("commands = %v", commands)
 	}
-	if string(data) != string(credentialJSON) || source != "macOS Keychain: "+claudeKeychainService {
-		t.Fatalf("source = %q data_length = %d", source, len(data))
+	if string(record.Data) != string(credentialJSON) ||
+		record.Source != "macOS Keychain: "+claudeKeychainService {
+		t.Fatalf("source = %q data_length = %d", record.Source, len(record.Data))
+	}
+	if record.ModifiedAtMS != time.Date(2026, 7, 24, 14, 10, 15, 0, time.UTC).UnixMilli() {
+		t.Fatalf("modified_at_ms = %d", record.ModifiedAtMS)
 	}
 }
 
@@ -72,17 +81,23 @@ func TestReadClaudeKeychainFallsBackToDefaultService(t *testing.T) {
 	sum := sha256.Sum256([]byte(configDir))
 	scopedService := claudeKeychainService + "-" + hex.EncodeToString(sum[:])[:8]
 	var services []string
-	data, source, err := readClaudeKeychainWith(
+	record, err := readClaudeKeychainWith(
 		configDir,
 		true,
 		"darwin",
 		"test-user",
 		func(_ context.Context, _ string, arguments ...string) ([]byte, error) {
-			services = append(services, arguments[len(arguments)-1])
-			if services[len(services)-1] == scopedService {
+			service := arguments[len(arguments)-1]
+			if slices.Contains(arguments, "-w") {
+				services = append(services, service)
+			}
+			if service == scopedService {
 				return []byte("not-json"), errors.New("scoped item missing")
 			}
-			return []byte(`{"claudeAiOauth":{"accessToken":"default-token"}}`), nil
+			if slices.Contains(arguments, "-w") {
+				return completeClaudeKeychainCredentials("default-token"), nil
+			}
+			return nil, errors.New("metadata unavailable")
 		},
 	)
 	if err != nil {
@@ -91,9 +106,9 @@ func TestReadClaudeKeychainFallsBackToDefaultService(t *testing.T) {
 	if !slices.Equal(services, []string{scopedService, claudeKeychainService}) {
 		t.Fatalf("services = %v", services)
 	}
-	if source != "macOS Keychain: "+claudeKeychainService ||
-		!slices.Equal(data, []byte(`{"claudeAiOauth":{"accessToken":"default-token"}}`)) {
-		t.Fatalf("source=%q data=%s", source, data)
+	if record.Source != "macOS Keychain: "+claudeKeychainService ||
+		!slices.Equal(record.Data, completeClaudeKeychainCredentials("default-token")) {
+		t.Fatalf("source=%q data=%s", record.Source, record.Data)
 	}
 }
 
@@ -102,17 +117,31 @@ func TestReadClaudeKeychainFallsBackToDefaultService(t *testing.T) {
 func TestReadClaudeKeychainRejectsMalformedPayload(t *testing.T) {
 	t.Parallel()
 
-	data, source, err := readClaudeKeychainWith(
-		"/Users/test/.claude",
-		false,
-		"darwin",
-		"test-user",
-		func(context.Context, string, ...string) ([]byte, error) {
-			return []byte(`{"claudeAiOauth":{}}`), nil
-		},
-	)
-	if !errors.Is(err, errClaudeKeychainUnavailable) || data != nil || source != "" {
-		t.Fatalf("data=%v source=%q error=%v", data, source, err)
+	invalidPayloads := map[string][]byte{
+		"空 OAuth":         []byte(`{"claudeAiOauth":{}}`),
+		"仅 Access Token":  []byte(`{"claudeAiOauth":{"accessToken":"access-only"}}`),
+		"仅 Refresh Token": []byte(`{"claudeAiOauth":{"refreshToken":"refresh-only"}}`),
+	}
+	for name, payload := range invalidPayloads {
+		name := name
+		payload := payload
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			record, err := readClaudeKeychainWith(
+				"/Users/test/.claude",
+				false,
+				"darwin",
+				"test-user",
+				func(context.Context, string, ...string) ([]byte, error) {
+					return append([]byte(nil), payload...), nil
+				},
+			)
+			if !errors.Is(err, errClaudeKeychainUnavailable) ||
+				record.Data != nil || record.Source != "" || record.ModifiedAtMS != 0 {
+				t.Fatalf("record=%v error=%v", record, err)
+			}
+		})
 	}
 }
 
@@ -141,16 +170,30 @@ func TestReadClaudeKeychainFailsClosed(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			data, source, err := readClaudeKeychainWith(
+			record, err := readClaudeKeychainWith(
 				"/Users/test/.claude",
 				false,
 				testCase.goos,
 				testCase.username,
 				testCase.run,
 			)
-			if !errors.Is(err, errClaudeKeychainUnavailable) || data != nil || source != "" {
-				t.Fatalf("data=%v source=%q error=%v", data, source, err)
+			if !errors.Is(err, errClaudeKeychainUnavailable) ||
+				record.Data != nil || record.Source != "" || record.ModifiedAtMS != 0 {
+				t.Fatalf(
+					"record=%v error=%v",
+					record,
+					err,
+				)
 			}
 		})
 	}
+}
+
+// completeClaudeKeychainCredentials 创建满足正式 secure storage 合同的测试信封。
+func completeClaudeKeychainCredentials(accessToken string) []byte {
+	return []byte(`{"claudeAiOauth":{` +
+		`"accessToken":"` + accessToken + `",` +
+		`"refreshToken":"refresh-` + accessToken + `",` +
+		`"expiresAt":4102444800000,` +
+		`"scopes":["user:inference","user:profile"]}}`)
 }

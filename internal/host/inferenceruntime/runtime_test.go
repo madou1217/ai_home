@@ -81,10 +81,12 @@ func TestRuntimeKeepsCooldownAtAccountModelGranularity(t *testing.T) {
 			inference.EventResponseCompleted {
 		t.Fatalf("sibling events = %#v", siblingEvents)
 	}
+	// 每次实际触网读取一次凭据，随后每个成功或失败终态再读取一次当前快照，
+	// 终态校验不进入候选扫描，也不会随账号池大小放大。
 	if fixture.upstream.CallCount() != 3 ||
-		fixture.store.CredentialReadCount() != 3 {
+		fixture.store.CredentialReadCount() != 6 {
 		t.Fatalf(
-			"calls upstream=%d credentials=%d, want 3/3",
+			"calls upstream=%d credentials=%d, want 3/6",
 			fixture.upstream.CallCount(),
 			fixture.store.CredentialReadCount(),
 		)
@@ -134,7 +136,7 @@ func TestRuntimeSchedulesModelRefreshAfterUnsupportedFailure(t *testing.T) {
 	if !errors.Is(err, inferencegateway.ErrNoRoutableAccount) ||
 		len(secondEvents) != 0 ||
 		fixture.upstream.CallCount() != 1 ||
-		fixture.store.CredentialReadCount() != 1 ||
+		fixture.store.CredentialReadCount() != 2 ||
 		fixture.refreshes.CallCount() != 1 {
 		t.Fatalf(
 			"policy block events=%#v error=%v upstream=%d credentials=%d refreshes=%d",
@@ -153,7 +155,7 @@ func TestRuntimeSchedulesModelRefreshAfterUnsupportedFailure(t *testing.T) {
 		len(siblingEvents) == 0 ||
 		siblingEvents[len(siblingEvents)-1].Kind() !=
 			inference.EventResponseCompleted ||
-		fixture.store.CredentialReadCount() != 2 ||
+		fixture.store.CredentialReadCount() != 4 ||
 		fixture.upstream.CallCount() != 2 {
 		t.Fatalf(
 			"model scope sibling events=%#v error=%v upstream=%d credentials=%d",
@@ -198,7 +200,7 @@ func TestRuntimeAppliesCredentialBlockAtAccountScope(t *testing.T) {
 	)
 	if !errors.Is(err, inferencegateway.ErrNoRoutableAccount) ||
 		len(siblingEvents) != 0 ||
-		fixture.store.CredentialReadCount() != 1 ||
+		fixture.store.CredentialReadCount() != 2 ||
 		fixture.upstream.CallCount() != 1 {
 		t.Fatalf(
 			"account block events=%#v error=%v upstream=%d credentials=%d",
@@ -490,7 +492,7 @@ func (*runtimeStore) ReplaceCredential(
 	return errors.New("合成 API Key 不应刷新")
 }
 
-// CredentialReadCount 返回真正越过运行态资格检查的凭据读取次数。
+// CredentialReadCount 返回请求解析与失败冷路径代次复核的凭据读取总数。
 func (store *runtimeStore) CredentialReadCount() int {
 	store.mu.Lock()
 	defer store.mu.Unlock()

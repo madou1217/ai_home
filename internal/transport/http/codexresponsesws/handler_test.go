@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/madou1217/ai_home/application/accountcredentials"
+	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/codexwebsocket"
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
@@ -82,6 +84,13 @@ func TestHandlerRelaysTwoTurnsWithoutReencodingFrames(t *testing.T) {
 		t.Fatalf("relayed events first=%q second=%q", firstEvents, secondEvents)
 	}
 	waitForAttempts(t, recorder, 2, 0)
+	for _, success := range recorder.Successes() {
+		if !success.HappenedAt().Equal(
+			time.Date(2026, 8, 10, 8, 0, 0, 0, time.UTC),
+		) {
+			t.Fatalf("success happened_at=%s", success.HappenedAt())
+		}
+	}
 }
 
 // TestHandlerRelaysToolCallAndFunctionCallOutput 验证工具事件和下一轮
@@ -184,6 +193,83 @@ func TestHandlerClassifiesWrapped429BeforeRelaying(t *testing.T) {
 	if failure.RuntimeKind() != runtimecore.FailureRateLimited ||
 		failure.RetryAfter() != 3*time.Second {
 		t.Fatalf("failure = %#v", failure)
+	}
+}
+
+// TestHandlerRelaysStaleCredentialFailureWithoutRuntimeWrite 验证连接建立后凭据
+// 已轮换时，旧连接迟到的真实失败仍原样交给客户端，但不会污染新凭据运行态。
+func TestHandlerRelaysStaleCredentialFailureWithoutRuntimeWrite(t *testing.T) {
+	t.Parallel()
+
+	errorFrame := `{"type":"error","status":429,"error":{"code":"rate_limit_exceeded","message":"stale-credential"}}`
+	upstream := newWebSocketUpstream(t, func(connection *websocket.Conn) {
+		readOneUpstreamRequest(t, connection)
+		writeUpstreamText(t, connection, errorFrame)
+	})
+	recorder := &attemptRecorder{}
+	verifier := &observationVerifierStub{current: false}
+	handler := newTestHandlerWithVerifier(
+		t,
+		upstream.URL,
+		recorder,
+		modelRefreshStub{},
+		verifier,
+	)
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	client, _ := dialGateway(t, server.URL, nil)
+	defer client.CloseNow()
+	writeClientText(t, client, []byte(
+		`{"type":"response.create","model":"gpt-5.6-sol","input":[]}`,
+	))
+	messageType, payload, err := readClientMessage(t, client)
+	if err != nil || messageType != websocket.MessageText || string(payload) != errorFrame {
+		t.Fatalf("error relay type=%v payload=%s error=%v", messageType, payload, err)
+	}
+	if got := len(recorder.Failures()); got != 0 {
+		t.Fatalf("runtime failures = %d, want 0", got)
+	}
+	if verifier.CallCount() != 1 {
+		t.Fatalf("observation verification calls = %d, want 1", verifier.CallCount())
+	}
+}
+
+// TestHandlerRelaysStaleCredentialSuccessWithoutRuntimeClear 验证 v1 WS 连接在
+// 凭据切到 v2 后迟到完成时仍透传 response.completed，但不清除 v2 运行态。
+func TestHandlerRelaysStaleCredentialSuccessWithoutRuntimeClear(t *testing.T) {
+	t.Parallel()
+
+	completed := `{"type":"response.completed","response":{"id":"resp_stale_success"}}`
+	upstream := newWebSocketUpstream(t, func(connection *websocket.Conn) {
+		readOneUpstreamRequest(t, connection)
+		writeUpstreamText(t, connection, completed)
+	})
+	recorder := &attemptRecorder{}
+	verifier := &observationVerifierStub{current: false}
+	handler := newTestHandlerWithVerifier(
+		t,
+		upstream.URL,
+		recorder,
+		modelRefreshStub{},
+		verifier,
+	)
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	client, _ := dialGateway(t, server.URL, nil)
+	defer client.CloseNow()
+	writeClientText(t, client, []byte(
+		`{"type":"response.create","model":"gpt-5.6-sol","input":[]}`,
+	))
+	messageType, payload, err := readClientMessage(t, client)
+	if err != nil || messageType != websocket.MessageText || string(payload) != completed {
+		t.Fatalf("completed relay type=%v payload=%s error=%v", messageType, payload, err)
+	}
+	if recorder.SuccessCount() != 0 || verifier.CallCount() != 1 {
+		t.Fatalf(
+			"runtime successes=%d verification_calls=%d",
+			recorder.SuccessCount(),
+			verifier.CallCount(),
+		)
 	}
 }
 
@@ -607,6 +693,23 @@ func newTestHandlerWithRefresh(
 	modelRefreshes inferencegateway.ModelRefreshScheduler,
 ) *codexresponsesws.Handler {
 	t.Helper()
+	return newTestHandlerWithVerifier(
+		t,
+		upstreamBaseURL,
+		recorder,
+		modelRefreshes,
+		&observationVerifierStub{current: true},
+	)
+}
+
+func newTestHandlerWithVerifier(
+	t *testing.T,
+	upstreamBaseURL string,
+	recorder *attemptRecorder,
+	modelRefreshes inferencegateway.ModelRefreshScheduler,
+	observations inferencegateway.CredentialObservationVerifier,
+) *codexresponsesws.Handler {
+	t.Helper()
 	credential, err := codexauth.NewAPIKeyAuth(codexauth.APIKeyInput{
 		APIKey:  "synthetic-upstream-key",
 		BaseURL: upstreamBaseURL,
@@ -634,7 +737,25 @@ func newTestHandlerWithRefresh(
 	if err != nil {
 		t.Fatalf("ParseAccountRef() error = %v", err)
 	}
-	selection, err := codexwebsocket.NewSelection(route, accountRef, credential)
+	snapshot, err := accountapp.NewCredentialSnapshot(
+		accountRef,
+		codexauth.ProviderID,
+		credential,
+		time.Date(2026, 8, 10, 7, 0, 0, 0, time.UTC),
+	)
+	if err != nil {
+		t.Fatalf("NewCredentialSnapshot() error = %v", err)
+	}
+	observation, err := accountcredentials.NewCredentialObservation(snapshot)
+	if err != nil {
+		t.Fatalf("NewCredentialObservation() error = %v", err)
+	}
+	selection, err := codexwebsocket.NewSelection(
+		route,
+		accountRef,
+		credential,
+		observation,
+	)
 	if err != nil {
 		t.Fatalf("NewSelection() error = %v", err)
 	}
@@ -647,11 +768,12 @@ func newTestHandlerWithRefresh(
 		t.Fatalf("NewDialer() error = %v", err)
 	}
 	handler, err := codexresponsesws.NewHandler(codexresponsesws.Dependencies{
-		Authorizer:     bearerAuthorizer{},
-		Selector:       selectionStub{selection: selection},
-		Upstream:       dialer,
-		Attempts:       recorder,
-		ModelRefreshes: modelRefreshes,
+		Authorizer:             bearerAuthorizer{},
+		Selector:               selectionStub{selection: selection},
+		Upstream:               dialer,
+		Attempts:               recorder,
+		CredentialObservations: observations,
+		ModelRefreshes:         modelRefreshes,
 		Clock: func() time.Time {
 			return time.Date(2026, 8, 10, 8, 0, 0, 0, time.UTC)
 		},
@@ -826,6 +948,29 @@ type selectionStub struct {
 	selection codexwebsocket.Selection
 }
 
+type observationVerifierStub struct {
+	mu      sync.Mutex
+	current bool
+	err     error
+	calls   int
+}
+
+func (verifier *observationVerifierStub) IsCurrentCredentialObservation(
+	_ context.Context,
+	_ accountcredentials.CredentialObservation,
+) (bool, error) {
+	verifier.mu.Lock()
+	defer verifier.mu.Unlock()
+	verifier.calls++
+	return verifier.current, verifier.err
+}
+
+func (verifier *observationVerifierStub) CallCount() int {
+	verifier.mu.Lock()
+	defer verifier.mu.Unlock()
+	return verifier.calls
+}
+
 func (stub selectionStub) Select(
 	_ context.Context,
 	request codexwebsocket.Request,
@@ -894,19 +1039,28 @@ func waitForRefresh(
 }
 
 type attemptRecorder struct {
-	mu        sync.Mutex
-	successes []runtimecore.ModelRoute
-	failures  []inferencegateway.AttemptFailure
+	mu            sync.Mutex
+	successes     []runtimecore.ModelRoute
+	successEvents []inferencegateway.AttemptSuccess
+	failures      []inferencegateway.AttemptFailure
 }
 
 func (recorder *attemptRecorder) RecordSuccess(
 	_ context.Context,
 	route runtimecore.ModelRoute,
+	success inferencegateway.AttemptSuccess,
 ) error {
 	recorder.mu.Lock()
 	recorder.successes = append(recorder.successes, route)
+	recorder.successEvents = append(recorder.successEvents, success)
 	recorder.mu.Unlock()
 	return nil
+}
+
+func (recorder *attemptRecorder) Successes() []inferencegateway.AttemptSuccess {
+	recorder.mu.Lock()
+	defer recorder.mu.Unlock()
+	return append([]inferencegateway.AttemptSuccess(nil), recorder.successEvents...)
 }
 
 func (recorder *attemptRecorder) RecordFailure(

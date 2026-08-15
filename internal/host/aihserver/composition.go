@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/madou1217/ai_home/application/accountauth"
@@ -24,7 +25,9 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accountruntime/accountrecovery"
 	runtimeinmemory "github.com/madou1217/ai_home/internal/adapters/accountruntime/inmemory"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/cliproxyapi"
+	"github.com/madou1217/ai_home/internal/adapters/accounts/deletionprojection"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
+	"github.com/madou1217/ai_home/internal/adapters/accounts/persistentsessionguard"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sub2api"
 	agycodeassist "github.com/madou1217/ai_home/internal/adapters/agy/codeassist"
@@ -95,18 +98,41 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		_ = store.Close()
 		return nil, fmt.Errorf("创建账号运行态失败: %w", err)
 	}
+	deletionGuard, err := persistentsessionguard.New(options.AIHomeDir)
+	if err != nil {
+		_ = store.Close()
+		return nil, fmt.Errorf("创建账号持久会话删除保护失败: %w", err)
+	}
+	hostHomeDir, err := os.UserHomeDir()
+	if err != nil {
+		_ = store.Close()
+		return nil, fmt.Errorf("解析 Provider 原生共享目录失败: %w", err)
+	}
+	deletionPreparation, err := deletionprojection.New(deletionprojection.Options{
+		AIHomeDir:   options.AIHomeDir,
+		HostHomeDir: hostHomeDir,
+		Credentials: store,
+		Clock:       time.Now,
+	})
+	if err != nil {
+		_ = store.Close()
+		return nil, fmt.Errorf("创建账号投影删除准备边界失败: %w", err)
+	}
 	handlers, resources, err := newHandlers(
 		ctx,
 		catalog,
 		store,
 		modelDiscovery,
 		accountRuntime,
+		deletionGuard,
+		deletionPreparation,
 		options.ManagementKey,
 		options.ClientKey,
 		options.InferenceHTTPClient,
 		options.WebSocketHTTPClient,
 		options.UsageHTTPClient,
 		options.RelayHTTPClient,
+		options.ErrorLog,
 		newMessagesDecodeErrorObserver(options.ErrorLog),
 		newClaudeUpstreamDecodeErrorObserver(options.ErrorLog),
 	)
@@ -116,7 +142,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 	}
 	resources = append(resources, store)
 	return newServer(
-		newRouter(handlers),
+		withManagementBrowserAccess(newRouter(handlers)),
 		resources,
 		options,
 	), nil
@@ -129,12 +155,15 @@ func newHandlers(
 	store *sqliteaccount.Store,
 	modelDiscovery *accountapp.ModelDiscovery,
 	accountRuntime serverAccountRuntime,
+	deletionGuard accountapp.DeletionGuard,
+	deletionPreparation accountapp.DeletionPreparation,
 	managementKey func() string,
 	clientKey func() string,
 	inferenceClient InferenceHTTPClient,
 	webSocketHTTPClient *http.Client,
 	usageClient UsageHTTPClient,
 	relayHTTPClient InferenceHTTPClient,
+	errorLog *log.Logger,
 	decodeErrors func(error),
 	upstreamDecodeErrors func(error),
 ) (_ serverHandlers, _ []io.Closer, resultErr error) {
@@ -290,15 +319,22 @@ func newHandlers(
 		catalog,
 		store,
 		time.Now,
-		usage,
 		accountRuntime,
 	)
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建静态账号凭据轮换用例失败: %w", err)
 	}
+	usageRefreshingCredentialRotator, err :=
+		usageapp.NewStaticCredentialRotationDecorator(
+			credentialRotator,
+			usage,
+		)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建凭据轮换额度刷新边界失败: %w", err)
+	}
 	modelRefreshingCredentialRotator, err :=
 		accountapp.NewStaticCredentialRotationModelRefreshDecorator(
-			credentialRotator,
+			usageRefreshingCredentialRotator,
 			modelRefresh,
 		)
 	if err != nil {
@@ -306,9 +342,12 @@ func newHandlers(
 	}
 	deleter, err := accountapp.NewDeleter(
 		store,
+		deletionGuard,
+		deletionPreparation,
 		modelRefresh,
 		usage,
 		accountRuntime,
+		credentials,
 	)
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建账号删除用例失败: %w", err)
@@ -322,7 +361,7 @@ func newHandlers(
 	}
 	scheduledRegistrar, err := usageapp.NewRegistrationDecorator(
 		modelRefreshingRegistrar,
-		usage.coordinator,
+		usage,
 	)
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建注册额度刷新边界失败: %w", err)
@@ -338,10 +377,18 @@ func newHandlers(
 	scheduledReauthenticator, err :=
 		usageapp.NewReauthenticationDecorator(
 			modelRefreshingReauthenticator,
-			usage.coordinator,
+			usage,
 		)
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建重登额度刷新边界失败: %w", err)
+	}
+	accountImporter, err := accountapp.NewAccountImporter(
+		scheduledRegistrar,
+		store,
+		scheduledReauthenticator,
+	)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建账号导入用例失败: %w", err)
 	}
 	authorizer, err := accountsapi.NewBearerAuthorizer(managementKey)
 	if err != nil {
@@ -353,7 +400,7 @@ func newHandlers(
 	}
 	decoder := nativeaccount.NewDecoder()
 	sub2APIDecoder := sub2api.NewDecoder()
-	credentialFactory := accountsapi.NewBuiltinAPIKeyCredentialFactory()
+	credentialFactory := accountsapi.NewBuiltinStaticCredentialFactory()
 	accountsHandler, err := accountsapi.NewHandler(accountsapi.Dependencies{
 		Management:          management,
 		Models:              recoveringModelManagement,
@@ -365,7 +412,7 @@ func newHandlers(
 		Sub2APIExporter:     accountExporter,
 		CLIProxyAPIExporter: cliProxyAPIExporter,
 		Registrar:           scheduledRegistrar,
-		APIKeys:             credentialFactory,
+		Importer:            accountImporter,
 		StaticCredentials:   credentialFactory,
 		NativeAccounts:      decoder,
 		Sub2APIAccounts:     sub2APIDecoder,
@@ -556,12 +603,13 @@ func newHandlers(
 	}
 	webSocketHandler, err := codexresponsesws.NewHandler(
 		codexresponsesws.Dependencies{
-			Authorizer:     clientAuthorizer,
-			Selector:       webSocketSelector,
-			Upstream:       webSocketDialer,
-			Attempts:       accountRuntime,
-			ModelRefreshes: inference.modelRefreshes,
-			Clock:          time.Now,
+			Authorizer:             clientAuthorizer,
+			Selector:               webSocketSelector,
+			Upstream:               webSocketDialer,
+			Attempts:               accountRuntime,
+			CredentialObservations: credentials,
+			ModelRefreshes:         inference.modelRefreshes,
+			Clock:                  time.Now,
 		},
 	)
 	if err != nil {
@@ -588,24 +636,50 @@ func newHandlers(
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf("创建本地模型目录 Handler 失败: %w", err)
 	}
+	initialModelRecovery, err := accountapp.NewInitialModelRefreshRecovery(
+		catalog,
+		store,
+		modelRefresh,
+	)
+	if err != nil {
+		_ = webSocketHandler.Close()
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建首次模型刷新恢复用例失败: %w", err)
+	}
+	initialModelRecoveryWorker, err := startInitialModelRefreshRecoveryWorker(
+		ctx,
+		initialModelRecovery,
+		errorLog,
+	)
+	if err != nil {
+		_ = webSocketHandler.Close()
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("启动首次模型刷新恢复 worker 失败: %w", err)
+	}
 	return serverHandlers{
-		accounts:          accountsHandler,
-		accountAuth:       accountAuthHandler,
-		models:            modelsHandler,
-		inference:         inference.handler,
-		codexResponsesWS:  webSocketHandler,
-		claudeRelayLeases: relayLeaseHandler,
-		claudeNativeRelay: nativeRelayHandler,
-		catalogStatus: func() catalogReadiness {
-			status := inference.models.Status()
-			return catalogReadiness{
-				ready:      status.Ready,
-				stale:      status.Stale,
-				modelCount: status.ModelCount,
-				routeCount: status.RouteCount,
-			}
-		},
-	}, []io.Closer{webSocketHandler, inference, usage, modelRefresh}, nil
+			accounts:          accountsHandler,
+			accountAuth:       accountAuthHandler,
+			models:            modelsHandler,
+			inference:         inference.handler,
+			codexResponsesWS:  webSocketHandler,
+			claudeRelayLeases: relayLeaseHandler,
+			claudeNativeRelay: nativeRelayHandler,
+			catalogStatus: func() catalogReadiness {
+				status := inference.models.Status()
+				return catalogReadiness{
+					ready:      status.Ready,
+					stale:      status.Stale,
+					modelCount: status.ModelCount,
+					routeCount: status.RouteCount,
+				}
+			},
+		}, []io.Closer{
+			initialModelRecoveryWorker,
+			webSocketHandler,
+			inference,
+			usage,
+			modelRefresh,
+		}, nil
 }
 
 // newClaudeUpstreamDecodeErrorObserver 只记录上游事件类型、字段形状和状态机位置。

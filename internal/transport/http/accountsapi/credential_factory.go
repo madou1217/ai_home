@@ -11,22 +11,11 @@ import (
 var (
 	// ErrUnsupportedProvider 表示当前 HTTP 注册入口不支持指定 Provider。
 	ErrUnsupportedProvider = errors.New("账号 HTTP Provider 不支持")
-	// ErrInvalidAPIKeyInput 表示 API Key 或 Base URL 未通过 Provider 领域校验。
-	ErrInvalidAPIKeyInput = errors.New("账号 HTTP API Key 输入无效")
 	// ErrUnsupportedStaticAuthKind 表示 Provider 不支持请求中的静态凭据类型。
 	ErrUnsupportedStaticAuthKind = errors.New("账号 HTTP 静态凭据类型不支持")
 	// ErrInvalidStaticCredentialInput 表示静态凭据字段组合或领域值无效。
 	ErrInvalidStaticCredentialInput = errors.New("账号 HTTP 静态凭据输入无效")
 )
-
-// APIKeyCredentialFactory 把 HTTP API Key 输入转换为 Provider 领域凭据。
-type APIKeyCredentialFactory interface {
-	Build(
-		providerID string,
-		apiKey string,
-		baseURL string,
-	) (accountapp.Credential, error)
-}
 
 // StaticCredentialFactory 把完整静态凭据 DTO 转换为 Provider 领域值。
 type StaticCredentialFactory interface {
@@ -45,14 +34,14 @@ type apiKeyCredentialBuilder func(
 	baseURL string,
 ) (accountapp.Credential, error)
 
-// BuiltinAPIKeyCredentialFactory 集中注册当前确认的 Codex、Claude 构造策略。
-type BuiltinAPIKeyCredentialFactory struct {
+// BuiltinStaticCredentialFactory 集中注册当前确认的 Codex、Claude 静态凭据策略。
+type BuiltinStaticCredentialFactory struct {
 	builders map[string]apiKeyCredentialBuilder
 }
 
-// NewBuiltinAPIKeyCredentialFactory 创建不包含 OAuth 或其他 Provider 的凭据工厂。
-func NewBuiltinAPIKeyCredentialFactory() *BuiltinAPIKeyCredentialFactory {
-	return &BuiltinAPIKeyCredentialFactory{
+// NewBuiltinStaticCredentialFactory 创建不包含 OAuth 或其他 Provider 的凭据工厂。
+func NewBuiltinStaticCredentialFactory() *BuiltinStaticCredentialFactory {
+	return &BuiltinStaticCredentialFactory{
 		builders: map[string]apiKeyCredentialBuilder{
 			codex.ProviderID:  buildCodexAPIKeyCredential,
 			claude.ProviderID: buildClaudeAPIKeyCredential,
@@ -60,8 +49,8 @@ func NewBuiltinAPIKeyCredentialFactory() *BuiltinAPIKeyCredentialFactory {
 	}
 }
 
-// Build 使用精确 Provider ID 构造领域凭据，不修剪或猜测调用方输入。
-func (factory *BuiltinAPIKeyCredentialFactory) Build(
+// buildAPIKey 使用精确 Provider ID 构造领域凭据，不修剪或猜测调用方输入。
+func (factory *BuiltinStaticCredentialFactory) buildAPIKey(
 	providerID string,
 	apiKey string,
 	baseURL string,
@@ -75,13 +64,13 @@ func (factory *BuiltinAPIKeyCredentialFactory) Build(
 	}
 	credential, err := builder(apiKey, baseURL)
 	if err != nil {
-		return nil, ErrInvalidAPIKeyInput
+		return nil, ErrInvalidStaticCredentialInput
 	}
 	return credential, nil
 }
 
 // BuildStatic 严格区分 API Key 与 Claude Auth Token 字段。
-func (factory *BuiltinAPIKeyCredentialFactory) BuildStatic(
+func (factory *BuiltinStaticCredentialFactory) BuildStatic(
 	providerID string,
 	kind string,
 	apiKey string,
@@ -96,7 +85,7 @@ func (factory *BuiltinAPIKeyCredentialFactory) BuildStatic(
 		if authToken != "" {
 			return nil, ErrInvalidStaticCredentialInput
 		}
-		credential, err := factory.Build(providerID, apiKey, baseURL)
+		credential, err := factory.buildAPIKey(providerID, apiKey, baseURL)
 		if errors.Is(err, ErrUnsupportedProvider) {
 			return nil, err
 		}

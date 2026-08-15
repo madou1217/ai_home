@@ -135,13 +135,22 @@ type AccountExporter interface {
 	) ([]byte, error)
 }
 
-// Registrar 是 HTTP API Key 创建入口依赖的最小注册端口。
+// Registrar 是 HTTP 静态账号创建入口依赖的最小注册端口。
 type Registrar interface {
 	Register(
 		ctx context.Context,
 		credential accountapp.Credential,
 		profile accountapp.PublicProfile,
 	) (accountcore.Account, error)
+}
+
+// Importer 是外部账号文档进入统一新建、幂等或重登语义的最小应用端口。
+type Importer interface {
+	Import(
+		ctx context.Context,
+		credential accountapp.Credential,
+		profile accountapp.PublicProfile,
+	) (accountapp.AccountImportResult, error)
 }
 
 // NativeAccountDecoder 是 HTTP 导入入口依赖的 Provider 官方 artifact 反腐端口。
@@ -172,7 +181,7 @@ type Dependencies struct {
 	Sub2APIExporter     AccountExporter
 	CLIProxyAPIExporter AccountExporter
 	Registrar           Registrar
-	APIKeys             APIKeyCredentialFactory
+	Importer            Importer
 	StaticCredentials   StaticCredentialFactory
 	NativeAccounts      NativeAccountDecoder
 	Sub2APIAccounts     Sub2APIAccountDecoder
@@ -191,7 +200,7 @@ type Handler struct {
 	sub2apiExporter     AccountExporter
 	cliProxyAPIExporter AccountExporter
 	registrar           Registrar
-	apiKeys             APIKeyCredentialFactory
+	importer            Importer
 	staticCredentials   StaticCredentialFactory
 	native              NativeAccountDecoder
 	sub2api             Sub2APIAccountDecoder
@@ -210,7 +219,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		dependencies.Sub2APIExporter == nil ||
 		dependencies.CLIProxyAPIExporter == nil ||
 		dependencies.Registrar == nil ||
-		dependencies.APIKeys == nil ||
+		dependencies.Importer == nil ||
 		dependencies.StaticCredentials == nil ||
 		dependencies.NativeAccounts == nil ||
 		dependencies.Sub2APIAccounts == nil ||
@@ -228,7 +237,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		sub2apiExporter:     dependencies.Sub2APIExporter,
 		cliProxyAPIExporter: dependencies.CLIProxyAPIExporter,
 		registrar:           dependencies.Registrar,
-		apiKeys:             dependencies.APIKeys,
+		importer:            dependencies.Importer,
 		staticCredentials:   dependencies.StaticCredentials,
 		native:              dependencies.NativeAccounts,
 		sub2api:             dependencies.Sub2APIAccounts,
@@ -596,7 +605,7 @@ func (handler *Handler) getAccount(
 	)
 }
 
-// createAccount 只接受 Codex、Claude API Key，并返回不含密钥的账号投影。
+// createAccount 接受 Codex、Claude 已声明的静态凭据，并返回脱敏账号投影。
 func (handler *Handler) createAccount(
 	response http.ResponseWriter,
 	request *http.Request,
@@ -609,22 +618,15 @@ func (handler *Handler) createAccount(
 		writeRequestDecodeError(response, err)
 		return
 	}
-	if input.Auth.Kind != "api_key" {
-		writeAPIError(
-			response,
-			http.StatusUnprocessableEntity,
-			"unsupported_auth_kind",
-			"当前接口只支持 API Key 注册",
-		)
-		return
-	}
-	credential, err := handler.apiKeys.Build(
+	credential, err := handler.staticCredentials.BuildStatic(
 		input.ProviderID,
+		input.Auth.Kind,
 		input.Auth.APIKey,
+		input.Auth.AuthToken,
 		input.Auth.BaseURL,
 	)
 	if err != nil {
-		writeCredentialInputError(response, err)
+		writeStaticCredentialInputError(response, err)
 		return
 	}
 	account, err := handler.registrar.Register(
@@ -636,10 +638,12 @@ func (handler *Handler) createAccount(
 		writeApplicationError(response, err)
 		return
 	}
+	// Registrar 返回已经提交的账号聚合；直接构造公开投影，避免提交后点查
+	// 瞬时失败使客户端误以为账号没有创建并重复提交。
 	overview, err := accountapp.NewAccountOverview(accountapp.AccountOverviewInput{
 		Account:       account,
 		HasCredential: true,
-		AuthKind:      "api_key",
+		AuthKind:      input.Auth.Kind,
 	})
 	if err != nil {
 		writeApplicationError(response, err)

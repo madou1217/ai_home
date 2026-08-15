@@ -51,6 +51,12 @@ type AccountView struct {
 	UpdatedAt        time.Time
 }
 
+// AccountImportResult 把统一账号公开投影与本次是否首次创建一起返回。
+type AccountImportResult struct {
+	Account AccountView
+	Created bool
+}
+
 // AccountListResult 是远端账号列表及其下一页游标。
 type AccountListResult struct {
 	Accounts     []AccountView
@@ -187,26 +193,26 @@ func (client *Client) SetAccountModelPolicy(
 	return client.requestAccountModels(ctx, http.MethodPatch, accountRef, payload)
 }
 
-// ImportNative 把本机读取的官方 artifact 上传到目标 Server 注册账号。
+// ImportNative 把本机官方 artifact 提交给目标 Server，并区分首建与原地更新。
 func (client *Client) ImportNative(
 	ctx context.Context,
 	providerID string,
 	artifacts []byte,
-) (AccountView, error) {
+) (AccountImportResult, error) {
 	if !client.isValid() {
-		return AccountView{}, ErrInvalidConfig
+		return AccountImportResult{}, ErrInvalidConfig
 	}
 	if ctx == nil || !validNativeProviderID(providerID) ||
 		len(artifacts) == 0 || len(artifacts) > maxNativeImportDocumentBytes ||
 		!validJSONObject(artifacts) {
-		return AccountView{}, ErrInvalidRequest
+		return AccountImportResult{}, ErrInvalidRequest
 	}
 	payload, err := json.Marshal(struct {
 		ProviderID string          `json:"provider_id"`
 		Artifacts  json.RawMessage `json:"artifacts"`
 	}{ProviderID: providerID, Artifacts: json.RawMessage(artifacts)})
 	if err != nil || len(payload) > maxNativeImportDocumentBytes {
-		return AccountView{}, ErrInvalidRequest
+		return AccountImportResult{}, ErrInvalidRequest
 	}
 	result, err := client.doResponseRequest(
 		ctx,
@@ -215,12 +221,32 @@ func (client *Client) ImportNative(
 		payload,
 	)
 	if err != nil {
-		return AccountView{}, err
+		return AccountImportResult{}, err
 	}
-	if result.statusCode != http.StatusCreated || !isJSONResponse(result.header) {
-		return AccountView{}, ErrInvalidResponse
+	return decodeAccountImportResult(result)
+}
+
+// decodeAccountImportResult 统一解释两个导入资源的 200/201 成功合同。
+func decodeAccountImportResult(
+	result responseResult,
+) (AccountImportResult, error) {
+	if !isAccountImportSuccess(result.statusCode) ||
+		!isJSONResponse(result.header) {
+		return AccountImportResult{}, ErrInvalidResponse
 	}
-	return decodeAccountView(result.body)
+	account, err := decodeAccountView(result.body)
+	if err != nil {
+		return AccountImportResult{}, err
+	}
+	return AccountImportResult{
+		Account: account,
+		Created: result.statusCode == http.StatusCreated,
+	}, nil
+}
+
+// isAccountImportSuccess 只接受冻结合同中的首次创建与同身份命中状态。
+func isAccountImportSuccess(statusCode int) bool {
+	return statusCode == http.StatusCreated || statusCode == http.StatusOK
 }
 
 // requestAccountModels 统一模型列表、刷新和策略写入的 HTTP 合同。

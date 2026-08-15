@@ -46,16 +46,10 @@ func TestRealClaudeNativeRelayEndToEnd(t *testing.T) {
 	imported := importRealClaudeFixtureAccount(t, serverURL, client)
 	assertRealStatus(t, imported, http.StatusCreated)
 
-	modelDocument := performRequest(
-		t,
-		client,
-		http.MethodGet,
-		serverURL+modelsapi.Path,
-		testClientKey,
-		nil,
-	)
-	assertRealStatus(t, modelDocument, http.StatusOK)
-	assertRealClaudeModelAvailable(t, modelDocument.body)
+	modelDocument := waitForRealModelCatalog(t, client, serverURL+modelsapi.Path)
+	selectedModel, _ := selectRealClaudeModelFromCatalog(t, modelDocument.body)
+	realClaudeTransferModel = selectedModel
+	realClaudeReasoningModel = selectedModel
 
 	leasePayload := []byte(`{"provider_id":"claude","model":"` +
 		realClaudeTransferModel + `"}`)

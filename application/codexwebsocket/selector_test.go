@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
+	"github.com/madou1217/ai_home/application/accountcredentials"
 	"github.com/madou1217/ai_home/application/accountrouting"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/codexwebsocket"
@@ -49,7 +51,9 @@ func TestSelectorResolvesExactRouteAndReusesRecruiter(t *testing.T) {
 	if !selection.IsValid() ||
 		selection.Route() != route ||
 		selection.AccountRef() != account.Ref() ||
-		selection.Credential() != credential {
+		selection.Credential() != credential ||
+		!selection.CredentialObservation().IsValid() ||
+		selection.CredentialObservation().AccountRef() != account.Ref() {
 		t.Fatalf("selection = %#v", selection)
 	}
 	if routes.model != "gpt-5.6-sol" ||
@@ -273,4 +277,29 @@ func (resolver credentialResolverStub) ResolveCredentialBinding(
 		codexauth.ProviderID,
 		resolver.credential,
 	)
+}
+
+func (resolver credentialResolverStub) ResolveObservedCredentialBinding(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+) (
+	accountapp.CredentialBinding,
+	accountcredentials.CredentialObservation,
+	error,
+) {
+	binding, err := resolver.ResolveCredentialBinding(ctx, accountRef)
+	if err != nil {
+		return accountapp.CredentialBinding{}, accountcredentials.CredentialObservation{}, err
+	}
+	snapshot, err := accountapp.NewCredentialSnapshot(
+		binding.AccountRef(),
+		binding.ProviderID(),
+		binding.Credential(),
+		time.Date(2026, 8, 15, 7, 0, 0, 0, time.UTC),
+	)
+	if err != nil {
+		return accountapp.CredentialBinding{}, accountcredentials.CredentialObservation{}, err
+	}
+	observation, err := accountcredentials.NewCredentialObservation(snapshot)
+	return binding, observation, err
 }

@@ -6,8 +6,17 @@ import (
 	"io"
 
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeartifact"
-	"github.com/madou1217/ai_home/internal/host/aihaccount"
 )
+
+// accountImportResult 是命令输出所需的最小非敏感导入结果。
+type accountImportResult struct {
+	providerID   string
+	cliAccountID int64
+	accountRef   string
+	email        string
+	sources      []string
+	created      bool
+}
 
 // runAccountImport 从本机官方 artifact 读取登录态并提交到当前目标 Server。
 func runAccountImport(
@@ -28,27 +37,17 @@ func runAccountImport(
 		return err
 	}
 	defer clear(artifacts.Envelope)
-	account, err := client.ImportNative(ctx, providerID, artifacts.Envelope)
+	result, err := client.ImportNative(ctx, providerID, artifacts.Envelope)
 	if err != nil {
 		return fmt.Errorf("导入官方登录态到 Server 失败: %w", err)
 	}
-	models, err := client.ListAccountModels(ctx, account.AccountRef)
-	if err != nil {
-		return fmt.Errorf("读取 Server 账号模型目录失败: %w", err)
-	}
-	modelIDs := make([]string, 0, len(models.Models))
-	for _, model := range models.Models {
-		if model.Effective {
-			modelIDs = append(modelIDs, model.ModelID)
-		}
-	}
-	writeImportResult(runtime.stdout, aihaccount.ImportResult{
-		ProviderID:   account.ProviderID,
-		CLIAccountID: account.CLIAccountID.Int64(),
-		AccountRef:   account.AccountRef.String(),
-		Email:        account.Email,
-		Models:       modelIDs,
-		Sources:      append([]string(nil), artifacts.Sources...),
+	writeImportResult(runtime.stdout, accountImportResult{
+		providerID:   result.Account.ProviderID,
+		cliAccountID: result.Account.CLIAccountID.Int64(),
+		accountRef:   result.Account.AccountRef.String(),
+		email:        result.Account.Email,
+		sources:      append([]string(nil), artifacts.Sources...),
+		created:      result.Created,
 	})
 	return nil
 }
@@ -56,32 +55,37 @@ func runAccountImport(
 // writeImportResult 只输出公开账号信息，绝不回显任何凭据。
 func writeImportResult(
 	output io.Writer,
-	result aihaccount.ImportResult,
+	result accountImportResult,
 ) {
-	_, _ = fmt.Fprintf(output, "已导入 %s 官方登录态:\n", result.ProviderID)
-	_, _ = fmt.Fprintf(output, "  账号别名   %d\n", result.CLIAccountID)
-	_, _ = fmt.Fprintf(output, "  账号身份   %s\n", result.AccountRef)
-	if result.Email != "" {
-		_, _ = fmt.Fprintf(output, "  登录邮箱   %s\n", result.Email)
+	if result.created {
+		_, _ = fmt.Fprintf(output, "已导入 %s 官方登录态:\n", result.providerID)
+	} else {
+		_, _ = fmt.Fprintf(
+			output,
+			"已更新 %s 官方登录态（未新建账号）:\n",
+			result.providerID,
+		)
 	}
-	for index, source := range result.Sources {
+	_, _ = fmt.Fprintf(output, "  账号别名   %d\n", result.cliAccountID)
+	_, _ = fmt.Fprintf(output, "  账号身份   %s\n", result.accountRef)
+	if result.email != "" {
+		_, _ = fmt.Fprintf(output, "  登录邮箱   %s\n", result.email)
+	}
+	for index, source := range result.sources {
 		label := "  官方来源  "
 		if index > 0 {
 			label = "            "
 		}
 		_, _ = fmt.Fprintf(output, "%s %s\n", label, source)
 	}
-	_, _ = fmt.Fprintf(output, "  可用模型   %d 个\n", len(result.Models))
-	for _, modelID := range result.Models {
-		_, _ = fmt.Fprintf(output, "             %s\n", modelID)
-	}
+	_, _ = fmt.Fprintln(output, "  模型目录   Server 后台异步刷新（不阻塞账号导入）")
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "后续用法:")
 	_, _ = fmt.Fprintf(
 		output,
-		"  aih %s %d --model <上面列出的真实模型>\n",
-		result.ProviderID,
-		result.CLIAccountID,
+		"  aih account models list %s:%d\n",
+		result.providerID,
+		result.cliAccountID,
 	)
 }
 
@@ -91,12 +95,12 @@ func writeAccountImportUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "  aih account import <codex|claude>")
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "行为:")
-	_, _ = fmt.Fprintln(output, "  从本机官方 CLI 读取 artifact，再提交到 AIH_SERVER_BASE_URL 注册账号并分配数字别名。")
-	_, _ = fmt.Fprintln(output, "  Server 在导入事务中发现并物化一次真实模型目录；运行期不再实时查询目录。")
+	_, _ = fmt.Fprintln(output, "  从本机官方 CLI 读取 artifact，再提交到 AIH_SERVER_BASE_URL；首次导入分配数字别名，同身份导入原地更新。")
+	_, _ = fmt.Fprintln(output, "  Server 提交账号后异步发现并物化模型目录；网络探测不阻塞账号导入。")
 	_, _ = fmt.Fprintln(output, "  只读取官方 artifact，不修改官方登录态，也不创建任何 Provider 或账号级 HOME。")
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "官方来源:")
-	_, _ = fmt.Fprintln(output, "  claude: macOS Keychain（优先）或 $CLAUDE_CONFIG_DIR/.credentials.json，以及 .claude.json 的 oauthAccount")
+	_, _ = fmt.Fprintln(output, "  claude: macOS Keychain 与 $CLAUDE_CONFIG_DIR/.credentials.json 按完整性、同身份和更新时间仲裁，再与 .claude.json 的 oauthAccount 组合")
 	_, _ = fmt.Fprintln(output, "  codex:  $CODEX_HOME/auth.json")
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "环境变量:")

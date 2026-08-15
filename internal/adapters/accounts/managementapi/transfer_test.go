@@ -48,8 +48,9 @@ func TestClientTransfersOneAccountAndRotatesStaticCredential(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ImportSub2API() error = %v", err)
 	}
-	if imported.AccountRef != accountRef || imported.ProviderID != "claude" ||
-		imported.CLIAccountID.String() != "9" {
+	if !imported.Created || imported.Account.AccountRef != accountRef ||
+		imported.Account.ProviderID != "claude" ||
+		imported.Account.CLIAccountID.String() != "9" {
 		t.Fatalf("ImportSub2API() = %+v", imported)
 	}
 
@@ -77,6 +78,58 @@ func TestClientTransfersOneAccountAndRotatesStaticCredential(t *testing.T) {
 	}
 	if transport.calls != 4 {
 		t.Fatalf("management API calls = %d, want 4", transport.calls)
+	}
+}
+
+// TestClientReportsExistingSub2APIImport 验证 200 成功响应不会被误判失败，
+// 同时把“未新建”语义交给 CLI 展示。
+func TestClientReportsExistingSub2APIImport(t *testing.T) {
+	t.Parallel()
+
+	response := transferResponse(
+		http.StatusOK,
+		"application/json",
+		accountImportDocument("acct_11111111111111111111", "claude", 9, true),
+		"",
+	)
+	client, err := managementapi.New(
+		&oneResponseHTTPClient{response: response},
+		managementapi.Config{
+			BaseURL:       "http://127.0.0.1:9527",
+			ManagementKey: testManagementKey,
+		},
+	)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	result, err := client.ImportSub2API(
+		context.Background(),
+		[]byte(`{"type":"sub2api-data"}`),
+	)
+	if err != nil {
+		t.Fatalf("ImportSub2API(existing) error = %v", err)
+	}
+	if result.Created || result.Account.AccountRef != mustManagementAccountRef(t) {
+		t.Fatalf("ImportSub2API(existing) = %+v", result)
+	}
+}
+
+// TestStaticCredentialInputFormattingRedactsUntrustedBaseURL 验证诊断格式不会
+// 回显尚未经过 Server 领域校验的 URL 用户信息、查询参数或路径密钥。
+func TestStaticCredentialInputFormattingRedactsUntrustedBaseURL(t *testing.T) {
+	t.Parallel()
+
+	const secret = "base-url-secret-must-not-leak"
+	input := managementapi.StaticCredentialInput{
+		Kind:    "api_key",
+		APIKey:  "api-key-secret-must-not-leak",
+		BaseURL: "https://user:" + secret + "@example.test/v1/" + secret + "?token=" + secret,
+	}
+	formatted := fmt.Sprintf("%v %#v", input, input)
+	if strings.Contains(formatted, secret) ||
+		strings.Contains(formatted, "api-key-secret-must-not-leak") ||
+		!strings.Contains(formatted, "<redacted>") {
+		t.Fatalf("StaticCredentialInput formatting leaked untrusted data: %s", formatted)
 	}
 }
 
@@ -121,7 +174,7 @@ func TestClientRejectsInvalidTransferAndCredentialContracts(t *testing.T) {
 				_, err := client.ImportSub2API(context.Background(), []byte(`{"type":"sub2api-data"}`))
 				return err
 			},
-			resp: transferResponse(http.StatusOK, "application/json", accountDocument(
+			resp: transferResponse(http.StatusAccepted, "application/json", accountDocument(
 				"acct_11111111111111111111", "claude", 9, true,
 			), ""),
 		},
@@ -220,17 +273,33 @@ func (client *accountTransferHTTPClient) Do(request *http.Request) (*http.Respon
 			"/v1/management/account-imports/sub2api",
 			`{"type":"sub2api-data","accounts":[]}`)
 		return transferResponse(http.StatusCreated, "application/json; charset=utf-8",
-			accountDocument("acct_11111111111111111111", "claude", 9, true), ""), nil
+			accountImportDocument("acct_11111111111111111111", "claude", 9, true), ""), nil
 	case 4:
 		assertManagementRequest(client.t, request, body, http.MethodPut,
 			accountcontract.AccountsPath+"/acct_11111111111111111111/credential",
-			`{"auth":{"kind":"api_key","api_key":"new-static-secret","auth_token":"","base_url":"https://api.anthropic.com"}}`)
+			`{"auth":{"kind":"api_key","api_key":"new-static-secret","base_url":"https://api.anthropic.com"}}`)
 		return transferResponse(http.StatusOK, "application/json; charset=utf-8",
 			accountDocument("acct_11111111111111111111", "claude", 9, true), ""), nil
 	default:
 		client.t.Fatalf("unexpected request count %d", client.calls)
 		return nil, nil
 	}
+}
+
+// accountImportDocument 构造导入资源返回的完整公开账号投影。
+func accountImportDocument(
+	accountRef string,
+	providerID string,
+	cliAccountID int64,
+	enabled bool,
+) string {
+	return fmt.Sprintf(
+		`{"data":{"account_ref":%q,"provider_id":%q,"cli_account_id":%d,"enabled":%t,"has_credential":true,"auth_kind":"oauth","auth_mode":"refreshable","has_profile":false,"created_at":"2026-08-09T14:00:00Z","updated_at":"2026-08-09T14:00:00Z"}}`,
+		accountRef,
+		providerID,
+		cliAccountID,
+		enabled,
+	)
 }
 
 // oneResponseHTTPClient 返回单个预设响应。

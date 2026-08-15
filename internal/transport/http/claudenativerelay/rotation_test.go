@@ -7,7 +7,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/madou1217/ai_home/application/accountcredentials"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
@@ -295,10 +297,44 @@ type rotationCredentialResolver struct {
 	credential accountapp.Credential
 }
 
-// ResolveCredential 对任意账号返回同一份凭据。
-func (resolver *rotationCredentialResolver) ResolveCredential(
+// ResolveObservedCredentialBinding 对任意账号返回同一份凭据和请求级观察。
+func (resolver *rotationCredentialResolver) ResolveObservedCredentialBinding(
+	_ context.Context,
+	accountRef accountcore.AccountRef,
+) (
+	accountapp.CredentialBinding,
+	accountcredentials.CredentialObservation,
+	error,
+) {
+	binding, err := accountapp.NewCredentialBinding(
+		accountRef,
+		claudeauth.ProviderID,
+		resolver.credential,
+	)
+	if err != nil {
+		return accountapp.CredentialBinding{},
+			accountcredentials.CredentialObservation{},
+			err
+	}
+	snapshot, err := accountapp.NewCredentialSnapshot(
+		accountRef,
+		claudeauth.ProviderID,
+		resolver.credential,
+		time.Date(2026, 8, 3, 11, 0, 0, 0, time.UTC),
+	)
+	if err != nil {
+		return accountapp.CredentialBinding{},
+			accountcredentials.CredentialObservation{},
+			err
+	}
+	observation, err := accountcredentials.NewCredentialObservation(snapshot)
+	return binding, observation, err
+}
+
+// IsCurrentCredentialObservation 保持轮转测试聚焦账号切换，不模拟凭据变化。
+func (*rotationCredentialResolver) IsCurrentCredentialObservation(
 	context.Context,
-	accountcore.AccountRef,
-) (accountapp.Credential, error) {
-	return resolver.credential, nil
+	accountcredentials.CredentialObservation,
+) (bool, error) {
+	return true, nil
 }

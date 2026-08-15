@@ -16,7 +16,7 @@ export type ServerRequestHeaders = Readonly<Record<string, string>>;
 export interface ServerRequest<TBody = ServerJsonValue> {
   profileId: string;
   method: ServerHttpMethod;
-  /** A relative Server API path whose pathname is `/v0` or starts with `/v0/`. */
+  /** 仅允许 `/v0` 与 `/v1/management` 两个受控命名空间的相对路径。 */
   path: string;
   body?: TBody;
   headers?: ServerRequestHeaders;

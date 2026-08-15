@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/madou1217/ai_home/application/accountcredentials"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
@@ -61,10 +62,15 @@ type Authorizer interface {
 
 // CredentialResolver 延迟读取并刷新目标账号凭据。
 type CredentialResolver interface {
-	ResolveCredential(
+	ResolveObservedCredentialBinding(
 		ctx context.Context,
 		accountRef accountcore.AccountRef,
-	) (accountapp.Credential, error)
+	) (
+		accountapp.CredentialBinding,
+		accountcredentials.CredentialObservation,
+		error,
+	)
+	inferencegateway.CredentialObservationVerifier
 }
 
 // HTTPClient 是 Relay 发起单个上游请求所需的最小端口。
@@ -96,7 +102,7 @@ type Handler struct {
 	fallback       http.Handler
 	credentials    CredentialResolver
 	client         HTTPClient
-	attempts       inferencegateway.AttemptRecorder
+	attempts       *inferencegateway.ObservedAttemptRecorder
 	modelRefreshes inferencegateway.ModelRefreshScheduler
 	clock          func() time.Time
 }
@@ -111,13 +117,20 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		dependencies.Clock == nil {
 		return nil, ErrInvalidDependencies
 	}
+	attempts, err := inferencegateway.NewObservedAttemptRecorder(
+		dependencies.Attempts,
+		dependencies.Credentials,
+	)
+	if err != nil {
+		return nil, ErrInvalidDependencies
+	}
 	return &Handler{
 		authorizer:     dependencies.Authorizer,
 		accounts:       dependencies.Accounts,
 		fallback:       dependencies.Fallback,
 		credentials:    dependencies.Credentials,
 		client:         dependencies.Client,
-		attempts:       dependencies.Attempts,
+		attempts:       attempts,
 		modelRefreshes: dependencies.ModelRefreshes,
 		clock:          dependencies.Clock,
 	}, nil
@@ -263,6 +276,7 @@ func (handler *Handler) ServeHTTP(
 	}
 	upstreamResponse := outcome.response
 	route := outcome.route
+	observation := outcome.observation
 	defer upstreamResponse.Body.Close()
 	retryAccount := outcome.retryAccount
 
@@ -298,7 +312,7 @@ func (handler *Handler) ServeHTTP(
 			response,
 			upstreamResponse.Body,
 			upstreamResponse.Header,
-			handler.clock(),
+			handler.clock,
 		)
 	} else {
 		copyResult = copyResponseBody(response, upstreamResponse.Body)
@@ -312,6 +326,7 @@ func (handler *Handler) ServeHTTP(
 		handler.recordFailure(
 			request.Context(),
 			route,
+			observation,
 			streamObservation.failure,
 		)
 		return
@@ -320,11 +335,24 @@ func (handler *Handler) ServeHTTP(
 		handler.recordIncompleteStreamFailure(
 			request.Context(),
 			route,
+			observation,
 			copyResult.upstreamErr,
 		)
 		return
 	}
-	_ = handler.attempts.RecordSuccess(request.Context(), route)
+	happenedAt := handler.clock()
+	if streamObservation.completed && !streamObservation.completedAt.IsZero() {
+		happenedAt = streamObservation.completedAt
+	}
+	success, err := inferencegateway.NewAttemptSuccess(happenedAt)
+	if err == nil {
+		_, _ = handler.attempts.RecordSuccess(
+			request.Context(),
+			route,
+			observation,
+			success,
+		)
+	}
 }
 
 // readNativeRequest 有界保存原始 JSON，并只解析顶层真实模型用于租约复核。
@@ -362,6 +390,7 @@ func readNativeRequest(
 func (handler *Handler) recordHTTPFailure(
 	ctx context.Context,
 	route runtimecore.ModelRoute,
+	credentialObservation accountcredentials.CredentialObservation,
 	response *http.Response,
 ) bool {
 	if ctx == nil || response == nil || response.Body == nil {
@@ -386,31 +415,33 @@ func (handler *Handler) recordHTTPFailure(
 	if err != nil {
 		return false
 	}
-	return handler.recordFailure(ctx, route, failure)
+	return handler.recordFailure(ctx, route, credentialObservation, failure)
 }
 
 // recordTransportFailure 使用稳定 Go 错误身份记录尚未收到响应的失败。
 func (handler *Handler) recordTransportFailure(
 	ctx context.Context,
 	route runtimecore.ModelRoute,
+	observation accountcredentials.CredentialObservation,
 	err error,
 ) bool {
 	failure, classifyErr := attemptfailure.NewTransport(err)
 	if classifyErr != nil {
 		return false
 	}
-	return handler.recordFailure(ctx, route, failure)
+	return handler.recordFailure(ctx, route, observation, failure)
 }
 
 // recordIncompleteStreamFailure 记录上游在完成事件前断开的流。
 func (handler *Handler) recordIncompleteStreamFailure(
 	ctx context.Context,
 	route runtimecore.ModelRoute,
+	observation accountcredentials.CredentialObservation,
 	err error,
 ) {
 	failure, classifyErr := attemptfailure.NewIncompleteStream(err)
 	if classifyErr == nil {
-		handler.recordFailure(ctx, route, failure)
+		handler.recordFailure(ctx, route, observation, failure)
 	}
 }
 
@@ -418,19 +449,29 @@ func (handler *Handler) recordIncompleteStreamFailure(
 func (handler *Handler) recordFailure(
 	ctx context.Context,
 	route runtimecore.ModelRoute,
+	observation accountcredentials.CredentialObservation,
 	failure inferencegateway.AttemptFailure,
 ) bool {
-	if !failure.IsValid() ||
-		handler.attempts.RecordFailure(ctx, route, failure) != nil {
+	if !failure.IsValid() || handler.attempts == nil {
 		return false
 	}
-	if failure.RuntimeKind() == runtimecore.FailureModelUnsupported {
+	recorded, err := handler.attempts.RecordFailure(
+		ctx,
+		route,
+		observation,
+		failure,
+	)
+	if err != nil {
+		return false
+	}
+	if recorded && failure.RuntimeKind() == runtimecore.FailureModelUnsupported {
 		_ = handler.modelRefreshes.ScheduleModelRefresh(
 			ctx,
 			route.AccountRef(),
 			claudeauth.ProviderID,
 		)
 	}
+	// 凭据已变化或暂时无法验证时只跳过状态写；真实上游失败是否换号不变。
 	return failure.ResponseFailure().Retryable()
 }
 

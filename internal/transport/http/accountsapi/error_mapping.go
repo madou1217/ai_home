@@ -46,25 +46,6 @@ func writeRequestDecodeError(response http.ResponseWriter, err error) {
 	}
 }
 
-// writeCredentialInputError 区分不支持的 Provider 和无效 API Key 输入。
-func writeCredentialInputError(response http.ResponseWriter, err error) {
-	if errors.Is(err, ErrUnsupportedProvider) {
-		writeAPIError(
-			response,
-			http.StatusUnprocessableEntity,
-			"unsupported_provider",
-			"当前只支持 Codex 和 Claude",
-		)
-		return
-	}
-	writeAPIError(
-		response,
-		http.StatusUnprocessableEntity,
-		"invalid_api_key",
-		"API Key 或 Base URL 无效",
-	)
-}
-
 // writeStaticCredentialInputError 区分 Provider、凭据类型和字段组合错误。
 func writeStaticCredentialInputError(response http.ResponseWriter, err error) {
 	switch {
@@ -122,6 +103,27 @@ func writeApplicationError(response http.ResponseWriter, err error) {
 			http.StatusNotFound,
 			"account_not_found",
 			"账号不存在",
+		)
+	case errors.Is(err, accountapp.ErrAccountRuntimeActive):
+		writeAPIError(
+			response,
+			http.StatusConflict,
+			"account_runtime_active",
+			"账号仍有活跃持久会话，不能删除",
+		)
+	case errors.Is(err, accountapp.ErrAccountRuntimeUnverifiable):
+		writeAPIError(
+			response,
+			http.StatusServiceUnavailable,
+			"account_runtime_unverifiable",
+			"无法确认账号持久会话已经退出",
+		)
+	case errors.Is(err, accountapp.ErrAccountDeletionPreparationFailed):
+		writeAPIError(
+			response,
+			http.StatusServiceUnavailable,
+			"account_deletion_preparation_failed",
+			"无法安全收敛账号 Provider 资源或敏感凭据投影",
 		)
 	case errors.Is(err, accountapp.ErrProviderDefaultNotFound):
 		writeAPIError(
@@ -199,6 +201,13 @@ func writeApplicationError(response http.ResponseWriter, err error) {
 			http.StatusConflict,
 			"account_conflict",
 			"账号已经存在或数字别名冲突",
+		)
+	case errors.Is(err, accountapp.ErrReauthenticationGenerationUnordered):
+		writeAPIError(
+			response,
+			http.StatusConflict,
+			"account_import_generation_unordered",
+			"无法证明导入凭据比当前凭据更新",
 		)
 	case errors.Is(err, accountapp.ErrCLIAccountIDExhausted):
 		writeAPIError(

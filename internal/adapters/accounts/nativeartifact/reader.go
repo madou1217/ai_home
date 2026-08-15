@@ -5,12 +5,15 @@
 package nativeartifact
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/madou1217/ai_home/internal/adapters/claude/nativeauth"
 )
 
 // maxArtifactFileBytes 限制单个官方 artifact 文件大小，避免读入异常文件耗尽内存。
@@ -40,6 +43,13 @@ type Artifacts struct {
 	Sources []string
 }
 
+// ClaudeSecureStorageRecord 保存精确 Keychain 条目的有界凭据及新鲜度证据。
+type ClaudeSecureStorageRecord struct {
+	Data         []byte
+	Source       string
+	ModifiedAtMS int64
+}
+
 // sourceStrategy 是单个 Provider 定位并组装官方 artifact envelope 的策略。
 type sourceStrategy func(reader *Reader) (Artifacts, error)
 
@@ -54,7 +64,12 @@ type Options struct {
 	// ReadClaudeSecureStorage 读取 Claude Code 的平台原生 secure storage。
 	//
 	// 生产环境缺省使用 macOS Keychain；测试可注入替身，避免接触真实登录态。
-	ReadClaudeSecureStorage func(configDir string, scoped bool) ([]byte, string, error)
+	ReadClaudeSecureStorage func(
+		configDir string,
+		scoped bool,
+	) (ClaudeSecureStorageRecord, error)
+	// FileModifiedAt 返回官方 artifact 文件的 Unix 毫秒修改时间。
+	FileModifiedAt func(path string) (int64, error)
 }
 
 // Reader 按 Provider 选择官方 artifact 定位策略。
@@ -62,7 +77,8 @@ type Reader struct {
 	lookupEnv               func(string) (string, bool)
 	userHomeDir             func() (string, error)
 	readFile                func(string) ([]byte, error)
-	readClaudeSecureStorage func(string, bool) ([]byte, string, error)
+	readClaudeSecureStorage func(string, bool) (ClaudeSecureStorageRecord, error)
+	fileModifiedAt          func(string) (int64, error)
 	sources                 map[string]sourceStrategy
 }
 
@@ -73,6 +89,7 @@ func New(options Options) *Reader {
 		userHomeDir:             options.UserHomeDir,
 		readFile:                options.ReadFile,
 		readClaudeSecureStorage: options.ReadClaudeSecureStorage,
+		fileModifiedAt:          options.FileModifiedAt,
 	}
 	if reader.lookupEnv == nil {
 		reader.lookupEnv = os.LookupEnv
@@ -85,6 +102,15 @@ func New(options Options) *Reader {
 	}
 	if reader.readClaudeSecureStorage == nil {
 		reader.readClaudeSecureStorage = readClaudeKeychain
+	}
+	if reader.fileModifiedAt == nil {
+		reader.fileModifiedAt = func(path string) (int64, error) {
+			info, err := os.Stat(path)
+			if err != nil {
+				return 0, err
+			}
+			return info.ModTime().UnixMilli(), nil
+		}
 	}
 	reader.sources = map[string]sourceStrategy{
 		"claude": (*Reader).readClaude,
@@ -116,24 +142,6 @@ func (reader *Reader) readClaude() (Artifacts, error) {
 	if err != nil {
 		return Artifacts{}, err
 	}
-	credentialsPath := filepath.Join(configDir, claudeCredentialsFileName)
-	credentials, credentialsSource, secureStorageErr := reader.readClaudeSecureStorage(
-		configDir,
-		scoped,
-	)
-	if secureStorageErr != nil {
-		credentials, err = reader.readArtifactFile(credentialsPath)
-		if err != nil {
-			return Artifacts{}, fmt.Errorf(
-				"%w: Claude 官方 secure storage 不可读取（macOS Keychain 或 %s）",
-				ErrInvalidArtifactSource,
-				credentialsPath,
-			)
-		}
-		credentialsSource = credentialsPath
-	}
-	defer clear(credentials)
-
 	globalConfigPath, globalConfig, err := reader.readClaudeGlobalConfig(configDir)
 	if err != nil {
 		return Artifacts{}, err
@@ -143,6 +151,44 @@ func (reader *Reader) readClaude() (Artifacts, error) {
 	if err != nil {
 		return Artifacts{}, err
 	}
+	credentialsPath := filepath.Join(configDir, claudeCredentialsFileName)
+	keychain, keychainErr := reader.readClaudeSecureStorage(
+		configDir,
+		scoped,
+	)
+	if keychainErr != nil {
+		clear(keychain.Data)
+		keychain = ClaudeSecureStorageRecord{}
+	}
+	fileData, fileErr := reader.readArtifactFile(credentialsPath)
+	fileModifiedAt, modifiedAtErr := reader.fileModifiedAt(credentialsPath)
+	if modifiedAtErr != nil || fileModifiedAt <= 0 {
+		fileModifiedAt = 0
+	}
+	credentials, credentialsSource, err := selectClaudeCredentials(
+		claudeCredentialCandidate{
+			data:         keychain.Data,
+			source:       keychain.Source,
+			modifiedAtMS: keychain.ModifiedAtMS,
+			valid: keychainErr == nil &&
+				validClaudeCredentials(keychain.Data, identity),
+		},
+		claudeCredentialCandidate{
+			data:         fileData,
+			source:       credentialsPath,
+			modifiedAtMS: fileModifiedAt,
+			valid:        fileErr == nil && validClaudeCredentials(fileData, identity),
+		},
+	)
+	if err != nil {
+		return Artifacts{}, fmt.Errorf(
+			"%w: Claude 官方 secure storage 不可读取或来源新鲜度无法确认（macOS Keychain 或 %s）",
+			ErrInvalidArtifactSource,
+			credentialsPath,
+		)
+	}
+	defer clear(credentials)
+
 	envelope, err := encodeEnvelope(map[string]json.RawMessage{
 		"credentials_json":   json.RawMessage(credentials),
 		"global_config_json": identity,
@@ -154,6 +200,118 @@ func (reader *Reader) readClaude() (Artifacts, error) {
 		Envelope: envelope,
 		Sources:  []string{credentialsSource, globalConfigPath},
 	}, nil
+}
+
+// claudeCredentialCandidate 是一次 Claude 官方凭据来源读取结果。
+type claudeCredentialCandidate struct {
+	data         []byte
+	source       string
+	modifiedAtMS int64
+	valid        bool
+}
+
+// selectClaudeCredentials 只在完整性和新鲜度都有证据时选择来源。
+func selectClaudeCredentials(
+	keychain claudeCredentialCandidate,
+	file claudeCredentialCandidate,
+) ([]byte, string, error) {
+	switch {
+	case keychain.valid && !file.valid:
+		clear(file.data)
+		return keychain.data, keychain.source, nil
+	case file.valid && !keychain.valid:
+		clear(keychain.data)
+		return file.data, file.source, nil
+	case !keychain.valid && !file.valid:
+		clear(keychain.data)
+		clear(file.data)
+		return nil, "", ErrInvalidArtifactSource
+	case bytes.Equal(keychain.data, file.data):
+		clear(file.data)
+		return keychain.data, keychain.source, nil
+	case keychain.modifiedAtMS <= 0 ||
+		file.modifiedAtMS <= 0 ||
+		keychain.modifiedAtMS == file.modifiedAtMS:
+		clear(keychain.data)
+		clear(file.data)
+		return nil, "", ErrInvalidArtifactSource
+	case keychain.modifiedAtMS > file.modifiedAtMS:
+		clear(file.data)
+		return keychain.data, keychain.source, nil
+	default:
+		clear(keychain.data)
+		return file.data, file.source, nil
+	}
+}
+
+// validClaudeCredentials 复用正式 Decoder 的 Provider 合同验证候选凭据，避免
+// Keychain 的半份信封遮蔽同一配置目录内可用的官方凭据文件。
+func validClaudeCredentials(credentials []byte, identity json.RawMessage) bool {
+	_, err := nativeauth.DecodeOAuth(credentials, identity)
+	return err == nil && claudeCredentialIdentityMatches(credentials, identity)
+}
+
+type claudeOAuthAccountDocument struct {
+	OAuthAccount struct {
+		AccountUUID string `json:"accountUuid"`
+		Email       string `json:"emailAddress"`
+	} `json:"oauthAccount"`
+}
+
+type claudeCredentialDocument struct {
+	OAuth struct {
+		Email        string `json:"email"`
+		EmailAddress string `json:"emailAddress"`
+		Account      struct {
+			UUID         string `json:"uuid"`
+			AccountUUID  string `json:"accountUuid"`
+			Email        string `json:"email"`
+			EmailAddress string `json:"emailAddress"`
+		} `json:"account"`
+	} `json:"claudeAiOauth"`
+}
+
+// claudeCredentialIdentityMatches 拒绝候选来源显式声明的其他账号身份。
+// 官方 secure storage 不携带身份时仍由同目录 oauthAccount 提供上下文。
+func claudeCredentialIdentityMatches(
+	credentials []byte,
+	identity json.RawMessage,
+) bool {
+	var account claudeOAuthAccountDocument
+	var candidate claudeCredentialDocument
+	if json.Unmarshal(identity, &account) != nil ||
+		json.Unmarshal(credentials, &candidate) != nil {
+		return false
+	}
+	if !identityValuesMatch(
+		account.OAuthAccount.AccountUUID,
+		candidate.OAuth.Account.UUID,
+		candidate.OAuth.Account.AccountUUID,
+	) {
+		return false
+	}
+	return identityValuesMatch(
+		account.OAuthAccount.Email,
+		candidate.OAuth.Email,
+		candidate.OAuth.EmailAddress,
+		candidate.OAuth.Account.Email,
+		candidate.OAuth.Account.EmailAddress,
+	)
+}
+
+// identityValuesMatch 要求候选中所有非空身份别名都与官方身份一致。
+func identityValuesMatch(expected string, candidates ...string) bool {
+	normalizedExpected := strings.ToLower(strings.TrimSpace(expected))
+	if normalizedExpected == "" {
+		return false
+	}
+	for _, candidate := range candidates {
+		normalized := strings.ToLower(strings.TrimSpace(candidate))
+		if normalized != "" && normalized != normalizedExpected {
+			return false
+		}
+	}
+	return true
 }
 
 // readCodex 组装官方 auth.json 单文件 envelope。

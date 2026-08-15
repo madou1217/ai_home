@@ -1,4 +1,4 @@
-export default [
+const nodeRoutes = [
   {
     path: "/",
     redirect: "/dashboard",
@@ -99,3 +99,30 @@ export default [
     redirect: "/dashboard",
   }
 ];
+
+// Go 账号页只在独立 preview Web 进程中暴露，正式 Web 路由始终使用 Node 页面。
+const goAccountsPreviewRoutes = [
+  {
+    path: "/",
+    redirect: "/accounts",
+    layout: false,
+  },
+  {
+    name: "Go 账号预览",
+    path: "/accounts",
+    component: "./AccountsGoPreview",
+    icon: "team",
+    layout: false,
+  },
+  {
+    path: "*",
+    redirect: "/accounts",
+    layout: false,
+  },
+];
+
+const routes = process.env.AIH_GO_ACCOUNTS_PREVIEW === "1"
+  ? goAccountsPreviewRoutes
+  : nodeRoutes;
+
+export default routes;

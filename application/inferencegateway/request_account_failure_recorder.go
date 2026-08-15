@@ -4,14 +4,16 @@ import (
 	"context"
 	"strings"
 
+	"github.com/madou1217/ai_home/application/accountcredentials"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 )
 
 // pendingAccountFailure 保存尚不能归因到账号的请求局部失败。
 type pendingAccountFailure struct {
-	providerID string
-	route      runtimecore.ModelRoute
-	failure    AttemptFailure
+	providerID  string
+	route       runtimecore.ModelRoute
+	observation accountcredentials.CredentialObservation
+	failure     AttemptFailure
 }
 
 // requestAccountFailureRecorder 把请求级归因与账号运行态写入解耦。
@@ -20,17 +22,17 @@ type pendingAccountFailure struct {
 // 同一请求跨两个及以上账号都出现歧义失败，说明请求或共享资源同样可能是根因，
 // 此时丢弃账号状态写入，但客户端终态仍由 Coordinator 独立保留。
 type requestAccountFailureRecorder struct {
-	attempts AttemptRecorder
+	failures *ObservedAttemptRecorder
 	pending  []pendingAccountFailure
 	indices  map[string]int
 }
 
 // newRequestAccountFailureRecorder 创建不跨请求共享状态的失败归因器。
 func newRequestAccountFailureRecorder(
-	attempts AttemptRecorder,
+	failures *ObservedAttemptRecorder,
 ) *requestAccountFailureRecorder {
 	return &requestAccountFailureRecorder{
-		attempts: attempts,
+		failures: failures,
 		indices:  make(map[string]int),
 	}
 }
@@ -40,16 +42,18 @@ func (recorder *requestAccountFailureRecorder) Record(
 	ctx context.Context,
 	providerID string,
 	route runtimecore.ModelRoute,
+	observation accountcredentials.CredentialObservation,
 	failure AttemptFailure,
 ) error {
 	if !failure.DefersAccountFailureUntilRequestOutcome() {
-		return recorder.attempts.RecordFailure(ctx, route, failure)
+		return recorder.recordCurrentFailure(ctx, route, observation, failure)
 	}
 	key := pendingFailureAccountKey(providerID, route)
 	entry := pendingAccountFailure{
-		providerID: strings.TrimSpace(providerID),
-		route:      route,
-		failure:    failure,
+		providerID:  strings.TrimSpace(providerID),
+		route:       route,
+		observation: observation,
+		failure:     failure,
 	}
 	if index, found := recorder.indices[key]; found {
 		recorder.pending[index] = entry
@@ -98,9 +102,10 @@ func (recorder *requestAccountFailureRecorder) FinalizeSuccess(
 		if pendingFailureGroupKey(entry.providerID, entry.route) != successGroup {
 			continue
 		}
-		if err := recorder.attempts.RecordFailure(
+		if err := recorder.recordCurrentFailure(
 			ctx,
 			entry.route,
+			entry.observation,
 			entry.failure,
 		); err != nil {
 			return err
@@ -130,11 +135,38 @@ func (recorder *requestAccountFailureRecorder) FinalizeFailure(
 		if len(accountsByGroup[group]) >= 2 {
 			continue
 		}
-		if err := recorder.attempts.RecordFailure(ctx, entry.route, entry.failure); err != nil {
+		if err := recorder.recordCurrentFailure(
+			ctx,
+			entry.route,
+			entry.observation,
+			entry.failure,
+		); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// recordCurrentFailure 在唯一运行态写入点复核请求读取的凭据快照。
+//
+// 存储暂时不可验证时与已变化采用相同的 fail-closed 语义：保留上游 HTTP 终态
+// 和换号决策，但不把无法证明归属的失败写入任何账号代次。
+func (recorder *requestAccountFailureRecorder) recordCurrentFailure(
+	ctx context.Context,
+	route runtimecore.ModelRoute,
+	observation accountcredentials.CredentialObservation,
+	failure AttemptFailure,
+) error {
+	if recorder == nil || recorder.failures == nil {
+		return nil
+	}
+	_, err := recorder.failures.RecordFailure(
+		ctx,
+		route,
+		observation,
+		failure,
+	)
+	return err
 }
 
 func (recorder *requestAccountFailureRecorder) takePending() []pendingAccountFailure {

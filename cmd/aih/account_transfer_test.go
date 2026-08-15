@@ -140,6 +140,35 @@ func TestAccountTransferImportsOneBoundedSub2APIDocument(t *testing.T) {
 	}
 }
 
+// TestAccountTransferImportReportsExistingIdentity 验证 200 成功响应不会在
+// 终端伪装成首次创建。
+func TestAccountTransferImportReportsExistingIdentity(t *testing.T) {
+	output := &bytes.Buffer{}
+	inputPath := filepath.Join(t.TempDir(), "sub2api-data.json")
+	document := `{"type":"sub2api-data","accounts":[]}`
+	if err := os.WriteFile(inputPath, []byte(document), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	transport := &accountImportCommandHTTPClient{
+		t:        t,
+		expected: document,
+		status:   http.StatusOK,
+	}
+	runtime := transferCommandRuntime(t, transport)
+	runtime.stdout = output
+
+	if err := run(context.Background(), []string{
+		"account", "transfer", "import",
+		"--format", "sub2api", "--input", inputPath,
+	}, runtime); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+	if !strings.Contains(output.String(), "账号已匹配（未新建）。") ||
+		strings.Contains(output.String(), "账号已导入。") {
+		t.Fatalf("重复迁移导入输出语义错误: %s", output.String())
+	}
+}
+
 // TestAccountTransferRejectsInvalidSyntaxBeforeIO 验证格式、路径和参数都必须显式。
 func TestAccountTransferRejectsInvalidSyntaxBeforeIO(t *testing.T) {
 	for _, arguments := range [][]string{
@@ -203,6 +232,7 @@ func (client *accountExportCommandHTTPClient) Do(request *http.Request) (*http.R
 type accountImportCommandHTTPClient struct {
 	t        *testing.T
 	expected string
+	status   int
 	calls    int
 }
 
@@ -219,8 +249,12 @@ func (client *accountImportCommandHTTPClient) Do(request *http.Request) (*http.R
 		request.Header.Get("Content-Type") != "application/json" || string(body) != client.expected {
 		client.t.Fatalf("import request = %s %s %s", request.Method, request.URL, body)
 	}
-	return commandTransferResponse(http.StatusCreated,
-		commandAccountDocument("claude", true), ""), nil
+	status := client.status
+	if status == 0 {
+		status = http.StatusCreated
+	}
+	return commandTransferResponse(status,
+		commandAccountImportDocument("claude", true), ""), nil
 }
 
 // transferCommandRuntime 创建只允许访问合成 Management API 的命令运行时。
@@ -253,6 +287,15 @@ func commandTransferResponse(status int, body string, fileName string) *http.Res
 func commandAccountDocument(providerID string, enabled bool) string {
 	return fmt.Sprintf(
 		`{"data":{"account_ref":"acct_11111111111111111111","provider_id":%q,"cli_account_id":9,"enabled":%t,"updated_at":"2026-08-10T08:00:00Z"}}`,
+		providerID,
+		enabled,
+	)
+}
+
+// commandAccountImportDocument 构造导入 API 的完整公开账号响应。
+func commandAccountImportDocument(providerID string, enabled bool) string {
+	return fmt.Sprintf(
+		`{"data":{"account_ref":"acct_11111111111111111111","provider_id":%q,"cli_account_id":9,"enabled":%t,"has_credential":true,"auth_kind":"oauth","auth_mode":"refreshable","has_profile":false,"created_at":"2026-08-10T08:00:00Z","updated_at":"2026-08-10T08:00:00Z"}}`,
 		providerID,
 		enabled,
 	)

@@ -24,7 +24,7 @@ const staticCredentialRotationTargetSQL = `
 	WHERE a.account_ref = ?
 	LIMIT 1`
 
-// RotateStaticCredential 原子替换静态凭据、自动模型和旧 usage 快照。
+// RotateStaticCredential 原子替换静态凭据并清理旧 usage，模型保留到异步刷新成功。
 func (store *Store) RotateStaticCredential(
 	ctx context.Context,
 	rotation accountapp.StaticCredentialRotation,
@@ -114,7 +114,7 @@ func (store *Store) RotateStaticCredential(
 	); err != nil {
 		return accountcore.Account{}, err
 	}
-	if err := clearRotatedCredentialUsage(
+	if err := clearCredentialUsage(
 		ctx,
 		connection,
 		rotation.AccountRef(),
@@ -244,22 +244,6 @@ func touchStaticCredentialAccount(
 		rotation.ExpectedAccountUpdatedAt().UnixMilli(),
 	)
 	return requireSingleStaticCredentialWrite(result, err, "更新静态账号时间")
-}
-
-// clearRotatedCredentialUsage 清除可能属于旧凭据主体的额度快照。
-func clearRotatedCredentialUsage(
-	ctx context.Context,
-	connection *sql.Conn,
-	accountRef accountcore.AccountRef,
-) error {
-	if _, err := connection.ExecContext(
-		ctx,
-		"DELETE FROM account_usage WHERE account_ref = ?",
-		accountRef.String(),
-	); err != nil {
-		return fmt.Errorf("清理旧凭据额度快照失败: %w", err)
-	}
-	return nil
 }
 
 // requireSingleStaticCredentialWrite 统一唯一冲突、锁冲突和 CAS 失败语义。

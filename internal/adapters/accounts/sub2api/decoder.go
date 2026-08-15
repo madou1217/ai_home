@@ -145,7 +145,7 @@ func validateImportDocument(document importDocument) (time.Time, error) {
 // decodeCodexOAuth 通过 ID Token 领域构造器恢复稳定 Codex 身份。
 func decodeCodexOAuth(
 	account importAccount,
-	exportedAt time.Time,
+	_ time.Time,
 ) (accountapp.Credential, accountapp.PublicProfile, error) {
 	input, err := decodeCodexOAuthCredential(account.Credentials)
 	if err != nil {
@@ -155,7 +155,7 @@ func decodeCodexOAuth(
 		AccessToken:       input.AccessToken,
 		RefreshToken:      input.RefreshToken,
 		IDToken:           input.IDToken,
-		RefreshedAtMS:     exportedAt.UnixMilli(),
+		RefreshedAtMS:     input.RefreshedAtMS,
 		ExplicitAccountID: input.ChatGPTAccountID,
 	})
 	if err != nil {

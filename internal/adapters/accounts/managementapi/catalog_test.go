@@ -71,6 +71,7 @@ func TestClientWritesModelPolicyAndNativeImport(t *testing.T) {
 	transport := &catalogSequenceHTTPClient{t: t, responses: []catalogResponse{
 		{status: http.StatusOK, body: `{"data":[{"model_id":"claude-opus-5","upstream_available":true,"manual_policy":"force_disable","effective":false,"updated_at":"2026-08-10T08:00:00Z"}]}`},
 		{status: http.StatusCreated, body: `{"data":{"account_ref":"acct_11111111111111111111","provider_id":"codex","cli_account_id":10,"enabled":true,"has_credential":true,"auth_kind":"oauth","auth_mode":"refreshable","has_profile":false,"created_at":"2026-08-10T08:00:00Z","updated_at":"2026-08-10T08:00:00Z"}}`},
+		{status: http.StatusOK, body: `{"data":{"account_ref":"acct_11111111111111111111","provider_id":"codex","cli_account_id":10,"enabled":true,"has_credential":true,"auth_kind":"oauth","auth_mode":"refreshable","has_profile":false,"created_at":"2026-08-10T08:00:00Z","updated_at":"2026-08-10T08:00:00Z"}}`},
 	}}
 	client, err := managementapi.New(transport, managementapi.Config{
 		BaseURL:       "http://127.0.0.1:9527",
@@ -88,10 +89,21 @@ func TestClientWritesModelPolicyAndNativeImport(t *testing.T) {
 	); err != nil {
 		t.Fatalf("SetAccountModelPolicy() error = %v", err)
 	}
-	if _, err := client.ImportNative(
+	created, err := client.ImportNative(
 		context.Background(), "codex", []byte(`{"auth_json":{"tokens":{"id_token":"synthetic"}}}`),
-	); err != nil {
+	)
+	if err != nil {
 		t.Fatalf("ImportNative() error = %v", err)
+	}
+	updated, err := client.ImportNative(
+		context.Background(), "codex", []byte(`{"auth_json":{"tokens":{"id_token":"synthetic"}}}`),
+	)
+	if err != nil {
+		t.Fatalf("ImportNative(existing) error = %v", err)
+	}
+	if !created.Created || created.Account.AccountRef != accountRef ||
+		updated.Created || updated.Account.AccountRef != accountRef {
+		t.Fatalf("native import results: created=%+v updated=%+v", created, updated)
 	}
 	if transport.methods[0] != http.MethodPatch || transport.paths[0] !=
 		accountcontract.AccountsPath+"/acct_11111111111111111111"+accountcontract.AccountModelsSuffix ||
@@ -102,6 +114,10 @@ func TestClientWritesModelPolicyAndNativeImport(t *testing.T) {
 		!strings.Contains(transport.bodies[1], `"provider_id":"codex"`) ||
 		!strings.Contains(transport.bodies[1], `"auth_json"`) {
 		t.Fatalf("导入请求 = methods=%v paths=%v bodies=%v", transport.methods, transport.paths, transport.bodies)
+	}
+	if transport.methods[2] != http.MethodPost ||
+		transport.paths[2] != accountcontract.NativeImportsPath {
+		t.Fatalf("重复导入请求 = methods=%v paths=%v", transport.methods, transport.paths)
 	}
 }
 

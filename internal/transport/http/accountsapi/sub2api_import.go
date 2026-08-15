@@ -38,7 +38,7 @@ func (handler *Handler) handleSub2APIImport(
 		)
 		return
 	}
-	overview, err := handler.registerAccount(
+	overview, created, err := handler.importAccount(
 		request.Context(),
 		credential,
 		profile,
@@ -49,7 +49,7 @@ func (handler *Handler) handleSub2APIImport(
 	}
 	writeJSON(
 		response,
-		http.StatusCreated,
+		accountImportStatus(created),
 		accountResponse{Data: newAccountView(overview)},
 	)
 }

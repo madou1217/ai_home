@@ -350,11 +350,23 @@ func TestServerMountsSystemAndAccountRoutes(t *testing.T) {
 		testManagementKey,
 		nativePayload,
 	)
-	assertStatus(t, duplicateNative, http.StatusConflict)
-	assertJSONErrorCode(t, duplicateNative.body, "account_conflict")
+	assertStatus(t, duplicateNative, http.StatusOK)
+	var duplicateNativeDocument struct {
+		Data struct {
+			AccountRef string `json:"account_ref"`
+		} `json:"data"`
+	}
+	decodeJSON(t, duplicateNative.body, &duplicateNativeDocument)
+	if duplicateNativeDocument.Data.AccountRef != nativeDocument.Data.AccountRef {
+		t.Fatalf(
+			"重复导入创建了影子账号: first=%s duplicate=%s",
+			nativeDocument.Data.AccountRef,
+			duplicateNativeDocument.Data.AccountRef,
+		)
+	}
 	if strings.Contains(duplicateNative.body, nativeAccessToken) ||
 		strings.Contains(duplicateNative.body, nativeRefreshToken) {
-		t.Fatal("重复导入错误响应泄漏 OAuth Token")
+		t.Fatal("重复导入响应泄漏 OAuth Token")
 	}
 
 	listed := performRequest(
@@ -406,6 +418,121 @@ func TestServerMountsSystemAndAccountRoutes(t *testing.T) {
 	assertStatus(t, wrongMethod, http.StatusMethodNotAllowed)
 	if wrongMethod.header.Get("Allow") != "GET, HEAD" {
 		t.Fatalf("healthz Allow = %q", wrongMethod.header.Get("Allow"))
+	}
+}
+
+// TestServerCreatesAccountBeforeInitialModelRefreshCompletes 验证账号事务提交与
+// 上游模型目录解耦：慢模型发现不能阻塞创建响应，成功结果随后异步物化。
+func TestServerCreatesAccountBeforeInitialModelRefreshCompletes(t *testing.T) {
+	t.Parallel()
+
+	discoverer := &blockingInitialModelDiscoverer{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	discoverers := accountmodels.NewDiscoverers()
+	discoverers[0] = discoverer
+	baseURL, client := startTestServerWithDiscoverers(t, discoverers)
+	payload := []byte(`{"provider_id":"codex","auth":{"kind":"api_key",` +
+		`"api_key":"synthetic-nonblocking-registration-key"}}`)
+	type createResult struct {
+		exchange httpExchange
+		err      error
+	}
+	result := make(chan createResult, 1)
+	go func() {
+		request, err := http.NewRequest(
+			http.MethodPost,
+			baseURL+accountsapi.CollectionPath,
+			bytes.NewReader(payload),
+		)
+		if err != nil {
+			result <- createResult{err: err}
+			return
+		}
+		request.Header.Set("Authorization", "Bearer "+testManagementKey)
+		request.Header.Set("Content-Type", "application/json")
+		response, err := client.Do(request)
+		if err != nil {
+			result <- createResult{err: err}
+			return
+		}
+		defer response.Body.Close()
+		body, err := io.ReadAll(response.Body)
+		result <- createResult{
+			exchange: httpExchange{
+				status: response.StatusCode,
+				header: response.Header,
+				body:   string(body),
+			},
+			err: err,
+		}
+	}()
+
+	var created createResult
+	select {
+	case created = <-result:
+	case <-time.After(time.Second):
+		t.Fatal("账号创建被初始模型发现阻塞")
+	}
+	if created.err != nil {
+		t.Fatalf("创建账号请求失败: %v", created.err)
+	}
+	assertStatus(t, created.exchange, http.StatusCreated)
+	select {
+	case <-discoverer.started:
+	case <-time.After(time.Second):
+		t.Fatal("提交后没有启动异步模型刷新")
+	}
+	var document struct {
+		Data struct {
+			AccountRef string `json:"account_ref"`
+		} `json:"data"`
+	}
+	decodeJSON(t, created.exchange.body, &document)
+	models := performRequest(
+		t,
+		client,
+		http.MethodGet,
+		baseURL+accountsapi.CollectionPath+"/"+document.Data.AccountRef+"/models",
+		testManagementKey,
+		nil,
+	)
+	assertStatus(t, models, http.StatusOK)
+	if models.body != `{"data":[]}` {
+		t.Fatalf("首次刷新完成前模型目录 = %s", models.body)
+	}
+
+	close(discoverer.release)
+	waitForAccountModels(
+		t,
+		client,
+		baseURL,
+		document.Data.AccountRef,
+		[]string{"gpt-after-background-refresh"},
+	)
+}
+
+// blockingInitialModelDiscoverer 让测试精确控制首次模型发现完成时间。
+type blockingInitialModelDiscoverer struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (*blockingInitialModelDiscoverer) ProviderID() string {
+	return "codex"
+}
+
+func (discoverer *blockingInitialModelDiscoverer) DiscoverModels(
+	ctx context.Context,
+	_ accountapp.Credential,
+) ([]string, error) {
+	close(discoverer.started)
+	select {
+	case <-discoverer.release:
+		return []string{"gpt-after-background-refresh"}, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
 	}
 }
 

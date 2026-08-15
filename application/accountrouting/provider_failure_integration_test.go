@@ -231,6 +231,7 @@ func verifyModelOverloadIsolation(
 	if err := fixture.registry.RecordSuccess(
 		context.Background(),
 		overloadedRoute,
+		now.Add(time.Second),
 	); err != nil {
 		t.Fatalf("RecordSuccess() error = %v", err)
 	}

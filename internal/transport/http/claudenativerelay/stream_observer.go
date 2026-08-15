@@ -20,9 +20,10 @@ import (
 
 // nativeStreamObservation 是旁路 SSE 观察器生成的唯一运行态终态。
 type nativeStreamObservation struct {
-	failure   inferencegateway.AttemptFailure
-	failed    bool
-	completed bool
+	failure     inferencegateway.AttemptFailure
+	failed      bool
+	completed   bool
+	completedAt time.Time
 }
 
 // responseCopyResult 区分上游读取失败和下游客户端写入失败。
@@ -48,12 +49,12 @@ func copyAndObserveNativeStream(
 	response http.ResponseWriter,
 	body io.Reader,
 	header http.Header,
-	observedAt time.Time,
+	clock func() time.Time,
 ) (responseCopyResult, nativeStreamObservation) {
 	reader, writer := io.Pipe()
 	observed := make(chan nativeStreamObservation, 1)
 	go func() {
-		observed <- observeNativeStream(reader, header, observedAt)
+		observed <- observeNativeStream(reader, header, clock)
 		_ = reader.Close()
 	}()
 	result := copyResponseBody(response, io.TeeReader(body, writer))
@@ -69,8 +70,11 @@ func copyAndObserveNativeStream(
 func observeNativeStream(
 	source io.Reader,
 	header http.Header,
-	observedAt time.Time,
+	clock func() time.Time,
 ) nativeStreamObservation {
+	if clock == nil {
+		return malformedNativeStreamObservation()
+	}
 	reader, err := sharedsse.NewReader(source)
 	if err != nil {
 		return malformedNativeStreamObservation()
@@ -97,12 +101,13 @@ func observeNativeStream(
 			}
 			continue
 		}
+		eventAt := clock()
 		classification, failed, observeErr := claudefailure.ObserveSSE(
 			sharedfailure.SSEInput{
 				EventType:  event.Type(),
 				Data:       bytes.NewReader(event.Data()),
 				Header:     header,
-				ObservedAt: observedAt,
+				ObservedAt: eventAt,
 			},
 		)
 		if observeErr != nil && !observed.failed {
@@ -120,6 +125,9 @@ func observeNativeStream(
 		}
 		if isNativeMessageStop(event) {
 			terminal = true
+			if observed.completedAt.IsZero() {
+				observed.completedAt = eventAt
+			}
 		}
 	}
 }

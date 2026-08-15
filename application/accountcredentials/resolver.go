@@ -17,6 +17,10 @@ import (
 const (
 	// DefaultRefreshSkew 提前刷新即将过期的 OAuth Access Token。
 	DefaultRefreshSkew = 5 * time.Minute
+	// recoverableRefreshRetryDelay 吸收瞬时故障后的请求突发，不替代真实上游判断。
+	recoverableRefreshRetryDelay = 30 * time.Second
+	// invalidRefreshRetryDelay 避免同一失效 Refresh Token 被每个请求重复提交。
+	invalidRefreshRetryDelay = 24 * time.Hour
 )
 
 var (
@@ -70,6 +74,20 @@ type Result struct {
 	refreshed bool
 }
 
+// credentialResolution 在解析器内部保留同一次读取的完整快照。
+// 对外 Result 继续只暴露凭据绑定和刷新事实，不携带持久化时间。
+type credentialResolution struct {
+	snapshot  accountapp.CredentialSnapshot
+	refreshed bool
+}
+
+func (resolution credentialResolution) result() Result {
+	return Result{
+		binding:   resolution.snapshot.Binding(),
+		refreshed: resolution.refreshed,
+	}
+}
+
 // Credential 返回当前可直接交给上游适配器的领域凭据。
 func (result Result) Credential() accountapp.Credential {
 	return result.binding.Credential()
@@ -87,10 +105,21 @@ func (result Result) Refreshed() bool {
 
 // Resolver 按 AccountRef 延迟读取凭据，并按账号合并并发刷新。
 type Resolver struct {
-	store      accountapp.CredentialVersionStore
-	strategies map[string]RefreshStrategy
-	clock      accountapp.Clock
-	flights    refreshFlightGroup
+	store             accountapp.CredentialVersionStore
+	strategies        map[string]RefreshStrategy
+	clock             accountapp.Clock
+	flights           refreshFlightGroup
+	refreshSuppressMu sync.Mutex
+	refreshSuppress   map[string]refreshSuppression
+}
+
+var _ accountapp.DeletionCleanup = (*Resolver)(nil)
+
+// refreshSuppression 只记录失败凭据的持久化观察时间和重试期限。
+// 不保存 Access Token、Refresh Token 或其可逆派生值。
+type refreshSuppression struct {
+	credentialUpdatedAt time.Time
+	retryAt             time.Time
 }
 
 // NewResolver 创建使用固定五分钟刷新窗口的凭据解析用例。
@@ -115,9 +144,10 @@ func NewResolver(dependencies Dependencies) (*Resolver, error) {
 		strategies[providerID] = strategy
 	}
 	return &Resolver{
-		store:      dependencies.Store,
-		strategies: strategies,
-		clock:      dependencies.Clock,
+		store:           dependencies.Store,
+		strategies:      strategies,
+		clock:           dependencies.Clock,
+		refreshSuppress: make(map[string]refreshSuppression),
 		flights: refreshFlightGroup{
 			active: make(map[string]*refreshCall),
 		},
@@ -129,28 +159,73 @@ func (resolver *Resolver) Resolve(
 	ctx context.Context,
 	accountRef accountcore.AccountRef,
 ) (Result, error) {
+	resolution, err := resolver.resolve(ctx, accountRef)
+	if err != nil {
+		return Result{}, err
+	}
+	return resolution.result(), nil
+}
+
+// ResolveObservedCredentialBinding 复用同一次凭据快照读取，同时返回稳定绑定和
+// 上游终态写入守卫所需的低敏观察。
+func (resolver *Resolver) ResolveObservedCredentialBinding(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+) (accountapp.CredentialBinding, CredentialObservation, error) {
+	resolution, err := resolver.resolve(ctx, accountRef)
+	if err != nil {
+		return accountapp.CredentialBinding{}, CredentialObservation{}, err
+	}
+	observation, err := NewCredentialObservation(resolution.snapshot)
+	if err != nil {
+		return accountapp.CredentialBinding{}, CredentialObservation{}, err
+	}
+	return resolution.snapshot.Binding(), observation, nil
+}
+
+func (resolver *Resolver) resolve(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+) (credentialResolution, error) {
 	if resolver == nil ||
 		resolver.store == nil ||
 		ctx == nil ||
 		!accountRef.IsValid() {
-		return Result{}, ErrInvalidResolveRequest
+		return credentialResolution{}, ErrInvalidResolveRequest
 	}
 	if err := ctx.Err(); err != nil {
-		return Result{}, err
+		return credentialResolution{}, err
 	}
 	snapshot, strategy, due, err := resolver.readResolutionState(
 		ctx,
 		accountRef,
 	)
 	if err != nil {
-		return Result{}, err
+		return credentialResolution{}, err
 	}
 	if !due {
-		return currentResult(snapshot), nil
+		return currentResolution(snapshot), nil
 	}
-	return resolver.flights.Do(ctx, accountRef.String(), func() (Result, error) {
+	now, err := resolver.currentTime()
+	if err != nil {
+		return credentialResolution{}, err
+	}
+	if resolver.suppressesRefresh(snapshot, now) {
+		return currentResolution(snapshot), nil
+	}
+	resolution, err := resolver.executeRefreshFlight(ctx, accountRef, func() (credentialResolution, error) {
 		return resolver.refreshCurrent(ctx, accountRef, strategy, false)
 	})
+	if err == nil {
+		return resolution, nil
+	}
+	// 共享飞行保留原始刷新错误：普通预刷新可继续尝试当前 Access Token，
+	// 同时加入该飞行的真实 401 强制刷新仍能看到 reauth 结论。
+	if !resolution.snapshot.IsValid() ||
+		!canUseCurrentCredentialAfterRefreshFailure(err) {
+		return credentialResolution{}, err
+	}
+	return currentResolution(resolution.snapshot), nil
 }
 
 // ResolveCredential 以最小端口形式返回当前可用凭据，供账号征召等应用用例组合。
@@ -158,11 +233,11 @@ func (resolver *Resolver) ResolveCredential(
 	ctx context.Context,
 	accountRef accountcore.AccountRef,
 ) (accountapp.Credential, error) {
-	result, err := resolver.Resolve(ctx, accountRef)
+	resolution, err := resolver.resolve(ctx, accountRef)
 	if err != nil {
 		return nil, err
 	}
-	return result.Credential(), nil
+	return resolution.snapshot.Credential(), nil
 }
 
 // ResolveCredentialBinding 返回可用凭据及其稳定账号绑定，供账号征召复核来源。
@@ -170,11 +245,11 @@ func (resolver *Resolver) ResolveCredentialBinding(
 	ctx context.Context,
 	accountRef accountcore.AccountRef,
 ) (accountapp.CredentialBinding, error) {
-	result, err := resolver.Resolve(ctx, accountRef)
+	resolution, err := resolver.resolve(ctx, accountRef)
 	if err != nil {
 		return accountapp.CredentialBinding{}, err
 	}
-	return result.Binding(), nil
+	return resolution.snapshot.Binding(), nil
 }
 
 // ForceRefreshCredentialBinding 在上游明确拒绝当前 OAuth 后强制刷新并返回新绑定。
@@ -201,13 +276,13 @@ func (resolver *Resolver) ForceRefreshCredentialBinding(
 	if _, refreshable := strategy.ExpiresAt(snapshot.Credential()); !refreshable {
 		return accountapp.CredentialBinding{}, ErrCredentialNotRefreshable
 	}
-	result, err := resolver.flights.Do(ctx, accountRef.String(), func() (Result, error) {
+	resolution, err := resolver.executeRefreshFlight(ctx, accountRef, func() (credentialResolution, error) {
 		return resolver.refreshCurrent(ctx, accountRef, strategy, true)
 	})
 	if err != nil {
 		return accountapp.CredentialBinding{}, err
 	}
-	return result.Binding(), nil
+	return resolution.snapshot.Binding(), nil
 }
 
 // readResolutionState 读取最新凭据，并选择唯一 Provider 刷新策略。
@@ -257,27 +332,27 @@ func (resolver *Resolver) refreshCurrent(
 	accountRef accountcore.AccountRef,
 	expectedStrategy RefreshStrategy,
 	force bool,
-) (Result, error) {
+) (credentialResolution, error) {
 	snapshot, strategy, due, err := resolver.readResolutionState(
 		ctx,
 		accountRef,
 	)
 	if err != nil {
-		return Result{}, err
+		return credentialResolution{}, err
 	}
 	if strategy.ProviderID() != expectedStrategy.ProviderID() {
-		return Result{}, ErrInvalidRefreshResult
+		return credentialResolution{}, ErrInvalidRefreshResult
 	}
 	_, refreshable := strategy.ExpiresAt(snapshot.Credential())
 	if force && !refreshable {
-		return Result{}, ErrCredentialNotRefreshable
+		return credentialResolution{}, ErrCredentialNotRefreshable
 	}
 	if !force && !due {
-		return currentResult(snapshot), nil
+		return currentResolution(snapshot), nil
 	}
 	now, err := resolver.currentTime()
 	if err != nil {
-		return Result{}, err
+		return credentialResolution{}, err
 	}
 	refreshedAt := nextCredentialVersion(now, snapshot.UpdatedAt())
 	credential, err := strategy.Refresh(
@@ -286,7 +361,8 @@ func (resolver *Resolver) refreshCurrent(
 		refreshedAt,
 	)
 	if err != nil {
-		return Result{}, err
+		resolver.rememberRefreshFailure(snapshot, now, err)
+		return currentResolution(snapshot), err
 	}
 	replacement, err := accountapp.NewCredentialReplacement(
 		snapshot,
@@ -294,23 +370,122 @@ func (resolver *Resolver) refreshCurrent(
 		refreshedAt,
 	)
 	if err != nil {
-		return Result{}, ErrInvalidRefreshResult
+		return credentialResolution{}, ErrInvalidRefreshResult
 	}
 	if err := resolver.store.ReplaceCredential(ctx, replacement); err != nil {
 		if errors.Is(err, accountapp.ErrCredentialConflict) {
 			return resolver.resolveCredentialConflict(ctx, accountRef, snapshot.UpdatedAt())
 		}
-		return Result{}, err
+		return credentialResolution{}, err
 	}
-	binding, err := accountapp.NewCredentialBinding(
+	resolver.forgetRefreshSuppression(accountRef)
+	refreshed, err := accountapp.NewCredentialSnapshot(
 		accountRef,
 		credential.ProviderID(),
 		credential,
+		refreshedAt,
 	)
 	if err != nil {
-		return Result{}, ErrInvalidRefreshResult
+		return credentialResolution{}, ErrInvalidRefreshResult
 	}
-	return Result{binding: binding, refreshed: true}, nil
+	return credentialResolution{snapshot: refreshed, refreshed: true}, nil
+}
+
+// executeRefreshFlight 合并同账号刷新，并隔离 leader 私有的取消状态。
+// 健康 follower 只在继承了其他调用方取消时独立重试一次，Provider 真实错误不重放。
+func (resolver *Resolver) executeRefreshFlight(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+	operation func() (credentialResolution, error),
+) (credentialResolution, error) {
+	resolution, err := resolver.flights.Do(
+		ctx,
+		accountRef.String(),
+		operation,
+	)
+	if ctx.Err() != nil ||
+		(!errors.Is(err, context.Canceled) &&
+			!errors.Is(err, context.DeadlineExceeded)) {
+		return resolution, err
+	}
+	return resolver.flights.Do(ctx, accountRef.String(), operation)
+}
+
+// canUseCurrentCredentialAfterRefreshFailure 只放行 Provider 已归类的预刷新失败。
+// 当前 Access Token 是否失效由随后真实上游响应判定；取消、非法结果和存储错误仍返回。
+func canUseCurrentCredentialAfterRefreshFailure(err error) bool {
+	if errors.Is(err, context.Canceled) ||
+		errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	return errors.Is(err, ErrRefreshUnavailable) ||
+		errors.Is(err, ErrRefreshRejected) ||
+		errors.Is(err, ErrReauthenticationRequired)
+}
+
+// suppressesRefresh 按 AccountRef 和 credential.updated_at 精确匹配。
+// 新登录或凭据轮换推进时间后会立即解除旧抑制。
+func (resolver *Resolver) suppressesRefresh(
+	snapshot accountapp.CredentialSnapshot,
+	now time.Time,
+) bool {
+	resolver.refreshSuppressMu.Lock()
+	defer resolver.refreshSuppressMu.Unlock()
+
+	key := snapshot.AccountRef().String()
+	observation, found := resolver.refreshSuppress[key]
+	if !found {
+		return false
+	}
+	if !observation.credentialUpdatedAt.Equal(snapshot.UpdatedAt()) ||
+		!now.Before(observation.retryAt) {
+		delete(resolver.refreshSuppress, key)
+		return false
+	}
+	return true
+}
+
+// rememberRefreshFailure 以 O(1) 按账号记录下一次允许刷新时间。
+// 失效 grant 使用长抑制；瞬时故障和一般拒绝只吸收短请求突发。
+func (resolver *Resolver) rememberRefreshFailure(
+	snapshot accountapp.CredentialSnapshot,
+	now time.Time,
+	err error,
+) {
+	delay := recoverableRefreshRetryDelay
+	switch {
+	case errors.Is(err, context.Canceled),
+		errors.Is(err, context.DeadlineExceeded):
+		return
+	case errors.Is(err, ErrReauthenticationRequired):
+		delay = invalidRefreshRetryDelay
+	case errors.Is(err, ErrRefreshUnavailable),
+		errors.Is(err, ErrRefreshRejected):
+	default:
+		return
+	}
+
+	resolver.refreshSuppressMu.Lock()
+	resolver.refreshSuppress[snapshot.AccountRef().String()] = refreshSuppression{
+		credentialUpdatedAt: snapshot.UpdatedAt(),
+		retryAt:             now.Add(delay),
+	}
+	resolver.refreshSuppressMu.Unlock()
+}
+
+func (resolver *Resolver) forgetRefreshSuppression(accountRef accountcore.AccountRef) {
+	resolver.refreshSuppressMu.Lock()
+	delete(resolver.refreshSuppress, accountRef.String())
+	resolver.refreshSuppressMu.Unlock()
+}
+
+// ForgetAccount 在账号事实删除提交后释放该账号的进程内刷新抑制。
+// 删除清理必须幂等，因此无效引用和 nil receiver 都直接返回。
+func (resolver *Resolver) ForgetAccount(accountRef accountcore.AccountRef) {
+	if resolver == nil || !accountRef.IsValid() {
+		return
+	}
+	resolver.forgetRefreshSuppression(accountRef)
 }
 
 // resolveCredentialConflict 接受其他进程已经成功写入的可用新版本。
@@ -318,20 +493,20 @@ func (resolver *Resolver) resolveCredentialConflict(
 	ctx context.Context,
 	accountRef accountcore.AccountRef,
 	rejectedVersion time.Time,
-) (Result, error) {
+) (credentialResolution, error) {
 	snapshot, _, _, err := resolver.readResolutionState(ctx, accountRef)
 	if err != nil {
-		return Result{}, err
+		return credentialResolution{}, err
 	}
 	if !snapshot.UpdatedAt().After(rejectedVersion) {
-		return Result{}, accountapp.ErrCredentialConflict
+		return credentialResolution{}, accountapp.ErrCredentialConflict
 	}
-	return currentResult(snapshot), nil
+	return currentResolution(snapshot), nil
 }
 
-// currentResult 把不需要刷新或已由其他进程刷新的快照转成结果。
-func currentResult(snapshot accountapp.CredentialSnapshot) Result {
-	return Result{binding: snapshot.Binding()}
+// currentResolution 保留不需要刷新或已由其他进程刷新的完整快照。
+func currentResolution(snapshot accountapp.CredentialSnapshot) credentialResolution {
+	return credentialResolution{snapshot: snapshot}
 }
 
 // currentTime 拒绝无法形成持久化毫秒版本的应用时钟。
@@ -355,7 +530,7 @@ func nextCredentialVersion(now time.Time, current time.Time) time.Time {
 // refreshCall 保存一个账号正在执行的唯一刷新结果。
 type refreshCall struct {
 	done   chan struct{}
-	result Result
+	result credentialResolution
 	err    error
 }
 
@@ -369,8 +544,8 @@ type refreshFlightGroup struct {
 func (group *refreshFlightGroup) Do(
 	ctx context.Context,
 	key string,
-	operation func() (Result, error),
-) (Result, error) {
+	operation func() (credentialResolution, error),
+) (credentialResolution, error) {
 	group.mu.Lock()
 	if call, found := group.active[key]; found {
 		group.mu.Unlock()
@@ -392,10 +567,10 @@ func (group *refreshFlightGroup) Do(
 func waitForRefresh(
 	ctx context.Context,
 	call *refreshCall,
-) (Result, error) {
+) (credentialResolution, error) {
 	select {
 	case <-ctx.Done():
-		return Result{}, ctx.Err()
+		return credentialResolution{}, ctx.Err()
 	case <-call.done:
 		return call.result, call.err
 	}

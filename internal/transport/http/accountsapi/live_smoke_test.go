@@ -664,6 +664,16 @@ func newAccountsLiveServer(
 	registeredAt time.Time,
 ) *httptest.Server {
 	t.Helper()
+	return newAccountsLiveServerAt(t, registeredAt, t.TempDir())
+}
+
+// newAccountsLiveServerAt 允许并发集成测试只读检查指定临时 aih.db。
+func newAccountsLiveServerAt(
+	t *testing.T,
+	registeredAt time.Time,
+	aiHomeDir string,
+) *httptest.Server {
+	t.Helper()
 
 	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
 	if err != nil {
@@ -672,7 +682,7 @@ func newAccountsLiveServer(
 	store, err := sqliteaccount.Open(
 		context.Background(),
 		sqliteaccount.OpenOptions{
-			AIHomeDir: t.TempDir(),
+			AIHomeDir: aiHomeDir,
 			Catalog:   catalog,
 		},
 	)
@@ -693,6 +703,22 @@ func newAccountsLiveServer(
 	)
 	if err != nil {
 		t.Fatalf("NewRegistrar() error = %v", err)
+	}
+	reauthenticator, err := accountapp.NewReauthenticator(
+		catalog,
+		store,
+		func() time.Time { return registeredAt.Add(time.Minute) },
+	)
+	if err != nil {
+		t.Fatalf("NewReauthenticator() error = %v", err)
+	}
+	importer, err := accountapp.NewAccountImporter(
+		registrar,
+		store,
+		reauthenticator,
+	)
+	if err != nil {
+		t.Fatalf("NewAccountImporter() error = %v", err)
 	}
 	management, err := accountapp.NewManagement(
 		store,
@@ -729,7 +755,12 @@ func newAccountsLiveServer(
 	if err != nil {
 		t.Fatalf("cliproxyapi.NewExporter() error = %v", err)
 	}
-	deleter, err := accountapp.NewDeleter(store, liveDeletionCleanup{})
+	deleter, err := accountapp.NewDeleter(
+		store,
+		liveDeletionGuard{},
+		liveDeletionPreparation{},
+		liveDeletionCleanup{},
+	)
 	if err != nil {
 		t.Fatalf("NewDeleter() error = %v", err)
 	}
@@ -757,7 +788,7 @@ func newAccountsLiveServer(
 	if err != nil {
 		t.Fatalf("NewBearerAuthorizer() error = %v", err)
 	}
-	credentialFactory := accountsapi.NewBuiltinAPIKeyCredentialFactory()
+	credentialFactory := accountsapi.NewBuiltinStaticCredentialFactory()
 	handler, err := accountsapi.NewHandler(accountsapi.Dependencies{
 		Management:          management,
 		Models:              modelManagement,
@@ -769,7 +800,7 @@ func newAccountsLiveServer(
 		Sub2APIExporter:     exporter,
 		CLIProxyAPIExporter: cliProxyAPIExporter,
 		Registrar:           registrar,
-		APIKeys:             credentialFactory,
+		Importer:            importer,
 		StaticCredentials:   credentialFactory,
 		NativeAccounts:      nativeaccount.NewDecoder(),
 		Sub2APIAccounts:     sub2api.NewDecoder(),
@@ -844,6 +875,28 @@ func importLiveSub2APIAccount(
 
 // liveDeletionCleanup 是真实 TCP smoke 使用的无状态幂等清理端口。
 type liveDeletionCleanup struct{}
+
+// liveDeletionPreparation 的临时账号不创建 Provider 凭据投影。
+type liveDeletionPreparation struct{}
+
+// liveDeletionGuard 的临时目录不包含 Node 持久会话登记。
+type liveDeletionGuard struct{}
+
+// AssertAccountDeletable 允许 smoke 删除自己创建的临时账号。
+func (liveDeletionGuard) AssertAccountDeletable(
+	context.Context,
+	accountcore.AccountRef,
+) error {
+	return nil
+}
+
+// PrepareAccountDeletion 允许 smoke 删除只存在于临时 aih.db 的账号。
+func (liveDeletionPreparation) PrepareAccountDeletion(
+	context.Context,
+	accountcore.Account,
+) error {
+	return nil
+}
 
 // ForgetAccount 在 smoke 中不保存任何派生运行态。
 func (liveDeletionCleanup) ForgetAccount(accountcore.AccountRef) {}

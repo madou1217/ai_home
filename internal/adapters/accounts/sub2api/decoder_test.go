@@ -36,6 +36,7 @@ func TestDecoderDecodesCurrentCodexAndClaudeContracts(t *testing.T) {
 				"access_token":       "synthetic-sub2api-codex-access",
 				"refresh_token":      "synthetic-sub2api-codex-refresh",
 				"id_token":           codexIDToken,
+				"last_refresh":       "2026-07-31T08:08:10Z",
 				"chatgpt_account_id": "sub2api-codex-workspace",
 				"plan_type":          "plus",
 				"email":              "sub2api-codex@example.invalid",
@@ -50,6 +51,7 @@ func TestDecoderDecodesCurrentCodexAndClaudeContracts(t *testing.T) {
 				if !valid ||
 					auth.AccessToken() != "synthetic-sub2api-codex-access" ||
 					auth.RefreshToken() != "synthetic-sub2api-codex-refresh" ||
+					auth.RefreshedAtMS() != 1_785_485_290_000 ||
 					auth.AccountID() != "sub2api-codex-workspace" {
 					t.Fatalf("Codex OAuth 解码结果错误: %T %v", credential, credential)
 				}

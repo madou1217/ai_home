@@ -83,12 +83,18 @@ type ModelRefreshCoordinator struct {
 	workers     sync.WaitGroup
 }
 
-// modelRefreshProviderQueue 保存一个 Provider 的队列、通知和共享退避状态。
+// modelRefreshProviderQueue 保存一个 Provider 的首次、重试队列和共享退避状态。
 type modelRefreshProviderQueue struct {
-	tasks         []*modelRefreshTask
-	notify        chan struct{}
-	failures      uint32
-	nextAttemptAt time.Time
+	fresh       modelRefreshTaskFIFO
+	retries     modelRefreshTaskFIFO
+	notify      chan struct{}
+	failures    uint32
+	nextRetryAt time.Time
+}
+
+// modelRefreshTaskFIFO 通过尾部追加和头部重切片实现摊销 O(1) 入队和出队。
+type modelRefreshTaskFIFO struct {
+	tasks []*modelRefreshTask
 }
 
 // modelRefreshTask 是一个账号刷新代次在队列和执行中的唯一身份。
@@ -96,7 +102,6 @@ type modelRefreshTask struct {
 	accountRef accountcore.AccountRef
 	providerID string
 	cancel     context.CancelFunc
-	retrying   bool
 }
 
 // NewModelRefreshCoordinator 创建立即启动 Provider worker 的异步协调器。
@@ -167,27 +172,24 @@ func (coordinator *ModelRefreshCoordinator) ScheduleModelRefresh(
 		providerID: providerID,
 	}
 	coordinator.pending[accountRef] = task
-	queue.tasks = insertFreshModelRefreshTask(queue.tasks, task)
+	queue.fresh.push(task)
 	signalModelRefreshQueue(queue)
 	return nil
 }
 
-// insertFreshModelRefreshTask 保持首次刷新 FIFO，并让新账号排在失败重试之前。
-func insertFreshModelRefreshTask(
-	tasks []*modelRefreshTask,
-	task *modelRefreshTask,
-) []*modelRefreshTask {
-	index := len(tasks)
-	for candidateIndex, candidate := range tasks {
-		if candidate != nil && candidate.retrying {
-			index = candidateIndex
-			break
-		}
+// SupportsModelRefresh 报告 Provider 是否拥有独立刷新队列和 worker。
+func (coordinator *ModelRefreshCoordinator) SupportsModelRefresh(
+	providerID string,
+) bool {
+	if coordinator == nil || coordinator.catalog == nil {
+		return false
 	}
-	tasks = append(tasks, nil)
-	copy(tasks[index+1:], tasks[index:])
-	tasks[index] = task
-	return tasks
+	canonicalProviderID, found := coordinator.catalog.CanonicalID(providerID)
+	if !found || canonicalProviderID != providerID {
+		return false
+	}
+	// Provider 队列只在构造阶段写入，启动 worker 后保持只读。
+	return coordinator.providers[providerID] != nil
 }
 
 // ForgetAccount 取消并分离账号当前刷新，使同身份重导入或凭据切换可以创建新代次。
@@ -262,7 +264,8 @@ func (coordinator *ModelRefreshCoordinator) nextModelRefreshTask(
 			coordinator.mu.Unlock()
 			return nil, nil, false
 		}
-		if len(queue.tasks) == 0 {
+		task, found := queue.fresh.pop()
+		if !found && queue.retries.empty() {
 			notify := queue.notify
 			coordinator.mu.Unlock()
 			if !waitForModelRefreshSignal(coordinator.ctx, notify, 0) {
@@ -270,20 +273,19 @@ func (coordinator *ModelRefreshCoordinator) nextModelRefreshTask(
 			}
 			continue
 		}
-		wait := queue.nextAttemptAt.Sub(coordinator.clock())
-		if wait > 0 {
-			notify := queue.notify
-			coordinator.mu.Unlock()
-			if !waitForModelRefreshSignal(coordinator.ctx, notify, wait) {
-				return nil, nil, false
+		if !found {
+			wait := queue.nextRetryAt.Sub(coordinator.clock())
+			if wait > 0 {
+				notify := queue.notify
+				coordinator.mu.Unlock()
+				if !waitForModelRefreshSignal(coordinator.ctx, notify, wait) {
+					return nil, nil, false
+				}
+				continue
 			}
-			continue
+			task, found = queue.retries.pop()
 		}
-		task := queue.tasks[0]
-		copy(queue.tasks, queue.tasks[1:])
-		queue.tasks[len(queue.tasks)-1] = nil
-		queue.tasks = queue.tasks[:len(queue.tasks)-1]
-		if task == nil || coordinator.pending[task.accountRef] != task {
+		if !found || task == nil || coordinator.pending[task.accountRef] != task {
 			coordinator.mu.Unlock()
 			continue
 		}
@@ -322,13 +324,12 @@ func (coordinator *ModelRefreshCoordinator) finishModelRefresh(
 	if refreshErr == nil {
 		delete(coordinator.pending, task.accountRef)
 		queue.failures = 0
-		queue.nextAttemptAt = time.Time{}
+		queue.nextRetryAt = time.Time{}
 	} else {
 		queue.failures++
 		delay := coordinator.modelRefreshBackoff(queue.failures)
-		queue.nextAttemptAt = coordinator.clock().Add(delay)
-		task.retrying = true
-		queue.tasks = append(queue.tasks, task)
+		queue.nextRetryAt = coordinator.clock().Add(delay)
+		queue.retries.push(task)
 	}
 	signalModelRefreshQueue(queue)
 	observer := coordinator.observer
@@ -343,6 +344,30 @@ func (coordinator *ModelRefreshCoordinator) finishModelRefresh(
 			Err:        refreshErr,
 		})
 	}
+}
+
+// push 把任务追加到 FIFO 尾部。
+func (queue *modelRefreshTaskFIFO) push(task *modelRefreshTask) {
+	queue.tasks = append(queue.tasks, task)
+}
+
+// pop 从 FIFO 头部取出任务，并清空指针使已完成任务可被回收。
+func (queue *modelRefreshTaskFIFO) pop() (*modelRefreshTask, bool) {
+	if queue.empty() {
+		return nil, false
+	}
+	task := queue.tasks[0]
+	queue.tasks[0] = nil
+	queue.tasks = queue.tasks[1:]
+	if len(queue.tasks) == 0 {
+		queue.tasks = nil
+	}
+	return task, true
+}
+
+// empty 报告 FIFO 是否不含任务。
+func (queue *modelRefreshTaskFIFO) empty() bool {
+	return len(queue.tasks) == 0
 }
 
 // modelRefreshBackoff 计算有上限指数退避和最多四分之一抖动。

@@ -71,17 +71,22 @@ func (registry *Registry) RecordFailure(
 	return transition, nil
 }
 
-// RecordSuccess 只清除当前账号与模型元组，不影响兄弟模型。
+// RecordSuccess 只用不早于最后失败的成功清除当前账号模型元组。
 func (registry *Registry) RecordSuccess(
 	ctx context.Context,
 	route runtimecore.ModelRoute,
+	happenedAt time.Time,
 ) error {
 	if err := registry.validateRequest(ctx, route); err != nil {
 		return err
 	}
 	registry.mu.Lock()
 	defer registry.mu.Unlock()
-	delete(registry.states, route)
+	next, err := registry.states[route].Succeed(happenedAt)
+	if err != nil {
+		return err
+	}
+	registry.replaceState(route, next)
 	return nil
 }
 

@@ -128,14 +128,16 @@ func NewComponents(dependencies Dependencies) (*Components, error) {
 	}
 	coordinator, err := inferencegateway.NewCoordinator(
 		inferencegateway.Dependencies{
-			Catalog:              dependencies.Catalog,
-			Routes:               dependencies.Routes,
-			Recruiter:            recruiter,
-			Upstreams:            upstreams,
-			Attempts:             dependencies.Runtime,
-			ModelRefreshes:       dependencies.ModelRefreshes,
-			UpstreamAttemptLimit: dependencies.UpstreamAttemptLimit,
-			PoolRetries:          dependencies.PoolRetries,
+			Catalog:                dependencies.Catalog,
+			Routes:                 dependencies.Routes,
+			Recruiter:              recruiter,
+			Upstreams:              upstreams,
+			Attempts:               dependencies.Runtime,
+			CredentialObservations: credentials,
+			Clock:                  dependencies.Clock,
+			ModelRefreshes:         dependencies.ModelRefreshes,
+			UpstreamAttemptLimit:   dependencies.UpstreamAttemptLimit,
+			PoolRetries:            dependencies.PoolRetries,
 		},
 	)
 	if err != nil {

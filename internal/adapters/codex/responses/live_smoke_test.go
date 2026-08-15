@@ -361,14 +361,15 @@ func newRealCodexCoordinatorComponents(
 	if err != nil {
 		t.Fatalf("accounts.NewRoutingAccount() error = %v", err)
 	}
+	credentialResolver := adapterCredentialResolver{
+		accountRef: accountRef,
+		credential: credential,
+	}
 	recruiter, err := accountrouting.NewRecruiter(
 		accountrouting.Dependencies{
-			Candidates: adapterCandidateSource{account: account},
-			Runtime:    runtime,
-			Credentials: adapterCredentialResolver{
-				accountRef: accountRef,
-				credential: credential,
-			},
+			Candidates:  adapterCandidateSource{account: account},
+			Runtime:     runtime,
+			Credentials: credentialResolver,
 		},
 	)
 	if err != nil {
@@ -389,12 +390,14 @@ func newRealCodexCoordinatorComponents(
 	}
 	coordinator, err := inferencegateway.NewCoordinator(
 		inferencegateway.Dependencies{
-			Catalog:        catalog,
-			Routes:         resolver,
-			Recruiter:      recruiter,
-			Upstreams:      upstreams,
-			Attempts:       attempts,
-			ModelRefreshes: adapterModelRefreshScheduler{},
+			Catalog:                catalog,
+			Routes:                 resolver,
+			Recruiter:              recruiter,
+			Upstreams:              upstreams,
+			Attempts:               attempts,
+			CredentialObservations: credentialResolver,
+			Clock:                  time.Now,
+			ModelRefreshes:         adapterModelRefreshScheduler{},
 			// 真实 smoke 每次只允许调用一个账号，禁止测试代码自动重试。
 			UpstreamAttemptLimit: 1,
 		},

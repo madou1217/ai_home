@@ -75,7 +75,11 @@ func TestRegistrySuccessClearsOnlyCurrentModel(t *testing.T) {
 		}
 	}
 
-	if err := registry.RecordSuccess(context.Background(), first); err != nil {
+	if err := registry.RecordSuccess(
+		context.Background(),
+		first,
+		now.Add(time.Second),
+	); err != nil {
 		t.Fatalf("RecordSuccess() error = %v", err)
 	}
 	firstEligibility, _ := registry.CheckEligibility(context.Background(), first)
@@ -89,6 +93,50 @@ func TestRegistrySuccessClearsOnlyCurrentModel(t *testing.T) {
 			secondEligibility,
 			registry.Len(),
 		)
+	}
+}
+
+// TestRegistryDoesNotClearNewerFailureWithOlderSuccess 验证 Registry 在同一把锁内
+// 比较事件发生时间，避免并发请求乱序完成时清掉更新的 cooldown。
+func TestRegistryDoesNotClearNewerFailureWithOlderSuccess(t *testing.T) {
+	t.Parallel()
+
+	now := registryTestTime()
+	current := now.Add(2 * time.Second)
+	registry, err := NewRegistry(func() time.Time { return current })
+	if err != nil {
+		t.Fatalf("NewRegistry() error = %v", err)
+	}
+	route := registryTestRoute(t, 1, "gpt-5.6-sol")
+	if _, err = registry.RecordFailure(
+		context.Background(),
+		route,
+		runtimecore.FailureRateLimited,
+		time.Minute,
+	); err != nil {
+		t.Fatalf("RecordFailure() error = %v", err)
+	}
+	if err = registry.RecordSuccess(
+		context.Background(),
+		route,
+		now.Add(time.Second),
+	); err != nil {
+		t.Fatalf("RecordSuccess(older) error = %v", err)
+	}
+	eligibility, err := registry.CheckEligibility(context.Background(), route)
+	if err != nil || eligibility.Eligible() {
+		t.Fatalf("older success eligibility=%#v error=%v", eligibility, err)
+	}
+	if err = registry.RecordSuccess(
+		context.Background(),
+		route,
+		current.Add(time.Second),
+	); err != nil {
+		t.Fatalf("RecordSuccess(current) error = %v", err)
+	}
+	eligibility, err = registry.CheckEligibility(context.Background(), route)
+	if err != nil || !eligibility.Eligible() {
+		t.Fatalf("current success eligibility=%#v error=%v", eligibility, err)
 	}
 }
 

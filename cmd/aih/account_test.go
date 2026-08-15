@@ -90,7 +90,7 @@ func TestAccountShowUsesServerAliasAndFullProjection(t *testing.T) {
 }
 
 // TestAccountImportReadsLocalArtifactThenSubmitsToServer 验证导入只从本机官方
-// artifact 读取凭据，随后把原生 envelope 发送到目标 Server，并从 Server 取回模型。
+// artifact 读取凭据，随后把原生 envelope 发送到目标 Server，且不等待模型刷新。
 func TestAccountImportReadsLocalArtifactThenSubmitsToServer(t *testing.T) {
 	output := &bytes.Buffer{}
 	codexHome := t.TempDir()
@@ -99,7 +99,6 @@ func TestAccountImportReadsLocalArtifactThenSubmitsToServer(t *testing.T) {
 	}
 	transport := &accountCatalogCommandHTTPClient{t: t, responses: []string{
 		`{"data":{"account_ref":"acct_11111111111111111111","provider_id":"codex","cli_account_id":9,"enabled":true,"has_credential":true,"auth_kind":"oauth","auth_mode":"refreshable","has_profile":false,"created_at":"2026-08-10T08:00:00Z","updated_at":"2026-08-10T08:00:00Z"}}`,
-		`{"data":[{"model_id":"gpt-5.4","upstream_available":true,"manual_policy":"inherit","effective":true,"updated_at":"2026-08-10T08:00:00Z"}]}`,
 	}}
 	runtime := testCommandRuntime(t, map[string]string{
 		"CODEX_HOME":                codexHome,
@@ -116,11 +115,8 @@ func TestAccountImportReadsLocalArtifactThenSubmitsToServer(t *testing.T) {
 	if err := run(context.Background(), []string{"account", "import", "codex"}, runtime); err != nil {
 		t.Fatalf("run() error = %v", err)
 	}
-	if transport.calls != 2 || transport.methods[0] != http.MethodPost ||
-		transport.paths[0] != accountcontract.NativeImportsPath ||
-		transport.methods[1] != http.MethodGet ||
-		transport.paths[1] != accountcontract.AccountsPath+
-			"/acct_11111111111111111111"+accountcontract.AccountModelsSuffix {
+	if transport.calls != 1 || transport.methods[0] != http.MethodPost ||
+		transport.paths[0] != accountcontract.NativeImportsPath {
 		t.Fatalf("导入请求 = methods=%v paths=%v", transport.methods, transport.paths)
 	}
 	if !strings.Contains(transport.bodies[0], `"provider_id":"codex"`) ||
@@ -128,11 +124,52 @@ func TestAccountImportReadsLocalArtifactThenSubmitsToServer(t *testing.T) {
 		t.Fatalf("原生导入正文不是官方 envelope: %s", transport.bodies[0])
 	}
 	for _, expected := range []string{
-		"已导入 codex 官方登录态", "账号别名   9", "gpt-5.4", "auth.json",
+		"已导入 codex 官方登录态", "账号别名   9", "后台异步刷新",
+		"aih account models list codex:9", "auth.json",
 	} {
 		if !strings.Contains(output.String(), expected) {
 			t.Fatalf("导入输出缺少 %q: %s", expected, output.String())
 		}
+	}
+}
+
+// TestAccountImportReportsExistingIdentityWithoutClaimingCreation 验证 Server
+// 返回 200 时 CLI 明确表示原账号被更新，而不是再次宣称创建账号。
+func TestAccountImportReportsExistingIdentityWithoutClaimingCreation(t *testing.T) {
+	output := &bytes.Buffer{}
+	codexHome := t.TempDir()
+	if err := os.WriteFile(
+		filepath.Join(codexHome, "auth.json"),
+		[]byte(`{"tokens":{"id_token":"synthetic"}}`),
+		0o600,
+	); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	transport := &accountCatalogCommandHTTPClient{
+		t:        t,
+		statuses: []int{http.StatusOK},
+		responses: []string{
+			`{"data":{"account_ref":"acct_11111111111111111111","provider_id":"codex","cli_account_id":9,"enabled":true,"has_credential":true,"auth_kind":"oauth","auth_mode":"refreshable","has_profile":false,"created_at":"2026-08-10T08:00:00Z","updated_at":"2026-08-10T08:00:00Z"}}`,
+		},
+	}
+	runtime := testCommandRuntime(t, map[string]string{
+		"CODEX_HOME":                codexHome,
+		"AIH_SERVER_BASE_URL":       "http://127.0.0.1:19527",
+		"AIH_SERVER_MANAGEMENT_KEY": commandTestManagementKey,
+	})
+	runtime.stdout = output
+	runtime.managementAPI = transport
+
+	if err := run(
+		context.Background(),
+		[]string{"account", "import", "codex"},
+		runtime,
+	); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+	if !strings.Contains(output.String(), "已更新 codex 官方登录态（未新建账号）") ||
+		strings.Contains(output.String(), "已导入 codex 官方登录态") {
+		t.Fatalf("重复导入输出语义错误: %s", output.String())
 	}
 }
 
@@ -152,6 +189,7 @@ func TestAccountManagementRequiresManagementKeyBeforeLocalImportRead(t *testing.
 type accountCatalogCommandHTTPClient struct {
 	t         *testing.T
 	responses []string
+	statuses  []int
 	calls     int
 	methods   []string
 	paths     []string
@@ -175,10 +213,14 @@ func (client *accountCatalogCommandHTTPClient) Do(request *http.Request) (*http.
 	client.methods = append(client.methods, request.Method)
 	client.paths = append(client.paths, request.URL.RequestURI())
 	client.bodies = append(client.bodies, string(body))
+	status := responseStatusForPath(request.URL.Path)
+	if client.calls < len(client.statuses) {
+		status = client.statuses[client.calls]
+	}
 	document := client.responses[client.calls]
 	client.calls++
 	return &http.Response{
-		StatusCode: responseStatusForPath(request.URL.Path),
+		StatusCode: status,
 		Header:     http.Header{"Content-Type": []string{"application/json"}},
 		Body:       io.NopCloser(strings.NewReader(document)),
 	}, nil

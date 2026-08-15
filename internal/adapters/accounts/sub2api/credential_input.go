@@ -21,6 +21,7 @@ type codexOAuthInput struct {
 	AccessToken      string
 	RefreshToken     string
 	IDToken          string
+	RefreshedAtMS    int64
 	ChatGPTAccountID string
 	PlanType         string
 	Email            string
@@ -28,17 +29,19 @@ type codexOAuthInput struct {
 
 // codexOAuthAliases 只声明 sub2api 与当前 AIH 标准导出的已确认同义字段。
 type codexOAuthAliases struct {
-	AccessTokenSnake      *string `json:"access_token"`
-	AccessTokenCamel      *string `json:"accessToken"`
-	RefreshTokenSnake     *string `json:"refresh_token"`
-	RefreshTokenCamel     *string `json:"refreshToken"`
-	IDTokenSnake          *string `json:"id_token"`
-	IDTokenCamel          *string `json:"idToken"`
-	ChatGPTAccountIDSnake *string `json:"chatgpt_account_id"`
-	ChatGPTAccountIDCamel *string `json:"chatgptAccountId"`
-	PlanTypeSnake         *string `json:"plan_type"`
-	PlanTypeCamel         *string `json:"planType"`
-	Email                 *string `json:"email"`
+	AccessTokenSnake      *string         `json:"access_token"`
+	AccessTokenCamel      *string         `json:"accessToken"`
+	RefreshTokenSnake     *string         `json:"refresh_token"`
+	RefreshTokenCamel     *string         `json:"refreshToken"`
+	IDTokenSnake          *string         `json:"id_token"`
+	IDTokenCamel          *string         `json:"idToken"`
+	LastRefreshSnake      json.RawMessage `json:"last_refresh"`
+	LastRefreshCamel      json.RawMessage `json:"lastRefresh"`
+	ChatGPTAccountIDSnake *string         `json:"chatgpt_account_id"`
+	ChatGPTAccountIDCamel *string         `json:"chatgptAccountId"`
+	PlanTypeSnake         *string         `json:"plan_type"`
+	PlanTypeCamel         *string         `json:"planType"`
+	Email                 *string         `json:"email"`
 }
 
 // apiKeyInput 是 Codex 与 Claude API Key 的规范输入。
@@ -169,6 +172,13 @@ func decodeCodexOAuthCredential(document json.RawMessage) (codexOAuthInput, erro
 	if err != nil {
 		return codexOAuthInput{}, err
 	}
+	refreshedAtMS, err := mergeTimestampAliases(
+		aliases.LastRefreshSnake,
+		aliases.LastRefreshCamel,
+	)
+	if err != nil {
+		return codexOAuthInput{}, err
+	}
 	accountID, err := mergeStringAliases(false, aliases.ChatGPTAccountIDSnake, aliases.ChatGPTAccountIDCamel)
 	if err != nil {
 		return codexOAuthInput{}, err
@@ -181,6 +191,7 @@ func decodeCodexOAuthCredential(document json.RawMessage) (codexOAuthInput, erro
 		AccessToken:      accessToken,
 		RefreshToken:     refreshToken,
 		IDToken:          idToken,
+		RefreshedAtMS:    refreshedAtMS,
 		ChatGPTAccountID: accountID,
 		PlanType:         planType,
 		Email:            valueOrEmpty(aliases.Email),

@@ -53,6 +53,30 @@ function loadTransportModule(entry) {
   return load(path.join(TRANSPORT_DIR, entry));
 }
 
+test('Server transport only allows v0 and the management control-plane namespace', () => {
+  const { normalizeServerPath } = loadTransportModule('request-policy');
+
+  for (const pathValue of [
+    '/v0',
+    '/v0/webui/accounts?provider=codex',
+    '/v1/management',
+    '/v1/management/accounts?provider=claude'
+  ]) {
+    assert.equal(normalizeServerPath(pathValue), pathValue);
+  }
+
+  for (const pathValue of [
+    '/v1',
+    '/v1/models',
+    '/v1/responses',
+    '/v1/management-override',
+    '/v1/management/../responses',
+    '/v1/management/%2e%2e/responses'
+  ]) {
+    assert.throws(() => normalizeServerPath(pathValue), /invalid_server_path/, pathValue);
+  }
+});
+
 test('Tauri JSON requests construct an auth-free, allowlisted IPC envelope', async () => {
   const { TauriServerTransport } = loadTransportModule('tauri-adapter');
   const invocations = [];

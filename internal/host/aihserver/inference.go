@@ -31,7 +31,7 @@ const (
 	modelRefreshConcurrency = 1
 )
 
-// inferenceComposition 保存推理 HTTP、原子模型目录和后台刷新生命周期。
+// inferenceComposition 保存推理 HTTP、原子模型目录及其内部生命周期。
 type inferenceComposition struct {
 	handler        http.Handler
 	models         *inferencecatalog.AtomicCatalog
@@ -58,7 +58,7 @@ type inferenceCompositionDependencies struct {
 	clock                func() time.Time
 }
 
-// newInferenceComposition 装配模型快照、异步模型刷新、Canonical Runtime 和 HTTP。
+// newInferenceComposition 装配模型快照、共享刷新调度器、Canonical Runtime 和 HTTP。
 func newInferenceComposition(
 	ctx context.Context,
 	dependencies inferenceCompositionDependencies,

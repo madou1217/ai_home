@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/madou1217/ai_home/application/accountcredentials"
 	"github.com/madou1217/ai_home/application/accountrouting"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/inferencegateway"
@@ -526,14 +527,15 @@ func newAdapterCoordinatorFixture(
 	if err != nil {
 		t.Fatalf("accounts.NewRoutingAccount() error = %v", err)
 	}
+	credentials := adapterCredentialResolver{
+		accountRef: accountRef,
+		credential: credential,
+	}
 	recruiter, err := accountrouting.NewRecruiter(
 		accountrouting.Dependencies{
-			Candidates: adapterCandidateSource{account: account},
-			Runtime:    adapterAvailableRuntime{},
-			Credentials: adapterCredentialResolver{
-				accountRef: accountRef,
-				credential: credential,
-			},
+			Candidates:  adapterCandidateSource{account: account},
+			Runtime:     adapterAvailableRuntime{},
+			Credentials: credentials,
 		},
 	)
 	if err != nil {
@@ -571,12 +573,14 @@ func newAdapterCoordinatorFixture(
 	recorder := &adapterAttemptRecorder{}
 	coordinator, err := inferencegateway.NewCoordinator(
 		inferencegateway.Dependencies{
-			Catalog:        catalog,
-			Routes:         adapterRouteResolver{route: route},
-			Recruiter:      recruiter,
-			Upstreams:      registry,
-			Attempts:       recorder,
-			ModelRefreshes: adapterModelRefreshScheduler{},
+			Catalog:                catalog,
+			Routes:                 adapterRouteResolver{route: route},
+			Recruiter:              recruiter,
+			Upstreams:              registry,
+			Attempts:               recorder,
+			CredentialObservations: credentials,
+			Clock:                  time.Now,
+			ModelRefreshes:         adapterModelRefreshScheduler{},
 		},
 	)
 	if err != nil {
@@ -720,6 +724,38 @@ func (resolver adapterCredentialResolver) ResolveCredentialBinding(
 	)
 }
 
+func (resolver adapterCredentialResolver) ResolveObservedCredentialBinding(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+) (
+	accountapp.CredentialBinding,
+	accountcredentials.CredentialObservation,
+	error,
+) {
+	binding, err := resolver.ResolveCredentialBinding(ctx, accountRef)
+	if err != nil {
+		return accountapp.CredentialBinding{}, accountcredentials.CredentialObservation{}, err
+	}
+	snapshot, err := accountapp.NewCredentialSnapshot(
+		binding.AccountRef(),
+		binding.ProviderID(),
+		binding.Credential(),
+		time.Date(2026, 8, 15, 7, 0, 0, 0, time.UTC),
+	)
+	if err != nil {
+		return accountapp.CredentialBinding{}, accountcredentials.CredentialObservation{}, err
+	}
+	observation, err := accountcredentials.NewCredentialObservation(snapshot)
+	return binding, observation, err
+}
+
+func (adapterCredentialResolver) IsCurrentCredentialObservation(
+	_ context.Context,
+	observation accountcredentials.CredentialObservation,
+) (bool, error) {
+	return observation.IsValid(), nil
+}
+
 // adapterRouteResolver 返回固定的显式 Codex 路由。
 type adapterRouteResolver struct {
 	route inferencegateway.Route
@@ -754,6 +790,7 @@ func (adapterModelRefreshScheduler) ScheduleModelRefresh(
 func (recorder *adapterAttemptRecorder) RecordSuccess(
 	context.Context,
 	runtimecore.ModelRoute,
+	inferencegateway.AttemptSuccess,
 ) error {
 	recorder.successes++
 	return nil

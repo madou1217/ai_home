@@ -8,6 +8,7 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/accounts/codex"
+	usagecore "github.com/madou1217/ai_home/core/accountusage"
 )
 
 func TestOverviewQueryUsesBoundedKeysetPagination(t *testing.T) {
@@ -68,6 +69,86 @@ func TestAccountOverviewKeepsOnlyPublicScalarMetadata(t *testing.T) {
 		!overview.HasProfile() ||
 		overview.Email() != "owner@example.com" {
 		t.Fatalf("AccountOverview 字段错误: %#v", overview)
+	}
+}
+
+func TestAccountOverviewKeepsPersistedModelAndUsageEvidence(t *testing.T) {
+	t.Parallel()
+
+	auth, err := codex.NewAPIKeyAuth(codex.APIKeyInput{APIKey: "sk-test-derived-overview"})
+	if err != nil {
+		t.Fatalf("NewAPIKeyAuth() error = %v", err)
+	}
+	alias, err := accountcore.NewCLIAccountID(1)
+	if err != nil {
+		t.Fatalf("NewCLIAccountID() error = %v", err)
+	}
+	capturedAt := time.Date(2026, time.August, 15, 2, 0, 0, 0, time.UTC)
+	account, err := accountcore.NewAccount(testCatalog(t), accountcore.NewAccountInput{
+		Identity:     auth,
+		CLIAccountID: alias,
+		CreatedAt:    capturedAt,
+	})
+	if err != nil {
+		t.Fatalf("NewAccount() error = %v", err)
+	}
+	modelSummary, err := accountapp.NewAccountModelSummary(accountapp.AccountModelSummaryInput{
+		Known:          true,
+		StoredCount:    3,
+		EffectiveCount: 2,
+		UpdatedAt:      capturedAt,
+	})
+	if err != nil {
+		t.Fatalf("NewAccountModelSummary() error = %v", err)
+	}
+	usageSnapshot, err := usagecore.NewSnapshot(usagecore.SnapshotInput{
+		AccountRef: account.Ref(),
+		ProviderID: codex.ProviderID,
+		Source:     "codex_wham_usage",
+		CapturedAt: capturedAt,
+		Entries: []usagecore.EntryInput{{
+			Bucket:               "primary",
+			Kind:                 usagecore.KindWindow,
+			Scope:                usagecore.ScopeAccount,
+			HasRemaining:         true,
+			RemainingBasisPoints: 7_500,
+			Availability:         usagecore.AvailabilityAvailable,
+			WindowSeconds:        18_000,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("NewSnapshot() error = %v", err)
+	}
+
+	overview, err := accountapp.NewAccountOverview(accountapp.AccountOverviewInput{
+		Account:          account,
+		ModelSummary:     modelSummary,
+		HasUsageSnapshot: true,
+		UsageSnapshot:    usageSnapshot,
+	})
+	if err != nil {
+		t.Fatalf("NewAccountOverview() error = %v", err)
+	}
+	storedUsage, found := overview.UsageSnapshot()
+	if overview.ModelSummary() != modelSummary ||
+		!found ||
+		!storedUsage.IsValid() ||
+		storedUsage.AccountRef() != account.Ref() {
+		t.Fatalf("AccountOverview 派生快照错误: %#v", overview)
+	}
+}
+
+func TestAccountModelSummaryRejectsImpossibleCounts(t *testing.T) {
+	t.Parallel()
+
+	modelSummary, err := accountapp.NewAccountModelSummary(accountapp.AccountModelSummaryInput{
+		Known:          true,
+		StoredCount:    1,
+		EffectiveCount: 2,
+		UpdatedAt:      time.Date(2026, time.August, 15, 2, 0, 0, 0, time.UTC),
+	})
+	if !errors.Is(err, accountapp.ErrInvalidOverview) || modelSummary.IsKnown() {
+		t.Fatalf("invalid model summary = %#v error=%v", modelSummary, err)
 	}
 }
 

@@ -7,8 +7,11 @@ import (
 	"time"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	usageapp "github.com/madou1217/ai_home/application/accountusage"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/core/accounts/claude"
 	"github.com/madou1217/ai_home/core/accounts/codex"
+	usagecore "github.com/madou1217/ai_home/core/accountusage"
 )
 
 // TestReauthenticateAtomicallyReplacesCredentialProfileAndAccountVersion 验证三张表同步推进。
@@ -22,6 +25,7 @@ func TestReauthenticateAtomicallyReplacesCredentialProfileAndAccountVersion(
 		t,
 		"original",
 		"plus",
+		1_700_000_000_000,
 	)
 	account := registerReauthenticationFixture(
 		t,
@@ -29,6 +33,20 @@ func TestReauthenticateAtomicallyReplacesCredentialProfileAndAccountVersion(
 		originalCredential,
 		originalProfile,
 	)
+	usage := newUsageStoreSnapshot(
+		t,
+		account.Ref(),
+		testAccountTime(),
+		[]usagecore.EntryInput{{
+			Bucket:       "primary",
+			Kind:         usagecore.KindWindow,
+			Scope:        usagecore.ScopeAccount,
+			Availability: usagecore.AvailabilityExhausted,
+		}},
+	)
+	if err := store.ReplaceUsageSnapshot(context.Background(), usage); err != nil {
+		t.Fatalf("ReplaceUsageSnapshot() error = %v", err)
+	}
 	providerDefault := newProviderDefault(
 		t,
 		"codex",
@@ -45,6 +63,7 @@ func TestReauthenticateAtomicallyReplacesCredentialProfileAndAccountVersion(
 		t,
 		"replacement",
 		"team",
+		1_700_000_060_000,
 	)
 	updatedAt := testAccountTime().Add(2 * time.Second)
 	command := newReauthenticationCommand(
@@ -88,6 +107,12 @@ func TestReauthenticateAtomicallyReplacesCredentialProfileAndAccountVersion(
 	}
 	assertReauthenticationVersions(t, store, account.Ref(), updatedAt.UnixMilli())
 	assertStoredModelIDs(t, store, account.Ref(), "test-model")
+	if _, err := store.GetUsageSnapshot(
+		context.Background(),
+		account.Ref(),
+	); !errors.Is(err, usageapp.ErrSnapshotNotFound) {
+		t.Fatalf("GetUsageSnapshot(after reauthentication) error = %v", err)
+	}
 	defaultAfterReauthentication, err := store.GetProviderDefault(
 		context.Background(),
 		"codex",
@@ -155,6 +180,7 @@ func TestReauthenticateCreatesMissingProfile(t *testing.T) {
 		t,
 		"missing-profile-original",
 		"plus",
+		1_700_000_000_000,
 	)
 	account := newAccountForCredential(t, store, originalCredential, 1)
 	registerAccountWithCredential(t, store, account, originalCredential)
@@ -162,6 +188,7 @@ func TestReauthenticateCreatesMissingProfile(t *testing.T) {
 		t,
 		"missing-profile-replacement",
 		"pro",
+		1_700_000_060_000,
 	)
 	updatedAt := testAccountTime().Add(2 * time.Second)
 	command := newReauthenticationCommand(
@@ -190,6 +217,142 @@ func TestReauthenticateCreatesMissingProfile(t *testing.T) {
 	assertReauthenticationVersions(t, store, account.Ref(), updatedAt.UnixMilli())
 }
 
+// TestReauthenticatePreservesMissingProfileWhenOnlyCredentialIsAvailable 验证
+// profileless OAuth 更新只替换凭据，不伪造公开资料。
+func TestReauthenticatePreservesMissingProfileWhenOnlyCredentialIsAvailable(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	newCredential := func(
+		accessToken string,
+		refreshToken string,
+		expiresAtMS int64,
+	) *claude.OAuthAuth {
+		credential, err := claude.NewOAuthAuth(claude.OAuthInput{
+			AccessToken:  accessToken,
+			RefreshToken: refreshToken,
+			ExpiresAtMS:  expiresAtMS,
+			Scopes:       []string{claude.InferenceScope},
+			Identity: claude.OAuthIdentity{
+				AccountUUID: "123e4567-e89b-12d3-a456-426614174397",
+			},
+		})
+		if err != nil {
+			t.Fatalf("NewOAuthAuth() error = %v", err)
+		}
+		return credential
+	}
+
+	store := openTestStore(t)
+	original := newCredential(
+		"profileless-old-access",
+		"profileless-old-refresh",
+		4_102_444_800_000,
+	)
+	account := newAccountForCredential(t, store, original, 1)
+	registerAccountWithCredential(t, store, account, original)
+	replacement := newCredential(
+		"profileless-new-access",
+		"profileless-new-refresh",
+		4_102_444_860_000,
+	)
+	updatedAt := testAccountTime().Add(2 * time.Second)
+	command := newReauthenticationCommand(
+		t,
+		store,
+		account.Ref(),
+		replacement,
+		nil,
+		updatedAt,
+	)
+
+	result, err := store.Reauthenticate(context.Background(), command)
+	if err != nil {
+		t.Fatalf("Reauthenticate() error = %v", err)
+	}
+	stored, err := store.GetCredential(context.Background(), account.Ref())
+	if err != nil {
+		t.Fatalf("GetCredential() error = %v", err)
+	}
+	storedOAuth, valid := stored.(*claude.OAuthAuth)
+	if !valid || storedOAuth.AccessToken() != "profileless-new-access" ||
+		storedOAuth.RefreshToken() != "profileless-new-refresh" ||
+		result.Ref() != account.Ref() || !result.UpdatedAt().Equal(updatedAt) {
+		t.Fatalf("result=%#v stored=%T", result, stored)
+	}
+	if _, err := store.GetProfile(
+		context.Background(),
+		account.Ref(),
+	); !errors.Is(err, accountapp.ErrProfileNotFound) {
+		t.Fatalf("GetProfile() error = %v, want ErrProfileNotFound", err)
+	}
+}
+
+// TestReauthenticatePreservesExistingProfileWhenReplacementOmitsIt 验证新
+// artifact 没有资料时只推进凭据，不清空上次可信公开快照。
+func TestReauthenticatePreservesExistingProfileWhenReplacementOmitsIt(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	store := openTestStore(t)
+	originalCredential, originalProfile := newCodexReauthenticationValues(
+		t,
+		"preserved-profile-original",
+		"plus",
+		1_700_000_000_000,
+	)
+	account := registerReauthenticationFixture(
+		t,
+		store,
+		originalCredential,
+		originalProfile,
+	)
+	replacementCredential, _ := newCodexReauthenticationValues(
+		t,
+		"preserved-profile-replacement",
+		"team",
+		1_700_000_060_000,
+	)
+	updatedAt := testAccountTime().Add(2 * time.Second)
+	command := newReauthenticationCommand(
+		t,
+		store,
+		account.Ref(),
+		replacementCredential,
+		nil,
+		updatedAt,
+	)
+
+	if _, err := store.Reauthenticate(context.Background(), command); err != nil {
+		t.Fatalf("Reauthenticate() error = %v", err)
+	}
+	storedProfile, err := store.GetProfile(context.Background(), account.Ref())
+	if err != nil {
+		t.Fatalf("GetProfile() error = %v", err)
+	}
+	if storedProfile.Profile().Email() !=
+		"preserved-profile-original@example.invalid" ||
+		storedProfile.Profile().SubscriptionKind() !=
+			codex.PlanFamilyPlus.String() ||
+		!storedProfile.UpdatedAt().Equal(testAccountTime()) {
+		t.Fatalf("GetProfile() = %#v", storedProfile)
+	}
+	storedCredential, err := store.GetCredential(
+		context.Background(),
+		account.Ref(),
+	)
+	if err != nil {
+		t.Fatalf("GetCredential() error = %v", err)
+	}
+	assertCredentialSecret(
+		t,
+		storedCredential,
+		"codex-preserved-profile-replacement-refresh-secret",
+	)
+}
+
 // TestReauthenticateRejectsStaleVersionWithoutMutation 验证旧 OAuth 结果不能覆盖当前快照。
 func TestReauthenticateRejectsStaleVersionWithoutMutation(t *testing.T) {
 	t.Parallel()
@@ -199,6 +362,7 @@ func TestReauthenticateRejectsStaleVersionWithoutMutation(t *testing.T) {
 		t,
 		"original-stale",
 		"plus",
+		1_700_000_000_000,
 	)
 	account := registerReauthenticationFixture(
 		t,
@@ -210,6 +374,7 @@ func TestReauthenticateRejectsStaleVersionWithoutMutation(t *testing.T) {
 		t,
 		"replacement-stale",
 		"team",
+		1_700_000_060_000,
 	)
 	command := newReauthenticationCommand(
 		t,
@@ -233,6 +398,105 @@ func TestReauthenticateRejectsStaleVersionWithoutMutation(t *testing.T) {
 	)
 }
 
+// TestReauthenticateKeepsNewerCredentialWhenOlderGenerationArrivesLate 验证
+// 事务内 generation 仲裁不会让晚到旧凭据推进账号或资料 metadata。
+func TestReauthenticateKeepsNewerCredentialWhenOlderGenerationArrivesLate(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	store := openTestStore(t)
+	currentCredential, currentProfile := newCodexReauthenticationValues(
+		t,
+		"current-generation",
+		"team",
+		1_700_000_120_000,
+	)
+	account := registerReauthenticationFixture(
+		t,
+		store,
+		currentCredential,
+		currentProfile,
+	)
+	olderCredential, olderProfile := newCodexReauthenticationValues(
+		t,
+		"older-generation",
+		"plus",
+		1_700_000_060_000,
+	)
+	command := newReauthenticationCommand(
+		t,
+		store,
+		account.Ref(),
+		olderCredential,
+		olderProfile,
+		testAccountTime().Add(2*time.Second),
+	)
+
+	result, err := store.Reauthenticate(context.Background(), command)
+	if err != nil {
+		t.Fatalf("Reauthenticate() error = %v", err)
+	}
+	if result != account {
+		t.Fatalf("Reauthenticate() result = %#v, want %#v", result, account)
+	}
+	assertStoredReauthenticationFixture(
+		t,
+		store,
+		account,
+		"codex-current-generation-refresh-secret",
+		codex.PlanFamilyBusiness.String(),
+	)
+}
+
+// TestReauthenticateRejectsCredentialsWithoutComparableGeneration 验证没有
+// Provider 代际时间的 OAuth 更新失败关闭，不使用命令时间猜新旧。
+func TestReauthenticateRejectsCredentialsWithoutComparableGeneration(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	store := openTestStore(t)
+	currentCredential, currentProfile := newCodexReauthenticationValues(
+		t,
+		"unordered-current",
+		"plus",
+		0,
+	)
+	account := registerReauthenticationFixture(
+		t,
+		store,
+		currentCredential,
+		currentProfile,
+	)
+	incomingCredential, incomingProfile := newCodexReauthenticationValues(
+		t,
+		"unordered-incoming",
+		"team",
+		0,
+	)
+	command := newReauthenticationCommand(
+		t,
+		store,
+		account.Ref(),
+		incomingCredential,
+		incomingProfile,
+		testAccountTime().Add(2*time.Second),
+	)
+
+	_, err := store.Reauthenticate(context.Background(), command)
+	if !errors.Is(err, accountapp.ErrReauthenticationGenerationUnordered) {
+		t.Fatalf("Reauthenticate() error = %v", err)
+	}
+	assertStoredReauthenticationFixture(
+		t,
+		store,
+		account,
+		"codex-unordered-current-refresh-secret",
+		codex.PlanFamilyPlus.String(),
+	)
+}
+
 // TestReauthenticateRollsBackCredentialWhenProfileWriteFails 验证任一写入失败都保留旧快照。
 func TestReauthenticateRollsBackCredentialWhenProfileWriteFails(t *testing.T) {
 	t.Parallel()
@@ -242,6 +506,7 @@ func TestReauthenticateRollsBackCredentialWhenProfileWriteFails(t *testing.T) {
 		t,
 		"original-rollback",
 		"plus",
+		1_700_000_000_000,
 	)
 	account := registerReauthenticationFixture(
 		t,
@@ -262,6 +527,7 @@ func TestReauthenticateRollsBackCredentialWhenProfileWriteFails(t *testing.T) {
 		t,
 		"replacement-rollback",
 		"team",
+		1_700_000_060_000,
 	)
 	command := newReauthenticationCommand(
 		t,
@@ -345,6 +611,7 @@ func newCodexReauthenticationValues(
 	t *testing.T,
 	label string,
 	plan string,
+	refreshedAtMS int64,
 ) (*codex.OAuthAuth, codex.AccountProfile) {
 	t.Helper()
 
@@ -362,7 +629,7 @@ func newCodexReauthenticationValues(
 				"chatgpt_plan_type":  plan,
 			},
 		}),
-		RefreshedAtMS:     1_700_000_000_000,
+		RefreshedAtMS:     refreshedAtMS,
 		ExplicitAccountID: "codex-workspace",
 	})
 	if err != nil {

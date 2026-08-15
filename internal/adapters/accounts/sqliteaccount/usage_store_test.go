@@ -3,10 +3,13 @@ package sqliteaccount
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
+	accountapp "github.com/madou1217/ai_home/application/accounts"
 	usageapp "github.com/madou1217/ai_home/application/accountusage"
+	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	usagecore "github.com/madou1217/ai_home/core/accountusage"
 )
@@ -151,6 +154,74 @@ func TestUsageStoreKeepsLastKnownGoodWhenReplacementFails(t *testing.T) {
 	}
 }
 
+// TestUsageStoreRejectsSnapshotFromStaleCredentialVersion 验证凭据版本推进后，
+// 旧上游请求不能删除或覆盖此前成功的额度快照。
+func TestUsageStoreRejectsSnapshotFromStaleCredentialVersion(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := openTestStore(t)
+	credential := mustCodexAPIKey(t, "sk-usage-generation-cas")
+	account := newAccountForCredential(t, store, credential, 1)
+	registerAccountWithCredential(t, store, account, credential)
+	lastKnownGood := newUsageStoreSnapshot(
+		t,
+		account.Ref(),
+		testAccountTime(),
+		[]usagecore.EntryInput{{
+			Bucket:       "primary",
+			Kind:         usagecore.KindWindow,
+			Scope:        usagecore.ScopeAccount,
+			Availability: usagecore.AvailabilityAvailable,
+		}},
+	)
+	if err := store.ReplaceUsageSnapshot(ctx, lastKnownGood); err != nil {
+		t.Fatalf("ReplaceUsageSnapshot() error = %v", err)
+	}
+	staleCredential, err := store.GetCredentialSnapshot(ctx, account.Ref())
+	if err != nil {
+		t.Fatalf("GetCredentialSnapshot() error = %v", err)
+	}
+	replacement, err := accountapp.NewCredentialReplacement(
+		staleCredential,
+		staleCredential.Credential(),
+		staleCredential.UpdatedAt().Add(time.Second),
+	)
+	if err != nil {
+		t.Fatalf("NewCredentialReplacement() error = %v", err)
+	}
+	if err := store.ReplaceCredential(ctx, replacement); err != nil {
+		t.Fatalf("ReplaceCredential() error = %v", err)
+	}
+	staleUsage := newUsageStoreSnapshot(
+		t,
+		account.Ref(),
+		testAccountTime().Add(time.Minute),
+		[]usagecore.EntryInput{{
+			Bucket:       "primary",
+			Kind:         usagecore.KindWindow,
+			Scope:        usagecore.ScopeAccount,
+			Availability: usagecore.AvailabilityExhausted,
+		}},
+	)
+	err = store.ReplaceUsageSnapshotIfCredentialVersion(
+		ctx,
+		staleUsage,
+		staleCredential.UpdatedAt(),
+	)
+	if !errors.Is(err, accountapp.ErrCredentialConflict) {
+		t.Fatalf("ReplaceUsageSnapshotIfCredentialVersion() error = %v", err)
+	}
+	restored, err := store.GetUsageSnapshot(ctx, account.Ref())
+	if err != nil {
+		t.Fatalf("GetUsageSnapshot() error = %v", err)
+	}
+	if !restored.CapturedAt().Equal(lastKnownGood.CapturedAt()) ||
+		restored.Entries()[0].Availability() != usagecore.AvailabilityAvailable {
+		t.Fatalf("stale usage changed last-known-good = %#v", restored)
+	}
+}
+
 // TestUsageStoreReturnsNotFoundWithoutCurrentSnapshot 验证缺省读取不会伪造空额度。
 func TestUsageStoreReturnsNotFoundWithoutCurrentSnapshot(t *testing.T) {
 	t.Parallel()
@@ -163,6 +234,65 @@ func TestUsageStoreReturnsNotFoundWithoutCurrentSnapshot(t *testing.T) {
 	_, err := store.GetUsageSnapshot(context.Background(), account.Ref())
 	if !errors.Is(err, usageapp.ErrSnapshotNotFound) {
 		t.Fatalf("GetUsageSnapshot() error = %v", err)
+	}
+}
+
+// TestUsageAndModelRefreshesSerializeSQLiteWrites 验证账号创建后的两个后台
+// 生命周期任务可同时启动，但不会让 SQLite deferred transaction 互相升级失败。
+func TestUsageAndModelRefreshesSerializeSQLiteWrites(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := openTestStore(t)
+	account := newCodexAPIKeyAccount(t, store, 1, "sk-concurrent-derived-state")
+	if err := store.Create(ctx, account); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	models := []runtimecore.ModelID{runtimecore.ModelID("gpt-concurrent-refresh")}
+	if !accountapp.ValidDiscoveredModelIDs(models) {
+		t.Fatal("测试模型集合无效")
+	}
+
+	for iteration := 0; iteration < 64; iteration++ {
+		started := make(chan struct{})
+		errorsByTask := make(chan error, 2)
+		capturedAt := testAccountTime().Add(time.Duration(iteration) * time.Millisecond)
+		snapshot := newUsageStoreSnapshot(
+			t,
+			account.Ref(),
+			capturedAt,
+			[]usagecore.EntryInput{{
+				Bucket:       "primary",
+				Kind:         usagecore.KindWindow,
+				Scope:        usagecore.ScopeAccount,
+				Availability: usagecore.AvailabilityAvailable,
+			}},
+		)
+		var ready sync.WaitGroup
+		ready.Add(2)
+		go func() {
+			ready.Done()
+			<-started
+			errorsByTask <- store.ReplaceUsageSnapshot(ctx, snapshot)
+		}()
+		go func() {
+			ready.Done()
+			<-started
+			_, err := store.ReplaceDiscoveredModels(
+				ctx,
+				account.Ref(),
+				models,
+				capturedAt,
+			)
+			errorsByTask <- err
+		}()
+		ready.Wait()
+		close(started)
+		for range 2 {
+			if err := <-errorsByTask; err != nil {
+				t.Fatalf("iteration %d derived-state write error = %v", iteration, err)
+			}
+		}
 	}
 }
 

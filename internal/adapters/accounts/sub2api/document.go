@@ -39,6 +39,7 @@ type codexOAuthCredentials struct {
 	AccessToken      string `json:"access_token"`
 	RefreshToken     string `json:"refresh_token"`
 	IDToken          string `json:"id_token"`
+	LastRefresh      string `json:"last_refresh,omitempty"`
 	ChatGPTAccountID string `json:"chatgpt_account_id,omitempty"`
 	PlanType         string `json:"plan_type,omitempty"`
 	Email            string `json:"email,omitempty"`

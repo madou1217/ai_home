@@ -77,11 +77,12 @@ func (runtime *Runtime) CheckEligibility(
 func (runtime *Runtime) RecordSuccess(
 	ctx context.Context,
 	route runtimecore.ModelRoute,
+	success inferencegateway.AttemptSuccess,
 ) error {
 	if runtime == nil || runtime.delegate == nil {
 		return ErrInvalidRuntime
 	}
-	if err := runtime.delegate.RecordSuccess(ctx, route); err != nil {
+	if err := runtime.delegate.RecordSuccess(ctx, route, success); err != nil {
 		return err
 	}
 	runtime.mu.Lock()

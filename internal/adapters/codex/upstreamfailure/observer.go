@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,11 +15,38 @@ import (
 const (
 	// modelAtCapacityMessage 是当前已确认的 Codex Responses 容量错误原文。
 	modelAtCapacityMessage       = "Selected model is at capacity. Please try a different model."
+	modelNotFoundCode            = "model_not_found"
 	websocketConnectionLimitCode = "websocket_connection_limit_reached"
 	previousResponseNotFoundCode = "previous_response_not_found"
 )
 
-// codexErrorFields 只接收分类所需字段；Message 仅用于一个精确容量签名。
+// codexModelMissingSignature 是 Node 真实 relay 回归确认的文案模板。
+// prefix 与 suffix 之间只能出现一个非空、无空白的模型标识。
+type codexModelMissingSignature struct {
+	prefix string
+	suffix string
+}
+
+var codexModelMissingSignatures = [...]codexModelMissingSignature{
+	{
+		prefix: "/responses: invalid model name passed in model=",
+		suffix: ". call `/v1/models` to view available models for your key.",
+	},
+	{
+		prefix: `model "`,
+		suffix: `" is not supported by any configured account in this group`,
+	},
+	{
+		prefix: "the '",
+		suffix: "' model is not supported when using codex with a chatgpt account.",
+	},
+	{
+		prefix: "the model `",
+		suffix: "` does not exist or you do not have access to it.",
+	},
+}
+
+// codexErrorFields 只接收分类所需字段；Message 仅在 Observer 内匹配已确认签名。
 type codexErrorFields struct {
 	Type    string `json:"type"`
 	Code    string `json:"code"`
@@ -230,11 +258,7 @@ func codexInputFromEnvelope(
 ) Input {
 	fields := selectCodexErrorFields(envelope)
 	errorType, _ := sharedfailure.NormalizeErrorToken(fields.Type)
-	errorCode, _ := sharedfailure.NormalizeErrorToken(fields.Code)
-	if errorCode == "" &&
-		strings.TrimSpace(fields.Message) == modelAtCapacityMessage {
-		errorCode = "model_at_capacity"
-	}
+	errorCode := codexErrorCode(statusCode, fields)
 	retryAfter, _ := sharedfailure.ParseRetryAfter(
 		header.Get("Retry-After"),
 		observedAt,
@@ -245,6 +269,60 @@ func codexInputFromEnvelope(
 		ErrorCode:  errorCode,
 		RetryAfter: retryAfter,
 	}
+}
+
+// codexErrorCode 优先保留 Provider 的稳定业务 code；只有 code 缺失或只是
+// HTTP 数字、且 400/404 message 完整命中已确认模板时，才合成 model_not_found。
+func codexErrorCode(statusCode int, fields codexErrorFields) string {
+	errorCode, _ := sharedfailure.NormalizeErrorToken(fields.Code)
+	if errorCode == "" &&
+		strings.TrimSpace(fields.Message) == modelAtCapacityMessage {
+		return "model_at_capacity"
+	}
+	if isMessageOnlyModelMissing(statusCode, errorCode, fields.Message) {
+		return modelNotFoundCode
+	}
+	return errorCode
+}
+
+// isMessageOnlyModelMissing 仅识别来源提交 15518c3 固化的四种真实文案。
+// 普通参数错误、相似散词和其他状态都不能改变原始 HTTP 分类。
+func isMessageOnlyModelMissing(
+	statusCode int,
+	errorCode string,
+	message string,
+) bool {
+	if statusCode != http.StatusBadRequest &&
+		statusCode != http.StatusNotFound {
+		return false
+	}
+	if errorCode != "" && errorCode != strconv.Itoa(statusCode) {
+		return false
+	}
+	normalized := strings.ToLower(strings.TrimSpace(message))
+	for _, signature := range codexModelMissingSignatures {
+		if matchesModelMissingSignature(normalized, signature) {
+			return true
+		}
+	}
+	return false
+}
+
+// matchesModelMissingSignature 要求模板完整且模型槽唯一非空，避免宽泛的
+// model/not supported 关键字把用户参数错误误判为账号模型能力问题。
+func matchesModelMissingSignature(
+	message string,
+	signature codexModelMissingSignature,
+) bool {
+	if !strings.HasPrefix(message, signature.prefix) ||
+		!strings.HasSuffix(message, signature.suffix) {
+		return false
+	}
+	modelID := strings.TrimSuffix(
+		strings.TrimPrefix(message, signature.prefix),
+		signature.suffix,
+	)
+	return modelID != "" && !strings.ContainsAny(modelID, " \t\r\n")
 }
 
 // selectCodexErrorFields 按 Responses、标准 error、detail、顶层字段顺序取值。

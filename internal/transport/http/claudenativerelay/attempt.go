@@ -5,8 +5,10 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/madou1217/ai_home/application/accountcredentials"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	claudeauth "github.com/madou1217/ai_home/core/accounts/claude"
 	"github.com/madou1217/ai_home/internal/adapters/claude/transportpolicy"
 )
 
@@ -20,6 +22,8 @@ type attemptOutcome struct {
 	response *http.Response
 	// route 是本次尝试的账号模型元组，用于记录运行态。
 	route runtimecore.ModelRoute
+	// observation 是本次尝试读取凭据时看到的低敏持久化观察。
+	observation accountcredentials.CredentialObservation
 	// credentialUnfit 表示账号凭据无法由透传承载（非官方 OAuth）。
 	//
 	// 无租约调用方遇到这种账号应交回 Canonical——它能承载 API Key 等凭据；
@@ -71,11 +75,17 @@ func (handler *Handler) attemptRelay(
 			message: "Claude Relay 运行态不可用",
 		}}, false
 	}
-	credential, err := handler.credentials.ResolveCredential(
+	binding, observation, err := handler.credentials.ResolveObservedCredentialBinding(
 		request.Context(),
 		accountRef,
 	)
-	if err != nil {
+	if err != nil ||
+		!binding.IsValid() ||
+		binding.AccountRef() != accountRef ||
+		binding.ProviderID() != claudeauth.ProviderID ||
+		!observation.IsValid() ||
+		observation.AccountRef() != accountRef ||
+		observation.ProviderID() != claudeauth.ProviderID {
 		// 凭据读取失败属该账号自身问题，换号可能成功；耗尽时按账号不可用回复。
 		return attemptOutcome{
 			route:        route,
@@ -87,6 +97,7 @@ func (handler *Handler) attemptRelay(
 			},
 		}, true
 	}
+	credential := binding.Credential()
 	// 透传只允许打官方 Messages 端点（officialMessagesEndpoint 是安全属性），
 	// 因此只有「官方端点上的订阅 OAuth」才适用。指向第三方中转的凭据即使也是
 	// OAuth 形态，也必须交回 Canonical——那里才尊重账号自带的 Base URL。
@@ -134,6 +145,7 @@ func (handler *Handler) attemptRelay(
 		retry := err != nil && handler.recordTransportFailure(
 			request.Context(),
 			route,
+			observation,
 			err,
 		)
 		return attemptOutcome{
@@ -148,18 +160,24 @@ func (handler *Handler) attemptRelay(
 	}
 	if upstreamResponse.StatusCode >= http.StatusOK &&
 		upstreamResponse.StatusCode < http.StatusMultipleChoices {
-		return attemptOutcome{response: upstreamResponse, route: route}, false
+		return attemptOutcome{
+			response:    upstreamResponse,
+			route:       route,
+			observation: observation,
+		}, false
 	}
 
 	retry := handler.recordHTTPFailure(
 		request.Context(),
 		route,
+		observation,
 		upstreamResponse,
 	)
 	// 失败响应一律保留：无论是否继续换号，耗尽时都要把它原样交付。
 	return attemptOutcome{
 		response:     upstreamResponse,
 		route:        route,
+		observation:  observation,
 		retryAccount: retry,
 	}, retry
 }

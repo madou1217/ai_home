@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/madou1217/ai_home/application/accountcredentials"
 	"github.com/madou1217/ai_home/application/accountrouting"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/claudegateway"
@@ -248,6 +249,31 @@ func (resolver selectorCredentials) ResolveCredentialBinding(
 		return accountapp.CredentialBinding{}, accountapp.ErrCredentialNotFound
 	}
 	return binding, nil
+}
+
+func (resolver selectorCredentials) ResolveObservedCredentialBinding(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+) (
+	accountapp.CredentialBinding,
+	accountcredentials.CredentialObservation,
+	error,
+) {
+	binding, err := resolver.ResolveCredentialBinding(ctx, accountRef)
+	if err != nil {
+		return accountapp.CredentialBinding{}, accountcredentials.CredentialObservation{}, err
+	}
+	snapshot, err := accountapp.NewCredentialSnapshot(
+		binding.AccountRef(),
+		binding.ProviderID(),
+		binding.Credential(),
+		time.Date(2026, 8, 15, 7, 0, 0, 0, time.UTC),
+	)
+	if err != nil {
+		return accountapp.CredentialBinding{}, accountcredentials.CredentialObservation{}, err
+	}
+	observation, err := accountcredentials.NewCredentialObservation(snapshot)
+	return binding, observation, err
 }
 
 type selectorTransportPolicy struct{}

@@ -674,7 +674,11 @@ func TestRuntimeSuccessDoesNotClearHardBlock(t *testing.T) {
 	); err != nil {
 		t.Fatalf("RecordFailure(cooldown) error = %v", err)
 	}
-	if err := runtime.RecordSuccess(context.Background(), route); err != nil {
+	if err := runtime.RecordSuccess(
+		context.Background(),
+		route,
+		newRuntimeSuccess(t, runtimeTestTime()),
+	); err != nil {
 		t.Fatalf("RecordSuccess() error = %v", err)
 	}
 	assertEligibilityStatus(
@@ -804,6 +808,7 @@ func TestRuntimeSupportsConcurrentRecordCheckAndClear(t *testing.T) {
 				if err := runtime.RecordSuccess(
 					context.Background(),
 					route,
+					newRuntimeSuccess(t, runtimeTestTime()),
 				); err != nil {
 					errs <- err
 					return
@@ -828,6 +833,7 @@ func TestRuntimeSupportsConcurrentRecordCheckAndClear(t *testing.T) {
 		if err := runtime.RecordSuccess(
 			context.Background(),
 			route,
+			newRuntimeSuccess(t, runtimeTestTime()),
 		); err != nil {
 			t.Fatalf("RecordSuccess(final) error = %v", err)
 		}
@@ -954,6 +960,20 @@ func newTestFailure(
 		t.Fatalf("NewAttemptFailure() error = %v", err)
 	}
 	return failure
+}
+
+// newRuntimeSuccess 创建确定性的低敏成功事件。
+func newRuntimeSuccess(
+	t *testing.T,
+	happenedAt time.Time,
+) inferencegateway.AttemptSuccess {
+	t.Helper()
+
+	success, err := inferencegateway.NewAttemptSuccess(happenedAt)
+	if err != nil {
+		t.Fatalf("NewAttemptSuccess() error = %v", err)
+	}
+	return success
 }
 
 // assertEligibilityStatus 验证目标元组的稳定资格状态。

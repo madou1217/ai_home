@@ -32,6 +32,24 @@ type usageComposition struct {
 	coordinator *usageapp.Coordinator
 }
 
+// usageCredentialSnapshots 先完成必要 OAuth 刷新，再读取与 SQLite CAS 对齐的
+// 当前凭据快照；额度应用层无需依赖具体凭据解析器或数据库实现。
+type usageCredentialSnapshots struct {
+	resolver *accountcredentials.Resolver
+	store    *sqliteaccount.Store
+}
+
+// ResolveCredentialSnapshot 返回刷新完成后当前数据库中的凭据代次。
+func (snapshots usageCredentialSnapshots) ResolveCredentialSnapshot(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+) (accountapp.CredentialSnapshot, error) {
+	if _, err := snapshots.resolver.ResolveCredential(ctx, accountRef); err != nil {
+		return accountapp.CredentialSnapshot{}, err
+	}
+	return snapshots.store.GetCredentialSnapshot(ctx, accountRef)
+}
+
 // usageCompositionDependencies 集中声明额度子系统的窄端口。
 type usageCompositionDependencies struct {
 	catalog     *providers.Catalog
@@ -73,11 +91,14 @@ func newUsageComposition(
 		return nil, err
 	}
 	service, err := usageapp.NewService(usageapp.Dependencies{
-		Catalog:     dependencies.catalog,
-		Store:       dependencies.store,
-		Credentials: dependencies.credentials,
-		Models:      dependencies.models,
-		Runtime:     dependencies.runtime,
+		Catalog: dependencies.catalog,
+		Store:   dependencies.store,
+		Credentials: usageCredentialSnapshots{
+			resolver: dependencies.credentials,
+			store:    dependencies.store,
+		},
+		Models:  dependencies.models,
+		Runtime: dependencies.runtime,
 		Strategies: []usageapp.ProviderStrategy{
 			codexStrategy,
 			claudeStrategy,
@@ -147,6 +168,22 @@ func (composition *usageComposition) ForgetAccount(
 	if composition.coordinator != nil {
 		composition.coordinator.ForgetAccount(accountRef)
 	}
+}
+
+// ScheduleUsageRefresh 把生命周期信号转交给周期协调器。
+func (composition *usageComposition) ScheduleUsageRefresh(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+	providerID string,
+) error {
+	if composition == nil || composition.coordinator == nil {
+		return usageapp.ErrInvalidSchedule
+	}
+	return composition.coordinator.ScheduleUsageRefresh(
+		ctx,
+		accountRef,
+		providerID,
+	)
 }
 
 // seedUsageRefreshes 使用稳定 keyset 分页为已有凭据账号安排错峰刷新。

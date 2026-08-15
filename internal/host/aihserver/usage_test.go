@@ -211,12 +211,12 @@ func TestSeedUsageRefreshesRestoresPersistedBlockAfterRestart(t *testing.T) {
 // startupCredentialResolver 只满足恢复服务依赖；恢复路径不会读取凭据。
 type startupCredentialResolver struct{}
 
-// ResolveCredential 不应在同步恢复路径被调用。
-func (startupCredentialResolver) ResolveCredential(
+// ResolveCredentialSnapshot 不应在同步恢复路径被调用。
+func (startupCredentialResolver) ResolveCredentialSnapshot(
 	context.Context,
 	accountcore.AccountRef,
-) (accountapp.Credential, error) {
-	return nil, usageapp.ErrUsageUnsupported
+) (accountapp.CredentialSnapshot, error) {
+	return accountapp.CredentialSnapshot{}, usageapp.ErrUsageUnsupported
 }
 
 // startupUsageStrategy 只提供持久快照所属 Provider 和模型族合同。

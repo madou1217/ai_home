@@ -53,6 +53,7 @@ func TestExporterEncodesCodexAndClaudeAccounts(t *testing.T) {
 						"access_token":"synthetic-codex-export-access",
 						"refresh_token":"synthetic-codex-export-refresh",
 						"id_token":"` + codexOAuth.IDToken() + `",
+						"last_refresh":"2026-07-31T08:08:10Z",
 						"chatgpt_account_id":"codex-export-workspace",
 						"plan_type":"team",
 						"email":"codex-export@example.invalid"

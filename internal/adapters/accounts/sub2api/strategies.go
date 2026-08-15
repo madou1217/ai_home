@@ -2,6 +2,7 @@ package sub2api
 
 import (
 	"strings"
+	"time"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/core/accounts/claude"
@@ -33,6 +34,7 @@ func (codexStrategy) encode(
 				AccessToken:      auth.AccessToken(),
 				RefreshToken:     auth.RefreshToken(),
 				IDToken:          auth.IDToken(),
+				LastRefresh:      formatOptionalTimestamp(auth.RefreshedAtMS()),
 				ChatGPTAccountID: auth.UpstreamAccountID(),
 				PlanType:         auth.PlanType(),
 				Email:            auth.Email(),
@@ -51,6 +53,14 @@ func (codexStrategy) encode(
 	default:
 		return accountDocument{}, accountapp.ErrUnsupportedAccountExport
 	}
+}
+
+// formatOptionalTimestamp 保留 Provider 提供的凭据时间；未知值不伪造。
+func formatOptionalTimestamp(unixMillis int64) string {
+	if unixMillis <= 0 {
+		return ""
+	}
+	return time.UnixMilli(unixMillis).UTC().Format(time.RFC3339Nano)
 }
 
 // claudeStrategy 编码 Claude OAuth 与 API Key。

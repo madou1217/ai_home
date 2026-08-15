@@ -130,8 +130,9 @@ func TestReauthenticatorRejectsDifferentAccount(t *testing.T) {
 	}
 }
 
-// TestReauthenticatorRejectsMissingProfile 验证重新认证必须携带可信公开身份资料。
-func TestReauthenticatorRejectsMissingProfile(t *testing.T) {
+// TestReauthenticatorAllowsMissingOptionalProfile 验证可刷新凭据能够在公开资料
+// 缺失时原地更新，且命令不会伪造或清空资料。
+func TestReauthenticatorAllowsMissingOptionalProfile(t *testing.T) {
 	t.Parallel()
 
 	credential, _ := newClaudeReauthValues(
@@ -143,7 +144,19 @@ func TestReauthenticatorRejectsMissingProfile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DeriveAccountRef() error = %v", err)
 	}
-	store := &reauthenticationStoreStub{}
+	alias, err := accountcore.NewCLIAccountID(10)
+	if err != nil {
+		t.Fatalf("NewCLIAccountID() error = %v", err)
+	}
+	account, err := accountcore.NewAccount(testCatalog(t), accountcore.NewAccountInput{
+		Identity:     credential,
+		CLIAccountID: alias,
+		CreatedAt:    time.Now().Add(-time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("NewAccount() error = %v", err)
+	}
+	store := &reauthenticationStoreStub{account: account}
 	catalog := testCatalog(t)
 	reauthenticator, err := accountapp.NewReauthenticator(
 		catalog,
@@ -154,17 +167,158 @@ func TestReauthenticatorRejectsMissingProfile(t *testing.T) {
 		t.Fatalf("NewReauthenticator() error = %v", err)
 	}
 
-	_, err = reauthenticator.Reauthenticate(
+	result, err := reauthenticator.Reauthenticate(
 		context.Background(),
 		accountRef,
 		credential,
 		nil,
 	)
-	if !errors.Is(err, accountapp.ErrInvalidReauthentication) {
-		t.Fatalf("Reauthenticate() error = %v, want ErrInvalidReauthentication", err)
+	if err != nil {
+		t.Fatalf("Reauthenticate() error = %v", err)
 	}
-	if store.calls != 0 {
-		t.Fatalf("缺少 Profile 仍访问持久化端口: store=%d", store.calls)
+	if result.Ref() != accountRef || store.calls != 1 ||
+		store.reauthentication.HasProfile() {
+		t.Fatalf("result=%#v store=%#v", result, store)
+	}
+}
+
+// TestReauthenticatorAdvancesPastPersistedAccountVersion 验证并发重登在业务
+// 时钟落后或同毫秒时仍生成严格递增的 CAS 版本。
+func TestReauthenticatorAdvancesPastPersistedAccountVersion(t *testing.T) {
+	t.Parallel()
+
+	credential, _ := newClaudeReauthValues(
+		t,
+		"123e4567-e89b-12d3-a456-426614174105",
+		"monotonic-version",
+	)
+	accountRef, err := accountcore.DeriveAccountRef(credential)
+	if err != nil {
+		t.Fatalf("DeriveAccountRef() error = %v", err)
+	}
+	alias, err := accountcore.NewCLIAccountID(11)
+	if err != nil {
+		t.Fatalf("NewCLIAccountID() error = %v", err)
+	}
+	persistedAt := time.Date(2026, time.August, 15, 6, 0, 0, 0, time.UTC)
+	account, err := accountcore.NewAccount(testCatalog(t), accountcore.NewAccountInput{
+		Identity:     credential,
+		CLIAccountID: alias,
+		CreatedAt:    persistedAt,
+	})
+	if err != nil {
+		t.Fatalf("NewAccount() error = %v", err)
+	}
+	store := &reauthenticationStoreStub{account: account, target: account}
+	reauthenticator, err := accountapp.NewReauthenticator(
+		testCatalog(t),
+		store,
+		func() time.Time { return persistedAt },
+	)
+	if err != nil {
+		t.Fatalf("NewReauthenticator() error = %v", err)
+	}
+
+	if _, err := reauthenticator.Reauthenticate(
+		context.Background(),
+		accountRef,
+		credential,
+		nil,
+	); err != nil {
+		t.Fatalf("Reauthenticate() error = %v", err)
+	}
+	if !store.reauthentication.UpdatedAt().Equal(persistedAt.Add(time.Millisecond)) ||
+		store.targetCalls != 1 {
+		t.Fatalf(
+			"UpdatedAt=%s target_calls=%d",
+			store.reauthentication.UpdatedAt(),
+			store.targetCalls,
+		)
+	}
+}
+
+// TestReauthenticationOrdersOnlyProviderCredentialGeneration 验证凭据替换
+// 只使用 Provider 凭据自身携带的非敏感时间事实。
+func TestReauthenticationOrdersOnlyProviderCredentialGeneration(t *testing.T) {
+	t.Parallel()
+
+	const accountUUID = "123e4567-e89b-12d3-a456-426614174106"
+	current := newClaudeGenerationCredential(
+		t,
+		accountUUID,
+		"current",
+		1_800_000_060_000,
+	)
+	tests := []struct {
+		name     string
+		incoming accountapp.Credential
+		current  accountapp.Credential
+		want     bool
+		wantErr  error
+	}{
+		{
+			name: "newer claude expiry",
+			incoming: newClaudeGenerationCredential(
+				t,
+				accountUUID,
+				"newer",
+				1_800_000_120_000,
+			),
+			current: current,
+			want:    true,
+		},
+		{
+			name: "older claude expiry",
+			incoming: newClaudeGenerationCredential(
+				t,
+				accountUUID,
+				"older",
+				1_800_000_000_000,
+			),
+			current: current,
+		},
+		{
+			name:     "same claude expiry",
+			incoming: current,
+			current:  current,
+		},
+		{
+			name:     "missing provider generation",
+			incoming: unorderedReauthenticationCredential{label: "incoming"},
+			current:  unorderedReauthenticationCredential{label: "current"},
+			wantErr:  accountapp.ErrReauthenticationGenerationUnordered,
+		},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			accountRef, err := accountcore.DeriveAccountRef(test.incoming)
+			if err != nil {
+				t.Fatalf("DeriveAccountRef() error = %v", err)
+			}
+			command, err := accountapp.NewReauthentication(
+				testCatalog(t),
+				accountRef,
+				test.incoming,
+				nil,
+				time.Date(2026, time.August, 15, 7, 0, 0, 0, time.UTC),
+			)
+			if err != nil {
+				t.Fatalf("NewReauthentication() error = %v", err)
+			}
+			replace, err := command.ShouldReplaceCredential(test.current)
+			if !errors.Is(err, test.wantErr) || replace != test.want {
+				t.Fatalf(
+					"ShouldReplaceCredential() = (%t, %v), want (%t, %v)",
+					replace,
+					err,
+					test.want,
+					test.wantErr,
+				)
+			}
+		})
 	}
 }
 
@@ -273,6 +427,9 @@ func (store *reauthenticationStoreStub) GetReauthenticationTarget(
 	_ accountcore.AccountRef,
 ) (accountcore.Account, error) {
 	store.targetCalls++
+	if !store.target.IsValid() {
+		return store.account, store.targetErr
+	}
 	return store.target, store.targetErr
 }
 
@@ -328,4 +485,42 @@ func newClaudeReauthValues(
 		t.Fatalf("NewAccountProfile() error = %v", err)
 	}
 	return credential, profile
+}
+
+func newClaudeGenerationCredential(
+	t *testing.T,
+	accountUUID string,
+	label string,
+	expiresAtMS int64,
+) *claude.OAuthAuth {
+	t.Helper()
+
+	credential, err := claude.NewOAuthAuth(claude.OAuthInput{
+		AccessToken:  "generation-" + label + "-access",
+		RefreshToken: "generation-" + label + "-refresh",
+		ExpiresAtMS:  expiresAtMS,
+		Scopes:       []string{claude.InferenceScope},
+		Identity: claude.OAuthIdentity{
+			AccountUUID: accountUUID,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewOAuthAuth() error = %v", err)
+	}
+	return credential
+}
+
+type unorderedReauthenticationCredential struct {
+	label string
+}
+
+func (unorderedReauthenticationCredential) ProviderID() string { return "claude" }
+func (unorderedReauthenticationCredential) IdentitySeed() string {
+	return "claude:oauth:unordered-reauthentication-generation"
+}
+func (credential unorderedReauthenticationCredential) String() string {
+	return "unorderedReauthenticationCredential<" + credential.label + ">"
+}
+func (credential unorderedReauthenticationCredential) GoString() string {
+	return credential.String()
 }

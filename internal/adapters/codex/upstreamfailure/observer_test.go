@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"testing/iotest"
@@ -105,6 +106,158 @@ func TestObserveCodexHTTPMapsKnownEnvelopes(t *testing.T) {
 					classification.Kind(),
 					test.want,
 				)
+			}
+		})
+	}
+}
+
+// TestObserveCodexHTTPMapsMessageOnlyModelMissingErrors 固化 Node 真实 relay
+// 回归中确认的四类 400/404 文案。它们没有稳定业务 code，但都明确表示
+// 当前 (账号, 模型) 不可用，不能退化成普通参数错误。
+func TestObserveCodexHTTPMapsMessageOnlyModelMissingErrors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		statusCode int
+		body       string
+	}{
+		{
+			name:       "litellm invalid model name",
+			statusCode: http.StatusBadRequest,
+			body:       `{"error":{"message":"/responses: Invalid model name passed in model=gpt-5.6-luna. Call \u0060/v1/models\u0060 to view available models for your key.","type":"None","code":"400"}}`,
+		},
+		{
+			name:       "new-api configured account",
+			statusCode: http.StatusNotFound,
+			body:       `{"error":{"message":"Model \"gpt-5.6-luna\" is not supported by any configured account in this group","type":"model_not_found"}}`,
+		},
+		{
+			name:       "ChatGPT account entitlement",
+			statusCode: http.StatusBadRequest,
+			body:       `{"error":{"message":"The 'gpt-5.3-codex' model is not supported when using Codex with a ChatGPT account."}}`,
+		},
+		{
+			name:       "OpenAI classic missing model",
+			statusCode: http.StatusNotFound,
+			body:       `{"error":{"message":"The model \u0060gpt-9\u0060 does not exist or you do not have access to it."}}`,
+		},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			classification, err := ObserveHTTP(
+				newCodexHTTPResponse(test.statusCode, nil, test.body),
+				time.Date(2026, 8, 15, 8, 0, 0, 0, time.UTC),
+			)
+			if err != nil {
+				t.Fatalf("ObserveHTTP() error = %v", err)
+			}
+			directive := classification.BlockDirective()
+			if classification.Kind() != runtimecore.FailureModelUnsupported ||
+				directive.Scope() != runtimecore.BlockScopeAccountModel ||
+				directive.RecoveryTrigger() != runtimecore.RecoveryModelCatalog {
+				t.Fatalf("ObserveHTTP() = %#v", classification)
+			}
+		})
+	}
+}
+
+// TestObserveCodexHTTPKeepsOrdinaryBadRequest 验证普通缺参 400 不会因为正文
+// 提到了请求字段而触发换号或模型目录刷新语义。
+func TestObserveCodexHTTPKeepsOrdinaryBadRequest(t *testing.T) {
+	t.Parallel()
+
+	classification, err := ObserveHTTP(
+		newCodexHTTPResponse(
+			http.StatusBadRequest,
+			nil,
+			`{"error":{"message":"Missing required parameter: 'input'.","type":"invalid_request_error"}}`,
+		),
+		time.Date(2026, 8, 15, 8, 0, 0, 0, time.UTC),
+	)
+	if err != nil {
+		t.Fatalf("ObserveHTTP() error = %v", err)
+	}
+	if classification.Kind() != runtimecore.FailureInvalidRequest ||
+		!classification.BlockDirective().IsZero() {
+		t.Fatalf("ObserveHTTP() = %#v", classification)
+	}
+}
+
+// TestObserveCodexHTTPKeepsStableBusinessCode 验证已确认业务 code 的优先级
+// 高于 message，即使异常上游拼接了相同文案也不能覆盖凭据失败。
+func TestObserveCodexHTTPKeepsStableBusinessCode(t *testing.T) {
+	t.Parallel()
+
+	classification, err := ObserveHTTP(
+		newCodexHTTPResponse(
+			http.StatusBadRequest,
+			nil,
+			`{"error":{"code":"invalid_api_key","message":"The model \u0060gpt-9\u0060 does not exist or you do not have access to it."}}`,
+		),
+		time.Date(2026, 8, 15, 8, 0, 0, 0, time.UTC),
+	)
+	if err != nil {
+		t.Fatalf("ObserveHTTP() error = %v", err)
+	}
+	if classification.Kind() != runtimecore.FailureCredentialRejected ||
+		classification.BlockDirective().Scope() != runtimecore.BlockScopeAccount {
+		t.Fatalf("ObserveHTTP() = %#v", classification)
+	}
+}
+
+// TestObserveCodexHTTPDoesNotGuessNearMissModelMessages 验证签名必须完整匹配
+// 已确认文案；仅包含 model/not supported 等散词不能改变 4xx 语义。
+func TestObserveCodexHTTPDoesNotGuessNearMissModelMessages(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		statusCode int
+		message    string
+		want       runtimecore.FailureKind
+	}{
+		{
+			name:       "invalid model name without relay contract suffix",
+			statusCode: http.StatusBadRequest,
+			message:    "Invalid model name format in request input.",
+			want:       runtimecore.FailureInvalidRequest,
+		},
+		{
+			name:       "configured account wording without model identity",
+			statusCode: http.StatusNotFound,
+			message:    "Model is not supported by any configured account in this group",
+			want:       runtimecore.FailureNotFound,
+		},
+		{
+			name:       "known text on unsupported status",
+			statusCode: http.StatusUnprocessableEntity,
+			message:    "The model `gpt-9` does not exist or you do not have access to it.",
+			want:       runtimecore.FailureInvalidRequest,
+		},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			classification, err := ObserveHTTP(
+				newCodexHTTPResponse(
+					test.statusCode,
+					nil,
+					`{"error":{"message":`+strconv.Quote(test.message)+`}}`,
+				),
+				time.Date(2026, 8, 15, 8, 0, 0, 0, time.UTC),
+			)
+			if err != nil {
+				t.Fatalf("ObserveHTTP() error = %v", err)
+			}
+			if classification.Kind() != test.want ||
+				!classification.BlockDirective().IsZero() {
+				t.Fatalf("ObserveHTTP() = %#v", classification)
 			}
 		})
 	}

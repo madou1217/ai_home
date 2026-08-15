@@ -475,9 +475,11 @@ func importRealCodexWebSocketAccount(t *testing.T, baseURL string, authJSON []by
 // discoverRealCodexWebSocketModel 只从本地已物化目录选实际存在的 gpt 模型。
 func discoverRealCodexWebSocketModel(t *testing.T, baseURL string) string {
 	t.Helper()
-	response := performRequest(t, &http.Client{Timeout: 15 * time.Second}, http.MethodGet,
-		baseURL+modelsapi.Path, testClientKey, nil)
-	assertRealStatus(t, response, http.StatusOK)
+	response := waitForRealModelCatalog(
+		t,
+		&http.Client{Timeout: 15 * time.Second},
+		baseURL+modelsapi.Path,
+	)
 	var document struct {
 		Data []struct {
 			ID string `json:"id"`

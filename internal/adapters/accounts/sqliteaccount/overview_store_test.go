@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	usagecore "github.com/madou1217/ai_home/core/accountusage"
 )
 
 func TestStoreListsAccountOverviewsWithoutSecretDocuments(t *testing.T) {
@@ -65,6 +68,94 @@ func TestStoreListsAccountOverviewsWithoutSecretDocuments(t *testing.T) {
 	if strings.Contains(accountOverviewSQL, "credential_json") ||
 		strings.Contains(accountOverviewSQL, "profile_json") {
 		t.Fatal("账号管理 SQL 不得读取凭据或公开资料 JSON")
+	}
+}
+
+func TestStoreListsPersistedModelAndUsageEvidenceWithoutNPlusOneReads(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := openTestStore(t)
+	unknown := newCodexAPIKeyAccount(t, store, 1, "sk-test-overview-unknown")
+	known := newCodexAPIKeyAccount(t, store, 2, "sk-test-overview-known")
+	for _, account := range []accountcore.Account{unknown, known} {
+		if err := store.Create(ctx, account); err != nil {
+			t.Fatalf("Create(%s) error = %v", account.Ref(), err)
+		}
+	}
+	modelUpdatedAt := testAccountTime().Add(time.Minute)
+	models := []runtimecore.ModelID{
+		runtimecore.ModelID("gpt-5.4"),
+		runtimecore.ModelID("gpt-5.6-sol"),
+	}
+	if _, err := store.ReplaceDiscoveredModels(
+		ctx,
+		known.Ref(),
+		models,
+		modelUpdatedAt,
+	); err != nil {
+		t.Fatalf("ReplaceDiscoveredModels() error = %v", err)
+	}
+	if _, err := store.SetManualModelPolicy(
+		ctx,
+		known.Ref(),
+		models[0],
+		accountapp.ModelPolicyForceDisable,
+		modelUpdatedAt.Add(time.Minute),
+	); err != nil {
+		t.Fatalf("SetManualModelPolicy() error = %v", err)
+	}
+	usageSnapshot := newUsageStoreSnapshot(
+		t,
+		known.Ref(),
+		testAccountTime().Add(2*time.Minute),
+		[]usagecore.EntryInput{{
+			Bucket:               "primary",
+			Kind:                 usagecore.KindWindow,
+			Scope:                usagecore.ScopeAccount,
+			HasRemaining:         true,
+			RemainingBasisPoints: 6_500,
+			WindowSeconds:        18_000,
+			ResetAt:              testAccountTime().Add(5 * time.Hour),
+			Availability:         usagecore.AvailabilityAvailable,
+		}},
+	)
+	if err := store.ReplaceUsageSnapshot(ctx, usageSnapshot); err != nil {
+		t.Fatalf("ReplaceUsageSnapshot() error = %v", err)
+	}
+	query, err := accountapp.NewOverviewQuery("", 10)
+	if err != nil {
+		t.Fatalf("NewOverviewQuery() error = %v", err)
+	}
+	overviews, err := store.ListAccountOverviews(ctx, query)
+	if err != nil {
+		t.Fatalf("ListAccountOverviews() error = %v", err)
+	}
+	byRef := make(map[accountcore.AccountRef]accountapp.AccountOverview, len(overviews))
+	for _, overview := range overviews {
+		byRef[overview.Account().Ref()] = overview
+	}
+	unknownOverview := byRef[unknown.Ref()]
+	if unknownOverview.ModelSummary().IsKnown() {
+		t.Fatalf("无模型行账号被伪造成已知快照: %#v", unknownOverview.ModelSummary())
+	}
+	if _, found := unknownOverview.UsageSnapshot(); found {
+		t.Fatal("无额度行账号被伪造成空快照")
+	}
+	knownOverview := byRef[known.Ref()]
+	modelSummary := knownOverview.ModelSummary()
+	if !modelSummary.IsKnown() ||
+		modelSummary.StoredCount() != 2 ||
+		modelSummary.EffectiveCount() != 1 ||
+		!modelSummary.UpdatedAt().Equal(modelUpdatedAt.Add(time.Minute)) {
+		t.Fatalf("model summary = %#v", modelSummary)
+	}
+	storedUsage, found := knownOverview.UsageSnapshot()
+	if !found || !storedUsage.IsValid() ||
+		storedUsage.Source() != usageSnapshot.Source() ||
+		len(storedUsage.Entries()) != 1 ||
+		storedUsage.Entries()[0].Bucket() != "primary" {
+		t.Fatalf("usage snapshot = %#v found=%v", storedUsage, found)
 	}
 }
 
@@ -290,6 +381,8 @@ func TestStoreAccountOverviewQueryUsesPrimaryKeys(t *testing.T) {
 				accountLookup,
 				"SEARCH c USING PRIMARY KEY",
 				"SEARCH p USING PRIMARY KEY",
+				"SEARCH m USING PRIMARY KEY",
+				"SEARCH u USING PRIMARY KEY",
 			} {
 				if !strings.Contains(queryPlan, expected) {
 					t.Fatalf("overview query plan = %q, want %q", queryPlan, expected)

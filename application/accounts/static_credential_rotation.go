@@ -147,7 +147,7 @@ type StaticCredentialRotationStore interface {
 	) (accountcore.Account, error)
 }
 
-// StaticCredentialRotator 编排校验、模型发现、原子写入和提交后运行态清理。
+// StaticCredentialRotator 编排校验、原子写入和提交后运行态清理。
 type StaticCredentialRotator struct {
 	catalog  *providers.Catalog
 	store    StaticCredentialRotationStore
@@ -178,7 +178,7 @@ func NewStaticCredentialRotator(
 	}, nil
 }
 
-// Rotate 在同一个 AccountRef 下轮换静态凭据并重建自动发现模型。
+// Rotate 在同一个 AccountRef 下轮换静态凭据，并保留最后成功的模型快照。
 func (rotator *StaticCredentialRotator) Rotate(
 	ctx context.Context,
 	accountRef accountcore.AccountRef,

@@ -651,7 +651,12 @@ func newLiveManagementHandler(
 	if err != nil {
 		t.Fatalf("accounts.NewStaticCredentialRotator() error = %v", err)
 	}
-	deleter, err := accountapp.NewDeleter(store, usage)
+	deleter, err := accountapp.NewDeleter(
+		store,
+		liveDeletionGuard{},
+		liveDeletionPreparation{},
+		usage,
+	)
 	if err != nil {
 		t.Fatalf("accounts.NewDeleter() error = %v", err)
 	}
@@ -702,7 +707,15 @@ func newLiveManagementHandler(
 	if err != nil {
 		t.Fatalf("accountauthapi.NewHandler() error = %v", err)
 	}
-	credentialFactory := accountsapi.NewBuiltinAPIKeyCredentialFactory()
+	importer, err := accountapp.NewAccountImporter(
+		registrar,
+		store,
+		reauthenticator,
+	)
+	if err != nil {
+		t.Fatalf("accounts.NewAccountImporter() error = %v", err)
+	}
+	credentialFactory := accountsapi.NewBuiltinStaticCredentialFactory()
 	accountsHandler, err := accountsapi.NewHandler(accountsapi.Dependencies{
 		Management:          management,
 		Models:              modelManagement,
@@ -714,7 +727,7 @@ func newLiveManagementHandler(
 		Sub2APIExporter:     exporter,
 		CLIProxyAPIExporter: cliProxyAPIExporter,
 		Registrar:           registrar,
-		APIKeys:             credentialFactory,
+		Importer:            importer,
 		StaticCredentials:   credentialFactory,
 		NativeAccounts:      decoder,
 		Sub2APIAccounts:     sub2api.NewDecoder(),
@@ -1078,6 +1091,28 @@ func logLiveExchange(t *testing.T, exchange liveExchange) {
 		exchange.status,
 		exchange.responseBody,
 	)
+}
+
+// liveDeletionGuard 的 smoke 临时目录不会创建 Node 持久会话登记。
+type liveDeletionGuard struct{}
+
+// liveDeletionPreparation 的 OAuth smoke 只写临时 aih.db，不创建 Node projection。
+type liveDeletionPreparation struct{}
+
+// AssertAccountDeletable 允许 smoke 清理自身创建的临时账号。
+func (liveDeletionGuard) AssertAccountDeletable(
+	context.Context,
+	accountcore.AccountRef,
+) error {
+	return nil
+}
+
+// PrepareAccountDeletion 允许 smoke 删除临时注册的账号。
+func (liveDeletionPreparation) PrepareAccountDeletion(
+	context.Context,
+	accountcore.Account,
+) error {
+	return nil
 }
 
 // decodeLiveJSON 解码 smoke 响应。

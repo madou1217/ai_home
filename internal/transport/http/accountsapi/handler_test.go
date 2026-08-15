@@ -64,6 +64,7 @@ func TestHandlerListsAccountsWithStableCursor(t *testing.T) {
 			service.listQuery.Limit(),
 		)
 	}
+	responseBody := response.Body.String()
 	var document struct {
 		Data []struct {
 			AccountRef    string `json:"account_ref"`
@@ -94,7 +95,100 @@ func TestHandlerListsAccountsWithStableCursor(t *testing.T) {
 		document.Page.NextAfterRef != first.Account().Ref().String() {
 		t.Fatalf("账号分页响应错误: %#v", document.Page)
 	}
+	if !strings.Contains(responseBody, `"model_summary":null`) ||
+		!strings.Contains(responseBody, `"usage_snapshot":null`) {
+		t.Fatalf("无派生快照必须显式返回 null: %s", responseBody)
+	}
 	assertSafeResponseHeaders(t, response)
+}
+
+func TestHandlerListsPersistedModelAndUsageEvidence(t *testing.T) {
+	t.Parallel()
+
+	service := newAccountServiceStub(t)
+	base := newTestOverview(t, service.catalog, 1, "http-list-derived")
+	modelSummary, err := accountapp.NewAccountModelSummary(accountapp.AccountModelSummaryInput{
+		Known:          true,
+		StoredCount:    3,
+		EffectiveCount: 2,
+		UpdatedAt:      testHTTPTime().Add(time.Minute),
+	})
+	if err != nil {
+		t.Fatalf("NewAccountModelSummary() error = %v", err)
+	}
+	usageSnapshot, err := usagecore.NewSnapshot(usagecore.SnapshotInput{
+		AccountRef: base.Account().Ref(),
+		ProviderID: base.Account().ProviderID(),
+		Source:     "codex_wham_usage",
+		CapturedAt: testHTTPTime().Add(2 * time.Minute),
+		Entries: []usagecore.EntryInput{{
+			Bucket:               "primary",
+			Kind:                 usagecore.KindWindow,
+			Scope:                usagecore.ScopeAccount,
+			HasRemaining:         true,
+			RemainingBasisPoints: 7_500,
+			WindowSeconds:        18_000,
+			ResetAt:              testHTTPTime().Add(5 * time.Hour),
+			Availability:         usagecore.AvailabilityAvailable,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("NewSnapshot() error = %v", err)
+	}
+	overview, err := accountapp.NewAccountOverview(accountapp.AccountOverviewInput{
+		Account:          base.Account(),
+		HasCredential:    base.HasCredential(),
+		AuthKind:         base.AuthKind(),
+		ModelSummary:     modelSummary,
+		HasUsageSnapshot: true,
+		UsageSnapshot:    usageSnapshot,
+	})
+	if err != nil {
+		t.Fatalf("NewAccountOverview() error = %v", err)
+	}
+	service.listResult = []accountapp.AccountOverview{overview}
+
+	response := performAuthorizedRequest(
+		t,
+		newTestHandler(t, service),
+		http.MethodGet,
+		accountsapi.CollectionPath+"?limit=1",
+		nil,
+	)
+	if response.Code != http.StatusOK {
+		t.Fatalf("GET accounts status=%d body=%s", response.Code, response.Body)
+	}
+	var document struct {
+		Data []struct {
+			ModelSummary *struct {
+				StoredCount    int    `json:"stored_count"`
+				EffectiveCount int    `json:"effective_count"`
+				UpdatedAt      string `json:"updated_at"`
+			} `json:"model_summary"`
+			UsageSnapshot *struct {
+				Source     string `json:"source"`
+				CapturedAt string `json:"captured_at"`
+				Entries    []struct {
+					Bucket               string  `json:"bucket"`
+					RemainingBasisPoints *uint16 `json:"remaining_basis_points"`
+				} `json:"entries"`
+			} `json:"usage_snapshot"`
+		} `json:"data"`
+	}
+	decodeResponseJSON(t, response, &document)
+	if len(document.Data) != 1 || document.Data[0].ModelSummary == nil ||
+		document.Data[0].ModelSummary.StoredCount != 3 ||
+		document.Data[0].ModelSummary.EffectiveCount != 2 ||
+		document.Data[0].ModelSummary.UpdatedAt != "2026-07-27T18:01:00Z" ||
+		document.Data[0].UsageSnapshot == nil ||
+		document.Data[0].UsageSnapshot.Source != "codex_wham_usage" ||
+		document.Data[0].UsageSnapshot.CapturedAt != "2026-07-27T18:02:00Z" ||
+		len(document.Data[0].UsageSnapshot.Entries) != 1 ||
+		document.Data[0].UsageSnapshot.Entries[0].Bucket != "primary" ||
+		document.Data[0].UsageSnapshot.Entries[0].RemainingBasisPoints == nil ||
+		*document.Data[0].UsageSnapshot.Entries[0].RemainingBasisPoints != 7_500 {
+		t.Fatalf("derived account view = %#v", document.Data)
+	}
 }
 
 // TestHandlerManagesProviderDefaultResource 验证默认账号 PUT、GET 和幂等 DELETE 合同。
@@ -490,7 +584,7 @@ func TestHandlerRotatesStaticCredentialWithoutChangingPublicAccountRef(t *testin
 func TestBuiltinStaticCredentialFactorySupportsOnlyDeclaredProviderKinds(t *testing.T) {
 	t.Parallel()
 
-	factory := accountsapi.NewBuiltinAPIKeyCredentialFactory()
+	factory := accountsapi.NewBuiltinStaticCredentialFactory()
 	credential, err := factory.BuildStatic(
 		claude.ProviderID,
 		"auth_token",
@@ -1082,23 +1176,36 @@ func TestHandlerManagesAccountModels(t *testing.T) {
 	}
 }
 
-// TestHandlerRegistersBuiltinAPIKeysWithoutEchoingSecret 验证 Codex、Claude 共用注册合同且不泄漏密钥。
-func TestHandlerRegistersBuiltinAPIKeysWithoutEchoingSecret(t *testing.T) {
+// TestHandlerRegistersBuiltinStaticCredentialsWithoutEchoingSecret 验证静态凭据共用注册合同且不泄漏。
+func TestHandlerRegistersBuiltinStaticCredentialsWithoutEchoingSecret(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name       string
 		providerID string
+		kind       string
+		secretKey  string
 		baseURL    string
 	}{
 		{
 			name:       "codex",
 			providerID: "codex",
+			kind:       "api_key",
+			secretKey:  "api_key",
 			baseURL:    "https://api.openai.com/v1",
 		},
 		{
-			name:       "claude",
+			name:       "claude api key",
 			providerID: "claude",
+			kind:       "api_key",
+			secretKey:  "api_key",
+			baseURL:    "https://api.anthropic.com",
+		},
+		{
+			name:       "claude auth token",
+			providerID: "claude",
+			kind:       "auth_token",
+			secretKey:  "auth_token",
 			baseURL:    "https://api.anthropic.com",
 		},
 	}
@@ -1109,14 +1216,15 @@ func TestHandlerRegistersBuiltinAPIKeysWithoutEchoingSecret(t *testing.T) {
 
 			service := newAccountServiceStub(t)
 			handler := newTestHandler(t, service)
-			secret := "synthetic-" + test.providerID + "-http-api-key"
+			secret := "synthetic-" + test.providerID + "-" + test.kind
+			auth := map[string]any{
+				"kind":     test.kind,
+				"base_url": test.baseURL,
+			}
+			auth[test.secretKey] = secret
 			payload := marshalRequestJSON(t, map[string]any{
 				"provider_id": test.providerID,
-				"auth": map[string]any{
-					"kind":     "api_key",
-					"api_key":  secret,
-					"base_url": test.baseURL,
-				},
+				"auth":        auth,
 			})
 			response := performAuthorizedRequest(
 				t,
@@ -1139,7 +1247,7 @@ func TestHandlerRegistersBuiltinAPIKeysWithoutEchoingSecret(t *testing.T) {
 				)
 			}
 			if strings.Contains(response.Body.String(), secret) {
-				t.Fatal("账号注册响应泄漏 API Key")
+				t.Fatal("账号注册响应泄漏静态凭据")
 			}
 			var document struct {
 				Data struct {
@@ -1149,8 +1257,83 @@ func TestHandlerRegistersBuiltinAPIKeysWithoutEchoingSecret(t *testing.T) {
 			}
 			decodeResponseJSON(t, response, &document)
 			if document.Data.ProviderID != test.providerID ||
-				document.Data.AuthKind != "api_key" {
+				document.Data.AuthKind != test.kind {
 				t.Fatalf("账号注册响应错误: %#v", document.Data)
+			}
+		})
+	}
+}
+
+// TestHandlerDoesNotTurnCommittedRegistrationIntoReadFailure 验证账号事务提交后
+// 不再追加一次点查，否则瞬时读失败会把已成功创建的账号伪装成 500。
+func TestHandlerDoesNotTurnCommittedRegistrationIntoReadFailure(t *testing.T) {
+	t.Parallel()
+
+	service := newAccountServiceStub(t)
+	service.overviewErr = errors.New("synthetic post-commit read failure")
+	handler := newTestHandler(t, service)
+	response := performAuthorizedRequest(
+		t,
+		handler,
+		http.MethodPost,
+		accountsapi.CollectionPath,
+		[]byte(`{"provider_id":"codex","auth":{`+
+			`"kind":"api_key","api_key":"synthetic-committed-key"}}`),
+	)
+
+	if response.Code != http.StatusCreated || service.registerCalls != 1 {
+		t.Fatalf(
+			"账号创建 status=%d calls=%d body=%s",
+			response.Code,
+			service.registerCalls,
+			response.Body.String(),
+		)
+	}
+}
+
+// TestHandlerRejectsUnsupportedStaticAccountCredentials 验证创建入口复用统一凭据边界且不会进入注册用例。
+func TestHandlerRejectsUnsupportedStaticAccountCredentials(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		body string
+		code string
+	}{
+		{
+			name: "codex auth token",
+			body: `{"provider_id":"codex","auth":{"kind":"auth_token",` +
+				`"auth_token":"unsupported-codex-token"}}`,
+			code: "unsupported_auth_kind",
+		},
+		{
+			name: "claude mixed credential",
+			body: `{"provider_id":"claude","auth":{"kind":"api_key",` +
+				`"api_key":"synthetic-key","auth_token":"unexpected-token"}}`,
+			code: "invalid_static_credential",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			service := newAccountServiceStub(t)
+			handler := newTestHandler(t, service)
+			response := performAuthorizedRequest(
+				t,
+				handler,
+				http.MethodPost,
+				accountsapi.CollectionPath,
+				[]byte(test.body),
+			)
+			assertAPIError(
+				t,
+				response,
+				http.StatusUnprocessableEntity,
+				test.code,
+			)
+			if service.registerCalls != 0 {
+				t.Fatalf("无效凭据进入注册用例: calls=%d", service.registerCalls)
 			}
 		})
 	}
@@ -1341,6 +1524,24 @@ func TestHandlerMapsApplicationErrors(t *testing.T) {
 			err:    accountapp.ErrAccountConflict,
 			status: http.StatusConflict,
 			code:   "account_conflict",
+		},
+		{
+			name:   "runtime active",
+			err:    accountapp.ErrAccountRuntimeActive,
+			status: http.StatusConflict,
+			code:   "account_runtime_active",
+		},
+		{
+			name:   "runtime unverifiable",
+			err:    accountapp.ErrAccountRuntimeUnverifiable,
+			status: http.StatusServiceUnavailable,
+			code:   "account_runtime_unverifiable",
+		},
+		{
+			name:   "deletion projection unverifiable",
+			err:    accountapp.ErrAccountDeletionPreparationFailed,
+			status: http.StatusServiceUnavailable,
+			code:   "account_deletion_preparation_failed",
 		},
 		{
 			name:   "internal",
@@ -1825,7 +2026,7 @@ func newTestHandlerWithCLIProxyAPIExporter(
 	if err != nil {
 		t.Fatalf("NewBearerAuthorizer() error = %v", err)
 	}
-	credentialFactory := accountsapi.NewBuiltinAPIKeyCredentialFactory()
+	credentialFactory := accountsapi.NewBuiltinStaticCredentialFactory()
 	handler, err := accountsapi.NewHandler(accountsapi.Dependencies{
 		Management:          service,
 		Models:              service,
@@ -1837,7 +2038,7 @@ func newTestHandlerWithCLIProxyAPIExporter(
 		Sub2APIExporter:     service,
 		CLIProxyAPIExporter: cliProxyAPIExporter,
 		Registrar:           service,
-		APIKeys:             credentialFactory,
+		Importer:            newAccountServiceImporter(t, service),
 		StaticCredentials:   credentialFactory,
 		NativeAccounts:      nativeaccount.NewDecoder(),
 		Sub2APIAccounts:     sub2api.NewDecoder(),
@@ -1944,6 +2145,7 @@ func cloneOverviewWithAccount(
 	account accountcore.Account,
 ) accountapp.AccountOverview {
 	t.Helper()
+	usageSnapshot, hasUsageSnapshot := current.UsageSnapshot()
 
 	overview, err := accountapp.NewAccountOverview(accountapp.AccountOverviewInput{
 		Account:          account,
@@ -1956,6 +2158,9 @@ func cloneOverviewWithAccount(
 		SubscriptionKind: current.SubscriptionKind(),
 		SubscriptionRaw:  current.SubscriptionRaw(),
 		ProfileUpdatedAt: current.ProfileUpdatedAt(),
+		ModelSummary:     current.ModelSummary(),
+		HasUsageSnapshot: hasUsageSnapshot,
+		UsageSnapshot:    usageSnapshot,
 	})
 	if err != nil {
 		t.Fatalf("NewAccountOverview() error = %v", err)

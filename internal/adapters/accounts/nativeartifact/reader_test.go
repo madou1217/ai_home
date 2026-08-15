@@ -16,8 +16,8 @@ func TestReadClaudeCombinesOfficialArtifactsAndTrimsGlobalConfig(t *testing.T) {
 	t.Parallel()
 
 	files := map[string]string{
-		"/home/user/.claude/.credentials.json": `{"claudeAiOauth":{"accessToken":"sk-ant-oat01-x"}}`,
-		"/home/user/.claude.json": `{"oauthAccount":{"accountUuid":"u","emailAddress":"e@x"},` +
+		"/home/user/.claude/.credentials.json": claudeCredentials("sk-ant-oat01-x", "sk-ant-ort01-x"),
+		"/home/user/.claude.json": `{"oauthAccount":{"accountUuid":"123e4567-e89b-12d3-a456-426614174001","emailAddress":"e@x"},` +
 			`"projects":{"/tmp":{"history":["机密会话内容"]}},"numStartups":42}`,
 	}
 	reader := nativeartifact.New(fakeOptions(files, nil))
@@ -64,9 +64,9 @@ func TestReadClaudePrefersConfigDirGlobalConfig(t *testing.T) {
 	t.Parallel()
 
 	files := map[string]string{
-		"/opt/claude-config/.credentials.json": `{"claudeAiOauth":{"accessToken":"sk-ant-oat01-x"}}`,
-		"/opt/claude-config/.claude.json":      `{"oauthAccount":{"accountUuid":"in-config-dir"}}`,
-		"/home/user/.claude.json":              `{"oauthAccount":{"accountUuid":"in-home"}}`,
+		"/opt/claude-config/.credentials.json": claudeCredentials("sk-ant-oat01-x", "sk-ant-ort01-x"),
+		"/opt/claude-config/.claude.json":      claudeIdentity("123e4567-e89b-12d3-a456-426614174002", "config@example.invalid"),
+		"/home/user/.claude.json":              claudeIdentity("123e4567-e89b-12d3-a456-426614174003", "home@example.invalid"),
 	}
 	reader := nativeartifact.New(fakeOptions(files, map[string]string{
 		"CLAUDE_CONFIG_DIR": "/opt/claude-config",
@@ -76,8 +76,8 @@ func TestReadClaudePrefersConfigDirGlobalConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Read(claude) error = %v", err)
 	}
-	if !strings.Contains(string(artifacts.Envelope), "in-config-dir") ||
-		strings.Contains(string(artifacts.Envelope), "in-home") {
+	if !strings.Contains(string(artifacts.Envelope), "config@example.invalid") ||
+		strings.Contains(string(artifacts.Envelope), "home@example.invalid") {
 		t.Fatalf("envelope 使用了错误的全局配置: %s", artifacts.Envelope)
 	}
 }
@@ -89,16 +89,21 @@ func TestReadClaudePrefersOfficialKeychain(t *testing.T) {
 
 	files := map[string]string{
 		"/home/user/.claude/.credentials.json": `{"stale":true}`,
-		"/home/user/.claude.json":              `{"oauthAccount":{"accountUuid":"u"}}`,
+		"/home/user/.claude.json":              claudeIdentity("123e4567-e89b-12d3-a456-426614174004", "user@example.invalid"),
 	}
 	options := fakeOptions(files, nil)
-	options.ReadClaudeSecureStorage = func(configDir string, scoped bool) ([]byte, string, error) {
+	options.ReadClaudeSecureStorage = func(
+		configDir string,
+		scoped bool,
+	) (nativeartifact.ClaudeSecureStorageRecord, error) {
 		if configDir != "/home/user/.claude" || scoped {
 			t.Fatalf("config_dir=%q scoped=%v", configDir, scoped)
 		}
-		return []byte(`{"claudeAiOauth":{"accessToken":"from-keychain"}}`),
-			"macOS Keychain: Claude Code-credentials",
-			nil
+		return nativeartifact.ClaudeSecureStorageRecord{
+			Data:         []byte(claudeCredentials("from-keychain", "keychain-refresh")),
+			Source:       "macOS Keychain: Claude Code-credentials",
+			ModifiedAtMS: 200,
+		}, nil
 	}
 	artifacts, err := nativeartifact.New(options).Read("claude")
 	if err != nil {
@@ -110,6 +115,140 @@ func TestReadClaudePrefersOfficialKeychain(t *testing.T) {
 	}
 	if artifacts.Sources[0] != "macOS Keychain: Claude Code-credentials" {
 		t.Fatalf("sources = %v", artifacts.Sources)
+	}
+}
+
+// TestReadClaudeFallsBackToCompleteFileWhenKeychainIsIncomplete 验证 Keychain
+// 残留的半份 OAuth 信封不会遮蔽同一官方配置目录内可用的凭据文件。
+func TestReadClaudeFallsBackToCompleteFileWhenKeychainIsIncomplete(t *testing.T) {
+	t.Parallel()
+
+	files := map[string]string{
+		"/home/user/.claude/.credentials.json": claudeCredentials("from-file", "file-refresh"),
+		"/home/user/.claude.json":              claudeIdentity("123e4567-e89b-12d3-a456-426614174005", "current@example.invalid"),
+	}
+	options := fakeOptions(files, nil)
+	options.ReadClaudeSecureStorage = func(string, bool) (nativeartifact.ClaudeSecureStorageRecord, error) {
+		return nativeartifact.ClaudeSecureStorageRecord{
+			Data:         []byte(`{"claudeAiOauth":{"accessToken":"incomplete-keychain"}}`),
+			Source:       "macOS Keychain: Claude Code-credentials",
+			ModifiedAtMS: 200,
+		}, nil
+	}
+
+	artifacts, err := nativeartifact.New(options).Read("claude")
+	if err != nil {
+		t.Fatalf("Read(claude) error = %v", err)
+	}
+	if artifacts.Sources[0] != "/home/user/.claude/.credentials.json" ||
+		!strings.Contains(string(artifacts.Envelope), "from-file") ||
+		strings.Contains(string(artifacts.Envelope), "incomplete-keychain") {
+		t.Fatalf("未回退到完整凭据文件: sources=%v", artifacts.Sources)
+	}
+}
+
+// TestReadClaudeChoosesTheNewerCompleteSource 验证 Keychain 与凭据文件都完整但
+// 内容不同时，只采用可由两个来源时间戳证明更新的登录态。
+func TestReadClaudeChoosesTheNewerCompleteSource(t *testing.T) {
+	t.Parallel()
+
+	credentialsPath := "/home/user/.claude/.credentials.json"
+	files := map[string]string{
+		credentialsPath:           claudeCredentials("new-file", "new-file-refresh"),
+		"/home/user/.claude.json": claudeIdentity("123e4567-e89b-12d3-a456-426614174006", "fresh@example.invalid"),
+	}
+	options := fakeOptions(files, nil)
+	options.ReadClaudeSecureStorage = func(string, bool) (nativeartifact.ClaudeSecureStorageRecord, error) {
+		return nativeartifact.ClaudeSecureStorageRecord{
+			Data:         []byte(claudeCredentials("old-keychain", "old-keychain-refresh")),
+			Source:       "macOS Keychain: Claude Code-credentials",
+			ModifiedAtMS: 100,
+		}, nil
+	}
+	options.FileModifiedAt = func(path string) (int64, error) {
+		if path != credentialsPath {
+			t.Fatalf("FileModifiedAt(%q)", path)
+		}
+		return 200, nil
+	}
+
+	artifacts, err := nativeartifact.New(options).Read("claude")
+	if err != nil {
+		t.Fatalf("Read(claude) error = %v", err)
+	}
+	if artifacts.Sources[0] != credentialsPath ||
+		!strings.Contains(string(artifacts.Envelope), "new-file") ||
+		strings.Contains(string(artifacts.Envelope), "old-keychain") {
+		t.Fatalf("没有选择更新的文件凭据: sources=%v", artifacts.Sources)
+	}
+}
+
+// TestReadClaudeRejectsDifferentSourcesWithoutComparableFreshness 验证两个完整但
+// 不同的登录态缺少可比较时间时不会按读取顺序猜测谁更新。
+func TestReadClaudeRejectsDifferentSourcesWithoutComparableFreshness(t *testing.T) {
+	t.Parallel()
+
+	files := map[string]string{
+		"/home/user/.claude/.credentials.json": claudeCredentials("file-token", "file-refresh"),
+		"/home/user/.claude.json":              claudeIdentity("123e4567-e89b-12d3-a456-426614174007", "unknown@example.invalid"),
+	}
+	options := fakeOptions(files, nil)
+	options.ReadClaudeSecureStorage = func(string, bool) (nativeartifact.ClaudeSecureStorageRecord, error) {
+		return nativeartifact.ClaudeSecureStorageRecord{
+			Data:   []byte(claudeCredentials("keychain-token", "keychain-refresh")),
+			Source: "macOS Keychain: Claude Code-credentials",
+		}, nil
+	}
+	options.FileModifiedAt = func(string) (int64, error) { return 0, nil }
+
+	artifacts, err := nativeartifact.New(options).Read("claude")
+	if !errors.Is(err, nativeartifact.ErrInvalidArtifactSource) {
+		t.Fatalf("Read(claude) error = %v", err)
+	}
+	if artifacts.Envelope != nil || artifacts.Sources != nil {
+		t.Fatalf("无法证明新鲜度时不得返回 artifact: %v", artifacts)
+	}
+}
+
+// TestReadClaudeRejectsNewerCredentialsFromAnotherIdentity 验证来源自身携带的
+// 账号 UUID 与当前 oauthAccount 冲突时，不能仅凭时间更新就采纳。
+func TestReadClaudeRejectsNewerCredentialsFromAnotherIdentity(t *testing.T) {
+	t.Parallel()
+
+	credentialsPath := "/home/user/.claude/.credentials.json"
+	currentUUID := "123e4567-e89b-12d3-a456-426614174008"
+	files := map[string]string{
+		credentialsPath: claudeCredentialsForIdentity(
+			"current-file",
+			"current-file-refresh",
+			currentUUID,
+			"current@example.invalid",
+		),
+		"/home/user/.claude.json": claudeIdentity(currentUUID, "current@example.invalid"),
+	}
+	options := fakeOptions(files, nil)
+	options.ReadClaudeSecureStorage = func(string, bool) (nativeartifact.ClaudeSecureStorageRecord, error) {
+		return nativeartifact.ClaudeSecureStorageRecord{
+			Data: []byte(claudeCredentialsForIdentity(
+				"other-keychain",
+				"other-keychain-refresh",
+				"123e4567-e89b-12d3-a456-426614174099",
+				"other@example.invalid",
+			)),
+			Source:       "macOS Keychain: Claude Code-credentials",
+			ModifiedAtMS: 200,
+		}, nil
+	}
+	options.FileModifiedAt = func(string) (int64, error) { return 100, nil }
+
+	artifacts, err := nativeartifact.New(options).Read("claude")
+	if err != nil {
+		t.Fatalf("Read(claude) error = %v", err)
+	}
+	if artifacts.Sources[0] != credentialsPath ||
+		!strings.Contains(string(artifacts.Envelope), "current-file") ||
+		strings.Contains(string(artifacts.Envelope), "other-keychain") {
+		t.Fatalf("采纳了其他身份的 Keychain 凭据: sources=%v", artifacts.Sources)
 	}
 }
 
@@ -205,8 +344,36 @@ func fakeOptions(
 			}
 			return []byte(content), nil
 		},
-		ReadClaudeSecureStorage: func(string, bool) ([]byte, string, error) {
-			return nil, "", errors.New("测试未提供 Keychain 登录态")
+		ReadClaudeSecureStorage: func(string, bool) (nativeartifact.ClaudeSecureStorageRecord, error) {
+			return nativeartifact.ClaudeSecureStorageRecord{}, errors.New("测试未提供 Keychain 登录态")
 		},
+		FileModifiedAt: func(string) (int64, error) { return 0, nil },
 	}
+}
+
+// claudeCredentials 创建不含真实凭据的完整官方 secure storage 文档。
+func claudeCredentials(accessToken string, refreshToken string) string {
+	return `{"claudeAiOauth":{` +
+		`"accessToken":"` + accessToken + `",` +
+		`"refreshToken":"` + refreshToken + `",` +
+		`"expiresAt":4102444800000,` +
+		`"scopes":["user:inference","user:profile"]}}`
+}
+
+// claudeCredentialsForIdentity 创建显式携带官方账号字段的完整凭据。
+func claudeCredentialsForIdentity(
+	accessToken string,
+	refreshToken string,
+	accountUUID string,
+	email string,
+) string {
+	return strings.TrimSuffix(claudeCredentials(accessToken, refreshToken), "}}") +
+		`,"account":{"uuid":"` + accountUUID + `","emailAddress":"` + email + `"}}}`
+}
+
+// claudeIdentity 创建导入测试使用的完整官方 oauthAccount 配置。
+func claudeIdentity(accountUUID string, email string) string {
+	return `{"oauthAccount":{` +
+		`"accountUuid":"` + accountUUID + `",` +
+		`"emailAddress":"` + email + `"}}`
 }

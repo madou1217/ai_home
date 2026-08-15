@@ -134,6 +134,7 @@ type benchmarkAttemptRecorder struct{}
 func (benchmarkAttemptRecorder) RecordSuccess(
 	context.Context,
 	runtimecore.ModelRoute,
+	inferencegateway.AttemptSuccess,
 ) error {
 	return nil
 }

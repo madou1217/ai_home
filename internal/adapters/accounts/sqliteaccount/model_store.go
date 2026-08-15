@@ -57,7 +57,7 @@ func (store *Store) ReplaceDiscoveredModelsIfCredentialVersion(
 	expectedCredentialUpdatedAt time.Time,
 	updatedAt time.Time,
 ) ([]accountapp.AccountModel, error) {
-	if !validPersistedModelTime(expectedCredentialUpdatedAt) {
+	if !validPersistedTimestamp(expectedCredentialUpdatedAt) {
 		return nil, accountapp.ErrInvalidDiscoveredModels
 	}
 	return store.replaceDiscoveredModels(
@@ -81,7 +81,7 @@ func (store *Store) replaceDiscoveredModels(
 		store.db == nil ||
 		store.routes == nil ||
 		!accountRef.IsValid() ||
-		!validPersistedModelTime(updatedAt) ||
+		!validPersistedTimestamp(updatedAt) ||
 		!accountapp.ValidDiscoveredModelIDs(models) {
 		return nil, accountapp.ErrInvalidDiscoveredModels
 	}
@@ -234,7 +234,7 @@ func (store *Store) SetManualModelPolicy(
 		!accountRef.IsValid() ||
 		!modelID.IsValid() ||
 		!policy.IsValid() ||
-		!validPersistedModelTime(updatedAt) {
+		!validPersistedTimestamp(updatedAt) {
 		return nil, accountapp.ErrInvalidAccountModel
 	}
 	store.routingWrites.Lock()
@@ -388,8 +388,8 @@ func (store *Store) accountExists(
 	return exists == 1, nil
 }
 
-// validPersistedModelTime 拒绝非 UTC 毫秒精度或越界时间。
-func validPersistedModelTime(value time.Time) bool {
+// validPersistedTimestamp 拒绝非 UTC 毫秒精度或越界时间。
+func validPersistedTimestamp(value time.Time) bool {
 	return !value.IsZero() &&
 		value.Location() == time.UTC &&
 		value.Nanosecond()%int(time.Millisecond) == 0 &&

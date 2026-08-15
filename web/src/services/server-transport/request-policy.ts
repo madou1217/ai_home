@@ -32,6 +32,11 @@ const NATIVE_CREDENTIAL_FIELD_NAMES = new Set([
 const MIN_TIMEOUT_MS = 1000;
 const MAX_TIMEOUT_MS = 120 * 1000;
 
+const ALLOWED_SERVER_PATH_PREFIXES = [
+  '/v0',
+  '/v1/management'
+] as const;
+
 export interface SafeRequestHeaders {
   accept?: string;
   contentType?: string;
@@ -43,6 +48,12 @@ function hasInvalidHeaderCharacters(value: string) {
 
 function normalizeCredentialFieldName(value: string) {
   return value.replace(/[-_\s]/g, '').toLowerCase();
+}
+
+function isAllowedServerPath(pathname: string) {
+  return ALLOWED_SERVER_PATH_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
+  );
 }
 
 export function normalizeServerPath(value: string): string {
@@ -64,7 +75,7 @@ export function normalizeServerPath(value: string): string {
   if (parsed.origin !== 'https://aih-server.invalid') {
     throw new ServerTransportError('invalid_server_path');
   }
-  if (parsed.pathname !== '/v0' && !parsed.pathname.startsWith('/v0/')) {
+  if (!isAllowedServerPath(parsed.pathname)) {
     throw new ServerTransportError('invalid_server_path');
   }
 

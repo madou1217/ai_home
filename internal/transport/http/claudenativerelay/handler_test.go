@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/madou1217/ai_home/application/accountcredentials"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
@@ -215,6 +216,192 @@ func TestHandlerRecordsPreCommitFailureAndSignalsAccountRetry(t *testing.T) {
 			response.Body.String(),
 			recorder.failures,
 			refreshes.calls,
+		)
+	}
+}
+
+// TestHandlerPreservesStaleCredentialFailureResponseWithoutRuntimeWrite 验证请求读取
+// v1 凭据后账号切到 v2，v1 的迟到 529 仍原样返回并保持换号语义，但不污染
+// v2 的账号运行态。
+func TestHandlerPreservesStaleCredentialFailureResponseWithoutRuntimeWrite(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	accountRef, credential := newRelayOAuthCredential(t)
+	recorder := &relayAttemptRecorder{}
+	resolver := &relayCredentialResolver{
+		accountRef: accountRef,
+		credential: credential,
+	}
+	client := &relayFailureClient{
+		status: http.StatusText(http.StatusServiceUnavailable),
+		code:   529,
+		body:   `{"type":"error","error":{"type":"overloaded_error"}}`,
+		beforeReturn: func() {
+			resolver.stale = true
+		},
+	}
+	authorizer, err := NewScopedTokenAuthorizer(relayTokenResolver{
+		token:      testRelayToken,
+		accountRef: accountRef,
+	})
+	if err != nil {
+		t.Fatalf("NewScopedTokenAuthorizer() error = %v", err)
+	}
+	handler, err := NewHandler(Dependencies{
+		Authorizer:     authorizer,
+		Credentials:    resolver,
+		Client:         client,
+		Attempts:       recorder,
+		ModelRefreshes: &relayModelRefreshScheduler{},
+		Clock:          relayTestClock,
+	})
+	if err != nil {
+		t.Fatalf("NewHandler() error = %v", err)
+	}
+	request := newNativeRelayRequest(
+		t,
+		`{"model":"claude-opus-5"}`,
+	)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != 529 ||
+		response.Header().Get(gatewaycontract.RetryAccountHeader) !=
+			gatewaycontract.RetryAccountValue ||
+		response.Body.String() != client.body {
+		t.Fatalf(
+			"status=%d retry=%q body=%q",
+			response.Code,
+			response.Header().Get(gatewaycontract.RetryAccountHeader),
+			response.Body.String(),
+		)
+	}
+	if len(recorder.failures) != 0 {
+		t.Fatalf("runtime failures = %d, want 0", len(recorder.failures))
+	}
+}
+
+// TestHandlerPreservesStaleCredentialSuccessWithoutRuntimeClear 验证 v1 Relay 请求
+// 在凭据切到 v2 后迟到成功时仍原样交付响应，但不清除 v2 的运行态失败。
+func TestHandlerPreservesStaleCredentialSuccessWithoutRuntimeClear(t *testing.T) {
+	t.Parallel()
+
+	accountRef, credential := newRelayOAuthCredential(t)
+	recorder := &relayAttemptRecorder{}
+	resolver := &relayCredentialResolver{
+		accountRef: accountRef,
+		credential: credential,
+	}
+	client := &relayFailureClient{
+		status: http.StatusText(http.StatusOK),
+		code:   http.StatusOK,
+		body:   `{"type":"message","content":[{"type":"text","text":"ok"}]}`,
+		header: http.Header{"Content-Type": []string{"application/json"}},
+		beforeReturn: func() {
+			resolver.stale = true
+		},
+	}
+	authorizer, err := NewScopedTokenAuthorizer(relayTokenResolver{
+		token:      testRelayToken,
+		accountRef: accountRef,
+	})
+	if err != nil {
+		t.Fatalf("NewScopedTokenAuthorizer() error = %v", err)
+	}
+	handler, err := NewHandler(Dependencies{
+		Authorizer:     authorizer,
+		Credentials:    resolver,
+		Client:         client,
+		Attempts:       recorder,
+		ModelRefreshes: &relayModelRefreshScheduler{},
+		Clock:          relayTestClock,
+	})
+	if err != nil {
+		t.Fatalf("NewHandler() error = %v", err)
+	}
+	request := newNativeRelayRequest(t, `{"model":"claude-opus-5"}`)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK ||
+		response.Body.String() != client.body ||
+		recorder.successes != 0 ||
+		resolver.verificationCalls != 1 {
+		t.Fatalf(
+			"status=%d body=%q successes=%d verification_calls=%d",
+			response.Code,
+			response.Body.String(),
+			recorder.successes,
+			resolver.verificationCalls,
+		)
+	}
+}
+
+// TestHandlerRecordsStreamingSuccessAtMessageStop 验证流尾之后的本地收尾不会推迟
+// 成功发生时间，避免它清除 message_stop 之后已经写入的同代失败。
+func TestHandlerRecordsStreamingSuccessAtMessageStop(t *testing.T) {
+	t.Parallel()
+
+	accountRef, credential := newRelayOAuthCredential(t)
+	recorder := &relayAttemptRecorder{}
+	resolver := &relayCredentialResolver{
+		accountRef: accountRef,
+		credential: credential,
+	}
+	terminalAt := relayTestClock().Add(time.Second)
+	afterCopy := terminalAt.Add(time.Second)
+	clockCalls := 0
+	clock := func() time.Time {
+		clockCalls++
+		if clockCalls == 1 {
+			return terminalAt
+		}
+		return afterCopy
+	}
+	authorizer, err := NewScopedTokenAuthorizer(relayTokenResolver{
+		token:      testRelayToken,
+		accountRef: accountRef,
+	})
+	if err != nil {
+		t.Fatalf("NewScopedTokenAuthorizer() error = %v", err)
+	}
+	handler, err := NewHandler(Dependencies{
+		Authorizer:  authorizer,
+		Credentials: resolver,
+		Client: &relayFailureClient{
+			status: http.StatusText(http.StatusOK),
+			code:   http.StatusOK,
+			body:   "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+			header: http.Header{"Content-Type": []string{"text/event-stream"}},
+		},
+		Attempts:       recorder,
+		ModelRefreshes: &relayModelRefreshScheduler{},
+		Clock:          clock,
+	})
+	if err != nil {
+		t.Fatalf("NewHandler() error = %v", err)
+	}
+	request := newNativeRelayRequest(
+		t,
+		`{"model":"claude-opus-5","stream":true}`,
+	)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK ||
+		recorder.successes != 1 ||
+		!recorder.lastSuccess.HappenedAt().Equal(terminalAt) {
+		t.Fatalf(
+			"status=%d successes=%d happened_at=%s want=%s",
+			response.Code,
+			recorder.successes,
+			recorder.lastSuccess.HappenedAt(),
+			terminalAt,
 		)
 	}
 }
@@ -909,35 +1096,79 @@ func (resolver relayTokenResolver) ConsumeRelayToken(
 
 // relayCredentialResolver 记录凭据解析是否发生。
 type relayCredentialResolver struct {
-	accountRef accountcore.AccountRef
-	credential accountapp.Credential
-	calls      int
+	accountRef        accountcore.AccountRef
+	credential        accountapp.Credential
+	calls             int
+	stale             bool
+	verificationCalls int
 }
 
-// ResolveCredential 只允许租约绑定的账号读取凭据。
-func (resolver *relayCredentialResolver) ResolveCredential(
+// ResolveObservedCredentialBinding 只允许租约绑定的账号读取同一份凭据快照。
+func (resolver *relayCredentialResolver) ResolveObservedCredentialBinding(
 	_ context.Context,
 	accountRef accountcore.AccountRef,
-) (accountapp.Credential, error) {
+) (
+	accountapp.CredentialBinding,
+	accountcredentials.CredentialObservation,
+	error,
+) {
 	resolver.calls++
 	if accountRef != resolver.accountRef {
-		return nil, accountapp.ErrCredentialNotFound
+		return accountapp.CredentialBinding{},
+			accountcredentials.CredentialObservation{},
+			accountapp.ErrCredentialNotFound
 	}
-	return resolver.credential, nil
+	binding, err := accountapp.NewCredentialBinding(
+		accountRef,
+		claudeauth.ProviderID,
+		resolver.credential,
+	)
+	if err != nil {
+		return accountapp.CredentialBinding{},
+			accountcredentials.CredentialObservation{},
+			err
+	}
+	snapshot, err := accountapp.NewCredentialSnapshot(
+		accountRef,
+		claudeauth.ProviderID,
+		resolver.credential,
+		relayTestClock().Add(-time.Hour),
+	)
+	if err != nil {
+		return accountapp.CredentialBinding{},
+			accountcredentials.CredentialObservation{},
+			err
+	}
+	observation, err := accountcredentials.NewCredentialObservation(snapshot)
+	return binding, observation, err
+}
+
+// IsCurrentCredentialObservation 模拟凭据在上游返回前是否已经轮换。
+func (resolver *relayCredentialResolver) IsCurrentCredentialObservation(
+	_ context.Context,
+	observation accountcredentials.CredentialObservation,
+) (bool, error) {
+	resolver.verificationCalls++
+	return !resolver.stale &&
+			observation.AccountRef() == resolver.accountRef,
+		nil
 }
 
 // relayAttemptRecorder 记录 Native Relay 是否提交了运行态终态。
 type relayAttemptRecorder struct {
-	successes int
-	failures  []inferencegateway.AttemptFailure
+	successes   int
+	lastSuccess inferencegateway.AttemptSuccess
+	failures    []inferencegateway.AttemptFailure
 }
 
 // RecordSuccess 记录完整成功响应。
 func (recorder *relayAttemptRecorder) RecordSuccess(
-	context.Context,
-	runtimecore.ModelRoute,
+	_ context.Context,
+	_ runtimecore.ModelRoute,
+	success inferencegateway.AttemptSuccess,
 ) error {
 	recorder.successes++
+	recorder.lastSuccess = success
 	return nil
 }
 
@@ -990,16 +1221,20 @@ func (client *relayRecordingClient) Do(
 
 // relayFailureClient 返回正文可回放的合成 Claude HTTP 失败。
 type relayFailureClient struct {
-	status string
-	code   int
-	body   string
-	header http.Header
+	status       string
+	code         int
+	body         string
+	header       http.Header
+	beforeReturn func()
 }
 
 // Do 返回预设失败，不访问网络。
 func (client *relayFailureClient) Do(
 	*http.Request,
 ) (*http.Response, error) {
+	if client.beforeReturn != nil {
+		client.beforeReturn()
+	}
 	return &http.Response{
 		Status:     client.status,
 		StatusCode: client.code,

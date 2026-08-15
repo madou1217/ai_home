@@ -199,12 +199,18 @@ func TestServiceForgetAccountCancelsAndDetachesOldRefresh(t *testing.T) {
 		firstCanceled: make(chan struct{}),
 		releaseFirst:  make(chan struct{}),
 	}
+	runtime := &runtimeProjectionStub{
+		accountBlocked: true,
+		modelIDs: []runtimecore.ModelID{
+			runtimecore.ModelID("gpt-old-usage-block"),
+		},
+	}
 	service := newServiceSubject(
 		t,
 		store,
 		credentialResolverStub{credential: credential},
 		modelReaderStub{},
-		&runtimeProjectionStub{},
+		runtime,
 		strategy,
 		func() time.Time { return now },
 	)
@@ -225,6 +231,16 @@ func TestServiceForgetAccountCancelsAndDetachesOldRefresh(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("ForgetAccount() 没有取消旧额度刷新")
 	}
+	runtime.mu.Lock()
+	if runtime.calls != 1 || runtime.accountBlocked || len(runtime.modelIDs) != 0 {
+		t.Fatalf(
+			"ForgetAccount() runtime calls=%d account=%t models=%#v",
+			runtime.calls,
+			runtime.accountBlocked,
+			runtime.modelIDs,
+		)
+	}
+	runtime.mu.Unlock()
 
 	second, err := service.RefreshUsage(context.Background(), accountRef)
 	if err != nil ||
@@ -252,6 +268,251 @@ func TestServiceForgetAccountCancelsAndDetachesOldRefresh(t *testing.T) {
 			strategy.calls.Load(),
 			store.replaceCalls.Load(),
 		)
+	}
+}
+
+// TestServiceRejectsUsageFromSupersededCredentialGeneration 验证旧凭据返回的
+// usage 即使上游成功，也不能覆盖新凭据代次下的 last-known-good。
+func TestServiceRejectsUsageFromSupersededCredentialGeneration(t *testing.T) {
+	t.Parallel()
+
+	now := serviceTestTime()
+	credential := serviceCredential{
+		providerID: "codex",
+		identity:   "oauth:codex:usage-generation-cas",
+	}
+	accountRef := deriveServiceRef(t, credential)
+	credentialVersion := now.Add(-time.Hour)
+	credentialSnapshot, err := accountapp.NewCredentialSnapshot(
+		accountRef,
+		credential.ProviderID(),
+		credential,
+		credentialVersion,
+	)
+	if err != nil {
+		t.Fatalf("NewCredentialSnapshot() error = %v", err)
+	}
+	lastKnownGood := mustServiceSnapshot(t, usagecore.SnapshotInput{
+		AccountRef: accountRef,
+		ProviderID: "codex",
+		Source:     "codex_wham_usage",
+		CapturedAt: now.Add(-time.Minute),
+		Entries: []usagecore.EntryInput{{
+			Bucket:       "primary",
+			Kind:         usagecore.KindWindow,
+			Scope:        usagecore.ScopeAccount,
+			Availability: usagecore.AvailabilityAvailable,
+		}},
+	})
+	store := &versionedServiceStore{
+		snapshot:            lastKnownGood,
+		credentialUpdatedAt: credentialVersion,
+	}
+	started := make(chan struct{})
+	release := make(chan struct{})
+	strategy := &strategyStub{
+		providerID: "codex",
+		build: func(capturedAt time.Time) usagecore.Snapshot {
+			close(started)
+			<-release
+			return mustServiceSnapshot(t, usagecore.SnapshotInput{
+				AccountRef: accountRef,
+				ProviderID: "codex",
+				Source:     "codex_wham_usage",
+				CapturedAt: capturedAt,
+				Entries: []usagecore.EntryInput{{
+					Bucket:       "primary",
+					Kind:         usagecore.KindWindow,
+					Scope:        usagecore.ScopeAccount,
+					Availability: usagecore.AvailabilityExhausted,
+				}},
+			})
+		},
+	}
+	runtime := &runtimeProjectionStub{}
+	service := newServiceSubject(
+		t,
+		store,
+		credentialGenerationResolverStub{snapshot: credentialSnapshot},
+		modelReaderStub{},
+		runtime,
+		strategy,
+		func() time.Time { return now },
+	)
+
+	result := make(chan error, 1)
+	go func() {
+		_, refreshErr := service.RefreshUsage(context.Background(), accountRef)
+		result <- refreshErr
+	}()
+	<-started
+	store.advanceCredentialVersion(credentialVersion.Add(time.Second))
+	close(release)
+	if refreshErr := <-result; !errors.Is(
+		refreshErr,
+		accountapp.ErrCredentialConflict,
+	) {
+		t.Fatalf("RefreshUsage(stale credential) error = %v", refreshErr)
+	}
+	restored, err := store.GetUsageSnapshot(context.Background(), accountRef)
+	if err != nil || !restored.CapturedAt().Equal(lastKnownGood.CapturedAt()) {
+		t.Fatalf("last-known-good = (%#v, %v)", restored, err)
+	}
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	if runtime.calls != 0 {
+		t.Fatalf("stale usage projected runtime calls = %d", runtime.calls)
+	}
+}
+
+// TestServiceForgetPreventsOldFlightFromReprojectingQuota 验证旧任务已经完成
+// SQLite 写入但尚未投影时，代次切换仍以清空后的运行态为最终结果。
+func TestServiceForgetPreventsOldFlightFromReprojectingQuota(t *testing.T) {
+	t.Parallel()
+
+	now := serviceTestTime()
+	credential := serviceCredential{
+		providerID: "codex",
+		identity:   "oauth:codex:usage-projection-generation",
+	}
+	accountRef := deriveServiceRef(t, credential)
+	credentialSnapshot, err := accountapp.NewCredentialSnapshot(
+		accountRef,
+		credential.ProviderID(),
+		credential,
+		now.Add(-time.Hour),
+	)
+	if err != nil {
+		t.Fatalf("NewCredentialSnapshot() error = %v", err)
+	}
+	writeStarted := make(chan struct{})
+	releaseWrite := make(chan struct{})
+	store := &versionedServiceStore{
+		credentialUpdatedAt: credentialSnapshot.UpdatedAt(),
+		writeStarted:        writeStarted,
+		releaseWrite:        releaseWrite,
+	}
+	runtime := &runtimeProjectionStub{}
+	service := newServiceSubject(
+		t,
+		store,
+		credentialGenerationResolverStub{snapshot: credentialSnapshot},
+		modelReaderStub{},
+		runtime,
+		&strategyStub{
+			providerID: "codex",
+			build: func(capturedAt time.Time) usagecore.Snapshot {
+				return mustServiceSnapshot(t, usagecore.SnapshotInput{
+					AccountRef: accountRef,
+					ProviderID: "codex",
+					Source:     "codex_wham_usage",
+					CapturedAt: capturedAt,
+					Entries: []usagecore.EntryInput{{
+						Bucket:       "primary",
+						Kind:         usagecore.KindWindow,
+						Scope:        usagecore.ScopeAccount,
+						Availability: usagecore.AvailabilityExhausted,
+					}},
+				})
+			},
+		},
+		func() time.Time { return now },
+	)
+
+	result := make(chan error, 1)
+	go func() {
+		_, refreshErr := service.RefreshUsage(context.Background(), accountRef)
+		result <- refreshErr
+	}()
+	<-writeStarted
+	service.ForgetAccount(accountRef)
+	close(releaseWrite)
+	if refreshErr := <-result; !errors.Is(refreshErr, context.Canceled) {
+		t.Fatalf("RefreshUsage(forgotten generation) error = %v", refreshErr)
+	}
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	if runtime.accountBlocked || len(runtime.modelIDs) != 0 {
+		t.Fatalf(
+			"forgotten generation reprojected account=%t models=%#v calls=%d",
+			runtime.accountBlocked,
+			runtime.modelIDs,
+			runtime.calls,
+		)
+	}
+}
+
+// TestServiceForgetOrdersClearBeforeNewGenerationProjection 验证代次清理期间启动的
+// 新刷新只能在旧投影清空之后发布，不能被迟到的清空动作反向覆盖。
+func TestServiceForgetOrdersClearBeforeNewGenerationProjection(t *testing.T) {
+	t.Parallel()
+
+	now := serviceTestTime()
+	credential := serviceCredential{
+		providerID: "codex",
+		identity:   "oauth:codex:usage-clear-order",
+	}
+	accountRef := deriveServiceRef(t, credential)
+	runtime := &orderedRuntimeProjection{
+		clearStarted: make(chan struct{}),
+		releaseClear: make(chan struct{}),
+		projected:    make(chan struct{}),
+	}
+	service := newServiceSubject(
+		t,
+		&serviceStore{},
+		credentialResolverStub{credential: credential},
+		modelReaderStub{},
+		runtime,
+		&strategyStub{
+			providerID: "codex",
+			build: func(capturedAt time.Time) usagecore.Snapshot {
+				return mustServiceSnapshot(t, usagecore.SnapshotInput{
+					AccountRef: accountRef,
+					ProviderID: "codex",
+					Source:     "codex_wham_usage",
+					CapturedAt: capturedAt,
+					Entries: []usagecore.EntryInput{{
+						Bucket:       "primary",
+						Kind:         usagecore.KindWindow,
+						Scope:        usagecore.ScopeAccount,
+						Availability: usagecore.AvailabilityExhausted,
+					}},
+				})
+			},
+		},
+		func() time.Time { return now },
+	)
+
+	forgotten := make(chan struct{})
+	go func() {
+		service.ForgetAccount(accountRef)
+		close(forgotten)
+	}()
+	<-runtime.clearStarted
+	refreshed := make(chan error, 1)
+	go func() {
+		_, refreshErr := service.RefreshUsage(context.Background(), accountRef)
+		refreshed <- refreshErr
+	}()
+	select {
+	case <-runtime.projected:
+		t.Fatal("新代次在旧 usage 投影清空前发布")
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(runtime.releaseClear)
+	select {
+	case <-forgotten:
+	case <-time.After(time.Second):
+		t.Fatal("等待 usage 代次清理完成超时")
+	}
+	if err := <-refreshed; err != nil {
+		t.Fatalf("RefreshUsage(new generation) error = %v", err)
+	}
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	if !runtime.accountBlocked {
+		t.Fatal("新代次明确耗尽投影被旧清理覆盖")
 	}
 }
 
@@ -313,6 +574,25 @@ type credentialResolverStub struct {
 	credential accountapp.Credential
 }
 
+// credentialGenerationResolverStub 同时提供旧接口和期望的版本化凭据快照。
+type credentialGenerationResolverStub struct {
+	snapshot accountapp.CredentialSnapshot
+}
+
+func (stub credentialGenerationResolverStub) ResolveCredential(
+	_ context.Context,
+	_ accountcore.AccountRef,
+) (accountapp.Credential, error) {
+	return stub.snapshot.Credential(), nil
+}
+
+func (stub credentialGenerationResolverStub) ResolveCredentialSnapshot(
+	_ context.Context,
+	_ accountcore.AccountRef,
+) (accountapp.CredentialSnapshot, error) {
+	return stub.snapshot, nil
+}
+
 func (stub credentialResolverStub) ResolveCredential(
 	_ context.Context,
 	_ accountcore.AccountRef,
@@ -320,11 +600,93 @@ func (stub credentialResolverStub) ResolveCredential(
 	return stub.credential, nil
 }
 
+func (stub credentialResolverStub) ResolveCredentialSnapshot(
+	_ context.Context,
+	accountRef accountcore.AccountRef,
+) (accountapp.CredentialSnapshot, error) {
+	if stub.credential == nil {
+		return accountapp.CredentialSnapshot{}, usageapp.ErrUsageUnsupported
+	}
+	return accountapp.NewCredentialSnapshot(
+		accountRef,
+		stub.credential.ProviderID(),
+		stub.credential,
+		serviceTestTime().Add(-time.Hour),
+	)
+}
+
 // serviceStore 保存测试最近一次快照。
 type serviceStore struct {
 	mu           sync.Mutex
 	snapshot     usagecore.Snapshot
 	replaceCalls atomic.Int64
+}
+
+// versionedServiceStore 模拟 credential.updated_at 的事务内 CAS。
+type versionedServiceStore struct {
+	mu                    sync.Mutex
+	snapshot              usagecore.Snapshot
+	credentialUpdatedAt   time.Time
+	writeStarted          chan struct{}
+	releaseWrite          <-chan struct{}
+	writeStartedOnce      sync.Once
+	unconditionalReplaces atomic.Int64
+	casReplaces           atomic.Int64
+}
+
+func (store *versionedServiceStore) ReplaceUsageSnapshot(
+	_ context.Context,
+	snapshot usagecore.Snapshot,
+) error {
+	store.waitForWriteBoundary()
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	store.snapshot = snapshot
+	store.unconditionalReplaces.Add(1)
+	return nil
+}
+
+func (store *versionedServiceStore) ReplaceUsageSnapshotIfCredentialVersion(
+	_ context.Context,
+	snapshot usagecore.Snapshot,
+	expectedCredentialUpdatedAt time.Time,
+) error {
+	store.waitForWriteBoundary()
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if !store.credentialUpdatedAt.Equal(expectedCredentialUpdatedAt) {
+		return accountapp.ErrCredentialConflict
+	}
+	store.snapshot = snapshot
+	store.casReplaces.Add(1)
+	return nil
+}
+
+func (store *versionedServiceStore) GetUsageSnapshot(
+	_ context.Context,
+	_ accountcore.AccountRef,
+) (usagecore.Snapshot, error) {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if !store.snapshot.IsValid() {
+		return usagecore.Snapshot{}, usageapp.ErrSnapshotNotFound
+	}
+	return store.snapshot, nil
+}
+
+func (store *versionedServiceStore) advanceCredentialVersion(updatedAt time.Time) {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	store.credentialUpdatedAt = updatedAt
+}
+
+func (store *versionedServiceStore) waitForWriteBoundary() {
+	if store.writeStarted != nil {
+		store.writeStartedOnce.Do(func() { close(store.writeStarted) })
+	}
+	if store.releaseWrite != nil {
+		<-store.releaseWrite
+	}
 }
 
 func (store *serviceStore) ReplaceUsageSnapshot(
@@ -336,6 +698,14 @@ func (store *serviceStore) ReplaceUsageSnapshot(
 	store.snapshot = snapshot
 	store.replaceCalls.Add(1)
 	return nil
+}
+
+func (store *serviceStore) ReplaceUsageSnapshotIfCredentialVersion(
+	ctx context.Context,
+	snapshot usagecore.Snapshot,
+	_ time.Time,
+) error {
+	return store.ReplaceUsageSnapshot(ctx, snapshot)
 }
 
 func (store *serviceStore) GetUsageSnapshot(
@@ -365,8 +735,38 @@ func (stub modelReaderStub) ListAccountModels(
 // runtimeProjectionStub 记录服务发布的权威额度阻塞集合。
 type runtimeProjectionStub struct {
 	mu             sync.Mutex
+	calls          int
 	accountBlocked bool
 	modelIDs       []runtimecore.ModelID
+}
+
+// orderedRuntimeProjection 允许测试精确控制旧清理和新投影的交错顺序。
+type orderedRuntimeProjection struct {
+	mu             sync.Mutex
+	clearStarted   chan struct{}
+	releaseClear   chan struct{}
+	projected      chan struct{}
+	projectedOnce  sync.Once
+	accountBlocked bool
+}
+
+func (runtime *orderedRuntimeProjection) ReplaceUsageProjection(
+	_ context.Context,
+	_ accountcore.AccountRef,
+	accountBlocked bool,
+	modelIDs []runtimecore.ModelID,
+) error {
+	if !accountBlocked && len(modelIDs) == 0 {
+		close(runtime.clearStarted)
+		<-runtime.releaseClear
+	}
+	runtime.mu.Lock()
+	runtime.accountBlocked = accountBlocked
+	runtime.mu.Unlock()
+	if accountBlocked {
+		runtime.projectedOnce.Do(func() { close(runtime.projected) })
+	}
+	return nil
 }
 
 func (stub *runtimeProjectionStub) ReplaceUsageProjection(
@@ -377,6 +777,7 @@ func (stub *runtimeProjectionStub) ReplaceUsageProjection(
 ) error {
 	stub.mu.Lock()
 	defer stub.mu.Unlock()
+	stub.calls++
 	stub.accountBlocked = accountBlocked
 	stub.modelIDs = append([]runtimecore.ModelID(nil), modelIDs...)
 	return nil
@@ -467,7 +868,7 @@ func (stub *strategyStub) MatchesModelFamily(
 func newServiceSubject(
 	t testing.TB,
 	store usageapp.SnapshotStore,
-	credentials usageapp.CredentialResolver,
+	credentials usageapp.CredentialSnapshotResolver,
 	models usageapp.AccountModelReader,
 	runtime usageapp.RuntimeProjection,
 	strategy usageapp.ProviderStrategy,

@@ -65,7 +65,7 @@ func runAccountCredentialUpdate(
 	return nil
 }
 
-// staticCredentialFromEnvironment 只识别 Codex/Claude 官方静态凭据变量。
+// staticCredentialFromEnvironment 为账号新增和轮换统一解析官方静态凭据变量。
 func staticCredentialFromEnvironment(
 	providerID string,
 	lookupEnv func(string) (string, bool),
@@ -75,7 +75,7 @@ func staticCredentialFromEnvironment(
 		apiKey, found := nonEmptyEnvironment(lookupEnv, "OPENAI_API_KEY")
 		if !found {
 			return managementapi.StaticCredentialInput{}, fmt.Errorf(
-				"%w: Codex 静态凭据更新需要 OPENAI_API_KEY",
+				"%w: Codex 静态凭据需要 OPENAI_API_KEY",
 				errInvalidCommand,
 			)
 		}
@@ -96,7 +96,7 @@ func staticCredentialFromEnvironment(
 		}
 		if !hasAPIKey && !hasAuthToken {
 			return managementapi.StaticCredentialInput{}, fmt.Errorf(
-				"%w: Claude 静态凭据更新需要 ANTHROPIC_API_KEY 或 ANTHROPIC_AUTH_TOKEN",
+				"%w: Claude 静态凭据需要 ANTHROPIC_API_KEY 或 ANTHROPIC_AUTH_TOKEN",
 				errInvalidCommand,
 			)
 		}
@@ -152,7 +152,7 @@ func writeAccountCredentialUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "行为:")
 	_, _ = fmt.Fprintln(output, "  通过运行中的 Go Server 原地更新静态凭据，保持 AccountRef、数字别名、启停和默认关系。")
-	_, _ = fmt.Fprintln(output, "  Server 使用新凭据真实刷新模型，并清理旧 usage、runtime 与 cooldown 派生状态。")
+	_, _ = fmt.Fprintln(output, "  Server 提交新凭据后异步刷新模型，并清理旧 usage、runtime 与 cooldown 派生状态。")
 	_, _ = fmt.Fprintln(output, "  OAuth 账号不支持本命令，必须使用 Provider 重新授权流程。终端不会输出凭据正文。")
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "Provider 官方环境变量:")

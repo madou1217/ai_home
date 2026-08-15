@@ -909,14 +909,15 @@ func newRealClaudeCoordinatorComponents(
 	if err != nil {
 		t.Fatalf("accounts.NewRoutingAccount() error = %v", err)
 	}
+	credentialResolver := claudeCredentialResolver{
+		accountRef: accountRef,
+		credential: credential,
+	}
 	recruiter, err := accountrouting.NewRecruiter(
 		accountrouting.Dependencies{
-			Candidates: claudeCandidateSource{account: account},
-			Runtime:    runtime,
-			Credentials: claudeCredentialResolver{
-				accountRef: accountRef,
-				credential: credential,
-			},
+			Candidates:  claudeCandidateSource{account: account},
+			Runtime:     runtime,
+			Credentials: credentialResolver,
 		},
 	)
 	if err != nil {
@@ -935,12 +936,14 @@ func newRealClaudeCoordinatorComponents(
 	}
 	coordinator, err := inferencegateway.NewCoordinator(
 		inferencegateway.Dependencies{
-			Catalog:        catalog,
-			Routes:         newRealClaudeRouteCatalog(t, model),
-			Recruiter:      recruiter,
-			Upstreams:      upstreams,
-			Attempts:       attempts,
-			ModelRefreshes: claudeModelRefreshScheduler{},
+			Catalog:                catalog,
+			Routes:                 newRealClaudeRouteCatalog(t, model),
+			Recruiter:              recruiter,
+			Upstreams:              upstreams,
+			Attempts:               attempts,
+			CredentialObservations: credentialResolver,
+			Clock:                  time.Now,
+			ModelRefreshes:         claudeModelRefreshScheduler{},
 			// 真实 smoke 每次只允许调用一个账号，禁止测试代码自动重试。
 			UpstreamAttemptLimit: 1,
 		},

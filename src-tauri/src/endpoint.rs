@@ -4,6 +4,8 @@ use reqwest::Url;
 
 use crate::error::{NativeError, NativeResult};
 
+const ALLOWED_REQUEST_PATH_PREFIXES: [&str; 2] = ["/v0", "/v1/management"];
+
 fn is_loopback_host(host: &str) -> bool {
     let ip_candidate = host
         .strip_prefix('[')
@@ -95,6 +97,15 @@ pub fn normalize_trusted_endpoint(value: &str) -> NativeResult<String> {
     normalize_endpoint_with_private_lan(value, true)
 }
 
+fn is_allowed_request_path(pathname: &str) -> bool {
+    ALLOWED_REQUEST_PATH_PREFIXES.iter().any(|prefix| {
+        pathname == *prefix
+            || pathname
+                .strip_prefix(prefix)
+                .is_some_and(|suffix| suffix.starts_with('/'))
+    })
+}
+
 pub fn build_request_url(endpoint: &str, relative_path: &str) -> NativeResult<Url> {
     if relative_path.is_empty()
         || relative_path.len() > 8192
@@ -104,15 +115,17 @@ pub fn build_request_url(endpoint: &str, relative_path: &str) -> NativeResult<Ur
         || relative_path.contains('#')
     {
         return Err(NativeError::invalid_input(
-            "请求路径必须是 Server 下的相对 /v0 路径。",
+            "请求路径必须是 Server 下允许的相对管理路径。",
         ));
     }
 
     let parsed_path = Url::parse(&format!("http://aih-native.invalid{relative_path}"))
         .map_err(|_| NativeError::invalid_input("请求路径无效。"))?;
     let pathname = parsed_path.path();
-    if pathname != "/v0" && !pathname.starts_with("/v0/") {
-        return Err(NativeError::invalid_input("原生请求仅允许访问 /v0 路径。"));
+    if !is_allowed_request_path(pathname) {
+        return Err(NativeError::invalid_input(
+            "原生请求仅允许访问 /v0 或 /v1/management 路径。",
+        ));
     }
 
     // This function is used only after Native has resolved a credential or a
@@ -183,6 +196,16 @@ mod tests {
             url.as_str(),
             "https://broker.example/base/proxy/v0/node-rpc/device-status?limit=10"
         );
+
+        let management_url = build_request_url(
+            "https://broker.example/base/proxy",
+            "/v1/management/accounts?provider=codex",
+        )
+        .unwrap();
+        assert_eq!(
+            management_url.as_str(),
+            "https://broker.example/base/proxy/v1/management/accounts?provider=codex"
+        );
     }
 
     #[test]
@@ -191,6 +214,10 @@ mod tests {
             "https://attacker.example/v0/test",
             "//attacker.example/v0/test",
             "/admin",
+            "/v1",
+            "/v1/models",
+            "/v1/management-override",
+            "/v1/management/../responses",
             "/v0/../admin",
             "/v0/test#fragment",
             "/v0\\test",

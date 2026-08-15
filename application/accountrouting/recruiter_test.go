@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/madou1217/ai_home/application/accountcredentials"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
@@ -942,20 +943,28 @@ func newRecruitmentCredentialResolver(
 	return &recruitmentCredentialResolver{resolutions: resolutions}
 }
 
-// ResolveCredentialBinding 返回目标账号预设的凭据绑定或错误。
-func (resolver *recruitmentCredentialResolver) ResolveCredentialBinding(
+// ResolveObservedCredentialBinding 返回目标账号预设的凭据绑定和同一快照观察。
+func (resolver *recruitmentCredentialResolver) ResolveObservedCredentialBinding(
 	_ context.Context,
 	accountRef accountcore.AccountRef,
-) (accountapp.CredentialBinding, error) {
+) (
+	accountapp.CredentialBinding,
+	accountcredentials.CredentialObservation,
+	error,
+) {
 	resolver.mu.Lock()
 	defer resolver.mu.Unlock()
 	resolver.calls++
 	resolution, found := resolver.resolutions[accountRef]
 	if !found {
-		return accountapp.CredentialBinding{}, accountapp.ErrCredentialNotFound
+		return accountapp.CredentialBinding{},
+			accountcredentials.CredentialObservation{},
+			accountapp.ErrCredentialNotFound
 	}
 	if resolution.err != nil {
-		return accountapp.CredentialBinding{}, resolution.err
+		return accountapp.CredentialBinding{},
+			accountcredentials.CredentialObservation{},
+			resolution.err
 	}
 	bindingRef := resolution.bindingRef
 	if !bindingRef.IsValid() {
@@ -967,9 +976,23 @@ func (resolver *recruitmentCredentialResolver) ResolveCredentialBinding(
 		resolution.credential,
 	)
 	if err != nil {
-		return accountapp.CredentialBinding{}, err
+		return accountapp.CredentialBinding{},
+			accountcredentials.CredentialObservation{},
+			err
 	}
-	return binding, nil
+	snapshot, err := accountapp.NewCredentialSnapshot(
+		accountRef,
+		resolution.credential.ProviderID(),
+		resolution.credential,
+		time.Date(2026, 8, 15, 7, 0, 0, 0, time.UTC),
+	)
+	if err != nil {
+		return accountapp.CredentialBinding{},
+			accountcredentials.CredentialObservation{},
+			err
+	}
+	observation, err := accountcredentials.NewCredentialObservation(snapshot)
+	return binding, observation, err
 }
 
 // CallCount 返回凭据解析调用次数。

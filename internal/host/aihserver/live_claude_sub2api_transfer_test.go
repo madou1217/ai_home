@@ -29,8 +29,6 @@ const (
 	realClaudeSub2APIFileEnv = "AIH_REAL_CLAUDE_SUB2API_FILE"
 	// realClaudeSub2APIEmailEnv 在多账号标准文件中精确选择一个公开身份。
 	realClaudeSub2APIEmailEnv = "AIH_REAL_CLAUDE_SUB2API_EMAIL"
-	// realClaudeTransferModel 是账号 9 已确认用于闭环的当前 Claude 模型。
-	realClaudeTransferModel = "claude-opus-5"
 	// realClaudeTransferMarker 是唯一允许进入真实推理的固定低敏文本。
 	realClaudeTransferMarker = "AIH_REAL_CLAUDE_TRANSFER_OK"
 	// realClaudeToolMarker 只允许固定工具参数进入真实上游。
@@ -744,6 +742,7 @@ func TestRealClaudeSub2APITransferEndToEnd(t *testing.T) {
 	sourceImported := importRealClaudeFixtureAccount(t, sourceURL, sourceClient)
 	assertRealStatus(t, sourceImported, http.StatusCreated)
 	sourceRef := decodeRealTransferAccountRef(t, sourceImported.body)
+	_ = waitForRealModelCatalog(t, sourceClient, sourceURL+modelsapi.Path)
 	sourceExported := performRequest(
 		t,
 		sourceClient,
@@ -775,16 +774,11 @@ func TestRealClaudeSub2APITransferEndToEnd(t *testing.T) {
 	assertRealStatus(t, targetImported, http.StatusCreated)
 	targetRef := decodeRealTransferAccountRef(t, targetImported.body)
 
-	models := performRequest(
-		t,
-		targetClient,
-		http.MethodGet,
-		targetURL+modelsapi.Path,
-		testClientKey,
-		nil,
-	)
-	assertRealStatus(t, models, http.StatusOK)
-	modelCount := assertRealClaudeModelAvailable(t, models.body)
+	models := waitForRealModelCatalog(t, targetClient, targetURL+modelsapi.Path)
+	selectedModel, modelCount := selectRealClaudeModelFromCatalog(t, models.body)
+	realClaudeTransferModel = selectedModel
+	realClaudeReasoningModel = selectedModel
+	assertRealClaudeModelAvailable(t, models.body)
 
 	inferencePayload := marshalRealCodexPayload(t, map[string]any{
 		"model": realClaudeTransferModel,

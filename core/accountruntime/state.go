@@ -90,6 +90,7 @@ type ModelState struct {
 	streakExpiresAt time.Time
 	cooldownKind    FailureKind
 	cooldownUntil   time.Time
+	lastFailureAt   time.Time
 }
 
 // Apply 按固定策略计算一个失败事件的新不可变状态。
@@ -105,6 +106,9 @@ func (state ModelState) Apply(
 	if !policy.EntersCooldown() {
 		state.clearStreak()
 		return state, transition, nil
+	}
+	if state.lastFailureAt.Before(failure.OccurredAt()) {
+		state.lastFailureAt = failure.OccurredAt()
 	}
 
 	count := uint8(1)
@@ -164,9 +168,18 @@ func (state ModelState) Evaluate(
 	), nil
 }
 
-// Succeed 清除当前账号与模型元组的全部瞬态失败状态。
-func (state ModelState) Succeed() ModelState {
-	return ModelState{}
+// Succeed 只允许未早于最后失败的成功清除当前元组瞬态状态。
+func (state ModelState) Succeed(
+	happenedAt time.Time,
+) (ModelState, error) {
+	if !isRuntimeTime(happenedAt) {
+		return ModelState{}, ErrInvalidRuntimeTime
+	}
+	happenedAt = normalizeRuntimeTime(happenedAt)
+	if state.lastFailureAt.After(happenedAt) {
+		return state, nil
+	}
+	return ModelState{}, nil
 }
 
 // IsZero 判断该元组是否无需占用稀疏运行态索引。
@@ -182,6 +195,9 @@ func (state ModelState) prune(now time.Time) ModelState {
 	}
 	if !state.streakExpiresAt.After(now) {
 		state.clearStreak()
+	}
+	if state.cooldownUntil.IsZero() && state.streakExpiresAt.IsZero() {
+		state.lastFailureAt = time.Time{}
 	}
 	return state
 }

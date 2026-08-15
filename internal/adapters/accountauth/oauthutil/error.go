@@ -89,10 +89,15 @@ func ClassifyRefreshError(statusCode int, errorCode string) error {
 // refreshTokenInvalid 只接受明确表示 Refresh Token 失效的机器码。
 func refreshTokenInvalid(code string) bool {
 	switch code {
-	case "invalid_grant",
+	case "expired_refresh_token",
+		"invalid_grant",
 		"invalid_token",
 		"invalid_refresh_token",
-		"refresh_token_expired":
+		"refresh_token_expired",
+		"refresh_token_invalid",
+		"refresh_token_not_found",
+		"refresh_token_revoked",
+		"revoked_refresh_token":
 		return true
 	default:
 		return false

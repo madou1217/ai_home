@@ -3,17 +3,19 @@ package sqliteaccount
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	usagecore "github.com/madou1217/ai_home/core/accountusage"
 )
 
-// accountOverviewSelectSQL 集中定义账号管理查询允许读取的公开标量。
+// accountOverviewSelectSQL 集中定义账号管理查询允许读取的公开事实。
 //
-// 账号管理查询禁止选择 credential_json 或 profile_json。
+// 单条 SQL 使用账号主键相关子查询读取有界派生快照，禁止选择凭据或资料 JSON。
 const accountOverviewSelectSQL = `
 	SELECT a.account_ref, a.provider_id, a.cli_account_id, a.enabled,
 	       a.created_at_ms, a.updated_at_ms,
@@ -22,7 +24,47 @@ const accountOverviewSelectSQL = `
 	       p.account_ref IS NOT NULL,
 	       COALESCE(p.display_name, ''), COALESCE(p.email, ''),
 	       COALESCE(p.subscription_kind, ''), COALESCE(p.subscription_raw, ''),
-	       COALESCE(p.updated_at_ms, 0)
+	       COALESCE(p.updated_at_ms, 0),
+	       (
+	         SELECT json_object(
+	           'stored_count', COUNT(*),
+	           'effective_count', COALESCE(SUM(
+	             CASE
+	               WHEN m.manual_policy = 'force_enable'
+	                 OR (m.manual_policy = 'inherit' AND m.upstream_available = 1)
+	               THEN 1 ELSE 0
+	             END
+	           ), 0),
+	           'updated_at_ms', COALESCE(MAX(m.updated_at_ms), 0)
+	         )
+	         FROM account_models AS m
+	         WHERE m.account_ref = a.account_ref
+	       ),
+	       COALESCE((
+	         SELECT json_group_array(json_object(
+	           'limit_id', bounded_usage.limit_id,
+	           'limit_name', bounded_usage.limit_name,
+	           'bucket', bounded_usage.bucket,
+	           'kind', bounded_usage.kind,
+	           'scope', bounded_usage.scope,
+	           'scope_key', bounded_usage.scope_key,
+	           'remaining_bps', bounded_usage.remaining_bps,
+	           'availability', bounded_usage.availability,
+	           'window_seconds', bounded_usage.window_seconds,
+	           'reset_at_ms', bounded_usage.reset_at_ms,
+	           'source', bounded_usage.source,
+	           'captured_at_ms', bounded_usage.captured_at_ms
+	         ))
+	         FROM (
+	           SELECT u.limit_id, u.limit_name, u.bucket, u.kind, u.scope,
+	                  u.scope_key, u.remaining_bps, u.availability,
+	                  u.window_seconds, u.reset_at_ms, u.source, u.captured_at_ms
+	           FROM account_usage AS u
+	           WHERE u.account_ref = a.account_ref
+	           ORDER BY u.limit_id, u.bucket
+	           LIMIT 65
+	         ) AS bounded_usage
+	       ), '[]')
 	FROM accounts AS a
 	LEFT JOIN account_credentials AS c ON c.account_ref = a.account_ref
 	LEFT JOIN account_profiles AS p ON p.account_ref = a.account_ref`
@@ -118,6 +160,7 @@ func (store *Store) scanAccountOverview(row rowScanner) (accountapp.AccountOverv
 	var record accountRecord
 	var input accountapp.AccountOverviewInput
 	var profileUpdatedAtMS int64
+	var modelSummaryJSON, usageSnapshotJSON string
 	if err := row.Scan(
 		&record.accountRef,
 		&record.providerID,
@@ -134,6 +177,8 @@ func (store *Store) scanAccountOverview(row rowScanner) (accountapp.AccountOverv
 		&input.SubscriptionKind,
 		&input.SubscriptionRaw,
 		&profileUpdatedAtMS,
+		&modelSummaryJSON,
+		&usageSnapshotJSON,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return accountapp.AccountOverview{}, accountapp.ErrAccountNotFound
@@ -145,6 +190,20 @@ func (store *Store) scanAccountOverview(row rowScanner) (accountapp.AccountOverv
 		return accountapp.AccountOverview{}, err
 	}
 	input.Account = account
+	modelSummary, err := restoreOverviewModelSummary(modelSummaryJSON)
+	if err != nil {
+		return accountapp.AccountOverview{}, err
+	}
+	input.ModelSummary = modelSummary
+	usageSnapshot, hasUsageSnapshot, err := restoreOverviewUsageSnapshot(
+		account,
+		usageSnapshotJSON,
+	)
+	if err != nil {
+		return accountapp.AccountOverview{}, err
+	}
+	input.HasUsageSnapshot = hasUsageSnapshot
+	input.UsageSnapshot = usageSnapshot
 	if input.HasProfile {
 		input.ProfileUpdatedAt = time.UnixMilli(profileUpdatedAtMS).UTC()
 	}
@@ -153,4 +212,117 @@ func (store *Store) scanAccountOverview(row rowScanner) (accountapp.AccountOverv
 		return accountapp.AccountOverview{}, ErrIncompatibleDatabase
 	}
 	return overview, nil
+}
+
+type overviewModelSummaryDocument struct {
+	StoredCount    int64 `json:"stored_count"`
+	EffectiveCount int64 `json:"effective_count"`
+	UpdatedAtMS    int64 `json:"updated_at_ms"`
+}
+
+// restoreOverviewModelSummary 把单次列表 SQL 的模型聚合恢复为领域汇总。
+func restoreOverviewModelSummary(
+	document string,
+) (accountapp.AccountModelSummary, error) {
+	var persisted overviewModelSummaryDocument
+	if err := json.Unmarshal([]byte(document), &persisted); err != nil {
+		return accountapp.AccountModelSummary{}, ErrIncompatibleDatabase
+	}
+	if persisted.StoredCount == 0 {
+		if persisted.EffectiveCount != 0 || persisted.UpdatedAtMS != 0 {
+			return accountapp.AccountModelSummary{}, ErrIncompatibleDatabase
+		}
+		return accountapp.NewAccountModelSummary(accountapp.AccountModelSummaryInput{})
+	}
+	maxInt := int64(^uint(0) >> 1)
+	if persisted.StoredCount < 0 ||
+		persisted.StoredCount > maxInt ||
+		persisted.EffectiveCount < 0 ||
+		persisted.EffectiveCount > maxInt {
+		return accountapp.AccountModelSummary{}, ErrIncompatibleDatabase
+	}
+	summary, err := accountapp.NewAccountModelSummary(accountapp.AccountModelSummaryInput{
+		Known:          true,
+		StoredCount:    int(persisted.StoredCount),
+		EffectiveCount: int(persisted.EffectiveCount),
+		UpdatedAt:      time.UnixMilli(persisted.UpdatedAtMS).UTC(),
+	})
+	if err != nil {
+		return accountapp.AccountModelSummary{}, ErrIncompatibleDatabase
+	}
+	return summary, nil
+}
+
+type overviewUsageEntryDocument struct {
+	LimitID       string `json:"limit_id"`
+	LimitName     string `json:"limit_name"`
+	Bucket        string `json:"bucket"`
+	Kind          string `json:"kind"`
+	Scope         string `json:"scope"`
+	ScopeKey      string `json:"scope_key"`
+	RemainingBPS  *int64 `json:"remaining_bps"`
+	Availability  string `json:"availability"`
+	WindowSeconds *int64 `json:"window_seconds"`
+	ResetAtMS     *int64 `json:"reset_at_ms"`
+	Source        string `json:"source"`
+	CapturedAtMS  int64  `json:"captured_at_ms"`
+}
+
+// restoreOverviewUsageSnapshot 恢复最多 64 条额度事实；第 65 行只用于发现不兼容数据库。
+func restoreOverviewUsageSnapshot(
+	account accountcore.Account,
+	document string,
+) (usagecore.Snapshot, bool, error) {
+	var persisted []overviewUsageEntryDocument
+	if err := json.Unmarshal([]byte(document), &persisted); err != nil {
+		return usagecore.Snapshot{}, false, ErrIncompatibleDatabase
+	}
+	if len(persisted) == 0 {
+		return usagecore.Snapshot{}, false, nil
+	}
+	if len(persisted) > usagecore.MaxEntriesPerSnapshot {
+		return usagecore.Snapshot{}, false, ErrIncompatibleDatabase
+	}
+	entries := make([]usagecore.EntryInput, 0, len(persisted))
+	source := persisted[0].Source
+	capturedAtMS := persisted[0].CapturedAtMS
+	for _, row := range persisted {
+		if row.Source != source || row.CapturedAtMS != capturedAtMS {
+			return usagecore.Snapshot{}, false, ErrIncompatibleDatabase
+		}
+		entry := usagecore.EntryInput{
+			LimitID:      row.LimitID,
+			LimitName:    row.LimitName,
+			Bucket:       row.Bucket,
+			Kind:         usagecore.Kind(row.Kind),
+			Scope:        usagecore.Scope(row.Scope),
+			ScopeKey:     row.ScopeKey,
+			Availability: usagecore.Availability(row.Availability),
+		}
+		if row.RemainingBPS != nil {
+			if *row.RemainingBPS < 0 || *row.RemainingBPS > 10_000 {
+				return usagecore.Snapshot{}, false, ErrIncompatibleDatabase
+			}
+			entry.HasRemaining = true
+			entry.RemainingBasisPoints = uint16(*row.RemainingBPS)
+		}
+		if row.WindowSeconds != nil {
+			entry.WindowSeconds = *row.WindowSeconds
+		}
+		if row.ResetAtMS != nil {
+			entry.ResetAt = time.UnixMilli(*row.ResetAtMS).UTC()
+		}
+		entries = append(entries, entry)
+	}
+	snapshot, err := usagecore.NewSnapshot(usagecore.SnapshotInput{
+		AccountRef: account.Ref(),
+		ProviderID: account.ProviderID(),
+		Source:     source,
+		CapturedAt: time.UnixMilli(capturedAtMS).UTC(),
+		Entries:    entries,
+	})
+	if err != nil {
+		return usagecore.Snapshot{}, false, ErrIncompatibleDatabase
+	}
+	return snapshot, true, nil
 }

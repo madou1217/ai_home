@@ -43,7 +43,7 @@ func (handler *Handler) handleNativeImport(
 		writeNativeImportInputError(response, err)
 		return
 	}
-	overview, err := handler.registerAccount(
+	overview, created, err := handler.importAccount(
 		request.Context(),
 		credential,
 		profile,
@@ -54,7 +54,7 @@ func (handler *Handler) handleNativeImport(
 	}
 	writeJSON(
 		response,
-		http.StatusCreated,
+		accountImportStatus(created),
 		accountResponse{Data: newAccountView(overview)},
 	)
 }
@@ -79,17 +79,32 @@ func (handler *Handler) decodeNativeAccount(
 	return credential, profile, nil
 }
 
-// registerAccount 复用原子 Registrar，并从数据库返回统一公开投影。
-func (handler *Handler) registerAccount(
+// importAccount 复用统一导入应用服务，并从数据库返回完整公开投影。
+func (handler *Handler) importAccount(
 	ctx context.Context,
 	credential accountapp.Credential,
 	profile accountapp.PublicProfile,
-) (accountapp.AccountOverview, error) {
-	account, err := handler.registrar.Register(ctx, credential, profile)
+) (accountapp.AccountOverview, bool, error) {
+	result, err := handler.importer.Import(ctx, credential, profile)
 	if err != nil {
-		return accountapp.AccountOverview{}, err
+		return accountapp.AccountOverview{}, false, err
 	}
-	return handler.management.GetAccountOverview(ctx, account.Ref())
+	overview, err := handler.management.GetAccountOverview(
+		ctx,
+		result.Account().Ref(),
+	)
+	if err != nil {
+		return accountapp.AccountOverview{}, false, err
+	}
+	return overview, result.Created(), nil
+}
+
+// accountImportStatus 用 HTTP 语义区分首次创建与既有身份原地更新。
+func accountImportStatus(created bool) int {
+	if created {
+		return http.StatusCreated
+	}
+	return http.StatusOK
 }
 
 // writeNativeImportInputError 输出不含 Provider artifact 内容的稳定错误。

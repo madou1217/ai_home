@@ -75,16 +75,10 @@ func TestRealCodexSub2APITransferEndToEnd(t *testing.T) {
 	assertRealStatus(t, imported, http.StatusCreated)
 	accountRef := decodeRealTransferAccountRef(t, imported.body)
 
-	models := performRequest(
-		t,
-		targetClient,
-		http.MethodGet,
-		targetURL+modelsapi.Path,
-		testClientKey,
-		nil,
-	)
-	assertRealStatus(t, models, http.StatusOK)
-	modelCount := assertRealCodexModelAvailable(t, models.body)
+	models := waitForRealModelCatalog(t, targetClient, targetURL+modelsapi.Path)
+	selectedModel, modelCount := selectRealCodexModelFromCatalog(t, models.body)
+	realCodexModel = selectedModel
+	targetUpstream.SetExpectedModel(selectedModel)
 
 	requestPayload := marshalRealCodexPayload(t, map[string]any{
 		"model":        realCodexModel,

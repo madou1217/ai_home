@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/madou1217/ai_home/application/accountcredentials"
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	"github.com/madou1217/ai_home/internal/adapters/attemptfailure"
@@ -25,7 +26,8 @@ type turnObserver struct {
 	mu             sync.Mutex
 	model          string
 	route          runtimecore.ModelRoute
-	attempts       inferencegateway.AttemptRecorder
+	observation    accountcredentials.CredentialObservation
+	attempts       *inferencegateway.ObservedAttemptRecorder
 	modelRefreshes inferencegateway.ModelRefreshScheduler
 	clock          func() time.Time
 	active         bool
@@ -36,13 +38,15 @@ type turnObserver struct {
 func newTurnObserver(
 	model string,
 	route runtimecore.ModelRoute,
-	attempts inferencegateway.AttemptRecorder,
+	observation accountcredentials.CredentialObservation,
+	attempts *inferencegateway.ObservedAttemptRecorder,
 	modelRefreshes inferencegateway.ModelRefreshScheduler,
 	clock func() time.Time,
 ) *turnObserver {
 	return &turnObserver{
 		model:          model,
 		route:          route,
+		observation:    observation,
 		attempts:       attempts,
 		modelRefreshes: modelRefreshes,
 		clock:          clock,
@@ -70,6 +74,7 @@ func (observer *turnObserver) Begin(payload []byte) error {
 // 和 error 都视为当前响应流的终态；只有 response.completed 可以复用连接。
 func (observer *turnObserver) ObserveUpstream(payload []byte) (bool, error) {
 	if observer == nil || observer.attempts == nil ||
+		!observer.observation.IsValid() ||
 		observer.modelRefreshes == nil || observer.clock == nil {
 		return false, ErrInvalidObserverState
 	}
@@ -89,10 +94,17 @@ func (observer *turnObserver) ObserveUpstream(payload []byte) (bool, error) {
 		if !generate {
 			return false, nil
 		}
-		return false, observer.attempts.RecordSuccess(
+		success, successErr := inferencegateway.NewAttemptSuccess(observer.clock())
+		if successErr != nil {
+			return false, ErrInvalidObserverState
+		}
+		_, successErr = observer.attempts.RecordSuccess(
 			context.Background(),
 			observer.route,
+			observer.observation,
+			success,
 		)
+		return false, successErr
 	case "response.failed", "error":
 		generate, err := observer.finishTurn()
 		if err != nil {
@@ -120,19 +132,15 @@ func (observer *turnObserver) ObserveUpstream(payload []byte) (bool, error) {
 		if err != nil {
 			return true, ErrInvalidObserverState
 		}
-		if err := observer.attempts.RecordFailure(
+		if err := recordCodexFailure(
 			context.Background(),
+			observer.attempts,
+			observer.modelRefreshes,
 			observer.route,
+			observer.observation,
 			failure,
 		); err != nil {
 			return true, err
-		}
-		if failure.RuntimeKind() == runtimecore.FailureModelUnsupported {
-			_ = observer.modelRefreshes.ScheduleModelRefresh(
-				context.Background(),
-				observer.route.AccountRef(),
-				"codex",
-			)
 		}
 		return true, nil
 	case "response.incomplete":
@@ -158,11 +166,40 @@ func (observer *turnObserver) RecordMalformedUpstream() error {
 	if err != nil {
 		return ErrInvalidObserverState
 	}
-	return observer.attempts.RecordFailure(
+	return recordCodexFailure(
 		context.Background(),
+		observer.attempts,
+		observer.modelRefreshes,
 		observer.route,
+		observer.observation,
 		failure,
 	)
+}
+
+// recordCodexFailure 统一保护 WS 握手、转发与终态观察产生的运行态写入。
+func recordCodexFailure(
+	ctx context.Context,
+	attempts *inferencegateway.ObservedAttemptRecorder,
+	modelRefreshes inferencegateway.ModelRefreshScheduler,
+	route runtimecore.ModelRoute,
+	observation accountcredentials.CredentialObservation,
+	failure inferencegateway.AttemptFailure,
+) error {
+	if attempts == nil || modelRefreshes == nil {
+		return ErrInvalidObserverState
+	}
+	recorded, err := attempts.RecordFailure(ctx, route, observation, failure)
+	if err != nil || !recorded {
+		return err
+	}
+	if failure.RuntimeKind() == runtimecore.FailureModelUnsupported {
+		_ = modelRefreshes.ScheduleModelRefresh(
+			ctx,
+			route.AccountRef(),
+			"codex",
+		)
+	}
+	return nil
 }
 
 // ActiveGenerating 判断连接断开时是否存在应归属到账号的真实生成请求。
@@ -181,6 +218,14 @@ func (observer *turnObserver) Route() runtimecore.ModelRoute {
 		return runtimecore.ModelRoute{}
 	}
 	return observer.route
+}
+
+// CredentialObservation 返回当前连接建连时读取的低敏凭据观察。
+func (observer *turnObserver) CredentialObservation() accountcredentials.CredentialObservation {
+	if observer == nil {
+		return accountcredentials.CredentialObservation{}
+	}
+	return observer.observation
 }
 
 // finishTurn 原子清除当前轮，并返回它是否是真实生成请求。

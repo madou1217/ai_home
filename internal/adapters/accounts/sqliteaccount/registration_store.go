@@ -13,7 +13,7 @@ import (
 
 var _ accountapp.RegistrationStore = (*Store)(nil)
 
-// RegisterNew 在同一事务中分配 Provider 内 CLI 别名并写入完整注册快照。
+// RegisterNew 在同一事务中分配 Provider 内 CLI 别名并写入账号、凭据和可选资料。
 func (store *Store) RegisterNew(
 	ctx context.Context,
 	request accountapp.RegistrationRequest,

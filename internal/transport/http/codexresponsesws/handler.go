@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/madou1217/ai_home/application/accountcredentials"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/codexwebsocket"
 	"github.com/madou1217/ai_home/application/inferencegateway"
@@ -67,12 +68,14 @@ type UpstreamDialer interface {
 
 // Dependencies 声明原生 WS Handler 的稳定外部端口。
 type Dependencies struct {
-	Authorizer     Authorizer
-	Selector       Selector
-	Upstream       UpstreamDialer
-	Attempts       inferencegateway.AttemptRecorder
-	ModelRefreshes inferencegateway.ModelRefreshScheduler
-	Clock          func() time.Time
+	Authorizer Authorizer
+	Selector   Selector
+	Upstream   UpstreamDialer
+	Attempts   inferencegateway.AttemptRecorder
+	// CredentialObservations 在终态写运行态前复核连接所用凭据是否仍是当前快照。
+	CredentialObservations inferencegateway.CredentialObservationVerifier
+	ModelRefreshes         inferencegateway.ModelRefreshScheduler
+	Clock                  func() time.Time
 }
 
 // Handler 管理 Upgrade、连接注册、双向帧代理和终态观察。
@@ -80,7 +83,7 @@ type Handler struct {
 	authorizer     Authorizer
 	selector       Selector
 	upstream       UpstreamDialer
-	attempts       inferencegateway.AttemptRecorder
+	attempts       *inferencegateway.ObservedAttemptRecorder
 	modelRefreshes inferencegateway.ModelRefreshScheduler
 	clock          func() time.Time
 	sessions       *sessionRegistry
@@ -92,15 +95,23 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		dependencies.Selector == nil ||
 		dependencies.Upstream == nil ||
 		dependencies.Attempts == nil ||
+		dependencies.CredentialObservations == nil ||
 		dependencies.ModelRefreshes == nil ||
 		dependencies.Clock == nil {
+		return nil, ErrInvalidDependencies
+	}
+	attempts, err := inferencegateway.NewObservedAttemptRecorder(
+		dependencies.Attempts,
+		dependencies.CredentialObservations,
+	)
+	if err != nil {
 		return nil, ErrInvalidDependencies
 	}
 	return &Handler{
 		authorizer:     dependencies.Authorizer,
 		selector:       dependencies.Selector,
 		upstream:       dependencies.Upstream,
-		attempts:       dependencies.Attempts,
+		attempts:       attempts,
 		modelRefreshes: dependencies.ModelRefreshes,
 		clock:          dependencies.Clock,
 		sessions:       newSessionRegistry(),
@@ -229,6 +240,7 @@ func (handler *Handler) ServeHTTP(
 	observer := newTurnObserver(
 		firstRequest.Model,
 		route,
+		selection.CredentialObservation(),
 		handler.attempts,
 		handler.modelRefreshes,
 		handler.clock,
@@ -257,6 +269,7 @@ func (handler *Handler) ServeHTTP(
 		handler.handleDialFailure(
 			client,
 			route,
+			selection.CredentialObservation(),
 			upstreamResponse,
 			dialErr,
 		)
@@ -275,7 +288,11 @@ func (handler *Handler) ServeHTTP(
 		websocket.MessageText,
 		firstFrame,
 	); err != nil {
-		handler.recordTransportFailure(route, err)
+		handler.recordTransportFailure(
+			route,
+			selection.CredentialObservation(),
+			err,
+		)
 		writeWebSocketError(
 			client,
 			http.StatusBadGateway,
@@ -315,9 +332,12 @@ func (handler *Handler) proxy(
 		observer.ActiveGenerating() {
 		failure, err := attemptfailure.NewIncompleteStream(result.err)
 		if err == nil {
-			_ = handler.attempts.RecordFailure(
+			_ = recordCodexFailure(
 				context.Background(),
+				handler.attempts,
+				handler.modelRefreshes,
 				observer.Route(),
+				observer.CredentialObservation(),
 				failure,
 			)
 		}
@@ -331,6 +351,7 @@ func (handler *Handler) proxy(
 func (handler *Handler) handleDialFailure(
 	client responseswebsocket.Connection,
 	route runtimecore.ModelRoute,
+	observation accountcredentials.CredentialObservation,
 	response *http.Response,
 	dialErr error,
 ) {
@@ -360,9 +381,12 @@ func (handler *Handler) handleDialFailure(
 		failure, err = attemptfailure.NewTransport(dialErr)
 	}
 	if err == nil && failure.IsValid() {
-		_ = handler.attempts.RecordFailure(
+		_ = recordCodexFailure(
 			context.Background(),
+			handler.attempts,
+			handler.modelRefreshes,
 			route,
+			observation,
 			failure,
 		)
 		responseFailure := failure.ResponseFailure()
@@ -391,13 +415,17 @@ func (handler *Handler) handleDialFailure(
 // recordTransportFailure 在首帧尚未产生上游事件时记录连接写入失败。
 func (handler *Handler) recordTransportFailure(
 	route runtimecore.ModelRoute,
+	observation accountcredentials.CredentialObservation,
 	err error,
 ) {
 	failure, classifyErr := attemptfailure.NewTransport(err)
 	if classifyErr == nil {
-		_ = handler.attempts.RecordFailure(
+		_ = recordCodexFailure(
 			context.Background(),
+			handler.attempts,
+			handler.modelRefreshes,
 			route,
+			observation,
 			failure,
 		)
 	}

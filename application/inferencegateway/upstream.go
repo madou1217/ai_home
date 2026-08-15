@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/madou1217/ai_home/application/accountcredentials"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	"github.com/madou1217/ai_home/core/inference"
@@ -15,6 +16,8 @@ var (
 	ErrInvalidInvocation = errors.New("上游推理调用无效")
 	// ErrInvalidAttemptFailure 表示公开失败和运行态分类不完整。
 	ErrInvalidAttemptFailure = errors.New("上游推理失败无效")
+	// ErrInvalidAttemptSuccess 表示成功发生时间无法稳定参与运行态时序判断。
+	ErrInvalidAttemptSuccess = errors.New("上游推理成功无效")
 	// ErrInvalidAttemptResult 表示上游没有返回明确成功或失败结果。
 	ErrInvalidAttemptResult = errors.New("上游推理结果无效")
 	// ErrInvalidUpstreamAdapter 表示上游 Adapter 缺失或协议无效。
@@ -25,12 +28,46 @@ var (
 	ErrUpstreamProtocolNotRegistered = errors.New("上游协议尚未注册")
 )
 
+// AttemptSuccess 是不含响应正文的成功发生事实。
+type AttemptSuccess struct {
+	happenedAt time.Time
+}
+
+// NewAttemptSuccess 创建 UTC 毫秒精度的成功事件。
+func NewAttemptSuccess(happenedAt time.Time) (AttemptSuccess, error) {
+	if happenedAt.IsZero() ||
+		happenedAt.Year() < 1970 ||
+		happenedAt.Year() > 9999 {
+		return AttemptSuccess{}, ErrInvalidAttemptSuccess
+	}
+	return AttemptSuccess{
+		happenedAt: time.UnixMilli(happenedAt.UnixMilli()).UTC(),
+	}, nil
+}
+
+// HappenedAt 返回成功终态被观察到的 UTC 毫秒时间。
+func (success AttemptSuccess) HappenedAt() time.Time {
+	return success.happenedAt
+}
+
+// IsValid 重新检查跨边界传递后的成功时间不变量。
+func (success AttemptSuccess) IsValid() bool {
+	return !success.happenedAt.IsZero() &&
+		success.happenedAt.Location() == time.UTC &&
+		success.happenedAt.Year() >= 1970 &&
+		success.happenedAt.Year() <= 9999 &&
+		time.UnixMilli(success.happenedAt.UnixMilli()).UTC().Equal(
+			success.happenedAt,
+		)
+}
+
 // Invocation 是交给单一上游 Adapter 的身份绑定调用。
 type Invocation struct {
-	request    inference.Request
-	route      Route
-	account    accountapp.RoutingAccount
-	credential accountapp.Credential
+	request     inference.Request
+	route       Route
+	account     accountapp.RoutingAccount
+	credential  accountapp.Credential
+	observation accountcredentials.CredentialObservation
 }
 
 // newInvocation 复核账号、凭据和路由属于同一个 Provider 身份。
@@ -39,19 +76,24 @@ func newInvocation(
 	route Route,
 	account accountapp.RoutingAccount,
 	binding accountapp.CredentialBinding,
+	observation accountcredentials.CredentialObservation,
 ) (Invocation, error) {
 	if !route.IsValid() ||
 		account.ProviderID() != string(route.ProviderID()) ||
 		!binding.IsValid() ||
 		binding.AccountRef() != account.Ref() ||
-		binding.ProviderID() != account.ProviderID() {
+		binding.ProviderID() != account.ProviderID() ||
+		!observation.IsValid() ||
+		observation.AccountRef() != account.Ref() ||
+		observation.ProviderID() != account.ProviderID() {
 		return Invocation{}, ErrInvalidInvocation
 	}
 	return Invocation{
-		request:    request,
-		route:      route,
-		account:    account,
-		credential: binding.Credential(),
+		request:     request,
+		route:       route,
+		account:     account,
+		credential:  binding.Credential(),
+		observation: observation,
 	}, nil
 }
 
@@ -73,6 +115,11 @@ func (invocation Invocation) Account() accountapp.RoutingAccount {
 // Credential 返回已刷新且身份复核完成的领域凭据。
 func (invocation Invocation) Credential() accountapp.Credential {
 	return invocation.credential
+}
+
+// CredentialObservation 返回本次上游调用读取凭据时的低敏持久化观察。
+func (invocation Invocation) CredentialObservation() accountcredentials.CredentialObservation {
+	return invocation.observation
 }
 
 // AttemptFailure 同时保存客户端安全失败和运行态稳定分类。
@@ -301,10 +348,20 @@ type AttemptRecorder interface {
 	RecordSuccess(
 		ctx context.Context,
 		route runtimecore.ModelRoute,
+		success AttemptSuccess,
 	) error
 	RecordFailure(
 		ctx context.Context,
 		route runtimecore.ModelRoute,
 		failure AttemptFailure,
 	) error
+}
+
+// CredentialObservationVerifier 在运行态写入前复核请求凭据是否仍是当前快照。
+// 实现可以访问持久化存储；校验只发生在上游终态，不进入账号征召热路径。
+type CredentialObservationVerifier interface {
+	IsCurrentCredentialObservation(
+		ctx context.Context,
+		observation accountcredentials.CredentialObservation,
+	) (bool, error)
 }

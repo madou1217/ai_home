@@ -223,7 +223,8 @@ func TestResolverCoalescesConcurrentRefreshByAccountRef(t *testing.T) {
 	}
 }
 
-// TestResolverDoesNotPersistRejectedRefresh 验证失败结果不会进入凭据存储。
+// TestResolverDoesNotPersistRejectedRefresh 验证预刷新失败继续使用当前凭据，
+// 且失败结果不会进入凭据存储。
 func TestResolverDoesNotPersistRejectedRefresh(t *testing.T) {
 	t.Parallel()
 
@@ -240,9 +241,12 @@ func TestResolverDoesNotPersistRejectedRefresh(t *testing.T) {
 	}
 	resolver := newResolverTestResolver(t, store, strategy, now)
 
-	_, err := resolver.Resolve(context.Background(), store.accountRef)
-	if !errors.Is(err, accountcredentials.ErrReauthenticationRequired) {
+	result, err := resolver.Resolve(context.Background(), store.accountRef)
+	if err != nil {
 		t.Fatalf("Resolve() error = %v", err)
+	}
+	if result.Refreshed() || result.Credential().IdentitySeed() != credential.IdentitySeed() {
+		t.Fatalf("Resolve() result = %#v", result)
 	}
 	persisted, snapshotErr := store.GetCredentialSnapshot(
 		context.Background(),
@@ -392,6 +396,8 @@ type resolverTestStore struct {
 	mu           sync.Mutex
 	accountRef   accountcore.AccountRef
 	snapshot     accountapp.CredentialSnapshot
+	replaceErr   error
+	readCalls    atomic.Int64
 	replaceCalls atomic.Int64
 }
 
@@ -427,12 +433,42 @@ func (store *resolverTestStore) GetCredentialSnapshot(
 	_ context.Context,
 	accountRef accountcore.AccountRef,
 ) (accountapp.CredentialSnapshot, error) {
+	store.readCalls.Add(1)
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	if accountRef != store.accountRef {
 		return accountapp.CredentialSnapshot{}, accountapp.ErrCredentialNotFound
 	}
 	return store.snapshot, nil
+}
+
+// replaceSnapshot 模拟重登或静态轮换已经提交了更新后的凭据快照。
+func (store *resolverTestStore) replaceSnapshot(
+	t *testing.T,
+	credential accountapp.Credential,
+	updatedAt time.Time,
+) {
+	t.Helper()
+
+	snapshot, err := accountapp.NewCredentialSnapshot(
+		store.accountRef,
+		credential.ProviderID(),
+		credential,
+		updatedAt,
+	)
+	if err != nil {
+		t.Fatalf("NewCredentialSnapshot() error = %v", err)
+	}
+	store.mu.Lock()
+	store.snapshot = snapshot
+	store.mu.Unlock()
+}
+
+// setReplaceError 设置确定性的凭据持久化失败。
+func (store *resolverTestStore) setReplaceError(err error) {
+	store.mu.Lock()
+	store.replaceErr = err
+	store.mu.Unlock()
 }
 
 // ReplaceCredential 模拟持久层 compare-and-swap。
@@ -445,6 +481,9 @@ func (store *resolverTestStore) ReplaceCredential(
 	if replacement.AccountRef() != store.accountRef ||
 		!replacement.ExpectedUpdatedAt().Equal(store.snapshot.UpdatedAt()) {
 		return accountapp.ErrCredentialConflict
+	}
+	if store.replaceErr != nil {
+		return store.replaceErr
 	}
 	next, err := accountapp.NewCredentialSnapshot(
 		replacement.AccountRef(),

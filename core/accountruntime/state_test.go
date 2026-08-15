@@ -233,8 +233,47 @@ func TestModelStateSuccessClearsTransientState(t *testing.T) {
 	if state.IsZero() {
 		t.Fatal("Apply() state unexpectedly empty")
 	}
-	if succeeded := state.Succeed(); !succeeded.IsZero() {
-		t.Fatalf("Succeed() state = %#v", succeeded)
+	if succeeded, succeedErr := state.Succeed(
+		runtimeTestTime().Add(time.Second),
+	); succeedErr != nil || !succeeded.IsZero() {
+		t.Fatalf("Succeed() state = %#v error=%v", succeeded, succeedErr)
+	}
+}
+
+// TestModelStateRejectsSuccessOlderThanLastFailure 验证同一凭据代次内，先发生但
+// 迟到提交的成功不能清除之后已经写入的失败状态。
+func TestModelStateRejectsSuccessOlderThanLastFailure(t *testing.T) {
+	t.Parallel()
+
+	failedAt := runtimeTestTime().Add(2 * time.Second)
+	failure := newRuntimeTestFailure(
+		t,
+		FailureRateLimited,
+		failedAt,
+		time.Minute,
+	)
+	state, _, err := (ModelState{}).Apply(failure)
+	if err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+
+	unchanged, err := state.Succeed(failedAt.Add(-time.Second))
+	if err != nil {
+		t.Fatalf("Succeed(older) error = %v", err)
+	}
+	_, eligibility, err := unchanged.Evaluate(failedAt)
+	if err != nil || eligibility.Eligible() {
+		t.Fatalf(
+			"older success state=%#v eligibility=%#v error=%v",
+			unchanged,
+			eligibility,
+			err,
+		)
+	}
+
+	cleared, err := unchanged.Succeed(failedAt.Add(time.Second))
+	if err != nil || !cleared.IsZero() {
+		t.Fatalf("Succeed(current) state=%#v error=%v", cleared, err)
 	}
 }
 

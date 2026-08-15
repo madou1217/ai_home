@@ -1,8 +1,8 @@
 # AI Home 当前功能矩阵
 
-> 快照日期：2026-08-13
+> 快照日期：2026-08-15
 > 用途：作为逐功能重构、技术栈迁移与回归验收的基线；本文件描述“当前真实存在什么”，不代表这些能力都已达到同一成熟度。
-> 本轮范围：仅盘点功能，不实施 Go/Rust/TypeScript 迁移，不修改运行时，不调整数据结构。
+> 本轮增量：记录 G1 Codex/Claude 账号控制面收口；只把当前工作区已有实现标为完成，真实 Provider 验收仍以独立证据为准。
 
 ## 1. 盘点口径
 
@@ -65,54 +65,58 @@
 
 ## 3. 账号管理功能矩阵
 
+除明确标记为“正式 Node”的入口外，本节 `aih account ...` 只表示 Go 命令语法；当前
+必须通过 `npm run go-cli:preview -- account ...` 执行。正式 npm `aih` 尚未接入 Go
+账号命令，默认 Web 与 Node Server 也没有切流。
+
 ### 3.1 账号查询、身份与状态
 
 | 编号 | 功能点 | 入口 | 当前行为/边界 | 状态 | 主要证据 |
 |---|---|---|---|---|---|
-| ACC-001 | 全局账号列表 | `aih ls`、`aih account list`、Web `/accounts` | 旧入口聚合运行态；Go 入口通过当前目标 Server 的 Management API 使用 AccountRef keyset 分页，只读基础信息、认证类型和公开资料，不加载凭据正文、模型、usage 或运行态 | 稳定/单控制面 | `cmd/aih/account_list.go`、`internal/adapters/accounts/managementapi/catalog.go`、`lib/cli/commands/root/router.js`、`web/src/pages/Accounts.tsx` |
-| ACC-002 | Provider 账号列表/单 ID 过滤 | `aih <provider> ls [id]` | 只列指定 provider；可进一步只看一个数字别名，支持列表帮助与分页行为 | 稳定 | `lib/cli/commands/ai-cli/router.js` |
-| ACC-003 | 账号详情/配置状态 | Web 账号表、Management API | 展示公开身份、认证类型、配置、调度、额度、模型探测和最后使用时间，不回传原始 secret | 稳定 | `lib/server/webui-account-live.js`、`lib/server/management-router.js` |
+| ACC-001 | 全局账号列表 | `npm run go-cli:preview -- account list`、Go Preview Web | Go Management API 使用 AccountRef keyset 分页，一次 SQLite 查询返回基础公开事实及持久化的模型/usage LKG 摘要；不加载凭据正文、不请求上游、不读取瞬态 runtime。正式 `aih ls/list` 和默认 Web 仍走 Node | 已实现（Go Preview，未切流） | `cmd/aih/account_list.go`、`internal/adapters/accounts/managementapi/catalog.go`、`internal/adapters/accounts/sqliteaccount/overview_store.go`、`scripts/go-accounts-preview.js` |
+| ACC-002 | Provider 账号列表/单 ID 过滤 | 正式 `aih <provider> ls [id]`、Go Preview 列表 | 正式 Node 入口保持可用；Go Preview 列表可分页但尚无独立 Provider filter 参数 | 迁移边界 | `lib/cli/commands/ai-cli/router.js`、`cmd/aih/account_list.go` |
+| ACC-003 | 账号详情/配置状态 | Go Preview 账号表、Management API | 展示 Go 基础公开事实；runtime、quota、schedulable 没有证据时保持 `unknown`，不因 API Key 或空模型伪造健康/可调度 | 已实现（Go Preview 受限投影） | `web/src/services/account-management/projection.ts`、`web/src/pages/AccountsGoPreview.tsx`、`internal/transport/http/accountsapi/contracts.go` |
 | ACC-004 | 稳定账号身份 | 全链路 | `accountRef` 是 DB/Server/Web/runtime/event/usage 唯一身份；`cliAccountId` 只是可变 CLI 数字别名 | 稳定 | `lib/account/account-registration.js`、`lib/server/account-ref-store.js` |
 | ACC-005 | 账号显示身份 | CLI/Web | OAuth 优先邮箱/账号信息，API Key 优先 Base URL/安全标签，避免暴露密钥 | 稳定 | `lib/account/display-identity.js`、`test/account-display-identity.test.js` |
-| ACC-006 | 账号运行态 | Web/Management/Dashboard | 区分 healthy、rate limited、auth invalid、overloaded、network、service unavailable、cooldown 等 | 稳定 | `lib/account/runtime-state-builders.js`、`web/src/pages/Accounts.tsx` |
-| ACC-007 | 调度/额度派生状态 | Web/Server | 展示 schedulable、exhausted、policy blocked、Free/Team 待确认等原因，而非单一启停布尔值 | 稳定 | `lib/account/derived-state.js`、`lib/server/account-usage-view.js` |
-| ACC-008 | OAuth 套餐 badge | `aih ls`、Web | Codex/Claude 读取缓存 metadata 显示已知付费 plan；Free/unknown/API Key 不虚构套餐 | 稳定 | `lib/cli/services/profile/account-plan-badge.js` |
-| ACC-009 | 账号实时更新 | Web SSE | 账号 snapshot、单账号变化、删除、hydration、auth/import/refresh job 通过 watch 推送；异常时可请求 snapshot | 稳定 | `lib/server/webui-sse-broadcaster.js`、`web/src/services/api.ts` |
+| ACC-006 | 账号运行态 | Go Gateway/runtime | Go 运行域区分 credential/quota/policy block 与 `(account, model)` cooldown；G1 账号列表尚未组合该投影，Web 必须显示 unknown | 已实现运行域，Web 待组合 | `core/accountruntime/`、`internal/adapters/accountruntime/inmemory/`、`web/src/services/account-management/projection.ts` |
+| ACC-007 | 调度/额度派生状态 | Go Server/Web | 路由选择内部有可调度事实，但 G1 账号基础 API 不返回 schedulable/quota 派生视图；页面不从 enabled 或凭据类型猜测 | 运行域已实现，Web 待组合 | `application/inferencegateway/`、`web/src/services/account-management/projection.ts` |
+| ACC-008 | OAuth 套餐 badge | Go Preview CLI/Web | Go 公开投影只显示已持久化的 `subscription_kind/raw`；unknown/API Key 不虚构付费套餐。正式 Node 列表保持现状 | 已实现（Go Preview 受限） | `cmd/aih/account_list.go`、`web/src/services/account-management/projection.ts` |
+| ACC-009 | 账号页面更新 | Go Preview watch facade | Preview 页面使用本地 mutation 通知、显式 snapshot 与仅可见时 30 秒低频轮询；不接入 Node 账号 SSE，也不形成双写。默认 Node 页面保持原有更新链 | 已实现（Go Preview 轮询） | `web/src/services/account-management/watch-coordinator.ts`、`facade.ts` |
 
 ### 3.2 添加、认证、编辑与删除
 
 | 编号 | 功能点 | 入口 | 当前行为/边界 | 状态 | 主要证据 |
 |---|---|---|---|---|---|
-| ACC-010 | Browser OAuth 添加 | `aih <provider> login`、Web“添加账号” | 启动原生 provider 授权；Web 展示授权 URL/日志并等待回调 | 稳定/受限 | `lib/server/web-account-auth.js`、`web/src/pages/Accounts.tsx` |
-| ACC-011 | Device auth 添加 | Codex CLI/Web | 适合无浏览器/远程环境；仅支持有 device flow 的 provider/账号 | 受限 | `lib/cli/commands/ai-cli/router.js`、`lib/server/oauth-loopback-callback.js` |
-| ACC-012 | API Key 添加 | Web、环境变量、导入 | Codex/Claude/Gemini/Grok/Qoder/Qoder CN/Kimi 按 provider 绑定 key/token 与可选 Base URL | 稳定 | `web/src/pages/Accounts.tsx`、`lib/account/account-registration.js` |
-| ACC-013 | Claude auth-token 添加 | Web | 单独使用 `ANTHROPIC_AUTH_TOKEN`，不与 `ANTHROPIC_API_KEY` 混为同一 credential type | 稳定 | `lib/profile/credential-config.js`、`web/src/pages/Accounts.tsx` |
-| ACC-014 | OAuth 授权作业状态 | Web | 查询 job、实时日志、已完成/失败/等待用户/等待安装等状态 | 稳定 | `lib/server/webui-account-routes.js` |
-| ACC-015 | 取消授权作业 | Web | 显式取消当前作业并清理本次 artifacts | 稳定 | `POST /v0/webui/accounts/add/jobs/:id/cancel` |
-| ACC-016 | 安装缺失原生 CLI 后继续 | Web | 明示安装确认，安装完成后继续同一授权作业；不静默全局安装 | 受限 | `POST /v0/webui/accounts/add/jobs/:id/install`、`lib/runtime/native-cli-installer.js` |
-| ACC-017 | 手工提交 Browser callback | Web | OAuth 自动回调不可用时粘贴 callback URL 完成作业 | 受限 | `POST /v0/webui/accounts/add/jobs/:id/callback` |
-| ACC-018 | 重新认证 | Web、Fabric 远程账号命令 | 对已有账号启动新的 auth job，保留稳定 `accountRef` | 稳定/高级 | `POST /v0/webui/accounts/:provider/:accountRef/reauth` |
-| ACC-019 | 编辑密钥/Token/Base URL | Web、Go Management API | 静态账号原地轮换并保持 `accountRef`、数字别名和用户启停；OAuth 账号必须重新登录 | 稳定/重构中 | `POST /v0/webui/accounts/:provider/:accountRef/update`、`PUT /v1/management/accounts/{account_ref}/credential` |
-| ACC-020 | 编辑 Claude credential type | Web、Go Management API | API Key 与 auth-token 可显式双向切换；Go 路径同步刷新模型、清理旧 usage/runtime 派生状态并保留人工模型策略 | 稳定/重构中 | `lib/server/webui-account-routes.js`、`application/accounts/static_credential_rotation.go` |
-| ACC-021 | 启用/关闭账号 | Web | 修改账号可调度状态；关闭后不进入正常路由选择 | 稳定 | `POST /v0/webui/accounts/:provider/:accountRef/status` |
-| ACC-022 | 删除单账号 | Web/CLI | Web 按 `provider + accountRef`；CLI 可按数字别名 | 稳定 | `DELETE /v0/webui/accounts/:provider/:accountRef` |
-| ACC-023 | 批量 selector 删除 | `aih <provider> delete <selectors>` | 支持 `1,2,3`、`1-9` 等选择器 | 稳定 | `lib/cli/commands/ai-cli/router.js` |
-| ACC-024 | 删除 provider 全部账号 | `aih <provider> deleteall` | 针对单 provider 清理全部账号，属于高风险数据动作 | 稳定 | `lib/cli/commands/ai-cli/router.js` |
+| ACC-010 | Browser OAuth 添加 | Go Preview Web“添加账号” | Codex/Claude 通过 Go `account-auth-jobs` 启动官方授权，页面展示一次性 URL 并等待回调；正式 Node login 入口保持不变 | 已实现（Go Preview） | `internal/transport/http/accountauthapi/`、`web/src/services/account-management/facade.ts` |
+| ACC-011 | Device auth 添加 | 正式 Node CLI/Web、Go Preview Web | Go Preview 明确隐藏并拒绝 `oauth-device`，不伪装成 browser OAuth；正式 Node 能力不因重构而关闭 | Go Preview 暂不支持 | `web/src/pages/AccountsGoPreview.tsx`、`web/src/services/account-management/facade.ts` |
+| ACC-012 | API Key 添加 | `npm run go-cli:preview -- account add ... --from-env`、Go Preview Web | Go Preview 只允许 Codex/Claude，通过 Management API 原子写入临时 `aih.db`；正式 Node 写链保持独立 | 已实现（Go Preview） | `cmd/aih/account_add.go`、`internal/transport/http/accountsapi/credential_factory.go`、`web/src/services/account-management/client.ts` |
+| ACC-013 | Claude auth-token 添加 | Go CLI/Web | 单独使用 `ANTHROPIC_AUTH_TOKEN`/`auth_token`，不与 API Key 混用；创建和轮换共用同一静态凭据工厂 | 已实现（G1） | `cmd/aih/account_add.go`、`internal/transport/http/accountsapi/credential_factory.go` |
+| ACC-014 | OAuth 授权作业状态 | Web | Go 作业公开 pending/processing/completed/failed/cancelled/expired 等低敏状态；state、PKCE、授权码和 Token 不进入状态响应 | 已实现（G1） | `application/accountauth/`、`internal/transport/http/accountauthapi/contracts.go` |
+| ACC-015 | 取消授权作业 | Web | `DELETE /v1/management/account-auth-jobs/{job_id}` 只取消仍 pending 的作业 | 已实现（G1） | `internal/transport/http/accountauthapi/handler.go` |
+| ACC-016 | 安装缺失原生 CLI 后继续 | 旧 Web 作业 | Go OAuth Job 不提供安装副作用，G1 facade 明确拒绝；旧 Node 实现仍是历史经验，不接回当前账号链 | 暂不支持（G1） | `web/src/services/account-management/facade.ts`、`lib/runtime/native-cli-installer.js` |
+| ACC-017 | 手工提交 Browser callback | Web | `POST /v1/management/account-auth-jobs/{job_id}/callback` 接受本次作业回调并完成注册/重登 | 已实现（G1） | `internal/transport/http/accountauthapi/handler.go`、`web/src/services/account-management/client.ts` |
+| ACC-018 | 重新认证 | Web | 对已有 AccountRef 创建 Go reauth Job；回调凭据和资料必须派生出同一身份，提交后模型/usage 异步刷新 | 已实现（G1） | `application/accounts/reauthentication.go`、`model_refresh_lifecycle.go`、`web/src/services/account-management/facade.ts` |
+| ACC-019 | 编辑密钥/Token/Base URL | Web、Go Management API/CLI | 静态账号先用账号/凭据时间戳 CAS 原地提交并保持身份、别名、启停、默认关系和 LKG 模型；随后异步刷新模型；OAuth 账号必须重登 | 已实现（G1） | `PUT /v1/management/accounts/{account_ref}/credential`、`application/accounts/static_credential_rotation.go` |
+| ACC-020 | 编辑 Claude credential type | Web、Go Management API/CLI | API Key 与 auth-token 可显式双向切换；提交时清理旧 usage/runtime 代次并保留人工模型策略和 LKG，模型刷新不阻塞响应 | 已实现（G1） | `application/accounts/static_credential_rotation.go`、`model_refresh_lifecycle.go` |
+| ACC-021 | 启用/关闭账号 | Web、Go CLI/API | 修改用户启停，并同步发布 Go 路由索引；关闭后不进入正常账号征召 | 已实现（G1） | `cmd/aih/account_state.go`、`PATCH /v1/management/accounts/{account_ref}` |
+| ACC-022 | 删除单账号 | Web、Go CLI/API | 按稳定 AccountRef 删除账号图；数据库写入前经 `DeletionGuard` 筛选该账号登记并逐 socket 探测 exact tmux session，live 返回 `409`，无法验证返回 `503`，可靠 stale 先清登记再删除；提交后清理模型/usage/default/runtime 任务 | 已实现（P0 门禁；极小 TOCTOU 待 lease） | `application/accounts/deletion.go`、`internal/adapters/accounts/persistentsessionguard/guard.go`、`internal/adapters/accounts/sqliteaccount/deletion_store.go` |
+| ACC-023 | 批量 selector 删除 | 正式 `aih <provider> delete <selectors>` | 正式 Node 入口保持现状；Go Preview 只允许逐账号 `--yes`，不新增容易误删的 selector 批量写 | Go Preview 不支持 | `lib/cli/commands/ai-cli/router.js`、`cmd/aih/account.go` |
+| ACC-024 | 删除 provider 全部账号 | 正式 `aih <provider> deleteall` | 正式 Node 入口保持现状；Go Preview 不提供 delete-all，必须先列出再逐账号明确确认 | Go Preview 不支持 | `lib/cli/commands/ai-cli/router.js`、`cmd/aih/account.go` |
 | ACC-025 | 环境变量账号自动识别 | CLI 启动 | 从 provider 对应 key/base URL 环境变量创建或复用 API Key sandbox | 受限 | `lib/cli/services/ai-cli/runtime.js`、`lib/profile/credential-config.js` |
 
 ### 3.3 默认账号、额度、配置与原生工具
 
 | 编号 | 功能点 | 入口 | 当前行为/边界 | 状态 | 主要证据 |
 |---|---|---|---|---|---|
-| ACC-026 | 设置默认账号 | `aih <provider> set-default <id>`、Web、桌面托盘 | provider 级默认；Web/托盘使用 `accountRef`，CLI 接受数字别名 | 稳定 | `lib/cli/commands/ai-cli/router.js`、`src-tauri/src/tray.rs` |
-| ACC-027 | 取消默认账号 | `aih <provider> unset-default`、Web | 清除 provider 默认指针 | 稳定 | `unset-default`、`clear-default` route |
-| ACC-028 | 设置 Codex App 账号 | `aih codex set-mobile`、Web | 仅 ChatGPT OAuth 账号；供 Codex App/desktop hook 使用 | 受限 | `lib/cli/commands/ai-cli/router.js`、`webui-account-routes.js` |
-| ACC-029 | 取消 Codex App 账号 | CLI/Web | 清除 mobile/Codex App 指针 | 受限 | `unset-mobile`、`clear-mobile` route |
-| ACC-030 | 设置默认后重启/启动桌面客户端 | CLI `--restart-client` | 使用已学习的桌面路径；默认不重启，需显式参数 | 受限 | `lib/cli/services/ai-cli/desktop-client-restart.js` |
-| ACC-031 | 强制退出桌面客户端 | CLI `--force-quit-client` | 仅和显式 restart/launch 工作流组合使用 | 受限 | `lib/cli/commands/ai-cli/router.js` |
-| ACC-032 | Claude Desktop 隔离 profile | `set-default --desktop-mode web\|api --restart-client` | 创建/复用隔离 user-data profile；支持 web 或 AI Home API 模式与会话迁移判定 | 受限 | `lib/cli/services/ai-cli/claude-desktop-session.js`、`desktop-client-profile.js` |
-| ACC-033 | 单账号额度刷新 | Web、`aih <provider> usage <id>` | 可使用缓存或 `--refresh` 强制探测；支持 `--preflight` | 稳定/受限 | `webui-account-routes.js`、`lib/cli/services/usage/` |
-| ACC-034 | Provider 全账号额度扫描 | `aih <provider> usage` | 并发扫描，`-j N` 限制 worker；支持 refresh/preflight | 稳定/受限 | `lib/cli/commands/ai-cli/router.js` |
+| ACC-026 | 设置默认账号 | Go Preview CLI/Web | Go Server 以 AccountRef 持久化 Provider 默认关系；Preview CLI 可用 `provider:id` 解析。正式 Node `set-default` 保持现状 | 已实现（Go Preview） | `application/accounts/provider_defaults.go`、`cmd/aih/account_default.go`、`web/src/services/account-management/facade.ts` |
+| ACC-027 | 取消默认账号 | `npm run go-cli:preview -- account default clear ...`、Go Preview Web | 幂等清除 Go Provider 默认关系；不修改账号模型、usage 或路由公平游标；正式 Node `aih` 保持现状 | 已实现（G1 Preview） | `application/accounts/provider_defaults.go`、`web/src/services/account-management/client.ts` |
+| ACC-028 | 设置 Codex App 账号 | 正式 `aih codex set-mobile`/Node Web | 该角色尚未进入 Go 账号域，Preview 隐藏；正式 Node 能力保持现状，不用通用 role 表过度设计 | Go Preview 暂不支持 | `lib/cli/commands/ai-cli/router.js`、`web/src/services/account-management/facade.ts` |
+| ACC-029 | 取消 Codex App 账号 | 正式 Node CLI/Web | 与设置相同，当前无 Go Preview 写入口 | Go Preview 暂不支持 | `lib/cli/commands/ai-cli/router.js`、`web/src/services/account-management/facade.ts` |
+| ACC-030 | 设置默认后重启/启动桌面客户端 | 正式 Node CLI `--restart-client` | 实现继续由 Node 承载；Go Preview default 命令不隐式控制桌面进程 | 正式 Node 保留/Go 未迁移 | `lib/cli/services/ai-cli/desktop-client-restart.js` |
+| ACC-031 | 强制退出桌面客户端 | 旧 CLI `--force-quit-client` | 仅存在于旧 restart/launch 工作流，G1 Go 账号命令不暴露该副作用 | 历史实现/未迁移 | `lib/cli/commands/ai-cli/router.js` |
+| ACC-032 | Claude Desktop 隔离 profile | 正式 Node `set-default --desktop-mode ...` | Node 实现保留；若后续迁移，必须与 Go 默认关系解耦后单独设计 | 正式 Node 保留/Go 未迁移 | `lib/cli/services/ai-cli/claude-desktop-session.js`、`desktop-client-profile.js` |
+| ACC-033 | 单账号额度刷新 | Go Preview Web/CLI | `show` 读取 Go LKG；`refresh` 显式访问 Provider。正式 Node `usage/stats` 保持现状 | 已实现（Go Preview） | `application/accountusage/`、`cmd/aih/account_usage.go`、`web/src/services/account-management/facade.ts` |
+| ACC-034 | Provider 全账号额度扫描 | 正式 `aih <provider> usage` | 正式 Node 能力保持现状；Go Preview 只提供逐账号刷新，不新增无界批量网络动作 | Go Preview 暂不支持 | `lib/cli/commands/ai-cli/router.js` |
 | ACC-035 | 额度后台刷新调度 | Server/background | 活跃与后台刷新间隔、阈值由 Usage 配置驱动 | 稳定 | `lib/usage/scheduler.js`、`lib/cli/services/usage/account-runtime.js` |
 | ACC-036 | Host config/session store 同步 | 默认账号/启动链 | 将允许共享的配置与 session store 接到 host；认证仍按账号隔离 | 稳定 | `lib/cli/services/ai-cli/host-sync.js`、`config-sync.js` |
 | ACC-037 | 临时凭据投影 | Codex/原生运行时 | DB-backed credential 在系统临时目录形成 marker/lease，进程退出后回收；不把长期 session/config 当 credential 删除 | 稳定 | `lib/runtime/transient-auth-projection.js` |
@@ -122,49 +126,57 @@
 | ACC-041 | Provider skill 安装 | 启动/能力初始化 | 将 AI Home provider skill 安装到目标工具支持的目录 | 受限 | `lib/cli/services/ai-cli/provider-skill-installer.js`、`assets/provider-skills/` |
 | ACC-042 | 会话 hook 状态与修复 | Settings/Web API | 显示全部 provider 的 hook/轮询/不可用三态；支持一键安装/修复官方 hook | 稳定/受限 | `web/src/components/settings/RealtimeSyncCard.tsx` |
 | ACC-043 | Provider HOME/config 诊断 | `aih <provider> home [id]` | 不启动 CLI，只显示实际 HOME、config 与账号投影路径 | 稳定 | `lib/cli/commands/ai-cli/router.js` |
-| ACC-044 | Go 账号物化模型列表 | `aih account models list <account_ref\|provider:id>` | 只读目标 Server 已物化的模型正排，展示上游可见性、人工策略和最终有效性；CLI 不打开本地 `aih.db`，不实时请求 Provider、不读取凭据或运行态 | 已实现（单控制面） | `cmd/aih/account_models.go`、`internal/adapters/accounts/managementapi/catalog.go` |
-| ACC-045 | Go 单账号模型刷新 | `aih account models refresh <account_ref\|provider:id>` | 由目标 Server 使用当前规范凭据读取完整 Provider 模型目录；成功后原子替换上游发现部分并保留人工策略，发现失败时保留旧快照 | 已实现（单控制面） | `application/accounts/model_management.go`、`cmd/aih/account_models.go` |
-| ACC-046 | Go 单模型人工策略 | `aih account models set-policy <target> <model_id> <policy>` | 通过目标 Server 精确设置 `inherit`、`force_enable` 或 `force_disable`，原子更新物化正排/倒排并返回完整快照；CLI 不访问 Provider | 已实现（单控制面） | `application/accounts/model_management.go`、`internal/adapters/accounts/managementapi/catalog.go` |
-| ACC-047 | Go 账号启用/停用 | `aih account enable\|disable <account_ref\|provider:id>`、`PATCH /v1/management/accounts/{account_ref}` | 数字别名在目标 Server 通过唯一索引解析；启停事务、账号模型正排/倒排和 `/v1/models` 刷新在同一进程提交，不由独立 CLI 直写 SQLite | 已实现（重构路径） | `cmd/aih/account_state.go`、`internal/adapters/accounts/managementapi/client.go`、`internal/transport/http/accountsapi/account_alias.go` |
-| ACC-048 | Go 单账号额度查看/刷新 | `aih account usage show\|refresh <account_ref\|provider:id>`、`GET/POST /v1/management/accounts/{account_ref}/usage[/refresh]` | `show` 只读取 Go Server 的 last-known-good 快照；`refresh` 使用 Server 当前规范凭据真实访问 Provider 并持久化。CLI 不直读 SQLite、不输出凭据，百分比按整数基点精确展示 | 已实现（重构路径） | `cmd/aih/account_usage.go`、`internal/adapters/accounts/managementapi/usage.go`、`application/accountusage/service.go` |
-| ACC-049 | Go 单账号删除 | `aih account delete <account_ref\|provider:id> --yes`、`DELETE /v1/management/accounts/{account_ref}` | 必须显式 `--yes`；数字别名在目标 Server 解析为稳定 `AccountRef`。Server 级联删除凭据、资料、模型、usage、默认关系，并立即清理额度任务、运行状态和路由候选；CLI 不直写 SQLite、不访问 Provider | 已实现（重构路径） | `cmd/aih/account_delete.go`、`internal/adapters/accounts/managementapi/client.go`、`application/accounts/deletion.go` |
-| ACC-050 | Go Provider 默认账号管理 | `aih account default show\|set\|clear ...`、`GET/PUT/DELETE /v1/management/account-defaults/{provider}` | 数字别名在目标 Server 解析；只允许 Codex/Claude 已启用且有凭据的同 Provider 账号。关系跨重启持久化，clear 幂等且不影响账号模型、usage 或 Gateway 公平征召 | 已实现（重构路径） | `cmd/aih/account_default.go`、`internal/adapters/accounts/managementapi/defaults.go`、`application/accounts/provider_defaults.go` |
-| ACC-051 | Go 静态凭据更新 CLI | `aih account credential update <account_ref\|provider:id> --from-env` | CLI 只从 Codex/Claude 官方环境变量读取新 Key/Token，经目标 Server 原地轮换；不直写 SQLite、不回显凭据。保持 AccountRef、数字别名、启停和默认关系，刷新模型并清理旧 usage/runtime/cooldown 派生状态；OAuth 账号明确拒绝 | 已实现（重构路径） | `cmd/aih/account_credential.go`、`internal/adapters/accounts/managementapi/transfer.go`、`application/accounts/static_credential_rotation.go` |
-| ACC-052 | Go 官方登录态导入 | `aih account import <codex\|claude>` | 本机只读 Codex `auth.json`；Claude 在 macOS 优先读取官方 Keychain、其他平台或缺失时读取 `.credentials.json`，并与 `.claude.json` 的 `oauthAccount` 组合；随后通过 Management API 提交到目标 Server 并物化真实模型，不修改官方登录态、不创建 Provider HOME | 已实现（单控制面） | `cmd/aih/account_import.go`、`internal/adapters/accounts/managementapi/catalog.go`、`internal/adapters/accounts/nativeartifact/` |
+| ACC-044 | Go 账号物化模型列表 | `npm run go-cli:preview -- account models list <account_ref\|provider:id>` | 只读目标 Server 已物化的模型正排，展示上游可见性、人工策略和最终有效性；CLI 不打开本地 `aih.db`，不实时请求 Provider、不读取凭据或运行态 | 已实现（单控制面 Preview） | `cmd/aih/account_models.go`、`internal/adapters/accounts/managementapi/catalog.go` |
+| ACC-045 | Go 单账号模型刷新 | `npm run go-cli:preview -- account models refresh <account_ref\|provider:id>` | 由目标 Server 使用当前规范凭据读取完整 Provider 模型目录；成功后原子替换上游发现部分并保留人工策略，发现失败时保留旧快照 | 已实现（单控制面 Preview） | `application/accounts/model_management.go`、`cmd/aih/account_models.go` |
+| ACC-046 | Go 单模型人工策略 | `npm run go-cli:preview -- account models set-policy <target> <model_id> <policy>` | 通过目标 Server 精确设置 `inherit`、`force_enable` 或 `force_disable`，原子更新物化正排/倒排并返回完整快照；CLI 不访问 Provider | 已实现（单控制面 Preview） | `application/accounts/model_management.go`、`internal/adapters/accounts/managementapi/catalog.go` |
+| ACC-047 | Go 账号启用/停用 | `npm run go-cli:preview -- account enable\|disable <account_ref\|provider:id>`、`PATCH /v1/management/accounts/{account_ref}` | 数字别名在目标 Server 通过唯一索引解析；启停事务、账号模型正排/倒排和 `/v1/models` 刷新在同一进程提交，不由独立 CLI 直写 SQLite | 已实现（单控制面 Preview） | `cmd/aih/account_state.go`、`internal/adapters/accounts/managementapi/client.go`、`internal/transport/http/accountsapi/account_alias.go` |
+| ACC-048 | Go 单账号额度查看/刷新 | `npm run go-cli:preview -- account usage show\|refresh <account_ref\|provider:id>`、`GET/POST /v1/management/accounts/{account_ref}/usage[/refresh]` | `show` 只读取 Go Server 的 last-known-good 快照；`refresh` 使用 Server 当前规范凭据真实访问 Provider 并持久化。CLI 不直读 SQLite、不输出凭据，百分比按整数基点精确展示 | 已实现（单控制面 Preview） | `cmd/aih/account_usage.go`、`internal/adapters/accounts/managementapi/usage.go`、`application/accountusage/service.go` |
+| ACC-049 | Go 单账号删除 | `npm run go-cli:preview -- account delete <account_ref\|provider:id> --yes`、`DELETE /v1/management/accounts/{account_ref}` | 必须显式 `--yes`；Go Host Composition Root（当前仅由独立 Preview 验收）已接入持久会话 Guard，live exact session 与不可验证状态均失败关闭，确认 stale 后才清登记并级联删除账号图、派生任务和路由候选 | 已实现（P0；非原子 TOCTOU 已知，Preview） | `cmd/aih/account_delete.go`、`application/accounts/deletion.go`、`internal/adapters/accounts/persistentsessionguard/`、`internal/host/aihserver/composition.go` |
+| ACC-050 | Go Provider 默认账号管理 | `npm run go-cli:preview -- account default show\|set\|clear ...`、`GET/PUT/DELETE /v1/management/account-defaults/{provider}` | 数字别名在目标 Server 解析；只允许 Codex/Claude 已启用且有凭据的同 Provider 账号。关系跨重启持久化，clear 幂等且不影响账号模型、usage 或 Gateway 公平征召 | 已实现（单控制面 Preview） | `cmd/aih/account_default.go`、`internal/adapters/accounts/managementapi/defaults.go`、`application/accounts/provider_defaults.go` |
+| ACC-051 | Go 静态凭据更新 CLI | `npm run go-cli:preview -- account credential update <account_ref\|provider:id> --from-env` | CLI 只从官方环境变量读取新 Key/Token，经目标 Server 用 CAS 原地提交；不直写 SQLite、不回显凭据。保持稳定身份和 LKG，清理旧派生状态后异步刷新模型；OAuth 明确拒绝 | 已实现（G1 Preview） | `cmd/aih/account_credential.go`、`application/accounts/static_credential_rotation.go`、`model_refresh_lifecycle.go` |
+| ACC-052 | Go 官方登录态导入 | `npm run go-cli:preview -- account import <codex\|claude>` | 本机只读官方 artifact 并上传目标 Server；账号事务成功立即返回，模型由 Server 提交后异步刷新，不修改官方登录态、不创建 Provider HOME | 已实现（G1 Preview） | `cmd/aih/account_import.go`、`internal/adapters/accounts/nativeartifact/`、`application/accounts/model_refresh_lifecycle.go` |
+| ACC-053 | Go 静态账号新增 | `npm run go-cli:preview -- account add <codex\|claude> --from-env`、`POST /v1/management/accounts`、Go Preview Web | Codex API Key、Claude API Key/Auth Token 共用静态凭据工厂；原子提交后立即返回，凭据不回显，模型异步刷新 | 已实现（G1 Preview） | `cmd/aih/account_add.go`、`internal/transport/http/accountsapi/credential_factory.go` |
+| ACC-054 | 首次模型异步恢复 | Server 启动/background | 创建/导入不等待模型；按 Provider 隔离队列合并同账号任务。重启后以 AccountRef keyset、每批 256 条扫描“有凭据但无上游模型快照”的账号并重新入队，不读凭据 JSON、不做 N+1 | 已实现（自动化验收） | `application/accounts/model_refresh_coordinator.go`、`initial_model_refresh_recovery.go`、`internal/host/aihserver/initial_model_refresh_recovery.go` |
+| ACC-055 | WebUI Go 账号控制面 Preview | 独立 `http://127.0.0.1:19528/ui/accounts` | 仅 Codex/Claude；Preview 页面经 `/v1/management` 操作临时 Go Server，支持添加、启停、默认、单账号模型目录查看/刷新、inherit/force_enable/force_disable 策略维护、模型刷新失败保留 LKG/未知语义和删除闭环；默认 `/accounts`、`web/src/services/api.ts` 和正式 Server 继续走 Node，不双写；真实 Codex/Claude Provider 验收已通过 | 已实现（Preview，真实 Provider 通过，未切正式入口） | `web/src/services/account-management/`、`web/src/pages/AccountsGoPreview.tsx`、`web/src/services/account-management/preview.ts`、`internal/host/aihserver/live_*test.go` |
+| ACC-056 | Go Preview 进程隔离 | `go-preview:server/web`、`go-cli:preview` | 固定 Go 19527、UI 19528 与系统临时 `AIH_HOME`；启动前探测端口，正式 `bin/ai-home.js`、`postinstall`、默认 Web 路由保持 Node。当前无正式 Go sidecar 或发行切流 | 已实现（隔离门禁） | `scripts/go-accounts-preview.js`、`test/go-preview-isolation.test.js`、`web/config/routes.ts` |
 
 ## 4. 导入、导出与迁移
 
+`XFER-001` 至 `XFER-022` 记录正式 Node 当前能力；Go Preview 不接管或禁用这些入口。
+Go 单账号迁移面从 `XFER-023` 开始，只写独立 Preview Server 的临时数据库，不污染
+CPA、sub2api 或正式 AIH 数据。
+
 | 编号 | 功能点 | 入口 | 当前行为/边界 | 状态 | 主要证据 |
 |---|---|---|---|---|---|
-| XFER-001 | 全量 ZIP 导出 | `aih export [file.zip]` | 写出扁平、标准命名的账号 JSON，再构建 ZIP | 稳定 | `lib/cli/commands/backup/router.js` |
-| XFER-002 | selector 导出 | `aih export [file.zip] [selectors...]` | 只导出指定 provider/账号选择器 | 稳定 | `parseExportArgs`、`stageSelectedAccounts` |
-| XFER-003 | Provider scoped ZIP | `aih <provider> export [file.zip]` | 只导出该 provider；不支持的 provider 明确报错 | 稳定/受限 | `buildProviderScopedExportArgs` |
-| XFER-004 | sub2api 迁移 JSON | CLI、Web“导出为迁移 JSON” | 当前标准迁移 shape；`format=aih/ai-home/aihome` 只是历史 alias，不再维护私有 payload | 稳定/兼容 | `lib/account/standard-transfer.js` |
-| XFER-005 | CLIProxyAPI JSON | CLI、Web | 支持 OAuth 与适用 API Key provider 的 CLIProxyAPI-compatible 数据 | 稳定 | `lib/cli/services/backup/cliproxyapi-export.js` |
-| XFER-006 | Antigravity Manager JSON | CLI、Web | 只导出 AGY OAuth 账号；旧 Antigravity 参数被拒绝 | 稳定/受限 | `standard-format-export.js` |
+| XFER-001 | 全量 ZIP 导出 | 正式 `aih export [file.zip]` | Node service 和正式根命令保持现状；Go Preview 不提供全量凭据导出 | 正式 Node 保留/Go 未迁移 | `lib/cli/commands/backup/router.js` |
+| XFER-002 | selector 导出 | 正式 `aih export ... [selectors...]` | selector staging 和正式 Node 入口保持现状；Go Preview 不提供 | 正式 Node 保留/Go 未迁移 | `parseExportArgs`、`stageSelectedAccounts` |
+| XFER-003 | Provider scoped ZIP | 正式 `aih <provider> export` | 正式 Node scoped 命令保持现状；Go Preview 只实现单账号标准导出 | 正式 Node 保留/Go 受限 | `buildProviderScopedExportArgs` |
+| XFER-004 | sub2api 迁移 JSON | 旧 Node 批量格式 | `format=aih/ai-home/aihome` 只是历史 alias；Codex/Claude 当前只暴露 `XFER-023/024/026/027` 的 Go 单账号合同 | 历史兼容 | `lib/account/standard-transfer.js` |
+| XFER-005 | CLIProxyAPI JSON | 旧 Node 批量导出 | Node exporter 仍在，但 G1 不从旧 CLI/Web 暴露；当前公开面只有 `XFER-025/028` 的 Go 单 OAuth auth-file | 历史实现/未迁移 | `lib/cli/services/backup/cliproxyapi-export.js` |
+| XFER-006 | Antigravity Manager JSON | `aih agy export` 等 Node scoped 路径 | 只适用于 AGY OAuth；不属于 Codex/Claude G1，旧 Antigravity 参数继续拒绝 | 其他 Provider 兼容 | `standard-format-export.js` |
 | XFER-007 | 不导出本机数字别名 | 所有标准迁移导出 | payload 不携带无跨机意义的 `cliAccountId/account_id`；导入侧重新分配 | 稳定 | `lib/account/standard-transfer.js` |
-| XFER-008 | 混合目录导入 | `aih import [provider] [sources...]` | 自动识别 provider 目录与嵌套目录 | 稳定 | `lib/cli/services/import/unified-import.js` |
-| XFER-009 | ZIP/嵌套 ZIP 导入 | CLI/Web 文件或文件夹 | 支持 ZIP、目录内 ZIP、缓存解压和 hash 复用 | 稳定 | `archive-import.js`、`unified-import.js` |
-| XFER-010 | JSON/JSONL 导入 | CLI/Web 粘贴或文件 | 支持标准 bundle、单账号 JSON、JSONL、迁移 JSON | 稳定 | `unified-import.js`、`Accounts.tsx` |
-| XFER-011 | Web 文件/文件夹/粘贴 | `/accounts` 导入弹窗 | 文件、目录、文本三种输入；提供迁移/Antigravity/JSONL 模板 | 稳定 | `web/src/pages/Accounts.tsx` |
-| XFER-012 | CLIProxyAPI 本地来源导入 | Web/CLI | 可从本地 CLIProxyAPI 数据源发现并导入 | 受限 | `unified-import.js`、`Accounts.tsx` |
-| XFER-013 | Provider scoped 导入 | `aih <provider> import` | 只允许目标 provider；复用统一 importer | 稳定 | `lib/cli/commands/ai-cli/router.js` |
-| XFER-014 | 并发导入 | `-j N` | 限制并发 worker，避免无界并行 | 稳定 | `parseUnifiedImportArgs` |
-| XFER-015 | ZIP 子目录选择 | `-f <folder>` | 从归档指定子目录导入；不存在时明确报错 | 稳定 | `resolveImportSourceRoot` |
-| XFER-016 | Dry-run | `--dry-run` | 扫描、校验和报告，不写入账号 | 稳定 | `unified-import.js` |
-| XFER-017 | 身份去重 | 所有导入 | OAuth 按 provider+identity，API Key 按 provider+normalized URL+key 等规则去重 | 稳定 | `lib/account/standard-transfer.js`、`unified-import.js` |
-| XFER-018 | 保留迁移 metadata | 标准导入 | 保留可迁移的 provider/OAuth metadata，但不复用来源机器本地 ID | 稳定 | `importStandardAccountRecords` |
-| XFER-019 | 后台导入作业 | Web | 返回 job、SSE 推送进度；已有作业时接管当前进度而非重复启动 | 稳定 | `webui-account-routes.js`、`accountsAPI.getImportJob` |
-| XFER-020 | 导入分阶段进度 | CLI/Web | hash、解压、provider/account 处理和汇总均有可观察进度 | 稳定 | `renderStageProgress`、`unified-import.js` |
-| XFER-021 | Codex bulk token/importer | 统一导入内部路径 | 支持 Codex 特定批量源并并入统一统计 | 受限 | `lib/cli/services/ai-cli/codex-bulk-import.js` |
+| XFER-008 | 混合目录导入 | 正式 `aih import ...` | Node importer 和正式入口保持现状；Go Preview 不复用混合目录/批量写链 | 正式 Node 保留/Go 未迁移 | `lib/cli/services/import/unified-import.js` |
+| XFER-009 | ZIP/嵌套 ZIP 导入 | 旧 Node CLI/Web | archive/hash/cache 实现仍在；Codex/Claude G1 CLI/Web 不暴露 | 历史实现/未迁移 | `archive-import.js`、`unified-import.js` |
+| XFER-010 | JSON/JSONL 批量导入 | 旧 Node CLI/Web | bundle、JSONL 与粘贴解析仍在；G1 只接受单份严格 sub2api JSON | 历史实现/未迁移 | `unified-import.js` |
+| XFER-011 | Web 文件/文件夹/粘贴 | 默认 Node `/accounts`、Go Preview 页面 | 默认 Node 页面保持现状；Go Preview 只暴露单份 sub2api 文档，不显示目录、ZIP、JSONL 或批量入口 | Go Preview 受限 | `web/src/services/account-management/facade.ts`、`web/src/pages/AccountsGoPreview.tsx` |
+| XFER-012 | CLIProxyAPI 本地来源导入 | 旧 Node Web/CLI | source discovery 仍在 legacy importer；G1 不暴露，避免污染 CPA 正式数据 | 历史实现/未迁移 | `unified-import.js` |
+| XFER-013 | Provider scoped 导入 | 正式 `aih <provider> import` | 正式 Node scoped 命令保持现状；Go Preview 不替换该批量/Provider 入口 | 正式 Node 保留/Go 未迁移 | `lib/cli/commands/ai-cli/router.js` |
+| XFER-014 | 并发导入 | 旧 Node `-j N` | 有界 worker 实现保留，但不属于 G1 公开入口 | 历史内部能力 | `parseUnifiedImportArgs` |
+| XFER-015 | ZIP 子目录选择 | 旧 Node `-f <folder>` | archive 子目录选择实现保留，但不属于 G1 公开入口 | 历史内部能力 | `resolveImportSourceRoot` |
+| XFER-016 | Dry-run | 旧 Node `--dry-run` | 扫描/校验路径保留，正式 Codex/Claude 账号入口不暴露 | 历史内部能力 | `unified-import.js` |
+| XFER-017 | 身份去重 | 旧 Node importer | 历史 importer 有自己的去重规则；Go G1 以稳定 Provider 身份和数据库约束为准，不复用这套 merge | 历史兼容 | `lib/account/standard-transfer.js`、`unified-import.js` |
+| XFER-018 | 保留迁移 metadata | 旧 Node 标准导入 | legacy importer 会保留允许的 metadata；Go 单账号合同只保留其 DTO 明确声明的字段 | 历史兼容 | `importStandardAccountRecords` |
+| XFER-019 | 后台导入作业 | 旧 Node Web API | 路由/SSE 代码仍在，但 G1 页面不再调用，也不作为 Go 账号写链 fallback | 兼容 API/未暴露 | `webui-account-routes.js` |
+| XFER-020 | 导入分阶段进度 | 旧 Node CLI/Web | hash、解压和批量处理进度实现保留，但 G1 单份导入不复用 | 历史内部能力 | `renderStageProgress`、`unified-import.js` |
+| XFER-021 | Codex bulk token/importer | 正式 Node 统一导入内部路径 | 代码与正式 Node 调用边界保持现状；Go Preview 不复用 | 正式 Node 内部能力 | `lib/cli/services/ai-cli/codex-bulk-import.js` |
 | XFER-022 | age/RSA/password/legacy crypto | 当前只有 service 与测试接线 | 加解密函数、age 安装提示和旧 envelope 解密存在，但普通 export 当前只生成 ZIP，未确认公开参数入口 | 未暴露/兼容 | `lib/cli/services/backup/crypto.js`、`test/backup.crypto.password-file.test.js` |
 | XFER-023 | Go 单账号 sub2api 导出 | `GET /v1/management/accounts/{account_ref}/export` | 只导出 Codex/Claude 当前账号凭据和可选公开资料；固定 `version: 1`，不含本地 ID、模型、usage 或运行态 | 已实现（重构路径） | `application/accounts/export.go`、`internal/adapters/accounts/sub2api/`、`internal/transport/http/accountsapi/handler.go` |
-| XFER-024 | Go 单账号 sub2api 导入 | `POST /v1/management/account-imports/sub2api` | 直接接收一个 `sub2api-data` 文档；只允许 Codex/Claude，接受现行版本与已确认的 snake/camel 同义字段，忽略同组空值并拒绝非空冲突；Claude 三种 expiry 统一为毫秒，last-refresh 只校验不持久化；不接受未知版本、字段、批量、代理或本地身份，并复用统一原子注册与模型维护链 | 已实现（重构路径） | `internal/adapters/accounts/sub2api/decoder.go`、`internal/adapters/accounts/sub2api/credential_input.go`、`internal/transport/http/accountsapi/sub2api_import.go` |
+| XFER-024 | Go 单账号 sub2api 导入 | `POST /v1/management/account-imports/sub2api` | 直接接收一个 `sub2api-data` 文档；只允许 Codex/Claude，严格归一已确认同义字段并拒绝冲突、未知版本、批量、代理或本地身份；账号原子提交后立即返回，首次模型目录异步维护 | 已实现（G1） | `internal/adapters/accounts/sub2api/decoder.go`、`internal/transport/http/accountsapi/sub2api_import.go`、`application/accounts/model_refresh_lifecycle.go` |
 | XFER-025 | Go 单账号 CLIProxyAPI auth 导出 | `GET /v1/management/accounts/{account_ref}/export/cliproxyapi` | 直接输出可放入 CPA `auth-dir` 的 Codex/Claude 单 OAuth JSON；API Key 属于 CPA 配置而非 auth 文件，Claude setup-token/Auth Token 也不伪装成该格式 | 已实现（重构路径） | `internal/adapters/accounts/cliproxyapi/`、`internal/transport/http/accountsapi/handler.go` |
-| XFER-026 | Go CLI 单账号 sub2api 导出 | `aih account transfer export <target> --format sub2api --output <file>` | 账号目标在目标 Server 解析；必须显式输出文件，使用 `O_EXCL + 0600`，不覆盖、不走 stdout、不打印凭据 | 已实现（重构路径） | `cmd/aih/account_transfer.go`、`cmd/aih/account_transfer_file.go`、`internal/adapters/accounts/managementapi/transfer.go` |
-| XFER-027 | Go CLI 单账号 sub2api 导入 | `aih account transfer import --format sub2api --input <file>` | 只接受一个最大 `1 MiB` 的显式 JSON 文件并提交目标 Server；不接受 stdin、批量 envelope 或 AIH 私有格式 | 已实现（重构路径） | `cmd/aih/account_transfer.go`、`cmd/aih/account_transfer_options.go`、`internal/adapters/accounts/managementapi/transfer.go` |
-| XFER-028 | Go CLI 单账号 CPA auth-file 导出 | `aih account transfer export <target> --format cliproxyapi --output <file>` | 只导出官方单 OAuth auth-file；与 sub2api 共用安全文件写入策略，不制造 CPA 批量 envelope 或有损导入 | 已实现（重构路径） | `cmd/aih/account_transfer.go`、`internal/adapters/accounts/cliproxyapi/` |
-| XFER-029 | Go sub2api 真实闭环验收 | 显式 live test | Codex/Claude 均以只读官方 artifact 导入一次性源 Server，经 Go Exporter 生成标准文档，再导入第二个一次性 Server并完成模型目录、真实推理和再导出；文档与临时库测试后清理，不写 CPA/sub2api 正式数据 | 已实现（开发验收） | `internal/host/aihserver/live_{codex,claude}_sub2api_transfer_test.go` |
+| XFER-026 | Go Preview CLI 单账号 sub2api 导出 | `npm run go-cli:preview -- account transfer export ...` | 账号目标在 Preview Server 解析；必须显式输出文件，使用 `O_EXCL + 0600`，不覆盖、不走 stdout、不打印凭据 | 已实现（Go Preview） | `cmd/aih/account_transfer.go`、`cmd/aih/account_transfer_file.go`、`internal/adapters/accounts/managementapi/transfer.go` |
+| XFER-027 | Go Preview CLI 单账号 sub2api 导入 | `npm run go-cli:preview -- account transfer import ...` | 只接受一个最大 `1 MiB` 的显式 JSON 文件并提交 Preview Server；不接受 stdin、批量 envelope 或 AIH 私有格式；返回不等待模型目录 | 已实现（Go Preview） | `cmd/aih/account_transfer.go`、`cmd/aih/account_transfer_options.go`、`internal/adapters/accounts/managementapi/transfer.go` |
+| XFER-028 | Go Preview CLI 单账号 CPA auth-file 导出 | `npm run go-cli:preview -- account transfer export ... --format cliproxyapi` | 只导出官方单 OAuth auth-file；与 sub2api 共用安全文件写入策略，不制造 CPA 批量 envelope 或有损导入 | 已实现（Go Preview） | `cmd/aih/account_transfer.go`、`internal/adapters/accounts/cliproxyapi/` |
+| XFER-029 | Go sub2api 真实闭环验收入口 | 显式 live test | harness 使用只读官方 artifact 和一次性源/目标 Server，不写 CPA/sub2api 正式数据；Codex 与 Claude 均已完成源导出→临时目标导入→真实模型→Responses→重新导出的闭环 | 已实现（真实 Provider 通过，未切正式入口） | `internal/host/aihserver/live_{codex,claude}_sub2api_transfer_test.go` |
 
 Go 重构路径实时核对的外部合同基准为 sub2api
 `1e618dbc299fc0a82e9a690bcf2d5843be817113` 与 CLIProxyAPI
@@ -342,7 +354,7 @@ Go 重构路径实时核对的外部合同基准为 sub2api
 | 编号 | 路由 | 当前页面/行为 | 状态 |
 |---|---|---|---|
 | WEB-032 | `/dashboard` | 仪表盘 | 稳定 |
-| WEB-033 | `/accounts` | 账号管理 | 稳定 |
+| WEB-033 | `/accounts` | 默认 Web 继续使用正式 Node 账号页面；只有独立 19528 Preview 进程加载 Codex/Claude Go 账号页 | 正式 Node 稳定/Go Preview |
 | WEB-034 | `/chat` | AI 会话与项目工作台 | 稳定/实验混合 |
 | WEB-035 | `/usage` | 模型用量 | 稳定 |
 | WEB-036 | `/models` | 全局模型目录 | 稳定 |
@@ -360,6 +372,15 @@ Go 重构路径实时核对的外部合同基准为 sub2api
 | WEB-043 | 响应式应用外壳 | 桌面侧栏；移动端固定底部 TabBar、安全区适配，Chat 沉浸态自动隐藏跨页导航 | 稳定/受限 | `web/src/app.tsx`、`web/src/components/mobile/MobileTabBar.tsx`、`mobile-shell.css` |
 | WEB-044 | 移动端专用视图 | 账号卡片/统计格/横向筛选、项目会话分层导航、底部抽屉、Files/Review 单页返回等，不只是桌面表格缩放 | 稳定/受限 | `web/src/components/mobile/`、`Accounts.tsx`、`Chat.tsx`、`ProjectWorkbench.tsx` |
 | WEB-045 | PWA standalone metadata | manifest 提供图标、start URL、portrait 与 standalone 安装外观；当前未发现离线 service worker/cache 能力 | 受限 | `web/public/manifest.json`、`web/index.html` |
+
+### 8.4 G1 账号页面收口
+
+| 编号 | 功能点 | 当前行为/边界 | 状态 | 主要证据 |
+|---|---|---|---|---|
+| WEB-046 | Go Preview 独立传输 | Preview 页面固定访问同源 `/v1/management`，由 19528 开发代理转发到 19527；不读取 active Server Profile，不修改正式 Browser/Tauri 账号路由 | 已实现（隔离 Preview） | `web/src/services/account-management/preview.ts`、`web/config/config.ts`、`scripts/go-accounts-preview.js` |
+| WEB-047 | Codex/Claude Preview 单账号操作 | 静态添加、browser OAuth/callback/取消、reauth、启停、静态轮换、默认、删除、usage refresh、单账号模型查看/刷新、inherit/force_enable/force_disable 策略维护、单份 sub2api 导入与单账号导出 | 已实现（自动化 + 独立 Preview 临时账号闭环；Codex/Claude 真实 Provider 与迁移验收已通过） | `web/src/services/account-management/facade.ts`、`client.ts`、`web/src/pages/AccountsGoPreview.tsx`、`internal/host/aihserver/live_*test.go` |
+| WEB-048 | 未知状态诚实投影 | Go 未返回 runtime/quota/schedulable 时统一显示未知；只有 Preview 页面真实发起模型刷新才显示“探测中”，成功空结果显示“未发现模型”，初始空状态不猜测 | 已实现（Go Preview） | `web/src/services/account-management/projection.ts`、`web/src/pages/AccountsGoPreview.tsx` |
+| WEB-049 | Go Preview 明确不支持项 | Device auth、Codex App/mobile role、原生 CLI 安装、全局导出、后台批量导入 Job、目录/ZIP/JSONL 导入均不进入 Go Preview；正式 Node 页面保持原能力，不用双写兜底 | 暂不支持（明确边界） | `web/src/services/account-management/facade.ts`、`web/src/pages/AccountsGoPreview.tsx` |
 
 ## 9. AI 会话、Canonical Runtime 与项目工作台
 
@@ -567,6 +588,7 @@ Canonical chat HTTP 面包括：`/v0/webui/chat/sessions`、session resolve/snap
 | LEG-010 | Vendored Claude Code | 只保留 AI Home 集成边界；上游内部功能不进入本矩阵 | 外部/兼容 | `cli/`、`bin/claudecodex.js` |
 | LEG-011 | CLI 拼写别名 | `list→ls`、`delete-all→deleteall`、`terminal-icons→terminal-icon`、`server list/rm/sync_codex` 等继续映射到同一实现 | 兼容 | `root/router.js`、`ai-cli/router.js`、`server/command-handler.js` |
 | LEG-012 | 已移除 provider 子命令 | `auto`、`count`、`cleanup`、`up`、`down` 被保留在拒绝集合中并明确报 unknown，不再执行旧逻辑 | 废弃 | `REMOVED_ACTIONS`、`ai-cli/router.js` |
+| LEG-013 | Codex/Claude 正式 Node 账号命令 | 根 `ls/list/import/export` 及 Provider scoped 的 login/list/import/export/usage/default/mobile/delete 系列继续由 `bin/ai-home.js -> lib/cli/app.js` 处理；Go 账号命令只能显式走 Preview wrapper | 正式能力保留/尚未切流 | `bin/ai-home.js`、`scripts/go-accounts-preview.js`、`test/go-preview-isolation.test.js` |
 
 ## 14. 当前重复实现与重构前风险提示
 
@@ -582,6 +604,19 @@ Canonical chat HTTP 面包括：`/v0/webui/chat/sessions`、session resolve/snap
 | 网关协议路径多 | OpenAI、Anthropic、Gemini、Codex app-server、direct passthrough、bridge 并存 | 固定 client→canonical→adapter→canonical→renderer 方向；避免 provider if/else 再扩散 |
 | Fabric 面积大但一级 UI 收缩 | CLI/RPC/测试仍多，旧 Web Node 页面已重定向 | 先区分“产品稳定面”和“实验控制面”，迁移顺序不能由文件数量决定 |
 | JavaScript 与 TypeScript 混用 | 主体 `lib/` 为 CommonJS JS，Web 同时有 TS/TSX 与 legacy JS/d.ts，Tauri 已是 Rust | 未来保留 JS 的部分转 TS 时要按模块边界逐个完成，不做一次性机械全仓改名 |
+
+### 14.1 Node 缺陷经验转成 G1 回归守卫
+
+| 历史缺陷类别 | G1 必须保持的可执行守卫 | 当前完成度 |
+|---|---|---|
+| 新登录态被旧 host/异步结果覆盖 | 同身份 native import 返回冲突；静态轮换和 OAuth/refresh 写使用持久化时间/CAS；旧凭据发起的模型发现写入前再次比对 credential `updated_at`；换凭据时取消旧刷新代次 | 已有 Go 定向测试；禁止恢复“谁最后返回谁覆盖”的 Node merge |
+| 空目录被当成模型不支持 | 首次模型可暂时为空但语义只能是 unknown；发现失败/空结果不覆盖 LKG；只有明确 `model_unsupported` 才异步刷新目录；重启补调度尚无首次快照的账号 | 已有应用、SQLite、Host 与 Web 投影测试 |
+| 单次错误污染全局账号状态 | 无状态证据的成功响应、请求参数错误、取消、畸形响应和跨账号共同失败不写账号 block；429/529/5xx 只按既定账号模型级策略处理，不删除模型。恢复必须携带明确 AccountRef，校验 Provider 归属和事件时间，不能用通用 session/hook 成功清掉别的账号或更新后的 block | 已有 Go 推理域测试；Node `6940d76` 的 native-session 恢复修复已提炼为 Go 后续 runtime 投影合同，不把 Node event/cache shape 搬入账号库 |
+| 删除账号时仍有活动 writer | 删除前按 AccountRef 筛选登记、逐 socket 探测 exact tmux session；live=`409 account_runtime_active`，探测/登记无法验证=`503 account_runtime_unverifiable`，可靠 stale 才先清登记后继续删除 | P0 已在 `DeletionGuard`、`persistentsessionguard` 和 Go Host Composition Root 完成，并由独立 Preview 等价环境中的真实 TCP/SQLite/worker 集成测试覆盖；尚未正式切流。检查后新会话仍可能在极小 TOCTOU 窗口启动，统一跨进程 account lease 留待 Node runtime 全迁移 |
+
+每次 Node 主链出现新的真实 Bug，先提炼“输入、持久事实、错误写入、正确不变量”，再
+把不变量加入相应 Go 领域/适配器合同和定向测试；不得复制 Node 的补丁形态、缓存 shape
+或双写路径。
 
 ## 15. `clawdcodex` 可复用性初判
 

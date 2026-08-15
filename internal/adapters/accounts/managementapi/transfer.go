@@ -28,20 +28,20 @@ type staticCredentialRequest struct {
 	Auth staticCredentialAuth `json:"auth"`
 }
 
-// staticCredentialAuth 保持与 Server 入站 DTO 完全一致的字段名和互斥语义。
+// staticCredentialAuth 保持与 Server 静态账号入站 DTO 一致的字段名和互斥语义。
 type staticCredentialAuth struct {
 	Kind      string `json:"kind"`
-	APIKey    string `json:"api_key"`
-	AuthToken string `json:"auth_token"`
-	BaseURL   string `json:"base_url"`
+	APIKey    string `json:"api_key,omitempty"`
+	AuthToken string `json:"auth_token,omitempty"`
+	BaseURL   string `json:"base_url,omitempty"`
 }
 
 // String 返回不泄露 API Key 或 Auth Token 的输入摘要。
 func (input StaticCredentialInput) String() string {
 	return fmt.Sprintf(
-		"managementapi.StaticCredentialInput{kind=%s,secret=<redacted>,base_url=%s}",
+		"managementapi.StaticCredentialInput{kind=%s,secret=<redacted>,base_url_set=%t}",
 		input.Kind,
-		input.BaseURL,
+		input.BaseURL != "",
 	)
 }
 
@@ -81,17 +81,17 @@ func (client *Client) ExportCLIProxyAPI(
 	)
 }
 
-// ImportSub2API 把一个有界单账号 sub2api-data 文档提交给目标 Server。
+// ImportSub2API 提交有界单账号文档，并区分首建与同身份命中。
 func (client *Client) ImportSub2API(
 	ctx context.Context,
 	document []byte,
-) (AccountSnapshot, error) {
+) (AccountImportResult, error) {
 	if !client.isValid() {
-		return AccountSnapshot{}, ErrInvalidConfig
+		return AccountImportResult{}, ErrInvalidConfig
 	}
 	if ctx == nil || len(document) == 0 || len(document) > maxTransferDocumentBytes ||
 		!json.Valid(document) {
-		return AccountSnapshot{}, ErrInvalidRequest
+		return AccountImportResult{}, ErrInvalidRequest
 	}
 	result, err := client.doResponseRequest(
 		ctx,
@@ -100,12 +100,9 @@ func (client *Client) ImportSub2API(
 		document,
 	)
 	if err != nil {
-		return AccountSnapshot{}, err
+		return AccountImportResult{}, err
 	}
-	if result.statusCode != http.StatusCreated || !isJSONResponse(result.header) {
-		return AccountSnapshot{}, ErrInvalidResponse
-	}
-	return decodeAccountSnapshot(result.body)
+	return decodeAccountImportResult(result)
 }
 
 // UpdateStaticCredential 原地替换 Codex/Claude 静态凭据并返回同一账号投影。
@@ -129,6 +126,7 @@ func (client *Client) UpdateStaticCredential(
 	if err != nil {
 		return AccountSnapshot{}, ErrInvalidRequest
 	}
+	defer clear(payload)
 	requestURL := accountURL(client.baseURL, accountRef) +
 		accountcontract.AccountCredentialSuffix
 	result, err := client.doResponseRequest(ctx, http.MethodPut, requestURL, payload)

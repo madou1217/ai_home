@@ -50,11 +50,15 @@ type CandidateSource interface {
 
 // CredentialResolver 把候选账号凭据解析为当前可直接使用的版本。
 type CredentialResolver interface {
-	// ResolveCredentialBinding 延迟读取凭据，并返回稳定账号绑定。
-	ResolveCredentialBinding(
+	// ResolveObservedCredentialBinding 延迟读取凭据，并从同一快照返回低敏观察。
+	ResolveObservedCredentialBinding(
 		ctx context.Context,
 		accountRef accountcore.AccountRef,
-	) (accountapp.CredentialBinding, error)
+	) (
+		accountapp.CredentialBinding,
+		accountcredentials.CredentialObservation,
+		error,
+	)
 }
 
 // CredentialTransportPolicy 判断领域凭据能否由当前上游协议安全承载。
@@ -226,6 +230,7 @@ func (request Request) excludes(accountRef accountcore.AccountRef) bool {
 type Result struct {
 	account         accountapp.RoutingAccount
 	binding         accountapp.CredentialBinding
+	observation     accountcredentials.CredentialObservation
 	examined        int
 	sourceExhausted bool
 }
@@ -238,6 +243,11 @@ func (result Result) Account() accountapp.RoutingAccount {
 // Binding 返回已经按候选账号复核的稳定凭据绑定。
 func (result Result) Binding() accountapp.CredentialBinding {
 	return result.binding
+}
+
+// CredentialObservation 返回解析该凭据时看到的持久化时间，不包含秘密。
+func (result Result) CredentialObservation() accountcredentials.CredentialObservation {
+	return result.observation
 }
 
 // Credential 返回稳定绑定中的当前 Provider 凭据。
@@ -406,7 +416,7 @@ func (session *RecruitmentSession) Next(ctx context.Context) (Result, error) {
 		if !session.admits(eligibility, offset) {
 			continue
 		}
-		binding, resolveErr := session.recruiter.credentials.ResolveCredentialBinding(
+		binding, observation, resolveErr := session.recruiter.credentials.ResolveObservedCredentialBinding(
 			ctx,
 			candidate.Ref(),
 		)
@@ -422,7 +432,7 @@ func (session *RecruitmentSession) Next(ctx context.Context) (Result, error) {
 				resolveErr,
 			)
 		}
-		if !credentialMatchesCandidate(candidate, binding) {
+		if !credentialMatchesCandidate(candidate, binding, observation) {
 			return progress, ErrInvalidResolvedCredential
 		}
 		credential := binding.Credential()
@@ -431,6 +441,7 @@ func (session *RecruitmentSession) Next(ctx context.Context) (Result, error) {
 		}
 		progress.account = candidate
 		progress.binding = binding
+		progress.observation = observation
 		return progress, nil
 	}
 	progress.sourceExhausted = true
@@ -543,10 +554,14 @@ func validCandidate(
 func credentialMatchesCandidate(
 	candidate accountapp.RoutingAccount,
 	binding accountapp.CredentialBinding,
+	observation accountcredentials.CredentialObservation,
 ) bool {
 	return binding.IsValid() &&
 		binding.AccountRef() == candidate.Ref() &&
-		binding.ProviderID() == candidate.ProviderID()
+		binding.ProviderID() == candidate.ProviderID() &&
+		observation.IsValid() &&
+		observation.AccountRef() == candidate.Ref() &&
+		observation.ProviderID() == candidate.ProviderID()
 }
 
 // isAccountUnavailable 只允许明确的单账号凭据故障进入候选降级。

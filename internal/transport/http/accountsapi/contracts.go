@@ -16,17 +16,18 @@ type nativeImportRequest struct {
 	Artifacts  json.RawMessage `json:"artifacts"`
 }
 
-// createAccountRequest 是当前只允许 API Key 的账号创建 DTO。
+// createAccountRequest 是 Codex、Claude 静态账号创建 DTO。
 type createAccountRequest struct {
 	ProviderID string               `json:"provider_id"`
 	Auth       createAccountAuthDTO `json:"auth"`
 }
 
-// createAccountAuthDTO 是不会进入响应或日志的 API Key 输入。
+// createAccountAuthDTO 显式区分 API Key 与 Claude Auth Token。
 type createAccountAuthDTO struct {
-	Kind    string `json:"kind"`
-	APIKey  string `json:"api_key"`
-	BaseURL string `json:"base_url"`
+	Kind      string `json:"kind"`
+	APIKey    string `json:"api_key"`
+	AuthToken string `json:"auth_token"`
+	BaseURL   string `json:"base_url"`
 }
 
 // updateAccountRequest 是账号基础资源当前允许修改的字段。
@@ -67,21 +68,37 @@ type updateAccountModelRequest struct {
 
 // accountView 是管理 API 允许公开的无敏感账号投影。
 type accountView struct {
-	AccountRef       string `json:"account_ref"`
-	ProviderID       string `json:"provider_id"`
-	CLIAccountID     int64  `json:"cli_account_id"`
-	Enabled          bool   `json:"enabled"`
-	HasCredential    bool   `json:"has_credential"`
-	AuthKind         string `json:"auth_kind"`
-	AuthMode         string `json:"auth_mode"`
-	HasProfile       bool   `json:"has_profile"`
-	DisplayName      string `json:"display_name"`
-	Email            string `json:"email"`
-	SubscriptionKind string `json:"subscription_kind"`
-	SubscriptionRaw  string `json:"subscription_raw"`
-	ProfileUpdatedAt string `json:"profile_updated_at,omitempty"`
-	CreatedAt        string `json:"created_at"`
-	UpdatedAt        string `json:"updated_at"`
+	AccountRef       string                    `json:"account_ref"`
+	ProviderID       string                    `json:"provider_id"`
+	CLIAccountID     int64                     `json:"cli_account_id"`
+	Enabled          bool                      `json:"enabled"`
+	HasCredential    bool                      `json:"has_credential"`
+	AuthKind         string                    `json:"auth_kind"`
+	AuthMode         string                    `json:"auth_mode"`
+	HasProfile       bool                      `json:"has_profile"`
+	DisplayName      string                    `json:"display_name"`
+	Email            string                    `json:"email"`
+	SubscriptionKind string                    `json:"subscription_kind"`
+	SubscriptionRaw  string                    `json:"subscription_raw"`
+	ProfileUpdatedAt string                    `json:"profile_updated_at,omitempty"`
+	ModelSummary     *accountModelSummaryView  `json:"model_summary"`
+	UsageSnapshot    *accountUsageSnapshotView `json:"usage_snapshot"`
+	CreatedAt        string                    `json:"created_at"`
+	UpdatedAt        string                    `json:"updated_at"`
+}
+
+// accountModelSummaryView 证明账号已有持久化模型关系，并给出当前有效数量。
+type accountModelSummaryView struct {
+	StoredCount    int    `json:"stored_count"`
+	EffectiveCount int    `json:"effective_count"`
+	UpdatedAt      string `json:"updated_at"`
+}
+
+// accountUsageSnapshotView 是账号列表内嵌的最近一次成功额度快照。
+type accountUsageSnapshotView struct {
+	Source     string                  `json:"source"`
+	CapturedAt string                  `json:"captured_at"`
+	Entries    []accountUsageEntryView `json:"entries"`
 }
 
 // accountResponse 是详情、创建和修改共享的成功 envelope。
@@ -184,7 +201,7 @@ type errorView struct {
 // newAccountView 从应用投影选择公开字段，不读取 Provider JSON 或凭据。
 func newAccountView(overview accountapp.AccountOverview) accountView {
 	account := overview.Account()
-	return accountView{
+	view := accountView{
 		AccountRef:       account.Ref().String(),
 		ProviderID:       account.ProviderID(),
 		CLIAccountID:     account.CLIAccountID().Int64(),
@@ -201,6 +218,22 @@ func newAccountView(overview accountapp.AccountOverview) accountView {
 		CreatedAt:        formatTime(account.CreatedAt()),
 		UpdatedAt:        formatTime(account.UpdatedAt()),
 	}
+	modelSummary := overview.ModelSummary()
+	if modelSummary.IsKnown() {
+		view.ModelSummary = &accountModelSummaryView{
+			StoredCount:    modelSummary.StoredCount(),
+			EffectiveCount: modelSummary.EffectiveCount(),
+			UpdatedAt:      formatTime(modelSummary.UpdatedAt()),
+		}
+	}
+	if usageSnapshot, found := overview.UsageSnapshot(); found {
+		view.UsageSnapshot = &accountUsageSnapshotView{
+			Source:     usageSnapshot.Source(),
+			CapturedAt: formatTime(usageSnapshot.CapturedAt()),
+			Entries:    newAccountUsageEntryViews(usageSnapshot.Entries()),
+		}
+	}
+	return view
 }
 
 // newAccountViews 保留应用层已经稳定排序的账号顺序。
@@ -254,19 +287,23 @@ func newAccountModelViews(models []accountapp.AccountModel) []accountModelView {
 // newAccountUsageResponse 从领域快照选择公开额度字段。
 func newAccountUsageResponse(result usageapp.ReadResult) accountUsageResponse {
 	snapshot := result.Snapshot()
-	entries := snapshot.Entries()
-	views := make([]accountUsageEntryView, 0, len(entries))
-	for _, entry := range entries {
-		views = append(views, newAccountUsageEntryView(entry))
-	}
 	return accountUsageResponse{Data: accountUsageView{
 		AccountRef: snapshot.AccountRef().String(),
 		ProviderID: snapshot.ProviderID(),
 		Source:     snapshot.Source(),
 		CapturedAt: formatTime(snapshot.CapturedAt()),
 		Stale:      result.Stale(),
-		Entries:    views,
+		Entries:    newAccountUsageEntryViews(snapshot.Entries()),
 	}}
+}
+
+// newAccountUsageEntryViews 让列表内嵌快照和单账号额度资源共享同一 DTO 映射。
+func newAccountUsageEntryViews(entries []usagecore.Entry) []accountUsageEntryView {
+	views := make([]accountUsageEntryView, 0, len(entries))
+	for _, entry := range entries {
+		views = append(views, newAccountUsageEntryView(entry))
+	}
+	return views
 }
 
 // newAccountUsageEntryView 保留未知值为 JSON null，而不是伪造零。

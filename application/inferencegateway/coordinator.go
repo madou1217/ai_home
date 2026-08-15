@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"sync/atomic"
+	"time"
 
+	"github.com/madou1217/ai_home/application/accountcredentials"
 	"github.com/madou1217/ai_home/application/accountrouting"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
@@ -61,6 +63,10 @@ type Dependencies struct {
 	Upstreams *UpstreamRegistry
 	// Attempts 在终态对客户端可见前记录成功或失败。
 	Attempts AttemptRecorder
+	// CredentialObservations 在终态真正写运行态前复核凭据读取代次。
+	CredentialObservations CredentialObservationVerifier
+	// Clock 在上游终态出现时生成可比较的 UTC 毫秒发生时间。
+	Clock func() time.Time
 	// ModelRefreshes 只在账号明确不支持目标模型时异步修正目录。
 	ModelRefreshes ModelRefreshScheduler
 	// UpstreamAttemptLimit 是单个路由候选允许调用的不同上游账号数。
@@ -75,8 +81,9 @@ type Coordinator struct {
 	routes               RouteResolver
 	recruiter            AccountRecruiter
 	upstreams            *UpstreamRegistry
-	attempts             AttemptRecorder
+	attempts             *ObservedAttemptRecorder
 	modelRefreshes       ModelRefreshScheduler
+	clock                func() time.Time
 	upstreamAttemptLimit int
 	poolRetries          *RequestPoolRetryPolicy
 	routeCursor          atomic.Uint64
@@ -153,9 +160,18 @@ func NewCoordinator(
 		dependencies.Recruiter == nil ||
 		dependencies.Upstreams == nil ||
 		dependencies.Attempts == nil ||
+		dependencies.CredentialObservations == nil ||
+		dependencies.Clock == nil ||
 		dependencies.ModelRefreshes == nil ||
 		attemptLimit < 1 ||
 		attemptLimit > DefaultUpstreamAttemptLimit {
+		return nil, ErrInvalidCoordinatorDependencies
+	}
+	attempts, err := NewObservedAttemptRecorder(
+		dependencies.Attempts,
+		dependencies.CredentialObservations,
+	)
+	if err != nil {
 		return nil, ErrInvalidCoordinatorDependencies
 	}
 	return &Coordinator{
@@ -163,8 +179,9 @@ func NewCoordinator(
 		routes:               dependencies.Routes,
 		recruiter:            dependencies.Recruiter,
 		upstreams:            dependencies.Upstreams,
-		attempts:             dependencies.Attempts,
+		attempts:             attempts,
 		modelRefreshes:       dependencies.ModelRefreshes,
+		clock:                dependencies.Clock,
 		upstreamAttemptLimit: attemptLimit,
 		poolRetries:          dependencies.PoolRetries,
 	}, nil
@@ -202,7 +219,9 @@ func (coordinator *Coordinator) executePlan(
 	poolRetryPermit := coordinator.newRequestPoolRetryPermit(ctx)
 	defer poolRetryPermit.close()
 	var pendingFailure *attemptStream
-	accountFailures := newRequestAccountFailureRecorder(coordinator.attempts)
+	accountFailures := newRequestAccountFailureRecorder(
+		coordinator.attempts,
+	)
 	supported := false
 	for _, route := range plan.candidates[:plan.count] {
 		if !route.Supports(request.RequiredCapabilities()) {
@@ -460,6 +479,7 @@ func (coordinator *Coordinator) executeRouteRound(
 			route,
 			recruited.Account(),
 			recruited.Binding(),
+			recruited.CredentialObservation(),
 		)
 		if err != nil {
 			return routeExecution{pendingFailure: pendingFailure}, err
@@ -574,7 +594,7 @@ func (coordinator *Coordinator) executeAttempt(
 	emit EventSink,
 	accountFailures *requestAccountFailureRecorder,
 ) (attemptOutcome, error) {
-	stream := newAttemptStream(emit)
+	stream := newAttemptStream(emit, coordinator.clock)
 	outcome := newAttemptOutcome(stream, false)
 	result, executeErr := upstream.Execute(ctx, invocation, stream.Accept)
 	if stream.Err() != nil {
@@ -594,12 +614,18 @@ func (coordinator *Coordinator) executeAttempt(
 		return outcome, ErrInvalidInvocation
 	}
 	if result.Completed() {
+		success, successErr := NewAttemptSuccess(stream.TerminalAt())
+		if successErr != nil {
+			return outcome, successErr
+		}
 		providerID := string(invocation.Route().ProviderID())
 		accountFailures.ForgetPending(providerID, route)
 		return outcome, coordinator.completeAttempt(
 			ctx,
 			providerID,
 			route,
+			invocation.CredentialObservation(),
+			success,
 			stream,
 			accountFailures,
 		)
@@ -608,6 +634,7 @@ func (coordinator *Coordinator) executeAttempt(
 		ctx,
 		route,
 		string(invocation.Route().ProviderID()),
+		invocation.CredentialObservation(),
 		result.Failure(),
 		stream,
 		accountFailures,
@@ -623,6 +650,8 @@ func (coordinator *Coordinator) completeAttempt(
 	ctx context.Context,
 	providerID string,
 	route runtimecore.ModelRoute,
+	observation accountcredentials.CredentialObservation,
+	success AttemptSuccess,
 	stream *attemptStream,
 	accountFailures *requestAccountFailureRecorder,
 ) error {
@@ -632,7 +661,12 @@ func (coordinator *Coordinator) completeAttempt(
 	if err := accountFailures.FinalizeSuccess(ctx, providerID, route); err != nil {
 		return fmt.Errorf("提交请求级上游失败状态失败: %w", err)
 	}
-	if err := coordinator.attempts.RecordSuccess(ctx, route); err != nil {
+	if _, err := coordinator.attempts.RecordSuccess(
+		ctx,
+		route,
+		observation,
+		success,
+	); err != nil {
 		return fmt.Errorf("记录上游成功状态失败: %w", err)
 	}
 	return stream.FlushTerminal()
@@ -643,6 +677,7 @@ func (coordinator *Coordinator) failAttempt(
 	ctx context.Context,
 	route runtimecore.ModelRoute,
 	providerID string,
+	observation accountcredentials.CredentialObservation,
 	failure AttemptFailure,
 	stream *attemptStream,
 	accountFailures *requestAccountFailureRecorder,
@@ -658,6 +693,7 @@ func (coordinator *Coordinator) failAttempt(
 		ctx,
 		providerID,
 		route,
+		observation,
 		failure,
 	); err != nil {
 		return false, fmt.Errorf("记录上游失败状态失败: %w", err)
@@ -693,6 +729,7 @@ func (coordinator *Coordinator) validateExecute(
 		coordinator.upstreams == nil ||
 		coordinator.attempts == nil ||
 		coordinator.modelRefreshes == nil ||
+		coordinator.clock == nil ||
 		ctx == nil ||
 		emit == nil ||
 		!request.ClientProtocol().IsValid() ||

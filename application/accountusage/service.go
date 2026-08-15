@@ -9,6 +9,7 @@ import (
 	"errors"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
@@ -42,8 +43,13 @@ var (
 
 // SnapshotStore 提供账号当前额度的原子全量替换和点查。
 type SnapshotStore interface {
-	// ReplaceUsageSnapshot 在一个事务中替换同账号的全部当前额度条目。
-	ReplaceUsageSnapshot(ctx context.Context, snapshot usagecore.Snapshot) error
+	// ReplaceUsageSnapshotIfCredentialVersion 只在采集使用的凭据仍是当前代次时，
+	// 在一个事务中替换同账号的全部当前额度条目。
+	ReplaceUsageSnapshotIfCredentialVersion(
+		ctx context.Context,
+		snapshot usagecore.Snapshot,
+		expectedCredentialUpdatedAt time.Time,
+	) error
 	// GetUsageSnapshot 返回同账号最近一次成功的完整快照。
 	GetUsageSnapshot(
 		ctx context.Context,
@@ -51,12 +57,12 @@ type SnapshotStore interface {
 	) (usagecore.Snapshot, error)
 }
 
-// CredentialResolver 返回已经完成必要 OAuth 刷新的当前凭据。
-type CredentialResolver interface {
-	ResolveCredential(
+// CredentialSnapshotResolver 返回完成必要 OAuth 刷新后的当前凭据快照。
+type CredentialSnapshotResolver interface {
+	ResolveCredentialSnapshot(
 		ctx context.Context,
 		accountRef accountcore.AccountRef,
-	) (accountapp.Credential, error)
+	) (accountapp.CredentialSnapshot, error)
 }
 
 // AccountModelReader 只读取模型族投影所需的账号模型当前快照。
@@ -99,7 +105,7 @@ type Clock func() time.Time
 type Dependencies struct {
 	Catalog     *providers.Catalog
 	Store       SnapshotStore
-	Credentials CredentialResolver
+	Credentials CredentialSnapshotResolver
 	Models      AccountModelReader
 	Runtime     RuntimeProjection
 	Strategies  []ProviderStrategy
@@ -137,7 +143,7 @@ func (result ReadResult) Stale() bool {
 type Service struct {
 	catalog     *providers.Catalog
 	store       SnapshotStore
-	credentials CredentialResolver
+	credentials CredentialSnapshotResolver
 	models      AccountModelReader
 	runtime     RuntimeProjection
 	strategies  map[string]ProviderStrategy
@@ -178,7 +184,8 @@ func NewService(dependencies Dependencies) (*Service, error) {
 		strategies:  strategies,
 		clock:       dependencies.Clock,
 		flights: refreshFlightGroup{
-			active: make(map[accountcore.AccountRef]*refreshCall),
+			active:      make(map[accountcore.AccountRef]*refreshCall),
+			generations: make(map[accountcore.AccountRef]*refreshGeneration),
 		},
 	}, nil
 }
@@ -253,37 +260,47 @@ func (service *Service) RefreshUsage(
 	}
 	return service.flights.Do(ctx, accountRef, func(
 		refreshCtx context.Context,
+		call *refreshCall,
 	) (ReadResult, error) {
-		return service.refreshCurrent(refreshCtx, accountRef)
+		return service.refreshCurrent(refreshCtx, accountRef, call)
 	})
 }
 
-// ForgetAccount 取消并分离账号当前刷新，使同身份重导入可以创建新一代任务。
+// ForgetAccount 取消并分离账号当前刷新，同时清除旧额度拥有的运行态阻塞。
 func (service *Service) ForgetAccount(
 	accountRef accountcore.AccountRef,
 ) {
 	if service == nil || !accountRef.IsValid() {
 		return
 	}
-	service.flights.Forget(accountRef)
+	_ = service.flights.Forget(accountRef, func() error {
+		return service.runtime.ReplaceUsageProjection(
+			context.Background(),
+			accountRef,
+			false,
+			nil,
+		)
+	})
 }
 
 // refreshCurrent 解析当前凭据、选择 Strategy 并按保存后投影的顺序提交。
 func (service *Service) refreshCurrent(
 	ctx context.Context,
 	accountRef accountcore.AccountRef,
+	call *refreshCall,
 ) (ReadResult, error) {
-	credential, err := service.credentials.ResolveCredential(ctx, accountRef)
+	credentialSnapshot, err := service.credentials.ResolveCredentialSnapshot(
+		ctx,
+		accountRef,
+	)
 	if err != nil {
 		return ReadResult{}, err
 	}
-	if credential == nil {
-		return ReadResult{}, ErrUsageUnsupported
-	}
-	derivedRef, err := accountcore.DeriveAccountRef(credential)
-	if err != nil || derivedRef != accountRef {
+	if !credentialSnapshot.IsValid() ||
+		credentialSnapshot.AccountRef() != accountRef {
 		return ReadResult{}, ErrInvalidSnapshot
 	}
+	credential := credentialSnapshot.Credential()
 	providerID, found := service.catalog.CanonicalID(credential.ProviderID())
 	if !found || providerID != credential.ProviderID() {
 		return ReadResult{}, ErrInvalidSnapshot
@@ -311,14 +328,26 @@ func (service *Service) refreshCurrent(
 		!snapshot.CapturedAt().Equal(capturedAt) {
 		return ReadResult{}, ErrInvalidSnapshot
 	}
-	if err := service.store.ReplaceUsageSnapshot(ctx, snapshot); err != nil {
+	if err := service.store.ReplaceUsageSnapshotIfCredentialVersion(
+		ctx,
+		snapshot,
+		credentialSnapshot.UpdatedAt(),
+	); err != nil {
 		return ReadResult{}, err
 	}
-	if err := service.projectRuntime(
-		context.WithoutCancel(ctx),
-		snapshot,
-		strategy,
-	); err != nil {
+	if call == nil {
+		return ReadResult{}, ErrInvalidRequest
+	}
+	if err := call.project(func() error {
+		return service.projectRuntime(
+			context.WithoutCancel(ctx),
+			snapshot,
+			strategy,
+		)
+	}); err != nil {
+		if errors.Is(err, context.Canceled) {
+			return ReadResult{}, err
+		}
 		return ReadResult{}, errors.Join(ErrRuntimeProjection, err)
 	}
 	return NewReadResult(snapshot, false)
@@ -408,23 +437,32 @@ func (service *Service) validateRequest(
 
 // refreshCall 保存同账号正在执行的唯一刷新结果。
 type refreshCall struct {
-	done   chan struct{}
-	cancel context.CancelFunc
-	result ReadResult
-	err    error
+	done             chan struct{}
+	cancel           context.CancelFunc
+	generation       *refreshGeneration
+	generationNumber uint64
+	result           ReadResult
+	err              error
+}
+
+// refreshGeneration 串行化同账号的代次切换与最终运行态投影。
+type refreshGeneration struct {
+	projectionMu sync.Mutex
+	number       atomic.Uint64
 }
 
 // refreshFlightGroup 只合并活动刷新，不缓存完成结果。
 type refreshFlightGroup struct {
-	mu     sync.Mutex
-	active map[accountcore.AccountRef]*refreshCall
+	mu          sync.Mutex
+	active      map[accountcore.AccountRef]*refreshCall
+	generations map[accountcore.AccountRef]*refreshGeneration
 }
 
 // Do 让首个调用执行刷新，其余调用等待同一个确定性结果。
 func (group *refreshFlightGroup) Do(
 	ctx context.Context,
 	accountRef accountcore.AccountRef,
-	operation func(context.Context) (ReadResult, error),
+	operation func(context.Context, *refreshCall) (ReadResult, error),
 ) (ReadResult, error) {
 	group.mu.Lock()
 	if call := group.active[accountRef]; call != nil {
@@ -432,14 +470,21 @@ func (group *refreshFlightGroup) Do(
 		return waitForRefresh(ctx, call)
 	}
 	operationCtx, cancel := context.WithCancel(ctx)
+	generation := group.generations[accountRef]
+	if generation == nil {
+		generation = &refreshGeneration{}
+		group.generations[accountRef] = generation
+	}
 	call := &refreshCall{
-		done:   make(chan struct{}),
-		cancel: cancel,
+		done:             make(chan struct{}),
+		cancel:           cancel,
+		generation:       generation,
+		generationNumber: generation.number.Load(),
 	}
 	group.active[accountRef] = call
 	group.mu.Unlock()
 
-	call.result, call.err = operation(operationCtx)
+	call.result, call.err = operation(operationCtx, call)
 	cancel()
 	group.mu.Lock()
 	if group.active[accountRef] == call {
@@ -450,22 +495,57 @@ func (group *refreshFlightGroup) Do(
 	return call.result, call.err
 }
 
-// Forget 取消并从新请求可见索引中分离一个活动刷新代次。
+// Forget 切换账号代次，在同一投影门禁内清理旧状态，并取消旧活动请求。
 func (group *refreshFlightGroup) Forget(
 	accountRef accountcore.AccountRef,
-) {
-	if group == nil || group.active == nil || !accountRef.IsValid() {
-		return
+	cleanup func() error,
+) error {
+	if group == nil ||
+		group.active == nil ||
+		group.generations == nil ||
+		!accountRef.IsValid() ||
+		cleanup == nil {
+		return ErrInvalidRequest
 	}
 	group.mu.Lock()
-	call := group.active[accountRef]
-	if call != nil {
-		delete(group.active, accountRef)
+	generation := group.generations[accountRef]
+	if generation == nil {
+		generation = &refreshGeneration{}
+		group.generations[accountRef] = generation
 	}
 	group.mu.Unlock()
-	if call != nil {
+
+	generation.projectionMu.Lock()
+	defer generation.projectionMu.Unlock()
+	nextGeneration := generation.number.Add(1)
+	group.mu.Lock()
+	call := group.active[accountRef]
+	if call != nil && call.generationNumber < nextGeneration {
+		delete(group.active, accountRef)
+	} else {
+		call = nil
+	}
+	group.mu.Unlock()
+	if call != nil && call.cancel != nil {
 		call.cancel()
 	}
+	return cleanup()
+}
+
+// project 只允许仍属于当前账号代次的任务修改 usage 运行态投影。
+func (call *refreshCall) project(operation func() error) error {
+	if call == nil || operation == nil {
+		return ErrInvalidRequest
+	}
+	if call.generation == nil {
+		return ErrInvalidRequest
+	}
+	call.generation.projectionMu.Lock()
+	defer call.generation.projectionMu.Unlock()
+	if call.generation.number.Load() != call.generationNumber {
+		return context.Canceled
+	}
+	return operation()
 }
 
 // waitForRefresh 允许等待者独立取消，不终止已经发出的 Provider 请求。

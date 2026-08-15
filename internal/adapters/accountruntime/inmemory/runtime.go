@@ -76,11 +76,16 @@ func (runtime *Runtime) CheckEligibility(
 func (runtime *Runtime) RecordSuccess(
 	ctx context.Context,
 	route runtimecore.ModelRoute,
+	success inferencegateway.AttemptSuccess,
 ) error {
-	if err := runtime.validateRouteRequest(ctx, route); err != nil {
-		return err
+	if err := runtime.validateRouteRequest(ctx, route); err != nil ||
+		!success.IsValid() {
+		if err != nil {
+			return err
+		}
+		return ErrInvalidRequest
 	}
-	return runtime.cooldowns.RecordSuccess(ctx, route)
+	return runtime.cooldowns.RecordSuccess(ctx, route, success.HappenedAt())
 }
 
 // RecordFailure 根据领域动作把失败分发到硬阻塞或模型 cooldown。

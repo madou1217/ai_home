@@ -126,3 +126,27 @@ func TestClassifyRefreshErrorSeparatesReauthRejectedAndTransient(t *testing.T) {
 		})
 	}
 }
+
+// TestClassifyRefreshErrorRecognizesProviderRefreshTokenRevocations 验证近期 Node
+// 已处理过的 Provider 机器码不会退化为每请求重复尝试的一般拒绝。
+func TestClassifyRefreshErrorRecognizesProviderRefreshTokenRevocations(t *testing.T) {
+	t.Parallel()
+
+	for _, errorCode := range []string{
+		"expired_refresh_token",
+		"refresh_token_invalid",
+		"refresh_token_not_found",
+		"refresh_token_revoked",
+		"revoked_refresh_token",
+	} {
+		errorCode := errorCode
+		t.Run(errorCode, func(t *testing.T) {
+			t.Parallel()
+
+			err := ClassifyRefreshError(http.StatusBadRequest, errorCode)
+			if !errors.Is(err, accountcredentials.ErrReauthenticationRequired) {
+				t.Fatalf("ClassifyRefreshError() = %v", err)
+			}
+		})
+	}
+}

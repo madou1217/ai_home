@@ -46,6 +46,12 @@ func TestModelRefreshCoordinatorCoalescesAccountsAndIsolatesProviders(
 	t.Cleanup(func() {
 		_ = coordinator.Close()
 	})
+	if !coordinator.SupportsModelRefresh("codex") ||
+		!coordinator.SupportsModelRefresh("claude") ||
+		coordinator.SupportsModelRefresh("grok") ||
+		coordinator.SupportsModelRefresh("unknown") {
+		t.Fatal("Provider 模型刷新能力与已装配 worker 不一致")
+	}
 	codexFirst := testRefreshAccountRef(t, 1)
 	codexSecond := testRefreshAccountRef(t, 2)
 	claudeFirst := testRefreshAccountRef(t, 3)
@@ -152,7 +158,6 @@ func TestModelRefreshCoordinatorBacksOffOnlyFailingProvider(t *testing.T) {
 		_ = coordinator.Close()
 	})
 	codexFirst := codexFailureRef
-	codexSecond := testRefreshAccountRef(t, 11)
 	claudeFirst := testRefreshAccountRef(t, 12)
 	if err := coordinator.ScheduleModelRefresh(
 		context.Background(),
@@ -168,13 +173,6 @@ func TestModelRefreshCoordinatorBacksOffOnlyFailingProvider(t *testing.T) {
 	}
 	if err := coordinator.ScheduleModelRefresh(
 		context.Background(),
-		codexSecond,
-		"codex",
-	); err != nil {
-		t.Fatalf("ScheduleModelRefresh(second) error = %v", err)
-	}
-	if err := coordinator.ScheduleModelRefresh(
-		context.Background(),
 		claudeFirst,
 		"claude",
 	); err != nil {
@@ -185,7 +183,7 @@ func TestModelRefreshCoordinatorBacksOffOnlyFailingProvider(t *testing.T) {
 		t.Fatalf("退避期间先启动了错误任务: %#v", next)
 	}
 	codexRetry := receiveRefreshInvocation(t, started)
-	if codexRetry.accountRef != codexSecond ||
+	if codexRetry.accountRef != codexFailureRef ||
 		codexRetry.startedAt.Sub(firstStart.startedAt) < baseBackoff-10*time.Millisecond {
 		t.Fatalf(
 			"Codex retry=%#v first=%#v backoff=%s",
@@ -193,6 +191,187 @@ func TestModelRefreshCoordinatorBacksOffOnlyFailingProvider(t *testing.T) {
 			firstStart,
 			codexRetry.startedAt.Sub(firstStart.startedAt),
 		)
+	}
+}
+
+// TestModelRefreshCoordinatorFreshWorkBypassesRetryBackoff 验证同 Provider
+// 新账号首次刷新不会被失败账号的退避窗口阻塞。
+func TestModelRefreshCoordinatorFreshWorkBypassesRetryBackoff(t *testing.T) {
+	t.Parallel()
+
+	fixedNow := time.Unix(1_800_000_000, 0)
+	failureRef := testRefreshAccountRef(t, 14)
+	freshRef := testRefreshAccountRef(t, 15)
+	started := make(chan refreshInvocation, 3)
+	results := make(chan accountapp.ModelRefreshResult, 3)
+	var calls int
+	var callsMu sync.Mutex
+	refresher := &refreshCoordinatorStub{
+		execute: func(
+			_ context.Context,
+			accountRef accountcore.AccountRef,
+		) error {
+			started <- refreshInvocation{
+				accountRef: accountRef,
+				startedAt:  time.Now(),
+			}
+			callsMu.Lock()
+			defer callsMu.Unlock()
+			calls++
+			if accountRef == failureRef && calls == 1 {
+				return errors.New("synthetic first refresh failure")
+			}
+			return nil
+		},
+	}
+	coordinator, err := accountapp.NewModelRefreshCoordinator(
+		accountapp.ModelRefreshCoordinatorOptions{
+			Catalog:             testCatalog(t),
+			Refresher:           refresher,
+			ProviderConcurrency: map[string]int{"codex": 1},
+			RefreshTimeout:      time.Second,
+			BaseBackoff:         time.Hour,
+			MaxBackoff:          time.Hour,
+			Clock: func() time.Time {
+				return fixedNow
+			},
+			Random: bytes.NewReader(make([]byte, 32)),
+			Observer: func(result accountapp.ModelRefreshResult) {
+				results <- result
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("NewModelRefreshCoordinator() error = %v", err)
+	}
+	t.Cleanup(func() {
+		_ = coordinator.Close()
+	})
+	if err := coordinator.ScheduleModelRefresh(
+		context.Background(),
+		failureRef,
+		"codex",
+	); err != nil {
+		t.Fatalf("ScheduleModelRefresh(failure) error = %v", err)
+	}
+	first := receiveRefreshInvocation(t, started)
+	firstResult := receiveRefreshResult(t, results)
+	if first.accountRef != failureRef || firstResult.Err == nil {
+		t.Fatalf("first=%#v result=%#v", first, firstResult)
+	}
+
+	if err := coordinator.ScheduleModelRefresh(
+		context.Background(),
+		freshRef,
+		"codex",
+	); err != nil {
+		t.Fatalf("ScheduleModelRefresh(fresh) error = %v", err)
+	}
+	select {
+	case next := <-started:
+		if next.accountRef != freshRef {
+			t.Fatalf("next accountRef = %s, want %s", next.accountRef, freshRef)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("新账号首次刷新被同 Provider 退避阻塞")
+	}
+}
+
+// TestModelRefreshCoordinatorPreservesFreshFIFOAtTenThousandAccounts 验证
+// 万账号批量入队后仍按首次调度顺序执行。
+func TestModelRefreshCoordinatorPreservesFreshFIFOAtTenThousandAccounts(
+	t *testing.T,
+) {
+	const accountCount = 10_000
+
+	started := make(chan accountcore.AccountRef, accountCount)
+	releaseFirst := make(chan struct{})
+	deadline := time.NewTimer(10 * time.Second)
+	defer deadline.Stop()
+	firstRef := testRefreshAccountRef(t, 1_000)
+	refresher := &refreshCoordinatorStub{
+		execute: func(
+			ctx context.Context,
+			accountRef accountcore.AccountRef,
+		) error {
+			started <- accountRef
+			if accountRef != firstRef {
+				return nil
+			}
+			select {
+			case <-releaseFirst:
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		},
+	}
+	coordinator := newTestRefreshCoordinator(
+		t,
+		refresher,
+		map[string]int{"codex": 1},
+		time.Millisecond,
+		nil,
+	)
+	t.Cleanup(func() {
+		_ = coordinator.Close()
+	})
+
+	accountRefs := make([]accountcore.AccountRef, accountCount)
+	for index := range accountRefs {
+		accountRefs[index] = testRefreshAccountRef(t, 1_000+index)
+	}
+	if err := coordinator.ScheduleModelRefresh(
+		context.Background(),
+		accountRefs[0],
+		"codex",
+	); err != nil {
+		t.Fatalf("ScheduleModelRefresh(first) error = %v", err)
+	}
+	if actual := receiveRefreshAccountRef(
+		t,
+		started,
+		deadline.C,
+	); actual != accountRefs[0] {
+		t.Fatalf("first accountRef = %s, want %s", actual, accountRefs[0])
+	}
+	for index := 1; index < accountCount; index++ {
+		if err := coordinator.ScheduleModelRefresh(
+			context.Background(),
+			accountRefs[index],
+			"codex",
+		); err != nil {
+			t.Fatalf("ScheduleModelRefresh(%d) error = %v", index, err)
+		}
+	}
+	close(releaseFirst)
+	for index := 1; index < accountCount; index++ {
+		actual := receiveRefreshAccountRef(t, started, deadline.C)
+		if actual != accountRefs[index] {
+			t.Fatalf(
+				"refresh order[%d] = %s, want %s",
+				index,
+				actual,
+				accountRefs[index],
+			)
+		}
+	}
+}
+
+// receiveRefreshAccountRef 在有界时间内等待高数量顺序测试的单个账号。
+func receiveRefreshAccountRef(
+	t *testing.T,
+	started <-chan accountcore.AccountRef,
+	deadline <-chan time.Time,
+) accountcore.AccountRef {
+	t.Helper()
+
+	select {
+	case accountRef := <-started:
+		return accountRef
+	case <-deadline:
+		t.Fatal("等待高数量模型刷新启动超时")
+		return accountcore.AccountRef("")
 	}
 }
 

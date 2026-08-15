@@ -4,14 +4,17 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
 	"os/user"
+	"regexp"
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/madou1217/ai_home/core/accounts/claude"
+	"github.com/madou1217/ai_home/internal/adapters/claude/securestorage"
 )
 
 const (
@@ -24,13 +27,20 @@ const (
 // errClaudeKeychainUnavailable 表示当前平台或当前用户没有可读的官方 Keychain 登录态。
 var errClaudeKeychainUnavailable = errors.New("Claude macOS Keychain 登录态不可读取")
 
+var claudeKeychainModifiedAtPattern = regexp.MustCompile(
+	`"mdat"<timedate>=[^\r\n]*"(\d{14})Z"`,
+)
+
 // keychainCommand 只抽象 security 子进程输出，供单测验证精确参数而不读取真实 Keychain。
 type keychainCommand func(context.Context, string, ...string) ([]byte, error)
 
 // readClaudeKeychain 从 Claude Code 官方 macOS Keychain 槽位读取 secure storage JSON。
 //
 // 凭据只通过 security 的 stdout 进入内存；命令参数只包含用户名和 service，绝不包含 Token。
-func readClaudeKeychain(configDir string, scoped bool) ([]byte, string, error) {
+func readClaudeKeychain(
+	configDir string,
+	scoped bool,
+) (ClaudeSecureStorageRecord, error) {
 	username := resolveClaudeKeychainUsername()
 	return readClaudeKeychainWith(
 		configDir,
@@ -50,9 +60,9 @@ func readClaudeKeychainWith(
 	goos string,
 	username string,
 	run keychainCommand,
-) ([]byte, string, error) {
+) (ClaudeSecureStorageRecord, error) {
 	if goos != "darwin" || strings.TrimSpace(username) == "" || run == nil {
-		return nil, "", errClaudeKeychainUnavailable
+		return ClaudeSecureStorageRecord{}, errClaudeKeychainUnavailable
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), claudeKeychainTimeout)
 	defer cancel()
@@ -72,9 +82,27 @@ func readClaudeKeychainWith(
 			clear(data)
 			continue
 		}
-		return data, "macOS Keychain: " + service, nil
+		metadata, metadataErr := run(
+			ctx,
+			"security",
+			"find-generic-password",
+			"-a",
+			username,
+			"-s",
+			service,
+		)
+		modifiedAtMS := int64(0)
+		if metadataErr == nil {
+			modifiedAtMS = parseClaudeKeychainModifiedAt(metadata)
+		}
+		clear(metadata)
+		return ClaudeSecureStorageRecord{
+			Data:         data,
+			Source:       "macOS Keychain: " + service,
+			ModifiedAtMS: modifiedAtMS,
+		}, nil
 	}
-	return nil, "", errClaudeKeychainUnavailable
+	return ClaudeSecureStorageRecord{}, errClaudeKeychainUnavailable
 }
 
 // claudeKeychainServices 与官方 Claude Code 的读取顺序一致：显式配置目录
@@ -91,30 +119,32 @@ func claudeKeychainServices(configDir string, scoped bool) []string {
 	return []string{scopedService, defaultService}
 }
 
-// validClaudeKeychainPayload 只接受官方 secure storage 中含 OAuth token 的对象；
+// validClaudeKeychainPayload 只接受完整的官方 secure storage OAuth 对象；
 // 坏条目必须继续尝试下一个 service 或文件回退，不能阻断正常登录态导入。
 func validClaudeKeychainPayload(data []byte) bool {
 	if len(data) == 0 || len(data) > maxArtifactFileBytes {
 		return false
 	}
-	var document map[string]json.RawMessage
-	if err := json.Unmarshal(data, &document); err != nil || document == nil {
-		return false
+	_, err := securestorage.Decode(data, securestorage.DecodeOptions{
+		Identity: claude.OAuthIdentity{
+			AccountUUID: "00000000-0000-4000-8000-000000000001",
+		},
+	})
+	return err == nil
+}
+
+// parseClaudeKeychainModifiedAt 从 security 元数据的 mdat 字段读取 UTC 时间。
+// 格式不认识时返回零，调用方必须把它视为“新鲜度不可证明”。
+func parseClaudeKeychainModifiedAt(metadata []byte) int64 {
+	match := claudeKeychainModifiedAtPattern.FindSubmatch(metadata)
+	if len(match) != 2 {
+		return 0
 	}
-	var oauth map[string]json.RawMessage
-	for _, key := range []string{"claudeAiOauth", "claude_ai_oauth"} {
-		if raw, found := document[key]; found && json.Unmarshal(raw, &oauth) == nil && oauth != nil {
-			for _, tokenKey := range []string{
-				"accessToken", "access_token", "refreshToken", "refresh_token",
-			} {
-				var token string
-				if json.Unmarshal(oauth[tokenKey], &token) == nil && strings.TrimSpace(token) != "" {
-					return true
-				}
-			}
-		}
+	parsed, err := time.ParseInLocation("20060102150405", string(match[1]), time.UTC)
+	if err != nil {
+		return 0
 	}
-	return false
+	return parsed.UnixMilli()
 }
 
 // buildClaudeKeychainService 复现 Claude Code 当前源码的 service 寻址规则。

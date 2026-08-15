@@ -19,7 +19,7 @@ func TestAccountCredentialUpdateUsesClaudeOfficialEnvironment(t *testing.T) {
 	transport := &accountCredentialCommandHTTPClient{
 		t:          t,
 		providerID: "claude",
-		expectedBody: `{"auth":{"kind":"auth_token","api_key":"","auth_token":"` +
+		expectedBody: `{"auth":{"kind":"auth_token","auth_token":"` +
 			secret + `","base_url":"https://api.anthropic.com"}}`,
 	}
 	runtime := testCommandRuntime(t, map[string]string{
@@ -57,7 +57,7 @@ func TestAccountCredentialUpdateUsesCodexOfficialEnvironment(t *testing.T) {
 		t:          t,
 		providerID: "codex",
 		expectedBody: `{"auth":{"kind":"api_key","api_key":"` + secret +
-			`","auth_token":"","base_url":"https://api.openai.com/v1"}}`,
+			`","base_url":"https://api.openai.com/v1"}}`,
 	}
 	runtime := testCommandRuntime(t, map[string]string{
 		"AIH_SERVER_BASE_URL":       "http://127.0.0.1:19527",

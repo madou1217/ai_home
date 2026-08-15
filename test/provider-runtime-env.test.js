@@ -11,6 +11,7 @@ const {
   parseWindowsProxyServer
 } = require('../lib/runtime/windows-system-proxy');
 const { CODEX_MANAGED_LAUNCH_ENV } = require('../lib/runtime/codex-launch-context');
+const { PROVIDER_ACCOUNT_REF_ENV } = require('../lib/runtime/provider-session-context');
 
 test('provider runtime env marks codex launches managed and clears the marker elsewhere', () => {
   // 单一装配线保证：任何经 buildProviderRuntimeEnv 组出来的 codex env（PTY /
@@ -28,6 +29,28 @@ test('provider runtime env marks codex launches managed and clears the marker el
     [CODEX_MANAGED_LAUNCH_ENV]: '1'
   }, { fs, path, platform: 'linux' });
   assert.equal(claudeEnv[CODEX_MANAGED_LAUNCH_ENV], undefined);
+});
+
+test('provider runtime env replaces inherited hook account context with the selected account', () => {
+  const accountRef = 'acct_0123456789abcdef0123';
+  const env = buildProviderRuntimeEnv('grok', '/home/u/.ai_home/run/auth-projections/grok/account', {
+    HOME: '/home/u',
+    PATH: '/usr/bin',
+    [PROVIDER_ACCOUNT_REF_ENV]: 'acct_aaaaaaaaaaaaaaaaaaaa'
+  }, {
+    fs,
+    path,
+    platform: 'linux',
+    accountRef
+  });
+  assert.equal(env[PROVIDER_ACCOUNT_REF_ENV], accountRef);
+
+  const unscoped = buildProviderRuntimeEnv('grok', '/home/u/.ai_home/run/login/grok', {
+    HOME: '/home/u',
+    PATH: '/usr/bin',
+    [PROVIDER_ACCOUNT_REF_ENV]: accountRef
+  }, { fs, path, platform: 'linux' });
+  assert.equal(unscoped[PROVIDER_ACCOUNT_REF_ENV], undefined);
 });
 
 test('provider runtime env strips the trailing /v1 the Anthropic SDK re-appends', () => {

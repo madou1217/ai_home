@@ -52,7 +52,10 @@ test('runProviderSessionHookSender forwards the PTY correlation id without chang
     provider: 'claude',
     eventName: 'SessionStart',
     stdin: JSON.stringify({ session_id: 's1' }),
-    processEnv: { AIH_PROVIDER_SESSION_CORRELATION_ID: 'pty-run-1' },
+    processEnv: {
+      AIH_PROVIDER_SESSION_CORRELATION_ID: 'pty-run-1',
+      AIH_PROVIDER_ACCOUNT_REF: 'acct_0123456789abcdef0123'
+    },
     postJson: async (_url, payload) => {
       calls.push(payload);
       return { ok: true };
@@ -60,6 +63,7 @@ test('runProviderSessionHookSender forwards the PTY correlation id without chang
   });
 
   assert.equal(calls[0].correlationId, 'pty-run-1');
+  assert.equal(calls[0].accountRef, 'acct_0123456789abcdef0123');
   assert.equal(calls[0].payload.session_id, 's1');
 });
 

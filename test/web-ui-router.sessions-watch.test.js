@@ -10,6 +10,7 @@ const { createSessionEventBus } = require('../lib/server/session-event-bus');
 const {
   createProviderSessionCorrelationRegistry
 } = require('../lib/server/provider-session-correlation-registry');
+const { registerAccountIdentity } = require('../lib/account/account-registration');
 const persistentSessionRegistry = require('../lib/runtime/persistent-session-registry');
 
 function createStreamResCapture() {
@@ -274,6 +275,76 @@ test('web ui provider hook endpoint publishes session watch update', async (t) =
   assert.match(res.body, /"phase":"turn-completed"/);
   assert.match(res.body, /"projectPath":"\/repo"/);
   req.emit('close');
+});
+
+test('Grok Stop hook clears runtime state only for its verified accountRef', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-grok-hook-recovery-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  const { accountRef } = registerAccountIdentity(fs, aiHomeDir, {
+    provider: 'grok',
+    cliAccountId: '1',
+    identitySeed: 'oauth:grok:hook-recovery@example.com'
+  });
+  const runtimeEvents = [];
+  const deps = createBaseDeps({
+    aiHomeDir,
+    accountRuntimeEventHub: {
+      emit(type, event) {
+        runtimeEvents.push({ type, event });
+        return [true];
+      }
+    }
+  });
+
+  async function postHook(payload) {
+    const req = new EventEmitter();
+    req.headers = {};
+    const res = createStreamResCapture();
+    await handleWebUIRequest({
+      method: 'POST',
+      pathname: '/v0/webui/session-events/provider-hook',
+      url: new URL('http://localhost/v0/webui/session-events/provider-hook'),
+      req,
+      res,
+      options: {},
+      state: {},
+      deps: {
+        ...deps,
+        readRequestBody: async () => Buffer.from(JSON.stringify(payload), 'utf8')
+      }
+    });
+    return res;
+  }
+
+  const validResponse = await postHook({
+    provider: 'grok',
+    eventName: 'Stop',
+    accountRef,
+    payload: {
+      session_id: 'grok-hook-session-1',
+      cwd: '/repo'
+    }
+  });
+  assert.equal(validResponse.statusCode, 200);
+  assert.equal(JSON.parse(validResponse.body).runtimeRecovered, true);
+  assert.equal(runtimeEvents.length, 1);
+  assert.equal(runtimeEvents[0].event.provider, 'grok');
+  assert.equal(runtimeEvents[0].event.accountRef, accountRef);
+  assert.equal(runtimeEvents[0].event.reason, 'native_session_success');
+  assert.equal(runtimeEvents[0].event.runtimeState, null);
+
+  const mismatchedResponse = await postHook({
+    provider: 'claude',
+    eventName: 'Stop',
+    accountRef,
+    payload: {
+      session_id: 'claude-hook-session-1',
+      cwd: '/repo'
+    }
+  });
+  assert.equal(mismatchedResponse.statusCode, 200);
+  assert.equal(JSON.parse(mismatchedResponse.body).runtimeRecovered, false);
+  assert.equal(runtimeEvents.length, 1);
 });
 
 test('Codex SessionStart hook binds the native thread to its persistent launch', async (t) => {

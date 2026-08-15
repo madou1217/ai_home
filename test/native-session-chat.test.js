@@ -23,6 +23,7 @@ const {
   isOfficialNativeSessionProvider,
   parseNativeStreamEvent,
   recordNativeAccountRuntimeBlocker,
+  recordNativeAccountRuntimeSuccess,
   resolveNativeCliLaunch,
   spawnNativeSessionStream,
   startAgyColdAfterQuiesce,
@@ -418,6 +419,110 @@ test('native session runtime blocker does not treat non-persistence listeners as
   }, blocker);
 
   assert.equal(persisted, false);
+});
+
+test('native session success clears a stale runtime block through the canonical event', () => {
+  const events = [];
+  const persisted = recordNativeAccountRuntimeSuccess({
+    provider: 'grok',
+    accountRef: 'acct_0123456789abcdef0123',
+    source: 'webui_native_session',
+    accountStateService: {
+      getAccountState() {
+        return {
+          runtimeState: {
+            authInvalidUntil: Date.now() + 60_000,
+            lastFailureKind: 'auth_invalid'
+          }
+        };
+      }
+    },
+    accountRuntimeEventHub: {
+      emit(type, event) {
+        events.push({ type, event });
+        return [true];
+      }
+    }
+  });
+
+  assert.equal(persisted, true);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].event.nextStatus, 'healthy');
+  assert.equal(events[0].event.reason, 'native_session_success');
+  assert.equal(events[0].event.runtimeState, null);
+  assert.equal(events[0].event.source, 'webui_native_session');
+});
+
+test('native session success falls back to the state service when the event hub cannot persist', () => {
+  const clears = [];
+  const persisted = recordNativeAccountRuntimeSuccess({
+    provider: 'grok',
+    accountRef: 'acct_0123456789abcdef0123',
+    accountRuntimeEventHub: { emit: () => [false] },
+    accountStateService: {
+      recordRuntimeSuccess(accountRef, provider, options) {
+        clears.push({ accountRef, provider, options });
+        return true;
+      }
+    }
+  });
+
+  assert.equal(persisted, true);
+  assert.equal(clears.length, 1);
+  assert.equal(clears[0].provider, 'grok');
+  assert.equal(clears[0].options.evidence, 'native_session_success');
+});
+
+test('native session success does not reload an already healthy account', () => {
+  const events = [];
+  const persisted = recordNativeAccountRuntimeSuccess({
+    provider: 'grok',
+    accountRef: 'acct_0123456789abcdef0123',
+    accountRuntimeEventHub: {
+      emit(type, event) {
+        events.push({ type, event });
+        return [true];
+      }
+    },
+    accountStateService: {
+      getAccountState() {
+        return { runtimeState: null };
+      }
+    }
+  });
+
+  assert.equal(persisted, false);
+  assert.deepEqual(events, []);
+});
+
+test('native session success does not clear a newer runtime failure', () => {
+  const events = [];
+  const successAt = Date.now() - 10_000;
+  const persisted = recordNativeAccountRuntimeSuccess({
+    provider: 'grok',
+    accountRef: 'acct_0123456789abcdef0123',
+    happenedAt: successAt,
+    accountRuntimeEventHub: {
+      emit(type, event) {
+        events.push({ type, event });
+        return [true];
+      }
+    },
+    accountStateService: {
+      getAccountState() {
+        return {
+          runtimeState: {
+            authInvalidUntil: Date.now() + 60_000,
+            lastFailureKind: 'auth_invalid',
+            lastFailureAt: successAt + 1
+          }
+        };
+      }
+    }
+  });
+
+  assert.equal(persisted, false);
+  assert.deepEqual(events, []);
 });
 
 test('ensureCodexSessionIndexEntry writes a prompt-derived thread_name so the session is not filtered as 未命名会话', (t) => {

@@ -3336,6 +3336,18 @@ test('web ui chat emits thinking events for codex reasoning deltas in api proxy 
 test('web ui chat routes grok session prompt through headless stream mode', async () => {
   const originalSpawn = nativeSessionChat.spawnNativeSessionStream;
   let seenOptions = null;
+  const runtimeEvents = [];
+  const accountRuntimeEventHub = {
+    emit(type, event) {
+      runtimeEvents.push({ type, event });
+      return [true];
+    }
+  };
+  const accountStateService = {
+    recordRuntimeFailure() {
+      return true;
+    }
+  };
   nativeSessionChat.spawnNativeSessionStream = (options = {}) => {
     seenOptions = options;
     return {
@@ -3376,7 +3388,11 @@ test('web ui chat routes grok session prompt through headless stream mode', asyn
       options: { port: 8317 },
       state: {},
       deps: {
-        ...createBaseDeps({ aiHomeDir }),
+        ...createBaseDeps({
+          aiHomeDir,
+          accountRuntimeEventHub,
+          accountStateService
+        }),
         readRequestBody: async () => Buffer.from(JSON.stringify(payload), 'utf8')
       }
     });
@@ -3385,6 +3401,12 @@ test('web ui chat routes grok session prompt through headless stream mode', asyn
     await waitForStreamEnd(res);
     assert.equal(seenOptions.provider, 'grok');
     assert.equal(seenOptions.interactiveCli, false);
+    assert.equal(seenOptions.accountRuntimeEventHub, accountRuntimeEventHub);
+    assert.equal(seenOptions.accountStateService, accountStateService);
+    assert.equal(runtimeEvents.length, 1);
+    assert.equal(runtimeEvents[0].event.provider, 'grok');
+    assert.equal(runtimeEvents[0].event.accountRef, ACCOUNT_REFS.grokOne);
+    assert.equal(runtimeEvents[0].event.runtimeState, null);
     assert.match(res.body, /"type":"ready","mode":"native-session"/);
     assert.match(res.body, /"type":"delta","delta":"Hello from Grok"/);
     assert.match(res.body, /"type":"done","mode":"native-session"/);
@@ -3393,4 +3415,3 @@ test('web ui chat routes grok session prompt through headless stream mode', asyn
     fs.rmSync(aiHomeDir, { recursive: true, force: true });
   }
 });
-

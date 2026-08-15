@@ -124,7 +124,9 @@ const {
 } = require('../lib/server/accounts');
 const { registerAccountIdentity } = require('../lib/account/account-registration');
 const { createAccountStateIndex } = require('../lib/account/state-index');
+const { createAccountStateService } = require('../lib/account/state-service');
 const {
+  readAccountCredentialRecord,
   writeAccountCredentials,
   writeAccountNativeAuth
 } = require('../lib/server/account-credential-store');
@@ -191,10 +193,10 @@ test('loadGrokServerAccounts respects custom XAI_BASE_URL', (t) => {
   assert.equal(accounts[0].openaiBaseUrl, 'https://custom.x.ai/v1');
 });
 
-test('loadGrokServerAccounts returns oauth account for grok-build auth', (t) => {
+test('loadGrokServerAccounts keeps refresh-only oauth accounts schedulable for renewal', (t) => {
   const { aiHomeDir, accountStateIndex, register } = createGrokFixture(t);
   register('grok', '1', {}, {
-    auth: { access_token: 'oauth-token-xyz' }
+    auth: { refresh_token: 'oauth-refresh-token-xyz' }
   });
 
   const accounts = loadGrokServerAccounts({
@@ -208,7 +210,8 @@ test('loadGrokServerAccounts returns oauth account for grok-build auth', (t) => 
   const account = accounts[0];
   assert.equal(account.authType, 'oauth');
   assert.equal(account.apiKeyMode, false);
-  assert.equal(account.accessToken, 'oauth-token-xyz');
+  assert.equal(account.accessToken, '');
+  assert.equal(account.refreshToken, 'oauth-refresh-token-xyz');
 });
 
 test('loadGrokServerAccounts reads official mapped Grok OAuth auth', (t) => {
@@ -219,6 +222,71 @@ test('loadGrokServerAccounts reads official mapped Grok OAuth auth', (t) => {
   const accounts = loadGrokServerAccounts({ fs, aiHomeDir, accountStateIndex, checkStatus: () => ({ configured: true }) });
   assert.equal(accounts[0].accessToken, 'mapped-token');
   assert.equal(accounts[0].email, 'grok@example.com');
+  assert.equal(accounts[0].oauthClientId, 'client-id');
+});
+
+test('runtime loading clears Grok auth-invalid state only after a newer credential update', (t) => {
+  const { aiHomeDir, accountStateIndex, register } = createGrokFixture(t);
+  const accountRef = register('grok', '1', {}, {
+    auth: { access_token: 'stale-access', refresh_token: 'refresh-token' }
+  });
+  const failureAt = Date.now() - 1000;
+  accountStateIndex.upsertRuntimeState(accountRef, 'grok', {
+    authInvalidUntil: Date.now() + 600_000,
+    lastFailureKind: 'auth_invalid',
+    lastFailureReason: 'upstream_401',
+    lastFailureAt: failureAt
+  }, {
+    configured: true,
+    apiKeyMode: false,
+    authMode: 'oauth'
+  });
+  writeAccountNativeAuth(fs, aiHomeDir, accountRef, {
+    auth: { access_token: 'renewed-access', refresh_token: 'renewed-refresh' }
+  });
+
+  const accountStateService = createAccountStateService({ accountStateIndex });
+  const runtime = loadServerRuntimeAccounts({
+    fs,
+    aiHomeDir,
+    accountStateIndex,
+    accountStateService,
+    checkStatus: () => ({ configured: true }),
+    getProfileDir: () => ''
+  });
+
+  assert.equal(runtime.grok[0].lastFailureKind, '');
+  assert.equal(accountStateIndex.getAccountState(accountRef).runtimeState, null);
+});
+
+test('runtime loading preserves Grok auth-invalid state when credentials predate the failure', (t) => {
+  const { aiHomeDir, accountStateIndex, register } = createGrokFixture(t);
+  const accountRef = register('grok', '1', {}, {
+    auth: { access_token: 'stale-access', refresh_token: 'stale-refresh' }
+  });
+  const credential = readAccountCredentialRecord(fs, aiHomeDir, accountRef);
+  accountStateIndex.upsertRuntimeState(accountRef, 'grok', {
+    authInvalidUntil: Date.now() + 600_000,
+    lastFailureKind: 'auth_invalid',
+    lastFailureReason: 'upstream_401',
+    lastFailureAt: credential.nativeAuthUpdatedAt + 1
+  }, {
+    configured: true,
+    apiKeyMode: false,
+    authMode: 'oauth'
+  });
+
+  const runtime = loadServerRuntimeAccounts({
+    fs,
+    aiHomeDir,
+    accountStateIndex,
+    accountStateService: createAccountStateService({ accountStateIndex }),
+    checkStatus: () => ({ configured: true }),
+    getProfileDir: () => ''
+  });
+
+  assert.equal(runtime.grok[0].lastFailureKind, 'auth_invalid');
+  assert.equal(accountStateIndex.getAccountState(accountRef).runtimeState.lastFailureReason, 'upstream_401');
 });
 
 test('loadGrokServerAccounts skips account without credentials', (t) => {

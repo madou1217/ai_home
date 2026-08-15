@@ -40,13 +40,14 @@ test('grok refresh posts the official contract and persists refreshed auth to DB
   const oldAccessToken = createSampleJwt(oldExp);
   const newAccessToken = createSampleJwt(newExp);
 
+  const oauthClientId = 'grok-official-client-from-auth-json';
   writeAccountNativeAuth(fs, aiHomeDir, registration.accountRef, {
     auth: {
-      'https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828': {
+      [`https://auth.x.ai::${oauthClientId}`]: {
         key: oldAccessToken,
         refresh_token: 'grok-refresh-token-1',
         email: 'user@example.com',
-        oidc_client_id: 'b1a00492-073a-47ea-816f-4c329264a828',
+        oidc_client_id: oauthClientId,
         oidc_issuer: 'https://auth.x.ai',
         expires_at: new Date(oldExp * 1000).toISOString()
       }
@@ -84,10 +85,10 @@ test('grok refresh posts the official contract and persists refreshed auth to DB
   assert.equal(calls[0].headers['content-type'], 'application/x-www-form-urlencoded');
   assert.equal(calls[0].body.grant_type, 'refresh_token');
   assert.equal(calls[0].body.refresh_token, 'grok-refresh-token-1');
-  assert.equal(calls[0].body.client_id, 'b1a00492-073a-47ea-816f-4c329264a828');
+  assert.equal(calls[0].body.client_id, oauthClientId);
 
   const persisted = readAccountNativeAuth(fs, aiHomeDir, registration.accountRef);
-  const profile = persisted.auth['https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828'];
+  const profile = persisted.auth[`https://auth.x.ai::${oauthClientId}`];
   assert.equal(profile.key, newAccessToken);
   assert.equal(profile.refresh_token, 'grok-refresh-token-2');
 });

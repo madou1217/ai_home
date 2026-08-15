@@ -256,6 +256,51 @@ test('ensureSessionStoreLinks keeps codex config isolated while dropping shared 
   assert.equal(fs.readFileSync(path.join(accountConfigDir, 'auth.json'), 'utf8'), '{"token":"secret"}\n');
 });
 
+test('ensureSessionStoreLinks keeps Grok auth private while sharing sessions', (t) => {
+  const root = mkTmpDir();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const hostHomeDir = path.join(root, 'home');
+  const profilesDir = path.join(root, 'profiles');
+  const accountConfigDir = path.join(profilesDir, 'grok', '1', '.grok');
+  const hostGrokDir = path.join(hostHomeDir, '.grok');
+  fs.mkdirSync(path.join(accountConfigDir, 'sessions'), { recursive: true });
+  fs.mkdirSync(hostGrokDir, { recursive: true });
+  fs.writeFileSync(path.join(accountConfigDir, 'auth.json'), '{"token":"account-secret"}\n');
+  fs.writeFileSync(path.join(accountConfigDir, 'auth.json.lock'), 'account-lock\n');
+  fs.writeFileSync(path.join(accountConfigDir, 'sessions', 'turn.jsonl'), '{"role":"user"}\n');
+  fs.writeFileSync(path.join(hostGrokDir, 'auth.json'), '{"token":"host-secret"}\n');
+
+  const service = createSessionStoreService({
+    fs,
+    fse,
+    path,
+    processObj: process,
+    hostHomeDir,
+    cliConfigs: { grok: { globalDir: '.grok' } },
+    getProfileDir: (cliName, id) => path.join(profilesDir, cliName, String(id)),
+    ensureDir: (dir) => fs.mkdirSync(dir, { recursive: true })
+  });
+
+  service.ensureSessionStoreLinks('grok', '1');
+
+  assert.equal(fs.lstatSync(path.join(accountConfigDir, 'auth.json')).isSymbolicLink(), false);
+  assert.equal(fs.lstatSync(path.join(accountConfigDir, 'auth.json.lock')).isSymbolicLink(), false);
+  assert.equal(
+    fs.readFileSync(path.join(accountConfigDir, 'auth.json'), 'utf8'),
+    '{"token":"account-secret"}\n'
+  );
+  assert.equal(
+    fs.readFileSync(path.join(hostGrokDir, 'auth.json'), 'utf8'),
+    '{"token":"host-secret"}\n'
+  );
+  assert.equal(fs.lstatSync(path.join(accountConfigDir, 'sessions')).isSymbolicLink(), true);
+  assert.equal(
+    fs.readFileSync(path.join(hostGrokDir, 'sessions', 'turn.jsonl'), 'utf8'),
+    '{"role":"user"}\n'
+  );
+});
+
 test('ensureSessionStoreLinks links additional codex host state directories when present', (t) => {
   const root = mkTmpDir();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

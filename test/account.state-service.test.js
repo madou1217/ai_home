@@ -84,6 +84,40 @@ test('account state service requires evidence before clearing runtime block', ()
   }]);
 });
 
+test('account state service accepts a successful native session as recovery evidence', () => {
+  const writes = [];
+  const service = createAccountStateService({
+    accountStateIndex: {
+      getAccountState() {
+        return {
+          accountRef: ACCOUNT_REF_1,
+          status: 'up',
+          configured: true,
+          apiKeyMode: false,
+          authMode: 'oauth',
+          displayName: 'grok@example.com',
+          runtimeState: {
+            authInvalidUntil: Date.now() + 60_000,
+            lastFailureKind: 'auth_invalid',
+            lastFailureReason: 'upstream_401'
+          }
+        };
+      },
+      upsertRuntimeState(accountRef, provider, runtimeState, baseState) {
+        writes.push({ accountRef, provider, runtimeState, baseState });
+        return true;
+      }
+    }
+  });
+
+  assert.equal(service.recordRuntimeSuccess(ACCOUNT_REF_1, 'grok', {
+    evidence: 'native_session_success'
+  }), true);
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].runtimeState, null);
+  assert.equal(writes[0].provider, 'grok');
+});
+
 test('account state service syncs base state without writing runtime null when no block exists', () => {
   const writes = [];
   const service = createAccountStateService({

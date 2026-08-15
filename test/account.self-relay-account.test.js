@@ -6,7 +6,8 @@ const path = require('node:path');
 
 const {
   buildAihServerProfileEnv,
-  deleteSelfRelayAccounts
+  deleteSelfRelayAccounts,
+  supportsAihServerProfile
 } = require('../lib/account/self-relay-account');
 const { registerAccountIdentity } = require('../lib/account/account-registration');
 const { writeAccountCredentials } = require('../lib/server/account-credential-store');
@@ -140,4 +141,9 @@ test('buildAihServerProfileEnv maps server config to Codex and Claude client env
     ANTHROPIC_API_KEY: 'dummy',
     ANTHROPIC_BASE_URL: 'http://127.0.0.1:8317'
   });
+
+  for (const unsupportedProvider of ['grok', 'kimi', 'kiro']) {
+    assert.equal(supportsAihServerProfile(unsupportedProvider), false);
+    assert.equal(buildAihServerProfileEnv(unsupportedProvider, {}), null);
+  }
 });

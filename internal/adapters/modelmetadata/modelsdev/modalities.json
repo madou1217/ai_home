@@ -351,6 +351,16 @@
       "text"
     ]
   },
+  "alibaba/qwen3.8-27b": {
+    "input": [
+      "text",
+      "image",
+      "video"
+    ],
+    "output": [
+      "text"
+    ]
+  },
   "alibaba/qwen3.8-max": {
     "input": [
       "text",

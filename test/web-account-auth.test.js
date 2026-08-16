@@ -13,8 +13,12 @@ const {
   normalizeAuthMode,
   getDefaultAuthMode,
   isSupportedAuthMode,
+  PROVIDER_AUTH_MODE_MATRIX,
+  PROVIDER_DEFAULT_AUTH_MODE,
   extractOAuthChallenge,
   extractBrowserOAuthHints,
+  getOauthArtifactPath,
+  hasOauthCompletionArtifacts,
   configureApiKeyAccount,
   configureVertexAiAccount,
   serializeAuthJob,
@@ -26,6 +30,72 @@ test('Kimi WebUI auth contract supports browser OAuth and API keys', () => {
   assert.equal(isSupportedAuthMode('kimi', 'oauth-browser'), true);
   assert.equal(isSupportedAuthMode('kimi', 'api-key'), true);
   assert.equal(isSupportedAuthMode('kimi', 'oauth-device'), false);
+});
+
+test('auth modes stay derived from the provider contract instead of a local matrix', () => {
+  // 与 Go 契约 authOptions 一一对应；新增 provider 不需要在这里登记。
+  assert.deepEqual([...PROVIDER_AUTH_MODE_MATRIX.codex].sort(), ['api-key', 'oauth-browser', 'oauth-device']);
+  assert.deepEqual([...PROVIDER_AUTH_MODE_MATRIX.gemini].sort(), ['api-key', 'oauth-browser', 'vertex-ai']);
+  assert.equal(PROVIDER_DEFAULT_AUTH_MODE.gemini, 'api-key');
+  assert.deepEqual([...PROVIDER_AUTH_MODE_MATRIX.zcode].sort(), ['api-key', 'oauth-browser']);
+  assert.equal(PROVIDER_DEFAULT_AUTH_MODE.zcode, 'oauth-browser');
+  assert.equal(isSupportedAuthMode('zcode', 'oauth-browser'), true);
+  assert.equal(isSupportedAuthMode('zcode', 'api-key'), true);
+  assert.equal(isSupportedAuthMode('zcode', 'oauth-device'), false);
+});
+
+test('login artifact paths derive from the storage policy for every provider', () => {
+  const job = { configDir: path.join('C:', 'login'), runtimeDir: path.join('C:', 'login') };
+  assert.equal(getOauthArtifactPath({ ...job, provider: 'codex' }), path.join(job.configDir, 'auth.json'));
+  assert.equal(getOauthArtifactPath({ ...job, provider: 'claude' }), path.join(job.configDir, '.credentials.json'));
+  assert.equal(getOauthArtifactPath({ ...job, provider: 'gemini' }), path.join(job.configDir, 'oauth_creds.json'));
+  assert.equal(getOauthArtifactPath({ ...job, provider: 'agy' }), path.join(job.configDir, 'antigravity-oauth-token'));
+  assert.equal(getOauthArtifactPath({ ...job, provider: 'grok' }), path.join(job.configDir, 'auth.json'));
+  assert.equal(
+    getOauthArtifactPath({ ...job, provider: 'kimi' }),
+    path.join(job.configDir, 'credentials', 'kimi-code.json')
+  );
+  assert.equal(
+    getOauthArtifactPath({ ...job, provider: 'opencode' }),
+    path.join(job.runtimeDir, '.local', 'share', 'opencode', 'auth.json')
+  );
+  assert.equal(
+    getOauthArtifactPath({ ...job, provider: 'zcode' }),
+    path.join(job.configDir, 'v2', 'credentials.json')
+  );
+});
+
+test('oauth completion accepts a fresh generic artifact for contract-only providers', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-oauth-artifact-'));
+  try {
+    const zcodeJob = {
+      provider: 'zcode',
+      runtimeDir: dir,
+      configDir: path.join(dir, '.zcode')
+    };
+    assert.equal(hasOauthCompletionArtifacts(zcodeJob, fs), false);
+    fs.mkdirSync(path.join(dir, '.zcode', 'v2'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.zcode', 'v2', 'credentials.json'), '{}');
+    assert.equal(hasOauthCompletionArtifacts(zcodeJob, fs), true);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('configureApiKeyAccount persists contract-derived env keys for zcode', (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-apikey-zcode-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  const { readAccountCredentials } = require('../lib/server/account-credential-store');
+  const configured = configureApiKeyAccount({
+    fs,
+    provider: 'zcode',
+    aiHomeDir,
+    config: { apiKey: 'zcode-webui-key', baseUrl: 'https://api.z.ai/api/anthropic' }
+  });
+  assert.equal(configured.provider, 'zcode');
+  const env = readAccountCredentials(fs, aiHomeDir, configured.accountRef);
+  assert.equal(env.ZCODE_API_KEY, 'zcode-webui-key');
+  assert.equal(env.ZCODE_BASE_URL, 'https://api.z.ai/api/anthropic');
 });
 
 test('Kiro WebUI auth contract supports browser OAuth', () => {

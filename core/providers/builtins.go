@@ -21,6 +21,7 @@ func BuiltinManifest() Manifest {
 			builtinQoderCN(),
 			builtinKimi(),
 			builtinKiro(),
+			builtinZcode(),
 		},
 		Fallback: Presentation{
 			ID:                "codex",
@@ -274,7 +275,7 @@ func builtinGrok() Definition {
 			LoginArgs:  []string{"login", "--oauth"},
 			BinaryName: "grok",
 			Package:    "",
-			EnvKeys:    []string{"GROK_HOME", "XAI_API_KEY"},
+			EnvKeys:    []string{"GROK_HOME", "XAI_API_KEY", "XAI_BASE_URL"},
 			DesktopClient: desktopClient(
 				"Grok",
 				[]string{"Grok"},
@@ -378,7 +379,7 @@ func builtinKimi() Definition {
 			GlobalDir: ".kimi-code",
 			LoginArgs: []string{"login"},
 			Package:   "@moonshot-ai/kimi-code",
-			EnvKeys:   []string{"MOONSHOT_API_KEY", "KIMI_CODE_HOME"},
+			EnvKeys:   []string{"MOONSHOT_API_KEY", "KIMI_BASE_URL", "KIMI_CODE_HOME"},
 		},
 		NativeBoundary: nativeKimi(),
 	}
@@ -404,6 +405,31 @@ func builtinKiro() Definition {
 			EnvKeys:    []string{"KIRO_HOME", "KIRO_TEST_DB_PATH", "KIRO_API_KEY"},
 		},
 		NativeBoundary: nativeKiro(),
+	}
+}
+
+// builtinZcode 定义 ZCode CLI 的 Z.AI OAuth 与 API Key 双账号模式。
+// ZCode 原生使用 Anthropic 协议（/v1/messages），凭据保存在
+// ~/.zcode/v2/credentials.json（无 refresh token，过期需重新 login 导入）。
+func builtinZcode() Definition {
+	return Definition{
+		ID:           "zcode",
+		Presentation: presentation("zcode", "ZCode", "ZC", "◈", "geekblue"),
+		Gateway:      GatewayActive,
+		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog},
+		AuthOptions: []AuthOption{
+			authOption(AuthModeOAuthBrowser, "ZCode 登录", "使用 ZCode CLI 原生 zcode login 流程（Z.AI 账号，OAuth 凭据捕获到 AIH）。"),
+			authOption(AuthModeAPIKey, "Z.ai 密钥", "绑定 ZCODE_API_KEY / ZCODE_BASE_URL（支持 open.bigmodel.cn 与 api.z.ai 双 Anthropic 端点）。"),
+		},
+		SessionSync: SessionSync{Mode: SessionSyncUnavailable, Events: []string{}},
+		CLI: &CLIConfig{
+			Order:      11,
+			GlobalDir:  ".zcode",
+			LoginArgs:  []string{"login"},
+			BinaryName: "zcode",
+			Package:    "",
+			EnvKeys:    []string{"ZCODE_API_KEY", "ZCODE_BASE_URL", "ZCODE_DATA_BASE_DIR"},
+		},
 	}
 }
 

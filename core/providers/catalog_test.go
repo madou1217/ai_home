@@ -8,7 +8,7 @@ func TestBuiltinManifestIsValid(t *testing.T) {
 	if err := ValidateManifest(manifest); err != nil {
 		t.Fatalf("内置 Provider 合同无效: %v", err)
 	}
-	if got, want := len(manifest.Providers), 10; got != want {
+	if got, want := len(manifest.Providers), 11; got != want {
 		t.Fatalf("Provider 数量错误: got=%d want=%d", got, want)
 	}
 }

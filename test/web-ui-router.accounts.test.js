@@ -32,6 +32,7 @@ const { upsertAccountRef } = require('../lib/server/account-ref-store');
 const { writeAccountUsageSnapshot } = require('../lib/account/usage-snapshot-store');
 const { setUsageConfig } = require('../lib/usage/config-store');
 const { writeAccountTokenUsageCache } = require('../lib/server/webui-account-token-usage-cache');
+const { encryptZcodeCredentialValue } = require('../lib/account/zcode-credential');
 const {
   readDefaultAccountRef,
   writeDefaultAccountRef
@@ -431,6 +432,50 @@ test('web ui accounts list does not let stale state mark an unconfigured DB cred
   assert.equal(body.accounts[0].planType, 'pending');
   assert.equal(body.accounts[0].quotaStatus, 'not_applicable');
   assert.equal(body.accounts[0].schedulableReason, 'account_unconfigured');
+});
+
+test('web ui accounts list derives zcode OAuth presence from native credentials', async (t) => {
+  // Regression guard: readFastAccountPresence once had no zcode branch, so an
+  // imported OAuth account (excluded from the gateway pool by design) fell
+  // through to configured=false and the WebUI showed it as 待登录.
+  const fixture = createAccountFixture(t);
+  const userInfo = JSON.stringify({ email: 'zcode@example.com', name: 'ZCode User' });
+  fixture.register('zcode', '10010', {
+    nativeAuth: {
+      credentials: {
+        'oauth:zai:access_token': encryptZcodeCredentialValue('zcode-access-token'),
+        'oauth:zai:user_info': encryptZcodeCredentialValue(userInfo),
+        'oauth:active_provider': encryptZcodeCredentialValue('zai'),
+        zcodejwttoken: encryptZcodeCredentialValue('zcode-jwt-token')
+      }
+    },
+    state: { configured: false, apiKeyMode: false, updatedAt: 100 }
+  });
+  const undecryptableRef = fixture.register('zcode', '10011', {
+    nativeAuth: {
+      credentials: {
+        'oauth:zai:access_token': 'enc:v1:invalid.0.0',
+        zcodejwttoken: 'enc:v1:invalid.0.0'
+      }
+    },
+    state: { configured: false, apiKeyMode: false, updatedAt: 100 }
+  });
+
+  const { handled, res, body } = await requestAccounts(fixture, {
+    deps: { checkStatus: () => ({ configured: false, accountName: 'Unknown' }) }
+  });
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 200);
+  const zcodeAccounts = body.accounts.filter((account) => account.provider === 'zcode');
+  assert.equal(zcodeAccounts.length, 2);
+  for (const account of zcodeAccounts) {
+    assert.equal(account.configured, true);
+    assert.equal(account.apiKeyMode, false);
+    assert.equal(account.schedulableStatus, 'schedulable');
+    assert.equal(account.schedulableReason || '', '');
+  }
+  assert.ok(zcodeAccounts.every((account) => account.accountRef !== undecryptableRef || account.configured === true));
 });
 
 test('web ui accounts list marks stale oauth pending accounts as retryable', async (t) => {

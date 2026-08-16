@@ -145,6 +145,12 @@ test('models.dev provider inference keeps AIH provider separate from catalog pro
   assert.deepEqual(inferModelsDevProviderIds('opencode', 'opencode-go/glm-5.2'), ['opencode-go', 'opencode']);
 });
 
+test('models.dev provider inference maps zcode to zhipu catalogs', () => {
+  assert.deepEqual(inferModelsDevProviderIds('zcode', 'glm-5.3'), ['zhipu', 'z-ai']);
+  // 请求路径没有 provider 上下文时按 glm- 前缀定位智谱目录
+  assert.deepEqual(inferModelsDevProviderIds('', 'glm-5-turbo'), ['zhipu', 'z-ai']);
+});
+
 test('models.dev provider inference maps kimi to coding and moonshotai catalogs', () => {
   assert.deepEqual(inferModelsDevProviderIds('kimi', 'kimi-k3'), ['kimi-for-coding', 'moonshotai-cn', 'moonshotai']);
   assert.deepEqual(inferModelsDevProviderIds('kimi', 'k3'), ['kimi-for-coding', 'moonshotai-cn', 'moonshotai']);

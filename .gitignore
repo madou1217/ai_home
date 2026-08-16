@@ -72,3 +72,4 @@ web/src/.umi-production/
 /sessions/
 /docs/user-guide/
 /[[]object Object[]]/
+.tmp-mitm/

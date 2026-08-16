@@ -99,6 +99,16 @@
       "accentVar": "var(--provider-kiro)",
       "softVar": "var(--provider-kiro-soft)",
       "tagColor": "volcano"
+    },
+    {
+      "id": "zcode",
+      "label": "ZCode",
+      "short": "ZC",
+      "terminalIcon": "◈",
+      "terminalIconAsset": "assets/provider-icons/zcode.png",
+      "accentVar": "var(--provider-zcode)",
+      "softVar": "var(--provider-zcode-soft)",
+      "tagColor": "geekblue"
     }
   ],
   "fallback": {

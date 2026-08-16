@@ -564,7 +564,8 @@ test('runtime buckets expose accountRef without CLI identity fields', (t) => {
     'kiro',
     'opencode',
     'qoder',
-    'qodercn'
+    'qodercn',
+    'zcode'
   ]);
   assert.equal(accounts.opencode[0].accountRef, accountRef);
   assert.equal(Object.hasOwn(accounts.opencode[0], 'id'), false);

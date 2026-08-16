@@ -225,6 +225,28 @@ export const PROVIDER_DEFINITIONS = [
         "description": "使用 Kiro CLI Device Flow 认证（支持 Google/GitHub/AWS Builder ID）。"
       }
     ]
+  },
+  {
+    "id": "zcode",
+    "label": "ZCode",
+    "short": "ZC",
+    "terminalIcon": "◈",
+    "terminalIconAsset": "assets/provider-icons/zcode.png",
+    "accentVar": "var(--provider-zcode)",
+    "softVar": "var(--provider-zcode-soft)",
+    "tagColor": "geekblue",
+    "authOptions": [
+      {
+        "value": "oauth-browser",
+        "label": "ZCode 登录",
+        "description": "使用 ZCode CLI 原生 zcode login 流程（Z.AI 账号，OAuth 凭据捕获到 AIH）。"
+      },
+      {
+        "value": "api-key",
+        "label": "Z.ai 密钥",
+        "description": "绑定 ZCODE_API_KEY / ZCODE_BASE_URL（支持 open.bigmodel.cn 与 api.z.ai 双 Anthropic 端点）。"
+      }
+    ]
   }
 ] as const;
 

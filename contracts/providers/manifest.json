@@ -702,7 +702,8 @@
         "pkg": "",
         "envKeys": [
           "GROK_HOME",
-          "XAI_API_KEY"
+          "XAI_API_KEY",
+          "XAI_BASE_URL"
         ],
         "desktopClient": {
           "macos": {
@@ -995,6 +996,7 @@
         "pkg": "@moonshot-ai/kimi-code",
         "envKeys": [
           "MOONSHOT_API_KEY",
+          "KIMI_BASE_URL",
           "KIMI_CODE_HOME"
         ]
       },
@@ -1125,6 +1127,54 @@
             "default"
           ]
         }
+      }
+    },
+    {
+      "id": "zcode",
+      "presentation": {
+        "id": "zcode",
+        "label": "ZCode",
+        "short": "ZC",
+        "terminalIcon": "◈",
+        "terminalIconAsset": "assets/provider-icons/zcode.png",
+        "accentVar": "var(--provider-zcode)",
+        "softVar": "var(--provider-zcode-soft)",
+        "tagColor": "geekblue"
+      },
+      "gateway": "active",
+      "capabilities": [
+        "api_key_account",
+        "model_catalog"
+      ],
+      "authOptions": [
+        {
+          "value": "oauth-browser",
+          "label": "ZCode 登录",
+          "description": "使用 ZCode CLI 原生 zcode login 流程（Z.AI 账号，OAuth 凭据捕获到 AIH）。"
+        },
+        {
+          "value": "api-key",
+          "label": "Z.ai 密钥",
+          "description": "绑定 ZCODE_API_KEY / ZCODE_BASE_URL（支持 open.bigmodel.cn 与 api.z.ai 双 Anthropic 端点）。"
+        }
+      ],
+      "sessionSync": {
+        "mode": "unavailable",
+        "events": []
+      },
+      "cli": {
+        "order": 11,
+        "globalDir": ".zcode",
+        "loginArgs": [
+          "login"
+        ],
+        "binaryName": "zcode",
+        "pkg": "",
+        "envKeys": [
+          "ZCODE_API_KEY",
+          "ZCODE_BASE_URL",
+          "ZCODE_DATA_BASE_DIR"
+        ]
       }
     }
   ],

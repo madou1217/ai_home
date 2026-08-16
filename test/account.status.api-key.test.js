@@ -12,6 +12,7 @@ const {
   writeAccountCredentials,
   writeAccountNativeAuth
 } = require('../lib/server/account-credential-store');
+const { encryptZcodeCredentialValue } = require('../lib/account/zcode-credential');
 
 function createFixture(t, options = {}) {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-account-status-'));
@@ -360,4 +361,42 @@ test('OpenCode auth status is derived from DB-native auth', (t) => {
     providers: ['opencode-go'],
     source: 'app-state.db'
   });
+});
+
+test('ZCode OAuth status is derived from DB-native credentials', (t) => {
+  // Regression guard: zcode once had no branch here, so every imported OAuth
+  // account silently fell through to configured=false ("待登录") after import.
+  const { checkStatus, register } = createFixture(t);
+  const emptyRef = register('zcode', '70', {
+    nativeAuth: { credentials: {} }
+  });
+  const userInfo = JSON.stringify({ email: 'zcode@example.com', name: 'ZCode User' });
+  const oauthRef = register('zcode', '71', {
+    nativeAuth: {
+      credentials: {
+        'oauth:zai:access_token': encryptZcodeCredentialValue('zcode-access-token'),
+        'oauth:zai:user_info': encryptZcodeCredentialValue(userInfo),
+        'oauth:active_provider': 'oauth:zai',
+        zcodejwttoken: encryptZcodeCredentialValue('zcode-jwt-token')
+      }
+    }
+  });
+  // Cross-machine import without secret: encrypted values can't decrypt, but
+  // the presence of credential keys must still count as configured.
+  const importedRef = register('zcode', '72', {
+    nativeAuth: {
+      credentials: {
+        'oauth:zai:access_token': 'enc:v1:invalid.0.0',
+        zcodejwttoken: 'enc:v1:invalid.0.0'
+      }
+    }
+  });
+
+  assert.equal(checkStatus('zcode', emptyRef).configured, false);
+  assert.deepEqual(checkStatus('zcode', oauthRef), {
+    configured: true,
+    accountName: 'zcode@example.com',
+    source: 'app-state.db'
+  });
+  assert.equal(checkStatus('zcode', importedRef).configured, true);
 });

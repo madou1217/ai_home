@@ -24,7 +24,7 @@ test('getAiCliConfig grok returns correct CLI configuration', () => {
   assert.equal(config.globalDir, '.grok');
   assert.equal(config.binaryName, 'grok');
   assert.equal(config.pkg, '');
-  assert.deepEqual(config.envKeys, ['GROK_HOME', 'XAI_API_KEY']);
+  assert.deepEqual(config.envKeys, ['GROK_HOME', 'XAI_API_KEY', 'XAI_BASE_URL']);
   assert.deepEqual(config.loginArgs, ['login', '--oauth']);
 });
 

@@ -39,12 +39,32 @@ function listTestFiles(projectRoot, options = {}) {
   return fsImpl.readdirSync(testDir)
     .filter((fileName) => fileName.endsWith('.test.js'))
     .sort()
-    .map((fileName) => path.join('test', fileName));
+    .map((fileName) => path.join('test', fileName))
+    .filter((filePath) => matchesTestFileFilters(filePath, options.filters));
+}
+
+// 定向测试过滤：`npm test -- zcode provider-catalog` 只跑文件名含任一
+// 子串的用例。全量套件里有真实冒烟用例（fabric-real-* 等），单机跑极易
+// 长时间挂住；按改动范围过滤是日常迭代的默认用法。
+function matchesTestFileFilters(filePath, filters) {
+  const list = Array.isArray(filters) ? filters.map((item) => String(item || '').trim()).filter(Boolean) : [];
+  if (list.length === 0) return true;
+  const normalized = String(filePath || '').replace(/\\/g, '/').toLowerCase();
+  return list.some((filter) => normalized.includes(filter.toLowerCase()));
+}
+
+function parseArgvFilters(argv = []) {
+  return (Array.isArray(argv) ? argv : [])
+    .filter((arg) => String(arg || '').trim() && !String(arg).startsWith('-'));
 }
 
 function run(options = {}) {
   const projectRoot = path.resolve(options.projectRoot || path.join(__dirname, '..'));
-  const testFiles = listTestFiles(projectRoot, options);
+  const testFiles = listTestFiles(projectRoot, { filters: options.filters });
+  if (testFiles.length === 0) {
+    process.stderr.write('[aih-test-runner] no test files matched the given filters\n');
+    return Promise.resolve(1);
+  }
   const tempRoot = createTestTempRoot(options);
   let child;
   try {
@@ -96,7 +116,7 @@ function run(options = {}) {
 }
 
 if (require.main === module) {
-  run().then((exitCode) => {
+  run({ filters: parseArgvFilters(process.argv.slice(2)) }).then((exitCode) => {
     process.exitCode = exitCode;
   }, (error) => {
     process.stderr.write(`[aih-test-runner] ${String(error && error.message || error)}\n`);
@@ -109,6 +129,8 @@ module.exports = {
   buildTestEnv,
   createTestTempRoot,
   listTestFiles,
+  matchesTestFileFilters,
+  parseArgvFilters,
   removeTestTempRoot,
   run
 };

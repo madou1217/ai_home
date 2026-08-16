@@ -351,6 +351,14 @@
       "text"
     ]
   },
+  "alibaba/qwen3.8-2.4t-a95b": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ]
+  },
   "alibaba/qwen3.8-27b": {
     "input": [
       "text",
@@ -2916,6 +2924,15 @@
     ],
     "output": [
       "text"
+    ]
+  },
+  "xai/grok-imagine-image-2.0": {
+    "input": [
+      "text",
+      "image"
+    ],
+    "output": [
+      "image"
     ]
   },
   "xai/grok-imagine-video-1.5": {

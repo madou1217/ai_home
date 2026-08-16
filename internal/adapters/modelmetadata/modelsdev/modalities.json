@@ -1923,6 +1923,15 @@
       "text"
     ]
   },
+  "mistral/voxtral-small-latest": {
+    "input": [
+      "text",
+      "audio"
+    ],
+    "output": [
+      "text"
+    ]
+  },
   "moonshotai/kimi-k2-thinking": {
     "input": [
       "text"
@@ -2697,6 +2706,14 @@
       "text"
     ]
   },
+  "perplexity/sonar-deep-research": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ]
+  },
   "perplexity/sonar-pro": {
     "input": [
       "text",
@@ -2823,6 +2840,14 @@
       "text"
     ]
   },
+  "swiss-ai/apertus-8b": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ]
+  },
   "tencent/hy3": {
     "input": [
       "text"
@@ -2854,6 +2879,39 @@
       "text",
       "image",
       "audio"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "trendyol/asure-12b": {
+    "input": [
+      "text",
+      "image"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "upstage/solar-pro2": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "upstage/solar-pro3": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "upstage/solar-pro4": {
+    "input": [
+      "text"
     ],
     "output": [
       "text"

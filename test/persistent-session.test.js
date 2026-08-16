@@ -609,9 +609,9 @@ test('ensureTmuxConf writes the transparent config idempotently', () => {
   assert.match(body, /set -g window-size latest/);
   assert.match(body, /set -g mouse on/);
   assert.match(body, /set -gq allow-passthrough on/);
-  assert.match(body, /set -g extended-keys on/);
-  assert.doesNotMatch(body, /set -g extended-keys always/);
-  assert.match(body, /set -g extended-keys-format csi-u/);
+  assert.match(body, /set -gq extended-keys on/);
+  assert.doesNotMatch(body, /extended-keys always/);
+  assert.match(body, /set -gq extended-keys-format csi-u/);
   assert.match(body, /set -g remain-on-exit off/);
   assert.match(body, /set -g terminal-features\[0\] "xterm\*:clipboard:ccolour:cstyle:focus:title:extkeys:sync"/);
   assert.match(body, /set -gqu terminal-features\[3\]/);
@@ -640,8 +640,11 @@ test('ensureTmuxConf writes a psmux-compatible transparent config on native Wind
   assert.match(body, /set -g status off/);
   assert.match(body, /set -g remain-on-exit off/);
   assert.match(body, /set -g destroy-unattached off/);
-  assert.doesNotMatch(body, /extended-keys on/);
-  assert.doesNotMatch(body, /extended-keys-format/);
+  // psmux stores the extended-keys options inertly so provider CLI probes see
+  // "on"; the real modified-Enter delivery is hardcoded in psmux's input layer.
+  assert.match(body, /set -gq extended-keys on/);
+  assert.match(body, /set -gq extended-keys-format csi-u/);
+  assert.doesNotMatch(body, /extended-keys always/);
   assert.doesNotMatch(body, /detach-on-destroy/);
   assert.equal(persistentSession.getTmuxConfContent({
     platform: 'win32',

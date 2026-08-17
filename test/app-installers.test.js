@@ -46,3 +46,35 @@ test('安装器公共平台接口使用 macos/windows/linux，兼容 Node 别名
   assert.equal(claude.resolveDesktopInstallPlans({ platform: 'windows' })[0].command, 'winget.exe');
   assert.equal(codex.resolveDesktopInstallPlans({ platform: 'win32' })[0].command, 'winget.exe');
 });
+
+test('官方安装器优先使用可验证的稳定下载端点，并覆盖 Windows CMD 兜底', () => {
+  const agy = getAppInstaller('agy');
+  const agyWindowsCli = agy.resolveCliInstallPlans({ platform: 'windows' });
+  assert.deepEqual(agyWindowsCli.map((plan) => plan.id), [
+    'agy_windows_official',
+    'agy_windows_cmd_official'
+  ]);
+  assert.equal(agyWindowsCli[1].command, 'cmd.exe');
+  assert.ok(agyWindowsCli[1].args.at(-1).includes('https://antigravity.google/cli/install.cmd'));
+
+  const claude = getAppInstaller('claude');
+  assert.deepEqual(claude.resolveCliInstallPlans({ platform: 'windows' }).map((plan) => plan.id), [
+    'claude_windows_official',
+    'claude_windows_cmd_official',
+    'winget'
+  ]);
+
+  const opencode = getAppInstaller('opencode');
+  const opencodeWindows = opencode.resolveDesktopInstallPlans({ platform: 'windows' });
+  assert.equal(opencodeWindows[0].id, 'opencode_desktop_windows_official');
+  assert.match(opencodeWindows[0].args.join(' '), /dev\.opencode\.ai\/download\/stable\/windows-x64-nsis/);
+  const opencodeLinux = opencode.resolveDesktopInstallPlans({ platform: 'linux' });
+  assert.deepEqual(opencodeLinux.map((plan) => plan.id), [
+    'opencode_desktop_linux_deb',
+    'opencode_desktop_linux_rpm'
+  ]);
+
+  const zcode = getAppInstaller('zcode');
+  const zcodeLinux = zcode.resolveDesktopInstallPlans({ platform: 'linux' })[0];
+  assert.ok(zcodeLinux.args.join(' ').includes('.AppImage'));
+});

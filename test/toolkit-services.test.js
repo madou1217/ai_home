@@ -54,6 +54,11 @@ test('app-manager listManagedApps returns structured apps list', async () => {
   const desktopApp = result.apps.find((a) => a.id === 'claude-desktop');
   assert.ok(desktopApp, 'Claude Desktop app should exist');
   assert.ok(desktopApp.categories.includes('Desktop'));
+
+  const geminiCli = result.apps.find((a) => a.id === 'gemini');
+  assert.ok(geminiCli, 'Gemini CLI should remain available as a CLI installer');
+  assert.equal(geminiCli.name, 'Gemini CLI');
+  assert.equal(result.apps.some((a) => a.id === 'gemini-desktop'), false, 'Gemini must not expose a Desktop installer without a desktop contract');
 });
 
 test('app-manager getProviderConfigPath resolves known provider paths', () => {

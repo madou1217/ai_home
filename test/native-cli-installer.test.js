@@ -18,12 +18,15 @@ test('Windows Claude prefers the official native installer before npm fallback',
     resolveNpmInstall: () => ({ command: 'npm.cmd', args: ['install', '-g', '@anthropic-ai/claude-code'] })
   });
 
-  assert.equal(plans.length, 2);
+  assert.equal(plans.length, 3);
   assert.equal(plans[0].id, 'claude_windows_official');
   assert.equal(plans[0].command, 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe');
   assert.match(plans[0].args.at(-1), /claude\.ai\/install\.ps1/);
   assert.equal(plans[0].timeoutMs, 1800000);
-  assert.equal(plans[1].id, 'winget');
+  assert.equal(plans[1].id, 'claude_windows_cmd_official');
+  assert.equal(plans[1].command, 'cmd.exe');
+  assert.match(plans[1].args.at(-1), /claude\.ai\/install\.cmd/);
+  assert.equal(plans[2].id, 'winget');
 });
 
 test('non-Windows Claude uses the official native script', () => {

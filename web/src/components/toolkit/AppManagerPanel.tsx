@@ -43,6 +43,12 @@ const SYNC_MODE_LABELS: Record<ManagedAppItem['syncMode'], string> = {
   unavailable: '需要手动刷新'
 };
 
+const APP_TYPE_LABELS: Record<ManagedAppItem['type'], string> = {
+  cli: 'CLI',
+  desktop: '桌面客户端',
+  ide: 'IDE 扩展'
+};
+
 function requestError(error: unknown, fallback: string) {
   if (typeof error === 'object' && error) {
     const candidate = error as {
@@ -100,6 +106,7 @@ export default function AppManagerPanel() {
 
   const installApp = async (app: ManagedAppItem) => {
     setInstallingApp(app.id);
+    const wasInstalled = app.installed;
     try {
       const response = await toolkitAPI.installApp(app.id);
       if (!response.ok || !response.job) {
@@ -114,7 +121,11 @@ export default function AppManagerPanel() {
         });
       });
       if (completed.status !== 'succeeded') throw new Error(completed.error || '安装未完成');
-      message.success({ key: `toolkit-install-${app.id}`, content: `${app.name} 已安装或更新`, duration: 3 });
+      message.success({
+        key: `toolkit-install-${app.id}`,
+        content: wasInstalled ? `${app.name} 更新完成` : `${app.name} 安装完成`,
+        duration: 3
+      });
       await fetchApps();
     } catch (requestFailure: unknown) {
       message.error(requestError(requestFailure, `${app.name} 安装失败`));
@@ -228,6 +239,7 @@ export default function AppManagerPanel() {
                         <div>
                           <h3 className="toolkit-card-title">{app.name}</h3>
                           <Space size={4} wrap>
+                            <Tag color="blue">{APP_TYPE_LABELS[app.type]}</Tag>
                             <Tag color={app.installed ? 'success' : 'default'}>{app.installed ? '已安装' : '未安装'}</Tag>
                             {app.hookSupported && <Tag color={app.hookInstalled ? 'blue' : 'warning'}>{app.hookInstalled ? '自动同步已启用' : '自动同步待启用'}</Tag>}
                           </Space>

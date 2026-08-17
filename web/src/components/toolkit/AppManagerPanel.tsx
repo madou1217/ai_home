@@ -5,49 +5,31 @@ import {
   message,
   Modal,
   Segmented,
-  Space,
   Spin,
-  Tag,
   Tooltip
 } from 'antd';
 import {
   CloudSyncOutlined,
-  DownloadOutlined,
-  EditOutlined,
   LockOutlined,
   ReloadOutlined
 } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
-import ProviderIcon from '@/components/chat/ProviderIcon';
 import { toolkitAPI } from '@/services/api';
 import type {
   ManagedAppItem,
   ManagedAppsResponse,
-  Provider,
   ToolkitAppConfigResponse
 } from '@/types';
 import ToolkitStatusTrack from './ToolkitStatusTrack';
 import ConfigCodeEditor from './config-editor/ConfigCodeEditor';
+import ManagedAppCard from './ManagedAppCard';
 
 const APP_CATEGORIES = [
   { label: '全部', value: 'ALL' },
   { label: 'CLI 编程', value: 'CLI Code' },
   { label: '桌面客户端', value: 'Desktop' },
-  { label: 'IDE 扩展', value: 'IDE' },
-  { label: '自主 Agent', value: 'Agents' }
+  { label: 'IDE 扩展', value: 'IDE' }
 ];
-
-const SYNC_MODE_LABELS: Record<ManagedAppItem['syncMode'], string> = {
-  hook: '配置变化后自动同步',
-  polling: '定期检查配置变化',
-  unavailable: '需要手动刷新'
-};
-
-const APP_TYPE_LABELS: Record<ManagedAppItem['type'], string> = {
-  cli: 'CLI',
-  desktop: '桌面客户端',
-  ide: 'IDE 扩展'
-};
 
 function requestError(error: unknown, fallback: string) {
   if (typeof error === 'object' && error) {
@@ -136,24 +118,25 @@ export default function AppManagerPanel() {
       .filter((app) => app.hookSupported && !app.hookInstalled)
       .map((app) => app.provider);
     if (!targets.length) {
-      message.info('所有可用的自动同步均已启用');
+      message.info('没有待安装的会话 Hook');
       return;
     }
 
     setInstallingHooks(true);
     try {
       const response = await toolkitAPI.installHooks(targets);
-      if (!response.ok) throw new Error('自动同步接口返回失败');
-      message.success('自动同步配置已更新');
+      if (!response.ok) throw new Error('会话 Hook 接口返回失败');
+      message.success('会话 Hook 配置已更新');
       await fetchApps();
     } catch (requestFailure: unknown) {
-      message.error(requestError(requestFailure, '自动同步配置失败'));
+      message.error(requestError(requestFailure, '会话 Hook 配置失败'));
     } finally {
       setInstallingHooks(false);
     }
   };
 
   const openConfig = async (app: ManagedAppItem) => {
+    if (!app.configExists || !app.configName) return;
     setEditingApp(app);
     setConfigData(null);
     setConfigContent('');
@@ -193,13 +176,17 @@ export default function AppManagerPanel() {
         <div>
           <div className="toolkit-panel-kicker">APPLICATION INVENTORY</div>
           <h2 id="toolkit-apps-title">应用管理</h2>
-          <p>统一查看 AI 客户端、CLI 与 IDE 扩展的安装状态、配置和自动同步能力。</p>
+          <p>统一查看当前主机的 CLI、桌面客户端与 IDE 扩展。会话同步只将会话消息和运行态事件送到 WebUI；凭据和配置文件本身不会作为同步数据上传。</p>
         </div>
         <div className="toolkit-header-actions">
           <Button icon={<ReloadOutlined />} loading={loading} onClick={fetchApps}>重新探测</Button>
-          <Button type="primary" icon={<CloudSyncOutlined />} loading={installingHooks} onClick={() => installHooks()}>
-            启用待配置的自动同步
-          </Button>
+          {hookSupportedCount > hookReadyCount ? (
+            <Tooltip title="安装各 Provider 官方会话 Hook；同步数据仅为会话事件，不上传凭据或配置文件内容。">
+              <Button type="primary" icon={<CloudSyncOutlined />} loading={installingHooks} onClick={() => installHooks()}>
+                安装缺失的会话 Hook
+              </Button>
+            </Tooltip>
+          ) : null}
         </div>
       </header>
 
@@ -213,7 +200,7 @@ export default function AppManagerPanel() {
             items={[
               { label: '实测', value: `${data.total} 个应用`, detail: '来自当前主机的应用清单', tone: 'info' },
               { label: '配置', value: `${data.installedCount} 个已安装`, detail: `${data.total - data.installedCount} 个未安装`, tone: data.installedCount ? 'success' : 'neutral' },
-              { label: '指南', value: `${hookReadyCount} / ${hookSupportedCount} 个自动同步已启用`, detail: '仅对明确支持自动同步的应用计数', tone: hookSupportedCount === 0 ? 'neutral' : hookReadyCount === hookSupportedCount ? 'success' : 'warning' }
+              { label: '会话同步', value: hookSupportedCount ? `${hookReadyCount} / ${hookSupportedCount} 个官方 Hook 已启用` : '暂无官方 Hook', detail: '仅同步会话事件和运行态，不上传凭据或配置文件内容', tone: hookSupportedCount === 0 ? 'neutral' : hookReadyCount === hookSupportedCount ? 'success' : 'warning' }
             ]}
           />
 
@@ -227,46 +214,15 @@ export default function AppManagerPanel() {
           {filteredApps.length ? (
             <div className="toolkit-grid">
               {filteredApps.map((app) => (
-                <article key={app.id} className={`toolkit-app-card ${app.installed ? 'installed' : 'uninstalled'}`}>
-                  <div>
-                    <div className="toolkit-card-header">
-                      <div className="toolkit-card-title-group">
-                        <ProviderIcon provider={app.provider as Provider} size={28} />
-                        <div>
-                          <h3 className="toolkit-card-title">{app.name}</h3>
-                          <Space size={4} wrap>
-                            <Tag color="blue">{APP_TYPE_LABELS[app.type]}</Tag>
-                            <Tag color={app.installed ? 'success' : 'default'}>{app.installed ? '已安装' : '未安装'}</Tag>
-                            {app.hookSupported && <Tag color={app.hookInstalled ? 'blue' : 'warning'}>{app.hookInstalled ? '自动同步已启用' : '自动同步待启用'}</Tag>}
-                          </Space>
-                        </div>
-                      </div>
-                    </div>
-                    <dl className="toolkit-card-body">
-                      <div className="toolkit-detail-row"><dt className="toolkit-detail-label">版本</dt><dd className="toolkit-detail-value">{app.version || '未探测到'}</dd></div>
-                      <div className="toolkit-detail-row"><dt className="toolkit-detail-label">主模型</dt><dd className="toolkit-detail-value">{app.type === 'cli' ? (app.defaultModel || '未声明') : '由应用自身管理'}</dd></div>
-                      <div className="toolkit-detail-row">
-                        <dt className="toolkit-detail-label">程序路径</dt>
-                        <dd className="toolkit-detail-value"><Tooltip title={app.cliPath || '未探测到可执行路径'}>{app.cliPath || '未探测到'}</Tooltip></dd>
-                      </div>
-                      <div className="toolkit-detail-row"><dt className="toolkit-detail-label">配置</dt><dd className="toolkit-detail-value">{app.configExists ? `${app.configName} 已存在` : `${app.configName || '默认配置'} 待创建`}</dd></div>
-                    </dl>
-                  </div>
-                  <div className="toolkit-card-actions">
-                    <Space size={6} wrap>
-                      {(app.type === 'cli' || (app.type === 'desktop' && app.installAvailable)) && (
-                        <Button size="small" type={app.installed ? 'default' : 'primary'} icon={<DownloadOutlined />} loading={installingApp === app.id} onClick={() => installApp(app)}>
-                          {app.installed ? '更新' : '安装'}
-                        </Button>
-                      )}
-                      {app.hookSupported && !app.hookInstalled && (
-                        <Button size="small" icon={<CloudSyncOutlined />} loading={installingHooks} onClick={() => installHooks([app.provider])}>启用自动同步</Button>
-                      )}
-                      {app.configName && <Button size="small" icon={<EditOutlined />} onClick={() => openConfig(app)}>编辑配置</Button>}
-                    </Space>
-                    <span className="toolkit-sync-mode">{SYNC_MODE_LABELS[app.syncMode]}</span>
-                  </div>
-                </article>
+                <ManagedAppCard
+                  key={app.id}
+                  app={app}
+                  installingApp={installingApp === app.id}
+                  installingHooks={installingHooks}
+                  onInstall={installApp}
+                  onInstallHooks={(provider) => void installHooks([provider])}
+                  onEditConfig={openConfig}
+                />
               ))}
             </div>
           ) : <Empty description="当前分类没有应用" />}

@@ -33,7 +33,7 @@ const SECTION_ITEMS: Record<ToolkitSection, ToolkitSecondaryItem[]> = {
     {
       id: 'apps',
       label: '应用管理',
-      description: '安装、更新、配置与自动同步',
+      description: '安装、更新、配置与会话事件',
       icon: <AppstoreOutlined />
     },
     {

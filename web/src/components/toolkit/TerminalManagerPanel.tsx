@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Empty, Modal, Space, Spin, Tag, Typography, message } from 'antd';
-import { DownloadOutlined, ReloadOutlined, DeleteOutlined } from '@ant-design/icons';
+import { ReloadOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import { toolkitAPI } from '@/services/api';
 import type { ClientTerminalItem } from '@/types';
+import InstallLifecycleAction, { type InstallLifecycleActionName as TerminalAction } from './InstallLifecycleAction';
 
 function requestError(error: unknown, fallback: string) {
   if (typeof error === 'object' && error) {
@@ -42,7 +43,7 @@ export default function TerminalManagerPanel() {
     return () => window.removeEventListener('aih:webui-task-completed', handleTaskCompleted);
   }, [load]);
 
-  const runAction = async (terminal: ClientTerminalItem, action: 'install' | 'update' | 'uninstall') => {
+  const runAction = async (terminal: ClientTerminalItem, action: TerminalAction) => {
     try {
       const plan = await toolkitAPI.planTerminalAction(terminal.id, action);
       if (!plan.ok) throw new Error(plan.error || '无法生成终端操作计划');
@@ -125,9 +126,9 @@ export default function TerminalManagerPanel() {
               </div>
               <div className="toolkit-card-actions">
                 <Space size={6} wrap>
-                  {terminal.canInstall && <Button size="small" type="primary" icon={<DownloadOutlined />} loading={workingId === `${terminal.id}:install`} onClick={() => void runAction(terminal, 'install')}>安装</Button>}
-                  {terminal.canUpdate && <Button size="small" icon={<ReloadOutlined />} loading={workingId === `${terminal.id}:update`} onClick={() => void runAction(terminal, 'update')}>更新</Button>}
-                  {terminal.canUninstall && <Button size="small" danger icon={<DeleteOutlined />} loading={workingId === `${terminal.id}:uninstall`} onClick={() => void runAction(terminal, 'uninstall')}>卸载</Button>}
+                  {terminal.canInstall && <InstallLifecycleAction action="install" size="small" loading={workingId === `${terminal.id}:install`} onClick={() => void runAction(terminal, 'install')} />}
+                  {terminal.canUpdate && <InstallLifecycleAction action="update" size="small" loading={workingId === `${terminal.id}:update`} onClick={() => void runAction(terminal, 'update')} />}
+                  {terminal.canUninstall && <InstallLifecycleAction action="uninstall" size="small" loading={workingId === `${terminal.id}:uninstall`} onClick={() => void runAction(terminal, 'uninstall')} />}
                 </Space>
               </div>
             </article>

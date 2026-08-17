@@ -1034,6 +1034,50 @@
   white-space: nowrap;
 }
 
+.toolkit-managed-app-icon {
+  position: relative;
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+}
+
+.toolkit-client-glyph {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-raised);
+  color: var(--color-brand);
+  font-size: var(--text-lg);
+  line-height: 1;
+}
+
+.toolkit-provider-badges {
+  position: absolute;
+  right: -8px;
+  bottom: -5px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.toolkit-provider-badge {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  align-items: center;
+  justify-content: center;
+  margin-left: -3px;
+  overflow: hidden;
+  border: 2px solid var(--color-surface);
+  border-radius: 50%;
+  background: var(--color-surface);
+}
+
 .toolkit-tool-icon {
   flex: 0 0 auto;
   color: var(--color-faint);

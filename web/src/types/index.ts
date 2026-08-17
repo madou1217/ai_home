@@ -1292,6 +1292,11 @@ export interface ManagedAppItem {
   id: string;
   name: string;
   provider: string;
+  /** 宿主客户端身份；IDE 场景与 Provider 身份分开，便于一个宿主承载多个 Provider。 */
+  clientId?: string;
+  clientName?: string;
+  /** 当前宿主实际承载的 Provider 标识，顺序与卡片角标展示一致。 */
+  integrationProviders?: string[];
   type: 'cli' | 'desktop' | 'ide';
   categories: string[];
   binaryName: string;

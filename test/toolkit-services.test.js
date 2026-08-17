@@ -9,7 +9,8 @@ const {
   getConfigFormat,
   findDesktopClientRecord,
   getDesktopVersion,
-  getBinaryVersion
+  getBinaryVersion,
+  APP_CATEGORIES
 } = require('../lib/cli/services/toolkit/app-manager');
 const {
   detectNodeEnvironment,
@@ -40,6 +41,7 @@ const { EventEmitter } = require('node:events');
 const { createServer } = require('node:http');
 
 test('app-manager listManagedApps returns structured apps list', async () => {
+  assert.equal(Object.hasOwn(APP_CATEGORIES, 'agents'), false);
   const result = await listManagedApps();
   assert.equal(result.ok, true);
   assert.ok(result.total > 0);
@@ -54,6 +56,11 @@ test('app-manager listManagedApps returns structured apps list', async () => {
   const desktopApp = result.apps.find((a) => a.id === 'claude-desktop');
   assert.ok(desktopApp, 'Claude Desktop app should exist');
   assert.ok(desktopApp.categories.includes('Desktop'));
+
+  const vscodeApp = result.apps.find((a) => a.id === 'vscode');
+  assert.ok(vscodeApp, 'Visual Studio Code host should exist');
+  assert.equal(vscodeApp.clientId, 'vscode');
+  assert.deepEqual(vscodeApp.integrationProviders, ['codex']);
 
   const geminiCli = result.apps.find((a) => a.id === 'gemini');
   assert.ok(geminiCli, 'Gemini CLI should remain available as a CLI installer');

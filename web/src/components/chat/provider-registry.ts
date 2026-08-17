@@ -9,6 +9,7 @@ import openaiIcon from '@/assets/icons/openai.svg';
 import grokIcon from '@/assets/icons/grok.svg';
 import kimiIcon from '@/assets/icons/kimi.svg';
 import kiroIcon from '@/assets/icons/kiro.svg';
+import zcodeIcon from '@/assets/icons/zcode.svg';
 import qoderIcon from '@/assets/icons/qoder.png';
 import aiHomeMark from '@/assets/brand/ai-home-mark.png';
 import agyTerminalIcon from '../../../../assets/provider-icons/agy.png';
@@ -18,6 +19,7 @@ import geminiTerminalIcon from '../../../../assets/provider-icons/gemini.png';
 import kimiTerminalIcon from '../../../../assets/provider-icons/kimi.png';
 import opencodeTerminalIcon from '../../../../assets/provider-icons/opencode.png';
 import grokTerminalIcon from '../../../../assets/provider-icons/grok.png';
+import zcodeTerminalIcon from '../../../../assets/provider-icons/zcode.png';
 import {
   PROVIDER_CATALOG,
   PROVIDER_FALLBACK,
@@ -66,7 +68,8 @@ const ICONS: Partial<Record<Provider, string>> = {
   qoder: qoderIcon,
   qodercn: qoderIcon,
   kimi: kimiIcon,
-  kiro: kiroIcon
+  kiro: kiroIcon,
+  zcode: zcodeIcon
 };
 
 const TERMINAL_ICON_ASSETS: Partial<Record<Provider, string>> = {
@@ -79,7 +82,8 @@ const TERMINAL_ICON_ASSETS: Partial<Record<Provider, string>> = {
   grok: grokTerminalIcon,
   qoder: aiHomeMark,
   qodercn: aiHomeMark,
-  kiro: aiHomeMark
+  kiro: aiHomeMark,
+  zcode: zcodeTerminalIcon
 };
 
 export const PROVIDERS: Record<Provider, ProviderMeta> = Object.fromEntries(

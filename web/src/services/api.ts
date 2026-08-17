@@ -317,6 +317,36 @@ export const accountsAPI = {
     return response.data;
   },
 
+  // 打开该账号的 Desktop 应用或新的 CLI 终端窗口
+  openApp: async (
+    provider: string,
+    accountRef: string,
+    kind: 'desktop' | 'cli',
+    action: 'open' | 'close' = 'open'
+  ): Promise<{ ok: boolean; status?: string; pid: number | null; executable?: string; pids?: number[] }> => {
+    const response = await api.post<{ ok: boolean; status?: string; pid: number | null; executable?: string; pids?: number[] }>(
+      `/webui/accounts/${provider}/${accountRef}/open-app`,
+      { kind, action }
+    );
+    return response.data;
+  },
+
+  // 宿主机实测的各 Provider 桌面/CLI 入口可用性，附带桌面运行中的账号清单
+  listAppEntries: async (): Promise<{
+    entries: Record<string, { desktop: boolean; cli: boolean }>;
+    runningAccounts: string[];
+  }> => {
+    const response = await api.get<{
+      ok: boolean;
+      entries: Record<string, { desktop: boolean; cli: boolean }>;
+      runningAccounts?: string[];
+    }>('/webui/app-entries');
+    return {
+      entries: response.data.entries || {},
+      runningAccounts: Array.isArray(response.data.runningAccounts) ? response.data.runningAccounts : []
+    };
+  },
+
   requestSnapshot: async (): Promise<AccountsSnapshotRequestResponse> => {
     const response = await api.post<AccountsSnapshotRequestResponse>('/webui/accounts/watch/snapshot');
     return response.data;

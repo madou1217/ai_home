@@ -29,7 +29,11 @@ export const PROVIDER_DEFINITIONS = [
         "label": "OpenAI 密钥",
         "description": "绑定 OPENAI_API_KEY / OPENAI_BASE_URL。"
       }
-    ]
+    ],
+    "appSupport": {
+      "cli": true,
+      "desktop": true
+    }
   },
   {
     "id": "gemini",
@@ -58,7 +62,11 @@ export const PROVIDER_DEFINITIONS = [
         "label": "Vertex AI",
         "description": "Google Cloud Vertex AI 认证 (暂未接入，先占位)。"
       }
-    ]
+    ],
+    "appSupport": {
+      "cli": true,
+      "desktop": true
+    }
   },
   {
     "id": "claude",
@@ -85,7 +93,11 @@ export const PROVIDER_DEFINITIONS = [
         "label": "Claude Code Token",
         "description": "绑定 ANTHROPIC_AUTH_TOKEN / ANTHROPIC_BASE_URL。"
       }
-    ]
+    ],
+    "appSupport": {
+      "cli": true,
+      "desktop": true
+    }
   },
   {
     "id": "agy",
@@ -102,7 +114,11 @@ export const PROVIDER_DEFINITIONS = [
         "label": "Antigravity 登录",
         "description": "使用 Antigravity CLI 原生 Google 登录流程。"
       }
-    ]
+    ],
+    "appSupport": {
+      "cli": true,
+      "desktop": true
+    }
   },
   {
     "id": "opencode",
@@ -119,7 +135,11 @@ export const PROVIDER_DEFINITIONS = [
         "label": "OpenCode 登录",
         "description": "使用 OpenCode CLI 原生 auth login 流程。"
       }
-    ]
+    ],
+    "appSupport": {
+      "cli": true,
+      "desktop": true
+    }
   },
   {
     "id": "grok",
@@ -141,7 +161,11 @@ export const PROVIDER_DEFINITIONS = [
         "label": "Grok 登录",
         "description": "使用 Grok Build CLI 原生 auth login 流程（需 SuperGrok 订阅）。"
       }
-    ]
+    ],
+    "appSupport": {
+      "cli": true,
+      "desktop": true
+    }
   },
   {
     "id": "qoder",
@@ -163,7 +187,11 @@ export const PROVIDER_DEFINITIONS = [
         "label": "Qoder Personal Access Token",
         "description": "绑定 QODER_PERSONAL_ACCESS_TOKEN（全球站）。"
       }
-    ]
+    ],
+    "appSupport": {
+      "cli": true,
+      "desktop": true
+    }
   },
   {
     "id": "qodercn",
@@ -185,7 +213,11 @@ export const PROVIDER_DEFINITIONS = [
         "label": "Qoder CN Personal Access Token",
         "description": "绑定 QODER_PERSONAL_ACCESS_TOKEN（国内站）。"
       }
-    ]
+    ],
+    "appSupport": {
+      "cli": true,
+      "desktop": true
+    }
   },
   {
     "id": "kimi",
@@ -207,7 +239,11 @@ export const PROVIDER_DEFINITIONS = [
         "label": "Kimi Code 登录",
         "description": "使用 Kimi Code CLI 原生 OAuth 设备码流程（需 Kimi 会员订阅）。"
       }
-    ]
+    ],
+    "appSupport": {
+      "cli": true,
+      "desktop": false
+    }
   },
   {
     "id": "kiro",
@@ -224,7 +260,11 @@ export const PROVIDER_DEFINITIONS = [
         "label": "AWS Builder ID 登录",
         "description": "使用 Kiro CLI Device Flow 认证（支持 Google/GitHub/AWS Builder ID）。"
       }
-    ]
+    ],
+    "appSupport": {
+      "cli": true,
+      "desktop": false
+    }
   },
   {
     "id": "zcode",
@@ -246,7 +286,11 @@ export const PROVIDER_DEFINITIONS = [
         "label": "Z.ai 密钥",
         "description": "绑定 ZCODE_API_KEY / ZCODE_BASE_URL（支持 open.bigmodel.cn 与 api.z.ai 双 Anthropic 端点）。"
       }
-    ]
+    ],
+    "appSupport": {
+      "cli": true,
+      "desktop": true
+    }
   }
 ] as const;
 
@@ -275,6 +319,7 @@ export interface ProviderCatalogEntry {
   readonly accentVar: string;
   readonly softVar: string;
   readonly tagColor: string;
+  readonly appSupport: { readonly cli: boolean; readonly desktop: boolean };
 }
 
 /** 按产品顺序排列的 Provider ID。 */
@@ -291,6 +336,7 @@ export const PROVIDER_CATALOG = Object.freeze(Object.fromEntries(
     accentVar: definition.accentVar,
     softVar: definition.softVar,
     tagColor: definition.tagColor,
+    appSupport: definition.appSupport,
   }]),
 ) as Readonly<Record<ProviderId, ProviderCatalogEntry>>);
 
@@ -308,5 +354,9 @@ export const PROVIDER_FALLBACK = {
   "terminalIconAsset": "web/src/assets/brand/ai-home-mark.png",
   "accentVar": "var(--color-brand)",
   "softVar": "var(--color-brand-soft)",
-  "tagColor": "blue"
+  "tagColor": "blue",
+  "appSupport": {
+    "cli": false,
+    "desktop": false
+  }
 } as const satisfies ProviderCatalogEntry;

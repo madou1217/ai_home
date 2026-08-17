@@ -429,6 +429,15 @@ func builtinZcode() Definition {
 			BinaryName: "zcode",
 			Package:    "",
 			EnvKeys:    []string{"ZCODE_API_KEY", "ZCODE_BASE_URL", "ZCODE_DATA_BASE_DIR"},
+			DesktopClient: desktopClient(
+				"ZCode",
+				[]string{"ZCode"},
+				[]string{"/ZCode.app/Contents/MacOS/"},
+				[]string{"/Applications/ZCode.app", "{hostHomeDir}/Applications/ZCode.app"},
+				[]string{"ZCode.exe"},
+				[]string{"ZCode.exe"},
+				[]string{"zcode"},
+			),
 		},
 	}
 }

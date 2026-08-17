@@ -48,7 +48,9 @@ import {
   ExportOutlined,
   ImportOutlined,
   MobileOutlined,
-  EditOutlined
+  EditOutlined,
+  CodeOutlined,
+  DesktopOutlined
 } from '@ant-design/icons';
 import { accountsAPI, modelsAPI } from '@/services/api';
 import {
@@ -1590,6 +1592,36 @@ export default function Accounts() {
     loadAccounts();
   }, [loadAccounts]);
 
+  // 桌面/CLI 入口按宿主机实测结果控制：加载完成前两个图标都隐藏，避免闪烁。
+  // runningAccounts 记录桌面运行中的账号，用于给图标挂角标。
+  const [appEntries, setAppEntries] = useState<Record<string, { desktop: boolean; cli: boolean }> | null>(null);
+  const [runningAccounts, setRunningAccounts] = useState<string[]>([]);
+  const loadAppEntries = async () => {
+    try {
+      const result = await accountsAPI.listAppEntries();
+      setAppEntries(result.entries);
+      setRunningAccounts(result.runningAccounts);
+    } catch (_error) {
+      setAppEntries((current) => current || {});
+    }
+  };
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const result = await accountsAPI.listAppEntries();
+        if (cancelled) return;
+        setAppEntries(result.entries);
+        setRunningAccounts(result.runningAccounts);
+      } catch (_error) {
+        if (!cancelled) setAppEntries({});
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const modelCatalogAccountRefsSignature = useMemo(() => {
     return accounts
       .map((account) => getAccountRef(account))
@@ -2067,6 +2099,34 @@ export default function Accounts() {
     }
   };
 
+  const handleOpenApp = async (record: Account, kind: 'desktop' | 'cli') => {
+    try {
+      const result = await accountsAPI.openApp(record.provider, record.accountRef, kind);
+      if (kind === 'desktop' && result.status === 'already_running') {
+        Modal.confirm({
+          title: '该账号的 Desktop 已在运行',
+          content: '是否关闭它？',
+          okText: '关闭',
+          cancelText: '保留',
+          onOk: async () => {
+            try {
+              await accountsAPI.openApp(record.provider, record.accountRef, 'desktop', 'close');
+              message.success('已关闭');
+              loadAppEntries();
+            } catch (error: any) {
+              message.error(error?.response?.data?.message || '关闭 Desktop 应用失败');
+            }
+          }
+        });
+        return;
+      }
+      message.success(kind === 'desktop' ? '已打开 Desktop 应用' : '已打开 CLI 终端');
+      loadAppEntries();
+    } catch (error: any) {
+      message.error(error?.response?.data?.message || (kind === 'desktop' ? '打开 Desktop 应用失败' : '打开 CLI 终端失败'));
+    }
+  };
+
   const renderAuthDetail = (
     label: string,
     value: string,
@@ -2277,6 +2337,34 @@ export default function Accounts() {
               <Tag color={getPlanTagColor(record)} style={{ fontSize: 11, lineHeight: '18px', padding: '0 4px', margin: 0 }}>
                 {getPlanTagLabel(record)}
               </Tag>
+              {appEntries && appEntries[record.provider]?.desktop ? (
+                <Tooltip title={runningAccounts.includes(getAccountRef(record)) ? 'Desktop 运行中（点击关闭）' : '打开 Desktop'}>
+                  <Badge dot={runningAccounts.includes(getAccountRef(record))} status="success">
+                    <Button
+                      type="text"
+                      size="small"
+                      icon={<DesktopOutlined />}
+                      onClick={(event: any) => {
+                        event?.stopPropagation?.();
+                        handleOpenApp(record, 'desktop');
+                      }}
+                    />
+                  </Badge>
+                </Tooltip>
+              ) : null}
+              {appEntries && appEntries[record.provider]?.cli ? (
+                <Tooltip title="使用系统默认终端打开 CLI">
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<CodeOutlined />}
+                    onClick={(event: any) => {
+                      event?.stopPropagation?.();
+                      handleOpenApp(record, 'cli');
+                    }}
+                  />
+                </Tooltip>
+              ) : null}
             </div>
           </div>
         </div>

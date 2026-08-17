@@ -1174,7 +1174,37 @@
           "ZCODE_API_KEY",
           "ZCODE_BASE_URL",
           "ZCODE_DATA_BASE_DIR"
-        ]
+        ],
+        "desktopClient": {
+          "macos": {
+            "clientName": "ZCode",
+            "execNames": [
+              "ZCode"
+            ],
+            "pathIncludes": [
+              "/ZCode.app/Contents/MacOS/"
+            ],
+            "installPaths": [
+              "/Applications/ZCode.app",
+              "{hostHomeDir}/Applications/ZCode.app"
+            ]
+          },
+          "windows": {
+            "clientName": "ZCode",
+            "processNames": [
+              "ZCode.exe"
+            ],
+            "execNames": [
+              "ZCode.exe"
+            ]
+          },
+          "linux": {
+            "clientName": "ZCode",
+            "execNames": [
+              "zcode"
+            ]
+          }
+        }
       }
     }
   ],

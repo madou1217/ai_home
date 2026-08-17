@@ -20,6 +20,12 @@ type outputFile struct {
 	Content      []byte
 }
 
+// appSupport 描述 Provider 支持打开的应用形态（CLI / Desktop）。
+type appSupport struct {
+	CLI     bool `json:"cli"`
+	Desktop bool `json:"desktop"`
+}
+
 // clientDefinition 是只暴露给 TypeScript Client 的最小 Provider 投影。
 type clientDefinition struct {
 	ID                string                 `json:"id"`
@@ -31,6 +37,7 @@ type clientDefinition struct {
 	SoftVar           string                 `json:"softVar"`
 	TagColor          string                 `json:"tagColor"`
 	AuthOptions       []providers.AuthOption `json:"authOptions"`
+	AppSupport        appSupport             `json:"appSupport"`
 }
 
 // legacyCatalog 保持旧 Node 数据文件的扁平字段形状，迁移期由同一 Go 定义生成。
@@ -128,13 +135,21 @@ func renderClientTypeScript(manifest providers.Manifest) ([]byte, error) {
 			SoftVar:           presentation.SoftVar,
 			TagColor:          presentation.TagColor,
 			AuthOptions:       definition.AuthOptions,
+			AppSupport: appSupport{
+				CLI:     definition.CLI != nil,
+				Desktop: definition.CLI != nil && definition.CLI.DesktopClient != nil,
+			},
 		})
 	}
 	definitionsJSON, err := renderJSON(definitions)
 	if err != nil {
 		return nil, err
 	}
-	fallbackJSON, err := renderJSON(manifest.Fallback)
+	// Fallback 没有 CLI 定义，appSupport 固定为全 false，保持 ProviderCatalogEntry 形状一致。
+	fallbackJSON, err := renderJSON(struct {
+		providers.Presentation
+		AppSupport appSupport `json:"appSupport"`
+	}{Presentation: manifest.Fallback, AppSupport: appSupport{CLI: false, Desktop: false}})
 	if err != nil {
 		return nil, err
 	}
@@ -169,6 +184,7 @@ func renderClientTypeScript(manifest providers.Manifest) ([]byte, error) {
 	output.WriteString("  readonly accentVar: string;\n")
 	output.WriteString("  readonly softVar: string;\n")
 	output.WriteString("  readonly tagColor: string;\n")
+	output.WriteString("  readonly appSupport: { readonly cli: boolean; readonly desktop: boolean };\n")
 	output.WriteString("}\n\n")
 	output.WriteString("/** 按产品顺序排列的 Provider ID。 */\n")
 	output.WriteString("export const PROVIDER_IDS = Object.freeze(PROVIDER_DEFINITIONS.map((definition) => definition.id));\n\n")
@@ -183,6 +199,7 @@ func renderClientTypeScript(manifest providers.Manifest) ([]byte, error) {
 	output.WriteString("    accentVar: definition.accentVar,\n")
 	output.WriteString("    softVar: definition.softVar,\n")
 	output.WriteString("    tagColor: definition.tagColor,\n")
+	output.WriteString("    appSupport: definition.appSupport,\n")
 	output.WriteString("  }]),\n")
 	output.WriteString(") as Readonly<Record<ProviderId, ProviderCatalogEntry>>);\n\n")
 	output.WriteString("/** 账号添加界面直接消费的认证选项目录。 */\n")

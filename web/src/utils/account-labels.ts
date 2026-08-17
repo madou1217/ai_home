@@ -18,6 +18,20 @@ export function isInternalAccountLabel(value?: string) {
   return INTERNAL_ACCOUNT_LABEL_RE.test(String(value || '').trim());
 }
 
+// 手机号类身份（z.ai 合成的 <phone>@phone.local、裸手机号/带区号手机号）在展示层
+// 脱敏为 189****1630 形式，避免截图泄露；复制等逻辑仍使用原始值。
+const PHONE_LOCAL_EMAIL_RE = /^\+?[\d\s-]{5,}@phone\.local$/i;
+const BARE_PHONE_RE = /^\+?\d[\d\s-]{6,}\d$/;
+
+export function maskPhoneIdentity(value?: string) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (!PHONE_LOCAL_EMAIL_RE.test(raw) && !BARE_PHONE_RE.test(raw)) return raw;
+  return raw.replace(/\d{7,}/g, (digits) =>
+    digits.length > 7 ? `${digits.slice(0, 3)}****${digits.slice(-4)}` : `${digits.slice(0, 3)}****`
+  );
+}
+
 export function getBaseDomain(value?: string) {
   const raw = String(value || '').trim();
   if (!raw) return '';
@@ -47,10 +61,10 @@ export function getAccountIdentityLabel(account: Pick<Account, 'provider' | 'ema
   }
 
   const email = String(account.email || '').trim();
-  if (email) return email;
+  if (email) return maskPhoneIdentity(email);
 
   const displayName = getCleanDisplayName(account);
-  if (displayName) return displayName;
+  if (displayName) return maskPhoneIdentity(displayName);
 
   if (!account.configured && account.authPendingStale) return 'OAuth 授权超时';
   return account.configured ? '账号待识别' : 'OAuth 授权中';
@@ -61,5 +75,5 @@ export function getAccountSecondaryIdentity(account: Pick<Account, 'email' | 'di
   const email = String(account.email || '').trim();
   const displayName = getCleanDisplayName(account);
   if (!displayName || displayName === email) return '';
-  return displayName;
+  return maskPhoneIdentity(displayName);
 }

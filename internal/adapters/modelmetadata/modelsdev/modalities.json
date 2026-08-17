@@ -190,6 +190,24 @@
       "text"
     ]
   },
+  "alibaba/qwen3-vl-235b-a22b-instruct": {
+    "input": [
+      "text",
+      "image"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "alibaba/qwen3-vl-235b-a22b-thinking": {
+    "input": [
+      "text",
+      "image"
+    ],
+    "output": [
+      "text"
+    ]
+  },
   "alibaba/qwen3-vl-plus": {
     "input": [
       "text",

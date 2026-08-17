@@ -127,6 +127,97 @@ test('resolveProxyConfig bypasses loopback hosts by default', () => {
   assert.equal(result.url, '');
 });
 
+test('fetchModelsForAccount probes zcode OAuth plan models via billing/balance with zcodeJwtToken', async (t) => {
+  const seenUrls = [];
+  let seenAuthorization = '';
+  t.mock.method(global, 'fetch', async (url, init) => {
+    seenUrls.push(String(url || ''));
+    seenAuthorization = String(init && init.headers && init.headers.authorization || '');
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        code: 0,
+        data: {
+          balances: [
+            { show_name: 'GLM-5.3', capabilities: ['model:glm-5.3'] },
+            { show_name: 'GLM-5-Turbo', capabilities: ['model:GLM-5-Turbo'] },
+            { show_name: 'GLM-5.3', capabilities: ['model:GLM-5.3'] },
+            { show_name: 'Fallback-Only', capabilities: [] }
+          ]
+        }
+      })
+    };
+  });
+
+  const models = await fetchModelsForAccount({}, {
+    provider: 'zcode',
+    accountRef: 'acct_test',
+    accessToken: 'expired-zai-token',
+    zcodeJwtToken: 'zcode-jwt-live',
+    apiKeyMode: false,
+    authType: 'oauth'
+  }, 500);
+
+  assert.deepEqual(seenUrls, ['https://zcode.z.ai/api/v1/zcode-plan/billing/balance']);
+  assert.equal(seenAuthorization, 'Bearer zcode-jwt-live');
+  assert.deepEqual(models, ['glm-5.3', 'GLM-5-Turbo', 'Fallback-Only']);
+});
+
+test('fetchModelsForAccount falls back to paas probe when zcode balance probe fails', async (t) => {
+  const seenUrls = [];
+  t.mock.method(global, 'fetch', async (url) => {
+    const text = String(url || '');
+    seenUrls.push(text);
+    if (text.includes('zcode-plan/billing/balance')) {
+      return { ok: false, status: 401, text: async () => 'unauthorized' };
+    }
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ data: [{ id: 'glm-4.5' }] })
+    };
+  });
+
+  const models = await fetchModelsForAccount({}, {
+    provider: 'zcode',
+    accountRef: 'acct_test',
+    accessToken: 'zai-token-fresh',
+    zcodeJwtToken: 'zcode-jwt-dead',
+    apiKeyMode: false,
+    authType: 'oauth',
+    openaiBaseUrl: 'https://api.z.ai/api/coding/paas/v4'
+  }, 500);
+
+  assert.equal(seenUrls[0], 'https://zcode.z.ai/api/v1/zcode-plan/billing/balance');
+  assert.equal(seenUrls[1], 'https://api.z.ai/api/coding/paas/v4/models');
+  assert.deepEqual(models, ['glm-4.5']);
+});
+
+test('fetchModelsForAccount skips balance probe for zcode api-key accounts', async (t) => {
+  const seenUrls = [];
+  t.mock.method(global, 'fetch', async (url) => {
+    seenUrls.push(String(url || ''));
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ data: [{ id: 'glm-4.6' }] })
+    };
+  });
+
+  const models = await fetchModelsForAccount({}, {
+    provider: 'zcode',
+    accountRef: 'acct_test',
+    accessToken: 'sk-zcode-api-key',
+    apiKeyMode: true,
+    authType: 'api-key',
+    openaiBaseUrl: 'https://open.bigmodel.cn/api/anthropic'
+  }, 500);
+
+  assert.equal(seenUrls.some((url) => url.includes('zcode-plan/billing/balance')), false);
+  assert.deepEqual(models, ['glm-4.6']);
+});
+
 test('fetchModelsForAccount uses codex api-key account base url without double v1 path', async (t) => {
   let seenUrl = '';
   let seenAuthorization = '';

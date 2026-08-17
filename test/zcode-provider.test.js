@@ -257,9 +257,11 @@ test('loadZcodeServerAccounts admits OAuth accounts as probe-only, non-schedulab
   assert.equal(account.provider, 'zcode');
   assert.equal(account.authType, 'oauth');
   assert.equal(account.apiKeyMode, false);
-  // 模型探测凭据是 zai accessToken（jwtToken 调 api.z.ai 实测 401）。
+  // 模型探测主凭据是 zcodeJwtToken（桌面端同款 balance 接口）；accessToken 仅作
+  // paas 探测回退，过期且无 refresh token 时会 401。
   assert.equal(account.accessToken, 'oauth-token');
-  // 已实证免验证码的模型列表端点（base 以 /v4 结尾，探测走 <base>/models）。
+  assert.equal(account.zcodeJwtToken, 'jwt-token');
+  // paas 端点保留为回退探测目标（base 以 /v4 结尾，探测走 <base>/models）。
   assert.equal(account.openaiBaseUrl, 'https://api.z.ai/api/coding/paas/v4');
   // 计划推理端点每请求强制阿里云验证码， relay 不可用前不参与推理调度。
   assert.equal(account.schedulableStatus, 'oauth_relay_unsupported');
@@ -290,7 +292,7 @@ test('loadZcodeServerAccounts uses zai user_info email as OAuth display identity
   assert.equal(accounts[0].displayName, '18997991630@phone.local');
 });
 
-test('loadZcodeServerAccounts skips OAuth accounts without a usable zai access token', (t) => {
+test('loadZcodeServerAccounts admits OAuth accounts with only a zcode jwt token', (t) => {
   const { aiHomeDir, accountStateIndex, register } = createZcodeFixture(t);
   register('zcode', '1', null, {
     credentials: {
@@ -305,7 +307,10 @@ test('loadZcodeServerAccounts skips OAuth accounts without a usable zai access t
     checkStatus: () => ({ configured: true })
   });
 
-  assert.equal(accounts.length, 0, 'jwtToken-only accounts cannot probe models and stay out of the pool');
+  // jwtToken 即可走桌面端同款 billing/balance 探测，无需 zai accessToken。
+  assert.equal(accounts.length, 1, 'jwtToken-only accounts can probe plan models via billing/balance');
+  assert.equal(accounts[0].accessToken, '');
+  assert.equal(accounts[0].zcodeJwtToken, 'jwt-token');
 });
 
 // --- Launch strategy ---

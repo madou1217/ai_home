@@ -94,6 +94,11 @@
               "Codex.exe"
             ]
           }
+        },
+        "headless": {
+          "triggerSubcommands": [
+            "exec"
+          ]
         }
       },
       "nativeBoundary": {
@@ -355,6 +360,15 @@
               "Claude.exe"
             ]
           }
+        },
+        "headless": {
+          "triggerFlags": [
+            "-p",
+            "--print"
+          ],
+          "stdinFlags": [
+            "--input-format=stream-json"
+          ]
         }
       },
       "nativeBoundary": {
@@ -495,6 +509,11 @@
               "agy"
             ]
           }
+        },
+        "headless": {
+          "triggerFlags": [
+            "--print"
+          ]
         }
       },
       "nativeBoundary": {
@@ -625,6 +644,11 @@
               "opencode-desktop"
             ]
           }
+        },
+        "headless": {
+          "triggerSubcommands": [
+            "run"
+          ]
         }
       }
     },
@@ -687,7 +711,12 @@
           "GROK_HOME",
           "XAI_API_KEY",
           "XAI_BASE_URL"
-        ]
+        ],
+        "headless": {
+          "triggerFlags": [
+            "--single"
+          ]
+        }
       },
       "nativeBoundary": {
         "config": {
@@ -825,6 +854,11 @@
               "qodercli"
             ]
           }
+        },
+        "headless": {
+          "triggerFlags": [
+            "--print"
+          ]
         }
       }
     },
@@ -912,6 +946,11 @@
               "qoderclicn"
             ]
           }
+        },
+        "headless": {
+          "triggerFlags": [
+            "--print"
+          ]
         }
       }
     },

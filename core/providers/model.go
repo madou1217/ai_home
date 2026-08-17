@@ -118,18 +118,31 @@ type SessionSync struct {
 
 // CLIConfig 描述原生 CLI 的发现、登录和账号隔离参数。
 type CLIConfig struct {
-	Order                  int            `json:"order"`
-	GlobalDir              string         `json:"globalDir"`
-	ConfigSubDir           string         `json:"configSubDir,omitempty"`
-	ConfigFile             string         `json:"configFile,omitempty"`
-	ConfigAtProjectionRoot bool           `json:"configAtProjectionRoot,omitempty"`
-	LoginArgs              []string       `json:"loginArgs"`
-	BinaryName             string         `json:"binaryName,omitempty"`
-	Package                string         `json:"pkg"`
-	ConfigDirFlag          string         `json:"configDirFlag,omitempty"`
-	InstallRegion          string         `json:"installRegion,omitempty"`
-	EnvKeys                []string       `json:"envKeys"`
-	DesktopClient          *DesktopClient `json:"desktopClient,omitempty"`
+	Order                  int             `json:"order"`
+	GlobalDir              string          `json:"globalDir"`
+	ConfigSubDir           string          `json:"configSubDir,omitempty"`
+	ConfigFile             string          `json:"configFile,omitempty"`
+	ConfigAtProjectionRoot bool            `json:"configAtProjectionRoot,omitempty"`
+	LoginArgs              []string        `json:"loginArgs"`
+	BinaryName             string          `json:"binaryName,omitempty"`
+	Package                string          `json:"pkg"`
+	ConfigDirFlag          string          `json:"configDirFlag,omitempty"`
+	InstallRegion          string          `json:"installRegion,omitempty"`
+	EnvKeys                []string        `json:"envKeys"`
+	DesktopClient          *DesktopClient  `json:"desktopClient,omitempty"`
+	Headless               *HeadlessConfig `json:"headless,omitempty"`
+}
+
+// HeadlessConfig 描述该原生 CLI 的非交互（一次性打印后退出）调用形态。
+// 缺省（nil）表示该 CLI 没有非交互入口，只能走 PTY 交互路径。
+type HeadlessConfig struct {
+	// TriggerFlags 中任一 flag 出现在 argv 里即判定为非交互调用。
+	TriggerFlags []string `json:"triggerFlags,omitempty"`
+	// TriggerSubcommands 命中首个位置参数即判定为非交互调用（codex exec / opencode run）。
+	TriggerSubcommands []string `json:"triggerSubcommands,omitempty"`
+	// StdinFlags 以 "name=value" 声明「需要接通父进程 stdin」的形态，
+	// 同时接受 `--name value` 与 `--name=value` 两种写法。
+	StdinFlags []string `json:"stdinFlags,omitempty"`
 }
 
 // DesktopClient 描述可选桌面客户端的跨平台启动信息。

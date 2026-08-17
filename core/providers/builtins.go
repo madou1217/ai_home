@@ -62,6 +62,7 @@ func builtinCodex() Definition {
 			LoginArgs:  []string{"login"},
 			Package:    "@openai/codex",
 			EnvKeys:    []string{"OPENAI_API_KEY", "OPENAI_BASE_URL"},
+			Headless:   &HeadlessConfig{TriggerSubcommands: []string{"exec"}},
 			DesktopClient: &DesktopClient{
 				UserDataEnvKey: "CODEX_ELECTRON_USER_DATA_PATH",
 				MacOS: &DesktopPlatform{
@@ -150,6 +151,10 @@ func builtinClaude() Definition {
 			LoginArgs:  []string{"setup-token"},
 			Package:    "@anthropic-ai/claude-code",
 			EnvKeys:    []string{"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL"},
+			Headless: &HeadlessConfig{
+				TriggerFlags: []string{"-p", "--print"},
+				StdinFlags:   []string{"--input-format=stream-json"},
+			},
 			DesktopClient: &DesktopClient{
 				ReloadsHostAuth: &reloadsHostAuth,
 				UserDataEnvKey:  "CLAUDE_USER_DATA_DIR",
@@ -195,6 +200,7 @@ func builtinAntigravity() Definition {
 			LoginArgs:    []string{},
 			Package:      "",
 			EnvKeys:      []string{"AGY_ACCESS_TOKEN", "GOOGLE_OAUTH_ACCESS_TOKEN"},
+			Headless:     &HeadlessConfig{TriggerFlags: []string{"--print"}},
 			DesktopClient: desktopClient(
 				"Antigravity",
 				[]string{"Antigravity"},
@@ -233,6 +239,7 @@ func builtinOpenCode() Definition {
 			LoginArgs:  []string{"auth", "login"},
 			Package:    "opencode-ai",
 			EnvKeys:    []string{},
+			Headless:   &HeadlessConfig{TriggerSubcommands: []string{"run"}},
 			DesktopClient: desktopClient(
 				"OpenCode",
 				[]string{"OpenCode"},
@@ -272,6 +279,7 @@ func builtinGrok() Definition {
 			BinaryName: "grok",
 			Package:    "",
 			EnvKeys:    []string{"GROK_HOME", "XAI_API_KEY", "XAI_BASE_URL"},
+			Headless:   &HeadlessConfig{TriggerFlags: []string{"--single"}},
 		},
 		NativeBoundary: nativeGrok(),
 	}
@@ -301,6 +309,7 @@ func builtinQoder() Definition {
 			ConfigDirFlag:          "--config-dir",
 			InstallRegion:          "global",
 			EnvKeys:                []string{"QODER_PERSONAL_ACCESS_TOKEN"},
+			Headless:               &HeadlessConfig{TriggerFlags: []string{"--print"}},
 			DesktopClient: desktopClient(
 				"Qoder",
 				[]string{"Qoder"},
@@ -338,6 +347,7 @@ func builtinQoderCN() Definition {
 			ConfigDirFlag:          "--config-dir",
 			InstallRegion:          "cn",
 			EnvKeys:                []string{"QODER_PERSONAL_ACCESS_TOKEN"},
+			Headless:               &HeadlessConfig{TriggerFlags: []string{"--print"}},
 			DesktopClient: desktopClient(
 				"Qoder CN",
 				[]string{"Qoder", "QoderCN"},

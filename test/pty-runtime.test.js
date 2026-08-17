@@ -105,12 +105,18 @@ function createMockProcess(env = {}, platform = 'linux', cwd = os.tmpdir(), opti
   const proc = new EventEmitter();
   const rawModeCalls = [];
   const writes = [];
+  const errorWrites = [];
 
   const stdout = new EventEmitter();
   stdout.columns = 80;
   stdout.rows = 24;
   if (options.stdoutIsTTY) stdout.isTTY = true;
   stdout.write = (chunk) => { writes.push(String(chunk || '')); };
+
+  const stderr = new EventEmitter();
+  stderr.columns = 80;
+  stderr.rows = 24;
+  stderr.write = (chunk) => { errorWrites.push(String(chunk || '')); };
 
   const stdin = new EventEmitter();
   stdin.isTTY = true;
@@ -123,18 +129,19 @@ function createMockProcess(env = {}, platform = 'linux', cwd = os.tmpdir(), opti
   proc.execPath = process.execPath;
   proc.argv = [process.execPath, path.join(cwd, 'ai-home.js')];
   proc.stdout = stdout;
+  proc.stderr = stderr;
   proc.stdin = stdin;
   proc.cwd = () => cwd;
   proc.exit = (code) => {
     throw new Error(`EXIT:${code}`);
   };
 
-  return { proc, rawModeCalls, writes };
+  return { proc, rawModeCalls, writes, errorWrites };
 }
 
 function createRuntimeHarness(env = {}, overrides = {}) {
   const mockCwd = overrides.cwd || path.resolve(os.tmpdir());
-  const { proc, rawModeCalls, writes } = createMockProcess(env, overrides.platform || 'linux', mockCwd, {
+  const { proc, rawModeCalls, writes, errorWrites } = createMockProcess(env, overrides.platform || 'linux', mockCwd, {
     stdoutIsTTY: overrides.stdoutIsTTY
   });
   proc.pid = Number(overrides.pid || 10001);
@@ -328,6 +335,7 @@ function createRuntimeHarness(env = {}, overrides = {}) {
     runtime,
     proc,
     writes,
+    errorWrites,
     ptyWrites,
     spawns,
     backgroundSpawns,
@@ -397,6 +405,99 @@ test('runtime uses headless direct spawn for claude print prompts', () => {
 
   directSpawns[0].child.stdout.emit('data', Buffer.from('ok\n'));
   assert.match(writes.join(''), /ok/);
+});
+
+test('headless 运行不安装终端外壳，stdout 只留子进程正文', () => {
+  const directSpawns = [];
+  const { runtime, writes, errorWrites, rawModeCalls } = createRuntimeHarness({}, {
+    resolveCliPath: () => '/usr/local/bin/claude',
+    spawn: (command, args, options) => {
+      const child = new EventEmitter();
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+      child.kill = () => {};
+      directSpawns.push({ command, args, options, child });
+      return child;
+    }
+  });
+
+  runtime.runCliPtyTracked('claude', '4', ['-p', '只输出 ok'], false);
+  directSpawns[0].child.stdout.emit('data', Buffer.from('ok\n'));
+
+  // No raw mode: a headless run owns no keyboard.
+  assert.deepEqual(rawModeCalls, []);
+  const stdout = writes.join('');
+  assert.equal(stdout, 'ok\n');
+  assert.equal(stdout.includes('Waiting for'), false);
+  assert.equal(stdout.includes('\x1b['), false);
+  assert.equal(errorWrites.join('').length, 0);
+});
+
+test('headless 子进程 stderr 不混进 stdout', () => {
+  const directSpawns = [];
+  const { runtime, writes, errorWrites } = createRuntimeHarness({}, {
+    resolveCliPath: () => '/usr/local/bin/claude',
+    spawn: (command, args, options) => {
+      const child = new EventEmitter();
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+      child.kill = () => {};
+      directSpawns.push({ command, args, options, child });
+      return child;
+    }
+  });
+
+  runtime.runCliPtyTracked('claude', '4', ['-p', 'hi'], false);
+  directSpawns[0].child.stderr.emit('data', Buffer.from('warning: slow upstream\n'));
+  directSpawns[0].child.stdout.emit('data', Buffer.from('ok\n'));
+
+  assert.equal(writes.join(''), 'ok\n');
+  assert.equal(errorWrites.join(''), 'warning: slow upstream\n');
+});
+
+test('headless 退出不再清屏，且退出码透传', () => {
+  const directSpawns = [];
+  const { runtime, writes } = createRuntimeHarness({}, {
+    resolveCliPath: () => '/usr/local/bin/claude',
+    spawn: (command, args, options) => {
+      const child = new EventEmitter();
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+      child.kill = () => {};
+      directSpawns.push({ command, args, options, child });
+      return child;
+    }
+  });
+
+  runtime.runCliPtyTracked('claude', '4', ['-p', 'hi'], false);
+  directSpawns[0].child.stdout.emit('data', Buffer.from('ok\n'));
+  assert.throws(() => directSpawns[0].child.emit('close', 3), /EXIT:3/);
+
+  const stdout = writes.join('');
+  // The teardown used to clear the drawer rows here, wiping the answer.
+  assert.equal(/\x1b\[\d+;1H\x1b\[2K/.test(stdout), false);
+  assert.equal(stdout, 'ok\n');
+});
+
+test('codex exec 也走 headless 直连，不进 PTY', () => {
+  const directSpawns = [];
+  const { runtime, spawns } = createRuntimeHarness({}, {
+    resolveCliPath: () => '/usr/local/bin/codex',
+    spawn: (command, args, options) => {
+      const child = new EventEmitter();
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+      child.kill = () => {};
+      directSpawns.push({ command, args, options, child });
+      return child;
+    }
+  });
+
+  runtime.runCliPtyTracked('codex', '10086', ['exec', '写一行'], false);
+
+  assert.equal(spawns.length, 0);
+  assert.equal(directSpawns.length, 1);
+  assert.deepEqual(directSpawns[0].args, ['exec', '写一行']);
 });
 
 test('headless direct 仅在 stream-json 输入时接通 stdin', () => {

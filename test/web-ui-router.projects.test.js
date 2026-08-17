@@ -2810,6 +2810,71 @@ test('web ui openai models refresh accepts a Qoder CN scoped account', async () 
   }
 });
 
+test('web ui openai models refresh accepts a ZCode OAuth scoped account', async () => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-zcode-models-'));
+
+  try {
+    // loadZcodeServerAccounts 产出的 OAuth 账号形态：仅模型探测、不参与推理调度。
+    // 回归：此前 OAuth zcode 不进网关池，此端点对它恒 404 account_not_found。
+    const accountRef = 'acct_91aa805bdd051b40fa47';
+    const state = {
+      accounts: {
+        zcode: [{
+          accountRef,
+          provider: 'zcode',
+          authType: 'oauth',
+          apiKeyMode: false,
+          accessToken: 'zai-access-token-test',
+          openaiBaseUrl: 'https://api.z.ai/api/coding/paas/v4',
+          schedulableStatus: 'oauth_relay_unsupported'
+        }]
+      },
+      modelRegistry: { providers: { zcode: new Set() } },
+      webUiModelsCache: {
+        updatedAt: 0,
+        byProvider: {},
+        byAccount: {},
+        errorsByAccount: {},
+        signature: '',
+        source: 'empty'
+      }
+    };
+    const postRes = createResCapture();
+    const handled = await handleWebUIRequest({
+      method: 'POST',
+      pathname: '/v0/webui/openai-models/refresh',
+      url: new URL(`http://localhost/v0/webui/openai-models/refresh?accountRef=${accountRef}`),
+      req: { headers: {} },
+      res: postRes,
+      options: {},
+      state,
+      deps: {
+        ...createBaseDeps(aiHomeDir),
+        fetchModelsForAccount: async (_options, account) => {
+          assert.equal(account.accountRef, accountRef);
+          assert.equal(account.provider, 'zcode');
+          return ['glm-4.6', 'glm-5.3'];
+        }
+      }
+    });
+
+    assert.equal(handled, true);
+    assert.equal(postRes.statusCode, 202);
+    assert.deepEqual(JSON.parse(postRes.body).job.accountScope, { accountRef });
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const job = Array.from(state.modelCatalogLive.jobs.values())[0];
+      if (job && job.status === 'succeeded') break;
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    const job = Array.from(state.modelCatalogLive.jobs.values())[0];
+    assert.equal(job.status, 'succeeded');
+    assert.deepEqual(job.catalog.byAccountRef[accountRef], ['glm-4.6', 'glm-5.3']);
+    assert.equal(job.catalog.firstError, '');
+  } finally {
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+  }
+});
+
 test('web ui openai models keeps aggregator models and final owner groups', async () => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-openai-owner-models-'));
 

@@ -235,7 +235,7 @@ test('loadZcodeServerAccounts honours account ZCODE_BASE_URL override', (t) => {
   assert.equal(accounts[0].openaiBaseUrl, 'https://api.z.ai/api/anthropic');
 });
 
-test('loadZcodeServerAccounts excludes OAuth-only accounts from the gateway pool', (t) => {
+test('loadZcodeServerAccounts admits OAuth accounts as probe-only, non-schedulable pool members', (t) => {
   const { aiHomeDir, accountStateIndex, register } = createZcodeFixture(t);
   register('zcode', '1', null, {
     credentials: {
@@ -251,7 +251,60 @@ test('loadZcodeServerAccounts excludes OAuth-only accounts from the gateway pool
     checkStatus: () => ({ configured: true })
   });
 
-  assert.equal(accounts.length, 0, 'OAuth plan accounts must not enter the gateway pool');
+  assert.equal(accounts.length, 1, 'OAuth plan accounts enter the pool for model catalog probing');
+  const account = accounts[0];
+  assert.equal(account.provider, 'zcode');
+  assert.equal(account.authType, 'oauth');
+  assert.equal(account.apiKeyMode, false);
+  // 模型探测凭据是 zai accessToken（jwtToken 调 api.z.ai 实测 401）。
+  assert.equal(account.accessToken, 'oauth-token');
+  // 已实证免验证码的模型列表端点（base 以 /v4 结尾，探测走 <base>/models）。
+  assert.equal(account.openaiBaseUrl, 'https://api.z.ai/api/coding/paas/v4');
+  // 计划推理端点每请求强制阿里云验证码， relay 不可用前不参与推理调度。
+  assert.equal(account.schedulableStatus, 'oauth_relay_unsupported');
+  assert.equal(account.displayName, 'ZCode OAuth');
+});
+
+test('loadZcodeServerAccounts uses zai user_info email as OAuth display identity', (t) => {
+  const { aiHomeDir, accountStateIndex, register } = createZcodeFixture(t);
+  register('zcode', '1', null, {
+    credentials: {
+      'oauth:zai:access_token': encryptZcodeCredentialValue('oauth-token'),
+      'oauth:zai:user_info': encryptZcodeCredentialValue(JSON.stringify({
+        user_id: 'u-123',
+        email: '18997991630@phone.local'
+      }))
+    }
+  });
+
+  const accounts = loadZcodeServerAccounts({
+    fs,
+    aiHomeDir,
+    accountStateIndex,
+    checkStatus: () => ({ configured: true })
+  });
+
+  assert.equal(accounts.length, 1);
+  assert.equal(accounts[0].email, '18997991630@phone.local');
+  assert.equal(accounts[0].displayName, '18997991630@phone.local');
+});
+
+test('loadZcodeServerAccounts skips OAuth accounts without a usable zai access token', (t) => {
+  const { aiHomeDir, accountStateIndex, register } = createZcodeFixture(t);
+  register('zcode', '1', null, {
+    credentials: {
+      zcodejwttoken: encryptZcodeCredentialValue('jwt-token')
+    }
+  });
+
+  const accounts = loadZcodeServerAccounts({
+    fs,
+    aiHomeDir,
+    accountStateIndex,
+    checkStatus: () => ({ configured: true })
+  });
+
+  assert.equal(accounts.length, 0, 'jwtToken-only accounts cannot probe models and stay out of the pool');
 });
 
 // --- Launch strategy ---

@@ -55,3 +55,43 @@ test('终端安装任务通过 install/update/uninstall 生命周期异步执行
   assert.equal(events[0].args[0], 'install');
   assert.equal(hub.listActiveTasks().length, 0);
 });
+
+test('终端更新任务返回真实活动状态并阻止同一目标重复提交，完成后可继续卸载', async () => {
+  const changed = [];
+  const calls = [];
+  let release;
+  const hub = createWebUiTaskHub();
+  const manager = createClientTerminalJobManager({
+    taskHub: hub,
+    platform: 'macos',
+    path: nodePath.posix,
+    env: { PATH: '/opt/homebrew/bin' },
+    fs: fakeFs(['/opt/homebrew/bin/brew', '/opt/homebrew/bin/wezterm']),
+    onJobChanged: (job) => changed.push(job),
+    runPlan: async (plan) => {
+      calls.push(plan);
+      await new Promise((resolve) => { release = resolve; });
+      return { ok: true };
+    }
+  });
+
+  const updated = manager.start({ terminalId: 'wezterm', action: 'update', confirmed: true });
+  assert.equal(updated.ok, true);
+  assert.equal(updated.job.status, 'queued');
+  const duplicate = manager.start({ terminalId: 'wezterm', action: 'update', confirmed: true });
+  assert.equal(duplicate.alreadyRunning, true);
+  assert.equal(duplicate.job.id, updated.job.id);
+  await waitFor(() => changed.some((job) => job.id === updated.job.id && job.status === 'running'));
+  assert.equal(hub.listActiveTasks()[0].action, 'update');
+  release();
+  await waitFor(() => manager.getJob(updated.job.id)?.status === 'succeeded');
+  assert.equal(calls[0].args[0], 'upgrade');
+
+  const uninstalled = manager.start({ terminalId: 'wezterm', action: 'uninstall', confirmed: true });
+  assert.equal(uninstalled.ok, true);
+  assert.equal(uninstalled.job.action, 'uninstall');
+  await waitFor(() => calls.length === 2);
+  release();
+  await waitFor(() => manager.getJob(uninstalled.job.id)?.status === 'succeeded');
+  assert.equal(calls[1].args[0], 'uninstall');
+});

@@ -171,6 +171,34 @@
   font-size: 11px;
 }
 
+.webui-task-queue-stream-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.webui-task-queue-stream-status i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-muted);
+}
+
+.webui-task-queue-stream-status.is-connected i {
+  background: var(--color-success, #16a34a);
+}
+
+.webui-task-queue-stream-status.is-reconnecting i,
+.webui-task-queue-stream-status.is-connecting i {
+  background: var(--color-warning, #d97706);
+  animation: webui-task-queue-pulse-dot 1.2s ease-in-out infinite;
+}
+
+.webui-task-queue-stream-status.is-offline i {
+  background: var(--color-danger, #dc2626);
+}
+
 .webui-task-queue-list {
   display: flex;
   min-height: 0;
@@ -215,6 +243,21 @@
   font-size: 10px;
 }
 
+.webui-task-queue-item-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  color: var(--color-faint);
+  font-size: 10px;
+}
+
+.webui-task-queue-item-meta span + span::before {
+  margin-right: 6px;
+  color: var(--color-border-strong);
+  content: '·';
+}
+
 .webui-task-queue-item .ant-progress {
   margin: 7px 0 2px;
 }
@@ -242,6 +285,10 @@
   75%, 100% { opacity: 0; transform: scale(1.24); }
 }
 
+@keyframes webui-task-queue-pulse-dot {
+  50% { opacity: .35; transform: scale(.72); }
+}
+
 @media (max-width: 640px) {
   .webui-task-queue {
     right: 12px;
@@ -262,6 +309,11 @@
   }
 
   .webui-task-queue:not(.is-expanded) .webui-task-queue-trigger::after {
+    animation: none;
+  }
+
+  .webui-task-queue-stream-status.is-reconnecting i,
+  .webui-task-queue-stream-status.is-connecting i {
     animation: none;
   }
 }

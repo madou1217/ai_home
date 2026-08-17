@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Empty, Modal, Space, Spin, Tag, Typography, message } from 'antd';
 import { ExportOutlined, ReloadOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import { toolkitAPI } from '@/services/api';
-import type { ClientPlatform, ClientTerminalItem } from '@/types';
+import { isActiveWebUiTask, useWebUiTaskQueue } from '@/services/webui-task-queue';
+import type { ClientPlatform, ClientTerminalItem, WebUiTask } from '@/types';
 import InstallLifecycleAction, { type InstallLifecycleActionName as TerminalAction } from './InstallLifecycleAction';
 
 const PLATFORM_LABELS: Record<ClientPlatform, string> = {
@@ -11,6 +12,26 @@ const PLATFORM_LABELS: Record<ClientPlatform, string> = {
   windows: 'Windows',
   linux: 'Linux'
 };
+
+const ACTION_LABELS: Record<TerminalAction, string> = {
+  install: '安装',
+  update: '更新',
+  uninstall: '卸载'
+};
+
+type PendingAction = {
+  phase: 'planning' | 'submitted';
+  jobId?: string;
+};
+
+function taskTargetsTerminal(task: WebUiTask, terminalId: string) {
+  return task.source === 'terminal'
+    && (task.appId === terminalId || task.provider === terminalId);
+}
+
+function isTerminalJobFinished(task: WebUiTask | null | undefined) {
+  return Boolean(task && !isActiveWebUiTask(task));
+}
 
 function requestError(error: unknown, fallback: string) {
   if (typeof error === 'object' && error) {
@@ -24,8 +45,43 @@ export default function TerminalManagerPanel() {
   const [terminals, setTerminals] = useState<ClientTerminalItem[]>([]);
   const [platform, setPlatform] = useState<ClientPlatform | ''>('');
   const [loading, setLoading] = useState(true);
-  const [workingId, setWorkingId] = useState('');
   const [openingId, setOpeningId] = useState('');
+  const [pendingActions, setPendingActions] = useState<Record<string, PendingAction>>({});
+  const pendingKeysRef = useRef(new Set<string>());
+  const { tasks, recentTasks } = useWebUiTaskQueue();
+
+  const activeTerminalTasks = useMemo(
+    () => tasks.filter((task) => task.source === 'terminal'),
+    [tasks]
+  );
+
+  const updatePendingAction = useCallback((key: string, pending: PendingAction | null) => {
+    if (pending) pendingKeysRef.current.add(key);
+    else pendingKeysRef.current.delete(key);
+    setPendingActions((current) => {
+      const next = { ...current };
+      if (pending) next[key] = pending;
+      else delete next[key];
+      return next;
+    });
+  }, []);
+
+  const clearPendingJob = useCallback((task: WebUiTask) => {
+    setPendingActions((current) => {
+      const next = { ...current };
+      let changed = false;
+      Object.entries(current).forEach(([key, pending]) => {
+        const sameJob = pending.jobId && pending.jobId === task.id;
+        const sameTarget = task.action && key === `${task.appId || task.provider}:${task.action}`;
+        if (sameJob || sameTarget) {
+          pendingKeysRef.current.delete(key);
+          delete next[key];
+          changed = true;
+        }
+      });
+      return changed ? next : current;
+    });
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -58,32 +114,78 @@ export default function TerminalManagerPanel() {
 
   useEffect(() => {
     const handleTaskCompleted = (event: Event) => {
-      const task = (event as CustomEvent<{ source?: string }>).detail;
-      if (task?.source === 'terminal') void load();
+      const task = (event as CustomEvent<WebUiTask>).detail;
+      if (task?.source !== 'terminal') return;
+      clearPendingJob(task);
+      void load();
     };
     window.addEventListener('aih:webui-task-completed', handleTaskCompleted);
     return () => window.removeEventListener('aih:webui-task-completed', handleTaskCompleted);
-  }, [load]);
+  }, [clearPendingJob, load]);
 
-  const submitTerminalAction = async (terminal: ClientTerminalItem, action: TerminalAction) => {
-    setWorkingId(`${terminal.id}:${action}`);
+  useEffect(() => {
+    setPendingActions((current) => {
+      const next = { ...current };
+      let changed = false;
+      Object.entries(current).forEach(([key, pending]) => {
+        if (!pending.jobId) return;
+        const completed = recentTasks.find((task) => task.id === pending.jobId && isTerminalJobFinished(task));
+        if (completed) {
+          pendingKeysRef.current.delete(key);
+          delete next[key];
+          changed = true;
+        }
+      });
+      return changed ? next : current;
+    });
+  }, [recentTasks]);
+
+  useEffect(() => {
+    const submitted = Object.entries(pendingActions)
+      .filter(([, pending]) => pending.phase === 'submitted' && pending.jobId);
+    if (!submitted.length) return undefined;
+    let disposed = false;
+    const pollJobs = async () => {
+      await Promise.all(submitted.map(async ([key, pending]) => {
+        if (!pending.jobId) return;
+        try {
+          const task = await toolkitAPI.getTerminalJob(pending.jobId);
+          if (!disposed && isTerminalJobFinished(task)) updatePendingAction(key, null);
+        } catch (_error) {
+          // SSE and the shared queue remain the primary state channel.
+        }
+      }));
+    };
+    const timer = window.setInterval(() => { void pollJobs(); }, 3000);
+    void pollJobs();
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+    };
+  }, [pendingActions, updatePendingAction]);
+
+  const submitTerminalAction = async (terminal: ClientTerminalItem, action: TerminalAction, key: string) => {
     try {
       const result = await toolkitAPI.executeTerminalAction(terminal.id, action);
       if (!result.ok) throw new Error(result.error || '终端操作失败');
-      message.info(`${terminal.name}${action === 'install' ? '安装' : action === 'update' ? '更新' : '卸载'}任务已提交，进度显示在右下角任务队列。`);
+      updatePendingAction(key, { phase: 'submitted', jobId: result.job?.id });
+      message.info(`${terminal.name}${ACTION_LABELS[action]}任务已提交，按钮状态将跟随真实任务进度。`);
     } catch (error: unknown) {
+      updatePendingAction(key, null);
       message.error(requestError(error, '终端操作失败'));
-    } finally {
-      setWorkingId('');
     }
   };
 
   const runAction = async (terminal: ClientTerminalItem, action: TerminalAction) => {
+    const key = `${terminal.id}:${action}`;
+    const targetBusy = activeTerminalTasks.some((task) => taskTargetsTerminal(task, terminal.id));
+    if (targetBusy || pendingKeysRef.current.has(key)) return;
+    updatePendingAction(key, { phase: 'planning' });
     try {
       const plan = await toolkitAPI.planTerminalAction(terminal.id, action);
       if (!plan.ok) throw new Error(plan.error || '无法生成终端操作计划');
       Modal.confirm({
-        title: `${action === 'install' ? '安装' : action === 'update' ? '更新' : '卸载'} ${terminal.name}`,
+        title: `${ACTION_LABELS[action]} ${terminal.name}`,
         content: (
           <Space direction="vertical" size={4}>
             <Typography.Text>{plan.label || '将执行官方包管理器命令'}</Typography.Text>
@@ -93,11 +195,38 @@ export default function TerminalManagerPanel() {
         okText: '确认执行',
         cancelText: '取消',
         // 立即关闭确认层；命令已在服务端异步排队，进度只由全局任务队列呈现。
-        onOk: () => { void submitTerminalAction(terminal, action); }
+        onOk: () => { void submitTerminalAction(terminal, action, key); },
+        onCancel: () => updatePendingAction(key, null)
       });
     } catch (error: unknown) {
+      updatePendingAction(key, null);
       message.error(requestError(error, '生成终端操作计划失败'));
     }
+  };
+
+  const activeTaskFor = (terminal: ClientTerminalItem) => activeTerminalTasks.find(
+    (task) => taskTargetsTerminal(task, terminal.id)
+  );
+
+  const actionBusyState = (terminal: ClientTerminalItem, action: TerminalAction) => {
+    const key = `${terminal.id}:${action}`;
+    const pending = pendingActions[key];
+    const activeTask = activeTaskFor(terminal);
+    const active = activeTask?.action === action ? activeTask : undefined;
+    return {
+      pending,
+      active,
+      busy: Boolean(pending || active)
+    };
+  };
+
+  const terminalLifecycleBusy = (terminal: ClientTerminalItem) => activeTerminalTasks.some(
+    (task) => taskTargetsTerminal(task, terminal.id)
+  ) || Object.keys(pendingActions).some((key) => key.startsWith(`${terminal.id}:`));
+
+  const unavailableActionTitle = (action: TerminalAction, terminal: ClientTerminalItem) => {
+    if (terminal.default) return `${ACTION_LABELS[action]}不适用于系统默认终端`;
+    return `未检测到可执行${ACTION_LABELS[action]}的当前平台官方包管理器`;
   };
 
   return (
@@ -151,19 +280,76 @@ export default function TerminalManagerPanel() {
               </div>
               <div className="toolkit-card-actions">
                 <Space size={6} wrap>
-                  {terminal.canLaunch && (terminal.installed || terminal.default) && (
-                    <Button
-                      size="small"
-                      icon={<ExportOutlined />}
-                      loading={openingId === terminal.id}
-                      onClick={() => void openTerminal(terminal)}
-                    >
-                      唤起终端
-                    </Button>
-                  )}
-                  {terminal.canInstall && <InstallLifecycleAction action="install" size="small" loading={workingId === `${terminal.id}:install`} onClick={() => void runAction(terminal, 'install')} />}
-                  {terminal.canUpdate && <InstallLifecycleAction action="update" size="small" loading={workingId === `${terminal.id}:update`} onClick={() => void runAction(terminal, 'update')} />}
-                  {terminal.canUninstall && <InstallLifecycleAction action="uninstall" size="small" loading={workingId === `${terminal.id}:uninstall`} onClick={() => void runAction(terminal, 'uninstall')} />}
+                  {(() => {
+                    const activeTask = activeTaskFor(terminal);
+                    const lifecycleBusy = terminalLifecycleBusy(terminal);
+                    const updateState = actionBusyState(terminal, 'update');
+                    const uninstallState = actionBusyState(terminal, 'uninstall');
+                    const updateLabel = updateState.active || updateState.pending?.phase === 'submitted'
+                      ? '更新中'
+                      : updateState.pending
+                        ? '准备更新'
+                        : undefined;
+                    const uninstallLabel = uninstallState.active || uninstallState.pending?.phase === 'submitted'
+                      ? '卸载中'
+                      : uninstallState.pending
+                        ? '准备卸载'
+                        : undefined;
+                    return (
+                      <>
+                        {activeTask ? (
+                          <Tag color="processing">
+                            {ACTION_LABELS[(activeTask.action as TerminalAction) || 'update'] || '操作'}中
+                            {` ${Math.round(Number(activeTask.progress?.percent || 0))}%`}
+                          </Tag>
+                        ) : null}
+                        {terminal.canLaunch && (terminal.installed || terminal.default) && (
+                          <Button
+                            size="small"
+                            icon={<ExportOutlined />}
+                            loading={openingId === terminal.id}
+                            disabled={lifecycleBusy}
+                            onClick={() => void openTerminal(terminal)}
+                          >
+                            唤起终端
+                          </Button>
+                        )}
+                        {terminal.canInstall && !terminal.installed && (
+                          <InstallLifecycleAction
+                            action="install"
+                            size="small"
+                            disabled={lifecycleBusy}
+                            loading={Boolean(actionBusyState(terminal, 'install').busy)}
+                            onClick={() => void runAction(terminal, 'install')}
+                          />
+                        )}
+                        {!terminal.default && terminal.installed && (
+                          <>
+                            <InstallLifecycleAction
+                              action="update"
+                              size="small"
+                              disabled={lifecycleBusy || !terminal.canUpdate}
+                              title={terminal.canUpdate ? undefined : unavailableActionTitle('update', terminal)}
+                              loading={Boolean(updateState.busy)}
+                              onClick={() => void runAction(terminal, 'update')}
+                            >
+                              {updateLabel}
+                            </InstallLifecycleAction>
+                            <InstallLifecycleAction
+                              action="uninstall"
+                              size="small"
+                              disabled={lifecycleBusy || !terminal.canUninstall}
+                              title={terminal.canUninstall ? undefined : unavailableActionTitle('uninstall', terminal)}
+                              loading={Boolean(uninstallState.busy)}
+                              onClick={() => void runAction(terminal, 'uninstall')}
+                            >
+                              {uninstallLabel}
+                            </InstallLifecycleAction>
+                          </>
+                        )}
+                      </>
+                    );
+                  })()}
                 </Space>
               </div>
             </article>

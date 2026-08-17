@@ -1,20 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Progress } from 'antd';
 import { DownOutlined, LoadingOutlined, RightOutlined } from '@ant-design/icons';
-import { listActiveWebUiTasks, watchWebUiTasks } from '@/services/api';
+import { useWebUiTaskQueue, type WebUiTaskStreamStatus } from '@/services/webui-task-queue';
 import type { WebUiTask } from '@/types';
 import './AppInstallTaskQueue.css';
-
-const ACTIVE_STATUSES = new Set(['queued', 'running']);
-
-function isActiveTask(task: WebUiTask | null | undefined) {
-  return Boolean(task && ACTIVE_STATUSES.has(String(task.status || '').toLowerCase()));
-}
 
 function taskName(task: WebUiTask) {
   if (task.taskName) return task.taskName;
   if (task.kind === 'terminal') return `${task.provider || task.appId} 终端操作`;
   return `${task.provider || task.appId} ${task.kind === 'desktop' ? 'Desktop' : 'CLI'} 安装`;
+}
+
+function taskAction(task: WebUiTask) {
+  if (task.action === 'install') return '安装';
+  if (task.action === 'update') return '更新';
+  if (task.action === 'uninstall') return '卸载';
+  if (task.kind === 'desktop') return '桌面端安装';
+  if (task.kind === 'cli') return 'CLI 安装';
+  return '后台操作';
 }
 
 function statusLabel(task: WebUiTask) {
@@ -23,59 +26,31 @@ function statusLabel(task: WebUiTask) {
   return task.status || '执行中';
 }
 
-function mergeTaskMap(current: Map<string, WebUiTask>, task: WebUiTask) {
-  const next = new Map(current);
-  if (isActiveTask(task)) next.set(task.id, task);
-  else next.delete(task.id);
-  return next;
+function phaseLabel(task: WebUiTask) {
+  if (task.phase === 'queued') return '等待执行';
+  if (task.phase === 'completed') return '已完成';
+  if (task.phase === 'failed') return '执行失败';
+  return task.phase || '执行中';
+}
+
+function streamStatusLabel(status: WebUiTaskStreamStatus) {
+  if (status === 'connected') return 'SSE 实时连接';
+  if (status === 'reconnecting') return 'SSE 重连中 · 轮询兜底';
+  if (status === 'polling') return '轮询已同步';
+  if (status === 'offline') return '连接不可用 · 等待恢复';
+  return 'SSE 连接中';
+}
+
+function updatedLabel(timestamp: number) {
+  if (!timestamp) return '等待首次更新';
+  return `更新于 ${new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
 }
 
 export default function AppInstallTaskQueue() {
   const rootRef = useRef<HTMLDivElement | null>(null);
-  const [tasks, setTasks] = useState<Map<string, WebUiTask>>(new Map());
   const [expanded, setExpanded] = useState(false);
 
-  useEffect(() => {
-    let disposed = false;
-    const load = async () => {
-      try {
-        const active = await listActiveWebUiTasks();
-        if (!disposed) {
-          setTasks(new Map(active.filter(isActiveTask).map((task) => [task.id, task])));
-        }
-      } catch (_error) {
-        // SSE reconnects itself; a later hydration retry will recover the list.
-      }
-    };
-    void load();
-    const pollTimer = window.setInterval(() => { void load(); }, 5000);
-    const eventSource = watchWebUiTasks();
-    eventSource.onmessage = (event) => {
-      try {
-        const payload = JSON.parse(String(event.data || '{}')) as {
-          type?: string;
-          task?: WebUiTask;
-          tasks?: WebUiTask[];
-        };
-        if (payload.type === 'snapshot' && Array.isArray(payload.tasks)) {
-          setTasks(new Map(payload.tasks.filter(isActiveTask).map((task) => [task.id, task])));
-          return;
-        }
-        if (payload.type !== 'task' || !payload.task) return;
-        setTasks((current) => mergeTaskMap(current, payload.task as WebUiTask));
-        if (!isActiveTask(payload.task) && typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('aih:webui-task-completed', { detail: payload.task }));
-        }
-      } catch (_error) {
-        // Ignore malformed heartbeat/frames.
-      }
-    };
-    return () => {
-      disposed = true;
-      window.clearInterval(pollTimer);
-      eventSource.close();
-    };
-  }, []);
+  const { tasks, streamStatus } = useWebUiTaskQueue();
 
   useEffect(() => {
     if (!expanded) return undefined;
@@ -88,10 +63,7 @@ export default function AppInstallTaskQueue() {
     return () => document.removeEventListener('pointerdown', handlePointerDown);
   }, [expanded]);
 
-  const activeTasks = useMemo(
-    () => [...tasks.values()].sort((left, right) => Number(left.createdAt || 0) - Number(right.createdAt || 0)),
-    [tasks]
-  );
+  const activeTasks = useMemo(() => tasks, [tasks]);
 
   useEffect(() => {
     if (!activeTasks.length) setExpanded(false);
@@ -130,7 +102,10 @@ export default function AppInstallTaskQueue() {
             <span className="webui-task-queue-kicker">BACKGROUND TASKS</span>
             <strong>后台任务队列</strong>
           </div>
-          <span>{activeTasks.length} 个活动任务</span>
+          <span className={`webui-task-queue-stream-status is-${streamStatus}`}>
+            <i aria-hidden="true" />
+            {streamStatusLabel(streamStatus)}
+          </span>
         </header>
         <div className="webui-task-queue-list">
           {activeTasks.map((task) => {
@@ -141,6 +116,11 @@ export default function AppInstallTaskQueue() {
                   <strong title={taskName(task)}>{taskName(task)}</strong>
                   <span>{statusLabel(task)}</span>
                 </div>
+                <div className="webui-task-queue-item-meta">
+                  <span>{taskAction(task)}</span>
+                  <span>{phaseLabel(task)}</span>
+                  <span>{task.source === 'terminal' ? '终端' : '应用'}</span>
+                </div>
                 <Progress
                   percent={percent}
                   size="small"
@@ -149,7 +129,7 @@ export default function AppInstallTaskQueue() {
                 />
                 <div className="webui-task-queue-item-detail">
                   <span>{task.progress?.label || '等待状态更新'}</span>
-                  <span>{task.source === 'terminal' ? '终端' : '应用'}</span>
+                  <span>{updatedLabel(Number(task.updatedAt || 0))}</span>
                 </div>
               </article>
             );

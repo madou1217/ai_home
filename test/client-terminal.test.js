@@ -92,6 +92,21 @@ test('iTerm2 启动通过统一接口使用已检测到的 macOS 应用', () => 
   assert.match(launch.args.join(' '), /tell application "iTerm2"/);
 });
 
+test('GUI 进程 PATH 不完整时，已安装终端仍能生成官方更新和卸载计划', () => {
+  const terminals = listClientTerminals({
+    platform: 'macos',
+    path: nodePath.posix,
+    env: { HOME: '/Users/test', PATH: '' },
+    fs: fakeFs(['/Users/test/Applications/iTerm.app', '/opt/homebrew/bin/brew'])
+  });
+  const iterm = terminals.find((item) => item.id === 'iterm2');
+  assert.equal(iterm.installed, true);
+  assert.equal(iterm.canUpdate, true);
+  assert.equal(iterm.canUninstall, true);
+  assert.equal(iterm.packageManager, 'homebrew');
+  assert.deepEqual(iterm.plans.map((plan) => plan.action), ['install', 'update', 'uninstall']);
+});
+
 test('终端安装计划使用官方稳定包管理器命令', () => {
   const macPlan = resolveTerminalActionPlan({ terminalId: 'wezterm', action: 'install' }, {
     platform: 'macos',

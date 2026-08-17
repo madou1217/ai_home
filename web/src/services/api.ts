@@ -1618,6 +1618,12 @@ export const toolkitAPI = {
     );
     return response.data;
   },
+  getTerminalJob: async (jobId: string): Promise<WebUiTask> => {
+    const response = await api.get<{ ok: boolean; job: WebUiTask }>(
+      `/webui/toolkit/terminals/jobs/${encodeURIComponent(jobId)}`
+    );
+    return response.data.job;
+  },
   installApp: async (provider: string): Promise<{ ok: boolean; accepted?: boolean; alreadyRunning?: boolean; job?: AppInstallJob; result?: any }> => {
     const response = await api.post<{ ok: boolean; accepted?: boolean; alreadyRunning?: boolean; job?: AppInstallJob; result?: any }>('/webui/toolkit/apps/install', { appId: provider });
     return response.data;

@@ -225,6 +225,46 @@ test('zcode desktop 启动带沙箱 env 与独立 --user-data-dir，进程 detac
   assert.ok(fsImpl.mkdirCalls.includes(expectedUserDataDir));
 });
 
+test('zcode desktop 注入按 accountRef 派生的 ZCODE_DESKTOP_APPLICATION_NAME（恒定且跨账号互异）', () => {
+  const exe = 'C:\\Users\\x\\AppData\\Local\\Programs\\ZCode\\ZCode.exe';
+  const mkLauncher = (accountRef) => createLauncher({
+    fs: createFakeFs([exe]),
+    env: { LOCALAPPDATA: 'C:\\Users\\x\\AppData\\Local', PATH: '', USERPROFILE: 'C:\\Users\\x' },
+    resolveAccount: () => ({ accountRef, provider: 'zcode', cliAccountId: '3' })
+  });
+
+  const first = mkLauncher(ACCOUNT_REF);
+  const firstResult = first.launcher.launchAccountApp({ provider: 'zcode', accountRef: ACCOUNT_REF, kind: 'desktop' });
+  assert.equal(firstResult.ok, true);
+  const nameA = first.fakeSpawn.calls[0].options.env.ZCODE_DESKTOP_APPLICATION_NAME;
+  assert.match(nameA, /^ZCode-[0-9a-f]{8}$/);
+
+  // 同 accountRef 重复启动，应用名恒定。
+  const second = mkLauncher(ACCOUNT_REF);
+  second.launcher.launchAccountApp({ provider: 'zcode', accountRef: ACCOUNT_REF, kind: 'desktop' });
+  assert.equal(second.fakeSpawn.calls[0].options.env.ZCODE_DESKTOP_APPLICATION_NAME, nameA);
+
+  // 不同 accountRef 派生出不同应用名，单实例锁不再互相吞掉。
+  const otherRef = 'acct_ffffffffffffffffffff';
+  const third = mkLauncher(otherRef);
+  third.launcher.launchAccountApp({ provider: 'zcode', accountRef: otherRef, kind: 'desktop' });
+  const nameB = third.fakeSpawn.calls[0].options.env.ZCODE_DESKTOP_APPLICATION_NAME;
+  assert.match(nameB, /^ZCode-[0-9a-f]{8}$/);
+  assert.notEqual(nameB, nameA);
+});
+
+test('非 zcode Provider 的 desktop 启动不注入 ZCODE_DESKTOP_APPLICATION_NAME', () => {
+  const codexExe = 'C:\\tools\\ChatGPT.exe';
+  const { launcher, fakeSpawn } = createLauncher({
+    fs: createFakeFs([codexExe]),
+    env: { PATH: 'C:\\tools', USERPROFILE: 'C:\\Users\\x' },
+    resolveAccount: () => ({ accountRef: ACCOUNT_REF, provider: 'codex', cliAccountId: '3' })
+  });
+  const result = launcher.launchAccountApp({ provider: 'codex', accountRef: ACCOUNT_REF, kind: 'desktop' });
+  assert.equal(result.ok, true);
+  assert.equal(fakeSpawn.calls[0].options.env.ZCODE_DESKTOP_APPLICATION_NAME, undefined);
+});
+
 test('zcode desktop 在 macOS 使用 manifest installPaths 解析 .app 内可执行文件', () => {
   const bundlePath = '/Applications/ZCode.app';
   const expectedExe = '/Applications/ZCode.app/Contents/MacOS/ZCode';

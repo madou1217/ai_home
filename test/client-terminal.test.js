@@ -30,6 +30,22 @@ test('终端目录按公共平台接口返回系统默认与平台可用终端',
   assert.equal(terminals.find((item) => item.id === 'system-default').canUninstall, false);
 });
 
+test('每个终端适配器实现统一 install/update/uninstall 生命周期接口', () => {
+  const terminals = listClientTerminals({
+    platform: 'macos',
+    path: nodePath.posix,
+    env: { PATH: '/opt/homebrew/bin' },
+    fs: fakeFs(['/opt/homebrew/bin/brew'])
+  });
+  assert.ok(terminals.length > 0);
+  const definitions = require('../lib/runtime/client-terminal').TERMINAL_DEFINITIONS;
+  Object.values(definitions).forEach((adapter) => {
+    assert.equal(typeof adapter.install, 'function');
+    assert.equal(typeof adapter.update, 'function');
+    assert.equal(typeof adapter.uninstall, 'function');
+  });
+});
+
 test('终端启动选择隐藏平台实现并生成 Windows Terminal 参数', () => {
   const launch = resolveClientTerminalLaunch('windows-terminal', 'node app.js', 'aih codex 1', {
     platform: 'windows',

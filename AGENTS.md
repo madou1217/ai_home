@@ -128,6 +128,7 @@ Fuller layer map:
 - Child stdout and stderr stay **separate** (`onData` / `onErrorData`); stderr text still feeds the auth/error scan buffer. stdin is only connected for `--input-format stream-json`.
 - Exit waits for stdout/stderr to drain before `process.exit` (`exitAfterFlush` in `pty/runtime.js`) — `process.exit()` discards queued pipe writes, which silently truncated `out=$(aih … -p …)`.
 - **Never clear terminal rows on teardown.** The shell drawer only clears rows it actually painted (`shell-drawer-controller.js`); the old unconditional teardown wiped the bottom of the screen on every exit, which erased a `-p` answer as soon as the process ended.
+- Waiting must look alive: `lib/cli/services/pty/headless-progress.js` animates the `Running …` line with a spinner + elapsed seconds and replaces it with `✔ … 首字节 <n>s` on the first byte from the child (stdout or stderr). It writes **only to stderr and only when stderr is a TTY**, so `out=$(aih … -p …)` still animates on screen while the captured stdout stays clean, and a redirected stderr gets the plain one-line banner instead. Escape hatch: `AIH_HEADLESS_SPINNER=0`; Windows falls back to ASCII frames.
 - Escape hatch: `AIH_HEADLESS_DIRECT_SPAWN=0` forces the PTY path. Side effect: on a TTY that run then falls back into the tmux persistent wrapper, since `shouldPersist` does not inspect argv.
 
 ## Gateway & Account Internals

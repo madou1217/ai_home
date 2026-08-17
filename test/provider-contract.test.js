@@ -77,6 +77,7 @@ test('Codex Desktop contract recognizes the merged ChatGPT executable on Windows
   const codex = AI_CLI_CONFIGS.codex;
 
   assert.equal(codex.desktopClient.macos.clientName, 'ChatGPT');
+  assert.equal(codex.desktopClient.userDataEnvKey, 'CODEX_ELECTRON_USER_DATA_PATH');
   assert.ok(codex.desktopClient.windows.processNames.includes('ChatGPT.exe'));
   assert.ok(codex.desktopClient.windows.execNames.includes('ChatGPT.exe'));
   assert.ok(codex.desktopClient.linux.execNames.includes('ChatGPT'));

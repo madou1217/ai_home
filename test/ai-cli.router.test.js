@@ -1219,7 +1219,7 @@ test('`aih codex set-default --restart-client` reports force-quit restart when g
 });
 
 test('`aih codex set-default --force-quit-client` requests force quit when restarting desktop client', (t) => {
-  const { root, aiHomeDir, profilesDir } = createRegisteredTestHome(t);
+  const { root, aiHomeDir, profilesDir, accountRef } = createRegisteredTestHome(t);
   const exits = [];
   const logs = [];
   const restartCalls = [];
@@ -1249,7 +1249,12 @@ test('`aih codex set-default --force-quit-client` requests force quit when resta
 
   assert.deepEqual(restartCalls, [{
     cliName: 'codex',
-    options: { forceQuit: true }
+    options: {
+      forceQuit: true,
+      launchEnv: {
+        CODEX_ELECTRON_USER_DATA_PATH: path.join(aiHomeDir, 'desktop-clients', 'codex', accountRef)
+      }
+    }
   }]);
   assert.deepEqual(exits, [0]);
   assert.equal(logs.some((line) => line.includes('Force-quit and restarted local Codex desktop client')), true);

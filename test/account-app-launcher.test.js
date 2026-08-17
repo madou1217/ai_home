@@ -265,6 +265,30 @@ test('非 zcode Provider 的 desktop 启动不注入 ZCODE_DESKTOP_APPLICATION_N
   assert.equal(fakeSpawn.calls[0].options.env.ZCODE_DESKTOP_APPLICATION_NAME, undefined);
 });
 
+test('codex desktop 为每个账号注入独立 CODEX_ELECTRON_USER_DATA_PATH', () => {
+  const bundlePath = '/Applications/ChatGPT.app';
+  const executablePath = `${bundlePath}/Contents/MacOS/ChatGPT`;
+  const profileDir = `/aih-home/run/auth-projections/codex/${ACCOUNT_REF}`;
+  const expectedUserDataDir = `${profileDir}/electron-user-data`;
+  const { launcher, fakeSpawn } = createLauncher({
+    path: nodePath.posix,
+    processObj: { platform: 'darwin', execPath: '/usr/local/bin/node', env: {} },
+    fs: createFakeFs([bundlePath, executablePath]),
+    env: { HOME: '/Users/x', PATH: '' },
+    resolveAccount: () => ({ accountRef: ACCOUNT_REF, provider: 'codex', cliAccountId: '7' }),
+    getProfileDir: () => profileDir,
+    readAccountEnv: () => ({ OPENAI_API_KEY: 'account-key' })
+  });
+
+  const result = launcher.launchAccountApp({ provider: 'codex', accountRef: ACCOUNT_REF, kind: 'desktop' });
+
+  assert.equal(result.ok, true);
+  assert.equal(fakeSpawn.calls.length, 1);
+  assert.equal(fakeSpawn.calls[0].options.env.CODEX_ELECTRON_USER_DATA_PATH, expectedUserDataDir);
+  assert.equal(fakeSpawn.calls[0].options.env.OPENAI_API_KEY, 'account-key');
+  assert.deepEqual(fakeSpawn.calls[0].args, [`--user-data-dir=${expectedUserDataDir}`]);
+});
+
 test('zcode desktop 在 macOS 使用 manifest installPaths 解析 .app 内可执行文件', () => {
   const bundlePath = '/Applications/ZCode.app';
   const expectedExe = '/Applications/ZCode.app/Contents/MacOS/ZCode';

@@ -59,6 +59,7 @@
           "OPENAI_BASE_URL"
         ],
         "desktopClient": {
+          "userDataEnvKey": "CODEX_ELECTRON_USER_DATA_PATH",
           "macos": {
             "clientName": "ChatGPT",
             "execNames": [

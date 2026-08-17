@@ -61,6 +61,7 @@ func builtinCodex() Definition {
 			Package:   "@openai/codex",
 			EnvKeys:   []string{"OPENAI_API_KEY", "OPENAI_BASE_URL"},
 			DesktopClient: &DesktopClient{
+				UserDataEnvKey: "CODEX_ELECTRON_USER_DATA_PATH",
 				MacOS: &DesktopPlatform{
 					ClientName:   "ChatGPT",
 					ExecNames:    []string{"ChatGPT", "Codex"},

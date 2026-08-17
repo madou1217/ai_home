@@ -31,6 +31,16 @@ test('provider runtime env marks codex launches managed and clears the marker el
   assert.equal(claudeEnv[CODEX_MANAGED_LAUNCH_ENV], undefined);
 });
 
+test('provider runtime env strips inherited Codex Desktop user-data path', () => {
+  const env = buildProviderRuntimeEnv('codex', '/home/u/.ai_home/run/auth-projections/codex/acct_0123456789abcdef0123', {
+    HOME: '/home/u',
+    PATH: '/usr/bin',
+    CODEX_ELECTRON_USER_DATA_PATH: '/tmp/another-account'
+  }, { fs, path, platform: 'linux' });
+
+  assert.equal(env.CODEX_ELECTRON_USER_DATA_PATH, undefined);
+});
+
 test('provider runtime env rejects empty and object profile paths before composing provider home paths', () => {
   ['', null, { toString: () => '/tmp/[object Object]' }].forEach((profileDir) => {
     assert.throws(

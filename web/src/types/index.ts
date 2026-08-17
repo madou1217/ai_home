@@ -1360,6 +1360,7 @@ export interface ClientTerminalItem {
   canInstall: boolean;
   canUpdate: boolean;
   canUninstall: boolean;
+  canLaunch: boolean;
   packageManager: string;
   plans: Array<{ action: string; label: string; command: string }>;
 }

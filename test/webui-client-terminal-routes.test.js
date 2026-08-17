@@ -120,3 +120,29 @@ test('Toolkit 终端执行复用服务端计划，不接受客户端自定义命
   );
   assert.equal(ctx.resCapture.statusCode, 202);
 });
+
+test('Toolkit 终端唤起只接受已探测的平台终端并立即返回', async () => {
+  const calls = [];
+  const ctx = createContext({
+    platform: 'macos',
+    path: nodePath.posix,
+    env: { HOME: '/Users/test', PATH: '/opt/homebrew/bin', SHELL: '/bin/zsh' },
+    fs: fakeFs(['/opt/homebrew/bin/wezterm']),
+    spawn: (file, args, options) => {
+      calls.push({ file, args, options });
+      return { pid: 7, unref() { calls.push({ unref: true }); } };
+    },
+    readRequestBody: async () => Buffer.from(JSON.stringify({ terminalId: 'wezterm' }))
+  });
+  await handleWebUiClientTerminalRoutes(
+    ctx.req,
+    ctx.res,
+    'POST',
+    '/v0/webui/toolkit/terminals/open',
+    ctx
+  );
+  assert.equal(ctx.resCapture.statusCode, 200);
+  assert.equal(JSON.parse(ctx.resCapture.body).terminalId, 'wezterm');
+  assert.equal(calls[0].file, '/opt/homebrew/bin/wezterm');
+  assert.equal(calls[0].options.detached, true);
+});

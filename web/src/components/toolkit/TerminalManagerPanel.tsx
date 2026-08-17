@@ -1,10 +1,16 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Empty, Modal, Space, Spin, Tag, Typography, message } from 'antd';
-import { ReloadOutlined } from '@ant-design/icons';
+import { ExportOutlined, ReloadOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import { toolkitAPI } from '@/services/api';
-import type { ClientTerminalItem } from '@/types';
+import type { ClientPlatform, ClientTerminalItem } from '@/types';
 import InstallLifecycleAction, { type InstallLifecycleActionName as TerminalAction } from './InstallLifecycleAction';
+
+const PLATFORM_LABELS: Record<ClientPlatform, string> = {
+  macos: 'macOS',
+  windows: 'Windows',
+  linux: 'Linux'
+};
 
 function requestError(error: unknown, fallback: string) {
   if (typeof error === 'object' && error) {
@@ -16,21 +22,37 @@ function requestError(error: unknown, fallback: string) {
 
 export default function TerminalManagerPanel() {
   const [terminals, setTerminals] = useState<ClientTerminalItem[]>([]);
+  const [platform, setPlatform] = useState<ClientPlatform | ''>('');
   const [loading, setLoading] = useState(true);
   const [workingId, setWorkingId] = useState('');
+  const [openingId, setOpeningId] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const response = await toolkitAPI.listTerminals();
       if (!response.ok) throw new Error('终端接口未返回可用结果');
-      setTerminals(response.terminals || []);
+      setPlatform(response.platform || '');
+      setTerminals((response.terminals || []).filter((terminal) => terminal.platform === response.platform));
     } catch (error: unknown) {
       message.error(requestError(error, '读取终端清单失败'));
     } finally {
       setLoading(false);
     }
   }, []);
+
+  const openTerminal = async (terminal: ClientTerminalItem) => {
+    setOpeningId(terminal.id);
+    try {
+      const result = await toolkitAPI.openTerminal(terminal.id);
+      if (!result.ok) throw new Error(result.error || '终端唤起失败');
+      message.success(`${terminal.name} 已唤起`);
+    } catch (error: unknown) {
+      message.error(requestError(error, `${terminal.name} 唤起失败`));
+    } finally {
+      setOpeningId('');
+    }
+  };
 
   useEffect(() => { void load(); }, [load]);
 
@@ -42,6 +64,19 @@ export default function TerminalManagerPanel() {
     window.addEventListener('aih:webui-task-completed', handleTaskCompleted);
     return () => window.removeEventListener('aih:webui-task-completed', handleTaskCompleted);
   }, [load]);
+
+  const submitTerminalAction = async (terminal: ClientTerminalItem, action: TerminalAction) => {
+    setWorkingId(`${terminal.id}:${action}`);
+    try {
+      const result = await toolkitAPI.executeTerminalAction(terminal.id, action);
+      if (!result.ok) throw new Error(result.error || '终端操作失败');
+      message.info(`${terminal.name}${action === 'install' ? '安装' : action === 'update' ? '更新' : '卸载'}任务已提交，进度显示在右下角任务队列。`);
+    } catch (error: unknown) {
+      message.error(requestError(error, '终端操作失败'));
+    } finally {
+      setWorkingId('');
+    }
+  };
 
   const runAction = async (terminal: ClientTerminalItem, action: TerminalAction) => {
     try {
@@ -57,18 +92,8 @@ export default function TerminalManagerPanel() {
         ),
         okText: '确认执行',
         cancelText: '取消',
-        onOk: async () => {
-          setWorkingId(`${terminal.id}:${action}`);
-          try {
-            const result = await toolkitAPI.executeTerminalAction(terminal.id, action);
-            if (!result.ok) throw new Error(result.error || '终端操作失败');
-            message.info(`${terminal.name}${action === 'install' ? '安装' : action === 'update' ? '更新' : '卸载'}任务已提交，进度显示在右下角任务队列。`);
-          } catch (error: unknown) {
-            message.error(requestError(error, '终端操作失败'));
-          } finally {
-            setWorkingId('');
-          }
-        }
+        // 立即关闭确认层；命令已在服务端异步排队，进度只由全局任务队列呈现。
+        onOk: () => { void submitTerminalAction(terminal, action); }
       });
     } catch (error: unknown) {
       message.error(requestError(error, '生成终端操作计划失败'));
@@ -81,7 +106,7 @@ export default function TerminalManagerPanel() {
         <div>
           <div className="toolkit-panel-kicker">TERMINAL RUNTIME</div>
           <h2 id="toolkit-terminals-title">终端管理</h2>
-          <p>CLI 入口统一使用这里探测到的终端。安装、更新和卸载只调用对应平台的官方包管理器。</p>
+          <p>仅显示当前平台（{platform ? PLATFORM_LABELS[platform] || platform : '当前主机'}）支持的终端；WebUI 可直接唤起已安装终端。安装、更新和卸载只调用对应平台的官方包管理器。</p>
         </div>
         <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void load()}>重新探测</Button>
       </header>
@@ -126,6 +151,16 @@ export default function TerminalManagerPanel() {
               </div>
               <div className="toolkit-card-actions">
                 <Space size={6} wrap>
+                  {terminal.canLaunch && (terminal.installed || terminal.default) && (
+                    <Button
+                      size="small"
+                      icon={<ExportOutlined />}
+                      loading={openingId === terminal.id}
+                      onClick={() => void openTerminal(terminal)}
+                    >
+                      唤起终端
+                    </Button>
+                  )}
                   {terminal.canInstall && <InstallLifecycleAction action="install" size="small" loading={workingId === `${terminal.id}:install`} onClick={() => void runAction(terminal, 'install')} />}
                   {terminal.canUpdate && <InstallLifecycleAction action="update" size="small" loading={workingId === `${terminal.id}:update`} onClick={() => void runAction(terminal, 'update')} />}
                   {terminal.canUninstall && <InstallLifecycleAction action="uninstall" size="small" loading={workingId === `${terminal.id}:uninstall`} onClick={() => void runAction(terminal, 'uninstall')} />}

@@ -1588,6 +1588,24 @@ export const toolkitAPI = {
     const response = await api.get<ClientTerminalsResponse>('/webui/toolkit/terminals');
     return response.data;
   },
+  openTerminal: async (terminalId: string): Promise<{
+    ok: boolean;
+    status?: string;
+    terminalId?: string;
+    executable?: string;
+    pid?: number | null;
+    error?: string;
+  }> => {
+    const response = await api.post<{
+      ok: boolean;
+      status?: string;
+      terminalId?: string;
+      executable?: string;
+      pid?: number | null;
+      error?: string;
+    }>('/webui/toolkit/terminals/open', { terminalId });
+    return response.data;
+  },
   planTerminalAction: async (terminalId: string, action: 'install' | 'update' | 'uninstall') => {
     const response = await api.post<{ ok: boolean; terminalId?: string; action?: string; label?: string; command?: string; file?: string; args?: string[]; error?: string }>(
       '/webui/toolkit/terminals/plan', { terminalId, action }

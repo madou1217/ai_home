@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const nodePath = require('node:path');
 const {
   DEFAULT_TERMINAL_ID,
+  launchClientTerminal,
   executeClientTerminalAction,
   listClientTerminals,
   resolveClientTerminalLaunch,
@@ -56,6 +57,27 @@ test('终端启动选择隐藏平台实现并生成 Windows Terminal 参数', ()
   assert.equal(launch.terminalId, 'windows-terminal');
   assert.equal(launch.file, 'C:\\tools\\wt.exe');
   assert.deepEqual(launch.args, ['new-tab', '--title', 'aih codex 1', 'cmd.exe', '/k', 'node app.js']);
+});
+
+test('WebUI 唤起已安装终端时复用平台适配器并立即脱离请求进程', () => {
+  const calls = [];
+  const result = launchClientTerminal('wezterm', {
+    platform: 'macos',
+    path: nodePath.posix,
+    env: { HOME: '/Users/test', PATH: '/opt/homebrew/bin', SHELL: '/bin/zsh' },
+    fs: fakeFs(['/opt/homebrew/bin/wezterm']),
+    spawn: (file, args, options) => {
+      calls.push({ file, args, options });
+      return { pid: 42, unref() { calls.push({ unref: true }); } };
+    }
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.terminalId, 'wezterm');
+  assert.equal(result.pid, 42);
+  assert.equal(calls[0].file, '/opt/homebrew/bin/wezterm');
+  assert.deepEqual(calls[0].args.slice(0, 3), ['start', '--always-new-process', '--']);
+  assert.equal(calls[0].options.detached, true);
+  assert.deepEqual(calls.at(-1), { unref: true });
 });
 
 test('iTerm2 启动通过统一接口使用已检测到的 macOS 应用', () => {

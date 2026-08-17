@@ -2147,30 +2147,24 @@ export default function Accounts() {
           return;
         }
         const runInstall = async () => {
-          const key = `app-install-${record.provider}-${kind}`;
           try {
             const job = await startAppInstallJob({
               provider: record.provider,
               kind,
               appId: kind === 'desktop' ? `${record.provider}-desktop` : record.provider
             });
-            message.open({ key, type: 'loading', content: '安装任务已提交，正在准备…', duration: 0 });
-            const completed = await waitForAppInstallJob(job.id, (next) => {
-              message.open({
-                key,
-                type: next.status === 'failed' ? 'error' : 'loading',
-                content: `安装进度 ${Math.round(Number(next.progress?.percent || 0))}%${next.progress?.label ? ` · ${next.progress.label}` : ''}`,
-                duration: next.status === 'failed' ? 4 : 0
-              });
-            });
+            message.info('安装任务已提交，进度显示在右下角任务队列。');
+            // 页面只负责等待后台任务完成后继续唤起目标应用；进度由全局 SSE
+            // 任务队列呈现，刷新或切换页面不会中断服务端任务。
+            const completed = await waitForAppInstallJob(job.id);
             if (completed.status !== 'succeeded') {
               throw new Error(completed.error || '安装未完成');
             }
-            message.success({ key, content: '安装完成，正在打开应用…', duration: 3 });
+            message.success('安装完成，正在打开应用…');
             await accountsAPI.openApp(record.provider, record.accountRef, kind, 'open', terminalId);
             loadAppEntries();
           } catch (installError: any) {
-            message.error({ key, content: installError?.response?.data?.message || installError?.message || '安装失败', duration: 5 });
+            message.error(installError?.response?.data?.message || installError?.message || '安装失败');
           }
         };
         Modal.confirm({

@@ -5,10 +5,10 @@ import { listActiveWebUiTasks, watchWebUiTasks } from '@/services/api';
 import type { WebUiTask } from '@/types';
 import './AppInstallTaskQueue.css';
 
-const TERMINAL_STATUSES = new Set(['succeeded', 'failed', 'cancelled']);
+const ACTIVE_STATUSES = new Set(['queued', 'running']);
 
 function isActiveTask(task: WebUiTask | null | undefined) {
-  return Boolean(task && !TERMINAL_STATUSES.has(String(task.status || '').toLowerCase()));
+  return Boolean(task && ACTIVE_STATUSES.has(String(task.status || '').toLowerCase()));
 }
 
 function taskName(task: WebUiTask) {
@@ -119,13 +119,18 @@ export default function AppInstallTaskQueue() {
         <span className="webui-task-queue-trigger-label">后台任务</span>
       </button>
 
-      <section className="webui-task-queue-panel" aria-label="后台任务队列" aria-live="polite">
+      <section
+        className="webui-task-queue-panel"
+        aria-label="后台任务队列"
+        aria-hidden={!expanded}
+        aria-live={expanded ? 'polite' : 'off'}
+      >
         <header className="webui-task-queue-header">
           <div>
             <span className="webui-task-queue-kicker">BACKGROUND TASKS</span>
             <strong>后台任务队列</strong>
           </div>
-          <span>{activeTasks.length} 个执行中</span>
+          <span>{activeTasks.length} 个活动任务</span>
         </header>
         <div className="webui-task-queue-list">
           {activeTasks.map((task) => {

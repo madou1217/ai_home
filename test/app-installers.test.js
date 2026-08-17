@@ -78,3 +78,16 @@ test('官方安装器优先使用可验证的稳定下载端点，并覆盖 Wind
   const zcodeLinux = zcode.resolveDesktopInstallPlans({ platform: 'linux' })[0];
   assert.ok(zcodeLinux.args.join(' ').includes('.AppImage'));
 });
+
+test('Desktop 安装器只在官方资料声明的架构上提供计划', () => {
+  const armLinux = { platform: 'linux', processObj: { platform: 'linux', arch: 'arm64', env: {} } };
+  assert.deepEqual(getAppInstaller('zcode').resolveDesktopInstallPlans(armLinux), []);
+  assert.deepEqual(getAppInstaller('kiro').resolveDesktopInstallPlans(armLinux), []);
+  assert.deepEqual(getAppInstaller('opencode').resolveDesktopInstallPlans(armLinux), []);
+  assert.deepEqual(getAppInstaller('qoder').resolveDesktopInstallPlans(armLinux), []);
+  assert.deepEqual(getAppInstaller('qodercn').resolveDesktopInstallPlans(armLinux), []);
+
+  const armWindows = { platform: 'windows', processObj: { platform: 'win32', arch: 'arm64', env: {} } };
+  assert.equal(getAppInstaller('zcode').resolveDesktopInstallPlans(armWindows).length, 1);
+  assert.deepEqual(getAppInstaller('opencode').resolveDesktopInstallPlans(armWindows), []);
+});

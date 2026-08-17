@@ -69,16 +69,20 @@ test('AIH_HEADLESS_SPINNER=0 关掉动画', () => {
   assert.equal(errorWrites.join(''), '');
 });
 
-test('没有任何输出就结束时，擦掉半截 spinner 且不报耗时', () => {
+test('没有任何输出就结束时，用一行收尾而不是把整行擦空', () => {
   const { processObj, errorWrites } = createProcessStub();
-  const progress = createHeadlessProgress({ processObj, label: 'Running claude' });
+  const clock = createClock();
+  const progress = createHeadlessProgress({ processObj, label: 'Running claude', now: clock.now });
 
   progress.start();
+  clock.advance(3500);
   progress.stop();
 
   const rendered = errorWrites.join('');
-  assert.equal(rendered.endsWith('\r\x1b[K'), true);
+  assert.match(rendered, /无输出 3\.5s/);
   assert.equal(rendered.includes('首字节'), false);
+  // Must end on a fresh line, or the shell prompt lands on the cleared row.
+  assert.equal(rendered.endsWith('\n'), true);
 });
 
 test('markFirstOutput 只生效一次，stop 之后也不再写', () => {

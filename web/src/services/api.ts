@@ -78,7 +78,6 @@ import type {
   AppInstallJob,
   WebUiTask,
   ClientTerminalsResponse,
-  ClientTerminalItem,
   EnvironmentsResponse,
   EnvironmentActionInput,
   EnvironmentActionResponse,

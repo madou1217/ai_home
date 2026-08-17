@@ -24,6 +24,7 @@ const {
   serializeAuthJob,
   createAuthJobManager: createAuthJobManagerImpl
 } = require('../lib/server/web-account-auth');
+const { decryptZcodeCredentialRecord } = require('../lib/account/zcode-credential');
 
 test('Kimi WebUI auth contract supports browser OAuth and API keys', () => {
   assert.equal(getDefaultAuthMode('kimi'), 'oauth-browser');
@@ -1209,6 +1210,164 @@ test('createAuthJobManager rejects a claude browser oauth state mismatch', async
   assert.equal(result.ok, false);
   assert.equal(result.code, 'invalid_callback_state');
   assert.equal(fetchCalled, false);
+});
+
+test('createAuthJobManager runs zcode browser oauth natively and writes encrypted credentials.json', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-oauth-zcode-native-'));
+  const getProfileDir = (provider, accountId) => path.join(root, provider, String(accountId));
+  const getToolConfigDir = (provider, accountId) => path.join(getProfileDir(provider, accountId), `.${provider}`);
+
+  const fetchCalls = [];
+  const loopbackCalls = [];
+  const zcodeJwt = makeJwt({ sub: 'zc-user-1' });
+  const manager = createAuthJobManager({
+    fs,
+    processObj: {
+      ...process,
+      cwd: () => root,
+      env: { ...process.env },
+      platform: process.platform,
+      kill() { return; }
+    },
+    ptyImpl: {
+      spawn() {
+        throw new Error('zcode browser oauth should not spawn cli');
+      }
+    },
+    fetchImpl: async (url, init) => {
+      fetchCalls.push({ url, body: String(init && init.body || ''), headers: (init && init.headers) || {} });
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({
+          code: 0,
+          msg: '',
+          data: {
+            token: zcodeJwt,
+            zai: {
+              access_token: 'zai-access-token',
+              refresh_token: 'zai-refresh-token'
+            },
+            user: {
+              user_id: 'zc-user-1',
+              email: 'zc@example.com',
+              name: 'ZC User'
+            }
+          }
+        })
+      };
+    },
+    startLoopbackCallbackServerImpl: createLoopbackCallbackStub(loopbackCalls),
+    resolveCliPathImpl: () => 'C:\\Program Files\\ZCode\\resources\\glm\\zcode.cjs',
+    getToolAccountIds: () => [],
+    getProfileDir,
+    getToolConfigDir
+  });
+
+  const started = manager.startOauthJob('zcode', 'oauth-browser');
+  // aih builds the desktop-flow authorize URL itself — no PKCE, loopback redirect.
+  assert.match(started.authorizationUrl, /^https:\/\/chat\.z\.ai\/api\/oauth\/authorize/);
+  assert.match(decodeURIComponent(started.authorizationUrl), /http:\/\/localhost:18653\/oauth\/callback/);
+  assert.equal(started.authorizationUrl.includes('code_challenge'), false);
+
+  const running = manager.getJob(started.jobId);
+  assert.equal(running.redirectUri, 'http://localhost:18653/oauth/callback');
+  assert.equal(loopbackCalls.length, 1);
+
+  const completed = await manager.completeBrowserOauthCallback(
+    started.jobId,
+    `${running.redirectUri}?code=zcode-auth-code&state=${running.oauthState}`
+  );
+  assert.equal(completed.ok, true);
+
+  // Token exchange mirrors the desktop client: provider/code/redirect_uri/state.
+  assert.equal(fetchCalls[0].url, 'https://zcode.z.ai/api/v1/oauth/token');
+  const tokenBody = JSON.parse(fetchCalls[0].body);
+  assert.equal(tokenBody.provider, 'zai');
+  assert.equal(tokenBody.code, 'zcode-auth-code');
+  assert.equal(tokenBody.redirect_uri, running.redirectUri);
+  assert.equal(tokenBody.state, running.oauthState);
+
+  // Credentials land encrypted in v2/credentials.json, the CLI-native layout.
+  const credentialsPath = path.join(running.configDir, 'v2', 'credentials.json');
+  const raw = JSON.parse(fs.readFileSync(credentialsPath, 'utf8'));
+  assert.match(raw['oauth:zai:access_token'], /^enc:v1:/);
+  const plain = decryptZcodeCredentialRecord(raw);
+  assert.equal(plain['oauth:active_provider'], 'zai');
+  assert.equal(plain['oauth:zai:access_token'], 'zai-access-token');
+  assert.equal(plain['oauth:zai:refresh_token'], 'zai-refresh-token');
+  assert.equal(plain.zcodejwttoken, zcodeJwt);
+  assert.equal(JSON.parse(plain['oauth:zai:user_info']).user_id, 'zc-user-1');
+
+  const finishedJob = manager.getJob(started.jobId);
+  assert.equal(finishedJob.status, 'succeeded');
+  assert.equal(finishedJob.email, 'zc@example.com');
+  assert.equal(loopbackCalls[0].closed, true);
+  assert.match(finishedJob.logs, /回调 state 校验通过/);
+  assert.match(finishedJob.logs, /ZCode OAuth 授权完成/);
+});
+
+test('createAuthJobManager rejects a zcode browser oauth state mismatch', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-oauth-zcode-state-'));
+  const getProfileDir = (provider, accountId) => path.join(root, provider, String(accountId));
+  const getToolConfigDir = (provider, accountId) => path.join(getProfileDir(provider, accountId), `.${provider}`);
+  let fetchCalled = false;
+
+  const manager = createAuthJobManager({
+    fs,
+    processObj: { ...process, cwd: () => root, env: { ...process.env }, platform: process.platform },
+    ptyImpl: { spawn() { throw new Error('zcode browser oauth should not spawn cli'); } },
+    fetchImpl: async () => { fetchCalled = true; throw new Error('unexpected token exchange'); },
+    startLoopbackCallbackServerImpl: createLoopbackCallbackStub(),
+    resolveCliPathImpl: () => 'C:\\Program Files\\ZCode\\resources\\glm\\zcode.cjs',
+    getToolAccountIds: () => [],
+    getProfileDir,
+    getToolConfigDir
+  });
+
+  const started = manager.startOauthJob('zcode', 'oauth-browser');
+  const running = manager.getJob(started.jobId);
+  const result = await manager.completeBrowserOauthCallback(
+    started.jobId,
+    `${running.redirectUri}?code=evil&state=not-the-state`
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'invalid_callback_state');
+  assert.equal(fetchCalled, false);
+});
+
+test('createAuthJobManager fails zcode oauth when the token envelope reports an error', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-oauth-zcode-envelope-'));
+  const getProfileDir = (provider, accountId) => path.join(root, provider, String(accountId));
+  const getToolConfigDir = (provider, accountId) => path.join(getProfileDir(provider, accountId), `.${provider}`);
+
+  const manager = createAuthJobManager({
+    fs,
+    processObj: { ...process, cwd: () => root, env: { ...process.env }, platform: process.platform, kill() { return; } },
+    ptyImpl: { spawn() { throw new Error('zcode browser oauth should not spawn cli'); } },
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ code: 40001, msg: 'invalid code' })
+    }),
+    startLoopbackCallbackServerImpl: createLoopbackCallbackStub(),
+    resolveCliPathImpl: () => 'C:\\Program Files\\ZCode\\resources\\glm\\zcode.cjs',
+    getToolAccountIds: () => [],
+    getProfileDir,
+    getToolConfigDir
+  });
+
+  const started = manager.startOauthJob('zcode', 'oauth-browser');
+  const running = manager.getJob(started.jobId);
+  const result = await manager.completeBrowserOauthCallback(
+    started.jobId,
+    `${running.redirectUri}?code=bad-code&state=${running.oauthState}`
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'token_exchange_failed');
+  const finishedJob = manager.getJob(started.jobId);
+  assert.equal(finishedJob.status, 'failed');
+  assert.match(finishedJob.error, /invalid code/);
 });
 
 test('createAuthJobManager rejects codex browser oauth state mismatch', async () => {

@@ -75,6 +75,7 @@ import type {
   ManagedToolsResponse,
   ToolkitToolConfigResponse,
   ManagedAppsResponse,
+  AppInstallJob,
   EnvironmentsResponse,
   EnvironmentActionInput,
   EnvironmentActionResponse,
@@ -334,15 +335,18 @@ export const accountsAPI = {
   // 宿主机实测的各 Provider 桌面/CLI 入口可用性，附带桌面运行中的账号清单
   listAppEntries: async (): Promise<{
     entries: Record<string, { desktop: boolean; cli: boolean }>;
+    capabilities: Record<string, { desktop: boolean; cli: boolean }>;
     runningAccounts: string[];
   }> => {
     const response = await api.get<{
       ok: boolean;
       entries: Record<string, { desktop: boolean; cli: boolean }>;
+      capabilities?: Record<string, { desktop: boolean; cli: boolean }>;
       runningAccounts?: string[];
     }>('/webui/app-entries');
     return {
       entries: response.data.entries || {},
+      capabilities: response.data.capabilities || {},
       runningAccounts: Array.isArray(response.data.runningAccounts) ? response.data.runningAccounts : []
     };
   },
@@ -415,6 +419,78 @@ export const accountsAPI = {
     return response.data.job;
   }
 };
+
+function isTerminalAppInstallJob(job: AppInstallJob | null | undefined) {
+  return Boolean(job && ['succeeded', 'failed', 'cancelled'].includes(String(job.status || '').trim().toLowerCase()));
+}
+
+export async function startAppInstallJob(input: {
+  provider?: string;
+  kind?: 'cli' | 'desktop';
+  appId?: string;
+}): Promise<AppInstallJob> {
+  const response = await api.post<{ ok: boolean; job: AppInstallJob }>('/webui/app-install', input);
+  return response.data.job;
+}
+
+export async function getAppInstallJob(jobId: string): Promise<AppInstallJob> {
+  const response = await api.get<{ ok: boolean; job: AppInstallJob }>(`/webui/app-install/jobs/${encodeURIComponent(jobId)}`);
+  return response.data.job;
+}
+
+// SSE 是主通道，短轮询只作为断线期间的恢复手段；安装进程始终在服务端
+// 后台运行，不会被浏览器请求的生命周期阻塞。
+export function waitForAppInstallJob(
+  jobId: string,
+  onJob?: (job: AppInstallJob) => void
+): Promise<AppInstallJob> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const eventSource = guardedWebUiEventSource(
+      `/v0/webui/app-install/jobs/${encodeURIComponent(jobId)}/watch`
+    );
+    const pollTimer = setInterval(() => {
+      void getAppInstallJob(jobId).then((job) => {
+        onJob?.(job);
+        if (isTerminalAppInstallJob(job)) finish(job);
+      }).catch(() => {});
+    }, 2000);
+    const timeoutTimer = setTimeout(() => {
+      finish(null, new Error('app_install_watch_timeout'));
+    }, 30 * 60 * 1000);
+
+    const finish = (job: AppInstallJob | null, error?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearInterval(pollTimer);
+      clearTimeout(timeoutTimer);
+      eventSource.close();
+      if (error) reject(error);
+      else if (job) resolve(job);
+      else reject(new Error('app_install_job_missing'));
+    };
+
+    eventSource.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(String(event.data || '{}')) as { job?: AppInstallJob };
+        const job = payload.job;
+        if (!job) return;
+        onJob?.(job);
+        if (isTerminalAppInstallJob(job)) finish(job);
+      } catch (_error) {
+        // Ignore malformed heartbeat/frames; polling remains available.
+      }
+    };
+    eventSource.onerror = () => {
+      // EventSource reconnects itself. Do not fail the install because a single
+      // SSE connection dropped; the polling fallback keeps terminal state visible.
+    };
+    void getAppInstallJob(jobId).then((job) => {
+      onJob?.(job);
+      if (isTerminalAppInstallJob(job)) finish(job);
+    }).catch(() => {});
+  });
+}
 
 export interface ModelAlias {
   id: string;
@@ -1491,8 +1567,8 @@ export const toolkitAPI = {
     const response = await api.get<ManagedAppsResponse>('/webui/toolkit/apps');
     return response.data;
   },
-  installApp: async (provider: string): Promise<{ ok: boolean; result: any }> => {
-    const response = await api.post<{ ok: boolean; result: any }>('/webui/toolkit/apps/install', { provider });
+  installApp: async (provider: string): Promise<{ ok: boolean; accepted?: boolean; alreadyRunning?: boolean; job?: AppInstallJob; result?: any }> => {
+    const response = await api.post<{ ok: boolean; accepted?: boolean; alreadyRunning?: boolean; job?: AppInstallJob; result?: any }>('/webui/toolkit/apps/install', { appId: provider });
     return response.data;
   },
   installHooks: async (providers: string[]): Promise<{ ok: boolean; results: any[] }> => {

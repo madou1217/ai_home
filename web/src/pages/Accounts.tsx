@@ -52,7 +52,12 @@ import {
   CodeOutlined,
   DesktopOutlined
 } from '@ant-design/icons';
-import { accountsAPI, modelsAPI } from '@/services/api';
+import {
+  accountsAPI,
+  modelsAPI,
+  startAppInstallJob,
+  waitForAppInstallJob
+} from '@/services/api';
 import {
   ACCOUNT_LIST_LOAD_MESSAGE_KEY,
   clearLoadFailureMessage,
@@ -1595,11 +1600,13 @@ export default function Accounts() {
   // 桌面/CLI 入口按宿主机实测结果控制：加载完成前两个图标都隐藏，避免闪烁。
   // runningAccounts 记录桌面运行中的账号，用于给图标挂角标。
   const [appEntries, setAppEntries] = useState<Record<string, { desktop: boolean; cli: boolean }> | null>(null);
+  const [appCapabilities, setAppCapabilities] = useState<Record<string, { desktop: boolean; cli: boolean }>>({});
   const [runningAccounts, setRunningAccounts] = useState<string[]>([]);
   const loadAppEntries = async () => {
     try {
       const result = await accountsAPI.listAppEntries();
       setAppEntries(result.entries);
+      setAppCapabilities(result.capabilities);
       setRunningAccounts(result.runningAccounts);
     } catch (_error) {
       setAppEntries((current) => current || {});
@@ -1612,6 +1619,7 @@ export default function Accounts() {
         const result = await accountsAPI.listAppEntries();
         if (cancelled) return;
         setAppEntries(result.entries);
+        setAppCapabilities(result.capabilities);
         setRunningAccounts(result.runningAccounts);
       } catch (_error) {
         if (!cancelled) setAppEntries({});
@@ -2123,6 +2131,57 @@ export default function Accounts() {
       message.success(kind === 'desktop' ? '已打开 Desktop 应用' : '已打开 CLI 终端');
       loadAppEntries();
     } catch (error: any) {
+      const code = String(error?.response?.data?.error || '').trim();
+      if (code === 'install_required') {
+        if (error?.response?.data?.installAvailable === false) {
+          message.info(error?.response?.data?.message || '请先手动安装目标应用后重试');
+          return;
+        }
+        const runInstall = async () => {
+          const key = `app-install-${record.provider}-${kind}`;
+          try {
+            const job = await startAppInstallJob({
+              provider: record.provider,
+              kind,
+              appId: kind === 'desktop' ? `${record.provider}-desktop` : record.provider
+            });
+            message.open({ key, type: 'loading', content: '安装任务已提交，正在准备…', duration: 0 });
+            const completed = await waitForAppInstallJob(job.id, (next) => {
+              message.open({
+                key,
+                type: next.status === 'failed' ? 'error' : 'loading',
+                content: `安装进度 ${Math.round(Number(next.progress?.percent || 0))}%${next.progress?.label ? ` · ${next.progress.label}` : ''}`,
+                duration: next.status === 'failed' ? 4 : 0
+              });
+            });
+            if (completed.status !== 'succeeded') {
+              throw new Error(completed.error || '安装未完成');
+            }
+            message.success({ key, content: '安装完成，正在打开应用…', duration: 3 });
+            await accountsAPI.openApp(record.provider, record.accountRef, kind);
+            loadAppEntries();
+          } catch (installError: any) {
+            message.error({ key, content: installError?.response?.data?.message || installError?.message || '安装失败', duration: 5 });
+          }
+        };
+        Modal.confirm({
+          title: `未检测到${kind === 'desktop' ? ' Desktop 应用' : '原生 CLI'}`,
+          content: error?.response?.data?.message || '是否确认开始后台安装？',
+          okText: '确认安装',
+          cancelText: '取消',
+          // 只确认并立即关闭弹窗；安装作业在 server 后台运行，进度经 SSE 回传。
+          onOk: () => { void runInstall(); }
+        });
+        return;
+      }
+      if (code === 'account_unconfigured') {
+        message.warning('账号尚未配置，完成授权或配置密钥后才能打开');
+        return;
+      }
+      if (code === 'account_auth_invalid') {
+        message.warning('账号认证已失效，请重新登录后再打开');
+        return;
+      }
       message.error(error?.response?.data?.message || (kind === 'desktop' ? '打开 Desktop 应用失败' : '打开 CLI 终端失败'));
     }
   };
@@ -2337,13 +2396,14 @@ export default function Accounts() {
               <Tag color={getPlanTagColor(record)} style={{ fontSize: 11, lineHeight: '18px', padding: '0 4px', margin: 0 }}>
                 {getPlanTagLabel(record)}
               </Tag>
-              {appEntries && appEntries[record.provider]?.desktop ? (
-                <Tooltip title={runningAccounts.includes(getAccountRef(record)) ? 'Desktop 运行中（点击关闭）' : '打开 Desktop'}>
+              {appEntries && (appEntries[record.provider]?.desktop || appCapabilities[record.provider]?.desktop) ? (
+                <Tooltip title={!record.configured ? '账号未配置，完成授权后可打开 Desktop' : record.runtimeStatus === 'auth_invalid' ? '认证已失效，请重新登录' : runningAccounts.includes(getAccountRef(record)) ? 'Desktop 运行中（点击关闭）' : appEntries[record.provider]?.desktop ? '打开 Desktop' : '未安装 Desktop，点击后确认安装'}>
                   <Badge dot={runningAccounts.includes(getAccountRef(record))} status="success">
                     <Button
                       type="text"
                       size="small"
                       icon={<DesktopOutlined />}
+                      disabled={!record.configured || record.runtimeStatus === 'auth_invalid'}
                       onClick={(event: any) => {
                         event?.stopPropagation?.();
                         handleOpenApp(record, 'desktop');
@@ -2352,12 +2412,13 @@ export default function Accounts() {
                   </Badge>
                 </Tooltip>
               ) : null}
-              {appEntries && appEntries[record.provider]?.cli ? (
-                <Tooltip title="使用系统默认终端打开 CLI">
+              {appEntries && (appEntries[record.provider]?.cli || appCapabilities[record.provider]?.cli) ? (
+                <Tooltip title={!record.configured ? '账号未配置，完成授权后可打开 CLI' : record.runtimeStatus === 'auth_invalid' ? '认证已失效，请重新登录' : appEntries[record.provider]?.cli ? '使用系统默认终端打开 CLI' : '未安装 CLI，点击后确认安装'}>
                   <Button
                     type="text"
                     size="small"
                     icon={<CodeOutlined />}
+                    disabled={!record.configured || record.runtimeStatus === 'auth_invalid'}
                     onClick={(event: any) => {
                       event?.stopPropagation?.();
                       handleOpenApp(record, 'cli');

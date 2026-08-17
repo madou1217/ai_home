@@ -108,6 +108,36 @@ test('webui toolkit routes GET /v0/webui/toolkit/apps returns app list', async (
   assert.ok(data.apps.some((a) => a.id === 'claude'));
 });
 
+test('webui toolkit app install returns an async unified job instead of blocking the request', async () => {
+  const result = await runToolkitRequest('/v0/webui/toolkit/apps/install', {
+    method: 'POST',
+    body: { appId: 'codex' },
+    deps: {
+      appInstallJobManager: {
+        start(input) {
+          assert.deepEqual(input, { appId: 'codex', provider: undefined, kind: undefined });
+          return {
+            ok: true,
+            accepted: true,
+            alreadyRunning: false,
+            job: {
+              id: 'app-install-test',
+              appId: 'codex',
+              provider: 'codex',
+              kind: 'cli',
+              status: 'queued'
+            }
+          };
+        }
+      }
+    }
+  });
+  assert.equal(result.handled, true);
+  assert.equal(result.res.statusCode, 202);
+  assert.equal(result.data.accepted, true);
+  assert.equal(result.data.job.id, 'app-install-test');
+});
+
 test('webui toolkit routes GET /v0/webui/toolkit/tools returns runtime and network categories', async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-toolkit-tools-'));
   const req = { method: 'GET', url: '/v0/webui/toolkit/tools', headers: {} };

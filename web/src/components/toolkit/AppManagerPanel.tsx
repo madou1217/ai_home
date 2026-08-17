@@ -19,7 +19,7 @@ import {
 } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import ProviderIcon from '@/components/chat/ProviderIcon';
-import { toolkitAPI } from '@/services/api';
+import { toolkitAPI, waitForAppInstallJob } from '@/services/api';
 import type {
   ManagedAppItem,
   ManagedAppsResponse,
@@ -102,10 +102,19 @@ export default function AppManagerPanel() {
     setInstallingApp(app.id);
     try {
       const response = await toolkitAPI.installApp(app.id);
-      if (!response.ok || !response.result?.installed) {
-        throw new Error(response.result?.installAttempts?.[0]?.error || '安装结果未确认');
+      if (!response.ok || !response.job) {
+        throw new Error(response.result?.installAttempts?.[0]?.error || '安装任务未创建');
       }
-      message.success(`${app.name} 已安装或更新`);
+      const completed = await waitForAppInstallJob(response.job.id, (job) => {
+        message.open({
+          key: `toolkit-install-${app.id}`,
+          type: job.status === 'failed' ? 'error' : 'loading',
+          content: `${app.name} 安装进度 ${Math.round(Number(job.progress?.percent || 0))}%${job.progress?.label ? ` · ${job.progress.label}` : ''}`,
+          duration: job.status === 'failed' ? 4 : 0
+        });
+      });
+      if (completed.status !== 'succeeded') throw new Error(completed.error || '安装未完成');
+      message.success({ key: `toolkit-install-${app.id}`, content: `${app.name} 已安装或更新`, duration: 3 });
       await fetchApps();
     } catch (requestFailure: unknown) {
       message.error(requestError(requestFailure, `${app.name} 安装失败`));
@@ -237,7 +246,7 @@ export default function AppManagerPanel() {
                   </div>
                   <div className="toolkit-card-actions">
                     <Space size={6} wrap>
-                      {app.type === 'cli' && (
+                      {(app.type === 'cli' || (app.type === 'desktop' && app.installAvailable)) && (
                         <Button size="small" type={app.installed ? 'default' : 'primary'} icon={<DownloadOutlined />} loading={installingApp === app.id} onClick={() => installApp(app)}>
                           {app.installed ? '更新 / 修复' : '一键安装'}
                         </Button>

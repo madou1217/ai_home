@@ -129,13 +129,15 @@ test('source fingerprint includes Codex canonical interaction boundary files', (
 });
 
 test('source fingerprint recursively includes the canonical chat runtime boundary', () => {
-  assert.deepEqual(SOURCE_FINGERPRINT_DIRECTORIES, ['lib/server/chat-runtime']);
+  assert.deepEqual(SOURCE_FINGERPRINT_DIRECTORIES, ['lib/server/chat-runtime', 'lib/server/app-installers']);
   const entryFile = path.join(__dirname, '..', 'lib', 'cli', 'app.js');
   const relativePaths = getSourceFingerprintPaths(fs, path, entryFile)
     .map((item) => item.relativePath);
   assert.equal(relativePaths.includes('lib/server/chat-runtime/session-actor.js'), true);
   assert.equal(relativePaths.includes('lib/server/chat-runtime/canonical-diagnostic-sanitizer.js'), true);
   assert.equal(new Set(relativePaths).size, relativePaths.length);
+  assert.equal(relativePaths.includes('lib/server/app-installers/codex.js'), true);
+  assert.equal(relativePaths.includes('lib/server/app-installers/zcode.js'), true);
 });
 
 test('source fingerprint includes canonical runtime composition and WebUI boundaries', () => {
@@ -147,8 +149,13 @@ test('source fingerprint includes canonical runtime composition and WebUI bounda
     'lib/server/provider-runtime-metadata.js',
     'lib/server/webui-chat-runtime-routes.js',
     'lib/server/webui-chat-runtime-sse.js',
+    'lib/server/webui-app-install-routes.js',
+    'lib/server/app-install-job-manager.js',
+    'lib/server/account-app-launcher.js',
+    'lib/server/webui-sse-broadcaster.js',
     'lib/server/webui-toolkit-routes.js',
     'lib/cli/services/toolkit/app-manager.js',
+    'lib/cli/services/ai-cli/desktop-install-strategies.js',
     'lib/cli/services/toolkit/config-editor.js',
     'lib/cli/services/toolkit/frp-discovery.js',
     'lib/cli/services/toolkit/host-runtime-discovery.js',

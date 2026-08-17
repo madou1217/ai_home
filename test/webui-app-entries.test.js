@@ -103,6 +103,47 @@ test('open-app 端点对缺失账号返回 404 account_not_found', async (t) => 
   assert.equal(ctx.res.json().error, 'account_not_found');
 });
 
+test('open-app 端点在账号未配置时后端拒绝打开', async (t) => {
+  const fixture = createFixture(t);
+  const ctx = createOpenAppCtx(fixture, { kind: 'desktop', action: 'open' });
+  ctx.accountStateIndex = { getAccountState: () => ({ configured: false }) };
+  const handled = await handleOpenAccountAppRequest(ctx);
+  assert.equal(handled, true);
+  assert.equal(ctx.res.statusCode, 409);
+  assert.equal(ctx.res.json().error, 'account_unconfigured');
+});
+
+test('open-app 端点在账号认证失效时后端拒绝打开', async (t) => {
+  const fixture = createFixture(t);
+  const ctx = createOpenAppCtx(fixture, { kind: 'desktop', action: 'open' });
+  ctx.accountStateIndex = {
+    getAccountState: () => ({
+      configured: true,
+      runtimeState: {
+        authInvalidUntil: Date.now() + 60_000,
+        lastFailureKind: 'auth_invalid'
+      }
+    })
+  };
+  const handled = await handleOpenAccountAppRequest(ctx);
+  assert.equal(handled, true);
+  assert.equal(ctx.res.statusCode, 409);
+  assert.equal(ctx.res.json().error, 'account_auth_invalid');
+});
+
+test('open-app 端点在桌面缺失时返回 install_required，不在请求内阻塞安装', async (t) => {
+  const fixture = createFixture(t);
+  const ctx = createOpenAppCtx(fixture, { kind: 'desktop', action: 'open' });
+  const handled = await handleOpenAccountAppRequest(ctx);
+  assert.equal(handled, true);
+  assert.equal(ctx.res.statusCode, 428);
+  const body = ctx.res.json();
+  assert.equal(body.error, 'install_required');
+  assert.equal(body.installTarget.provider, 'zcode');
+  assert.equal(body.installTarget.kind, 'desktop');
+  assert.equal(body.installAvailable, false);
+});
+
 test('app-entries 端点返回按 Provider 分组的布尔入口可用性并命中缓存', async (t) => {
   const fixture = createFixture(t);
   const ctx = {
@@ -123,6 +164,8 @@ test('app-entries 端点返回按 Provider 分组的布尔入口可用性并命�
   assert.ok(body.entries.zcode, 'zcode 必须在条目中');
   assert.equal(typeof body.entries.zcode.desktop, 'boolean');
   assert.equal(typeof body.entries.zcode.cli, 'boolean');
+  assert.equal(body.capabilities.zcode.desktop, true);
+  assert.equal(body.capabilities.zcode.cli, true);
   // 未声明 desktopClient 的 Provider 恒为 desktop:false
   assert.equal(body.entries.kiro.desktop, false);
   assert.ok(Array.isArray(body.runningAccounts), '响应必须带 runningAccounts 数组');

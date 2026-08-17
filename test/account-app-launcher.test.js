@@ -69,10 +69,41 @@ function createLauncher(overrides = {}) {
       cliAccountId: '3'
     })),
     getProfileDir: overrides.getProfileDir || (() => SANDBOX_DIR),
-    readAccountEnv: overrides.readAccountEnv || (() => ({}))
+    readAccountEnv: overrides.readAccountEnv || (() => ({})),
+    resolveAccountEligibility: overrides.resolveAccountEligibility,
+    enforceCliInstallation: overrides.enforceCliInstallation,
+    resolveCliPath: overrides.resolveCliPath
   });
   return { launcher, fakeSpawn, fsImpl };
 }
+
+test('launchAccountApp 在账号未配置时拒绝打开', () => {
+  const { launcher } = createLauncher({
+    resolveAccountEligibility: () => ({ configured: false })
+  });
+  const result = launcher.launchAccountApp({ provider: 'zcode', accountRef: ACCOUNT_REF, kind: 'desktop' });
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'account_unconfigured');
+});
+
+test('launchAccountApp 在认证失效时拒绝打开', () => {
+  const { launcher } = createLauncher({
+    resolveAccountEligibility: () => ({ configured: true, runtimeStatus: 'auth_invalid' })
+  });
+  const result = launcher.launchAccountApp({ provider: 'zcode', accountRef: ACCOUNT_REF, kind: 'cli' });
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'account_auth_invalid');
+});
+
+test('launchAccountApp 在生产资格检查开启且 CLI 缺失时返回 cli_not_installed', () => {
+  const { launcher } = createLauncher({
+    enforceCliInstallation: true,
+    resolveCliPath: () => ''
+  });
+  const result = launcher.launchAccountApp({ provider: 'zcode', accountRef: ACCOUNT_REF, kind: 'cli' });
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'cli_not_installed');
+});
 
 test('launchAccountApp 校验 kind，未知 kind 返回 unsupported_kind', () => {
   const { launcher } = createLauncher();

@@ -1307,6 +1307,7 @@ export interface ManagedAppItem {
   hookSupported: boolean;
   hookInstalled: boolean;
   syncMode: 'hook' | 'polling' | 'unavailable';
+  installAvailable?: boolean;
 }
 
 export interface ManagedAppsResponse {
@@ -1314,6 +1315,22 @@ export interface ManagedAppsResponse {
   total: number;
   installedCount: number;
   apps: ManagedAppItem[];
+}
+
+export interface AppInstallJob {
+  id: string;
+  appId: string;
+  provider: string;
+  kind: 'cli' | 'desktop';
+  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | string;
+  phase: string;
+  progress: { percent: number; label: string };
+  attempts: Array<{ id: string; label: string; ok: boolean; error?: string }>;
+  result?: { installed: boolean; cliPath?: string; executablePath?: string } | null;
+  error?: string;
+  createdAt: number;
+  updatedAt: number;
+  finishedAt?: number | null;
 }
 
 export interface ToolkitAppConfigResponse {

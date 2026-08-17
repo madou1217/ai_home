@@ -38,3 +38,11 @@ test('桌面安装参数只来自对应 Provider 安装器', () => {
   assert.deepEqual(gemini.resolveDesktopInstallPlans({ platform: 'darwin' }), []);
   assert.deepEqual(grok.resolveDesktopInstallPlans({ platform: 'darwin' }), []);
 });
+
+test('安装器公共平台接口使用 macos/windows/linux，兼容 Node 别名输入', () => {
+  const codex = getAppInstaller('codex');
+  const claude = getAppInstaller('claude');
+  assert.equal(codex.resolveDesktopInstallPlans({ platform: 'macos' })[0].command, 'brew');
+  assert.equal(claude.resolveDesktopInstallPlans({ platform: 'windows' })[0].command, 'winget.exe');
+  assert.equal(codex.resolveDesktopInstallPlans({ platform: 'win32' })[0].command, 'winget.exe');
+});

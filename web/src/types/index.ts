@@ -1333,12 +1333,14 @@ export interface AppInstallJob {
   finishedAt?: number | null;
 }
 
+export type ClientPlatform = 'macos' | 'windows' | 'linux';
+
 export interface ClientTerminalItem {
   id: string;
   name: string;
   description: string;
   sourceUrl: string;
-  platform: string;
+  platform: ClientPlatform;
   installed: boolean;
   default: boolean;
   executablePath: string;
@@ -1351,7 +1353,7 @@ export interface ClientTerminalItem {
 
 export interface ClientTerminalsResponse {
   ok: boolean;
-  platform: string;
+  platform: ClientPlatform;
   terminals: ClientTerminalItem[];
 }
 

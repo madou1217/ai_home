@@ -8,7 +8,7 @@ const { getAppInstaller, INSTALLERS } = require('../lib/server/app-installers');
 
 test('每个合同 CLI Provider 都由独立安装器模块提供统一入口', () => {
   const providers = listProviderDefinitions()
-    .filter((definition) => definition.cli)
+    .filter((definition) => definition.clients && definition.clients.cli)
     .map((definition) => definition.id);
   assert.ok(providers.length > 0);
   providers.forEach((provider) => {
@@ -18,7 +18,16 @@ test('每个合同 CLI Provider 都由独立安装器模块提供统一入口', 
     assert.equal(typeof installer.installCli, 'function');
     assert.equal(typeof installer.resolveDesktopInstallPlans, 'function');
   });
-  assert.deepEqual(Object.keys(INSTALLERS).sort(), providers.slice().sort());
+  providers.forEach((provider) => assert.ok(Object.prototype.hasOwnProperty.call(INSTALLERS, provider)));
+});
+
+test('ZCode 安装器只提供 Desktop 能力，不暴露 CLI 安装入口', () => {
+  const zcode = getAppInstaller('zcode');
+  assert.ok(zcode);
+  assert.equal(typeof zcode.installCli, 'undefined');
+  assert.equal(typeof zcode.resolveCliInstallPlans, 'undefined');
+  assert.equal(typeof zcode.listCliBinaryNames, 'undefined');
+  assert.equal(typeof zcode.resolveDesktopInstallPlans, 'function');
 });
 
 test('桌面安装参数只来自对应 Provider 安装器', () => {

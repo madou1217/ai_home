@@ -95,3 +95,12 @@ test('desktop install only succeeds after the installed client is rediscovered',
   assert.match(job.attempts[0].error, /未检测到目标 Desktop 应用/);
   assert.equal(job.attempts[1].ok, true);
 });
+
+test('ZCode CLI 安装任务在入口处拒绝，避免把 Desktop 误报为 CLI', () => {
+  const manager = createAppInstallJobManager();
+  assert.equal(manager.canInstall({ provider: 'zcode', kind: 'cli' }), false);
+  assert.deepEqual(manager.start({ provider: 'zcode', kind: 'cli' }), {
+    ok: false,
+    error: 'cli_not_supported'
+  });
+});

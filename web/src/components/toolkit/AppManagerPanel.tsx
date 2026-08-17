@@ -248,7 +248,7 @@ export default function AppManagerPanel() {
                     <Space size={6} wrap>
                       {(app.type === 'cli' || (app.type === 'desktop' && app.installAvailable)) && (
                         <Button size="small" type={app.installed ? 'default' : 'primary'} icon={<DownloadOutlined />} loading={installingApp === app.id} onClick={() => installApp(app)}>
-                          {app.installed ? '更新 / 修复' : '一键安装'}
+                          {app.installed ? '更新' : '安装'}
                         </Button>
                       )}
                       {app.hookSupported && !app.hookInstalled && (

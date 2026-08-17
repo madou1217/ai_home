@@ -141,7 +141,7 @@ test('open-app 端点在桌面缺失时返回 install_required，不在请求内
   assert.equal(body.error, 'install_required');
   assert.equal(body.installTarget.provider, 'zcode');
   assert.equal(body.installTarget.kind, 'desktop');
-  assert.equal(body.installAvailable, false);
+  assert.equal(body.installAvailable, true);
 });
 
 test('app-entries 端点返回按 Provider 分组的布尔入口可用性并命中缓存', async (t) => {
@@ -165,8 +165,7 @@ test('app-entries 端点返回按 Provider 分组的布尔入口可用性并命�
   assert.equal(typeof body.entries.zcode.desktop, 'boolean');
   assert.equal(typeof body.entries.zcode.cli, 'boolean');
   assert.equal(body.capabilities.zcode.desktop, true);
-  assert.equal(body.capabilities.zcode.cli, true);
-  // 未声明 desktopClient 的 Provider 恒为 desktop:false
+  assert.equal(body.capabilities.zcode.cli, false);
   assert.equal(body.entries.kiro.desktop, false);
   assert.ok(Array.isArray(body.runningAccounts), '响应必须带 runningAccounts 数组');
 });

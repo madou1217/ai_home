@@ -28,11 +28,11 @@ const {
   listStrategyBinaryNames
 } = require('../lib/cli/services/ai-cli/native-cli-install-strategies');
 
-test('Strategy registry matches qoder / qodercn / claude', () => {
-  assert.equal(findInstallStrategy('qoder').name, 'qoder:qoder');
-  assert.equal(findInstallStrategy('qodercn').name, 'qoder:qodercn');
+test('Provider installer adapter resolves qoder / qodercn / claude', () => {
+  assert.equal(findInstallStrategy('qoder').name, 'qoder');
+  assert.equal(findInstallStrategy('qodercn').name, 'qodercn');
   assert.equal(findInstallStrategy('claude').name, 'claude');
-  assert.equal(findInstallStrategy('codex'), null);
+  assert.equal(findInstallStrategy('codex').name, 'codex');
 });
 
 test('listProviderBinaryNames returns strategy binary aliases', () => {
@@ -161,10 +161,10 @@ test('ensureNativeCliAvailable auto-installs when missing then re-resolves (win3
   assert.equal(result.cliPath, 'C:\\Users\\example\\.local\\bin\\qoderclicn.exe');
   assert.equal(result.binaryName, 'qoderclicn');
   assert.equal(spawnCalls.length, 1);
-  // Preferred plan is direct (manifest → binary install --force)
-  assert.match(String(spawnCalls[0].args.at(-1) || ''), /static\.qoder\.com\.cn\/qoder-cli-cn|install --force|qoderclicn/);
+  // The provider module owns the official script source.
+  assert.match(String(spawnCalls[0].args.at(-1) || ''), /qoder\.com\.cn\/install|qoderclicn/);
   assert.equal(result.installAttempts[0].ok, true);
-  assert.match(result.installAttempts[0].id, /qoder_cn_windows/);
+  assert.match(result.installAttempts[0].id, /qodercn_windows_official/);
 });
 
 test('ensureNativeCliAvailable auto-installs on posix global region', () => {
@@ -211,15 +211,14 @@ test('ensureNativeCliAvailable does not install when autoInstall=false', () => {
   assert.deepEqual(result.installAttempts, []);
 });
 
-test('resolveNativeCliInstallPlans prefers direct install then official script', () => {
+test('resolveNativeCliInstallPlans delegates to independent provider installers', () => {
   const winGlobal = resolveNativeCliInstallPlans('qoder', '@qoder-ai/qodercli', {
     path,
     hostHomeDir: 'C:\\Users\\example',
     processObj: { platform: 'win32', env: { SystemRoot: 'C:\\Windows' } },
     resolveNpmInstall: () => ({ command: 'npm.cmd', args: ['install', '-g', '@qoder-ai/qodercli'] })
   });
-  assert.equal(winGlobal[0].id, 'qoder_global_windows_direct');
-  assert.ok(winGlobal.some((p) => p.id === 'qoder_global_windows_script'));
+  assert.equal(winGlobal[0].id, 'qoder_windows_official');
   assert.ok(winGlobal.some((p) => p.id === 'npm_global'));
 
   const posixCn = resolveNativeCliInstallPlans('qodercn', '', {
@@ -228,7 +227,7 @@ test('resolveNativeCliInstallPlans prefers direct install then official script',
     processObj: { platform: 'darwin', env: {} }
   });
   assert.ok(posixCn.length >= 1);
-  assert.equal(posixCn[0].id, 'qoder_cn_posix_script');
+  assert.equal(posixCn[0].id, 'qodercn_posix_official');
 });
 
 test('buildCliNotFoundMessage mentions binary and install failure detail', () => {

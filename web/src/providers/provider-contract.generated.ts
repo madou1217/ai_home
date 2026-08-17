@@ -30,7 +30,7 @@ export const PROVIDER_DEFINITIONS = [
         "description": "绑定 OPENAI_API_KEY / OPENAI_BASE_URL。"
       }
     ],
-    "appSupport": {
+    "clients": {
       "cli": true,
       "desktop": true
     }
@@ -63,9 +63,9 @@ export const PROVIDER_DEFINITIONS = [
         "description": "Google Cloud Vertex AI 认证 (暂未接入，先占位)。"
       }
     ],
-    "appSupport": {
+    "clients": {
       "cli": true,
-      "desktop": true
+      "desktop": false
     }
   },
   {
@@ -94,7 +94,7 @@ export const PROVIDER_DEFINITIONS = [
         "description": "绑定 ANTHROPIC_AUTH_TOKEN / ANTHROPIC_BASE_URL。"
       }
     ],
-    "appSupport": {
+    "clients": {
       "cli": true,
       "desktop": true
     }
@@ -115,7 +115,7 @@ export const PROVIDER_DEFINITIONS = [
         "description": "使用 Antigravity CLI 原生 Google 登录流程。"
       }
     ],
-    "appSupport": {
+    "clients": {
       "cli": true,
       "desktop": true
     }
@@ -136,7 +136,7 @@ export const PROVIDER_DEFINITIONS = [
         "description": "使用 OpenCode CLI 原生 auth login 流程。"
       }
     ],
-    "appSupport": {
+    "clients": {
       "cli": true,
       "desktop": true
     }
@@ -162,9 +162,9 @@ export const PROVIDER_DEFINITIONS = [
         "description": "使用 Grok Build CLI 原生 auth login 流程（需 SuperGrok 订阅）。"
       }
     ],
-    "appSupport": {
+    "clients": {
       "cli": true,
-      "desktop": true
+      "desktop": false
     }
   },
   {
@@ -188,7 +188,7 @@ export const PROVIDER_DEFINITIONS = [
         "description": "绑定 QODER_PERSONAL_ACCESS_TOKEN（全球站）。"
       }
     ],
-    "appSupport": {
+    "clients": {
       "cli": true,
       "desktop": true
     }
@@ -214,7 +214,7 @@ export const PROVIDER_DEFINITIONS = [
         "description": "绑定 QODER_PERSONAL_ACCESS_TOKEN（国内站）。"
       }
     ],
-    "appSupport": {
+    "clients": {
       "cli": true,
       "desktop": true
     }
@@ -240,7 +240,7 @@ export const PROVIDER_DEFINITIONS = [
         "description": "使用 Kimi Code CLI 原生 OAuth 设备码流程（需 Kimi 会员订阅）。"
       }
     ],
-    "appSupport": {
+    "clients": {
       "cli": true,
       "desktop": false
     }
@@ -261,9 +261,9 @@ export const PROVIDER_DEFINITIONS = [
         "description": "使用 Kiro CLI Device Flow 认证（支持 Google/GitHub/AWS Builder ID）。"
       }
     ],
-    "appSupport": {
+    "clients": {
       "cli": true,
-      "desktop": false
+      "desktop": true
     }
   },
   {
@@ -287,8 +287,8 @@ export const PROVIDER_DEFINITIONS = [
         "description": "绑定 ZCODE_API_KEY / ZCODE_BASE_URL（支持 open.bigmodel.cn 与 api.z.ai 双 Anthropic 端点）。"
       }
     ],
-    "appSupport": {
-      "cli": true,
+    "clients": {
+      "cli": false,
       "desktop": true
     }
   }
@@ -319,7 +319,7 @@ export interface ProviderCatalogEntry {
   readonly accentVar: string;
   readonly softVar: string;
   readonly tagColor: string;
-  readonly appSupport: { readonly cli: boolean; readonly desktop: boolean };
+  readonly clients: { readonly cli: boolean; readonly desktop: boolean };
 }
 
 /** 按产品顺序排列的 Provider ID。 */
@@ -336,7 +336,7 @@ export const PROVIDER_CATALOG = Object.freeze(Object.fromEntries(
     accentVar: definition.accentVar,
     softVar: definition.softVar,
     tagColor: definition.tagColor,
-    appSupport: definition.appSupport,
+    clients: definition.clients,
   }]),
 ) as Readonly<Record<ProviderId, ProviderCatalogEntry>>);
 
@@ -355,7 +355,7 @@ export const PROVIDER_FALLBACK = {
   "accentVar": "var(--color-brand)",
   "softVar": "var(--color-brand-soft)",
   "tagColor": "blue",
-  "appSupport": {
+  "clients": {
     "cli": false,
     "desktop": false
   }

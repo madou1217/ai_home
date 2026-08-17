@@ -25,6 +25,8 @@ test('桌面安装参数只来自对应 Provider 安装器', () => {
   const codex = getAppInstaller('codex');
   const claude = getAppInstaller('claude');
   const zcode = getAppInstaller('zcode');
+  const gemini = getAppInstaller('gemini');
+  const grok = getAppInstaller('grok');
 
   assert.deepEqual(codex.resolveDesktopInstallPlans({ platform: 'darwin' })[0].args, [
     'install', '--cask', 'chatgpt'
@@ -32,5 +34,7 @@ test('桌面安装参数只来自对应 Provider 安装器', () => {
   assert.deepEqual(claude.resolveDesktopInstallPlans({ platform: 'win32' })[0].args.slice(0, 4), [
     'install', '--id', 'Anthropic.Claude', '--exact'
   ]);
-  assert.deepEqual(zcode.resolveDesktopInstallPlans({ platform: 'darwin' }), []);
+  assert.equal(zcode.resolveDesktopInstallPlans({ platform: 'darwin' })[0].id, 'zcode_desktop_macos_official_page');
+  assert.deepEqual(gemini.resolveDesktopInstallPlans({ platform: 'darwin' }), []);
+  assert.deepEqual(grok.resolveDesktopInstallPlans({ platform: 'darwin' }), []);
 });

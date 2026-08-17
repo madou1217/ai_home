@@ -118,9 +118,9 @@ test('launchAccountApp 对未知 Provider 返回 unsupported_provider', () => {
   assert.equal(result.error, 'unsupported_provider');
 });
 
-test('launchAccountApp 对未声明 DesktopClient 的 Provider 返回 desktop_not_supported', () => {
+test('launchAccountApp 对 clients.desktop=false 的 Provider 返回 desktop_not_supported', () => {
   const { launcher } = createLauncher();
-  const result = launcher.launchAccountApp({ provider: 'kiro', accountRef: ACCOUNT_REF, kind: 'desktop' });
+  const result = launcher.launchAccountApp({ provider: 'gemini', accountRef: ACCOUNT_REF, kind: 'desktop' });
   assert.equal(result.ok, false);
   assert.equal(result.error, 'desktop_not_supported');
 });

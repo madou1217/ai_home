@@ -72,8 +72,19 @@ type Definition struct {
 	Capabilities   []Capability      `json:"capabilities"`
 	AuthOptions    []AuthOption      `json:"authOptions"`
 	SessionSync    SessionSync       `json:"sessionSync"`
+	Clients        ClientSupport     `json:"clients"`
 	CLI            *CLIConfig        `json:"cli,omitempty"`
 	NativeBoundary *NativeCapability `json:"nativeBoundary,omitempty"`
+}
+
+// ClientSupport 是 Provider 面向用户的客户端形态合同。
+//
+// CLIConfig/DesktopClient 保存发现、隔离和运行时细节；Clients 只表达产品
+// 是否应在 Toolkit 和账号入口中呈现对应客户端。两者刻意分离，允许保留
+// 兼容性的内部运行时投影（例如历史桌面内置 CLI），而不把它误报成可安装客户端。
+type ClientSupport struct {
+	CLI     bool `json:"cli"`
+	Desktop bool `json:"desktop"`
 }
 
 // Presentation 保存跨 Server 和 Client 共用的展示元数据。
@@ -110,6 +121,7 @@ type CLIConfig struct {
 	Order                  int            `json:"order"`
 	GlobalDir              string         `json:"globalDir"`
 	ConfigSubDir           string         `json:"configSubDir,omitempty"`
+	ConfigFile             string         `json:"configFile,omitempty"`
 	ConfigAtProjectionRoot bool           `json:"configAtProjectionRoot,omitempty"`
 	LoginArgs              []string       `json:"loginArgs"`
 	BinaryName             string         `json:"binaryName,omitempty"`

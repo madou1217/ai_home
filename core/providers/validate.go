@@ -61,6 +61,12 @@ func validateDefinition(definition Definition) error {
 	if err := validateSessionSync(definition.SessionSync); err != nil {
 		return err
 	}
+	if definition.Clients.CLI && definition.CLI == nil {
+		return errors.New("clients.cli=true 必须声明 cli 配置")
+	}
+	if definition.Clients.Desktop && (definition.CLI == nil || definition.CLI.DesktopClient == nil) {
+		return errors.New("clients.desktop=true 必须声明 desktopClient 配置")
+	}
 	// API-only Provider 可以没有 CLI；只有声明了 CLI 才校验运行时投影字段。
 	if definition.CLI != nil {
 		if strings.TrimSpace(definition.CLI.GlobalDir) == "" {

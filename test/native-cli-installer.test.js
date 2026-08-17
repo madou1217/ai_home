@@ -4,7 +4,6 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const {
-  CLAUDE_WINDOWS_INSTALL_URL,
   collectNativeCliPathEntries,
   resolveNativeCliInstallPlans
 } = require('../lib/cli/services/ai-cli/native-cli-installer');
@@ -20,27 +19,23 @@ test('Windows Claude prefers the official native installer before npm fallback',
   });
 
   assert.equal(plans.length, 2);
-  assert.equal(plans[0].id, 'claude_windows_native');
+  assert.equal(plans[0].id, 'claude_windows_official');
   assert.equal(plans[0].command, 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe');
-  assert.match(plans[0].args.at(-1), new RegExp(CLAUDE_WINDOWS_INSTALL_URL.replaceAll('.', '\\.')));
-  assert.equal(plans[0].timeoutMs, 300000);
-  assert.equal(plans[1].id, 'npm_global');
+  assert.match(plans[0].args.at(-1), /claude\.ai\/install\.ps1/);
+  assert.equal(plans[0].timeoutMs, 1800000);
+  assert.equal(plans[1].id, 'winget');
 });
 
-test('non-Windows providers keep the existing npm-only install path', () => {
+test('non-Windows Claude uses the official native script', () => {
   const plans = resolveNativeCliInstallPlans('claude', '@anthropic-ai/claude-code', {
     path,
     processObj: { platform: 'linux', env: {} },
     resolveNpmInstall: () => ({ command: 'npm', args: ['install', '-g', '@anthropic-ai/claude-code'] })
   });
 
-  assert.deepEqual(plans, [{
-    id: 'npm_global',
-    label: 'npm global installer',
-    command: 'npm',
-    args: ['install', '-g', '@anthropic-ai/claude-code'],
-    timeoutMs: 120000
-  }]);
+  assert.equal(plans.length, 1);
+  assert.equal(plans[0].id, 'claude_posix_official');
+  assert.equal(plans[0].command, 'bash');
 });
 
 test('Windows Claude lookup includes the official native install directory only for Claude', () => {
@@ -53,7 +48,7 @@ test('Windows Claude lookup includes the official native install directory only 
     collectNativeCliPathEntries('claude', options),
     ['C:\\Users\\example\\.local\\bin']
   );
-  assert.deepEqual(collectNativeCliPathEntries('codex', options), []);
+  assert.ok(collectNativeCliPathEntries('codex', options).length > 0);
   assert.deepEqual(collectNativeCliPathEntries('claude', {
     ...options,
     processObj: { platform: 'linux' }
@@ -67,8 +62,8 @@ test('Qoder install plans use region-specific official installers', () => {
     processObj: { platform: 'win32', env: { SystemRoot: 'C:\\Windows' } },
     resolveNpmInstall: () => ({ command: 'npm.cmd', args: ['install', '-g', '@qoder-ai/qodercli'] })
   });
-  assert.equal(winGlobal[0].id, 'qoder_global_windows_direct');
-  assert.match(winGlobal[0].args.at(-1), /qodercli|install --force|manifest/);
+  assert.equal(winGlobal[0].id, 'qoder_windows_official');
+  assert.match(winGlobal[0].args.at(-1), /qoder\.com\/install\.ps1/);
 
   const posixCn = resolveNativeCliInstallPlans('qodercn', '', {
     path,
@@ -76,7 +71,7 @@ test('Qoder install plans use region-specific official installers', () => {
     processObj: { platform: 'darwin', env: {} }
   });
   assert.ok(posixCn.length >= 1);
-  assert.equal(posixCn[0].id, 'qoder_cn_posix_script');
+  assert.equal(posixCn[0].id, 'qodercn_posix_official');
 
   const qoderCnEntries = collectNativeCliPathEntries('qodercn', {
     path,

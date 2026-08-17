@@ -47,9 +47,14 @@
           "Stop"
         ]
       },
+      "clients": {
+        "cli": true,
+        "desktop": true
+      },
       "cli": {
         "order": 4,
         "globalDir": ".codex",
+        "configFile": "config.toml",
         "loginArgs": [
           "login"
         ],
@@ -87,16 +92,6 @@
             "execNames": [
               "ChatGPT.exe",
               "Codex.exe"
-            ]
-          },
-          "linux": {
-            "clientName": "ChatGPT",
-            "execNames": [
-              "ChatGPT",
-              "chatgpt",
-              "Codex",
-              "codex-desktop",
-              "codex-app"
             ]
           }
         }
@@ -199,9 +194,14 @@
           "SessionEnd"
         ]
       },
+      "clients": {
+        "cli": true,
+        "desktop": false
+      },
       "cli": {
         "order": 2,
         "globalDir": ".gemini",
+        "configFile": "settings.json",
         "loginArgs": [
           "auth"
         ],
@@ -209,38 +209,7 @@
         "envKeys": [
           "GEMINI_API_KEY",
           "GOOGLE_API_KEY"
-        ],
-        "desktopClient": {
-          "macos": {
-            "clientName": "Gemini",
-            "execNames": [
-              "Gemini"
-            ],
-            "pathIncludes": [
-              "/Gemini.app/Contents/MacOS/"
-            ],
-            "installPaths": [
-              "/Applications/Gemini.app",
-              "{hostHomeDir}/Applications/Gemini.app"
-            ]
-          },
-          "windows": {
-            "clientName": "Gemini",
-            "processNames": [
-              "Gemini.exe"
-            ],
-            "execNames": [
-              "Gemini.exe"
-            ]
-          },
-          "linux": {
-            "clientName": "Gemini",
-            "execNames": [
-              "Gemini",
-              "gemini-desktop"
-            ]
-          }
-        }
+        ]
       },
       "nativeBoundary": {
         "config": {
@@ -344,9 +313,14 @@
           "SessionEnd"
         ]
       },
+      "clients": {
+        "cli": true,
+        "desktop": true
+      },
       "cli": {
         "order": 3,
         "globalDir": ".claude",
+        "configFile": "settings.json",
         "loginArgs": [
           "setup-token"
         ],
@@ -379,13 +353,6 @@
             ],
             "execNames": [
               "Claude.exe"
-            ]
-          },
-          "linux": {
-            "clientName": "Claude",
-            "execNames": [
-              "Claude",
-              "claude-desktop"
             ]
           }
         }
@@ -483,10 +450,15 @@
           "Stop"
         ]
       },
+      "clients": {
+        "cli": true,
+        "desktop": true
+      },
       "cli": {
         "order": 1,
         "globalDir": ".gemini",
         "configSubDir": "antigravity-cli",
+        "configFile": "hooks.json",
         "loginArgs": [],
         "pkg": "",
         "envKeys": [
@@ -609,9 +581,14 @@
         "targetKind": "plugin.js",
         "events": []
       },
+      "clients": {
+        "cli": true,
+        "desktop": true
+      },
       "cli": {
         "order": 5,
         "globalDir": ".config/opencode",
+        "configFile": "opencode.json",
         "loginArgs": [
           "auth",
           "login"
@@ -692,9 +669,14 @@
           "SessionEnd"
         ]
       },
+      "clients": {
+        "cli": true,
+        "desktop": false
+      },
       "cli": {
         "order": 6,
         "globalDir": ".grok",
+        "configFile": "settings.json",
         "loginArgs": [
           "login",
           "--oauth"
@@ -705,38 +687,7 @@
           "GROK_HOME",
           "XAI_API_KEY",
           "XAI_BASE_URL"
-        ],
-        "desktopClient": {
-          "macos": {
-            "clientName": "Grok",
-            "execNames": [
-              "Grok"
-            ],
-            "pathIncludes": [
-              "/Grok.app/Contents/MacOS/"
-            ],
-            "installPaths": [
-              "/Applications/Grok.app",
-              "{hostHomeDir}/Applications/Grok.app"
-            ]
-          },
-          "windows": {
-            "clientName": "Grok",
-            "processNames": [
-              "Grok.exe"
-            ],
-            "execNames": [
-              "Grok.exe"
-            ]
-          },
-          "linux": {
-            "clientName": "Grok",
-            "execNames": [
-              "grok",
-              "grok-build"
-            ]
-          }
-        }
+        ]
       },
       "nativeBoundary": {
         "config": {
@@ -824,9 +775,14 @@
         "mode": "polling",
         "events": []
       },
+      "clients": {
+        "cli": true,
+        "desktop": true
+      },
       "cli": {
         "order": 7,
         "globalDir": ".qoder",
+        "configFile": "config.json",
         "configAtProjectionRoot": true,
         "loginArgs": [
           "login"
@@ -904,9 +860,14 @@
         "mode": "polling",
         "events": []
       },
+      "clients": {
+        "cli": true,
+        "desktop": true
+      },
       "cli": {
         "order": 8,
         "globalDir": ".qoder-cn",
+        "configFile": "config.json",
         "configAtProjectionRoot": true,
         "loginArgs": [
           "login"
@@ -988,9 +949,14 @@
         "mode": "unavailable",
         "events": []
       },
+      "clients": {
+        "cli": true,
+        "desktop": false
+      },
       "cli": {
         "order": 9,
         "globalDir": ".kimi-code",
+        "configFile": "config.toml",
         "loginArgs": [
           "login"
         ],
@@ -1070,9 +1036,14 @@
         "mode": "polling",
         "events": []
       },
+      "clients": {
+        "cli": true,
+        "desktop": true
+      },
       "cli": {
         "order": 10,
         "globalDir": ".kiro",
+        "configFile": "config.json",
         "loginArgs": [
           "login",
           "--license",
@@ -1085,7 +1056,38 @@
           "KIRO_HOME",
           "KIRO_TEST_DB_PATH",
           "KIRO_API_KEY"
-        ]
+        ],
+        "desktopClient": {
+          "macos": {
+            "clientName": "Kiro",
+            "execNames": [
+              "Kiro"
+            ],
+            "pathIncludes": [
+              "/Kiro.app/Contents/MacOS/"
+            ],
+            "installPaths": [
+              "/Applications/Kiro.app",
+              "{hostHomeDir}/Applications/Kiro.app"
+            ]
+          },
+          "windows": {
+            "clientName": "Kiro",
+            "processNames": [
+              "Kiro.exe"
+            ],
+            "execNames": [
+              "Kiro.exe"
+            ]
+          },
+          "linux": {
+            "clientName": "Kiro",
+            "execNames": [
+              "kiro",
+              "Kiro"
+            ]
+          }
+        }
       },
       "nativeBoundary": {
         "config": {
@@ -1162,6 +1164,10 @@
       "sessionSync": {
         "mode": "unavailable",
         "events": []
+      },
+      "clients": {
+        "cli": false,
+        "desktop": true
       },
       "cli": {
         "order": 11,

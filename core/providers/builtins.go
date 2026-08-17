@@ -42,6 +42,7 @@ func builtinCodex() Definition {
 		ID:           "codex",
 		Presentation: presentation("codex", "ChatGPT", "GPT", "◎", "green"),
 		Gateway:      GatewayActive,
+		Clients:      clientSupport(true, true),
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeOAuthBrowser, "ChatGPT / OpenAI 登录", "打开授权链接，授权后把回调地址提交给 WebUI。"),
@@ -55,11 +56,12 @@ func builtinCodex() Definition {
 			Events:     []string{"SessionStart", "UserPromptSubmit", "Stop"},
 		},
 		CLI: &CLIConfig{
-			Order:     4,
-			GlobalDir: ".codex",
-			LoginArgs: []string{"login"},
-			Package:   "@openai/codex",
-			EnvKeys:   []string{"OPENAI_API_KEY", "OPENAI_BASE_URL"},
+			Order:      4,
+			GlobalDir:  ".codex",
+			ConfigFile: "config.toml",
+			LoginArgs:  []string{"login"},
+			Package:    "@openai/codex",
+			EnvKeys:    []string{"OPENAI_API_KEY", "OPENAI_BASE_URL"},
 			DesktopClient: &DesktopClient{
 				UserDataEnvKey: "CODEX_ELECTRON_USER_DATA_PATH",
 				MacOS: &DesktopPlatform{
@@ -79,10 +81,6 @@ func builtinCodex() Definition {
 					ProcessNames: []string{"ChatGPT.exe", "Codex.exe"},
 					ExecNames:    []string{"ChatGPT.exe", "Codex.exe"},
 				},
-				Linux: &DesktopPlatform{
-					ClientName: "ChatGPT",
-					ExecNames:  []string{"ChatGPT", "chatgpt", "Codex", "codex-desktop", "codex-app"},
-				},
 			},
 		},
 		NativeBoundary: nativeCodex(),
@@ -95,6 +93,7 @@ func builtinGemini() Definition {
 		ID:           "gemini",
 		Presentation: presentation("gemini", "Gemini", "GM", "✦", "blue"),
 		Gateway:      GatewayDeprecated,
+		Clients:      clientSupport(true, false),
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage},
 		AuthOptions: []AuthOption{
 			disabledAuthOption(
@@ -113,20 +112,12 @@ func builtinGemini() Definition {
 			Events:     []string{"SessionStart", "BeforeAgent", "AfterAgent", "SessionEnd"},
 		},
 		CLI: &CLIConfig{
-			Order:     2,
-			GlobalDir: ".gemini",
-			LoginArgs: []string{"auth"},
-			Package:   "@google/gemini-cli",
-			EnvKeys:   []string{"GEMINI_API_KEY", "GOOGLE_API_KEY"},
-			DesktopClient: desktopClient(
-				"Gemini",
-				[]string{"Gemini"},
-				[]string{"/Gemini.app/Contents/MacOS/"},
-				[]string{"/Applications/Gemini.app", "{hostHomeDir}/Applications/Gemini.app"},
-				[]string{"Gemini.exe"},
-				[]string{"Gemini.exe"},
-				[]string{"Gemini", "gemini-desktop"},
-			),
+			Order:      2,
+			GlobalDir:  ".gemini",
+			ConfigFile: "settings.json",
+			LoginArgs:  []string{"auth"},
+			Package:    "@google/gemini-cli",
+			EnvKeys:    []string{"GEMINI_API_KEY", "GOOGLE_API_KEY"},
 		},
 		NativeBoundary: nativeGemini(),
 	}
@@ -139,6 +130,7 @@ func builtinClaude() Definition {
 		ID:           "claude",
 		Presentation: presentation("claude", "Claude", "CL", "◇", "orange"),
 		Gateway:      GatewayActive,
+		Clients:      clientSupport(true, true),
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeOAuthBrowser, "Claude 登录", "使用 Claude Code 原生 login 流程（Claude.ai 凭据）。"),
@@ -152,11 +144,12 @@ func builtinClaude() Definition {
 			Events:     []string{"SessionStart", "UserPromptSubmit", "Stop", "StopFailure", "SessionEnd"},
 		},
 		CLI: &CLIConfig{
-			Order:     3,
-			GlobalDir: ".claude",
-			LoginArgs: []string{"setup-token"},
-			Package:   "@anthropic-ai/claude-code",
-			EnvKeys:   []string{"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL"},
+			Order:      3,
+			GlobalDir:  ".claude",
+			ConfigFile: "settings.json",
+			LoginArgs:  []string{"setup-token"},
+			Package:    "@anthropic-ai/claude-code",
+			EnvKeys:    []string{"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL"},
 			DesktopClient: &DesktopClient{
 				ReloadsHostAuth: &reloadsHostAuth,
 				UserDataEnvKey:  "CLAUDE_USER_DATA_DIR",
@@ -171,10 +164,6 @@ func builtinClaude() Definition {
 					ProcessNames: []string{"Claude.exe"},
 					ExecNames:    []string{"Claude.exe"},
 				},
-				Linux: &DesktopPlatform{
-					ClientName: "Claude",
-					ExecNames:  []string{"Claude", "claude-desktop"},
-				},
 			},
 		},
 		NativeBoundary: nativeClaude(),
@@ -187,6 +176,7 @@ func builtinAntigravity() Definition {
 		ID:           "agy",
 		Presentation: presentation("agy", "Antigravity", "AGY", "▲", "purple"),
 		Gateway:      GatewayActive,
+		Clients:      clientSupport(true, true),
 		Capabilities: []Capability{CapabilityModelCatalog, CapabilityQuotaUsage},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeOAuthBrowser, "Antigravity 登录", "使用 Antigravity CLI 原生 Google 登录流程。"),
@@ -201,6 +191,7 @@ func builtinAntigravity() Definition {
 			Order:        1,
 			GlobalDir:    ".gemini",
 			ConfigSubDir: "antigravity-cli",
+			ConfigFile:   "hooks.json",
 			LoginArgs:    []string{},
 			Package:      "",
 			EnvKeys:      []string{"AGY_ACCESS_TOKEN", "GOOGLE_OAUTH_ACCESS_TOKEN"},
@@ -224,6 +215,7 @@ func builtinOpenCode() Definition {
 		ID:           "opencode",
 		Presentation: presentation("opencode", "OpenCode", "OC", "⌘", "default"),
 		Gateway:      GatewayActive,
+		Clients:      clientSupport(true, true),
 		Capabilities: []Capability{CapabilityModelCatalog},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeOAuthBrowser, "OpenCode 登录", "使用 OpenCode CLI 原生 auth login 流程。"),
@@ -235,11 +227,12 @@ func builtinOpenCode() Definition {
 			Events:     []string{},
 		},
 		CLI: &CLIConfig{
-			Order:     5,
-			GlobalDir: ".config/opencode",
-			LoginArgs: []string{"auth", "login"},
-			Package:   "opencode-ai",
-			EnvKeys:   []string{},
+			Order:      5,
+			GlobalDir:  ".config/opencode",
+			ConfigFile: "opencode.json",
+			LoginArgs:  []string{"auth", "login"},
+			Package:    "opencode-ai",
+			EnvKeys:    []string{},
 			DesktopClient: desktopClient(
 				"OpenCode",
 				[]string{"OpenCode"},
@@ -259,6 +252,7 @@ func builtinGrok() Definition {
 		ID:           "grok",
 		Presentation: presentation("grok", "Grok", "GK", "⚡", "cyan"),
 		Gateway:      GatewayActive,
+		Clients:      clientSupport(true, false),
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeAPIKey, "xAI 密钥", "绑定 XAI_API_KEY / XAI_BASE_URL。"),
@@ -273,19 +267,11 @@ func builtinGrok() Definition {
 		CLI: &CLIConfig{
 			Order:      6,
 			GlobalDir:  ".grok",
+			ConfigFile: "settings.json",
 			LoginArgs:  []string{"login", "--oauth"},
 			BinaryName: "grok",
 			Package:    "",
 			EnvKeys:    []string{"GROK_HOME", "XAI_API_KEY", "XAI_BASE_URL"},
-			DesktopClient: desktopClient(
-				"Grok",
-				[]string{"Grok"},
-				[]string{"/Grok.app/Contents/MacOS/"},
-				[]string{"/Applications/Grok.app", "{hostHomeDir}/Applications/Grok.app"},
-				[]string{"Grok.exe"},
-				[]string{"Grok.exe"},
-				[]string{"grok", "grok-build"},
-			),
 		},
 		NativeBoundary: nativeGrok(),
 	}
@@ -297,6 +283,7 @@ func builtinQoder() Definition {
 		ID:           "qoder",
 		Presentation: presentation("qoder", "Qoder", "QD", "◆", "blue"),
 		Gateway:      GatewayActive,
+		Clients:      clientSupport(true, true),
 		Capabilities: []Capability{CapabilityModelCatalog},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeOAuthBrowser, "Qoder 登录", "使用 Qoder CLI 原生 browser login 流程（全球站 qodercli）。"),
@@ -306,6 +293,7 @@ func builtinQoder() Definition {
 		CLI: &CLIConfig{
 			Order:                  7,
 			GlobalDir:              ".qoder",
+			ConfigFile:             "config.json",
 			ConfigAtProjectionRoot: true,
 			LoginArgs:              []string{"login"},
 			BinaryName:             "qodercli",
@@ -332,6 +320,7 @@ func builtinQoderCN() Definition {
 		ID:           "qodercn",
 		Presentation: presentation("qodercn", "Qoder CN", "QCN", "◇", "purple"),
 		Gateway:      GatewayActive,
+		Clients:      clientSupport(true, true),
 		Capabilities: []Capability{CapabilityModelCatalog},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeOAuthBrowser, "Qoder CN 登录", "使用 Qoder CLI CN 原生 browser login 流程（qoderclicn）。"),
@@ -341,6 +330,7 @@ func builtinQoderCN() Definition {
 		CLI: &CLIConfig{
 			Order:                  8,
 			GlobalDir:              ".qoder-cn",
+			ConfigFile:             "config.json",
 			ConfigAtProjectionRoot: true,
 			LoginArgs:              []string{"login"},
 			BinaryName:             "qoderclicn",
@@ -369,6 +359,7 @@ func builtinKimi() Definition {
 		ID:           "kimi",
 		Presentation: presentation("kimi", "Kimi", "KM", "☾", "geekblue"),
 		Gateway:      GatewayActive,
+		Clients:      clientSupport(true, false),
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeAPIKey, "Moonshot 密钥", "绑定 MOONSHOT_API_KEY / KIMI_BASE_URL（支持 api.moonshot.cn 和 api.moonshot.ai 双端点）。"),
@@ -376,11 +367,12 @@ func builtinKimi() Definition {
 		},
 		SessionSync: SessionSync{Mode: SessionSyncUnavailable, Events: []string{}},
 		CLI: &CLIConfig{
-			Order:     9,
-			GlobalDir: ".kimi-code",
-			LoginArgs: []string{"login"},
-			Package:   "@moonshot-ai/kimi-code",
-			EnvKeys:   []string{"MOONSHOT_API_KEY", "KIMI_BASE_URL", "KIMI_CODE_HOME"},
+			Order:      9,
+			GlobalDir:  ".kimi-code",
+			ConfigFile: "config.toml",
+			LoginArgs:  []string{"login"},
+			Package:    "@moonshot-ai/kimi-code",
+			EnvKeys:    []string{"MOONSHOT_API_KEY", "KIMI_BASE_URL", "KIMI_CODE_HOME"},
 		},
 		NativeBoundary: nativeKimi(),
 	}
@@ -392,6 +384,7 @@ func builtinKiro() Definition {
 		ID:           "kiro",
 		Presentation: presentation("kiro", "Kiro", "KR", "⬡", "volcano"),
 		Gateway:      GatewayActive,
+		Clients:      clientSupport(true, true),
 		Capabilities: []Capability{CapabilityModelCatalog},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeOAuthBrowser, "AWS Builder ID 登录", "使用 Kiro CLI Device Flow 认证（支持 Google/GitHub/AWS Builder ID）。"),
@@ -400,10 +393,20 @@ func builtinKiro() Definition {
 		CLI: &CLIConfig{
 			Order:      10,
 			GlobalDir:  ".kiro",
+			ConfigFile: "config.json",
 			LoginArgs:  []string{"login", "--license", "free", "--use-device-flow"},
 			BinaryName: "kiro-cli",
 			Package:    "",
 			EnvKeys:    []string{"KIRO_HOME", "KIRO_TEST_DB_PATH", "KIRO_API_KEY"},
+			DesktopClient: desktopClient(
+				"Kiro",
+				[]string{"Kiro"},
+				[]string{"/Kiro.app/Contents/MacOS/"},
+				[]string{"/Applications/Kiro.app", "{hostHomeDir}/Applications/Kiro.app"},
+				[]string{"Kiro.exe"},
+				[]string{"Kiro.exe"},
+				[]string{"kiro", "Kiro"},
+			),
 		},
 		NativeBoundary: nativeKiro(),
 	}
@@ -417,6 +420,7 @@ func builtinZcode() Definition {
 		ID:           "zcode",
 		Presentation: presentation("zcode", "ZCode", "ZC", "◈", "geekblue"),
 		Gateway:      GatewayActive,
+		Clients:      clientSupport(false, true),
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeOAuthBrowser, "ZCode 登录", "使用 ZCode CLI 原生 zcode login 流程（Z.AI 账号，OAuth 凭据捕获到 AIH）。"),
@@ -441,6 +445,11 @@ func builtinZcode() Definition {
 			),
 		},
 	}
+}
+
+// clientSupport 是面向产品的客户端形态构造器；安装器和 Toolkit 只读取该合同。
+func clientSupport(cli, desktop bool) ClientSupport {
+	return ClientSupport{CLI: cli, Desktop: desktop}
 }
 
 // presentation 统一构造 Provider 的展示字段，避免十处重复资产命名规则。

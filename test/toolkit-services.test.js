@@ -62,6 +62,10 @@ test('app-manager getProviderConfigPath resolves known provider paths', () => {
   assert.ok(claudePath.includes('.claude'));
   const codexPath = getProviderConfigPath('codex', hostHome);
   assert.ok(codexPath.includes('.codex'));
+  const kimiPath = getProviderConfigPath('kimi', hostHome);
+  assert.equal(kimiPath, '/fake/home/.kimi-code/config.toml');
+  const antigravityPath = getProviderConfigPath('agy', hostHome);
+  assert.equal(antigravityPath, '/fake/home/.gemini/antigravity-cli/hooks.json');
 });
 
 test('app-manager normalizes editable config formats across platforms', () => {
@@ -74,21 +78,13 @@ test('app-manager normalizes editable config formats across platforms', () => {
   assert.equal(getConfigFormat('/opt/example/unknown.conf'), 'conf');
 });
 
-test('app-manager resolves the merged ChatGPT desktop executable on Windows and Linux', () => {
-  const cases = [
-    {
-      platform: 'win32',
-      hostHomeDir: 'C:\\Users\\tester',
-      env: { LOCALAPPDATA: 'C:\\Users\\tester\\AppData\\Local' },
-      target: 'C:\\Users\\tester\\AppData\\Local\\Programs\\ChatGPT\\ChatGPT.exe'
-    },
-    {
-      platform: 'linux',
-      hostHomeDir: '/home/tester',
-      env: {},
-      target: '/usr/bin/ChatGPT'
-    }
-  ];
+test('app-manager resolves the merged ChatGPT desktop executable on Windows', () => {
+  const cases = [{
+    platform: 'win32',
+    hostHomeDir: 'C:\\Users\\tester',
+    env: { LOCALAPPDATA: 'C:\\Users\\tester\\AppData\\Local' },
+    target: 'C:\\Users\\tester\\AppData\\Local\\Programs\\ChatGPT\\ChatGPT.exe'
+  }];
 
   for (const item of cases) {
     const record = findDesktopClientRecord('codex', {

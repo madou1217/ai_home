@@ -53,6 +53,8 @@ test('CLI 和原生能力注册表都从同一合同派生', () => {
   for (const definition of cliDefinitions) {
     assert.deepEqual(AI_CLI_CONFIGS[definition.id], omitOrder(definition.cli));
   }
+  assert.equal(AI_CLI_CONFIGS.codex.configFile, 'config.toml');
+  assert.equal(AI_CLI_CONFIGS.kimi.configFile, 'config.toml');
 
   assert.deepEqual(
     Object.keys(PROVIDER_NATIVE_CAPABILITIES),
@@ -66,6 +68,17 @@ test('CLI 和原生能力注册表都从同一合同派生', () => {
   }
 });
 
+test('客户端形态由统一 clients 合同声明，不由 CLI 细节推断', () => {
+  const byId = Object.fromEntries(manifest.providers.map((provider) => [provider.id, provider]));
+  assert.deepEqual(byId.codex.clients, { cli: true, desktop: true });
+  assert.deepEqual(byId.gemini.clients, { cli: true, desktop: false });
+  assert.deepEqual(byId.grok.clients, { cli: true, desktop: false });
+  assert.deepEqual(byId.kiro.clients, { cli: true, desktop: true });
+  assert.deepEqual(byId.zcode.clients, { cli: false, desktop: true });
+  assert.equal(byId.gemini.cli.desktopClient, undefined);
+  assert.equal(byId.grok.cli.desktopClient, undefined);
+});
+
 test('Qoder 桌面进程识别不会把命令行进程当作桌面客户端', () => {
   const qoder = AI_CLI_CONFIGS.qoder;
 
@@ -73,13 +86,11 @@ test('Qoder 桌面进程识别不会把命令行进程当作桌面客户端', ()
   assert.deepEqual(qoder.desktopClient.windows.execNames, ['Qoder.exe', 'qodercli.exe']);
 });
 
-test('Codex Desktop contract recognizes the merged ChatGPT executable on Windows and Linux', () => {
+test('Codex Desktop contract recognizes the merged ChatGPT executable on Windows', () => {
   const codex = AI_CLI_CONFIGS.codex;
 
   assert.equal(codex.desktopClient.macos.clientName, 'ChatGPT');
   assert.equal(codex.desktopClient.userDataEnvKey, 'CODEX_ELECTRON_USER_DATA_PATH');
   assert.ok(codex.desktopClient.windows.processNames.includes('ChatGPT.exe'));
   assert.ok(codex.desktopClient.windows.execNames.includes('ChatGPT.exe'));
-  assert.ok(codex.desktopClient.linux.execNames.includes('ChatGPT'));
-  assert.ok(codex.desktopClient.linux.execNames.includes('chatgpt'));
 });

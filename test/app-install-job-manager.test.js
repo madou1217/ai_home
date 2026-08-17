@@ -73,3 +73,25 @@ test('app install job exposes failed result without throwing into the HTTP calle
   assert.equal(job.status, 'failed');
   assert.match(job.error, /permission denied/);
 });
+
+test('desktop install only succeeds after the installed client is rediscovered', async () => {
+  const verificationResults = [null, { executablePath: '/Applications/OpenCode.app' }];
+  const manager = createAppInstallJobManager({
+    resolveDesktopInstallPlans: () => [
+      { id: 'official-first', label: 'official first', command: 'installer', args: [] },
+      { id: 'official-fallback', label: 'official fallback', command: 'installer', args: [] }
+    ],
+    runInstallPlan: async () => ({ ok: true, status: 0 }),
+    verifyDesktopInstall: async () => verificationResults.shift()
+  });
+
+  const started = manager.start({ provider: 'opencode', kind: 'desktop' });
+  await waitFor(() => manager.getJob(started.job.id)?.status === 'succeeded');
+  const job = manager.getJob(started.job.id);
+  assert.equal(job.status, 'succeeded');
+  assert.equal(job.result.executablePath, '/Applications/OpenCode.app');
+  assert.equal(job.attempts.length, 2);
+  assert.equal(job.attempts[0].ok, false);
+  assert.match(job.attempts[0].error, /未检测到目标 Desktop 应用/);
+  assert.equal(job.attempts[1].ok, true);
+});

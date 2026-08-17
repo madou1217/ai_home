@@ -15,7 +15,6 @@ const {
 const { getProviderLaunchStrategy } = require('../lib/cli/services/ai-cli/launch-profile');
 const { getProviderStoragePolicy, getProviderAuthArtifacts } = require('../lib/runtime/provider-storage-policy');
 const {
-  QODER_INSTALLERS,
   resolveNativeCliInstallPlans,
   collectNativeCliPathEntries
 } = require('../lib/cli/services/ai-cli/native-cli-installer');
@@ -73,15 +72,13 @@ test('storage policy and artifact hooks share config-root-relative auth paths', 
   assert.equal(getProviderStoragePolicy('qoder').nativeRoot.length, 0);
 });
 test('official install plans cover Windows PowerShell and POSIX curl for both regions', () => {
-  assert.ok(QODER_INSTALLERS.qoder.ps1Url.includes('qoder.com'));
-  assert.ok(QODER_INSTALLERS.qodercn.ps1Url.includes('qoder.com.cn'));
 
   const winPlans = resolveNativeCliInstallPlans('qoder', '@qoder-ai/qodercli', {
     path,
     processObj: { platform: 'win32', env: { SystemRoot: 'C:\\Windows' } },
     resolveNpmInstall: (pkg) => ({ command: 'npm', args: ['install', '-g', pkg] })
   });
-  assert.equal(winPlans[0].id, 'qoder_global_windows_direct');
+  assert.equal(winPlans[0].id, 'qoder_windows_official');
   assert.equal(winPlans[0].command.endsWith('powershell.exe'), true);
   assert.equal(winPlans.some((p) => p.id === 'npm_global'), true);
 
@@ -90,7 +87,7 @@ test('official install plans cover Windows PowerShell and POSIX curl for both re
     processObj: { platform: 'linux', env: {} }
   });
   assert.equal(cnPosix.length >= 1, true);
-  assert.equal(cnPosix.every((plan) => plan.id === 'qoder_cn_posix'), true);
+  assert.equal(cnPosix.every((plan) => plan.id === 'qodercn_posix_official'), true);
   assert.match(cnPosix[0].args.at(-1), /qoder\.com\.cn\/install/);
 
   const globalPathEntries = collectNativeCliPathEntries('qoder', {

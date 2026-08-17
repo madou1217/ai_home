@@ -30,15 +30,18 @@ export interface AccountTokenUsageModel {
   day: number;
   week: number;
   month: number;
+  total: number;
   dayCostUsd: number | null;
   weekCostUsd: number | null;
   monthCostUsd: number | null;
+  totalCostUsd: number | null;
 }
 
 export interface AccountTokenUsage {
   day: number;
   week: number;
   month: number;
+  total: number;
   models: AccountTokenUsageModel[];
 }
 
@@ -1311,8 +1314,14 @@ export interface ManagedAppItem {
   supportedModels: string[];
   hookSupported: boolean;
   hookInstalled: boolean;
+  hookReason?: string;
+  hookMissingEvents?: string[];
   syncMode: 'hook' | 'polling' | 'unavailable';
   installAvailable?: boolean;
+  canUpdate?: boolean;
+  canUninstall?: boolean;
+  updateReason?: string;
+  uninstallReason?: string;
 }
 
 export interface ManagedAppsResponse {
@@ -1329,7 +1338,7 @@ export interface AppInstallJob {
   appId: string;
   provider: string;
   kind: 'cli' | 'desktop' | 'terminal' | string;
-  action?: string;
+  action?: 'install' | 'update' | 'uninstall' | string;
   status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | string;
   phase: string;
   progress: { percent: number; label: string };

@@ -88,7 +88,7 @@ test('model usage scan scheduler runs startup and interval scans without overlap
   assert.equal(intervals[0].unrefCalled, true);
 
   await timeouts[0].fn();
-  assert.deepEqual(calls, ['scan', 'pricing', 'token:day,week,month']);
+  assert.deepEqual(calls, ['scan', 'pricing', 'token:day,week,month,total']);
   assert.deepEqual(tokenUsageUpdates[0].usage, {
     acct_0123456789abcdefabcd: {
       day: 500,
@@ -97,7 +97,7 @@ test('model usage scan scheduler runs startup and interval scans without overlap
       models: [{ model: 'gpt-5.1', day: 500, week: 500, month: 500 }]
     }
   });
-  assert.deepEqual(tokenUsageUpdates[0].options.dimensions, ['day', 'week', 'month']);
+  assert.deepEqual(tokenUsageUpdates[0].options.dimensions, ['day', 'week', 'month', 'total']);
   assert.equal(scheduler.getState().scanCount, 1);
   assert.equal(logs.some((line) => line.includes('startup')), true);
 
@@ -105,10 +105,10 @@ test('model usage scan scheduler runs startup and interval scans without overlap
   assert.deepEqual(calls, [
     'scan',
     'pricing',
-    'token:day,week,month',
+    'token:day,week,month,total',
     'scan',
     'pricing',
-    'token:day,week,month'
+    'token:day,week,month,total'
   ]);
   assert.equal(tokenUsageUpdates.length, 2);
   assert.equal(scheduler.getState().scanCount, 2);

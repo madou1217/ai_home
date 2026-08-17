@@ -23,6 +23,7 @@ const {
   parseModelUsageArgs,
   __private: modelAccountingPrivate
 } = require('../lib/cli/services/usage/model-accounting');
+const { normalizeAccountTokenUsageValue } = require('../lib/usage/account-token-usage');
 
 function requireDatabaseSync(t) {
   try {
@@ -330,7 +331,7 @@ test('model usage records accept only accountRef as the runtime account key', ()
   });
 });
 
-test('model usage aggregates account tokens by local day, Monday week, and calendar month', (t) => {
+test('model usage aggregates account tokens by local day, Monday week, calendar month, and all-time total', (t) => {
   const fixture = makeService(t, { enableAsyncQueries: false });
   if (!fixture) return;
   const { service } = fixture;
@@ -390,11 +391,13 @@ test('model usage aggregates account tokens by local day, Monday week, and calen
     }
   ]);
 
+  // 月窗口之外的那条 4_000 记录只会出现在 total 里，正是「总」这一维要表达的语义。
   assert.deepEqual(service.getAccountTokenUsage({ nowMs }), {
     [accountA]: {
       day: 500,
       week: 4_000,
       month: 6_000,
+      total: 10_000,
       models: [
         {
           model: 'gpt-5.1',
@@ -403,7 +406,9 @@ test('model usage aggregates account tokens by local day, Monday week, and calen
           week: 1_500,
           weekCostUsd: null,
           month: 3_500,
-          monthCostUsd: null
+          monthCostUsd: null,
+          total: 7_500,
+          totalCostUsd: null
         },
         {
           model: 'gpt-5.6-luna',
@@ -412,7 +417,9 @@ test('model usage aggregates account tokens by local day, Monday week, and calen
           week: 2_500,
           weekCostUsd: null,
           month: 2_500,
-          monthCostUsd: null
+          monthCostUsd: null,
+          total: 2_500,
+          totalCostUsd: null
         }
       ]
     },
@@ -420,6 +427,7 @@ test('model usage aggregates account tokens by local day, Monday week, and calen
       day: 3_000,
       week: 3_000,
       month: 3_000,
+      total: 3_000,
       models: [{
         model: 'claude-sonnet',
         day: 3_000,
@@ -427,7 +435,9 @@ test('model usage aggregates account tokens by local day, Monday week, and calen
         week: 3_000,
         weekCostUsd: null,
         month: 3_000,
-        monthCostUsd: null
+        monthCostUsd: null,
+        total: 3_000,
+        totalCostUsd: null
       }]
     }
   });
@@ -543,6 +553,7 @@ test('model usage aggregates stored model costs and marks unpriced periods unava
       day: 160,
       week: 360,
       month: 460,
+      total: 460,
       models: [
         {
           model: 'gpt-priced',
@@ -551,7 +562,9 @@ test('model usage aggregates stored model costs and marks unpriced periods unava
           week: 350,
           weekCostUsd: 0.4,
           month: 450,
-          monthCostUsd: 0.6000000000000001
+          monthCostUsd: 0.6000000000000001,
+          total: 450,
+          totalCostUsd: 0.6000000000000001
         },
         {
           model: 'gpt-unpriced',
@@ -560,11 +573,30 @@ test('model usage aggregates stored model costs and marks unpriced periods unava
           week: 10,
           weekCostUsd: null,
           month: 10,
-          monthCostUsd: null
+          monthCostUsd: null,
+          total: 10,
+          totalCostUsd: null
         }
       ]
     }
   });
+});
+
+test('account token usage keeps recently used models ahead of history-only models', () => {
+  // models[] 的顺序同时决定 Tooltip 行序和柱子配色下标；只在历史上跑过的模型
+  // 不能因为累计量大就抢到第一个色位，否则日/周/月三根柱子的配色会无故换人。
+  const usage = normalizeAccountTokenUsageValue({
+    day: 100,
+    week: 100,
+    month: 100,
+    total: 1_100,
+    models: [
+      { model: 'recent', day: 100, week: 100, month: 100, total: 100 },
+      { model: 'history-only', day: 0, week: 0, month: 0, total: 1_000 }
+    ]
+  });
+
+  assert.deepEqual(usage.models.map((model) => model.model), ['recent', 'history-only']);
 });
 
 test('model usage records reject events without a model identity', () => {

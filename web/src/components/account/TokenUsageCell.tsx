@@ -1,10 +1,11 @@
+import type { CSSProperties } from 'react';
 import { Tooltip } from 'antd';
 import type { AccountTokenUsage, AccountTokenUsageModel } from '@/types';
 import './TokenUsageCell.css';
 
 type TokenUsageValue = number | null;
-type TokenUsageDimension = 'day' | 'week' | 'month';
-type TokenUsageCostKey = 'dayCostUsd' | 'weekCostUsd' | 'monthCostUsd';
+type TokenUsageDimension = 'day' | 'week' | 'month' | 'total';
+type TokenUsageCostKey = 'dayCostUsd' | 'weekCostUsd' | 'monthCostUsd' | 'totalCostUsd';
 
 const TOKEN_USAGE_PERIODS: readonly {
   key: TokenUsageDimension;
@@ -13,12 +14,18 @@ const TOKEN_USAGE_PERIODS: readonly {
 }[] = [
   { key: 'day', label: '日', hint: '当天' },
   { key: 'week', label: '周', hint: '本周' },
-  { key: 'month', label: '月', hint: '本月' }
+  { key: 'month', label: '月', hint: '本月' },
+  { key: 'total', label: '总', hint: '累计' }
 ];
 
 const TOKEN_CHART_BASELINE = 33;
 const TOKEN_CHART_MAX_HEIGHT = 28;
 const TOKEN_CHART_BAR_WIDTH = 14;
+const TOKEN_CHART_SLOT_WIDTH = 52;
+const TOKEN_CHART_EDGE = 8;
+// 图表几何完全由周期数量推导，加减一个维度不用再手改坐标。
+const TOKEN_CHART_WIDTH = TOKEN_USAGE_PERIODS.length * TOKEN_CHART_SLOT_WIDTH;
+const TOKEN_CHART_BAR_OFFSET = (TOKEN_CHART_SLOT_WIDTH - TOKEN_CHART_BAR_WIDTH) / 2;
 const TOKEN_MODEL_COLOR_TOKENS = [
   'var(--c-info-600)',
   'var(--c-teal-500)',
@@ -32,7 +39,8 @@ const TOKEN_MODEL_COLOR_TOKENS = [
 const TOKEN_USAGE_COST_KEYS: Record<TokenUsageDimension, TokenUsageCostKey> = {
   day: 'dayCostUsd',
   week: 'weekCostUsd',
-  month: 'monthCostUsd'
+  month: 'monthCostUsd',
+  total: 'totalCostUsd'
 };
 
 function toTokenValue(value: unknown): TokenUsageValue {
@@ -188,25 +196,26 @@ export default function TokenUsageCell({ usage }: { usage?: AccountTokenUsage | 
     <div
       className="token-usage-cell"
       role="group"
-      aria-label={`Token 用量（日、周、月）：${accessibleSummary}`}
+      style={{ '--token-usage-columns': TOKEN_USAGE_PERIODS.length } as CSSProperties}
+      aria-label={`Token 用量（${TOKEN_USAGE_PERIODS.map(({ label }) => label).join('、')}）：${accessibleSummary}`}
     >
       <div className="token-usage-chart">
         <svg
           className="token-usage-chart-svg"
-          viewBox="0 0 156 38"
+          viewBox={`0 0 ${TOKEN_CHART_WIDTH} 38`}
           role="presentation"
           focusable="false"
         >
           <line
             className="token-usage-baseline"
-            x1="8"
+            x1={TOKEN_CHART_EDGE}
             y1={TOKEN_CHART_BASELINE}
-            x2="148"
+            x2={TOKEN_CHART_WIDTH - TOKEN_CHART_EDGE}
             y2={TOKEN_CHART_BASELINE}
           />
           {metrics.map(({ key, value }, index) => {
             const height = getBarHeight(value, maximum);
-            const x = 19 + index * 52;
+            const x = TOKEN_CHART_BAR_OFFSET + index * TOKEN_CHART_SLOT_WIDTH;
             const isPeak = value !== null && value === maximum && maximum > 0;
             const dimension = key;
             const tooltipLines = formatModelTooltip(dimension, usedModels, value);

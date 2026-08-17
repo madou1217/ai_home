@@ -345,6 +345,7 @@ test('token usage cache refresh updates account records and broadcasts token usa
       day: 500_000_000,
       week: 1_000_000_000,
       month: 10_000_000_000,
+      total: 42_000_000_000,
       models: [{
         model: 'gpt-5.6-luna',
         day: 500_000_000,
@@ -352,17 +353,20 @@ test('token usage cache refresh updates account records and broadcasts token usa
         week: 1_000_000_000,
         weekCostUsd: 2.5,
         month: 10_000_000_000,
-        monthCostUsd: null
+        monthCostUsd: null,
+        total: 42_000_000_000,
+        totalCostUsd: 12.5
       }]
     }
   }, { generatedAt: 1234 });
 
   assert.equal(cache.generatedAt, 1234);
-  assert.equal(cache.schemaVersion, 2);
+  assert.equal(cache.schemaVersion, 3);
   assert.deepEqual(liveState.records.get(accountRef).tokenUsage, {
     day: 500_000_000,
     week: 1_000_000_000,
     month: 10_000_000_000,
+    total: 42_000_000_000,
     models: [{
       model: 'gpt-5.6-luna',
       day: 500_000_000,
@@ -370,7 +374,9 @@ test('token usage cache refresh updates account records and broadcasts token usa
       week: 1_000_000_000,
       weekCostUsd: 2.5,
       month: 10_000_000_000,
-      monthCostUsd: null
+      monthCostUsd: null,
+      total: 42_000_000_000,
+      totalCostUsd: 12.5
     }]
   });
   assert.match(sseRes.body, /"type":"account"/);
@@ -381,6 +387,7 @@ test('token usage cache refresh updates account records and broadcasts token usa
     day: 500_000_000,
     week: 1_000_000_000,
     month: 10_000_000_000,
+    total: 42_000_000_000,
     models: [{
       model: 'gpt-5.6-luna',
       day: 500_000_000,
@@ -388,7 +395,9 @@ test('token usage cache refresh updates account records and broadcasts token usa
       week: 1_000_000_000,
       weekCostUsd: 2.5,
       month: 10_000_000_000,
-      monthCostUsd: null
+      monthCostUsd: null,
+      total: 42_000_000_000,
+      totalCostUsd: 12.5
     }]
   });
 });

@@ -2199,7 +2199,7 @@ export default function Accounts() {
       title: 'Token 用量',
       dataIndex: 'tokenUsage',
       key: 'tokenUsage',
-      width: 176,
+      width: 214,
       render: (_value: any, record: Account) => (
         <TokenUsageCell usage={record.tokenUsage} />
       )

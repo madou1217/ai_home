@@ -1,7 +1,10 @@
+/* 列数由 TokenUsageCell 以内联变量传入，宽度和栅格都跟着它走。 */
 .token-usage-cell {
+  --token-usage-columns: 4;
+
   display: inline-flex;
-  width: 140px;
-  min-width: 140px;
+  width: calc(var(--token-usage-columns) * 46px + 2px);
+  min-width: calc(var(--token-usage-columns) * 46px + 2px);
   flex-direction: column;
   gap: 1px;
   color: var(--color-text);
@@ -115,7 +118,7 @@
   position: absolute;
   inset: 0;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(var(--token-usage-columns), 1fr);
 }
 
 .token-usage-chart-hit-target {
@@ -142,7 +145,7 @@
 .token-usage-values,
 .token-usage-labels {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--token-usage-columns), minmax(0, 1fr));
   text-align: center;
 }
 
@@ -181,7 +184,7 @@
 
 @media (max-width: 768px) {
   .token-usage-cell {
-    width: 156px;
-    min-width: 156px;
+    width: calc(var(--token-usage-columns) * 52px);
+    min-width: calc(var(--token-usage-columns) * 52px);
   }
 }

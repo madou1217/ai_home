@@ -75,6 +75,7 @@ test('客户端形态由统一 clients 合同声明，不由 CLI 细节推断', 
   assert.deepEqual(byId.grok.clients, { cli: true, desktop: false });
   assert.deepEqual(byId.kiro.clients, { cli: true, desktop: true });
   assert.deepEqual(byId.zcode.clients, { cli: false, desktop: true });
+  assert.doesNotMatch(byId.zcode.authOptions[0].description, /CLI|TUI/i);
   assert.equal(byId.gemini.cli.desktopClient, undefined);
   assert.equal(byId.grok.cli.desktopClient, undefined);
 });

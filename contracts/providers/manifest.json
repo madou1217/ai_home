@@ -1153,7 +1153,7 @@
         {
           "value": "oauth-browser",
           "label": "ZCode 登录",
-          "description": "使用 ZCode CLI 原生 zcode login 流程（Z.AI 账号，OAuth 凭据捕获到 AIH）。"
+          "description": "使用 ZCode Desktop 的官方浏览器 OAuth 流程（Z.AI 账号，OAuth 凭据安全写入 AIH）。"
         },
         {
           "value": "api-key",

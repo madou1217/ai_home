@@ -11,6 +11,7 @@ import {
 } from '@ant-design/icons';
 import PageScaffold from '@/components/ui/PageScaffold';
 import AppManagerPanel from '@/components/toolkit/AppManagerPanel';
+import TerminalManagerPanel from '@/components/toolkit/TerminalManagerPanel';
 import EnvironmentPanel from '@/components/toolkit/EnvironmentPanel';
 import ManagedToolsPanel from '@/components/toolkit/ManagedToolsPanel';
 import MirrorManagerPanel from '@/components/toolkit/MirrorManagerPanel';
@@ -34,6 +35,12 @@ const SECTION_ITEMS: Record<ToolkitSection, ToolkitSecondaryItem[]> = {
       label: '应用管理',
       description: '安装、更新、配置与自动同步',
       icon: <AppstoreOutlined />
+    },
+    {
+      id: 'terminals',
+      label: '终端管理',
+      description: '发现、安装、更新与卸载终端',
+      icon: <ToolOutlined />
     },
     {
       id: 'session-runtimes',
@@ -96,6 +103,8 @@ function renderPanel(panelId: string) {
       return <AppManagerPanel />;
     case 'session-runtimes':
       return <ManagedToolsPanel category="session-runtimes" />;
+    case 'terminals':
+      return <TerminalManagerPanel />;
     case 'environment':
       return <EnvironmentPanel />;
     case 'mirrors':

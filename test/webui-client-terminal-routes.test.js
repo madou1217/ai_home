@@ -1,0 +1,124 @@
+'use strict';
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const nodePath = require('node:path');
+const {
+  handleWebUiClientTerminalRoutes
+} = require('../lib/server/webui-client-terminal-routes');
+
+function createResCapture() {
+  return {
+    statusCode: 0,
+    body: '',
+    writeHead(code) { this.statusCode = code; },
+    end(chunk = '') { this.body = String(chunk); }
+  };
+}
+
+function writeJson(res, status, payload) {
+  res.writeHead(status);
+  res.end(JSON.stringify(payload));
+}
+
+function fakeFs(paths = []) {
+  const existing = new Set(paths);
+  return { existsSync: (value) => existing.has(String(value)) };
+}
+
+function createContext(options = {}) {
+  const res = createResCapture();
+  return {
+    req: {},
+    res,
+    writeJson,
+    ...options,
+    resCapture: res
+  };
+}
+
+test('WebUI 终端清单只暴露公共平台标识和可用终端', async () => {
+  const ctx = createContext({
+    platform: 'windows',
+    path: nodePath.win32,
+    env: { PATH: 'C:\\tools' },
+    fs: fakeFs(['C:\\tools\\wt.exe', 'C:\\tools\\wezterm.exe', 'C:\\tools\\winget.exe'])
+  });
+  const handled = await handleWebUiClientTerminalRoutes(
+    ctx.req,
+    ctx.res,
+    'GET',
+    '/v0/webui/terminals',
+    ctx
+  );
+  assert.equal(handled, true);
+  assert.equal(ctx.resCapture.statusCode, 200);
+  const body = JSON.parse(ctx.resCapture.body);
+  assert.equal(body.platform, 'windows');
+  assert.deepEqual(body.terminals.map((terminal) => terminal.id), [
+    'system-default', 'wezterm', 'windows-terminal'
+  ]);
+  assert.equal(body.terminals.find((terminal) => terminal.id === 'windows-terminal').sourceUrl,
+    'https://learn.microsoft.com/en-us/windows/terminal/install');
+});
+
+test('Toolkit 终端操作先生成官方包管理器计划，未确认执行会被拒绝', async () => {
+  const base = {
+    platform: 'macos',
+    path: nodePath.posix,
+    env: { PATH: '/opt/homebrew/bin' },
+    fs: fakeFs(['/opt/homebrew/bin/brew'])
+  };
+  const planCtx = createContext({ ...base, readRequestBody: async () => Buffer.from(JSON.stringify({
+    terminalId: 'wezterm', action: 'install'
+  })) });
+  await handleWebUiClientTerminalRoutes(
+    planCtx.req,
+    planCtx.res,
+    'POST',
+    '/v0/webui/toolkit/terminals/plan',
+    planCtx
+  );
+  assert.equal(planCtx.resCapture.statusCode, 200);
+  assert.deepEqual(JSON.parse(planCtx.resCapture.body).args, ['install', '--cask', 'wezterm']);
+
+  const deniedCtx = createContext({ ...base, readRequestBody: async () => Buffer.from(JSON.stringify({
+    terminalId: 'wezterm', action: 'install'
+  })) });
+  await handleWebUiClientTerminalRoutes(
+    deniedCtx.req,
+    deniedCtx.res,
+    'POST',
+    '/v0/webui/toolkit/terminals/execute',
+    deniedCtx
+  );
+  assert.equal(deniedCtx.resCapture.statusCode, 428);
+  assert.equal(JSON.parse(deniedCtx.resCapture.body).error, 'confirmation_required');
+});
+
+test('Toolkit 终端执行复用服务端计划，不接受客户端自定义命令', async () => {
+  const calls = [];
+  const ctx = createContext({
+    platform: 'macos',
+    path: nodePath.posix,
+    env: { PATH: '/opt/homebrew/bin' },
+    fs: fakeFs(['/opt/homebrew/bin/brew']),
+    runTerminalPlan: async (plan) => {
+      calls.push(plan);
+      return { ok: true };
+    },
+    readRequestBody: async () => Buffer.from(JSON.stringify({
+      terminalId: 'wezterm', action: 'install', confirmed: true, file: '/tmp/unsafe', args: ['--nope']
+    }))
+  });
+  await handleWebUiClientTerminalRoutes(
+    ctx.req,
+    ctx.res,
+    'POST',
+    '/v0/webui/toolkit/terminals/execute',
+    ctx
+  );
+  assert.equal(ctx.resCapture.statusCode, 200);
+  assert.equal(calls[0].file, '/opt/homebrew/bin/brew');
+  assert.deepEqual(calls[0].args, ['install', '--cask', 'wezterm']);
+});

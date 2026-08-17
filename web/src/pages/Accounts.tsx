@@ -1,6 +1,6 @@
 import { formatRuntimeUntil } from '@/components/runtime/RuntimeStatusTag';
 import './Accounts.css';
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { ModalForm, StatisticCard } from '@ant-design/pro-components';
 import Button from '@/components/ui/AppButton';
 import PageScaffold from '@/components/ui/PageScaffold';
@@ -75,13 +75,14 @@ import type {
   AccountImportResponse,
   AccountRefreshJob,
   AccountRemovedEvent,
+  ClientTerminalItem,
   Provider,
   WebUiOpenAIModelsJob,
   WebUiOpenAIModelsResponse,
   WebUiModelsResponse,
 } from '@/types';
 import ProviderIcon, { providerIds, providerNames } from '@/components/chat/ProviderIcon';
-import { PROVIDER_AUTH_OPTIONS } from '@/providers/catalog';
+import { PROVIDER_AUTH_OPTIONS, PROVIDER_CATALOG } from '@/providers/catalog';
 import UsageSnapshotCell from '@/components/account/UsageSnapshotCell';
 import TokenUsageCell from '@/components/account/TokenUsageCell';
 import {
@@ -1602,6 +1603,14 @@ export default function Accounts() {
   const [appEntries, setAppEntries] = useState<Record<string, { desktop: boolean; cli: boolean }> | null>(null);
   const [appCapabilities, setAppCapabilities] = useState<Record<string, { desktop: boolean; cli: boolean }>>({});
   const [runningAccounts, setRunningAccounts] = useState<string[]>([]);
+  const cliClickTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const [cliPickerAccount, setCliPickerAccount] = useState<Account | null>(null);
+  const [cliTerminals, setCliTerminals] = useState<ClientTerminalItem[]>([]);
+  const [selectedCliTerminalId, setSelectedCliTerminalId] = useState('system-default');
+  const [cliTerminalsLoading, setCliTerminalsLoading] = useState(false);
+  useEffect(() => () => {
+    Object.values(cliClickTimers.current).forEach((timer) => clearTimeout(timer));
+  }, []);
   const loadAppEntries = async () => {
     try {
       const result = await accountsAPI.listAppEntries();
@@ -2107,9 +2116,9 @@ export default function Accounts() {
     }
   };
 
-  const handleOpenApp = async (record: Account, kind: 'desktop' | 'cli') => {
+  const handleOpenApp = async (record: Account, kind: 'desktop' | 'cli', terminalId?: string) => {
     try {
-      const result = await accountsAPI.openApp(record.provider, record.accountRef, kind);
+      const result = await accountsAPI.openApp(record.provider, record.accountRef, kind, 'open', terminalId);
       if (kind === 'desktop' && result.status === 'already_running') {
         Modal.confirm({
           title: '该账号的 Desktop 已在运行',
@@ -2158,7 +2167,7 @@ export default function Accounts() {
               throw new Error(completed.error || '安装未完成');
             }
             message.success({ key, content: '安装完成，正在打开应用…', duration: 3 });
-            await accountsAPI.openApp(record.provider, record.accountRef, kind);
+            await accountsAPI.openApp(record.provider, record.accountRef, kind, 'open', terminalId);
             loadAppEntries();
           } catch (installError: any) {
             message.error({ key, content: installError?.response?.data?.message || installError?.message || '安装失败', duration: 5 });
@@ -2184,6 +2193,45 @@ export default function Accounts() {
       }
       message.error(error?.response?.data?.message || (kind === 'desktop' ? '打开 Desktop 应用失败' : '打开 CLI 终端失败'));
     }
+  };
+
+  const chooseCliTerminal = async (record: Account) => {
+    setCliTerminalsLoading(true);
+    try {
+      const response = await accountsAPI.listTerminals();
+      const available = (response.terminals || []).filter((terminal) => terminal.installed);
+      if (!available.length) {
+        message.info('当前主机没有可用终端，请到 Toolkit > 终端管理安装。');
+        return;
+      }
+      setCliTerminals(available);
+      setSelectedCliTerminalId(available.find((terminal) => terminal.default)?.id || available[0].id);
+      setCliPickerAccount(record);
+    } catch (error: any) {
+      message.error(error?.response?.data?.message || '读取可用终端失败');
+    } finally {
+      setCliTerminalsLoading(false);
+    }
+  };
+
+  const scheduleCliTerminalPicker = (record: Account) => {
+    const accountRef = getAccountRef(record);
+    const existing = cliClickTimers.current[accountRef];
+    if (existing) clearTimeout(existing);
+    cliClickTimers.current[accountRef] = setTimeout(() => {
+      delete cliClickTimers.current[accountRef];
+      void chooseCliTerminal(record);
+    }, 240);
+  };
+
+  const openCliWithDefaultTerminal = (record: Account) => {
+    const accountRef = getAccountRef(record);
+    const existing = cliClickTimers.current[accountRef];
+    if (existing) {
+      clearTimeout(existing);
+      delete cliClickTimers.current[accountRef];
+    }
+    void handleOpenApp(record, 'cli', 'system-default');
   };
 
   const renderAuthDetail = (
@@ -2412,8 +2460,10 @@ export default function Accounts() {
                   </Badge>
                 </Tooltip>
               ) : null}
-              {appEntries && (appEntries[record.provider]?.cli || appCapabilities[record.provider]?.cli) ? (
-                <Tooltip title={!record.configured ? '账号未配置，完成授权后可打开 CLI' : record.runtimeStatus === 'auth_invalid' ? '认证已失效，请重新登录' : appEntries[record.provider]?.cli ? '使用系统默认终端打开 CLI' : '未安装 CLI，点击后确认安装'}>
+              {appEntries
+                && PROVIDER_CATALOG[record.provider as Provider]?.clients?.cli
+                && (appEntries[record.provider]?.cli || appCapabilities[record.provider]?.cli) ? (
+                <Tooltip title={!record.configured ? '账号未配置，完成授权后可打开 CLI' : record.runtimeStatus === 'auth_invalid' ? '认证已失效，请重新登录' : '单击选择终端，双击使用系统默认终端'}>
                   <Button
                     type="text"
                     size="small"
@@ -2421,7 +2471,11 @@ export default function Accounts() {
                     disabled={!record.configured || record.runtimeStatus === 'auth_invalid'}
                     onClick={(event: any) => {
                       event?.stopPropagation?.();
-                      handleOpenApp(record, 'cli');
+                      scheduleCliTerminalPicker(record);
+                    }}
+                    onDoubleClick={(event: any) => {
+                      event?.stopPropagation?.();
+                      openCliWithDefaultTerminal(record);
                     }}
                   />
                 </Tooltip>
@@ -3457,6 +3511,34 @@ export default function Accounts() {
             />
           </Space>
         ) : null}
+      </Modal>
+      <Modal
+        open={Boolean(cliPickerAccount)}
+        title={cliPickerAccount ? `选择终端 · ${getAccountPrimaryLabel(cliPickerAccount)}` : '选择终端'}
+        okText="打开 CLI"
+        cancelText="取消"
+        confirmLoading={cliTerminalsLoading}
+        onCancel={() => setCliPickerAccount(null)}
+        onOk={() => {
+          if (!cliPickerAccount) return;
+          const account = cliPickerAccount;
+          setCliPickerAccount(null);
+          void handleOpenApp(account, 'cli', selectedCliTerminalId);
+        }}
+      >
+        <Select
+          style={{ width: '100%' }}
+          value={selectedCliTerminalId}
+          onChange={setSelectedCliTerminalId}
+          options={cliTerminals.map((terminal) => ({
+            value: terminal.id,
+            label: `${terminal.name}${terminal.default ? '（系统默认）' : ''}`,
+            title: terminal.description
+          }))}
+        />
+        <Typography.Text type="secondary" style={{ display: 'block', marginTop: 10 }}>
+          单击 CLI 图标选择终端；双击直接使用系统默认终端。ZCode 仅支持 Desktop，不提供 CLI/TUI。
+        </Typography.Text>
       </Modal>
     </PageScaffold>
   );

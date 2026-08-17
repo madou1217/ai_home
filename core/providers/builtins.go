@@ -412,7 +412,7 @@ func builtinKiro() Definition {
 	}
 }
 
-// builtinZcode 定义 ZCode CLI 的 Z.AI OAuth 与 API Key 双账号模式。
+// builtinZcode 定义 ZCode Desktop 的 Z.AI OAuth 与 API Key 双账号模式。
 // ZCode 原生使用 Anthropic 协议（/v1/messages），凭据保存在
 // ~/.zcode/v2/credentials.json（无 refresh token，过期需重新 login 导入）。
 func builtinZcode() Definition {
@@ -423,7 +423,7 @@ func builtinZcode() Definition {
 		Clients:      clientSupport(false, true),
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog},
 		AuthOptions: []AuthOption{
-			authOption(AuthModeOAuthBrowser, "ZCode 登录", "使用 ZCode CLI 原生 zcode login 流程（Z.AI 账号，OAuth 凭据捕获到 AIH）。"),
+			authOption(AuthModeOAuthBrowser, "ZCode 登录", "使用 ZCode Desktop 的官方浏览器 OAuth 流程（Z.AI 账号，OAuth 凭据安全写入 AIH）。"),
 			authOption(AuthModeAPIKey, "Z.ai 密钥", "绑定 ZCODE_API_KEY / ZCODE_BASE_URL（支持 open.bigmodel.cn 与 api.z.ai 双 Anthropic 端点）。"),
 		},
 		SessionSync: SessionSync{Mode: SessionSyncUnavailable, Events: []string{}},

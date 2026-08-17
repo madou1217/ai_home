@@ -76,6 +76,8 @@ import type {
   ToolkitToolConfigResponse,
   ManagedAppsResponse,
   AppInstallJob,
+  ClientTerminalsResponse,
+  ClientTerminalItem,
   EnvironmentsResponse,
   EnvironmentActionInput,
   EnvironmentActionResponse,
@@ -323,12 +325,18 @@ export const accountsAPI = {
     provider: string,
     accountRef: string,
     kind: 'desktop' | 'cli',
-    action: 'open' | 'close' = 'open'
-  ): Promise<{ ok: boolean; status?: string; pid: number | null; executable?: string; pids?: number[] }> => {
-    const response = await api.post<{ ok: boolean; status?: string; pid: number | null; executable?: string; pids?: number[] }>(
+    action: 'open' | 'close' = 'open',
+    terminalId?: string
+  ): Promise<{ ok: boolean; status?: string; pid: number | null; terminalId?: string; executable?: string; pids?: number[] }> => {
+    const response = await api.post<{ ok: boolean; status?: string; pid: number | null; terminalId?: string; executable?: string; pids?: number[] }>(
       `/webui/accounts/${provider}/${accountRef}/open-app`,
-      { kind, action }
+      { kind, action, ...(terminalId ? { terminalId } : {}) }
     );
+    return response.data;
+  },
+
+  listTerminals: async (): Promise<ClientTerminalsResponse> => {
+    const response = await api.get<ClientTerminalsResponse>('/webui/terminals');
     return response.data;
   },
 
@@ -1565,6 +1573,22 @@ export const sshHostsAPI = {
 export const toolkitAPI = {
   listApps: async (): Promise<ManagedAppsResponse> => {
     const response = await api.get<ManagedAppsResponse>('/webui/toolkit/apps');
+    return response.data;
+  },
+  listTerminals: async (): Promise<ClientTerminalsResponse> => {
+    const response = await api.get<ClientTerminalsResponse>('/webui/toolkit/terminals');
+    return response.data;
+  },
+  planTerminalAction: async (terminalId: string, action: 'install' | 'update' | 'uninstall') => {
+    const response = await api.post<{ ok: boolean; terminalId?: string; action?: string; label?: string; command?: string; file?: string; args?: string[]; error?: string }>(
+      '/webui/toolkit/terminals/plan', { terminalId, action }
+    );
+    return response.data;
+  },
+  executeTerminalAction: async (terminalId: string, action: 'install' | 'update' | 'uninstall') => {
+    const response = await api.post<{ ok: boolean; status?: string; terminal?: ClientTerminalItem | null; error?: string }>(
+      '/webui/toolkit/terminals/execute', { terminalId, action, confirmed: true }
+    );
     return response.data;
   },
   installApp: async (provider: string): Promise<{ ok: boolean; accepted?: boolean; alreadyRunning?: boolean; job?: AppInstallJob; result?: any }> => {

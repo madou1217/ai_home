@@ -1258,7 +1258,7 @@ test('createAuthJobManager runs zcode browser oauth natively and writes encrypte
       };
     },
     startLoopbackCallbackServerImpl: createLoopbackCallbackStub(loopbackCalls),
-    resolveCliPathImpl: () => 'C:\\Program Files\\ZCode\\resources\\glm\\zcode.cjs',
+    resolveCliPathImpl: () => { throw new Error('ZCode Desktop OAuth 不应解析 CLI'); },
     getToolAccountIds: () => [],
     getProfileDir,
     getToolConfigDir
@@ -1288,7 +1288,7 @@ test('createAuthJobManager runs zcode browser oauth natively and writes encrypte
   assert.equal(tokenBody.redirect_uri, running.redirectUri);
   assert.equal(tokenBody.state, running.oauthState);
 
-  // Credentials land encrypted in v2/credentials.json, the CLI-native layout.
+  // Credentials land encrypted in v2/credentials.json, the ZCode-native layout.
   const credentialsPath = path.join(running.configDir, 'v2', 'credentials.json');
   const raw = JSON.parse(fs.readFileSync(credentialsPath, 'utf8'));
   assert.match(raw['oauth:zai:access_token'], /^enc:v1:/);

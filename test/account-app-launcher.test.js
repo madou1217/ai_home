@@ -2,6 +2,8 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const nodeFs = require('node:fs');
+const nodeOs = require('node:os');
 const nodePath = require('node:path');
 
 const {
@@ -12,6 +14,7 @@ const {
   listRunningDesktopInstances,
   normalizePlatform
 } = require('../lib/server/account-app-launcher');
+const { registerAccountIdentity } = require('../lib/account/account-registration');
 
 const ACCOUNT_REF = 'acct_0123456789abcdef0123';
 const SANDBOX_DIR = nodePath.join('C:\\aih-home', 'run', 'auth-projections', 'zcode', ACCOUNT_REF);
@@ -88,19 +91,21 @@ test('launchAccountApp 在账号未配置时拒绝打开', () => {
 
 test('launchAccountApp 在认证失效时拒绝打开', () => {
   const { launcher } = createLauncher({
+    resolveAccount: () => ({ accountRef: ACCOUNT_REF, provider: 'codex', cliAccountId: '3' }),
     resolveAccountEligibility: () => ({ configured: true, runtimeStatus: 'auth_invalid' })
   });
-  const result = launcher.launchAccountApp({ provider: 'zcode', accountRef: ACCOUNT_REF, kind: 'cli' });
+  const result = launcher.launchAccountApp({ provider: 'codex', accountRef: ACCOUNT_REF, kind: 'cli' });
   assert.equal(result.ok, false);
   assert.equal(result.error, 'account_auth_invalid');
 });
 
 test('launchAccountApp 在生产资格检查开启且 CLI 缺失时返回 cli_not_installed', () => {
   const { launcher } = createLauncher({
+    resolveAccount: () => ({ accountRef: ACCOUNT_REF, provider: 'codex', cliAccountId: '3' }),
     enforceCliInstallation: true,
     resolveCliPath: () => ''
   });
-  const result = launcher.launchAccountApp({ provider: 'zcode', accountRef: ACCOUNT_REF, kind: 'cli' });
+  const result = launcher.launchAccountApp({ provider: 'codex', accountRef: ACCOUNT_REF, kind: 'cli' });
   assert.equal(result.ok, false);
   assert.equal(result.error, 'cli_not_installed');
 });
@@ -136,7 +141,7 @@ test('launchAccountApp 拒绝 Provider 与账号不匹配的请求', () => {
   const { launcher } = createLauncher({
     resolveAccount: () => ({ accountRef: ACCOUNT_REF, provider: 'claude', cliAccountId: '3' })
   });
-  const result = launcher.launchAccountApp({ provider: 'zcode', accountRef: ACCOUNT_REF, kind: 'cli' });
+  const result = launcher.launchAccountApp({ provider: 'codex', accountRef: ACCOUNT_REF, kind: 'cli' });
   assert.equal(result.ok, false);
   assert.equal(result.error, 'account_not_found');
 });
@@ -357,14 +362,16 @@ test('zcode desktop 在 Linux 通过 PATH 上的 execNames 解析', () => {
 });
 
 test('cli kind 在 Windows 通过 cmd start 打开新终端运行 aih 启动链路', () => {
-  const { launcher, fakeSpawn } = createLauncher();
-  const result = launcher.launchAccountApp({ provider: 'zcode', accountRef: ACCOUNT_REF, kind: 'cli' });
+  const { launcher, fakeSpawn } = createLauncher({
+    resolveAccount: () => ({ accountRef: ACCOUNT_REF, provider: 'codex', cliAccountId: '3' })
+  });
+  const result = launcher.launchAccountApp({ provider: 'codex', accountRef: ACCOUNT_REF, kind: 'cli' });
   assert.equal(result.ok, true);
   assert.equal(result.pid, 4321);
   const call = fakeSpawn.calls[0];
   assert.equal(call.file, 'cmd.exe');
   assert.equal(call.args[0], '/c');
-  assert.ok(call.args[1].includes('start "aih zcode 3"'));
+  assert.ok(call.args[1].includes('start "aih codex 3"'));
   assert.ok(call.args[1].includes('cmd /k'));
   assert.ok(call.args[1].includes(nodePath.win32.join('C:\\repo', 'bin', 'ai-home.js')));
   assert.ok(call.args[1].includes('"C:\\node\\node.exe"'));
@@ -376,9 +383,10 @@ test('cli kind 在 macOS 通过 osascript 让 Terminal.app 打开新窗口', () 
   const { launcher, fakeSpawn } = createLauncher({
     path: nodePath.posix,
     processObj: { platform: 'darwin', execPath: '/usr/local/bin/node', env: {} },
-    env: { HOME: '/Users/x', PATH: '' }
+    env: { HOME: '/Users/x', PATH: '' },
+    resolveAccount: () => ({ accountRef: ACCOUNT_REF, provider: 'codex', cliAccountId: '3' })
   });
-  const result = launcher.launchAccountApp({ provider: 'zcode', accountRef: ACCOUNT_REF, kind: 'cli' });
+  const result = launcher.launchAccountApp({ provider: 'codex', accountRef: ACCOUNT_REF, kind: 'cli' });
   assert.equal(result.ok, true);
   const call = fakeSpawn.calls[0];
   assert.equal(call.file, 'osascript');
@@ -386,7 +394,7 @@ test('cli kind 在 macOS 通过 osascript 让 Terminal.app 打开新窗口', () 
   assert.ok(script.includes('tell application "Terminal"'));
   assert.ok(script.includes('do script'));
   assert.ok(script.includes('bin/ai-home.js'));
-  assert.ok(script.includes('zcode 3'));
+  assert.ok(script.includes('codex 3'));
 });
 
 test('cli kind 在 Linux 按 x-terminal-emulator -> gnome-terminal -> konsole 顺序选择终端', () => {
@@ -395,14 +403,15 @@ test('cli kind 在 Linux 按 x-terminal-emulator -> gnome-terminal -> konsole �
     path: nodePath.posix,
     processObj: { platform: 'linux', execPath: '/usr/bin/node', env: {} },
     fs: createFakeFs(['/usr/bin/gnome-terminal']),
-    env: { HOME: '/home/x', PATH: '/usr/bin' }
+    env: { HOME: '/home/x', PATH: '/usr/bin' },
+    resolveAccount: () => ({ accountRef: ACCOUNT_REF, provider: 'codex', cliAccountId: '3' })
   });
-  const result = launcher.launchAccountApp({ provider: 'zcode', accountRef: ACCOUNT_REF, kind: 'cli' });
+  const result = launcher.launchAccountApp({ provider: 'codex', accountRef: ACCOUNT_REF, kind: 'cli' });
   assert.equal(result.ok, true);
   const call = fakeSpawn.calls[0];
   assert.equal(call.file, '/usr/bin/gnome-terminal');
   assert.deepEqual(call.args.slice(0, 3), ['--', 'bash', '-lc']);
-  assert.ok(call.args[3].includes('zcode 3'));
+  assert.ok(call.args[3].includes('codex 3'));
 });
 
 test('cli kind 在 Linux 没有任何终端时返回 terminal_not_found', () => {
@@ -410,21 +419,52 @@ test('cli kind 在 Linux 没有任何终端时返回 terminal_not_found', () => 
     path: nodePath.posix,
     processObj: { platform: 'linux', execPath: '/usr/bin/node', env: {} },
     fs: createFakeFs([]),
-    env: { HOME: '/home/x', PATH: '' }
+    env: { HOME: '/home/x', PATH: '' },
+    resolveAccount: () => ({ accountRef: ACCOUNT_REF, provider: 'codex', cliAccountId: '3' })
   });
-  const result = launcher.launchAccountApp({ provider: 'zcode', accountRef: ACCOUNT_REF, kind: 'cli' });
+  const result = launcher.launchAccountApp({ provider: 'codex', accountRef: ACCOUNT_REF, kind: 'cli' });
   assert.equal(result.ok, false);
   assert.equal(result.error, 'terminal_not_found');
   assert.equal(fakeSpawn.calls.length, 0);
 });
 
-test('cli kind 缺少 cliAccountId 时返回 account_not_found', () => {
+test('ZCode 没有 CLI/TUI 入口', () => {
   const { launcher } = createLauncher({
-    resolveAccount: () => ({ accountRef: ACCOUNT_REF, provider: 'zcode', cliAccountId: '' })
+    resolveAccount: () => ({ accountRef: ACCOUNT_REF, provider: 'zcode', cliAccountId: '3' })
   });
   const result = launcher.launchAccountApp({ provider: 'zcode', accountRef: ACCOUNT_REF, kind: 'cli' });
   assert.equal(result.ok, false);
-  assert.equal(result.error, 'account_not_found');
+  assert.equal(result.error, 'cli_not_supported');
+});
+
+test('默认 accountRef 解析会联结 CLI 别名，CLI 点击不再误报 account_not_found', () => {
+  const aiHomeDir = nodeFs.mkdtempSync(nodePath.join(nodeOs.tmpdir(), 'aih-launcher-cli-'));
+  try {
+    const accountRef = registerAccountIdentity(nodeFs, aiHomeDir, {
+      provider: 'codex',
+      cliAccountId: '12',
+      identitySeed: 'oauth:codex:launcher@example.test'
+    }).accountRef;
+    const fakeSpawn = createFakeSpawn();
+    const launcher = createAccountAppLauncher({
+      fs: nodeFs,
+      path: nodePath,
+      spawn: fakeSpawn.spawnImpl,
+      processObj: { platform: 'win32', execPath: 'C:\\node\\node.exe', env: {} },
+      env: {},
+      aiHomeDir,
+      repoRoot: 'C:\\repo',
+      execFileSync: () => '',
+      readAccountEnv: () => ({})
+    });
+    const result = launcher.launchAccountApp({ provider: 'codex', accountRef, kind: 'cli' });
+    assert.equal(result.ok, true);
+    assert.equal(result.terminalId, 'system-default');
+    assert.equal(fakeSpawn.calls.length, 1);
+    assert.match(fakeSpawn.calls[0].args[1], /aih codex 12/);
+  } finally {
+    nodeFs.rmSync(aiHomeDir, { recursive: true, force: true });
+  }
 });
 
 test('findOnPath 在 Windows 为无扩展名的名字补 .exe', () => {

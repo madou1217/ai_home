@@ -16,9 +16,9 @@ test('provider catalog includes zcode and isKnownProvider returns true', () => {
 });
 
 // --- Provider Registry (CLI) ---
-const { getAiCliConfig, listSupportedAiClis } = require('../lib/cli/services/ai-cli/provider-registry');
+const { getAiCliConfig, isSupportedAiCli, listSupportedAiClis } = require('../lib/cli/services/ai-cli/provider-registry');
 
-test('getAiCliConfig zcode returns correct CLI configuration', () => {
+test('getAiCliConfig zcode 保留内部 Desktop/凭据运行配置，但不暴露为 CLI', () => {
   const config = getAiCliConfig('zcode');
   assert.ok(config, 'zcode config should exist');
   assert.equal(config.globalDir, '.zcode');
@@ -27,9 +27,10 @@ test('getAiCliConfig zcode returns correct CLI configuration', () => {
   assert.deepEqual(config.loginArgs, ['login']);
 });
 
-test('listSupportedAiClis includes zcode', () => {
+test('listSupportedAiClis excludes ZCode because it has no CLI/TUI client', () => {
   const clis = listSupportedAiClis();
-  assert.ok(clis.includes('zcode'), 'zcode should be in supported CLIs');
+  assert.equal(clis.includes('zcode'), false);
+  assert.equal(isSupportedAiCli('zcode'), false);
 });
 
 // --- Credential module (encryption envelope) ---

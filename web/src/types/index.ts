@@ -1333,6 +1333,28 @@ export interface AppInstallJob {
   finishedAt?: number | null;
 }
 
+export interface ClientTerminalItem {
+  id: string;
+  name: string;
+  description: string;
+  sourceUrl: string;
+  platform: string;
+  installed: boolean;
+  default: boolean;
+  executablePath: string;
+  canInstall: boolean;
+  canUpdate: boolean;
+  canUninstall: boolean;
+  packageManager: string;
+  plans: Array<{ action: string; label: string; command: string }>;
+}
+
+export interface ClientTerminalsResponse {
+  ok: boolean;
+  platform: string;
+  terminals: ClientTerminalItem[];
+}
+
 export interface ToolkitAppConfigResponse {
   ok: boolean;
   appId: string;

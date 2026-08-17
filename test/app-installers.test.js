@@ -33,6 +33,16 @@ test('ZCode 安装器只提供 Desktop 能力，不暴露 CLI 安装入口', () 
   assert.equal(typeof zcode.resolveDesktopInstallPlans, 'function');
 });
 
+test('注册表发现的每个独立 Provider 安装器都实现生命周期接口', () => {
+  const installers = Object.values(INSTALLERS);
+  assert.ok(installers.length > 0);
+  installers.forEach((installer) => {
+    assert.equal(typeof installer.install, 'function', `${installer.provider} must implement install()`);
+    assert.equal(typeof installer.update, 'function', `${installer.provider} must implement update()`);
+    assert.equal(typeof installer.uninstall, 'function', `${installer.provider} must implement uninstall()`);
+  });
+});
+
 test('桌面安装参数只来自对应 Provider 安装器', () => {
   const codex = getAppInstaller('codex');
   const claude = getAppInstaller('claude');

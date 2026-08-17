@@ -15,6 +15,9 @@ test('每个合同 CLI Provider 都由独立安装器模块提供统一入口', 
     const installer = getAppInstaller(provider);
     assert.ok(installer, `${provider} must have an independent installer module`);
     assert.equal(installer.provider, provider);
+    assert.equal(typeof installer.install, 'function');
+    assert.equal(typeof installer.update, 'function');
+    assert.equal(typeof installer.uninstall, 'function');
     assert.equal(typeof installer.installCli, 'function');
     assert.equal(typeof installer.resolveDesktopInstallPlans, 'function');
   });

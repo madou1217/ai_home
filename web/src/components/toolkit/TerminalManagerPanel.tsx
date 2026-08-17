@@ -33,6 +33,15 @@ export default function TerminalManagerPanel() {
 
   useEffect(() => { void load(); }, [load]);
 
+  useEffect(() => {
+    const handleTaskCompleted = (event: Event) => {
+      const task = (event as CustomEvent<{ source?: string }>).detail;
+      if (task?.source === 'terminal') void load();
+    };
+    window.addEventListener('aih:webui-task-completed', handleTaskCompleted);
+    return () => window.removeEventListener('aih:webui-task-completed', handleTaskCompleted);
+  }, [load]);
+
   const runAction = async (terminal: ClientTerminalItem, action: 'install' | 'update' | 'uninstall') => {
     try {
       const plan = await toolkitAPI.planTerminalAction(terminal.id, action);
@@ -52,8 +61,7 @@ export default function TerminalManagerPanel() {
           try {
             const result = await toolkitAPI.executeTerminalAction(terminal.id, action);
             if (!result.ok) throw new Error(result.error || '终端操作失败');
-            message.success(`${terminal.name}${action === 'install' ? '安装' : action === 'update' ? '更新' : '卸载'}完成`);
-            await load();
+            message.info(`${terminal.name}${action === 'install' ? '安装' : action === 'update' ? '更新' : '卸载'}任务已提交，进度显示在右下角任务队列。`);
           } catch (error: unknown) {
             message.error(requestError(error, '终端操作失败'));
           } finally {

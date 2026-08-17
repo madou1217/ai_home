@@ -1,12 +1,18 @@
 import { useState } from 'react';
-import { Progress, Space, Spin } from 'antd';
+import { message, Progress, Space, Spin, Tooltip } from 'antd';
 import type {
   AccountUsageSnapshot,
   CodexUsageEntry,
   GeminiUsageModel
 } from '@/types';
 import Button from '@/components/ui/AppButton';
-import { formatResetAt, formatResetIn, formatWindowDuration } from './usage-snapshot-format';
+import {
+  formatResetAt,
+  formatResetIn,
+  formatWindowDuration,
+  groupAgyQuotaModels,
+  type AgyGroupMemberModel
+} from './usage-snapshot-format';
 
 interface UsageRecordLike {
   configured?: boolean;
@@ -46,6 +52,142 @@ function orderGeminiModels(models: GeminiUsageModel[]) {
     if (aRemaining !== bRemaining) return aRemaining - bRemaining;
     return String(a.model || '').localeCompare(String(b.model || ''));
   });
+}
+
+function CopyableModelId({ modelId }: { modelId: string }) {
+  const handleCopy = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(modelId);
+      } else {
+        const input = document.createElement('input');
+        input.value = modelId;
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand('copy');
+        document.body.removeChild(input);
+      }
+      message.success({ content: `已复制: ${modelId}`, duration: 1.5, key: 'copy-model-id' });
+    } catch (_err) {
+      message.error({ content: '复制失败', duration: 1.5 });
+    }
+  };
+
+  return (
+    <span
+      onClick={handleCopy}
+      title="点击复制模型 ID"
+      style={{
+        color: 'rgba(255, 255, 255, 0.75)',
+        cursor: 'pointer',
+        fontSize: 11.5,
+        fontFamily: 'var(--font-mono, monospace)',
+        wordBreak: 'break-all',
+        transition: 'color 0.15s ease',
+        userSelect: 'all',
+        textAlign: 'left'
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.color = '#91caff';
+        e.currentTarget.style.textDecoration = 'underline';
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.color = 'rgba(255, 255, 255, 0.75)';
+        e.currentTarget.style.textDecoration = 'none';
+      }}
+    >
+      {modelId}
+    </span>
+  );
+}
+
+function AgyGroupModelsTooltip({
+  members
+}: {
+  members: AgyGroupMemberModel[];
+}) {
+  const [showAll, setShowAll] = useState(false);
+  const maxInitial = 8;
+  const isLargeList = members.length > maxInitial;
+  const visibleMembers = (isLargeList && !showAll) ? members.slice(0, maxInitial) : members;
+
+  return (
+    <div style={{ minWidth: 320, maxWidth: 540, padding: '2px 0' }}>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'minmax(140px, auto) 1fr',
+          alignItems: 'center',
+          gap: 16,
+          paddingBottom: 5,
+          marginBottom: 6,
+          borderBottom: '1px solid rgba(255, 255, 255, 0.18)',
+          fontSize: 11,
+          color: 'rgba(255, 255, 255, 0.65)'
+        }}
+      >
+        <span style={{ textAlign: 'left', whiteSpace: 'nowrap' }}>名称 ({members.length})</span>
+        <span style={{ textAlign: 'left', whiteSpace: 'nowrap' }}>模型 ID</span>
+      </div>
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 6,
+          maxHeight: showAll ? 280 : 190,
+          overflowY: 'auto',
+          paddingRight: 4
+        }}
+      >
+        {visibleMembers.map((m) => (
+          <div
+            key={m.id}
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'minmax(140px, auto) 1fr',
+              alignItems: 'center',
+              gap: 16
+            }}
+          >
+            <span
+              style={{
+                color: '#fff',
+                textAlign: 'left',
+                fontWeight: 500,
+                fontSize: 11.5,
+                whiteSpace: 'nowrap'
+              }}
+            >
+              {m.name}
+            </span>
+            <div style={{ textAlign: 'left', minWidth: 0 }}>
+              <CopyableModelId modelId={m.id} />
+            </div>
+          </div>
+        ))}
+      </div>
+      {isLargeList ? (
+        <div
+          style={{
+            marginTop: 6,
+            paddingTop: 4,
+            borderTop: '1px solid rgba(255, 255, 255, 0.12)',
+            textAlign: 'center',
+            cursor: 'pointer',
+            color: '#4096ff',
+            fontSize: 11
+          }}
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowAll((curr) => !curr);
+          }}
+        >
+          {showAll ? '收起列表 ▲' : `展开全部 (${members.length}) ▼`}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function UsageMetaLine({
@@ -149,10 +291,68 @@ export default function UsageSnapshotCell({ record, hideModels = false }: { reco
     );
   }
 
-  if (
-    (record.provider === 'gemini' && snapshot?.kind === 'gemini_oauth_stats')
-    || (record.provider === 'agy' && snapshot?.kind === 'agy_code_assist_quota')
-  ) {
+  if (record.provider === 'agy' && snapshot?.kind === 'agy_code_assist_quota') {
+    const groups = groupAgyQuotaModels(snapshot.models || []);
+    if (groups.length === 0) return <>-</>;
+
+    return (
+      <div style={{ minWidth: 220 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {groups.map((group) => {
+            const visibleLimits = hideModels
+              ? group.limits.slice(0, 1)
+              : group.limits.slice(0, 2);
+
+            return (
+              <div key={group.key} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Tooltip
+                    overlayClassName="token-usage-tooltip-overlay"
+                    title={<AgyGroupModelsTooltip members={group.members} />}
+                    placement="topLeft"
+                  >
+                    <span
+                      style={{
+                        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+                        fontWeight: 600,
+                        fontSize: 'clamp(12px, 3vw, 12.5px)',
+                        color: '#334155',
+                        letterSpacing: '0.15px',
+                        cursor: 'help',
+                        borderBottom: '1px dotted #94a3b8'
+                      }}
+                    >
+                      {group.title}
+                    </span>
+                  </Tooltip>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {visibleLimits.map((limit, index) => (
+                    <UsageMetaLine
+                      key={`${limit.key}-${index}`}
+                      label={limit.label}
+                      value={limit.remainingPct}
+                      resetIn={limit.resetIn}
+                      resetAtMs={limit.resetAtMs}
+                    />
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        {record.usageRefreshing ? (
+          <div style={{ marginTop: 4, color: '#8c8c8c', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Spin size="small" />
+            <span>刷新中</span>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  if (record.provider === 'gemini' && snapshot?.kind === 'gemini_oauth_stats') {
     const models = orderGeminiModels((snapshot.models || []).filter((model) => model.remainingPct != null));
     if (models.length === 0) return <>-</>;
     const visibleModels = hideModels ? models.slice(0, 1) : (expanded ? models : models.slice(0, 2));
@@ -178,6 +378,12 @@ export default function UsageSnapshotCell({ record, hideModels = false }: { reco
           >
             {expanded ? '收起' : `展开 ${models.length - 2} 个模型`}
           </Button>
+        ) : null}
+        {record.usageRefreshing ? (
+          <div style={{ marginTop: 4, color: '#8c8c8c', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Spin size="small" />
+            <span>刷新中</span>
+          </div>
         ) : null}
       </div>
     );

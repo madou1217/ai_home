@@ -15,7 +15,7 @@ export function formatWindowDuration(windowMinutes: number | null | undefined, f
   return parts.join(' ');
 }
 
-function parseResetInDurationMs(resetIn: string | null | undefined) {
+export function parseResetInDurationMs(resetIn: string | null | undefined) {
   const text = String(resetIn || '').trim().toLowerCase();
   if (!text) return null;
 
@@ -79,4 +79,162 @@ export function formatResetAt(resetAtMs: number | null | undefined) {
 
   const pad = (value: number) => String(value).padStart(2, '0');
   return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+export interface AgyQuotaModelLike {
+  model: string;
+  remainingPct: number | null;
+  resetIn?: string;
+  resetAtMs?: number;
+  displayName?: string;
+}
+
+export interface AgyQuotaLimitItem {
+  key: string;
+  label: string;
+  remainingPct: number | null;
+  resetIn: string;
+  resetAtMs: number;
+  durationMinutes: number;
+}
+
+export interface AgyGroupMemberModel {
+  id: string;
+  name: string;
+}
+
+export interface AgyQuotaGroup {
+  key: 'gemini' | 'claude_gpt' | 'other';
+  title: string;
+  members: AgyGroupMemberModel[];
+  memberNames: string[];
+  limits: AgyQuotaLimitItem[];
+  minRemainingPct: number | null;
+}
+
+function resolveLimitLabel(durationMinutes: number, fallbackName: string): string {
+  if (durationMinutes > 0) {
+    if (durationMinutes <= 360) return '5h Limit';
+    return 'Weekly Limit';
+  }
+  return fallbackName || 'Limit';
+}
+
+export function groupAgyQuotaModels(
+  models: AgyQuotaModelLike[] = [],
+  nowMs = Date.now()
+): AgyQuotaGroup[] {
+  const validModels = (Array.isArray(models) ? models : []).filter(
+    (m) => m && m.remainingPct != null && Number.isFinite(Number(m.remainingPct))
+  );
+  if (validModels.length === 0) return [];
+
+  const geminiModels: AgyQuotaModelLike[] = [];
+  const claudeGptModels: AgyQuotaModelLike[] = [];
+  const otherModels: AgyQuotaModelLike[] = [];
+
+  for (const item of validModels) {
+    const rawName = String(item.model || '').toLowerCase();
+    const rawDisplay = String(item.displayName || '').toLowerCase();
+    if (rawName.includes('gemini') || rawDisplay.includes('gemini')) {
+      geminiModels.push(item);
+    } else if (
+      rawName.includes('claude') ||
+      rawDisplay.includes('claude') ||
+      rawName.includes('gpt') ||
+      rawDisplay.includes('gpt')
+    ) {
+      claudeGptModels.push(item);
+    } else {
+      otherModels.push(item);
+    }
+  }
+
+  const buckets: Array<{ key: 'gemini' | 'claude_gpt' | 'other'; title: string; items: AgyQuotaModelLike[] }> = [
+    { key: 'gemini', title: 'Gemini Models', items: geminiModels },
+    { key: 'claude_gpt', title: 'Claude & GPT Models', items: claudeGptModels },
+    { key: 'other', title: 'Other Models', items: otherModels }
+  ];
+
+  const result: AgyQuotaGroup[] = [];
+
+  for (const bucket of buckets) {
+    if (bucket.items.length === 0) continue;
+
+    // Member models with id and display name (deduplicated by id)
+    const memberMap = new Map<string, AgyGroupMemberModel>();
+    for (const item of bucket.items) {
+      const id = String(item.model || '').trim();
+      const name = String(item.displayName || item.model || '').trim();
+      if (id && !memberMap.has(id)) {
+        memberMap.set(id, { id, name });
+      }
+    }
+    const members = Array.from(memberMap.values());
+    const memberNames = members.map((m) => m.name);
+
+    // Limit items deduplication and formatting
+    const limitMap = new Map<string, AgyQuotaLimitItem>();
+
+    for (const item of bucket.items) {
+      const remainingPct = Math.max(0, Math.min(100, Number(item.remainingPct)));
+      const resetAt = Number(item.resetAtMs) || 0;
+      let durationMinutes = 0;
+
+      if (resetAt > nowMs) {
+        durationMinutes = Math.ceil((resetAt - nowMs) / 60000);
+      } else {
+        const parsedDurationMs = parseResetInDurationMs(item.resetIn);
+        if (parsedDurationMs != null && parsedDurationMs > 0) {
+          durationMinutes = Math.ceil(parsedDurationMs / 60000);
+        }
+      }
+
+      const displayName = String(item.displayName || item.model || '').trim();
+      const label = resolveLimitLabel(durationMinutes, displayName);
+
+      const resetSlot = resetAt > 0 ? Math.round(resetAt / (5 * 60 * 1000)) : 0;
+      const dedupeKey = `${label}_${Math.round(remainingPct)}_${resetSlot}`;
+
+      const existing = limitMap.get(dedupeKey);
+      if (!existing) {
+        limitMap.set(dedupeKey, {
+          key: dedupeKey,
+          label,
+          remainingPct,
+          resetIn: item.resetIn || '',
+          resetAtMs: resetAt,
+          durationMinutes
+        });
+      } else if (remainingPct < (existing.remainingPct ?? 101)) {
+        existing.remainingPct = remainingPct;
+        existing.resetIn = item.resetIn || existing.resetIn;
+        existing.resetAtMs = resetAt || existing.resetAtMs;
+      }
+    }
+
+    const limits = Array.from(limitMap.values()).sort((a, b) => {
+      if (a.durationMinutes !== b.durationMinutes) {
+        return a.durationMinutes - b.durationMinutes;
+      }
+      const aPct = a.remainingPct == null ? 101 : a.remainingPct;
+      const bPct = b.remainingPct == null ? 101 : b.remainingPct;
+      return aPct - bPct;
+    });
+
+    const minRemainingPct = limits.length > 0
+      ? Math.min(...limits.map((l) => Number(l.remainingPct ?? 0)))
+      : null;
+
+    result.push({
+      key: bucket.key,
+      title: bucket.title,
+      members,
+      memberNames,
+      limits,
+      minRemainingPct
+    });
+  }
+
+  return result;
 }

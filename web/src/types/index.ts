@@ -1319,9 +1319,12 @@ export interface ManagedAppsResponse {
 
 export interface AppInstallJob {
   id: string;
+  source?: 'app-install' | 'terminal' | string;
+  taskName?: string;
   appId: string;
   provider: string;
-  kind: 'cli' | 'desktop';
+  kind: 'cli' | 'desktop' | 'terminal' | string;
+  action?: string;
   status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | string;
   phase: string;
   progress: { percent: number; label: string };
@@ -1331,6 +1334,11 @@ export interface AppInstallJob {
   createdAt: number;
   updatedAt: number;
   finishedAt?: number | null;
+}
+
+export interface WebUiTask extends AppInstallJob {
+  source: 'app-install' | 'terminal' | string;
+  taskName: string;
 }
 
 export type ClientPlatform = 'macos' | 'windows' | 'linux';

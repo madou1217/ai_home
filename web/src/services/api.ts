@@ -76,6 +76,7 @@ import type {
   ToolkitToolConfigResponse,
   ManagedAppsResponse,
   AppInstallJob,
+  WebUiTask,
   ClientTerminalsResponse,
   ClientTerminalItem,
   EnvironmentsResponse,
@@ -444,6 +445,15 @@ export async function startAppInstallJob(input: {
 export async function getAppInstallJob(jobId: string): Promise<AppInstallJob> {
   const response = await api.get<{ ok: boolean; job: AppInstallJob }>(`/webui/app-install/jobs/${encodeURIComponent(jobId)}`);
   return response.data.job;
+}
+
+export async function listActiveWebUiTasks(): Promise<WebUiTask[]> {
+  const response = await api.get<{ ok: boolean; tasks?: WebUiTask[] }>('/webui/tasks');
+  return Array.isArray(response.data.tasks) ? response.data.tasks : [];
+}
+
+export function watchWebUiTasks(): EventSource {
+  return guardedWebUiEventSource('/v0/webui/tasks/watch');
 }
 
 // SSE 是主通道，短轮询只作为断线期间的恢复手段；安装进程始终在服务端
@@ -1586,7 +1596,7 @@ export const toolkitAPI = {
     return response.data;
   },
   executeTerminalAction: async (terminalId: string, action: 'install' | 'update' | 'uninstall') => {
-    const response = await api.post<{ ok: boolean; status?: string; terminal?: ClientTerminalItem | null; error?: string }>(
+    const response = await api.post<{ ok: boolean; accepted?: boolean; alreadyRunning?: boolean; job?: WebUiTask; error?: string }>(
       '/webui/toolkit/terminals/execute', { terminalId, action, confirmed: true }
     );
     return response.data;

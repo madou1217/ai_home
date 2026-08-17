@@ -19,7 +19,7 @@ import {
 } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import ProviderIcon from '@/components/chat/ProviderIcon';
-import { toolkitAPI, waitForAppInstallJob } from '@/services/api';
+import { toolkitAPI } from '@/services/api';
 import type {
   ManagedAppItem,
   ManagedAppsResponse,
@@ -94,6 +94,16 @@ export default function AppManagerPanel() {
     void fetchApps();
   }, [fetchApps]);
 
+  useEffect(() => {
+    const handleTaskCompleted = (event: Event) => {
+      const task = (event as CustomEvent<{ source?: string; appId?: string }>).detail;
+      if (task?.source !== 'app-install' || !task.appId) return;
+      void fetchApps();
+    };
+    window.addEventListener('aih:webui-task-completed', handleTaskCompleted);
+    return () => window.removeEventListener('aih:webui-task-completed', handleTaskCompleted);
+  }, [fetchApps]);
+
   const filteredApps = useMemo(() => {
     if (!data) return [];
     return category === 'ALL'
@@ -112,21 +122,7 @@ export default function AppManagerPanel() {
       if (!response.ok || !response.job) {
         throw new Error(response.result?.installAttempts?.[0]?.error || '安装任务未创建');
       }
-      const completed = await waitForAppInstallJob(response.job.id, (job) => {
-        message.open({
-          key: `toolkit-install-${app.id}`,
-          type: job.status === 'failed' ? 'error' : 'loading',
-          content: `${app.name} 安装进度 ${Math.round(Number(job.progress?.percent || 0))}%${job.progress?.label ? ` · ${job.progress.label}` : ''}`,
-          duration: job.status === 'failed' ? 4 : 0
-        });
-      });
-      if (completed.status !== 'succeeded') throw new Error(completed.error || '安装未完成');
-      message.success({
-        key: `toolkit-install-${app.id}`,
-        content: wasInstalled ? `${app.name} 更新完成` : `${app.name} 安装完成`,
-        duration: 3
-      });
-      await fetchApps();
+      message.info(`${app.name}${wasInstalled ? '更新' : '安装'}任务已提交，进度显示在右下角任务队列。`);
     } catch (requestFailure: unknown) {
       message.error(requestError(requestFailure, `${app.name} 安装失败`));
     } finally {

@@ -3,6 +3,7 @@ import { history } from "@umijs/max";
 import { Alert } from "antd";
 import ControlPlaneProfileSelect from "@/components/control-plane/ControlPlaneProfileSelect";
 import MobileTabBar from "@/components/mobile/MobileTabBar";
+import AppInstallTaskQueue from "@/components/task-queue/AppInstallTaskQueue";
 import {
   FABRIC_SERVER_SETUP_HREF,
   FABRIC_SERVER_SETUP_TARGET,
@@ -124,6 +125,7 @@ export const layout = ({ initialState }: any) => {
             />
           )}
           {canRenderWorkspace ? children : null}
+          {canRenderWorkspace && <AppInstallTaskQueue />}
           {canRenderWorkspace && <MobileTabBar />}
         </>
       );

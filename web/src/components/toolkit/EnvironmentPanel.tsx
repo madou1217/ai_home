@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
-  Collapse,
   Empty,
   Segmented,
   Spin,
@@ -230,43 +229,6 @@ function environmentEntries(runtime: RuntimeId, info: EnvironmentInfo): Environm
   })));
 }
 
-const FAQ_ITEMS = {
-  node: [
-    {
-      key: 'node-manager-choice',
-      label: 'NVM、FNM、Volta 应该选哪一个？',
-      children: '已有团队约定时跟随项目；需要跨平台与更快启动可考虑 FNM；需要按项目固定 Node 与 npm 版本可考虑 Volta。不要在同一 Shell 初始化多个版本管理器。'
-    },
-    {
-      key: 'node-detected-vs-installed',
-      label: '为什么显示“仅提供指南”？',
-      children: '实测轨道只反映 AIH 服务进程当前可见的 PATH 与用户目录。指南可用不代表工具已经安装，也不代表你的交互式 Shell 已完成初始化。'
-    },
-    {
-      key: 'node-command-safety',
-      label: '哪些操作可以在页面中执行？',
-      children: 'NVM/FNM 的安装、卸载、默认版本以及后端白名单内的操作，可以先生成结构化计划，再显式确认执行。curl、brew 等安装管理器本身的脚本仍只提供复制，不会自动运行。'
-    }
-  ],
-  python: [
-    {
-      key: 'python-env-choice',
-      label: 'venv、uv、Conda、Poetry 如何选择？',
-      children: '标准 Python 项目优先 venv；追求依赖安装速度可用 uv；科学计算与非 Python 依赖可用 Conda；需要项目依赖声明和发布流程可用 Poetry。'
-    },
-    {
-      key: 'python-global-local',
-      label: 'pyenv 与虚拟环境是什么关系？',
-      children: 'pyenv 负责选择 Python 解释器版本，venv/uv/Conda/Poetry 负责项目依赖隔离。通常先选解释器，再为项目创建独立环境。'
-    },
-    {
-      key: 'python-command-safety',
-      label: '为什么复制按钮有时不可用？',
-      children: '命令包含版本、包名或环境名称时必须先填写参数，避免把示例占位符直接粘贴到终端。'
-    }
-  ]
-};
-
 export default function EnvironmentPanel() {
   const [data, setData] = useState<EnvironmentsResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -422,12 +384,6 @@ export default function EnvironmentPanel() {
               ) : <Empty description="没有环境工具指南" />}
             </div>
           </div>
-
-          <section className="toolkit-faq" aria-labelledby="toolkit-environment-faq">
-            <div className="toolkit-panel-kicker">FIELD NOTES</div>
-            <h3 id="toolkit-environment-faq">常见问题</h3>
-            <Collapse items={FAQ_ITEMS[runtime]} />
-          </section>
         </>
       ) : null}
     </section>

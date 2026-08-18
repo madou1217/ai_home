@@ -349,7 +349,8 @@ export const PROVIDER_DEFINITIONS = [
     "capabilities": [
       "api_key_account",
       "model_catalog",
-      "session_history"
+      "session_history",
+      "quota_usage"
     ],
     "authOptions": [
       {

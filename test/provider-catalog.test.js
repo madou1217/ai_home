@@ -36,7 +36,7 @@ test('ProviderCatalog exposes provider capabilities centrally', () => {
   );
   assert.deepEqual(
     listProvidersByCapability('quotaUsage'),
-    ['codex', 'gemini', 'claude', 'agy', 'kimi']
+    ['codex', 'gemini', 'claude', 'agy', 'kimi', 'zcode']
   );
   assert.deepEqual(
     listProvidersByCapability('sessionRuntime'),

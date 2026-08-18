@@ -79,6 +79,7 @@ Fuller layer map:
 - 全局禁止使用大面积的告警/提示块作为页面主内容，包括黄色、蓝色或灰色的整块 `Alert` 卡片；保留无障碍语义，但统一使用紧凑的行内状态、标签或操作旁说明。
 - 全局禁止在卡片、状态项、导航项和列表项上使用粗左侧彩色竖条、`border-left` 装饰条或等价的 `inset` 强调条；状态应通过背景、完整边框、图标、标签或留白表达。
 - 新增或修改页面必须遵守上述规则，并通过真实页面检查确认不存在大块提示容器和左侧粗竖条。1px 的功能性分隔线仅可用于明确的控件分界，不得作为状态装饰。
+- 账号列表及各管理卡片的操作按钮必须保持语义化功能图标（例如 Desktop 使用 `DesktopOutlined`、CLI 使用 `CodeOutlined` 等），严禁将其替换为 Provider 厂商 Logo（`ProviderIcon`），避免与主体厂商图标重复混淆导致失去操作语义。
 
 ## Architecture & Layering Principles
 - Enforce separation of concerns: each module should have one clear responsibility (composition, domain logic, integration, or I/O).

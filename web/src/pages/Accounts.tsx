@@ -50,7 +50,7 @@ import {
   MobileOutlined,
   EditOutlined,
   CodeOutlined,
-  DesktopOutlined
+  DesktopOutlined,
 } from '@ant-design/icons';
 import {
   accountsAPI,
@@ -2438,12 +2438,14 @@ export default function Accounts() {
               <Tag color={getPlanTagColor(record)} style={{ fontSize: 11, lineHeight: '18px', padding: '0 4px', margin: 0 }}>
                 {getPlanTagLabel(record)}
               </Tag>
+              {/* 操作按钮必须保持语义化图标（DesktopOutlined / CodeOutlined），禁止替换为 ProviderIcon，避免与行首厂商主图标混淆 */}
               {appEntries && (appEntries[record.provider]?.desktop || appCapabilities[record.provider]?.desktop) ? (
                 <Tooltip title={!record.configured ? '账号未配置，完成授权后可打开 Desktop' : record.runtimeStatus === 'auth_invalid' ? '认证已失效，请重新登录' : runningAccounts.includes(getAccountRef(record)) ? 'Desktop 运行中（点击关闭）' : appEntries[record.provider]?.desktop ? '打开 Desktop' : '未安装 Desktop，点击后确认安装'}>
                   <Badge dot={runningAccounts.includes(getAccountRef(record))} status="success">
                     <Button
                       type="text"
                       size="small"
+                      aria-label={`打开 ${providerNames[record.provider] || record.provider} Desktop`}
                       icon={<DesktopOutlined />}
                       disabled={!record.configured || record.runtimeStatus === 'auth_invalid'}
                       onClick={(event: any) => {
@@ -2461,6 +2463,7 @@ export default function Accounts() {
                   <Button
                     type="text"
                     size="small"
+                    aria-label={`打开 ${providerNames[record.provider] || record.provider} CLI`}
                     icon={<CodeOutlined />}
                     disabled={!record.configured || record.runtimeStatus === 'auth_invalid'}
                     onClick={(event: any) => {
@@ -2614,6 +2617,8 @@ export default function Accounts() {
       dataIndex: 'tokenUsage',
       key: 'tokenUsage',
       width: 214,
+      // 单元格宽度随折叠变化，内容已居中；表头跟着居中才不会两头不齐。
+      align: 'center' as const,
       render: (_value: any, record: Account) => (
         <TokenUsageCell usage={record.tokenUsage} />
       )

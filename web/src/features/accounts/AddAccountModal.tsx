@@ -97,20 +97,45 @@ export function AddAccountModal({
           <>
             <Form.Item
               name="apiKey"
-              label={selectedAuthMode === 'auth-token' ? 'Auth Token' : (selectedProvider === 'gemini' ? 'Gemini API Key' : '密钥')}
+              label={
+                selectedAuthMode === 'auth-token'
+                  ? 'Auth Token'
+                  : selectedProvider === 'gemini'
+                  ? 'Gemini API Key'
+                  : selectedProvider === 'opencode'
+                  ? 'OpenCode API Key'
+                  : '密钥'
+              }
               rules={[{ required: true, message: '请输入密钥' }]}
-              help={selectedProvider === 'gemini' ? '填入 Google AI Studio 获取的 GEMINI_API_KEY 或 GOOGLE_API_KEY' : undefined}
+              help={
+                selectedProvider === 'gemini'
+                  ? '填入 Google AI Studio 获取的 GEMINI_API_KEY 或 GOOGLE_API_KEY'
+                  : selectedProvider === 'opencode'
+                  ? '填入 https://opencode.ai/auth 获取的 API Key'
+                  : undefined
+              }
             >
-              <Input.Password autoComplete="new-password" placeholder="请输入密钥" size="large" />
+              <Input.Password
+                autoComplete="new-password"
+                placeholder={selectedProvider === 'opencode' ? 'sk-...' : '请输入密钥'}
+                size="large"
+              />
             </Form.Item>
 
             {selectedProvider !== 'gemini' && (
               <Form.Item
                 name="baseUrl"
                 label="接口地址（可选）"
-                help="用于中转服务或自定义网关"
+                help={
+                  selectedProvider === 'opencode'
+                    ? '默认使用 OpenCode Go 端点 https://opencode.ai/zen/go/v1，支持全量 Zen / Go 模型；亦可指定 Zen 端点 https://opencode.ai/zen/v1 或自定义反代'
+                    : '用于中转服务或自定义网关'
+                }
               >
-                <Input placeholder="https://api.example.com" size="large" />
+                <Input
+                  placeholder={selectedProvider === 'opencode' ? 'https://opencode.ai/zen/go/v1' : 'https://api.example.com'}
+                  size="large"
+                />
               </Form.Item>
             )}
           </>

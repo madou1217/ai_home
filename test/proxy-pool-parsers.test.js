@@ -177,3 +177,27 @@ proxies:
   assert.equal(nodes[1].path, '/proxy:v1');
   assert.equal(nodes[1].host, 'edge.example.com');
 });
+
+test('clash YAML import keeps nodes that carry benign transport flags', () => {
+  // 机场订阅普遍在每个节点上带 `udp: true`（还有 tfo / mptcp 之类）。这些开关不改变
+  // 出站目标，早期的严格白名单却把它们判为 unsupported_proxy_field_udp，整份订阅被丢空，
+  // 应用空配置后又表现为 routing_not_fully_applied / proxy_core_rollback_not_applied。
+  const yaml = [
+    'proxies:',
+    '  - {name: reality-01, type: vless, server: 198.51.100.7, port: 36699, uuid: 11111111-2222-3333-4444-555555555555, udp: true, tls: true, skip-cert-verify: false, flow: xtls-rprx-vision, client-fingerprint: chrome, servername: example.com, reality-opts: {public-key: PUBKEY, short-id: ab12}}',
+    '  - {name: ss-01, type: ss, server: 198.51.100.8, port: 8388, cipher: aes-256-gcm, password: secret, udp: true, tfo: true, mptcp: false, ip-version: ipv4}'
+  ].join('\n');
+
+  const nodes = parseSubscriptionContent(yaml);
+  assert.equal(nodes.length, 2, '带 udp/tfo 的节点不应被丢弃');
+
+  const [reality, ss] = nodes;
+  assert.equal(reality.protocol, 'vless');
+  assert.equal(reality.security, 'reality');
+  assert.equal(reality.publicKey, 'PUBKEY');
+  assert.equal(ss.protocol, 'shadowsocks');
+  assert.equal(ss.port, 8388);
+  // 忽略的字段不应泄漏进节点模型，编译期只认我们自己拼的字段。
+  assert.equal(reality.udp, undefined);
+  assert.equal(ss.tfo, undefined);
+});

@@ -15,7 +15,6 @@ import {
   Input,
   Select,
   Radio,
-  Segmented,
   Alert,
   message,
   Card,
@@ -112,6 +111,7 @@ import {
 } from '@/features/accounts/useModelCatalog';
 import { CliPickerModal } from '@/features/accounts/CliPickerModal';
 import { EditAccountModal } from '@/features/accounts/EditAccountModal';
+import { ImportAccountsModal } from '@/features/accounts/ImportAccountsModal';
 import {
   getAccountPrimaryLabel,
   getAccountSecondaryLabel,
@@ -1762,7 +1762,6 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
       )
     }))
   ];
-  const activePasteTemplate = PASTE_TEMPLATES[pasteTemplate];
   const exportMenuItems: MenuProps['items'] = EXPORT_ACTIONS.map((action) => ({
     key: action.format,
     label: (
@@ -1919,96 +1918,23 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
           style={{ marginBottom: 16 }}
         />
       ) : null}
-      <Modal
-        title="导入账号"
+      <ImportAccountsModal
         open={importModalVisible}
-        onOk={handleImportSubmit}
+        importing={importingAccounts}
+        canSubmit={canSubmitImport}
+        mode={importMode}
+        fileName={importFileName}
+        pasteTemplate={pasteTemplate}
+        importText={importText}
+        onModeChange={handleImportModeChange}
+        onTemplateChange={(template) => setPasteTemplate(template)}
+        onTextChange={(text) => setImportText(text)}
+        onPickFile={() => importInputRef.current?.click()}
+        onPickFolder={() => importFolderInputRef.current?.click()}
+        onFillTemplate={() => setImportText(PASTE_TEMPLATES[pasteTemplate].value)}
+        onSubmit={handleImportSubmit}
         onCancel={closeImportModal}
-        okText="导入"
-        cancelText="取消"
-        confirmLoading={importingAccounts}
-        okButtonProps={{ disabled: !canSubmitImport }}
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <Segmented
-            value={importMode}
-            onChange={handleImportModeChange}
-            options={[
-              { label: '文件', value: 'file' },
-              { label: '文件夹', value: 'folder' },
-              { label: '粘贴', value: 'text' },
-              { label: 'CLIProxyAPI', value: 'cliproxyapi' }
-            ]}
-          />
-          {importMode === 'file' ? (
-            <Alert
-              type={importFileName ? 'success' : 'info'}
-              showIcon
-              message={importFileName ? `已选择 ${importFileName}` : '选择 JSON / JSONL / ZIP 文件'}
-              description="支持迁移 JSON、Antigravity Manager、JSONL 和 zip 导入包。"
-              action={
-                <Button size="small" onClick={() => importInputRef.current?.click()}>
-                  {importFileName ? '重新选择' : '选择文件'}
-                </Button>
-              }
-            />
-          ) : null}
-          {importMode === 'folder' ? (
-            <Alert
-              type={importFileName ? 'success' : 'info'}
-              showIcon
-              message={importFileName ? `已选择 ${importFileName}` : '选择账号文件夹'}
-              description="支持包含 provider 目录、账号目录、JSON 文件或嵌套 ZIP 的文件夹，上传后由统一导入器自动发现。"
-              action={
-                <Button size="small" onClick={() => importFolderInputRef.current?.click()}>
-                  {importFileName ? '重新选择' : '选择文件夹'}
-                </Button>
-              }
-            />
-          ) : null}
-          {importMode === 'text' ? (
-            <div className="accounts-import-paste">
-              <Select
-                value={pasteTemplate}
-                onChange={(value) => setPasteTemplate(value as PasteTemplate)}
-                options={Object.entries(PASTE_TEMPLATES).map(([value, template]) => ({
-                  value,
-                  label: template.label
-                }))}
-              />
-              <Alert
-                type="info"
-                showIcon
-                message={activePasteTemplate.label}
-                description={activePasteTemplate.description}
-                action={
-                  <Button size="small" onClick={() => setImportText(activePasteTemplate.value)}>
-                    填入模板
-                  </Button>
-                }
-              />
-              <div className="accounts-import-template">
-                <div>格式模板</div>
-                <pre>{activePasteTemplate.value}</pre>
-              </div>
-              <Input.TextArea
-                rows={8}
-                placeholder="粘贴真实 JSON / JSONL 数据，或先填入模板再替换占位凭据"
-                value={importText}
-                onChange={(e) => setImportText(e.target.value)}
-              />
-            </div>
-          ) : null}
-          {importMode === 'cliproxyapi' ? (
-            <Alert
-              type="info"
-              showIcon
-              message="从 CLIProxyAPI 配置导入"
-              description="读取本机 CLIProxyAPI 配置和账号凭据，导入到 AI Home 账号池；无需上传文件。"
-            />
-          ) : null}
-        </div>
-      </Modal>
+      />
 
         {isMobile ? (
           <div className="accounts-mobile-pool">

@@ -215,16 +215,16 @@ func builtinAntigravity() Definition {
 	}
 }
 
-// builtinOpenCode 定义由 OpenCode 自身管理认证的 CLI 能力。
+// builtinOpenCode 定义由 OpenCode API 密钥认证的 CLI 与网关能力。
 func builtinOpenCode() Definition {
 	return Definition{
 		ID:           "opencode",
 		Presentation: presentation("opencode", "OpenCode", "OC", "⌘", "default"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
-		Capabilities: []Capability{CapabilityModelCatalog, CapabilitySessionRuntime, CapabilityFabricRuntime, CapabilityGatewayProfile, CapabilitySessionHistory, CapabilityUsageScan},
+		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionRuntime, CapabilityFabricRuntime, CapabilityGatewayProfile, CapabilitySessionHistory, CapabilityUsageScan},
 		AuthOptions: []AuthOption{
-			authOption(AuthModeOAuthBrowser, "OpenCode 登录", "使用 OpenCode CLI 原生 auth login 流程。"),
+			authOption(AuthModeAPIKey, "OpenCode 密钥", "绑定 OpenCode / OpenCode Go API Key（从 https://opencode.ai/auth 获取，默认端点 https://opencode.ai/zen/go/v1，支持全量 Zen / Go 模型）。"),
 		},
 		SessionSync: SessionSync{
 			Mode:       SessionSyncHook,
@@ -238,7 +238,7 @@ func builtinOpenCode() Definition {
 			ConfigFile: "opencode.json",
 			LoginArgs:  []string{"auth", "login"},
 			Package:    "opencode-ai",
-			EnvKeys:    []string{},
+			EnvKeys:    []string{"OPENCODE_API_KEY", "OPENCODE_BASE_URL"},
 			Headless:   &HeadlessConfig{TriggerSubcommands: []string{"run"}},
 			DesktopClient: desktopClient(
 				"OpenCode",

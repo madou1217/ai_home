@@ -166,6 +166,7 @@ export const PROVIDER_DEFINITIONS = [
     "softVar": "var(--provider-opencode-soft)",
     "tagColor": "default",
     "capabilities": [
+      "api_key_account",
       "model_catalog",
       "session_runtime",
       "fabric_runtime",
@@ -175,9 +176,9 @@ export const PROVIDER_DEFINITIONS = [
     ],
     "authOptions": [
       {
-        "value": "oauth-browser",
-        "label": "OpenCode 登录",
-        "description": "使用 OpenCode CLI 原生 auth login 流程。"
+        "value": "api-key",
+        "label": "OpenCode 密钥",
+        "description": "绑定 OpenCode / OpenCode Go API Key（从 https://opencode.ai/auth 获取，默认端点 https://opencode.ai/zen/go/v1，支持全量 Zen / Go 模型）。"
       }
     ],
     "clients": {

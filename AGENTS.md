@@ -28,7 +28,6 @@ Fuller layer map:
 - `lib/usage/` — usage tracking, pricing, cycle scheduling.
 - `lib/protocol/` — SSE parsing, tool-call adaptation, token counting.
 - `web/src/` — React WebUI (pages + hooks + services).
-- `cli/src/` — vendored Claude Code (Bun/TypeScript, independent tech stack).
 - `test/` — all test files (`*.test.js`, ~155).
 
 ## Build, Test, and Development Commands
@@ -72,7 +71,6 @@ Fuller layer map:
 - Formatting style in repo: 2-space indentation, semicolons, single quotes.
 - File names use kebab-case (for example `account-import-orchestrator.js`).
 - Prefer small, composable functions; avoid feature growth in one large file.
-- `cli/`: TypeScript ESM, run by Bun (vendored Claude Code source — do not modify unless necessary).
 - `web/`: TypeScript + React 18 + Ant Design + Umi Max (Webpack build), ESM.
 
 ## UI Visual Constraints

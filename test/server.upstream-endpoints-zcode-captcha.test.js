@@ -88,7 +88,11 @@ function runZcodePassthrough(options = {}) {
     state,
     req: {
       url: '/v1/messages',
-      headers: { 'content-type': 'application/json' }
+      headers: {
+        'content-type': 'application/json',
+        'accept-language': 'zh-CN,zh;q=0.9',
+        'sec-fetch-mode': 'cors'
+      }
     },
     res,
     method: 'POST',
@@ -106,7 +110,7 @@ function runZcodePassthrough(options = {}) {
         response.end(JSON.stringify(payload));
       },
       fetchWithTimeout: async (url, init) => {
-        fetchCalls.push({ url, headers: { ...(init && init.headers || {}) } });
+        fetchCalls.push({ url, headers: { ...(init && init.headers || {}) }, body: init && init.body });
         return options.onFetch
           ? options.onFetch(fetchCalls.length)
           : createUpstreamResponse(200, '{"ok":true}');
@@ -133,7 +137,15 @@ test('zcode OAuth 3007 triggers the captcha bridge and resends with verify heade
     captchaBridge: {
       requestVerification: async (ref, opts) => {
         bridgeCalls.push({ ref, opts });
-        return { ok: true, verifyParam: 'verify-param-xyz', region: 'cn' };
+        // 桥会带回求解浏览器的身份头；重试绝不能用它覆盖桌面端 UA（黄金请求实证）。
+        return {
+          ok: true,
+          verifyParam: 'verify-param-xyz',
+          region: 'cn',
+          userAgent: 'Mozilla/5.0 Chrome/140',
+          secChUa: '"Chromium";v="140"',
+          acceptLanguage: 'zh-CN'
+        };
       }
     }
   });
@@ -150,10 +162,27 @@ test('zcode OAuth 3007 triggers the captcha bridge and resends with verify heade
     assert.equal(call.headers.authorization, 'Bearer zcode-jwt-token');
     assert.equal(call.headers['x-api-key'], 'zcode-jwt-token');
     assert.equal(call.headers['anthropic-version'], '2023-06-01');
+    // mitm 黄金请求身份（zcode-official-client.js）：两次调用都必须带。
+    assert.equal(call.headers['user-agent'], 'ZCode/3.7.7 ai-sdk/provider-utils/4.0.27 runtime/node.js/24');
+    assert.equal(call.headers['x-zcode-app-version'], '3.7.7');
+    assert.equal(call.headers['x-zcode-agent'], 'glm');
+    assert.equal(call.headers['x-title'], 'Z Code@electron');
+    assert.equal(call.headers['http-referer'], 'https://zcode.z.ai');
+    const metadata = JSON.parse(JSON.parse(call.body.toString('utf8')).metadata.user_id);
+    assert.match(metadata.device_id, /^[0-9a-f-]{36}$/);
+    assert.equal(metadata.session_id, call.headers['x-session-id']);
   }
   assert.equal(scenario.fetchCalls[0].headers['x-aliyun-captcha-verify-param'], undefined);
   assert.equal(scenario.fetchCalls[1].headers['x-aliyun-captcha-verify-param'], 'verify-param-xyz');
   assert.equal(scenario.fetchCalls[1].headers['x-aliyun-captcha-verify-region'], 'cn');
+  assert.equal(scenario.fetchCalls[1].headers['sec-ch-ua'], undefined, 'solver browser headers must not leak into the retry');
+  for (const call of scenario.fetchCalls) {
+    // 内部记账标记与下游浏览器杂头不透传给 zcode 官方端点（黄金请求无这些字段）。
+    assert.equal(call.headers['x-aih-account-ref'], undefined);
+    assert.equal(call.headers['x-aih-account-email'], undefined);
+    assert.equal(call.headers['accept-language'], undefined);
+    assert.equal(call.headers['sec-fetch-mode'], undefined);
+  }
 
   assert.equal(bridgeCalls.length, 1);
   assert.equal(bridgeCalls[0].ref, scenario.account.accountRef);

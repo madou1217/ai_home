@@ -3,9 +3,9 @@ import test from 'node:test';
 
 import { LegacyChatAccountCatalogClient } from './legacy-chat-account-catalog-core.ts';
 
-test('旧聊天账号目录从 Node 只读快照保留非 Codex/Claude Provider', async (context) => {
+test('旧聊天账号目录从 Node 只读快照保留非 Codex/Claude Provider', async () => {
   const requests: Array<{ input: RequestInfo | URL; init?: RequestInit }> = [];
-  const fetchResource = context.mock.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+  const fetchResource = async (input: RequestInfo | URL, init?: RequestInit) => {
     requests.push({ input, init });
     return Response.json({
       ok: true,
@@ -16,7 +16,7 @@ test('旧聊天账号目录从 Node 只读快照保留非 Codex/Claude Provider'
       hydrating: false,
       providerNativeCapabilities: {},
     });
-  });
+  };
   const client = new LegacyChatAccountCatalogClient({
     fetch: fetchResource,
     openStream: () => {

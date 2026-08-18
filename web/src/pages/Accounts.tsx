@@ -57,11 +57,6 @@ import {
   startAppInstallJob,
   waitForAppInstallJob
 } from '@/services/api';
-import {
-  ACCOUNT_LIST_LOAD_MESSAGE_KEY,
-  clearLoadFailureMessage,
-  showLoadFailureMessage
-} from '@/services/load-failure-message.js';
 import { openExternalUrl } from '@/services/open-external-url';
 import { formatTimeCell } from '@/utils/datetime';
 import type { AccountExportFormat } from '@/services/api';
@@ -74,7 +69,6 @@ import type {
   AccountAuthMode,
   AccountImportJob,
   AccountRefreshJob,
-  AccountRemovedEvent,
   ClientTerminalItem,
   Provider,
   WebUiOpenAIModelsJob,
@@ -84,7 +78,6 @@ import ProviderIcon, { providerIds, providerNames } from '@/components/chat/Prov
 import { PROVIDER_AUTH_OPTIONS, PROVIDER_CATALOG } from '@/providers/catalog';
 import UsageSnapshotCell from '@/components/account/UsageSnapshotCell';
 import TokenUsageCell from '@/components/account/TokenUsageCell';
-import { isInternalAccountLabel } from '@/utils/account-labels';
 import {
   canCopyAccountEmail,
   canEditAccountConfig,
@@ -95,7 +88,8 @@ import {
   getReauthActionLabel,
   getUsageSortValue,
   hasKnownUsage,
-  isAccountEnabled
+  isAccountEnabled,
+  mergeSingleAccount
 } from '@/features/accounts/account-state';
 import {
   buildAccountModelCatalogFromOpenAI,
@@ -117,6 +111,10 @@ import {
 } from '@/features/accounts/account-import-export';
 import type { ImportMode, PasteTemplate } from '@/features/accounts/account-import-export';
 import {
+  useAccountsSnapshot
+} from '@/features/accounts/useAccountsSnapshot';
+import type { UseAccountsSnapshotHandlers } from '@/features/accounts/useAccountsSnapshot';
+import {
   getAccountPrimaryLabel,
   getAccountSecondaryLabel,
   getPlanTagColor,
@@ -134,10 +132,8 @@ dayjs.locale('zh-cn');
 
 // Provider 顺序和认证方式都来自 Go 核心生成的 Client 合同。
 const PROVIDERS: readonly Provider[] = providerIds;
-const ACCOUNT_REMOVE_ANIMATION_MS = 420;
 const AUTH_JOB_FALLBACK_POLL_MS = 5000;
 const ACCOUNT_REFRESH_FALLBACK_CLEAR_MS = 70_000;
-const ACCOUNT_SNAPSHOT_REFRESH_FALLBACK_MS = 70_000;
 
 // Browser-OAuth wrap-up copy differs by provider, mirroring the backend login
 // strategies: agy/claude keep a CLI running and want an authorization code
@@ -246,99 +242,24 @@ function persistActiveProviderTab(provider: AccountProviderFilter): void {
   try { window.localStorage.setItem(ACCOUNTS_ACTIVE_PROVIDER_STORAGE_KEY, provider); } catch (_error) {}
 }
 
-function mergeAccountRecord(
-  current: Account,
-  incoming: Account,
-  options: { preserveLiveFields?: boolean } = {}
-): Account {
-  const fallbackDisplayName = incoming.accountRef;
-  const merged: Account = {
-    ...current,
-    ...incoming
-  };
-
-  if (merged.apiKeyMode) {
-    merged.runtimeStatus = undefined;
-    merged.runtimeUntil = undefined;
-    merged.runtimeReason = undefined;
-    merged.usageSnapshot = null;
-    merged.remainingPct = null as any;
-    merged.quotaStatus = undefined;
-    merged.quotaReason = undefined;
-    merged.schedulableStatus = undefined;
-    merged.schedulableReason = undefined;
-    return merged;
-  }
-
-  if (!merged.configured || merged.apiKeyMode) {
-    return merged;
-  }
-
-  if (!incoming.email && current.email) {
-    merged.email = current.email;
-  }
-  if (options.preserveLiveFields) {
-    if ((incoming.updatedAt == null || incoming.updatedAt <= 0) && current.updatedAt > 0) {
-      merged.updatedAt = current.updatedAt;
-    }
-    if ((incoming.lastUsedAt == null || incoming.lastUsedAt <= 0) && current.lastUsedAt && current.lastUsedAt > 0) {
-      merged.lastUsedAt = current.lastUsedAt;
-    }
-    if (!incoming.usageSnapshot && current.usageSnapshot) {
-      merged.usageSnapshot = current.usageSnapshot;
-    }
-    if ((incoming.remainingPct == null) && current.remainingPct != null) {
-      merged.remainingPct = current.remainingPct;
-    }
-    if (incoming.runtimeStatus == null && current.runtimeStatus != null) {
-      merged.runtimeStatus = current.runtimeStatus;
-    }
-    if (incoming.runtimeUntil == null && current.runtimeUntil != null) {
-      merged.runtimeUntil = current.runtimeUntil;
-    }
-    if (incoming.runtimeReason == null && current.runtimeReason != null) {
-      merged.runtimeReason = current.runtimeReason;
-    }
-    if (incoming.quotaStatus == null && current.quotaStatus != null) {
-      merged.quotaStatus = current.quotaStatus;
-    }
-    if (incoming.quotaReason == null && current.quotaReason != null) {
-      merged.quotaReason = current.quotaReason;
-    }
-    if (incoming.schedulableStatus == null && current.schedulableStatus != null) {
-      merged.schedulableStatus = current.schedulableStatus;
-    }
-    if (incoming.schedulableReason == null && current.schedulableReason != null) {
-      merged.schedulableReason = current.schedulableReason;
-    }
-  }
-  if (
-    (!incoming.planType || incoming.planType === 'oauth' || incoming.planType === 'pending')
-    && current.planType
-    && current.planType !== 'oauth'
-    && current.planType !== 'pending'
-  ) {
-    merged.planType = current.planType;
-  }
-  if ((!incoming.displayName || incoming.displayName === fallbackDisplayName || isInternalAccountLabel(incoming.displayName)) && current.displayName) {
-    merged.displayName = current.displayName;
-  }
-
-  return merged;
-}
-
 export default function Accounts() {
   const { Paragraph, Text } = Typography;
   const screens = Grid.useBreakpoint();
   const isMobile = !screens.md;
   const location = useLocation();
   const navigate = useNavigate();
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [hydratingDetails, setHydratingDetails] = useState(false);
+const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
+  const {
+    accounts,
+    setAccounts,
+    hydratingDetails,
+    removingAccountRefs,
+    loading,
+    refreshing,
+    requestAccountsSnapshotUpdate,
+    stageAccountRemoval
+  } = useAccountsSnapshot(accountsHandlersRef);
   const [zcodeCaptchaEvent, setZcodeCaptchaEvent] = useState<ZcodeCaptchaEvent | null>(null);
-  const [removingAccountRefs, setRemovingAccountRefs] = useState<Record<string, boolean>>({});
-  const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
   const [updatingStatusAccountRefs, setUpdatingStatusAccountRefs] = useState<Record<string, boolean>>({});
   const [refreshingUsageAccountRefs, setRefreshingUsageAccountRefs] = useState<Record<string, boolean>>({});
   const [modalVisible, setModalVisible] = useState(false);
@@ -376,17 +297,11 @@ export default function Accounts() {
   const importInputRef = React.useRef<HTMLInputElement>(null);
   const importFolderInputRef = React.useRef<HTMLInputElement>(null);
   const successAutoCloseTimerRef = React.useRef<number | null>(null);
-  const removingAccountTimersRef = React.useRef<Record<string, number>>({});
   const completedImportJobKeysRef = React.useRef<Set<string>>(new Set());
   const completedAuthJobKeysRef = React.useRef<Set<string>>(new Set());
   const completedRefreshJobKeysRef = React.useRef<Set<string>>(new Set());
   const requestedModelCatalogJobIdsRef = React.useRef<Set<string>>(new Set());
   const refreshingUsageFallbackTimersRef = React.useRef<Record<string, number>>({});
-  const accountsSnapshotFallbackTimerRef = React.useRef<number | null>(null);
-  const accountsRef = React.useRef<Account[]>([]);
-  const hasLoadedAccountsRef = React.useRef(false);
-  const accountsSnapshotRevisionRef = React.useRef(0);
-  const accountsLoadRequestRef = React.useRef(0);
   const previousAddProviderRef = React.useRef<Provider | undefined>(undefined);
   const selectedProvider = Form.useWatch('provider', form) as Provider | undefined;
   const selectedAuthMode = Form.useWatch('authMode', form) as AccountAuthMode | undefined;
@@ -448,35 +363,6 @@ export default function Accounts() {
     }
   }, []);
 
-  const mergeAccounts = React.useCallback((
-    current: Account[],
-    incoming: Account[],
-    options: { preserveLiveFields?: boolean } = {}
-  ) => {
-    const currentMap = new Map<string, Account>(
-      current.map((account) => [getAccountRef(account), account])
-    );
-    const nextMap = new Map<string, Account>();
-    incoming.forEach((account) => {
-      const key = getAccountRef(account);
-      const previous = currentMap.get(key);
-      nextMap.set(key, previous ? mergeAccountRecord(previous, account, options) : account);
-    });
-    return Array.from(nextMap.values());
-  }, []);
-
-  const mergeSingleAccount = React.useCallback((current: Account[], incoming: Account) => {
-    const next = current.slice();
-    const key = getAccountRef(incoming);
-    const index = next.findIndex((account) => getAccountRef(account) === key);
-    if (index >= 0) {
-      next[index] = mergeAccountRecord(next[index], incoming);
-      return next;
-    }
-    next.push(incoming);
-    return next;
-  }, []);
-
   const clearAccountUsageRefresh = React.useCallback((accountRef: string) => {
     const key = String(accountRef || '').trim();
     if (!key) return;
@@ -506,97 +392,6 @@ export default function Accounts() {
       clearAccountUsageRefresh(key);
     }, ACCOUNT_REFRESH_FALLBACK_CLEAR_MS);
   }, [clearAccountUsageRefresh]);
-
-  const clearAccountsSnapshotRefresh = React.useCallback(() => {
-    if (accountsSnapshotFallbackTimerRef.current !== null) {
-      window.clearTimeout(accountsSnapshotFallbackTimerRef.current);
-      accountsSnapshotFallbackTimerRef.current = null;
-    }
-    setRefreshing(false);
-  }, []);
-
-  const trackAccountsSnapshotRefresh = React.useCallback(() => {
-    setRefreshing(true);
-    setHydratingDetails(true);
-    if (accountsSnapshotFallbackTimerRef.current !== null) {
-      window.clearTimeout(accountsSnapshotFallbackTimerRef.current);
-    }
-    accountsSnapshotFallbackTimerRef.current = window.setTimeout(() => {
-      accountsSnapshotFallbackTimerRef.current = null;
-      setRefreshing(false);
-      setHydratingDetails(false);
-    }, ACCOUNT_SNAPSHOT_REFRESH_FALLBACK_MS);
-  }, []);
-
-  const cancelAccountRemoval = React.useCallback((accountRef: string) => {
-    const key = String(accountRef || '').trim();
-    if (!key) return;
-    const timer = removingAccountTimersRef.current[key];
-    if (timer) {
-      window.clearTimeout(timer);
-      delete removingAccountTimersRef.current[key];
-    }
-    setRemovingAccountRefs((current) => {
-      if (!current[key]) return current;
-      const next = { ...current };
-      delete next[key];
-      return next;
-    });
-  }, []);
-
-  const stageAccountRemoval = React.useCallback((target: Pick<Account, 'accountRef'>) => {
-    const accountRef = getAccountRef(target);
-    if (!accountRef) return;
-    clearAccountUsageRefresh(accountRef);
-    setRemovingAccountRefs((current) => (
-      current[accountRef] ? current : { ...current, [accountRef]: true }
-    ));
-    const currentTimer = removingAccountTimersRef.current[accountRef];
-    if (currentTimer) window.clearTimeout(currentTimer);
-    removingAccountTimersRef.current[accountRef] = window.setTimeout(() => {
-      setAccounts((current) => current.filter((account) => getAccountRef(account) !== accountRef));
-      setRemovingAccountRefs((current) => {
-        if (!current[accountRef]) return current;
-        const next = { ...current };
-        delete next[accountRef];
-        return next;
-      });
-      setRefreshingUsageAccountRefs((current) => {
-        if (!current[accountRef]) return current;
-        const next = { ...current };
-        delete next[accountRef];
-        return next;
-      });
-      setUpdatingStatusAccountRefs((current) => {
-        if (!current[accountRef]) return current;
-        const next = { ...current };
-        delete next[accountRef];
-        return next;
-      });
-      delete removingAccountTimersRef.current[accountRef];
-    }, ACCOUNT_REMOVE_ANIMATION_MS);
-  }, [clearAccountUsageRefresh]);
-
-  const applyAccountsSnapshot = React.useCallback((
-    snapshotAccounts: Account[],
-    options: { preserveLiveFields?: boolean } = {}
-  ) => {
-    const incoming = Array.isArray(snapshotAccounts) ? snapshotAccounts : [];
-    const incomingRefs = new Set(incoming.map((account) => getAccountRef(account)));
-    accountsRef.current
-      .filter((account) => !incomingRefs.has(getAccountRef(account)))
-      .forEach((account) => stageAccountRemoval(account));
-
-    setAccounts((current) => {
-      const next = mergeAccounts(current, incoming, options);
-      const nextRefs = new Set(next.map((account) => getAccountRef(account)));
-      const exiting = current.filter((account) => {
-        const key = getAccountRef(account);
-        return Boolean(removingAccountTimersRef.current[key]) && !nextRefs.has(key);
-      });
-      return [...next, ...exiting];
-    });
-  }, [mergeAccounts, stageAccountRemoval]);
 
   const closeAuthProgressPanel = React.useCallback(() => {
     if (successAutoCloseTimerRef.current !== null) {
@@ -755,38 +550,6 @@ export default function Accounts() {
     }
   };
 
-  const loadAccounts = React.useCallback(async () => {
-    const requestId = ++accountsLoadRequestRef.current;
-    const snapshotRevision = accountsSnapshotRevisionRef.current;
-    if (hasLoadedAccountsRef.current) setRefreshing(true);
-    else setLoading(true);
-    try {
-      const payload = await accountsAPI.list();
-      if (
-        requestId !== accountsLoadRequestRef.current
-        || snapshotRevision !== accountsSnapshotRevisionRef.current
-      ) return;
-      clearLoadFailureMessage(message, ACCOUNT_LIST_LOAD_MESSAGE_KEY);
-      applyAccountsSnapshot(payload.accounts, {
-        preserveLiveFields: Boolean(payload.hydrating)
-      });
-      setHydratingDetails(Boolean(payload.hydrating));
-      hasLoadedAccountsRef.current = true;
-    } catch (_error) {
-      if (
-        requestId === accountsLoadRequestRef.current
-        && snapshotRevision === accountsSnapshotRevisionRef.current
-      ) {
-        showLoadFailureMessage(message, ACCOUNT_LIST_LOAD_MESSAGE_KEY, '加载账号失败');
-      }
-    } finally {
-      if (requestId === accountsLoadRequestRef.current) {
-        setLoading(false);
-        setRefreshing(false);
-      }
-    }
-  }, [applyAccountsSnapshot]);
-
   const markModelAccountRefreshing = React.useCallback((accountRef: string) => {
     if (!accountRef) return;
     setRefreshingModelAccountRefs((current) => ({ ...current, [accountRef]: true }));
@@ -937,25 +700,6 @@ export default function Accounts() {
     }
   }, [applyModelCatalogJob, clearModelAccountRefreshing, markModelAccountRefreshing]);
 
-  const requestAccountsSnapshotUpdate = React.useCallback(async (options: {
-    announce?: boolean;
-    failureMessage?: string;
-  } = {}) => {
-    trackAccountsSnapshotRefresh();
-    try {
-      const response = await accountsAPI.requestSnapshot();
-      if (options.announce) {
-        message.info(response.alreadyRunning ? '账号重新加载已在进行' : '账号重新加载已开始');
-      }
-      return response;
-    } catch (error: any) {
-      clearAccountsSnapshotRefresh();
-      setHydratingDetails(false);
-      message.error(error?.response?.data?.message || error?.message || options.failureMessage || '刷新账号列表失败');
-      return null;
-    }
-  }, [clearAccountsSnapshotRefresh, trackAccountsSnapshotRefresh]);
-
   const handleImportJobUpdate = React.useCallback((job: AccountImportJob) => {
     const jobId = String(job?.id || '').trim();
     if (!jobId) return;
@@ -1055,16 +799,8 @@ export default function Accounts() {
   }, [clearAccountUsageRefresh, stageAccountRemoval, trackAccountUsageRefresh]);
 
   useEffect(() => {
-    accountsRef.current = accounts;
-  }, [accounts]);
-
-  useEffect(() => {
     persistActiveProviderTab(activeProvider);
   }, [activeProvider]);
-
-  useEffect(() => {
-    loadAccounts();
-  }, [loadAccounts]);
 
   // 桌面/CLI 入口按宿主机实测结果控制：加载完成前两个图标都隐藏，避免闪烁。
   // runningAccounts 记录桌面运行中的账号，用于给图标挂角标。
@@ -1138,75 +874,42 @@ export default function Accounts() {
     return () => watcher.close();
   }, [applyModelCatalogJob]);
 
-  useEffect(() => {
-    const watcher = accountsAPI.watch({
-      onSnapshot: ({ accounts: snapshotAccounts, hydrating }) => {
-        accountsSnapshotRevisionRef.current += 1;
-        clearLoadFailureMessage(message, ACCOUNT_LIST_LOAD_MESSAGE_KEY);
-        applyAccountsSnapshot(snapshotAccounts, {
-          preserveLiveFields: Boolean(hydrating)
-        });
-        setHydratingDetails(Boolean(hydrating));
-        hasLoadedAccountsRef.current = true;
-        setLoading(false);
-      },
-      onSnapshotRequested: () => {
-        trackAccountsSnapshotRefresh();
-      },
-      onAccount: (account) => {
-        cancelAccountRemoval(getAccountRef(account));
-        clearAccountUsageRefresh(getAccountRef(account));
-        clearModelAccountRefreshing(getModelRefreshAccountRef(account));
-        setAccounts((current) => mergeSingleAccount(current, account));
-      },
-      onAccountRemoved: (event: AccountRemovedEvent) => {
-        clearAccountUsageRefresh(getAccountRef(event));
-        const removedAccount = accountsRef.current.find((account) => (
-          account.provider === event.provider && account.accountRef === event.accountRef
-        ));
-        clearModelAccountRefreshing(removedAccount ? getModelRefreshAccountRef(removedAccount) : '');
-        stageAccountRemoval(event);
-      },
-      onHydrated: () => {
-        setHydratingDetails(false);
-        clearAccountsSnapshotRefresh();
-      },
-      onImportJob: handleImportJobUpdate,
-      onAuthJob: handleAuthJobUpdate,
-      onAccountRefreshJob: handleAccountRefreshJobUpdate,
-      onZcodeCaptcha: (captchaEvent) => {
-        setZcodeCaptchaEvent(captchaEvent);
-      },
-      onError: () => {
-        if (accountsSnapshotFallbackTimerRef.current === null) {
-          setHydratingDetails(false);
-        }
-      }
-    });
-    return () => {
-      watcher.close();
-    };
-  }, [applyAccountsSnapshot, cancelAccountRemoval, clearAccountUsageRefresh, clearAccountsSnapshotRefresh, clearModelAccountRefreshing, handleAccountRefreshJobUpdate, handleAuthJobUpdate, handleImportJobUpdate, mergeSingleAccount, stageAccountRemoval, trackAccountsSnapshotRefresh]);
+accountsHandlersRef.current = {
+    onImportJob: handleImportJobUpdate,
+    onAuthJob: handleAuthJobUpdate,
+    onAccountRefreshJob: handleAccountRefreshJobUpdate,
+    onZcodeCaptcha: (captchaEvent) => {
+      setZcodeCaptchaEvent(captchaEvent);
+    },
+    onAccountLive: (account) => {
+      clearAccountUsageRefresh(getAccountRef(account));
+      clearModelAccountRefreshing(getModelRefreshAccountRef(account));
+    },
+    onAccountRemoved: (event, removedAccount) => {
+      clearAccountUsageRefresh(getAccountRef(event));
+      clearModelAccountRefreshing(removedAccount ? getModelRefreshAccountRef(removedAccount) : '');
+    },
+    onRemovalCleanup: (accountRef) => {
+      clearAccountUsageRefresh(accountRef);
+      setUpdatingStatusAccountRefs((current) => {
+        if (!current[accountRef]) return current;
+        const next = { ...current };
+        delete next[accountRef];
+        return next;
+      });
+    }
+  };
 
   useEffect(() => {
     return () => {
-      accountsLoadRequestRef.current += 1;
       if (successAutoCloseTimerRef.current !== null) {
         window.clearTimeout(successAutoCloseTimerRef.current);
         successAutoCloseTimerRef.current = null;
       }
-      Object.values(removingAccountTimersRef.current).forEach((timer) => {
-        window.clearTimeout(timer);
-      });
-      removingAccountTimersRef.current = {};
       Object.values(refreshingUsageFallbackTimersRef.current).forEach((timer) => {
         window.clearTimeout(timer);
       });
       refreshingUsageFallbackTimersRef.current = {};
-      if (accountsSnapshotFallbackTimerRef.current !== null) {
-        window.clearTimeout(accountsSnapshotFallbackTimerRef.current);
-        accountsSnapshotFallbackTimerRef.current = null;
-      }
     };
   }, []);
 

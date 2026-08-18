@@ -18,7 +18,10 @@ import {
   hasBlockingRuntimeStatus,
   hasKnownUsage,
   isAccountEnabled,
-  isClaudeAuthTokenMode
+  isClaudeAuthTokenMode,
+  mergeAccountRecord,
+  mergeAccounts,
+  mergeSingleAccount
 } from './account-state.ts';
 
 function makeAccount(overrides: Partial<Account> = {}): Account {
@@ -204,4 +207,125 @@ test('formatQuotaReason delegates to account issue reason formatting', () => {
   assert.equal(formatQuotaReason(''), '');
   assert.equal(formatQuotaReason(undefined), '');
   assert.equal(typeof formatQuotaReason('some_reason'), 'string');
+});
+
+test('mergeAccountRecord clears live fields for api key mode accounts', () => {
+  const current = makeAccount({
+    apiKeyMode: false,
+    runtimeStatus: 'running',
+    runtimeUntil: 123,
+    runtimeReason: 'probe',
+    usageSnapshot: {
+      kind: 'codex_oauth_status',
+      capturedAt: 1,
+      entries: []
+    },
+    remainingPct: 42,
+    quotaStatus: 'ok',
+    quotaReason: '',
+    schedulableStatus: 'ok',
+    schedulableReason: ''
+  });
+  const merged = mergeAccountRecord(current, makeAccount({ apiKeyMode: true }));
+  assert.equal(merged.apiKeyMode, true);
+  assert.equal(merged.runtimeStatus, undefined);
+  assert.equal(merged.runtimeUntil, undefined);
+  assert.equal(merged.runtimeReason, undefined);
+  assert.equal(merged.usageSnapshot, null);
+  assert.equal(merged.remainingPct, null);
+  assert.equal(merged.quotaStatus, undefined);
+  assert.equal(merged.quotaReason, undefined);
+  assert.equal(merged.schedulableStatus, undefined);
+  assert.equal(merged.schedulableReason, undefined);
+});
+
+test('mergeAccountRecord keeps email, planType and displayName when incoming omits them', () => {
+  const current = makeAccount({
+    displayName: 'My Claude',
+    planType: 'pro',
+    email: 'user@example.com'
+  });
+  const merged = mergeAccountRecord(current, makeAccount({
+    accountRef: 'acct_other',
+    displayName: 'acct_other',
+    planType: 'oauth',
+    email: ''
+  }));
+  assert.equal(merged.email, 'user@example.com');
+  assert.equal(merged.planType, 'pro');
+  assert.equal(merged.displayName, 'My Claude');
+});
+
+test('mergeAccountRecord preserves live fields only when requested', () => {
+  const current = makeAccount({
+    remainingPct: 80,
+    updatedAt: 500,
+    lastUsedAt: 400,
+    usageSnapshot: {
+      kind: 'codex_oauth_status',
+      capturedAt: 1,
+      entries: []
+    },
+    runtimeStatus: 'running'
+  });
+  const incoming = makeAccount({});
+  const plain = mergeAccountRecord(current, incoming);
+  assert.equal(plain.remainingPct, null);
+  assert.equal(plain.runtimeStatus, 'running');
+  const preserved = mergeAccountRecord(current, incoming, { preserveLiveFields: true });
+  assert.equal(preserved.remainingPct, 80);
+  assert.equal(preserved.updatedAt, 500);
+  assert.equal(preserved.lastUsedAt, 400);
+  assert.equal(preserved.runtimeStatus, 'running');
+  assert.deepEqual(preserved.usageSnapshot, {
+    kind: 'codex_oauth_status',
+    capturedAt: 1,
+    entries: []
+  });
+});
+
+test('mergeAccounts merges by accountRef and keeps incoming order', () => {
+  const current = [
+    makeAccount({ accountRef: 'acct_a', displayName: 'A-old', remainingPct: 10 }),
+    makeAccount({ accountRef: 'acct_b', displayName: 'B', remainingPct: 20 })
+  ];
+  const incoming = [
+    makeAccount({ accountRef: 'acct_c', displayName: 'C', remainingPct: 30 }),
+    makeAccount({ accountRef: 'acct_a', displayName: 'A-new', remainingPct: null })
+  ];
+  const merged = mergeAccounts(current, incoming);
+  assert.deepEqual(merged.map((account) => account.accountRef), ['acct_c', 'acct_a']);
+  assert.equal(merged[1].displayName, 'A-new');
+  assert.equal(merged[1].remainingPct, null);
+});
+
+test('mergeAccounts preserves live fields of existing accounts when requested', () => {
+  const current = [
+    makeAccount({ accountRef: 'acct_a', remainingPct: 66, updatedAt: 900 })
+  ];
+  const incoming = [
+    makeAccount({ accountRef: 'acct_a', remainingPct: null, updatedAt: 0 })
+  ];
+  const merged = mergeAccounts(current, incoming, { preserveLiveFields: true });
+  assert.equal(merged[0].remainingPct, 66);
+  assert.equal(merged[0].updatedAt, 900);
+});
+
+test('mergeSingleAccount updates an existing account in place', () => {
+  const current = [
+    makeAccount({ accountRef: 'acct_a', displayName: 'old' }),
+    makeAccount({ accountRef: 'acct_b', displayName: 'b' })
+  ];
+  const merged = mergeSingleAccount(current, makeAccount({ accountRef: 'acct_a', displayName: 'new' }));
+  assert.equal(merged.length, 2);
+  assert.equal(merged[0].displayName, 'new');
+  assert.equal(merged[1].displayName, 'b');
+});
+
+test('mergeSingleAccount appends when the account is unknown', () => {
+  const current = [makeAccount({ accountRef: 'acct_a' })];
+  const merged = mergeSingleAccount(current, makeAccount({ accountRef: 'acct_new', displayName: 'new' }));
+  assert.equal(merged.length, 2);
+  assert.equal(merged[1].accountRef, 'acct_new');
+  assert.equal(current.length, 1);
 });

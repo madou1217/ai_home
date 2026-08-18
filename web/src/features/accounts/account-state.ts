@@ -1,5 +1,7 @@
 import type { Account, AccountAuthMode } from '@/types';
 import { formatAccountIssueReason } from '@/utils/account-reasons';
+import { isInternalAccountLabel } from '@/utils/account-labels';
+import { getAccountRef } from '@/features/accounts/account-model-catalog';
 
 // 账号显示状态推导 —— 纯函数模块。
 // 从 Accounts.tsx 抽取：账号状态、用量、认证方式的所有推导逻辑集中于此，
@@ -142,4 +144,117 @@ export function getAccountDisplayState(record: Pick<Account, 'status' | 'configu
   if (String(record.quotaStatus || '').trim() === 'not_applicable') return 'healthy';
   if (!record.apiKeyMode && !hasKnownUsage(record)) return 'usage_attention';
   return 'healthy';
+}
+
+// 账号记录合并 —— 从 Accounts.tsx 抽取的快照/增量合并逻辑。
+// mergeAccountRecord 合并单条记录；mergeAccounts/mergeSingleAccount 合并列表。
+
+export function mergeAccountRecord(
+  current: Account,
+  incoming: Account,
+  options: { preserveLiveFields?: boolean } = {}
+): Account {
+  const fallbackDisplayName = incoming.accountRef;
+  const merged: Account = {
+    ...current,
+    ...incoming
+  };
+
+  if (merged.apiKeyMode) {
+    merged.runtimeStatus = undefined;
+    merged.runtimeUntil = undefined;
+    merged.runtimeReason = undefined;
+    merged.usageSnapshot = null;
+    merged.remainingPct = null;
+    merged.quotaStatus = undefined;
+    merged.quotaReason = undefined;
+    merged.schedulableStatus = undefined;
+    merged.schedulableReason = undefined;
+    return merged;
+  }
+
+  if (!merged.configured || merged.apiKeyMode) {
+    return merged;
+  }
+
+  if (!incoming.email && current.email) {
+    merged.email = current.email;
+  }
+  if (options.preserveLiveFields) {
+    if ((incoming.updatedAt == null || incoming.updatedAt <= 0) && current.updatedAt > 0) {
+      merged.updatedAt = current.updatedAt;
+    }
+    if ((incoming.lastUsedAt == null || incoming.lastUsedAt <= 0) && current.lastUsedAt && current.lastUsedAt > 0) {
+      merged.lastUsedAt = current.lastUsedAt;
+    }
+    if (!incoming.usageSnapshot && current.usageSnapshot) {
+      merged.usageSnapshot = current.usageSnapshot;
+    }
+    if ((incoming.remainingPct == null) && current.remainingPct != null) {
+      merged.remainingPct = current.remainingPct;
+    }
+    if (incoming.runtimeStatus == null && current.runtimeStatus != null) {
+      merged.runtimeStatus = current.runtimeStatus;
+    }
+    if (incoming.runtimeUntil == null && current.runtimeUntil != null) {
+      merged.runtimeUntil = current.runtimeUntil;
+    }
+    if (incoming.runtimeReason == null && current.runtimeReason != null) {
+      merged.runtimeReason = current.runtimeReason;
+    }
+    if (incoming.quotaStatus == null && current.quotaStatus != null) {
+      merged.quotaStatus = current.quotaStatus;
+    }
+    if (incoming.quotaReason == null && current.quotaReason != null) {
+      merged.quotaReason = current.quotaReason;
+    }
+    if (incoming.schedulableStatus == null && current.schedulableStatus != null) {
+      merged.schedulableStatus = current.schedulableStatus;
+    }
+    if (incoming.schedulableReason == null && current.schedulableReason != null) {
+      merged.schedulableReason = current.schedulableReason;
+    }
+  }
+  if (
+    (!incoming.planType || incoming.planType === 'oauth' || incoming.planType === 'pending')
+    && current.planType
+    && current.planType !== 'oauth'
+    && current.planType !== 'pending'
+  ) {
+    merged.planType = current.planType;
+  }
+  if ((!incoming.displayName || incoming.displayName === fallbackDisplayName || isInternalAccountLabel(incoming.displayName)) && current.displayName) {
+    merged.displayName = current.displayName;
+  }
+
+  return merged;
+}
+
+export function mergeAccounts(
+  current: Account[],
+  incoming: Account[],
+  options: { preserveLiveFields?: boolean } = {}
+): Account[] {
+  const currentMap = new Map<string, Account>(
+    current.map((account) => [getAccountRef(account), account])
+  );
+  const nextMap = new Map<string, Account>();
+  incoming.forEach((account) => {
+    const key = getAccountRef(account);
+    const previous = currentMap.get(key);
+    nextMap.set(key, previous ? mergeAccountRecord(previous, account, options) : account);
+  });
+  return Array.from(nextMap.values());
+}
+
+export function mergeSingleAccount(current: Account[], incoming: Account): Account[] {
+  const next = current.slice();
+  const key = getAccountRef(incoming);
+  const index = next.findIndex((account) => getAccountRef(account) === key);
+  if (index >= 0) {
+    next[index] = mergeAccountRecord(next[index], incoming);
+    return next;
+  }
+  next.push(incoming);
+  return next;
 }

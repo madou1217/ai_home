@@ -1,31 +1,27 @@
 import type { CSSProperties } from 'react';
+import { useMemo } from 'react';
 import { Tooltip } from 'antd';
 import type { AccountTokenUsage, AccountTokenUsageModel } from '@/types';
+import {
+  TOKEN_CHART_BAR_OFFSET,
+  TOKEN_CHART_BAR_WIDTH,
+  TOKEN_CHART_BASELINE,
+  TOKEN_CHART_EDGE,
+  TOKEN_CHART_MAX_HEIGHT,
+  TOKEN_CHART_SLOT_WIDTH,
+  buildTokenUsageMetrics,
+  getModelCostValue,
+  getModelUsageValue,
+  getUsedModels
+} from './token-usage-periods';
+import type {
+  TokenUsageDimension,
+  TokenUsageMetric,
+  TokenUsageValue
+} from './token-usage-periods';
+import { useTokenUsageTransitions } from './useTokenUsageTransitions';
 import './TokenUsageCell.css';
 
-type TokenUsageValue = number | null;
-type TokenUsageDimension = 'day' | 'week' | 'month' | 'total';
-type TokenUsageCostKey = 'dayCostUsd' | 'weekCostUsd' | 'monthCostUsd' | 'totalCostUsd';
-
-const TOKEN_USAGE_PERIODS: readonly {
-  key: TokenUsageDimension;
-  label: string;
-  hint: string;
-}[] = [
-  { key: 'day', label: '日', hint: '当天' },
-  { key: 'week', label: '周', hint: '本周' },
-  { key: 'month', label: '月', hint: '本月' },
-  { key: 'total', label: '总', hint: '累计' }
-];
-
-const TOKEN_CHART_BASELINE = 33;
-const TOKEN_CHART_MAX_HEIGHT = 28;
-const TOKEN_CHART_BAR_WIDTH = 14;
-const TOKEN_CHART_SLOT_WIDTH = 52;
-const TOKEN_CHART_EDGE = 8;
-// 图表几何完全由周期数量推导，加减一个维度不用再手改坐标。
-const TOKEN_CHART_WIDTH = TOKEN_USAGE_PERIODS.length * TOKEN_CHART_SLOT_WIDTH;
-const TOKEN_CHART_BAR_OFFSET = (TOKEN_CHART_SLOT_WIDTH - TOKEN_CHART_BAR_WIDTH) / 2;
 const TOKEN_MODEL_COLOR_TOKENS = [
   'var(--c-info-600)',
   'var(--c-teal-500)',
@@ -36,18 +32,9 @@ const TOKEN_MODEL_COLOR_TOKENS = [
   'var(--c-grok)',
   'var(--c-claude)'
 ];
-const TOKEN_USAGE_COST_KEYS: Record<TokenUsageDimension, TokenUsageCostKey> = {
-  day: 'dayCostUsd',
-  week: 'weekCostUsd',
-  month: 'monthCostUsd',
-  total: 'totalCostUsd'
-};
 
-function toTokenValue(value: unknown): TokenUsageValue {
-  if (value === null || value === undefined || value === '') return null;
-  const number = Number(value);
-  return Number.isFinite(number) && number >= 0 ? number : null;
-}
+// 与 CSS 里的吸附/脱离动画时长保持一致：动画放完才真正把 ghost 丢掉。
+const TOKEN_USAGE_TRANSITION_MS = 420;
 
 function formatTokenUnit(value: number) {
   if (value >= 100) return String(Math.round(value));
@@ -81,22 +68,8 @@ function formatCostUsd(value: TokenUsageValue) {
   })}`;
 }
 
-function getModelUsageValue(model: AccountTokenUsageModel, dimension: TokenUsageDimension) {
-  return toTokenValue(model[dimension]) || 0;
-}
-
-function getModelCostValue(model: AccountTokenUsageModel, dimension: TokenUsageDimension) {
-  return toTokenValue(model[TOKEN_USAGE_COST_KEYS[dimension]]);
-}
-
 function getModelColor(modelIndex: number) {
   return TOKEN_MODEL_COLOR_TOKENS[modelIndex % TOKEN_MODEL_COLOR_TOKENS.length];
-}
-
-function getUsedModels(usage: AccountTokenUsage) {
-  const models = Array.isArray(usage.models) ? usage.models : [];
-  return models
-    .filter((model) => TOKEN_USAGE_PERIODS.some(({ key }) => getModelUsageValue(model, key) > 0));
 }
 
 function getModelTooltipEntries(dimension: TokenUsageDimension, models: AccountTokenUsageModel[]) {
@@ -110,17 +83,25 @@ function getModelTooltipEntries(dimension: TokenUsageDimension, models: AccountT
     .filter(({ value }) => value > 0);
 }
 
+// 被折叠掉的更宽窗口不能凭空消失：说清楚"到这里为止都是同一个数"。
+function formatAbsorbedHint(metric: TokenUsageMetric) {
+  if (metric.absorbed.length === 0) return '';
+  return `${metric.absorbed.map(({ label }) => label).join('、')}与${metric.label}相同`;
+}
+
 function formatModelTooltip(
-  dimension: TokenUsageDimension,
-  models: AccountTokenUsageModel[],
-  total: TokenUsageValue
+  metric: TokenUsageMetric,
+  models: AccountTokenUsageModel[]
 ) {
-  const lines = getModelTooltipEntries(dimension, models)
+  const lines = getModelTooltipEntries(metric.key, models)
     .map(({ model, value, costUsd }) => (
       `${model.model} ${formatTokenAmount(value)} ${formatCostUsd(costUsd)}`
     ));
-  if (lines.length > 0) return lines;
-  return models.length > 0 ? ['暂无用量'] : [`总计 ${formatTokenAmount(total)}`];
+  if (lines.length === 0) {
+    lines.push(models.length > 0 ? '暂无用量' : `总计 ${formatTokenAmount(metric.value)}`);
+  }
+  const absorbed = formatAbsorbedHint(metric);
+  return absorbed ? [...lines, absorbed] : lines;
 }
 
 function allocateLayerHeights(
@@ -176,33 +157,102 @@ function getBarHeight(value: TokenUsageValue, maximum: number) {
   return Math.max(6, Math.round(normalized * TOKEN_CHART_MAX_HEIGHT));
 }
 
-export default function TokenUsageCell({ usage }: { usage?: AccountTokenUsage | null }) {
-  if (!usage) {
-    return <span className="token-usage-cell token-usage-cell--empty">暂无统计</span>;
-  }
+function TokenUsageBar({
+  dimension,
+  value,
+  index,
+  maximum,
+  models,
+  className,
+  style
+}: {
+  dimension: TokenUsageDimension;
+  value: TokenUsageValue;
+  index: number;
+  maximum: number;
+  models: AccountTokenUsageModel[];
+  className: string;
+  style?: CSSProperties;
+}) {
+  const height = getBarHeight(value, maximum);
+  const x = TOKEN_CHART_BAR_OFFSET + index * TOKEN_CHART_SLOT_WIDTH;
+  const isPeak = value !== null && value === maximum && maximum > 0;
+  const layers = allocateLayerHeights(models, dimension, value || 0, height);
 
-  const metrics = TOKEN_USAGE_PERIODS.map((period) => ({
-    ...period,
-    value: toTokenValue(usage[period.key])
-  }));
+  return (
+    <g className={className} style={style}>
+      {layers.length > 0 ? layers.map(({ model, index: modelIndex, height: layerHeight }, layerIndex) => (
+        <path
+          key={`${model.model}-${modelIndex}`}
+          className={[
+            'token-usage-bar',
+            'token-usage-bar--layer',
+            layerIndex === 0 ? 'token-usage-bar--layer-back' : '',
+            layerIndex > 0 && layerIndex < layers.length - 1 ? 'token-usage-bar--layer-middle' : '',
+            layerIndex === layers.length - 1 ? 'token-usage-bar--layer-front' : ''
+          ].filter(Boolean).join(' ')}
+          d={getBarPath(x, TOKEN_CHART_BASELINE - layerHeight, TOKEN_CHART_BAR_WIDTH, layerHeight)}
+          fill={getModelColor(modelIndex)}
+        />
+      )) : (
+        <path
+          className={[
+            'token-usage-bar',
+            isPeak ? 'token-usage-bar--peak' : '',
+            value === null ? 'token-usage-bar--unknown' : '',
+            value === 0 ? 'token-usage-bar--zero' : ''
+          ].filter(Boolean).join(' ')}
+          d={getBarPath(x, TOKEN_CHART_BASELINE - height, TOKEN_CHART_BAR_WIDTH, height)}
+          fill={value === null ? undefined : 'var(--color-info)'}
+        />
+      )}
+    </g>
+  );
+}
+
+// 入场（脱离）和滑位互斥：刚出现的格子没有旧槽位可滑。
+function buildTransitionClassName(
+  base: string,
+  key: TokenUsageDimension,
+  entering: ReadonlySet<TokenUsageDimension>,
+  shifts: ReadonlyMap<TokenUsageDimension, number>
+) {
+  if (entering.has(key)) return `${base} ${base}--detaching`;
+  if (shifts.has(key)) return `${base} ${base}--sliding`;
+  return base;
+}
+
+function buildShiftStyle(
+  key: TokenUsageDimension,
+  shifts: ReadonlyMap<TokenUsageDimension, number>
+): CSSProperties | undefined {
+  const shift = shifts.get(key);
+  return shift === undefined ? undefined : ({ '--token-usage-shift': shift } as CSSProperties);
+}
+
+function TokenUsageChart({ usage }: { usage: AccountTokenUsage }) {
+  const metrics = useMemo(() => buildTokenUsageMetrics(usage), [usage]);
+  const { entering, ghosts, shifts } = useTokenUsageTransitions(metrics, TOKEN_USAGE_TRANSITION_MS);
+  const usedModels = useMemo(() => getUsedModels(usage), [usage]);
+
   const validValues = metrics.flatMap(({ value }) => (value === null ? [] : [value]));
   const maximum = Math.max(0, ...validValues);
-  const usedModels = getUsedModels(usage);
+  const chartWidth = metrics.length * TOKEN_CHART_SLOT_WIDTH;
   const accessibleSummary = metrics
-    .map(({ key, label, value }) => `${label} ${formatModelTooltip(key, usedModels, value).join('，')}`)
+    .map((metric) => `${metric.label} ${formatModelTooltip(metric, usedModels).join('，')}`)
     .join('，');
 
   return (
     <div
       className="token-usage-cell"
       role="group"
-      style={{ '--token-usage-columns': TOKEN_USAGE_PERIODS.length } as CSSProperties}
-      aria-label={`Token 用量（${TOKEN_USAGE_PERIODS.map(({ label }) => label).join('、')}）：${accessibleSummary}`}
+      style={{ '--token-usage-columns': metrics.length } as CSSProperties}
+      aria-label={`Token 用量（${metrics.map(({ label }) => label).join('、')}）：${accessibleSummary}`}
     >
       <div className="token-usage-chart">
         <svg
           className="token-usage-chart-svg"
-          viewBox={`0 0 ${TOKEN_CHART_WIDTH} 38`}
+          viewBox={`0 0 ${chartWidth} 38`}
           role="presentation"
           focusable="false"
         >
@@ -210,67 +260,50 @@ export default function TokenUsageCell({ usage }: { usage?: AccountTokenUsage | 
             className="token-usage-baseline"
             x1={TOKEN_CHART_EDGE}
             y1={TOKEN_CHART_BASELINE}
-            x2={TOKEN_CHART_WIDTH - TOKEN_CHART_EDGE}
+            x2={chartWidth - TOKEN_CHART_EDGE}
             y2={TOKEN_CHART_BASELINE}
           />
-          {metrics.map(({ key, value }, index) => {
-            const height = getBarHeight(value, maximum);
-            const x = TOKEN_CHART_BAR_OFFSET + index * TOKEN_CHART_SLOT_WIDTH;
-            const isPeak = value !== null && value === maximum && maximum > 0;
-            const dimension = key;
-            const tooltipLines = formatModelTooltip(dimension, usedModels, value);
-            const layers = allocateLayerHeights(usedModels, dimension, value || 0, height);
-
-            return (
-              <g key={key} className="token-usage-bar-group">
-                {layers.length > 0 ? layers.map(({ model, index: modelIndex, height: layerHeight }, layerIndex) => {
-                  const layerY = TOKEN_CHART_BASELINE - layerHeight;
-                  return (
-                    <path
-                      key={`${model.model}-${modelIndex}`}
-                      className={[
-                        'token-usage-bar',
-                        'token-usage-bar--layer',
-                        layerIndex === 0 ? 'token-usage-bar--layer-back' : '',
-                        layerIndex > 0 && layerIndex < layers.length - 1 ? 'token-usage-bar--layer-middle' : '',
-                        layerIndex === layers.length - 1 ? 'token-usage-bar--layer-front' : ''
-                      ].filter(Boolean).join(' ')}
-                      d={getBarPath(x, layerY, TOKEN_CHART_BAR_WIDTH, layerHeight)}
-                      fill={getModelColor(modelIndex)}
-                    />
-                  );
-                }) : (
-                  <path
-                    className={[
-                      'token-usage-bar',
-                      isPeak ? 'token-usage-bar--peak' : '',
-                      value === null ? 'token-usage-bar--unknown' : '',
-                      value === 0 ? 'token-usage-bar--zero' : ''
-                    ].filter(Boolean).join(' ')}
-                    d={getBarPath(x, TOKEN_CHART_BASELINE - height, TOKEN_CHART_BAR_WIDTH, height)}
-                    fill={value === null ? undefined : 'var(--color-info)'}
-                  />
-                )}
-                <title>{tooltipLines.join('\n')}</title>
-              </g>
-            );
-          })}
+          {metrics.map((metric, index) => (
+            <g key={metric.key} className="token-usage-bar-slot">
+              <TokenUsageBar
+                dimension={metric.key}
+                value={metric.value}
+                index={index}
+                maximum={maximum}
+                models={usedModels}
+                className={buildTransitionClassName('token-usage-bar-group', metric.key, entering, shifts)}
+                style={buildShiftStyle(metric.key, shifts)}
+              />
+              <title>{formatModelTooltip(metric, usedModels).join('\n')}</title>
+            </g>
+          ))}
+          {ghosts.map((ghost) => (
+            <TokenUsageBar
+              key={`ghost-${ghost.key}`}
+              dimension={ghost.key}
+              value={ghost.value}
+              index={ghost.index}
+              maximum={maximum}
+              models={usedModels}
+              className="token-usage-bar-group token-usage-bar-group--snapping"
+            />
+          ))}
         </svg>
         <div className="token-usage-chart-hit-targets">
-          {metrics.map(({ key, hint, value }) => (
+          {metrics.map((metric) => (
             <Tooltip
-              key={key}
+              key={metric.key}
               overlayClassName="token-usage-tooltip-overlay"
               title={(
                 <div className="token-usage-tooltip">
-                  {getModelTooltipEntries(key, usedModels).length > 0 ? (
+                  {getModelTooltipEntries(metric.key, usedModels).length > 0 ? (
                     <>
                       <div className="token-usage-tooltip-row token-usage-tooltip-header" aria-hidden="true">
                         <span>模型</span>
                         <span>用量</span>
                         <span>费用</span>
                       </div>
-                      {getModelTooltipEntries(key, usedModels).map(({
+                      {getModelTooltipEntries(metric.key, usedModels).map(({
                         model,
                         modelIndex,
                         value: modelValue,
@@ -290,34 +323,68 @@ export default function TokenUsageCell({ usage }: { usage?: AccountTokenUsage | 
                         </div>
                       ))}
                     </>
-                  ) : <div>{formatModelTooltip(key, usedModels, value)[0]}</div>}
+                  ) : <div>{formatModelTooltip(metric, usedModels)[0]}</div>}
+                  {formatAbsorbedHint(metric) ? (
+                    <div className="token-usage-tooltip-note">{formatAbsorbedHint(metric)}</div>
+                  ) : null}
                 </div>
               )}
             >
               <button
                 type="button"
                 className="token-usage-chart-hit-target"
-                aria-label={`${hint}用量：${formatModelTooltip(key, usedModels, value).join('，')}`}
+                aria-label={`${metric.hint}用量：${formatModelTooltip(metric, usedModels).join('，')}`}
               />
             </Tooltip>
           ))}
         </div>
       </div>
       <div className="token-usage-values" aria-hidden="true">
-        {metrics.map(({ key, value }) => (
+        {metrics.map((metric) => (
           <span
-            key={key}
-            className={value !== null && value === maximum && maximum > 0
-              ? 'token-usage-value token-usage-value--peak'
-              : 'token-usage-value'}
+            key={metric.key}
+            className={[
+              buildTransitionClassName('token-usage-value', metric.key, entering, shifts),
+              metric.value !== null && metric.value === maximum && maximum > 0
+                ? 'token-usage-value--peak'
+                : ''
+            ].filter(Boolean).join(' ')}
+            style={buildShiftStyle(metric.key, shifts)}
           >
-            {formatTokenAmount(value)}
+            {formatTokenAmount(metric.value)}
           </span>
         ))}
       </div>
       <div className="token-usage-labels" aria-hidden="true">
-        {metrics.map(({ key, label }) => <span key={key}>{label}</span>)}
+        {metrics.map((metric) => (
+          <span
+            key={metric.key}
+            className={buildTransitionClassName('token-usage-label', metric.key, entering, shifts)}
+            style={buildShiftStyle(metric.key, shifts)}
+          >
+            {metric.label}
+          </span>
+        ))}
       </div>
+      {ghosts.map((ghost) => (
+        // 文字层脱离栅格单独定位，才能在单元格已经收窄之后继续把旧数字吸回前一格。
+        <div
+          key={`ghost-text-${ghost.key}`}
+          className="token-usage-ghost"
+          style={{ '--token-usage-ghost-index': ghost.index } as CSSProperties}
+          aria-hidden="true"
+        >
+          <span className="token-usage-value">{formatTokenAmount(ghost.value)}</span>
+          <span className="token-usage-label">{ghost.label}</span>
+        </div>
+      ))}
     </div>
   );
+}
+
+export default function TokenUsageCell({ usage }: { usage?: AccountTokenUsage | null }) {
+  if (!usage) {
+    return <span className="token-usage-cell token-usage-cell--empty">暂无统计</span>;
+  }
+  return <TokenUsageChart usage={usage} />;
 }

@@ -1,15 +1,24 @@
 /* 列数由 TokenUsageCell 以内联变量传入，宽度和栅格都跟着它走。 */
 .token-usage-cell {
   --token-usage-columns: 4;
+  --token-usage-slot: 46px;
+  /* 吸附/脱离动画时长与 TokenUsageCell.tsx 的 TOKEN_USAGE_TRANSITION_MS 对齐。
+     reduced-motion 下 design-tokens 会把 --motion-* 归零，这里自然跟着静止。 */
+  --token-usage-motion: var(--motion-slower, 420ms);
+  --token-usage-ease-snap: var(--ease-emphasized, cubic-bezier(0.2, 0, 0, 1));
+  --token-usage-ease-detach: cubic-bezier(0.34, 1.42, 0.64, 1);
 
+  position: relative;
   display: inline-flex;
-  width: calc(var(--token-usage-columns) * 46px + 2px);
-  min-width: calc(var(--token-usage-columns) * 46px + 2px);
+  width: calc(var(--token-usage-columns) * var(--token-usage-slot) + 2px);
+  min-width: calc(var(--token-usage-columns) * var(--token-usage-slot) + 2px);
   flex-direction: column;
   gap: 1px;
   color: var(--color-text);
   line-height: 1;
   vertical-align: middle;
+  transition: width var(--token-usage-motion) var(--token-usage-ease-snap),
+    min-width var(--token-usage-motion) var(--token-usage-ease-snap);
 }
 
 .token-usage-chart {
@@ -34,6 +43,67 @@
 .token-usage-bar {
   opacity: 0.58;
   transition: opacity var(--motion-fast) var(--ease-standard);
+}
+
+/* 折叠发生在数据侧：一根柱子要么被吸进左邻，要么从左邻里脱离出来。
+   两个动画共用同一条位移轴（一个槽宽），只是方向和缓动相反，
+   所以视觉上是同一块量在"合并"和"分裂"，而不是凭空增删。 */
+.token-usage-bar-group {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+
+.token-usage-bar-group--snapping {
+  animation: token-usage-snap var(--token-usage-motion) var(--token-usage-ease-snap) forwards;
+  pointer-events: none;
+}
+
+.token-usage-bar-group--detaching {
+  animation: token-usage-detach var(--token-usage-motion) var(--token-usage-ease-detach) both;
+}
+
+/* 中间某格被并掉时，右边的格子整体左移一个槽位；让它们滑过去，而不是瞬间跳位。 */
+.token-usage-bar-group--sliding {
+  animation: token-usage-slide-bar var(--token-usage-motion) var(--token-usage-ease-snap) both;
+}
+
+@keyframes token-usage-slide-bar {
+  from {
+    transform: translateX(calc(var(--token-usage-shift, 0) * 52px));
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes token-usage-snap {
+  0% {
+    transform: translateX(0) scaleX(1) scaleY(1);
+    opacity: 1;
+  }
+  55% {
+    transform: translateX(-26px) scaleX(0.82) scaleY(1.06);
+    opacity: 0.72;
+  }
+  100% {
+    transform: translateX(-52px) scaleX(0.28) scaleY(0.9);
+    opacity: 0;
+  }
+}
+
+@keyframes token-usage-detach {
+  0% {
+    transform: translateX(-52px) scaleX(0.28) scaleY(0.9);
+    opacity: 0;
+  }
+  45% {
+    transform: translateX(-14px) scaleX(0.86) scaleY(1.08);
+    opacity: 0.85;
+  }
+  100% {
+    transform: translateX(0) scaleX(1) scaleY(1);
+    opacity: 1;
+  }
 }
 
 .token-usage-bar--layer-back {
@@ -95,6 +165,11 @@
   font-variant-numeric: tabular-nums;
 }
 
+.token-usage-tooltip-note {
+  color: rgb(255 255 255 / 62%);
+  font-size: var(--text-2xs);
+}
+
 .token-usage-tooltip-model {
   display: flex;
   min-width: 0;
@@ -149,17 +224,15 @@
   text-align: center;
 }
 
-.token-usage-values {
+/* 字号写在条目上而不是容器上：离场的 ghost 脱离栅格单独定位，仍要拿到同一套排版。 */
+.token-usage-value {
+  min-width: 0;
+  overflow: hidden;
   color: var(--color-muted-strong);
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
   font-weight: var(--weight-semibold);
   line-height: var(--leading-tight);
-}
-
-.token-usage-value {
-  min-width: 0;
-  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -168,11 +241,65 @@
   color: var(--color-info);
 }
 
-.token-usage-labels {
+.token-usage-label {
   color: var(--color-faint);
   font-size: var(--text-2xs);
   font-weight: var(--weight-medium);
   line-height: var(--leading-tight);
+}
+
+.token-usage-value--detaching,
+.token-usage-label--detaching {
+  animation: token-usage-text-detach var(--token-usage-motion) var(--token-usage-ease-detach) both;
+}
+
+.token-usage-value--sliding,
+.token-usage-label--sliding {
+  animation: token-usage-text-slide var(--token-usage-motion) var(--token-usage-ease-snap) both;
+}
+
+@keyframes token-usage-text-slide {
+  from {
+    transform: translateX(calc(var(--token-usage-shift, 0) * var(--token-usage-slot)));
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+/* 数字和标签的离场副本：单元格宽度已经开始收窄，这一层仍停在旧槽位把旧值吸回左邻。 */
+.token-usage-ghost {
+  position: absolute;
+  top: 39px;
+  left: calc(var(--token-usage-ghost-index) * var(--token-usage-slot) + 1px);
+  display: grid;
+  width: var(--token-usage-slot);
+  gap: 1px;
+  text-align: center;
+  pointer-events: none;
+  animation: token-usage-text-snap var(--token-usage-motion) var(--token-usage-ease-snap) forwards;
+}
+
+@keyframes token-usage-text-snap {
+  0% {
+    transform: translateX(0) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(calc(var(--token-usage-slot) * -1)) scale(0.72);
+    opacity: 0;
+  }
+}
+
+@keyframes token-usage-text-detach {
+  0% {
+    transform: translateX(calc(var(--token-usage-slot) * -1)) scale(0.72);
+    opacity: 0;
+  }
+  100% {
+    transform: translateX(0) scale(1);
+    opacity: 1;
+  }
 }
 
 .token-usage-cell--empty {
@@ -184,7 +311,9 @@
 
 @media (max-width: 768px) {
   .token-usage-cell {
-    width: calc(var(--token-usage-columns) * 52px);
-    min-width: calc(var(--token-usage-columns) * 52px);
+    --token-usage-slot: 52px;
+
+    width: calc(var(--token-usage-columns) * var(--token-usage-slot));
+    min-width: calc(var(--token-usage-columns) * var(--token-usage-slot));
   }
 }

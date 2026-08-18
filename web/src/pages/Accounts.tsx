@@ -91,6 +91,20 @@ import {
   isInternalAccountLabel
 } from '@/utils/account-labels';
 import { formatAccountIssueReason } from '@/utils/account-reasons';
+import {
+  canCopyAccountEmail,
+  canEditAccountConfig,
+  canReauthAccount,
+  canRefreshUsageAccount,
+  formatQuotaReason,
+  formatSchedulableReason,
+  getAccountDisplayState,
+  getClaudeCredentialMode,
+  getReauthActionLabel,
+  getUsageSortValue,
+  hasKnownUsage,
+  isAccountEnabled
+} from '@/features/accounts/account-state';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import 'dayjs/locale/zh-cn';
@@ -232,17 +246,6 @@ function getAccountSecondaryLabel(record: Account) {
 
 
 
-function isClaudeAuthTokenMode(value?: string) {
-  const normalized = String(value || '').trim().toLowerCase().replace(/_/g, '-');
-  return normalized === 'auth-token' || normalized === 'claude-code-token';
-}
-
-function getClaudeCredentialMode(record?: Pick<Account, 'authMode' | 'authType' | 'credentialType'> | null): AccountAuthMode {
-  return isClaudeAuthTokenMode(record?.credentialType || record?.authType || record?.authMode)
-    ? 'auth-token'
-    : 'api-key';
-}
-
 function formatImportResult(result: AccountImportResponse) {
   const summary = result.summary;
   const imported = Number(summary?.imported ?? result.imported ?? 0);
@@ -274,31 +277,6 @@ function formatImportJobProgress(job: AccountImportJob | null) {
   const label = String(progress.label || '').trim();
   return `${percent}%${label ? ` · ${label}` : ''}`;
 }
-
-function canCopyAccountEmail(record: Pick<Account, 'apiKeyMode' | 'email' | 'baseUrl'>) {
-  if (record.apiKeyMode) {
-    return true; // API Key 账号始终展示复制按钮
-  }
-  return Boolean(String(record.email || '').trim());
-}
-
-function hasBlockingRuntimeStatus(record: Pick<Account, 'runtimeStatus'>) {
-  const status = String(record.runtimeStatus || '').trim();
-  return Boolean(status && status !== 'healthy');
-}
-
-function isAccountEnabled(record: Pick<Account, 'status'>) {
-  return String(record.status || 'up').trim().toLowerCase() !== 'down';
-}
-
-type AccountDisplayStateKind =
-  | 'healthy'
-  | 'exhausted'
-  | 'policy_blocked'
-  | 'usage_attention'
-  | 'runtime_blocked'
-  | 'disabled'
-  | 'unconfigured';
 
 type AccountFilterValue =
   | 'all'
@@ -368,109 +346,6 @@ function readStoredActiveProviderTab(): AccountProviderFilter {
 function persistActiveProviderTab(provider: AccountProviderFilter): void {
   if (typeof window === 'undefined') return;
   try { window.localStorage.setItem(ACCOUNTS_ACTIVE_PROVIDER_STORAGE_KEY, provider); } catch (_error) {}
-}
-
-function getAccountDisplayState(record: Pick<Account, 'status' | 'configured' | 'apiKeyMode' | 'runtimeStatus' | 'quotaStatus' | 'schedulableStatus' | 'remainingPct' | 'provider' | 'usageSnapshot'>): AccountDisplayStateKind {
-  if (!isAccountEnabled(record)) return 'disabled';
-  if (!record.configured) return 'unconfigured';
-  if (hasBlockingRuntimeStatus(record)) return 'runtime_blocked';
-  const effectiveRemainingPct = getEffectiveRemainingPct(record);
-  if (!record.apiKeyMode && effectiveRemainingPct != null && effectiveRemainingPct <= 0) return 'exhausted';
-  if (String(record.quotaStatus || '').trim() === 'exhausted') return 'exhausted';
-  if (String(record.schedulableStatus || '').trim() === 'blocked_by_policy') return 'policy_blocked';
-  if (
-    String(record.quotaStatus || '').trim()
-    && !['available', 'not_applicable', 'exhausted'].includes(String(record.quotaStatus || '').trim())
-  ) {
-    return 'usage_attention';
-  }
-  if (String(record.quotaStatus || '').trim() === 'not_applicable') return 'healthy';
-  if (!record.apiKeyMode && !hasKnownUsage(record)) return 'usage_attention';
-  return 'healthy';
-}
-
-function canRefreshUsageAccount(record: Pick<Account, 'configured' | 'apiKeyMode' | 'runtimeStatus' | 'quotaStatus' | 'schedulableStatus'>) {
-  // OAuth 已配置账号始终允许手动刷新用量,不再依赖已有额度状态。
-  if (String(record.quotaStatus || '').trim() === 'not_applicable') return false;
-  return Boolean(record.configured) && !record.apiKeyMode;
-}
-
-function canReauthAccount(record: Pick<Account, 'apiKeyMode'>) {
-  return !record.apiKeyMode;
-}
-
-function getReauthActionLabel(record: Pick<Account, 'configured' | 'authPending' | 'authPendingStale'>) {
-  if (record.authPending && !record.authPendingStale) return '继续授权';
-  if (!record.configured) return '重新授权';
-  return '重新登录';
-}
-
-function canEditAccountConfig(record: Pick<Account, 'apiKeyMode'>) {
-  return Boolean(record.apiKeyMode);
-}
-
-function hasKnownUsage(record: Pick<Account, 'apiKeyMode' | 'remainingPct' | 'provider' | 'usageSnapshot'>) {
-  if (record.apiKeyMode) return false;
-  return getEffectiveRemainingPct(record) != null;
-}
-
-function getUsageSnapshotRemainingPct(record: Pick<Account, 'provider' | 'usageSnapshot'>) {
-  const snapshot = record.usageSnapshot;
-  if (!snapshot) return null;
-  let values: number[] = [];
-  if (
-    (record.provider === 'codex' && snapshot.kind === 'codex_oauth_status')
-    || (record.provider === 'claude' && snapshot.kind === 'claude_oauth_usage')
-    || (record.provider === 'kimi' && snapshot.kind === 'kimi_oauth_usage')
-  ) {
-    values = (snapshot.entries || [])
-      .map((entry) => Number(entry.remainingPct))
-      .filter((value) => Number.isFinite(value));
-  } else if (
-    (record.provider === 'gemini' && snapshot.kind === 'gemini_oauth_stats')
-    || (record.provider === 'agy' && snapshot.kind === 'agy_code_assist_quota')
-  ) {
-    values = (snapshot.models || [])
-      .map((model) => Number(model.remainingPct))
-      .filter((value) => Number.isFinite(value));
-  }
-  if (values.length === 0) return null;
-  return Math.max(0, Math.min(100, Math.min(...values)));
-}
-
-function getEffectiveRemainingPct(record: Pick<Account, 'provider' | 'remainingPct' | 'usageSnapshot'>) {
-  const snapshotRemaining = getUsageSnapshotRemainingPct(record);
-  if (snapshotRemaining != null) return snapshotRemaining;
-  if (record.remainingPct == null) return null;
-  const numeric = Number(record.remainingPct);
-  if (!Number.isFinite(numeric)) return null;
-  return Math.max(0, Math.min(100, numeric));
-}
-
-function getUsageSortValue(record: Pick<Account, 'provider' | 'remainingPct' | 'usageSnapshot'>) {
-  return getEffectiveRemainingPct(record) ?? -1;
-}
-
-function formatQuotaReason(reason?: string) {
-  return formatAccountIssueReason(reason);
-}
-
-function formatSchedulableReason(reason?: string) {
-  const text = String(reason || '').trim();
-  if (!text) return '';
-  if (text === 'codex_free_plan_below_server_min_remaining') {
-    return 'Free 账号剩余额度已低于当前账号切换阈值（按配置计算），已从 aih server 账号池排除，避免接近上限时继续使用导致会话中断。';
-  }
-  if (text === 'codex_free_plan_missing_rate_limits') {
-    return '当前账号已被判定为 Free，但 Codex 没返回可计算额度窗口；server 暂不把它放进账号池，建议重新登录确认。';
-  }
-  if (text === 'codex_team_plan_missing_rate_limits') {
-    return '当前账号 token claim 仍是 Team，但 Codex 没返回可计算额度窗口；server 暂不把它放进账号池，建议重新登录确认。';
-  }
-  if (text === 'agy_access_token_required') {
-    return 'Antigravity OAuth token 在系统 keyring 中，aih server 不能安全读取；需要在账号环境中显式配置 AGY_ACCESS_TOKEN 后才会进入聊天/转发池。';
-  }
-  return formatAccountIssueReason(text);
 }
 
 function renderRuntimeStatusBadge(record: Pick<Account, 'runtimeStatus' | 'runtimeReason' | 'runtimeUntil'>) {

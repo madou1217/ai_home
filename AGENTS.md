@@ -139,6 +139,13 @@ Fuller layer map:
 - Waiting must look alive: `lib/cli/services/pty/headless-progress.js` animates the `Running …` line with a spinner + elapsed seconds and replaces it with `✔ … 首字节 <n>s` on the first byte from the child (stdout or stderr). It writes **only to stderr and only when stderr is a TTY**, so `out=$(aih … -p …)` still animates on screen while the captured stdout stays clean, and a redirected stderr gets the plain one-line banner instead. Escape hatch: `AIH_HEADLESS_SPINNER=0`; Windows falls back to ASCII frames.
 - Escape hatch: `AIH_HEADLESS_DIRECT_SPAWN=0` forces the PTY path. Side effect: on a TTY that run then falls back into the tmux persistent wrapper, since `shouldPersist` does not inspect argv.
 
+## Server 重启与 launchd 环境安全（2026-08-18 事故教训）
+- **绝不在 provider 沙箱会话（agy/codex/opencode 等 auth-projection 环境）里执行 `aih server start/restart/stop`、`aih daemon *`、`aih server autostart *` 或任何 `launchctl bootstrap/kickstart` 类命令。** 沙箱会话的 `HOME` 被覆盖为 `~/.ai_home/run/auth-projections/<provider>/<accountRef>/`；在这些环境里安装/重启 launchd job 会把 `com.clawdcodex.ai_home.plist` 写到投影目录，且 plist 内的 `HOME` 会固化指向沙箱。Server 随后从投影的空 `.ai_home` 启动：账号全 0、无 management key、WebUI 数据面全 503 `webui_unauthorized`，前端被 gate 重定向到 `/server-setup`。
+- 重启 Server 前先确认环境：`echo $HOME` 必须是真实家目录（如 `/Users/<user>`），或显式钉住 `AIH_HOST_HOME=/Users/<user>`；不确定就 `env | grep -i home` 检查。
+- 症状识别：`curl -s http://127.0.0.1:9527/readyz` 若 `ready: false` 且各 provider 账号全 0，同时 `curl -i http://127.0.0.1:9527/v0/webui/accounts` 返回 503 `webui_unauthorized`，先怀疑 launchd job 的 plist 来源，不要改代码。
+- 修复方法：`launchctl bootout gui/$(id -u)/com.clawdcodex.ai_home` 移除错误 job，再用真实家目录的 plist `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.clawdcodex.ai_home.plist` 重新拉起；若投影目录（`~/.ai_home/run/auth-projections/<provider>/<accountRef>/Library/LaunchAgents/`）残留错误 plist 应一并清理。
+- Background: on 2026-08-18 13:38 一次在 agy 投影会话中执行的重启导致 launchd 加载了投影 plist（HOME 指向沙箱），Server 以空库启动，WebUI 被强制重定向到 `/server-setup`；账号/密钥数据完好（真实 `app-state.db` 29 行账号未受影响），仅启动环境错误。
+
 ## Gateway & Account Internals
 - Gateway routing (`lib/server/`): request enters → `router.js` (account selection + failure/success accounting) → `capability-router.js` (route by provider capability) → `protocol-*.js` (OpenAI/Anthropic/Gemini protocol translation) → upstream.
 - Account unique identity: `accountRef` is the persisted DB primary key and the only identity used by server, WebUI, runtime, events, and usage. `cliAccountId` is only a mutable numeric alias for CLI input/display. Registration derives `accountRef` once from the provider identity seed through `lib/account/account-registration.js`; no `unique_key` column or profile-directory identity fallback exists.

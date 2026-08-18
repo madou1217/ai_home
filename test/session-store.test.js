@@ -421,6 +421,229 @@ test('ensureSessionStoreLinks migrates the legacy Kimi projection into .kimi-cod
   );
 });
 
+test('Kimi session index becomes a private view with projection-local sessionDir', (t) => {
+  const root = mkTmpDir();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const hostHomeDir = path.join(root, 'home');
+  const accountRef = 'acct_eeeeeeeeeeeeeeeeeeee';
+  const otherRef = 'acct_ffffffffffffffffffff';
+  const runtimeDir = path.join(root, 'run', 'auth-projections', 'kimi', accountRef);
+  const otherRuntimeDir = path.join(root, 'run', 'auth-projections', 'kimi', otherRef);
+  const kimiHome = path.join(runtimeDir, '.kimi-code');
+  const storeRoot = path.join(hostHomeDir, '.kimi-code');
+  const storeSessions = path.join(storeRoot, 'sessions');
+  const storeIndex = path.join(storeRoot, 'session_index.jsonl');
+
+  const ownSessionDir = path.join(kimiHome, 'sessions', 'wd_proj_x', 'session_own-1');
+  const otherSessionDir = path.join(otherRuntimeDir, '.kimi-code', 'sessions', 'wd_proj_y', 'session_other-1');
+  const hostSessionDir = path.join(storeSessions, 'wd_host', 'session_host-1');
+  fs.mkdirSync(path.join(storeSessions, 'wd_proj_x', 'session_own-1'), { recursive: true });
+  fs.mkdirSync(path.join(storeSessions, 'wd_proj_y', 'session_other-1'), { recursive: true });
+  fs.mkdirSync(hostSessionDir, { recursive: true });
+  // Legacy broken data: the shared index recorded the creator projection's
+  // absolute sessionDir, which every other account's CLI rejects.
+  fs.writeFileSync(storeIndex, [
+    JSON.stringify({ sessionId: 'session_own-1', sessionDir: ownSessionDir, workDir: 'C:/work/x' }),
+    JSON.stringify({ sessionId: 'session_other-1', sessionDir: otherSessionDir, workDir: 'C:/work/y' }),
+    JSON.stringify({ sessionId: 'session_host-1', sessionDir: hostSessionDir, workDir: 'C:/work/h' })
+  ].join('\n') + '\n', 'utf8');
+
+  // Legacy shared layout: both entries are managed links into the host store.
+  fs.mkdirSync(kimiHome, { recursive: true });
+  fs.symlinkSync(storeSessions, path.join(kimiHome, 'sessions'), 'dir');
+  fs.symlinkSync(storeIndex, path.join(kimiHome, 'session_index.jsonl'), 'file');
+
+  const service = createSessionStoreService({
+    fs,
+    fse,
+    path,
+    processObj: process,
+    aiHomeDir: root,
+    hostHomeDir,
+    cliConfigs: { kimi: { globalDir: '.kimi-code' } },
+    getProfileDir: () => runtimeDir,
+    ensureDir: (dir) => fs.mkdirSync(dir, { recursive: true })
+  });
+
+  const result = service.ensureSessionStoreLinks('kimi', accountRef);
+
+  assert.equal(Array.isArray(result.unresolved), false);
+  // Sessions stay shared: one physical copy, linked from the projection.
+  assert.equal(fs.lstatSync(path.join(kimiHome, 'sessions')).isSymbolicLink(), true);
+
+  // The projection index is a private view: every shared session listed with
+  // this projection's own sessionDir prefix so resume passes the CLI check.
+  const viewIndex = path.join(kimiHome, 'session_index.jsonl');
+  assert.equal(fs.lstatSync(viewIndex).isSymbolicLink(), false);
+  const viewEntries = fs.readFileSync(viewIndex, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+  assert.equal(viewEntries.length, 3);
+  viewEntries.forEach((entry) => {
+    assert.equal(entry.sessionDir.startsWith(`${kimiHome}/sessions/`.replace(/\\/g, '/')) ||
+      entry.sessionDir.startsWith(kimiHome), true);
+  });
+  assert.deepEqual(viewEntries.map((entry) => entry.sessionId).sort(), [
+    'session_host-1',
+    'session_other-1',
+    'session_own-1'
+  ]);
+
+  // The canonical host index is normalized to host path form.
+  const canonicalEntries = fs.readFileSync(storeIndex, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+  assert.equal(canonicalEntries.length, 3);
+  canonicalEntries.forEach((entry) => {
+    const normalizedStore = storeSessions.replace(/\\/g, '/');
+    assert.equal(entry.sessionDir.replace(/\\/g, '/').startsWith(`${normalizedStore}/`), true);
+  });
+
+  // Re-running is stable.
+  const rerun = service.ensureSessionStoreLinks('kimi', accountRef);
+  assert.equal(Array.isArray(rerun.unresolved), false);
+  assert.equal(fs.readFileSync(viewIndex, 'utf8'), fs.readFileSync(viewIndex, 'utf8'));
+});
+
+test('Kimi view sync propagates sessions created by another account', (t) => {
+  const root = mkTmpDir();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const hostHomeDir = path.join(root, 'home');
+  const refA = 'acct_aaaaaaaaaaaaaaaaaaa1';
+  const refB = 'acct_bbbbbbbbbbbbbbbbbbb1';
+  const runtimeDirA = path.join(root, 'run', 'auth-projections', 'kimi', refA);
+  const runtimeDirB = path.join(root, 'run', 'auth-projections', 'kimi', refB);
+  const kimiHomeA = path.join(runtimeDirA, '.kimi-code');
+  const kimiHomeB = path.join(runtimeDirB, '.kimi-code');
+  const storeRoot = path.join(hostHomeDir, '.kimi-code');
+  const storeSessions = path.join(storeRoot, 'sessions');
+
+  // Account A already ran: canonical index holds its session in host form.
+  fs.mkdirSync(path.join(storeSessions, 'wd_proj_x', 'session_a-1'), { recursive: true });
+  fs.mkdirSync(storeRoot, { recursive: true });
+  fs.writeFileSync(path.join(storeRoot, 'session_index.jsonl'), JSON.stringify({
+    sessionId: 'session_a-1',
+    sessionDir: path.join(storeSessions, 'wd_proj_x', 'session_a-1').replace(/\\/g, '/'),
+    workDir: 'C:/work/x'
+  }) + '\n', 'utf8');
+
+  // Account B created a session since the last sync: recorded in B's private
+  // view with B's projection path, data in the shared store.
+  fs.mkdirSync(path.join(storeSessions, 'wd_proj_y', 'session_b-1'), { recursive: true });
+  fs.mkdirSync(kimiHomeB, { recursive: true });
+  fs.writeFileSync(path.join(kimiHomeB, 'session_index.jsonl'), JSON.stringify({
+    sessionId: 'session_b-1',
+    sessionDir: path.join(kimiHomeB, 'sessions', 'wd_proj_y', 'session_b-1').replace(/\\/g, '/'),
+    workDir: 'C:/work/y'
+  }) + '\n', 'utf8');
+
+  const service = createSessionStoreService({
+    fs,
+    fse,
+    path,
+    processObj: process,
+    aiHomeDir: root,
+    hostHomeDir,
+    cliConfigs: { kimi: { globalDir: '.kimi-code' } },
+    getProfileDir: (cliName, id) => path.join(root, 'run', 'auth-projections', 'kimi', id),
+    ensureDir: (dir) => fs.mkdirSync(dir, { recursive: true })
+  });
+
+  // B launches: its private entry is canonicalized into the host index.
+  service.ensureSessionStoreLinks('kimi', refB);
+  const canonicalIds = fs.readFileSync(path.join(storeRoot, 'session_index.jsonl'), 'utf8')
+    .trim().split('\n').map((line) => JSON.parse(line).sessionId).sort();
+  assert.deepEqual(canonicalIds, ['session_a-1', 'session_b-1']);
+
+  // A launches later: its view gains B's session with A's own path prefix.
+  service.ensureSessionStoreLinks('kimi', refA);
+  const viewA = fs.readFileSync(path.join(kimiHomeA, 'session_index.jsonl'), 'utf8')
+    .trim().split('\n').map((line) => JSON.parse(line));
+  assert.deepEqual(viewA.map((entry) => entry.sessionId).sort(), ['session_a-1', 'session_b-1']);
+  const propagated = viewA.find((entry) => entry.sessionId === 'session_b-1');
+  assert.equal(
+    propagated.sessionDir.replace(/\\/g, '/'),
+    path.join(kimiHomeA, 'sessions', 'wd_proj_y', 'session_b-1').replace(/\\/g, '/')
+  );
+});
+
+test('Kimi view sync honors deleted markers across accounts', (t) => {
+  const root = mkTmpDir();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const hostHomeDir = path.join(root, 'home');
+  const refA = 'acct_aaaaaaaaaaaaaaaaaaa2';
+  const refB = 'acct_bbbbbbbbbbbbbbbbbbb2';
+  const runtimeDirA = path.join(root, 'run', 'auth-projections', 'kimi', refA);
+  const runtimeDirB = path.join(root, 'run', 'auth-projections', 'kimi', refB);
+  const kimiHomeA = path.join(runtimeDirA, '.kimi-code');
+  const kimiHomeB = path.join(runtimeDirB, '.kimi-code');
+  const storeRoot = path.join(hostHomeDir, '.kimi-code');
+  const storeSessions = path.join(storeRoot, 'sessions');
+
+  fs.mkdirSync(path.join(storeSessions, 'wd_proj_x', 'session_a-1'), { recursive: true });
+  fs.mkdirSync(storeRoot, { recursive: true });
+  fs.writeFileSync(path.join(storeRoot, 'session_index.jsonl'), JSON.stringify({
+    sessionId: 'session_a-1',
+    sessionDir: path.join(storeSessions, 'wd_proj_x', 'session_a-1').replace(/\\/g, '/'),
+    workDir: 'C:/work/x'
+  }) + '\n', 'utf8');
+
+  // B deleted the session: its view carries the deleted marker.
+  fs.mkdirSync(kimiHomeB, { recursive: true });
+  fs.writeFileSync(path.join(kimiHomeB, 'session_index.jsonl'),
+    JSON.stringify({ sessionId: 'session_a-1', deleted: true }) + '\n', 'utf8');
+
+  const service = createSessionStoreService({
+    fs,
+    fse,
+    path,
+    processObj: process,
+    aiHomeDir: root,
+    hostHomeDir,
+    cliConfigs: { kimi: { globalDir: '.kimi-code' } },
+    getProfileDir: (cliName, id) => path.join(root, 'run', 'auth-projections', 'kimi', id),
+    ensureDir: (dir) => fs.mkdirSync(dir, { recursive: true })
+  });
+
+  service.ensureSessionStoreLinks('kimi', refB);
+  const canonical = fs.readFileSync(path.join(storeRoot, 'session_index.jsonl'), 'utf8').trim();
+  assert.equal(canonical.includes('session_a-1'), false);
+
+  service.ensureSessionStoreLinks('kimi', refA);
+  const viewA = path.join(kimiHomeA, 'session_index.jsonl');
+  assert.equal(fs.existsSync(viewA) ? fs.readFileSync(viewA, 'utf8').includes('session_a-1') : false, false);
+});
+
+test('Kimi session index sync fails closed on a foreign index link', (t) => {
+  const root = mkTmpDir();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const hostHomeDir = path.join(root, 'home');
+  const accountRef = 'acct_12121212121212121212';
+  const runtimeDir = path.join(root, 'run', 'auth-projections', 'kimi', accountRef);
+  const kimiHome = path.join(runtimeDir, '.kimi-code');
+  const externalIndex = path.join(root, 'external-index.jsonl');
+  fs.writeFileSync(externalIndex, 'must-survive\n', 'utf8');
+  fs.mkdirSync(kimiHome, { recursive: true });
+  fs.symlinkSync(externalIndex, path.join(kimiHome, 'session_index.jsonl'), 'file');
+
+  const service = createSessionStoreService({
+    fs,
+    fse,
+    path,
+    processObj: process,
+    hostHomeDir,
+    cliConfigs: { kimi: { globalDir: '.kimi-code' } },
+    getProfileDir: () => runtimeDir,
+    ensureDir: (dir) => fs.mkdirSync(dir, { recursive: true })
+  });
+
+  const result = service.ensureSessionStoreLinks('kimi', accountRef);
+
+  assert.equal(result.unresolved.includes(path.join('.kimi-code', 'session_index.jsonl')), true);
+  assert.equal(fs.lstatSync(path.join(kimiHome, 'session_index.jsonl')).isSymbolicLink(), true);
+  assert.equal(fs.readFileSync(externalIndex, 'utf8'), 'must-survive\n');
+});
+
 test('Kimi legacy migration preserves conflicting private files in migration-conflicts', (t) => {
   const root = mkTmpDir();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

@@ -2814,7 +2814,8 @@ test('web ui openai models refresh accepts a ZCode OAuth scoped account', async 
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-zcode-models-'));
 
   try {
-    // loadZcodeServerAccounts 产出的 OAuth 账号形态：仅模型探测、不参与推理调度。
+    // loadZcodeServerAccounts 产出的 OAuth 账号形态：推理走 zcode-plan anthropic 端点
+    //（3007 验证码由 WebUI 桥求解），openaiBaseUrl 指向该推理 base。
     // 回归：此前 OAuth zcode 不进网关池，此端点对它恒 404 account_not_found。
     const accountRef = 'acct_91aa805bdd051b40fa47';
     const state = {
@@ -2825,8 +2826,8 @@ test('web ui openai models refresh accepts a ZCode OAuth scoped account', async 
           authType: 'oauth',
           apiKeyMode: false,
           accessToken: 'zai-access-token-test',
-          openaiBaseUrl: 'https://api.z.ai/api/coding/paas/v4',
-          schedulableStatus: 'oauth_relay_unsupported'
+          openaiBaseUrl: 'https://zcode.z.ai/api/v1/zcode-plan/anthropic',
+          schedulableStatus: 'schedulable'
         }]
       },
       modelRegistry: { providers: { zcode: new Set() } },

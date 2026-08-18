@@ -66,6 +66,8 @@ import { openExternalUrl } from '@/services/open-external-url';
 import { formatTimeCell } from '@/utils/datetime';
 import type { AccountExportFormat } from '@/services/api';
 import type { AccountImportUploadFile } from '@/services/api';
+import type { ZcodeCaptchaEvent } from '@/services/api';
+import ZcodeCaptchaBridge from '@/components/account/ZcodeCaptchaBridge';
 import type {
   Account,
   AccountAddJob,
@@ -333,6 +335,7 @@ export default function Accounts() {
   const navigate = useNavigate();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [hydratingDetails, setHydratingDetails] = useState(false);
+  const [zcodeCaptchaEvent, setZcodeCaptchaEvent] = useState<ZcodeCaptchaEvent | null>(null);
   const [removingAccountRefs, setRemovingAccountRefs] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -1171,6 +1174,9 @@ export default function Accounts() {
       onImportJob: handleImportJobUpdate,
       onAuthJob: handleAuthJobUpdate,
       onAccountRefreshJob: handleAccountRefreshJobUpdate,
+      onZcodeCaptcha: (captchaEvent) => {
+        setZcodeCaptchaEvent(captchaEvent);
+      },
       onError: () => {
         if (accountsSnapshotFallbackTimerRef.current === null) {
           setHydratingDetails(false);
@@ -3004,6 +3010,7 @@ export default function Accounts() {
           单击 CLI 图标选择终端；双击直接使用系统默认终端。ZCode 仅支持 Desktop，不提供 CLI/TUI。
         </Typography.Text>
       </Modal>
+      <ZcodeCaptchaBridge event={zcodeCaptchaEvent} />
     </PageScaffold>
   );
 };

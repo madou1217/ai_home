@@ -236,7 +236,7 @@ test('loadZcodeServerAccounts honours account ZCODE_BASE_URL override', (t) => {
   assert.equal(accounts[0].openaiBaseUrl, 'https://api.z.ai/api/anthropic');
 });
 
-test('loadZcodeServerAccounts admits OAuth accounts as probe-only, non-schedulable pool members', (t) => {
+test('loadZcodeServerAccounts admits OAuth accounts as schedulable pool members', (t) => {
   const { aiHomeDir, accountStateIndex, register } = createZcodeFixture(t);
   register('zcode', '1', null, {
     credentials: {
@@ -261,10 +261,12 @@ test('loadZcodeServerAccounts admits OAuth accounts as probe-only, non-schedulab
   // paas 探测回退，过期且无 refresh token 时会 401。
   assert.equal(account.accessToken, 'oauth-token');
   assert.equal(account.zcodeJwtToken, 'jwt-token');
-  // paas 端点保留为回退探测目标（base 以 /v4 结尾，探测走 <base>/models）。
-  assert.equal(account.openaiBaseUrl, 'https://api.z.ai/api/coding/paas/v4');
-  // 计划推理端点每请求强制阿里云验证码， relay 不可用前不参与推理调度。
-  assert.equal(account.schedulableStatus, 'oauth_relay_unsupported');
+  // 推理端点是 zcode-plan anthropic base（3007 验证码由 WebUI 桥求解后重发）；
+  // paas 端点不再是账号 base，仅作 http-utils 内部的模型探测回退目标。
+  assert.equal(account.openaiBaseUrl, 'https://zcode.z.ai/api/v1/zcode-plan/anthropic');
+  // 验证码桥落地后 OAuth 计划账号参与推理调度。
+  assert.equal(account.schedulableStatus, 'schedulable');
+  assert.equal(account.schedulableReason, '');
   assert.equal(account.displayName, 'ZCode OAuth');
 });
 

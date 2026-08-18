@@ -186,7 +186,9 @@ test('fetchModelsForAccount falls back to paas probe when zcode balance probe fa
     zcodeJwtToken: 'zcode-jwt-dead',
     apiKeyMode: false,
     authType: 'oauth',
-    openaiBaseUrl: 'https://api.z.ai/api/coding/paas/v4'
+    // 新账号形态：openaiBaseUrl 是推理端点（…/zcode-plan/anthropic）。回退探测必须
+    // 用分支内部的 paas 常量而不是 fall through 到通用探测拼这个 base 的 /models。
+    openaiBaseUrl: 'https://zcode.z.ai/api/v1/zcode-plan/anthropic'
   }, 500);
 
   assert.equal(seenUrls[0], 'https://zcode.z.ai/api/v1/zcode-plan/billing/balance');

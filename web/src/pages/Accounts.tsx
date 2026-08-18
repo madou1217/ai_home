@@ -78,7 +78,6 @@ import type {
   ClientTerminalItem,
   Provider,
   WebUiOpenAIModelsJob,
-  WebUiOpenAIModelsResponse,
   WebUiModelsResponse,
 } from '@/types';
 import ProviderIcon, { providerIds, providerNames } from '@/components/chat/ProviderIcon';
@@ -105,6 +104,17 @@ import {
   hasKnownUsage,
   isAccountEnabled
 } from '@/features/accounts/account-state';
+import {
+  buildAccountModelCatalogFromOpenAI,
+  getAccountModelProbe,
+  getAccountRef,
+  getModelCatalogAccountScope,
+  getModelCatalogJobAccountRef,
+  getModelProbeTagColor,
+  getModelProbeTagLabel,
+  getModelRefreshAccountRef,
+  isModelCatalogJobActive
+} from '@/features/accounts/account-model-catalog';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import 'dayjs/locale/zh-cn';
@@ -573,85 +583,6 @@ function getPlanTagColor(record: Pick<Account, 'apiKeyMode' | 'planType' | 'plan
   if (record.planType === 'plus') return 'green';
   if (record.planType === 'business') return 'gold';
   return 'default';
-}
-
-function getAccountRef(record: Pick<Account, 'accountRef'>) {
-  return String(record.accountRef || '').trim();
-}
-
-function getModelRefreshAccountRef(record: Pick<Account, 'accountRef'>) {
-  return getAccountRef(record);
-}
-
-function getModelCatalogAccountScope(record: Pick<Account, 'accountRef'>) {
-  const accountRef = getAccountRef(record);
-  return {
-    accountRef
-  };
-}
-
-function getModelCatalogJobAccountRef(job: WebUiOpenAIModelsJob) {
-  const scope = job.accountScope;
-  if (!scope) return '';
-  return String(scope.accountRef || '').trim();
-}
-
-function isModelCatalogJobActive(job: WebUiOpenAIModelsJob | null) {
-  return Boolean(job && (job.status === 'queued' || job.status === 'running'));
-}
-
-function buildAccountModelCatalogFromOpenAI(catalog: WebUiOpenAIModelsResponse | null): WebUiModelsResponse | null {
-  if (!catalog) return null;
-  return {
-    ok: catalog.ok,
-    cached: catalog.cached,
-    updatedAt: catalog.updatedAt,
-    source: catalog.source,
-    sources: catalog.sources,
-    scannedAccounts: catalog.scannedAccounts,
-    firstError: catalog.firstError,
-    models: catalog.byProvider || {},
-    byAccountRef: catalog.byAccountRef || {},
-    errorsByAccountRef: catalog.errorsByAccountRef || {}
-  };
-}
-
-function getAccountModelProbe(record: Account, catalog: WebUiModelsResponse | null) {
-  const accountRef = getAccountRef(record);
-  const modelsByAccountRef = catalog?.byAccountRef || {};
-  const errorsByAccountRef = catalog?.errorsByAccountRef || {};
-  const hasModels = Boolean(accountRef && Object.prototype.hasOwnProperty.call(modelsByAccountRef, accountRef));
-  const hasError = Boolean(accountRef && Object.prototype.hasOwnProperty.call(errorsByAccountRef, accountRef));
-  return {
-    probed: Boolean(hasModels || hasError),
-    models: hasModels && Array.isArray(modelsByAccountRef[accountRef]) ? modelsByAccountRef[accountRef] : [],
-    error: String(hasError ? errorsByAccountRef[accountRef] : '')
-  };
-}
-
-function formatModelProbeErrorLabel(error: string) {
-  const normalized = String(error || '').trim();
-  if (!normalized) return '探测失败';
-  const httpMatch = normalized.match(/HTTP\s+(\d{3})/i);
-  if (httpMatch) return `${httpMatch[1]} 失败`;
-  if (normalized.includes('PERMISSION_DENIED')) return '权限拒绝';
-  if (normalized.includes('UND_ERR')) return '网络失败';
-  return '探测失败';
-}
-
-function getModelProbeTagLabel(probe: ReturnType<typeof getAccountModelProbe>, modelRefreshing: boolean) {
-  if (probe.models.length > 0) return `模型 ${probe.models.length}`;
-  if (probe.error) return formatModelProbeErrorLabel(probe.error);
-  if (modelRefreshing) return '探测中';
-  if (probe.probed) return '未发现模型';
-  return '待探测';
-}
-
-function getModelProbeTagColor(probe: ReturnType<typeof getAccountModelProbe>, modelRefreshing: boolean) {
-  if (probe.models.length > 0) return probe.error ? 'warning' : 'success';
-  if (probe.error) return 'error';
-  if (modelRefreshing) return 'processing';
-  return probe.probed ? 'default' : 'default';
 }
 
 function mergeAccountRecord(

@@ -52,7 +52,8 @@ test('status checker reads API-key credentials only from app-state.db', (t) => {
   const cases = [
     ['codex', '1', { OPENAI_API_KEY: 'sk-codex-123456789' }, 'API Key: sk-co...6789'],
     ['claude', '2', { ANTHROPIC_AUTH_TOKEN: 'sk-claude-123456789' }, 'Auth Token: sk-cl...6789'], // gitleaks:allow
-    ['gemini', '3', { GEMINI_API_KEY: 'gemini-123456789' }, 'API Key: gemin...6789']
+    ['gemini', '3', { GEMINI_API_KEY: 'gemini-123456789' }, 'API Key: gemin...6789'],
+    ['opencode', '4', { OPENCODE_API_KEY: 'sk-opencode-123456789' }, 'API Key: sk-op...6789']
   ];
 
   for (const [provider, cliAccountId, env, accountName] of cases) {

@@ -99,6 +99,34 @@ test('configureApiKeyAccount persists contract-derived env keys for zcode', (t) 
   assert.equal(env.ZCODE_BASE_URL, 'https://api.z.ai/api/anthropic');
 });
 
+test('configureApiKeyAccount persists OPENCODE_API_KEY, OPENCODE_BASE_URL, and dual native auth for opencode', (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-apikey-opencode-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  const { readAccountCredentials, readAccountNativeAuth } = require('../lib/server/account-credential-store');
+  const configured = configureApiKeyAccount({
+    fs,
+    provider: 'opencode',
+    aiHomeDir,
+    config: { apiKey: 'sk-opencode-test-key-12345678', baseUrl: 'https://opencode.ai/zen/go/v1' }
+  });
+  assert.equal(configured.provider, 'opencode');
+  const env = readAccountCredentials(fs, aiHomeDir, configured.accountRef);
+  assert.equal(env.OPENCODE_API_KEY, 'sk-opencode-test-key-12345678');
+  assert.equal(env.OPENCODE_BASE_URL, 'https://opencode.ai/zen/go/v1');
+
+  const nativeAuth = readAccountNativeAuth(fs, aiHomeDir, configured.accountRef);
+  assert.deepEqual(nativeAuth.auth, {
+    'opencode-go': {
+      type: 'api',
+      key: 'sk-opencode-test-key-12345678'
+    },
+    opencode: {
+      type: 'api',
+      key: 'sk-opencode-test-key-12345678'
+    }
+  });
+});
+
 test('Kiro WebUI auth contract supports browser OAuth', () => {
   assert.equal(getDefaultAuthMode('kiro'), 'oauth-browser');
   assert.equal(isSupportedAuthMode('kiro', 'oauth-browser'), true);
@@ -178,7 +206,7 @@ test('getDefaultAuthMode keeps appropriate default login mode per provider', () 
   assert.equal(getDefaultAuthMode('claude'), 'oauth-browser');
   assert.equal(getDefaultAuthMode('gemini'), 'api-key');
   assert.equal(getDefaultAuthMode('agy'), 'oauth-browser');
-  assert.equal(getDefaultAuthMode('opencode'), 'oauth-browser');
+  assert.equal(getDefaultAuthMode('opencode'), 'api-key');
 });
 
 test('gemini google oauth browser flow is short-circuited and disabled with explicit error', () => {
@@ -612,7 +640,7 @@ test('createAuthJobManager uses a login runtime and exposes accountRef after OAu
   assert.equal(finishedJobs[0].accountRef, finishedJob.accountRef);
 });
 
-test('createAuthJobManager starts opencode login with shared home and account auth data', () => {
+test('createAuthJobManager starts opencode login with shared home and account auth data', { skip: 'opencode auth mode is api-key' }, () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-oauth-opencode-'));
   try {
     const getProfileDir = (provider, accountId) => path.join(root, '.ai_home', 'profiles', provider, String(accountId));
@@ -771,15 +799,15 @@ test('createAuthJobManager expires stale browser oauth jobs without provider sig
         };
       }
     },
-    resolveCliPathImpl: () => '/usr/local/bin/claude',
+    resolveCliPathImpl: () => '/usr/local/bin/grok',
     getToolAccountIds: () => [],
     getProfileDir,
     getToolConfigDir
   });
 
-  // opencode spawns a CLI for browser oauth (no native loopback), so its job
+  // grok spawns a CLI for browser oauth (no native loopback), so its job
   // starts without a provider-declared expiry and relies on the staleness fallback.
-  const started = manager.startOauthJob('opencode', 'oauth-browser');
+  const started = manager.startOauthJob('grok', 'oauth-browser');
   const running = manager.getJob(started.jobId);
   assert.equal(running.status, 'running');
   assert.equal(running.expiresAt, null);
@@ -792,7 +820,7 @@ test('createAuthJobManager expires stale browser oauth jobs without provider sig
   assert.equal(expired.authProgressState, 'expired');
   assert.match(expired.error, /OAuth 授权已超时/);
   assert.equal(killed, true);
-  assert.equal(manager.getRunningJob('opencode'), null);
+  assert.equal(manager.getRunningJob('grok'), null);
 });
 
 // gemini oauth-browser flow is disabled by product policy (gemini_google_oauth_disabled);
@@ -897,25 +925,25 @@ test('createAuthJobManager cancelJob releases provider lock for retry', () => {
         };
       }
     },
-    resolveCliPathImpl: () => '/usr/local/bin/opencode',
+    resolveCliPathImpl: () => '/usr/local/bin/agy',
     getToolAccountIds: () => ['1'],
     getProfileDir,
     getToolConfigDir
   });
 
-  const started = manager.startOauthJob('opencode', 'oauth-browser');
-  assert.equal(manager.getRunningJob('opencode')?.id, started.jobId);
+  const started = manager.startOauthJob('agy', 'oauth-browser');
+  assert.equal(manager.getRunningJob('agy')?.id, started.jobId);
 
   const cancelled = manager.cancelJob(started.jobId);
   assert.equal(cancelled.ok, true);
   assert.equal(killed, true);
-  assert.equal(manager.getRunningJob('opencode'), null);
+  assert.equal(manager.getRunningJob('agy'), null);
   assert.equal(manager.getJob(started.jobId)?.status, 'cancelled');
 
   onExitHandler({ exitCode: 130 });
   assert.equal(manager.getJob(started.jobId)?.status, 'cancelled');
 
-  const retried = manager.startOauthJob('opencode', 'oauth-browser');
+  const retried = manager.startOauthJob('agy', 'oauth-browser');
   assert.notEqual(retried.jobId, started.jobId);
 });
 
@@ -1618,7 +1646,7 @@ test('createAuthJobManager marks claude oauth job succeeded when credentials fil
 });
 
 test('createAuthJobManager preserves succeeded status after oauth artifact completion triggers onExit', async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-oauth-opencode-exit-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-oauth-device-exit-'));
   const getProfileDir = (provider, accountId) => path.join(root, provider, String(accountId));
   const getToolConfigDir = (provider, accountId) => path.join(getProfileDir(provider, accountId), `.${provider}`);
 
@@ -1647,7 +1675,7 @@ test('createAuthJobManager preserves succeeded status after oauth artifact compl
         };
       }
     },
-    resolveCliPathImpl: () => '/usr/local/bin/opencode',
+    resolveCliPathImpl: () => '/usr/local/bin/codex',
     getToolAccountIds: () => ['1'],
     getProfileDir,
     getToolConfigDir,
@@ -1656,15 +1684,14 @@ test('createAuthJobManager preserves succeeded status after oauth artifact compl
     }
   });
 
-  // opencode spawns its CLI for browser oauth, so this exercises the PTY
-  // onExit path after completion artifacts (auth.json) appear.
-  const started = manager.startOauthJob('opencode', 'oauth-browser');
-  const credentialsPath = path.join(manager.getJob(started.jobId).runtimeDir, '.local', 'share', 'opencode', 'auth.json');
+  const started = manager.startOauthJob('codex', 'oauth-device');
+  const credentialsPath = path.join(manager.getJob(started.jobId).configDir, 'auth.json');
   fs.mkdirSync(path.dirname(credentialsPath), { recursive: true });
   fs.writeFileSync(credentialsPath, JSON.stringify({
-    default: {
-      access_token: 'opencode-access-token',
-      refresh_token: 'opencode-refresh-token'
+    tokens: {
+      access_token: 'codex-access-token',
+      refresh_token: 'codex-refresh-token',
+      id_token: makeJwt({ email: 'user@example.com' })
     }
   }));
 
@@ -2657,71 +2684,5 @@ test('startOauthJob resolves qodercn through ensureNativeCli success path', asyn
   const launch = spawned[0];
   const launchBlob = `${launch.command} ${(launch.args || []).join(' ')}`;
   assert.match(launchBlob, /qoderclicn\.exe/i);
-});
-
-test('createAuthJobManager auto-confirms opencode provider prompt and injects -p opencode', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-oauth-opencode-prompt-'));
-  const getProfileDir = (provider, accountId) => path.join(root, provider, String(accountId));
-  const getToolConfigDir = (provider, accountId) => path.join(getProfileDir(provider, accountId), `.${provider}`);
-
-  let onDataHandler = null;
-  let spawnArgs = null;
-  const writes = [];
-  const manager = createAuthJobManager({
-    fs,
-    processObj: {
-      ...process,
-      cwd: () => root,
-      env: { ...process.env },
-      platform: process.platform,
-      kill() {
-        return;
-      }
-    },
-    ptyImpl: {
-      spawn(cmd, args) {
-        spawnArgs = args;
-        return {
-          pid: 4096,
-          onData(handler) {
-            onDataHandler = handler;
-          },
-          onExit() {},
-          write(chunk) {
-            writes.push(chunk);
-          },
-          kill() {}
-        };
-      }
-    },
-    resolveCliPathImpl: () => '/usr/local/bin/opencode',
-    getToolAccountIds: () => [],
-    getProfileDir,
-    getToolConfigDir
-  });
-
-  const started = manager.startOauthJob('opencode', 'oauth-browser');
-  assert.equal(started.provider, 'opencode');
-  assert.deepEqual(spawnArgs, ['auth', 'login', '-p', 'opencode']);
-  assert.equal(typeof onDataHandler, 'function');
-
-  onDataHandler([
-    '┌  Add credential',
-    '│',
-    '◆  Select provider',
-    '│',
-    '│  Search: _',
-    '│  ● OpenCode Zen (recommended)',
-    '│  ○ OpenAI',
-    '│  ○ GitHub Copilot',
-    '│  ↑/↓ to select • Enter: confirm • Type: to search',
-    '└'
-  ].join('\n'));
-
-  // Should auto-write \r to select default OpenCode Zen and be idempotent
-  onDataHandler('◆  Select provider\n│  ● OpenCode Zen (recommended)');
-
-  assert.deepEqual(writes, ['\r']);
-  assert.match(manager.getJob(started.jobId).logs, /自动选择 OpenCode Zen/);
 });
 

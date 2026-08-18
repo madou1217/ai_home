@@ -2658,3 +2658,70 @@ test('startOauthJob resolves qodercn through ensureNativeCli success path', asyn
   const launchBlob = `${launch.command} ${(launch.args || []).join(' ')}`;
   assert.match(launchBlob, /qoderclicn\.exe/i);
 });
+
+test('createAuthJobManager auto-confirms opencode provider prompt and injects -p opencode', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-oauth-opencode-prompt-'));
+  const getProfileDir = (provider, accountId) => path.join(root, provider, String(accountId));
+  const getToolConfigDir = (provider, accountId) => path.join(getProfileDir(provider, accountId), `.${provider}`);
+
+  let onDataHandler = null;
+  let spawnArgs = null;
+  const writes = [];
+  const manager = createAuthJobManager({
+    fs,
+    processObj: {
+      ...process,
+      cwd: () => root,
+      env: { ...process.env },
+      platform: process.platform,
+      kill() {
+        return;
+      }
+    },
+    ptyImpl: {
+      spawn(cmd, args) {
+        spawnArgs = args;
+        return {
+          pid: 4096,
+          onData(handler) {
+            onDataHandler = handler;
+          },
+          onExit() {},
+          write(chunk) {
+            writes.push(chunk);
+          },
+          kill() {}
+        };
+      }
+    },
+    resolveCliPathImpl: () => '/usr/local/bin/opencode',
+    getToolAccountIds: () => [],
+    getProfileDir,
+    getToolConfigDir
+  });
+
+  const started = manager.startOauthJob('opencode', 'oauth-browser');
+  assert.equal(started.provider, 'opencode');
+  assert.deepEqual(spawnArgs, ['auth', 'login', '-p', 'opencode']);
+  assert.equal(typeof onDataHandler, 'function');
+
+  onDataHandler([
+    '┌  Add credential',
+    '│',
+    '◆  Select provider',
+    '│',
+    '│  Search: _',
+    '│  ● OpenCode Zen (recommended)',
+    '│  ○ OpenAI',
+    '│  ○ GitHub Copilot',
+    '│  ↑/↓ to select • Enter: confirm • Type: to search',
+    '└'
+  ].join('\n'));
+
+  // Should auto-write \r to select default OpenCode Zen and be idempotent
+  onDataHandler('◆  Select provider\n│  ● OpenCode Zen (recommended)');
+
+  assert.deepEqual(writes, ['\r']);
+  assert.match(manager.getJob(started.jobId).logs, /自动选择 OpenCode Zen/);
+});
+

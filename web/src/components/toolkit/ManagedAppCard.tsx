@@ -1,9 +1,10 @@
-import { CloudSyncOutlined, EditOutlined } from '@ant-design/icons';
+import { CloudSyncOutlined, EditOutlined, ExportOutlined } from '@ant-design/icons';
 import { Space, Tag, Tooltip } from 'antd';
 import Button from '@/components/ui/AppButton';
 import type { ManagedAppItem } from '@/types';
 import InstallLifecycleAction from './InstallLifecycleAction';
 import ManagedAppIcon from './ManagedAppIcon';
+import { SESSION_SYNC_BOUNDARY, SESSION_SYNC_SCOPE } from '@/components/session-sync-copy';
 
 export const APP_TYPE_LABELS: Record<ManagedAppItem['type'], string> = {
   cli: 'CLI',
@@ -18,16 +19,22 @@ export const SYNC_MODE_LABELS: Record<ManagedAppItem['syncMode'], string> = {
 };
 
 const SYNC_MODE_DESCRIPTIONS: Record<ManagedAppItem['syncMode'], string> = {
-  hook: 'Provider 官方 Hook 把会话事件实时通知给 WebUI，不上传凭据或配置文件内容。',
+  hook: `Provider 官方 Hook 把${SESSION_SYNC_SCOPE}的事件实时通知给 WebUI；${SESSION_SYNC_BOUNDARY}`,
   polling: '没有官方 Hook，WebUI 通过会话文件轮询获取变化，可能有轻微延迟。',
   unavailable: '当前 Provider 没有可用的会话事件或会话文件读取能力。'
 };
 
+const HOOK_REASON_LABELS: Record<string, string> = {
+  disabled: 'Hook 已禁用',
+  missing_events: 'Hook 配置不完整'
+};
+
 export interface ManagedAppCardProps {
   app: ManagedAppItem;
-  installingApp: boolean;
+  busyAction?: 'install' | 'update' | 'uninstall';
   installingHooks: boolean;
-  onInstall: (app: ManagedAppItem) => void;
+  onAction: (app: ManagedAppItem, action: 'install' | 'update' | 'uninstall') => void;
+  onOpenApp: (app: ManagedAppItem) => void;
   onInstallHooks: (provider: string) => void;
   onEditConfig: (app: ManagedAppItem) => void;
 }
@@ -36,16 +43,32 @@ function hasExistingConfig(app: ManagedAppItem) {
   return Boolean(app.configExists && app.configName);
 }
 
+function getHookStatusDetail(app: ManagedAppItem) {
+  if (!app.hookSupported || app.hookInstalled) return '';
+  const reasonKey = String(app.hookReason || '').trim();
+  const reason = HOOK_REASON_LABELS[reasonKey] || (reasonKey ? `Hook 状态：${reasonKey}` : 'Hook 尚未通过验证');
+  const missingEvents = (app.hookMissingEvents || [])
+    .map((event) => String(event || '').trim())
+    .filter(Boolean);
+  return [
+    reason,
+    missingEvents.length > 0 ? `缺少事件：${missingEvents.join('、')}` : ''
+  ].filter(Boolean).join('；');
+}
+
 export default function ManagedAppCard({
   app,
-  installingApp,
+  busyAction,
   installingHooks,
-  onInstall,
+  onAction,
+  onOpenApp,
   onInstallHooks,
   onEditConfig
 }: ManagedAppCardProps) {
-  const canInstall = app.type === 'cli' || (app.type === 'desktop' && app.installAvailable);
+  const canInstall = app.type === 'cli' ? Boolean(app.installAvailable) : (app.type === 'desktop' && app.installAvailable);
+  const lifecycleManaged = app.type === 'cli' || app.type === 'desktop';
   const existingConfig = hasExistingConfig(app);
+  const hookStatusDetail = getHookStatusDetail(app);
 
   return (
     <article
@@ -62,9 +85,9 @@ export default function ManagedAppCard({
               <Space size={4} wrap>
                 <Tag color="blue">{APP_TYPE_LABELS[app.type]}</Tag>
                 <Tag color={app.installed ? 'success' : 'default'}>{app.installed ? '已安装' : '未安装'}</Tag>
-                {app.hookSupported ? (
+                {app.installed && app.hookSupported ? (
                   <Tag color={app.hookInstalled ? 'blue' : 'warning'}>
-                    {app.hookInstalled ? '会话 Hook 已启用' : '会话 Hook 待配置'}
+                    {app.hookInstalled ? '会话同步已验证' : '会话同步待启用'}
                   </Tag>
                 ) : null}
               </Space>
@@ -96,23 +119,57 @@ export default function ManagedAppCard({
       </div>
       <div className="toolkit-card-actions">
         <Space size={6} wrap>
-          {canInstall ? (
-            <InstallLifecycleAction
-              action={app.installed ? 'update' : 'install'}
-              size="small"
-              loading={installingApp}
-              onClick={() => onInstall(app)}
-            />
-          ) : null}
-          {app.hookSupported && !app.hookInstalled ? (
+          {app.type === 'desktop' && app.installed ? (
             <Button
               size="small"
-              icon={<CloudSyncOutlined />}
-              loading={installingHooks}
-              onClick={() => onInstallHooks(app.provider)}
+              icon={<ExportOutlined />}
+              disabled={Boolean(busyAction)}
+              onClick={() => onOpenApp(app)}
             >
-              安装会话 Hook
+              打开应用
             </Button>
+          ) : null}
+          {!app.installed && canInstall ? (
+            <InstallLifecycleAction
+              action="install"
+              size="small"
+              loading={busyAction === 'install'}
+              disabled={Boolean(busyAction)}
+              onClick={() => onAction(app, 'install')}
+            />
+          ) : null}
+          {app.installed && lifecycleManaged ? (
+            <>
+              <InstallLifecycleAction
+                action="update"
+                size="small"
+                loading={busyAction === 'update'}
+                disabled={Boolean(busyAction) || app.canUpdate === false}
+                title={app.canUpdate === false ? (app.updateReason || '没有可用更新计划') : undefined}
+                onClick={() => onAction(app, 'update')}
+              />
+              <InstallLifecycleAction
+                action="uninstall"
+                size="small"
+                loading={busyAction === 'uninstall'}
+                disabled={Boolean(busyAction) || app.canUninstall === false}
+                title={app.canUninstall === false ? (app.uninstallReason || '没有安全卸载计划') : undefined}
+                onClick={() => onAction(app, 'uninstall')}
+              />
+            </>
+          ) : null}
+          {app.installed && app.hookSupported && !app.hookInstalled ? (
+            <Tooltip title={`仅写入 AIH 标记的官方事件 Hook，把${SESSION_SYNC_SCOPE}通知 WebUI；${SESSION_SYNC_BOUNDARY}安装后会重新读取并验证。`}>
+              <Button
+                size="small"
+                icon={<CloudSyncOutlined />}
+                loading={installingHooks}
+                disabled={Boolean(busyAction)}
+                onClick={() => onInstallHooks(app.provider)}
+              >
+                启用会话同步
+              </Button>
+            </Tooltip>
           ) : null}
           {existingConfig ? (
             <Button size="small" icon={<EditOutlined />} onClick={() => onEditConfig(app)}>
@@ -120,9 +177,12 @@ export default function ManagedAppCard({
             </Button>
           ) : null}
         </Space>
-        <Tooltip title={SYNC_MODE_DESCRIPTIONS[app.syncMode]}>
-          <span className="toolkit-sync-mode">会话同步：{SYNC_MODE_LABELS[app.syncMode]}</span>
-        </Tooltip>
+        <div className="toolkit-sync-summary">
+          <Tooltip title={SYNC_MODE_DESCRIPTIONS[app.syncMode]}>
+            <span className="toolkit-sync-mode">会话同步：{SYNC_MODE_LABELS[app.syncMode]}</span>
+          </Tooltip>
+          {hookStatusDetail ? <span className="toolkit-sync-detail">{hookStatusDetail}</span> : null}
+        </div>
       </div>
     </article>
   );

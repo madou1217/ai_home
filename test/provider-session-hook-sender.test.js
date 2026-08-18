@@ -28,11 +28,16 @@ test('parseSenderArgs extracts provider event and url', () => {
   });
 });
 
-test('buildHookReceiverBody wraps raw JSON without leaking text fields outside payload', () => {
+test('buildHookReceiverBody keeps only session metadata and strips content fields', () => {
   const body = buildHookReceiverBody(JSON.stringify({
     session_id: 's1',
     prompt: 'secret prompt',
-    tool_input: { command: 'secret command' }
+    tool_input: { command: 'secret command' },
+    cwd: '/tmp/project',
+    toolCall: { command: 'secret command' },
+    error: 'secret error',
+    fullyIdle: false,
+    unknownField: 'must be dropped'
   }), {
     provider: 'codex',
     eventName: 'UserPromptSubmit'
@@ -41,7 +46,12 @@ test('buildHookReceiverBody wraps raw JSON without leaking text fields outside p
   assert.equal(body.provider, 'codex');
   assert.equal(body.eventName, 'UserPromptSubmit');
   assert.equal(body.payload.session_id, 's1');
-  assert.equal(body.payload.prompt, 'secret prompt');
+  assert.equal(body.payload.cwd, '/tmp/project');
+  assert.deepEqual(body.payload.toolCall, {});
+  assert.equal(body.payload.error, true);
+  assert.equal(body.payload.fullyIdle, false);
+  assert.equal(body.payload.prompt, undefined);
+  assert.equal(body.payload.unknownField, undefined);
   assert.equal(body.prompt, undefined);
   assert.equal(body.tool_input, undefined);
 });

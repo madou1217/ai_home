@@ -39,3 +39,19 @@ func TestRenderClientTypeScriptUsesGeneratedContract(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderClientJavaScriptUsesGeneratedContract(t *testing.T) {
+	output, err := renderClientJavaScript(providers.BuiltinManifest())
+	if err != nil {
+		t.Fatalf("生成 JavaScript Provider 投影失败: %v", err)
+	}
+	for _, expected := range [][]byte{
+		[]byte("请编辑 `core/providers/builtins.go`"),
+		[]byte("export const PROVIDER_DEFINITIONS"),
+		[]byte("gateway_profile"),
+	} {
+		if !bytes.Contains(output, expected) {
+			t.Fatalf("JavaScript Provider 投影缺少 %q", expected)
+		}
+	}
+}

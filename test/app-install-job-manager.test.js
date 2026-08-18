@@ -104,3 +104,23 @@ test('ZCode CLI 安装任务在入口处拒绝，避免把 Desktop 误报为 CLI
     error: 'cli_not_supported'
   });
 });
+
+test('独立托管 CLI 支持更新和卸载生命周期，任务中保留 action', async () => {
+  const commands = [];
+  const manager = createAppInstallJobManager({
+    runInstallPlan: async (plan) => {
+      commands.push(plan.id);
+      return { ok: true, status: 0 };
+    },
+    processObj: { platform: 'darwin', env: { PATH: '' }, cwd: () => process.cwd() },
+    hostHomeDir: '/tmp/aih-test-dsh'
+  });
+
+  for (const action of ['update', 'uninstall']) {
+    const started = manager.start({ appId: 'dsh', action });
+    assert.equal(started.ok, true);
+    assert.equal(started.job.action, action);
+    await waitFor(() => manager.getJob(started.job.id)?.status === 'succeeded');
+  }
+  assert.deepEqual(commands, ['npm_global_update', 'npm_global_uninstall']);
+});

@@ -368,41 +368,10 @@ export const PROVIDER_DEFINITIONS = [
       "desktop": true
     }
   }
-] as const;
+];
 
-/** Provider 的稳定字符串身份。 */
-export type ProviderId = (typeof PROVIDER_DEFINITIONS)[number]['id'];
-
-/** Client 支持的账号认证方式。 */
-export type ProviderAuthMode = (typeof PROVIDER_DEFINITIONS)[number]['authOptions'][number]['value'];
-
-/** Client 展示的一条账号认证选项。 */
-export interface ProviderAuthOption {
-  readonly value: ProviderAuthMode;
-  readonly label: string;
-  readonly description: string;
-  readonly disabled?: boolean;
-  readonly disabledReason?: string;
-}
-
-/** Client 使用的 Provider 展示元数据。 */
-export interface ProviderCatalogEntry {
-  readonly id: ProviderId;
-  readonly label: string;
-  readonly short: string;
-  readonly terminalIcon: string;
-  readonly terminalIconAsset: string;
-  readonly accentVar: string;
-  readonly softVar: string;
-  readonly tagColor: string;
-  readonly capabilities: readonly string[];
-  readonly clients: { readonly cli: boolean; readonly desktop: boolean };
-}
-
-/** 按产品顺序排列的 Provider ID。 */
 export const PROVIDER_IDS = Object.freeze(PROVIDER_DEFINITIONS.map((definition) => definition.id));
 
-/** 由同一生成源构建的 Provider 展示目录。 */
 export const PROVIDER_CATALOG = Object.freeze(Object.fromEntries(
   PROVIDER_DEFINITIONS.map((definition) => [definition.id, {
     id: definition.id,
@@ -416,14 +385,12 @@ export const PROVIDER_CATALOG = Object.freeze(Object.fromEntries(
     capabilities: definition.capabilities,
     clients: definition.clients,
   }]),
-) as Readonly<Record<ProviderId, ProviderCatalogEntry>>);
+));
 
-/** 账号添加界面直接消费的认证选项目录。 */
 export const PROVIDER_AUTH_OPTIONS = Object.freeze(Object.fromEntries(
   PROVIDER_DEFINITIONS.map((definition) => [definition.id, definition.authOptions]),
-) as Readonly<Record<ProviderId, readonly ProviderAuthOption[]>>);
+));
 
-/** 未知 Provider 的安全展示回退。 */
 export const PROVIDER_FALLBACK = {
   "id": "codex",
   "label": "AI",
@@ -438,4 +405,4 @@ export const PROVIDER_FALLBACK = {
     "cli": false,
     "desktop": false
   }
-} as const satisfies ProviderCatalogEntry;
+};

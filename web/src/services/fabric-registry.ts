@@ -1,4 +1,5 @@
 import type { ControlPlaneProfile } from '@/types';
+import { providerIdsByCapability } from '../providers/catalog';
 import { createControlPlaneApiClient } from './control-plane-api-client';
 import {
   isNativeServerTransportAvailable,
@@ -9,6 +10,10 @@ import {
   requireActiveControlPlaneProfile,
   resolveStoredActiveControlPlaneContext
 } from './active-control-plane';
+
+// Runtime actions follow the generated Provider contract. A new CLI Provider
+// becomes visible here by declaring `clients.cli`; no second list is needed.
+const SESSION_PROVIDER_IDS = providerIdsByCapability('session_runtime');
 
 export interface FabricRegistryCounts {
   nodes: number;
@@ -561,7 +566,7 @@ function buildStartSessionAction(provider: string, view: Omit<FabricNodeInventor
 }
 
 function buildRuntimeGaps(view: Omit<FabricNodeInventoryItem, 'capabilities' | 'actions' | 'runtimeGaps'>): FabricNodeRuntimeGap[] {
-  return ['codex', 'claude', 'agy', 'opencode']
+  return SESSION_PROVIDER_IDS
     .map((provider) => {
       const gate = resolveProviderRuntimeGate(provider, view);
       if (!gate.blocker) return null;
@@ -603,7 +608,7 @@ function buildNodeActions(view: Omit<FabricNodeInventoryItem, 'actions' | 'runti
       ...(view.projects.length > 0 ? [] : ['missing_project_snapshot']),
       'm4_project_action_pending'
     ], { eligible: view.projects.length > 0 }),
-    ...['codex', 'claude', 'agy', 'opencode'].map((provider) => buildStartSessionAction(provider, view)),
+    ...SESSION_PROVIDER_IDS.map((provider) => buildStartSessionAction(provider, view)),
     buildAction('configure-ssh', 'Configure SSH', view.capabilities.sshBootstrap, view.capabilities.sshBootstrap ? [] : ['missing_ssh_bootstrap_transport'], {
       eligible: view.capabilities.sshBootstrap
     }),

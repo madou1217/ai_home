@@ -56,6 +56,7 @@ output/
 # UmiJS temporary cache
 web/src/.umi/
 web/src/.umi-production/
+/.umi-production/
 
 # WebUI 终端运行时生成的 aih shim（见 webui-terminal-routes.js）
 .runtime-bin/

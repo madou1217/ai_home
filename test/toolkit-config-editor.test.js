@@ -6,17 +6,77 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {
+  CONFIG_APP_ALIASES,
   readManagedAppConfig,
+  resolveTarget,
   saveManagedAppConfig,
   ToolkitConfigError
 } = require('../lib/cli/services/toolkit/config-editor');
+const { listProviderDefinitions } = require('../lib/provider-catalog');
 
 function createHome() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'aih-toolkit-config-test-'));
 }
 
+test('config editor derives Provider and Desktop aliases from the shared contract', () => {
+  for (const definition of listProviderDefinitions()) {
+    const provider = definition.id;
+    assert.equal(CONFIG_APP_ALIASES[provider], provider);
+    assert.equal(resolveTarget(provider, {
+      hostHomeDir: '/tmp/aih-config-contract-home',
+      platform: 'linux'
+    }).provider, provider);
+    if (definition.clients && definition.clients.desktop) {
+      const desktopAlias = `${provider}-desktop`;
+      const expectedTarget = provider === 'claude' ? 'claude-desktop' : provider;
+      assert.equal(CONFIG_APP_ALIASES[desktopAlias], expectedTarget);
+    }
+  }
+});
+
+test('config editor exposes public platform identifiers while accepting Node aliases', () => {
+  assert.equal(resolveTarget('codex', {
+    hostHomeDir: '/tmp/aih-config-platform-home',
+    platform: 'darwin'
+  }).platform, 'macos');
+  assert.equal(resolveTarget('codex', {
+    hostHomeDir: 'C:\\Users\\tester',
+    platform: 'win32',
+    processObj: { platform: 'win32', env: {} }
+  }).platform, 'windows');
+});
+
+test('config editor refuses to read a missing config as an editable document', () => {
+  const home = createHome();
+
+  assert.throws(
+    () => readManagedAppConfig('codex-desktop', {
+      hostHomeDir: home,
+      platform: 'linux'
+    }),
+    (error) => error instanceof ToolkitConfigError && error.code === 'config_not_found'
+  );
+});
+
+test('config editor refuses to create a missing config on save', () => {
+  const home = createHome();
+  const configPath = path.join(home, '.codex', 'config.toml');
+
+  assert.throws(
+    () => saveManagedAppConfig('codex', 'model = "gpt-5.5"\n', {
+      hostHomeDir: home,
+      platform: 'linux'
+    }),
+    (error) => error instanceof ToolkitConfigError && error.code === 'config_not_found'
+  );
+  assert.equal(fs.existsSync(configPath), false);
+});
+
 test('config editor resolves a Codex Desktop alias without exposing a path contract', () => {
   const home = createHome();
+  const configDir = path.join(home, '.codex');
+  fs.mkdirSync(configDir, { recursive: true });
+  fs.writeFileSync(path.join(configDir, 'config.toml'), 'model = "gpt-5"\n', 'utf8');
   const data = readManagedAppConfig('codex-desktop', {
     hostHomeDir: home,
     platform: 'linux'
@@ -26,7 +86,7 @@ test('config editor resolves a Codex Desktop alias without exposing a path contr
   assert.equal(data.appId, 'codex-desktop');
   assert.equal(data.configName, 'config.toml');
   assert.equal(data.configFormat, 'toml');
-  assert.equal(data.exists, false);
+  assert.equal(data.exists, true);
   assert.equal(Object.prototype.hasOwnProperty.call(data, 'path'), false);
 });
 
@@ -75,6 +135,11 @@ test('config editor saves with an optimistic revision check', () => {
 
 test('config editor falls back to Linux privilege elevation after EACCES', () => {
   const home = createHome();
+  const configDir = path.join(home, '.codex');
+  fs.mkdirSync(configDir, { recursive: true });
+  const configPath = path.join(configDir, 'config.toml');
+  fs.writeFileSync(configPath, 'model = "before"\n', 'utf8');
+  fs.chmodSync(configPath, 0o600);
   let denyNextWrite = true;
   const calls = [];
   const fsImpl = new Proxy(fs, {
@@ -119,7 +184,7 @@ test('config editor uses Windows UAC elevation after EACCES', () => {
   const files = new Map();
   let writeCount = 0;
   const fsImpl = {
-    existsSync() { return false; },
+    existsSync(candidate) { return candidate === 'C:\\Users\\tester\\.codex\\config.toml'; },
     accessSync() {},
     mkdirSync() {},
     statSync() { throw Object.assign(new Error('missing'), { code: 'ENOENT' }); },
@@ -194,7 +259,7 @@ test('config editor does not expose a config path through save failures', () => 
       hostHomeDir: home,
       platform: 'linux',
       fs: {
-        existsSync() { return false; },
+        existsSync() { return true; },
         mkdirSync() {},
         statSync() { throw Object.assign(new Error('missing'), { code: 'ENOENT' }); },
         writeFileSync() {

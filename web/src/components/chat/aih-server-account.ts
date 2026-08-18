@@ -1,12 +1,12 @@
 import type { ChatAccount, GatewayAccount, Provider } from '@/types';
+import { providerIdsByCapability } from '@/providers/catalog';
 
 // 网关目标不是账号，不分配伪 accountRef；后端只通过 gateway=true 进入池化路由。
 export const AIH_SERVER_ACCOUNT_LABEL = 'aih-server(全部账号+别名)';
 const GATEWAY_SELECTION_SCOPE_PREFIX = 'gateway:';
 
-// 仅这些 provider 支持网关 profile（与后端 self-relay-account.AIH_SERVER_PROFILE_PROVIDERS 对齐）。
-// agy 无端点覆盖、gemini 尚未接入网关 → 不提供该选项，保持单账号直连。
-export const AIH_SERVER_PROVIDERS: Provider[] = ['codex', 'claude', 'opencode'];
+// 网关 profile 的 Provider 集合来自生成合同，与后端 self-relay-account 保持同一真相源。
+export const AIH_SERVER_PROVIDERS: Provider[] = providerIdsByCapability('gatewayProfile') as Provider[];
 
 export function supportsAihServer(provider?: string | null): boolean {
   return AIH_SERVER_PROVIDERS.includes(String(provider || '').trim() as Provider);

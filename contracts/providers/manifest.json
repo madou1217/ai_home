@@ -18,7 +18,12 @@
       "capabilities": [
         "api_key_account",
         "model_catalog",
-        "quota_usage"
+        "quota_usage",
+        "session_runtime",
+        "fabric_runtime",
+        "gateway_profile",
+        "session_history",
+        "usage_scan"
       ],
       "authOptions": [
         {
@@ -167,7 +172,10 @@
       "capabilities": [
         "api_key_account",
         "model_catalog",
-        "quota_usage"
+        "quota_usage",
+        "fabric_runtime",
+        "session_history",
+        "usage_scan"
       ],
       "authOptions": [
         {
@@ -287,7 +295,12 @@
       "capabilities": [
         "api_key_account",
         "model_catalog",
-        "quota_usage"
+        "quota_usage",
+        "session_runtime",
+        "fabric_runtime",
+        "gateway_profile",
+        "session_history",
+        "usage_scan"
       ],
       "authOptions": [
         {
@@ -445,7 +458,11 @@
       "gateway": "active",
       "capabilities": [
         "model_catalog",
-        "quota_usage"
+        "quota_usage",
+        "session_runtime",
+        "fabric_runtime",
+        "session_history",
+        "usage_scan"
       ],
       "authOptions": [
         {
@@ -585,7 +602,12 @@
       },
       "gateway": "active",
       "capabilities": [
-        "model_catalog"
+        "model_catalog",
+        "session_runtime",
+        "fabric_runtime",
+        "gateway_profile",
+        "session_history",
+        "usage_scan"
       ],
       "authOptions": [
         {
@@ -667,7 +689,9 @@
       "gateway": "active",
       "capabilities": [
         "api_key_account",
-        "model_catalog"
+        "model_catalog",
+        "session_history",
+        "account_session_store"
       ],
       "authOptions": [
         {
@@ -786,7 +810,9 @@
       },
       "gateway": "active",
       "capabilities": [
-        "model_catalog"
+        "model_catalog",
+        "session_history",
+        "account_session_store"
       ],
       "authOptions": [
         {
@@ -876,7 +902,9 @@
       },
       "gateway": "active",
       "capabilities": [
-        "model_catalog"
+        "model_catalog",
+        "session_history",
+        "account_session_store"
       ],
       "authOptions": [
         {
@@ -970,7 +998,8 @@
       "capabilities": [
         "api_key_account",
         "model_catalog",
-        "quota_usage"
+        "quota_usage",
+        "usage_scan"
       ],
       "authOptions": [
         {
@@ -1062,7 +1091,9 @@
       },
       "gateway": "active",
       "capabilities": [
-        "model_catalog"
+        "model_catalog",
+        "session_history",
+        "account_session_store"
       ],
       "authOptions": [
         {
@@ -1186,7 +1217,8 @@
       "gateway": "active",
       "capabilities": [
         "api_key_account",
-        "model_catalog"
+        "model_catalog",
+        "session_history"
       ],
       "authOptions": [
         {

@@ -67,7 +67,7 @@ const SECTION_ITEMS: Record<ToolkitSection, ToolkitSecondaryItem[]> = {
     {
       id: 'network-access',
       label: '接入与隧道',
-      description: 'FRP 与 Cloudflare Tunnel',
+      description: 'FRP 客户端配置',
       icon: <ApiOutlined />
     },
     {

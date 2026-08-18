@@ -23,6 +23,13 @@ export {
 /** 按产品顺序排列的 Provider ID。 */
 export const providerIds: readonly ProviderId[] = PROVIDER_IDS;
 
+/** 按声明式能力筛选 Provider，避免消费层复制 Provider 名单。 */
+export function providerIdsByCapability(capability: string): readonly ProviderId[] {
+  const normalized = String(capability || '').trim();
+  if (!normalized) return [];
+  return providerIds.filter((provider) => PROVIDER_CATALOG[provider].capabilities.includes(normalized));
+}
+
 /** 读取 Provider 展示元数据，未知值使用安全回退。 */
 export function getProviderMeta(provider: string | undefined | null): ProviderCatalogEntry {
   return PROVIDER_CATALOG[provider as ProviderId] || PROVIDER_FALLBACK;

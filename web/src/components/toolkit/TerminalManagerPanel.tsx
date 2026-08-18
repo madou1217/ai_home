@@ -6,6 +6,7 @@ import { toolkitAPI } from '@/services/api';
 import { isActiveWebUiTask, useWebUiTaskQueue } from '@/services/webui-task-queue';
 import type { ClientPlatform, ClientTerminalItem, WebUiTask } from '@/types';
 import InstallLifecycleAction, { type InstallLifecycleActionName as TerminalAction } from './InstallLifecycleAction';
+import ManagedClientIcon from './ManagedClientIcon';
 
 const PLATFORM_LABELS: Record<ClientPlatform, string> = {
   macos: 'macOS',
@@ -248,7 +249,7 @@ export default function TerminalManagerPanel() {
               <div>
                 <div className="toolkit-card-header">
                   <div className="toolkit-card-title-group">
-                    <div className="toolkit-terminal-glyph" aria-hidden="true">⌘</div>
+                    <ManagedClientIcon clientType="terminal" clientName={terminal.name} />
                     <div>
                       <h3 className="toolkit-card-title">{terminal.name}</h3>
                       <Space size={4} wrap>

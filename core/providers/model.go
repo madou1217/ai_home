@@ -26,6 +26,19 @@ const (
 	CapabilityModelCatalog Capability = "model_catalog"
 	// CapabilityQuotaUsage 表示可以生成统一额度快照。
 	CapabilityQuotaUsage Capability = "quota_usage"
+	// CapabilitySessionRuntime 表示已接入 Fabric 的 Provider runtime/session 控制面。
+	CapabilitySessionRuntime Capability = "session_runtime"
+	// CapabilityFabricRuntime 表示可发布到 Fabric runtime registry 的 Provider。
+	// 它比 session_runtime 更宽，允许保留仅支持显式/兼容 runtime 的 Provider。
+	CapabilityFabricRuntime Capability = "fabric_runtime"
+	// CapabilityGatewayProfile 表示可以通过 AIH 内置网关 profile 启动客户端。
+	CapabilityGatewayProfile Capability = "gateway_profile"
+	// CapabilitySessionHistory 表示 AIH 已实现该 Provider 的历史项目/会话读取适配器。
+	CapabilitySessionHistory Capability = "session_history"
+	// CapabilityAccountSessionStore 表示会话存储位于账号隔离的 runtime 目录中。
+	CapabilityAccountSessionStore Capability = "account_session_store"
+	// CapabilityUsageScan 表示已实现本地历史用量扫描适配器。
+	CapabilityUsageScan Capability = "usage_scan"
 )
 
 // AuthMode 是账号创建时可选择的认证方式。

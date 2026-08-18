@@ -38,6 +38,30 @@ test('ProviderCatalog exposes provider capabilities centrally', () => {
     listProvidersByCapability('quotaUsage'),
     ['codex', 'gemini', 'claude', 'agy', 'kimi']
   );
+  assert.deepEqual(
+    listProvidersByCapability('sessionRuntime'),
+    ['codex', 'claude', 'agy', 'opencode']
+  );
+  assert.deepEqual(
+    listProvidersByCapability('fabricRuntime'),
+    ['codex', 'gemini', 'claude', 'agy', 'opencode']
+  );
+  assert.deepEqual(
+    listProvidersByCapability('gatewayProfile'),
+    ['codex', 'claude', 'opencode']
+  );
+  assert.deepEqual(
+    listProvidersByCapability('accountSessionStore'),
+    ['grok', 'qoder', 'qodercn', 'kiro']
+  );
+  assert.deepEqual(
+    listProvidersByCapability('sessionHistory'),
+    ['codex', 'gemini', 'claude', 'agy', 'opencode', 'grok', 'qoder', 'qodercn', 'kiro', 'zcode']
+  );
+  assert.deepEqual(
+    listProvidersByCapability('usageScan'),
+    ['codex', 'gemini', 'claude', 'agy', 'opencode', 'kimi']
+  );
 });
 
 test('core account modules do not duplicate the complete provider list', () => {

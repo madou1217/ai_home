@@ -1,4 +1,10 @@
-const EXTERNAL_PENDING_PROVIDERS = new Set(['codex', 'claude', 'opencode']);
+import { PROVIDER_DEFINITIONS } from '../../providers/provider-contract.generated.js';
+
+const EXTERNAL_PENDING_PROVIDERS = new Set(
+  PROVIDER_DEFINITIONS
+    .filter((definition) => definition.capabilities.includes('gateway_profile'))
+    .map((definition) => definition.id),
+);
 
 function normalizeProvider(provider) {
   return String(provider || '').trim().toLowerCase();

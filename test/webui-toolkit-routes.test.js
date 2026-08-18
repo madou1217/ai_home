@@ -138,6 +138,40 @@ test('webui toolkit app install returns an async unified job instead of blocking
   assert.equal(result.data.job.id, 'app-install-test');
 });
 
+test('webui toolkit opens an installed Desktop client from its application card', async () => {
+  const calls = [];
+  const result = await runToolkitRequest('/v0/webui/toolkit/apps/codex-desktop/open', {
+    method: 'POST',
+    body: {},
+    deps: {
+      platform: 'macos',
+      processObj: { platform: 'darwin', env: {} },
+      hostHomeDir: '/home/tester',
+      fs: {
+        existsSync(candidate) {
+          return candidate === '/Applications/ChatGPT.app'
+            || candidate === '/Applications/ChatGPT.app/Contents/MacOS/ChatGPT';
+        },
+        readFileSync() {
+          return '';
+        }
+      },
+      spawn(command, args) {
+        calls.push([command, args]);
+        return { unref() {} };
+      },
+      spawnSync() {
+        return { status: 1, stdout: '', stderr: '' };
+      }
+    }
+  });
+
+  assert.equal(result.handled, true);
+  assert.equal(result.res.statusCode, 200);
+  assert.equal(result.data.ok, true);
+  assert.deepEqual(calls, [['open', ['-a', '/Applications/ChatGPT.app']]]);
+});
+
 test('webui toolkit routes GET /v0/webui/toolkit/tools returns runtime and network categories', async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-toolkit-tools-'));
   const req = { method: 'GET', url: '/v0/webui/toolkit/tools', headers: {} };

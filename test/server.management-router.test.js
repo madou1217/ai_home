@@ -547,13 +547,14 @@ test('management usage scan starts async job and streams progress', async () => 
           });
         }),
         getAccountTokenUsageAsync: async (options) => {
-          assert.deepEqual(options.dimensions, ['day', 'week', 'month']);
+          assert.deepEqual(options.dimensions, ['day', 'week', 'month', 'total']);
           return {
             acct_0123456789abcdefabcd: {
               day: 500,
               week: 500,
               month: 500,
-              models: [{ model: 'gpt-5.1', day: 500, week: 500, month: 500 }]
+              total: 500,
+              models: [{ model: 'gpt-5.1', day: 500, week: 500, month: 500, total: 500 }]
             }
           };
         }
@@ -587,10 +588,11 @@ test('management usage scan starts async job and streams progress', async () => 
         day: 500,
         week: 500,
         month: 500,
-        models: [{ model: 'gpt-5.1', day: 500, week: 500, month: 500 }]
+        total: 500,
+        models: [{ model: 'gpt-5.1', day: 500, week: 500, month: 500, total: 500 }]
       }
     },
-    options: { dimensions: ['day', 'week', 'month'], generatedAt: tokenUsageUpdates[0].options.generatedAt }
+    options: { dimensions: ['day', 'week', 'month', 'total'], generatedAt: tokenUsageUpdates[0].options.generatedAt }
   }]);
   req.emit('close');
 });

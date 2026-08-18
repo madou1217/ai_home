@@ -73,13 +73,33 @@ test('tool-manager exposes runtime and network categories without absolute paths
   );
 
   const herdr = result.tools.find((tool) => tool.id === 'herdr');
-  const cloudflared = result.tools.find((tool) => tool.id === 'cloudflared');
   assert.equal(result.tools.some((tool) => tool.id === 'tailscale'), false);
+  assert.equal(herdr.role, '持久会话运行时');
   assert.equal(herdr.version, '0.8.0');
-  assert.equal(cloudflared.version, '2026.8.2');
+  assert.equal(result.tools.some((tool) => tool.id === 'frps'), false);
+  assert.equal(result.tools.some((tool) => tool.id === 'cloudflared'), false);
   assert.equal(Object.prototype.hasOwnProperty.call(herdr, 'path'), false);
-  assert.equal(Object.prototype.hasOwnProperty.call(cloudflared, 'path'), false);
-  assert.equal(Object.prototype.hasOwnProperty.call(cloudflared, 'configPath'), false);
+});
+
+test('tool-manager accepts Node platform aliases and returns the public platform contract', () => {
+  const cases = [
+    ['darwin', 'macos'],
+    ['macos', 'macos'],
+    ['win32', 'windows'],
+    ['windows', 'windows'],
+    ['linux', 'linux']
+  ];
+
+  for (const [input, expected] of cases) {
+    const result = listManagedTools({
+      ...createProbeOptions(createHome()),
+      platform: input,
+      resolveCommandPath() { return ''; }
+    });
+    assert.equal(result.platform, expected);
+    assert.equal(result.tools.find((tool) => tool.id === 'tmux').supported, true);
+    assert.equal(result.tools.find((tool) => tool.id === 'psmux').supported, expected === 'windows');
+  }
 });
 
 test('tool-manager discovers a running frpc config from process arguments', () => {
@@ -111,36 +131,9 @@ test('tool-manager discovers a running frpc config from process arguments', () =
   assert.equal(frpc.configEditable, true);
 });
 
-test('tool-manager discovers a stopped frps config from a startup task', () => {
-  const home = createHome();
-  const configPath = path.join(home, 'services', 'server.ini');
-  const executablePath = path.join(home, 'bin', 'frps');
-  fs.mkdirSync(path.dirname(configPath), { recursive: true });
-  fs.mkdirSync(path.dirname(executablePath), { recursive: true });
-  fs.writeFileSync(configPath, '[common]\nbindPort = 7000\n', 'utf8');
-  fs.writeFileSync(executablePath, '', 'utf8');
-
-  const result = listManagedTools({
-    platform: 'linux',
-    hostHomeDir: home,
-    fs,
-    resolveCommandPath() { return ''; },
-    processEntries: [],
-    startupEntries: [{
-      source: 'systemd',
-      name: 'edge-frps.service',
-      commandLine: `${executablePath} -c ${configPath}`,
-      enabled: true
-    }]
-  });
-
-  const frps = result.tools.find((tool) => tool.id === 'frps');
-  assert.equal(frps.installed, true);
-  assert.equal(frps.running, false);
-  assert.equal(frps.startupManaged, true);
-  assert.deepEqual(frps.startupSources, ['systemd']);
-  assert.equal(frps.configName, 'server.ini');
-  assert.equal(frps.configSource, 'systemd');
+test('tool-manager no longer manages the FRP server role', () => {
+  const result = listManagedTools({ platform: 'linux', hostHomeDir: createHome(), fs, resolveCommandPath() { return ''; }, processEntries: [], startupEntries: [] });
+  assert.equal(result.tools.some((tool) => tool.id === 'frps'), false);
 });
 
 test('tool-manager does not advertise a frpc config editor when no config exists', () => {
@@ -302,12 +295,11 @@ test('frp discovery reads Windows services, scheduled tasks, and startup command
   assert.match(entries[1].commandLine, /frps\.exe/);
 });
 
-test('tool-manager resolves Windows FRP and Cloudflare config names without exposing paths', () => {
+test('tool-manager resolves Windows FRP client config without exposing paths', () => {
   const home = 'C:\\Users\\tester';
   const programData = 'C:\\ProgramData';
   const frpcPath = `${programData}\\frp\\frpc.toml`;
-  const cloudflaredPath = `${programData}\\cloudflared\\config.yml`;
-  const existing = new Set([frpcPath, cloudflaredPath]);
+  const existing = new Set([frpcPath]);
   const result = listManagedTools({
     platform: 'win32',
     hostHomeDir: home,
@@ -322,13 +314,10 @@ test('tool-manager resolves Windows FRP and Cloudflare config names without expo
   });
 
   const frpc = result.tools.find((tool) => tool.id === 'frpc');
-  const cloudflared = result.tools.find((tool) => tool.id === 'cloudflared');
   assert.equal(frpc.configName, 'frpc.toml');
   assert.equal(frpc.configExists, true);
-  assert.equal(cloudflared.configName, 'config.yml');
-  assert.equal(cloudflared.configExists, true);
+  assert.equal(result.tools.some((tool) => tool.id === 'cloudflared'), false);
   assert.equal(Object.prototype.hasOwnProperty.call(frpc, 'configPath'), false);
-  assert.equal(Object.prototype.hasOwnProperty.call(cloudflared, 'configPath'), false);
 });
 
 test('network discovery prioritizes a running FRP config over environment fallbacks', () => {
@@ -386,93 +375,14 @@ test('network discovery fails closed when frpc --config-dir contains multiple co
   assert.equal(frpc.configEditable, false);
 });
 
-test('network discovery finds a running cloudflared config and service state', () => {
-  const home = createHome();
-  const configPath = path.join(home, 'edge', 'config.yml');
-  fs.mkdirSync(path.dirname(configPath), { recursive: true });
-  fs.writeFileSync(configPath, 'tunnel: test\n', 'utf8');
-
-  const result = listManagedTools({
-    platform: 'linux',
-    hostHomeDir: home,
-    fs,
-    resolveCommandPath() { return ''; },
-    processEntries: [{
-      pid: 102,
-      executablePath: '/opt/cloudflared',
-      commandLine: `/opt/cloudflared tunnel --config=${configPath} run`
-    }],
-    startupEntries: [{
-      source: 'systemd',
-      name: 'cloudflared.service',
-      commandLine: `/opt/cloudflared --config=${configPath} tunnel run`,
-      enabled: true
-    }]
-  });
-  const cloudflared = result.tools.find((tool) => tool.id === 'cloudflared');
-
-  assert.equal(cloudflared.installed, true);
-  assert.equal(cloudflared.running, true);
-  assert.equal(cloudflared.startupManaged, true);
-  assert.equal(cloudflared.configName, 'config.yml');
-  assert.equal(cloudflared.configSource, 'running-process');
-  assert.equal(cloudflared.configEditable, true);
+test('network discovery does not manage cloudflared', () => {
+  const result = discoverNetworkTools({ platform: 'linux', hostHomeDir: createHome(), processEntries: [{ executablePath: '/opt/cloudflared', commandLine: '/opt/cloudflared tunnel run' }], startupEntries: [] });
+  assert.deepEqual(Object.keys(result), ['frpc']);
 });
 
-test('network discovery accepts an explicitly selected Cloudflare YAML config without exposing credentials files', () => {
-  const home = createHome();
-  const configPath = path.join(home, 'edge', 'production.yaml');
-  const credentialsPath = path.join(home, 'edge', 'tunnel-credentials.json');
-  fs.mkdirSync(path.dirname(configPath), { recursive: true });
-  fs.writeFileSync(configPath, 'tunnel: test\n', 'utf8');
-  fs.writeFileSync(credentialsPath, '{"AccountTag":"secret"}\n', 'utf8');
-
-  const result = listManagedTools({
-    platform: 'linux',
-    hostHomeDir: home,
-    fs,
-    resolveCommandPath() { return ''; },
-    processEntries: [{
-      pid: 104,
-      executablePath: '/opt/cloudflared',
-      commandLine: `/opt/cloudflared tunnel --config ${configPath} run`
-    }],
-    startupEntries: []
-  });
-  const cloudflared = result.tools.find((tool) => tool.id === 'cloudflared');
-
-  assert.equal(cloudflared.configName, 'production.yaml');
-  assert.equal(cloudflared.configFormat, 'yaml');
-  assert.equal(cloudflared.configEditable, true);
-  assert.equal(JSON.stringify(cloudflared).includes(credentialsPath), false);
-});
-
-test('network discovery does not attach an unrelated config to token-managed cloudflared', () => {
-  const home = createHome();
-  const configPath = path.join(home, '.cloudflared', 'config.yml');
-  fs.mkdirSync(path.dirname(configPath), { recursive: true });
-  fs.writeFileSync(configPath, 'tunnel: unrelated\n', 'utf8');
-
-  const result = listManagedTools({
-    platform: 'linux',
-    hostHomeDir: home,
-    fs,
-    resolveCommandPath() { return ''; },
-    processEntries: [{
-      pid: 103,
-      executablePath: '/opt/cloudflared',
-      commandLine: '/opt/cloudflared tunnel run --token sensitive-value'
-    }],
-    startupEntries: []
-  });
-  const cloudflared = result.tools.find((tool) => tool.id === 'cloudflared');
-
-  assert.equal(cloudflared.running, true);
-  assert.equal(cloudflared.configCount, 0);
-  assert.equal(cloudflared.configState, 'token-managed');
-  assert.equal(cloudflared.configName, '');
-  assert.equal(cloudflared.configEditable, false);
-  assert.equal(JSON.stringify(cloudflared).includes('sensitive-value'), false);
+test('network discovery ignores cloudflared config files', () => {
+  const result = discoverNetworkTools({ platform: 'linux', hostHomeDir: createHome(), processEntries: [], startupEntries: [] });
+  assert.equal(Object.prototype.hasOwnProperty.call(result, 'cloudflared'), false);
 });
 
 test('systemd parsing ignores ExecStartPre helpers and keeps the actual service command', () => {

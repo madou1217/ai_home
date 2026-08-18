@@ -1,24 +1,28 @@
 import type { Provider } from '@/types';
 import { useEffect, useMemo, useState } from 'react';
-import { getProviderIcon, getProviderLabel, getProviderTerminalIcon, getProviderTerminalIconAssetUrl } from './provider-registry';
+import { getProviderIcon, getProviderLabel, getProviderTerminalIcon, getProviderTerminalIconAssetUrl, providerIds } from './provider-registry';
 
 export { providerIds, providerNames } from './provider-registry';
 
 interface Props {
-  provider: Provider;
+  provider: Provider | string;
   size?: number;
   className?: string;
   variant?: 'brand' | 'terminal';
+  fallbackLabel?: string;
 }
 
-const ProviderIcon = ({ provider, size = 16, className, variant = 'brand' }: Props) => {
-  const label = getProviderLabel(provider);
-  const src = variant === 'terminal' ? getProviderTerminalIconAssetUrl(provider) : getProviderIcon(provider);
+const ProviderIcon = ({ provider, size = 16, className, variant = 'brand', fallbackLabel }: Props) => {
+  const knownProvider = providerIds.includes(provider as Provider);
+  const label = knownProvider ? getProviderLabel(provider) : String(provider || 'AIH').trim().toUpperCase();
+  const src = knownProvider
+    ? (variant === 'terminal' ? getProviderTerminalIconAssetUrl(provider) : getProviderIcon(provider))
+    : '';
   const assetKey = `${variant}:${provider}:${src}`;
   const [failedAssetKey, setFailedAssetKey] = useState('');
   const fallbackText = useMemo(() => (
-    variant === 'terminal' ? getProviderTerminalIcon(provider) : label.slice(0, 2).toUpperCase()
-  ), [label, provider, variant]);
+    variant === 'terminal' ? getProviderTerminalIcon(provider) : fallbackLabel || label.slice(0, 2).toUpperCase()
+  ), [fallbackLabel, label, provider, variant]);
 
   useEffect(() => {
     setFailedAssetKey('');

@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const {
   listManagedApps,
   installAppHooks,
+  openManagedDesktopApp,
   getProviderConfigPath,
   getConfigFormat,
   findDesktopClientRecord,
@@ -60,12 +61,62 @@ test('app-manager listManagedApps returns structured apps list', async () => {
   const vscodeApp = result.apps.find((a) => a.id === 'vscode');
   assert.ok(vscodeApp, 'Visual Studio Code host should exist');
   assert.equal(vscodeApp.clientId, 'vscode');
-  assert.deepEqual(vscodeApp.integrationProviders, ['codex']);
+  assert.ok(Array.isArray(vscodeApp.integrationProviders));
+  for (const ideId of APP_CATEGORIES.ide) {
+    const ideApp = result.apps.find((app) => app.id === ideId);
+    assert.ok(ideApp, `${ideId} IDE host should come from the shared registry`);
+    assert.equal(ideApp.type, 'ide');
+    assert.equal(ideApp.clientId, ideId);
+  }
 
   const geminiCli = result.apps.find((a) => a.id === 'gemini');
   assert.ok(geminiCli, 'Gemini CLI should remain available as a CLI installer');
   assert.equal(geminiCli.name, 'Gemini CLI');
   assert.equal(result.apps.some((a) => a.id === 'gemini-desktop'), false, 'Gemini must not expose a Desktop installer without a desktop contract');
+});
+
+test('app-manager discovers all matching Provider integrations from IDE extension manifests', async () => {
+  const hostHomeDir = '/home/tester';
+  const extensionRoot = `${hostHomeDir}/.vscode/extensions`;
+  const manifests = new Map([
+    [`${extensionRoot}/anthropic.claude-code-2.1.228/package.json`, JSON.stringify({
+      name: 'claude-code',
+      publisher: 'anthropic',
+      displayName: 'Claude Code'
+    })],
+    [`${extensionRoot}/openai.chatgpt-1.0.0/package.json`, JSON.stringify({
+      name: 'chatgpt',
+      publisher: 'openai',
+      displayName: 'Codex'
+    })]
+  ]);
+  const fs = {
+    existsSync(candidate) {
+      return candidate === extensionRoot || manifests.has(candidate);
+    },
+    readdirSync(directory) {
+      if (directory !== extensionRoot) return [];
+      return [
+        { name: 'anthropic.claude-code-2.1.228', isDirectory: () => true },
+        { name: 'openai.chatgpt-1.0.0', isDirectory: () => true }
+      ];
+    },
+    readFileSync(filePath) {
+      return manifests.get(filePath) || '';
+    }
+  };
+
+  const result = await listManagedApps({
+    platform: 'macos',
+    hostHomeDir,
+    fs,
+    spawnSync() {
+      return { status: 1, stdout: '', stderr: '' };
+    }
+  });
+
+  const vscodeApp = result.apps.find((app) => app.id === 'vscode');
+  assert.deepEqual(vscodeApp.integrationProviders, ['codex', 'claude']);
 });
 
 test('app-manager getProviderConfigPath resolves known provider paths', () => {
@@ -78,6 +129,10 @@ test('app-manager getProviderConfigPath resolves known provider paths', () => {
   assert.equal(kimiPath, '/fake/home/.kimi-code/config.toml');
   const antigravityPath = getProviderConfigPath('agy', hostHome);
   assert.equal(antigravityPath, '/fake/home/.gemini/antigravity-cli/hooks.json');
+  assert.equal(
+    getProviderConfigPath('cursor', hostHome, undefined, { platform: 'macos' }),
+    '/fake/home/Library/Application Support/Cursor/User/settings.json'
+  );
 });
 
 test('app-manager normalizes editable config formats across platforms', () => {
@@ -194,6 +249,37 @@ test('app-manager presents the merged Codex desktop client as ChatGPT and parses
       return { status: 0, stdout: 'example 3.7b\n', stderr: '' };
     }
   }), '3.7b');
+});
+
+test('app-manager opens an installed Codex Desktop client through the host launcher', () => {
+  const calls = [];
+  const result = openManagedDesktopApp('codex-desktop', {
+    platform: 'macos',
+    hostHomeDir: '/home/tester',
+    fs: {
+      existsSync(candidate) {
+        return candidate === '/Applications/ChatGPT.app'
+          || candidate === '/Applications/ChatGPT.app/Contents/MacOS/ChatGPT';
+      },
+      readFileSync() {
+        return '';
+      }
+    },
+    spawn(command, args, options) {
+      calls.push({ command, args, options });
+      return { unref() {} };
+    },
+    spawnSync() {
+      return { status: 1, stdout: '', stderr: '' };
+    },
+    processObj: { platform: 'darwin', env: {} }
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 'launched');
+  assert.deepEqual(calls.map((call) => [call.command, call.args]), [
+    ['open', ['-a', '/Applications/ChatGPT.app']]
+  ]);
 });
 
 test('env-manager detects Node and Python environments', () => {

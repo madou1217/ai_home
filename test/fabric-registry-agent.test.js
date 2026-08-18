@@ -17,6 +17,7 @@ const {
 const {
   writeRegistryAgentManagementKey
 } = require('../lib/cli/services/fabric/registry-agent-management-key-store');
+const { listProvidersByCapability } = require('../lib/provider-catalog');
 
 test('parseFabricRegistryAgentArgs builds a foreground heartbeat loop config', () => {
   const options = parseFabricRegistryAgentArgs([
@@ -101,7 +102,7 @@ test('discoverRuntimeDiagnostics records provider CLI and local readyz account f
 
   const codex = diagnostics.find((item) => item.provider === 'codex');
   const claude = diagnostics.find((item) => item.provider === 'claude');
-  assert.equal(diagnostics.length, 4);
+  assert.equal(diagnostics.length, listProvidersByCapability('fabricRuntime').length);
   assert.equal(codex.cli.available, true);
   assert.equal(codex.cli.path, codexPath);
   assert.equal(codex.accounts.total, 0);
@@ -448,7 +449,10 @@ test('runFabricRegistryAgent sends runtime diagnostics when explicitly enabled',
 
   assert.equal(result.ok, true);
   assert.equal(calls.length, 1);
-  assert.equal(calls[0].runtimeDiagnostics.length, 4);
+  assert.equal(
+    calls[0].runtimeDiagnostics.length,
+    listProvidersByCapability('fabricRuntime').length
+  );
   assert.equal(calls[0].runtimeDiagnostics.find((item) => item.provider === 'codex').cli.available, true);
   assert.equal(calls[0].runtimeDiagnostics.find((item) => item.provider === 'claude').cli.available, false);
   assert.equal(JSON.stringify(calls[0].runtimeDiagnostics).includes('secret-token'), false);

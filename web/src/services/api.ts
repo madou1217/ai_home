@@ -1624,8 +1624,26 @@ export const toolkitAPI = {
     );
     return response.data.job;
   },
+  planAppAction: async (appId: string, action: 'install' | 'update' | 'uninstall', kind?: 'cli' | 'desktop' | 'ide'): Promise<{ ok: boolean; action?: string; label?: string; plans?: Array<{ id: string; label: string; command: string; args: string[] }>; error?: string }> => {
+    const response = await api.post<{ ok: boolean; action?: string; label?: string; plans?: Array<{ id: string; label: string; command: string; args: string[] }>; error?: string }>(
+      '/webui/toolkit/apps/plan', { appId, action, kind }
+    );
+    return response.data;
+  },
+  executeAppAction: async (appId: string, action: 'install' | 'update' | 'uninstall', kind?: 'cli' | 'desktop' | 'ide'): Promise<{ ok: boolean; accepted?: boolean; alreadyRunning?: boolean; job?: AppInstallJob; error?: string }> => {
+    const response = await api.post<{ ok: boolean; accepted?: boolean; alreadyRunning?: boolean; job?: AppInstallJob; error?: string }>(
+      '/webui/toolkit/apps/install', { appId, action, kind }
+    );
+    return response.data;
+  },
+  openManagedDesktopApp: async (appId: string): Promise<{ ok: boolean; status?: string; provider?: string; executable?: string; installRequired?: boolean; installAvailable?: boolean; error?: string; message?: string }> => {
+    const response = await api.post<{ ok: boolean; status?: string; provider?: string; executable?: string; installRequired?: boolean; installAvailable?: boolean; error?: string; message?: string }>(
+      `/webui/toolkit/apps/${encodeURIComponent(appId)}/open`, {}
+    );
+    return response.data;
+  },
   installApp: async (provider: string): Promise<{ ok: boolean; accepted?: boolean; alreadyRunning?: boolean; job?: AppInstallJob; result?: any }> => {
-    const response = await api.post<{ ok: boolean; accepted?: boolean; alreadyRunning?: boolean; job?: AppInstallJob; result?: any }>('/webui/toolkit/apps/install', { appId: provider });
+    const response = await api.post<{ ok: boolean; accepted?: boolean; alreadyRunning?: boolean; job?: AppInstallJob; result?: any }>('/webui/toolkit/apps/install', { appId: provider, action: 'install' });
     return response.data;
   },
   installHooks: async (providers: string[]): Promise<{ ok: boolean; results: any[] }> => {

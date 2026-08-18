@@ -43,7 +43,7 @@ func builtinCodex() Definition {
 		Presentation: presentation("codex", "ChatGPT", "GPT", "◎", "green"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
-		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage},
+		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage, CapabilitySessionRuntime, CapabilityFabricRuntime, CapabilityGatewayProfile, CapabilitySessionHistory, CapabilityUsageScan},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeOAuthBrowser, "ChatGPT / OpenAI 登录", "打开授权链接，授权后把回调地址提交给 WebUI。"),
 			authOption(AuthModeOAuthDevice, "设备码登录", "仅在账号支持 device auth 时使用，适合远程环境。"),
@@ -95,7 +95,7 @@ func builtinGemini() Definition {
 		Presentation: presentation("gemini", "Gemini", "GM", "✦", "blue"),
 		Gateway:      GatewayDeprecated,
 		Clients:      clientSupport(true, false),
-		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage},
+		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage, CapabilityFabricRuntime, CapabilitySessionHistory, CapabilityUsageScan},
 		AuthOptions: []AuthOption{
 			disabledAuthOption(
 				AuthModeOAuthBrowser,
@@ -132,7 +132,7 @@ func builtinClaude() Definition {
 		Presentation: presentation("claude", "Claude", "CL", "◇", "orange"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
-		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage},
+		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage, CapabilitySessionRuntime, CapabilityFabricRuntime, CapabilityGatewayProfile, CapabilitySessionHistory, CapabilityUsageScan},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeOAuthBrowser, "Claude 登录", "使用 Claude Code 原生 login 流程（Claude.ai 凭据）。"),
 			authOption(AuthModeAPIKey, "Anthropic 密钥", "绑定 ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL。"),
@@ -182,7 +182,7 @@ func builtinAntigravity() Definition {
 		Presentation: presentation("agy", "Antigravity", "AGY", "▲", "purple"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
-		Capabilities: []Capability{CapabilityModelCatalog, CapabilityQuotaUsage},
+		Capabilities: []Capability{CapabilityModelCatalog, CapabilityQuotaUsage, CapabilitySessionRuntime, CapabilityFabricRuntime, CapabilitySessionHistory, CapabilityUsageScan},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeOAuthBrowser, "Antigravity 登录", "使用 Antigravity CLI 原生 Google 登录流程。"),
 		},
@@ -222,7 +222,7 @@ func builtinOpenCode() Definition {
 		Presentation: presentation("opencode", "OpenCode", "OC", "⌘", "default"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
-		Capabilities: []Capability{CapabilityModelCatalog},
+		Capabilities: []Capability{CapabilityModelCatalog, CapabilitySessionRuntime, CapabilityFabricRuntime, CapabilityGatewayProfile, CapabilitySessionHistory, CapabilityUsageScan},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeOAuthBrowser, "OpenCode 登录", "使用 OpenCode CLI 原生 auth login 流程。"),
 		},
@@ -260,7 +260,7 @@ func builtinGrok() Definition {
 		Presentation: presentation("grok", "Grok", "GK", "⚡", "cyan"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, false),
-		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog},
+		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionHistory, CapabilityAccountSessionStore},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeAPIKey, "xAI 密钥", "绑定 XAI_API_KEY / XAI_BASE_URL。"),
 			authOption(AuthModeOAuthBrowser, "Grok 登录", "使用 Grok Build CLI 原生 auth login 流程（需 SuperGrok 订阅）。"),
@@ -292,7 +292,7 @@ func builtinQoder() Definition {
 		Presentation: presentation("qoder", "Qoder", "QD", "◆", "blue"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
-		Capabilities: []Capability{CapabilityModelCatalog},
+		Capabilities: []Capability{CapabilityModelCatalog, CapabilitySessionHistory, CapabilityAccountSessionStore},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeOAuthBrowser, "Qoder 登录", "使用 Qoder CLI 原生 browser login 流程（全球站 qodercli）。"),
 			authOption(AuthModeAPIKey, "Qoder Personal Access Token", "绑定 QODER_PERSONAL_ACCESS_TOKEN（全球站）。"),
@@ -330,7 +330,7 @@ func builtinQoderCN() Definition {
 		Presentation: presentation("qodercn", "Qoder CN", "QCN", "◇", "purple"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
-		Capabilities: []Capability{CapabilityModelCatalog},
+		Capabilities: []Capability{CapabilityModelCatalog, CapabilitySessionHistory, CapabilityAccountSessionStore},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeOAuthBrowser, "Qoder CN 登录", "使用 Qoder CLI CN 原生 browser login 流程（qoderclicn）。"),
 			authOption(AuthModeAPIKey, "Qoder CN Personal Access Token", "绑定 QODER_PERSONAL_ACCESS_TOKEN（国内站）。"),
@@ -370,7 +370,7 @@ func builtinKimi() Definition {
 		Presentation: presentation("kimi", "Kimi", "KM", "☾", "geekblue"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, false),
-		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage},
+		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage, CapabilityUsageScan},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeAPIKey, "Moonshot 密钥", "绑定 MOONSHOT_API_KEY / KIMI_BASE_URL（支持 api.moonshot.cn 和 api.moonshot.ai 双端点）。"),
 			authOption(AuthModeOAuthBrowser, "Kimi Code 登录", "使用 Kimi Code CLI 原生 OAuth 设备码流程（需 Kimi 会员订阅）。"),
@@ -395,7 +395,7 @@ func builtinKiro() Definition {
 		Presentation: presentation("kiro", "Kiro", "KR", "⬡", "volcano"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
-		Capabilities: []Capability{CapabilityModelCatalog},
+		Capabilities: []Capability{CapabilityModelCatalog, CapabilitySessionHistory, CapabilityAccountSessionStore},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeOAuthBrowser, "AWS Builder ID 登录", "使用 Kiro CLI Device Flow 认证（支持 Google/GitHub/AWS Builder ID）。"),
 		},
@@ -431,7 +431,7 @@ func builtinZcode() Definition {
 		Presentation: presentation("zcode", "ZCode", "ZC", "◈", "geekblue"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(false, true),
-		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog},
+		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionHistory},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeOAuthBrowser, "ZCode 登录", "使用 ZCode Desktop 的官方浏览器 OAuth 流程（Z.AI 账号，OAuth 凭据安全写入 AIH）。"),
 			authOption(AuthModeAPIKey, "Z.ai 密钥", "绑定 ZCODE_API_KEY / ZCODE_BASE_URL（支持 open.bigmodel.cn 与 api.z.ai 双 Anthropic 端点）。"),

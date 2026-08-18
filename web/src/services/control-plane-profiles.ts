@@ -54,6 +54,7 @@ import {
   migrateLegacyServerRoutes,
   normalizeStableServerId
 } from './server-routes/server-route-service';
+import { providerIds } from '../providers/catalog';
 
 export { normalizeControlPlaneEndpoint };
 
@@ -490,7 +491,7 @@ function normalizeDeviceStatus(value: unknown): ControlPlaneDeviceStatus | null 
 
 function normalizeControlPlaneProvider(value: unknown) {
   const provider = normalizeText(value, 64).toLowerCase();
-  if (['codex', 'gemini', 'claude', 'agy', 'opencode', 'grok', 'qoder', 'qodercn', 'kimi', 'kiro'].includes(provider)) {
+  if (providerIds.includes(provider as (typeof providerIds)[number])) {
     return provider as ControlPlaneDeviceAccountsResponse['result']['accounts'][number]['provider'];
   }
   return 'codex';

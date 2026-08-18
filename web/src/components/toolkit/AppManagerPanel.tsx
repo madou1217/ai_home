@@ -5,11 +5,9 @@ import {
   message,
   Modal,
   Segmented,
-  Spin,
-  Tooltip
+  Spin
 } from 'antd';
 import {
-  CloudSyncOutlined,
   LockOutlined,
   ReloadOutlined
 } from '@ant-design/icons';
@@ -23,6 +21,9 @@ import type {
 import ToolkitStatusTrack from './ToolkitStatusTrack';
 import ConfigCodeEditor from './config-editor/ConfigCodeEditor';
 import ManagedAppCard from './ManagedAppCard';
+import { useWebUiTaskQueue } from '@/services/webui-task-queue';
+import type { WebUiTask } from '@/types';
+import { SESSION_SYNC_POLICY, SESSION_SYNC_BOUNDARY, SESSION_SYNC_SCOPE } from '@/components/session-sync-copy';
 
 const APP_CATEGORIES = [
   { label: '全部', value: 'ALL' },
@@ -50,8 +51,9 @@ export default function AppManagerPanel() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [category, setCategory] = useState('ALL');
-  const [installingApp, setInstallingApp] = useState('');
   const [installingHooks, setInstallingHooks] = useState(false);
+  const [pendingActions, setPendingActions] = useState<Record<string, { phase: 'planning' | 'submitted'; jobId?: string }>>({});
+  const { tasks } = useWebUiTaskQueue();
   const [editingApp, setEditingApp] = useState<ManagedAppItem | null>(null);
   const [configData, setConfigData] = useState<ToolkitAppConfigResponse | null>(null);
   const [configContent, setConfigContent] = useState('');
@@ -78,8 +80,15 @@ export default function AppManagerPanel() {
 
   useEffect(() => {
     const handleTaskCompleted = (event: Event) => {
-      const task = (event as CustomEvent<{ source?: string; appId?: string }>).detail;
+      const task = (event as CustomEvent<WebUiTask>).detail;
       if (task?.source !== 'app-install' || !task.appId) return;
+      setPendingActions((current) => {
+        const next = { ...current };
+        Object.entries(current).forEach(([key, pending]) => {
+          if (pending.jobId === task.id || key.startsWith(`${task.appId}:`)) delete next[key];
+        });
+        return next;
+      });
       void fetchApps();
     };
     window.addEventListener('aih:webui-task-completed', handleTaskCompleted);
@@ -93,29 +102,79 @@ export default function AppManagerPanel() {
       : data.apps.filter((app) => app.categories.includes(category));
   }, [category, data]);
 
-  const hookReadyCount = data?.apps.filter((app) => app.hookSupported && app.hookInstalled).length || 0;
-  const hookSupportedCount = data?.apps.filter((app) => app.hookSupported).length || 0;
+  const hookReadyCount = data?.apps.filter((app) => app.installed && app.hookSupported && app.hookInstalled).length || 0;
+  const hookSupportedCount = data?.apps.filter((app) => app.installed && app.hookSupported).length || 0;
 
-  const installApp = async (app: ManagedAppItem) => {
-    setInstallingApp(app.id);
-    const wasInstalled = app.installed;
+  const activeAppTasks = tasks.filter((task) => task.source === 'app-install');
+  const actionLabel = (action: 'install' | 'update' | 'uninstall') => ({ install: '安装', update: '更新', uninstall: '卸载' })[action];
+  const actionKey = (app: ManagedAppItem, action: string) => `${app.id}:${action}`;
+  const activeTaskFor = (app: ManagedAppItem) => activeAppTasks.find((task) => (
+    task.appId === app.id || (!task.appId && task.provider === app.provider)
+  ));
+
+  const submitAppAction = async (app: ManagedAppItem, action: 'install' | 'update' | 'uninstall', key: string) => {
     try {
-      const response = await toolkitAPI.installApp(app.id);
+      const response = await toolkitAPI.executeAppAction(app.id, action, app.type === 'ide' ? undefined : app.type);
       if (!response.ok || !response.job) {
-        throw new Error(response.result?.installAttempts?.[0]?.error || '安装任务未创建');
+        throw new Error(response.error || '应用任务未创建');
       }
-      message.info(`${app.name}${wasInstalled ? '更新' : '安装'}任务已提交，进度显示在右下角任务队列。`);
+      setPendingActions((current) => ({ ...current, [key]: { phase: 'submitted', jobId: response.job?.id } }));
+      message.info(`${app.name}${actionLabel(action)}任务已提交，按钮状态跟随真实任务进度。`);
     } catch (requestFailure: unknown) {
-      message.error(requestError(requestFailure, `${app.name} 安装失败`));
-    } finally {
-      setInstallingApp('');
+      setPendingActions((current) => {
+        const next = { ...current };
+        delete next[key];
+        return next;
+      });
+      message.error(requestError(requestFailure, `${app.name}${actionLabel(action)}失败`));
+    }
+  };
+
+  const openManagedDesktopApp = async (app: ManagedAppItem) => {
+    try {
+      const response = await toolkitAPI.openManagedDesktopApp(app.id);
+      if (!response.ok) throw new Error(response.message || response.error || '桌面应用启动失败');
+      message.success(`${app.name} 已打开`);
+    } catch (requestFailure: unknown) {
+      message.error(requestError(requestFailure, `${app.name} 打开失败`));
+    }
+  };
+
+  const runAppAction = async (app: ManagedAppItem, action: 'install' | 'update' | 'uninstall') => {
+    const key = actionKey(app, action);
+    if (activeTaskFor(app) || pendingActions[key]) return;
+    setPendingActions((current) => ({ ...current, [key]: { phase: 'planning' } }));
+    try {
+      const plan = await toolkitAPI.planAppAction(app.id, action, app.type === 'ide' ? undefined : app.type);
+      if (!plan.ok) throw new Error(plan.error || '无法生成应用操作计划');
+      const commands = (plan.plans || []).map((item) => `${item.label || item.id}\n${item.command} ${(item.args || []).join(' ')}`).join('\n\n');
+      Modal.confirm({
+        title: `${actionLabel(action)} ${app.name}`,
+        content: <div style={{ whiteSpace: 'pre-wrap' }}>{commands || '将执行官方应用生命周期命令。'}</div>,
+        okText: '确认执行',
+        cancelText: '取消',
+        okButtonProps: action === 'uninstall' ? { danger: true } : undefined,
+        onOk: () => { void submitAppAction(app, action, key); },
+        onCancel: () => setPendingActions((current) => {
+          const next = { ...current };
+          delete next[key];
+          return next;
+        })
+      });
+    } catch (requestFailure: unknown) {
+      setPendingActions((current) => {
+        const next = { ...current };
+        delete next[key];
+        return next;
+      });
+      message.error(requestError(requestFailure, `${app.name}${actionLabel(action)}计划生成失败`));
     }
   };
 
   const installHooks = async (providers?: string[]) => {
     if (!data) return;
     const targets = providers || data.apps
-      .filter((app) => app.hookSupported && !app.hookInstalled)
+      .filter((app) => app.installed && app.hookSupported && !app.hookInstalled)
       .map((app) => app.provider);
     if (!targets.length) {
       message.info('没有待安装的会话 Hook');
@@ -125,8 +184,11 @@ export default function AppManagerPanel() {
     setInstallingHooks(true);
     try {
       const response = await toolkitAPI.installHooks(targets);
-      if (!response.ok) throw new Error('会话 Hook 接口返回失败');
-      message.success('会话 Hook 配置已更新');
+      const failed = (response.results || []).filter((result) => !result.ok);
+      if (!response.ok || failed.length) {
+        throw new Error(failed.map((result) => `${result.provider}: ${result.error || result.reason || '验证失败'}`).join('；') || '会话同步未通过验证');
+      }
+      message.success('会话同步已写入并重新读取验证');
       await fetchApps();
     } catch (requestFailure: unknown) {
       message.error(requestError(requestFailure, '会话 Hook 配置失败'));
@@ -176,21 +238,19 @@ export default function AppManagerPanel() {
         <div>
           <div className="toolkit-panel-kicker">APPLICATION INVENTORY</div>
           <h2 id="toolkit-apps-title">应用管理</h2>
-          <p>统一查看当前主机的 CLI、桌面客户端与 IDE 扩展。会话同步只将会话消息和运行态事件送到 WebUI；凭据和配置文件本身不会作为同步数据上传。</p>
+          <p>统一查看当前主机的 CLI、桌面客户端与 IDE 扩展。{SESSION_SYNC_POLICY}同步范围：{SESSION_SYNC_SCOPE}。{SESSION_SYNC_BOUNDARY}</p>
         </div>
         <div className="toolkit-header-actions">
           <Button icon={<ReloadOutlined />} loading={loading} onClick={fetchApps}>重新探测</Button>
-          {hookSupportedCount > hookReadyCount ? (
-            <Tooltip title="安装各 Provider 官方会话 Hook；同步数据仅为会话事件，不上传凭据或配置文件内容。">
-              <Button type="primary" icon={<CloudSyncOutlined />} loading={installingHooks} onClick={() => installHooks()}>
-                安装缺失的会话 Hook
-              </Button>
-            </Tooltip>
-          ) : null}
         </div>
       </header>
 
-      {error && <Alert type="error" showIcon message="应用清单读取失败" description={error} />}
+      {error && (
+        <div className="toolkit-inline-error" role="alert">
+          <strong>应用清单读取失败</strong>
+          <span>{error}</span>
+        </div>
+      )}
       {loading && !data ? (
         <div className="toolkit-loading"><Spin size="large" tip="正在探测应用" /></div>
       ) : data ? (
@@ -200,7 +260,7 @@ export default function AppManagerPanel() {
             items={[
               { label: '实测', value: `${data.total} 个应用`, detail: '来自当前主机的应用清单', tone: 'info' },
               { label: '配置', value: `${data.installedCount} 个已安装`, detail: `${data.total - data.installedCount} 个未安装`, tone: data.installedCount ? 'success' : 'neutral' },
-              { label: '会话同步', value: hookSupportedCount ? `${hookReadyCount} / ${hookSupportedCount} 个官方 Hook 已启用` : '暂无官方 Hook', detail: '仅同步会话事件和运行态，不上传凭据或配置文件内容', tone: hookSupportedCount === 0 ? 'neutral' : hookReadyCount === hookSupportedCount ? 'success' : 'warning' }
+              { label: '会话同步', value: hookSupportedCount ? `${hookReadyCount} / ${hookSupportedCount} 个已安装 CLI 已验证` : '无可按需启用的 Hook', detail: `同步${SESSION_SYNC_SCOPE}；${SESSION_SYNC_BOUNDARY}`, tone: hookSupportedCount === 0 ? 'neutral' : hookReadyCount === hookSupportedCount ? 'success' : 'warning' }
             ]}
           />
 
@@ -217,9 +277,10 @@ export default function AppManagerPanel() {
                 <ManagedAppCard
                   key={app.id}
                   app={app}
-                  installingApp={installingApp === app.id}
+                  busyAction={pendingActions[actionKey(app, 'install')] ? 'install' : pendingActions[actionKey(app, 'update')] ? 'update' : pendingActions[actionKey(app, 'uninstall')] ? 'uninstall' : (activeTaskFor(app)?.action as 'install' | 'update' | 'uninstall' | undefined)}
                   installingHooks={installingHooks}
-                  onInstall={installApp}
+                  onAction={(target, action) => void runAppAction(target, action)}
+                  onOpenApp={(target) => void openManagedDesktopApp(target)}
                   onInstallHooks={(provider) => void installHooks([provider])}
                   onEditConfig={openConfig}
                 />

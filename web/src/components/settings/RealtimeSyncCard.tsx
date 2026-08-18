@@ -3,6 +3,7 @@ import { message } from 'antd';
 import { SyncOutlined, CheckCircleFilled, ExclamationCircleFilled } from '@ant-design/icons';
 import api from '@/services/api';
 import { providerNames } from '@/components/chat/ProviderIcon';
+import { SESSION_SYNC_POLICY, SESSION_SYNC_BOUNDARY, SESSION_SYNC_SCOPE } from '@/components/session-sync-copy';
 import './RealtimeSyncCard.css';
 
 type ProviderSyncMode = 'hook' | 'polling' | 'unavailable';
@@ -19,7 +20,7 @@ interface ProviderHookStatus {
 // 会话实时同步状态卡:展示全部 10 个 provider 的真实同步方式,不再悄悄隐藏没有官方 hook 的 provider。
 // syncMode 三态(后端 provider-session-hook-config.js 的 getProviderSessionSyncMode 派生):
 //   hook = 官方 hook 已接入(事件驱动,可一键启用/修复) / polling = 无官方 hook,靠 500ms 文件轮询兜底
-//   / unavailable = 连轮询都读不到会话文件。启动时会自动安装 hook 态的 provider,这里提供可见状态 + 手动「修复」。
+//   / unavailable = 连轮询都读不到会话文件。自动安装策略和数据边界由共享文案统一说明。
 export default function RealtimeSyncCard() {
   const [rows, setRows] = useState<ProviderHookStatus[]>([]);
   const [loading, setLoading] = useState(false);
@@ -70,7 +71,7 @@ export default function RealtimeSyncCard() {
       <div className="settings-panel-head">
         <div>
           <h2>会话实时同步</h2>
-          <p>安装各 provider 官方 hook 后,CLI 会话的消息与运行态会事件驱动实时同步到网页(否则退化为轮询)。启动时自动安装。</p>
+          <p>{SESSION_SYNC_POLICY} 同步范围：{SESSION_SYNC_SCOPE}。{SESSION_SYNC_BOUNDARY}</p>
         </div>
       </div>
 
@@ -87,20 +88,20 @@ export default function RealtimeSyncCard() {
 
       <div className="rtsync-chips">
         {hookRows.map((r) => (
-          <span key={r.provider} className={`rtsync-chip ${r.installed ? 'on' : 'off'}`} title={r.installed ? '官方 hook 已安装,事件驱动实时同步' : '官方 hook 未安装,点「一键启用」'}>
+          <span key={r.provider} className={`rtsync-chip ${r.installed ? 'on' : 'off'}`} title={r.installed ? `官方 Hook 已安装；事件载荷只包含${SESSION_SYNC_SCOPE}。` : '官方 Hook 未安装，点击「一键启用」写入 AIH 标记的 Hook。'}>
             <span className="rtsync-dot" />
             {providerLabel(r.provider)}
           </span>
         ))}
         {pollingRows.map((r) => (
-          <span key={r.provider} className="rtsync-chip poll" title="该 provider 暂无官方 hook,靠文件轮询兜底同步(非事件驱动,有延迟)">
+          <span key={r.provider} className="rtsync-chip poll" title="该 Provider 暂无官方 Hook，通过 session 文件轮询兜底同步，可能有延迟。">
             <span className="rtsync-dot" />
             {providerLabel(r.provider)}
             <span className="rtsync-chip-tag">轮询</span>
           </span>
         ))}
         {unavailableRows.map((r) => (
-          <span key={r.provider} className="rtsync-chip na" title="该 provider 尚不支持会话读取,暂无法同步到网页">
+          <span key={r.provider} className="rtsync-chip na" title="该 Provider 尚不支持会话读取，暂无法同步到网页。">
             <span className="rtsync-dot" />
             {providerLabel(r.provider)}
             <span className="rtsync-chip-tag">不可用</span>

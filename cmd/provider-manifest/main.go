@@ -36,6 +36,7 @@ type clientDefinition struct {
 	AccentVar         string                 `json:"accentVar"`
 	SoftVar           string                 `json:"softVar"`
 	TagColor          string                 `json:"tagColor"`
+	Capabilities      []providers.Capability `json:"capabilities"`
 	AuthOptions       []providers.AuthOption `json:"authOptions"`
 	Clients           clientSupport          `json:"clients"`
 }
@@ -78,12 +79,17 @@ func run(root string, check bool) error {
 	if err != nil {
 		return fmt.Errorf("生成 TypeScript Provider 投影失败: %w", err)
 	}
+	clientJavaScript, err := renderClientJavaScript(manifest)
+	if err != nil {
+		return fmt.Errorf("生成 JavaScript Provider 投影失败: %w", err)
+	}
 
 	outputs := []outputFile{
 		{RelativePath: "contracts/providers/manifest.json", Content: manifestJSON},
 		// 旧路径暂时保留扁平兼容投影，避免现有外部脚本在迁移期突然失效。
 		{RelativePath: "lib/provider-catalog-data.json", Content: legacyJSON},
 		{RelativePath: "web/src/providers/provider-contract.generated.ts", Content: clientTypeScript},
+		{RelativePath: "web/src/providers/provider-contract.generated.js", Content: clientJavaScript},
 	}
 	for _, output := range outputs {
 		if err := syncOutput(root, output, check); err != nil {
@@ -91,6 +97,31 @@ func run(root string, check bool) error {
 		}
 	}
 	return nil
+}
+
+// buildClientDefinitions 只投影浏览器需要的展示、能力和认证字段。
+func buildClientDefinitions(manifest providers.Manifest) []clientDefinition {
+	definitions := make([]clientDefinition, 0, len(manifest.Providers))
+	for _, definition := range manifest.Providers {
+		presentation := definition.Presentation
+		definitions = append(definitions, clientDefinition{
+			ID:                definition.ID,
+			Label:             presentation.Label,
+			Short:             presentation.Short,
+			TerminalIcon:      presentation.TerminalIcon,
+			TerminalIconAsset: presentation.TerminalIconAsset,
+			AccentVar:         presentation.AccentVar,
+			SoftVar:           presentation.SoftVar,
+			TagColor:          presentation.TagColor,
+			Capabilities:      definition.Capabilities,
+			AuthOptions:       definition.AuthOptions,
+			Clients: clientSupport{
+				CLI:     definition.Clients.CLI,
+				Desktop: definition.Clients.Desktop,
+			},
+		})
+	}
+	return definitions
 }
 
 // buildLegacyCatalog 从完整合同派生旧版扁平展示目录，不引入第二份人工定义。
@@ -122,25 +153,7 @@ func renderJSON(value any) ([]byte, error) {
 
 // renderClientTypeScript 只投影 Client 需要的展示和认证字段，避免把 Server CLI 细节带进浏览器包。
 func renderClientTypeScript(manifest providers.Manifest) ([]byte, error) {
-	definitions := make([]clientDefinition, 0, len(manifest.Providers))
-	for _, definition := range manifest.Providers {
-		presentation := definition.Presentation
-		definitions = append(definitions, clientDefinition{
-			ID:                definition.ID,
-			Label:             presentation.Label,
-			Short:             presentation.Short,
-			TerminalIcon:      presentation.TerminalIcon,
-			TerminalIconAsset: presentation.TerminalIconAsset,
-			AccentVar:         presentation.AccentVar,
-			SoftVar:           presentation.SoftVar,
-			TagColor:          presentation.TagColor,
-			AuthOptions:       definition.AuthOptions,
-			Clients: clientSupport{
-				CLI:     definition.Clients.CLI,
-				Desktop: definition.Clients.Desktop,
-			},
-		})
-	}
+	definitions := buildClientDefinitions(manifest)
 	definitionsJSON, err := renderJSON(definitions)
 	if err != nil {
 		return nil, err
@@ -148,8 +161,13 @@ func renderClientTypeScript(manifest providers.Manifest) ([]byte, error) {
 	// Fallback 没有 CLI 定义，clients 固定为全 false，保持 ProviderCatalogEntry 形状一致。
 	fallbackJSON, err := renderJSON(struct {
 		providers.Presentation
-		Clients clientSupport `json:"clients"`
-	}{Presentation: manifest.Fallback, Clients: clientSupport{CLI: false, Desktop: false}})
+		Capabilities []providers.Capability `json:"capabilities"`
+		Clients      clientSupport          `json:"clients"`
+	}{
+		Presentation: manifest.Fallback,
+		Capabilities: []providers.Capability{},
+		Clients:      clientSupport{CLI: false, Desktop: false},
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -184,6 +202,7 @@ func renderClientTypeScript(manifest providers.Manifest) ([]byte, error) {
 	output.WriteString("  readonly accentVar: string;\n")
 	output.WriteString("  readonly softVar: string;\n")
 	output.WriteString("  readonly tagColor: string;\n")
+	output.WriteString("  readonly capabilities: readonly string[];\n")
 	output.WriteString("  readonly clients: { readonly cli: boolean; readonly desktop: boolean };\n")
 	output.WriteString("}\n\n")
 	output.WriteString("/** 按产品顺序排列的 Provider ID。 */\n")
@@ -199,6 +218,7 @@ func renderClientTypeScript(manifest providers.Manifest) ([]byte, error) {
 	output.WriteString("    accentVar: definition.accentVar,\n")
 	output.WriteString("    softVar: definition.softVar,\n")
 	output.WriteString("    tagColor: definition.tagColor,\n")
+	output.WriteString("    capabilities: definition.capabilities,\n")
 	output.WriteString("    clients: definition.clients,\n")
 	output.WriteString("  }]),\n")
 	output.WriteString(") as Readonly<Record<ProviderId, ProviderCatalogEntry>>);\n\n")
@@ -210,6 +230,58 @@ func renderClientTypeScript(manifest providers.Manifest) ([]byte, error) {
 	output.WriteString("export const PROVIDER_FALLBACK = ")
 	output.Write(bytes.TrimSpace(fallbackJSON))
 	output.WriteString(" as const satisfies ProviderCatalogEntry;\n")
+	return []byte(output.String()), nil
+}
+
+// renderClientJavaScript 生成 Node 测试和浏览器运行时代码都能直接加载的 ESM 投影。
+// 数据仍来自同一 Provider 合同，避免运行时代码依赖 Umi 专用路径别名。
+func renderClientJavaScript(manifest providers.Manifest) ([]byte, error) {
+	definitionsJSON, err := renderJSON(buildClientDefinitions(manifest))
+	if err != nil {
+		return nil, err
+	}
+	fallbackJSON, err := renderJSON(struct {
+		providers.Presentation
+		Capabilities []providers.Capability `json:"capabilities"`
+		Clients      clientSupport          `json:"clients"`
+	}{
+		Presentation: manifest.Fallback,
+		Capabilities: []providers.Capability{},
+		Clients:      clientSupport{CLI: false, Desktop: false},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	var output strings.Builder
+	output.WriteString("/**\n")
+	output.WriteString(" * 此文件由 `go run ./cmd/provider-manifest` 自动生成。\n")
+	output.WriteString(" * 人工修改会在 Provider 合同校验中失败；请编辑 `core/providers/builtins.go`。\n")
+	output.WriteString(" */\n\n")
+	output.WriteString("export const PROVIDER_DEFINITIONS = ")
+	output.Write(bytes.TrimSpace(definitionsJSON))
+	output.WriteString(";\n\n")
+	output.WriteString("export const PROVIDER_IDS = Object.freeze(PROVIDER_DEFINITIONS.map((definition) => definition.id));\n\n")
+	output.WriteString("export const PROVIDER_CATALOG = Object.freeze(Object.fromEntries(\n")
+	output.WriteString("  PROVIDER_DEFINITIONS.map((definition) => [definition.id, {\n")
+	output.WriteString("    id: definition.id,\n")
+	output.WriteString("    label: definition.label,\n")
+	output.WriteString("    short: definition.short,\n")
+	output.WriteString("    terminalIcon: definition.terminalIcon,\n")
+	output.WriteString("    terminalIconAsset: definition.terminalIconAsset,\n")
+	output.WriteString("    accentVar: definition.accentVar,\n")
+	output.WriteString("    softVar: definition.softVar,\n")
+	output.WriteString("    tagColor: definition.tagColor,\n")
+	output.WriteString("    capabilities: definition.capabilities,\n")
+	output.WriteString("    clients: definition.clients,\n")
+	output.WriteString("  }]),\n")
+	output.WriteString("));\n\n")
+	output.WriteString("export const PROVIDER_AUTH_OPTIONS = Object.freeze(Object.fromEntries(\n")
+	output.WriteString("  PROVIDER_DEFINITIONS.map((definition) => [definition.id, definition.authOptions]),\n")
+	output.WriteString("));\n\n")
+	output.WriteString("export const PROVIDER_FALLBACK = ")
+	output.Write(bytes.TrimSpace(fallbackJSON))
+	output.WriteString(";\n")
 	return []byte(output.String()), nil
 }
 

@@ -82,9 +82,15 @@ func validateDefinition(definition Definition) error {
 // validateCapabilities 防止能力拼写错误变成静默的运行时缺失。
 func validateCapabilities(capabilities []Capability) error {
 	allowed := map[Capability]struct{}{
-		CapabilityAPIKeyAccount: {},
-		CapabilityModelCatalog:  {},
-		CapabilityQuotaUsage:    {},
+		CapabilityAPIKeyAccount:       {},
+		CapabilityModelCatalog:        {},
+		CapabilityQuotaUsage:          {},
+		CapabilitySessionRuntime:      {},
+		CapabilityFabricRuntime:       {},
+		CapabilityGatewayProfile:      {},
+		CapabilitySessionHistory:      {},
+		CapabilityAccountSessionStore: {},
+		CapabilityUsageScan:           {},
 	}
 	seen := make(map[Capability]struct{}, len(capabilities))
 	for _, capability := range capabilities {

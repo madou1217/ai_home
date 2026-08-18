@@ -4,7 +4,12 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const { listProviderDefinitions } = require('../lib/provider-catalog');
-const { getAppInstaller, INSTALLERS } = require('../lib/server/app-installers');
+const { getAppInstaller, listManagedAppInstallers, INSTALLERS } = require('../lib/server/app-installers');
+const {
+  buildNpmPlan,
+  buildNpmUpdatePlan,
+  buildNpmUninstallPlan
+} = require('../lib/server/app-installers/official-install');
 
 test('每个合同 CLI Provider 都由独立安装器模块提供统一入口', () => {
   const providers = listProviderDefinitions()
@@ -43,6 +48,17 @@ test('注册表发现的每个独立 Provider 安装器都实现生命周期接�
   });
 });
 
+test('独立托管 CLI 不污染 Provider 合同，并通过同一生命周期接口注册', () => {
+  const dsh = getAppInstaller('dsh');
+  assert.ok(dsh);
+  assert.equal(dsh.managedApp.id, 'dsh');
+  assert.equal(dsh.managedApp.type, 'cli');
+  assert.equal(dsh.listCliBinaryNames()[0], 'dsh');
+  assert.deepEqual(listManagedAppInstallers().map((installer) => installer.provider), ['dsh']);
+  assert.deepEqual(dsh.resolveLifecyclePlans('update', { kind: 'cli' }).map((plan) => plan.id), ['npm_global_update']);
+  assert.deepEqual(dsh.resolveLifecyclePlans('uninstall', { kind: 'cli' }).map((plan) => plan.id), ['npm_global_uninstall']);
+});
+
 test('桌面安装参数只来自对应 Provider 安装器', () => {
   const codex = getAppInstaller('codex');
   const claude = getAppInstaller('claude');
@@ -67,6 +83,26 @@ test('安装器公共平台接口使用 macos/windows/linux，兼容 Node 别名
   assert.equal(codex.resolveDesktopInstallPlans({ platform: 'macos' })[0].command, 'brew');
   assert.equal(claude.resolveDesktopInstallPlans({ platform: 'windows' })[0].command, 'winget.exe');
   assert.equal(codex.resolveDesktopInstallPlans({ platform: 'win32' })[0].command, 'winget.exe');
+});
+
+test('npm 生命周期计划隔离用户配置并固定公共 registry', () => {
+  const packageName = '@example/provider-cli';
+  const builders = [
+    buildNpmPlan,
+    buildNpmUpdatePlan,
+    buildNpmUninstallPlan
+  ];
+
+  for (const platform of ['macos', 'linux', 'windows']) {
+    const expectedUserConfig = platform === 'windows' ? 'NUL' : '/dev/null';
+    const expectedCommand = platform === 'windows' ? 'npm.cmd' : 'npm';
+    for (const buildPlan of builders) {
+      const plan = buildPlan(packageName, { platform });
+      assert.equal(plan.command, expectedCommand);
+      assert.ok(plan.args.includes(`--userconfig=${expectedUserConfig}`));
+      assert.ok(plan.args.includes('--registry=https://registry.npmjs.org'));
+    }
+  }
 });
 
 test('官方安装器优先使用可验证的稳定下载端点，并覆盖 Windows CMD 兜底', () => {

@@ -112,6 +112,29 @@ test('webui toolkit config routes read and save an allowlisted config without re
   assert.equal(fs.readFileSync(configPath, 'utf8'), 'model = "gpt-5.5"\n');
 });
 
+test('webui toolkit app config routes return 404 and never create a missing config', async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-toolkit-config-missing-'));
+  const configPath = path.join(home, '.codex', 'config.toml');
+  const url = new URL('http://localhost/v0/webui/toolkit/apps/codex/config');
+  const res = createResCapture();
+
+  const handled = await handleWebUIRequest({
+    method: 'GET',
+    pathname: url.pathname,
+    url,
+    req: createRequest('GET', url.pathname),
+    res,
+    deps: createDeps(home),
+    options: {},
+    state: {}
+  });
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 404);
+  assert.equal(JSON.parse(res.body).error, 'config_not_found');
+  assert.equal(fs.existsSync(configPath), false);
+});
+
 test('webui toolkit app config routes cannot bypass discovered tool targets', async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-toolkit-tool-bypass-'));
   const url = new URL('http://localhost/v0/webui/toolkit/apps/frpc/config');

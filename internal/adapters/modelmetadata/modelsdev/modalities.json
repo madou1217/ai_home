@@ -2800,6 +2800,16 @@
       "text"
     ]
   },
+  "sakana/sakana-namazu": {
+    "input": [
+      "text",
+      "image",
+      "pdf"
+    ],
+    "output": [
+      "text"
+    ]
+  },
   "sarvam/sarvam-105b": {
     "input": [
       "text"

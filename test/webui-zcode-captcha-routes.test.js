@@ -75,7 +75,52 @@ test('POST complete resolves the pending verification', async () => {
   });
   assert.equal(handled, true);
   assert.equal(res.statusCode, 200);
-  assert.deepEqual(await pending, { ok: true, verifyParam: 'param-1', region: 'cn' });
+  assert.deepEqual(await pending, {
+    ok: true,
+    verifyParam: 'param-1',
+    region: 'cn',
+    userAgent: '',
+    secChUa: '',
+    secChUaPlatform: '',
+    secChUaMobile: '',
+    acceptLanguage: ''
+  });
+});
+
+test('POST complete forwards solver browser identity headers to the waiter', async () => {
+  const res = createResCapture();
+  const { bridge, ctx } = createRouteCtx({ res });
+  const pending = bridge.requestVerification('acct_route_ua', { timeoutMs: 5000 });
+  await new Promise((resolve) => setImmediate(resolve));
+  const challenge = bridge.listPending()[0];
+
+  const handled = await handleWebUiZcodeCaptchaRoutes({
+    ...ctx,
+    method: 'POST',
+    pathname: `/v0/webui/zcode-captcha/${challenge.id}/complete`,
+    req: {
+      headers: {
+        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/126.0.0.0',
+        'sec-ch-ua': '"Chromium";v="126"',
+        'sec-ch-ua-platform': '"Windows"',
+        'sec-ch-ua-mobile': '?0',
+        'accept-language': 'zh-CN,zh;q=0.9'
+      }
+    },
+    readRequestBody: async () => Buffer.from(JSON.stringify({ verifyParam: 'param-ua', region: 'cn' }))
+  });
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(await pending, {
+    ok: true,
+    verifyParam: 'param-ua',
+    region: 'cn',
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/126.0.0.0',
+    secChUa: '"Chromium";v="126"',
+    secChUaPlatform: '"Windows"',
+    secChUaMobile: '?0',
+    acceptLanguage: 'zh-CN,zh;q=0.9'
+  });
 });
 
 test('POST dismiss rejects the pending verification', async () => {

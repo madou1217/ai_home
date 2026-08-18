@@ -111,7 +111,16 @@ test('requestVerification broadcasts the challenge and complete resolves it', as
   assert.equal(completeResult.ok, true);
 
   const result = await pending;
-  assert.deepEqual(result, { ok: true, verifyParam: 'verify-param-1', region: 'cn' });
+  assert.deepEqual(result, {
+    ok: true,
+    verifyParam: 'verify-param-1',
+    region: 'cn',
+    userAgent: '',
+    secChUa: '',
+    secChUaPlatform: '',
+    secChUaMobile: '',
+    acceptLanguage: ''
+  });
   // complete 后广播 resolved 让 WebUI 清理 UI。
   assert.equal(broadcasts[1].state, 'resolved');
   assert.deepEqual(bridge.listPending(), []);
@@ -146,7 +155,16 @@ test('complete consumes the verify param: only the earliest waiter gets it', asy
   const challenge = bridge.listPending()[0];
   bridge.complete(challenge.id, { verifyParam: 'one-shot-param' });
 
-  assert.deepEqual(await first, { ok: true, verifyParam: 'one-shot-param', region: 'cn' });
+  assert.deepEqual(await first, {
+    ok: true,
+    verifyParam: 'one-shot-param',
+    region: 'cn',
+    userAgent: '',
+    secChUa: '',
+    secChUaPlatform: '',
+    secChUaMobile: '',
+    acceptLanguage: ''
+  });
   assert.deepEqual(await second, { ok: false, reason: 'captcha_consumed' });
   assert.deepEqual(bridge.listPending(), []);
 });

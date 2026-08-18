@@ -216,6 +216,11 @@ func builtinAntigravity() Definition {
 }
 
 // builtinOpenCode 定义由 OpenCode API 密钥认证的 CLI 与网关能力。
+// 官方规范说明：
+// - 凭据获取：从 https://opencode.ai/auth 获取 API Key。
+// - 官方端点：默认使用 OpenCode Go 端点 https://opencode.ai/zen/go/v1，亦支持 Zen 端点 https://opencode.ai/zen/v1。
+// - 原生存储：CLI (opencode auth login) 在 ~/.local/share/opencode/auth.json 中管理 opencode / opencode-go 提供商键值。
+// - 环境变量：OPENCODE_API_KEY 与 OPENCODE_BASE_URL。
 func builtinOpenCode() Definition {
 	return Definition{
 		ID:           "opencode",

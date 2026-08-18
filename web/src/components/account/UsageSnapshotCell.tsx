@@ -291,6 +291,74 @@ export default function UsageSnapshotCell({ record, hideModels = false }: { reco
     );
   }
 
+  if (record.provider === 'zcode' && snapshot?.kind === 'zcode_plan_balance') {
+    // zcode 的 entries 是「按模型分桶」的余额（bucket = 模型 ID，window 多为 1days），
+    // 渲染成套餐分组（仿 agy）：组标题 = plan 名，行 = 模型 + 窗口。
+    const entries = orderCodexEntries(
+      (snapshot.entries || []).filter((entry) => typeof entry.remainingPct === 'number' && Number.isFinite(entry.remainingPct))
+    );
+    if (entries.length === 0) {
+      return record.usageRefreshing ? (
+        <Space size={6}>
+          <span>-</span>
+          <Spin size="small" />
+        </Space>
+      ) : <>-</>;
+    }
+    const planName = snapshot.account?.planType || '';
+    const visibleEntries = hideModels ? entries.slice(0, 1) : (expanded ? entries : entries.slice(0, 2));
+    return (
+      <div style={{ minWidth: 200 }}>
+        {planName ? (
+          <div
+            style={{
+              fontWeight: 600,
+              fontSize: 'clamp(12px, 3vw, 12.5px)',
+              color: '#334155',
+              letterSpacing: '0.15px',
+              marginBottom: 4
+            }}
+          >
+            {planName}
+          </div>
+        ) : null}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {visibleEntries.map((entry, index) => {
+            const windowLabel = formatWindowDuration(entry.windowMinutes, entry.window) || entry.window || '';
+            const label = entry.bucket
+              ? (windowLabel ? `${entry.bucket} · ${windowLabel}` : entry.bucket)
+              : (windowLabel || 'usage');
+            return (
+              <UsageMetaLine
+                key={`${entry.bucket}-${entry.window}-${index}`}
+                label={label}
+                value={entry.remainingPct}
+                resetIn={entry.resetIn}
+                resetAtMs={entry.resetAtMs}
+              />
+            );
+          })}
+        </div>
+        {!hideModels && entries.length > 2 ? (
+          <Button
+            type="link"
+            size="small"
+            style={{ padding: 0, height: 22, marginTop: 4, fontSize: 13 }}
+            onClick={() => setExpanded((value) => !value)}
+          >
+            {expanded ? '收起' : `展开 ${entries.length - 2} 项`}
+          </Button>
+        ) : null}
+        {record.usageRefreshing ? (
+          <div style={{ marginTop: 4, color: '#8c8c8c', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Spin size="small" />
+            <span>刷新中</span>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
   if (record.provider === 'agy' && snapshot?.kind === 'agy_code_assist_quota') {
     const groups = groupAgyQuotaModels(snapshot.models || []);
     if (groups.length === 0) return <>-</>;

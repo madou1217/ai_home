@@ -80,6 +80,14 @@ export type AccountUsageSnapshot =
       entries: CodexUsageEntry[];
     }
   | {
+      kind: 'zcode_plan_balance';
+      capturedAt: number;
+      account?: {
+        planType: string; // 套餐名，如 ZCode Start Plan
+      } | null;
+      entries: CodexUsageEntry[]; // bucket = 模型 ID（billing/balance 的 capabilities model:*）
+    }
+  | {
       kind: 'gemini_oauth_stats';
       capturedAt: number;
       models: GeminiUsageModel[];

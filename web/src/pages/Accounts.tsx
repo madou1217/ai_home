@@ -1,6 +1,6 @@
 import './Accounts.css';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { ModalForm, StatisticCard } from '@ant-design/pro-components';
+import { StatisticCard } from '@ant-design/pro-components';
 import Button from '@/components/ui/AppButton';
 import PageScaffold from '@/components/ui/PageScaffold';
 import SectionCard from '@/components/ui/SectionCard';
@@ -111,6 +111,7 @@ import {
   useModelCatalog
 } from '@/features/accounts/useModelCatalog';
 import { CliPickerModal } from '@/features/accounts/CliPickerModal';
+import { EditAccountModal } from '@/features/accounts/EditAccountModal';
 import {
   getAccountPrimaryLabel,
   getAccountSecondaryLabel,
@@ -2152,57 +2153,15 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
           </SectionCard>
         )}
 
-      <ModalForm
-        title="编辑配置"
+      <EditAccountModal
         open={editModalVisible}
-        onOpenChange={(visible) => {
-          if (!visible) {
-            setEditModalVisible(false);
-            editForm.resetFields();
-          }
-        }}
         form={editForm}
-        layout="vertical"
-        onFinish={async () => {
-          return handleEditSubmit();
-        }}
-        submitter={{
-          searchConfig: {
-            submitText: '保存',
-            resetText: '取消',
-          },
-        }}
-      >
-          {isEditingClaudeCredential ? (
-            <Form.Item
-              name="authMode"
-              label="Claude 认证方式"
-              rules={[{ required: true, message: '请选择 Claude 认证方式' }]}
-            >
-              <Radio.Group>
-                <Space direction="vertical">
-                  <Radio value="api-key">ANTHROPIC_API_KEY</Radio>
-                  <Radio value="auth-token">ANTHROPIC_AUTH_TOKEN</Radio>
-                </Space>
-              </Radio.Group>
-            </Form.Item>
-          ) : null}
-          <Form.Item
-            name="apiKey"
-            label={effectiveEditAuthMode === 'auth-token' ? 'Auth Token' : '密钥'}
-            extra={isEditCredentialModeChanged ? '切换认证方式时必须重新输入。' : '如不修改请留空。支持设置密钥以提升并发配额。'}
-            rules={isEditCredentialModeChanged ? [{ required: true, message: '切换认证方式时请输入密钥' }] : []}
-          >
-            <Input.Password autoComplete="new-password" placeholder="sk-..." />
-          </Form.Item>
-          <Form.Item
-            name="baseUrl"
-            label="接口地址"
-            extra="自定义反代或网关地址。如不修改请留空。"
-          >
-            <Input placeholder="https://api.openai.com/v1" />
-          </Form.Item>
-      </ModalForm>
+        isClaudeCredential={isEditingClaudeCredential}
+        effectiveAuthMode={effectiveEditAuthMode}
+        credentialModeChanged={isEditCredentialModeChanged}
+        onClose={() => setEditModalVisible(false)}
+        onSubmit={handleEditSubmit}
+      />
 
       <Modal
         title="添加新账号"

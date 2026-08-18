@@ -89,6 +89,13 @@ Fuller layer map:
 - Refactor trigger: if a file mixes unrelated responsibilities or becomes difficult to test in isolation, split it before further feature work.
 - Exceptions must be explicit in PR notes, including why boundary-preserving design was not feasible and what follow-up refactor is planned.
 
+## Web UI Componentization (frontend pages)
+- 单个页面文件禁止无限堆积。`web/src/pages/` 下的页面一旦超过 ~2000 行，就必须把弹窗、抽屉等 UI 块拆成 `web/src/features/<domain>/` 下的独立受控组件，而不是继续在页面里加 JSX。历史参照：`Accounts.tsx` 从 2538 行拆分后稳定在 ~2000 行，拆出的 `CliPickerModal` / `EditAccountModal` / `ImportAccountsModal` / `AddAccountModal` / `AuthProgressModal` 都在 `web/src/features/accounts/`。
+- 拆分组件保持「状态留在页面、行为严格等价」：页面持有 state 和业务 handler，组件通过 `props + 回调` 受控渲染；不要为了拆分把页面级状态挪进组件，也不要顺手改行为。
+- 组件文件里的纯函数（文案、派生工具）若同时被页面和其他组件引用，直接 `export` 复用，不要在页面里重复实现。
+- 只在纯渲染层转发页面共享状态的小块（例如移动端底部筛选 Drawer / 操作 Sheet，直接转发 `activeProvider`/`filterStatus`/`actionAccount` 及页面 handler）不强制抽取——加 props 管道不降复杂度，KISS/YAGNI 允许留在页面。
+- 每拆一个组件必须独立完成「eslint（限改动文件）+ 相关单测 + `npm run build`」验证并独立提交推送，禁止批量拆分、禁止越过验证直接合并。
+
 ## Agent Runtime Compatibility & Advisor Semantics
 - Treat `advisor` as a workflow intent (`independent_review_intent`), not as a guaranteed concrete tool name.
 - Never hard-fail solely because a copied Claude/Antigravity prompt references an unavailable `advisor` tool. Resolve the intent through the runtime capability chain first.

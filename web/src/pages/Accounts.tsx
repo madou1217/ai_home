@@ -110,6 +110,7 @@ import type { UseAccountsSnapshotHandlers } from '@/features/accounts/useAccount
 import {
   useModelCatalog
 } from '@/features/accounts/useModelCatalog';
+import { CliPickerModal } from '@/features/accounts/CliPickerModal';
 import {
   getAccountPrimaryLabel,
   getAccountSecondaryLabel,
@@ -2504,34 +2505,18 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
           </Space>
         ) : null}
       </Modal>
-      <Modal
-        open={Boolean(cliPickerAccount)}
-        title={cliPickerAccount ? `选择终端 · ${getAccountPrimaryLabel(cliPickerAccount)}` : '选择终端'}
-        okText="打开 CLI"
-        cancelText="取消"
-        confirmLoading={cliTerminalsLoading}
+      <CliPickerModal
+        account={cliPickerAccount}
+        terminals={cliTerminals}
+        selectedTerminalId={selectedCliTerminalId}
+        loading={cliTerminalsLoading}
+        onTerminalChange={setSelectedCliTerminalId}
         onCancel={() => setCliPickerAccount(null)}
-        onOk={() => {
-          if (!cliPickerAccount) return;
-          const account = cliPickerAccount;
+        onOpen={(account, terminalId) => {
           setCliPickerAccount(null);
-          void handleOpenApp(account, 'cli', selectedCliTerminalId);
+          void handleOpenApp(account, 'cli', terminalId);
         }}
-      >
-        <Select
-          style={{ width: '100%' }}
-          value={selectedCliTerminalId}
-          onChange={setSelectedCliTerminalId}
-          options={cliTerminals.map((terminal) => ({
-            value: terminal.id,
-            label: `${terminal.name}${terminal.default ? '（系统默认）' : ''}`,
-            title: terminal.description
-          }))}
-        />
-        <Typography.Text type="secondary" style={{ display: 'block', marginTop: 10 }}>
-          单击 CLI 图标选择终端；双击直接使用系统默认终端。ZCode 仅支持 Desktop，不提供 CLI/TUI。
-        </Typography.Text>
-      </Modal>
+      />
       <ZcodeCaptchaBridge event={zcodeCaptchaEvent} />
     </PageScaffold>
   );

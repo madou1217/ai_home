@@ -83,10 +83,16 @@ function getModelTooltipEntries(dimension: TokenUsageDimension, models: AccountT
     .filter(({ value }) => value > 0);
 }
 
-// 被折叠掉的更宽窗口不能凭空消失：说清楚"到这里为止都是同一个数"。
-function formatAbsorbedHint(metric: TokenUsageMetric) {
-  if (metric.absorbed.length === 0) return '';
-  return `${metric.absorbed.map(({ label }) => label).join('、')}与${metric.label}相同`;
+// 被藏起来的窗口不能凭空消失：说清楚它们是"和这格同一个数"还是"根本没有量"。
+function formatWindowNotes(metric: TokenUsageMetric) {
+  const notes: string[] = [];
+  if (metric.idle.length > 0) {
+    notes.push(`${metric.idle.map(({ label }) => label).join('、')}无用量`);
+  }
+  if (metric.absorbed.length > 0) {
+    notes.push(`${metric.absorbed.map(({ label }) => label).join('、')}与${metric.label}相同`);
+  }
+  return notes;
 }
 
 function formatModelTooltip(
@@ -100,8 +106,7 @@ function formatModelTooltip(
   if (lines.length === 0) {
     lines.push(models.length > 0 ? '暂无用量' : `总计 ${formatTokenAmount(metric.value)}`);
   }
-  const absorbed = formatAbsorbedHint(metric);
-  return absorbed ? [...lines, absorbed] : lines;
+  return [...lines, ...formatWindowNotes(metric)];
 }
 
 function allocateLayerHeights(
@@ -222,10 +227,17 @@ function buildTransitionClassName(
   return base;
 }
 
-function buildShiftStyle(
+function buildTransitionStyle(
   key: TokenUsageDimension,
+  index: number,
+  entering: ReadonlySet<TokenUsageDimension>,
   shifts: ReadonlyMap<TokenUsageDimension, number>
 ): CSSProperties | undefined {
+  if (entering.has(key)) {
+    // 新格子从"它原先藏身的那一格"里吐出来：排在最前面的（日重新有量了）来自右边更宽的
+    // 窗口，其余的（周/月/总重新拉开差距）来自左边更窄的窗口。
+    return { '--token-usage-detach-dir': index === 0 ? 1 : -1 } as CSSProperties;
+  }
   const shift = shifts.get(key);
   return shift === undefined ? undefined : ({ '--token-usage-shift': shift } as CSSProperties);
 }
@@ -272,7 +284,7 @@ function TokenUsageChart({ usage }: { usage: AccountTokenUsage }) {
                 maximum={maximum}
                 models={usedModels}
                 className={buildTransitionClassName('token-usage-bar-group', metric.key, entering, shifts)}
-                style={buildShiftStyle(metric.key, shifts)}
+                style={buildTransitionStyle(metric.key, index, entering, shifts)}
               />
               <title>{formatModelTooltip(metric, usedModels).join('\n')}</title>
             </g>
@@ -324,9 +336,9 @@ function TokenUsageChart({ usage }: { usage: AccountTokenUsage }) {
                       ))}
                     </>
                   ) : <div>{formatModelTooltip(metric, usedModels)[0]}</div>}
-                  {formatAbsorbedHint(metric) ? (
-                    <div className="token-usage-tooltip-note">{formatAbsorbedHint(metric)}</div>
-                  ) : null}
+                  {formatWindowNotes(metric).map((note) => (
+                    <div key={note} className="token-usage-tooltip-note">{note}</div>
+                  ))}
                 </div>
               )}
             >
@@ -340,7 +352,7 @@ function TokenUsageChart({ usage }: { usage: AccountTokenUsage }) {
         </div>
       </div>
       <div className="token-usage-values" aria-hidden="true">
-        {metrics.map((metric) => (
+        {metrics.map((metric, index) => (
           <span
             key={metric.key}
             className={[
@@ -349,18 +361,18 @@ function TokenUsageChart({ usage }: { usage: AccountTokenUsage }) {
                 ? 'token-usage-value--peak'
                 : ''
             ].filter(Boolean).join(' ')}
-            style={buildShiftStyle(metric.key, shifts)}
+            style={buildTransitionStyle(metric.key, index, entering, shifts)}
           >
             {formatTokenAmount(metric.value)}
           </span>
         ))}
       </div>
       <div className="token-usage-labels" aria-hidden="true">
-        {metrics.map((metric) => (
+        {metrics.map((metric, index) => (
           <span
             key={metric.key}
             className={buildTransitionClassName('token-usage-label', metric.key, entering, shifts)}
-            style={buildShiftStyle(metric.key, shifts)}
+            style={buildTransitionStyle(metric.key, index, entering, shifts)}
           >
             {metric.label}
           </span>

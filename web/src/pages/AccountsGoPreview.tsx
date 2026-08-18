@@ -2200,6 +2200,8 @@ export default function Accounts() {
       dataIndex: 'tokenUsage',
       key: 'tokenUsage',
       width: 214,
+      // 单元格宽度随折叠变化，内容已居中；表头跟着居中才不会两头不齐。
+      align: 'center' as const,
       render: (_value: any, record: Account) => (
         <TokenUsageCell usage={record.tokenUsage} />
       )

@@ -14,6 +14,8 @@ export interface TokenUsageMetric extends TokenUsagePeriod {
   value: TokenUsageValue;
   /** 被这根柱子吸收掉的更宽窗口（数值与它完全相同），Tooltip 用来说明"到此为止"。 */
   absorbed: TokenUsagePeriod[];
+  /** 因为完全没有用量而被藏掉的更窄窗口（例如今天还没跑过）。 */
+  idle: TokenUsagePeriod[];
 }
 
 // 顺序必须是「由窄到宽」：折叠规则依赖后一项是前一项的超集。
@@ -76,17 +78,39 @@ export function collapseTokenUsageMetrics(metrics: TokenUsageMetric[]): TokenUsa
       ];
       return;
     }
-    collapsed.push({ ...metric, absorbed: [...metric.absorbed] });
+    collapsed.push({ ...metric, absorbed: [...metric.absorbed], idle: [...metric.idle] });
   });
   return collapsed;
 }
 
+/**
+ * 开头的空窗口不占位：今天还没跑过时，"日 0"只是一根贴地的柱子，
+ * 真正有信息的是它右边那几格。所以只要还有别的窗口有量，就把开头的 0 藏掉，
+ * 让最窄的"确实有量"的窗口顶到最前面。全都是 0 时保留一格，否则整格没有东西可看。
+ */
+export function dropIdleLeadingMetrics(metrics: TokenUsageMetric[]): TokenUsageMetric[] {
+  if (metrics.length <= 1) return metrics;
+  if (!metrics.some((metric) => (metric.value || 0) > 0)) return metrics;
+
+  const kept = [...metrics];
+  const idle: TokenUsagePeriod[] = [];
+  while (kept.length > 1 && kept[0].value === 0) {
+    const dropped = kept.shift() as TokenUsageMetric;
+    idle.push({ key: dropped.key, label: dropped.label, hint: dropped.hint }, ...dropped.absorbed);
+  }
+  if (idle.length === 0) return metrics;
+
+  kept[0] = { ...kept[0], idle: [...idle, ...kept[0].idle] };
+  return kept;
+}
+
 export function buildTokenUsageMetrics(usage: AccountTokenUsage): TokenUsageMetric[] {
-  return collapseTokenUsageMetrics(TOKEN_USAGE_PERIODS.map((period) => ({
+  return dropIdleLeadingMetrics(collapseTokenUsageMetrics(TOKEN_USAGE_PERIODS.map((period) => ({
     ...period,
     value: toTokenValue(usage[period.key]),
-    absorbed: []
-  })));
+    absorbed: [],
+    idle: []
+  }))));
 }
 
 export function getUsedModels(usage: AccountTokenUsage) {

@@ -9,10 +9,14 @@
   --token-usage-ease-detach: cubic-bezier(0.34, 1.42, 0.64, 1);
 
   position: relative;
-  display: inline-flex;
+  /* 折叠会让单元格宽度在 1~4 格之间变化，左对齐时柱子会跟着列的左边缘跳；
+     这里让它在列里水平居中，行高由表格统一给，垂直方向靠单元格自身的 middle 对齐。 */
+  display: flex;
   width: calc(var(--token-usage-columns) * var(--token-usage-slot) + 2px);
   min-width: calc(var(--token-usage-columns) * var(--token-usage-slot) + 2px);
+  margin-inline: auto;
   flex-direction: column;
+  justify-content: center;
   gap: 1px;
   color: var(--color-text);
   line-height: 1;
@@ -91,13 +95,15 @@
   }
 }
 
+/* --token-usage-detach-dir 决定新格子从哪一侧吐出来：-1 = 从左边更窄的窗口里裂开，
+   +1 = 从右边更宽的窗口里吐出来（日重新有量时就是这种）。 */
 @keyframes token-usage-detach {
   0% {
-    transform: translateX(-52px) scaleX(0.28) scaleY(0.9);
+    transform: translateX(calc(var(--token-usage-detach-dir, -1) * 52px)) scaleX(0.28) scaleY(0.9);
     opacity: 0;
   }
   45% {
-    transform: translateX(-14px) scaleX(0.86) scaleY(1.08);
+    transform: translateX(calc(var(--token-usage-detach-dir, -1) * 14px)) scaleX(0.86) scaleY(1.08);
     opacity: 0.85;
   }
   100% {
@@ -291,9 +297,13 @@
   }
 }
 
+/* 文字比柱子挤：起点只挪 0.6 个槽，并且等邻居让开位置之后再淡入，避免两组数字叠在一起。 */
 @keyframes token-usage-text-detach {
   0% {
-    transform: translateX(calc(var(--token-usage-slot) * -1)) scale(0.72);
+    transform: translateX(calc(var(--token-usage-detach-dir, -1) * var(--token-usage-slot) * 0.6)) scale(0.72);
+    opacity: 0;
+  }
+  38% {
     opacity: 0;
   }
   100% {
@@ -303,10 +313,12 @@
 }
 
 .token-usage-cell--empty {
-  display: inline-block;
+  display: block;
+  width: auto;
   min-width: 0;
   color: var(--color-faint);
   font-size: var(--text-sm);
+  text-align: center;
 }
 
 @media (max-width: 768px) {

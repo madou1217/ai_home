@@ -89,6 +89,32 @@ test('collapses to a single bar when all usage happened today', () => {
   assert.deepEqual(metrics[0].absorbed.map((period) => period.key), ['week', 'month', 'total']);
 });
 
+test('hides an idle day when the wider windows still carry usage', () => {
+  const metrics = buildTokenUsageMetrics(usageOf({
+    day: 0,
+    week: 42_000,
+    month: 380_000,
+    total: 1_200_000
+  }));
+
+  assert.deepEqual(metrics.map((metric) => metric.key), ['week', 'month', 'total']);
+  assert.deepEqual(metrics[0].idle.map((period) => period.key), ['day']);
+});
+
+test('hides every leading empty window at once', () => {
+  // 日、周都没量时，两格一起藏掉；月吸收掉与它相同的总。
+  const metrics = buildTokenUsageMetrics(usageOf({
+    day: 0,
+    week: 0,
+    month: 500,
+    total: 500
+  }));
+
+  assert.deepEqual(metrics.map((metric) => metric.key), ['month']);
+  assert.deepEqual(metrics[0].idle.map((period) => period.key), ['day', 'week']);
+  assert.deepEqual(metrics[0].absorbed.map((period) => period.key), ['total']);
+});
+
 test('an account with no usage at all collapses to one zero bar', () => {
   const metrics = buildTokenUsageMetrics(usageOf({}));
 

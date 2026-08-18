@@ -322,4 +322,34 @@ test('private model helpers classify OpenCode Go endpoints', () => {
   assert.equal(__private.isAnthropicMessagesModel('opencode-go/glm-5.2'), false);
   assert.equal(__private.prefixOpenCodeGoModel('glm-5.2'), 'opencode-go/glm-5.2');
   assert.equal(__private.stripOpenCodeGoModelPrefix('opencode-go/glm-5.2'), 'glm-5.2');
+  assert.equal(__private.stripOpenCodeGoModelPrefix('opencode/claude-3-5-sonnet'), 'claude-3-5-sonnet');
+  assert.equal(__private.stripOpenCodeGoModelPrefix('zen/gpt-4o'), 'gpt-4o');
+  assert.equal(__private.stripOpenCodeGoModelPrefix('go/deepseek-r1'), 'deepseek-r1');
+});
+
+test('fetchOpenCodeChatCompletion respects custom baseUrl configured on account', async () => {
+  const calls = [];
+  await fetchOpenCodeChatCompletion({}, {
+    provider: 'opencode',
+    baseUrl: 'https://opencode.ai/zen/v1',
+    accessToken: 'sk-custom-zen-key'
+  }, {
+    model: 'zen/gpt-4o',
+    messages: [{ role: 'user', content: 'hello' }]
+  }, 500, {
+    fetchWithTimeout: async (url, init) => {
+      calls.push({ url: String(url), init });
+      return jsonResponse({
+        id: 'chatcmpl-zen-1',
+        object: 'chat.completion',
+        model: 'gpt-4o',
+        choices: [{ index: 0, message: { role: 'assistant', content: 'zen reply' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 2, completion_tokens: 2, total_tokens: 4 }
+      });
+    }
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'https://opencode.ai/zen/v1/chat/completions');
+  assert.equal(calls[0].init.headers.authorization, 'Bearer sk-custom-zen-key');
 });

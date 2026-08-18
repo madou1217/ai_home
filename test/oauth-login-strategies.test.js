@@ -41,53 +41,13 @@ test('CODEX_STRATEGY injects --device-auth when authMode is oauth-device', () =>
   assert.deepEqual(deviceArgs, ['auth', 'login', '--device-auth']);
 });
 
-test('OPENCODE_STRATEGY injects -p opencode for CLI login args', () => {
+test('OPENCODE_STRATEGY delegates to default strategy', () => {
   const loginArgs = OPENCODE_STRATEGY.buildLoginArgs({
     provider: 'opencode',
     authMode: 'oauth-browser',
     baseArgs: ['auth', 'login']
   });
-  assert.deepEqual(loginArgs, ['auth', 'login', '-p', 'opencode']);
-
-  // If already present, does not duplicate
-  const customArgs = OPENCODE_STRATEGY.buildLoginArgs({
-    provider: 'opencode',
-    authMode: 'oauth-browser',
-    baseArgs: ['auth', 'login', '-p', 'zen']
-  });
-  assert.deepEqual(customArgs, ['auth', 'login', '-p', 'zen']);
-});
-
-test('OPENCODE_STRATEGY handlePrompt automatically writes return on Select provider prompt', () => {
-  const writes = [];
-  const logs = [];
-  const job = {
-    status: 'running',
-    provider: 'opencode',
-    logs: '┌  Add credential\n│\n◆  Select provider\n│  ● OpenCode Zen (recommended)',
-    _ptyProcess: {
-      write(chunk) {
-        writes.push(chunk);
-      }
-    }
-  };
-  const deps = {
-    stripAnsi: (str) => str,
-    appendJobLog: (j, msg) => logs.push(msg),
-    setAuthProgressState: () => {},
-    states: {}
-  };
-
-  const handled = OPENCODE_STRATEGY.handlePrompt({ job, deps });
-  assert.equal(handled, true);
-  assert.deepEqual(writes, ['\r']);
-  assert.equal(job._opencodeProviderSelected, true);
-  assert.match(logs[0], /自动选择 OpenCode Zen/);
-
-  // Idempotent: subsequent calls do nothing
-  const secondHandled = OPENCODE_STRATEGY.handlePrompt({ job, deps });
-  assert.equal(secondHandled, false);
-  assert.deepEqual(writes, ['\r']);
+  assert.deepEqual(loginArgs, ['auth', 'login']);
 });
 
 test('AGY_STRATEGY handlePrompt auto-selects Google OAuth and reports initial progress state', () => {

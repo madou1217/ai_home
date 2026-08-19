@@ -141,7 +141,7 @@ function createOpenCodeTestDb(dbPath, options = {}) {
   db.close();
 }
 
-test('discoverOpenCodeUsageFiles discovers canonical host opencode.db and conflict recovery dbs', () => {
+test('discoverOpenCodeUsageFiles discovers only the canonical host opencode.db', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-opencode-discovery-'));
   const canonicalDb = path.join(root, '.local', 'share', 'opencode', 'opencode.db');
   const conflictDb = path.join(root, '.local', 'share', 'opencode', '.aih-migration-conflicts', 'acct_123', 'opencode.db');
@@ -157,9 +157,7 @@ test('discoverOpenCodeUsageFiles discovers canonical host opencode.db and confli
     aiHomeDir: path.join(root, '.ai_home')
   });
 
-  assert.equal(files.length, 2);
-  assert.ok(files.includes(canonicalDb));
-  assert.ok(files.includes(conflictDb));
+  assert.deepEqual(files, [canonicalDb]);
 });
 
 test('scanOpenCodeFile extracts usage records, prompts and upserts sessions from opencode.db', () => {

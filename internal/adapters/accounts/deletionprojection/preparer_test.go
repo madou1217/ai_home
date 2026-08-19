@@ -110,9 +110,9 @@ func TestPreparerFailsClosedWhenClaudeProjectionCredentialChanged(t *testing.T) 
 	}
 }
 
-// TestPreparerPreservesConflictingProviderResource 验证不同内容不会覆盖 host
-// 文件，而是进入按 AccountRef 隔离的恢复目录。
-func TestPreparerPreservesConflictingProviderResource(t *testing.T) {
+// TestPreparerDiscardsConflictingProviderResource 验证不同内容不会覆盖 host
+// 文件，投影副本作为无法合并的残留被就地删除。
+func TestPreparerDiscardsConflictingProviderResource(t *testing.T) {
 	t.Parallel()
 
 	fixture := newProjectionFixture(t, codexCredential(t, "old", deletionProjectionTime))
@@ -140,16 +140,8 @@ func TestPreparerPreservesConflictingProviderResource(t *testing.T) {
 	if err != nil || string(hostData) != "host-history\n" {
 		t.Fatalf("host 文件被覆盖: data=%q error=%v", hostData, err)
 	}
-	conflictPath := filepath.Join(
-		fixture.hostHome,
-		".codex",
-		".aih-migration-conflicts",
-		fixture.account.Ref().String(),
-		"history.jsonl",
-	)
-	conflictData, err := os.ReadFile(conflictPath)
-	if err != nil || string(conflictData) != "projection-history\n" {
-		t.Fatalf("冲突资源未保留: data=%q error=%v", conflictData, err)
+	if _, err := os.Lstat(filepath.Join(projectionRoot, ".codex", "history.jsonl")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("冲突的投影副本应就地删除: error=%v", err)
 	}
 }
 

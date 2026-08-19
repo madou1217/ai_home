@@ -644,7 +644,7 @@ test('Kimi session index sync fails closed on a foreign index link', (t) => {
   assert.equal(fs.readFileSync(externalIndex, 'utf8'), 'must-survive\n');
 });
 
-test('Kimi legacy migration preserves conflicting private files in migration-conflicts', (t) => {
+test('Kimi legacy migration discards a conflicting private file in place', (t) => {
   const root = mkTmpDir();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
@@ -667,21 +667,18 @@ test('Kimi legacy migration preserves conflicting private files in migration-con
   });
 
   const result = service.ensureSessionStoreLinks('kimi', accountRef);
-  const conflictPath = path.join(
-    hostHomeDir,
-    '.kimi-code',
-    '.aih-migration-conflicts',
-    accountRef,
-    'legacy-kimi',
-    'config.toml'
-  );
 
   assert.equal(Array.isArray(result.unresolved), false);
   assert.equal(fs.readFileSync(path.join(runtimeDir, '.kimi-code', 'config.toml'), 'utf8'), 'canonical-config\n');
-  assert.equal(fs.readFileSync(conflictPath, 'utf8'), 'legacy-config\n');
+  assert.equal(fs.existsSync(path.join(runtimeDir, 'config.toml')), false, '冲突的 legacy 副本应就地丢弃');
+  assert.equal(
+    fs.existsSync(path.join(hostHomeDir, '.kimi-code', '.aih-migration-conflicts')),
+    false,
+    '不应再生成迁移冲突备份目录'
+  );
 });
 
-test('Kimi migration moves an external .kimi-code link without touching its target', (t) => {
+test('Kimi migration discards an external .kimi-code link without touching its target', (t) => {
   const root = mkTmpDir();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
@@ -708,24 +705,20 @@ test('Kimi migration moves an external .kimi-code link without touching its targ
   });
 
   const result = service.ensureSessionStoreLinks('kimi', accountRef);
-  const conflictPath = path.join(
-    hostHomeDir,
-    '.kimi-code',
-    '.aih-migration-conflicts',
-    accountRef,
-    'legacy-kimi',
-    '.kimi-code'
-  );
 
   assert.equal(Array.isArray(result.unresolved), false);
   assert.equal(fs.lstatSync(path.join(runtimeDir, '.kimi-code')).isDirectory(), true);
-  assert.equal(fs.lstatSync(conflictPath).isSymbolicLink(), true);
-  assert.equal(fs.readlinkSync(conflictPath), externalKimiHome);
+  assert.equal(fs.existsSync(path.join(runtimeDir, '.kimi-code', 'sentinel.txt')), false);
   assert.equal(fs.readFileSync(path.join(externalKimiHome, 'sentinel.txt'), 'utf8'), 'must-survive\n');
   assert.equal(fs.readFileSync(path.join(runtimeDir, '.kimi-code', 'config.toml'), 'utf8'), 'legacy-config\n');
   assert.equal(
     fs.readFileSync(path.join(runtimeDir, '.kimi-code', 'credentials', 'kimi-code.json'), 'utf8'),
     '{"access_token":"test"}\n'
+  );
+  assert.equal(
+    fs.existsSync(path.join(hostHomeDir, '.kimi-code', '.aih-migration-conflicts')),
+    false,
+    '不应再生成迁移冲突备份目录'
   );
 });
 
@@ -754,20 +747,16 @@ test('Kimi migration repairs a lone external .kimi-code link before normal recon
   });
 
   const result = service.ensureSessionStoreLinks('kimi', accountRef);
-  const conflictPath = path.join(
-    hostHomeDir,
-    '.kimi-code',
-    '.aih-migration-conflicts',
-    accountRef,
-    'legacy-kimi',
-    '.kimi-code'
-  );
 
   assert.equal(Array.isArray(result.unresolved), false);
   assert.equal(fs.lstatSync(path.join(runtimeDir, '.kimi-code')).isDirectory(), true);
-  assert.equal(fs.lstatSync(conflictPath).isSymbolicLink(), true);
-  assert.equal(fs.readlinkSync(conflictPath), externalKimiHome);
+  assert.equal(fs.existsSync(path.join(runtimeDir, '.kimi-code', 'sentinel.txt')), false);
   assert.equal(fs.readFileSync(path.join(externalKimiHome, 'sentinel.txt'), 'utf8'), 'must-survive\n');
+  assert.equal(
+    fs.existsSync(path.join(hostHomeDir, '.kimi-code', '.aih-migration-conflicts')),
+    false,
+    '不应再生成迁移冲突备份目录'
+  );
 });
 
 test('Kimi transient login projection ignores unrelated fake-home symlinks', (t) => {
@@ -812,16 +801,12 @@ test('Kimi transient login projection ignores unrelated fake-home symlinks', (t)
   assert.equal(fs.existsSync(path.join(runtimeDir, 'config.toml')), false);
   assert.equal(fs.existsSync(path.join(runtimeDir, 'credentials')), false);
   assert.equal(fs.existsSync(path.join(runtimeDir, 'device_id')), false);
-  const deviceConflictPath = path.join(
-    hostHomeDir,
-    '.kimi-code',
-    '.aih-migration-conflicts',
-    'login-auth-real-login',
-    'legacy-kimi',
-    'device_id'
+  assert.equal(fs.readFileSync(externalDeviceId, 'utf8'), 'host-device\n');
+  assert.equal(
+    fs.existsSync(path.join(hostHomeDir, '.kimi-code', '.aih-migration-conflicts')),
+    false,
+    '不应再生成迁移冲突备份目录'
   );
-  assert.equal(fs.lstatSync(deviceConflictPath).isSymbolicLink(), true);
-  assert.equal(fs.readlinkSync(deviceConflictPath), externalDeviceId);
   assert.equal(
     fs.readFileSync(path.join(runtimeDir, '.kimi-code', 'config.toml'), 'utf8'),
     'legacy-config\n'
@@ -1566,8 +1551,9 @@ test('ensureSessionStoreLinks shares settings and keeps credentials isolated for
   assert.ok(fs.lstatSync(path.join(guestGeminiDir, 'settings.json')).isSymbolicLink());
   assert.equal(fs.readFileSync(path.join(hostGeminiDir, 'settings.json'), 'utf8'), '{"global":true}');
   assert.equal(
-    fs.readFileSync(path.join(hostGeminiDir, '.aih-migration-conflicts', '1', 'settings.json'), 'utf8'),
-    '{"local":true}'
+    fs.existsSync(path.join(hostGeminiDir, '.aih-migration-conflicts')),
+    false,
+    '不应再生成迁移冲突备份目录'
   );
   assert.ok(!fs.lstatSync(path.join(guestGeminiDir, 'google_accounts.json')).isSymbolicLink());
   assert.ok(!fs.lstatSync(path.join(guestGeminiDir, 'oauth_creds.json')).isSymbolicLink());
@@ -1584,25 +1570,17 @@ test('ensureSessionStoreLinks shares settings and keeps credentials isolated for
   assert.equal(fs.readFileSync(path.join(guestAgyDir, 'email.cache.corrupted.bak'), 'utf8'), 'shared@example.com');
   assert.ok(fs.lstatSync(path.join(guestAgyDir, 'cli.log')).isSymbolicLink());
   assert.ok(fs.lstatSync(path.join(guestAgyDir, 'keybindings.json')).isSymbolicLink());
-  assert.equal(
-    fs.readFileSync(path.join(hostAgyDir, '.aih-migration-conflicts', '1', 'keybindings.json'), 'utf8'),
-    '{"local":true}'
-  );
+  assert.equal(fs.readFileSync(path.join(hostAgyDir, 'keybindings.json'), 'utf8'), '{"shared":true}');
   assert.ok(fs.lstatSync(path.join(guestAgyDir, 'builtin')).isSymbolicLink());
   assert.equal(fs.readFileSync(path.join(hostAgyDir, 'builtin', 'local.txt'), 'utf8'), 'local builtin');
   
   // Verify that the parent .gemini/config directory is also shared (symlinked)
   assert.ok(fs.lstatSync(guestAgyConfigDir).isSymbolicLink());
+  assert.equal(fs.readFileSync(path.join(hostGeminiConfigDir, 'mcp_config.json'), 'utf8'), '{"global":true}');
   assert.equal(
-    fs.readFileSync(path.join(
-      hostAgyDir,
-      '.aih-migration-conflicts',
-      '1',
-      'parent-gemini',
-      'config',
-      'mcp_config.json'
-    ), 'utf8'),
-    '{"local":true}'
+    fs.existsSync(path.join(hostAgyDir, '.aih-migration-conflicts')),
+    false,
+    '不应再生成迁移冲突备份目录'
   );
 });
 

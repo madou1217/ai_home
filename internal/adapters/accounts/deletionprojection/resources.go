@@ -2,10 +2,8 @@ package deletionprojection
 
 import (
 	"context"
-	"crypto/sha256"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -108,17 +106,7 @@ func (preparer *Preparer) reconcileProjectionEntry(
 		destinationPath := filepath.Join(
 			append([]string{destinationRoot}, classification.destination...)...,
 		)
-		conflictPath := filepath.Join(
-			append(
-				[]string{
-					destinationRoot,
-					".aih-migration-conflicts",
-					account.Ref().String(),
-				},
-				classification.destination...,
-			)...,
-		)
-		return migrateResource(ctx, destinationRoot, sourcePath, destinationPath, conflictPath)
+		return migrateResource(ctx, destinationRoot, sourcePath, destinationPath)
 	default:
 		return fmt.Errorf("投影包含未注册的 Provider 资源")
 	}
@@ -238,7 +226,6 @@ func migrateResource(
 	destinationRoot string,
 	sourcePath string,
 	destinationPath string,
-	conflictPath string,
 ) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -256,13 +243,12 @@ func migrateResource(
 			destinationRoot,
 			sourcePath,
 			destinationPath,
-			conflictPath,
 		)
 	}
 	if !sourceInfo.Mode().IsRegular() {
 		return fmt.Errorf("Provider 资源不是普通文件或目录")
 	}
-	return migrateResourceFile(destinationRoot, sourcePath, destinationPath, conflictPath)
+	return migrateResourceFile(destinationRoot, sourcePath, destinationPath)
 }
 
 func migrateResourceDirectory(
@@ -270,7 +256,6 @@ func migrateResourceDirectory(
 	destinationRoot string,
 	sourcePath string,
 	destinationPath string,
-	conflictPath string,
 ) error {
 	destinationInfo, err := os.Lstat(destinationPath)
 	if err == nil && (!destinationInfo.IsDir() || destinationInfo.Mode()&os.ModeSymlink != 0) {
@@ -295,7 +280,6 @@ func migrateResourceDirectory(
 			destinationRoot,
 			filepath.Join(sourcePath, entry.Name()),
 			filepath.Join(destinationPath, entry.Name()),
-			filepath.Join(conflictPath, entry.Name()),
 		); err != nil {
 			return err
 		}
@@ -314,7 +298,6 @@ func migrateResourceFile(
 	destinationRoot string,
 	sourcePath string,
 	destinationPath string,
-	conflictPath string,
 ) error {
 	if err := ensureSafeAbsoluteDirectory(destinationRoot, filepath.Dir(destinationPath)); err != nil {
 		return err
@@ -329,41 +312,7 @@ func migrateResourceFile(
 	if destinationInfo.Mode()&os.ModeSymlink != 0 || !destinationInfo.Mode().IsRegular() {
 		return fmt.Errorf("Provider 资源文件与原生路径类型冲突")
 	}
-	equal, err := regularFilesEqual(sourcePath, destinationPath)
-	if err != nil {
-		return err
-	}
-	if equal {
-		return os.Remove(sourcePath)
-	}
-	return preserveResourceConflict(destinationRoot, sourcePath, conflictPath)
-}
-
-func preserveResourceConflict(
-	destinationRoot string,
-	sourcePath string,
-	conflictPath string,
-) error {
-	if err := ensureSafeAbsoluteDirectory(destinationRoot, filepath.Dir(conflictPath)); err != nil {
-		return err
-	}
-	conflictInfo, err := os.Lstat(conflictPath)
-	if errors.Is(err, os.ErrNotExist) {
-		return os.Rename(sourcePath, conflictPath)
-	}
-	if err != nil {
-		return err
-	}
-	if conflictInfo.Mode()&os.ModeSymlink != 0 || !conflictInfo.Mode().IsRegular() {
-		return fmt.Errorf("Provider 资源恢复路径冲突")
-	}
-	equal, err := regularFilesEqual(sourcePath, conflictPath)
-	if err != nil {
-		return err
-	}
-	if !equal {
-		return fmt.Errorf("Provider 资源恢复文件内容冲突")
-	}
+	// 原生路径已是权威文件，投影副本是无法合并的残留，就地丢弃。
 	return os.Remove(sourcePath)
 }
 
@@ -427,44 +376,4 @@ func ensureSafeDirectory(root string, segments []string) error {
 		}
 	}
 	return nil
-}
-
-func regularFilesEqual(leftPath string, rightPath string) (bool, error) {
-	leftInfo, err := os.Lstat(leftPath)
-	if err != nil {
-		return false, err
-	}
-	rightInfo, err := os.Lstat(rightPath)
-	if err != nil {
-		return false, err
-	}
-	if !leftInfo.Mode().IsRegular() || !rightInfo.Mode().IsRegular() || leftInfo.Size() != rightInfo.Size() {
-		return false, nil
-	}
-	leftHash, err := hashRegularFile(leftPath)
-	if err != nil {
-		return false, err
-	}
-	rightHash, err := hashRegularFile(rightPath)
-	if err != nil {
-		return false, err
-	}
-	return leftHash == rightHash, nil
-}
-
-func hashRegularFile(filePath string) ([sha256.Size]byte, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return [sha256.Size]byte{}, err
-	}
-	defer func() {
-		_ = file.Close()
-	}()
-	hash := sha256.New()
-	if _, err := io.Copy(hash, file); err != nil {
-		return [sha256.Size]byte{}, err
-	}
-	var result [sha256.Size]byte
-	copy(result[:], hash.Sum(nil))
-	return result, nil
 }

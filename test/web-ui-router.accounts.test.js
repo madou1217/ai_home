@@ -2250,16 +2250,11 @@ test('web ui cleanup removes a legacy Kimi HOME link without touching its extern
 
   assert.equal(fs.existsSync(runtimeDir), false);
   assert.equal(fs.readFileSync(path.join(externalKimiHome, 'sentinel.txt'), 'utf8'), 'must-survive\n');
-  const conflictPath = path.join(
-    hostHomeDir,
-    '.kimi-code',
-    '.aih-migration-conflicts',
-    'login-job-kimi-link-cleanup',
-    'legacy-kimi',
-    '.kimi-code'
+  assert.equal(
+    fs.existsSync(path.join(hostHomeDir, '.kimi-code', '.aih-migration-conflicts')),
+    false,
+    '不应再生成迁移冲突备份目录'
   );
-  assert.equal(fs.lstatSync(conflictPath).isSymbolicLink(), true);
-  assert.equal(fs.readlinkSync(conflictPath), externalKimiHome);
   assert.equal(reloaded, true);
 });
 

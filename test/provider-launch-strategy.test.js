@@ -362,7 +362,7 @@ test('opencode prepare migrates account runtime data before rebuilding shared li
   }
 });
 
-test('opencode prepare preserves a conflicting account copy under the provider-native root', () => {
+test('opencode prepare discards a conflicting account-local copy and links the shared authoritative db', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-opencode-shared-merge-'));
   try {
     const hostHome = path.join(root, 'home');
@@ -371,7 +371,7 @@ test('opencode prepare preserves a conflicting account copy under the provider-n
     const sharedDataDir = path.join(hostHome, '.local', 'share', 'opencode');
     fs.mkdirSync(bridgeDataDir, { recursive: true });
     // 共享侧已有权威 db；账号本地又存了一个独立 db。共享侧继续做单一真相，
-    // 但账号副本必须进入 provider-native recovery 目录，不能随 projection 被丢弃。
+    // 账号副本是无法合并的投影残留，就地丢弃后重建指向共享 db 的链接。
     fs.mkdirSync(sharedDataDir, { recursive: true });
     fs.writeFileSync(path.join(sharedDataDir, 'opencode.db'), 'shared-authoritative', 'utf8');
     fs.writeFileSync(path.join(bridgeDataDir, 'opencode.db'), 'stale-account-local', 'utf8');
@@ -387,14 +387,9 @@ test('opencode prepare preserves a conflicting account copy under the provider-n
     assert.equal(fs.readlinkSync(dbLink), path.join(sharedDataDir, 'opencode.db'));
     assert.equal(fs.readFileSync(path.join(sharedDataDir, 'opencode.db'), 'utf8'), 'shared-authoritative');
     assert.equal(
-      fs.readFileSync(path.join(
-        sharedDataDir,
-        '.aih-migration-conflicts',
-        'acct_1234567890abcdef1234',
-        'bridge-data',
-        'opencode.db'
-      ), 'utf8'),
-      'stale-account-local'
+      fs.existsSync(path.join(sharedDataDir, '.aih-migration-conflicts')),
+      false,
+      '不应再生成迁移冲突备份目录'
     );
   } finally {
     fs.rmSync(root, { recursive: true, force: true });

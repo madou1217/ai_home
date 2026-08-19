@@ -253,7 +253,7 @@ test('deleteAccountByRef migrates OpenCode bridge state before removing auth pro
   assert.equal(fs.existsSync(path.join(hostHomeDir, '.config', 'opencode', 'auth.json.backup')), false);
 });
 
-test('deleteAccountByRef keeps OpenCode DB conflicts observable in the provider recovery root', (t) => {
+test('deleteAccountByRef discards a conflicting OpenCode DB instead of preserving it in a recovery root', (t) => {
   const root = mkTmpDir();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const aiHomeDir = path.join(root, '.ai_home');
@@ -262,13 +262,6 @@ test('deleteAccountByRef keeps OpenCode DB conflicts observable in the provider 
   const runtimeDir = resolveAccountRuntimeDir(aiHomeDir, 'opencode', accountRef);
   const bridgeDir = path.join(runtimeDir, '.local', 'share', 'aih-opencode-runtime', 'opencode');
   const nativeDataDir = path.join(hostHomeDir, '.local', 'share', 'opencode');
-  const conflictPath = path.join(
-    nativeDataDir,
-    '.aih-migration-conflicts',
-    accountRef,
-    'bridge-data',
-    'opencode.db'
-  );
   fs.mkdirSync(bridgeDir, { recursive: true });
   fs.mkdirSync(nativeDataDir, { recursive: true });
   fs.writeFileSync(path.join(bridgeDir, 'opencode.db'), 'account-db', 'utf8');
@@ -276,8 +269,9 @@ test('deleteAccountByRef keeps OpenCode DB conflicts observable in the provider 
   const reconcile = createRealSessionReconciler(aiHomeDir, hostHomeDir);
 
   const reconciliation = reconcile('opencode', accountRef);
-  assert.deepEqual(reconciliation.conflicts, [conflictPath]);
-  assert.equal(fs.readFileSync(conflictPath, 'utf8'), 'account-db');
+  assert.deepEqual(reconciliation.conflicts, undefined);
+  assert.equal(fs.lstatSync(path.join(bridgeDir, 'opencode.db')).isSymbolicLink(), true);
+  assert.equal(fs.readlinkSync(path.join(bridgeDir, 'opencode.db')), path.join(nativeDataDir, 'opencode.db'));
 
   const result = createService(aiHomeDir, [], {
     hostHomeDir,
@@ -287,7 +281,11 @@ test('deleteAccountByRef keeps OpenCode DB conflicts observable in the provider 
   assert.equal(result.deleted, true);
   assert.equal(fs.existsSync(runtimeDir), false);
   assert.equal(fs.readFileSync(path.join(nativeDataDir, 'opencode.db'), 'utf8'), 'canonical-db');
-  assert.equal(fs.readFileSync(conflictPath, 'utf8'), 'account-db');
+  assert.equal(
+    fs.existsSync(path.join(nativeDataDir, '.aih-migration-conflicts')),
+    false,
+    '不应再生成迁移冲突备份目录'
+  );
 });
 
 test('deleteAccountByRef fails closed when provider resources remain unreconciled', (t) => {

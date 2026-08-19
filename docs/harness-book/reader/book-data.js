@@ -2,7 +2,7 @@ window.BOOK_DATA = {
   "title": "《现代 AI Agent 运行时与 Harness 架构设计》",
   "subtitle": "从五大主流工业级实现（Claude Code / OpenAI Codex / OpenCode / DeepSeek Harness / Pi Agent）深度源码解构到自主研发落地",
   "version": "1.0.0-PROD",
-  "buildTime": "2026-08-20T01:40:00Z",
+  "buildTime": "2026-08-19T20:39:42.466Z",
   "chapters": [
     {
       "id": "01-why-we-need-own-harness",

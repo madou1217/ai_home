@@ -22,6 +22,7 @@ const {
   refreshLiveAccountRecord,
   removeLiveAccountRecord,
   emitAccountsAuthJobEvent,
+  emitAccountTokenConsumedEvent,
   updateCachedAccountTokenUsage,
   __private
 } = require('../lib/server/webui-account-live');
@@ -759,6 +760,125 @@ test('emitAccountsAuthJobEvent broadcasts auth-job over SSE and WebSocket watche
   assert.equal(frame.type, 'auth-job');
   assert.equal(frame.job.id, 'job-live');
   assert.equal(Object.prototype.hasOwnProperty.call(frame.job, '_ptyProcess'), false);
+});
+
+test('emitAccountTokenConsumedEvent broadcasts token-consumed over SSE and WebSocket watchers', () => {
+  const sseRes = {
+    body: '',
+    write(chunk = '') {
+      this.body += String(chunk);
+      return true;
+    }
+  };
+  const wsClient = {
+    readyState: 1,
+    frames: [],
+    send(frame) {
+      this.frames.push(String(frame));
+    }
+  };
+  const state = {
+    __webUiAccountsLive: {
+      records: new Map(),
+      metadata: new Map(),
+      usageSnapshots: new Map(),
+      watchers: new Set([{ res: sseRes, heartbeat: null }]),
+      webSocketWatchers: new Set([{ client: wsClient, heartbeat: null }]),
+      webSocketServer: null,
+      loadedFromDisk: true,
+      hydrating: false,
+      queued: false,
+      lastHydratedAt: 0,
+      revision: 1,
+      roleSignature: '',
+      fastSnapshot: null,
+      fastSnapshotAt: 0
+    }
+  };
+
+  emitAccountTokenConsumedEvent(state, {
+    provider: 'codex',
+    accountRef: 'acct_12000000000000000000',
+    model: 'gpt-5.6-terra',
+    usage: {
+      prompt_tokens: 100,
+      completion_tokens: 50,
+      total_tokens: 150
+    },
+    timestampMs: 12_345
+  });
+
+  assert.match(sseRes.body, /"type":"token-consumed"/);
+  assert.match(sseRes.body, /"accountRef":"acct_12000000000000000000"/);
+  assert.equal(wsClient.frames.length, 1);
+  const frame = JSON.parse(wsClient.frames[0]);
+  assert.equal(frame.type, 'token-consumed');
+  assert.equal(frame.provider, 'codex');
+  assert.equal(frame.accountRef, 'acct_12000000000000000000');
+  assert.equal(frame.model, 'gpt-5.6-terra');
+  assert.deepEqual(frame.tokens, { input: 100, output: 50, total: 150 });
+  assert.equal(frame.occurredAt, 12_345);
+});
+
+test('emitAccountTokenConsumedEvent broadcasts anthropic cache/reasoning tokens as input+output', () => {
+  const sseRes = {
+    body: '',
+    write(chunk = '') {
+      this.body += String(chunk);
+      return true;
+    }
+  };
+  const state = {
+    __webUiAccountsLive: {
+      records: new Map(),
+      metadata: new Map(),
+      usageSnapshots: new Map(),
+      watchers: new Set([{ res: sseRes, heartbeat: null }]),
+      webSocketWatchers: new Set(),
+      webSocketServer: null,
+      loadedFromDisk: true,
+      hydrating: false,
+      queued: false,
+      lastHydratedAt: 0,
+      revision: 1,
+      roleSignature: '',
+      fastSnapshot: null,
+      fastSnapshotAt: 0
+    }
+  };
+
+  emitAccountTokenConsumedEvent(state, {
+    provider: 'claude',
+    accountRef: 'acct_12000000000000000001',
+    model: 'claude-opus',
+    usage: {
+      input_tokens: 10,
+      cache_read_input_tokens: 30,
+      cache_creation_input_tokens: 5,
+      output_tokens: 20,
+      reasoning_tokens: 4
+    },
+    timestampMs: 12_346
+  });
+
+  const frame = JSON.parse(sseRes.body.replace(/^data: /, '').trim());
+  assert.equal(frame.type, 'token-consumed');
+  assert.deepEqual(frame.tokens, { input: 45, output: 20, total: 65 });
+});
+
+test('emitAccountTokenConsumedEvent tolerates missing live state and ignores empty payloads', () => {
+  const state = {};
+  assert.doesNotThrow(() => emitAccountTokenConsumedEvent(state, {}));
+  assert.doesNotThrow(() => emitAccountTokenConsumedEvent(state, {
+    provider: 'codex',
+    accountRef: 'acct_12000000000000000000',
+    usage: {}
+  }));
+  assert.doesNotThrow(() => emitAccountTokenConsumedEvent(null, {
+    provider: 'codex',
+    accountRef: 'acct_12000000000000000000',
+    usage: { total_tokens: 5 }
+  }));
 });
 
 test('refreshLiveAccountRecord prefers trusted usage snapshot remaining over stale indexed/runtime remaining', async (t) => {

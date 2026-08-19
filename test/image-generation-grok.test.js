@@ -238,6 +238,31 @@ test('grok strategy surfaces upstream errors with the body attached', async () =
   );
 });
 
+test('grok strategy surfaces string-form upstream errors with the body attached', async () => {
+  const strategy = createGrokImageGenerationStrategy({
+    fetchWithTimeout: makeFetch(async () => errResponse(403, {
+      code: 'personal-team-blocked:spending-limit',
+      error: 'You have run out of credits or need a Grok subscription'
+    })),
+    refreshGrokAccessToken: async () => {}
+  });
+
+  await assert.rejects(
+    strategy.generate({
+      mode: 'generation',
+      model: 'grok-image-2',
+      prompt: 'x',
+      account: grokAccount(),
+      options: {}
+    }),
+    (error) => {
+      assert.equal(error.statusCode, 403);
+      assert.match(error.detail, /run out of credits/);
+      return true;
+    }
+  );
+});
+
 test('grok strategy rejects empty upstream image data', async () => {
   const strategy = createGrokImageGenerationStrategy({
     fetchWithTimeout: makeFetch(async () => okResponse({ data: [] }))
@@ -321,5 +346,6 @@ test('buildGrokImageUrl trims trailing slashes', () => {
 test('readGrokErrorBody falls back to a status message', () => {
   assert.equal(readGrokErrorBody(500, { error: { message: 'boom' } }), 'boom');
   assert.equal(readGrokErrorBody(500, { error: { detail: 'detail' } }), 'detail');
+  assert.equal(readGrokErrorBody(500, { error: 'string error' }), 'string error');
   assert.equal(readGrokErrorBody(500, {}), 'upstream returned HTTP 500');
 });

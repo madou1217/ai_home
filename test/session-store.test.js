@@ -1617,7 +1617,8 @@ test('AGY reconciliation preserves a provider-local dynamic log alias', (t) => {
   const result = service.ensureSessionStoreLinks('agy', 'acct_12121212121212121212');
 
   assert.equal(result.unresolved, undefined);
-  assert.equal(fs.readlinkSync(guestCliLog), 'log/guest-current.log');
+  // Windows readlinkSync returns the stored target with backslashes.
+  assert.equal(fs.readlinkSync(guestCliLog).replace(/\\/g, '/'), 'log/guest-current.log');
   assert.equal(fs.realpathSync(guestCliLog), fs.realpathSync(path.join(hostLogDir, 'guest-current.log')));
 });
 

@@ -313,66 +313,97 @@ export interface ToolResult<T = unknown> {
 
 ### 6.1 运行时状态跃迁图 (State Machine Diagram)
 
-```mermaid
-stateDiagram-v2
-    [*] --> IDLE
-    IDLE --> PERCEIVING: 用户提交输入 (User Prompt)
+<div class="rich-diagram-box">
+  <div class="diagram-header-tag">State Machine Architecture</div>
+  <div class="diagram-title"><span>🔄</span> ReAct Harness 运行时状态跃迁全景图 (State Machine Flow)</div>
+  <div class="fsm-visual-flow">
     
-    state PERCEIVING {
-        [*] --> GatherEnvironment: 探测 CWD / Git
-        GatherEnvironment --> RecallMemory: 检索 MEMORY.md
-        RecallMemory --> AssembleContext: 编译 System Prompt + History
-    }
-    
-    PERCEIVING --> INFERENCING: Context 就绪
-    
-    state INFERENCING {
-        [*] --> StreamTokens: 建立 HTTP SSE / WS 连接
-        StreamTokens --> ParseThinking: 解析 <think> 流
-        ParseThinking --> ParseText: 收集用户回复文本
-        ParseText --> DetectToolCall: 侦测到 tool_use 结构块
-    }
-    
-    INFERENCING --> TOOL_PARSING: 接收到完整 Tool Use
-    INFERENCING --> COMPACTING: 侦测到 Token 水位线超标 (>= 80%)
-    INFERENCING --> IDLE: 模型推理完成且无工具调用 (End Turn)
-    
-    state TOOL_PARSING {
-        [*] --> ValidateJsonSchema: 校验参数合法性
-        ValidateJsonSchema --> ClassifyRisk: 评估危险等级
-    }
-    
-    TOOL_PARSING --> PERMISSION_GATING: 评估安全策略
-    
-    state PERMISSION_GATING {
-        [*] --> CheckWhitelist: 检查已知安全规则
-        CheckWhitelist --> AutoApproved: 匹配成功 (只读/白名单)
-        CheckWhitelist --> PromptHuman: 匹配失败或高危操作 (Ask)
-        PromptHuman --> ApprovedByUser: 人工点击允许
-        PromptHuman --> DeniedByUser: 人工拒绝或超时
-    }
-    
-    PERMISSION_GATING --> EXECUTING: Approved
-    PERMISSION_GATING --> INFERENCING: Denied (注入用户拒绝反馈)
-    
-    state EXECUTING {
-        [*] --> SpawnSandboxOrWorktree: 分配隔离执行上下文
-        SpawnSandboxOrWorktree --> RunToolDriver: 驱动 Bash / FS / MCP
-        RunToolDriver --> CaptureOutputAndExitCode: 捕获 Stdout / Stderr
-        CaptureOutputAndExitCode --> FormatObservation: 格式化为 tool_result 帧
-    }
-    
-    EXECUTING --> COMPACTING: 产物过大需要截断/折叠
-    EXECUTING --> INFERENCING: 组装 Observation 注入历史，触发下一轮 ReAct
-    
-    state COMPACTING {
-        [*] --> PruneOldToolResults: 剪枝历史巨大输出
-        PruneOldToolResults --> SummarizeTrajectory: 生成阶段性结构化总结
-        SummarizeTrajectory --> RebuildContextTree: 重塑上下文树
-    }
-    
-    COMPACTING --> INFERENCING: 恢复推理循环
-```
+    <!-- State 1: IDLE -->
+    <div class="fsm-step-card idle-card">
+      <div class="fsm-card-head">
+        <span class="pulse-dot" style="background:#8b949e;"></span>
+        <span class="fsm-name">1. IDLE (空闲就绪)</span>
+      </div>
+      <p class="fsm-desc">会话就绪，监听用户指令输入</p>
+    </div>
+
+    <div class="fsm-arrow-down">⬇️ <span>用户提交 Prompt (User Input)</span></div>
+
+    <!-- State 2: PERCEIVING -->
+    <div class="fsm-step-card perceive-card">
+      <div class="fsm-card-head">
+        <span class="pulse-dot" style="background:#58a6ff;"></span>
+        <span class="fsm-name">2. PERCEIVING (环境感知与上下文水合)</span>
+      </div>
+      <div class="sub-steps-grid">
+        <div class="sub-step-chip"><span>1</span> 探测 CWD &amp; Git HEAD</div>
+        <div class="sub-step-chip"><span>2</span> 语义检索 MEMORY.md</div>
+        <div class="sub-step-chip"><span>3</span> 编译静态 System Prompt</div>
+      </div>
+    </div>
+
+    <div class="fsm-arrow-down">⬇️ <span>Context 组装就绪 (Prompt Ready)</span></div>
+
+    <!-- State 3: INFERENCING -->
+    <div class="fsm-step-card infer-card">
+      <div class="fsm-card-head">
+        <span class="pulse-dot" style="background:#d29922;"></span>
+        <span class="fsm-name">3. INFERENCING (多模型流式推理)</span>
+      </div>
+      <div class="sub-steps-grid">
+        <div class="sub-step-chip"><span>1</span> 建立 HTTP/2 SSE 流</div>
+        <div class="sub-step-chip"><span>2</span> 解析 &lt;think&gt; 思考流</div>
+        <div class="sub-step-chip"><span>3</span> 收集用户正文 / 侦测 ToolCall</div>
+      </div>
+    </div>
+
+    <!-- Branches from Inferencing -->
+    <div class="fsm-branches-row">
+      <div class="branch-col">
+        <div class="branch-arrow">⬇️ <span>Case A: 收到 tool_use</span></div>
+        <div class="fsm-step-card gate-card">
+          <div class="fsm-card-head">
+            <span class="pulse-dot" style="background:#f85149;"></span>
+            <span class="fsm-name">4. PERMISSION GATING</span>
+          </div>
+          <p class="fsm-desc">AST 静态扫描 ➔ 4 态权限评估 ➔ 双端 HITL 审批</p>
+        </div>
+        <div class="branch-arrow">⬇️ <span>Granted (授权通过)</span></div>
+        <div class="fsm-step-card exec-card">
+          <div class="fsm-card-head">
+            <span class="pulse-dot" style="background:#bc8cff;"></span>
+            <span class="fsm-name">5. EXECUTING (物理执行)</span>
+          </div>
+          <p class="fsm-desc">Git Worktree 沙箱 ➔ PTY 进程驱动 ➔ 16KB 截断</p>
+        </div>
+        <div class="branch-arrow">🔄 <span>注入 ToolResult，回归第 2 步开启下一轮</span></div>
+      </div>
+
+      <div class="branch-col">
+        <div class="branch-arrow">⬇️ <span>Case B: end_turn 交付</span></div>
+        <div class="fsm-step-card complete-card">
+          <div class="fsm-card-head">
+            <span class="pulse-dot" style="background:#3fb950;"></span>
+            <span class="fsm-name">6. COMPLETED (任务完成)</span>
+          </div>
+          <p class="fsm-desc">持久化 WAL 日志 ➔ 结算 Token 财务 ➔ 复位回 IDLE</p>
+        </div>
+      </div>
+
+      <div class="branch-col">
+        <div class="branch-arrow">⬇️ <span>Case C: 水位 &gt;= 80%</span></div>
+        <div class="fsm-step-card compact-card">
+          <div class="fsm-card-head">
+            <span class="pulse-dot" style="background:#39c5bb;"></span>
+            <span class="fsm-name">7. EMERGENCY COMPACTING</span>
+          </div>
+          <p class="fsm-desc">微观折叠历史日志 ➔ 宏观提炼状态树 ➔ 恢复推理</p>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
 
 ---
 

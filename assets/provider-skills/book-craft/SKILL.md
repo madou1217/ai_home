@@ -1,110 +1,100 @@
 ---
 name: book-craft
-description: 工业级电子书全流程创作、迭代与一键出书专家技能（Authoring, Iterating, and AI Web Reader Generator for Technical Books）。支持基于已有书籍/大纲增量续写、给定 GitHub 仓库/技术读物一键生成深度架构电子书、自动调用本地 aih-server 生成 8K 级概念插图与原生 SVG/HTML 双语流程图，并一键交付内置 AI Copilot 伴读的现代单页 Web 阅读器。
+description: 工业级电子书全流程创作、迭代与一键出书专家技能（Authoring, Iterating, and AI Web Reader Generator for Technical Books）。支持无参考时多维搜索排名前3话题并进行交互确认、AI 风格分析与专属阅读器模板生成、基于已有书籍/大纲增量续写、给定 GitHub 仓库一键逆向出书、自动化 /loop 撰写流水线（封面、章节名称、深度内容），严格遵循书籍内容不入 Git 规范。
 ---
 
 # book-craft — 工业级技术电子书创作与全流程出书专家
 
-`book-craft` 是用于编写、迭代、插图、重构与发布【顶尖工业级/教科书级技术电子书】的全流程自动化技能。
-
-无论是**基于现有书籍继续迭代编写**，还是**输入一个 GitHub 仓库链接 / 技术参考资料进行一键逆向出书**，本技能均可提供端到端确定性交付。
+`book-craft` 是用于编写、迭代、插图、风格定制与发布【顶尖工业级/教科书级技术电子书】的全流程自动化技能。
 
 ---
 
-## 🎯 核心能力与适用场景
+## 🎯 核心能力与标准工作流
 
-1. **增量续写模式 (Iterative Authoring)**：
-   - 读取书籍索引 `README.md`，自动扫描未完成 `[待编写]` 章节；
-   - 每次只聚焦深度编写一个小节，落盘到规范目录（如 `docs/<book-name>/01-part/01-01-title.md`）；
-   - 自动生成专属 8K 概念艺术图、原生 SVG 矢量流程图与交互式状态机模拟器；
-   - 自动更新主索引 `[x]` 并执行干净的 Git Commit，支持通过 `/loop 15m` 全自动无人值守交付。
-2. **一键出书模式 (One-Click Book from Repo / Doc)**：
-   - 输入一个 GitHub 仓库 URL 或参考读物，自动执行：
-     `源码/文档深读 -> 核心壁垒萃取 -> 工业级全景目录设计 -> 分篇章教科书级撰写 -> AI 概念绘图 -> 交互仿真组件构建 -> 现代 Web 阅读器编译`。
-3. **沉浸式 AI 伴读阅读器生成 (Interactive Web Reader)**：
-   - 自动在 `docs/<book-name>/reader/` 生成基于 Linear 级现代暗黑/明亮设计语言的单页应用；
-   - 内置全屏 Lightbox 放大镜、全键盘快捷键、阅读进度记忆；
-   - 内置 **AI 伴读 Copilot**，支持划词即问、本地 `aih-server` 免密直连与自定义 BYOK 双模式。
-
----
-
-## 🛠️ 标准出书工程规范与写作准则
-
-编写技术章节时，**必须达到教科书/源码分析级深度**，杜绝泛泛而谈或概念堆砌：
-
-### 1. 章节骨架结构标准
-每个小节 Markdown 必须包含以下 7 大核心模块：
-1. **章节导读与核心命题**：阐明无状态与具身运行时的范式转移，剖析核心技术痛点；
-2. **核心专业术语权威中文释义表**：针对所有出现的专业英文名词给出精准中文定义与底层机制；
-3. **架构机制与协议 Wire Payload 规范**：提供真实的 JSON / TypeScript / Rust / Go 数据结构；
-4. **原生 SVG 矢量图 / Rich-HTML 流程图**：禁止使用生硬的 ASCII 字符画，一律使用现代 HTML/SVG 矢量芯片；
-5. **核心源码级调用栈（Call Stack Trace）**：梳理真实调用链路；
-6. **极端异常边界防御矩阵（Fault-Tolerance Matrix）**：针对死循环、429、崩溃提供确定性自愈策略；
-7. **【对当前项目自主研发的落地指导与架构设计】**：针对宿主系统给出具体落地方案。
-
----
-
-## 🎨 AI 概念插画与绘图标准
-
-本技能已深度打通本地 `aih-server` 图像生成能力（基于 `gemini-3.1-flash-image`）：
-
-### 1. 本地调用绘图脚本规范
-```python
-import urllib.request, json, base64, re, os
-
-def generate_book_image(prompt, out_path):
-    url = "http://127.0.0.1:9527/docs/harness-book/api/chat" # 或 /v1/chat/completions
-    payload = {
-        "model": "gemini-3.1-flash-image",
-        "messages": [{"role": "user", "content": prompt}],
-        "stream": False
-    }
-    req = urllib.request.Request(url, headers={"Content-Type": "application/json"}, data=json.dumps(payload).encode("utf-8"))
-    with urllib.request.urlopen(req) as resp:
-        data = json.loads(resp.read().decode("utf-8"))
-        content = data["choices"][0]["message"]["content"]
-        match = re.search(r"data:image\/[a-zA-Z]+;base64,([A-Za-z0-9+/=]+)", content)
-        if match:
-            img_data = base64.b64decode(match.group(1))
-            os.makedirs(os.path.dirname(out_path), exist_ok=True)
-            with open(out_path, "wb") as f:
-                f.write(img_data)
-            return True
-    return False
+```
+                           ┌──────────────────────────────────────────────┐
+                           │              /book-craft 创作中枢            │
+                           └──────────────────────┬───────────────────────┘
+                                                  │
+         ┌────────────────────────────────────────┼────────────────────────────────────────┐
+         ▼                                        ▼                                        ▼
+  【阶段一：事实查证与话题确认】           【阶段二：风格分析与专属模板】           【阶段三：/loop 自动化流水线】
+  - 无输入参考时，多维度 Web 搜索        - 分析书籍领域特征 (机甲/极客/拟人)      - 8K AI 专属概念封面生成
+  - 提炼排名前 3 大权威/真实技术话题     - 融合 GitHub 顶尖阅读器设计语言         - 制定 5~6 篇 20+ 子章节目录
+  - 呈现给用户交互选择并支持 Prompt 补充  - 自动生成专属 CSS 变量与主题配色        - 章节深度撰写 (7大标准模块)
+                                                                                  - 书籍内容与大图不入 Git
 ```
 
-### 2. 精品 Prompt 模板
-> **Prompt 规范**：必须结合当前小节具体机制，要求 8K、暗黑深空底色（`#030712`）、极光蓝/紫流光、Octane Render 质感与中英双语标签。
+---
+
+## 🧭 一、事实查证与交互确认规范（Fact-Checking & Topic Confirmation）
+
+当用户未提供具体参考资料或代码库，仅给出一个模糊概念/书名（例如“Pi Agent”）时，**绝对禁止凭空捏造事实**，必须严格执行以下三步：
+
+1. **多维度网络事实检索**：
+   - 检索 GitHub 开源生态、学术顶会论文、工业界发布会与主流技术社区；
+   - 提取该术语在真实世界中最主流、排名前 3 的不同技术维度与实体。
+2. **三维度话题提炼与用户交互选择**：
+   - **选项 A**：主流工业级开源/商业实现（背景、核心架构、代表团队与最新进展）；
+   - **选项 B**：学术前沿/通用大模型理论（核心论文、算法突破、物理/数学模型）；
+   - **选项 C**：边缘计算/垂直领域应用（实际落地场景与系统集成）。
+3. **二次 Prompt 补充确认**：
+   - 允许用户选择对应话题编号，或输入自定义补充要求与侧重方向；
+   - 确认后再进入大纲规划与自动化编写流水线。
 
 ---
 
-## 🚀 常用执行工作流命令
+## 🎨 二、AI 风格分析与自适应阅读器模板设计
 
-### 场景 A：继续编写现有书籍未完成小节
+杜绝千篇一律的阅读器排版。AI 必须根据书籍的主题领域，自动从 GitHub 顶尖文档框架（如 GitBook、VitePress、mdBook、Docusaurus、Linear-style Docs）中汲取精髓，定制专属的阅读风格：
+
+| 书籍类型 | 视觉风格定义 | 色彩方案与设计基调 | 核心视觉组件与图表特征 |
+| :--- | :--- | :--- | :--- |
+| **具身智能 / 机器人 / 硬件** | **硬核机甲未来风 (Mecha Cyber)** | 深钛灰 `#0a0e17`、琥珀金 `#f59e0b`、机能绿 `#10b981` | 机械臂时序图、物理世界空间流匹配、传感器数据帧卡片 |
+| **底层内核 / Harness / 编译器** | **深空极客极简风 (Linear Dark)** | 深空蓝黑 `#030712`、霓虹蓝 `#38bdf8`、量子紫 `#818cf8` | 7态 FSM 状态机、字节级对齐内存图、CAS 互斥锁时序图 |
+| **情感拟人 / 语音 / 多模态** | **温暖流体有机风 (Fluid Warmth)** | 极光夜紫 `#0f0c29`、流体粉 `#ec4899`、柔和青 `#06b6d4` | 声音波形、VAD 情感张量 3D 空间、动态呼吸停顿气泡 |
+| **分布式架构 / 高并发后端** | **企业级高可用风 (Enterprise Pro)**| 蓝黑冷调 `#0b132b`、翡翠绿 `#00b4d8`、警报橙 `#ff9f1c` | Raft/Paxos 一致性动画、多泳道数据流水线、SLA 容灾矩阵 |
+
+---
+
+## 🔄 三、/loop 自动化出书执行流水线
+
+在用户确认话题与风格后，拉起 `/loop 15m` 自动化任务，依次执行：
+
+1. **8K AI 专属概念封面生成**：
+   - 调用本地 `gemini-3.1-flash-image`（通过 `/docs/api/chat` 免密端点），生成符合书籍风格的 8K 立体赛博/写实封面，落盘至 `assets/images/cover-<book>.jpg`；
+2. **全景章节目录设计**：
+   - 规划 5~6 大核心篇章，设计 15~25 个子章节名称与技术命题，生成 `README.md`；
+3. **章节逐篇深度撰写（教科书级标准）**：
+   - 严格包含 7 大核心模块（导读、专业术语中文释义、Wire Payload、Native Rich-HTML 流程图、源码调用栈、异常防御矩阵、宿主落地指导）；
+   - 为每个小节 1:1 生成 AI 概念插画；
+4. **编译单页 AI 伴读阅读器**：
+   - 注入定制的视觉主题 CSS、离线 `book-data.js` 与免密 AI 伴读 Copilot。
+
+---
+
+## 🛡️ 四、Git 管理规范：书籍内容与大图不入 Git
+
+为了保持代码库的轻量与整洁，**书籍的具体章节 Markdown 内容与几十 MB 的生成大图严禁直接入 Git 仓库**：
+- **受 Git 版本控制的元数据**：
+  - 书籍索引大纲：`docs/<book-name>/README.md`
+  - 阅读器外壳代码：`docs/<book-name>/reader/index.html` 及相关 js 组件
+  - WebUI 书架与工坊元数据
+- **被 Git 忽略的生成资产**：
+  - 章节内容文件：`/docs/*-book/**`（已在 `.gitignore` 中配置排除）
+  - 生成的高清大图：`assets/images/*.jpg`
+
+---
+
+## 🚀 五、常用命令与调用示例
+
 ```bash
-/loop 15m /book-craft continue docs/harness-book/README.md
+# 模式 1：无参考出书（自动触发多维度事实检索与用户确认）
+/book-craft topic "Pi Agent"
+
+# 模式 2：已有书籍增量无人值守出书
+/loop 15m /book-craft continue docs/pi-agent-book/README.md
+
+# 模式 3：给定 GitHub 仓库一键逆向出书
+/book-craft generate --repo https://github.com/Physical-Intelligence/openpi --out docs/openpi-book/
 ```
-- 扫描 `README.md` 中第一个 `[待编写]` 章节；
-- 编写小节落盘 -> 绘图 -> 打包 `book-data.js` -> 编译 WebUI -> Git 提交与推送。
-
-### 场景 B：给定 GitHub 仓库一键出书
-```bash
-/book-craft generate --repo https://github.com/owner/repo --out docs/my-book/
-```
-1. 深度扫描仓库架构与核心源码模块；
-2. 提炼出 5~6 个核心篇章，生成完整的 `README.md` 目录大纲；
-3. 自动建立 `/loop` 任务逐章推进编写、AI 生图与 Web 阅读器交付。
-
-### 场景 C：重新打包并编译 Web 阅读器
-```bash
-/book-craft build-reader docs/harness-book/
-```
-- 重新扫描所有 `.md` 章节，打包生成 `book-data.js`；
-- 执行 `cd web && node ./node_modules/.bin/max build` 完成前端生产打包。
-
----
-
-## 🛡️ 铁律与约束
-1. **单次聚焦**：每次循环只编写一个完整小节，确保字数在 3,000~5,000 字且达到最高深度；
-2. **严禁 ASCII 黑框**：架构图一律采用原生 Native Rich-HTML 芯片与 SVG 矢量图；
-3. **双端免密**：生成的 Web 阅读器必须默认直连本地 `aih-server`（`/docs/.../api/chat`），确保读者开箱即用 AI 伴读。

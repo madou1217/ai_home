@@ -74,3 +74,11 @@ web/src/.umi-production/
 /docs/user-guide/
 /[[]object Object[]]/
 .tmp-mitm/
+
+# Generated book content & assets policy (书籍内容与生成大图不入 Git)
+/docs/*-book/**
+!/docs/*-book/README.md
+!/docs/*-book/reader/
+!/docs/*-book/reader/**
+!/docs/harness-book/
+!/docs/harness-book/**

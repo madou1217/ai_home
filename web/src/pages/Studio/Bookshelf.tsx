@@ -12,7 +12,9 @@ import {
   Tooltip,
   Modal,
   Badge,
-  Input
+  Input,
+  Radio,
+  Tabs
 } from 'antd';
 import {
   BookOutlined,
@@ -25,7 +27,11 @@ import {
   FireOutlined,
   CompassOutlined,
   PictureOutlined,
-  CodeOutlined
+  CodeOutlined,
+  AppstoreOutlined,
+  RobotOutlined,
+  SendOutlined,
+  ControlOutlined
 } from '@ant-design/icons';
 import { BookCraftDrawer } from './BookCraftDrawer';
 
@@ -36,19 +42,22 @@ interface BookMeta {
   title: string;
   subtitle: string;
   coverImage: string;
-  category: string;
+  mainCategory: 'all' | 'harness' | 'embodied' | 'pi-series';
+  subCategory: string;
   tags: string[];
   totalChapters: number;
   completedChapters: number;
   readerUrl: string;
   description: string;
   badge?: string;
+  styleTheme: string;
 }
 
 const BookshelfPage: React.FC = () => {
   const [craftDrawerVisible, setCraftDrawerVisible] = useState(false);
   const [activeReadingBook, setActiveReadingBook] = useState<BookMeta | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
 
   const books: BookMeta[] = [
     {
@@ -56,34 +65,87 @@ const BookshelfPage: React.FC = () => {
       title: '《现代 AI Agent 运行时与 Harness 架构设计》',
       subtitle: '五大主流工业级实现源码解构与自主研发落地',
       coverImage: '/docs/harness-book/assets/images/cover-harness-book.jpg',
-      category: 'Agent 运行时核心',
+      mainCategory: 'harness',
+      subCategory: 'AI ➔ Harness 架构内核',
       tags: ['Claude Code', 'OpenAI Codex', 'OpenCode', 'DeepSeek', 'ReAct FSM', 'Dual-Parity'],
       totalChapters: 21,
       completedChapters: 21,
       readerUrl: '/docs/harness-book/reader/index.html',
       description: '全景深度解构工业界顶尖 Agent Harness 的 ReAct 状态机、工具沙箱、双轨持久化、Prompt Cache 亲和调度与双端等价通信桥。',
-      badge: '👑 旗舰专著',
+      badge: '👑 旗舰总纲',
+      styleTheme: '深空极客极简风 (Linear Dark)'
     },
     {
       id: 'pi-agent-book',
-      title: '《Agent Pi：全双工实时流式架构与拟人情感引擎设计》',
-      subtitle: '毫秒流式管道、Barge-in 即时打断、Persona 状态机与 HMG 记忆图谱',
+      title: '《Physical Intelligence π0 与通用具身 Agent 架构设计》',
+      subtitle: 'VLA 视觉-语言-动作大模型、Flow Matching 连续流与 50Hz 实时控制',
       coverImage: '/docs/pi-agent-book/assets/images/cover-pi-agent-book.jpg',
-      category: '拟人伴侣与低延迟通信',
-      tags: ['Inflection Pi', 'WebSocket Wire', 'Barge-in 打断', 'VAD 情感张量', 'HMG 记忆图谱'],
+      mainCategory: 'embodied',
+      subCategory: 'AI ➔ 具身物理智能 ➔ π0',
+      tags: ['Physical Intelligence', 'π0 VLA', 'Flow Matching', 'Cross-Embodiment', '50Hz Control'],
       totalChapters: 12,
       completedChapters: 12,
       readerUrl: '/docs/pi-agent-book/reader/index.html',
-      description: '针对传统问答 Agent 迟钝冰冷的痛点，系统性解构全双工毫秒流、语音/文字即时打断、动态情感共鸣与艾宾浩斯记忆衰减模型。',
-      badge: '✨ 全新上线',
+      description: '解构通用物理机器人大模型 π0，涵盖连续动作流匹配、跨本体（双臂/移动底盘）泛化与硬件阻抗力控闭环。',
+      badge: '🤖 具身智能',
+      styleTheme: '硬核机甲未来风 (Mecha Cyber)'
+    },
+    {
+      id: 'pi-core-book',
+      title: '《Pi 编码 Agent 架构与终端 TUI 引擎设计》',
+      subtitle: '从 @earendil-works/pi 源码解构多模型统一层、差异化 TUI 渲染与微虚拟机沙箱',
+      coverImage: '/docs/pi-core-book/assets/images/cover-pi-core-book.jpg',
+      mainCategory: 'pi-series',
+      subCategory: 'AI ➔ Coding Agent ➔ Pi 内核篇',
+      tags: ['earendil-works/pi', 'pi-tui 差量渲染', 'pi-ai 统一层', 'Gondolin Micro-VM', '/loop 状态机'],
+      totalChapters: 11,
+      completedChapters: 11,
+      readerUrl: '/docs/pi-core-book/reader/index.html',
+      description: '1000% 深度钻透开源自扩展编程助手 Pi 的 Monorepo 五大核心包、终端 0 闪烁差量屏幕更新算法与微虚拟机物理沙箱。',
+      badge: '⚡ 源码内核篇',
+      styleTheme: '终端黑客极客风 (TUI Hacker)'
+    },
+    {
+      id: 'pi-practice-book',
+      title: '《现代 Coding Agent 高阶实战与生产级调优指南》',
+      subtitle: '从 0 到 100 打造个人全自动编程副驾、Token 成本控制与复杂工程重构工作流',
+      coverImage: '/docs/pi-practice-book/assets/images/cover-pi-practice-book.jpg',
+      mainCategory: 'pi-series',
+      subCategory: 'AI ➔ Coding Agent ➔ Pi 实战篇',
+      tags: ['长程重构', '80% 上下文剪枝', 'Token 降本 80%', 'AST 精确切片', '5大异常自愈'],
+      totalChapters: 8,
+      completedChapters: 8,
+      readerUrl: '/docs/pi-practice-book/reader/index.html',
+      description: '面向一线开发者的生产级实战手册：长程会话上下文治理、多文件 AST 重构、自定义 Slash Commands 插件与死循环自愈技巧。',
+      badge: '🛠️ 进阶实战篇',
+      styleTheme: '现代工程极简风 (Linear Clean)'
+    },
+    {
+      id: 'pi-telegram-book',
+      title: '《Pi-Telegram 远程自主开发与全自动调度系统设计》',
+      subtitle: '基于 Telegram 打造随时随地的 7×24 小时无人值守 AI 研发协作中心',
+      coverImage: '/docs/pi-telegram-book/assets/images/cover-pi-telegram-book.jpg',
+      mainCategory: 'pi-series',
+      subCategory: 'AI ➔ Coding Agent ➔ Pi 远程生态篇',
+      tags: ['Ziphyrien/Pi-Telegram', 'AI Tag 协议桥', 'Croner 10 引擎', '多租户隔离', '7x24 无人巡检'],
+      totalChapters: 7,
+      completedChapters: 7,
+      readerUrl: '/docs/pi-telegram-book/reader/index.html',
+      description: '解构如何将终端 Agent 桥接至 Telegram：AI Tag 流式拦截（tg-reply/cron）、分布式定时任务引擎与多租户会话物理隔离。',
+      badge: '📡 远程生态篇',
+      styleTheme: '分布式协作风 (Telegram Cyber)'
     }
   ];
 
-  const filteredBooks = books.filter(b => 
-    b.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    b.tags.some(t => t.toLowerCase().includes(searchQuery.toLowerCase())) ||
-    b.description.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredBooks = books.filter(b => {
+    const matchesCategory = selectedCategory === 'all' || b.mainCategory === selectedCategory;
+    const matchesSearch = 
+      b.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      b.tags.some(t => t.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      b.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      b.subCategory.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesCategory && matchesSearch;
+  });
 
   const handleOpenReader = (book: BookMeta) => {
     setActiveReadingBook(book);
@@ -102,15 +164,15 @@ const BookshelfPage: React.FC = () => {
             <span style={{ fontSize: 20, fontWeight: 600 }}>
               AI 知识书架与创作工坊 (Library & Book-Craft)
             </span>
-            <Tag color="blue">2 本技术专著</Tag>
+            <Tag color="blue">5 部大师级专著已上架</Tag>
             <Tag color="green">免密 AI 伴读已就绪</Tag>
           </Space>
         ),
-        subTitle: '汇聚生产级 AI Agent 架构体系专著，支持沉浸式伴读、8K AI 封面概念生成与一键出书',
+        subTitle: '包含 AI Harness 运行时架构、Physical Intelligence 具身大模型、以及 Pi 自扩展 Coding Agent 全套源码剖析与实战专著',
         extra: [
           <Input
             key="search"
-            placeholder="搜索书名、技术标签或架构机制..."
+            placeholder="搜索书名、子分类或技术标签..."
             prefix={<SearchOutlined style={{ color: '#8c8c8c' }} />}
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
@@ -134,34 +196,41 @@ const BookshelfPage: React.FC = () => {
         ],
       }}
     >
-      {/* 顶部横幅引导 */}
+      {/* 分类导航 Tabs */}
       <Card
         bordered={false}
-        style={{
-          marginBottom: 24,
-          borderRadius: 12,
-          background: 'linear-gradient(135deg, rgba(22,119,255,0.06) 0%, rgba(114,46,209,0.06) 100%)',
-          border: '1px solid rgba(22,119,255,0.12)',
-        }}
+        bodyStyle={{ padding: '12px 20px' }}
+        style={{ marginBottom: 20, borderRadius: 10, boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}
       >
         <Row align="middle" justify="space-between" gutter={[16, 16]}>
-          <Col xs={24} md={16}>
-            <Title level={4} style={{ margin: 0, color: '#1f1f1f' }}>
-              💡 现代 Agent 运行时技术专著系列
-            </Title>
-            <Paragraph style={{ margin: '8px 0 0 0', color: '#595959', fontSize: 13 }}>
-              所有专著均包含 8K AI 概念插画、双语矢量流程图与动态交互仿真器。读者可在阅读过程中鼠标划词直接唤起本地 aih-server 进行免密深度解析。
-            </Paragraph>
+          <Col xs={24} md={18}>
+            <Radio.Group
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              buttonStyle="solid"
+            >
+              <Radio.Button value="all">
+                <AppstoreOutlined style={{ marginRight: 6 }} />
+                全部专著 (5)
+              </Radio.Button>
+              <Radio.Button value="harness">
+                <ControlOutlined style={{ marginRight: 6 }} />
+                AI ➔ Harness 运行时 (1)
+              </Radio.Button>
+              <Radio.Button value="embodied">
+                <RobotOutlined style={{ marginRight: 6 }} />
+                AI ➔ 具身物理智能 (π0) (1)
+              </Radio.Button>
+              <Radio.Button value="pi-series">
+                <CodeOutlined style={{ marginRight: 6 }} />
+                AI ➔ Coding Agent ➔ Pi 开源三部曲 (3)
+              </Radio.Button>
+            </Radio.Group>
           </Col>
-          <Col xs={24} md={8} style={{ textAlign: 'right' }}>
-            <Space>
-              <Button icon={<CompassOutlined />} onClick={() => setCraftDrawerVisible(true)}>
-                出书工作流规范
-              </Button>
-              <Button type="primary" ghost icon={<ThunderboltOutlined />} onClick={() => setCraftDrawerVisible(true)}>
-                逆向 GitHub 出书
-              </Button>
-            </Space>
+          <Col xs={24} md={6} style={{ textAlign: 'right' }}>
+            <Text type="secondary" style={{ fontSize: 13 }}>
+              支持按领域自适应 AI 渲染排版模板
+            </Text>
           </Col>
         </Row>
       </Card>
@@ -172,7 +241,15 @@ const BookshelfPage: React.FC = () => {
           const progressPercent = Math.round((book.completedChapters / book.totalChapters) * 100);
           return (
             <Col xs={24} sm={24} md={12} lg={12} xl={8} key={book.id}>
-              <Badge.Ribbon text={book.badge || 'PROD'} color={book.id === 'harness-book' ? 'blue' : 'purple'}>
+              <Badge.Ribbon
+                text={book.badge || 'PROD'}
+                color={
+                  book.mainCategory === 'harness' ? 'blue' :
+                  book.mainCategory === 'embodied' ? 'gold' :
+                  book.id === 'pi-core-book' ? 'green' :
+                  book.id === 'pi-practice-book' ? 'purple' : 'cyan'
+                }
+              >
                 <Card
                   hoverable
                   bordered={false}
@@ -222,8 +299,8 @@ const BookshelfPage: React.FC = () => {
                         alignItems: 'flex-end',
                       }}
                     >
-                      <Tag color="cyan" style={{ border: 'none', background: 'rgba(19, 194, 194, 0.2)', color: '#13c2c2', fontWeight: 500 }}>
-                        {book.category}
+                      <Tag color="blue" style={{ border: 'none', background: 'rgba(22, 119, 255, 0.25)', color: '#58a6ff', fontWeight: 500 }}>
+                        {book.subCategory}
                       </Tag>
                       <span style={{ color: '#fff', fontSize: 12, opacity: 0.9 }}>
                         {book.completedChapters} / {book.totalChapters} 章节全量完工
@@ -246,19 +323,26 @@ const BookshelfPage: React.FC = () => {
                     {book.description}
                   </Paragraph>
 
-                  {/* 标签 */}
-                  <div style={{ marginBottom: 16 }}>
-                    {book.tags.map((tag) => (
-                      <Tag key={tag} style={{ margin: '0 4px 4px 0', fontSize: 11 }}>
-                        {tag}
+                  {/* 风格与标签 */}
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ marginBottom: 6 }}>
+                      <Tag color="geekblue" style={{ fontSize: 11 }}>
+                        🎨 风格模板: {book.styleTheme}
                       </Tag>
-                    ))}
+                    </div>
+                    <div>
+                      {book.tags.map((tag) => (
+                        <Tag key={tag} style={{ margin: '0 4px 4px 0', fontSize: 11 }}>
+                          {tag}
+                        </Tag>
+                      ))}
+                    </div>
                   </div>
 
                   {/* 进度条 */}
                   <div style={{ marginBottom: 16 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
-                      <Text type="secondary">编写与验收进度</Text>
+                      <Text type="secondary">编写与验收状态</Text>
                       <Text strong style={{ color: '#52c41a' }}>100% (已验收)</Text>
                     </div>
                     <Progress percent={progressPercent} status="success" strokeColor="#52c41a" size="small" />

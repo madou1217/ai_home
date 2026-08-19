@@ -39,6 +39,10 @@ Fuller layer map:
 - `npm run web:dev`: WebUI dev server (`cd web && npm run dev`, Umi Max).
 - `npm run build`: build the WebUI (`cd web && npm run build`, Umi Max/Webpack).
 - `cd web && npm run lint`: lint the WebUI.
+- `.github/workflows/web-build.yml`: on push to `main` and on PRs, install web
+  deps and run `npm run lint` + `npm run build` for the WebUI. This is the CI
+  gate that catches missing imports/undefined references and other TS compile
+  errors that local Node tests cannot see.
 - `npm run models:sync`: update the `third_party/models.dev` submodule to upstream
   `dev`, then regenerate the Go `modalities.json` snapshot atomically. Model metadata
   (modalities, context window, pricing) comes from that submodule, and a submodule
@@ -93,6 +97,7 @@ Fuller layer map:
 - 组件文件里的纯函数（文案、派生工具）若同时被页面和其他组件引用，直接 `export` 复用，不要在页面里重复实现。
 - 只在纯渲染层转发页面共享状态的小块（例如移动端底部筛选 Drawer / 操作 Sheet，直接转发 `activeProvider`/`filterStatus`/`actionAccount` 及页面 handler）不强制抽取——加 props 管道不降复杂度，KISS/YAGNI 允许留在页面。
 - 每拆一个组件必须独立完成「eslint（限改动文件）+ 相关单测 + `npm run build`」验证并独立提交推送，禁止批量拆分、禁止越过验证直接合并。
+- **任何改动只要涉及 `web/` 下的源码文件（新增/修改/删除），提交前必须完成并记录三项验证：`cd web && npm run build`（全量 TS 编译，能捕获未导入引用等运行时 ReferenceError 根源）、eslint（限改动文件）、相关单测。** 完成报告必须逐项列出 web 侧验证证据；未运行 `npm run build` 的 web 改动禁止声称已完成，也不得在未验证时提交。历史教训：`Accounts.tsx` 曾因漏导入 `AccountActivityIcon` 导致 WebUI 运行时 `ReferenceError` 整页白屏，本地 Node 测试全部通过而未被发现。
 
 ## Agent Runtime Compatibility & Advisor Semantics
 - Treat `advisor` as a workflow intent (`independent_review_intent`), not as a guaranteed concrete tool name.

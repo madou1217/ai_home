@@ -20,139 +20,22 @@ Anthropic **Claude Code** 设计了一套优雅高效的 **动态 Skills 系统�
 
 本节将系统拆解该子系统的底层解析器、动态注入生命周期、协议载荷规范与架构落地指南。
 
-```
-┌────────────────────────────────────────────────────────────────────────────────────────────┐
-│                           Claude Code 动态 Skills 与 Slash 架构                             │
-│                                                                                            │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                                  用户输入 (User Prompt)                              │  │
-│  │                                  例如: "/code-review --fix"                          │  │
-│  └──────────────────────────────────────────┬───────────────────────────────────────────┘  │
-│                                             │                                              │
-│                                             ▼                                              │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                     Layer 1: SlashCommandParser (快捷指令词法解析器)                 │  │
-│  │                                                                                      │  │
-│  │   [Case A: 内置客户端指令] (/clear, /config, /cost, /fast, /pr_comments)            │  │
-│  │   └── 本地直接执行，不发起 LLM 网络请求                                              │  │
-│  │                                                                                      │  │
-│  │   [Case B: 动态能力技能指令] (/code-review, /simplify, /dataviz, /loop...)            │  │
-│  │   └── 转换为结构化 Skill 工具调用: Skill({ skill: "code-review", args: "--fix" })    │  │
-│  └──────────────────────────────────────────┬───────────────────────────────────────────┘  │
-│                                             │                                              │
-│                                             ▼                                              │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                     Layer 2: Skills Registry & Lazy Ingestion                        │  │
-│  │                                                                                      │  │
-│  │  1. 扫描全局技能 (~/.claude/skills/) 与 项目技能 (.claude/skills/)                    │  │
-│  │  2. 会话初始阶段: 仅在 System-Reminder 注入 1 行轻量声明 (~30 tokens/skill)           │  │
-│  │  3. 运行时触发: 读取对应 Markdown 文件，将完整执行规范包装为 <command-name> 动态注入  │  │
-│  └──────────────────────────────────────────┬───────────────────────────────────────────┘  │
-│                                             │                                              │
-│                                             ▼                                              │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                     Layer 3: Execution Runtime & Subagent Delegation                 │  │
-│  │                                                                                      │  │
-│  │   - Inline Execution: 当前 Agent 上下文吸收规范并直接驱动 Read/Edit/Bash             │  │
-│  │   - Subagent Execution: 派生独立子代理在后台静默运行并交付终态结果                   │  │
-│  └──────────────────────────────────────────────────────────────────────────────────────┘  │
-└────────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## 2. 核心专业术语与概念精确释义
-
-| 专业术语 (Terminology) | 中文标准译名 | 底层架构定义与机制说明 |
-| :--- | :--- | :--- |
-| **Slash Command** | **斜杠快捷指令** | 以斜杠 `/` 开头的显式文本输入。用于触发客户端内置功能（如 `/clear`）或显式唤起特定的复合技能（如 `/code-review`）。 |
-| **Dynamic Skill** | **动态可插拔技能** | 一种打包的专项任务执行规程（包含步骤清单、质量守则与工具调用范式）。以 Markdown 文件的形式保存在特定目录，供 Harness 动态发现与按需加载。 |
-| **Lazy Prompt Ingestion** | **提示词延迟按需摄入** | 一种优化 Token 占用的策略：平时仅在系统提示词中暴露极简的技能名称与单行摘要，仅当用户调用或模型自主判定需要使用时，才将技能正文水合注入上下文。 |
-| **Built-in CLI Commands** | **客户端内建指令** | 完全由本地终端或 WebUI 客户端捕获并执行的元命令（如清屏、切换模型、退出会话），无需经过大模型推理，响应延迟为 0ms。 |
-| **Directory-Scoped Skill** | **目录作用域绑定技能** | 在 Monorepo 多工程场景下，绑定到特定子目录（如 `apps/web:deploy`）的定制化技能。Harness 依据当前编辑文件路径实行最长前缀匹配调度。 |
-| **Skill Hot-Reloading** | **技能热插拔 / 实时重载** | Harness 对本地技能目录进行 `fs.watch` 监听，开发者修改或新增技能 Markdown 文件后，无需重启终端即可在下一轮对话中即时生效。 |
-
----
-
-## 3. 两级 Slash 命令解析流水线与调度决策
-
-Claude Code 在接收到以 `/` 开头的输入时，执行严格的两级分流路由算法：
-
-```
-                                 输入文本以 '/' 开头
-                                         │
-                                         ▼
-                            [SlashCommandParser 词法切分]
-                            - commandName: "/foo"
-                            - rawArgs: "bar --baz=1"
-                                         │
-                                         ▼
-                         [检查 Built-in CLI Commands 静态表]
-                                         │
-                 ┌───────────────────────┴───────────────────────┐
-                 ▼                                               ▼
-      [命中客户端内置命令]                            [未命中客户端内置命令]
-  (/help, /clear, /cost, /exit...)                               │
-                 │                                               ▼
-                 │                                   [查询 Skills 动态注册表]
-                 │                                               │
-                 │                               ┌───────────────┴───────────────┐
-                 │                               ▼                               ▼
-                 │                      [命中注册技能 (Skill)]          [完全未知命令]
-                 │                               │                               │
-                 ▼                               ▼                               ▼
-     [本地客户端直接执行]             [组装为 Skill 工具调用帧]        [向用户提示未知命令与建议]
-  (清空终端屏幕/显示用量等)           (Skill({ skill, args }))        (提示可用命令列表并退出)
-```
-
-### 3.1 内置命令（Built-in） vs 动态技能（Skill）特征对比表
-
-| 维度 (Dimensions) | 客户端内置命令 (Built-in Commands) | 动态扩展技能 (Dynamic Skills) |
-| :--- | :--- | :--- |
-| **执行载体** | 本地 UI / Node.js 进程 | 大模型推理引擎 + ReAct 工具执行总线 |
-| **典型示例** | `/clear`、`/config`、`/cost`、`/fast`、`/exit` | `/code-review`、`/simplify`、`/dataviz`、`/loop` |
-| **是否消耗 Token** | **0 Token** (纯本地逻辑) | 消耗（注入 Markdown 规范 + ReAct 交互） |
-| **扩展与定制性** | 固化在 Harness 源码内 | **用户完全自由编写 Markdown 文件扩展** |
-| **调用方式** | 仅限人类用户在终端敲击触发 | **人类可通过 `/cmd` 显式触发，Agent 也可自主调用** |
-
----
-
-## 4. 技能发现契约与两阶段延迟摄入（Lazy Ingestion）机制
-
-### 4.1 技能文件的三级文件系统发现路径
-Harness 启动时，按优先级从高到低自动扫掠三层目录：
-1. **工作区特定子目录技能**：`<repo>/apps/web/.claude/skills/*.md`（作用域限定在 `apps/web/`）；
-2. **项目级共享技能**：`<repo>/.claude/skills/*.md`（适用于当前项目全员共享，通常提交至 Git）；
-3. **用户全局私人技能**：`~/.claude/skills/*.md`（适用于开发者个人跨项目的定制习惯）。
-
-### 4.2 两阶段延迟加载状态流转
-
-```
- [Phase 1: 会话启动 - 轻量目录曝光]
-  Harness 扫描发现已安装了 10 个 Skills，仅在 System-Reminder 注入精炼清单 (总共 ~300 Tokens)：
-  ┌────────────────────────────────────────────────────────────────────────────────────────┐
-  │ Available skills for use with the Skill tool:                                          │
-  │ - code-review: Review git diff for correctness and bugs at given effort level.         │
-  │ - dataviz: Professional data visualization and chart design fundamentals.              │
-  │ - simplify: Clean up changed code for reuse, simplification and efficiency.            │
-  └────────────────────────────────────────────────────────────────────────────────────────┘
-
- [Phase 2: 运行时触发 - 全量规程水合]
-  用户输入 "/code-review --fix" 或 Agent 自主调用 Skill({ skill: "code-review", args: "--fix" })
-  Harness 读取 `skills/code-review.md`，将数百行详细规程作为专用块动态拼装入当前轮次：
-  ┌────────────────────────────────────────────────────────────────────────────────────────┐
-  │ <command-message>code-review --fix</command-message>                                   │
-  │ <command-name>/code-review</command-name>                                              │
-  │ <command-args>--fix</command-args>                                                     │
-  │                                                                                        │
-  │ <skill-instructions>                                                                   │
-  │ # Code Review Protocol (Full Markdown Content Loaded on Demand)                        │
-  │ 1. Run git diff against base branch...                                                 │
-  │ 2. Perform static analysis across 4 dimensions: correctness, security, perf, typing... │
-  │ 3. Apply fixes directly if --fix flag is present...                                    │
-  │ </skill-instructions>                                                                  │
-  └────────────────────────────────────────────────────────────────────────────────────────┘
-```
+<div class="rich-diagram-box">
+  <div class="diagram-header-tag">Lazy Ingestion Flow</div>
+  <div class="diagram-title"><span>⚡</span> 动态 Skills 两阶段延迟按需加载（Two-Phase Lazy Ingestion）</div>
+  <div class="split-two-col">
+    <div class="col-box">
+      <div class="col-title">Phase 1: 会话启动 (轻量目录曝光)</div>
+      <div class="tech-card blue" style="margin-bottom:6px;"><div class="card-label">System-Reminder 轻量索引 (~300 Tokens)</div></div>
+      <div class="tech-card purple"><div class="card-label">- code-review: Review git diff for bugs<br>- simplify: Clean up changed code</div></div>
+    </div>
+    <div class="col-box">
+      <div class="col-title">Phase 2: 运行时触发 (全量规程水合)</div>
+      <div class="tech-card orange" style="margin-bottom:6px;"><div class="card-label">用户调用 /code-review --fix</div></div>
+      <div class="tech-card green"><div class="card-label">动态读取 skills/code-review.md 注入当前轮次上下文</div></div>
+    </div>
+  </div>
+</div>
 
 ---
 

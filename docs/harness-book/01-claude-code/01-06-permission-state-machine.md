@@ -60,20 +60,16 @@ Anthropic **Claude Code** 设计了工业界最为严密且体验丝滑的 **安
 
 Claude Code 通过四种权限模式定义了 Agent 执行动作时的自由度边界：
 
-```
- [Security Level]
-   ▲
-   │  ┌────────────────────────────────────────────────────────┐
-   │  │ 1. default (默认安全模式)                               │  - 读写操作均受严格监控，写操作强行弹窗确认
-   │  ├────────────────────────────────────────────────────────┤
-   │  │ 2. accept-reads (只读放行模式)                          │  - 自动放行 Read/Glob/Grep，写/执行操作询问
-   │  ├────────────────────────────────────────────────────────┤
-   │  │ 3. dont-ask (自动化静默模式)                            │  - 仅放行 settings.json 中明确配置的白名单命令
-   │  ├────────────────────────────────────────────────────────┤
-   │  │ 4. bypass (完全无阻模式 - 极高危)                      │  - 跳过所有人工审批，全速无人值守运行 (CI/CD 专用)
-   │  └────────────────────────────────────────────────────────┘
-   └─────────────────────────────────────────────────────────────► [Automation Level]
-```
+<div class="rich-diagram-box">
+  <div class="diagram-header-tag">Permission Modes Ladder</div>
+  <div class="diagram-title"><span>🛡️</span> 四大权限运行模式矩阵 (Security vs. Automation)</div>
+  <div class="chips-grid-4">
+    <div class="tech-card blue"><div class="card-label">1. default</div><div class="card-sub">默认安全模式: 读写均需严格人工确认</div></div>
+    <div class="tech-card green"><div class="card-label">2. accept-reads</div><div class="card-sub">只读放行模式: 自动放行 Read/Glob，写操作询问</div></div>
+    <div class="tech-card orange"><div class="card-label">3. dont-ask</div><div class="card-sub">自动化静默模式: 仅放行 settings.json 白名单</div></div>
+    <div class="tech-card red"><div class="card-label">4. bypass</div><div class="card-sub">完全无阻模式: 极高危，跳过所有拦截 (CI/CD 专属)</div></div>
+  </div>
+</div>
 
 ### 3.1 模式详细特征与决策矩阵
 
@@ -92,25 +88,26 @@ Claude Code 通过四种权限模式定义了 Agent 执行动作时的自由度�
 
 Claude Code 引入了 **AST 语法树级安全扫描引擎**：
 
-```
-                      Raw Command String: "git commit -m 'fix' && rm -rf /tmp/build"
-                                                    │
-                                                    ▼
-                                    [Shell AST Parser (Lex & Parse)]
-                                                    │
-                                                    ▼
-                                   [Program AST Node: LogicalAnd (&&)]
-                                       ├── Left: Command (Name: "git", Args: ["commit", "-m", "fix"])
-                                       └── Right: Command (Name: "rm", Args: ["-rf", "/tmp/build"])
-                                                    │
-                                                    ▼
-                                  [AST Risk Evaluator (Rule Engine)]
-                                       ├── Check Node Left: git commit -> Risk: LOW
-                                       └── Check Node Right: rm -rf -> Risk: CRITICAL (Recursive Delete)
-                                                    │
-                                                    ▼
-                                   Decision: ESCALATE_TO_PROMPT (High Risk)
-```
+<div class="rich-diagram-box">
+  <div class="diagram-header-tag">AST Safety Scanning</div>
+  <div class="diagram-title"><span>🔍</span> Shell 命令 AST 语法树级安全扫描流向</div>
+  <div class="harness-stack">
+    <div class="tech-card blue"><div class="card-label">原始命令输入: "git commit -m fix &amp;&amp; rm -rf /tmp/build"</div></div>
+    <div class="flow-connector">⬇️ Shell AST Parser (Lex &amp; Parse)</div>
+    <div class="split-two-col">
+      <div class="col-box">
+        <div class="col-title">AST Node 1: Left Command</div>
+        <div class="tech-card green"><div class="card-label">git commit -m "fix" ➔ Risk: LOW</div></div>
+      </div>
+      <div class="col-box">
+        <div class="col-title">AST Node 2: Right Command</div>
+        <div class="tech-card red"><div class="card-label">rm -rf /tmp/build ➔ Risk: CRITICAL (Recursive Delete)</div></div>
+      </div>
+    </div>
+    <div class="flow-connector">⬇️ 风险汇总评估</div>
+    <div class="tech-card red"><div class="card-label">决策: ESCALATE_TO_PROMPT (触发双端 HITL 人工审批网桥)</div></div>
+  </div>
+</div>
 
 ### 4.1 危险指令模式分类与 AST 拦截规则
 

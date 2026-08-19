@@ -4,6 +4,15 @@
 
 ---
 
+
+<div class="ai-concept-hero">
+  <img src="/docs/harness-book/assets/images/00-01-harness-architecture.jpg" alt="Agent Harness 具身底座全景概念图" loading="lazy" />
+  <div class="ai-hero-caption">
+    <div class="hero-cap-title"><span>🎨</span> Agent Harness 具身底座全景概念图</div>
+    <span class="hero-cap-badge">AI Generated 8K Digital Art</span>
+  </div>
+</div>
+
 ## 1. 绪论：从无状态补全到有状态自主系统的范式转移
 
 在生成式 AI 落地初期，大量开发者与团队将 AI 应用的构建简化为 **“API Client + Prompt 模板”** 的薄封装模式（Thin Wrapper）。然而，当应用场景从简单的聊天问答、文本摘要迈向 **自主代码编写（Coding Agent）、复杂故障排查、长程工程重构与多子代理协同** 等严肃工业级场景时，这种纯 API 封装的架构迅速遭遇系统性崩溃。

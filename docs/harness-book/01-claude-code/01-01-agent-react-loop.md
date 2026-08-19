@@ -4,6 +4,15 @@
 
 ---
 
+
+<div class="ai-concept-hero">
+  <img src="/docs/harness-book/assets/images/01-01-react-loop.jpg" alt="ReAct 核心事件循环与有限状态机流向" loading="lazy" />
+  <div class="ai-hero-caption">
+    <div class="hero-cap-title"><span>🎨</span> ReAct 核心事件循环与有限状态机流向</div>
+    <span class="hero-cap-badge">Gemini 3.1 Flash Image</span>
+  </div>
+</div>
+
 ## 1. 章节导读与核心命题
 
 作为当今工业界最强大的编码 Agent（Coding Agent）实现之一，Anthropic **Claude Code** 将大模型的长程规划、工具调用、权限审批与上下文管理收敛于一套极为紧凑且高效的 **ReAct 核心事件循环** 中。

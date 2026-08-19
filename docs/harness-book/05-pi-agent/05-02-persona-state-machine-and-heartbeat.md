@@ -15,91 +15,15 @@
 
 本节将系统拆解动态 Persona 情绪向量模型、多模态情感元数据注入标准、主动心跳探测状态机以及长静默防骚扰退避算法。
 
-```
-┌────────────────────────────────────────────────────────────────────────────────────────────┐
-│                             Pi Agent 动态 Persona 与心跳维持全景架构                        │
-│                                                                                            │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                     User Inbound Stream (用户多模态输入: 文本 / 语音语调)            │  │
-│  └──────────────────────────────────────────┬───────────────────────────────────────────┘  │
-│                                             │                                              │
-│                                             ▼                                              │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                    Sentiment & Tone Classifier (情感与语气多维分析器)                │  │
-│  │                                                                                      │  │
-│  │  - 情绪效价 (Valence: -1.0 ~ +1.0)       - 唤醒度 (Arousal: 0.0 ~ 1.0)               │  │
-│  │  - 意图紧急度 (Urgency: LOW/HIGH/CRIT)   - 社交偏好 (Conversational vs Crisp)        │  │
-│  └──────────────────────────────────────────┬───────────────────────────────────────────┘  │
-│                                             │                                              │
-│                                             ▼                                              │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                    Dynamic Persona State Machine (动态人设状态机)                    │  │
-│  │                                                                                      │  │
-│  │   [Persona: EMPATHETIC_LISTENER] ──(Frustration detected)──> [Persona: CALM_SUPPORT]  │  │
-│  │   [Persona: RAPID_DEBUGGER]      ──(Production outage)────> [Persona: CRISP_ACTION] │  │
-│  │   [Persona: CURIOUS_EXPLORER]    ──(Brainstorming idea)───> [Persona: PROACTIVE_COACH│
-│  └──────────────────────────────────────────┬───────────────────────────────────────────┘  │
-│                                             │                                              │
-│                     ┌───────────────────────┴───────────────────────┐                      │
-│                     ▼                                               ▼                      │
-│  ┌────────────────────────────────────────┐   ┌─────────────────────────────────────────┐  │
-│  │   Adaptive System Prompt Compiler      │   │    Proactive Heartbeat Daemon (主动心跳)│  │
-│  │  - 动态调整 Temperature (0.2 ~ 0.85)   │   │  - 静默计时器 (Inactivity Watchdog)     │  │
-│  │  - 注入语调指导标签 (Tone: Warm/Crisp) │   │  - 任务进展主动推送 (Progress Ping)     │  │
-│  │  - 注入 TTS 声学标记 (<prosody>)       │   │  - 适度关怀探测 (Contextual Check-in)   │  │
-│  └──────────────────┬─────────────────────┘   └────────────────────┬────────────────────┘  │
-│                     │                                              │                       │
-│                     └───────────────────────┬──────────────────────┘                       │
-│                                             │                                              │
-│                                             ▼                                              │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                       Outbound Multi-Modal Stream (多模态输出流)                     │  │
-│  │  - 文本流 (含情绪语义) + 音频流 (动态音高/语速) + UI 氛围色彩 (Ambient Color)         │  │
-│  └──────────────────────────────────────────────────────────────────────────────────────┘  │
-└────────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## 2. 核心专业术语与概念精确释义
-
-| 专业术语 (Terminology) | 中文标准译名 | 底层架构定义与机制说明 |
-| :--- | :--- | :--- |
-| **Dynamic Persona FSM** | **动态人设有限状态机** | 一种根据用户当前情绪状态、任务紧急度与历史互动亲密度，在预设的多种人格模式（如沉稳、共情、严谨、探索）间实时动态跃迁的状态机系统。 |
-| **Sentiment Valence & Arousal** | **情绪效价与唤醒度模型** | 心理学经典情感坐标系：效价（Valence，表示情绪正负向度，-1.0 极悲观到 +1.0 极愉悦）与唤醒度（Arousal，表示情绪激烈程度，0.0 平静到 1.0 激动）。 |
-| **Proactive Heartbeat** | **主动心跳维持机制** | Agent 摆脱单纯被动响应，在检测到用户长时间静默（Inactivity Timeout）或后台长任务状态跃迁时，主动向用户发起轻量级交互或关怀的能力。 |
-| **Multi-Modal Tone Alignment** | **多模态语调对齐** | 确保 LLM 生成的文字语气、TTS 合成的声学特征（音高 Pitch、语速 Rate、停顿 Break）以及前端 UI 视觉氛围（Theme Color）保持毫秒级同步共鸣的技术。 |
-| **SSML (Speech Synthesis Markup Language)** | **语音合成标记语言** | W3C 标准化 XML 标记语言，用于在文本中嵌入 `<prosody rate="fast" pitch="+2st">`、`<break time="500ms"/>` 等声学渲染指令。 |
-| **Inactivity Exponential Backoff** | **静默指数退避防骚扰** | 当 Agent 主动发起一次心跳交互但用户未予理睬时，自动呈指数级延长下一次主动发问的等待时间，防止对人类造成干扰骚扰。 |
-
----
-
-## 3. 动态 Persona 情绪向量与状态跃迁矩阵
-
-Pi Agent 在内存中维护了一个轻量级情绪评估向量 $\vec{S} = (\text{Valence}, \text{Arousal}, \text{Urgency}, \text{Intimacy})$：
-
-```
-                              [用户输入到达]
-                                     │
-                                     ▼
-                      [情绪分类器计算 4 维特征向量]
-                                     │
-         ┌───────────────────────────┼───────────────────────────┐
-         ▼ (Valence < -0.5)          ▼ (Urgency == CRITICAL)     ▼ (Valence > 0.3)
-   [用户焦躁/受挫]                 [线上故障/生产火警]          [头脑风暴/轻松探讨]
-         │                           │                           │
-         ▼                           ▼                           ▼
- ┌─────────────────┐         ┌─────────────────┐         ┌─────────────────┐
- │ Persona:        │         │ Persona:        │         │ Persona:        │
- │ CALM_SUPPORTIVE │         │ CRISP_ACTION    │         │ CURIOUS_COACH   │
- │ (温和共情, 倾听) │         │ (绝对精炼, 0废话)│         │ (发散提问, 探索) │
- └────────┬────────┘         └────────┬────────┘         └────────┬────────┘
-          │                           │                           │
-          └───────────────────────────┼───────────────────────────┘
-                                      │
-                                      ▼
-                      [动态重塑 System Prompt 注入帧]
-```
+<div class="rich-diagram-box">
+  <div class="diagram-header-tag">Persona Emotion FSM</div>
+  <div class="diagram-title"><span>🎭</span> 动态 Persona 情绪向量与角色状态跃迁矩阵</div>
+  <div class="chips-grid-3">
+    <div class="tech-card blue"><div class="card-label">CALM_SUPPORTIVE (温和共情)</div><div class="card-sub">Valence &lt; -0.5 (用户受挫/抱怨) ➔ Temp 0.65 语速放缓</div></div>
+    <div class="tech-card red"><div class="card-label">CRISP_ACTION (绝对干练)</div><div class="card-sub">Urgency == CRITICAL (线上火警) ➔ Temp 0.15 零废话直奔主题</div></div>
+    <div class="tech-card purple"><div class="card-label">CURIOUS_COACH (启发探索)</div><div class="card-sub">Valence &gt; 0.3 (头脑风暴) ➔ Temp 0.80 发散反问</div></div>
+  </div>
+</div>
 
 ### 3.1 四大典型 Persona 状态参数与声学配置矩阵
 

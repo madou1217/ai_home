@@ -4,6 +4,15 @@
 
 ---
 
+
+<div class="ai-concept-hero">
+  <img src="/docs/harness-book/assets/images/05-01-pi-voice-bargein.jpg" alt="全双工实时流式语音与 50ms 即时打断波形" loading="lazy" />
+  <div class="ai-hero-caption">
+    <div class="hero-cap-title"><span>🎨</span> 全双工实时流式语音与 50ms 即时打断波形</div>
+    <span class="hero-cap-badge">Gemini 3.1 Flash Image</span>
+  </div>
+</div>
+
 ## 1. 章节导读与核心命题
 
 前四篇我们深入探讨了专注于代码编写、工具调用与长程推理的 Agent Harness（Claude Code、Codex、OpenCode 与 DeepSeek）。然而，当 Agent 的交互场景从非实时的代码生成迈向 **高频日常交互、实时语音对话与智能个人助理（Personal AI）** 时，系统面临的物理约束发生了根本性逆转：

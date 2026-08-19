@@ -4,6 +4,15 @@
 
 ---
 
+
+<div class="ai-concept-hero">
+  <img src="/docs/harness-book/assets/images/01-04-subagent-swarm.jpg" alt="多 Agent 协同编排与并发隔离网络" loading="lazy" />
+  <div class="ai-hero-caption">
+    <div class="hero-cap-title"><span>🎨</span> 多 Agent 协同编排与并发隔离网络</div>
+    <span class="hero-cap-badge">Gemini 3.1 Flash Image</span>
+  </div>
+</div>
+
 ## 1. 章节导读与核心命题
 
 在面对大型工程重构、跨模块依赖分析、海量测试用例并发修复或对抗性安全审计等复杂场景时，单个 Agent 往往会陷入 **“上下文容量爆炸”** 与 **“思维惯性/单点偏见（Cognitive Bias）”** 的双重困境。

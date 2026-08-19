@@ -4,6 +4,15 @@
 
 ---
 
+
+<div class="ai-concept-hero">
+  <img src="/docs/harness-book/assets/images/06-01-ai-home-architecture.jpg" alt="ai_home 下一代 5 层企业级 Agent Harness 操作系统蓝图" loading="lazy" />
+  <div class="ai-hero-caption">
+    <div class="hero-cap-title"><span>🎨</span> ai_home 下一代 5 层企业级 Agent Harness 操作系统蓝图</div>
+    <span class="hero-cap-badge">Gemini 3.1 Flash Image</span>
+  </div>
+</div>
+
 ## 1. 章节导读与核心命题
 
 在过去的发展阶段中，`ai_home` 主要作为一个兼具多账号负载均衡、协议代理转发与轻量级 WebUI 的 API 网关存在。然而，随着开发者对 **自主编程重构、长程推理排障、跨子代理并发协同与远程工作区委派（Fabric）** 诉求的爆发，单纯的 API Proxy 模式已触碰到架构天花板。

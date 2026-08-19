@@ -4,6 +4,15 @@
 
 ---
 
+
+<div class="ai-concept-hero">
+  <img src="/docs/harness-book/assets/images/02-01-codex-app-server.jpg" alt="Codex Stdio 全双工 App Server 通信总线" loading="lazy" />
+  <div class="ai-hero-caption">
+    <div class="hero-cap-title"><span>🎨</span> Codex Stdio 全双工 App Server 通信总线</div>
+    <span class="hero-cap-badge">Gemini 3.1 Flash Image</span>
+  </div>
+</div>
+
 ## 1. 章节导读与核心命题
 
 在解构了 Anthropic Claude Code 的 ReAct 单进程状态机后，我们进入 **第二篇：OpenAI Codex CLI / App Server 架构体系**。

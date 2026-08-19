@@ -4,6 +4,15 @@
 
 ---
 
+
+<div class="ai-concept-hero">
+  <img src="/docs/harness-book/assets/images/01-03-context-compaction.jpg" alt="上下文 Token 树与 GPU KV Cache 压缩拓扑" loading="lazy" />
+  <div class="ai-hero-caption">
+    <div class="hero-cap-title"><span>🎨</span> 上下文 Token 树与 GPU KV Cache 压缩拓扑</div>
+    <span class="hero-cap-badge">Gemini 3.1 Flash Image</span>
+  </div>
+</div>
+
 ## 1. 章节导读与核心命题
 
 当 Agent 深入复杂工程场景执行长程任务（如大规模代码库重构、跨模块缺陷排查、多文件联动编写）时，执行轨迹（Trajectory）通常会迅速演进至数十甚至上百轮 ReAct 循环。每一次工具读取的代码、运行测试输出的数百行日志，都会使上下文 Token 呈指数级膨胀。
@@ -95,127 +104,21 @@ Claude Code 将单次请求的上下文空间进行了严密的物理分区，�
 
 为了在性能开销与上下文保真度之间取得极致平衡，Claude Code 设计了“**微观本地修剪 -> 宏观语义压缩**”的双层递进治理体系。
 
-```
-                                  Token 水位线升高
-                                         │
-                                         ▼
-                             [Step 1: 微观本地启发式剪枝]
-                                         │
-                 ┌───────────────────────┴───────────────────────┐
-                 ▼                                               ▼
-     [历史 Tool Result 折叠]                         [冗余 Read 内容按 LRU 淘汰]
- (将 >500 行的旧日志替换为简要占位符)           (若文件后文被再次 Read，仅保留最新版本)
-                 │                                               │
-                 └───────────────────────┬───────────────────────┘
-                                         │ (若 Token 仍 > 80% 水位线)
-                                         ▼
-                             [Step 2: 宏观语义自动滚扎压缩]
-                                         │
-                                         ▼
-                             [唤起独立 Fork 摘要子代理]
-                                         │
-                                         ▼
-                             [生成结构化 XML 状态树]
-             (<task_goal>, <completed_milestones>, <file_state>, <next_steps>)
-                                         │
-                                         ▼
-                             [原子替换历史消息为 Compact 帧]
-```
-
-### 4.1 Step 1：微观启发式剪枝算法（Micro Pruning Engine）
-微观剪枝无需调用大模型，完全由 Harness 本地毫秒级完成，核心规则包括：
-1. **陈旧工具结果折叠（Observation Collapse）**：
-   - 距离当前轮次超过 3 轮以上的 `Bash` 或 `Read` 输出，若原始内容超过 1,000 字节，将其内容替换为：
-     ```
-     [Historical Tool Output Truncated: Bash "npm test" produced 450 lines. Status: SUCCESS. Full output archived in WAL.]
-     ```
-2. **读操作去重与淘汰（Read Cache LRU Pruning）**：
-   - 如果 Agent 在第 2 轮读取了 `src/index.ts`，并在第 8 轮修改后于第 9 轮再次读取了 `src/index.ts`；
-   - Harness 自动将第 2 轮的历史读取内容清空为 `[Content superseded by later Read in Turn 9]`，仅保留最新一次的文件镜像。
-3. **ANSI 与空白行流式压缩**：
-   - 工具输出进入上下文前，去除全部 ANSI 颜色控制字符、去除连续 3 个以上的空行、对长重复行做行级 RLE（Run-length encoding）折叠（如将 100 行连续相同的 `.` 折叠为 `... [100 repeated dots] ...`）。
-
-### 4.2 Step 2：宏观语义压缩算法（Macro Semantic Compaction）
-当微观剪枝后 Token 总量依然触碰 **80% 警戒线（160k / 200k）** 时，Harness 启动宏观压缩流水线：
-1. **上下文分水岭划分（Split Horizon）**：
-   - 提取全局前置设定（System Prompt 与初始 User Prompt）；
-   - 保留最近 3~5 轮活跃的 `Active Window` 交互（保证当前正在调试的细节不丢）；
-   - 将中间产生的所有历史轮次打包为待压缩历史集（`Target Trajectory Chunk`）。
-2. **后台 Fork 摘要子代理（Compaction Subagent）**：
-   - Harness 唤起一个轻量级子代理（如 Claude 3.5 Haiku 或无状态模型调用），使用专门的 **压缩提取 Prompt**；
-   - 强制模型输出符合特定 XML 格式的结构化摘要状态树。
-3. **结构化压缩状态树协议规范（Compact State Schema）**：
-   ```xml
-   <compacted_context version="1.0">
-     <original_intent>
-       用户要求修复 AuthController 中的 JWT 令牌刷新失效 Bug，并添加对应的单元测试。
-     </original_intent>
-     
-     <key_discoveries>
-       1. src/auth/jwt.ts 中的 verifyRefreshToken 没有处理 exp 溢出边界情况。
-       2. 数据库 users 表的 token_version 字段在并发请求时存在读写竞争。
-     </key_discoveries>
-     
-     <modified_files>
-       <file path="src/auth/jwt.ts" status="MODIFIED" summary="修复 exp 过期判定并增加容错窗口" />
-       <file path="src/auth/service.ts" status="MODIFIED" summary="引入原子递增 CAS 锁防止并发争用" />
-     </modified_files>
-     
-     <failed_attempts>
-       - 曾尝试直接修改 Redis Key 过期时间，但导致分布式集群同步延迟，已回滚。
-     </failed_attempts>
-     
-     <current_state_and_next_steps>
-       业务代码修复完毕，目前已完成 3/4 个测试用例编写，正在调试 test/auth/jwt.spec.ts 的并发模拟测试。
-     </current_state_and_next_steps>
-   </compacted_context>
-   ```
-4. **上下文原子重组与水合**：
-   - 将这串高度压缩（通常仅占 1,500 ~ 2,500 Tokens）的结构化 XML 注入为新的历史起点；
-   - 释放中间数十万 Token 的冗余历史，上下文容量瞬间回落至安全水位（~20%），会话得以继续平滑执行数十轮。
-
----
-
-## 5. Prompt Cache 亲和度治理与字节级对齐工程
-
-在 Anthropic 的计费与性能模型中，**Prompt Caching** 是降低成本（写入省 25%，读取省 90%）并实现秒级 TTFT 的核心王牌。然而，Prompt Cache 依赖于从头至尾的**严格前缀字节匹配（Prefix Matching）**。一旦头部哪怕多出一个空格或时间戳变动，整个缓存将发生断崖式失效（Cache Busting）。
-
-```
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                              Prompt Cache 字节级对齐与断点布局                          │
-│                                                                                        │
-│  [Byte 0]                                                                              │
-│     │                                                                                  │
-│     ▼                                                                                  │
-│  ┌──────────────────────────────────────────────────────────┐                          │
-│  │ 1. 静态基础系统提示词 (Static System Prompt)              │                          │
-│  │    - 角色设定、工作原则、代码风格 (永不修改)              │                          │
-│  └──────────────────────────┬───────────────────────────────┘                          │
-│                             │                                                          │
-│                             ▼ [Breakpoint 1: cache_control = {"type": "ephemeral"}]    │
-│  ┌──────────────────────────────────────────────────────────┐                          │
-│  │ 2. 工具定义 Schema 列表 (Tools Definition List)           │                          │
-│  │    - Built-in + MCP Tools (按字典序严格排序，保持哈希稳定) │                          │
-│  └──────────────────────────┬───────────────────────────────┘                          │
-│                             │                                                          │
-│                             ▼ [Breakpoint 2: cache_control = {"type": "ephemeral"}]    │
-│  ┌──────────────────────────────────────────────────────────┐                          │
-│  │ 3. 历史滚扎压缩摘要 (Compacted Context Summary)           │                          │
-│  │    - 只有在发生 Compaction 时才会发生单次变更              │                          │
-│  └──────────────────────────┬───────────────────────────────┘                          │
-│                             │                                                          │
-│                             ▼ [Breakpoint 3: cache_control = {"type": "ephemeral"}]    │
-│  ┌──────────────────────────────────────────────────────────┐                          │
-│  │ 4. 动态环境感知探针 (Dynamic Probes - System Reminder)    │                          │
-│  │    - Current Date, Git SHA, CWD, MEMORY.md 动态召回       │                          │
-│  └──────────────────────────┬───────────────────────────────┘                          │
-│                             │                                                          │
-│                             ▼ (无缓存，每轮高频追加)                                    │
-│  ┌──────────────────────────────────────────────────────────┐                          │
-│  │ 5. 当前活跃对话轮次 (Active Turns: Assistant + User Tools)│                          │
-│  └──────────────────────────────────────────────────────────┘                          │
-└────────────────────────────────────────────────────────────────────────────────────────┘
-```
+<div class="rich-diagram-box">
+  <div class="diagram-header-tag">Cache Breakpoints</div>
+  <div class="diagram-title"><span>⚡</span> Prompt Cache 字节级对齐与四段式断点布局</div>
+  <div class="harness-stack">
+    <div class="tech-card blue"><div class="card-label">1. 静态基础系统提示词 (Static System Prompt)</div><div class="card-sub">角色、代码风格、全局原则 ── 100% 命中 Cache</div></div>
+    <div class="flow-connector">⬇️ Breakpoint 1: cache_control = {"type": "ephemeral"}</div>
+    <div class="tech-card purple"><div class="card-label">2. 工具定义 Schema 列表 (Tools Definition List)</div><div class="card-sub">字典序严格排序，保持哈希稳定 ── 100% 命中 Cache</div></div>
+    <div class="flow-connector">⬇️ Breakpoint 2: cache_control = {"type": "ephemeral"}</div>
+    <div class="tech-card green"><div class="card-label">3. 历史滚扎压缩摘要 (Compacted Context Summary)</div><div class="card-sub">&lt;compacted_context&gt; 状态树 ── 95% 增量命中</div></div>
+    <div class="flow-connector">⬇️ Breakpoint 3: cache_control = {"type": "ephemeral"}</div>
+    <div class="tech-card cyan"><div class="card-label">4. 动态环境感知探针 (Dynamic Probes - System Reminder)</div><div class="card-sub">当前时间、Git SHA、CWD、MEMORY.md 动态召回</div></div>
+    <div class="flow-connector">⬇️ 极速增量计算区 (No Cache)</div>
+    <div class="tech-card orange"><div class="card-label">5. 当前活跃对话轮次 (Active Turns: Recent 2 Rounds)</div><div class="card-sub">增量 Prefill 仅消耗 ~1.2k Tokens (TTFT &lt; 180ms)</div></div>
+  </div>
+</div>
 
 ### 5.1 保持 Prompt Cache 命中的四大工程军规
 1. **军规一：工具 Schema 绝对确定性排序**：

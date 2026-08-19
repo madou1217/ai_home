@@ -15,109 +15,18 @@
 
 本节将深入解构这套记忆系统的三层分层存储拓扑、艾宾浩斯遗忘衰减与强化算法、用户画像实时提取引擎，以及跨轮次精准动态图谱水合方案。
 
-```
-┌────────────────────────────────────────────────────────────────────────────────────────────┐
-│                             Pi Agent 层次化动态记忆图谱 (HMG) 全景架构                      │
-│                                                                                            │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                 Layer 1: Core User Profile (核心用户画像层 - 永恒记忆)                │  │
-│  │                                                                                      │  │
-│  │   - 核心事实: 姓名、居住地、职业角色 (如 "Senior Distributed Systems Engineer")       │  │
-│  │   - 禁忌与原则: 物理过敏源、绝对讨厌的沟通风格 (如 "Dislikes long introductory text")│  │
-│  │   - 认知深度: 资深技术背景，代码无需输出基础概念解释                                │  │
-│  └──────────────────────────────────────────┬───────────────────────────────────────────┘  │
-│                                             │                                              │
-│                                             ▼ (指导语义关系连接)                           │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                 Layer 2: Semantic Knowledge Graph (语义知识实体图谱层)               │  │
-│  │                                                                                      │  │
-│  │   [Node: Project ai_home] ────(Uses)────> [Node: Rust / TypeScript]                  │  │
-│  │            │                                       │                                 │  │
-│  │       (Maintains)                             (Preference)                           │  │
-│  │            ▼                                       ▼                                 │  │
-│  │   [Node: Multi-Account Gateway] ──(Goal)─> [Node: Low-Latency Streaming]            │  │
-│  │                                                                                      │  │
-│  │   - 具备时间戳、边权重（Weight）、置信度（Confidence）与衰减半衰期 (Half-life)        │  │
-│  └──────────────────────────────────────────┬───────────────────────────────────────────┘  │
-│                                             │                                              │
-│                                             ▼ (提供细粒度情境追溯)                         │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                 Layer 3: Episodic Interaction Stream (情境事件记忆流)                │  │
-│  │                                                                                      │  │
-│  │   - 过去 7 天内的具体对话片段与事件快照 (Event Sourcing Logs)                         │  │
-│  │   - 引入艾宾浩斯遗忘衰减曲线 (Ebbinghaus Decay Curve) 自动淘汰琐碎细节               │  │
-│  │   - 发生重要共鸣或重复提及的事件 ──(Consolidation)──> 抽象提炼上升至 Layer 2 图谱    │  │
-│  └──────────────────────────────────────────────────────────────────────────────────────┘  │
-└────────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## 2. 核心专业术语与概念精确释义
-
-| 专业术语 (Terminology) | 中文标准译名 | 底层架构定义与机制说明 |
-| :--- | :--- | :--- |
-| **Hierarchical Memory Graph (HMG)** | **层次化动态记忆图谱** | 一种将记忆在垂直维度划分为核心画像（Core Profile）、语义实体图（Semantic Graph）与情境事件流（Episodic Stream）的多层图数据结构。 |
-| **Episodic Memory** | **情境/情节记忆** | 记录特定时间、地点与对话情境下的具体交互事件（如“用户周二下午抱怨服务器网络超时”）。时效性强，随时间自然衰减。 |
-| **Semantic Memory** | **语义实体记忆** | 脱离具体对话情境的抽象事实与概念关系网络（如“用户拥有一个基于 macOS 的开发环境”）。 |
-| **Core User Profile** | **核心用户画像** | 关于用户基本身份、不可变事实、绝对偏好与禁忌的高阶结构化摘要，常驻系统最高提示词上下文。 |
-| **Ebbinghaus Memory Decay** | **艾宾浩斯记忆衰减算法** | 模拟人类遗忘规律的数学衰减模型：记忆节点的检索权重随时间推移呈指数级下降，但在被再次激活（Re-activated）时权重跃迁强化并延长半衰期。 |
-| **Memory Consolidation** | **记忆固化与蒸馏** | 后台批处理流水线将底层分散、重复的情境记忆，提炼抽取为高阶语义实体与关系边并写入知识图谱的过程。 |
-| **Preference Drift** | **用户偏好漂移** | 用户的兴趣、技术栈或生活状态随时间发生变化的客观现象。Harness 必须具备基于时间戳冲突检测的新旧偏好覆盖机制。 |
-
----
-
-## 3. 三层记忆图谱数据模型与存储拓扑
-
-Pi Agent 将三层记忆实体映射为结构化的图节点与关系边：
-
-```
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                              三层记忆图谱物理存储与实体规范                              │
-│                                                                                        │
-│  [Entity: UserProfileNode] (Layer 1)                                                   │
-│  ├── userId: "usr_alice_001"                                                           │
-│  ├── coreTraits: { "role": "Staff Engineer", "concisenessPreference": "VERY_HIGH" }   │
-│  ├── hardConstraints: ["Never recommend Java solutions", "Uses macOS Darwin exclusively"]
-│  └── updatedAt: 1787129000000                                                          │
-│                                                                                        │
-│  [Entity: GraphNode & GraphEdge] (Layer 2)                                             │
-│  ├── Node: { id: "n_rust", label: "Technology", name: "Rust", confidence: 0.95 }      │
-│  ├── Node: { id: "n_gateway", label: "Project", name: "ai_home Gateway" }             │
-│  └── Edge: { source: "usr_alice", target: "n_rust", relation: "LOVES", weight: 0.92,  │
-│              lastReinforced: 1787129000000, halfLifeDays: 30 }                         │
-│                                                                                        │
-│  [Entity: EpisodicLog] (Layer 3)                                                       │
-│  ├── eventId: "evt_ep_99120"                                                           │
-│  ├── timestamp: 1787128500000                                                          │
-│  ├── summary: "Alice debugged a WebSocket broken pipe issue in her proxy server."      │
-│  └── rawDecayWeight: 0.73 (随天数衰减: W = W0 * e^(-lambda * delta_t))                 │
-└────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## 4. 记忆强化衰减算法与偏好覆盖数学模型
-
-<div id="widget-memory-graph-container"></div>
-
-
-
-为了杜绝记忆库无限膨胀与死锁，Pi Agent 实现了基于物理时间衰减与激活强化的动态权重算法：
-
-```
-               Memory Node Weight (W)
-                 ▲
-             1.0 ┼───────┐ (首次产生记忆, W0 = 1.0)
-                 │        \
-                 │         \ (指数时间衰减: W(t) = W0 * e^(-λt))
-             0.5 ┼──────────\─────┐ (用户再次提及, 触发 Reinforce 跃迁强化!)
-                 │           \   / \
-                 │            \_/   \ (半衰期延长，衰减变慢)
-             0.2 ┼───────────────────\───────────── (Prune Threshold: 跌破 0.2 自动归档淘汰)
-                 │                    \
-               0 └─────────────────────┴────────────────────────► Time (Days)
-```
+<div class="rich-diagram-box">
+  <div class="diagram-header-tag">Ebbinghaus Memory Decay</div>
+  <div class="diagram-title"><span>📉</span> 艾宾浩斯记忆衰减与强化跃迁数学模型</div>
+  <div class="harness-stack">
+    <div class="chips-grid-3">
+      <div class="tech-card green"><div class="card-label">初始记忆生成 (W0 = 1.0)</div><div class="card-sub">首次交互产生新记忆节点</div></div>
+      <div class="tech-card orange"><div class="card-label">指数时间衰减: W(t) = W0 * e^(-λt)</div><div class="card-sub">随时间推移未激活权重自然下降</div></div>
+      <div class="tech-card purple"><div class="card-label">强化跃迁 (Re-activation Jump)</div><div class="card-sub">再次提及权重复位且半衰期延长 50%</div></div>
+    </div>
+    <div class="tech-card red" style="margin-top:8px;"><div class="card-label">淘汰红线: W &lt; 0.2 自动归档至磁盘冷存储 (严禁挤占实时注意力)</div></div>
+  </div>
+</div>
 
 ### 4.1 记忆衰减与强化数学公式
 设记忆节点初始权重为 $W_0 = 1.0$，经过时间 $\Delta t$（天），衰减系数为 $\lambda = \frac{\ln 2}{T_{\text{half}}}$（其中 $T_{\text{half}}$ 为半衰期）：

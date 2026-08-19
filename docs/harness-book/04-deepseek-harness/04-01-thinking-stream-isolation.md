@@ -4,6 +4,15 @@
 
 ---
 
+
+<div class="ai-concept-hero">
+  <img src="/docs/harness-book/assets/images/04-01-deepseek-thinking.jpg" alt="Thinking 思考流与正文流多路解耦分发管道" loading="lazy" />
+  <div class="ai-hero-caption">
+    <div class="hero-cap-title"><span>🎨</span> Thinking 思考流与正文流多路解耦分发管道</div>
+    <span class="hero-cap-badge">Gemini 3.1 Flash Image</span>
+  </div>
+</div>
+
 ## 1. 章节导读与核心命题
 
 推理大模型（Reasoning Models）在复杂代码重构、数学推导与逻辑规划上展现了惊人的能力。但将推理大模型接入生产级 Agent Harness 运行时时，传统的输入输出管线瞬间遭遇了四大致命冲突：
@@ -53,201 +62,20 @@
 
 目前工业界推理模型的思考流呈现出三种不同的传输协议模式：
 
-```
- [Mode A: DeepSeek Native XML Tag] (混杂模式)
-  data: {"choices":[{"delta":{"content":"<think>\n分析 JWT 鉴权边界..."}}]}
-  data: {"choices":[{"delta":{"content":"\n</think>\n修复完成，请检查代码。"}}]}
-
- [Mode B: DeepSeek / OpenAI Field Separation] (独立字段模式)
-  data: {"choices":[{"delta":{"reasoning_content":"分析 JWT 鉴权边界..."}}]}
-  data: {"choices":[{"delta":{"content":"修复完成，请检查代码。"}}]}
-
- [Mode C: Anthropic Thinking Block] (独立块模式)
-  data: {"type":"content_block_start","content_block":{"type":"thinking"}}
-  data: {"type":"content_block_delta","delta":{"type":"thinking_delta","thinking":"分析..."}}
-  data: {"type":"content_block_stop"}
-```
-
-### 3.1 协议特征对比矩阵
-
-| 维度 (Dimensions) | DeepSeek Tag 模式 (`<think>`) | DeepSeek/OpenAI 字段模式 (`reasoning_content`) | Anthropic 块模式 (`thinking_delta`) |
-| :--- | :--- | :--- | :--- |
-| **传输位置** | `delta.content` 内部嵌入 XML 标签 | `delta.reasoning_content` 独立字段 | 独立的 `content_block` 结构体 |
-| **状态结束标志** | 文本中出现 `</think>` 闭合标签 | `reasoning_content` 停止吐字，转为吐 `content` | 收到 `content_block_stop` 明确事件 |
-| **思考签名支持** | 无 | 无 | 支持 `signature` 加密验证防篡改 |
-| **解析复杂度** | **极高**（需处理跨包标签边界缓冲） | **中等**（字段级提取） | **低**（标准状态机事件） |
-
----
-
-## 4. 思考流多路解耦状态机（ThinkingStreamDemuxer）源码级实现
-
-<div id="widget-demuxer-container"></div>
-
-
-
-为了在统一协议层抹平上述三种协议差异，Harness 必须构建一个 **字符级/分片级有限状态机解包器**。
-
-```
-                       Inbound Stream Token Chunk
-                                   │
-                                   ▼
-             ┌───────────────────────────────────────────┐
-             │         State: BUFFERING_TAG_CHECK        │ <── (检测是否以 "<think>" 开头)
-             └─────────────────────┬─────────────────────┘
-                                   │
-                 ┌─────────────────┴─────────────────┐
-                 ▼                                   ▼
-  [Detected "<think>" or reasoning_content]    [Plain Text / Tool Call]
-                 │                                   │
-                 ▼                                   ▼
-    ┌─────────────────────────┐         ┌─────────────────────────┐
-    │   State: IN_THINKING    │         │     State: IN_TEXT      │
-    │  - emit('thinking', c)  │         │   - emit('text', c)     │
-    └────────────┬────────────┘         └────────────┬────────────┘
-                 │ (遇到 "</think>" 或 字段切换)     │
-                 └─────────────────┬─────────────────┘
-                                   ▼
-                     ┌───────────────────────────┐
-                     │   State: IN_TOOL_CALL     │
-                     │  - emit('tool_call', c)   │
-                     └───────────────────────────┘
-```
-
-### 4.1 TypeScript 高性能解耦分流器实现代码
-
-```typescript
-import { EventEmitter } from 'events';
-
-export enum DemuxerState {
-  INITIAL = 'INITIAL',
-  IN_THINKING = 'IN_THINKING',
-  IN_TEXT = 'IN_TEXT',
-  IN_TOOL_CALL = 'IN_TOOL_CALL'
-}
-
-export class ThinkingStreamDemuxer extends EventEmitter {
-  private state: DemuxerState = DemuxerState.INITIAL;
-  private tagBuffer = '';
-  private fullThinkingAccumulator = '';
-  private fullTextAccumulator = '';
-
-  /**
-   * 消费标准增量分片，兼容 XML 模式与独立字段模式
-   */
-  public feedChunk(contentDelta?: string, reasoningDelta?: string): void {
-    // 1. 处理显式独立字段模式 (DeepSeek reasoning_content / OpenAI o1)
-    if (reasoningDelta) {
-      this.state = DemuxerState.IN_THINKING;
-      this.fullThinkingAccumulator += reasoningDelta;
-      this.emit('thinking', reasoningDelta);
-      return;
-    }
-
-    if (!contentDelta) return;
-
-    // 2. 处理 XML 混杂模式 (<think> ... </think>)
-    let remaining = contentDelta;
-
-    while (remaining.length > 0) {
-      switch (this.state) {
-        case DemuxerState.INITIAL: {
-          this.tagBuffer += remaining;
-          remaining = '';
-
-          // 检测是否以 <think> 开头
-          if (this.tagBuffer.startsWith('<think>')) {
-            this.state = DemuxerState.IN_THINKING;
-            const rest = this.tagBuffer.slice(7);
-            this.tagBuffer = '';
-            if (rest) this.feedChunk(rest);
-          } else if ('<think>'.startsWith(this.tagBuffer)) {
-            // 处于分片半包等待中 (如只收到 "<th")，继续等待下一分片
-            return;
-          } else {
-            // 不是以 <think> 开头，直接流转为普通正文
-            this.state = DemuxerState.IN_TEXT;
-            const textToFlush = this.tagBuffer;
-            this.tagBuffer = '';
-            this.emit('text', textToFlush);
-            this.fullTextAccumulator += textToFlush;
-          }
-          break;
-        }
-
-        case DemuxerState.IN_THINKING: {
-          const endTagIndex = remaining.indexOf('</think>');
-          if (endTagIndex !== -1) {
-            // 思考流结束
-            const thinkingChunk = remaining.slice(0, endTagIndex);
-            if (thinkingChunk) {
-              this.fullThinkingAccumulator += thinkingChunk;
-              this.emit('thinking', thinkingChunk);
-            }
-            this.emit('thinking_complete', this.fullThinkingAccumulator);
-            
-            // 切换为普通正文流，消费 </think> 后的剩余文本
-            this.state = DemuxerState.IN_TEXT;
-            remaining = remaining.slice(endTagIndex + 8).replace(/^\n+/, ''); // 清除紧跟的换行
-          } else {
-            // 检查尾部是否挂着半包 "</th"
-            if (remaining.endsWith('<') || remaining.endsWith('</') || remaining.endsWith('</t') || remaining.endsWith('</th') || remaining.endsWith('</thi') || remaining.endsWith('</thin') || remaining.endsWith('</think')) {
-              const lastLtIndex = remaining.lastIndexOf('<');
-              const safeChunk = remaining.slice(0, lastLtIndex);
-              this.tagBuffer = remaining.slice(lastLtIndex);
-              if (safeChunk) {
-                this.fullThinkingAccumulator += safeChunk;
-                this.emit('thinking', safeChunk);
-              }
-              remaining = '';
-            } else {
-              this.fullThinkingAccumulator += remaining;
-              this.emit('thinking', remaining);
-              remaining = '';
-            }
-          }
-          break;
-        }
-
-        case DemuxerState.IN_TEXT: {
-          this.fullTextAccumulator += remaining;
-          this.emit('text', remaining);
-          remaining = '';
-          break;
-        }
-      }
-    }
-  }
-
-  public getAccumulatedResult(): { thinking: string; text: string } {
-    return {
-      thinking: this.fullThinkingAccumulator.trim(),
-      text: this.fullTextAccumulator.trim()
-    };
-  }
-}
-```
-
----
-
-## 5. 思考预算（Thinking Budget）动态分配算法与防饿死公式
-
-为了防止模型将所有的输出 Token 配额耗尽在思考阶段，Harness 在组装请求时必须根据公式严格计算 `max_tokens` 与 `thinking.budget_tokens` 的保留区间。
-
-```
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                              思考预算动态分配与净空预留模型                              │
-│                                                                                        │
-│   [0] ══════════════════════════════════════════════════════════════════════ [16,384]   │
-│   ├───────────────────────────────────────────────┼────────────────────────────────────┤
-│   │       Thinking Budget Allocation Area         │       Answer Reserve Headroom      │
-│   │             (Max: 12,288 Tokens)              │        (Locked: 4,096 Tokens)      │
-│   │                                               │                                    │
-│   │   大模型 `<think>` 思考过程最深允许探索的深度   │   绝对保留给最终文本与工具调用的安全净空 │
-│   └───────────────────────────────────────────────┴────────────────────────────────────┘
-│                                                   ▲                                    │
-│                                     Budget Boundary = Total - 4096                     │
-└────────────────────────────────────────────────────────────────────────────────────────┘
-```
+<div class="rich-diagram-box">
+  <div class="diagram-header-tag">Thinking Budget Model</div>
+  <div class="diagram-title"><span>🧠</span> 思考预算动态分配与 4,096 Tokens 净空预留模型 (Total: 16,384)</div>
+  <div class="split-two-col">
+    <div class="col-box">
+      <div class="col-title">Thinking Budget Allocation (最大 12,288 Tokens)</div>
+      <div class="tech-card orange"><div class="card-label">&lt;think&gt; 深度思维链展开空间</div><div class="card-sub">大模型自我反思、推导与规划探索深度</div></div>
+    </div>
+    <div class="col-box">
+      <div class="col-title">Answer Reserve Headroom (强制锁定: 4,096 Tokens)</div>
+      <div class="tech-card green"><div class="card-label">绝对保留给最终文本与工具调用</div><div class="card-sub">彻底消除思考吃光配额导致的 0 字符死锁</div></div>
+    </div>
+  </div>
+</div>
 
 ### 5.1 动态预算分配数学公式
 设大模型单次请求允许的最大输出上限为 $T_{\text{max\_output}}$（如 16,384 Tokens），正文及工具调用所需的最低净空预留为 $T_{\text{reserve}}$（工业级推荐 $T_{\text{reserve}} \ge 4,096$），任务复杂度系数为 $\alpha \in (0, 1]$：

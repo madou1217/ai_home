@@ -4,6 +4,15 @@
 
 ---
 
+
+<div class="ai-concept-hero">
+  <img src="/docs/harness-book/assets/images/01-02-sandbox-tools.jpg" alt="执行沙箱与 PTY 伪终端隔离防御矩阵" loading="lazy" />
+  <div class="ai-hero-caption">
+    <div class="hero-cap-title"><span>🎨</span> 执行沙箱与 PTY 伪终端隔离防御矩阵</div>
+    <span class="hero-cap-badge">Gemini 3.1 Flash Image</span>
+  </div>
+</div>
+
 ## 1. 章节导读与核心命题
 
 大语言模型（LLM）的本质是概率图灵机，其自身无法感知外部时间、无法直接读取硬盘扇区、更无法修改任何一行代码。**工具调用协议（Tool Use Protocol）与执行沙箱（Execution Sandbox）** 是连接模型数字认知与物理操作系统环境的确定性桥梁。

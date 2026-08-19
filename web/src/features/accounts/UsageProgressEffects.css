@@ -1,0 +1,59 @@
+.usage-progress-effects {
+  position: relative;
+  display: inline-block;
+  width: 100%;
+  vertical-align: top;
+}
+
+/* 运行中：进度条底色加流光扫描，表达"正在被消耗" */
+.usage-progress-effects--running .ant-progress-bg {
+  position: relative;
+  overflow: hidden;
+  background-image: linear-gradient(
+    100deg,
+    rgba(255, 255, 255, 0) 30%,
+    rgba(255, 255, 255, 0.45) 50%,
+    rgba(255, 255, 255, 0) 70%
+  );
+  background-size: 220% 100%;
+  background-repeat: no-repeat;
+  animation: usage-progress-shimmer 1.4s linear infinite;
+}
+
+@keyframes usage-progress-shimmer {
+  0% {
+    background-position: 180% 0;
+  }
+  100% {
+    background-position: -80% 0;
+  }
+}
+
+/* remainingPct 下降：进度条做一次短促回弹（被咬了一口） */
+.usage-progress-effects--pulsing .ant-progress-bg {
+  animation: usage-progress-bite 0.55s ease;
+}
+
+@keyframes usage-progress-bite {
+  0% {
+    transform: scaleX(1);
+  }
+  28% {
+    transform: scaleX(1.035);
+    filter: brightness(1.18);
+  }
+  60% {
+    transform: scaleX(0.985);
+  }
+  100% {
+    transform: scaleX(1);
+    filter: brightness(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .usage-progress-effects--running .ant-progress-bg,
+  .usage-progress-effects--pulsing .ant-progress-bg {
+    animation: none;
+  }
+}

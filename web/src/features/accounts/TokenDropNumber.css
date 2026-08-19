@@ -1,0 +1,63 @@
+.token-drop-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 5;
+}
+
+.token-drop {
+  position: absolute;
+  right: 4px;
+  bottom: 2px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  font-family: var(--font-mono, monospace);
+  line-height: 1.1;
+  text-align: right;
+  white-space: nowrap;
+  will-change: transform, opacity;
+  animation: token-drop-rise 1.6s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+}
+
+.token-drop-tokens {
+  font-size: 12px;
+  font-weight: 700;
+  color: #ff7a45;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+
+.token-drop-cost {
+  font-size: 10px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.72);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+
+@keyframes token-drop-rise {
+  0% {
+    transform: translateY(0) scale(0.7);
+    opacity: 0;
+  }
+  12% {
+    transform: translateY(-4px) scale(1);
+    opacity: 1;
+  }
+  65% {
+    transform: translateY(-22px) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-38px) scale(0.92);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .token-drop {
+    animation: none;
+    opacity: 0;
+  }
+}

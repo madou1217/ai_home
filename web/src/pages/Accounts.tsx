@@ -64,8 +64,9 @@ import type {
 } from '@/types';
 import ProviderIcon, { providerIds, providerNames } from '@/components/chat/ProviderIcon';
 import { PROVIDER_AUTH_OPTIONS, PROVIDER_CATALOG } from '@/providers/catalog';
-import UsageSnapshotCell from '@/components/account/UsageSnapshotCell';
 import TokenUsageCell from '@/components/account/TokenUsageCell';
+import UsageProgressEffects from '@/features/accounts/UsageProgressEffects';
+import { useTokenDropEvents } from '@/features/accounts/useTokenDropEvents';
 import {
   canCopyAccountEmail,
   canEditAccountConfig,
@@ -222,6 +223,7 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
     requestAccountsSnapshotUpdate,
     stageAccountRemoval
   } = useAccountsSnapshot(accountsHandlersRef);
+  const tokenDrops = useTokenDropEvents(accounts);
   const {
     modelCatalog,
     refreshingModelAccountRefs,
@@ -1590,7 +1592,11 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
         return String(getAccountRef(a)).localeCompare(String(getAccountRef(b)));
       },
       render: (_pct: any, record: Account) => (
-        <UsageSnapshotCell record={record} />
+        <UsageProgressEffects
+          record={record}
+          activity={getAccountActivity(record)}
+          drops={tokenDrops}
+        />
       )
     },
     {
@@ -1709,7 +1715,11 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
         </div>
         {/* 用量快照 */}
         <div className="account-mobile-usage">
-          <UsageSnapshotCell record={record} />
+          <UsageProgressEffects
+            record={record}
+            activity={getAccountActivity(record)}
+            drops={tokenDrops}
+          />
         </div>
         <div className="account-mobile-token-usage">
           <div className="account-mobile-token-usage-head">

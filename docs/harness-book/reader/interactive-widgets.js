@@ -5,6 +5,212 @@
 
 window.HarnessInteractiveWidgets = {
   /**
+   * 5. Git Worktree 物理并发沙箱与 PTY 进程组隔离动画视效 (for 01-02 & 06-03)
+   */
+  createWorktreeSandboxSimulator(containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    let worktrees = [
+      { id: 'wt-01', branch: 'agent/task-auth', status: 'ACTIVE', changes: 3, isolation: 'ISOLATED' },
+      { id: 'wt-02', branch: 'agent/task-linter', status: 'COMPLETED', changes: 1, isolation: 'ISOLATED' }
+    ];
+
+    const render = () => {
+      container.innerHTML = `
+        <div class="interactive-card">
+          <div class="card-header">
+            <div class="card-title">
+              <span>🌳</span> 交互式模拟：Git Worktree 物理并发沙箱与 PTY 进程树安全隔离池
+            </div>
+            <div class="card-controls">
+              <button class="sim-btn" id="spawn-wt-btn">➕ 派生新 Worktree 沙箱</button>
+              <button class="sim-btn sim-btn-primary" id="merge-wt-btn">🔀 Squash & Merge 任务</button>
+              <button class="sim-btn" id="kill-pty-btn">⚡ 模拟超时 PTY 树杀 (SIGKILL -pgid)</button>
+            </div>
+          </div>
+
+          <div class="worktree-sandbox-grid">
+            <!-- Host Main Workspace -->
+            <div class="workspace-card host-ws">
+              <div class="ws-header">
+                <span class="ws-icon">🏠</span>
+                <div>
+                  <div class="ws-name">Host Main Workspace</div>
+                  <div class="ws-branch">Branch: main (Clean & Protected)</div>
+                </div>
+              </div>
+              <div class="ws-status-box">
+                <div class="status-indicator online"></div>
+                <span>零代码脏写污染 · 生产安全锁定</span>
+              </div>
+            </div>
+
+            <!-- Isolated Subagent Worktrees -->
+            <div class="worktrees-container">
+              <div class="wt-list-title">Active Isolated Git Worktrees (沙箱隔离区: .aih/worktrees/)</div>
+              <div class="wt-cards-flex">
+                ${worktrees.map((wt, idx) => `
+                  <div class="sandbox-item-card ${wt.status === 'COMPLETED' ? 'merged' : ''}">
+                    <div class="sb-header">
+                      <span class="sb-badge">${wt.id}</span>
+                      <span class="sb-branch">${wt.branch}</span>
+                    </div>
+                    <div class="sb-meta">
+                      <span>修改文件: <strong>${wt.changes} files</strong></span>
+                      <span class="sb-state ${wt.status.toLowerCase()}">${wt.status}</span>
+                    </div>
+                    <div class="sb-actions">
+                      <button class="mini-btn" onclick="window.__discardWt(${idx})">🗑️ 丢弃</button>
+                      <button class="mini-btn primary" onclick="window.__mergeWt(${idx})">✅ 合并</button>
+                    </div>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          </div>
+
+          <div id="pty-kill-alert" class="pty-kill-log" style="display:none;">
+            🚨 [ProcessTreeWatcher]: PTY 子进程 PID: 8820 超时 (120s)。执行 <code>process.kill(-8820, 'SIGKILL')</code> 递归彻底杀灭进程树（包含 node, vite, esbuild 全部子孙进程）。
+          </div>
+        </div>
+      `;
+
+      document.getElementById('spawn-wt-btn').onclick = () => {
+        const nextNum = worktrees.length + 1;
+        worktrees.push({
+          id: `wt-0${nextNum}`,
+          branch: `agent/task-fix-${nextNum}`,
+          status: 'ACTIVE',
+          changes: Math.floor(Math.random() * 4) + 1,
+          isolation: 'ISOLATED'
+        });
+        render();
+      };
+
+      document.getElementById('merge-wt-btn').onclick = () => {
+        worktrees.forEach(wt => wt.status = 'COMPLETED');
+        render();
+      };
+
+      document.getElementById('kill-pty-btn').onclick = () => {
+        const el = document.getElementById('pty-kill-alert');
+        el.style.display = 'block';
+        setTimeout(() => el.style.display = 'none', 4000);
+      };
+    };
+
+    window.__discardWt = (idx) => {
+      worktrees.splice(idx, 1);
+      render();
+    };
+
+    window.__mergeWt = (idx) => {
+      if (worktrees[idx]) {
+        worktrees[idx].status = 'MERGED';
+        render();
+      }
+    };
+
+    render();
+  },
+
+  /**
+   * 6. Pi Agent 毫秒级流式波形与即时打断 (Barge-in) 动态模拟器 (for 05-01)
+   */
+  createBargeInWaveformSimulator(containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    let isPlaying = false;
+    let isInterrupted = false;
+    let tokenCount = 0;
+    let timer = null;
+
+    const render = () => {
+      container.innerHTML = `
+        <div class="interactive-card">
+          <div class="card-header">
+            <div class="card-title">
+              <span>🎙️</span> 交互式模拟：Pi Agent 全双工流式音频波形与 50ms 即时打断 (Barge-in)
+            </div>
+            <div class="card-controls">
+              <button class="sim-btn sim-btn-primary" id="start-voice-btn" ${isPlaying ? 'disabled' : ''}>
+                ▶️ 开始播放流式语音
+              </button>
+              <button class="sim-btn sim-btn-danger" id="bargein-btn" ${!isPlaying ? 'disabled' : ''}>
+                ✋ 用户插话打断 (Barge-in)!
+              </button>
+              <button class="sim-btn" id="reset-voice-btn">🔄 重置</button>
+            </div>
+          </div>
+
+          <div class="voice-bargein-visual">
+            <div class="waveform-box">
+              <div class="wave-bars-container ${isPlaying ? 'animating' : ''} ${isInterrupted ? 'interrupted' : ''}">
+                ${Array.from({ length: 24 }).map((_, i) => `
+                  <div class="wave-bar" style="--delay: ${(i * 0.08).toFixed(2)}s; --h: ${Math.sin(i)*40 + 50}%;"></div>
+                `).join('')}
+              </div>
+              <div class="wave-status-text">
+                ${isInterrupted ? '🚨 50ms VAD 捕获插话！已发送 input.interrupt 截断并回滚幽灵分片' : (isPlaying ? '🔊 正在流式播放语音 (Playhead Token #' + tokenCount + ')...' : '⏸️ 麦克风与扬声器就绪')}
+              </div>
+            </div>
+
+            <div class="token-purge-tracker">
+              <div class="tracker-item">
+                <span class="tk-label">已生成 Token 数</span>
+                <span class="tk-val">${tokenCount}</span>
+              </div>
+              <div class="tracker-item">
+                <span class="tk-label">已播放 Token (Playhead)</span>
+                <span class="tk-val">${isInterrupted ? Math.max(0, tokenCount - 8) : tokenCount}</span>
+              </div>
+              <div class="tracker-item">
+                <span class="tk-label">已物理剪裁幽灵 Token</span>
+                <span class="tk-val highlight">${isInterrupted ? '8 Tokens' : '0'}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      document.getElementById('start-voice-btn').onclick = () => {
+        isPlaying = true;
+        isInterrupted = false;
+        tokenCount = 0;
+        render();
+
+        timer = setInterval(() => {
+          tokenCount++;
+          if (tokenCount >= 30) {
+            clearInterval(timer);
+            isPlaying = false;
+          }
+          render();
+        }, 150);
+      };
+
+      document.getElementById('bargein-btn').onclick = () => {
+        clearInterval(timer);
+        isPlaying = false;
+        isInterrupted = true;
+        render();
+      };
+
+      document.getElementById('reset-voice-btn').onclick = () => {
+        clearInterval(timer);
+        isPlaying = false;
+        isInterrupted = false;
+        tokenCount = 0;
+        render();
+      };
+    };
+
+    render();
+  }
+
+  /**
    * 1. ReAct 7-State FSM 交互式状态机模拟器 (for 01-01 & 06-02)
    */
   createReActSimulator(containerId) {
@@ -402,6 +608,11 @@ window.HarnessInteractiveWidgets = {
       const target = document.getElementById('widget-fsm-container');
       if (target) this.createReActSimulator('widget-fsm-container');
     }
+    // 挂载 Git Worktree 沙箱模拟器 (01-02 & 06-03)
+    if (chapterId.includes('01-02') || chapterId.includes('06-03')) {
+      const target = document.getElementById('widget-worktree-container');
+      if (target) this.createWorktreeSandboxSimulator('widget-worktree-container');
+    }
     // 挂载 Cache & Compaction 水位模拟器 (01-03, 04-03, 06-04)
     if (chapterId.includes('01-03') || chapterId.includes('04-03') || chapterId.includes('06-04')) {
       const target = document.getElementById('widget-cache-container');
@@ -416,6 +627,11 @@ window.HarnessInteractiveWidgets = {
     if (chapterId.includes('04-01')) {
       const target = document.getElementById('widget-demuxer-container');
       if (target) this.createDemuxerSimulator('widget-demuxer-container');
+    }
+    // 挂载 Pi Agent 即时打断波形模拟器 (05-01)
+    if (chapterId.includes('05-01')) {
+      const target = document.getElementById('widget-bargein-container');
+      if (target) this.createBargeInWaveformSimulator('widget-bargein-container');
     }
   }
 };

@@ -906,6 +906,150 @@
     .lane-dot.cyan { background: #39c5bb; }
     .lane-content { font-family: var(--font-mono); font-size: 11.5px; line-height: 1.5; color: var(--text-main); }
 
+  
+    /* Worktree Sandbox Simulator Styles */
+    .worktree-sandbox-grid {
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      gap: 16px;
+      margin-top: 14px;
+    }
+    .workspace-card.host-ws {
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .ws-header { display: flex; align-items: center; gap: 10px; }
+    .ws-icon { font-size: 24px; }
+    .ws-name { font-size: 13px; font-weight: 700; color: var(--text-bright); }
+    .ws-branch { font-size: 11px; color: var(--success); font-family: var(--font-mono); }
+    .ws-status-box {
+      margin-top: 16px;
+      font-size: 11px;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(0,0,0,0.2);
+      padding: 6px 8px;
+      border-radius: 4px;
+    }
+    .status-indicator.online {
+      width: 6px; height: 6px; border-radius: 50%; background: var(--success); box-shadow: 0 0 6px var(--success);
+    }
+    .worktrees-container {
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 14px;
+    }
+    .wt-list-title { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-bottom: 10px; }
+    .wt-cards-flex { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px; }
+    .sandbox-item-card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--accent);
+      border-radius: 6px;
+      padding: 10px 12px;
+      min-width: 170px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    }
+    .sandbox-item-card.merged { border-color: var(--success); opacity: 0.7; }
+    .sb-header { display: flex; justify-content: space-between; align-items: center; }
+    .sb-badge { font-size: 10px; font-weight: 700; background: var(--accent); color: #fff; padding: 1px 5px; border-radius: 4px; }
+    .sb-branch { font-size: 11px; font-family: var(--font-mono); color: var(--text-bright); }
+    .sb-meta { font-size: 11px; color: var(--text-muted); display: flex; justify-content: space-between; }
+    .sb-state.active { color: var(--warning); font-weight: 600; }
+    .sb-state.completed { color: var(--success); font-weight: 600; }
+    .sb-actions { display: flex; gap: 6px; margin-top: 4px; }
+    .mini-btn {
+      flex: 1;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      font-size: 10.5px;
+      padding: 3px 6px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .mini-btn.primary { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); }
+    .pty-kill-log {
+      margin-top: 14px;
+      background: rgba(248, 81, 73, 0.15);
+      border: 1px solid var(--danger);
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 12px;
+      color: #ff7b72;
+      animation: popIn 0.2s ease;
+    }
+
+    /* Waveform & Barge-in Styles */
+    .voice-bargein-visual {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-top: 14px;
+    }
+    .waveform-box {
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      gap: 14px;
+    }
+    .wave-bars-container {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      height: 60px;
+    }
+    .wave-bar {
+      width: 4px;
+      height: 10%;
+      background: var(--accent);
+      border-radius: 2px;
+      transition: height 0.1s ease;
+    }
+    .wave-bars-container.animating .wave-bar {
+      animation: soundWave 0.8s infinite ease-in-out alternate;
+      animation-delay: var(--delay);
+    }
+    .wave-bars-container.interrupted .wave-bar {
+      background: var(--danger) !important;
+      height: 4px !important;
+      animation: none !important;
+    }
+    @keyframes soundWave {
+      0% { height: 10%; }
+      100% { height: var(--h); }
+    }
+    .wave-status-text { font-size: 12px; color: var(--text-bright); text-align: center; font-weight: 500; }
+    .token-purge-tracker {
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      justify-content: center;
+    }
+    .tracker-item { display: flex; justify-content: space-between; font-size: 12px; padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+    .tk-label { color: var(--text-muted); }
+    .tk-val { font-family: var(--font-mono); font-weight: 700; color: var(--text-bright); }
+    .tk-val.highlight { color: var(--danger); }
+
   </style>
 </head>
 <body>

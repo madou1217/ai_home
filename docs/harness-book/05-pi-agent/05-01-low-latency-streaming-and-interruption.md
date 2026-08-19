@@ -134,6 +134,10 @@ export interface BaseWireFrame {
 
 ## 4. 即时打断有限状态机（Barge-in FSM）与幽灵分片剪裁算法
 
+<div id="widget-bargein-container"></div>
+
+
+
 ```mermaid
 stateDiagram-v2
     [*] --> LISTENING: 会话就绪 (Session Ready)

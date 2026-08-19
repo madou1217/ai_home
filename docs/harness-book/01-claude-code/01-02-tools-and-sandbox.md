@@ -251,6 +251,10 @@ $$\text{ToolName}_{\text{Exposed}} = \text{mcp}\_\_\langle \text{server\_name} \
 
 ## 5. 多层执行沙箱与安全隔离机制
 
+<div id="widget-worktree-container"></div>
+
+
+
 当 Agent 拥有执行代码和修改系统的能力时，**沙箱与隔离** 就是阻断系统灾难的最后一道防线。
 
 ```

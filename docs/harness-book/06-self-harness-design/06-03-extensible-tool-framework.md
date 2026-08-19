@@ -222,6 +222,10 @@ export class BashTool {
 
 ## 4. Git Worktree 物理并发沙箱隔离管理器实现
 
+<div id="widget-worktree-container"></div>
+
+
+
 当子代理需要并发执行写操作时，`WorktreeManager` 为其分配独立的临时文件系统沙箱：
 
 ```typescript

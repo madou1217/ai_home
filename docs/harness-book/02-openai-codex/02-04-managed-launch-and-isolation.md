@@ -17,40 +17,33 @@
 
 本节将系统拆解这套凭据架构的底层数据结构、内存投影机制、环境变量清理与进程沙箱隔离方案。
 
-```
-┌────────────────────────────────────────────────────────────────────────────────────────────┐
-│                             Codex 多账号凭据投影与隔离全景架构                              │
-│                                                                                            │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                    Unified Account Pool (统一凭据池: OAuth / API Key)                │  │
-│  │                                                                                      │  │
-│  │   [Account 1: team_prod (OAuth)]   [Account 2: dev_relay (API Key)]   [Account N]    │  │
-│  └──────────────────────────────────────────┬───────────────────────────────────────────┘  │
-│                                             │                                              │
-│                     ┌───────────────────────┴───────────────────────┐                      │
-│                     │ (按 Session 动态分配 / 负载均衡调度)           │                      │
-│                     ▼                                               ▼                      │
-│  ┌────────────────────────────────────────┐   ┌─────────────────────────────────────────┐  │
-│  │   Session A Context (Assigned: Acc 1)  │   │   Session B Context (Assigned: Acc 2)   │  │
-│  └──────────────────┬─────────────────────┘   └────────────────────┬────────────────────┘  │
-│                     │                                              │                       │
-│                     │ (Build Isolated Runtime Env & Injection)     │                       │
-│                     ▼                                              ▼                       │
-│  ┌────────────────────────────────────────┐   ┌─────────────────────────────────────────┐  │
-│  │ Subprocess Sandbox A (Managed-Launch)  │   │ Subprocess Sandbox B (Managed-Launch)   │  │
-│  │                                        │   │                                         │  │
-│  │ - 注入 AIH_MANAGED_LAUNCH=1 (防回落)   │   │ - 注入 AIH_MANAGED_LAUNCH=1 (防回落)    │  │
-│  │ - 独立 CODEX_CONFIG_DIR (/tmp/c1)      │   │ - 独立 CODEX_CONFIG_DIR (/tmp/c2)       │  │
-│  │ - 虚拟 auth.json (只读挂载/只在内存)   │   │ - 虚拟 auth.json (只读挂载/只在内存)    │  │
-│  │ - 清理宿主污染 (Unset OPENAI_API_KEY)  │   │ - 清理宿主污染 (Unset OPENAI_API_KEY)   │  │
-│  └────────────────────────────────────────┘   └─────────────────────────────────────────┘  │
-│                     │                                              │                       │
-│                     ▼ (并发独立运行，互不干扰)                     ▼                       │
-│        ┌────────────────────────┐                     ┌────────────────────────┐           │
-│        │ Codex App Server (PID 101) │                 │ Codex App Server (PID 102) │       │
-│        └────────────────────────┘                     └────────────────────────┘           │
-└────────────────────────────────────────────────────────────────────────────────────────────┘
-```
+<div class="rich-diagram-box">
+  <div class="diagram-header-tag">Credential Isolation</div>
+  <div class="diagram-title"><span>🔒</span> 多账号凭据动态投影与受控环境隔离模型</div>
+  <div class="harness-stack">
+    <div class="stack-layer">
+      <div class="layer-badge">Central Account Pool (中央统一凭据池)</div>
+      <div class="chips-grid-3">
+        <div class="tech-card blue"><div class="card-label">OAuth 凭据槽 1</div><div class="card-sub">team_prod (自动 Token 轮转)</div></div>
+        <div class="tech-card purple"><div class="card-label">API Key 凭据槽 2</div><div class="card-sub">fast_relay (直连高并发)</div></div>
+        <div class="tech-card green"><div class="card-label">(Account, Model) 熔断器</div><div class="card-sub">429 独立退避冷却</div></div>
+      </div>
+    </div>
+    <div class="flow-connector">⬇️ 动态构建干净运行时环境 (Build Isolated Runtime Env)</div>
+    <div class="split-two-col">
+      <div class="col-box">
+        <div class="col-title">🧪 Subprocess Sandbox A (Session 1)</div>
+        <div class="tech-card cyan" style="margin-bottom:6px;"><div class="card-label">CODEX_CONFIG_DIR = /tmp/c1</div></div>
+        <div class="tech-card orange"><div class="card-label">AIH_MANAGED_LAUNCH = 1 (防回落)</div></div>
+      </div>
+      <div class="col-box">
+        <div class="col-title">🧪 Subprocess Sandbox B (Session 2)</div>
+        <div class="tech-card cyan" style="margin-bottom:6px;"><div class="card-label">CODEX_CONFIG_DIR = /tmp/c2</div></div>
+        <div class="tech-card orange"><div class="card-label">AIH_MANAGED_LAUNCH = 1 (防回落)</div></div>
+      </div>
+    </div>
+  </div>
+</div>
 
 ---
 

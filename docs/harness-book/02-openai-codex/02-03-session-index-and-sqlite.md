@@ -19,42 +19,22 @@ OpenAI **Codex CLI / App Server** 在存储架构上确立了一套极具工业�
 
 本节将深入解构这套双轨持久化架构的表结构设计、事件溯源机制、断点续传（Session Resume）状态机以及数据一致性与崩溃恢复策略。
 
-```
-┌────────────────────────────────────────────────────────────────────────────────────────────┐
-│                             OpenAI Codex 双轨持久化与恢复架构                              │
-│                                                                                            │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                              Codex Session Execution Runtime                         │  │
-│  │                                                                                      │  │
-│  │    [Turn Loop Engine] ───> [Event Producer (Thought / ToolCall / ToolResult)]         │  │
-│  └──────────────────────────────────────────┬───────────────────────────────────────────┘  │
-│                                             │                                              │
-│                     ┌───────────────────────┴───────────────────────┐                      │
-│                     │ (双写 WAL 管道: Dual-Write Pipeline)          │                      │
-│                     ▼                                               ▼                      │
-│  ┌────────────────────────────────────────┐   ┌─────────────────────────────────────────┐  │
-│  │  Track 1: SQLite 关系型实体与索引库    │   │ Track 2: JSONL 物理事件溯源日志         │  │
-│  │  (File: ~/.codex/codex.db)             │   │ (File: ~/.codex/threads/<id>/events.jsonl)│
-│  │                                        │   │                                         │  │
-│  │  - `threads` 表 (会话元信息/状态)       │   │  - 纯追加写入 (O(1) Append-only)         │  │
-│  │  - `turns` 表 (轮次聚合/Token 用量)    │   │  - 包含流式原始分片 (Raw Event Stream)   │  │
-│  │  - `tool_calls` 表 (结构化工具索引)    │   │  - 毫秒级 fsync 刷盘保证                 │  │
-│  │  - `session_index` (全文检索与过滤)    │   │  - 离线高保真执行轨迹重放 (Replay Engine)│  │
-│  └──────────────────┬─────────────────────┘   └────────────────────┬────────────────────┘  │
-│                     │                                              │                       │
-│                     └───────────────────────┬──────────────────────┘                       │
-│                                             │                                              │
-│                                             ▼                                              │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                         Session Resume & Rehydration Engine                          │  │
-│  │                                                                                      │  │
-│  │  1. Fast Path: 从 SQLite 瞬时读取最新 Turn 聚合快照与 last_response_id (< 10ms)       │  │
-│  │  2. Deep Path: 扫描 JSONL 重放校验事件完整性，自愈修复脏写或未闭合状态               │  │
-│  │  3. 环境一致性核验: 校验 CWD、Git HEAD SHA，检测工作区文件漂移                       │  │
-│  │  4. 恢复 ReAct 事件循环，无缝等待用户下一条输入或继续执行未完长任务                  │  │
-│  └──────────────────────────────────────────────────────────────────────────────────────┘  │
-└────────────────────────────────────────────────────────────────────────────────────────────┘
-```
+<div class="rich-diagram-box">
+  <div class="diagram-header-tag">Dual-Track Storage</div>
+  <div class="diagram-title"><span>💾</span> OpenAI Codex 关系索引 + 物理事件溯源双轨持久化架构</div>
+  <div class="split-two-col">
+    <div class="col-box">
+      <div class="col-title">🗄️ Track 1: SQLite 关系实体库</div>
+      <div class="tech-card blue" style="margin-bottom:6px;"><div class="card-label">threads &amp; turns 表</div><div class="card-sub">会话元信息、状态枚举与 Token 统计</div></div>
+      <div class="tech-card green"><div class="card-label">tool_calls 索引表</div><div class="card-sub">结构化工具执行历史</div></div>
+    </div>
+    <div class="col-box">
+      <div class="col-title">📜 Track 2: JSONL 物理事件溯源</div>
+      <div class="tech-card purple" style="margin-bottom:6px;"><div class="card-label">events.jsonl 追加日志</div><div class="card-sub">O(1) 物理追加，零损耗记录每帧思考与操作</div></div>
+      <div class="tech-card cyan"><div class="card-label">100% 确定性重放引擎</div><div class="card-sub">离线高保真复现任意历史时刻</div></div>
+    </div>
+  </div>
+</div>
 
 ---
 

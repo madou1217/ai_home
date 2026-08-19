@@ -17,43 +17,29 @@
 
 本节将深入解构 Zen / Go 双端点路由设计、多 Provider 统一抽象接口模型、动态权重调度算法与连接池优化。
 
-```
-┌────────────────────────────────────────────────────────────────────────────────────────────┐
-│                              OpenCode Zen / Go 双端点路由全景架构                          │
-│                                                                                            │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                              Host Agent & Tool Runtime                               │  │
-│  │                              (Node.js / TypeScript Layer)                            │  │
-│  └──────────────────────────────────────────┬───────────────────────────────────────────┘  │
-│                                             │                                              │
-│                                             ▼ [Internal IPC / Loopback HTTP]               │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                       Zen Policy & Routing Plane (Zen 智能控制面)                     │  │
-│  │                                                                                      │  │
-│  │   - Model Catalog & Capabilities Map (模型能力画像: 视觉/思考/函数调用/窗口)           │  │
-│  │   - Session Sticky Binder (账号粘性绑定 / Prompt Cache 亲和性计算)                   │  │
-│  │   - Health & Cooldown Circuit Breaker (429/500 熔断器状态机)                          │  │
-│  │   - Routing Policy Resolver: [Cost-First | Speed-First | Capability-First]           │  │
-│  └──────────────────────────────────────────┬───────────────────────────────────────────┘  │
-│                                             │                                              │
-│                                             ▼ [Resolved Upstream Target & Normalized Payload]
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                   Go High-Throughput Data Plane (Go 高性能数据面转发内核)             │  │
-│  │                                                                                      │  │
-│  │  ┌─────────────────────────┐  ┌─────────────────────────┐  ┌──────────────────────┐  │  │
-│  │  │  HTTP/2 Connection Pool │  │  SSE Zero-Copy Rewriter │  │ Stream Decompressor  │  │  │
-│  │  │  (Keep-Alive / Multiplex│  │ (Universal Frame Normal)│  │ (Brotli / Gzip / Raw)│  │  │
-│  │  └─────────────────────────┘  └─────────────────────────┘  └──────────────────────┘  │  │
-│  └──────────────────────────────────────────┬───────────────────────────────────────────┘  │
-│                                             │                                              │
-│                     ┌───────────────────────┼───────────────────────┐                      │
-│                     ▼ (Direct HTTPS)        ▼ (Relay HTTPS)         ▼ (Local gRPC)         │
-│        ┌────────────────────────┐  ┌────────────────────────┐  ┌────────────────────────┐  │
-│        │ Anthropic Messages API │  │  OpenAI Responses API  │  │ Local Ollama / vLLM    │  │
-│        │ (claude.ai / AWS Bed)  │  │ (api.openai.com / Relay│  │ (127.0.0.1:11434)      │  │
-│        └────────────────────────┘  └────────────────────────┘  └────────────────────────┘  │
-└────────────────────────────────────────────────────────────────────────────────────────────┘
-```
+<div class="rich-diagram-box">
+  <div class="diagram-header-tag">Dual-Endpoint Architecture</div>
+  <div class="diagram-title"><span>🧭</span> OpenCode Zen 控制面 / Go 数据面双端点解耦架构</div>
+  <div class="harness-stack">
+    <div class="stack-layer">
+      <div class="layer-badge">Zen Policy &amp; Routing Plane (TypeScript 智能控制面)</div>
+      <div class="chips-grid-3">
+        <div class="tech-card blue"><div class="card-label">Model Capabilities Map</div><div class="card-sub">模型能力画像与别名解析</div></div>
+        <div class="tech-card purple"><div class="card-label">Sticky Session Binder</div><div class="card-sub">会话粘性绑定与 Cache 亲和</div></div>
+        <div class="tech-card red"><div class="card-label">Circuit Breaker (429/500)</div><div class="card-sub">(Account, Model) 四态熔断</div></div>
+      </div>
+    </div>
+    <div class="flow-connector">⬇️ Resolved Upstream Target &amp; Normalized Payload</div>
+    <div class="stack-layer">
+      <div class="layer-badge">Go High-Throughput Data Plane (Go 高性能数据面转发内核)</div>
+      <div class="chips-grid-3">
+        <div class="tech-card green"><div class="card-label">HTTP/2 Connection Pool</div><div class="card-sub">Keep-Alive 多路复用</div></div>
+        <div class="tech-card cyan"><div class="card-label">SSE Zero-Copy Rewriter</div><div class="card-sub">字节级快速流式归一重写</div></div>
+        <div class="tech-card orange"><div class="card-label">Stream Decompressor</div><div class="card-sub">透明管道转发与空响应熔断</div></div>
+      </div>
+    </div>
+  </div>
+</div>
 
 ---
 

@@ -13,36 +13,26 @@
 
 本节将深入解构推理模型的思考流传输机理、**流式多路解耦分发器（Thinking/Text De-muxer）** 的状态机实现、动态思考预算分配算法以及跨轮次历史净化（Thinking Strip）工程。
 
-```
-┌────────────────────────────────────────────────────────────────────────────────────────────┐
-│                             推理大模型思考流解耦与预算治理全景拓扑                          │
-│                                                                                            │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                    Inbound Raw Stream (多源异构流式输入: DeepSeek/Claude/o3)         │  │
-│  │  - Case A (Tag Mode): `<think>用户需要重构 auth.ts ...</think>好的，我开始执行`      │  │
-│  │  - Case B (Field Mode): chunk.choices[0].delta.reasoning_content = "分析依赖..."     │  │
-│  │  - Case C (Block Mode): chunk.delta.type = "thinking_delta"                          │  │
-│  └──────────────────────────────────────────┬───────────────────────────────────────────┘  │
-│                                             │                                              │
-│                                             ▼                                              │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                     ThinkingStreamDemuxer (流式多路解耦解包状态机)                   │  │
-│  │                                                                                      │  │
-│  │   [State 1: IN_THINKING]           [State 2: IN_TEXT]         [State 3: IN_TOOL_CALL]│  │
-│  │   - 剥离标签，提取纯思维链         - 用户可见最终正文文本     - 工具参数累加与校验   │  │
-│  │   - 实时推送至折叠面板 UI          - 流式推送至终端与气泡     - 触发物理工具执行     │  │
-│  └──────────────────┬───────────────────────┬───────────────────────┬───────────────────┘  │
-│                     │                       │                       │                      │
-│                     ▼                       ▼                       ▼                      │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                           Three-Tier Storage & Context Splitter                      │  │
-│  │                                                                                      │  │
-│  │  1. WebUI / Terminal Layer ──> 实时渲染：[Thought Process (折叠)] + [正文流 (高亮)]  │  │
-│  │  2. Local WAL Persistence ───> 完整落盘：JSONL events.jsonl 保留完整 thinking 数据   │  │
-│  │  3. Next-Turn Context Builder> 历史净化：将思考流物理抹除 (Strip)，仅保留最终 Action │  │
-│  └──────────────────────────────────────────────────────────────────────────────────────┘  │
-└────────────────────────────────────────────────────────────────────────────────────────────┘
-```
+<div class="rich-diagram-box">
+  <div class="diagram-header-tag">Thinking Demuxing Topology</div>
+  <div class="diagram-title"><span>🧠</span> 推理大模型思考流解耦与预算治理全景拓扑</div>
+  <div class="harness-stack">
+    <div class="stack-layer">
+      <div class="layer-badge">ThinkingStreamDemuxer (流式多路解耦解包状态机)</div>
+      <div class="chips-grid-3">
+        <div class="tech-card orange"><div class="card-label">1. IN_THINKING</div><div class="card-sub">提取纯思维链，实时推送至折叠抽屉</div></div>
+        <div class="tech-card cyan"><div class="card-label">2. IN_TEXT</div><div class="card-sub">最终正文文本，流式推送至屏幕</div></div>
+        <div class="tech-card green"><div class="card-label">3. IN_TOOL_CALL</div><div class="card-sub">工具参数累加，触发物理动作</div></div>
+      </div>
+    </div>
+    <div class="flow-connector">⬇️ 三层存储与历史上下文分流治理</div>
+    <div class="chips-grid-3">
+      <div class="tech-card blue"><div class="card-label">1. UI 渲染层</div><div class="card-sub">折叠思考抽屉 + 正文打字机</div></div>
+      <div class="tech-card purple"><div class="card-label">2. WAL 持久化</div><div class="card-sub">JSONL 完整保留用于复盘审计</div></div>
+      <div class="tech-card red"><div class="card-label">3. 下一轮上下文</div><div class="card-sub">100% 物理剥离 (Thinking Strip)</div></div>
+    </div>
+  </div>
+</div>
 
 ---
 

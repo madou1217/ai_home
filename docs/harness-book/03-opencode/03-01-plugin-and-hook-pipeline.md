@@ -15,41 +15,24 @@
 
 本节将系统拆解 OpenCode 的插件化微内核架构、生命周期 Hook 拓扑矩阵、洋葱模型拦截流水线以及核心源码实现。
 
-```
-┌────────────────────────────────────────────────────────────────────────────────────────────┐
-│                             OpenCode 插件化微内核与 Hook 拦截架构                           │
-│                                                                                            │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                              OpenCode Microkernel Core                               │  │
-│  │  - 状态驱动引擎 (State Engine)               - 全局插件注册表 (Plugin Registry)      │  │
-│  │  - 事件调度总线 (Event Dispatcher Bus)       - 统一 Provider 抽象层 (Model Gateway)  │  │
-│  └──────────────────────────────────────────┬───────────────────────────────────────────┘  │
-│                                             │                                              │
-│                     ┌───────────────────────┴───────────────────────┐                      │
-│                     ▼                                               ▼                      │
-│  ┌────────────────────────────────────────┐   ┌─────────────────────────────────────────┐  │
-│  │    Ingress Pipeline (输入与提示词管线)  │   │    Egress Pipeline (工具与执行管线)     │  │
-│  │                                        │   │                                         │  │
-│  │  1. `before_prompt_hydrate`            │   │  1. `before_tool_dispatch`              │  │
-│  │     (插件注入自定义 Rules/Memory)       │   │     (安全审计 / 参数清洗 / AST 拦截)     │  │
-│  │  2. `transform_model_payload`          │   │  2. `wrap_tool_execution`               │  │
-│  │     (多模型协议格式转换 / 思考流解耦)  │   │     (沙箱隔离 / PTY 包装 / 超时守护)    │  │
-│  │  3. `before_stream_start`              │   │  3. `after_tool_executed`               │  │
-│  │     (鉴权令牌刷新 / 请求头覆写)        │   │     (结果截断 / 状态快照 / Linter 触发) │  │
-│  └──────────────────┬─────────────────────┘   └────────────────────┬────────────────────┘  │
-│                     │                                              │                       │
-│                     └───────────────────────┬──────────────────────┘                       │
-│                                             │                                              │
-│                                             ▼                                              │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                             Active Plugin Instances (插件实例集合)                   │  │
-│  │  ┌───────────────────────┐  ┌────────────────────────┐  ┌─────────────────────────┐  │  │
-│  │  │  SecurityGuardPlugin  │  │  MemoryRetrieverPlugin │  │ AutoLinterFixerPlugin   │  │  │
-│  │  │  (拦截 rm -rf / 提权) │  │  (检索本地 .md 规则库) │  │ (文件修改后自动跑 eslint)│  │  │
-│  │  └───────────────────────┘  └────────────────────────┘  └─────────────────────────┘  │  │
-│  └──────────────────────────────────────────────────────────────────────────────────────┘  │
-└────────────────────────────────────────────────────────────────────────────────────────────┘
-```
+<div class="rich-diagram-box">
+  <div class="diagram-header-tag">Microkernel Pipeline</div>
+  <div class="diagram-title"><span>🔌</span> OpenCode 插件微内核与双向可变 Hook 拦截架构</div>
+  <div class="split-two-col">
+    <div class="col-box">
+      <div class="col-title">📥 Ingress Pipeline (输入与提示词管线)</div>
+      <div class="tech-card blue" style="margin-bottom:6px;"><div class="card-label">1. before_prompt_hydrate</div><div class="card-sub">注入自定义规则与长效记忆</div></div>
+      <div class="tech-card purple" style="margin-bottom:6px;"><div class="card-label">2. transform_model_payload</div><div class="card-sub">多模型协议重写与思考流解耦</div></div>
+      <div class="tech-card green"><div class="card-label">3. before_stream_start</div><div class="card-sub">令牌刷新与请求头动态改写</div></div>
+    </div>
+    <div class="col-box">
+      <div class="col-title">📤 Egress Pipeline (工具与执行管线)</div>
+      <div class="tech-card red" style="margin-bottom:6px;"><div class="card-label">1. before_tool_dispatch</div><div class="card-sub">AST 安全审计与权限短路拦截</div></div>
+      <div class="tech-card orange" style="margin-bottom:6px;"><div class="card-label">2. wrap_tool_execution</div><div class="card-sub">沙箱隔离、PTY 包装与超时守护</div></div>
+      <div class="tech-card cyan"><div class="card-label">3. after_tool_executed</div><div class="card-sub">输出截断与伴随 Linter 自动修复</div></div>
+    </div>
+  </div>
+</div>
 
 ---
 

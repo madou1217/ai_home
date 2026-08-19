@@ -19,46 +19,21 @@
 3. **多工具调用（Tool Calls）的极速流式桥接、参数校验与本地物理执行流水线**；
 4. **对 `ai_home` 多协议网关与适配层研发的落地指导**。
 
-```
-┌────────────────────────────────────────────────────────────────────────────────────────────┐
-│                             OpenAI Responses API 流式管道拓扑                               │
-│                                                                                            │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                              Client Request (POST /v1/responses)                     │  │
-│  │  - conversation_id / previous_response_id (服务端会话状态延续)                        │  │
-│  │  - tools: [ { type: "function", function: { ... } }, { type: "computer" } ]          │  │
-│  │  - input: "修复单元测试并运行"                                                         │  │
-│  └──────────────────────────────────────────┬───────────────────────────────────────────┘  │
-│                                             │                                              │
-│                                             ▼ (HTTP/2 SSE Event Stream)                    │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                         Responses Wire Protocol Event Stream                         │  │
-│  │                                                                                      │  │
-│  │   1. event: response.created ───────────────> (初始化响应元数据与 ID)                │  │
-│  │   2. event: response.output_item.added ─────> (新增输出项: Message / Function Call)  │  │
-│  │   3. event: response.reasoning.delta ───────> (流式思考过程: 思维链展开)             │  │
-│  │   4. event: response.text.delta ────────────> (流式正文输出: 渲染到终端/UI)          │  │
-│  │   5. event: response.function_call_arguments.delta ─> (工具参数流式累加器)           │  │
-│  │   6. event: response.output_item.done ──────> (单项输出闭环校验)                     │  │
-│  │   7. event: response.completed ─────────────> (响应生命周期终态，Token 用量结算)     │  │
-│  └──────────────────────────────────────────┬───────────────────────────────────────────┘  │
-│                                             │                                              │
-│                                             ▼                                              │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                     ResponsesStreamParser (流式协议解包与工具桥接器)                 │  │
-│  │                                                                                      │  │
-│  │  ┌─────────────────────────┐  ┌─────────────────────────┐  ┌──────────────────────┐  │  │
-│  │  │   Thinking Channel      │  │      Text Channel       │  │ Tool Bridge Dispatch │  │  │
-│  │  │ (Reasoning Chunk Buffer)│  │ (UI Text Chunk Emitter) │  │(Schema Validate & Run│  │  │
-│  │  └─────────────────────────┘  └─────────────────────────┘  └──────────┬───────────┘  │  │
-│  └───────────────────────────────────────────────────────────────────────┼──────────────┘  │
-│                                                                          │                 │
-│                                                                          ▼                 │
-│                                                      ┌───────────────────────────────────┐ │
-│                                                      │ Physical Tool Execution (Bash/FS) │ │
-│                                                      └───────────────────────────────────┘ │
-└────────────────────────────────────────────────────────────────────────────────────────────┘
-```
+<div class="rich-diagram-box">
+  <div class="diagram-header-tag">Responses Wire Protocol</div>
+  <div class="diagram-title"><span>📡</span> OpenAI Responses API 流式管道拓扑与事件拆解</div>
+  <div class="harness-stack">
+    <div class="stack-layer">
+      <div class="layer-badge">HTTP/2 SSE Event Stream (强类型事件流)</div>
+      <div class="chips-grid-4">
+        <div class="tech-card blue"><div class="card-label">1. response.created</div><div class="card-sub">初始化会话句柄</div></div>
+        <div class="tech-card purple"><div class="card-label">2. reasoning.delta</div><div class="card-sub">流式思维链展开</div></div>
+        <div class="tech-card orange"><div class="card-label">3. text.delta</div><div class="card-sub">正文打字机推送</div></div>
+        <div class="tech-card green"><div class="card-label">4. output_item.done</div><div class="card-sub">工具调用闭环与校验</div></div>
+      </div>
+    </div>
+  </div>
+</div>
 
 ---
 

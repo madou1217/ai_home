@@ -17,45 +17,29 @@ OpenAI 在构建其下一代编程 Agent（Codex CLI 及桌面端/IDE 集成产�
 
 本节将深入拆解 Codex App Server 的进程生命周期管理、JSON-RPC 2.0 协议分帧、雙向异步消息路由模型以及反压（Backpressure）流控机制。
 
-```
-┌────────────────────────────────────────────────────────────────────────────────────────────┐
-│                             OpenAI Codex App Server 全景分层架构                            │
-│                                                                                            │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                     Host Client Layer (宿主接入层: IDE / WebUI / Desktop)            │  │
-│  │                                                                                      │  │
-│  │   [VS Code Extension]         [macOS Desktop App]         [ai_home Gateway Bridge]   │  │
-│  └──────────────────────────────────────────┬───────────────────────────────────────────┘  │
-│                                             │                                              │
-│                                             ▼ (Stdio / Named Pipe / Domain Socket)         │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                  Transport & Framing Layer (传输与数据分帧层: Rust Core)              │  │
-│  │                                                                                      │  │
-│  │   [Framed Read Stream (Stdin)]  ──> [Line-delimited JSON-RPC Parser]                 │  │
-│  │   [Framed Write Stream (Stdout)] <── [JSON-RPC Serializer & Event Dispatcher]        │  │
-│  └──────────────────────────────────────────┬───────────────────────────────────────────┘  │
-│                                             │                                              │
-│                                             ▼                                              │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                   JSON-RPC 2.0 Router & Dispatcher (全双工消息总线)                   │  │
-│  │                                                                                      │  │
-│  │   [Incoming Requests Router]   [Outgoing Notifications]   [Pending Request Tracker]  │  │
-│  │   - thread/start               - thread/event             - Map<RequestId, Sender>   │  │
-│  │   - thread/turn/start          - progress/update          - (Timeout & Cancellation) │  │
-│  │   - tool/respond               - log/message              -                          │  │
-│  └──────────────────────────────────────────┬───────────────────────────────────────────┘  │
-│                                             │                                              │
-│                                             ▼                                              │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                   Codex Engine Core Layer (Agent 线程管理与执行引擎)                 │  │
-│  │                                                                                      │  │
-│  │  ┌─────────────────────────┐  ┌─────────────────────────┐  ┌──────────────────────┐  │  │
-│  │  │  Thread Runtime State   │  │  Responses Wire Client  │  │ Tool Execution Pool  │  │  │
-│  │  │  (Turn FSM & Context)   │  │ (Streaming SSE Engine)  │  │ (Process/Sandbox/FS) │  │  │
-│  │  └─────────────────────────┘  └─────────────────────────┘  └──────────────────────┘  │  │
-│  └──────────────────────────────────────────────────────────────────────────────────────┘  │
-└────────────────────────────────────────────────────────────────────────────────────────────┘
-```
+<div class="rich-diagram-box">
+  <div class="diagram-header-tag">App Server Architecture</div>
+  <div class="diagram-title"><span>⚡</span> OpenAI Codex Stdio App Server 全景分层架构</div>
+  <div class="harness-stack">
+    <div class="stack-layer">
+      <div class="layer-badge">Host Client Layer (宿主接入层)</div>
+      <div class="chips-grid-3">
+        <div class="tech-card blue"><div class="card-label">VS Code Extension</div><div class="card-sub">IDE 双向 LSP/RPC</div></div>
+        <div class="tech-card purple"><div class="card-label">macOS Desktop App</div><div class="card-sub">Swift/Electron GUI</div></div>
+        <div class="tech-card cyan"><div class="card-label">ai_home Gateway Bridge</div><div class="card-sub">WebUI / Stdio 代理</div></div>
+      </div>
+    </div>
+    <div class="flow-connector">⬇️ Stdio 全双工管道 (Line-delimited JSON-RPC 2.0) ⬆️</div>
+    <div class="stack-layer">
+      <div class="layer-badge">JSON-RPC 2.0 Router & Dispatcher (Rust Core)</div>
+      <div class="chips-grid-3">
+        <div class="tech-card green"><div class="card-label">Incoming Requests</div><div class="card-sub">thread/start, turn/start</div></div>
+        <div class="tech-card orange"><div class="card-label">Outgoing Notifications</div><div class="card-sub">thread/event (流式分发)</div></div>
+        <div class="tech-card red"><div class="card-label">Pending Trackers</div><div class="card-sub">approval/request 反向调用</div></div>
+      </div>
+    </div>
+  </div>
+</div>
 
 ---
 

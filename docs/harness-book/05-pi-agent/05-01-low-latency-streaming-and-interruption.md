@@ -15,44 +15,24 @@
 
 本节将深入解构 Pi Agent 的全双工通信协议、即时打断有限状态机、幽灵分片丢弃算法以及毫秒级流式管道架构。
 
-```
-┌────────────────────────────────────────────────────────────────────────────────────────────┐
-│                             Pi Agent 全双工流式事件管道与打断拓扑                          │
-│                                                                                            │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                     Full-Duplex WebSocket Transport Channel (WSS Pipe)               │  │
-│  │                                                                                      │  │
-│  │   Client (Web/Voice) ══════════════════════════════════════════════ Server Core      │  │
-│  │     │                                                                  │             │  │
-│  │     │ ─── 1. user_speech_chunk (Voice/Text Input) ───────────────────> │ (Prefill)    │  │
-│  │     │ <── 2. assistant_token_stream (Streaming TTFT: 180ms) ────────── │ (Decode)     │  │
-│  │     │                                                                  │             │  │
-│  │     │ ─── 3. [INTERRUPT_SIGNAL] ("Wait, let me change...") ──────────> │ [State: CUT]│  │
-│  │     │ <── 4. [STREAM_PURGED_ACK] (Purge from Token ID #42) ─────────── │ (Rollback)  │  │
-│  └─────┴──────────────────────────────────────────────────────────────────┴─────────────┘  │
-│                                                                                            │
-│                                              ▼                                             │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                     Barge-in Finite State Machine (即时打断状态机)                   │  │
-│  │                                                                                      │  │
-│  │  [State: LISTENING] ──(Speech Start)──> [State: GENERATING_STREAM]                   │  │
-│  │         ▲                                       │                                    │  │
-│  │         │                                       │ (Client sends INTERRUPT / VAD)     │  │
-│  │         │                                       ▼                                    │  │
-│  │  [State: RESUMED_IDLE] <──(Purge Done)─── [State: PURGING_AND_REWIND]                │  │
-│  └──────────────────────────────────────────┬───────────────────────────────────────────┘  │
-│                                             │                                              │
-│                                             ▼                                              │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                    Phantom Output Rollback Engine (幽灵产物回滚引擎)                 │  │
-│  │                                                                                      │  │
-│  │  1. 截断模型服务端推理解码循环 (TCP Abort / Engine Cancel)                           │  │
-│  │  2. 计算客户端已实际播放/渲染的最后 Token 偏移量 (Rendered Token Offset = K)         │  │
-│  │  3. 物理剪裁持久化日志中的 [K+1 .. N] 幽灵分片                                        │  │
-│  │  4. 将截断前缀标记为 `[Interrupted by user]` 并无缝接入用户最新输入                  │  │
-│  └──────────────────────────────────────────────────────────────────────────────────────┘  │
-└────────────────────────────────────────────────────────────────────────────────────────────┘
-```
+<div class="rich-diagram-box">
+  <div class="diagram-header-tag">Full-Duplex Barge-in</div>
+  <div class="diagram-title"><span>🎙️</span> Pi Agent 全双工 WebSocket 管道与 50ms 即时打断拓扑</div>
+  <div class="split-two-col">
+    <div class="col-box">
+      <div class="col-title">🔄 Full-Duplex WSS Transport</div>
+      <div class="tech-card blue" style="margin-bottom:6px;"><div class="card-label">1. user_speech_chunk</div><div class="card-sub">语音/文本高频双向流</div></div>
+      <div class="tech-card green" style="margin-bottom:6px;"><div class="card-label">2. assistant_token_stream</div><div class="card-sub">极低延迟首字下发 (TTFT &lt; 180ms)</div></div>
+      <div class="tech-card red"><div class="card-label">3. input.interrupt</div><div class="card-sub">50ms VAD 捕获插话并发送打断帧</div></div>
+    </div>
+    <div class="col-box">
+      <div class="col-title">✂️ Phantom Output Rollback</div>
+      <div class="tech-card purple" style="margin-bottom:6px;"><div class="card-label">1. 掐断模型服务端解码</div><div class="card-sub">TCP Abort / Engine Cancel</div></div>
+      <div class="tech-card orange" style="margin-bottom:6px;"><div class="card-label">2. 锁定客户端 Playhead</div><div class="card-sub">以已播放 Token 序号为唯一基准</div></div>
+      <div class="tech-card cyan"><div class="card-label">3. 物理剪裁幽灵分片</div><div class="card-sub">擦除未被人类听到的残余内容</div></div>
+    </div>
+  </div>
+</div>
 
 ---
 

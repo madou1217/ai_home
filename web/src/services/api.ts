@@ -184,23 +184,6 @@ export type AccountImportPayload =
   | { mode: 'upload'; uploadKind?: 'file' | 'folder'; files: AccountImportUploadFile[]; provider?: string }
   | { mode: 'cliproxyapi'; provider?: string };
 
-// zcode OAuth 计划账号的阿里云验证码挑战（服务端 zcode-captcha-bridge 经
-// accounts watch 推送，一次性 verify param 由 WebUI 跑 Captcha SDK 求解）。
-export interface ZcodeCaptchaChallenge {
-  id: string;
-  accountRef: string;
-  sceneId: string;
-  region: string;
-  prefix: string;
-  language: string;
-  createdAt: number;
-}
-
-export interface ZcodeCaptchaEvent {
-  state: 'required' | 'resolved' | 'expired';
-  challenge: ZcodeCaptchaChallenge | null;
-}
-
 function dispatchAccountsWatchPayload(payload: any, handlers: {
   onSnapshot?: (payload: AccountsListResponse) => void;
   onSnapshotRequested?: (payload: { requestedAt?: number; hydrating?: boolean }) => void;
@@ -210,7 +193,6 @@ function dispatchAccountsWatchPayload(payload: any, handlers: {
   onImportJob?: (job: AccountImportJob) => void;
   onAuthJob?: (job: AccountAddJob) => void;
   onAccountRefreshJob?: (job: AccountRefreshJob) => void;
-  onZcodeCaptcha?: (event: ZcodeCaptchaEvent) => void;
 }) {
   if (payload.type === 'snapshot') {
     handlers.onSnapshot?.({
@@ -258,34 +240,7 @@ function dispatchAccountsWatchPayload(payload: any, handlers: {
     handlers.onAccountRefreshJob?.(payload.job as AccountRefreshJob);
     return;
   }
-  if (payload.type === 'zcode-captcha') {
-    handlers.onZcodeCaptcha?.({
-      state: String(payload.state || '') as ZcodeCaptchaEvent['state'],
-      challenge: payload.challenge && typeof payload.challenge === 'object'
-        ? payload.challenge as ZcodeCaptchaChallenge
-        : null
-    });
-  }
 }
-
-// zcode OAuth 计划账号的验证码桥 API（服务端 webui-zcode-captcha-routes.js）。
-export const zcodeCaptchaAPI = {
-  fetchPending: async (): Promise<ZcodeCaptchaChallenge[]> => {
-    const response = await api.get<{ ok: boolean; challenges: ZcodeCaptchaChallenge[] }>('/webui/zcode-captcha/pending');
-    return Array.isArray(response.data.challenges) ? response.data.challenges : [];
-  },
-  complete: async (id: string, verifyParam: string, region?: string) => {
-    const response = await api.post<{ ok: boolean }>(
-      `/webui/zcode-captcha/${encodeURIComponent(id)}/complete`,
-      { verifyParam, region }
-    );
-    return response.data;
-  },
-  dismiss: async (id: string) => {
-    const response = await api.post<{ ok: boolean }>(`/webui/zcode-captcha/${encodeURIComponent(id)}/dismiss`);
-    return response.data;
-  }
-};
 
 // 账号管理 API
 export const accountsAPI = {
@@ -308,7 +263,6 @@ export const accountsAPI = {
     onImportJob?: (job: AccountImportJob) => void;
     onAuthJob?: (job: AccountAddJob) => void;
     onAccountRefreshJob?: (job: AccountRefreshJob) => void;
-    onZcodeCaptcha?: (event: ZcodeCaptchaEvent) => void;
     onError?: () => void;
   }) => {
     const eventSource = guardedWebUiEventSource('/v0/webui/accounts/watch');

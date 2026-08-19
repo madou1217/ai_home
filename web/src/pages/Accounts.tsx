@@ -52,8 +52,6 @@ import {
 import { formatTimeCell } from '@/utils/datetime';
 import type { AccountExportFormat } from '@/services/api';
 import type { AccountImportUploadFile } from '@/services/api';
-import type { ZcodeCaptchaEvent } from '@/services/api';
-import ZcodeCaptchaBridge from '@/components/account/ZcodeCaptchaBridge';
 import type {
   Account,
   AccountAddJob,
@@ -229,7 +227,6 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
     clearModelAccountRefreshing,
     loadModelCatalog
   } = useModelCatalog(accounts);
-  const [zcodeCaptchaEvent, setZcodeCaptchaEvent] = useState<ZcodeCaptchaEvent | null>(null);
   const [updatingStatusAccountRefs, setUpdatingStatusAccountRefs] = useState<Record<string, boolean>>({});
   const [refreshingUsageAccountRefs, setRefreshingUsageAccountRefs] = useState<Record<string, boolean>>({});
   const [modalVisible, setModalVisible] = useState(false);
@@ -641,9 +638,6 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
     onImportJob: handleImportJobUpdate,
     onAuthJob: handleAuthJobUpdate,
     onAccountRefreshJob: handleAccountRefreshJobUpdate,
-    onZcodeCaptcha: (captchaEvent) => {
-      setZcodeCaptchaEvent(captchaEvent);
-    },
     onAccountLive: (account) => {
       clearAccountUsageRefresh(getAccountRef(account));
       clearModelAccountRefreshing(getModelRefreshAccountRef(account));
@@ -2095,7 +2089,6 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
           void handleOpenApp(account, 'cli', terminalId);
         }}
       />
-      <ZcodeCaptchaBridge event={zcodeCaptchaEvent} />
     </PageScaffold>
   );
 };

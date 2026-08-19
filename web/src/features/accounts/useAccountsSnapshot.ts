@@ -14,7 +14,6 @@ import type {
   AccountRemovedEvent,
   AccountsSnapshotRequestResponse
 } from '@/types';
-import type { ZcodeCaptchaEvent } from '@/services/api';
 import { getAccountRef } from '@/features/accounts/account-model-catalog';
 import { mergeAccounts, mergeSingleAccount } from '@/features/accounts/account-state';
 
@@ -25,7 +24,6 @@ export interface UseAccountsSnapshotHandlers {
   onImportJob?: (job: AccountImportJob) => void;
   onAuthJob?: (job: AccountAddJob) => void;
   onAccountRefreshJob?: (job: AccountRefreshJob) => void;
-  onZcodeCaptcha?: (event: ZcodeCaptchaEvent) => void;
   onAccountLive?: (account: Account) => void;
   onAccountRemoved?: (event: AccountRemovedEvent, removedAccount: Account | undefined) => void;
   onRemovalCleanup?: (accountRef: string) => void;
@@ -233,7 +231,6 @@ export function useAccountsSnapshot(
       onImportJob: (job) => handlersRef.current.onImportJob?.(job),
       onAuthJob: (job) => handlersRef.current.onAuthJob?.(job),
       onAccountRefreshJob: (job) => handlersRef.current.onAccountRefreshJob?.(job),
-      onZcodeCaptcha: (event) => handlersRef.current.onZcodeCaptcha?.(event),
       onError: () => {
         if (accountsSnapshotFallbackTimerRef.current === null) {
           setHydratingDetails(false);

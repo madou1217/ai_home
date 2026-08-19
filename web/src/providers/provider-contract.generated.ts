@@ -309,7 +309,7 @@ export const PROVIDER_DEFINITIONS = [
     ],
     "clients": {
       "cli": true,
-      "desktop": false
+      "desktop": true
     }
   },
   {

@@ -1023,7 +1023,7 @@
       },
       "clients": {
         "cli": true,
-        "desktop": false
+        "desktop": true
       },
       "cli": {
         "order": 9,
@@ -1037,7 +1037,38 @@
           "MOONSHOT_API_KEY",
           "KIMI_BASE_URL",
           "KIMI_CODE_HOME"
-        ]
+        ],
+        "desktopClient": {
+          "macos": {
+            "clientName": "Kimi",
+            "execNames": [
+              "Kimi"
+            ],
+            "pathIncludes": [
+              "/Kimi.app/Contents/MacOS/"
+            ],
+            "installPaths": [
+              "/Applications/Kimi.app",
+              "{hostHomeDir}/Applications/Kimi.app"
+            ]
+          },
+          "windows": {
+            "clientName": "Kimi",
+            "processNames": [
+              "Kimi.exe"
+            ],
+            "execNames": [
+              "Kimi.exe"
+            ]
+          },
+          "linux": {
+            "clientName": "Kimi",
+            "execNames": [
+              "Kimi",
+              "kimi-desktop"
+            ]
+          }
+        }
       },
       "nativeBoundary": {
         "config": {

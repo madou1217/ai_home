@@ -369,12 +369,15 @@ func builtinQoderCN() Definition {
 // builtinKimi 定义 Kimi Code OAuth 和 Moonshot API Key 能力。
 // quota_usage：kimi OAuth 账号由 Node 侧 kimi-quota-probe 走
 // {KIMI_CODE_BASE_URL|api.kimi.com/coding/v1}/usages 拉取 5h/7days 配额窗口。
+// 桌面端：Kimi Work / Kimi 桌面版（kimi.com/zh-cn/products/download）与
+// Kimi 会员账号同体系；Electron 应用，按账号用 --user-data-dir 隔离登录态
+// （桌面版不读 ~/.kimi-code，登录态在各自 user-data 目录内）。
 func builtinKimi() Definition {
 	return Definition{
 		ID:           "kimi",
 		Presentation: presentation("kimi", "Kimi", "KM", "☾", "geekblue"),
 		Gateway:      GatewayActive,
-		Clients:      clientSupport(true, false),
+		Clients:      clientSupport(true, true),
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage, CapabilityUsageScan},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeAPIKey, "Moonshot 密钥", "绑定 MOONSHOT_API_KEY / KIMI_BASE_URL（支持 api.moonshot.cn 和 api.moonshot.ai 双端点）。"),
@@ -388,6 +391,15 @@ func builtinKimi() Definition {
 			LoginArgs:  []string{"login"},
 			Package:    "@moonshot-ai/kimi-code",
 			EnvKeys:    []string{"MOONSHOT_API_KEY", "KIMI_BASE_URL", "KIMI_CODE_HOME"},
+			DesktopClient: desktopClient(
+				"Kimi",
+				[]string{"Kimi"},
+				[]string{"/Kimi.app/Contents/MacOS/"},
+				[]string{"/Applications/Kimi.app", "{hostHomeDir}/Applications/Kimi.app"},
+				[]string{"Kimi.exe"},
+				[]string{"Kimi.exe"},
+				[]string{"Kimi", "kimi-desktop"},
+			),
 		},
 		NativeBoundary: nativeKimi(),
 	}

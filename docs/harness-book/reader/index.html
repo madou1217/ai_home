@@ -790,6 +790,202 @@
 
     @keyframes popIn { from { transform: scale(0.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  
+    /* ========================================================= */
+    /* 🖼️ Pro Interactive Image & SVG Viewer Component Styles     */
+    /* ========================================================= */
+    #pro-image-viewer-modal {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      z-index: 3000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      user-select: none;
+      opacity: 0;
+      transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    #pro-image-viewer-modal.active {
+      display: flex;
+      opacity: 1;
+    }
+    .iv-backdrop {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(3, 7, 18, 0.92);
+      backdrop-filter: blur(16px);
+      z-index: 1;
+    }
+    
+    /* Top Header */
+    .iv-header {
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 60px;
+      padding: 0 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      z-index: 10;
+      background: linear-gradient(180deg, rgba(3, 7, 18, 0.8) 0%, transparent 100%);
+      pointer-events: auto;
+    }
+    .iv-title-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .iv-icon { font-size: 18px; }
+    .iv-title {
+      font-size: 14.5px;
+      font-weight: 700;
+      color: var(--text-primary);
+      letter-spacing: -0.01em;
+    }
+    .iv-zoom-pill {
+      font-size: 11px;
+      font-family: var(--font-mono);
+      font-weight: 700;
+      color: var(--brand-sky);
+      background: var(--accent-bg);
+      border: 1px solid var(--accent-border);
+      padding: 2px 8px;
+      border-radius: 12px;
+    }
+    .iv-top-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .iv-btn {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--border-medium);
+      color: var(--text-secondary);
+      border-radius: 8px;
+      padding: 6px 14px;
+      font-size: 12.5px;
+      font-weight: 500;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      backdrop-filter: blur(8px);
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .iv-btn:hover {
+      background: rgba(255, 255, 255, 0.12);
+      color: var(--text-primary);
+      border-color: var(--brand-sky);
+      transform: translateY(-1px);
+    }
+    .iv-close-btn {
+      width: 34px;
+      height: 34px;
+      padding: 0;
+      justify-content: center;
+      border-radius: 50%;
+      font-size: 15px;
+    }
+
+    /* Viewport & Transform Layer */
+    .iv-viewport {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 5;
+      cursor: grab;
+    }
+    .iv-transform-layer {
+      transition: transform 0.05s linear;
+      transform-origin: center center;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      will-change: transform;
+    }
+    .iv-transform-layer img {
+      max-width: 85vw;
+      max-height: 80vh;
+      border-radius: 10px;
+      box-shadow: 0 25px 80px rgba(0, 0, 0, 0.95);
+      border: 1px solid var(--border-medium);
+      object-fit: contain;
+      pointer-events: none;
+    }
+    .iv-transform-layer svg {
+      max-width: 85vw;
+      max-height: 80vh;
+      border-radius: 10px;
+      background: #000;
+      padding: 24px;
+      border: 1px solid var(--border-medium);
+      box-shadow: 0 25px 80px rgba(0, 0, 0, 0.95);
+    }
+
+    /* Floating Control HUD Toolbar */
+    .iv-toolbar {
+      position: absolute;
+      bottom: 40px;
+      left: 50%;
+      transform: translateX(-50%);
+      height: 48px;
+      padding: 0 10px;
+      background: rgba(17, 24, 39, 0.85);
+      border: 1px solid var(--border-medium);
+      border-radius: 24px;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(20px);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      z-index: 10;
+    }
+    .iv-tool-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 18px;
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-family: var(--font-mono);
+      font-weight: 700;
+      transition: all 0.15s;
+    }
+    .iv-tool-btn:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: var(--brand-sky);
+      transform: scale(1.1);
+    }
+    .iv-tool-divider {
+      width: 1px;
+      height: 20px;
+      background: var(--border-subtle);
+      margin: 0 2px;
+    }
+    
+    .iv-keyboard-hints {
+      position: absolute;
+      bottom: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 11px;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      z-index: 10;
+      pointer-events: none;
+    }
+    .iv-keyboard-hints .dot { color: var(--text-dim); }
+
   </style>
 </head>
 <body>
@@ -889,6 +1085,7 @@
   </div>
 
   <!-- Script Libraries -->
+  <script src="image-viewer.js"></script>
   <script src="diagram-components.js"></script>
   <script src="interactive-widgets.js"></script>
   <script src="book-data.js"></script>

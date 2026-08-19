@@ -986,6 +986,34 @@
     }
     .iv-keyboard-hints .dot { color: var(--text-dim); }
 
+  
+    /* 骨架屏与平滑加载动效 */
+    @keyframes skeleton-shimmer {
+      0% { background-position: -200% 0; }
+      100% { background-position: 200% 0; }
+    }
+    .skeleton-box {
+      background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.03) 75%);
+      background-size: 200% 100%;
+      animation: skeleton-shimmer 1.5s infinite;
+      border-radius: 6px;
+      margin-bottom: 12px;
+    }
+    .skeleton-title { height: 32px; width: 60%; margin-bottom: 24px; }
+    .skeleton-hero { height: 280px; width: 100%; border-radius: 12px; margin-bottom: 28px; }
+    .skeleton-line { height: 16px; width: 100%; }
+    .skeleton-line.short { width: 40%; }
+    .skeleton-line.mid { width: 75%; }
+    .skeleton-card { height: 140px; width: 100%; border-radius: 8px; margin: 20px 0; }
+
+    .content-fade-in {
+      animation: fadeInContent 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+    @keyframes fadeInContent {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
   </style>
 </head>
 <body>

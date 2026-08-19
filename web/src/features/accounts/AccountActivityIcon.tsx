@@ -22,7 +22,7 @@ const AccountActivityIcon = ({ provider, activity, size = 18 }: Props) => {
   const style: CSSProperties | undefined = active
     ? {
         display: 'inline-block',
-        animation: `aih-account-activity-spin ${spinDurationMs(activity as ManagementAccountActivity)}ms linear infinite`
+        animation: `${provider === 'agy' ? 'aih-account-activity-spin-y' : 'aih-account-activity-spin'} ${spinDurationMs(activity as ManagementAccountActivity)}ms linear infinite`
       }
     : undefined;
   return (

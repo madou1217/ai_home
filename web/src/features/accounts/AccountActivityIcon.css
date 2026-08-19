@@ -6,3 +6,14 @@
     transform: rotate(360deg);
   }
 }
+
+/* agy 图标形似「人」字，绕 z 轴转像是在平面上打滚；
+   改为绕 y 轴立体翻转（立着转），透视让翻转有纵深。 */
+@keyframes aih-account-activity-spin-y {
+  from {
+    transform: perspective(160px) rotateY(0deg);
+  }
+  to {
+    transform: perspective(160px) rotateY(360deg);
+  }
+}

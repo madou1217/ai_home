@@ -40,6 +40,12 @@ const nodeRoutes = [
     icon: "tool",
   },
   {
+    name: "Harness 电子书",
+    path: "/harness-book",
+    component: "./HarnessBook",
+    icon: "read",
+  },
+  {
     name: "Server",
     path: "/fabric",
     icon: "cluster",

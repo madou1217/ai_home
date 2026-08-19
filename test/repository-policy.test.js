@@ -9,6 +9,7 @@ const IGNORED_DIR_NAMES = new Set([
   '.git',
   '.claude',
   '.aih',
+  '.omo',
   '.spec-workflow',
   'cli',
   'node_modules',

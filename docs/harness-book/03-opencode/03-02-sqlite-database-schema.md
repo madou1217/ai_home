@@ -175,6 +175,10 @@ CREATE INDEX IF NOT EXISTS idx_token_usages_session ON token_usages(session_id);
 
 ## 4. 细粒度 Token 用量归属与多维财务统计模型
 
+<div id="widget-attribution-container"></div>
+
+
+
 在企业研发与多账号调度中，管理员需要清晰回答三个关键问题：
 1. **项目成本**：“前端项目 `apps/web` 本周总共消耗了多少 Token，折合多少美元？”
 2. **账号分摊**：“企业 Team 账号本月被哪些会话使用，是否存在异常刷量？”

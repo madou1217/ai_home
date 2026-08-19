@@ -141,6 +141,10 @@ const results = await pipeline(
 ```
 
 ### 4.3 模式二：对抗性证伪验证面板 (Adversarial Judge Panel Pattern)
+
+<div id="widget-judge-container"></div>
+
+
 为了防止单一 Agent 的“自圆其说”幻觉，引入 $N$ 个独立的对抗性怀疑者（Skeptics）：
 
 ```

@@ -1208,6 +1208,152 @@
     .hmg-bar-fill { height: 100%; transition: width 0.3s ease; border-radius: 3px; }
     .archived-tag { font-size: 10px; color: var(--danger); font-weight: 600; }
 
+  
+    /* Judge Panel Styles */
+    .judge-panel-grid {
+      display: grid;
+      grid-template-columns: 1fr 1.2fr;
+      gap: 16px;
+      margin-top: 14px;
+    }
+    .patch-candidate-box {
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .cand-title { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; }
+    .cand-code { background: #000; padding: 10px; border-radius: 6px; font-family: var(--font-mono); font-size: 11.5px; color: #79c0ff; }
+    .cand-verdict { font-size: 12px; padding: 6px 10px; border-radius: 6px; background: rgba(255,255,255,0.05); }
+    .cand-verdict.verified { background: rgba(63, 185, 80, 0.15); color: var(--success); }
+    .cand-verdict.refuted { background: rgba(248, 81, 73, 0.15); color: var(--danger); }
+    .judges-list { display: flex; flex-direction: column; gap: 8px; }
+    .judge-card {
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      transition: all 0.2s;
+    }
+    .judge-card.passed { border-color: var(--success); }
+    .judge-card.refuted { border-color: var(--danger); }
+    .judge-header { display: flex; justify-content: space-between; align-items: center; }
+    .j-name { font-size: 12px; font-weight: 700; color: var(--text-bright); }
+    .j-badge { font-size: 10px; padding: 1px 6px; border-radius: 4px; background: var(--bg-tertiary); }
+    .j-badge.pass { background: rgba(63, 185, 80, 0.2); color: var(--success); font-weight: 700; }
+    .j-badge.fail { background: rgba(248, 81, 73, 0.2); color: var(--danger); font-weight: 700; }
+    .j-lens { font-size: 11px; color: var(--text-muted); }
+    .j-reason { font-size: 11px; color: #79c0ff; font-family: var(--font-mono); margin-top: 2px; }
+
+    /* Calculator Styles */
+    .calc-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-top: 14px;
+    }
+    .calc-inputs {
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .calc-row { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+    .calc-row label { color: var(--text-muted); font-size: 11.5px; }
+    .calc-row input[type="range"] { width: 100%; accent-color: var(--accent); }
+    .calc-row span { align-self: flex-end; font-family: var(--font-mono); font-weight: 700; color: var(--text-bright); font-size: 11px; }
+    .calc-results-box {
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      justify-content: center;
+    }
+    .res-item { display: flex; justify-content: space-between; font-size: 12.5px; }
+    .res-label { color: var(--text-muted); }
+    .res-val { font-family: var(--font-mono); font-weight: 700; color: var(--text-bright); }
+    .res-val.highlight { color: var(--accent); font-size: 16px; }
+    .res-val.green { color: var(--success); }
+    .sim-select {
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      color: var(--text-bright);
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 12px;
+      outline: none;
+    }
+
+    /* Zen Flow Grid */
+    .zen-flow-grid {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 16px;
+      align-items: center;
+      margin-top: 14px;
+    }
+    .zen-step {
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .z-title { font-size: 11.5px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-bottom: 8px; }
+    .z-box { font-size: 12px; line-height: 1.6; }
+    .zen-arrow { color: var(--accent); font-size: 20px; text-align: center; }
+
+    /* Arch Explorer */
+    .arch-explorer-grid {
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      gap: 16px;
+      margin-top: 14px;
+    }
+    .layers-stack { display: flex; flex-direction: column; gap: 6px; }
+    .layer-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 8px 10px;
+      cursor: pointer;
+      font-size: 11.5px;
+      transition: all 0.15s;
+    }
+    .layer-item:hover { border-color: var(--accent); }
+    .layer-item.active { background: var(--accent-bg); border-color: var(--accent); color: var(--accent); font-weight: 700; }
+    .l-num { font-family: var(--font-mono); font-size: 10px; font-weight: 800; }
+    .layer-detail-box {
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .comp-badges-flex { display: flex; flex-wrap: wrap; gap: 6px; }
+    .comp-badge {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      color: var(--text-bright);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 4px;
+    }
+
   </style>
 </head>
 <body>

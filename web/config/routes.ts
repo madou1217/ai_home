@@ -40,10 +40,32 @@ const nodeRoutes = [
     icon: "tool",
   },
   {
-    name: "Harness 电子书",
+    name: "灵感工坊",
+    path: "/studio",
+    icon: "experiment",
+    routes: [
+      {
+        path: "/studio",
+        redirect: "/studio/bookshelf",
+      },
+      {
+        name: "知识书架",
+        path: "/studio/bookshelf",
+        component: "./StudioBookshelf",
+        icon: "read",
+      },
+      {
+        name: "AI 生图",
+        path: "/studio/image",
+        component: "./StudioImage",
+        icon: "picture",
+      },
+    ]
+  },
+  {
     path: "/harness-book",
-    component: "./HarnessBook",
-    icon: "read",
+    redirect: "/studio/bookshelf",
+    hideInMenu: true,
   },
   {
     name: "Server",

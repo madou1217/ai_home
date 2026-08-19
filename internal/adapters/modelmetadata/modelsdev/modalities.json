@@ -3138,6 +3138,16 @@
       "text"
     ]
   },
+  "zhipuai/glm-4.6v-flash": {
+    "input": [
+      "text",
+      "image",
+      "video"
+    ],
+    "output": [
+      "text"
+    ]
+  },
   "zhipuai/glm-4.7": {
     "input": [
       "text"

@@ -260,6 +260,12 @@ test('zcode desktop 启动带沙箱 env 与独立 --user-data-dir，进程 detac
   assert.equal(call.options.env.ZCODE_HOME, nodePath.join(SANDBOX_DIR, '.zcode'));
   assert.equal(call.options.env.ZCODE_API_KEY, undefined);
 
+  // ZCode settingService 写死按 HOME || USERPROFILE 定位 setting.json
+  // （无视 ZCODE_DATA_BASE_DIR/ZCODE_HOME），二者必须指向沙箱，
+  // 否则多账号实例共享真实家目录的 setting.json 互踩套餐选择状态（假登陆）。
+  assert.equal(call.options.env.HOME, SANDBOX_DIR);
+  assert.equal(call.options.env.USERPROFILE, SANDBOX_DIR);
+
   // electron-user-data 目录在启动前创建。
   assert.ok(fsImpl.mkdirCalls.includes(expectedUserDataDir));
 });

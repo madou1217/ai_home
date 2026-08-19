@@ -649,7 +649,7 @@ tmux -L aih-claude-<accountRef> kill-server              # 杀该账号下全部
 
 - **api-key 账号**：直通上游 OpenAI 兼容的 `/images/*` 端点（generations 用 JSON，edits 用 multipart，网关只产出 multipart、不解析入站 multipart）。
 - **agy / gemini OAuth 账号**：原生 Code Assist 出图，适用于 `gemini-*-image` 系列模型。
-- **codex OAuth 账号**：Responses `image_generation` 工具，适用于 `gpt-image-1` 等模型。
+- **codex OAuth 账号**：Responses `image_generation` 工具，适用于 `gpt-image-2` / `gpt-image-1` 等模型名。上游 `model` 字段只接受 codex 对话模型（`gpt-image-*` 会被拒绝），策略把请求模型名映射到 codex 对话模型候选列表（默认 `gpt-5.6-terra`，可用 `codexImageUpstreamModel` 覆盖），图片经流式 `image_generation_call` 事件返回。
 - 其余 provider 返回 `400 unsupported_image_provider`；模型不在出图名单返回 `400 unsupported_model_for_images`。
 
 错误统一为 OpenAI 信封 `{ error: { message, type, code } }`。账号出图成功/失败与聊天请求走同一套用量记账、请求日志与 (账号, 模型) 熔断；出图超时默认 120s（`options.upstreamTimeoutMs` 可调）。

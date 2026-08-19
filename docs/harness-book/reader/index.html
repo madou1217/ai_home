@@ -636,7 +636,7 @@
     // Settings config
     let aiConfig = JSON.parse(localStorage.getItem("aih_book_ai_config") || JSON.stringify({
       mode: "aih_server",
-      baseUrl: "http://127.0.0.1:9527/v1",
+      baseUrl: "/docs/harness-book/api/chat",
       apiKey: "",
       model: "claude-opus-5"
     }));
@@ -806,7 +806,7 @@
 请结合本章节的底层架构知识，以严谨、源码级、生动透彻的语言解答读者的问题。如果涉及状态机、协议、数据结构或 ai_home 落地，请给出具体的解释或代码示例。`;
 
       try {
-        let endpoint = aiConfig.mode === "aih_server" ? "http://127.0.0.1:9527/v1/chat/completions" : `${aiConfig.baseUrl}/chat/completions`;
+        let endpoint = aiConfig.mode === "aih_server" ? "/docs/harness-book/api/chat" : `${aiConfig.baseUrl}/chat/completions`;
         let headers = { "Content-Type": "application/json" };
         if (aiConfig.apiKey) {
           headers["Authorization"] = `Bearer ${aiConfig.apiKey}`;

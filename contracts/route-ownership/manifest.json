@@ -1,0 +1,464 @@
+{
+  "schema_version": 1,
+  "manifest_id": "ai-home-route-ownership-2026-08-19",
+  "baseline_date": "2026-08-19",
+  "source_revision": {
+    "git_commit": "e29f90464cec9d25242738a534815a60711ce404",
+    "collection_script": "scripts/collect-gateway-routes.js",
+    "source_mode": "read_only_source_scan",
+    "note": "工作树在生成时包含其他会话的未提交改动；manifest 只声明本次核对的路由/架构事实，不吸收这些改动。"
+  },
+  "migration_state_machine": [
+    "node_owned",
+    "write_frozen",
+    "migrated_and_verified",
+    "go_owned"
+  ],
+  "public_endpoint": {
+    "service": "node-host",
+    "host": "127.0.0.1",
+    "port": 9527,
+    "production_owner": "node",
+    "migration_state": "node_owned",
+    "go_may_bind": false,
+    "cutover_requires": [
+      "capability_parity_evidence",
+      "protocol_and_route_shadow_evidence",
+      "database_and_runtime_migration_verification",
+      "rollback_plan",
+      "explicit_cutover_confirmation"
+    ]
+  },
+  "go_private_endpoint": {
+    "server": {
+      "host": "127.0.0.1",
+      "port": 19527,
+      "purpose": "explicit Go account/inference preview",
+      "production": false
+    },
+    "web": {
+      "host": "127.0.0.1",
+      "port": 19528,
+      "purpose": "explicit Go account management preview",
+      "production": false
+    },
+    "launcher": "scripts/go-accounts-preview.js",
+    "formal_aih_cli_integrated": false,
+    "formal_node_webui_integrated": false,
+    "may_claim_public_9527": false,
+    "isolated_ai_home": true
+  },
+  "route_baseline": {
+    "collector_schema_version": 2,
+    "node": {
+      "route_records": 299,
+      "endpoint_records": 292,
+      "unique_endpoint_patterns": 220,
+      "unique_http_endpoint_patterns": 215,
+      "unique_websocket_endpoint_patterns": 7,
+      "guard_records": 7,
+      "fallback_records": 0
+    },
+    "go": {
+      "route_records": 19,
+      "endpoint_records": 18,
+      "unique_endpoint_patterns": 17,
+      "unique_http_endpoint_patterns": 17,
+      "unique_websocket_endpoint_patterns": 1,
+      "guard_records": 0,
+      "fallback_records": 1
+    },
+    "comparable_node_http_endpoint_records": 14,
+    "missing_go_capability_routes": [
+      "/v1{beta?}/models/{model}:generateContent",
+      "/v1{beta?}/models/{model}:streamGenerateContent",
+      "/v1/blobs/{id}",
+      "/v1/images/edits",
+      "/v1/images/generations",
+      "/v1/messages/count_tokens",
+      "/v1/models/{id}"
+    ],
+    "guards_not_endpoints": [
+      "/v1/",
+      "/v1beta/"
+    ],
+    "evidence_command": "node scripts/collect-gateway-routes.js --json"
+  },
+  "entries": [
+    {
+      "id": "gateway.health",
+      "kind": "route",
+      "capability": "process_health",
+      "node_routes": [
+        { "transport": "http", "methods": ["GET"], "path": "/healthz" }
+      ],
+      "go_routes": [
+        { "transport": "http", "methods": ["GET", "HEAD"], "path": "/healthz" }
+      ],
+      "production_owner": "node",
+      "migration_state": "node_owned",
+      "node_implementation": "stable",
+      "go_implementation": "private_canary",
+      "cutover_blocking": true,
+      "blockers": ["public endpoint remains Node until the full gate passes"],
+      "evidence": ["lib/server/server.js", "internal/host/aihserver/router.go", "scripts/collect-gateway-routes.js"]
+    },
+    {
+      "id": "gateway.readiness",
+      "kind": "route",
+      "capability": "service_readiness",
+      "node_routes": [
+        { "transport": "http", "methods": ["GET"], "path": "/readyz" }
+      ],
+      "go_routes": [
+        { "transport": "http", "methods": ["GET", "HEAD"], "path": "/readyz" }
+      ],
+      "production_owner": "node",
+      "migration_state": "node_owned",
+      "node_implementation": "stable",
+      "go_implementation": "private_canary",
+      "cutover_blocking": true,
+      "blockers": ["readiness semantics are not yet the public Node contract"],
+      "evidence": ["lib/server/server.js", "internal/host/aihserver/router.go", "scripts/collect-gateway-routes.js"]
+    },
+    {
+      "id": "gateway.models.list",
+      "kind": "route",
+      "capability": "model_catalog",
+      "node_routes": [
+        { "transport": "http", "methods": ["GET"], "path": "/v1/models" }
+      ],
+      "go_routes": [
+        { "transport": "http", "methods": ["GET", "HEAD"], "path": "/v1/models" }
+      ],
+      "production_owner": "node",
+      "migration_state": "node_owned",
+      "node_implementation": "stable",
+      "go_implementation": "private_canary",
+      "cutover_blocking": true,
+      "blockers": ["models.dev snapshot and account catalog ownership still require migration gate"],
+      "evidence": ["lib/server/v1-router.js", "internal/transport/http/modelsapi", "docs/architecture/route-catalog-snapshot-v1.md"]
+    },
+    {
+      "id": "gateway.models.detail",
+      "kind": "route",
+      "capability": "single_model_lookup",
+      "node_routes": [
+        { "transport": "http", "methods": ["GET"], "path": "/v1/models/{id}", "pattern": "^/v1/models/([^/]+)$" }
+      ],
+      "go_routes": [],
+      "production_owner": "node",
+      "migration_state": "node_owned",
+      "node_implementation": "stable",
+      "go_implementation": "absent",
+      "cutover_blocking": true,
+      "blockers": ["Go has no single-model lookup route"],
+      "evidence": ["lib/server/v1-router.js", "scripts/collect-gateway-routes.js"]
+    },
+    {
+      "id": "gateway.props",
+      "kind": "route",
+      "capability": "codex_client_properties",
+      "node_routes": [
+        { "transport": "http", "methods": ["GET"], "path": "/v1/props" }
+      ],
+      "go_routes": [
+        { "transport": "http", "methods": ["GET"], "path": "/v1/props" }
+      ],
+      "production_owner": "node",
+      "migration_state": "node_owned",
+      "node_implementation": "compatibility",
+      "go_implementation": "private_canary",
+      "cutover_blocking": true,
+      "blockers": ["matching route does not transfer public ownership"],
+      "evidence": ["lib/server/v1-router.js", "internal/transport/http/clientpropsapi", "docs/architecture/go-node-parity-matrix.md"]
+    },
+    {
+      "id": "gateway.openai.responses",
+      "kind": "route",
+      "capability": "openai_responses_http",
+      "node_routes": [
+        { "transport": "http", "methods": ["POST"], "path": "/v1/responses" }
+      ],
+      "go_routes": [
+        { "transport": "http", "methods": ["POST"], "path": "/v1/responses" }
+      ],
+      "production_owner": "node",
+      "migration_state": "node_owned",
+      "node_implementation": "stable",
+      "go_implementation": "private_canary",
+      "cutover_blocking": true,
+      "blockers": ["protocol shadow and runtime ownership gates remain open"],
+      "evidence": ["lib/server/protocol-registry.js", "internal/transport/http/openairesponsesapi", "internal/host/aihserver/live_codex_responses_test.go"]
+    },
+    {
+      "id": "gateway.openai.responses.websocket",
+      "kind": "route",
+      "capability": "codex_responses_websocket",
+      "node_routes": [
+        { "transport": "websocket", "methods": ["GET"], "path": "/v1/responses", "upgrade": true }
+      ],
+      "go_routes": [
+        { "transport": "websocket", "methods": ["GET"], "path": "/v1/responses", "upgrade": true }
+      ],
+      "production_owner": "node",
+      "migration_state": "node_owned",
+      "node_implementation": "stable",
+      "go_implementation": "private_canary",
+      "cutover_blocking": true,
+      "blockers": ["same-path HTTP and WebSocket ownership still belongs to Node"],
+      "evidence": ["lib/server/server.js", "internal/transport/http/codexresponsesws", "scripts/collect-gateway-routes.js"]
+    },
+    {
+      "id": "gateway.openai.chat_completions",
+      "kind": "route",
+      "capability": "openai_chat_completions",
+      "node_routes": [
+        { "transport": "http", "methods": ["POST"], "path": "/v1/chat/completions" }
+      ],
+      "go_routes": [
+        { "transport": "http", "methods": ["POST"], "path": "/v1/chat/completions" }
+      ],
+      "production_owner": "node",
+      "migration_state": "node_owned",
+      "node_implementation": "stable",
+      "go_implementation": "private_canary",
+      "cutover_blocking": true,
+      "blockers": ["canonical routing and account runtime are not public Go-owned"],
+      "evidence": ["lib/server/protocol-registry.js", "internal/transport/http/openaichatcompletionsapi", "internal/host/aihserver/live_codex_chat_completions_test.go"]
+    },
+    {
+      "id": "gateway.anthropic.messages",
+      "kind": "route",
+      "capability": "anthropic_messages",
+      "node_routes": [
+        { "transport": "http", "methods": ["POST"], "path": "/v1/messages" }
+      ],
+      "go_routes": [
+        { "transport": "http", "methods": ["POST"], "path": "/v1/messages" }
+      ],
+      "production_owner": "node",
+      "migration_state": "node_owned",
+      "node_implementation": "stable",
+      "go_implementation": "private_canary",
+      "cutover_blocking": true,
+      "blockers": ["Native Relay and Canonical parity are verified privately, not promoted"],
+      "evidence": ["lib/server/protocol-registry.js", "internal/transport/http/anthropicmessagesapi", "internal/transport/http/claudenativerelay"]
+    },
+    {
+      "id": "gateway.anthropic.count_tokens",
+      "kind": "route",
+      "capability": "anthropic_count_tokens",
+      "node_routes": [
+        { "transport": "http", "methods": ["POST"], "path": "/v1/messages/count_tokens" }
+      ],
+      "go_routes": [],
+      "production_owner": "node",
+      "migration_state": "node_owned",
+      "node_implementation": "stable",
+      "go_implementation": "absent",
+      "cutover_blocking": true,
+      "blockers": ["Go has no local token-count route"],
+      "evidence": ["lib/server/protocol-registry.js", "lib/server/v1-router.js", "scripts/collect-gateway-routes.js"]
+    },
+    {
+      "id": "gateway.gemini.generate_content",
+      "kind": "route",
+      "capability": "gemini_generate_content",
+      "node_routes": [
+        { "transport": "http", "methods": ["POST"], "path": "/v1{beta?}/models/{model}:generateContent", "pattern": "^/v1(?:beta)?/models/[^/]*:generateContent$" }
+      ],
+      "go_routes": [],
+      "production_owner": "node",
+      "migration_state": "node_owned",
+      "node_implementation": "restricted",
+      "go_implementation": "absent",
+      "cutover_blocking": true,
+      "blockers": ["Go does not implement the Gemini protocol route"],
+      "evidence": ["lib/server/protocol-registry.js", "lib/server/protocol-gemini-request-adapters.js", "scripts/collect-gateway-routes.js"]
+    },
+    {
+      "id": "gateway.gemini.stream_generate_content",
+      "kind": "route",
+      "capability": "gemini_stream_generate_content",
+      "node_routes": [
+        { "transport": "http", "methods": ["POST"], "path": "/v1{beta?}/models/{model}:streamGenerateContent", "pattern": "^/v1(?:beta)?/models/[^/]*:streamGenerateContent$" }
+      ],
+      "go_routes": [],
+      "production_owner": "node",
+      "migration_state": "node_owned",
+      "node_implementation": "restricted",
+      "go_implementation": "absent",
+      "cutover_blocking": true,
+      "blockers": ["Go does not implement the Gemini streaming protocol route"],
+      "evidence": ["lib/server/protocol-registry.js", "lib/server/protocol-gemini-response-adapters.js", "scripts/collect-gateway-routes.js"]
+    },
+    {
+      "id": "gateway.images.generations",
+      "kind": "route",
+      "capability": "image_generation",
+      "node_routes": [
+        { "transport": "http", "methods": ["POST"], "path": "/v1/images/generations" }
+      ],
+      "go_routes": [],
+      "production_owner": "node",
+      "migration_state": "node_owned",
+      "node_implementation": "restricted",
+      "go_implementation": "absent",
+      "cutover_blocking": true,
+      "blockers": ["Go has no image strategy registry or image response contract"],
+      "evidence": ["lib/server/image-generations-endpoint.js", "lib/server/image-generation-strategy-registry.js", "scripts/collect-gateway-routes.js"]
+    },
+    {
+      "id": "gateway.images.edits",
+      "kind": "route",
+      "capability": "image_editing",
+      "node_routes": [
+        { "transport": "http", "methods": ["POST"], "path": "/v1/images/edits" }
+      ],
+      "go_routes": [],
+      "production_owner": "node",
+      "migration_state": "node_owned",
+      "node_implementation": "restricted",
+      "go_implementation": "absent",
+      "cutover_blocking": true,
+      "blockers": ["Go has no multipart image-edit route or provider strategy"],
+      "evidence": ["lib/server/image-generations-endpoint.js", "lib/server/image-generation-request.js", "scripts/collect-gateway-routes.js"]
+    },
+    {
+      "id": "gateway.vision.blobs",
+      "kind": "route",
+      "capability": "vision_blob_handle",
+      "node_routes": [
+        { "transport": "http", "methods": ["GET"], "path": "/v1/blobs/{id}", "pattern": "/v1/blobs/*" }
+      ],
+      "go_routes": [],
+      "production_owner": "node",
+      "migration_state": "node_owned",
+      "node_implementation": "restricted",
+      "go_implementation": "absent",
+      "cutover_blocking": true,
+      "blockers": ["Go lacks the vision guard/blob store round trip, not only the GET endpoint"],
+      "evidence": ["lib/server/vision-image-guard.js", "lib/server/image-blob-store.js", "lib/server/v1-router.js"]
+    },
+    {
+      "id": "node.webui_and_session_surface",
+      "kind": "capability_surface",
+      "capability": "webui_session_pty",
+      "node_routes": [
+        { "transport": "http", "methods": ["*"], "path": "/v0/webui/*", "role": "WebUI API, session, terminal and PTY" },
+        { "transport": "http", "methods": ["GET"], "path": "/ui/*", "role": "static WebUI" }
+      ],
+      "go_routes": [],
+      "production_owner": "node",
+      "migration_state": "node_owned",
+      "node_implementation": "stable",
+      "go_implementation": "out_of_scope",
+      "cutover_blocking": false,
+      "blockers": ["intentionally retained by Node Host in Go Refactor .1"],
+      "evidence": ["lib/server/web-ui-router.js", "lib/server/webui-terminal-routes.js", "docs/functional-matrix.md"]
+    },
+    {
+      "id": "node.fabric_surface",
+      "kind": "capability_surface",
+      "capability": "fabric_and_remote_node",
+      "node_routes": [
+        { "transport": "http", "methods": ["*"], "path": "/v0/fabric/*" },
+        { "transport": "websocket", "methods": ["GET"], "path": "/v0/fabric/broker/control", "upgrade": true },
+        { "transport": "websocket", "methods": ["GET"], "path": "/v0/fabric/transport/echo", "upgrade": true }
+      ],
+      "go_routes": [],
+      "production_owner": "node",
+      "migration_state": "node_owned",
+      "node_implementation": "advanced",
+      "go_implementation": "out_of_scope",
+      "cutover_blocking": false,
+      "blockers": ["Fabric remains a Node-owned product surface in this baseline"],
+      "evidence": ["lib/server/fabric-router.js", "lib/server/fabric-broker-router.js", "docs/functional-matrix.md"]
+    },
+    {
+      "id": "node.node_rpc_surface",
+      "kind": "capability_surface",
+      "capability": "node_rpc_and_remote_sessions",
+      "node_routes": [
+        { "transport": "http", "methods": ["*"], "path": "/v0/node-rpc/*" },
+        { "transport": "websocket", "methods": ["GET"], "path": "/v0/relay/node", "upgrade": true }
+      ],
+      "go_routes": [],
+      "production_owner": "node",
+      "migration_state": "node_owned",
+      "node_implementation": "advanced",
+      "go_implementation": "out_of_scope",
+      "cutover_blocking": false,
+      "blockers": ["remote node/session orchestration is not part of Go Refactor .1"],
+      "evidence": ["lib/server/node-rpc-router.js", "lib/server/remote/relay-server.js", "docs/functional-matrix.md"]
+    },
+    {
+      "id": "node.codex_app_server",
+      "kind": "route",
+      "capability": "codex_app_server_proxy",
+      "node_routes": [
+        { "transport": "websocket", "methods": ["GET"], "path": "/v0/codex/app-server", "upgrade": true },
+        { "transport": "websocket", "methods": ["GET"], "path": "/", "upgrade": true, "role": "legacy app-server compatibility" }
+      ],
+      "go_routes": [],
+      "production_owner": "node",
+      "migration_state": "node_owned",
+      "node_implementation": "restricted",
+      "go_implementation": "out_of_scope",
+      "cutover_blocking": false,
+      "blockers": ["Codex app-server/stdio session proxy remains Node-owned"],
+      "evidence": ["lib/server/codex-app-server-proxy.js", "lib/server/server.js", "docs/functional-matrix.md"]
+    },
+    {
+      "id": "go.preview.account_management",
+      "kind": "preview_surface",
+      "capability": "account_management_v1",
+      "node_routes": [
+        { "transport": "http", "methods": ["*"], "path": "/v0/webui/management/*", "role": "formal Node WebUI facade" }
+      ],
+      "go_routes": [
+        { "transport": "http", "methods": ["*"], "path": "/v1/management/*", "role": "explicit private Preview only" }
+      ],
+      "production_owner": "node",
+      "migration_state": "node_owned",
+      "node_implementation": "stable",
+      "go_implementation": "preview",
+      "cutover_blocking": false,
+      "blockers": ["Go Preview is not wired into formal aih CLI/WebUI and must not double-write production state"],
+      "evidence": ["scripts/go-accounts-preview.js", "test/go-preview-isolation.test.js", "internal/host/aihserver/router.go", "docs/functional-matrix.md"]
+    },
+    {
+      "id": "go.preview.claude_relay_leases",
+      "kind": "preview_surface",
+      "capability": "claude_relay_lease_control",
+      "node_routes": [
+        { "transport": "http", "methods": ["*"], "path": "/v0/webui/*", "role": "formal Node control surface" }
+      ],
+      "go_routes": [
+        { "transport": "http", "methods": ["POST"], "path": "/v1/claude-relay-leases", "role": "explicit private Preview/canary only" }
+      ],
+      "production_owner": "node",
+      "migration_state": "node_owned",
+      "node_implementation": "stable",
+      "go_implementation": "private_canary",
+      "cutover_blocking": false,
+      "blockers": ["relay lease route is not a public ownership transfer"],
+      "evidence": ["internal/transport/http/clauderelayleaseapi", "internal/host/aihserver/router.go", "docs/architecture/go-node-parity-matrix.md"]
+    }
+  ],
+  "ownership_invariants": [
+    "Every production entry in this manifest remains production_owner=node and migration_state=node_owned.",
+    "A Go implementation status of preview, private_canary, or partial never changes production ownership.",
+    "No Go process may bind or claim the public 127.0.0.1:9527 endpoint in this stage.",
+    "The /v1/ and /v1beta/ scope guards are evidence of dispatch scope, not public endpoints.",
+    "Node /v0 WebUI, Fabric, Node RPC, Session, PTY, and Codex app-server surfaces remain Node-owned and are not Go Refactor .1 cutover blockers."
+  ],
+  "evidence": [
+    "scripts/collect-gateway-routes.js",
+    "docs/functional-matrix.md",
+    "docs/architecture/go-node-parity-matrix.md",
+    "docs/architecture/product-direction-node-go-2026-08-15.md",
+    "test/go-preview-isolation.test.js"
+  ]
+}

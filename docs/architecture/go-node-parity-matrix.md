@@ -1,108 +1,95 @@
 # Go / Node 网关功能矩阵
 
-> ~~原目的：把「Go 什么时候能取代 Node 9527」从感觉变成账。~~
-> **2026-08-15 决策修正：** 本矩阵只用于衡量能力差距，不授权 Go 直接占用或替换生产
-> `127.0.0.1:9527`。Go 上线门禁完成前该公开端口必须由 Node Host 持有；门禁通过后改变
-> 端口所有者仍须单独 ADR、兼容/回滚证据和显式切流确认。详见
-> [`product-direction-node-go-2026-08-15.md` 第 6.2 节](./product-direction-node-go-2026-08-15.md#62-go-上线前的公开端口禁令)。
-> 初次采集日期：2026-08-08；当前复核日期：2026-08-11。Node 侧 106 条路径 /
-> 35 组，Go 侧当前扫描到 15 条路径。
-> 采集方式：只读扫描 `lib/server/{server,v1-router,web-ui-router,webui-*-routes}.js`
-> 与 `internal/host/aihserver/router.go` 的路径字面量，未启动服务。
+> **2026-08-19 Go Refactor .1 决策：** 本矩阵记录源码路由能力差异和 ownership，
+> 不授权 Go 直接占用或替换生产 `127.0.0.1:9527`。本阶段公开端口、正式 `aih` CLI、
+> 默认 WebUI 和 Provider 迁移均保持不变；Go 只通过隔离 Preview 验证。详见
+> [`product-direction-node-go-2026-08-15.md` 第 6.2 节](./product-direction-node-go-2026-08-15.md#62-go-上线前的公开端口禁令)
+> 与 [`contracts/route-ownership/manifest.json`](../../contracts/route-ownership/manifest.json)。
+> 采集方式是只读源码扫描，未启动服务，也不代替协议/运行时验收。
 
 ## 结论先行
 
-**阻塞切流的只有 3 组，不是 35 组。** Node 的 106 条路径里约 80 条是 WebUI 自己的
-后端（终端、文件树、git、ssh、项目、会话），与「推理网关」无关。把它们算进
-Go 的必做清单是把重构范围放大了一个数量级。
+Go Refactor .1 的交付物是可复核的路由基线和 ownership manifest，不是切流实现。当前
+`127.0.0.1:9527` 的 production owner 固定为 Node，migration state 为 `node_owned`；Go
+Preview Server 使用 `127.0.0.1:19527`，Preview Web 使用 `127.0.0.1:19528`，不得声明
+9527 ownership。
 
-三档分类：
+路由采集结果（`node scripts/collect-gateway-routes.js --json`）：
 
-| 档 | 含义 | 组数 | 路径数 |
-| --- | --- | ---: | ---: |
-| **A 阻塞** | 不补齐就不能切流 | 3 | 9 |
-| **B 需决策** | 归属未定，先定归属再排期 | 4 | 15 |
-| **C 不阻塞** | WebUI 后端，重构范围之外 | 28 | 82 |
+| 项目 | Node | Go Preview | 口径 |
+| --- | ---: | ---: | --- |
+| 路由记录 | 299 | 19 | 按方法、传输和协议证据保留记录 |
+| endpoint 记录 | 292 | 18 | 实际交给处理器的入口 |
+| guard 记录 | 7 | 0 | 作用域/派发判断，不是 endpoint |
+| fallback 记录 | 0 | 1 | Go `/` 未命中兜底 |
+| endpoint 路径模式 | 220 | 17 | 去重后的标准化 `path` |
+| HTTP endpoint 路径模式 | 215 | 17 | 仅 HTTP 传输 |
+| WebSocket endpoint 路径模式 | 7 | 1 | 仅 WebSocket 传输 |
 
----
+### 当前可比较数据面与明确缺口
 
-## A 档：阻塞切流（必须补齐）
+Node 中符合 `/v1*`、`/healthz`、`/readyz` 且为 HTTP endpoint 的记录为 14 条。Go
+当前明确缺少以下 7 个 capability route：
 
-| Node 路径 | Go 现状 | 说明 |
+| Node capability route | Go 状态 | 说明 |
 | --- | --- | --- |
-| `/v1/responses` | ✅ 已有 | OpenAI Responses HTTP/SSE + Codex Responses WebSocket；WS 在首帧读取 model 后征召账号，保持原生文本帧 |
-| `/v1/chat/completions` | ✅ 已有 | OpenAI Chat 入口 |
-| `/v1/messages` | ✅ 已有 | Canonical + Native Relay 双路分发 |
-| `/v1/models` | ✅ 已有 | 模型目录 |
-| `/healthz` `/readyz` | ✅ 已有 | 存活/就绪 |
-| `/v1/props` | ✅ 已有 | 客户端能力协商，返回 `{object:"props",data:{}}` |
-| `/v1/blobs/{id}` | ❌ **缺失** | 视觉 blob 句柄，见下方说明 |
-| ~~`/v1/`~~ | — | **不是端点**：`v1-router.js:592` 的作用域守卫 |
-| ~~`/v1beta/`~~ | — | **不是端点**：同上。全仓 `/v1beta` 只出现在该守卫里，无任何处理器 |
+| `/v1{beta?}/models/{model}:generateContent` | 缺失 | Gemini 非流式；Node 同时匹配 `/v1` 与 `/v1beta` |
+| `/v1{beta?}/models/{model}:streamGenerateContent` | 缺失 | Gemini 流式；Node 同时匹配 `/v1` 与 `/v1beta` |
+| `/v1/blobs/{id}` | 缺失 | vision guard 使用的图像 blob 读取链路 |
+| `/v1/images/edits` | 缺失 | OpenAI image edit |
+| `/v1/images/generations` | 缺失 | OpenAI image generation |
+| `/v1/messages/count_tokens` | 缺失 | Anthropic 本地 token count，不发起推理 |
+| `/v1/models/{id}` | 缺失 | 单模型查询 |
 
-采集脚本按路径字面量收集，会把这两条守卫当成端点。**已实测证伪**：对活着的
-Node 9527 探测，`/v1beta/models` 与 `/v1/unknown-endpoint` 均返回 404，而
-`/v1/props` 返回 200。
+`/v1/` 和 `/v1beta/` 是 Node 的 scope guard，不是 endpoint。采集器保留它们是为了
+保留源码证据，但 manifest 的 `guards_not_endpoints` 只冻结这两个数据面命名空间守卫。
+Node 其余 5 个 guard 也仍按 `guard` 分类，不能在路由计数中被误读成可调用 endpoint。
 
-所以数据面剩余缺口是 **1 条**，不是 4 条：
+### Ownership 与非数据面
 
-1. `/v1/blobs/{id}` —— 依赖 vision-image-guard 的 blob 存储：非视觉模型收到图片时
-   网关剥图存 blob、正文留句柄，视觉子代理再回来取。Go 侧没有这条链路，补端点
-   而不补链路没有意义。**归入「Go 支持视觉借用」的独立课题，不算切流阻塞。**
+manifest 中每个 production entry 都固定为 `production_owner=node`、
+`migration_state=node_owned`。Node 的 WebUI、Fabric、Node RPC、Session、PTY 和 Codex
+app-server surface 仍由 Node 持有；它们不因 Go Preview 已存在就自动变成 Go 的切流范围。
+Go 的账号管理 API `/v1/management/*` 与 Node 的 `/v0/webui/management/*` 是不同语义的
+控制面，不通过兼容别名伪装成同一路由。
 
-## B 档：需要先定归属
+## Go Preview 当前 endpoint 记录
 
-| 组 | Node | Go | 决策点 |
-| --- | --- | --- | --- |
-| 管理面账号 | `/v0/webui/management/accounts` 等 11 条 | `/v1/management/*` | **语义不同，不做别名**：旧路径是 Node WebUI 运维 facade；Go 路径是账号领域 API。后续 TypeScript 客户端直接使用 `/v1/management`。 |
-| `/v0/management` | ✅ | ❌ | 控制面入口，是否由 Go 承载 |
-| `/v0/node-rpc/status` | ✅ | ❌ | Fabric 节点 RPC |
-| `/v0/webui/nodes/*`（6） | ✅ | ❌ | 远程节点编排，属 Fabric 主线 |
-
-管理面命名空间已经定案：不把旧 WebUI facade 伪装成 Go 账号 API，也不在 Go 中增加
-`/v0` 兼容层。前端迁移属于消费者改造；其余三项取决于 Fabric 是否也迁 Go。
-
-## C 档：WebUI 后端，不阻塞
-
-以下 28 组共 82 条路径服务于 WebUI 自身，与推理网关正交。切流时应继续由 Node
-提供，或由前端直连 Node。列出仅为完整性。
-
-`accounts`(6) `chat`(5) `config`(1) `control-plane`(5) `desktop-menu`(1)
-`fs`(5) `git`(2) `internal`(1) `model-aliases`(1) `projects`(含 sessions/watch)
-`provider-hooks`(2) `server`(1) `server-config`(2) `server-routes`(6)
-`session-events`(1) `sessions`(6) `slash-commands`(1) `ssh-connections`(3)
-`ssh-hosts`(1) `ssh-workspaces`(2) `terminal`(7) `ui`(2) `webui` 根(2) 等。
-
----
-
-## Go 侧完整路由清单（15）
+Go 当前为 18 条 endpoint 记录、17 个去重路径模式，另有 1 条 `/` fallback 和 1 条
+`/v1/responses` WebSocket endpoint。HTTP 路由的标准化路径如下：
 
 ```
 /healthz
 /readyz
+/v1/chat/completions
+/v1/claude-relay-leases
+/v1/management/account-aliases/
+/v1/management/account-auth-jobs/
+/v1/management/account-auth-jobs
+/v1/management/account-defaults/
+/v1/management/account-imports/sub2api
+/v1/management/account-imports
+/v1/management/account-selections/resolve
+/v1/management/accounts/
+/v1/management/accounts
+/v1/messages
 /v1/models
 /v1/props
 /v1/responses
-/v1/chat/completions
-/v1/messages                              (Canonical / Native Relay 分发)
-/v1/claude-relay-leases
-/v1/management/accounts        (+ /)
-/v1/management/account-aliases (+ /)
-/v1/management/account-imports (+ /sub2api)
-/v1/management/account-defaults/
-/v1/management/account-selections/resolve
-/v1/management/account-auth-jobs (+ /)
 ```
 
-## 第二步的工作清单
+`/v1/responses` 的 WebSocket dispatch 是单独的 transport record；`/` 是 fallback，不是
+业务 endpoint。完整记录（方法、匹配类型、源文件、行号和表达式）由 collector JSON
+提供，manifest 只登记用于 ownership/cutover 判断的能力条目。
 
-1. ✅ `/v1/props` —— 已补齐。
-2. 管理面命名空间对齐（B 档硬伤）—— 需先决策由谁改，非纯实现工作。
+## 本阶段不做的事情
 
-不在清单内且有理由：
-
-- `/v1/blobs/{id}`：依赖 Go 侧尚不存在的 vision-guard blob 链路，独立课题。
-- `/v1beta/`、`/v1/` 兜底：不是端点（见 A 档说明）。
+- 不补齐上述 7 个 Go route，不把源码缺口伪装成已迁移能力。
+- 不切换 Node 9527，不启动 Go 作为正式 sidecar，不接入正式 `aih` CLI 或默认 WebUI。
+- 不迁移 Provider，不修改生产账号数据库，不执行真实上游请求。
+- 下一阶段若要推进，必须在 capability parity、协议 shadow、数据库/runtime migration、
+  rollback plan 和显式切流确认全部具备后，按 manifest 的
+  `node_owned -> write_frozen -> migrated_and_verified -> go_owned` 状态机推进。
 
 ## 判定原则：权威是 provider 契约，不是 Node
 

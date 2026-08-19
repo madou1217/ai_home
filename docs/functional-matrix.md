@@ -1,8 +1,8 @@
 # AI Home 当前功能矩阵
 
-> 快照日期：2026-08-15
+> 快照日期：2026-08-19
 > 用途：作为逐功能重构、技术栈迁移与回归验收的基线；本文件描述“当前真实存在什么”，不代表这些能力都已达到同一成熟度。
-> 本轮增量：记录 G1 Codex/Claude 账号控制面收口；只把当前工作区已有实现标为完成，真实 Provider 验收仍以独立证据为准。
+> 本轮增量：记录 G1 Codex/Claude 账号控制面收口，并冻结 Go Refactor .1 的只读路由/ownership 基线；只把当前工作区已有实现标为完成，真实 Provider 验收仍以独立证据为准。
 
 ## 1. 盘点口径
 
@@ -230,17 +230,19 @@ Go 重构路径实时核对的外部合同基准为 sub2api
 
 | 编号 | HTTP 入口 | 功能 | 状态 | 主要证据 |
 |---|---|---|---|---|
-| GW-001 | `GET /v1/models` | 聚合启用账号模型、能力过滤、cache/SWR；不暴露通配 alias | 稳定 | `lib/server/v1-router.js` |
-| GW-002 | `GET /v1/models/:id` | 查询单模型可见性/描述 | 稳定 | `getModelIdFromModelsPath` |
-| GW-003 | `POST /v1/chat/completions` | OpenAI Chat Completions，支持 stream/tool/usage/reasoning 适配；Go 路径已对 Codex 与 Claude 真实账号完成流/非流验收 | 稳定/迁移中 | `internal/transport/http/openaichatcompletionsapi`、`internal/adapters/clientprotocol/openaichatcompletions` |
-| GW-004 | `POST /v1/responses` | OpenAI Responses，支持 stream、tool、reasoning 与 canonical bridge；Go 路径已对 Codex 与 Claude 真实账号完成验收 | 稳定/迁移中 | `internal/transport/http/openairesponsesapi`、`internal/adapters/clientprotocol/openairesponses` |
-| GW-004-WS | `GET /v1/responses` + WebSocket Upgrade | Go Gateway 原生 Codex Responses-over-WebSocket：首帧按真实模型公平征召账号，单连接固定 `(accountRef, model)`，文本帧双向原样转发，支持同连接 `previous_response_id` 双轮、`generate:false` 预热、permessage-deflate、16 MiB 消息上限、终态/cooldown 旁路观察和 Server.Close 清理；真实 OAuth 已完成工具调用→结果回放双轮及预热复用验收 | 已实现（真实验收） | `application/codexwebsocket`、`internal/adapters/codex/responseswebsocket`、`internal/transport/http/codexresponsesws` |
-| GW-005 | `POST /v1/messages` | Anthropic Messages，按 provider 能力选择 Native Relay 或 Canonical；Go 路径已对 Claude 原生文本/工具/签名回放与 Codex 跨协议文本/工具/thinking 完成流/非流真实验收 | 稳定/迁移中 | `internal/transport/http/{anthropicmessagesapi,claudenativerelay}`、`internal/adapters/clientprotocol/anthropicmessages` |
-| GW-006 | `POST /v1/messages/count_tokens` | 本地 token count 响应，不发起上游推理 | 稳定 | `detectClientProtocol`、`createAnthropicTokenCountResponse` |
-| GW-007 | `/v1beta/models/*:generateContent` | Gemini generateContent | 稳定/受限 | `protocol-gemini-*`、`v1-router.js` |
-| GW-008 | `/v1beta/models/*:streamGenerateContent` | Gemini streaming generateContent | 稳定/受限 | `protocol-gemini-*` |
-| GW-009 | `GET /v1/props` | Codex-compatible properties/model metadata | 兼容 | `v1-router.js` |
-| GW-010 | `GET /v1/blobs/:id` | 读取暂存的图像 blob | 受限 | `lib/server/image-blob-store.js` |
+| GW-001 | `GET /v1/models` | 聚合启用账号模型、能力过滤、cache/SWR；不暴露通配 alias。正式入口由 Node 持有，Go 仅为私有 Preview | 稳定/迁移中 | `lib/server/v1-router.js`、`internal/transport/http/modelsapi` |
+| GW-002 | `GET /v1/models/:id` | 查询单模型可见性/描述；当前由 Node 提供，Go 路由基线尚无对应入口 | 稳定/迁移中 | `getModelIdFromModelsPath`、`scripts/collect-gateway-routes.js` |
+| GW-003 | `POST /v1/chat/completions` | OpenAI Chat Completions，支持 stream/tool/usage/reasoning 适配；Go 私有路径已对 Codex 与 Claude 真实账号完成流/非流验收，正式 ownership 仍是 Node | 稳定/迁移中 | `internal/transport/http/openaichatcompletionsapi`、`internal/adapters/clientprotocol/openaichatcompletions`、`contracts/route-ownership/manifest.json` |
+| GW-004 | `POST /v1/responses` | OpenAI Responses，支持 stream、tool、reasoning 与 canonical bridge；Go 私有路径已对 Codex 与 Claude 真实账号完成验收，正式 ownership 仍是 Node | 稳定/迁移中 | `internal/transport/http/openairesponsesapi`、`internal/adapters/clientprotocol/openairesponses`、`contracts/route-ownership/manifest.json` |
+| GW-004-WS | `GET /v1/responses` + WebSocket Upgrade | Go 私有 Gateway 支持原生 Codex Responses-over-WebSocket：首帧按真实模型公平征召账号，单连接固定 `(accountRef, model)`，文本帧双向原样转发，支持同连接 `previous_response_id` 双轮、`generate:false` 预热、permessage-deflate、16 MiB 消息上限、终态/cooldown 旁路观察和 Server.Close 清理；正式 ownership 仍是 Node | 已实现（私有真实验收） | `application/codexwebsocket`、`internal/adapters/codex/responseswebsocket`、`internal/transport/http/codexresponsesws`、`contracts/route-ownership/manifest.json` |
+| GW-005 | `POST /v1/messages` | Anthropic Messages，按 provider 能力选择 Native Relay 或 Canonical；Go 私有路径已对 Claude 原生文本/工具/签名回放与 Codex 跨协议文本/工具/thinking 完成流/非流真实验收，正式 ownership 仍是 Node | 稳定/迁移中 | `internal/transport/http/{anthropicmessagesapi,claudenativerelay}`、`internal/adapters/clientprotocol/anthropicmessages`、`contracts/route-ownership/manifest.json` |
+| GW-006 | `POST /v1/messages/count_tokens` | 本地 token count 响应，不发起上游推理；当前由 Node 提供，Go 路由基线尚无对应入口 | 稳定/迁移中 | `detectClientProtocol`、`createAnthropicTokenCountResponse`、`scripts/collect-gateway-routes.js` |
+| GW-007 | `/v1{beta?}/models/*:generateContent` | Gemini generateContent；Node 同时接受 `/v1` 与 `/v1beta`，Go 路由基线尚无对应入口 | 稳定/受限/迁移中 | `protocol-gemini-*`、`v1-router.js`、`scripts/collect-gateway-routes.js` |
+| GW-008 | `/v1{beta?}/models/*:streamGenerateContent` | Gemini streaming generateContent；Node 同时接受 `/v1` 与 `/v1beta`，Go 路由基线尚无对应入口 | 稳定/受限/迁移中 | `protocol-gemini-*`、`scripts/collect-gateway-routes.js` |
+| GW-009 | `GET /v1/props` | Codex-compatible properties/model metadata；Go 有私有对应路由，正式入口仍由 Node 持有 | 兼容/迁移中 | `v1-router.js`、`internal/transport/http/clientpropsapi` |
+| GW-010 | `GET /v1/blobs/:id` | 读取暂存的图像 blob；依赖 vision guard/blob store，Go 路由基线尚无对应入口 | 受限/迁移中 | `lib/server/image-blob-store.js`、`vision-image-guard.js`、`scripts/collect-gateway-routes.js` |
+| GW-010A | `POST /v1/images/generations` | OpenAI image generation；当前由 Node 提供，Go 路由基线尚无对应入口 | 受限/迁移中 | `lib/server/image-generations-endpoint.js`、`image-generation-strategy-registry.js`、`scripts/collect-gateway-routes.js` |
+| GW-010B | `POST /v1/images/edits` | OpenAI image edit；当前由 Node 提供，Go 路由基线尚无对应入口 | 受限/迁移中 | `lib/server/image-generations-endpoint.js`、`image-generation-request.js`、`scripts/collect-gateway-routes.js` |
 | GW-011 | `/v0/codex/app-server` | Codex app-server WebSocket/stdio 代理与 canonical 消息适配 | 受限 | `codex-app-server-*` |
 | GW-012 | `GET /healthz` | 进程健康 | 稳定 | `lib/server/server.js` |
 | GW-013 | `GET /readyz` | 账号池或 Fabric gateway 可服务状态 | 稳定 | `lib/server/server.js` |
@@ -279,6 +281,37 @@ Go 重构路径实时核对的外部合同基准为 sub2api
 | GW-041 | Go 真实协议验收夹具 | 真实 TCP Server + 一次性 `aih.db` + 只读原生 OAuth artifact；严格限制上游端点、官方 Header、模型、固定 marker 和请求数，校验源文件哈希不变，不打印凭据/reasoning/signature | 已实现（开发验收） | `internal/host/aihserver/live_{codex,claude}_*_test.go` |
 | GW-042 | Claude Native SSE 代理控制 | Native Relay 保持上游 SSE 字节不重编码，同时强制 `no-cache`、禁用 Nginx 缓冲并设置 `nosniff`；官方 `ping` 与 reasoning 块透传 | 已实现（真实验收） | `internal/transport/http/claudenativerelay/handler.go`、`handler_test.go` |
 | GW-043 | Claude 非原生客户端身份投影 | 只有 Handler 已判定为非原生的官方 OAuth 请求才补官方 system/Header；统一使用本机已核对 Claude Code 2.1.229 身份，真实原生请求旁路投影并保持原始 Header | 已实现（真实验收） | `internal/transport/http/claudenativerelay/official_client_body.go`、`internal/adapters/claude/messages/client_identity.go` |
+
+### 6.3 Go Refactor .1 路由与 ownership 基线
+
+2026-08-19 使用只读源码采集器重新核对 Node/Go 路由。采集结果不是运行时探针，也不代表
+Go 已获得正式入口；生产 `127.0.0.1:9527` 仍由 Node 持有，Go 只允许通过隔离的
+`127.0.0.1:19527` Server 和 `127.0.0.1:19528` Web Preview 验证。正式 `aih` CLI、默认
+WebUI 和 Provider 迁移均不在本阶段范围内。
+
+| 项目 | Node | Go | 口径 |
+|---|---:|---:|---|
+| 路由记录 | 299 | 19 | 同一路径的不同方法/传输/协议证据分别计数 |
+| endpoint 记录 | 292 | 18 | 真实处理入口 |
+| guard 记录 | 7 | 0 | 作用域/派发判断，不是 endpoint |
+| fallback 记录 | 0 | 1 | Go `/` 未命中兜底 |
+| endpoint 路径模式 | 220 | 17 | 去重后的标准化路径表示 |
+| HTTP endpoint 路径模式 | 215 | 17 | 仅 HTTP 传输 |
+| WebSocket endpoint 路径模式 | 7 | 1 | 仅 WebSocket 传输 |
+
+当前 Go 可比较的 Node HTTP endpoint 记录为 14 条；明确缺口为 Gemini
+`generateContent`/`streamGenerateContent`、`/v1/blobs/{id}`、image
+`generations`/`edits`、`/v1/messages/count_tokens` 和 `/v1/models/{id}`。这些缺口以及
+生产 ownership、迁移状态、证据文件由
+[`contracts/route-ownership/manifest.json`](../contracts/route-ownership/manifest.json)
+冻结；`/v1/`、`/v1beta/` 仅是 Node scope guard，不计为 endpoint。
+
+采集与回归证据：
+
+```bash
+node scripts/collect-gateway-routes.js --json
+node --test test/go-route-ownership-manifest.test.js
+```
 
 ## 7. Server 生命周期、配置与运维
 

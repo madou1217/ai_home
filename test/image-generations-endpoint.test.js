@@ -183,6 +183,9 @@ test('handleImageGenerations marks account failure and returns 502 on strategy e
   assert.equal(ctx.calls.failure.length, 1);
   assert.equal(ctx.calls.failure[0].code, 'upstream_failed');
   assert.equal(ctx.calls.failure[0].account.accountRef, 'acct_a');
+  assert.equal(ctx.calls.logs.length, 2, 'access log plus failure diagnostic entry');
+  assert.equal(ctx.calls.logs[1].provider, 'image');
+  assert.equal(ctx.calls.logs[1].policyKind, 'upstream_failed');
 });
 
 test('handleImageGenerations skips failure accounting for non-cooldown codes', async () => {

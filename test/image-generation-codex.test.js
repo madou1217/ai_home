@@ -164,7 +164,10 @@ test('codex strategy maps upstream errors and empty output', async () => {
   });
   await assert.rejects(
     upstream.generate({ mode: 'generation', model: 'gpt-image-1', prompt: 'p', account: codexAccount(), options: codexOptions() }),
-    (error) => error.code === 'upstream_failed' && error.statusCode === 401 && error.message === 'unauthorized'
+    (error) => error.code === 'upstream_failed'
+      && error.statusCode === 401
+      && error.message === 'unauthorized'
+      && error.upstreamBody === '{"error":{"message":"unauthorized"}}'
   );
 
   const empty = createCodexImageGenerationStrategy({

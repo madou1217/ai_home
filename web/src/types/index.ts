@@ -1833,6 +1833,15 @@ export interface ManagementStatus {
   uptimeSec: number;
 }
 
+export interface ManagementAccountActivity {
+  provider: string;
+  accountRef: string;
+  inFlight: number;
+  rate: number;
+  lastActivityAt: number;
+  updatedAt: number;
+}
+
 export interface ManagementMetrics {
   ok: boolean;
   totalRequests: number;
@@ -1846,6 +1855,7 @@ export interface ManagementMetrics {
   providerSuccess: Record<string, number>;
   providerFailures: Record<string, number>;
   queue: Record<string, ManagementQueueSnapshot>;
+  accountActivity?: Record<string, ManagementAccountActivity>;
   lastErrors: Array<{
     at?: string;
     provider?: string;

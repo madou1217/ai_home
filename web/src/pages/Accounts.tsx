@@ -634,6 +634,38 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
     };
   }, []);
 
+  // 网关请求活动轮询：驱动账号行首图标「运行中」旋转，转速随请求速率变化。
+  // 数据来自 /webui/management/metrics 的 accountActivity（服务端每 1s 刷新）。
+  const [accountActivity, setAccountActivity] = useState<Record<string, ManagementAccountActivity> | null>(null);
+  const accountActivityRef = useRef<Record<string, ManagementAccountActivity> | null>(null);
+  accountActivityRef.current = accountActivity;
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const poll = async () => {
+      try {
+        const metrics = await managementAPI.metrics();
+        if (cancelled) return;
+        setAccountActivity(metrics.accountActivity || null);
+      } catch (_error) {
+        if (!cancelled) setAccountActivity(null);
+      }
+    };
+    poll();
+    timer = setInterval(poll, 2000);
+    return () => {
+      cancelled = true;
+      if (timer !== null) clearInterval(timer);
+    };
+  }, []);
+
+  const getAccountActivity = (record: Pick<Account, 'provider' | 'accountRef'>): ManagementAccountActivity | null => {
+    const activities = accountActivityRef.current;
+    if (!activities) return null;
+    const key = `${String(record.provider).toLowerCase()}:${record.accountRef}`;
+    return activities[key] || null;
+  };
+
   accountsHandlersRef.current = {
     onImportJob: handleImportJobUpdate,
     onAuthJob: handleAuthJobUpdate,
@@ -1344,7 +1376,7 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
         return (
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
           <div style={{ paddingTop: 3, flexShrink: 0 }}>
-            <ProviderIcon provider={record.provider} size={18} />
+            <AccountActivityIcon provider={record.provider} activity={getAccountActivity(record)} size={18} />
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div className="account-email-row" style={{ display: 'flex', alignItems: 'center', gap: 8, height: 24 }}>
@@ -1640,7 +1672,7 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
       <div className="mobile-card account-mobile-card" key={accountRef} data-account-ref={accountRef}>
         <div className="mobile-card-head">
           <span className="mobile-card-head-icon">
-            <ProviderIcon provider={record.provider} size={22} />
+            <AccountActivityIcon provider={record.provider} activity={getAccountActivity(record)} size={22} />
           </span>
           <div className="mobile-card-head-main">
             <div className="mobile-card-title">

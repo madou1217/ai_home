@@ -57,7 +57,7 @@ test('showLsHelp includes Ctrl+C quit hint', () => {
   assert.match(joined, /Ctrl\+C/);
 });
 
-test('interactive pager treats Ctrl+C as quit and prints omitted count', () => {
+test('interactive TTY renders all accounts in animated mode without paging', () => {
   const { root, aiHomeDir, getCliAccountId } = createTempAccounts();
   const logs = [];
   const writes = [];
@@ -73,9 +73,9 @@ test('interactive pager treats Ctrl+C as quit and prints omitted count', () => {
       cliConfigs: { codex: {} },
       listPageSize: 2,
       getAccountStateIndex: () => ({ listStates: () => [] }),
-      checkStatus: (_tool, accountRef) => ({ configured: true, accountName: getCliAccountId(accountRef) }),
+      checkStatus: (_tool, accountRef) => ({ configured: true, accountName: `u-${getCliAccountId(accountRef)}` }),
       formatUsageLabel: () => '',
-      refreshIndexedStateForAccount: () => {}
+      refreshIndexedStateForAccount: () => ({ remainingPct: 88 })
     });
     service.listProfiles('codex');
   } finally {
@@ -84,9 +84,12 @@ test('interactive pager treats Ctrl+C as quit and prints omitted count', () => {
   }
 
   const joinedWrites = writes.join('');
-  const joinedLogs = logs.join('\n');
-  assert.match(joinedWrites, /Ctrl\+C=quit/);
-  assert.match(joinedLogs, /omitted 1 accounts/);
+  // 动画模式下所有账号一次性渲染，不再分页、不再输出 omitted
+  assert.match(joinedWrites, /Account ID: .*\x1b\[36m1\x1b\[0m/);
+  assert.match(joinedWrites, /Account ID: .*\x1b\[36m2\x1b\[0m/);
+  assert.match(joinedWrites, /Account ID: .*\x1b\[36m3\x1b\[0m/);
+  assert.doesNotMatch(joinedWrites, /omitted/);
+  assert.doesNotMatch(joinedWrites, /Ctrl\+C=quit/);
 });
 
 test('listProfiles hides accounts with remaining 0 by default', () => {

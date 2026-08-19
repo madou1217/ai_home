@@ -149,6 +149,7 @@ Fuller layer map:
 - Account unique identity: `accountRef` is the persisted DB primary key and the only identity used by server, WebUI, runtime, events, and usage. `cliAccountId` is only a mutable numeric alias for CLI input/display. Registration derives `accountRef` once from the provider identity seed through `lib/account/account-registration.js`; no `unique_key` column or profile-directory identity fallback exists.
 - Model alias + circuit-breaking: aliases resolve fallback at runtime and `/v1/models` does not expose the wildcard `claude-*`; 429s trip a circuit breaker at `(account, model)` granularity rather than locking the whole account.
 - WebUI real-time push: `session-event-bus.js` → `webui-sse-broadcaster.js` → browser SSE connection.
+- **zcode provider scope (2026-08-19): OAuth 计划账号只做账号管理、桌面 App 启动、用量/额度查看，不做推理 relay。** `zcode.z.ai/api/v1/zcode-plan/*` 是 ZCode 桌面端的私有通道（闪促活动窗口 + 设备态 + 阿里云验证码三重门，405/3012 已由两天端到端取证确认客户端侧无解），不要再尝试对它做 relay。正规 relay 走官方 Coding Plan 端点 + API Key（zcode API-key 账号）：Anthropic `open.bigmodel.cn/api/anthropic` 或 `api.z.ai/api/anthropic`，OpenAI Chat `.../api/coding/paas/v4`，Responses `.../api/v1`（docs.bigmodel.cn / docs.z.ai 的 coding-plan/tool/others）。
 
 ## Testing Guidelines
 - Framework: built-in Node test runner (`node:test`) with `assert/strict`.

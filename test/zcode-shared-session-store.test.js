@@ -39,7 +39,7 @@ test('fresh projection: all session entries become links into the host store', (
   try {
     const summary = ensureZcodeSharedSessionState({ sandboxDir, hostHomeDir });
     assert.deepEqual(summary.errors, []);
-    assert.equal(summary.conflicts.length, 0);
+    assert.equal(summary.discarded, 0);
     for (const seg of ZCODE_SHARED_DIR_ENTRIES) {
       const link = path.join(sandboxDir, '.zcode', ...seg);
       assert.ok(isLink(link), `${seg.join('/')} should be a link`);
@@ -63,7 +63,7 @@ test('fresh projection: all session entries become links into the host store', (
   }
 });
 
-test('projection-only data is migrated into the shared store on first link', () => {
+test('projection residue is deleted in place, never copied or moved anywhere', () => {
   const { root, sandboxDir, hostHomeDir } = makeTree();
   try {
     const projDb = path.join(sandboxDir, '.zcode', 'v2', 'tasks-index.sqlite');
@@ -72,34 +72,20 @@ test('projection-only data is migrated into the shared store on first link', () 
     const projCli = path.join(sandboxDir, '.zcode', 'cli');
     fs.mkdirSync(projCli, { recursive: true });
     fs.writeFileSync(path.join(projCli, 'history.txt'), 'cli-history');
-
-    const summary = ensureZcodeSharedSessionState({ sandboxDir, hostHomeDir });
-    assert.deepEqual(summary.errors, []);
-    assert.equal(summary.conflicts.length, 0);
-    assert.ok(summary.migrated >= 3);
-    assert.equal(fs.readFileSync(path.join(hostHomeDir, '.zcode', 'v2', 'tasks-index.sqlite'), 'utf8'), 'projection-db');
-    assert.equal(fs.readFileSync(path.join(hostHomeDir, '.zcode', 'v2', 'tasks-index.sqlite-wal'), 'utf8'), 'projection-wal');
-    assert.equal(fs.readFileSync(path.join(hostHomeDir, '.zcode', 'cli', 'history.txt'), 'utf8'), 'cli-history');
-    assert.ok(isLink(projDb));
-    assert.ok(isLink(projCli));
-  } finally {
-    cleanup(root);
-  }
-});
-
-test('divergent projection data moves to the conflict backup, shared store wins', () => {
-  const { root, sandboxDir, hostHomeDir } = makeTree();
-  try {
     fs.writeFileSync(path.join(hostHomeDir, '.zcode', 'v2', 'tasks-index.sqlite'), 'shared-db');
-    const projDb = path.join(sandboxDir, '.zcode', 'v2', 'tasks-index.sqlite');
-    fs.writeFileSync(projDb, 'divergent-db');
 
     const summary = ensureZcodeSharedSessionState({ sandboxDir, hostHomeDir });
     assert.deepEqual(summary.errors, []);
-    assert.equal(summary.conflicts.length, 1);
-    assert.equal(fs.readFileSync(summary.conflicts[0], 'utf8'), 'divergent-db');
+    assert.equal(summary.discarded, 3);
+
+    // residue is gone, not relocated: nothing may exist outside the two roots
+    assert.ok(!fs.existsSync(path.join(hostHomeDir, '.zcode', '.aih-migration-conflicts')));
     assert.ok(isLink(projDb));
     assert.equal(fs.readFileSync(projDb, 'utf8'), 'shared-db');
+    assert.ok(isLink(projCli));
+    assert.deepEqual(fs.readdirSync(path.join(hostHomeDir, '.zcode', 'cli')), []);
+    // shared store content is exactly what the host already had
+    assert.equal(fs.readFileSync(path.join(hostHomeDir, '.zcode', 'v2', 'tasks-index.sqlite'), 'utf8'), 'shared-db');
   } finally {
     cleanup(root);
   }
@@ -112,8 +98,7 @@ test('existing correct links are left untouched (idempotent)', () => {
     fs.writeFileSync(path.join(hostHomeDir, '.zcode', 'v2', 'tasks-index.sqlite'), 'shared-db');
     const before = ensureZcodeSharedSessionState({ sandboxDir, hostHomeDir });
     assert.deepEqual(before.errors, []);
-    assert.equal(before.conflicts.length, 0);
-    assert.equal(before.migrated, 0);
+    assert.equal(before.discarded, 0);
     assert.equal(fs.readFileSync(path.join(sandboxDir, '.zcode', 'v2', 'tasks-index.sqlite'), 'utf8'), 'shared-db');
   } finally {
     cleanup(root);
@@ -140,7 +125,7 @@ test('fail-closed when sandbox and host home are the same directory', () => {
   try {
     const summary = ensureZcodeSharedSessionState({ sandboxDir, hostHomeDir: sandboxDir });
     assert.equal(summary.linked, 0);
-    assert.equal(summary.migrated, 0);
+    assert.equal(summary.discarded, 0);
     assert.ok(!isLink(path.join(sandboxDir, '.zcode', 'v2', 'tasks-index.sqlite')));
   } finally {
     cleanup(root);

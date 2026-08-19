@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type { Account } from '@/types';
-import { diffTokenUsage } from './useTokenDropEvents.ts';
+import { appendTokenDrop, diffTokenUsage, type TokenDropEvent } from './useTokenDropEvents.ts';
 
 function makeAccount(overrides: Partial<Account> = {}): Account {
   return {
@@ -27,6 +27,17 @@ function makeUsage(day: number, models?: Array<{ model: string; dayCostUsd: numb
     month: day,
     total: day,
     models: models || []
+  };
+}
+
+function makeDrop(id: string, accountRef = id): TokenDropEvent {
+  return {
+    id,
+    provider: 'codex',
+    accountRef,
+    deltaTokens: 100,
+    deltaCostUsd: null,
+    occurredAt: 0
   };
 }
 
@@ -132,4 +143,30 @@ test('diffTokenUsage lifts fractional delta below 1 to 1 token', () => {
 
   assert.equal(deltas.length, 1);
   assert.equal(deltas[0].deltaTokens, 1);
+});
+
+test('appendTokenDrop enforces the global queue cap', () => {
+  const drops = Array.from({ length: 24 }, (_, index) => makeDrop(`drop-${index}`));
+  const next = appendTokenDrop(drops, makeDrop('drop-new'));
+
+  assert.equal(next.length, 24);
+  assert.equal(next.at(-1)?.id, 'drop-new');
+  assert.equal(next.some((drop) => drop.id === 'drop-0'), false);
+});
+
+test('appendTokenDrop keeps at most three active drops for one account', () => {
+  const drops = [
+    makeDrop('drop-a-1', 'acct-a'),
+    makeDrop('drop-a-2', 'acct-a'),
+    makeDrop('drop-a-3', 'acct-a'),
+    makeDrop('drop-b-1', 'acct-b')
+  ];
+  const next = appendTokenDrop(drops, makeDrop('drop-a-4', 'acct-a'));
+
+  assert.equal(next.filter((drop) => drop.accountRef === 'acct-a').length, 3);
+  assert.equal(next.some((drop) => drop.id === 'drop-a-1'), false);
+  assert.equal(next.some((drop) => drop.id === 'drop-a-2'), true);
+  assert.equal(next.some((drop) => drop.id === 'drop-a-3'), true);
+  assert.equal(next.at(-1)?.id, 'drop-a-4');
+  assert.equal(next.some((drop) => drop.id === 'drop-b-1'), true);
 });

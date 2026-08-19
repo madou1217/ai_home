@@ -49,7 +49,7 @@ const UsageProgressEffects = ({ record, activity, drops }: Props) => {
     : [];
 
   return (
-    <span
+    <div
       className={[
         'usage-progress-effects',
         running ? 'usage-progress-effects--running' : '',
@@ -58,7 +58,7 @@ const UsageProgressEffects = ({ record, activity, drops }: Props) => {
     >
       <UsageSnapshotCell record={record} />
       <TokenDropNumber drops={accountDrops} />
-    </span>
+    </div>
   );
 };
 

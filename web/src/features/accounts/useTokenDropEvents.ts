@@ -100,16 +100,18 @@ function buildDropEvent(delta: TokenUsageDelta): TokenDropEvent {
   };
 }
 
-function pushDrop(drops: TokenDropEvent[], next: TokenDropEvent): TokenDropEvent[] {
+export function appendTokenDrop(drops: TokenDropEvent[], next: TokenDropEvent): TokenDropEvent[] {
   const perAccount = drops.filter((drop) => drop.accountRef === next.accountRef);
   const overflow = perAccount.length >= MAX_DROPS_PER_ACCOUNT;
-  const accountRefs = new Set(drops.map((drop) => drop.accountRef));
-  if (drops.length >= MAX_DROPS_TOTAL && !overflow && accountRefs.size >= MAX_DROPS_TOTAL) {
-    return [...drops.slice(1), next];
-  }
-  return overflow
-    ? [...drops.filter((drop) => drop.accountRef !== next.accountRef).slice(-(MAX_DROPS_PER_ACCOUNT - 1)), next]
+  const retainedIds = overflow
+    ? new Set(perAccount.slice(-(MAX_DROPS_PER_ACCOUNT - 1)).map((drop) => drop.id))
+    : null;
+  const nextDrops = retainedIds
+    ? [...drops.filter((drop) => drop.accountRef !== next.accountRef || retainedIds.has(drop.id)), next]
     : [...drops, next];
+  return nextDrops.length > MAX_DROPS_TOTAL
+    ? nextDrops.slice(-MAX_DROPS_TOTAL)
+    : nextDrops;
 }
 
 /**
@@ -126,7 +128,7 @@ export function useTokenDropEvents(accounts: Account[]): TokenDropEvent[] {
     previousRef.current = next;
     if (deltas.length > 0) {
       const pending = deltas.map((delta) => buildDropEvent(delta));
-      setDrops((current) => pending.reduce((queue, drop) => pushDrop(queue, drop), current));
+      setDrops((current) => pending.reduce((queue, drop) => appendTokenDrop(queue, drop), current));
     }
   }, [accounts]);
 

@@ -119,6 +119,7 @@ import {
   renderAccountRoleIcons,
   renderAccountRoleTags
 } from '@/features/accounts/AccountBadges';
+import AccountActivityIcon from '@/features/accounts/AccountActivityIcon';
 
 // Provider 顺序和认证方式都来自 Go 核心生成的 Client 合同。
 const PROVIDERS: readonly Provider[] = providerIds;

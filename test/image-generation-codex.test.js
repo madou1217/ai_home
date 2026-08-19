@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 
 const {
   createCodexImageGenerationStrategy,
-  __private: { extractCodexImageOutput, readCodexErrorDetail }
+  __private: { extractCodexImageOutput, extractCodexImageOutputFromSse, resolveCodexImageUpstreamModel, readCodexErrorDetail }
 } = require('../lib/server/image-generation-codex');
 const { ImageGenerationError } = require('../lib/server/image-generation-strategy');
 
@@ -17,7 +17,7 @@ function okResponse(json) {
     ok: true,
     status: 200,
     async text() {
-      return JSON.stringify(json);
+      return typeof json === 'string' ? json : JSON.stringify(json);
     }
   };
 }
@@ -51,7 +51,7 @@ function codexOptions(overrides = {}) {
   return { codexBaseUrl: 'https://chatgpt.com/backend-api', ...overrides };
 }
 
-test('codex strategy posts a Responses payload with the image_generation tool', async () => {
+test('codex strategy posts a streaming Responses payload with the image_generation tool', async () => {
   let captured;
   const strategy = createCodexImageGenerationStrategy({
     fetchWithTimeout: makeFetch(async (url, init, timeoutMs, extra) => {
@@ -77,10 +77,14 @@ test('codex strategy posts a Responses payload with the image_generation tool', 
   assert.equal(captured.init.method, 'POST');
   assert.equal(captured.init.headers.authorization, 'Bearer tok-codex');
   assert.equal(captured.init.headers['chatgpt-account-id'], 'chatgpt-1');
+  assert.equal(captured.init.headers.accept, 'text/event-stream');
   const payload = JSON.parse(captured.init.body);
-  assert.equal(payload.model, 'gpt-image-1');
+  // image model names are intent markers; the upstream model must be a codex dialog model
+  assert.equal(payload.model, 'gpt-5.6-terra');
+  assert.equal(payload.store, false);
+  assert.equal(payload.stream, true);
   assert.deepEqual(payload.input, [{ role: 'user', content: [{ type: 'input_text', text: 'a cat' }] }]);
-  assert.deepEqual(payload.tools, [{ type: 'image_generation', name: 'image_generation' }]);
+  assert.deepEqual(payload.tools, [{ type: 'image_generation' }]);
   // wire-only params must never be forwarded
   assert.equal('n' in payload, false);
   assert.equal('size' in payload, false);
@@ -222,6 +226,65 @@ test('extractCodexImageOutput handles tool_call with flat output array', () => {
     { type: 'tool_call', output: [{ type: 'image', data: PNG_BASE64 }] }
   ];
   assert.deepEqual(extractCodexImageOutput(output), [{ b64_json: PNG_BASE64 }]);
+});
+
+test('codex strategy extracts images from the image_generation_call SSE stream', async () => {
+  let captured;
+  const sse = [
+    'event: response.created',
+    'data: {"type":"response.created"}',
+    '',
+    'event: response.output_item.added',
+    'data: {"type":"response.output_item.added","item":{"id":"ig_1","type":"image_generation_call","status":"in_progress"}}',
+    '',
+    'event: response.image_generation_call.partial_image',
+    'data: {"type":"response.image_generation_call.partial_image","item_id":"ig_1","partial_image_b64":"aaa"}',
+    '',
+    'event: response.output_item.done',
+    `data: {"type":"response.output_item.done","item":{"id":"ig_1","type":"image_generation_call","status":"generating","result":"${PNG_BASE64}"}}`,
+    '',
+    'event: response.completed',
+    'data: {"type":"response.completed","response":{"model":"gpt-5.6-terra","usage":{"input_tokens":3,"output_tokens":8,"total_tokens":11}}}',
+    ''
+  ].join('\n');
+  const strategy = createCodexImageGenerationStrategy({
+    fetchWithTimeout: makeFetch(async (url, init) => {
+      captured = JSON.parse(init.body);
+      return okResponse(sse);
+    }),
+    refreshCodexAccessToken: async () => {}
+  });
+
+  const out = await strategy.generate({
+    mode: 'generation',
+    model: 'gpt-image-2',
+    prompt: 'a cat',
+    account: codexAccount(),
+    options: codexOptions()
+  });
+
+  assert.equal(captured.model, 'gpt-5.6-terra');
+  assert.equal(captured.stream, true);
+  assert.equal(captured.store, false);
+  assert.deepEqual(out.images, [{ b64_json: PNG_BASE64 }]);
+  assert.equal(out.usageInput.usage.total_tokens, 11);
+  assert.equal(out.usageInput.usageFormat, 'responses-stream');
+});
+
+test('resolveCodexImageUpstreamModel picks the override or first candidate', () => {
+  assert.equal(resolveCodexImageUpstreamModel('gpt-image-2', {}), 'gpt-5.6-terra');
+  assert.equal(resolveCodexImageUpstreamModel('gpt-image-2', { codexImageUpstreamModel: 'gpt-5.5' }), 'gpt-5.5');
+});
+
+test('extractCodexImageOutputFromSse skips non-image events', () => {
+  const sse = [
+    'data: {"type":"response.output_item.done","item":{"id":"msg_1","type":"message","content":[]}}',
+    '',
+    'data: {"type":"response.output_item.done","item":{"id":"rs_1","type":"reasoning"}}',
+    '',
+    'data: [DONE]'
+  ].join('\n');
+  assert.deepEqual(extractCodexImageOutputFromSse(sse), { images: [], usage: null });
 });
 
 test('readCodexErrorDetail falls back to status text', () => {

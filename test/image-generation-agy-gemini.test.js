@@ -142,7 +142,7 @@ test('agy strategy maps NOT_APPLICABLE to 400 and rejects empty output', async (
   );
 });
 
-test('agy strategy honors upstreamTimeoutMs override', async () => {
+test('agy strategy honors upstreamTimeoutMs override above the floor', async () => {
   let captured;
   const strategy = createAgyGeminiImageGenerationStrategy({
     fetchGeminiCodeAssistGenerateContent: async (options, account, requestJson, timeoutMs) => {
@@ -155,7 +155,7 @@ test('agy strategy honors upstreamTimeoutMs override', async () => {
     model: 'gemini-3.1-flash-image',
     prompt: 'p',
     account: agyAccount(),
-    options: { upstreamTimeoutMs: 30000 }
+    options: { upstreamTimeoutMs: 180000 }
   });
-  assert.equal(captured, 30000);
+  assert.equal(captured, 180000);
 });

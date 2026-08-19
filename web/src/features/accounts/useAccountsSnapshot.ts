@@ -14,6 +14,7 @@ import type {
   AccountRemovedEvent,
   AccountsSnapshotRequestResponse
 } from '@/types';
+import type { TokenConsumedEvent } from '@/services/api';
 import { getAccountRef } from '@/features/accounts/account-model-catalog';
 import { mergeAccounts, mergeSingleAccount } from '@/features/accounts/account-state';
 
@@ -27,6 +28,7 @@ export interface UseAccountsSnapshotHandlers {
   onAccountLive?: (account: Account) => void;
   onAccountRemoved?: (event: AccountRemovedEvent, removedAccount: Account | undefined) => void;
   onRemovalCleanup?: (accountRef: string) => void;
+  onTokenConsumed?: (event: TokenConsumedEvent) => void;
 }
 
 export interface UseAccountsSnapshotResult {
@@ -231,6 +233,7 @@ export function useAccountsSnapshot(
       onImportJob: (job) => handlersRef.current.onImportJob?.(job),
       onAuthJob: (job) => handlersRef.current.onAuthJob?.(job),
       onAccountRefreshJob: (job) => handlersRef.current.onAccountRefreshJob?.(job),
+      onTokenConsumed: (event) => handlersRef.current.onTokenConsumed?.(event),
       onError: () => {
         if (accountsSnapshotFallbackTimerRef.current === null) {
           setHydratingDetails(false);

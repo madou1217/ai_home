@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 
-import UsageSnapshotCell from '@/components/account/UsageSnapshotCell';
+import UsageSnapshotCell, { getUsageBarColor } from '@/components/account/UsageSnapshotCell';
 import type { Account, ManagementAccountActivity } from '@/types';
 import { getAccountRef } from '@/features/accounts/account-model-catalog';
+import BurningParticles from './BurningParticles';
 import TokenDropNumber from './TokenDropNumber';
 import type { TokenDropEvent } from './useTokenDropEvents';
 import './UsageProgressEffects.css';
@@ -57,6 +58,13 @@ const UsageProgressEffects = ({ record, activity, drops }: Props) => {
       ].filter(Boolean).join(' ')}
     >
       <UsageSnapshotCell record={record} />
+      {running ? (
+        <BurningParticles
+          active
+          anchorPct={remainingPct == null || !Number.isFinite(remainingPct) ? 50 : remainingPct}
+          color={getUsageBarColor(remainingPct)}
+        />
+      ) : null}
       <TokenDropNumber drops={accountDrops} />
     </div>
   );

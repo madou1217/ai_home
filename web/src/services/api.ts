@@ -184,28 +184,20 @@ export type AccountImportPayload =
   | { mode: 'upload'; uploadKind?: 'file' | 'folder'; files: AccountImportUploadFile[]; provider?: string }
   | { mode: 'cliproxyapi'; provider?: string };
 
-// kimi 桌面托管登录（微信扫码）会话状态
-export type KimiDesktopSessionStatus =
-  | 'STATUS_PENDING'
-  | 'STATUS_SCANNED'
-  | 'STATUS_EXPIRED'
-  | 'STATUS_SUCCESS';
-
-export interface KimiDesktopSessionStartResponse {
-  ok: boolean;
-  code?: string;
-  qrUrl?: string;
-  expiresAtMs?: number;
-  error?: string;
+/** 单次请求完成的实时 token 消耗事件（服务端 recordModelUsage 钩子推送）。 */
+export interface TokenConsumedEvent {
+  provider: string;
+  accountRef: string;
+  model: string;
+  tokens: {
+    input: number;
+    output: number;
+    total: number;
+  };
+  occurredAt: number;
 }
 
-export interface KimiDesktopSessionPollResponse {
-  ok: boolean;
-  status?: KimiDesktopSessionStatus;
-  error?: string;
-}
-
-function dispatchAccountsWatchPayload(payload: any, handlers: {
+export function dispatchAccountsWatchPayload(payload: any, handlers: {
   onSnapshot?: (payload: AccountsListResponse) => void;
   onSnapshotRequested?: (payload: { requestedAt?: number; hydrating?: boolean }) => void;
   onAccount?: (account: Account) => void;
@@ -214,6 +206,7 @@ function dispatchAccountsWatchPayload(payload: any, handlers: {
   onImportJob?: (job: AccountImportJob) => void;
   onAuthJob?: (job: AccountAddJob) => void;
   onAccountRefreshJob?: (job: AccountRefreshJob) => void;
+  onTokenConsumed?: (event: TokenConsumedEvent) => void;
 }) {
   if (payload.type === 'snapshot') {
     handlers.onSnapshot?.({
@@ -261,6 +254,20 @@ function dispatchAccountsWatchPayload(payload: any, handlers: {
     handlers.onAccountRefreshJob?.(payload.job as AccountRefreshJob);
     return;
   }
+  if (payload.type === 'token-consumed' && payload.accountRef) {
+    handlers.onTokenConsumed?.({
+      provider: String(payload.provider || ''),
+      accountRef: String(payload.accountRef || ''),
+      model: String(payload.model || ''),
+      tokens: {
+        input: Number(payload.tokens?.input) || 0,
+        output: Number(payload.tokens?.output) || 0,
+        total: Number(payload.tokens?.total) || 0
+      },
+      occurredAt: Number(payload.occurredAt) || Date.now()
+    });
+    return;
+  }
 }
 
 // 账号管理 API
@@ -284,6 +291,7 @@ export const accountsAPI = {
     onImportJob?: (job: AccountImportJob) => void;
     onAuthJob?: (job: AccountAddJob) => void;
     onAccountRefreshJob?: (job: AccountRefreshJob) => void;
+    onTokenConsumed?: (event: TokenConsumedEvent) => void;
     onError?: () => void;
   }) => {
     const eventSource = guardedWebUiEventSource('/v0/webui/accounts/watch');
@@ -359,23 +367,6 @@ export const accountsAPI = {
 
   listTerminals: async (): Promise<ClientTerminalsResponse> => {
     const response = await api.get<ClientTerminalsResponse>('/webui/terminals');
-    return response.data;
-  },
-
-  // kimi 桌面托管登录：生成微信扫码二维码
-  startKimiDesktopSession: async (accountRef: string): Promise<KimiDesktopSessionStartResponse> => {
-    const response = await api.post<KimiDesktopSessionStartResponse>(
-      `/webui/accounts/kimi/${accountRef}/desktop-session/start`
-    );
-    return response.data;
-  },
-
-  // kimi 桌面托管登录：轮询扫码状态
-  pollKimiDesktopSession: async (accountRef: string, code: string): Promise<KimiDesktopSessionPollResponse> => {
-    const response = await api.post<KimiDesktopSessionPollResponse>(
-      `/webui/accounts/kimi/${accountRef}/desktop-session/poll`,
-      { code }
-    );
     return response.data;
   },
 

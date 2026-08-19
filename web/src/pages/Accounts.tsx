@@ -54,6 +54,7 @@ import {
 import { formatTimeCell } from '@/utils/datetime';
 import type { AccountExportFormat } from '@/services/api';
 import type { AccountImportUploadFile } from '@/services/api';
+import type { TokenConsumedEvent } from '@/services/api';
 import type {
   Account,
   AccountAddJob,
@@ -67,7 +68,7 @@ import ProviderIcon, { providerIds, providerNames } from '@/components/chat/Prov
 import { PROVIDER_AUTH_OPTIONS, PROVIDER_CATALOG } from '@/providers/catalog';
 import TokenUsageCell from '@/components/account/TokenUsageCell';
 import UsageProgressEffects from '@/features/accounts/UsageProgressEffects';
-import { useTokenDropEvents } from '@/features/accounts/useTokenDropEvents';
+import { useTokenDropEvents, type TokenDropEvent } from '@/features/accounts/useTokenDropEvents';
 import {
   canCopyAccountEmail,
   canEditAccountConfig,
@@ -225,7 +226,8 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
     requestAccountsSnapshotUpdate,
     stageAccountRemoval
   } = useAccountsSnapshot(accountsHandlersRef);
-  const tokenDrops = useTokenDropEvents(accounts);
+  const [liveTokenDrops, setLiveTokenDrops] = useState<TokenDropEvent[]>([]);
+  const tokenDrops = useTokenDropEvents(accounts, liveTokenDrops);
   const {
     modelCatalog,
     refreshingModelAccountRefs,
@@ -693,6 +695,19 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
         delete next[accountRef];
         return next;
       });
+    },
+    onTokenConsumed: (event: TokenConsumedEvent) => {
+      const total = Number(event.tokens && event.tokens.total) || 0;
+      if (total <= 0) return;
+      const drop: TokenDropEvent = {
+        id: `live-${event.accountRef}-${event.occurredAt}-${total}`,
+        provider: String(event.provider || ''),
+        accountRef: String(event.accountRef || ''),
+        deltaTokens: Math.max(1, Math.round(total)),
+        deltaCostUsd: null,
+        occurredAt: Number(event.occurredAt) || Date.now()
+      };
+      setLiveTokenDrops((current) => [...current, drop]);
     }
   };
 
@@ -1761,6 +1776,15 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
     );
   };
 
+  // provider tab 聚合运行态：该 provider 下任一账号 inFlight > 0 时 tab 图标转圈。
+  const providerRunning: Record<string, boolean> = {};
+  accounts.forEach((account) => {
+    const activity = getAccountActivity(account);
+    if (activity && activity.inFlight > 0) {
+      providerRunning[String(account.provider).toLowerCase()] = true;
+    }
+  });
+
   const tabItems = [
     {
       key: 'all',
@@ -1770,7 +1794,13 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
       key: provider,
       label: (
         <span style={{ padding: '0 8px', display: 'flex', alignItems: 'center', gap: 4 }}>
-          <ProviderIcon provider={provider} size={14} /> {providerNames[provider]} ({providerStats[provider].total})
+          <span
+            className={`accounts-tab-provider-icon${providerRunning[provider] ? ' accounts-tab-provider-icon--running' : ''}`}
+            data-provider-tab={provider}
+          >
+            <ProviderIcon provider={provider} size={14} />
+          </span>
+          {providerNames[provider]} ({providerStats[provider].total})
         </span>
       )
     }))

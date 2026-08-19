@@ -1,0 +1,81 @@
+.burning-particles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 3;
+}
+
+/* 燃烧点光核：锚定在剩余量位置，微微明暗起伏像火药捻子的火头 */
+.burning-particles::before {
+  content: '';
+  position: absolute;
+  left: var(--anchor);
+  top: 22px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.95) 0%, var(--pc) 45%, transparent 75%);
+  box-shadow: 0 0 5px var(--pc), 0 0 12px var(--pc);
+  animation: burning-core-pulse 0.5s ease-in-out infinite alternate;
+}
+
+.burning-particles--active::before {
+  width: 7px;
+  height: 7px;
+  box-shadow: 0 0 6px var(--pc), 0 0 16px var(--pc), 0 0 24px color-mix(in srgb, var(--pc) 45%, transparent);
+}
+
+/* 火花：从燃烧点向四周短促迸溅，位移小、快速熄灭，紧贴燃烧点不飘散 */
+.burning-particle {
+  position: absolute;
+  left: var(--anchor);
+  top: 22px;
+  width: var(--ps);
+  height: var(--ps);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.98) 0%, var(--pc) 50%, transparent 78%);
+  box-shadow: 0 0 3px var(--pc), 0 0 7px var(--pc);
+  opacity: 0;
+  will-change: transform, opacity;
+  animation: burning-spark-burst var(--dur) cubic-bezier(0.12, 0.75, 0.3, 1) var(--delay) infinite;
+}
+
+@keyframes burning-spark-burst {
+  0% {
+    transform: translate(-50%, -50%) translate3d(0, 0, 0) scale(0.45);
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  55% {
+    transform: translate(-50%, -50%) translate3d(calc(var(--dx) * 0.75), calc(var(--dy) * 0.75), 0) scale(0.95);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -50%) translate3d(var(--dx), var(--dy), 0) scale(0.15);
+    opacity: 0;
+  }
+}
+
+@keyframes burning-core-pulse {
+  from {
+    opacity: 0.72;
+    scale: 0.88;
+  }
+  to {
+    opacity: 1;
+    scale: 1.12;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .burning-particle,
+  .burning-particles::before {
+    animation: none;
+    opacity: 0;
+  }
+}

@@ -27,7 +27,7 @@ function formatUsagePercent(value: number | null) {
   return value == null ? '-' : `${value.toFixed(1)}%`;
 }
 
-function getUsageBarColor(value: number | null) {
+export function getUsageBarColor(value: number | null) {
   if (value == null) return '#d9d9d9';
   if (value > 80) return '#52c41a';
   if (value > 30) return '#faad14';

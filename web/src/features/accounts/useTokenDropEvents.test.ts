@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type { Account } from '@/types';
-import { appendTokenDrop, diffTokenUsage, type TokenDropEvent } from './useTokenDropEvents.ts';
+import { appendTokenDrop, diffTokenUsage, mergeLiveTokenDrops, type TokenDropEvent } from './useTokenDropEvents.ts';
 
 function makeAccount(overrides: Partial<Account> = {}): Account {
   return {
@@ -146,27 +146,68 @@ test('diffTokenUsage lifts fractional delta below 1 to 1 token', () => {
 });
 
 test('appendTokenDrop enforces the global queue cap', () => {
-  const drops = Array.from({ length: 24 }, (_, index) => makeDrop(`drop-${index}`));
+  const drops = Array.from({ length: 32 }, (_, index) => makeDrop(`drop-${index}`));
   const next = appendTokenDrop(drops, makeDrop('drop-new'));
 
-  assert.equal(next.length, 24);
+  assert.equal(next.length, 32);
   assert.equal(next.at(-1)?.id, 'drop-new');
   assert.equal(next.some((drop) => drop.id === 'drop-0'), false);
 });
 
-test('appendTokenDrop keeps at most three active drops for one account', () => {
+test('appendTokenDrop keeps at most six active drops for one account', () => {
   const drops = [
     makeDrop('drop-a-1', 'acct-a'),
     makeDrop('drop-a-2', 'acct-a'),
     makeDrop('drop-a-3', 'acct-a'),
+    makeDrop('drop-a-4', 'acct-a'),
+    makeDrop('drop-a-5', 'acct-a'),
+    makeDrop('drop-a-6', 'acct-a'),
     makeDrop('drop-b-1', 'acct-b')
   ];
-  const next = appendTokenDrop(drops, makeDrop('drop-a-4', 'acct-a'));
+  const next = appendTokenDrop(drops, makeDrop('drop-a-7', 'acct-a'));
 
-  assert.equal(next.filter((drop) => drop.accountRef === 'acct-a').length, 3);
+  assert.equal(next.filter((drop) => drop.accountRef === 'acct-a').length, 6);
   assert.equal(next.some((drop) => drop.id === 'drop-a-1'), false);
   assert.equal(next.some((drop) => drop.id === 'drop-a-2'), true);
-  assert.equal(next.some((drop) => drop.id === 'drop-a-3'), true);
-  assert.equal(next.at(-1)?.id, 'drop-a-4');
+  assert.equal(next.some((drop) => drop.id === 'drop-a-7'), true);
+  assert.equal(next.at(-1)?.id, 'drop-a-7');
   assert.equal(next.some((drop) => drop.id === 'drop-b-1'), true);
+});
+
+test('mergeLiveTokenDrops appends unseen live events and records their ids', () => {
+  const drops = [makeDrop('diff-1')];
+  const liveEvents = [makeDrop('live-1'), makeDrop('live-2')];
+
+  const { drops: merged, seenIds } = mergeLiveTokenDrops(drops, liveEvents, new Set());
+
+  assert.equal(merged.length, 3);
+  assert.equal(merged.at(-1)?.id, 'live-2');
+  assert.equal(seenIds.has('live-1'), true);
+  assert.equal(seenIds.has('live-2'), true);
+});
+
+test('mergeLiveTokenDrops is idempotent for already-seen live events', () => {
+  const drops = [makeDrop('diff-1')];
+  const liveEvents = [makeDrop('live-1'), makeDrop('live-2')];
+  const first = mergeLiveTokenDrops(drops, liveEvents, new Set());
+
+  const { drops: merged, seenIds } = mergeLiveTokenDrops(first.drops, liveEvents, first.seenIds);
+
+  assert.equal(merged.length, 3);
+  assert.equal(merged.filter((drop) => drop.id === 'live-1').length, 1);
+  assert.equal(seenIds.has('live-1'), true);
+  assert.equal(seenIds.has('live-2'), true);
+});
+
+test('mergeLiveTokenDrops skips events without id and tolerates non-array input', () => {
+  const drops = [makeDrop('diff-1')];
+
+  const { drops: merged, seenIds } = mergeLiveTokenDrops(drops, null as unknown as TokenDropEvent[], new Set());
+
+  assert.equal(merged.length, 1);
+  assert.equal(seenIds.size, 0);
+
+  const withEmptyId = mergeLiveTokenDrops(drops, [makeDrop('')], new Set());
+  assert.equal(withEmptyId.drops.length, 1);
+  assert.equal(withEmptyId.seenIds.size, 0);
 });

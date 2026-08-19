@@ -26,11 +26,11 @@ export interface TokenUsageDelta {
 }
 
 /** 飘字动画时长（与 TokenDropNumber.css 保持一致），事件到期后自动清理。 */
-export const TOKEN_DROP_LIFETIME_MS = 1600;
+export const TOKEN_DROP_LIFETIME_MS = 2400;
 /** 同账号同时最多保留的掉落事件数，超出时丢弃最旧的，避免刷屏。 */
-const MAX_DROPS_PER_ACCOUNT = 3;
+const MAX_DROPS_PER_ACCOUNT = 6;
 /** 全页面事件队列上限。 */
-const MAX_DROPS_TOTAL = 24;
+const MAX_DROPS_TOTAL = 32;
 
 function readDayTokens(usage: AccountTokenUsage | null | undefined): number {
   const value = Number(usage && usage.day);
@@ -115,13 +115,38 @@ export function appendTokenDrop(drops: TokenDropEvent[], next: TokenDropEvent): 
 }
 
 /**
+ * 把实时通道（accounts/watch SSE）推送的 token 消耗事件并入掉落队列。
+ * 幂等：以事件 id 去重，同一份 liveEvents 重复传入不会产生重复掉落。
+ * 纯函数——输入现有队列 + 实时事件 + 已见 id 集合，输出新队列与新已见集合。
+ */
+export function mergeLiveTokenDrops(
+  drops: TokenDropEvent[],
+  liveEvents: TokenDropEvent[],
+  seenIds: Set<string>
+): { drops: TokenDropEvent[]; seenIds: Set<string> } {
+  const nextSeen = new Set(seenIds);
+  let nextDrops = drops;
+  for (const event of Array.isArray(liveEvents) ? liveEvents : []) {
+    if (!event || !event.id || nextSeen.has(event.id)) continue;
+    nextSeen.add(event.id);
+    nextDrops = appendTokenDrop(nextDrops, event);
+  }
+  return { drops: nextDrops, seenIds: nextSeen };
+}
+
+/**
  * 订阅账号列表变化，对相邻快照的 tokenUsage.day 做 diff：
  * day 数值增长即视为一次「被打了一下的消耗」，产出掉落事件。
+ * 同时消费 accounts/watch SSE 实时推送的 token-consumed 事件（liveEvents）。
  * 事件有生命周期，动画播完自动从队列移除。
  */
-export function useTokenDropEvents(accounts: Account[]): TokenDropEvent[] {
+export function useTokenDropEvents(
+  accounts: Account[],
+  liveEvents: TokenDropEvent[] = []
+): TokenDropEvent[] {
   const [drops, setDrops] = useState<TokenDropEvent[]>([]);
   const previousRef = useRef<TokenUsageBaseline>(new Map());
+  const seenLiveIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     const { deltas, next } = diffTokenUsage(accounts, previousRef.current);
@@ -131,6 +156,15 @@ export function useTokenDropEvents(accounts: Account[]): TokenDropEvent[] {
       setDrops((current) => pending.reduce((queue, drop) => appendTokenDrop(queue, drop), current));
     }
   }, [accounts]);
+
+  useEffect(() => {
+    if (!Array.isArray(liveEvents) || liveEvents.length === 0) return;
+    setDrops((current) => {
+      const merged = mergeLiveTokenDrops(current, liveEvents, seenLiveIdsRef.current);
+      seenLiveIdsRef.current = merged.seenIds;
+      return merged.drops;
+    });
+  }, [liveEvents]);
 
   useEffect(() => {
     const timer = setInterval(() => {

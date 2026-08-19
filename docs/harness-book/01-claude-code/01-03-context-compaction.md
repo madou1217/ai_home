@@ -57,25 +57,37 @@
 
 Claude Code 将单次请求的上下文空间进行了严密的物理分区，构建了四层 Token 预算模型：
 
-```
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                              上下文物理内存分区模型 (Total: 200,000 Tokens)             │
-│                                                                                        │
-│  [Zone A: 静态系统底护区] (Static System Zone: ~8,000 Tokens) ── 100% 命中 Prompt Cache │
-│    - Core System Prompt, Global Rules, Built-in Tools Schema, MCP Tools Schema         │
-│                                                                                        │
-│  [Zone B: 压缩摘要区] (Compacted Summary Zone: ~12,000 Tokens) ── 周期性异步滚扎更新   │
-│    - <compacted_summary>：记录任务最初目标、关键决策链、已修改文件列表与测试现状         │
-│                                                                                        │
-│  [Zone C: 活跃执行轨迹区] (Active Trajectory Zone: ~140,000 Tokens) ── 动态滑动增长     │
-│    - 最近 N 轮完整的 Thought、Action、Observation（只读工具结果根据 LRU 启发式剪枝）  │
-│                                                                                        │
-│  [Zone D: 弹性警戒与净空区] (Headroom & Safety Zone: ~40,000 Tokens) ── 绝对安全红线   │
-│    - 160,000 Tokens (80% 水位线): 触发异步后台预压缩 (Pre-compaction)                   │
-│    - 184,000 Tokens (92% 水位线): 触发同步阻塞式强力修剪                               │
-│    - 16,000 Tokens (Reserve): 严格锁定给模型 `max_tokens` 输出与 Thinking 思考预算      │
-└────────────────────────────────────────────────────────────────────────────────────────┘
-```
+<div class="rich-diagram-box">
+  <div class="diagram-header-tag">Memory Partition Model</div>
+  <div class="diagram-title"><span>🧠</span> 上下文物理内存分区模型 (Total: 200,000 Tokens)</div>
+  <div class="harness-stack">
+    <div class="stack-layer">
+      <div class="layer-badge">Zone A: 静态系统底护区 (~8,000 Tokens) ── 100% 命中 Prompt Cache</div>
+      <div class="chips-flex-wrap">
+        <span class="tech-card blue" style="padding:4px 8px; font-size:11px;">Core System Prompt</span>
+        <span class="tech-card blue" style="padding:4px 8px; font-size:11px;">Global Safety Rules</span>
+        <span class="tech-card blue" style="padding:4px 8px; font-size:11px;">Built-in Tools Schema</span>
+        <span class="tech-card blue" style="padding:4px 8px; font-size:11px;">MCP Tools Schema</span>
+      </div>
+    </div>
+    <div class="stack-layer">
+      <div class="layer-badge">Zone B: 压缩摘要区 (~12,000 Tokens) ── 周期性异步滚扎更新 (95% 命中)</div>
+      <div class="tech-card purple"><div class="card-label">&lt;compacted_summary&gt; 任务最初目标、关键决策链、已修改文件列表与测试现状</div></div>
+    </div>
+    <div class="stack-layer">
+      <div class="layer-badge">Zone C: 活跃执行轨迹区 (~140,000 Tokens) ── 动态滑动增长</div>
+      <div class="tech-card cyan"><div class="card-label">最近 N 轮完整 Thought、Action、Observation（只读工具结果根据 LRU 启发式剪枝）</div></div>
+    </div>
+    <div class="stack-layer">
+      <div class="layer-badge">Zone D: 弹性警戒与净空区 (~40,000 Tokens) ── 绝对安全红线</div>
+      <div class="chips-grid-3">
+        <div class="tech-card orange"><div class="card-label">160k (80% 水位)</div><div class="card-sub">触发异步预压缩</div></div>
+        <div class="tech-card red"><div class="card-label">184k (92% 水位)</div><div class="card-sub">触发同步阻塞修剪</div></div>
+        <div class="tech-card green"><div class="card-label">16k (Reserve)</div><div class="card-sub">锁定给 max_tokens 输出</div></div>
+      </div>
+    </div>
+  </div>
+</div>
 
 ---
 

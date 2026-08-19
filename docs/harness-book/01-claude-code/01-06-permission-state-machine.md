@@ -16,53 +16,29 @@ Anthropic **Claude Code** 设计了工业界最为严密且体验丝滑的 **安
 
 本节将深度解构 Claude Code 权限状态机的底层数学模型、核心源码调用栈、Wire Protocol 审批帧及极端逃逸防御策略。
 
-```
-┌────────────────────────────────────────────────────────────────────────────────────────────┐
-│                             Claude Code 权限状态机与安全网关架构                            │
-│                                                                                            │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                              LLM 生成待执行工具调用 (tool_use)                        │  │
-│  │                              - Tool: Bash (command: "git push -f origin main")       │  │
-│  │                              - Tool: Edit (file: "/etc/hosts")                       │  │
-│  └──────────────────────────────────────────┬───────────────────────────────────────────┘  │
-│                                             │                                              │
-│                                             ▼                                              │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                          Layer 1: 权限模式评估器 (Mode Evaluator)                    │  │
-│  │                                                                                      │  │
-│  │   [Mode 1: default]       [Mode 2: accept-reads]    [Mode 3: dont-ask] [Mode 4: bypass]│
-│  │   读写均需确认             只读直接放行/写操作询问    规则内自动执行     跳过所有拦截(危险)│
-│  └──────────────────────────────────────────┬───────────────────────────────────────────┘  │
-│                                             │                                              │
-│                                             ▼                                              │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                      Layer 2: AST 语法树安全扫描器 (AST Safety Scanner)              │  │
-│  │     - 识别 rm -rf / git reset / curl | bash / sudo 等高危特征                         │  │
-│  │     - 检查 settings.json 与 .claude/settings.local.json 规则白名单                   │  │
-│  └──────────────────────────────────────────┬───────────────────────────────────────────┘  │
-│                                             │                                              │
-│                     ┌───────────────────────┴───────────────────────┐                      │
-│                     ▼ (匹配安全规则 / 自动放行)                     ▼ (命中高危特征 / 需确认)│
-│       ┌───────────────────────────┐           ┌─────────────────────────────────────────┐  │
-│       │       AUTO_APPROVED       │           │        Layer 3: 统一审批网桥            │  │
-│       │   (Direct to ToolRunner)  │           │        (Unified Approval Bridge)        │  │
-│       └───────────────────────────┘           └────────────────────┬────────────────────┘  │
-│                                                                    │                       │
-│                                             ┌──────────────────────┴──────────────────────┐│
-│                                             ▼ (PTY ANSI 交互)                             ▼│(WebSocket)
-│                                  ┌────────────────────┐                 ┌─────────────────┐│
-│                                  │ Terminal Interactive│                │ WebUI Modal Card││
-│                                  │ Prompt: [y/n/always]│                │ [Approve/Reject]││
-│                                  └──────────┬─────────┘                 └────────┬────────┘│
-│                                             │                                    │         │
-│                                             └──────────────────────┬─────────────┘         │
-│                                                                    ▼                       │
-│                                                      [Promise<ApprovalDecision>]           │
-│                                                                    │                       │
-│                                            ┌───────────────────────┴───────────────────────┐
-│                                            ▼                                               ▼
-│                                     [GRANTED / Run]                                 [DENIED / Fast-Fail]
-```
+<div class="rich-diagram-box">
+  <div class="diagram-header-tag">Permission FSM</div>
+  <div class="diagram-title"><span>🛡️</span> Claude Code 权限状态机与安全网关架构</div>
+  <div class="harness-stack">
+    <div class="chips-grid-4">
+      <div class="tech-card blue"><div class="card-label">1. default</div><div class="card-sub">读写均需确认，全面受控</div></div>
+      <div class="tech-card green"><div class="card-label">2. accept-reads</div><div class="card-sub">只读放行 / 写操作弹窗确认</div></div>
+      <div class="tech-card orange"><div class="card-label">3. dont-ask</div><div class="card-sub">白名单静默 / 非白名单拒执行</div></div>
+      <div class="tech-card red"><div class="card-label">4. bypass</div><div class="card-sub">全自动无阻 (CI/CD 专属)</div></div>
+    </div>
+    <div class="flow-connector">⬇️ AST 语法树安全扫描 (拦截 rm -rf / git push -f / curl | bash)</div>
+    <div class="split-two-col">
+      <div class="col-box">
+        <div class="col-title">🟢 AUTO_APPROVED (白名单放行)</div>
+        <div class="tech-card green"><div class="card-label">直接分发至 ToolRunner 驱动物理执行</div></div>
+      </div>
+      <div class="col-box">
+        <div class="col-title">🔴 HITL Unified Approval Bridge (审批挂起)</div>
+        <div class="tech-card red"><div class="card-label">终端 [y/n/a] 与 WebUI 可视化弹窗双端 CAS 互斥</div></div>
+      </div>
+    </div>
+  </div>
+</div>
 
 ---
 

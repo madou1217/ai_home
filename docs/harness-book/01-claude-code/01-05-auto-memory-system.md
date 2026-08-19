@@ -19,42 +19,30 @@ Anthropic **Claude Code** 另辟蹊径，开创性地设计了一套 **“双层
 
 本节将深入拆解这套记忆系统的文件存储拓扑、Frontmatter 语义分类规范、动态水合与检索算法，以及防腐化淘汰机制。
 
-```
-┌────────────────────────────────────────────────────────────────────────────────────────────┐
-│                              Claude Code 双层自记忆系统全景架构                             │
-│                                                                                            │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                     Tier 1: 轻量级一级总索引 (Top-Level Index)                        │  │
-│  │                                                                                      │  │
-│  │   文件路径: ~/.claude/projects/<project-hash>/memory/MEMORY.md                       │  │
-│  │   内容特征: 单行 Pointer 列表，纯 Markdown 无 Frontmatter，常驻会话 System-Reminder    │  │
-│  │                                                                                      │  │
-│  │   - [非视觉模型图片400防护](vision-guard-400.md) — 剥图存blob句柄让子代理借视觉      │  │
-│  │   - [禁止 god file 铁律](no-god-files-clean-code.md) — 功能放独立模块不塞大文件      │  │
-│  │   - [git 只用 main 工作流](git-main-only.md) — 不建侧分支直接 main 提交              │  │
-│  └──────────────────────────────────────────┬───────────────────────────────────────────┘  │
-│                                             │ (双向超链接 [[slug]] 拓扑与语义召回)         │
-│                                             ▼                                              │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                  Tier 2: 结构化深层实体记忆库 (Deep Memory Entities)                 │  │
-│  │                                                                                      │  │
-│  │   存储目录: ~/.claude/projects/<project-hash>/memory/*.md                            │  │
-│  │   每个文件独占一个原子事实，严格包含 YAML Frontmatter 元数据：                       │  │
-│  │                                                                                      │  │
-│  │   ┌────────────────────────────────────────────────────────────────────────────────┐ │  │
-│  │   │  ---                                                                           │ │  │
-│  │   │  name: no-god-files-clean-code                                                 │ │  │
-│  │   │  description: 禁止创建超过 300 行的混杂大文件，严格遵循 SOLID 模块拆分原则     │ │  │
-│  │   │  metadata:                                                                     │ │  │
-│  │   │    type: feedback | user | project | reference                                 │ │  │
-│  │   │  ---                                                                           │ │  │
-│  │   │  用户明确要求：功能必须拆分至独立子模块。                                      │ │  │
-│  │   │  **Why:** 降低认知负载与 Merge 冲突风险。                                      │ │  │
-│  │   │  **How to apply:** 在创建新功能前先查重，超过 300 行必须重构拆分。关联 [[pty]] │ │  │
-│  │   └────────────────────────────────────────────────────────────────────────────────┘ │  │
-│  └──────────────────────────────────────────────────────────────────────────────────────┘  │
-└────────────────────────────────────────────────────────────────────────────────────────────┘
-```
+<div class="rich-diagram-box">
+  <div class="diagram-header-tag">Two-Tier Auto-Memory</div>
+  <div class="diagram-title"><span>🧠</span> Claude Code 双层自记忆系统全景架构</div>
+  <div class="harness-stack">
+    <div class="stack-layer">
+      <div class="layer-badge">Tier 1: 轻量级一级总索引 (MEMORY.md - 常驻 System-Reminder)</div>
+      <div class="chips-grid-3">
+        <div class="tech-card blue"><div class="card-label">[图片400防护]</div><div class="card-sub">剥图存blob让子代理借视觉</div></div>
+        <div class="tech-card green"><div class="card-label">[禁止 god file]</div><div class="card-sub">功能放独立模块不塞大文件</div></div>
+        <div class="tech-card purple"><div class="card-label">[git 只用 main]</div><div class="card-sub">不建侧分支直接 main 提交</div></div>
+      </div>
+    </div>
+    <div class="flow-connector">⬇️ 双向超链接 [[slug]] 拓扑与语义精准召回</div>
+    <div class="stack-layer">
+      <div class="layer-badge">Tier 2: 结构化深层实体记忆库 (~/.claude/projects/*/memory/*.md)</div>
+      <div class="chips-grid-4">
+        <div class="tech-card orange"><div class="card-label">feedback</div><div class="card-sub">用户纠偏 (含 Why &amp; How)</div></div>
+        <div class="tech-card blue"><div class="card-label">user</div><div class="card-sub">用户技术栈与个性偏好</div></div>
+        <div class="tech-card purple"><div class="card-label">project</div><div class="card-sub">项目隐性约束与架构规范</div></div>
+        <div class="tech-card cyan"><div class="card-label">reference</div><div class="card-sub">外部 Wiki 与看板指针</div></div>
+      </div>
+    </div>
+  </div>
+</div>
 
 ---
 

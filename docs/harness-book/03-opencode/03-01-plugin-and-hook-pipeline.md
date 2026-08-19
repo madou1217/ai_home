@@ -113,6 +113,10 @@ OpenCode 将 Agent 单轮 ReAct 交互精确划分为 6 个核心拦截锚点：
 
 ## 4. 双向可变 Hook 流水线（Mutable Pipeline）TypeScript 核心实现
 
+<div id="widget-onion-container"></div>
+
+
+
 为了实现极高执行效率与严密异常隔离，OpenCode 设计了一个基于 TypeScript 的洋葱型 Hook 流水线引擎。
 
 ### 4.1 核心类型契约与接口定义

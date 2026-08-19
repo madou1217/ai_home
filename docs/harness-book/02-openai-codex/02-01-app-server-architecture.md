@@ -75,6 +75,10 @@ OpenAI 在构建其下一代编程 Agent（Codex CLI 及桌面端/IDE 集成产�
 
 ## 3. Stdio IPC 传输机制与数据分帧（Framing）设计
 
+<div id="widget-responses-container"></div>
+
+
+
 在传统的 HTTP REST 架构中，客户端是唯一的发起方，服务端无法主动向客户端推送结构化请求（例如“请用户审批某条高危命令”）。而在 LSP（Language Server Protocol）与 Codex App Server 体系中，**双向实时通信** 是绝对刚需。
 
 ```

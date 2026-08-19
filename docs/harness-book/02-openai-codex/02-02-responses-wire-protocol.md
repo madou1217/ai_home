@@ -90,6 +90,10 @@
 
 ## 4. Responses Wire Protocol 完整事件流时序与 Payload 规范
 
+<div id="widget-responses-container"></div>
+
+
+
 在一次典型的 Coding Agent 交互中（模型先进行推理思考，然后吐出一句解释，接着调用 Bash 工具），Responses API 的 SSE 原始数据帧流转如下：
 
 ```

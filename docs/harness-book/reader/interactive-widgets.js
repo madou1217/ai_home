@@ -5,6 +5,247 @@
 
 window.HarnessInteractiveWidgets = {
   /**
+   * 7. OpenAI Codex Responses API 流式分帧与工具桥接模拟器 (for 02-01 & 02-02)
+   */
+  createResponsesSseSimulator(containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    let sseEvents = [
+      { type: 'response.created', payload: '{"id":"resp_01","status":"in_progress"}' },
+      { type: 'response.output_item.added', payload: '{"item":{"id":"item_reasoning","type":"reasoning"}}' },
+      { type: 'response.reasoning.delta', payload: '{"delta":"分析 JWT 签名算法混淆漏洞..."}' },
+      { type: 'response.output_item.added', payload: '{"item":{"id":"item_func","type":"function_call","name":"bash"}}' },
+      { type: 'response.function_call_arguments.delta', payload: '{"call_id":"call_01","delta":"{\"command\":\"git diff\"}"}' },
+      { type: 'response.output_item.done', payload: '{"item":{"id":"item_func","status":"completed"}}' },
+      { type: 'response.completed', payload: '{"id":"resp_01","status":"completed","usage":{"total_tokens":1420}}' }
+    ];
+    let currentEventIdx = 0;
+
+    const render = () => {
+      container.innerHTML = `
+        <div class="interactive-card">
+          <div class="card-header">
+            <div class="card-title">
+              <span>⚡</span> 交互式模拟：OpenAI Responses API (`POST /v1/responses`) 强类型 SSE 协议流与工具桥接
+            </div>
+            <div class="card-controls">
+              <button class="sim-btn" id="sse-next-btn" ${currentEventIdx >= sseEvents.length - 1 ? 'disabled' : ''}>
+                ⏭️ 发送下一帧 SSE
+              </button>
+              <button class="sim-btn sim-btn-primary" id="sse-reset-btn">🔄 重置流</button>
+            </div>
+          </div>
+
+          <div class="sse-wire-grid">
+            <div class="sse-timeline">
+              <div class="timeline-title">Server-Sent Events (SSE) Stream Timeline</div>
+              <div class="timeline-events">
+                ${sseEvents.map((evt, idx) => `
+                  <div class="timeline-event-item ${idx === currentEventIdx ? 'active' : ''} ${idx < currentEventIdx ? 'past' : ''}">
+                    <span class="evt-index">#${idx+1}</span>
+                    <span class="evt-name">${evt.type}</span>
+                    ${idx === currentEventIdx ? '<span class="pulse-dot" style="background:#58a6ff;"></span>' : ''}
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+
+            <div class="sse-inspector">
+              <div class="inspector-title">当前 SSE 帧 JSON 载荷 (Wire Payload)</div>
+              <pre class="inspector-payload"><code>event: ${sseEvents[currentEventIdx].type}
+data: ${sseEvents[currentEventIdx].payload}</code></pre>
+              <div class="bridge-action-box">
+                <span class="action-label">Harness 解包动作:</span>
+                <span class="action-desc">${getSseActionDesc(sseEvents[currentEventIdx].type)}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      document.getElementById('sse-next-btn').onclick = () => {
+        if (currentEventIdx < sseEvents.length - 1) {
+          currentEventIdx++;
+          render();
+        }
+      };
+      document.getElementById('sse-reset-btn').onclick = () => {
+        currentEventIdx = 0;
+        render();
+      };
+    };
+
+    function getSseActionDesc(type) {
+      if (type === 'response.created') return '初始化会话响应句柄，记录 response_id。';
+      if (type.includes('reasoning')) return '流式推入思考通道，向前端展示思维链。';
+      if (type.includes('function_call_arguments')) return '内存参数累加器追加字符串分片。';
+      if (type === 'response.output_item.done') return '参数收集完毕，执行 JSON.parse 校验并分发给物理工具驱动！';
+      if (type === 'response.completed') return '轮次终态闭环，记录 Token 消耗并持久化至 SQLite。';
+      return '流式状态机推进。';
+    }
+
+    render();
+  },
+
+  /**
+   * 8. OpenCode 洋葱模型 Hook 拦截流水线模拟器 (for 03-01)
+   */
+  createOnionPipelineSimulator(containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    let currentLayer = 0; // 0: Enter Plugin 1 -> 1: Enter Plugin 2 -> 2: Core Tool Exec -> 3: Exit Plugin 2 -> 4: Exit Plugin 1
+    const layers = [
+      { name: 'Layer 1: SecurityGuardPlugin (beforeToolDispatch)', desc: '前置拦截：扫描 AST，检查是否包含 rm -rf 或破坏性命令', type: 'inbound' },
+      { name: 'Layer 2: TimeoutWatchdogPlugin (wrapToolExecution)', desc: '洋葱包裹：为工具启动 120s 进程树超时监控与 Worktree 分配', type: 'inbound' },
+      { name: 'Core Layer: Physical Execution (node-pty/fs)', desc: '核心执行：在物理子进程中执行 Bash 并捕获 Stdout/Stderr', type: 'core' },
+      { name: 'Layer 2: TimeoutWatchdogPlugin (afterToolExecuted)', desc: '后置清理：释放超时定时器，记录真实执行耗时 (ms)', type: 'outbound' },
+      { name: 'Layer 1: AutoLinterPlugin (afterToolExecuted)', desc: '后置收割：检测文件变动并伴随运行 eslint --fix 自动修复', type: 'outbound' }
+    ];
+
+    const render = () => {
+      container.innerHTML = `
+        <div class="interactive-card">
+          <div class="card-header">
+            <div class="card-title">
+              <span>🧅</span> 交互式模拟：OpenCode 插件微内核洋葱模型（Onion Hook Pipeline）双向穿透
+            </div>
+            <div class="card-controls">
+              <button class="sim-btn sim-btn-primary" id="onion-step-btn">
+                ${currentLayer === layers.length - 1 ? '🔄 重置流水线' : '进入下一层 next() ⏭️'}
+              </button>
+            </div>
+          </div>
+
+          <div class="onion-pipeline-visual">
+            <div class="onion-rings-container">
+              <div class="onion-ring outer ${currentLayer === 0 || currentLayer === 4 ? 'active' : ''}">
+                <div class="ring-label">Plugin 1: Security & Linter</div>
+                <div class="onion-ring middle ${currentLayer === 1 || currentLayer === 3 ? 'active' : ''}">
+                  <div class="ring-label">Plugin 2: Timeout & Worktree</div>
+                  <div class="onion-ring center ${currentLayer === 2 ? 'active' : ''}">
+                    <div class="ring-label">Core Exec</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="onion-inspector">
+              <div class="inspector-title">当前 Hook 阶段与调用栈动作</div>
+              <div class="onion-stage-title" style="color:var(--accent); font-weight:700; margin-bottom:6px;">
+                ${layers[currentLayer].name}
+              </div>
+              <div class="inspector-desc">${layers[currentLayer].desc}</div>
+              <div class="callstack-box">
+                <code>${getCallStack(currentLayer)}</code>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      document.getElementById('onion-step-btn').onclick = () => {
+        currentLayer = (currentLayer + 1) % layers.length;
+        render();
+      };
+    };
+
+    function getCallStack(layer) {
+      if (layer === 0) return 'HookPipelineExecutor -> SecurityGuard.beforeToolDispatch() -> await next()';
+      if (layer === 1) return '  -> TimeoutWatchdog.wrapToolExecution() -> await next()';
+      if (layer === 2) return '    -> [CORE] PtyRunner.spawn("/bin/zsh", ["npm test"]) -> ExitCode 0';
+      if (layer === 3) return '  <- TimeoutWatchdog: cleared timer, executionTimeMs: 142ms';
+      if (layer === 4) return '<- AutoLinterPlugin: executed eslint --fix on auth.ts (Status: CLEAN)';
+      return '';
+    }
+
+    render();
+  },
+
+  /**
+   * 9. 层次化动态记忆图谱 (Hierarchical Memory Graph) 衰减与强化树 (for 05-03)
+   */
+  createMemoryGraphVisualizer(containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    let daysPassed = 0;
+    let nodes = [
+      { name: 'Core: Senior Rust Architect', category: 'PROFILE', w: 1.0, halfLife: 9999, immutable: true },
+      { name: 'Tech: Prefers Async Tokio', category: 'TECH', w: 0.95, halfLife: 30 },
+      { name: 'Project: ai_home Gateway', category: 'PROJECT', w: 0.88, halfLife: 14 },
+      { name: 'Episodic: Debugged WebSocket bug', category: 'EPISODIC', w: 0.75, halfLife: 3 }
+    ];
+
+    const render = () => {
+      container.innerHTML = `
+        <div class="interactive-card">
+          <div class="card-header">
+            <div class="card-title">
+              <span>🧬</span> 交互式模拟：Pi Agent 层次化动态记忆图谱（HMG）时间衰减与强化跃迁
+            </div>
+            <div class="card-controls">
+              <button class="sim-btn" id="advance-time-btn">⏳ 时间流逝 (+5 天)</button>
+              <button class="sim-btn sim-btn-primary" id="reinforce-btn">⚡ 再次提及并强化记忆</button>
+              <button class="sim-btn" id="reset-mem-btn">🔄 重置</button>
+            </div>
+          </div>
+
+          <div class="memory-graph-grid">
+            <div class="time-gauge">
+              <span>当前相对时间: <strong>第 ${daysPassed} 天</strong></span>
+              <span style="font-size:11px; color:var(--text-muted);">艾宾浩斯指数衰减公式: $W(t) = W_0 \cdot e^{-\lambda t}$</span>
+            </div>
+
+            <div class="nodes-list-box">
+              ${nodes.map(n => {
+                const currentWeight = n.immutable ? 1.0 : (n.w * Math.exp(- (Math.LN2 / n.halfLife) * daysPassed));
+                const isArchived = currentWeight < 0.2;
+                return `
+                  <div class="hmg-node-card ${isArchived ? 'archived' : ''}">
+                    <div class="hmg-header">
+                      <span class="hmg-cat ${n.category.toLowerCase()}">${n.category}</span>
+                      <span class="hmg-name">${n.name}</span>
+                      <span class="hmg-weight ${currentWeight > 0.6 ? 'high' : 'low'}">权重: ${(currentWeight).toFixed(2)}</span>
+                    </div>
+                    <div class="hmg-bar-bg">
+                      <div class="hmg-bar-fill" style="width:${Math.max(0, currentWeight * 100)}%; background:${isArchived ? 'var(--text-muted)' : (currentWeight > 0.5 ? 'var(--success)' : 'var(--warning)')};"></div>
+                    </div>
+                    ${isArchived ? '<span class="archived-tag">已跌破 0.2 自动归档淘汰</span>' : ''}
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        </div>
+      `;
+
+      document.getElementById('advance-time-btn').onclick = () => {
+        daysPassed += 5;
+        render();
+      };
+      document.getElementById('reinforce-btn').onclick = () => {
+        daysPassed = Math.max(0, daysPassed - 3);
+        nodes[1].w = 1.0;
+        nodes[1].halfLife *= 1.5;
+        nodes[2].w = 1.0;
+        nodes[2].halfLife *= 1.5;
+        render();
+      };
+      document.getElementById('reset-mem-btn').onclick = () => {
+        daysPassed = 0;
+        nodes[1].w = 0.95; nodes[1].halfLife = 30;
+        nodes[2].w = 0.88; nodes[2].halfLife = 14;
+        nodes[3].w = 0.75; nodes[3].halfLife = 3;
+        render();
+      };
+    };
+
+    render();
+  }
+
+  /**
    * 5. Git Worktree 物理并发沙箱与 PTY 进程组隔离动画视效 (for 01-02 & 06-03)
    */
   createWorktreeSandboxSimulator(containerId) {
@@ -602,36 +843,51 @@ window.HarnessInteractiveWidgets = {
   /**
    * 自动根据当前章节挂载对应的仿真 Widget
    */
-  mountWidgetsForChapter(chapterId) {
-    // 挂载 ReAct 状态机模拟器 (01-01 & 06-02)
+    mountWidgetsForChapter(chapterId) {
+    // 1. ReAct 状态机模拟器 (01-01 & 06-02)
     if (chapterId.includes('01-01') || chapterId.includes('06-02')) {
       const target = document.getElementById('widget-fsm-container');
       if (target) this.createReActSimulator('widget-fsm-container');
     }
-    // 挂载 Git Worktree 沙箱模拟器 (01-02 & 06-03)
+    // 2. Git Worktree 沙箱模拟器 (01-02 & 06-03)
     if (chapterId.includes('01-02') || chapterId.includes('06-03')) {
       const target = document.getElementById('widget-worktree-container');
       if (target) this.createWorktreeSandboxSimulator('widget-worktree-container');
     }
-    // 挂载 Cache & Compaction 水位模拟器 (01-03, 04-03, 06-04)
+    // 3. Cache & Compaction 水位模拟器 (01-03, 04-03, 06-04)
     if (chapterId.includes('01-03') || chapterId.includes('04-03') || chapterId.includes('06-04')) {
       const target = document.getElementById('widget-cache-container');
       if (target) this.createCacheWatermarkSimulator('widget-cache-container');
     }
-    // 挂载 统一审批网桥模拟器 (01-06 & 06-05)
+    // 4. 统一审批网桥模拟器 (01-06 & 06-05)
     if (chapterId.includes('01-06') || chapterId.includes('06-05')) {
       const target = document.getElementById('widget-bridge-container');
       if (target) this.createApprovalBridgeSimulator('widget-bridge-container');
     }
-    // 挂载 Thinking 解耦管道模拟器 (04-01)
+    // 5. Responses API SSE 协议模拟器 (02-01 & 02-02)
+    if (chapterId.includes('02-01') || chapterId.includes('02-02')) {
+      const target = document.getElementById('widget-responses-container');
+      if (target) this.createResponsesSseSimulator('widget-responses-container');
+    }
+    // 6. OpenCode 洋葱 Hook 模拟器 (03-01)
+    if (chapterId.includes('03-01')) {
+      const target = document.getElementById('widget-onion-container');
+      if (target) this.createOnionPipelineSimulator('widget-onion-container');
+    }
+    // 7. Thinking 解耦管道模拟器 (04-01)
     if (chapterId.includes('04-01')) {
       const target = document.getElementById('widget-demuxer-container');
       if (target) this.createDemuxerSimulator('widget-demuxer-container');
     }
-    // 挂载 Pi Agent 即时打断波形模拟器 (05-01)
+    // 8. Pi Agent 即时打断波形模拟器 (05-01)
     if (chapterId.includes('05-01')) {
       const target = document.getElementById('widget-bargein-container');
       if (target) this.createBargeInWaveformSimulator('widget-bargein-container');
+    }
+    // 9. 层次化记忆图谱衰减模拟器 (05-03)
+    if (chapterId.includes('05-03')) {
+      const target = document.getElementById('widget-memory-graph-container');
+      if (target) this.createMemoryGraphVisualizer('widget-memory-graph-container');
     }
   }
 };

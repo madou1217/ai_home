@@ -1050,6 +1050,164 @@
     .tk-val { font-family: var(--font-mono); font-weight: 700; color: var(--text-bright); }
     .tk-val.highlight { color: var(--danger); }
 
+  
+    /* SSE Wire Stream Simulator Styles */
+    .sse-wire-grid {
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      gap: 16px;
+      margin-top: 14px;
+    }
+    .sse-timeline {
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .timeline-title { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-bottom: 10px; }
+    .timeline-events { display: flex; flex-direction: column; gap: 6px; }
+    .timeline-event-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border-radius: 6px;
+      background: var(--bg-secondary);
+      border: 1px solid transparent;
+      font-size: 11.5px;
+      color: var(--text-muted);
+      transition: all 0.2s;
+    }
+    .timeline-event-item.active {
+      border-color: var(--accent);
+      background: var(--accent-bg);
+      color: var(--text-bright);
+      font-weight: 600;
+    }
+    .timeline-event-item.past { color: var(--text-main); }
+    .evt-index { font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); }
+    .evt-name { font-family: var(--font-mono); font-size: 11px; flex: 1; }
+    .sse-inspector {
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .bridge-action-box {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-size: 12px;
+      display: flex;
+      gap: 8px;
+    }
+    .action-label { color: var(--accent); font-weight: 700; }
+    .action-desc { color: var(--text-bright); }
+
+    /* Onion Pipeline Styles */
+    .onion-pipeline-visual {
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      gap: 16px;
+      align-items: center;
+      margin-top: 14px;
+    }
+    .onion-rings-container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 10px;
+    }
+    .onion-ring {
+      border-radius: 12px;
+      border: 2px dashed var(--border-color);
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      transition: all 0.3s;
+    }
+    .onion-ring.outer { background: rgba(88, 166, 255, 0.05); width: 220px; }
+    .onion-ring.middle { background: rgba(210, 153, 34, 0.05); width: 170px; }
+    .onion-ring.center { background: rgba(63, 185, 80, 0.1); width: 110px; border-style: solid; }
+    .onion-ring.active {
+      border-color: var(--accent);
+      border-style: solid;
+      box-shadow: 0 0 16px var(--accent-bg);
+    }
+    .ring-label { font-size: 10px; font-weight: 700; color: var(--text-muted); text-align: center; margin-bottom: 4px; }
+    .onion-inspector {
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 14px;
+    }
+    .callstack-box {
+      margin-top: 10px;
+      background: #000;
+      padding: 10px;
+      border-radius: 6px;
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      color: #3fb950;
+      line-height: 1.5;
+    }
+
+    /* Memory Graph Styles */
+    .memory-graph-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: 14px;
+    }
+    .time-gauge {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+      background: var(--bg-primary);
+      padding: 8px 14px;
+      border-radius: 6px;
+      border: 1px solid var(--border-color);
+    }
+    .nodes-list-box {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .hmg-node-card {
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+    .hmg-node-card.archived { opacity: 0.4; border-style: dashed; }
+    .hmg-header { display: flex; justify-content: space-between; align-items: center; }
+    .hmg-cat {
+      font-size: 9px; font-weight: 800; padding: 2px 5px; border-radius: 4px; text-transform: uppercase;
+    }
+    .hmg-cat.profile { background: #58a6ff; color: #fff; }
+    .hmg-cat.tech { background: #bc8cff; color: #fff; }
+    .hmg-cat.project { background: #d29922; color: #fff; }
+    .hmg-cat.episodic { background: #39c5bb; color: #fff; }
+    .hmg-name { font-size: 11.5px; font-weight: 600; color: var(--text-bright); }
+    .hmg-weight { font-size: 10.5px; font-family: var(--font-mono); }
+    .hmg-weight.high { color: var(--success); }
+    .hmg-weight.low { color: var(--warning); }
+    .hmg-bar-bg {
+      height: 6px; background: var(--bg-tertiary); border-radius: 3px; overflow: hidden;
+    }
+    .hmg-bar-fill { height: 100%; transition: width 0.3s ease; border-radius: 3px; }
+    .archived-tag { font-size: 10px; color: var(--danger); font-weight: 600; }
+
   </style>
 </head>
 <body>

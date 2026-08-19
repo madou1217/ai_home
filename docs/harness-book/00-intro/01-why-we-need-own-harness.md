@@ -10,31 +10,49 @@
 
 本章作为整部《现代 AI Agent 运行时与 Harness 架构设计》的技术基石，将深入剖析：**为什么大模型 API 本身只是冰山一角？为什么必须构建自主的 Agent Harness 运行时？现代 Agent Harness 的核心壁垒与架构本质究竟是什么？**
 
-```
-                  ┌──────────────────────────────────────────────────────────┐
-                  │                    用户业务目标与意图                     │
-                  └─────────────────────────────┬────────────────────────────┘
-                                                │
-                                                ▼
-┌────────────────────────────────────────────────────────────────────────────────────────────┐
-│                             Agent Harness 现代运行时环境                                    │
-│                                                                                            │
-│  ┌───────────────────────┐  ┌────────────────────────┐  ┌───────────────────────────────┐  │
-│  │   上下文编排与压缩     │  │   ReAct 核心事件循环   │  │       权限状态机与安全沙箱     │  │
-│  │ (Context Compaction)  │  │   (ReAct Event Loop)   │  │   (Permission & Sandboxing)   │  │
-│  └───────────────────────┘  └────────────────────────┘  └───────────────────────────────┘  │
-│  ┌───────────────────────┐  ┌────────────────────────┐  ┌───────────────────────────────┐  │
-│  │   长期记忆与状态水合   │  │   工具系统与 MCP 协议   │  │       多 Agent 协同编排       │  │
-│  │   (Memory & State)    │  │   (Tools & MCP Bridge) │  │  (Subagent Fork & Pipeline)   │  │
-│  └───────────────────────┘  └────────────────────────┘  └───────────────────────────────┘  │
-└───────────────────────────────────────┬────────────────────────────▲───────────────────────┘
-                                        │ (有状态调度与感知)          │ (物理执行与环境观测反馈)
-                                        ▼                            │
-        ┌──────────────────────────────────────────────┐  ┌──────────┴───────────────────────┐
-        │        无状态大模型推理引擎 (LLM Core)         │  │     物理操作系统 / 工具环境 / 仓库      │
-        │  Anthropic Claude / OpenAI / DeepSeek 等     │  │   OS / Shell / Git / Filesystem   │
-        └──────────────────────────────────────────────┘  └──────────────────────────────────┘
-```
+<div class="rich-diagram-box">
+  <div class="diagram-header-tag">Architecture Topology</div>
+  <div class="diagram-title"><span>🏛️</span> Agent Harness 现代具身运行时全景拓扑图</div>
+  <div class="harness-stack">
+    <div class="stack-layer">
+      <div class="layer-badge">User Intent Layer (用户意图层)</div>
+      <div class="tech-card blue">
+        <div class="card-label">👤 用户业务目标与复杂需求描述 (Prompt)</div>
+      </div>
+    </div>
+    <div class="flow-connector">⬇️ 有状态感知与上下文水合</div>
+    <div class="stack-layer">
+      <div class="layer-badge">Agent Harness Runtime Environment (具身运行时底座)</div>
+      <div class="chips-grid-3">
+        <div class="tech-card blue"><div class="card-label">📦 上下文编排与压缩</div><div class="card-sub">Context Compaction</div></div>
+        <div class="tech-card purple"><div class="card-label">🔄 ReAct 核心事件循环</div><div class="card-sub">ReAct Event Loop</div></div>
+        <div class="tech-card red"><div class="card-label">🛡️ 权限状态机与沙箱</div><div class="card-sub">Permission & Sandbox</div></div>
+        <div class="tech-card green"><div class="card-label">🧠 长期记忆与状态水合</div><div class="card-sub">Memory & Hydration</div></div>
+        <div class="tech-card cyan"><div class="card-label">🔌 工具系统与 MCP 协议</div><div class="card-sub">Tools & MCP Bridge</div></div>
+        <div class="tech-card orange"><div class="card-label">👥 多 Agent 协同编排</div><div class="card-sub">Subagent Fork & Pipeline</div></div>
+      </div>
+    </div>
+    <div class="flow-connector">⬇️ 有状态调度 / ⬆️ 物理环境观测反馈</div>
+    <div class="split-two-col">
+      <div class="col-box">
+        <div class="col-title">🧠 无状态大模型推理引擎 (LLM Core)</div>
+        <div class="chips-flex-wrap">
+          <span class="tech-card purple" style="padding:4px 8px; font-size:11px;">Claude Opus 5</span>
+          <span class="tech-card blue" style="padding:4px 8px; font-size:11px;">OpenAI GPT-5.5</span>
+          <span class="tech-card green" style="padding:4px 8px; font-size:11px;">DeepSeek-R1</span>
+        </div>
+      </div>
+      <div class="col-box">
+        <div class="col-title">💻 物理操作系统 / 工具环境 / 仓库</div>
+        <div class="chips-flex-wrap">
+          <span class="tech-card red" style="padding:4px 8px; font-size:11px;">node-pty Master/Slave</span>
+          <span class="tech-card orange" style="padding:4px 8px; font-size:11px;">Git Worktrees</span>
+          <span class="tech-card cyan" style="padding:4px 8px; font-size:11px;">MCP Stdio/SSE Bus</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
 ---
 

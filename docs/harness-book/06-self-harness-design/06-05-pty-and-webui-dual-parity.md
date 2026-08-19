@@ -19,35 +19,37 @@
 4. **统一审批网桥在 TUI 与 WebUI 之间的原子 CAS 互斥状态同步**；
 5. **全书宏观技术总结与生产落地蓝图**。
 
-```
-┌────────────────────────────────────────────────────────────────────────────────────────────┐
-│                             ai_home 双端完全等价通信桥 (Dual-Parity Bridge)                 │
-│                                                                                            │
-│  ┌────────────────────────────────────────┐   ┌─────────────────────────────────────────┐  │
-│  │   Client 1: Terminal PTY Client (CLI)  │   │     Client 2: Modern WebUI (Browser)    │  │
-│  │   - 真实终端 (xterm-256color / ANSI)   │   │   - React 18 + Ant Design Pro / Mobx    │  │
-│  │   - 键盘监听 (y/n/a 单键快捷审批)      │   │   - 可视化审批卡片 + 进度泳道面板       │  │
-│  │   - OSC 转义标题实时用量投影           │   │   - 折叠思考抽屉 + 富文本 Markdown 渲染 │  │
-│  └──────────────────┬─────────────────────┘   └────────────────────┬────────────────────┘  │
-│                     │                                              │                       │
-│                     │ (Native PTY IO Pipe)                         │ (WebSocket JSON-RPC)  │
-│                     ▼                                              ▼                       │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                        Dual-Parity Unified Communication Bus                         │  │
-│  │                                                                                      │  │
-│  │  1. Event Demuxer & Broadcaster ──> 保证同一事件帧向双端毫秒级并行广播                │  │
-│  │  2. Dual-Bridge Mutex State Engine ─> 双端任意一侧提交动作 (如批准/打断)，原子同步生效 │  │
-│  │  3. Terminal Shims Injection ───────> 自动注入 .runtime-bin/ 保证两端命令完全对齐    │  │
-│  └──────────────────────────────────────────┬───────────────────────────────────────────┘  │
-│                                             │                                              │
-│                                             ▼                                              │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                        Universal Agent Harness Runtime Core                          │  │
-│  │                                                                                      │  │
-│  │  [UniversalAgentEventLoop] ──> [ToolDispatcher] ──> [PermissionGatekeeper]           │  │
-│  └──────────────────────────────────────────────────────────────────────────────────────┘  │
-└────────────────────────────────────────────────────────────────────────────────────────────┘
-```
+<div class="rich-diagram-box">
+  <div class="diagram-header-tag">Dual-Parity Topology</div>
+  <div class="diagram-title"><span>🌉</span> ai_home 双端完全等价通信桥 (Dual-Parity Bridge) 全景架构</div>
+  <div class="split-two-col">
+    <div class="col-box">
+      <div class="col-title">💻 Client 1: Terminal PTY Client (CLI)</div>
+      <div class="tech-card blue" style="margin-bottom:6px;"><div class="card-label">🖥️ 真实终端 (xterm-256color / ANSI)</div></div>
+      <div class="tech-card green" style="margin-bottom:6px;"><div class="card-label">⌨️ 键盘单键快捷审批 (y/n/a)</div></div>
+      <div class="tech-card orange"><div class="card-label">🏷️ OSC 转义标题实时用量投影</div></div>
+    </div>
+    <div class="col-box">
+      <div class="col-title">🌐 Client 2: Modern WebUI (Browser)</div>
+      <div class="tech-card purple" style="margin-bottom:6px;"><div class="card-label">🌐 React 18 + Ant Design Pro</div></div>
+      <div class="tech-card red" style="margin-bottom:6px;"><div class="card-label">🛡️ 可视化审批卡片 + 进度泳道</div></div>
+      <div class="tech-card cyan"><div class="card-label">📑 折叠思考抽屉 + 富文本渲染</div></div>
+    </div>
+  </div>
+  <div class="flow-connector" style="margin:10px 0;">
+    <span>⬇️ Native PTY I/O Pipe</span>
+    <span class="flow-line"></span>
+    <span>⬇️ WebSocket JSON-RPC 2.0</span>
+  </div>
+  <div class="stack-layer" style="margin-top:6px;">
+    <div class="layer-badge">Dual-Parity Unified Communication Bus (统一通信总线)</div>
+    <div class="chips-grid-3">
+      <div class="tech-card blue"><div class="card-label">📡 Event Demuxer</div><div class="card-sub">全双工数据帧毫秒广播</div></div>
+      <div class="tech-card purple"><div class="card-label">🔒 CAS Mutex Engine</div><div class="card-sub">双端原子互斥状态结算</div></div>
+      <div class="tech-card green"><div class="card-label">💉 Runtime Shims</div><div class="card-sub">自动注入 .runtime-bin/</div></div>
+    </div>
+  </div>
+</div>
 
 ---
 

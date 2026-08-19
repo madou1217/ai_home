@@ -1354,6 +1354,131 @@
       border-radius: 4px;
     }
 
+  
+    /* ========================================================= */
+    /* 🏛️ Native Rich-HTML 现代架构图示与矢量芯片视觉体系        */
+    /* ========================================================= */
+    .rich-diagram-box {
+      background: linear-gradient(135deg, rgba(22, 27, 34, 0.95), rgba(13, 17, 23, 0.98));
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 24px;
+      margin: 28px 0;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+      position: relative;
+      overflow: hidden;
+    }
+    .rich-diagram-box::before {
+      content: "";
+      position: absolute;
+      top: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, var(--accent), var(--success), var(--warning));
+    }
+    .diagram-header-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--accent-hover);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      background: var(--accent-bg);
+      padding: 3px 10px;
+      border-radius: 20px;
+      margin-bottom: 16px;
+    }
+    .diagram-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text-bright);
+      margin-bottom: 18px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* 层级容器 */
+    .harness-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .stack-layer {
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 14px 18px;
+      position: relative;
+      transition: all 0.2s;
+    }
+    .stack-layer:hover {
+      border-color: var(--accent);
+      transform: translateY(-1px);
+    }
+    .layer-badge {
+      font-size: 10.5px;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+    .chips-grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    .chips-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .chips-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+    .chips-flex-wrap { display: flex; flex-wrap: wrap; gap: 8px; }
+
+    .tech-card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .tech-card.blue { border-left: 3px solid var(--accent); }
+    .tech-card.purple { border-left: 3px solid #bc8cff; }
+    .tech-card.green { border-left: 3px solid var(--success); }
+    .tech-card.orange { border-left: 3px solid var(--warning); }
+    .tech-card.red { border-left: 3px solid var(--danger); }
+    .tech-card.cyan { border-left: 3px solid #39c5bb; }
+
+    .card-label { font-size: 12px; font-weight: 700; color: var(--text-bright); display: flex; align-items: center; gap: 6px; }
+    .card-sub { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); }
+
+    /* 连接流动箭头 */
+    .flow-connector {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      padding: 4px 0;
+    }
+    .flow-line {
+      flex: 1;
+      height: 1px;
+      background: dashed 1px var(--border-color);
+    }
+
+    /* 左右分栏流 */
+    .split-two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .col-box {
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 14px;
+    }
+    .col-title { font-size: 12.5px; font-weight: 700; color: var(--text-bright); margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+
   </style>
 </head>
 <body>

@@ -236,10 +236,11 @@ test('loadZcodeServerAccounts honours account ZCODE_BASE_URL override', (t) => {
   assert.equal(accounts[0].openaiBaseUrl, 'https://api.z.ai/api/anthropic');
 });
 
-// OAuth 计划账号自 2026-08-19 起不再进入推理池（relay 已取消：Start Plan 推理
-// 准入门由 Z.ai 服务端活动窗口控制，405/3012，官方桌面端同待遇）。账号管理 /
-// 桌面启动 / billing 用量展示按 accountRef 直读凭据，不经过本池。
-test('loadZcodeServerAccounts excludes OAuth plan accounts from the inference pool', (t) => {
+// OAuth 计划账号保留在池中供模型探测/用量展示/WebUI 运行时状态使用，但标记
+// schedulableStatus='relay_disabled'——推理选择器跳过一切非 schedulable 账号
+//（relay 已于 2026-08-19 取消：Start Plan 推理准入门由 Z.ai 服务端活动窗口控制，
+// 405/3012，官方桌面端同待遇）。移出池会导致 WebUI 刷新模型 404 account_not_found。
+test('loadZcodeServerAccounts keeps OAuth accounts in pool as relay_disabled (non-schedulable)', (t) => {
   const { aiHomeDir, accountStateIndex, register } = createZcodeFixture(t);
   register('zcode', '1', null, {
     credentials: {
@@ -255,10 +256,44 @@ test('loadZcodeServerAccounts excludes OAuth plan accounts from the inference po
     checkStatus: () => ({ configured: true })
   });
 
-  assert.equal(accounts.length, 0, 'OAuth plan accounts stay out of the inference pool (relay canceled)');
+  assert.equal(accounts.length, 1, 'OAuth accounts stay in the pool for probing/display');
+  const account = accounts[0];
+  assert.equal(account.provider, 'zcode');
+  assert.equal(account.authType, 'oauth');
+  assert.equal(account.apiKeyMode, false);
+  assert.equal(account.accessToken, 'oauth-token');
+  assert.equal(account.zcodeJwtToken, 'jwt-token');
+  assert.equal(account.openaiBaseUrl, 'https://zcode.z.ai/api/v1/zcode-plan/anthropic');
+  assert.equal(account.schedulableStatus, 'relay_disabled');
+  assert.equal(account.displayName, 'ZCode OAuth');
 });
 
-test('loadZcodeServerAccounts excludes jwtToken-only OAuth accounts from the inference pool', (t) => {
+test('loadZcodeServerAccounts uses zai user_info email as OAuth display identity', (t) => {
+  const { aiHomeDir, accountStateIndex, register } = createZcodeFixture(t);
+  register('zcode', '1', null, {
+    credentials: {
+      'oauth:zai:access_token': encryptZcodeCredentialValue('oauth-token'),
+      'oauth:zai:user_info': encryptZcodeCredentialValue(JSON.stringify({
+        user_id: 'u-123',
+        email: '18997991630@phone.local'
+      }))
+    }
+  });
+
+  const accounts = loadZcodeServerAccounts({
+    fs,
+    aiHomeDir,
+    accountStateIndex,
+    checkStatus: () => ({ configured: true })
+  });
+
+  assert.equal(accounts.length, 1);
+  assert.equal(accounts[0].email, '18997991630@phone.local');
+  assert.equal(accounts[0].displayName, '18997991630@phone.local');
+  assert.equal(accounts[0].schedulableStatus, 'relay_disabled');
+});
+
+test('loadZcodeServerAccounts keeps jwtToken-only OAuth accounts as relay_disabled', (t) => {
   const { aiHomeDir, accountStateIndex, register } = createZcodeFixture(t);
   register('zcode', '1', null, {
     credentials: {
@@ -273,7 +308,11 @@ test('loadZcodeServerAccounts excludes jwtToken-only OAuth accounts from the inf
     checkStatus: () => ({ configured: true })
   });
 
-  assert.equal(accounts.length, 0);
+  // jwtToken 即可走桌面端同款 billing/balance 探测，无需 zai accessToken。
+  assert.equal(accounts.length, 1, 'jwtToken-only accounts can probe plan models via billing/balance');
+  assert.equal(accounts[0].accessToken, '');
+  assert.equal(accounts[0].zcodeJwtToken, 'jwt-token');
+  assert.equal(accounts[0].schedulableStatus, 'relay_disabled');
 });
 
 // --- Launch strategy ---

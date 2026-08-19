@@ -636,6 +636,24 @@ tmux -L aih-claude-<accountRef> kill-server              # 杀该账号下全部
 - 当某个别名目标（如 claude-opus）在**所有账号上都被限流**时，自动**降级到下一条优先级的别名**（如 gemini-3.5-flash-low）顶上。
 - `/v1/models` 带 stale-while-revalidate 缓存，稳态响应 <5ms。
 
+### 图片生成与编辑接口
+
+内置网关同时暴露 OpenAI 兼容的出图/修图端点：
+
+- `POST /v1/images/generations` — 文生图
+- `POST /v1/images/edits` — 图生图（`image` 为 data URL，png/jpeg/webp、≤4 MiB，可选 `mask`）
+
+请求体兼容 OpenAI 字段：`model`、`prompt`、`n`（1-10）、`size`、`quality`、`response_format`（`b64_json` 默认 / `url`）。响应为 `{ created, data: [{ b64_json | url }] }`；`response_format=url` 时图片字节存入本机 blob 存储，返回 `http://<host>/v1/blobs/<id>`（与聊天图片剥离共用同一存储，受同样的客户端 key 保护）。
+
+后端路由对外透明，按账号类型自动选择实现：
+
+- **api-key 账号**：直通上游 OpenAI 兼容的 `/images/*` 端点（generations 用 JSON，edits 用 multipart，网关只产出 multipart、不解析入站 multipart）。
+- **agy / gemini OAuth 账号**：原生 Code Assist 出图，适用于 `gemini-*-image` 系列模型。
+- **codex OAuth 账号**：Responses `image_generation` 工具，适用于 `gpt-image-1` 等模型。
+- 其余 provider 返回 `400 unsupported_image_provider`；模型不在出图名单返回 `400 unsupported_model_for_images`。
+
+错误统一为 OpenAI 信封 `{ error: { message, type, code } }`。账号出图成功/失败与聊天请求走同一套用量记账、请求日志与 (账号, 模型) 熔断；出图超时默认 120s（`options.upstreamTimeoutMs` 可调）。
+
 ## 开发
 
 运行测试：

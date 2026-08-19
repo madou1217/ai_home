@@ -4,8 +4,30 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { createProfileListService } = require('../lib/cli/services/profile/list');
+const { parseListKey } = require('../lib/cli/services/profile/account-list-animator');
 const { writeDefaultAccountRef } = require('../lib/account/default-account-store');
 const { upsertAccountRef } = require('../lib/server/account-ref-store');
+
+test('parseListKey quits on q, Q, Ctrl+C and bare Esc after delay', () => {
+  assert.deepEqual(parseListKey('q'), { pending: false, action: 'quit', rest: '' });
+  assert.deepEqual(parseListKey('Q'), { pending: false, action: 'quit', rest: '' });
+  assert.deepEqual(parseListKey('\x03'), { pending: false, action: 'quit', rest: '' });
+  assert.deepEqual(parseListKey('\x1b', { allowBareEscape: true }), { pending: false, action: 'quit', rest: '' });
+  assert.deepEqual(parseListKey('\x1b'), { pending: true, action: '', rest: '\x1b' });
+});
+
+test('parseListKey ignores arrow-key CSI sequences without quitting', () => {
+  assert.deepEqual(parseListKey('\x1b[A'), { pending: false, action: '', rest: '' });
+  assert.deepEqual(parseListKey('\x1b[B'), { pending: false, action: '', rest: '' });
+  assert.deepEqual(parseListKey('\x1bOA'), { pending: false, action: '', rest: '' });
+  assert.deepEqual(parseListKey('\x1b'), { pending: true, action: '', rest: '\x1b' });
+});
+
+test('parseListKey ignores ordinary printable keys', () => {
+  assert.deepEqual(parseListKey('x'), { pending: false, action: '', rest: '' });
+  assert.deepEqual(parseListKey('abc'), { pending: false, action: '', rest: 'bc' });
+  assert.deepEqual(parseListKey(''), { pending: false, action: '', rest: '' });
+});
 
 function createTempAccounts(provider = 'codex', cliAccountIds = ['1', '2', '3']) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-profile-list-'));

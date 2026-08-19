@@ -43,6 +43,7 @@ import {
   EditOutlined,
   CodeOutlined,
   DesktopOutlined,
+  QrcodeOutlined,
 } from '@ant-design/icons';
 import {
   accountsAPI,
@@ -103,6 +104,7 @@ import {
   useModelCatalog
 } from '@/features/accounts/useModelCatalog';
 import { CliPickerModal } from '@/features/accounts/CliPickerModal';
+import { KimiDesktopLoginModal } from '@/features/accounts/KimiDesktopLoginModal';
 import { AccountAppInstallModal } from '@/features/accounts/AccountAppInstallModal';
 import { EditAccountModal } from '@/features/accounts/EditAccountModal';
 import { ImportAccountsModal } from '@/features/accounts/ImportAccountsModal';
@@ -604,6 +606,7 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
   const [runningAccounts, setRunningAccounts] = useState<string[]>([]);
   const cliClickTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const [cliPickerAccount, setCliPickerAccount] = useState<Account | null>(null);
+  const [kimiDesktopLoginAccount, setKimiDesktopLoginAccount] = useState<Account | null>(null);
   const [cliTerminals, setCliTerminals] = useState<ClientTerminalItem[]>([]);
   const [selectedCliTerminalId, setSelectedCliTerminalId] = useState('system-default');
   const [cliTerminalsLoading, setCliTerminalsLoading] = useState(false);
@@ -1433,6 +1436,20 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
                   </Badge>
                 </Tooltip>
               ) : null}
+              {record.provider === 'kimi' ? (
+                <Tooltip title="桌面托管登录（微信扫码）">
+                  <Button
+                    type="text"
+                    size="small"
+                    aria-label="kimi 桌面托管登录"
+                    icon={<QrcodeOutlined />}
+                    onClick={(event: any) => {
+                      event?.stopPropagation?.();
+                      setKimiDesktopLoginAccount(record);
+                    }}
+                  />
+                </Tooltip>
+              ) : null}
               {appEntries && cliSupported ? (
                 <Tooltip title={!record.configured ? '账号未配置，完成授权后可打开 CLI' : record.runtimeStatus === 'auth_invalid' ? '认证已失效，请重新登录' : cliInstalled ? '单击选择终端，双击使用系统默认终端' : '未安装原生 CLI，点击后确认安装'}>
                   <Button
@@ -2132,6 +2149,12 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
           setCliPickerAccount(null);
           void handleOpenApp(account, 'cli', terminalId);
         }}
+      />
+      <KimiDesktopLoginModal
+        open={Boolean(kimiDesktopLoginAccount)}
+        accountRef={kimiDesktopLoginAccount ? getAccountRef(kimiDesktopLoginAccount) : ''}
+        accountLabel={kimiDesktopLoginAccount ? getAccountPrimaryLabel(kimiDesktopLoginAccount) : ''}
+        onClose={() => setKimiDesktopLoginAccount(null)}
       />
     </PageScaffold>
   );

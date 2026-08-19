@@ -15,6 +15,8 @@ const {
   normalizePlatform
 } = require('../lib/server/account-app-launcher');
 const { registerAccountIdentity } = require('../lib/account/account-registration');
+const { upsertAccountRef } = require('../lib/server/account-ref-store');
+const { readDesktopSession, writeDesktopSession } = require('../lib/server/kimi-desktop-session');
 
 const ACCOUNT_REF = 'acct_0123456789abcdef0123';
 const SANDBOX_DIR = nodePath.join('C:\\aih-home', 'run', 'auth-projections', 'zcode', ACCOUNT_REF);
@@ -78,7 +80,10 @@ function createLauncher(overrides = {}) {
     writeAgyKeychainCredentials: overrides.writeAgyKeychainCredentials,
     resolveAccountEligibility: overrides.resolveAccountEligibility,
     enforceCliInstallation: overrides.enforceCliInstallation,
-    resolveCliPath: overrides.resolveCliPath
+    resolveCliPath: overrides.resolveCliPath,
+    readAccountCredentialRecord: overrides.readAccountCredentialRecord,
+    seedKimiDesktopTokenStore: overrides.seedKimiDesktopTokenStore,
+    adoptKimiDesktopTokensFromProfile: overrides.adoptKimiDesktopTokensFromProfile
   });
   return { launcher, fakeSpawn, fsImpl };
 }
@@ -965,4 +970,136 @@ test('listRunningDesktopInstances 在扫描失败时返回空数组', () => {
   };
   assert.deepEqual(listRunningDesktopInstances('windows', { execFileSync }), []);
   assert.deepEqual(listRunningDesktopInstances('linux', {}), []);
+});
+
+
+// kimi 桌面托管登录的启动接线测试使用真实临时目录：kimi 的 launch-profile
+// prepare 链路（凭证协调 + config 投影）需要真实 fs 与 SQLite。
+function createKimiDesktopLauncherFixture(t, overrides = {}) {
+  const rootDir = nodeFs.mkdtempSync(nodePath.join(nodeOs.tmpdir(), 'aih-kimi-launcher-'));
+  t.after(() => nodeFs.rmSync(rootDir, { recursive: true, force: true }));
+  const aiHomeDir = nodePath.join(rootDir, 'aih');
+  const hostHomeDir = nodePath.join(rootDir, 'host');
+  const profileDir = nodePath.join(rootDir, 'profile');
+  const toolsDir = nodePath.join(rootDir, 'tools');
+  nodeFs.mkdirSync(toolsDir, { recursive: true });
+  nodeFs.mkdirSync(hostHomeDir, { recursive: true });
+  const kimiExe = nodePath.join(toolsDir, 'Kimi.exe');
+  nodeFs.writeFileSync(kimiExe, '');
+  const accountRef = upsertAccountRef(nodeFs, aiHomeDir, {
+    provider: 'kimi',
+    cliAccountId: '2',
+    identitySeed: 'oauth:kimi:launcher-test@example.com'
+  });
+  const fakeSpawn = createFakeSpawn();
+  const launcher = createAccountAppLauncher({
+    fs: nodeFs,
+    path: nodePath,
+    spawn: fakeSpawn.spawnImpl,
+    processObj: { platform: 'win32', execPath: 'C:\\node\\node.exe', env: {} },
+    env: { PATH: toolsDir, USERPROFILE: hostHomeDir },
+    aiHomeDir,
+    hostHomeDir,
+    repoRoot: rootDir,
+    execFileSync: () => { throw new Error('exec disabled in tests'); },
+    resolveAccount: () => ({ accountRef, provider: 'kimi', cliAccountId: '2' }),
+    getProfileDir: () => profileDir,
+    readAccountEnv: () => ({}),
+    ...overrides
+  });
+  return { launcher, fakeSpawn, accountRef, profileDir, aiHomeDir, kimiExe };
+}
+
+test('kimi desktop 存在托管 desktopSession 时启动前把 session 种进隔离 profile', (t) => {
+  const seeds = [];
+  const { launcher, fakeSpawn, accountRef, profileDir, aiHomeDir, kimiExe } = createKimiDesktopLauncherFixture(t, {
+    adoptKimiDesktopTokensFromProfile: () => null,
+    seedKimiDesktopTokenStore: (payload) => {
+      seeds.push(payload);
+      return { seeded: true };
+    }
+  });
+  writeDesktopSession(nodeFs, aiHomeDir, accountRef, {
+    accessToken: 'web-access',
+    refreshToken: 'web-refresh',
+    userId: 'u-1'
+  });
+
+  const result = launcher.launchAccountApp({ provider: 'kimi', accountRef, kind: 'desktop' });
+  assert.equal(result.ok, true);
+  assert.equal(fakeSpawn.calls.length, 1);
+  assert.equal(fakeSpawn.calls[0].file, kimiExe);
+  // 不再使用 CDP 调试端口（App 明确拒绝调试开关）
+  assert.equal(fakeSpawn.calls[0].args.includes('--remote-debugging-port=0'), false);
+
+  assert.equal(seeds.length, 1);
+  assert.equal(seeds[0].userDataDir, nodePath.join(profileDir, 'electron-user-data'));
+  assert.equal(seeds[0].accessToken, 'web-access');
+  assert.equal(seeds[0].refreshToken, 'web-refresh');
+  assert.equal(seeds[0].userId, 'u-1');
+});
+
+test('kimi desktop 无托管 desktopSession 时不 seed 也不影响启动', (t) => {
+  const seeds = [];
+  const { launcher, fakeSpawn, accountRef } = createKimiDesktopLauncherFixture(t, {
+    adoptKimiDesktopTokensFromProfile: () => null,
+    seedKimiDesktopTokenStore: (payload) => {
+      seeds.push(payload);
+      return { seeded: true };
+    }
+  });
+
+  const result = launcher.launchAccountApp({ provider: 'kimi', accountRef, kind: 'desktop' });
+  assert.equal(result.ok, true);
+  assert.equal(fakeSpawn.calls.length, 1);
+  assert.equal(seeds.length, 0);
+});
+
+test('kimi desktop 在 profile 已有轮换后的 token 时先采纳回托管存储再 seed', (t) => {
+  const seeds = [];
+  const { launcher, accountRef, aiHomeDir } = createKimiDesktopLauncherFixture(t, {
+    adoptKimiDesktopTokensFromProfile: () => ({
+      accessToken: 'rotated-access',
+      refreshToken: 'rotated-refresh',
+      userId: 'u-1'
+    }),
+    seedKimiDesktopTokenStore: (payload) => {
+      seeds.push(payload);
+      return { seeded: true };
+    }
+  });
+  writeDesktopSession(nodeFs, aiHomeDir, accountRef, {
+    accessToken: 'web-access',
+    refreshToken: 'web-refresh',
+    userId: 'u-1'
+  });
+
+  const result = launcher.launchAccountApp({ provider: 'kimi', accountRef, kind: 'desktop' });
+  assert.equal(result.ok, true);
+  assert.equal(seeds.length, 1);
+  assert.equal(seeds[0].accessToken, 'rotated-access');
+  assert.equal(seeds[0].refreshToken, 'rotated-refresh');
+
+  // 托管存储被更新为轮换后的 token，下次启动沿用
+  const { readAccountCredentialRecord } = require('../lib/server/account-credential-store');
+  const session = readDesktopSession(readAccountCredentialRecord(nodeFs, aiHomeDir, accountRef));
+  assert.equal(session.refreshToken, 'rotated-refresh');
+});
+
+test('kimi desktop seed 抛异常时启动不受影响', (t) => {
+  const { launcher, accountRef, aiHomeDir } = createKimiDesktopLauncherFixture(t, {
+    adoptKimiDesktopTokensFromProfile: () => {
+      throw new Error('boom');
+    },
+    seedKimiDesktopTokenStore: () => {
+      throw new Error('boom');
+    }
+  });
+  writeDesktopSession(nodeFs, aiHomeDir, accountRef, {
+    accessToken: 'web-access',
+    refreshToken: 'web-refresh',
+    userId: 'u-1'
+  });
+  const result = launcher.launchAccountApp({ provider: 'kimi', accountRef, kind: 'desktop' });
+  assert.equal(result.ok, true);
 });

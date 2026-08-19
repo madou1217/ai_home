@@ -2895,3 +2895,107 @@ test('web ui oauth success preserves manually disabled DB status', async (t) => 
     }
   ]);
 });
+
+// kimi 桌面托管登录扫码路由（desktop-session start/poll）。
+async function requestKimiDesktopSession(fixture, action, options = {}) {
+  const res = createResCapture();
+  const pathname = `/v0/webui/accounts/kimi/${options.accountRef}/desktop-session/${action}`;
+  const handled = await handleWebUIRequest({
+    method: 'POST',
+    pathname,
+    url: new URL(`http://localhost${pathname}`),
+    req: { headers: {} },
+    res,
+    options: {},
+    state: options.state || {
+      accounts: { agy: [], claude: [], codex: [], gemini: [], opencode: [], kimi: [] }
+    },
+    deps: createBaseDeps(fixture, options.deps)
+  });
+  return { handled, res, body: JSON.parse(res.body) };
+}
+
+test('kimi desktop-session start 返回官方登录 QR', async (t) => {
+  const fixture = createAccountFixture(t);
+  const accountRef = fixture.register('kimi', '9201');
+  const { res, body } = await requestKimiDesktopSession(fixture, 'start', {
+    accountRef,
+    deps: {
+      fetchImpl: async () => ({ status: 200, json: async () => ({ code: 'qr-9' }) })
+    }
+  });
+  assert.equal(res.statusCode, 200);
+  assert.equal(body.ok, true);
+  assert.equal(body.code, 'qr-9');
+  assert.match(body.qrUrl, /wechat\/mp\/auth\?id=qr-9$/);
+});
+
+test('kimi desktop-session start 对未知账号返回 404，对非 kimi provider 返回 400', async (t) => {
+  const fixture = createAccountFixture(t);
+  const missing = await requestKimiDesktopSession(fixture, 'start', {
+    accountRef: 'acct_ffffffffffffffffffff',
+    deps: { fetchImpl: async () => ({ status: 200, json: async () => ({ code: 'x' }) }) }
+  });
+  assert.equal(missing.res.statusCode, 404);
+
+  const res = createResCapture();
+  const codexRef = fixture.register('codex', '9202', { apiKeyMode: true });
+  await handleWebUIRequest({
+    method: 'POST',
+    pathname: `/v0/webui/accounts/codex/${codexRef}/desktop-session/start`,
+    url: new URL(`http://localhost/v0/webui/accounts/codex/${codexRef}/desktop-session/start`),
+    req: { headers: {} },
+    res,
+    options: {},
+    state: { accounts: {} },
+    deps: createBaseDeps(fixture, { fetchImpl: async () => ({ status: 200, json: async () => ({}) }) })
+  });
+  assert.equal(res.statusCode, 400);
+  assert.equal(JSON.parse(res.body).error, 'unsupported_provider');
+});
+
+test('kimi desktop-session poll 在 SUCCESS 时把 web session 托管进 nativeAuth', async (t) => {
+  const fixture = createAccountFixture(t);
+  const accountRef = fixture.register('kimi', '9203');
+  const { res, body } = await requestKimiDesktopSession(fixture, 'poll', {
+    accountRef,
+    deps: {
+      readRequestBody: async () => Buffer.from(JSON.stringify({ code: 'qr-9' })),
+      fetchImpl: async () => ({
+        status: 200,
+        json: async () => ({
+          status: 'STATUS_SUCCESS',
+          access_token: 'web-access',
+          refresh_token: 'web-refresh',
+          user_id: 'u-1'
+        })
+      })
+    }
+  });
+  assert.equal(res.statusCode, 200);
+  assert.equal(body.status, 'STATUS_SUCCESS');
+
+  const { readAccountCredentialRecord } = require('../lib/server/account-credential-store');
+  const record = readAccountCredentialRecord(fs, fixture.aiHomeDir, accountRef);
+  assert.equal(record.nativeAuth.desktopSession.accessToken, 'web-access');
+  assert.equal(record.nativeAuth.desktopSession.refreshToken, 'web-refresh');
+  assert.equal(record.nativeAuth.desktopSession.userId, 'u-1');
+});
+
+test('kimi desktop-session poll 在 PENDING 时不写托管 session', async (t) => {
+  const fixture = createAccountFixture(t);
+  const accountRef = fixture.register('kimi', '9204');
+  const { res, body } = await requestKimiDesktopSession(fixture, 'poll', {
+    accountRef,
+    deps: {
+      readRequestBody: async () => Buffer.from(JSON.stringify({ code: 'qr-9' })),
+      fetchImpl: async () => ({ status: 200, json: async () => ({ status: 'STATUS_PENDING' }) })
+    }
+  });
+  assert.equal(res.statusCode, 200);
+  assert.equal(body.status, 'STATUS_PENDING');
+
+  const { readAccountCredentialRecord } = require('../lib/server/account-credential-store');
+  const record = readAccountCredentialRecord(fs, fixture.aiHomeDir, accountRef);
+  assert.equal(record.nativeAuth.desktopSession, undefined);
+});

@@ -184,6 +184,27 @@ export type AccountImportPayload =
   | { mode: 'upload'; uploadKind?: 'file' | 'folder'; files: AccountImportUploadFile[]; provider?: string }
   | { mode: 'cliproxyapi'; provider?: string };
 
+// kimi 桌面托管登录（微信扫码）会话状态
+export type KimiDesktopSessionStatus =
+  | 'STATUS_PENDING'
+  | 'STATUS_SCANNED'
+  | 'STATUS_EXPIRED'
+  | 'STATUS_SUCCESS';
+
+export interface KimiDesktopSessionStartResponse {
+  ok: boolean;
+  code?: string;
+  qrUrl?: string;
+  expiresAtMs?: number;
+  error?: string;
+}
+
+export interface KimiDesktopSessionPollResponse {
+  ok: boolean;
+  status?: KimiDesktopSessionStatus;
+  error?: string;
+}
+
 function dispatchAccountsWatchPayload(payload: any, handlers: {
   onSnapshot?: (payload: AccountsListResponse) => void;
   onSnapshotRequested?: (payload: { requestedAt?: number; hydrating?: boolean }) => void;
@@ -338,6 +359,23 @@ export const accountsAPI = {
 
   listTerminals: async (): Promise<ClientTerminalsResponse> => {
     const response = await api.get<ClientTerminalsResponse>('/webui/terminals');
+    return response.data;
+  },
+
+  // kimi 桌面托管登录：生成微信扫码二维码
+  startKimiDesktopSession: async (accountRef: string): Promise<KimiDesktopSessionStartResponse> => {
+    const response = await api.post<KimiDesktopSessionStartResponse>(
+      `/webui/accounts/kimi/${accountRef}/desktop-session/start`
+    );
+    return response.data;
+  },
+
+  // kimi 桌面托管登录：轮询扫码状态
+  pollKimiDesktopSession: async (accountRef: string, code: string): Promise<KimiDesktopSessionPollResponse> => {
+    const response = await api.post<KimiDesktopSessionPollResponse>(
+      `/webui/accounts/kimi/${accountRef}/desktop-session/poll`,
+      { code }
+    );
     return response.data;
   },
 

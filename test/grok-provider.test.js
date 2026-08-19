@@ -171,6 +171,7 @@ test('loadGrokServerAccounts returns api-key account with XAI_API_KEY', (t) => {
   assert.equal(account.provider, 'grok');
   assert.equal(account.authType, 'api-key');
   assert.equal(account.apiKeyMode, true);
+  assert.equal(account.grokBoundary, 'api-key');
   assert.equal(account.accessToken, 'xai-test-key-abc');
   assert.equal(account.openaiBaseUrl, 'https://api.x.ai/v1');
 });
@@ -210,6 +211,7 @@ test('loadGrokServerAccounts keeps refresh-only oauth accounts schedulable for r
   const account = accounts[0];
   assert.equal(account.authType, 'oauth');
   assert.equal(account.apiKeyMode, false);
+  assert.equal(account.grokBoundary, 'oauth2-cli');
   assert.equal(account.accessToken, '');
   assert.equal(account.refreshToken, 'oauth-refresh-token-xyz');
 });
@@ -223,6 +225,7 @@ test('loadGrokServerAccounts reads official mapped Grok OAuth auth', (t) => {
   assert.equal(accounts[0].accessToken, 'mapped-token');
   assert.equal(accounts[0].email, 'grok@example.com');
   assert.equal(accounts[0].oauthClientId, 'client-id');
+  assert.equal(accounts[0].grokBoundary, 'oauth2-cli');
 });
 
 test('runtime loading clears Grok auth-invalid state only after a newer credential update', (t) => {

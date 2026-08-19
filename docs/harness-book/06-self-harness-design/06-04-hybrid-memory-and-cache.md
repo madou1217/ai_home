@@ -213,6 +213,10 @@ export class ContextOrchestrator {
 
 ## 5. Prompt Cache 亲和度调度与字节级前缀布局工程
 
+<div id="widget-cache-container"></div>
+
+
+
 为了确保每一次请求在上游（无论是 Anthropic API、OpenAI 还是本地 vLLM 集群）实现 **90% 以上的 KV Cache 命中率**，Prompt 结构必须严格遵循四段式字节级对齐规范：
 
 ```

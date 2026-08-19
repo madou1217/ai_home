@@ -61,6 +61,10 @@
 
 ## 3. 多级 Token 预算水位线与分区拓扑
 
+<div id="widget-cache-container"></div>
+
+
+
 Claude Code 将单次请求的上下文空间进行了严密的物理分区，构建了四层 Token 预算模型：
 
 ```

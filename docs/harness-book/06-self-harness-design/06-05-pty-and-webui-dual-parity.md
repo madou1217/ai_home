@@ -148,6 +148,10 @@ export class TerminalPresenter {
 
 ## 5. 双端等价审批网桥（Unified Dual-Bridge）核心源码实现
 
+<div id="widget-bridge-container"></div>
+
+
+
 以下是支持 PTY 终端单键监听与 WebUI WebSocket 全双工互斥结算的 `UnifiedApprovalBridge` 生产级代码：
 
 ```typescript

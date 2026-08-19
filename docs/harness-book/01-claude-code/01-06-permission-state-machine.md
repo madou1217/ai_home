@@ -196,6 +196,10 @@ export const DANGEROUS_COMMAND_RULES: SecurityRule[] = [
 
 ## 5. 统一审批网桥（Unified Approval Bridge）与双端全双工通信
 
+<div id="widget-bridge-container"></div>
+
+
+
 为了保证在纯命令行 TUI（终端用户）与现代化 WebUI（浏览器用户）下具有完全一致的审批控制能力，Harness 构建了 **非阻塞、事件驱动的统一审批网桥**。
 
 ```

@@ -60,6 +60,10 @@
 
 ## 3. Claude Code ReAct 状态机的六大生命周期阶段
 
+<div id="widget-fsm-container"></div>
+
+
+
 Claude Code 将 Agent 的单次完整任务执行严格划分为 6 个确定性的状态阶段：
 
 ```

@@ -66,6 +66,10 @@
 
 ## 3. 统一状态机（Universal FSM）七大生命周期状态流转矩阵
 
+<div id="widget-fsm-container"></div>
+
+
+
 ```mermaid
 stateDiagram-v2
     [*] --> IDLE: 会话初始化 (Init)

@@ -91,6 +91,10 @@
 
 ## 4. 思考流多路解耦状态机（ThinkingStreamDemuxer）源码级实现
 
+<div id="widget-demuxer-container"></div>
+
+
+
 为了在统一协议层抹平上述三种协议差异，Harness 必须构建一个 **字符级/分片级有限状态机解包器**。
 
 ```

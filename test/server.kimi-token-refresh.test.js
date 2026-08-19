@@ -205,6 +205,42 @@ test('refreshKimiAccessToken updates host credentials when host still holds the 
   assert.equal(hostCredentials.access_token, 'at_new');
 });
 
+test('refreshKimiAccessToken adopts newer projection grant before refreshing', async (t) => {
+  const fixture = createKimiFixture(t, { ...expiredCredentials('rt_old'), user_id: 'user-1' });
+  // 模拟 aih 沙箱里的 kimi-code CLI 已自行轮换：projection 文件比 DB 新
+  const projectionDir = path.join(
+    fixture.aiHomeDir, 'run', 'auth-projections', 'kimi', fixture.accountRef,
+    '.kimi-code', 'credentials'
+  );
+  fs.mkdirSync(projectionDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(projectionDir, 'kimi-code.json'),
+    `${JSON.stringify({ ...expiredCredentials('rt_proj'), user_id: 'user-1' }, null, 2)}\n`
+  );
+  const capture = {};
+
+  const result = await refreshKimiAccessToken(
+    { provider: 'kimi', accountRef: fixture.accountRef },
+    { force: true },
+    {
+      fs,
+      aiHomeDir: fixture.aiHomeDir,
+      fetchWithTimeout: okFetch({
+        access_token: 'at_new',
+        refresh_token: 'rt_new',
+        expires_in: 900
+      }, capture)
+    }
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(result.refreshed, true);
+  // 必须用 projection 里最新的 grant 发起刷新，而不是 DB 里已轮换掉的旧 grant
+  assert.match(capture.body, /refresh_token=rt_proj/);
+  const stored = readAccountNativeAuth(fs, fixture.aiHomeDir, fixture.accountRef);
+  assert.equal(stored.credentials.refresh_token, 'rt_new');
+});
+
 test('refreshKimiAccessToken skips refresh when token is not due', async (t) => {
   const fixture = createKimiFixture(t, {
     ...expiredCredentials('rt_old'),

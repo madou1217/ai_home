@@ -161,6 +161,24 @@ test('failure policy treats codex deactivated workspace as account auth failure'
   assert.equal(policy.failureReason, 'deactivated_workspace');
 });
 
+test('failure policy treats plain 402 (no credits) as payment_required, never marking the account', () => {
+  const policy = classifyUpstreamFailure({
+    provider: 'grok',
+    statusCode: 402,
+    body: JSON.stringify({ code: 'personal-team-blocked:spending-limit', error: 'out of credits' }),
+    detail: 'upstream_402: {"code":"personal-team-blocked:spending-limit"}',
+    defaultCooldownMs: 1000
+  });
+  assert.equal(policy.kind, 'payment_required');
+  assert.equal(policy.retryable, false);
+  assert.equal(policy.shouldMarkFailure, false);
+  assert.equal(policy.shouldRetryAnotherAccount, false);
+  assert.equal(policy.shouldPassthroughToClient, true);
+  assert.equal(policy.failureThreshold, 0);
+  assert.equal(policy.cooldownMs, 0);
+  assert.equal(policy.clientStatusCode, 402);
+});
+
 test('failure policy treats 401 as reauth-required account failure', () => {
   const policy = classifyUpstreamFailure({
     provider: 'codex',

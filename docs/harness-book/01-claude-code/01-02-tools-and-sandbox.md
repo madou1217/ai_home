@@ -17,52 +17,29 @@
 4. **多层执行沙箱、OS 级限制（Sandbox-exec / Seccomp）与 Git Worktree 隔离机制**；
 5. **对 `ai_home` 自主 Harness 工具总线研发的架构落地指导**。
 
-```
-┌────────────────────────────────────────────────────────────────────────────────────────────┐
-│                               Claude Code 工具运行时子系统                                  │
-│                                                                                            │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                               Tools Registry & Ingestion                              │  │
-│  │  ┌───────────────────────┐  ┌────────────────────────┐  ┌─────────────────────────┐  │  │
-│  │  │  Built-in Core Tools  │  │  Dynamic Plugin Tools  │  │    MCP Client Bridge    │  │  │
-│  │  │  (Read/Edit/Bash...)  │  │  (Skills / Subagents)  │  │ (Stdio/SSE MCP Servers) │  │  │
-│  │  └───────────┬───────────┘  └───────────┬────────────┘  └────────────┬────────────┘  │  │
-│  └──────────────┼──────────────────────────┼────────────────────────────┼───────────────┘  │
-│                 ▼                          ▼                            ▼                  │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                         Tool Schema Compiler & Token Budgeter                        │  │
-│  │     - JSON Schema 编译与类型严格化     - Tools Prompt 注入器 (按需/延迟加载)              │  │
-│  └─────────────────────────────────────────┬────────────────────────────────────────────┘  │
-└────────────────────────────────────────────┼───────────────────────────────────────────────┘
-                                             │ JSON Schema Definitions
-                                             ▼
-                               ┌───────────────────────────┐
-                               │  LLM Inference (API Wire) │
-                               └─────────────┬─────────────┘
-                                             │ Tool Use Action Frame (tool_use)
-                                             ▼
-┌────────────────────────────────────────────────────────────────────────────────────────────┐
-│                             Tool Dispatcher & Security Sandbox                             │
-│                                                                                            │
-│  ┌─────────────────────────┐  ┌─────────────────────────┐  ┌────────────────────────────┐  │
-│  │   AST Parameter Check   │  │ Permission Gatekeeper   │  │   Isolation Environment    │  │
-│  │  (JSON Schema Validator)│  │ (Default/Accept/Bypass) │  │ (OS Sandbox / Worktree)    │  │
-│  └────────────┬────────────┘  └────────────┬────────────┘  └─────────────┬──────────────┘  │
-│               ▼                            ▼                             ▼                 │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                                Tool Execution Drivers                                │  │
-│  │  ┌────────────────┐  ┌────────────────┐  ┌────────────────┐  ┌────────────────────┐  │  │
-│  │  │  File Driver   │  │  Pty Process   │  │ AST Patch Eng  │  │   Network Client   │  │  │
-│  │  │ (Atomic/Paged) │  │ (Timeout/Tree) │  │(Unique Replace)│  │ (MCP JSON-RPC Bus) │  │  │
-│  │  └────────────────┘  └────────────────┘  └────────────────┘  └────────────────────┘  │  │
-│  └─────────────────────────────────────────┬────────────────────────────────────────────┘  │
-└────────────────────────────────────────────┼───────────────────────────────────────────────┘
-                                             │ Tool Result Observation Frame (tool_result)
-                                             ▼
-                               ┌───────────────────────────┐
-                               │  Next ReAct Turn Context  │
-                               └───────────────────────────┘
-```
+<div class="rich-diagram-box">
+  <div class="diagram-header-tag">Tools Subsystem</div>
+  <div class="diagram-title"><span>🛠️</span> Claude Code 工具运行时子系统全景</div>
+  <div class="harness-stack">
+    <div class="stack-layer">
+      <div class="layer-badge">Tools Registry & Ingestion (工具注册与发现)</div>
+      <div class="chips-grid-3">
+        <div class="tech-card blue"><div class="card-label">Built-in Core Tools</div><div class="card-sub">Read / Edit / Write / Bash</div></div>
+        <div class="tech-card purple"><div class="card-label">Dynamic Plugin Tools</div><div class="card-sub">Skills / Subagents</div></div>
+        <div class="tech-card green"><div class="card-label">MCP Client Bridge</div><div class="card-sub">Stdio / SSE Transports</div></div>
+      </div>
+    </div>
+    <div class="flow-connector">⬇️ JSON Schema Definitions (字典序稳定排序)</div>
+    <div class="stack-layer">
+      <div class="layer-badge">Tool Dispatcher & Security Sandbox (调度与沙箱)</div>
+      <div class="chips-grid-3">
+        <div class="tech-card red"><div class="card-label">AST Parameter Check</div><div class="card-sub">JSON Schema 严格校验</div></div>
+        <div class="tech-card orange"><div class="card-label">Permission Gatekeeper</div><div class="card-sub">4 态权限状态机</div></div>
+        <div class="tech-card cyan"><div class="card-label">Isolation Environment</div><div class="card-sub">OS Sandbox / Worktree</div></div>
+      </div>
+    </div>
+  </div>
+</div>
 
 ---
 

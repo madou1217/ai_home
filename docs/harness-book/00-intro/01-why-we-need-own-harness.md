@@ -80,14 +80,18 @@
 
 直接基于 HTTP 客户端调用大模型 `POST /v1/messages` 或 `POST /v1/chat/completions` 的架构设计，在面对真实软件研发场景时存在六个无法逾越的结构性断裂。
 
-```
-                              API 薄封装架构的六大坍塌点
-                                          │
-    ┌─────────────────┬───────────────────┼───────────────────┬─────────────────┐
-    ▼                 ▼                   ▼                   ▼                 ▼
-[上下文膨胀断崖]   [环境状态漂移]     [安全与权限真空]     [长事务中断失效]    [子代理并发污染]
- (Token Overflow)   (State Drift)       (Security Hole)    (Crash & Resume)   (Context Poison)
-```
+<div class="rich-diagram-box">
+  <div class="diagram-header-tag">Collapse Analysis</div>
+  <div class="diagram-title"><span>⚠️</span> API 薄封装（Thin Wrapper）架构的六大坍塌断裂点</div>
+  <div class="chips-grid-3">
+    <div class="tech-card red"><div class="card-label">💥 上下文膨胀断崖</div><div class="card-sub">Context Explosion / Token Overflow</div></div>
+    <div class="tech-card orange"><div class="card-label">🌪️ 环境状态漂移</div><div class="card-sub">Physical State Drift / Desync</div></div>
+    <div class="tech-card red"><div class="card-label">🔓 安全与权限真空</div><div class="card-sub">Permission & AST Security Void</div></div>
+    <div class="tech-card purple"><div class="card-label">⚡ 长事务中断失效</div><div class="card-sub">Session Crash & Resumption Fail</div></div>
+    <div class="tech-card cyan"><div class="card-label">👥 子代理并发污染</div><div class="card-sub">Multi-agent Context Poisoning</div></div>
+    <div class="tech-card blue"><div class="card-label">❄️ Prompt Cache 击穿</div><div class="card-sub">Prefix Invariance Busting</div></div>
+  </div>
+</div>
 
 ### 3.1 上下文膨胀断崖与 Token 经济学破产 (Context Explosion)
 - **现象**：一次 `grep` 或 `cat` 输出了 5,000 行代码，或者调用 `git log` 返回了 200KB 文本，如果未经处理直接塞入上下文，单轮请求就会消耗掉数万 Token。
@@ -122,40 +126,47 @@
 
 工业级 Agent Harness（如 Claude Code、OpenAI Codex CLI、ai_home Harness）均采用了严密的分层架构体系。
 
-```
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                      Layer 1: Perception & Ingestion (感知与摄入层)                     │
-│  - System Prompt 编译器 (静态底护 + 动态能力槽)                                            │
-│  - 动态探针注入器 (Git Status / CWD / OS / Auto-Memory 语义召回)                          │
-│  - Prompt Cache 亲和性对齐器 (前缀稳定保证 + Ephemeral 断点标记)                         │
-└──────────────────────────────────────────┬─────────────────────────────────────────────┘
-                                           │ Token-Optimized Context Stream
-                                           ▼
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                      Layer 2: Cognition & Loop (认知调度与事件循环层)                    │
-│  - ReAct 事件驱动状态机 (Idle -> Perceive -> Model_Stream -> Tool_Exec -> Ingest)     │
-│  - 流式协议解包器 (Thinking 思考流 / Text 输出流 / ToolCall 结构化解包)                    │
-│  - 上下文滑动窗口压缩器 (Auto-Compaction & AST Pruning)                                  │
-│  - 子代理编排引擎 (Fork / Workflow / Pipeline 并发隔离)                                  │
-└──────────────────────────────────────────┬─────────────────────────────────────────────┘
-                                           │ Structured Tool Calls (JSON Schema Validated)
-                                           ▼
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                      Layer 3: Execution & Grounding (物理执行与环境接地层)               │
-│  - 权限拦截与审批网关 (4 态权限状态机 + Dangerous Command Ast 拦截)                       │
-│  - 物理与虚拟隔离容器 (Git Worktree 临时隔离区 / PTY 终端会话池 / Sandbox)                 │
-│  - 标准化工具总线 (Built-in Tools: Read, Edit, Bash + MCP Protocol Bridge)             │
-│  - 副作用回滚与事务守护 (Dry-run / Undo Engine)                                           │
-└──────────────────────────────────────────┬─────────────────────────────────────────────┘
-                                           │ Observation Payloads / Status Codes / Events
-                                           ▼
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                      Layer 4: State, Telemetry & Storage (状态存储与遥测层)             │
-│  - WAL 事件溯源存储引擎 (Append-only JSONL / SQLite 实体关系映射)                         │
-│  - Token 用量与成本精确计量器 (Input / Output / Cache Read / Cache Creation)             │
-│  - 双端状态同步广播器 (PTY OSC-Escape Sequence / WebUI WebSocket Event Stream)         │
-└────────────────────────────────────────────────────────────────────────────────────────┘
-```
+<div class="rich-diagram-box">
+  <div class="diagram-header-tag">4-Layer Topology</div>
+  <div class="diagram-title"><span>🏛️</span> 现代 Agent 运行时四层物理架构体系</div>
+  <div class="harness-stack">
+    <div class="stack-layer">
+      <div class="layer-badge">Layer 1: Perception & Ingestion (感知与摄入层)</div>
+      <div class="chips-grid-3">
+        <div class="tech-card blue"><div class="card-label">System Prompt 编译器</div><div class="card-sub">静态底护 + 动态能力槽</div></div>
+        <div class="tech-card green"><div class="card-label">动态探针注入器</div><div class="card-sub">Git Status / CWD / MEMORY.md</div></div>
+        <div class="tech-card purple"><div class="card-label">Prompt Cache 对齐器</div><div class="card-sub">字节级前缀锁定 + 断点标记</div></div>
+      </div>
+    </div>
+    <div class="flow-connector">⬇️ Token-Optimized Context Stream</div>
+    <div class="stack-layer">
+      <div class="layer-badge">Layer 2: Cognition & Loop (认知调度与事件循环层)</div>
+      <div class="chips-grid-3">
+        <div class="tech-card purple"><div class="card-label">ReAct 驱动状态机</div><div class="card-sub">Idle ➔ Infer ➔ Gate ➔ Exec</div></div>
+        <div class="tech-card orange"><div class="card-label">三通道流式解包器</div><div class="card-sub">Thinking / Text / ToolCall</div></div>
+        <div class="tech-card cyan"><div class="card-label">滑动窗口压缩器</div><div class="card-sub">Auto-Compaction & AST Pruning</div></div>
+      </div>
+    </div>
+    <div class="flow-connector">⬇️ Structured Tool Calls (JSON Schema Validated)</div>
+    <div class="stack-layer">
+      <div class="layer-badge">Layer 3: Execution & Grounding (物理执行与环境接地层)</div>
+      <div class="chips-grid-3">
+        <div class="tech-card red"><div class="card-label">权限门禁与审批网桥</div><div class="card-sub">4 态状态机 + AST 拦截</div></div>
+        <div class="tech-card cyan"><div class="card-label">物理隔离容器池</div><div class="card-sub">Git Worktrees + PTY Pool</div></div>
+        <div class="tech-card green"><div class="card-label">标准化工具总线</div><div class="card-sub">Built-in Tools + MCP Bridge</div></div>
+      </div>
+    </div>
+    <div class="flow-connector">⬇️ Observation Payloads / Status Codes / Events</div>
+    <div class="stack-layer">
+      <div class="layer-badge">Layer 4: State, Telemetry & Storage (状态存储与遥测层)</div>
+      <div class="chips-grid-3">
+        <div class="tech-card blue"><div class="card-label">WAL 事件溯源引擎</div><div class="card-sub">Append-only JSONL Streams</div></div>
+        <div class="tech-card orange"><div class="card-label">Token 财务计量表</div><div class="card-sub">SQLite 3NF 细粒度归属</div></div>
+        <div class="tech-card green"><div class="card-label">双端状态同步广播器</div><div class="card-sub">PTY OSC Title + WebUI WS</div></div>
+      </div>
+    </div>
+  </div>
+</div>
 
 ---
 

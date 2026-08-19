@@ -16,43 +16,28 @@ Anthropic **Claude Code** 并没有简单地堆砌提示词，而是在运行时
 
 本节将逐层解构 Claude Code 多 Agent 编排机制的底层实现原理、通信协议帧、并发调度状态机与异常边界防御。
 
-```
-┌────────────────────────────────────────────────────────────────────────────────────────────┐
-│                             Claude Code 多 Agent 编排系统全景架构                           │
-│                                                                                            │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                              Main Agent (Parent Session)                             │  │
-│  │  - 持有用户交互界面 (PTY / WebUI)                                                    │  │
-│  │  - 维护主任务目标与全局 Token 预算 (budget.spent() / budget.remaining())             │  │
-│  └──────────────────────────────────────────┬───────────────────────────────────────────┘  │
-│                                             │                                              │
-│                     ┌───────────────────────┴───────────────────────┐                      │
-│                     ▼                                               ▼                      │
-│  ┌────────────────────────────────────────┐   ┌─────────────────────────────────────────┐  │
-│  │         Subagent Fork 派生机制         │   │        Workflow 声明式流水线引擎        │  │
-│  │  - 继承父级全量上下文快照              │   │  - 确定性流水线拓扑 (pipeline/parallel) │  │
-│  │  - 后台静默执行，产物收敛为单结果      │   │  - 多阶段推进 (phase: 'Scan' -> 'Fix')  │  │
-│  │  - 独立执行沙箱与生命周期              │   │  - 对抗性校验 (Adversarial Verifiers)   │  │
-│  └──────────────────┬─────────────────────┘   └────────────────────┬────────────────────┘  │
-│                     │                                              │                       │
-│                     └───────────────────────┬──────────────────────┘                       │
-│                                             │ (Spawn & Isolate)                            │
-│                                             ▼                                              │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                           并发隔离与物理接地层 (Concurrency Pool)                     │  │
-│  │  ┌─────────────────────────┐  ┌─────────────────────────┐  ┌──────────────────────┐  │  │
-│  │  │ Subagent 1 (Read-Only)  │  │ Subagent 2 (Worktree A) │  │ Subagent N (Judge)   │  │  │
-│  │  │ .claude/worktrees/wt-1  │  │ .claude/worktrees/wt-2  │  │ (Zero-shot Verify)   │  │  │
-│  │  └─────────────────────────┘  └─────────────────────────┘  └──────────────────────┘  │  │
-│  └──────────────────────────────────────────┬───────────────────────────────────────────┘  │
-│                                             │ Structured JSON Output (Schema-Enforced)     │
-│                                             ▼                                              │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                    Reducer & Synthesis Engine (归约与综合收割层)                     │  │
-│  │     - 多路结果并行收集 -> 去重 -> 对抗性裁决 (2/3 多数票) -> 合并回主 Agent 上下文      │  │
-│  └──────────────────────────────────────────────────────────────────────────────────────┘  │
-└────────────────────────────────────────────────────────────────────────────────────────────┘
-```
+<div class="rich-diagram-box">
+  <div class="diagram-header-tag">Multi-Agent Orchestration</div>
+  <div class="diagram-title"><span>👥</span> Claude Code 多 Agent 协同编排系统架构</div>
+  <div class="harness-stack">
+    <div class="stack-layer">
+      <div class="layer-badge">Main Agent (Parent Session - 维持用户界面与全局 Token 预算)</div>
+      <div class="chips-grid-2">
+        <div class="tech-card blue"><div class="card-label">Subagent Fork 派生</div><div class="card-sub">继承上下文快照，后台静默执行</div></div>
+        <div class="tech-card purple"><div class="card-label">Workflow 流水线引擎</div><div class="card-sub">声明式 pipeline() / parallel() 编排</div></div>
+      </div>
+    </div>
+    <div class="flow-connector">⬇️ 派生子代理并挂载物理隔离工作空间</div>
+    <div class="stack-layer">
+      <div class="layer-badge">Concurrency Pool (并发隔离池)</div>
+      <div class="chips-grid-3">
+        <div class="tech-card cyan"><div class="card-label">Worker 1: Read-Only</div><div class="card-sub">只读探索分析</div></div>
+        <div class="tech-card orange"><div class="card-label">Worker 2: Worktree 沙箱</div><div class="card-sub">.aih/worktrees/wt-2 (修改代码)</div></div>
+        <div class="tech-card green"><div class="card-label">Worker 3: 对抗性裁决</div><div class="card-sub">独立 Skeptic 盲审投票</div></div>
+      </div>
+    </div>
+  </div>
+</div>
 
 ---
 

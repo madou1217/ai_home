@@ -15,32 +15,22 @@
 
 本节将深入 Anthropic **Claude Code** 的底层内存治理机制，深度剖析其 **多级 Token 预算分配体系、微观启发式输出剪枝、基于语义的宏观自动滚扎压缩（Auto-Compaction）算法以及 Prompt Cache 字节级对齐工程**。
 
-```
-┌────────────────────────────────────────────────────────────────────────────────────────────┐
-│                             Claude Code 上下文生命周期与压缩引擎                            │
-│                                                                                            │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                              Token Budget Watermark 监控                             │  │
-│  │                                                                                      │  │
-│  │   [0%] ══════════════════════════════════════════════════════════════ [100%]        │  │
-│  │   ├───────────────┼───────────────────────────┼─────────────────────┤                │  │
-│  │   │ Static Base   │ Active Recent History     │ Headroom / Reserve  │                │  │
-│  │   │ (System/MCP)  │ (Recent Turns, Unchanged) │ (Single Output/Tool)│                │  │
-│  │   └───────────────┴───────────────────────────┴─────────────────────┘                │  │
-│  │                                               ▲                                      │  │
-│  │                                    Threshold (Trigger: 80%)                          │  │
-│  └───────────────────────────────────────────────┼──────────────────────────────────────┘  │
-│                                                  │                                         │
-│                      ┌───────────────────────────┴───────────────────────────┐             │
-│                      ▼                                                       ▼             │
-│  ┌────────────────────────────────────────┐  ┌──────────────────────────────────────────┐  │
-│  │    Micro-Level: Heuristic Pruning      │  │     Macro-Level: Semantic Compaction     │  │
-│  │  - 历史 Tool Result 超长文本折叠/剪枝  │  │  - Fork 独立后台 Agent 进行语义抽象总结 │  │
-│  │  - 过期 Read / Glob 结果按需淘汰 (LRU) │  │  - 抹除陈旧中间思考，保留结构化状态树    │  │
-│  │  - ANSI / 空白行流式清洗               │  │  - 重新构建 Context Tree，持久化为快照   │  │
-│  └────────────────────────────────────────┘  └──────────────────────────────────────────┘  │
-└────────────────────────────────────────────────────────────────────────────────────────────┘
-```
+<div class="rich-diagram-box">
+  <div class="diagram-header-tag">Context Engine</div>
+  <div class="diagram-title"><span>📦</span> 上下文生命周期与多级压缩引擎拓扑</div>
+  <div class="split-two-col">
+    <div class="col-box">
+      <div class="col-title">🧹 微观启发式剪枝 (Micro Pruning)</div>
+      <div class="tech-card blue" style="margin-bottom:6px;"><div class="card-label">超长工具输出折叠</div><div class="card-sub">&gt;500 行日志替换为简要占位符</div></div>
+      <div class="tech-card green"><div class="card-label">重复读取按 LRU 淘汰</div><div class="card-sub">仅保留文件最新读取镜像</div></div>
+    </div>
+    <div class="col-box">
+      <div class="col-title">🧠 宏观语义压缩 (Macro Compaction)</div>
+      <div class="tech-card purple" style="margin-bottom:6px;"><div class="card-label">Fork 独立后台子代理</div><div class="card-sub">生成结构化 XML 状态树</div></div>
+      <div class="tech-card cyan"><div class="card-label">原子替换历史消息</div><div class="card-sub">回收 70%+ 上下文 Token</div></div>
+    </div>
+  </div>
+</div>
 
 ---
 

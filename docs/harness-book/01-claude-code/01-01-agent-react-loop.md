@@ -12,32 +12,24 @@
 
 本节将深入 Claude Code 的架构内核，逐行解构其 **ReAct 事件循环（Reasoning + Acting Loop）的状态机生命周期、消息轮次迭代拓扑、流式协议解包通道与异常恢复模型**。
 
-```
-                  ┌─────────────────────────────────────────────────────────┐
-                  │                   用户输入 (User Prompt)                │
-                  └────────────────────────────┬────────────────────────────┘
-                                               │
-                                               ▼
-┌───────────────────────────────────────────────────────────────────────────────────────────┐
-│                           Claude Code Agent ReAct 核心事件循环                             │
-│                                                                                           │
-│       ┌───────────────┐        ┌───────────────────┐        ┌───────────────────┐         │
-│       │  INIT / IDLE  │ ─────> │ CONTEXT_HYDRATION │ ─────> │ MODEL_STREAM_INIT │         │
-│       └───────────────┘        └───────────────────┘        └─────────┬─────────┘         │
-│               ▲                                                       │                   │
-│               │                                                       ▼                   │
-│       ┌───────┴───────┐        ┌───────────────────┐        ┌───────────────────┐         │
-│       │   COMPACTION  │ <───── │   EXECUTE_TOOLS   │ <───── │ PERMISSION_GATING │         │
-│       │  & TURN_END   │        │  (Parallel/Async) │        │  (4-State Machine)│         │
-│       └───────────────┘        └───────────────────┘        └───────────────────┘         │
-│               │                          │                                                │
-│               └──────────────────────────┴──────── (Next Turn / Iteration) ───────┐      │
-│                                                                                   │      │
-└───────────────────────────────────────────────────────────────────────────────────┼──────┘
-                                                                                    │
-                                                                                    ▼
-                                                                        [循环直到 stop_reason = end_turn]
-```
+<div class="rich-diagram-box">
+  <div class="diagram-header-tag">ReAct Control Topology</div>
+  <div class="diagram-title"><span>🔄</span> Claude Code ReAct 核心事件循环与控制流</div>
+  <div class="harness-stack">
+    <div class="chips-grid-4">
+      <div class="tech-card blue"><div class="card-label">1. INIT / IDLE</div><div class="card-sub">会话绑定与信号监听</div></div>
+      <div class="tech-card cyan"><div class="card-label">2. PERCEIVE</div><div class="card-sub">环境感知与上下文水合</div></div>
+      <div class="tech-card purple"><div class="card-label">3. INFER & STREAM</div><div class="card-sub">三通道流式解包</div></div>
+      <div class="tech-card red"><div class="card-label">4. PERM GATING</div><div class="card-sub">4 态权限门禁拦截</div></div>
+    </div>
+    <div class="flow-connector">⬇️ 物理工具分发执行 / 递归下一轮 ReAct</div>
+    <div class="chips-grid-3">
+      <div class="tech-card orange"><div class="card-label">5. EXECUTE TOOLS</div><div class="card-sub">PTY 超时强杀 / Worktree 沙箱</div></div>
+      <div class="tech-card green"><div class="card-label">6. COMPACT & HARVEST</div><div class="card-sub">水位线治理与状态沉淀</div></div>
+      <div class="tech-card blue"><div class="card-label">7. NEXT TURN</div><div class="card-sub">循环直到 stop_reason=end_turn</div></div>
+    </div>
+  </div>
+</div>
 
 ---
 

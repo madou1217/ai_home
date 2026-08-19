@@ -63,96 +63,24 @@
 在 Claude Code 中，最核心的物理交互集中在四个内建工具上：`Read`、`Edit`、`Write` 与 `Bash`。每个工具的设计都包含了深厚的工程考量。
 
 ### 3.1 `Read` 工具：分页、行号锚定与多模态扩展
-```typescript
-interface ReadToolParams {
-  file_path: string;       // 绝对路径
-  offset?: number;         // 起始行号 (1-indexed)
-  limit?: number;          // 读取行数 (默认 2000 行)
-  pages?: string;          // PDF 分页范围 (如 "1-5")
-}
-```
-- **核心机制**：
-  1. **严格绝对路径守卫**：拒绝任何相对路径，避免多目录并发时因 CWD 状态漂移读错文件；
-  2. **`cat -n` 格式化注入**：每一行文本均强制前缀 `\t<line_number>\t`。这不仅让大模型具备绝对行号感知，更是后续精准 `Edit` 替换的前提；
-  3. **超大文件滑动窗口截断**：单次默认上限 2,000 行。超过限制时在末尾注入结构化截断提示：`[File continues... Use offset: 2001, limit: 2000 to read next chunk]`；
-  4. **多模态与二进制探针**：内置 `file-type` 探测器，若为 PNG/JPG/WebP 则转换为视觉图像载荷，若为 PDF 则调用内置解析器，若为未知二进制（如 `.so` / `.dylib`）则直接拒绝并返回元信息，防止乱码冲垮上下文。
-
-### 3.2 `Edit` 工具：确定性唯一字符串替换（String-Anchor Replacement）
-```typescript
-interface EditToolParams {
-  file_path: string;
-  old_string: string;      // 待替换的原文本块
-  new_string: string;      // 替换后的目标文本块
-  replace_all?: boolean;   // 是否全量替换 (默认 false)
-}
-```
-- **核心机制**：
-  1. **Read-Before-Edit 硬性约束**：Harness 在内存中维护当前会话的 `ReadFileTracker`。如果模型试图 `Edit` 一个本会话中从未被 `Read` 过的文件，工具层直接 Fast-Fail 报错：`"You must Read the file in this conversation before editing, or the call will fail."`；
-  2. **严格单匹配校验（Uniqueness Assertion）**：
-     - 当 `replace_all: false` 时，Harness 在文件全文中搜索 `old_string`；
-     - 若出现次数 $N = 0$，报错并提示上下文不匹配；
-     - 若出现次数 $N > 1$，**坚决拒绝修改并报错**：`"old_string occurs 3 times in the file. Please provide more surrounding context lines to make it uniquely identifiable."`；
-  3. **空行与缩进严格对齐**：自动剔除模型从 `Read` 复制时附带的 `cat -n` 行号前缀，但在字符串内部对 Tab 与 Space 缩进做精确匹配。
-
-### 3.3 `Write` 工具：原子落盘与读后写保护
-```typescript
-interface WriteToolParams {
-  file_path: string;
-  content: string;
-}
-```
-- **核心机制**：
-  1. **创建与全量覆盖二相性**：若文件不存在，直接创建父目录并写入；若文件已存在，必须同样满足 Read-Before-Write 校验；
-  2. **原子写入事务（Atomic Write）**：
-     - 先将 `content` 写入同目录下的 `.tmp.<uuid>.<filename>`；
-     - 执行 `fs.renameSync()` 原子替换；
-     - 若中途进程中断或断电，原文件 100% 保持完整，杜绝产生 0-byte 的半截坏文件。
-
-### 3.4 `Bash` 工具：PTY 终端沙箱、超时守护与进程树强杀
-```typescript
-interface BashToolParams {
-  command: string;
-  description: string;     // 5-10 个词的简要意图描述 (用于 UI 与审批)
-  timeout?: number;        // 超时毫秒数 (默认 120000ms, 上限 600000ms)
-  run_in_background?: boolean;
-}
-```
-- **核心机制**：
-  1. **非交互环境伪装**：自动注入环境变量：`export CI=true TERM=dumb DEBIAN_FRONTEND=noninteractive`，并关闭各种 CLI 工具的交互提示（如 `git --no-pager`、`npm --yes`）；
-  2. **PTY 缓冲区捕获与 ANSI 清洗**：使用 `node-pty` 分配独立的 Master/Slave 虚拟终端，捕获子进程包括色彩控制在内的全部输出，并利用流式正则清洗掉对 LLM 无意义的 ANSI Cursor Jump 控制字符；
-  3. **进程树级杀灭（Process Tree SIGKILL）**：
-     - 很多脚本会启动子进程（如 `npm run dev` 唤起 `vite` 和 `esbuild`）；
-     - 超时发生时，普通的 `process.kill(pid)` 只能杀掉父脚本，子进程沦为孤儿守护进程；
-     - Claude Code 通过执行 `pgrep -P <pid>` 递归获取所有子孙 PID，先发送 `SIGTERM`，等待 500ms，未退出则全量发送 `SIGKILL -<pgid>` 彻底清场。
-
----
-
-## 4. 动态工具注入与 Model Context Protocol (MCP) 运行时桥接
-
-除了静态编译的内置工具外，现代 Harness 必须支持动态工具扩展。Claude Code 通过 **MCP 客户端桥接器** 实现了热插拔能力。
-
-```
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                              Harness MCP Bridge Architecture                           │
-│                                                                                        │
-│  ┌───────────────────────┐                                                             │
-│  │   LLM Tool Request    │                                                             │
-│  │ (mcp__github__get_pr) │                                                             │
-│  └───────────┬───────────┘                                                             │
-│              ▼                                                                         │
-│  ┌──────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                            McpBridge Router / Dispatcher                         │  │
-│  │  1. 拦截以 mcp__<server>__<tool> 命名的外部工具调用                                   │  │
-│  │  2. 映射为对应 MCP Server 实例与标准 JSON-RPC 2.0 请求 payload                     │  │
-│  └───────────┬──────────────────────────────────────────────────────┬───────────────┘  │
-│              │ (Stdio Transport: Subprocess stdin/stdout)           │ (SSE HTTP)       │
-│              ▼                                                      ▼                  │
-│  ┌────────────────────────┐                             ┌────────────────────────┐     │
-│  │ GitHub MCP Server (CLI)│                             │ Remote Enterprise DB   │     │
-│  │ (stdio: node server.js)│                             │ (https://mcp.corp/sse) │     │
-│  └────────────────────────┘                             └────────────────────────┘     │
-└────────────────────────────────────────────────────────────────────────────────────────┘
-```
+<div class="rich-diagram-box">
+  <div class="diagram-header-tag">MCP Integration</div>
+  <div class="diagram-title"><span>🔌</span> MCP 客户端桥接与命名空间路由架构</div>
+  <div class="harness-stack">
+    <div class="stack-layer">
+      <div class="layer-badge">LLM Tool Call Request: mcp__&lt;server&gt;__&lt;tool&gt;</div>
+      <div class="chips-grid-2">
+        <div class="tech-card blue"><div class="card-label">mcp__github__get_pr</div><div class="card-sub">GitHub MCP Server (Stdio)</div></div>
+        <div class="tech-card green"><div class="card-label">mcp__postgres__query</div><div class="card-sub">Remote Database (SSE)</div></div>
+      </div>
+    </div>
+    <div class="flow-connector">⬇️ JSON-RPC 2.0 双向协议路由 (tools/list &amp; tools/call)</div>
+    <div class="stack-layer">
+      <div class="layer-badge">McpBridge Router / Dispatcher</div>
+      <div class="tech-card purple"><div class="card-label">动态参数类型校验 ➔ 隔离进程调用 ➔ 封装标准化 tool_result 帧</div></div>
+    </div>
+  </div>
+</div>
 
 ### 4.1 MCP 工具命名的双下划线命名空间编码
 为了防止第三方 MCP 工具与 Harness 内置工具发生重名冲突，系统采用结构化命名空间映射：
@@ -162,94 +90,16 @@ $$\text{ToolName}_{\text{Exposed}} = \text{mcp}\_\_\langle \text{server\_name} \
 ### 4.2 MCP 运行时通信协议帧 (JSON-RPC 2.0 Wire Protocol)
 
 #### (1) 工具能力发现请求与响应 (`tools/list`)
-```json
-// Harness 发送给 MCP Server 的初始化发现请求
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "method": "tools/list",
-  "params": {}
-}
-
-// MCP Server 返回的工具能力 Schema 列表
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "result": {
-    "tools": [
-      {
-        "name": "query_database",
-        "description": "Execute a read-only SQL query against the target PostgreSQL instance",
-        "inputSchema": {
-          "type": "object",
-          "properties": {
-            "sql": { "type": "string", "description": "SQL query statement" }
-          },
-          "required": ["sql"]
-        }
-      }
-    ]
-  }
-}
-```
-
-#### (2) 工具调用执行请求与响应 (`tools/call`)
-```json
-// Harness 路由发起的工具调用
-{
-  "jsonrpc": "2.0",
-  "id": 2,
-  "method": "tools/call",
-  "params": {
-    "name": "query_database",
-    "arguments": {
-      "sql": "SELECT id, username, email FROM users WHERE status = 'active' LIMIT 5;"
-    }
-  }
-}
-
-// MCP Server 返回的执行结果
-{
-  "jsonrpc": "2.0",
-  "id": 2,
-  "result": {
-    "content": [
-      {
-        "type": "text",
-        "text": "[{\"id\": 101, \"username\": \"alice\", \"email\": \"alice@example.com\"}]"
-      }
-    ],
-    "isError": false
-  }
-}
-```
-
----
-
-## 5. 多层执行沙箱与安全隔离机制
-
-<div id="widget-worktree-container"></div>
-
-
-
-当 Agent 拥有执行代码和修改系统的能力时，**沙箱与隔离** 就是阻断系统灾难的最后一道防线。
-
-```
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                              多层防护执行沙箱拓扑 (Defense-in-Depth)                    │
-│                                                                                        │
-│  [Layer 1: 语义与权限层] ──> JSON Schema 校验 -> AST 危险指令过滤 -> 4 态权限状态机       │
-│                                   │                                                    │
-│                                   ▼                                                    │
-│  [Layer 2: 工作区隔离层] ──> Git Worktree 临时隔离区 (隔离代码脏写，支持一键丢弃)        │
-│                                   │                                                    │
-│                                   ▼                                                    │
-│  [Layer 3: 进程与资源层] ──> PTY 进程树组隔离 (Setpgid) + 硬超时守护 + 内存配额 (Ulimit) │
-│                                   │                                                    │
-│                                   ▼                                                    │
-│  [Layer 4: 操作系统内核] ──> macOS sandbox-exec (Seatbelt) / Linux Bubblewrap (bwrap) │
-└────────────────────────────────────────────────────────────────────────────────────────┘
-```
+<div class="rich-diagram-box">
+  <div class="diagram-header-tag">Defense-in-Depth</div>
+  <div class="diagram-title"><span>🛡️</span> 多层防护执行沙箱拓扑 (Defense-in-Depth)</div>
+  <div class="harness-stack">
+    <div class="tech-card red"><div class="card-label">Layer 1: 语义与权限层</div><div class="card-sub">JSON Schema 校验 ➔ AST 危险指令过滤 ➔ 4 态权限状态机</div></div>
+    <div class="tech-card orange"><div class="card-label">Layer 2: 工作区隔离层</div><div class="card-sub">Git Worktree 临时分支隔离区 (支持一键 Squash 合并或丢弃)</div></div>
+    <div class="tech-card purple"><div class="card-label">Layer 3: 进程与资源层</div><div class="card-sub">PTY 进程组 (Setpgid) + 120s 超时守护 (SIGKILL -pgid)</div></div>
+    <div class="tech-card blue"><div class="card-label">Layer 4: 操作系统内核层</div><div class="card-sub">macOS Seatbelt (sandbox-exec) / Linux Bubblewrap (bwrap) 系统调用拦截</div></div>
+  </div>
+</div>
 
 ### 5.1 macOS 内核级沙箱配置范例 (Seatbelt Profile)
 在 macOS 上，Harness 可以通过 `sandbox-exec` 启动子进程，利用 Scheme 语言定义的规则限制子进程的系统调用：

@@ -56,87 +56,24 @@ OpenAI **Codex CLI / App Server** 在存储架构上确立了一套极具工业�
 
 为了支持毫秒级会话列表检索、多维度分页过滤、Token 用量统计与快速状态定位，Codex 在本地采用嵌入式 **SQLite 3（开启 WAL 模式）** 管理结构化实体。
 
-```
-┌─────────────────────────┐          1:N         ┌─────────────────────────┐
-│         threads         │ ───────────────────> │          turns          │
-│ ─────────────────────── │                      │ ─────────────────────── │
-│ PK: id (VARCHAR)        │                      │ PK: id (VARCHAR)        │
-│     workspace_root      │                      │ FK: thread_id (VARCHAR) │
-│     title               │                      │     turn_index (INTEGER)│
-│     model               │                      │     status (ENUM)       │
-│     status (ENUM)       │                      │     user_prompt         │
-│     created_at          │                      │     assistant_text      │
-│     updated_at          │                      │     thinking_content    │
-│     last_response_id    │                      │     input_tokens        │
-└─────────────────────────┘                      │     output_tokens       │
-                                                 │     started_at          │
-                                                 │     completed_at        │
-                                                 └───────────┬─────────────┘
-                                                             │ 1:N
-                                                             ▼
-                                                 ┌─────────────────────────┐
-                                                 │       tool_calls        │
-                                                 │ ─────────────────────── │
-                                                 │ PK: call_id (VARCHAR)   │
-                                                 │ FK: turn_id (VARCHAR)   │
-                                                 │     tool_name           │
-                                                 │     arguments_json      │
-                                                 │     result_content      │
-                                                 │     is_error (BOOLEAN)  │
-                                                 │     execution_time_ms   │
-                                                 │     created_at          │
-                                                 └─────────────────────────┘
-```
-
-### 3.1 核心 DDL 建表语句规范
-
-```sql
--- 1. 线程主表 (Threads)
-CREATE TABLE IF NOT EXISTS threads (
-    id TEXT PRIMARY KEY,
-    workspace_root TEXT NOT NULL,
-    title TEXT NOT NULL,
-    model TEXT NOT NULL,
-    status TEXT CHECK(status IN ('IDLE', 'RUNNING', 'AWAITING_APPROVAL', 'FAILED', 'COMPLETED')) DEFAULT 'IDLE',
-    last_response_id TEXT,
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
-);
-
--- 2. 交互轮次表 (Turns)
-CREATE TABLE IF NOT EXISTS turns (
-    id TEXT PRIMARY KEY,
-    thread_id TEXT NOT NULL,
-    turn_index INTEGER NOT NULL,
-    status TEXT CHECK(status IN ('IN_PROGRESS', 'SUCCESS', 'ERROR', 'ABORTED')) DEFAULT 'IN_PROGRESS',
-    user_prompt TEXT NOT NULL,
-    assistant_text TEXT,
-    thinking_content TEXT,
-    input_tokens INTEGER DEFAULT 0,
-    output_tokens INTEGER DEFAULT 0,
-    started_at INTEGER NOT NULL,
-    completed_at INTEGER,
-    FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE
-);
-
--- 3. 工具执行索引表 (Tool Calls)
-CREATE TABLE IF NOT EXISTS tool_calls (
-    call_id TEXT PRIMARY KEY,
-    turn_id TEXT NOT NULL,
-    tool_name TEXT NOT NULL,
-    arguments_json TEXT NOT NULL,
-    result_content TEXT,
-    is_error INTEGER DEFAULT 0,
-    execution_time_ms INTEGER DEFAULT 0,
-    created_at INTEGER NOT NULL,
-    FOREIGN KEY(turn_id) REFERENCES turns(id) ON DELETE CASCADE
-);
-
--- 创建高性能查询索引
-CREATE INDEX IF NOT EXISTS idx_threads_updated ON threads(updated_at DESC);
-CREATE INDEX IF NOT EXISTS idx_turns_thread ON turns(thread_id, turn_index ASC);
-CREATE INDEX IF NOT EXISTS idx_tool_calls_turn ON tool_calls(turn_id);
-```
+<div class="rich-diagram-box">
+  <div class="diagram-header-tag">Relational ER Diagram</div>
+  <div class="diagram-title"><span>🗄️</span> SQLite 实体关系模型 (threads ➔ turns ➔ tool_calls)</div>
+  <div class="chips-grid-3">
+    <div class="tech-card blue">
+      <div class="card-label">threads (会话主表)</div>
+      <div class="card-sub">id (PK), workspace_root, model, status, last_response_id</div>
+    </div>
+    <div class="tech-card purple">
+      <div class="card-label">turns (交互轮次表)</div>
+      <div class="card-sub">id (PK), thread_id (FK), user_prompt, assistant_text, tokens</div>
+    </div>
+    <div class="tech-card green">
+      <div class="card-label">tool_calls (工具索引表)</div>
+      <div class="card-sub">call_id (PK), turn_id (FK), tool_name, arguments, result</div>
+    </div>
+  </div>
+</div>
 
 ---
 

@@ -15,49 +15,27 @@
 
 本节将深入解构 `opencode.db` 的核心 ER 实体关系图、DDL 索引设计、用量归属聚合算法以及并发事务隔离实践。
 
-```
-┌────────────────────────────────────────────────────────────────────────────────────────────┐
-│                             opencode.db 核心实体关系拓扑全景图                             │
-│                                                                                            │
-│  ┌─────────────────────────┐                                                               │
-│  │       workspaces        │ (工作区/仓库实体)                                              │
-│  │ ─────────────────────── │                                                               │
-│  │ PK: id                  │                                                               │
-│  │     path (绝对路径)     │                                                               │
-│  │     name, created_at    │                                                               │
-│  └───────────┬─────────────┘                                                               │
-│              │ 1:N                                                                         │
-│              ▼                                                                             │
-│  ┌─────────────────────────┐          1:N          ┌────────────────────────────────────┐  │
-│  │        sessions         │ ────────────────────> │              messages              │  │
-│  │ ─────────────────────── │                       │ ────────────────────────────────── │  │
-│  │ PK: id                  │                       │ PK: id                             │  │
-│  │ FK: workspace_id        │                       │ FK: session_id                     │  │
-│  │     title, model        │                       │     role (user/assistant/system)   │  │
-│  │     status, parent_id   │                       │     turn_index, created_at         │  │
-│  │     pinned_account_key  │                       └─────────────────┬──────────────────┘  │
-│  └───────────┬─────────────┘                                         │                     │
-│              │                                                       │ 1:N                 │
-│              │ 1:N                                                   ▼                     │
-│              │                                     ┌────────────────────────────────────┐  │
-│              │                                     │            message_parts           │  │
-│              │                                     │ ────────────────────────────────── │  │
-│              │                                     │ PK: id                             │  │
-│              │                                     │ FK: message_id                     │  │
-│              │                                     │     part_type (text/thinking/call) │  │
-│              │                                     │     content_text, json_payload     │  │
-│              │                                     │     seq_order (顺序序号)           │  │
-│              │                                     └────────────────────────────────────┘  │
-│              │                                                                             │
-│              ▼ 1:N                                                                         │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                                    token_usages                                      │  │
-│  │ ──────────────────────────────────────────────────────────────────────────────────── │  │
-│  │ PK: id | FK: session_id | FK: message_id | model_id | account_unique_key             │  │
-│  │      input_tokens | output_tokens | cache_read_tokens | cache_write_tokens | cost    │  │
-│  └──────────────────────────────────────────────────────────────────────────────────────┘  │
-└────────────────────────────────────────────────────────────────────────────────────────────┘
-```
+<div class="rich-diagram-box">
+  <div class="diagram-header-tag">opencode.db Schema</div>
+  <div class="diagram-title"><span>📊</span> opencode.db 核心实体关系全景拓扑图</div>
+  <div class="harness-stack">
+    <div class="tech-card blue"><div class="card-label">workspaces (工作区/仓库实体)</div><div class="card-sub">id (PK), path (绝对路径), name, active_branch</div></div>
+    <div class="flow-connector">⬇️ 1 : N</div>
+    <div class="tech-card purple"><div class="card-label">sessions (会话主表)</div><div class="card-sub">id (PK), workspace_id (FK), parent_id (Fork 追溯), pinned_account_key</div></div>
+    <div class="flow-connector">⬇️ 1 : N</div>
+    <div class="split-two-col">
+      <div class="col-box">
+        <div class="col-title">💬 messages ➔ message_parts (分块解耦)</div>
+        <div class="tech-card cyan" style="margin-bottom:6px;"><div class="card-label">messages: role, turn_index</div></div>
+        <div class="tech-card green"><div class="card-label">message_parts: text / thinking / tool_use / tool_result</div></div>
+      </div>
+      <div class="col-box">
+        <div class="col-title">💰 token_usages (财务计量)</div>
+        <div class="tech-card orange"><div class="card-label">account_unique_key, input_tokens, cached_tokens, cost_usd</div></div>
+      </div>
+    </div>
+  </div>
+</div>
 
 ---
 

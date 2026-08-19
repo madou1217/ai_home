@@ -150,6 +150,7 @@ Fuller layer map:
 - Model alias + circuit-breaking: aliases resolve fallback at runtime and `/v1/models` does not expose the wildcard `claude-*`; 429s trip a circuit breaker at `(account, model)` granularity rather than locking the whole account.
 - WebUI real-time push: `session-event-bus.js` → `webui-sse-broadcaster.js` → browser SSE connection.
 - **zcode provider scope (2026-08-19): OAuth 计划账号只做账号管理、桌面 App 启动、用量/额度查看，不做推理 relay。** `zcode.z.ai/api/v1/zcode-plan/*` 是 ZCode 桌面端的私有通道（闪促活动窗口 + 设备态 + 阿里云验证码三重门，405/3012 已由两天端到端取证确认客户端侧无解），不要再尝试对它做 relay。正规 relay 走官方 Coding Plan 端点 + API Key（zcode API-key 账号）：Anthropic `open.bigmodel.cn/api/anthropic` 或 `api.z.ai/api/anthropic`，OpenAI Chat `.../api/coding/paas/v4`，Responses `.../api/v1`（docs.bigmodel.cn / docs.z.ai 的 coding-plan/tool/others）。
+- **zcode 桌面启动的 HOME 沙箱化（2026-08-19）：ZCode 的 settingService 写死按 `HOME || USERPROFILE`（HOME 优先）定位 `<home>/.zcode/v2/setting.json`，无视 `ZCODE_DATA_BASE_DIR`/`ZCODE_HOME`。** setting.json 持有 `modelProviderFamilySelectedKeys`/`providerFamilyDomain` 等套餐选择状态；若 HOME 留在真实家目录，所有账号实例共享一份 setting.json 互踩，表现为"看着登录了但套餐未连接/无可用模型"的假登陆。`account-app-launcher.js` 的 zcode 桌面分支因此把 `HOME` 指向账号沙箱。**绝不能同时改 `USERPROFILE`**——实测 Windows 上 USERPROFILE 指向投影会让 ZCode 主进程在 deep-link 注册前静默卡死。z.ai-only 账号的"编程套餐（BigModel）"卡片显示"未连接"是产品行为（需单独 BigModel OAuth），不是故障。
 
 ## Testing Guidelines
 - Framework: built-in Node test runner (`node:test`) with `assert/strict`.

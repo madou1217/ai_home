@@ -5682,3 +5682,129 @@ test('v1 router streams Gemini streamGenerateContent to AGY Claude through neste
   assert.match(res.body, /"finishReason":"STOP"/);
   assert.match(res.body, /"usageMetadata":\{"promptTokenCount":3,"candidatesTokenCount":5,"totalTokenCount":8\}/);
 });
+
+test('v1 router passes accountActivity through codex chat completions deps for activity tracking', async () => {
+  const res = createResCapture();
+  const accountActivity = { begin: () => {}, end: () => {} };
+  let seenAccountActivity = null;
+  let seenRequest = null;
+
+  const handled = await handleV1Request({
+    req: { headers: {}, url: '/v1/responses' },
+    res,
+    method: 'POST',
+    pathname: '/v1/responses',
+    options: { backend: 'codex-adapter', provider: 'codex' },
+    state: { metrics: { totalRequests: 0, routeCounts: {}, totalSuccess: 0 } },
+    requiredClientKey: '',
+    cooldownMs: 1000,
+    maxRequestBodyBytes: 1024 * 1024,
+    requestMeta: {},
+    deps: {
+      parseAuthorizationBearer: () => '',
+      writeJson: (r, code, payload) => { r.statusCode = code; r.end(JSON.stringify(payload)); },
+      readRequestBody: async () => Buffer.from(JSON.stringify({ model: 'gpt-5.3-codex', input: 'hi' })),
+      buildOpenAIModelsList: () => ({ object: 'list', data: [] }),
+      handleCodexModels: async () => {},
+      handleCodexChatCompletions: async (ctx) => {
+        seenAccountActivity = ctx.deps.accountActivity;
+        seenRequest = ctx.requestJson;
+        ctx.res.statusCode = 200;
+        ctx.res.end(JSON.stringify({
+          id: 'resp_response',
+          object: 'response',
+          created: 1770000000,
+          model: 'gpt-5.3-codex',
+          status: 'completed',
+          output: [],
+          usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 }
+        }));
+      },
+      handleUpstreamModels: async () => {},
+      handleUpstreamPassthrough: async () => {
+        throw new Error('codex responses adapter should use codex chat adapter');
+      },
+      chooseServerAccount: () => null,
+      markProxyAccountSuccess: () => {},
+      markProxyAccountFailure: () => {},
+      pushMetricError: () => {},
+      appendProxyRequestLog: () => {},
+      fetchModelsForAccount: async () => [],
+      FALLBACK_MODELS: [],
+      fetchWithTimeout: async () => ({}),
+      accountActivity
+    }
+  });
+
+  assert.equal(handled, true);
+  assert.equal(seenAccountActivity, accountActivity);
+  assert.equal(seenRequest.input, 'hi');
+});
+
+test('v1 router passes accountActivity through upstream passthrough deps for activity tracking', async () => {
+  const res = createResCapture();
+  const accountActivity = { begin: () => {}, end: () => {} };
+  let seenAccountActivity = null;
+
+  const handled = await handleV1Request({
+    req: { headers: {}, url: '/v1/chat/completions' },
+    res,
+    method: 'POST',
+    pathname: '/v1/chat/completions',
+    options: { backend: 'codex-adapter', provider: 'codex' },
+    state: {
+      metrics: { totalRequests: 0, routeCounts: {}, totalSuccess: 0 },
+      accounts: {
+        codex: [{
+          accountRef: V1_CODEX_REF_1,
+          accessToken: 'tok',
+          upstreamWireApi: 'chat',
+          openaiBaseUrl: 'https://api.example.com/v1'
+        }]
+      }
+    },
+    requiredClientKey: '',
+    cooldownMs: 1000,
+    maxRequestBodyBytes: 1024 * 1024,
+    requestMeta: {},
+    deps: {
+      parseAuthorizationBearer: () => '',
+      writeJson: (r, code, payload) => { r.statusCode = code; r.end(JSON.stringify(payload)); },
+      readRequestBody: async () => Buffer.from(JSON.stringify({ model: 'gpt-5.3-codex', messages: [{ role: 'user', content: 'hi' }] })),
+      buildOpenAIModelsList: () => ({ object: 'list', data: [] }),
+      handleCodexModels: async () => {},
+      handleCodexChatCompletions: async () => {
+        throw new Error('chat passthrough should be used for chat-wire codex accounts');
+      },
+      handleUpstreamModels: async () => {},
+      handleUpstreamPassthrough: async (ctx) => {
+        seenAccountActivity = ctx.deps.accountActivity;
+        ctx.res.statusCode = 200;
+        ctx.res.end(JSON.stringify({
+          id: 'chatcmpl-1',
+          object: 'chat.completion',
+          created: 1770000000,
+          model: 'gpt-5.3-codex',
+          choices: [{ index: 0, message: { role: 'assistant', content: 'pong' } }]
+        }));
+      },
+      chooseServerAccount: () => null,
+      resolveRequestProvider: () => 'codex',
+      markProxyAccountSuccess: () => {},
+      markProxyAccountFailure: () => {},
+      pushMetricError: () => {},
+      appendProxyRequestLog: () => {},
+      fetchModelsForAccount: async () => [],
+      FALLBACK_MODELS: [],
+      fetchWithTimeout: async () => ({}),
+      fetchGeminiCodeAssistChatCompletion: async () => ({}),
+      fetchGeminiCodeAssistChatCompletionStream: async function* () {},
+      fetchGeminiCodeAssistGenerateContent: async () => ({}),
+      fetchGeminiCodeAssistGenerateContentStream: async function* () {},
+      accountActivity
+    }
+  });
+
+  assert.equal(handled, true);
+  assert.equal(seenAccountActivity, accountActivity);
+});

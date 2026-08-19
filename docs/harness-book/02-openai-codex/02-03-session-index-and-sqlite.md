@@ -4,6 +4,15 @@
 
 ---
 
+
+<div class="ai-concept-hero">
+  <img src="/docs/harness-book/assets/images/02-03-sqlite-wal-resume.jpg" alt="SQLite 关系索引 + JSONL 事件溯源双轨 (Dual-Track SQLite & WAL Resume)" loading="lazy" />
+  <div class="ai-hero-caption">
+    <div class="hero-cap-title"><span>🎨</span> SQLite 关系索引 + JSONL 事件溯源双轨 (Dual-Track SQLite & WAL Resume)</div>
+    <span class="hero-cap-badge">AI 8K Concept</span>
+  </div>
+</div>
+
 ## 1. 章节导读与核心命题
 
 编程 Agent 的单次任务执行周期往往持续数十分钟甚至数小时。在这一长程交互过程中，系统面临各种不可预知的宿主中断事件：

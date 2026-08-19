@@ -4,6 +4,15 @@
 
 ---
 
+
+<div class="ai-concept-hero">
+  <img src="/docs/harness-book/assets/images/04-02-reasoning-correction.jpg" alt="长推理 Trajectory 自反思与决策回溯 (Reasoning Trajectory Self-Correction)" loading="lazy" />
+  <div class="ai-hero-caption">
+    <div class="hero-cap-title"><span>🎨</span> 长推理 Trajectory 自反思与决策回溯 (Reasoning Trajectory Self-Correction)</div>
+    <span class="hero-cap-badge">AI 8K Concept</span>
+  </div>
+</div>
+
 ## 1. 章节导读与核心命题
 
 在长程复杂编程任务中，Agent 几乎不可能一次性写出 100% 正确的代码。面对编译报错、测试用例失败、运行时空指针异常等现实挫折：

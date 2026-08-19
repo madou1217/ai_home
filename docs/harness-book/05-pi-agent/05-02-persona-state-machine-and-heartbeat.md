@@ -4,6 +4,15 @@
 
 ---
 
+
+<div class="ai-concept-hero">
+  <img src="/docs/harness-book/assets/images/05-02-persona-fsm.jpg" alt="动态 Persona 情绪向量与主动心跳守护 (Dynamic Persona FSM & Heartbeat)" loading="lazy" />
+  <div class="ai-hero-caption">
+    <div class="hero-cap-title"><span>🎨</span> 动态 Persona 情绪向量与主动心跳守护 (Dynamic Persona FSM & Heartbeat)</div>
+    <span class="hero-cap-badge">AI 8K Concept</span>
+  </div>
+</div>
+
 ## 1. 章节导读与核心命题
 
 传统的 Coding 或 Task Agent 通常具有固定不变的系统人设（如“你是一个资深架构师，请简洁严谨地回答”）。然而，在长程人机协作、个人助理与陪伴型 Agent 场景中，静态人设迅速遭遇三大体验天花板：

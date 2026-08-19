@@ -4,6 +4,15 @@
 
 ---
 
+
+<div class="ai-concept-hero">
+  <img src="/docs/harness-book/assets/images/01-05-auto-memory.jpg" alt="双层自记忆系统与 Frontmatter 索引 (Two-Tier Auto-Memory & Frontmatter)" loading="lazy" />
+  <div class="ai-hero-caption">
+    <div class="hero-cap-title"><span>🎨</span> 双层自记忆系统与 Frontmatter 索引 (Two-Tier Auto-Memory & Frontmatter)</div>
+    <span class="hero-cap-badge">AI 8K Concept</span>
+  </div>
+</div>
+
 ## 1. 章节导读与核心命题
 
 在真实的软件研发场景中，工程师经常会对 Agent 提出各种隐式约束与工程偏好，例如：“本项目中永远不要使用 `npm install`，统一用 `pnpm`”、“所有前端组件禁止自定义 CSS，必须使用 antd-pro 主题 Token”、“遇到 429 错误时优先检查 account-pool 状态”。

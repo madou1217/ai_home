@@ -4,6 +4,15 @@
 
 ---
 
+
+<div class="ai-concept-hero">
+  <img src="/docs/harness-book/assets/images/02-04-managed-credentials.jpg" alt="多账号凭据沙箱投影与受控启动 (Managed Credential Sandbox Projection)" loading="lazy" />
+  <div class="ai-hero-caption">
+    <div class="hero-cap-title"><span>🎨</span> 多账号凭据沙箱投影与受控启动 (Managed Credential Sandbox Projection)</div>
+    <span class="hero-cap-badge">AI 8K Concept</span>
+  </div>
+</div>
+
 ## 1. 章节导读与核心命题
 
 在实际工业界落地中，开发团队与企业用户往往配置了多个不同等级、不同计费团队或不同限流阈值的模型账号（例如个人付费账号、企业 Team 账号、按量付费的 API Key 账号、海外节点订阅账号等）。

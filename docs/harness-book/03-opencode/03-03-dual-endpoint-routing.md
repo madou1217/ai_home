@@ -4,6 +4,15 @@
 
 ---
 
+
+<div class="ai-concept-hero">
+  <img src="/docs/harness-book/assets/images/03-03-zen-router.jpg" alt="Zen 策略决策大脑与 Go 数据面路由 (Zen Router & Go Data Plane)" loading="lazy" />
+  <div class="ai-hero-caption">
+    <div class="hero-cap-title"><span>🎨</span> Zen 策略决策大脑与 Go 数据面路由 (Zen Router & Go Data Plane)</div>
+    <span class="hero-cap-badge">AI 8K Concept</span>
+  </div>
+</div>
+
 ## 1. 章节导读与核心命题
 
 当 Agent 框架试图同时驾驭 Anthropic Claude、OpenAI GPT-5、Google Gemini、DeepSeek 以及本地私有 Ollama 模型时，开发者必然面临三大系统性架构冲突：

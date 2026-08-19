@@ -4,6 +4,15 @@
 
 ---
 
+
+<div class="ai-concept-hero">
+  <img src="/docs/harness-book/assets/images/06-04-hybrid-memory.jpg" alt="混合持久化存储与 Prompt Cache 亲和中枢 (Hybrid Storage & Prompt Cache Affinity)" loading="lazy" />
+  <div class="ai-hero-caption">
+    <div class="hero-cap-title"><span>🎨</span> 混合持久化存储与 Prompt Cache 亲和中枢 (Hybrid Storage & Prompt Cache Affinity)</div>
+    <span class="hero-cap-badge">AI 8K Concept</span>
+  </div>
+</div>
+
 ## 1. 章节导读与核心命题
 
 在设计自主 Agent 运行时的存储与记忆子系统时，很多架构往往陷入两极分化的误区：

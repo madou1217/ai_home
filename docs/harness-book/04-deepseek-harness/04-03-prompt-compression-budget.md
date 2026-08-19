@@ -4,6 +4,15 @@
 
 ---
 
+
+<div class="ai-concept-hero">
+  <img src="/docs/harness-book/assets/images/04-03-radix-tree-cache.jpg" alt="GPU HBM Radix Tree KV Cache 亲和拓扑 (Radix Tree KV Cache Affinity)" loading="lazy" />
+  <div class="ai-hero-caption">
+    <div class="hero-cap-title"><span>🎨</span> GPU HBM Radix Tree KV Cache 亲和拓扑 (Radix Tree KV Cache Affinity)</div>
+    <span class="hero-cap-badge">AI 8K Concept</span>
+  </div>
+</div>
+
 ## 1. 章节导读与核心命题
 
 推理大模型（如 DeepSeek-R1、Claude 3.7 Thinking、OpenAI o1/o3）相较于传统非推理模型，其单次交互产生的 Token 吞吐量呈现出数量级（$10\times \sim 20\times$）的膨胀。当一个 Coding Agent 在深度排查一个跨数十个微服务与模块的复杂 Bug 时，执行轨迹往往在 10 轮内便轻易突破 100,000 Tokens。

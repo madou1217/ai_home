@@ -4,6 +4,15 @@
 
 ---
 
+
+<div class="ai-concept-hero">
+  <img src="/docs/harness-book/assets/images/06-03-extensible-tools.jpg" alt="高性能插件化工具总线与沙箱隔离 (Extensible Tool Bus & Worktree Isolation)" loading="lazy" />
+  <div class="ai-hero-caption">
+    <div class="hero-cap-title"><span>🎨</span> 高性能插件化工具总线与沙箱隔离 (Extensible Tool Bus & Worktree Isolation)</div>
+    <span class="hero-cap-badge">AI 8K Concept</span>
+  </div>
+</div>
+
 ## 1. 章节导读与核心命题
 
 在 Agent 执行任务过程中，绝大多数的物理副作用（Side Effects）与现实状态变更都源于工具的执行。一个生产级 Agent 运行时的工具系统必须同时解决三大核心命题：

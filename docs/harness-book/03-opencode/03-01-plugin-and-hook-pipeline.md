@@ -4,6 +4,15 @@
 
 ---
 
+
+<div class="ai-concept-hero">
+  <img src="/docs/harness-book/assets/images/03-01-opencode-onion.jpg" alt="OpenCode 微内核双向 Hook 洋葱流水线 (Microkernel Onion Hook Pipeline)" loading="lazy" />
+  <div class="ai-hero-caption">
+    <div class="hero-cap-title"><span>🎨</span> OpenCode 微内核双向 Hook 洋葱流水线 (Microkernel Onion Hook Pipeline)</div>
+    <span class="hero-cap-badge">AI 8K Concept</span>
+  </div>
+</div>
+
 ## 1. 章节导读与核心命题
 
 在解构了 Anthropic Claude Code 的 ReAct 单进程体系与 OpenAI Codex 的 Stdio App Server 架构后，我们正式开启 **第三篇：OpenCode 架构深度解构**。

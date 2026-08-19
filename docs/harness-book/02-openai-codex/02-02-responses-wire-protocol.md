@@ -4,6 +4,15 @@
 
 ---
 
+
+<div class="ai-concept-hero">
+  <img src="/docs/harness-book/assets/images/02-02-responses-protocol.jpg" alt="Responses API 强类型 SSE 流式协议 (Responses API Streaming Protocol)" loading="lazy" />
+  <div class="ai-hero-caption">
+    <div class="hero-cap-title"><span>🎨</span> Responses API 强类型 SSE 流式协议 (Responses API Streaming Protocol)</div>
+    <span class="hero-cap-badge">AI 8K Concept</span>
+  </div>
+</div>
+
 ## 1. 章节导读与核心命题
 
 多年来，OpenAI 的 `/v1/chat/completions` API 一直是生成式 AI 应用的行业事实标准。然而，当开发者试图基于该接口构建生产级编程 Agent（Coding Agent）时，其原始设计的局限性暴露无遗：

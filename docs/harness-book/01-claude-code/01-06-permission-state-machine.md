@@ -4,6 +4,15 @@
 
 ---
 
+
+<div class="ai-concept-hero">
+  <img src="/docs/harness-book/assets/images/01-06-permission-gate.jpg" alt="4 态权限状态机与 AST 安全门禁 (4-State Permission FSM & AST Guard)" loading="lazy" />
+  <div class="ai-hero-caption">
+    <div class="hero-cap-title"><span>🎨</span> 4 态权限状态机与 AST 安全门禁 (4-State Permission FSM & AST Guard)</div>
+    <span class="hero-cap-badge">AI 8K Concept</span>
+  </div>
+</div>
+
 ## 1. 章节导读与核心命题
 
 当 Agent 拥有运行 `Bash`、调用外部 `API`、修改磁盘文件等能力时，它在本质上已经成为了一个具有宿主权限的自动化执行实体。如果权限系统存在漏洞，恶意 Prompt 注入（Prompt Injection）、模型的逻辑幻觉或错误的递归操作将直接导致灾难性后果（如无意执行 `rm -rf /`、敏感配置文件外发、误删未提交的 Git 历史）。

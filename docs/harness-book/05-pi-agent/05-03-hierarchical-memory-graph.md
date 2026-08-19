@@ -4,6 +4,15 @@
 
 ---
 
+
+<div class="ai-concept-hero">
+  <img src="/docs/harness-book/assets/images/05-03-memory-graph.jpg" alt="层次化动态记忆图谱与时间衰减曲线 (Hierarchical Memory Graph & Decay)" loading="lazy" />
+  <div class="ai-hero-caption">
+    <div class="hero-cap-title"><span>🎨</span> 层次化动态记忆图谱与时间衰减曲线 (Hierarchical Memory Graph & Decay)</div>
+    <span class="hero-cap-badge">AI 8K Concept</span>
+  </div>
+</div>
+
 ## 1. 章节导读与核心命题
 
 当 Agent 陪伴用户的周期从“单次编程会话”延伸至“数周、数月乃至数年的长期共处”时，传统的记忆方案（如 Claude Code 的单项目 `MEMORY.md` 或简单的向量检索 RAG）将遭遇严酷的认知瓶颈：

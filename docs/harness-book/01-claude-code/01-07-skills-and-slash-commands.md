@@ -4,6 +4,15 @@
 
 ---
 
+
+<div class="ai-concept-hero">
+  <img src="/docs/harness-book/assets/images/01-07-skills-plugins.jpg" alt="动态 Skills 插件与 Slash 指令热插拔 (Dynamic Skills & Slash Hot-Reloading)" loading="lazy" />
+  <div class="ai-hero-caption">
+    <div class="hero-cap-title"><span>🎨</span> 动态 Skills 插件与 Slash 指令热插拔 (Dynamic Skills & Slash Hot-Reloading)</div>
+    <span class="hero-cap-badge">AI 8K Concept</span>
+  </div>
+</div>
+
 ## 1. 章节导读与核心命题
 
 随着项目复杂度的上升，开发者往往需要沉淀大量垂直领域的专项工作流，例如：“运行 `/code-review` 进行多维度代码审查”、“触发 `/loop 15m` 建立定时巡检”、“调用 `/simplify` 自动重构臃肿模块”或“执行 `/deploy` 跑特定的发版流程”。

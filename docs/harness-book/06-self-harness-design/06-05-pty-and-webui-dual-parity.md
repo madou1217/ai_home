@@ -4,6 +4,15 @@
 
 ---
 
+
+<div class="ai-concept-hero">
+  <img src="/docs/harness-book/assets/images/06-05-dual-parity-bridge.jpg" alt="双端完全等价通信桥与全双工 CAS 结算 (Dual-Parity Communication Bridge)" loading="lazy" />
+  <div class="ai-hero-caption">
+    <div class="hero-cap-title"><span>🎨</span> 双端完全等价通信桥与全双工 CAS 结算 (Dual-Parity Communication Bridge)</div>
+    <span class="hero-cap-badge">AI 8K Concept</span>
+  </div>
+</div>
+
 ## 1. 章节导读与核心命题
 
 长期以来，工业界的 AI 编程工具往往在交互形态上面临艰难的“二选一”抉择：

@@ -4,6 +4,15 @@
 
 ---
 
+
+<div class="ai-concept-hero">
+  <img src="/docs/harness-book/assets/images/06-02-universal-event-loop.jpg" alt="跨 Provider 统一事件循环 7 态 FSM (Universal Event Loop 7-State FSM)" loading="lazy" />
+  <div class="ai-hero-caption">
+    <div class="hero-cap-title"><span>🎨</span> 跨 Provider 统一事件循环 7 态 FSM (Universal Event Loop 7-State FSM)</div>
+    <span class="hero-cap-badge">AI 8K Concept</span>
+  </div>
+</div>
+
 ## 1. 章节导读与核心命题
 
 在传统的多模型接入实践中，很多系统通过为每个模型编写一套独立的 ReAct 执行循环来适配差异。这种做法会引发严重的架构灾难：

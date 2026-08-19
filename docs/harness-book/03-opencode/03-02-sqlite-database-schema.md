@@ -4,6 +4,15 @@
 
 ---
 
+
+<div class="ai-concept-hero">
+  <img src="/docs/harness-book/assets/images/03-02-opencode-db-schema.jpg" alt="opencode.db 实体关系与 Token 财务归属 (Relational Entity & Token Attribution)" loading="lazy" />
+  <div class="ai-hero-caption">
+    <div class="hero-cap-title"><span>🎨</span> opencode.db 实体关系与 Token 财务归属 (Relational Entity & Token Attribution)</div>
+    <span class="hero-cap-badge">AI 8K Concept</span>
+  </div>
+</div>
+
 ## 1. 章节导读与核心命题
 
 随着 Agent 深入企业级团队与多项目管理，一个看似简单的本地持久化需求往往迅速演变为复杂的领域模型挑战：

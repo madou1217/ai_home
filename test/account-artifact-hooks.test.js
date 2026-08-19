@@ -176,8 +176,13 @@ test('default artifact hook registry routes shared auth handlers through provide
       relativePath: path.join('.gemini', 'oauth_creds.json')
     },
     {
-      provider: 'kimi',
+      provider: 'agy',
       cliAccountId: '5',
+      relativePath: path.join('.gemini', 'jetski-standalone-oauth-token')
+    },
+    {
+      provider: 'kimi',
+      cliAccountId: '6',
       relativePath: path.join('.kimi-code', 'credentials', 'kimi-code.json')
     }
   ];
@@ -207,8 +212,9 @@ test('default artifact hook registry routes shared auth handlers through provide
     assert.equal(result.dispatched, true);
   });
 
-  assert.deepEqual(events.map((event) => event.provider), ['claude', 'gemini', 'kimi']);
+  assert.deepEqual(events.map((event) => event.provider), ['claude', 'gemini', 'agy', 'kimi']);
   assert.deepEqual(events.map((event) => event.type), [
+    'default_account_auth_updated',
     'default_account_auth_updated',
     'default_account_auth_updated',
     'default_account_auth_updated'

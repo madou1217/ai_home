@@ -34,24 +34,26 @@ function writeJson(res, code, payload) {
   res.end(JSON.stringify(payload));
 }
 
-function createFixture(t) {
+function createFixture(t, provider = 'zcode') {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-app-entries-'));
   t.after(() => {
     fs.rmSync(aiHomeDir, { recursive: true, force: true });
   });
   const accountRef = upsertAccountRef(fs, aiHomeDir, {
-    provider: 'zcode',
+    provider,
     cliAccountId: '7',
-    identitySeed: 'oauth:zcode:app-entries@example.com'
+    identitySeed: `oauth:${provider}:app-entries@example.com`
   });
   assert.match(accountRef, /^acct_[a-f0-9]{20}$/);
-  writeAccountCredentials(fs, aiHomeDir, accountRef, { ZCODE_API_KEY: 'fixture-key' });
-  return { aiHomeDir, accountRef };
+  writeAccountCredentials(fs, aiHomeDir, accountRef, provider === 'codex'
+    ? { OPENAI_API_KEY: 'fixture-key' }
+    : { ZCODE_API_KEY: 'fixture-key' });
+  return { aiHomeDir, accountRef, provider };
 }
 
 function createOpenAppCtx(fixture, payload) {
   return {
-    pathname: `/v0/webui/accounts/zcode/${fixture.accountRef}/open-app`,
+    pathname: `/v0/webui/accounts/${fixture.provider}/${fixture.accountRef}/open-app`,
     req: {},
     res: createResCapture(),
     fs,
@@ -144,6 +146,42 @@ test('open-app 端点在桌面缺失时返回 install_required，不在请求内
   assert.equal(body.installAvailable, true);
 });
 
+test('open-app 端点在 CLI 缺失时返回 install_required，并返回 CLI Toolkit 目标', async (t) => {
+  const fixture = createFixture(t, 'codex');
+  const ctx = createOpenAppCtx(fixture, { kind: 'cli', action: 'open' });
+  ctx.deps.hostHomeDir = path.join(fixture.aiHomeDir, 'host-home');
+  ctx.processObj = { platform: 'linux', env: { PATH: '' }, execPath: process.execPath };
+  ctx.deps.resolveNativeCliPath = () => '';
+  ctx.deps.appInstallJobManager = {
+    canInstall(input) {
+      assert.deepEqual(input, { provider: 'codex', kind: 'cli', appId: 'codex' });
+      return true;
+    }
+  };
+
+  const handled = await handleOpenAccountAppRequest(ctx);
+  assert.equal(handled, true);
+  assert.equal(ctx.res.statusCode, 428);
+  const body = ctx.res.json();
+  assert.equal(body.error, 'install_required');
+  assert.deepEqual(body.installTarget, { provider: 'codex', kind: 'cli', appId: 'codex' });
+  assert.equal(body.installAvailable, true);
+});
+
+test('open-app 端点在没有自动安装器时保留 install_required 并给出手动安装提示', async (t) => {
+  const fixture = createFixture(t);
+  const ctx = createOpenAppCtx(fixture, { kind: 'desktop', action: 'open' });
+  ctx.deps.appInstallJobManager = { canInstall: () => false };
+
+  const handled = await handleOpenAccountAppRequest(ctx);
+  assert.equal(handled, true);
+  assert.equal(ctx.res.statusCode, 428);
+  const body = ctx.res.json();
+  assert.equal(body.error, 'install_required');
+  assert.equal(body.installAvailable, false);
+  assert.match(body.message, /手动安装/);
+});
+
 test('app-entries 端点返回按 Provider 分组的布尔入口可用性并命中缓存', async (t) => {
   const fixture = createFixture(t);
   const ctx = {
@@ -219,4 +257,20 @@ test('app-entries 端点在扫描失败时降级为空 runningAccounts 且 entri
   const body = ctx.res.json();
   assert.deepEqual(body.entries, { zcode: { desktop: true, cli: false } });
   assert.deepEqual(body.runningAccounts, []);
+});
+
+test('app-entries refresh 参数使宿主检测缓存失效', async (t) => {
+  const fixture = createFixture(t);
+  let invalidated = 0;
+  const ctx = createAppEntriesCtx(fixture, {
+    invalidate: () => { invalidated += 1; },
+    detect: () => ({ zcode: { desktop: false, cli: false } }),
+    scanRunning: () => []
+  });
+  ctx.url = new URL('http://localhost/v0/webui/app-entries?refresh=1');
+
+  const handled = await handleListAppEntriesRequest(ctx);
+  assert.equal(handled, true);
+  assert.equal(ctx.res.statusCode, 200);
+  assert.equal(invalidated, 1);
 });

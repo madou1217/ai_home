@@ -16,6 +16,7 @@ const {
   refreshAgyAccessToken,
   __private
 } = require('../lib/server/agy-token-refresh');
+const { resolveAccountRuntimeDir } = require('../lib/runtime/aih-storage-layout');
 
 function createFixture(t, oauthToken = {}) {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-agy-refresh-'));
@@ -98,6 +99,42 @@ test('Agy token refresh uses CLI client defaults and persists refreshed auth to 
   assert.equal(saved.oauthToken.token.token_type, 'Bearer');
   assert.equal(saved.oauthToken.token.expiry, new Date(1700003600000).toISOString());
   assert.equal(saved.email, 'test@example.com');
+});
+
+test('Agy token refresh re-materializes a stale CLI projection from the refreshed DB auth', async (t) => {
+  const fixture = createFixture(t);
+  const runtimeDir = resolveAccountRuntimeDir(fixture.aiHomeDir, 'agy', fixture.accountRef);
+  const authPath = path.join(runtimeDir, '.gemini', 'antigravity-cli', 'antigravity-oauth-token');
+  fs.mkdirSync(path.dirname(authPath), { recursive: true });
+  fs.writeFileSync(authPath, JSON.stringify({
+    auth_method: 'consumer',
+    token: {
+      access_token: 'stale-projection-token',
+      refresh_token: 'refresh-token'
+    }
+  }), 'utf8');
+
+  const result = await refreshAgyAccessToken(fixture.account, {
+    force: true,
+    nowMs: 1700000000000
+  }, {
+    ...fixture.deps,
+    fetchWithTimeout: async () => ({
+      ok: true,
+      text: async () => JSON.stringify({
+        access_token: 'fresh-projection-token',
+        refresh_token: 'fresh-refresh-token',
+        expires_in: 3600
+      })
+    })
+  });
+
+  const projection = JSON.parse(fs.readFileSync(authPath, 'utf8'));
+  assert.equal(result.ok, true);
+  assert.equal(result.persisted, true);
+  assert.equal(projection.token.access_token, 'fresh-projection-token');
+  assert.equal(projection.token.refresh_token, 'fresh-refresh-token');
+  assert.equal(projection.token.expiry, new Date(1700003600000).toISOString());
 });
 
 test('Agy token refresh refreshes an expired token without force', async (t) => {

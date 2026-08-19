@@ -165,10 +165,96 @@ test('AGY and OpenCode projections round-trip through the account database', (t)
   });
 });
 
+test('AGY materialization derives generic Gemini Desktop credentials from the canonical DB auth', (t) => {
+  const fixture = createProjectionFixture(t);
+  const accountRef = registerAccount(fixture, 'agy', '30');
+  const runtimeDir = fixture.runtimeDir('agy', accountRef);
+  writeAccountNativeAuth(fs, fixture.aiHomeDir, accountRef, {
+    oauthToken: {
+      auth_method: 'consumer',
+      token: {
+        access_token: 'agy-desktop-access',
+        refresh_token: 'agy-desktop-refresh',
+        token_type: 'Bearer',
+        expiry: '2030-01-02T03:04:05Z'
+      }
+    },
+    email: 'agy-desktop@example.com'
+  });
+
+  const result = materializeProviderAuth(
+    fs,
+    runtimeDir,
+    'agy',
+    projectionOptions(fixture, accountRef)
+  );
+
+  assert.deepEqual(result, {
+    materialized: 5,
+    removed: 0,
+    missing: false
+  });
+  assert.deepEqual(readJson(path.join(runtimeDir, '.gemini', 'jetski-standalone-oauth-token')), {
+    auth_method: 'consumer',
+    token: {
+      access_token: 'agy-desktop-access',
+      refresh_token: 'agy-desktop-refresh',
+      token_type: 'Bearer',
+      expiry: '2030-01-02T03:04:05Z'
+    }
+  });
+  assert.deepEqual(readJson(path.join(runtimeDir, '.gemini', 'oauth_creds.json')), {
+    access_token: 'agy-desktop-access',
+    refresh_token: 'agy-desktop-refresh',
+    token_type: 'Bearer',
+    expiry_date: Date.parse('2030-01-02T03:04:05Z'),
+    scope: 'https://www.googleapis.com/auth/userinfo.email openid https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.profile'
+  });
+  assert.deepEqual(readJson(path.join(runtimeDir, '.gemini', 'google_accounts.json')), {
+    active: 'agy-desktop@example.com',
+    old: []
+  });
+});
+
+test('AGY capture ignores derived Gemini compatibility files and keeps DB auth canonical', (t) => {
+  const fixture = createProjectionFixture(t);
+  const accountRef = registerAccount(fixture, 'agy', '31');
+  const runtimeDir = fixture.runtimeDir('agy', accountRef);
+  const nativeAuth = {
+    oauthToken: {
+      auth_method: 'consumer',
+      token: {
+        access_token: 'agy-canonical-access',
+        refresh_token: 'agy-canonical-refresh'
+      }
+    },
+    email: 'canonical@example.com'
+  };
+  writeAccountNativeAuth(fs, fixture.aiHomeDir, accountRef, nativeAuth);
+  materializeProviderAuth(fs, runtimeDir, 'agy', projectionOptions(fixture, accountRef));
+  fs.writeFileSync(
+    path.join(runtimeDir, '.gemini', 'oauth_creds.json'),
+    JSON.stringify({ access_token: 'derived-file-change' }),
+    'utf8'
+  );
+  fs.writeFileSync(
+    path.join(runtimeDir, '.gemini', 'google_accounts.json'),
+    JSON.stringify({ active: 'wrong@example.com', old: [] }),
+    'utf8'
+  );
+
+  const result = captureProviderAuth(fs, runtimeDir, 'agy', projectionOptions(fixture, accountRef));
+
+  assert.equal(result.captured, false);
+  assert.equal(result.reason, 'unchanged');
+  assert.deepEqual(readAccountNativeAuth(fs, fixture.aiHomeDir, accountRef), nativeAuth);
+});
+
 test('materialization removes stale auth artifacts when DB has no required auth', (t) => {
   const fixture = createProjectionFixture(t);
   const cases = [
     ['agy', ['.gemini', 'antigravity-cli', 'antigravity-oauth-token']],
+    ['agy', ['.gemini', 'jetski-standalone-oauth-token']],
     ['gemini', ['.gemini', 'oauth_creds.json']],
     ['opencode', ['.local', 'share', 'opencode', 'auth.json']]
   ];

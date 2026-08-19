@@ -138,6 +138,43 @@ test('webui toolkit app install returns an async unified job instead of blocking
   assert.equal(result.data.job.id, 'app-install-test');
 });
 
+test('webui toolkit app install preserves the account-entry Desktop target', async () => {
+  let receivedInput = null;
+  const result = await runToolkitRequest('/v0/webui/toolkit/apps/install', {
+    method: 'POST',
+    body: { appId: 'codex-desktop', action: 'install', kind: 'desktop' },
+    deps: {
+      appInstallJobManager: {
+        start(input) {
+          receivedInput = input;
+          return {
+            ok: true,
+            accepted: true,
+            alreadyRunning: false,
+            job: {
+              id: 'app-install-desktop-test',
+              appId: 'codex-desktop',
+              provider: 'codex',
+              kind: 'desktop',
+              action: 'install',
+              status: 'queued'
+            }
+          };
+        }
+      }
+    }
+  });
+  assert.equal(result.handled, true);
+  assert.equal(result.res.statusCode, 202);
+  assert.deepEqual(receivedInput, {
+    appId: 'codex-desktop',
+    provider: undefined,
+    kind: 'desktop',
+    action: 'install'
+  });
+  assert.equal(result.data.job.id, 'app-install-desktop-test');
+});
+
 test('webui toolkit opens an installed Desktop client from its application card', async () => {
   const calls = [];
   const result = await runToolkitRequest('/v0/webui/toolkit/apps/codex-desktop/open', {

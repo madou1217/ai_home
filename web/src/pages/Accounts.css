@@ -60,6 +60,26 @@
   max-width: 260px;
 }
 
+/* 未安装客户端仍保留可点击入口：用低对比度表达缺失状态，不使用 disabled 阻断 Toolkit 安装引导。 */
+.account-client-entry-button--uninstalled {
+  color: var(--app-muted) !important;
+  opacity: 0.58;
+}
+.account-client-entry-button--uninstalled:hover,
+.account-client-entry-button--uninstalled:focus-visible {
+  color: var(--color-primary) !important;
+  opacity: 1;
+}
+.account-app-install-copy p {
+  margin: 0;
+}
+.account-app-install-copy__hint {
+  margin-top: 10px !important;
+  color: var(--app-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
 /* 移动端账号池：横向滚动 provider 标签 + 筛选条 + 卡片列表（替代宽表格）。
    顶部统计已改用 MobileStatGrid，桌面才走 StatisticCard.Group。 */
 .accounts-mobile-pool {

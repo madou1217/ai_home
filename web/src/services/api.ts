@@ -388,7 +388,7 @@ export const accountsAPI = {
   },
 
   // 宿主机实测的各 Provider 桌面/CLI 入口可用性，附带桌面运行中的账号清单
-  listAppEntries: async (): Promise<{
+  listAppEntries: async (options: { refresh?: boolean } = {}): Promise<{
     entries: Record<string, { desktop: boolean; cli: boolean }>;
     capabilities: Record<string, { desktop: boolean; cli: boolean }>;
     runningAccounts: string[];
@@ -398,7 +398,7 @@ export const accountsAPI = {
       entries: Record<string, { desktop: boolean; cli: boolean }>;
       capabilities?: Record<string, { desktop: boolean; cli: boolean }>;
       runningAccounts?: string[];
-    }>('/webui/app-entries');
+    }>('/webui/app-entries', options.refresh ? { params: { refresh: '1' } } : undefined);
     return {
       entries: response.data.entries || {},
       capabilities: response.data.capabilities || {},

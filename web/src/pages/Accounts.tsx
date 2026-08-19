@@ -46,7 +46,7 @@ import {
 } from '@ant-design/icons';
 import {
   accountsAPI,
-  startAppInstallJob,
+  toolkitAPI,
   waitForAppInstallJob
 } from '@/services/api';
 import { formatTimeCell } from '@/utils/datetime';
@@ -103,6 +103,7 @@ import {
   useModelCatalog
 } from '@/features/accounts/useModelCatalog';
 import { CliPickerModal } from '@/features/accounts/CliPickerModal';
+import { AccountAppInstallModal } from '@/features/accounts/AccountAppInstallModal';
 import { EditAccountModal } from '@/features/accounts/EditAccountModal';
 import { ImportAccountsModal } from '@/features/accounts/ImportAccountsModal';
 import { AddAccountModal } from '@/features/accounts/AddAccountModal';
@@ -137,6 +138,15 @@ type AccountFilterValue =
   | 'unconfigured';
 
 type AccountProviderFilter = 'all' | Provider;
+
+type AccountAppInstallKind = 'desktop' | 'cli';
+
+interface AccountAppInstallPrompt {
+  record: Account;
+  kind: AccountAppInstallKind;
+  terminalId?: string;
+  message: string;
+}
 
 type ProviderStatsBucket = {
   total: number;
@@ -233,6 +243,8 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
   const [authCallbackUrl, setAuthCallbackUrl] = useState('');
   const [authCallbackSubmitting, setAuthCallbackSubmitting] = useState(false);
   const [cliInstallSubmitting, setCliInstallSubmitting] = useState(false);
+  const [accountAppInstallPrompt, setAccountAppInstallPrompt] = useState<AccountAppInstallPrompt | null>(null);
+  const [accountAppInstallSubmitting, setAccountAppInstallSubmitting] = useState(false);
   const [form] = Form.useForm();
   const [editForm] = Form.useForm();
   const [editModalVisible, setEditModalVisible] = useState(false);
@@ -597,9 +609,9 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
   useEffect(() => () => {
     Object.values(cliClickTimers.current).forEach((timer) => clearTimeout(timer));
   }, []);
-  const loadAppEntries = async () => {
+  const loadAppEntries = async (options: { refresh?: boolean } = {}) => {
     try {
-      const result = await accountsAPI.listAppEntries();
+      const result = await accountsAPI.listAppEntries(options);
       setAppEntries(result.entries);
       setAppCapabilities(result.capabilities);
       setRunningAccounts(result.runningAccounts);
@@ -1054,7 +1066,7 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
             try {
               await accountsAPI.openApp(record.provider, record.accountRef, 'desktop', 'close');
               message.success('已关闭');
-              loadAppEntries();
+              loadAppEntries({ refresh: true });
             } catch (error: any) {
               message.error(error?.response?.data?.message || '关闭 Desktop 应用失败');
             }
@@ -1063,42 +1075,24 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
         return;
       }
       message.success(kind === 'desktop' ? '已打开 Desktop 应用' : '已打开 CLI 终端');
-      loadAppEntries();
+      loadAppEntries({ refresh: true });
     } catch (error: any) {
       const code = String(error?.response?.data?.error || '').trim();
       if (code === 'install_required') {
         if (error?.response?.data?.installAvailable === false) {
-          message.info(error?.response?.data?.message || '请先手动安装目标应用后重试');
+          Modal.info({
+            title: `无法自动安装${kind === 'desktop' ? ' Desktop 应用' : '原生 CLI'}`,
+            content: `${error?.response?.data?.message || '当前平台没有可用的自动安装器。'} 可前往 Toolkit > 应用管理查看当前主机状态；完成手动安装后重新点击图标。`,
+            okText: '打开 Toolkit',
+            onOk: () => navigate('/toolkit')
+          });
           return;
         }
-        const runInstall = async () => {
-          try {
-            const job = await startAppInstallJob({
-              provider: record.provider,
-              kind,
-              appId: kind === 'desktop' ? `${record.provider}-desktop` : record.provider
-            });
-            message.info('安装任务已提交，进度显示在右下角任务队列。');
-            // 页面只负责等待后台任务完成后继续唤起目标应用；进度由全局 SSE
-            // 任务队列呈现，刷新或切换页面不会中断服务端任务。
-            const completed = await waitForAppInstallJob(job.id);
-            if (completed.status !== 'succeeded') {
-              throw new Error(completed.error || '安装未完成');
-            }
-            message.success('安装完成，正在打开应用…');
-            await accountsAPI.openApp(record.provider, record.accountRef, kind, 'open', terminalId);
-            loadAppEntries();
-          } catch (installError: any) {
-            message.error(installError?.response?.data?.message || installError?.message || '安装失败');
-          }
-        };
-        Modal.confirm({
-          title: `未检测到${kind === 'desktop' ? ' Desktop 应用' : '原生 CLI'}`,
-          content: error?.response?.data?.message || '是否确认开始后台安装？',
-          okText: '确认安装',
-          cancelText: '取消',
-          // 只确认并立即关闭弹窗；安装作业在 server 后台运行，进度经 SSE 回传。
-          onOk: () => { void runInstall(); }
+        setAccountAppInstallPrompt({
+          record,
+          kind,
+          terminalId,
+          message: error?.response?.data?.message || '当前主机尚未安装目标客户端。'
         });
         return;
       }
@@ -1110,7 +1104,60 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
         message.warning('账号认证已失效，请重新登录后再打开');
         return;
       }
+      if (code === 'agy_desktop_restart_required') {
+        Modal.confirm({
+          title: 'Antigravity Desktop 需要重启',
+          content: '当前账号凭据已变化。关闭正在运行的实例并重新打开后，Desktop 才会使用当前账号登录态。',
+          okText: '关闭并重新打开',
+          cancelText: '取消',
+          onOk: async () => {
+            try {
+              await accountsAPI.openApp(record.provider, record.accountRef, 'desktop', 'close');
+              await accountsAPI.openApp(record.provider, record.accountRef, 'desktop', 'open', terminalId);
+              message.success('已重新打开 Desktop 应用');
+              loadAppEntries({ refresh: true });
+            } catch (restartError: any) {
+              message.error(restartError?.response?.data?.message || '重启 Desktop 应用失败');
+            }
+          }
+        });
+        return;
+      }
+      if (code === 'agy_desktop_keychain_conflict') {
+        message.warning('检测到其他 Antigravity Desktop 实例，请先关闭其他实例后再打开此账号');
+        return;
+      }
+      if (code === 'agy_desktop_auth_unavailable') {
+        message.warning('当前账号没有可用的 Antigravity OAuth 凭据，请先完成授权后再打开 Desktop');
+        return;
+      }
       message.error(error?.response?.data?.message || (kind === 'desktop' ? '打开 Desktop 应用失败' : '打开 CLI 终端失败'));
+    }
+  };
+
+  const confirmAccountAppInstall = async () => {
+    const prompt = accountAppInstallPrompt;
+    if (!prompt || accountAppInstallSubmitting) return;
+    setAccountAppInstallSubmitting(true);
+    try {
+      const appId = prompt.kind === 'desktop' ? `${prompt.record.provider}-desktop` : prompt.record.provider;
+      const response = await toolkitAPI.executeAppAction(appId, 'install', prompt.kind);
+      if (!response.ok || !response.job) {
+        throw new Error(response.error || 'Toolkit 未创建安装任务');
+      }
+      setAccountAppInstallPrompt(null);
+      message.info('安装任务已交给 Toolkit 应用管理，进度显示在右下角任务队列。');
+      const completed = await waitForAppInstallJob(response.job.id);
+      if (completed.status !== 'succeeded') {
+        throw new Error(completed.error || '安装未完成');
+      }
+      await loadAppEntries({ refresh: true });
+      message.success('安装完成，正在打开应用…');
+      await handleOpenApp(prompt.record, prompt.kind, prompt.terminalId);
+    } catch (installError: any) {
+      message.error(installError?.response?.data?.message || installError?.message || '安装失败');
+    } finally {
+      setAccountAppInstallSubmitting(false);
     }
   };
 
@@ -1283,8 +1330,25 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
       dataIndex: 'displayName',
       key: 'displayName',
       width: 280,
-      render: (_text: any, record: Account) => (
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+      render: (_text: any, record: Account) => {
+        const desktopInstalled = Boolean(appEntries?.[record.provider]?.desktop);
+        const desktopSupported = Boolean(
+          appEntries?.[record.provider]?.desktop || appCapabilities[record.provider]?.desktop
+        );
+        const cliInstalled = Boolean(appEntries?.[record.provider]?.cli);
+        const cliSupported = Boolean(
+          PROVIDER_CATALOG[record.provider as Provider]?.clients?.cli
+            && (appEntries?.[record.provider]?.cli || appCapabilities[record.provider]?.cli)
+        );
+        const desktopEntryClassName = desktopInstalled
+          ? undefined
+          : 'account-client-entry-button--uninstalled';
+        const cliEntryClassName = cliInstalled
+          ? undefined
+          : 'account-client-entry-button--uninstalled';
+
+        return (
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
           <div style={{ paddingTop: 3, flexShrink: 0 }}>
             <ProviderIcon provider={record.provider} size={18} />
           </div>
@@ -1319,13 +1383,16 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
                 {getPlanTagLabel(record)}
               </Tag>
               {/* 操作按钮必须保持语义化图标（DesktopOutlined / CodeOutlined），禁止替换为 ProviderIcon，避免与行首厂商主图标混淆 */}
-              {appEntries && (appEntries[record.provider]?.desktop || appCapabilities[record.provider]?.desktop) ? (
-                <Tooltip title={!record.configured ? '账号未配置，完成授权后可打开 Desktop' : record.runtimeStatus === 'auth_invalid' ? '认证已失效，请重新登录' : runningAccounts.includes(getAccountRef(record)) ? 'Desktop 运行中（点击关闭）' : appEntries[record.provider]?.desktop ? '打开 Desktop' : '未安装 Desktop，点击后确认安装'}>
+              {appEntries && desktopSupported ? (
+                <Tooltip title={!record.configured ? '账号未配置，完成授权后可打开 Desktop' : record.runtimeStatus === 'auth_invalid' ? '认证已失效，请重新登录' : runningAccounts.includes(getAccountRef(record)) ? 'Desktop 运行中（点击关闭）' : desktopInstalled ? '打开 Desktop' : '未安装 Desktop，点击后确认安装'}>
                   <Badge dot={runningAccounts.includes(getAccountRef(record))} status="success">
                     <Button
+                      className={desktopEntryClassName}
                       type="text"
                       size="small"
-                      aria-label={`打开 ${providerNames[record.provider] || record.provider} Desktop`}
+                      aria-label={desktopInstalled
+                        ? `打开 ${providerNames[record.provider] || record.provider} Desktop`
+                        : `安装 ${providerNames[record.provider] || record.provider} Desktop`}
                       icon={<DesktopOutlined />}
                       disabled={!record.configured || record.runtimeStatus === 'auth_invalid'}
                       onClick={(event: any) => {
@@ -1336,31 +1403,37 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
                   </Badge>
                 </Tooltip>
               ) : null}
-              {appEntries
-                && PROVIDER_CATALOG[record.provider as Provider]?.clients?.cli
-                && (appEntries[record.provider]?.cli || appCapabilities[record.provider]?.cli) ? (
-                <Tooltip title={!record.configured ? '账号未配置，完成授权后可打开 CLI' : record.runtimeStatus === 'auth_invalid' ? '认证已失效，请重新登录' : '单击选择终端，双击使用系统默认终端'}>
+              {appEntries && cliSupported ? (
+                <Tooltip title={!record.configured ? '账号未配置，完成授权后可打开 CLI' : record.runtimeStatus === 'auth_invalid' ? '认证已失效，请重新登录' : cliInstalled ? '单击选择终端，双击使用系统默认终端' : '未安装原生 CLI，点击后确认安装'}>
                   <Button
+                    className={cliEntryClassName}
                     type="text"
                     size="small"
-                    aria-label={`打开 ${providerNames[record.provider] || record.provider} CLI`}
+                    aria-label={cliInstalled
+                      ? `打开 ${providerNames[record.provider] || record.provider} CLI`
+                      : `安装 ${providerNames[record.provider] || record.provider} CLI`}
                     icon={<CodeOutlined />}
                     disabled={!record.configured || record.runtimeStatus === 'auth_invalid'}
                     onClick={(event: any) => {
                       event?.stopPropagation?.();
+                      if (!cliInstalled) {
+                        void handleOpenApp(record, 'cli');
+                        return;
+                      }
                       scheduleCliTerminalPicker(record);
                     }}
                     onDoubleClick={(event: any) => {
                       event?.stopPropagation?.();
-                      openCliWithDefaultTerminal(record);
+                      if (cliInstalled) openCliWithDefaultTerminal(record);
                     }}
                   />
                 </Tooltip>
               ) : null}
             </div>
           </div>
-        </div>
-      )
+          </div>
+        );
+      },
     },
     {
       title: '开关',
@@ -1998,6 +2071,17 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
         onCallbackUrlChange={setAuthCallbackUrl}
         onSubmitBrowserCallback={handleSubmitBrowserCallback}
         onConfirmCliInstall={handleConfirmCliInstall}
+      />
+      <AccountAppInstallModal
+        open={Boolean(accountAppInstallPrompt)}
+        providerName={accountAppInstallPrompt ? (providerNames[accountAppInstallPrompt.record.provider] || accountAppInstallPrompt.record.provider) : ''}
+        kind={accountAppInstallPrompt?.kind || 'desktop'}
+        message={accountAppInstallPrompt?.message || ''}
+        confirmLoading={accountAppInstallSubmitting}
+        onConfirm={confirmAccountAppInstall}
+        onCancel={() => {
+          if (!accountAppInstallSubmitting) setAccountAppInstallPrompt(null);
+        }}
       />
       <CliPickerModal
         account={cliPickerAccount}

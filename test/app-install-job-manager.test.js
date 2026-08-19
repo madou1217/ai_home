@@ -63,6 +63,31 @@ test('app install job runs asynchronously, deduplicates active targets, and publ
   assert.ok(events.some((event) => event.status === 'succeeded'));
 });
 
+test('app install job is published to the shared Toolkit task hub', async () => {
+  const registeredSources = [];
+  const published = [];
+  const taskHub = {
+    registerSource(source, listActiveJobs) {
+      registeredSources.push({ source, listActiveJobs });
+    },
+    publish(task) {
+      published.push(task);
+    }
+  };
+  const manager = createAppInstallJobManager({
+    taskHub,
+    installCli: async () => ({ installed: true, cliPath: '/opt/bin/codex' })
+  });
+
+  const started = manager.start({ appId: 'codex' });
+  await waitFor(() => manager.getJob(started.job.id)?.status === 'succeeded');
+
+  assert.deepEqual(registeredSources.map((item) => item.source), ['app-install']);
+  assert.ok(published.some((task) => task.id === started.job.id && task.source === 'app-install' && task.status === 'queued'));
+  assert.ok(published.some((task) => task.id === started.job.id && task.source === 'app-install' && task.status === 'succeeded'));
+  assert.deepEqual(registeredSources[0].listActiveJobs(), []);
+});
+
 test('app install job exposes failed result without throwing into the HTTP caller', async () => {
   const manager = createAppInstallJobManager({
     installCli: async () => ({ installed: false, installAttempts: [{ ok: false, error: 'permission denied' }] })

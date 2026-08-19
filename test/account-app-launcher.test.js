@@ -73,6 +73,9 @@ function createLauncher(overrides = {}) {
     })),
     getProfileDir: overrides.getProfileDir || (() => SANDBOX_DIR),
     readAccountEnv: overrides.readAccountEnv || (() => ({})),
+    readAccountNativeAuth: overrides.readAccountNativeAuth,
+    readAgyKeychainCredentials: overrides.readAgyKeychainCredentials,
+    writeAgyKeychainCredentials: overrides.writeAgyKeychainCredentials,
     resolveAccountEligibility: overrides.resolveAccountEligibility,
     enforceCliInstallation: overrides.enforceCliInstallation,
     resolveCliPath: overrides.resolveCliPath
@@ -323,6 +326,234 @@ test('codex desktop 为每个账号注入独立 CODEX_ELECTRON_USER_DATA_PATH', 
   assert.equal(fakeSpawn.calls[0].options.env.CODEX_ELECTRON_USER_DATA_PATH, expectedUserDataDir);
   assert.equal(fakeSpawn.calls[0].options.env.OPENAI_API_KEY, 'account-key');
   assert.deepEqual(fakeSpawn.calls[0].args, [`--user-data-dir=${expectedUserDataDir}`]);
+});
+
+test('agy macOS desktop 使用账号投影文件且不把 token 放进进程 env', () => {
+  const bundlePath = '/Applications/Antigravity.app';
+  const executablePath = `${bundlePath}/Contents/MacOS/Antigravity`;
+  const profileDir = `/aih-home/run/auth-projections/agy/${ACCOUNT_REF}`;
+  const { launcher, fakeSpawn } = createLauncher({
+    path: nodePath.posix,
+    processObj: { platform: 'darwin', execPath: '/usr/local/bin/node', env: {} },
+    fs: createFakeFs([bundlePath, executablePath]),
+    env: { HOME: '/Users/x', PATH: '' },
+    execFileSync: (file) => {
+      if (file === 'ps') return '';
+      throw new Error(`unexpected exec: ${file}`);
+    },
+    resolveAccount: () => ({ accountRef: ACCOUNT_REF, provider: 'agy', cliAccountId: '7' }),
+    getProfileDir: () => profileDir,
+    readAccountNativeAuth: () => ({
+      email: 'agy@example.test',
+      oauthToken: {
+        auth_method: 'consumer',
+        token: {
+          access_token: 'agy-access-test',
+          refresh_token: 'agy-refresh-test',
+          expiry: '2030-01-01T00:00:00Z'
+        }
+      }
+    }),
+    writeAgyKeychainCredentials: () => assert.fail('Desktop must not write the shared AGY Keychain')
+  });
+
+  const result = launcher.launchAccountApp({ provider: 'agy', accountRef: ACCOUNT_REF, kind: 'desktop' });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 'launched');
+  assert.equal(result.executable, executablePath);
+  assert.equal(fakeSpawn.calls.length, 1);
+  assert.equal(fakeSpawn.calls[0].options.env.AGY_ACCESS_TOKEN, undefined);
+  assert.equal(fakeSpawn.calls[0].options.env.SSH_CONNECTION, '127.0.0.1 12345 127.0.0.1 22');
+  assert.equal(fakeSpawn.calls[0].options.env.SSH_CLIENT, '127.0.0.1 12345 22');
+  assert.equal(fakeSpawn.calls[0].options.env.SSH_TTY, '/dev/tty');
+  assert.equal(fakeSpawn.calls[0].options.env.container, 'docker');
+  assert.equal(fakeSpawn.calls[0].options.env.WSL_DISTRO_NAME, 'Ubuntu');
+  assert.equal(fakeSpawn.calls[0].file, '/usr/bin/open');
+  assert.deepEqual(fakeSpawn.calls[0].args, [
+    '-n',
+    '-a',
+    bundlePath,
+    '--args',
+    `--user-data-dir=${profileDir}/electron-user-data`
+  ]);
+});
+
+test('agy macOS desktop 不依赖共享 Keychain，仍可创建账号独立数据目录', () => {
+  const bundlePath = '/Applications/Antigravity.app';
+  const executablePath = `${bundlePath}/Contents/MacOS/Antigravity`;
+  const fsImpl = createFakeFs([bundlePath, executablePath]);
+  const { launcher, fakeSpawn } = createLauncher({
+    path: nodePath.posix,
+    processObj: { platform: 'darwin', execPath: '/usr/local/bin/node', env: {} },
+    fs: fsImpl,
+    env: { HOME: '/Users/x', PATH: '' },
+    execFileSync: (file) => {
+      if (file === 'ps') return '';
+      throw new Error(`unexpected exec: ${file}`);
+    },
+    resolveAccount: () => ({ accountRef: ACCOUNT_REF, provider: 'agy', cliAccountId: '7' }),
+    getProfileDir: () => '/aih-home/run/auth-projections/agy/' + ACCOUNT_REF,
+    readAccountNativeAuth: () => ({
+      oauthToken: {
+        auth_method: 'consumer',
+        token: {
+          access_token: 'agy-access-test',
+          refresh_token: 'agy-refresh-test'
+        }
+      }
+    }),
+    writeAgyKeychainCredentials: () => assert.fail('Desktop must not write the shared AGY Keychain')
+  });
+
+  const result = launcher.launchAccountApp({ provider: 'agy', accountRef: ACCOUNT_REF, kind: 'desktop' });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 'launched');
+  assert.equal(fakeSpawn.calls.length, 1);
+  assert.equal(fsImpl.mkdirCalls.length, 1);
+});
+
+test('agy macOS desktop 启动新账号时保留其他实例并通过 app bundle 启动', () => {
+  const bundlePath = '/Applications/Antigravity.app';
+  const executablePath = `${bundlePath}/Contents/MacOS/Antigravity`;
+  const profileDir = `/aih-home/run/auth-projections/agy/${ACCOUNT_REF}`;
+  const killCalls = [];
+  const { launcher, fakeSpawn } = createLauncher({
+    path: nodePath.posix,
+    processObj: {
+      platform: 'darwin',
+      execPath: '/usr/local/bin/node',
+      env: {},
+      kill(pid, signal) {
+        killCalls.push({ pid, signal });
+      }
+    },
+    stopGraceMs: 0,
+    fs: createFakeFs([bundlePath, executablePath]),
+    env: { HOME: '/Users/x', PATH: '' },
+    execFileSync: (file) => {
+      if (file === 'ps') {
+        return '  9100 Antigravity --user-data-dir=/other/agy/electron-user-data\n';
+      }
+      throw new Error(`unexpected exec: ${file}`);
+    },
+    resolveAccount: () => ({ accountRef: ACCOUNT_REF, provider: 'agy', cliAccountId: '7' }),
+    getProfileDir: () => profileDir,
+    readAccountNativeAuth: () => ({ oauthToken: { token: { refresh_token: 'agy-refresh-test' } } }),
+    writeAgyKeychainCredentials: () => assert.fail('Desktop must not write the shared AGY Keychain')
+  });
+
+  const result = launcher.launchAccountApp({ provider: 'agy', accountRef: ACCOUNT_REF, kind: 'desktop' });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 'launched');
+  assert.deepEqual(killCalls, []);
+  assert.equal(fakeSpawn.calls[0].file, '/usr/bin/open');
+  assert.deepEqual(fakeSpawn.calls[0].args, [
+    '-n',
+    '-a',
+    bundlePath,
+    '--args',
+    `--user-data-dir=${profileDir}/electron-user-data`
+  ]);
+});
+
+test('agy macOS desktop 同账号实例已运行时只复用该实例，不影响其他账号', () => {
+  const bundlePath = '/Applications/Antigravity.app';
+  const executablePath = `${bundlePath}/Contents/MacOS/Antigravity`;
+  const profileDir = `/aih-home/run/auth-projections/agy/${ACCOUNT_REF}`;
+  const killCalls = [];
+  const { launcher, fakeSpawn } = createLauncher({
+    path: nodePath.posix,
+    processObj: {
+      platform: 'darwin',
+      execPath: '/usr/local/bin/node',
+      env: {},
+      kill(pid, signal) {
+        killCalls.push({ pid, signal });
+      }
+    },
+    stopGraceMs: 0,
+    fs: createFakeFs([bundlePath, executablePath]),
+    env: { HOME: '/Users/x', PATH: '' },
+    execFileSync: (file) => {
+      if (file === 'ps') {
+        return `  9101 Antigravity --user-data-dir=${profileDir}/electron-user-data\n`;
+      }
+      throw new Error(`unexpected exec: ${file}`);
+    },
+    resolveAccount: () => ({ accountRef: ACCOUNT_REF, provider: 'agy', cliAccountId: '7' }),
+    getProfileDir: () => profileDir,
+    readAccountNativeAuth: () => ({
+      oauthToken: {
+        auth_method: 'consumer',
+        token: {
+          access_token: 'new-access-test',
+          refresh_token: 'new-refresh-test',
+          expiry: '2030-01-01T00:00:00Z'
+        }
+      }
+    }),
+    readAgyKeychainCredentials: () => ({
+      auth_method: 'consumer',
+      token: {
+        access_token: 'old-access-test',
+        refresh_token: 'old-refresh-test',
+        expiry: '2029-01-01T00:00:00Z'
+      }
+    }),
+    writeAgyKeychainCredentials: () => assert.fail('Desktop must not write the shared AGY Keychain')
+  });
+
+  const result = launcher.launchAccountApp({ provider: 'agy', accountRef: ACCOUNT_REF, kind: 'desktop' });
+
+  assert.deepEqual(result, { ok: true, status: 'already_running', pids: [9101] });
+  assert.deepEqual(killCalls, []);
+  assert.equal(fakeSpawn.calls.length, 0);
+});
+
+test('agy macOS desktop 两个账号可分别启动且不互相关闭', () => {
+  const bundlePath = '/Applications/Antigravity.app';
+  const executablePath = `${bundlePath}/Contents/MacOS/Antigravity`;
+  const otherRef = 'acct_aaaaaaaaaaaaaaaaaaaa';
+  const firstProfile = `/aih-home/run/auth-projections/agy/${ACCOUNT_REF}`;
+  const secondProfile = `/aih-home/run/auth-projections/agy/${otherRef}`;
+  const first = createLauncher({
+    path: nodePath.posix,
+    processObj: { platform: 'darwin', execPath: '/usr/local/bin/node', env: {} },
+    fs: createFakeFs([bundlePath, executablePath]),
+    env: { HOME: '/Users/x', PATH: '' },
+    execFileSync: (file) => file === 'ps' ? '' : assert.fail(`unexpected exec: ${file}`),
+    resolveAccount: () => ({ accountRef: ACCOUNT_REF, provider: 'agy', cliAccountId: '7' }),
+    getProfileDir: () => firstProfile,
+    writeAgyKeychainCredentials: () => assert.fail('Desktop must not write the shared AGY Keychain')
+  });
+  const second = createLauncher({
+    path: nodePath.posix,
+    processObj: { platform: 'darwin', execPath: '/usr/local/bin/node', env: {} },
+    fs: createFakeFs([bundlePath, executablePath]),
+    env: { HOME: '/Users/x', PATH: '' },
+    execFileSync: (file) => file === 'ps' ? '' : assert.fail(`unexpected exec: ${file}`),
+    resolveAccount: () => ({ accountRef: otherRef, provider: 'agy', cliAccountId: '8' }),
+    getProfileDir: () => secondProfile,
+    writeAgyKeychainCredentials: () => assert.fail('Desktop must not write the shared AGY Keychain')
+  });
+
+  const firstResult = first.launcher.launchAccountApp({
+    provider: 'agy', accountRef: ACCOUNT_REF, kind: 'desktop'
+  });
+  const secondResult = second.launcher.launchAccountApp({
+    provider: 'agy', accountRef: otherRef, kind: 'desktop'
+  });
+
+  assert.equal(firstResult.status, 'launched');
+  assert.equal(secondResult.status, 'launched');
+  assert.equal(first.fakeSpawn.calls[0].options.env.HOME, firstProfile);
+  assert.equal(second.fakeSpawn.calls[0].options.env.HOME, secondProfile);
+  assert.notEqual(first.fakeSpawn.calls[0].args[4], second.fakeSpawn.calls[0].args[4]);
+  assert.equal(first.fakeSpawn.calls[0].file, '/usr/bin/open');
+  assert.equal(second.fakeSpawn.calls[0].file, '/usr/bin/open');
 });
 
 test('zcode desktop 在 macOS 使用 manifest installPaths 解析 .app 内可执行文件', () => {
@@ -661,6 +892,24 @@ test('app-entries 检测结果在 30s 内命中缓存', () => {
   assert.equal(detector.detect().zcode.desktop, true);
   // 超过缓存窗口重新检测
   nowValue = 1000 + 31 * 1000;
+  assert.equal(detector.detect().zcode.desktop, false);
+});
+
+test('app-entries 检测器支持安装完成后的显式失效', () => {
+  const exe = 'C:\\Program Files\\ZCode\\ZCode.exe';
+  const fsImpl = createFakeFs([exe]);
+  const detector = createAppEntryDetector({
+    fs: fsImpl,
+    path: nodePath,
+    processObj: { platform: 'win32', env: {} },
+    env: { ProgramFiles: 'C:\\Program Files', PATH: '', USERPROFILE: 'C:\\Users\\x' },
+    now: () => 1000
+  });
+
+  assert.equal(detector.detect().zcode.desktop, true);
+  fsImpl.existsSync = createFakeFs([]).existsSync;
+  assert.equal(detector.detect().zcode.desktop, true);
+  detector.invalidate();
   assert.equal(detector.detect().zcode.desktop, false);
 });
 

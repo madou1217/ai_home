@@ -31,6 +31,35 @@ test('provider runtime env marks codex launches managed and clears the marker el
   assert.equal(claudeEnv[CODEX_MANAGED_LAUNCH_ENV], undefined);
 });
 
+test('AGY CLI 与 Desktop 都保留文件凭据回退标记，避免共享 Keychain 串号', () => {
+  const profileDir = '/home/u/.ai_home/run/auth-projections/agy/acct_0123456789abcdef0123';
+  const cliEnv = buildProviderRuntimeEnv('agy', profileDir, {
+    HOME: '/home/u',
+    PATH: '/usr/bin',
+    SSH_CONNECTION: 'inherited-connection',
+    SSH_CLIENT: 'inherited-client',
+    container: 'inherited-container'
+  }, { fs, path, platform: 'darwin' });
+  assert.equal(cliEnv.SSH_CONNECTION, '127.0.0.1 12345 127.0.0.1 22');
+  assert.equal(cliEnv.SSH_CLIENT, '127.0.0.1 12345 22');
+  assert.equal(cliEnv.container, 'docker');
+
+  const desktopEnv = buildProviderRuntimeEnv('agy', profileDir, {
+    HOME: '/home/u',
+    PATH: '/usr/bin',
+    SSH_CONNECTION: 'inherited-connection',
+    SSH_CLIENT: 'inherited-client',
+    SSH_TTY: '/dev/pts/1',
+    container: 'inherited-container',
+    WSL_DISTRO_NAME: 'Inherited'
+  }, { fs, path, platform: 'darwin', launchKind: 'desktop' });
+  assert.equal(desktopEnv.SSH_CONNECTION, '127.0.0.1 12345 127.0.0.1 22');
+  assert.equal(desktopEnv.SSH_CLIENT, '127.0.0.1 12345 22');
+  assert.equal(desktopEnv.SSH_TTY, '/dev/tty');
+  assert.equal(desktopEnv.container, 'docker');
+  assert.equal(desktopEnv.WSL_DISTRO_NAME, 'Ubuntu');
+});
+
 test('provider runtime env strips inherited Codex Desktop user-data path', () => {
   const env = buildProviderRuntimeEnv('codex', '/home/u/.ai_home/run/auth-projections/codex/acct_0123456789abcdef0123', {
     HOME: '/home/u',

@@ -168,8 +168,13 @@ test('handleImageGenerations renders blob urls for response_format=url', async (
 });
 
 test('handleImageGenerations marks account failure and returns 502 on strategy errors', async () => {
+  let picks = 0;
   const ctx = makeCtx({
     deps: {
+      chooseServerAccount: () => {
+        picks += 1;
+        return picks === 1 ? { accountRef: 'acct_a', email: 'a@example.com', provider: 'agy' } : null;
+      },
       fetchGeminiCodeAssistGenerateContent: async () => {
         throw new Error('socket hang up');
       }
@@ -183,9 +188,89 @@ test('handleImageGenerations marks account failure and returns 502 on strategy e
   assert.equal(ctx.calls.failure.length, 1);
   assert.equal(ctx.calls.failure[0].code, 'upstream_failed');
   assert.equal(ctx.calls.failure[0].account.accountRef, 'acct_a');
-  assert.equal(ctx.calls.logs.length, 2, 'access log plus failure diagnostic entry');
-  assert.equal(ctx.calls.logs[1].provider, 'image');
-  assert.equal(ctx.calls.logs[1].policyKind, 'upstream_failed');
+  // access log + per-attempt diagnostic + final failure summary
+  assert.equal(ctx.calls.logs.length, 3);
+  const attemptDiag = ctx.calls.logs.find((entry) => entry.attempt === 1);
+  assert.ok(attemptDiag, 'per-attempt diagnostic should be recorded');
+  assert.equal(attemptDiag.provider, 'image');
+  assert.equal(attemptDiag.policyKind, 'upstream_failed');
+  assert.equal(attemptDiag.maxAttempts, 3);
+});
+
+test('handleImageGenerations retries the next account after a retryable failure', async () => {
+  const ctx = makeCtx({
+    deps: {
+      chooseServerAccount: (() => {
+        let idx = 0;
+        const accounts = [
+          { accountRef: 'acct_a', email: 'a@example.com', provider: 'agy' },
+          { accountRef: 'acct_b', email: 'b@example.com', provider: 'agy' }
+        ];
+        return () => (idx < accounts.length ? accounts[idx++] : null);
+      })(),
+      fetchGeminiCodeAssistGenerateContent: async (options, account) => {
+        if (account.accountRef === 'acct_a') throw new Error('socket hang up');
+        return {
+          candidates: [{ content: { parts: [{ inlineData: { mimeType: 'image/png', data: PNG_BASE64 } }] } }],
+          usageMetadata: { totalTokenCount: 7 },
+          model: 'gemini-3.1-flash-image'
+        };
+      }
+    }
+  });
+  await handleImageGenerations(ctx);
+
+  assert.equal(ctx.res.statusCode, 200);
+  assert.equal(JSON.parse(ctx.res.body).data.length, 1);
+  assert.equal(ctx.calls.failure.length, 1);
+  assert.equal(ctx.calls.failure[0].account.accountRef, 'acct_a');
+  assert.equal(ctx.calls.success.length, 1);
+  assert.equal(ctx.calls.success[0].accountRef, 'acct_b');
+  const diag = ctx.calls.logs.find((entry) => entry.policyKind === 'upstream_failed' && entry.attempt === 1);
+  assert.ok(diag, 'per-attempt diagnostic should be recorded');
+  assert.equal(diag.accountRef, 'acct_a');
+});
+
+test('handleImageGenerations does not retry non-retryable errors', async () => {
+  let picks = 0;
+  const ctx = makeCtx({
+    requestJson: { model: 'gemini-3.1-pro-high', prompt: 'p' },
+    deps: {
+      chooseServerAccount: () => {
+        picks += 1;
+        return picks === 1 ? { accountRef: 'acct_a', email: 'a@example.com', provider: 'agy' } : null;
+      },
+      fetchGeminiCodeAssistGenerateContent: async () => {
+        const error = new ImageGenerationError(400, 'bad_request', 'unsupported param');
+        throw error;
+      }
+    }
+  });
+  await handleImageGenerations(ctx);
+
+  assert.equal(ctx.res.statusCode, 400);
+  assert.equal(picks, 1, 'no second account should be picked');
+});
+
+test('handleImageGenerations caps retries via imageGenMaxAttempts', async () => {
+  let picks = 0;
+  const ctx = makeCtx({
+    options: { logRequests: true, imageGenMaxAttempts: 1 },
+    deps: {
+      chooseServerAccount: () => {
+        picks += 1;
+        return picks === 1 ? { accountRef: 'acct_a', email: 'a@example.com', provider: 'agy' } : null;
+      },
+      fetchGeminiCodeAssistGenerateContent: async () => {
+        throw new Error('socket hang up');
+      }
+    }
+  });
+  await handleImageGenerations(ctx);
+
+  assert.equal(ctx.res.statusCode, 502);
+  assert.equal(picks, 1);
+  assert.equal(ctx.calls.failure.length, 1);
 });
 
 test('handleImageGenerations skips failure accounting for non-cooldown codes', async () => {

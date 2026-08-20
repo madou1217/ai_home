@@ -55,6 +55,7 @@ import {
   buildLanDiscoveryProfileInputs,
   buildServerRouteRows
 } from '@/services/server-route-presentation';
+import { buildAppHref } from '@/services/app-navigation';
 
 type NumericAddonInputProps = ComponentProps<typeof InputNumber> & {
   addonAfter: React.ReactNode;
@@ -586,7 +587,7 @@ const Settings = ({ section }: SettingsProps) => {
           </div>
         </div>
         <div style={{ marginTop: 12 }}>
-          <Button type="primary" onClick={() => window.location.href = '/toolkit'}>
+          <Button type="primary" onClick={() => window.location.href = buildAppHref('/toolkit')}>
             进入开发工具箱 (Toolkit)
           </Button>
         </div>

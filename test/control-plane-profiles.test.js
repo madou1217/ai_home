@@ -111,6 +111,25 @@ test('control plane profiles auto-seed current WebUI origin as local profile', (
   delete global.window;
 });
 
+test('control plane shared profile sync does not probe a protected endpoint before a local key exists', async () => {
+  const requests = [];
+  global.window = {
+    localStorage: createStorage(),
+    location: { origin: 'http://127.0.0.1:9527' },
+    fetch: async (url) => {
+      requests.push(String(url));
+      return { ok: true, status: 200, json: async () => ({ profiles: [] }) };
+    }
+  };
+  const profiles = loadControlPlaneProfilesModule();
+
+  const result = await profiles.syncSharedControlPlaneProfiles();
+
+  assert.deepEqual(result, { profiles: [], activeProfileId: '' });
+  assert.deepEqual(requests, []);
+  delete global.window;
+});
+
 test('control plane profiles physically remove obsolete auth fields from local storage', () => {
   const storage = createStorage();
   storage.setItem('aih:control-plane-profiles:v1', JSON.stringify([{
@@ -212,8 +231,16 @@ test('control plane profiles bootstrap ready profiles from shared local server s
     updatedAt: 2
   };
   const requests = [];
+  storage.setItem('aih:control-plane-profiles:v1', JSON.stringify([{
+    id: 'cp-aws',
+    endpoint: sharedProfile.endpoint,
+    managementKey: 'management-key',
+    managementKeyConfigured: true,
+    state: 'ready'
+  }]));
   global.window = Object.assign(eventTarget, {
     localStorage: storage,
+    location: { origin: sharedProfile.endpoint },
     fetch: async (url, init = {}) => {
       requests.push({ url: String(url), method: init.method || 'GET' });
       return {

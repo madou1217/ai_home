@@ -72,7 +72,7 @@ function persistSharedActiveControlPlaneProfileId(profileId: string) {
   const fetcher = getSharedProfileFetch();
   const id = normalizeProfileId(profileId);
   const managementKey = resolveWebUiManagementKey();
-  if (!fetcher) return;
+  if (!fetcher || !managementKey) return;
   fetcher(SHARED_PROFILE_ACTIVE_API_PATH, {
     method: 'POST',
     headers: {

@@ -267,7 +267,7 @@ function normalizeSharedProfilesPayload(payload: SharedControlPlaneProfilesRespo
 
 async function readSharedControlPlaneProfiles(options: { fetchImpl?: typeof fetch } = {}) {
   const fetcher = options.fetchImpl || getSharedProfileFetch();
-  if (!fetcher) return { profiles: [], activeProfileId: '' };
+  if (!fetcher || !resolveWebUiManagementKey()) return { profiles: [], activeProfileId: '' };
   const response = await fetcher(SHARED_PROFILE_API_PATH, {
     method: 'GET',
     headers: { accept: 'application/json', ...sharedProfileAuthHeaders() },
@@ -284,7 +284,7 @@ function persistSharedControlPlaneProfile(
   options: { active?: boolean; fetchImpl?: typeof fetch } = {}
 ) {
   const fetcher = options.fetchImpl || getSharedProfileFetch();
-  if (!fetcher || !profile) return;
+  if (!fetcher || !profile || !resolveWebUiManagementKey()) return;
   if (isAutoCurrentControlPlaneProfile(profile)) return;
   fetcher(SHARED_PROFILE_API_PATH, {
     method: 'POST',
@@ -304,7 +304,7 @@ function persistSharedControlPlaneProfile(
 function removeSharedControlPlaneProfile(profileId: string, options: { fetchImpl?: typeof fetch } = {}) {
   const fetcher = options.fetchImpl || getSharedProfileFetch();
   const id = normalizeText(profileId, 96);
-  if (!fetcher || !id) return;
+  if (!fetcher || !id || !resolveWebUiManagementKey()) return;
   fetcher(`${SHARED_PROFILE_API_PATH}/${encodeURIComponent(id)}`, {
     method: 'DELETE',
     headers: { accept: 'application/json', ...sharedProfileAuthHeaders() },

@@ -44,6 +44,22 @@ function loadFabricProfileGateModule() {
   }
 }
 
+function loadAppNavigationModule() {
+  const filename = path.join(__dirname, '../web/src/services/app-navigation.ts');
+  const mod = new Module(filename, module);
+  mod.filename = filename;
+  mod.paths = Module._nodeModulePaths(path.dirname(filename));
+  const originalRequire = mod.require.bind(mod);
+  mod.require = (request) => {
+    if (request === './native-server-profile-repository') {
+      return { isNativeDesktopRuntime: () => false };
+    }
+    return originalRequire(request);
+  };
+  mod._compile(compileTypeScript(filename), filename);
+  return mod.exports;
+}
+
 function createProfile(id, overrides = {}) {
   return {
     id,
@@ -148,4 +164,17 @@ test('app applies the profile gate to browser and native clients before mounting
   assert.doesNotMatch(source, /function enforceNativeServerProfileGate/u);
   assert.match(source, /menuDataRender:[\s\S]*resolveCurrentServerProfileGate\(\)\.ready/u);
   assert.match(source, /canRenderWorkspace\s*\?\s*children\s*:\s*null/u);
+  assert.match(source, /const canRenderDataPlane = isGoAccountsPreview \|\| profileGate\.ready/u);
+  assert.match(source, /canRenderDataPlane && <AppInstallTaskQueue \/>/u);
+});
+
+test('Settings Toolkit navigation keeps the browser UI prefix', () => {
+  const navigation = loadAppNavigationModule();
+  assert.equal(navigation.buildAppHref('/toolkit'), '/ui/toolkit');
+  assert.equal(navigation.resolveAppRoutePathname('/ui/toolkit'), '/toolkit');
+
+  const settingsSource = fs.readFileSync(path.join(__dirname, '../web/src/pages/Settings.tsx'), 'utf8');
+  const routesSource = fs.readFileSync(path.join(__dirname, '../web/config/routes.ts'), 'utf8');
+  assert.match(settingsSource, /buildAppHref\(['"]\/toolkit['"]\)/u);
+  assert.match(routesSource, /path:\s*["']\/toolkit["']/u);
 });

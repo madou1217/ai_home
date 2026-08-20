@@ -108,11 +108,13 @@ export const layout = ({ initialState }: any) => {
     // 移动端底部 TabBar：桌面隐藏、手机上承接跨页导航（见 mobile-shell.css）。
     // 挂在 children 之后，随各页内容一起铺，固定定位不参与布局流。
     childrenRender: (children: any) => {
+      const profileGate = resolveCurrentServerProfileGate();
       const canRenderWorkspace = isGoAccountsPreview || canRenderFabricWorkspace(
-        resolveCurrentServerProfileGate(),
+        profileGate,
         history.location.pathname,
         history.location.search,
       );
+      const canRenderDataPlane = isGoAccountsPreview || profileGate.ready;
       return (
         <>
           {initialState?.desktopInitializationError && (
@@ -125,8 +127,8 @@ export const layout = ({ initialState }: any) => {
             />
           )}
           {canRenderWorkspace ? children : null}
-          {canRenderWorkspace && <AppInstallTaskQueue />}
-          {canRenderWorkspace && <MobileTabBar />}
+          {canRenderDataPlane && <AppInstallTaskQueue />}
+          {canRenderDataPlane && <MobileTabBar />}
         </>
       );
     },

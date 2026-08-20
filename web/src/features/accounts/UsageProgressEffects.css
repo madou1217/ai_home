@@ -5,10 +5,16 @@
   vertical-align: top;
 }
 
-/* 运行中：进度条底色加流光扫描，表达"正在被消耗" */
-.usage-progress-effects--running .ant-progress-bg {
+/* 仅真实活动的额度轨道加流光；账号级 running 不再广播给所有模型组。 */
+.usage-progress-track[data-burning-active="true"] .ant-progress-bg {
   position: relative;
   overflow: hidden;
+}
+
+.usage-progress-track[data-burning-active="true"] .ant-progress-bg::after {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
   background-image: linear-gradient(
     100deg,
     rgba(255, 255, 255, 0) 30%,
@@ -18,6 +24,7 @@
   background-size: 220% 100%;
   background-repeat: no-repeat;
   animation: usage-progress-shimmer 1.4s linear infinite;
+  content: '';
 }
 
 @keyframes usage-progress-shimmer {
@@ -52,7 +59,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .usage-progress-effects--running .ant-progress-bg,
+  .usage-progress-track[data-burning-active="true"] .ant-progress-bg::after,
   .usage-progress-effects--pulsing .ant-progress-bg {
     animation: none;
   }

@@ -6,18 +6,22 @@ import type {
   GeminiUsageModel
 } from '@/types';
 import Button from '@/components/ui/AppButton';
+import BurningParticles from '@/features/accounts/BurningParticles';
 import {
   formatResetAt,
   formatResetIn,
   formatWindowDuration,
   groupAgyQuotaModels,
+  resolveActiveAgyQuotaGroupKeys,
   type AgyGroupMemberModel
 } from './usage-snapshot-format';
+import './UsageSnapshotCell.css';
 
 interface UsageRecordLike {
   configured?: boolean;
   apiKeyMode?: boolean;
   provider?: string;
+  accountRef?: string;
   remainingPct?: number | null;
   usageSnapshot?: AccountUsageSnapshot | null;
   usageRefreshing?: boolean;
@@ -194,12 +198,18 @@ function UsageMetaLine({
   label,
   value,
   resetIn,
-  resetAtMs
+  resetAtMs,
+  running,
+  activityRate,
+  effectKey
 }: {
   label: string;
   value: number | null;
   resetIn?: string;
   resetAtMs?: number;
+  running: boolean;
+  activityRate: number;
+  effectKey: string;
 }) {
   const resetInLabel = formatResetIn(resetIn, resetAtMs);
   const resetLabel = formatResetAt(resetAtMs);
@@ -214,12 +224,11 @@ function UsageMetaLine({
           </span>
         ) : null}
       </div>
-      <Progress
-        percent={Math.max(0, Math.min(100, Number(value || 0)))}
-        size="small"
-        strokeColor={getUsageBarColor(value)}
-        trailColor="#f0f0f0"
-        format={() => formatUsagePercent(value)}
+      <UsageProgressBar
+        value={value}
+        running={running}
+        activityRate={activityRate}
+        effectKey={effectKey}
       />
       {resetLabel ? (
         <div style={{ color: '#8c8c8c', fontSize: 'clamp(11.5px, 3vw, 12.5px)', whiteSpace: 'nowrap' }}>
@@ -230,11 +239,72 @@ function UsageMetaLine({
   );
 }
 
-export default function UsageSnapshotCell({ record, hideModels = false }: { record: UsageRecordLike; hideModels?: boolean }) {
+function UsageProgressBar({
+  value,
+  running,
+  activityRate,
+  effectKey
+}: {
+  value: number | null;
+  running: boolean;
+  activityRate: number;
+  effectKey: string;
+}) {
+  const percent = Math.max(0, Math.min(100, Number(value || 0)));
+  const color = getUsageBarColor(value);
+
+  return (
+    <div className="usage-progress-line" data-usage-progress-value={String(percent)}>
+      <div className="usage-progress-track" data-burning-active={running ? 'true' : 'false'}>
+        <Progress
+          percent={percent}
+          size="small"
+          strokeColor={color}
+          trailColor="#f0f0f0"
+          showInfo={false}
+        />
+        {running && value != null ? (
+          <BurningParticles
+            anchorPct={percent}
+            color={color}
+            activityRate={activityRate}
+            seedKey={effectKey}
+          />
+        ) : null}
+      </div>
+      <span className="usage-progress-value">{formatUsagePercent(value)}</span>
+    </div>
+  );
+}
+
+export default function UsageSnapshotCell({
+  record,
+  hideModels = false,
+  running = false,
+  activityRate = 0,
+  activeModels
+}: {
+  record: UsageRecordLike;
+  hideModels?: boolean;
+  running?: boolean;
+  activityRate?: number;
+  activeModels?: string[];
+}) {
   const [expanded, setExpanded] = useState(false);
+  const effectKeyPrefix = `${String(record.provider || 'provider')}:${String(record.accountRef || 'account')}`;
 
   if (!record.configured) return <>-</>;
-  if (record.apiKeyMode) return <>-</>;
+  if (record.apiKeyMode) {
+    return (
+      <span
+        className="usage-empty-state usage-empty-state--api-key"
+        title="API Key 账号当前没有可展示的剩余额度，额度由上游服务管理"
+      >
+        <span className="usage-empty-state-dot" aria-hidden="true" />
+        <span>额度由上游管理</span>
+      </span>
+    );
+  }
 
   const snapshot = record.usageSnapshot;
 
@@ -268,6 +338,9 @@ export default function UsageSnapshotCell({ record, hideModels = false }: { reco
               value={entry.remainingPct}
               resetIn={entry.resetIn}
               resetAtMs={entry.resetAtMs}
+              running={running}
+              activityRate={activityRate}
+              effectKey={`${effectKeyPrefix}:window:${entry.window || entry.bucket || 'usage'}:${index}`}
             />
           ))}
         </div>
@@ -335,6 +408,9 @@ export default function UsageSnapshotCell({ record, hideModels = false }: { reco
                 value={entry.remainingPct}
                 resetIn={entry.resetIn}
                 resetAtMs={entry.resetAtMs}
+                running={running}
+                activityRate={activityRate}
+                effectKey={`${effectKeyPrefix}:bucket:${entry.bucket || 'usage'}:${entry.window || 'window'}:${index}`}
               />
             );
           })}
@@ -362,6 +438,9 @@ export default function UsageSnapshotCell({ record, hideModels = false }: { reco
   if (record.provider === 'agy' && snapshot?.kind === 'agy_code_assist_quota') {
     const groups = groupAgyQuotaModels(snapshot.models || []);
     if (groups.length === 0) return <>-</>;
+    const activeGroupKeys = new Set(
+      resolveActiveAgyQuotaGroupKeys(groups, activeModels, running)
+    );
 
     return (
       <div style={{ minWidth: 220 }}>
@@ -370,9 +449,15 @@ export default function UsageSnapshotCell({ record, hideModels = false }: { reco
             const visibleLimits = hideModels
               ? group.limits.slice(0, 1)
               : group.limits.slice(0, 2);
+            const groupRunning = activeGroupKeys.has(group.key);
 
             return (
-              <div key={group.key} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div
+                key={group.key}
+                data-usage-quota-group={group.key}
+                data-usage-group-active={groupRunning ? 'true' : 'false'}
+                style={{ display: 'flex', flexDirection: 'column', gap: 4 }}
+              >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <Tooltip
                     overlayClassName="token-usage-tooltip-overlay"
@@ -403,6 +488,9 @@ export default function UsageSnapshotCell({ record, hideModels = false }: { reco
                       value={limit.remainingPct}
                       resetIn={limit.resetIn}
                       resetAtMs={limit.resetAtMs}
+                      running={groupRunning}
+                      activityRate={activityRate}
+                      effectKey={`${effectKeyPrefix}:group:${group.key}:${limit.label}:${index}`}
                     />
                   ))}
                 </div>
@@ -434,6 +522,9 @@ export default function UsageSnapshotCell({ record, hideModels = false }: { reco
               value={model.remainingPct}
               resetIn={model.resetIn}
               resetAtMs={model.resetAtMs}
+              running={running}
+              activityRate={activityRate}
+              effectKey={`${effectKeyPrefix}:model:${model.model || 'model'}:${index}`}
             />
           ))}
         </div>
@@ -467,12 +558,11 @@ export default function UsageSnapshotCell({ record, hideModels = false }: { reco
   }
   return (
     <div>
-      <Progress
-        percent={Math.max(0, Math.min(100, Number(record.remainingPct || 0)))}
-        size="small"
-        strokeColor={getUsageBarColor(record.remainingPct)}
-        trailColor="#f0f0f0"
-        format={() => formatUsagePercent(record.remainingPct ?? null)}
+      <UsageProgressBar
+        value={record.remainingPct ?? null}
+        running={running}
+        activityRate={activityRate}
+        effectKey={`${effectKeyPrefix}:remaining`}
       />
       {record.usageRefreshing ? (
         <div style={{ marginTop: 4, color: '#8c8c8c', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>

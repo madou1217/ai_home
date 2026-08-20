@@ -1838,6 +1838,7 @@ export interface ManagementAccountActivity {
   accountRef: string;
   inFlight: number;
   rate: number;
+  activeModels?: string[];
   lastActivityAt: number;
   updatedAt: number;
 }

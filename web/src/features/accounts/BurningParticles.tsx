@@ -1,82 +1,20 @@
 import React, { useMemo } from 'react';
 
+import {
+  buildBurningSparkSpecs,
+  clampBurningAnchor
+} from './burning-particles-model';
 import './BurningParticles.css';
 
 interface Props {
-  /** 运行中（inFlight > 0）：喷射密集；空闲：少量余烬缓慢上浮 */
-  active: boolean;
   /** 进度条填充边缘（剩余值位置）水平百分比 0-100 */
   anchorPct: number;
   /** 血条主色（进度条 strokeColor），粒子在该色系内抖动并混入白热核心 */
   color: string;
-}
-
-/** 十六进制 → HSL 三元组（供粒子色系抖动用）。 */
-function hexToHsl(hex: string): [number, number, number] {
-  const match = /^#?([0-9a-f]{6})$/i.exec(String(hex || '').trim());
-  if (!match) return [0, 60, 60];
-  const value = parseInt(match[1], 16);
-  const r = ((value >> 16) & 0xff) / 255;
-  const g = ((value >> 8) & 0xff) / 255;
-  const b = (value & 0xff) / 255;
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  const delta = max - min;
-  let h = 0;
-  if (delta !== 0) {
-    if (max === r) h = ((g - b) / delta) % 6;
-    else if (max === g) h = (b - r) / delta + 2;
-    else h = (r - g) / delta + 4;
-    h *= 60;
-    if (h < 0) h += 360;
-  }
-  const l = (max + min) / 2;
-  const s = delta === 0 ? 0 : delta / (1 - Math.abs(2 * l - 1));
-  return [Math.round(h), Math.round(s * 100), Math.round(l * 100)];
-}
-
-/** 由 index 派生的确定性伪随机（0-1），保证粒子参数跨渲染稳定。 */
-function seededRandom(seed: number): number {
-  const x = Math.sin(seed * 12.9898) * 43758.5453;
-  return x - Math.floor(x);
-}
-
-interface SparkSpec {
-  dx: number;
-  dy: number;
-  size: number;
-  delay: number;
-  duration: number;
-  hue: number;
-  sat: number;
-  light: number;
-}
-
-/** 火药捻子火花：从燃烧点（剩余量位置）向四周短促迸溅，距离小、密度高。 */
-function buildSparkSpecs(active: boolean, baseHsl: [number, number, number]): SparkSpec[] {
-  const count = active ? 48 : 10;
-  const [baseHue, baseSat, baseLight] = baseHsl;
-  const specs: SparkSpec[] = [];
-  for (let i = 0; i < count; i += 1) {
-    const r1 = seededRandom(i + 1);
-    const r2 = seededRandom(i + 101);
-    const r3 = seededRandom(i + 201);
-    const r4 = seededRandom(i + 301);
-    // 以向上/侧向为主（-150°~-30°），少量向下溅落；迸溅距离很短，紧贴燃烧点。
-    const angle = (-150 + r1 * 120) * (Math.PI / 180);
-    const distance = active ? 4 + r2 * 11 : 2 + r3 * 5;
-    specs.push({
-      dx: Math.cos(angle) * distance,
-      dy: Math.sin(angle) * distance,
-      size: active ? 1.6 + r3 * 1.8 : 1.2 + r4 * 1.2,
-      delay: active ? r4 * 0.5 : r2 * 1.2,
-      duration: active ? 0.3 + r2 * 0.35 : 0.8 + r3 * 0.8,
-      hue: (baseHue + (r1 - 0.5) * 20 + 360) % 360,
-      sat: Math.min(100, Math.max(35, baseSat + (r2 - 0.5) * 24)),
-      light: Math.min(94, Math.max(40, baseLight + 14 + r3 * 26))
-    });
-  }
-  return specs;
+  /** 最近 10 秒请求数；只用于调节火花密度与节奏。 */
+  activityRate?: number;
+  /** 额度轨道的稳定身份；用于实例间去相关，不能使用每次渲染变化的随机值。 */
+  seedKey: string;
 }
 
 /**
@@ -85,28 +23,46 @@ function buildSparkSpecs(active: boolean, baseHsl: [number, number, number]): Sp
  * 粒子在血条主色（getUsageBarColor）色系内抖动并混入白热核心，非纯色。
  * 纯渲染组件：CSS 变量 + keyframes 驱动，无动画库、无状态。
  */
-const BurningParticles = ({ active, anchorPct, color }: Props) => {
-  const baseHsl = useMemo(() => hexToHsl(color), [color]);
-  const specs = useMemo(() => buildSparkSpecs(active, baseHsl), [active, baseHsl]);
-  const anchor = Math.max(4, Math.min(96, Number(anchorPct) || 50));
+const BurningParticles = ({ anchorPct, color, activityRate = 0, seedKey }: Props) => {
+  const specs = useMemo(
+    () => buildBurningSparkSpecs(color, activityRate, seedKey),
+    [activityRate, color, seedKey]
+  );
+  const anchor = clampBurningAnchor(anchorPct);
+  const coreDuration = 0.23 + (Math.abs(specs[0]?.dx || 0) % 0.09);
+  const coreDelay = specs[0]?.delay || 0;
+  const joltDuration = 0.15 + (Math.abs(specs[1]?.dy || 0) % 0.07);
+  const joltDelay = specs[1]?.delay || 0;
 
   return (
     <span
-      className={`burning-particles${active ? ' burning-particles--active' : ''}`}
+      className="burning-particles"
       aria-hidden="true"
-      style={{ ['--anchor' as string]: `${anchor}%` }}
+      data-burning-anchor={String(anchor)}
+      data-burning-seed={seedKey}
+      style={{
+        ['--anchor' as string]: `${anchor}%`,
+        ['--core-color' as string]: color,
+        ['--core-duration' as string]: `${coreDuration.toFixed(3)}s`,
+        ['--core-delay' as string]: `${coreDelay.toFixed(3)}s`,
+        ['--jolt-duration' as string]: `${joltDuration.toFixed(3)}s`,
+        ['--jolt-delay' as string]: `${joltDelay.toFixed(3)}s`
+      }}
     >
       {specs.map((spec, index) => (
         <span
           key={index}
-          className="burning-particle"
+          className={`burning-particle${spec.ember ? ' burning-particle--ember' : ''}`}
           style={{
             ['--dx' as string]: `${Math.round(spec.dx * 10) / 10}px`,
             ['--dy' as string]: `${Math.round(spec.dy * 10) / 10}px`,
-            ['--ps' as string]: `${Math.round(spec.size * 10) / 10}px`,
+            ['--fall' as string]: `${Math.round(spec.fall * 10) / 10}px`,
+            ['--pw' as string]: `${Math.round(spec.width * 10) / 10}px`,
+            ['--ph' as string]: `${Math.round(spec.height * 10) / 10}px`,
+            ['--rot' as string]: `${Math.round(spec.rotation * 10) / 10}deg`,
             ['--dur' as string]: `${Math.round(spec.duration * 100) / 100}s`,
             ['--delay' as string]: `${Math.round(spec.delay * 100) / 100}s`,
-            ['--pc' as string]: `hsl(${spec.hue} ${spec.sat}% ${spec.light}%)`
+            ['--pc' as string]: `hsl(${spec.hue} ${spec.saturation}% ${spec.lightness}%)`
           }}
         />
       ))}

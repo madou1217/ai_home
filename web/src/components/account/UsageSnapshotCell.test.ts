@@ -5,7 +5,8 @@ import {
   formatResetAt,
   formatResetIn,
   formatWindowDuration,
-  groupAgyQuotaModels
+  groupAgyQuotaModels,
+  resolveActiveAgyQuotaGroupKeys
 } from './usage-snapshot-format.ts';
 
 test('formats usage windows from minutes using only non-zero units', () => {
@@ -131,3 +132,44 @@ test('groupAgyQuotaModels gracefully handles empty or invalid models', () => {
   assert.deepEqual(groupAgyQuotaModels([{ model: 'invalid', remainingPct: null } as any]), []);
 });
 
+test('resolveActiveAgyQuotaGroupKeys activates only the group containing the live model', () => {
+  const groups = groupAgyQuotaModels([
+    { model: 'gemini-3-flash', remainingPct: 90, resetIn: '2h' },
+    { model: 'claude-opus-4-6', remainingPct: 70, resetIn: '20h' }
+  ]);
+
+  assert.deepEqual(
+    resolveActiveAgyQuotaGroupKeys(groups, ['claude-opus-4-6-thinking'], true),
+    ['claude_gpt']
+  );
+  assert.deepEqual(
+    resolveActiveAgyQuotaGroupKeys(groups, ['gemini-3.7-flash-high'], true),
+    ['gemini']
+  );
+  assert.deepEqual(
+    resolveActiveAgyQuotaGroupKeys(groups, [
+      'gemini-3.7-flash-high',
+      'claude-opus-4-6-thinking'
+    ], true),
+    ['gemini', 'claude_gpt']
+  );
+});
+
+test('resolveActiveAgyQuotaGroupKeys fails closed when a multi-group activity has no model', () => {
+  const groups = groupAgyQuotaModels([
+    { model: 'gemini-3-flash', remainingPct: 90, resetIn: '2h' },
+    { model: 'claude-opus-4-6', remainingPct: 70, resetIn: '20h' }
+  ]);
+
+  assert.deepEqual(resolveActiveAgyQuotaGroupKeys(groups, [], true), []);
+  assert.deepEqual(resolveActiveAgyQuotaGroupKeys(groups, undefined, true), []);
+  assert.deepEqual(resolveActiveAgyQuotaGroupKeys(groups, ['gemini-3-flash'], false), []);
+});
+
+test('resolveActiveAgyQuotaGroupKeys preserves the unambiguous single-group fallback', () => {
+  const groups = groupAgyQuotaModels([
+    { model: 'gemini-3-flash', remainingPct: 90, resetIn: '2h' }
+  ]);
+
+  assert.deepEqual(resolveActiveAgyQuotaGroupKeys(groups, [], true), ['gemini']);
+});

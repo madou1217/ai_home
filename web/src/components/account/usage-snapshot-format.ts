@@ -112,6 +112,56 @@ export interface AgyQuotaGroup {
   minRemainingPct: number | null;
 }
 
+export function resolveAgyQuotaGroupKey(
+  model: string | null | undefined,
+  displayName: string | null | undefined = ''
+): AgyQuotaGroup['key'] {
+  const searchable = `${String(model || '')} ${String(displayName || '')}`.toLowerCase();
+  if (searchable.includes('gemini')) return 'gemini';
+  if (searchable.includes('claude') || searchable.includes('gpt')) return 'claude_gpt';
+  return 'other';
+}
+
+/**
+ * 把账号级活动收窄到真实额度组。多组但缺少模型时不做猜测，避免全部额度条误燃烧；
+ * 单组账号仍可兼容没有 activeModels 字段的旧服务端快照。
+ */
+export function resolveActiveAgyQuotaGroupKeys(
+  groups: AgyQuotaGroup[],
+  activeModels: string[] | null | undefined,
+  accountRunning: boolean
+): AgyQuotaGroup['key'][] {
+  const availableGroups = Array.isArray(groups) ? groups : [];
+  if (!accountRunning || availableGroups.length === 0) return [];
+
+  const models = (Array.isArray(activeModels) ? activeModels : [])
+    .map((model) => String(model || '').trim())
+    .filter(Boolean);
+  if (models.length === 0) {
+    return availableGroups.length === 1 ? [availableGroups[0].key] : [];
+  }
+
+  const availableKeys = new Set(availableGroups.map((group) => group.key));
+  const memberGroupById = new Map<string, AgyQuotaGroup['key']>();
+  for (const group of availableGroups) {
+    for (const member of group.members || []) {
+      const memberId = String(member.id || '').trim().toLowerCase();
+      if (memberId) memberGroupById.set(memberId, group.key);
+    }
+  }
+
+  const activeKeys = new Set<AgyQuotaGroup['key']>();
+  for (const model of models) {
+    const exactGroup = memberGroupById.get(model.toLowerCase());
+    const groupKey = exactGroup || resolveAgyQuotaGroupKey(model);
+    if (availableKeys.has(groupKey)) activeKeys.add(groupKey);
+  }
+
+  return availableGroups
+    .map((group) => group.key)
+    .filter((key) => activeKeys.has(key));
+}
+
 function resolveLimitLabel(durationMinutes: number, fallbackName: string): string {
   if (durationMinutes > 0) {
     if (durationMinutes <= 360) return '5h Limit';
@@ -129,31 +179,20 @@ export function groupAgyQuotaModels(
   );
   if (validModels.length === 0) return [];
 
-  const geminiModels: AgyQuotaModelLike[] = [];
-  const claudeGptModels: AgyQuotaModelLike[] = [];
-  const otherModels: AgyQuotaModelLike[] = [];
+  const modelsByGroup: Record<AgyQuotaGroup['key'], AgyQuotaModelLike[]> = {
+    gemini: [],
+    claude_gpt: [],
+    other: []
+  };
 
   for (const item of validModels) {
-    const rawName = String(item.model || '').toLowerCase();
-    const rawDisplay = String(item.displayName || '').toLowerCase();
-    if (rawName.includes('gemini') || rawDisplay.includes('gemini')) {
-      geminiModels.push(item);
-    } else if (
-      rawName.includes('claude') ||
-      rawDisplay.includes('claude') ||
-      rawName.includes('gpt') ||
-      rawDisplay.includes('gpt')
-    ) {
-      claudeGptModels.push(item);
-    } else {
-      otherModels.push(item);
-    }
+    modelsByGroup[resolveAgyQuotaGroupKey(item.model, item.displayName)].push(item);
   }
 
   const buckets: Array<{ key: 'gemini' | 'claude_gpt' | 'other'; title: string; items: AgyQuotaModelLike[] }> = [
-    { key: 'gemini', title: 'Gemini Models', items: geminiModels },
-    { key: 'claude_gpt', title: 'Claude & GPT Models', items: claudeGptModels },
-    { key: 'other', title: 'Other Models', items: otherModels }
+    { key: 'gemini', title: 'Gemini Models', items: modelsByGroup.gemini },
+    { key: 'claude_gpt', title: 'Claude & GPT Models', items: modelsByGroup.claude_gpt },
+    { key: 'other', title: 'Other Models', items: modelsByGroup.other }
   ];
 
   const result: AgyQuotaGroup[] = [];

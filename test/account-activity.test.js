@@ -31,6 +31,46 @@ test('begin/end pairs track in-flight per account', () => {
   assert.equal(snap['codex:acct_1'].inFlight, 0);
 });
 
+test('activeModels only reports models with live concurrent attempts', () => {
+  const { now } = createClock();
+  const activity = createAccountActivity({ now });
+
+  activity.begin('agy', 'acct_1', 'gemini-3.7-flash-high');
+  activity.begin('agy', 'acct_1', 'claude-opus-4-6-thinking');
+  activity.begin('agy', 'acct_1', 'claude-opus-4-6-thinking');
+
+  assert.deepEqual(activity.snapshot()['agy:acct_1'].activeModels, [
+    'claude-opus-4-6-thinking',
+    'gemini-3.7-flash-high'
+  ]);
+
+  activity.end('agy', 'acct_1', 'claude-opus-4-6-thinking');
+  assert.deepEqual(activity.snapshot()['agy:acct_1'].activeModels, [
+    'claude-opus-4-6-thinking',
+    'gemini-3.7-flash-high'
+  ]);
+
+  activity.end('agy', 'acct_1', 'gemini-3.7-flash-high');
+  assert.deepEqual(activity.snapshot()['agy:acct_1'].activeModels, [
+    'claude-opus-4-6-thinking'
+  ]);
+
+  activity.end('agy', 'acct_1', 'claude-opus-4-6-thinking');
+  assert.deepEqual(activity.snapshot()['agy:acct_1'].activeModels, []);
+});
+
+test('legacy begin/end calls without a model keep account activity compatible', () => {
+  const { now } = createClock();
+  const activity = createAccountActivity({ now });
+
+  activity.begin('codex', 'acct_1');
+  assert.deepEqual(activity.snapshot()['codex:acct_1'].activeModels, []);
+
+  activity.end('codex', 'acct_1');
+  assert.equal(activity.snapshot()['codex:acct_1'].inFlight, 0);
+  assert.deepEqual(activity.snapshot()['codex:acct_1'].activeModels, []);
+});
+
 test('end never drives in-flight below zero', () => {
   const { now } = createClock();
   const activity = createAccountActivity({ now });
@@ -72,6 +112,7 @@ test('snapshot emits provider, accountRef and timestamps', () => {
     accountRef: 'acct_1',
     inFlight: 1,
     rate: 1,
+    activeModels: [],
     lastActivityAt: 1_000_000,
     updatedAt: 1_000_000
   });

@@ -1,0 +1,66 @@
+.usage-progress-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.usage-progress-track {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 14px;
+  overflow: visible;
+}
+
+.usage-progress-track .ant-progress {
+  width: 100%;
+  margin: 0;
+  line-height: 1;
+}
+
+.usage-progress-track .ant-progress-outer,
+.usage-progress-track .ant-progress-inner {
+  display: block;
+  width: 100%;
+}
+
+.usage-progress-value {
+  min-width: 44px;
+  color: #475569;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.usage-empty-state {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  gap: 7px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.usage-empty-state-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
+  border: 1px solid color-mix(in srgb, #1677ff 62%, #fff);
+  border-radius: 50%;
+  background: color-mix(in srgb, #1677ff 22%, #fff);
+  box-shadow: 0 0 0 2px color-mix(in srgb, #1677ff 8%, transparent);
+}
+
+@media (max-width: 767px) {
+  .usage-progress-line {
+    grid-template-columns: minmax(0, 1fr) 44px;
+    gap: 6px;
+  }
+}

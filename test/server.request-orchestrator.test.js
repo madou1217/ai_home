@@ -118,6 +118,38 @@ test('有干净账号时优先用它，不提前打开逃生阀', async () => {
   assert.deepEqual(attempted, ['acct_healthy']);
 });
 
+test('账号活动使用本次 attempt 的实际模型并在 finally 中成对结束', async () => {
+  const events = [];
+  const account = {
+    accountRef: 'acct_agy',
+    apiKeyMode: true,
+    schedulableStatus: 'schedulable'
+  };
+
+  await assert.rejects(
+    runWithAccountAttempts({
+      pool: [account],
+      maxAttempts: 1,
+      provider: 'agy',
+      model: 'gemini-3.7-flash-high',
+      chooseServerAccount: () => account,
+      accountActivity: {
+        begin: (...args) => events.push(['begin', ...args]),
+        end: (...args) => events.push(['end', ...args])
+      },
+      onAttempt: async () => {
+        throw new Error('upstream exploded');
+      }
+    }),
+    /upstream exploded/
+  );
+
+  assert.deepEqual(events, [
+    ['begin', 'agy', 'acct_agy', 'gemini-3.7-flash-high'],
+    ['end', 'agy', 'acct_agy', 'gemini-3.7-flash-high']
+  ]);
+});
+
 test('显式策略允许时仅开启一轮有界全池重试', async () => {
   const pool = [
     { accountRef: 'acct_retry_1', apiKeyMode: true, schedulableStatus: 'schedulable' },

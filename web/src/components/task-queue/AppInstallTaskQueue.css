@@ -102,33 +102,35 @@
 }
 
 .webui-task-queue.is-expanded {
-  width: min(360px, calc(100vw - 32px));
-  height: min(360px, calc(100vh - 32px));
+  width: min(400px, calc(100vw - 32px));
+  height: min(420px, calc(100vh - 32px));
 }
 
 .webui-task-queue.is-expanded .webui-task-queue-trigger {
-  inset: 8px 8px auto auto;
-  width: calc(100% - 16px);
-  height: 40px;
-  justify-content: flex-start;
-  padding: 0 12px;
-  border-radius: 12px;
-  background: transparent;
+  inset: 12px 12px auto auto;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-color: var(--color-border);
+  border-radius: 50%;
+  background: var(--color-surface-raised);
   color: var(--color-heading);
   box-shadow: none;
 }
 
+.webui-task-queue.is-expanded .webui-task-queue-trigger:hover {
+  border-color: color-mix(in srgb, var(--color-brand) 42%, var(--color-border));
+  background: color-mix(in srgb, var(--color-brand) 8%, var(--color-surface-raised));
+  color: var(--color-brand);
+}
+
 .webui-task-queue.is-expanded .webui-task-queue-trigger-icon {
-  color: var(--color-brand);
+  color: inherit;
 }
 
-.webui-task-queue.is-expanded .webui-task-queue-count {
-  background: color-mix(in srgb, var(--color-brand) 12%, var(--color-surface-raised));
-  color: var(--color-brand);
-}
-
+.webui-task-queue.is-expanded .webui-task-queue-count,
 .webui-task-queue.is-expanded .webui-task-queue-trigger-label {
-  display: inline;
+  display: none;
 }
 
 .webui-task-queue.is-expanded .webui-task-queue-panel {
@@ -138,11 +140,11 @@
 }
 
 .webui-task-queue-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  padding-right: 48px;
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  padding-right: 40px;
 }
 
 .webui-task-queue-header > div {
@@ -166,7 +168,7 @@
 }
 
 .webui-task-queue-header > span {
-  flex: 0 0 auto;
+  min-width: 0;
   color: var(--color-muted);
   font-size: 11px;
 }
@@ -174,8 +176,9 @@
 .webui-task-queue-stream-status {
   display: inline-flex;
   align-items: center;
+  justify-self: start;
   gap: 5px;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .webui-task-queue-stream-status i {
@@ -210,6 +213,7 @@
 }
 
 .webui-task-queue-item {
+  min-width: 0;
   padding: 10px;
   border: 1px solid var(--color-border);
   border-radius: 12px;
@@ -218,38 +222,55 @@
 
 .webui-task-queue-item-heading,
 .webui-task-queue-item-detail {
-  display: flex;
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
 }
 
 .webui-task-queue-item-heading strong,
 .webui-task-queue-item-detail span:first-child {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .webui-task-queue-item-heading strong {
+  display: -webkit-box;
+  overflow: hidden;
   color: var(--color-heading);
   font-size: 12px;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
-.webui-task-queue-item-heading > span,
+.webui-task-queue-item-heading > span {
+  white-space: nowrap;
+}
+
 .webui-task-queue-item-detail {
   color: var(--color-muted);
   font-size: 10px;
 }
 
+.webui-task-queue-item-detail span:last-child {
+  white-space: nowrap;
+}
+
 .webui-task-queue-item-meta {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
   margin-top: 4px;
   color: var(--color-faint);
   font-size: 10px;
+}
+
+.webui-task-queue-item-meta span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .webui-task-queue-item-meta span + span::before {
@@ -259,7 +280,12 @@
 }
 
 .webui-task-queue-item .ant-progress {
+  width: 100%;
   margin: 7px 0 2px;
+}
+
+.webui-task-queue-item .ant-progress-outer {
+  min-width: 0;
 }
 
 .webui-task-queue-item .ant-progress-text {
@@ -296,8 +322,17 @@
   }
 
   .webui-task-queue.is-expanded {
-    width: min(340px, calc(100vw - 24px));
-    height: min(360px, calc(100vh - 92px));
+    width: calc(100vw - 24px);
+    height: min(420px, calc(100vh - 92px));
+  }
+
+  .webui-task-queue-item-detail {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+
+  .webui-task-queue-item-detail span:last-child {
+    white-space: normal;
   }
 }
 

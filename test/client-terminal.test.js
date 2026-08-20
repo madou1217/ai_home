@@ -24,7 +24,7 @@ test('终端目录按公共平台接口返回系统默认与平台可用终端',
     env: { PATH: 'C:\\tools' },
     fs: fakeFs(['C:\\tools\\wt.exe', 'C:\\tools\\wezterm.exe', 'C:\\tools\\winget.exe'])
   });
-  assert.deepEqual(terminals.map((item) => item.id), [DEFAULT_TERMINAL_ID, 'wezterm', 'windows-terminal']);
+  assert.deepEqual(terminals.map((item) => item.id), [DEFAULT_TERMINAL_ID, 'wezterm', 'warp', 'windows-terminal']);
   assert.equal(terminals.find((item) => item.id === 'windows-terminal').installed, true);
   assert.equal(terminals.find((item) => item.id === 'wezterm').canUpdate, true);
   assert.equal(terminals.find((item) => item.id === 'wezterm').packageManager, 'winget');
@@ -90,6 +90,73 @@ test('iTerm2 启动通过统一接口使用已检测到的 macOS 应用', () => 
   assert.equal(launch.terminalId, 'iterm2');
   assert.equal(launch.file, 'osascript');
   assert.match(launch.args.join(' '), /tell application "iTerm2"/);
+});
+
+test('Warp 在 macOS 使用官方应用并生成 Homebrew 生命周期计划', () => {
+  const options = {
+    platform: 'macos',
+    path: nodePath.posix,
+    env: { HOME: '/Users/test', PATH: '/opt/homebrew/bin' },
+    fs: fakeFs([
+      '/Applications/Warp.app/Contents/MacOS/stable',
+      '/opt/homebrew/bin/brew'
+    ])
+  };
+  const warp = listClientTerminals(options).find((item) => item.id === 'warp');
+  assert.equal(warp.installed, true);
+  assert.equal(warp.canLaunch, true);
+  assert.equal(warp.canUpdate, true);
+  assert.equal(warp.packageManager, 'homebrew');
+  assert.equal(warp.sourceUrl, 'https://www.warp.dev/terminal');
+
+  const launch = resolveClientTerminalLaunch('warp', 'node app.js', 'AI Home Warp', options);
+  assert.equal(launch.file, '/usr/bin/open');
+  assert.deepEqual(launch.args, ['-n', '-a', 'Warp']);
+
+  const updatePlan = resolveTerminalActionPlan({ terminalId: 'warp', action: 'update' }, options);
+  assert.equal(updatePlan.ok, true);
+  assert.deepEqual(updatePlan.args, ['upgrade', '--cask', 'warp']);
+});
+
+test('Warp 使用 Windows 官方 winget 标识，Linux 仅检测和唤起现有安装', () => {
+  const windowsPlan = resolveTerminalActionPlan({ terminalId: 'warp', action: 'install' }, {
+    platform: 'windows',
+    path: nodePath.win32,
+    env: { LOCALAPPDATA: 'D:\\Profiles\\test\\Local', PATH: 'C:\\tools' },
+    fs: fakeFs(['C:\\tools\\winget.exe'])
+  });
+  assert.equal(windowsPlan.ok, true);
+  assert.deepEqual(windowsPlan.args, ['install', '--id', 'Warp.Warp', '--exact', '--source', 'winget']);
+
+  const windowsInstalledOptions = {
+    platform: 'windows',
+    path: nodePath.win32,
+    env: { LOCALAPPDATA: 'D:\\Profiles\\test\\Local', PATH: 'C:\\tools' },
+    fs: fakeFs(['D:\\Profiles\\test\\Local\\Programs\\Warp\\Warp.exe'])
+  };
+  const windowsWarp = listClientTerminals(windowsInstalledOptions).find((item) => item.id === 'warp');
+  assert.equal(windowsWarp.installed, true);
+  assert.equal(windowsWarp.executablePath, 'D:\\Profiles\\test\\Local\\Programs\\Warp\\Warp.exe');
+  const windowsLaunch = resolveClientTerminalLaunch('warp', 'node app.js', 'AI Home Warp', windowsInstalledOptions);
+  assert.equal(windowsLaunch.file, 'D:\\Profiles\\test\\Local\\Programs\\Warp\\Warp.exe');
+  assert.deepEqual(windowsLaunch.args, []);
+
+  const linuxOptions = {
+    platform: 'linux',
+    path: nodePath.posix,
+    env: { HOME: '/home/test', PATH: '/usr/bin' },
+    fs: fakeFs(['/usr/bin/warp-terminal', '/usr/bin/flatpak'])
+  };
+  const warp = listClientTerminals(linuxOptions).find((item) => item.id === 'warp');
+  assert.equal(warp.installed, true);
+  assert.equal(warp.canLaunch, true);
+  assert.equal(warp.canUpdate, false);
+  assert.equal(warp.canUninstall, false);
+  assert.deepEqual(warp.plans, []);
+
+  const launch = resolveClientTerminalLaunch('warp', 'node app.js', 'AI Home Warp', linuxOptions);
+  assert.equal(launch.file, '/usr/bin/warp-terminal');
+  assert.deepEqual(launch.args, []);
 });
 
 test('GUI 进程 PATH 不完整时，已安装终端仍能生成官方更新和卸载计划', () => {

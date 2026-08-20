@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Progress } from 'antd';
-import { DownOutlined, LoadingOutlined, RightOutlined } from '@ant-design/icons';
+import { CloseOutlined, LoadingOutlined, RightOutlined } from '@ant-design/icons';
 import { useWebUiTaskQueue, type WebUiTaskStreamStatus } from '@/services/webui-task-queue';
 import type { WebUiTask } from '@/types';
 import './AppInstallTaskQueue.css';
@@ -85,7 +85,7 @@ export default function AppInstallTaskQueue() {
         onClick={() => setExpanded((current) => !current)}
       >
         <span className="webui-task-queue-trigger-icon" aria-hidden="true">
-          {expanded ? <DownOutlined /> : <LoadingOutlined spin />}
+          {expanded ? <CloseOutlined /> : <LoadingOutlined spin />}
         </span>
         <span className="webui-task-queue-count">{activeTasks.length}</span>
         <span className="webui-task-queue-trigger-label">后台任务</span>

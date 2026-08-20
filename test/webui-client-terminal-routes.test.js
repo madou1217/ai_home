@@ -56,7 +56,7 @@ test('WebUI 终端清单只暴露公共平台标识和可用终端', async () =>
   const body = JSON.parse(ctx.resCapture.body);
   assert.equal(body.platform, 'windows');
   assert.deepEqual(body.terminals.map((terminal) => terminal.id), [
-    'system-default', 'wezterm', 'windows-terminal'
+    'system-default', 'wezterm', 'warp', 'windows-terminal'
   ]);
   assert.equal(body.terminals.find((terminal) => terminal.id === 'windows-terminal').sourceUrl,
     'https://learn.microsoft.com/en-us/windows/terminal/install');

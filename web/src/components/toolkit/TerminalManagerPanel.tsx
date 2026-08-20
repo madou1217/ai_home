@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Empty, Modal, Space, Spin, Tag, Typography, message } from 'antd';
-import { ExportOutlined, ReloadOutlined } from '@ant-design/icons';
+import { Empty, Modal, Space, Spin, Tag, Tooltip, Typography, message } from 'antd';
+import { CodeOutlined, ReloadOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import { toolkitAPI } from '@/services/api';
 import { isActiveWebUiTask, useWebUiTaskQueue } from '@/services/webui-task-queue';
@@ -286,16 +286,6 @@ export default function TerminalManagerPanel() {
                     const lifecycleBusy = terminalLifecycleBusy(terminal);
                     const updateState = actionBusyState(terminal, 'update');
                     const uninstallState = actionBusyState(terminal, 'uninstall');
-                    const updateLabel = updateState.active || updateState.pending?.phase === 'submitted'
-                      ? '更新中'
-                      : updateState.pending
-                        ? '准备更新'
-                        : undefined;
-                    const uninstallLabel = uninstallState.active || uninstallState.pending?.phase === 'submitted'
-                      ? '卸载中'
-                      : uninstallState.pending
-                        ? '准备卸载'
-                        : undefined;
                     return (
                       <>
                         {activeTask ? (
@@ -305,20 +295,25 @@ export default function TerminalManagerPanel() {
                           </Tag>
                         ) : null}
                         {terminal.canLaunch && (terminal.installed || terminal.default) && (
-                          <Button
-                            size="small"
-                            icon={<ExportOutlined />}
-                            loading={openingId === terminal.id}
-                            disabled={lifecycleBusy}
-                            onClick={() => void openTerminal(terminal)}
-                          >
-                            唤起终端
-                          </Button>
+                          <Tooltip title={`唤起 ${terminal.name}`}>
+                            <Button
+                              size="small"
+                              shape="circle"
+                              icon={<CodeOutlined />}
+                              aria-label={`唤起 ${terminal.name}`}
+                              loading={openingId === terminal.id}
+                              disabled={lifecycleBusy}
+                              onClick={() => void openTerminal(terminal)}
+                            />
+                          </Tooltip>
                         )}
                         {terminal.canInstall && !terminal.installed && (
                           <InstallLifecycleAction
                             action="install"
                             size="small"
+                            iconOnly
+                            tooltip={`安装 ${terminal.name}`}
+                            aria-label={`安装 ${terminal.name}`}
                             disabled={lifecycleBusy}
                             loading={Boolean(actionBusyState(terminal, 'install').busy)}
                             onClick={() => void runAction(terminal, 'install')}
@@ -329,23 +324,27 @@ export default function TerminalManagerPanel() {
                             <InstallLifecycleAction
                               action="update"
                               size="small"
+                              iconOnly
+                              tooltip={terminal.canUpdate
+                                ? `更新 ${terminal.name}`
+                                : unavailableActionTitle('update', terminal)}
+                              aria-label={`更新 ${terminal.name}`}
                               disabled={lifecycleBusy || !terminal.canUpdate}
-                              title={terminal.canUpdate ? undefined : unavailableActionTitle('update', terminal)}
                               loading={Boolean(updateState.busy)}
                               onClick={() => void runAction(terminal, 'update')}
-                            >
-                              {updateLabel}
-                            </InstallLifecycleAction>
+                            />
                             <InstallLifecycleAction
                               action="uninstall"
                               size="small"
+                              iconOnly
+                              tooltip={terminal.canUninstall
+                                ? `卸载 ${terminal.name}`
+                                : unavailableActionTitle('uninstall', terminal)}
+                              aria-label={`卸载 ${terminal.name}`}
                               disabled={lifecycleBusy || !terminal.canUninstall}
-                              title={terminal.canUninstall ? undefined : unavailableActionTitle('uninstall', terminal)}
                               loading={Boolean(uninstallState.busy)}
                               onClick={() => void runAction(terminal, 'uninstall')}
-                            >
-                              {uninstallLabel}
-                            </InstallLifecycleAction>
+                            />
                           </>
                         )}
                       </>

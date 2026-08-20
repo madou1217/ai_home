@@ -1317,6 +1317,15 @@ export interface ManagedAppItem {
   configExists: boolean;
   installed: boolean;
   version: string;
+  versionSource?: {
+    type: 'npm' | 'homebrew_cask' | 'winget' | string;
+    packageName?: string;
+    cask?: string;
+    id?: string;
+  } | null;
+  latestVersion?: string | null;
+  updateAvailable?: boolean;
+  updateStatus?: 'unavailable' | 'unknown' | 'current' | 'available' | string;
   pkg: string;
   defaultModel: string;
   supportedModels: string[];
@@ -1337,6 +1346,34 @@ export interface ManagedAppsResponse {
   total: number;
   installedCount: number;
   apps: ManagedAppItem[];
+}
+
+export interface ManagedAppUpdateResponse {
+  ok: boolean;
+  appId: string;
+  provider: string;
+  currentVersion: string | null;
+  latestVersion: string | null;
+  updateAvailable: boolean;
+  status: 'unavailable' | 'unknown' | 'current' | 'available' | string;
+  error?: string;
+  message?: string;
+}
+
+export interface AccountAppLaunchResponse {
+  ok: boolean;
+  provider?: string;
+  accountRef?: string;
+  kind?: 'cli' | 'desktop' | string;
+  status?: string;
+  pid?: number | null;
+  pids?: number[];
+  terminalId?: string;
+  executable?: string;
+  installRequired?: boolean;
+  installAvailable?: boolean;
+  error?: string;
+  message?: string;
 }
 
 export interface AppInstallJob {

@@ -9,6 +9,8 @@ const { EventEmitter } = require('node:events');
 const { Readable } = require('node:stream');
 
 const { handleWebUIRequest } = require('../lib/server/web-ui-router');
+const { upsertAccountRef } = require('../lib/server/account-ref-store');
+const { writeDefaultAccountRef } = require('../lib/account/default-account-store');
 
 function createResCapture() {
   return {
@@ -207,6 +209,184 @@ test('webui toolkit opens an installed Desktop client from its application card'
   assert.equal(result.res.statusCode, 200);
   assert.equal(result.data.ok, true);
   assert.deepEqual(calls, [['open', ['-a', '/Applications/ChatGPT.app']]]);
+});
+
+test('webui toolkit Desktop open uses the Provider default account when no account is selected', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-toolkit-default-account-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  const accountRef = upsertAccountRef(fs, aiHomeDir, {
+    provider: 'claude',
+    cliAccountId: '7',
+    identitySeed: 'oauth:claude:toolkit-default@example.com'
+  });
+  writeDefaultAccountRef(fs, aiHomeDir, 'claude', accountRef);
+  const calls = [];
+  const result = await runToolkitRequest('/v0/webui/toolkit/apps/claude-desktop/open', {
+    method: 'POST',
+    body: { action: 'close' },
+    deps: {
+      aiHomeDir,
+      hostHomeDir: '/home/tester',
+      platform: 'macos',
+      processObj: { platform: 'darwin', env: {} },
+      getProfileDir: () => '/tmp/claude-toolkit-profile',
+      execFileSync: () => '',
+      spawn(command, args) {
+        calls.push([command, args]);
+        return { unref() {} };
+      }
+    }
+  });
+
+  assert.equal(result.handled, true);
+  assert.equal(result.res.statusCode, 200);
+  assert.equal(result.data.ok, true);
+  assert.equal(result.data.status, 'not_running');
+  assert.equal(result.data.accountRef, accountRef);
+  assert.deepEqual(calls, []);
+});
+
+test('webui toolkit unscoped open bypasses the Provider default account', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-toolkit-unscoped-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  const accountRef = upsertAccountRef(fs, aiHomeDir, {
+    provider: 'claude',
+    cliAccountId: '7',
+    identitySeed: 'oauth:claude:toolkit-unscoped@example.com'
+  });
+  writeDefaultAccountRef(fs, aiHomeDir, 'claude', accountRef);
+  const calls = [];
+  const result = await runToolkitRequest('/v0/webui/toolkit/apps/claude/open', {
+    method: 'POST',
+    body: { kind: 'cli', unscoped: true },
+    deps: {
+      aiHomeDir,
+      hostHomeDir: '/home/tester',
+      platform: 'macos',
+      processObj: { platform: 'darwin', execPath: '/usr/local/bin/node', env: {} },
+      resolveNativeCliPath: () => '/usr/local/bin/claude',
+      spawn(command, args) {
+        calls.push([command, args]);
+        return { pid: 4321, unref() {} };
+      }
+    }
+  });
+
+  assert.equal(result.handled, true);
+  assert.equal(result.res.statusCode, 200);
+  assert.equal(result.data.ok, true);
+  assert.equal(result.data.accountRef, '');
+  assert.equal(result.data.kind, 'cli');
+  assert.equal(calls.length, 1);
+  const command = calls[0][1].join(' ');
+  assert.match(command, /AIH_ACCOUNT_APP=1/);
+  assert.match(command, /\/usr\/local\/bin\/claude/);
+  assert.doesNotMatch(command, /bin\/ai-home\.js.*claude 7/);
+});
+
+test('webui toolkit 手动检查更新只调用注入的远端检查器并返回结果', async (t) => {
+  const hostHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-toolkit-update-'));
+  t.after(() => fs.rmSync(hostHomeDir, { recursive: true, force: true }));
+  const checkedApps = [];
+  const result = await runToolkitRequest('/v0/webui/toolkit/apps/codex/check-update', {
+    method: 'POST',
+    deps: {
+      platform: 'linux',
+      hostHomeDir,
+      fs,
+      spawnSync: () => ({ status: 1, stdout: '', stderr: '' }),
+      updateChecker: {
+        async check(app) {
+          checkedApps.push(app);
+          return {
+            ok: true,
+            appId: app.id,
+            provider: app.provider,
+            currentVersion: null,
+            latestVersion: '2.0.0',
+            updateAvailable: false,
+            status: 'current'
+          };
+        }
+      }
+    }
+  });
+
+  assert.equal(result.handled, true);
+  assert.equal(result.res.statusCode, 200);
+  assert.deepEqual(result.data, {
+    ok: true,
+    appId: 'codex',
+    provider: 'codex',
+    currentVersion: null,
+    latestVersion: '2.0.0',
+    updateAvailable: false,
+    status: 'current'
+  });
+  assert.equal(checkedApps.length, 1);
+  assert.equal(checkedApps[0].id, 'codex');
+});
+
+test('webui toolkit 手动检查只同步刷新被选中的应用版本', async (t) => {
+  const hostHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-toolkit-single-version-'));
+  t.after(() => fs.rmSync(hostHomeDir, { recursive: true, force: true }));
+  const versionCalls = [];
+  const checkedApps = [];
+  const result = await runToolkitRequest('/v0/webui/toolkit/apps/codex/check-update', {
+    method: 'POST',
+    deps: {
+      platform: 'linux',
+      hostHomeDir,
+      processObj: { platform: 'linux', env: { PATH: '' }, cwd: () => hostHomeDir },
+      fs,
+      resolveNativeCliPath(name) {
+        return name === 'codex' ? '/opt/test-codex' : '';
+      },
+      spawn: () => { throw new Error('async version probe must not be used for refresh'); },
+      spawnSync(command, args) {
+        if (command === '/opt/test-codex' && args[0] === '--version') {
+          versionCalls.push({ command, args });
+          return { status: 0, stdout: 'codex 7.8.9\n', stderr: '' };
+        }
+        return { status: 1, stdout: '', stderr: '' };
+      },
+      updateChecker: {
+        async check(app) {
+          checkedApps.push(app);
+          return {
+            ok: true,
+            appId: app.id,
+            provider: app.provider,
+            currentVersion: app.version,
+            latestVersion: '7.8.9',
+            updateAvailable: false,
+            status: 'current'
+          };
+        }
+      }
+    }
+  });
+
+  assert.equal(result.res.statusCode, 200);
+  assert.equal(result.data.currentVersion, '7.8.9');
+  assert.equal(checkedApps.length, 1);
+  assert.equal(checkedApps[0].version, '7.8.9');
+  assert.deepEqual(versionCalls, [{ command: '/opt/test-codex', args: ['--version'] }]);
+});
+
+test('webui toolkit 手动检查更新对不存在应用返回 404', async () => {
+  const result = await runToolkitRequest('/v0/webui/toolkit/apps/not-an-app/check-update', {
+    method: 'POST',
+    deps: {
+      platform: 'linux',
+      fs,
+      spawnSync: () => ({ status: 1, stdout: '', stderr: '' })
+    }
+  });
+
+  assert.equal(result.handled, true);
+  assert.equal(result.res.statusCode, 404);
+  assert.equal(result.data.error, 'app_not_found');
 });
 
 test('webui toolkit routes GET /v0/webui/toolkit/tools returns runtime and network categories', async () => {

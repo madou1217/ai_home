@@ -12,6 +12,7 @@ const {
   findOnPath,
   findRunningDesktopPids,
   listRunningDesktopInstances,
+  listRunningCliInstances,
   normalizePlatform
 } = require('../lib/server/account-app-launcher');
 const { registerAccountIdentity } = require('../lib/account/account-registration');
@@ -619,6 +620,10 @@ test('cli kind 在 Windows 通过 cmd start 打开新终端运行 aih 启动链�
   assert.ok(call.args[1].includes('cmd /k'));
   assert.ok(call.args[1].includes(nodePath.win32.join('C:\\repo', 'bin', 'ai-home.js')));
   assert.ok(call.args[1].includes('"C:\\node\\node.exe"'));
+  assert.match(call.args[1], /AIH_ACCOUNT_APP=1/);
+  assert.match(call.args[1], /AIH_PROVIDER_ACCOUNT_REF=/);
+  assert.equal(call.options.env.AIH_ACCOUNT_APP, '1');
+  assert.equal(call.options.env.AIH_PROVIDER_ACCOUNT_REF, ACCOUNT_REF);
   assert.equal(call.options.detached, true);
   assert.equal(call.child.unrefCalled, true);
 });
@@ -962,6 +967,79 @@ test('listRunningDesktopInstances 在 posix 解析 ps 输出并排除 --type= �
   assert.deepEqual(instances, [
     { pid: 9201, userDataDir: '/home/x/.aih/a/electron-user-data' }
   ]);
+});
+
+test('listRunningCliInstances 在 POSIX 通过 marker 和父子进程识别账号 CLI', () => {
+  const execFileSync = (file, args) => {
+    assert.equal(file, 'ps');
+    assert.deepEqual(args, ['-ax', '-o', 'pid=,ppid=,command=']);
+    return [
+      `  9301 1 aih codex 3 AIH_ACCOUNT_APP=1 AIH_PROVIDER_ACCOUNT_REF=${ACCOUNT_REF}`,
+      '  9302 9301 /usr/local/bin/node /repo/bin/ai-home.js codex 3',
+      '  9303 9302 codex exec --help',
+      '  9304 1 /bin/zsh -c /usr/local/bin/node /repo/bin/ai-home.js claude 4'
+    ].join('\n');
+  };
+
+  const instances = listRunningCliInstances('linux', { execFileSync });
+  assert.deepEqual(instances, [
+    { pid: 9301, ppid: 1, provider: 'codex', cliAccountId: '3', accountRef: ACCOUNT_REF, rootPid: 9301 },
+    { pid: 9302, ppid: 9301, provider: 'codex', cliAccountId: '3', accountRef: ACCOUNT_REF, rootPid: 9301 },
+    { pid: 9303, ppid: 9302, provider: 'codex', cliAccountId: '3', accountRef: ACCOUNT_REF, rootPid: 9301 }
+  ]);
+});
+
+test('listRunningCliInstances 在 Windows 解析 set marker、ParentProcessId 和子进程', () => {
+  const execFileSync = (file, args) => {
+    assert.equal(file, 'powershell.exe');
+    assert.deepEqual(args, [
+      '-NoProfile',
+      '-Command',
+      'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name,CommandLine | ConvertTo-Json -Compress'
+    ]);
+    return JSON.stringify([
+      {
+        ProcessId: 9401,
+        ParentProcessId: 1,
+        Name: 'cmd.exe',
+        CommandLine: 'cmd.exe /c set "AIH_ACCOUNT_APP=1" && set "AIH_PROVIDER_ACCOUNT_REF=acct_win" && "C:\\node.exe" "C:\\repo\\bin\\ai-home.js" claude 8'
+      },
+      {
+        ProcessId: 9402,
+        ParentProcessId: 9401,
+        Name: 'node.exe',
+        CommandLine: '"C:\\node.exe" "C:\\repo\\bin\\ai-home.js" claude 8'
+      },
+      {
+        ProcessId: 9403,
+        ParentProcessId: 9402,
+        Name: 'claude.exe',
+        CommandLine: 'claude --print'
+      },
+      {
+        ProcessId: 9404,
+        ParentProcessId: 1,
+        Name: 'node.exe',
+        CommandLine: '"C:\\node.exe" "C:\\repo\\bin\\ai-home.js" codex 2'
+      }
+    ]);
+  };
+
+  const instances = listRunningCliInstances('windows', { execFileSync });
+  assert.deepEqual(instances, [
+    { pid: 9401, ppid: 1, provider: 'claude', cliAccountId: '8', accountRef: 'acct_win', rootPid: 9401 },
+    { pid: 9402, ppid: 9401, provider: 'claude', cliAccountId: '8', accountRef: 'acct_win', rootPid: 9401 },
+    { pid: 9403, ppid: 9402, provider: 'claude', cliAccountId: '8', accountRef: 'acct_win', rootPid: 9401 }
+  ]);
+});
+
+test('listRunningCliInstances 在进程扫描失败时返回空数组', () => {
+  assert.deepEqual(listRunningCliInstances('linux', {
+    execFileSync() {
+      throw new Error('ps unavailable');
+    }
+  }), []);
+  assert.deepEqual(listRunningCliInstances('windows', {}), []);
 });
 
 test('listRunningDesktopInstances 在扫描失败时返回空数组', () => {

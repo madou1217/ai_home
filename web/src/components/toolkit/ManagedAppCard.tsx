@@ -1,9 +1,10 @@
-import { CloudSyncOutlined, EditOutlined, ExportOutlined } from '@ant-design/icons';
+import { CloudSyncOutlined, EditOutlined } from '@ant-design/icons';
 import { Space, Tag, Tooltip } from 'antd';
 import Button from '@/components/ui/AppButton';
-import type { ManagedAppItem } from '@/types';
+import type { Account, ManagedAppItem } from '@/types';
 import InstallLifecycleAction from './InstallLifecycleAction';
 import ManagedAppIcon from './ManagedAppIcon';
+import ManagedAppAccountActions from './ManagedAppAccountActions';
 import { SESSION_SYNC_BOUNDARY, SESSION_SYNC_SCOPE } from '@/components/session-sync-copy';
 
 export const SYNC_MODE_LABELS: Record<ManagedAppItem['syncMode'], string> = {
@@ -27,8 +28,13 @@ export interface ManagedAppCardProps {
   app: ManagedAppItem;
   busyAction?: 'install' | 'update' | 'uninstall';
   installingHooks: boolean;
+  checkingUpdate?: boolean;
+  accounts: Account[];
+  runningAccountPids: Record<string, number[]>;
+  runningCliAccountPids: Record<string, number[]>;
   onAction: (app: ManagedAppItem, action: 'install' | 'update' | 'uninstall') => void;
-  onOpenApp: (app: ManagedAppItem) => void;
+  onCheckUpdate: (app: ManagedAppItem) => void;
+  onOpenApp: (app: ManagedAppItem, accountRef?: string, unscoped?: boolean) => void;
   onInstallHooks: (provider: string) => void;
   onEditConfig: (app: ManagedAppItem) => void;
 }
@@ -54,7 +60,12 @@ export default function ManagedAppCard({
   app,
   busyAction,
   installingHooks,
+  checkingUpdate,
+  accounts,
+  runningAccountPids,
+  runningCliAccountPids,
   onAction,
+  onCheckUpdate,
   onOpenApp,
   onInstallHooks,
   onEditConfig
@@ -112,15 +123,15 @@ export default function ManagedAppCard({
       </div>
       <div className="toolkit-card-actions">
         <Space size={6} wrap>
-          {app.type === 'desktop' && app.installed ? (
-            <Button
-              size="small"
-              icon={<ExportOutlined />}
+          {app.installed && (app.type === 'cli' || app.type === 'desktop') ? (
+            <ManagedAppAccountActions
+              app={app}
+              accounts={accounts}
+              runningAccountPids={runningAccountPids}
+              runningCliAccountPids={runningCliAccountPids}
               disabled={Boolean(busyAction)}
-              onClick={() => onOpenApp(app)}
-            >
-              打开应用
-            </Button>
+              onOpen={onOpenApp}
+            />
           ) : null}
           {!app.installed && canInstall ? (
             <InstallLifecycleAction
@@ -140,13 +151,11 @@ export default function ManagedAppCard({
                 action="update"
                 size="small"
                 iconOnly
-                tooltip={app.canUpdate === false
-                  ? (app.updateReason || '没有可用更新计划')
-                  : `更新 ${app.name}`}
-                aria-label={`更新 ${app.name}`}
-                loading={busyAction === 'update'}
-                disabled={Boolean(busyAction) || app.canUpdate === false}
-                onClick={() => onAction(app, 'update')}
+                tooltip={`检查 ${app.name} 更新`}
+                aria-label={`检查 ${app.name} 更新`}
+                loading={checkingUpdate || busyAction === 'update'}
+                disabled={Boolean(busyAction) || checkingUpdate}
+                onClick={() => onCheckUpdate(app)}
               />
               <InstallLifecycleAction
                 action="uninstall"

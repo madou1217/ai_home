@@ -1,5 +1,9 @@
 #!/usr/bin/env node
 
+const { markAccountAppProcess } = require('../lib/runtime/account-app-process-marker');
+
+markAccountAppProcess(process);
+
 const SQLITE_EXPERIMENTAL_WARNING_RE = /SQLite is an experimental feature/i;
 const originalEmitWarning = process.emitWarning.bind(process);
 

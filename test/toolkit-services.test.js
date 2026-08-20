@@ -2,8 +2,13 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const {
   listManagedApps,
+  refreshManagedAppVersion,
+  invalidateManagedAppsCache,
   installAppHooks,
   openManagedDesktopApp,
   getProviderConfigPath,
@@ -71,8 +76,45 @@ test('app-manager listManagedApps returns structured apps list', async () => {
 
   const geminiCli = result.apps.find((a) => a.id === 'gemini');
   assert.ok(geminiCli, 'Gemini CLI should remain available as a CLI installer');
-  assert.equal(geminiCli.name, 'Gemini CLI');
+  assert.equal(geminiCli.name, 'Gemini');
   assert.equal(result.apps.some((a) => a.id === 'gemini-desktop'), false, 'Gemini must not expose a Desktop installer without a desktop contract');
+});
+
+test('app-manager coalesces concurrent inventory scans and expires the short cache', async (t) => {
+  const hostHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-toolkit-app-cache-'));
+  t.after(() => fs.rmSync(hostHomeDir, { recursive: true, force: true }));
+  let existsCalls = 0;
+  const fsImpl = {
+    ...fs,
+    existsSync(candidate) {
+      existsCalls += 1;
+      return fs.existsSync(candidate);
+    }
+  };
+  const options = {
+    inventoryCacheKey: `test:${hostHomeDir}`,
+    platform: 'linux',
+    hostHomeDir,
+    fs: fsImpl,
+    spawnSync: () => ({ status: 1, stdout: '', stderr: '' })
+  };
+  invalidateManagedAppsCache(options.inventoryCacheKey);
+
+  const [first, second] = await Promise.all([
+    listManagedApps(options),
+    listManagedApps(options)
+  ]);
+  assert.strictEqual(first, second);
+  const firstScanExistsCalls = existsCalls;
+  assert.ok(firstScanExistsCalls > 0);
+
+  const cached = await listManagedApps(options);
+  assert.strictEqual(cached, first);
+  assert.equal(existsCalls, firstScanExistsCalls);
+
+  invalidateManagedAppsCache(options.inventoryCacheKey);
+  await listManagedApps(options);
+  assert.ok(existsCalls > firstScanExistsCalls);
 });
 
 test('app-manager discovers all matching Provider integrations from IDE extension manifests', async () => {
@@ -221,6 +263,43 @@ test('app-manager reads a conventional Windows desktop version through file meta
   assert.notEqual(calls[0].command, executablePath);
 });
 
+test('app-manager probes Windows desktop version metadata asynchronously without launching the GUI', async () => {
+  const executablePath = 'C:\\Async\\ChatGPT-version-probe.exe';
+  const calls = [];
+  const version = getDesktopVersion({ executablePath }, {
+    platform: 'win32',
+    deferProbe: true,
+    spawn(command, args) {
+      calls.push({ command, args });
+      const child = new EventEmitter();
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+      child.kill = () => {};
+      process.nextTick(() => {
+        child.stdout.emit('data', '26.900.1\n');
+        child.emit('close', 0);
+      });
+      return child;
+    }
+  });
+
+  assert.equal(version, '探测中');
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(getDesktopVersion({ executablePath }, {
+    platform: 'win32',
+    deferProbe: true,
+    spawn() {
+      throw new Error('cached probe should not spawn again');
+    }
+  }), '26.900.1');
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].command, 'powershell.exe');
+  assert.match(String(calls[0].args[3]), /VersionInfo\.ProductVersion/);
+  assert.equal(calls[0].args.includes('--version'), false);
+  assert.equal(calls[0].args.includes(executablePath), false);
+});
+
 test('app-manager presents the merged Codex desktop client as ChatGPT and parses desktop versions', async () => {
   const result = await listManagedApps({
     platform: 'darwin',
@@ -242,6 +321,7 @@ test('app-manager presents the merged Codex desktop client as ChatGPT and parses
   const desktop = result.apps.find((app) => app.id === 'codex-desktop');
   assert.equal(desktop.name, 'ChatGPT');
   assert.equal(desktop.version, '26.727');
+  assert.deepEqual(desktop.versionSource, { type: 'homebrew_cask', cask: 'chatgpt' });
   assert.equal(desktop.defaultModel, '-');
   assert.deepEqual(desktop.supportedModels, []);
   assert.equal(getBinaryVersion('/usr/bin/example', {
@@ -249,6 +329,38 @@ test('app-manager presents the merged Codex desktop client as ChatGPT and parses
       return { status: 0, stdout: 'example 3.7b\n', stderr: '' };
     }
   }), '3.7b');
+});
+
+test('app-manager 手动刷新只对目标 CLI 做同步版本探测', async (t) => {
+  const hostHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-toolkit-single-version-'));
+  t.after(() => fs.rmSync(hostHomeDir, { recursive: true, force: true }));
+  const calls = [];
+  const result = await refreshManagedAppVersion('codex', {
+    inventoryCacheKey: `single-version:${hostHomeDir}`,
+    platform: 'linux',
+    hostHomeDir,
+    processObj: { platform: 'linux', env: { PATH: '' }, cwd: () => hostHomeDir },
+    resolveNativeCliPath(name) {
+      return name === 'codex' ? '/opt/test-codex' : '';
+    },
+    fs,
+    spawn: () => { throw new Error('async version probe must not be used for refresh'); },
+    spawnSync(command, args) {
+      calls.push({ command, args });
+      if (command === '/opt/test-codex' && args[0] === '--version') {
+        return { status: 0, stdout: 'codex 7.8.9\n', stderr: '' };
+      }
+      return { status: 1, stdout: '', stderr: '' };
+    }
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.app.id, 'codex');
+  assert.equal(result.app.version, '7.8.9');
+  assert.equal(result.currentVersion, '7.8.9');
+  assert.deepEqual(calls.filter((call) => call.args[0] === '--version'), [
+    { command: '/opt/test-codex', args: ['--version'] }
+  ]);
 });
 
 test('app-manager opens an installed Codex Desktop client through the host launcher', () => {

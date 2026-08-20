@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Empty,
@@ -13,7 +13,9 @@ import {
 } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import { toolkitAPI } from '@/services/api';
+import { accountsAPI } from '@/services/api';
 import type {
+  Account,
   ManagedAppItem,
   ManagedAppsResponse,
   ToolkitAppConfigResponse
@@ -48,6 +50,9 @@ function requestError(error: unknown, fallback: string) {
 
 export default function AppManagerPanel() {
   const [data, setData] = useState<ManagedAppsResponse | null>(null);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [runningAccountPids, setRunningAccountPids] = useState<Record<string, number[]>>({});
+  const [runningCliAccountPids, setRunningCliAccountPids] = useState<Record<string, number[]>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [category, setCategory] = useState('ALL');
@@ -59,24 +64,60 @@ export default function AppManagerPanel() {
   const [configContent, setConfigContent] = useState('');
   const [configLoading, setConfigLoading] = useState(false);
   const [configSaving, setConfigSaving] = useState(false);
+  const [checkingUpdates, setCheckingUpdates] = useState<Record<string, boolean>>({});
+  const runningRefreshRef = useRef<Promise<void> | null>(null);
 
-  const fetchApps = useCallback(async () => {
-    setLoading(true);
+  const refreshRunningApps = useCallback(() => {
+    if (runningRefreshRef.current) return runningRefreshRef.current;
+    const request = (async () => {
+      try {
+        const response = await accountsAPI.listAppEntries();
+        setRunningAccountPids(response.runningAccountPids);
+        setRunningCliAccountPids(response.runningCliAccountPids);
+      } catch (_error) {
+        // 运行态是辅助信息，扫描失败不阻断应用清单。
+      }
+    })();
+    runningRefreshRef.current = request;
+    void request.then(() => {
+      if (runningRefreshRef.current === request) runningRefreshRef.current = null;
+    });
+    return request;
+  }, []);
+
+  const fetchApps = useCallback(async (options: { showLoading?: boolean } = {}) => {
+    if (options.showLoading !== false) setLoading(true);
     setError('');
     try {
-      const response = await toolkitAPI.listApps();
+      const [response, accountResponse] = await Promise.all([
+        toolkitAPI.listApps(),
+        accountsAPI.list().catch(() => null),
+        refreshRunningApps()
+      ]);
       if (!response.ok) throw new Error('应用接口未返回可用结果');
       setData(response);
+      if (accountResponse) setAccounts(accountResponse.accounts || []);
     } catch (requestFailure: unknown) {
       setError(requestError(requestFailure, '读取应用列表失败'));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [refreshRunningApps]);
 
   useEffect(() => {
     void fetchApps();
   }, [fetchApps]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => { void refreshRunningApps(); }, 1000);
+    return () => window.clearInterval(timer);
+  }, [refreshRunningApps]);
+
+  useEffect(() => {
+    if (!data || !data.apps.some((app) => app.version === '探测中')) return undefined;
+    const timer = window.setTimeout(() => { void fetchApps({ showLoading: false }); }, 500);
+    return () => window.clearTimeout(timer);
+  }, [data, fetchApps]);
 
   useEffect(() => {
     const handleTaskCompleted = (event: Event) => {
@@ -130,13 +171,106 @@ export default function AppManagerPanel() {
     }
   };
 
-  const openManagedDesktopApp = async (app: ManagedAppItem) => {
+  const openManagedApp = async (app: ManagedAppItem, accountRef?: string, unscoped = false) => {
+    const kind = app.type === 'desktop' ? 'desktop' : 'cli';
     try {
-      const response = await toolkitAPI.openManagedDesktopApp(app.id);
+      const response = await toolkitAPI.openManagedApp(app.id, {
+        kind,
+        ...(accountRef ? { accountRef } : {}),
+        ...(unscoped ? { unscoped: true } : {})
+      });
+      if (response.status === 'already_running' && accountRef && kind === 'desktop') {
+        Modal.confirm({
+          title: `${app.name} 已在运行`,
+          content: '是否关闭该账号的 Desktop 实例？',
+          okText: '关闭',
+          cancelText: '保留',
+          onOk: async () => {
+            try {
+              await toolkitAPI.openManagedApp(app.id, { kind, accountRef, action: 'close' });
+              message.success('Desktop 已关闭');
+              await refreshRunningApps();
+            } catch (requestFailure: unknown) {
+              message.error(requestError(requestFailure, '关闭 Desktop 失败'));
+            }
+          }
+        });
+        return;
+      }
       if (!response.ok) throw new Error(response.message || response.error || '桌面应用启动失败');
-      message.success(`${app.name} 已打开`);
+      message.success(`${app.name} 已启动`);
+      await refreshRunningApps();
     } catch (requestFailure: unknown) {
-      message.error(requestError(requestFailure, `${app.name} 打开失败`));
+      message.error(requestError(requestFailure, `${app.name} 启动失败`));
+    }
+  };
+
+  const checkAppUpdate = async (app: ManagedAppItem) => {
+    if (checkingUpdates[app.id]) return;
+    setCheckingUpdates((current) => ({ ...current, [app.id]: true }));
+    try {
+      const response = await toolkitAPI.checkAppUpdate(app.id);
+      setData((current) => current ? {
+        ...current,
+        apps: current.apps.map((item) => item.id === app.id
+          ? {
+              ...item,
+              version: response.currentVersion || (item.version === '探测中' ? '未探测到' : item.version),
+              latestVersion: response.latestVersion,
+              updateAvailable: response.updateAvailable,
+              updateStatus: response.status
+            }
+          : item)
+      } : current);
+      if (!response.ok || response.status === 'unavailable') {
+        message.info(response.message || '当前应用没有可用的远端版本源');
+        return;
+      }
+      if (!response.updateAvailable) {
+        if (response.status === 'unknown') {
+          message.info(response.latestVersion
+            ? `已读取远端最新版（${response.latestVersion}），但当前版本无法完成比较`
+            : '已完成检查，但当前版本无法完成比较');
+          return;
+        }
+        message.success(response.latestVersion
+          ? `${app.name} 已是最新版（${response.latestVersion}）`
+          : '未发现可用更新');
+        return;
+      }
+      if (app.canUpdate === false) {
+        message.info(`${app.name} 有新版本（${response.latestVersion}），但当前安装方式没有安全的自动更新计划，请按官方方式更新。`);
+        return;
+      }
+      const key = actionKey(app, 'update');
+      const plan = await toolkitAPI.planAppAction(app.id, 'update', app.type === 'ide' ? undefined : app.type);
+      if (!plan.ok) throw new Error(plan.error || '无法生成更新计划');
+      const commands = (plan.plans || [])
+        .map((item) => `${item.label || item.id}\n${item.command} ${(item.args || []).join(' ')}`)
+        .join('\n\n');
+      Modal.confirm({
+        title: `${app.name} 有新版本`,
+        content: (
+          <div>
+            <div>当前版本：{response.currentVersion || '未探测到'}</div>
+            <div>远端最新版：{response.latestVersion}</div>
+            <pre style={{ margin: '12px 0 0', whiteSpace: 'pre-wrap' }}>
+              {commands || '将执行官方应用生命周期命令。'}
+            </pre>
+          </div>
+        ),
+        okText: '确认更新',
+        cancelText: '稍后',
+        onOk: () => { void submitAppAction(app, 'update', key); }
+      });
+    } catch (requestFailure: unknown) {
+      message.error(requestError(requestFailure, `${app.name} 检查更新失败`));
+    } finally {
+      setCheckingUpdates((current) => {
+        const next = { ...current };
+        delete next[app.id];
+        return next;
+      });
     }
   };
 
@@ -241,7 +375,7 @@ export default function AppManagerPanel() {
           <p>统一查看当前主机的 CLI、桌面客户端与 IDE 扩展。{SESSION_SYNC_POLICY}同步范围：{SESSION_SYNC_SCOPE}。{SESSION_SYNC_BOUNDARY}</p>
         </div>
         <div className="toolkit-header-actions">
-          <Button icon={<ReloadOutlined />} loading={loading} onClick={fetchApps}>重新探测</Button>
+          <Button icon={<ReloadOutlined />} loading={loading} onClick={() => { void fetchApps(); }}>重新探测</Button>
         </div>
       </header>
 
@@ -278,9 +412,14 @@ export default function AppManagerPanel() {
                   key={app.id}
                   app={app}
                   busyAction={pendingActions[actionKey(app, 'install')] ? 'install' : pendingActions[actionKey(app, 'update')] ? 'update' : pendingActions[actionKey(app, 'uninstall')] ? 'uninstall' : (activeTaskFor(app)?.action as 'install' | 'update' | 'uninstall' | undefined)}
+                  checkingUpdate={Boolean(checkingUpdates[app.id])}
+                  accounts={accounts}
+                  runningAccountPids={runningAccountPids}
+                  runningCliAccountPids={runningCliAccountPids}
                   installingHooks={installingHooks}
                   onAction={(target, action) => void runAppAction(target, action)}
-                  onOpenApp={(target) => void openManagedDesktopApp(target)}
+                  onCheckUpdate={(target) => void checkAppUpdate(target)}
+                  onOpenApp={(target, accountRef, unscoped) => void openManagedApp(target, accountRef, unscoped)}
                   onInstallHooks={(provider) => void installHooks([provider])}
                   onEditConfig={openConfig}
                 />

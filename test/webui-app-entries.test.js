@@ -241,6 +241,64 @@ test('app-entries 端点把批量扫描命中的账号列入 runningAccounts', a
   const body = ctx.res.json();
   assert.deepEqual(body.entries, { zcode: { desktop: true, cli: false } });
   assert.deepEqual(body.runningAccounts, [fixture.accountRef]);
+  assert.deepEqual(body.runningAccountPids, { [fixture.accountRef]: [9001] });
+  assert.deepEqual(body.runningCliAccounts, []);
+  assert.deepEqual(body.runningCliAccountPids, {});
+});
+
+test('app-entries 端点在外部关闭 Desktop 后下一次扫描移除运行态', async (t) => {
+  const fixture = createFixture(t);
+  const userDataDir = path.join(
+    fixture.aiHomeDir, 'run', 'auth-projections', 'zcode', fixture.accountRef, 'electron-user-data'
+  );
+  let running = [{ pid: 9001, userDataDir }];
+  const detector = {
+    detect: () => ({ zcode: { desktop: true, cli: false } }),
+    scanRunning: () => running,
+    scanRunningCli: () => []
+  };
+  const ctx = createAppEntriesCtx(fixture, detector);
+
+  await handleListAppEntriesRequest(ctx);
+  assert.deepEqual(ctx.res.json().runningAccountPids, { [fixture.accountRef]: [9001] });
+
+  running = [];
+  ctx.res = createResCapture();
+  await handleListAppEntriesRequest(ctx);
+  const body = ctx.res.json();
+  assert.deepEqual(body.runningAccounts, []);
+  assert.deepEqual(body.runningAccountPids, {});
+});
+
+test('app-entries 端点把 marker CLI 的父子 PID 映射回 accountRef', async (t) => {
+  const fixture = createFixture(t, 'codex');
+  const ctx = createAppEntriesCtx(fixture, {
+    detect: () => ({ codex: { desktop: false, cli: true } }),
+    scanRunning: () => [],
+    scanRunningCli: () => [
+      {
+        pid: 9101,
+        provider: 'codex',
+        cliAccountId: '7',
+        accountRef: fixture.accountRef
+      },
+      {
+        pid: 9102,
+        provider: 'codex',
+        cliAccountId: '7',
+        accountRef: fixture.accountRef
+      }
+    ]
+  });
+
+  const handled = await handleListAppEntriesRequest(ctx);
+  assert.equal(handled, true);
+  assert.equal(ctx.res.statusCode, 200);
+  const body = ctx.res.json();
+  assert.deepEqual(body.runningAccounts, []);
+  assert.deepEqual(body.runningAccountPids, {});
+  assert.deepEqual(body.runningCliAccounts, [fixture.accountRef]);
+  assert.deepEqual(body.runningCliAccountPids, { [fixture.accountRef]: [9101, 9102] });
 });
 
 test('app-entries 端点在扫描失败时降级为空 runningAccounts 且 entries 不受影响', async (t) => {
@@ -257,6 +315,9 @@ test('app-entries 端点在扫描失败时降级为空 runningAccounts 且 entri
   const body = ctx.res.json();
   assert.deepEqual(body.entries, { zcode: { desktop: true, cli: false } });
   assert.deepEqual(body.runningAccounts, []);
+  assert.deepEqual(body.runningAccountPids, {});
+  assert.deepEqual(body.runningCliAccounts, []);
+  assert.deepEqual(body.runningCliAccountPids, {});
 });
 
 test('app-entries refresh 参数使宿主检测缓存失效', async (t) => {

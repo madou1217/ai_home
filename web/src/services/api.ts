@@ -78,6 +78,8 @@ import type {
   ManagedToolsResponse,
   ToolkitToolConfigResponse,
   ManagedAppsResponse,
+  ManagedAppUpdateResponse,
+  AccountAppLaunchResponse,
   AppInstallJob,
   WebUiTask,
   ClientTerminalsResponse,
@@ -360,8 +362,8 @@ export const accountsAPI = {
     kind: 'desktop' | 'cli',
     action: 'open' | 'close' = 'open',
     terminalId?: string
-  ): Promise<{ ok: boolean; status?: string; pid: number | null; terminalId?: string; executable?: string; pids?: number[] }> => {
-    const response = await api.post<{ ok: boolean; status?: string; pid: number | null; terminalId?: string; executable?: string; pids?: number[] }>(
+  ): Promise<AccountAppLaunchResponse> => {
+    const response = await api.post<AccountAppLaunchResponse>(
       `/webui/accounts/${provider}/${accountRef}/open-app`,
       { kind, action, ...(terminalId ? { terminalId } : {}) }
     );
@@ -378,17 +380,26 @@ export const accountsAPI = {
     entries: Record<string, { desktop: boolean; cli: boolean }>;
     capabilities: Record<string, { desktop: boolean; cli: boolean }>;
     runningAccounts: string[];
+    runningAccountPids: Record<string, number[]>;
+    runningCliAccounts: string[];
+    runningCliAccountPids: Record<string, number[]>;
   }> => {
     const response = await api.get<{
       ok: boolean;
       entries: Record<string, { desktop: boolean; cli: boolean }>;
       capabilities?: Record<string, { desktop: boolean; cli: boolean }>;
       runningAccounts?: string[];
-    }>('/webui/app-entries', options.refresh ? { params: { refresh: '1' } } : undefined);
+      runningAccountPids?: Record<string, number[]>;
+      runningCliAccounts?: string[];
+      runningCliAccountPids?: Record<string, number[]>;
+  }>('/webui/app-entries', options.refresh ? { params: { refresh: '1' } } : undefined);
     return {
       entries: response.data.entries || {},
       capabilities: response.data.capabilities || {},
-      runningAccounts: Array.isArray(response.data.runningAccounts) ? response.data.runningAccounts : []
+      runningAccounts: Array.isArray(response.data.runningAccounts) ? response.data.runningAccounts : [],
+      runningAccountPids: response.data.runningAccountPids || {},
+      runningCliAccounts: Array.isArray(response.data.runningCliAccounts) ? response.data.runningCliAccounts : [],
+      runningCliAccountPids: response.data.runningCliAccountPids || {}
     };
   },
 
@@ -1670,6 +1681,12 @@ export const toolkitAPI = {
     const response = await api.get<ManagedAppsResponse>('/webui/toolkit/apps');
     return response.data;
   },
+  checkAppUpdate: async (appId: string): Promise<ManagedAppUpdateResponse> => {
+    const response = await api.post<ManagedAppUpdateResponse>(
+      `/webui/toolkit/apps/${encodeURIComponent(appId)}/check-update`, {}
+    );
+    return response.data;
+  },
   listTerminals: async (): Promise<ClientTerminalsResponse> => {
     const response = await api.get<ClientTerminalsResponse>('/webui/toolkit/terminals');
     return response.data;
@@ -1722,11 +1739,14 @@ export const toolkitAPI = {
     );
     return response.data;
   },
-  openManagedDesktopApp: async (appId: string): Promise<{ ok: boolean; status?: string; provider?: string; executable?: string; installRequired?: boolean; installAvailable?: boolean; error?: string; message?: string }> => {
-    const response = await api.post<{ ok: boolean; status?: string; provider?: string; executable?: string; installRequired?: boolean; installAvailable?: boolean; error?: string; message?: string }>(
-      `/webui/toolkit/apps/${encodeURIComponent(appId)}/open`, {}
+  openManagedApp: async (appId: string, input: { kind: 'cli' | 'desktop'; accountRef?: string; unscoped?: boolean; action?: 'open' | 'close'; terminalId?: string }): Promise<AccountAppLaunchResponse> => {
+    const response = await api.post<AccountAppLaunchResponse>(
+      `/webui/toolkit/apps/${encodeURIComponent(appId)}/open`, input
     );
     return response.data;
+  },
+  openManagedDesktopApp: async (appId: string): Promise<AccountAppLaunchResponse> => {
+    return toolkitAPI.openManagedApp(appId, { kind: 'desktop' });
   },
   installApp: async (provider: string): Promise<{ ok: boolean; accepted?: boolean; alreadyRunning?: boolean; job?: AppInstallJob; result?: any }> => {
     const response = await api.post<{ ok: boolean; accepted?: boolean; alreadyRunning?: boolean; job?: AppInstallJob; result?: any }>('/webui/toolkit/apps/install', { appId: provider, action: 'install' });

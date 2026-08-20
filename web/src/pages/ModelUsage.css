@@ -52,9 +52,24 @@
   white-space: nowrap;
 }
 
+.usage-query-progress {
+  display: flex;
+  min-height: 24px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+  margin: -8px 0 10px;
+  font-size: 13px;
+}
+
 @media (max-width: 768px) {
   .usage-live-scan-main {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .usage-query-progress {
+    justify-content: flex-start;
+    margin-top: -4px;
   }
 }
 

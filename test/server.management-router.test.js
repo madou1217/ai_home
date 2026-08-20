@@ -568,6 +568,115 @@ test('management router returns one usage dashboard snapshot through the async w
   });
 });
 
+test('management usage dashboard query streams cumulative shards and supports cancellation', async () => {
+  const state = {};
+  const writes = [];
+  const watchReq = new EventEmitter();
+  watchReq.headers = {};
+  const watchRes = createStreamResCapture();
+  watchRes.write = (chunk = '') => {
+    writes.push(String(chunk));
+    watchRes.body += String(chunk);
+    return true;
+  };
+  const writeJson = (response, code, payload) => {
+    response.statusCode = code;
+    response.end(JSON.stringify(payload));
+  };
+  let releaseQuery;
+  let capturedSignal;
+  const dashboard = {
+    stats: { totalCalls: 2, totalSessions: 1, totalTokens: 30 },
+    models: [{ provider: 'codex', model: 'gpt-5.1-codex', calls: 2 }],
+    sessions: [{ provider: 'codex', sessionId: 'progressive-session', calls: 2 }],
+    modelOptions: [{ provider: 'codex', model: 'gpt-5.1-codex', calls: 2 }]
+  };
+  const modelUsageService = {
+    getDashboardProgressive: async (query, options) => {
+      assert.equal(query.provider, 'codex');
+      capturedSignal = options.signal;
+      options.onProgress({
+        completedShards: 1,
+        totalShards: 3,
+        dashboard
+      });
+      await new Promise((resolve) => { releaseQuery = resolve; });
+      if (options.signal.aborted) {
+        const error = new Error('model_usage_query_cancelled');
+        error.code = 'model_usage_query_cancelled';
+        throw error;
+      }
+      return dashboard;
+    }
+  };
+  const deps = {
+    parseAuthorizationBearer: () => '',
+    writeJson,
+    modelUsageService
+  };
+
+  const watchHandled = await handleManagementRequest({
+    method: 'GET',
+    pathname: '/v0/management/usage/dashboard/query/watch',
+    url: new URL('http://localhost/v0/management/usage/dashboard/query/watch'),
+    req: watchReq,
+    res: watchRes,
+    options: {},
+    state,
+    requiredManagementKey: '',
+    deps
+  });
+  assert.equal(watchHandled, true);
+  assert.equal(watchRes.statusCode, 200);
+  assert.match(writes.join(''), /usage-dashboard-query-snapshot/);
+
+  const postRes = createResCapture();
+  const handled = await handleManagementRequest({
+    method: 'POST',
+    pathname: '/v0/management/usage/dashboard/query',
+    url: new URL('http://localhost/v0/management/usage/dashboard/query?from=2026-06-01&to=2026-06-03&provider=codex&limit=50'),
+    req: { headers: {} },
+    res: postRes,
+    options: {},
+    state,
+    requiredManagementKey: '',
+    deps
+  });
+  assert.equal(handled, true);
+  assert.equal(postRes.statusCode, 202);
+  const started = JSON.parse(postRes.body);
+  assert.equal(started.ok, true);
+  assert.equal(started.job.status, 'queued');
+  assert.match(started.job.id, /^usage-dashboard-query-/);
+
+  while (!releaseQuery) await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(capturedSignal.aborted, false);
+  assert.match(writes.join(''), /"completedShards":1/);
+  assert.match(writes.join(''), /"totalShards":3/);
+  assert.match(writes.join(''), /"totalCalls":2/);
+
+  const deleteRes = createResCapture();
+  const deleteHandled = await handleManagementRequest({
+    method: 'DELETE',
+    pathname: `/v0/management/usage/dashboard/query/${started.job.id}`,
+    url: new URL(`http://localhost/v0/management/usage/dashboard/query/${started.job.id}`),
+    req: { headers: {} },
+    res: deleteRes,
+    options: {},
+    state,
+    requiredManagementKey: '',
+    deps
+  });
+  assert.equal(deleteHandled, true);
+  assert.equal(deleteRes.statusCode, 200);
+  assert.equal(capturedSignal.aborted, true);
+  assert.equal(JSON.parse(deleteRes.body).job.status, 'cancelled');
+  assert.match(writes.join(''), /"status":"cancelled"/);
+
+  releaseQuery();
+  await new Promise((resolve) => setImmediate(resolve));
+});
+
 test('management usage scan starts async job and streams progress', async () => {
   let releaseScan;
   const tokenUsageUpdates = [];

@@ -59,6 +59,9 @@ import type {
   ManagementAccountsResponse,
   ManagementRestartEvent,
   ManagementRestartResponse,
+  ModelUsageDashboardQueryCancelResponse,
+  ModelUsageDashboardQueryJob,
+  ModelUsageDashboardQueryResponse,
   ModelUsageDashboardResponse,
   ModelUsageModelsResponse,
   ModelUsageQuery,
@@ -1501,6 +1504,41 @@ function buildModelUsageParams(query: ModelUsageQuery = {}) {
 }
 
 export const modelUsageAPI = {
+  startDashboardQuery: async (query: ModelUsageQuery = {}): Promise<ModelUsageDashboardQueryResponse> => {
+    const response = await api.post<ModelUsageDashboardQueryResponse>(
+      '/webui/management/usage/dashboard/query',
+      null,
+      { params: buildModelUsageParams(query) }
+    );
+    return response.data;
+  },
+
+  cancelDashboardQuery: async (jobId: string): Promise<ModelUsageDashboardQueryCancelResponse> => {
+    const response = await api.delete<ModelUsageDashboardQueryCancelResponse>(
+      `/webui/management/usage/dashboard/query/${encodeURIComponent(jobId)}`
+    );
+    return response.data;
+  },
+
+  watchDashboardQueries: (handlers: {
+    onJob?: (job: ModelUsageDashboardQueryJob) => void;
+    onSnapshot?: (jobs: ModelUsageDashboardQueryJob[]) => void;
+    onError?: () => void;
+  }) => {
+    const eventSource = guardedWebUiEventSource('/v0/webui/management/usage/dashboard/query/watch');
+    eventSource.onmessage = (event) => {
+      try {
+        dispatchModelUsageDashboardQueryPayload(JSON.parse(String(event.data || '{}')), handlers);
+      } catch (_error) {
+        // Ignore malformed frames.
+      }
+    };
+    eventSource.onerror = () => {
+      handlers.onError?.();
+    };
+    return eventSource;
+  },
+
   dashboard: async (query: ModelUsageQuery = {}): Promise<ModelUsageDashboardResponse> => {
     const response = await api.get<ModelUsageDashboardResponse>('/webui/management/usage/dashboard', {
       params: buildModelUsageParams(query)
@@ -1567,6 +1605,24 @@ export const modelUsageAPI = {
     return eventSource;
   }
 };
+
+export function dispatchModelUsageDashboardQueryPayload(
+  payload: any,
+  handlers: {
+    onJob?: (job: ModelUsageDashboardQueryJob) => void;
+    onSnapshot?: (jobs: ModelUsageDashboardQueryJob[]) => void;
+  }
+) {
+  if (payload?.type === 'usage-dashboard-query-job' && payload.job) {
+    handlers.onJob?.(payload.job as ModelUsageDashboardQueryJob);
+    return;
+  }
+  if (payload?.type === 'usage-dashboard-query-snapshot') {
+    handlers.onSnapshot?.(
+      Array.isArray(payload.jobs) ? payload.jobs as ModelUsageDashboardQueryJob[] : []
+    );
+  }
+}
 
 export const sshHostsAPI = {
   listConnections: async (): Promise<any[]> => {

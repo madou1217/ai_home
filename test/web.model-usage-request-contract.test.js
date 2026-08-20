@@ -11,12 +11,16 @@ const {
 
 const MODEL_USAGE_PAGE = path.join(__dirname, '../web/src/pages/ModelUsage.tsx');
 
-test('model usage page loads one dashboard snapshot instead of fan-out usage requests', () => {
+test('model usage page starts one progressive dashboard query instead of waiting for one snapshot', () => {
   const source = fs.readFileSync(MODEL_USAGE_PAGE, 'utf8');
-  const dashboardCalls = source.match(/modelUsageAPI\.dashboard\s*\(/g) || [];
+  const startCalls = source.match(/modelUsageAPI\.startDashboardQuery\s*\(/g) || [];
 
-  assert.equal(dashboardCalls.length, 1);
-  assert.doesNotMatch(source, /modelUsageAPI\.(?:stats|models|sessions)\s*\(/);
+  assert.equal(startCalls.length, 1);
+  assert.match(source, /modelUsageAPI\.watchDashboardQueries\s*\(/);
+  assert.match(source, /modelUsageAPI\.cancelDashboardQuery\s*\(/);
+  assert.doesNotMatch(source, /modelUsageAPI\.(?:dashboard|stats|models|sessions)\s*\(/);
+  assert.match(source, /completedShards/);
+  assert.match(source, /totalShards/);
   assert.match(
     source,
     /const handleRefreshUsage = \(\) => requestUsageRefresh\(false\);/

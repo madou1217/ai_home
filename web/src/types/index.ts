@@ -1989,13 +1989,48 @@ export interface ModelUsageSessionsResponse {
   sessions: ModelUsageSessionRow[];
 }
 
-export interface ModelUsageDashboardResponse {
-  ok: boolean;
-  range: ModelUsageDateRange;
+export interface ModelUsageDashboardData {
   stats: ModelUsageStats;
   models: ModelUsageModelRow[];
   sessions: ModelUsageSessionRow[];
   modelOptions: ModelUsageModelRow[];
+}
+
+export interface ModelUsageDashboardResponse extends ModelUsageDashboardData {
+  ok: boolean;
+  range: ModelUsageDateRange;
+}
+
+export type ModelUsageDashboardQueryStatus =
+  | 'queued'
+  | 'preparing'
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'cancelled';
+
+export interface ModelUsageDashboardQueryJob {
+  id: string;
+  status: ModelUsageDashboardQueryStatus;
+  query: ModelUsageQuery;
+  startedAt: number;
+  finishedAt: number;
+  completedShards: number;
+  totalShards: number;
+  dashboard: ModelUsageDashboardData | null;
+  error: string;
+}
+
+export interface ModelUsageDashboardQueryResponse {
+  ok: boolean;
+  accepted: boolean;
+  job: ModelUsageDashboardQueryJob;
+}
+
+export interface ModelUsageDashboardQueryCancelResponse {
+  ok: boolean;
+  cancelled: boolean;
+  job: ModelUsageDashboardQueryJob;
 }
 
 export interface ModelUsageSessionDetailResponse {

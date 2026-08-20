@@ -26,6 +26,7 @@ import {
 import dayjs, { Dayjs } from 'dayjs';
 import { modelUsageAPI } from '@/services/api';
 import type {
+  ModelUsageDashboardQueryJob,
   ModelUsageModelRow,
   ModelUsageQuery,
   ModelUsageScanJob,
@@ -123,6 +124,10 @@ function isScanJobActive(job: ModelUsageScanJob | null) {
   return Boolean(job && (job.status === 'queued' || job.status === 'running'));
 }
 
+function isDashboardQueryActive(job: ModelUsageDashboardQueryJob | null) {
+  return Boolean(job && ['queued', 'preparing', 'running'].includes(job.status));
+}
+
 function getSessionKey(row: ModelUsageSessionRow) {
   return `${row.provider}:${row.sessionId}`;
 }
@@ -160,6 +165,7 @@ export default function ModelUsage() {
   const [models, setModels] = useState<ModelUsageModelRow[]>([]);
   const [sessions, setSessions] = useState<ModelUsageSessionRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const [dashboardQueryJob, setDashboardQueryJob] = useState<ModelUsageDashboardQueryJob | null>(null);
   const [scanning, setScanning] = useState(false);
   const [scanJob, setScanJob] = useState<ModelUsageScanJob | null>(null);
   const [selectedSession, setSelectedSession] = useState<ModelUsageSessionRow | null>(null);
@@ -167,11 +173,64 @@ export default function ModelUsage() {
   const [sessionDetailLoading, setSessionDetailLoading] = useState(false);
   const [refreshRevision, setRefreshRevision] = useState(0);
   const completedScanJobIdsRef = useRef<Set<string>>(new Set());
+  const completedDashboardQueryIdsRef = useRef<Set<string>>(new Set());
+  const dashboardQueryJobsRef = useRef<Map<string, ModelUsageDashboardQueryJob>>(new Map());
+  const activeDashboardQueryIdRef = useRef('');
+  const activeDashboardQueryQuietRef = useRef(true);
   const loadSequenceRef = useRef(0);
   const quietNextLoadRef = useRef(true);
   const refreshAfterScanRef = useRef<() => void>(() => {});
 
   const query = useMemo(() => buildQuery(range, rangeMode, provider, model, 50), [model, provider, range, rangeMode]);
+
+  const cancelDashboardQuery = useCallback((jobId: string) => {
+    if (!jobId) return;
+    void modelUsageAPI.cancelDashboardQuery(jobId).catch(() => {});
+  }, []);
+
+  const applyDashboardQueryJob = useCallback((job: ModelUsageDashboardQueryJob) => {
+    if (!job.id || job.id !== activeDashboardQueryIdRef.current) return;
+    setDashboardQueryJob(job);
+    if (job.dashboard) {
+      setStats(job.dashboard.stats || emptyStats);
+      setModels(job.dashboard.models || []);
+      setSessions(job.dashboard.sessions || []);
+      setModelOptions(job.dashboard.modelOptions || []);
+    }
+    if (isDashboardQueryActive(job)) {
+      setLoading(true);
+      return;
+    }
+    setLoading(false);
+    if (job.status !== 'failed' || completedDashboardQueryIdsRef.current.has(job.id)) return;
+    completedDashboardQueryIdsRef.current.add(job.id);
+    if (!activeDashboardQueryQuietRef.current) {
+      message.error(job.error || '加载模型用量失败');
+    }
+  }, []);
+
+  const handleDashboardQueryJob = useCallback((job: ModelUsageDashboardQueryJob) => {
+    if (!job.id) return;
+    dashboardQueryJobsRef.current.set(job.id, job);
+    applyDashboardQueryJob(job);
+  }, [applyDashboardQueryJob]);
+
+  useEffect(() => {
+    const watcher = modelUsageAPI.watchDashboardQueries({
+      onJob: handleDashboardQueryJob,
+      onSnapshot: (jobs) => {
+        jobs.forEach((job) => dashboardQueryJobsRef.current.set(job.id, job));
+        const activeJob = dashboardQueryJobsRef.current.get(activeDashboardQueryIdRef.current);
+        if (activeJob) applyDashboardQueryJob(activeJob);
+      }
+    });
+    return () => {
+      watcher.close();
+      const activeJobId = activeDashboardQueryIdRef.current;
+      activeDashboardQueryIdRef.current = '';
+      cancelDashboardQuery(activeJobId);
+    };
+  }, [applyDashboardQueryJob, cancelDashboardQuery, handleDashboardQueryJob]);
 
   const loadUsage = useCallback(async (
     nextQuery: ModelUsageQuery,
@@ -179,22 +238,36 @@ export default function ModelUsage() {
   ) => {
     const loadSequence = loadSequenceRef.current + 1;
     loadSequenceRef.current = loadSequence;
+    const previousJobId = activeDashboardQueryIdRef.current;
+    activeDashboardQueryIdRef.current = '';
+    cancelDashboardQuery(previousJobId);
+    activeDashboardQueryQuietRef.current = options.quiet !== false;
+    setDashboardQueryJob(null);
+    setStats(emptyStats);
+    setModels([]);
+    setSessions([]);
+    setModelOptions([]);
     setLoading(true);
     try {
-      const response = await modelUsageAPI.dashboard({ ...nextQuery, scan: false });
-      if (loadSequence !== loadSequenceRef.current) return;
-      setStats(response.stats || emptyStats);
-      setModels(response.models || []);
-      setSessions(response.sessions || []);
-      setModelOptions(response.modelOptions || []);
+      const response = await modelUsageAPI.startDashboardQuery({ ...nextQuery, scan: false });
+      if (loadSequence !== loadSequenceRef.current) {
+        cancelDashboardQuery(response.job?.id || '');
+        return;
+      }
+      const jobId = response.job?.id || '';
+      activeDashboardQueryIdRef.current = jobId;
+      const latestJob = dashboardQueryJobsRef.current.get(jobId) || response.job;
+      if (latestJob) {
+        dashboardQueryJobsRef.current.set(jobId, latestJob);
+        applyDashboardQueryJob(latestJob);
+      }
     } catch (error: any) {
       if (loadSequence === loadSequenceRef.current && !options.quiet) {
         message.error(error?.response?.data?.message || error?.message || '加载模型用量失败');
       }
-    } finally {
       if (loadSequence === loadSequenceRef.current) setLoading(false);
     }
-  }, []);
+  }, [applyDashboardQueryJob, cancelDashboardQuery]);
 
   useEffect(() => {
     const quiet = quietNextLoadRef.current;
@@ -592,6 +665,17 @@ export default function ModelUsage() {
         </StatisticCard.Group>
       )}
 
+      {loading ? (
+        <div className="usage-query-progress" role="status" aria-live="polite">
+          <SyncOutlined spin />
+          <Text type="secondary">
+            {dashboardQueryJob && dashboardQueryJob.totalShards > 0
+              ? `正在汇总 ${dashboardQueryJob.completedShards}/${dashboardQueryJob.totalShards}`
+              : '正在准备统计范围…'}
+          </Text>
+        </div>
+      ) : null}
+
       {isMobile ? (
         <>
           {/* 原生:一个「筛选」按钮 → 底部抽屉,不在主屏平铺 pills */}
@@ -718,7 +802,7 @@ export default function ModelUsage() {
               label: '按模型',
               children: (
                 <ListTable<ModelUsageModelRow>
-                  loading={loading}
+                  loading={loading && models.length === 0}
                   rowKey={(row) => `${row.provider}:${row.model || 'unknown'}`}
                   columns={modelColumns}
                   dataSource={models}
@@ -731,7 +815,7 @@ export default function ModelUsage() {
               label: '按会话',
               children: (
                 <ListTable<ModelUsageSessionRow>
-                  loading={loading}
+                  loading={loading && sessions.length === 0}
                   rowKey={getSessionKey}
                   columns={sessionColumns}
                   dataSource={sessions}

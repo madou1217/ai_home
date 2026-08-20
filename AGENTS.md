@@ -43,20 +43,18 @@ Fuller layer map:
   deps and run `npm run lint` + `npm run build` for the WebUI. This is the CI
   gate that catches missing imports/undefined references and other TS compile
   errors that local Node tests cannot see.
-- `npm run models:sync`: update the `third_party/models.dev` submodule to upstream
-  `dev`, then regenerate the Go `modalities.json` snapshot atomically. Model metadata
-  (modalities, context window, pricing) comes from that submodule, and a submodule
-  is pinned to one commit — upstream ships new models daily, so without syncing a
-  newly released model has no metadata and falls back to regex heuristics or shows
-  as unknown. The command refuses to overwrite dirty sync inputs and never commits;
-  the pointer and generated snapshot remain a reviewable repository change.
-- `npm run models:check`: offline-verify that the generated Go snapshot matches the
-  pinned submodule commit. It never contacts upstream, so unrelated CI and runtime
-  work do not fail while the asynchronous updater is waiting for its next run.
-- `.github/workflows/models-dev-sync.yml`: every two hours, asynchronously sync the
-  pinned submodule and generated snapshot, verify both, and commit only those two
-  files to `main` when they changed. Runtime startup and inference requests always
-  use the last verified local snapshot and never wait for GitHub or upstream Git.
+- `npm run models:sync`: fetch `https://models.dev/catalog.json`, validate its schema,
+  pin its content hash in `data/models-dev/catalog.json`, then regenerate the Go
+  `modalities.json` index. Model metadata (modalities, context window, pricing) comes
+  from this fixed API snapshot. The command refuses to overwrite dirty generated
+  outputs and never commits; both generated files remain reviewable repository changes.
+- `npm run models:check`: offline-verify the fixed catalog source/hash/schema and that
+  the generated Go index matches it. It never contacts upstream, so unrelated CI and
+  runtime work do not fail while the asynchronous updater waits for its next run.
+- `.github/workflows/models-dev-sync.yml`: every two hours, asynchronously refresh the
+  fixed API catalog and generated Go index, verify both, and commit only those two files
+  to `main` when they changed. Runtime startup and inference requests always use the
+  last verified local snapshot and never wait for models.dev or GitHub.
 - `npm run gateway:routes`: read-only scan of both gateways' HTTP paths and their
   data-plane diff. Backs `docs/architecture/go-node-parity-matrix.md`; `--json`
   for CI. Note it collects path literals, so router scope guards (`/v1/`,

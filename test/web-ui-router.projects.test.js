@@ -110,12 +110,6 @@ function assertNoInternalAccountKeys(payload) {
   assert.equal(text.includes('oauth:'), false);
 }
 
-function writeModelsDevFixture(root, relativePath, content) {
-  const filePath = path.join(root, relativePath);
-  fs.mkdirpSync(path.dirname(filePath));
-  fs.writeFileSync(filePath, content);
-}
-
 test('web ui static assets do not fall back to index html when chunk is missing', async () => {
   const res = createResCapture();
   const handled = await handleWebUIRequest({
@@ -2113,36 +2107,39 @@ test('web ui openai models route exposes v1 models shape with account probe meta
   }
 });
 
-test('web ui openai models route exposes inherited models.dev metadata', async () => {
+test('web ui openai models route exposes resolved models.dev catalog metadata', async () => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-openai-models-metadata-'));
-  const modelsDevDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-models-dev-route-'));
+  const modelsDevFixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-models-dev-route-'));
+  const modelsDevCatalogPath = path.join(modelsDevFixtureRoot, 'catalog.json');
 
   try {
-    writeModelsDevFixture(modelsDevDir, 'models/openai/gpt-5.toml', `
-name = "GPT-5"
-family = "gpt"
-attachment = true
-reasoning = true
-temperature = false
-tool_call = true
-structured_output = true
-
-[limit]
-context = 400_000
-output = 128_000
-
-[modalities]
-input = ["text", "image"]
-output = ["text"]
-`);
-    writeModelsDevFixture(modelsDevDir, 'providers/openai/models/gpt-5.toml', `
-base_model = "openai/gpt-5"
-
-[cost]
-input = 1.25
-output = 10
-cache_read = 0.125
-`);
+    const model = {
+      id: 'openai/gpt-5',
+      name: 'GPT-5',
+      family: 'gpt',
+      attachment: true,
+      reasoning: true,
+      temperature: false,
+      tool_call: true,
+      structured_output: true,
+      limit: { context: 400000, output: 128000 },
+      modalities: { input: ['text', 'image'], output: ['text'] }
+    };
+    fs.writeFileSync(modelsDevCatalogPath, JSON.stringify({
+      models: { 'openai/gpt-5': model },
+      providers: {
+        openai: {
+          id: 'openai',
+          models: {
+            'gpt-5': {
+              ...model,
+              id: 'gpt-5',
+              cost: { input: 1.25, output: 10, cache_read: 0.125 }
+            }
+          }
+        }
+      }
+    }));
 
     const state = {
       accounts: {
@@ -2172,7 +2169,7 @@ cache_read = 0.125
     };
     const deps = {
       ...createBaseDeps(aiHomeDir),
-      modelsDevDir
+      modelsDevCatalogPath
     };
 
     const res = createResCapture();
@@ -2198,7 +2195,7 @@ cache_read = 0.125
     assertNoInternalAccountKeys(body);
   } finally {
     fs.rmSync(aiHomeDir, { recursive: true, force: true });
-    fs.rmSync(modelsDevDir, { recursive: true, force: true });
+    fs.rmSync(modelsDevFixtureRoot, { recursive: true, force: true });
   }
 });
 

@@ -1,4 +1,4 @@
-// Package modelsdev 提供由 vendored models.dev 生成的进程内只读模态索引。
+// Package modelsdev 提供由固定 models.dev API 快照生成的进程内只读模态索引。
 package modelsdev
 
 import (
@@ -14,7 +14,7 @@ import (
 var (
 	// ErrInvalidSnapshot 表示嵌入快照损坏或不满足应用层值对象合同。
 	ErrInvalidSnapshot = errors.New("models.dev 嵌入模态快照无效")
-	// embeddedSnapshot 由 Go 生成器从固定的 models.dev 子模块指针生成。
+	// embeddedSnapshot 由 Go 生成器从仓库内固定的 models.dev catalog 快照生成。
 	//go:embed modalities.json
 	embeddedSnapshot []byte
 )
@@ -75,4 +75,4 @@ func (index *Index) LookupModalities(
 	return modalities, found
 }
 
-//go:generate go run ../../../tools/modelsdevmodalities --source ../../../../third_party/models.dev/models --target modalities.json
+//go:generate go run ../../../tools/modelsdevmodalities --source ../../../../data/models-dev/catalog.json --target modalities.json

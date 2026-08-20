@@ -603,7 +603,7 @@ Canonical chat HTTP 面包括：`/v0/webui/chat/sessions`、session resolve/snap
 | OPS-015 | Provider hook sender | provider 官方 hook 调用的低依赖 sender | 内部 | `scripts/aih-provider-session-hook-sender.js` |
 | OPS-016 | Test runner cleanup | 全量 test 分片/清理与 focused Node test | 开发 | `scripts/run-tests.js`、`test/test-runner-cleanup.test.js` |
 | OPS-017 | Postinstall | 修复权限/hooks/本地可执行项 | 内部 | `scripts/postinstall.js` |
-| OPS-018 | models.dev 异步同步 | GitHub Actions 每两小时后台检查上游；有变化时原子更新固定子模块指针与 Go 快照，验证成功后直接提交主分支。Server 启动和推理请求始终读取最后一次已验证的本地快照，不等待 GitHub 或上游 Git | 运维/稳定 | `.github/workflows/models-dev-sync.yml`、`scripts/sync-models-dev.js` |
+| OPS-018 | models.dev 异步同步 | GitHub Actions 每两小时后台读取官方 `catalog.json` API；有变化时更新带内容哈希的固定 catalog 与 Go 模态索引，验证成功后直接提交主分支。Server 启动和推理请求始终读取最后一次已验证的本地快照，不等待 models.dev 或 GitHub | 运维/稳定 | `.github/workflows/models-dev-sync.yml`、`scripts/sync-models-dev.js` |
 
 ## 13. 兼容、废弃与未公开能力清单
 

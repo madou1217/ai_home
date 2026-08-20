@@ -2952,7 +2952,7 @@ test('model usage pricing sync uses models.dev standard costs per million tokens
   if (!DatabaseSync) return;
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-model-usage-models-dev-pricing-'));
   const aiHomeDir = path.join(root, '.ai_home');
-  const modelsDevDir = path.join(root, 'models.dev');
+  const modelsDevCatalogPath = path.join(root, 'models-dev-catalog.json');
   fs.mkdirSync(aiHomeDir, { recursive: true });
   const service = createModelUsageService({
     fs,
@@ -2960,28 +2960,46 @@ test('model usage pricing sync uses models.dev standard costs per million tokens
     aiHomeDir,
     hostHomeDir: root,
     DatabaseSync,
-    modelsDevDir,
+    modelsDevCatalogPath,
     fetchImpl: async () => {
       throw new Error('unexpected_network_pricing_fetch');
     }
   });
   try {
-    writeTextFile(path.join(modelsDevDir, 'providers', 'openai', 'models', 'gpt-standard.toml'), `
-[cost]
-input = 1
-output = 2
-reasoning = 3
-cache_read = 0.1
-cache_write = 0.2
-
-[[cost.tiers]]
-tier = { size = 100 }
-input = 10
-output = 20
-reasoning = 30
-cache_read = 1
-cache_write = 2
-`);
+    writeTextFile(modelsDevCatalogPath, JSON.stringify({
+      models: {
+        'openai/test-base': {
+          id: 'openai/test-base',
+          modalities: { input: ['text'], output: ['text'] }
+        }
+      },
+      providers: {
+        openai: {
+          id: 'openai',
+          models: {
+            'gpt-standard': {
+              id: 'gpt-standard',
+              modalities: { input: ['text'], output: ['text'] },
+              cost: {
+                input: 1,
+                output: 2,
+                reasoning: 3,
+                cache_read: 0.1,
+                cache_write: 0.2,
+                tiers: [{
+                  tier: { size: 100 },
+                  input: 10,
+                  output: 20,
+                  reasoning: 30,
+                  cache_read: 1,
+                  cache_write: 2
+                }]
+              }
+            }
+          }
+        }
+      }
+    }));
 
     service.recordUsage({
       eventKey: 'api:codex:req_models_dev_pricing:1',

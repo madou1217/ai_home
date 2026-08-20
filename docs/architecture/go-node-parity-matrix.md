@@ -139,16 +139,17 @@ Node 给每个模型对象内联一个 `aih_modalities`（`lib/server/models.js:
   `aih_modalities: {input,output}`。
 - `client_version` 继续选择 Codex 目录合同；它不能与 `include` 混用。未知、重复或混合
   query 一律返回 `400 invalid_query`，避免客户端意图被静默误判。
-- 权威数据由 `internal/tools/modelsdevmodalities` 从固定子模块指针生成，299 个基础模型
-  被嵌入 Go 二进制。服务启动时只解码和校验一次，HTTP 热路径是 O(1) 只读 map，
+- 权威数据由 `internal/tools/modelsdevmodalities` 从仓库内固定的 models.dev API catalog
+  快照生成，全部 canonical model 被嵌入 Go 二进制。服务启动时只解码和校验一次，
+  HTTP 热路径是 O(1) 只读 map，
   不访问 SQLite、文件系统或上游。
 - 只映射当前重构范围内的 `codex -> openai`、`claude -> anthropic`。权威快照未命中时
   明确降级为 `{input:["text"],output:["text"]}`，不靠模型名猜测能力。
 
-同步 `third_party/models.dev` 后运行：
+刷新官方 catalog 并生成索引：
 
 ```bash
-go generate ./internal/adapters/modelmetadata/modelsdev
+npm run models:sync
 ```
 
 roadmap 里的 `aih_context_length` 可以沿用显式 `include` 机制，但当前没有实现，避免把

@@ -21,8 +21,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -36,7 +34,7 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Verify pinned models.dev snapshot
+      - name: Verify pinned models.dev API snapshot
         run: npm run models:check
 
       - name: Install dependencies

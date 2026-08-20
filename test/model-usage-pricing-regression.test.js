@@ -12,7 +12,7 @@ const { openModelUsageStore } = require('../lib/usage/model-usage-store');
 const { stableHash } = require('../lib/usage/model-usage-stable-hash');
 const {
   buildModelsDevPricingRecords,
-  DEFAULT_MODELS_DEV_DIR
+  DEFAULT_MODELS_DEV_CATALOG_PATH
 } = require('../lib/server/models-dev-metadata');
 
 function createModelUsageService(options) {
@@ -28,20 +28,47 @@ function requireDatabaseSync(t) {
   }
 }
 
-function writeModelPrice(root, input, output) {
-  writeOpenAiModelPrice(root, 'gpt-standard', input, output);
+function readModelsDevCatalog(catalogPath) {
+  if (fs.existsSync(catalogPath)) return JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
+  return {
+    models: {
+      'openai/test-base': {
+        id: 'openai/test-base',
+        modalities: { input: ['text'], output: ['text'] }
+      }
+    },
+    providers: {}
+  };
 }
 
-function writeOpenAiModelPrice(root, model, input, output) {
-  const filePath = path.join(root, 'providers', 'openai', 'models', `${model}.toml`);
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, `[cost]\ninput = ${input}\noutput = ${output}\n`, 'utf8');
+function writeProviderModelPrice(catalogPath, providerId, modelId, cost) {
+  const catalog = readModelsDevCatalog(catalogPath);
+  if (!catalog.providers[providerId]) {
+    catalog.providers[providerId] = { id: providerId, models: {} };
+  }
+  catalog.providers[providerId].models[modelId] = {
+    id: modelId,
+    modalities: { input: ['text'], output: ['text'] },
+    cost
+  };
+  fs.writeFileSync(catalogPath, JSON.stringify(catalog), 'utf8');
 }
 
-function writeGeminiFlashPrice(root) {
-  const filePath = path.join(root, 'providers', 'google', 'models', 'gemini-3.5-flash.toml');
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, '[cost]\ninput = 1.5\noutput = 9\n', 'utf8');
+function writeModelPrice(catalogPath, input, output) {
+  writeOpenAiModelPrice(catalogPath, 'gpt-standard', input, output);
+}
+
+function writeOpenAiModelPrice(catalogPath, model, input, output) {
+  writeProviderModelPrice(catalogPath, 'openai', model, { input, output });
+}
+
+function writeGeminiFlashPrice(catalogPath) {
+  writeProviderModelPrice(
+    catalogPath,
+    'google',
+    'gemini-3.5-flash',
+    { input: 1.5, output: 9 }
+  );
 }
 
 function activateTestCatalog(store, fingerprint, inputCostPerToken, sourceFamily = 'test') {
@@ -180,16 +207,16 @@ test('bundled pricing defers historical cost recalculation until explicit mainte
   if (!DatabaseSync) return;
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-model-pricing-maintenance-'));
   const aiHomeDir = path.join(root, '.ai_home');
-  const modelsDevDir = path.join(root, 'models.dev');
+  const modelsDevCatalogPath = path.join(root, 'models-dev-catalog.json');
   fs.mkdirSync(aiHomeDir, { recursive: true });
-  writeModelPrice(modelsDevDir, 1, 2);
+  writeModelPrice(modelsDevCatalogPath, 1, 2);
 
   const createService = () => createModelUsageService({
     fs,
     path,
     aiHomeDir,
     hostHomeDir: root,
-    modelsDevDir,
+    modelsDevCatalogPath,
     DatabaseSync
   });
 
@@ -239,16 +266,16 @@ test('bundled pricing maintenance resumes from its persisted batch cursor', asyn
   if (!DatabaseSync) return;
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-model-pricing-resume-'));
   const aiHomeDir = path.join(root, '.ai_home');
-  const modelsDevDir = path.join(root, 'models.dev');
+  const modelsDevCatalogPath = path.join(root, 'models-dev-catalog.json');
   fs.mkdirSync(aiHomeDir, { recursive: true });
-  writeModelPrice(modelsDevDir, 1, 2);
+  writeModelPrice(modelsDevCatalogPath, 1, 2);
 
   const createService = (options = {}) => createModelUsageService({
     fs,
     path,
     aiHomeDir,
     hostHomeDir: root,
-    modelsDevDir,
+    modelsDevCatalogPath,
     DatabaseSync,
     ...options
   });
@@ -337,15 +364,15 @@ test('reading the same pending bundled catalog does not rewrite its maintenance 
   if (!DatabaseSync) return;
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-model-pricing-pending-read-'));
   const aiHomeDir = path.join(root, '.ai_home');
-  const modelsDevDir = path.join(root, 'models.dev');
+  const modelsDevCatalogPath = path.join(root, 'models-dev-catalog.json');
   fs.mkdirSync(aiHomeDir, { recursive: true });
-  writeModelPrice(modelsDevDir, 1, 2);
+  writeModelPrice(modelsDevCatalogPath, 1, 2);
   const service = createModelUsageService({
     fs,
     path,
     aiHomeDir,
     hostHomeDir: root,
-    modelsDevDir,
+    modelsDevCatalogPath,
     DatabaseSync
   });
 
@@ -389,17 +416,17 @@ test('a stale bundled service cannot replace a newer active catalog', async (t) 
   if (!DatabaseSync) return;
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-model-pricing-catalog-cas-'));
   const aiHomeDir = path.join(root, '.ai_home');
-  const modelsDevDir = path.join(root, 'models.dev');
+  const modelsDevCatalogPath = path.join(root, 'models-dev-catalog.json');
   fs.mkdirSync(aiHomeDir, { recursive: true });
-  writeModelPrice(modelsDevDir, 1, 2);
-  writeOpenAiModelPrice(modelsDevDir, 'gpt-removed', 7, 8);
+  writeModelPrice(modelsDevCatalogPath, 1, 2);
+  writeOpenAiModelPrice(modelsDevCatalogPath, 'gpt-removed', 7, 8);
 
   const createService = () => createModelUsageService({
     fs,
     path,
     aiHomeDir,
     hostHomeDir: root,
-    modelsDevDir,
+    modelsDevCatalogPath,
     DatabaseSync
   });
 
@@ -408,14 +435,10 @@ test('a stale bundled service cannot replace a newer active catalog', async (t) 
     const catalogA = await staleService.syncPricingIfStale();
     assert.equal(catalogA.synced, true);
 
-    writeModelPrice(modelsDevDir, 3, 4);
-    fs.rmSync(path.join(
-      modelsDevDir,
-      'providers',
-      'openai',
-      'models',
-      'gpt-removed.toml'
-    ));
+    writeModelPrice(modelsDevCatalogPath, 3, 4);
+    const updatedCatalog = readModelsDevCatalog(modelsDevCatalogPath);
+    delete updatedCatalog.providers.openai.models['gpt-removed'];
+    fs.writeFileSync(modelsDevCatalogPath, JSON.stringify(updatedCatalog), 'utf8');
     const currentService = createService();
     const catalogB = await currentService.syncPricingIfStale({ force: true });
     assert.equal(catalogB.synced, true);
@@ -466,16 +489,16 @@ test('pricing maintenance stops when a newer catalog epoch becomes active', asyn
   if (!DatabaseSync) return;
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-model-pricing-maintenance-cas-'));
   const aiHomeDir = path.join(root, '.ai_home');
-  const modelsDevDir = path.join(root, 'models.dev');
+  const modelsDevCatalogPath = path.join(root, 'models-dev-catalog.json');
   fs.mkdirSync(aiHomeDir, { recursive: true });
-  writeModelPrice(modelsDevDir, 1, 2);
+  writeModelPrice(modelsDevCatalogPath, 1, 2);
 
   const createService = (options = {}) => createModelUsageService({
     fs,
     path,
     aiHomeDir,
     hostHomeDir: root,
-    modelsDevDir,
+    modelsDevCatalogPath,
     DatabaseSync,
     ...options
   });
@@ -503,7 +526,7 @@ test('pricing maintenance stops when a newer catalog epoch becomes active', asyn
       async onProgress() {
         if (switched) return;
         switched = true;
-        writeModelPrice(modelsDevDir, 3, 4);
+        writeModelPrice(modelsDevCatalogPath, 3, 4);
         catalogB = await createService().syncPricingIfStale({
           recalculateCosts: true,
           batchSize: 1
@@ -709,15 +732,15 @@ test('ordinary pricing reads never downgrade an unknown future active catalog', 
   if (!DatabaseSync) return;
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-model-pricing-future-format-'));
   const aiHomeDir = path.join(root, '.ai_home');
-  const modelsDevDir = path.join(root, 'models.dev');
+  const modelsDevCatalogPath = path.join(root, 'models-dev-catalog.json');
   fs.mkdirSync(aiHomeDir, { recursive: true });
-  writeModelPrice(modelsDevDir, 1, 2);
+  writeModelPrice(modelsDevCatalogPath, 1, 2);
   const createService = () => createModelUsageService({
     fs,
     path,
     aiHomeDir,
     hostHomeDir: root,
-    modelsDevDir,
+    modelsDevCatalogPath,
     DatabaseSync
   });
 
@@ -796,9 +819,9 @@ test('explicit catalog activation surfaces a concurrent stale epoch', async (t) 
   if (!DatabaseSync) return;
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-model-pricing-activation-cas-'));
   const aiHomeDir = path.join(root, '.ai_home');
-  const modelsDevDir = path.join(root, 'models.dev');
+  const modelsDevCatalogPath = path.join(root, 'models-dev-catalog.json');
   fs.mkdirSync(aiHomeDir, { recursive: true });
-  writeModelPrice(modelsDevDir, 2, 4);
+  writeModelPrice(modelsDevCatalogPath, 2, 4);
 
   const seed = openModelUsageStore({ fs, path, aiHomeDir, DatabaseSync });
   activateTestCatalog(seed, '1'.repeat(64), 0.000001, 'models.dev');
@@ -820,7 +843,7 @@ test('explicit catalog activation surfaces a concurrent stale epoch', async (t) 
       path,
       aiHomeDir,
       hostHomeDir: root,
-      modelsDevDir,
+      modelsDevCatalogPath,
       DatabaseSync: HookedDatabaseSync
     }).syncPricingIfStale({ force: true });
     assert.equal(result.ok, false);
@@ -985,16 +1008,16 @@ test('a second service skips all-cost recalculation for the same bundled catalog
   if (!DatabaseSync) return;
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-model-pricing-fingerprint-'));
   const aiHomeDir = path.join(root, '.ai_home');
-  const modelsDevDir = path.join(root, 'models.dev');
+  const modelsDevCatalogPath = path.join(root, 'models-dev-catalog.json');
   fs.mkdirSync(aiHomeDir, { recursive: true });
-  writeModelPrice(modelsDevDir, 1, 2);
+  writeModelPrice(modelsDevCatalogPath, 1, 2);
 
   const createService = () => createModelUsageService({
     fs,
     path,
     aiHomeDir,
     hostHomeDir: root,
-    modelsDevDir,
+    modelsDevCatalogPath,
     DatabaseSync
   });
 
@@ -1053,16 +1076,16 @@ test('a new model usage service refreshes bundled pricing only with explicit mai
   if (!DatabaseSync) return;
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-model-pricing-refresh-'));
   const aiHomeDir = path.join(root, '.ai_home');
-  const modelsDevDir = path.join(root, 'models.dev');
+  const modelsDevCatalogPath = path.join(root, 'models-dev-catalog.json');
   fs.mkdirSync(aiHomeDir, { recursive: true });
-  writeModelPrice(modelsDevDir, 1, 2);
+  writeModelPrice(modelsDevCatalogPath, 1, 2);
 
   const createService = () => createModelUsageService({
     fs,
     path,
     aiHomeDir,
     hostHomeDir: root,
-    modelsDevDir,
+    modelsDevCatalogPath,
     DatabaseSync
   });
 
@@ -1078,7 +1101,7 @@ test('a new model usage service refreshes bundled pricing only with explicit mai
       timestampMs: new Date(2026, 6, 16, 12).getTime()
     });
 
-    writeModelPrice(modelsDevDir, 3, 4);
+    writeModelPrice(modelsDevCatalogPath, 3, 4);
     const restartedService = createService();
     const freshRead = await restartedService.syncPricingIfStale();
     assert.equal(freshRead.synced, false);
@@ -1114,15 +1137,15 @@ test('canonical attribution prices client tokens with the execution model', asyn
   if (!DatabaseSync) return;
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-model-attribution-pricing-'));
   const aiHomeDir = path.join(root, '.ai_home');
-  const modelsDevDir = path.join(root, 'models.dev');
+  const modelsDevCatalogPath = path.join(root, 'models-dev-catalog.json');
   fs.mkdirSync(aiHomeDir, { recursive: true });
-  writeGeminiFlashPrice(modelsDevDir);
+  writeGeminiFlashPrice(modelsDevCatalogPath);
   const service = createModelUsageService({
     fs,
     path,
     aiHomeDir,
     hostHomeDir: root,
-    modelsDevDir,
+    modelsDevCatalogPath,
     DatabaseSync
   });
 
@@ -1247,7 +1270,7 @@ test('canonical attribution zeroes only unpriced cross-provider execution costs'
 
 test('bundled models.dev exposes current GPT-5.6 Sol and Gemini 3.5 Flash prices', () => {
   const pricing = Object.fromEntries(
-    buildModelsDevPricingRecords({ modelsDevDir: DEFAULT_MODELS_DEV_DIR })
+    buildModelsDevPricingRecords({ modelsDevCatalogPath: DEFAULT_MODELS_DEV_CATALOG_PATH })
       .map((record) => [record.model, record])
   );
 

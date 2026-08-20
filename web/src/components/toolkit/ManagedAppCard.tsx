@@ -6,12 +6,6 @@ import InstallLifecycleAction from './InstallLifecycleAction';
 import ManagedAppIcon from './ManagedAppIcon';
 import { SESSION_SYNC_BOUNDARY, SESSION_SYNC_SCOPE } from '@/components/session-sync-copy';
 
-export const APP_TYPE_LABELS: Record<ManagedAppItem['type'], string> = {
-  cli: 'CLI',
-  desktop: '桌面客户端',
-  ide: 'IDE 扩展'
-};
-
 export const SYNC_MODE_LABELS: Record<ManagedAppItem['syncMode'], string> = {
   hook: '事件驱动',
   polling: '文件轮询',
@@ -69,6 +63,9 @@ export default function ManagedAppCard({
   const lifecycleManaged = app.type === 'cli' || app.type === 'desktop';
   const existingConfig = hasExistingConfig(app);
   const hookStatusDetail = getHookStatusDetail(app);
+  const currentVersion = app.installed
+    ? (app.version && app.version !== '-' ? app.version : '未探测到')
+    : '未安装';
 
   return (
     <article
@@ -82,33 +79,29 @@ export default function ManagedAppCard({
             <ManagedAppIcon app={app} />
             <div>
               <h3 className="toolkit-card-title">{app.name}</h3>
-              <Space size={4} wrap>
-                <Tag color="blue">{APP_TYPE_LABELS[app.type]}</Tag>
-                <Tag color={app.installed ? 'success' : 'default'}>{app.installed ? '已安装' : '未安装'}</Tag>
-                {app.installed && app.hookSupported ? (
-                  <Tag color={app.hookInstalled ? 'blue' : 'warning'}>
-                    {app.hookInstalled ? '会话同步已验证' : '会话同步待启用'}
-                  </Tag>
-                ) : null}
-              </Space>
+              {app.installed && app.hookSupported ? (
+                <Tag color={app.hookInstalled ? 'blue' : 'warning'}>
+                  {app.hookInstalled ? '会话同步已验证' : '会话同步待启用'}
+                </Tag>
+              ) : null}
             </div>
           </div>
         </div>
         <dl className="toolkit-card-body">
           <div className="toolkit-detail-row">
-            <dt className="toolkit-detail-label">版本</dt>
-            <dd className="toolkit-detail-value">{app.version || '未探测到'}</dd>
-          </div>
-          <div className="toolkit-detail-row">
-            <dt className="toolkit-detail-label">主模型</dt>
-            <dd className="toolkit-detail-value">{app.type === 'cli' ? (app.defaultModel || '未声明') : '由应用自身管理'}</dd>
-          </div>
-          <div className="toolkit-detail-row">
-            <dt className="toolkit-detail-label">程序路径</dt>
-            <dd className="toolkit-detail-value">
-              <Tooltip title={app.cliPath || '未探测到可执行路径'}>{app.cliPath || '未探测到'}</Tooltip>
+            <dt className="toolkit-detail-label">当前版本</dt>
+            <dd className={`toolkit-detail-value${app.installed ? '' : ' is-uninstalled'}`}>
+              {currentVersion}
             </dd>
           </div>
+          {app.installed ? (
+            <div className="toolkit-detail-row">
+              <dt className="toolkit-detail-label">程序路径</dt>
+              <dd className="toolkit-detail-value">
+                <Tooltip title={app.cliPath || '未探测到可执行路径'}>{app.cliPath || '未探测到'}</Tooltip>
+              </dd>
+            </div>
+          ) : null}
           {existingConfig ? (
             <div className="toolkit-detail-row">
               <dt className="toolkit-detail-label">配置</dt>
@@ -133,6 +126,9 @@ export default function ManagedAppCard({
             <InstallLifecycleAction
               action="install"
               size="small"
+              iconOnly
+              tooltip={`安装 ${app.name}`}
+              aria-label={`安装 ${app.name}`}
               loading={busyAction === 'install'}
               disabled={Boolean(busyAction)}
               onClick={() => onAction(app, 'install')}
@@ -143,17 +139,25 @@ export default function ManagedAppCard({
               <InstallLifecycleAction
                 action="update"
                 size="small"
+                iconOnly
+                tooltip={app.canUpdate === false
+                  ? (app.updateReason || '没有可用更新计划')
+                  : `更新 ${app.name}`}
+                aria-label={`更新 ${app.name}`}
                 loading={busyAction === 'update'}
                 disabled={Boolean(busyAction) || app.canUpdate === false}
-                title={app.canUpdate === false ? (app.updateReason || '没有可用更新计划') : undefined}
                 onClick={() => onAction(app, 'update')}
               />
               <InstallLifecycleAction
                 action="uninstall"
                 size="small"
+                iconOnly
+                tooltip={app.canUninstall === false
+                  ? `无法卸载 ${app.name}：${app.uninstallReason || '没有安全卸载计划'}`
+                  : `卸载 ${app.name}`}
+                aria-label={`卸载 ${app.name}`}
                 loading={busyAction === 'uninstall'}
                 disabled={Boolean(busyAction) || app.canUninstall === false}
-                title={app.canUninstall === false ? (app.uninstallReason || '没有安全卸载计划') : undefined}
                 onClick={() => onAction(app, 'uninstall')}
               />
             </>
@@ -172,9 +176,15 @@ export default function ManagedAppCard({
             </Tooltip>
           ) : null}
           {existingConfig ? (
-            <Button size="small" icon={<EditOutlined />} onClick={() => onEditConfig(app)}>
-              编辑配置
-            </Button>
+            <Tooltip title={`编辑 ${app.name} 配置`}>
+              <Button
+                size="small"
+                shape="circle"
+                icon={<EditOutlined />}
+                aria-label={`编辑 ${app.name} 配置`}
+                onClick={() => onEditConfig(app)}
+              />
+            </Tooltip>
           ) : null}
         </Space>
         <div className="toolkit-sync-summary">

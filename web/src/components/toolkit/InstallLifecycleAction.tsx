@@ -4,6 +4,7 @@ import {
   DownloadOutlined,
   ReloadOutlined
 } from '@ant-design/icons';
+import { Tooltip } from 'antd';
 import Button, { type AppButtonProps } from '@/components/ui/AppButton';
 
 export type InstallLifecycleActionName = 'install' | 'update' | 'uninstall';
@@ -18,6 +19,8 @@ export interface InstallLifecycleActionProps
   extends Omit<AppButtonProps, 'children' | 'icon'> {
   action: InstallLifecycleActionName;
   children?: ReactNode;
+  iconOnly?: boolean;
+  tooltip?: ReactNode;
 }
 
 /**
@@ -28,20 +31,28 @@ export default function InstallLifecycleAction({
   action,
   children,
   danger,
+  iconOnly = false,
+  tooltip,
   type,
   ...props
 }: InstallLifecycleActionProps) {
   const meta = ACTION_META[action];
   const isUninstall = action === 'uninstall';
+  const accessibleLabel = props['aria-label'] || meta.label;
+  const buttonType = type || (!iconOnly && action === 'install' ? 'primary' : 'default');
 
-  return (
+  const button = (
     <Button
       {...props}
+      aria-label={iconOnly ? accessibleLabel : props['aria-label']}
       danger={danger || isUninstall}
-      type={type || (action === 'install' ? 'primary' : 'default')}
+      type={buttonType}
+      shape={iconOnly ? 'circle' : props.shape}
       icon={meta.icon}
     >
-      {children || meta.label}
+      {iconOnly ? null : (children || meta.label)}
     </Button>
   );
+
+  return iconOnly ? <Tooltip title={tooltip ?? accessibleLabel}>{button}</Tooltip> : button;
 }

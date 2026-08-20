@@ -1174,6 +1174,10 @@
   white-space: normal;
 }
 
+.toolkit-detail-value.is-uninstalled {
+  color: var(--color-muted);
+}
+
 .toolkit-card-actions {
   display: flex;
   min-width: 0;

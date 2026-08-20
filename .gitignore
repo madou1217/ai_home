@@ -75,6 +75,10 @@ web/src/.umi-production/
 /[[]object Object[]]/
 .tmp-mitm/
 
+# Local agent and browser-automation scratch artifacts.
+/.omo/
+/.playwright-*
+
 # Generated book content & assets policy (书籍内容与生成大图不入 Git)
 /docs/*-book/**
 !/docs/*-book/README.md

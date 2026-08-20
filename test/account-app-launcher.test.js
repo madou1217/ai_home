@@ -18,6 +18,10 @@ const {
 const { registerAccountIdentity } = require('../lib/account/account-registration');
 const { upsertAccountRef } = require('../lib/server/account-ref-store');
 const { readDesktopSession, writeDesktopSession } = require('../lib/server/kimi-desktop-session');
+const { ZCODE_CREDENTIAL_SECRET_ENV } = require('../lib/account/zcode-credential');
+const {
+  buildZcodeDesktopApplicationName
+} = require('../lib/runtime/account-app-process-marker');
 
 const ACCOUNT_REF = 'acct_0123456789abcdef0123';
 const SANDBOX_DIR = nodePath.join('C:\\aih-home', 'run', 'auth-projections', 'zcode', ACCOUNT_REF);
@@ -84,7 +88,8 @@ function createLauncher(overrides = {}) {
     resolveCliPath: overrides.resolveCliPath,
     readAccountCredentialRecord: overrides.readAccountCredentialRecord,
     seedKimiDesktopTokenStore: overrides.seedKimiDesktopTokenStore,
-    adoptKimiDesktopTokensFromProfile: overrides.adoptKimiDesktopTokensFromProfile
+    adoptKimiDesktopTokensFromProfile: overrides.adoptKimiDesktopTokensFromProfile,
+    resolveZcodeCredentialSecret: overrides.resolveZcodeCredentialSecret
   });
   return { launcher, fakeSpawn, fsImpl };
 }
@@ -593,6 +598,31 @@ test('zcode desktop 在 macOS 使用 manifest installPaths 解析 .app 内可执
     `/aih-home/run/auth-projections/zcode/${ACCOUNT_REF}/.zcode`);
 });
 
+test('zcode desktop 在 macOS 隔离 HOME 时固定宿主凭据密钥', () => {
+  const bundlePath = '/Applications/ZCode.app';
+  const expectedExe = '/Applications/ZCode.app/Contents/MacOS/ZCode';
+  const profileDir = `/aih-home/run/auth-projections/zcode/${ACCOUNT_REF}`;
+  const { launcher, fakeSpawn } = createLauncher({
+    path: nodePath.posix,
+    processObj: { platform: 'darwin', execPath: '/usr/local/bin/node', env: {} },
+    fs: createFakeFs([bundlePath, expectedExe]),
+    env: { HOME: '/Users/x', PATH: '' },
+    getProfileDir: () => profileDir,
+    resolveZcodeCredentialSecret: () => 'host-stable-zcode-secret'
+  });
+
+  const result = launcher.launchAccountApp({
+    provider: 'zcode', accountRef: ACCOUNT_REF, kind: 'desktop'
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(fakeSpawn.calls[0].options.env.HOME, profileDir);
+  assert.equal(
+    fakeSpawn.calls[0].options.env[ZCODE_CREDENTIAL_SECRET_ENV],
+    'host-stable-zcode-secret'
+  );
+});
+
 test('zcode desktop 在 Linux 通过 PATH 上的 execNames 解析', () => {
   const { launcher } = createLauncher({
     path: nodePath.posix,
@@ -967,6 +997,36 @@ test('listRunningDesktopInstances 在 posix 解析 ps 输出并排除 --type= �
   assert.deepEqual(instances, [
     { pid: 9201, userDataDir: '/home/x/.aih/a/electron-user-data' }
   ]);
+});
+
+test('listRunningDesktopInstances 在 macOS 识别改名后的 ZCode 主进程', () => {
+  const applicationName = buildZcodeDesktopApplicationName(ACCOUNT_REF);
+  const execFileSync = (file, args) => {
+    assert.equal(file, 'ps');
+    assert.deepEqual(args, ['-ax', '-o', 'pid=,command=']);
+    return [
+      `  9251 ${applicationName}`,
+      `  9252 ${applicationName} --type=renderer`,
+      '  9253 /usr/bin/vim session.txt'
+    ].join('\n');
+  };
+
+  assert.deepEqual(listRunningDesktopInstances('macos', { execFileSync }), [
+    { pid: 9251, applicationName }
+  ]);
+});
+
+test('findRunningDesktopPids 在 macOS 通过 ZCode application name 定位实例', () => {
+  const applicationName = buildZcodeDesktopApplicationName(ACCOUNT_REF);
+  const execFileSync = () => `  9261 ${applicationName}\n`;
+  const platformConfig = { execNames: ['ZCode'] };
+
+  assert.deepEqual(findRunningDesktopPids(
+    '/aih-home/run/auth-projections/zcode/acct_x/electron-user-data',
+    platformConfig,
+    'macos',
+    { execFileSync, applicationName }
+  ), [9261]);
 });
 
 test('listRunningCliInstances 在 POSIX 通过 marker 和父子进程识别账号 CLI', () => {

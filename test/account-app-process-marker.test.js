@@ -5,6 +5,8 @@ const assert = require('node:assert/strict');
 
 const {
   buildAccountAppProcessTitle,
+  buildZcodeDesktopApplicationName,
+  parseZcodeDesktopApplicationName,
   markAccountAppProcess
 } = require('../lib/runtime/account-app-process-marker');
 
@@ -53,4 +55,23 @@ test('进程标题只接受规范 accountRef，缺失时仍可由 provider 与 C
       AIH_PROVIDER_ACCOUNT_REF: 'unexpected-ref'
     }
   ), 'aih codex 3 AIH_ACCOUNT_APP=1');
+});
+
+test('ZCode application name 使用稳定账号身份且只解析主进程执行名', () => {
+  const applicationName = buildZcodeDesktopApplicationName('acct_0123456789abcdef0123');
+  assert.match(applicationName, /^ZCode-[0-9a-f]{8}$/);
+  assert.equal(
+    buildZcodeDesktopApplicationName('acct_0123456789abcdef0123'),
+    applicationName
+  );
+  assert.notEqual(
+    buildZcodeDesktopApplicationName('acct_abcdef0123456789abcd'),
+    applicationName
+  );
+  assert.equal(parseZcodeDesktopApplicationName(applicationName), applicationName);
+  assert.equal(
+    parseZcodeDesktopApplicationName(`/Applications/ZCode.app/Contents/MacOS/${applicationName}`),
+    applicationName
+  );
+  assert.equal(parseZcodeDesktopApplicationName(`rg ${applicationName}`), '');
 });

@@ -12,6 +12,9 @@ const {
 } = require('../lib/server/webui-account-routes');
 const { upsertAccountRef } = require('../lib/server/account-ref-store');
 const { writeAccountCredentials } = require('../lib/server/account-credential-store');
+const {
+  buildZcodeDesktopApplicationName
+} = require('../lib/runtime/account-app-process-marker');
 
 function createResCapture() {
   return {
@@ -268,6 +271,26 @@ test('app-entries 端点在外部关闭 Desktop 后下一次扫描移除运行�
   const body = ctx.res.json();
   assert.deepEqual(body.runningAccounts, []);
   assert.deepEqual(body.runningAccountPids, {});
+});
+
+test('app-entries 端点按 macOS ZCode application name 映射运行账号与退出状态', async (t) => {
+  const fixture = createFixture(t);
+  const applicationName = buildZcodeDesktopApplicationName(fixture.accountRef);
+  let running = [{ pid: 9051, applicationName }];
+  const detector = {
+    detect: () => ({ zcode: { desktop: true, cli: false } }),
+    scanRunning: () => running,
+    scanRunningCli: () => []
+  };
+  const ctx = createAppEntriesCtx(fixture, detector);
+
+  await handleListAppEntriesRequest(ctx);
+  assert.deepEqual(ctx.res.json().runningAccountPids, { [fixture.accountRef]: [9051] });
+
+  running = [];
+  ctx.res = createResCapture();
+  await handleListAppEntriesRequest(ctx);
+  assert.deepEqual(ctx.res.json().runningAccountPids, {});
 });
 
 test('app-entries 端点把 marker CLI 的父子 PID 映射回 accountRef', async (t) => {

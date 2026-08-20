@@ -129,6 +129,7 @@ import {
   renderAccountRoleTags
 } from '@/features/accounts/AccountBadges';
 import AccountActivityIcon from '@/features/accounts/AccountActivityIcon';
+import { startAccountAppEntryPolling } from '@/features/accounts/app-entry-poller';
 
 // Provider 顺序和认证方式都来自 Go 核心生成的 Client 合同。
 const PROVIDERS: readonly Provider[] = providerIds;
@@ -619,33 +620,24 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
   useEffect(() => () => {
     Object.values(cliClickTimers.current).forEach((timer) => clearTimeout(timer));
   }, []);
-  const loadAppEntries = async (options: { refresh?: boolean } = {}) => {
+  const applyAppEntries = React.useCallback((result: Awaited<ReturnType<typeof accountsAPI.listAppEntries>>) => {
+    setAppEntries(result.entries);
+    setAppCapabilities(result.capabilities);
+    setRunningAccounts(result.runningAccounts);
+  }, []);
+  const loadAppEntries = React.useCallback(async (options: { refresh?: boolean } = {}) => {
     try {
       const result = await accountsAPI.listAppEntries(options);
-      setAppEntries(result.entries);
-      setAppCapabilities(result.capabilities);
-      setRunningAccounts(result.runningAccounts);
+      applyAppEntries(result);
     } catch (_error) {
       setAppEntries((current) => current || {});
     }
-  };
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const result = await accountsAPI.listAppEntries();
-        if (cancelled) return;
-        setAppEntries(result.entries);
-        setAppCapabilities(result.capabilities);
-        setRunningAccounts(result.runningAccounts);
-      } catch (_error) {
-        if (!cancelled) setAppEntries({});
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  }, [applyAppEntries]);
+  useEffect(() => startAccountAppEntryPolling({
+    request: () => accountsAPI.listAppEntries(),
+    onResult: applyAppEntries,
+    onError: () => setAppEntries((current) => current || {})
+  }), [applyAppEntries]);
 
   // 网关请求活动轮询：驱动账号行首图标「运行中」旋转，转速随请求速率变化。
   // 数据来自 /webui/management/metrics 的 accountActivity（服务端每 1s 刷新）。

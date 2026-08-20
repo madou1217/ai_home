@@ -64,7 +64,7 @@ import type {
   ClientTerminalItem,
   Provider,
 } from '@/types';
-import ProviderIcon, { providerIds, providerNames } from '@/components/chat/ProviderIcon';
+import { providerIds, providerNames } from '@/components/chat/ProviderIcon';
 import { PROVIDER_AUTH_OPTIONS, PROVIDER_CATALOG } from '@/providers/catalog';
 import UsageProgressEffects from '@/features/accounts/UsageProgressEffects';
 import AccountTokenUsageGardenCell from '@/features/accounts/AccountTokenUsageGardenCell';
@@ -1788,13 +1788,21 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
     );
   };
 
-  // provider tab 聚合运行态：该 provider 下任一账号 inFlight > 0 时 tab 图标转圈。
-  const providerRunning: Record<string, boolean> = {};
+  // provider tab 聚合账号活动，复用行首图标组件，保证转轴与速率语义完全一致。
+  const providerActivity: Record<string, ManagementAccountActivity> = {};
   accounts.forEach((account) => {
     const activity = getAccountActivity(account);
-    if (activity && activity.inFlight > 0) {
-      providerRunning[String(account.provider).toLowerCase()] = true;
-    }
+    if (!activity) return;
+    const provider = String(account.provider).toLowerCase();
+    const current = providerActivity[provider];
+    providerActivity[provider] = {
+      provider,
+      accountRef: '*',
+      inFlight: (current?.inFlight || 0) + Math.max(0, Number(activity.inFlight) || 0),
+      rate: (current?.rate || 0) + Math.max(0, Number(activity.rate) || 0),
+      lastActivityAt: Math.max(current?.lastActivityAt || 0, Number(activity.lastActivityAt) || 0),
+      updatedAt: Math.max(current?.updatedAt || 0, Number(activity.updatedAt) || 0)
+    };
   });
 
   const tabItems = [
@@ -1806,12 +1814,11 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
       key: provider,
       label: (
         <span style={{ padding: '0 8px', display: 'flex', alignItems: 'center', gap: 4 }}>
-          <span
-            className={`accounts-tab-provider-icon${providerRunning[provider] ? ' accounts-tab-provider-icon--running' : ''}`}
-            data-provider-tab={provider}
-          >
-            <ProviderIcon provider={provider} size={14} />
-          </span>
+          <AccountActivityIcon
+            provider={provider}
+            activity={providerActivity[provider] || null}
+            size={14}
+          />
           {providerNames[provider]} ({providerStats[provider].total})
         </span>
       )

@@ -17,3 +17,10 @@
     transform: perspective(160px) rotateY(360deg);
   }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  [data-account-activity="active"] {
+    animation: none !important;
+    filter: drop-shadow(0 0 3px rgba(22, 119, 255, 0.45));
+  }
+}

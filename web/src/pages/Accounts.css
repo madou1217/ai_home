@@ -129,16 +129,3 @@
   border-color: var(--color-info, #1677ff);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-info, #1677ff) 14%, transparent);
 }
-
-/* provider tab 图标转圈：该 provider 下任一账号运行中时与账号行首图标同步旋转 */
-.accounts-tab-provider-icon {
-  display: inline-flex;
-  align-items: center;
-  line-height: 1;
-}
-.accounts-tab-provider-icon--running {
-  animation: aih-account-activity-spin 1.2s linear infinite;
-}
-.accounts-tab-provider-icon--running[data-provider-tab="agy"] {
-  animation-name: aih-account-activity-spin-y;
-}

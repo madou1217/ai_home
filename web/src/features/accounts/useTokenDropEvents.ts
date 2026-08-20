@@ -31,6 +31,8 @@ export const TOKEN_DROP_LIFETIME_MS = 2400;
 const MAX_DROPS_PER_ACCOUNT = 6;
 /** 全页面事件队列上限。 */
 const MAX_DROPS_TOTAL = 32;
+/** 页面暂存的原始 SSE 事件上限；避免长期开页时 liveEvents 无限增长。 */
+export const MAX_LIVE_TOKEN_EVENTS = 32;
 
 function readDayTokens(usage: AccountTokenUsage | null | undefined): number {
   const value = Number(usage && usage.day);
@@ -115,6 +117,20 @@ export function appendTokenDrop(drops: TokenDropEvent[], next: TokenDropEvent): 
 }
 
 /**
+ * 暂存一条原始 SSE 事件：按 id 去重并保留最近一页事件。
+ * useTokenDropEvents 会再把这些事件合并进动画队列，两层队列都必须有界。
+ */
+export function appendLiveTokenEvent(
+  events: TokenDropEvent[],
+  next: TokenDropEvent
+): TokenDropEvent[] {
+  const retained = Array.isArray(events)
+    ? events.filter((event) => event && event.id !== next.id)
+    : [];
+  return [...retained, next].slice(-MAX_LIVE_TOKEN_EVENTS);
+}
+
+/**
  * 把实时通道（accounts/watch SSE）推送的 token 消耗事件并入掉落队列。
  * 幂等：以事件 id 去重，同一份 liveEvents 重复传入不会产生重复掉落。
  * 纯函数——输入现有队列 + 实时事件 + 已见 id 集合，输出新队列与新已见集合。
@@ -124,7 +140,14 @@ export function mergeLiveTokenDrops(
   liveEvents: TokenDropEvent[],
   seenIds: Set<string>
 ): { drops: TokenDropEvent[]; seenIds: Set<string> } {
-  const nextSeen = new Set(seenIds);
+  const liveIds = new Set(
+    (Array.isArray(liveEvents) ? liveEvents : [])
+      .map((event) => String(event?.id || ''))
+      .filter(Boolean)
+  );
+  const nextSeen = new Set(
+    Array.from(seenIds).filter((id) => liveIds.has(id))
+  );
   let nextDrops = drops;
   for (const event of Array.isArray(liveEvents) ? liveEvents : []) {
     if (!event || !event.id || nextSeen.has(event.id)) continue;
@@ -158,7 +181,10 @@ export function useTokenDropEvents(
   }, [accounts]);
 
   useEffect(() => {
-    if (!Array.isArray(liveEvents) || liveEvents.length === 0) return;
+    if (!Array.isArray(liveEvents) || liveEvents.length === 0) {
+      seenLiveIdsRef.current.clear();
+      return;
+    }
     setDrops((current) => {
       const merged = mergeLiveTokenDrops(current, liveEvents, seenLiveIdsRef.current);
       seenLiveIdsRef.current = merged.seenIds;

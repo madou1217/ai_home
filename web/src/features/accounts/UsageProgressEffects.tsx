@@ -56,6 +56,8 @@ const UsageProgressEffects = ({ record, activity, drops }: Props) => {
         pulsing ? 'usage-progress-effects--pulsing' : ''
       ].filter(Boolean).join(' ')}
       data-usage-layout={record.apiKeyMode ? 'unmetered' : 'metered'}
+      data-account-ref={accountRef}
+      data-quota-damage-source={record.apiKeyMode ? 'true' : undefined}
     >
       <UsageSnapshotCell
         record={record}
@@ -63,10 +65,9 @@ const UsageProgressEffects = ({ record, activity, drops }: Props) => {
         activityRate={Number(activity?.rate) || 0}
         activeModels={activity?.activeModels}
       />
-      <TokenDropNumber
-        drops={accountDrops}
-        placement={record.apiKeyMode ? 'unmetered' : 'metered'}
-      />
+      {!record.apiKeyMode ? (
+        <TokenDropNumber drops={accountDrops} placement="metered" />
+      ) : null}
     </div>
   );
 };

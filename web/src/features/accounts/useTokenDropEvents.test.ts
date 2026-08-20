@@ -2,7 +2,14 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type { Account } from '@/types';
-import { appendTokenDrop, diffTokenUsage, mergeLiveTokenDrops, type TokenDropEvent } from './useTokenDropEvents.ts';
+import {
+  appendLiveTokenEvent,
+  appendTokenDrop,
+  diffTokenUsage,
+  MAX_LIVE_TOKEN_EVENTS,
+  mergeLiveTokenDrops,
+  type TokenDropEvent
+} from './useTokenDropEvents.ts';
 
 function makeAccount(overrides: Partial<Account> = {}): Account {
   return {
@@ -174,6 +181,21 @@ test('appendTokenDrop keeps at most six active drops for one account', () => {
   assert.equal(next.some((drop) => drop.id === 'drop-b-1'), true);
 });
 
+test('appendLiveTokenEvent bounds and de-duplicates the raw SSE event queue', () => {
+  let events: TokenDropEvent[] = [];
+  for (let index = 0; index < MAX_LIVE_TOKEN_EVENTS + 4; index += 1) {
+    events = appendLiveTokenEvent(events, makeDrop(`live-${index}`));
+  }
+
+  assert.equal(events.length, MAX_LIVE_TOKEN_EVENTS);
+  assert.equal(events[0].id, 'live-4');
+  assert.equal(events.at(-1)?.id, `live-${MAX_LIVE_TOKEN_EVENTS + 3}`);
+
+  events = appendLiveTokenEvent(events, makeDrop('live-12'));
+  assert.equal(events.filter((event) => event.id === 'live-12').length, 1);
+  assert.equal(events.at(-1)?.id, 'live-12');
+});
+
 test('mergeLiveTokenDrops appends unseen live events and records their ids', () => {
   const drops = [makeDrop('diff-1')];
   const liveEvents = [makeDrop('live-1'), makeDrop('live-2')];
@@ -197,6 +219,15 @@ test('mergeLiveTokenDrops is idempotent for already-seen live events', () => {
   assert.equal(merged.filter((drop) => drop.id === 'live-1').length, 1);
   assert.equal(seenIds.has('live-1'), true);
   assert.equal(seenIds.has('live-2'), true);
+});
+
+test('mergeLiveTokenDrops prunes seen ids that fell out of the bounded live queue', () => {
+  const seen = new Set(['live-old', 'live-current']);
+  const liveEvents = [makeDrop('live-current')];
+
+  const { seenIds } = mergeLiveTokenDrops([], liveEvents, seen);
+
+  assert.deepEqual(Array.from(seenIds), ['live-current']);
 });
 
 test('mergeLiveTokenDrops skips events without id and tolerates non-array input', () => {

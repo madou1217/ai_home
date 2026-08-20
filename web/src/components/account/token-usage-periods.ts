@@ -119,3 +119,14 @@ export function getUsedModels(usage: AccountTokenUsage) {
     (model) => TOKEN_USAGE_PERIODS.some(({ key }) => getModelUsageValue(model, key) > 0)
   );
 }
+
+/**
+ * Token 柱的唯一高度算法。图表与柱顶效果必须共享它，否则对数缩放后视觉锚点会漂移。
+ */
+export function getTokenUsageBarHeight(value: TokenUsageValue, maximum: number) {
+  if (value === null || value <= 0 || maximum <= 0) return 2;
+
+  // 对数高度只负责表达量级，精确值仍由文字和 Tooltip 负责。
+  const normalized = Math.log1p(value) / Math.log1p(maximum);
+  return Math.max(6, Math.round(normalized * TOKEN_CHART_MAX_HEIGHT));
+}

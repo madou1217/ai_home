@@ -1,0 +1,712 @@
+.account-token-usage-garden-cell {
+  --garden-stage-top: 48px;
+
+  position: relative;
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  justify-content: center;
+  padding-top: 0;
+  overflow: visible;
+  transition: padding-top var(--motion-slower, 420ms) var(--ease-emphasized, cubic-bezier(0.2, 0, 0, 1));
+}
+
+.account-token-usage-garden-cell[data-garden-stage-active="true"] {
+  padding-top: var(--garden-stage-top);
+}
+
+.upstream-quota-garden {
+  /* 与 TokenUsageCell 桌面槽宽一致；移动端在下方媒体查询切回 52px。 */
+  --garden-slot: 46px;
+
+  position: absolute;
+  top: var(--garden-stage-top);
+  left: 50%;
+  z-index: 9;
+  display: block;
+  width: calc(var(--garden-columns) * var(--garden-slot) + 2px);
+  height: 38px;
+  overflow: visible;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.upstream-quota-plant {
+  position: absolute;
+  top: var(--plant-y);
+  left: var(--plant-x);
+  z-index: 2;
+  width: var(--garden-slot);
+  height: calc(var(--stem-height) + 23px);
+  overflow: hidden;
+  transform: translate(-50%, -100%);
+  transform-origin: 50% 100%;
+}
+
+.upstream-quota-plant-growth,
+.upstream-quota-plant-sway {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 100%;
+}
+
+.upstream-quota-plant-growth {
+  transform: translateY(calc(100% + 2px));
+  transition-property: transform;
+  transition-duration: var(--garden-retreat-duration);
+  transition-timing-function: cubic-bezier(0.58, 0, 0.9, 0.42);
+  will-change: transform;
+}
+
+.upstream-quota-plant--lifecycle-hidden .upstream-quota-plant-growth {
+  transition: none;
+}
+
+.upstream-quota-plant--lifecycle-emerging .upstream-quota-plant-growth,
+.upstream-quota-plant--lifecycle-visible .upstream-quota-plant-growth {
+  transform: translateY(0);
+}
+
+.upstream-quota-plant--lifecycle-emerging .upstream-quota-plant-growth {
+  transition-duration: var(--garden-emerge-duration);
+  transition-timing-function: cubic-bezier(0.16, 0.78, 0.24, 1);
+}
+
+.upstream-quota-plant--lifecycle-retreating .upstream-quota-plant-growth {
+  transform: translateY(calc(100% + 2px));
+  transition-duration: var(--garden-retreat-duration);
+  transition-timing-function: cubic-bezier(0.58, 0, 0.9, 0.42);
+}
+
+.upstream-quota-plant-sway {
+  animation: upstream-quota-plant-sway var(--sway-duration) ease-in-out var(--sway-delay) infinite alternate;
+}
+
+.upstream-quota-plant--lifecycle-hidden .upstream-quota-plant-sway,
+.upstream-quota-plant--reserved .upstream-quota-plant-sway {
+  animation-play-state: paused;
+}
+
+.upstream-quota-plant-root-anchor {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  display: block;
+  width: 1px;
+  height: 1px;
+  transform: translate(-50%, 50%);
+}
+
+.upstream-quota-plant-stem {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  box-sizing: border-box;
+  width: var(--stem-width);
+  height: calc(var(--stem-height) + 8px);
+  border: 0.5px solid rgb(30 66 26 / 72%);
+  border-radius: 999px;
+  background:
+    repeating-linear-gradient(
+      138deg,
+      rgb(225 242 189 / 48%) 0 0.7px,
+      transparent 0.7px 2.1px
+    ),
+    repeating-linear-gradient(
+      42deg,
+      transparent 0 1.1px,
+      rgb(20 58 25 / 42%) 1.1px 1.8px
+    ),
+    var(--stem-color);
+  box-shadow: 0.5px 1px 1.5px rgb(30 41 25 / 24%);
+  transform: translateX(-50%);
+}
+
+.upstream-quota-plant-leaf {
+  position: absolute;
+  bottom: 6px;
+  left: 50%;
+  z-index: -1;
+  width: 10px;
+  height: 6px;
+  border: 1px solid rgb(37 45 30 / 48%);
+  background: var(--stem-color);
+  box-shadow: inset 1px 1px rgb(255 255 255 / 18%);
+}
+
+.upstream-quota-plant-leaf--left {
+  border-radius: 90% 10% 75% 25%;
+  transform: translateX(-90%) rotate(-26deg);
+  transform-origin: 100% 70%;
+}
+
+.upstream-quota-plant-leaf--right {
+  border-radius: 10% 90% 25% 75%;
+  transform: translateX(-10%) rotate(29deg);
+  transform-origin: 0 70%;
+}
+
+.upstream-quota-plant-head-stage {
+  position: absolute;
+  bottom: calc(var(--stem-height) - 2px);
+  left: 50%;
+  z-index: 3;
+  width: 20px;
+  height: 19px;
+  transform: translateX(-50%);
+  transform-origin: 70% 72%;
+  transition: opacity 80ms linear;
+}
+
+.upstream-quota-plant-head-visual,
+.upstream-quota-plant-mouth-core,
+.upstream-quota-plant-head-half {
+  position: absolute;
+  inset: 0;
+}
+
+.upstream-quota-plant-head-visual {
+  display: block;
+  filter: drop-shadow(0 1px 1px rgb(35 24 21 / 24%));
+  transform-origin: 68% 64%;
+}
+
+.upstream-quota-plant-mouth-core {
+  top: 31%;
+  right: 24%;
+  bottom: 23%;
+  left: 5%;
+  border: 0.6px solid rgb(46 26 24 / 72%);
+  border-radius: 55% 35% 48% 52%;
+  background: var(--mouth-color);
+  box-shadow: inset 1px 1px 2px rgb(0 0 0 / 26%);
+}
+
+.upstream-quota-plant-head-half {
+  background-image: url('../../../public/assets/quota-garden/quota-plant-head.webp');
+  background-position: center;
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  filter: hue-rotate(var(--head-hue));
+  will-change: transform;
+}
+
+.upstream-quota-plant-head-half--upper {
+  clip-path: inset(0 0 49% 0);
+  transform: translateY(1px) rotate(1deg);
+  transform-origin: 72% 49%;
+}
+
+.upstream-quota-plant-head-half--lower {
+  clip-path: inset(46% 0 0 0);
+  transform: translateY(-1px) rotate(-1deg);
+  transform-origin: 72% 51%;
+}
+
+.upstream-quota-plant-eye-accent {
+  position: absolute;
+  top: 25%;
+  left: 62%;
+  z-index: 4;
+  display: block;
+  width: 1.6px;
+  height: 1.6px;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 88%);
+  box-shadow: 0 0 0 0.4px rgb(63 37 28 / 34%);
+}
+
+.upstream-quota-plant--attacking .upstream-quota-plant-head-stage {
+  opacity: 0;
+}
+
+@keyframes upstream-quota-plant-sway {
+  from {
+    transform: rotate(-3.5deg);
+  }
+  to {
+    transform: rotate(4deg);
+  }
+}
+
+.upstream-quota-attack-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 980;
+  display: block;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.upstream-quota-attack,
+.upstream-quota-attack-damage {
+  position: absolute;
+}
+
+.upstream-quota-attack {
+  inset: 0;
+}
+
+.upstream-quota-attack-damage {
+  top: var(--damage-y);
+  left: var(--damage-x);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  filter: drop-shadow(0 2px 2px rgb(92 27 8 / 24%));
+  font-family: var(--font-mono, monospace);
+  line-height: 1.1;
+  white-space: nowrap;
+  will-change: transform, opacity;
+}
+
+.upstream-quota-attack--caught .upstream-quota-attack-damage {
+  animation: upstream-quota-damage-eaten var(--attack-duration) cubic-bezier(0.2, 0.72, 0.2, 1) var(--attack-delay) both;
+}
+
+.upstream-quota-attack--missed .upstream-quota-attack-damage {
+  animation: upstream-quota-damage-missed var(--miss-duration) cubic-bezier(0.34, 0.02, 0.62, 1) var(--attack-delay) both;
+}
+
+.upstream-quota-attack-rope {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: visible;
+  shape-rendering: geometricPrecision;
+}
+
+.upstream-quota-attack-rope-mask {
+  mask-type: luminance;
+}
+
+.upstream-quota-attack-rope-reveal,
+.upstream-quota-attack-rope-shadow,
+.upstream-quota-attack-rope-core,
+.upstream-quota-attack-rope-braid {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.upstream-quota-attack-rope-reveal {
+  stroke: white;
+  stroke-width: 7px;
+  stroke-dasharray: var(--attack-rope-rest) 100;
+  will-change: stroke-dasharray;
+  animation: upstream-quota-rope-reach var(--attack-duration) linear var(--attack-delay) both;
+}
+
+.upstream-quota-attack-rope-shadow {
+  stroke: rgb(28 61 25 / 78%);
+  stroke-width: 4.2px;
+}
+
+.upstream-quota-attack-rope-core {
+  stroke: hsl(104 43% 38%);
+  stroke-width: 3px;
+}
+
+.upstream-quota-attack-rope-braid {
+  stroke: rgb(224 241 185 / 72%);
+  stroke-width: 0.85px;
+  stroke-dasharray: 1.4px 2.7px;
+  stroke-dashoffset: 0.7px;
+}
+
+.upstream-quota-attack-root-knot {
+  position: absolute;
+  top: var(--attack-root-y);
+  left: var(--attack-root-x);
+  z-index: 2;
+  box-sizing: border-box;
+  width: 5px;
+  height: 7px;
+  border: 0.6px solid rgb(28 61 25 / 70%);
+  border-radius: 48% 52% 44% 56%;
+  background:
+    repeating-linear-gradient(
+      135deg,
+      rgb(225 242 189 / 62%) 0 0.8px,
+      transparent 0.8px 2px
+    ),
+    hsl(104 43% 38%);
+  box-shadow: 0 1px 1.5px rgb(24 43 22 / 25%);
+  opacity: 0;
+  transform: translate(-50%, -50%);
+  animation: upstream-quota-root-knot var(--attack-duration) linear var(--attack-delay) both;
+}
+
+.upstream-quota-attack-head-motion,
+.upstream-quota-attack-swallow-motion {
+  position: absolute;
+  top: 0;
+  left: 0;
+  offset-path: var(--attack-offset-path);
+  offset-anchor: 50% 50%;
+}
+
+.upstream-quota-attack-head-motion {
+  z-index: 4;
+  width: 20px;
+  height: 19px;
+  offset-distance: 0%;
+  offset-rotate: auto 180deg;
+  filter: drop-shadow(0 2px 2px rgb(35 24 21 / 28%));
+  will-change: offset-distance;
+  animation: upstream-quota-head-route var(--attack-duration) linear var(--attack-delay) both;
+}
+
+.upstream-quota-attack-head-pose,
+.upstream-quota-attack-head-scale {
+  position: absolute;
+  inset: 0;
+}
+
+.upstream-quota-attack-head-pose {
+  transform-origin: 50% 50%;
+  animation: upstream-quota-head-pose var(--attack-duration) ease-in-out var(--attack-delay) both;
+}
+
+.upstream-quota-attack-head-scale {
+  transform-origin: 78% 56%;
+  will-change: transform;
+  animation: upstream-quota-head-bite-chew var(--attack-duration) ease-in-out var(--attack-delay) both;
+}
+
+.upstream-quota-attack-head-collar {
+  position: absolute;
+  top: 50%;
+  right: -1px;
+  z-index: -1;
+  box-sizing: border-box;
+  width: 7px;
+  height: 6px;
+  border: 0.6px solid rgb(28 61 25 / 72%);
+  border-radius: 45% 55% 48% 52%;
+  background:
+    repeating-linear-gradient(
+      135deg,
+      rgb(225 242 189 / 58%) 0 0.8px,
+      transparent 0.8px 2px
+    ),
+    hsl(104 43% 38%);
+  box-shadow: 1px 1px 1.5px rgb(24 43 22 / 22%);
+  transform: translateY(-50%);
+}
+
+.upstream-quota-attack-swallow-motion {
+  z-index: 3;
+  width: 8px;
+  height: 8px;
+  offset-distance: 100%;
+  offset-rotate: 0deg;
+  filter: drop-shadow(0 1px 1px rgb(30 54 25 / 34%));
+  opacity: 0;
+  will-change: offset-distance, opacity;
+  animation: upstream-quota-swallow-route var(--attack-duration) ease-in-out var(--attack-delay) both;
+}
+
+.upstream-quota-attack-swallow {
+  position: absolute;
+  inset: 0;
+  border: 1px solid rgb(42 73 35 / 58%);
+  border-radius: 50%;
+  background: radial-gradient(circle at 34% 32%, hsl(82 64% 72%) 0 18%, hsl(96 51% 51%) 42%, hsl(106 43% 34%) 100%);
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 24%);
+  transform-origin: 50% 50%;
+  animation: upstream-quota-swallow-pulse var(--attack-duration) ease-in-out var(--attack-delay) both;
+}
+
+.upstream-quota-attack-head-motion .upstream-quota-plant-head-half--upper {
+  animation: upstream-quota-jaw-upper var(--attack-duration) ease-in-out var(--attack-delay) both;
+}
+
+.upstream-quota-attack-head-motion .upstream-quota-plant-head-half--lower {
+  animation: upstream-quota-jaw-lower var(--attack-duration) ease-in-out var(--attack-delay) both;
+}
+
+@keyframes upstream-quota-damage-eaten {
+  0% {
+    transform: translate(-50%, -50%) scale(0.55);
+    opacity: 0;
+  }
+  8% {
+    transform: translate(-50%, -54%) scale(1.08);
+    opacity: 1;
+  }
+  34% {
+    transform: translate(-50%, -60%) scale(1);
+    opacity: 1;
+  }
+  44% {
+    transform: translate(-50%, -48%) scale(1.18);
+    opacity: 1;
+  }
+  53%, 100% {
+    transform: translate(-50%, -50%) rotate(12deg) scale(0.04);
+    opacity: 0;
+  }
+}
+
+@keyframes upstream-quota-damage-missed {
+  0% {
+    transform: translate(-50%, -50%) rotate(-4deg) scale(0.58);
+    opacity: 0;
+  }
+  12% {
+    transform: translate(-50%, -56%) rotate(3deg) scale(1.05);
+    opacity: 1;
+  }
+  42% {
+    transform: translate(-46%, -48%) rotate(-5deg) scale(0.98);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-58%, calc(-50% + var(--miss-fall))) rotate(17deg) scale(0.72);
+    opacity: 0;
+  }
+}
+
+@keyframes upstream-quota-rope-reach {
+  0% {
+    stroke-dasharray: 0 100;
+  }
+  6% {
+    stroke-dasharray: var(--attack-rope-rest) 100;
+  }
+  24% {
+    stroke-dasharray: var(--attack-rope-mid) 100;
+  }
+  34% {
+    stroke-dasharray: var(--attack-rope-near) 100;
+  }
+  42%, 57% {
+    stroke-dasharray: 100 100;
+  }
+  70%, 100% {
+    stroke-dasharray: var(--attack-rope-rest) 100;
+  }
+}
+
+@keyframes upstream-quota-root-knot {
+  0%, 3% {
+    opacity: 0;
+  }
+  7%, 70% {
+    opacity: 1;
+  }
+  74%, 100% {
+    opacity: 0;
+  }
+}
+
+@keyframes upstream-quota-head-route {
+  0%, 6% {
+    offset-distance: 0%;
+  }
+  24% {
+    offset-distance: 56%;
+  }
+  34% {
+    offset-distance: 86%;
+  }
+  42%, 57% {
+    offset-distance: 100%;
+  }
+  70%, 100% {
+    offset-distance: 0%;
+  }
+}
+
+@keyframes upstream-quota-head-pose {
+  0%, 6% {
+    transform: rotate(var(--attack-origin-correction));
+  }
+  14%, 58% {
+    transform: rotate(0deg);
+  }
+  70%, 100% {
+    transform: rotate(var(--attack-origin-correction));
+  }
+}
+
+@keyframes upstream-quota-swallow-route {
+  0%, 51% {
+    offset-distance: 100%;
+    opacity: 0;
+  }
+  55% {
+    offset-distance: 96%;
+    opacity: 1;
+  }
+  64% {
+    offset-distance: 38%;
+    opacity: 1;
+  }
+  70%, 100% {
+    offset-distance: 0%;
+    opacity: 0;
+  }
+}
+
+@keyframes upstream-quota-swallow-pulse {
+  0%, 51% {
+    transform: scale(0.55);
+  }
+  56% {
+    transform: scale(1);
+  }
+  62% {
+    transform: scale(1.2);
+  }
+  68% {
+    transform: scale(0.82);
+  }
+  70%, 100% {
+    transform: scale(0.5);
+  }
+}
+
+@keyframes upstream-quota-head-bite-chew {
+  0%, 29% {
+    transform: scale(1);
+  }
+  33% {
+    transform: scale(0.92, 1.08);
+  }
+  38% {
+    transform: scale(1.35, 1.26);
+  }
+  42% {
+    transform: scale(2.05, 1.9);
+  }
+  47% {
+    transform: scale(2.3, 2.15);
+  }
+  51% {
+    transform: scale(2.2, 2.05);
+  }
+  56% {
+    transform: scale(1.65, 1.48);
+  }
+  63% {
+    transform: scale(1.55);
+  }
+  70% {
+    transform: scale(1.72);
+  }
+  73% {
+    transform: translateY(2px) rotate(-4deg) scale(1.78, 1.24);
+  }
+  76% {
+    transform: translateY(-2px) rotate(4deg) scale(1.4, 1.74);
+  }
+  79% {
+    transform: translateY(2px) rotate(-3deg) scale(1.67, 1.28);
+  }
+  82% {
+    transform: scale(1.48, 1.58);
+  }
+  88% {
+    transform: scale(1.3);
+  }
+  94% {
+    transform: scale(1.12);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes upstream-quota-jaw-upper {
+  0%, 31% {
+    transform: translateY(1px) rotate(1deg);
+  }
+  35% {
+    transform: translateY(-2px) rotate(-8deg);
+  }
+  42%, 49% {
+    transform: translateY(-5px) rotate(-22deg);
+  }
+  55% {
+    transform: translateY(2px) rotate(5deg);
+  }
+  63%, 70%, 76% {
+    transform: translateY(1.5px) rotate(4deg);
+  }
+  73%, 79% {
+    transform: translateY(-0.5px) rotate(-3deg);
+  }
+  82%, 100% {
+    transform: translateY(1px) rotate(1deg);
+  }
+}
+
+@keyframes upstream-quota-jaw-lower {
+  0%, 31% {
+    transform: translateY(-1px) rotate(-1deg);
+  }
+  35% {
+    transform: translateY(2px) rotate(8deg);
+  }
+  42%, 49% {
+    transform: translateY(5px) rotate(22deg);
+  }
+  55% {
+    transform: translateY(-2px) rotate(-5deg);
+  }
+  63%, 70%, 76% {
+    transform: translateY(-1.5px) rotate(-4deg);
+  }
+  73%, 79% {
+    transform: translateY(0.5px) rotate(3deg);
+  }
+  82%, 100% {
+    transform: translateY(-1px) rotate(-1deg);
+  }
+}
+
+@media (max-width: 768px) {
+  .upstream-quota-garden {
+    --garden-slot: 52px;
+
+    width: calc(var(--garden-columns) * var(--garden-slot));
+  }
+
+  .upstream-quota-plant {
+    top: var(--plant-y-mobile);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .account-token-usage-garden-cell {
+    transition: none;
+  }
+
+  .upstream-quota-plant-growth {
+    transition: none;
+  }
+
+  .upstream-quota-plant--lifecycle-emerging .upstream-quota-plant-growth,
+  .upstream-quota-plant--lifecycle-visible .upstream-quota-plant-growth {
+    transform: translateY(0);
+  }
+
+  .upstream-quota-plant-sway,
+  .upstream-quota-attack-damage {
+    animation: none;
+  }
+
+  .upstream-quota-plant--attacking .upstream-quota-plant-head-stage {
+    opacity: 1;
+  }
+
+  .upstream-quota-attack-rope,
+  .upstream-quota-attack-root-knot,
+  .upstream-quota-attack-swallow-motion,
+  .upstream-quota-attack-head-motion {
+    display: none;
+  }
+}

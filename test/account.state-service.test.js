@@ -8,6 +8,91 @@ const ACCOUNT_REF_1 = getPublicAccountRef('unique:state-1@example.com');
 const ACCOUNT_REF_2 = getPublicAccountRef('unique:state-2@example.com');
 const ACCOUNT_REF_5 = getPublicAccountRef('unique:state-5@example.com');
 
+test('account state service prevents base-state sync from changing operational status', () => {
+  const localWrites = [];
+  const remoteWrites = [];
+  const queuedState = {
+    status: 'down',
+    configured: true,
+    apiKeyMode: false,
+    displayName: 'queued@example.com'
+  };
+  const service = createAccountStateService({
+    accountStateIndex: {
+      upsertAccountState(accountRef, provider, state) {
+        localWrites.push({ accountRef, provider, state });
+        return true;
+      }
+    },
+    stateIndexClient: {
+      upsert(accountRef, provider, state) {
+        remoteWrites.push({ accountRef, provider, state });
+      }
+    }
+  });
+
+  assert.equal(service.syncAccountBaseState(ACCOUNT_REF_1, 'Codex', queuedState), true);
+  assert.deepEqual(localWrites, [{
+    accountRef: ACCOUNT_REF_1,
+    provider: 'codex',
+    state: {
+      configured: true,
+      apiKeyMode: false,
+      displayName: 'queued@example.com'
+    }
+  }]);
+  assert.deepEqual(remoteWrites, localWrites);
+  assert.equal(queuedState.status, 'down');
+});
+
+test('account state service forwards operational changes only through the explicit command', () => {
+  const calls = [];
+  const service = createAccountStateService({
+    accountStateIndex: {
+      getAccountState() {
+        return {
+          accountRef: ACCOUNT_REF_1,
+          status: 'down',
+          configured: true,
+          apiKeyMode: false,
+          authMode: 'oauth',
+          displayName: 'user@example.com'
+        };
+      },
+      setStatus(accountRef, status) {
+        calls.push({ operation: 'local', accountRef, status });
+        return true;
+      }
+    },
+    stateIndexClient: {
+      upsert() {
+        calls.push({ operation: 'base-upsert' });
+      },
+      setOperationalStatus(accountRef, provider, status, baseState) {
+        calls.push({ operation: 'remote', accountRef, provider, status, baseState });
+      }
+    }
+  });
+
+  assert.equal(service.setOperationalStatus(ACCOUNT_REF_1, 'Codex', 'up'), true);
+  assert.deepEqual(calls, [{
+    operation: 'local',
+    accountRef: ACCOUNT_REF_1,
+    status: 'up'
+  }, {
+    operation: 'remote',
+    accountRef: ACCOUNT_REF_1,
+    provider: 'codex',
+    status: 'up',
+    baseState: {
+      configured: true,
+      apiKeyMode: false,
+      authMode: 'oauth',
+      displayName: 'user@example.com'
+    }
+  }]);
+});
+
 test('account state service writes operational status through the accountRef boundary', () => {
   const calls = [];
   const service = createAccountStateService({
@@ -75,7 +160,6 @@ test('account state service requires evidence before clearing runtime block', ()
     provider: 'codex',
     runtimeState: null,
     baseState: {
-      status: 'up',
       configured: true,
       apiKeyMode: false,
       authMode: '',
@@ -152,7 +236,6 @@ test('account state service syncs base state without writing runtime null when n
     accountRef: ACCOUNT_REF_1,
     provider: 'codex',
     baseState: {
-      status: 'up',
       configured: true,
       apiKeyMode: false,
       authMode: '',
@@ -198,7 +281,6 @@ test('account state service accepts verified api key config as runtime clear evi
     provider: 'codex',
     runtimeState: null,
     baseState: {
-      status: 'up',
       configured: true,
       apiKeyMode: true,
       authMode: 'api-key',
@@ -391,7 +473,6 @@ test('account state service records runtime failures with merged base state', ()
       lastFailureKind: 'auth_invalid'
     },
     baseState: {
-      status: 'down',
       configured: true,
       apiKeyMode: false,
       authMode: 'oauth-browser',

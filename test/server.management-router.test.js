@@ -314,6 +314,94 @@ test('management router returns stable not_found payload for unknown management 
   assert.equal(body.error, 'management_not_found');
 });
 
+test('management base-state upsert cannot carry an operational status change', async () => {
+  const res = createResCapture();
+  const calls = [];
+  const handled = await handleManagementRequest({
+    method: 'POST',
+    pathname: '/v0/management/state-index/upsert',
+    url: new URL('http://localhost/v0/management/state-index/upsert'),
+    req: { headers: {} },
+    res,
+    options: {},
+    state: {},
+    requiredManagementKey: '',
+    deps: {
+      parseAuthorizationBearer: () => '',
+      writeJson: (r, code, payload) => { r.statusCode = code; r.end(JSON.stringify(payload)); },
+      readRequestBody: async () => Buffer.from(JSON.stringify({
+        accountRef: MANAGEMENT_CODEX_ACCOUNT_REF,
+        provider: 'codex',
+        state: { status: 'down', configured: true }
+      })),
+      accountStateService: {
+        syncAccountBaseState(accountRef, provider, baseState) {
+          calls.push({ operation: 'base', accountRef, provider, baseState });
+          return true;
+        },
+        setOperationalStatus() {
+          calls.push({ operation: 'operational' });
+          return true;
+        }
+      }
+    }
+  });
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(calls, [{
+    operation: 'base',
+    accountRef: MANAGEMENT_CODEX_ACCOUNT_REF,
+    provider: 'codex',
+    baseState: { configured: true }
+  }]);
+});
+
+test('management operational-status route uses only the explicit status command', async () => {
+  const res = createResCapture();
+  const calls = [];
+  const handled = await handleManagementRequest({
+    method: 'POST',
+    pathname: '/v0/management/state-index/operational-status',
+    url: new URL('http://localhost/v0/management/state-index/operational-status'),
+    req: { headers: {} },
+    res,
+    options: {},
+    state: {},
+    requiredManagementKey: '',
+    deps: {
+      parseAuthorizationBearer: () => '',
+      writeJson: (r, code, payload) => { r.statusCode = code; r.end(JSON.stringify(payload)); },
+      readRequestBody: async () => Buffer.from(JSON.stringify({
+        accountRef: MANAGEMENT_CODEX_ACCOUNT_REF,
+        provider: 'codex',
+        status: 'up',
+        baseState: { status: 'down', configured: true }
+      })),
+      accountStateService: {
+        syncAccountBaseState() {
+          calls.push({ operation: 'base' });
+          return true;
+        },
+        setOperationalStatus(accountRef, provider, status, baseState) {
+          calls.push({ operation: 'operational', accountRef, provider, status, baseState });
+          return true;
+        }
+      }
+    }
+  });
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(calls, [{
+    operation: 'operational',
+    accountRef: MANAGEMENT_CODEX_ACCOUNT_REF,
+    provider: 'codex',
+    status: 'up',
+    baseState: { configured: true }
+  }]);
+});
+
 test('management router serves model usage stats without implicit scan', async () => {
   const res = createResCapture();
   let scanCalls = 0;

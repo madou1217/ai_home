@@ -5,11 +5,13 @@ const os = require('node:os');
 const path = require('node:path');
 const {
   deleteAccountCredentials,
+  listAccountCredentialRecords,
   writeAccountCredentials,
   writeAccountNativeAuth
 } = require('../lib/server/account-credential-store');
 const { upsertAccountRef } = require('../lib/server/account-ref-store');
 const { writeDefaultAccountRef } = require('../lib/account/default-account-store');
+const { createAccountStateIndex } = require('../lib/account/state-index');
 const { writeAccountUsageSnapshot } = require('../lib/account/usage-snapshot-store');
 const { resolveAccountRuntimeDir } = require('../lib/runtime/aih-storage-layout');
 const {
@@ -579,6 +581,66 @@ test('accounts canonical signature includes DB-backed role changes', (t) => {
 
   assert.notEqual(after, before);
   assert.match(after, new RegExp(`roles:codex:${accountRef}`));
+});
+
+test('background hydration does not overwrite a newer operational status with queued state', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-account-live-status-race-'));
+  const accountStateIndex = createAccountStateIndex({ fs, aiHomeDir: root });
+  t.after(() => {
+    accountStateIndex.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  registerDbAccount(root, 'codex', '20', {
+    nativeAuth: { auth: { tokens: { access_token: 'at_20', refresh_token: 'rt_20' } } }
+  });
+  registerDbAccount(root, 'codex', '21', {
+    nativeAuth: { auth: { tokens: { access_token: 'at_21', refresh_token: 'rt_21' } } }
+  });
+  const [leadingRecord, targetRecord] = listAccountCredentialRecords(fs, root, 'codex');
+  const leadingRef = leadingRecord.accountRef;
+  const targetRef = targetRecord.accountRef;
+  accountStateIndex.upsertAccountState(leadingRef, 'codex', {
+    status: 'down',
+    configured: true,
+    displayName: 'leading@example.com'
+  });
+  accountStateIndex.upsertAccountState(targetRef, 'codex', {
+    status: 'down',
+    configured: true,
+    displayName: 'target@example.com'
+  });
+  let operationalChangeApplied = false;
+  const state = {
+    accounts: { codex: [], gemini: [], claude: [], agy: [] }
+  };
+  const ctx = {
+    state,
+    fs,
+    aiHomeDir: root,
+    options: {},
+    accountStateIndex,
+    checkStatus(_provider, accountRef) {
+      if (accountRef === leadingRef && !operationalChangeApplied) {
+        operationalChangeApplied = true;
+        assert.equal(accountStateIndex.setStatus(targetRef, 'up'), true);
+      }
+      return {
+        configured: true,
+        accountName: accountRef === targetRef ? 'target@example.com' : 'leading@example.com'
+      };
+    },
+    getLastUsageProbeState() {
+      return null;
+    },
+    getLastUsageProbeError() {
+      return '';
+    }
+  };
+
+  await __private.refreshAccountsFromCanonicalSource(ctx, { force: true });
+
+  assert.equal(operationalChangeApplied, true);
+  assert.equal(state.__webUiAccountsLive.records.get(targetRef).status, 'up');
 });
 
 test('accounts live poll invalidates derived caches before hydrating canonical usage changes', async (t) => {

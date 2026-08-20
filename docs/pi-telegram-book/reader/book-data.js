@@ -63,3 +63,5 @@ window.BOOK_DATA = {
     }
   ]
 };
+
+window.HARNESS_BOOK_DATA = (window.BOOK_DATA && window.BOOK_DATA.chapters) ? window.BOOK_DATA.chapters : [];

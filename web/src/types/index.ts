@@ -1876,7 +1876,10 @@ export interface ManagementStatus {
 export interface ManagementAccountActivity {
   provider: string;
   accountRef: string;
+  /** 网关 attempt 的 in-flight，外加一个「原生会话回合正在跑」的折算位。 */
   inFlight: number;
+  /** 原生 CLI 会话（不经网关）当前是否有回合在跑。 */
+  sessionTurnActive?: boolean;
   rate: number;
   activeModels?: string[];
   lastActivityAt: number;

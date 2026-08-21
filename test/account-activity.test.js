@@ -111,6 +111,7 @@ test('snapshot emits provider, accountRef and timestamps', () => {
     provider: 'codex',
     accountRef: 'acct_1',
     inFlight: 1,
+    sessionTurnActive: false,
     rate: 1,
     activeModels: [],
     lastActivityAt: 1_000_000,
@@ -146,4 +147,64 @@ test('idle accounts are pruned from snapshot state', () => {
 
 test('DEFAULT_RATE_WINDOW_MS is exported', () => {
   assert.equal(DEFAULT_RATE_WINDOW_MS, 10_000);
+});
+
+test('a native session turn lights the account up without a gateway attempt', () => {
+  const clock = createClock();
+  const activity = createAccountActivity({ now: clock.now });
+
+  activity.markSessionTurn('claude', 'claude_9');
+  const snap = activity.snapshot();
+  assert.equal(snap['claude:claude_9'].inFlight, 1);
+  assert.equal(snap['claude:claude_9'].sessionTurnActive, true);
+  // 会话回合不是网关请求，不该污染速率语义。
+  assert.equal(snap['claude:claude_9'].rate, 0);
+});
+
+test('session turn ends immediately instead of waiting for the ttl', () => {
+  const clock = createClock();
+  const activity = createAccountActivity({ now: clock.now });
+
+  activity.markSessionTurn('claude', 'claude_9');
+  activity.endSessionTurn('claude', 'claude_9');
+
+  const snap = activity.snapshot();
+  assert.equal(snap['claude:claude_9'].inFlight, 0);
+  assert.equal(snap['claude:claude_9'].sessionTurnActive, false);
+});
+
+test('a lost stop hook expires instead of spinning forever', () => {
+  const clock = createClock();
+  const activity = createAccountActivity({ now: clock.now, sessionTurnTtlMs: 30_000 });
+
+  activity.markSessionTurn('claude', 'claude_9');
+  clock.advance(29_000);
+  assert.equal(activity.snapshot()['claude:claude_9'].inFlight, 1);
+
+  clock.advance(2_000);
+  assert.equal(activity.snapshot()['claude:claude_9'].inFlight, 0);
+});
+
+test('turn events keep refreshing the ttl while the turn is still running', () => {
+  const clock = createClock();
+  const activity = createAccountActivity({ now: clock.now, sessionTurnTtlMs: 30_000 });
+
+  activity.markSessionTurn('claude', 'claude_9');
+  clock.advance(25_000);
+  activity.markSessionTurn('claude', 'claude_9');
+  clock.advance(25_000);
+
+  assert.equal(activity.snapshot()['claude:claude_9'].inFlight, 1);
+});
+
+test('gateway attempts and session turns stack on the same account', () => {
+  const clock = createClock();
+  const activity = createAccountActivity({ now: clock.now });
+
+  activity.begin('claude', 'claude_9', 'claude-opus-5');
+  activity.markSessionTurn('claude', 'claude_9');
+  assert.equal(activity.snapshot()['claude:claude_9'].inFlight, 2);
+
+  activity.end('claude', 'claude_9', 'claude-opus-5');
+  assert.equal(activity.snapshot()['claude:claude_9'].inFlight, 1);
 });

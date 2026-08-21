@@ -296,78 +296,90 @@
   }
 }
 
+/*
+ * 咬的那一下：先缩一下蓄力，再急速胀大成一颗血盆大口，咬合时挤一下，
+ * 之后一路缩回原尺寸。放大是有过程的（约 8 帧），不是一帧蹦过去——夸张归夸张，
+ * 中间那几帧才是它有分量的原因。
+ */
 @keyframes upstream-quota-head-bite-chew {
-  0%, 29% {
+  0%, 26% {
     transform: scale(1);
   }
-  33% {
-    transform: scale(0.92, 1.08);
+  30% {
+    transform: scale(0.84, 1.12);
+  }
+  34% {
+    transform: scale(1.55, 1.46);
   }
   38% {
-    transform: scale(1.35, 1.26);
+    transform: scale(2.35, 2.2);
   }
   42% {
-    transform: scale(2.05, 1.9);
+    transform: scale(2.95, 2.78);
   }
-  47% {
-    transform: scale(2.3, 2.15);
+  46% {
+    transform: scale(2.72, 2.92);
   }
-  51% {
-    transform: scale(2.2, 2.05);
+  50% {
+    transform: scale(2.86, 2.6);
   }
   56% {
-    transform: scale(1.65, 1.48);
+    transform: scale(2.3, 2.24);
   }
-  63% {
-    transform: scale(1.55);
+  60% {
+    transform: translateY(1.5px) rotate(-3deg) scale(2.42, 2.1);
   }
-  70% {
-    transform: scale(1.72);
+  64% {
+    transform: translateY(-1.5px) rotate(3deg) scale(2.08, 2.36);
   }
-  73% {
-    transform: translateY(2px) rotate(-4deg) scale(1.78, 1.24);
+  68% {
+    transform: scale(2.15, 2.1);
   }
-  76% {
-    transform: translateY(-2px) rotate(4deg) scale(1.4, 1.74);
-  }
-  79% {
-    transform: translateY(2px) rotate(-3deg) scale(1.67, 1.28);
+  74% {
+    transform: scale(1.7);
   }
   82% {
-    transform: scale(1.48, 1.58);
-  }
-  88% {
     transform: scale(1.3);
   }
-  94% {
-    transform: scale(1.12);
+  90% {
+    transform: scale(1.1);
   }
   100% {
     transform: scale(1);
   }
 }
 
+/* 张嘴跟着放大走：逼近时先抿一下，胀大的同时张到最大，咬中猛地合上。 */
 @keyframes upstream-quota-jaw {
-  0%, 24% {
-    --jaw-open: 6deg;
+  0%, 26% {
+    --jaw-open: 8deg;
   }
-  32% {
-    --jaw-open: 22deg;
-  }
-  40%, 46% {
-    --jaw-open: 26deg;
-  }
-  52% {
-    --jaw-open: 0deg;
-  }
-  60%, 72% {
-    --jaw-open: 9deg;
-  }
-  66%, 78% {
+  30% {
     --jaw-open: 2deg;
   }
-  100% {
-    --jaw-open: 5deg;
+  36% {
+    --jaw-open: 30deg;
+  }
+  42%, 45% {
+    --jaw-open: 42deg;
+  }
+  48% {
+    --jaw-open: 0deg;
+  }
+  54% {
+    --jaw-open: 14deg;
+  }
+  58% {
+    --jaw-open: 3deg;
+  }
+  62% {
+    --jaw-open: 11deg;
+  }
+  66% {
+    --jaw-open: 2deg;
+  }
+  74%, 100% {
+    --jaw-open: 8deg;
   }
 }
 

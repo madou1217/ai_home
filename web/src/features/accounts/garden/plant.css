@@ -202,14 +202,14 @@
 .quota-plant-leaf--left {
   right: 40%;
   rotate: -16deg;
-  /* 朝右时整片叶子镜像过去，跟头一个方向。 */
-  transform: scaleX(var(--facing, 1));
+  /* 叶子朝嘴的反方向：一左一右分开，整株看上去才平衡。 */
+  transform: scaleX(calc(var(--facing, 1) * -1));
 }
 
 .quota-plant-leaf--right {
   left: 40%;
   rotate: -16deg;
-  transform: scaleX(calc(var(--facing, 1) * -1));
+  transform: scaleX(var(--facing, 1));
   transform-origin: 0 50%;
 }
 

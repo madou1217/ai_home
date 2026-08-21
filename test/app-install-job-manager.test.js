@@ -63,6 +63,41 @@ test('app install job runs asynchronously, deduplicates active targets, and publ
   assert.ok(events.some((event) => event.status === 'succeeded'));
 });
 
+// 回归：安装/卸载改变了宿主机的"已安装"事实，作业收尾必须让入口检测缓存失效，
+// 否则 WebUI 的一键入口按钮最多会停留一个缓存周期（30s）的旧状态。
+test('安装作业终态让入口检测缓存失效，按钮不再停留旧状态', async () => {
+  const invalidations = [];
+  const manager = createAppInstallJobManager({
+    installCli: async () => ({ installed: true, cliPath: '/opt/bin/codex', installAttempts: [] }),
+    invalidateAppEntries: (detail) => invalidations.push(detail)
+  });
+  const started = manager.start({ provider: 'codex', kind: 'cli' });
+  await waitFor(() => manager.getJob(started.job.id).status === 'succeeded');
+  assert.deepEqual(invalidations, [{ provider: 'codex', kind: 'cli', action: 'install', status: 'succeeded' }]);
+});
+
+test('安装失败同样让缓存失效：脚本可能已落下半份文件，旧结论不可信', async () => {
+  const invalidations = [];
+  const manager = createAppInstallJobManager({
+    installCli: async () => { throw new Error('network down'); },
+    invalidateAppEntries: (detail) => invalidations.push(detail)
+  });
+  const started = manager.start({ provider: 'codex', kind: 'cli' });
+  await waitFor(() => manager.getJob(started.job.id).status === 'failed');
+  assert.equal(invalidations.length, 1);
+  assert.equal(invalidations[0].status, 'failed');
+});
+
+test('缓存失效钩子抛错不影响作业终态上报', async () => {
+  const manager = createAppInstallJobManager({
+    installCli: async () => ({ installed: true, cliPath: '/opt/bin/codex', installAttempts: [] }),
+    invalidateAppEntries: () => { throw new Error('detector exploded'); }
+  });
+  const started = manager.start({ provider: 'codex', kind: 'cli' });
+  await waitFor(() => manager.getJob(started.job.id).status === 'succeeded');
+  assert.equal(manager.getJob(started.job.id).progress.percent, 100);
+});
+
 test('app install job is published to the shared Toolkit task hub', async () => {
   const registeredSources = [];
   const published = [];

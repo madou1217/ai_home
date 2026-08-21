@@ -177,11 +177,11 @@
 }
 
 /*
- * 捕食时把摇摆定格在当前姿态，而不是 animation: none——后者会让茎瞬间弹回直立，
- * 那一帧就是肉眼看到的「卡一下」。
+ * 扑出去之前就把摇摆定格在当前姿态（不是 animation: none——那会让茎瞬间弹回
+ * 直立，肉眼看到的就是「卡一下」）。定格早于攻击层测量，藤蔓才接得住茎尖。
  */
-.quota-plant--busy .quota-plant-seg,
-.quota-plant--busy .quota-plant-leaf {
+.quota-plant--frozen .quota-plant-seg,
+.quota-plant--frozen .quota-plant-leaf {
   animation-play-state: paused;
 }
 
@@ -239,8 +239,15 @@
     var(--sway-delay) infinite alternate;
 }
 
-/* 跳跃时同时跑两条：张嘴的节奏，和起跳瞬间的转身。 */
 .quota-plant--airborne .quota-plant-head {
+  animation: quota-head-hop var(--hop-duration) cubic-bezier(0.3, 0.1, 0.3, 1) both;
+}
+
+/*
+ * 只有真的换了朝向才叠上转身那一条。同向连跳时若也播，中间那帧会把头挤成
+ * 四分之一宽再弹回来——每跳一次抽一下。
+ */
+.quota-plant--airborne.quota-plant--turning .quota-plant-head {
   animation:
     quota-head-hop var(--hop-duration) cubic-bezier(0.3, 0.1, 0.3, 1) both,
     quota-head-turn var(--hop-duration) cubic-bezier(0.3, 0.1, 0.3, 1) both;
@@ -292,10 +299,7 @@
   }
 }
 
-/*
- * 转身：蓄力阶段把头侧过来再翻到新朝向，中间那一帧是侧脸，看起来像真的转了个身。
- * 朝向不变时 --facing-from 与 --facing 相同，这条动画等于什么都没做。
- */
+/* 转身：蓄力阶段把头侧过来再翻到新朝向，中间那一帧是侧脸，像真的转了个身。 */
 @keyframes quota-head-turn {
   0% {
     transform: translateX(-50%) scaleX(var(--facing-from, 1));
@@ -486,6 +490,11 @@
 
   .quota-plant--airborne .quota-plant-head {
     transform: translateX(-50%) scaleX(var(--facing, 1));
+  }
+
+  /* 攻击层在 reduced-motion 下整块不画，原地这颗头必须留着，不然花是无头的。 */
+  .quota-plant--busy .quota-plant-head {
+    opacity: 1;
   }
 
   /* 跳跃降级成瞬移：换柱子这件事仍然发生，只是不画弧线也不弹。 */

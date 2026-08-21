@@ -12,6 +12,11 @@ export const GARDEN_ATTACK_MS = GARDEN_HUNT_MS
   + GARDEN_CHEW_MS
   + GARDEN_RECOVER_MS;
 export const GARDEN_MISS_MS = 1100;
+/**
+ * 扑出去之前多久把花茎定住。攻击层要在稳定的茎顶坐标上生成藤蔓，
+ * 而摇摆每一帧都在动；先定格再测量，藤蔓根部才咬得住茎尖。
+ */
+export const GARDEN_FREEZE_LEAD_MS = 140;
 
 // 捕食率不是定值：按账号与事件在区间里取，偶尔漏一口才像活物。
 export const GARDEN_CATCH_CHANCE_MIN = 0.62;
@@ -58,6 +63,12 @@ export function getPendingCatches(jobs: GardenFeedJob[], now: number) {
 /** 此刻嘴里那一口；没有就是 undefined。 */
 export function getActiveCatch(jobs: GardenFeedJob[], now: number) {
   return getPendingCatches(jobs, now).find((job) => job.attackAt <= now);
+}
+
+/** 即将扑出去的那一口——茎要先为它定住。 */
+export function getFreezingCatch(jobs: GardenFeedJob[], now: number) {
+  return getPendingCatches(jobs, now)
+    .find((job) => job.attackAt - GARDEN_FREEZE_LEAD_MS <= now);
 }
 
 export function getCatchChance(accountRef: string, dropId: string) {

@@ -9,8 +9,6 @@ export const GARDEN_STALK_SEGMENTS = 4;
 /** 根部/顶端的茎宽，中间线性收细——锥形比等宽柱体像植物。 */
 export const GARDEN_STALK_BASE_WIDTH = 6.5;
 export const GARDEN_STALK_TIP_WIDTH = 4;
-export const GARDEN_HEAD_WIDTH = 24;
-export const GARDEN_HEAD_HEIGHT = 24;
 
 export interface GardenStalkSegment {
   height: number;

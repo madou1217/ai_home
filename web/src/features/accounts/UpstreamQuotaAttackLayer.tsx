@@ -79,11 +79,11 @@ const UpstreamQuotaAttackLayer = ({ accountRef, gardenRef, jobs, profile }: Prop
     }
 
     const sourceRect = source.getBoundingClientRect();
+    // 只需要花茎顶端（头的咽喉）：藤蔓从那里往外长，根部由原地植株自己画。
     const originElement = garden.querySelector<HTMLElement>('[data-quota-plant-origin]');
-    const rootElement = garden.querySelector<HTMLElement>('[data-quota-plant-root]');
-    const anchored = hasVisibleRect(originElement) && hasVisibleRect(rootElement);
-    const origin = anchored ? getCenter(originElement as HTMLElement) : null;
-    const root = anchored ? getCenter(rootElement as HTMLElement) : null;
+    const origin = hasVisibleRect(originElement)
+      ? getCenter(originElement as HTMLElement)
+      : null;
 
     const next: Record<string, MeasuredJob> = {};
     currentJobs.forEach((job) => {
@@ -92,14 +92,14 @@ const UpstreamQuotaAttackLayer = ({ accountRef, gardenRef, jobs, profile }: Prop
         18,
         Math.min(52, sourceRect.top + sourceRect.height - damagePoint.y - 6)
       );
-      if (job.outcome === 'missed' || !origin || !root) {
+      if (job.outcome === 'missed' || !origin) {
         next[job.id] = { damagePoint, attack: null, missFallPx };
         return;
       }
       next[job.id] = {
         damagePoint,
         // 起点宽度对齐花茎顶端，藤蔓才是这根茎的延长而不是另一条绳子。
-        attack: buildGardenAttackGeometry(origin, damagePoint, root, GARDEN_STALK_TIP_WIDTH),
+        attack: buildGardenAttackGeometry(origin, damagePoint, GARDEN_STALK_TIP_WIDTH),
         missFallPx
       };
     });

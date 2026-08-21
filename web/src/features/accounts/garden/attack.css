@@ -92,7 +92,8 @@
   top: 0;
   left: 0;
   offset-path: var(--attack-offset-path);
-  offset-anchor: 50% 50%;
+  /* 元素中心是咽喉；沿路径走的应该是嘴，否则咬合点会越过伤害数字。 */
+  offset-anchor: 2.6px 12px;
 }
 
 .upstream-quota-attack-head-motion {

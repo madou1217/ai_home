@@ -17,7 +17,9 @@ interface Props {
   fromPerch: GardenPerch | null;
   hop: HopState;
   lifecycle: GardenLifecyclePhase;
-  /** 正在捕食：整株交给攻击层，原地只留一个根结。 */
+  /** 马上要扑食：先把花茎定住，好让攻击层量到稳定的茎顶。 */
+  frozen: boolean;
+  /** 正在捕食：头飞出去咬东西，花茎留在原地绷住。 */
   busy: boolean;
 }
 
@@ -61,7 +63,7 @@ function buildPlantStyle(
  * - squash  整株的压扁与拉伸（起跳蓄力、落地回弹）
  * - stalk   骨节链：摇摆、甩动、头与叶都长在它上面
  */
-const QuotaPlant = ({ profile, perch, fromPerch, hop, lifecycle, busy }: Props) => {
+const QuotaPlant = ({ profile, perch, fromPerch, hop, lifecycle, frozen, busy }: Props) => {
   const stemHeight = getStemHeight(perch.barHeight);
   const airborne = hop.phase === 'airborne' && Boolean(fromPerch);
 
@@ -71,6 +73,8 @@ const QuotaPlant = ({ profile, perch, fromPerch, hop, lifecycle, busy }: Props) 
         'quota-plant',
         `quota-plant--lifecycle-${lifecycle}`,
         airborne ? 'quota-plant--airborne' : '',
+        airborne && hop.facing !== hop.facingFrom ? 'quota-plant--turning' : '',
+        frozen ? 'quota-plant--frozen' : '',
         busy ? 'quota-plant--busy' : ''
       ].filter(Boolean).join(' ')}
       data-plant-lifecycle={lifecycle}
@@ -83,7 +87,7 @@ const QuotaPlant = ({ profile, perch, fromPerch, hop, lifecycle, busy }: Props) 
       <span className="quota-plant-hop">
         <span className="quota-plant-pipe">
           <span className="quota-plant-body">
-            <span className="quota-plant-root" data-quota-plant-root="0" />
+            <span className="quota-plant-root" />
             <span className="quota-plant-squash">
               <QuotaPlantStalk
                 stemHeight={stemHeight}

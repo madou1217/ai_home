@@ -18,7 +18,6 @@ export interface GardenRect {
 }
 
 export interface GardenAttackGeometry {
-  root: GardenPoint;
   origin: GardenPoint;
   target: GardenPoint;
   control1: GardenPoint;
@@ -65,7 +64,6 @@ export function buildGardenDamagePoint(
 export function buildGardenAttackGeometry(
   origin: GardenPoint,
   target: GardenPoint,
-  root: GardenPoint = origin,
   stemTipWidth = 4
 ): GardenAttackGeometry {
   const deltaX = target.x - origin.x;
@@ -104,7 +102,6 @@ export function buildGardenAttackGeometry(
   const revealAt = (attackProgress: number) => attackProgress * 100;
 
   return {
-    root,
     origin,
     target,
     control1,

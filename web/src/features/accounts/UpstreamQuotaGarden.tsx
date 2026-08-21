@@ -20,7 +20,9 @@ import {
   reconcileHopState
 } from './garden/hop-model';
 import {
+  GARDEN_FREEZE_LEAD_MS,
   getActiveCatch,
+  getFreezingCatch,
   getPendingCatches,
   pruneGardenFeedJobs,
   scheduleGardenFeeds
@@ -71,6 +73,7 @@ const UpstreamQuotaGarden = ({
   const seenDropIdsRef = useRef<Set<string>>(new Set());
 
   const activeCatch = getActiveCatch(jobs, clock);
+  const freezingCatch = getFreezingCatch(jobs, clock);
   const pendingCatches = getPendingCatches(jobs, clock);
   // 嘴里有东西、或者已经排上号了都不能跳——花不能咬着东西飞走。
   const canHop = lifecycle.phase === 'visible' && pendingCatches.length === 0;
@@ -98,6 +101,9 @@ const UpstreamQuotaGarden = ({
   useEffect(() => {
     const now = Date.now();
     const jobDelays = jobs.flatMap((job) => [
+      job.attackAt - GARDEN_FREEZE_LEAD_MS > now
+        ? job.attackAt - GARDEN_FREEZE_LEAD_MS - now
+        : null,
       job.attackAt > now ? job.attackAt - now : null,
       job.endsAt > now ? job.endsAt - now : null
     ]);
@@ -181,6 +187,7 @@ const UpstreamQuotaGarden = ({
           fromPerch={fromPerch}
           hop={hop}
           lifecycle={lifecycle.phase}
+          frozen={Boolean(freezingCatch)}
           busy={Boolean(activeCatch)}
         />
       ) : null}

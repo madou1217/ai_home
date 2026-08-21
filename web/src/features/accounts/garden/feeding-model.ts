@@ -13,6 +13,11 @@ export const GARDEN_ATTACK_MS = GARDEN_HUNT_MS
   + GARDEN_RECOVER_MS;
 export const GARDEN_MISS_MS = 1100;
 /**
+ * 咬合发生在整套攻击动画的哪个位置（0~1）。与 attack.css 里 jaw 合上的那一帧
+ * 对齐——血必须从咬到的那一刻溅出来，早一点晚一点都不对。
+ */
+export const GARDEN_BITE_AT = 0.48;
+/**
  * 扑出去之前多久把花茎定住。攻击层要在稳定的茎顶坐标上生成藤蔓，
  * 而摇摆每一帧都在动；先定格再测量，藤蔓根部才咬得住茎尖。
  */

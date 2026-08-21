@@ -25,6 +25,13 @@ import {
   scheduleGardenFeeds
 } from './feeding-model.ts';
 import { buildTaperedRibbonPath } from './vine-geometry.ts';
+import {
+  BLOOD_MAX_DROPLETS,
+  BLOOD_MAX_LIFE_MS,
+  BLOOD_MIN_DROPLETS,
+  BLOOD_MIN_LIFE_MS,
+  buildBloodBurst
+} from './blood-burst.ts';
 import { buildGardenAttackGeometry } from './attack-geometry.ts';
 import {
   GARDEN_STALK_SEGMENTS,
@@ -444,4 +451,45 @@ test('plant profile: the stalk splits into a tapering chain that spans the whole
   segments.forEach((segment, index) => {
     if (index > 0) assert.ok(segment.width < segments[index - 1].width);
   });
+});
+
+test('blood burst: every hit splatters differently, but the same hit always the same way', () => {
+  const small = buildBloodBurst(ACCOUNT, 'drop-a', 900);
+  const again = buildBloodBurst(ACCOUNT, 'drop-a', 900);
+  const other = buildBloodBurst(ACCOUNT, 'drop-b', 900);
+  assert.deepEqual(small, again);
+  assert.notEqual(
+    small.map((d) => d.driftPx).join(),
+    other.map((d) => d.driftPx).join()
+  );
+});
+
+test('blood burst: a bigger mouthful splatters more', () => {
+  const small = buildBloodBurst(ACCOUNT, 'drop-a', 500);
+  const huge = buildBloodBurst(ACCOUNT, 'drop-a', 40_000_000);
+  assert.ok((huge.length) >= (small.length));
+  assert.ok((huge.length) <= (BLOOD_MAX_DROPLETS));
+  assert.ok((small.length) >= (BLOOD_MIN_DROPLETS));
+});
+
+test('blood burst: gravity always wins — every droplet ends below where it started', () => {
+  const droplets = buildBloodBurst(ACCOUNT, 'drop-c', 12_000);
+  droplets.forEach((droplet) => {
+    // 上抛多高都好，最后必须落到起点下方，而且飞得越久落得越深。
+    assert.ok((droplet.fallPx) > (0));
+    assert.ok((droplet.risePx) > (0));
+    assert.ok((droplet.lifeMs) >= (BLOOD_MIN_LIFE_MS));
+    assert.ok((droplet.lifeMs) <= (BLOOD_MAX_LIFE_MS));
+  });
+  const longest = droplets.reduce((a, b) => (a.lifeMs > b.lifeMs ? a : b));
+  const shortest = droplets.reduce((a, b) => (a.lifeMs < b.lifeMs ? a : b));
+  if (longest.lifeMs > shortest.lifeMs) {
+    assert.ok((longest.fallPx) > (shortest.fallPx));
+  }
+});
+
+test('blood burst: droplets do not all leave at once', () => {
+  const droplets = buildBloodBurst(ACCOUNT, 'drop-d', 8_000);
+  const delays = new Set(droplets.map((droplet) => droplet.delayMs));
+  assert.ok((delays.size) > (1));
 });

@@ -34,6 +34,7 @@ import { buildPlantProfile } from './garden/plant-profile';
 import './garden/head.css';
 import './garden/plant.css';
 import './garden/attack.css';
+import './garden/blood.css';
 
 interface Props {
   accountRef: string;

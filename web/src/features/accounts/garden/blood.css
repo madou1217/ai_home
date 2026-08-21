@@ -1,0 +1,99 @@
+/*
+ * 咬中那一下的血。
+ *
+ * 分层是为了让一条抛物线由两个互不干扰的运动合成：水平匀速、竖直被重力拉回。
+ * 三层动的都是 transform / opacity，不触发布局，一次爆开十几滴也不会掉帧。
+ */
+
+.quota-blood {
+  position: absolute;
+  top: var(--damage-y);
+  left: var(--damage-x);
+  /*
+   * 血要压在头（z 4）上面。数字是被吃进去的，所以躲在颚后面；血是从嘴里溅出来
+   * 的，必须飞在头前面——否则整团血都被那颗放大的头挡住，等于没画。
+   */
+  z-index: 6;
+  display: block;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.quota-blood-drift,
+.quota-blood-fall,
+.quota-blood-drop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+}
+
+/* 水平方向没有力，所以是匀速的。 */
+.quota-blood-drift {
+  animation: quota-blood-drift var(--blood-life) linear var(--blood-delay) both;
+}
+
+/* 竖直方向：先减速上升，到顶之后加速坠落——同一个重力的两段。 */
+.quota-blood-fall {
+  animation: quota-blood-fall var(--blood-life) var(--blood-delay) both;
+}
+
+.quota-blood-drop {
+  width: var(--blood-size);
+  height: var(--blood-size);
+  border-radius: 50%;
+  background: var(--blood-color);
+  animation: quota-blood-fade var(--blood-life) ease-out var(--blood-delay) both;
+}
+
+@keyframes quota-blood-drift {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(var(--blood-drift));
+  }
+}
+
+@keyframes quota-blood-fall {
+  0% {
+    transform: translateY(0);
+    /* 上升段减速 */
+    animation-timing-function: cubic-bezier(0.12, 0.62, 0.4, 1);
+  }
+  32% {
+    transform: translateY(calc(var(--blood-rise) * -1));
+    /* 下落段加速 */
+    animation-timing-function: cubic-bezier(0.55, 0, 0.85, 0.52);
+  }
+  100% {
+    transform: translateY(var(--blood-fall));
+  }
+}
+
+/* 飞出去时被拉长，落下时散开变淡——血滴不会原地消失，是慢慢化掉的。 */
+@keyframes quota-blood-fade {
+  0% {
+    opacity: 0;
+    transform: rotate(var(--blood-spin)) scale(0.4, 0.4);
+  }
+  12% {
+    opacity: 1;
+    transform: rotate(var(--blood-spin)) scale(1, var(--blood-stretch));
+  }
+  55% {
+    opacity: 0.92;
+    transform: rotate(var(--blood-spin)) scale(1, 1);
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(var(--blood-spin)) scale(0.55, 0.45);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .quota-blood {
+    display: none;
+  }
+}

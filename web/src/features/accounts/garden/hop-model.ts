@@ -158,7 +158,16 @@ export function reconcileHopState(
     };
   }
 
-  if (!canHop || perches.length <= 1 || now < current.nextHopAt) return current;
+  if (!canHop) {
+    /*
+     * 不能跳的时候要把下次起跳一起往后推。否则捕食那一秒多里 nextHopAt 早就
+     * 过期了，等花一咽下去就会立刻弹射出去——「刚吃完收回就转身又走」的怪感
+     * 就是这么来的。推到「至少再待够一个最短停留」为止。
+     */
+    const floor = now + GARDEN_HOP_MIN_IDLE_MS;
+    return current.nextHopAt >= floor ? current : { ...current, nextHopAt: floor };
+  }
+  if (perches.length <= 1 || now < current.nextHopAt) return current;
 
   const hopIndex = current.hopIndex + 1;
   const target = pickHopTarget(accountRef, hopIndex, perches.length, current.perchIndex);

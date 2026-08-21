@@ -17,6 +17,10 @@ export const GARDEN_MISS_MS = 1100;
  * 而摇摆每一帧都在动；先定格再测量，藤蔓根部才咬得住茎尖。
  */
 export const GARDEN_FREEZE_LEAD_MS = 140;
+/** 两口之间咽下去的间隔。一口刚缩回就立刻扑下一口，看着像卡带。 */
+export const GARDEN_SWALLOW_GAP_MS = 320;
+/** 吃完之后的回神时间：这段时间里既不跳也不吃，动作之间才有呼吸。 */
+export const GARDEN_FEED_RECOVER_MS = 420;
 
 // 捕食率不是定值：按账号与事件在区间里取，偶尔漏一口才像活物。
 export const GARDEN_CATCH_CHANCE_MIN = 0.62;
@@ -49,8 +53,21 @@ export type GardenFeedPhase =
   | 'chewing'
   | 'recover';
 
+/**
+ * 任务结束后再多留一段回神时间才丢掉——留着它，花才知道自己刚吃完，
+ * 不会前一口刚咽下去就弹射着去跳。
+ */
 export function pruneGardenFeedJobs(jobs: GardenFeedJob[], now: number) {
-  return jobs.filter((job) => job.endsAt > now);
+  return jobs.filter((job) => job.endsAt + GARDEN_FEED_RECOVER_MS > now);
+}
+
+/** 刚吃完还在回神：这一刻不该起跳，也不该接下一口。 */
+export function isRecoveringFromFeed(jobs: GardenFeedJob[], now: number) {
+  return jobs.some((job) => (
+    job.outcome === 'caught'
+    && job.endsAt <= now
+    && job.endsAt + GARDEN_FEED_RECOVER_MS > now
+  ));
 }
 
 /** 当前正在被吃 / 已排队的捕食任务（miss 不占用花）。 */
@@ -119,8 +136,10 @@ export function scheduleGardenFeeds({
       && stableGardenRandom(accountRef, drop.id, 'catch') < getCatchChance(accountRef, drop.id);
     const jitterMs = Math.round(stableGardenRandom(accountRef, drop.id, 'delay') * 120);
     const readyAt = now + baseDelay + jitterMs;
-    // 排队的那一口要等前一口咽下去，否则两次扑咬会重叠成一团。
-    const busyUntil = pending.length > 0 ? pending[pending.length - 1].endsAt : 0;
+    // 排队的那一口要等前一口咽下去，中间还留一段吞咽的间隔。
+    const busyUntil = pending.length > 0
+      ? pending[pending.length - 1].endsAt + GARDEN_SWALLOW_GAP_MS
+      : 0;
     const attackAt = catches ? Math.max(readyAt, busyUntil) : readyAt;
     const outcome: GardenFeedOutcome = catches ? 'caught' : 'missed';
     const reason: GardenFeedReason = catches

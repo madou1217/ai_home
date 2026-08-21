@@ -38,6 +38,9 @@ export interface GardenAttackGeometry {
   ropeNearPercent: number;
   /** motion-path 会让嘴朝行进方向；待机点用反向补偿恢复原地朝向。 */
   originCorrectionDeg: number;
+  /** 嘴叼着东西往回缩的方向（单位向量）：伤害数字要顺着它被带走。 */
+  retreatX: number;
+  retreatY: number;
 }
 
 /** 伤害点始终留在剩余额度锚点内，并按账号与事件稳定错开。 */
@@ -142,6 +145,8 @@ export function buildGardenAttackGeometry(
     vineRibbonPath,
     ropeMidPercent: revealAt(0.56),
     ropeNearPercent: revealAt(0.86),
-    originCorrectionDeg: normalizeAngle(-normalizeAngle(startTangentDeg + 180))
+    originCorrectionDeg: normalizeAngle(-normalizeAngle(startTangentDeg + 180)),
+    retreatX: -approachX / approachSpan,
+    retreatY: -approachY / approachSpan
   };
 }

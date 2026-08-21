@@ -16,9 +16,12 @@ import {
   GARDEN_ATTACK_MS,
   GARDEN_CATCH_CHANCE_MAX,
   GARDEN_CATCH_CHANCE_MIN,
+  GARDEN_FEED_RECOVER_MS,
+  GARDEN_SWALLOW_GAP_MS,
   getActiveCatch,
   getCatchChance,
   getGardenFeedPhase,
+  isRecoveringFromFeed,
   scheduleGardenFeeds
 } from './feeding-model.ts';
 import { buildTaperedRibbonPath } from './vine-geometry.ts';
@@ -108,6 +111,27 @@ test('hop model: takes off after the idle window and lands after the flight', ()
   assert.equal(landed.phase, 'settled');
   assert.equal(landed.perchIndex, state.perchIndex);
   assert.equal(landed.fromPerchIndex, state.perchIndex);
+});
+
+test('hop model: a busy stretch pushes the next hop back instead of firing the moment it ends', () => {
+  const perchList = buildGardenPerches(usage({ day: 10, week: 40, month: 90, total: 200 })).perches;
+  const start = 1_000_000;
+  const state = createHopState(ACCOUNT, perchList, start);
+  // 忙了很久：不推迟的话 nextHopAt 早就过期，一咽下去就会立刻弹射出去。
+  const busy = reconcileHopState(state, {
+    accountRef: ACCOUNT,
+    perches: perchList,
+    canHop: false,
+    now: start + GARDEN_HOP_MAX_IDLE_MS * 2
+  });
+  assert.ok((busy.nextHopAt) > (start + GARDEN_HOP_MAX_IDLE_MS * 2));
+  const freed = reconcileHopState(busy, {
+    accountRef: ACCOUNT,
+    perches: perchList,
+    canHop: true,
+    now: start + GARDEN_HOP_MAX_IDLE_MS * 2 + 1
+  });
+  assert.equal(freed.phase, 'settled');
 });
 
 test('hop model: stays put while it is busy eating', () => {
@@ -238,6 +262,38 @@ test('feeding model: misses once the queue is full rather than eating everything
     if (index === 0) return;
     assert.ok((job.attackAt) >= (active[index - 1].endsAt));
   });
+});
+
+test('feeding model: leaves room to swallow between two mouthfuls', () => {
+  const now = 1_000_000;
+  const { jobs } = scheduleGardenFeeds({
+    accountRef: ACCOUNT,
+    drops: [drop('a', now), drop('b', now + 1)],
+    hasPerch: true,
+    now
+  });
+  const caught = jobs.filter((job) => job.outcome === 'caught');
+  caught.forEach((job, index) => {
+    // 一口刚缩回就立刻扑下一口，看着像卡带。
+    if (index > 0) {
+      assert.ok((job.attackAt) >= (caught[index - 1].endsAt + GARDEN_SWALLOW_GAP_MS));
+    }
+  });
+});
+
+test('feeding model: stays in recovery for a beat after swallowing', () => {
+  const now = 1_000_000;
+  const { jobs } = scheduleGardenFeeds({
+    accountRef: ACCOUNT,
+    drops: [drop('a', now)],
+    hasPerch: true,
+    now
+  });
+  const job = jobs.find((entry) => entry.outcome === 'caught');
+  if (!job) return;
+  assert.equal(isRecoveringFromFeed(jobs, job.endsAt - 1), false);
+  assert.equal(isRecoveringFromFeed(jobs, job.endsAt + 1), true);
+  assert.equal(isRecoveringFromFeed(jobs, job.endsAt + GARDEN_FEED_RECOVER_MS + 1), false);
 });
 
 test('feeding model: drops everything when there is no bar to stand on', () => {

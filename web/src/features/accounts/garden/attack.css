@@ -27,7 +27,11 @@
 .upstream-quota-attack-damage {
   top: var(--damage-y);
   left: var(--damage-x);
-  z-index: 5;
+  /*
+   * 必须压在头（z 4）下面。数字盖在嘴前面时，无论怎么缩放都是「贴着嘴消失」，
+   * 而不是「被吃进去」——嘴合上时把它遮住，才真的进了嘴里。
+   */
+  z-index: 2;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -168,6 +172,10 @@
   animation: upstream-quota-jaw var(--attack-duration) ease-in-out var(--attack-delay) both;
 }
 
+/*
+ * 被吃掉的那个数字。42% 嘴罩上来，48% 咬合——此后它顺着嘴往回缩的方向被带走，
+ * 而不是在原地缩没：配合 z-index 被头挡住，才是「叼进嘴里」而不是「贴着嘴消失」。
+ */
 @keyframes upstream-quota-damage-eaten {
   0% {
     transform: translate(-50%, -50%) scale(0.55);
@@ -181,12 +189,32 @@
     transform: translate(-50%, -60%) scale(1);
     opacity: 1;
   }
-  44% {
-    transform: translate(-50%, -48%) scale(1.18);
+  42% {
+    transform: translate(-50%, -52%) scale(1.22);
     opacity: 1;
   }
-  53%, 100% {
-    transform: translate(-50%, -50%) rotate(12deg) scale(0.04);
+  48% {
+    transform: translate(
+        calc(-50% + var(--bite-retreat-x, 0) * 5px),
+        calc(-50% + var(--bite-retreat-y, 0) * 5px)
+      )
+      rotate(8deg) scale(0.62);
+    opacity: 1;
+  }
+  56% {
+    transform: translate(
+        calc(-50% + var(--bite-retreat-x, 0) * 13px),
+        calc(-50% + var(--bite-retreat-y, 0) * 13px)
+      )
+      rotate(16deg) scale(0.14);
+    opacity: 0.75;
+  }
+  62%, 100% {
+    transform: translate(
+        calc(-50% + var(--bite-retreat-x, 0) * 18px),
+        calc(-50% + var(--bite-retreat-y, 0) * 18px)
+      )
+      rotate(20deg) scale(0.04);
     opacity: 0;
   }
 }

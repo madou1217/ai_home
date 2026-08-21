@@ -20,10 +20,12 @@ import {
   reconcileHopState
 } from './garden/hop-model';
 import {
+  GARDEN_FEED_RECOVER_MS,
   GARDEN_FREEZE_LEAD_MS,
   getActiveCatch,
   getFreezingCatch,
   getPendingCatches,
+  isRecoveringFromFeed,
   pruneGardenFeedJobs,
   scheduleGardenFeeds
 } from './garden/feeding-model';
@@ -75,8 +77,10 @@ const UpstreamQuotaGarden = ({
   const activeCatch = getActiveCatch(jobs, clock);
   const freezingCatch = getFreezingCatch(jobs, clock);
   const pendingCatches = getPendingCatches(jobs, clock);
-  // 嘴里有东西、或者已经排上号了都不能跳——花不能咬着东西飞走。
-  const canHop = lifecycle.phase === 'visible' && pendingCatches.length === 0;
+  // 吃和跳互斥：嘴里有东西、已经排上号、或刚吃完还在回神，都不起跳。
+  const canHop = lifecycle.phase === 'visible'
+    && pendingCatches.length === 0
+    && !isRecoveringFromFeed(jobs, clock);
 
   useEffect(() => {
     const now = Date.now();
@@ -105,7 +109,11 @@ const UpstreamQuotaGarden = ({
         ? job.attackAt - GARDEN_FREEZE_LEAD_MS - now
         : null,
       job.attackAt > now ? job.attackAt - now : null,
-      job.endsAt > now ? job.endsAt - now : null
+      job.endsAt > now ? job.endsAt - now : null,
+      // 回神结束也是一个状态变化点：过了它才重新允许起跳。
+      job.endsAt + GARDEN_FEED_RECOVER_MS > now
+        ? job.endsAt + GARDEN_FEED_RECOVER_MS - now
+        : null
     ]);
     const delay = getNextWakeDelayMs([
       getGardenLifecycleDelayMs(lifecycle, now),

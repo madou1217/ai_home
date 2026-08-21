@@ -158,7 +158,9 @@ const UpstreamQuotaAttackLayer = ({ accountRef, gardenRef, jobs, profile }: Prop
             ['--attack-offset-path' as string]: `path("${measured.attack.pathData}")`,
             ['--attack-rope-mid' as string]: measured.attack.ropeMidPercent,
             ['--attack-rope-near' as string]: measured.attack.ropeNearPercent,
-            ['--attack-origin-correction' as string]: `${measured.attack.originCorrectionDeg}deg`
+            ['--attack-origin-correction' as string]: `${measured.attack.originCorrectionDeg}deg`,
+            ['--bite-retreat-x' as string]: measured.attack.retreatX,
+            ['--bite-retreat-y' as string]: measured.attack.retreatY
           } : {})
         } as CSSProperties;
 

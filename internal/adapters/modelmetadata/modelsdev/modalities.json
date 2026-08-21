@@ -1067,6 +1067,14 @@
       "text"
     ]
   },
+  "deepseek/deepseek-v4-pro-0423": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ]
+  },
   "deepseek/deepseek-v4-pro-0813": {
     "input": [
       "text"

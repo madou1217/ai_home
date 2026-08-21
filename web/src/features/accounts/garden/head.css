@@ -21,7 +21,8 @@
 .quota-head-jaw {
   /* 铰接点在咽喉：两片颚绕同一个点反向转，咬合时严丝合缝。 */
   transform-box: view-box;
-  transform-origin: 20.8px 12px;
+  /* 内容已左移 8.8，铰接点正好在 viewBox 中心。 */
+  transform-origin: 12px 12px;
 }
 
 .quota-head-jaw--upper {

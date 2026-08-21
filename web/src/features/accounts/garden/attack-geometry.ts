@@ -1,10 +1,8 @@
 import { stableGardenRandom } from './stable-random';
 import {
-  approximateCubicLength,
   buildCubicPathData,
-  buildVineSegment,
-  clampNumber,
-  formatPathPoint
+  buildTaperedRibbonPath,
+  clampNumber
 } from './vine-geometry';
 import type { GardenPoint } from './vine-geometry';
 
@@ -25,12 +23,10 @@ export interface GardenAttackGeometry {
   target: GardenPoint;
   control1: GardenPoint;
   control2: GardenPoint;
-  /** 只有扑出去的那一段，供头部 motion-path 使用。 */
+  /** 扑出去的那一段中心线，供头部 motion-path 与 reveal 遮罩使用。 */
   pathData: string;
-  /** 柱顶 → 待机头 → 目标的一整条连续藤蔓。 */
-  vinePathData: string;
-  /** 待机段占整条藤蔓的比例；reveal 从这里开始往外伸。 */
-  ropeRestPercent: number;
+  /** 同一段的锥形填充轮廓：根部与花茎顶端同宽，越伸越细。 */
+  vineRibbonPath: string;
   ropeMidPercent: number;
   ropeNearPercent: number;
   /** motion-path 会让嘴朝行进方向；待机点用反向补偿恢复原地朝向。 */
@@ -61,15 +57,16 @@ export function buildGardenDamagePoint(
 }
 
 /**
- * 待机头到伤害值之间的扑咬路径：先上扬越过卡片，再从目标上方俯冲。
- * 根部到待机头那一段直接复用 buildVineSegment——和原地花茎同一个函数、同一份
- * bend，所以藤蔓伸出去时与花茎严丝合缝。
+ * 从花茎顶端扑向伤害值的路径：先上扬越过卡片，再从目标上方俯冲。
+ *
+ * 这里只负责"伸出去的那一段"。根部到茎顶由原地植株自己的骨节链画着，攻击时它
+ * 留在原地不动，藤蔓接着它的顶端往外长，所以两者之间不存在需要对齐的接缝。
  */
 export function buildGardenAttackGeometry(
   origin: GardenPoint,
   target: GardenPoint,
   root: GardenPoint = origin,
-  stemBend = 0
+  stemTipWidth = 4
 ): GardenAttackGeometry {
   const deltaX = target.x - origin.x;
   const deltaY = target.y - origin.y;
@@ -95,20 +92,16 @@ export function buildGardenAttackGeometry(
     control1.x - origin.x
   ) * 180 / Math.PI;
 
-  const stem = buildVineSegment(root, origin, stemBend);
-  const hasStem = stem.length > 0.5;
-  const vinePathData = hasStem
-    ? [
-      stem.pathData,
-      `C ${formatPathPoint(control1)} ${formatPathPoint(control2)} ${formatPathPoint(target)}`
-    ].join(' ')
-    : pathData;
-  const attackLength = approximateCubicLength(origin, control1, control2, target);
-  const totalLength = Math.max(1, (hasStem ? stem.length : 0) + attackLength);
-  const ropeRestPercent = ((hasStem ? stem.length : 0) / totalLength) * 100;
-  const revealAt = (attackProgress: number) => (
-    ropeRestPercent + (100 - ropeRestPercent) * attackProgress
+  // 起点宽度接住花茎顶端，末端收细：伸出去的是同一根茎的延长，不是另一条绳子。
+  const vineRibbonPath = buildTaperedRibbonPath(
+    origin,
+    control1,
+    control2,
+    target,
+    stemTipWidth,
+    Math.max(1.6, stemTipWidth * 0.45)
   );
+  const revealAt = (attackProgress: number) => attackProgress * 100;
 
   return {
     root,
@@ -117,8 +110,7 @@ export function buildGardenAttackGeometry(
     control1,
     control2,
     pathData,
-    vinePathData,
-    ropeRestPercent,
+    vineRibbonPath,
     ropeMidPercent: revealAt(0.56),
     ropeNearPercent: revealAt(0.86),
     originCorrectionDeg: normalizeAngle(-normalizeAngle(startTangentDeg + 180))

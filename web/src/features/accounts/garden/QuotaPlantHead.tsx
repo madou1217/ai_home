@@ -7,6 +7,9 @@ import React, { useId } from 'react';
  * 角度，缝里露出的都是口腔，颚转出去也不会露馅。牙齿长在各自颚的内缘上，跟着
  * 那片颚一起转，所以咬合时上下牙是真的合上。
  *
+ * 内容整体左移，让咽喉（铰接点）正好落在 viewBox 中心：定位、镜像转身、
+ * 攻击时沿路径运动都绕这一个点，脖子因此不会随朝向左右漂。
+ *
  * 原地植株与 Portal 攻击层共用这一个组件，任何时刻只有一处在画。
  */
 const QuotaPlantHead = ({ className = '' }: { className?: string }) => {
@@ -19,6 +22,7 @@ const QuotaPlantHead = ({ className = '' }: { className?: string }) => {
       focusable="false"
       aria-hidden="true"
     >
+      <g transform="translate(-8.8 0)">
       <defs>
         <clipPath id={clipId}>
           {/* 头闭合时的轮廓：口腔只在这个范围里露出来。 */}
@@ -56,6 +60,7 @@ const QuotaPlantHead = ({ className = '' }: { className?: string }) => {
         />
         <path className="quota-head-teeth" d="M5.6 12.9L7.8 8.9L10 12.7ZM12.8 12.5L14.8 9L16.8 12.4Z" />
         <path className="quota-head-spot" d="M8.2 18.4a1.35 1.35 0 1 0 0.01 0Z" />
+      </g>
       </g>
     </svg>
   );

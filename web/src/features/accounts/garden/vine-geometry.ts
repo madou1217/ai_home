@@ -3,15 +3,6 @@ export interface GardenPoint {
   y: number;
 }
 
-export interface GardenVineSegment {
-  root: GardenPoint;
-  head: GardenPoint;
-  control1: GardenPoint;
-  control2: GardenPoint;
-  pathData: string;
-  length: number;
-}
-
 export function clampNumber(value: number, minimum: number, maximum: number) {
   return Math.max(minimum, Math.min(maximum, value));
 }
@@ -49,23 +40,6 @@ export function getCubicPoint(
   };
 }
 
-export function approximateCubicLength(
-  start: GardenPoint,
-  control1: GardenPoint,
-  control2: GardenPoint,
-  end: GardenPoint,
-  steps = 18
-) {
-  let length = 0;
-  let previous = start;
-  for (let step = 1; step <= steps; step += 1) {
-    const point = getCubicPoint(start, control1, control2, end, step / steps);
-    length += getPointDistance(previous, point);
-    previous = point;
-  }
-  return length;
-}
-
 export function buildCubicPathData(
   start: GardenPoint,
   control1: GardenPoint,
@@ -79,40 +53,56 @@ export function buildCubicPathData(
 }
 
 /**
- * 花茎的唯一几何来源：一段从柱顶（root）弯到花头（head）的三次贝塞尔。
+ * 把一条三次贝塞尔加粗成锥形的填充带：起点宽 startWidth、终点宽 endWidth。
  *
- * 待机时的花茎和捕食时藤蔓的起始段都由这里生成——两处用同一个函数、同一份
- * bend，藤蔓覆盖到原花茎上时不会出现双线或者接缝。之前那套 root 控制点三分点
- * 近似 + 朝向补偿，存在的唯一目的就是手工对齐两套渲染器，现在不需要了。
- *
- * bend 是垂直于根→头方向的弯曲量（px）：正值往行进方向右侧鼓，让茎有弧度而不是
- * 一根直棍；0 就是一条直线段。
+ * 描边画不出变宽度，而伸出去的藤蔓必须接住花茎顶端的粗细——否则一根锥形的茎上
+ * 突然接一条等宽的弧线，接缝处怎么调都别扭。这里沿曲线采样法线，走一遍上沿、
+ * 回一遍下沿，闭合成一条真正会变细的带子。
  */
-export function buildVineSegment(
-  root: GardenPoint,
-  head: GardenPoint,
-  bend = 0
-): GardenVineSegment {
-  const deltaX = head.x - root.x;
-  const deltaY = head.y - root.y;
-  const span = Math.hypot(deltaX, deltaY);
-  const normalX = span > 0 ? -deltaY / span : 0;
-  const normalY = span > 0 ? deltaX / span : 0;
-  const control1 = {
-    x: root.x + deltaX * 0.34 + normalX * bend,
-    y: root.y + deltaY * 0.34 + normalY * bend
-  };
-  const control2 = {
-    x: root.x + deltaX * 0.72 + normalX * bend * 0.55,
-    y: root.y + deltaY * 0.72 + normalY * bend * 0.55
-  };
+export function buildTaperedRibbonPath(
+  start: GardenPoint,
+  control1: GardenPoint,
+  control2: GardenPoint,
+  end: GardenPoint,
+  startWidth: number,
+  endWidth: number,
+  steps = 22
+): string {
+  const upper: GardenPoint[] = [];
+  const lower: GardenPoint[] = [];
 
-  return {
-    root,
-    head,
-    control1,
-    control2,
-    pathData: buildCubicPathData(root, control1, control2, head),
-    length: approximateCubicLength(root, control1, control2, head)
-  };
+  for (let step = 0; step <= steps; step += 1) {
+    const progress = step / steps;
+    const point = getCubicPoint(start, control1, control2, end, progress);
+    const ahead = getCubicPoint(
+      start,
+      control1,
+      control2,
+      end,
+      Math.min(1, progress + 0.004)
+    );
+    const behind = getCubicPoint(
+      start,
+      control1,
+      control2,
+      end,
+      Math.max(0, progress - 0.004)
+    );
+    const tangentX = ahead.x - behind.x;
+    const tangentY = ahead.y - behind.y;
+    const span = Math.hypot(tangentX, tangentY) || 1;
+    const half = (startWidth + (endWidth - startWidth) * progress) / 2;
+    const offsetX = (-tangentY / span) * half;
+    const offsetY = (tangentX / span) * half;
+    upper.push({ x: point.x + offsetX, y: point.y + offsetY });
+    lower.push({ x: point.x - offsetX, y: point.y - offsetY });
+  }
+
+  const outline = [
+    `M ${formatPathPoint(upper[0])}`,
+    ...upper.slice(1).map((point) => `L ${formatPathPoint(point)}`),
+    ...lower.reverse().map((point) => `L ${formatPathPoint(point)}`),
+    'Z'
+  ];
+  return outline.join(' ');
 }

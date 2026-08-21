@@ -25,6 +25,7 @@ function buildPlantStyle(
   profile: GardenPlantProfile,
   perch: GardenPerch,
   fromPerch: GardenPerch | null,
+  hop: HopState,
   stemHeight: number
 ): CSSProperties {
   // 跳跃位移用无量纲比例表达，真实像素由 CSS 乘上花园宽度算出来——
@@ -39,6 +40,8 @@ function buildPlantStyle(
     ['--hop-dy' as string]: `${fromPerch ? fromPerch.y - perch.y : 0}px`,
     ['--hop-dy-mobile' as string]: `${fromPerch ? fromPerch.mobileY - perch.mobileY : 0}px`,
     ['--hop-duration' as string]: `${GARDEN_HOP_FLIGHT_MS}ms`,
+    ['--facing' as string]: hop.facing,
+    ['--facing-from' as string]: hop.facingFrom,
     ['--head-hue' as string]: `${profile.headHueRotateDeg}deg`,
     ['--plant-lean' as string]: `${profile.leanDeg}deg`,
     ['--stem-color' as string]: profile.stemColor,
@@ -74,7 +77,8 @@ const QuotaPlant = ({ profile, perch, fromPerch, hop, lifecycle, busy }: Props) 
       data-plant-metric={perch.metricKey}
       data-plant-hop={hop.phase}
       data-plant-hop-index={hop.hopIndex}
-      style={buildPlantStyle(profile, perch, airborne ? fromPerch : null, stemHeight)}
+      data-plant-facing={hop.facing}
+      style={buildPlantStyle(profile, perch, airborne ? fromPerch : null, hop, stemHeight)}
     >
       <span className="quota-plant-hop">
         <span className="quota-plant-pipe">

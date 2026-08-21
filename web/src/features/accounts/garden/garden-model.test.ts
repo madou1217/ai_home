@@ -9,7 +9,8 @@ import {
   createHopState,
   getHopDelayMs,
   pickHopTarget,
-  reconcileHopState
+  reconcileHopState,
+  resolveFacing
 } from './hop-model.ts';
 import {
   GARDEN_ATTACK_MS,
@@ -20,11 +21,9 @@ import {
   getGardenFeedPhase,
   scheduleGardenFeeds
 } from './feeding-model.ts';
-import { buildVineSegment } from './vine-geometry.ts';
+import { buildTaperedRibbonPath } from './vine-geometry.ts';
 import { buildGardenAttackGeometry } from './attack-geometry.ts';
 import {
-  GARDEN_HEAD_HEIGHT,
-  GARDEN_HEAD_STEM_INSET,
   GARDEN_STALK_SEGMENTS,
   GARDEN_STEM_MAX_HEIGHT,
   GARDEN_STEM_MIN_HEIGHT,
@@ -170,6 +169,39 @@ test('hop model: keeps the plant seated on the same window when the bar only mov
   assert.equal(shifted[next.perchIndex].metricKey, 'month');
 });
 
+test('hop model: turns around instead of jumping backwards', () => {
+  const perches = buildGardenPerches(usage({ day: 10, week: 40, month: 90, total: 200 })).perches;
+  // 往右跳必须转身；往左跳再转回来；朝向在同一次跳跃里不会来回抖。
+  assert.equal(resolveFacing(perches, 0, 3, 1), -1);
+  assert.equal(resolveFacing(perches, 3, 0, -1), 1);
+  assert.equal(resolveFacing(perches, 2, 2, -1), -1);
+});
+
+test('hop model: a hop records where it was facing before taking off', () => {
+  const start = 1_000_000;
+  const perches = buildGardenPerches(usage({ day: 10, week: 40, month: 90, total: 200 })).perches;
+  let state = createHopState(ACCOUNT, perches, start);
+  state = reconcileHopState(state, {
+    accountRef: ACCOUNT,
+    perches,
+    canHop: true,
+    now: start + GARDEN_HOP_MAX_IDLE_MS + 1
+  });
+  assert.equal(state.phase, 'airborne');
+  // 转身动画要知道两端；落地后新朝向成为下一跳的起点。
+  const expected = resolveFacing(perches, state.fromPerchIndex, state.perchIndex, state.facingFrom);
+  assert.equal(state.facing, expected);
+
+  const landed = reconcileHopState(state, {
+    accountRef: ACCOUNT,
+    perches,
+    canHop: true,
+    now: state.startedAt + GARDEN_HOP_FLIGHT_MS
+  });
+  assert.equal(landed.facing, state.facing);
+  assert.equal(landed.facingFrom, state.facing);
+});
+
 test('feeding model: catch chance stays inside the configured range', () => {
   for (let index = 0; index < 50; index += 1) {
     const chance = getCatchChance(ACCOUNT, `drop-${index}`);
@@ -277,27 +309,40 @@ test('feeding model: reports the mouthful that is being eaten right now', () => 
   assert.equal(getActiveCatch(jobs, job.endsAt + 1), undefined);
 });
 
-test('vine geometry: bends the stem instead of drawing a rigid stick', () => {
-  const straight = buildVineSegment({ x: 0, y: 40 }, { x: 0, y: 10 }, 0);
-  const bent = buildVineSegment({ x: 0, y: 40 }, { x: 0, y: 10 }, 3);
-  assert.ok(Math.abs((straight.control1.x) - (0)) < 0.001);
-  assert.ok(Math.abs((bent.control1.x) - (0)) >= 0.001);
-  assert.ok((bent.length) > (straight.length));
-});
-
-test('vine geometry: the attack vine starts with exactly the resting stem', () => {
+test('vine geometry: the attack vine is the stem carrying on, not a second rope', () => {
   const root = { x: 100, y: 200 };
   const origin = { x: 100, y: 170 };
-  const bend = 2.4;
-  const stem = buildVineSegment(root, origin, bend);
-  const attack = buildGardenAttackGeometry(origin, { x: 320, y: 240 }, root, bend);
+  const tipWidth = 4;
+  const attack = buildGardenAttackGeometry(origin, { x: 320, y: 240 }, root, tipWidth);
 
-  // 同一个函数、同一份 bend：藤蔓的起始段与原地花茎逐字符相同，不可能有接缝。
-  assert.equal(attack.vinePathData.startsWith(stem.pathData), true);
-  assert.ok((attack.ropeRestPercent) > (0));
-  assert.ok((attack.ropeRestPercent) < (100));
-  assert.ok((attack.ropeMidPercent) > (attack.ropeRestPercent));
+  // 藤蔓只画伸出去的那一段：起点就是花茎顶端，根部那一段仍由原地植株自己画。
+  assert.equal(attack.pathData.startsWith(`M ${origin.x} ${origin.y}`), true);
+  assert.ok((attack.ropeMidPercent) > (0));
   assert.ok((attack.ropeNearPercent) > (attack.ropeMidPercent));
+  assert.ok((attack.ropeNearPercent) <= (100));
+});
+
+test('vine geometry: the ribbon starts at the stem width and tapers away', () => {
+  const start = { x: 0, y: 0 };
+  const end = { x: 100, y: 0 };
+  const startWidth = 4;
+  const ribbon = buildTaperedRibbonPath(
+    start,
+    { x: 30, y: 0 },
+    { x: 70, y: 0 },
+    end,
+    startWidth,
+    1.8
+  );
+  const points = ribbon
+    .replace(/[MLZ]/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .map(Number);
+  // 第一个点与最后一个点是起点两侧的上下沿：它们的间距就是接住花茎的那一头。
+  const firstY = points[1];
+  const lastY = points[points.length - 1];
+  assert.ok(Math.abs(Math.abs(firstY - lastY) - startWidth) < 0.01);
 });
 
 test('vine geometry: lifts over the card before diving onto the damage number', () => {
@@ -308,13 +353,10 @@ test('vine geometry: lifts over the card before diving onto the damage number', 
   assert.ok((attack.control2.y) < (target.y));
 });
 
-test('plant profile: the resting vine reaches the point the attack geometry measures', () => {
-  // 攻击藤蔓的 origin 是头部元素的中心；待机花茎必须长到同一个点，
-  // 否则藤蔓伸出去时会比原地花茎长出一截，接缝就露出来了。
+test('plant profile: the head sits on the stem tip the vine grows out of', () => {
+  // 咽喉、茎顶、藤蔓起点必须是同一个点，否则脖子伸出去的地方会露接缝。
   const stemHeight = getStemHeight(20);
-  const headCentre = getHeadCenterOffset(stemHeight);
-  assert.ok(headCentre > stemHeight);
-  assert.equal(headCentre, stemHeight - GARDEN_HEAD_STEM_INSET + GARDEN_HEAD_HEIGHT / 2);
+  assert.equal(getHeadCenterOffset(stemHeight), stemHeight);
 });
 
 test('plant profile: grows the stem with the bar it stands on, within bounds', () => {

@@ -58,56 +58,32 @@
   mask-type: luminance;
 }
 
-.upstream-quota-attack-rope-reveal,
-.upstream-quota-attack-rope-shadow,
-.upstream-quota-attack-rope-core,
-.upstream-quota-attack-rope-braid {
-  fill: none;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
 .upstream-quota-attack-rope-reveal {
+  fill: none;
   stroke: white;
-  stroke-width: 7px;
-  stroke-dasharray: var(--attack-rope-rest) 100;
+  /* 遮罩比藤蔓宽一圈，露出来的边缘才是藤蔓自己的轮廓而不是遮罩的直切口。 */
+  stroke-width: 10px;
+  stroke-linecap: round;
+  stroke-dasharray: 0 100;
   animation: upstream-quota-rope-reach var(--attack-duration) linear var(--attack-delay) both;
 }
 
-.upstream-quota-attack-rope-shadow {
-  stroke: rgb(28 61 25 / 78%);
-  stroke-width: 5.4px;
+/* 藤蔓是一条会变细的填充带，起点和花茎顶端同宽——它就是这根茎伸出去的部分。 */
+.upstream-quota-attack-rope-body {
+  fill: var(--stem-color, hsl(104 44% 42%));
+  stroke: var(--stem-shade, hsl(108 40% 26%));
+  stroke-width: 1;
+  stroke-linejoin: round;
+  paint-order: stroke fill;
 }
 
-.upstream-quota-attack-rope-core {
-  stroke: var(--stem-color, hsl(104 43% 38%));
-  stroke-width: 4px;
-}
-
-.upstream-quota-attack-rope-braid {
-  stroke: rgb(224 241 185 / 72%);
-  stroke-width: 0.85px;
-  stroke-dasharray: 1.4px 2.7px;
-  stroke-dashoffset: 0.7px;
-}
-
-.upstream-quota-attack-root-knot {
-  position: absolute;
-  top: var(--attack-root-y);
-  left: var(--attack-root-x);
-  z-index: 2;
-  box-sizing: border-box;
-  width: 5px;
-  height: 7px;
-  border: 0.6px solid rgb(28 61 25 / 70%);
-  border-radius: 48% 52% 44% 56%;
-  background: var(--stem-color, hsl(104 43% 38%));
-  box-shadow:
-    inset 0.6px 0.6px rgb(226 243 190 / 55%),
-    0 1px 1.5px rgb(24 43 22 / 25%);
-  opacity: 0;
-  transform: translate(-50%, -50%);
-  animation: upstream-quota-root-knot var(--attack-duration) linear var(--attack-delay) both;
+.upstream-quota-attack-rope-sheen {
+  fill: none;
+  stroke: hsl(96 52% 62%);
+  stroke-width: 1.1px;
+  stroke-linecap: round;
+  opacity: 0.72;
+  transform: translate(-0.6px, -0.6px);
 }
 
 .upstream-quota-attack-head-motion,
@@ -233,12 +209,10 @@
   }
 }
 
+/* 伸脖子：从茎顶 0 开始往外长，咬完再缩回 0——两端都收在茎顶，不会突然消失。 */
 @keyframes upstream-quota-rope-reach {
-  0% {
+  0%, 6% {
     stroke-dasharray: 0 100;
-  }
-  6% {
-    stroke-dasharray: var(--attack-rope-rest) 100;
   }
   24% {
     stroke-dasharray: var(--attack-rope-mid) 100;
@@ -250,19 +224,7 @@
     stroke-dasharray: 100 100;
   }
   70%, 100% {
-    stroke-dasharray: var(--attack-rope-rest) 100;
-  }
-}
-
-@keyframes upstream-quota-root-knot {
-  0%, 3% {
-    opacity: 0;
-  }
-  7%, 70% {
-    opacity: 1;
-  }
-  74%, 100% {
-    opacity: 0;
+    stroke-dasharray: 0 100;
   }
 }
 
@@ -414,7 +376,6 @@
   }
 
   .upstream-quota-attack-rope,
-  .upstream-quota-attack-root-knot,
   .upstream-quota-attack-swallow-motion,
   .upstream-quota-attack-head-motion {
     display: none;

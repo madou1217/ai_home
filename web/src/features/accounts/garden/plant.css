@@ -108,8 +108,12 @@
   animation: quota-plant-squash var(--hop-duration) linear both;
 }
 
-/* 捕食时整株交给攻击层，原地只留根结，避免出现两株花。 */
-.quota-plant--busy .quota-plant-squash {
+/*
+ * 捕食时只有头飞出去，花茎留在原地绷住不动。
+ * 之前是整株隐藏、攻击层另画一根藤，两套形态一换就是一次硬跳变——
+ * 「直线段上拼了个弧线」的接缝就是这么来的。
+ */
+.quota-plant--busy .quota-plant-head {
   opacity: 0;
 }
 
@@ -167,14 +171,18 @@
   bottom: calc(100% - 1px);
 }
 
-.quota-plant--busy .quota-plant-seg,
 .quota-plant--airborne .quota-plant-seg {
   animation: quota-seg-hop var(--hop-duration) cubic-bezier(0.3, 0.1, 0.3, 1)
     calc(var(--seg-lag) * 26ms) both;
 }
 
-.quota-plant--busy .quota-plant-seg {
-  animation: none;
+/*
+ * 捕食时把摇摆定格在当前姿态，而不是 animation: none——后者会让茎瞬间弹回直立，
+ * 那一帧就是肉眼看到的「卡一下」。
+ */
+.quota-plant--busy .quota-plant-seg,
+.quota-plant--busy .quota-plant-leaf {
+  animation-play-state: paused;
 }
 
 .quota-plant-leaf {
@@ -217,20 +225,25 @@
 
 .quota-plant-head {
   position: absolute;
-  bottom: calc(100% - 6px);
+  /* 咽喉（= viewBox 中心，也就是元素中心）正好坐在茎顶：头不是浮在茎上方。 */
+  bottom: calc(100% - 12px);
   left: 50%;
   z-index: 3;
   width: 24px;
   height: 24px;
-  transform: translateX(-50%);
-  transform-origin: 50% 100%;
+  /* 造型朝左；朝右时整颗头镜像过去，绝不倒着飞。镜像绕咽喉，脖子不会左右漂。 */
+  transform: translateX(-50%) scaleX(var(--facing, 1));
+  transform-origin: 50% 50%;
   /* 待机时轻轻开合，像在呼吸。 */
   animation: quota-head-breathe calc(var(--sway-duration) * 0.72) ease-in-out
     var(--sway-delay) infinite alternate;
 }
 
+/* 跳跃时同时跑两条：张嘴的节奏，和起跳瞬间的转身。 */
 .quota-plant--airborne .quota-plant-head {
-  animation: quota-head-hop var(--hop-duration) cubic-bezier(0.3, 0.1, 0.3, 1) both;
+  animation:
+    quota-head-hop var(--hop-duration) cubic-bezier(0.3, 0.1, 0.3, 1) both,
+    quota-head-turn var(--hop-duration) cubic-bezier(0.3, 0.1, 0.3, 1) both;
 }
 
 @keyframes quota-plant-emerge {
@@ -276,6 +289,22 @@
   }
   to {
     --jaw-open: 19deg;
+  }
+}
+
+/*
+ * 转身：蓄力阶段把头侧过来再翻到新朝向，中间那一帧是侧脸，看起来像真的转了个身。
+ * 朝向不变时 --facing-from 与 --facing 相同，这条动画等于什么都没做。
+ */
+@keyframes quota-head-turn {
+  0% {
+    transform: translateX(-50%) scaleX(var(--facing-from, 1));
+  }
+  10% {
+    transform: translateX(-50%) scaleX(calc(var(--facing-from, 1) * 0.24));
+  }
+  20%, 100% {
+    transform: translateX(-50%) scaleX(var(--facing, 1));
   }
 }
 
@@ -453,6 +482,10 @@
   .quota-plant-leaf,
   .quota-plant-head {
     animation: none;
+  }
+
+  .quota-plant--airborne .quota-plant-head {
+    transform: translateX(-50%) scaleX(var(--facing, 1));
   }
 
   /* 跳跃降级成瞬移：换柱子这件事仍然发生，只是不画弧线也不弹。 */

@@ -12,6 +12,7 @@ import {
 } from './garden/attack-geometry';
 import type { GardenAttackGeometry } from './garden/attack-geometry';
 import type { GardenPoint } from './garden/vine-geometry';
+import { GARDEN_STALK_TIP_WIDTH } from './garden/plant-profile';
 import type { GardenPlantProfile } from './garden/plant-profile';
 import { subscribeViewportChange } from './garden/viewport-observer';
 
@@ -97,12 +98,13 @@ const UpstreamQuotaAttackLayer = ({ accountRef, gardenRef, jobs, profile }: Prop
       }
       next[job.id] = {
         damagePoint,
-        attack: buildGardenAttackGeometry(origin, damagePoint, root, profile.stemBend),
+        // 起点宽度对齐花茎顶端，藤蔓才是这根茎的延长而不是另一条绳子。
+        attack: buildGardenAttackGeometry(origin, damagePoint, root, GARDEN_STALK_TIP_WIDTH),
         missFallPx
       };
     });
     setMeasurements(next);
-  }, [accountRef, gardenRef, profile.stemBend]);
+  }, [accountRef, gardenRef]);
 
   useLayoutEffect(() => {
     if (jobs.length === 0) {
@@ -152,10 +154,7 @@ const UpstreamQuotaAttackLayer = ({ accountRef, gardenRef, jobs, profile }: Prop
           ['--mouth-color' as string]: profile.mouthColor,
           ['--stem-color' as string]: profile.stemColor,
           ...(measured.attack ? {
-            ['--attack-root-x' as string]: `${measured.attack.root.x}px`,
-            ['--attack-root-y' as string]: `${measured.attack.root.y}px`,
             ['--attack-offset-path' as string]: `path("${measured.attack.pathData}")`,
-            ['--attack-rope-rest' as string]: measured.attack.ropeRestPercent,
             ['--attack-rope-mid' as string]: measured.attack.ropeMidPercent,
             ['--attack-rope-near' as string]: measured.attack.ropeNearPercent,
             ['--attack-origin-correction' as string]: `${measured.attack.originCorrectionDeg}deg`
@@ -195,7 +194,7 @@ const UpstreamQuotaAttackLayer = ({ accountRef, gardenRef, jobs, profile }: Prop
                     >
                       <path
                         className="upstream-quota-attack-rope-reveal"
-                        d={measured.attack.vinePathData}
+                        d={measured.attack.pathData}
                         pathLength={100}
                         vectorEffect="non-scaling-stroke"
                       />
@@ -203,23 +202,16 @@ const UpstreamQuotaAttackLayer = ({ accountRef, gardenRef, jobs, profile }: Prop
                   </defs>
                   <g mask={`url(#${ropeMaskId})`}>
                     <path
-                      className="upstream-quota-attack-rope-shadow"
-                      d={measured.attack.vinePathData}
-                      vectorEffect="non-scaling-stroke"
+                      className="upstream-quota-attack-rope-body"
+                      d={measured.attack.vineRibbonPath}
                     />
                     <path
-                      className="upstream-quota-attack-rope-core"
-                      d={measured.attack.vinePathData}
-                      vectorEffect="non-scaling-stroke"
-                    />
-                    <path
-                      className="upstream-quota-attack-rope-braid"
-                      d={measured.attack.vinePathData}
+                      className="upstream-quota-attack-rope-sheen"
+                      d={measured.attack.pathData}
                       vectorEffect="non-scaling-stroke"
                     />
                   </g>
                 </svg>
-                <span className="upstream-quota-attack-root-knot" />
                 <span className="upstream-quota-attack-swallow-motion">
                   <span className="upstream-quota-attack-swallow" />
                 </span>

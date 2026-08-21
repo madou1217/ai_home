@@ -13,6 +13,9 @@ export const GARDEN_HOP_MAX_IDLE_MS = 6200;
 
 export type HopPhase = 'settled' | 'airborne';
 
+/** 面朝方向：1 = 朝左（造型的默认朝向），-1 = 朝右。 */
+export type HopFacing = 1 | -1;
+
 export interface HopState {
   phase: HopPhase;
   /** 落脚点身份：柱子重排后靠它认路，而不是靠序号。 */
@@ -22,6 +25,10 @@ export interface HopState {
   fromPerchIndex: number;
   /** 单调递增的跳跃序号：跳跃目标的随机盐，保证同一次跳跃重渲染不变。 */
   hopIndex: number;
+  /** 当前面朝方向；往回跳要先转身，不能倒着飞过去。 */
+  facing: HopFacing;
+  /** 这一跳起跳前的朝向，转身动画要两端都知道。 */
+  facingFrom: HopFacing;
   /** 当前相位的起点。 */
   startedAt: number;
   /** settled 期间的下一次起跳时刻。 */
@@ -60,9 +67,24 @@ export function createHopState(
     perchIndex,
     fromPerchIndex: perchIndex,
     hopIndex: 0,
+    facing: 1,
+    facingFrom: 1,
     startedAt: now,
     nextHopAt: scheduleNextHop(accountRef, 0, now)
   };
+}
+
+/** 目标在右边就转过去；同一列（几乎不可能）保持原朝向。 */
+export function resolveFacing(
+  perches: GardenPerch[],
+  fromIndex: number,
+  toIndex: number,
+  current: HopFacing
+): HopFacing {
+  const from = perches[fromIndex];
+  const to = perches[toIndex];
+  if (!from || !to || to.xPercent === from.xPercent) return current;
+  return to.xPercent > from.xPercent ? -1 : 1;
 }
 
 /**
@@ -130,6 +152,7 @@ export function reconcileHopState(
       ...current,
       phase: 'settled',
       fromPerchIndex: current.perchIndex,
+      facingFrom: current.facing,
       startedAt: now,
       nextHopAt: scheduleNextHop(accountRef, current.hopIndex, now)
     };
@@ -146,6 +169,8 @@ export function reconcileHopState(
     perchIndex: target,
     fromPerchIndex: current.perchIndex,
     hopIndex,
+    facing: resolveFacing(perches, current.perchIndex, target, current.facing),
+    facingFrom: current.facing,
     startedAt: now,
     nextHopAt: now + GARDEN_HOP_FLIGHT_MS
   };

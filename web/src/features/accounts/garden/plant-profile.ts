@@ -11,8 +11,6 @@ export const GARDEN_STALK_BASE_WIDTH = 6.5;
 export const GARDEN_STALK_TIP_WIDTH = 4;
 export const GARDEN_HEAD_WIDTH = 24;
 export const GARDEN_HEAD_HEIGHT = 24;
-/** 头压进茎顶的重叠量：头的咽喉正好含住茎尖。 */
-export const GARDEN_HEAD_STEM_INSET = 6;
 
 export interface GardenStalkSegment {
   height: number;
@@ -67,9 +65,11 @@ export function getStalkSegments(stemHeight: number): GardenStalkSegment[] {
 }
 
 /**
- * 攻击藤蔓的起点取的是头部元素的中心；这里给出同一个点相对根部的高度，
- * 让藤蔓从花茎该结束的地方接着往外伸，而不是从半空冒出来。
+ * 头的定位锚点（咽喉）相对根部的高度。
+ *
+ * 咽喉就落在茎顶，所以这个值等于茎长本身——攻击藤蔓取的 origin 是头部元素的
+ * 中心，也就是这一点，藤蔓因此正好从花茎结束的地方接着往外伸。
  */
 export function getHeadCenterOffset(stemHeight: number) {
-  return stemHeight - GARDEN_HEAD_STEM_INSET + GARDEN_HEAD_HEIGHT / 2;
+  return stemHeight;
 }

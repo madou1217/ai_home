@@ -346,11 +346,23 @@ test('vine geometry: the ribbon starts at the stem width and tapers away', () =>
 });
 
 test('vine geometry: lifts over the card before diving onto the damage number', () => {
+  // 桌面：剩余额度在右边一列，脖子要先上扬越过卡片再俯冲下去。
   const origin = { x: 100, y: 200 };
   const target = { x: 320, y: 240 };
-  const attack = buildGardenAttackGeometry(origin, target, origin, 0);
+  const attack = buildGardenAttackGeometry(origin, target, 4);
   assert.ok((attack.control1.y) < (Math.min(origin.y, target.y)));
   assert.ok((attack.control2.y) < (target.y));
+});
+
+test('vine geometry: a target straight overhead is reached by looking up, not by arcing away', () => {
+  // 手机：剩余额度就在花的正上方。硬套桌面那套上扬会先冲出卡片顶部再拐回来。
+  const origin = { x: 120, y: 260 };
+  const target = { x: 132, y: 196 };
+  const attack = buildGardenAttackGeometry(origin, target, 4);
+  const apex = Math.min(attack.control1.y, attack.control2.y);
+  // 弧顶最多比目标再高出一点点，不能整条脖子从卡片外面绕过去。
+  assert.ok((target.y - apex) < (40));
+  assert.ok((apex) < (target.y));
 });
 
 test('plant profile: the head sits on the stem tip the vine grows out of', () => {

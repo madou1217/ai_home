@@ -150,7 +150,8 @@ const UpstreamQuotaAttackLayer = ({ accountRef, gardenRef, jobs, profile }: Prop
           ['--attack-duration' as string]: `${GARDEN_ATTACK_MS}ms`,
           ['--miss-duration' as string]: `${GARDEN_MISS_MS}ms`,
           ['--miss-fall' as string]: `${measured.missFallPx}px`,
-          ['--head-hue' as string]: `${profile.headHueRotateDeg}deg`,
+          ['--head-skin' as string]: profile.headSkinColor,
+          ['--head-outline' as string]: profile.headOutlineColor,
           ['--mouth-color' as string]: profile.mouthColor,
           ['--stem-color' as string]: profile.stemColor,
           ...(measured.attack ? {

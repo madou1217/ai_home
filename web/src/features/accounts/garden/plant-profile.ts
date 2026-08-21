@@ -16,8 +16,9 @@ export interface GardenStalkSegment {
 }
 
 export interface GardenPlantProfile {
-  /** 每个账号一朵花，色调稳定，用来区分不同账号的行。 */
-  headHueRotateDeg: number;
+  /** 头的配色。每个账号一朵花，色相稳定，用来区分不同账号的行。 */
+  headSkinColor: string;
+  headOutlineColor: string;
   /** 待机时整株的静态倾斜，几株花并排时不会像复制粘贴。 */
   leanDeg: number;
   stemColor: string;
@@ -28,12 +29,15 @@ export interface GardenPlantProfile {
 }
 
 export function buildPlantProfile(accountRef: string): GardenPlantProfile {
+  // 色相直接算进颜色：filter 会让飞行中的头每帧重新滤一遍，而这只是个静态色差。
+  const hue = 352 + Math.round(stableGardenRange(-14, 14, accountRef, 'head-hue'));
   return {
-    headHueRotateDeg: Math.round(stableGardenRange(-16, 16, accountRef, 'head-hue')),
+    headSkinColor: `hsl(${hue} 72% 52%)`,
+    headOutlineColor: `hsl(${hue} 56% 22%)`,
     leanDeg: Number(stableGardenRange(-5, 5, accountRef, 'lean').toFixed(2)),
     stemColor: 'hsl(104 44% 42%)',
     stemShadeColor: 'hsl(108 40% 26%)',
-    mouthColor: 'hsl(354 62% 17%)',
+    mouthColor: `hsl(${hue} 62% 17%)`,
     swayDurationMs: Math.round(stableGardenRange(2600, 3400, accountRef, 'sway-duration')),
     // 负延迟：不同账号的摇摆一开始就错开，不会整页同步摆动。
     swayDelayMs: -Math.round(stableGardenRandom(accountRef, 'sway-phase') * 2700)

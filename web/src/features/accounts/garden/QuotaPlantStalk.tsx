@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { memo } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 
+import QuotaPlantHead from './QuotaPlantHead';
 import { GARDEN_STALK_SEGMENTS, getStalkSegments } from './plant-profile';
 import type { GardenStalkSegment } from './plant-profile';
 
@@ -29,11 +30,17 @@ const Leaf = ({ side }: { side: 'left' | 'right' }) => (
 function renderSegment(
   segments: GardenStalkSegment[],
   index: number,
-  leafIndex: number,
-  head: ReactNode
+  leafIndex: number
 ): ReactNode {
   const segment = segments[index];
-  if (!segment) return head;
+  // 链尾就是头：它长在最上面那一节上，跟着整串一起摆。
+  if (!segment) {
+    return (
+      <span className="quota-plant-head" data-quota-plant-origin="0">
+        <QuotaPlantHead />
+      </span>
+    );
+  }
   return (
     <span
       className="quota-plant-seg"
@@ -52,18 +59,19 @@ function renderSegment(
           <Leaf side="right" />
         </>
       ) : null}
-      {renderSegment(segments, index + 1, leafIndex, head)}
+      {renderSegment(segments, index + 1, leafIndex)}
     </span>
   );
 }
 
-const QuotaPlantStalk = ({ stemHeight, head }: { stemHeight: number; head: ReactNode }) => {
+const QuotaPlantStalk = ({ stemHeight }: { stemHeight: number }) => {
   const segments = getStalkSegments(stemHeight);
   return (
     <span className="quota-plant-stalk">
-      {renderSegment(segments, 0, Math.min(1, GARDEN_STALK_SEGMENTS - 1), head)}
+      {renderSegment(segments, 0, Math.min(1, GARDEN_STALK_SEGMENTS - 1))}
     </span>
   );
 };
 
-export default QuotaPlantStalk;
+/* 茎的形状只跟茎长有关；时钟每醒一次就重建一遍这棵递归结构没有意义。 */
+export default memo(QuotaPlantStalk);

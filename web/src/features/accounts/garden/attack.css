@@ -92,8 +92,8 @@
   top: 0;
   left: 0;
   offset-path: var(--attack-offset-path);
-  /* 元素中心是咽喉；沿路径走的应该是嘴，否则咬合点会越过伤害数字。 */
-  offset-anchor: 2.6px 12px;
+  /* 元素中心就是咽喉，藤蔓末端也在那里；嘴的位置由路径终点回收来保证。 */
+  offset-anchor: 50% 50%;
 }
 
 .upstream-quota-attack-head-motion {
@@ -102,7 +102,6 @@
   height: 24px;
   offset-distance: 0%;
   offset-rotate: auto 180deg;
-  filter: drop-shadow(0 2px 2px rgb(35 24 21 / 28%));
   will-change: offset-distance;
   animation: upstream-quota-head-route var(--attack-duration) linear var(--attack-delay) both;
 }
@@ -119,7 +118,8 @@
 }
 
 .upstream-quota-attack-head-scale {
-  transform-origin: 78% 56%;
+  /* 咬合放大必须绕咽喉：绕别处放大会把头从脖子上拽下来。 */
+  transform-origin: 50% 50%;
   will-change: transform;
   animation: upstream-quota-head-bite-chew var(--attack-duration) ease-in-out var(--attack-delay) both;
 }
@@ -127,7 +127,8 @@
 .upstream-quota-attack-head-collar {
   position: absolute;
   top: 50%;
-  right: -1px;
+  /* 颈环套在咽喉上，也就是元素中心。 */
+  left: 50%;
   z-index: -1;
   box-sizing: border-box;
   width: 8px;
@@ -138,7 +139,7 @@
   box-shadow:
     inset 0.6px 0.6px rgb(226 243 190 / 50%),
     1px 1px 1.5px rgb(24 43 22 / 22%);
-  transform: translateY(-50%);
+  transform: translate(-50%, -50%);
 }
 
 .upstream-quota-attack-swallow-motion {
@@ -147,7 +148,6 @@
   height: 8px;
   offset-distance: 100%;
   offset-rotate: 0deg;
-  filter: drop-shadow(0 1px 1px rgb(30 54 25 / 34%));
   opacity: 0;
   will-change: offset-distance, opacity;
   animation: upstream-quota-swallow-route var(--attack-duration) ease-in-out var(--attack-delay) both;

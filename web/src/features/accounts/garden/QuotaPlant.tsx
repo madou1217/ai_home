@@ -1,7 +1,6 @@
 import React from 'react';
 import type { CSSProperties } from 'react';
 
-import QuotaPlantHead from './QuotaPlantHead';
 import QuotaPlantStalk from './QuotaPlantStalk';
 import type { GardenLifecyclePhase } from './lifecycle-model';
 import type { GardenPerch } from './perch-model';
@@ -44,7 +43,8 @@ function buildPlantStyle(
     ['--hop-duration' as string]: `${GARDEN_HOP_FLIGHT_MS}ms`,
     ['--facing' as string]: hop.facing,
     ['--facing-from' as string]: hop.facingFrom,
-    ['--head-hue' as string]: `${profile.headHueRotateDeg}deg`,
+    ['--head-skin' as string]: profile.headSkinColor,
+    ['--head-outline' as string]: profile.headOutlineColor,
     ['--plant-lean' as string]: `${profile.leanDeg}deg`,
     ['--stem-color' as string]: profile.stemColor,
     ['--stem-shade' as string]: profile.stemShadeColor,
@@ -64,8 +64,12 @@ function buildPlantStyle(
  * - stalk   骨节链：摇摆、甩动、头与叶都长在它上面
  */
 const QuotaPlant = ({ profile, perch, fromPerch, hop, lifecycle, frozen, busy }: Props) => {
-  const stemHeight = getStemHeight(perch.barHeight);
   const airborne = hop.phase === 'airborne' && Boolean(fromPerch);
+  // 茎长跟着脚下的柱子走，但换柱子是落地那一刻的事：腾空时仍用起跳柱的高度，
+  // 否则起跳第一帧整株会凭空长高一截（两根柱子高度差最多有 9px）。
+  const stemHeight = getStemHeight(
+    (airborne && fromPerch ? fromPerch : perch).barHeight
+  );
 
   return (
     <span
@@ -89,14 +93,7 @@ const QuotaPlant = ({ profile, perch, fromPerch, hop, lifecycle, frozen, busy }:
           <span className="quota-plant-body">
             <span className="quota-plant-root" />
             <span className="quota-plant-squash">
-              <QuotaPlantStalk
-                stemHeight={stemHeight}
-                head={(
-                  <span className="quota-plant-head" data-quota-plant-origin="0">
-                    <QuotaPlantHead />
-                  </span>
-                )}
-              />
+              <QuotaPlantStalk stemHeight={stemHeight} />
             </span>
           </span>
         </span>

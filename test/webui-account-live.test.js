@@ -583,6 +583,28 @@ test('accounts canonical signature includes DB-backed role changes', (t) => {
   assert.match(after, new RegExp(`roles:codex:${accountRef}`));
 });
 
+test('accounts canonical signature includes Kimi Desktop effective region changes', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-account-live-region-signature-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const accountRef = registerDbAccount(root, 'kimi', '10', {
+    nativeAuth: { auth: { tokens: { access_token: 'at_10', refresh_token: 'rt_10' } } }
+  });
+  const regionPath = path.join(
+    resolveAccountRuntimeDir(root, 'kimi', accountRef),
+    'electron-user-data',
+    'bridge-store',
+    'region.json'
+  );
+  const ctx = { fs, aiHomeDir: root };
+
+  const before = __private.buildCanonicalAccountsSignature(ctx);
+  writeJson(regionPath, { lastEffective: 'china' });
+  const after = __private.buildCanonicalAccountsSignature(ctx);
+
+  assert.notEqual(after, before);
+  assert.match(after, new RegExp(`${accountRef}:[^|]*,china(?:\\||$)`));
+});
+
 test('background hydration does not overwrite a newer operational status with queued state', async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-account-live-status-race-'));
   const accountStateIndex = createAccountStateIndex({ fs, aiHomeDir: root });
@@ -1497,6 +1519,12 @@ test('refreshLiveAccountRecord surfaces kimi /me identity as nickname email and 
     },
     status: { configured: true, accountName: '' }
   });
+  writeJson(path.join(
+    resolveAccountRuntimeDir(root, 'kimi', accountRef),
+    'electron-user-data',
+    'bridge-store',
+    'region.json'
+  ), { lastEffective: 'china' });
 
   const record = await refreshLiveAccountRecord(ctx, 'kimi', accountRef, {
     skipUsageRefresh: true,
@@ -1507,6 +1535,7 @@ test('refreshLiveAccountRecord surfaces kimi /me identity as nickname email and 
   assert.equal(record.displayName, '+86 186****2115');
   assert.equal(record.planType, 'basic');
   assert.equal(record.planName, 'Allegretto');
+  assert.equal(record.region, 'china');
 });
 
 test('fast account snapshot preserves the Kimi public subscription name', (t) => {
@@ -1550,6 +1579,12 @@ test('fast account snapshot preserves the Kimi public subscription name', (t) =>
     },
     status: { configured: true, accountName: '' }
   });
+  writeJson(path.join(
+    resolveAccountRuntimeDir(root, 'kimi', accountRef),
+    'electron-user-data',
+    'bridge-store',
+    'region.json'
+  ), { lastEffective: 'overseas' });
 
   const snapshot = readAccountsFastSnapshot(ctx);
   const record = snapshot.accounts.find((item) => item.accountRef === accountRef);
@@ -1557,4 +1592,5 @@ test('fast account snapshot preserves the Kimi public subscription name', (t) =>
   assert.ok(record);
   assert.equal(record.planType, 'intermediate');
   assert.equal(record.planName, 'Allegretto');
+  assert.equal(record.region, 'overseas');
 });

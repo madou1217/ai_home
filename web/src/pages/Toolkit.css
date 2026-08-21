@@ -1242,8 +1242,19 @@
   text-align: right;
 }
 
-.toolkit-modal-alert {
-  margin-bottom: var(--space-6);
+.toolkit-config-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: var(--space-4);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.toolkit-config-note > .anticon {
+  margin-top: 3px;
+  color: var(--warning-color, #d48806);
 }
 
 /* Compatibility primitives retained for the proxy-pool leaf panel. */

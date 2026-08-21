@@ -33,6 +33,35 @@ const providerCases = [
   ['agy', ['.gemini', 'antigravity-cli'], ['brain', 'session-id', 'artifact.md']],
   ['opencode', ['.local', 'share', 'opencode'], ['storage', 'session.json']]
 ];
+const desktopProviders = [
+  'codex',
+  'claude',
+  'agy',
+  'opencode',
+  'qoder',
+  'qodercn',
+  'kimi',
+  'kiro',
+  'zcode'
+];
+
+test('desktop electron user data aliases remain account-private', () => {
+  desktopProviders.forEach((provider) => {
+    const projected = path.join(
+      aiHomeDir,
+      'run',
+      'auth-projections',
+      provider,
+      accountRef,
+      'electron-user-data',
+      'Local State'
+    );
+    assert.deepEqual(
+      resolveProviderResourcePath(projected, { aiHomeDir, hostHomeDir, provider }),
+      { path: projected, provider, canonicalized: false, blocked: true }
+    );
+  });
+});
 
 test('provider resource aliases resolve to one account-independent native root', () => {
   providerCases.forEach(([provider, projectionRoot, resourceTail]) => {

@@ -4,7 +4,9 @@ import test from 'node:test';
 import {
   KIMI_DESKTOP_SESSION_POLL_MS,
   getKimiDesktopSessionStatusTagColor,
-  getKimiDesktopSessionStatusText
+  getKimiDesktopSessionStatusText,
+  resolveKimiDesktopPollPhase,
+  resolveKimiDesktopSessionExpiryDelay
 } from './kimi-desktop-login.ts';
 
 test('getKimiDesktopSessionStatusText 覆盖全部轮询状态文案', () => {
@@ -27,4 +29,17 @@ test('getKimiDesktopSessionStatusTagColor 区分进行/告警/成功状态', () 
 
 test('轮询间隔为 2 秒', () => {
   assert.equal(KIMI_DESKTOP_SESSION_POLL_MS, 2000);
+});
+
+test('二维码截止时间拒绝无效值并把剩余时间收敛到非负数', () => {
+  assert.equal(resolveKimiDesktopSessionExpiryDelay(10_000, 4_000), 6_000);
+  assert.equal(resolveKimiDesktopSessionExpiryDelay(3_000, 4_000), 0);
+  assert.equal(resolveKimiDesktopSessionExpiryDelay(undefined, 4_000), null);
+  assert.equal(resolveKimiDesktopSessionExpiryDelay('invalid', 4_000), null);
+});
+
+test('已发出的官方成功响应赢得本地过期竞态', () => {
+  assert.equal(resolveKimiDesktopPollPhase('STATUS_PENDING', 3_000, 4_000), 'STATUS_EXPIRED');
+  assert.equal(resolveKimiDesktopPollPhase('STATUS_SCANNED', 3_000, 4_000), 'STATUS_EXPIRED');
+  assert.equal(resolveKimiDesktopPollPhase('STATUS_SUCCESS', 3_000, 4_000), 'STATUS_SUCCESS');
 });

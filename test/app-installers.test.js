@@ -2,14 +2,35 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 
 const { listProviderDefinitions } = require('../lib/provider-catalog');
 const { getAppInstaller, listManagedAppInstallers, INSTALLERS } = require('../lib/server/app-installers');
 const {
   buildNpmPlan,
   buildNpmUpdatePlan,
-  buildNpmUninstallPlan
+  buildNpmUninstallPlan,
+  buildShellPlan
 } = require('../lib/server/app-installers/official-install');
+
+test('后台 shell 安装计划不读取用户登录配置', (t) => {
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-shell-plan-'));
+  t.after(() => fs.rmSync(homeDir, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(homeDir, '.bash_profile'), 'echo login_profile_loaded >&2\nexit 87\n');
+  const plan = buildShellPlan('probe', 'probe', 'printf shell_plan_ok');
+
+  const result = spawnSync(plan.command, plan.args, {
+    env: { ...process.env, HOME: homeDir },
+    encoding: 'utf8'
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, 'shell_plan_ok');
+  assert.doesNotMatch(result.stderr, /login_profile_loaded/);
+});
 
 test('每个合同 CLI Provider 都由独立安装器模块提供统一入口', () => {
   const providers = listProviderDefinitions()
@@ -62,6 +83,7 @@ test('独立托管 CLI 不污染 Provider 合同，并通过同一生命周期�
 test('桌面安装参数只来自对应 Provider 安装器', () => {
   const codex = getAppInstaller('codex');
   const claude = getAppInstaller('claude');
+  const kimi = getAppInstaller('kimi');
   const zcode = getAppInstaller('zcode');
   const gemini = getAppInstaller('gemini');
   const grok = getAppInstaller('grok');
@@ -72,9 +94,64 @@ test('桌面安装参数只来自对应 Provider 安装器', () => {
   assert.deepEqual(claude.resolveDesktopInstallPlans({ platform: 'win32' })[0].args.slice(0, 4), [
     'install', '--id', 'Anthropic.Claude', '--exact'
   ]);
+  assert.equal(kimi.resolveDesktopInstallPlans({
+    platform: 'darwin',
+    processObj: { platform: 'darwin', arch: 'arm64', env: {} }
+  })[0].id, 'kimi_desktop_macos_official');
+  assert.equal(kimi.resolveDesktopInstallPlans({
+    platform: 'win32',
+    processObj: { platform: 'win32', arch: 'x64', env: {} }
+  })[0].id, 'kimi_desktop_windows_official');
   assert.equal(zcode.resolveDesktopInstallPlans({ platform: 'darwin' })[0].id, 'zcode_desktop_macos_official_page');
   assert.deepEqual(gemini.resolveDesktopInstallPlans({ platform: 'darwin' }), []);
   assert.deepEqual(grok.resolveDesktopInstallPlans({ platform: 'darwin' }), []);
+});
+
+test('Kimi Desktop 安装器从官方动态端点解析白名单 DMG 并精确安装 Kimi.app', () => {
+  const kimi = getAppInstaller('kimi');
+  const [plan] = kimi.resolveDesktopInstallPlans({
+    platform: 'macos',
+    processObj: { platform: 'darwin', arch: 'arm64', env: {} }
+  });
+
+  assert.equal(plan.command, 'bash');
+  const script = plan.args.at(-1);
+  assert.match(script, /appsupport\.kimi\.ai\/api\/app\/pkg\/latest\/macos\/download/);
+  assert.match(script, /https:\/\/kimi-img\.moonshot\.cn\/\*/);
+  assert.match(script, /hdiutil attach .* -readonly /);
+  assert.match(script, /CFBundleIdentifier raw/);
+  assert.match(script, /com\.moonshot\.kimichat/);
+  assert.match(script, /codesign --verify --deep --strict/);
+  assert.match(script, /TeamIdentifier/);
+  assert.match(script, /2J9472RW75/);
+  assert.match(script, /Kimi Installer\.app\/Contents\/Helpers\/Kimi\.app/);
+  assert.match(script, /target="\$install_root\/Kimi\.app"/);
+  assert.match(script, /ditto "\$app" "\$stage"/);
+  assert.match(script, /codesign --verify --deep --strict "\$stage"/);
+  assert.match(script, /mv "\$target" "\$backup"/);
+  assert.match(script, /mv "\$stage" "\$target"/);
+  assert.match(script, /\[ "\$installed" -ne 1 \].*mv "\$backup" "\$target"/);
+  assert.match(script, /trap cleanup EXIT/);
+});
+
+test('Kimi Desktop Windows 安装器校验官方跳转、Authenticode 与发布者后静默安装', () => {
+  const kimi = getAppInstaller('kimi');
+  const [plan] = kimi.resolveDesktopInstallPlans({
+    platform: 'windows',
+    processObj: { platform: 'win32', arch: 'x64', env: { SystemRoot: 'C:\\Windows' } }
+  });
+
+  assert.equal(plan.id, 'kimi_desktop_windows_official');
+  assert.equal(plan.command, 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe');
+  const script = plan.args.at(-1);
+  assert.match(script, /appsupport\.kimi\.ai\/api\/app\/pkg\/latest\/windows\/download/);
+  assert.match(script, /AllowAutoRedirect = \$false/);
+  assert.match(script, /kimi-img\.moonshot\.cn/);
+  assert.match(script, /\/app\/download\/windows\/kimi_/);
+  assert.match(script, /Get-AuthenticodeSignature/);
+  assert.match(script, /SignerCertificate\.Subject -notmatch 'Moonshot'/);
+  assert.match(script, /Start-Process .* -ArgumentList '\/S' -Wait -PassThru/);
+  assert.match(script, /Remove-Item -Force \$dest/);
 });
 
 test('安装器公共平台接口使用 macos/windows/linux，兼容 Node 别名输入', () => {
@@ -138,6 +215,9 @@ test('官方安装器优先使用可验证的稳定下载端点，并覆盖 Wind
 });
 
 test('Desktop 安装器只在官方资料声明的架构上提供计划', () => {
+  const x64Mac = { platform: 'macos', processObj: { platform: 'darwin', arch: 'x64', env: {} } };
+  assert.deepEqual(getAppInstaller('kimi').resolveDesktopInstallPlans(x64Mac), []);
+
   const armLinux = { platform: 'linux', processObj: { platform: 'linux', arch: 'arm64', env: {} } };
   assert.deepEqual(getAppInstaller('zcode').resolveDesktopInstallPlans(armLinux), []);
   assert.deepEqual(getAppInstaller('kiro').resolveDesktopInstallPlans(armLinux), []);
@@ -147,5 +227,9 @@ test('Desktop 安装器只在官方资料声明的架构上提供计划', () => 
 
   const armWindows = { platform: 'windows', processObj: { platform: 'win32', arch: 'arm64', env: {} } };
   assert.equal(getAppInstaller('zcode').resolveDesktopInstallPlans(armWindows).length, 1);
+  assert.deepEqual(getAppInstaller('kimi').resolveDesktopInstallPlans(armWindows), []);
   assert.deepEqual(getAppInstaller('opencode').resolveDesktopInstallPlans(armWindows), []);
+
+  const x64Windows = { platform: 'windows', processObj: { platform: 'win32', arch: 'x64', env: {} } };
+  assert.equal(getAppInstaller('kimi').resolveDesktopInstallPlans(x64Windows).length, 1);
 });

@@ -51,6 +51,8 @@ export interface AccountModelSummary {
   updatedAt: number;
 }
 
+export type AccountRegion = 'china' | 'overseas';
+
 export type AccountUsageSnapshot =
   | {
       kind: 'codex_oauth_status';
@@ -126,6 +128,7 @@ export interface Account {
   lastUsedAt?: number | null;
   planType: string; // free/pro/ultra/plus/team/business/api-key/oauth
   planName?: string; // 订阅品牌档（如 kimi 的 Allegretto），展示优先于 planType
+  region?: AccountRegion; // 当前账号客户端实际生效区域
   email: string;
   baseUrl?: string;
   quotaStatus?: string;

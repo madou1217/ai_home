@@ -89,6 +89,7 @@ function createLauncher(overrides = {}) {
     readAccountCredentialRecord: overrides.readAccountCredentialRecord,
     seedKimiDesktopTokenStore: overrides.seedKimiDesktopTokenStore,
     adoptKimiDesktopTokensFromProfile: overrides.adoptKimiDesktopTokensFromProfile,
+    hasKimiDesktopTokenStore: overrides.hasKimiDesktopTokenStore,
     resolveZcodeCredentialSecret: overrides.resolveZcodeCredentialSecret
   });
   return { launcher, fakeSpawn, fsImpl };
@@ -874,16 +875,105 @@ test('posix close 先 SIGTERM，宽限后仍存活再 SIGKILL', () => {
   assert.deepEqual(signals, [[9001, 'SIGTERM'], [9001, 0], [9001, 'SIGKILL']]);
 });
 
-test('action 校验：未知 action 与 cli+close 都返回 unsupported_action', () => {
+test('action 校验：未知 action 返回 unsupported_action', () => {
   const { launcher } = createLauncher();
   assert.equal(
     launcher.launchAccountApp({ provider: 'zcode', accountRef: ACCOUNT_REF, kind: 'desktop', action: 'restart' }).error,
     'unsupported_action'
   );
-  assert.equal(
-    launcher.launchAccountApp({ provider: 'zcode', accountRef: ACCOUNT_REF, kind: 'cli', action: 'close' }).error,
-    'unsupported_action'
-  );
+});
+
+test('cli close 结束该账号由 Toolkit 打开的全部 CLI 进程树', () => {
+  const calls = [];
+  const execFileSync = (file, args) => {
+    calls.push({ file, args });
+    if (file === 'powershell.exe') {
+      return JSON.stringify([
+        {
+          ProcessId: 9501,
+          ParentProcessId: 1,
+          Name: 'cmd.exe',
+          CommandLine: `cmd.exe /c set "AIH_ACCOUNT_APP=1" && set "AIH_PROVIDER_ACCOUNT_REF=${ACCOUNT_REF}" && "C:\\node.exe" "C:\\repo\\bin\\ai-home.js" codex 3`
+        },
+        {
+          ProcessId: 9502,
+          ParentProcessId: 9501,
+          Name: 'node.exe',
+          CommandLine: '"C:\\node.exe" "C:\\repo\\bin\\ai-home.js" codex 3'
+        }
+      ]);
+    }
+    if (file === 'taskkill') return '';
+    throw new Error(`unexpected exec: ${file}`);
+  };
+  const { launcher } = createLauncher({
+    execFileSync,
+    resolveAccount: () => ({ accountRef: ACCOUNT_REF, provider: 'codex', cliAccountId: '3' })
+  });
+  const result = launcher.launchAccountApp({
+    provider: 'codex',
+    accountRef: ACCOUNT_REF,
+    kind: 'cli',
+    action: 'close'
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 'closed');
+  assert.deepEqual(result.pids, [9501]);
+  assert.deepEqual(calls.filter((call) => call.file === 'taskkill'), [{
+    file: 'taskkill',
+    args: ['/PID', '9501', '/T', '/F']
+  }]);
+});
+
+test('posix cli close 只结束目标账号的 Toolkit CLI 进程，不影响其他账号', () => {
+  const signals = [];
+  const otherAccountRef = 'acct_other000000000000000';
+  const execFileSync = (file, args) => {
+    assert.equal(file, 'ps');
+    assert.deepEqual(args, ['-ax', '-o', 'pid=,ppid=,command=']);
+    return [
+      `9601 1 AIH_ACCOUNT_APP=1 AIH_PROVIDER_ACCOUNT_REF='${ACCOUNT_REF}' /bin/zsh -lc \"/repo/bin/ai-home.js codex 3\"`,
+      '9602 9601 /usr/bin/node /repo/bin/ai-home.js codex 3',
+      '9603 9602 /opt/homebrew/bin/tmux -L aih-codex-target',
+      `9701 1 AIH_ACCOUNT_APP=1 AIH_PROVIDER_ACCOUNT_REF='${otherAccountRef}' /bin/zsh -lc \"/repo/bin/ai-home.js codex 4\"`,
+      '9702 9701 /usr/bin/node /repo/bin/ai-home.js codex 4'
+    ].join('\n');
+  };
+  const alive = new Set([9601, 9602, 9603, 9701, 9702]);
+  const { launcher } = createLauncher({
+    path: nodePath.posix,
+    processObj: {
+      platform: 'darwin',
+      execPath: '/usr/bin/node',
+      env: {},
+      kill(pid, signal) {
+        signals.push([pid, signal]);
+        if (signal === 'SIGTERM' || signal === 'SIGKILL') alive.delete(pid);
+        if (signal === 0 && !alive.has(pid)) {
+          throw Object.assign(new Error('ESRCH'), { code: 'ESRCH' });
+        }
+      }
+    },
+    execFileSync,
+    stopGraceMs: 0,
+    resolveAccount: () => ({ accountRef: ACCOUNT_REF, provider: 'codex', cliAccountId: '3' })
+  });
+  const result = launcher.launchAccountApp({
+    provider: 'codex',
+    accountRef: ACCOUNT_REF,
+    kind: 'cli',
+    action: 'close'
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 'closed');
+  assert.deepEqual(result.pids, [9603, 9602, 9601]);
+  assert.deepEqual(signals, [
+    [9603, 'SIGTERM'], [9603, 0],
+    [9602, 'SIGTERM'], [9602, 0],
+    [9601, 'SIGTERM'], [9601, 0]
+  ]);
+  assert.equal(alive.has(9701), true);
+  assert.equal(alive.has(9702), true);
 });
 
 test('findRunningDesktopPids 排除 --type= 子进程并只匹配本账号 user-data-dir', () => {
@@ -959,6 +1049,44 @@ test('app-entries 检测器支持安装完成后的显式失效', () => {
   assert.equal(detector.detect().zcode.desktop, true);
   detector.invalidate();
   assert.equal(detector.detect().zcode.desktop, false);
+});
+
+// 回归：后台 Server（launchd/systemd）继承的 PATH 缺少 ~/.local/bin 等
+// profile 追加目录，只扫描该 PATH 会把官方安装器装好的 CLI 判成未安装，
+// 与真正的启动链路（登录 shell 回落）结论相反。
+test('app-entries 检测：CLI 只在登录 shell PATH 上时仍判定为已安装', () => {
+  const claudeBin = '/home/alice/.local/bin/claude';
+  const execCalls = [];
+  const detector = createAppEntryDetector({
+    fs: createFakeFs([claudeBin]),
+    path: nodePath.posix,
+    processObj: { platform: 'linux', env: {} },
+    env: { PATH: '/usr/bin:/bin', HOME: '/home/alice' },
+    execFileSync: (file, args) => {
+      execCalls.push({ file, args });
+      return '/home/alice/.local/bin:/usr/bin:/bin';
+    },
+    now: () => 1000
+  });
+
+  assert.equal(detector.detect().claude.cli, true);
+  // 登录 shell 每个检测周期只拉起一次，不随 provider 数量放大。
+  assert.equal(execCalls.length, 1);
+  assert.deepEqual(execCalls[0].args, ['-lc', 'printf %s "$PATH"']);
+});
+
+test('app-entries 检测：登录 shell 不可用时降级为宿主 PATH', () => {
+  const detector = createAppEntryDetector({
+    fs: createFakeFs(['/usr/bin/claude']),
+    path: nodePath.posix,
+    processObj: { platform: 'linux', env: {} },
+    env: { PATH: '/usr/bin', HOME: '/home/alice' },
+    execFileSync: () => { throw new Error('sh missing'); },
+    now: () => 1000
+  });
+  const entries = detector.detect();
+  assert.equal(entries.claude.cli, true);
+  assert.equal(entries.codex.cli, false);
 });
 
 // --- 批量桌面实例扫描 ---
@@ -1143,9 +1271,11 @@ function createKimiDesktopLauncherFixture(t, overrides = {}) {
     resolveAccount: () => ({ accountRef, provider: 'kimi', cliAccountId: '2' }),
     getProfileDir: () => profileDir,
     readAccountEnv: () => ({}),
+    adoptKimiDesktopTokensFromProfile: () => null,
+    seedKimiDesktopTokenStore: () => ({ seeded: true }),
     ...overrides
   });
-  return { launcher, fakeSpawn, accountRef, profileDir, aiHomeDir, kimiExe };
+  return { launcher, fakeSpawn, accountRef, profileDir, aiHomeDir, hostHomeDir, kimiExe };
 }
 
 test('kimi desktop 存在托管 desktopSession 时启动前把 session 种进隔离 profile', (t) => {
@@ -1177,10 +1307,11 @@ test('kimi desktop 存在托管 desktopSession 时启动前把 session 种进隔
   assert.equal(seeds[0].userId, 'u-1');
 });
 
-test('kimi desktop 无托管 desktopSession 时不 seed 也不影响启动', (t) => {
+test('kimi desktop 无托管 desktopSession 且 profile 未登录时要求先扫码', (t) => {
   const seeds = [];
   const { launcher, fakeSpawn, accountRef } = createKimiDesktopLauncherFixture(t, {
     adoptKimiDesktopTokensFromProfile: () => null,
+    hasKimiDesktopTokenStore: () => false,
     seedKimiDesktopTokenStore: (payload) => {
       seeds.push(payload);
       return { seeded: true };
@@ -1188,9 +1319,102 @@ test('kimi desktop 无托管 desktopSession 时不 seed 也不影响启动', (t)
   });
 
   const result = launcher.launchAccountApp({ provider: 'kimi', accountRef, kind: 'desktop' });
-  assert.equal(result.ok, true);
-  assert.equal(fakeSpawn.calls.length, 1);
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'kimi_desktop_session_required');
+  assert.equal(fakeSpawn.calls.length, 0);
   assert.equal(seeds.length, 0);
+});
+
+test('kimi desktop 旧实例已运行但未登录时仍进入扫码流程', (t) => {
+  let userDataDir = '';
+  const { launcher, fakeSpawn, accountRef, profileDir } = createKimiDesktopLauncherFixture(t, {
+    adoptKimiDesktopTokensFromProfile: () => null,
+    hasKimiDesktopTokenStore: () => false,
+    execFileSync(file) {
+      assert.equal(file, 'powershell.exe');
+      return JSON.stringify({
+        ProcessId: 9801,
+        Name: 'Kimi.exe',
+        CommandLine: `Kimi.exe --user-data-dir=${userDataDir}`
+      });
+    }
+  });
+  userDataDir = nodePath.join(profileDir, 'electron-user-data');
+
+  const result = launcher.launchAccountApp({ provider: 'kimi', accountRef, kind: 'desktop' });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'kimi_desktop_session_required');
+  assert.deepEqual(result.pids, [9801]);
+  assert.equal(fakeSpawn.calls.length, 0);
+});
+
+test('kimi desktop 扫码成功后只重启该账号未登录的旧实例', (t) => {
+  const execCalls = [];
+  let userDataDir = '';
+  const { launcher, fakeSpawn, accountRef, profileDir, aiHomeDir } = createKimiDesktopLauncherFixture(t, {
+    adoptKimiDesktopTokensFromProfile: () => null,
+    hasKimiDesktopTokenStore: () => false,
+    seedKimiDesktopTokenStore: () => ({ seeded: true }),
+    execFileSync(file, args) {
+      execCalls.push({ file, args });
+      if (file === 'powershell.exe') {
+        return JSON.stringify({
+          ProcessId: 9802,
+          Name: 'Kimi.exe',
+          CommandLine: `Kimi.exe --user-data-dir=${userDataDir}`
+        });
+      }
+      if (file === 'taskkill') return '';
+      throw new Error(`unexpected exec: ${file}`);
+    }
+  });
+  userDataDir = nodePath.join(profileDir, 'electron-user-data');
+  writeDesktopSession(nodeFs, aiHomeDir, accountRef, {
+    accessToken: 'web-access',
+    refreshToken: 'web-refresh',
+    userId: 'u-1'
+  });
+
+  const result = launcher.launchAccountApp({ provider: 'kimi', accountRef, kind: 'desktop' });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 'launched');
+  assert.deepEqual(execCalls.filter((call) => call.file === 'taskkill'), [{
+    file: 'taskkill',
+    args: ['/PID', '9802', '/T', '/F']
+  }]);
+  assert.equal(fakeSpawn.calls.length, 1);
+});
+
+test('kimi desktop 启动时把历史共享 user-data 链接迁回账号私有目录', (t) => {
+  const { launcher, accountRef, profileDir, aiHomeDir, kimiExe } = createKimiDesktopLauncherFixture(t);
+  const sharedUserDataDir = nodePath.join(
+    nodePath.dirname(nodePath.dirname(profileDir)),
+    'shared-kimi-user-data'
+  );
+  const accountUserDataDir = nodePath.join(profileDir, 'electron-user-data');
+  nodeFs.mkdirSync(sharedUserDataDir, { recursive: true });
+  nodeFs.mkdirSync(profileDir, { recursive: true });
+  nodeFs.writeFileSync(nodePath.join(sharedUserDataDir, 'must-survive.txt'), 'shared-state\n', 'utf8');
+  nodeFs.symlinkSync(sharedUserDataDir, accountUserDataDir, 'dir');
+  writeDesktopSession(nodeFs, aiHomeDir, accountRef, {
+    accessToken: 'web-access',
+    refreshToken: 'web-refresh',
+    userId: 'u-1'
+  });
+
+  const result = launcher.launchAccountApp({ provider: 'kimi', accountRef, kind: 'desktop' });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.executable, kimiExe);
+  assert.equal(nodeFs.lstatSync(accountUserDataDir).isSymbolicLink(), false);
+  assert.equal(nodeFs.lstatSync(accountUserDataDir).isDirectory(), true);
+  assert.equal(nodeFs.existsSync(nodePath.join(accountUserDataDir, 'must-survive.txt')), false);
+  assert.equal(
+    nodeFs.readFileSync(nodePath.join(sharedUserDataDir, 'must-survive.txt'), 'utf8'),
+    'shared-state\n'
+  );
 });
 
 test('kimi desktop 在 profile 已有轮换后的 token 时先采纳回托管存储再 seed', (t) => {
@@ -1224,8 +1448,43 @@ test('kimi desktop 在 profile 已有轮换后的 token 时先采纳回托管存
   assert.equal(session.refreshToken, 'rotated-refresh');
 });
 
-test('kimi desktop seed 抛异常时启动不受影响', (t) => {
-  const { launcher, accountRef, aiHomeDir } = createKimiDesktopLauncherFixture(t, {
+test('macOS kimi desktop 已有密文 store 时沿用 profile，不用旧托管 token 覆盖', (t) => {
+  const seeds = [];
+  const fixture = createKimiDesktopLauncherFixture(t, {
+    processObj: { platform: 'darwin', execPath: '/usr/bin/node', env: {} },
+    env: { HOME: '' },
+    adoptKimiDesktopTokensFromProfile: () => null,
+    hasKimiDesktopTokenStore: () => true,
+    seedKimiDesktopTokenStore: (payload) => {
+      seeds.push(payload);
+      return { seeded: true };
+    }
+  });
+  const bundlePath = nodePath.join(fixture.hostHomeDir, 'Applications', 'Kimi.app');
+  nodeFs.mkdirSync(nodePath.join(bundlePath, 'Contents', 'MacOS'), { recursive: true });
+  writeDesktopSession(nodeFs, fixture.aiHomeDir, fixture.accountRef, {
+    accessToken: 'stale-access',
+    refreshToken: 'stale-refresh',
+    userId: 'u-1'
+  });
+
+  const result = fixture.launcher.launchAccountApp({
+    provider: 'kimi',
+    accountRef: fixture.accountRef,
+    kind: 'desktop'
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(seeds.length, 0);
+  assert.equal(fixture.fakeSpawn.calls.length, 1);
+  assert.equal(
+    fixture.fakeSpawn.calls[0].file,
+    nodePath.join(bundlePath, 'Contents', 'MacOS', 'Kimi')
+  );
+});
+
+test('kimi desktop seed 抛异常且 profile 无既有登录态时阻止打开登录页', (t) => {
+  const { launcher, fakeSpawn, accountRef, aiHomeDir } = createKimiDesktopLauncherFixture(t, {
     adoptKimiDesktopTokensFromProfile: () => {
       throw new Error('boom');
     },
@@ -1239,5 +1498,7 @@ test('kimi desktop seed 抛异常时启动不受影响', (t) => {
     userId: 'u-1'
   });
   const result = launcher.launchAccountApp({ provider: 'kimi', accountRef, kind: 'desktop' });
-  assert.equal(result.ok, true);
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'kimi_desktop_session_seed_failed');
+  assert.equal(fakeSpawn.calls.length, 0);
 });

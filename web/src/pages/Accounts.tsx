@@ -13,7 +13,6 @@ import {
   Modal,
   Form,
   Select,
-  Alert,
   message,
   Dropdown,
   Tooltip,
@@ -60,6 +59,7 @@ import type {
   AccountAddJob,
   AccountAuthMode,
   AccountImportJob,
+  AppInstallJob,
   AccountRefreshJob,
   ClientTerminalItem,
   Provider,
@@ -111,6 +111,7 @@ import {
 import { CliPickerModal } from '@/features/accounts/CliPickerModal';
 import { KimiDesktopLoginModal } from '@/features/accounts/KimiDesktopLoginModal';
 import { AccountAppInstallModal } from '@/features/accounts/AccountAppInstallModal';
+import { AccountAppInstallResultModal } from '@/features/accounts/AccountAppInstallResultModal';
 import { EditAccountModal } from '@/features/accounts/EditAccountModal';
 import { ImportAccountsModal } from '@/features/accounts/ImportAccountsModal';
 import { AddAccountModal } from '@/features/accounts/AddAccountModal';
@@ -125,6 +126,7 @@ import {
   getPlanTagColor,
   getPlanTagLabel,
   renderAccountDisplayBadge,
+  renderAccountRegionTag,
   renderAccountRoleIcons,
   renderAccountRoleTags
 } from '@/features/accounts/AccountBadges';
@@ -155,6 +157,12 @@ interface AccountAppInstallPrompt {
   kind: AccountAppInstallKind;
   terminalId?: string;
   message: string;
+}
+
+interface AccountAppInstallResult {
+  prompt: AccountAppInstallPrompt;
+  job: AppInstallJob | null;
+  error?: string;
 }
 
 type ProviderStatsBucket = {
@@ -255,6 +263,7 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
   const [cliInstallSubmitting, setCliInstallSubmitting] = useState(false);
   const [accountAppInstallPrompt, setAccountAppInstallPrompt] = useState<AccountAppInstallPrompt | null>(null);
   const [accountAppInstallSubmitting, setAccountAppInstallSubmitting] = useState(false);
+  const [accountAppInstallResult, setAccountAppInstallResult] = useState<AccountAppInstallResult | null>(null);
   const [form] = Form.useForm();
   const [editForm] = Form.useForm();
   const [editModalVisible, setEditModalVisible] = useState(false);
@@ -613,7 +622,10 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
   const [runningAccounts, setRunningAccounts] = useState<string[]>([]);
   const cliClickTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const [cliPickerAccount, setCliPickerAccount] = useState<Account | null>(null);
-  const [kimiDesktopLoginAccount, setKimiDesktopLoginAccount] = useState<Account | null>(null);
+  const [kimiDesktopLoginRequest, setKimiDesktopLoginRequest] = useState<{
+    account: Account;
+    openAfterLogin: boolean;
+  } | null>(null);
   const [cliTerminals, setCliTerminals] = useState<ClientTerminalItem[]>([]);
   const [selectedCliTerminalId, setSelectedCliTerminalId] = useState('system-default');
   const [cliTerminalsLoading, setCliTerminalsLoading] = useState(false);
@@ -1148,6 +1160,14 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
         message.warning('账号认证已失效，请重新登录后再打开');
         return;
       }
+      if (kind === 'desktop' && record.provider === 'kimi'
+        && (code === 'kimi_desktop_session_required' || code === 'kimi_desktop_session_seed_failed')) {
+        setKimiDesktopLoginRequest({ account: record, openAfterLogin: true });
+        if (code === 'kimi_desktop_session_seed_failed') {
+          message.warning(error?.response?.data?.message || 'Kimi Desktop 登录态需要重新托管');
+        }
+        return;
+      }
       if (code === 'agy_desktop_restart_required') {
         Modal.confirm({
           title: 'Antigravity Desktop 需要重启',
@@ -1179,30 +1199,36 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
     }
   };
 
-  const confirmAccountAppInstall = async () => {
-    const prompt = accountAppInstallPrompt;
-    if (!prompt || accountAppInstallSubmitting) return;
+  const runAccountAppInstall = async (prompt: AccountAppInstallPrompt) => {
+    if (accountAppInstallSubmitting) return;
     setAccountAppInstallSubmitting(true);
+    setAccountAppInstallPrompt(null);
     try {
       const appId = prompt.kind === 'desktop' ? `${prompt.record.provider}-desktop` : prompt.record.provider;
       const response = await toolkitAPI.executeAppAction(appId, 'install', prompt.kind);
       if (!response.ok || !response.job) {
         throw new Error(response.error || 'Toolkit 未创建安装任务');
       }
-      setAccountAppInstallPrompt(null);
       message.info('安装任务已交给 Toolkit 应用管理，进度显示在右下角任务队列。');
       const completed = await waitForAppInstallJob(response.job.id);
-      if (completed.status !== 'succeeded') {
-        throw new Error(completed.error || '安装未完成');
+      if (completed.status === 'succeeded') {
+        await loadAppEntries({ refresh: true });
       }
-      await loadAppEntries({ refresh: true });
-      message.success('安装完成，正在打开应用…');
-      await handleOpenApp(prompt.record, prompt.kind, prompt.terminalId);
+      setAccountAppInstallResult({ prompt, job: completed });
     } catch (installError: any) {
-      message.error(installError?.response?.data?.message || installError?.message || '安装失败');
+      setAccountAppInstallResult({
+        prompt,
+        job: null,
+        error: installError?.response?.data?.message || installError?.message || '安装失败'
+      });
     } finally {
       setAccountAppInstallSubmitting(false);
     }
+  };
+
+  const confirmAccountAppInstall = async () => {
+    if (!accountAppInstallPrompt) return;
+    await runAccountAppInstall(accountAppInstallPrompt);
   };
 
   const chooseCliTerminal = async (record: Account) => {
@@ -1426,6 +1452,7 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
               <Tag color={getPlanTagColor(record)} style={{ fontSize: 11, lineHeight: '18px', padding: '0 4px', margin: 0 }}>
                 {getPlanTagLabel(record)}
               </Tag>
+              {renderAccountRegionTag(record)}
               {/* 操作按钮必须保持语义化图标（DesktopOutlined / CodeOutlined），禁止替换为 ProviderIcon，避免与行首厂商主图标混淆 */}
               {appEntries && desktopSupported ? (
                 <Tooltip title={!record.configured ? '账号未配置，完成授权后可打开 Desktop' : record.runtimeStatus === 'auth_invalid' ? '认证已失效，请重新登录' : runningAccounts.includes(getAccountRef(record)) ? 'Desktop 运行中（点击关闭）' : desktopInstalled ? '打开 Desktop' : '未安装 Desktop，点击后确认安装'}>
@@ -1456,7 +1483,7 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
                     icon={<QrcodeOutlined />}
                     onClick={(event: any) => {
                       event?.stopPropagation?.();
-                      setKimiDesktopLoginAccount(record);
+                      setKimiDesktopLoginRequest({ account: record, openAfterLogin: false });
                     }}
                   />
                 </Tooltip>
@@ -1733,6 +1760,7 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
         {/* 状态 + 模型探测(轻量一行,可点探测进模型管理) */}
         <div className="account-mobile-meta">
           <span className="account-mobile-status">{renderAccountDisplayBadge(record)}</span>
+          {renderAccountRegionTag(record)}
           <span
             className="account-mobile-probe"
             role="button"
@@ -1964,13 +1992,11 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
       )}
 
       {hasActiveImportJob ? (
-        <Alert
-          type="info"
-          showIcon
-          message="账号导入正在后台运行"
-          description={formatImportJobProgress(importJob)}
-          style={{ marginBottom: 16 }}
-        />
+        <div className="accounts-import-running" role="status" aria-live="polite">
+          <SyncOutlined spin aria-hidden="true" />
+          <strong>账号导入正在后台运行</strong>
+          <span>{formatImportJobProgress(importJob)}</span>
+        </div>
       ) : null}
       <ImportAccountsModal
         open={importModalVisible}
@@ -2179,6 +2205,27 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
           if (!accountAppInstallSubmitting) setAccountAppInstallPrompt(null);
         }}
       />
+      <AccountAppInstallResultModal
+        open={Boolean(accountAppInstallResult)}
+        providerName={accountAppInstallResult ? (providerNames[accountAppInstallResult.prompt.record.provider] || accountAppInstallResult.prompt.record.provider) : ''}
+        accountLabel={accountAppInstallResult ? getAccountPrimaryLabel(accountAppInstallResult.prompt.record) : ''}
+        kind={accountAppInstallResult?.prompt.kind || 'desktop'}
+        job={accountAppInstallResult?.job || null}
+        error={accountAppInstallResult?.error}
+        onOpenApp={() => {
+          const result = accountAppInstallResult;
+          if (!result) return;
+          setAccountAppInstallResult(null);
+          void handleOpenApp(result.prompt.record, result.prompt.kind, result.prompt.terminalId);
+        }}
+        onRetry={() => {
+          const result = accountAppInstallResult;
+          if (!result) return;
+          setAccountAppInstallResult(null);
+          void runAccountAppInstall(result.prompt);
+        }}
+        onClose={() => setAccountAppInstallResult(null)}
+      />
       <CliPickerModal
         account={cliPickerAccount}
         terminals={cliTerminals}
@@ -2192,10 +2239,15 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
         }}
       />
       <KimiDesktopLoginModal
-        open={Boolean(kimiDesktopLoginAccount)}
-        accountRef={kimiDesktopLoginAccount ? getAccountRef(kimiDesktopLoginAccount) : ''}
-        accountLabel={kimiDesktopLoginAccount ? getAccountPrimaryLabel(kimiDesktopLoginAccount) : ''}
-        onClose={() => setKimiDesktopLoginAccount(null)}
+        open={Boolean(kimiDesktopLoginRequest)}
+        accountRef={kimiDesktopLoginRequest ? getAccountRef(kimiDesktopLoginRequest.account) : ''}
+        accountLabel={kimiDesktopLoginRequest ? getAccountPrimaryLabel(kimiDesktopLoginRequest.account) : ''}
+        onClose={() => setKimiDesktopLoginRequest(null)}
+        onSuccess={() => {
+          const request = kimiDesktopLoginRequest;
+          setKimiDesktopLoginRequest(null);
+          if (request?.openAfterLogin) void handleOpenApp(request.account, 'desktop');
+        }}
       />
     </PageScaffold>
   );

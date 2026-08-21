@@ -421,6 +421,51 @@ test('ensureSessionStoreLinks migrates the legacy Kimi projection into .kimi-cod
   );
 });
 
+test('Kimi Desktop electron user data remains account-private', (t) => {
+  const root = mkTmpDir();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const hostHomeDir = path.join(root, 'home');
+  const accountRef = 'acct_12121212121212121212';
+  const runtimeDir = path.join(root, 'run', 'auth-projections', 'kimi', accountRef);
+  const accountUserDataDir = path.join(runtimeDir, 'electron-user-data');
+  const sharedUserDataDir = path.join(
+    hostHomeDir,
+    '.kimi-code',
+    '.aih-runtime-home',
+    'electron-user-data'
+  );
+  fs.mkdirSync(accountUserDataDir, { recursive: true });
+  fs.mkdirSync(sharedUserDataDir, { recursive: true });
+  fs.writeFileSync(path.join(accountUserDataDir, 'account-state.json'), '{"private":true}\n', 'utf8');
+  fs.writeFileSync(path.join(sharedUserDataDir, 'shared-state.json'), '{"shared":true}\n', 'utf8');
+
+  const service = createSessionStoreService({
+    fs,
+    fse,
+    path,
+    processObj: process,
+    hostHomeDir,
+    cliConfigs: { kimi: { globalDir: '.kimi-code' } },
+    getProfileDir: () => runtimeDir,
+    ensureDir: (dir) => fs.mkdirSync(dir, { recursive: true })
+  });
+
+  const result = service.ensureSessionStoreLinks('kimi', accountRef);
+
+  assert.equal(Array.isArray(result.unresolved), false);
+  assert.equal(fs.lstatSync(accountUserDataDir).isSymbolicLink(), false);
+  assert.equal(
+    fs.readFileSync(path.join(accountUserDataDir, 'account-state.json'), 'utf8'),
+    '{"private":true}\n'
+  );
+  assert.equal(
+    fs.readFileSync(path.join(sharedUserDataDir, 'shared-state.json'), 'utf8'),
+    '{"shared":true}\n'
+  );
+  assert.equal(fs.existsSync(path.join(sharedUserDataDir, 'account-state.json')), false);
+});
+
 test('Kimi session index becomes a private view with projection-local sessionDir', (t) => {
   const root = mkTmpDir();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

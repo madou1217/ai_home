@@ -2,7 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type { Account } from '@/types';
-import { getPlanTagColor, getPlanTagLabel } from './AccountBadges.tsx';
+import {
+  getAccountRegionMeta,
+  getPlanTagColor,
+  getPlanTagLabel
+} from './AccountBadges.tsx';
 
 function makeAccount(overrides: Partial<Account> = {}): Account {
   return {
@@ -44,4 +48,23 @@ test('getPlanTagColor maps plan type tiers and normalizes planName case', () => 
   assert.equal(getPlanTagColor(makeAccount({ planType: 'business' })), 'gold');
   assert.equal(getPlanTagColor(makeAccount({ planType: 'unknown' })), 'default');
   assert.equal(getPlanTagColor(makeAccount({ planType: 'ALLEGRO' })), 'default');
+});
+
+test('getAccountRegionMeta exposes Kimi effective region and explicit unknown state', () => {
+  assert.deepEqual(getAccountRegionMeta(makeAccount({ provider: 'kimi', region: 'china' })), {
+    color: 'blue',
+    label: '中国区',
+    endpoint: 'www.kimi.com'
+  });
+  assert.deepEqual(getAccountRegionMeta(makeAccount({ provider: 'kimi', region: 'overseas' })), {
+    color: 'geekblue',
+    label: '海外区',
+    endpoint: 'www.kimi.ai'
+  });
+  assert.deepEqual(getAccountRegionMeta(makeAccount({ provider: 'kimi' })), {
+    color: 'default',
+    label: '区域未知',
+    endpoint: ''
+  });
+  assert.equal(getAccountRegionMeta(makeAccount({ provider: 'codex', region: 'china' })), null);
 });

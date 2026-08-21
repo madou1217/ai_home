@@ -48,6 +48,18 @@
   white-space: pre-wrap;
   word-break: break-all;
 }
+.accounts-import-running {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  margin-bottom: 16px;
+  color: var(--app-text);
+  font-size: 13px;
+}
+.accounts-import-running > span:last-child {
+  color: var(--app-muted);
+}
 /* 导出弹窗 */
 .accounts-export-popover .ant-popover-inner {
   padding: 4px;

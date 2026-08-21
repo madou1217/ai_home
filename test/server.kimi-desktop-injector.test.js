@@ -13,7 +13,9 @@ const {
   buildTokenStorePayload,
   parseTokenStorePlaintext,
   encryptV10,
-  decryptV10
+  decryptV10,
+  hasKimiDesktopTokenStore,
+  readKimiDesktopRegion
 } = require('../lib/server/kimi-desktop-injector');
 
 // fakeDpapiDeps 字节级模拟 DPAPI：protect 返回 base64('FAKEP:'+原文)，
@@ -113,14 +115,67 @@ test('seed 复用既有 Local State 密钥而不覆盖', (t) => {
   assert.equal(adopted.refreshToken, 'r2');
 });
 
-test('seed 在非 Windows 平台跳过', (t) => {
+test('macOS seed 写入 Kimi 可自迁移的 0600 明文 bootstrap，不访问 Keychain', (t) => {
+  const userDataDir = createProfileFixture(t);
+  const bridgeStoreDir = nodePath.join(userDataDir, 'bridge-store');
+  nodeFs.mkdirSync(bridgeStoreDir, { recursive: true });
+  nodeFs.writeFileSync(nodePath.join(bridgeStoreDir, 'region.json'), JSON.stringify({
+    manual: 'overseas',
+    lastEffective: 'overseas'
+  }));
+  const deps = {
+    fs: nodeFs,
+    path: nodePath,
+    platform: 'darwin',
+    execFileSync() { throw new Error('macOS seed 不应读取 Keychain'); }
+  };
+  const result = seedKimiDesktopTokenStore({
+    userDataDir,
+    accessToken: 'web-access',
+    refreshToken: 'web-refresh',
+    userId: 'u-1'
+  }, deps);
+  assert.equal(result.seeded, true);
+  assert.equal(hasKimiDesktopTokenStore(userDataDir, deps), true);
+  const storePath = nodePath.join(userDataDir, 'bridge-store', 'token-store.json');
+  const store = JSON.parse(nodeFs.readFileSync(storePath, 'utf8'));
+  assert.equal(store.encryption, undefined);
+  assert.equal(store.origin, 'https://www.kimi.com');
+  assert.deepEqual(adoptKimiDesktopTokensFromProfile(userDataDir, deps), {
+    accessToken: 'web-access',
+    refreshToken: 'web-refresh',
+    userId: 'u-1'
+  });
+  assert.equal(nodeFs.statSync(storePath).mode & 0o777, 0o600);
+  assert.equal(nodeFs.existsSync(nodePath.join(userDataDir, 'Local State')), false);
+  const regionPath = nodePath.join(userDataDir, 'bridge-store', 'region.json');
+  assert.deepEqual(JSON.parse(nodeFs.readFileSync(regionPath, 'utf8')), {
+    lastEffective: 'china'
+  });
+  assert.equal(nodeFs.statSync(regionPath).mode & 0o777, 0o600);
+});
+
+test('seed 在不支持的平台跳过', (t) => {
   const userDataDir = createProfileFixture(t);
   const result = seedKimiDesktopTokenStore({
     userDataDir,
     accessToken: 'a',
     refreshToken: 'r'
-  }, { fs: nodeFs, path: nodePath, platform: 'darwin' });
+  }, { fs: nodeFs, path: nodePath, platform: 'linux' });
   assert.deepEqual(result, { seeded: false, reason: 'unsupported_platform' });
+});
+
+test('macOS 已由 Kimi 迁移的密文 store 可识别，但后台不尝试解密', (t) => {
+  const userDataDir = createProfileFixture(t);
+  const storeDir = nodePath.join(userDataDir, 'bridge-store');
+  nodeFs.mkdirSync(storeDir, { recursive: true });
+  nodeFs.writeFileSync(nodePath.join(storeDir, 'token-store.json'), JSON.stringify({
+    encryption: 'safeStorage.v1',
+    data: Buffer.alloc(256, 1).toString('base64')
+  }));
+  const deps = { fs: nodeFs, path: nodePath, platform: 'darwin' };
+  assert.equal(hasKimiDesktopTokenStore(userDataDir, deps), true);
+  assert.equal(adoptKimiDesktopTokensFromProfile(userDataDir, deps), null);
 });
 
 test('seed 缺参数时不落盘', (t) => {
@@ -144,4 +199,41 @@ test('adopt 在无 token 仓或数据损坏时返回 null', (t) => {
   );
   // Local State 不存在时会新建密钥，但密文不是该密钥所出 → 解密失败 → null
   assert.equal(adoptKimiDesktopTokensFromProfile(userDataDir, deps), null);
+});
+
+test('hasKimiDesktopTokenStore 不把损坏 JSON 或空密文当作可用登录态', (t) => {
+  const userDataDir = createProfileFixture(t);
+  const storeDir = nodePath.join(userDataDir, 'bridge-store');
+  const storePath = nodePath.join(storeDir, 'token-store.json');
+  nodeFs.mkdirSync(storeDir, { recursive: true });
+  nodeFs.writeFileSync(storePath, '{broken');
+  assert.equal(hasKimiDesktopTokenStore(userDataDir, { fs: nodeFs, path: nodePath }), false);
+  nodeFs.writeFileSync(storePath, JSON.stringify({ encryption: 'safeStorage.v1', data: '' }));
+  assert.equal(hasKimiDesktopTokenStore(userDataDir, { fs: nodeFs, path: nodePath }), false);
+  nodeFs.writeFileSync(storePath, JSON.stringify({
+    encryption: 'safeStorage.v1',
+    data: Buffer.alloc(64, 1).toString('base64')
+  }));
+  assert.equal(hasKimiDesktopTokenStore(userDataDir, { fs: nodeFs, path: nodePath }), false);
+});
+
+test('readKimiDesktopRegion 只返回 Kimi 实际生效的已知区域', (t) => {
+  const userDataDir = createProfileFixture(t);
+  const storeDir = nodePath.join(userDataDir, 'bridge-store');
+  const regionPath = nodePath.join(storeDir, 'region.json');
+  nodeFs.mkdirSync(storeDir, { recursive: true });
+
+  assert.equal(readKimiDesktopRegion(userDataDir, { fs: nodeFs, path: nodePath }), '');
+
+  nodeFs.writeFileSync(regionPath, JSON.stringify({ lastEffective: 'china' }));
+  assert.equal(readKimiDesktopRegion(userDataDir, { fs: nodeFs, path: nodePath }), 'china');
+
+  nodeFs.writeFileSync(regionPath, JSON.stringify({ lastEffective: 'overseas' }));
+  assert.equal(readKimiDesktopRegion(userDataDir, { fs: nodeFs, path: nodePath }), 'overseas');
+
+  nodeFs.writeFileSync(regionPath, JSON.stringify({ lastEffective: 'unknown', manual: 'china' }));
+  assert.equal(readKimiDesktopRegion(userDataDir, { fs: nodeFs, path: nodePath }), '');
+
+  nodeFs.writeFileSync(regionPath, '{broken');
+  assert.equal(readKimiDesktopRegion(userDataDir, { fs: nodeFs, path: nodePath }), '');
 });

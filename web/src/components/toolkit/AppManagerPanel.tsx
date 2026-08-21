@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert,
   Empty,
   message,
   Modal,
@@ -23,6 +22,8 @@ import type {
 import ToolkitStatusTrack from './ToolkitStatusTrack';
 import ConfigCodeEditor from './config-editor/ConfigCodeEditor';
 import ManagedAppCard from './ManagedAppCard';
+import AppActionConfirmContent from './AppActionConfirmContent';
+import { KimiDesktopLoginModal } from '@/features/accounts/KimiDesktopLoginModal';
 import { useWebUiTaskQueue } from '@/services/webui-task-queue';
 import type { WebUiTask } from '@/types';
 import { SESSION_SYNC_POLICY, SESSION_SYNC_BOUNDARY, SESSION_SYNC_SCOPE } from '@/components/session-sync-copy';
@@ -65,6 +66,10 @@ export default function AppManagerPanel() {
   const [configLoading, setConfigLoading] = useState(false);
   const [configSaving, setConfigSaving] = useState(false);
   const [checkingUpdates, setCheckingUpdates] = useState<Record<string, boolean>>({});
+  const [kimiDesktopLoginTarget, setKimiDesktopLoginTarget] = useState<{
+    app: ManagedAppItem;
+    accountRef: string;
+  } | null>(null);
   const runningRefreshRef = useRef<Promise<void> | null>(null);
 
   const refreshRunningApps = useCallback(() => {
@@ -179,29 +184,40 @@ export default function AppManagerPanel() {
         ...(accountRef ? { accountRef } : {}),
         ...(unscoped ? { unscoped: true } : {})
       });
-      if (response.status === 'already_running' && accountRef && kind === 'desktop') {
-        Modal.confirm({
-          title: `${app.name} 已在运行`,
-          content: '是否关闭该账号的 Desktop 实例？',
-          okText: '关闭',
-          cancelText: '保留',
-          onOk: async () => {
-            try {
-              await toolkitAPI.openManagedApp(app.id, { kind, accountRef, action: 'close' });
-              message.success('Desktop 已关闭');
-              await refreshRunningApps();
-            } catch (requestFailure: unknown) {
-              message.error(requestError(requestFailure, '关闭 Desktop 失败'));
-            }
-          }
-        });
-        return;
-      }
       if (!response.ok) throw new Error(response.message || response.error || '桌面应用启动失败');
-      message.success(`${app.name} 已启动`);
+      message.success(response.status === 'already_running'
+        ? `${app.name} 的该账号实例已在运行`
+        : `${app.name} 已启动`);
       await refreshRunningApps();
     } catch (requestFailure: unknown) {
+      const code = typeof requestFailure === 'object' && requestFailure
+        ? String((requestFailure as { response?: { data?: { error?: string } } }).response?.data?.error || '')
+        : '';
+      if (kind === 'desktop' && app.provider === 'kimi' && accountRef
+        && (code === 'kimi_desktop_session_required' || code === 'kimi_desktop_session_seed_failed')) {
+        setKimiDesktopLoginTarget({ app, accountRef });
+        if (code === 'kimi_desktop_session_seed_failed') {
+          message.warning(requestError(requestFailure, 'Kimi Desktop 登录态需要重新托管'));
+        }
+        return;
+      }
       message.error(requestError(requestFailure, `${app.name} 启动失败`));
+    }
+  };
+
+  const closeManagedApp = async (app: ManagedAppItem, accountRef: string) => {
+    const kind = app.type === 'desktop' ? 'desktop' : 'cli';
+    try {
+      const response = await toolkitAPI.openManagedApp(app.id, {
+        kind,
+        accountRef,
+        action: 'close'
+      });
+      if (!response.ok) throw new Error(response.message || response.error || '结束应用失败');
+      message.success(kind === 'desktop' ? 'Desktop 实例已结束' : '该账号的 CLI 会话已结束');
+      await refreshRunningApps();
+    } catch (requestFailure: unknown) {
+      message.error(requestError(requestFailure, kind === 'desktop' ? '结束 Desktop 失败' : '结束 CLI 会话失败'));
     }
   };
 
@@ -245,19 +261,17 @@ export default function AppManagerPanel() {
       const key = actionKey(app, 'update');
       const plan = await toolkitAPI.planAppAction(app.id, 'update', app.type === 'ide' ? undefined : app.type);
       if (!plan.ok) throw new Error(plan.error || '无法生成更新计划');
-      const commands = (plan.plans || [])
-        .map((item) => `${item.label || item.id}\n${item.command} ${(item.args || []).join(' ')}`)
-        .join('\n\n');
       Modal.confirm({
         title: `${app.name} 有新版本`,
         content: (
-          <div>
-            <div>当前版本：{response.currentVersion || '未探测到'}</div>
-            <div>远端最新版：{response.latestVersion}</div>
-            <pre style={{ margin: '12px 0 0', whiteSpace: 'pre-wrap' }}>
-              {commands || '将执行官方应用生命周期命令。'}
-            </pre>
-          </div>
+          <AppActionConfirmContent
+            summary={`确认后将创建 ${app.name} 更新任务，进度和最终结果会保留在右下角任务队列。`}
+            plans={plan.plans || []}
+            metadata={[
+              { label: '当前版本', value: response.currentVersion || '未探测到' },
+              { label: '远端最新版', value: response.latestVersion || '未提供' }
+            ]}
+          />
         ),
         okText: '确认更新',
         cancelText: '稍后',
@@ -281,10 +295,14 @@ export default function AppManagerPanel() {
     try {
       const plan = await toolkitAPI.planAppAction(app.id, action, app.type === 'ide' ? undefined : app.type);
       if (!plan.ok) throw new Error(plan.error || '无法生成应用操作计划');
-      const commands = (plan.plans || []).map((item) => `${item.label || item.id}\n${item.command} ${(item.args || []).join(' ')}`).join('\n\n');
       Modal.confirm({
         title: `${actionLabel(action)} ${app.name}`,
-        content: <div style={{ whiteSpace: 'pre-wrap' }}>{commands || '将执行官方应用生命周期命令。'}</div>,
+        content: (
+          <AppActionConfirmContent
+            summary={`确认后将创建 ${app.name}${actionLabel(action)}任务；弹窗关闭不影响后台执行。`}
+            plans={plan.plans || []}
+          />
+        ),
         okText: '确认执行',
         cancelText: '取消',
         okButtonProps: action === 'uninstall' ? { danger: true } : undefined,
@@ -420,6 +438,7 @@ export default function AppManagerPanel() {
                   onAction={(target, action) => void runAppAction(target, action)}
                   onCheckUpdate={(target) => void checkAppUpdate(target)}
                   onOpenApp={(target, accountRef, unscoped) => void openManagedApp(target, accountRef, unscoped)}
+                  onCloseApp={(target, accountRef) => void closeManagedApp(target, accountRef)}
                   onInstallHooks={(provider) => void installHooks([provider])}
                   onEditConfig={openConfig}
                 />
@@ -428,6 +447,18 @@ export default function AppManagerPanel() {
           ) : <Empty description="当前分类没有应用" />}
         </>
       ) : null}
+
+      <KimiDesktopLoginModal
+        open={Boolean(kimiDesktopLoginTarget)}
+        accountRef={kimiDesktopLoginTarget?.accountRef || ''}
+        accountLabel={accounts.find((account) => account.accountRef === kimiDesktopLoginTarget?.accountRef)?.displayName || ''}
+        onClose={() => setKimiDesktopLoginTarget(null)}
+        onSuccess={() => {
+          const target = kimiDesktopLoginTarget;
+          setKimiDesktopLoginTarget(null);
+          if (target) void openManagedApp(target.app, target.accountRef);
+        }}
+      />
 
       <Modal
         open={Boolean(editingApp)}
@@ -450,16 +481,15 @@ export default function AppManagerPanel() {
           <div className="toolkit-loading compact"><Spin /></div>
         ) : (
           <>
-            <Alert
-              type="warning"
-              showIcon
-              icon={<LockOutlined />}
-              className="toolkit-modal-alert"
-              message="配置可能包含访问令牌或其他敏感信息"
-              description={configData?.requiresElevation
-                ? '当前配置需要系统授权才能保存，保存后会出现平台授权提示。'
-                : `格式：${configData?.configFormat || editingApp?.configFormat || 'text'}；保存时会检查文件是否被其他进程修改。`}
-            />
+            <div className="toolkit-config-note" role="note">
+              <LockOutlined aria-hidden="true" />
+              <span>
+                <strong>配置可能包含访问令牌或其他敏感信息</strong>
+                {configData?.requiresElevation
+                  ? '；当前配置需要系统授权才能保存，保存后会出现平台授权提示。'
+                  : `；格式：${configData?.configFormat || editingApp?.configFormat || 'text'}，保存时会检查文件是否被其他进程修改。`}
+              </span>
+            </div>
             <ConfigCodeEditor
               value={configContent}
               onChange={setConfigContent}

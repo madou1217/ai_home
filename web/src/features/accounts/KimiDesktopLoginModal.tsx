@@ -4,7 +4,9 @@ import { accountsAPI } from '@/services/api';
 import {
   KIMI_DESKTOP_SESSION_POLL_MS,
   getKimiDesktopSessionStatusTagColor,
-  getKimiDesktopSessionStatusText
+  getKimiDesktopSessionStatusText,
+  resolveKimiDesktopPollPhase,
+  resolveKimiDesktopSessionExpiryDelay
 } from '@/features/accounts/kimi-desktop-login';
 import type { KimiDesktopLoginPhase } from '@/features/accounts/kimi-desktop-login';
 
@@ -13,18 +15,31 @@ interface KimiDesktopLoginModalProps {
   accountRef: string;
   accountLabel: string;
   onClose: () => void;
+  onSuccess?: () => void;
 }
 
-export function KimiDesktopLoginModal({ open, accountRef, accountLabel, onClose }: KimiDesktopLoginModalProps) {
+export function KimiDesktopLoginModal({ open, accountRef, accountLabel, onClose, onSuccess }: KimiDesktopLoginModalProps) {
   const [phase, setPhase] = useState<KimiDesktopLoginPhase>('loading');
   const [qrUrl, setQrUrl] = useState('');
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const expiryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const generationRef = useRef(0);
+  const onCloseRef = useRef(onClose);
+  const onSuccessRef = useRef(onSuccess);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+    onSuccessRef.current = onSuccess;
+  }, [onClose, onSuccess]);
 
   const stopPolling = useCallback(() => {
-    if (pollTimerRef.current) {
+    if (pollTimerRef.current !== null) {
       clearInterval(pollTimerRef.current);
       pollTimerRef.current = null;
+    }
+    if (expiryTimerRef.current !== null) {
+      clearTimeout(expiryTimerRef.current);
+      expiryTimerRef.current = null;
     }
   }, []);
 
@@ -41,9 +56,25 @@ export function KimiDesktopLoginModal({ open, accountRef, accountLabel, onClose 
         message.error(result.error || '生成登录二维码失败');
         return;
       }
+      const expiryDelayMs = resolveKimiDesktopSessionExpiryDelay(result.expiresAtMs);
+      if (expiryDelayMs === null) {
+        setPhase('error');
+        message.error('登录二维码缺少有效期，请重新生成');
+        return;
+      }
       setQrUrl(result.qrUrl);
+      if (expiryDelayMs === 0) {
+        setPhase('STATUS_EXPIRED');
+        return;
+      }
       setPhase('STATUS_PENDING');
       const code = result.code;
+      const expiresAtMs = result.expiresAtMs;
+      expiryTimerRef.current = setTimeout(() => {
+        if (generationRef.current !== generation) return;
+        stopPolling();
+        setPhase('STATUS_EXPIRED');
+      }, expiryDelayMs);
       pollTimerRef.current = setInterval(async () => {
         try {
           const polled = await accountsAPI.pollKimiDesktopSession(accountRef, code);
@@ -54,16 +85,23 @@ export function KimiDesktopLoginModal({ open, accountRef, accountLabel, onClose 
             message.error(polled.error || '查询扫码状态失败');
             return;
           }
-          setPhase(polled.status);
-          if (polled.status === 'STATUS_SUCCESS') {
+          const nextPhase = resolveKimiDesktopPollPhase(polled.status, expiresAtMs);
+          setPhase(nextPhase);
+          if (nextPhase === 'STATUS_SUCCESS') {
             stopPolling();
             message.success('桌面登录成功，session 已托管');
-            onClose();
-          } else if (polled.status === 'STATUS_EXPIRED') {
+            if (onSuccessRef.current) onSuccessRef.current();
+            else onCloseRef.current();
+          } else if (nextPhase === 'STATUS_EXPIRED') {
             stopPolling();
           }
         } catch (pollError: any) {
           if (generationRef.current !== generation) return;
+          if (resolveKimiDesktopSessionExpiryDelay(expiresAtMs) === 0) {
+            stopPolling();
+            setPhase('STATUS_EXPIRED');
+            return;
+          }
           stopPolling();
           setPhase('error');
           message.error(pollError?.response?.data?.error || pollError?.message || '查询扫码状态失败');
@@ -74,7 +112,7 @@ export function KimiDesktopLoginModal({ open, accountRef, accountLabel, onClose 
       setPhase('error');
       message.error(startError?.response?.data?.error || startError?.message || '生成登录二维码失败');
     }
-  }, [accountRef, onClose, stopPolling]);
+  }, [accountRef, stopPolling]);
 
   useEffect(() => {
     if (!open || !accountRef) return undefined;
@@ -93,7 +131,7 @@ export function KimiDesktopLoginModal({ open, accountRef, accountLabel, onClose 
       title={accountLabel ? `桌面托管登录 · ${accountLabel}` : '桌面托管登录'}
       footer={null}
       onCancel={onClose}
-      destroyOnClose
+      destroyOnHidden
       width={360}
     >
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: '8px 0' }}>

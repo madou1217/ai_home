@@ -121,6 +121,32 @@ test('desktop install only succeeds after the installed client is rediscovered',
   assert.equal(job.attempts[1].ok, true);
 });
 
+test('Kimi macOS Desktop 通过统一异步任务执行官方安装计划并回流可执行路径', async () => {
+  const executedPlans = [];
+  const manager = createAppInstallJobManager({
+    processObj: { platform: 'darwin', arch: 'arm64', env: {} },
+    runInstallPlan: async (plan) => {
+      executedPlans.push(plan);
+      return { ok: true, status: 0 };
+    },
+    verifyDesktopInstall: async (provider) => {
+      assert.equal(provider, 'kimi');
+      return {
+        executablePath: '/Users/test/Applications/Kimi.app/Contents/MacOS/Kimi'
+      };
+    }
+  });
+
+  const started = manager.start({ provider: 'kimi', kind: 'desktop' });
+  assert.equal(started.ok, true);
+  await waitFor(() => manager.getJob(started.job.id)?.status === 'succeeded');
+
+  const job = manager.getJob(started.job.id);
+  assert.equal(executedPlans.length, 1);
+  assert.equal(executedPlans[0].id, 'kimi_desktop_macos_official');
+  assert.equal(job.result.executablePath, '/Users/test/Applications/Kimi.app/Contents/MacOS/Kimi');
+});
+
 test('ZCode CLI 安装任务在入口处拒绝，避免把 Desktop 误报为 CLI', () => {
   const manager = createAppInstallJobManager();
   assert.equal(manager.canInstall({ provider: 'zcode', kind: 'cli' }), false);

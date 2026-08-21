@@ -23,6 +23,17 @@ export function getAccountSecondaryLabel(record: Account) {
   return getAccountSecondaryIdentity(record);
 }
 
+export function getAccountRegionMeta(record: Pick<Account, 'provider' | 'region'>) {
+  if (record.provider !== 'kimi') return null;
+  if (record.region === 'china') {
+    return { color: 'blue', label: '中国区', endpoint: 'www.kimi.com' };
+  }
+  if (record.region === 'overseas') {
+    return { color: 'geekblue', label: '海外区', endpoint: 'www.kimi.ai' };
+  }
+  return { color: 'default', label: '区域未知', endpoint: '' };
+}
+
 export function renderRuntimeStatusBadge(record: Pick<Account, 'runtimeStatus' | 'runtimeReason' | 'runtimeUntil'>) {
   const status = record.runtimeStatus || 'unknown';
   const reason = record.runtimeReason;
@@ -170,6 +181,21 @@ const accountRoleTagStyle: React.CSSProperties = {
   alignItems: 'center',
   marginInlineEnd: 0
 };
+
+export function renderAccountRegionTag(record: Pick<Account, 'provider' | 'region'>) {
+  const meta = getAccountRegionMeta(record);
+  if (!meta) return null;
+  const detail = meta.endpoint
+    ? `Kimi Desktop 当前生效区域：${meta.label}（${meta.endpoint}）`
+    : '尚未从该账号的 Kimi Desktop profile 读取到有效区域。';
+  return (
+    <Tooltip title={detail}>
+      <Tag color={meta.color} style={accountRoleTagStyle}>
+        {meta.label}
+      </Tag>
+    </Tooltip>
+  );
+}
 
 const accountRoleIconStyle: React.CSSProperties = {
   width: 18,

@@ -1,0 +1,58 @@
+.managed-app-account-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 280px;
+}
+
+.managed-app-account-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.managed-app-account-name-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.managed-app-account-muted {
+  margin-left: 8px;
+  color: #8c8c8c;
+}
+
+.managed-app-account-runtime,
+.managed-app-account-runtime-actions {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+
+.managed-app-account-runtime-actions {
+  display: none;
+  gap: 2px;
+}
+
+.managed-app-account-row.is-running:hover .managed-app-account-running-label,
+.managed-app-account-row.is-running:focus-within .managed-app-account-running-label {
+  display: none;
+}
+
+.managed-app-account-row.is-running:hover .managed-app-account-runtime-actions,
+.managed-app-account-row.is-running:focus-within .managed-app-account-runtime-actions {
+  display: inline-flex;
+}
+
+@media (hover: none) {
+  .managed-app-account-row.is-running .managed-app-account-running-label {
+    display: none;
+  }
+
+  .managed-app-account-row.is-running .managed-app-account-runtime-actions {
+    display: inline-flex;
+  }
+}

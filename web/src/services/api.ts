@@ -176,6 +176,26 @@ export function isSessionRequestCancelled(error: unknown) {
 }
 
 export type AccountExportFormat = 'sub2api' | 'antigravity' | 'cliproxyapi';
+export type KimiDesktopSessionStatus =
+  | 'STATUS_PENDING'
+  | 'STATUS_SCANNED'
+  | 'STATUS_SUCCESS'
+  | 'STATUS_EXPIRED';
+
+export interface KimiDesktopSessionStartResponse {
+  ok: boolean;
+  code?: string;
+  qrUrl?: string;
+  expiresAtMs?: number;
+  error?: string;
+}
+
+export interface KimiDesktopSessionPollResponse {
+  ok: boolean;
+  status?: KimiDesktopSessionStatus;
+  error?: string;
+}
+
 export interface AccountImportUploadFile {
   name: string;
   relativePath?: string;
@@ -366,6 +386,24 @@ export const accountsAPI = {
     const response = await api.post<AccountAppLaunchResponse>(
       `/webui/accounts/${provider}/${accountRef}/open-app`,
       { kind, action, ...(terminalId ? { terminalId } : {}) }
+    );
+    return response.data;
+  },
+
+  startKimiDesktopSession: async (accountRef: string): Promise<KimiDesktopSessionStartResponse> => {
+    const response = await api.post<KimiDesktopSessionStartResponse>(
+      `/webui/accounts/kimi/${encodeURIComponent(accountRef)}/desktop-session/start`
+    );
+    return response.data;
+  },
+
+  pollKimiDesktopSession: async (
+    accountRef: string,
+    code: string
+  ): Promise<KimiDesktopSessionPollResponse> => {
+    const response = await api.post<KimiDesktopSessionPollResponse>(
+      `/webui/accounts/kimi/${encodeURIComponent(accountRef)}/desktop-session/poll`,
+      { code }
     );
     return response.data;
   },

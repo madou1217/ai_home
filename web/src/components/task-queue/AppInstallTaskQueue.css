@@ -102,8 +102,8 @@
 }
 
 .webui-task-queue.is-expanded {
-  width: min(400px, calc(100vw - 32px));
-  height: min(420px, calc(100vh - 32px));
+  width: min(440px, calc(100vw - 32px));
+  height: min(520px, calc(100vh - 32px));
 }
 
 .webui-task-queue.is-expanded .webui-task-queue-trigger {
@@ -220,6 +220,24 @@
   background: var(--color-surface-raised);
 }
 
+.webui-task-queue-item.is-success {
+  border-color: color-mix(in srgb, var(--color-success, #16a34a) 34%, var(--color-border));
+  background: color-mix(in srgb, var(--color-success, #16a34a) 5%, var(--color-surface-raised));
+}
+
+.webui-task-queue-item.is-error {
+  border-color: color-mix(in srgb, var(--color-danger, #dc2626) 38%, var(--color-border));
+  background: color-mix(in srgb, var(--color-danger, #dc2626) 5%, var(--color-surface-raised));
+}
+
+.webui-task-queue-item.is-success .webui-task-queue-item-heading > span {
+  color: var(--color-success, #16a34a);
+}
+
+.webui-task-queue-item.is-error .webui-task-queue-item-heading > span {
+  color: var(--color-danger, #dc2626);
+}
+
 .webui-task-queue-item-heading,
 .webui-task-queue-item-detail {
   display: grid;
@@ -292,6 +310,42 @@
   font-size: 11px;
 }
 
+.webui-task-queue-failure {
+  margin-top: 8px;
+  color: var(--color-body);
+  font-size: 11px;
+}
+
+.webui-task-queue-failure summary {
+  width: fit-content;
+  color: var(--color-danger, #dc2626);
+  cursor: pointer;
+}
+
+.webui-task-queue-failure ul {
+  display: grid;
+  gap: 4px;
+  margin: 7px 0 0;
+  padding-left: 18px;
+}
+
+.webui-task-queue-failure li {
+  overflow-wrap: anywhere;
+}
+
+.webui-task-queue-item-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.webui-task-queue-item-actions .ant-btn {
+  font-size: 11px;
+}
+
 .webui-task-queue-collapse-hint {
   display: inline-flex;
   align-items: center;
@@ -323,7 +377,7 @@
 
   .webui-task-queue.is-expanded {
     width: calc(100vw - 24px);
-    height: min(420px, calc(100vh - 92px));
+    height: min(520px, calc(100vh - 92px));
   }
 
   .webui-task-queue-item-detail {

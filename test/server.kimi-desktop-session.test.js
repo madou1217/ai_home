@@ -88,15 +88,15 @@ test('getDesktopLoginQRCodeStatus 在缺 code 时不发起请求', async () => {
   assert.equal(calls.length, 0);
 });
 
-test('getDesktopLoginQRCodeStatus 在 SUCCESS 时返回 token，缺 token 视为失败', async () => {
+test('getDesktopLoginQRCodeStatus 解析官方 camelCase SUCCESS token，缺 token 视为失败', async () => {
   const ok = await getDesktopLoginQRCodeStatus({
     fetchImpl: createFetchMock([{
       status: 200,
       data: {
         status: 'STATUS_SUCCESS',
-        access_token: 'web-access',
-        refresh_token: 'web-refresh',
-        user_id: 'u-1'
+        accessToken: 'web-access',
+        refreshToken: 'web-refresh',
+        userId: 'u-1'
       }
     }]).fetchImpl,
     authBaseUrl: 'https://auth.test/api'
@@ -114,10 +114,29 @@ test('getDesktopLoginQRCodeStatus 在 SUCCESS 时返回 token，缺 token 视为
   assert.equal(missing.error, 'qrcode_success_without_tokens');
 });
 
-test('refreshDesktopSessionToken 返回轮换后的 refresh_token，401 归为未授权', async () => {
+test('getDesktopLoginQRCodeStatus 兼容 snake_case SUCCESS token', async () => {
+  const result = await getDesktopLoginQRCodeStatus({
+    fetchImpl: createFetchMock([{
+      status: 200,
+      data: {
+        status: 'STATUS_SUCCESS',
+        access_token: 'legacy-access',
+        refresh_token: 'legacy-refresh',
+        user_id: 'legacy-user'
+      }
+    }]).fetchImpl,
+    authBaseUrl: 'https://auth.test/api'
+  }, 'qr-1');
+  assert.equal(result.ok, true);
+  assert.equal(result.accessToken, 'legacy-access');
+  assert.equal(result.refreshToken, 'legacy-refresh');
+  assert.equal(result.userId, 'legacy-user');
+});
+
+test('refreshDesktopSessionToken 解析官方 camelCase 轮换 token，401 归为未授权', async () => {
   const { calls, fetchImpl } = createFetchMock([{
     status: 200,
-    data: { access_token: 'new-access', refresh_token: 'new-refresh' }
+    data: { accessToken: 'new-access', refreshToken: 'new-refresh' }
   }]);
   const ok = await refreshDesktopSessionToken({ fetchImpl, authBaseUrl: 'https://auth.test/api' }, 'old-refresh');
   assert.equal(ok.ok, true);

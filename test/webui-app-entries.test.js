@@ -89,13 +89,13 @@ test('open-app 端点对未知 action 返回 400 unsupported_action', async (t) 
   assert.equal(ctx.res.json().error, 'unsupported_action');
 });
 
-test('open-app 端点对 cli+close 返回 400 unsupported_action', async (t) => {
-  const fixture = createFixture(t);
+test('open-app 端点支持 cli+close，无运行实例时返回 not_running', async (t) => {
+  const fixture = createFixture(t, 'codex');
   const ctx = createOpenAppCtx(fixture, { kind: 'cli', action: 'close' });
   const handled = await handleOpenAccountAppRequest(ctx);
   assert.equal(handled, true);
-  assert.equal(ctx.res.statusCode, 400);
-  assert.equal(ctx.res.json().error, 'unsupported_action');
+  assert.equal(ctx.res.statusCode, 200);
+  assert.equal(ctx.res.json().status, 'not_running');
 });
 
 test('open-app 端点对缺失账号返回 404 account_not_found', async (t) => {

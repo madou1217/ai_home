@@ -35,6 +35,7 @@ export interface ManagedAppCardProps {
   onAction: (app: ManagedAppItem, action: 'install' | 'update' | 'uninstall') => void;
   onCheckUpdate: (app: ManagedAppItem) => void;
   onOpenApp: (app: ManagedAppItem, accountRef?: string, unscoped?: boolean) => void;
+  onCloseApp: (app: ManagedAppItem, accountRef: string) => void;
   onInstallHooks: (provider: string) => void;
   onEditConfig: (app: ManagedAppItem) => void;
 }
@@ -67,6 +68,7 @@ export default function ManagedAppCard({
   onAction,
   onCheckUpdate,
   onOpenApp,
+  onCloseApp,
   onInstallHooks,
   onEditConfig
 }: ManagedAppCardProps) {
@@ -131,6 +133,7 @@ export default function ManagedAppCard({
               runningCliAccountPids={runningCliAccountPids}
               disabled={Boolean(busyAction)}
               onOpen={onOpenApp}
+              onClose={onCloseApp}
             />
           ) : null}
           {!app.installed && canInstall ? (

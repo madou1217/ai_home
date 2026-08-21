@@ -6,14 +6,12 @@ import type { GardenLifecyclePhase } from './lifecycle-model';
 import type { GardenPerch } from './perch-model';
 import type { HopState } from './hop-model';
 import { GARDEN_HOP_FLIGHT_MS } from './hop-model';
-import { GARDEN_STEM_WIDTH, getStemHeight } from './plant-profile';
+import { GARDEN_STEM_WIDTH, getHeadCenterOffset, getStemHeight } from './plant-profile';
 import type { GardenPlantProfile } from './plant-profile';
 import { buildVineSegment } from './vine-geometry';
 
 /** 花茎 SVG 的画布宽度：够装下最大弯曲量与描边，且不随槽宽变化。 */
 const VINE_CANVAS_WIDTH = 26;
-/** 头部压在茎顶上的重叠量，避免出现一条缝。 */
-const VINE_HEAD_OVERLAP = 2;
 
 interface Props {
   profile: GardenPlantProfile;
@@ -63,12 +61,13 @@ const QuotaPlant = ({ profile, perch, fromPerch, hop, lifecycle, busy }: Props) 
   const stemHeight = getStemHeight(perch.barHeight);
   const airborne = hop.phase === 'airborne' && Boolean(fromPerch);
   const vine = useMemo(() => {
-    const canvasHeight = stemHeight + VINE_HEAD_OVERLAP;
+    // 画布从根部一直到头部中心：藤蔓的终点必须和攻击几何取的 origin 是同一个点。
+    const canvasHeight = getHeadCenterOffset(stemHeight);
     return {
       canvasHeight,
       segment: buildVineSegment(
         { x: VINE_CANVAS_WIDTH / 2, y: canvasHeight },
-        { x: VINE_CANVAS_WIDTH / 2, y: VINE_HEAD_OVERLAP },
+        { x: VINE_CANVAS_WIDTH / 2, y: 0 },
         profile.stemBend
       )
     };

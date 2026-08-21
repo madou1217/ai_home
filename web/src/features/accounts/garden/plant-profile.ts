@@ -8,6 +8,8 @@ export const GARDEN_STEM_MAX_HEIGHT = 27;
 export const GARDEN_STEM_WIDTH = 5;
 export const GARDEN_HEAD_WIDTH = 20;
 export const GARDEN_HEAD_HEIGHT = 19;
+/** 头部下缘压进茎顶的重叠量（与 plant.css 的 head bottom 同一个数）。 */
+export const GARDEN_HEAD_STEM_INSET = 2;
 
 export interface GardenPlantProfile {
   /** 每个账号一朵花，色调稳定，用来区分不同账号的行。 */
@@ -30,6 +32,15 @@ export function buildPlantProfile(accountRef: string): GardenPlantProfile {
     // 负延迟：不同账号的摇摆一开始就错开，不会整页同步摆动。
     swayDelayMs: -Math.round(stableGardenRandom(accountRef, 'sway-phase') * 2700)
   };
+}
+
+/**
+ * 花茎要长到头部中心，而不是长到头部下缘——攻击藤蔓的 origin 取的就是头部
+ * 元素的中心（getBoundingClientRect 的中点）。两处不一致时，待机花茎会比藤蔓
+ * 的起始段短一截，接缝就会露出来。头会盖住多出的这一小段，看不见。
+ */
+export function getHeadCenterOffset(stemHeight: number) {
+  return stemHeight - GARDEN_HEAD_STEM_INSET + GARDEN_HEAD_HEIGHT / 2;
 }
 
 /** 茎长跟着脚下那根柱子走，而不是写死一个常数。 */

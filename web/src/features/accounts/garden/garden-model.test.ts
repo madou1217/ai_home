@@ -22,7 +22,12 @@ import {
 } from './feeding-model.ts';
 import { buildVineSegment } from './vine-geometry.ts';
 import { buildGardenAttackGeometry } from './attack-geometry.ts';
-import { getStemHeight } from './plant-profile.ts';
+import {
+  GARDEN_HEAD_HEIGHT,
+  GARDEN_HEAD_STEM_INSET,
+  getHeadCenterOffset,
+  getStemHeight
+} from './plant-profile.ts';
 
 const ACCOUNT = 'acct_0123456789abcdef0123';
 
@@ -297,6 +302,15 @@ test('vine geometry: lifts over the card before diving onto the damage number', 
   const attack = buildGardenAttackGeometry(origin, target, origin, 0);
   assert.ok((attack.control1.y) < (Math.min(origin.y, target.y)));
   assert.ok((attack.control2.y) < (target.y));
+});
+
+test('plant profile: the resting vine reaches the point the attack geometry measures', () => {
+  // 攻击藤蔓的 origin 是头部元素的中心；待机花茎必须长到同一个点，
+  // 否则藤蔓伸出去时会比原地花茎长出一截，接缝就露出来了。
+  const stemHeight = getStemHeight(20);
+  const headCentre = getHeadCenterOffset(stemHeight);
+  assert.ok(headCentre > stemHeight);
+  assert.equal(headCentre, stemHeight - GARDEN_HEAD_STEM_INSET + GARDEN_HEAD_HEIGHT / 2);
 });
 
 test('plant profile: grows the stem with the bar it stands on, within bounds', () => {

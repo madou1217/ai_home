@@ -14,6 +14,7 @@ import {
 import type { GardenLifecycleState } from './garden/lifecycle-model';
 import { buildGardenPerches } from './garden/perch-model';
 import {
+  GARDEN_HOP_FLIGHT_MS,
   createHopState,
   getHopDelayMs,
   reconcileHopState
@@ -126,11 +127,16 @@ const UpstreamQuotaGarden = ({
 
     const now = Date.now();
     const lifecycleDelay = getGardenLifecycleDelayMs(lifecycle, now);
-    const minimumDelayMs = lifecycle.phase === 'visible'
+    const stageDelayMs = lifecycle.phase === 'visible'
       ? 0
       : lifecycle.phase === 'emerging' && lifecycleDelay !== null
         ? lifecycleDelay
         : GARDEN_EMERGE_MS;
+    // 半空中不能扑食：攻击层会把藤蔓钉在测量那一刻的位置，而花马上就落到别处去了。
+    const landingDelayMs = hop.phase === 'airborne'
+      ? Math.max(0, GARDEN_HOP_FLIGHT_MS - (now - hop.startedAt))
+      : 0;
+    const minimumDelayMs = Math.max(stageDelayMs, landingDelayMs);
     setClock(now);
     setJobs((current) => scheduleGardenFeeds({
       accountRef,
@@ -140,7 +146,7 @@ const UpstreamQuotaGarden = ({
       now,
       minimumDelayMs
     }).jobs);
-  }, [accountRef, active, drops, layout.perches.length, lifecycle]);
+  }, [accountRef, active, drops, hop, layout.perches.length, lifecycle]);
 
   const perch = hop.perchIndex >= 0 ? layout.perches[hop.perchIndex] : null;
   const fromPerch = hop.fromPerchIndex >= 0 && hop.fromPerchIndex !== hop.perchIndex

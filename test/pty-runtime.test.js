@@ -1252,6 +1252,9 @@ test('runtime bare launch creates a fresh strict tmux session when a project ses
   const sessionName = assertStrictFreshSessionLaunch(spawns[0], baseSession);
   const correlationId = spawns[0].options.env.AIH_PROVIDER_SESSION_CORRELATION_ID;
   assert.match(correlationId, /^[0-9a-f-]{36}$/);
+  // 会话里必须能读到账号标识：provider hook 靠它把「正在跑」归属到某个账号。
+  const launchAccountRef = spawns[0].options.env.AIH_PROVIDER_ACCOUNT_REF;
+  assert.match(launchAccountRef, /^acct_[a-f0-9]{20}$/);
   const [registryEntry] = persistentSessionRegistry.listEntries(aiHomeDir);
   assert.equal(registryEntry.session, sessionName);
   assert.equal(registryEntry.correlationId, correlationId);
@@ -1260,8 +1263,10 @@ test('runtime bare launch creates a fresh strict tmux session when a project ses
     'set-environment',
     'set-environment',
     'set-environment',
+    'set-environment',
     'source-file',
     'list-sessions',
+    'set-environment',
     'set-environment',
     'set-environment',
     'set-environment',
@@ -1280,10 +1285,12 @@ test('runtime bare launch creates a fresh strict tmux session when a project ses
       ['-g', 'LC_CTYPE', 'C.UTF-8'],
       ['-g', 'LC_ALL', 'C.UTF-8'],
       ['-g', 'AIH_PROVIDER_SESSION_CORRELATION_ID', correlationId],
+      ['-g', 'AIH_PROVIDER_ACCOUNT_REF', launchAccountRef],
       ['-t', sessionName, 'LANG', 'C.UTF-8'],
       ['-t', sessionName, 'LC_CTYPE', 'C.UTF-8'],
       ['-t', sessionName, 'LC_ALL', 'C.UTF-8'],
       ['-t', sessionName, 'AIH_PROVIDER_SESSION_CORRELATION_ID', correlationId],
+      ['-t', sessionName, 'AIH_PROVIDER_ACCOUNT_REF', launchAccountRef],
       ['-t', sessionName, CODEX_MANAGED_LAUNCH_ENV, '1']
     ]
   );
@@ -1294,6 +1301,7 @@ test('runtime bare launch creates a fresh strict tmux session when a project ses
       'LC_CTYPE=C.UTF-8',
       'LC_ALL=C.UTF-8',
       `AIH_PROVIDER_SESSION_CORRELATION_ID=${correlationId}`,
+      `AIH_PROVIDER_ACCOUNT_REF=${launchAccountRef}`,
       `${CODEX_MANAGED_LAUNCH_ENV}=1`,
       `${persistentSession.PROVIDER_SUPERVISOR_RUNTIME_MARKER_KEY}=${persistentSession.PROVIDER_SUPERVISOR_RUNTIME_MARKER_VALUE}`,
       `${persistentSession.UTF8_RUNTIME_MARKER_KEY}=${persistentSession.UTF8_RUNTIME_MARKER_VALUE}`
@@ -1458,6 +1466,8 @@ test('runtime uses zh_CN UTF-8 tmux env for macOS generic UTF-8 sessions', () =>
   const sessionName = assertStrictFreshSessionLaunch(spawns[0], baseSession);
   const correlationId = spawns[0].options.env.AIH_PROVIDER_SESSION_CORRELATION_ID;
   assert.match(correlationId, /^[0-9a-f-]{36}$/);
+  const launchAccountRef = spawns[0].options.env.AIH_PROVIDER_ACCOUNT_REF;
+  assert.match(launchAccountRef, /^acct_[a-f0-9]{20}$/);
   assert.equal(spawnSyncCalls.every((call) => call.options.env.LANG === 'zh_CN.UTF-8'), true);
   assert.equal(spawnSyncCalls.every((call) => call.options.env.LC_CTYPE === 'zh_CN.UTF-8'), true);
   assert.equal(spawnSyncCalls.every((call) => call.options.env.LC_ALL === 'zh_CN.UTF-8'), true);
@@ -1470,10 +1480,12 @@ test('runtime uses zh_CN UTF-8 tmux env for macOS generic UTF-8 sessions', () =>
       ['-g', 'LC_CTYPE', 'zh_CN.UTF-8'],
       ['-g', 'LC_ALL', 'zh_CN.UTF-8'],
       ['-g', 'AIH_PROVIDER_SESSION_CORRELATION_ID', correlationId],
+      ['-g', 'AIH_PROVIDER_ACCOUNT_REF', launchAccountRef],
       ['-t', sessionName, 'LANG', 'zh_CN.UTF-8'],
       ['-t', sessionName, 'LC_CTYPE', 'zh_CN.UTF-8'],
       ['-t', sessionName, 'LC_ALL', 'zh_CN.UTF-8'],
       ['-t', sessionName, 'AIH_PROVIDER_SESSION_CORRELATION_ID', correlationId],
+      ['-t', sessionName, 'AIH_PROVIDER_ACCOUNT_REF', launchAccountRef],
       ['-t', sessionName, CODEX_MANAGED_LAUNCH_ENV, '1']
     ]
   );
@@ -1484,6 +1496,7 @@ test('runtime uses zh_CN UTF-8 tmux env for macOS generic UTF-8 sessions', () =>
       'LC_CTYPE=zh_CN.UTF-8',
       'LC_ALL=zh_CN.UTF-8',
       `AIH_PROVIDER_SESSION_CORRELATION_ID=${correlationId}`,
+      `AIH_PROVIDER_ACCOUNT_REF=${launchAccountRef}`,
       `${CODEX_MANAGED_LAUNCH_ENV}=1`,
       `${persistentSession.PROVIDER_SUPERVISOR_RUNTIME_MARKER_KEY}=${persistentSession.PROVIDER_SUPERVISOR_RUNTIME_MARKER_VALUE}`,
       `${persistentSession.UTF8_RUNTIME_MARKER_KEY}=${persistentSession.UTF8_RUNTIME_MARKER_VALUE}`

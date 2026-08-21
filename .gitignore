@@ -79,6 +79,12 @@ web/src/.umi-production/
 /.omo/
 /.playwright-*
 
+# Local code-index tool database (per-machine, never shared).
+/.codegraph/
+
+# Web 依赖锁定走 npm（web/package-lock.json + CI npm ci），忽略误用 pnpm 生成的锁文件。
+web/pnpm-lock.yaml
+
 # Generated book content & assets policy (书籍内容与生成大图不入 Git)
 /docs/*-book/**
 !/docs/*-book/README.md

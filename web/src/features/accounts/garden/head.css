@@ -1,0 +1,58 @@
+/* 花头视觉：原地植株与 Portal 攻击层共用同一套结构，样式只在这里定义一次。 */
+
+.upstream-quota-plant-head-visual,
+.upstream-quota-plant-mouth-core,
+.upstream-quota-plant-head-half {
+  position: absolute;
+  inset: 0;
+}
+
+.upstream-quota-plant-head-visual {
+  display: block;
+  /* 账号色调是静态的，整颗头只滤一次；之前上下颚各滤一次等于白付一倍成本。 */
+  filter: hue-rotate(var(--head-hue, 0deg)) drop-shadow(0 1px 1px rgb(35 24 21 / 24%));
+  transform-origin: 68% 64%;
+}
+
+.upstream-quota-plant-mouth-core {
+  top: 31%;
+  right: 24%;
+  bottom: 23%;
+  left: 5%;
+  border: 0.6px solid rgb(46 26 24 / 72%);
+  border-radius: 55% 35% 48% 52%;
+  background: var(--mouth-color);
+  box-shadow: inset 1px 1px 2px rgb(0 0 0 / 26%);
+}
+
+.upstream-quota-plant-head-half {
+  background-image: url('../../../../public/assets/quota-garden/quota-plant-head.webp');
+  background-position: center;
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+}
+
+.upstream-quota-plant-head-half--upper {
+  clip-path: inset(0 0 49% 0);
+  transform: translateY(1px) rotate(1deg);
+  transform-origin: 72% 49%;
+}
+
+.upstream-quota-plant-head-half--lower {
+  clip-path: inset(46% 0 0 0);
+  transform: translateY(-1px) rotate(-1deg);
+  transform-origin: 72% 51%;
+}
+
+.upstream-quota-plant-eye-accent {
+  position: absolute;
+  top: 25%;
+  left: 62%;
+  z-index: 4;
+  display: block;
+  width: 1.6px;
+  height: 1.6px;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 88%);
+  box-shadow: 0 0 0 0.4px rgb(63 37 28 / 34%);
+}

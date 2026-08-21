@@ -1,0 +1,297 @@
+/*
+ * 花园舞台与单株花。
+ *
+ * 分层原则（腾空跳的前提）：定位、飞行、裁剪、摇摆各归各层。
+ * .quota-plant       钉在当前柱顶（不裁剪，弧线才飞得出格子）
+ *   .quota-plant-hop     只做跳跃位移
+ *     .quota-plant-pipe    只做出土裁剪（overflow: hidden 待在这一层）
+ *       .quota-plant-body    只做出场/退场的升降
+ *         .quota-plant-sway    只做摇摆
+ */
+
+.account-token-usage-garden-cell {
+  --garden-stage-top: 48px;
+
+  position: relative;
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  justify-content: center;
+  padding-top: 0;
+  overflow: visible;
+  transition: padding-top var(--motion-slower, 420ms) var(--ease-emphasized, cubic-bezier(0.2, 0, 0, 1));
+}
+
+.account-token-usage-garden-cell[data-garden-stage-active="true"] {
+  padding-top: var(--garden-stage-top);
+}
+
+.upstream-quota-garden {
+  /* 与 TokenUsageCell 桌面槽宽一致；移动端在下方媒体查询切回 52px。 */
+  --garden-slot: 46px;
+  --garden-width: calc(var(--garden-columns) * var(--garden-slot) + 2px);
+  /* 跳跃弧顶高度：必须留在 --garden-stage-top 预留的空间里，否则会被表格行裁掉。 */
+  --hop-lift: 20px;
+
+  position: absolute;
+  top: var(--garden-stage-top);
+  left: 50%;
+  z-index: 9;
+  display: block;
+  width: var(--garden-width);
+  height: 38px;
+  overflow: visible;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.quota-plant {
+  position: absolute;
+  top: var(--plant-y);
+  left: var(--plant-x);
+  z-index: 2;
+  width: 34px;
+  height: calc(var(--stem-height) + 24px);
+  overflow: visible;
+  transform: translate(-50%, -100%);
+}
+
+.quota-plant-hop,
+.quota-plant-pipe,
+.quota-plant-body,
+.quota-plant-sway {
+  position: absolute;
+  inset: 0;
+}
+
+/* 跳跃层：静止时没有任何 transform，也不占合成层。 */
+.quota-plant--airborne .quota-plant-hop {
+  will-change: transform;
+  animation: quota-plant-hop-arc var(--hop-duration) cubic-bezier(0.32, 0.02, 0.24, 1) both;
+}
+
+/* 出土裁剪只发生在这一层，跳跃弧线因此不会被自己的框切掉。 */
+.quota-plant-pipe {
+  overflow: hidden;
+}
+
+/*
+ * 出场/退场用 animation 而不是 transition：植株只在花园可见时才挂载，
+ * 元素插入的那一帧动画就得开始播。transition 需要先有一个"之前的值"，
+ * 挂载即播的场景下它什么也不做。
+ */
+.quota-plant-body {
+  transform: translateY(0);
+  transform-origin: 50% 100%;
+}
+
+.quota-plant--lifecycle-emerging .quota-plant-body {
+  animation: quota-plant-emerge var(--garden-emerge-duration) cubic-bezier(0.16, 0.78, 0.24, 1) both;
+}
+
+.quota-plant--lifecycle-retreating .quota-plant-body {
+  animation: quota-plant-retreat var(--garden-retreat-duration) cubic-bezier(0.58, 0, 0.9, 0.42) both;
+}
+
+@keyframes quota-plant-emerge {
+  from {
+    transform: translateY(calc(100% + 2px));
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes quota-plant-retreat {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(calc(100% + 2px));
+  }
+}
+
+.quota-plant-sway {
+  transform-origin: 50% 100%;
+  animation: quota-plant-sway var(--sway-duration) ease-in-out var(--sway-delay) infinite alternate;
+}
+
+.quota-plant--busy .quota-plant-sway,
+.quota-plant--airborne .quota-plant-sway {
+  animation-play-state: paused;
+}
+
+/* 攻击层测量根部与头部锚点用的两个 0 尺寸标记。 */
+.quota-plant-root {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  display: block;
+  width: 1px;
+  height: 1px;
+  transform: translate(-50%, 50%);
+}
+
+.quota-plant-vine {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  overflow: visible;
+  transform: translateX(-50%);
+}
+
+.quota-plant-vine-shadow,
+.quota-plant-vine-core,
+.quota-plant-vine-braid {
+  fill: none;
+  stroke-linecap: round;
+}
+
+.quota-plant-vine-shadow {
+  stroke: rgb(28 61 25 / 78%);
+  stroke-width: calc(var(--stem-width) + 1.4px);
+}
+
+.quota-plant-vine-core {
+  stroke: var(--stem-color);
+  stroke-width: var(--stem-width);
+}
+
+/* 一条细高光代替原来那两层斜纹——3px 宽的斜纹只是亚像素噪点。 */
+.quota-plant-vine-braid {
+  stroke: rgb(226 243 190 / 62%);
+  stroke-width: 1px;
+  stroke-dasharray: 1.6px 3.2px;
+  transform: translateX(-1px);
+}
+
+.quota-plant-leaf {
+  position: absolute;
+  bottom: calc(var(--stem-height) * 0.28);
+  left: 50%;
+  z-index: 1;
+  width: 10px;
+  height: 6px;
+  border: 1px solid rgb(37 45 30 / 48%);
+  background: var(--stem-color);
+  box-shadow: inset 1px 1px rgb(255 255 255 / 18%);
+}
+
+.quota-plant-leaf--left {
+  border-radius: 90% 10% 75% 25%;
+  transform: translateX(-90%) rotate(-26deg);
+  transform-origin: 100% 70%;
+}
+
+.quota-plant-leaf--right {
+  border-radius: 10% 90% 25% 75%;
+  transform: translateX(-10%) rotate(29deg);
+  transform-origin: 0 70%;
+}
+
+.quota-plant-head {
+  position: absolute;
+  bottom: calc(var(--stem-height) - 2px);
+  left: 50%;
+  z-index: 3;
+  width: 20px;
+  height: 19px;
+  transform: translateX(-50%);
+  transform-origin: 70% 72%;
+  transition: opacity 80ms linear;
+}
+
+/* 捕食时头部由攻击层接管，原地只留茎，避免出现两个头。 */
+.quota-plant--busy .quota-plant-head {
+  opacity: 0;
+}
+
+@keyframes quota-plant-sway {
+  from {
+    transform: rotate(-3.5deg);
+  }
+  to {
+    transform: rotate(4deg);
+  }
+}
+
+/*
+ * 腾空跳：起点是「相对目标柱的位移」，终点恒为 0，所以动画一结束元素就正好
+ * 停在新柱顶上，不会有一帧跳变。横向位移用比例 × 花园宽度算，桌面 46px 槽和
+ * 移动端 52px 槽共用这一条弧线。
+ */
+@keyframes quota-plant-hop-arc {
+  0% {
+    transform: translate(calc(var(--hop-dx-ratio) * var(--garden-width)), var(--hop-dy));
+  }
+  45% {
+    transform: translate(
+      calc(var(--hop-dx-ratio) * var(--garden-width) * 0.52),
+      calc(var(--hop-dy) * 0.52 - var(--hop-lift))
+    );
+  }
+  82% {
+    transform: translate(
+      calc(var(--hop-dx-ratio) * var(--garden-width) * 0.06),
+      calc(var(--hop-dy) * 0.06 - 3px)
+    );
+  }
+  100% {
+    transform: translate(0, 0);
+  }
+}
+
+@media (max-width: 768px) {
+  .upstream-quota-garden {
+    --garden-slot: 52px;
+    --garden-width: calc(var(--garden-columns) * var(--garden-slot));
+  }
+
+  .quota-plant {
+    top: var(--plant-y-mobile);
+  }
+
+  @keyframes quota-plant-hop-arc {
+    0% {
+      transform: translate(
+        calc(var(--hop-dx-ratio) * var(--garden-width)),
+        var(--hop-dy-mobile)
+      );
+    }
+    45% {
+      transform: translate(
+        calc(var(--hop-dx-ratio) * var(--garden-width) * 0.52),
+        calc(var(--hop-dy-mobile) * 0.52 - var(--hop-lift))
+      );
+    }
+    82% {
+      transform: translate(
+        calc(var(--hop-dx-ratio) * var(--garden-width) * 0.06),
+        calc(var(--hop-dy-mobile) * 0.06 - 3px)
+      );
+    }
+    100% {
+      transform: translate(0, 0);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .account-token-usage-garden-cell {
+    transition: none;
+  }
+
+  .quota-plant--lifecycle-emerging .quota-plant-body,
+  .quota-plant--lifecycle-retreating .quota-plant-body {
+    animation: none;
+  }
+
+  .quota-plant-sway {
+    animation: none;
+  }
+
+  /* 跳跃降级成瞬移：换柱子这件事仍然发生，只是不画弧线。 */
+  .quota-plant--airborne .quota-plant-hop {
+    animation: none;
+  }
+}

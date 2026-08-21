@@ -2,26 +2,33 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 
 import type { AccountTokenUsage } from '@/types';
-import QuotaPlantHead from './QuotaPlantHead';
+import QuotaPlant from './garden/QuotaPlant';
 import UpstreamQuotaAttackLayer from './UpstreamQuotaAttackLayer';
 import type { TokenDropEvent } from './useTokenDropEvents';
 import {
   GARDEN_EMERGE_MS,
   GARDEN_RETREAT_MS,
-  buildGardenLayout,
   getGardenLifecycleDelayMs,
-  getGardenPlantPhase,
-  pruneGardenJobs,
-  reconcileGardenLifecycle,
-  scheduleGardenDrops
-} from './upstream-quota-garden-model';
-import type {
-  GardenJob,
-  GardenLifecyclePhase,
-  GardenLifecycleState,
-  GardenPlantProfile
-} from './upstream-quota-garden-model';
-import './UpstreamQuotaGarden.css';
+  reconcileGardenLifecycle
+} from './garden/lifecycle-model';
+import type { GardenLifecycleState } from './garden/lifecycle-model';
+import { buildGardenPerches } from './garden/perch-model';
+import {
+  createHopState,
+  getHopDelayMs,
+  reconcileHopState
+} from './garden/hop-model';
+import {
+  getActiveCatch,
+  getPendingCatches,
+  pruneGardenFeedJobs,
+  scheduleGardenFeeds
+} from './garden/feeding-model';
+import type { GardenFeedJob } from './garden/feeding-model';
+import { buildPlantProfile } from './garden/plant-profile';
+import './garden/head.css';
+import './garden/plant.css';
+import './garden/attack.css';
 
 interface Props {
   accountRef: string;
@@ -31,84 +38,17 @@ interface Props {
   onStageActiveChange?: (active: boolean) => void;
 }
 
-function buildPlantStyle(profile: GardenPlantProfile): CSSProperties {
-  return {
-    ['--plant-x' as string]: `${profile.anchorXPercent}%`,
-    ['--plant-y' as string]: `${profile.anchorY}px`,
-    ['--plant-y-mobile' as string]: `${profile.mobileAnchorY}px`,
-    ['--stem-height' as string]: `${profile.stemHeight}px`,
-    ['--stem-width' as string]: `${profile.stemWidth}px`,
-    ['--head-hue' as string]: `${profile.headHueRotateDeg}deg`,
-    ['--stem-color' as string]: profile.stemColor,
-    ['--mouth-color' as string]: profile.mouthColor,
-    ['--sway-duration' as string]: `${profile.swayDurationMs}ms`,
-    ['--sway-delay' as string]: `${profile.swayDelayMs}ms`
-  } as CSSProperties;
+/** 下一个需要醒来的时刻；没有就让整格彻底静止，一个定时器都不留。 */
+function getNextWakeDelayMs(delays: Array<number | null>) {
+  const pending = delays.filter((delay): delay is number => delay !== null && delay >= 0);
+  return pending.length === 0 ? null : Math.min(...pending);
 }
 
-const QuotaPlant = ({
-  profile,
-  lifecycle,
-  now,
-  job
-}: {
-  profile: GardenPlantProfile;
-  lifecycle: GardenLifecyclePhase;
-  now: number;
-  job?: GardenJob;
-}) => {
-  const phase = getGardenPlantPhase({ lifecycle, now, job });
-  const reserved = Boolean(
-    job
-    && job.outcome === 'caught'
-    && job.endsAt > now
-  );
-  const attacking = Boolean(
-    reserved
-    && job
-    && job.attackAt <= now
-  );
-
-  return (
-    <span
-      className={[
-        'upstream-quota-plant',
-        `upstream-quota-plant--lifecycle-${lifecycle}`,
-        reserved ? 'upstream-quota-plant--reserved' : '',
-        attacking ? 'upstream-quota-plant--attacking' : '',
-        `upstream-quota-plant--phase-${phase}`
-      ].filter(Boolean).join(' ')}
-      data-plant-index={profile.index}
-      data-plant-lifecycle={lifecycle}
-      data-plant-phase={phase}
-      data-plant-metric={profile.metricKey}
-      data-plant-job={job?.drop.id}
-      style={buildPlantStyle(profile)}
-    >
-      <span className="upstream-quota-plant-growth">
-        <span className="upstream-quota-plant-sway">
-          <span
-            className="upstream-quota-plant-root-anchor"
-            data-quota-plant-root={profile.index}
-          />
-          <span className="upstream-quota-plant-leaf upstream-quota-plant-leaf--left" />
-          <span className="upstream-quota-plant-leaf upstream-quota-plant-leaf--right" />
-          <span className="upstream-quota-plant-stem" />
-          <span
-            key={job?.id || 'idle'}
-            className="upstream-quota-plant-head-stage"
-            data-quota-plant-origin={profile.index}
-          >
-            <QuotaPlantHead />
-          </span>
-        </span>
-      </span>
-    </span>
-  );
-};
-
 /**
- * API Key 账号的 Token 柱顶微剧场。事件只在到达时争抢一次，不排队补吃。
+ * 一个账号一株花：在真实 Token 柱之间跳来跳去，路过的消耗顺手吃掉。
+ *
+ * 这里只做编排——生命周期、落脚点、捕食三个状态机都是纯函数（garden/ 下），
+ * 时间推进靠事件点唤醒而不是高频轮询：花空闲时整格不跑任何 JS 定时器。
  */
 const UpstreamQuotaGarden = ({
   accountRef,
@@ -117,40 +57,58 @@ const UpstreamQuotaGarden = ({
   drops,
   onStageActiveChange
 }: Props) => {
-  const layout = useMemo(() => buildGardenLayout(accountRef, usage), [accountRef, usage]);
-  const [jobs, setJobs] = useState<GardenJob[]>([]);
+  const layout = useMemo(() => buildGardenPerches(usage), [usage]);
+  const profile = useMemo(() => buildPlantProfile(accountRef), [accountRef]);
+  const [clock, setClock] = useState(() => Date.now());
+  const [jobs, setJobs] = useState<GardenFeedJob[]>([]);
   const [lifecycle, setLifecycle] = useState<GardenLifecycleState>(() => ({
     phase: 'hidden',
     startedAt: Date.now()
   }));
-  const [clock, setClock] = useState(() => Date.now());
+  const [hop, setHop] = useState(() => createHopState(accountRef, layout.perches, Date.now()));
   const gardenRef = useRef<HTMLSpanElement>(null);
   const seenDropIdsRef = useRef<Set<string>>(new Set());
 
+  const activeCatch = getActiveCatch(jobs, clock);
+  const pendingCatches = getPendingCatches(jobs, clock);
+  // 嘴里有东西、或者已经排上号了都不能跳——花不能咬着东西飞走。
+  const canHop = lifecycle.phase === 'visible' && pendingCatches.length === 0;
+
   useEffect(() => {
     const now = Date.now();
-    setClock(now);
     setLifecycle((current) => reconcileGardenLifecycle(current, {
       requestedActive: active,
       hasPendingJobs: jobs.length > 0,
       now
     }));
-  }, [active, jobs.length]);
+    setHop((current) => reconcileHopState(current, {
+      accountRef,
+      perches: layout.perches,
+      now,
+      canHop
+    }));
+    setJobs((current) => {
+      const next = pruneGardenFeedJobs(current, now);
+      return next.length === current.length ? current : next;
+    });
+  }, [accountRef, active, canHop, clock, jobs, layout.perches]);
 
+  // 唯一的时间驱动：算出下一个真正会发生变化的时刻，睡到那时再说。
   useEffect(() => {
-    const delay = getGardenLifecycleDelayMs(lifecycle, Date.now());
+    const now = Date.now();
+    const jobDelays = jobs.flatMap((job) => [
+      job.attackAt > now ? job.attackAt - now : null,
+      job.endsAt > now ? job.endsAt - now : null
+    ]);
+    const delay = getNextWakeDelayMs([
+      getGardenLifecycleDelayMs(lifecycle, now),
+      getHopDelayMs(hop, { perchCount: layout.perches.length, now, canHop }),
+      ...jobDelays
+    ]);
     if (delay === null) return undefined;
-    const timer = window.setTimeout(() => {
-      const now = Date.now();
-      setClock(now);
-      setLifecycle((current) => reconcileGardenLifecycle(current, {
-        requestedActive: active,
-        hasPendingJobs: jobs.length > 0,
-        now
-      }));
-    }, delay + 20);
+    const timer = window.setTimeout(() => setClock(Date.now()), Math.max(16, delay) + 16);
     return () => window.clearTimeout(timer);
-  }, [active, jobs.length, lifecycle]);
+  }, [canHop, clock, hop, jobs, layout.perches.length, lifecycle]);
 
   useEffect(() => {
     onStageActiveChange?.(lifecycle.phase !== 'hidden');
@@ -164,7 +122,7 @@ const UpstreamQuotaGarden = ({
     );
     const fresh = sourceDrops.filter((drop) => !seenDropIdsRef.current.has(drop.id));
     fresh.forEach((drop) => seenDropIdsRef.current.add(drop.id));
-    if (!active || fresh.length === 0 || layout.profiles.length === 0) return;
+    if (!active || fresh.length === 0) return;
 
     const now = Date.now();
     const lifecycleDelay = getGardenLifecycleDelayMs(lifecycle, now);
@@ -174,38 +132,20 @@ const UpstreamQuotaGarden = ({
         ? lifecycleDelay
         : GARDEN_EMERGE_MS;
     setClock(now);
-    setJobs((current) => scheduleGardenDrops({
+    setJobs((current) => scheduleGardenFeeds({
       accountRef,
       drops: fresh,
-      profiles: layout.profiles,
+      hasPerch: layout.perches.length > 0,
       jobs: current,
       now,
       minimumDelayMs
     }).jobs);
-  }, [accountRef, active, drops, layout.profiles, lifecycle]);
+  }, [accountRef, active, drops, layout.perches.length, lifecycle]);
 
-  useEffect(() => {
-    if (jobs.length === 0) return undefined;
-    const timer = window.setInterval(() => {
-      const now = Date.now();
-      setClock(now);
-      setJobs((current) => {
-        const next = pruneGardenJobs(current, now, layout.profiles.length);
-        return next.length === current.length ? current : next;
-      });
-    }, 70);
-    return () => window.clearInterval(timer);
-  }, [jobs.length, layout.profiles.length]);
-
-  const jobsByPlant = useMemo(() => {
-    const result = new Map<number, GardenJob>();
-    jobs.forEach((job) => {
-      if (job.outcome === 'caught' && job.plantIndex !== null && job.endsAt > clock) {
-        result.set(job.plantIndex, job);
-      }
-    });
-    return result;
-  }, [clock, jobs]);
+  const perch = hop.perchIndex >= 0 ? layout.perches[hop.perchIndex] : null;
+  const fromPerch = hop.fromPerchIndex >= 0 && hop.fromPerchIndex !== hop.perchIndex
+    ? layout.perches[hop.fromPerchIndex] || null
+    : null;
 
   return (
     <span
@@ -217,7 +157,8 @@ const UpstreamQuotaGarden = ({
       data-garden-active={lifecycle.phase === 'hidden' ? 'false' : 'true'}
       data-garden-requested-active={active ? 'true' : 'false'}
       data-garden-lifecycle={lifecycle.phase}
-      data-garden-plants={layout.profiles.length}
+      data-garden-columns={layout.columns}
+      data-garden-hop={hop.phase}
       data-garden-jobs={jobs.length}
       style={{
         ['--garden-columns' as string]: layout.columns,
@@ -226,20 +167,22 @@ const UpstreamQuotaGarden = ({
       } as CSSProperties}
       aria-hidden="true"
     >
-      {layout.profiles.map((profile) => (
+      {/* 花园收起时连植株 DOM 都不挂：一屏 20 个空闲账号不该留下 20 组合成层。 */}
+      {perch && lifecycle.phase !== 'hidden' ? (
         <QuotaPlant
-          key={profile.id}
           profile={profile}
+          perch={perch}
+          fromPerch={fromPerch}
+          hop={hop}
           lifecycle={lifecycle.phase}
-          now={clock}
-          job={jobsByPlant.get(profile.index)}
+          busy={Boolean(activeCatch)}
         />
-      ))}
+      ) : null}
       <UpstreamQuotaAttackLayer
         accountRef={accountRef}
         gardenRef={gardenRef}
         jobs={jobs}
-        profiles={layout.profiles}
+        profile={profile}
       />
     </span>
   );

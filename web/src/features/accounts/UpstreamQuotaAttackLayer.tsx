@@ -1,27 +1,25 @@
-import React, { useCallback, useId, useLayoutEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties, RefObject } from 'react';
 import { createPortal } from 'react-dom';
 
 import QuotaPlantHead from './QuotaPlantHead';
 import { TokenDropLabel } from './TokenDropNumber';
+import { GARDEN_ATTACK_MS, GARDEN_MISS_MS } from './garden/feeding-model';
+import type { GardenFeedJob } from './garden/feeding-model';
 import {
-  GARDEN_ATTACK_MS,
-  GARDEN_MISS_MS,
   buildGardenAttackGeometry,
   buildGardenDamagePoint
-} from './upstream-quota-garden-model';
-import type {
-  GardenAttackGeometry,
-  GardenJob,
-  GardenPlantProfile,
-  GardenPoint
-} from './upstream-quota-garden-model';
+} from './garden/attack-geometry';
+import type { GardenAttackGeometry } from './garden/attack-geometry';
+import type { GardenPoint } from './garden/vine-geometry';
+import type { GardenPlantProfile } from './garden/plant-profile';
+import { subscribeViewportChange } from './garden/viewport-observer';
 
 interface Props {
   accountRef: string;
   gardenRef: RefObject<HTMLSpanElement>;
-  jobs: GardenJob[];
-  profiles: GardenPlantProfile[];
+  jobs: GardenFeedJob[];
+  profile: GardenPlantProfile;
 }
 
 interface MeasuredJob {
@@ -34,6 +32,11 @@ function hasVisibleRect(element: HTMLElement | null): element is HTMLElement {
   if (!element) return false;
   const rect = element.getBoundingClientRect();
   return rect.width > 0 && rect.height > 0;
+}
+
+function getCenter(element: HTMLElement): GardenPoint {
+  const rect = element.getBoundingClientRect();
+  return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
 }
 
 function findDamageSource(garden: HTMLElement, accountRef: string) {
@@ -53,95 +56,78 @@ function findDamageSource(garden: HTMLElement, accountRef: string) {
  * 跨列捕食层：伤害数字固定出生在剩余额度列，头部从 Token 柱顶伸颈过去吞食。
  * Portal 只解决跨单元格裁切；事件调度仍由 UpstreamQuotaGarden 单点持有。
  */
-const UpstreamQuotaAttackLayer = ({ accountRef, gardenRef, jobs, profiles }: Props) => {
+const UpstreamQuotaAttackLayer = ({ accountRef, gardenRef, jobs, profile }: Props) => {
   const [measurements, setMeasurements] = useState<Record<string, MeasuredJob>>({});
   const attackLayerId = `quota-attack-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
+  // 测量本身不该重建监听：jobs 每次调度都是新数组，跟着它拆装监听会一直抖。
+  const jobsRef = useRef(jobs);
+  jobsRef.current = jobs;
 
   const measure = useCallback(() => {
     const garden = gardenRef.current;
-    if (!garden || jobs.length === 0) {
-      setMeasurements({});
+    const currentJobs = jobsRef.current;
+    if (!garden || currentJobs.length === 0) {
+      setMeasurements((current) => (Object.keys(current).length === 0 ? current : {}));
       return;
     }
 
     const source = findDamageSource(garden, accountRef);
     if (!source) {
-      setMeasurements({});
+      setMeasurements((current) => (Object.keys(current).length === 0 ? current : {}));
       return;
     }
 
     const sourceRect = source.getBoundingClientRect();
+    const originElement = garden.querySelector<HTMLElement>('[data-quota-plant-origin]');
+    const rootElement = garden.querySelector<HTMLElement>('[data-quota-plant-root]');
+    const anchored = hasVisibleRect(originElement) && hasVisibleRect(rootElement);
+    const origin = anchored ? getCenter(originElement as HTMLElement) : null;
+    const root = anchored ? getCenter(rootElement as HTMLElement) : null;
+
     const next: Record<string, MeasuredJob> = {};
-    jobs.forEach((job) => {
+    currentJobs.forEach((job) => {
       const damagePoint = buildGardenDamagePoint(accountRef, job.drop.id, sourceRect);
       const missFallPx = Math.max(
         18,
         Math.min(52, sourceRect.top + sourceRect.height - damagePoint.y - 6)
       );
-      if (job.outcome === 'missed' || job.plantIndex === null) {
+      if (job.outcome === 'missed' || !origin || !root) {
         next[job.id] = { damagePoint, attack: null, missFallPx };
         return;
       }
-
-      const originElement = garden.querySelector<HTMLElement>(
-        `[data-quota-plant-origin="${job.plantIndex}"]`
-      );
-      const rootElement = garden.querySelector<HTMLElement>(
-        `[data-quota-plant-root="${job.plantIndex}"]`
-      );
-      if (!hasVisibleRect(originElement) || !hasVisibleRect(rootElement)) return;
-      const originRect = originElement.getBoundingClientRect();
-      const rootRect = rootElement.getBoundingClientRect();
-      const origin = {
-        x: originRect.left + originRect.width / 2,
-        y: originRect.top + originRect.height / 2
-      };
-      const root = {
-        x: rootRect.left + rootRect.width / 2,
-        y: rootRect.top + rootRect.height / 2
-      };
       next[job.id] = {
         damagePoint,
-        attack: buildGardenAttackGeometry(origin, damagePoint, root),
+        attack: buildGardenAttackGeometry(origin, damagePoint, root, profile.stemBend),
         missFallPx
       };
     });
     setMeasurements(next);
-  }, [accountRef, gardenRef, jobs]);
+  }, [accountRef, gardenRef, profile.stemBend]);
 
   useLayoutEffect(() => {
     if (jobs.length === 0) {
-      setMeasurements({});
+      setMeasurements((current) => (Object.keys(current).length === 0 ? current : {}));
       return undefined;
     }
 
-    let animationFrame = 0;
-    const requestMeasure = () => {
-      window.cancelAnimationFrame(animationFrame);
-      animationFrame = window.requestAnimationFrame(measure);
-    };
-    requestMeasure();
-
-    // 入场与柱子折叠都可能改变锚点；攻击前再测一次，避免使用过渡中的坐标。
+    let frame = window.requestAnimationFrame(measure);
+    // 入场与柱子折叠都可能改变锚点；每一口扑出去之前再量一次。
     const timers = jobs.map((job) => window.setTimeout(
-      requestMeasure,
+      measure,
       Math.max(0, job.attackAt - Date.now())
     ));
-    window.addEventListener('resize', requestMeasure);
-    window.addEventListener('scroll', requestMeasure, true);
-
     return () => {
-      window.cancelAnimationFrame(animationFrame);
+      window.cancelAnimationFrame(frame);
+      frame = 0;
       timers.forEach((timer) => window.clearTimeout(timer));
-      window.removeEventListener('resize', requestMeasure);
-      window.removeEventListener('scroll', requestMeasure, true);
     };
   }, [jobs, measure]);
 
-  const profileByIndex = useMemo(
-    () => new Map(profiles.map((profile) => [profile.index, profile])),
-    [profiles]
-  );
+  // 滚动/缩放走全页面共享的那一对监听，不是每个账号行各挂一份。
+  useEffect(() => {
+    if (jobs.length === 0) return undefined;
+    return subscribeViewportChange(measure);
+  }, [jobs.length, measure]);
 
   if (typeof document === 'undefined' || jobs.length === 0) return null;
 
@@ -154,7 +140,6 @@ const UpstreamQuotaAttackLayer = ({ accountRef, gardenRef, jobs, profiles }: Pro
       {jobs.map((job, jobIndex) => {
         const measured = measurements[job.id];
         if (!measured) return null;
-        const profile = job.plantIndex === null ? null : profileByIndex.get(job.plantIndex);
         const ropeMaskId = `${attackLayerId}-rope-${jobIndex}`;
         const style = {
           ['--damage-x' as string]: `${measured.damagePoint.x}px`,
@@ -163,13 +148,12 @@ const UpstreamQuotaAttackLayer = ({ accountRef, gardenRef, jobs, profiles }: Pro
           ['--attack-duration' as string]: `${GARDEN_ATTACK_MS}ms`,
           ['--miss-duration' as string]: `${GARDEN_MISS_MS}ms`,
           ['--miss-fall' as string]: `${measured.missFallPx}px`,
-          ['--head-hue' as string]: `${profile?.headHueRotateDeg || 0}deg`,
-          ['--mouth-color' as string]: profile?.mouthColor || 'hsl(8 52% 28%)',
+          ['--head-hue' as string]: `${profile.headHueRotateDeg}deg`,
+          ['--mouth-color' as string]: profile.mouthColor,
+          ['--stem-color' as string]: profile.stemColor,
           ...(measured.attack ? {
             ['--attack-root-x' as string]: `${measured.attack.root.x}px`,
             ['--attack-root-y' as string]: `${measured.attack.root.y}px`,
-            ['--attack-origin-x' as string]: `${measured.attack.origin.x}px`,
-            ['--attack-origin-y' as string]: `${measured.attack.origin.y}px`,
             ['--attack-offset-path' as string]: `path("${measured.attack.pathData}")`,
             ['--attack-rope-rest' as string]: measured.attack.ropeRestPercent,
             ['--attack-rope-mid' as string]: measured.attack.ropeMidPercent,
@@ -185,16 +169,13 @@ const UpstreamQuotaAttackLayer = ({ accountRef, gardenRef, jobs, profiles }: Pro
             data-quota-attack-job={job.id}
             data-drop-outcome={job.outcome}
             data-drop-reason={job.reason}
-            data-drop-plant={job.plantIndex == null ? undefined : String(job.plantIndex)}
             data-attack-curve={measured.attack ? 'cubic' : undefined}
-            data-attack-path={measured.attack?.pathData}
-            data-attack-vine-path={measured.attack?.vinePathData}
             style={style}
           >
             <span className="upstream-quota-attack-damage">
               <TokenDropLabel drop={job.drop} />
             </span>
-            {measured.attack && profile ? (
+            {measured.attack ? (
               <>
                 <svg
                   className="upstream-quota-attack-rope"

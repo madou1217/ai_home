@@ -25,7 +25,11 @@ import { buildGardenAttackGeometry } from './attack-geometry.ts';
 import {
   GARDEN_HEAD_HEIGHT,
   GARDEN_HEAD_STEM_INSET,
+  GARDEN_STALK_SEGMENTS,
+  GARDEN_STEM_MAX_HEIGHT,
+  GARDEN_STEM_MIN_HEIGHT,
   getHeadCenterOffset,
+  getStalkSegments,
   getStemHeight
 } from './plant-profile.ts';
 
@@ -314,7 +318,20 @@ test('plant profile: the resting vine reaches the point the attack geometry meas
 });
 
 test('plant profile: grows the stem with the bar it stands on, within bounds', () => {
-  assert.equal(getStemHeight(0), 15);
+  assert.equal(getStemHeight(0), GARDEN_STEM_MIN_HEIGHT);
   assert.ok((getStemHeight(28)) > (getStemHeight(4)));
-  assert.ok((getStemHeight(1000)) <= (27));
+  assert.ok((getStemHeight(1000)) <= (GARDEN_STEM_MAX_HEIGHT));
+});
+
+test('plant profile: the stalk splits into a tapering chain that spans the whole stem', () => {
+  const stemHeight = getStemHeight(24);
+  const segments = getStalkSegments(stemHeight);
+  assert.equal(segments.length, GARDEN_STALK_SEGMENTS);
+  // 骨节首尾相接，总高就是茎高——差一点点都会让头浮在茎顶上方。
+  const total = segments.reduce((sum, segment) => sum + segment.height, 0);
+  assert.ok(Math.abs(total - stemHeight) < 0.05);
+  // 越往上越细，才像植物而不是一根等宽柱体。
+  segments.forEach((segment, index) => {
+    if (index > 0) assert.ok(segment.width < segments[index - 1].width);
+  });
 });

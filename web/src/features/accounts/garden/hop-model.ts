@@ -2,8 +2,11 @@ import type { GardenPerch } from './perch-model';
 import { resolvePerchIndex } from './perch-model';
 import { stableGardenRandom, stableGardenRange } from './stable-random';
 
-/** 腾空一次的时长；落地要能接上下一次捕食，所以不能拖。 */
-export const GARDEN_HOP_FLIGHT_MS = 620;
+/**
+ * 一次跳跃的总时长。它不只是"在空中的时间"：起跳前的蓄力和落地后的回弹都算
+ * 在里面（见 plant.css 的时间轴），少了这两头，跳跃看着就是平移贴图。
+ */
+export const GARDEN_HOP_FLIGHT_MS = 780;
 /** 两次跳跃之间的停留区间——固定间隔会看出节拍，所以按账号+跳次取随机值。 */
 export const GARDEN_HOP_MIN_IDLE_MS = 2600;
 export const GARDEN_HOP_MAX_IDLE_MS = 6200;

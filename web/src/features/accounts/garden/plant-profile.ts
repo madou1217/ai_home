@@ -2,21 +2,30 @@ import { stableGardenRandom, stableGardenRange } from './stable-random';
 import { clampNumber } from './vine-geometry';
 
 /** 花茎最短/最长长度（px）。柱子越高长得越精神，但不能高到盖住上一行。 */
-export const GARDEN_STEM_MIN_HEIGHT = 15;
-export const GARDEN_STEM_MAX_HEIGHT = 27;
-/** 茎宽相对柱宽（14px）不能太细，3px 那种会看成一根牙签。 */
-export const GARDEN_STEM_WIDTH = 5;
-export const GARDEN_HEAD_WIDTH = 20;
-export const GARDEN_HEAD_HEIGHT = 19;
-/** 头部下缘压进茎顶的重叠量（与 plant.css 的 head bottom 同一个数）。 */
-export const GARDEN_HEAD_STEM_INSET = 2;
+export const GARDEN_STEM_MIN_HEIGHT = 16;
+export const GARDEN_STEM_MAX_HEIGHT = 30;
+/** 茎的骨节数：够画出一道波，又不至于每株花挂一堆元素。 */
+export const GARDEN_STALK_SEGMENTS = 4;
+/** 根部/顶端的茎宽，中间线性收细——锥形比等宽柱体像植物。 */
+export const GARDEN_STALK_BASE_WIDTH = 6.5;
+export const GARDEN_STALK_TIP_WIDTH = 4;
+export const GARDEN_HEAD_WIDTH = 24;
+export const GARDEN_HEAD_HEIGHT = 24;
+/** 头压进茎顶的重叠量：头的咽喉正好含住茎尖。 */
+export const GARDEN_HEAD_STEM_INSET = 6;
+
+export interface GardenStalkSegment {
+  height: number;
+  width: number;
+}
 
 export interface GardenPlantProfile {
   /** 每个账号一朵花，色调稳定，用来区分不同账号的行。 */
   headHueRotateDeg: number;
-  /** 花茎弯曲量（px），正负决定往哪边鼓。 */
-  stemBend: number;
+  /** 待机时整株的静态倾斜，几株花并排时不会像复制粘贴。 */
+  leanDeg: number;
   stemColor: string;
+  stemShadeColor: string;
   mouthColor: string;
   swayDurationMs: number;
   swayDelayMs: number;
@@ -24,31 +33,43 @@ export interface GardenPlantProfile {
 
 export function buildPlantProfile(accountRef: string): GardenPlantProfile {
   return {
-    headHueRotateDeg: Math.round(stableGardenRange(-32, 32, accountRef, 'head-hue')),
-    stemBend: Number(stableGardenRange(-3.6, 3.6, accountRef, 'stem-bend').toFixed(2)),
-    stemColor: 'hsl(104 42% 38%)',
-    mouthColor: 'hsl(8 52% 28%)',
+    headHueRotateDeg: Math.round(stableGardenRange(-16, 16, accountRef, 'head-hue')),
+    leanDeg: Number(stableGardenRange(-5, 5, accountRef, 'lean').toFixed(2)),
+    stemColor: 'hsl(104 44% 42%)',
+    stemShadeColor: 'hsl(108 40% 26%)',
+    mouthColor: 'hsl(354 62% 17%)',
     swayDurationMs: Math.round(stableGardenRange(2600, 3400, accountRef, 'sway-duration')),
     // 负延迟：不同账号的摇摆一开始就错开，不会整页同步摆动。
     swayDelayMs: -Math.round(stableGardenRandom(accountRef, 'sway-phase') * 2700)
   };
 }
 
-/**
- * 花茎要长到头部中心，而不是长到头部下缘——攻击藤蔓的 origin 取的就是头部
- * 元素的中心（getBoundingClientRect 的中点）。两处不一致时，待机花茎会比藤蔓
- * 的起始段短一截，接缝就会露出来。头会盖住多出的这一小段，看不见。
- */
-export function getHeadCenterOffset(stemHeight: number) {
-  return stemHeight - GARDEN_HEAD_STEM_INSET + GARDEN_HEAD_HEIGHT / 2;
-}
-
 /** 茎长跟着脚下那根柱子走，而不是写死一个常数。 */
 export function getStemHeight(barHeight: number) {
   const height = Number.isFinite(barHeight) ? barHeight : 0;
   return Math.round(clampNumber(
-    GARDEN_STEM_MIN_HEIGHT + height * 0.42,
+    GARDEN_STEM_MIN_HEIGHT + height * 0.46,
     GARDEN_STEM_MIN_HEIGHT,
     GARDEN_STEM_MAX_HEIGHT
   ));
+}
+
+/** 把茎长切成锥形骨节：每节比下一节细一点，接缝靠圆头描边盖住。 */
+export function getStalkSegments(stemHeight: number): GardenStalkSegment[] {
+  const total = Math.max(GARDEN_STEM_MIN_HEIGHT, stemHeight);
+  const segmentHeight = total / GARDEN_STALK_SEGMENTS;
+  const widthStep = (GARDEN_STALK_BASE_WIDTH - GARDEN_STALK_TIP_WIDTH)
+    / Math.max(1, GARDEN_STALK_SEGMENTS - 1);
+  return Array.from({ length: GARDEN_STALK_SEGMENTS }, (_value, index) => ({
+    height: Number(segmentHeight.toFixed(2)),
+    width: Number((GARDEN_STALK_BASE_WIDTH - widthStep * index).toFixed(2))
+  }));
+}
+
+/**
+ * 攻击藤蔓的起点取的是头部元素的中心；这里给出同一个点相对根部的高度，
+ * 让藤蔓从花茎该结束的地方接着往外伸，而不是从半空冒出来。
+ */
+export function getHeadCenterOffset(stemHeight: number) {
+  return stemHeight - GARDEN_HEAD_STEM_INSET + GARDEN_HEAD_HEIGHT / 2;
 }

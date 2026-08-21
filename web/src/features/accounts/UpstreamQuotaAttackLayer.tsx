@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState
 import type { CSSProperties, RefObject } from 'react';
 import { createPortal } from 'react-dom';
 
-import QuotaPlantHead from './QuotaPlantHead';
+import QuotaPlantHead from './garden/QuotaPlantHead';
 import { TokenDropLabel } from './TokenDropNumber';
 import { GARDEN_ATTACK_MS, GARDEN_MISS_MS } from './garden/feeding-model';
 import type { GardenFeedJob } from './garden/feeding-model';

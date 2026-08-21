@@ -121,8 +121,8 @@
 
 .upstream-quota-attack-head-motion {
   z-index: 4;
-  width: 20px;
-  height: 19px;
+  width: 24px;
+  height: 24px;
   offset-distance: 0%;
   offset-rotate: auto 180deg;
   filter: drop-shadow(0 2px 2px rgb(35 24 21 / 28%));
@@ -153,8 +153,8 @@
   right: -1px;
   z-index: -1;
   box-sizing: border-box;
-  width: 7px;
-  height: 6px;
+  width: 8px;
+  height: 7px;
   border: 0.6px solid rgb(28 61 25 / 72%);
   border-radius: 45% 55% 48% 52%;
   background: var(--stem-color, hsl(104 43% 38%));
@@ -187,12 +187,8 @@
   animation: upstream-quota-swallow-pulse var(--attack-duration) ease-in-out var(--attack-delay) both;
 }
 
-.upstream-quota-attack-head-motion .upstream-quota-plant-head-half--upper {
-  animation: upstream-quota-jaw-upper var(--attack-duration) ease-in-out var(--attack-delay) both;
-}
-
-.upstream-quota-attack-head-motion .upstream-quota-plant-head-half--lower {
-  animation: upstream-quota-jaw-lower var(--attack-duration) ease-in-out var(--attack-delay) both;
+.upstream-quota-attack-head-motion .quota-head {
+  animation: upstream-quota-jaw var(--attack-duration) ease-in-out var(--attack-delay) both;
 }
 
 @keyframes upstream-quota-damage-eaten {
@@ -388,54 +384,29 @@
   }
 }
 
-@keyframes upstream-quota-jaw-upper {
-  0%, 31% {
-    transform: translateY(1px) rotate(1deg);
+@keyframes upstream-quota-jaw {
+  0%, 24% {
+    --jaw-open: 6deg;
   }
-  35% {
-    transform: translateY(-2px) rotate(-8deg);
+  32% {
+    --jaw-open: 22deg;
   }
-  42%, 49% {
-    transform: translateY(-5px) rotate(-22deg);
+  40%, 46% {
+    --jaw-open: 26deg;
   }
-  55% {
-    transform: translateY(2px) rotate(5deg);
+  52% {
+    --jaw-open: 0deg;
   }
-  63%, 70%, 76% {
-    transform: translateY(1.5px) rotate(4deg);
+  60%, 72% {
+    --jaw-open: 9deg;
   }
-  73%, 79% {
-    transform: translateY(-0.5px) rotate(-3deg);
+  66%, 78% {
+    --jaw-open: 2deg;
   }
-  82%, 100% {
-    transform: translateY(1px) rotate(1deg);
-  }
-}
-
-@keyframes upstream-quota-jaw-lower {
-  0%, 31% {
-    transform: translateY(-1px) rotate(-1deg);
-  }
-  35% {
-    transform: translateY(2px) rotate(8deg);
-  }
-  42%, 49% {
-    transform: translateY(5px) rotate(22deg);
-  }
-  55% {
-    transform: translateY(-2px) rotate(-5deg);
-  }
-  63%, 70%, 76% {
-    transform: translateY(-1.5px) rotate(-4deg);
-  }
-  73%, 79% {
-    transform: translateY(0.5px) rotate(3deg);
-  }
-  82%, 100% {
-    transform: translateY(-1px) rotate(-1deg);
+  100% {
+    --jaw-open: 5deg;
   }
 }
-
 
 @media (prefers-reduced-motion: reduce) {
   .upstream-quota-attack-damage {

@@ -1,58 +1,67 @@
-/* 花头视觉：原地植株与 Portal 攻击层共用同一套结构，样式只在这里定义一次。 */
+/*
+ * 花头。上下颚绕同一个铰接点开合（右后方咽喉），所以「张嘴」是真的在张嘴。
+ * 张开角度由 --jaw-open 驱动，待机呼吸、扑咬、咀嚼只是给这一个变量喂不同的值。
+ */
 
-.upstream-quota-plant-head-visual,
-.upstream-quota-plant-mouth-core,
-.upstream-quota-plant-head-half {
-  position: absolute;
-  inset: 0;
+/* 不注册的自定义属性只会离散跳变，张嘴就没有中间帧。 */
+@property --jaw-open {
+  syntax: '<angle>';
+  inherits: true;
+  initial-value: 0deg;
 }
 
-.upstream-quota-plant-head-visual {
+.quota-head {
   display: block;
-  /* 账号色调是静态的，整颗头只滤一次；之前上下颚各滤一次等于白付一倍成本。 */
-  filter: hue-rotate(var(--head-hue, 0deg)) drop-shadow(0 1px 1px rgb(35 24 21 / 24%));
-  transform-origin: 68% 64%;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  filter: hue-rotate(var(--head-hue, 0deg)) drop-shadow(0 1px 1.5px rgb(48 18 20 / 30%));
 }
 
-.upstream-quota-plant-mouth-core {
-  top: 31%;
-  right: 24%;
-  bottom: 23%;
-  left: 5%;
-  border: 0.6px solid rgb(46 26 24 / 72%);
-  border-radius: 55% 35% 48% 52%;
-  background: var(--mouth-color);
-  box-shadow: inset 1px 1px 2px rgb(0 0 0 / 26%);
+.quota-head-jaw {
+  /* 铰接点在咽喉：两片颚绕同一个点反向转，咬合时严丝合缝。 */
+  transform-box: view-box;
+  transform-origin: 20.8px 12px;
 }
 
-.upstream-quota-plant-head-half {
-  background-image: url('../../../../public/assets/quota-garden/quota-plant-head.webp');
-  background-position: center;
-  background-size: 100% 100%;
-  background-repeat: no-repeat;
+.quota-head-jaw--upper {
+  transform: rotate(calc(var(--jaw-open) * -1));
 }
 
-.upstream-quota-plant-head-half--upper {
-  clip-path: inset(0 0 49% 0);
-  transform: translateY(1px) rotate(1deg);
-  transform-origin: 72% 49%;
+.quota-head-jaw--lower {
+  transform: rotate(var(--jaw-open));
 }
 
-.upstream-quota-plant-head-half--lower {
-  clip-path: inset(46% 0 0 0);
-  transform: translateY(-1px) rotate(-1deg);
-  transform-origin: 72% 51%;
+.quota-head-lip {
+  fill: var(--head-skin, hsl(352 72% 52%));
+  stroke: var(--head-outline, hsl(352 56% 22%));
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  paint-order: stroke fill;
 }
 
-.upstream-quota-plant-eye-accent {
-  position: absolute;
-  top: 25%;
-  left: 62%;
-  z-index: 4;
-  display: block;
-  width: 1.6px;
-  height: 1.6px;
-  border-radius: 50%;
-  background: rgb(255 255 255 / 88%);
-  box-shadow: 0 0 0 0.4px rgb(63 37 28 / 34%);
+/* 牙齿长在颚的内缘上，跟着那片颚转。 */
+.quota-head-teeth {
+  fill: hsl(45 44% 96%);
+  stroke: hsl(352 50% 24%);
+  stroke-width: 0.5;
+  stroke-linejoin: round;
+}
+
+.quota-head-spot {
+  fill: rgb(255 255 255 / 90%);
+}
+
+/* 口腔：整片内壁，被头轮廓裁出来，张多大都不会露馅。 */
+/* 小尺寸下嘴要读得出来，靠的是口腔与外皮的明度差，不是细节。 */
+.quota-head-throat {
+  fill: var(--mouth-color, hsl(354 62% 17%));
+}
+
+.quota-head-gullet {
+  fill: hsl(352 62% 16%);
+}
+
+.quota-head-tongue {
+  fill: hsl(348 58% 46%);
 }

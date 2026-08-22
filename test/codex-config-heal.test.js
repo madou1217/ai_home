@@ -10,8 +10,10 @@ const {
   convertWindowsPathToWsl,
   healCodexMcpServers,
   healCodexMcpServersConfigFile,
+  healCodexProjectsSection,
+  healCodexConfigFile,
   resolveMcpCommandTarget
-} = require('../lib/cli/services/pty/codex-mcp-config-heal');
+} = require('../lib/cli/services/pty/codex-config-heal');
 
 function fakeFs(existingPaths = []) {
   const set = new Set(existingPaths.map((value) => String(value).toLowerCase()));

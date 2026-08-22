@@ -17,14 +17,14 @@ interface Props {
 /**
  * 剩余额度进度条运行动效包装（低侵入）：
  * - 运行中：进度条渐变流光扫过，表达"正在被消耗"。
- * - remainingPct 下降：进度条做一次短促回弹（被咬了一口）。
+ * - remainingPct 下降：进度条做一次短促回弹。
  * - tokenUsage 增量：由页面级 useTokenDropEvents 产出的掉落事件在此渲染伤害数字。
  * 火药燃点由 UsageSnapshotCell 挂在真实轨道内；本层只编排活动状态与掉落事件。
  */
 const UsageProgressEffects = ({ record, activity, drops }: Props) => {
   const accountRef = getAccountRef(record);
   const accountDrops = selectAccountDrops(drops, accountRef);
-  // 判定收敛在 usage-activity 里：花那边用的是同一套，两处不该各写一份。
+  // 判定收敛在 usage-activity 里，避免活动状态与掉落反馈各自推导。
   const running = isAccountConsuming(activity, accountDrops);
   const remainingPct = record.remainingPct;
   const previousPctRef = useRef<number | null>(remainingPct);
@@ -55,8 +55,6 @@ const UsageProgressEffects = ({ record, activity, drops }: Props) => {
         pulsing ? 'usage-progress-effects--pulsing' : ''
       ].filter(Boolean).join(' ')}
       data-usage-layout={record.apiKeyMode ? 'unmetered' : 'metered'}
-      data-account-ref={accountRef}
-      data-quota-damage-source={record.apiKeyMode ? 'true' : undefined}
     >
       <UsageSnapshotCell
         record={record}
@@ -65,7 +63,7 @@ const UsageProgressEffects = ({ record, activity, drops }: Props) => {
         activeModels={activity?.activeModels}
       />
       {!record.apiKeyMode ? (
-        <TokenDropNumber drops={accountDrops} placement="metered" />
+        <TokenDropNumber drops={accountDrops} />
       ) : null}
     </div>
   );

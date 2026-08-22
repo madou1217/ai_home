@@ -36,12 +36,12 @@
   }
 }
 
-/* remainingPct 下降：进度条做一次短促回弹（被咬了一口） */
+/* remainingPct 下降：进度条做一次短促回弹 */
 .usage-progress-effects--pulsing .ant-progress-bg {
-  animation: usage-progress-bite 0.55s ease;
+  animation: usage-progress-damage 0.55s ease;
 }
 
-@keyframes usage-progress-bite {
+@keyframes usage-progress-damage {
   0% {
     transform: scaleX(1);
   }

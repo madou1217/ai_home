@@ -7,11 +7,11 @@ import {
   TOKEN_CHART_BAR_WIDTH,
   TOKEN_CHART_BASELINE,
   TOKEN_CHART_EDGE,
+  TOKEN_CHART_MAX_HEIGHT,
   TOKEN_CHART_SLOT_WIDTH,
   buildTokenUsageMetrics,
   getModelCostValue,
   getModelUsageValue,
-  getTokenUsageBarHeight,
   getUsedModels
 } from './token-usage-periods';
 import type {
@@ -141,6 +141,14 @@ function getBarPath(x: number, y: number, width: number, height: number) {
   ].join(' ');
 }
 
+function getBarHeight(value: TokenUsageValue, maximum: number) {
+  if (value === null || value <= 0 || maximum <= 0) return 2;
+
+  // 对数高度只负责表达量级，精确值仍由文字和 Tooltip 负责。
+  const normalized = Math.log1p(value) / Math.log1p(maximum);
+  return Math.max(6, Math.round(normalized * TOKEN_CHART_MAX_HEIGHT));
+}
+
 function TokenUsageBar({
   dimension,
   value,
@@ -158,7 +166,7 @@ function TokenUsageBar({
   className: string;
   style?: CSSProperties;
 }) {
-  const height = getTokenUsageBarHeight(value, maximum);
+  const height = getBarHeight(value, maximum);
   const x = TOKEN_CHART_BAR_OFFSET + index * TOKEN_CHART_SLOT_WIDTH;
   const isPeak = value !== null && value === maximum && maximum > 0;
   const layers = allocateLayerHeights(models, dimension, value || 0, height);

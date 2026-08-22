@@ -67,8 +67,8 @@ import type {
 } from '@/types';
 import { providerIds, providerNames } from '@/components/chat/ProviderIcon';
 import { PROVIDER_AUTH_OPTIONS, PROVIDER_CATALOG } from '@/providers/catalog';
+import TokenUsageCell from '@/components/account/TokenUsageCell';
 import UsageProgressEffects from '@/features/accounts/UsageProgressEffects';
-import AccountTokenUsageGardenCell from '@/features/accounts/AccountTokenUsageGardenCell';
 import {
   appendLiveTokenEvent,
   useTokenDropEvents,
@@ -1705,11 +1705,7 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
       // 单元格宽度随折叠变化，内容已居中；表头跟着居中才不会两头不齐。
       align: 'center' as const,
       render: (_value: any, record: Account) => (
-        <AccountTokenUsageGardenCell
-          record={record}
-          activity={getAccountActivity(record)}
-          drops={tokenDrops}
-        />
+        <TokenUsageCell usage={record.tokenUsage} />
       )
     },
     {
@@ -1828,11 +1824,7 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
           <div className="account-mobile-token-usage-head">
             <span>Token 用量</span>
           </div>
-          <AccountTokenUsageGardenCell
-            record={record}
-            activity={getAccountActivity(record)}
-            drops={tokenDrops}
-          />
+          <TokenUsageCell usage={record.tokenUsage} />
         </div>
 
         <div className="mobile-card-foot">

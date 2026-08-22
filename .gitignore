@@ -1,7 +1,7 @@
 node_modules/
 .DS_Store
 /accounts/
-.claude/settings.local.json
+.claude/
 .spec-workflow/
 logs/
 *.log
@@ -78,6 +78,10 @@ web/src/.umi-production/
 # Local agent and browser-automation scratch artifacts.
 /.omo/
 /.playwright-*
+# GUI 测试取证截图（web-gui-tester skill 的本地证据目录）。
+gui-test-screenshots/
+# 本地 HTML 设计原型稿，不入库。
+prototypes/
 
 # Local code-index tool database (per-machine, never shared).
 /.codegraph/

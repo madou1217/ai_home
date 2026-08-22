@@ -597,6 +597,18 @@ test('zcode desktop 在 macOS 使用 manifest installPaths 解析 .app 内可执
     `/aih-home/run/auth-projections/zcode/${ACCOUNT_REF}`);
   assert.equal(fakeSpawn.calls[0].options.env.ZCODE_HOME,
     `/aih-home/run/auth-projections/zcode/${ACCOUNT_REF}/.zcode`);
+  assert.equal(
+    fakeSpawn.calls[0].options.env.AIH_ZCODE_SESSION_ATTRIBUTION_SCOPE,
+    ACCOUNT_REF
+  );
+  assert.equal(fakeSpawn.calls[0].options.env.ZCODE_AGENT_SERVER_COMMAND, process.execPath);
+  const agentArgs = JSON.parse(fakeSpawn.calls[0].options.env.ZCODE_AGENT_SERVER_ARGS_JSON);
+  assert.match(agentArgs[0], /zcode-session-attribution-runner\.js$/);
+  assert.equal(
+    agentArgs[1],
+    '/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs'
+  );
+  assert.deepEqual(agentArgs.slice(2), ['app-server', '--stdio']);
 });
 
 test('zcode desktop 在 macOS 隔离 HOME 时固定宿主凭据密钥', () => {

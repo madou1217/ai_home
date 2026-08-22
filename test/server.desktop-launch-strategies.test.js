@@ -49,6 +49,7 @@ test('未注册 provider 落到中性默认策略：无应用名、无 env 覆�
 
   const env = { A: '1' };
   strategy.decorateLaunchEnv(env, ctx);
+  strategy.decorateResolvedLaunchEnv(env, { executablePath: '/apps/Foo', bundlePath: '/apps/Foo.app' }, ctx);
   assert.deepEqual(env, { A: '1' });
 
   assert.deepEqual(
@@ -191,7 +192,14 @@ test('实例身份必须由唯一 provider 认领：撞车时返回空而不是�
 test('注册表内每个策略都满足完整的策略契约', () => {
   for (const [provider, strategy] of Object.entries(STRATEGY_BY_PROVIDER)) {
     assert.equal(typeof strategy.name, 'string', provider);
-    for (const hook of ['resolveInstanceName', 'parseInstanceName', 'decorateLaunchEnv', 'resolveSpawnPlan', 'prepareLaunchSession']) {
+    for (const hook of [
+      'resolveInstanceName',
+      'parseInstanceName',
+      'decorateLaunchEnv',
+      'decorateResolvedLaunchEnv',
+      'resolveSpawnPlan',
+      'prepareLaunchSession'
+    ]) {
       assert.equal(typeof strategy[hook], 'function', `${provider}.${hook}`);
     }
     assert.equal(typeof strategy.reuseRunningInstance, 'boolean', provider);

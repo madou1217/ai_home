@@ -553,3 +553,72 @@ test('普通 400 参数错误仍然直接回客户端，不换账号空跑', () 
   assert.equal(policy.shouldPassthroughToClient, true);
   assert.equal(policy.shouldRetryAnotherAccount, false);
 });
+
+// zcode（智谱/Z.ai）用 HTTP 200 + {"code":1005,...} 表达配额拒绝，
+// 状态码分支永远看不到它——必须按结构化业务码判定。
+// 夹具取自 2026-08-22 12:37:52Z 实际抓到的上游响应（responseStatus=200）。
+test('zcode 1005 carried in HTTP 200 becomes a real failure instead of a success', () => {
+  const policy = classifyUpstreamFailure({
+    provider: 'zcode',
+    statusCode: 0,
+    body: '{"code":1005,"msg":"exceed quota limit"}',
+    detail: 'upstream_business_1005: exceed quota limit',
+    defaultCooldownMs: 60000
+  });
+  assert.equal(policy.clientStatusCode, 429);
+  assert.equal(policy.shouldMarkFailure, true);
+  assert.equal(policy.shouldRetryAnotherAccount, true);
+  // 熔断范围必须是 (account, model)，不能锁整个账号。
+  assert.equal(policy.scope, 'model');
+  // 上游没给 reset 提示时不能按 24h 硬配额封锁：账号可能还剩大量额度，
+  // 1005 用的是 balance 未暴露的另一维度（实测余额仍 74%）。
+  assert.equal(policy.kind, 'rate_limited');
+  assert.equal(policy.cooldownMs, 5 * 60 * 1000);
+  assert.equal(policy.deferAccountFailureUntilRequestOutcome, true);
+});
+
+test('zcode 1005 escalates to a quota block only when upstream supplies a reset hint', () => {
+  const policy = classifyUpstreamFailure({
+    provider: 'zcode',
+    statusCode: 0,
+    headers: { 'retry-after': '600' },
+    body: '{"code":1005,"msg":"exceed quota limit"}',
+    detail: 'upstream_business_1005: exceed quota limit'
+  });
+  assert.equal(policy.kind, 'model_quota_exhausted');
+  assert.equal(policy.cooldownMs, 600000);
+  assert.equal(policy.scope, 'model');
+});
+
+test('zcode 1005 classification does not depend on the human-readable message', () => {
+  const policy = classifyUpstreamFailure({
+    provider: 'zcode',
+    statusCode: 0,
+    body: '{"code":1005,"msg":"配额不足"}',
+    detail: 'upstream_business_1005: 配额不足'
+  });
+  assert.equal(policy.clientStatusCode, 429);
+  assert.equal(policy.shouldRetryAnotherAccount, true);
+});
+
+// 防误伤：别的 provider 恰好回 code 1005 不应被归成 zcode 配额语义。
+test('non-zcode providers are unaffected by the 1005 business code branch', () => {
+  const policy = classifyUpstreamFailure({
+    provider: 'claude',
+    statusCode: 0,
+    body: '{"code":1005,"msg":"exceed quota limit"}',
+    detail: 'upstream_business_1005: exceed quota limit'
+  });
+  assert.equal(policy.kind, 'unknown_error');
+});
+
+// 其余 zcode 业务码不应被冒充成配额耗尽（会误开 24h 冷却）。
+test('other zcode business codes do not become quota exhaustion', () => {
+  const policy = classifyUpstreamFailure({
+    provider: 'zcode',
+    statusCode: 0,
+    body: '{"code":3007,"msg":"captcha verify failed"}',
+    detail: 'upstream_business_3007: captcha verify failed'
+  });
+  assert.equal(policy.kind, 'unknown_error');
+});

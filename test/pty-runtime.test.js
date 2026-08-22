@@ -2886,7 +2886,6 @@ test('runtime routes codex through the built-in AIH server profile when no accou
   assert.deepEqual(spawns[0].args, [
     '-c', 'suppress_unstable_features_warning=true',
     '-c', 'model_provider=aih_server',
-    '-c', 'model_providers.aih_server.name="AIH Server"',
     '-c', 'model_providers.aih_server.base_url=http://127.0.0.1:8317/v1',
     '-c', 'model_providers.aih_server.wire_api=responses',
     '-c', 'model_providers.aih_server.env_key=OPENAI_API_KEY',
@@ -2965,7 +2964,6 @@ test('runtime injects codex remote proxy for built-in AIH server resume by defau
     'resume',
     '-c', 'suppress_unstable_features_warning=true',
     '-c', 'model_provider=aih_server',
-    '-c', 'model_providers.aih_server.name="AIH Server"',
     '-c', 'model_providers.aih_server.base_url=http://127.0.0.1:9527/v1',
     '-c', 'model_providers.aih_server.wire_api=responses',
     '-c', 'model_providers.aih_server.env_key=OPENAI_API_KEY',
@@ -2997,7 +2995,6 @@ test('runtime keeps reboot-restored Codex resume native with gateway credentials
     'resume',
     '-c', 'suppress_unstable_features_warning=true',
     '-c', 'model_provider=aih_server',
-    '-c', 'model_providers.aih_server.name="AIH Server"',
     '-c', 'model_providers.aih_server.base_url=http://127.0.0.1:9527/v1',
     '-c', 'model_providers.aih_server.wire_api=responses',
     '-c', 'model_providers.aih_server.env_key=OPENAI_API_KEY',

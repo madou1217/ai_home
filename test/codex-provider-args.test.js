@@ -24,12 +24,27 @@ test('codex provider args inject endpoint through config and keep the key in env
   assert.deepEqual(args, [
     '-c', 'suppress_unstable_features_warning=true',
     '-c', 'model_provider=aih_server',
-    '-c', 'model_providers.aih_server.name="AIH Server"',
     '-c', 'model_providers.aih_server.base_url=http://127.0.0.1:9527/v1',
     '-c', 'model_providers.aih_server.wire_api=responses',
     '-c', 'model_providers.aih_server.env_key=OPENAI_API_KEY'
   ]);
   assert.equal(args.join(' ').includes('secret-key'), false);
+});
+
+test('codex provider args stay quotable-free for the windows cmd transport', () => {
+  // Windows 上这些参数会经 buildPtyLaunch 的 cmd.exe 包装传递；node-pty 把
+  // " 转义成 \" 后 cmd.exe 无法解析（2026-08-22 codex 启动报
+  // `was unexpected at this time` 事故）。回归守卫：值里不允许出现引号或空格，
+  // provider 显示名只能由 codex-config-sync 写入 config.toml。
+  const args = buildCodexProviderArgs({
+    OPENAI_API_KEY: 'secret-key',
+    OPENAI_BASE_URL: 'http://127.0.0.1:9527/v1'
+  });
+  args.forEach((arg, index) => {
+    if (index % 2 === 0) return; // 只检查 -c 的值
+    assert.equal(/["\s]/.test(arg), false, `arg contains quote/space: ${arg}`);
+  });
+  assert.equal(args.some((arg) => /model_providers\..*\.name=/.test(arg)), false);
 });
 
 test('codex provider args leave native OAuth config untouched', () => {

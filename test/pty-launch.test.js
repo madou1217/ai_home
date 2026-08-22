@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   buildPtyLaunch,
+  resolveWindowsUpstreamSpawn,
   resolveWindowsBatchLaunch,
   resolveWindowsNodeShimLaunch
 } = require('../lib/runtime/pty-launch');
@@ -229,4 +230,77 @@ test('resolveWindowsNodeShimLaunch ignores non-node cmd files', () => {
   };
 
   assert.equal(resolveWindowsNodeShimLaunch(shimPath, [], { platform: 'win32', fsImpl }), null);
+});
+
+test('buildPtyLaunch keeps key=value args unquoted in the windows cmd wrapper', () => {
+  const launch = buildPtyLaunch('codex', [
+    '-c', 'suppress_unstable_features_warning=true',
+    '-c', 'model_provider=aih_server',
+    '-c', 'model_providers.aih_server.base_url=https://example.com/v1',
+    '-c', 'model_providers.aih_server.wire_api=responses',
+    '-c', 'model_providers.aih_server.env_key=OPENAI_API_KEY'
+  ], { platform: 'win32' });
+  assert.equal(launch.command, 'cmd.exe');
+  assert.equal(
+    launch.args[3],
+    'chcp 65001>nul & codex -c suppress_unstable_features_warning=true'
+    + ' -c model_provider=aih_server'
+    + ' -c model_providers.aih_server.base_url=https://example.com/v1'
+    + ' -c model_providers.aih_server.wire_api=responses'
+    + ' -c model_providers.aih_server.env_key=OPENAI_API_KEY'
+  );
+  // 传输层不变量：cmd 包装行不允许出现 "。node-pty 会把 " 转义成 \"，
+  // 而 cmd.exe 不认识 \"（2026-08-22 codex -c 引号事故）。
+  assert.equal(launch.args[3].includes('"'), false);
+});
+
+
+test('resolveWindowsUpstreamSpawn routes npm cmd shims to node directly', () => {
+  const shimPath = 'C:\\npm\\codex.cmd';
+  const fsImpl = {
+    existsSync: (filePath) => filePath === shimPath,
+    readFileSync: () => [
+      '@echo off',
+      'SETLOCAL',
+      'SET "_prog=%dp0%\\node.exe"',
+      '"%_prog%"  "%dp0%\\node_modules\\@openai\\codex\\bin\\codex.js" %*'
+    ].join('\r\n')
+  };
+  const target = resolveWindowsUpstreamSpawn(shimPath, ['-c', 'model_provider=aih_server'], {
+    platform: 'win32',
+    fsImpl
+  });
+  assert.match(target.command, /node(\.exe)?$/);
+  assert.match(target.args[0], /codex\.js$/);
+  assert.deepEqual(target.args.slice(1), ['-c', 'model_provider=aih_server']);
+  assert.equal(target.windowsVerbatimArguments, false);
+});
+
+test('resolveWindowsUpstreamSpawn falls back to the cmd wrapper for non-node cmd files', () => {
+  const shimPath = 'C:\\tools\\native-tool.cmd';
+  const fsImpl = {
+    existsSync: (filePath) => filePath === shimPath,
+    readFileSync: () => '@echo off\r\nnative-tool.exe %*\r\n'
+  };
+  const target = resolveWindowsUpstreamSpawn(shimPath, ['--flag=1'], {
+    platform: 'win32',
+    fsImpl
+  });
+  assert.equal(target.command, 'cmd.exe');
+  assert.deepEqual(target.args.slice(0, 3), ['/d', '/s', '/c']);
+  // cmd 包装必须声明 verbatim，否则 libuv 的 \" 转义会让 cmd 解析失败
+  assert.equal(target.windowsVerbatimArguments, true);
+});
+
+test('resolveWindowsUpstreamSpawn passes through untouched outside win32', () => {
+  const posix = resolveWindowsUpstreamSpawn('/usr/local/bin/codex', ['exec'], {
+    platform: 'linux'
+  });
+  assert.equal(posix.command, '/usr/local/bin/codex');
+  assert.deepEqual(posix.args, ['exec']);
+  assert.equal(posix.windowsVerbatimArguments, false);
+
+  const unspecified = resolveWindowsUpstreamSpawn('codex', ['exec'], {});
+  assert.equal(unspecified.command, 'codex');
+  assert.deepEqual(unspecified.args, ['exec']);
 });

@@ -8,6 +8,7 @@ import type {
 import Button from '@/components/ui/AppButton';
 import BurningParticles from '@/features/accounts/BurningParticles';
 import {
+  buildUsageUnitsTooltipLines,
   formatResetAt,
   formatResetIn,
   formatWindowDuration,
@@ -194,6 +195,17 @@ function AgyGroupModelsTooltip({
   );
 }
 
+function UsageUnitsTooltipBody({ content }: { content: { title: string; detail: string } }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 12 }}>
+      <span style={{ whiteSpace: 'nowrap' }}>{content.title}</span>
+      {content.detail ? (
+        <span style={{ whiteSpace: 'nowrap', opacity: 0.72 }}>{content.detail}</span>
+      ) : null}
+    </div>
+  );
+}
+
 function UsageMetaLine({
   label,
   value,
@@ -201,7 +213,8 @@ function UsageMetaLine({
   resetAtMs,
   running,
   activityRate,
-  effectKey
+  effectKey,
+  progressTooltip
 }: {
   label: string;
   value: number | null;
@@ -210,6 +223,7 @@ function UsageMetaLine({
   running: boolean;
   activityRate: number;
   effectKey: string;
+  progressTooltip?: React.ReactNode;
 }) {
   const resetInLabel = formatResetIn(resetIn, resetAtMs);
   const resetLabel = formatResetAt(resetAtMs);
@@ -229,6 +243,7 @@ function UsageMetaLine({
         running={running}
         activityRate={activityRate}
         effectKey={effectKey}
+        tooltip={progressTooltip}
       />
       {resetLabel ? (
         <div style={{ color: '#8c8c8c', fontSize: 'clamp(11.5px, 3vw, 12.5px)', whiteSpace: 'nowrap' }}>
@@ -243,17 +258,19 @@ function UsageProgressBar({
   value,
   running,
   activityRate,
-  effectKey
+  effectKey,
+  tooltip
 }: {
   value: number | null;
   running: boolean;
   activityRate: number;
   effectKey: string;
+  tooltip?: React.ReactNode;
 }) {
   const percent = Math.max(0, Math.min(100, Number(value || 0)));
   const color = getUsageBarColor(value);
 
-  return (
+  const line = (
     <div className="usage-progress-line" data-usage-progress-value={String(percent)}>
       <div className="usage-progress-track" data-burning-active={running ? 'true' : 'false'}>
         <Progress
@@ -274,6 +291,13 @@ function UsageProgressBar({
       </div>
       <span className="usage-progress-value">{formatUsagePercent(value)}</span>
     </div>
+  );
+
+  if (!tooltip) return line;
+  return (
+    <Tooltip title={tooltip} placement="top">
+      {line}
+    </Tooltip>
   );
 }
 
@@ -401,6 +425,8 @@ export default function UsageSnapshotCell({
             const label = entry.bucket
               ? (windowLabel ? `${entry.bucket} · ${windowLabel}` : entry.bucket)
               : (windowLabel || 'usage');
+            // billing/balance 带 unit_type=token 的绝对额度时，hover 进度条展示「总/剩余/已用」。
+            const unitsLines = buildUsageUnitsTooltipLines(entry);
             return (
               <UsageMetaLine
                 key={`${entry.bucket}-${entry.window}-${index}`}
@@ -411,6 +437,7 @@ export default function UsageSnapshotCell({
                 running={running}
                 activityRate={activityRate}
                 effectKey={`${effectKeyPrefix}:bucket:${entry.bucket || 'usage'}:${entry.window || 'window'}:${index}`}
+                progressTooltip={unitsLines ? <UsageUnitsTooltipBody content={unitsLines} /> : undefined}
               />
             );
           })}

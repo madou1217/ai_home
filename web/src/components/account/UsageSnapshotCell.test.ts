@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  buildUsageUnitsTooltipLines,
   formatResetAt,
   formatResetIn,
+  formatTokenAmount,
   formatWindowDuration,
   groupAgyQuotaModels,
   resolveActiveAgyQuotaGroupKeys
@@ -46,6 +48,48 @@ test('derives the reset countdown from the reset timestamp when available', () =
   assert.equal(formatResetIn('', nowMs + (24 * 60 + 3 * 60) * 60 * 1000, nowMs), '1d3h');
   assert.equal(formatResetIn('', nowMs + (3 * 60 + 25) * 60 * 1000, nowMs), '3h25m');
   assert.equal(formatResetIn('', nowMs - 1, nowMs), '');
+});
+
+test('formatTokenAmount renders compact K/M/B token counts', () => {
+  assert.equal(formatTokenAmount(500), '500');
+  assert.equal(formatTokenAmount(1_500), '1.5K');
+  assert.equal(formatTokenAmount(606_408), '606K');
+  assert.equal(formatTokenAmount(999_499), '999K');
+  assert.equal(formatTokenAmount(999_500), '1M');
+  assert.equal(formatTokenAmount(1_500_000), '1.5M');
+  assert.equal(formatTokenAmount(100_000_000), '100M');
+  assert.equal(formatTokenAmount(1_000_000_000), '1B');
+  assert.equal(formatTokenAmount(null), '-');
+});
+
+test('buildUsageUnitsTooltipLines renders total/remaining/used token lines', () => {
+  assert.deepEqual(
+    buildUsageUnitsTooltipLines({
+      totalUnits: 100_000_000,
+      usedUnits: 606_408,
+      remainingUnits: 99_393_592,
+      remainingPct: 99.4,
+      unitType: 'token'
+    }),
+    { title: '总 100M / 剩余 99.4M tokens', detail: '已用 606K' }
+  );
+});
+
+test('buildUsageUnitsTooltipLines handles partial and missing unit fields', () => {
+  // unitType 缺省按 tokens 展示；只有 total 也能成行。
+  assert.deepEqual(
+    buildUsageUnitsTooltipLines({ totalUnits: 1_000_000_000 }),
+    { title: '总 1B tokens', detail: '' }
+  );
+  // 只有 remaining（上游 summary 只带剩余）。
+  assert.deepEqual(
+    buildUsageUnitsTooltipLines({ remainingUnits: 2_500, unitType: 'token' }),
+    { title: '剩余 2.5K tokens', detail: '' }
+  );
+  // 非绝对数值（只有百分比）或 total=0 时不显示 tooltip。
+  assert.equal(buildUsageUnitsTooltipLines({ remainingPct: 50 }), null);
+  assert.equal(buildUsageUnitsTooltipLines({ totalUnits: 0, remainingUnits: null }), null);
+  assert.equal(buildUsageUnitsTooltipLines(null), null);
 });
 
 test('groupAgyQuotaModels groups models into Gemini Models and Claude & GPT Models with dynamic limits', () => {

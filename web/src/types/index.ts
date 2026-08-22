@@ -11,6 +11,12 @@ export interface CodexUsageEntry {
   remainingPct: number | null;
   resetIn: string;
   resetAtMs: number;
+  // zcode_plan_balance 携带的绝对额度（unitType 为 'token' 时即 token 数）；
+  // 其余 provider 的 entries 不带这些字段。
+  totalUnits?: number | null;
+  usedUnits?: number | null;
+  remainingUnits?: number | null;
+  unitType?: string;
 }
 
 export interface GeminiUsageModel {

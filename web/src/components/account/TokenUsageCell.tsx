@@ -20,6 +20,7 @@ import type {
   TokenUsageValue
 } from './token-usage-periods';
 import { useTokenUsageTransitions } from './useTokenUsageTransitions';
+import { formatTokenAmount } from './usage-snapshot-format';
 import './TokenUsageCell.css';
 
 const TOKEN_MODEL_COLOR_TOKENS = [
@@ -35,20 +36,6 @@ const TOKEN_MODEL_COLOR_TOKENS = [
 
 // 与 CSS 里的吸附/脱离动画时长保持一致：动画放完才真正把 ghost 丢掉。
 const TOKEN_USAGE_TRANSITION_MS = 420;
-
-function formatTokenUnit(value: number) {
-  if (value >= 100) return String(Math.round(value));
-  if (value >= 10) return value.toFixed(1).replace(/\.0$/, '');
-  return value.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
-}
-
-function formatTokenAmount(value: TokenUsageValue) {
-  if (value === null) return '-';
-  if (value >= 999_500_000) return `${formatTokenUnit(value / 1_000_000_000)}B`;
-  if (value >= 999_500) return `${formatTokenUnit(value / 1_000_000)}M`;
-  if (value >= 1_000) return `${formatTokenUnit(value / 1_000)}K`;
-  return String(Math.round(value));
-}
 
 function formatCostUsd(value: TokenUsageValue) {
   if (value === null) return '-';

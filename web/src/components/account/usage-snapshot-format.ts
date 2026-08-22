@@ -81,6 +81,71 @@ export function formatResetAt(resetAtMs: number | null | undefined) {
   return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+function formatCompactUnit(value: number) {
+  if (value >= 100) return String(Math.round(value));
+  if (value >= 10) return value.toFixed(1).replace(/\.0$/, '');
+  return value.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+}
+
+/**
+ * token 数量的紧凑展示（K/M/B），与账号页 Token 用量列的约定一致：
+ * 100000000 → "100M"、1000000000 → "1B"、606408 → "606K"、500 → "500"。
+ */
+export function formatTokenAmount(value: number | null | undefined) {
+  if (value == null || !Number.isFinite(Number(value))) return '-';
+  if (value >= 999_500_000) return `${formatCompactUnit(value / 1_000_000_000)}B`;
+  if (value >= 999_500) return `${formatCompactUnit(value / 1_000_000)}M`;
+  if (value >= 1_000) return `${formatCompactUnit(value / 1_000)}K`;
+  return String(Math.round(value));
+}
+
+export interface UsageUnitsTooltipLike {
+  totalUnits?: number | null;
+  usedUnits?: number | null;
+  remainingUnits?: number | null;
+  remainingPct?: number | null;
+  unitType?: string;
+}
+
+export interface UsageUnitsTooltipContent {
+  title: string;
+  detail: string;
+}
+
+function resolveUsageUnitLabel(unitType: string | null | undefined) {
+  const normalized = String(unitType || '').trim().toLowerCase();
+  if (!normalized || normalized === 'token' || normalized === 'tokens') return 'tokens';
+  return normalized;
+}
+
+/**
+ * 由额度条目的绝对数值组装 hover 文案：主行「总 X / 剩余 Y tokens」，
+ * 次行「已用 Z」。任何绝对值都不可用时返回 null（不显示 tooltip）。
+ */
+export function buildUsageUnitsTooltipLines(
+  entry: UsageUnitsTooltipLike | null | undefined
+): UsageUnitsTooltipContent | null {
+  if (!entry) return null;
+
+  const isCountable = (value: number | null | undefined) =>
+    value != null && Number.isFinite(Number(value)) && Number(value) >= 0;
+
+  const hasTotal = isCountable(entry.totalUnits) && Number(entry.totalUnits) > 0;
+  const hasRemaining = isCountable(entry.remainingUnits);
+  if (!hasTotal && !hasRemaining) return null;
+
+  const parts: string[] = [];
+  if (hasTotal) parts.push(`总 ${formatTokenAmount(Number(entry.totalUnits))}`);
+  if (hasRemaining) parts.push(`剩余 ${formatTokenAmount(Number(entry.remainingUnits))}`);
+  const title = `${parts.join(' / ')} ${resolveUsageUnitLabel(entry.unitType)}`;
+
+  const detail = isCountable(entry.usedUnits)
+    ? `已用 ${formatTokenAmount(Number(entry.usedUnits))}`
+    : '';
+
+  return { title, detail };
+}
+
 export interface AgyQuotaModelLike {
   model: string;
   remainingPct: number | null;

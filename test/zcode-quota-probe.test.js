@@ -58,6 +58,7 @@ function makeBalancePayload(overrides = {}) {
         {
           show_name: 'GLM 5.3',
           capabilities: ['model:glm-5.3'],
+          unit_type: 'token',
           total_units: 1000,
           used_units: 210,
           remaining_units: 790,
@@ -97,11 +98,16 @@ test('parseZcodeBalancePayload maps balances into windowed entries', () => {
   assert.equal(model.remainingPct, 79);
   assert.equal(model.resetAtMs, 1_780_086_400_000);
   assert.equal(model.resetIn, '1d0h0m');
+  assert.equal(model.totalUnits, 1000, '绝对额度原样透传，供 WebUI hover 展示');
+  assert.equal(model.usedUnits, 210);
+  assert.equal(model.remainingUnits, 790);
+  assert.equal(model.unitType, 'token');
 
   const fallback = snapshot.entries.find((entry) => entry.bucket === 'Weekly Pool');
   assert.equal(fallback.windowMinutes, 10080);
   assert.equal(fallback.window, '7days');
   assert.equal(fallback.remainingPct, 80);
+  assert.equal(fallback.unitType, '', 'unit_type 缺失时保持空串');
 
   assert.deepEqual(snapshot.account, { planType: 'pro' });
 });
@@ -125,9 +131,11 @@ test('parseZcodeBalancePayload prefers remaining_units and clamps remainingPct',
   assert.equal(b.windowMinutes, 43200);
   assert.equal(b.resetAtMs, 0);
   assert.equal(b.resetIn, '');
+  assert.equal(b.remainingUnits, null, '上游缺失的绝对值保持 null');
   const c = snapshot.entries.find((entry) => entry.bucket === 'c');
   assert.equal(c.remainingPct, null, 'total_units 为 0 时无法计算百分比');
   assert.equal(c.windowMinutes, 0);
+  assert.equal(c.totalUnits, 0, 'total_units=0 是有限数值，原样保留');
 });
 
 test('parseZcodeBalancePayload derives window from period_start/period_end when period is absent', () => {
@@ -164,7 +172,19 @@ test('normalizeAccountUsageSnapshot keeps zcode_plan_balance entries for the Web
     source: 'zcode_plan_billing_balance_api',
     account: { planType: 'ZCode Start Plan' },
     entries: [
-      { bucket: 'glm-5.3', windowMinutes: 1440, window: '1days', remainingPct: 99.4, resetIn: '13h19m', resetAtMs: 1787068799000 }
+      {
+        bucket: 'glm-5.3',
+        windowMinutes: 1440,
+        window: '1days',
+        remainingPct: 99.4,
+        resetIn: '13h19m',
+        resetAtMs: 1787068799000,
+        totalUnits: 100_000_000,
+        usedUnits: 606_408,
+        remainingUnits: 99_393_592,
+        unitType: 'token'
+      },
+      { bucket: 'glm-4.7', windowMinutes: 1440, window: '1days', remainingPct: 40, resetIn: '', resetAtMs: 0 }
     ]
   });
   assert.equal(normalized.kind, 'zcode_plan_balance');
@@ -174,8 +194,25 @@ test('normalizeAccountUsageSnapshot keeps zcode_plan_balance entries for the Web
     windowMinutes: 1440,
     window: '1days',
     remainingPct: 99.4,
+    totalUnits: 100_000_000,
+    usedUnits: 606_408,
+    remainingUnits: 99_393_592,
+    unitType: 'token',
     resetIn: '13h19m',
     resetAtMs: 1787068799000
+  });
+  // 旧快照（新字段未写入前）同样合法：缺失的绝对值归一为 null / ''。
+  assert.deepEqual(normalized.entries[1], {
+    bucket: 'glm-4.7',
+    windowMinutes: 1440,
+    window: '1days',
+    remainingPct: 40,
+    totalUnits: null,
+    usedUnits: null,
+    remainingUnits: null,
+    unitType: '',
+    resetIn: '',
+    resetAtMs: 0
   });
 });
 

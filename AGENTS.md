@@ -162,6 +162,7 @@ Fuller layer map:
 - **服务重启环境安全（Windows 补充）**：`resolveHostHomeDir` 优先序为 `AIH_HOST_HOME` → `USERPROFILE` → `HOMEDRIVE/HOMEPATH` → `HOME`，投影 HOME 不会污染 `.ai_home` 定位，但重启前仍按上一节规程检查并钉住 `AIH_HOST_HOME`；`aih server restart` 不接受 serve 参数、以保存配置为唯一事实来源，重启前先 `aih server config show` 核对（host/port/proxy_url/models_probe_accounts），验证以 `/readyz` + 账号数 + accounts 端点 401（而非 503）为准。
 - **本机调试纪律**：PowerShell 一律走 `.ps1` 脚本文件（bash 内联会吞 `$_` 等）；bash heredoc 会把 `\\` 折叠成 `\`（JS 字符串里 `\n`/`\t` 随之变控制字符），写含反斜杠路径的代码/测试用编辑工具而非 heredoc；进程取证用 `Get-CimInstance Win32_Process`（`CommandLine` 是原始命令行，`\"` 污染一眼可辨；高频采样可抓到瞬时子进程）；spawn `EINVAL` 用 `NODE_DEBUG=child_process` 定位调用方。
 - **Windows 全量 `npm test` 存在既有卡死/失败**（`web-ui-router.projects` 挂起、native 会话类及依赖本机真实安装状态的用例），与代码改动无关；判定是否回归用 git stash A/B 对照是最快手段（本日三次使用均以逐字节一致结果排除嫌疑）。
+- **WSL 与 Windows 共用配置时的路径互通**：`/mnt/<drive>/...` 与 `<drive>:\...` 指向同一文件但互不认路径（blender MCP 的 `/mnt/c/...uvx.exe` 在 Windows 原生 codex 报 os error 3，且坏 MCP 会连累 `codex_apps` 等后续 MCP 未初始化）。自愈在 `lib/cli/services/pty/codex-mcp-config-heal.js`（codex 启动时自动执行）：跨端路径可无损转换且目标存在 → 改写为当前平台路径（备份 + 日志，幂等）；绝对路径两种形态都不存在 → 移除条目（含子表）；相对命令（uvx/npx 走 PATH）、`~`、环境变量路径不强求、原样保留。注意 TOML 双引号基本串的 `\\` 需反转义。
 
 ## Gateway & Account Internals
 - Gateway routing (`lib/server/`): request enters → `router.js` (account selection + failure/success accounting) → `capability-router.js` (route by provider capability) → `protocol-*.js` (OpenAI/Anthropic/Gemini protocol translation) → upstream.

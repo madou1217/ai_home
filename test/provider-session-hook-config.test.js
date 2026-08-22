@@ -20,7 +20,32 @@ const {
   isManagedCommand
 } = require('../lib/server/provider-session-hook-config');
 
-test('builds Windows Codex hook commands with node.exe and cmd-safe quoting', () => {
+test('builds Windows Codex hook commands quote-free for host mangling safety', () => {
+  const command = buildProviderSessionHookSenderCommand({
+    provider: 'codex',
+    eventName: 'SessionStart',
+    platform: 'win32',
+    nodeExecPath: 'D:\\nvm4w\\nodejs\\node.exe',
+    senderScriptPath: 'C:\\repo\\scripts\\aih-provider-session-hook-sender.js'
+  });
+
+  // codex 0.149 宿主经 MSVCRT arg 转义把 " 变成 \"，cmd 报 not recognized
+  // → hook exit 1（2026-08-22）。无空格路径必须产出完全无引号、URL 无查询串
+  // 的命令；含空格的 node 路径退回裸 node。
+  assert.equal(command.includes('"'), false);
+  assert.equal(command.includes('?'), false);
+  assert.equal(
+    command,
+    'D:/nvm4w/nodejs/node.exe C:/repo/scripts/aih-provider-session-hook-sender.js'
+    + ' --aih-provider-session-hook --provider codex --event SessionStart'
+    + ' --url http://127.0.0.1:9527/v0/webui/session-events/provider-hook'
+  );
+  assert.equal(command.includes('powershell'), false);
+  assert.equal(command.includes('/usr/bin/env'), false);
+  assert.equal(isManagedCommand(command, 'codex'), true);
+});
+
+test('falls back to PATH node for spaced Windows node installs', () => {
   const command = buildProviderSessionHookSenderCommand({
     provider: 'codex',
     eventName: 'SessionStart',
@@ -29,11 +54,8 @@ test('builds Windows Codex hook commands with node.exe and cmd-safe quoting', ()
     senderScriptPath: 'C:\\repo path\\scripts\\aih-provider-session-hook-sender.js'
   });
 
-  assert.match(command, /^"C:\/Program Files\/nodejs\/node\.exe" /);
+  assert.match(command, /^node /);
   assert.match(command, /"C:\/repo path\/scripts\/aih-provider-session-hook-sender\.js"/);
-  assert.match(command, /--provider "codex"/);
-  assert.equal(command.includes('powershell'), false);
-  assert.equal(command.includes('/usr/bin/env'), false);
   assert.equal(isManagedCommand(command, 'codex'), true);
 });
 
@@ -142,7 +164,7 @@ test('uses provider-specific hook timeout units', () => {
   assert.equal(gemini.config.hooks.AfterAgent[0].hooks[0].timeout, DEFAULT_HOOK_TIMEOUT_MS);
 });
 
-test('builds Agy hooks.json using hookName schema and explicit event query', () => {
+test('builds Agy hooks.json using hookName schema and explicit event flag', () => {
   const patch = buildProviderSessionHookConfigPatch('agy', {}, {
     senderScriptPath: '/tmp/aih-hook.js',
     serverUrl: 'http://127.0.0.1:8317/v0/webui/session-events/provider-hook'
@@ -155,9 +177,11 @@ test('builds Agy hooks.json using hookName schema and explicit event query', () 
   assert.equal(Array.isArray(hookDefinition.PreInvocation), true);
   assert.equal(Array.isArray(hookDefinition.PostInvocation), true);
   assert.equal(Array.isArray(hookDefinition.Stop), true);
-  assert.match(hookDefinition.PreInvocation[0].command, /event=PreInvocation/);
-  assert.match(hookDefinition.PostInvocation[0].command, /event=PostInvocation/);
-  assert.match(hookDefinition.Stop[0].command, /event=Stop/);
+  // Windows 命令无引号化后 event 由 --event 标志携带（posix 为引号值），
+  // URL 查询串仅 posix 保留；断言两种平台都可见的标志形式。
+  assert.match(hookDefinition.PreInvocation[0].command, /--event .?PreInvocation\b/);
+  assert.match(hookDefinition.PostInvocation[0].command, /--event .?PostInvocation\b/);
+  assert.match(hookDefinition.Stop[0].command, /--event .?Stop\b/);
 });
 
 test('diagnoses installed and missing provider hook configs', () => {
@@ -318,5 +342,6 @@ test('installProviderSessionHookConfig writes Agy hookName schema', (t) => {
   const hooksConfig = JSON.parse(fs.readFileSync(hooksPath, 'utf8'));
   assert.equal(Boolean(hooksConfig[AGY_MANAGED_HOOK_NAME]), true);
   assert.equal(Array.isArray(hooksConfig[AGY_MANAGED_HOOK_NAME].Stop), true);
-  assert.match(hooksConfig[AGY_MANAGED_HOOK_NAME].Stop[0].command, /provider=agy/);
+  // Windows 命令无引号化后 provider 由 --provider 标志携带（URL 查询串仅 posix 保留）
+  assert.match(hooksConfig[AGY_MANAGED_HOOK_NAME].Stop[0].command, /--provider .?agy\b/);
 });

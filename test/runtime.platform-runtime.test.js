@@ -26,7 +26,8 @@ test('configureConsoleEncoding enables UTF-8 on win32 via chcp', () => {
 
   assert.equal(calls.length, 1);
   assert.equal(calls[0].cmd, 'cmd.exe');
-  assert.deepEqual(calls[0].args, ['/d', '/s', '/c', 'chcp 65001>nul']);
+  assert.deepEqual(calls[0].args, ['/d', '/s', '/c', '"chcp 65001>nul"']);
+  assert.equal(calls[0].options.windowsVerbatimArguments, true);
   assert.deepEqual(stdoutCalls, ['utf8']);
   assert.deepEqual(stderrCalls, ['utf8']);
 });

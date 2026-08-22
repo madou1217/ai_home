@@ -17,6 +17,21 @@ function fakeFs(paths = []) {
   return { existsSync: (value) => existing.has(String(value)) };
 }
 
+// fakeStoreAliasFs 模拟 Store 应用可执行别名（AppExecutionAlias）：0 字节
+// reparse point，existsSync 返回 false，只有 accessSync/lstatSync 看得见。
+function fakeStoreAliasFs(aliasPaths = []) {
+  const aliases = new Set(aliasPaths);
+  return {
+    existsSync: () => false,
+    accessSync: (value) => {
+      if (aliases.has(String(value))) return;
+      const error = new Error('EACCES');
+      error.code = 'EACCES';
+      throw error;
+    }
+  };
+}
+
 test('终端目录按公共平台接口返回系统默认与平台可用终端', () => {
   const terminals = listClientTerminals({
     platform: 'windows',
@@ -24,11 +39,28 @@ test('终端目录按公共平台接口返回系统默认与平台可用终端',
     env: { PATH: 'C:\\tools' },
     fs: fakeFs(['C:\\tools\\wt.exe', 'C:\\tools\\wezterm.exe', 'C:\\tools\\winget.exe'])
   });
-  assert.deepEqual(terminals.map((item) => item.id), [DEFAULT_TERMINAL_ID, 'wezterm', 'warp', 'windows-terminal']);
+  // Windows 无「系统默认」概念：默认 Windows Terminal、其次 CMD
+  assert.deepEqual(terminals.map((item) => item.id), ['windows-terminal', 'cmd', 'wezterm', 'warp']);
   assert.equal(terminals.find((item) => item.id === 'windows-terminal').installed, true);
+  assert.equal(terminals.find((item) => item.id === 'windows-terminal').default, true);
+  assert.equal(terminals.find((item) => item.id === 'cmd').installed, true);
   assert.equal(terminals.find((item) => item.id === 'wezterm').canUpdate, true);
   assert.equal(terminals.find((item) => item.id === 'wezterm').packageManager, 'winget');
-  assert.equal(terminals.find((item) => item.id === 'system-default').canUninstall, false);
+  assert.equal(terminals.find((item) => item.id === 'cmd').canUninstall, false);
+});
+
+test('未安装 Windows Terminal 时 CMD 成为 Windows 默认终端', () => {
+  const terminals = listClientTerminals({
+    platform: 'windows',
+    path: nodePath.win32,
+    env: { PATH: 'C:\\tools' },
+    fs: fakeFs([])
+  });
+  // 未安装的终端仍列出（供 Toolkit 提供安装入口），只是 default 标记落到 CMD
+  assert.deepEqual(terminals.map((item) => item.id), ['windows-terminal', 'cmd', 'wezterm', 'warp']);
+  assert.equal(terminals.find((item) => item.id === 'windows-terminal').installed, false);
+  assert.equal(terminals.find((item) => item.id === 'windows-terminal').default, false);
+  assert.equal(terminals.find((item) => item.id === 'cmd').default, true);
 });
 
 test('每个终端适配器实现统一 install/update/uninstall 生命周期接口', () => {
@@ -56,7 +88,94 @@ test('终端启动选择隐藏平台实现并生成 Windows Terminal 参数', ()
   });
   assert.equal(launch.terminalId, 'windows-terminal');
   assert.equal(launch.file, 'C:\\tools\\wt.exe');
-  assert.deepEqual(launch.args, ['new-tab', '--title', 'aih codex 1', 'cmd.exe', '/k', 'node app.js']);
+  assert.deepEqual(launch.args, ['-w', 'new', 'new-tab', '--title', 'aih codex 1', 'cmd.exe', '/k', 'node app.js']);
+});
+
+test('Windows 系统默认终端以 verbatim 命令行把整段命令包进新窗口', () => {
+  const command = 'set "AIH_ACCOUNT_APP=1" && set "AIH_PROVIDER_ACCOUNT_REF=ref-1" && '
+    + '"C:\\Program Files\\nodejs\\node.exe" "C:\\repo\\bin\\ai-home.js" codex 12';
+  const launch = resolveClientTerminalLaunch(DEFAULT_TERMINAL_ID, command, 'aih codex 12', {
+    platform: 'windows',
+    path: nodePath.win32,
+    env: { PATH: 'C:\\tools' }
+  });
+  assert.equal(launch.terminalId, DEFAULT_TERMINAL_ID);
+  assert.equal(launch.file, 'cmd.exe');
+  assert.equal(launch.windowsVerbatimArguments, true);
+  assert.deepEqual(launch.args.slice(0, 3), ['/d', '/s', '/c']);
+  // 命令整段包进内层 cmd /d /s /k "…"，set A && set B && <cli> 链不会在外层被拆开
+  assert.equal(
+    launch.args[3],
+    `start "aih codex 12" cmd.exe /d /s /k "${command}"`
+  );
+  // 回归守卫：cmd.exe 不认识 \" 转义，命令行里出现即会让 start 挂死
+  assert.ok(!launch.args[3].includes('\\"'));
+});
+
+test('AppExecutionAlias 形态的 wt.exe 也能被探测到（existsSync 看不见别名）', () => {
+  const terminals = listClientTerminals({
+    platform: 'windows',
+    path: nodePath.win32,
+    env: { PATH: 'C:\\tools' },
+    fs: fakeStoreAliasFs(['C:\\tools\\wt.exe'])
+  });
+  const wt = terminals.find((item) => item.id === 'windows-terminal');
+  assert.equal(wt.installed, true);
+  assert.equal(wt.executablePath, 'C:\\tools\\wt.exe');
+});
+
+test('Windows 系统默认终端探测到 wt.exe 时直接委托 Windows Terminal', () => {
+  const command = 'set "AIH_ACCOUNT_APP=1" && node app.js';
+  const launch = resolveClientTerminalLaunch(DEFAULT_TERMINAL_ID, command, 'aih codex 12', {
+    platform: 'windows',
+    path: nodePath.win32,
+    env: { PATH: 'C:\\tools' },
+    fs: fakeStoreAliasFs(['C:\\tools\\wt.exe'])
+  });
+  // OS 默认终端 deflection 从隐藏父进程启动时不生效，system-default 须显式走 wt；
+  // -w new 强制弹独立窗口（new-tab 会复用既有窗口，目标窗口在别的桌面时
+  // 用户表现为「点了没反应」）；windowsHide 必须为 false，否则 CREATE_NO_WINDOW
+  // 会把 WT 新窗口创建成隐藏窗口（进程链正常但用户看不到）。
+  assert.equal(launch.terminalId, 'windows-terminal');
+  assert.equal(launch.file, 'C:\\tools\\wt.exe');
+  assert.deepEqual(
+    launch.args,
+    ['-w', 'new', 'new-tab', '--title', 'aih codex 12', 'cmd.exe', '/k', command]
+  );
+  assert.equal(launch.windowsHide, false);
+});
+
+test('CMD 终端适配器用 cmd start 打开 conhost 窗口', () => {
+  const command = 'set "AIH_ACCOUNT_APP=1" && node app.js';
+  const launch = resolveClientTerminalLaunch('cmd', command, 'aih codex 12', {
+    platform: 'windows',
+    path: nodePath.win32,
+    env: { PATH: 'C:\\tools' }
+  });
+  assert.equal(launch.terminalId, 'cmd');
+  assert.equal(launch.file, 'cmd.exe');
+  assert.equal(launch.windowsVerbatimArguments, true);
+  assert.equal(
+    launch.args[3],
+    `start "aih codex 12" cmd.exe /d /s /k "${command}"`
+  );
+});
+
+test('WebUI 唤起 Windows 系统默认终端时向 spawn 传递 verbatim 标记', () => {
+  const calls = [];
+  const result = launchClientTerminal(DEFAULT_TERMINAL_ID, {
+    platform: 'windows',
+    path: nodePath.win32,
+    env: { PATH: 'C:\\tools' },
+    spawn: (file, args, options) => {
+      calls.push({ file, args, options });
+      return { pid: 11, unref() {} };
+    }
+  });
+  assert.equal(result.ok, true);
+  assert.equal(calls[0].file, 'cmd.exe');
+  assert.equal(calls[0].options.windowsVerbatimArguments, true);
+  assert.deepEqual(calls[0].args.slice(0, 3), ['/d', '/s', '/c']);
 });
 
 test('WebUI 唤起已安装终端时复用平台适配器并立即脱离请求进程', () => {
@@ -216,4 +335,29 @@ test('终端执行必须显式确认并通过抽象计划运行', async () => {
   });
   assert.equal(result.ok, true);
   assert.equal(calls[0].file, '/opt/homebrew/bin/brew');
+});
+
+test('launchClientTerminal 按规格透传 windowsHide（wt 显窗、其余缺省隐藏）', () => {
+  const calls = [];
+  const spySpawn = (file, args, options) => {
+    calls.push({ file, options });
+    return { pid: 9, unref() {} };
+  };
+  const wt = launchClientTerminal('windows-terminal', {
+    platform: 'windows',
+    path: nodePath.win32,
+    env: { PATH: 'C:\\tools' },
+    fs: fakeStoreAliasFs(['C:\\tools\\wt.exe']),
+    spawn: spySpawn
+  });
+  assert.equal(wt.ok, true);
+  assert.equal(calls[0].options.windowsHide, false);
+  const cmd = launchClientTerminal('cmd', {
+    platform: 'windows',
+    path: nodePath.win32,
+    env: { PATH: 'C:\\tools' },
+    spawn: spySpawn
+  });
+  assert.equal(cmd.ok, true);
+  assert.equal(calls[1].options.windowsHide, true);
 });

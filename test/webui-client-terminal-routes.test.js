@@ -55,9 +55,12 @@ test('WebUI 终端清单只暴露公共平台标识和可用终端', async () =>
   assert.equal(ctx.resCapture.statusCode, 200);
   const body = JSON.parse(ctx.resCapture.body);
   assert.equal(body.platform, 'windows');
+  // Windows 无「系统默认」概念：默认 Windows Terminal、其次 CMD
   assert.deepEqual(body.terminals.map((terminal) => terminal.id), [
-    'system-default', 'wezterm', 'warp', 'windows-terminal'
+    'windows-terminal', 'cmd', 'wezterm', 'warp'
   ]);
+  assert.equal(body.terminals.find((terminal) => terminal.id === 'windows-terminal').default, true);
+  assert.equal(body.terminals.find((terminal) => terminal.id === 'cmd').installed, true);
   assert.equal(body.terminals.find((terminal) => terminal.id === 'windows-terminal').sourceUrl,
     'https://learn.microsoft.com/en-us/windows/terminal/install');
 });

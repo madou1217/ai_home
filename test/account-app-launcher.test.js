@@ -637,7 +637,7 @@ test('zcode desktop 在 Linux 通过 PATH 上的 execNames 解析', () => {
   assert.equal(result.executable, '/usr/bin/zcode');
 });
 
-test('cli kind 在 Windows 通过 cmd start 打开新终端运行 aih 启动链路', () => {
+test('cli kind 在 Windows 通过 verbatim cmd start 打开新终端运行 aih 启动链路', () => {
   const { launcher, fakeSpawn } = createLauncher({
     resolveAccount: () => ({ accountRef: ACCOUNT_REF, provider: 'codex', cliAccountId: '3' })
   });
@@ -646,13 +646,17 @@ test('cli kind 在 Windows 通过 cmd start 打开新终端运行 aih 启动链�
   assert.equal(result.pid, 4321);
   const call = fakeSpawn.calls[0];
   assert.equal(call.file, 'cmd.exe');
-  assert.equal(call.args[0], '/c');
-  assert.ok(call.args[1].includes('start "aih codex 3"'));
-  assert.ok(call.args[1].includes('cmd /k'));
-  assert.ok(call.args[1].includes(nodePath.win32.join('C:\\repo', 'bin', 'ai-home.js')));
-  assert.ok(call.args[1].includes('"C:\\node\\node.exe"'));
-  assert.match(call.args[1], /AIH_ACCOUNT_APP=1/);
-  assert.match(call.args[1], /AIH_PROVIDER_ACCOUNT_REF=/);
+  assert.deepEqual(call.args.slice(0, 3), ['/d', '/s', '/c']);
+  const startLine = call.args[3];
+  assert.ok(startLine.includes('start "aih codex 3"'));
+  assert.ok(startLine.includes('cmd.exe /d /s /k "set "AIH_ACCOUNT_APP=1"'));
+  assert.ok(startLine.includes(nodePath.win32.join('C:\\repo', 'bin', 'ai-home.js')));
+  assert.ok(startLine.includes('"C:\\node\\node.exe"'));
+  assert.match(startLine, /AIH_ACCOUNT_APP=1/);
+  assert.match(startLine, /AIH_PROVIDER_ACCOUNT_REF=/);
+  // 回归守卫：libuv 的 \" 转义会让 cmd start 挂死，必须以 verbatim 关闭转义
+  assert.equal(call.options.windowsVerbatimArguments, true);
+  assert.ok(!startLine.includes('\\"'));
   assert.equal(call.options.env.AIH_ACCOUNT_APP, '1');
   assert.equal(call.options.env.AIH_PROVIDER_ACCOUNT_REF, ACCOUNT_REF);
   assert.equal(call.options.detached, true);
@@ -741,7 +745,8 @@ test('默认 accountRef 解析会联结 CLI 别名，CLI 点击不再误报 acco
     assert.equal(result.ok, true);
     assert.equal(result.terminalId, 'system-default');
     assert.equal(fakeSpawn.calls.length, 1);
-    assert.match(fakeSpawn.calls[0].args[1], /aih codex 12/);
+    assert.match(fakeSpawn.calls[0].args[3], /aih codex 12/);
+    assert.equal(fakeSpawn.calls[0].options.windowsVerbatimArguments, true);
   } finally {
     nodeFs.rmSync(aiHomeDir, { recursive: true, force: true });
   }

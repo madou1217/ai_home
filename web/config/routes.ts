@@ -46,13 +46,7 @@ const nodeRoutes = [
     routes: [
       {
         path: "/studio",
-        redirect: "/studio/bookshelf",
-      },
-      {
-        name: "知识书架",
-        path: "/studio/bookshelf",
-        component: "./StudioBookshelf",
-        icon: "read",
+        redirect: "/studio/image",
       },
       {
         name: "AI 生图",
@@ -61,11 +55,6 @@ const nodeRoutes = [
         icon: "picture",
       },
     ]
-  },
-  {
-    path: "/harness-book",
-    redirect: "/studio/bookshelf",
-    hideInMenu: true,
   },
   {
     name: "Server",

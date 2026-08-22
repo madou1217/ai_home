@@ -86,6 +86,25 @@ function createStreamResCapture() {
   return response;
 }
 
+test('web UI router does not expose repository docs as static routes', async () => {
+  for (const pathname of ['/docs/api/chat', '/docs/example/index.html']) {
+    const res = createStreamResCapture();
+    const handled = await handleWebUIRequest({
+      method: pathname.endsWith('/api/chat') ? 'POST' : 'GET',
+      pathname,
+      url: new URL(`http://localhost${pathname}`),
+      req: { headers: {} },
+      res,
+      options: {},
+      state: {},
+      deps: {}
+    });
+
+    assert.equal(handled, false);
+    assert.equal(res.writableEnded, false);
+  }
+});
+
 async function waitForStreamEnd(res, timeoutMs = 6000) {
   const startedAt = Date.now();
   while (!res.writableEnded && Date.now() - startedAt < timeoutMs) {

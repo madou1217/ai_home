@@ -1261,8 +1261,14 @@ export const modelsAPI = {
 // 聊天 API
 export const chatAPI = {
   // 发送聊天消息
-  send: async (request: ChatRequest): Promise<ChatResponse> => {
-    const response = await api.post<ChatResponse>('/webui/chat', request);
+  send: async (
+    request: ChatRequest,
+    options: { timeoutMs?: number } = {}
+  ): Promise<ChatResponse> => {
+    const timeoutMs = Number(options.timeoutMs);
+    const response = await api.post<ChatResponse>('/webui/chat', request, {
+      timeout: Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : undefined
+    });
     return response.data;
   },
 

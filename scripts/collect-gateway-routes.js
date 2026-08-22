@@ -46,7 +46,6 @@ const PUBLIC_PATH_PREFIXES = [
   '/v1',
   '/v1beta',
   '/ui',
-  '/docs/harness-book',
   '/healthz',
   '/readyz',
 ];
@@ -487,12 +486,6 @@ function addKnownNodeRoutes(routes) {
       methods: ['GET'],
       file: 'lib/server/web-ui-router.js',
       lineNeedle: "if (pathname === '/ui')",
-    },
-    {
-      path: '/docs/harness-book/api/chat',
-      methods: ['POST'],
-      file: 'lib/server/web-ui-router.js',
-      lineNeedle: "pathname !== '/docs/harness-book/api/chat'",
     },
     {
       path: '/v1/models/{id}',

@@ -23,12 +23,12 @@ import {
   DownloadOutlined,
   CopyOutlined,
   ClearOutlined,
-  AppstoreOutlined,
-  FireOutlined
+  AppstoreOutlined
 } from '@ant-design/icons';
+import { chatAPI } from '@/services/api';
 
 const { TextArea } = Input;
-const { Text, Title, Paragraph } = Typography;
+const { Text, Paragraph } = Typography;
 
 interface GeneratedHistoryItem {
   id: string;
@@ -43,31 +43,9 @@ const ImageStudioPage: React.FC = () => {
   const [model, setModel] = useState('gemini-3.1-flash-image');
   const [loading, setLoading] = useState(false);
   const [currentImage, setCurrentImage] = useState<string | null>(null);
-  const [history, setHistory] = useState<GeneratedHistoryItem[]>(() => {
-    // 预设几张书籍生成的精彩封面/插图
-    return [
-      {
-        id: 'harness-cover',
-        prompt: "Modern AI Agent Runtime & Harness Architecture Design, cyberpunk holographic state machine, 8K concept art",
-        model: 'gemini-3.1-flash-image',
-        imageUrl: '/docs/harness-book/assets/images/cover-harness-book.jpg',
-        createdAt: Date.now() - 3600000,
-      },
-      {
-        id: 'pi-cover',
-        prompt: "Agent Pi: Full-Duplex Real-Time Streaming Agent Architecture & Emotional Persona Engine, 8k resolution",
-        model: 'gemini-3.1-flash-image',
-        imageUrl: '/docs/pi-agent-book/assets/images/cover-pi-agent-book.jpg',
-        createdAt: Date.now() - 1800000,
-      }
-    ];
-  });
+  const [history, setHistory] = useState<GeneratedHistoryItem[]>([]);
 
   const promptPresets = [
-    {
-      label: '📖 电子书极客封面 (Cyberpunk Book Cover)',
-      value: 'An ultra-modern 8K futuristic cyberpunk book cover for a technical architecture book. Features glowing holographic state machine nodes, neural circuit pathways, dark titanium and electric blue neon palette, cinematic lighting, photorealistic concept art.',
-    },
     {
       label: '⚡ 全双工流式架构 (Streaming Pipeline)',
       value: 'A high-tech 8K digital visualization of a full-duplex streaming pipeline and microsecond token demuxing. Ultra-low latency data packets flowing across glowing fiber optic tracks, deep navy blue and emerald green hues, 8k render.',
@@ -90,22 +68,18 @@ const ImageStudioPage: React.FC = () => {
 
     setLoading(true);
     try {
-      const res = await fetch('/docs/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const result = await chatAPI.send(
+        {
+          provider: 'agy',
+          gateway: true,
           model,
+          stream: false,
           messages: [{ role: 'user', content: prompt.trim() }]
-        })
-      });
-
-      if (!res.ok) {
-        throw new Error(`生成请求失败 (HTTP ${res.status})`);
-      }
-
-      const json = await res.json();
-      const content = json.choices?.[0]?.message?.content || '';
-      const match = content.match(/data:image\/[a-zA-Z]+;base64,([^\)]+)/);
+        },
+        { timeoutMs: 120000 }
+      );
+      const content = result.content || '';
+      const match = content.match(/data:image\/[a-zA-Z]+;base64,([^)]+)/);
 
       if (match) {
         const fullBase64 = `data:image/jpeg;base64,${match[1]}`;
@@ -147,7 +121,7 @@ const ImageStudioPage: React.FC = () => {
             <Tag color="purple">直连 本地 aih-server</Tag>
           </Space>
         ),
-        subTitle: '调用本地 gemini-3.1-flash-image 极速生成 8K 概念艺术图、电子书插画与架构可视化图',
+        subTitle: '调用本地 gemini-3.1-flash-image 极速生成 8K 概念艺术图、创意插画与架构可视化图',
       }}
     >
       <Row gutter={[20, 20]}>

@@ -158,3 +158,41 @@ test('healCodexConfigFile 组合自愈一次备份一次写回', (t) => {
   });
   assert.equal(again.changed, false, '组合自愈应幂等');
 });
+
+test('hooks.state 外来形态信任键被清理，本平台键保留', () => {
+  const { healCodexHooksStateSection } = require('../lib/cli/services/pty/codex-config-heal');
+  const config = [
+    '[hooks.state]',
+    '',
+    "[hooks.state.\"/mnt/c/Users/madou/.codex/hooks.json:stop:0:0\"]",
+    'trusted_hash = "sha256:aaaa"',
+    '',
+    "[hooks.state.'C:\\Users\\madou\\.codex\\hooks.json:session_start:0:0']",
+    'trusted_hash = "sha256:bbbb"',
+    '',
+    "[hooks.state.'C:\\Users\\madou\\.codex\\hooks.json:stop:0:0']",
+    'trusted_hash = "sha256:cccc"'
+  ].join('\n');
+  const result = healCodexHooksStateSection(config, { platform: 'win32' });
+  assert.equal(result.removed.length, 1);
+  assert.ok(result.removed[0].key.includes('/mnt/c'));
+  assert.equal(result.config.includes('/mnt/c'), false);
+  assert.equal(result.config.includes('sha256:bbbb'), true);
+  assert.equal(result.config.includes('sha256:cccc'), true);
+});
+
+test('hooks.state 在 WSL 侧清理 Windows 形态键', () => {
+  const { healCodexHooksStateSection } = require('../lib/cli/services/pty/codex-config-heal');
+  const config = [
+    '[hooks.state]',
+    "[hooks.state.'C:\\Users\\madou\\.codex\\hooks.json:stop:0:0']",
+    'trusted_hash = "sha256:dddd"',
+    "[hooks.state.\"/mnt/c/Users/madou/.codex/hooks.json:stop:0:0\"]",
+    'trusted_hash = "sha256:eeee"'
+  ].join('\n');
+  const result = healCodexHooksStateSection(config, { platform: 'linux' });
+  assert.equal(result.removed.length, 1);
+  assert.ok(result.removed[0].path.includes('C:'));
+  assert.equal(result.config.includes('sha256:eeee'), true);
+  assert.equal(result.config.includes('sha256:dddd'), false);
+});

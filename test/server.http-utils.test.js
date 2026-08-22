@@ -143,7 +143,11 @@ test('fetchModelsForAccount probes zcode OAuth plan models via billing/balance w
             { show_name: 'GLM-5.3', capabilities: ['model:glm-5.3'] },
             { show_name: 'GLM-5-Turbo', capabilities: ['model:GLM-5-Turbo'] },
             { show_name: 'GLM-5.3', capabilities: ['model:GLM-5.3'] },
-            { show_name: 'Fallback-Only', capabilities: [] }
+            // capabilities 为空时回退 show_name（该名字能路由回 zcode）。
+            { show_name: 'GLM-4.7', capabilities: [] },
+            // 伙伴命名空间：balance 会列出，但 bigmodel 推理端点不认，
+            // 且网关按前缀会把它路由到 opencode —— 必须过滤掉。
+            { show_name: 'Grok Code', capabilities: ['model:opencode-go/grok-code'] }
           ]
         }
       })
@@ -161,7 +165,7 @@ test('fetchModelsForAccount probes zcode OAuth plan models via billing/balance w
 
   assert.deepEqual(seenUrls, ['https://zcode.z.ai/api/v1/zcode-plan/billing/balance']);
   assert.equal(seenAuthorization, 'Bearer zcode-jwt-live');
-  assert.deepEqual(models, ['glm-5.3', 'GLM-5-Turbo', 'Fallback-Only']);
+  assert.deepEqual(models, ['glm-5.3', 'GLM-5-Turbo', 'GLM-4.7']);
 });
 
 test('fetchModelsForAccount falls back to paas probe when zcode balance probe fails', async (t) => {

@@ -97,3 +97,13 @@ test('resolveHostHomeDir does not infer host USERPROFILE from an account runtime
   });
   assert.equal(out, runtimeHome);
 });
+
+test('resolveHostHomeDir 让调用方注入的 hostHomeDir 优先于环境派生', () => {
+  const out = resolveHostHomeDir({
+    hostHomeDir: 'C:\tmp\isolated-home',
+    env: { USERPROFILE: 'C:\Users\real', HOME: '/home/real' },
+    platform: 'win32',
+    os: { userInfo: () => ({ homedir: 'C:\Users\os' }), homedir: () => 'C:\Users\os' }
+  });
+  assert.equal(out, 'C:\tmp\isolated-home');
+});

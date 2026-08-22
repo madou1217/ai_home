@@ -448,7 +448,7 @@ func builtinZcode() Definition {
 		Presentation: presentation("zcode", "ZCode", "ZC", "◈", "geekblue"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(false, true),
-		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionHistory, CapabilityQuotaUsage},
+		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionHistory, CapabilityQuotaUsage, CapabilityUsageScan},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeOAuthBrowser, "ZCode 登录", "使用 ZCode Desktop 的官方浏览器 OAuth 流程（Z.AI 账号，OAuth 凭据安全写入 AIH）。"),
 			authOption(AuthModeAPIKey, "Z.ai 密钥", "绑定 ZCODE_API_KEY / ZCODE_BASE_URL（支持 open.bigmodel.cn 与 api.z.ai 双 Anthropic 端点）。"),

@@ -89,3 +89,19 @@ test('removeAihManagedCruft 组合清理后受管块生成不再叠加遗留', (
   assert.ok(block.includes('env_key = "OPENAI_API_KEY"'));
   assert.equal(block.includes('bearer_token'), false);
 });
+
+test('authCommand 形态产出 auth 命令表且不含 env_key（codex 0.149 互斥）', () => {
+  const block = getManagedAihProviderBlock({
+    openaiBaseUrl: 'https://www.yeslaoban.com/llm/api/v1',
+    openaiApiKey: 'secret-key',
+    authCommand: {
+      command: 'D:/nvm4w/nodejs/node.exe',
+      scriptPath: 'C:/repo/scripts/aih-codex-provider-auth.js'
+    }
+  });
+  assert.equal(block.includes('env_key'), false);
+  assert.ok(block.includes('[model_providers.aih_server.auth]'));
+  assert.ok(block.includes("command = 'D:/nvm4w/nodejs/node.exe'"));
+  assert.ok(block.includes("args = ['C:/repo/scripts/aih-codex-provider-auth.js']"));
+  assert.ok(block.includes('refresh_interval_ms = 300000'));
+});

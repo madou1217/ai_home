@@ -2901,7 +2901,6 @@ test('runtime routes codex through the built-in AIH server profile when no accou
     '-c', 'model_provider=aih_server',
     '-c', 'model_providers.aih_server.base_url=http://127.0.0.1:8317/v1',
     '-c', 'model_providers.aih_server.wire_api=responses',
-    '-c', 'model_providers.aih_server.env_key=OPENAI_API_KEY',
     '--version'
   ]);
   assert.doesNotMatch(spawns[0].args.join(' '), /secret-key/);
@@ -2979,7 +2978,6 @@ test('runtime injects codex remote proxy for built-in AIH server resume by defau
     '-c', 'model_provider=aih_server',
     '-c', 'model_providers.aih_server.base_url=http://127.0.0.1:9527/v1',
     '-c', 'model_providers.aih_server.wire_api=responses',
-    '-c', 'model_providers.aih_server.env_key=OPENAI_API_KEY',
     'thread-id'
   ]);
   assert.doesNotMatch(spawns[0].args.join(' '), /secret-key/);
@@ -3010,7 +3008,6 @@ test('runtime keeps reboot-restored Codex resume native with gateway credentials
     '-c', 'model_provider=aih_server',
     '-c', 'model_providers.aih_server.base_url=http://127.0.0.1:9527/v1',
     '-c', 'model_providers.aih_server.wire_api=responses',
-    '-c', 'model_providers.aih_server.env_key=OPENAI_API_KEY',
     'thread-id'
   ]);
   assert.equal(resumeArgs.includes('--remote'), false);

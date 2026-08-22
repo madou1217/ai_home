@@ -363,7 +363,11 @@ test('syncGlobalConfigToHost replaces the single provider block without encoding
   assert.equal(providerHeaders.length, 1);
   assert.match(hostConfig, new RegExp(`^model_provider = "${providerKey}"$`, 'm'));
   assert.match(hostConfig, /^base_url = "https:\/\/b\.example\.com\/v1"$/m);
-  assert.match(hostConfig, /^env_key = "OPENAI_API_KEY"$/m);
+  // codex 0.149：auth 命令表与 env_key 互斥；受管块走 auth 表（脚本三级取 key）
+  assert.doesNotMatch(hostConfig, /env_key/);
+  assert.match(hostConfig, /model_providers\.aih_server\.auth\]/);
+  assert.match(hostConfig, /aih-codex-provider-auth\.js/);
+  assert.match(hostConfig, /refresh_interval_ms = 300000/);
   assert.doesNotMatch(hostConfig, /dummy-(10|11)/);
   assert.equal(hostConfig.includes(firstRef), false);
   assert.equal(hostConfig.includes(secondRef), false);

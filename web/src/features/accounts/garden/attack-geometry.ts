@@ -1,8 +1,10 @@
 import { stableGardenRandom } from './stable-random';
 import {
   buildCubicPathData,
+  buildStraightSegment,
   buildTaperedRibbonPath,
-  clampNumber
+  clampNumber,
+  getPointDistance
 } from './vine-geometry';
 import type { GardenPoint } from './vine-geometry';
 
@@ -30,10 +32,14 @@ export interface GardenAttackGeometry {
   target: GardenPoint;
   control1: GardenPoint;
   control2: GardenPoint;
-  /** 扑出去的那一段中心线，供头部 motion-path 与 reveal 遮罩使用。 */
+  /** 扑出去的那一段中心线，供头部 motion-path 使用。 */
   pathData: string;
-  /** 同一段的锥形填充轮廓：根部与花茎顶端同宽，越伸越细。 */
+  /** 柱顶 → 茎顶 → 目标的完整中心线，供 reveal 遮罩使用。 */
+  vinePathData: string;
+  /** 同一条路径的锥形填充轮廓：根部是茎宽，末端收细成脖子。 */
   vineRibbonPath: string;
+  /** 花茎那一段占整条藤的比例；reveal 从这里开始往外伸。 */
+  ropeRestPercent: number;
   ropeMidPercent: number;
   ropeNearPercent: number;
   /** motion-path 会让嘴朝行进方向；待机点用反向补偿恢复原地朝向。 */
@@ -67,14 +73,18 @@ export function buildGardenDamagePoint(
 }
 
 /**
- * 从花茎顶端扑向伤害值的路径：先上扬越过卡片，再从目标上方俯冲。
+ * 从柱顶一路画到伤害值的一整条藤：先是贴着柱子的那截花茎，再上扬越过卡片，
+ * 最后从目标上方俯冲下去。
  *
- * 这里只负责"伸出去的那一段"。根部到茎顶由原地植株自己的骨节链画着，攻击时它
- * 留在原地不动，藤蔓接着它的顶端往外长，所以两者之间不存在需要对齐的接缝。
+ * 茎和脖子是同一条轮廓上的两段，不是两个渲染器——攻击期间原地植株整株让位，
+ * 画面上从头到尾只有这一条。宽度从根部的茎宽一路收到脖子末端，所以「茎变成
+ * 脖子」是连续的，中间没有可以对不齐的接缝。
  */
 export function buildGardenAttackGeometry(
   origin: GardenPoint,
   target: GardenPoint,
+  root: GardenPoint = origin,
+  stemBaseWidth = 6.5,
   stemTipWidth = 4
 ): GardenAttackGeometry {
   const deltaX = target.x - origin.x;
@@ -125,16 +135,30 @@ export function buildGardenAttackGeometry(
     control1.x - origin.x
   ) * 180 / Math.PI;
 
-  // 起点宽度接住花茎顶端，末端收细：伸出去的是同一根茎的延长，不是另一条绳子。
+  // 根 → 茎顶那一段就是原地那根花茎的位置，攻击时由这条藤自己接管。
+  const stemSpan = getPointDistance(root, origin);
+  const hasStem = stemSpan > 0.5;
+  const stemSegment = buildStraightSegment(root, origin);
+  const neckSegment = { start: origin, control1, control2, end: neckEnd };
   const vineRibbonPath = buildTaperedRibbonPath(
-    origin,
-    control1,
-    control2,
-    neckEnd,
-    stemTipWidth,
-    Math.max(1.6, stemTipWidth * 0.45)
+    hasStem ? [stemSegment, neckSegment] : [neckSegment],
+    hasStem
+      ? [stemBaseWidth, stemTipWidth, Math.max(1.6, stemTipWidth * 0.45)]
+      : [stemTipWidth, Math.max(1.6, stemTipWidth * 0.45)],
+    16
   );
-  const revealAt = (attackProgress: number) => attackProgress * 100;
+  const vinePathData = hasStem
+    ? [buildCubicPathData(root, stemSegment.control1, stemSegment.control2, origin),
+      buildCubicPathData(origin, control1, control2, neckEnd).replace(/^M [^C]+/, '')].join(' ')
+    : pathData;
+  // 静止那一段（贴在柱子上的花茎）始终露着，reveal 只负责往外伸的脖子。
+  const neckSpan = getPointDistance(origin, neckEnd);
+  const ropeRestPercent = hasStem
+    ? (stemSpan / Math.max(1, stemSpan + neckSpan)) * 100
+    : 0;
+  const revealAt = (attackProgress: number) => (
+    ropeRestPercent + (100 - ropeRestPercent) * attackProgress
+  );
 
   return {
     origin,
@@ -142,7 +166,9 @@ export function buildGardenAttackGeometry(
     control1,
     control2,
     pathData,
+    vinePathData,
     vineRibbonPath,
+    ropeRestPercent,
     ropeMidPercent: revealAt(0.56),
     ropeNearPercent: revealAt(0.86),
     originCorrectionDeg: normalizeAngle(-normalizeAngle(startTangentDeg + 180)),

@@ -13,7 +13,7 @@ import {
 } from './garden/attack-geometry';
 import type { GardenAttackGeometry } from './garden/attack-geometry';
 import type { GardenPoint } from './garden/vine-geometry';
-import { GARDEN_STALK_TIP_WIDTH } from './garden/plant-profile';
+import { GARDEN_STALK_BASE_WIDTH, GARDEN_STALK_TIP_WIDTH } from './garden/plant-profile';
 import type { GardenPlantProfile } from './garden/plant-profile';
 import { subscribeViewportChange } from './garden/viewport-observer';
 
@@ -80,11 +80,12 @@ const UpstreamQuotaAttackLayer = ({ accountRef, gardenRef, jobs, profile }: Prop
     }
 
     const sourceRect = source.getBoundingClientRect();
-    // 只需要花茎顶端（头的咽喉）：藤蔓从那里往外长，根部由原地植株自己画。
+    // 藤从柱顶画到目标，所以两个锚点都要：根（柱顶）和茎顶（头的咽喉）。
     const originElement = garden.querySelector<HTMLElement>('[data-quota-plant-origin]');
-    const origin = hasVisibleRect(originElement)
-      ? getCenter(originElement as HTMLElement)
-      : null;
+    const rootElement = garden.querySelector<HTMLElement>('[data-quota-plant-root]');
+    const anchored = hasVisibleRect(originElement) && hasVisibleRect(rootElement);
+    const origin = anchored ? getCenter(originElement as HTMLElement) : null;
+    const root = anchored ? getCenter(rootElement as HTMLElement) : null;
 
     const next: Record<string, MeasuredJob> = {};
     currentJobs.forEach((job) => {
@@ -93,14 +94,20 @@ const UpstreamQuotaAttackLayer = ({ accountRef, gardenRef, jobs, profile }: Prop
         18,
         Math.min(52, sourceRect.top + sourceRect.height - damagePoint.y - 6)
       );
-      if (job.outcome === 'missed' || !origin) {
+      if (job.outcome === 'missed' || !origin || !root) {
         next[job.id] = { damagePoint, attack: null, missFallPx };
         return;
       }
       next[job.id] = {
         damagePoint,
         // 起点宽度对齐花茎顶端，藤蔓才是这根茎的延长而不是另一条绳子。
-        attack: buildGardenAttackGeometry(origin, damagePoint, GARDEN_STALK_TIP_WIDTH),
+        attack: buildGardenAttackGeometry(
+          origin,
+          damagePoint,
+          root,
+          GARDEN_STALK_BASE_WIDTH,
+          GARDEN_STALK_TIP_WIDTH
+        ),
         missFallPx
       };
     });
@@ -157,6 +164,7 @@ const UpstreamQuotaAttackLayer = ({ accountRef, gardenRef, jobs, profile }: Prop
           ['--stem-color' as string]: profile.stemColor,
           ...(measured.attack ? {
             ['--attack-offset-path' as string]: `path("${measured.attack.pathData}")`,
+            ['--attack-rope-rest' as string]: measured.attack.ropeRestPercent,
             ['--attack-rope-mid' as string]: measured.attack.ropeMidPercent,
             ['--attack-rope-near' as string]: measured.attack.ropeNearPercent,
             ['--attack-origin-correction' as string]: `${measured.attack.originCorrectionDeg}deg`,
@@ -204,7 +212,7 @@ const UpstreamQuotaAttackLayer = ({ accountRef, gardenRef, jobs, profile }: Prop
                     >
                       <path
                         className="upstream-quota-attack-rope-reveal"
-                        d={measured.attack.pathData}
+                        d={measured.attack.vinePathData}
                         pathLength={100}
                         vectorEffect="non-scaling-stroke"
                       />
@@ -217,7 +225,7 @@ const UpstreamQuotaAttackLayer = ({ accountRef, gardenRef, jobs, profile }: Prop
                     />
                     <path
                       className="upstream-quota-attack-rope-sheen"
-                      d={measured.attack.pathData}
+                      d={measured.attack.vinePathData}
                       vectorEffect="non-scaling-stroke"
                     />
                   </g>

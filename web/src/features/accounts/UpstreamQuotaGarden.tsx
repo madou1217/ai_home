@@ -22,7 +22,6 @@ import {
 import {
   GARDEN_FEED_RECOVER_MS,
   GARDEN_FREEZE_LEAD_MS,
-  getActiveCatch,
   getFreezingCatch,
   getPendingCatches,
   isRecoveringFromFeed,
@@ -75,7 +74,6 @@ const UpstreamQuotaGarden = ({
   const gardenRef = useRef<HTMLSpanElement>(null);
   const seenDropIdsRef = useRef<Set<string>>(new Set());
 
-  const activeCatch = getActiveCatch(jobs, clock);
   const freezingCatch = getFreezingCatch(jobs, clock);
   const pendingCatches = getPendingCatches(jobs, clock);
   // 吃和跳互斥：嘴里有东西、已经排上号、或刚吃完还在回神，都不起跳。
@@ -163,6 +161,7 @@ const UpstreamQuotaGarden = ({
     }).jobs);
   }, [accountRef, active, drops, hop, layout.perches.length, lifecycle]);
 
+  const liveJobs = jobs.filter((job) => job.endsAt > clock);
   const perch = hop.perchIndex >= 0 ? layout.perches[hop.perchIndex] : null;
   const fromPerch = hop.fromPerchIndex >= 0 && hop.fromPerchIndex !== hop.perchIndex
     ? layout.perches[hop.fromPerchIndex] || null
@@ -197,13 +196,18 @@ const UpstreamQuotaGarden = ({
           hop={hop}
           lifecycle={lifecycle.phase}
           frozen={Boolean(freezingCatch)}
-          busy={Boolean(activeCatch)}
+          busy={pendingCatches.length > 0}
         />
       ) : null}
+      {/*
+        * 只把还在演的任务交给攻击层。任务结束后还会在 jobs 里多留一段回神时间，
+        * 那段时间攻击层的头会停在动画末帧（正好是原地那颗头的位置），两颗头叠在
+        * 一起就是「收回时出现两个头」。
+        */}
       <UpstreamQuotaAttackLayer
         accountRef={accountRef}
         gardenRef={gardenRef}
-        jobs={jobs}
+        jobs={liveJobs}
         profile={profile}
       />
     </span>

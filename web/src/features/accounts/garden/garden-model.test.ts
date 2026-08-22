@@ -24,7 +24,7 @@ import {
   isRecoveringFromFeed,
   scheduleGardenFeeds
 } from './feeding-model.ts';
-import { buildTaperedRibbonPath } from './vine-geometry.ts';
+import { buildStraightSegment, buildTaperedRibbonPath } from './vine-geometry.ts';
 import {
   BLOOD_MAX_DROPLETS,
   BLOOD_MAX_LIFE_MS,
@@ -386,16 +386,10 @@ test('vine geometry: the attack vine is the stem carrying on, not a second rope'
 });
 
 test('vine geometry: the ribbon starts at the stem width and tapers away', () => {
-  const start = { x: 0, y: 0 };
-  const end = { x: 100, y: 0 };
   const startWidth = 4;
   const ribbon = buildTaperedRibbonPath(
-    start,
-    { x: 30, y: 0 },
-    { x: 70, y: 0 },
-    end,
-    startWidth,
-    1.8
+    [buildStraightSegment({ x: 0, y: 0 }, { x: 100, y: 0 })],
+    [startWidth, 1.8]
   );
   const points = ribbon
     .replace(/[MLZ]/g, ' ')
@@ -412,7 +406,7 @@ test('vine geometry: lifts over the card before diving onto the damage number', 
   // 桌面：剩余额度在右边一列，脖子要先上扬越过卡片再俯冲下去。
   const origin = { x: 100, y: 200 };
   const target = { x: 320, y: 240 };
-  const attack = buildGardenAttackGeometry(origin, target, 4);
+  const attack = buildGardenAttackGeometry(origin, target, origin, 6.5, 4);
   assert.ok((attack.control1.y) < (Math.min(origin.y, target.y)));
   assert.ok((attack.control2.y) < (target.y));
 });
@@ -421,7 +415,7 @@ test('vine geometry: a target straight overhead is reached by looking up, not by
   // 手机：剩余额度就在花的正上方。硬套桌面那套上扬会先冲出卡片顶部再拐回来。
   const origin = { x: 120, y: 260 };
   const target = { x: 132, y: 196 };
-  const attack = buildGardenAttackGeometry(origin, target, 4);
+  const attack = buildGardenAttackGeometry(origin, target, origin, 6.5, 4);
   const apex = Math.min(attack.control1.y, attack.control2.y);
   // 弧顶最多比目标再高出一点点，不能整条脖子从卡片外面绕过去。
   assert.ok((target.y - apex) < (40));

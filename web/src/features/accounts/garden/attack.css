@@ -68,7 +68,7 @@
   /* 遮罩比藤蔓宽一圈，露出来的边缘才是藤蔓自己的轮廓而不是遮罩的直切口。 */
   stroke-width: 10px;
   stroke-linecap: round;
-  stroke-dasharray: 0 100;
+  stroke-dasharray: var(--attack-rope-rest) 100;
   animation: upstream-quota-rope-reach var(--attack-duration) linear var(--attack-delay) both;
 }
 
@@ -238,10 +238,13 @@
   }
 }
 
-/* 伸脖子：从茎顶 0 开始往外长，咬完再缩回 0——两端都收在茎顶，不会突然消失。 */
+/*
+ * 伸脖子。静止那一段（贴在柱子上的花茎）全程露着，所以起点和终点都停在
+ * rest 上——脖子缩回去之后画面上仍然有一根茎，不会整根消失。
+ */
 @keyframes upstream-quota-rope-reach {
   0%, 6% {
-    stroke-dasharray: 0 100;
+    stroke-dasharray: var(--attack-rope-rest) 100;
   }
   24% {
     stroke-dasharray: var(--attack-rope-mid) 100;
@@ -253,7 +256,7 @@
     stroke-dasharray: 100 100;
   }
   70%, 100% {
-    stroke-dasharray: 0 100;
+    stroke-dasharray: var(--attack-rope-rest) 100;
   }
 }
 
@@ -377,16 +380,25 @@
   }
 }
 
-/* 张嘴跟着放大走：逼近时先抿一下，胀大的同时张到最大，咬中猛地合上。 */
+/*
+ * 张嘴。脖子一伸出去嘴就得张开——扑食的动作是"张着嘴过去"，等到脸贴上了才
+ * 张嘴就看不出这是在咬东西。中途抿一下是胀大前的蓄力，然后张到最大、猛地合上。
+ */
 @keyframes upstream-quota-jaw {
-  0%, 26% {
-    --jaw-open: 8deg;
+  0% {
+    --jaw-open: 6deg;
+  }
+  12% {
+    --jaw-open: 26deg;
+  }
+  22% {
+    --jaw-open: 22deg;
   }
   30% {
-    --jaw-open: 2deg;
+    --jaw-open: 8deg;
   }
   36% {
-    --jaw-open: 30deg;
+    --jaw-open: 32deg;
   }
   42%, 45% {
     --jaw-open: 42deg;

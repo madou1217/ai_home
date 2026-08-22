@@ -109,11 +109,13 @@
 }
 
 /*
- * 捕食时只有头飞出去，花茎留在原地绷住不动。
- * 之前是整株隐藏、攻击层另画一根藤，两套形态一换就是一次硬跳变——
- * 「直线段上拼了个弧线」的接缝就是这么来的。
+ * 捕食时整株让位：从柱顶到脖子末端由攻击层那条藤一次画完。
+ *
+ * 试过「茎留在原地、藤从茎顶接着长」，但那是两套渲染并排放着——真实页面上
+ * 就是茎顶和脖子之间一道对不齐的缝。同一时刻只让一套在画，缝自然不存在。
+ * 那条藤贴着柱子的那一段始终露着，所以看上去是这根茎自己伸长成了脖子。
  */
-.quota-plant--busy .quota-plant-head {
+.quota-plant--busy .quota-plant-squash {
   opacity: 0;
 }
 
@@ -168,9 +170,10 @@
     calc(var(--sway-delay) + var(--seg-delay)) infinite alternate;
 }
 
-/* 每节挂在上一节的顶端，重叠 1px 让圆头把接缝盖住。 */
+/* 每节多压住上一节 2px：茎要读作一根连续的锥形，而不是一串珠子——
+   攻击时接手的那条藤就是平滑的，两者形态得对得上。 */
 .quota-plant-seg > .quota-plant-seg {
-  bottom: calc(100% - 1px);
+  bottom: calc(100% - 2px);
 }
 
 .quota-plant--airborne .quota-plant-seg {

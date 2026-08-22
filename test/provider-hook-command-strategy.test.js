@@ -20,16 +20,38 @@ const BASE_OPTIONS = Object.freeze({
   receiverUrl: 'http://127.0.0.1:9527/hook?provider=codex&event=UserPromptSubmit'
 });
 
-test('Windows strategy invokes node.exe directly with cross-shell paths', () => {
+test('Windows strategy stays quote-free so hosts cannot mangle it', () => {
+  const command = buildProviderHookCommand({
+    ...BASE_OPTIONS,
+    platform: 'win32',
+    nodeCommand: 'D:\\nvm4w\\nodejs\\node.exe',
+    senderScriptPath: 'C:\\repo\\scripts\\hook.js'
+  });
+
+  // codex 0.149 等宿主把命令串经 MSVCRT arg 转义交给 COMSPEC /C，任何 "
+  // 都会变成 \" 导致 not recognized → exit 1（2026-08-22）。回归守卫：
+  // 无空格路径的命令必须完全无引号，URL 不带查询串（& 需要引号）。
+  assert.equal(command.includes('"'), false);
+  assert.equal(command.includes('?'), false);
+  assert.equal(
+    command,
+    'D:/nvm4w/nodejs/node.exe C:/repo/scripts/hook.js'
+    + ' --aih-provider-session-hook --provider codex --event UserPromptSubmit'
+    + ' --url http://127.0.0.1:9527/hook'
+  );
+  assert.equal(commandReferencesProvider(command, 'codex'), true);
+});
+
+test('Windows strategy falls back to PATH node for spaced node installs', () => {
   const command = buildProviderHookCommand({
     ...BASE_OPTIONS,
     platform: 'win32',
     nodeCommand: 'C:\\Program Files\\nodejs\\node.exe'
   });
 
-  assert.match(command, /^"C:\/Program Files\/nodejs\/node\.exe" /);
+  assert.match(command, /^node /);
+  // 脚本路径含空格只能保留引号（尽力而为，新版 raw_arg 宿主可用）
   assert.match(command, /"C:\/repo path\/scripts\/hook\.js"/);
-  assert.match(command, /--provider "codex"/);
   assert.equal(command.includes('powershell'), false);
   assert.equal(commandReferencesProvider(command, 'codex'), true);
 });
@@ -38,7 +60,8 @@ test('Windows strategy defaults to the current Node executable', () => {
   const command = buildProviderHookCommand({ ...BASE_OPTIONS, platform: 'win32' });
 
   const normalizedNodePath = process.execPath.replace(/\\/g, '/');
-  assert.equal(command.startsWith(`"${normalizedNodePath}" `), true);
+  const expectedNode = /\s/.test(normalizedNodePath) ? 'node' : normalizedNodePath;
+  assert.equal(command.startsWith(`${expectedNode} `), true);
 });
 
 test('Windows strategy command executes through cmd.exe with spaced paths', {
@@ -73,7 +96,8 @@ test('Windows strategy command executes through cmd.exe with spaced paths', {
     '--event',
     'UserPromptSubmit',
     '--url',
-    BASE_OPTIONS.receiverUrl
+    // 查询串（含 &）在 Windows 命令里被剥离，provider/event 由 sender body 携带
+    'http://127.0.0.1:9527/hook'
   ]);
 });
 

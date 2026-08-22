@@ -216,20 +216,23 @@ test('scanZcodeUsageFile rescan is incremental and dedups by event key', () => {
   const skipped = scanZcodeUsageFile({ fs, path, store, filePath: dbPath, accountRef: 'acct_aa000000000000000001', DatabaseSync });
   assert.equal(skipped.records, 0, '指纹未变化时跳过');
 
-  // 追加新 usage 行（主库 mtime 变化）+ 伪造 -wal 增长，重扫时旧行按 event_key 去重只记新行。
+  // 追加新 usage 行（主库 mtime 变化）+ 伪造 -wal 增长，重扫时按行级游标只取增量、
+  // 旧行按 event_key 去重；旧行事后被修改也不回读（游标语义，幂等优先）。
   const reopen = new DatabaseSync(dbPath);
   reopen.exec(`
     INSERT INTO model_usage (id, session_id, model_id, status, started_at, input_tokens, output_tokens, computed_total_tokens)
       VALUES ('usage-2', 'sess-1', 'GLM-5.3', 'completed', 1787300002000, 7, 3, 10);
+    UPDATE model_usage SET input_tokens = 999, computed_total_tokens = 1004 WHERE id = 'usage-1';
   `);
   reopen.close();
   fs.writeFileSync(`${dbPath}-wal`, Buffer.alloc(4096, 1));
 
   const second = scanZcodeUsageFile({ fs, path, store, filePath: dbPath, accountRef: 'acct_aa000000000000000001', DatabaseSync });
-  assert.equal(second.records, 1, '旧行 event_key 去重，只新增 usage-2');
+  assert.equal(second.records, 1, '游标增量：只新增 usage-2，旧行修改不回读');
 
   const stats = store.queryStats({ provider: 'zcode' });
   assert.equal(stats.totalCalls, 2);
+  assert.equal(stats.totalTokens, 25, 'usage-1 保持首次扫描值 15 + usage-2 的 10');
   store.close();
 });
 
@@ -239,7 +242,7 @@ test('resolveZcodeUsageAttribution: single oauth wins, api-key excluded, multi o
   // 0 个 zcode 账号
   assert.deepEqual(
     resolveZcodeUsageAttribution({ fs, aiHomeDir }),
-    { accountRef: '', mode: 'none', oauthAccountCount: 0 }
+    { accountRef: '', mode: 'none', oauthAccountCount: 0, unreadableAccountCount: 0 }
   );
 
   // 1 个 OAuth + 1 个 api-key：api-key 不算共享库写入者，仍精确归属 OAuth
@@ -247,14 +250,37 @@ test('resolveZcodeUsageAttribution: single oauth wins, api-key excluded, multi o
   setupZcodeAccount(aiHomeDir, { seed: 'two', apiKey: 'sk-key', cliAccountId: '2' });
   assert.deepEqual(
     resolveZcodeUsageAttribution({ fs, aiHomeDir }),
-    { accountRef: oauthRef, mode: 'single', oauthAccountCount: 1 }
+    { accountRef: oauthRef, mode: 'single', oauthAccountCount: 1, unreadableAccountCount: 0 }
   );
 
   // 2 个 OAuth：共享库无法区分写入者，诚实降级为未归属
   setupZcodeAccount(aiHomeDir, { seed: 'three', cliAccountId: '3' });
   assert.deepEqual(
     resolveZcodeUsageAttribution({ fs, aiHomeDir }),
-    { accountRef: '', mode: 'ambiguous', oauthAccountCount: 2 }
+    { accountRef: '', mode: 'ambiguous', oauthAccountCount: 2, unreadableAccountCount: 0 }
+  );
+});
+
+test('resolveZcodeUsageAttribution skips accounts whose credentials cannot be read', () => {
+  const { root, aiHomeDir } = makeRoot();
+  const oauthRef = setupZcodeAccount(aiHomeDir, { seed: 'readable' });
+  setupZcodeAccount(aiHomeDir, { seed: 'broken', cliAccountId: '2' });
+
+  // 第二个账号凭据读取抛错：按「无法分类」跳过，不得被误算成第二个 OAuth
+  // 而把归属打成 ambiguous（丢失柱状图）。
+  const resolved = resolveZcodeUsageAttribution({
+    fs,
+    aiHomeDir,
+    readCredentialRecord: (fsImpl, dir, accountRef) => {
+      if (String(accountRef) === oauthRef) {
+        return { env: {}, nativeAuth: {} };
+      }
+      throw new Error('credential_read_failed');
+    }
+  });
+  assert.deepEqual(
+    resolved,
+    { accountRef: oauthRef, mode: 'single', oauthAccountCount: 1, unreadableAccountCount: 1 }
   );
 });
 

@@ -65,9 +65,11 @@ test('injectZcodeThinking never touches explicit client thinking or unrelated mo
   assert.equal(injectZcodeThinking(disabled), disabled, '显式关闭思考也尊重');
 });
 
-test('resolveThinkingBudgetTokens keeps the budget within validated bounds', () => {
+test('resolveThinkingBudgetTokens keeps the budget within max_tokens (no floor)', () => {
   assert.equal(resolveThinkingBudgetTokens(4096), 1024);
   assert.equal(resolveThinkingBudgetTokens(200), 200);
+  assert.equal(resolveThinkingBudgetTokens(16), 16, 'budget==max 合法，不得被下限抬高到超过 max_tokens');
+  assert.equal(resolveThinkingBudgetTokens(1), 1);
   assert.equal(resolveThinkingBudgetTokens(undefined), DEFAULT_THINKING_BUDGET_TOKENS);
   assert.equal(resolveThinkingBudgetTokens(-1), DEFAULT_THINKING_BUDGET_TOKENS);
 });

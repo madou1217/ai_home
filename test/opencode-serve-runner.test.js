@@ -1,9 +1,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const {
   CONFIRM_PERMISSION_RULES,
   createServeEventMapper,
+  ensureOpenCodeServe,
   servePortForAccount,
   serveSocketForAccount,
   startOpenCodeServeTurn
@@ -109,12 +113,204 @@ function startTurn(fake, bus, events, overrides = {}) {
   });
 }
 
+function createServeEnsureFixture() {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-opencode-serve-'));
+  const runtimeScope = 'gateway';
+  const statePath = path.join(aiHomeDir, 'run', 'opencode-serve', `${runtimeScope}.json`);
+  const socket = serveSocketForAccount(runtimeScope);
+  const port = servePortForAccount(runtimeScope);
+  const calls = [];
+  const baseOptions = {
+    gateway: true,
+    aiHomeDir,
+    env: { HOME: aiHomeDir, PATH: process.env.PATH || '' },
+    getProfileDir: () => path.join(aiHomeDir, 'profile'),
+    resolveNativeCliLaunchImpl: () => ({ command: '/fake/opencode', prefixArgs: [] }),
+    readyTimeoutMs: 30,
+    pollIntervalMs: 1
+  };
+  return {
+    aiHomeDir,
+    runtimeScope,
+    statePath,
+    socket,
+    port,
+    calls,
+    baseOptions,
+    readState() {
+      return JSON.parse(fs.readFileSync(statePath, 'utf8'));
+    },
+    writeState(state) {
+      fs.mkdirSync(path.dirname(statePath), { recursive: true });
+      fs.writeFileSync(statePath, JSON.stringify(state), 'utf8');
+    }
+  };
+}
+
 test('端口/socket 按账号确定性派生', () => {
   assert.equal(servePortForAccount('1'), servePortForAccount('1'));
   assert.notEqual(servePortForAccount('1'), servePortForAccount('2'));
   const port = servePortForAccount('1');
   assert.ok(port >= 46300 && port < 47000, `端口在预留区间:${port}`);
   assert.match(serveSocketForAccount('a/b c'), /^aih-run-ocserveabc$/);
+});
+
+test('ensureOpenCodeServe:legacy state 固定 tmux 清理,auto 固定 Herdr spawn 并在 readiness 前写 backend state', async (t) => {
+  const fixture = createServeEnsureFixture();
+  t.after(() => fs.rmSync(fixture.aiHomeDir, { recursive: true, force: true }));
+  fixture.writeState({
+    runtimeScope: fixture.runtimeScope,
+    port: fixture.port,
+    socket: fixture.socket,
+    startedAt: 1
+  });
+
+  let healthChecks = 0;
+  const result = await ensureOpenCodeServe({
+    ...fixture.baseOptions,
+    clientFactory: () => ({
+      async health() {
+        healthChecks += 1;
+        if (healthChecks === 1) return false;
+        assert.equal(fixture.readState().multiplexer, 'herdr', 'spawn 后、readiness 探测前必须持久化新 backend');
+        return true;
+      }
+    }),
+    spawnSyncImpl(command, args) {
+      fixture.calls.push({ command, args: [...args] });
+      if (command === 'tmux' && args[0] === '-V') return { status: 0 };
+      if (command === 'tmux' && args.includes('has-session')) return { status: 0 };
+      if (command === 'tmux' && args.includes('kill-server')) return { status: 0 };
+      if (command === 'herdr' && args[0] === '--version') return { status: 0 };
+      if (command === 'herdr' && args[0] === 'spawn') return { status: 0 };
+      return { status: 1 };
+    }
+  });
+
+  assert.equal(result.reused, false);
+  assert.equal(result.multiplexer, 'herdr');
+  const cleanupIndex = fixture.calls.findIndex(({ command, args }) => command === 'tmux' && args.includes('kill-server'));
+  const spawnIndex = fixture.calls.findIndex(({ command, args }) => command === 'herdr' && args[0] === 'spawn');
+  assert.ok(cleanupIndex >= 0, 'legacy state 缺 multiplexer 时按 tmux 清理');
+  assert.ok(spawnIndex > cleanupIndex, '旧 binding 清理完成后才使用新 binding spawn');
+  const state = fixture.readState();
+  assert.deepEqual({ ...state, startedAt: 0 }, {
+    runtimeScope: fixture.runtimeScope,
+    port: fixture.port,
+    socket: fixture.socket,
+    multiplexer: 'herdr',
+    startedAt: 0
+  });
+  assert.ok(Number.isFinite(state.startedAt) && state.startedAt > 0);
+});
+
+test('ensureOpenCodeServe:Herdr spawn readiness 超时时用同一 binding cleanup 并保留 state', async (t) => {
+  const fixture = createServeEnsureFixture();
+  t.after(() => fs.rmSync(fixture.aiHomeDir, { recursive: true, force: true }));
+  const calls = fixture.calls;
+
+  await assert.rejects(ensureOpenCodeServe({
+    ...fixture.baseOptions,
+    readyTimeoutMs: 5,
+    clientFactory: () => ({ health: async () => false }),
+    spawnSyncImpl(command, args) {
+      calls.push({ command, args: [...args] });
+      if (command === 'tmux' && args[0] === '-V') return { status: 1 };
+      if (command === 'herdr' && args[0] === '--version') return { status: 0 };
+      if (command === 'herdr' && args[0] === 'spawn') return { status: 0 };
+      if (command === 'herdr' && args[0] === 'kill') return { status: 0 };
+      return { status: 1 };
+    }
+  }), (error) => error.code === 'opencode_serve_start_failed');
+
+  const spawnIndex = calls.findIndex(({ command, args }) => command === 'herdr' && args[0] === 'spawn');
+  const cleanupIndex = calls.findIndex(({ command, args }) => command === 'herdr' && args[0] === 'kill');
+  assert.ok(spawnIndex >= 0);
+  assert.ok(cleanupIndex > spawnIndex, 'timeout cleanup 复用已固定的 Herdr binding');
+  assert.equal(calls.some(({ command, args }) => command === 'tmux' && args.includes('kill-server')), false);
+  assert.equal(fixture.readState().multiplexer, 'herdr', 'timeout 后保留 backend 身份供下一轮安全清理');
+});
+
+test('ensureOpenCodeServe:健康 legacy serve 无 state 时回填 tmux binding', async (t) => {
+  const fixture = createServeEnsureFixture();
+  t.after(() => fs.rmSync(fixture.aiHomeDir, { recursive: true, force: true }));
+
+  const result = await ensureOpenCodeServe({
+    ...fixture.baseOptions,
+    clientFactory: () => ({ health: async () => true }),
+    spawnSyncImpl() {
+      assert.fail('健康 legacy serve 不应探测或启动新的 multiplexer');
+    }
+  });
+
+  assert.equal(result.reused, true);
+  assert.equal(result.multiplexer, 'tmux');
+  assert.equal(fixture.readState().multiplexer, 'tmux');
+});
+
+test('ensureOpenCodeServe:未知 stored backend fail closed 且原 state 不变', async (t) => {
+  const fixture = createServeEnsureFixture();
+  t.after(() => fs.rmSync(fixture.aiHomeDir, { recursive: true, force: true }));
+  const unknownState = {
+    runtimeScope: fixture.runtimeScope,
+    port: fixture.port,
+    socket: fixture.socket,
+    multiplexer: 'screen',
+    startedAt: 123
+  };
+  fixture.writeState(unknownState);
+
+  await assert.rejects(ensureOpenCodeServe({
+    ...fixture.baseOptions,
+    clientFactory: () => ({ health: async () => false }),
+    spawnSyncImpl() {
+      assert.fail('未知 backend 不应进入探测、清理或 spawn');
+    }
+  }), (error) => error.code === 'opencode_serve_multiplexer_unknown');
+  assert.deepEqual(fixture.readState(), unknownState);
+});
+
+test('ensureOpenCodeServe:非字符串的非空 stored backend 同样 fail closed', async (t) => {
+  const fixture = createServeEnsureFixture();
+  t.after(() => fs.rmSync(fixture.aiHomeDir, { recursive: true, force: true }));
+  fixture.writeState({
+    runtimeScope: fixture.runtimeScope,
+    port: fixture.port,
+    socket: fixture.socket,
+    multiplexer: 7,
+    startedAt: 123
+  });
+
+  await assert.rejects(ensureOpenCodeServe({
+    ...fixture.baseOptions,
+    clientFactory: () => ({ health: async () => false }),
+    spawnSyncImpl: () => ({ status: 1 })
+  }), (error) => error.code === 'opencode_serve_multiplexer_unknown');
+});
+
+test('ensureOpenCodeServe:stored backend 不可用时保留 state 并报错', async (t) => {
+  const fixture = createServeEnsureFixture();
+  t.after(() => fs.rmSync(fixture.aiHomeDir, { recursive: true, force: true }));
+  const storedState = {
+    runtimeScope: fixture.runtimeScope,
+    port: fixture.port,
+    socket: fixture.socket,
+    multiplexer: 'herdr',
+    startedAt: 456
+  };
+  fixture.writeState(storedState);
+
+  await assert.rejects(ensureOpenCodeServe({
+    ...fixture.baseOptions,
+    clientFactory: () => ({ health: async () => false }),
+    spawnSyncImpl(command, args) {
+      fixture.calls.push({ command, args: [...args] });
+      if (command === 'herdr' && args[0] === '--version') return { status: 1 };
+      return { status: 1 };
+    }
+  }), (error) => error.code === 'opencode_serve_multiplexer_unavailable');
+  assert.deepEqual(fixture.readState(), storedState);
+  assert.equal(fixture.calls.some(({ args }) => args[0] === 'kill' || args.includes('kill-server')), false);
 });
 
 test('事件映射器:只收本会话 assistant 文本;reasoning/用户回显/他会话不进正文;工具卡成对', () => {

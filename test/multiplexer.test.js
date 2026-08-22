@@ -7,6 +7,8 @@ const {
   MULTIPLEXER_ENV,
   resolveConfiguredType,
   resolveMultiplexerDriver,
+  resolveMultiplexerBinding,
+  bindMultiplexerDriver,
   getDriver,
   TmuxDriver,
   HerdrDriver,
@@ -55,6 +57,99 @@ test('resolveMultiplexerDriver: auto mode prefers herdr if available, otherwise 
     }
   });
   assert.equal(driverWithTmuxFallback.name, 'tmux');
+});
+
+test('resolveMultiplexerDriver: native-run spawnSyncImpl participates in driver detection', () => {
+  const calls = [];
+  const driver = resolveMultiplexerDriver({
+    type: 'auto',
+    spawnSyncImpl: (cmd, args) => {
+      calls.push([cmd, args]);
+      return { status: cmd === 'herdr' ? 0 : 1 };
+    }
+  });
+
+  assert.equal(driver.name, 'herdr');
+  assert.deepEqual(calls[0], ['herdr', ['--version']]);
+});
+
+test('resolveMultiplexerBinding: pins the detected backend and process dependency across lifecycle calls', () => {
+  const calls = [];
+  let detectionCount = 0;
+  const spawnSyncImpl = (command, args) => {
+    calls.push([command, args]);
+    if (args[0] === '--version') {
+      detectionCount += 1;
+      return { status: command === 'herdr' && detectionCount === 1 ? 0 : 1 };
+    }
+    return { status: 0 };
+  };
+  const binding = resolveMultiplexerBinding({
+    type: 'auto',
+    spawnSyncImpl
+  });
+
+  assert.equal(binding.name, 'herdr');
+  assert.equal(binding.driver.name, 'herdr');
+  assert.equal(binding.available, true);
+  assert.equal(binding.command, 'herdr');
+  assert.equal(binding.spawnSync, spawnSyncImpl);
+
+  assert.equal(binding.hasRun('test-socket'), true);
+  binding.killRun('test-socket', {
+    command: '/wrong/tmux',
+    spawnSync: () => {
+      throw new Error('per-call process dependency must not replace the binding');
+    }
+  });
+
+  assert.equal(detectionCount, 1);
+  assert.deepEqual(calls.map(([command]) => command), ['herdr', 'herdr', 'herdr']);
+  assert.deepEqual(calls[1][1], ['status', '--session', 'test-socket-run']);
+  assert.deepEqual(calls[2][1], ['kill', '--session', 'test-socket-run']);
+});
+
+test('resolveMultiplexerBinding: executes lifecycle calls through the detected absolute command', () => {
+  const calls = [];
+  const binding = resolveMultiplexerBinding({
+    type: 'herdr',
+    strict: true,
+    resolveCommandPath: (command) => command === 'herdr' ? '/opt/herdr/bin/herdr' : '',
+    spawnSyncImpl: (command, args) => {
+      calls.push([command, args]);
+      return { status: 0 };
+    }
+  });
+
+  const result = binding.spawnHeadlessRun({
+    socket: 'absolute-command',
+    shellCommand: 'echo ready'
+  });
+
+  assert.equal(binding.command, '/opt/herdr/bin/herdr');
+  assert.equal(result.ok, true);
+  assert.equal(calls[0][0], '/opt/herdr/bin/herdr');
+});
+
+test('bindMultiplexerDriver: binds a supplied detection without probing again', () => {
+  const calls = [];
+  const driver = new HerdrDriver();
+  const spawnSyncImpl = (command, args) => {
+    calls.push([command, args]);
+    return { status: 0 };
+  };
+  const binding = bindMultiplexerDriver(driver, {
+    available: true,
+    reason: 'ok',
+    command: '/custom/herdr',
+    viaShell: false
+  }, { spawnSyncImpl });
+
+  assert.equal(binding.hasRun('bound-run'), true);
+  assert.deepEqual(calls, [[
+    '/custom/herdr',
+    ['status', '--session', 'bound-run-run']
+  ]]);
 });
 
 test('resolveMultiplexerDriver: explicit herdr selection falls back gracefully when missing unless strict', () => {
@@ -181,7 +276,7 @@ test('HerdrDriver: headless run lifecycle (spawn, has, kill, send)', () => {
     socket: 'test-socket',
     shellCommand: 'echo hello',
     cwd: '/tmp',
-    spawnSyncImpl: mockSpawn
+    spawnSync: mockSpawn
   });
   assert.equal(spawned.ok, true);
   assert.equal(spawnCalls[0].cmd, 'herdr');
@@ -190,16 +285,81 @@ test('HerdrDriver: headless run lifecycle (spawn, has, kill, send)', () => {
   ]);
 
   // Has run
-  const has = driver.hasRun('test-socket', { spawnSyncImpl: mockSpawn });
+  const has = driver.hasRun('test-socket', { spawnSync: mockSpawn });
   assert.equal(has, true);
   assert.deepEqual(spawnCalls[1].args, ['status', '--session', 'test-socket-run']);
 
   // Send input
-  const sent = driver.sendInput('test-socket', 'y', { spawnSyncImpl: mockSpawn });
+  const sent = driver.sendInput('test-socket', 'y', { spawnSync: mockSpawn });
   assert.equal(sent, true);
   assert.deepEqual(spawnCalls[2].args, ['send', '--session', 'test-socket-run', '--', 'y', '\n']);
 
   // Kill
-  driver.killRun('test-socket', { spawnSyncImpl: mockSpawn });
+  driver.killRun('test-socket', { spawnSync: mockSpawn });
   assert.deepEqual(spawnCalls[3].args, ['kill', '--session', 'test-socket-run']);
+});
+
+test('TmuxDriver: headless lifecycle uses the canonical command and spawnSync options', () => {
+  const driver = new TmuxDriver();
+  const calls = [];
+  const mockSpawn = (command, args) => {
+    calls.push([command, args]);
+    return { status: 0 };
+  };
+  const lifecycleOptions = {
+    command: '/opt/tmux/bin/tmux',
+    spawnSync: mockSpawn,
+    useSystemdScope: false
+  };
+
+  const spawned = driver.spawnHeadlessRun({
+    ...lifecycleOptions,
+    socket: 'tmux-socket',
+    shellCommand: 'echo hello',
+    cwd: '/tmp'
+  });
+  assert.equal(spawned.ok, true);
+  assert.deepEqual(calls[0], [
+    '/opt/tmux/bin/tmux',
+    ['-L', 'tmux-socket', 'new-session', '-d', '-s', 'run', '-c', '/tmp', '--', 'sh', '-c', 'echo hello']
+  ]);
+
+  assert.equal(driver.hasRun('tmux-socket', lifecycleOptions), true);
+  assert.deepEqual(calls[1], [
+    '/opt/tmux/bin/tmux',
+    ['-L', 'tmux-socket', 'has-session', '-t', 'run']
+  ]);
+
+  assert.equal(driver.sendInput('tmux-socket', 'y', lifecycleOptions), true);
+  assert.deepEqual(calls[2], [
+    '/opt/tmux/bin/tmux',
+    ['-L', 'tmux-socket', 'send-keys', '-t', 'run', '-l', '--', 'y']
+  ]);
+  assert.deepEqual(calls[3], [
+    '/opt/tmux/bin/tmux',
+    ['-L', 'tmux-socket', 'send-keys', '-t', 'run', 'Enter']
+  ]);
+
+  driver.killRun('tmux-socket', lifecycleOptions);
+  assert.deepEqual(calls[4], [
+    '/opt/tmux/bin/tmux',
+    ['-L', 'tmux-socket', 'kill-server']
+  ]);
+});
+
+test('TmuxDriver: injected systemd probes are scoped to their binding dependency', () => {
+  const driver = new TmuxDriver();
+  const options = {
+    platform: 'linux',
+    env: { XDG_RUNTIME_DIR: '/run/user/1000' }
+  };
+
+  assert.equal(driver.isSystemdScopeSupported({
+    ...options,
+    spawnSync: () => ({ status: 0 })
+  }), true);
+  assert.equal(driver.isSystemdScopeSupported({
+    ...options,
+    spawnSync: () => ({ status: 1 })
+  }), false);
 });

@@ -8,7 +8,12 @@ const {
   RUN_EXIT_MARKER,
   socketForRun,
   buildRunShellCommand,
-  buildInnerCommandFromArgv
+  buildInnerCommandFromArgv,
+  resolveRunMultiplexerBinding,
+  spawnDetachedTmuxRun,
+  hasRunSession,
+  killRunServer,
+  sendRunKeys
 } = require('../lib/server/native-run-tmux');
 const {
   writeRunManifest,
@@ -42,11 +47,31 @@ test('manifest 写读改删 + runId 安全校验', (t) => {
   }
   assert.equal(readRunManifest(aiHome, 'run-abc-123').provider, 'opencode');
   assert.equal(readRunManifest(aiHome, 'run-abc-123').gateway, true);
+  assert.equal(readRunManifest(aiHome, 'run-abc-123').multiplexer, 'tmux');
   assert.equal(Object.prototype.hasOwnProperty.call(readRunManifest(aiHome, 'run-abc-123'), 'accountRef'), false);
+
+  const herdrEntry = writeRunManifest(aiHome, {
+    runId: 'run-herdr-123', provider: 'codex', gateway: true,
+    multiplexer: 'herdr', socket: 'aih-run-herdr123', logPath: runLogPath(aiHome, 'run-herdr-123')
+  });
+  assert.equal(herdrEntry.multiplexer, 'herdr');
+  assert.equal(readRunManifest(aiHome, 'run-herdr-123').multiplexer, 'herdr');
+
+  const legacyRunId = 'run-legacy-123';
+  const legacyLogPath = runLogPath(aiHome, legacyRunId);
+  fs.writeFileSync(legacyLogPath, '');
+  fs.writeFileSync(manifestPath(aiHome, legacyRunId), JSON.stringify({
+    runId: legacyRunId,
+    provider: 'codex',
+    gateway: true,
+    socket: 'aih-run-legacy123',
+    logPath: legacyLogPath
+  }));
+  assert.equal(readRunManifest(aiHome, legacyRunId).multiplexer, 'tmux');
 
   updateRunManifest(aiHome, 'run-abc-123', { sessionId: 'ses_x' });
   assert.equal(readRunManifest(aiHome, 'run-abc-123').sessionId, 'ses_x');
-  assert.equal(listRunManifests(aiHome).length, 1);
+  assert.equal(listRunManifests(aiHome).length, 3);
 
   const foreignLogPath = path.join(aiHome, 'foreign', 'run.log');
   assert.equal(writeRunManifest(aiHome, {
@@ -64,13 +89,68 @@ test('manifest 写读改删 + runId 安全校验', (t) => {
     logPath: foreignLogPath
   }));
   assert.equal(readRunManifest(aiHome, tamperedRunId), null);
-  assert.equal(listRunManifests(aiHome).length, 1);
+  assert.equal(listRunManifests(aiHome).length, 3);
+
+  const invalidMultiplexerRunId = 'run-invalid-mux';
+  const invalidMultiplexerLog = runLogPath(aiHome, invalidMultiplexerRunId);
+  fs.writeFileSync(invalidMultiplexerLog, '');
+  fs.writeFileSync(manifestPath(aiHome, invalidMultiplexerRunId), JSON.stringify({
+    runId: invalidMultiplexerRunId,
+    provider: 'codex',
+    gateway: true,
+    multiplexer: 'unknown',
+    socket: 'aih-run-invalid',
+    logPath: invalidMultiplexerLog
+  }));
+  assert.equal(readRunManifest(aiHome, invalidMultiplexerRunId), null);
 
   // 不安全 runId(路径穿越)拒绝
   assert.equal(writeRunManifest(aiHome, { runId: '../evil', provider: 'x', socket: 's', logPath: '/tmp/l' }), null);
 
   removeRunManifest(aiHome, 'run-abc-123');
   assert.equal(readRunManifest(aiHome, 'run-abc-123'), null);
+});
+
+test('native run binding: spawnSyncImpl 只解析一次并固定 Herdr 生命周期', () => {
+  const calls = [];
+  const spawnSyncImpl = (command, args) => {
+    calls.push([command, args]);
+    if (args.includes('--version')) return { status: command === 'herdr' ? 0 : 1 };
+    return { status: 0 };
+  };
+  const binding = resolveRunMultiplexerBinding({ type: 'auto', spawnSyncImpl });
+
+  assert.equal(binding.name, 'herdr');
+  assert.equal(binding.available, true);
+  const spawned = spawnDetachedTmuxRun({
+    multiplexerBinding: binding,
+    socket: 'aih-run-binding',
+    shellCommand: 'echo ok',
+    cwd: '/tmp'
+  });
+  assert.equal(spawned.ok, true);
+  assert.equal(spawned.multiplexer, 'herdr');
+  assert.equal(hasRunSession('aih-run-binding', { multiplexerBinding: binding }), true);
+  assert.equal(sendRunKeys('aih-run-binding', 'continue', {
+    multiplexerBinding: binding,
+    appendNewline: false
+  }), true);
+  killRunServer('aih-run-binding', { multiplexerBinding: binding });
+
+  assert.equal(calls.filter(([, args]) => args.includes('--version')).length, 1);
+  assert.deepEqual(calls.map(([command]) => command), ['herdr', 'herdr', 'herdr', 'herdr', 'herdr']);
+});
+
+test('native run binding: unknown persisted backend fails closed before detection', () => {
+  assert.throws(
+    () => resolveRunMultiplexerBinding({
+      multiplexerType: 'screen',
+      spawnSyncImpl: () => {
+        throw new Error('unknown backend must not probe another driver');
+      }
+    }),
+    (error) => error.code === 'multiplexer_backend_unknown'
+  );
 });
 
 test('shell 命令组装:整体重定向 + 退出标记 + 参数安全引用', () => {
@@ -154,4 +234,106 @@ test('收养:死 run 直接收尾,活 run 注册并在退出标记后统一收�
   assert.ok(unregistered.includes('live-run-2'));
   assert.ok(finished.some((f) => f.runId === 'live-run-2' && f.adopted === true && f.sessionId === 'ses_live'));
   assert.equal(readRunManifest(aiHome, 'live-run-2'), null);
+});
+
+test('收养:按 manifest 固定 Herdr；backend 不可用时保留清单', async (t) => {
+  const aiHome = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-run-adopt-herdr-'));
+  t.after(() => fs.rmSync(aiHome, { recursive: true, force: true }));
+
+  const liveRunId = 'herdr-live-1';
+  const liveLog = runLogPath(aiHome, liveRunId);
+  writeRunManifest(aiHome, {
+    runId: liveRunId,
+    provider: 'codex',
+    accountRef: 'acct_33333333333333333333',
+    multiplexer: 'herdr',
+    socket: 'aih-run-herdr-live',
+    logPath: liveLog
+  });
+  const unavailableRunId = 'herdr-missing-2';
+  const unavailableLog = runLogPath(aiHome, unavailableRunId);
+  writeRunManifest(aiHome, {
+    runId: unavailableRunId,
+    provider: 'codex',
+    accountRef: 'acct_44444444444444444444',
+    multiplexer: 'herdr',
+    socket: 'aih-run-herdr-missing',
+    logPath: unavailableLog
+  });
+
+  const calls = [];
+  let liveAlive = true;
+  const fakeSpawnSync = (command, args) => {
+    calls.push([command, args]);
+    if (args.includes('--version')) {
+      const available = calls.filter(([, currentArgs]) => currentArgs.includes('--version')).length === 1;
+      return { status: command === 'herdr' && available ? 0 : 1 };
+    }
+    if (command === 'herdr' && args[0] === 'status') return { status: liveAlive ? 0 : 1 };
+    if (command === 'herdr' && args[0] === 'send') return { status: 0 };
+    if (command === 'herdr' && args[0] === 'kill') {
+      liveAlive = false;
+      return { status: 0 };
+    }
+    throw new Error(`unexpected multiplexer command: ${command} ${args.join(' ')}`);
+  };
+  const registered = [];
+  const result = adoptWebUiNativeRuns({
+    aiHomeDir: aiHome,
+    spawnSyncImpl: fakeSpawnSync,
+    registerNativeChatRun: (handle) => registered.push(handle),
+    unregisterNativeChatRun: () => {},
+    log: () => {}
+  });
+
+  assert.equal(result.adopted, 1);
+  assert.equal(result.skipped, 1);
+  assert.equal(registered.length, 1);
+  assert.equal(registered[0].runId, liveRunId);
+  assert.ok(calls.some(([command, args]) => command === 'herdr' && args[0] === 'status'));
+  assert.equal(calls.some(([command]) => command === 'tmux'), false);
+  assert.ok(readRunManifest(aiHome, unavailableRunId));
+
+  registered[0].writeInput('continue');
+  registered[0].abort();
+  await new Promise((resolve) => setTimeout(resolve, 180));
+  assert.ok(calls.some(([command, args]) => command === 'herdr' && args[0] === 'send'));
+  assert.ok(calls.some(([command, args]) => command === 'herdr' && args[0] === 'kill'));
+});
+
+test('收养:旧 manifest 无 backend 字段时固定按 tmux 管理', (t) => {
+  const aiHome = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-run-adopt-legacy-'));
+  t.after(() => fs.rmSync(aiHome, { recursive: true, force: true }));
+  const runId = 'legacy-adopt-1';
+  const logPath = runLogPath(aiHome, runId);
+  fs.mkdirSync(path.dirname(logPath), { recursive: true });
+  fs.writeFileSync(logPath, `${RUN_EXIT_MARKER}0\n`);
+  fs.mkdirSync(path.dirname(manifestPath(aiHome, runId)), { recursive: true });
+  fs.writeFileSync(manifestPath(aiHome, runId), JSON.stringify({
+    runId,
+    provider: 'codex',
+    gateway: true,
+    socket: 'aih-run-legacy-adopt',
+    logPath
+  }));
+
+  const calls = [];
+  const result = adoptWebUiNativeRuns({
+    aiHomeDir: aiHome,
+    spawnSyncImpl: (command, args) => {
+      calls.push([command, args]);
+      if (command === 'herdr') throw new Error('legacy run must not probe Herdr');
+      if (args[0] === '-V') return { status: 0 };
+      if (args.includes('has-session')) return { status: 1 };
+      return { status: 0 };
+    },
+    registerNativeChatRun: () => {},
+    unregisterNativeChatRun: () => {}
+  });
+
+  assert.equal(result.finalized, 1);
+  assert.equal(result.skipped, 0);
+  assert.equal(calls.some(([command]) => command === 'herdr'), false);
+  assert.ok(calls.some(([command, args]) => command === 'tmux' && args.includes('has-session')));
+  assert.equal(readRunManifest(aiHome, runId), null);
 });

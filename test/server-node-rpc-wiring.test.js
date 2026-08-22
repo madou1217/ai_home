@@ -276,6 +276,63 @@ test('running Server protects loopback WebUI data with the Management Key', asyn
   assert.equal(providerHook.status, 200, await providerHook.text());
 });
 
+test('running Server injects the Codex reset-credit service into the WebUI route', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-server-codex-reset-wiring-'));
+  const port = await getFreePort();
+  const endpoint = `http://127.0.0.1:${port}`;
+  const processObj = createProcessCapture();
+  const managementKey = 'codex-reset-wiring-management-key';
+  const accountRef = 'acct_11111111111111111111';
+  const listCalls = [];
+
+  t.after(async () => {
+    await processObj.stop();
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+  });
+
+  await startLocalServer({
+    host: '127.0.0.1',
+    port,
+    provider: 'codex',
+    backend: 'openai',
+    strategy: 'round_robin',
+    codexClientVersion: '0.0.0-test',
+    managementKey,
+    modelUsageScan: false,
+    logRequests: false
+  }, createServerDeps(aiHomeDir, processObj, { closeAll() {} }, {
+    codexResetCreditService: {
+      async list(actualAccountRef) {
+        listCalls.push(actualAccountRef);
+        return {
+          accountRef: actualAccountRef,
+          supported: true,
+          availableCount: 2,
+          selectableCount: 2,
+          detailsComplete: true,
+          inventoryVersion: 'inventory-version',
+          capturedAt: 1,
+          nextCreditId: 'credit-a',
+          credits: [],
+          activeOperation: null
+        };
+      }
+    }
+  }));
+
+  const response = await fetch(
+    `${endpoint}/v0/webui/accounts/codex/${accountRef}/reset-credits`,
+    { headers: { authorization: `Bearer ${managementKey}` } }
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(listCalls, [accountRef]);
+  assert.equal(body.ok, true);
+  assert.equal(body.accountRef, accountRef);
+  assert.equal(body.availableCount, 2);
+});
+
 test('server WebUI resolves SSH identity files from the configured SSH home', async (t) => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-server-ssh-home-'));
   const sshHomeDir = path.join(aiHomeDir, 'ssh-home');

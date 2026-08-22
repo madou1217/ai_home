@@ -64,6 +64,7 @@ export type AccountUsageSnapshot =
       kind: 'codex_oauth_status';
       capturedAt: number;
       entries: CodexUsageEntry[];
+      resetCreditsAvailableCount?: number;
     }
   | {
       kind: 'claude_oauth_usage';
@@ -220,6 +221,75 @@ export interface AccountRefreshUsageResponse {
   accepted: boolean;
   alreadyRunning: boolean;
   job: AccountRefreshJob;
+}
+
+export type CodexResetCreditStatus =
+  | 'available'
+  | 'consuming'
+  | 'consumed'
+  | 'expired'
+  | 'missing'
+  | 'unknown';
+
+export interface CodexResetCredit {
+  accountRef: string;
+  creditId: string;
+  status: CodexResetCreditStatus;
+  grantedAt: number | null;
+  expiresAt: number | null;
+  firstSeenAt: number;
+  lastSeenAt: number;
+  consumedAt: number | null;
+  consumedOperationId: string;
+  statusSource: string;
+}
+
+export type CodexResetOperationStatus =
+  | 'consuming'
+  | 'succeeded'
+  | 'no_effect'
+  | 'unknown';
+
+export type CodexResetOperationOutcome =
+  | 'reset'
+  | 'nothingToReset'
+  | 'noCredit'
+  | 'alreadyRedeemed'
+  | '';
+
+export interface CodexResetOperation {
+  operationId: string;
+  accountRef: string;
+  creditId: string;
+  inventoryVersion: string;
+  status: CodexResetOperationStatus;
+  outcome: CodexResetOperationOutcome;
+  requestedAt: number;
+  updatedAt: number;
+  completedAt: number | null;
+  beforeCount: number;
+  afterCount: number | null;
+  errorCode: string;
+}
+
+export interface CodexResetCreditsResponse {
+  ok: boolean;
+  accountRef: string;
+  supported: boolean;
+  availableCount: number;
+  selectableCount: number;
+  detailsComplete: boolean;
+  inventoryVersion: string;
+  capturedAt: number;
+  nextCreditId: string;
+  credits: CodexResetCredit[];
+  activeOperation: CodexResetOperation | null;
+}
+
+export interface CodexResetOperationResponse {
+  ok: boolean;
+  operation: CodexResetOperation;
+  reconciliationRequired: boolean;
 }
 
 export interface WebUiModelsResponse {

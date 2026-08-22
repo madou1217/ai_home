@@ -23,6 +23,9 @@ import type {
   Account,
   AccountRefreshJob,
   AccountRefreshUsageResponse,
+  CodexResetCreditsResponse,
+  CodexResetOperation,
+  CodexResetOperationResponse,
   AccountRemovedEvent,
   AccountsSnapshotRequestResponse,
   AccountsListResponse,
@@ -372,6 +375,44 @@ export const accountsAPI = {
 
   refreshUsage: async (provider: string, accountRef: string): Promise<AccountRefreshUsageResponse> => {
     const response = await api.post<AccountRefreshUsageResponse>(`/webui/accounts/${provider}/${accountRef}/refresh-usage`);
+    return response.data;
+  },
+
+  listCodexResetCredits: async (accountRef: string): Promise<CodexResetCreditsResponse> => {
+    const response = await api.get<CodexResetCreditsResponse>(
+      `/webui/accounts/codex/${encodeURIComponent(accountRef)}/reset-credits`
+    );
+    return response.data;
+  },
+
+  consumeCodexResetCredit: async (
+    accountRef: string,
+    input: { operationId: string; inventoryVersion: string }
+  ): Promise<CodexResetOperationResponse> => {
+    const response = await api.post<CodexResetOperationResponse>(
+      `/webui/accounts/codex/${encodeURIComponent(accountRef)}/reset-credits/consume`,
+      input
+    );
+    return response.data;
+  },
+
+  getCodexResetOperation: async (
+    accountRef: string,
+    operationId: string
+  ): Promise<CodexResetOperation> => {
+    const response = await api.get<{ ok: boolean; operation: CodexResetOperation }>(
+      `/webui/accounts/codex/${encodeURIComponent(accountRef)}/reset-operations/${encodeURIComponent(operationId)}`
+    );
+    return response.data.operation;
+  },
+
+  reconcileCodexResetOperation: async (
+    accountRef: string,
+    operationId: string
+  ): Promise<CodexResetOperationResponse> => {
+    const response = await api.post<CodexResetOperationResponse>(
+      `/webui/accounts/codex/${encodeURIComponent(accountRef)}/reset-operations/${encodeURIComponent(operationId)}/reconcile`
+    );
     return response.data;
   },
 

@@ -502,6 +502,38 @@ function addKnownNodeRoutes(routes) {
       file: 'lib/server/v1-router.js',
       lineNeedle: "match(/^\\/v1\\/models\\/([^/]+)$/)",
     },
+    {
+      path: '/v0/webui/accounts/codex/{account_ref}/reset-credits',
+      pattern: '^/v0/webui/accounts/codex/([^/]+)/reset-credits$',
+      match: 'regex',
+      methods: ['GET'],
+      file: 'lib/server/webui-codex-reset-credit-routes.js',
+      lineNeedle: 'const LIST_PATTERN =',
+    },
+    {
+      path: '/v0/webui/accounts/codex/{account_ref}/reset-credits/consume',
+      pattern: '^/v0/webui/accounts/codex/([^/]+)/reset-credits/consume$',
+      match: 'regex',
+      methods: ['POST'],
+      file: 'lib/server/webui-codex-reset-credit-routes.js',
+      lineNeedle: 'const CONSUME_PATTERN =',
+    },
+    {
+      path: '/v0/webui/accounts/codex/{account_ref}/reset-operations/{operation_id}',
+      pattern: '^/v0/webui/accounts/codex/([^/]+)/reset-operations/([^/]+)$',
+      match: 'regex',
+      methods: ['GET'],
+      file: 'lib/server/webui-codex-reset-credit-routes.js',
+      lineNeedle: 'const OPERATION_PATTERN =',
+    },
+    {
+      path: '/v0/webui/accounts/codex/{account_ref}/reset-operations/{operation_id}/reconcile',
+      pattern: '^/v0/webui/accounts/codex/([^/]+)/reset-operations/([^/]+)/reconcile$',
+      match: 'regex',
+      methods: ['POST'],
+      file: 'lib/server/webui-codex-reset-credit-routes.js',
+      lineNeedle: 'const RECONCILE_PATTERN =',
+    },
   ];
   for (const item of known) {
     const file = nodePath.join(REPO_ROOT, item.file);

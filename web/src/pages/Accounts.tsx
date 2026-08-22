@@ -43,6 +43,7 @@ import {
   CodeOutlined,
   DesktopOutlined,
   QrcodeOutlined,
+  UndoOutlined,
 } from '@ant-design/icons';
 import {
   accountsAPI,
@@ -110,6 +111,11 @@ import {
 } from '@/features/accounts/useModelCatalog';
 import { CliPickerModal } from '@/features/accounts/CliPickerModal';
 import { KimiDesktopLoginModal } from '@/features/accounts/KimiDesktopLoginModal';
+import { CodexResetCreditsModal } from '@/features/accounts/CodexResetCreditsModal';
+import {
+  formatCodexResetMenuLabel,
+  isCodexOAuthResetEligible
+} from '@/features/accounts/codex-reset-credit-model';
 import { AccountAppInstallModal } from '@/features/accounts/AccountAppInstallModal';
 import { AccountAppInstallResultModal } from '@/features/accounts/AccountAppInstallResultModal';
 import { EditAccountModal } from '@/features/accounts/EditAccountModal';
@@ -626,9 +632,35 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
     account: Account;
     openAfterLogin: boolean;
   } | null>(null);
+  const [codexResetAccount, setCodexResetAccount] = useState<Account | null>(null);
   const [cliTerminals, setCliTerminals] = useState<ClientTerminalItem[]>([]);
   const [selectedCliTerminalId, setSelectedCliTerminalId] = useState('system-default');
   const [cliTerminalsLoading, setCliTerminalsLoading] = useState(false);
+  const updateCodexResetAvailableCount = React.useCallback((accountRef: string, availableCount: number) => {
+    setAccounts((current) => current.map((item) => {
+      if (item.provider !== 'codex' || getAccountRef(item) !== accountRef) return item;
+      const resetCreditsAvailableCount = Math.max(0, Math.trunc(availableCount));
+      if (item.usageSnapshot?.kind === 'codex_oauth_status') {
+        if (item.usageSnapshot.resetCreditsAvailableCount === resetCreditsAvailableCount) return item;
+        return {
+          ...item,
+          usageSnapshot: {
+            ...item.usageSnapshot,
+            resetCreditsAvailableCount
+          }
+        };
+      }
+      return {
+        ...item,
+        usageSnapshot: {
+          kind: 'codex_oauth_status',
+          capturedAt: Date.now(),
+          entries: [],
+          resetCreditsAvailableCount
+        }
+      };
+    }));
+  }, [setAccounts]);
   useEffect(() => () => {
     Object.values(cliClickTimers.current).forEach((timer) => clearTimeout(timer));
   }, []);
@@ -1366,6 +1398,13 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
         disabled: Boolean(!record.isMobile && (!record.configured || record.apiKeyMode))
       });
     }
+    if (isCodexOAuthResetEligible(record)) {
+      menuItems.push({
+        key: 'codex-reset-credits',
+        label: formatCodexResetMenuLabel(record),
+        icon: <UndoOutlined />
+      });
+    }
     if (canReauthAccount(record)) {
       menuItems.push({ key: 'reauth', label: getReauthActionLabel(record), icon: <SyncOutlined /> });
     }
@@ -1380,6 +1419,10 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
   const handleAccountMenuClick = (record: Account, key: string) => {
     if (key === 'set-default') { handleSetDefault(record); return; }
     if (key === 'set-mobile') { handleSetMobile(record); return; }
+    if (key === 'codex-reset-credits' && isCodexOAuthResetEligible(record)) {
+      setCodexResetAccount(record);
+      return;
+    }
     if (key === 'reauth') { handleReauth(record); return; }
     if (key === 'edit' && canEditAccountConfig(record)) { handleEdit(record); return; }
     if (key === 'delete') {
@@ -2248,6 +2291,12 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
           setKimiDesktopLoginRequest(null);
           if (request?.openAfterLogin) void handleOpenApp(request.account, 'desktop');
         }}
+      />
+      <CodexResetCreditsModal
+        open={Boolean(codexResetAccount)}
+        account={codexResetAccount}
+        onClose={() => setCodexResetAccount(null)}
+        onAvailableCountChange={updateCodexResetAvailableCount}
       />
     </PageScaffold>
   );

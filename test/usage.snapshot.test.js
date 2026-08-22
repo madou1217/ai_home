@@ -195,6 +195,151 @@ test('codex usage snapshot keeps app-server plan type when local metadata has no
   }
 });
 
+test('codex usage snapshot preserves app-server reset-credit count in the cached snapshot', () => {
+  const root = mkTmpDir();
+  try {
+    const { aiHomeDir, getProfileDir, getToolConfigDir } = createUsagePaths(root);
+    const accountRef = registerUsageAccount(aiHomeDir, 'codex', '3', {
+      nativeAuth: { auth: { tokens: { access_token: 'codex-access-token' } } }
+    });
+    const cacheService = createUsageCacheService({
+      fs,
+      aiHomeDir,
+      path,
+      getProfileDir,
+      usageSnapshotSchemaVersion: 2,
+      usageSourceGemini: 'gemini_refresh_user_quota',
+      usageSourceCodex: 'codex_app_server',
+      usageSourceClaudeOauth: 'claude_oauth_usage_api',
+      usageSourceClaudeAuthToken: 'claude_auth_token_usage_api'
+    });
+    const stdout = `AIH_CODEX_RATE_LIMIT_JSON_START\n${JSON.stringify({
+      ok: true,
+      rateLimits: {
+        planType: 'plus',
+        primary: { windowDurationMins: 300, usedPercent: 20, resetsAt: 123 }
+      },
+      rateLimitResetCredits: { availableCount: 3 }
+    })}\nAIH_CODEX_RATE_LIMIT_JSON_END\n`;
+    let probeScript = '';
+    const usageSnapshotService = createUsageSnapshotService({
+      fs,
+      path,
+      aiHomeDir,
+      spawnSync: (_file, args) => {
+        probeScript = String(args && args[1] || '');
+        return { stdout, stderr: '' };
+      },
+      processObj: {
+        execPath: process.execPath,
+        cwd: () => root,
+        env: {},
+        platform: process.platform
+      },
+      resolveCliPath: () => '/usr/bin/codex',
+      usageSnapshotSchemaVersion: 2,
+      usageRefreshStaleMs: 5 * 60 * 1000,
+      usageSourceGemini: 'gemini_refresh_user_quota',
+      usageSourceCodex: 'codex_app_server',
+      usageSourceClaudeOauth: 'claude_oauth_usage_api',
+      usageSourceClaudeAuthToken: 'claude_auth_token_usage_api',
+      getProfileDir,
+      getToolConfigDir,
+      writeUsageCache: cacheService.writeUsageCache,
+      readUsageCache: cacheService.readUsageCache
+    });
+
+    const snapshot = usageSnapshotService.ensureUsageSnapshot('codex', accountRef, null);
+
+    assert.deepEqual(snapshot.rateLimitResetCredits, { availableCount: 3 });
+    assert.deepEqual(
+      cacheService.readUsageCache('codex', accountRef).rateLimitResetCredits,
+      { availableCount: 3 }
+    );
+    assert.match(probeScript, /rateLimitResetCredits/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('codex usage snapshot async preserves reset-credit count from account/rateLimits/read', async () => {
+  const root = mkTmpDir();
+  try {
+    const { aiHomeDir, getProfileDir, getToolConfigDir } = createUsagePaths(root);
+    const accountRef = registerUsageAccount(aiHomeDir, 'codex', '4', {
+      nativeAuth: { auth: {} }
+    });
+    const spawnMock = () => {
+      const child = new EventEmitter();
+      child.pid = 12345;
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+      child.stdout.setEncoding = () => {};
+      child.stderr.setEncoding = () => {};
+      child.kill = () => {};
+      child.stdin = new EventEmitter();
+      child.stdin.end = () => {};
+      child.stdin.write = (chunk, callback) => {
+        const message = JSON.parse(String(chunk || '').trim());
+        process.nextTick(() => {
+          if (message.method === 'initialize') {
+            child.stdout.emit('data', `${JSON.stringify({ id: 'aih_init', result: {} })}\n`);
+          } else if (message.method === 'account/rateLimits/read') {
+            child.stdout.emit('data', `${JSON.stringify({
+              id: 'aih_rate',
+              result: {
+                rateLimits: {
+                  planType: 'plus',
+                  primary: { windowDurationMins: 300, usedPercent: 25, resetsAt: 123 }
+                },
+                rateLimitResetCredits: { availableCount: 2 }
+              }
+            })}\n`);
+          }
+          if (typeof callback === 'function') callback();
+        });
+        return true;
+      };
+      return child;
+    };
+    const usageSnapshotService = createUsageSnapshotService({
+      fs,
+      path,
+      aiHomeDir,
+      spawn: spawnMock,
+      spawnSync: () => ({ stdout: '', stderr: '' }),
+      processObj: {
+        execPath: process.execPath,
+        cwd: () => root,
+        env: { AIH_CODEX_USAGE_DIRECT: '0' },
+        platform: process.platform
+      },
+      resolveCliPath: () => '/usr/bin/codex',
+      usageSnapshotSchemaVersion: 2,
+      usageRefreshStaleMs: 5 * 60 * 1000,
+      usageSourceGemini: 'gemini_refresh_user_quota',
+      usageSourceCodex: 'codex_app_server',
+      usageSourceClaudeOauth: 'claude_oauth_usage_api',
+      usageSourceClaudeAuthToken: 'claude_auth_token_usage_api',
+      getProfileDir,
+      getToolConfigDir,
+      writeUsageCache: () => {},
+      readUsageCache: () => null
+    });
+
+    const snapshot = await usageSnapshotService.ensureUsageSnapshotAsync(
+      'codex',
+      accountRef,
+      null,
+      { forceRefresh: true }
+    );
+
+    assert.deepEqual(snapshot.rateLimitResetCredits, { availableCount: 2 });
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('claude OAuth usage snapshot preserves the explicit Max rate-limit tier', () => {
   const root = mkTmpDir();
   try {
@@ -1090,6 +1235,9 @@ test('codex usage snapshot async uses direct HTTP rate-limits by default', async
             email: 'direct-from-wham@example.com',
             account_id: 'acc_from_wham',
             plan_type: 'free',
+            rate_limit_reset_credits: {
+              available_count: 4
+            },
             rate_limit: {
               allowed: true,
               limit_reached: false,
@@ -1146,6 +1294,11 @@ test('codex usage snapshot async uses direct HTTP rate-limits by default', async
       upstreamAccountId: 'acc_1',
       organizationId: ''
     });
+    assert.deepEqual(snapshot.rateLimitResetCredits, { availableCount: 4 });
+    assert.deepEqual(
+      cacheService.readUsageCache('codex', accountRef).rateLimitResetCredits,
+      { availableCount: 4 }
+    );
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -1200,11 +1353,16 @@ test('codex usage snapshot direct HTTP uses proxy-aware fetchWithTimeout by defa
         return {
           ok: true,
           text: async () => JSON.stringify({
-            rate_limits: {
-              primary: {
-                window_minutes: 300,
-                used_percent: 15,
-                resets_at: Math.floor(Date.now() / 1000) + 3600
+            result: {
+              rate_limits: {
+                primary: {
+                  window_minutes: 300,
+                  used_percent: 15,
+                  resets_at: Math.floor(Date.now() / 1000) + 3600
+                }
+              },
+              rateLimitResetCredits: {
+                availableCount: 2
               }
             }
           })
@@ -1235,6 +1393,7 @@ test('codex usage snapshot direct HTTP uses proxy-aware fetchWithTimeout by defa
     assert.equal(fetchWithTimeoutCalls[0].url, 'https://chatgpt.com/backend-api/wham/usage');
     assert.equal(fetchWithTimeoutCalls[0].timeoutMs, 60000);
     assert.equal(snapshot.entries[0].remainingPct, 85);
+    assert.deepEqual(snapshot.rateLimitResetCredits, { availableCount: 2 });
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

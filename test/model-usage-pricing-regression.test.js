@@ -1071,7 +1071,7 @@ test('a second service skips all-cost recalculation for the same bundled catalog
   }
 });
 
-test('a new model usage service refreshes bundled pricing only with explicit maintenance intent', async (t) => {
+test('a new model usage service automatically activates a changed provider snapshot', async (t) => {
   const DatabaseSync = requireDatabaseSync(t);
   if (!DatabaseSync) return;
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-model-pricing-refresh-'));
@@ -1104,13 +1104,10 @@ test('a new model usage service refreshes bundled pricing only with explicit mai
     writeModelPrice(modelsDevCatalogPath, 3, 4);
     const restartedService = createService();
     const freshRead = await restartedService.syncPricingIfStale();
-    assert.equal(freshRead.synced, false);
-    assert.equal(freshRead.catalogFingerprint, firstSync.catalogFingerprint);
-
-    const refreshed = await restartedService.syncPricingIfStale({ force: true });
-    assert.equal(refreshed.synced, true);
-    assert.equal(refreshed.recalculated, 0);
-    assert.equal(refreshed.recalculationRequired, true);
+    assert.equal(freshRead.synced, true);
+    assert.notEqual(freshRead.catalogFingerprint, firstSync.catalogFingerprint);
+    assert.equal(freshRead.recalculated, 0);
+    assert.equal(freshRead.recalculationRequired, true);
 
     const maintenance = await restartedService.syncPricingIfStale({
       recalculateCosts: true

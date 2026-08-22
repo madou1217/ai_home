@@ -5,6 +5,7 @@ import type { Account, ManagementAccountActivity } from '@/types';
 import { getAccountRef } from '@/features/accounts/account-model-catalog';
 import TokenDropNumber from './TokenDropNumber';
 import type { TokenDropEvent } from './useTokenDropEvents';
+import { isAccountConsuming, selectAccountDrops } from './usage-activity';
 import './UsageProgressEffects.css';
 
 interface Props {
@@ -15,13 +16,16 @@ interface Props {
 
 /**
  * 剩余额度进度条运行动效包装（低侵入）：
- * - 运行中（inFlight > 0）：进度条渐变流光扫过，表达"正在被消耗"。
+ * - 运行中：进度条渐变流光扫过，表达"正在被消耗"。
  * - remainingPct 下降：进度条做一次短促回弹（被咬了一口）。
  * - tokenUsage 增量：由页面级 useTokenDropEvents 产出的掉落事件在此渲染伤害数字。
  * 火药燃点由 UsageSnapshotCell 挂在真实轨道内；本层只编排活动状态与掉落事件。
  */
 const UsageProgressEffects = ({ record, activity, drops }: Props) => {
-  const running = Boolean(activity && activity.inFlight > 0);
+  const accountRef = getAccountRef(record);
+  const accountDrops = selectAccountDrops(drops, accountRef);
+  // 判定收敛在 usage-activity 里：花那边用的是同一套，两处不该各写一份。
+  const running = isAccountConsuming(activity, accountDrops);
   const remainingPct = record.remainingPct;
   const previousPctRef = useRef<number | null>(remainingPct);
   const [pulsing, setPulsing] = useState(false);
@@ -42,11 +46,6 @@ const UsageProgressEffects = ({ record, activity, drops }: Props) => {
     }
     return undefined;
   }, [remainingPct]);
-
-  const accountRef = getAccountRef(record);
-  const accountDrops = Array.isArray(drops)
-    ? drops.filter((drop) => drop.accountRef === accountRef)
-    : [];
 
   return (
     <div

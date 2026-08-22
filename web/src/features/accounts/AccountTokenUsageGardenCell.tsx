@@ -5,6 +5,7 @@ import type { Account, ManagementAccountActivity } from '@/types';
 import { getAccountRef } from './account-model-catalog';
 import UpstreamQuotaGarden from './UpstreamQuotaGarden';
 import type { TokenDropEvent } from './useTokenDropEvents';
+import { isAccountConsuming, selectAccountDrops } from './usage-activity';
 
 interface Props {
   record: Account;
@@ -18,14 +19,11 @@ interface Props {
 const AccountTokenUsageGardenCell = ({ record, activity, drops }: Props) => {
   const accountRef = getAccountRef(record);
   const accountDrops = useMemo(
-    () => (Array.isArray(drops) ? drops.filter((drop) => drop.accountRef === accountRef) : []),
+    () => selectAccountDrops(drops, accountRef),
     [accountRef, drops]
   );
   const eligible = Boolean(record.apiKeyMode && record.tokenUsage);
-  // token-consumed 往往紧跟请求结束到达；保留活跃掉落可避免 inFlight 先归零导致花提前缩回。
-  const active = eligible && Boolean(
-    Number(activity?.inFlight) > 0 || accountDrops.length > 0
-  );
+  const active = eligible && isAccountConsuming(activity, accountDrops);
   const [gardenStageActive, setGardenStageActive] = useState(active);
 
   useEffect(() => {

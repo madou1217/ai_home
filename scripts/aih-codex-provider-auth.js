@@ -21,7 +21,22 @@ function fail(message) {
 }
 
 const envKey = String(process.env.OPENAI_API_KEY || '').trim();
+function auditLog(tier, detail) {
+  try {
+    const logDir = path.join(aiHomeDirForLog(), 'run', 'logs');
+    fs.mkdirSync(logDir, { recursive: true });
+    fs.appendFileSync(path.join(logDir, 'codex-provider-auth.log'),
+      `${new Date().toISOString()} tier=${tier} ${detail}\n`);
+  } catch (_error) {}
+}
+function aiHomeDirForLog() {
+  const explicit = String(process.env.AIH_HOME_DIR || process.env.AIH_HOME || process.env.AI_HOME || '').trim();
+  if (explicit) return explicit;
+  const home = resolveHostHomeDir({ env: process.env, platform: process.platform });
+  return home ? path.join(home, '.ai_home') : '';
+}
 if (envKey) {
+  auditLog('env-passthrough', 'len=' + envKey.length);
   process.stdout.write(envKey);
   return;
 }
@@ -38,9 +53,17 @@ if (!aiHomeDir) fail('cannot resolve ai-home directory');
 
 const accountRef = String(process.env.AIH_PROVIDER_ACCOUNT_REF || '').trim()
   || readDefaultAccountRef(fs, aiHomeDir, 'codex');
-if (!accountRef) fail('no codex account selected (set AIH_PROVIDER_ACCOUNT_REF or aih codex set-default)');
+if (!accountRef) {
+  auditLog('fail', 'no account selected');
+  fail('no codex account selected (set AIH_PROVIDER_ACCOUNT_REF or aih codex set-default)');
+}
 
 const record = readAccountCredentialRecord(fs, aiHomeDir, accountRef);
 const accountKey = record && record.env && String(record.env.OPENAI_API_KEY || '').trim();
-if (!accountKey) fail(`codex account ${accountRef} has no OPENAI_API_KEY credential`);
+if (!accountKey) {
+  auditLog('fail', 'account has no OPENAI_API_KEY');
+  fail(`codex account ${accountRef} has no OPENAI_API_KEY credential`);
+}
+auditLog(String(process.env.AIH_PROVIDER_ACCOUNT_REF || '').trim() ? 'account-ref' : 'default-account',
+  'ref=' + accountRef + ' len=' + accountKey.length);
 process.stdout.write(accountKey);

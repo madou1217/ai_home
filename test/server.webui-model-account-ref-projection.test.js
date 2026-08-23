@@ -65,6 +65,36 @@ test('a listed account whose last probe failed reports the error instead of look
   assert.equal(projection.errorsByAccountRef[FAILED_REF], 'HTTP 404 Not Found');
 });
 
+test('a scoped projection only merges persisted results for the selected account', () => {
+  const projection = buildModelAccountRefProjection(
+    {},
+    buildState(),
+    buildCatalog(),
+    { accountRef: LISTED_REF },
+    [LISTED_REF, FAILED_REF]
+  );
+
+  assert.deepEqual(projection.byAccountRef, {
+    [LISTED_REF]: ['model-a', 'model-b']
+  });
+  assert.deepEqual(projection.errorsByAccountRef, {});
+});
+
+test('a scoped projection keeps the selected account error without leaking other cached models', () => {
+  const projection = buildModelAccountRefProjection(
+    {},
+    buildState(),
+    buildCatalog(),
+    { accountRef: FAILED_REF },
+    [LISTED_REF, FAILED_REF]
+  );
+
+  assert.deepEqual(projection.byAccountRef, {});
+  assert.deepEqual(projection.errorsByAccountRef, {
+    [FAILED_REF]: 'HTTP 404 Not Found'
+  });
+});
+
 // 「从未探测」和「已知为空」是两回事：前者绝不能写成空数组，
 // 否则页面会把「未知」显示成「没有模型」，下游也会当成这个账号确实不支持任何模型。
 test('a never-probed account is left absent rather than written as an empty catalog', () => {

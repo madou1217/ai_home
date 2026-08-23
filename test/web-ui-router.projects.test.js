@@ -2267,6 +2267,101 @@ test('web ui openai models scoped account does not fall back to global catalog',
   }
 });
 
+test('web ui scoped models route keeps probe errors on their owning account page', async () => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-openai-models-scoped-errors-'));
+
+  try {
+    const failedAccountRef = WEBUI_CODEX_REF_1;
+    const healthyAccountRef = WEBUI_CODEX_REF_2;
+    const failedMessage = 'HTTP 401 failed-account-only';
+    const state = {
+      accounts: {
+        codex: [
+          {
+            id: '1',
+            accountRef: failedAccountRef,
+            provider: 'codex',
+            accessToken: 'token-c1',
+            apiKeyMode: true
+          },
+          {
+            id: '2',
+            accountRef: healthyAccountRef,
+            provider: 'codex',
+            accessToken: 'token-c2',
+            apiKeyMode: true
+          }
+        ],
+        gemini: [],
+        claude: [],
+        agy: []
+      },
+      modelRegistry: {
+        providers: {
+          codex: new Set(),
+          gemini: new Set(),
+          claude: new Set(),
+          agy: new Set()
+        }
+      },
+      webUiModelsCache: {
+        updatedAt: Date.now(),
+        byProvider: { codex: ['gpt-healthy'] },
+        byAccount: { [healthyAccountRef]: ['gpt-healthy'] },
+        errorsByAccount: { [failedAccountRef]: failedMessage },
+        accountUpdatedAt: {
+          [failedAccountRef]: Date.now(),
+          [healthyAccountRef]: Date.now()
+        },
+        accountSource: {
+          [failedAccountRef]: 'error',
+          [healthyAccountRef]: 'remote'
+        },
+        accountScanned: {
+          [failedAccountRef]: 1,
+          [healthyAccountRef]: 1
+        },
+        signature: '',
+        source: 'remote',
+        sourceCount: 1,
+        scannedAccounts: 2,
+        firstError: failedMessage
+      }
+    };
+    const requestScopedCatalog = async (accountRef) => {
+      const res = createResCapture();
+      await handleWebUIRequest({
+        method: 'GET',
+        pathname: '/v0/webui/openai-models',
+        url: new URL(`http://localhost/v0/webui/openai-models?accountRef=${accountRef}`),
+        req: { headers: {} },
+        res,
+        options: {},
+        state,
+        deps: createBaseDeps(aiHomeDir)
+      });
+      assert.equal(res.statusCode, 200);
+      return JSON.parse(res.body);
+    };
+
+    const healthyBody = await requestScopedCatalog(healthyAccountRef);
+    assert.equal(healthyBody.firstError, '');
+    assert.deepEqual(healthyBody.byAccountRef, {
+      [healthyAccountRef]: ['gpt-healthy']
+    });
+    assert.deepEqual(healthyBody.errorsByAccountRef, {});
+
+    const failedBody = await requestScopedCatalog(failedAccountRef);
+    assert.equal(failedBody.firstError, failedMessage);
+    assert.deepEqual(failedBody.byAccountRef, {});
+    assert.deepEqual(failedBody.errorsByAccountRef, {
+      [failedAccountRef]: failedMessage
+    });
+  } finally {
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+  }
+});
+
 test('web ui openai models manages model visibility per account', async () => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-openai-models-settings-'));
 

@@ -16,6 +16,13 @@ function fakeFs(existingPaths = []) {
   return { existsSync: (value) => set.has(String(value).toLowerCase()) };
 }
 
+function realFsWithExistingPaths(existingPaths = []) {
+  const set = new Set(existingPaths.map((value) => String(value).toLowerCase()));
+  return Object.assign(Object.create(fs), {
+    existsSync: (value) => set.has(String(value).toLowerCase()) || fs.existsSync(value)
+  });
+}
+
 // 用 String.raw 保证夹具里的 TOML 转义与真实 config.toml 完全一致：
 // 双引号基本串中一个反斜杠需写成 \\。
 const WIN_AI = String.raw`[projects."C:\\Users\\madou\\proj\\ai"]`;
@@ -117,13 +124,12 @@ test('healCodexConfigFile 组合自愈一次备份一次写回', (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-config-heal-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const configPath = path.join(dir, 'config.toml');
-  const realProjectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-heal-proj-'));
-  t.after(() => fs.rmSync(realProjectDir, { recursive: true, force: true }));
   const wslUvx = '/mnt/c/Users/madou/.local/bin/uvx.exe';
   const winUvx = 'C:\\Users\\madou\\.local\\bin\\uvx.exe';
-  // 真实存在的项目目录 + 其 WSL 形态重复条目
-  const winHeader = `[projects."${realProjectDir.replace(/\\/g, '\\\\')}"]`;
-  const wslHeader = `[projects.'${convertWindowsPathToWsl(realProjectDir)}']`;
+  const winProjectDir = 'C:\\Users\\madou\\proj\\shared';
+  const wslProjectDir = convertWindowsPathToWsl(winProjectDir);
+  const winHeader = String.raw`[projects."C:\\Users\\madou\\proj\\shared"]`;
+  const wslHeader = `[projects.'${wslProjectDir}']`;
   fs.writeFileSync(configPath, [
     '[mcp_servers.blender]',
     `command = '${wslUvx}'`,
@@ -137,7 +143,7 @@ test('healCodexConfigFile 组合自愈一次备份一次写回', (t) => {
 
   const logs = [];
   const result = healCodexConfigFile(configPath, {
-    fs,
+    fs: realFsWithExistingPaths([winUvx, winProjectDir]),
     platform: 'win32',
     log: (message) => logs.push(message)
   });
@@ -152,7 +158,7 @@ test('healCodexConfigFile 组合自愈一次备份一次写回', (t) => {
   assert.ok(logs.some((line) => line.includes('projects')));
 
   const again = healCodexConfigFile(configPath, {
-    fs,
+    fs: realFsWithExistingPaths([winUvx, winProjectDir]),
     platform: 'win32',
     log: () => {}
   });

@@ -2312,7 +2312,8 @@ test('buildCodexAppServerSpawnEnv separates mobile identity from default executi
   assert.match(runtimeConfig, /^chatgpt_base_url = "http:\/\/127\.0\.0\.1:18888\/backend-api"$/m);
   assert.match(runtimeConfig, new RegExp(`^sqlite_home = "${hostCodexHome.replace(/\\/g, '/').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"$`, 'm'));
   assert.match(runtimeConfig, /^cli_auth_credentials_store = "file"$/m);
-  assert.equal(runtimeConfig.indexOf('cli_auth_credentials_store = "file"') < runtimeConfig.indexOf('[model_providers.aih_10]'), true);
+  assert.doesNotMatch(runtimeConfig, /^\[model_providers\.aih_10\]$/m);
+  assert.equal(runtimeConfig.indexOf('cli_auth_credentials_store = "file"') < runtimeConfig.indexOf('[model_providers.aih_server]'), true);
 });
 
 test('buildCodexAppServerSpawnEnv keeps mobile identity isolated when default uses API key', () => {

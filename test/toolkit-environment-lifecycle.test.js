@@ -60,6 +60,28 @@ test('运行环境目录按平台提供完整安装、更新和卸载计划', ()
   }
 });
 
+test('运行环境与终端后台任务复用统一资源任务调度器', () => {
+  for (const relativePath of [
+    '../lib/server/environment-tool-job-manager.js',
+    '../lib/server/client-terminal-job-manager.js'
+  ]) {
+    const source = fs.readFileSync(path.join(__dirname, relativePath), 'utf8');
+    assert.match(source, /createToolkitResourceJobManager/);
+    assert.doesNotMatch(source, /const crypto = require\('node:crypto'\)/);
+    assert.doesNotMatch(source, /new Map\(\)/);
+  }
+});
+
+test('环境公共 helper 不包含具体资源的生命周期实现', () => {
+  const sharedSources = [
+    '../lib/cli/services/toolkit/environment/platforms/shared.js',
+    '../lib/cli/services/toolkit/environment/tools/shared.js'
+  ].map((relativePath) => fs.readFileSync(path.join(__dirname, relativePath), 'utf8'));
+  const resourceId = /\b(?:nvm|fnm|volta|pnpm|yarn|bun|pyenv|conda|uv|poetry)\b/i;
+
+  for (const source of sharedSources) assert.doesNotMatch(source, resourceId);
+});
+
 test('生命周期契约错误不再向用户提供缺少卸载计划的兜底文案', () => {
   const lifecycleSource = fs.readFileSync(
     path.join(__dirname, '../lib/cli/services/toolkit/environment/lifecycle.js'),

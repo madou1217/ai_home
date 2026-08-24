@@ -27,6 +27,40 @@ function waitFor(predicate, timeoutMs = 1000) {
   });
 }
 
+test('应用生命周期执行入口必须显式确认', () => {
+  let installCalls = 0;
+  const manager = createAppInstallJobManager({
+    installCli: async () => {
+      installCalls += 1;
+      return { installed: true, cliPath: '/opt/bin/codex' };
+    }
+  });
+
+  assert.deepEqual(manager.start({ provider: 'codex', kind: 'cli' }), {
+    ok: false,
+    error: 'confirmation_required'
+  });
+  assert.equal(installCalls, 0);
+});
+
+test('取消 queued 应用任务后不再执行安装', async () => {
+  let installCalls = 0;
+  const manager = createAppInstallJobManager({
+    installCli: async () => {
+      installCalls += 1;
+      return { installed: true, cliPath: '/opt/bin/codex' };
+    }
+  });
+
+  const started = manager.start({ provider: 'codex', kind: 'cli', confirmed: true });
+  const cancelled = manager.cancelJob(started.job.id);
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(cancelled.ok, true);
+  assert.equal(manager.getJob(started.job.id).status, 'cancelled');
+  assert.equal(installCalls, 0);
+});
+
 test('app install job runs asynchronously, deduplicates active targets, and publishes progress', async () => {
   const events = [];
   const manager = createAppInstallJobManager({
@@ -46,12 +80,12 @@ test('app install job runs asynchronously, deduplicates active targets, and publ
     }
   });
 
-  const first = manager.start({ provider: 'codex', kind: 'cli' });
+  const first = manager.start({ provider: 'codex', kind: 'cli', confirmed: true });
   assert.equal(first.ok, true);
   assert.equal(first.accepted, true);
   assert.equal(first.job.status, 'queued');
 
-  const duplicate = manager.start({ provider: 'codex', kind: 'cli' });
+  const duplicate = manager.start({ provider: 'codex', kind: 'cli', confirmed: true });
   assert.equal(duplicate.alreadyRunning, true);
   assert.equal(duplicate.job.id, first.job.id);
 
@@ -73,7 +107,7 @@ test('安装作业终态让入口检测缓存失效，按钮不再停留旧状�
     installCli: async () => ({ installed: true, cliPath: '/opt/bin/codex', installAttempts: [] }),
     invalidateAppEntries: (detail) => invalidations.push(detail)
   });
-  const started = manager.start({ provider: 'codex', kind: 'cli' });
+  const started = manager.start({ provider: 'codex', kind: 'cli', confirmed: true });
   await waitFor(() => manager.getJob(started.job.id).status === 'succeeded');
   assert.deepEqual(invalidations, [{ provider: 'codex', kind: 'cli', action: 'install', status: 'succeeded' }]);
 });
@@ -84,7 +118,7 @@ test('安装失败同样让缓存失效：脚本可能已落下半份文件，�
     installCli: async () => { throw new Error('network down'); },
     invalidateAppEntries: (detail) => invalidations.push(detail)
   });
-  const started = manager.start({ provider: 'codex', kind: 'cli' });
+  const started = manager.start({ provider: 'codex', kind: 'cli', confirmed: true });
   await waitFor(() => manager.getJob(started.job.id).status === 'failed');
   assert.equal(invalidations.length, 1);
   assert.equal(invalidations[0].status, 'failed');
@@ -95,7 +129,7 @@ test('缓存失效钩子抛错不影响作业终态上报', async () => {
     installCli: async () => ({ installed: true, cliPath: '/opt/bin/codex', installAttempts: [] }),
     invalidateAppEntries: () => { throw new Error('detector exploded'); }
   });
-  const started = manager.start({ provider: 'codex', kind: 'cli' });
+  const started = manager.start({ provider: 'codex', kind: 'cli', confirmed: true });
   await waitFor(() => manager.getJob(started.job.id).status === 'succeeded');
   assert.equal(manager.getJob(started.job.id).progress.percent, 100);
 });
@@ -116,7 +150,7 @@ test('app install job is published to the shared Toolkit task hub', async () => 
     installCli: async () => ({ installed: true, cliPath: '/opt/bin/codex' })
   });
 
-  const started = manager.start({ appId: 'codex' });
+  const started = manager.start({ appId: 'codex', confirmed: true });
   await waitFor(() => manager.getJob(started.job.id)?.status === 'succeeded');
 
   assert.deepEqual(registeredSources.map((item) => item.source), ['app-install']);
@@ -129,7 +163,7 @@ test('app install job exposes failed result without throwing into the HTTP calle
   const manager = createAppInstallJobManager({
     installCli: async () => ({ installed: false, installAttempts: [{ ok: false, error: 'permission denied' }] })
   });
-  const started = manager.start({ provider: 'qoder', kind: 'cli' });
+  const started = manager.start({ provider: 'qoder', kind: 'cli', confirmed: true });
   await waitFor(() => manager.getJob(started.job.id)?.status === 'failed');
   const job = manager.getJob(started.job.id);
   assert.equal(job.status, 'failed');
@@ -147,7 +181,7 @@ test('desktop install only succeeds after the installed client is rediscovered',
     verifyDesktopInstall: async () => verificationResults.shift()
   });
 
-  const started = manager.start({ provider: 'opencode', kind: 'desktop' });
+  const started = manager.start({ provider: 'opencode', kind: 'desktop', confirmed: true });
   await waitFor(() => manager.getJob(started.job.id)?.status === 'succeeded');
   const job = manager.getJob(started.job.id);
   assert.equal(job.status, 'succeeded');
@@ -174,7 +208,7 @@ test('Kimi macOS Desktop 通过统一异步任务执行官方安装计划并回�
     }
   });
 
-  const started = manager.start({ provider: 'kimi', kind: 'desktop' });
+  const started = manager.start({ provider: 'kimi', kind: 'desktop', confirmed: true });
   assert.equal(started.ok, true);
   await waitFor(() => manager.getJob(started.job.id)?.status === 'succeeded');
 
@@ -187,7 +221,7 @@ test('Kimi macOS Desktop 通过统一异步任务执行官方安装计划并回�
 test('ZCode CLI 安装任务在入口处拒绝，避免把 Desktop 误报为 CLI', () => {
   const manager = createAppInstallJobManager();
   assert.equal(manager.canInstall({ provider: 'zcode', kind: 'cli' }), false);
-  assert.deepEqual(manager.start({ provider: 'zcode', kind: 'cli' }), {
+  assert.deepEqual(manager.start({ provider: 'zcode', kind: 'cli', confirmed: true }), {
     ok: false,
     error: 'cli_not_supported'
   });
@@ -201,7 +235,7 @@ test('显式非法生命周期 action 在计划和执行入口均被拒绝', asy
       return { installed: true, cliPath: '/opt/bin/codex', installAttempts: [] };
     }
   });
-  const input = { provider: 'codex', kind: 'cli', action: 'instal' };
+  const input = { provider: 'codex', kind: 'cli', action: 'instal', confirmed: true };
 
   const planned = manager.plan(input);
   const started = manager.start(input);
@@ -237,7 +271,7 @@ test('独立托管 CLI 支持更新和卸载生命周期，任务中保留 actio
   });
 
   for (const action of ['update', 'uninstall']) {
-    const started = manager.start({ appId: 'dsh', action });
+    const started = manager.start({ appId: 'dsh', action, confirmed: true });
     assert.equal(started.ok, true);
     assert.equal(started.job.action, action);
     await waitFor(() => manager.getJob(started.job.id)?.status === 'succeeded');

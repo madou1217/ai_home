@@ -114,3 +114,23 @@ test('平台不适用资源由后端过滤，网络工具界面不再读取 supp
   );
   assert.doesNotMatch(managedToolType, /supported:\s*boolean/);
 });
+
+test('应用执行 API 与旧入口都显式携带确认标记', () => {
+  const apiSource = read('../../services/api.ts');
+  const executeAppAction = apiSource.slice(
+    apiSource.indexOf('executeAppAction:'),
+    apiSource.indexOf('openManagedApp:', apiSource.indexOf('executeAppAction:'))
+  );
+  const startAppInstall = apiSource.slice(
+    apiSource.indexOf('export async function startAppInstallJob'),
+    apiSource.indexOf('export async function getAppInstallJob')
+  );
+  const installApp = apiSource.slice(
+    apiSource.indexOf('installApp:'),
+    apiSource.indexOf('installHooks:', apiSource.indexOf('installApp:'))
+  );
+
+  assert.match(executeAppAction, /confirmed:\s*true/);
+  assert.match(startAppInstall, /confirmed:\s*true/);
+  assert.match(installApp, /confirmed:\s*true/);
+});

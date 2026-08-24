@@ -115,6 +115,60 @@ test('每个会话运行时和网络工具由独立适配器实现统一生命�
   }
 });
 
+test('每个受管工具在声明平台内独立生成完整生命周期计划', () => {
+  const scenarios = [
+    {
+      options: macOptions({ commands: { brew: '/opt/homebrew/bin/brew' } }),
+      executable: {
+        tmux: '/opt/homebrew/bin/tmux',
+        herdr: '/Users/tester/.local/bin/herdr',
+        frpc: '/usr/local/bin/frpc'
+      }
+    },
+    {
+      options: linuxOptions({ commands: { 'apt-get': '/usr/bin/apt-get' } }),
+      executable: {
+        tmux: '/usr/bin/tmux',
+        herdr: '/home/tester/.local/bin/herdr',
+        frpc: '/usr/local/bin/frpc'
+      }
+    },
+    {
+      options: windowsOptions({ commands: { winget: 'winget.exe' } }),
+      executable: {
+        psmux: 'C:\\Tools\\psmux.exe',
+        herdr: 'C:\\Users\\tester\\AppData\\Local\\Programs\\Herdr\\bin\\herdr.exe',
+        frpc: 'C:\\Tools\\frpc.exe'
+      }
+    }
+  ];
+
+  for (const scenario of scenarios) {
+    for (const adapter of adapterApi.listManagedToolAdapters().filter((item) => item.supports(scenario.options))) {
+      for (const action of ['install', 'update', 'uninstall']) {
+        const installed = action !== 'install';
+        const planned = adapter[action]({
+          options: scenario.options,
+          tool: {
+            id: adapter.id,
+            name: adapter.name,
+            installed,
+            executablePath: installed ? scenario.executable[adapter.id] : ''
+          }
+        });
+        assert.ok(Array.isArray(planned), `${scenario.options.platform}/${adapter.id}/${action}`);
+        assert.ok(planned.length > 0, `${scenario.options.platform}/${adapter.id}/${action}`);
+        assert.ok(
+          planned.every((plan) => plan.toolId === adapter.id
+            && plan.action === action
+            && plan.requiresConfirmation === true),
+          `${scenario.options.platform}/${adapter.id}/${action} lifecycle contract`
+        );
+      }
+    }
+  }
+});
+
 test('资源清单只返回当前平台适用项且公共响应不暴露 supported 标签状态', () => {
   const mac = listManagedTools(macOptions()).tools;
   const linux = listManagedTools(linuxOptions()).tools;

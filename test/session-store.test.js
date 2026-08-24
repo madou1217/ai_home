@@ -14,6 +14,7 @@ const {
   resolveAccountRuntimeDir,
   resolveCodexDesktopRuntimeDir
 } = require('../lib/runtime/aih-storage-layout');
+const { MARKER_FILE: TRANSIENT_AUTH_MARKER_FILE } = require('../lib/runtime/transient-auth-projection');
 
 function mkTmpDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'aih-session-store-'));
@@ -2041,6 +2042,58 @@ test('fallback reverse projection never links private descendants', (t) => {
   assert.equal(fs.lstatSync(projectedLibrary).isSymbolicLink(), false);
   assert.equal(fs.realpathSync(projectedCache), fs.realpathSync(nativeCache));
   assert.equal(fs.existsSync(projectedKeychain), false);
+});
+
+test('transient auth projection marker remains account-private during fallback reconciliation', (t) => {
+  const root = mkTmpDir();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const hostHomeDir = path.join(root, 'home');
+  const accountRef = 'acct_adadadadadadadadadad';
+  const foreignAccountRef = 'acct_aeaeaeaeaeaeaeaeaeae';
+  const projectionRoot = path.join(root, 'transient', `aih-auth-codex-${accountRef}-test`);
+  const fallbackStore = path.join(hostHomeDir, '.codex', '.aih-runtime-home');
+  const markerPath = path.join(projectionRoot, TRANSIENT_AUTH_MARKER_FILE);
+  const sharedMarkerPath = path.join(fallbackStore, TRANSIENT_AUTH_MARKER_FILE);
+  fs.mkdirSync(projectionRoot, { recursive: true });
+  fs.mkdirSync(fallbackStore, { recursive: true });
+  fs.writeFileSync(markerPath, `${JSON.stringify({
+    version: 1,
+    provider: 'codex',
+    accountRef
+  })}\n`, 'utf8');
+  fs.writeFileSync(sharedMarkerPath, `${JSON.stringify({
+    version: 1,
+    provider: 'codex',
+    accountRef: foreignAccountRef
+  })}\n`, 'utf8');
+
+  const service = createSessionStoreService({
+    fs,
+    fse,
+    path,
+    processObj: process,
+    hostHomeDir,
+    cliConfigs: { codex: { globalDir: '.codex' } },
+    getProfileDir: () => path.join(root, 'canonical', accountRef),
+    ensureDir: (dir) => fs.mkdirSync(dir, { recursive: true })
+  });
+
+  const result = service.ensureSessionStoreLinks('codex', accountRef, {
+    projectionRoot
+  });
+
+  assert.equal(Array.isArray(result.unresolved), false);
+  assert.equal(fs.lstatSync(markerPath).isSymbolicLink(), false);
+  assert.deepEqual(JSON.parse(fs.readFileSync(markerPath, 'utf8')), {
+    version: 1,
+    provider: 'codex',
+    accountRef
+  });
+  assert.deepEqual(JSON.parse(fs.readFileSync(sharedMarkerPath, 'utf8')), {
+    version: 1,
+    provider: 'codex',
+    accountRef: foreignAccountRef
+  });
 });
 
 test('projection directory symlinks fail closed without traversing external targets', (t) => {

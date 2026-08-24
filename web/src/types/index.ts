@@ -1,5 +1,5 @@
 import type { ProviderId } from '@/providers/catalog';
-export * from './proxy-pool';
+export * from './account-egress-catalog';
 
 // Provider 类型由 Go 核心生成，新增 Provider 不再手工修改 TypeScript 联合类型。
 export type Provider = ProviderId;

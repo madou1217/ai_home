@@ -225,8 +225,7 @@
 
 .toolkit-header-actions,
 .toolkit-detail-actions,
-.toolkit-card-button-row,
-.toolkit-proxy-source-actions {
+.toolkit-card-button-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -483,10 +482,7 @@
 .toolkit-command-guide h3,
 .toolkit-faq h3,
 .toolkit-observation-card h3,
-.toolkit-tool-config-card h3,
-.toolkit-proxy-apply h3,
-.toolkit-connectivity h3,
-.toolkit-scoped-proxies h3 {
+.toolkit-tool-config-card h3 {
   margin: var(--space-2) 0 0;
   color: var(--color-heading);
   font-family: var(--font-display);
@@ -766,8 +762,7 @@
 }
 
 .toolkit-observation-grid,
-.toolkit-tool-config-grid,
-.toolkit-connectivity-grid {
+.toolkit-tool-config-grid {
   display: grid;
   min-width: 0;
   gap: var(--space-8);
@@ -779,10 +774,7 @@
 }
 
 .toolkit-observation-card,
-.toolkit-tool-config-card,
-.toolkit-proxy-apply,
-.toolkit-connectivity,
-.toolkit-scoped-proxies {
+.toolkit-tool-config-card {
   min-width: 0;
   padding: var(--space-10);
   border: 1px solid var(--color-border);
@@ -792,15 +784,6 @@
 
 .toolkit-observation-card .toolkit-inspection-list {
   margin-top: var(--space-6);
-}
-
-.toolkit-proxy-apply {
-  background: var(--color-surface-raised);
-}
-
-.toolkit-proxy-source-actions {
-  justify-content: flex-start;
-  margin-top: var(--space-8);
 }
 
 .toolkit-tool-config-card {
@@ -825,82 +808,8 @@
   justify-content: flex-start;
 }
 
-.toolkit-scoped-proxies {
-  grid-column: 1 / -1;
-}
-
-.toolkit-scoped-proxies > div {
-  display: grid;
-  grid-template-columns: minmax(128px, 0.36fr) minmax(0, 1fr);
-  gap: var(--space-6);
-  padding: var(--space-4) 0;
-  border-bottom: 1px solid var(--color-border-subtle);
-}
-
-.toolkit-scoped-proxies code,
-.toolkit-scoped-proxies strong {
-  min-width: 0;
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  overflow-wrap: anywhere;
-}
-
-.toolkit-scoped-proxies code {
-  color: var(--color-muted);
-}
-
-.toolkit-connectivity-grid article {
-  display: grid;
-  min-width: 0;
-  gap: var(--space-4);
-  padding: var(--space-6);
-  border: 1px solid color-mix(in srgb, var(--color-danger) 35%, var(--color-border));
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-soft);
-}
-
-.toolkit-connectivity-grid article[data-reachable='true'] {
-  border-color: color-mix(in srgb, var(--color-success) 35%, var(--color-border));
-}
-
-.toolkit-connectivity-grid article > div {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-}
-
-.toolkit-connectivity-grid article strong {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--color-heading);
-  font-family: var(--font-display);
-  font-size: var(--text-sm);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.toolkit-connectivity-grid article code,
-.toolkit-connectivity-grid article > span {
-  min-width: 0;
-  color: var(--color-muted);
-  font-family: var(--font-mono);
-  font-size: var(--text-2xs);
-  overflow-wrap: anywhere;
-}
-
 .toolkit-section-note {
   padding: var(--space-5) var(--space-6);
-}
-
-.toolkit-connectivity-grid {
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
-  margin-top: var(--space-8);
-}
-
-.toolkit-connectivity-grid > * {
-  min-width: 0;
 }
 
 /* App and managed-tool cards share one inventory grammar. */
@@ -1326,18 +1235,6 @@
   color: var(--warning-color, #d48806);
 }
 
-/* Compatibility primitives retained for the proxy-pool leaf panel. */
-.toolkit-stat-row {
-  min-width: 0;
-  margin-bottom: var(--space-8);
-  overflow-x: auto;
-  scrollbar-width: thin;
-}
-
-.toolkit-stat-row > .ant-pro-card {
-  min-width: 600px;
-}
-
 .toolkit-mirror-row {
   display: flex;
   min-width: 0;
@@ -1393,12 +1290,6 @@
   gap: var(--space-2);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
-}
-
-.toolkit-form-row {
-  display: flex;
-  width: 100%;
-  min-width: 0;
 }
 
 .toolkit-load-errors {
@@ -1461,108 +1352,6 @@
 
 .toolkit-action-plan .ant-btn {
   justify-self: start;
-}
-
-.toolkit-status-rail {
-  margin-bottom: var(--space-8);
-  border-color: var(--color-border);
-  border-radius: var(--radius-md);
-}
-
-.proxy-pool-panel {
-  min-width: 0;
-}
-
-.toolkit-network-integration {
-  margin-bottom: var(--space-8);
-  border-radius: var(--radius-md);
-}
-
-.toolkit-network-integration-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-8);
-}
-
-.toolkit-field-label {
-  margin-bottom: var(--space-2);
-  color: var(--color-muted-strong);
-  font-size: var(--text-xs);
-  font-weight: 600;
-}
-
-.proxy-pool-toolbar {
-  align-items: flex-start;
-  flex-wrap: wrap;
-}
-
-.proxy-pool-toolbar > * {
-  max-width: 100%;
-}
-
-.proxy-group-source {
-  display: block;
-  margin: calc(-1 * var(--space-4)) 0 var(--space-8);
-  padding: var(--space-4) var(--space-6);
-  border: 1px solid color-mix(in srgb, var(--color-info) 35%, var(--color-border));
-  border-radius: var(--radius-sm);
-  background: var(--color-info-soft);
-  color: var(--color-muted-strong);
-  font-size: var(--text-xs);
-  line-height: var(--leading-normal);
-}
-
-.proxy-node-heading,
-.proxy-subscription-info {
-  min-width: 0;
-}
-
-.proxy-node-grid > article[data-current-outbound='true'] {
-  border-color: var(--color-warning);
-  box-shadow: 0 0 0 1px var(--color-warning-soft);
-}
-
-.proxy-country-flag {
-  flex: 0 0 auto;
-  font-size: var(--text-2xl);
-  line-height: 1;
-}
-
-.proxy-local-port {
-  max-width: 100%;
-  overflow: hidden;
-  font-family: var(--font-mono);
-  text-overflow: ellipsis;
-}
-
-.proxy-export-toolbar,
-.proxy-export-summary,
-.proxy-subscription-form {
-  max-width: 100%;
-}
-
-.proxy-export-content {
-  align-items: flex-start;
-  max-height: 360px;
-  overflow: auto;
-  white-space: pre;
-}
-
-.proxy-subscription-list,
-.proxy-routing-section {
-  min-width: 0;
-}
-
-.proxy-subscription-info {
-  overflow-wrap: anywhere;
-}
-
-.proxy-share-content {
-  display: grid;
-  min-width: 0;
-  place-items: center;
-  gap: var(--space-8);
-  text-align: center;
 }
 
 @media (max-width: 1024px) {
@@ -1658,10 +1447,6 @@
     grid-template-columns: 1fr;
   }
 
-  .toolkit-scoped-proxies {
-    grid-column: auto;
-  }
-
   .toolkit-category-bar {
     align-items: flex-start;
     flex-direction: column;
@@ -1690,11 +1475,6 @@
     flex-direction: column;
   }
 
-  .toolkit-form-row {
-    align-items: stretch !important;
-    flex-direction: column;
-  }
-
   .toolkit-environment-action-form {
     display: grid;
     grid-template-columns: 1fr;
@@ -1708,9 +1488,6 @@
     width: 100%;
   }
 
-  .toolkit-form-row > * {
-    width: 100% !important;
-  }
 }
 
 @media (max-width: 520px) {
@@ -1750,10 +1527,7 @@
   .toolkit-mirror-detail,
   .toolkit-environment-action,
   .toolkit-observation-card,
-  .toolkit-tool-config-card,
-  .toolkit-proxy-apply,
-  .toolkit-connectivity,
-  .toolkit-scoped-proxies {
+  .toolkit-tool-config-card {
     padding: var(--space-6);
   }
 
@@ -1788,17 +1562,10 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .toolkit-network-integration-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
   .toolkit-app-card {
     min-height: 0;
   }
 
-  .toolkit-stat-row > .ant-pro-card {
-    min-width: 520px;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {

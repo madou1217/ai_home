@@ -117,18 +117,6 @@ import type {
   ProxySubscription,
   ProxyMutationResponse,
   ProxySubscriptionSyncResponse,
-  NodePingResponse,
-  RoutingResponse,
-  RoutingRule,
-  DedicatedPortsResponse,
-  DedicatedPortMutationResponse,
-  AggregateExportResponse,
-  ProxyCoreStatusResponse,
-  ProxyCoreActionResponse,
-  NetworkStatusResponse,
-  NetworkPlanResponse,
-  NetworkApplyResponse,
-  ProxyTunConfig,
   AggregatedProject,
   ArchivedSession,
   ArchivedSessionsResponse,
@@ -2091,13 +2079,13 @@ export const toolkitAPI = {
   }
 };
 
-export const proxyPoolAPI = {
+export const accountEgressCatalogAPI = {
   listNodes: async (params: { group?: string; protocol?: string } = {}): Promise<ProxyNodesResponse> => {
-    const response = await api.get<ProxyNodesResponse>('/webui/toolkit/proxy-pool/nodes', { params });
+    const response = await api.get<ProxyNodesResponse>('/webui/account-egress/catalog/nodes', { params });
     return response.data;
   },
   listGroups: async (): Promise<ProxyGroupsResponse> => {
-    const response = await api.get<ProxyGroupsResponse>('/webui/toolkit/proxy-pool/groups');
+    const response = await api.get<ProxyGroupsResponse>('/webui/account-egress/catalog/groups');
     return response.data;
   },
   upsertGroup: async (group: {
@@ -2109,7 +2097,7 @@ export const proxyPoolAPI = {
     failoverStrategy?: ProxyGroupStrategy;
   }): Promise<ProxyGroupMutationResponse> => {
     const response = await api.post<ProxyGroupMutationResponse>(
-      '/webui/toolkit/proxy-pool/groups',
+      '/webui/account-egress/catalog/groups',
       group
     );
     return response.data;
@@ -2119,138 +2107,46 @@ export const proxyPoolAPI = {
     policy: { strategy: ProxyGroupStrategy; failoverStrategy: ProxyGroupStrategy }
   ): Promise<ProxyGroupMutationResponse> => {
     const response = await api.post<ProxyGroupMutationResponse>(
-      '/webui/toolkit/proxy-pool/groups/policy',
+      '/webui/account-egress/catalog/groups/policy',
       { id, ...policy }
     );
     return response.data;
   },
   deleteGroup: async (groupId: string): Promise<ProxyGroupMutationResponse> => {
     const response = await api.delete<ProxyGroupMutationResponse>(
-      `/webui/toolkit/proxy-pool/groups/${encodeURIComponent(groupId)}`
+      `/webui/account-egress/catalog/groups/${encodeURIComponent(groupId)}`
     );
     return response.data;
   },
   upsertNode: async (node: Partial<ProxyNode>): Promise<{ ok: boolean; node: ProxyNode; uri?: string }> => {
-    const response = await api.post<{ ok: boolean; node: ProxyNode; uri?: string }>('/webui/toolkit/proxy-pool/nodes', node);
+    const response = await api.post<{ ok: boolean; node: ProxyNode; uri?: string }>('/webui/account-egress/catalog/nodes', node);
     return response.data;
   },
   deleteNode: async (nodeId: string): Promise<ProxyMutationResponse> => {
-    const response = await api.delete<ProxyMutationResponse>(`/webui/toolkit/proxy-pool/nodes/${encodeURIComponent(nodeId)}`);
+    const response = await api.delete<ProxyMutationResponse>(`/webui/account-egress/catalog/nodes/${encodeURIComponent(nodeId)}`);
     return response.data;
   },
   importNodes: async (content: string, subscriptionId?: string): Promise<{ ok: boolean; count: number; nodes: ProxyNode[]; error?: string }> => {
-    const response = await api.post<{ ok: boolean; count: number; nodes: ProxyNode[]; error?: string }>('/webui/toolkit/proxy-pool/import', { content, subscriptionId });
+    const response = await api.post<{ ok: boolean; count: number; nodes: ProxyNode[]; error?: string }>('/webui/account-egress/catalog/import', { content, subscriptionId });
     return response.data;
   },
   listSubscriptions: async (): Promise<ProxySubscriptionsResponse> => {
-    const response = await api.get<ProxySubscriptionsResponse>('/webui/toolkit/proxy-pool/subscriptions');
+    const response = await api.get<ProxySubscriptionsResponse>('/webui/account-egress/catalog/subscriptions');
     return response.data;
   },
   upsertSubscription: async (sub: Partial<ProxySubscription>): Promise<{ ok: boolean; subscription: ProxySubscription }> => {
-    const response = await api.post<{ ok: boolean; subscription: ProxySubscription }>('/webui/toolkit/proxy-pool/subscriptions', sub);
+    const response = await api.post<{ ok: boolean; subscription: ProxySubscription }>('/webui/account-egress/catalog/subscriptions', sub);
     return response.data;
   },
-  syncSubscription: async (
-    id: string,
-    options: { storageOnly?: boolean } = {}
-  ): Promise<ProxySubscriptionSyncResponse> => {
+  syncSubscription: async (id: string): Promise<ProxySubscriptionSyncResponse> => {
     const response = await api.post<ProxySubscriptionSyncResponse>(
-      '/webui/toolkit/proxy-pool/subscriptions/sync',
-      { id, storageOnly: options.storageOnly === true }
+      '/webui/account-egress/catalog/subscriptions/sync',
+      { id }
     );
     return response.data;
   },
   deleteSubscription: async (id: string): Promise<ProxyMutationResponse> => {
-    const response = await api.delete<ProxyMutationResponse>(`/webui/toolkit/proxy-pool/subscriptions/${encodeURIComponent(id)}`);
-    return response.data;
-  },
-  pingNode: async (nodeId: string): Promise<NodePingResponse> => {
-    const response = await api.post<NodePingResponse>('/webui/toolkit/proxy-pool/ping', { nodeId });
-    return response.data;
-  },
-  pingAllNodes: async (filter: { group?: string; protocol?: string } = {}): Promise<{ ok: boolean; testedCount: number; results: Record<string, { ok: boolean; latencyMs: number }> }> => {
-    const response = await api.post<{ ok: boolean; testedCount: number; results: Record<string, { ok: boolean; latencyMs: number }> }>('/webui/toolkit/proxy-pool/ping', { filter });
-    return response.data;
-  },
-  getRouting: async (): Promise<RoutingResponse> => {
-    const response = await api.get<RoutingResponse>('/webui/toolkit/proxy-pool/routing');
-    return response.data;
-  },
-  setRouting: async (payload: { mode?: 'global' | 'rule' | 'direct'; activeOutboundNodeId?: string | null; rules?: RoutingRule[] }): Promise<RoutingResponse> => {
-    const response = await api.post<RoutingResponse>('/webui/toolkit/proxy-pool/routing', payload);
-    return response.data;
-  },
-  getDedicatedPorts: async (): Promise<DedicatedPortsResponse> => {
-    const response = await api.get<DedicatedPortsResponse>('/webui/toolkit/proxy-pool/dedicated-ports');
-    return response.data;
-  },
-  toggleDedicatedPort: async (nodeId: string, enabled: boolean, requestedPort?: number): Promise<DedicatedPortMutationResponse> => {
-    const response = await api.post<DedicatedPortMutationResponse>('/webui/toolkit/proxy-pool/dedicated-ports/toggle', { nodeId, enabled, requestedPort });
-    return response.data;
-  },
-  exportAggregate: async (params: { format?: 'mihomo' | 'base64'; group?: string; raw?: boolean } = {}): Promise<AggregateExportResponse> => {
-    const response = await api.get<AggregateExportResponse>('/webui/toolkit/proxy-pool/export', { params });
-    return response.data;
-  },
-  getCoreStatus: async (): Promise<ProxyCoreStatusResponse> => {
-    const response = await api.get<ProxyCoreStatusResponse>('/webui/toolkit/proxy-pool/core');
-    return response.data;
-  },
-  startCore: async (): Promise<ProxyCoreActionResponse> => {
-    const response = await api.post<ProxyCoreActionResponse>('/webui/toolkit/proxy-pool/core/start');
-    return response.data;
-  },
-  stopCore: async (): Promise<ProxyCoreActionResponse> => {
-    const response = await api.post<ProxyCoreActionResponse>('/webui/toolkit/proxy-pool/core/stop');
-    return response.data;
-  },
-  reloadCore: async (): Promise<ProxyCoreActionResponse> => {
-    const response = await api.post<ProxyCoreActionResponse>('/webui/toolkit/proxy-pool/core/reload');
-    return response.data;
-  },
-  planCoreInstall: async (input: { platform?: string; arch?: string } = {}): Promise<{
-    ok: boolean;
-    plan?: { planId: string; version: string; platform: string; arch: string; assetName: string; digest: string; size: number; official: boolean; managed: boolean };
-    error?: string;
-    message?: string;
-  }> => {
-    const response = await api.post('/webui/toolkit/proxy-pool/core/install/plan', input);
-    return response.data;
-  },
-  executeCoreInstall: async (planId: string, confirmed: boolean): Promise<{
-    ok: boolean;
-    version?: string;
-    digest?: string;
-    error?: string;
-    message?: string;
-  }> => {
-    const response = await api.post('/webui/toolkit/proxy-pool/core/install/execute', { planId, confirmed });
-    return response.data;
-  },
-  uninstallManagedCore: async (confirmed: boolean): Promise<{ ok: boolean; removed?: boolean; error?: string }> => {
-    const response = await api.post('/webui/toolkit/proxy-pool/core/uninstall', { confirmed });
-    return response.data;
-  },
-  getNetworkStatus: async (): Promise<NetworkStatusResponse> => {
-    const response = await api.get<NetworkStatusResponse>('/webui/toolkit/proxy-pool/network/status');
-    return response.data;
-  },
-  planNetwork: async (input: {
-    kind?: 'system-proxy' | 'tun';
-    action: 'enable' | 'disable' | 'restore';
-    service?: string;
-    proxyUrl?: string;
-    tun?: Partial<ProxyTunConfig>;
-  }): Promise<NetworkPlanResponse> => {
-    const response = await api.post<NetworkPlanResponse>('/webui/toolkit/proxy-pool/network/plan', input);
-    return response.data;
-  },
-  applyNetwork: async (planId: string, snapshotHash: string, confirmed: boolean): Promise<NetworkApplyResponse> => {
-    const response = await api.post<NetworkApplyResponse>('/webui/toolkit/proxy-pool/network/apply', {
-      planId,
-      expectedSnapshotHash: snapshotHash,
-      confirmed
-    });
+    const response = await api.delete<ProxyMutationResponse>(`/webui/account-egress/catalog/subscriptions/${encodeURIComponent(id)}`);
     return response.data;
   }
 };

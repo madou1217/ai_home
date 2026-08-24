@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ImportOutlined, RetweetOutlined, SettingOutlined } from '@ant-design/icons';
 import { Button, Form, Input, Modal, Radio, Select, Space, Spin, Tag, Typography, message } from 'antd';
-import ProxyImportModal from '@/components/toolkit/proxy-pool/ProxyImportModal';
-import { accountsAPI, proxyPoolAPI } from '@/services/api';
+import { accountEgressCatalogAPI, accountsAPI } from '@/services/api';
 import { getAccountPrimaryLabel } from '@/features/accounts/AccountBadges';
 import type {
   Account,
@@ -14,6 +13,7 @@ import type {
   ProxyNode,
   ProxyNodesResponse
 } from '@/types';
+import AccountEgressImportModal from './AccountEgressImportModal';
 import { ZcodeProxyGroupManagerModal } from './ZcodeProxyGroupManagerModal';
 import {
   ZCODE_SIDECAR_PROTOCOLS,
@@ -69,7 +69,7 @@ export function AccountEgressModal({ account, onClose }: AccountEgressModalProps
 
   const refreshNodeLibrary = useCallback(async () => {
     try {
-      applyNodeLibrary(await proxyPoolAPI.listNodes());
+      applyNodeLibrary(await accountEgressCatalogAPI.listNodes());
     } catch {
       markNodeLibraryUnavailable();
     }
@@ -98,7 +98,7 @@ export function AccountEgressModal({ account, onClose }: AccountEgressModalProps
 
     void Promise.allSettled([
       accountsAPI.getAccountEgress(account.provider, account.accountRef),
-      proxyPoolAPI.listNodes()
+      accountEgressCatalogAPI.listNodes()
     ]).then(([bindingResult, nodesResult]) => {
       if (cancelled) return;
       if (bindingResult.status === 'fulfilled') {
@@ -455,9 +455,8 @@ export function AccountEgressModal({ account, onClose }: AccountEgressModalProps
           </Form>
         </Spin>
       </Modal>
-      <ProxyImportModal
+      <AccountEgressImportModal
         open={importOpen && Boolean(account)}
-        storageOnly
         onClose={() => setImportOpen(false)}
         onImported={refreshNodeLibrary}
       />

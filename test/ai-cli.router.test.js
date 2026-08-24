@@ -2106,7 +2106,7 @@ test('`aih codex sessions` reloads tmux config before listing live sessions', (t
     console.log = originalLog;
   }
 
-  const confPath = path.join(aiHomeDir, 'run', 'tmux', 'tmux.conf');
+  const confPath = path.join(aiHomeDir, 'run', 'tmux', 'tmux-codex.conf');
   assert.deepEqual(exits, [0]);
   assert.deepEqual(spawnCalls.map((call) => call.args[3]), [
     'set-environment',
@@ -2122,6 +2122,10 @@ test('`aih codex sessions` reloads tmux config before listing live sessions', (t
   ]);
   assert.equal(spawnCalls[3].args[4], confPath);
   assert.match(fs.readFileSync(confPath, 'utf8'), /set -g mouse on/);
+  assert.match(
+    fs.readFileSync(confPath, 'utf8'),
+    /set -g terminal-features\[0\] "xterm\*:clipboard:ccolour:cstyle:focus:title:extkeys"/
+  );
   assert.equal(logs.some((line) => line.includes('任务一')), true);
 });
 

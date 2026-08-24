@@ -349,6 +349,27 @@ function createRuntimeHarness(env = {}, overrides = {}) {
   };
 }
 
+function captureRuntimeIntervals() {
+  const realSetInterval = global.setInterval;
+  const realClearInterval = global.clearInterval;
+  const intervals = [];
+  global.setInterval = (cb, ms) => {
+    const interval = { cb, ms, cleared: false, unref() {} };
+    intervals.push(interval);
+    return interval;
+  };
+  global.clearInterval = (interval) => {
+    if (interval) interval.cleared = true;
+  };
+  return {
+    intervals,
+    restore() {
+      global.setInterval = realSetInterval;
+      global.clearInterval = realClearInterval;
+    }
+  };
+}
+
 function fakeCodexNodeShimLaunch(_cliBin, args) {
   return {
     command: 'C:\\Program Files\\nodejs\\node.exe',
@@ -1249,6 +1270,13 @@ test('runtime bare launch creates a fresh strict tmux session when a project ses
 
   assert.equal(spawns.length, 1);
   assert.equal(spawns[0].command, '/usr/bin/tmux');
+  const codexConfPath = path.join(aiHomeDir, 'run', 'tmux', 'tmux-codex.conf');
+  const confIndex = spawns[0].args.indexOf('-f');
+  assert.equal(spawns[0].args[confIndex + 1], codexConfPath);
+  assert.equal(
+    spawnSyncCalls.find((call) => call.args[3] === 'source-file').args[4],
+    codexConfPath
+  );
   const sessionName = assertStrictFreshSessionLaunch(spawns[0], baseSession);
   const correlationId = spawns[0].options.env.AIH_PROVIDER_SESSION_CORRELATION_ID;
   assert.match(correlationId, /^[0-9a-f-]{36}$/);
@@ -1315,7 +1343,7 @@ test('runtime applies Claude tmux render compatibility only when persistent tmux
   const cwd = '/tmp/aih-claude-render-project';
   const baseSession = persistentSession.deriveSessionName({ cwd });
   const spawnSyncCalls = [];
-  const { runtime, proc, spawns, resolveHarnessAccountRef } = createRuntimeHarness({
+  const { runtime, proc, spawns, resolveHarnessAccountRef, aiHomeDir } = createRuntimeHarness({
     AIH_RUNTIME_SHOW_USAGE: '0'
   }, {
     cwd,
@@ -1336,6 +1364,13 @@ test('runtime applies Claude tmux render compatibility only when persistent tmux
 
   assert.equal(spawns.length, 1);
   assert.equal(spawns[0].command, '/usr/bin/tmux');
+  const claudeConfPath = path.join(aiHomeDir, 'run', 'tmux', 'tmux.conf');
+  const confIndex = spawns[0].args.indexOf('-f');
+  assert.equal(spawns[0].args[confIndex + 1], claudeConfPath);
+  assert.match(
+    fsBase.readFileSync(claudeConfPath, 'utf8'),
+    /set -g terminal-features\[0\] "xterm\*:clipboard:ccolour:cstyle:focus:title:extkeys:sync"/
+  );
   const sessionName = assertStrictFreshSessionLaunch(spawns[0], baseSession);
   const correlationId = spawns[0].options.env.AIH_PROVIDER_SESSION_CORRELATION_ID;
   assert.match(correlationId, /^[0-9a-f-]{36}$/);
@@ -1662,14 +1697,15 @@ test('runtime supervises the inner provider only when creating a projected persi
   const innerIndex = spawns[0].args.indexOf('--');
   const supervisorArgs = spawns[0].args.slice(innerIndex + 1);
   assert.equal(supervisorArgs[0], process.execPath);
-  assert.match(supervisorArgs[1], /persistent-provider-supervisor-entry\.js$/);
+  assert.equal(supervisorArgs[1], '--no-warnings');
+  assert.match(supervisorArgs[2], /persistent-provider-supervisor-entry\.js$/);
   assert.equal(
     spawns[0].args.includes(
       `${persistentSession.PROVIDER_SUPERVISOR_RUNTIME_MARKER_KEY}=${persistentSession.PROVIDER_SUPERVISOR_RUNTIME_MARKER_VALUE}`
     ),
     true
   );
-  const context = parsePersistentProviderSupervisorArgs(supervisorArgs.slice(2));
+  const context = parsePersistentProviderSupervisorArgs(supervisorArgs.slice(3));
   const accountRef = resolveHarnessAccountRef('codex', '10086');
   assert.equal(isTransientAuthProjection(fsBase, context.runtimeDir, 'codex', accountRef), true);
   assert.deepEqual(context, {
@@ -1741,6 +1777,7 @@ test('runtime attaches an explicit detached session target without retaining an 
   const cwd = '/tmp/aih-explicit-detached-target-project';
   const targetSession = persistentSession.deriveSessionName({ cwd });
   const separator = persistentSession.SESSION_LIST_SEPARATOR;
+  const spawnSyncCalls = [];
   const {
     runtime,
     proc,
@@ -1755,7 +1792,8 @@ test('runtime attaches an explicit detached session target without retaining an 
     cwd,
     stdoutIsTTY: true,
     resolveCliPath: (name) => (name === 'tmux' ? '/usr/bin/tmux' : '/usr/bin/codex'),
-    spawnSync: (_command, args) => {
+    spawnSync: (command, args, options) => {
+      spawnSyncCalls.push({ command, args, options });
       if (args.includes('list-sessions')) {
         return {
           status: 0,
@@ -1792,6 +1830,12 @@ test('runtime attaches an explicit detached session target without retaining an 
   assert.equal(spawns[0].args.includes('-D'), false);
   assert.equal(spawns[0].args.includes('-d'), false);
   assert.deepEqual(spawns[0].args.slice(-3), ['attach-session', '-t', targetSession]);
+  const sourceConfigCall = spawnSyncCalls.find((call) => call.args[3] === 'source-file');
+  assert.ok(sourceConfigCall);
+  assert.equal(
+    sourceConfigCall.args[4],
+    path.join(aiHomeDir, 'run', 'tmux', 'tmux-codex.conf')
+  );
   assert.equal(spawns[0].options.env.AIH_PERSIST_ACTIVE, '1');
   assert.equal(spawns[0].proc.aihTransientAuthProjection, false);
   assert.equal(fsBase.existsSync(unusedRuntimeDir), false);
@@ -2736,7 +2780,7 @@ test('runtime ignores legacy account configs while rebuilding transient config f
   assert.deepEqual(rawModeCalls, [true, false]);
 });
 
-test('runtime auto-skips codex upgrade prompt', () => {
+function captureRuntimeTimers() {
   const realSetTimeout = global.setTimeout;
   const realClearTimeout = global.clearTimeout;
   const timers = [];
@@ -2748,6 +2792,17 @@ test('runtime auto-skips codex upgrade prompt', () => {
   global.clearTimeout = (timer) => {
     if (timer) timer.cleared = true;
   };
+  return {
+    timers,
+    restore() {
+      global.setTimeout = realSetTimeout;
+      global.clearTimeout = realClearTimeout;
+    }
+  };
+}
+
+test('runtime never injects repeated skip text from Codex repaint output', () => {
+  const { timers, restore } = captureRuntimeTimers();
 
   try {
     const { runtime, proc, spawns } = createRuntimeHarness({
@@ -2755,31 +2810,22 @@ test('runtime auto-skips codex upgrade prompt', () => {
     });
 
     runtime.runCliPtyTracked('codex', '10086', [], false);
-    spawns[0].proc._onData('A new Codex version is available. Upgrade now or skip?');
+    for (let frame = 0; frame < 3; frame += 1) {
+      spawns[0].proc._onData(`A new Codex version is available. Upgrade now or skip? frame=${frame}`);
+      const pendingTimer = timers.findLast((timer) => timer.ms === 10_000 && !timer.cleared);
+      if (pendingTimer) pendingTimer.cb();
+    }
 
+    assert.equal(timers.some((timer) => timer.ms === 10_000), false);
     assert.deepEqual(spawns[0].proc.writes, []);
-    assert.equal(timers.some((timer) => timer.ms === 10_000 && !timer.cleared), true);
-    timers.find((timer) => timer.ms === 10_000 && !timer.cleared).cb();
-    assert.deepEqual(spawns[0].proc.writes, ['skip\r']);
     assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
   } finally {
-    global.setTimeout = realSetTimeout;
-    global.clearTimeout = realClearTimeout;
+    restore();
   }
 });
 
-test('runtime accepts codex default prompt after delay', () => {
-  const realSetTimeout = global.setTimeout;
-  const realClearTimeout = global.clearTimeout;
-  const timers = [];
-  global.setTimeout = (cb, ms) => {
-    const timer = { cb, ms, cleared: false, unref() {} };
-    timers.push(timer);
-    return timer;
-  };
-  global.clearTimeout = (timer) => {
-    if (timer) timer.cleared = true;
-  };
+test('runtime leaves Codex update and trust prompts under user input ownership', () => {
+  const { timers, restore } = captureRuntimeTimers();
 
   try {
     const { runtime, proc, spawns } = createRuntimeHarness({
@@ -2788,54 +2834,36 @@ test('runtime accepts codex default prompt after delay', () => {
 
     runtime.runCliPtyTracked('codex', '10086', [], false);
     spawns[0].proc._onData([
+      '\u001b[1mUpdate available!\u001b[0m 0.140.0 -> 0.149.0',
+      '\u001b[36m› 1. Update now\u001b[0m',
+      '  2. Skip',
+      '  3. Skip until next version'
+    ].join('\r\n'));
+    spawns[0].proc._onData([
       'Do you trust the contents of this directory?',
       '› 1. Yes, continue',
       '  2. No, quit',
       'Press enter to continue'
     ].join('\n'));
 
+    assert.equal(timers.some((timer) => timer.ms === 10_000), false);
     assert.deepEqual(spawns[0].proc.writes, []);
-    assert.equal(timers.some((timer) => timer.ms === 10_000 && !timer.cleared), true);
-    timers.find((timer) => timer.ms === 10_000 && !timer.cleared).cb();
-    assert.deepEqual(spawns[0].proc.writes, ['\r']);
     assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
   } finally {
-    global.setTimeout = realSetTimeout;
-    global.clearTimeout = realClearTimeout;
+    restore();
   }
 });
 
-test('runtime cancels codex auto prompt when user answers manually', () => {
-  const realSetTimeout = global.setTimeout;
-  const realClearTimeout = global.clearTimeout;
-  const timers = [];
-  global.setTimeout = (cb, ms) => {
-    const timer = { cb, ms, cleared: false, unref() {} };
-    timers.push(timer);
-    return timer;
-  };
-  global.clearTimeout = (timer) => {
-    if (timer) timer.cleared = true;
-  };
+test('runtime forwards explicit Codex user input exactly once', () => {
+  const { runtime, proc, spawns } = createRuntimeHarness({
+    AIH_RUNTIME_SHOW_USAGE: '0'
+  });
 
-  try {
-    const { runtime, proc, spawns } = createRuntimeHarness({
-      AIH_RUNTIME_SHOW_USAGE: '0'
-    });
+  runtime.runCliPtyTracked('codex', '10086', [], false);
+  proc.stdin.emit('data', 'skip\r');
 
-    runtime.runCliPtyTracked('codex', '10086', [], false);
-    spawns[0].proc._onData('A new Codex version is available. Upgrade now or skip?');
-    proc.stdin.emit('data', 'skip\r');
-
-    const promptTimer = timers.find((timer) => timer.ms === 10_000);
-    assert.equal(promptTimer.cleared, true);
-    promptTimer.cb();
-    assert.deepEqual(spawns[0].proc.writes, ['skip\r']);
-    assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
-  } finally {
-    global.setTimeout = realSetTimeout;
-    global.clearTimeout = realClearTimeout;
-  }
+  assert.deepEqual(spawns[0].proc.writes, ['skip\r']);
+  assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
 });
 
 test('runtime injects --skip-git-repo-check only when explicitly enabled', () => {
@@ -3866,6 +3894,96 @@ test('runtime forwards PTY output verbatim without injecting viewport sequences'
   assert.equal(outputWrites.some((line) => /\x1b\[\d+;1H\x1b\[2K/.test(line)), false);
 
   assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
+});
+
+test('runtime gives the Codex inline TUI exclusive ownership of startup screen writes', () => {
+  const { intervals, restore } = captureRuntimeIntervals();
+  let proc;
+
+  try {
+    const harness = createRuntimeHarness({ AIH_RUNTIME_SHOW_USAGE: '0' });
+    ({ proc } = harness);
+    harness.runtime.runCliPtyTracked('codex', '10086', [], false);
+
+    assert.equal(intervals.some((interval) => interval.ms === 200), false);
+    const checkpoint = harness.writes.length;
+    const frame = '\x1b[?2026hcodex frame\x1b[?2026l';
+    harness.spawns[0].proc._onData(frame);
+    assert.deepEqual(harness.writes.slice(checkpoint), [frame]);
+  } finally {
+    if (proc) {
+      try { proc.emit('SIGINT'); } catch (_error) {}
+    }
+    restore();
+  }
+});
+
+test('runtime gives the Codex resume TUI exclusive ownership of startup screen writes', () => {
+  const { intervals, restore } = captureRuntimeIntervals();
+  let proc;
+
+  try {
+    const harness = createRuntimeHarness({ AIH_RUNTIME_SHOW_USAGE: '0' });
+    ({ proc } = harness);
+    harness.runtime.runCliPtyTracked('codex', '10086', ['resume', 'thread-123'], false);
+
+    assert.equal(intervals.some((interval) => interval.ms === 200), false);
+    const checkpoint = harness.writes.length;
+    const frame = '\x1b[?2026hcodex resume frame\x1b[?2026l';
+    harness.spawns[0].proc._onData(frame);
+    assert.deepEqual(harness.writes.slice(checkpoint), [frame]);
+  } finally {
+    if (proc) {
+      try { proc.emit('SIGINT'); } catch (_error) {}
+    }
+    restore();
+  }
+});
+
+test('runtime does not clear a provider boot line before the spinner actually draws it', () => {
+  const { intervals, restore } = captureRuntimeIntervals();
+  let proc;
+
+  try {
+    const harness = createRuntimeHarness({ AIH_RUNTIME_SHOW_USAGE: '0' });
+    ({ proc } = harness);
+    harness.runtime.runCliPtyTracked('claude', '4', [], false);
+
+    assert.equal(intervals.some((interval) => interval.ms === 200), true);
+    const checkpoint = harness.writes.length;
+    harness.spawns[0].proc._onData('claude frame');
+    assert.deepEqual(harness.writes.slice(checkpoint), ['claude frame']);
+  } finally {
+    if (proc) {
+      try { proc.emit('SIGINT'); } catch (_error) {}
+    }
+    restore();
+  }
+});
+
+test('runtime clears a provider boot line after the spinner has drawn it', () => {
+  const { intervals, restore } = captureRuntimeIntervals();
+  let proc;
+
+  try {
+    const harness = createRuntimeHarness({ AIH_RUNTIME_SHOW_USAGE: '0' });
+    ({ proc } = harness);
+    harness.runtime.runCliPtyTracked('claude', '4', [], false);
+
+    const bootWave = intervals.find((interval) => interval.ms === 200);
+    assert.ok(bootWave);
+    bootWave.cb();
+    assert.equal(harness.writes.some((write) => write.includes('Waiting for claude to boot')), true);
+
+    const checkpoint = harness.writes.length;
+    harness.spawns[0].proc._onData('claude frame');
+    assert.deepEqual(harness.writes.slice(checkpoint), ['\r\x1b[K', 'claude frame']);
+  } finally {
+    if (proc) {
+      try { proc.emit('SIGINT'); } catch (_error) {}
+    }
+    restore();
+  }
 });
 
 test('runtime resizes the child PTY to full terminal height on resize', () => {

@@ -600,6 +600,50 @@ test('buildSourceConfigCommand targets the account socket config reload', () => 
   assert.equal(persistentSession.buildSourceConfigCommand({ cliName: 'codex', runtimeScope: ACCOUNT_REF_1, confPath: '' }), null);
 });
 
+test('provider-scoped tmux config keeps Claude sync batching but disables the Codex outer layer', () => {
+  const basePath = '/home/u/.ai_home/run/tmux/tmux.conf';
+  const codexPath = persistentSession.resolveProviderTmuxConfPath(basePath, 'codex');
+
+  assert.equal(codexPath, '/home/u/.ai_home/run/tmux/tmux-codex.conf');
+  assert.equal(persistentSession.resolveProviderTmuxConfPath(basePath, 'claude'), basePath);
+
+  const claudeConfig = persistentSession.getTmuxConfContent({ cliName: 'claude' });
+  const codexConfig = persistentSession.getTmuxConfContent({ cliName: 'codex' });
+  const claudeTerminalFeatures = claudeConfig.match(/^set -g terminal-features\[0\].*$/gm);
+  const codexTerminalFeatures = codexConfig.match(/^set -g terminal-features\[0\].*$/gm);
+
+  assert.deepEqual(claudeTerminalFeatures, [
+    'set -g terminal-features[0] "xterm*:clipboard:ccolour:cstyle:focus:title:extkeys:sync"'
+  ]);
+  assert.deepEqual(codexTerminalFeatures, [
+    'set -g terminal-features[0] "xterm*:clipboard:ccolour:cstyle:focus:title:extkeys:sync"',
+    'set -g terminal-features[0] "xterm*:clipboard:ccolour:cstyle:focus:title:extkeys"'
+  ]);
+  assert.deepEqual(
+    codexConfig.match(/^set -s terminal-overrides\[99\] "\*:Sync@"$/gm),
+    ['set -s terminal-overrides[99] "*:Sync@"']
+  );
+  assert.doesNotMatch(codexConfig, /^set -as terminal-overrides/m);
+  assert.doesNotMatch(claudeConfig, /Sync@/);
+
+  const psmuxClaudeConfig = persistentSession.getTmuxConfContent({
+    cliName: 'claude',
+    tmuxCommand: 'C:\\Tools\\psmux.exe',
+    platform: 'win32'
+  });
+  const psmuxCodexConfig = persistentSession.getTmuxConfContent({
+    cliName: 'codex',
+    tmuxCommand: 'C:\\Tools\\psmux.exe',
+    platform: 'win32'
+  });
+  assert.match(psmuxClaudeConfig, /terminal-features\[0\].*:extkeys:sync"/);
+  assert.equal(
+    psmuxCodexConfig.match(/^set -g terminal-features\[0\].*$/gm).at(-1),
+    'set -g terminal-features[0] "xterm*:clipboard:ccolour:cstyle:focus:title:extkeys"'
+  );
+  assert.doesNotMatch(psmuxCodexConfig, /Sync@/);
+});
+
 test('ensureTmuxConf writes the transparent config idempotently', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-persist-'));
   const confPath = path.join(dir, 'persist', 'tmux.conf');
@@ -628,7 +672,6 @@ test('ensureTmuxConf writes the transparent config idempotently', () => {
 test('ensureTmuxConf writes a psmux-compatible transparent config on native Windows', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-persist-psmux-'));
   const confPath = path.join(dir, 'persist', 'tmux.conf');
-
   assert.equal(persistentSession.ensureTmuxConf(confPath, fs, {
     platform: 'win32',
     tmuxCommand: 'C:\\tools\\psmux.exe'

@@ -22,12 +22,10 @@ import type {
 import ToolkitStatusTrack from './ToolkitStatusTrack';
 import ConfigCodeEditor from './config-editor/ConfigCodeEditor';
 import ManagedAppCard from './ManagedAppCard';
-import AppActionConfirmContent from './AppActionConfirmContent';
 import { getAppUpdateActionPresentation } from '@/features/app-install/app-install-presentation';
 import { KimiDesktopLoginModal } from '@/features/accounts/KimiDesktopLoginModal';
-import { useWebUiTaskQueue } from '@/services/webui-task-queue';
-import type { WebUiTask } from '@/types';
 import { SESSION_SYNC_SUMMARY } from '@/components/session-sync-copy';
+import useToolkitLifecycleController from './useToolkitLifecycleController';
 
 const APP_CATEGORIES = [
   { label: '全部', value: 'ALL' },
@@ -63,8 +61,6 @@ export default function AppManagerPanel() {
   const [error, setError] = useState('');
   const [category, setCategory] = useState('ALL');
   const [installingHooks, setInstallingHooks] = useState(false);
-  const [pendingActions, setPendingActions] = useState<Record<string, { phase: 'planning' | 'submitted'; jobId?: string }>>({});
-  const { tasks } = useWebUiTaskQueue();
   const [editingApp, setEditingApp] = useState<ManagedAppItem | null>(null);
   const [configData, setConfigData] = useState<ToolkitAppConfigResponse | null>(null);
   const [configContent, setConfigContent] = useState('');
@@ -129,22 +125,26 @@ export default function AppManagerPanel() {
     return () => window.clearTimeout(timer);
   }, [data, fetchApps]);
 
-  useEffect(() => {
-    const handleTaskCompleted = (event: Event) => {
-      const task = (event as CustomEvent<WebUiTask>).detail;
-      if (task?.source !== 'app-install' || !task.appId) return;
-      setPendingActions((current) => {
-        const next = { ...current };
-        Object.entries(current).forEach(([key, pending]) => {
-          if (pending.jobId === task.id || key.startsWith(`${task.appId}:`)) delete next[key];
-        });
-        return next;
-      });
-      void fetchApps();
-    };
-    window.addEventListener('aih:webui-task-completed', handleTaskCompleted);
-    return () => window.removeEventListener('aih:webui-task-completed', handleTaskCompleted);
-  }, [fetchApps]);
+  const refreshAppsAfterLifecycle = useCallback(
+    () => fetchApps({ showLoading: false }),
+    [fetchApps]
+  );
+  const {
+    busyActionFor,
+    runAction: runAppAction
+  } = useToolkitLifecycleController({
+    source: 'app-install',
+    scopeLabel: '应用',
+    refresh: refreshAppsAfterLifecycle,
+    plan: (app: ManagedAppItem, action) => (
+      toolkitAPI.planAppAction(app.id, action, lifecycleKind(app))
+    ),
+    execute: (app: ManagedAppItem, action) => (
+      toolkitAPI.executeAppAction(app.id, action, lifecycleKind(app))
+    ),
+    plans: (response) => response.plans || [],
+    resourceIds: (app: ManagedAppItem) => [app.id, app.provider]
+  });
 
   const filteredApps = useMemo(() => {
     if (!data) return [];
@@ -155,31 +155,6 @@ export default function AppManagerPanel() {
 
   const hookReadyCount = data?.apps.filter((app) => app.installed && app.hookSupported && app.hookInstalled).length || 0;
   const hookSupportedCount = data?.apps.filter((app) => app.installed && app.hookSupported).length || 0;
-
-  const activeAppTasks = tasks.filter((task) => task.source === 'app-install');
-  const actionLabel = (action: 'install' | 'update' | 'uninstall') => ({ install: '安装', update: '更新', uninstall: '卸载' })[action];
-  const actionKey = (app: ManagedAppItem, action: string) => `${app.id}:${action}`;
-  const activeTaskFor = (app: ManagedAppItem) => activeAppTasks.find((task) => (
-    task.appId === app.id || (!task.appId && task.provider === app.provider)
-  ));
-
-  const submitAppAction = async (app: ManagedAppItem, action: 'install' | 'update' | 'uninstall', key: string) => {
-    try {
-      const response = await toolkitAPI.executeAppAction(app.id, action, lifecycleKind(app));
-      if (!response.ok || !response.job) {
-        throw new Error(response.error || '应用任务未创建');
-      }
-      setPendingActions((current) => ({ ...current, [key]: { phase: 'submitted', jobId: response.job?.id } }));
-      message.info(`${app.name}${actionLabel(action)}任务已提交`);
-    } catch (requestFailure: unknown) {
-      setPendingActions((current) => {
-        const next = { ...current };
-        delete next[key];
-        return next;
-      });
-      message.error(requestError(requestFailure, `${app.name}${actionLabel(action)}失败`));
-    }
-  };
 
   const openManagedApp = async (app: ManagedAppItem, accountRef?: string, unscoped = false) => {
     const kind = app.type === 'desktop' ? 'desktop' : 'cli';
@@ -251,21 +226,10 @@ export default function AppManagerPanel() {
         message.success(presentation.notice);
         return;
       }
-      const key = actionKey(app, 'update');
-      const plan = await toolkitAPI.planAppAction(app.id, 'update', lifecycleKind(app));
-      if (!plan.ok) throw new Error(plan.error || '无法生成更新计划');
-      Modal.confirm({
+      await runAppAction(app, 'update', {
         title: presentation.title,
-        content: (
-          <AppActionConfirmContent
-            summary={presentation.summary}
-            plans={plan.plans || []}
-            metadata={presentation.metadata}
-          />
-        ),
-        okText: '确认更新',
-        cancelText: '稍后',
-        onOk: () => { void submitAppAction(app, 'update', key); }
+        summary: presentation.summary,
+        metadata: presentation.metadata
       });
     } catch (requestFailure: unknown) {
       message.error(requestError(requestFailure, `${app.name} 更新准备失败`));
@@ -275,41 +239,6 @@ export default function AppManagerPanel() {
         delete next[app.id];
         return next;
       });
-    }
-  };
-
-  const runAppAction = async (app: ManagedAppItem, action: 'install' | 'update' | 'uninstall') => {
-    const key = actionKey(app, action);
-    if (activeTaskFor(app) || pendingActions[key]) return;
-    setPendingActions((current) => ({ ...current, [key]: { phase: 'planning' } }));
-    try {
-      const plan = await toolkitAPI.planAppAction(app.id, action, lifecycleKind(app));
-      if (!plan.ok) throw new Error(plan.error || '无法生成应用操作计划');
-      Modal.confirm({
-        title: `${actionLabel(action)} ${app.name}`,
-        content: (
-          <AppActionConfirmContent
-            summary={`确认后将创建 ${app.name}${actionLabel(action)}任务，进度显示在后台任务队列。`}
-            plans={plan.plans || []}
-          />
-        ),
-        okText: '确认执行',
-        cancelText: '取消',
-        okButtonProps: action === 'uninstall' ? { danger: true } : undefined,
-        onOk: () => { void submitAppAction(app, action, key); },
-        onCancel: () => setPendingActions((current) => {
-          const next = { ...current };
-          delete next[key];
-          return next;
-        })
-      });
-    } catch (requestFailure: unknown) {
-      setPendingActions((current) => {
-        const next = { ...current };
-        delete next[key];
-        return next;
-      });
-      message.error(requestError(requestFailure, `${app.name}${actionLabel(action)}计划生成失败`));
     }
   };
 
@@ -423,7 +352,7 @@ export default function AppManagerPanel() {
                 <ManagedAppCard
                   key={app.id}
                   app={app}
-                  busyAction={pendingActions[actionKey(app, 'install')] ? 'install' : pendingActions[actionKey(app, 'update')] ? 'update' : pendingActions[actionKey(app, 'uninstall')] ? 'uninstall' : (activeTaskFor(app)?.action as 'install' | 'update' | 'uninstall' | undefined)}
+                  busyAction={busyActionFor(app)}
                   checkingUpdate={Boolean(checkingUpdates[app.id])}
                   accounts={accounts}
                   runningAccountPids={runningAccountPids}

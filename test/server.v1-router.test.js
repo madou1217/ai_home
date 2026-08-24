@@ -4280,6 +4280,9 @@ test('v1 router rejects a mutable CLI account id in the account pin header', asy
   assert.deepEqual(logEntries.map((entry) => entry.kind), ['account_pin_rejected']);
   assert.equal(logEntries[0].status, 400);
   assert.equal(logEntries[0].error, 'invalid_account_ref');
+  assert.equal(logEntries[0].provider, 'gateway');
+  assert.equal(logEntries[0].reasoningEffort, 'not_applicable');
+  assert.equal(logEntries[0].requestType, 'sync');
   assert.doesNotMatch(JSON.stringify(logEntries), /(?:accountRef|x-account-ref|"9")/u);
 });
 
@@ -4364,6 +4367,9 @@ test('v1 router keeps stale account pins fail-closed for inference requests', as
   const rejected = logEntries.find((entry) => entry.kind === 'account_pin_rejected');
   assert.equal(rejected.error, 'unknown_account_ref');
   assert.equal(rejected.status, 404);
+  assert.equal(rejected.provider, 'gateway');
+  assert.equal(rejected.reasoningEffort, 'not_applicable');
+  assert.equal(rejected.requestType, 'sync');
   assert.doesNotMatch(JSON.stringify(logEntries), new RegExp(staleAccountRef));
 });
 

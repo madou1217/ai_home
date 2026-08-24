@@ -68,6 +68,7 @@ import type {
   ManagementAccountsResponse,
   ManagementRestartEvent,
   ManagementRestartResponse,
+  ModelUsageBreakdownResponse,
   ModelUsageDashboardQueryCancelResponse,
   ModelUsageDashboardQueryJob,
   ModelUsageDashboardQueryResponse,
@@ -86,6 +87,8 @@ import type {
   WebUiModelsResponse,
   ToolkitAppConfigResponse,
   ManagedToolsResponse,
+  ManagedToolActionResponse,
+  ManagedToolLifecycleAction,
   ToolkitToolConfigResponse,
   ManagedAppsResponse,
   ManagedAppUpdateResponse,
@@ -99,6 +102,9 @@ import type {
   EnvironmentsResponse,
   EnvironmentActionInput,
   EnvironmentActionResponse,
+  EnvironmentGuideResponse,
+  EnvironmentLifecycleAction,
+  EnvironmentToolActionResponse,
   MirrorsResponse,
   ProxyStatusResponse,
   ConnectivityResponse,
@@ -1775,6 +1781,13 @@ export const modelUsageAPI = {
     return response.data;
   },
 
+  breakdown: async (query: ModelUsageQuery): Promise<ModelUsageBreakdownResponse> => {
+    const response = await api.get<ModelUsageBreakdownResponse>('/webui/management/usage/breakdown', {
+      params: buildModelUsageParams(query)
+    });
+    return response.data;
+  },
+
   sessionDetail: async (query: ModelUsageQuery): Promise<ModelUsageSessionDetailResponse> => {
     const response = await api.get<ModelUsageSessionDetailResponse>('/webui/management/usage/session-detail', {
       params: buildModelUsageParams(query)
@@ -1980,9 +1993,69 @@ export const toolkitAPI = {
     });
     return response.data;
   },
+  planManagedToolAction: async (
+    toolId: string,
+    action: ManagedToolLifecycleAction
+  ): Promise<ManagedToolActionResponse> => {
+    const response = await api.post<ManagedToolActionResponse>('/webui/toolkit/tools/plan', {
+      toolId,
+      action
+    });
+    return response.data;
+  },
+  executeManagedToolAction: async (
+    toolId: string,
+    action: ManagedToolLifecycleAction
+  ): Promise<ManagedToolActionResponse> => {
+    const response = await api.post<ManagedToolActionResponse>('/webui/toolkit/tools/execute', {
+      toolId,
+      action,
+      confirmed: true
+    });
+    return response.data;
+  },
+  getManagedToolJob: async (jobId: string): Promise<WebUiTask> => {
+    const response = await api.get<{ ok: boolean; job: WebUiTask }>(
+      `/webui/toolkit/tools/jobs/${encodeURIComponent(jobId)}`
+    );
+    return response.data.job;
+  },
   getEnvironments: async (): Promise<EnvironmentsResponse> => {
     const response = await api.get<EnvironmentsResponse>('/webui/toolkit/environments');
     return response.data;
+  },
+  getEnvironmentGuide: async (platform?: string): Promise<EnvironmentGuideResponse> => {
+    const response = await api.get<EnvironmentGuideResponse>('/webui/toolkit/environments/guide', {
+      params: platform ? { platform } : undefined
+    });
+    return response.data;
+  },
+  planEnvironmentToolAction: async (
+    toolId: string,
+    action: EnvironmentLifecycleAction
+  ): Promise<EnvironmentToolActionResponse> => {
+    const response = await api.post<EnvironmentToolActionResponse>('/webui/toolkit/environments/plan', {
+      toolId,
+      action
+    });
+    return response.data;
+  },
+  executeEnvironmentToolAction: async (
+    toolId: string,
+    action: EnvironmentLifecycleAction
+  ): Promise<EnvironmentToolActionResponse> => {
+    const response = await api.post<EnvironmentToolActionResponse>('/webui/toolkit/environments/execute', {
+      toolId,
+      action,
+      confirmed: true
+    });
+    return response.data;
+  },
+  getEnvironmentJob: async (jobId: string): Promise<WebUiTask> => {
+    const response = await api.get<{ ok: boolean; job: WebUiTask }>(
+      `/webui/toolkit/environments/jobs/${encodeURIComponent(jobId)}`
+    );
+    return response.data.job;
   },
   planEnvironmentAction: async (input: EnvironmentActionInput): Promise<EnvironmentActionResponse> => {
     const response = await api.post<EnvironmentActionResponse>('/webui/toolkit/environments/plan', input);

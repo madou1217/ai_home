@@ -1,12 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Empty, Modal, Space, Spin, Tag, Tooltip, Typography, message } from 'antd';
+import { Empty, Modal, Space, Spin, Tag, Tooltip, message } from 'antd';
 import { CodeOutlined, ReloadOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import { toolkitAPI } from '@/services/api';
 import { isActiveWebUiTask, useWebUiTaskQueue } from '@/services/webui-task-queue';
 import type { ClientPlatform, ClientTerminalItem, WebUiTask } from '@/types';
 import InstallLifecycleAction, { type InstallLifecycleActionName as TerminalAction } from './InstallLifecycleAction';
+import AppActionConfirmContent from './AppActionConfirmContent';
 import ManagedClientIcon from './ManagedClientIcon';
+import ManagedResourceCard from './ManagedResourceCard';
+import {
+  getTerminalExecutablePresentation,
+  hasManagedTerminalLifecycle
+} from './terminal-presentation';
+import ToolkitStatusTrack from './ToolkitStatusTrack';
 
 const PLATFORM_LABELS: Record<ClientPlatform, string> = {
   macos: 'macOS',
@@ -46,6 +53,7 @@ export default function TerminalManagerPanel() {
   const [terminals, setTerminals] = useState<ClientTerminalItem[]>([]);
   const [platform, setPlatform] = useState<ClientPlatform | ''>('');
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [openingId, setOpeningId] = useState('');
   const [pendingActions, setPendingActions] = useState<Record<string, PendingAction>>({});
   const pendingKeysRef = useRef(new Set<string>());
@@ -86,13 +94,14 @@ export default function TerminalManagerPanel() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setError('');
     try {
       const response = await toolkitAPI.listTerminals();
       if (!response.ok) throw new Error('终端接口未返回可用结果');
       setPlatform(response.platform || '');
       setTerminals((response.terminals || []).filter((terminal) => terminal.platform === response.platform));
-    } catch (error: unknown) {
-      message.error(requestError(error, '读取终端清单失败'));
+    } catch (requestFailure: unknown) {
+      setError(requestError(requestFailure, '读取终端清单失败'));
     } finally {
       setLoading(false);
     }
@@ -170,7 +179,7 @@ export default function TerminalManagerPanel() {
       const result = await toolkitAPI.executeTerminalAction(terminal.id, action);
       if (!result.ok) throw new Error(result.error || '终端操作失败');
       updatePendingAction(key, { phase: 'submitted', jobId: result.job?.id });
-      message.info(`${terminal.name}${ACTION_LABELS[action]}任务已提交，按钮状态将跟随真实任务进度。`);
+      message.info(`${terminal.name}${ACTION_LABELS[action]}任务已提交`);
     } catch (error: unknown) {
       updatePendingAction(key, null);
       message.error(requestError(error, '终端操作失败'));
@@ -188,13 +197,19 @@ export default function TerminalManagerPanel() {
       Modal.confirm({
         title: `${ACTION_LABELS[action]} ${terminal.name}`,
         content: (
-          <Space direction="vertical" size={4}>
-            <Typography.Text>{plan.label || '将执行官方包管理器命令'}</Typography.Text>
-            <Typography.Text code copyable>{plan.command}</Typography.Text>
-          </Space>
+          <AppActionConfirmContent
+            summary={`确认后将创建 ${terminal.name}${ACTION_LABELS[action]}任务，进度显示在后台任务队列。`}
+            plans={[{
+              id: `${terminal.id}:${action}`,
+              label: plan.label || `${ACTION_LABELS[action]} ${terminal.name}`,
+              command: plan.file || plan.command || '',
+              args: plan.args || []
+            }]}
+          />
         ),
         okText: '确认执行',
         cancelText: '取消',
+        okButtonProps: action === 'uninstall' ? { danger: true } : undefined,
         // 立即关闭确认层；命令已在服务端异步排队，进度只由全局任务队列呈现。
         onOk: () => { void submitTerminalAction(terminal, action, key); },
         onCancel: () => updatePendingAction(key, null)
@@ -225,136 +240,146 @@ export default function TerminalManagerPanel() {
     (task) => taskTargetsTerminal(task, terminal.id)
   ) || Object.keys(pendingActions).some((key) => key.startsWith(`${terminal.id}:`));
 
-  const unavailableActionTitle = (action: TerminalAction, terminal: ClientTerminalItem) => {
-    if (terminal.default) return `${ACTION_LABELS[action]}不适用于系统默认终端`;
-    return `未检测到可执行${ACTION_LABELS[action]}的当前平台官方包管理器`;
-  };
-
   return (
     <section className="toolkit-page toolkit-domain-panel" aria-labelledby="toolkit-terminals-title">
       <header className="toolkit-panel-header">
         <div>
           <div className="toolkit-panel-kicker">TERMINAL RUNTIME</div>
           <h2 id="toolkit-terminals-title">终端管理</h2>
-          <p>仅显示当前平台（{platform ? PLATFORM_LABELS[platform] || platform : '当前主机'}）支持的终端；WebUI 可直接唤起已安装终端。安装、更新和卸载只调用对应平台的官方包管理器。</p>
         </div>
         <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void load()}>重新探测</Button>
       </header>
+      {error ? (
+        <div className="toolkit-inline-error" role="alert">
+          <strong>终端清单读取失败</strong>
+          <span>{error}</span>
+        </div>
+      ) : null}
       {loading && !terminals.length ? (
         <div className="toolkit-loading"><Spin size="large" tip="正在探测终端" /></div>
       ) : terminals.length ? (
-        <div className="toolkit-grid">
-          {terminals.map((terminal) => (
-            <article key={terminal.id} className={`toolkit-app-card ${terminal.installed ? 'installed' : 'uninstalled'}`}>
-              <div>
-                <div className="toolkit-card-header">
-                  <div className="toolkit-card-title-group">
-                    <ManagedClientIcon clientType="terminal" clientName={terminal.name} />
-                    <div>
-                      <h3 className="toolkit-card-title">{terminal.name}</h3>
-                      <Space size={4} wrap>
-                        <Tag color={terminal.default ? 'blue' : 'default'}>{terminal.default ? '系统默认' : '可选终端'}</Tag>
-                        <Tag color={terminal.installed ? 'success' : 'default'}>{terminal.installed ? '已安装' : '未安装'}</Tag>
-                      </Space>
-                    </div>
-                  </div>
-                </div>
-                <p className="toolkit-card-body toolkit-terminal-description">{terminal.description}</p>
-                <dl className="toolkit-card-body">
-                  <div className="toolkit-detail-row">
-                    <dt className="toolkit-detail-label">程序路径</dt>
-                    <dd className="toolkit-detail-value">
-                      <Typography.Text ellipsis={{ tooltip: terminal.executablePath || '由系统默认终端解析' }}>
-                        {terminal.executablePath || '由系统默认终端解析'}
-                      </Typography.Text>
-                    </dd>
-                  </div>
-                  {terminal.sourceUrl ? (
-                    <div className="toolkit-detail-row">
-                      <dt className="toolkit-detail-label">官方文档</dt>
-                      <dd className="toolkit-detail-value">
-                        <a href={terminal.sourceUrl} target="_blank" rel="noreferrer">安装说明</a>
-                      </dd>
-                    </div>
-                  ) : null}
-                </dl>
-              </div>
-              <div className="toolkit-card-actions">
-                <Space size={6} wrap>
-                  {(() => {
-                    const activeTask = activeTaskFor(terminal);
-                    const lifecycleBusy = terminalLifecycleBusy(terminal);
-                    const updateState = actionBusyState(terminal, 'update');
-                    const uninstallState = actionBusyState(terminal, 'uninstall');
-                    return (
-                      <>
-                        {activeTask ? (
-                          <Tag color="processing">
-                            {ACTION_LABELS[(activeTask.action as TerminalAction) || 'update'] || '操作'}中
-                            {` ${Math.round(Number(activeTask.progress?.percent || 0))}%`}
-                          </Tag>
-                        ) : null}
-                        {terminal.canLaunch && (terminal.installed || terminal.default) && (
-                          <Tooltip title={`唤起 ${terminal.name}`}>
-                            <Button
-                              size="small"
-                              shape="circle"
-                              icon={<CodeOutlined />}
-                              aria-label={`唤起 ${terminal.name}`}
-                              loading={openingId === terminal.id}
-                              disabled={lifecycleBusy}
-                              onClick={() => void openTerminal(terminal)}
-                            />
-                          </Tooltip>
-                        )}
-                        {terminal.canInstall && !terminal.installed && (
-                          <InstallLifecycleAction
-                            action="install"
-                            size="small"
-                            iconOnly
-                            tooltip={`安装 ${terminal.name}`}
-                            aria-label={`安装 ${terminal.name}`}
-                            disabled={lifecycleBusy}
-                            loading={Boolean(actionBusyState(terminal, 'install').busy)}
-                            onClick={() => void runAction(terminal, 'install')}
-                          />
-                        )}
-                        {!terminal.default && terminal.installed && (
+        <>
+          <ToolkitStatusTrack
+            ariaLabel="终端管理状态轨道"
+            items={[
+              {
+                label: '当前系统',
+                value: platform ? PLATFORM_LABELS[platform] || platform : '当前系统',
+                detail: '只展示本机支持的终端',
+                tone: 'info'
+              },
+              {
+                label: '终端资源',
+                value: `${terminals.filter((terminal) => terminal.installed || terminal.default).length} / ${terminals.length} 可用`,
+                detail: '安装状态来自当前主机探测',
+                tone: terminals.some((terminal) => terminal.installed || terminal.default) ? 'success' : 'neutral'
+              },
+              {
+                label: '生命周期',
+                value: '后台任务',
+                detail: '安装、更新、卸载统一进入任务队列',
+                tone: 'neutral'
+              }
+            ]}
+          />
+          <div className="toolkit-grid">
+            {terminals.map((terminal) => {
+              const executable = getTerminalExecutablePresentation(terminal);
+              return (
+                <ManagedResourceCard
+                  key={terminal.id}
+                  resourceId={terminal.id}
+                  name={terminal.name}
+                  installed={terminal.installed}
+                  icon={<ManagedClientIcon clientType="terminal" clientName={terminal.name} />}
+                  badges={<Tag color={terminal.default ? 'blue' : 'default'}>{terminal.default ? '系统默认' : '可选终端'}</Tag>}
+                  details={[
+                    {
+                      label: '程序路径',
+                      value: executable.value,
+                      tooltip: executable.tooltip,
+                      muted: executable.muted
+                    },
+                    ...(terminal.sourceUrl ? [{
+                      label: '官方文档',
+                      value: <a href={terminal.sourceUrl} target="_blank" rel="noreferrer">安装说明</a>
+                    }] : [])
+                  ]}
+                  actions={(
+                    <Space size={6} wrap>
+                      {(() => {
+                        const activeTask = activeTaskFor(terminal);
+                        const lifecycleBusy = terminalLifecycleBusy(terminal);
+                        const updateState = actionBusyState(terminal, 'update');
+                        const uninstallState = actionBusyState(terminal, 'uninstall');
+                        const managedLifecycle = hasManagedTerminalLifecycle(terminal);
+                        return (
                           <>
-                            <InstallLifecycleAction
-                              action="update"
-                              size="small"
-                              iconOnly
-                              tooltip={terminal.canUpdate
-                                ? `更新 ${terminal.name}`
-                                : unavailableActionTitle('update', terminal)}
-                              aria-label={`更新 ${terminal.name}`}
-                              disabled={lifecycleBusy || !terminal.canUpdate}
-                              loading={Boolean(updateState.busy)}
-                              onClick={() => void runAction(terminal, 'update')}
-                            />
-                            <InstallLifecycleAction
-                              action="uninstall"
-                              size="small"
-                              iconOnly
-                              tooltip={terminal.canUninstall
-                                ? `卸载 ${terminal.name}`
-                                : unavailableActionTitle('uninstall', terminal)}
-                              aria-label={`卸载 ${terminal.name}`}
-                              disabled={lifecycleBusy || !terminal.canUninstall}
-                              loading={Boolean(uninstallState.busy)}
-                              onClick={() => void runAction(terminal, 'uninstall')}
-                            />
+                            {activeTask ? (
+                              <Tag color="processing">
+                                {ACTION_LABELS[(activeTask.action as TerminalAction) || 'update'] || '操作'}中
+                                {` ${Math.round(Number(activeTask.progress?.percent || 0))}%`}
+                              </Tag>
+                            ) : null}
+                            {terminal.canLaunch && (terminal.installed || terminal.default) && (
+                              <Tooltip title={`唤起 ${terminal.name}`}>
+                                <Button
+                                  size="small"
+                                  shape="circle"
+                                  icon={<CodeOutlined />}
+                                  aria-label={`唤起 ${terminal.name}`}
+                                  loading={openingId === terminal.id}
+                                  disabled={lifecycleBusy}
+                                  onClick={() => void openTerminal(terminal)}
+                                />
+                              </Tooltip>
+                            )}
+                            {terminal.canInstall && !terminal.installed && (
+                              <InstallLifecycleAction
+                                action="install"
+                                size="small"
+                                iconOnly
+                                tooltip={`安装 ${terminal.name}`}
+                                aria-label={`安装 ${terminal.name}`}
+                                disabled={lifecycleBusy}
+                                loading={Boolean(actionBusyState(terminal, 'install').busy)}
+                                onClick={() => void runAction(terminal, 'install')}
+                              />
+                            )}
+                            {terminal.installed && managedLifecycle && (
+                              <>
+                                <InstallLifecycleAction
+                                  action="update"
+                                  size="small"
+                                  iconOnly
+                                  tooltip={`更新 ${terminal.name}`}
+                                  aria-label={`更新 ${terminal.name}`}
+                                  disabled={lifecycleBusy}
+                                  loading={Boolean(updateState.busy)}
+                                  onClick={() => void runAction(terminal, 'update')}
+                                />
+                                <InstallLifecycleAction
+                                  action="uninstall"
+                                  size="small"
+                                  iconOnly
+                                  tooltip={`卸载 ${terminal.name}`}
+                                  aria-label={`卸载 ${terminal.name}`}
+                                  disabled={lifecycleBusy}
+                                  loading={Boolean(uninstallState.busy)}
+                                  onClick={() => void runAction(terminal, 'uninstall')}
+                                />
+                              </>
+                            )}
                           </>
-                        )}
-                      </>
-                    );
-                  })()}
-                </Space>
-              </div>
-            </article>
-          ))}
-        </div>
+                        );
+                      })()}
+                    </Space>
+                  )}
+                />
+              );
+            })}
+          </div>
+        </>
       ) : <Empty description="当前平台没有可管理的终端" />}
     </section>
   );

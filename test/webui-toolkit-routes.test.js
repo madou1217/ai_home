@@ -8,6 +8,7 @@ const path = require('node:path');
 const { EventEmitter } = require('node:events');
 const { Readable } = require('node:stream');
 
+const { createAppInstallJobManager } = require('../lib/server/app-install-job-manager');
 const { handleWebUIRequest } = require('../lib/server/web-ui-router');
 const { upsertAccountRef } = require('../lib/server/account-ref-store');
 const { writeDefaultAccountRef } = require('../lib/account/default-account-store');
@@ -229,6 +230,39 @@ test('webui toolkit app install preserves the account-entry Desktop target', asy
     action: 'install'
   });
   assert.equal(result.data.job.id, 'app-install-desktop-test');
+});
+
+test('webui toolkit app install 保留显式空 action 并返回 400', async () => {
+  let installCalls = 0;
+  const manager = createAppInstallJobManager({
+    installCli: async () => {
+      installCalls += 1;
+      return { installed: true, cliPath: '/tmp/codex' };
+    }
+  });
+  const result = await runToolkitRequest('/v0/webui/toolkit/apps/install', {
+    method: 'POST',
+    body: { appId: 'codex', action: '' },
+    deps: { appInstallJobManager: manager }
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(result.handled, true);
+  assert.equal(result.res.statusCode, 400);
+  assert.equal(result.data.error, 'invalid_lifecycle_action');
+  assert.equal(installCalls, 0);
+});
+
+test('webui toolkit app plan 保留显式空 action 并返回 400', async () => {
+  const result = await runToolkitRequest('/v0/webui/toolkit/apps/plan', {
+    method: 'POST',
+    body: { appId: 'codex', action: '' },
+    deps: { appInstallJobManager: createAppInstallJobManager() }
+  });
+
+  assert.equal(result.handled, true);
+  assert.equal(result.res.statusCode, 400);
+  assert.equal(result.data.error, 'invalid_lifecycle_action');
 });
 
 test('webui toolkit opens an installed Desktop client from its application card', async () => {
@@ -637,6 +671,75 @@ test('webui toolkit routes GET /v0/webui/toolkit/tools returns runtime and netwo
   assert.deepEqual(data.categories.map((category) => category.id), ['session-runtimes', 'network-access']);
   assert.ok(data.tools.some((tool) => tool.id === 'tmux'));
   assert.equal(Object.prototype.hasOwnProperty.call(data.tools[0], 'path'), false);
+});
+
+test('webui toolkit routes 为网络接入工具生成生命周期确认计划', async () => {
+  const result = await runToolkitRequest('/v0/webui/toolkit/tools/plan', {
+    method: 'POST',
+    body: { toolId: 'frpc', action: 'install' },
+    deps: {
+      platform: 'linux',
+      hostHomeDir: '/home/tester',
+      processObj: { platform: 'linux', arch: 'x64', env: { HOME: '/home/tester', PATH: '' }, execPath: process.execPath },
+      networkRuntime: {
+        frpc: {
+          running: false,
+          executablePath: '',
+          executableExists: false,
+          configPath: '',
+          configCount: 0,
+          configState: 'none'
+        }
+      },
+      resolveCommandPath: () => ''
+    }
+  });
+
+  assert.equal(result.handled, true);
+  assert.equal(result.res.statusCode, 200);
+  assert.equal(result.data.action, 'install');
+  assert.equal(result.data.tool.id, 'frpc');
+  assert.ok(result.data.plans.every((plan) => plan.requiresConfirmation === true));
+});
+
+test('webui toolkit routes 将网络接入工具操作提交到后台任务', async () => {
+  const starts = [];
+  const result = await runToolkitRequest('/v0/webui/toolkit/tools/execute', {
+    method: 'POST',
+    body: { toolId: 'frpc', action: 'update', confirmed: true },
+    deps: {
+      managedToolJobManager: {
+        start(input) {
+          starts.push(input);
+          return {
+            ok: true,
+            accepted: true,
+            alreadyRunning: false,
+            job: {
+              id: 'managed-tool-action-1',
+              source: 'managed-tool',
+              taskName: '更新 frpc',
+              appId: 'frpc',
+              provider: 'frpc',
+              kind: 'managed-tool',
+              action: 'update',
+              status: 'queued',
+              phase: 'queued',
+              progress: { percent: 0, label: '等待网络工具操作开始' },
+              attempts: [],
+              createdAt: 1,
+              updatedAt: 1
+            }
+          };
+        }
+      }
+    }
+  });
+
+  assert.equal(result.handled, true);
+  assert.equal(result.res.statusCode, 202);
+  assert.deepEqual(starts, [{ toolId: 'frpc', action: 'update', confirmed: true }]);
+  assert.equal(result.data.job.source, 'managed-tool');
 });
 
 test('webui toolkit routes read a network tool config without returning its path', async () => {

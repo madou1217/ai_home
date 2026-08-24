@@ -4,8 +4,10 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
-  createAppInstallJobManager
+  createAppInstallJobManager,
+  resolveInstallTarget
 } = require('../lib/server/app-install-job-manager');
+const { getAppInstaller } = require('../lib/server/app-installers');
 
 function waitFor(predicate, timeoutMs = 1000) {
   const startedAt = Date.now();
@@ -191,6 +193,38 @@ test('ZCode CLI 安装任务在入口处拒绝，避免把 Desktop 误报为 CLI
   });
 });
 
+test('显式非法生命周期 action 在计划和执行入口均被拒绝', async () => {
+  let installCalls = 0;
+  const manager = createAppInstallJobManager({
+    installCli: async () => {
+      installCalls += 1;
+      return { installed: true, cliPath: '/opt/bin/codex', installAttempts: [] };
+    }
+  });
+  const input = { provider: 'codex', kind: 'cli', action: 'instal' };
+
+  const planned = manager.plan(input);
+  const started = manager.start(input);
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(planned, { ok: false, error: 'invalid_lifecycle_action' });
+  assert.deepEqual(started, { ok: false, error: 'invalid_lifecycle_action' });
+  assert.equal(manager.canInstall(input), false);
+  assert.equal(resolveInstallTarget(input), null);
+  assert.equal(installCalls, 0);
+});
+
+test('只有缺省 action 才使用 install，显式空值和非字符串值均拒绝', () => {
+  const manager = createAppInstallJobManager();
+  for (const action of ['', '   ', null, false, 0]) {
+    const input = { provider: 'codex', kind: 'cli', action };
+    assert.deepEqual(manager.plan(input), { ok: false, error: 'invalid_lifecycle_action' });
+    assert.equal(manager.canInstall(input), false);
+    assert.equal(resolveInstallTarget(input), null);
+  }
+  assert.equal(resolveInstallTarget({ provider: 'codex', kind: 'cli' }).action, 'install');
+});
+
 test('独立托管 CLI 支持更新和卸载生命周期，任务中保留 action', async () => {
   const commands = [];
   const manager = createAppInstallJobManager({
@@ -209,4 +243,37 @@ test('独立托管 CLI 支持更新和卸载生命周期，任务中保留 actio
     await waitFor(() => manager.getJob(started.job.id)?.status === 'succeeded');
   }
   assert.deepEqual(commands, ['npm_global_update', 'npm_global_uninstall']);
+});
+
+test('IDE 生命周期目标统一映射为 desktop，避免误走 CLI 安装链', () => {
+  assert.deepEqual(resolveInstallTarget({ appId: 'vscode', action: 'update' }), {
+    appId: 'vscode',
+    provider: 'vscode',
+    kind: 'desktop',
+    action: 'update',
+    key: 'desktop:vscode'
+  });
+  assert.equal(resolveInstallTarget({ appId: 'cursor', kind: 'ide' }).kind, 'desktop');
+});
+
+test('VS Code、Cursor 与 Devin Desktop 在三平台都声明安装、更新和卸载计划', () => {
+  for (const provider of ['vscode', 'cursor', 'windsurf']) {
+    const installer = getAppInstaller(provider);
+    assert.ok(installer, `${provider} installer should exist`);
+    for (const platform of ['macos', 'windows', 'linux']) {
+      for (const action of ['install', 'update', 'uninstall']) {
+        const plans = installer.resolveLifecyclePlans(action, {
+          provider,
+          kind: 'desktop',
+          platform,
+          hostHomeDir: platform === 'windows' ? 'C:\\Users\\tester' : '/home/tester',
+          processObj: {
+            platform: platform === 'macos' ? 'darwin' : platform === 'windows' ? 'win32' : 'linux',
+            env: {}
+          }
+        });
+        assert.ok(plans.length > 0, `${provider}/${platform}/${action} should have a plan`);
+      }
+    }
+  }
 });

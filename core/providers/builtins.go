@@ -370,8 +370,9 @@ func builtinQoderCN() Definition {
 // quota_usage：kimi OAuth 账号由 Node 侧 kimi-quota-probe 走
 // {KIMI_CODE_BASE_URL|api.kimi.com/coding/v1}/usages 拉取 5h/7days 配额窗口。
 // 桌面端：Kimi Work / Kimi 桌面版（kimi.com/zh-cn/products/download）与
-// Kimi 会员账号同体系；Electron 应用，按账号用 --user-data-dir 隔离登录态
-// （桌面版不读 ~/.kimi-code，登录态在各自 user-data 目录内）。
+// Kimi 会员账号同体系；官方公开下载仅支持 macOS / Windows。Electron 应用
+// 按账号用 --user-data-dir 隔离登录态（桌面版不读 ~/.kimi-code，登录态在
+// 各自 user-data 目录内）。
 func builtinKimi() Definition {
 	return Definition{
 		ID:           "kimi",
@@ -398,7 +399,7 @@ func builtinKimi() Definition {
 				[]string{"/Applications/Kimi.app", "{hostHomeDir}/Applications/Kimi.app"},
 				[]string{"Kimi.exe"},
 				[]string{"Kimi.exe"},
-				[]string{"Kimi", "kimi-desktop"},
+				nil,
 			),
 		},
 		NativeBoundary: nativeKimi(),
@@ -519,7 +520,7 @@ func desktopClient(
 	windowsExecNames []string,
 	linuxExecNames []string,
 ) *DesktopClient {
-	return &DesktopClient{
+	client := &DesktopClient{
 		MacOS: &DesktopPlatform{
 			ClientName:   clientName,
 			ExecNames:    macExecNames,
@@ -531,9 +532,12 @@ func desktopClient(
 			ProcessNames: windowsProcessNames,
 			ExecNames:    windowsExecNames,
 		},
-		Linux: &DesktopPlatform{
+	}
+	if len(linuxExecNames) > 0 {
+		client.Linux = &DesktopPlatform{
 			ClientName: clientName,
 			ExecNames:  linuxExecNames,
-		},
+		}
 	}
+	return client
 }

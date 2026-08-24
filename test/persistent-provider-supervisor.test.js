@@ -89,9 +89,12 @@ test('persistent provider supervisor argv round-trips metadata and inner launch 
   );
 
   assert.equal(launch.command, '/runtime/node');
-  assert.equal(launch.args[0], '/app/persistent-provider-supervisor-entry.js');
+  assert.deepEqual(launch.args.slice(0, 2), [
+    '--no-warnings',
+    '/app/persistent-provider-supervisor-entry.js'
+  ]);
   assert.deepEqual(
-    parsePersistentProviderSupervisorArgs(launch.args.slice(1)),
+    parsePersistentProviderSupervisorArgs(launch.args.slice(2)),
     context
   );
 });
@@ -303,7 +306,8 @@ test('persistent provider supervisor forwards termination signals and preserves 
     reconcileResources() {},
     removeProjection() {},
     removeRegistry() { return true; },
-    signalNumbers: { SIGTERM: 15 }
+    signalNumbers: { SIGTERM: 15 },
+    waitForTerminationSettle() {}
   });
 
   processObj.emit('SIGTERM');
@@ -312,6 +316,138 @@ test('persistent provider supervisor forwards termination signals and preserves 
   const result = await completed;
   assert.equal(result.exitCode, 143);
   assert.equal(processObj.listenerCount('SIGTERM'), 0);
+});
+
+test('persistent provider supervisor translates pane SIGHUP into provider process-group termination', async () => {
+  const child = createChildDouble();
+  const processObj = createProcessDouble();
+  processObj.platform = 'darwin';
+  processObj.pid = 4242;
+  processObj.killCalls = [];
+  processObj.kill = (pid, signal) => {
+    processObj.killCalls.push([pid, signal]);
+    return true;
+  };
+  const completed = runPersistentProviderSupervisor(supervisorContext(), {
+    processObj,
+    spawn: () => child,
+    captureAuth() {},
+    reconcileResources() {},
+    removeProjection() {},
+    removeRegistry() { return true; },
+    signalNumbers: { SIGHUP: 1, SIGTERM: 15 },
+    waitForTerminationSettle() {}
+  });
+
+  processObj.emit('SIGHUP');
+  assert.deepEqual(processObj.killCalls, [[-4242, 'SIGTERM']]);
+  assert.deepEqual(child.killCalls, []);
+
+  // The group signal is delivered back to the supervisor itself. It must be
+  // consumed once instead of recursively broadcasting SIGTERM forever.
+  processObj.emit('SIGTERM');
+  assert.deepEqual(processObj.killCalls, [[-4242, 'SIGTERM']]);
+  child.emit('close', null, 'SIGTERM');
+
+  const result = await completed;
+  assert.equal(result.signal, 'SIGHUP');
+  assert.equal(result.exitCode, 129);
+  assert.equal(processObj.listenerCount('SIGHUP'), 0);
+  assert.equal(processObj.listenerCount('SIGTERM'), 0);
+});
+
+test('persistent provider supervisor removes signal watchers when the group echo is coalesced', async () => {
+  const child = createChildDouble();
+  const processObj = createProcessDouble();
+  processObj.platform = 'darwin';
+  processObj.pid = 5252;
+  processObj.kill = () => true;
+  const completed = runPersistentProviderSupervisor(supervisorContext(), {
+    processObj,
+    spawn: () => child,
+    captureAuth() {},
+    reconcileResources() {},
+    removeProjection() {},
+    removeRegistry() { return true; },
+    signalNumbers: { SIGHUP: 1, SIGTERM: 15 },
+    waitForTerminationSettle() {}
+  });
+
+  processObj.emit('SIGHUP');
+  child.emit('close', null, 'SIGTERM');
+  const result = await completed;
+
+  assert.equal(result.exitCode, 129);
+  assert.equal(processObj.listenerCount('SIGINT'), 0);
+  assert.equal(processObj.listenerCount('SIGTERM'), 0);
+  assert.equal(processObj.listenerCount('SIGHUP'), 0);
+});
+
+test('persistent provider supervisor waits for signaled descendants before cleanup', async () => {
+  const calls = [];
+  const child = createChildDouble();
+  const processObj = createProcessDouble();
+  let releaseSettle;
+  const settle = new Promise((resolve) => { releaseSettle = resolve; });
+  const completed = runPersistentProviderSupervisor(supervisorContext(), {
+    processObj,
+    spawn: () => child,
+    captureAuth() { calls.push('capture'); },
+    reconcileResources() { calls.push('reconcile'); },
+    removeProjection() { calls.push('remove-projection'); },
+    removeRegistry() { calls.push('remove-registry'); return true; },
+    waitForTerminationSettle() {
+      calls.push('settle');
+      return settle;
+    }
+  });
+
+  processObj.emit('SIGHUP');
+  child.emit('close', null, 'SIGTERM');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(calls, ['settle']);
+
+  releaseSettle();
+  const result = await completed;
+  assert.deepEqual(calls, [
+    'settle',
+    'capture',
+    'reconcile',
+    'remove-projection',
+    'remove-registry'
+  ]);
+  assert.equal(result.exitCode, 129);
+});
+
+test('persistent provider supervisor reports cleanup errors without constructing a revoked TTY', async () => {
+  const child = createChildDouble();
+  const processObj = createProcessDouble();
+  const writes = [];
+  Object.defineProperty(processObj, 'stderr', {
+    configurable: true,
+    get() {
+      throw new Error('revoked tty accessed');
+    }
+  });
+  const completed = runPersistentProviderSupervisor(supervisorContext(), {
+    processObj,
+    spawn: () => child,
+    captureAuth() {
+      throw new Error('capture failed');
+    },
+    reconcileResources() {},
+    removeProjection() {},
+    removeRegistry() { return true; },
+    writeError(output) {
+      writes.push(output);
+    }
+  });
+
+  child.emit('close', 0, null);
+  const result = await completed;
+  assert.equal(result.exitCode, 1);
+  assert.equal(writes.length, 1);
+  assert.match(writes[0], /capture failed/);
 });
 
 test('production supervisor dependencies use the explicit host/projection roots', () => {
@@ -399,6 +535,7 @@ test('production supervisor removes a transient projection after every terminal 
         createSessionStoreService: () => ({
           ensureSessionStoreLinks: () => ({ migrated: 0, linked: 0 })
         }),
+        writeError() {},
         captureProviderAuth() {},
         reconcileProviderResources() {},
         persistentSessionRegistry: {

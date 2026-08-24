@@ -1,4 +1,4 @@
-import type { AppInstallJob, WebUiTask } from '@/types';
+import type { AppInstallJob, ManagedAppUpdateResponse, WebUiTask } from '@/types';
 
 export interface AppActionPlanPresentation {
   id: string;
@@ -15,6 +15,14 @@ export interface AppInstallStatusPresentation {
   terminal: boolean;
 }
 
+export interface AppUpdateActionPresentation {
+  shouldExecute: boolean;
+  title: string;
+  summary: string;
+  notice: string;
+  metadata: Array<{ label: string; value: string }>;
+}
+
 function quoteShellToken(value: string) {
   if (!value) return "''";
   if (/^[A-Za-z0-9_./:@%+=,-]+$/.test(value)) return value;
@@ -29,6 +37,41 @@ export function formatAppActionPlan(plan: AppActionPlanPresentation) {
   if (tokens.length <= 1) return tokens[0] || '';
   return tokens.map((token, index) => index === 0 ? token : `  ${token}`)
     .join(' \\\n');
+}
+
+export function getAppUpdateActionPresentation(
+  appName: string,
+  response: ManagedAppUpdateResponse
+): AppUpdateActionPresentation {
+  const name = String(appName || '').trim() || '应用';
+  const currentVersion = response.currentVersion || '未探测到';
+  const latestVersion = response.latestVersion || '';
+  const isCurrent = response.ok && response.status === 'current' && !response.updateAvailable;
+  if (isCurrent) {
+    return {
+      shouldExecute: false,
+      title: '',
+      summary: '',
+      notice: latestVersion ? `${name} 已是最新版（${latestVersion}）` : `${name} 已是最新版`,
+      metadata: []
+    };
+  }
+
+  const summary = response.updateAvailable
+    ? '确认后将创建更新任务，进度显示在后台任务队列。'
+    : response.status === 'unknown'
+      ? '当前版本无法自动比较；确认后仍会执行更新计划。'
+      : '远端版本不可用；确认后仍会执行更新计划。';
+  return {
+    shouldExecute: true,
+    title: response.updateAvailable ? `${name} 有新版本` : `更新 ${name}`,
+    summary,
+    notice: '',
+    metadata: [
+      { label: '当前版本', value: currentVersion },
+      ...(latestVersion ? [{ label: '远端最新版', value: latestVersion }] : [])
+    ]
+  };
 }
 
 export function getAppInstallFailureReasons(job: Pick<AppInstallJob, 'error' | 'attempts'> | null | undefined) {
@@ -80,4 +123,18 @@ export function canRetryAppInstallTask(task: WebUiTask) {
   return task.source === 'app-install'
     && String(task.status || '').toLowerCase() === 'failed'
     && Boolean(task.appId && task.action);
+}
+
+export function canRetryWebUiTask(task: WebUiTask) {
+  const source = String(task.source || '');
+  return ['app-install', 'terminal', 'environment', 'managed-tool'].includes(source)
+    && String(task.status || '').toLowerCase() === 'failed'
+    && Boolean(task.appId && task.action);
+}
+
+export function getWebUiTaskSourceLabel(task: Pick<WebUiTask, 'source'>) {
+  if (task.source === 'terminal') return '终端';
+  if (task.source === 'environment') return '运行环境';
+  if (task.source === 'managed-tool') return '网络接入';
+  return '应用';
 }

@@ -33,19 +33,19 @@ const SECTION_ITEMS: Record<ToolkitSection, ToolkitSecondaryItem[]> = {
     {
       id: 'apps',
       label: '应用管理',
-      description: '安装、更新、配置与会话事件',
+      description: '安装、更新与卸载',
       icon: <AppstoreOutlined />
     },
     {
       id: 'terminals',
       label: '终端管理',
-      description: '发现、安装、更新与卸载终端',
+      description: '安装、更新与卸载',
       icon: <ToolOutlined />
     },
     {
       id: 'session-runtimes',
       label: '会话运行时',
-      description: 'tmux、psmux 与持久会话后端',
+      description: '持久会话后端',
       icon: <ToolOutlined />
     }
   ],
@@ -53,13 +53,13 @@ const SECTION_ITEMS: Record<ToolkitSection, ToolkitSecondaryItem[]> = {
     {
       id: 'environment',
       label: 'Node / Python',
-      description: '版本、包管理器与任务式命令',
+      description: '安装、更新与卸载',
       icon: <CodeOutlined />
     },
     {
       id: 'mirrors',
       label: '软件源与镜像',
-      description: '当前源、连通延迟与平台指南',
+      description: '镜像状态与连通性',
       icon: <CloudSyncOutlined />
     }
   ],
@@ -67,19 +67,19 @@ const SECTION_ITEMS: Record<ToolkitSection, ToolkitSecondaryItem[]> = {
     {
       id: 'network-access',
       label: '接入与隧道',
-      description: 'FRP 客户端配置',
+      description: 'FRP 接入配置',
       icon: <ApiOutlined />
     },
     {
       id: 'proxy-pool',
       label: '代理池与分流',
-      description: '节点、订阅、出口与聚合配置',
+      description: '节点、订阅与出口',
       icon: <ForkOutlined />
     },
     {
       id: 'proxy-diagnostics',
       label: '网络诊断',
-      description: '系统、进程与工具代理观测',
+      description: '代理状态与诊断',
       icon: <GlobalOutlined />
     }
   ]
@@ -164,16 +164,9 @@ export default function Toolkit() {
   return (
     <PageScaffold
       title="开发工具"
-      subTitle="工业化开发控制台：沿实测、配置、指南三条轨道管理应用、运行时与网络。"
+      subTitle="管理应用、终端、运行环境与网络。"
       className="toolkit-scaffold"
       ghost
-      headerContent={(
-        <div className="toolkit-console-legend" aria-label="控制台数据语义">
-          <span><strong>实测</strong> 当前主机返回的观测值</span>
-          <span><strong>配置</strong> 可变更且可重新读取的状态</span>
-          <span><strong>指南</strong> 只生成命令，不在页面自动执行</span>
-        </div>
-      )}
     >
       <div className="toolkit-console">
         <Tabs

@@ -1,4 +1,3 @@
-import { StatisticCard } from '@ant-design/pro-components';
 import './ModelUsage.css';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -24,16 +23,18 @@ import {
   FilterOutlined
 } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
-import { modelUsageAPI } from '@/services/api';
+import { accountsAPI, modelUsageAPI } from '@/services/api';
 import type {
+  Account,
+  ModelUsageBreakdownResponse,
   ModelUsageDashboardQueryJob,
   ModelUsageModelRow,
   ModelUsageQuery,
   ModelUsageRequestRow,
   ModelUsageScanJob,
-  ModelUsageSessionDetailRow,
   ModelUsageSessionRow,
   ModelUsageStats,
+  ModelUsageTrend,
   Provider
 } from '@/types';
 import ProviderIcon, { providerIds, providerNames } from '@/components/chat/ProviderIcon';
@@ -41,10 +42,22 @@ import Button from '@/components/ui/AppButton';
 import PageScaffold from '@/components/ui/PageScaffold';
 import SectionCard from '@/components/ui/SectionCard';
 import ListTable from '@/components/ui/ListTable';
-import MobileStatGrid from '@/components/mobile/MobileStatGrid';
 import MobilePills from '@/components/mobile/MobilePills';
 import '@/components/mobile/mobile-cards.css';
+import UsageTrendChart from '@/features/model-usage/UsageTrendChart';
+import UsageModelMixChart from '@/features/model-usage/UsageModelMixChart';
 import RequestDetailsSection from '@/features/model-usage/RequestDetailsSection';
+import UsageBreakdownDrawer, {
+  type UsageBreakdownTarget
+} from '@/features/model-usage/UsageBreakdownDrawer';
+import {
+  calculateCacheHitRate,
+  formatAccountScope,
+  formatCacheRate,
+  formatCost,
+  formatTokens,
+  getCacheTokens
+} from '@/features/model-usage/model-usage-presentation';
 
 const { RangePicker } = DatePicker;
 const { Text } = Typography;
@@ -80,6 +93,13 @@ const emptyStats: ModelUsageStats = {
   totalCostUsd: 0
 };
 
+const emptyTrend: ModelUsageTrend = {
+  fromMs: 0,
+  toMs: 0,
+  bucketMs: 0,
+  points: []
+};
+
 function formatDate(value: Dayjs) {
   return value.format('YYYY-MM-DD');
 }
@@ -96,20 +116,6 @@ function buildRangeByMode(mode: RangeMode): [Dayjs, Dayjs] {
   return [now.startOf('day'), now];
 }
 
-function formatTokens(value: number) {
-  const number = Number(value) || 0;
-  if (number >= 1_000_000) return `${(number / 1_000_000).toFixed(2)}M`;
-  if (number >= 1_000) return `${(number / 1_000).toFixed(1)}K`;
-  return String(number);
-}
-
-function formatCost(value: number) {
-  const number = Number(value) || 0;
-  if (number <= 0) return '$0.0000';
-  if (number < 0.01) return `$${number.toFixed(4)}`;
-  return `$${number.toFixed(2)}`;
-}
-
 function formatTime(value: number) {
   if (!value) return '-';
   return dayjs(value).format('MM-DD HH:mm');
@@ -121,6 +127,27 @@ function formatProvider(provider: Provider) {
       <ProviderIcon provider={provider} size={14} />
       <span>{providerNames[provider] || provider}</span>
     </Space>
+  );
+}
+
+function renderAccountScope(accountCount: number, unattributedCalls: number) {
+  const value = formatAccountScope(accountCount, unattributedCalls);
+  if (unattributedCalls <= 0) return value;
+  return (
+    <Tooltip title="未归属部分缺少可审计账号证据，不按默认账号、时间或调度结果猜测。">
+      <span>{value}</span>
+    </Tooltip>
+  );
+}
+
+function renderCacheTokens(row: {
+  cacheReadInputTokens: number;
+  cacheCreationInputTokens: number;
+}) {
+  return (
+    <Tooltip title={`读取 ${formatTokens(row.cacheReadInputTokens)} · 写入 ${formatTokens(row.cacheCreationInputTokens)}`}>
+      <span>{formatTokens(getCacheTokens(row))}</span>
+    </Tooltip>
   );
 }
 
@@ -154,10 +181,10 @@ function buildQuery(
   limit = 50,
   scan = false
 ): ModelUsageQuery {
-  const includeTime = rangeMode === 'hour' || rangeMode === 'custom';
+  const includeStartTime = rangeMode === 'hour' || rangeMode === 'custom';
   return {
-    from: includeTime ? formatDateTime(range[0]) : formatDate(range[0]),
-    to: includeTime ? formatDateTime(range[1]) : formatDate(range[1]),
+    from: includeStartTime ? formatDateTime(range[0]) : formatDate(range[0]),
+    to: formatDateTime(range[1]),
     provider,
     model: model.trim(),
     limit,
@@ -183,13 +210,17 @@ export default function ModelUsage() {
   const [requestDetailsRequested, setRequestDetailsRequested] = useState(false);
   const [requestDetailsLoading, setRequestDetailsLoading] = useState(false);
   const [requestDetailsError, setRequestDetailsError] = useState('');
+  const [trend, setTrend] = useState<ModelUsageTrend>(emptyTrend);
+  const [accountsByRef, setAccountsByRef] = useState<Map<string, Account>>(() => new Map());
   const [loading, setLoading] = useState(false);
+  const [hasDashboardSnapshot, setHasDashboardSnapshot] = useState(false);
+  const [dashboardLoadError, setDashboardLoadError] = useState('');
   const [dashboardQueryJob, setDashboardQueryJob] = useState<ModelUsageDashboardQueryJob | null>(null);
   const [scanning, setScanning] = useState(false);
   const [scanJob, setScanJob] = useState<ModelUsageScanJob | null>(null);
-  const [selectedSession, setSelectedSession] = useState<ModelUsageSessionRow | null>(null);
-  const [sessionDetail, setSessionDetail] = useState<ModelUsageSessionDetailRow[]>([]);
-  const [sessionDetailLoading, setSessionDetailLoading] = useState(false);
+  const [breakdownTarget, setBreakdownTarget] = useState<UsageBreakdownTarget | null>(null);
+  const [breakdown, setBreakdown] = useState<ModelUsageBreakdownResponse | null>(null);
+  const [breakdownLoading, setBreakdownLoading] = useState(false);
   const [refreshRevision, setRefreshRevision] = useState(0);
   const completedScanJobIdsRef = useRef<Set<string>>(new Set());
   const completedDashboardQueryIdsRef = useRef<Set<string>>(new Set());
@@ -199,9 +230,21 @@ export default function ModelUsage() {
   const loadSequenceRef = useRef(0);
   const quietNextLoadRef = useRef(true);
   const refreshAfterScanRef = useRef<() => void>(() => {});
+  const breakdownSequenceRef = useRef(0);
   const requestDetailsSequenceRef = useRef(0);
 
   const query = useMemo(() => buildQuery(range, rangeMode, provider, model, 50), [model, provider, range, rangeMode]);
+
+  const beginUsageTransition = useCallback((quiet = false) => {
+    quietNextLoadRef.current = quiet;
+    setLoading(true);
+    setDashboardLoadError('');
+    setDashboardQueryJob(null);
+    breakdownSequenceRef.current += 1;
+    setBreakdownTarget(null);
+    setBreakdown(null);
+    setBreakdownLoading(false);
+  }, []);
 
   const cancelDashboardQuery = useCallback((jobId: string) => {
     if (!jobId) return;
@@ -216,17 +259,37 @@ export default function ModelUsage() {
       setModels(job.dashboard.models || []);
       setSessions(job.dashboard.sessions || []);
       setModelOptions(job.dashboard.modelOptions || []);
+      setTrend(job.dashboard.trend || emptyTrend);
+      setHasDashboardSnapshot(true);
+      setDashboardLoadError('');
     }
     if (isDashboardQueryActive(job)) {
       setLoading(true);
       return;
     }
     setLoading(false);
+    if (job.status === 'succeeded') {
+      setDashboardLoadError('');
+      return;
+    }
     if (job.status !== 'failed' || completedDashboardQueryIdsRef.current.has(job.id)) return;
     completedDashboardQueryIdsRef.current.add(job.id);
+    const errorMessage = job.error || '加载模型用量失败';
+    setDashboardLoadError(errorMessage);
     if (!activeDashboardQueryQuietRef.current) {
-      message.error(job.error || '加载模型用量失败');
+      message.error(errorMessage);
     }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    accountsAPI.list()
+      .then((response) => {
+        if (!active) return;
+        setAccountsByRef(new Map(response.accounts.map((account) => [account.accountRef, account])));
+      })
+      .catch(() => {});
+    return () => { active = false; };
   }, []);
 
   const handleDashboardQueryJob = useCallback((job: ModelUsageDashboardQueryJob) => {
@@ -263,10 +326,9 @@ export default function ModelUsage() {
     cancelDashboardQuery(previousJobId);
     activeDashboardQueryQuietRef.current = options.quiet !== false;
     setDashboardQueryJob(null);
-    setStats(emptyStats);
-    setModels([]);
-    setSessions([]);
-    setModelOptions([]);
+    setDashboardLoadError('');
+    setBreakdownTarget(null);
+    setBreakdown(null);
     setLoading(true);
     try {
       const response = await modelUsageAPI.startDashboardQuery({ ...nextQuery, scan: false });
@@ -282,10 +344,11 @@ export default function ModelUsage() {
         applyDashboardQueryJob(latestJob);
       }
     } catch (error: any) {
-      if (loadSequence === loadSequenceRef.current && !options.quiet) {
-        message.error(error?.response?.data?.message || error?.message || '加载模型用量失败');
-      }
-      if (loadSequence === loadSequenceRef.current) setLoading(false);
+      if (loadSequence !== loadSequenceRef.current) return;
+      const errorMessage = error?.response?.data?.message || error?.message || '加载模型用量失败';
+      setDashboardLoadError(errorMessage);
+      if (!options.quiet) message.error(errorMessage);
+      setLoading(false);
     }
   }, [applyDashboardQueryJob, cancelDashboardQuery]);
 
@@ -329,12 +392,14 @@ export default function ModelUsage() {
 
   const handleRangeChange = (value: null | [Dayjs | null, Dayjs | null]) => {
     if (!value || !value[0] || !value[1]) return;
+    beginUsageTransition();
     setRangeMode('custom');
     setRange([value[0], value[1]]);
     setModel('');
   };
 
   const handleRangeModeChange = (value: RangeMode) => {
+    beginUsageTransition();
     setRangeMode(value);
     setModel('');
     if (value !== 'custom') {
@@ -343,15 +408,21 @@ export default function ModelUsage() {
   };
 
   const handleProviderChange = (value: ProviderFilter) => {
+    beginUsageTransition();
     setProvider(value);
     setModel('');
   };
 
+  const handleModelChange = (value: string | undefined) => {
+    beginUsageTransition();
+    setModel(String(value || ''));
+  };
+
   const requestUsageRefresh = useCallback((quiet: boolean) => {
-    quietNextLoadRef.current = quiet;
+    beginUsageTransition(quiet);
     if (rangeMode !== 'custom') setRange(buildRangeByMode(rangeMode));
     setRefreshRevision((current) => current + 1);
-  }, [rangeMode]);
+  }, [beginUsageTransition, rangeMode]);
 
   const handleRefreshUsage = () => requestUsageRefresh(false);
 
@@ -407,22 +478,36 @@ export default function ModelUsage() {
     }
   };
 
-  const openSessionDetail = async (row: ModelUsageSessionRow) => {
-    setSelectedSession(row);
-    setSessionDetail([]);
-    setSessionDetailLoading(true);
+  const openBreakdown = useCallback(async (target: UsageBreakdownTarget) => {
+    if (loading) return;
+    const sequence = breakdownSequenceRef.current + 1;
+    breakdownSequenceRef.current = sequence;
+    setBreakdownTarget(target);
+    setBreakdown(null);
+    setBreakdownLoading(true);
     try {
-      const response = await modelUsageAPI.sessionDetail({
+      const response = await modelUsageAPI.breakdown({
         ...query,
-        provider: row.provider,
-        sessionId: row.sessionId
+        provider: target.row.provider,
+        model: target.kind === 'model' ? target.row.model : query.model,
+        sessionId: target.kind === 'session' ? target.row.sessionId : '',
+        limit: 500
       });
-      setSessionDetail(response.session || []);
+      if (sequence === breakdownSequenceRef.current) setBreakdown(response);
     } catch (error: any) {
-      message.error(error?.response?.data?.message || error?.message || '加载会话明细失败');
+      if (sequence === breakdownSequenceRef.current) {
+        message.error(error?.response?.data?.message || error?.message || '加载用量分量失败');
+      }
     } finally {
-      setSessionDetailLoading(false);
+      if (sequence === breakdownSequenceRef.current) setBreakdownLoading(false);
     }
+  }, [loading, query]);
+
+  const closeBreakdown = () => {
+    breakdownSequenceRef.current += 1;
+    setBreakdownTarget(null);
+    setBreakdown(null);
+    setBreakdownLoading(false);
   };
 
   const copySessionId = async (sessionId: string) => {
@@ -440,54 +525,83 @@ export default function ModelUsage() {
     {
       title: 'Provider',
       dataIndex: 'provider',
-      width: 130,
-      render: (value: any) => formatProvider(value as Provider)
+      width: 124,
+      render: (value) => formatProvider(value as Provider)
     },
     {
       title: '模型',
       dataIndex: 'model',
+      width: 220,
       ellipsis: true,
-      render: (value: any) => value || '-'
+      render: (value) => value || '-'
+    },
+    {
+      title: '账号',
+      key: 'accounts',
+      width: 138,
+      render: (_, row) => renderAccountScope(row.accountCount, row.unattributedCalls)
     },
     {
       title: '调用',
       dataIndex: 'calls',
-      width: 90,
+      width: 78,
       align: 'right'
-    },
-    {
-      title: 'Tokens',
-      dataIndex: 'totalTokens',
-      width: 110,
-      align: 'right',
-      render: (value: any) => formatTokens(value)
     },
     {
       title: 'Input',
       dataIndex: 'inputTokens',
-      width: 110,
+      width: 96,
       align: 'right',
-      render: (value: any) => formatTokens(value)
+      render: (value) => formatTokens(Number(value))
     },
     {
       title: 'Output',
       dataIndex: 'outputTokens',
-      width: 110,
+      width: 96,
       align: 'right',
-      render: (value: any) => formatTokens(value)
+      render: (value) => formatTokens(Number(value))
     },
     {
       title: 'Cache',
-      width: 110,
+      key: 'cache',
+      width: 96,
       align: 'right',
-      render: (_, row: any) => formatTokens(row.cacheReadInputTokens + row.cacheCreationInputTokens)
+      render: (_, row) => renderCacheTokens(row)
+    },
+    {
+      title: '缓存率',
+      dataIndex: 'cacheHitRate',
+      width: 88,
+      align: 'right',
+      render: (value) => formatCacheRate(value as number | null)
+    },
+    {
+      title: 'Tokens',
+      dataIndex: 'totalTokens',
+      width: 100,
+      align: 'right',
+      render: (value) => formatTokens(Number(value))
     },
     {
       title: '成本',
       dataIndex: 'costUsd',
-      width: 110,
+      width: 96,
       align: 'right',
-      render: (value: any) => formatCost(value)
+      render: (value) => formatCost(Number(value))
+    },
+    {
+      title: '',
+      key: 'action',
+      width: 52,
+      align: 'center',
+      render: (_, row) => (
+        <Button
+          aria-label={`查看 ${row.model || '未知模型'} 的账号分量`}
+          icon={<EyeOutlined />}
+          size="small"
+          onClick={() => void openBreakdown({ kind: 'model', row })}
+        />
+      )
     }
   ];
 
@@ -495,14 +609,15 @@ export default function ModelUsage() {
     {
       title: 'Provider',
       dataIndex: 'provider',
-      width: 130,
-      render: (value: any) => formatProvider(value as Provider)
+      width: 124,
+      render: (value) => formatProvider(value as Provider)
     },
     {
       title: '会话',
       dataIndex: 'sessionId',
+      width: 250,
       ellipsis: true,
-      render: (value: any) => (
+      render: (value) => (
         <span className="usage-session-cell">
           <span className="usage-session-id" title={String(value || '')}>{value}</span>
           <Tooltip title="复制会话 ID">
@@ -520,115 +635,117 @@ export default function ModelUsage() {
     {
       title: '项目',
       dataIndex: 'project',
-      width: 170,
+      width: 150,
       ellipsis: true,
-      render: (value: any) => value || '-'
+      render: (value) => value || '-'
+    },
+    {
+      title: '账号',
+      key: 'accounts',
+      width: 138,
+      render: (_, row) => renderAccountScope(row.accountCount, row.unattributedCalls)
     },
     {
       title: '调用',
       dataIndex: 'calls',
-      width: 90,
+      width: 78,
       align: 'right'
+    },
+    {
+      title: 'Input',
+      dataIndex: 'inputTokens',
+      width: 96,
+      align: 'right',
+      render: (value) => formatTokens(Number(value))
+    },
+    {
+      title: 'Output',
+      dataIndex: 'outputTokens',
+      width: 96,
+      align: 'right',
+      render: (value) => formatTokens(Number(value))
+    },
+    {
+      title: 'Cache',
+      key: 'cache',
+      width: 96,
+      align: 'right',
+      render: (_, row) => renderCacheTokens(row)
+    },
+    {
+      title: '缓存率',
+      dataIndex: 'cacheHitRate',
+      width: 88,
+      align: 'right',
+      render: (value) => formatCacheRate(value as number | null)
     },
     {
       title: 'Tokens',
       dataIndex: 'totalTokens',
-      width: 110,
+      width: 100,
       align: 'right',
-      render: (value: any) => formatTokens(value)
+      render: (value) => formatTokens(Number(value))
     },
     {
       title: '成本',
       dataIndex: 'costUsd',
-      width: 110,
+      width: 96,
       align: 'right',
-      render: (value: any) => formatCost(value)
+      render: (value) => formatCost(Number(value))
     },
     {
       title: '更新时间',
       dataIndex: 'updatedAtMs',
-      width: 130,
-      render: (value: any) => formatTime(value)
+      width: 124,
+      render: (value) => formatTime(Number(value))
     },
     {
       title: '',
       key: 'action',
       width: 56,
       align: 'center',
-      render: (_, row: any) => (
+      render: (_, row) => (
         <Button
-          aria-label="查看会话明细"
+          aria-label="查看会话账号与模型分量"
           icon={<EyeOutlined />}
           size="small"
-          onClick={() => openSessionDetail(row as ModelUsageSessionRow)}
+          onClick={() => void openBreakdown({ kind: 'session', row })}
         />
       )
     }
   ];
 
-  const detailColumns: ProColumns<ModelUsageSessionDetailRow>[] = [
-    {
-      title: '模型',
-      dataIndex: 'model',
-      ellipsis: true,
-      render: (value: any) => value || '-'
-    },
-    {
-      title: '调用',
-      dataIndex: 'calls',
-      width: 90,
-      align: 'right'
-    },
-    {
-      title: 'Input',
-      dataIndex: 'inputTokens',
-      width: 110,
-      align: 'right',
-      render: (value: any) => formatTokens(value)
-    },
-    {
-      title: 'Output',
-      dataIndex: 'outputTokens',
-      width: 110,
-      align: 'right',
-      render: (value: any) => formatTokens(value)
-    },
-    {
-      title: 'Cache',
-      width: 110,
-      align: 'right',
-      render: (_, row: any) => formatTokens(row.cacheReadInputTokens + row.cacheCreationInputTokens)
-    },
-    {
-      title: 'Reasoning',
-      dataIndex: 'reasoningOutputTokens',
-      width: 120,
-      align: 'right',
-      render: (value: any) => formatTokens(value)
-    },
-    {
-      title: '成本',
-      dataIndex: 'costUsd',
-      width: 110,
-      align: 'right',
-      render: (value: any) => formatCost(value)
-    }
-  ];
-
-  // 移动端：把「按模型 / 按会话」宽表的每一行竖排成一张卡（§2 表格→卡片列表）。
+  // 移动端把宽表降级为可点击卡片，同时保留完整审计指标。
   const renderModelCard = (row: ModelUsageModelRow) => (
-    <div className="mobile-card" key={`${row.provider}:${row.model || 'unknown'}`}>
+    <div
+      className="mobile-card usage-mobile-card"
+      key={`${row.provider}:${row.model || 'unknown'}`}
+      role="button"
+      tabIndex={0}
+      aria-label={`查看 ${row.model || '未知模型'} 的账号分量`}
+      onClick={() => void openBreakdown({ kind: 'model', row })}
+      onKeyDown={(event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        void openBreakdown({ kind: 'model', row });
+      }}
+    >
       <div className="mobile-card-head">
         <span className="mobile-card-head-icon"><ProviderIcon provider={row.provider} size={20} /></span>
         <div className="mobile-card-head-main">
           <div className="mobile-card-title"><span className="mobile-card-title-text">{row.model || '未知模型'}</span></div>
-          <div className="mobile-card-subtitle">{providerNames[row.provider] || row.provider}</div>
+          <div className="mobile-card-subtitle">
+            {providerNames[row.provider] || row.provider} · {renderAccountScope(row.accountCount, row.unattributedCalls)} · {row.calls} 次调用
+          </div>
         </div>
+        <span className="usage-mobile-card-action" aria-hidden><EyeOutlined /></span>
       </div>
-      {/* 移动端简版:只留 调用/Tokens/成本,Input/Output 细分留桌面 */}
       <div className="mobile-card-meta">
-        <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">调用</span><span className="mobile-card-meta-value">{row.calls}</span></div>
         <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">Tokens</span><span className="mobile-card-meta-value">{formatTokens(row.totalTokens)}</span></div>
+        <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">Input</span><span className="mobile-card-meta-value">{formatTokens(row.inputTokens)}</span></div>
+        <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">Output</span><span className="mobile-card-meta-value">{formatTokens(row.outputTokens)}</span></div>
+        <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">Cache</span><span className="mobile-card-meta-value">{formatTokens(getCacheTokens(row))}</span></div>
+        <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">缓存率</span><span className="mobile-card-meta-value">{formatCacheRate(row.cacheHitRate)}</span></div>
         <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">成本</span><span className="mobile-card-meta-value" style={{ color: 'var(--m-run, #13a65a)' }}>{formatCost(row.costUsd)}</span></div>
       </div>
     </div>
@@ -636,24 +753,34 @@ export default function ModelUsage() {
 
   const renderSessionCard = (row: ModelUsageSessionRow) => (
     <div
-      className="mobile-card"
+      className="mobile-card usage-mobile-card"
       key={getSessionKey(row)}
       role="button"
       tabIndex={0}
-      onClick={() => openSessionDetail(row)}
-      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openSessionDetail(row); } }}
+      aria-label={`查看会话 ${row.project || row.sessionId} 的账号与模型分量`}
+      onClick={() => void openBreakdown({ kind: 'session', row })}
+      onKeyDown={(event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        void openBreakdown({ kind: 'session', row });
+      }}
     >
       <div className="mobile-card-head">
         <span className="mobile-card-head-icon"><ProviderIcon provider={row.provider} size={20} /></span>
         <div className="mobile-card-head-main">
           <div className="mobile-card-title"><span className="mobile-card-title-text">{row.project || row.sessionId}</span></div>
-          <div className="mobile-card-subtitle">{providerNames[row.provider] || row.provider} · {formatTime(row.updatedAtMs)}</div>
+          <div className="mobile-card-subtitle">
+            {providerNames[row.provider] || row.provider} · {renderAccountScope(row.accountCount, row.unattributedCalls)} · {formatTime(row.updatedAtMs)}
+          </div>
         </div>
-        <div className="mobile-card-head-action"><Button type="text" icon={<EyeOutlined />} aria-label="查看会话明细" /></div>
+        <span className="usage-mobile-card-action" aria-hidden><EyeOutlined /></span>
       </div>
       <div className="mobile-card-meta">
-        <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">调用</span><span className="mobile-card-meta-value">{row.calls}</span></div>
         <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">Tokens</span><span className="mobile-card-meta-value">{formatTokens(row.totalTokens)}</span></div>
+        <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">Input</span><span className="mobile-card-meta-value">{formatTokens(row.inputTokens)}</span></div>
+        <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">Output</span><span className="mobile-card-meta-value">{formatTokens(row.outputTokens)}</span></div>
+        <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">Cache</span><span className="mobile-card-meta-value">{formatTokens(getCacheTokens(row))}</span></div>
+        <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">缓存率</span><span className="mobile-card-meta-value">{formatCacheRate(row.cacheHitRate)}</span></div>
         <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">成本</span><span className="mobile-card-meta-value" style={{ color: 'var(--color-success, #15803d)' }}>{formatCost(row.costUsd)}</span></div>
       </div>
     </div>
@@ -680,6 +807,26 @@ export default function ModelUsage() {
       });
   }, [modelOptions, provider]);
 
+  const totalCacheTokens = getCacheTokens(stats);
+  const overallCacheHitRate = calculateCacheHitRate(stats);
+  const dashboardProgress = dashboardQueryJob && dashboardQueryJob.totalShards > 0
+    ? `${dashboardQueryJob.completedShards}/${dashboardQueryJob.totalShards}`
+    : '';
+  const dashboardStatusText = loading
+    ? [
+      hasDashboardSnapshot ? '正在切换数据范围' : '正在加载模型用量',
+      dashboardProgress ? `已汇总 ${dashboardProgress}` : ''
+    ].filter(Boolean).join(' · ')
+    : dashboardLoadError
+      ? hasDashboardSnapshot ? '切换失败，仍显示上一次成功快照' : '加载失败，请重试'
+      : '';
+  const dashboardBodyClassName = [
+    'usage-dashboard-body',
+    loading ? 'usage-dashboard-body--loading' : '',
+    loading && hasDashboardSnapshot ? 'usage-dashboard-body--refreshing' : '',
+    dashboardLoadError ? 'usage-dashboard-body--error' : ''
+  ].filter(Boolean).join(' ');
+
   return (
     <PageScaffold ghost
       title="模型用量统计"
@@ -698,35 +845,53 @@ export default function ModelUsage() {
         </Button>
       ]}
     >
-      {/* 4 项关键指标。移动端用 MobileStatGrid（2 列，数值不换行）；桌面保留 StatisticCard.Group。 */}
-      {isMobile ? (
-        <MobileStatGrid
-          items={[
-            { key: 'calls', label: '总调用次数', value: stats.totalCalls },
-            { key: 'sessions', label: '运行会话', value: stats.totalSessions },
-            { key: 'tokens', label: '总 Tokens', value: formatTokens(stats.totalTokens) },
-            { key: 'cost', label: '估算成本 (USD)', value: formatCost(stats.totalCostUsd), valueColor: 'var(--color-success, #15803d)' }
-          ]}
-        />
-      ) : (
-        <StatisticCard.Group direction="row" style={{ marginBottom: 16 }}>
-          <StatisticCard statistic={{ title: '总调用次数', value: stats.totalCalls }} />
-          <StatisticCard statistic={{ title: '运行会话', value: stats.totalSessions }} />
-          <StatisticCard statistic={{ title: '总 Tokens', value: formatTokens(stats.totalTokens) }} />
-          <StatisticCard statistic={{ title: '估算成本 (USD)', value: formatCost(stats.totalCostUsd), valueStyle: { color: 'var(--color-success, #15803d)' } }} />
-        </StatisticCard.Group>
-      )}
-
-      {loading ? (
-        <div className="usage-query-progress" role="status" aria-live="polite">
-          <SyncOutlined spin />
-          <Text type="secondary">
-            {dashboardQueryJob && dashboardQueryJob.totalShards > 0
-              ? `正在汇总 ${dashboardQueryJob.completedShards}/${dashboardQueryJob.totalShards}`
-              : '正在准备统计范围…'}
+      <div className={dashboardBodyClassName} aria-busy={loading}>
+      <div
+        className={`usage-query-progress${dashboardStatusText ? ' usage-query-progress--visible' : ''}${dashboardLoadError && !loading ? ' usage-query-progress--error' : ''}`}
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        {loading ? <SyncOutlined spin aria-hidden /> : null}
+        {dashboardStatusText ? (
+          <Text type={dashboardLoadError && !loading ? 'danger' : 'secondary'}>
+            {dashboardStatusText}
           </Text>
+        ) : null}
+      </div>
+
+      <section className="usage-kpi-rail" aria-label="核心用量指标">
+        <div className="usage-kpi-item usage-kpi-item--primary">
+          <span>总 Tokens</span>
+          <strong>{formatTokens(stats.totalTokens)}</strong>
+          <small>{stats.totalCalls} 次调用 · {stats.totalSessions} 个会话</small>
         </div>
-      ) : null}
+        <div className="usage-kpi-item">
+          <span>Input</span>
+          <strong>{formatTokens(stats.inputTokens)}</strong>
+          <small>未含缓存读写</small>
+        </div>
+        <div className="usage-kpi-item">
+          <span>Output</span>
+          <strong>{formatTokens(stats.outputTokens)}</strong>
+          <small>推理 {formatTokens(stats.reasoningOutputTokens)}</small>
+        </div>
+        <div className="usage-kpi-item">
+          <span>Cache</span>
+          <strong>{formatTokens(totalCacheTokens)}</strong>
+          <small>读 {formatTokens(stats.cacheReadInputTokens)} · 写 {formatTokens(stats.cacheCreationInputTokens)}</small>
+        </div>
+        <div className="usage-kpi-item">
+          <span>缓存率</span>
+          <strong>{formatCacheRate(overallCacheHitRate)}</strong>
+          <small>读取 / 全部输入侧 Tokens</small>
+        </div>
+        <div className="usage-kpi-item usage-kpi-item--cost">
+          <span>估算成本</span>
+          <strong>{formatCost(stats.totalCostUsd)}</strong>
+          <small>USD · 按当前价格快照</small>
+        </div>
+      </section>
 
       {isMobile ? (
         <>
@@ -775,7 +940,7 @@ export default function ModelUsage() {
             <div className="m-filter-group-label">模型</div>
             <Select
               allowClear showSearch optionFilterProp="label" placeholder="全部模型"
-              value={model || undefined} onChange={(value) => setModel(String(value || ''))}
+              value={model || undefined} onChange={handleModelChange}
               style={{ width: '100%' }} options={modelSelectOptions}
             />
           </Drawer>
@@ -809,7 +974,7 @@ export default function ModelUsage() {
             optionFilterProp="label"
             placeholder="全部模型"
             value={model || undefined}
-            onChange={(value) => setModel(String(value || ''))}
+            onChange={handleModelChange}
             style={{ width: 260 }}
             options={modelSelectOptions}
           />
@@ -820,8 +985,18 @@ export default function ModelUsage() {
       </SectionCard>
       )}
 
+      <SectionCard className="usage-insights-card" bodyStyle={{ padding: 0 }}>
+        <div className="usage-insight-grid">
+          <UsageTrendChart trend={trend} />
+          <UsageModelMixChart
+            models={models}
+            onSelectModel={(row) => void openBreakdown({ kind: 'model', row })}
+          />
+        </div>
+      </SectionCard>
+
       {isMobile ? (
-        <>
+        <div className="usage-results-mobile">
           <MobilePills
             items={[{ key: 'model', label: '按模型' }, { key: 'session', label: '按会话' }]}
             activeKey={usageTab}
@@ -844,10 +1019,12 @@ export default function ModelUsage() {
               <div className="mobile-card-list">{sessions.map(renderSessionCard)}</div>
             )
           )}
-        </>
+        </div>
       ) : (
-      <SectionCard>
+      <SectionCard className="usage-results-card">
         <Tabs
+          activeKey={usageTab}
+          onChange={(key) => setUsageTab(key as 'model' | 'session')}
           items={[
             {
               key: 'model',
@@ -858,7 +1035,7 @@ export default function ModelUsage() {
                   rowKey={(row) => `${row.provider}:${row.model || 'unknown'}`}
                   columns={modelColumns}
                   dataSource={models}
-                  scroll={{ x: 900 }}
+                  scroll={{ x: 1280 }}
                 />
               )
             },
@@ -871,7 +1048,7 @@ export default function ModelUsage() {
                   rowKey={getSessionKey}
                   columns={sessionColumns}
                   dataSource={sessions}
-                  scroll={{ x: 1000 }}
+                  scroll={{ x: 1560 }}
                 />
               )
             }
@@ -890,26 +1067,15 @@ export default function ModelUsage() {
         onRequest={() => void loadRequestDetails()}
       />
 
-      <Drawer
-        title={selectedSession ? `${providerNames[selectedSession.provider]} · ${selectedSession.project || selectedSession.sessionId}` : '会话明细'}
-        open={Boolean(selectedSession)}
-        onClose={() => setSelectedSession(null)}
-        width={isMobile ? '100%' : 760}
-      >
-        {selectedSession ? (
-          <Space direction="vertical" size={12} style={{ width: '100%' }}>
-            <Text code>{selectedSession.sessionId}</Text>
-            {selectedSession.cwd ? <Text type="secondary">{selectedSession.cwd}</Text> : null}
-            <ListTable<ModelUsageSessionDetailRow>
-              loading={sessionDetailLoading}
-              rowKey={(row) => `${row.provider}:${row.sessionId}:${row.model || 'unknown'}`}
-              columns={detailColumns}
-              dataSource={sessionDetail}
-              scroll={{ x: 760 }}
-            />
-          </Space>
-        ) : null}
-      </Drawer>
+      <UsageBreakdownDrawer
+        target={breakdownTarget}
+        data={breakdown}
+        loading={breakdownLoading}
+        isMobile={isMobile}
+        accountsByRef={accountsByRef}
+        onClose={closeBreakdown}
+      />
+      </div>
     </PageScaffold>
   );
 }

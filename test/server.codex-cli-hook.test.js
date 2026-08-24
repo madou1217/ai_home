@@ -65,6 +65,23 @@ test('buildWindowsCmdWrapperScript renders stable codex cli wrapper', () => {
   assert.equal(script.includes('%AIH_CODEX_APP_SERVER_PASSTHROUGH%'), true);
 });
 
+test('Windows wrapper scripts fall back to node.exe on PATH when the captured binary disappears', () => {
+  const options = {
+    nodeExecPath: 'D:\\nvm4w\\nodejs\\node.exe',
+    helperScriptPath: 'C:\\repo\\lib\\server\\codex-app-server-stdio-proxy.js',
+    upstreamBinaryPath: 'C:\\Users\\me\\AppData\\Local\\pnpm\\codex.aih-original.CMD',
+    stateFilePath: 'C:\\Users\\me\\.ai_home\\codex-cli-hook-state.json'
+  };
+  const powerShellScript = buildWindowsPowerShellWrapperScript(options);
+  const cmdScript = buildWindowsCmdWrapperScript(options);
+
+  assert.equal(powerShellScript.includes('Test-Path -LiteralPath $nodeBin -PathType Leaf'), true);
+  assert.equal(powerShellScript.includes('Get-Command node.exe -CommandType Application'), true);
+  assert.equal(powerShellScript.includes('$nodeBin = $nodeCommand.Source'), true);
+  assert.equal(cmdScript.includes('if not exist "%NODE_BIN%"'), true);
+  assert.equal(cmdScript.includes('%%~$PATH:I'), true);
+});
+
 test('all wrapper variants share option-aware Codex subcommand semantics', () => {
   assert.equal(findCodexSubcommand(['app-server']), 'app-server');
   assert.equal(findCodexSubcommand(['-c', 'features.foo=true', 'app-server']), 'app-server');

@@ -2898,6 +2898,7 @@ test('runtime routes codex through the built-in AIH server profile when no accou
   assert.equal(spawns.length, 1);
   assert.deepEqual(spawns[0].args, [
     '-c', 'suppress_unstable_features_warning=true',
+    '-c', 'check_for_update_on_startup=false',
     '-c', 'model_provider=aih_server',
     '-c', 'model_providers.aih_server.base_url=http://127.0.0.1:8317/v1',
     '-c', 'model_providers.aih_server.wire_api=responses',
@@ -2975,6 +2976,7 @@ test('runtime injects codex remote proxy for built-in AIH server resume by defau
     'ws://127.0.0.1:9527',
     'resume',
     '-c', 'suppress_unstable_features_warning=true',
+    '-c', 'check_for_update_on_startup=false',
     '-c', 'model_provider=aih_server',
     '-c', 'model_providers.aih_server.base_url=http://127.0.0.1:9527/v1',
     '-c', 'model_providers.aih_server.wire_api=responses',
@@ -3005,6 +3007,7 @@ test('runtime keeps reboot-restored Codex resume native with gateway credentials
   assert.deepEqual(resumeArgs, [
     'resume',
     '-c', 'suppress_unstable_features_warning=true',
+    '-c', 'check_for_update_on_startup=false',
     '-c', 'model_provider=aih_server',
     '-c', 'model_providers.aih_server.base_url=http://127.0.0.1:9527/v1',
     '-c', 'model_providers.aih_server.wire_api=responses',

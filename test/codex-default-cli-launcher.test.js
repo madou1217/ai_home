@@ -238,6 +238,7 @@ test('default Codex CLI passes the API key only through the child environment', 
   assert.deepEqual(spawns[0].args, [
     'exec',
     '-c', 'suppress_unstable_features_warning=true',
+    '-c', 'check_for_update_on_startup=false',
     'Reply with OK only.'
   ]);
   assert.equal(spawns[0].options.env.OPENAI_API_KEY, apiKey);
@@ -269,6 +270,7 @@ test('default Codex CLI omits an unsupported configured service tier without hid
   assert.deepEqual(unsupportedArgs, [
     'exec',
     '-c', 'suppress_unstable_features_warning=true',
+    '-c', 'check_for_update_on_startup=false',
     '-c', 'service_tier="default"',
     '--json'
   ]);
@@ -281,11 +283,19 @@ test('default Codex CLI omits an unsupported configured service tier without hid
   }), 'utf8');
   assert.deepEqual(
     buildCodexDefaultCliArgs(fs, { CODEX_HOME: codexHome }, ['exec'], 'apikey'),
-    ['exec', '-c', 'suppress_unstable_features_warning=true']
+    [
+      'exec',
+      '-c', 'suppress_unstable_features_warning=true',
+      '-c', 'check_for_update_on_startup=false'
+    ]
   );
   assert.deepEqual(
     buildCodexDefaultCliArgs(fs, { CODEX_HOME: codexHome }, ['exec'], 'oauth'),
-    ['exec', '-c', 'suppress_unstable_features_warning=true']
+    [
+      'exec',
+      '-c', 'suppress_unstable_features_warning=true',
+      '-c', 'check_for_update_on_startup=false'
+    ]
   );
 });
 

@@ -3,15 +3,16 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  buildCodexStartupWarningArgs,
+  buildCodexStartupPolicyArgs,
   buildCodexProviderArgs,
   hasCodexModelProviderArg,
   injectCodexProviderArgs
 } = require('../lib/cli/services/ai-cli/codex-provider-args');
 
-test('codex startup warning args use the root config key', () => {
-  assert.deepEqual(buildCodexStartupWarningArgs(), [
-    '-c', 'suppress_unstable_features_warning=true'
+test('codex startup policy args suppress warnings and disable update checks', () => {
+  assert.deepEqual(buildCodexStartupPolicyArgs(), [
+    '-c', 'suppress_unstable_features_warning=true',
+    '-c', 'check_for_update_on_startup=false'
   ]);
 });
 
@@ -23,6 +24,7 @@ test('codex provider args inject endpoint through config and keep the key in env
 
   assert.deepEqual(args, [
     '-c', 'suppress_unstable_features_warning=true',
+    '-c', 'check_for_update_on_startup=false',
     '-c', 'model_provider=aih_server',
     '-c', 'model_providers.aih_server.base_url=http://127.0.0.1:9527/v1',
     '-c', 'model_providers.aih_server.wire_api=responses'

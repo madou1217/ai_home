@@ -177,6 +177,27 @@ test('mergeConfigs assigns aih provider defaults for api key mode without explic
   assert.doesNotMatch(merged, /^bearer_token = /m);
 });
 
+test('mergeConfigs centrally disables codex startup update checks at the root', () => {
+  const merged = mergeConfigs([
+    'model = "gpt-5.6-sol"',
+    'check_for_update_on_startup = true',
+    '',
+    '[features]',
+    'hooks = true'
+  ].join('\n'), {
+    preferred_auth_method: null,
+    model_provider: null,
+    providers: [],
+    model_providers: []
+  });
+
+  const updateKeyIndex = merged.indexOf('check_for_update_on_startup = false');
+  const featuresIndex = merged.indexOf('[features]');
+  assert.equal(updateKeyIndex >= 0, true);
+  assert.equal(updateKeyIndex < featuresIndex, true);
+  assert.equal((merged.match(/check_for_update_on_startup\s*=/g) || []).length, 1);
+});
+
 test('mergeConfigs moves misplaced unstable warning suppression to the root table', () => {
   const merged = mergeConfigs([
     'model = "gpt-5.6-sol"',

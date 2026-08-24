@@ -1,14 +1,47 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { once } = require('node:events');
+const http = require('node:http');
+const WebSocket = require('ws');
 const {
   createRemoteChunkAssembler,
   readRemoteHydrationSuppressionState,
   rewriteRemoteControlPayload,
   sanitizeTraceText,
   shouldSuppressRemoteHydrationEnvelope,
+  startCodexRemoteControlProxy,
   summarizeJsonRpcMessage,
   summarizeRemoteEnvelope
 } = require('../lib/server/codex-remote-control-proxy');
+
+const ACCOUNT_REF = 'acct_0123456789abcdef0123';
+
+function requestLocal(port, pathname = '/backend-api/test') {
+  return new Promise((resolve, reject) => {
+    const req = http.get({ host: '127.0.0.1', port, path: pathname }, (res) => {
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => { body += chunk; });
+      res.on('end', () => resolve({ statusCode: res.statusCode, body }));
+    });
+    req.once('error', reject);
+  });
+}
+
+function requestWebSocketUpgrade(port, pathname = '/backend-api/test') {
+  return new Promise((resolve, reject) => {
+    const socket = new WebSocket(`ws://127.0.0.1:${port}${pathname}`);
+    socket.once('unexpected-response', (_request, response) => {
+      response.resume();
+      resolve(response.statusCode);
+    });
+    socket.once('open', () => reject(new Error('unexpected_websocket_open')));
+    socket.once('error', (error) => {
+      if (/Unexpected server response: \d+/.test(String(error?.message || ''))) return;
+      reject(error);
+    });
+  });
+}
 
 test('remote-control proxy rewrites mobile thread/list requests for shared AIH sessions', () => {
   const payload = JSON.stringify({
@@ -187,4 +220,66 @@ test('remote-control proxy ignores expired hidden hydration suppression entries'
   }, {
     suppressedThreadIds: suppressed
   }), false);
+});
+
+test('remote-control HTTP 与 WebSocket 在绑定 runtime 不可用时统一 fail-closed', async (t) => {
+  let resolveCalls = 0;
+  const server = startCodexRemoteControlProxy({
+    host: '127.0.0.1',
+    port: 0,
+    upstreamOrigin: 'http://127.0.0.1:1',
+    accountRef: ACCOUNT_REF,
+    aiHomeDir: '/tmp/aih-remote-control-egress',
+    resolveAccountEgressRuntimeProxy() {
+      resolveCalls += 1;
+      const error = new Error('account_egress_runtime_not_ready');
+      error.code = 'account_egress_runtime_not_ready';
+      throw error;
+    }
+  });
+  await once(server, 'listening');
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const port = server.address().port;
+
+  const [httpResponse, wsStatus] = await Promise.all([
+    requestLocal(port),
+    requestWebSocketUpgrade(port)
+  ]);
+
+  assert.equal(httpResponse.statusCode, 503);
+  assert.equal(httpResponse.body, 'account_egress_unavailable');
+  assert.equal(wsStatus, 503);
+  assert.equal(resolveCalls, 2);
+});
+
+test('remote-control HTTP 对绑定账号显式传入固定回环代理，不依赖宿主环境', async (t) => {
+  const proxyFetchCalls = [];
+  const server = startCodexRemoteControlProxy({
+    host: '127.0.0.1',
+    port: 0,
+    upstreamOrigin: 'http://upstream.example',
+    accountRef: ACCOUNT_REF,
+    aiHomeDir: '/tmp/aih-remote-control-egress',
+    resolveAccountEgressRuntimeProxy: () => ({
+      bound: true,
+      proxyServer: '127.0.0.1:23109'
+    }),
+    proxyFetch: async (...args) => {
+      proxyFetchCalls.push(args);
+      return new Response('proxied-response', {
+        status: 200,
+        headers: { 'content-type': 'text/plain' }
+      });
+    }
+  });
+  await once(server, 'listening');
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+
+  const response = await requestLocal(server.address().port);
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body, 'proxied-response');
+  assert.equal(proxyFetchCalls.length, 1);
+  assert.equal(proxyFetchCalls[0][3].proxyUrl, 'http://127.0.0.1:23109');
+  assert.equal(proxyFetchCalls[0][3].noProxy, 'localhost,127.0.0.1,::1');
 });

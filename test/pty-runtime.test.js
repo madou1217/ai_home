@@ -11,6 +11,7 @@ const { AIH_SERVER_PROFILE_ID } = require('../lib/account/self-relay-account');
 const { registerAccountIdentity } = require('../lib/account/account-registration');
 const { writeDefaultAccountRef } = require('../lib/account/default-account-store');
 const { writeAccountCredentials } = require('../lib/server/account-credential-store');
+const { writeAccountEgressBinding } = require('../lib/account/zcode-egress-binding-store');
 const { listCliAccountRefRecords } = require('../lib/server/account-ref-store');
 const persistentSession = require('../lib/runtime/persistent-session');
 const persistentSessionRegistry = require('../lib/runtime/persistent-session-registry');
@@ -379,6 +380,56 @@ function fakeCodexNodeShimLaunch(_cliBin, args) {
     }
   };
 }
+
+test('绑定账号 CLI 冷启动会先拉起 Server sidecar，再构造账号代理环境', () => {
+  let ready = false;
+  let startCalls = 0;
+  let accountRef = '';
+  let aiHomeDir = '';
+  const runtimePid = process.pid;
+  const serverDaemon = {
+    status() {
+      return ready
+        ? { running: true, ready: true, stale: false }
+        : { running: false, ready: false, stale: false };
+    },
+    start() {
+      startCalls += 1;
+      ready = true;
+      const runtimeDir = path.join(aiHomeDir, 'run', 'zcode-egress', 'sing-box');
+      fsBase.mkdirSync(runtimeDir, { recursive: true });
+      fsBase.writeFileSync(path.join(runtimeDir, 'status.json'), JSON.stringify({
+        engine: 'sing-box',
+        running: true,
+        dataPlaneReady: true,
+        pid: runtimePid,
+        accounts: [{ accountRef, port: 23118, source: 'url' }]
+      }));
+      return Promise.resolve({ started: true, ready: true });
+    }
+  };
+  const harness = createRuntimeHarness({}, {
+    platform: 'darwin',
+    pid: runtimePid,
+    serverDaemon
+  });
+  aiHomeDir = harness.aiHomeDir;
+  accountRef = harness.resolveHarnessAccountRef('gemini', '1');
+  writeAccountEgressBinding(fsBase, aiHomeDir, accountRef, {
+    mode: 'url',
+    proxyUrl: 'http://proxy.example:8080'
+  });
+
+  harness.runtime.runCliPtyTracked('gemini', accountRef, ['--version'], false, {
+    cliAccountId: '1'
+  });
+
+  assert.equal(startCalls, 1);
+  assert.equal(harness.spawns.length, 1);
+  assert.equal(harness.spawns[0].options.env.HTTP_PROXY, 'http://127.0.0.1:23118');
+  assert.equal(harness.spawns[0].options.env.HTTPS_PROXY, 'http://127.0.0.1:23118');
+  assert.equal(harness.spawns[0].options.env.ALL_PROXY, 'http://127.0.0.1:23118');
+});
 
 test('runtime does not inject --skip-git-repo-check by default', () => {
   const { runtime, proc, spawns, rawModeCalls } = createRuntimeHarness();

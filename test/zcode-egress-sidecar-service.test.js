@@ -661,6 +661,34 @@ test('Server 启动恢复全部持久 ZCode endpoint，并复用同一个 runtim
   assert.equal(events.filter(([name]) => name === 'sidecar-ensure').length, 1);
 });
 
+test('Server 启动从账号绑定恢复缺失 runtime state 的非 ZCode endpoint', async (t) => {
+  const { accountRef, aiHomeDir } = createAccount(t, 'claude');
+  writeAccountEgressBinding(fs, aiHomeDir, accountRef, {
+    mode: EGRESS_MODE_URL,
+    proxyUrl: 'http://proxy.example:8080'
+  });
+  const events = [];
+  const deps = createDependencies(events);
+  deps.zcodeSingBoxRuntime.readState = () => ({ accounts: {} });
+  deps.zcodeSingBoxRuntime.getStatus = () => ({ running: false, accounts: [] });
+  deps.zcodeSingBoxRuntime.getAccountState = () => null;
+
+  const result = await restorePersistedZcodeEgress({
+    fs,
+    aiHomeDir,
+    processObj: { platform: 'darwin' },
+    deps
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.discovered, 1);
+  assert.equal(result.restored, 1);
+  assert.equal(result.failed, 0);
+  assert.equal(result.results[0].provider, 'claude');
+  assert.equal(result.results[0].accountRef, accountRef);
+  assert.equal(events.filter(([name]) => name === 'sidecar-ensure').length, 1);
+});
+
 test('首次绑定会先验证出口，再精确重启已运行但尚未接入 sidecar 的 ZCode 账号', async (t) => {
   const { accountRef, aiHomeDir } = createAccount(t);
   writeAccountEgressBinding(fs, aiHomeDir, accountRef, {

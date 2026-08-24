@@ -8,6 +8,7 @@ const http = require('node:http');
 const net = require('node:net');
 const os = require('node:os');
 const path = require('node:path');
+const WebSocket = require('ws');
 
 const { startLocalServer } = require('../lib/server/server');
 
@@ -144,6 +145,7 @@ test('embedded local server returns an idempotent lifecycle handle without ownin
     mdnsStopped: 0,
     outboundStopped: 0,
     frpStopped: 0,
+    egressStopped: 0,
     logTimers: new Set(),
     logTimersCleared: 0
   };
@@ -161,7 +163,11 @@ test('embedded local server returns an idempotent lifecycle handle without ownin
 
   handle = await startLocalServer(
     createServeOptions(port, { manageProcessLifecycle: false }),
-    createServerDeps(aiHomeDir, processObj, lifecycle)
+    createServerDeps(aiHomeDir, processObj, lifecycle, {
+      peekAccountEgressRuntime: () => ({
+        stop() { lifecycle.egressStopped += 1; }
+      })
+    })
   );
 
   assert.equal(handle.server.listening, true);
@@ -185,9 +191,74 @@ test('embedded local server returns an idempotent lifecycle handle without ownin
   assert.equal(lifecycle.mdnsStopped, 1);
   assert.equal(lifecycle.outboundStopped, 1);
   assert.equal(lifecycle.frpStopped, 1);
+  assert.equal(lifecycle.egressStopped, 1);
   assert.equal(lifecycle.logTimersCleared, 1);
   assert.equal(processObj.listenerCount('exit'), 0);
   assert.equal(fs.existsSync(path.join(aiHomeDir, 'run', 'server.pid')), false);
+});
+
+test('Codex responses WebSocket 账号出口不可用时返回 503，且不构造上游直连', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-server-ws-egress-'));
+  const processObj = createProcessCapture();
+  const port = await getFreePort();
+  const lifecycle = {
+    relayClosed: 0,
+    webrtcClosed: 0,
+    fabricClosed: 0,
+    mdnsStopped: 0,
+    outboundStopped: 0,
+    frpStopped: 0,
+    logTimers: new Set(),
+    logTimersCleared: 0
+  };
+  let connectCalls = 0;
+  const handle = await startLocalServer(
+    createServeOptions(port, {
+      manageProcessLifecycle: false,
+      codexBaseUrl: 'https://upstream.example/backend-api/codex'
+    }),
+    createServerDeps(aiHomeDir, processObj, lifecycle, {
+      loadServerRuntimeAccounts: () => ({
+        codex: [{
+          provider: 'codex',
+          accountRef: 'acct_0123456789abcdef0123',
+          accessToken: 'test-access-token'
+        }]
+      }),
+      createAccountWebSocket: async () => {
+        connectCalls += 1;
+        const error = new Error('account_egress_unavailable');
+        error.code = 'account_egress_unavailable';
+        throw error;
+      }
+    })
+  );
+  t.after(async () => {
+    await handle.stop('test-cleanup');
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+  });
+
+  const response = await new Promise((resolve, reject) => {
+    const socket = new WebSocket(`ws://127.0.0.1:${port}/v1/responses`);
+    socket.once('unexpected-response', (_request, res) => {
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => { body += chunk; });
+      res.on('end', () => resolve({ statusCode: res.statusCode, body }));
+    });
+    socket.once('open', () => reject(new Error('unexpected_websocket_open')));
+    socket.once('error', (error) => {
+      if (error?.message === 'Unexpected server response: 503') return;
+      reject(error);
+    });
+  });
+
+  assert.equal(connectCalls, 1);
+  assert.equal(response.statusCode, 503);
+  assert.deepEqual(JSON.parse(response.body), {
+    ok: false,
+    error: 'account_egress_unavailable'
+  });
 });
 
 test('server 启动异步恢复持久化的 ZCode 出口 runtime', async (t) => {

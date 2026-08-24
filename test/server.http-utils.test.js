@@ -96,6 +96,37 @@ test('fetchWithTimeout bypasses proxy when no_proxy matches host', async (t) => 
   assert.equal(seenInit.dispatcher, undefined);
 });
 
+test('fetchWithTimeout never drops a caller-supplied dispatcher during env proxy fallback', async (t) => {
+  const pinnedDispatcher = { dispatch() {} };
+  let calls = 0;
+  t.mock.method(global, 'fetch', async (_url, init) => {
+    calls += 1;
+    assert.equal(init.dispatcher, pinnedDispatcher);
+    const error = new Error('fetch failed');
+    error.code = 'ENOTFOUND';
+    throw error;
+  });
+
+  await withEnv({
+    AIH_SERVER_PROXY_URL: undefined,
+    AIH_SERVER_NO_PROXY: undefined,
+    HTTPS_PROXY: 'http://127.0.0.1:7890',
+    https_proxy: undefined,
+    HTTP_PROXY: undefined,
+    http_proxy: undefined,
+    NO_PROXY: undefined,
+    no_proxy: undefined,
+  }, async () => {
+    await assert.rejects(fetchWithTimeout(
+      'https://cdn.example/image.png',
+      { method: 'GET', dispatcher: pinnedDispatcher },
+      500,
+    ), /fetch failed/);
+  });
+
+  assert.equal(calls, 1);
+});
+
 test('fetchWithTimeout propagates a caller abort into the active fetch', async (t) => {
   let seenSignal = null;
   t.mock.method(global, 'fetch', async (_url, init) => {

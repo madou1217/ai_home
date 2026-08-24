@@ -285,6 +285,8 @@ $AIH_HOME/app-state.db
   account_state             # accountRef -> 启停、额度与运行状态
   model_aliases             # 模型别名
   model_usage_*             # 模型用量、会话、价格与扫描状态
+  image_studio_sessions     # Image Studio 会话、修订与资产元数据
+  image_studio_assets       # Image Studio 原始图像、蒙版与生成结果 BLOB
   app_kv                    # Server/usage 配置、默认账号、缓存与 Server 状态
 ```
 
@@ -641,16 +643,16 @@ tmux -L aih-claude-<accountRef> kill-server              # 杀该账号下全部
 内置网关同时暴露 OpenAI 兼容的出图/修图端点：
 
 - `POST /v1/images/generations` — 文生图
-- `POST /v1/images/edits` — 图生图（`image` 为 data URL，png/jpeg/webp、≤4 MiB，可选 `mask`）
+- `POST /v1/images/edits` — 图生图（支持 OpenAI multipart 文件上传，也兼容 JSON data URL；png/jpeg/webp、单图 ≤4 MiB、最多 16 张，可选 PNG `mask`）
 
-请求体兼容 OpenAI 字段：`model`、`prompt`、`n`（1-10）、`size`、`quality`、`response_format`（`b64_json` 默认 / `url`）。响应为 `{ created, data: [{ b64_json | url }] }`；`response_format=url` 时图片字节存入本机 blob 存储，返回 `http://<host>/v1/blobs/<id>`（与聊天图片剥离共用同一存储，受同样的客户端 key 保护）。
+请求体兼容 OpenAI 字段：`model`、`prompt`、`n`（1-10）、`size`、`quality`、`response_format`（`b64_json` 默认 / `url`）；编辑接口还支持有序 `image` / `image[]`、`mask`、`background`、`output_format`、`output_compression`、`moderation`。响应为 `{ created, data: [{ b64_json | url, revised_prompt? }] }`；`response_format=url` 时图片字节存入本机 blob 存储，返回 `http://<host>/v1/blobs/<id>`（与聊天图片剥离共用同一存储，受同样的客户端 key 保护）。具体控件按所选 provider/model 的真实能力过滤，不支持的参数会显式报错而不会静默丢失。
 
 后端路由对外透明，按账号类型自动选择实现：
 
-- **api-key 账号**：直通上游 OpenAI 兼容的 `/images/*` 端点（generations 用 JSON，edits 用 multipart，网关只产出 multipart、不解析入站 multipart）。
+- **api-key 账号**：直通上游 OpenAI 兼容的 `/images/*` 端点（generations 用 JSON，edits 用 multipart；入站 multipart 先由 v1 路由规范化，再由策略重新编码给上游）。
 - **agy / gemini OAuth 账号**：原生 Code Assist 出图，适用于 `gemini-*-image` 系列模型。
-- **codex OAuth 账号**：Responses `image_generation` 工具，适用于 `gpt-image-2` / `gpt-image-1` 等模型名。上游 `model` 字段只接受 codex 对话模型（`gpt-image-*` 会被拒绝），策略把请求模型名映射到 codex 对话模型候选列表（默认 `gpt-5.6-terra`，可用 `codexImageUpstreamModel` 覆盖），图片经流式 `image_generation_call` 事件返回。
-- **grok OAuth 账号**：xAI OAuth token 可直接调用官方 `api.x.ai/v1/images/generations`（OpenAI 兼容）。策略把请求模型名映射到 `grok-imagine-*` 候选列表（默认 `grok-imagine-image-2.0`，可用 `grokImageUpstreamModel` 覆盖），转发 `n` / `quality` / `response_format`；edits 把源图以 data URL 内嵌到同一端点（xAI image-to-image），不需要 multipart。
+- **codex OAuth 账号**：直接调用 ChatGPT Codex Images API：`/backend-api/codex/images/generations` / `/backend-api/codex/images/edits`。原生合同固定为 `gpt-image-2`；编辑请求用 JSON `images: [{ image_url }]`，最多 5 张有序参考图，并支持 `n`、`size`、`quality`、`background`。该合同不支持 `mask`、`output_format`、`output_compression`、`moderation`，传入时会显式报错而不会静默丢弃；`gpt-image-1` 等模型仍可由具有对应 Images API 的 api-key 账号走 passthrough。
+- **grok OAuth 账号**：xAI OAuth token 可直接调用官方 `api.x.ai/v1/images/generations` 与 `/v1/images/edits`。原生目录列出 `grok-imagine-image-2.0`、`grok-imagine-image-quality` 和仍可用的旧版 `grok-imagine-image`；策略默认选择 2.0，也可用 `grokImageUpstreamModel` 覆盖，并转发 `n` / `quality` / `response_format`。编辑请求按 xAI JSON 合同内嵌 1-3 张 data URL 参考图，不使用 multipart，也不会把 OpenAI `size` 有损映射成 xAI 的 aspect ratio / resolution。
 - 其余 provider 返回 `400 unsupported_image_provider`；模型不在出图名单返回 `400 unsupported_model_for_images`。
 
 错误统一为 OpenAI 信封 `{ error: { message, type, code } }`。账号出图成功/失败与聊天请求走同一套用量记账、请求日志与 (账号, 模型) 熔断；出图超时默认 120s（`options.upstreamTimeoutMs` 可调）。

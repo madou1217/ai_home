@@ -26,7 +26,7 @@ describe('zcode egress presentation', () => {
     });
   });
 
-  test('reports first takeover as a precise ZCode restart instead of a sidecar reload', () => {
+  test('reports first takeover as a precise desktop restart instead of a sidecar reload', () => {
     expect(describeApplyResult({
       ok: true,
       applied: true,
@@ -36,12 +36,12 @@ describe('zcode egress presentation', () => {
       previousPids: [7101]
     })).toEqual({
       color: 'success',
-      text: '已接管并重启当前 ZCode 实例；ZCode 使用的账号固定本地端口保持不变。'
+      text: '已接管并重启当前桌面实例；账号固定本地端口保持不变。'
     });
   });
 
   test('summarizes runtime readiness without exposing implementation details', () => {
-    expect(describeRuntimeStatus(null)).toBe('ZCode 账号出口尚未运行');
+    expect(describeRuntimeStatus(null)).toBe('账号出口尚未运行');
     expect(describeRuntimeStatus({
       running: true,
       dataPlaneReady: true,

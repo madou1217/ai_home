@@ -101,6 +101,49 @@ test('egress POST 写入后 GET 返回同一账号绑定', async (t) => {
   assert.ok(Object.prototype.hasOwnProperty.call(get.res.payload, 'runtime'));
 });
 
+test('egress 路由允许任意真实 provider 账号按自身路径绑定', async (t) => {
+  const fixture = createFixture(t, 'codex');
+  const ctx = createContext(
+    fixture,
+    'POST',
+    Buffer.from(JSON.stringify({ mode: 'url', proxyUrl: '127.0.0.1:10801' }))
+  );
+  const calls = [];
+  ctx.deps = {
+    async applyStoredAccountEgress(input) {
+      calls.push(input);
+      return {
+        ok: true,
+        applied: true,
+        status: 'started',
+        proxyServer: '127.0.0.1:23104'
+      };
+    },
+    getAccountEgressRuntimeStatus() {
+      return {
+        ok: true,
+        runtime: {
+          running: true,
+          dataPlaneReady: true,
+          proxyServer: '127.0.0.1:23104',
+          health: { monitoring: false }
+        }
+      };
+    },
+    createWebUiAccountAppLauncher() {
+      return { launchAccountApp() {} };
+    }
+  };
+
+  await handleZcodeEgressRequest(ctx);
+
+  assert.equal(ctx.res.statusCode, 200);
+  assert.equal(ctx.res.payload.binding.proxyUrl, '127.0.0.1:10801');
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].provider, 'codex');
+  assert.equal(calls[0].accountRef, fixture.accountRef);
+});
+
 test('egress GET 返回当前节点、分组、sidecar 与健康运行态', async (t) => {
   const fixture = createFixture(t);
   writeAccountEgressBinding(fs, fixture.aiHomeDir, fixture.accountRef, {

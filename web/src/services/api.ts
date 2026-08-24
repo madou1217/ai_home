@@ -90,9 +90,9 @@ import type {
   ManagedAppsResponse,
   ManagedAppUpdateResponse,
   AccountAppLaunchResponse,
-  ZcodeEgressBindingInput,
-  ZcodeEgressResponse,
-  ZcodeEgressRotateResponse,
+  AccountEgressBindingInput,
+  AccountEgressResponse,
+  AccountEgressRotateResponse,
   AppInstallJob,
   WebUiTask,
   ClientTerminalsResponse,
@@ -312,6 +312,16 @@ export function dispatchAccountsWatchPayload(payload: any, handlers: {
 }
 
 // 账号管理 API
+const buildAccountScopedPath = (provider: string, accountRef: string) => (
+  `/webui/accounts/${encodeURIComponent(provider)}/${encodeURIComponent(accountRef)}`
+);
+const buildAccountEgressPath = (provider: string, accountRef: string) => (
+  `${buildAccountScopedPath(provider, accountRef)}/egress`
+);
+const buildAccountEgressRotatePath = (provider: string, accountRef: string) => (
+  `${buildAccountScopedPath(provider, accountRef)}/egress/rotate`
+);
+
 export const accountsAPI = {
   // 获取所有账号
   list: async (): Promise<AccountsListResponse> => {
@@ -444,27 +454,28 @@ export const accountsAPI = {
     return response.data;
   },
 
-  getZcodeEgress: async (accountRef: string): Promise<ZcodeEgressResponse> => {
-    const response = await api.get<ZcodeEgressResponse>(
-      `/webui/accounts/zcode/${encodeURIComponent(accountRef)}/egress`
+  getAccountEgress: async (provider: string, accountRef: string): Promise<AccountEgressResponse> => {
+    const response = await api.get<AccountEgressResponse>(
+      buildAccountEgressPath(provider, accountRef)
     );
     return response.data;
   },
 
-  saveZcodeEgress: async (
+  saveAccountEgress: async (
+    provider: string,
     accountRef: string,
-    binding: ZcodeEgressBindingInput | null
-  ): Promise<ZcodeEgressResponse> => {
-    const response = await api.post<ZcodeEgressResponse>(
-      `/webui/accounts/zcode/${encodeURIComponent(accountRef)}/egress`,
+    binding: AccountEgressBindingInput | null
+  ): Promise<AccountEgressResponse> => {
+    const response = await api.post<AccountEgressResponse>(
+      buildAccountEgressPath(provider, accountRef),
       binding || {}
     );
     return response.data;
   },
 
-  rotateZcodeEgress: async (accountRef: string): Promise<ZcodeEgressRotateResponse> => {
-    const response = await api.post<ZcodeEgressRotateResponse>(
-      `/webui/accounts/zcode/${encodeURIComponent(accountRef)}/egress/rotate`
+  rotateAccountEgress: async (provider: string, accountRef: string): Promise<AccountEgressRotateResponse> => {
+    const response = await api.post<AccountEgressRotateResponse>(
+      buildAccountEgressRotatePath(provider, accountRef)
     );
     return response.data;
   },

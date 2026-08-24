@@ -12,6 +12,19 @@ const {
 } = require('../lib/runtime/windows-system-proxy');
 const { CODEX_MANAGED_LAUNCH_ENV } = require('../lib/runtime/codex-launch-context');
 const { PROVIDER_ACCOUNT_REF_ENV } = require('../lib/runtime/provider-session-context');
+const { upsertAccountRef } = require('../lib/server/account-ref-store');
+const { writeAccountEgressBinding } = require('../lib/account/zcode-egress-binding-store');
+
+const PROXY_ENV_KEYS = [
+  'HTTP_PROXY',
+  'HTTPS_PROXY',
+  'ALL_PROXY',
+  'NO_PROXY',
+  'http_proxy',
+  'https_proxy',
+  'all_proxy',
+  'no_proxy'
+];
 
 test('provider runtime env marks codex launches managed and clears the marker elsewhere', () => {
   // 单一装配线保证：任何经 buildProviderRuntimeEnv 组出来的 codex env（PTY /
@@ -102,6 +115,95 @@ test('provider runtime env replaces inherited hook account context with the sele
     [PROVIDER_ACCOUNT_REF_ENV]: accountRef
   }, { fs, path, platform: 'linux' });
   assert.equal(unscoped[PROVIDER_ACCOUNT_REF_ENV], undefined);
+});
+
+test('账号绑定出口时 CLI 运行环境只注入该账号的固定回环代理', (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-account-egress-runtime-env-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  const accountRef = upsertAccountRef(fs, aiHomeDir, {
+    provider: 'codex',
+    cliAccountId: '1',
+    identitySeed: 'oauth:codex:account-egress-runtime@example.com'
+  });
+  writeAccountEgressBinding(fs, aiHomeDir, accountRef, {
+    mode: 'url',
+    proxyUrl: 'socks5://proxy.example:1080'
+  });
+  const runtimeDir = path.join(aiHomeDir, 'run', 'zcode-egress', 'sing-box');
+  fs.mkdirSync(runtimeDir, { recursive: true });
+  fs.writeFileSync(path.join(runtimeDir, 'status.json'), JSON.stringify({
+    engine: 'sing-box',
+    running: true,
+    dataPlaneReady: true,
+    pid: process.pid,
+    accounts: [{ accountRef, port: 23101, source: 'url' }]
+  }));
+
+  const env = buildProviderRuntimeEnv('codex', path.join(aiHomeDir, 'projection'), {
+    HOME: '/Users/tester',
+    PATH: '/usr/bin',
+    HTTP_PROXY: 'http://inherited.example:7890',
+    HTTPS_PROXY: 'http://inherited.example:7890',
+    NO_PROXY: 'upstream.example'
+  }, {
+    fs,
+    path,
+    platform: 'darwin',
+    aiHomeDir,
+    accountRef,
+    accountEnv: { OPENAI_API_KEY: 'sk-test' }
+  });
+
+  assert.equal(env.HTTP_PROXY, 'http://127.0.0.1:23101');
+  assert.equal(env.HTTPS_PROXY, 'http://127.0.0.1:23101');
+  assert.equal(env.ALL_PROXY, 'http://127.0.0.1:23101');
+  assert.equal(env.NO_PROXY, 'localhost,127.0.0.1,::1');
+  assert.equal(env.http_proxy, env.HTTP_PROXY);
+  assert.equal(env.https_proxy, env.HTTPS_PROXY);
+  assert.equal(env.all_proxy, env.ALL_PROXY);
+  assert.equal(env.no_proxy, env.NO_PROXY);
+});
+
+test('未绑定账号不继承宿主或其它账号的代理环境', (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-account-egress-unbound-env-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  const accountRef = upsertAccountRef(fs, aiHomeDir, {
+    provider: 'claude',
+    cliAccountId: '1',
+    identitySeed: 'oauth:claude:account-egress-unbound@example.com'
+  });
+  const inherited = Object.fromEntries(PROXY_ENV_KEYS.map((key) => [key, 'http://other-account:7890']));
+
+  const env = buildProviderRuntimeEnv('claude', path.join(aiHomeDir, 'projection'), {
+    HOME: '/Users/tester',
+    PATH: '/usr/bin',
+    ...inherited
+  }, {
+    fs,
+    path,
+    platform: 'darwin',
+    aiHomeDir,
+    accountRef,
+    accountEnv: { ANTHROPIC_API_KEY: 'sk-test' }
+  });
+
+  for (const key of PROXY_ENV_KEYS) assert.equal(env[key], undefined, key);
+});
+
+test('ZCode 保留原生 setting.json 适配，不重复注入通用代理环境', () => {
+  const env = buildProviderRuntimeEnv('zcode', '/tmp/aih-zcode-runtime', {
+    HOME: '/Users/tester',
+    PATH: '/usr/bin',
+    HTTPS_PROXY: 'http://inherited.example:7890'
+  }, {
+    fs,
+    path,
+    platform: 'darwin',
+    accountRef: 'acct_3123456789abcdef0123',
+    accountEgress: { ok: true, proxyServer: '127.0.0.1:23102' }
+  });
+
+  for (const key of PROXY_ENV_KEYS) assert.equal(env[key], undefined, key);
 });
 
 test('provider runtime env strips the trailing /v1 the Anthropic SDK re-appends', () => {

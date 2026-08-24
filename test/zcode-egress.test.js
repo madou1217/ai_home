@@ -155,7 +155,7 @@ test('writeAccountEgressBinding 拒绝非空非法绑定且不删除已有记录
   );
 });
 
-test('writeAccountEgressBinding 只允许真实 ZCode 账号写入绑定', (t) => {
+test('writeAccountEgressBinding 允许所有真实 provider 账号写入绑定', (t) => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-zcode-egress-provider-'));
   t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
   const accountRef = upsertAccountRef(fs, aiHomeDir, {
@@ -164,14 +164,15 @@ test('writeAccountEgressBinding 只允许真实 ZCode 账号写入绑定', (t) =
     identitySeed: 'oauth:codex:zcode-egress-provider@example.com'
   });
 
-  assert.throws(
-    () => writeAccountEgressBinding(fs, aiHomeDir, accountRef, {
-      mode: EGRESS_MODE_URL,
-      proxyUrl: '127.0.0.1:10801'
-    }),
-    /invalid_zcode_egress_account/
+  writeAccountEgressBinding(fs, aiHomeDir, accountRef, {
+    mode: EGRESS_MODE_URL,
+    proxyUrl: '127.0.0.1:10801'
+  });
+
+  assert.equal(
+    readAccountEgressBinding(fs, aiHomeDir, accountRef).proxyUrl,
+    '127.0.0.1:10801'
   );
-  assert.equal(readAccountEgressBinding(fs, aiHomeDir, accountRef), null);
 });
 
 // ── ZCode 原生 setting.json ────────────────────────────────────────────────
@@ -632,10 +633,13 @@ function createStableSidecarDeps(overrides = {}) {
   };
 }
 
-test('isEgressSupportedProvider 目前只认 zcode', () => {
+test('isEgressSupportedProvider 接受合同中所有 provider', () => {
   assert.equal(isEgressSupportedProvider('zcode'), true);
   assert.equal(isEgressSupportedProvider('ZCODE'), true);
-  assert.equal(isEgressSupportedProvider('codex'), false);
+  for (const provider of ['codex', 'claude', 'gemini', 'agy', 'kimi', 'opencode']) {
+    assert.equal(isEgressSupportedProvider(provider), true, provider);
+  }
+  assert.equal(isEgressSupportedProvider('unknown-provider'), false);
 });
 
 test('resolveAccountEgress 对不支持的 provider 直接回 null', async () => {

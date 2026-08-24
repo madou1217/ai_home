@@ -2,8 +2,8 @@ import type {
   ProxyGroup,
   ProxyGroupStrategy,
   ProxyNode,
-  ZcodeEgressApplyResult,
-  ZcodeEgressRuntimeStatus
+  AccountEgressApplyResult,
+  AccountEgressRuntimeStatus
 } from '@/types';
 
 export const ZCODE_SIDECAR_PROTOCOLS = new Set([
@@ -48,7 +48,7 @@ export function describeProxyGroupKind(group?: ProxyGroup | null) {
   return labels[String(group?.kind || '')] || '自动组';
 }
 
-export function describeApplyResult(apply: ZcodeEgressApplyResult | null) {
+export function describeApplyResult(apply: AccountEgressApplyResult | null) {
   if (!apply) return null;
   if (!apply.ok) {
     const detail = apply.reason || apply.error || 'unknown';
@@ -58,10 +58,10 @@ export function describeApplyResult(apply: ZcodeEgressApplyResult | null) {
     return { color: 'error', text: `运行时应用失败：${detail}` };
   }
   if (!apply.applied || apply.status === 'pending_launch') {
-    return { color: 'default', text: '绑定已保存；ZCode 尚未运行，将在下次启动时应用。' };
+    return { color: 'default', text: '绑定已保存；当前账号将在下次启动时应用。' };
   }
   const action = apply.restarted
-    ? '已接管并重启当前 ZCode 实例'
+    ? '已接管并重启当前桌面实例'
     : apply.rotated
       ? '已切换到新的分组节点'
       : apply.status === 'selected'
@@ -69,11 +69,11 @@ export function describeApplyResult(apply: ZcodeEgressApplyResult | null) {
         : apply.status === 'restarted'
           ? 'sidecar 已重载'
           : '已实时应用';
-  return { color: 'success', text: `${action}；ZCode 使用的账号固定本地端口保持不变。` };
+  return { color: 'success', text: `${action}；账号固定本地端口保持不变。` };
 }
 
-export function describeRuntimeStatus(runtime?: ZcodeEgressRuntimeStatus | null) {
-  if (!runtime?.running) return 'ZCode 账号出口尚未运行';
+export function describeRuntimeStatus(runtime?: AccountEgressRuntimeStatus | null) {
+  if (!runtime?.running) return '账号出口尚未运行';
   if (!runtime.dataPlaneReady) return '账号出口进程存在，但数据面尚未就绪';
   if (runtime.selectedNodeId) return '账号出口正在通过分组节点运行';
   return '账号固定出口正在运行';

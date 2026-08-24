@@ -569,6 +569,88 @@ test('codex adapter posts chat completions to account openai base url for api ke
   assert.match(String(res.body), /api key ok/);
 });
 
+test('codex Gateway attempt 使用所选账号出口覆盖全局代理', async () => {
+  const selectedAccountRef = accountRef('codex-account-egress');
+  const res = createResCapture();
+  const state = {
+    accounts: {
+      codex: [{
+        accountRef: selectedAccountRef,
+        email: 'egress@example.com',
+        accessToken: 'sk-live',
+        apiKeyMode: true,
+        authType: 'api-key',
+        openaiBaseUrl: 'https://proxy.example.com/v1'
+      }]
+    },
+    cursors: { codex: 0 },
+    metrics: { totalFailures: 0, totalSuccess: 0, totalTimeouts: 0 }
+  };
+  const resolverCalls = [];
+  let networkOptions = null;
+
+  await handleCodexChatCompletions({
+    options: {
+      codexBaseUrl: 'https://chatgpt.com/backend-api/codex',
+      proxyUrl: 'http://global-proxy.example:7890',
+      noProxy: 'proxy.example.com',
+      upstreamTimeoutMs: 3000,
+      maxAttempts: 1,
+      failureThreshold: 1,
+      logRequests: false,
+      aiHomeDir: '/tmp/aih-codex-account-egress'
+    },
+    state,
+    req: { headers: { 'content-type': 'application/json' } },
+    res,
+    requestJson: {
+      model: 'gpt-5.3-codex',
+      stream: false,
+      messages: [{ role: 'user', content: 'hello' }]
+    },
+    routeKey: 'POST /v1/chat/completions',
+    requestStartedAt: Date.now(),
+    cooldownMs: 1000,
+    requestMeta: { sessionKey: 'account-egress' },
+    deps: {
+      fs: {},
+      chooseServerAccount: (pool) => pool[0],
+      pushMetricError: () => {},
+      writeJson: (response, code, payload) => {
+        response.statusCode = code;
+        response.end(JSON.stringify(payload));
+      },
+      async resolveAccountEgressRequestOptions(input) {
+        resolverCalls.push(input);
+        return {
+          ok: true,
+          bound: true,
+          options: {
+            ...input.options,
+            proxyUrl: 'http://127.0.0.1:23105',
+            noProxy: 'localhost,127.0.0.1,::1'
+          }
+        };
+      },
+      refreshCodexAccessToken: async () => ({ ok: true, refreshed: false }),
+      fetchWithTimeout: async (_url, _init, _timeoutMs, proxyOptions) => {
+        networkOptions = proxyOptions;
+        return createCompletedUpstreamResponse('account egress');
+      },
+      markProxyAccountFailure: () => {},
+      markProxyAccountSuccess: () => {},
+      appendProxyRequestLog: () => {}
+    }
+  });
+
+  assert.equal(resolverCalls.length, 1);
+  assert.equal(resolverCalls[0].provider, 'codex');
+  assert.equal(resolverCalls[0].accountRef, selectedAccountRef);
+  assert.equal(networkOptions.proxyUrl, 'http://127.0.0.1:23105');
+  assert.equal(networkOptions.noProxy, 'localhost,127.0.0.1,::1');
+  assert.equal(res.statusCode, 200);
+});
+
 test('codex adapter honors an explicit x-account-ref pin for Responses requests', async () => {
   const firstAccount = {
     accountRef: accountRef('pin-first'),

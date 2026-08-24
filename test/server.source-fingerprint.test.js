@@ -9,7 +9,8 @@ const {
   SOURCE_FINGERPRINT_FILES,
   getSourceFingerprintPaths,
   isBackgroundSupervisorCommand,
-  parseServerEntryFilePathFromCommand
+  parseServerEntryFilePathFromCommand,
+  samePath
 } = require('../lib/server/source-fingerprint');
 
 test('source fingerprint parses real node server serve command', () => {
@@ -67,6 +68,24 @@ test('source fingerprint parses the exact background supervisor command', () => 
   assert.equal(isBackgroundSupervisorCommand(
     '/usr/local/bin/node /opt/homebrew/bin/aih __background run extra'
   ), false);
+});
+
+test('source fingerprint treats a global symlink entry as the same deployed source', () => {
+  const globalEntry = '/opt/homebrew/lib/node_modules/ai_home/lib/cli/app.js';
+  const deployedEntry = '/repo/deployments/ai_home/lib/cli/app.js';
+  const fakeFs = {
+    realpathSync(filePath) {
+      return filePath === globalEntry ? deployedEntry : filePath;
+    }
+  };
+
+  assert.equal(samePath(
+    path.posix,
+    { platform: 'darwin' },
+    globalEntry,
+    deployedEntry,
+    fakeFs
+  ), true);
 });
 
 test('source fingerprint ignores unrelated process text containing historical server command', () => {

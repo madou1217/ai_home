@@ -672,9 +672,11 @@ test('ensureTmuxConf writes the transparent config idempotently', () => {
 test('ensureTmuxConf writes a psmux-compatible transparent config on native Windows', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-persist-psmux-'));
   const confPath = path.join(dir, 'persist', 'tmux.conf');
+  const psmuxCommand = "C:\\Users\\O'Brien\\WinGet\\Links\\psmux.exe";
+
   assert.equal(persistentSession.ensureTmuxConf(confPath, fs, {
     platform: 'win32',
-    tmuxCommand: 'C:\\tools\\psmux.exe'
+    tmuxCommand: psmuxCommand
   }), confPath);
 
   const body = fs.readFileSync(confPath, 'utf8');
@@ -683,10 +685,18 @@ test('ensureTmuxConf writes a psmux-compatible transparent config on native Wind
   assert.match(body, /set -g status off/);
   assert.match(body, /set -g remain-on-exit off/);
   assert.match(body, /set -g destroy-unattached off/);
-  // psmux stores the extended-keys options inertly so provider CLI probes see
-  // "on"; the real modified-Enter delivery is hardcoded in psmux's input layer.
-  assert.match(body, /set -gq extended-keys on/);
-  assert.match(body, /set -gq extended-keys-format csi-u/);
+  // psmux 3.3.6 warns for unknown options while parsing its config file even
+  // with `-q`. Deferring the same commands through run-shell is silent, while
+  // preserving the inert values that provider CLI probes expect to read.
+  assert.doesNotMatch(body, /^set -gq extended-keys(?:-format)?/gm);
+  assert.match(
+    body,
+    /^run-shell "& 'C:\/Users\/O''Brien\/WinGet\/Links\/psmux\.exe' set -gq extended-keys on"$/m
+  );
+  assert.match(
+    body,
+    /^run-shell "& 'C:\/Users\/O''Brien\/WinGet\/Links\/psmux\.exe' set -gq extended-keys-format csi-u"$/m
+  );
   assert.doesNotMatch(body, /extended-keys always/);
   assert.doesNotMatch(body, /detach-on-destroy/);
   assert.equal(persistentSession.getTmuxConfContent({

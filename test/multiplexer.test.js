@@ -12,8 +12,21 @@ const {
   getDriver,
   TmuxDriver,
   HerdrDriver,
-  buildHerdrInstallCommand
+  buildHerdrInstallCommand,
+  PSMUX_TRANSPARENT_CONF
 } = require('../lib/runtime/multiplexer');
+
+test('psmux transparent config defers inert extended-key options without parse warnings', () => {
+  assert.doesNotMatch(PSMUX_TRANSPARENT_CONF, /^set -gq extended-keys(?:-format)?/gm);
+  assert.match(
+    PSMUX_TRANSPARENT_CONF,
+    /^run-shell "& 'psmux' set -gq extended-keys on"$/m
+  );
+  assert.match(
+    PSMUX_TRANSPARENT_CONF,
+    /^run-shell "& 'psmux' set -gq extended-keys-format csi-u"$/m
+  );
+});
 
 test('resolveConfiguredType: parses explicit options and env', () => {
   assert.equal(resolveConfiguredType({ type: 'herdr' }), MULTIPLEXER_TYPE.HERDR);

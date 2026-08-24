@@ -6,7 +6,10 @@ const assert = require('node:assert/strict');
 const {
   handleImageGenerations,
   __private: {
+    buildImageGenerationRegistry,
     renderImageGenerationResponse,
+    resolveEligibleImageAccounts,
+    resolveImageCapabilityError,
     resolveBlobBaseUrl,
     writeImageGenerationError,
     IMAGE_PATHNAMES
@@ -128,12 +131,144 @@ test('handleImageGenerations rejects unsupported providers and unsupported model
   assert.equal(JSON.parse(unsupportedModel.res.body).error.code, 'unsupported_model_for_images');
 });
 
+test('handleImageGenerations preserves an explicit provider routing hint', async () => {
+  let capturedRequest;
+  const ctx = makeCtx({
+    requestJson: {
+      provider: 'codex',
+      model: 'gemini-3.1-flash-image',
+      prompt: 'a cat'
+    },
+    deps: {
+      resolveGatewayProvider: (input) => {
+        capturedRequest = input.requestJson;
+        return { provider: 'agy' };
+      }
+    }
+  });
+  await handleImageGenerations(ctx);
+  assert.deepEqual(capturedRequest, {
+    provider: 'codex',
+    model: 'gemini-3.1-flash-image'
+  });
+});
+
+test('image capability filtering keeps only accounts whose strategy supports the requested mask', () => {
+  const registry = buildImageGenerationRegistry({});
+  const oauth = { accountRef: 'acct_oauth', provider: 'codex', accessToken: 'oauth' };
+  const apiKey = {
+    accountRef: 'acct_key',
+    provider: 'codex',
+    authType: 'api-key',
+    apiKey: 'key',
+    openaiBaseUrl: 'https://api.example/v1'
+  };
+  const request = {
+    mode: 'edit',
+    model: 'gpt-image-2',
+    prompt: 'replace the sky',
+    n: 1,
+    responseFormat: 'b64_json',
+    images: [{ mimeType: 'image/png', data: PNG_BASE64 }],
+    mask: { mimeType: 'image/png', data: PNG_BASE64 }
+  };
+  const eligible = resolveEligibleImageAccounts([oauth, apiKey], registry, 'codex', request);
+  assert.deepEqual(eligible.pool.map((account) => account.accountRef), ['acct_key']);
+});
+
+test('native image capabilities reject controls that would otherwise be silently dropped', () => {
+  const registry = buildImageGenerationRegistry({});
+  const strategy = registry.resolve('codex', {
+    accountRef: 'acct_oauth',
+    provider: 'codex',
+    accessToken: 'oauth'
+  });
+  const base = {
+    mode: 'edit',
+    model: 'gpt-image-2',
+    prompt: 'edit',
+    n: 1,
+    responseFormat: 'b64_json',
+    images: [{ mimeType: 'image/png', data: PNG_BASE64 }]
+  };
+  assert.equal(resolveImageCapabilityError(strategy, { ...base, mask: base.images[0] }).code, 'unsupported_image_mask');
+  assert.equal(resolveImageCapabilityError(strategy, {
+    ...base,
+    images: Array.from({ length: 6 }, () => base.images[0])
+  }).code, 'unsupported_image_input_count');
+  assert.equal(resolveImageCapabilityError(strategy, { ...base, background: 'transparent' }), null);
+  assert.equal(resolveImageCapabilityError(strategy, { ...base, n: 2 }), null);
+  assert.equal(resolveImageCapabilityError(strategy, { ...base, size: '1024x1024' }), null);
+  assert.equal(resolveImageCapabilityError(strategy, { ...base, quality: 'high' }), null);
+  assert.equal(resolveImageCapabilityError(strategy, { ...base, outputFormat: 'webp' }).code, 'unsupported_image_output_format');
+  assert.equal(resolveImageCapabilityError(strategy, { ...base, outputCompression: 80 }).code, 'unsupported_image_output_compression');
+  assert.equal(resolveImageCapabilityError(strategy, { ...base, moderation: 'low' }).code, 'unsupported_image_moderation');
+
+  const agyStrategy = registry.resolve('agy', {
+    accountRef: 'acct_agy_oauth',
+    provider: 'agy',
+    accessToken: 'oauth'
+  });
+  assert.equal(resolveImageCapabilityError(agyStrategy, {
+    ...base,
+    model: 'gemini-3.1-flash-image',
+    mask: base.images[0]
+  }).code, 'unsupported_image_mask');
+  assert.equal(resolveImageCapabilityError(agyStrategy, {
+    ...base,
+    model: 'gemini-3.1-flash-image',
+    background: 'transparent'
+  }).code, 'unsupported_image_background');
+  assert.equal(resolveImageCapabilityError(agyStrategy, {
+    ...base,
+    model: 'gemini-3.1-flash-image',
+    outputFormat: 'webp'
+  }).code, 'unsupported_image_output_format');
+  assert.equal(resolveImageCapabilityError(agyStrategy, {
+    ...base,
+    model: 'gemini-3.1-flash-image',
+    outputFormat: 'webp',
+    outputCompression: 80
+  }).code, 'unsupported_image_output_format');
+  assert.equal(resolveImageCapabilityError(agyStrategy, {
+    ...base,
+    model: 'gemini-3.1-flash-image',
+    moderation: 'low'
+  }).code, 'unsupported_image_moderation');
+
+  const grokStrategy = registry.resolve('grok', {
+    accountRef: 'acct_grok_oauth',
+    provider: 'grok',
+    accessToken: 'oauth'
+  });
+  assert.equal(resolveImageCapabilityError(grokStrategy, {
+    ...base,
+    mode: 'generation',
+    model: 'grok-imagine-image',
+    images: undefined,
+    quality: 'low'
+  }).code, 'unsupported_image_quality');
+  assert.equal(resolveImageCapabilityError(grokStrategy, {
+    ...base,
+    mode: 'generation',
+    model: 'grok-imagine-image-2.0',
+    images: undefined,
+    quality: 'medium'
+  }), null);
+  assert.equal(resolveImageCapabilityError(grokStrategy, {
+    ...base,
+    model: 'grok-imagine-image-2.0',
+    images: Array.from({ length: 4 }, () => base.images[0])
+  }).code, 'unsupported_image_input_count');
+});
+
 test('handleImageGenerations renders a successful b64_json response and records accounting', async () => {
   const ctx = makeCtx();
   assert.equal(await handleImageGenerations(ctx), true);
 
   assert.equal(ctx.res.statusCode, 200);
   assert.equal(ctx.res.headers['content-type'], 'application/json; charset=utf-8');
+  assert.equal(ctx.res.headers['x-aih-server-provider'], 'agy');
   assert.equal(ctx.res.headers['x-aih-server-account-ref'], 'acct_a');
   const body = JSON.parse(ctx.res.body);
   assert.ok(Number.isInteger(body.created));
@@ -153,6 +288,57 @@ test('handleImageGenerations renders a successful b64_json response and records 
   assert.equal(ctx.calls.usage[0].usageFormat, 'gemini');
 });
 
+test('handleImageGenerations forwards normalized image controls to the selected strategy', async () => {
+  let capturedPayload;
+  const account = {
+    accountRef: 'acct_key',
+    provider: 'codex',
+    authType: 'api-key',
+    apiKey: 'key',
+    openaiBaseUrl: 'https://api.example/v1'
+  };
+  const ctx = makeCtx({
+    state: {
+      accounts: { codex: [account] },
+      metrics: { totalSuccess: 0, totalFailures: 0 }
+    },
+    requestJson: {
+      provider: 'codex',
+      model: 'gpt-image-2',
+      prompt: 'a cat',
+      n: 2,
+      size: '1024x1024',
+      quality: 'high',
+      response_format: 'url'
+    },
+    deps: {
+      resolveGatewayProvider: () => ({ provider: 'codex' }),
+      chooseServerAccount: (pool) => pool[0],
+      fetchWithTimeout: async (url, init) => {
+        capturedPayload = JSON.parse(init.body);
+        return {
+          ok: true,
+          status: 200,
+          async text() {
+            return JSON.stringify({ data: [{ url: 'https://cdn.example/generated.png' }] });
+          }
+        };
+      }
+    }
+  });
+  await handleImageGenerations(ctx);
+  assert.deepEqual(capturedPayload, {
+    model: 'gpt-image-2',
+    prompt: 'a cat',
+    n: 2,
+    size: '1024x1024',
+    quality: 'high',
+    response_format: 'url'
+  });
+  assert.equal(ctx.res.statusCode, 200);
+  assert.equal(JSON.parse(ctx.res.body).data[0].url, 'https://cdn.example/generated.png');
+});
+
 test('handleImageGenerations renders blob urls for response_format=url', async () => {
   const ctx = makeCtx({ requestJson: { model: 'gemini-3.1-flash-image', prompt: 'a cat', response_format: 'url' } });
   await handleImageGenerations(ctx);
@@ -167,7 +353,7 @@ test('handleImageGenerations renders blob urls for response_format=url', async (
   assert.deepEqual([...blob.bytes], [...Buffer.from(PNG_BASE64, 'base64')]);
 });
 
-test('handleImageGenerations marks account failure and returns 502 on strategy errors', async () => {
+test('handleImageGenerations records unknown strategy failures with the actual provider', async () => {
   let picks = 0;
   const ctx = makeCtx({
     deps: {
@@ -176,7 +362,7 @@ test('handleImageGenerations marks account failure and returns 502 on strategy e
         return picks === 1 ? { accountRef: 'acct_a', email: 'a@example.com', provider: 'agy' } : null;
       },
       fetchGeminiCodeAssistGenerateContent: async () => {
-        throw new Error('socket hang up');
+        throw new Error('strategy exploded');
       }
     }
   });
@@ -186,18 +372,18 @@ test('handleImageGenerations marks account failure and returns 502 on strategy e
   assert.equal(JSON.parse(ctx.res.body).error.code, 'upstream_failed');
   assert.equal(ctx.state.metrics.totalFailures, 1);
   assert.equal(ctx.calls.failure.length, 1);
-  assert.equal(ctx.calls.failure[0].code, 'upstream_failed');
+  assert.equal(ctx.calls.failure[0].code, 'strategy exploded');
   assert.equal(ctx.calls.failure[0].account.accountRef, 'acct_a');
   // access log + per-attempt diagnostic + final failure summary
   assert.equal(ctx.calls.logs.length, 3);
   const attemptDiag = ctx.calls.logs.find((entry) => entry.attempt === 1);
   assert.ok(attemptDiag, 'per-attempt diagnostic should be recorded');
-  assert.equal(attemptDiag.provider, 'image');
-  assert.equal(attemptDiag.policyKind, 'upstream_failed');
+  assert.equal(attemptDiag.provider, 'agy');
+  assert.equal(attemptDiag.policyKind, 'unknown_error');
   assert.equal(attemptDiag.maxAttempts, 3);
 });
 
-test('handleImageGenerations retries the next account after a retryable failure', async () => {
+test('handleImageGenerations retries the next account without cooling it after a network failure', async () => {
   const ctx = makeCtx({
     deps: {
       chooseServerAccount: (() => {
@@ -209,7 +395,11 @@ test('handleImageGenerations retries the next account after a retryable failure'
         return () => (idx < accounts.length ? accounts[idx++] : null);
       })(),
       fetchGeminiCodeAssistGenerateContent: async (options, account) => {
-        if (account.accountRef === 'acct_a') throw new Error('socket hang up');
+        if (account.accountRef === 'acct_a') {
+          const error = new Error('socket hang up');
+          error.code = 'ECONNRESET';
+          throw error;
+        }
         return {
           candidates: [{ content: { parts: [{ inlineData: { mimeType: 'image/png', data: PNG_BASE64 } }] } }],
           usageMetadata: { totalTokenCount: 7 },
@@ -222,27 +412,260 @@ test('handleImageGenerations retries the next account after a retryable failure'
 
   assert.equal(ctx.res.statusCode, 200);
   assert.equal(JSON.parse(ctx.res.body).data.length, 1);
-  assert.equal(ctx.calls.failure.length, 1);
-  assert.equal(ctx.calls.failure[0].account.accountRef, 'acct_a');
+  assert.equal(ctx.calls.failure.length, 0);
   assert.equal(ctx.calls.success.length, 1);
   assert.equal(ctx.calls.success[0].accountRef, 'acct_b');
-  const diag = ctx.calls.logs.find((entry) => entry.policyKind === 'upstream_failed' && entry.attempt === 1);
+  const diag = ctx.calls.logs.find((entry) => entry.policyKind === 'network_error' && entry.attempt === 1);
   assert.ok(diag, 'per-attempt diagnostic should be recorded');
+  assert.equal(diag.provider, 'agy');
   assert.equal(diag.accountRef, 'acct_a');
+});
+
+test('handleImageGenerations retries the next account after an upstream auth rejection', async () => {
+  const accounts = [
+    {
+      accountRef: 'acct_stale',
+      provider: 'codex',
+      authType: 'api-key',
+      apiKey: 'stale-key',
+      openaiBaseUrl: 'https://api.example/v1'
+    },
+    {
+      accountRef: 'acct_healthy',
+      provider: 'codex',
+      authType: 'api-key',
+      apiKey: 'healthy-key',
+      openaiBaseUrl: 'https://api.example/v1'
+    }
+  ];
+  const ctx = makeCtx({
+    state: {
+      accounts: { codex: accounts },
+      metrics: { totalSuccess: 0, totalFailures: 0 }
+    },
+    requestJson: { provider: 'codex', model: 'gpt-image-2', prompt: 'p' },
+    deps: {
+      resolveGatewayProvider: () => ({ provider: 'codex' }),
+      chooseServerAccount: (pool, _state, _routeKey, selection = {}) => {
+        const excluded = selection.excludeAccountRefs || new Set();
+        return pool.find((account) => !excluded.has(account.accountRef)) || null;
+      },
+      fetchWithTimeout: async (_url, init) => {
+        const accountRef = init.headers['x-aih-account-ref'];
+        if (accountRef === 'acct_stale') {
+          return {
+            ok: false,
+            status: 401,
+            async text() {
+              return JSON.stringify({ error: { message: 'token expired' } });
+            }
+          };
+        }
+        return {
+          ok: true,
+          status: 200,
+          async text() {
+            return JSON.stringify({ data: [{ b64_json: PNG_BASE64 }] });
+          }
+        };
+      }
+    }
+  });
+
+  await handleImageGenerations(ctx);
+
+  assert.equal(ctx.res.statusCode, 200);
+  assert.equal(ctx.calls.failure.length, 1);
+  assert.equal(ctx.calls.failure[0].account.accountRef, 'acct_stale');
+  assert.equal(ctx.calls.success.length, 1);
+  assert.equal(ctx.calls.success[0].accountRef, 'acct_healthy');
+  const authDiagnostic = ctx.calls.logs.find((entry) => entry.accountRef === 'acct_stale');
+  assert.ok(authDiagnostic);
+  assert.equal(authDiagnostic.policyKind, 'auth_invalid');
+  assert.equal(authDiagnostic.retryable, true);
+});
+
+test('handleImageGenerations skips a local missing token and uses the next Codex account', async () => {
+  const accounts = [
+    { accountRef: 'acct_missing', provider: 'codex' },
+    { accountRef: 'acct_healthy', provider: 'codex', accessToken: 'oauth-token' }
+  ];
+  let upstreamCalls = 0;
+  const ctx = makeCtx({
+    options: { logRequests: true, codexBaseUrl: 'https://chatgpt.com/backend-api/codex' },
+    state: {
+      accounts: { codex: accounts },
+      metrics: { totalSuccess: 0, totalFailures: 0 }
+    },
+    requestJson: { provider: 'codex', model: 'gpt-image-2', prompt: 'p' },
+    deps: {
+      resolveGatewayProvider: () => ({ provider: 'codex' }),
+      chooseServerAccount: (pool, _state, _routeKey, selection = {}) => {
+        const excluded = selection.excludeAccountRefs || new Set();
+        return pool.find((account) => !excluded.has(account.accountRef)) || null;
+      },
+      fetchWithTimeout: async () => {
+        upstreamCalls += 1;
+        return {
+          ok: true,
+          status: 200,
+          async text() {
+            return JSON.stringify({ data: [{ b64_json: PNG_BASE64 }] });
+          }
+        };
+      }
+    }
+  });
+
+  await handleImageGenerations(ctx);
+
+  assert.equal(ctx.res.statusCode, 200);
+  assert.equal(upstreamCalls, 1);
+  assert.equal(ctx.calls.failure.length, 1);
+  assert.equal(ctx.calls.failure[0].account.accountRef, 'acct_missing');
+  assert.equal(ctx.calls.success.length, 1);
+  assert.equal(ctx.calls.success[0].accountRef, 'acct_healthy');
+  const diagnostic = ctx.calls.logs.find((entry) => entry.accountRef === 'acct_missing');
+  assert.ok(diagnostic);
+  assert.equal(diagnostic.policyKind, 'auth_invalid');
+});
+
+test('handleImageGenerations does not rotate accounts for a structured safety rejection', async () => {
+  const accounts = [
+    {
+      accountRef: 'acct_first',
+      provider: 'codex',
+      authType: 'api-key',
+      apiKey: 'first-key',
+      openaiBaseUrl: 'https://api.example/v1'
+    },
+    {
+      accountRef: 'acct_second',
+      provider: 'codex',
+      authType: 'api-key',
+      apiKey: 'second-key',
+      openaiBaseUrl: 'https://api.example/v1'
+    }
+  ];
+  let upstreamCalls = 0;
+  const ctx = makeCtx({
+    state: {
+      accounts: { codex: accounts },
+      metrics: { totalSuccess: 0, totalFailures: 0 }
+    },
+    requestJson: { provider: 'codex', model: 'gpt-image-2', prompt: 'p' },
+    deps: {
+      resolveGatewayProvider: () => ({ provider: 'codex' }),
+      chooseServerAccount: (pool, _state, _routeKey, selection = {}) => {
+        const excluded = selection.excludeAccountRefs || new Set();
+        return pool.find((account) => !excluded.has(account.accountRef)) || null;
+      },
+      fetchWithTimeout: async () => {
+        upstreamCalls += 1;
+        return {
+          ok: false,
+          status: 403,
+          async text() {
+            return JSON.stringify({
+              error: {
+                code: 'sensitive_words_detected',
+                message: 'request rejected'
+              }
+            });
+          }
+        };
+      }
+    }
+  });
+
+  await handleImageGenerations(ctx);
+
+  assert.equal(ctx.res.statusCode, 403);
+  assert.equal(upstreamCalls, 1);
+  assert.equal(ctx.calls.failure.length, 0);
+  assert.equal(ctx.calls.success.length, 0);
+  const diagnostic = ctx.calls.logs.find((entry) => entry.policyKind === 'safety_rejected');
+  assert.ok(diagnostic);
+  assert.equal(diagnostic.provider, 'codex');
+  assert.equal(diagnostic.accountRef, 'acct_first');
+  assert.equal(diagnostic.retryable, false);
+});
+
+test('handleImageGenerations preserves AGY HTTP 429 status and retries the next account', async () => {
+  const accounts = [
+    { accountRef: 'acct_limited', provider: 'agy' },
+    { accountRef: 'acct_healthy', provider: 'agy' }
+  ];
+  let upstreamCalls = 0;
+  const ctx = makeCtx({
+    state: {
+      accounts: { agy: accounts },
+      metrics: { totalSuccess: 0, totalFailures: 0 }
+    },
+    deps: {
+      chooseServerAccount: (pool, _state, _routeKey, selection = {}) => {
+        const excluded = selection.excludeAccountRefs || new Set();
+        return pool.find((account) => !excluded.has(account.accountRef)) || null;
+      },
+      fetchGeminiCodeAssistGenerateContent: async (_options, account) => {
+        upstreamCalls += 1;
+        if (account.accountRef === 'acct_limited') {
+          const error = new Error('rate limited');
+          error.code = 'HTTP_429';
+          throw error;
+        }
+        return {
+          candidates: [{ content: { parts: [{ inlineData: { mimeType: 'image/png', data: PNG_BASE64 } }] } }],
+          usageMetadata: { totalTokenCount: 7 },
+          model: 'gemini-3.1-flash-image'
+        };
+      }
+    }
+  });
+
+  await handleImageGenerations(ctx);
+
+  assert.equal(ctx.res.statusCode, 200);
+  assert.equal(upstreamCalls, 2);
+  assert.equal(ctx.calls.success.length, 1);
+  assert.equal(ctx.calls.success[0].accountRef, 'acct_healthy');
+  const diagnostic = ctx.calls.logs.find((entry) => entry.accountRef === 'acct_limited');
+  assert.ok(diagnostic);
+  assert.equal(diagnostic.provider, 'agy');
+  assert.equal(diagnostic.status, 429);
+  assert.equal(diagnostic.policyKind, 'rate_limited');
+  assert.equal(diagnostic.retryable, true);
 });
 
 test('handleImageGenerations does not retry non-retryable errors', async () => {
   let picks = 0;
+  const account = {
+    accountRef: 'acct_key',
+    provider: 'codex',
+    authType: 'api-key',
+    apiKey: 'key',
+    openaiBaseUrl: 'https://api.example/v1'
+  };
   const ctx = makeCtx({
-    requestJson: { model: 'gemini-3.1-pro-high', prompt: 'p' },
+    requestJson: { provider: 'codex', model: 'gpt-image-2', prompt: 'p' },
+    state: {
+      accounts: { codex: [account] },
+      metrics: { totalSuccess: 0, totalFailures: 0 }
+    },
     deps: {
+      resolveGatewayProvider: () => ({ provider: 'codex' }),
       chooseServerAccount: () => {
         picks += 1;
-        return picks === 1 ? { accountRef: 'acct_a', email: 'a@example.com', provider: 'agy' } : null;
+        return picks === 1 ? account : null;
       },
-      fetchGeminiCodeAssistGenerateContent: async () => {
-        const error = new ImageGenerationError(400, 'bad_request', 'unsupported param');
-        throw error;
+      fetchWithTimeout: async () => {
+        return {
+          ok: false,
+          status: 400,
+          async text() {
+            return JSON.stringify({ error: { message: 'unsupported param' } });
+          }
+        };
       }
     }
   });
@@ -289,10 +712,16 @@ test('handleImageGenerations skips failure accounting for non-cooldown codes', a
 
 test('renderImageGenerationResponse maps b64_json, url and empty inputs', () => {
   const out = renderImageGenerationResponse(
-    [{ b64_json: 'YWJj', mimeType: 'image/png' }, { url: 'https://x/y.png' }],
+    [
+      { b64_json: 'YWJj', mimeType: 'image/png', revised_prompt: 'first prompt' },
+      { url: 'https://x/y.png', revised_prompt: 'second prompt' }
+    ],
     { responseFormat: 'b64_json' }
   );
-  assert.deepEqual(out.data, [{ b64_json: 'YWJj' }, { url: 'https://x/y.png' }]);
+  assert.deepEqual(out.data, [
+    { b64_json: 'YWJj', revised_prompt: 'first prompt' },
+    { url: 'https://x/y.png', revised_prompt: 'second prompt' }
+  ]);
   assert.ok(Number.isInteger(out.created));
 
   const empty = renderImageGenerationResponse(undefined, { responseFormat: 'b64_json' });

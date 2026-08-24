@@ -51,7 +51,7 @@ test('agy strategy shapes a native generateContent request for generation', asyn
   assert.ok(out.usageInput, 'usageInput should be captured');
 });
 
-test('agy strategy appends inlineData part for edits', async () => {
+test('agy strategy appends ordered inlineData parts for multi-image edits', async () => {
   let captured;
   const strategy = createAgyGeminiImageGenerationStrategy({
     fetchGeminiCodeAssistGenerateContent: async (options, account, requestJson) => {
@@ -64,14 +64,18 @@ test('agy strategy appends inlineData part for edits', async () => {
     mode: 'edit',
     model: 'gemini-3.1-flash-image',
     prompt: 'make it red',
-    image: { mimeType: 'image/png', data: PNG_BASE64 },
+    images: [
+      { mimeType: 'image/png', data: PNG_BASE64 },
+      { mimeType: 'image/webp', data: 'd2VicA==' }
+    ],
     account: agyAccount(),
     options: {}
   });
 
   assert.deepEqual(captured.contents[0].parts, [
     { text: 'make it red' },
-    { inlineData: { mimeType: 'image/png', data: PNG_BASE64 } }
+    { inlineData: { mimeType: 'image/png', data: PNG_BASE64 } },
+    { inlineData: { mimeType: 'image/webp', data: 'd2VicA==' } }
   ]);
 });
 
@@ -94,9 +98,11 @@ test('agy strategy reads images from wrapped response envelopes', async () => {
   assert.deepEqual(out.images, [{ b64_json: 'aGk=', mimeType: 'image/png' }]);
 });
 
-test('agy strategy gates models through isImageGenerationModel', () => {
+test('agy strategy only accepts Gemini-owned image model intents', () => {
   const strategy = createAgyGeminiImageGenerationStrategy({});
   assert.equal(strategy.supportsModel('gemini-3.1-flash-image'), true);
+  assert.equal(strategy.supportsModel('nano-banana'), true);
+  assert.equal(strategy.supportsModel('gpt-image-2'), false);
   assert.equal(strategy.supportsModel('gemini-3.1-pro-high'), false);
 });
 

@@ -53,6 +53,12 @@ import type {
   ChatRequest,
   ChatResponse,
   ChatStreamEvent,
+  ImageStudioModelsResponse,
+  ImageStudioDeleteSessionResponse,
+  ImageStudioRunInput,
+  ImageStudioRunResponse,
+  ImageStudioSessionResponse,
+  ImageStudioSessionsResponse,
   NativeSlashCommand,
   Provider,
   SlashCommandsResponse,
@@ -1500,6 +1506,62 @@ export const chatAPI = {
   getSlashCommands: async (provider: string): Promise<NativeSlashCommand[]> => {
     const response = await api.get<SlashCommandsResponse>(`/webui/slash-commands?provider=${encodeURIComponent(provider)}`);
     return response.data.commands || [];
+  }
+};
+
+export const imageStudioAPI = {
+  listModels: async (): Promise<ImageStudioModelsResponse> => {
+    const response = await api.get<ImageStudioModelsResponse>('/webui/studio/image/models');
+    return response.data;
+  },
+
+  listSessions: async (): Promise<ImageStudioSessionsResponse> => {
+    const response = await api.get<ImageStudioSessionsResponse>('/webui/studio/image/sessions');
+    return response.data;
+  },
+
+  createSession: async (title = ''): Promise<ImageStudioSessionResponse> => {
+    const response = await api.post<ImageStudioSessionResponse>('/webui/studio/image/sessions', { title });
+    return response.data;
+  },
+
+  getSession: async (sessionId: string): Promise<ImageStudioSessionResponse> => {
+    const response = await api.get<ImageStudioSessionResponse>(
+      `/webui/studio/image/sessions/${encodeURIComponent(sessionId)}`
+    );
+    return response.data;
+  },
+
+  renameSession: async (sessionId: string, title: string): Promise<ImageStudioSessionResponse> => {
+    const response = await api.patch<ImageStudioSessionResponse>(
+      `/webui/studio/image/sessions/${encodeURIComponent(sessionId)}`,
+      { title }
+    );
+    return response.data;
+  },
+
+  deleteSession: async (sessionId: string): Promise<ImageStudioDeleteSessionResponse> => {
+    const response = await api.delete<ImageStudioDeleteSessionResponse>(
+      `/webui/studio/image/sessions/${encodeURIComponent(sessionId)}`
+    );
+    return response.data;
+  },
+
+  run: async (sessionId: string, input: ImageStudioRunInput): Promise<ImageStudioRunResponse> => {
+    const response = await api.post<ImageStudioRunResponse>(
+      `/webui/studio/image/sessions/${encodeURIComponent(sessionId)}/runs`,
+      input,
+      { timeout: 0 }
+    );
+    return response.data;
+  },
+
+  getAssetBlob: async (sessionId: string, assetId: string, mimeType: string): Promise<Blob> => {
+    const response = await api.get<ArrayBuffer>(
+      `/webui/studio/image/sessions/${encodeURIComponent(sessionId)}/assets/${encodeURIComponent(assetId)}`,
+      { responseType: 'arraybuffer' }
+    );
+    return new Blob([response.data], { type: mimeType || 'image/png' });
   }
 };
 

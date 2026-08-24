@@ -2379,3 +2379,155 @@ export interface SshHostTestResult {
   };
   recommendation?: string;
 }
+
+export interface ImageStudioModelCapabilities {
+  generation: boolean;
+  edit: boolean;
+  mask: boolean;
+  multiple: boolean;
+  size: boolean;
+  quality: boolean;
+  responseFormat: boolean;
+  maxInputImages: number;
+  background: boolean;
+  outputFormat: boolean;
+  outputCompression: boolean;
+  moderation: boolean;
+}
+
+export interface ImageStudioModel {
+  key: string;
+  id: string;
+  label: string;
+  provider: string;
+  providerLabel: string;
+  priority: number;
+  source: string;
+  capabilities: ImageStudioModelCapabilities;
+  qualityOptions?: string[];
+  accountCount: number;
+  availableAccountCount: number;
+  unavailableReasons?: Array<{
+    reason: string;
+    count: number;
+  }>;
+}
+
+export type ImageStudioRevisionStatus = 'running' | 'succeeded' | 'failed';
+export type ImageStudioRevisionMode = 'generation' | 'edit';
+
+export interface ImageStudioRevisionError {
+  code: string;
+  message: string;
+  statusCode: number;
+}
+
+export interface ImageStudioRevision {
+  id: string;
+  parentRevisionId: string;
+  mode: ImageStudioRevisionMode;
+  prompt: string;
+  provider: string;
+  model: string;
+  modelKey: string;
+  parameters: {
+    n: number;
+    size: string;
+    quality: string;
+    background: string;
+    outputFormat: string;
+    outputCompression: number | null;
+    moderation: string;
+  };
+  sourceAssetIds: string[];
+  maskAssetId: string;
+  outputAssetIds: string[];
+  status: ImageStudioRevisionStatus;
+  createdAt: number;
+  completedAt: number;
+  accountRef: string;
+  error: ImageStudioRevisionError | null;
+}
+
+export interface ImageStudioAsset {
+  id: string;
+  revisionId: string;
+  role: 'source' | 'mask' | 'output';
+  mimeType: string;
+  byteLength: number;
+  createdAt: number;
+  revisedPrompt?: string;
+  url: string;
+}
+
+export interface ImageStudioSession {
+  version: number;
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  activeRevisionId: string;
+  revisions: ImageStudioRevision[];
+  assets: ImageStudioAsset[];
+}
+
+export interface ImageStudioSessionSummary {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  revisionCount: number;
+  assetCount: number;
+  activeRevisionId: string;
+  latestStatus: ImageStudioRevisionStatus | '';
+  latestModel: string;
+  latestProvider: string;
+  previewAssetId: string;
+  previewMimeType: string;
+  previewUrl: string;
+}
+
+export interface ImageStudioModelsResponse {
+  ok: boolean;
+  models: ImageStudioModel[];
+  defaultModelKey: string;
+}
+
+export interface ImageStudioSessionsResponse {
+  ok: boolean;
+  sessions: ImageStudioSessionSummary[];
+}
+
+export interface ImageStudioSessionResponse {
+  ok: boolean;
+  session: ImageStudioSession;
+}
+
+export interface ImageStudioDeleteSessionResponse {
+  ok: boolean;
+  deletedSessionId: string;
+}
+
+export interface ImageStudioRunInput {
+  mode: ImageStudioRevisionMode;
+  modelKey: string;
+  prompt: string;
+  parentRevisionId?: string;
+  sources?: Array<{
+    assetId?: string;
+    image?: string;
+  }>;
+  maskAssetId?: string;
+  mask?: string;
+  n?: number;
+  size?: string;
+  quality?: string;
+  background?: string;
+  output_format?: string;
+  output_compression?: number;
+  moderation?: string;
+}
+
+export interface ImageStudioRunResponse extends ImageStudioSessionResponse {
+  revisionId: string;
+}

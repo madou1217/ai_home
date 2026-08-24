@@ -43,8 +43,84 @@ const {
   setNpmProxy,
   testConnectivity
 } = require('../lib/cli/services/toolkit/proxy-manager');
+const managedToolManager = require('../lib/cli/services/toolkit/tool-manager');
 const { EventEmitter } = require('node:events');
 const { createServer } = require('node:http');
+
+function managedToolOptions(platform, installed) {
+  const hostHomeDir = platform === 'win32' ? 'C:\\Users\\tester' : '/home/tester';
+  const executablePath = platform === 'win32'
+    ? 'C:\\Users\\tester\\AppData\\Local\\AIHome\\bin\\frpc.exe'
+    : '/home/tester/.local/bin/frpc';
+  return {
+    platform,
+    hostHomeDir,
+    networkRuntime: {
+      frpc: {
+        running: false,
+        runningCount: 0,
+        startupManaged: false,
+        startupSources: [],
+        executablePath: installed ? executablePath : '',
+        executableExists: installed,
+        configPath: '',
+        configSource: '',
+        configCount: 0,
+        configAmbiguous: false,
+        configState: 'none'
+      }
+    },
+    processObj: {
+      platform,
+      arch: platform === 'darwin' ? 'arm64' : 'x64',
+      env: platform === 'win32'
+        ? { LOCALAPPDATA: 'C:\\Users\\tester\\AppData\\Local', PATH: '' }
+        : { HOME: hostHomeDir, PATH: '' }
+    },
+    resolveCommandPath(command) {
+      if (command === 'frpc' && installed) return executablePath;
+      if (command === 'brew' && platform === 'darwin') return '/opt/homebrew/bin/brew';
+      return '';
+    },
+    spawnSync() {
+      return { status: 0, stdout: '0.71.0\n', stderr: '' };
+    }
+  };
+}
+
+test('网络接入工具使用与应用一致的完整生命周期契约', () => {
+  assert.equal(typeof managedToolManager.planManagedToolAction, 'function');
+
+  for (const platform of ['darwin', 'linux', 'win32']) {
+    const uninstalledOptions = managedToolOptions(platform, false);
+    const uninstalled = managedToolManager.listManagedTools(uninstalledOptions)
+      .tools.find((tool) => tool.id === 'frpc');
+    assert.ok(uninstalled, `${platform} 应返回 frpc 资源`);
+    assert.equal(uninstalled.canInstall, true, `${platform} 应支持安装 frpc`);
+    assert.equal(uninstalled.canUpdate, false);
+    assert.equal(uninstalled.canUninstall, false);
+    assert.equal(uninstalled.managedBy, '', `${platform} 未安装时不应声明受管归属`);
+
+    const installPlan = managedToolManager.planManagedToolAction({ toolId: 'frpc', action: 'install' }, uninstalledOptions);
+    assert.equal(installPlan.ok, true, `${platform} 应生成安装计划`);
+    assert.ok(installPlan.plans.length > 0);
+
+    const installedOptions = managedToolOptions(platform, true);
+    const installed = managedToolManager.listManagedTools(installedOptions)
+      .tools.find((tool) => tool.id === 'frpc');
+    assert.equal(installed.canInstall, false);
+    assert.equal(installed.canUpdate, true, `${platform} 应支持更新 frpc`);
+    assert.equal(installed.canUninstall, true, `${platform} 应支持卸载 frpc`);
+
+    for (const action of ['update', 'uninstall']) {
+      const planned = managedToolManager.planManagedToolAction({ toolId: 'frpc', action }, installedOptions);
+      assert.equal(planned.ok, true, `${platform} 应生成 ${action} 计划`);
+      assert.ok(planned.plans.length > 0);
+      assert.ok(planned.plans.every((plan) => plan.requiresConfirmation === true));
+      assert.doesNotMatch(String(planned.message || ''), /没有.*卸载计划|安全的官方卸载计划/);
+    }
+  }
+});
 
 test('app-manager listManagedApps returns structured apps list', async () => {
   assert.equal(Object.hasOwn(APP_CATEGORIES, 'agents'), false);
@@ -78,6 +154,28 @@ test('app-manager listManagedApps returns structured apps list', async () => {
   assert.ok(geminiCli, 'Gemini CLI should remain available as a CLI installer');
   assert.equal(geminiCli.name, 'Gemini');
   assert.equal(result.apps.some((a) => a.id === 'gemini-desktop'), false, 'Gemini must not expose a Desktop installer without a desktop contract');
+});
+
+test('app-manager 缺少 CLI 时使用网页会话刷新术语', async (t) => {
+  const hostHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-toolkit-session-refresh-'));
+  t.after(() => fs.rmSync(hostHomeDir, { recursive: true, force: true }));
+
+  const result = await installAppHooks(['claude'], {
+    cacheInventory: false,
+    platform: 'linux',
+    hostHomeDir,
+    probeVersions: false,
+    processObj: {
+      platform: 'linux',
+      env: { PATH: '' },
+      execPath: process.execPath
+    },
+    spawnSync: () => ({ status: 1, stdout: '', stderr: '' })
+  });
+
+  assert.equal(result.ok, false);
+  assert.match(result.results[0].error, /网页会话刷新/);
+  assert.doesNotMatch(result.results[0].error, /会话同步/);
 });
 
 test('app-manager coalesces concurrent inventory scans and expires the short cache', async (t) => {

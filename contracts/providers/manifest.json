@@ -1060,13 +1060,6 @@
             "execNames": [
               "Kimi.exe"
             ]
-          },
-          "linux": {
-            "clientName": "Kimi",
-            "execNames": [
-              "Kimi",
-              "kimi-desktop"
-            ]
           }
         }
       },

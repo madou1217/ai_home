@@ -34,6 +34,11 @@ const nodeRoutes = [
     icon: "database",
   },
   {
+    path: "/toolkit/install-guide",
+    component: "./ToolkitInstallGuide",
+    hideInMenu: true,
+  },
+  {
     name: "开发工具",
     path: "/toolkit",
     component: "./Toolkit",

@@ -16,9 +16,10 @@ import { KimiDesktopLoginModal } from '@/features/accounts/KimiDesktopLoginModal
 import { accountsAPI, toolkitAPI } from '@/services/api';
 import { useWebUiTaskQueue, type WebUiTaskStreamStatus } from '@/services/webui-task-queue';
 import {
-  canRetryAppInstallTask,
+  canRetryWebUiTask,
   getAppInstallFailureReasons,
   getAppInstallStatusPresentation,
+  getWebUiTaskSourceLabel,
   mergeWebUiTaskQueueEntries
 } from '@/features/app-install/app-install-presentation';
 import type { Account, WebUiTask } from '@/types';
@@ -133,14 +134,20 @@ export default function AppInstallTaskQueue() {
   };
 
   const retryTask = async (task: WebUiTask) => {
-    if (!canRetryAppInstallTask(task) || retryingTaskIds.has(task.id)) return;
+    if (!canRetryWebUiTask(task) || retryingTaskIds.has(task.id)) return;
     const action = task.action as 'install' | 'update' | 'uninstall';
     const kind = task.kind === 'desktop' || task.kind === 'cli' || task.kind === 'ide'
       ? task.kind
       : undefined;
     setRetryingTaskIds((current) => new Set(current).add(task.id));
     try {
-      const response = await toolkitAPI.executeAppAction(task.appId, action, kind);
+      const response = task.source === 'terminal'
+        ? await toolkitAPI.executeTerminalAction(task.appId, action)
+        : task.source === 'environment'
+          ? await toolkitAPI.executeEnvironmentToolAction(task.appId, action)
+          : task.source === 'managed-tool'
+            ? await toolkitAPI.executeManagedToolAction(task.appId, action)
+            : await toolkitAPI.executeAppAction(task.appId, action, kind);
       if (!response.ok || !response.job) throw new Error(response.error || '重试任务未创建');
       dismissTask(task.id);
       message.info(`${taskName(task)}已重新进入任务队列`);
@@ -273,7 +280,7 @@ export default function AppInstallTaskQueue() {
                 <div className="webui-task-queue-item-meta">
                   <span>{taskAction(task)}</span>
                   <span>{phaseLabel(task)}</span>
-                  <span>{task.source === 'terminal' ? '终端' : '应用'}</span>
+                  <span>{getWebUiTaskSourceLabel(task)}</span>
                 </div>
                 <Progress
                   percent={percent}
@@ -306,7 +313,7 @@ export default function AppInstallTaskQueue() {
                         onClose={closeManagedApp}
                       />
                     ) : null}
-                    {canRetryAppInstallTask(task) ? (
+                    {canRetryWebUiTask(task) ? (
                       <Button
                         type="text"
                         size="small"

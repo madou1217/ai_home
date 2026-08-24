@@ -23,10 +23,11 @@ import ToolkitStatusTrack from './ToolkitStatusTrack';
 import ConfigCodeEditor from './config-editor/ConfigCodeEditor';
 import ManagedAppCard from './ManagedAppCard';
 import AppActionConfirmContent from './AppActionConfirmContent';
+import { getAppUpdateActionPresentation } from '@/features/app-install/app-install-presentation';
 import { KimiDesktopLoginModal } from '@/features/accounts/KimiDesktopLoginModal';
 import { useWebUiTaskQueue } from '@/services/webui-task-queue';
 import type { WebUiTask } from '@/types';
-import { SESSION_SYNC_POLICY, SESSION_SYNC_BOUNDARY, SESSION_SYNC_SCOPE } from '@/components/session-sync-copy';
+import { SESSION_SYNC_SUMMARY } from '@/components/session-sync-copy';
 
 const APP_CATEGORIES = [
   { label: '全部', value: 'ALL' },
@@ -47,6 +48,10 @@ function requestError(error: unknown, fallback: string) {
       || fallback;
   }
   return fallback;
+}
+
+function lifecycleKind(app: ManagedAppItem): 'cli' | 'desktop' {
+  return app.type === 'cli' ? 'cli' : 'desktop';
 }
 
 export default function AppManagerPanel() {
@@ -160,12 +165,12 @@ export default function AppManagerPanel() {
 
   const submitAppAction = async (app: ManagedAppItem, action: 'install' | 'update' | 'uninstall', key: string) => {
     try {
-      const response = await toolkitAPI.executeAppAction(app.id, action, app.type === 'ide' ? undefined : app.type);
+      const response = await toolkitAPI.executeAppAction(app.id, action, lifecycleKind(app));
       if (!response.ok || !response.job) {
         throw new Error(response.error || '应用任务未创建');
       }
       setPendingActions((current) => ({ ...current, [key]: { phase: 'submitted', jobId: response.job?.id } }));
-      message.info(`${app.name}${actionLabel(action)}任务已提交，按钮状态跟随真实任务进度。`);
+      message.info(`${app.name}${actionLabel(action)}任务已提交`);
     } catch (requestFailure: unknown) {
       setPendingActions((current) => {
         const next = { ...current };
@@ -241,39 +246,21 @@ export default function AppManagerPanel() {
             }
           : item)
       } : current);
-      if (!response.ok || response.status === 'unavailable') {
-        message.info(response.message || '当前应用没有可用的远端版本源');
-        return;
-      }
-      if (!response.updateAvailable) {
-        if (response.status === 'unknown') {
-          message.info(response.latestVersion
-            ? `已读取远端最新版（${response.latestVersion}），但当前版本无法完成比较`
-            : '已完成检查，但当前版本无法完成比较');
-          return;
-        }
-        message.success(response.latestVersion
-          ? `${app.name} 已是最新版（${response.latestVersion}）`
-          : '未发现可用更新');
-        return;
-      }
-      if (app.canUpdate === false) {
-        message.info(`${app.name} 有新版本（${response.latestVersion}），但当前安装方式没有安全的自动更新计划，请按官方方式更新。`);
+      const presentation = getAppUpdateActionPresentation(app.name, response);
+      if (!presentation.shouldExecute) {
+        message.success(presentation.notice);
         return;
       }
       const key = actionKey(app, 'update');
-      const plan = await toolkitAPI.planAppAction(app.id, 'update', app.type === 'ide' ? undefined : app.type);
+      const plan = await toolkitAPI.planAppAction(app.id, 'update', lifecycleKind(app));
       if (!plan.ok) throw new Error(plan.error || '无法生成更新计划');
       Modal.confirm({
-        title: `${app.name} 有新版本`,
+        title: presentation.title,
         content: (
           <AppActionConfirmContent
-            summary={`确认后将创建 ${app.name} 更新任务，进度和最终结果会保留在右下角任务队列。`}
+            summary={presentation.summary}
             plans={plan.plans || []}
-            metadata={[
-              { label: '当前版本', value: response.currentVersion || '未探测到' },
-              { label: '远端最新版', value: response.latestVersion || '未提供' }
-            ]}
+            metadata={presentation.metadata}
           />
         ),
         okText: '确认更新',
@@ -281,7 +268,7 @@ export default function AppManagerPanel() {
         onOk: () => { void submitAppAction(app, 'update', key); }
       });
     } catch (requestFailure: unknown) {
-      message.error(requestError(requestFailure, `${app.name} 检查更新失败`));
+      message.error(requestError(requestFailure, `${app.name} 更新准备失败`));
     } finally {
       setCheckingUpdates((current) => {
         const next = { ...current };
@@ -296,13 +283,13 @@ export default function AppManagerPanel() {
     if (activeTaskFor(app) || pendingActions[key]) return;
     setPendingActions((current) => ({ ...current, [key]: { phase: 'planning' } }));
     try {
-      const plan = await toolkitAPI.planAppAction(app.id, action, app.type === 'ide' ? undefined : app.type);
+      const plan = await toolkitAPI.planAppAction(app.id, action, lifecycleKind(app));
       if (!plan.ok) throw new Error(plan.error || '无法生成应用操作计划');
       Modal.confirm({
         title: `${actionLabel(action)} ${app.name}`,
         content: (
           <AppActionConfirmContent
-            summary={`确认后将创建 ${app.name}${actionLabel(action)}任务；弹窗关闭不影响后台执行。`}
+            summary={`确认后将创建 ${app.name}${actionLabel(action)}任务，进度显示在后台任务队列。`}
             plans={plan.plans || []}
           />
         ),
@@ -332,7 +319,7 @@ export default function AppManagerPanel() {
       .filter((app) => app.installed && app.hookSupported && !app.hookInstalled)
       .map((app) => app.provider);
     if (!targets.length) {
-      message.info('没有待安装的会话 Hook');
+      message.info('没有待启用的网页会话刷新');
       return;
     }
 
@@ -341,12 +328,12 @@ export default function AppManagerPanel() {
       const response = await toolkitAPI.installHooks(targets);
       const failed = (response.results || []).filter((result) => !result.ok);
       if (!response.ok || failed.length) {
-        throw new Error(failed.map((result) => `${result.provider}: ${result.error || result.reason || '验证失败'}`).join('；') || '会话同步未通过验证');
+        throw new Error(failed.map((result) => `${result.provider}: ${result.error || result.reason || '验证失败'}`).join('；') || '网页会话刷新未通过验证');
       }
-      message.success('会话同步已写入并重新读取验证');
+      message.success('网页会话刷新已启用并验证');
       await fetchApps();
     } catch (requestFailure: unknown) {
-      message.error(requestError(requestFailure, '会话 Hook 配置失败'));
+      message.error(requestError(requestFailure, '网页会话刷新配置失败'));
     } finally {
       setInstallingHooks(false);
     }
@@ -393,7 +380,6 @@ export default function AppManagerPanel() {
         <div>
           <div className="toolkit-panel-kicker">APPLICATION INVENTORY</div>
           <h2 id="toolkit-apps-title">应用管理</h2>
-          <p>统一查看当前主机的 CLI、桌面客户端与 IDE 扩展。{SESSION_SYNC_POLICY}同步范围：{SESSION_SYNC_SCOPE}。{SESSION_SYNC_BOUNDARY}</p>
         </div>
         <div className="toolkit-header-actions">
           <Button icon={<ReloadOutlined />} loading={loading} onClick={() => { void fetchApps(); }}>重新探测</Button>
@@ -415,13 +401,18 @@ export default function AppManagerPanel() {
             items={[
               { label: '实测', value: `${data.total} 个应用`, detail: '来自当前主机的应用清单', tone: 'info' },
               { label: '配置', value: `${data.installedCount} 个已安装`, detail: `${data.total - data.installedCount} 个未安装`, tone: data.installedCount ? 'success' : 'neutral' },
-              { label: '会话同步', value: hookSupportedCount ? `${hookReadyCount} / ${hookSupportedCount} 个已安装 CLI 已验证` : '无可按需启用的 Hook', detail: `同步${SESSION_SYNC_SCOPE}；${SESSION_SYNC_BOUNDARY}`, tone: hookSupportedCount === 0 ? 'neutral' : hookReadyCount === hookSupportedCount ? 'success' : 'warning' }
+              { label: '网页会话刷新', value: hookSupportedCount ? `${hookReadyCount} / ${hookSupportedCount} 个 CLI 已启用` : '无需启用', detail: SESSION_SYNC_SUMMARY, tone: hookSupportedCount === 0 ? 'neutral' : hookReadyCount === hookSupportedCount ? 'success' : 'warning' }
             ]}
           />
 
           <div className="toolkit-category-bar">
             <div className="toolkit-filter-scroll">
-              <Segmented value={category} onChange={(value) => setCategory(String(value))} options={APP_CATEGORIES} />
+              <Segmented
+                aria-label="应用分类"
+                value={category}
+                onChange={(value) => setCategory(String(value))}
+                options={APP_CATEGORIES}
+              />
             </div>
             <span className="toolkit-result-count">当前显示 {filteredApps.length} 项</span>
           </div>

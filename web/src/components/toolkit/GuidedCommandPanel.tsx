@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Input, Select, Tag } from 'antd';
+import { Input, Select, Tag } from 'antd';
 import CopyableCommand from './CopyableCommand';
 
 export interface GuidedCommandParameter {
@@ -12,7 +12,7 @@ export interface GuidedCommandTask {
   id: string;
   label: string;
   command: string;
-  category: 'install' | 'configure' | 'use' | 'uninstall' | 'inspect';
+  category: 'install' | 'update' | 'configure' | 'use' | 'uninstall' | 'inspect';
   platform?: string;
   description?: string;
   danger?: boolean;
@@ -27,6 +27,7 @@ interface GuidedCommandPanelProps {
 
 const CATEGORY_LABELS: Record<GuidedCommandTask['category'], string> = {
   install: '安装',
+  update: '更新',
   configure: '配置',
   use: '使用',
   uninstall: '卸载',
@@ -111,12 +112,9 @@ export default function GuidedCommandPanel({
       </div>
       {selectedTask.description && <p className="toolkit-command-description">{selectedTask.description}</p>}
       {selectedTask.danger && (
-        <Alert
-          type="warning"
-          showIcon
-          message="请先检查命令再复制"
-          description="AIH 只生成并复制命令，不会在当前页面自动执行安装、卸载或环境变更。"
-        />
+        <p className="toolkit-command-caution" role="note">
+          请先检查命令；当前页面只负责生成和复制，不会自动执行环境变更。
+        </p>
       )}
       <CopyableCommand
         command={renderedCommand}

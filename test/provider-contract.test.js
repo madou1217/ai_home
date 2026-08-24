@@ -78,6 +78,7 @@ test('客户端形态由统一 clients 合同声明，不由 CLI 细节推断', 
   assert.doesNotMatch(byId.zcode.authOptions[0].description, /CLI|TUI/i);
   assert.equal(byId.gemini.cli.desktopClient, undefined);
   assert.equal(byId.grok.cli.desktopClient, undefined);
+  assert.equal(byId.kimi.cli.desktopClient.linux, undefined);
 });
 
 test('Qoder 桌面进程识别不会把命令行进程当作桌面客户端', () => {

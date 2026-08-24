@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 import { Button, Form, Input, Modal, Select, Space, Tag, Typography, message } from 'antd';
-import { proxyPoolAPI } from '@/services/api';
+import { accountEgressCatalogAPI } from '@/services/api';
 import type { ProxyGroup, ProxyGroupStrategy, ProxyNode } from '@/types';
 import {
   PROXY_GROUP_STRATEGY_OPTIONS,
@@ -92,7 +92,7 @@ export function ZcodeProxyGroupManagerModal({
   };
 
   const refreshGroups = async (nextPreferredGroupId?: string) => {
-    const response = await proxyPoolAPI.listGroups();
+    const response = await accountEgressCatalogAPI.listGroups();
     const nextGroups = response.groups || [];
     onChanged(nextGroups, nextPreferredGroupId);
     const selected = nextGroups.find((group) => group.id === nextPreferredGroupId) || nextGroups[0] || null;
@@ -117,14 +117,14 @@ export function ZcodeProxyGroupManagerModal({
     setSubmitting(true);
     try {
       const response = editingManualGroup
-        ? await proxyPoolAPI.upsertGroup({
+        ? await accountEgressCatalogAPI.upsertGroup({
           ...(creating ? {} : { id: selectedGroup?.id }),
           name: String(values.name || '').trim(),
           nodeIds: values.nodeIds || [],
           strategy: values.strategy,
           failoverStrategy: values.failoverStrategy
         })
-        : await proxyPoolAPI.updateGroupPolicy(selectedGroup!.id, {
+        : await accountEgressCatalogAPI.updateGroupPolicy(selectedGroup!.id, {
           strategy: values.strategy,
           failoverStrategy: values.failoverStrategy
         });
@@ -149,7 +149,7 @@ export function ZcodeProxyGroupManagerModal({
       onOk: async () => {
         setSubmitting(true);
         try {
-          await proxyPoolAPI.deleteGroup(selectedGroup.id);
+          await accountEgressCatalogAPI.deleteGroup(selectedGroup.id);
           await refreshGroups();
           message.success('手动分组已删除');
         } catch (error: any) {

@@ -1,17 +1,11 @@
-import { Form, Input, Modal, Tabs, Typography, Upload, message } from 'antd';
 import { UploadOutlined } from '@ant-design/icons';
+import { Form, Input, Modal, Tabs, Typography, Upload, message } from 'antd';
 import { useState } from 'react';
-import { proxyPoolAPI } from '@/services/api';
-import {
-  getErrorMessage,
-  getMutationMessage,
-  isHttpUrl,
-  isMutationApplied
-} from './proxy-pool-utils';
-import ConfigCodeEditor from '../config-editor/ConfigCodeEditor';
+import ConfigCodeEditor from '@/components/toolkit/config-editor/ConfigCodeEditor';
+import { accountEgressCatalogAPI } from '@/services/api';
 
-const { Paragraph } = Typography;
 const { Dragger } = Upload;
+const { Paragraph } = Typography;
 
 type ImportMode = 'text' | 'subscription' | 'qr';
 
@@ -27,19 +21,37 @@ interface BarcodeDetectorConstructor {
   new(options: { formats: string[] }): BarcodeDetectorInstance;
 }
 
-interface ProxyImportModalProps {
+interface AccountEgressImportModalProps {
   open: boolean;
   onClose: () => void;
   onImported: () => Promise<void> | void;
-  storageOnly?: boolean;
 }
 
-export default function ProxyImportModal({
+function getErrorMessage(error: unknown, fallback: string) {
+  const candidate = error as {
+    message?: string;
+    response?: { data?: { message?: string; error?: string } };
+  };
+  return candidate?.response?.data?.message
+    || candidate?.response?.data?.error
+    || candidate?.message
+    || fallback;
+}
+
+function isHttpUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+export default function AccountEgressImportModal({
   open,
   onClose,
-  onImported,
-  storageOnly = false
-}: ProxyImportModalProps) {
+  onImported
+}: AccountEgressImportModalProps) {
   const [mode, setMode] = useState<ImportMode>('text');
   const [content, setContent] = useState('');
   const [importing, setImporting] = useState(false);
@@ -56,7 +68,7 @@ export default function ProxyImportModal({
     }
     setImporting(true);
     try {
-      const result = await proxyPoolAPI.importNodes(content);
+      const result = await accountEgressCatalogAPI.importNodes(content);
       if (!result.ok || result.count === 0) {
         message.error(result.error || '没有识别到可支持的节点');
         return;
@@ -76,11 +88,11 @@ export default function ProxyImportModal({
     setImporting(true);
     try {
       const values = await subscriptionForm.validateFields();
-      const saved = await proxyPoolAPI.upsertSubscription(values);
+      const saved = await accountEgressCatalogAPI.upsertSubscription(values);
       if (!saved.ok) throw new Error('订阅源保存失败');
-      const synced = await proxyPoolAPI.syncSubscription(saved.subscription.id, { storageOnly });
-      if (!isMutationApplied(synced)) {
-        message.warning(getMutationMessage(synced, '订阅已保存，但首次同步未应用'));
+      const synced = await accountEgressCatalogAPI.syncSubscription(saved.subscription.id);
+      if (!synced.ok || synced.applied !== true) {
+        message.warning(synced.message || synced.error || '订阅已保存，但首次同步未应用');
       } else {
         message.success(`订阅已保存并同步 ${synced.count || 0} 个节点`);
       }
@@ -96,7 +108,9 @@ export default function ProxyImportModal({
   };
 
   const readQrCode = async (file: File) => {
-    const BarcodeDetector = (window as unknown as { BarcodeDetector?: BarcodeDetectorConstructor }).BarcodeDetector;
+    const BarcodeDetector = (window as unknown as {
+      BarcodeDetector?: BarcodeDetectorConstructor;
+    }).BarcodeDetector;
     if (!BarcodeDetector) {
       message.error('当前浏览器不支持本地二维码识别，请使用最新版 Chromium 或粘贴二维码原文');
       return;
@@ -113,7 +127,10 @@ export default function ProxyImportModal({
       }
       if (isHttpUrl(decoded)) {
         setMode('subscription');
-        subscriptionForm.setFieldsValue({ name: file.name.replace(/\.[^.]+$/, ''), url: decoded });
+        subscriptionForm.setFieldsValue({
+          name: file.name.replace(/\.[^.]+$/u, ''),
+          url: decoded
+        });
         message.success('已识别订阅 URL，请确认名称后导入');
       } else {
         setMode('text');
@@ -127,7 +144,7 @@ export default function ProxyImportModal({
 
   return (
     <Modal
-      title="导入代理节点或订阅"
+      title="导入账号出口节点或订阅"
       open={open}
       confirmLoading={importing}
       onOk={() => void (mode === 'subscription' ? importSubscription() : importText())}
@@ -146,7 +163,7 @@ export default function ProxyImportModal({
             children: (
               <>
                 <Paragraph type="secondary">
-                  支持当前解析器明确识别的单节点链接、Base64 节点列表和 Mihomo/Clash YAML。HTTP(S) 订阅地址不会在这里被误解析为代理节点。
+                  支持单节点链接、Base64 节点列表与 Clash YAML。HTTP(S) 订阅地址不会被误解析为代理节点。
                 </Paragraph>
                 <ConfigCodeEditor
                   ariaLabel="节点或配置文本"
@@ -165,11 +182,8 @@ export default function ProxyImportModal({
             children: (
               <Form form={subscriptionForm} layout="vertical">
                 <Paragraph type="secondary" style={{ marginBottom: 16 }}>
-                  首次导入会立即发起一次受限同步；当前版本只承诺手动同步，不会显示并不存在的后台定时任务。
-                  服务端会校验协议、响应大小和内网目标。
-                  {storageOnly
-                    ? ' 当前入口只更新中立节点仓，不启动、重载或停止其它代理核心，也不更改系统代理或 TUN。'
-                    : ''}
+                  首次导入会立即执行一次受限同步；当前只支持手动同步。服务端会校验协议、响应大小和内网目标。
+                  数据只写入账号出口节点目录，不会启动代理核心，也不会更改系统代理或 TUN。
                 </Paragraph>
                 <Form.Item
                   label="订阅名称"
@@ -183,9 +197,11 @@ export default function ProxyImportModal({
                   name="url"
                   rules={[
                     { required: true, message: '请输入订阅 URL' },
-                    { validator: async (_rule, value) => {
-                      if (value && !isHttpUrl(value)) throw new Error('仅支持 http:// 或 https:// URL');
-                    } }
+                    {
+                      validator: async (_rule, value) => {
+                        if (value && !isHttpUrl(value)) throw new Error('仅支持 http:// 或 https:// URL');
+                      }
+                    }
                   ]}
                 >
                   <Input placeholder="https://example.com/subscribe?..." autoComplete="off" />

@@ -9,7 +9,7 @@ const projectRoot = path.join(__dirname, '..');
 const accountsPath = path.join(projectRoot, 'web/src/pages/Accounts.tsx');
 const apiPath = path.join(projectRoot, 'web/src/services/api.ts');
 const modalPath = path.join(projectRoot, 'web/src/features/accounts/ZcodeEgressModal.tsx');
-const importModalPath = path.join(projectRoot, 'web/src/components/toolkit/proxy-pool/ProxyImportModal.tsx');
+const importModalPath = path.join(projectRoot, 'web/src/features/accounts/AccountEgressImportModal.tsx');
 const groupManagerPath = path.join(projectRoot, 'web/src/features/accounts/ZcodeProxyGroupManagerModal.tsx');
 const toolkitPanelPath = path.join(projectRoot, 'web/src/components/toolkit/AppManagerPanel.tsx');
 const taskQueuePath = path.join(projectRoot, 'web/src/components/task-queue/AppInstallTaskQueue.tsx');
@@ -28,13 +28,13 @@ test('所有 provider 账号菜单都用语义化出口图标打开独立弹窗'
   assert.doesNotMatch(accountsSource, /record\.provider\s*===\s*['"]zcode['"][\s\S]{0,160}account-egress/);
 });
 
-test('账号出口弹窗支持五种来源并复用节点库管理面', () => {
+test('账号出口弹窗支持五种来源并复用账号出口目录', () => {
   assert.equal(fs.existsSync(modalPath), true, '出口设置弹窗尚未实现');
   const modalSource = fs.readFileSync(modalPath, 'utf8');
 
   assert.match(modalSource, /accountsAPI\.getAccountEgress\(account\.provider, account\.accountRef\)/);
   assert.match(modalSource, /accountsAPI\.saveAccountEgress\(account\.provider, account\.accountRef/);
-  assert.match(modalSource, /proxyPoolAPI\.listNodes\(\)/);
+  assert.match(modalSource, /accountEgressCatalogAPI\.listNodes\(\)/);
   assert.match(modalSource, /proxyUrl:\s*String\(values\.proxyUrl/);
   assert.match(modalSource, /nodeId:\s*String\(values\.nodeId/);
   assert.match(modalSource, /groupId:\s*String\(values\.groupId/);
@@ -70,28 +70,29 @@ test('账号出口弹窗支持五种来源并复用节点库管理面', () => {
 });
 
 test('账号出口从导入弹窗写入中立节点仓且不触碰其它代理核心或系统网络', () => {
+  assert.equal(fs.existsSync(importModalPath), true, '账号出口导入组件尚未迁移');
   const modalSource = fs.readFileSync(modalPath, 'utf8');
   const importModalSource = fs.readFileSync(importModalPath, 'utf8');
   const apiSource = fs.readFileSync(apiPath, 'utf8');
 
-  assert.match(modalSource, /import ProxyImportModal from '@\/components\/toolkit\/proxy-pool\/ProxyImportModal'/);
+  assert.match(modalSource, /import AccountEgressImportModal from '\.\/AccountEgressImportModal'/);
   assert.match(modalSource, /导入节点或订阅/);
-  assert.match(modalSource, /const refreshNodeLibrary = useCallback\([\s\S]*proxyPoolAPI\.listNodes\(\)/);
+  assert.match(modalSource, /const refreshNodeLibrary = useCallback\([\s\S]*accountEgressCatalogAPI\.listNodes\(\)/);
   assert.match(
     modalSource,
-    /<ProxyImportModal[\s\S]*storageOnly[\s\S]*onImported=\{refreshNodeLibrary\}/
+    /<AccountEgressImportModal[\s\S]*onImported=\{refreshNodeLibrary\}/
   );
-  assert.match(importModalSource, /storageOnly\?: boolean/);
   assert.match(
     importModalSource,
-    /proxyPoolAPI\.syncSubscription\(saved\.subscription\.id,\s*\{\s*storageOnly\s*\}\)/
+    /accountEgressCatalogAPI\.syncSubscription\(saved\.subscription\.id\)/
   );
+  assert.doesNotMatch(importModalSource, /storageOnly|Mihomo|proxyPoolAPI/u);
   assert.doesNotMatch(importModalSource, /\bAlert\b|borderLeft|border-left/);
   assert.match(
     apiSource,
-    /syncSubscription:\s*async\s*\(\s*id: string,\s*options: \{ storageOnly\?: boolean \} = \{\}\s*\)/
+    /export const accountEgressCatalogAPI[\s\S]*syncSubscription:\s*async\s*\(\s*id: string\s*\)/
   );
-  assert.match(apiSource, /\{\s*id,\s*storageOnly:\s*options\.storageOnly === true\s*\}/);
+  assert.match(apiSource, /\/webui\/account-egress\/catalog\/subscriptions\/sync/);
 });
 
 test('ZCode 出口弹窗提供手动分组 CRUD 与自动组策略调整', () => {
@@ -100,10 +101,10 @@ test('ZCode 出口弹窗提供手动分组 CRUD 与自动组策略调整', () =>
   const managerSource = fs.readFileSync(groupManagerPath, 'utf8');
 
   assert.match(modalSource, /<ZcodeProxyGroupManagerModal/);
-  assert.match(managerSource, /proxyPoolAPI\.listGroups\(\)/);
-  assert.match(managerSource, /proxyPoolAPI\.upsertGroup\(/);
-  assert.match(managerSource, /proxyPoolAPI\.updateGroupPolicy\(/);
-  assert.match(managerSource, /proxyPoolAPI\.deleteGroup\(/);
+  assert.match(managerSource, /accountEgressCatalogAPI\.listGroups\(\)/);
+  assert.match(managerSource, /accountEgressCatalogAPI\.upsertGroup\(/);
+  assert.match(managerSource, /accountEgressCatalogAPI\.updateGroupPolicy\(/);
+  assert.match(managerSource, /accountEgressCatalogAPI\.deleteGroup\(/);
   assert.match(managerSource, /新建手动组/);
   assert.match(managerSource, /自动组成员.*只调整调度策略/s);
   assert.doesNotMatch(managerSource, /\bAlert\b|borderLeft|border-left|Mihomo/i);

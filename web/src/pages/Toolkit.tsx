@@ -5,7 +5,6 @@ import {
   AppstoreOutlined,
   CloudSyncOutlined,
   CodeOutlined,
-  ForkOutlined,
   GlobalOutlined,
   ToolOutlined
 } from '@ant-design/icons';
@@ -15,8 +14,6 @@ import TerminalManagerPanel from '@/components/toolkit/TerminalManagerPanel';
 import EnvironmentPanel from '@/components/toolkit/EnvironmentPanel';
 import ManagedToolsPanel from '@/components/toolkit/ManagedToolsPanel';
 import MirrorManagerPanel from '@/components/toolkit/MirrorManagerPanel';
-import ProxyDiagnosticsPanel from '@/components/toolkit/ProxyDiagnosticsPanel';
-import ProxyPoolPanel from '@/components/toolkit/proxy-pool/ProxyPoolPanel';
 import './Toolkit.css';
 
 type ToolkitSection = 'integration' | 'runtime' | 'network';
@@ -69,18 +66,6 @@ const SECTION_ITEMS: Record<ToolkitSection, ToolkitSecondaryItem[]> = {
       label: '接入与隧道',
       description: 'FRP 接入配置',
       icon: <ApiOutlined />
-    },
-    {
-      id: 'proxy-pool',
-      label: '代理池与分流',
-      description: '节点、订阅与出口',
-      icon: <ForkOutlined />
-    },
-    {
-      id: 'proxy-diagnostics',
-      label: '网络诊断',
-      description: '代理状态与诊断',
-      icon: <GlobalOutlined />
     }
   ]
 };
@@ -111,10 +96,6 @@ function renderPanel(panelId: string) {
       return <MirrorManagerPanel />;
     case 'network-access':
       return <ManagedToolsPanel category="network-access" />;
-    case 'proxy-pool':
-      return <ProxyPoolPanel />;
-    case 'proxy-diagnostics':
-      return <ProxyDiagnosticsPanel />;
     default:
       return null;
   }

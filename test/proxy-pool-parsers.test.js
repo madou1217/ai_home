@@ -8,7 +8,6 @@ const {
   encodeProxyNode,
   parseSubscriptionContent
 } = require('../lib/cli/services/toolkit/proxy-pool/protocol-parsers');
-const { compileMihomoConfig } = require('../lib/cli/services/toolkit/proxy-pool/mihomo-config-compiler');
 
 test('parseProxyNode parses Shadowsocks SIP002 link', () => {
   const link = 'ss://YWVzLTI1Ni1nY206cGFzc3dvcmRAMTIz@198.51.100.1:8388#HongKong-01';
@@ -115,15 +114,6 @@ test('proxy URI parsers store IPv6 hosts without brackets and restore brackets o
     assert.equal(node.server, '2001:4860:4860::8888');
     assert.match(encodeProxyNode(node), /@\[2001:4860:4860::8888\]:/);
   }
-  const compiled = compileMihomoConfig({
-    nodes,
-    routing: { mode: 'direct', activeOutboundNodeId: null, rules: [] }
-  });
-  assert.deepEqual(compiled.config.proxies.map((proxy) => proxy.server), [
-    '2001:4860:4860::8888',
-    '2001:4860:4860::8888',
-    '2001:4860:4860::8888'
-  ]);
 });
 
 test('parseSubscriptionContent parses mixed text and Clash YAML', () => {
@@ -181,7 +171,7 @@ proxies:
 test('clash YAML import keeps nodes that carry benign transport flags', () => {
   // 机场订阅普遍在每个节点上带 `udp: true`（还有 tfo / mptcp 之类）。这些开关不改变
   // 出站目标，早期的严格白名单却把它们判为 unsupported_proxy_field_udp，整份订阅被丢空，
-  // 应用空配置后又表现为 routing_not_fully_applied / proxy_core_rollback_not_applied。
+  // 否则导入后会表现为节点目录为空。
   const yaml = [
     'proxies:',
     '  - {name: reality-01, type: vless, server: 198.51.100.7, port: 36699, uuid: 11111111-2222-3333-4444-555555555555, udp: true, tls: true, skip-cert-verify: false, flow: xtls-rprx-vision, client-fingerprint: chrome, servername: example.com, reality-opts: {public-key: PUBKEY, short-id: ab12}}',
@@ -197,7 +187,7 @@ test('clash YAML import keeps nodes that carry benign transport flags', () => {
   assert.equal(reality.publicKey, 'PUBKEY');
   assert.equal(ss.protocol, 'shadowsocks');
   assert.equal(ss.port, 8388);
-  // 忽略的字段不应泄漏进节点模型，编译期只认我们自己拼的字段。
+  // 忽略的字段不应泄漏进节点模型，出口编译期只认标准化字段。
   assert.equal(reality.udp, undefined);
   assert.equal(ss.tfo, undefined);
 });

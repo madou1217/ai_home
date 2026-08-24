@@ -91,58 +91,6 @@ async function runToolkitRequest(pathname, { method = 'GET', body, deps = {} } =
   return { handled, res, data: res.body ? JSON.parse(res.body) : null };
 }
 
-test('webui proxy-pool groups routes expose manual CRUD and automatic policy updates', async () => {
-  const calls = [];
-  const proxyPoolService = {
-    listGroups() {
-      return { ok: true, groups: [{ id: 'US', kind: 'country', count: 2 }] };
-    },
-    upsertGroup(input) {
-      calls.push(['upsert', input]);
-      return Promise.resolve({ ok: true, applied: true, group: { id: 'group_a', ...input } });
-    },
-    updateGroupPolicy(id, input) {
-      calls.push(['policy', id, input]);
-      return Promise.resolve({ ok: true, applied: true, group: { id, ...input } });
-    },
-    deleteGroup(id) {
-      calls.push(['delete', id]);
-      return Promise.resolve({ ok: true, applied: true });
-    }
-  };
-
-  const listed = await runToolkitRequest('/v0/webui/toolkit/proxy-pool/groups', {
-    deps: { proxyPoolService }
-  });
-  assert.equal(listed.res.statusCode, 200);
-  assert.equal(listed.data.groups[0].id, 'US');
-
-  const created = await runToolkitRequest('/v0/webui/toolkit/proxy-pool/groups', {
-    method: 'POST',
-    body: { name: 'A', nodeIds: ['node-a'], strategy: 'sticky' },
-    deps: { proxyPoolService }
-  });
-  assert.equal(created.res.statusCode, 200);
-
-  const policy = await runToolkitRequest('/v0/webui/toolkit/proxy-pool/groups/policy', {
-    method: 'POST',
-    body: { id: 'US', strategy: 'round_robin', failoverStrategy: 'lowest_latency' },
-    deps: { proxyPoolService }
-  });
-  assert.equal(policy.res.statusCode, 200);
-
-  const removed = await runToolkitRequest('/v0/webui/toolkit/proxy-pool/groups/group_a', {
-    method: 'DELETE',
-    deps: { proxyPoolService }
-  });
-  assert.equal(removed.res.statusCode, 200);
-  assert.deepEqual(calls, [
-    ['upsert', { name: 'A', nodeIds: ['node-a'], strategy: 'sticky' }],
-    ['policy', 'US', { strategy: 'round_robin', failoverStrategy: 'lowest_latency' }],
-    ['delete', 'group_a']
-  ]);
-});
-
 test('webui toolkit routes GET /v0/webui/toolkit/apps returns app list', async () => {
   const req = { method: 'GET', url: '/v0/webui/toolkit/apps', headers: {} };
   const res = createResCapture();

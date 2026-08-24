@@ -13,6 +13,10 @@ import {
   requestNativeServerJson
 } from './native-server-transport';
 import type { ServerStreamHandle } from './server-transport';
+import {
+  getEffectiveServerProfileId,
+  getExplicitServerProfileId
+} from './server-selection-scope';
 
 const SERVER_PROFILE_STORAGE_KEY = 'aih:control-plane-profiles:v1';
 const ACTIVE_PROFILE_STORAGE_KEY = 'aih:active-control-plane-profile:v1';
@@ -69,20 +73,25 @@ export function resolveWebUiManagementKey(): string {
 }
 
 export function resolveActiveServer(): { serverId: string; isRemote: boolean } {
+  const explicitProfileId = getExplicitServerProfileId();
   try {
     if (typeof window === 'undefined') return { serverId: '', isRemote: false };
-    const activeId = String(window.localStorage.getItem(ACTIVE_PROFILE_STORAGE_KEY) || '').trim();
+    const activeId = getEffectiveServerProfileId(
+      String(window.localStorage.getItem(ACTIVE_PROFILE_STORAGE_KEY) || '').trim()
+    );
     if (!activeId) return { serverId: '', isRemote: false };
     const raw = window.localStorage.getItem(SERVER_PROFILE_STORAGE_KEY);
     const profiles = raw ? JSON.parse(raw) : [];
     const profile = Array.isArray(profiles) ? profiles.find((item) => item && item.id === activeId) : null;
-    if (!profile?.endpoint) return { serverId: '', isRemote: false };
+    if (!profile?.endpoint) return { serverId: activeId, isRemote: true };
     const origin = new URL(window.location.origin);
     const target = new URL(String(profile.endpoint));
     const isRemote = !isSameServerOrigin(target, origin);
     return { serverId: activeId, isRemote };
   } catch (_error) {
-    return { serverId: '', isRemote: false };
+    return explicitProfileId
+      ? { serverId: explicitProfileId, isRemote: true }
+      : { serverId: '', isRemote: false };
   }
 }
 
@@ -103,7 +112,9 @@ function nativeResourcePath(input: RequestInfo | URL) {
 
 function nativeActiveProfileId() {
   if (typeof window === 'undefined') return '';
-  return String(window.localStorage.getItem(ACTIVE_PROFILE_STORAGE_KEY) || '').trim();
+  return getEffectiveServerProfileId(
+    String(window.localStorage.getItem(ACTIVE_PROFILE_STORAGE_KEY) || '').trim()
+  );
 }
 
 function parseNativeRequestBody(body: BodyInit | null | undefined) {

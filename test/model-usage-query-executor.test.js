@@ -37,6 +37,20 @@ test('model usage query executor bounds parallel worker threads', async (t) => {
   });
 });
 
+test('model usage query executor accepts request-detail reads', async (t) => {
+  const executor = createModelUsageQueryExecutor({
+    workerPath: WORKER_FIXTURE,
+    concurrency: 1,
+    timeoutMs: 2_000
+  });
+  t.after(() => executor.close());
+  const counters = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT * 2);
+
+  const result = await executor.execute('getRequestDetails', { counters });
+
+  assert.equal(Number.isInteger(result.threadId), true);
+});
+
 test('model usage query executor rejects overload instead of growing without bound', async (t) => {
   const executor = createModelUsageQueryExecutor({
     workerPath: WORKER_FIXTURE,

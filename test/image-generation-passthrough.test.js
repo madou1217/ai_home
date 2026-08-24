@@ -102,14 +102,25 @@ test('passthrough strategy sends multipart FormData for edits', async () => {
     prompt: 'add a hat',
     n: 1,
     responseFormat: 'url',
-    image: { mimeType: 'image/png', data: 'aGVsbG8=' },
+    images: [
+      { mimeType: 'image/png', data: 'aGVsbG8=' },
+      { mimeType: 'image/webp', data: 'd2VicA==' }
+    ],
+    background: 'transparent',
+    outputFormat: 'webp',
+    outputCompression: 82,
+    moderation: 'low',
     account: apiKeyAccount(),
     options: {}
   });
 
-  assert.ok(capturedBody.has('image'));
+  assert.equal(capturedBody.getAll('image[]').length, 2);
   assert.equal(capturedBody.get('model'), 'gpt-image-1');
   assert.equal(capturedBody.get('response_format'), 'url');
+  assert.equal(capturedBody.get('background'), 'transparent');
+  assert.equal(capturedBody.get('output_format'), 'webp');
+  assert.equal(capturedBody.get('output_compression'), '82');
+  assert.equal(capturedBody.get('moderation'), 'low');
   assert.deepEqual(out.images, [{ url: 'https://upstream/x.png' }]);
 });
 
@@ -158,6 +169,69 @@ test('passthrough strategy fails closed without transport or key', async () => {
     }),
     (error) => error.code === 'invalid_access_token'
   );
+});
+
+test('passthrough strategy rejects the current AIH loopback endpoint before transport', async () => {
+  let calls = 0;
+  const strategy = createPassthroughImageGenerationStrategy({
+    fetchWithTimeout: makeFetch(async () => {
+      calls += 1;
+      return okResponse({ data: [{ b64_json: 'YWJj' }] });
+    })
+  });
+
+  for (const openaiBaseUrl of [
+    'http://127.0.0.1:9527/v1',
+    'http://[::1]:9527/v1',
+    'http://[2002:7f00:1::]:9527/v1'
+  ]) {
+    await assert.rejects(
+      strategy.generate({
+        mode: 'generation',
+        model: 'gpt-image-1',
+        prompt: 'x',
+        account: apiKeyAccount({ openaiBaseUrl }),
+        options: { port: 9527 }
+      }),
+      (error) => error.code === 'infinite_loop_detected' && error.statusCode === 502
+    );
+  }
+  assert.equal(calls, 0);
+});
+
+test('passthrough strategy rejects an upstream body larger than the configured byte cap', async () => {
+  let cancelled = false;
+  const strategy = createPassthroughImageGenerationStrategy({
+    fetchWithTimeout: makeFetch(async () => ({
+      ok: true,
+      status: 200,
+      headers: {
+        get(name) {
+          return String(name).toLowerCase() === 'content-length' ? '64' : null;
+        }
+      },
+      body: {
+        async cancel() {
+          cancelled = true;
+        }
+      },
+      async text() {
+        return JSON.stringify({ data: [{ b64_json: 'YWJj' }] });
+      }
+    }))
+  });
+
+  await assert.rejects(
+    strategy.generate({
+      mode: 'generation',
+      model: 'gpt-image-1',
+      prompt: 'x',
+      account: apiKeyAccount(),
+      options: { imageGenMaxResponseBytes: 32 }
+    }),
+    (error) => error.code === 'upstream_response_too_large' && error.statusCode === 502
+  );
+  assert.equal(cancelled, true);
 });
 
 test('passthrough strategy rejects empty upstream data and transport failures', async () => {

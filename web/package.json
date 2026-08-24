@@ -23,6 +23,7 @@
     "antd": "^5.23.6",
     "axios": "^1.7.9",
     "dayjs": "^1.11.20",
+    "echarts": "^6.1.0",
     "monaco-editor": "0.56.0",
     "prettier": "3.9.6",
     "react": "^18.3.1",

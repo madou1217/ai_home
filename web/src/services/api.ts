@@ -4,7 +4,7 @@ import {
   isNativeServerTransportAvailable,
   openNativeServerSse
 } from './native-server-transport';
-import { getActiveControlPlaneProfileId } from './control-plane-selection';
+import { getCurrentControlPlaneProfileId } from './control-plane-selection';
 import { buildAppHref } from './app-navigation';
 import { collectAllSessionHistoryMessages } from './session-history-window.js';
 import { SessionRequestCoordinator } from './session-request-coordinator.js';
@@ -53,6 +53,12 @@ import type {
   ChatRequest,
   ChatResponse,
   ChatStreamEvent,
+  ImageStudioModelsResponse,
+  ImageStudioDeleteSessionResponse,
+  ImageStudioRunInput,
+  ImageStudioRunResponse,
+  ImageStudioSessionResponse,
+  ImageStudioSessionsResponse,
   NativeSlashCommand,
   Provider,
   SlashCommandsResponse,
@@ -62,12 +68,14 @@ import type {
   ManagementAccountsResponse,
   ManagementRestartEvent,
   ManagementRestartResponse,
+  ModelUsageBreakdownResponse,
   ModelUsageDashboardQueryCancelResponse,
   ModelUsageDashboardQueryJob,
   ModelUsageDashboardQueryResponse,
   ModelUsageDashboardResponse,
   ModelUsageModelsResponse,
   ModelUsageQuery,
+  ModelUsageRequestDetailsResponse,
   ModelUsageScanJob,
   ModelUsageScanResponse,
   ModelUsageSessionDetailResponse,
@@ -79,6 +87,8 @@ import type {
   WebUiModelsResponse,
   ToolkitAppConfigResponse,
   ManagedToolsResponse,
+  ManagedToolActionResponse,
+  ManagedToolLifecycleAction,
   ToolkitToolConfigResponse,
   ManagedAppsResponse,
   ManagedAppUpdateResponse,
@@ -92,6 +102,9 @@ import type {
   EnvironmentsResponse,
   EnvironmentActionInput,
   EnvironmentActionResponse,
+  EnvironmentGuideResponse,
+  EnvironmentLifecycleAction,
+  EnvironmentToolActionResponse,
   MirrorsResponse,
   ProxyStatusResponse,
   ConnectivityResponse,
@@ -1311,7 +1324,7 @@ export const chatAPI = {
     } = {}
   ): Promise<void> => {
     if (isNativeServerTransportAvailable()) {
-      const profileId = getActiveControlPlaneProfileId();
+      const profileId = getCurrentControlPlaneProfileId();
       if (!profileId) throw new Error('missing_active_server_profile');
       const handle = await openNativeServerSse({
         profileId,
@@ -1503,6 +1516,62 @@ export const chatAPI = {
   }
 };
 
+export const imageStudioAPI = {
+  listModels: async (): Promise<ImageStudioModelsResponse> => {
+    const response = await api.get<ImageStudioModelsResponse>('/webui/studio/image/models');
+    return response.data;
+  },
+
+  listSessions: async (): Promise<ImageStudioSessionsResponse> => {
+    const response = await api.get<ImageStudioSessionsResponse>('/webui/studio/image/sessions');
+    return response.data;
+  },
+
+  createSession: async (title = ''): Promise<ImageStudioSessionResponse> => {
+    const response = await api.post<ImageStudioSessionResponse>('/webui/studio/image/sessions', { title });
+    return response.data;
+  },
+
+  getSession: async (sessionId: string): Promise<ImageStudioSessionResponse> => {
+    const response = await api.get<ImageStudioSessionResponse>(
+      `/webui/studio/image/sessions/${encodeURIComponent(sessionId)}`
+    );
+    return response.data;
+  },
+
+  renameSession: async (sessionId: string, title: string): Promise<ImageStudioSessionResponse> => {
+    const response = await api.patch<ImageStudioSessionResponse>(
+      `/webui/studio/image/sessions/${encodeURIComponent(sessionId)}`,
+      { title }
+    );
+    return response.data;
+  },
+
+  deleteSession: async (sessionId: string): Promise<ImageStudioDeleteSessionResponse> => {
+    const response = await api.delete<ImageStudioDeleteSessionResponse>(
+      `/webui/studio/image/sessions/${encodeURIComponent(sessionId)}`
+    );
+    return response.data;
+  },
+
+  run: async (sessionId: string, input: ImageStudioRunInput): Promise<ImageStudioRunResponse> => {
+    const response = await api.post<ImageStudioRunResponse>(
+      `/webui/studio/image/sessions/${encodeURIComponent(sessionId)}/runs`,
+      input,
+      { timeout: 0 }
+    );
+    return response.data;
+  },
+
+  getAssetBlob: async (sessionId: string, assetId: string, mimeType: string): Promise<Blob> => {
+    const response = await api.get<ArrayBuffer>(
+      `/webui/studio/image/sessions/${encodeURIComponent(sessionId)}/assets/${encodeURIComponent(assetId)}`,
+      { responseType: 'arraybuffer' }
+    );
+    return new Blob([response.data], { type: mimeType || 'image/png' });
+  }
+};
+
 // VSCode 风格底部终端：交互式 shell PTY（POST 写 + SSE 读）。
 //
 // 终端连的是「当前激活的 server」——本机激活就是本机的 shell，远端激活(如 AWS)就是那台机器的
@@ -1689,6 +1758,20 @@ export const modelUsageAPI = {
 
   sessions: async (query: ModelUsageQuery = {}): Promise<ModelUsageSessionsResponse> => {
     const response = await api.get<ModelUsageSessionsResponse>('/webui/management/usage/sessions', {
+      params: buildModelUsageParams(query)
+    });
+    return response.data;
+  },
+
+  requests: async (query: ModelUsageQuery = {}): Promise<ModelUsageRequestDetailsResponse> => {
+    const response = await api.get<ModelUsageRequestDetailsResponse>('/webui/management/usage/requests', {
+      params: buildModelUsageParams(query)
+    });
+    return response.data;
+  },
+
+  breakdown: async (query: ModelUsageQuery): Promise<ModelUsageBreakdownResponse> => {
+    const response = await api.get<ModelUsageBreakdownResponse>('/webui/management/usage/breakdown', {
       params: buildModelUsageParams(query)
     });
     return response.data;
@@ -1899,9 +1982,69 @@ export const toolkitAPI = {
     });
     return response.data;
   },
+  planManagedToolAction: async (
+    toolId: string,
+    action: ManagedToolLifecycleAction
+  ): Promise<ManagedToolActionResponse> => {
+    const response = await api.post<ManagedToolActionResponse>('/webui/toolkit/tools/plan', {
+      toolId,
+      action
+    });
+    return response.data;
+  },
+  executeManagedToolAction: async (
+    toolId: string,
+    action: ManagedToolLifecycleAction
+  ): Promise<ManagedToolActionResponse> => {
+    const response = await api.post<ManagedToolActionResponse>('/webui/toolkit/tools/execute', {
+      toolId,
+      action,
+      confirmed: true
+    });
+    return response.data;
+  },
+  getManagedToolJob: async (jobId: string): Promise<WebUiTask> => {
+    const response = await api.get<{ ok: boolean; job: WebUiTask }>(
+      `/webui/toolkit/tools/jobs/${encodeURIComponent(jobId)}`
+    );
+    return response.data.job;
+  },
   getEnvironments: async (): Promise<EnvironmentsResponse> => {
     const response = await api.get<EnvironmentsResponse>('/webui/toolkit/environments');
     return response.data;
+  },
+  getEnvironmentGuide: async (platform?: string): Promise<EnvironmentGuideResponse> => {
+    const response = await api.get<EnvironmentGuideResponse>('/webui/toolkit/environments/guide', {
+      params: platform ? { platform } : undefined
+    });
+    return response.data;
+  },
+  planEnvironmentToolAction: async (
+    toolId: string,
+    action: EnvironmentLifecycleAction
+  ): Promise<EnvironmentToolActionResponse> => {
+    const response = await api.post<EnvironmentToolActionResponse>('/webui/toolkit/environments/plan', {
+      toolId,
+      action
+    });
+    return response.data;
+  },
+  executeEnvironmentToolAction: async (
+    toolId: string,
+    action: EnvironmentLifecycleAction
+  ): Promise<EnvironmentToolActionResponse> => {
+    const response = await api.post<EnvironmentToolActionResponse>('/webui/toolkit/environments/execute', {
+      toolId,
+      action,
+      confirmed: true
+    });
+    return response.data;
+  },
+  getEnvironmentJob: async (jobId: string): Promise<WebUiTask> => {
+    const response = await api.get<{ ok: boolean; job: WebUiTask }>(
+      `/webui/toolkit/environments/jobs/${encodeURIComponent(jobId)}`
+    );
+    return response.data.job;
   },
   planEnvironmentAction: async (input: EnvironmentActionInput): Promise<EnvironmentActionResponse> => {
     const response = await api.post<EnvironmentActionResponse>('/webui/toolkit/environments/plan', input);

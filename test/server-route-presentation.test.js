@@ -273,6 +273,10 @@ test('Server management UI wires native LAN discovery and stable logical server 
   assert.match(source, /onAuthorize=\{openDiscoveredServerAuthorization\}/u);
   assert.match(serverListSource, /key=\{row\.stableServerId\}/u);
   assert.match(serverListSource, /authorizationPending[\s\S]*授权/u);
+  assert.match(serverListSource, /buildServerScopedAppHref\(['"]\/dashboard['"],\s*profile\.id\)/u);
+  assert.match(serverListSource, /target=["']_blank["']/u);
+  assert.match(serverListSource, />\s*打开\s*</u);
+  assert.match(serverListSource, />\s*设为默认\s*</u);
 });
 
 test('public Server selection requires one authorized local Server and one to five distinct peers', () => {

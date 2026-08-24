@@ -1417,8 +1417,6 @@ export interface ManagedAppItem {
   installAvailable?: boolean;
   canUpdate?: boolean;
   canUninstall?: boolean;
-  updateReason?: string;
-  uninstallReason?: string;
 }
 
 export interface ManagedAppsResponse {
@@ -1541,7 +1539,7 @@ export interface ZcodeEgressRotateResponse extends ZcodeEgressApplyResult {
 
 export interface AppInstallJob {
   id: string;
-  source?: 'app-install' | 'terminal' | string;
+  source?: 'app-install' | 'terminal' | 'environment' | 'managed-tool' | string;
   taskName?: string;
   appId: string;
   provider: string;
@@ -1559,9 +1557,11 @@ export interface AppInstallJob {
 }
 
 export interface WebUiTask extends AppInstallJob {
-  source: 'app-install' | 'terminal' | string;
+  source: 'app-install' | 'terminal' | 'environment' | 'managed-tool' | string;
   taskName: string;
 }
+
+export type ToolkitLifecycleAction = 'install' | 'update' | 'uninstall';
 
 export type ClientPlatform = 'macos' | 'windows' | 'linux';
 
@@ -1617,6 +1617,7 @@ export interface ManagedToolItem {
   role: string;
   supported: boolean;
   installed: boolean;
+  executablePath: string;
   binaryName: string;
   version: string;
   serviceManager: string;
@@ -1636,6 +1637,12 @@ export interface ManagedToolItem {
   configWritable: boolean;
   requiresElevation: boolean;
   configEditable: boolean;
+  managedPath?: string;
+  managedBy: 'aih' | 'homebrew' | '' | string;
+  canInstall: boolean;
+  canUpdate: boolean;
+  canUninstall: boolean;
+  lifecycle: Record<ToolkitLifecycleAction, boolean>;
 }
 
 export interface ManagedToolsResponse {
@@ -1650,6 +1657,38 @@ export interface ManagedToolsResponse {
 export interface ToolkitToolConfigResponse extends ToolkitAppConfigResponse {
   toolId: string;
   targetRevision: string;
+}
+
+export type ManagedToolLifecycleAction = ToolkitLifecycleAction;
+
+export interface ManagedToolPlan {
+  id: string;
+  toolId: string;
+  action: ManagedToolLifecycleAction;
+  label: string;
+  method: string;
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+  cwd: string | null;
+  effect: string;
+  timeoutMs: number;
+  requiresConfirmation: boolean;
+  preview: string;
+}
+
+export interface ManagedToolActionResponse {
+  ok: boolean;
+  platform?: ClientPlatform;
+  action?: ManagedToolLifecycleAction;
+  label?: string;
+  tool?: Pick<ManagedToolItem, 'id' | 'name' | 'category'>;
+  plans?: ManagedToolPlan[];
+  job?: WebUiTask;
+  accepted?: boolean;
+  alreadyRunning?: boolean;
+  error?: string;
+  message?: string;
 }
 
 export interface EnvironmentCheatsheetCommand {
@@ -1743,8 +1782,103 @@ export interface EnvironmentActionResponse {
   outputTruncated?: boolean;
 }
 
+export type EnvironmentLifecycleAction = ToolkitLifecycleAction;
+
+export interface EnvironmentRuntimeSummary {
+  name: string;
+  scope: string;
+  source: string;
+  probeStatus: 'available' | 'unavailable' | 'unset' | 'error' | string;
+  currentVersion: string;
+  activePath: string;
+  packageManagerVersion?: string;
+}
+
+export interface EnvironmentResourceItem {
+  id: string;
+  name: string;
+  runtime: 'node' | 'python';
+  category: string;
+  description: string;
+  platform: ClientPlatform;
+  installed: boolean;
+  version: string;
+  executablePath: string;
+  managedVersions: string[];
+  canInstall: boolean;
+  canUpdate: boolean;
+  canUninstall: boolean;
+  lifecycle: Record<EnvironmentLifecycleAction, boolean>;
+}
+
+export interface EnvironmentToolPlan {
+  id: string;
+  toolId: string;
+  action: EnvironmentLifecycleAction;
+  label: string;
+  method: string;
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+  cwd: string | null;
+  effect: string;
+  timeoutMs: number;
+  requiresConfirmation: boolean;
+  preview: string;
+}
+
+export interface EnvironmentToolActionResponse {
+  ok: boolean;
+  platform?: ClientPlatform;
+  action?: EnvironmentLifecycleAction;
+  label?: string;
+  tool?: Pick<EnvironmentResourceItem, 'id' | 'name' | 'runtime' | 'category'>;
+  plans?: EnvironmentToolPlan[];
+  job?: WebUiTask;
+  accepted?: boolean;
+  alreadyRunning?: boolean;
+  error?: string;
+  message?: string;
+}
+
+export interface EnvironmentGuideTask {
+  id: string;
+  toolId: string;
+  label: string;
+  category: 'install' | 'update' | 'uninstall' | 'configure' | 'use' | 'inspect';
+  template: string;
+  parameters: Array<{ key: string; label: string; placeholder: string }>;
+  method?: string;
+  source: 'lifecycle' | 'task';
+}
+
+export interface EnvironmentGuideTool {
+  id: string;
+  name: string;
+  runtime: 'node' | 'python';
+  category: string;
+  description: string;
+  tasks: EnvironmentGuideTask[];
+}
+
+export interface EnvironmentGuideResponse {
+  ok: boolean;
+  platform: ClientPlatform;
+  currentPlatform: ClientPlatform;
+  platforms: Array<{ id: ClientPlatform; label: string }>;
+  tools: EnvironmentGuideTool[];
+}
+
 export interface EnvironmentsResponse {
   ok: boolean;
+  platform: ClientPlatform;
+  runtimes: {
+    node: EnvironmentRuntimeSummary;
+    python: EnvironmentRuntimeSummary;
+  };
+  resources: EnvironmentResourceItem[];
+  installedCount: number;
+  total: number;
   environments: {
     node: EnvironmentInfo;
     python: EnvironmentInfo;
@@ -2143,9 +2277,7 @@ export interface ModelUsageStats {
   totalCostUsd: number;
 }
 
-export interface ModelUsageModelRow {
-  provider: Provider;
-  model: string;
+export interface ModelUsageMetricTotals {
   calls: number;
   inputTokens: number;
   outputTokens: number;
@@ -2154,9 +2286,17 @@ export interface ModelUsageModelRow {
   reasoningOutputTokens: number;
   totalTokens: number;
   costUsd: number;
+  cacheHitRate: number | null;
 }
 
-export interface ModelUsageSessionRow {
+export interface ModelUsageModelRow extends ModelUsageMetricTotals {
+  provider: Provider;
+  model: string;
+  accountCount: number;
+  unattributedCalls: number;
+}
+
+export interface ModelUsageSessionRow extends ModelUsageMetricTotals {
   provider: Provider;
   sessionId: string;
   project: string;
@@ -2165,13 +2305,40 @@ export interface ModelUsageSessionRow {
   startedAtMs: number;
   updatedAtMs: number;
   promptCount: number;
-  calls: number;
-  totalTokens: number;
-  costUsd: number;
+  accountCount: number;
+  unattributedCalls: number;
 }
 
 export interface ModelUsageSessionDetailRow extends ModelUsageModelRow {
   sessionId: string;
+}
+
+export interface ModelUsageTrendPoint extends ModelUsageMetricTotals {
+  bucketStartMs: number;
+}
+
+export interface ModelUsageTrend {
+  fromMs: number;
+  toMs: number;
+  bucketMs: number;
+  points: ModelUsageTrendPoint[];
+}
+
+export interface ModelUsageAccountModelRow extends ModelUsageMetricTotals {
+  provider: Provider;
+  model: string;
+}
+
+export interface ModelUsageAccountRow extends ModelUsageMetricTotals {
+  accountRef: string;
+  accountProvider: Provider | '';
+  modelCount: number;
+  models: ModelUsageAccountModelRow[];
+}
+
+export interface ModelUsageBreakdownSummary extends ModelUsageMetricTotals {
+  accountCount: number;
+  unattributedCalls: number;
 }
 
 export interface ModelUsageStatsResponse {
@@ -2197,6 +2364,7 @@ export interface ModelUsageDashboardData {
   models: ModelUsageModelRow[];
   sessions: ModelUsageSessionRow[];
   modelOptions: ModelUsageModelRow[];
+  trend: ModelUsageTrend;
 }
 
 export interface ModelUsageDashboardResponse extends ModelUsageDashboardData {
@@ -2240,6 +2408,44 @@ export interface ModelUsageSessionDetailResponse {
   ok: boolean;
   range: ModelUsageDateRange;
   session: ModelUsageSessionDetailRow[];
+}
+
+export interface ModelUsageRequestRow {
+  requestId: string;
+  provider: Provider | '';
+  model: string;
+  reasoningEffort: string;
+  endpoint: string;
+  clientIp: string;
+  requestType: 'stream' | 'sync' | '';
+  billingMode: 'token' | '';
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadInputTokens: number;
+  cacheCreationInputTokens: number;
+  reasoningOutputTokens: number;
+  totalTokens: number;
+  costUsd: number;
+  durationMs: number;
+  timestampMs: number;
+  statusCode: number;
+  errorCode: string;
+  errorMessage: string;
+}
+
+export interface ModelUsageRequestDetailsResponse {
+  ok: boolean;
+  range: ModelUsageDateRange;
+  usage: ModelUsageRequestRow[];
+  errors: ModelUsageRequestRow[];
+}
+
+export interface ModelUsageBreakdownResponse {
+  ok: boolean;
+  range: ModelUsageDateRange;
+  summary: ModelUsageBreakdownSummary;
+  models: ModelUsageModelRow[];
+  accounts: ModelUsageAccountRow[];
 }
 
 export interface ModelUsageScanProviderResult {
@@ -2379,4 +2585,156 @@ export interface SshHostTestResult {
     present?: boolean;
   };
   recommendation?: string;
+}
+
+export interface ImageStudioModelCapabilities {
+  generation: boolean;
+  edit: boolean;
+  mask: boolean;
+  multiple: boolean;
+  size: boolean;
+  quality: boolean;
+  responseFormat: boolean;
+  maxInputImages: number;
+  background: boolean;
+  outputFormat: boolean;
+  outputCompression: boolean;
+  moderation: boolean;
+}
+
+export interface ImageStudioModel {
+  key: string;
+  id: string;
+  label: string;
+  provider: string;
+  providerLabel: string;
+  priority: number;
+  source: string;
+  capabilities: ImageStudioModelCapabilities;
+  qualityOptions?: string[];
+  accountCount: number;
+  availableAccountCount: number;
+  unavailableReasons?: Array<{
+    reason: string;
+    count: number;
+  }>;
+}
+
+export type ImageStudioRevisionStatus = 'running' | 'succeeded' | 'failed';
+export type ImageStudioRevisionMode = 'generation' | 'edit';
+
+export interface ImageStudioRevisionError {
+  code: string;
+  message: string;
+  statusCode: number;
+}
+
+export interface ImageStudioRevision {
+  id: string;
+  parentRevisionId: string;
+  mode: ImageStudioRevisionMode;
+  prompt: string;
+  provider: string;
+  model: string;
+  modelKey: string;
+  parameters: {
+    n: number;
+    size: string;
+    quality: string;
+    background: string;
+    outputFormat: string;
+    outputCompression: number | null;
+    moderation: string;
+  };
+  sourceAssetIds: string[];
+  maskAssetId: string;
+  outputAssetIds: string[];
+  status: ImageStudioRevisionStatus;
+  createdAt: number;
+  completedAt: number;
+  accountRef: string;
+  error: ImageStudioRevisionError | null;
+}
+
+export interface ImageStudioAsset {
+  id: string;
+  revisionId: string;
+  role: 'source' | 'mask' | 'output';
+  mimeType: string;
+  byteLength: number;
+  createdAt: number;
+  revisedPrompt?: string;
+  url: string;
+}
+
+export interface ImageStudioSession {
+  version: number;
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  activeRevisionId: string;
+  revisions: ImageStudioRevision[];
+  assets: ImageStudioAsset[];
+}
+
+export interface ImageStudioSessionSummary {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  revisionCount: number;
+  assetCount: number;
+  activeRevisionId: string;
+  latestStatus: ImageStudioRevisionStatus | '';
+  latestModel: string;
+  latestProvider: string;
+  previewAssetId: string;
+  previewMimeType: string;
+  previewUrl: string;
+}
+
+export interface ImageStudioModelsResponse {
+  ok: boolean;
+  models: ImageStudioModel[];
+  defaultModelKey: string;
+}
+
+export interface ImageStudioSessionsResponse {
+  ok: boolean;
+  sessions: ImageStudioSessionSummary[];
+}
+
+export interface ImageStudioSessionResponse {
+  ok: boolean;
+  session: ImageStudioSession;
+}
+
+export interface ImageStudioDeleteSessionResponse {
+  ok: boolean;
+  deletedSessionId: string;
+}
+
+export interface ImageStudioRunInput {
+  mode: ImageStudioRevisionMode;
+  modelKey: string;
+  prompt: string;
+  parentRevisionId?: string;
+  sources?: Array<{
+    assetId?: string;
+    image?: string;
+  }>;
+  maskAssetId?: string;
+  mask?: string;
+  n?: number;
+  size?: string;
+  quality?: string;
+  background?: string;
+  output_format?: string;
+  output_compression?: number;
+  moderation?: string;
+}
+
+export interface ImageStudioRunResponse extends ImageStudioSessionResponse {
+  revisionId: string;
 }

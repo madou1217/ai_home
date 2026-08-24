@@ -29,6 +29,21 @@ function loadControlPlaneSelectionModule() {
         setActiveNativeServerProfile: async () => ({ activeProfileId: '', profile: null })
       };
     }
+    if (request === './server-selection-scope') {
+      const dependencyFilename = path.join(__dirname, '../web/src/services/server-selection-scope.ts');
+      const dependency = new Module(dependencyFilename, mod);
+      dependency.filename = dependencyFilename;
+      dependency.paths = Module._nodeModulePaths(path.dirname(dependencyFilename));
+      const dependencySource = fs.readFileSync(dependencyFilename, 'utf8');
+      dependency._compile(ts.transpileModule(dependencySource, {
+        compilerOptions: {
+          module: ts.ModuleKind.CommonJS,
+          target: ts.ScriptTarget.ES2022,
+          esModuleInterop: true
+        }
+      }).outputText, dependencyFilename);
+      return dependency.exports;
+    }
     return requireFromSelection(request);
   };
   mod._compile(compiled.outputText, filename);
@@ -201,6 +216,31 @@ test('control plane selection stores chosen profile before resolving', () => {
   assert.equal(resolved.profileId, 'cp-home');
   assert.equal(resolved.source, 'stored');
   assert.equal(selection.getActiveControlPlaneProfileId(storage), 'cp-home');
+});
+
+test('explicit control plane selection resolves exactly and never falls back to the default Server', () => {
+  const selection = loadControlPlaneSelectionModule();
+  const profiles = [
+    createProfile('cp-default', { state: 'ready', managementKey: 'management-key' }),
+    createProfile('cp-aws', { state: 'ready', managementKey: 'aws-management-key' })
+  ];
+
+  assert.deepEqual(
+    selection.resolveCurrentControlPlaneProfile(profiles, 'cp-default', 'cp-aws'),
+    {
+      profile: profiles[1],
+      profileId: 'cp-aws',
+      source: 'explicit'
+    }
+  );
+  assert.deepEqual(
+    selection.resolveCurrentControlPlaneProfile(profiles, 'cp-default', 'cp-missing'),
+    {
+      profile: null,
+      profileId: 'cp-missing',
+      source: 'explicit'
+    }
+  );
 });
 
 test('control plane selection notifies same-window subscribers when active profile changes', () => {

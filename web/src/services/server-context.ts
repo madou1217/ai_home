@@ -7,7 +7,7 @@ import {
 } from './control-plane-profiles';
 import {
   addActiveControlPlaneProfileChangeListener,
-  resolveStoredActiveControlPlaneProfile
+  resolveCurrentControlPlaneProfile
 } from './control-plane-selection';
 import { isSameServerOrigin } from './webui-auth-transport';
 
@@ -33,7 +33,7 @@ function isSameOriginEndpoint(endpoint: string) {
 
 export function resolveServerContext(): ServerContext {
   const profiles = listControlPlaneProfiles();
-  const active = resolveStoredActiveControlPlaneProfile(profiles);
+  const active = resolveCurrentControlPlaneProfile(profiles);
   const profile = active.profile;
   const endpoint = String(profile?.endpoint || '');
   const isLocal = isSameOriginEndpoint(endpoint);

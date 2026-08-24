@@ -531,7 +531,7 @@ const Settings = ({ section }: SettingsProps) => {
     try {
       const resolution = await selectActiveControlPlaneProfileSecure(controlPlaneProfiles, profileId);
       setActiveControlPlaneId(resolution.profileId);
-      message.success('已切换当前 Server');
+      message.success('已设置默认 Server');
     } catch (error: any) {
       message.error(error?.message || '切换 Server 失败');
     }
@@ -790,9 +790,12 @@ const Settings = ({ section }: SettingsProps) => {
   const controlPlanesContent = (
     <div className="settings-control-plane-page">
       <ProCard className="settings-panel settings-control-plane-shell" bordered bodyStyle={{ padding: 18 }}>
+        <p className="settings-control-plane-scope-copy">
+          默认 Server 用于无参数页面；点击“打开”会用显式 server 参数固定当前标签页，可同时操作多台 Server。
+        </p>
         <div className="settings-control-plane-current">
           <div className="settings-control-plane-current-main">
-            <span>当前 Server</span>
+            <span>默认 Server</span>
             <strong>{formatActiveControlPlaneLabel(activeControlPlaneProfile)}</strong>
             <em>{formatActiveControlPlaneEndpoint(activeControlPlaneProfile)}</em>
           </div>

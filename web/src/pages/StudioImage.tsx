@@ -1,2 +1,2 @@
-import ImageStudio from './Studio/ImageStudio';
+import ImageStudio from '@/features/image-studio/ImageStudioWorkspace';
 export default ImageStudio;

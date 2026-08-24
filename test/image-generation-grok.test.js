@@ -116,11 +116,48 @@ test('grok strategy forwards n, quality and url response format when requested',
   assert.equal(out.images[0].url, 'https://media.x.ai/img.png');
 });
 
-test('grok strategy embeds the source image as a data URL for edits', async () => {
+test('grok strategy omits automatic quality and rejects unsupported quality values', async () => {
+  let captured;
+  let calls = 0;
+  const strategy = createGrokImageGenerationStrategy({
+    fetchWithTimeout: makeFetch(async (_url, init) => {
+      calls += 1;
+      captured = JSON.parse(init.body);
+      return okResponse({ data: [{ b64_json: PNG_BASE64 }] });
+    })
+  });
+
+  await strategy.generate({
+    mode: 'generation',
+    model: 'grok-imagine-image-2.0',
+    prompt: 'default quality',
+    quality: 'auto',
+    account: grokAccount(),
+    options: {}
+  });
+  assert.equal('quality' in captured, false);
+
+  await assert.rejects(
+    strategy.generate({
+      mode: 'generation',
+      model: 'grok-imagine-image-2.0',
+      prompt: 'unsupported quality',
+      quality: 'high',
+      account: grokAccount(),
+      options: {}
+    }),
+    (error) => error instanceof ImageGenerationError
+      && error.code === 'unsupported_image_quality_value'
+      && error.statusCode === 400
+  );
+  assert.equal(calls, 1);
+});
+
+test('grok strategy uses the edits endpoint and ordered xAI images shape', async () => {
   let captured;
   const strategy = createGrokImageGenerationStrategy({
     fetchWithTimeout: makeFetch(async (url, init) => {
-      captured = init;
+      captured = { url, init };
       return okResponse({
         data: [{ b64_json: PNG_BASE64 }]
       });
@@ -132,13 +169,45 @@ test('grok strategy embeds the source image as a data URL for edits', async () =
     mode: 'edit',
     model: 'grok-image-2',
     prompt: 'make it sunset',
-    image: { mimeType: 'image/png', data: PNG_BASE64 },
+    images: [
+      { mimeType: 'image/png', data: PNG_BASE64 },
+      { mimeType: 'image/webp', data: 'd2VicA==' }
+    ],
     account: grokAccount(),
     options: {}
   });
 
-  const payload = JSON.parse(captured.body);
-  assert.equal(payload.image, `data:image/png;base64,${PNG_BASE64}`);
+  assert.equal(captured.url, 'https://api.x.ai/v1/images/edits');
+  const payload = JSON.parse(captured.init.body);
+  assert.deepEqual(payload.images, [
+    { type: 'image_url', url: `data:image/png;base64,${PNG_BASE64}` },
+    { type: 'image_url', url: 'data:image/webp;base64,d2VicA==' }
+  ]);
+});
+
+test('grok strategy uses the singular xAI image field for one edit source', async () => {
+  let captured;
+  const strategy = createGrokImageGenerationStrategy({
+    fetchWithTimeout: makeFetch(async (_url, init) => {
+      captured = JSON.parse(init.body);
+      return okResponse({ data: [{ b64_json: PNG_BASE64 }] });
+    })
+  });
+
+  await strategy.generate({
+    mode: 'edit',
+    model: 'grok-imagine-image-2.0',
+    prompt: 'keep the subject and change the light',
+    images: [{ mimeType: 'image/png', data: PNG_BASE64 }],
+    account: grokAccount(),
+    options: {}
+  });
+
+  assert.deepEqual(captured.image, {
+    type: 'image_url',
+    url: `data:image/png;base64,${PNG_BASE64}`
+  });
+  assert.equal(Object.hasOwn(captured, 'images'), false);
 });
 
 test('grok strategy honors an explicit grokImageUpstreamModel override', async () => {
@@ -204,6 +273,76 @@ test('grok strategy rejects accounts without a usable token', async () => {
       return true;
     }
   );
+});
+
+test('grok strategy rejects the current AIH loopback endpoint before transport', async () => {
+  let calls = 0;
+  const strategy = createGrokImageGenerationStrategy({
+    fetchWithTimeout: makeFetch(async () => {
+      calls += 1;
+      return okResponse({ data: [{ b64_json: PNG_BASE64 }] });
+    })
+  });
+
+  for (const openaiBaseUrl of [
+    'http://127.0.0.1:9527/v1',
+    'http://[::1]:9527/v1',
+    'http://[2002:7f00:1::]:9527/v1'
+  ]) {
+    await assert.rejects(
+      strategy.generate({
+        mode: 'generation',
+        model: 'grok-image-2',
+        prompt: 'x',
+        account: grokAccount({ openaiBaseUrl }),
+        options: { port: 9527 }
+      }),
+      (error) => error.code === 'infinite_loop_detected' && error.statusCode === 502
+    );
+  }
+  assert.equal(calls, 0);
+});
+
+test('grok strategy cancels an upstream response that exceeds the configured byte cap', async () => {
+  let cancelled = false;
+  const chunks = [Buffer.alloc(20), Buffer.alloc(20)];
+  const strategy = createGrokImageGenerationStrategy({
+    fetchWithTimeout: makeFetch(async () => ({
+      ok: true,
+      status: 200,
+      headers: { get: () => null },
+      body: {
+        getReader() {
+          let index = 0;
+          return {
+            async read() {
+              if (index >= chunks.length) return { done: true, value: undefined };
+              return { done: false, value: chunks[index++] };
+            },
+            async cancel() {
+              cancelled = true;
+            },
+            releaseLock() {}
+          };
+        }
+      },
+      async text() {
+        return JSON.stringify({ data: [{ b64_json: PNG_BASE64 }] });
+      }
+    }))
+  });
+
+  await assert.rejects(
+    strategy.generate({
+      mode: 'generation',
+      model: 'grok-image-2',
+      prompt: 'x',
+      account: grokAccount(),
+      options: { imageGenMaxResponseBytes: 32 }
+    }),
+    (error) => error.code === 'upstream_response_too_large' && error.statusCode === 502
+  );
+  assert.equal(cancelled, true);
 });
 
 test('grok strategy surfaces upstream errors with the body attached', async () => {
@@ -329,18 +468,22 @@ test('grok strategy only serves image-generation model names', () => {
   const strategy = createGrokImageGenerationStrategy({});
   assert.equal(strategy.supportsModel('grok-image-2'), true);
   assert.equal(strategy.supportsModel('grok-imagine-image-2.0'), true);
+  assert.equal(strategy.supportsModel('gpt-image-2'), false);
   assert.equal(strategy.supportsModel('grok-4.6'), false);
   assert.equal(strategy.supportsModel('gpt-4o'), false);
 });
 
 test('resolveGrokImageUpstreamModel picks the default candidate or explicit override', () => {
   assert.equal(resolveGrokImageUpstreamModel('grok-image-2', {}), 'grok-imagine-image-2.0');
+  assert.equal(resolveGrokImageUpstreamModel('grok-imagine-image', {}), 'grok-imagine-image');
+  assert.equal(resolveGrokImageUpstreamModel('grok-imagine-image-quality-latest', {}), 'grok-imagine-image-quality-latest');
   assert.equal(resolveGrokImageUpstreamModel('grok-image-2', { grokImageUpstreamModel: 'grok-imagine-image' }), 'grok-imagine-image');
 });
 
-test('buildGrokImageUrl trims trailing slashes', () => {
+test('buildGrokImageUrl trims trailing slashes and selects the operation endpoint', () => {
   assert.equal(buildGrokImageUrl('https://api.x.ai/v1/'), 'https://api.x.ai/v1/images/generations');
   assert.equal(buildGrokImageUrl('https://api.x.ai'), 'https://api.x.ai/images/generations');
+  assert.equal(buildGrokImageUrl('https://api.x.ai/v1/', 'edit'), 'https://api.x.ai/v1/images/edits');
 });
 
 test('readGrokErrorBody falls back to a status message', () => {

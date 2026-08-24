@@ -2,7 +2,7 @@ import type { ControlPlaneProfile } from '@/types';
 import { buildAppHref, resolveAppRoutePathname } from './app-navigation';
 import { isControlPlaneProfileReady } from './control-plane-profiles';
 import {
-  resolveStoredActiveControlPlaneProfile,
+  resolveCurrentControlPlaneProfile,
   type ActiveControlPlaneResolution
 } from './control-plane-selection';
 
@@ -33,7 +33,7 @@ export function resolveFabricProfileGateState(
   activeProfileId = ''
 ): FabricProfileGateState {
   const items = Array.isArray(profiles) ? profiles : [];
-  const active = resolveStoredActiveControlPlaneProfile(items, activeProfileId);
+  const active = resolveCurrentControlPlaneProfile(items, activeProfileId);
   return {
     ready: isControlPlaneProfileReady(active.profile),
     active,

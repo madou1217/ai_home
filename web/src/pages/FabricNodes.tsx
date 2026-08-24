@@ -22,7 +22,7 @@ import {
 import {
   addActiveControlPlaneProfileChangeListener,
   getActiveControlPlaneProfileId,
-  resolveStoredActiveControlPlaneProfile
+  resolveCurrentControlPlaneProfile
 } from '@/services/control-plane-selection';
 import type { ControlPlaneProfile } from '@/types';
 import Button from '@/components/ui/AppButton';
@@ -235,7 +235,7 @@ function pickPrimaryTransport(transports: FabricRegistryTransport[]) {
 
 function getInitialProfile() {
   const profiles = listControlPlaneProfiles();
-  const active = resolveStoredActiveControlPlaneProfile(profiles, getActiveControlPlaneProfileId());
+  const active = resolveCurrentControlPlaneProfile(profiles, getActiveControlPlaneProfileId());
   return active.profile || null;
 }
 

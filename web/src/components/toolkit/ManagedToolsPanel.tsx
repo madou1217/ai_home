@@ -1,15 +1,25 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Badge, Modal, Space, Spin, Tag, message } from 'antd';
+import { Modal, Space, Spin, Tag, message } from 'antd';
 import {
-  CheckCircleOutlined,
   EditOutlined,
   LockOutlined,
   ReloadOutlined,
   ToolOutlined
 } from '@ant-design/icons';
 import { toolkitAPI } from '@/services/api';
-import type { ManagedToolItem, ManagedToolsResponse, ToolkitToolCategoryId, ToolkitToolConfigResponse } from '@/types';
+import { useWebUiTaskQueue } from '@/services/webui-task-queue';
+import type {
+  ManagedToolItem,
+  ManagedToolLifecycleAction,
+  ManagedToolsResponse,
+  ToolkitToolCategoryId,
+  ToolkitToolConfigResponse,
+  WebUiTask
+} from '@/types';
 import Button from '@/components/ui/AppButton';
+import AppActionConfirmContent from './AppActionConfirmContent';
+import InstallLifecycleAction from './InstallLifecycleAction';
+import ManagedResourceCard from './ManagedResourceCard';
 import ToolkitStatusTrack from './ToolkitStatusTrack';
 import ConfigCodeEditor from './config-editor/ConfigCodeEditor';
 
@@ -37,6 +47,52 @@ interface ManagedToolsPanelProps {
   category: ToolkitToolCategoryId;
 }
 
+type PendingAction = { phase: 'planning' | 'submitted'; jobId?: string };
+
+const MANAGED_TOOL_ACTIONS: readonly ManagedToolLifecycleAction[] = ['install', 'update', 'uninstall'];
+
+const ACTION_LABELS: Record<ManagedToolLifecycleAction, string> = {
+  install: '安装',
+  update: '更新',
+  uninstall: '卸载'
+};
+
+const MANAGEMENT_LABELS: Record<string, string> = {
+  aih: 'AIH 管理',
+  homebrew: 'Homebrew 管理',
+  external: '外部安装'
+};
+
+function isManagedToolAction(value: unknown): value is ManagedToolLifecycleAction {
+  return typeof value === 'string'
+    && MANAGED_TOOL_ACTIONS.includes(value as ManagedToolLifecycleAction);
+}
+
+function taskTargetsTool(task: WebUiTask, toolId: string) {
+  return task.source === 'managed-tool'
+    && (task.appId === toolId || task.provider === toolId);
+}
+
+function actionKey(tool: ManagedToolItem, action: ManagedToolLifecycleAction) {
+  return `${tool.id}:${action}`;
+}
+
+function runtimeSummary(tool: ManagedToolItem) {
+  if (!tool.runtimeInspectable) return '无需运行时探测';
+  if (tool.running) return `运行中${tool.runningCount > 1 ? `（${tool.runningCount} 个）` : ''}`;
+  return tool.installed ? '当前未运行' : '未发现程序';
+}
+
+function configSummary(tool: ManagedToolItem) {
+  if (tool.configState === 'multiple') return `已发现 ${tool.configCount} 个配置，需先消除歧义`;
+  if (tool.configState === 'unresolved') return '运行参数指向的配置当前无法安全读取';
+  if (tool.configState === 'token-managed') return '令牌托管模式未使用本地配置文件';
+  if (tool.configName) {
+    return `${tool.configName} 已发现${tool.configSource ? `（${DISCOVERY_SOURCE_LABELS[tool.configSource] || tool.configSource}）` : ''}`;
+  }
+  return tool.runtimeInspectable ? '未发现实际配置文件' : '无本地配置';
+}
+
 function requestError(error: unknown, fallback: string) {
   if (typeof error !== 'object' || !error) return fallback;
   const candidate = error as {
@@ -58,6 +114,8 @@ export default function ManagedToolsPanel({ category }: ManagedToolsPanelProps) 
   const [configContent, setConfigContent] = useState('');
   const [configLoading, setConfigLoading] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
+  const [pendingActions, setPendingActions] = useState<Record<string, PendingAction>>({});
+  const { tasks, recentTasks } = useWebUiTaskQueue();
 
   const fetchTools = useCallback(async () => {
     setLoading(true);
@@ -77,6 +135,42 @@ export default function ManagedToolsPanel({ category }: ManagedToolsPanelProps) 
     void fetchTools();
   }, [fetchTools]);
 
+  useEffect(() => {
+    const handleTaskCompleted = (event: Event) => {
+      const task = (event as CustomEvent<WebUiTask>).detail;
+      if (task?.source !== 'managed-tool') return;
+      setPendingActions((current) => {
+        const next = { ...current };
+        Object.entries(current).forEach(([key, pending]) => {
+          if (pending.jobId === task.id || key.startsWith(`${task.appId || task.provider}:`)) delete next[key];
+        });
+        return next;
+      });
+      void fetchTools();
+    };
+    window.addEventListener('aih:webui-task-completed', handleTaskCompleted);
+    return () => window.removeEventListener('aih:webui-task-completed', handleTaskCompleted);
+  }, [fetchTools]);
+
+  useEffect(() => {
+    if (!recentTasks.length) return;
+    setPendingActions((current) => {
+      const next = { ...current };
+      let changed = false;
+      Object.entries(current).forEach(([key, pending]) => {
+        if (!pending.jobId) return;
+        const completed = recentTasks.find((task) => task.id === pending.jobId
+          && task.source === 'managed-tool'
+          && !['queued', 'running'].includes(String(task.status || '').toLowerCase()));
+        if (completed) {
+          delete next[key];
+          changed = true;
+        }
+      });
+      return changed ? next : current;
+    });
+  }, [recentTasks]);
+
   const tools = useMemo(
     () => (data?.tools || []).filter((tool) => tool.category === category),
     [category, data]
@@ -84,6 +178,85 @@ export default function ManagedToolsPanel({ category }: ManagedToolsPanelProps) 
   const categoryInfo = data?.categories.find((item) => item.id === category);
   const installedCount = tools.filter((tool) => tool.installed).length;
   const editableCount = tools.filter((tool) => tool.configEditable).length;
+  const lifecycleCount = tools.filter((tool) => tool.canInstall || tool.canUpdate || tool.canUninstall).length;
+  const managedToolTasks = useMemo(
+    () => tasks.filter((task) => task.source === 'managed-tool'),
+    [tasks]
+  );
+
+  const activeTaskFor = (tool: ManagedToolItem) => managedToolTasks.find(
+    (task) => taskTargetsTool(task, tool.id)
+  );
+
+  const busyActionFor = (tool: ManagedToolItem) => {
+    const pending = MANAGED_TOOL_ACTIONS.find((action) => pendingActions[actionKey(tool, action)]);
+    if (pending) return pending;
+    const activeAction = activeTaskFor(tool)?.action;
+    return isManagedToolAction(activeAction) ? activeAction : undefined;
+  };
+
+  const submitAction = async (
+    tool: ManagedToolItem,
+    action: ManagedToolLifecycleAction,
+    key: string
+  ) => {
+    try {
+      const response = await toolkitAPI.executeManagedToolAction(tool.id, action);
+      if (!response.ok || !response.job) throw new Error(response.error || '网络工具任务未创建');
+      setPendingActions((current) => ({
+        ...current,
+        [key]: { phase: 'submitted', jobId: response.job?.id }
+      }));
+      message.info(`${tool.name}${ACTION_LABELS[action]}任务已提交`);
+    } catch (requestFailure: unknown) {
+      setPendingActions((current) => {
+        const next = { ...current };
+        delete next[key];
+        return next;
+      });
+      message.error(requestError(requestFailure, `${tool.name}${ACTION_LABELS[action]}失败`));
+    }
+  };
+
+  const runAction = async (tool: ManagedToolItem, action: ManagedToolLifecycleAction) => {
+    const key = actionKey(tool, action);
+    if (busyActionFor(tool)) return;
+    setPendingActions((current) => ({ ...current, [key]: { phase: 'planning' } }));
+    try {
+      const response = await toolkitAPI.planManagedToolAction(tool.id, action);
+      if (!response.ok) throw new Error(response.error || '无法生成网络工具计划');
+      Modal.confirm({
+        title: `${ACTION_LABELS[action]} ${tool.name}`,
+        content: (
+          <AppActionConfirmContent
+            summary={`确认后将创建 ${tool.name}${ACTION_LABELS[action]}任务，进度显示在后台任务队列。`}
+            plans={(response.plans || []).map((plan) => ({
+              id: plan.id,
+              label: plan.label,
+              command: plan.command,
+              args: plan.args
+            }))}
+          />
+        ),
+        okText: '确认执行',
+        cancelText: '取消',
+        okButtonProps: action === 'uninstall' ? { danger: true } : undefined,
+        onOk: () => { void submitAction(tool, action, key); },
+        onCancel: () => setPendingActions((current) => {
+          const next = { ...current };
+          delete next[key];
+          return next;
+        })
+      });
+    } catch (requestFailure: unknown) {
+      setPendingActions((current) => {
+        const next = { ...current };
+        delete next[key];
+        return next;
+      });
+      message.error(requestError(requestFailure, `${tool.name}${ACTION_LABELS[action]}计划生成失败`));
+    }
+  };
 
   const openConfig = async (tool: ManagedToolItem) => {
     setEditingTool(tool);
@@ -130,12 +303,16 @@ export default function ManagedToolsPanel({ category }: ManagedToolsPanelProps) 
         <div>
           <div className="toolkit-panel-kicker">MANAGED TOOL INVENTORY</div>
           <h2 id={`toolkit-tools-${category}`}>{categoryInfo?.label || category}</h2>
-          <p>{categoryInfo?.description || '检测当前平台支持的工具。'}</p>
         </div>
-        <Button icon={<ReloadOutlined />} loading={loading} onClick={fetchTools}>刷新</Button>
+        <Button icon={<ReloadOutlined />} loading={loading} onClick={fetchTools}>重新探测</Button>
       </header>
 
-      {error && <Alert type="error" showIcon message="工具状态读取失败" description={error} />}
+      {error ? (
+        <div className="toolkit-inline-error" role="alert">
+          <strong>工具状态读取失败</strong>
+          <span>{error}</span>
+        </div>
+      ) : null}
 
       {loading && !data ? (
         <div className="toolkit-loading"><Spin size="large" /></div>
@@ -146,86 +323,124 @@ export default function ManagedToolsPanel({ category }: ManagedToolsPanelProps) 
             items={[
               { label: '实测', value: `${tools.length} 个工具记录`, detail: '来自当前主机与平台探测结果', tone: tools.length ? 'info' : 'neutral' },
               { label: '配置', value: `${installedCount} 个已检测`, detail: `${editableCount} 个工具提供配置编辑入口`, tone: installedCount ? 'success' : 'warning' },
-              { label: '指南', value: '显式读取与保存', detail: '不会在本面板自动安装、启动或猜测配置', tone: 'neutral' }
+              {
+                label: '生命周期',
+                value: lifecycleCount ? `${lifecycleCount} 个可管理` : '仅探测',
+                detail: lifecycleCount ? '安装、更新、卸载均进入后台任务队列' : '当前资源不提供自动安装操作',
+                tone: lifecycleCount ? 'success' : 'neutral'
+              }
             ]}
           />
           <div className="toolkit-grid">
-            {tools.map((tool) => (
-            <div key={tool.id} className={`toolkit-app-card ${tool.installed ? 'installed' : 'uninstalled'}`}>
-              <div>
-                <div className="toolkit-card-header">
-                  <div className="toolkit-card-title-group">
-                    <ToolOutlined className="toolkit-tool-icon" data-installed={tool.installed || undefined} />
-                    <div>
-                      <h3 className="toolkit-card-title">{tool.name}</h3>
-                      <Space className="toolkit-card-tags" size={4} wrap>
-                        <Tag color={tool.supported ? 'blue' : 'default'}>{tool.supported ? '当前平台支持' : '当前平台不适用'}</Tag>
-                        {tool.installed && <Tag color="success"><CheckCircleOutlined /> 已检测</Tag>}
-                        {tool.runtimeInspectable && tool.running && <Tag color="green">运行中</Tag>}
-                        {tool.runtimeInspectable && tool.installed && !tool.running && <Tag>未运行</Tag>}
-                      </Space>
-                    </div>
-                  </div>
-                </div>
-                <div className="toolkit-card-body">
-                  <div className="toolkit-detail-row"><span className="toolkit-detail-label">作用:</span><span className="toolkit-detail-value">{tool.role}</span></div>
-                  <div className="toolkit-detail-row"><span className="toolkit-detail-label">版本:</span><span className="toolkit-detail-value">{tool.version}</span></div>
-                  <div className="toolkit-detail-row"><span className="toolkit-detail-label">程序:</span><span className="toolkit-detail-value">{tool.binaryName}</span></div>
-                  <div className="toolkit-detail-row"><span className="toolkit-detail-label">服务:</span><span className="toolkit-detail-value">{tool.serviceManager}</span></div>
-                  {tool.runtimeInspectable && (
-                    <div className="toolkit-detail-row">
-                      <span className="toolkit-detail-label">运行:</span>
-                      <span className="toolkit-detail-value">
-                        {tool.running ? `运行中${tool.runningCount > 1 ? `（${tool.runningCount} 个）` : ''}` : tool.installed ? '当前未运行' : '未发现程序'}
-                        {tool.startupManaged ? `；自动启动：${tool.startupSources.map((source) => DISCOVERY_SOURCE_LABELS[source] || source).join('、')}` : ''}
-                      </span>
-                    </div>
+            {tools.map((tool) => {
+              const activeTask = activeTaskFor(tool);
+              const busyAction = busyActionFor(tool);
+              const startupSources = tool.startupManaged
+                ? tool.startupSources.map((source) => DISCOVERY_SOURCE_LABELS[source] || source).join('、')
+                : '';
+              return (
+                <ManagedResourceCard
+                  key={tool.id}
+                  resourceId={tool.id}
+                  name={tool.name}
+                  installed={tool.installed}
+                  icon={(
+                    <span className="toolkit-client-glyph" aria-hidden="true">
+                      <ToolOutlined />
+                    </span>
                   )}
-                  {tool.configState === 'multiple' ? (
-                    <div className="toolkit-detail-row">
-                      <span className="toolkit-detail-label">配置:</span>
-                      <span className="toolkit-detail-value">
-                        已发现 {tool.configCount} 个实际配置文件；为避免误编辑，当前不自动选择
-                      </span>
-                    </div>
-                  ) : tool.configState === 'unresolved' ? (
-                    <div className="toolkit-detail-row">
-                      <span className="toolkit-detail-label">配置:</span>
-                      <span className="toolkit-detail-value">运行或启动参数指向的配置当前无法安全读取</span>
-                    </div>
-                  ) : tool.configState === 'token-managed' ? (
-                    <div className="toolkit-detail-row">
-                      <span className="toolkit-detail-label">配置:</span>
-                      <span className="toolkit-detail-value">令牌托管模式未使用可编辑的本地 config.yml</span>
-                    </div>
-                  ) : tool.configName ? (
-                    <div className="toolkit-detail-row">
-                      <span className="toolkit-detail-label">配置:</span>
-                      <span className="toolkit-detail-value">
-                        {tool.configName} 已发现{tool.configSource ? `（${DISCOVERY_SOURCE_LABELS[tool.configSource] || tool.configSource}）` : ''}
-                      </span>
-                    </div>
-                  ) : tool.runtimeInspectable ? (
-                    <div className="toolkit-detail-row">
-                      <span className="toolkit-detail-label">配置:</span>
-                      <span className="toolkit-detail-value">未发现实际配置文件</span>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-              <div className="toolkit-card-actions">
-                <Space size={8}>
-                  {tool.configEditable && (
-                    <Button size="small" icon={<EditOutlined />} onClick={() => openConfig(tool)}>编辑配置</Button>
+                  badges={(
+                    <>
+                      <Tag color={tool.supported ? 'blue' : 'default'}>
+                        {tool.supported ? '当前平台支持' : '当前平台不适用'}
+                      </Tag>
+                      {tool.runtimeInspectable && tool.running ? <Tag color="processing">运行中</Tag> : null}
+                      {tool.managedBy ? <Tag>{MANAGEMENT_LABELS[tool.managedBy] || tool.managedBy}</Tag> : null}
+                    </>
                   )}
-                  {tool.requiresElevation && tool.configEditable && <Badge status="warning" text="保存需授权" />}
-                </Space>
-                <span className="toolkit-capabilities">
-                  {tool.capabilities.map((capability) => CAPABILITY_LABELS[capability] || capability).join(' · ')}
-                </span>
-              </div>
-            </div>
-            ))}
+                  details={[
+                    { label: '作用', value: tool.role },
+                    { label: '当前版本', value: tool.installed ? tool.version : '未安装', muted: !tool.installed },
+                    {
+                      label: '程序',
+                      value: tool.executablePath || tool.binaryName,
+                      tooltip: tool.executablePath || tool.binaryName,
+                      muted: !tool.installed
+                    },
+                    ...(tool.runtimeInspectable ? [{
+                      label: '运行状态',
+                      value: `${runtimeSummary(tool)}${startupSources ? `；自动启动：${startupSources}` : ''}`
+                    }] : []),
+                    ...(tool.configState !== 'none' || tool.runtimeInspectable ? [{
+                      label: '配置',
+                      value: configSummary(tool)
+                    }] : [])
+                  ]}
+                  actions={(
+                    <Space size={6} wrap>
+                      {activeTask ? (
+                        <Tag color="processing">
+                          {ACTION_LABELS[(activeTask.action as ManagedToolLifecycleAction) || 'update'] || '操作'}中
+                          {` ${Math.round(Number(activeTask.progress?.percent || 0))}%`}
+                        </Tag>
+                      ) : null}
+                      {!tool.installed && tool.canInstall ? (
+                        <InstallLifecycleAction
+                          action="install"
+                          size="small"
+                          iconOnly
+                          tooltip={`安装 ${tool.name}`}
+                          aria-label={`安装 ${tool.name}`}
+                          loading={busyAction === 'install'}
+                          disabled={Boolean(busyAction)}
+                          onClick={() => void runAction(tool, 'install')}
+                        />
+                      ) : null}
+                      {tool.installed && tool.canUpdate ? (
+                        <InstallLifecycleAction
+                          action="update"
+                          size="small"
+                          iconOnly
+                          tooltip={`更新 ${tool.name}`}
+                          aria-label={`更新 ${tool.name}`}
+                          loading={busyAction === 'update'}
+                          disabled={Boolean(busyAction)}
+                          onClick={() => void runAction(tool, 'update')}
+                        />
+                      ) : null}
+                      {tool.installed && tool.canUninstall ? (
+                        <InstallLifecycleAction
+                          action="uninstall"
+                          size="small"
+                          iconOnly
+                          tooltip={`卸载 ${tool.name}`}
+                          aria-label={`卸载 ${tool.name}`}
+                          loading={busyAction === 'uninstall'}
+                          disabled={Boolean(busyAction)}
+                          onClick={() => void runAction(tool, 'uninstall')}
+                        />
+                      ) : null}
+                      {tool.configEditable ? (
+                        <Button
+                          size="small"
+                          shape="circle"
+                          icon={<EditOutlined />}
+                          aria-label={`编辑 ${tool.name} 配置`}
+                          title={`编辑 ${tool.name} 配置`}
+                          onClick={() => openConfig(tool)}
+                        />
+                      ) : null}
+                      {tool.requiresElevation && tool.configEditable ? <Tag color="warning">保存需授权</Tag> : null}
+                    </Space>
+                  )}
+                  footer={(
+                    <span className="toolkit-capabilities">
+                      {tool.capabilities.map((capability) => CAPABILITY_LABELS[capability] || capability).join(' · ')}
+                    </span>
+                  )}
+                />
+              );
+            })}
           </div>
         </>
       ) : null}
@@ -251,16 +466,15 @@ export default function ManagedToolsPanel({ category }: ManagedToolsPanelProps) 
           <div className="toolkit-loading compact"><Spin /></div>
         ) : (
           <>
-            <Alert
-              type="warning"
-              showIcon
-              icon={<LockOutlined />}
-              className="toolkit-modal-alert"
-              message="配置可能包含令牌或其他敏感信息"
-              description={configData?.requiresElevation
-                ? '当前配置需要系统授权才能保存；不会在页面或接口中显示绝对路径。'
-                : `格式：${configData?.configFormat || editingTool?.configFormat || 'text'}；保存时会检查文件是否被其他进程修改。`}
-            />
+            <div className="toolkit-inline-note" role="note">
+              <LockOutlined aria-hidden="true" />
+              <span>
+                配置可能包含敏感信息；
+                {configData?.requiresElevation
+                  ? '当前目标需要系统授权才能保存，接口不会返回绝对路径。'
+                  : `格式为 ${configData?.configFormat || editingTool?.configFormat || 'text'}，保存时会校验并发修改。`}
+              </span>
+            </div>
             <ConfigCodeEditor
               value={configContent}
               onChange={setConfigContent}

@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
-  "manifest_id": "ai-home-route-ownership-2026-08-19",
-  "baseline_date": "2026-08-19",
+  "manifest_id": "ai-home-route-ownership-2026-08-23",
+  "baseline_date": "2026-08-23",
   "source_revision": {
-    "git_commit": "e29f90464cec9d25242738a534815a60711ce404",
+    "git_commit": "af920a2e2eeeb4fd6031649fd0cbbf61099ae869",
     "collection_script": "scripts/collect-gateway-routes.js",
-    "source_mode": "read_only_source_scan",
-    "note": "工作树在生成时包含其他会话的未提交改动；manifest 只声明本次核对的路由/架构事实，不吸收这些改动。"
+    "source_mode": "read_only_source_scan_with_scoped_worktree_delta",
+    "note": "以提交基线为起点，仅登记 Image Studio 的 6 条采集增量（路由模块 3 endpoint + 1 guard，WebUI 分发器 2 endpoint）；当前工作树其他会话的未提交路由差异不纳入。"
   },
   "migration_state_machine": [
     "node_owned",
@@ -51,12 +51,12 @@
   "route_baseline": {
     "collector_schema_version": 2,
     "node": {
-      "route_records": 310,
-      "endpoint_records": 303,
-      "unique_endpoint_patterns": 231,
-      "unique_http_endpoint_patterns": 226,
+      "route_records": 316,
+      "endpoint_records": 308,
+      "unique_endpoint_patterns": 235,
+      "unique_http_endpoint_patterns": 230,
       "unique_websocket_endpoint_patterns": 7,
-      "guard_records": 7,
+      "guard_records": 8,
       "fallback_records": 0
     },
     "go": {
@@ -357,6 +357,26 @@
       "cutover_blocking": false,
       "blockers": ["intentionally retained by Node Host in Go Refactor .1"],
       "evidence": ["lib/server/web-ui-router.js", "lib/server/webui-terminal-routes.js", "docs/functional-matrix.md"]
+    },
+    {
+      "id": "node.webui_image_studio",
+      "kind": "capability_surface",
+      "capability": "durable_image_studio",
+      "node_routes": [
+        { "transport": "http", "methods": ["GET"], "path": "/v0/webui/studio/image/models" },
+        { "transport": "http", "methods": ["GET", "POST"], "path": "/v0/webui/studio/image/sessions" },
+        { "transport": "http", "methods": ["DELETE", "GET", "PATCH"], "path": "/v0/webui/studio/image/sessions/{sessionId}" },
+        { "transport": "http", "methods": ["POST"], "path": "/v0/webui/studio/image/sessions/{sessionId}/runs" },
+        { "transport": "http", "methods": ["GET"], "path": "/v0/webui/studio/image/sessions/{sessionId}/assets/{assetId}" }
+      ],
+      "go_routes": [],
+      "production_owner": "node",
+      "migration_state": "node_owned",
+      "node_implementation": "stable",
+      "go_implementation": "out_of_scope",
+      "cutover_blocking": false,
+      "blockers": ["Image Studio remains a Node-owned WebUI product surface"],
+      "evidence": ["lib/server/webui-image-studio-routes.js", "lib/server/image-studio-store.js", "test/webui-image-studio-routes.test.js"]
     },
     {
       "id": "node.fabric_surface",

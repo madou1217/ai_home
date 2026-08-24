@@ -52,6 +52,15 @@ test('account reason formatter preserves existing known quota explanations', () 
   assert.equal(formatAccountIssueReason('some_future_reason'), 'some_future_reason');
 });
 
+test('account reason formatter explains restored expired OAuth backups', () => {
+  const { formatAccountIssueReason } = loadAccountReasons();
+
+  assert.equal(
+    formatAccountIssueReason('restored_expired_oauth_backup'),
+    '账号已从备份恢复，原登录凭据已过期，请重新登录。'
+  );
+});
+
 test('account reason formatter explains OpenCode model region restrictions without calling them auth failures', () => {
   const { formatAccountIssueReason } = loadAccountReasons();
 

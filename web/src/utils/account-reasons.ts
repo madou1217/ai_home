@@ -11,6 +11,7 @@ const KNOWN_REASON_MESSAGES: Record<string, string> = {
   direct_json_parse_failed: '直连额度响应解析失败。',
   direct_missing_rate_limits: '直连额度响应里缺少 rate limits。',
   direct_request_failed: '直连额度请求失败。',
+  restored_expired_oauth_backup: '账号已从备份恢复，原登录凭据已过期，请重新登录。',
   model_region_restricted: 'OpenCode 当前模型受区域/托管范围限制，不是账号认证失效；请切换模型或完成 workspace opt-in。'
 };
 

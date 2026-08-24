@@ -3,9 +3,12 @@ import test from 'node:test';
 
 import {
   canRetryAppInstallTask,
+  canRetryWebUiTask,
   formatAppActionPlan,
   getAppInstallFailureReasons,
   getAppInstallStatusPresentation,
+  getAppUpdateActionPresentation,
+  getWebUiTaskSourceLabel,
   mergeWebUiTaskQueueEntries
 } from './app-install-presentation.ts';
 
@@ -57,6 +60,54 @@ test('getAppInstallFailureReasons 聚合任务与失败步骤原因并去重', (
   ]);
 });
 
+test('应用更新检查只在确认已是最新版时停止，其余状态继续提供更新计划', () => {
+  assert.deepEqual(getAppUpdateActionPresentation('Codex', {
+    ok: true,
+    appId: 'codex',
+    provider: 'codex',
+    currentVersion: '1.2.0',
+    latestVersion: '1.2.0',
+    updateAvailable: false,
+    status: 'current'
+  }), {
+    shouldExecute: false,
+    title: '',
+    summary: '',
+    notice: 'Codex 已是最新版（1.2.0）',
+    metadata: []
+  });
+
+  const unavailable = getAppUpdateActionPresentation('Kimi Desktop', {
+    ok: false,
+    appId: 'kimi-desktop',
+    provider: 'kimi',
+    currentVersion: null,
+    latestVersion: null,
+    updateAvailable: false,
+    status: 'unavailable'
+  });
+  assert.equal(unavailable.shouldExecute, true);
+  assert.equal(unavailable.title, '更新 Kimi Desktop');
+  assert.match(unavailable.summary, /仍会执行更新计划/);
+  assert.deepEqual(unavailable.metadata, [{ label: '当前版本', value: '未探测到' }]);
+
+  const unknown = getAppUpdateActionPresentation('Warp', {
+    ok: true,
+    appId: 'warp',
+    provider: 'warp',
+    currentVersion: null,
+    latestVersion: '0.2026.08.23',
+    updateAvailable: false,
+    status: 'unknown'
+  });
+  assert.equal(unknown.shouldExecute, true);
+  assert.match(unknown.summary, /无法自动比较/);
+  assert.deepEqual(unknown.metadata, [
+    { label: '当前版本', value: '未探测到' },
+    { label: '远端最新版', value: '0.2026.08.23' }
+  ]);
+});
+
 test('mergeWebUiTaskQueueEntries 合并活动与最近终态并以活动快照覆盖同 id 旧状态', () => {
   const recentSucceeded = makeTask({ id: 'job-1', status: 'succeeded', updatedAt: 150 });
   const activeRunning = makeTask({ id: 'job-1', status: 'running', updatedAt: 200 });
@@ -92,4 +143,25 @@ test('终态展示区分成功失败取消，且只有失败的应用任务可�
   assert.equal(canRetryAppInstallTask(makeTask({ status: 'failed' })), true);
   assert.equal(canRetryAppInstallTask(makeTask({ status: 'succeeded' })), false);
   assert.equal(canRetryAppInstallTask(makeTask({ status: 'failed', source: 'terminal' })), false);
+});
+
+test('后台任务来源区分应用、终端和运行环境', () => {
+  assert.equal(getWebUiTaskSourceLabel(makeTask({ source: 'app-install' })), '应用');
+  assert.equal(getWebUiTaskSourceLabel(makeTask({ source: 'terminal' })), '终端');
+  assert.equal(getWebUiTaskSourceLabel(makeTask({ source: 'environment' })), '运行环境');
+  assert.equal(getWebUiTaskSourceLabel(makeTask({ source: 'managed-tool' })), '网络接入');
+});
+
+test('统一后台任务允许失败的网络工具重新进入对应生命周期队列', () => {
+  const failedTool = makeTask({
+    source: 'managed-tool',
+    kind: 'managed-tool',
+    appId: 'frpc',
+    provider: 'frpc',
+    action: 'update',
+    status: 'failed'
+  });
+  assert.equal(canRetryWebUiTask(failedTool), true);
+  assert.equal(canRetryWebUiTask({ ...failedTool, status: 'succeeded' }), false);
+  assert.equal(canRetryAppInstallTask(failedTool), false);
 });

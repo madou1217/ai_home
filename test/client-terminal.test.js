@@ -237,7 +237,7 @@ test('Warp 在 macOS 使用官方应用并生成 Homebrew 生命周期计划', (
   assert.deepEqual(updatePlan.args, ['upgrade', '--cask', 'warp']);
 });
 
-test('Warp 使用 Windows 官方 winget 标识，Linux 仅检测和唤起现有安装', () => {
+test('Warp 使用 Windows 官方 winget 标识，Linux 提供官方系统包生命周期', () => {
   const windowsPlan = resolveTerminalActionPlan({ terminalId: 'warp', action: 'install' }, {
     platform: 'windows',
     path: nodePath.win32,
@@ -263,19 +263,59 @@ test('Warp 使用 Windows 官方 winget 标识，Linux 仅检测和唤起现有�
   const linuxOptions = {
     platform: 'linux',
     path: nodePath.posix,
-    env: { HOME: '/home/test', PATH: '/usr/bin' },
-    fs: fakeFs(['/usr/bin/warp-terminal', '/usr/bin/flatpak'])
+    env: { HOME: '/home/test', PATH: '' },
+    fs: fakeFs(['/usr/bin/warp-terminal', '/usr/bin/apt-get'])
   };
   const warp = listClientTerminals(linuxOptions).find((item) => item.id === 'warp');
   assert.equal(warp.installed, true);
   assert.equal(warp.canLaunch, true);
-  assert.equal(warp.canUpdate, false);
-  assert.equal(warp.canUninstall, false);
-  assert.deepEqual(warp.plans, []);
+  assert.equal(warp.canUpdate, true);
+  assert.equal(warp.canUninstall, true);
+  assert.equal(warp.packageManager, 'apt');
+  assert.deepEqual(warp.plans.map((plan) => plan.action), ['install', 'update', 'uninstall']);
 
   const launch = resolveClientTerminalLaunch('warp', 'node app.js', 'AI Home Warp', linuxOptions);
   assert.equal(launch.file, '/usr/bin/warp-terminal');
   assert.deepEqual(launch.args, []);
+
+  const updatePlan = resolveTerminalActionPlan({ terminalId: 'warp', action: 'update' }, linuxOptions);
+  assert.equal(updatePlan.ok, true);
+  assert.equal(updatePlan.file, '/bin/sh');
+  assert.equal(updatePlan.packageManager, 'apt');
+  assert.match(updatePlan.args[1], /apt-get update/);
+  assert.match(updatePlan.args[1], /apt-get install -y --only-upgrade warp-terminal/);
+
+  const uninstallPlan = resolveTerminalActionPlan({ terminalId: 'warp', action: 'uninstall' }, linuxOptions);
+  assert.equal(uninstallPlan.ok, true);
+  assert.match(uninstallPlan.args[1], /apt-get remove -y warp-terminal/);
+
+  const installPlan = resolveTerminalActionPlan({ terminalId: 'warp', action: 'install' }, {
+    ...linuxOptions,
+    fs: fakeFs(['/usr/bin/apt-get'])
+  });
+  assert.equal(installPlan.ok, true);
+  assert.match(installPlan.args[1], /https:\/\/releases\.warp\.dev\/linux\/keys\/warp\.asc/);
+  assert.match(installPlan.args[1], /https:\/\/releases\.warp\.dev\/linux\/deb stable main/);
+  assert.match(installPlan.args[1], /apt-get install -y warp-terminal/);
+});
+
+test('Warp Linux 按 dnf 与 yum 生成各自的更新和卸载计划', () => {
+  for (const packageManager of ['dnf', 'yum']) {
+    const options = {
+      platform: 'linux',
+      path: nodePath.posix,
+      env: { HOME: '/home/test', PATH: '/usr/bin' },
+      fs: fakeFs(['/usr/bin/warp-terminal', `/usr/bin/${packageManager}`])
+    };
+    const updatePlan = resolveTerminalActionPlan({ terminalId: 'warp', action: 'update' }, options);
+    const uninstallPlan = resolveTerminalActionPlan({ terminalId: 'warp', action: 'uninstall' }, options);
+
+    assert.equal(updatePlan.ok, true);
+    assert.equal(updatePlan.packageManager, packageManager);
+    assert.match(updatePlan.args[1], new RegExp(`${packageManager} (?:upgrade|update) -y warp-terminal`));
+    assert.equal(uninstallPlan.ok, true);
+    assert.match(uninstallPlan.args[1], new RegExp(`${packageManager} remove -y warp-terminal`));
+  }
 });
 
 test('GUI 进程 PATH 不完整时，已安装终端仍能生成官方更新和卸载计划', () => {
@@ -291,6 +331,19 @@ test('GUI 进程 PATH 不完整时，已安装终端仍能生成官方更新和�
   assert.equal(iterm.canUninstall, true);
   assert.equal(iterm.packageManager, 'homebrew');
   assert.deepEqual(iterm.plans.map((plan) => plan.action), ['install', 'update', 'uninstall']);
+});
+
+test('Windows GUI 进程 PATH 不完整时从用户应用目录发现 winget', () => {
+  const plan = resolveTerminalActionPlan({ terminalId: 'wezterm', action: 'install' }, {
+    platform: 'windows',
+    path: nodePath.win32,
+    env: { USERPROFILE: 'C:\\Users\\test', PATH: '' },
+    fs: fakeFs(['C:\\Users\\test\\AppData\\Local\\Microsoft\\WindowsApps\\winget.exe'])
+  });
+
+  assert.equal(plan.ok, true);
+  assert.equal(plan.file, 'C:\\Users\\test\\AppData\\Local\\Microsoft\\WindowsApps\\winget.exe');
+  assert.equal(plan.packageManager, 'winget');
 });
 
 test('终端安装计划使用官方稳定包管理器命令', () => {
@@ -311,6 +364,101 @@ test('终端安装计划使用官方稳定包管理器命令', () => {
   });
   assert.equal(linuxPlan.ok, true);
   assert.deepEqual(linuxPlan.args, ['install', '--user', '-y', 'flathub', 'org.wezfurlong.wezterm']);
+});
+
+test('macOS 无 Homebrew 时使用各终端官方发布源直装', () => {
+  const options = {
+    platform: 'macos',
+    path: nodePath.posix,
+    env: { HOME: '/Users/test', PATH: '' },
+    processObj: { platform: 'darwin', arch: 'arm64', env: {} },
+    fs: fakeFs([])
+  };
+  const wezterm = resolveTerminalActionPlan({ terminalId: 'wezterm', action: 'install' }, options);
+  const warp = resolveTerminalActionPlan({ terminalId: 'warp', action: 'install' }, options);
+  const iterm = resolveTerminalActionPlan({ terminalId: 'iterm2', action: 'install' }, options);
+
+  assert.equal(wezterm.ok, true);
+  assert.equal(wezterm.packageManager, 'official');
+  assert.match(wezterm.args[1], /api\.github\.com\/repos\/wezterm\/wezterm\/releases\/latest/);
+  assert.match(wezterm.args[1], /WezTerm-macos-/);
+  assert.match(wezterm.args[1], /Applications\/WezTerm\.app/);
+
+  assert.equal(warp.ok, true);
+  assert.equal(warp.packageManager, 'official');
+  assert.match(warp.args[1], /app\.warp\.dev\/download\?package=dmg_arm64/);
+  assert.match(warp.args[1], /Applications\/Warp\.app/);
+
+  assert.equal(iterm.ok, true);
+  assert.equal(iterm.packageManager, 'official');
+  assert.match(iterm.args[1], /iterm2\.com\/downloads\.html/);
+  assert.match(iterm.args[1], /Applications\/iTerm\.app/);
+});
+
+test('Windows 无 winget 时使用官方发布源和系统安装 API', () => {
+  const options = {
+    platform: 'windows',
+    path: nodePath.win32,
+    env: {
+      USERPROFILE: 'C:\\Users\\test',
+      LOCALAPPDATA: 'C:\\Users\\test\\AppData\\Local',
+      SystemRoot: 'C:\\Windows',
+      PATH: ''
+    },
+    processObj: { platform: 'win32', arch: 'x64', env: { SystemRoot: 'C:\\Windows' } },
+    fs: fakeFs([])
+  };
+  const wezterm = resolveTerminalActionPlan({ terminalId: 'wezterm', action: 'install' }, options);
+  const warp = resolveTerminalActionPlan({ terminalId: 'warp', action: 'install' }, options);
+  const windowsTerminal = resolveTerminalActionPlan({ terminalId: 'windows-terminal', action: 'install' }, options);
+
+  assert.equal(wezterm.ok, true);
+  assert.equal(wezterm.packageManager, 'official');
+  assert.match(wezterm.args.at(-1), /api\.github\.com\/repos\/wezterm\/wezterm\/releases\/latest/);
+  assert.match(wezterm.args.at(-1), /Expand-Archive/);
+  assert.match(wezterm.args.at(-1), /Programs\\WezTerm/);
+
+  assert.equal(warp.ok, true);
+  assert.equal(warp.packageManager, 'official');
+  assert.match(warp.args.at(-1), /app\.warp\.dev\/download\?package=windows/);
+  assert.match(warp.args.at(-1), /VERYSILENT/);
+
+  assert.equal(windowsTerminal.ok, true);
+  assert.equal(windowsTerminal.packageManager, 'official');
+  assert.match(windowsTerminal.args.at(-1), /api\.github\.com\/repos\/microsoft\/terminal\/releases\/latest/);
+  assert.match(windowsTerminal.args.at(-1), /Add-AppxPackage/);
+});
+
+test('Linux 无包管理器时使用官方 AppImage 并保留可执行卸载计划', () => {
+  const uninstalledOptions = {
+    platform: 'linux',
+    path: nodePath.posix,
+    env: { HOME: '/home/test', PATH: '' },
+    processObj: { platform: 'linux', arch: 'x64', env: {} },
+    fs: fakeFs([])
+  };
+  const wezterm = resolveTerminalActionPlan({ terminalId: 'wezterm', action: 'install' }, uninstalledOptions);
+  const warp = resolveTerminalActionPlan({ terminalId: 'warp', action: 'install' }, uninstalledOptions);
+
+  assert.equal(wezterm.ok, true);
+  assert.equal(wezterm.packageManager, 'official');
+  assert.match(wezterm.args[1], /api\.github\.com\/repos\/wezterm\/wezterm\/releases\/latest/);
+  assert.match(wezterm.args[1], /Ubuntu20\.04\.AppImage/);
+  assert.match(wezterm.args[1], /\.local\/bin\/wezterm/);
+
+  assert.equal(warp.ok, true);
+  assert.equal(warp.packageManager, 'official');
+  assert.match(warp.args[1], /app\.warp\.dev\/download\?package=appimage/);
+  assert.match(warp.args[1], /\.local\/bin\/warp-terminal/);
+
+  const uninstall = resolveTerminalActionPlan({ terminalId: 'warp', action: 'uninstall' }, {
+    ...uninstalledOptions,
+    env: { HOME: '/home/test', PATH: '/usr/bin' },
+    fs: fakeFs(['/usr/bin/warp-terminal'])
+  });
+  assert.equal(uninstall.ok, true);
+  assert.equal(uninstall.packageManager, 'official');
+  assert.match(uninstall.args[1], /\/usr\/bin\/warp-terminal/);
 });
 
 test('终端执行必须显式确认并通过抽象计划运行', async () => {

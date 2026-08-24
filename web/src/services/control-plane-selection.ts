@@ -4,6 +4,11 @@ import {
   isNativeDesktopRuntime,
   setActiveNativeServerProfile
 } from './native-server-profile-repository';
+import {
+  getExplicitServerProfileId,
+  hasExplicitServerSelection,
+  setExplicitServerProfileId
+} from './server-selection-scope';
 
 const ACTIVE_CONTROL_PLANE_STORAGE_KEY = 'aih:active-control-plane-profile:v1';
 export const ACTIVE_CONTROL_PLANE_CHANGED_EVENT = 'aih:active-control-plane-profile-changed';
@@ -23,7 +28,7 @@ export interface ActiveControlPlaneChangeDetail {
 export interface ActiveControlPlaneResolution {
   profile: ControlPlaneProfile | null;
   profileId: string;
-  source: 'stored' | 'ready' | 'first' | 'none';
+  source: 'explicit' | 'stored' | 'ready' | 'first' | 'none';
 }
 
 function getStorage(): StorageLike | null {
@@ -88,6 +93,13 @@ function persistSharedActiveControlPlaneProfileId(profileId: string) {
 export function getActiveControlPlaneProfileId(storage = getStorage()) {
   if (!storage) return '';
   return normalizeProfileId(storage.getItem(ACTIVE_CONTROL_PLANE_STORAGE_KEY));
+}
+
+export function getCurrentControlPlaneProfileId(
+  storage = getStorage(),
+  explicitProfileId = getExplicitServerProfileId()
+) {
+  return normalizeProfileId(explicitProfileId) || getActiveControlPlaneProfileId(storage);
 }
 
 export function setActiveControlPlaneProfileId(
@@ -212,6 +224,31 @@ export function resolveStoredActiveControlPlaneProfile(
   return resolveControlPlaneProfile(profiles, storedProfileId);
 }
 
+export function resolveCurrentControlPlaneProfile(
+  profiles: ControlPlaneProfile[],
+  storedProfileId = getActiveControlPlaneProfileId(),
+  explicitProfileId = getExplicitServerProfileId()
+): ActiveControlPlaneResolution {
+  const explicitId = normalizeProfileId(explicitProfileId);
+  if (!explicitId) return resolveControlPlaneProfile(profiles, storedProfileId);
+  return {
+    profile: (Array.isArray(profiles) ? profiles : []).find((item) => item.id === explicitId) || null,
+    profileId: explicitId,
+    source: 'explicit'
+  };
+}
+
+export function syncCurrentControlPlaneProfile(
+  profiles: ControlPlaneProfile[],
+  storage = getStorage(),
+  eventTarget = getEventTarget()
+) {
+  const explicitProfileId = getExplicitServerProfileId();
+  return explicitProfileId
+    ? resolveCurrentControlPlaneProfile(profiles, getActiveControlPlaneProfileId(storage), explicitProfileId)
+    : syncStoredActiveControlPlaneProfile(profiles, storage, eventTarget);
+}
+
 export function syncStoredActiveControlPlaneProfile(
   profiles: ControlPlaneProfile[],
   storage = getStorage(),
@@ -241,4 +278,19 @@ export async function selectActiveControlPlaneProfileSecure(
 ) {
   const id = await setActiveControlPlaneProfileIdSecure(profileId, storage);
   return resolveActiveControlPlaneProfile(profiles, id);
+}
+
+export async function selectCurrentControlPlaneProfileSecure(
+  profiles: ControlPlaneProfile[],
+  profileId: string,
+  storage = getStorage(),
+  eventTarget = getEventTarget()
+) {
+  if (!hasExplicitServerSelection()) {
+    return selectActiveControlPlaneProfileSecure(profiles, profileId, storage);
+  }
+  const previousProfileId = getCurrentControlPlaneProfileId(storage);
+  const id = setExplicitServerProfileId(profileId);
+  emitActiveControlPlaneProfileChange({ profileId: id, previousProfileId }, eventTarget);
+  return resolveCurrentControlPlaneProfile(profiles, getActiveControlPlaneProfileId(storage), id);
 }

@@ -166,11 +166,20 @@ test('app applies the profile gate to browser and native clients before mounting
   assert.match(source, /canRenderWorkspace\s*\?\s*children\s*:\s*null/u);
   assert.match(source, /const canRenderDataPlane = isGoAccountsPreview \|\| profileGate\.ready/u);
   assert.match(source, /canRenderDataPlane && <AppInstallTaskQueue \/>/u);
+  assert.match(
+    source,
+    /pathname:\s*resolveAppRoutePathname\(history\.location\.pathname\)/u,
+    'explicit Server navigation must strip the browser /ui base before Umi history.replace'
+  );
 });
 
 test('Settings Toolkit navigation keeps the browser UI prefix', () => {
   const navigation = loadAppNavigationModule();
   assert.equal(navigation.buildAppHref('/toolkit'), '/ui/toolkit');
+  assert.equal(
+    navigation.buildServerScopedAppHref('/toolkit', 'cp-aws', 'tab=tools'),
+    '/ui/toolkit?tab=tools&server=cp-aws'
+  );
   assert.equal(navigation.resolveAppRoutePathname('/ui/toolkit'), '/toolkit');
 
   const settingsSource = fs.readFileSync(path.join(__dirname, '../web/src/pages/Settings.tsx'), 'utf8');

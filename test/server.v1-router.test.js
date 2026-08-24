@@ -3,7 +3,10 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { handleV1Request } = require('../lib/server/v1-router');
+const {
+  handleV1Request,
+  __private: { IMAGE_REQUEST_BODY_BYTES, resolveRequestBodyLimit }
+} = require('../lib/server/v1-router');
 const { buildOpenAIModelsList } = require('../lib/server/models');
 const {
   handleUpstreamModels,
@@ -84,6 +87,78 @@ test('v1 router returns false for non-v1 path', async () => {
     deps: {}
   });
   assert.equal(handled, false);
+});
+
+test('v1 router reserves enough JSON body space for an edit image plus mask', () => {
+  assert.equal(IMAGE_REQUEST_BODY_BYTES, 16 * 1024 * 1024);
+  assert.equal(resolveRequestBodyLimit('/v1/images/edits', 10 * 1024 * 1024), IMAGE_REQUEST_BODY_BYTES);
+  assert.equal(resolveRequestBodyLimit('/v1/images/generations', 20 * 1024 * 1024), 20 * 1024 * 1024);
+  assert.equal(resolveRequestBodyLimit('/v1/chat/completions', 10 * 1024 * 1024), 10 * 1024 * 1024);
+});
+
+test('v1 router parses multipart image edits before alias and provider routing', async () => {
+  const pngBytes = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    'base64'
+  );
+  const form = new FormData();
+  form.append('provider', 'codex');
+  form.append('model', 'gpt-image-2');
+  form.append('prompt', 'replace the sky');
+  form.append('image', new File([pngBytes], 'source.png', { type: 'image/png' }));
+  const multipartRequest = new Request('http://aih.local/v1/images/edits', {
+    method: 'POST',
+    body: form
+  });
+  const bodyBuffer = Buffer.from(await multipartRequest.arrayBuffer());
+  const contentType = multipartRequest.headers.get('content-type');
+  const res = createResCapture();
+  let capturedRequest = null;
+
+  const handled = await handleV1Request({
+    req: { headers: { 'content-type': contentType }, url: '/v1/images/edits' },
+    res,
+    method: 'POST',
+    pathname: '/v1/images/edits',
+    options: { backend: 'codex-adapter', provider: 'codex' },
+    state: {
+      modelRegistry: { providers: { codex: new Set(['gpt-image-2']) } },
+      metrics: { totalRequests: 0, routeCounts: {}, totalSuccess: 0 }
+    },
+    requiredClientKey: '',
+    cooldownMs: 1000,
+    maxRequestBodyBytes: 1024 * 1024,
+    requestMeta: {},
+    deps: {
+      parseAuthorizationBearer: () => '',
+      writeJson: (target, code, payload) => {
+        target.statusCode = code;
+        target.end(JSON.stringify(payload));
+      },
+      readRequestBody: async () => bodyBuffer,
+      handleImageGenerations: async (routeCtx) => {
+        capturedRequest = routeCtx.requestJson;
+        routeCtx.res.statusCode = 200;
+        routeCtx.res.end('{}');
+      },
+      chooseServerAccount: () => null,
+      markProxyAccountSuccess: () => {},
+      markProxyAccountFailure: () => {},
+      pushMetricError: () => {},
+      appendProxyRequestLog: () => {},
+      fetchModelsForAccount: async () => [],
+      FALLBACK_MODELS: [],
+      fetchWithTimeout: async () => ({})
+    }
+  });
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 200);
+  assert.equal(capturedRequest.provider, 'codex');
+  assert.equal(capturedRequest.model, 'gpt-image-2');
+  assert.equal(capturedRequest.prompt, 'replace the sky');
+  assert.equal(capturedRequest.images.length, 1);
+  assert.match(capturedRequest.images[0], /^data:image\/png;base64,/);
 });
 
 test('v1 router enforces client key', async () => {

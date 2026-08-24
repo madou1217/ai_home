@@ -140,6 +140,37 @@ test('manifest 冻结生产 ownership，并把 Go Preview 隔离到专用端口'
   }
 });
 
+test('Image Studio WebUI 路由以独立 Node capability surface 登记', () => {
+  const entry = manifest.entries.find((candidate) => candidate.id === 'node.webui_image_studio');
+  assert.ok(entry);
+  assert.equal(entry.capability, 'durable_image_studio');
+  assert.equal(entry.production_owner, 'node');
+  assert.equal(entry.go_implementation, 'out_of_scope');
+  assert.deepEqual(entry.node_routes, [
+    { transport: 'http', methods: ['GET'], path: '/v0/webui/studio/image/models' },
+    { transport: 'http', methods: ['GET', 'POST'], path: '/v0/webui/studio/image/sessions' },
+    { transport: 'http', methods: ['DELETE', 'GET', 'PATCH'], path: '/v0/webui/studio/image/sessions/{sessionId}' },
+    { transport: 'http', methods: ['POST'], path: '/v0/webui/studio/image/sessions/{sessionId}/runs' },
+    { transport: 'http', methods: ['GET'], path: '/v0/webui/studio/image/sessions/{sessionId}/assets/{assetId}' },
+  ]);
+
+  const routes = collectGatewayRoutes().node.routes.filter((route) => [
+    route.source,
+    ...(route.sources || []),
+  ].some((source) => source && source.file === 'lib/server/webui-image-studio-routes.js'));
+  assert.deepEqual({
+    routeRecords: routes.length,
+    endpointRecords: routes.filter((route) => route.kind === 'endpoint').length,
+    guardRecords: routes.filter((route) => route.kind === 'guard').length,
+    uniqueEndpointPatterns: endpointPaths(routes).size,
+  }, {
+    routeRecords: 4,
+    endpointRecords: 3,
+    guardRecords: 1,
+    uniqueEndpointPatterns: 3,
+  });
+});
+
 test('v1/v1beta 作用域守卫不被登记为 endpoint', () => {
   const routes = collectGatewayRoutes();
   const guards = routes.node.routes.filter((route) => (

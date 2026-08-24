@@ -275,6 +275,26 @@ test('WebUI server proxy resolves the remote Management Key from the canonical p
   assert.equal(updated.endpoint, 'https://aws.example.com');
 });
 
+test('WebUI server proxy fails closed for an unknown explicit Server id', (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-server-profile-proxy-missing-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+
+  const target = resolveProxyTarget({
+    req: {
+      headers: { 'x-aih-server-id': 'server-missing' },
+      url: '/v0/webui/projects'
+    },
+    requestHost: '127.0.0.1:9527',
+    deps: { fs, aiHomeDir }
+  });
+
+  assert.deepEqual(target, {
+    error: 'server_proxy_profile_not_found',
+    statusCode: 404,
+    profileId: 'server-missing'
+  });
+});
+
 test('legacy profile auth fields are not accepted as Management Key fallback', (t) => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-server-profile-breaking-schema-'));
   t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));

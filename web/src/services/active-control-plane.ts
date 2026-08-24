@@ -21,7 +21,7 @@ import {
 import {
   getActiveControlPlaneProfileId,
   resolveActiveControlPlaneProfile,
-  resolveStoredActiveControlPlaneProfile,
+  resolveCurrentControlPlaneProfile,
   type ActiveControlPlaneResolution
 } from './control-plane-selection';
 
@@ -158,7 +158,7 @@ export function resolveActiveControlPlaneContext(
 ): ActiveControlPlaneContext {
   const sourceProfiles = Array.isArray(profiles) ? profiles : listControlPlaneProfiles();
   const resolution = profileId === undefined
-    ? resolveStoredActiveControlPlaneProfile(sourceProfiles, getActiveControlPlaneProfileId())
+    ? resolveCurrentControlPlaneProfile(sourceProfiles, getActiveControlPlaneProfileId())
     : resolveActiveControlPlaneProfile(sourceProfiles, profileId);
   return createActiveControlPlaneContext(resolution);
 }
@@ -167,7 +167,7 @@ export function resolveStoredActiveControlPlaneContext(
   profiles = listControlPlaneProfiles(),
   storedProfileId = getActiveControlPlaneProfileId()
 ): ActiveControlPlaneContext {
-  return createActiveControlPlaneContext(resolveStoredActiveControlPlaneProfile(profiles, storedProfileId));
+  return createActiveControlPlaneContext(resolveCurrentControlPlaneProfile(profiles, storedProfileId));
 }
 
 export function isActiveControlPlaneResultCurrent(
@@ -179,7 +179,7 @@ export function isActiveControlPlaneResultCurrent(
   if (!activeProfileId) return false;
   const sourceProfiles = Array.isArray(profiles) ? profiles : listControlPlaneProfiles();
   const resolution = profileId === undefined
-    ? resolveStoredActiveControlPlaneProfile(sourceProfiles, getActiveControlPlaneProfileId())
+    ? resolveCurrentControlPlaneProfile(sourceProfiles, getActiveControlPlaneProfileId())
     : resolveActiveControlPlaneProfile(sourceProfiles, profileId);
   return resolution.profileId === activeProfileId;
 }

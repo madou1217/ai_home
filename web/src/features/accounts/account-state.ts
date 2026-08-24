@@ -47,29 +47,13 @@ function isExplicitOauthAccount(record: Pick<Account, 'apiKeyMode' | 'authMode' 
   });
 }
 
-export function isRecoveryAccount(record: Pick<Account,
+export function requiresAccountReauth(record: Pick<Account,
   'status' | 'apiKeyMode' | 'authMode' | 'authType' | 'credentialType' | 'runtimeStatus' | 'runtimeReason'
 >) {
   if (isAccountEnabled(record)) return false;
   const hasRecoveryMarker = String(record.runtimeStatus || '').trim().toLowerCase() === 'auth_invalid'
     && String(record.runtimeReason || '').trim().startsWith(ACCOUNT_RECOVERY_REASON_PREFIX);
   return hasRecoveryMarker || isExplicitOauthAccount(record);
-}
-
-export function getRecoveryAccountReason(record: Pick<Account, 'runtimeReason'>) {
-  const reason = String(record.runtimeReason || '').trim();
-  return reason.startsWith(ACCOUNT_RECOVERY_REASON_PREFIX)
-    ? reason.slice(ACCOUNT_RECOVERY_REASON_PREFIX.length)
-    : reason;
-}
-
-export function partitionAccountsByRecovery(accounts: readonly Account[]) {
-  const currentAccounts: Account[] = [];
-  const recoveryAccounts: Account[] = [];
-  accounts.forEach((account) => {
-    (isRecoveryAccount(account) ? recoveryAccounts : currentAccounts).push(account);
-  });
-  return { currentAccounts, recoveryAccounts };
 }
 
 export function reconcileAccountAfterReauthSuccess(accounts: Account[], accountRef: string) {
@@ -98,6 +82,7 @@ export function reconcileAccountAfterReauthSuccess(accounts: Account[], accountR
 
 export type AccountDisplayStateKind =
   | 'healthy'
+  | 'reauth_required'
   | 'exhausted'
   | 'policy_blocked'
   | 'usage_attention'
@@ -105,8 +90,12 @@ export type AccountDisplayStateKind =
   | 'disabled'
   | 'unconfigured';
 
-export function canRefreshUsageAccount(record: Pick<Account, 'configured' | 'apiKeyMode' | 'runtimeStatus' | 'quotaStatus' | 'schedulableStatus'>) {
+export function canRefreshUsageAccount(record: Pick<Account,
+  'status' | 'configured' | 'apiKeyMode' | 'authMode' | 'authType' | 'credentialType'
+  | 'runtimeStatus' | 'runtimeReason' | 'quotaStatus' | 'schedulableStatus'
+>) {
   // OAuth 已配置账号始终允许手动刷新用量,不再依赖已有额度状态。
+  if (requiresAccountReauth(record)) return false;
   if (String(record.quotaStatus || '').trim() === 'not_applicable') return false;
   return Boolean(record.configured) && !record.apiKeyMode;
 }
@@ -189,7 +178,12 @@ export function formatSchedulableReason(reason?: string) {
   return formatAccountIssueReason(text);
 }
 
-export function getAccountDisplayState(record: Pick<Account, 'status' | 'configured' | 'apiKeyMode' | 'runtimeStatus' | 'quotaStatus' | 'schedulableStatus' | 'remainingPct' | 'provider' | 'usageSnapshot'>): AccountDisplayStateKind {
+export function getAccountDisplayState(record: Pick<Account,
+  'status' | 'configured' | 'apiKeyMode' | 'authMode' | 'authType' | 'credentialType'
+  | 'runtimeStatus' | 'runtimeReason' | 'quotaStatus' | 'schedulableStatus'
+  | 'remainingPct' | 'provider' | 'usageSnapshot'
+>): AccountDisplayStateKind {
+  if (requiresAccountReauth(record)) return 'reauth_required';
   if (!isAccountEnabled(record)) return 'disabled';
   if (!record.configured) return 'unconfigured';
   if (hasBlockingRuntimeStatus(record)) return 'runtime_blocked';

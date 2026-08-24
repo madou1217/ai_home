@@ -27,9 +27,7 @@ import {
 import type { MenuProps } from 'antd';
 import MobileStatGrid from '@/components/mobile/MobileStatGrid';
 import MobilePills from '@/components/mobile/MobilePills';
-import MobileBackButton from '@/components/mobile/MobileBackButton';
 import {
-  ArrowLeftOutlined,
   PlusOutlined,
   DeleteOutlined,
   CheckCircleOutlined,
@@ -89,8 +87,8 @@ import {
   hasKnownUsage,
   isAccountEnabled,
   mergeSingleAccount,
-  partitionAccountsByRecovery,
-  reconcileAccountAfterReauthSuccess
+  reconcileAccountAfterReauthSuccess,
+  requiresAccountReauth
 } from '@/features/accounts/account-state';
 import {
   getAccountModelProbe,
@@ -144,7 +142,6 @@ import {
 } from '@/features/accounts/AccountBadges';
 import AccountActivityIcon from '@/features/accounts/AccountActivityIcon';
 import { startAccountAppEntryPolling } from '@/features/accounts/app-entry-poller';
-import { RecoveryAccountsView } from '@/features/accounts/RecoveryAccountsView';
 
 // Provider 顺序和认证方式都来自 Go 核心生成的 Client 合同。
 const PROVIDERS: readonly Provider[] = providerIds;
@@ -154,6 +151,7 @@ const ACCOUNT_REFRESH_FALLBACK_CLEAR_MS = 70_000;
 type AccountFilterValue =
   | 'all'
   | 'healthy'
+  | 'reauth_required'
   | 'exhausted'
   | 'policy_blocked'
   | 'usage_attention'
@@ -183,6 +181,7 @@ type ProviderStatsBucket = {
   healthy: number;
   exhausted: number;
   policyBlocked: number;
+  reauthRequired: number;
   usageAttention: number;
   runtimeBlocked: number;
   disabled: number;
@@ -197,6 +196,7 @@ function createProviderStatsBucket(): ProviderStatsBucket {
     healthy: 0,
     exhausted: 0,
     policyBlocked: 0,
+    reauthRequired: 0,
     usageAttention: 0,
     runtimeBlocked: 0,
     disabled: 0,
@@ -241,7 +241,6 @@ export default function Accounts() {
   const isMobile = !screens.md;
   const location = useLocation();
   const navigate = useNavigate();
-  const isRecoveryPage = location.pathname === '/accounts/recovery';
   const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
   const {
     accounts,
@@ -253,19 +252,15 @@ export default function Accounts() {
     requestAccountsSnapshotUpdate,
     stageAccountRemoval
   } = useAccountsSnapshot(accountsHandlersRef);
-  const { currentAccounts, recoveryAccounts } = useMemo(
-    () => partitionAccountsByRecovery(accounts),
-    [accounts]
-  );
   const [liveTokenDrops, setLiveTokenDrops] = useState<TokenDropEvent[]>([]);
-  const tokenDrops = useTokenDropEvents(currentAccounts, liveTokenDrops);
+  const tokenDrops = useTokenDropEvents(accounts, liveTokenDrops);
   const {
     modelCatalog,
     refreshingModelAccountRefs,
     refreshAccountModelCatalog,
     clearModelAccountRefreshing,
     loadModelCatalog
-  } = useModelCatalog(currentAccounts);
+  } = useModelCatalog(accounts);
   const [updatingStatusAccountRefs, setUpdatingStatusAccountRefs] = useState<Record<string, boolean>>({});
   const [refreshingUsageAccountRefs, setRefreshingUsageAccountRefs] = useState<Record<string, boolean>>({});
   const [modalVisible, setModalVisible] = useState(false);
@@ -579,9 +574,6 @@ export default function Accounts() {
       completedAuthJobKeysRef.current.add(jobId);
       const successLabel = getAuthJobIdentity(job, authSubjectLabel) || authSubjectLabel || '账号';
       const isReauthSuccess = Boolean(job.reauth) || authFlowKind === 'reauth';
-      const movedToCurrentPool = isReauthSuccess && recoveryAccounts.some((account) => (
-        getAccountRef(account) === String(job.accountRef || '').trim()
-      ));
       if (isReauthSuccess) {
         setAccounts((current) => reconcileAccountAfterReauthSuccess(current, job.accountRef));
       }
@@ -590,7 +582,7 @@ export default function Accounts() {
         setAuthSuccessClosing(true);
         message.success(
           isReauthSuccess
-            ? `${successLabel} 重新认证成功${movedToCurrentPool ? '，已移回当前账号池' : ''}`
+            ? `${successLabel} 重新认证成功`
             : `${successLabel} 授权完成`
         );
         if (successAutoCloseTimerRef.current !== null) {
@@ -608,7 +600,6 @@ export default function Accounts() {
     authSubjectLabel,
     authSuccessClosing,
     closeAuthProgressPanel,
-    recoveryAccounts,
     requestAccountsSnapshotUpdate,
     setAccounts
   ]);
@@ -1332,7 +1323,7 @@ export default function Accounts() {
   const providerStats = useMemo<ProviderStats>(() => {
     const stats = createProviderStats();
 
-    currentAccounts.forEach(account => {
+    accounts.forEach(account => {
       const provider = account.provider;
       const providerBucket = stats[provider];
       if (!providerBucket) return;
@@ -1343,6 +1334,9 @@ export default function Accounts() {
       if (state === 'healthy') {
         stats.all.healthy++;
         providerBucket.healthy++;
+      } else if (state === 'reauth_required') {
+        stats.all.reauthRequired++;
+        providerBucket.reauthRequired++;
       } else if (state === 'exhausted') {
         stats.all.exhausted++;
         providerBucket.exhausted++;
@@ -1365,11 +1359,11 @@ export default function Accounts() {
     });
 
     return stats;
-  }, [currentAccounts]);
+  }, [accounts]);
 
   // 过滤账号
   const filteredAccounts = useMemo(() => {
-    let filtered = currentAccounts;
+    let filtered = accounts;
 
     // 按 provider 过滤
     if (activeProvider !== 'all') {
@@ -1382,7 +1376,7 @@ export default function Accounts() {
     }
 
     return filtered;
-  }, [currentAccounts, activeProvider, filterStatus]);
+  }, [accounts, activeProvider, filterStatus]);
 
   useEffect(() => {
     if (!accountRouteTarget) return;
@@ -1393,29 +1387,20 @@ export default function Accounts() {
 
   useEffect(() => {
     if (!accountRouteTarget || loading) return;
-    const retainedTarget = recoveryAccounts.some((account) => (
-      account.provider === accountRouteTarget.provider
-      && account.accountRef === accountRouteTarget.accountRef
-    ));
-    if (retainedTarget) {
-      if (!isRecoveryPage) {
-        navigate(`/accounts/recovery${location.search}`, { replace: true });
-        return;
-      }
-      const row = document.querySelector<HTMLElement>(`[data-account-ref="${accountRouteTarget.accountRef}"]`);
-      row?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-      return;
-    }
     const row = document.querySelector<HTMLElement>(`[data-account-ref="${accountRouteTarget.accountRef}"]`);
     row?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  }, [accountRouteTarget, filteredAccounts, isRecoveryPage, loading, location.search, navigate, recoveryAccounts]);
+  }, [accountRouteTarget, filteredAccounts, loading]);
 
-  const openModelManagement = React.useCallback((record: Pick<Account, 'provider' | 'accountRef'>) => {
+  const openModelManagement = React.useCallback((record: Account) => {
+    if (requiresAccountReauth(record)) return;
     navigate(`/accounts/${encodeURIComponent(record.provider)}/${encodeURIComponent(record.accountRef)}/models`);
   }, [navigate]);
 
   // 账号操作菜单（⋮）—— 桌面表格列和移动卡片共用同一套 items + 点击分发，避免逻辑分叉。
   const buildAccountMenuItems = (record: Account): MenuProps['items'] => {
+    if (requiresAccountReauth(record)) {
+      return [{ key: 'reauth', label: '重新登录', icon: <SyncOutlined /> }];
+    }
     const menuItems: MenuProps['items'] = [];
     menuItems.push({
       key: 'set-default',
@@ -1457,6 +1442,7 @@ export default function Accounts() {
   };
 
   const handleAccountMenuClick = (record: Account, key: string) => {
+    if (requiresAccountReauth(record) && key !== 'reauth') return;
     if (key === 'set-default') { handleSetDefault(record); return; }
     if (key === 'set-mobile') { handleSetMobile(record); return; }
     if (key === 'codex-reset-credits' && isCodexOAuthResetEligible(record)) {
@@ -1488,6 +1474,7 @@ export default function Accounts() {
       key: 'displayName',
       width: 280,
       render: (_text: any, record: Account) => {
+        const requiresReauth = requiresAccountReauth(record);
         const desktopInstalled = Boolean(appEntries?.[record.provider]?.desktop);
         const desktopSupported = Boolean(
           appEntries?.[record.provider]?.desktop || appCapabilities[record.provider]?.desktop
@@ -1542,7 +1529,7 @@ export default function Accounts() {
               {renderAccountRegionTag(record)}
               {/* 操作按钮必须保持语义化图标（DesktopOutlined / CodeOutlined），禁止替换为 ProviderIcon，避免与行首厂商主图标混淆 */}
               {appEntries && desktopSupported ? (
-                <Tooltip title={!record.configured ? '账号未配置，完成授权后可打开 Desktop' : record.runtimeStatus === 'auth_invalid' ? '认证已失效，请重新登录' : runningAccounts.includes(getAccountRef(record)) ? 'Desktop 运行中（点击关闭）' : desktopInstalled ? '打开 Desktop' : '未安装 Desktop，点击后确认安装'}>
+                <Tooltip title={requiresReauth ? '需要重新登录后才能打开 Desktop' : !record.configured ? '账号未配置，完成授权后可打开 Desktop' : runningAccounts.includes(getAccountRef(record)) ? 'Desktop 运行中（点击关闭）' : desktopInstalled ? '打开 Desktop' : '未安装 Desktop，点击后确认安装'}>
                   <Badge dot={runningAccounts.includes(getAccountRef(record))} status="success">
                     <Button
                       className={desktopEntryClassName}
@@ -1552,7 +1539,7 @@ export default function Accounts() {
                         ? `打开 ${providerNames[record.provider] || record.provider} Desktop`
                         : `安装 ${providerNames[record.provider] || record.provider} Desktop`}
                       icon={<DesktopOutlined />}
-                      disabled={!record.configured || record.runtimeStatus === 'auth_invalid'}
+                      disabled={requiresReauth || !record.configured}
                       onClick={(event: any) => {
                         event?.stopPropagation?.();
                         handleOpenApp(record, 'desktop');
@@ -1562,12 +1549,13 @@ export default function Accounts() {
                 </Tooltip>
               ) : null}
               {record.provider === 'kimi' ? (
-                <Tooltip title="桌面托管登录（微信扫码）">
+                <Tooltip title={requiresReauth ? '需要重新登录后才能使用桌面托管登录' : '桌面托管登录（微信扫码）'}>
                   <Button
                     type="text"
                     size="small"
                     aria-label="kimi 桌面托管登录"
                     icon={<QrcodeOutlined />}
+                    disabled={requiresReauth}
                     onClick={(event: any) => {
                       event?.stopPropagation?.();
                       setKimiDesktopLoginRequest({ account: record, openAfterLogin: false });
@@ -1576,7 +1564,7 @@ export default function Accounts() {
                 </Tooltip>
               ) : null}
               {appEntries && cliSupported ? (
-                <Tooltip title={!record.configured ? '账号未配置，完成授权后可打开 CLI' : record.runtimeStatus === 'auth_invalid' ? '认证已失效，请重新登录' : cliInstalled ? '单击选择终端，双击使用系统默认终端' : '未安装原生 CLI，点击后确认安装'}>
+                <Tooltip title={requiresReauth ? '需要重新登录后才能打开 CLI' : !record.configured ? '账号未配置，完成授权后可打开 CLI' : cliInstalled ? '单击选择终端，双击使用系统默认终端' : '未安装原生 CLI，点击后确认安装'}>
                   <Button
                     className={cliEntryClassName}
                     type="text"
@@ -1585,7 +1573,7 @@ export default function Accounts() {
                       ? `打开 ${providerNames[record.provider] || record.provider} CLI`
                       : `安装 ${providerNames[record.provider] || record.provider} CLI`}
                     icon={<CodeOutlined />}
-                    disabled={!record.configured || record.runtimeStatus === 'auth_invalid'}
+                    disabled={requiresReauth || !record.configured}
                     onClick={(event: any) => {
                       event?.stopPropagation?.();
                       if (!cliInstalled) {
@@ -1616,6 +1604,7 @@ export default function Accounts() {
       render: (_status: any, record: Account) => {
         const accountRef = getAccountRef(record);
         const enabled = isAccountEnabled(record);
+        const requiresReauth = requiresAccountReauth(record);
         return (
           <span style={{ display: 'inline-flex', justifyContent: 'center', width: 64 }}>
             <Switch
@@ -1623,6 +1612,7 @@ export default function Accounts() {
               checkedChildren="启用"
               unCheckedChildren="关闭"
               loading={Boolean(updatingStatusAccountRefs[accountRef])}
+              disabled={requiresReauth}
               onChange={(checked) => handleToggleStatus(record, checked)}
             />
           </span>
@@ -1673,23 +1663,24 @@ export default function Accounts() {
       key: 'modelProbe',
       width: 180,
       render: (_value: any, record: Account) => {
+        const requiresReauth = requiresAccountReauth(record);
         const probe = getAccountModelProbe(record, modelCatalog);
         const modelRefreshing = Boolean(refreshingModelAccountRefs[getModelRefreshAccountRef(record)]);
         const tagLabel = getModelProbeTagLabel(probe, modelRefreshing);
         return (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} className="accounts-model-probe">
             <span
-              className="accounts-model-probe-badge-link"
-              role="button"
-              tabIndex={0}
-              onClick={() => openModelManagement(record)}
-              onKeyDown={(event) => {
+              className={requiresReauth ? undefined : 'accounts-model-probe-badge-link'}
+              role={requiresReauth ? undefined : 'button'}
+              tabIndex={requiresReauth ? undefined : 0}
+              onClick={requiresReauth ? undefined : () => openModelManagement(record)}
+              onKeyDown={requiresReauth ? undefined : (event) => {
                 if (event.key !== 'Enter' && event.key !== ' ') return;
                 event.preventDefault();
                 openModelManagement(record);
               }}
               style={{
-                cursor: 'pointer',
+                cursor: requiresReauth ? 'default' : 'pointer',
                 display: 'inline-flex',
                 alignItems: 'center',
                 transition: 'opacity 0.2s'
@@ -1708,6 +1699,7 @@ export default function Accounts() {
                 size="small"
                 icon={<ReloadOutlined />}
                 loading={modelRefreshing}
+                disabled={requiresReauth}
                 onClick={() => refreshAccountModelCatalog(record)}
               />
             </Tooltip>
@@ -1793,19 +1785,25 @@ export default function Accounts() {
     {
       title: '操作',
       key: 'actions',
-      width: 80,
+      width: 112,
       align: 'center' as const,
       fixed: 'right' as const,
       render: (_: any, record: Account) => (
-        <Dropdown
-          menu={{
-            items: buildAccountMenuItems(record),
-            onClick: ({ key }: { key: string }) => handleAccountMenuClick(record, key)
-          }}
-          trigger={['click']}
-        >
-          <Button type="text" icon={<MoreOutlined />} />
-        </Dropdown>
+        requiresAccountReauth(record) ? (
+          <Button type="link" size="small" icon={<SyncOutlined />} onClick={() => handleReauth(record)}>
+            重新登录
+          </Button>
+        ) : (
+          <Dropdown
+            menu={{
+              items: buildAccountMenuItems(record),
+              onClick: ({ key }: { key: string }) => handleAccountMenuClick(record, key)
+            }}
+            trigger={['click']}
+          >
+            <Button type="text" icon={<MoreOutlined />} />
+          </Dropdown>
+        )
       )
     }
   ];
@@ -1815,6 +1813,7 @@ export default function Accounts() {
   const renderAccountCard = (record: Account) => {
     const accountRef = getAccountRef(record);
     const enabled = isAccountEnabled(record);
+    const requiresReauth = requiresAccountReauth(record);
     const probe = getAccountModelProbe(record, modelCatalog);
     const modelRefreshing = Boolean(refreshingModelAccountRefs[getModelRefreshAccountRef(record)]);
     const lastUsed = formatTimeCell(record.lastUsedAt);
@@ -1834,8 +1833,18 @@ export default function Accounts() {
             ) : null}
           </div>
           <div className="mobile-card-head-action">
-            <button className="m-card-more" aria-label="更多操作" onClick={() => setActionAccount(record)}>
-              <MoreOutlined />
+            <button
+              className="m-card-more"
+              aria-label={requiresReauth ? '重新登录' : '更多操作'}
+              onClick={() => {
+                if (requiresReauth) {
+                  void handleReauth(record);
+                  return;
+                }
+                setActionAccount(record);
+              }}
+            >
+              {requiresReauth ? <SyncOutlined /> : <MoreOutlined />}
             </button>
           </div>
         </div>
@@ -1845,10 +1854,10 @@ export default function Accounts() {
           <span className="account-mobile-status">{renderAccountDisplayBadge(record)}</span>
           {renderAccountRegionTag(record)}
           <span
-            className="account-mobile-probe"
-            role="button"
-            tabIndex={0}
-            onClick={() => openModelManagement(record)}
+            className={requiresReauth ? undefined : 'account-mobile-probe'}
+            role={requiresReauth ? undefined : 'button'}
+            tabIndex={requiresReauth ? undefined : 0}
+            onClick={requiresReauth ? undefined : () => openModelManagement(record)}
           >
             <Badge
               status={getModelProbeTagColor(probe, modelRefreshing) as any}
@@ -1877,6 +1886,7 @@ export default function Accounts() {
             checkedChildren="启用"
             unCheckedChildren="关闭"
             loading={Boolean(updatingStatusAccountRefs[accountRef])}
+            disabled={requiresReauth}
             onChange={(checked) => handleToggleStatus(record, checked)}
           />
           <span className="mobile-card-foot-hint">
@@ -1889,7 +1899,7 @@ export default function Accounts() {
 
   // provider tab 聚合账号活动，复用行首图标组件，保证转轴与速率语义完全一致。
   const providerActivity: Record<string, ManagementAccountActivity> = {};
-  currentAccounts.forEach((account) => {
+  accounts.forEach((account) => {
     const activity = getAccountActivity(account);
     if (!activity) return;
     const provider = String(account.provider).toLowerCase();
@@ -1953,40 +1963,10 @@ export default function Accounts() {
 
   return (
     <PageScaffold ghost
-      title={isRecoveryPage ? '待恢复账号' : '账号池管理'}
-      subTitle={isRecoveryPage
-        ? '集中处理因认证失效而暂时移出账号池的账号。'
-        : '统一管理 OAuth 和密钥账号；密钥账号的网络可达性以模型探测为准。'}
-      extra={isRecoveryPage ? (isMobile ? (
+      title="账号管理"
+      subTitle="统一管理 OAuth 和密钥账号；密钥账号的网络可达性以模型探测为准。"
+      extra={isMobile ? (
         <div className="m-header-actions">
-          <MobileBackButton
-            className="m-icon-btn"
-            title="返回账号池"
-            onClick={() => navigate('/accounts')}
-          />
-          <button
-            className="m-icon-btn primary"
-            aria-label="刷新待恢复账号"
-            disabled={refreshing}
-            onClick={handleReload}
-          >
-            <SyncOutlined spin={refreshing} />
-          </button>
-        </div>
-      ) : (
-        <>
-          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/accounts')}>
-            返回账号池
-          </Button>
-          <Button icon={<SyncOutlined />} loading={refreshing} onClick={handleReload}>
-            刷新
-          </Button>
-        </>
-      )) : isMobile ? (
-        <div className="m-header-actions">
-          <Badge count={recoveryAccounts.length} size="small">
-            <button className="m-icon-btn" aria-label={`待恢复账号 ${recoveryAccounts.length}`} onClick={() => navigate('/accounts/recovery')}><UndoOutlined /></button>
-          </Badge>
           <Popover
             trigger="click" placement="bottomRight" arrow={false}
             open={exportMenuOpen} onOpenChange={setExportMenuOpen}
@@ -1999,13 +1979,6 @@ export default function Accounts() {
         </div>
       ) : (
         <>
-          <Button
-            key="recovery"
-            icon={<UndoOutlined />}
-            onClick={() => navigate('/accounts/recovery')}
-          >
-            待恢复 ({recoveryAccounts.length})
-          </Button>
           <Popover
             key="export"
             trigger="click"
@@ -2043,23 +2016,10 @@ export default function Accounts() {
         </>
       )}
     >
-      {isRecoveryPage ? (
-        <RecoveryAccountsView
-          accounts={recoveryAccounts}
-          loading={loading}
-          highlightedAccountRef={accountRouteTarget?.accountRef}
-          removingAccountRefs={removingAccountRefs}
-          onReauth={(record) => {
-            void handleReauth(record);
-          }}
-          onDelete={(record) => handleAccountMenuClick(record, 'delete')}
-        />
-      ) : (
-        <>
-          {/* 顶部统计。移动端用专属 MobileStatGrid（2 列，数值不换行）；桌面保留 StatisticCard.Group。 */}
-          {isMobile ? (
-        /* 手机版只保留两张有信息量的卡:正常可用 / 耗尽·停用。
-           「账号状态」恒为就绪、「待处理问题」常为 0,信息量低,已移除;
+      {/* 顶部统计。移动端用专属 MobileStatGrid（2 列，数值不换行）；桌面保留 StatisticCard.Group。 */}
+      {isMobile ? (
+        /* 手机版只保留两张有信息量的卡:正常可用 / 需登录·不可用。
+           「账号状态」恒为就绪,信息量低,已移除;
            每个账号卡自身已展示状态与用量。 */
         <MobileStatGrid
           items={[
@@ -2070,10 +2030,10 @@ export default function Accounts() {
             },
             {
               key: 'exhausted',
-              label: '耗尽/停用',
-              value: providerStats[activeProvider].exhausted + providerStats[activeProvider].policyBlocked,
-              hint: `耗尽 ${providerStats[activeProvider].exhausted} · 停池 ${providerStats[activeProvider].policyBlocked}`,
-              valueColor: providerStats[activeProvider].exhausted + providerStats[activeProvider].policyBlocked > 0
+              label: '需登录/不可用',
+              value: providerStats[activeProvider].reauthRequired + providerStats[activeProvider].exhausted + providerStats[activeProvider].policyBlocked,
+              hint: `需登录 ${providerStats[activeProvider].reauthRequired} · 耗尽 ${providerStats[activeProvider].exhausted} · 停池 ${providerStats[activeProvider].policyBlocked}`,
+              valueColor: providerStats[activeProvider].reauthRequired + providerStats[activeProvider].exhausted + providerStats[activeProvider].policyBlocked > 0
                 ? 'var(--color-danger, #dc2626)' : undefined
             }
           ]}
@@ -2096,10 +2056,10 @@ export default function Accounts() {
           <StatisticCard
             statistic={{
               title: '待处理问题',
-              value: providerStats[activeProvider].runtimeBlocked + providerStats[activeProvider].usageAttention,
-              description: `阻塞 ${providerStats[activeProvider].runtimeBlocked} · 待校准 ${providerStats[activeProvider].usageAttention}`,
+              value: providerStats[activeProvider].reauthRequired + providerStats[activeProvider].runtimeBlocked + providerStats[activeProvider].usageAttention,
+              description: `需登录 ${providerStats[activeProvider].reauthRequired} · 阻塞 ${providerStats[activeProvider].runtimeBlocked} · 待校准 ${providerStats[activeProvider].usageAttention}`,
               valueStyle: {
-                color: providerStats[activeProvider].runtimeBlocked + providerStats[activeProvider].usageAttention > 0
+                color: providerStats[activeProvider].reauthRequired + providerStats[activeProvider].runtimeBlocked + providerStats[activeProvider].usageAttention > 0
                   ? 'var(--color-warning, #d97706)'
                   : undefined
               }
@@ -2177,6 +2137,7 @@ export default function Accounts() {
                 items={[
                   { key: 'all', label: '全部状态' },
                   { key: 'healthy', label: '正常可用' },
+                  { key: 'reauth_required', label: '需要重新登录' },
                   { key: 'runtime_blocked', label: '运行阻塞' },
                   { key: 'usage_attention', label: '额度待确认' },
                   { key: 'policy_blocked', label: '已停池' },
@@ -2223,13 +2184,13 @@ export default function Accounts() {
             </Drawer>
           </div>
         ) : (
-          <SectionCard title="当前账号池">
+          <SectionCard title="账号列表">
           <ListTable
             headerTitle={
               <Space size={12}>
                 <Badge status="success" text={`可用 ${providerStats[activeProvider].healthy}`} />
-                {providerStats[activeProvider].runtimeBlocked + providerStats[activeProvider].usageAttention > 0 && (
-                  <Badge status="warning" text={`待处理 ${providerStats[activeProvider].runtimeBlocked + providerStats[activeProvider].usageAttention}`} />
+                {providerStats[activeProvider].reauthRequired + providerStats[activeProvider].runtimeBlocked + providerStats[activeProvider].usageAttention > 0 && (
+                  <Badge status="warning" text={`待处理 ${providerStats[activeProvider].reauthRequired + providerStats[activeProvider].runtimeBlocked + providerStats[activeProvider].usageAttention}`} />
                 )}
                 {providerStats[activeProvider].exhausted + providerStats[activeProvider].policyBlocked > 0 && (
                   <Badge status="error" text={`不可用 ${providerStats[activeProvider].exhausted + providerStats[activeProvider].policyBlocked}`} />
@@ -2259,10 +2220,11 @@ export default function Accounts() {
                   key="status-filter"
                   value={filterStatus}
                   onChange={setFilterStatus}
-                  style={{ width: 140 }}
+                  style={{ width: 156 }}
                   options={[
                     { label: '全部状态', value: 'all' },
                     { label: '正常可用', value: 'healthy' },
+                    { label: '需要重新登录', value: 'reauth_required' },
                     { label: '运行阻塞', value: 'runtime_blocked' },
                     { label: '额度待确认', value: 'usage_attention' },
                     { label: '已停池', value: 'policy_blocked' },
@@ -2287,8 +2249,6 @@ export default function Accounts() {
           />
           </SectionCard>
         )}
-        </>
-      )}
 
       <EditAccountModal
         open={editModalVisible}

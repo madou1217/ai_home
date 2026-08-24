@@ -104,7 +104,8 @@ test('Windows 系统默认终端以 verbatim 命令行把整段命令包进新�
   const launch = resolveClientTerminalLaunch(DEFAULT_TERMINAL_ID, command, 'aih codex 12', {
     platform: 'windows',
     path: nodePath.win32,
-    env: { PATH: 'C:\\tools' }
+    env: { PATH: 'C:\\tools' },
+    fs: fakeFs([])
   });
   assert.equal(launch.terminalId, DEFAULT_TERMINAL_ID);
   assert.equal(launch.file, 'cmd.exe');
@@ -196,6 +197,21 @@ test('Windows Terminal 的 Store 别名通过 wt.exe 命令名交给 start', () 
   });
   assert.equal(launch.file, 'cmd.exe');
   assert.match(launch.args[3], /^start "" wt\.exe /);
+});
+
+test('Windows Terminal 优先使用 AppX 包内的真实 WindowsTerminal.exe', () => {
+  const packageRoot = 'C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.24.11911.0_x64__8wekyb3d8bbwe';
+  const executable = `${packageRoot}\\WindowsTerminal.exe`;
+  const launch = resolveClientTerminalLaunch('windows-terminal', 'echo ready', 'aih codex 3', {
+    platform: 'windows',
+    path: nodePath.win32,
+    env: { PATH: 'C:\\Users\\madou\\AppData\\Local\\Microsoft\\WindowsApps' },
+    fs: fakeFs([executable, 'C:\\Users\\madou\\AppData\\Local\\Microsoft\\WindowsApps\\wt.exe']),
+    execFileSync: () => `${packageRoot}\r\n`
+  });
+  assert.equal(launch.terminalExecutable, executable);
+  assert.match(launch.args[3], new RegExp(`start "" "${packageRoot.replace(/\\/g, '\\\\')}\\\\WindowsTerminal\\.exe"`));
+  assert.doesNotMatch(launch.args[3], /start "" wt\.exe/);
 });
 
 test('CMD 终端适配器用 cmd start 打开 conhost 窗口', () => {

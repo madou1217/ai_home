@@ -333,6 +333,21 @@ test('非 zcode Provider 的 desktop 启动不注入 ZCODE_DESKTOP_APPLICATION_N
   assert.equal(fakeSpawn.calls[0].options.env.ZCODE_DESKTOP_APPLICATION_NAME, undefined);
 });
 
+test('codex desktop 不把 app\\resources\\codex.exe 当作桌面入口', () => {
+  const resourcesExe = 'C:\\Users\\x\\AppData\\Local\\OpenAI\\Codex\\desktop-portable\\26.623.13972.0\\app\\resources\\Codex.exe';
+  const appExe = 'C:\\Users\\x\\AppData\\Local\\OpenAI\\Codex\\desktop-portable\\26.623.13972.0\\app\\Codex.exe';
+  const { launcher, fakeSpawn } = createLauncher({
+    fs: createFakeFs([resourcesExe, appExe]),
+    env: { PATH: 'C:\\Users\\x\\AppData\\Local\\OpenAI\\Codex\\desktop-portable\\26.623.13972.0\\app\\resources', USERPROFILE: 'C:\\Users\\x' },
+    resolveAccount: () => ({ accountRef: ACCOUNT_REF, provider: 'codex', cliAccountId: '3' })
+  });
+  const result = launcher.launchAccountApp({ provider: 'codex', accountRef: ACCOUNT_REF, kind: 'desktop' });
+  assert.equal(result.ok, true);
+  assert.equal(result.executable, appExe);
+  assert.equal(fakeSpawn.calls[0].file, appExe);
+  assert.equal(fakeSpawn.calls[0].options.windowsHide, false);
+});
+
 test('codex desktop 为每个账号注入独立 CODEX_ELECTRON_USER_DATA_PATH', () => {
   const bundlePath = '/Applications/ChatGPT.app';
   const executablePath = `${bundlePath}/Contents/MacOS/ChatGPT`;

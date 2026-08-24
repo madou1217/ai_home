@@ -33,15 +33,32 @@ test('claude refresh posts the official contract and persists refreshed auth to 
   });
 
   const calls = [];
+  const resolvedInputs = [];
   const result = await refreshClaudeAccessToken({
     accountRef: registration.accountRef,
     provider: 'claude',
     tokenExpiresAt: Date.now() - 60_000
-  }, { force: true }, {
+  }, {
+    force: true,
+    proxyUrl: 'http://global-proxy.example:7890',
+    noProxy: 'global.example'
+  }, {
     fs,
     aiHomeDir,
-    fetchWithTimeout: async (url, options) => {
-      calls.push({ url, body: JSON.parse(options.body) });
+    async resolveAccountEgressRequestOptions(input) {
+      resolvedInputs.push(input);
+      return {
+        ok: true,
+        bound: true,
+        options: {
+          ...input.options,
+          proxyUrl: 'http://127.0.0.1:23113',
+          noProxy: 'localhost,127.0.0.1,::1'
+        }
+      };
+    },
+    fetchWithTimeout: async (url, options, _timeoutMs, proxyOptions) => {
+      calls.push({ url, body: JSON.parse(options.body), proxyOptions });
       return {
         ok: true,
         status: 200,
@@ -57,7 +74,14 @@ test('claude refresh posts the official contract and persists refreshed auth to 
   assert.equal(result.ok, true);
   assert.equal(result.refreshed, true);
   assert.equal(result.persisted, true);
+  assert.equal(resolvedInputs.length, 1);
+  assert.equal(resolvedInputs[0].provider, 'claude');
+  assert.equal(resolvedInputs[0].accountRef, registration.accountRef);
   assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0].proxyOptions, {
+    proxyUrl: 'http://127.0.0.1:23113',
+    noProxy: 'localhost,127.0.0.1,::1'
+  });
   assert.equal(calls[0].url, 'https://platform.claude.com/v1/oauth/token');
   assert.equal(calls[0].body.grant_type, 'refresh_token');
   assert.equal(calls[0].body.refresh_token, 'sk-ant-ort01-refresh');

@@ -1,16 +1,18 @@
-import { useEffect, useMemo, useState } from 'react';
-import { RetweetOutlined, SettingOutlined } from '@ant-design/icons';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ImportOutlined, RetweetOutlined, SettingOutlined } from '@ant-design/icons';
 import { Button, Form, Input, Modal, Radio, Select, Space, Spin, Tag, Typography, message } from 'antd';
+import ProxyImportModal from '@/components/toolkit/proxy-pool/ProxyImportModal';
 import { accountsAPI, proxyPoolAPI } from '@/services/api';
 import { getAccountPrimaryLabel } from '@/features/accounts/AccountBadges';
 import type {
   Account,
+  AccountEgressApplyResult,
+  AccountEgressMode,
+  AccountEgressRotateResponse,
+  AccountEgressRuntimeStatus,
   ProxyGroup,
   ProxyNode,
-  ZcodeEgressApplyResult,
-  ZcodeEgressMode,
-  ZcodeEgressRotateResponse,
-  ZcodeEgressRuntimeStatus
+  ProxyNodesResponse
 } from '@/types';
 import { ZcodeProxyGroupManagerModal } from './ZcodeProxyGroupManagerModal';
 import {
@@ -21,36 +23,64 @@ import {
   formatProxyNodeLabel
 } from './zcode-egress-presentation';
 
-interface ZcodeEgressFormValues {
-  mode: ZcodeEgressMode;
+interface AccountEgressFormValues {
+  mode: AccountEgressMode;
   proxyUrl?: string;
   nodeId?: string;
   groupId?: string;
 }
 
-interface ZcodeEgressModalProps {
+interface AccountEgressModalProps {
   account: Account | null;
   onClose: () => void;
 }
 
-export function ZcodeEgressModal({ account, onClose }: ZcodeEgressModalProps) {
-  const [form] = Form.useForm<ZcodeEgressFormValues>();
+export function AccountEgressModal({ account, onClose }: AccountEgressModalProps) {
+  const [form] = Form.useForm<AccountEgressFormValues>();
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [nodes, setNodes] = useState<ProxyNode[]>([]);
   const [groups, setGroups] = useState<ProxyGroup[]>([]);
   const [nodesUnavailable, setNodesUnavailable] = useState(false);
   const [hasBinding, setHasBinding] = useState(false);
-  const [applyResult, setApplyResult] = useState<ZcodeEgressApplyResult | null>(null);
-  const [runtime, setRuntime] = useState<ZcodeEgressRuntimeStatus | null>(null);
+  const [applyResult, setApplyResult] = useState<AccountEgressApplyResult | null>(null);
+  const [runtime, setRuntime] = useState<AccountEgressRuntimeStatus | null>(null);
   const [runtimeError, setRuntimeError] = useState('');
   const [rotating, setRotating] = useState(false);
   const [groupManagerOpen, setGroupManagerOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const mode = Form.useWatch('mode', form) || 'url';
   const selectedGroupId = Form.useWatch('groupId', form) || '';
+  const usesNativeSettings = account?.provider === 'zcode';
+
+  const applyNodeLibrary = useCallback((response: ProxyNodesResponse) => {
+    setNodes((response.nodes || []).filter((node) => (
+      ZCODE_SIDECAR_PROTOCOLS.has(node.protocol)
+    )));
+    setGroups((response.groups || []).filter((group) => group.id !== 'dedicated'));
+    setNodesUnavailable(false);
+  }, []);
+
+  const markNodeLibraryUnavailable = useCallback(() => {
+    setNodes([]);
+    setGroups([]);
+    setNodesUnavailable(true);
+  }, []);
+
+  const refreshNodeLibrary = useCallback(async () => {
+    try {
+      applyNodeLibrary(await proxyPoolAPI.listNodes());
+    } catch {
+      markNodeLibraryUnavailable();
+    }
+  }, [applyNodeLibrary, markNodeLibraryUnavailable]);
 
   useEffect(() => {
-    if (!account) return undefined;
+    if (!account) {
+      setGroupManagerOpen(false);
+      setImportOpen(false);
+      return undefined;
+    }
     let cancelled = false;
     setLoading(true);
     setNodesUnavailable(false);
@@ -58,6 +88,7 @@ export function ZcodeEgressModal({ account, onClose }: ZcodeEgressModalProps) {
     setRuntime(null);
     setRuntimeError('');
     setGroupManagerOpen(false);
+    setImportOpen(false);
     form.setFieldsValue({
       mode: 'url',
       proxyUrl: '',
@@ -66,7 +97,7 @@ export function ZcodeEgressModal({ account, onClose }: ZcodeEgressModalProps) {
     });
 
     void Promise.allSettled([
-      accountsAPI.getZcodeEgress(account.accountRef),
+      accountsAPI.getAccountEgress(account.provider, account.accountRef),
       proxyPoolAPI.listNodes()
     ]).then(([bindingResult, nodesResult]) => {
       if (cancelled) return;
@@ -85,20 +116,13 @@ export function ZcodeEgressModal({ account, onClose }: ZcodeEgressModalProps) {
         }
       } else {
         setHasBinding(false);
-        message.error('读取 ZCode 出口绑定失败');
+        message.error('读取账号出口绑定失败');
       }
 
       if (nodesResult.status === 'fulfilled') {
-        setNodes((nodesResult.value.nodes || []).filter((node) => (
-          ZCODE_SIDECAR_PROTOCOLS.has(node.protocol)
-        )));
-        setGroups((nodesResult.value.groups || []).filter((group) => (
-          group.id !== 'dedicated'
-        )));
+        applyNodeLibrary(nodesResult.value);
       } else {
-        setNodes([]);
-        setGroups([]);
-        setNodesUnavailable(true);
+        markNodeLibraryUnavailable();
       }
     }).finally(() => {
       if (!cancelled) setLoading(false);
@@ -107,7 +131,7 @@ export function ZcodeEgressModal({ account, onClose }: ZcodeEgressModalProps) {
     return () => {
       cancelled = true;
     };
-  }, [account, form]);
+  }, [account, applyNodeLibrary, form, markNodeLibraryUnavailable]);
 
   const nodeOptions = useMemo(() => nodes.map((node) => ({
     value: node.id,
@@ -134,7 +158,7 @@ export function ZcodeEgressModal({ account, onClose }: ZcodeEgressModalProps) {
   );
 
   const updateRuntime = (response: {
-    runtime?: ZcodeEgressRuntimeStatus | null;
+    runtime?: AccountEgressRuntimeStatus | null;
     runtimeError?: string;
   }) => {
     if (Object.prototype.hasOwnProperty.call(response, 'runtime')) {
@@ -143,7 +167,7 @@ export function ZcodeEgressModal({ account, onClose }: ZcodeEgressModalProps) {
     setRuntimeError(response.runtimeError || '');
   };
 
-  const reportApplyResult = (apply: ZcodeEgressApplyResult | undefined, cleared = false) => {
+  const reportApplyResult = (apply: AccountEgressApplyResult | undefined, cleared = false) => {
     setApplyResult(apply || null);
     if (apply && !apply.ok) {
       message.warning(cleared ? '绑定已解除，但运行中出口切换失败' : '绑定已保存，但运行中出口切换失败');
@@ -153,12 +177,12 @@ export function ZcodeEgressModal({ account, onClose }: ZcodeEgressModalProps) {
       message.success(cleared ? '绑定已解除，将在下次启动时恢复原生设置' : '绑定已保存，将在下次启动时应用');
       return;
     }
-    message.success(cleared ? '绑定已解除并已实时应用' : 'ZCode 账号出口已实时应用');
+    message.success(cleared ? '绑定已解除并已实时应用' : '账号出口已实时应用');
   };
 
   const saveBinding = async () => {
     if (!account || submitting) return;
-    let values: ZcodeEgressFormValues;
+    let values: AccountEgressFormValues;
     try {
       values = await form.validateFields();
     } catch {
@@ -172,12 +196,12 @@ export function ZcodeEgressModal({ account, onClose }: ZcodeEgressModalProps) {
     };
     setSubmitting(true);
     try {
-      const response = await accountsAPI.saveZcodeEgress(account.accountRef, binding);
+      const response = await accountsAPI.saveAccountEgress(account.provider, account.accountRef, binding);
       setHasBinding(Boolean(response.binding));
       updateRuntime(response);
       reportApplyResult(response.apply);
     } catch (error: any) {
-      message.error(error?.response?.data?.error || error?.message || '保存 ZCode 出口失败');
+      message.error(error?.response?.data?.error || error?.message || '保存账号出口失败');
     } finally {
       setSubmitting(false);
     }
@@ -187,13 +211,13 @@ export function ZcodeEgressModal({ account, onClose }: ZcodeEgressModalProps) {
     if (!account || submitting) return;
     setSubmitting(true);
     try {
-      const response = await accountsAPI.saveZcodeEgress(account.accountRef, null);
+      const response = await accountsAPI.saveAccountEgress(account.provider, account.accountRef, null);
       setHasBinding(false);
       updateRuntime(response);
       form.setFieldsValue({ mode: 'url', proxyUrl: '', nodeId: undefined, groupId: undefined });
       reportApplyResult(response.apply, true);
     } catch (error: any) {
-      message.error(error?.response?.data?.error || error?.message || '解除 ZCode 出口绑定失败');
+      message.error(error?.response?.data?.error || error?.message || '解除账号出口绑定失败');
     } finally {
       setSubmitting(false);
     }
@@ -203,20 +227,20 @@ export function ZcodeEgressModal({ account, onClose }: ZcodeEgressModalProps) {
     if (!account || rotating || submitting || !runtime?.canRotate) return;
     setRotating(true);
     try {
-      const response = await accountsAPI.rotateZcodeEgress(account.accountRef);
+      const response = await accountsAPI.rotateAccountEgress(account.provider, account.accountRef);
       updateRuntime(response);
       setApplyResult(response);
       message.success('已切换到新的分组节点，账号固定本地端口保持不变');
     } catch (error: any) {
-      const response = error?.response?.data as ZcodeEgressRotateResponse | undefined;
+      const response = error?.response?.data as AccountEgressRotateResponse | undefined;
       if (response) {
         updateRuntime(response);
         setApplyResult(response);
       }
       if (response?.rolledBack) {
-        message.warning('替代节点均不可用，已恢复原节点、租约和 ZCode 进程归属');
+        message.warning('替代节点均不可用，已恢复原节点、租约和账号进程归属');
       } else {
-        message.error(response?.error || error?.message || '切换 ZCode 代理节点失败');
+        message.error(response?.error || error?.message || '切换账号代理节点失败');
       }
     } finally {
       setRotating(false);
@@ -243,7 +267,7 @@ export function ZcodeEgressModal({ account, onClose }: ZcodeEgressModalProps) {
     <>
       <Modal
         open={Boolean(account)}
-        title={account ? `出口设置 · ${getAccountPrimaryLabel(account)}` : 'ZCode 出口设置'}
+        title={account ? `出口设置 · ${getAccountPrimaryLabel(account)}` : '账号出口设置'}
         width={720}
         destroyOnHidden
         maskClosable={!submitting && !rotating}
@@ -276,16 +300,30 @@ export function ZcodeEgressModal({ account, onClose }: ZcodeEgressModalProps) {
         <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
           当前仅支持 macOS。AIH 使用独立 sing-box sidecar，并为每个账号保持固定的
           127.0.0.1 本地端口；它不会改写系统代理，也不会创建或接管 TUN。系统代理和外部 TUN
-          模式都只读取当前状态。订阅地址、YAML 与单节点链接继续在节点库中导入，ZCode 链路只消费
-          解析后的节点，不启动其它代理核心。
+          模式都只读取当前状态。订阅地址、YAML 与单节点链接继续在节点库中导入，账号出口只消费
+          解析后的节点，不启动其它代理核心。未绑定账号不会继承其它账号或宿主进程的代理环境。
         </Typography.Paragraph>
         <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
-          AIH 仅访问中性连通性地址，不调用 ZCode 接口。探测成功后安全合并账号隔离的 ZCode 原生
-          配置；模型、MCP、命令工具和内置浏览器都由客户端自行消费账号的 setting.json。运行中的账号会
-          实时应用；尚未运行的账号在下次启动时应用。绑定无法解析或连通性探测失败时会阻止启动并
-          保留现有设置；绑定记录无法读取或 marker 无法识别时同样阻止启动并保留现有设置。
-          用户手工设置不变，不会直连降级。
+          AIH 仅访问中性连通性地址，不调用 ZCode 接口，也不调用其它 provider 推理接口。绑定无法解析或连通性探测失败时会
+          阻止启动与请求并保留现有设置，不会回退到全局代理或直连。
+          绑定记录无法读取或 marker 无法识别时同样阻止启动并保留现有设置，用户手工设置不变。
+          {usesNativeSettings
+            ? ' ZCode 原生链路中，模型、MCP、命令工具和内置浏览器统一消费账号隔离的 setting.json；用户手工设置会安全合并。'
+            : ' 其他 provider 在 CLI、Desktop 和 Gateway 边界注入该账号的回环代理；不修改系统级网络配置。'}
         </Typography.Paragraph>
+          <Space wrap size={8} style={{ marginBottom: 16 }}>
+            <Button
+              size="small"
+              icon={<ImportOutlined />}
+              disabled={loading || submitting || rotating}
+              onClick={() => setImportOpen(true)}
+            >
+              导入节点或订阅
+            </Button>
+            <Typography.Text type="secondary">
+              只写入中立节点仓；不会启动、重载或停止其它代理核心，也不会更改系统代理或 TUN。
+            </Typography.Text>
+          </Space>
           <Space wrap size={8} style={{ marginBottom: 12 }}>
             <Tag color={runtime?.dataPlaneReady ? 'success' : 'default'}>
               {runtime?.dataPlaneReady ? '数据面就绪' : '未运行'}
@@ -380,7 +418,7 @@ export function ZcodeEgressModal({ account, onClose }: ZcodeEgressModalProps) {
                 <Form.Item
                   name="groupId"
                   label="代理节点组"
-                  extra="按分组策略选择节点，并尽量避免多个 ZCode 账号占用同一节点。"
+                  extra="按分组策略选择节点，并尽量避免多个账号占用同一节点。"
                   rules={[{ required: true, message: '请选择代理节点组' }]}
                 >
                   <Select
@@ -417,6 +455,12 @@ export function ZcodeEgressModal({ account, onClose }: ZcodeEgressModalProps) {
           </Form>
         </Spin>
       </Modal>
+      <ProxyImportModal
+        open={importOpen && Boolean(account)}
+        storageOnly
+        onClose={() => setImportOpen(false)}
+        onImported={refreshNodeLibrary}
+      />
       <ZcodeProxyGroupManagerModal
         open={groupManagerOpen}
         nodes={nodes}
@@ -428,3 +472,6 @@ export function ZcodeEgressModal({ account, onClose }: ZcodeEgressModalProps) {
     </>
   );
 }
+
+// 兼容旧引用；页面和新代码统一使用通用命名。
+export const ZcodeEgressModal = AccountEgressModal;

@@ -67,12 +67,24 @@ test('desktop renderer paths distinguish development from packaged builds', () =
       publicPath: development.publicPath,
       base: development.base,
       fastRefresh: development.fastRefresh,
+      favicons: development.favicons,
     },
-    { history: 'hash', publicPath: '/', base: '/', fastRefresh: false },
+    {
+      history: 'hash',
+      publicPath: '/',
+      base: '/',
+      fastRefresh: false,
+      favicons: ['/ai-home-logo.png'],
+    },
   );
   assert.deepEqual(
-    { history: production.history.type, publicPath: production.publicPath, base: production.base },
-    { history: 'hash', publicPath: './', base: '/' },
+    {
+      history: production.history.type,
+      publicPath: production.publicPath,
+      base: production.base,
+      favicons: production.favicons,
+    },
+    { history: 'hash', publicPath: './', base: '/', favicons: ['./ai-home-logo.png'] },
   );
   assert.deepEqual(
     {
@@ -80,8 +92,15 @@ test('desktop renderer paths distinguish development from packaged builds', () =
       publicPath: browser.publicPath,
       base: browser.base,
       fastRefresh: browser.fastRefresh,
+      favicons: browser.favicons,
     },
-    { history: 'browser', publicPath: '/ui/', base: '/ui', fastRefresh: true },
+    {
+      history: 'browser',
+      publicPath: '/ui/',
+      base: '/ui',
+      fastRefresh: true,
+      favicons: ['/ui/ai-home-logo.png'],
+    },
   );
 });
 

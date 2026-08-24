@@ -6,6 +6,7 @@ const isDesktopBuild = process.env.AIH_DESKTOP_BUILD === "1";
 const isDesktopProductionBuild = isDesktopBuild && process.env.NODE_ENV === "production";
 const isGoAccountsPreview = process.env.AIH_GO_ACCOUNTS_PREVIEW === "1";
 const goAccountsPreviewManagementKey = process.env.AIH_GO_ACCOUNTS_PREVIEW_MANAGEMENT_KEY;
+const publicPath = isDesktopProductionBuild ? "./" : (isDesktopBuild ? "/" : "/ui/");
 
 if (isGoAccountsPreview && !goAccountsPreviewManagementKey) {
   throw new Error("Go 账号 preview 缺少独立 Management Key");
@@ -106,13 +107,14 @@ export default defineConfig({
     title: "AI Home",
     locale: true,
   },
+  favicons: [`${publicPath}ai-home-logo.png`],
   routes,
   npmClient: "npm",
   history: {
     // Packaged Tauri apps cannot rely on an HTTP server to resolve deep links.
     type: isDesktopBuild ? "hash" : "browser",
   },
-  publicPath: isDesktopProductionBuild ? "./" : (isDesktopBuild ? "/" : "/ui/"),
+  publicPath,
   base: isDesktopBuild ? "/" : "/ui",
   outputPath: "dist",
   hash: true,

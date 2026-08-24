@@ -8,7 +8,9 @@ const path = require('node:path');
 
 const {
   handleOpenAccountAppRequest,
-  handleListAppEntriesRequest
+  handleListAppEntriesRequest,
+  resolveAccountAppErrorMessage,
+  resolveAccountAppErrorStatus
 } = require('../lib/server/webui-account-routes');
 const { upsertAccountRef } = require('../lib/server/account-ref-store');
 const { writeAccountCredentials } = require('../lib/server/account-credential-store');
@@ -68,6 +70,18 @@ function createOpenAppCtx(fixture, payload) {
     writeJson
   };
 }
+
+test('通用账号出口错误映射为稳定 HTTP 状态和非 ZCode 文案', () => {
+  const unavailable = { error: 'account_egress_unavailable' };
+  const unreadable = { error: 'account_egress_binding_unavailable' };
+
+  assert.equal(resolveAccountAppErrorStatus(unavailable), 503);
+  assert.equal(resolveAccountAppErrorStatus(unreadable), 500);
+  assert.match(resolveAccountAppErrorMessage(unavailable), /账号出口.*不可用.*Desktop 未启动/);
+  assert.match(resolveAccountAppErrorMessage(unreadable), /账号出口绑定.*无法读取.*客户端设置保持不变/);
+  assert.doesNotMatch(resolveAccountAppErrorMessage(unavailable), /ZCode/);
+  assert.doesNotMatch(resolveAccountAppErrorMessage(unreadable), /ZCode/);
+});
 
 test('open-app 端点透传 close action，无运行实例时返回 not_running', async (t) => {
   const fixture = createFixture(t);

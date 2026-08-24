@@ -128,6 +128,14 @@ test('model usage dashboard exposes bounded trends and exact model/session accou
   assert.equal(direct.sessions[0].cacheCreationInputTokens, 100);
   assert.equal(direct.sessions[0].cacheHitRate, 500 / 950);
 
+  const sessionDetail = service.getSessionDetail({
+    ...query,
+    sessionId: 'session-shared'
+  });
+  assert.equal(sessionDetail.length, 1);
+  assert.equal(sessionDetail[0].accountCount, 2);
+  assert.equal(sessionDetail[0].unattributedCalls, 1);
+
   const breakdown = await service.getBreakdownAsync({
     ...query,
     sessionId: 'session-shared'

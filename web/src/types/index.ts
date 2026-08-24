@@ -1455,24 +1455,24 @@ export interface AccountAppLaunchResponse {
   egressWarning?: string;
 }
 
-export type ZcodeEgressMode = 'system' | 'tun' | 'url' | 'node' | 'group';
+export type AccountEgressMode = 'system' | 'tun' | 'url' | 'node' | 'group';
 
-export interface ZcodeEgressBinding {
-  mode: ZcodeEgressMode;
+export interface AccountEgressBinding {
+  mode: AccountEgressMode;
   proxyUrl: string;
   nodeId: string;
   groupId: string;
   updatedAt: number;
 }
 
-export interface ZcodeEgressBindingInput {
-  mode: ZcodeEgressMode;
+export interface AccountEgressBindingInput {
+  mode: AccountEgressMode;
   proxyUrl?: string;
   nodeId?: string;
   groupId?: string;
 }
 
-export interface ZcodeEgressApplyResult {
+export interface AccountEgressApplyResult {
   ok: boolean;
   applied: boolean;
   status?: 'pending_launch' | 'selected' | 'started' | 'restarted' | 'unchanged' | 'applied';
@@ -1491,7 +1491,7 @@ export interface ZcodeEgressApplyResult {
   reason?: string;
 }
 
-export interface ZcodeEgressHealthStatus {
+export interface AccountEgressHealthStatus {
   monitoring: boolean;
   intervalMs?: number;
   failureThreshold?: number;
@@ -1503,13 +1503,14 @@ export interface ZcodeEgressHealthStatus {
   checking?: boolean;
 }
 
-export interface ZcodeEgressRuntimeStatus {
+export interface AccountEgressRuntimeStatus {
   running: boolean;
   dataPlaneReady: boolean;
   proxyServer: string | null;
   source: string | null;
   selectedNodeId: string | null;
   groupId: string | null;
+  ownerPid?: number | null;
   zcodePid: number | null;
   canRotate: boolean;
   sidecar: {
@@ -1520,22 +1521,32 @@ export interface ZcodeEgressRuntimeStatus {
     pid: number | null;
     lastError: string | null;
   };
-  health: ZcodeEgressHealthStatus;
+  health: AccountEgressHealthStatus;
 }
 
-export interface ZcodeEgressResponse {
+export interface AccountEgressResponse {
   ok: boolean;
-  binding: ZcodeEgressBinding | null;
-  apply?: ZcodeEgressApplyResult;
-  runtime?: ZcodeEgressRuntimeStatus | null;
+  binding: AccountEgressBinding | null;
+  apply?: AccountEgressApplyResult;
+  runtime?: AccountEgressRuntimeStatus | null;
   runtimeError?: string;
 }
 
-export interface ZcodeEgressRotateResponse extends ZcodeEgressApplyResult {
-  binding?: ZcodeEgressBinding | null;
-  runtime?: ZcodeEgressRuntimeStatus | null;
+export interface AccountEgressRotateResponse extends AccountEgressApplyResult {
+  binding?: AccountEgressBinding | null;
+  runtime?: AccountEgressRuntimeStatus | null;
   runtimeError?: string;
 }
+
+// 兼容已发布的组件/API 类型名；新代码统一使用 AccountEgress*。
+export type ZcodeEgressMode = AccountEgressMode;
+export type ZcodeEgressBinding = AccountEgressBinding;
+export type ZcodeEgressBindingInput = AccountEgressBindingInput;
+export type ZcodeEgressApplyResult = AccountEgressApplyResult;
+export type ZcodeEgressHealthStatus = AccountEgressHealthStatus;
+export type ZcodeEgressRuntimeStatus = AccountEgressRuntimeStatus;
+export type ZcodeEgressResponse = AccountEgressResponse;
+export type ZcodeEgressRotateResponse = AccountEgressRotateResponse;
 
 export interface AppInstallJob {
   id: string;

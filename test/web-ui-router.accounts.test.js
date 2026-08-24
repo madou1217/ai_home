@@ -2999,7 +2999,7 @@ async function requestKimiDesktopSession(fixture, action, options = {}) {
     url: new URL(`http://localhost${pathname}`),
     req: { headers: {} },
     res,
-    options: {},
+    options: options.serverOptions || {},
     state: options.state || {
       accounts: { agy: [], claude: [], codex: [], gemini: [], opencode: [], kimi: [] }
     },
@@ -3011,16 +3011,47 @@ async function requestKimiDesktopSession(fixture, action, options = {}) {
 test('kimi desktop-session start 返回官方登录 QR', async (t) => {
   const fixture = createAccountFixture(t);
   const accountRef = fixture.register('kimi', '9201');
+  const resolvedInputs = [];
+  let proxyOptions = null;
   const { res, body } = await requestKimiDesktopSession(fixture, 'start', {
     accountRef,
+    serverOptions: {
+      proxyUrl: 'http://global-proxy.example:7890',
+      noProxy: 'global.example'
+    },
     deps: {
-      fetchImpl: async () => ({ status: 200, json: async () => ({ code: 'qr-9' }) })
+      async resolveAccountEgressRequestOptions(input) {
+        resolvedInputs.push(input);
+        return {
+          ok: true,
+          bound: true,
+          options: {
+            ...input.options,
+            proxyUrl: 'http://127.0.0.1:23132',
+            noProxy: 'localhost,127.0.0.1,::1'
+          }
+        };
+      },
+      fetchImpl: async () => {
+        throw new Error('account-bound request must not use direct fetch');
+      },
+      fetchWithTimeout: async (_url, _init, _timeoutMs, requestOptions) => {
+        proxyOptions = requestOptions;
+        return { status: 200, json: async () => ({ code: 'qr-9' }) };
+      }
     }
   });
   assert.equal(res.statusCode, 200);
   assert.equal(body.ok, true);
   assert.equal(body.code, 'qr-9');
   assert.match(body.qrUrl, /wechat\/mp\/auth\?id=qr-9$/);
+  assert.equal(resolvedInputs.length, 1);
+  assert.equal(resolvedInputs[0].provider, 'kimi');
+  assert.equal(resolvedInputs[0].accountRef, accountRef);
+  assert.deepEqual(proxyOptions, {
+    proxyUrl: 'http://127.0.0.1:23132',
+    noProxy: 'localhost,127.0.0.1,::1'
+  });
 });
 
 test('kimi desktop-session start 对未知账号返回 404，对非 kimi provider 返回 400', async (t) => {

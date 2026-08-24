@@ -3496,18 +3496,28 @@ test('runtime keeps USER and uses a disposable auth directory for Claude login',
   assert.deepEqual(rawModeCalls, [true, false]);
 });
 
-test('runtime mirrors proxy env vars across lower/upper case for CLI compatibility', () => {
+test('runtime clears inherited proxy env vars for an unbound CLI account', () => {
   const { runtime, proc, spawns, rawModeCalls } = createRuntimeHarness({
+    http_proxy: 'http://127.0.0.1:6152',
     https_proxy: 'http://127.0.0.1:6152',
+    all_proxy: 'socks5://127.0.0.1:6153',
     no_proxy: 'localhost,127.0.0.1'
   });
   runtime.runCliPtyTracked('codex', '10086', ['--version'], false);
   assert.equal(spawns.length, 1);
   const env = spawns[0].options.env || {};
-  assert.equal(env.https_proxy, 'http://127.0.0.1:6152');
-  assert.equal(env.HTTPS_PROXY, 'http://127.0.0.1:6152');
-  assert.equal(env.no_proxy, 'localhost,127.0.0.1');
-  assert.equal(env.NO_PROXY, 'localhost,127.0.0.1');
+  for (const key of [
+    'HTTP_PROXY',
+    'HTTPS_PROXY',
+    'ALL_PROXY',
+    'NO_PROXY',
+    'http_proxy',
+    'https_proxy',
+    'all_proxy',
+    'no_proxy'
+  ]) {
+    assert.equal(env[key], undefined, key);
+  }
 
   assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
   assert.deepEqual(rawModeCalls, [true, false]);

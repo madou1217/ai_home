@@ -34,10 +34,11 @@ function expiredCredentials(refreshToken = 'rt_old') {
 }
 
 function okFetch(payload, capture) {
-  return async (url, opts) => {
+  return async (url, opts, _timeoutMs, proxyOptions) => {
     if (capture) {
       capture.url = url;
       capture.body = String(opts && opts.body || '');
+      capture.proxyOptions = proxyOptions;
     }
     return { status: 200, json: async () => payload };
   };
@@ -54,20 +55,45 @@ function readProjectionCredentials(aiHomeDir, accountRef) {
 test('refreshKimiAccessToken persists rotated refresh_token to DB and writes back projection file', async (t) => {
   const fixture = createKimiFixture(t, expiredCredentials('rt_old'));
   const account = { provider: 'kimi', accountRef: fixture.accountRef };
+  const capture = {};
+  const resolvedInputs = [];
 
-  const result = await refreshKimiAccessToken(account, { force: true }, {
+  const result = await refreshKimiAccessToken(account, {
+    force: true,
+    proxyUrl: 'http://global-proxy.example:7890',
+    noProxy: 'global.example'
+  }, {
     fs,
     aiHomeDir: fixture.aiHomeDir,
+    async resolveAccountEgressRequestOptions(input) {
+      resolvedInputs.push(input);
+      return {
+        ok: true,
+        bound: true,
+        options: {
+          ...input.options,
+          proxyUrl: 'http://127.0.0.1:23116',
+          noProxy: 'localhost,127.0.0.1,::1'
+        }
+      };
+    },
     fetchWithTimeout: okFetch({
       access_token: 'at_new',
       refresh_token: 'rt_new',
       expires_in: 900,
       token_type: 'Bearer'
-    })
+    }, capture)
   });
 
   assert.equal(result.ok, true);
   assert.equal(result.refreshed, true);
+  assert.equal(resolvedInputs.length, 1);
+  assert.equal(resolvedInputs[0].provider, 'kimi');
+  assert.equal(resolvedInputs[0].accountRef, fixture.accountRef);
+  assert.deepEqual(capture.proxyOptions, {
+    proxyUrl: 'http://127.0.0.1:23116',
+    noProxy: 'localhost,127.0.0.1,::1'
+  });
 
   const stored = readAccountNativeAuth(fs, fixture.aiHomeDir, fixture.accountRef);
   assert.equal(stored.credentials.refresh_token, 'rt_new');

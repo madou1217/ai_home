@@ -152,6 +152,67 @@ test('refreshDesktopSessionToken 解析官方 camelCase 轮换 token，401 归�
   assert.equal(unauthorized.error, 'desktop_session_refresh_unauthorized');
 });
 
+test('Kimi Desktop 扫码与 session 刷新统一使用账号绑定出口', async () => {
+  const responses = [
+    { status: 200, data: { code: 'qr-egress' } },
+    { status: 200, data: { status: 'STATUS_PENDING' } },
+    { status: 200, data: { accessToken: 'new-access', refreshToken: 'new-refresh' } }
+  ];
+  const directCalls = [];
+  const resolvedInputs = [];
+  const proxyOptions = [];
+  const deps = {
+    fs,
+    aiHomeDir: '/tmp/aih-kimi-desktop-egress',
+    accountRef: 'acct_01000000000000000031',
+    authBaseUrl: 'https://auth.test/api',
+    proxyUrl: 'http://global-proxy.example:7890',
+    noProxy: 'global.example',
+    async resolveAccountEgressRequestOptions(input) {
+      resolvedInputs.push(input);
+      return {
+        ok: true,
+        bound: true,
+        options: {
+          ...input.options,
+          proxyUrl: 'http://127.0.0.1:23131',
+          noProxy: 'localhost,127.0.0.1,::1'
+        }
+      };
+    },
+    async fetchImpl(url, options) {
+      directCalls.push({ url, options });
+      const next = responses.shift();
+      return { status: next.status, json: async () => next.data };
+    },
+    async fetchWithTimeout(url, options, _timeoutMs, requestOptions) {
+      proxyOptions.push(requestOptions);
+      const next = responses.shift();
+      return { status: next.status, json: async () => next.data };
+    }
+  };
+
+  const created = await createDesktopLoginQRCode(deps);
+  const polled = await getDesktopLoginQRCodeStatus(deps, created.code);
+  const refreshed = await refreshDesktopSessionToken(deps, 'old-refresh');
+
+  assert.equal(created.ok, true);
+  assert.equal(polled.status, QR_STATUS.PENDING);
+  assert.equal(refreshed.ok, true);
+  assert.equal(directCalls.length, 0);
+  assert.equal(resolvedInputs.length, 3);
+  assert.deepEqual(resolvedInputs.map((input) => [input.provider, input.accountRef]), [
+    ['kimi', deps.accountRef],
+    ['kimi', deps.accountRef],
+    ['kimi', deps.accountRef]
+  ]);
+  assert.deepEqual(proxyOptions, [
+    { proxyUrl: 'http://127.0.0.1:23131', noProxy: 'localhost,127.0.0.1,::1' },
+    { proxyUrl: 'http://127.0.0.1:23131', noProxy: 'localhost,127.0.0.1,::1' },
+    { proxyUrl: 'http://127.0.0.1:23131', noProxy: 'localhost,127.0.0.1,::1' }
+  ]);
+});
+
 test('desktopSession 写入后可读回且与既有 nativeAuth 字段并存', (t) => {
   const { aiHomeDir, accountRef } = createStoreFixture(t);
   const { writeAccountNativeAuth } = require('../lib/server/account-credential-store');

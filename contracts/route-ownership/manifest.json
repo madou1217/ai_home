@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
-  "manifest_id": "ai-home-route-ownership-2026-08-23",
-  "baseline_date": "2026-08-23",
+  "manifest_id": "ai-home-route-ownership-2026-08-24",
+  "baseline_date": "2026-08-24",
   "source_revision": {
-    "git_commit": "af920a2e2eeeb4fd6031649fd0cbbf61099ae869",
+    "git_commit": "8ba99aca87e12ae07a0640bf501f2ffb0f434450",
     "collection_script": "scripts/collect-gateway-routes.js",
-    "source_mode": "read_only_source_scan_with_scoped_worktree_delta",
-    "note": "以提交基线为起点，仅登记 Image Studio 的 6 条采集增量（路由模块 3 endpoint + 1 guard，WebUI 分发器 2 endpoint）；当前工作树其他会话的未提交路由差异不纳入。"
+    "source_mode": "read_only_source_scan",
+    "note": "按最新 origin/main 重新采集 Node 与 Go 路由基线，不包含工作区未提交改动。"
   },
   "migration_state_machine": [
     "node_owned",
@@ -51,10 +51,10 @@
   "route_baseline": {
     "collector_schema_version": 2,
     "node": {
-      "route_records": 316,
-      "endpoint_records": 308,
-      "unique_endpoint_patterns": 235,
-      "unique_http_endpoint_patterns": 230,
+      "route_records": 327,
+      "endpoint_records": 319,
+      "unique_endpoint_patterns": 242,
+      "unique_http_endpoint_patterns": 237,
       "unique_websocket_endpoint_patterns": 7,
       "guard_records": 8,
       "fallback_records": 0

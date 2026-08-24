@@ -5,7 +5,8 @@ import type { Account } from '@/types';
 import {
   formatQuotaReason,
   formatSchedulableReason,
-  getAccountDisplayState
+  getAccountDisplayState,
+  requiresAccountReauth
 } from './account-state.ts';
 import { formatAccountIssueReason } from '@/utils/account-reasons';
 import { formatRuntimeUntil } from '@/components/runtime/RuntimeStatusTag';
@@ -133,6 +134,7 @@ export function renderQuotaStateBadge(record: Pick<Account, 'quotaStatus' | 'quo
 
 export function renderAccountDisplayBadge(record: Account) {
   if (!record.configured && record.authPendingStale) return <Badge status="warning" text="授权超时" />;
+  if (requiresAccountReauth(record)) return <Badge status="error" text="需要重新登录" />;
   const state = getAccountDisplayState(record);
   if (state === 'disabled') return <Badge status="default" text="已关闭" />;
   if (state === 'unconfigured') return <Badge status="default" text="未配置" />;

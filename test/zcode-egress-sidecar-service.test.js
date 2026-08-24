@@ -22,13 +22,13 @@ const {
   rotateStoredAccountEgress
 } = require('../lib/server/zcode-egress-service');
 
-function createAccount(t) {
+function createAccount(t, provider = 'zcode') {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-zcode-egress-sidecar-service-'));
   t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
   const accountRef = upsertAccountRef(fs, aiHomeDir, {
-    provider: 'zcode',
+    provider,
     cliAccountId: '1',
-    identitySeed: `oauth:zcode:${path.basename(aiHomeDir)}@example.com`
+    identitySeed: `oauth:${provider}:${path.basename(aiHomeDir)}@example.com`
   });
   return { accountRef, aiHomeDir };
 }
@@ -394,6 +394,36 @@ test('关闭或未绑定 ZCode Desktop 时释放租约和 sidecar，不触碰系
   assert.ok(events.some(([name]) => name === 'sidecar-release'));
 });
 
+test('关闭仍绑定出口的非 ZCode Desktop 时保留 sidecar，供 CLI 与 Gateway 继续复用', async (t) => {
+  const { accountRef, aiHomeDir } = createAccount(t, 'claude');
+  writeAccountEgressBinding(fs, aiHomeDir, accountRef, {
+    mode: EGRESS_MODE_URL,
+    proxyUrl: '127.0.0.1:10801'
+  });
+  const events = [];
+  const deps = createDependencies(events);
+  const launcher = {
+    launchAccountApp() {
+      return { ok: true, status: 'closed', pids: [7221] };
+    }
+  };
+
+  const closed = await launchAccountAppWithEgress({
+    launcher,
+    launchInput: {
+      provider: 'claude',
+      accountRef,
+      kind: 'desktop',
+      action: 'close'
+    },
+    egressInput: { fs, aiHomeDir, processObj: { platform: 'darwin' }, deps }
+  });
+
+  assert.equal(closed.result.status, 'closed');
+  assert.equal(events.some(([name]) => name === 'lease-release-account'), false);
+  assert.equal(events.some(([name]) => name === 'sidecar-release'), false);
+});
+
 test('URL 模式也经过稳定本地 sidecar，而不是把远端地址直接写入 ZCode', async (t) => {
   const { accountRef, aiHomeDir } = createAccount(t);
   writeAccountEgressBinding(fs, aiHomeDir, accountRef, {
@@ -676,6 +706,55 @@ test('首次绑定会先验证出口，再精确重启已运行但尚未接入 s
   assert.equal(applied.selectedNodeId, 'node-a');
   assert.ok(events.findIndex(([name]) => name === 'probe') < events.findIndex(([name]) => name === 'desktop-close'));
   assert.ok(events.some(([name, value]) => name === 'lease-attach' && value.pid === 7102));
+});
+
+test('非 ZCode Desktop 首次绑定时也会重启已运行实例，让账号代理真正生效', async (t) => {
+  const { accountRef, aiHomeDir } = createAccount(t, 'claude');
+  writeAccountEgressBinding(fs, aiHomeDir, accountRef, {
+    mode: EGRESS_MODE_GROUP,
+    groupId: 'group-fast'
+  });
+  const events = [];
+  const deps = createDependencies(events);
+  deps.zcodeSingBoxRuntime.getStatus = () => ({ running: false, accounts: [] });
+  const ensureAccountEndpoint = deps.zcodeSingBoxRuntime.ensureAccountEndpoint;
+  deps.zcodeSingBoxRuntime.ensureAccountEndpoint = async (input) => ({
+    ...(await ensureAccountEndpoint(input)),
+    sidecar: { pid: 7300 }
+  });
+  const launcher = {
+    launchAccountApp(input) {
+      if (input.inspectDesktopRunning) {
+        events.push(['desktop-inspect', input]);
+        return { ok: true, status: 'already_running', pids: [7201] };
+      }
+      if (input.action === 'close') {
+        events.push(['desktop-close', input]);
+        return { ok: true, status: 'closed', pids: [7201] };
+      }
+      events.push(['desktop-open', input]);
+      assert.equal(input.egress.proxyServer, '127.0.0.1:23100');
+      return { ok: true, status: 'launched', pid: 7202 };
+    }
+  };
+
+  const applied = await applyStoredAccountEgress({
+    fs,
+    aiHomeDir,
+    provider: 'claude',
+    accountRef,
+    processObj: { platform: 'darwin' },
+    deps,
+    launcher
+  });
+
+  assert.equal(applied.ok, true);
+  assert.equal(applied.status, 'restarted');
+  assert.equal(applied.restarted, true);
+  assert.equal(applied.pid, 7202);
+  assert.deepEqual(applied.previousPids, [7201]);
+  assert.ok(events.findIndex(([name]) => name === 'probe') < events.findIndex(([name]) => name === 'desktop-close'));
+  assert.ok(events.some(([name, value]) => name === 'lease-attach' && value.pid === 7300));
 });
 
 test('首次绑定在 ZCode 未运行时保持 pending_launch，不提前启动 sidecar', async (t) => {

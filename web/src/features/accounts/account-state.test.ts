@@ -19,12 +19,11 @@ import {
   hasKnownUsage,
   isAccountEnabled,
   isClaudeAuthTokenMode,
-  isRecoveryAccount,
   mergeAccountRecord,
   mergeAccounts,
   mergeSingleAccount,
-  partitionAccountsByRecovery,
-  reconcileAccountAfterReauthSuccess
+  reconcileAccountAfterReauthSuccess,
+  requiresAccountReauth
 } from './account-state.ts';
 
 function makeAccount(overrides: Partial<Account> = {}): Account {
@@ -76,28 +75,61 @@ test('isAccountEnabled only treats "down" as disabled', () => {
   assert.equal(isAccountEnabled({}), true);
 });
 
-test('system-retained accounts are separated from the current pool without treating manual down as recovery', () => {
+test('only explicit runtime auth evidence marks an account as requiring reauth', () => {
   const retained = makeAccount({
     accountRef: 'acct_retained',
     status: 'down',
     runtimeStatus: 'auth_invalid',
     runtimeReason: 'account_recovery_required:refresh_http_401'
   });
-  const manuallyDisabled = makeAccount({
-    accountRef: 'acct_manual',
+  const disabledBrowserOauth = makeAccount({
+    accountRef: 'acct_disabled_browser',
+    status: 'down',
+    authMode: 'oauth-browser'
+  });
+  const disabledOauth = makeAccount({
+    accountRef: 'acct_disabled_oauth',
+    status: 'down',
+    authMode: 'oauth'
+  });
+  const unmarkedAuthInvalid = makeAccount({
+    accountRef: 'acct_auth_invalid',
     status: 'down',
     runtimeStatus: 'auth_invalid',
+    runtimeReason: 'refresh_http_401'
+  });
+  const expiredToken = makeAccount({
+    accountRef: 'acct_token_expired',
+    status: 'down',
     runtimeReason: 'token_expired'
+  });
+  const manuallyDisabledApiKey = makeAccount({
+    accountRef: 'acct_manual_api_key',
+    status: 'down',
+    apiKeyMode: true,
+    authMode: 'api-key'
+  });
+  const invalidApiKey = makeAccount({
+    accountRef: 'acct_invalid_api_key',
+    apiKeyMode: true,
+    authMode: 'api-key',
+    runtimeStatus: 'auth_invalid'
+  });
+  const unknownDisabled = makeAccount({
+    accountRef: 'acct_unknown',
+    status: 'down'
   });
   const healthy = makeAccount({ accountRef: 'acct_healthy' });
 
-  assert.equal(isRecoveryAccount(retained), true);
-  assert.equal(isRecoveryAccount(manuallyDisabled), false);
-  assert.equal(isRecoveryAccount(healthy), false);
-  assert.deepEqual(partitionAccountsByRecovery([healthy, retained, manuallyDisabled]), {
-    currentAccounts: [healthy, manuallyDisabled],
-    recoveryAccounts: [retained]
-  });
+  assert.equal(requiresAccountReauth(retained), true);
+  assert.equal(requiresAccountReauth(unmarkedAuthInvalid), true);
+  assert.equal(requiresAccountReauth(expiredToken), true);
+  assert.equal(requiresAccountReauth(disabledBrowserOauth), false);
+  assert.equal(requiresAccountReauth(disabledOauth), false);
+  assert.equal(requiresAccountReauth(manuallyDisabledApiKey), false);
+  assert.equal(requiresAccountReauth(invalidApiKey), false);
+  assert.equal(requiresAccountReauth(unknownDisabled), false);
+  assert.equal(requiresAccountReauth(healthy), false);
 });
 
 test('successful reauth immediately returns a retained account to the current pool', () => {
@@ -123,7 +155,7 @@ test('successful reauth immediately returns a retained account to the current po
   assert.equal(next[0].schedulableStatus, undefined);
   assert.equal(next[0].schedulableReason, undefined);
   assert.equal(next[1], healthy);
-  assert.equal(isRecoveryAccount(next[0]), false);
+  assert.equal(requiresAccountReauth(next[0]), false);
 });
 
 test('successful reauth re-enables a legacy markerless down account and ignores unknown accounts', () => {
@@ -152,8 +184,12 @@ test('hasBlockingRuntimeStatus ignores healthy and empty states', () => {
 
 test('getAccountDisplayState maps each blocking condition to its kind', () => {
   assert.equal(getAccountDisplayState(makeAccount({ status: 'down' })), 'disabled');
+  assert.equal(
+    getAccountDisplayState(makeAccount({ status: 'down', authMode: 'oauth-browser' })),
+    'disabled'
+  );
   assert.equal(getAccountDisplayState(makeAccount({ configured: false })), 'unconfigured');
-  assert.equal(getAccountDisplayState(makeAccount({ runtimeStatus: 'auth_invalid' })), 'runtime_blocked');
+  assert.equal(getAccountDisplayState(makeAccount({ runtimeStatus: 'auth_invalid' })), 'reauth_required');
   assert.equal(
     getAccountDisplayState(makeAccount({ remainingPct: 0, quotaStatus: 'available' })),
     'exhausted'
@@ -183,6 +219,20 @@ test('getAccountDisplayState treats unknown quota for oauth without usage as att
 
 test('usage refresh gate: configured oauth accounts only, not_applicable excluded', () => {
   assert.equal(canRefreshUsageAccount(makeAccount({ configured: true, apiKeyMode: false })), true);
+  assert.equal(
+    canRefreshUsageAccount(makeAccount({ configured: true, apiKeyMode: false, status: 'down', authMode: 'oauth' })),
+    true
+  );
+  assert.equal(
+    canRefreshUsageAccount(makeAccount({
+      configured: true,
+      apiKeyMode: false,
+      status: 'down',
+      authMode: 'oauth',
+      runtimeStatus: 'auth_invalid'
+    })),
+    false
+  );
   assert.equal(canRefreshUsageAccount(makeAccount({ configured: true, apiKeyMode: true })), false);
   assert.equal(canRefreshUsageAccount(makeAccount({ configured: false, apiKeyMode: false })), false);
   assert.equal(

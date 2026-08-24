@@ -5,31 +5,36 @@ const path = require('node:path');
 
 const projectRoot = path.resolve(__dirname, '..');
 const accountsPath = path.join(projectRoot, 'web/src/pages/Accounts.tsx');
+const accountBadgesPath = path.join(projectRoot, 'web/src/features/accounts/AccountBadges.tsx');
 const recoveryViewPath = path.join(projectRoot, 'web/src/features/accounts/RecoveryAccountsView.tsx');
+const recoveryViewStylePath = path.join(projectRoot, 'web/src/features/accounts/RecoveryAccountsView.css');
 const legacyRecoveryDrawerPaths = [
   path.join(projectRoot, 'web/src/features/accounts/RecoveryAccountsDrawer.tsx'),
   path.join(projectRoot, 'web/src/features/accounts/RecoveryAccountsDrawer.css')
 ];
 const routesPath = path.join(projectRoot, 'web/config/routes.ts');
 
-test('accounts page keeps system-retained accounts outside the current pool and links to a recovery page', () => {
+test('accounts page keeps every non-deleted account in the single management list', () => {
   const source = fs.readFileSync(accountsPath, 'utf8');
   const routes = fs.readFileSync(routesPath, 'utf8');
-  assert.match(source, /partitionAccountsByRecovery\(accounts\)/);
-  assert.match(source, /<RecoveryAccountsView/);
-  assert.match(source, /<Badge count=\{recoveryAccounts\.length\}/);
-  assert.match(source, /navigate\('\/accounts\/recovery'\)/);
-  assert.match(routes, /path: "\/accounts\/recovery"/);
+  assert.match(source, /useTokenDropEvents\(accounts,/);
+  assert.match(source, /useModelCatalog\(accounts\)/);
+  assert.match(source, /accounts\.forEach\(account =>/);
+  assert.match(source, /let filtered = accounts;/);
+  assert.doesNotMatch(source, /partitionAccountsByRecovery|currentAccounts|recoveryAccounts/);
+  assert.doesNotMatch(source, /RecoveryAccountsView|待恢复|\/accounts\/recovery/);
+  assert.doesNotMatch(routes, /\/accounts\/recovery/);
+  assert.equal(fs.existsSync(recoveryViewPath), false);
+  assert.equal(fs.existsSync(recoveryViewStylePath), false);
 });
 
-test('recovery page explains retention and exposes reauth plus explicit delete actions without a drawer', () => {
+test('reauth-required rows are distinguished inline and expose reauth as their only action', () => {
   const accountsSource = fs.readFileSync(accountsPath, 'utf8');
-  assert.equal(fs.existsSync(recoveryViewPath), true);
-  const source = fs.existsSync(recoveryViewPath) ? fs.readFileSync(recoveryViewPath, 'utf8') : '';
-  assert.match(source, /账号数据仍然保留/);
-  assert.match(source, /重新登录/);
-  assert.match(source, /删除账号/);
-  assert.doesNotMatch(source, /\bDrawer\b/);
+  const badgesSource = fs.readFileSync(accountBadgesPath, 'utf8');
+  assert.match(accountsSource, /if \(requiresAccountReauth\(record\)\) \{\s*return \[\{ key: 'reauth'/s);
+  assert.match(accountsSource, /requiresAccountReauth\(record\) \? \(/);
+  assert.match(accountsSource, /disabled=\{requiresReauth/);
+  assert.match(badgesSource, /text="需要重新登录"/);
   assert.doesNotMatch(accountsSource, /RecoveryAccountsDrawer|recoveryDrawerOpen/);
   legacyRecoveryDrawerPaths.forEach((legacyPath) => {
     assert.equal(fs.existsSync(legacyPath), false, `${path.basename(legacyPath)} must stay removed`);

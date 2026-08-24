@@ -178,6 +178,8 @@ function startUpstreamStream(options = {}) {
       provider,
       claudeBaseUrl: 'https://api.anthropic.com/v1',
       codexBaseUrl: options.baseUrl || 'https://api.openai.com/v1',
+      proxyUrl: options.proxyUrl || '',
+      noProxy: options.noProxy || '',
       upstreamTimeoutMs: 3000,
       maxAttempts: 1,
       failureThreshold: 1,
@@ -207,8 +209,9 @@ function startUpstreamStream(options = {}) {
         response.setHeader('content-type', 'application/json');
         response.end(JSON.stringify(payload));
       },
-      fetchWithTimeout: async (_url, init, timeoutMs) => {
-        if (typeof options.onFetch === 'function') options.onFetch(init, timeoutMs);
+      resolveAccountEgressRequestOptions: options.resolveAccountEgressRequestOptions,
+      fetchWithTimeout: async (_url, init, timeoutMs, proxyOptions) => {
+        if (typeof options.onFetch === 'function') options.onFetch(init, timeoutMs, proxyOptions);
         return {
           status: 200,
           headers: options.upstreamHeaders || new Map(),
@@ -226,6 +229,50 @@ function startUpstreamStream(options = {}) {
   });
   return { completion, res, state };
 }
+
+test('通用 Gateway attempt 使用所选账号出口覆盖全局代理', async () => {
+  const resolverCalls = [];
+  let networkOptions = null;
+  const upstreamPayload = {
+    id: 'msg_account_egress',
+    type: 'message',
+    role: 'assistant',
+    model: 'claude-sonnet-4',
+    content: [{ type: 'text', text: 'ok' }],
+    stop_reason: 'end_turn',
+    usage: { input_tokens: 1, output_tokens: 1 }
+  };
+  const { completion, res } = startUpstreamStream({
+    provider: 'claude',
+    proxyUrl: 'http://global-proxy.example:7890',
+    noProxy: 'api.anthropic.com',
+    upstreamHeaders: new Map([['content-type', 'application/json']]),
+    arrayBuffer: async () => Buffer.from(JSON.stringify(upstreamPayload)),
+    async resolveAccountEgressRequestOptions(input) {
+      resolverCalls.push(input);
+      return {
+        ok: true,
+        bound: true,
+        options: {
+          ...input.options,
+          proxyUrl: 'http://127.0.0.1:23106',
+          noProxy: 'localhost,127.0.0.1,::1'
+        }
+      };
+    },
+    onFetch(_init, _timeoutMs, proxyOptions) {
+      networkOptions = proxyOptions;
+    }
+  });
+
+  await completion;
+
+  assert.equal(resolverCalls.length, 1);
+  assert.equal(resolverCalls[0].provider, 'claude');
+  assert.equal(networkOptions.proxyUrl, 'http://127.0.0.1:23106');
+  assert.equal(networkOptions.noProxy, 'localhost,127.0.0.1,::1');
+  assert.equal(res.statusCode, 200);
+});
 
 function chooseAvailableAccount(pool, _state, _cursorKey, options = {}) {
   const excludedRefs = options.excludeAccountRefs instanceof Set ? options.excludeAccountRefs : new Set();

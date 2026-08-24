@@ -288,6 +288,49 @@ test('handleImageGenerations renders a successful b64_json response and records 
   assert.equal(ctx.calls.usage[0].usageFormat, 'gemini');
 });
 
+test('图片请求在选定账号后使用该账号的出口选项', async () => {
+  const resolvedInputs = [];
+  let strategyOptions = null;
+  const ctx = makeCtx({
+    options: {
+      logRequests: true,
+      proxyUrl: 'http://global-proxy.example:7890',
+      noProxy: 'global.example'
+    },
+    deps: {
+      async resolveAccountEgressRequestOptions(input) {
+        resolvedInputs.push(input);
+        return {
+          ok: true,
+          bound: true,
+          options: {
+            ...input.options,
+            proxyUrl: 'http://127.0.0.1:23101',
+            noProxy: 'localhost,127.0.0.1,::1'
+          }
+        };
+      },
+      async fetchGeminiCodeAssistGenerateContent(options) {
+        strategyOptions = options;
+        return {
+          candidates: [{ content: { parts: [{ inlineData: { mimeType: 'image/png', data: PNG_BASE64 } }] } }],
+          usageMetadata: { totalTokenCount: 7 },
+          model: 'gemini-3.1-flash-image'
+        };
+      }
+    }
+  });
+
+  await handleImageGenerations(ctx);
+
+  assert.equal(ctx.res.statusCode, 200);
+  assert.equal(resolvedInputs.length, 1);
+  assert.equal(resolvedInputs[0].provider, 'agy');
+  assert.equal(resolvedInputs[0].accountRef, 'acct_a');
+  assert.equal(strategyOptions.proxyUrl, 'http://127.0.0.1:23101');
+  assert.equal(strategyOptions.noProxy, 'localhost,127.0.0.1,::1');
+});
+
 test('handleImageGenerations forwards normalized image controls to the selected strategy', async () => {
   let capturedPayload;
   const account = {

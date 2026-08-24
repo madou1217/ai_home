@@ -725,6 +725,45 @@ test('zcode desktop 在 spawn 前同步原生设置，不重复追加 Chromium �
   assert.equal(fakeSpawn.calls[0].options.env.ZCODE_NO_PROXY, undefined);
 });
 
+test('非 ZCode Desktop 仅在该账号绑定后注入进程代理与 Chromium 参数', () => {
+  const bundlePath = '/Applications/Claude.app';
+  const expectedExe = '/Applications/Claude.app/Contents/MacOS/Claude';
+  const { launcher, fakeSpawn } = createLauncher({
+    path: nodePath.posix,
+    processObj: { platform: 'darwin', execPath: '/usr/local/bin/node', env: {} },
+    fs: createFakeFs([bundlePath, expectedExe]),
+    env: {
+      HOME: '/Users/x',
+      PATH: '',
+      HTTPS_PROXY: 'http://inherited.example:7890'
+    },
+    resolveAccount: () => ({
+      accountRef: ACCOUNT_REF,
+      provider: 'claude',
+      cliAccountId: '3'
+    }),
+    readAccountEnv: () => ({ ANTHROPIC_API_KEY: 'sk-test' }),
+    getProfileDir: () => `/aih-home/run/auth-projections/claude/${ACCOUNT_REF}`
+  });
+
+  const result = launcher.launchAccountApp({
+    provider: 'claude',
+    accountRef: ACCOUNT_REF,
+    kind: 'desktop',
+    egress: { ok: true, proxyServer: '127.0.0.1:23103', source: 'group' }
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(fakeSpawn.calls.length, 1);
+  const [{ args, options }] = fakeSpawn.calls;
+  assert.equal(options.env.HTTP_PROXY, 'http://127.0.0.1:23103');
+  assert.equal(options.env.HTTPS_PROXY, 'http://127.0.0.1:23103');
+  assert.equal(options.env.ALL_PROXY, 'http://127.0.0.1:23103');
+  assert.equal(options.env.NO_PROXY, 'localhost,127.0.0.1,::1');
+  assert.equal(args.includes('--proxy-server=http://127.0.0.1:23103'), true);
+  assert.equal(args.includes('--proxy-bypass-list=localhost;127.0.0.1;[::1]'), true);
+});
+
 test('zcode desktop 遇到未知 marker 时保留原生设置并停止 spawn', () => {
   const bundlePath = '/Applications/ZCode.app';
   const expectedExe = '/Applications/ZCode.app/Contents/MacOS/ZCode';
@@ -1470,6 +1509,36 @@ function createKimiDesktopLauncherFixture(t, overrides = {}) {
   });
   return { launcher, fakeSpawn, accountRef, profileDir, aiHomeDir, hostHomeDir, kimiExe };
 }
+
+test('kimi desktop 只读运行态检查识别已有实例且不触发登录准备或 spawn', (t) => {
+  let userDataDir = '';
+  const { launcher, fakeSpawn, accountRef, profileDir } = createKimiDesktopLauncherFixture(t, {
+    adoptKimiDesktopTokensFromProfile: () => {
+      throw new Error('inspect must not read desktop session');
+    },
+    execFileSync(file) {
+      assert.equal(file, 'powershell.exe');
+      return JSON.stringify({
+        ProcessId: 9791,
+        Name: 'Kimi.exe',
+        CommandLine: `Kimi.exe --user-data-dir=${userDataDir}`
+      });
+    }
+  });
+  userDataDir = nodePath.join(profileDir, 'electron-user-data');
+
+  const result = launcher.launchAccountApp({
+    provider: 'kimi',
+    accountRef,
+    kind: 'desktop',
+    inspectDesktopRunning: true
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 'already_running');
+  assert.deepEqual(result.pids, [9791]);
+  assert.equal(fakeSpawn.calls.length, 0);
+});
 
 test('kimi desktop 存在托管 desktopSession 时启动前把 session 种进隔离 profile', (t) => {
   const seeds = [];

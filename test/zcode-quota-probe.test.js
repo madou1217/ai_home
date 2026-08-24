@@ -275,6 +275,50 @@ test('zcode quota probe fetches the plan balance endpoint with the jwt token', a
   }
 });
 
+test('zcode quota probe 使用账号绑定出口而不是 Server 全局代理', async () => {
+  const { aiHomeDir, accountRef } = setupZcodeAccount({
+    credentials: { zcodejwttoken: 'zcode-jwt-token' }
+  });
+  const resolvedInputs = [];
+  let fetchProxyOptions = null;
+  const probe = createZcodeQuotaProbe({
+    fs,
+    aiHomeDir,
+    proxyUrl: 'http://global-proxy.example:7890',
+    noProxy: 'global.example',
+    readAccountCredentialRecord: require('../lib/server/account-credential-store').readAccountCredentialRecord,
+    async resolveAccountEgressRequestOptions(input) {
+      resolvedInputs.push(input);
+      return {
+        ok: true,
+        bound: true,
+        options: {
+          proxyUrl: 'http://127.0.0.1:23102',
+          noProxy: 'localhost,127.0.0.1,::1'
+        }
+      };
+    },
+    async fetchWithTimeout(_url, _init, _timeoutMs, proxyOptions) {
+      fetchProxyOptions = proxyOptions;
+      return makeOkResponse(makeBalancePayload());
+    }
+  });
+  try {
+    const result = await probe.probe(accountRef, 4321);
+
+    assert.ok(result.snapshot, 'expected snapshot');
+    assert.equal(resolvedInputs.length, 1);
+    assert.equal(resolvedInputs[0].provider, 'zcode');
+    assert.equal(resolvedInputs[0].accountRef, accountRef);
+    assert.deepEqual(fetchProxyOptions, {
+      proxyUrl: 'http://127.0.0.1:23102',
+      noProxy: 'localhost,127.0.0.1,::1'
+    });
+  } finally {
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+  }
+});
+
 test('zcode quota probe skips API key accounts without fetching', async () => {
   const { aiHomeDir, accountRef } = setupZcodeAccount({
     env: { ZCODE_API_KEY: 'sk-zcode' },

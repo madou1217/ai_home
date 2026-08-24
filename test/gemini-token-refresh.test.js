@@ -36,17 +36,37 @@ test('Gemini token refresh uses CLI client defaults and persists refreshed auth 
     } });
 
     let seenBody = null;
+    let seenProxyOptions = null;
+    const resolvedInputs = [];
     const result = await refreshGeminiAccessToken({
       accountRef,
       provider: 'gemini',
       authType: 'oauth-personal',
       accessToken: 'old-token',
       tokenExpiresAt: Date.now() - 60_000
-    }, { force: true, nowMs: 1700000000000 }, {
+    }, {
+      force: true,
+      nowMs: 1700000000000,
+      proxyUrl: 'http://global-proxy.example:7890',
+      noProxy: 'global.example'
+    }, {
       fs,
       aiHomeDir,
-      fetchWithTimeout: async (_url, init) => {
+      async resolveAccountEgressRequestOptions(input) {
+        resolvedInputs.push(input);
+        return {
+          ok: true,
+          bound: true,
+          options: {
+            ...input.options,
+            proxyUrl: 'http://127.0.0.1:23112',
+            noProxy: 'localhost,127.0.0.1,::1'
+          }
+        };
+      },
+      fetchWithTimeout: async (_url, init, _timeoutMs, proxyOptions) => {
         seenBody = JSON.parse(String(init && init.body || '{}'));
+        seenProxyOptions = proxyOptions;
         return {
           ok: true,
           text: async () => JSON.stringify({
@@ -60,6 +80,13 @@ test('Gemini token refresh uses CLI client defaults and persists refreshed auth 
     const saved = readAccountNativeAuth(fs, aiHomeDir, accountRef).oauthCreds;
 
     assert.equal(result.ok, true);
+    assert.equal(resolvedInputs.length, 1);
+    assert.equal(resolvedInputs[0].provider, 'gemini');
+    assert.equal(resolvedInputs[0].accountRef, accountRef);
+    assert.deepEqual(seenProxyOptions, {
+      proxyUrl: 'http://127.0.0.1:23112',
+      noProxy: 'localhost,127.0.0.1,::1'
+    });
     assert.equal(seenBody.client_id, '681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com');
     assert.equal(typeof seenBody.client_secret, 'string');
     assert.ok(seenBody.client_secret.length > 0);

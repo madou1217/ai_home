@@ -74,6 +74,36 @@ test('handleWebUiProxyPoolRoutes responds to GET /v0/webui/toolkit/proxy-pool/su
   assert.ok(Array.isArray(data.subscriptions));
 });
 
+test('proxy-pool subscription sync route forwards the explicit storage-only intent', async () => {
+  const calls = [];
+  const proxyPoolService = {
+    async syncSubscription(id, options) {
+      calls.push({ id, options });
+      return { ok: true, applied: true, storageOnly: true };
+    }
+  };
+  const pathname = '/v0/webui/toolkit/proxy-pool/subscriptions/sync';
+  const { req, res } = createMockReqRes('POST', pathname, {
+    id: 'sub_account_egress',
+    storageOnly: true
+  });
+
+  const handled = await handleWebUiProxyPoolRoutes(
+    req,
+    res,
+    'POST',
+    pathname,
+    { proxyPoolService }
+  );
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(calls, [{
+    id: 'sub_account_egress',
+    options: { storageOnly: true }
+  }]);
+});
+
 test('handleWebUiProxyPoolRoutes responds to GET /v0/webui/toolkit/proxy-pool/routing', async () => {
   const { req, res } = createMockReqRes('GET', '/v0/webui/toolkit/proxy-pool/routing');
   const handled = await handleWebUiProxyPoolRoutes(req, res, 'GET', '/v0/webui/toolkit/proxy-pool/routing', {});

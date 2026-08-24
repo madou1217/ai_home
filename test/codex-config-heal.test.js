@@ -20,6 +20,13 @@ function fakeFs(existingPaths = []) {
   return { existsSync: (value) => set.has(String(value).toLowerCase()) };
 }
 
+function realFsWithExistingPaths(existingPaths = []) {
+  const set = new Set(existingPaths.map((value) => String(value).toLowerCase()));
+  return Object.assign(Object.create(fs), {
+    existsSync: (value) => set.has(String(value).toLowerCase()) || fs.existsSync(value)
+  });
+}
+
 const WIN_UVX = 'C:\\Users\\madou\\.local\\bin\\uvx.exe';
 const WSL_UVX = '/mnt/c/Users/madou/.local/bin/uvx.exe';
 
@@ -123,8 +130,8 @@ test('healCodexMcpServersConfigFile 备份后写回且幂等', (t) => {
 
   const logs = [];
   const once = healCodexMcpServersConfigFile(configPath, {
-    fs,
-    platform: process.platform,
+    fs: realFsWithExistingPaths([WIN_UVX]),
+    platform: 'win32',
     log: (message) => logs.push(message)
   });
   assert.equal(once.changed, true);
@@ -135,8 +142,8 @@ test('healCodexMcpServersConfigFile 备份后写回且幂等', (t) => {
   assert.equal(logs.length, 1);
 
   const twice = healCodexMcpServersConfigFile(configPath, {
-    fs,
-    platform: process.platform,
+    fs: realFsWithExistingPaths([WIN_UVX]),
+    platform: 'win32',
     log: () => {}
   });
   assert.equal(twice.changed, false, '已转换过的路径应幂等无改动');

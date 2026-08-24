@@ -19,9 +19,12 @@ import {
   hasKnownUsage,
   isAccountEnabled,
   isClaudeAuthTokenMode,
+  isRecoveryAccount,
   mergeAccountRecord,
   mergeAccounts,
-  mergeSingleAccount
+  mergeSingleAccount,
+  partitionAccountsByRecovery,
+  reconcileAccountAfterReauthSuccess
 } from './account-state.ts';
 
 function makeAccount(overrides: Partial<Account> = {}): Account {
@@ -71,6 +74,73 @@ test('isAccountEnabled only treats "down" as disabled', () => {
   assert.equal(isAccountEnabled({ status: 'down' }), false);
   assert.equal(isAccountEnabled({ status: 'DOWN' }), false);
   assert.equal(isAccountEnabled({}), true);
+});
+
+test('system-retained accounts are separated from the current pool without treating manual down as recovery', () => {
+  const retained = makeAccount({
+    accountRef: 'acct_retained',
+    status: 'down',
+    runtimeStatus: 'auth_invalid',
+    runtimeReason: 'account_recovery_required:refresh_http_401'
+  });
+  const manuallyDisabled = makeAccount({
+    accountRef: 'acct_manual',
+    status: 'down',
+    runtimeStatus: 'auth_invalid',
+    runtimeReason: 'token_expired'
+  });
+  const healthy = makeAccount({ accountRef: 'acct_healthy' });
+
+  assert.equal(isRecoveryAccount(retained), true);
+  assert.equal(isRecoveryAccount(manuallyDisabled), false);
+  assert.equal(isRecoveryAccount(healthy), false);
+  assert.deepEqual(partitionAccountsByRecovery([healthy, retained, manuallyDisabled]), {
+    currentAccounts: [healthy, manuallyDisabled],
+    recoveryAccounts: [retained]
+  });
+});
+
+test('successful reauth immediately returns a retained account to the current pool', () => {
+  const retained = makeAccount({
+    accountRef: 'acct_retained',
+    status: 'down',
+    runtimeStatus: 'auth_invalid',
+    runtimeUntil: Date.now() + 60_000,
+    runtimeReason: 'account_recovery_required:refresh_http_401',
+    schedulableStatus: 'blocked_by_runtime',
+    schedulableReason: 'auth_invalid'
+  });
+  const healthy = makeAccount({ accountRef: 'acct_healthy' });
+
+  const next = reconcileAccountAfterReauthSuccess([retained, healthy], retained.accountRef);
+
+  assert.notEqual(next[0], retained);
+  assert.equal(next[0].status, 'up');
+  assert.equal(next[0].configured, true);
+  assert.equal(next[0].runtimeStatus, undefined);
+  assert.equal(next[0].runtimeUntil, undefined);
+  assert.equal(next[0].runtimeReason, undefined);
+  assert.equal(next[0].schedulableStatus, undefined);
+  assert.equal(next[0].schedulableReason, undefined);
+  assert.equal(next[1], healthy);
+  assert.equal(isRecoveryAccount(next[0]), false);
+});
+
+test('successful reauth re-enables a legacy markerless down account and ignores unknown accounts', () => {
+  const legacyMarkerless = makeAccount({
+    accountRef: 'acct_legacy',
+    status: 'down',
+    runtimeStatus: 'auth_invalid',
+    runtimeReason: 'token_expired'
+  });
+  const next = reconcileAccountAfterReauthSuccess([legacyMarkerless], legacyMarkerless.accountRef);
+
+  assert.equal(next[0].status, 'up');
+  assert.equal(next[0].runtimeStatus, undefined);
+  assert.equal(
+    reconcileAccountAfterReauthSuccess(next, 'acct_unknown'),
+    next
+  );
 });
 
 test('hasBlockingRuntimeStatus ignores healthy and empty states', () => {

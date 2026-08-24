@@ -27,6 +27,10 @@ function createAccountFixture(t, prefix = 'aih-token-refresh-daemon-db-') {
   };
 }
 
+function createJwt(payload) {
+  return `header.${Buffer.from(JSON.stringify(payload)).toString('base64url')}.signature`;
+}
+
 describe('createTokenRefreshDaemon', () => {
   it('should create daemon with stats', () => {
     const state = {
@@ -353,6 +357,150 @@ describe('createTokenRefreshDaemon', () => {
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  it('forces grok refresh before clearing a stale auth block with a locally fresh access token', async (t) => {
+    const fixture = createAccountFixture(t, 'aih-token-refresh-daemon-grok-stale-db-');
+    const futureExp = Math.floor((Date.now() + 6 * 60 * 60 * 1000) / 1000);
+    const nextExp = futureExp + 3600;
+    const accessToken = createJwt({ exp: futureExp, client_id: 'grok-client' });
+    const nextAccessToken = createJwt({ exp: nextExp, client_id: 'grok-client' });
+    const accountRef = fixture.register('grok', '2', {
+      auth: {
+        'https://auth.x.ai::grok-client': {
+          key: accessToken,
+          refresh_token: 'grok-stale-refresh-token',
+          oidc_client_id: 'grok-client',
+          expires_at: new Date(futureExp * 1000).toISOString()
+        }
+      }
+    });
+    const account = {
+      accountRef,
+      provider: 'grok',
+      authType: 'oauth',
+      accessToken,
+      refreshToken: 'grok-stale-refresh-token',
+      tokenExpiresAt: futureExp * 1000,
+      authInvalidUntil: Date.now() + 60_000,
+      cooldownUntil: Date.now() + 60_000,
+      lastFailureKind: 'auth_invalid',
+      lastFailureReason: 'auth_invalid_reauth_required',
+      lastError: 'auth_invalid_reauth_required'
+    };
+    let refreshCalls = 0;
+    const clears = [];
+    const daemon = createTokenRefreshDaemon({
+      accounts: { codex: [], gemini: [], claude: [], agy: [], grok: [account], kimi: [] }
+    }, {
+      tokenRefreshIntervalMs: 60_000,
+      tokenStartupRefreshBeforeExpiryMs: 5 * 60 * 1000
+    }, {
+      fs,
+      aiHomeDir: fixture.aiHomeDir,
+      fetchWithTimeout: async () => {
+        refreshCalls += 1;
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({
+            access_token: nextAccessToken,
+            refresh_token: 'grok-stale-refresh-token-next',
+            expires_in: 7 * 60 * 60
+          })
+        };
+      },
+      accountStateService: {
+        clearRuntimeBlock(targetRef, provider, options) {
+          clears.push({ targetRef, provider, options });
+          return true;
+        }
+      },
+      hub: { emit() {} },
+      logInfo: () => {},
+      logWarn: () => {},
+      logError: () => {}
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    daemon.stop();
+
+    assert.equal(refreshCalls, 1, 'auth-invalid Grok account must prove its refresh grant even when access token is not due');
+    assert.equal(clears.length, 1);
+    assert.equal(clears[0].provider, 'grok');
+    assert.equal(clears[0].options.evidence, 'token_refresh_success');
+    assert.equal(account.authInvalidUntil, 0);
+    assert.equal(account.lastError, '');
+  });
+
+  it('keeps a real grok revoked block when the forced refresh grant is rejected', async (t) => {
+    const fixture = createAccountFixture(t, 'aih-token-refresh-daemon-grok-revoked-db-');
+    const futureExp = Math.floor((Date.now() + 6 * 60 * 60 * 1000) / 1000);
+    const accessToken = createJwt({ exp: futureExp, client_id: 'grok-client' });
+    const accountRef = fixture.register('grok', '3', {
+      auth: {
+        'https://auth.x.ai::grok-client': {
+          key: accessToken,
+          refresh_token: 'grok-revoked-refresh-token',
+          oidc_client_id: 'grok-client',
+          expires_at: new Date(futureExp * 1000).toISOString()
+        }
+      }
+    });
+    const blockedUntil = Date.now() + 60_000;
+    const account = {
+      accountRef,
+      provider: 'grok',
+      authType: 'oauth',
+      accessToken,
+      refreshToken: 'grok-revoked-refresh-token',
+      tokenExpiresAt: futureExp * 1000,
+      authInvalidUntil: blockedUntil,
+      cooldownUntil: blockedUntil,
+      lastFailureKind: 'auth_invalid',
+      lastFailureReason: 'auth_invalid_reauth_required',
+      lastError: 'auth_invalid_reauth_required'
+    };
+    let refreshCalls = 0;
+    let clearCalls = 0;
+    const daemon = createTokenRefreshDaemon({
+      accounts: { codex: [], gemini: [], claude: [], agy: [], grok: [account], kimi: [] }
+    }, {
+      tokenRefreshIntervalMs: 60_000,
+      tokenStartupRefreshBeforeExpiryMs: 5 * 60 * 1000
+    }, {
+      fs,
+      aiHomeDir: fixture.aiHomeDir,
+      fetchWithTimeout: async () => {
+        refreshCalls += 1;
+        return {
+          ok: false,
+          status: 401,
+          text: async () => JSON.stringify({
+            error: 'invalid_grant',
+            error_description: 'refresh token has been revoked'
+          })
+        };
+      },
+      accountStateService: {
+        clearRuntimeBlock() {
+          clearCalls += 1;
+          return true;
+        }
+      },
+      hub: { emit() {} },
+      logInfo: () => {},
+      logWarn: () => {},
+      logError: () => {}
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    daemon.stop();
+
+    assert.equal(refreshCalls, 1);
+    assert.equal(clearCalls, 0);
+    assert.equal(account.authInvalidUntil, blockedUntil);
+    assert.equal(account.lastError, 'auth_invalid_reauth_required');
   });
 
   it('does not clear agy runtime memory when persisted clear is rejected', async (t) => {
@@ -716,6 +864,10 @@ describe('createTokenRefreshDaemon', () => {
     assert.equal(f({ ok: false, reason: 'refresh_exception', detail: 'oops invalid_grant oops' }), true);
     assert.equal(f({ ok: false, reason: 'refresh_invalid_refresh_token' }), true);
     assert.equal(f({ ok: false, detail: 'Refresh token has been revoked' }), true);
+    assert.equal(f({ ok: false, oauthError: 'refresh_token_reused' }), true);
+    assert.equal(f({ ok: false, oauthError: 'token_already_used' }), true);
+    assert.equal(f({ ok: false, detail: 'The refresh token has already been used' }), true);
+    assert.equal(f({ ok: false, detail: 'Refresh token was reused; sign in again' }), true);
     // Recoverable / not applicable
     assert.equal(f({ ok: false, status: 400, reason: 'refresh_http_400' }), false);
     assert.equal(f({ ok: false, status: 401, reason: 'refresh_http_401' }), false);

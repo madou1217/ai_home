@@ -1,0 +1,57 @@
+.account-recovery-view__summary {
+  margin: 0 0 16px;
+  color: var(--app-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.account-recovery-view__description {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.account-recovery-view__secondary,
+.account-recovery-view__reason {
+  color: var(--app-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.account-recovery-view .ant-list-item.accounts-row-target {
+  background: var(--tint-info);
+}
+
+.account-recovery-view__empty {
+  padding: 32px 0;
+}
+
+@media (max-width: 767px) {
+  .account-recovery-view__summary {
+    margin-bottom: 12px;
+  }
+
+  .account-recovery-view .ant-list-item {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .account-recovery-view .ant-list-item-meta {
+    flex: none;
+    width: 100%;
+  }
+
+  .account-recovery-view .ant-list-item-meta-content {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .account-recovery-view .ant-list-item-action {
+    display: flex;
+    flex-wrap: wrap;
+    margin-left: 0;
+    width: 100%;
+  }
+}

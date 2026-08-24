@@ -509,6 +509,34 @@ test('web ui accounts list uses DB account status as the status truth', async (t
   assert.equal(body.accounts[0].status, 'down');
 });
 
+test('web ui accounts list exposes retained auth-invalid accounts for the recovery view', async (t) => {
+  const fixture = createAccountFixture(t);
+  const accountRef = fixture.register('codex', '10003', {
+    state: {
+      status: 'down',
+      configured: true,
+      apiKeyMode: false,
+      authMode: 'oauth-browser',
+      displayName: 'recovery@example.com',
+      runtimeState: buildAuthInvalidRuntimeState(
+        'account_recovery_required:refresh_http_401'
+      )
+    }
+  });
+
+  const { handled, res, body } = await requestAccounts(fixture);
+  const account = body.accounts.find((candidate) => candidate.accountRef === accountRef);
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 200);
+  assert.ok(account);
+  assert.equal(account.status, 'down');
+  assert.equal(account.configured, true);
+  assert.equal(account.authMode, 'oauth-browser');
+  assert.equal(account.runtimeStatus, 'auth_invalid');
+  assert.equal(account.runtimeReason, 'account_recovery_required:refresh_http_401');
+});
+
 test('web ui accounts cold start rebuilds from current DB state instead of trusting persisted snapshot', async (t) => {
   const fixture = createAccountFixture(t, 'aih-webui-accounts-cache-');
   const accountRef = fixture.register('codex', '7', {
@@ -2894,6 +2922,71 @@ test('web ui oauth success preserves manually disabled DB status', async (t) => 
       }
     }
   ]);
+});
+
+test('web ui reauth success restores a legacy markerless down account to the runtime pool', async (t) => {
+  const fixture = createAccountFixture(t, 'aih-webui-oauth-recovery-status-');
+  const accountRef = fixture.register('codex', '43', {
+    state: {
+      status: 'down',
+      configured: true,
+      apiKeyMode: false,
+      authMode: 'oauth-browser',
+      displayName: 'recovery@example.com',
+      runtimeState: null
+    }
+  });
+  const upserts = [];
+  const invalidations = [];
+
+  await handleOauthJobFinishedStateSync({
+    fs,
+    aiHomeDir: fixture.aiHomeDir,
+    options: {},
+    accountStateIndex: fixture.accountStateIndex,
+    accountStateService: {
+      syncAccountBaseState(candidateRef, provider, state) {
+        upserts.push({ kind: 'account', provider, accountRef: candidateRef, state });
+        return true;
+      },
+      clearRuntimeBlock(candidateRef, provider, options) {
+        upserts.push({
+          kind: 'runtime',
+          provider,
+          accountRef: candidateRef,
+          runtimeState: null,
+          state: options.baseState
+        });
+        return true;
+      }
+    },
+    getToolConfigDir: fixture.getToolConfigDir,
+    getProfileDir: fixture.getProfileDir,
+    loadServerRuntimeAccounts() {
+      return { codex: [{ accountRef }], gemini: [], claude: [] };
+    },
+    applyReloadState() {},
+    invalidateCodexAppServerEndpoint(options) {
+      invalidations.push(options);
+      return { ok: true, invalidated: true };
+    },
+    checkStatus() {
+      return { configured: true, accountName: 'recovery@example.com' };
+    }
+  }, {}, {
+    provider: 'codex',
+    accountRef,
+    authMode: 'oauth-browser',
+    reauth: true,
+    status: 'succeeded'
+  });
+
+  assert.equal(upserts.length, 2);
+  assert.equal(upserts[0].state.status, 'up');
+  assert.equal(upserts[1].state.status, 'up');
+  assert.equal(invalidations.length, 1);
+  assert.equal(invalidations[0].aiHomeDir, fixture.aiHomeDir);
+  assert.equal(invalidations[0].accountRef, accountRef);
 });
 
 // kimi 桌面托管登录扫码路由（desktop-session start/poll）。

@@ -266,3 +266,28 @@ test('refreshKimiAccessToken skips refresh when token is not due', async (t) => 
   assert.equal(result.refreshed, false);
   assert.equal(result.reason, 'not_due');
 });
+
+test('refreshKimiAccessToken preserves bounded redacted OAuth diagnostics for HTTP 200 without access_token', async (t) => {
+  const sensitiveRefreshToken = 'kimi-sensitive-refresh-token';
+  const fixture = createKimiFixture(t, expiredCredentials(sensitiveRefreshToken));
+
+  const result = await refreshKimiAccessToken(
+    { provider: 'kimi', accountRef: fixture.accountRef },
+    { force: true },
+    {
+      fs,
+      aiHomeDir: fixture.aiHomeDir,
+      fetchWithTimeout: okFetch({
+        code: 'token_already_used',
+        message: `Refresh credential ${sensitiveRefreshToken} was already used`
+      })
+    }
+  );
+
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'refresh_http_200');
+  assert.equal(result.oauthError, 'token_already_used');
+  assert.match(result.detail, /already used/u);
+  assert.ok(result.detail.length <= 240);
+  assert.doesNotMatch(JSON.stringify(result), /kimi-sensitive-refresh-token/u);
+});

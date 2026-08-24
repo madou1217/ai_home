@@ -128,12 +128,17 @@ test('refreshCodexAccessToken force refresh updates account and persists auth sn
   const nowMs = Date.now();
   let seenUrl = '';
   let seenBody = null;
+  const invalidations = [];
   const result = await refreshCodexAccessToken(account, {
     force: true,
     nowMs
   }, {
     fs,
     aiHomeDir: fixture.aiHomeDir,
+    invalidateCodexAppServerEndpoint: (options) => {
+      invalidations.push(options);
+      return { ok: true, invalidated: true };
+    },
     fetchWithTimeout: async (url, init) => {
       seenUrl = url;
       seenBody = JSON.parse(String(init && init.body || '{}'));
@@ -167,6 +172,9 @@ test('refreshCodexAccessToken force refresh updates account and persists auth sn
   assert.equal(saved.tokens.account_id, 'acc_1');
   assert.equal(typeof saved.last_refresh, 'string');
   assert.equal(typeof saved.expired, 'string');
+  assert.equal(invalidations.length, 1);
+  assert.equal(invalidations[0].aiHomeDir, fixture.aiHomeDir);
+  assert.equal(invalidations[0].accountRef, fixture.accountRef);
 });
 
 test('refreshCodexAccessToken rereads rotated auth file before reusing stale refresh token', async (t) => {

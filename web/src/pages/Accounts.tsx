@@ -27,7 +27,9 @@ import {
 import type { MenuProps } from 'antd';
 import MobileStatGrid from '@/components/mobile/MobileStatGrid';
 import MobilePills from '@/components/mobile/MobilePills';
+import MobileBackButton from '@/components/mobile/MobileBackButton';
 import {
+  ArrowLeftOutlined,
   PlusOutlined,
   DeleteOutlined,
   CheckCircleOutlined,
@@ -86,7 +88,9 @@ import {
   getUsageSortValue,
   hasKnownUsage,
   isAccountEnabled,
-  mergeSingleAccount
+  mergeSingleAccount,
+  partitionAccountsByRecovery,
+  reconcileAccountAfterReauthSuccess
 } from '@/features/accounts/account-state';
 import {
   getAccountModelProbe,
@@ -140,6 +144,7 @@ import {
 } from '@/features/accounts/AccountBadges';
 import AccountActivityIcon from '@/features/accounts/AccountActivityIcon';
 import { startAccountAppEntryPolling } from '@/features/accounts/app-entry-poller';
+import { RecoveryAccountsView } from '@/features/accounts/RecoveryAccountsView';
 
 // Provider 顺序和认证方式都来自 Go 核心生成的 Client 合同。
 const PROVIDERS: readonly Provider[] = providerIds;
@@ -236,7 +241,8 @@ export default function Accounts() {
   const isMobile = !screens.md;
   const location = useLocation();
   const navigate = useNavigate();
-const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
+  const isRecoveryPage = location.pathname === '/accounts/recovery';
+  const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
   const {
     accounts,
     setAccounts,
@@ -247,15 +253,19 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
     requestAccountsSnapshotUpdate,
     stageAccountRemoval
   } = useAccountsSnapshot(accountsHandlersRef);
+  const { currentAccounts, recoveryAccounts } = useMemo(
+    () => partitionAccountsByRecovery(accounts),
+    [accounts]
+  );
   const [liveTokenDrops, setLiveTokenDrops] = useState<TokenDropEvent[]>([]);
-  const tokenDrops = useTokenDropEvents(accounts, liveTokenDrops);
+  const tokenDrops = useTokenDropEvents(currentAccounts, liveTokenDrops);
   const {
     modelCatalog,
     refreshingModelAccountRefs,
     refreshAccountModelCatalog,
     clearModelAccountRefreshing,
     loadModelCatalog
-  } = useModelCatalog(accounts);
+  } = useModelCatalog(currentAccounts);
   const [updatingStatusAccountRefs, setUpdatingStatusAccountRefs] = useState<Record<string, boolean>>({});
   const [refreshingUsageAccountRefs, setRefreshingUsageAccountRefs] = useState<Record<string, boolean>>({});
   const [modalVisible, setModalVisible] = useState(false);
@@ -568,12 +578,19 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
       if (completedAuthJobKeysRef.current.has(jobId)) return;
       completedAuthJobKeysRef.current.add(jobId);
       const successLabel = getAuthJobIdentity(job, authSubjectLabel) || authSubjectLabel || '账号';
+      const isReauthSuccess = Boolean(job.reauth) || authFlowKind === 'reauth';
+      const movedToCurrentPool = isReauthSuccess && recoveryAccounts.some((account) => (
+        getAccountRef(account) === String(job.accountRef || '').trim()
+      ));
+      if (isReauthSuccess) {
+        setAccounts((current) => reconcileAccountAfterReauthSuccess(current, job.accountRef));
+      }
       void requestAccountsSnapshotUpdate();
       if (!authSuccessClosing) {
         setAuthSuccessClosing(true);
         message.success(
-          authFlowKind === 'reauth'
-            ? `${successLabel} 重新认证成功`
+          isReauthSuccess
+            ? `${successLabel} 重新认证成功${movedToCurrentPool ? '，已移回当前账号池' : ''}`
             : `${successLabel} 授权完成`
         );
         if (successAutoCloseTimerRef.current !== null) {
@@ -591,7 +608,9 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
     authSubjectLabel,
     authSuccessClosing,
     closeAuthProgressPanel,
-    requestAccountsSnapshotUpdate
+    recoveryAccounts,
+    requestAccountsSnapshotUpdate,
+    setAccounts
   ]);
 
   const handleAccountRefreshJobUpdate = React.useCallback((job: AccountRefreshJob) => {
@@ -863,6 +882,7 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
       provider: result.provider,
       accountRef: result.accountRef,
       authMode: result.authMode,
+      reauth: flowKind === 'reauth',
       status: 'running',
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -1312,7 +1332,7 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
   const providerStats = useMemo<ProviderStats>(() => {
     const stats = createProviderStats();
 
-    accounts.forEach(account => {
+    currentAccounts.forEach(account => {
       const provider = account.provider;
       const providerBucket = stats[provider];
       if (!providerBucket) return;
@@ -1345,11 +1365,11 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
     });
 
     return stats;
-  }, [accounts]);
+  }, [currentAccounts]);
 
   // 过滤账号
   const filteredAccounts = useMemo(() => {
-    let filtered = accounts;
+    let filtered = currentAccounts;
 
     // 按 provider 过滤
     if (activeProvider !== 'all') {
@@ -1362,7 +1382,7 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
     }
 
     return filtered;
-  }, [accounts, activeProvider, filterStatus]);
+  }, [currentAccounts, activeProvider, filterStatus]);
 
   useEffect(() => {
     if (!accountRouteTarget) return;
@@ -1373,9 +1393,22 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
 
   useEffect(() => {
     if (!accountRouteTarget || loading) return;
+    const retainedTarget = recoveryAccounts.some((account) => (
+      account.provider === accountRouteTarget.provider
+      && account.accountRef === accountRouteTarget.accountRef
+    ));
+    if (retainedTarget) {
+      if (!isRecoveryPage) {
+        navigate(`/accounts/recovery${location.search}`, { replace: true });
+        return;
+      }
+      const row = document.querySelector<HTMLElement>(`[data-account-ref="${accountRouteTarget.accountRef}"]`);
+      row?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      return;
+    }
     const row = document.querySelector<HTMLElement>(`[data-account-ref="${accountRouteTarget.accountRef}"]`);
     row?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  }, [accountRouteTarget, filteredAccounts, loading]);
+  }, [accountRouteTarget, filteredAccounts, isRecoveryPage, loading, location.search, navigate, recoveryAccounts]);
 
   const openModelManagement = React.useCallback((record: Pick<Account, 'provider' | 'accountRef'>) => {
     navigate(`/accounts/${encodeURIComponent(record.provider)}/${encodeURIComponent(record.accountRef)}/models`);
@@ -1858,7 +1891,7 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
 
   // provider tab 聚合账号活动，复用行首图标组件，保证转轴与速率语义完全一致。
   const providerActivity: Record<string, ManagementAccountActivity> = {};
-  accounts.forEach((account) => {
+  currentAccounts.forEach((account) => {
     const activity = getAccountActivity(account);
     if (!activity) return;
     const provider = String(account.provider).toLowerCase();
@@ -1922,10 +1955,40 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
 
   return (
     <PageScaffold ghost
-      title="账号池管理"
-      subTitle="统一管理 OAuth 和密钥账号；密钥账号的网络可达性以模型探测为准。"
-      extra={isMobile ? (
+      title={isRecoveryPage ? '待恢复账号' : '账号池管理'}
+      subTitle={isRecoveryPage
+        ? '集中处理因认证失效而暂时移出账号池的账号。'
+        : '统一管理 OAuth 和密钥账号；密钥账号的网络可达性以模型探测为准。'}
+      extra={isRecoveryPage ? (isMobile ? (
         <div className="m-header-actions">
+          <MobileBackButton
+            className="m-icon-btn"
+            title="返回账号池"
+            onClick={() => navigate('/accounts')}
+          />
+          <button
+            className="m-icon-btn primary"
+            aria-label="刷新待恢复账号"
+            disabled={refreshing}
+            onClick={handleReload}
+          >
+            <SyncOutlined spin={refreshing} />
+          </button>
+        </div>
+      ) : (
+        <>
+          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/accounts')}>
+            返回账号池
+          </Button>
+          <Button icon={<SyncOutlined />} loading={refreshing} onClick={handleReload}>
+            刷新
+          </Button>
+        </>
+      )) : isMobile ? (
+        <div className="m-header-actions">
+          <Badge count={recoveryAccounts.length} size="small">
+            <button className="m-icon-btn" aria-label={`待恢复账号 ${recoveryAccounts.length}`} onClick={() => navigate('/accounts/recovery')}><UndoOutlined /></button>
+          </Badge>
           <Popover
             trigger="click" placement="bottomRight" arrow={false}
             open={exportMenuOpen} onOpenChange={setExportMenuOpen}
@@ -1938,6 +2001,13 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
         </div>
       ) : (
         <>
+          <Button
+            key="recovery"
+            icon={<UndoOutlined />}
+            onClick={() => navigate('/accounts/recovery')}
+          >
+            待恢复 ({recoveryAccounts.length})
+          </Button>
           <Popover
             key="export"
             trigger="click"
@@ -1974,9 +2044,22 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
           </Button>
         </>
       )}
->
-      {/* 顶部统计。移动端用专属 MobileStatGrid（2 列，数值不换行）；桌面保留 StatisticCard.Group。 */}
-      {isMobile ? (
+    >
+      {isRecoveryPage ? (
+        <RecoveryAccountsView
+          accounts={recoveryAccounts}
+          loading={loading}
+          highlightedAccountRef={accountRouteTarget?.accountRef}
+          removingAccountRefs={removingAccountRefs}
+          onReauth={(record) => {
+            void handleReauth(record);
+          }}
+          onDelete={(record) => handleAccountMenuClick(record, 'delete')}
+        />
+      ) : (
+        <>
+          {/* 顶部统计。移动端用专属 MobileStatGrid（2 列，数值不换行）；桌面保留 StatisticCard.Group。 */}
+          {isMobile ? (
         /* 手机版只保留两张有信息量的卡:正常可用 / 耗尽·停用。
            「账号状态」恒为就绪、「待处理问题」常为 0,信息量低,已移除;
            每个账号卡自身已展示状态与用量。 */
@@ -2206,6 +2289,8 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
           />
           </SectionCard>
         )}
+        </>
+      )}
 
       <EditAccountModal
         open={editModalVisible}

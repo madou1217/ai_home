@@ -16,6 +16,11 @@ const nodeRoutes = [
     icon: "team",
   },
   {
+    path: "/accounts/recovery",
+    component: "./Accounts",
+    hideInMenu: true,
+  },
+  {
     name: "AI 会话",
     path: "/chat",
     component: "./Chat",

@@ -322,6 +322,67 @@ test('kimi quota probe forwards proxy, device headers, and timeout through refre
   }
 });
 
+test('kimi quota probe 的刷新、用量和身份请求统一使用账号绑定出口', async () => {
+  const { aiHomeDir, accountRef } = setupKimiAccount({
+    credentials: {
+      access_token: 'expired-account-egress',
+      refresh_token: 'rt-account-egress',
+      expires_at: Math.floor(Date.now() / 1000) - 60
+    }
+  });
+  const resolvedInputs = [];
+  const requests = [];
+  const probe = createKimiQuotaProbe({
+    fs,
+    aiHomeDir,
+    readAccountCredentialRecord: require('../lib/server/account-credential-store').readAccountCredentialRecord,
+    proxyUrl: 'http://global-proxy.example:7890',
+    noProxy: 'global.example',
+    async resolveAccountEgressRequestOptions(input) {
+      resolvedInputs.push(input);
+      return {
+        ok: true,
+        bound: true,
+        options: {
+          ...input.options,
+          proxyUrl: 'http://127.0.0.1:23103',
+          noProxy: 'localhost,127.0.0.1,::1'
+        }
+      };
+    },
+    async fetchWithTimeout(url, _init, _timeoutMs, proxyOptions) {
+      requests.push({ url: String(url), proxyOptions });
+      if (String(url).endsWith('/api/oauth/token')) {
+        return makeOkResponse({
+          access_token: 'fresh-account-egress',
+          refresh_token: 'rt-account-egress-next',
+          expires_in: 900
+        });
+      }
+      if (String(url).endsWith('/usages')) {
+        return makeOkResponse({ usage: { used: 6, limit: 100 } });
+      }
+      return makeOkResponse({});
+    }
+  });
+
+  try {
+    const result = await probe.probe(accountRef, 5000);
+
+    assert.ok(result.snapshot, 'expected quota snapshot');
+    assert.equal(resolvedInputs.length, 1);
+    assert.equal(resolvedInputs[0].provider, 'kimi');
+    assert.equal(resolvedInputs[0].accountRef, accountRef);
+    assert.deepEqual(requests.map((request) => request.proxyOptions), [
+      { proxyUrl: 'http://127.0.0.1:23103', noProxy: 'localhost,127.0.0.1,::1' },
+      { proxyUrl: 'http://127.0.0.1:23103', noProxy: 'localhost,127.0.0.1,::1' },
+      { proxyUrl: 'http://127.0.0.1:23103', noProxy: 'localhost,127.0.0.1,::1' }
+    ]);
+  } finally {
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+  }
+});
+
 test('kimi quota probe refreshes and migrates legacy auth refresh-only credentials', async () => {
   const { aiHomeDir, accountRef } = setupKimiAccount();
   writeAccountNativeAuth(fs, aiHomeDir, accountRef, {
@@ -709,7 +770,7 @@ test('refreshKimiAccessToken singleflights concurrent callers by accountRef acro
       { force: true },
       { fs, aiHomeDir, fetchWithTimeout }
     );
-    await Promise.resolve();
+    await new Promise((resolve) => setImmediate(resolve));
     const callsBeforeRelease = refreshCalls;
     releaseRefresh();
     const [gatewayResult, quotaResult] = await Promise.all([gatewayRefresh, quotaRefresh]);

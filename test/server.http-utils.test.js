@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { spawnSync } = require('node:child_process');
 const zlib = require('node:zlib');
 const {
   fetchWithTimeout,
@@ -15,6 +16,25 @@ const {
 } = require('../lib/server/protocol-adapters');
 
 const GEMINI_SESSION_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+test('账号出口消费者加载时不产生循环依赖警告', () => {
+  for (const modulePath of [
+    './lib/server/http-utils',
+    './lib/cli/services/usage/kimi-quota-probe'
+  ]) {
+    const child = spawnSync(process.execPath, [
+      '--trace-warnings',
+      '-e',
+      `require(${JSON.stringify(modulePath)})`
+    ], {
+      cwd: process.cwd(),
+      encoding: 'utf8'
+    });
+
+    assert.equal(child.status, 0, child.stderr);
+    assert.doesNotMatch(child.stderr, /circular dependency/i, child.stderr);
+  }
+});
 
 test('writeJson ignores a response whose headers were already sent', () => {
   let mutated = false;
@@ -197,6 +217,57 @@ test('fetchModelsForAccount probes zcode OAuth plan models via billing/balance w
   assert.deepEqual(seenUrls, ['https://zcode.z.ai/api/v1/zcode-plan/billing/balance']);
   assert.equal(seenAuthorization, 'Bearer zcode-jwt-live');
   assert.deepEqual(models, ['glm-5.3', 'GLM-5-Turbo', 'GLM-4.7']);
+});
+
+test('fetchModelsForAccount 在账号选定后使用账号绑定出口探测模型', async () => {
+  const resolvedInputs = [];
+  let fetchProxyOptions = null;
+  const models = await fetchModelsForAccount({
+    aiHomeDir: '/tmp/aih-model-egress-test',
+    proxyUrl: 'http://global-proxy.example:7890',
+    noProxy: 'global.example',
+    async resolveAccountEgressRequestOptions(input) {
+      resolvedInputs.push(input);
+      return {
+        ok: true,
+        bound: true,
+        options: {
+          ...input.options,
+          proxyUrl: 'http://127.0.0.1:23104',
+          noProxy: 'localhost,127.0.0.1,::1'
+        }
+      };
+    },
+    async fetchWithTimeout(_url, _init, _timeoutMs, proxyOptions) {
+      fetchProxyOptions = proxyOptions;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          code: 0,
+          data: {
+            balances: [{ capabilities: ['model:glm-5'] }]
+          }
+        })
+      };
+    }
+  }, {
+    provider: 'zcode',
+    accountRef: 'acct_01000000000000000004',
+    accessToken: 'zai-token',
+    zcodeJwtToken: 'zcode-jwt',
+    authType: 'oauth',
+    apiKeyMode: false
+  }, 500);
+
+  assert.deepEqual(models, ['glm-5']);
+  assert.equal(resolvedInputs.length, 1);
+  assert.equal(resolvedInputs[0].provider, 'zcode');
+  assert.equal(resolvedInputs[0].accountRef, 'acct_01000000000000000004');
+  assert.deepEqual(fetchProxyOptions, {
+    proxyUrl: 'http://127.0.0.1:23104',
+    noProxy: 'localhost,127.0.0.1,::1'
+  });
 });
 
 test('fetchModelsForAccount falls back to paas probe when zcode balance probe fails', async (t) => {

@@ -66,13 +66,30 @@ test('Agy token refresh reads expiry from the canonical account model', () => {
 test('Agy token refresh uses CLI client defaults and persists refreshed auth to DB', async (t) => {
   const fixture = createFixture(t);
   let seenBody = null;
+  let seenProxyOptions = null;
+  const resolvedInputs = [];
   const result = await refreshAgyAccessToken(fixture.account, {
     force: true,
-    nowMs: 1700000000000
+    nowMs: 1700000000000,
+    proxyUrl: 'http://global-proxy.example:7890',
+    noProxy: 'global.example'
   }, {
     ...fixture.deps,
-    fetchWithTimeout: async (_url, init) => {
+    async resolveAccountEgressRequestOptions(input) {
+      resolvedInputs.push(input);
+      return {
+        ok: true,
+        bound: true,
+        options: {
+          ...input.options,
+          proxyUrl: 'http://127.0.0.1:23114',
+          noProxy: 'localhost,127.0.0.1,::1'
+        }
+      };
+    },
+    fetchWithTimeout: async (_url, init, _timeoutMs, proxyOptions) => {
       seenBody = parseRequestBody(init);
+      seenProxyOptions = proxyOptions;
       assert.match(String(init.headers && init.headers['content-type'] || ''), /application\/x-www-form-urlencoded/);
       return {
         ok: true,
@@ -91,6 +108,13 @@ test('Agy token refresh uses CLI client defaults and persists refreshed auth to 
   const defaultCredential = __private.resolveAgyOAuthClientCredentialCandidates({}, {})[0];
   assert.equal(result.ok, true);
   assert.equal(result.persisted, true);
+  assert.equal(resolvedInputs.length, 1);
+  assert.equal(resolvedInputs[0].provider, 'agy');
+  assert.equal(resolvedInputs[0].accountRef, fixture.accountRef);
+  assert.deepEqual(seenProxyOptions, {
+    proxyUrl: 'http://127.0.0.1:23114',
+    noProxy: 'localhost,127.0.0.1,::1'
+  });
   assert.equal(seenBody.client_id, defaultCredential.clientId);
   assert.equal(seenBody.client_secret, defaultCredential.clientSecret);
   assert.equal(seenBody.refresh_token, 'refresh-token');

@@ -549,6 +549,8 @@ test('agy usage snapshot reads Antigravity OAuth token and caches fetchAvailable
     });
 
     const calls = [];
+    const quotaProxyOptions = [];
+    const resolvedInputs = [];
     const fetchImpl = async (url, init) => {
       calls.push({
         url,
@@ -587,6 +589,22 @@ test('agy usage snapshot reads Antigravity OAuth token and caches fetchAvailable
       aiHomeDir,
       spawnSync: () => ({ stdout: '', stderr: '' }),
       fetchImpl,
+      async resolveAccountEgressRequestOptions(input) {
+        resolvedInputs.push(input);
+        return {
+          ok: true,
+          bound: true,
+          options: {
+            ...input.options,
+            proxyUrl: 'http://127.0.0.1:23122',
+            noProxy: 'localhost,127.0.0.1,::1'
+          }
+        };
+      },
+      fetchWithTimeout: async (url, init, _timeoutMs, proxyOptions) => {
+        quotaProxyOptions.push(proxyOptions);
+        return fetchImpl(url, init);
+      },
       processObj: {
         execPath: process.execPath,
         cwd: () => root,
@@ -618,6 +636,16 @@ test('agy usage snapshot reads Antigravity OAuth token and caches fetchAvailable
     assert.equal(snapshot.models[0].model, 'claude-sonnet-4-6');
     assert.equal(snapshot.models[0].remainingPct, 33);
     assert.equal(calls[0].authorization, 'Bearer agy-access-token');
+    assert.equal(resolvedInputs.length, 1);
+    assert.equal(resolvedInputs[0].provider, 'agy');
+    assert.equal(resolvedInputs[0].accountRef, accountRef);
+    assert.ok(quotaProxyOptions.length >= 1);
+    assert.deepEqual(Array.from(new Set(quotaProxyOptions.map((value) => JSON.stringify(value)))), [
+      JSON.stringify({
+        proxyUrl: 'http://127.0.0.1:23122',
+        noProxy: 'localhost,127.0.0.1,::1'
+      })
+    ]);
 
     const cached = cacheService.readUsageCache('agy', accountRef);
     assert.ok(cached);
@@ -1341,6 +1369,7 @@ test('codex usage snapshot direct HTTP uses proxy-aware fetchWithTimeout by defa
     });
 
     const fetchWithTimeoutCalls = [];
+    const resolvedInputs = [];
     const usageSnapshotService = createUsageSnapshotService({
       fs,
       path,
@@ -1348,8 +1377,20 @@ test('codex usage snapshot direct HTTP uses proxy-aware fetchWithTimeout by defa
       spawn: () => {
         throw new Error('spawn should not be called when direct HTTP succeeds');
       },
-      fetchWithTimeout: async (url, init, timeoutMs) => {
-        fetchWithTimeoutCalls.push({ url, init, timeoutMs });
+      async resolveAccountEgressRequestOptions(input) {
+        resolvedInputs.push(input);
+        return {
+          ok: true,
+          bound: true,
+          options: {
+            ...input.options,
+            proxyUrl: 'http://127.0.0.1:23121',
+            noProxy: 'localhost,127.0.0.1,::1'
+          }
+        };
+      },
+      fetchWithTimeout: async (url, init, timeoutMs, proxyOptions) => {
+        fetchWithTimeoutCalls.push({ url, init, timeoutMs, proxyOptions });
         return {
           ok: true,
           text: async () => JSON.stringify({
@@ -1390,8 +1431,15 @@ test('codex usage snapshot direct HTTP uses proxy-aware fetchWithTimeout by defa
     const snapshot = await usageSnapshotService.ensureUsageSnapshotAsync('codex', accountRef, null);
     assert.ok(snapshot);
     assert.equal(fetchWithTimeoutCalls.length, 1);
+    assert.equal(resolvedInputs.length, 1);
+    assert.equal(resolvedInputs[0].provider, 'codex');
+    assert.equal(resolvedInputs[0].accountRef, accountRef);
     assert.equal(fetchWithTimeoutCalls[0].url, 'https://chatgpt.com/backend-api/wham/usage');
     assert.equal(fetchWithTimeoutCalls[0].timeoutMs, 60000);
+    assert.deepEqual(fetchWithTimeoutCalls[0].proxyOptions, {
+      proxyUrl: 'http://127.0.0.1:23121',
+      noProxy: 'localhost,127.0.0.1,::1'
+    });
     assert.equal(snapshot.entries[0].remainingPct, 85);
     assert.deepEqual(snapshot.rateLimitResetCredits, { availableCount: 2 });
   } finally {

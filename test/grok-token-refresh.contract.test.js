@@ -55,16 +55,33 @@ test('grok refresh posts the official contract and persists refreshed auth to DB
   });
 
   const calls = [];
+  const resolvedInputs = [];
   const result = await refreshGrokAccessToken({
     accountRef: registration.accountRef,
     provider: 'grok',
     tokenExpiresAt: oldExp * 1000
-  }, { force: true }, {
+  }, {
+    force: true,
+    proxyUrl: 'http://global-proxy.example:7890',
+    noProxy: 'global.example'
+  }, {
     fs,
     aiHomeDir,
-    fetchWithTimeout: async (url, options) => {
+    async resolveAccountEgressRequestOptions(input) {
+      resolvedInputs.push(input);
+      return {
+        ok: true,
+        bound: true,
+        options: {
+          ...input.options,
+          proxyUrl: 'http://127.0.0.1:23115',
+          noProxy: 'localhost,127.0.0.1,::1'
+        }
+      };
+    },
+    fetchWithTimeout: async (url, options, _timeoutMs, proxyOptions) => {
       const parsedBody = Object.fromEntries(new URLSearchParams(options.body).entries());
-      calls.push({ url, body: parsedBody, headers: options.headers });
+      calls.push({ url, body: parsedBody, headers: options.headers, proxyOptions });
       return {
         ok: true,
         status: 200,
@@ -80,7 +97,14 @@ test('grok refresh posts the official contract and persists refreshed auth to DB
   assert.equal(result.ok, true);
   assert.equal(result.refreshed, true);
   assert.equal(result.persisted, true);
+  assert.equal(resolvedInputs.length, 1);
+  assert.equal(resolvedInputs[0].provider, 'grok');
+  assert.equal(resolvedInputs[0].accountRef, registration.accountRef);
   assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0].proxyOptions, {
+    proxyUrl: 'http://127.0.0.1:23115',
+    noProxy: 'localhost,127.0.0.1,::1'
+  });
   assert.equal(calls[0].url, 'https://auth.x.ai/oauth2/token');
   assert.equal(calls[0].headers['content-type'], 'application/x-www-form-urlencoded');
   assert.equal(calls[0].body.grant_type, 'refresh_token');

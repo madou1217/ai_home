@@ -128,15 +128,32 @@ test('refreshCodexAccessToken force refresh updates account and persists auth sn
   const nowMs = Date.now();
   let seenUrl = '';
   let seenBody = null;
+  let seenProxyOptions = null;
+  const resolvedInputs = [];
   const result = await refreshCodexAccessToken(account, {
     force: true,
-    nowMs
+    nowMs,
+    proxyUrl: 'http://global-proxy.example:7890',
+    noProxy: 'global.example'
   }, {
     fs,
     aiHomeDir: fixture.aiHomeDir,
-    fetchWithTimeout: async (url, init) => {
+    async resolveAccountEgressRequestOptions(input) {
+      resolvedInputs.push(input);
+      return {
+        ok: true,
+        bound: true,
+        options: {
+          ...input.options,
+          proxyUrl: 'http://127.0.0.1:23111',
+          noProxy: 'localhost,127.0.0.1,::1'
+        }
+      };
+    },
+    fetchWithTimeout: async (url, init, _timeoutMs, proxyOptions) => {
       seenUrl = url;
       seenBody = JSON.parse(String(init && init.body || '{}'));
+      seenProxyOptions = proxyOptions;
       return {
         ok: true,
         status: 200,
@@ -151,6 +168,13 @@ test('refreshCodexAccessToken force refresh updates account and persists auth sn
   });
 
   assert.equal(seenUrl, 'https://auth.openai.com/oauth/token');
+  assert.equal(resolvedInputs.length, 1);
+  assert.equal(resolvedInputs[0].provider, 'codex');
+  assert.equal(resolvedInputs[0].accountRef, fixture.accountRef);
+  assert.deepEqual(seenProxyOptions, {
+    proxyUrl: 'http://127.0.0.1:23111',
+    noProxy: 'localhost,127.0.0.1,::1'
+  });
   assert.equal(seenBody.client_id, 'app_test_client');
   assert.equal(seenBody.grant_type, 'refresh_token');
   assert.equal(result.ok, true);
@@ -167,6 +191,48 @@ test('refreshCodexAccessToken force refresh updates account and persists auth sn
   assert.equal(saved.tokens.account_id, 'acc_1');
   assert.equal(typeof saved.last_refresh, 'string');
   assert.equal(typeof saved.expired, 'string');
+});
+
+test('refreshCodexAccessToken 在账号绑定出口不可用时禁止回退刷新', async (t) => {
+  const fixture = createCodexFixture(t, {
+    auth_mode: 'chatgpt',
+    tokens: {
+      access_token: 'old-token',
+      refresh_token: 'opaque-old'
+    }
+  }, '9');
+  let fetchCalled = false;
+
+  const result = await refreshCodexAccessToken({
+    provider: 'codex',
+    accountRef: fixture.accountRef,
+    accessToken: 'old-token',
+    refreshToken: 'opaque-old'
+  }, {
+    force: true,
+    proxyUrl: 'http://global-proxy.example:7890'
+  }, {
+    fs,
+    aiHomeDir: fixture.aiHomeDir,
+    async resolveAccountEgressRequestOptions() {
+      return {
+        ok: false,
+        bound: true,
+        error: 'account_egress_unavailable',
+        egressError: 'proxy_unreachable'
+      };
+    },
+    async fetchWithTimeout() {
+      fetchCalled = true;
+      throw new Error('must_not_fallback');
+    }
+  });
+
+  assert.equal(fetchCalled, false);
+  assert.equal(result.ok, false);
+  assert.equal(result.refreshed, false);
+  assert.equal(result.reason, 'account_egress_unavailable');
+  assert.match(result.detail, /proxy_unreachable/);
 });
 
 test('refreshCodexAccessToken rereads rotated auth file before reusing stale refresh token', async (t) => {

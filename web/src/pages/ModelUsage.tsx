@@ -213,6 +213,8 @@ export default function ModelUsage() {
   const [trend, setTrend] = useState<ModelUsageTrend>(emptyTrend);
   const [accountsByRef, setAccountsByRef] = useState<Map<string, Account>>(() => new Map());
   const [loading, setLoading] = useState(false);
+  const [hasDashboardSnapshot, setHasDashboardSnapshot] = useState(false);
+  const [dashboardLoadError, setDashboardLoadError] = useState('');
   const [dashboardQueryJob, setDashboardQueryJob] = useState<ModelUsageDashboardQueryJob | null>(null);
   const [scanning, setScanning] = useState(false);
   const [scanJob, setScanJob] = useState<ModelUsageScanJob | null>(null);
@@ -233,6 +235,17 @@ export default function ModelUsage() {
 
   const query = useMemo(() => buildQuery(range, rangeMode, provider, model, 50), [model, provider, range, rangeMode]);
 
+  const beginUsageTransition = useCallback((quiet = false) => {
+    quietNextLoadRef.current = quiet;
+    setLoading(true);
+    setDashboardLoadError('');
+    setDashboardQueryJob(null);
+    breakdownSequenceRef.current += 1;
+    setBreakdownTarget(null);
+    setBreakdown(null);
+    setBreakdownLoading(false);
+  }, []);
+
   const cancelDashboardQuery = useCallback((jobId: string) => {
     if (!jobId) return;
     void modelUsageAPI.cancelDashboardQuery(jobId).catch(() => {});
@@ -247,16 +260,24 @@ export default function ModelUsage() {
       setSessions(job.dashboard.sessions || []);
       setModelOptions(job.dashboard.modelOptions || []);
       setTrend(job.dashboard.trend || emptyTrend);
+      setHasDashboardSnapshot(true);
+      setDashboardLoadError('');
     }
     if (isDashboardQueryActive(job)) {
       setLoading(true);
       return;
     }
     setLoading(false);
+    if (job.status === 'succeeded') {
+      setDashboardLoadError('');
+      return;
+    }
     if (job.status !== 'failed' || completedDashboardQueryIdsRef.current.has(job.id)) return;
     completedDashboardQueryIdsRef.current.add(job.id);
+    const errorMessage = job.error || '加载模型用量失败';
+    setDashboardLoadError(errorMessage);
     if (!activeDashboardQueryQuietRef.current) {
-      message.error(job.error || '加载模型用量失败');
+      message.error(errorMessage);
     }
   }, []);
 
@@ -305,11 +326,7 @@ export default function ModelUsage() {
     cancelDashboardQuery(previousJobId);
     activeDashboardQueryQuietRef.current = options.quiet !== false;
     setDashboardQueryJob(null);
-    setStats(emptyStats);
-    setModels([]);
-    setSessions([]);
-    setModelOptions([]);
-    setTrend(emptyTrend);
+    setDashboardLoadError('');
     setBreakdownTarget(null);
     setBreakdown(null);
     setLoading(true);
@@ -327,10 +344,11 @@ export default function ModelUsage() {
         applyDashboardQueryJob(latestJob);
       }
     } catch (error: any) {
-      if (loadSequence === loadSequenceRef.current && !options.quiet) {
-        message.error(error?.response?.data?.message || error?.message || '加载模型用量失败');
-      }
-      if (loadSequence === loadSequenceRef.current) setLoading(false);
+      if (loadSequence !== loadSequenceRef.current) return;
+      const errorMessage = error?.response?.data?.message || error?.message || '加载模型用量失败';
+      setDashboardLoadError(errorMessage);
+      if (!options.quiet) message.error(errorMessage);
+      setLoading(false);
     }
   }, [applyDashboardQueryJob, cancelDashboardQuery]);
 
@@ -374,12 +392,14 @@ export default function ModelUsage() {
 
   const handleRangeChange = (value: null | [Dayjs | null, Dayjs | null]) => {
     if (!value || !value[0] || !value[1]) return;
+    beginUsageTransition();
     setRangeMode('custom');
     setRange([value[0], value[1]]);
     setModel('');
   };
 
   const handleRangeModeChange = (value: RangeMode) => {
+    beginUsageTransition();
     setRangeMode(value);
     setModel('');
     if (value !== 'custom') {
@@ -388,15 +408,21 @@ export default function ModelUsage() {
   };
 
   const handleProviderChange = (value: ProviderFilter) => {
+    beginUsageTransition();
     setProvider(value);
     setModel('');
   };
 
+  const handleModelChange = (value: string | undefined) => {
+    beginUsageTransition();
+    setModel(String(value || ''));
+  };
+
   const requestUsageRefresh = useCallback((quiet: boolean) => {
-    quietNextLoadRef.current = quiet;
+    beginUsageTransition(quiet);
     if (rangeMode !== 'custom') setRange(buildRangeByMode(rangeMode));
     setRefreshRevision((current) => current + 1);
-  }, [rangeMode]);
+  }, [beginUsageTransition, rangeMode]);
 
   const handleRefreshUsage = () => requestUsageRefresh(false);
 
@@ -453,6 +479,7 @@ export default function ModelUsage() {
   };
 
   const openBreakdown = useCallback(async (target: UsageBreakdownTarget) => {
+    if (loading) return;
     const sequence = breakdownSequenceRef.current + 1;
     breakdownSequenceRef.current = sequence;
     setBreakdownTarget(target);
@@ -474,7 +501,7 @@ export default function ModelUsage() {
     } finally {
       if (sequence === breakdownSequenceRef.current) setBreakdownLoading(false);
     }
-  }, [query]);
+  }, [loading, query]);
 
   const closeBreakdown = () => {
     breakdownSequenceRef.current += 1;
@@ -782,6 +809,23 @@ export default function ModelUsage() {
 
   const totalCacheTokens = getCacheTokens(stats);
   const overallCacheHitRate = calculateCacheHitRate(stats);
+  const dashboardProgress = dashboardQueryJob && dashboardQueryJob.totalShards > 0
+    ? `${dashboardQueryJob.completedShards}/${dashboardQueryJob.totalShards}`
+    : '';
+  const dashboardStatusText = loading
+    ? [
+      hasDashboardSnapshot ? '正在切换数据范围' : '正在加载模型用量',
+      dashboardProgress ? `已汇总 ${dashboardProgress}` : ''
+    ].filter(Boolean).join(' · ')
+    : dashboardLoadError
+      ? hasDashboardSnapshot ? '切换失败，仍显示上一次成功快照' : '加载失败，请重试'
+      : '';
+  const dashboardBodyClassName = [
+    'usage-dashboard-body',
+    loading ? 'usage-dashboard-body--loading' : '',
+    loading && hasDashboardSnapshot ? 'usage-dashboard-body--refreshing' : '',
+    dashboardLoadError ? 'usage-dashboard-body--error' : ''
+  ].filter(Boolean).join(' ');
 
   return (
     <PageScaffold ghost
@@ -801,6 +845,21 @@ export default function ModelUsage() {
         </Button>
       ]}
     >
+      <div className={dashboardBodyClassName} aria-busy={loading}>
+      <div
+        className={`usage-query-progress${dashboardStatusText ? ' usage-query-progress--visible' : ''}${dashboardLoadError && !loading ? ' usage-query-progress--error' : ''}`}
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        {loading ? <SyncOutlined spin aria-hidden /> : null}
+        {dashboardStatusText ? (
+          <Text type={dashboardLoadError && !loading ? 'danger' : 'secondary'}>
+            {dashboardStatusText}
+          </Text>
+        ) : null}
+      </div>
+
       <section className="usage-kpi-rail" aria-label="核心用量指标">
         <div className="usage-kpi-item usage-kpi-item--primary">
           <span>总 Tokens</span>
@@ -833,17 +892,6 @@ export default function ModelUsage() {
           <small>USD · 按当前价格快照</small>
         </div>
       </section>
-
-      {loading ? (
-        <div className="usage-query-progress" role="status" aria-live="polite">
-          <SyncOutlined spin />
-          <Text type="secondary">
-            {dashboardQueryJob && dashboardQueryJob.totalShards > 0
-              ? `正在汇总 ${dashboardQueryJob.completedShards}/${dashboardQueryJob.totalShards}`
-              : '正在准备统计范围…'}
-          </Text>
-        </div>
-      ) : null}
 
       {isMobile ? (
         <>
@@ -892,7 +940,7 @@ export default function ModelUsage() {
             <div className="m-filter-group-label">模型</div>
             <Select
               allowClear showSearch optionFilterProp="label" placeholder="全部模型"
-              value={model || undefined} onChange={(value) => setModel(String(value || ''))}
+              value={model || undefined} onChange={handleModelChange}
               style={{ width: '100%' }} options={modelSelectOptions}
             />
           </Drawer>
@@ -926,7 +974,7 @@ export default function ModelUsage() {
             optionFilterProp="label"
             placeholder="全部模型"
             value={model || undefined}
-            onChange={(value) => setModel(String(value || ''))}
+            onChange={handleModelChange}
             style={{ width: 260 }}
             options={modelSelectOptions}
           />
@@ -948,7 +996,7 @@ export default function ModelUsage() {
       </SectionCard>
 
       {isMobile ? (
-        <>
+        <div className="usage-results-mobile">
           <MobilePills
             items={[{ key: 'model', label: '按模型' }, { key: 'session', label: '按会话' }]}
             activeKey={usageTab}
@@ -971,9 +1019,9 @@ export default function ModelUsage() {
               <div className="mobile-card-list">{sessions.map(renderSessionCard)}</div>
             )
           )}
-        </>
+        </div>
       ) : (
-      <SectionCard>
+      <SectionCard className="usage-results-card">
         <Tabs
           activeKey={usageTab}
           onChange={(key) => setUsageTab(key as 'model' | 'session')}
@@ -1027,6 +1075,7 @@ export default function ModelUsage() {
         accountsByRef={accountsByRef}
         onClose={closeBreakdown}
       />
+      </div>
     </PageScaffold>
   );
 }

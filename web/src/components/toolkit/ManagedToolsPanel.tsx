@@ -7,21 +7,19 @@ import {
   ToolOutlined
 } from '@ant-design/icons';
 import { toolkitAPI } from '@/services/api';
-import { useWebUiTaskQueue } from '@/services/webui-task-queue';
 import type {
   ManagedToolItem,
   ManagedToolLifecycleAction,
   ManagedToolsResponse,
   ToolkitToolCategoryId,
-  ToolkitToolConfigResponse,
-  WebUiTask
+  ToolkitToolConfigResponse
 } from '@/types';
 import Button from '@/components/ui/AppButton';
-import AppActionConfirmContent from './AppActionConfirmContent';
 import InstallLifecycleAction from './InstallLifecycleAction';
 import ManagedResourceCard from './ManagedResourceCard';
 import ToolkitStatusTrack from './ToolkitStatusTrack';
 import ConfigCodeEditor from './config-editor/ConfigCodeEditor';
+import useToolkitLifecycleController from './useToolkitLifecycleController';
 
 const DISCOVERY_SOURCE_LABELS: Record<string, string> = {
   'running-process': '运行进程参数',
@@ -47,10 +45,6 @@ interface ManagedToolsPanelProps {
   category: ToolkitToolCategoryId;
 }
 
-type PendingAction = { phase: 'planning' | 'submitted'; jobId?: string };
-
-const MANAGED_TOOL_ACTIONS: readonly ManagedToolLifecycleAction[] = ['install', 'update', 'uninstall'];
-
 const ACTION_LABELS: Record<ManagedToolLifecycleAction, string> = {
   install: '安装',
   update: '更新',
@@ -62,20 +56,6 @@ const MANAGEMENT_LABELS: Record<string, string> = {
   homebrew: 'Homebrew 管理',
   external: '外部安装'
 };
-
-function isManagedToolAction(value: unknown): value is ManagedToolLifecycleAction {
-  return typeof value === 'string'
-    && MANAGED_TOOL_ACTIONS.includes(value as ManagedToolLifecycleAction);
-}
-
-function taskTargetsTool(task: WebUiTask, toolId: string) {
-  return task.source === 'managed-tool'
-    && (task.appId === toolId || task.provider === toolId);
-}
-
-function actionKey(tool: ManagedToolItem, action: ManagedToolLifecycleAction) {
-  return `${tool.id}:${action}`;
-}
 
 function runtimeSummary(tool: ManagedToolItem) {
   if (!tool.runtimeInspectable) return '无需运行时探测';
@@ -114,8 +94,6 @@ export default function ManagedToolsPanel({ category }: ManagedToolsPanelProps) 
   const [configContent, setConfigContent] = useState('');
   const [configLoading, setConfigLoading] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
-  const [pendingActions, setPendingActions] = useState<Record<string, PendingAction>>({});
-  const { tasks, recentTasks } = useWebUiTaskQueue();
 
   const fetchTools = useCallback(async () => {
     setLoading(true);
@@ -135,41 +113,27 @@ export default function ManagedToolsPanel({ category }: ManagedToolsPanelProps) 
     void fetchTools();
   }, [fetchTools]);
 
-  useEffect(() => {
-    const handleTaskCompleted = (event: Event) => {
-      const task = (event as CustomEvent<WebUiTask>).detail;
-      if (task?.source !== 'managed-tool') return;
-      setPendingActions((current) => {
-        const next = { ...current };
-        Object.entries(current).forEach(([key, pending]) => {
-          if (pending.jobId === task.id || key.startsWith(`${task.appId || task.provider}:`)) delete next[key];
-        });
-        return next;
-      });
-      void fetchTools();
-    };
-    window.addEventListener('aih:webui-task-completed', handleTaskCompleted);
-    return () => window.removeEventListener('aih:webui-task-completed', handleTaskCompleted);
-  }, [fetchTools]);
-
-  useEffect(() => {
-    if (!recentTasks.length) return;
-    setPendingActions((current) => {
-      const next = { ...current };
-      let changed = false;
-      Object.entries(current).forEach(([key, pending]) => {
-        if (!pending.jobId) return;
-        const completed = recentTasks.find((task) => task.id === pending.jobId
-          && task.source === 'managed-tool'
-          && !['queued', 'running'].includes(String(task.status || '').toLowerCase()));
-        if (completed) {
-          delete next[key];
-          changed = true;
-        }
-      });
-      return changed ? next : current;
-    });
-  }, [recentTasks]);
+  const {
+    activeTaskFor,
+    busyActionFor,
+    runAction
+  } = useToolkitLifecycleController({
+    source: 'managed-tool',
+    scopeLabel: category === 'network-access' ? '网络接入与隧道' : '会话运行时',
+    refresh: fetchTools,
+    plan: (tool: ManagedToolItem, action) => (
+      toolkitAPI.planManagedToolAction(tool.id, action)
+    ),
+    execute: (tool: ManagedToolItem, action) => (
+      toolkitAPI.executeManagedToolAction(tool.id, action)
+    ),
+    plans: (response) => (response.plans || []).map((plan) => ({
+      id: plan.id,
+      label: plan.label,
+      command: plan.command,
+      args: plan.args
+    }))
+  });
 
   const tools = useMemo(
     () => (data?.tools || []).filter((tool) => tool.category === category),
@@ -179,84 +143,6 @@ export default function ManagedToolsPanel({ category }: ManagedToolsPanelProps) 
   const installedCount = tools.filter((tool) => tool.installed).length;
   const editableCount = tools.filter((tool) => tool.configEditable).length;
   const lifecycleCount = tools.filter((tool) => tool.canInstall || tool.canUpdate || tool.canUninstall).length;
-  const managedToolTasks = useMemo(
-    () => tasks.filter((task) => task.source === 'managed-tool'),
-    [tasks]
-  );
-
-  const activeTaskFor = (tool: ManagedToolItem) => managedToolTasks.find(
-    (task) => taskTargetsTool(task, tool.id)
-  );
-
-  const busyActionFor = (tool: ManagedToolItem) => {
-    const pending = MANAGED_TOOL_ACTIONS.find((action) => pendingActions[actionKey(tool, action)]);
-    if (pending) return pending;
-    const activeAction = activeTaskFor(tool)?.action;
-    return isManagedToolAction(activeAction) ? activeAction : undefined;
-  };
-
-  const submitAction = async (
-    tool: ManagedToolItem,
-    action: ManagedToolLifecycleAction,
-    key: string
-  ) => {
-    try {
-      const response = await toolkitAPI.executeManagedToolAction(tool.id, action);
-      if (!response.ok || !response.job) throw new Error(response.error || '网络工具任务未创建');
-      setPendingActions((current) => ({
-        ...current,
-        [key]: { phase: 'submitted', jobId: response.job?.id }
-      }));
-      message.info(`${tool.name}${ACTION_LABELS[action]}任务已提交`);
-    } catch (requestFailure: unknown) {
-      setPendingActions((current) => {
-        const next = { ...current };
-        delete next[key];
-        return next;
-      });
-      message.error(requestError(requestFailure, `${tool.name}${ACTION_LABELS[action]}失败`));
-    }
-  };
-
-  const runAction = async (tool: ManagedToolItem, action: ManagedToolLifecycleAction) => {
-    const key = actionKey(tool, action);
-    if (busyActionFor(tool)) return;
-    setPendingActions((current) => ({ ...current, [key]: { phase: 'planning' } }));
-    try {
-      const response = await toolkitAPI.planManagedToolAction(tool.id, action);
-      if (!response.ok) throw new Error(response.error || '无法生成网络工具计划');
-      Modal.confirm({
-        title: `${ACTION_LABELS[action]} ${tool.name}`,
-        content: (
-          <AppActionConfirmContent
-            summary={`确认后将创建 ${tool.name}${ACTION_LABELS[action]}任务，进度显示在后台任务队列。`}
-            plans={(response.plans || []).map((plan) => ({
-              id: plan.id,
-              label: plan.label,
-              command: plan.command,
-              args: plan.args
-            }))}
-          />
-        ),
-        okText: '确认执行',
-        cancelText: '取消',
-        okButtonProps: action === 'uninstall' ? { danger: true } : undefined,
-        onOk: () => { void submitAction(tool, action, key); },
-        onCancel: () => setPendingActions((current) => {
-          const next = { ...current };
-          delete next[key];
-          return next;
-        })
-      });
-    } catch (requestFailure: unknown) {
-      setPendingActions((current) => {
-        const next = { ...current };
-        delete next[key];
-        return next;
-      });
-      message.error(requestError(requestFailure, `${tool.name}${ACTION_LABELS[action]}计划生成失败`));
-    }
-  };
 
   const openConfig = async (tool: ManagedToolItem) => {
     setEditingTool(tool);
@@ -351,9 +237,6 @@ export default function ManagedToolsPanel({ category }: ManagedToolsPanelProps) 
                   )}
                   badges={(
                     <>
-                      <Tag color={tool.supported ? 'blue' : 'default'}>
-                        {tool.supported ? '当前平台支持' : '当前平台不适用'}
-                      </Tag>
                       {tool.runtimeInspectable && tool.running ? <Tag color="processing">运行中</Tag> : null}
                       {tool.managedBy ? <Tag>{MANAGEMENT_LABELS[tool.managedBy] || tool.managedBy}</Tag> : null}
                     </>

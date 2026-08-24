@@ -1625,7 +1625,6 @@ export interface ManagedToolItem {
   category: ToolkitToolCategoryId;
   name: string;
   role: string;
-  supported: boolean;
   installed: boolean;
   executablePath: string;
   binaryName: string;

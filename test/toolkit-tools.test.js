@@ -81,24 +81,24 @@ test('tool-manager exposes runtime and network categories without absolute paths
   assert.equal(Object.prototype.hasOwnProperty.call(herdr, 'path'), false);
 });
 
-test('tool-manager accepts Node platform aliases and returns the public platform contract', () => {
+test('tool-manager accepts Node platform aliases and only returns resources for the public platform contract', () => {
   const cases = [
-    ['darwin', 'macos'],
-    ['macos', 'macos'],
-    ['win32', 'windows'],
-    ['windows', 'windows'],
-    ['linux', 'linux']
+    ['darwin', 'macos', ['tmux', 'herdr', 'frpc']],
+    ['macos', 'macos', ['tmux', 'herdr', 'frpc']],
+    ['win32', 'windows', ['psmux', 'herdr', 'frpc']],
+    ['windows', 'windows', ['psmux', 'herdr', 'frpc']],
+    ['linux', 'linux', ['tmux', 'herdr', 'frpc']]
   ];
 
-  for (const [input, expected] of cases) {
+  for (const [input, expected, toolIds] of cases) {
     const result = listManagedTools({
       ...createProbeOptions(createHome()),
       platform: input,
       resolveCommandPath() { return ''; }
     });
     assert.equal(result.platform, expected);
-    assert.equal(result.tools.find((tool) => tool.id === 'tmux').supported, true);
-    assert.equal(result.tools.find((tool) => tool.id === 'psmux').supported, expected === 'windows');
+    assert.deepEqual(result.tools.map((tool) => tool.id), toolIds);
+    assert.ok(result.tools.every((tool) => !Object.hasOwn(tool, 'supported')));
   }
 });
 

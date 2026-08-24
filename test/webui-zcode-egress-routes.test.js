@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
+const { listProviderIds } = require('../lib/provider-catalog');
 const { upsertAccountRef } = require('../lib/server/account-ref-store');
 const {
   readAccountEgressBinding,
@@ -102,46 +103,48 @@ test('egress POST 写入后 GET 返回同一账号绑定', async (t) => {
 });
 
 test('egress 路由允许任意真实 provider 账号按自身路径绑定', async (t) => {
-  const fixture = createFixture(t, 'codex');
-  const ctx = createContext(
-    fixture,
-    'POST',
-    Buffer.from(JSON.stringify({ mode: 'url', proxyUrl: '127.0.0.1:10801' }))
-  );
-  const calls = [];
-  ctx.deps = {
-    async applyStoredAccountEgress(input) {
-      calls.push(input);
-      return {
-        ok: true,
-        applied: true,
-        status: 'started',
-        proxyServer: '127.0.0.1:23104'
-      };
-    },
-    getAccountEgressRuntimeStatus() {
-      return {
-        ok: true,
-        runtime: {
-          running: true,
-          dataPlaneReady: true,
-          proxyServer: '127.0.0.1:23104',
-          health: { monitoring: false }
-        }
-      };
-    },
-    createWebUiAccountAppLauncher() {
-      return { launchAccountApp() {} };
-    }
-  };
+  for (const provider of listProviderIds()) {
+    const fixture = createFixture(t, provider);
+    const ctx = createContext(
+      fixture,
+      'POST',
+      Buffer.from(JSON.stringify({ mode: 'url', proxyUrl: '127.0.0.1:10801' }))
+    );
+    const calls = [];
+    ctx.deps = {
+      async applyStoredAccountEgress(input) {
+        calls.push(input);
+        return {
+          ok: true,
+          applied: true,
+          status: 'started',
+          proxyServer: '127.0.0.1:23104'
+        };
+      },
+      getAccountEgressRuntimeStatus() {
+        return {
+          ok: true,
+          runtime: {
+            running: true,
+            dataPlaneReady: true,
+            proxyServer: '127.0.0.1:23104',
+            health: { monitoring: false }
+          }
+        };
+      },
+      createWebUiAccountAppLauncher() {
+        return { launchAccountApp() {} };
+      }
+    };
 
-  await handleZcodeEgressRequest(ctx);
+    await handleZcodeEgressRequest(ctx);
 
-  assert.equal(ctx.res.statusCode, 200);
-  assert.equal(ctx.res.payload.binding.proxyUrl, '127.0.0.1:10801');
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].provider, 'codex');
-  assert.equal(calls[0].accountRef, fixture.accountRef);
+    assert.equal(ctx.res.statusCode, 200, provider);
+    assert.equal(ctx.res.payload.binding.proxyUrl, '127.0.0.1:10801', provider);
+    assert.equal(calls.length, 1, provider);
+    assert.equal(calls[0].provider, provider);
+    assert.equal(calls[0].accountRef, fixture.accountRef);
+  }
 });
 
 test('egress GET 返回当前节点、分组、sidecar 与健康运行态', async (t) => {

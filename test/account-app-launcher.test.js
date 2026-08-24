@@ -1510,6 +1510,36 @@ function createKimiDesktopLauncherFixture(t, overrides = {}) {
   return { launcher, fakeSpawn, accountRef, profileDir, aiHomeDir, hostHomeDir, kimiExe };
 }
 
+test('kimi desktop 只读运行态检查识别已有实例且不触发登录准备或 spawn', (t) => {
+  let userDataDir = '';
+  const { launcher, fakeSpawn, accountRef, profileDir } = createKimiDesktopLauncherFixture(t, {
+    adoptKimiDesktopTokensFromProfile: () => {
+      throw new Error('inspect must not read desktop session');
+    },
+    execFileSync(file) {
+      assert.equal(file, 'powershell.exe');
+      return JSON.stringify({
+        ProcessId: 9791,
+        Name: 'Kimi.exe',
+        CommandLine: `Kimi.exe --user-data-dir=${userDataDir}`
+      });
+    }
+  });
+  userDataDir = nodePath.join(profileDir, 'electron-user-data');
+
+  const result = launcher.launchAccountApp({
+    provider: 'kimi',
+    accountRef,
+    kind: 'desktop',
+    inspectDesktopRunning: true
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 'already_running');
+  assert.deepEqual(result.pids, [9791]);
+  assert.equal(fakeSpawn.calls.length, 0);
+});
+
 test('kimi desktop 存在托管 desktopSession 时启动前把 session 种进隔离 profile', (t) => {
   const seeds = [];
   const { launcher, fakeSpawn, accountRef, profileDir, aiHomeDir, kimiExe } = createKimiDesktopLauncherFixture(t, {

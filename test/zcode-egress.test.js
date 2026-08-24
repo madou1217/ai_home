@@ -19,6 +19,7 @@ const {
   writeAccountEgressBinding
 } = require('../lib/account/zcode-egress-binding-store');
 const { writeJsonValue } = require('../lib/server/app-state-store');
+const { listProviderIds } = require('../lib/provider-catalog');
 const { upsertAccountRef } = require('../lib/server/account-ref-store');
 const {
   SUPPORTED_PLATFORM,
@@ -158,21 +159,24 @@ test('writeAccountEgressBinding 拒绝非空非法绑定且不删除已有记录
 test('writeAccountEgressBinding 允许所有真实 provider 账号写入绑定', (t) => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-zcode-egress-provider-'));
   t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
-  const accountRef = upsertAccountRef(fs, aiHomeDir, {
-    provider: 'codex',
-    cliAccountId: '1',
-    identitySeed: 'oauth:codex:zcode-egress-provider@example.com'
-  });
+  for (const [index, provider] of listProviderIds().entries()) {
+    const accountRef = upsertAccountRef(fs, aiHomeDir, {
+      provider,
+      cliAccountId: String(index + 1),
+      identitySeed: `oauth:${provider}:account-egress-provider@example.com`
+    });
 
-  writeAccountEgressBinding(fs, aiHomeDir, accountRef, {
-    mode: EGRESS_MODE_URL,
-    proxyUrl: '127.0.0.1:10801'
-  });
+    writeAccountEgressBinding(fs, aiHomeDir, accountRef, {
+      mode: EGRESS_MODE_URL,
+      proxyUrl: '127.0.0.1:10801'
+    });
 
-  assert.equal(
-    readAccountEgressBinding(fs, aiHomeDir, accountRef).proxyUrl,
-    '127.0.0.1:10801'
-  );
+    assert.equal(
+      readAccountEgressBinding(fs, aiHomeDir, accountRef).proxyUrl,
+      '127.0.0.1:10801',
+      provider
+    );
+  }
 });
 
 // ── ZCode 原生 setting.json ────────────────────────────────────────────────
@@ -634,17 +638,16 @@ function createStableSidecarDeps(overrides = {}) {
 }
 
 test('isEgressSupportedProvider 接受合同中所有 provider', () => {
-  assert.equal(isEgressSupportedProvider('zcode'), true);
-  assert.equal(isEgressSupportedProvider('ZCODE'), true);
-  for (const provider of ['codex', 'claude', 'gemini', 'agy', 'kimi', 'opencode']) {
+  for (const provider of listProviderIds()) {
     assert.equal(isEgressSupportedProvider(provider), true, provider);
+    assert.equal(isEgressSupportedProvider(provider.toUpperCase()), true, provider);
   }
   assert.equal(isEgressSupportedProvider('unknown-provider'), false);
 });
 
 test('resolveAccountEgress 对不支持的 provider 直接回 null', async () => {
   const result = await resolveAccountEgress({
-    fs: {}, aiHomeDir: '/tmp/aih', provider: 'codex', accountRef: 'acct_91aa805bdd051b40fa47'
+    fs: {}, aiHomeDir: '/tmp/aih', provider: 'unknown-provider', accountRef: 'acct_91aa805bdd051b40fa47'
   });
   assert.equal(result, null);
 });
@@ -819,6 +822,35 @@ test('prepareAccountAppEgress 在已绑定出口不可用时 fail-closed', async
   assert.match(result.warning, /阻止启动/);
 });
 
+test('非 ZCode provider 的出口失败返回账号级错误语义', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-account-egress-unavailable-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  const accountRef = upsertAccountRef(fs, aiHomeDir, {
+    provider: 'claude',
+    cliAccountId: '1',
+    identitySeed: 'oauth:claude:egress-unavailable@example.com'
+  });
+  writeAccountEgressBinding(fs, aiHomeDir, accountRef, {
+    mode: EGRESS_MODE_URL,
+    proxyUrl: 'not-a-proxy-url'
+  });
+
+  const result = await prepareAccountAppEgress({
+    action: 'open',
+    kind: 'desktop',
+    fs,
+    aiHomeDir,
+    provider: 'claude',
+    accountRef,
+    processObj: { platform: 'darwin' }
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'account_egress_unavailable');
+  assert.equal(result.egressError, 'invalid_proxy_url');
+  assert.doesNotMatch(result.warning, /ZCode/);
+});
+
 test('prepareAccountAppEgress 在绑定状态未知时保留现有原生设置', async () => {
   const result = await prepareAccountAppEgress({
     action: 'open',
@@ -842,6 +874,28 @@ test('prepareAccountAppEgress 在绑定状态未知时保留现有原生设置',
   assert.equal(result.egressError, 'egress_resolve_failed');
   assert.match(result.reason, /app-state read denied/);
   assert.match(result.warning, /保留现有 ZCode 原生设置/);
+});
+
+test('非 ZCode provider 读取绑定失败时保留通用客户端设置语义', async () => {
+  const result = await prepareAccountAppEgress({
+    action: 'open',
+    kind: 'desktop',
+    fs: {
+      existsSync: () => true,
+      mkdirSync() {
+        throw new Error('app-state read denied');
+      }
+    },
+    aiHomeDir: '/tmp/aih-account-egress-read-failure',
+    provider: 'claude',
+    accountRef: 'acct_91aa805bdd051b40fa47',
+    processObj: { platform: 'darwin' }
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'account_egress_binding_unavailable');
+  assert.match(result.warning, /保留现有客户端设置/);
+  assert.doesNotMatch(result.warning, /ZCode/);
 });
 
 test('prepareAccountAppEgress 遇到损坏绑定时不得把它当成已确认未绑定', async (t) => {
@@ -1044,6 +1098,26 @@ test('同步预检发现 ZCode 已运行时不探测出口并提示可实时应�
   assert.equal(probeCalls, 0);
   assert.equal(launch.result.status, 'already_running');
   assert.match(launch.egressWarning, /当前实例已运行.*出口设置.*实时应用/);
+});
+
+test('非 ZCode Desktop 已运行时使用通用出口提示，不泄漏 ZCode 专属语义', async () => {
+  const launch = await launchAccountAppWithEgress({
+    launcher: {
+      launchAccountApp() {
+        return { ok: true, status: 'already_running', pids: [9124] };
+      }
+    },
+    launchInput: {
+      provider: 'claude',
+      accountRef: 'acct_91aa805bdd051b40fa47',
+      kind: 'desktop',
+      action: 'open'
+    }
+  });
+
+  assert.equal(launch.result.status, 'already_running');
+  assert.match(launch.egressWarning, /客户端当前实例已运行.*出口设置.*实时应用/);
+  assert.doesNotMatch(launch.egressWarning, /ZCode/);
 });
 
 test('异步出口预检后若已有实例抢先运行，必须明确告警本次出口未应用', async (t) => {

@@ -8,7 +8,8 @@ const path = require('node:path');
 
 const {
   getAppStateDbPath,
-  openAppStateDatabase
+  openAppStateDatabase,
+  readJsonValue
 } = require('../lib/server/app-state-store');
 
 test('app state database files are private on POSIX hosts', (t) => {
@@ -29,4 +30,14 @@ test('app state database files are private on POSIX hosts', (t) => {
     });
   }
   db.close();
+});
+
+test('readJsonValue strict 模式拒绝静默接受不可用的 DatabaseSync', () => {
+  assert.throws(
+    () => readJsonValue(fs, '/tmp/aih-app-state-strict', 'strict-check', {
+      DatabaseSync: null,
+      strict: true
+    }),
+    /app_state_database_unavailable/
+  );
 });

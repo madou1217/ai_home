@@ -83,6 +83,9 @@ import type {
   ManagedAppsResponse,
   ManagedAppUpdateResponse,
   AccountAppLaunchResponse,
+  ZcodeEgressBindingInput,
+  ZcodeEgressResponse,
+  ZcodeEgressRotateResponse,
   AppInstallJob,
   WebUiTask,
   ClientTerminalsResponse,
@@ -94,6 +97,9 @@ import type {
   ConnectivityResponse,
   ProxyNodesResponse,
   ProxyNode,
+  ProxyGroupsResponse,
+  ProxyGroupMutationResponse,
+  ProxyGroupStrategy,
   ProxySubscriptionsResponse,
   ProxySubscription,
   ProxyMutationResponse,
@@ -427,6 +433,31 @@ export const accountsAPI = {
     const response = await api.post<AccountAppLaunchResponse>(
       `/webui/accounts/${provider}/${accountRef}/open-app`,
       { kind, action, ...(terminalId ? { terminalId } : {}) }
+    );
+    return response.data;
+  },
+
+  getZcodeEgress: async (accountRef: string): Promise<ZcodeEgressResponse> => {
+    const response = await api.get<ZcodeEgressResponse>(
+      `/webui/accounts/zcode/${encodeURIComponent(accountRef)}/egress`
+    );
+    return response.data;
+  },
+
+  saveZcodeEgress: async (
+    accountRef: string,
+    binding: ZcodeEgressBindingInput | null
+  ): Promise<ZcodeEgressResponse> => {
+    const response = await api.post<ZcodeEgressResponse>(
+      `/webui/accounts/zcode/${encodeURIComponent(accountRef)}/egress`,
+      binding || {}
+    );
+    return response.data;
+  },
+
+  rotateZcodeEgress: async (accountRef: string): Promise<ZcodeEgressRotateResponse> => {
+    const response = await api.post<ZcodeEgressRotateResponse>(
+      `/webui/accounts/zcode/${encodeURIComponent(accountRef)}/egress/rotate`
     );
     return response.data;
   },
@@ -1909,6 +1940,40 @@ export const toolkitAPI = {
 export const proxyPoolAPI = {
   listNodes: async (params: { group?: string; protocol?: string } = {}): Promise<ProxyNodesResponse> => {
     const response = await api.get<ProxyNodesResponse>('/webui/toolkit/proxy-pool/nodes', { params });
+    return response.data;
+  },
+  listGroups: async (): Promise<ProxyGroupsResponse> => {
+    const response = await api.get<ProxyGroupsResponse>('/webui/toolkit/proxy-pool/groups');
+    return response.data;
+  },
+  upsertGroup: async (group: {
+    id?: string;
+    name: string;
+    icon?: string;
+    nodeIds: string[];
+    strategy?: ProxyGroupStrategy;
+    failoverStrategy?: ProxyGroupStrategy;
+  }): Promise<ProxyGroupMutationResponse> => {
+    const response = await api.post<ProxyGroupMutationResponse>(
+      '/webui/toolkit/proxy-pool/groups',
+      group
+    );
+    return response.data;
+  },
+  updateGroupPolicy: async (
+    id: string,
+    policy: { strategy: ProxyGroupStrategy; failoverStrategy: ProxyGroupStrategy }
+  ): Promise<ProxyGroupMutationResponse> => {
+    const response = await api.post<ProxyGroupMutationResponse>(
+      '/webui/toolkit/proxy-pool/groups/policy',
+      { id, ...policy }
+    );
+    return response.data;
+  },
+  deleteGroup: async (groupId: string): Promise<ProxyGroupMutationResponse> => {
+    const response = await api.delete<ProxyGroupMutationResponse>(
+      `/webui/toolkit/proxy-pool/groups/${encodeURIComponent(groupId)}`
+    );
     return response.data;
   },
   upsertNode: async (node: Partial<ProxyNode>): Promise<{ ok: boolean; node: ProxyNode; uri?: string }> => {

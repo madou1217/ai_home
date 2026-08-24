@@ -1453,6 +1453,89 @@ export interface AccountAppLaunchResponse {
   installAvailable?: boolean;
   error?: string;
   message?: string;
+  egressWarning?: string;
+}
+
+export type ZcodeEgressMode = 'system' | 'tun' | 'url' | 'node' | 'group';
+
+export interface ZcodeEgressBinding {
+  mode: ZcodeEgressMode;
+  proxyUrl: string;
+  nodeId: string;
+  groupId: string;
+  updatedAt: number;
+}
+
+export interface ZcodeEgressBindingInput {
+  mode: ZcodeEgressMode;
+  proxyUrl?: string;
+  nodeId?: string;
+  groupId?: string;
+}
+
+export interface ZcodeEgressApplyResult {
+  ok: boolean;
+  applied: boolean;
+  status?: 'pending_launch' | 'selected' | 'started' | 'restarted' | 'unchanged' | 'applied';
+  rotated?: boolean;
+  restarted?: boolean;
+  pid?: number | null;
+  previousPids?: number[];
+  proxyServer?: string;
+  source?: string;
+  previousNodeId?: string | null;
+  selectedNodeId?: string | null;
+  groupId?: string | null;
+  attemptedNodeCount?: number;
+  rolledBack?: boolean;
+  error?: string;
+  reason?: string;
+}
+
+export interface ZcodeEgressHealthStatus {
+  monitoring: boolean;
+  intervalMs?: number;
+  failureThreshold?: number;
+  consecutiveFailures?: number;
+  lastCheckedAt?: number | null;
+  lastHealthyAt?: number | null;
+  lastSwitchAt?: number | null;
+  lastError?: string | null;
+  checking?: boolean;
+}
+
+export interface ZcodeEgressRuntimeStatus {
+  running: boolean;
+  dataPlaneReady: boolean;
+  proxyServer: string | null;
+  source: string | null;
+  selectedNodeId: string | null;
+  groupId: string | null;
+  zcodePid: number | null;
+  canRotate: boolean;
+  sidecar: {
+    engine: string;
+    installed: boolean;
+    running: boolean;
+    dataPlaneReady: boolean;
+    pid: number | null;
+    lastError: string | null;
+  };
+  health: ZcodeEgressHealthStatus;
+}
+
+export interface ZcodeEgressResponse {
+  ok: boolean;
+  binding: ZcodeEgressBinding | null;
+  apply?: ZcodeEgressApplyResult;
+  runtime?: ZcodeEgressRuntimeStatus | null;
+  runtimeError?: string;
+}
+
+export interface ZcodeEgressRotateResponse extends ZcodeEgressApplyResult {
+  binding?: ZcodeEgressBinding | null;
+  runtime?: ZcodeEgressRuntimeStatus | null;
+  runtimeError?: string;
 }
 
 export interface AppInstallJob {

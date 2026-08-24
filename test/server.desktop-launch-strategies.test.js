@@ -56,6 +56,9 @@ test('未注册 provider 落到中性默认策略：无应用名、无 env 覆�
     strategy.resolveSpawnPlan({ executablePath: '/apps/Foo', bundlePath: '/apps/Foo.app' }, ctx),
     { file: '/apps/Foo', args: ['--user-data-dir=/sandbox/account/electron-user-data'] }
   );
+  const resolved = { executablePath: '/apps/Foo', bundlePath: '/apps/Foo.app' };
+  assert.deepEqual(strategy.prepareResolvedLaunch(resolved, ctx), { ready: true, resolved });
+  assert.deepEqual(strategy.prepareLaunchProfile(ctx), { ready: true });
   assert.deepEqual(strategy.prepareLaunchSession(ctx), { ready: true });
   assert.equal(strategy.reuseRunningInstance, true);
 });
@@ -91,6 +94,82 @@ test('zcode 策略派生稳定应用名并写全桌面 env（数据根/凭据密
   assert.equal(env.HOME, '/sandbox/account');
   assert.equal(env.USERPROFILE, undefined);
   assert.equal(env[ZCODE_DESKTOP_APPLICATION_NAME_ENV], applicationName);
+});
+
+test('zcode 策略在 macOS fresh launch 前同步账号隔离的原生代理设置', () => {
+  const calls = [];
+  const strategy = getDesktopLaunchStrategy('zcode');
+  const result = strategy.prepareLaunchProfile(buildContext({
+    provider: 'zcode',
+    egressPrepared: true,
+    egress: { ok: true, proxyServer: '127.0.0.1:10801' },
+    fs: { tag: 'fs' },
+    deps: {
+      prepareZcodeNativeProxySettings(input) {
+        calls.push(input);
+        return { ready: true, status: 'managed' };
+      }
+    }
+  }));
+
+  assert.deepEqual(result, { ready: true, status: 'managed' });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].profileDir, '/sandbox/account');
+  assert.equal(calls[0].proxyServer, '127.0.0.1:10801');
+  assert.equal(calls[0].noProxy, 'localhost,127.0.0.1,::1');
+});
+
+test('zcode 策略通过独立 resolved-launch 边界准备账号影子 App', () => {
+  const sourceResolved = {
+    executablePath: '/Applications/ZCode.app/Contents/MacOS/ZCode',
+    bundlePath: '/Applications/ZCode.app'
+  };
+  const shadowResolved = {
+    executablePath: '/sandbox/account/.aih-runtime/zcode-shadow/ZCode.app/Contents/MacOS/ZCode',
+    bundlePath: '/sandbox/account/.aih-runtime/zcode-shadow/ZCode.app'
+  };
+  const calls = [];
+  const strategy = getDesktopLaunchStrategy('zcode');
+  const result = strategy.prepareResolvedLaunch(sourceResolved, buildContext({
+    provider: 'zcode',
+    deps: {
+      prepareZcodeElectronShadowApp(input) {
+        calls.push(input);
+        return { ready: true, resolved: shadowResolved, status: 'prepared' };
+      }
+    }
+  }));
+
+  assert.deepEqual(result, { ready: true, resolved: shadowResolved, status: 'prepared' });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].sourceBundlePath, '/Applications/ZCode.app');
+  assert.equal(calls[0].profileDir, '/sandbox/account');
+  assert.match(calls[0].hookModulePath, /zcode-electron-captcha-hook\.js$/);
+});
+
+test('zcode 策略只在调用方明确完成出口解析后改写或释放原生设置', () => {
+  const calls = [];
+  const prepareZcodeNativeProxySettings = (input) => {
+    calls.push(input);
+    return { ready: true, status: 'released' };
+  };
+  const strategy = getDesktopLaunchStrategy('zcode');
+
+  assert.deepEqual(strategy.prepareLaunchProfile(buildContext({
+    provider: 'zcode',
+    egress: null,
+    deps: { prepareZcodeNativeProxySettings }
+  })), { ready: true });
+  assert.equal(calls.length, 0, '未经过出口编排的直接调用不得清理用户配置');
+
+  assert.deepEqual(strategy.prepareLaunchProfile(buildContext({
+    provider: 'zcode',
+    egressPrepared: true,
+    egress: null,
+    deps: { prepareZcodeNativeProxySettings }
+  })), { ready: true, status: 'released' });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].proxyServer, '');
 });
 
 test('parseDesktopInstanceName 从命令行反解实例身份，非改写型 provider 返回空', () => {
@@ -197,7 +276,9 @@ test('注册表内每个策略都满足完整的策略契约', () => {
       'parseInstanceName',
       'decorateLaunchEnv',
       'decorateResolvedLaunchEnv',
+      'prepareResolvedLaunch',
       'resolveSpawnPlan',
+      'prepareLaunchProfile',
       'prepareLaunchSession'
     ]) {
       assert.equal(typeof strategy[hook], 'function', `${provider}.${hook}`);

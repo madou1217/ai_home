@@ -188,6 +188,9 @@ export default function AppManagerPanel() {
       message.success(response.status === 'already_running'
         ? `${app.name} 的该账号实例已在运行`
         : `${app.name} 已启动`);
+      if (response.egressWarning) {
+        message.warning(`ZCode 出口未生效：${response.egressWarning}`);
+      }
       await refreshRunningApps();
     } catch (requestFailure: unknown) {
       const code = typeof requestFailure === 'object' && requestFailure

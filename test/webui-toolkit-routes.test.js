@@ -11,6 +11,8 @@ const { Readable } = require('node:stream');
 const { handleWebUIRequest } = require('../lib/server/web-ui-router');
 const { upsertAccountRef } = require('../lib/server/account-ref-store');
 const { writeDefaultAccountRef } = require('../lib/account/default-account-store');
+const { writeAccountEgressBinding } = require('../lib/account/zcode-egress-binding-store');
+const { buildZcodeDesktopApplicationName } = require('../lib/runtime/account-app-process-marker');
 
 function createResCapture() {
   return {
@@ -87,6 +89,58 @@ async function runToolkitRequest(pathname, { method = 'GET', body, deps = {} } =
   });
   return { handled, res, data: res.body ? JSON.parse(res.body) : null };
 }
+
+test('webui proxy-pool groups routes expose manual CRUD and automatic policy updates', async () => {
+  const calls = [];
+  const proxyPoolService = {
+    listGroups() {
+      return { ok: true, groups: [{ id: 'US', kind: 'country', count: 2 }] };
+    },
+    upsertGroup(input) {
+      calls.push(['upsert', input]);
+      return Promise.resolve({ ok: true, applied: true, group: { id: 'group_a', ...input } });
+    },
+    updateGroupPolicy(id, input) {
+      calls.push(['policy', id, input]);
+      return Promise.resolve({ ok: true, applied: true, group: { id, ...input } });
+    },
+    deleteGroup(id) {
+      calls.push(['delete', id]);
+      return Promise.resolve({ ok: true, applied: true });
+    }
+  };
+
+  const listed = await runToolkitRequest('/v0/webui/toolkit/proxy-pool/groups', {
+    deps: { proxyPoolService }
+  });
+  assert.equal(listed.res.statusCode, 200);
+  assert.equal(listed.data.groups[0].id, 'US');
+
+  const created = await runToolkitRequest('/v0/webui/toolkit/proxy-pool/groups', {
+    method: 'POST',
+    body: { name: 'A', nodeIds: ['node-a'], strategy: 'sticky' },
+    deps: { proxyPoolService }
+  });
+  assert.equal(created.res.statusCode, 200);
+
+  const policy = await runToolkitRequest('/v0/webui/toolkit/proxy-pool/groups/policy', {
+    method: 'POST',
+    body: { id: 'US', strategy: 'round_robin', failoverStrategy: 'lowest_latency' },
+    deps: { proxyPoolService }
+  });
+  assert.equal(policy.res.statusCode, 200);
+
+  const removed = await runToolkitRequest('/v0/webui/toolkit/proxy-pool/groups/group_a', {
+    method: 'DELETE',
+    deps: { proxyPoolService }
+  });
+  assert.equal(removed.res.statusCode, 200);
+  assert.deepEqual(calls, [
+    ['upsert', { name: 'A', nodeIds: ['node-a'], strategy: 'sticky' }],
+    ['policy', 'US', { strategy: 'round_robin', failoverStrategy: 'lowest_latency' }],
+    ['delete', 'group_a']
+  ]);
+});
 
 test('webui toolkit routes GET /v0/webui/toolkit/apps returns app list', async () => {
   const req = { method: 'GET', url: '/v0/webui/toolkit/apps', headers: {} };
@@ -244,6 +298,170 @@ test('webui toolkit Desktop open uses the Provider default account when no accou
   assert.equal(result.data.status, 'not_running');
   assert.equal(result.data.accountRef, accountRef);
   assert.deepEqual(calls, []);
+});
+
+test('webui toolkit 复用已运行 ZCode Desktop 时不探测尚不能应用的出口', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-toolkit-zcode-egress-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  const accountRef = upsertAccountRef(fs, aiHomeDir, {
+    provider: 'zcode',
+    cliAccountId: '2',
+    identitySeed: 'oauth:zcode:toolkit-egress@example.com'
+  });
+  writeDefaultAccountRef(fs, aiHomeDir, 'zcode', accountRef);
+  writeAccountEgressBinding(fs, aiHomeDir, accountRef, {
+    mode: 'url',
+    proxyUrl: '127.0.0.1:10801'
+  });
+  let probeCalls = 0;
+
+  const result = await runToolkitRequest('/v0/webui/toolkit/apps/zcode-desktop/open', {
+    method: 'POST',
+    body: {},
+    deps: {
+      aiHomeDir,
+      processObj: { platform: 'darwin', env: { PATH: '' }, execPath: process.execPath },
+      execFileSync: (file) => file === 'ps'
+        ? `  9262 ${buildZcodeDesktopApplicationName(accountRef)}\n`
+        : '',
+      probeProxyServer: async (proxyServer) => {
+        probeCalls += 1;
+        assert.equal(proxyServer, '127.0.0.1:10801');
+        return { ok: false, error: 'proxy_probe_failed', reason: 'curl_exit_7' };
+      }
+    }
+  });
+
+  assert.equal(result.handled, true);
+  assert.equal(probeCalls, 0);
+  assert.equal(result.res.statusCode, 200);
+  assert.equal(result.data.status, 'already_running');
+  assert.match(result.data.egressWarning, /实例已运行.*出口设置.*实时应用/);
+});
+
+test('webui toolkit 已绑定代理不可达时返回 503 且不启动 ZCode', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-toolkit-zcode-egress-fail-closed-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  const accountRef = upsertAccountRef(fs, aiHomeDir, {
+    provider: 'zcode',
+    cliAccountId: '4',
+    identitySeed: 'oauth:zcode:toolkit-egress-fail-closed@example.com'
+  });
+  writeDefaultAccountRef(fs, aiHomeDir, 'zcode', accountRef);
+  writeAccountEgressBinding(fs, aiHomeDir, accountRef, {
+    mode: 'url',
+    proxyUrl: '127.0.0.1:10801'
+  });
+  const hostHomeDir = path.join(aiHomeDir, 'host-home');
+  const bundlePath = path.join(hostHomeDir, 'Applications', 'ZCode.app');
+  const executablePath = path.join(bundlePath, 'Contents', 'MacOS', 'ZCode');
+  const virtualPaths = new Set([bundlePath, executablePath]);
+  const fsWithVirtualApp = new Proxy(fs, {
+    get(target, property) {
+      if (property === 'existsSync') {
+        return (candidate) => virtualPaths.has(String(candidate)) || target.existsSync(candidate);
+      }
+      const value = Reflect.get(target, property);
+      return typeof value === 'function' ? value.bind(target) : value;
+    }
+  });
+  const spawnCalls = [];
+
+  const result = await runToolkitRequest('/v0/webui/toolkit/apps/zcode-desktop/open', {
+    method: 'POST',
+    body: {},
+    deps: {
+      fs: fsWithVirtualApp,
+      aiHomeDir,
+      hostHomeDir,
+      getProfileDir: () => path.join(aiHomeDir, 'zcode-profile'),
+      processObj: {
+        platform: 'darwin',
+        env: { HOME: hostHomeDir, PATH: '' },
+        execPath: process.execPath
+      },
+      execFileSync: () => '',
+      spawn(...args) {
+        spawnCalls.push(args);
+        return { pid: 9980, unref() {} };
+      },
+      zcodeSingBoxRuntime: {
+        ensureAccountEndpoint: async () => ({
+          ok: true,
+          action: 'started',
+          proxyServer: '127.0.0.1:23100'
+        }),
+        releaseAccount: async () => ({ ok: true, action: 'stopped' })
+      },
+      probeProxyServer: async (proxyServer) => ({
+        ok: false,
+        error: 'proxy_probe_failed',
+        reason: proxyServer === '127.0.0.1:23100' ? 'curl_exit_7' : 'unexpected_proxy'
+      })
+    }
+  });
+
+  assert.equal(result.handled, true);
+  assert.equal(result.res.statusCode, 503);
+  assert.equal(result.data.error, 'zcode_egress_unavailable');
+  assert.equal(result.data.egressError, 'proxy_unreachable');
+  assert.match(result.data.message, /出口.*不可用.*未启动/);
+  assert.equal(spawnCalls.length, 0);
+});
+
+test('webui toolkit 在 ZCode 原生代理设置同步失败时返回可读错误且不启动进程', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-toolkit-zcode-native-proxy-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  const accountRef = upsertAccountRef(fs, aiHomeDir, {
+    provider: 'zcode',
+    cliAccountId: '3',
+    identitySeed: 'oauth:zcode:toolkit-native-proxy@example.com'
+  });
+  writeDefaultAccountRef(fs, aiHomeDir, 'zcode', accountRef);
+  const hostHomeDir = path.join(aiHomeDir, 'host-home');
+  const bundlePath = path.join(hostHomeDir, 'Applications', 'ZCode.app');
+  const executablePath = path.join(bundlePath, 'Contents', 'MacOS', 'ZCode');
+  const virtualPaths = new Set([bundlePath, executablePath]);
+  const fsWithVirtualApp = new Proxy(fs, {
+    get(target, property) {
+      if (property === 'existsSync') {
+        return (candidate) => virtualPaths.has(String(candidate)) || target.existsSync(candidate);
+      }
+      const value = Reflect.get(target, property);
+      return typeof value === 'function' ? value.bind(target) : value;
+    }
+  });
+  const spawnCalls = [];
+
+  const result = await runToolkitRequest('/v0/webui/toolkit/apps/zcode-desktop/open', {
+    method: 'POST',
+    body: {},
+    deps: {
+      fs: fsWithVirtualApp,
+      aiHomeDir,
+      hostHomeDir,
+      getProfileDir: () => path.join(aiHomeDir, 'zcode-profile'),
+      processObj: {
+        platform: 'darwin',
+        env: { HOME: hostHomeDir, PATH: '' },
+        execPath: process.execPath
+      },
+      execFileSync: () => '',
+      spawn(...args) {
+        spawnCalls.push(args);
+        return { pid: 9981, unref() {} };
+      },
+      prepareZcodeNativeProxySettings() {
+        throw new Error('setting.json is locked');
+      }
+    }
+  });
+
+  assert.equal(result.handled, true);
+  assert.equal(result.res.statusCode, 500);
+  assert.equal(result.data.error, 'zcode_native_proxy_settings_failed');
+  assert.match(result.data.message, /ZCode 原生代理设置写入失败/);
+  assert.equal(spawnCalls.length, 0);
 });
 
 test('webui toolkit unscoped open bypasses the Provider default account', async (t) => {

@@ -12,6 +12,7 @@ const {
 } = require('../lib/server/webui-account-routes');
 const { upsertAccountRef } = require('../lib/server/account-ref-store');
 const { writeAccountCredentials } = require('../lib/server/account-credential-store');
+const { writeAccountEgressBinding } = require('../lib/account/zcode-egress-binding-store');
 const {
   buildZcodeDesktopApplicationName
 } = require('../lib/runtime/account-app-process-marker');
@@ -110,10 +111,20 @@ test('open-app 端点对缺失账号返回 404 account_not_found', async (t) => 
 
 test('open-app 端点在账号未配置时后端拒绝打开', async (t) => {
   const fixture = createFixture(t);
+  writeAccountEgressBinding(fs, fixture.aiHomeDir, fixture.accountRef, {
+    mode: 'url',
+    proxyUrl: '127.0.0.1:10801'
+  });
+  let probeCalls = 0;
   const ctx = createOpenAppCtx(fixture, { kind: 'desktop', action: 'open' });
   ctx.accountStateIndex = { getAccountState: () => ({ configured: false }) };
+  ctx.deps.probeProxyServer = async () => {
+    probeCalls += 1;
+    return { ok: true };
+  };
   const handled = await handleOpenAccountAppRequest(ctx);
   assert.equal(handled, true);
+  assert.equal(probeCalls, 0, '资格检查失败前不得等待或触发出口探测');
   assert.equal(ctx.res.statusCode, 409);
   assert.equal(ctx.res.json().error, 'account_unconfigured');
 });
@@ -136,11 +147,223 @@ test('open-app 端点在账号认证失效时后端拒绝打开', async (t) => {
   assert.equal(ctx.res.json().error, 'account_auth_invalid');
 });
 
+test('open-app 端点复用已运行实例时不探测尚不能应用的出口', async (t) => {
+  const fixture = createFixture(t);
+  writeAccountEgressBinding(fs, fixture.aiHomeDir, fixture.accountRef, {
+    mode: 'url',
+    proxyUrl: '127.0.0.1:10801'
+  });
+  const ctx = createOpenAppCtx(fixture, { kind: 'desktop', action: 'open' });
+  ctx.processObj = { platform: 'darwin', env: { PATH: '' }, execPath: process.execPath };
+  const applicationName = buildZcodeDesktopApplicationName(fixture.accountRef);
+  ctx.execFileSync = (file) => file === 'ps' ? `  9261 ${applicationName}\n` : '';
+  let probeCalls = 0;
+  ctx.deps = {
+    ...ctx.deps,
+    probeProxyServer: async (proxyServer) => {
+      probeCalls += 1;
+      assert.equal(proxyServer, '127.0.0.1:10801');
+      return { ok: false, error: 'proxy_probe_failed', reason: 'curl_exit_7' };
+    }
+  };
+
+  const handled = await handleOpenAccountAppRequest(ctx);
+
+  assert.equal(handled, true);
+  assert.equal(probeCalls, 0);
+  assert.equal(ctx.res.statusCode, 200);
+  assert.equal(ctx.res.json().status, 'already_running');
+  assert.match(ctx.res.json().egressWarning, /实例已运行.*出口设置.*实时应用/);
+});
+
+test('open-app 已绑定代理不可达时返回 503 且不启动 ZCode', async (t) => {
+  const fixture = createFixture(t);
+  writeAccountEgressBinding(fs, fixture.aiHomeDir, fixture.accountRef, {
+    mode: 'url',
+    proxyUrl: '127.0.0.1:10801'
+  });
+  const hostHomeDir = path.join(fixture.aiHomeDir, 'host-home');
+  const bundlePath = path.join(hostHomeDir, 'Applications', 'ZCode.app');
+  const executablePath = path.join(bundlePath, 'Contents', 'MacOS', 'ZCode');
+  const virtualPaths = new Set([bundlePath, executablePath]);
+  const fsWithVirtualApp = new Proxy(fs, {
+    get(target, property) {
+      if (property === 'existsSync') {
+        return (candidate) => virtualPaths.has(String(candidate)) || target.existsSync(candidate);
+      }
+      const value = Reflect.get(target, property);
+      return typeof value === 'function' ? value.bind(target) : value;
+    }
+  });
+  const spawnCalls = [];
+  const ctx = createOpenAppCtx(fixture, { kind: 'desktop', action: 'open' });
+  ctx.fs = fsWithVirtualApp;
+  ctx.processObj = {
+    platform: 'darwin',
+    env: { HOME: hostHomeDir, PATH: '' },
+    execPath: process.execPath
+  };
+  ctx.env = ctx.processObj.env;
+  ctx.execFileSync = () => '';
+  ctx.spawn = (...args) => {
+    spawnCalls.push(args);
+    return { pid: 9875, unref() {} };
+  };
+  ctx.deps = {
+    ...ctx.deps,
+    hostHomeDir,
+    zcodeSingBoxRuntime: {
+      ensureAccountEndpoint: async () => ({
+        ok: true,
+        action: 'started',
+        proxyServer: '127.0.0.1:23100'
+      }),
+      releaseAccount: async () => ({ ok: true, action: 'stopped' })
+    },
+    probeProxyServer: async (proxyServer) => ({
+      ok: false,
+      error: 'proxy_probe_failed',
+      reason: proxyServer === '127.0.0.1:23100' ? 'curl_exit_7' : 'unexpected_proxy'
+    })
+  };
+
+  const handled = await handleOpenAccountAppRequest(ctx);
+
+  assert.equal(handled, true);
+  assert.equal(ctx.res.statusCode, 503);
+  assert.equal(ctx.res.json().error, 'zcode_egress_unavailable');
+  assert.equal(ctx.res.json().egressError, 'proxy_unreachable');
+  assert.match(ctx.res.json().message, /出口.*不可用.*未启动/);
+  assert.equal(spawnCalls.length, 0);
+});
+
+test('open-app 遇到未知 ZCode marker 时返回 409 且不启动进程', async (t) => {
+  const fixture = createFixture(t);
+  const hostHomeDir = path.join(fixture.aiHomeDir, 'host-home');
+  const bundlePath = path.join(hostHomeDir, 'Applications', 'ZCode.app');
+  const executablePath = path.join(bundlePath, 'Contents', 'MacOS', 'ZCode');
+  const virtualPaths = new Set([bundlePath, executablePath]);
+  const fsWithVirtualApp = new Proxy(fs, {
+    get(target, property) {
+      if (property === 'existsSync') {
+        return (candidate) => virtualPaths.has(String(candidate)) || target.existsSync(candidate);
+      }
+      const value = Reflect.get(target, property);
+      return typeof value === 'function' ? value.bind(target) : value;
+    }
+  });
+  const spawnCalls = [];
+  const ctx = createOpenAppCtx(fixture, { kind: 'desktop', action: 'open' });
+  ctx.fs = fsWithVirtualApp;
+  ctx.processObj = {
+    platform: 'darwin',
+    env: { HOME: hostHomeDir, PATH: '' },
+    execPath: process.execPath
+  };
+  ctx.env = ctx.processObj.env;
+  ctx.execFileSync = () => '';
+  ctx.spawn = (...args) => {
+    spawnCalls.push(args);
+    return { pid: 9874, unref() {} };
+  };
+  ctx.deps = {
+    ...ctx.deps,
+    hostHomeDir,
+    prepareZcodeNativeProxySettings() {
+      return {
+        ready: false,
+        status: 'preserved_unrecognized_marker',
+        error: 'zcode_native_proxy_marker_unrecognized',
+        reason: '无法识别 ZCode 出口 marker；本次保留现有原生设置，账号出口变更未应用'
+      };
+    }
+  };
+
+  const handled = await handleOpenAccountAppRequest(ctx);
+
+  assert.equal(handled, true);
+  assert.equal(ctx.res.statusCode, 409);
+  assert.equal(ctx.res.json().error, 'zcode_native_proxy_marker_unrecognized');
+  assert.match(ctx.res.json().message, /marker.*无法识别.*未启动/i);
+  assert.equal(spawnCalls.length, 0);
+});
+
+test('open-app 在 ZCode 原生代理设置同步失败时返回 500 且不启动进程', async (t) => {
+  const fixture = createFixture(t);
+  const hostHomeDir = path.join(fixture.aiHomeDir, 'host-home');
+  const bundlePath = path.join(hostHomeDir, 'Applications', 'ZCode.app');
+  const executablePath = path.join(bundlePath, 'Contents', 'MacOS', 'ZCode');
+  const virtualPaths = new Set([bundlePath, executablePath]);
+  const fsWithVirtualApp = new Proxy(fs, {
+    get(target, property) {
+      if (property === 'existsSync') {
+        return (candidate) => virtualPaths.has(String(candidate)) || target.existsSync(candidate);
+      }
+      const value = Reflect.get(target, property);
+      return typeof value === 'function' ? value.bind(target) : value;
+    }
+  });
+  const spawnCalls = [];
+  const ctx = createOpenAppCtx(fixture, { kind: 'desktop', action: 'open' });
+  ctx.fs = fsWithVirtualApp;
+  ctx.processObj = { platform: 'darwin', env: { HOME: hostHomeDir, PATH: '' }, execPath: process.execPath };
+  ctx.env = ctx.processObj.env;
+  ctx.execFileSync = () => '';
+  ctx.spawn = (...args) => {
+    spawnCalls.push(args);
+    return { pid: 9876, unref() {} };
+  };
+  ctx.deps = {
+    ...ctx.deps,
+    hostHomeDir,
+    prepareZcodeNativeProxySettings() {
+      throw new Error('setting.json is locked');
+    }
+  };
+
+  const handled = await handleOpenAccountAppRequest(ctx);
+
+  assert.equal(handled, true);
+  assert.equal(ctx.res.statusCode, 500);
+  assert.equal(ctx.res.json().error, 'zcode_native_proxy_settings_failed');
+  assert.match(ctx.res.json().message, /ZCode 原生代理设置写入失败/);
+  assert.equal(spawnCalls.length, 0);
+});
+
+test('open-app 的 ZCode Desktop 出口绑定不干预同账号 CLI 启动', async (t) => {
+  const fixture = createFixture(t);
+  writeAccountEgressBinding(fs, fixture.aiHomeDir, fixture.accountRef, {
+    mode: 'url',
+    proxyUrl: 'not-a-proxy-url'
+  });
+  const ctx = createOpenAppCtx(fixture, { kind: 'cli', action: 'open' });
+  ctx.deps.hostHomeDir = path.join(fixture.aiHomeDir, 'host-home');
+  ctx.deps.resolveNativeCliPath = () => '';
+  ctx.processObj = { platform: 'linux', env: { PATH: '' }, execPath: process.execPath };
+
+  const handled = await handleOpenAccountAppRequest(ctx);
+
+  assert.equal(handled, true);
+  assert.equal(ctx.res.statusCode, 400);
+  assert.equal(ctx.res.json().error, 'cli_not_supported');
+  assert.equal(ctx.res.json().egressError, undefined);
+});
+
 test('open-app 端点在桌面缺失时返回 install_required，不在请求内阻塞安装', async (t) => {
   const fixture = createFixture(t);
+  writeAccountEgressBinding(fs, fixture.aiHomeDir, fixture.accountRef, {
+    mode: 'url',
+    proxyUrl: '127.0.0.1:10801'
+  });
+  let probeCalls = 0;
   const ctx = createOpenAppCtx(fixture, { kind: 'desktop', action: 'open' });
+  ctx.deps.probeProxyServer = async () => {
+    probeCalls += 1;
+    return { ok: true };
+  };
   const handled = await handleOpenAccountAppRequest(ctx);
   assert.equal(handled, true);
+  assert.equal(probeCalls, 0, 'Desktop 不存在时不得先探测代理');
   assert.equal(ctx.res.statusCode, 428);
   const body = ctx.res.json();
   assert.equal(body.error, 'install_required');

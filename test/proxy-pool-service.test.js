@@ -959,3 +959,40 @@ test('ProxyPoolService discards fetched nodes when the subscription changes befo
   assert.equal(store.listNodes().length, 0);
   assert.equal(store.listSubscriptions()[0].url, 'https://new.example.com/subscription');
 });
+
+test('ProxyPoolService exposes manual-group CRUD and automatic-group policy updates without Mihomo', async (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-proxy-group-service-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const store = new ProxyNodeStore(path.join(directory, 'pool.json'));
+  const node = store.upsertNode({
+    name: 'US group node',
+    protocol: 'http',
+    server: 'group.example.com',
+    port: 8080,
+    countryCode: 'US',
+    countryName: '美国',
+    countryFlag: '🇺🇸'
+  });
+  const service = new ProxyPoolService({ store, coreRuntime: createUnavailableCoreRuntime() });
+
+  const created = await service.upsertGroup({
+    name: '手动代理组',
+    nodeIds: [node.id],
+    strategy: 'sticky',
+    failoverStrategy: 'lowest_latency'
+  });
+  assert.equal(created.ok, true);
+  assert.equal(created.applied, true);
+  assert.equal(created.group.count, undefined);
+
+  const policy = await service.updateGroupPolicy('US', {
+    strategy: 'round_robin',
+    failoverStrategy: 'random'
+  });
+  assert.equal(policy.group.strategy, 'round_robin');
+  assert.equal(service.listGroups().groups.find((group) => group.id === 'US').failoverStrategy, 'random');
+
+  const removed = await service.deleteGroup(created.group.id);
+  assert.deepEqual(removed, { ok: true, applied: true });
+  assert.equal((await service.deleteGroup(created.group.id)).error, 'proxy_group_not_found');
+});

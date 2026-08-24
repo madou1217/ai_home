@@ -45,14 +45,33 @@ export interface ProxyNode {
   updatedAt?: number;
 }
 
+export type ProxyGroupStrategy = 'sticky' | 'lowest_latency' | 'round_robin' | 'random';
+
 export interface ProxyGroup {
   id: string;
   name: string;
   icon?: string;
   count: number;
-  kind?: 'system' | 'tag' | 'country' | 'custom';
+  kind?: 'system' | 'tag' | 'country' | 'custom' | 'subscription' | 'manual';
+  nodeIds?: string[];
+  strategy?: ProxyGroupStrategy;
+  failoverStrategy?: ProxyGroupStrategy;
+  createdAt?: number;
+  updatedAt?: number;
   classificationSource?: 'explicit' | 'node-name' | 'subscription' | 'runtime';
   description?: string;
+}
+
+export interface ProxyGroupsResponse {
+  ok: boolean;
+  groups: ProxyGroup[];
+}
+
+export interface ProxyGroupMutationResponse {
+  ok: boolean;
+  applied: boolean;
+  group?: ProxyGroup;
+  error?: string;
 }
 
 export interface ProxyNodesResponse {

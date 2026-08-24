@@ -90,7 +90,16 @@ function createLauncher(overrides = {}) {
     seedKimiDesktopTokenStore: overrides.seedKimiDesktopTokenStore,
     adoptKimiDesktopTokensFromProfile: overrides.adoptKimiDesktopTokensFromProfile,
     hasKimiDesktopTokenStore: overrides.hasKimiDesktopTokenStore,
-    resolveZcodeCredentialSecret: overrides.resolveZcodeCredentialSecret
+    resolveZcodeCredentialSecret: overrides.resolveZcodeCredentialSecret,
+    prepareZcodeNativeProxySettings: overrides.prepareZcodeNativeProxySettings,
+    prepareZcodeElectronShadowApp: overrides.prepareZcodeElectronShadowApp || ((input) => ({
+      ready: true,
+      status: 'test_passthrough',
+      resolved: {
+        bundlePath: input.sourceBundlePath,
+        executablePath: input.sourceExecutablePath
+      }
+    }))
   });
   return { launcher, fakeSpawn, fsImpl };
 }
@@ -609,6 +618,173 @@ test('zcode desktop 在 macOS 使用 manifest installPaths 解析 .app 内可执
     '/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs'
   );
   assert.deepEqual(agentArgs.slice(2), ['app-server', '--stdio']);
+});
+
+test('zcode desktop 在 macOS 用账号影子 App 装载验证码 hook 后再 spawn', () => {
+  const bundlePath = '/Applications/ZCode.app';
+  const expectedExe = '/Applications/ZCode.app/Contents/MacOS/ZCode';
+  const shadowBundlePath = `/aih-home/run/auth-projections/zcode/${ACCOUNT_REF}/.aih-runtime/zcode-shadow/hash/ZCode.app`;
+  const shadowExe = `${shadowBundlePath}/Contents/MacOS/ZCode`;
+  const prepareCalls = [];
+  const { launcher, fakeSpawn } = createLauncher({
+    path: nodePath.posix,
+    processObj: { platform: 'darwin', execPath: '/usr/local/bin/node', env: {} },
+    fs: createFakeFs([bundlePath, expectedExe]),
+    env: { HOME: '/Users/x', PATH: '' },
+    getProfileDir: () => '/aih-home/run/auth-projections/zcode/' + ACCOUNT_REF,
+    prepareZcodeElectronShadowApp(input) {
+      prepareCalls.push(input);
+      return {
+        ready: true,
+        status: 'prepared',
+        resolved: { bundlePath: shadowBundlePath, executablePath: shadowExe }
+      };
+    }
+  });
+
+  const result = launcher.launchAccountApp({
+    provider: 'zcode', accountRef: ACCOUNT_REF, kind: 'desktop'
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.executable, shadowExe);
+  assert.equal(prepareCalls.length, 1);
+  assert.equal(fakeSpawn.calls[0].file, shadowExe);
+  const env = fakeSpawn.calls[0].options.env;
+  assert.match(env.AIH_ZCODE_CAPTCHA_HOOK_MODULE_PATH, /zcode-electron-captcha-hook\.js$/);
+  assert.equal(
+    JSON.parse(env.ZCODE_AGENT_SERVER_ARGS_JSON)[1],
+    `${shadowBundlePath}/Contents/Resources/glm/zcode.cjs`
+  );
+});
+
+test('zcode desktop 启动预检只确认可启动，不准备账号投影、原生设置或进程', () => {
+  const bundlePath = '/Applications/ZCode.app';
+  const expectedExe = '/Applications/ZCode.app/Contents/MacOS/ZCode';
+  let nativeSettingsCalls = 0;
+  const { launcher, fakeSpawn, fsImpl } = createLauncher({
+    path: nodePath.posix,
+    processObj: { platform: 'darwin', execPath: '/usr/local/bin/node', env: {} },
+    fs: createFakeFs([bundlePath, expectedExe]),
+    env: { HOME: '/Users/x', PATH: '' },
+    getProfileDir: () => '/aih-home/run/auth-projections/zcode/' + ACCOUNT_REF,
+    prepareZcodeNativeProxySettings() {
+      nativeSettingsCalls += 1;
+      return { ready: true };
+    }
+  });
+
+  const result = launcher.launchAccountApp({
+    provider: 'zcode',
+    accountRef: ACCOUNT_REF,
+    kind: 'desktop',
+    deferDesktopSpawn: true
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 'launch_ready');
+  assert.equal(result.executable, expectedExe);
+  assert.equal(nativeSettingsCalls, 0);
+  assert.equal(fakeSpawn.calls.length, 0);
+  assert.deepEqual(fsImpl.mkdirCalls, []);
+});
+
+test('zcode desktop 在 spawn 前同步原生设置，不重复追加 Chromium 代理参数', () => {
+  const bundlePath = '/Applications/ZCode.app';
+  const expectedExe = '/Applications/ZCode.app/Contents/MacOS/ZCode';
+  const nativeSettingsCalls = [];
+  const { launcher, fakeSpawn } = createLauncher({
+    path: nodePath.posix,
+    processObj: { platform: 'darwin', execPath: '/usr/local/bin/node', env: {} },
+    fs: createFakeFs([bundlePath, expectedExe]),
+    env: { HOME: '/Users/x', PATH: '' },
+    getProfileDir: () => '/aih-home/run/auth-projections/zcode/' + ACCOUNT_REF,
+    prepareZcodeNativeProxySettings(input) {
+      nativeSettingsCalls.push(input);
+      return { ready: true, status: 'managed' };
+    }
+  });
+
+  const result = launcher.launchAccountApp({
+    provider: 'zcode',
+    accountRef: ACCOUNT_REF,
+    kind: 'desktop',
+    egress: { ok: true, proxyServer: '127.0.0.1:10801', source: 'url' }
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(nativeSettingsCalls.length, 1);
+  assert.equal(nativeSettingsCalls[0].profileDir, `/aih-home/run/auth-projections/zcode/${ACCOUNT_REF}`);
+  assert.equal(nativeSettingsCalls[0].proxyServer, '127.0.0.1:10801');
+  assert.equal(
+    fakeSpawn.calls[0].args.some((arg) => arg.startsWith('--proxy-server=')),
+    false,
+    'ZCode 原生设置已覆盖模型、工具与 Electron 网络 session'
+  );
+  assert.equal(fakeSpawn.calls[0].options.env.ZCODE_HTTP_PROXY, undefined);
+  assert.equal(fakeSpawn.calls[0].options.env.ZCODE_NO_PROXY, undefined);
+});
+
+test('zcode desktop 遇到未知 marker 时保留原生设置并停止 spawn', () => {
+  const bundlePath = '/Applications/ZCode.app';
+  const expectedExe = '/Applications/ZCode.app/Contents/MacOS/ZCode';
+  const warning = '无法识别 ZCode 出口 marker；本次保留现有原生设置，账号出口变更未应用';
+  const { launcher, fakeSpawn } = createLauncher({
+    path: nodePath.posix,
+    processObj: { platform: 'darwin', execPath: '/usr/local/bin/node', env: {} },
+    fs: createFakeFs([bundlePath, expectedExe]),
+    env: { HOME: '/Users/x', PATH: '' },
+    getProfileDir: () => '/aih-home/run/auth-projections/zcode/' + ACCOUNT_REF,
+    prepareZcodeNativeProxySettings() {
+      return {
+        ready: false,
+        status: 'preserved_unrecognized_marker',
+        error: 'zcode_native_proxy_marker_unrecognized',
+        reason: warning,
+        egressApplied: false,
+        egressWarning: warning
+      };
+    }
+  });
+
+  const result = launcher.launchAccountApp({
+    provider: 'zcode',
+    accountRef: ACCOUNT_REF,
+    kind: 'desktop',
+    egress: { ok: true, proxyServer: '127.0.0.1:10801', source: 'url' }
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'zcode_native_proxy_marker_unrecognized');
+  assert.match(result.reason, /无法识别.*保留.*未应用/);
+  assert.equal(fakeSpawn.calls.length, 0);
+});
+
+test('zcode 原生代理设置同步失败时停止 spawn 并返回可诊断错误', () => {
+  const bundlePath = '/Applications/ZCode.app';
+  const expectedExe = '/Applications/ZCode.app/Contents/MacOS/ZCode';
+  const { launcher, fakeSpawn } = createLauncher({
+    path: nodePath.posix,
+    processObj: { platform: 'darwin', execPath: '/usr/local/bin/node', env: {} },
+    fs: createFakeFs([bundlePath, expectedExe]),
+    env: { HOME: '/Users/x', PATH: '' },
+    getProfileDir: () => '/aih-home/run/auth-projections/zcode/' + ACCOUNT_REF,
+    prepareZcodeNativeProxySettings() {
+      throw new Error('setting.json is locked');
+    }
+  });
+
+  const result = launcher.launchAccountApp({
+    provider: 'zcode',
+    accountRef: ACCOUNT_REF,
+    kind: 'desktop',
+    egress: { ok: true, proxyServer: '127.0.0.1:10801', source: 'url' }
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'zcode_native_proxy_settings_failed');
+  assert.match(result.reason, /setting\.json is locked/);
+  assert.equal(fakeSpawn.calls.length, 0);
 });
 
 test('zcode desktop 在 macOS 隔离 HOME 时固定宿主凭据密钥', () => {

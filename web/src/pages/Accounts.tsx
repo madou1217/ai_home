@@ -42,6 +42,7 @@ import {
   EditOutlined,
   CodeOutlined,
   DesktopOutlined,
+  GlobalOutlined,
   QrcodeOutlined,
   UndoOutlined,
 } from '@ant-design/icons';
@@ -112,6 +113,7 @@ import {
 import { CliPickerModal } from '@/features/accounts/CliPickerModal';
 import { KimiDesktopLoginModal } from '@/features/accounts/KimiDesktopLoginModal';
 import { CodexResetCreditsModal } from '@/features/accounts/CodexResetCreditsModal';
+import { ZcodeEgressModal } from '@/features/accounts/ZcodeEgressModal';
 import {
   formatCodexResetMenuLabel,
   isCodexOAuthResetEligible
@@ -633,6 +635,7 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
     openAfterLogin: boolean;
   } | null>(null);
   const [codexResetAccount, setCodexResetAccount] = useState<Account | null>(null);
+  const [zcodeEgressAccount, setZcodeEgressAccount] = useState<Account | null>(null);
   const [cliTerminals, setCliTerminals] = useState<ClientTerminalItem[]>([]);
   const [selectedCliTerminalId, setSelectedCliTerminalId] = useState('system-default');
   const [cliTerminalsLoading, setCliTerminalsLoading] = useState(false);
@@ -1144,6 +1147,9 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
   const handleOpenApp = async (record: Account, kind: 'desktop' | 'cli', terminalId?: string) => {
     try {
       const result = await accountsAPI.openApp(record.provider, record.accountRef, kind, 'open', terminalId);
+      if (result.egressWarning) {
+        message.warning(`ZCode 出口未生效：${result.egressWarning}`);
+      }
       if (kind === 'desktop' && result.status === 'already_running') {
         Modal.confirm({
           title: '该账号的 Desktop 已在运行',
@@ -1411,6 +1417,9 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
     if (canEditAccountConfig(record)) {
       menuItems.push({ key: 'edit', label: '编辑配置', icon: <EditOutlined /> });
     }
+    if (record.provider === 'zcode') {
+      menuItems.push({ key: 'zcode-egress', label: '出口设置', icon: <GlobalOutlined /> });
+    }
     menuItems.push({ type: 'divider' });
     menuItems.push({ key: 'delete', label: '删除账号', danger: true, icon: <DeleteOutlined /> });
     return menuItems;
@@ -1425,6 +1434,10 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
     }
     if (key === 'reauth') { handleReauth(record); return; }
     if (key === 'edit' && canEditAccountConfig(record)) { handleEdit(record); return; }
+    if (key === 'zcode-egress' && record.provider === 'zcode') {
+      setZcodeEgressAccount(record);
+      return;
+    }
     if (key === 'delete') {
       Modal.confirm({
         title: '确认删除？',
@@ -2289,6 +2302,10 @@ const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
         account={codexResetAccount}
         onClose={() => setCodexResetAccount(null)}
         onAvailableCountChange={updateCodexResetAvailableCount}
+      />
+      <ZcodeEgressModal
+        account={zcodeEgressAccount}
+        onClose={() => setZcodeEgressAccount(null)}
       />
     </PageScaffold>
   );

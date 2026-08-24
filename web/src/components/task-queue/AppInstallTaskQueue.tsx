@@ -166,6 +166,9 @@ export default function AppInstallTaskQueue() {
       });
       if (!response.ok) throw new Error(response.message || response.error || '应用启动失败');
       message.success(response.status === 'already_running' ? `${app.name} 已在运行` : `${app.name} 已启动`);
+      if (response.egressWarning) {
+        message.warning(`ZCode 出口未生效：${response.egressWarning}`);
+      }
       await refreshLaunchContext();
     } catch (error: unknown) {
       const responseData = typeof error === 'object' && error

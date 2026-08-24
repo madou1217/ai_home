@@ -16,6 +16,10 @@ const {
   resolveAccountRefByCliId
 } = require('../lib/server/account-ref-store');
 const {
+  readAccountEgressBinding,
+  writeAccountEgressBinding
+} = require('../lib/account/zcode-egress-binding-store');
+const {
   resolveAccountRuntimeDir,
   resolveCodexDesktopRuntimeDir
 } = require('../lib/runtime/aih-storage-layout');
@@ -136,6 +140,21 @@ test('deleteAccountByRef does not depend on the CLI alias', (t) => {
   assert.equal(Object.hasOwn(result, 'cliAccountId'), false);
   assert.equal(resolveAccountRef(fs, root, accountRef), null);
   assert.equal(readAccountCredentialRecord(fs, root, accountRef), null);
+});
+
+test('deleteAccountByRef removes the ZCode egress binding with the account', (t) => {
+  const root = mkTmpDir();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const accountRef = registerAccount(root, 'zcode', '5');
+  writeAccountEgressBinding(fs, root, accountRef, {
+    mode: 'url',
+    proxyUrl: '127.0.0.1:10801'
+  });
+
+  const result = createService(root).deleteAccountByRef('zcode', accountRef);
+
+  assert.equal(result.deleted, true);
+  assert.equal(readAccountEgressBinding(fs, root, accountRef), null);
 });
 
 test('deleteAccountByRef reconciles provider state before removing its projection', (t) => {

@@ -116,11 +116,16 @@ test('webui toolkit routes GET /v0/webui/toolkit/apps returns app list', async (
 test('webui toolkit app install returns an async unified job instead of blocking the request', async () => {
   const result = await runToolkitRequest('/v0/webui/toolkit/apps/install', {
     method: 'POST',
-    body: { appId: 'codex' },
+    body: { appId: 'codex', confirmed: true },
     deps: {
       appInstallJobManager: {
         start(input) {
-          assert.deepEqual(input, { appId: 'codex', provider: undefined, kind: undefined });
+          assert.deepEqual(input, {
+            appId: 'codex',
+            provider: undefined,
+            kind: undefined,
+            confirmed: true
+          });
           return {
             ok: true,
             accepted: true,
@@ -143,11 +148,23 @@ test('webui toolkit app install returns an async unified job instead of blocking
   assert.equal(result.data.job.id, 'app-install-test');
 });
 
+test('webui toolkit app execute rejects a request without explicit confirmation', async () => {
+  const result = await runToolkitRequest('/v0/webui/toolkit/apps/install', {
+    method: 'POST',
+    body: { appId: 'codex', action: 'install' },
+    deps: { appInstallJobManager: createAppInstallJobManager() }
+  });
+
+  assert.equal(result.handled, true);
+  assert.equal(result.res.statusCode, 428);
+  assert.equal(result.data.error, 'confirmation_required');
+});
+
 test('webui toolkit app install preserves the account-entry Desktop target', async () => {
   let receivedInput = null;
   const result = await runToolkitRequest('/v0/webui/toolkit/apps/install', {
     method: 'POST',
-    body: { appId: 'codex-desktop', action: 'install', kind: 'desktop' },
+    body: { appId: 'codex-desktop', action: 'install', kind: 'desktop', confirmed: true },
     deps: {
       appInstallJobManager: {
         start(input) {
@@ -175,6 +192,7 @@ test('webui toolkit app install preserves the account-entry Desktop target', asy
     appId: 'codex-desktop',
     provider: undefined,
     kind: 'desktop',
+    confirmed: true,
     action: 'install'
   });
   assert.equal(result.data.job.id, 'app-install-desktop-test');
@@ -190,7 +208,7 @@ test('webui toolkit app install 保留显式空 action 并返回 400', async () 
   });
   const result = await runToolkitRequest('/v0/webui/toolkit/apps/install', {
     method: 'POST',
-    body: { appId: 'codex', action: '' },
+    body: { appId: 'codex', action: '', confirmed: true },
     deps: { appInstallJobManager: manager }
   });
   await new Promise((resolve) => setImmediate(resolve));

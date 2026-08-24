@@ -59,13 +59,26 @@ async function request(manager, method, pathname, body = '') {
   return { handled, req, res };
 }
 
+test('旧应用安装执行入口拒绝未经显式确认的请求', async () => {
+  const manager = createAppInstallJobManager();
+  const result = await request(manager, 'POST', '/v0/webui/app-install', JSON.stringify({
+    provider: 'codex',
+    kind: 'cli'
+  }));
+
+  assert.equal(result.handled, true);
+  assert.equal(result.res.statusCode, 428);
+  assert.equal(JSON.parse(result.res.body).error, 'confirmation_required');
+});
+
 test('统一安装接口返回 202，并可查询异步任务', async () => {
   const manager = createAppInstallJobManager({
     installCli: async () => ({ installed: true, cliPath: '/tmp/codex' })
   });
   const created = await request(manager, 'POST', '/v0/webui/app-install', JSON.stringify({
     provider: 'codex',
-    kind: 'cli'
+    kind: 'cli',
+    confirmed: true
   }));
   assert.equal(created.handled, true);
   assert.equal(created.res.statusCode, 202);
@@ -83,7 +96,7 @@ test('安装任务 watch 使用 SSE 推送初始状态，取消接口只取消 q
   const manager = createAppInstallJobManager({
     installCli: async () => ({ installed: true, cliPath: '/tmp/codex' })
   });
-  const created = manager.start({ appId: 'codex' });
+  const created = manager.start({ appId: 'codex', confirmed: true });
   const watched = await request(manager, 'GET', `/v0/webui/app-install/jobs/${created.job.id}/watch`);
   assert.equal(watched.handled, true);
   assert.equal(watched.res.statusCode, 200);
@@ -93,7 +106,7 @@ test('安装任务 watch 使用 SSE 推送初始状态，取消接口只取消 q
   watched.req.emit('close');
 
   const queuedManager = createAppInstallJobManager({ installCli: async () => ({ installed: true }) });
-  const queued = queuedManager.start({ appId: 'codex' });
+  const queued = queuedManager.start({ appId: 'codex', confirmed: true });
   const cancelled = await request(
     queuedManager,
     'POST',

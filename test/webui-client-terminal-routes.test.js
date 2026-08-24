@@ -124,6 +124,32 @@ test('Toolkit 终端执行复用服务端计划，不接受客户端自定义命
   assert.equal(ctx.resCapture.statusCode, 202);
 });
 
+test('Toolkit 终端任务取消入口与其他资源使用相同语义', async () => {
+  const calls = [];
+  const ctx = createContext({
+    deps: {
+      clientTerminalJobManager: {
+        cancelJob(jobId) {
+          calls.push(jobId);
+          return { ok: true, job: { id: jobId, status: 'cancelled' } };
+        }
+      }
+    }
+  });
+
+  await handleWebUiClientTerminalRoutes(
+    ctx.req,
+    ctx.res,
+    'POST',
+    '/v0/webui/toolkit/terminals/jobs/terminal-action-1/cancel',
+    ctx
+  );
+
+  assert.equal(ctx.resCapture.statusCode, 200);
+  assert.deepEqual(calls, ['terminal-action-1']);
+  assert.equal(JSON.parse(ctx.resCapture.body).job.status, 'cancelled');
+});
+
 test('Toolkit 终端唤起只接受已探测的平台终端并立即返回', async () => {
   const calls = [];
   const ctx = createContext({

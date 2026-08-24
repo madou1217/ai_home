@@ -88,7 +88,10 @@ test('终端启动选择隐藏平台实现并生成 Windows Terminal 参数', ()
   });
   assert.equal(launch.terminalId, 'windows-terminal');
   assert.equal(launch.file, 'C:\\tools\\wt.exe');
-  assert.deepEqual(launch.args, ['-w', 'new', 'new-tab', '--title', 'aih codex 1', 'cmd.exe', '/k', 'node app.js']);
+  assert.deepEqual(launch.args, [
+    '-w', 'new', 'new-tab', '--title', 'aih codex 1',
+    'cmd.exe', '/d', '/s', '/k', 'node', 'app.js'
+  ]);
 });
 
 test('Windows 系统默认终端以 verbatim 命令行把整段命令包进新窗口', () => {
@@ -140,9 +143,64 @@ test('Windows 系统默认终端探测到 wt.exe 时直接委托 Windows Termina
   assert.equal(launch.file, 'C:\\tools\\wt.exe');
   assert.deepEqual(
     launch.args,
-    ['-w', 'new', 'new-tab', '--title', 'aih codex 12', 'cmd.exe', '/k', command]
+    [
+      '-w', 'new', 'new-tab', '--title', 'aih codex 12',
+      'cmd.exe', '/d', '/s', '/k',
+      'set', 'AIH_ACCOUNT_APP=1', '&&', 'node', 'app.js'
+    ]
   );
   assert.equal(launch.windowsHide, false);
+});
+
+test('Windows Terminal 不把带 set 标记的整段命令误组装成 cmd.exe /k set', () => {
+  const command = 'set "AIH_ACCOUNT_APP=1" && set "AIH_PROVIDER_ACCOUNT_REF=acct_d62c5c4961277f9403c8" && '
+    + '"d:\\nvm4w\\nodejs\\node.exe" "C:\\Users\\madou\\projects\\feature\\ai_home\\bin\\ai-home.js" codex 3';
+  const launch = resolveClientTerminalLaunch('windows-terminal', command, 'aih codex 3', {
+    platform: 'windows',
+    path: nodePath.win32,
+    env: { PATH: 'C:\\tools' },
+    fs: fakeFs(['C:\\tools\\wt.exe'])
+  });
+  assert.deepEqual(launch.args.slice(0, 9), [
+    '-w', 'new', 'new-tab', '--title', 'aih codex 3',
+    'cmd.exe', '/d', '/s', '/k'
+  ]);
+  assert.deepEqual(launch.args.slice(9), [
+    'set', 'AIH_ACCOUNT_APP=1', '&&',
+    'set', 'AIH_PROVIDER_ACCOUNT_REF=acct_d62c5c4961277f9403c8', '&&',
+    'd:\\nvm4w\\nodejs\\node.exe',
+    'C:\\Users\\madou\\projects\\feature\\ai_home\\bin\\ai-home.js',
+    'codex', '3'
+  ]);
+  const windowsTerminalCommandline = launch.args.slice(5)
+    .map((arg) => /\s/.test(arg) ? `"${arg}"` : arg)
+    .join(' ');
+  assert.equal(
+    windowsTerminalCommandline,
+    'cmd.exe /d /s /k set AIH_ACCOUNT_APP=1 && '
+      + 'set AIH_PROVIDER_ACCOUNT_REF=acct_d62c5c4961277f9403c8 && '
+      + 'd:\\nvm4w\\nodejs\\node.exe '
+      + 'C:\\Users\\madou\\projects\\feature\\ai_home\\bin\\ai-home.js codex 3'
+  );
+  assert.match(windowsTerminalCommandline, /^cmd\.exe \/d \/s \/k set /);
+  assert.doesNotMatch(windowsTerminalCommandline, /^"cmd\.exe \/k set"/);
+  assert.ok(!launch.args.some((arg) => arg.includes('cmd.exe /k set')));
+  assert.ok(!launch.args.some((arg) => arg.includes('AIH_ACCOUNT_APP=1"')));
+});
+
+test('Windows Terminal 保留带空格的可执行路径为单个 positional arg', () => {
+  const command = '"C:\\Program Files\\nodejs\\node.exe" "C:\\Program Files\\AI Home\\bin\\ai-home.js" codex 3';
+  const launch = resolveClientTerminalLaunch('windows-terminal', command, 'aih codex 3', {
+    platform: 'windows',
+    path: nodePath.win32,
+    env: { PATH: 'C:\\tools' },
+    fs: fakeFs(['C:\\tools\\wt.exe'])
+  });
+  assert.deepEqual(launch.args.slice(9), [
+    'C:\\Program Files\\nodejs\\node.exe',
+    'C:\\Program Files\\AI Home\\bin\\ai-home.js',
+    'codex', '3'
+  ]);
 });
 
 test('CMD 终端适配器用 cmd start 打开 conhost 窗口', () => {

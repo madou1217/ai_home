@@ -87,11 +87,15 @@ test('终端启动选择隐藏平台实现并生成 Windows Terminal 参数', ()
     fs: fakeFs(['C:\\tools\\wt.exe'])
   });
   assert.equal(launch.terminalId, 'windows-terminal');
-  assert.equal(launch.file, 'C:\\tools\\wt.exe');
-  assert.deepEqual(launch.args, [
-    '-w', 'new', 'new-tab', '--title', 'aih codex 1',
-    'cmd.exe', '/d', '/s', '/k', 'node', 'app.js'
-  ]);
+  assert.equal(launch.file, 'cmd.exe');
+  assert.equal(launch.windowsHide, true);
+  assert.equal(launch.windowsVerbatimArguments, true);
+  assert.equal(launch.terminalExecutable, 'C:\\tools\\wt.exe');
+  assert.deepEqual(launch.args.slice(0, 3), ['/d', '/s', '/c']);
+  assert.equal(
+    launch.args[3],
+    'start "" C:\\tools\\wt.exe -w new new-tab --title "aih codex 1" cmd.exe /d /s /k node app.js'
+  );
 });
 
 test('Windows 系统默认终端以 verbatim 命令行把整段命令包进新窗口', () => {
@@ -106,12 +110,10 @@ test('Windows 系统默认终端以 verbatim 命令行把整段命令包进新�
   assert.equal(launch.file, 'cmd.exe');
   assert.equal(launch.windowsVerbatimArguments, true);
   assert.deepEqual(launch.args.slice(0, 3), ['/d', '/s', '/c']);
-  // 命令整段包进内层 cmd /d /s /k "…"，set A && set B && <cli> 链不会在外层被拆开
   assert.equal(
     launch.args[3],
     `start "aih codex 12" cmd.exe /d /s /k "${command}"`
   );
-  // 回归守卫：cmd.exe 不认识 \" 转义，命令行里出现即会让 start 挂死
   assert.ok(!launch.args[3].includes('\\"'));
 });
 
@@ -135,21 +137,18 @@ test('Windows 系统默认终端探测到 wt.exe 时直接委托 Windows Termina
     env: { PATH: 'C:\\tools' },
     fs: fakeStoreAliasFs(['C:\\tools\\wt.exe'])
   });
-  // OS 默认终端 deflection 从隐藏父进程启动时不生效，system-default 须显式走 wt；
-  // -w new 强制弹独立窗口（new-tab 会复用既有窗口，目标窗口在别的桌面时
-  // 用户表现为「点了没反应」）；windowsHide 必须为 false，否则 CREATE_NO_WINDOW
-  // 会把 WT 新窗口创建成隐藏窗口（进程链正常但用户看不到）。
+  // 由隐藏 cmd 执行 start 显式拉起 WT，避免 Node 直接 spawn AppExecutionAlias
+  // 时只激活宿主而丢失 new-tab positional args。
   assert.equal(launch.terminalId, 'windows-terminal');
-  assert.equal(launch.file, 'C:\\tools\\wt.exe');
-  assert.deepEqual(
-    launch.args,
-    [
-      '-w', 'new', 'new-tab', '--title', 'aih codex 12',
-      'cmd.exe', '/d', '/s', '/k',
-      'set', 'AIH_ACCOUNT_APP=1', '&&', 'node', 'app.js'
-    ]
+  assert.equal(launch.file, 'cmd.exe');
+  assert.equal(launch.windowsVerbatimArguments, true);
+  assert.equal(launch.windowsHide, true);
+  assert.equal(launch.terminalExecutable, 'C:\\tools\\wt.exe');
+  assert.equal(
+    launch.args[3],
+    'start "" C:\\tools\\wt.exe -w new new-tab --title "aih codex 12" '
+      + 'cmd.exe /d /s /k set AIH_ACCOUNT_APP=1 ^&^& node app.js'
   );
-  assert.equal(launch.windowsHide, false);
 });
 
 test('Windows Terminal 不把带 set 标记的整段命令误组装成 cmd.exe /k set', () => {
@@ -161,31 +160,18 @@ test('Windows Terminal 不把带 set 标记的整段命令误组装成 cmd.exe /
     env: { PATH: 'C:\\tools' },
     fs: fakeFs(['C:\\tools\\wt.exe'])
   });
-  assert.deepEqual(launch.args.slice(0, 9), [
-    '-w', 'new', 'new-tab', '--title', 'aih codex 3',
-    'cmd.exe', '/d', '/s', '/k'
-  ]);
-  assert.deepEqual(launch.args.slice(9), [
-    'set', 'AIH_ACCOUNT_APP=1', '&&',
-    'set', 'AIH_PROVIDER_ACCOUNT_REF=acct_d62c5c4961277f9403c8', '&&',
-    'd:\\nvm4w\\nodejs\\node.exe',
-    'C:\\Users\\madou\\projects\\feature\\ai_home\\bin\\ai-home.js',
-    'codex', '3'
-  ]);
-  const windowsTerminalCommandline = launch.args.slice(5)
-    .map((arg) => /\s/.test(arg) ? `"${arg}"` : arg)
-    .join(' ');
-  assert.equal(
-    windowsTerminalCommandline,
-    'cmd.exe /d /s /k set AIH_ACCOUNT_APP=1 && '
-      + 'set AIH_PROVIDER_ACCOUNT_REF=acct_d62c5c4961277f9403c8 && '
-      + 'd:\\nvm4w\\nodejs\\node.exe '
-      + 'C:\\Users\\madou\\projects\\feature\\ai_home\\bin\\ai-home.js codex 3'
-  );
-  assert.match(windowsTerminalCommandline, /^cmd\.exe \/d \/s \/k set /);
-  assert.doesNotMatch(windowsTerminalCommandline, /^"cmd\.exe \/k set"/);
-  assert.ok(!launch.args.some((arg) => arg.includes('cmd.exe /k set')));
-  assert.ok(!launch.args.some((arg) => arg.includes('AIH_ACCOUNT_APP=1"')));
+  assert.equal(launch.file, 'cmd.exe');
+  assert.equal(launch.windowsVerbatimArguments, true);
+  assert.equal(launch.windowsHide, true);
+  assert.equal(launch.terminalExecutable, 'C:\\tools\\wt.exe');
+  const windowsTerminalCommandline = launch.args[3];
+  assert.match(windowsTerminalCommandline, /^start "" C:\\tools\\wt\.exe -w new new-tab/);
+  assert.match(windowsTerminalCommandline, /cmd\.exe \/d \/s \/k set AIH_ACCOUNT_APP=1/);
+  assert.match(windowsTerminalCommandline, /\^&\^&/);
+  assert.match(windowsTerminalCommandline, /d:\\nvm4w\\nodejs\\node\.exe/);
+  assert.match(windowsTerminalCommandline, /C:\\Users\\madou\\projects\\feature\\ai_home\\bin\\ai-home\.js/);
+  assert.doesNotMatch(windowsTerminalCommandline, /"cmd\.exe \/k set"/);
+  assert.ok(!windowsTerminalCommandline.includes('\\"'));
 });
 
 test('Windows Terminal 保留带空格的可执行路径为单个 positional arg', () => {
@@ -196,11 +182,20 @@ test('Windows Terminal 保留带空格的可执行路径为单个 positional arg
     env: { PATH: 'C:\\tools' },
     fs: fakeFs(['C:\\tools\\wt.exe'])
   });
-  assert.deepEqual(launch.args.slice(9), [
-    'C:\\Program Files\\nodejs\\node.exe',
-    'C:\\Program Files\\AI Home\\bin\\ai-home.js',
-    'codex', '3'
-  ]);
+  assert.equal(launch.file, 'cmd.exe');
+  assert.match(launch.args[3], /"C:\\Program Files\\nodejs\\node\.exe"/);
+  assert.match(launch.args[3], /"C:\\Program Files\\AI Home\\bin\\ai-home\.js"/);
+});
+
+test('Windows Terminal 的 Store 别名通过 wt.exe 命令名交给 start', () => {
+  const launch = resolveClientTerminalLaunch('windows-terminal', 'echo ready', 'aih codex 3', {
+    platform: 'windows',
+    path: nodePath.win32,
+    env: { PATH: 'C:\\Users\\madou\\AppData\\Local\\Microsoft\\WindowsApps' },
+    fs: fakeFs(['C:\\Users\\madou\\AppData\\Local\\Microsoft\\WindowsApps\\wt.exe'])
+  });
+  assert.equal(launch.file, 'cmd.exe');
+  assert.match(launch.args[3], /^start "" wt\.exe /);
 });
 
 test('CMD 终端适配器用 cmd start 打开 conhost 窗口', () => {
@@ -557,7 +552,9 @@ test('launchClientTerminal 按规格透传 windowsHide（wt 显窗、其余缺�
     spawn: spySpawn
   });
   assert.equal(wt.ok, true);
-  assert.equal(calls[0].options.windowsHide, false);
+  assert.equal(calls[0].options.windowsHide, true);
+  assert.equal(calls[0].options.windowsVerbatimArguments, true);
+  assert.equal(calls[0].file, 'cmd.exe');
   const cmd = launchClientTerminal('cmd', {
     platform: 'windows',
     path: nodePath.win32,

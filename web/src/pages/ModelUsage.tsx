@@ -29,6 +29,7 @@ import type {
   ModelUsageDashboardQueryJob,
   ModelUsageModelRow,
   ModelUsageQuery,
+  ModelUsageRequestRow,
   ModelUsageScanJob,
   ModelUsageSessionDetailRow,
   ModelUsageSessionRow,
@@ -43,12 +44,15 @@ import ListTable from '@/components/ui/ListTable';
 import MobileStatGrid from '@/components/mobile/MobileStatGrid';
 import MobilePills from '@/components/mobile/MobilePills';
 import '@/components/mobile/mobile-cards.css';
+import RequestDetailsSection from '@/features/model-usage/RequestDetailsSection';
 
 const { RangePicker } = DatePicker;
 const { Text } = Typography;
 
 type ProviderFilter = Provider | '';
 type RangeMode = 'hour' | 'today' | '7d' | 'month' | 'custom';
+
+const REQUEST_DETAIL_LIMIT = 80;
 
 const PROVIDER_OPTIONS: Array<{ label: string; value: ProviderFilter }> = [
   { label: '全部', value: '' },
@@ -132,6 +136,16 @@ function getSessionKey(row: ModelUsageSessionRow) {
   return `${row.provider}:${row.sessionId}`;
 }
 
+function getRequestDetailsError(error: unknown) {
+  const requestError = error as {
+    message?: string;
+    response?: { data?: { message?: string } };
+  };
+  return requestError?.response?.data?.message
+    || requestError?.message
+    || '加载请求明细失败';
+}
+
 function buildQuery(
   range: [Dayjs, Dayjs],
   rangeMode: RangeMode,
@@ -164,6 +178,11 @@ export default function ModelUsage() {
   const [stats, setStats] = useState<ModelUsageStats>(emptyStats);
   const [models, setModels] = useState<ModelUsageModelRow[]>([]);
   const [sessions, setSessions] = useState<ModelUsageSessionRow[]>([]);
+  const [requestUsage, setRequestUsage] = useState<ModelUsageRequestRow[]>([]);
+  const [requestErrors, setRequestErrors] = useState<ModelUsageRequestRow[]>([]);
+  const [requestDetailsRequested, setRequestDetailsRequested] = useState(false);
+  const [requestDetailsLoading, setRequestDetailsLoading] = useState(false);
+  const [requestDetailsError, setRequestDetailsError] = useState('');
   const [loading, setLoading] = useState(false);
   const [dashboardQueryJob, setDashboardQueryJob] = useState<ModelUsageDashboardQueryJob | null>(null);
   const [scanning, setScanning] = useState(false);
@@ -180,6 +199,7 @@ export default function ModelUsage() {
   const loadSequenceRef = useRef(0);
   const quietNextLoadRef = useRef(true);
   const refreshAfterScanRef = useRef<() => void>(() => {});
+  const requestDetailsSequenceRef = useRef(0);
 
   const query = useMemo(() => buildQuery(range, rangeMode, provider, model, 50), [model, provider, range, rangeMode]);
 
@@ -274,6 +294,38 @@ export default function ModelUsage() {
     quietNextLoadRef.current = true;
     loadUsage(query, { quiet });
   }, [loadUsage, query, refreshRevision]);
+
+  useEffect(() => {
+    requestDetailsSequenceRef.current += 1;
+    setRequestDetailsRequested(false);
+    setRequestDetailsLoading(false);
+    setRequestDetailsError('');
+    setRequestUsage([]);
+    setRequestErrors([]);
+  }, [query, refreshRevision]);
+
+  const loadRequestDetails = useCallback(async () => {
+    const requestSequence = requestDetailsSequenceRef.current + 1;
+    requestDetailsSequenceRef.current = requestSequence;
+    setRequestDetailsRequested(true);
+    setRequestDetailsLoading(true);
+    setRequestDetailsError('');
+    setRequestUsage([]);
+    setRequestErrors([]);
+    try {
+      const response = await modelUsageAPI.requests({ ...query, limit: REQUEST_DETAIL_LIMIT });
+      if (requestSequence !== requestDetailsSequenceRef.current) return;
+      setRequestUsage(response.usage || []);
+      setRequestErrors(response.errors || []);
+    } catch (error: unknown) {
+      if (requestSequence !== requestDetailsSequenceRef.current) return;
+      setRequestDetailsError(getRequestDetailsError(error));
+    } finally {
+      if (requestSequence === requestDetailsSequenceRef.current) {
+        setRequestDetailsLoading(false);
+      }
+    }
+  }, [query]);
 
   const handleRangeChange = (value: null | [Dayjs | null, Dayjs | null]) => {
     if (!value || !value[0] || !value[1]) return;
@@ -827,6 +879,16 @@ export default function ModelUsage() {
         />
       </SectionCard>
       )}
+
+      <RequestDetailsSection
+        usage={requestUsage}
+        errors={requestErrors}
+        requested={requestDetailsRequested}
+        loading={requestDetailsLoading}
+        error={requestDetailsError}
+        limit={REQUEST_DETAIL_LIMIT}
+        onRequest={() => void loadRequestDetails()}
+      />
 
       <Drawer
         title={selectedSession ? `${providerNames[selectedSession.provider]} · ${selectedSession.project || selectedSession.sessionId}` : '会话明细'}

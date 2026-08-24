@@ -1,0 +1,61 @@
+.request-detail-token-cell {
+  display: flex;
+  min-width: 220px;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.request-detail-token-part {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.request-detail-token-part > span {
+  color: var(--app-text-secondary);
+  font-size: 12px;
+}
+
+.request-detail-token-part > strong {
+  color: var(--app-heading);
+  font-variant-numeric: tabular-nums;
+}
+
+.request-detail-mono {
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.request-detail-cost {
+  color: var(--color-success, #15803d);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.request-detail-error-cell {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.request-detail-error-message {
+  display: block;
+  max-width: 320px;
+}
+
+.request-detail-load-error {
+  display: block;
+  margin-bottom: 8px;
+}
+
+@media (max-width: 767.98px) {
+  .request-detail-token-cell {
+    min-width: 0;
+  }
+
+  .request-detail-error-message {
+    max-width: 100%;
+  }
+}

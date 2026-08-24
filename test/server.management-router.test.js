@@ -446,6 +446,49 @@ test('management router serves model usage stats without implicit scan', async (
   });
 });
 
+test('management router serves usage and error request details from one query', async () => {
+  const res = createResCapture();
+  let capturedQuery = null;
+  const details = {
+    usage: [{ requestId: 'req-usage', model: 'gpt-5.6-sol' }],
+    errors: [{ requestId: 'req-error', statusCode: 502 }]
+  };
+  const handled = await handleManagementRequest({
+    method: 'GET',
+    pathname: '/v0/management/usage/requests',
+    url: new URL('http://localhost/v0/management/usage/requests?from=2026-08-23&to=2026-08-23&provider=codex&limit=80'),
+    req: { headers: {} },
+    res,
+    options: {},
+    state: {},
+    requiredManagementKey: '',
+    deps: {
+      parseAuthorizationBearer: () => '',
+      writeJson: (r, code, payload) => { r.statusCode = code; r.end(JSON.stringify(payload)); },
+      modelUsageService: {
+        syncPricingIfStale: async () => ({ ok: true }),
+        getRequestDetails: () => {
+          throw new Error('sync request details must stay off the server thread');
+        },
+        getRequestDetailsAsync: async (query) => {
+          capturedQuery = query;
+          return details;
+        }
+      }
+    }
+  });
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 200);
+  assert.equal(capturedQuery.provider, 'codex');
+  assert.equal(capturedQuery.limit, 80);
+  assert.deepEqual(JSON.parse(res.body), {
+    ok: true,
+    range: { from: '2026-08-23', to: '2026-08-23' },
+    ...details
+  });
+});
+
 test('management router accepts model usage date-time range', async () => {
   const res = createResCapture();
   let capturedQuery = null;

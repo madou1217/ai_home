@@ -74,6 +74,7 @@ import type {
   ModelUsageDashboardResponse,
   ModelUsageModelsResponse,
   ModelUsageQuery,
+  ModelUsageRequestDetailsResponse,
   ModelUsageScanJob,
   ModelUsageScanResponse,
   ModelUsageSessionDetailResponse,
@@ -1751,6 +1752,13 @@ export const modelUsageAPI = {
 
   sessions: async (query: ModelUsageQuery = {}): Promise<ModelUsageSessionsResponse> => {
     const response = await api.get<ModelUsageSessionsResponse>('/webui/management/usage/sessions', {
+      params: buildModelUsageParams(query)
+    });
+    return response.data;
+  },
+
+  requests: async (query: ModelUsageQuery = {}): Promise<ModelUsageRequestDetailsResponse> => {
+    const response = await api.get<ModelUsageRequestDetailsResponse>('/webui/management/usage/requests', {
       params: buildModelUsageParams(query)
     });
     return response.data;

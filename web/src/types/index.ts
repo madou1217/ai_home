@@ -2241,6 +2241,36 @@ export interface ModelUsageSessionDetailResponse {
   session: ModelUsageSessionDetailRow[];
 }
 
+export interface ModelUsageRequestRow {
+  requestId: string;
+  provider: Provider | '';
+  model: string;
+  reasoningEffort: string;
+  endpoint: string;
+  clientIp: string;
+  requestType: 'stream' | 'sync' | '';
+  billingMode: 'token' | '';
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadInputTokens: number;
+  cacheCreationInputTokens: number;
+  reasoningOutputTokens: number;
+  totalTokens: number;
+  costUsd: number;
+  durationMs: number;
+  timestampMs: number;
+  statusCode: number;
+  errorCode: string;
+  errorMessage: string;
+}
+
+export interface ModelUsageRequestDetailsResponse {
+  ok: boolean;
+  range: ModelUsageDateRange;
+  usage: ModelUsageRequestRow[];
+  errors: ModelUsageRequestRow[];
+}
+
 export interface ModelUsageScanProviderResult {
   files: number;
   records: number;

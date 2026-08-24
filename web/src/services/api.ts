@@ -68,6 +68,7 @@ import type {
   ManagementAccountsResponse,
   ManagementRestartEvent,
   ManagementRestartResponse,
+  ModelUsageBreakdownResponse,
   ModelUsageDashboardQueryCancelResponse,
   ModelUsageDashboardQueryJob,
   ModelUsageDashboardQueryResponse,
@@ -1764,6 +1765,13 @@ export const modelUsageAPI = {
 
   requests: async (query: ModelUsageQuery = {}): Promise<ModelUsageRequestDetailsResponse> => {
     const response = await api.get<ModelUsageRequestDetailsResponse>('/webui/management/usage/requests', {
+      params: buildModelUsageParams(query)
+    });
+    return response.data;
+  },
+
+  breakdown: async (query: ModelUsageQuery): Promise<ModelUsageBreakdownResponse> => {
+    const response = await api.get<ModelUsageBreakdownResponse>('/webui/management/usage/breakdown', {
       params: buildModelUsageParams(query)
     });
     return response.data;

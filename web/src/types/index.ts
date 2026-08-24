@@ -2276,9 +2276,7 @@ export interface ModelUsageStats {
   totalCostUsd: number;
 }
 
-export interface ModelUsageModelRow {
-  provider: Provider;
-  model: string;
+export interface ModelUsageMetricTotals {
   calls: number;
   inputTokens: number;
   outputTokens: number;
@@ -2287,9 +2285,17 @@ export interface ModelUsageModelRow {
   reasoningOutputTokens: number;
   totalTokens: number;
   costUsd: number;
+  cacheHitRate: number | null;
 }
 
-export interface ModelUsageSessionRow {
+export interface ModelUsageModelRow extends ModelUsageMetricTotals {
+  provider: Provider;
+  model: string;
+  accountCount: number;
+  unattributedCalls: number;
+}
+
+export interface ModelUsageSessionRow extends ModelUsageMetricTotals {
   provider: Provider;
   sessionId: string;
   project: string;
@@ -2298,13 +2304,40 @@ export interface ModelUsageSessionRow {
   startedAtMs: number;
   updatedAtMs: number;
   promptCount: number;
-  calls: number;
-  totalTokens: number;
-  costUsd: number;
+  accountCount: number;
+  unattributedCalls: number;
 }
 
 export interface ModelUsageSessionDetailRow extends ModelUsageModelRow {
   sessionId: string;
+}
+
+export interface ModelUsageTrendPoint extends ModelUsageMetricTotals {
+  bucketStartMs: number;
+}
+
+export interface ModelUsageTrend {
+  fromMs: number;
+  toMs: number;
+  bucketMs: number;
+  points: ModelUsageTrendPoint[];
+}
+
+export interface ModelUsageAccountModelRow extends ModelUsageMetricTotals {
+  provider: Provider;
+  model: string;
+}
+
+export interface ModelUsageAccountRow extends ModelUsageMetricTotals {
+  accountRef: string;
+  accountProvider: Provider | '';
+  modelCount: number;
+  models: ModelUsageAccountModelRow[];
+}
+
+export interface ModelUsageBreakdownSummary extends ModelUsageMetricTotals {
+  accountCount: number;
+  unattributedCalls: number;
 }
 
 export interface ModelUsageStatsResponse {
@@ -2330,6 +2363,7 @@ export interface ModelUsageDashboardData {
   models: ModelUsageModelRow[];
   sessions: ModelUsageSessionRow[];
   modelOptions: ModelUsageModelRow[];
+  trend: ModelUsageTrend;
 }
 
 export interface ModelUsageDashboardResponse extends ModelUsageDashboardData {
@@ -2403,6 +2437,14 @@ export interface ModelUsageRequestDetailsResponse {
   range: ModelUsageDateRange;
   usage: ModelUsageRequestRow[];
   errors: ModelUsageRequestRow[];
+}
+
+export interface ModelUsageBreakdownResponse {
+  ok: boolean;
+  range: ModelUsageDateRange;
+  summary: ModelUsageBreakdownSummary;
+  models: ModelUsageModelRow[];
+  accounts: ModelUsageAccountRow[];
 }
 
 export interface ModelUsageScanProviderResult {

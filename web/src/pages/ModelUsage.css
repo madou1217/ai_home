@@ -1,42 +1,76 @@
-/* ModelUsage 页已重构为框架组件（SectionCard / ProTable / StatisticCard）。
- * 原 484 行里 ~40 个 .usage-* 面板/卡片/网格类已全部死亡（无 tsx 引用），此处只保留
- * 仍在用的「实时扫描」状态条规则：
- *   - usage-live-scan--{status}：状态色边框（叠加在 SectionCard 上，基础卡样式由
- *     SectionCard 提供，不再重复 border/radius/shadow）。
- *   - usage-live-scan-main：扫描条内部 4 列指标网格。 */
-
-.usage-live-scan--queued,
-.usage-live-scan--running {
-  border-color: color-mix(in srgb, var(--c-teal-500) 32%, transparent) !important;
-}
-
-.usage-live-scan--failed {
-  border-color: color-mix(in srgb, var(--c-danger-600) 28%, transparent) !important;
-}
-
-.usage-live-scan-main {
+/* 紧凑遥测轨道：单一容器承载核心指标，避免一组互相争抢注意力的统计卡片。 */
+.usage-kpi-rail {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: 1.18fr repeat(5, minmax(0, 1fr));
+  margin-bottom: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--elevation-1);
+  overflow: hidden;
 }
 
-.usage-live-scan-main > div {
+.usage-kpi-item {
   display: flex;
   min-width: 0;
+  min-height: 112px;
   flex-direction: column;
-  gap: 4px;
+  justify-content: center;
+  gap: 5px;
+  padding: 18px 20px;
+  border-inline-end: 1px solid var(--color-border-subtle);
 }
 
-.usage-live-scan-main strong {
+.usage-kpi-item:last-child {
+  border-inline-end: 0;
+}
+
+.usage-kpi-item > span {
+  color: var(--color-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+
+.usage-kpi-item > strong {
   overflow: hidden;
-  color: var(--app-heading);
-  font-size: 15px;
-  font-weight: 900;
+  color: var(--color-heading);
+  font-family: var(--font-display);
+  font-size: clamp(21px, 1.8vw, 29px);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--weight-extrabold);
+  letter-spacing: var(--tracking-tight);
+  line-height: var(--leading-tight);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* 会话 ID 单元格：等宽纯文本（无 code 灰底边框），尾随悬停才显示的复制图标 */
+.usage-kpi-item > small {
+  overflow: hidden;
+  color: var(--color-faint);
+  font-size: var(--text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.usage-kpi-item--primary {
+  background: var(--color-heading);
+}
+
+.usage-kpi-item--primary > span,
+.usage-kpi-item--primary > small {
+  color: color-mix(in srgb, var(--color-on-brand) 68%, transparent);
+}
+
+.usage-kpi-item--primary > strong {
+  color: var(--color-on-brand);
+}
+
+.usage-kpi-item--cost > strong {
+  color: var(--color-success);
+}
+
 .usage-session-cell {
   display: inline-flex;
   min-width: 0;
@@ -62,33 +96,323 @@
   font-size: 13px;
 }
 
-@media (max-width: 768px) {
-  .usage-live-scan-main {
+.usage-insights-card > .ant-pro-card-body {
+  padding: 0 !important;
+}
+
+.usage-insight-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.72fr) minmax(340px, 0.88fr);
+  min-height: 360px;
+}
+
+.usage-chart-shell {
+  display: flex;
+  min-width: 0;
+  min-height: 360px;
+  flex-direction: column;
+  padding: 22px 24px 18px;
+}
+
+.usage-chart-shell--mix {
+  border-inline-start: 1px solid var(--color-border);
+  background: var(--color-surface-raised);
+}
+
+.usage-chart-heading {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.usage-chart-heading > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.usage-chart-heading strong {
+  color: var(--color-heading);
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-extrabold);
+  letter-spacing: var(--tracking-tight);
+}
+
+.usage-chart-heading span {
+  color: var(--color-muted);
+  font-size: var(--text-sm);
+}
+
+.usage-chart-canvas {
+  width: 100%;
+  min-height: 270px;
+  flex: 1 1 auto;
+}
+
+.usage-chart-shell > .ant-empty {
+  display: flex;
+  min-height: 260px;
+  flex: 1 1 auto;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.usage-breakdown-context {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.usage-breakdown-context .ant-typography-code {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.usage-breakdown-summary {
+  display: grid;
+  grid-template-columns: 1.15fr repeat(6, minmax(0, 1fr));
+  margin-bottom: 18px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-raised);
+  overflow: hidden;
+}
+
+.usage-breakdown-summary > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+  padding: 15px 16px;
+  border-inline-end: 1px solid var(--color-border-subtle);
+}
+
+.usage-breakdown-summary > div:last-child {
+  border-inline-end: 0;
+}
+
+.usage-breakdown-summary span {
+  color: var(--color-muted);
+  font-size: var(--text-xs);
+}
+
+.usage-breakdown-summary strong {
+  overflow: hidden;
+  color: var(--color-heading);
+  font-size: var(--text-lg);
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.usage-breakdown-loading {
+  display: grid;
+  min-height: 260px;
+  place-items: center;
+}
+
+.usage-account-identity {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.usage-account-provider {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
+  place-items: center;
+}
+
+.usage-account-identity > span:last-child {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.usage-account-identity strong,
+.usage-account-identity small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.usage-account-identity small {
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.usage-mobile-card {
+  cursor: pointer;
+}
+
+.usage-mobile-card:focus-visible {
+  outline: none;
+  box-shadow: var(--ring-focus-info);
+}
+
+.usage-mobile-card-action {
+  display: inline-grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  border-radius: var(--radius-sm);
+  color: var(--color-muted);
+  place-items: center;
+}
+
+@media (max-width: 1180px) {
+  .usage-kpi-rail {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .usage-kpi-item:nth-child(3n) {
+    border-inline-end: 0;
+  }
+
+  .usage-kpi-item:nth-child(n + 4) {
+    border-top: 1px solid var(--color-border-subtle);
+  }
+}
+
+@media (max-width: 960px) {
+  .usage-insight-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .usage-chart-shell--mix {
+    border-inline-start: 0;
+    border-top: 1px solid var(--color-border);
+  }
+
+  .usage-breakdown-summary {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .usage-breakdown-summary > div:nth-child(4n) {
+    border-inline-end: 0;
+  }
+
+  .usage-breakdown-summary > div:nth-child(n + 5) {
+    border-top: 1px solid var(--color-border-subtle);
+  }
+
+  .usage-breakdown-summary > div:last-child {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 768px) {
+  .usage-kpi-rail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-bottom: 13px;
+  }
+
+  .usage-kpi-item {
+    min-height: 98px;
+    padding: 15px 16px;
+  }
+
+  .usage-kpi-item:nth-child(3n) {
+    border-inline-end: 1px solid var(--color-border-subtle);
+  }
+
+  .usage-kpi-item:nth-child(3),
+  .usage-kpi-item:nth-child(5),
+  .usage-kpi-item:last-child {
+    border-inline-end: 0;
+  }
+
+  .usage-kpi-item:nth-child(n + 2) {
+    border-top: 1px solid var(--color-border-subtle);
+  }
+
+  .usage-kpi-item--primary {
+    grid-column: 1 / -1;
+    border-inline-end: 0;
+    border-top: 0;
+  }
+
+  .usage-kpi-item--cost {
+    grid-column: 1 / -1;
+    border-inline-end: 0;
   }
 
   .usage-query-progress {
     justify-content: flex-start;
     margin-top: -4px;
   }
-}
 
-/* 移动端筛选区：时间/Provider 的 Segmented 选项多，窄屏放不下就横向滚动，
-   绝不撑破文档宽度。各项占满一行，Select 全宽。 */
-@media (max-width: 767.98px) {
-  .usage-mobile-filters {
-    row-gap: 10px !important;
+  .usage-chart-shell {
+    min-height: 320px;
+    padding: 18px 16px 14px;
   }
-  .usage-mobile-filters > .ant-space-item {
-    max-width: 100%;
+
+  .usage-chart-heading {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .usage-chart-heading .ant-segmented {
+    align-self: flex-start;
+  }
+
+  .usage-chart-canvas {
+    min-height: 240px;
+  }
+
+  .usage-breakdown-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .usage-breakdown-summary > div:nth-child(4n) {
+    border-inline-end: 1px solid var(--color-border-subtle);
+  }
+
+  .usage-breakdown-summary > div:nth-child(2n) {
+    border-inline-end: 0;
+  }
+
+  .usage-breakdown-summary > div:nth-child(n + 3) {
+    border-top: 1px solid var(--color-border-subtle);
+  }
+
+  .usage-breakdown-summary > div:last-child {
+    border-inline-end: 0;
+  }
+
+  .usage-mobile-card .mobile-card-meta {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px 8px;
+  }
+
+  .usage-mobile-card .mobile-card-meta-item {
     min-width: 0;
   }
-  .usage-mobile-filters .ant-segmented {
-    max-width: 100%;
-    overflow-x: auto;
-    scrollbar-width: none;
+
+  .usage-mobile-card .mobile-card-subtitle {
+    white-space: normal;
   }
-  .usage-mobile-filters .ant-segmented::-webkit-scrollbar {
-    display: none;
+
+  .usage-mobile-card-action {
+    margin-top: 1px;
   }
 }

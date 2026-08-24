@@ -28,7 +28,7 @@ function emptyStats(overrides = {}) {
 }
 
 function modelRow(model, overrides = {}) {
-  return {
+  const row = {
     provider: 'codex',
     model,
     calls: 0,
@@ -39,7 +39,14 @@ function modelRow(model, overrides = {}) {
     reasoningOutputTokens: 0,
     totalTokens: 0,
     costUsd: 0,
+    accountCount: 0,
+    unattributedCalls: 0,
     ...overrides
+  };
+  const totalInput = row.inputTokens + row.cacheReadInputTokens + row.cacheCreationInputTokens;
+  return {
+    ...row,
+    cacheHitRate: totalInput > 0 ? row.cacheReadInputTokens / totalInput : null
   };
 }
 
@@ -59,8 +66,15 @@ function sessionPart(sessionId, overrides = {}) {
     sessionUpdatedAtMs: 0,
     promptCount: 0,
     calls: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadInputTokens: 0,
+    cacheCreationInputTokens: 0,
+    reasoningOutputTokens: 0,
     totalTokens: 0,
     costUsd: 0,
+    unattributedCalls: 0,
+    accountRefs: [],
     ...overrides
   };
 }
@@ -221,8 +235,16 @@ test('progressive dashboard prepares attribution once, bounds concurrency and me
     updatedAtMs: day3Start + 100,
     promptCount: 3,
     calls: 3,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadInputTokens: 0,
+    cacheCreationInputTokens: 0,
+    reasoningOutputTokens: 0,
     totalTokens: 30,
-    costUsd: 3
+    costUsd: 3,
+    accountCount: 0,
+    unattributedCalls: 0,
+    cacheHitRate: null
   }, {
     provider: 'codex',
     sessionId: 'oldest',
@@ -233,8 +255,16 @@ test('progressive dashboard prepares attribution once, bounds concurrency and me
     updatedAtMs: fromMs + 200,
     promptCount: 3,
     calls: 1,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadInputTokens: 0,
+    cacheCreationInputTokens: 0,
+    reasoningOutputTokens: 0,
     totalTokens: 5,
-    costUsd: 0.5
+    costUsd: 0.5,
+    accountCount: 0,
+    unattributedCalls: 0,
+    cacheHitRate: null
   }]);
   assert.deepEqual(dashboard.modelOptions, dashboard.models);
 });

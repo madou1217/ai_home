@@ -186,7 +186,9 @@ test('switching API-key defaults updates one canonical provider block', (t) => {
   const providerKey = getAihProviderKey();
   assert.equal((hostConfig.match(new RegExp(`^\\[model_providers\\.${providerKey}\\]$`, 'gm')) || []).length, 1);
   assert.match(hostConfig, /^base_url = "https:\/\/b\.example\.com\/v1"$/m);
-  assert.match(hostConfig, /^env_key = "OPENAI_API_KEY"$/m);
+  assert.match(hostConfig, new RegExp(`^\\[model_providers\\.${providerKey}\\.auth\\]$`, 'm'));
+  assert.match(hostConfig, /aih-codex-provider-auth\.js/);
+  assert.doesNotMatch(hostConfig, /^env_key\s*=/m);
   assert.doesNotMatch(hostConfig, /dummy-(10|11)/);
 });
 

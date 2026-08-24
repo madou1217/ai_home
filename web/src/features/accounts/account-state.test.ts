@@ -76,27 +76,51 @@ test('isAccountEnabled only treats "down" as disabled', () => {
   assert.equal(isAccountEnabled({}), true);
 });
 
-test('system-retained accounts are separated from the current pool without treating manual down as recovery', () => {
+test('system-retained and legacy disabled OAuth accounts are separated from the current pool', () => {
   const retained = makeAccount({
     accountRef: 'acct_retained',
     status: 'down',
     runtimeStatus: 'auth_invalid',
     runtimeReason: 'account_recovery_required:refresh_http_401'
   });
-  const manuallyDisabled = makeAccount({
-    accountRef: 'acct_manual',
+  const legacyBrowserOauth = makeAccount({
+    accountRef: 'acct_legacy_browser',
     status: 'down',
-    runtimeStatus: 'auth_invalid',
-    runtimeReason: 'token_expired'
+    authMode: 'oauth-browser'
+  });
+  const legacyOauth = makeAccount({
+    accountRef: 'acct_legacy_oauth',
+    status: 'down',
+    authMode: 'oauth'
+  });
+  const manuallyDisabledApiKey = makeAccount({
+    accountRef: 'acct_manual_api_key',
+    status: 'down',
+    apiKeyMode: true,
+    authMode: 'api-key'
+  });
+  const unknownDisabled = makeAccount({
+    accountRef: 'acct_unknown',
+    status: 'down'
   });
   const healthy = makeAccount({ accountRef: 'acct_healthy' });
 
   assert.equal(isRecoveryAccount(retained), true);
-  assert.equal(isRecoveryAccount(manuallyDisabled), false);
+  assert.equal(isRecoveryAccount(legacyBrowserOauth), true);
+  assert.equal(isRecoveryAccount(legacyOauth), true);
+  assert.equal(isRecoveryAccount(manuallyDisabledApiKey), false);
+  assert.equal(isRecoveryAccount(unknownDisabled), false);
   assert.equal(isRecoveryAccount(healthy), false);
-  assert.deepEqual(partitionAccountsByRecovery([healthy, retained, manuallyDisabled]), {
-    currentAccounts: [healthy, manuallyDisabled],
-    recoveryAccounts: [retained]
+  assert.deepEqual(partitionAccountsByRecovery([
+    healthy,
+    retained,
+    legacyBrowserOauth,
+    manuallyDisabledApiKey,
+    legacyOauth,
+    unknownDisabled
+  ]), {
+    currentAccounts: [healthy, manuallyDisabledApiKey, unknownDisabled],
+    recoveryAccounts: [retained, legacyBrowserOauth, legacyOauth]
   });
 });
 

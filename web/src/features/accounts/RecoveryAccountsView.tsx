@@ -34,7 +34,7 @@ export function RecoveryAccountsView({
   return (
     <div className="account-recovery-view">
       <p className="account-recovery-view__summary">
-        系统因认证失效将这些账号移出当前账号池，但账号数据仍然保留。重新登录后账号会自动回到当前列表；彻底移除仍需显式删除。
+        即使认证失效或被停用，OAuth 账号数据仍然保留在这里，不会因页面刷新消失。重新登录后账号会自动回到当前列表；彻底移除仍需显式删除。
       </p>
       <SectionCard
         title="需要重新登录"
@@ -48,7 +48,7 @@ export function RecoveryAccountsView({
               <Empty
                 className="account-recovery-view__empty"
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description="当前没有系统保留的待恢复账号"
+                description="当前没有待恢复账号"
               />
             )
           }}
@@ -99,7 +99,7 @@ export function RecoveryAccountsView({
                       {secondaryLabel ? (
                         <span className="account-recovery-view__secondary">{secondaryLabel}</span>
                       ) : null}
-                      <Badge status="warning" text="认证失效，已移出账号池" />
+                      <Badge status="warning" text="已移出当前账号池，等待恢复" />
                       {reason ? <span className="account-recovery-view__reason">{reason}</span> : null}
                     </div>
                   )}

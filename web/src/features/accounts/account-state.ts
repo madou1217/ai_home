@@ -36,10 +36,24 @@ export function isAccountEnabled(record: Pick<Account, 'status'>) {
   return String(record.status || 'up').trim().toLowerCase() !== 'down';
 }
 
-export function isRecoveryAccount(record: Pick<Account, 'status' | 'runtimeStatus' | 'runtimeReason'>) {
-  return !isAccountEnabled(record)
-    && String(record.runtimeStatus || '').trim().toLowerCase() === 'auth_invalid'
+function isExplicitOauthAccount(record: Pick<Account, 'apiKeyMode' | 'authMode' | 'authType' | 'credentialType'>) {
+  if (record.apiKeyMode) return false;
+  return [record.authMode, record.authType, record.credentialType].some((value) => {
+    const mode = String(value || '').trim().toLowerCase().replace(/_/g, '-');
+    return mode === 'oauth'
+      || mode.startsWith('oauth-')
+      || mode === 'device'
+      || mode === 'device-code';
+  });
+}
+
+export function isRecoveryAccount(record: Pick<Account,
+  'status' | 'apiKeyMode' | 'authMode' | 'authType' | 'credentialType' | 'runtimeStatus' | 'runtimeReason'
+>) {
+  if (isAccountEnabled(record)) return false;
+  const hasRecoveryMarker = String(record.runtimeStatus || '').trim().toLowerCase() === 'auth_invalid'
     && String(record.runtimeReason || '').trim().startsWith(ACCOUNT_RECOVERY_REASON_PREFIX);
+  return hasRecoveryMarker || isExplicitOauthAccount(record);
 }
 
 export function getRecoveryAccountReason(record: Pick<Account, 'runtimeReason'>) {

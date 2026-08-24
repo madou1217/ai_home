@@ -19,6 +19,11 @@ import {
   getActiveControlPlaneProfileId,
   setActiveControlPlaneProfileId,
 } from "@/services/control-plane-selection";
+import {
+  buildServerScopedSearch,
+  getExplicitServerProfileId,
+} from "@/services/server-selection-scope";
+import { resolveAppRoutePathname } from "@/services/app-navigation";
 import { isNativeDesktopRuntime } from "@/services/native-server-profile-repository";
 import { startNativeRelayDiscovery } from "@/services/server-routes/native-relay-discovery";
 import { startNativeLanRouteRefresh } from "@/services/server-routes/native-lan-route-refresh";
@@ -37,9 +42,27 @@ function resolveCurrentServerProfileGate() {
 
 function enforceServerProfileGate() {
   if (isGoAccountsPreview) return;
+  const explicitProfileId = getExplicitServerProfileId();
+  if (explicitProfileId) {
+    const scopedSearch = buildServerScopedSearch(history.location.search, explicitProfileId);
+    if (scopedSearch !== history.location.search) {
+      history.replace({
+        // Umi history expects an app-relative pathname. Passing the browser
+        // pathname (`/ui/...`) makes it prepend `base` again as `/ui/ui/...`.
+        pathname: resolveAppRoutePathname(history.location.pathname),
+        search: scopedSearch,
+      });
+      return;
+    }
+  }
   const gate = resolveCurrentServerProfileGate();
   if (shouldRedirectToFabricServerSetup(gate, history.location.pathname, history.location.search)) {
-    history.replace(FABRIC_SERVER_SETUP_TARGET);
+    history.replace({
+      pathname: FABRIC_SERVER_SETUP_TARGET,
+      search: explicitProfileId
+        ? buildServerScopedSearch('', explicitProfileId)
+        : '',
+    });
   }
 }
 

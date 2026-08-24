@@ -1,4 +1,9 @@
 import { isNativeDesktopRuntime } from './native-server-profile-repository';
+import {
+  buildServerScopedHref,
+  buildServerScopedSearch,
+  getExplicitServerProfileId
+} from './server-selection-scope';
 
 const BROWSER_APP_BASE_PATH = '/ui';
 
@@ -14,8 +19,16 @@ export function resolveAppRoutePathname(pathname: string) {
 
 export function buildAppHref(pathname: string, search = '') {
   const path = String(pathname || '').startsWith('/') ? pathname : `/${pathname}`;
-  const query = search && !String(search).startsWith('?') ? `?${search}` : search;
+  const rawQuery = search && !String(search).startsWith('?') ? `?${search}` : search;
+  const explicitProfileId = getExplicitServerProfileId();
+  const query = explicitProfileId
+    ? buildServerScopedSearch(rawQuery, explicitProfileId)
+    : rawQuery;
   return isNativeDesktopRuntime()
     ? `#${path}${query || ''}`
     : `${BROWSER_APP_BASE_PATH}${path}${query || ''}`;
+}
+
+export function buildServerScopedAppHref(pathname: string, profileId: string, search = '') {
+  return buildServerScopedHref(buildAppHref(pathname, search), profileId);
 }

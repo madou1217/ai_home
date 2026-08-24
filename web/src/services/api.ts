@@ -4,7 +4,7 @@ import {
   isNativeServerTransportAvailable,
   openNativeServerSse
 } from './native-server-transport';
-import { getActiveControlPlaneProfileId } from './control-plane-selection';
+import { getCurrentControlPlaneProfileId } from './control-plane-selection';
 import { buildAppHref } from './app-navigation';
 import { collectAllSessionHistoryMessages } from './session-history-window.js';
 import { SessionRequestCoordinator } from './session-request-coordinator.js';
@@ -1335,7 +1335,7 @@ export const chatAPI = {
     } = {}
   ): Promise<void> => {
     if (isNativeServerTransportAvailable()) {
-      const profileId = getActiveControlPlaneProfileId();
+      const profileId = getCurrentControlPlaneProfileId();
       if (!profileId) throw new Error('missing_active_server_profile');
       const handle = await openNativeServerSse({
         profileId,

@@ -31,7 +31,7 @@ function loadNativeAxiosAdapter(response) {
   const originalRequire = mod.require.bind(mod);
   mod.require = (request) => {
     if (request === './control-plane-selection') {
-      return { getActiveControlPlaneProfileId: () => 'server-aws' };
+      return { getCurrentControlPlaneProfileId: () => 'server-aws' };
     }
     if (request === './native-server-transport') {
       return {

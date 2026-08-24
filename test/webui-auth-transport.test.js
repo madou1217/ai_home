@@ -26,6 +26,21 @@ function loadTransportModule() {
     if (request === './native-server-transport') {
       return { isNativeServerTransportAvailable: () => false };
     }
+    if (request === './server-selection-scope') {
+      const dependencyFilename = path.join(__dirname, '../web/src/services/server-selection-scope.ts');
+      const dependency = new Module(dependencyFilename, mod);
+      dependency.filename = dependencyFilename;
+      dependency.paths = Module._nodeModulePaths(path.dirname(dependencyFilename));
+      const dependencySource = fs.readFileSync(dependencyFilename, 'utf8');
+      dependency._compile(ts.transpileModule(dependencySource, {
+        compilerOptions: {
+          module: ts.ModuleKind.CommonJS,
+          target: ts.ScriptTarget.ES2022,
+          esModuleInterop: true
+        }
+      }).outputText, dependencyFilename);
+      return dependency.exports;
+    }
     return originalRequire(request);
   };
   mod._compile(compiled.outputText, filename);
@@ -37,7 +52,7 @@ function installBrowserFixture(t, options = {}) {
   const previousFetch = global.fetch;
   const previousEventSource = global.EventSource;
   const storage = new Map();
-  storage.set('aih:control-plane-profiles:v1', JSON.stringify([
+  const profilePayload = JSON.stringify([
     {
       id: 'local-server',
       endpoint: 'http://127.0.0.1:9527',
@@ -48,14 +63,27 @@ function installBrowserFixture(t, options = {}) {
       endpoint: 'https://aws.example.com',
       managementKey: 'aws-management-key'
     }
-  ]));
+  ]);
+  storage.set(
+    'aih:control-plane-profiles:v1',
+    options.profilePayload === undefined ? profilePayload : String(options.profilePayload)
+  );
   storage.set('aih:active-control-plane-profile:v1', 'aws-server');
   global.window = {
-    location: { origin: 'http://localhost:9527' },
+    location: {
+      origin: 'http://localhost:9527',
+      search: String(options.search || ''),
+      hash: String(options.hash || '')
+    },
     localStorage: {
       getItem: (key) => storage.get(key) || null,
       setItem: (key, value) => storage.set(key, String(value)),
       removeItem: (key) => storage.delete(key)
+    },
+    sessionStorage: {
+      getItem: (key) => storage.get(`session:${key}`) || null,
+      setItem: (key, value) => storage.set(`session:${key}`, String(value)),
+      removeItem: (key) => storage.delete(`session:${key}`)
     },
     setTimeout,
     clearTimeout
@@ -90,6 +118,39 @@ test('webui auth transport keeps Management Key and remote Server id out of URLs
   assert.equal(calls[0].input.includes('x-aih-server-id'), false);
   assert.equal(calls[0].init.headers.get('authorization'), 'Bearer local-management-key');
   assert.equal(calls[0].init.headers.get('x-aih-server-id'), 'aws-server');
+});
+
+test('webui auth transport lets two tabs explicitly target different Servers without changing the default', (t) => {
+  installBrowserFixture(t, { search: '?server=local-server' });
+  const transport = loadTransportModule();
+
+  assert.deepEqual(transport.resolveActiveServer(), {
+    serverId: 'local-server',
+    isRemote: false
+  });
+
+  global.window.location.search = '?server=aws-server';
+  assert.deepEqual(transport.resolveActiveServer(), {
+    serverId: 'aws-server',
+    isRemote: true
+  });
+});
+
+test('webui auth transport fails closed on an explicit Server when profile storage is unreadable', (t) => {
+  installBrowserFixture(t, {
+    search: '?server=server-missing',
+    profilePayload: '{invalid-json'
+  });
+  const transport = loadTransportModule();
+
+  assert.deepEqual(transport.resolveActiveServer(), {
+    serverId: 'server-missing',
+    isRemote: true
+  });
+  assert.equal(
+    transport.buildAuthorizedWebUiHeaders().get('x-aih-server-id'),
+    'server-missing'
+  );
 });
 
 test('webui fetch event stream authenticates by header and exposes EventSource-compatible frames', async (t) => {

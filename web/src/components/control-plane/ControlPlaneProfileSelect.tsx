@@ -4,9 +4,9 @@ import { CloudServerOutlined, DesktopOutlined, DownOutlined, SettingOutlined } f
 import {
   addActiveControlPlaneProfileChangeListener,
   resolveActiveControlPlaneProfile,
-  resolveStoredActiveControlPlaneProfile,
-  selectActiveControlPlaneProfileSecure,
-  syncStoredActiveControlPlaneProfile
+  resolveCurrentControlPlaneProfile,
+  selectCurrentControlPlaneProfileSecure,
+  syncCurrentControlPlaneProfile
 } from '@/services/control-plane-selection';
 import {
   addControlPlaneProfilesChangeListener,
@@ -91,7 +91,7 @@ function getProfileShortName(profile: ControlPlaneProfile | null) {
 function resolveProfileSelection(profiles: ControlPlaneProfile[], activeProfileId?: string) {
   return activeProfileId
     ? resolveActiveControlPlaneProfile(profiles, activeProfileId).profileId
-    : resolveStoredActiveControlPlaneProfile(profiles).profileId;
+    : resolveCurrentControlPlaneProfile(profiles).profileId;
 }
 
 export default function ControlPlaneProfileSelect(props: ControlPlaneProfileSelectProps) {
@@ -134,11 +134,12 @@ function ControlPlaneProfileSelectBody({
       setProfiles(nextProfiles);
       const nextProfileId = nextActiveProfileId
         ? resolveProfileSelection(nextProfiles, nextActiveProfileId)
-        : syncStoredActiveControlPlaneProfile(nextProfiles).profileId;
+        : syncCurrentControlPlaneProfile(nextProfiles).profileId;
       setSelectedProfileId(nextProfileId);
     };
-    const unsubscribe = addActiveControlPlaneProfileChangeListener((detail) => {
-      refreshProfiles(detail.profileId);
+    const unsubscribe = addActiveControlPlaneProfileChangeListener(() => {
+      // A default change from another tab must not replace this tab's explicit selection.
+      refreshProfiles();
     });
     const unsubscribeProfiles = addControlPlaneProfilesChangeListener(() => {
       refreshProfiles();
@@ -191,7 +192,7 @@ function ControlPlaneProfileSelectBody({
 
   const handleSelect = async (nextId: string) => {
     try {
-      const resolution = await selectActiveControlPlaneProfileSecure(profiles, nextId);
+      const resolution = await selectCurrentControlPlaneProfileSecure(profiles, nextId);
       setSelectedProfileId(resolution.profileId);
       onChange?.(resolution.profile, resolution.profileId);
     } catch (error) {

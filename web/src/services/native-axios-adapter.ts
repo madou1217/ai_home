@@ -4,7 +4,7 @@ import axios, {
   type AxiosResponse,
   type InternalAxiosRequestConfig
 } from 'axios';
-import { getActiveControlPlaneProfileId } from './control-plane-selection';
+import { getCurrentControlPlaneProfileId } from './control-plane-selection';
 import {
   requestNativeServerBlob,
   requestNativeServerJson
@@ -106,7 +106,7 @@ function normalizeTransportError(error: unknown, config: InternalAxiosRequestCon
 
 export function createNativeAxiosAdapter(): AxiosAdapter {
   return async (config) => {
-    const profileId = getActiveControlPlaneProfileId();
+    const profileId = getCurrentControlPlaneProfileId();
     if (!profileId) throw normalizeTransportError(new Error('missing_active_server_profile'), config);
     const abort = bridgeAbortSignal(config.signal);
     const body = parseJsonRequestBody(config.data);

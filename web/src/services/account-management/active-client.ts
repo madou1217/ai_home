@@ -1,4 +1,4 @@
-import { resolveActiveControlPlaneProfile } from '../control-plane-selection.ts';
+import { resolveCurrentControlPlaneProfile } from '../control-plane-selection.ts';
 import { listControlPlaneProfiles } from '../control-plane-profiles.ts';
 import { createServerTransport } from '../server-transport/index.ts';
 import {
@@ -13,7 +13,7 @@ export async function createActiveAccountManagementClient(
 ): Promise<AccountManagementClient> {
   const profiles = listControlPlaneProfiles();
   const profileId = overrides.profileId
-    || resolveActiveControlPlaneProfile(profiles).profileId;
+    || resolveCurrentControlPlaneProfile(profiles).profileId;
   if (!profileId) throw new AccountManagementError('active_server_profile_missing');
   const transport = overrides.transport || await createServerTransport({
     browser: {

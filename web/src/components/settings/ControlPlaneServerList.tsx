@@ -1,8 +1,9 @@
 import type { ReactNode } from 'react';
 import { Card, Dropdown, Space } from 'antd';
-import { DeleteOutlined, MoreOutlined, ReloadOutlined } from '@ant-design/icons';
+import { DeleteOutlined, ExportOutlined, MoreOutlined, ReloadOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import { isControlPlaneManagementKeyConfigured } from '@/services/control-plane-profiles';
+import { buildServerScopedAppHref } from '@/services/app-navigation';
 import type { ControlPlaneProfile, ControlPlaneProfileState } from '@/types';
 import type { ServerRouteRow, ServerRouteView } from '@/services/server-route-presentation';
 import './ControlPlaneServerList.css';
@@ -100,10 +101,19 @@ function ServerCardActions({
         </Button>
       ) : (
         <>
+          <Button
+            size="small"
+            icon={<ExportOutlined />}
+            href={buildServerScopedAppHref('/dashboard', profile.id)}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            打开
+          </Button>
           {active ? (
-            <span className="cp-current-badge">当前</span>
+            <span className="cp-current-badge">默认</span>
           ) : (
-            <Button size="small" onClick={() => onSelect(profile.id)}>设为当前</Button>
+            <Button size="small" onClick={() => onSelect(profile.id)}>设为默认</Button>
           )}
           <Button
             size="small"
@@ -167,6 +177,7 @@ export default function ControlPlaneServerList({
                 </Space>
                 <div className="cp-server-meta">
                   <span>{row.stableServerId}</span>
+                  <span title="显式 Server 参数">server={profile.id}</span>
                   {profile.lastError && <span className="cp-server-error">{profile.lastError}</span>}
                 </div>
               </div>

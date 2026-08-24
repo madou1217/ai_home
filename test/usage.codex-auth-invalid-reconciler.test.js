@@ -8,8 +8,14 @@ const {
   createCodexAuthInvalidReconciler
 } = require('../lib/cli/services/usage/codex-auth-invalid-reconciler');
 const { registerAccountIdentity } = require('../lib/account/account-registration');
-const { writeAccountNativeAuth } = require('../lib/server/account-credential-store');
+const {
+  readAccountNativeAuth,
+  writeAccountNativeAuth
+} = require('../lib/server/account-credential-store');
+const { resolveAccountRef } = require('../lib/server/account-ref-store');
 const { resolveAccountRuntimeDir } = require('../lib/runtime/aih-storage-layout');
+const { createAccountStateIndex } = require('../lib/account/state-index');
+const { createAccountStateService } = require('../lib/account/state-service');
 
 function mkTmpDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'aih-codex-auth-reconcile-'));
@@ -37,6 +43,8 @@ function makeService(root, overrides = {}) {
   const deletedStates = [];
   const clearedRuntime = [];
   const deletedEvents = [];
+  const retainedRuntime = [];
+  const statusUpdates = [];
   const scheduled = [];
   const service = createCodexAuthInvalidReconciler({
     fs,
@@ -46,6 +54,29 @@ function makeService(root, overrides = {}) {
     accountStateService: {
       deleteAccount(accountRef) {
         deletedStates.push(accountRef);
+        return true;
+      },
+      getAccountState(accountRef) {
+        return {
+          accountRef,
+          provider: 'codex',
+          status: 'up',
+          configured: true,
+          apiKeyMode: false,
+          authMode: 'oauth',
+          displayName: 'retained@example.com',
+          runtimeState: {
+            successCount: 2,
+            failCount: 1
+          }
+        };
+      },
+      recordRuntimeFailure(accountRef, provider, runtimeState, baseState) {
+        retainedRuntime.push({ accountRef, provider, runtimeState, baseState });
+        return true;
+      },
+      setOperationalStatus(accountRef, provider, status, baseState) {
+        statusUpdates.push({ accountRef, provider, status, baseState });
         return true;
       },
       clearRuntimeBlock(accountRef, provider, options) {
@@ -60,14 +91,18 @@ function makeService(root, overrides = {}) {
     ensureSessionStoreLinks: () => ({ migrated: 0, linked: 0 }),
     ...overrides
   });
-  service.onAccountDeleted((event) => {
-    deletedEvents.push(event);
-  });
+  if (typeof service.onAccountDeleted === 'function') {
+    service.onAccountDeleted((event) => {
+      deletedEvents.push(event);
+    });
+  }
   return {
     service,
     deletedStates,
     clearedRuntime,
     deletedEvents,
+    retainedRuntime,
+    statusUpdates,
     scheduled,
     async runScheduled() {
       while (scheduled.length > 0) {
@@ -80,7 +115,25 @@ function makeService(root, overrides = {}) {
   };
 }
 
-test('codex auth invalid reconciler deletes direct usage 401 asynchronously', async (t) => {
+function assertRetained(ctx, root, accountRef, reason) {
+  assert.ok(resolveAccountRef(fs, root, accountRef));
+  assert.deepEqual(ctx.deletedStates, []);
+  assert.deepEqual(ctx.deletedEvents, []);
+  assert.equal(ctx.retainedRuntime.length, 1);
+  assert.equal(ctx.retainedRuntime[0].accountRef, accountRef);
+  assert.equal(ctx.retainedRuntime[0].provider, 'codex');
+  assert.equal(ctx.retainedRuntime[0].runtimeState.lastFailureKind, 'auth_invalid');
+  assert.equal(
+    ctx.retainedRuntime[0].runtimeState.lastFailureReason,
+    `account_recovery_required:${reason}`
+  );
+  assert.ok(ctx.retainedRuntime[0].runtimeState.authInvalidUntil > Date.now());
+  assert.equal(ctx.statusUpdates.length, 1);
+  assert.equal(ctx.statusUpdates[0].accountRef, accountRef);
+  assert.equal(ctx.statusUpdates[0].status, 'down');
+}
+
+test('codex auth invalid reconciler retains direct usage 401 asynchronously', async (t) => {
   const root = mkTmpDir();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const { accountRef, runtimeDir } = registerCodexAccount(root, '1');
@@ -94,14 +147,56 @@ test('codex auth invalid reconciler deletes direct usage 401 asynchronously', as
 
   await ctx.runScheduled();
 
-  assert.equal(fs.existsSync(runtimeDir), false);
-  assert.deepEqual(ctx.deletedStates, [accountRef]);
-  assert.deepEqual(ctx.deletedEvents, [
-    { provider: 'codex', accountRef, reason: 'direct_http_status_401' }
-  ]);
+  assert.equal(fs.existsSync(runtimeDir), true);
+  assertRetained(ctx, root, accountRef, 'direct_http_status_401');
 });
 
-test('codex auth invalid reconciler deletes auth-invalid account without refresh token', async (t) => {
+test('codex auth invalid reconciler persists retained recovery state without removing credentials', async (t) => {
+  const root = mkTmpDir();
+  let accountStateIndex = null;
+  t.after(() => {
+    if (accountStateIndex) accountStateIndex.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  const { accountRef, runtimeDir } = registerCodexAccount(root, '11', {
+    access_token: makeJwt({ client_id: 'app_test' }),
+    refresh_token: 'rt_keep',
+    account_id: 'acc_keep'
+  });
+  accountStateIndex = createAccountStateIndex({ fs, aiHomeDir: root });
+  accountStateIndex.upsertAccountState(accountRef, 'codex', {
+    status: 'up',
+    configured: true,
+    apiKeyMode: false,
+    authMode: 'oauth-browser',
+    displayName: 'persisted@example.com'
+  });
+  const accountStateService = createAccountStateService({ accountStateIndex });
+  const ctx = makeService(root, { accountStateService });
+
+  ctx.service.enqueueDirectHttpStatus401('codex', accountRef, 'direct_http_status_401');
+  await ctx.runScheduled();
+
+  const persisted = accountStateIndex.getAccountState(accountRef);
+  assert.equal(persisted.status, 'down');
+  assert.equal(persisted.configured, true);
+  assert.equal(persisted.authMode, 'oauth-browser');
+  assert.equal(persisted.runtimeState.lastFailureKind, 'auth_invalid');
+  assert.equal(
+    persisted.runtimeState.lastFailureReason,
+    'account_recovery_required:direct_http_status_401'
+  );
+  assert.ok(persisted.runtimeState.authInvalidUntil > Date.now());
+  assert.deepEqual(accountStateIndex.listConfiguredRefs('codex'), []);
+  assert.ok(resolveAccountRef(fs, root, accountRef));
+  assert.equal(fs.existsSync(runtimeDir), true);
+  assert.equal(
+    readAccountNativeAuth(fs, root, accountRef).auth.tokens.refresh_token,
+    'rt_keep'
+  );
+});
+
+test('codex auth invalid reconciler retains auth-invalid account without refresh token', async (t) => {
   const root = mkTmpDir();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const { accountRef, runtimeDir } = registerCodexAccount(root, '2', {
@@ -114,14 +209,11 @@ test('codex auth invalid reconciler deletes auth-invalid account without refresh
   ctx.service.enqueueAuthInvalidReauthRequired('codex', accountRef, 'auth_invalid_reauth_required');
   await ctx.runScheduled();
 
-  assert.equal(fs.existsSync(runtimeDir), false);
-  assert.deepEqual(ctx.deletedStates, [accountRef]);
-  assert.deepEqual(ctx.deletedEvents, [
-    { provider: 'codex', accountRef, reason: 'auth_invalid_missing_refresh_token' }
-  ]);
+  assert.equal(fs.existsSync(runtimeDir), true);
+  assertRetained(ctx, root, accountRef, 'auth_invalid_missing_refresh_token');
 });
 
-test('codex auth invalid reconciler removes state when runtime projection is already missing', async (t) => {
+test('codex auth invalid reconciler retains account identity when runtime projection is already missing', async (t) => {
   const root = mkTmpDir();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const { accountRef, runtimeDir } = registerCodexAccount(root, '20', null, { createRuntime: false });
@@ -131,13 +223,10 @@ test('codex auth invalid reconciler removes state when runtime projection is alr
   await ctx.runScheduled();
 
   assert.equal(fs.existsSync(runtimeDir), false);
-  assert.deepEqual(ctx.deletedStates, [accountRef]);
-  assert.deepEqual(ctx.deletedEvents, [
-    { provider: 'codex', accountRef, reason: 'direct_http_status_401' }
-  ]);
+  assertRetained(ctx, root, accountRef, 'direct_http_status_401');
 });
 
-test('codex auth invalid reconciler fails closed when provider resources remain unreconciled', async (t) => {
+test('codex auth invalid reconciler retains provider resources without cleanup reconciliation', async (t) => {
   const root = mkTmpDir();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const { accountRef, runtimeDir } = registerCodexAccount(root, '21');
@@ -155,10 +244,9 @@ test('codex auth invalid reconciler fails closed when provider resources remain 
   ctx.service.enqueueDirectHttpStatus401('codex', accountRef, 'direct_http_status_401');
   await ctx.runScheduled();
 
-  assert.deepEqual(reconciliations, [{ provider: 'codex', accountRef }]);
+  assert.deepEqual(reconciliations, []);
   assert.equal(fs.readFileSync(resourcePath, 'utf8'), '{"kept":true}\n');
-  assert.deepEqual(ctx.deletedStates, []);
-  assert.deepEqual(ctx.deletedEvents, []);
+  assertRetained(ctx, root, accountRef, 'direct_http_status_401');
 });
 
 test('codex auth invalid reconciler clears runtime when refresh succeeds', async (t) => {
@@ -186,12 +274,14 @@ test('codex auth invalid reconciler clears runtime when refresh succeeds', async
   assert.equal(refreshCalls[0].options.force, true);
   assert.deepEqual(ctx.deletedStates, []);
   assert.deepEqual(ctx.deletedEvents, []);
+  assert.deepEqual(ctx.retainedRuntime, []);
+  assert.deepEqual(ctx.statusUpdates, []);
   assert.equal(ctx.clearedRuntime.length, 1);
   assert.equal(ctx.clearedRuntime[0].accountRef, accountRef);
   assert.equal(ctx.clearedRuntime[0].options.evidence, 'token_refresh_success');
 });
 
-test('codex auth invalid reconciler deletes normalized direct usage 401 without refreshing', async (t) => {
+test('codex auth invalid reconciler retains normalized direct usage 401 without refreshing', async (t) => {
   const root = mkTmpDir();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const { accountRef, runtimeDir } = registerCodexAccount(root, '30', {
@@ -214,16 +304,13 @@ test('codex auth invalid reconciler deletes normalized direct usage 401 without 
   );
   await ctx.runScheduled();
 
-  assert.equal(fs.existsSync(runtimeDir), false);
+  assert.equal(fs.existsSync(runtimeDir), true);
   assert.equal(refreshCalls.length, 0);
-  assert.deepEqual(ctx.deletedStates, [accountRef]);
-  assert.deepEqual(ctx.deletedEvents, [
-    { provider: 'codex', accountRef, reason: 'auth_invalid_reauth_required:direct_http_status_401' }
-  ]);
+  assertRetained(ctx, root, accountRef, 'auth_invalid_reauth_required:direct_http_status_401');
   assert.equal(ctx.clearedRuntime.length, 0);
 });
 
-test('codex auth invalid reconciler deletes when refresh reports terminated session', async (t) => {
+test('codex auth invalid reconciler retains account when refresh reports terminated session', async (t) => {
   const root = mkTmpDir();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const { accountRef, runtimeDir } = registerCodexAccount(root, '4', {
@@ -242,11 +329,8 @@ test('codex auth invalid reconciler deletes when refresh reports terminated sess
   ctx.service.enqueueAuthInvalidReauthRequired('codex', accountRef, 'auth_invalid_reauth_required');
   await ctx.runScheduled();
 
-  assert.equal(fs.existsSync(runtimeDir), false);
-  assert.deepEqual(ctx.deletedStates, [accountRef]);
-  assert.deepEqual(ctx.deletedEvents, [
-    { provider: 'codex', accountRef, reason: 'refresh_http_400' }
-  ]);
+  assert.equal(fs.existsSync(runtimeDir), true);
+  assertRetained(ctx, root, accountRef, 'refresh_http_400');
 });
 
 test('codex auth invalid reconciler keeps account when refresh failure is not session invalid', async (t) => {
@@ -271,6 +355,8 @@ test('codex auth invalid reconciler keeps account when refresh failure is not se
   assert.equal(fs.existsSync(runtimeDir), true);
   assert.deepEqual(ctx.deletedStates, []);
   assert.deepEqual(ctx.deletedEvents, []);
+  assert.deepEqual(ctx.retainedRuntime, []);
+  assert.deepEqual(ctx.statusUpdates, []);
   assert.deepEqual(ctx.clearedRuntime, []);
 });
 

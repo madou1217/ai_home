@@ -130,6 +130,7 @@ test('refreshCodexAccessToken force refresh updates account and persists auth sn
   let seenBody = null;
   let seenProxyOptions = null;
   const resolvedInputs = [];
+  const invalidations = [];
   const result = await refreshCodexAccessToken(account, {
     force: true,
     nowMs,
@@ -149,6 +150,10 @@ test('refreshCodexAccessToken force refresh updates account and persists auth sn
           noProxy: 'localhost,127.0.0.1,::1'
         }
       };
+    },
+    invalidateCodexAppServerEndpoint: (options) => {
+      invalidations.push(options);
+      return { ok: true, invalidated: true };
     },
     fetchWithTimeout: async (url, init, _timeoutMs, proxyOptions) => {
       seenUrl = url;
@@ -191,6 +196,9 @@ test('refreshCodexAccessToken force refresh updates account and persists auth sn
   assert.equal(saved.tokens.account_id, 'acc_1');
   assert.equal(typeof saved.last_refresh, 'string');
   assert.equal(typeof saved.expired, 'string');
+  assert.equal(invalidations.length, 1);
+  assert.equal(invalidations[0].aiHomeDir, fixture.aiHomeDir);
+  assert.equal(invalidations[0].accountRef, fixture.accountRef);
 });
 
 test('refreshCodexAccessToken 在账号绑定出口不可用时禁止回退刷新', async (t) => {

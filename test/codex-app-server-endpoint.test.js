@@ -10,10 +10,64 @@ const {
   appServerSocketName,
   appServerStatePath,
   ensureCodexAppServerEndpoint,
+  invalidateCodexAppServerEndpoint,
   readAppServerState,
   writeAppServerState,
   waitForAppServerReady
 } = require('../lib/server/codex-app-server-endpoint');
+
+test('app-server auth invalidation stops only the matching account runtime', (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-codex-app-invalidate-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  const targetRef = 'acct_11111111111111111111';
+  const otherRef = 'acct_22222222222222222222';
+  writeAppServerState(aiHomeDir, targetRef, {
+    accountRef: targetRef,
+    runtimeScope: targetRef,
+    multiplexer: 'tmux',
+    port: 43121,
+    socket: appServerSocketName(targetRef)
+  });
+  writeAppServerState(aiHomeDir, otherRef, {
+    accountRef: otherRef,
+    runtimeScope: otherRef,
+    multiplexer: 'tmux',
+    port: 43122,
+    socket: appServerSocketName(otherRef)
+  });
+  const calls = [];
+
+  const result = invalidateCodexAppServerEndpoint({
+    aiHomeDir,
+    accountRef: targetRef,
+    spawnSyncImpl(command, args) {
+      calls.push({ command, args });
+      if (args[0] === '-V') return { status: 0 };
+      if (args.includes('has-session')) return { status: 1 };
+      return { status: 0 };
+    }
+  });
+
+  assert.deepEqual(result, {
+    ok: true,
+    invalidated: true,
+    accountRef: targetRef,
+    runtimeScope: targetRef
+  });
+  assert.ok(calls.some(({ args }) => (
+    args.includes('-L')
+    && args.includes(appServerSocketName(targetRef))
+    && args.includes('kill-server')
+  )));
+  assert.ok(calls.some(({ args }) => (
+    args.includes('-L')
+    && args.includes(appServerSocketName(targetRef))
+    && args.includes('has-session')
+  )));
+  assert.equal(calls.some(({ args }) => args.includes(appServerSocketName(otherRef))), false);
+  assert.equal(fs.existsSync(appServerStatePath(aiHomeDir, targetRef)), false);
+  assert.equal(fs.existsSync(appServerStatePath(aiHomeDir, otherRef)), true);
+});
 
 test('app-server readiness returns as soon as readyz succeeds', async () => {
   let livenessChecks = 0;

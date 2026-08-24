@@ -3,6 +3,8 @@ import { formatAccountIssueReason } from '@/utils/account-reasons';
 import { isInternalAccountLabel } from '@/utils/account-labels';
 import { getAccountRef } from '@/features/accounts/account-model-catalog';
 
+const ACCOUNT_RECOVERY_REASON_PREFIX = 'account_recovery_required:';
+
 // 账号显示状态推导 —— 纯函数模块。
 // 从 Accounts.tsx 抽取：账号状态、用量、认证方式的所有推导逻辑集中于此，
 // 组件/hook 只做展示与交互，禁止在组件内联重复推导。
@@ -32,6 +34,52 @@ export function hasBlockingRuntimeStatus(record: Pick<Account, 'runtimeStatus'>)
 
 export function isAccountEnabled(record: Pick<Account, 'status'>) {
   return String(record.status || 'up').trim().toLowerCase() !== 'down';
+}
+
+export function isRecoveryAccount(record: Pick<Account, 'status' | 'runtimeStatus' | 'runtimeReason'>) {
+  return !isAccountEnabled(record)
+    && String(record.runtimeStatus || '').trim().toLowerCase() === 'auth_invalid'
+    && String(record.runtimeReason || '').trim().startsWith(ACCOUNT_RECOVERY_REASON_PREFIX);
+}
+
+export function getRecoveryAccountReason(record: Pick<Account, 'runtimeReason'>) {
+  const reason = String(record.runtimeReason || '').trim();
+  return reason.startsWith(ACCOUNT_RECOVERY_REASON_PREFIX)
+    ? reason.slice(ACCOUNT_RECOVERY_REASON_PREFIX.length)
+    : reason;
+}
+
+export function partitionAccountsByRecovery(accounts: readonly Account[]) {
+  const currentAccounts: Account[] = [];
+  const recoveryAccounts: Account[] = [];
+  accounts.forEach((account) => {
+    (isRecoveryAccount(account) ? recoveryAccounts : currentAccounts).push(account);
+  });
+  return { currentAccounts, recoveryAccounts };
+}
+
+export function reconcileAccountAfterReauthSuccess(accounts: Account[], accountRef: string) {
+  const targetAccountRef = String(accountRef || '').trim();
+  if (!targetAccountRef) return accounts;
+
+  let changed = false;
+  const next = accounts.map((account) => {
+    if (getAccountRef(account) !== targetAccountRef) return account;
+    changed = true;
+    return {
+      ...account,
+      status: 'up',
+      configured: true,
+      authPending: false,
+      authPendingStale: false,
+      runtimeStatus: undefined,
+      runtimeUntil: undefined,
+      runtimeReason: undefined,
+      schedulableStatus: undefined,
+      schedulableReason: undefined
+    };
+  });
+  return changed ? next : accounts;
 }
 
 export type AccountDisplayStateKind =

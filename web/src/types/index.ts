@@ -529,6 +529,7 @@ export interface AccountAddJob {
   provider: Provider;
   accountRef: string;
   authMode: AccountAuthMode;
+  reauth?: boolean;
   status: 'running' | 'succeeded' | 'failed' | 'cancelled' | 'expired';
   createdAt: number;
   updatedAt: number;

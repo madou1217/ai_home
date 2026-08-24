@@ -9,7 +9,6 @@ import {
   Space,
   Tabs,
   Tooltip,
-  Typography,
   Empty,
   Spin,
   message
@@ -60,8 +59,6 @@ import {
 } from '@/features/model-usage/model-usage-presentation';
 
 const { RangePicker } = DatePicker;
-const { Text } = Typography;
-
 type ProviderFilter = Provider | '';
 type RangeMode = 'hour' | 'today' | '7d' | 'month' | 'custom';
 
@@ -207,7 +204,6 @@ export default function ModelUsage() {
   const [sessions, setSessions] = useState<ModelUsageSessionRow[]>([]);
   const [requestUsage, setRequestUsage] = useState<ModelUsageRequestRow[]>([]);
   const [requestErrors, setRequestErrors] = useState<ModelUsageRequestRow[]>([]);
-  const [requestDetailsRequested, setRequestDetailsRequested] = useState(false);
   const [requestDetailsLoading, setRequestDetailsLoading] = useState(false);
   const [requestDetailsError, setRequestDetailsError] = useState('');
   const [trend, setTrend] = useState<ModelUsageTrend>(emptyTrend);
@@ -215,7 +211,6 @@ export default function ModelUsage() {
   const [loading, setLoading] = useState(false);
   const [hasDashboardSnapshot, setHasDashboardSnapshot] = useState(false);
   const [dashboardLoadError, setDashboardLoadError] = useState('');
-  const [dashboardQueryJob, setDashboardQueryJob] = useState<ModelUsageDashboardQueryJob | null>(null);
   const [scanning, setScanning] = useState(false);
   const [scanJob, setScanJob] = useState<ModelUsageScanJob | null>(null);
   const [breakdownTarget, setBreakdownTarget] = useState<UsageBreakdownTarget | null>(null);
@@ -239,7 +234,6 @@ export default function ModelUsage() {
     quietNextLoadRef.current = quiet;
     setLoading(true);
     setDashboardLoadError('');
-    setDashboardQueryJob(null);
     breakdownSequenceRef.current += 1;
     setBreakdownTarget(null);
     setBreakdown(null);
@@ -253,7 +247,6 @@ export default function ModelUsage() {
 
   const applyDashboardQueryJob = useCallback((job: ModelUsageDashboardQueryJob) => {
     if (!job.id || job.id !== activeDashboardQueryIdRef.current) return;
-    setDashboardQueryJob(job);
     if (job.dashboard) {
       setStats(job.dashboard.stats || emptyStats);
       setModels(job.dashboard.models || []);
@@ -325,7 +318,6 @@ export default function ModelUsage() {
     activeDashboardQueryIdRef.current = '';
     cancelDashboardQuery(previousJobId);
     activeDashboardQueryQuietRef.current = options.quiet !== false;
-    setDashboardQueryJob(null);
     setDashboardLoadError('');
     setBreakdownTarget(null);
     setBreakdown(null);
@@ -358,23 +350,11 @@ export default function ModelUsage() {
     loadUsage(query, { quiet });
   }, [loadUsage, query, refreshRevision]);
 
-  useEffect(() => {
-    requestDetailsSequenceRef.current += 1;
-    setRequestDetailsRequested(false);
-    setRequestDetailsLoading(false);
-    setRequestDetailsError('');
-    setRequestUsage([]);
-    setRequestErrors([]);
-  }, [query, refreshRevision]);
-
   const loadRequestDetails = useCallback(async () => {
     const requestSequence = requestDetailsSequenceRef.current + 1;
     requestDetailsSequenceRef.current = requestSequence;
-    setRequestDetailsRequested(true);
     setRequestDetailsLoading(true);
     setRequestDetailsError('');
-    setRequestUsage([]);
-    setRequestErrors([]);
     try {
       const response = await modelUsageAPI.requests({ ...query, limit: REQUEST_DETAIL_LIMIT });
       if (requestSequence !== requestDetailsSequenceRef.current) return;
@@ -389,6 +369,10 @@ export default function ModelUsage() {
       }
     }
   }, [query]);
+
+  useEffect(() => {
+    void loadRequestDetails();
+  }, [loadRequestDetails, refreshRevision]);
 
   const handleRangeChange = (value: null | [Dayjs | null, Dayjs | null]) => {
     if (!value || !value[0] || !value[1]) return;
@@ -809,17 +793,6 @@ export default function ModelUsage() {
 
   const totalCacheTokens = getCacheTokens(stats);
   const overallCacheHitRate = calculateCacheHitRate(stats);
-  const dashboardProgress = dashboardQueryJob && dashboardQueryJob.totalShards > 0
-    ? `${dashboardQueryJob.completedShards}/${dashboardQueryJob.totalShards}`
-    : '';
-  const dashboardStatusText = loading
-    ? [
-      hasDashboardSnapshot ? '正在切换数据范围' : '正在加载模型用量',
-      dashboardProgress ? `已汇总 ${dashboardProgress}` : ''
-    ].filter(Boolean).join(' · ')
-    : dashboardLoadError
-      ? hasDashboardSnapshot ? '切换失败，仍显示上一次成功快照' : '加载失败，请重试'
-      : '';
   const dashboardBodyClassName = [
     'usage-dashboard-body',
     loading ? 'usage-dashboard-body--loading' : '',
@@ -846,20 +819,6 @@ export default function ModelUsage() {
       ]}
     >
       <div className={dashboardBodyClassName} aria-busy={loading}>
-      <div
-        className={`usage-query-progress${dashboardStatusText ? ' usage-query-progress--visible' : ''}${dashboardLoadError && !loading ? ' usage-query-progress--error' : ''}`}
-        role="status"
-        aria-live="polite"
-        aria-atomic="true"
-      >
-        {loading ? <SyncOutlined spin aria-hidden /> : null}
-        {dashboardStatusText ? (
-          <Text type={dashboardLoadError && !loading ? 'danger' : 'secondary'}>
-            {dashboardStatusText}
-          </Text>
-        ) : null}
-      </div>
-
       <section className="usage-kpi-rail" aria-label="核心用量指标">
         <div className="usage-kpi-item usage-kpi-item--primary">
           <span>总 Tokens</span>
@@ -1060,10 +1019,8 @@ export default function ModelUsage() {
       <RequestDetailsSection
         usage={requestUsage}
         errors={requestErrors}
-        requested={requestDetailsRequested}
         loading={requestDetailsLoading}
         error={requestDetailsError}
-        limit={REQUEST_DETAIL_LIMIT}
         onRequest={() => void loadRequestDetails()}
       />
 

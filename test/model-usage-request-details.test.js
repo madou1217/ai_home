@@ -145,7 +145,7 @@ test('request details merge request usage with safe gateway telemetry and omit u
   const result = service.getRequestDetails({
     fromMs: Date.parse('2026-08-23T00:00:00.000Z'),
     toMs: Date.parse('2026-08-23T23:59:59.999Z'),
-    provider: 'codex',
+    provider: '',
     limit: 50
   });
 
@@ -175,9 +175,9 @@ test('request details merge request usage with safe gateway telemetry and omit u
 
   assert.equal(result.errors.length, 1);
   assert.equal(result.errors[0].requestId, 'req-error');
-  assert.equal(result.errors[0].provider, 'codex');
-  assert.equal(result.errors[0].model, 'gpt-5.6-sol');
-  assert.equal(result.errors[0].reasoningEffort, 'high');
+  assert.equal(result.errors[0].provider, 'gateway');
+  assert.equal(result.errors[0].model, 'model-catalog');
+  assert.equal(result.errors[0].reasoningEffort, 'not_applicable');
   assert.equal(result.errors[0].endpoint, '/v1/models');
   assert.equal(result.errors[0].clientIp, '10.0.0.9');
   assert.equal(result.errors[0].requestType, 'sync');
@@ -253,8 +253,59 @@ test('request details infer synchronous type for access-only GET errors', () => 
   });
 
   assert.equal(result.errors.length, 1);
+  assert.equal(result.errors[0].provider, 'gateway');
+  assert.equal(result.errors[0].model, 'model-catalog');
+  assert.equal(result.errors[0].reasoningEffort, 'not_applicable');
   assert.equal(result.errors[0].endpoint, '/v1/models');
   assert.equal(result.errors[0].requestType, 'sync');
+});
+
+test('request details distinguish provider defaults from dimensions absent in historical logs', () => {
+  const logRecords = projectRequestLogText([
+    JSON.stringify({
+      at: '2026-08-23T10:10:00.000Z',
+      kind: 'model_usage_request_context',
+      requestId: 'req-context-default',
+      provider: 'codex',
+      model: 'gpt-5.6-sol',
+      endpoint: '/v1/responses',
+      clientIp: '10.0.0.12',
+      requestType: 'stream'
+    }),
+    JSON.stringify({
+      at: '2026-08-23T10:10:00.050Z',
+      kind: 'access',
+      requestId: 'req-context-default',
+      method: 'POST',
+      path: '/v1/responses',
+      clientIp: '10.0.0.12',
+      status: 502,
+      durationMs: 50
+    }),
+    JSON.stringify({
+      at: '2026-08-23T10:11:00.000Z',
+      kind: 'access',
+      requestId: 'req-history-only',
+      method: 'POST',
+      path: '/v1/responses',
+      clientIp: '10.0.0.13',
+      status: 502,
+      durationMs: 12
+    })
+  ].join('\n'));
+
+  const result = buildRequestDetails([], logRecords, {
+    fromMs: Date.parse('2026-08-23T00:00:00.000Z'),
+    toMs: Date.parse('2026-08-23T23:59:59.999Z'),
+    provider: '',
+    model: '',
+    limit: 50
+  });
+
+  const defaulted = result.errors.find((row) => row.requestId === 'req-context-default');
+  const historical = result.errors.find((row) => row.requestId === 'req-history-only');
+  assert.equal(defaulted.reasoningEffort, 'provider_default');
+  assert.equal(historical.reasoningEffort, '');
 });
 
 test('request details keep one latest usage row per request id', (t) => {

@@ -1,16 +1,18 @@
 import type { ReactNode } from 'react';
 import type { ProColumns } from '@ant-design/pro-components';
-import { Tabs, Tag, Tooltip, Typography } from 'antd';
+import { Space, Tabs, Tag, Tooltip, Typography } from 'antd';
 import dayjs from 'dayjs';
 import { ReloadOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import ListTable from '@/components/ui/ListTable';
 import SectionCard from '@/components/ui/SectionCard';
-import type { ModelUsageRequestRow } from '@/types';
+import ProviderIcon, { providerIds, providerNames } from '@/components/chat/ProviderIcon';
+import type { ModelUsageRequestRow, Provider } from '@/types';
 import {
   REQUEST_DETAIL_COLUMN_CONTRACTS,
   buildRequestTokenParts,
   formatBillingMode,
+  formatRequestProvider,
   formatReasoningEffort,
   formatRequestCost,
   formatRequestDuration,
@@ -25,19 +27,17 @@ const { Text } = Typography;
 export interface RequestDetailsSectionProps {
   usage: ModelUsageRequestRow[];
   errors: ModelUsageRequestRow[];
-  requested: boolean;
   loading: boolean;
   error: string;
-  limit?: number;
   onRequest: () => void;
 }
 
 type RequestColumnConfig = Omit<ProColumns<ModelUsageRequestRow>, 'key' | 'title'>;
 
 function renderEllipsisText(value: string, maxWidth: number, monospace = false): ReactNode {
-  const label = String(value || '').trim() || '-';
+  const label = String(value || '').trim() || '历史未记录';
   return (
-    <Tooltip title={label === '-' ? undefined : label}>
+    <Tooltip title={label === '历史未记录' ? undefined : label}>
       <Text
         className={monospace ? 'request-detail-mono' : undefined}
         ellipsis
@@ -46,6 +46,21 @@ function renderEllipsisText(value: string, maxWidth: number, monospace = false):
         {label}
       </Text>
     </Tooltip>
+  );
+}
+
+function renderProvider(provider: ModelUsageRequestRow['provider']) {
+  const label = formatRequestProvider(provider);
+  if (!provider) return <Text type="secondary">{label}</Text>;
+  if (provider === 'gateway') return <Tag color="geekblue">{label}</Tag>;
+  const knownProvider = providerIds.includes(provider as Provider);
+  if (!knownProvider) return label;
+  const typedProvider = provider as Provider;
+  return (
+    <Space size={6}>
+      <ProviderIcon provider={typedProvider} size={14} />
+      <span>{providerNames[typedProvider] || label}</span>
+    </Space>
   );
 }
 
@@ -75,6 +90,11 @@ function renderErrorMessage(row: ModelUsageRequestRow) {
 }
 
 const REQUEST_COLUMN_CONFIG: Record<RequestDetailColumnKey, RequestColumnConfig> = {
+  provider: {
+    dataIndex: 'provider',
+    width: 130,
+    render: (_, row) => renderProvider(row.provider)
+  },
   model: {
     dataIndex: 'model',
     width: 180,
@@ -160,30 +180,10 @@ const errorColumns = buildColumns('errors');
 export default function RequestDetailsSection({
   usage,
   errors,
-  requested,
   loading,
   error,
-  limit = 80,
   onRequest
 }: RequestDetailsSectionProps) {
-  if (!requested) {
-    return (
-      <SectionCard
-        className="request-details-section"
-        title="请求明细"
-        extra={(
-          <Button icon={<ReloadOutlined />} onClick={onRequest}>
-            加载最近 {limit} 条
-          </Button>
-        )}
-      >
-        <Text type="secondary">
-          成功与错误请求仅在需要时读取，避免日志解析占用趋势与分量统计的首屏资源。
-        </Text>
-      </SectionCard>
-    );
-  }
-
   return (
     <SectionCard
       className="request-details-section"
@@ -210,7 +210,7 @@ export default function RequestDetailsSection({
                 rowKey="requestId"
                 columns={usageColumns}
                 dataSource={usage}
-                scroll={{ x: 1460 }}
+                scroll={{ x: 1590 }}
               />
             )
           },
@@ -223,7 +223,7 @@ export default function RequestDetailsSection({
                 rowKey="requestId"
                 columns={errorColumns}
                 dataSource={errors}
-                scroll={{ x: 1370 }}
+                scroll={{ x: 1500 }}
               />
             )
           }

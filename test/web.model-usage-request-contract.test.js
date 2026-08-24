@@ -28,8 +28,7 @@ test('model usage page starts one progressive dashboard query instead of waiting
   assert.match(source, /modelUsageAPI\.watchDashboardQueries\s*\(/);
   assert.match(source, /modelUsageAPI\.cancelDashboardQuery\s*\(/);
   assert.doesNotMatch(source, /modelUsageAPI\.(?:dashboard|stats|models|sessions)\s*\(/);
-  assert.match(source, /completedShards/);
-  assert.match(source, /totalShards/);
+  assert.match(source, /isDashboardQueryActive/);
   assert.match(
     source,
     /const handleRefreshUsage = \(\) => requestUsageRefresh\(false\);/
@@ -62,7 +61,7 @@ test('usage dashboard is declared across the remote management boundary', () => 
   assert.equal(descriptor.capabilities.management.includes('usage.requests'), true);
 });
 
-test('model usage page loads request details on demand without unsupported columns', () => {
+test('model usage page automatically loads request details without unsupported columns', () => {
   const pageSource = fs.readFileSync(MODEL_USAGE_PAGE, 'utf8');
   const apiSource = fs.readFileSync(MODEL_USAGE_API, 'utf8');
 
@@ -73,11 +72,13 @@ test('model usage page loads request details on demand without unsupported colum
   assert.equal(requestCalls.length, 1);
   assert.match(pageSource, /<RequestDetailsSection/);
   assert.match(pageSource, /const loadRequestDetails = useCallback/);
-  assert.match(pageSource, /requested=\{requestDetailsRequested\}/);
+  assert.match(pageSource, /useEffect\(\(\) => \{\s*void loadRequestDetails\(\);/);
+  assert.doesNotMatch(pageSource, /requestDetailsRequested|requested=\{/);
   assert.match(pageSource, /onRequest=\{\(\) => void loadRequestDetails\(\)\}/);
   assert.match(apiSource, /\/webui\/management\/usage\/requests/);
   assert.match(sectionSource, /REQUEST_DETAIL_COLUMN_CONTRACTS/);
-  assert.match(sectionSource, /仅在需要时读取/);
+  assert.doesNotMatch(sectionSource, /加载最近|仅在需要时读取/);
+  assert.match(sectionSource, /刷新明细/);
   assert.match(sectionSource, /ListTable/);
   assert.doesNotMatch(sectionSource, /apiKey|accountRef|密钥|分组/);
 });

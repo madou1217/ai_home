@@ -7,6 +7,7 @@ test('request detail columns expose exactly the requested dimensions', () => {
   const contracts = requestDetailsPresentation.REQUEST_DETAIL_COLUMN_CONTRACTS;
 
   assert.deepEqual(contracts.usage, [
+    { key: 'provider', title: 'Provider' },
     { key: 'model', title: '模型' },
     { key: 'reasoningEffort', title: '推理强度' },
     { key: 'endpoint', title: '端点' },
@@ -19,6 +20,7 @@ test('request detail columns expose exactly the requested dimensions', () => {
     { key: 'timestampMs', title: '时间' }
   ]);
   assert.deepEqual(contracts.errors, [
+    { key: 'provider', title: 'Provider' },
     { key: 'model', title: '模型' },
     { key: 'reasoningEffort', title: '推理强度' },
     { key: 'endpoint', title: '端点' },
@@ -38,8 +40,16 @@ test('request detail values preserve request precision without inventing unavail
   assert.equal(requestDetailsPresentation.formatRequestDuration(0), '-');
   assert.equal(requestDetailsPresentation.formatRequestCost(0.012345), '$0.012345');
   assert.equal(requestDetailsPresentation.formatReasoningEffort('xhigh'), 'XHigh');
-  assert.equal(requestDetailsPresentation.formatReasoningEffort(''), '-');
+  assert.equal(requestDetailsPresentation.formatReasoningEffort('provider_default'), 'Provider 默认');
+  assert.equal(requestDetailsPresentation.formatReasoningEffort('not_applicable'), '不适用');
+  assert.equal(requestDetailsPresentation.formatReasoningEffort('budget:-1'), '自动预算');
+  assert.equal(requestDetailsPresentation.formatReasoningEffort('budget:8000'), '预算 8,000 Tokens');
+  assert.equal(requestDetailsPresentation.formatReasoningEffort(''), '历史未记录');
   assert.equal(requestDetailsPresentation.formatRequestType('stream'), '流式');
+  assert.equal(requestDetailsPresentation.formatRequestType(''), '历史未记录');
+  assert.equal(requestDetailsPresentation.formatRequestProvider('gateway'), 'AIH 网关');
+  assert.equal(requestDetailsPresentation.formatRequestProvider('codex'), 'codex');
+  assert.equal(requestDetailsPresentation.formatRequestProvider(''), '历史未记录');
   assert.equal(requestDetailsPresentation.formatBillingMode('token'), '按 Token');
   assert.deepEqual(requestDetailsPresentation.buildRequestTokenParts({
     inputTokens: 2000,

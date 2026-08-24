@@ -4254,20 +4254,22 @@ test('v1 router pins Claude OAuth relay by accountRef and bypasses global aliase
 
 test('v1 router rejects a mutable CLI account id in the account pin header', async () => {
   const res = createResCapture();
+  const logEntries = [];
   const handled = await handleV1Request({
     req: { headers: { 'x-account-ref': '9' }, url: '/v1/messages' },
     res,
     method: 'POST',
     pathname: '/v1/messages',
-    options: { backend: 'codex-adapter', provider: 'auto' },
+    options: { backend: 'codex-adapter', provider: 'auto', logRequests: true },
     state: { accounts: {} },
     requiredClientKey: '',
     cooldownMs: 1000,
     maxRequestBodyBytes: 1024,
-    requestMeta: {},
+    requestMeta: { requestId: 'req-invalid-account-pin', clientIp: '127.0.0.1' },
     deps: {
       parseAuthorizationBearer: () => '',
       writeJson: (r, code, payload) => { r.statusCode = code; r.end(JSON.stringify(payload)); },
+      appendProxyRequestLog: (entry) => logEntries.push(entry),
       readRequestBody: async () => Buffer.from('{}')
     }
   });
@@ -4275,6 +4277,94 @@ test('v1 router rejects a mutable CLI account id in the account pin header', asy
   assert.equal(handled, true);
   assert.equal(res.statusCode, 400);
   assert.equal(JSON.parse(res.body).error, 'invalid_account_ref');
+  assert.deepEqual(logEntries.map((entry) => entry.kind), ['account_pin_rejected']);
+  assert.equal(logEntries[0].status, 400);
+  assert.equal(logEntries[0].error, 'invalid_account_ref');
+  assert.doesNotMatch(JSON.stringify(logEntries), /(?:accountRef|x-account-ref|"9")/u);
+});
+
+test('v1 router heals a stale account pin only for the read-only model catalog', async () => {
+  const staleAccountRef = 'acct_99999999999999999999';
+  const res = createResCapture();
+  const logEntries = [];
+  const handled = await handleV1Request({
+    req: { headers: { 'x-account-ref': staleAccountRef }, url: '/v1/models' },
+    res,
+    method: 'GET',
+    pathname: '/v1/models',
+    options: { backend: 'codex-adapter', provider: 'auto', logRequests: true },
+    state: {
+      metrics: { totalRequests: 0, routeCounts: {}, totalSuccess: 0 },
+      accounts: {},
+      modelRegistry: { providers: {} },
+      modelsCache: { ids: [], updatedAt: 0, byAccount: {}, sourceCount: 0 }
+    },
+    requiredClientKey: '',
+    cooldownMs: 1000,
+    maxRequestBodyBytes: 1024,
+    requestMeta: { requestId: 'req-stale-model-pin', clientIp: '127.0.0.1' },
+    deps: {
+      parseAuthorizationBearer: () => '',
+      writeJson: (r, code, payload) => { r.statusCode = code; r.end(JSON.stringify(payload)); },
+      readRequestBody: async () => Buffer.from(''),
+      appendProxyRequestLog: (entry) => logEntries.push(entry),
+      handleCodexModels: async ({ res: routeRes }) => {
+        routeRes.statusCode = 200;
+        routeRes.end(JSON.stringify({ object: 'list', data: [] }));
+      },
+      handleUpstreamModels: async ({ res: routeRes }) => {
+        routeRes.statusCode = 200;
+        routeRes.end(JSON.stringify({ object: 'list', data: [] }));
+      }
+    }
+  });
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(JSON.parse(res.body), { object: 'list', data: [] });
+  const healed = logEntries.find((entry) => entry.kind === 'stale_account_pin_healed');
+  assert.equal(healed.requestId, 'req-stale-model-pin');
+  assert.equal(healed.provider, 'gateway');
+  assert.equal(healed.model, 'model-catalog');
+  assert.equal(healed.reasoningEffort, 'not_applicable');
+  assert.doesNotMatch(JSON.stringify(logEntries), new RegExp(staleAccountRef));
+});
+
+test('v1 router keeps stale account pins fail-closed for inference requests', async () => {
+  const staleAccountRef = 'acct_99999999999999999999';
+  const res = createResCapture();
+  const logEntries = [];
+  let bodyRead = false;
+  const handled = await handleV1Request({
+    req: { headers: { 'x-account-ref': staleAccountRef }, url: '/v1/responses' },
+    res,
+    method: 'POST',
+    pathname: '/v1/responses',
+    options: { backend: 'codex-adapter', provider: 'auto', logRequests: true },
+    state: { accounts: {} },
+    requiredClientKey: '',
+    cooldownMs: 1000,
+    maxRequestBodyBytes: 1024,
+    requestMeta: { requestId: 'req-stale-inference-pin', clientIp: '127.0.0.1' },
+    deps: {
+      parseAuthorizationBearer: () => '',
+      writeJson: (r, code, payload) => { r.statusCode = code; r.end(JSON.stringify(payload)); },
+      readRequestBody: async () => {
+        bodyRead = true;
+        return Buffer.from('{"model":"gpt-5.6-sol"}');
+      },
+      appendProxyRequestLog: (entry) => logEntries.push(entry)
+    }
+  });
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 404);
+  assert.equal(JSON.parse(res.body).error, 'unknown_account_ref');
+  assert.equal(bodyRead, false);
+  const rejected = logEntries.find((entry) => entry.kind === 'account_pin_rejected');
+  assert.equal(rejected.error, 'unknown_account_ref');
+  assert.equal(rejected.status, 404);
+  assert.doesNotMatch(JSON.stringify(logEntries), new RegExp(staleAccountRef));
 });
 
 test('v1 router rejects Anthropic messages without model before provider passthrough', async () => {

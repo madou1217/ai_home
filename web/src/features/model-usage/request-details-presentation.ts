@@ -1,5 +1,6 @@
 export const REQUEST_DETAIL_COLUMN_CONTRACTS = Object.freeze({
   usage: Object.freeze([
+    { key: 'provider', title: 'Provider' },
     { key: 'model', title: '模型' },
     { key: 'reasoningEffort', title: '推理强度' },
     { key: 'endpoint', title: '端点' },
@@ -12,6 +13,7 @@ export const REQUEST_DETAIL_COLUMN_CONTRACTS = Object.freeze({
     { key: 'timestampMs', title: '时间' }
   ] as const),
   errors: Object.freeze([
+    { key: 'provider', title: 'Provider' },
     { key: 'model', title: '模型' },
     { key: 'reasoningEffort', title: '推理强度' },
     { key: 'endpoint', title: '端点' },
@@ -63,10 +65,28 @@ export function formatRequestCost(value: number) {
   return `$${Math.max(0, Number(value) || 0).toFixed(6)}`;
 }
 
+export function formatRequestProvider(value: string) {
+  const provider = String(value || '').trim().toLowerCase();
+  if (provider === 'gateway') return 'AIH 网关';
+  return provider || '历史未记录';
+}
+
 export function formatReasoningEffort(value: string) {
   const effort = String(value || '').trim();
-  if (!effort) return '-';
+  if (!effort) return '历史未记录';
+  if (effort === 'provider_default') return 'Provider 默认';
+  if (effort === 'not_applicable') return '不适用';
+  const budgetMatch = effort.match(/^budget:(-?\d+)$/u);
+  if (budgetMatch) {
+    const budget = Number(budgetMatch[1]);
+    if (budget === -1) return '自动预算';
+    if (budget === 0) return '关闭';
+    return `预算 ${budget.toLocaleString('en-US')} Tokens`;
+  }
   const labels: Record<string, string> = {
+    adaptive: '自适应',
+    disabled: '已关闭',
+    enabled: '已启用',
     minimal: 'Minimal',
     low: 'Low',
     medium: 'Medium',
@@ -80,7 +100,7 @@ export function formatRequestType(value: string) {
   const requestType = String(value || '').trim().toLowerCase();
   if (requestType === 'stream') return '流式';
   if (requestType === 'sync') return '同步';
-  return '-';
+  return '历史未记录';
 }
 
 export function formatBillingMode(value: string) {

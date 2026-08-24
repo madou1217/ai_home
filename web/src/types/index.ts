@@ -2422,7 +2422,7 @@ export interface ModelUsageSessionDetailResponse {
 
 export interface ModelUsageRequestRow {
   requestId: string;
-  provider: Provider | '';
+  provider: Provider | 'gateway' | '';
   model: string;
   reasoningEffort: string;
   endpoint: string;

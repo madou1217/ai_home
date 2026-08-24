@@ -197,6 +197,61 @@ test('ProxyPoolService rejects a subscription URL instead of importing it as an 
   assert.equal(store.listNodes().length, 0);
 });
 
+test('ProxyPoolService URI, Base64, and YAML imports only update the neutral store while a core is running', async (t) => {
+  const uri = 'ss://YWVzLTI1Ni1nY206cGFzc3dvcmRAMTIz@198.51.100.1:8388#storage-only';
+  const cases = [
+    ['URI', uri],
+    ['Base64', Buffer.from(uri).toString('base64')],
+    ['YAML', [
+      'proxies:',
+      '  - name: storage-only-yaml',
+      '    type: http',
+      '    server: proxy.example.com',
+      '    port: 8080'
+    ].join('\n')]
+  ];
+
+  for (const [format, content] of cases) {
+    await t.test(format, async (subtest) => {
+      const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-proxy-import-storage-only-'));
+      subtest.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+      const store = new ProxyNodeStore(path.join(directory, 'pool.json'));
+      const networkBefore = store.getNetworkConfig();
+      const lifecycleCalls = [];
+      const coreRuntime = {
+        getStatus() {
+          return {
+            engine: 'mihomo',
+            installed: true,
+            running: true,
+            dataPlaneReady: true,
+            activeListeners: []
+          };
+        },
+        async start() {
+          lifecycleCalls.push('start');
+        },
+        async stop() {
+          lifecycleCalls.push('stop');
+        },
+        async reload() {
+          lifecycleCalls.push('reload');
+        }
+      };
+      const service = new ProxyPoolService({ store, coreRuntime });
+
+      const result = await service.importNodes(content);
+
+      assert.equal(result.ok, true);
+      assert.equal(result.count, 1);
+      assert.equal(result.applied, false);
+      assert.deepEqual(result.warnings, ['proxy_core_reload_required']);
+      assert.deepEqual(lifecycleCalls, []);
+      assert.deepEqual(store.getNetworkConfig(), networkBefore);
+    });
+  }
+});
+
 test('ProxyPoolService reports an unavailable Mihomo data plane explicitly', () => {
   const store = createInjectedStore();
   const service = createInjectedService(store, createUnavailableCoreRuntime());
@@ -711,6 +766,57 @@ test('ProxyPoolService restores previous subscription nodes when Mihomo rejects 
   assert.equal(store.getDedicatedPortsConfig().mappings[oldNode.id], 10801);
   const persisted = JSON.parse(fs.readFileSync(path.join(directory, 'pool.json'), 'utf8'));
   assert.equal(Object.hasOwn(persisted.nodes[0], 'dedicatedPort'), false);
+});
+
+test('ProxyPoolService storage-only subscription sync updates the neutral store without touching Mihomo or network state', async (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-proxy-sync-storage-only-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const store = new ProxyNodeStore(path.join(directory, 'pool.json'));
+  const subscription = store.upsertSubscription({
+    name: 'account egress subscription',
+    url: 'https://example.com/subscription'
+  });
+  store.bulkUpsertNodes([{
+    name: 'old node',
+    protocol: 'http',
+    server: 'old.example.com',
+    port: 8080
+  }], subscription.id);
+  let reloadCount = 0;
+  const coreRuntime = {
+    getStatus() {
+      return {
+        engine: 'mihomo',
+        installed: true,
+        running: true,
+        dataPlaneReady: true,
+        activeListeners: []
+      };
+    },
+    async reload() {
+      reloadCount += 1;
+      throw new Error('storage-only sync must not reload Mihomo');
+    }
+  };
+  const service = new ProxyPoolService({
+    store,
+    coreRuntime,
+    subscriptionFetcher: {
+      async fetch() {
+        return { content: 'http://new.example.com:8080#new-node', url: subscription.url };
+      }
+    }
+  });
+
+  const result = await service.syncSubscription(subscription.id, { storageOnly: true });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.applied, true);
+  assert.equal(result.storageOnly, true);
+  assert.equal(result.count, 1);
+  assert.equal(reloadCount, 0);
+  assert.deepEqual(result.warnings, ['proxy_core_reload_required']);
+  assert.equal(store.listNodes()[0].server, 'new.example.com');
 });
 
 test('ProxyPoolService applies synchronized subscription nodes through Mihomo before reporting success', async (t) => {

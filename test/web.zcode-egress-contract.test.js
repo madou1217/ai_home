@@ -9,6 +9,7 @@ const projectRoot = path.join(__dirname, '..');
 const accountsPath = path.join(projectRoot, 'web/src/pages/Accounts.tsx');
 const apiPath = path.join(projectRoot, 'web/src/services/api.ts');
 const modalPath = path.join(projectRoot, 'web/src/features/accounts/ZcodeEgressModal.tsx');
+const importModalPath = path.join(projectRoot, 'web/src/components/toolkit/proxy-pool/ProxyImportModal.tsx');
 const groupManagerPath = path.join(projectRoot, 'web/src/features/accounts/ZcodeProxyGroupManagerModal.tsx');
 const toolkitPanelPath = path.join(projectRoot, 'web/src/components/toolkit/AppManagerPanel.tsx');
 const taskQueuePath = path.join(projectRoot, 'web/src/components/task-queue/AppInstallTaskQueue.tsx');
@@ -66,6 +67,31 @@ test('账号出口弹窗支持五种来源并复用节点库管理面', () => {
   assert.doesNotMatch(modalSource, /Anthropic/i);
   assert.doesNotMatch(modalSource, /Mihomo/i);
   assert.doesNotMatch(modalSource, /\bAlert\b|borderLeft|border-left/);
+});
+
+test('账号出口从导入弹窗写入中立节点仓且不触碰其它代理核心或系统网络', () => {
+  const modalSource = fs.readFileSync(modalPath, 'utf8');
+  const importModalSource = fs.readFileSync(importModalPath, 'utf8');
+  const apiSource = fs.readFileSync(apiPath, 'utf8');
+
+  assert.match(modalSource, /import ProxyImportModal from '@\/components\/toolkit\/proxy-pool\/ProxyImportModal'/);
+  assert.match(modalSource, /导入节点或订阅/);
+  assert.match(modalSource, /const refreshNodeLibrary = useCallback\([\s\S]*proxyPoolAPI\.listNodes\(\)/);
+  assert.match(
+    modalSource,
+    /<ProxyImportModal[\s\S]*storageOnly[\s\S]*onImported=\{refreshNodeLibrary\}/
+  );
+  assert.match(importModalSource, /storageOnly\?: boolean/);
+  assert.match(
+    importModalSource,
+    /proxyPoolAPI\.syncSubscription\(saved\.subscription\.id,\s*\{\s*storageOnly\s*\}\)/
+  );
+  assert.doesNotMatch(importModalSource, /\bAlert\b|borderLeft|border-left/);
+  assert.match(
+    apiSource,
+    /syncSubscription:\s*async\s*\(\s*id: string,\s*options: \{ storageOnly\?: boolean \} = \{\}\s*\)/
+  );
+  assert.match(apiSource, /\{\s*id,\s*storageOnly:\s*options\.storageOnly === true\s*\}/);
 });
 
 test('ZCode 出口弹窗提供手动分组 CRUD 与自动组策略调整', () => {

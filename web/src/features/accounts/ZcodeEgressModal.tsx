@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
-import { RetweetOutlined, SettingOutlined } from '@ant-design/icons';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ImportOutlined, RetweetOutlined, SettingOutlined } from '@ant-design/icons';
 import { Button, Form, Input, Modal, Radio, Select, Space, Spin, Tag, Typography, message } from 'antd';
+import ProxyImportModal from '@/components/toolkit/proxy-pool/ProxyImportModal';
 import { accountsAPI, proxyPoolAPI } from '@/services/api';
 import { getAccountPrimaryLabel } from '@/features/accounts/AccountBadges';
 import type {
@@ -10,7 +11,8 @@ import type {
   AccountEgressRotateResponse,
   AccountEgressRuntimeStatus,
   ProxyGroup,
-  ProxyNode
+  ProxyNode,
+  ProxyNodesResponse
 } from '@/types';
 import { ZcodeProxyGroupManagerModal } from './ZcodeProxyGroupManagerModal';
 import {
@@ -46,12 +48,39 @@ export function AccountEgressModal({ account, onClose }: AccountEgressModalProps
   const [runtimeError, setRuntimeError] = useState('');
   const [rotating, setRotating] = useState(false);
   const [groupManagerOpen, setGroupManagerOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const mode = Form.useWatch('mode', form) || 'url';
   const selectedGroupId = Form.useWatch('groupId', form) || '';
   const usesNativeSettings = account?.provider === 'zcode';
 
+  const applyNodeLibrary = useCallback((response: ProxyNodesResponse) => {
+    setNodes((response.nodes || []).filter((node) => (
+      ZCODE_SIDECAR_PROTOCOLS.has(node.protocol)
+    )));
+    setGroups((response.groups || []).filter((group) => group.id !== 'dedicated'));
+    setNodesUnavailable(false);
+  }, []);
+
+  const markNodeLibraryUnavailable = useCallback(() => {
+    setNodes([]);
+    setGroups([]);
+    setNodesUnavailable(true);
+  }, []);
+
+  const refreshNodeLibrary = useCallback(async () => {
+    try {
+      applyNodeLibrary(await proxyPoolAPI.listNodes());
+    } catch {
+      markNodeLibraryUnavailable();
+    }
+  }, [applyNodeLibrary, markNodeLibraryUnavailable]);
+
   useEffect(() => {
-    if (!account) return undefined;
+    if (!account) {
+      setGroupManagerOpen(false);
+      setImportOpen(false);
+      return undefined;
+    }
     let cancelled = false;
     setLoading(true);
     setNodesUnavailable(false);
@@ -59,6 +88,7 @@ export function AccountEgressModal({ account, onClose }: AccountEgressModalProps
     setRuntime(null);
     setRuntimeError('');
     setGroupManagerOpen(false);
+    setImportOpen(false);
     form.setFieldsValue({
       mode: 'url',
       proxyUrl: '',
@@ -90,16 +120,9 @@ export function AccountEgressModal({ account, onClose }: AccountEgressModalProps
       }
 
       if (nodesResult.status === 'fulfilled') {
-        setNodes((nodesResult.value.nodes || []).filter((node) => (
-          ZCODE_SIDECAR_PROTOCOLS.has(node.protocol)
-        )));
-        setGroups((nodesResult.value.groups || []).filter((group) => (
-          group.id !== 'dedicated'
-        )));
+        applyNodeLibrary(nodesResult.value);
       } else {
-        setNodes([]);
-        setGroups([]);
-        setNodesUnavailable(true);
+        markNodeLibraryUnavailable();
       }
     }).finally(() => {
       if (!cancelled) setLoading(false);
@@ -108,7 +131,7 @@ export function AccountEgressModal({ account, onClose }: AccountEgressModalProps
     return () => {
       cancelled = true;
     };
-  }, [account, form]);
+  }, [account, applyNodeLibrary, form, markNodeLibraryUnavailable]);
 
   const nodeOptions = useMemo(() => nodes.map((node) => ({
     value: node.id,
@@ -288,6 +311,19 @@ export function AccountEgressModal({ account, onClose }: AccountEgressModalProps
             ? ' ZCode 原生链路中，模型、MCP、命令工具和内置浏览器统一消费账号隔离的 setting.json；用户手工设置会安全合并。'
             : ' 其他 provider 在 CLI、Desktop 和 Gateway 边界注入该账号的回环代理；不修改系统级网络配置。'}
         </Typography.Paragraph>
+          <Space wrap size={8} style={{ marginBottom: 16 }}>
+            <Button
+              size="small"
+              icon={<ImportOutlined />}
+              disabled={loading || submitting || rotating}
+              onClick={() => setImportOpen(true)}
+            >
+              导入节点或订阅
+            </Button>
+            <Typography.Text type="secondary">
+              只写入中立节点仓；不会启动、重载或停止其它代理核心，也不会更改系统代理或 TUN。
+            </Typography.Text>
+          </Space>
           <Space wrap size={8} style={{ marginBottom: 12 }}>
             <Tag color={runtime?.dataPlaneReady ? 'success' : 'default'}>
               {runtime?.dataPlaneReady ? '数据面就绪' : '未运行'}
@@ -419,6 +455,12 @@ export function AccountEgressModal({ account, onClose }: AccountEgressModalProps
           </Form>
         </Spin>
       </Modal>
+      <ProxyImportModal
+        open={importOpen && Boolean(account)}
+        storageOnly
+        onClose={() => setImportOpen(false)}
+        onImported={refreshNodeLibrary}
+      />
       <ZcodeProxyGroupManagerModal
         open={groupManagerOpen}
         nodes={nodes}

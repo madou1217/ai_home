@@ -114,6 +114,7 @@ export interface ProxySubscriptionSyncResponse extends ProxyMutationResponse {
   count?: number;
   nodes?: ProxyNode[];
   manualSyncOnly?: boolean;
+  storageOnly?: boolean;
 }
 
 export interface RoutingRule {

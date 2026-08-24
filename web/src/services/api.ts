@@ -2150,8 +2150,14 @@ export const proxyPoolAPI = {
     const response = await api.post<{ ok: boolean; subscription: ProxySubscription }>('/webui/toolkit/proxy-pool/subscriptions', sub);
     return response.data;
   },
-  syncSubscription: async (id: string): Promise<ProxySubscriptionSyncResponse> => {
-    const response = await api.post<ProxySubscriptionSyncResponse>('/webui/toolkit/proxy-pool/subscriptions/sync', { id });
+  syncSubscription: async (
+    id: string,
+    options: { storageOnly?: boolean } = {}
+  ): Promise<ProxySubscriptionSyncResponse> => {
+    const response = await api.post<ProxySubscriptionSyncResponse>(
+      '/webui/toolkit/proxy-pool/subscriptions/sync',
+      { id, storageOnly: options.storageOnly === true }
+    );
     return response.data;
   },
   deleteSubscription: async (id: string): Promise<ProxyMutationResponse> => {

@@ -1,4 +1,4 @@
-import { Alert, Form, Input, Modal, Tabs, Typography, Upload, message } from 'antd';
+import { Form, Input, Modal, Tabs, Typography, Upload, message } from 'antd';
 import { UploadOutlined } from '@ant-design/icons';
 import { useState } from 'react';
 import { proxyPoolAPI } from '@/services/api';
@@ -31,9 +31,15 @@ interface ProxyImportModalProps {
   open: boolean;
   onClose: () => void;
   onImported: () => Promise<void> | void;
+  storageOnly?: boolean;
 }
 
-export default function ProxyImportModal({ open, onClose, onImported }: ProxyImportModalProps) {
+export default function ProxyImportModal({
+  open,
+  onClose,
+  onImported,
+  storageOnly = false
+}: ProxyImportModalProps) {
   const [mode, setMode] = useState<ImportMode>('text');
   const [content, setContent] = useState('');
   const [importing, setImporting] = useState(false);
@@ -72,7 +78,7 @@ export default function ProxyImportModal({ open, onClose, onImported }: ProxyImp
       const values = await subscriptionForm.validateFields();
       const saved = await proxyPoolAPI.upsertSubscription(values);
       if (!saved.ok) throw new Error('订阅源保存失败');
-      const synced = await proxyPoolAPI.syncSubscription(saved.subscription.id);
+      const synced = await proxyPoolAPI.syncSubscription(saved.subscription.id, { storageOnly });
       if (!isMutationApplied(synced)) {
         message.warning(getMutationMessage(synced, '订阅已保存，但首次同步未应用'));
       } else {
@@ -158,12 +164,13 @@ export default function ProxyImportModal({ open, onClose, onImported }: ProxyImp
             label: '订阅 URL',
             children: (
               <Form form={subscriptionForm} layout="vertical">
-                <Alert
-                  type="info"
-                  showIcon
-                  message="首次导入会立即发起一次受限同步"
-                  description="当前版本只承诺手动同步；不会显示并不存在的后台定时任务。服务端会校验协议、响应大小和内网目标。"
-                />
+                <Paragraph type="secondary" style={{ marginBottom: 16 }}>
+                  首次导入会立即发起一次受限同步；当前版本只承诺手动同步，不会显示并不存在的后台定时任务。
+                  服务端会校验协议、响应大小和内网目标。
+                  {storageOnly
+                    ? ' 当前入口只更新中立节点仓，不启动、重载或停止其它代理核心，也不更改系统代理或 TUN。'
+                    : ''}
+                </Paragraph>
                 <Form.Item
                   label="订阅名称"
                   name="name"

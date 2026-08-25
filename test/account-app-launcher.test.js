@@ -62,6 +62,7 @@ function createFakeSpawn() {
 
 function createLauncher(overrides = {}) {
   const fakeSpawn = createFakeSpawn();
+  const interactiveLaunches = [];
   const fsImpl = overrides.fs || createFakeFs();
   const launcher = createAccountAppLauncher({
     fs: fsImpl,
@@ -72,6 +73,10 @@ function createLauncher(overrides = {}) {
     aiHomeDir: 'C:\\aih-home',
     repoRoot: 'C:\\repo',
     execFileSync: overrides.execFileSync || function execFileSync() { throw new Error('exec disabled in tests'); },
+    launchWindowsInteractive: overrides.launchWindowsInteractive || ((command, options) => {
+      interactiveLaunches.push({ command, options });
+      return { ok: true, taskName: 'AihWebCli_test' };
+    }),
     stopGraceMs: overrides.stopGraceMs,
     resolveAccount: overrides.resolveAccount || (() => ({
       accountRef: ACCOUNT_REF,
@@ -101,7 +106,7 @@ function createLauncher(overrides = {}) {
       }
     }))
   });
-  return { launcher, fakeSpawn, fsImpl };
+  return { launcher, fakeSpawn, fsImpl, interactiveLaunches };
 }
 
 test('launchAccountApp 在账号未配置时拒绝打开', () => {
@@ -880,29 +885,20 @@ test('zcode desktop 在 Linux 通过 PATH 上的 execNames 解析', () => {
 });
 
 test('cli kind 在 Windows 通过 verbatim cmd start 打开新终端运行 aih 启动链路', () => {
-  const { launcher, fakeSpawn } = createLauncher({
+  const { launcher, fakeSpawn, interactiveLaunches } = createLauncher({
     resolveAccount: () => ({ accountRef: ACCOUNT_REF, provider: 'codex', cliAccountId: '3' })
   });
   const result = launcher.launchAccountApp({ provider: 'codex', accountRef: ACCOUNT_REF, kind: 'cli' });
   assert.equal(result.ok, true);
-  assert.equal(result.pid, 4321);
-  const call = fakeSpawn.calls[0];
-  assert.equal(call.file, 'cmd.exe');
-  assert.deepEqual(call.args.slice(0, 3), ['/d', '/s', '/c']);
-  const startLine = call.args[3];
-  assert.ok(startLine.includes('start "aih codex 3"'));
-  assert.ok(startLine.includes('cmd.exe /d /s /k "set "AIH_ACCOUNT_APP=1"'));
-  assert.ok(startLine.includes(nodePath.win32.join('C:\\repo', 'bin', 'ai-home.js')));
-  assert.ok(startLine.includes('"C:\\node\\node.exe"'));
-  assert.match(startLine, /AIH_ACCOUNT_APP=1/);
-  assert.match(startLine, /AIH_PROVIDER_ACCOUNT_REF=/);
-  // 回归守卫：libuv 的 \" 转义会让 cmd start 挂死，必须以 verbatim 关闭转义
-  assert.equal(call.options.windowsVerbatimArguments, true);
-  assert.ok(!startLine.includes('\\"'));
-  assert.equal(call.options.env.AIH_ACCOUNT_APP, '1');
-  assert.equal(call.options.env.AIH_PROVIDER_ACCOUNT_REF, ACCOUNT_REF);
-  assert.equal(call.options.detached, true);
-  assert.equal(call.child.unrefCalled, true);
+  assert.equal(result.pid, null);
+  assert.equal(result.launchMode, 'interactive-task');
+  assert.equal(result.taskName, 'AihWebCli_test');
+  assert.equal(fakeSpawn.calls.length, 0);
+  assert.equal(interactiveLaunches.length, 1);
+  assert.match(interactiveLaunches[0].command, /AIH_ACCOUNT_APP=1/);
+  assert.match(interactiveLaunches[0].command, /AIH_PROVIDER_ACCOUNT_REF=/);
+  assert.match(interactiveLaunches[0].command, /aih\.js|ai-home\.js/);
+  assert.equal(interactiveLaunches[0].options.title, 'aih codex 3');
 });
 
 test('cli kind 在 macOS 通过 osascript 让 Terminal.app 打开新窗口', () => {
@@ -972,6 +968,7 @@ test('默认 accountRef 解析会联结 CLI 别名，CLI 点击不再误报 acco
       identitySeed: 'oauth:codex:launcher@example.test'
     }).accountRef;
     const fakeSpawn = createFakeSpawn();
+    const interactiveLaunches = [];
     const launcher = createAccountAppLauncher({
       fs: nodeFs,
       path: nodePath,
@@ -981,17 +978,54 @@ test('默认 accountRef 解析会联结 CLI 别名，CLI 点击不再误报 acco
       aiHomeDir,
       repoRoot: 'C:\\repo',
       execFileSync: () => '',
-      readAccountEnv: () => ({})
+      readAccountEnv: () => ({}),
+      launchWindowsInteractive: (command, options) => {
+        interactiveLaunches.push({ command, options });
+        return { ok: true, taskName: 'AihWebCli_alias' };
+      }
     });
     const result = launcher.launchAccountApp({ provider: 'codex', accountRef, kind: 'cli' });
     assert.equal(result.ok, true);
     assert.equal(result.terminalId, 'system-default');
-    assert.equal(fakeSpawn.calls.length, 1);
-    assert.match(fakeSpawn.calls[0].args[3], /aih codex 12/);
-    assert.equal(fakeSpawn.calls[0].options.windowsVerbatimArguments, true);
+    assert.equal(fakeSpawn.calls.length, 0);
+    assert.equal(interactiveLaunches.length, 1);
+    assert.match(interactiveLaunches[0].command, /ai-home\.js" codex 12/);
   } finally {
     nodeFs.rmSync(aiHomeDir, { recursive: true, force: true });
   }
+});
+
+test('cli kind 在 Windows 真实 WindowsTerminal.exe 宿主下保持 Codex 命令 argv 边界', () => {
+  const packageRoot = 'C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.24.11911.0_x64__8wekyb3d8bbwe';
+  const terminalExecutable = `${packageRoot}\\WindowsTerminal.exe`;
+  const accountRef = 'acct_d62c5c4961277f9403c8';
+  const { launcher, fakeSpawn, interactiveLaunches } = createLauncher({
+    fs: createFakeFs([terminalExecutable]),
+    env: {
+      PATH: 'C:\\Users\\madou\\AppData\\Local\\Microsoft\\WindowsApps',
+      USERPROFILE: 'C:\\Users\\madou'
+    },
+    processObj: {
+      platform: 'win32',
+      execPath: 'd:\\nvm4w\\nodejs\\node.exe',
+      env: {}
+    },
+    execFileSync: (file) => file === 'powershell.exe' ? `${packageRoot}\r\n` : '',
+    resolveAccount: () => ({ accountRef, provider: 'codex', cliAccountId: '3' })
+  });
+
+  const result = launcher.launchAccountApp({
+    provider: 'codex',
+    accountRef,
+    kind: 'cli'
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(fakeSpawn.calls.length, 0);
+  assert.equal(interactiveLaunches.length, 1);
+  assert.match(interactiveLaunches[0].command, /AIH_ACCOUNT_APP=1/);
+  assert.match(interactiveLaunches[0].command, new RegExp(`AIH_PROVIDER_ACCOUNT_REF=${accountRef}`));
+  assert.match(interactiveLaunches[0].command, /codex 3/);
 });
 
 test('findOnPath 在 Windows 为无扩展名的名字补 .exe', () => {

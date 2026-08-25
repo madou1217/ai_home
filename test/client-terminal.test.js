@@ -210,8 +210,36 @@ test('Windows Terminal 优先使用 AppX 包内的真实 WindowsTerminal.exe', (
     execFileSync: () => `${packageRoot}\r\n`
   });
   assert.equal(launch.terminalExecutable, executable);
-  assert.match(launch.args[3], new RegExp(`start "" "${packageRoot.replace(/\\/g, '\\\\')}\\\\WindowsTerminal\\.exe"`));
-  assert.doesNotMatch(launch.args[3], /start "" wt\.exe/);
+  assert.equal(launch.file, executable);
+  assert.equal(launch.windowsHide, false);
+  assert.deepEqual(launch.args.slice(0, 9), [
+    '-w', 'new', 'new-tab', '--title', 'aih codex 3',
+    'cmd.exe', '/d', '/s', '/k'
+  ]);
+  assert.deepEqual(launch.args.slice(9), ['echo', 'ready']);
+  assert.doesNotMatch(launch.args.join(' '), /cmd\.exe \/k set/);
+});
+
+test('Windows Terminal 真实宿主保持 set 与账号 CLI 参数为独立 argv', () => {
+  const packageRoot = 'C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.24.11911.0_x64__8wekyb3d8bbwe';
+  const executable = `${packageRoot}\\WindowsTerminal.exe`;
+  const command = 'set AIH_APP_MARKER=1 && set AIH_PROVIDER_ACCOUNT_REF=acct_d62c5c4961277f9403c8 && "d:\\\\nvm4w\\\\nodejs\\\\node.exe" "C:\\\\Users\\\\madou\\\\projects\\\\feature\\\\ai_home\\\\bin\\\\ai-home.js" codex 3';
+  const launch = resolveClientTerminalLaunch('windows-terminal', command, 'aih codex 3', {
+    platform: 'windows',
+    path: nodePath.win32,
+    env: { PATH: 'C:\\Users\\madou\\AppData\\Local\\Microsoft\\WindowsApps' },
+    fs: fakeFs([executable]),
+    execFileSync: () => `${packageRoot}\r\n`
+  });
+  assert.equal(launch.file, executable);
+  assert.equal(launch.windowsHide, false);
+  assert.deepEqual(launch.args.slice(5, 9), ['cmd.exe', '/d', '/s', '/k']);
+  assert.deepEqual(launch.args.slice(9, 15), [
+    'set', 'AIH_APP_MARKER=1', '&&', 'set',
+    'AIH_PROVIDER_ACCOUNT_REF=acct_d62c5c4961277f9403c8', '&&'
+  ]);
+  assert.equal(launch.args.at(-1), '3');
+  assert.ok(!launch.args.some((arg) => arg.includes('cmd.exe /k set')));
 });
 
 test('CMD 终端适配器用 cmd start 打开 conhost 窗口', () => {

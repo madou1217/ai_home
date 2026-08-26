@@ -216,3 +216,41 @@ test('webui account quota reset routes return event history with pagination', as
 
   fs.rmSync(root, { recursive: true, force: true });
 });
+
+test('quota reset detector captures exhaustedAtMs when quota reaches 0%', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-quota-exhausted-test-'));
+  const aiHomeDir = path.join(root, '.ai_home');
+
+  const { accountRef } = registerAccountIdentity(fs, aiHomeDir, {
+    provider: 'codex',
+    cliAccountId: '1',
+    identitySeed: 'oauth:codex:exhausted@example.com'
+  });
+
+  const now = 1787500000000;
+  const cycleResetAt = now + 5 * 3600 * 1000;
+
+  // 1. Quota drops to 0% at now (exhausted)
+  writeAccountUsageSnapshot(fs, aiHomeDir, accountRef, {
+    schemaVersion: 1,
+    kind: 'codex_oauth_status',
+    capturedAt: now,
+    entries: [{ bucket: 'primary', window: '5h', remainingPct: 0.0, resetAtMs: cycleResetAt }]
+  });
+
+  // 2. Early reset 2 hours later
+  const resetTime = now + 2 * 3600 * 1000;
+  writeAccountUsageSnapshot(fs, aiHomeDir, accountRef, {
+    schemaVersion: 1,
+    kind: 'codex_oauth_status',
+    capturedAt: resetTime,
+    entries: [{ bucket: 'primary', window: '5h', remainingPct: 100.0, resetAtMs: cycleResetAt }]
+  });
+
+  const events = listAccountQuotaResetEvents(fs, aiHomeDir, accountRef);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].exhaustedAtMs, now);
+  assert.equal(events[0].detectedAtMs, resetTime);
+
+  fs.rmSync(root, { recursive: true, force: true });
+});

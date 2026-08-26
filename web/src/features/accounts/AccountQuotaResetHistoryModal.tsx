@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Modal, Timeline, Tag, Spin, Empty, Typography, Space, Button } from 'antd';
-import { HistoryOutlined, ReloadOutlined, ThunderboltOutlined, CheckCircleOutlined } from '@ant-design/icons';
+import { HistoryOutlined, ReloadOutlined, ThunderboltOutlined, CheckCircleOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import type { Account } from '@/types';
 import { accountsAPI } from '@/services/api';
 
@@ -20,6 +20,7 @@ export interface QuotaResetEvent {
   previousRemainingPct: number | null;
   currentRemainingPct: number | null;
   previousExpectedResetAtMs?: number | null;
+  exhaustedAtMs?: number | null;
   detectedAtMs: number;
   earlyDurationMs?: number;
 }
@@ -126,7 +127,7 @@ export default function AccountQuotaResetHistoryModal({
                   color: isEarly ? 'blue' : 'green',
                   dot: icon,
                   children: (
-                    <div style={{ marginBottom: 12 }}>
+                    <div style={{ marginBottom: 14 }}>
                       <Space orientation="horizontal" size="small" style={{ marginBottom: 4 }}>
                         <Tag color={tagColor}>{tagLabel}</Tag>
                         {event.windowLabel ? <Tag>{event.windowLabel}</Tag> : null}
@@ -142,6 +143,17 @@ export default function AccountQuotaResetHistoryModal({
                           {event.currentRemainingPct !== null ? `${event.currentRemainingPct}%` : '100%'}
                         </Text>
                       </div>
+                      {event.exhaustedAtMs ? (
+                        <div style={{ marginTop: 3 }}>
+                          <Text type="secondary" style={{ fontSize: 12 }}>
+                            <ClockCircleOutlined style={{ marginRight: 4 }} />
+                            耗尽时间点：<Text strong>{formatTime(event.exhaustedAtMs)}</Text>
+                            {event.detectedAtMs > event.exhaustedAtMs ? (
+                              <span> (耗尽后经历了 {formatDuration(event.detectedAtMs - event.exhaustedAtMs)} 恢复)</span>
+                            ) : null}
+                          </Text>
+                        </div>
+                      ) : null}
                       {isEarly && event.earlyDurationMs && event.earlyDurationMs > 0 ? (
                         <div style={{ marginTop: 2 }}>
                           <Text type="secondary" style={{ fontSize: 12 }}>

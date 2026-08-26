@@ -10,6 +10,7 @@ const { registerAccountIdentity } = require('../lib/account/account-registration
 const { writeAccountUsageSnapshot } = require('../lib/account/usage-snapshot-store');
 const { listAccountQuotaResetEvents } = require('../lib/account/quota-reset-store');
 const { handleWebUiAccountQuotaResetRoutes } = require('../lib/server/webui-account-quota-reset-routes');
+const { createAccountQuotaProbeScheduler } = require('../lib/server/account-quota-probe-scheduler');
 
 function createMockResponse() {
   const res = {
@@ -38,7 +39,7 @@ function createMockResponse() {
   return res;
 }
 
-test('quota reset detector captures cycle rollover and early replenishment events', () => {
+test('quota reset detector captures cycle rollover and early replenishment events with physical occurredAtMs', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-quota-reset-test-'));
   const aiHomeDir = path.join(root, '.ai_home');
 
@@ -95,6 +96,7 @@ test('quota reset detector captures cycle rollover and early replenishment event
   assert.equal(events[0].classification, 'early_inferred');
   assert.equal(events[0].previousRemainingPct, 10.0);
   assert.equal(events[0].currentRemainingPct, 100.0);
+  assert.equal(events[0].occurredAtMs, earlyTime);
   assert.ok(events[0].earlyDurationMs > 0, 'Should record early duration');
 
   // 3. Repeated snapshot at 100%: should be idempotent and not create duplicate events
@@ -116,32 +118,33 @@ test('quota reset detector captures cycle rollover and early replenishment event
   events = listAccountQuotaResetEvents(fs, aiHomeDir, accountRef);
   assert.equal(events.length, 1, 'Duplicate 100% snapshot should be idempotent');
 
-  // 4. Usage drops to 50%, then natural cycle rollover happens
-  const cycleRolloverTime = cycle1ResetAt + 10000;
-  const cycle2ResetAt = cycleRolloverTime + 5 * 3600 * 1000;
-
-  // Usage drop
+  // 4. Usage drops to 0% at 18:00 (now + 2h)
+  const exhaustedTime = earlyTime + 3600 * 1000;
   writeAccountUsageSnapshot(fs, aiHomeDir, accountRef, {
     schemaVersion: 1,
     kind: 'codex_oauth_status',
-    capturedAt: earlyTime + 2 * 3600 * 1000,
+    capturedAt: exhaustedTime,
     source: 'codex_app_server',
     entries: [
       {
         bucket: 'primary',
         windowMinutes: 300,
         window: '5h',
-        remainingPct: 50.0,
+        remainingPct: 0.0,
         resetAtMs: cycle1ResetAt
       }
     ]
   });
 
-  // Cycle rollover (resetAtMs jumps to cycle 2)
+  // 5. Natural cycle rollover: scheduled reset is cycle1ResetAt (23:00).
+  // User observes/probes 1 hour later (24:00 = cycle1ResetAt + 3600*1000)
+  const probeAtMidnight = cycle1ResetAt + 3600 * 1000;
+  const cycle2ResetAt = cycle1ResetAt + 5 * 3600 * 1000;
+
   writeAccountUsageSnapshot(fs, aiHomeDir, accountRef, {
     schemaVersion: 1,
     kind: 'codex_oauth_status',
-    capturedAt: cycleRolloverTime,
+    capturedAt: probeAtMidnight,
     source: 'codex_app_server',
     entries: [
       {
@@ -158,8 +161,12 @@ test('quota reset detector captures cycle rollover and early replenishment event
   assert.equal(events.length, 2, 'Cycle rollover should trigger second event');
   assert.equal(events[0].eventKind, 'cycle_rollover');
   assert.equal(events[0].classification, 'natural');
-  assert.equal(events[0].previousRemainingPct, 50.0);
+  assert.equal(events[0].previousRemainingPct, 0.0);
   assert.equal(events[0].currentRemainingPct, 100.0);
+  // Crucial check: physical occurredAtMs is exactly the scheduled reset time (23:00), not the late probe time (24:00)
+  assert.equal(events[0].occurredAtMs, cycle1ResetAt);
+  assert.equal(events[0].detectedAtMs, probeAtMidnight);
+  assert.equal(events[0].exhaustedAtMs, exhaustedTime);
 
   fs.rmSync(root, { recursive: true, force: true });
 });
@@ -191,6 +198,7 @@ test('webui account quota reset routes return event history with pagination', as
 
   const res = createMockResponse();
   const ctx = {
+    res,
     method: 'GET',
     pathname: `/v0/webui/accounts/claude/${accountRef}/quota-reset-events`,
     url: new URL(`http://127.0.0.1/v0/webui/accounts/claude/${accountRef}/quota-reset-events`),
@@ -217,40 +225,37 @@ test('webui account quota reset routes return event history with pagination', as
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-test('quota reset detector captures exhaustedAtMs when quota reaches 0%', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-quota-exhausted-test-'));
-  const aiHomeDir = path.join(root, '.ai_home');
+test('quota probe scheduler triggers auto probe for accounts near reset time', async () => {
+  const probedAccounts = [];
+  const fakeEnsureUsageSnapshotAsync = async (provider, accountRef, snapshot, opts) => {
+    probedAccounts.push({ provider, accountRef, forceRefresh: opts?.forceRefresh });
+    return snapshot;
+  };
 
-  const { accountRef } = registerAccountIdentity(fs, aiHomeDir, {
+  const now = Date.now();
+  const testAccount = {
     provider: 'codex',
-    cliAccountId: '1',
-    identitySeed: 'oauth:codex:exhausted@example.com'
-  });
+    accountRef: 'acct_scheduler_test',
+    apiKeyMode: false,
+    usageSnapshot: {
+      capturedAt: now - 3600000,
+      entries: [
+        {
+          bucket: 'primary',
+          remainingPct: 0.0,
+          resetAtMs: now + 60000 // resets in 1 minute
+        }
+      ]
+    }
+  };
 
-  const now = 1787500000000;
-  const cycleResetAt = now + 5 * 3600 * 1000;
+  const scheduler = createAccountQuotaProbeScheduler({
+    ensureUsageSnapshotAsync: fakeEnsureUsageSnapshotAsync,
+    listAccounts: () => [testAccount]
+  }, { quotaProbeIntervalMs: 1000 });
 
-  // 1. Quota drops to 0% at now (exhausted)
-  writeAccountUsageSnapshot(fs, aiHomeDir, accountRef, {
-    schemaVersion: 1,
-    kind: 'codex_oauth_status',
-    capturedAt: now,
-    entries: [{ bucket: 'primary', window: '5h', remainingPct: 0.0, resetAtMs: cycleResetAt }]
-  });
-
-  // 2. Early reset 2 hours later
-  const resetTime = now + 2 * 3600 * 1000;
-  writeAccountUsageSnapshot(fs, aiHomeDir, accountRef, {
-    schemaVersion: 1,
-    kind: 'codex_oauth_status',
-    capturedAt: resetTime,
-    entries: [{ bucket: 'primary', window: '5h', remainingPct: 100.0, resetAtMs: cycleResetAt }]
-  });
-
-  const events = listAccountQuotaResetEvents(fs, aiHomeDir, accountRef);
-  assert.equal(events.length, 1);
-  assert.equal(events[0].exhaustedAtMs, now);
-  assert.equal(events[0].detectedAtMs, resetTime);
-
-  fs.rmSync(root, { recursive: true, force: true });
+  await scheduler.tick();
+  assert.equal(probedAccounts.length, 1);
+  assert.equal(probedAccounts[0].accountRef, 'acct_scheduler_test');
+  assert.equal(probedAccounts[0].forceRefresh, true);
 });

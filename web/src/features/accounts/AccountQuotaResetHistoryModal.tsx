@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Modal, Timeline, Tag, Spin, Empty, Typography, Space, Button } from 'antd';
-import { HistoryOutlined, ReloadOutlined, ThunderboltOutlined, CheckCircleOutlined, ClockCircleOutlined } from '@ant-design/icons';
+import { HistoryOutlined, ReloadOutlined, ThunderboltOutlined, CheckCircleOutlined, ClockCircleOutlined, EyeOutlined } from '@ant-design/icons';
 import type { Account } from '@/types';
 import { accountsAPI } from '@/services/api';
 
@@ -21,6 +21,7 @@ export interface QuotaResetEvent {
   currentRemainingPct: number | null;
   previousExpectedResetAtMs?: number | null;
   exhaustedAtMs?: number | null;
+  occurredAtMs: number;
   detectedAtMs: number;
   earlyDurationMs?: number;
 }
@@ -122,6 +123,7 @@ export default function AccountQuotaResetHistoryModal({
                 const tagColor = isEarly ? 'blue' : 'green';
                 const tagLabel = isEarly ? '提前回血重置' : '自然周期重置';
                 const icon = isEarly ? <ThunderboltOutlined style={{ color: '#1677ff' }} /> : <CheckCircleOutlined style={{ color: '#52c41a' }} />;
+                const resetTimeMs = event.occurredAtMs || event.detectedAtMs;
 
                 return {
                   color: isEarly ? 'blue' : 'green',
@@ -131,7 +133,7 @@ export default function AccountQuotaResetHistoryModal({
                       <Space orientation="horizontal" size="small" style={{ marginBottom: 4 }}>
                         <Tag color={tagColor}>{tagLabel}</Tag>
                         {event.windowLabel ? <Tag>{event.windowLabel}</Tag> : null}
-                        <Text type="secondary">{formatTime(event.detectedAtMs)}</Text>
+                        <Text strong style={{ color: '#1f1f1f' }}>{formatTime(resetTimeMs)}</Text>
                       </Space>
                       <div>
                         <Text strong>用量变化：</Text>
@@ -148,9 +150,17 @@ export default function AccountQuotaResetHistoryModal({
                           <Text type="secondary" style={{ fontSize: 12 }}>
                             <ClockCircleOutlined style={{ marginRight: 4 }} />
                             耗尽时间点：<Text strong>{formatTime(event.exhaustedAtMs)}</Text>
-                            {event.detectedAtMs > event.exhaustedAtMs ? (
-                              <span> (耗尽后经历了 {formatDuration(event.detectedAtMs - event.exhaustedAtMs)} 恢复)</span>
+                            {resetTimeMs > event.exhaustedAtMs ? (
+                              <span> (耗尽后经历了 {formatDuration(resetTimeMs - event.exhaustedAtMs)} 恢复)</span>
                             ) : null}
+                          </Text>
+                        </div>
+                      ) : null}
+                      {!isEarly && event.detectedAtMs > resetTimeMs + 60000 ? (
+                        <div style={{ marginTop: 2 }}>
+                          <Text type="secondary" style={{ fontSize: 12 }}>
+                            <EyeOutlined style={{ marginRight: 4 }} />
+                            系统观测同步于：{formatTime(event.detectedAtMs)}
                           </Text>
                         </div>
                       ) : null}

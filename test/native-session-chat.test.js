@@ -1220,6 +1220,16 @@ test('agy native session builds antigravity CLI start/resume commands', () => {
   const resume = buildResumeCommand('agy', { sessionId: 'conv-123', prompt: '继续', interactiveCli: true });
   assert.equal(resume.commandName, 'agy');
   assert.deepEqual(resume.args, ['--conversation', 'conv-123', '--dangerously-skip-permissions', '--print', '继续']);
+
+  // 防御：生图模型不应被 agy CLI 接受
+  assert.throws(
+    () => buildStartCommand('agy', { prompt: '画一只猫', model: 'gemini-3.1-flash-image', interactiveCli: true }),
+    { code: 'agy_image_model_unsupported' }
+  );
+  assert.throws(
+    () => buildResumeCommand('agy', { sessionId: 'conv-123', prompt: '修改图片', model: 'gemini-3.1-flash-image', interactiveCli: true }),
+    { code: 'agy_image_model_unsupported' }
+  );
 });
 
 test('agy native session adopts a new conversation only after the CLI exits', async (t) => {

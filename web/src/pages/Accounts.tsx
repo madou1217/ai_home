@@ -45,6 +45,7 @@ import {
   GlobalOutlined,
   QrcodeOutlined,
   UndoOutlined,
+  HistoryOutlined,
 } from '@ant-design/icons';
 import {
   accountsAPI,

@@ -479,6 +479,18 @@ export const accountsAPI = {
     return response.data;
   },
 
+  getQuotaResetEvents: async (
+    provider: string,
+    accountRef: string,
+    limit?: number
+  ): Promise<{ ok: boolean; provider: string; accountRef: string; events: any[] }> => {
+    const query = limit ? `?limit=${encodeURIComponent(limit)}` : '';
+    const response = await api.get<{ ok: boolean; provider: string; accountRef: string; events: any[] }>(
+      `/webui/accounts/${encodeURIComponent(provider)}/${encodeURIComponent(accountRef)}/quota-reset-events${query}`
+    );
+    return response.data;
+  },
+
   rotateAccountEgress: async (provider: string, accountRef: string): Promise<AccountEgressRotateResponse> => {
     const response = await api.post<AccountEgressRotateResponse>(
       buildAccountEgressRotatePath(provider, accountRef)

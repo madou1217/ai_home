@@ -70,6 +70,7 @@ import { providerIds, providerNames } from '@/components/chat/ProviderIcon';
 import { PROVIDER_AUTH_OPTIONS, PROVIDER_CATALOG } from '@/providers/catalog';
 import TokenUsageCell from '@/components/account/TokenUsageCell';
 import UsageProgressEffects from '@/features/accounts/UsageProgressEffects';
+import AccountQuotaResetHistoryModal from '@/features/accounts/AccountQuotaResetHistoryModal';
 import {
   appendLiveTokenEvent,
   useTokenDropEvents,
@@ -645,6 +646,7 @@ export default function Accounts() {
     openAfterLogin: boolean;
   } | null>(null);
   const [codexResetAccount, setCodexResetAccount] = useState<Account | null>(null);
+  const [quotaResetHistoryAccount, setQuotaResetHistoryAccount] = useState<Account | null>(null);
   const [accountEgressAccount, setAccountEgressAccount] = useState<Account | null>(null);
   const [cliTerminals, setCliTerminals] = useState<ClientTerminalItem[]>([]);
   const [selectedCliTerminalId, setSelectedCliTerminalId] = useState('system-default');
@@ -1429,6 +1431,13 @@ export default function Accounts() {
         icon: <UndoOutlined />
       });
     }
+    if (!record.apiKeyMode) {
+      menuItems.push({
+        key: 'quota-reset-history',
+        label: '重置历史记录',
+        icon: <HistoryOutlined />
+      });
+    }
     if (canReauthAccount(record)) {
       menuItems.push({ key: 'reauth', label: getReauthActionLabel(record), icon: <SyncOutlined /> });
     }
@@ -1447,6 +1456,10 @@ export default function Accounts() {
     if (key === 'set-mobile') { handleSetMobile(record); return; }
     if (key === 'codex-reset-credits' && isCodexOAuthResetEligible(record)) {
       setCodexResetAccount(record);
+      return;
+    }
+    if (key === 'quota-reset-history') {
+      setQuotaResetHistoryAccount(record);
       return;
     }
     if (key === 'reauth') { handleReauth(record); return; }
@@ -2345,6 +2358,11 @@ export default function Accounts() {
         account={codexResetAccount}
         onClose={() => setCodexResetAccount(null)}
         onAvailableCountChange={updateCodexResetAvailableCount}
+      />
+      <AccountQuotaResetHistoryModal
+        open={Boolean(quotaResetHistoryAccount)}
+        account={quotaResetHistoryAccount}
+        onClose={() => setQuotaResetHistoryAccount(null)}
       />
       <AccountEgressModal
         account={accountEgressAccount}

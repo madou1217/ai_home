@@ -1771,6 +1771,15 @@
       "text"
     ]
   },
+  "minimax/image-01": {
+    "input": [
+      "text",
+      "image"
+    ],
+    "output": [
+      "image"
+    ]
+  },
   "mistral/codestral-22b-v0.1": {
     "input": [
       "text"
@@ -3224,6 +3233,17 @@
   "zhipuai/glm-5.3": {
     "input": [
       "text"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "zhipuai/glm-5.3-flash": {
+    "input": [
+      "text",
+      "image",
+      "video",
+      "pdf"
     ],
     "output": [
       "text"

@@ -15,7 +15,7 @@ export interface QuotaResetEvent {
   windowLabel?: string;
   windowMinutes?: number;
   eventKind: 'cycle_rollover' | 'replenishment';
-  classification: 'natural' | 'early_inferred' | 'unknown';
+  classification: 'natural' | 'early_inferred' | 'plan_upgrade' | 'unknown';
   cause?: string;
   previousRemainingPct: number | null;
   currentRemainingPct: number | null;
@@ -24,6 +24,8 @@ export interface QuotaResetEvent {
   occurredAtMs: number;
   detectedAtMs: number;
   earlyDurationMs?: number;
+  previousPlanType?: string | null;
+  currentPlanType?: string | null;
 }
 
 interface AccountQuotaResetHistoryModalProps {
@@ -119,10 +121,14 @@ export default function AccountQuotaResetHistoryModal({
           ) : (
             <Timeline
               items={events.map((event) => {
-                const isEarly = event.classification === 'early_inferred' || event.eventKind === 'replenishment';
-                const tagColor = isEarly ? 'blue' : 'green';
-                const tagLabel = isEarly ? '提前回血重置' : '自然周期重置';
-                const icon = isEarly ? <ThunderboltOutlined style={{ color: '#1677ff' }} /> : <CheckCircleOutlined style={{ color: '#52c41a' }} />;
+                const isUpgrade = event.classification === 'plan_upgrade' || (event.cause && event.cause.startsWith('upgrade:'));
+                const isEarly = !isUpgrade && (event.classification === 'early_inferred' || event.eventKind === 'replenishment');
+                
+                const tagColor = isUpgrade ? 'purple' : (isEarly ? 'blue' : 'green');
+                const tagLabel = isUpgrade ? '套餐升级重置' : (isEarly ? '提前回血重置' : '自然周期重置');
+                const icon = isUpgrade 
+                  ? <ThunderboltOutlined style={{ color: '#722ed1' }} />
+                  : (isEarly ? <ThunderboltOutlined style={{ color: '#1677ff' }} /> : <CheckCircleOutlined style={{ color: '#52c41a' }} />);
                 const resetTimeMs = event.occurredAtMs || event.detectedAtMs;
 
                 return {
@@ -145,6 +151,13 @@ export default function AccountQuotaResetHistoryModal({
                           {event.currentRemainingPct !== null ? `${event.currentRemainingPct}%` : '100%'}
                         </Text>
                       </div>
+                      {isUpgrade ? (
+                        <div style={{ marginTop: 3 }}>
+                          <Text type="secondary" style={{ fontSize: 12 }}>
+                            ✨ 账号权益升级生效：{event.previousPlanType ? event.previousPlanType.toUpperCase() : 'FREE'} ➔ {event.currentPlanType ? event.currentPlanType.toUpperCase() : 'PLUS'} (额度窗口重置回满)
+                          </Text>
+                        </div>
+                      ) : null}
                       {event.exhaustedAtMs ? (
                         <div style={{ marginTop: 3 }}>
                           <Text type="secondary" style={{ fontSize: 12 }}>
@@ -164,7 +177,7 @@ export default function AccountQuotaResetHistoryModal({
                           </Text>
                         </div>
                       ) : null}
-                      {isEarly && event.earlyDurationMs && event.earlyDurationMs > 0 ? (
+                      {isEarly && event.earlyDurationMs && event.earlyDurationMs > 0 && event.earlyDurationMs < 7 * 24 * 3600 * 1000 ? (
                         <div style={{ marginTop: 2 }}>
                           <Text type="secondary" style={{ fontSize: 12 }}>
                             ⚡ 推断提前了约 <Text strong>{formatDuration(event.earlyDurationMs)}</Text> 回满

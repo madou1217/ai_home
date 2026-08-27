@@ -335,3 +335,50 @@ test('quota reset detector strictly rejects consumption (e.g. 100% -> 42%) and n
 
   fs.rmSync(root, { recursive: true, force: true });
 });
+
+test('quota reset detector recognizes plan upgrade (e.g. Free -> Plus) and sets classification to plan_upgrade', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-quota-upgrade-test-'));
+  const aiHomeDir = path.join(root, '.ai_home');
+
+  const { accountRef } = registerAccountIdentity(fs, aiHomeDir, {
+    provider: 'codex',
+    cliAccountId: '1',
+    identitySeed: 'oauth:codex:upgrade@example.com'
+  });
+
+  const now = 1787500000000;
+  // 1. Free plan with 2% remaining, reset far in future (e.g. 15 days)
+  writeAccountUsageSnapshot(fs, aiHomeDir, accountRef, {
+    schemaVersion: 2,
+    kind: 'codex_oauth_status',
+    capturedAt: now,
+    account: { planType: 'free', email: 'upgrade@example.com' },
+    entries: [{ bucket: 'primary', remainingPct: 2.0, resetAtMs: now + 15 * 86400000 }]
+  });
+
+  let events = listAccountQuotaResetEvents(fs, aiHomeDir, accountRef);
+  assert.equal(events.length, 0);
+
+  // 2. Upgraded to Plus plan: quota jumps to 100%, reset moves to 5h
+  const upgradeTime = now + 1800 * 1000;
+  writeAccountUsageSnapshot(fs, aiHomeDir, accountRef, {
+    schemaVersion: 2,
+    kind: 'codex_oauth_status',
+    capturedAt: upgradeTime,
+    account: { planType: 'plus', email: 'upgrade@example.com' },
+    entries: [{ bucket: 'primary', remainingPct: 100.0, resetAtMs: upgradeTime + 5 * 3600000 }]
+  });
+
+  events = listAccountQuotaResetEvents(fs, aiHomeDir, accountRef);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].eventKind, 'replenishment');
+  assert.equal(events[0].classification, 'plan_upgrade');
+  assert.equal(events[0].cause, 'upgrade:free->plus');
+  assert.equal(events[0].previousPlanType, 'free');
+  assert.equal(events[0].currentPlanType, 'plus');
+  assert.equal(events[0].previousRemainingPct, 2.0);
+  assert.equal(events[0].currentRemainingPct, 100.0);
+  assert.equal(events[0].earlyDurationMs, 0, 'Plan upgrade should not report absurd earlyDuration');
+
+  fs.rmSync(root, { recursive: true, force: true });
+});

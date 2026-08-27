@@ -26,6 +26,7 @@ import { openExternalUrl } from '@/services/open-external-url';
 type ProviderFilter = Provider | 'all';
 type AccountFilter = string | 'all';
 type ModelStatusFilter = 'all' | 'enabled' | 'disabled' | 'manual';
+type ModelGroupFilter = 'all' | 'go' | 'zen' | 'free';
 
 type GlobalModelAccount = {
   key: string;
@@ -200,6 +201,7 @@ export default function Models() {
   const [providerFilter, setProviderFilter] = useState<ProviderFilter>(() => scopedProvider || normalizeProvider(searchParams.get('provider')));
   const [accountFilter, setAccountFilter] = useState<AccountFilter>(() => scopedAccountRef || searchParams.get('accountRef') || 'all');
   const [statusFilter, setStatusFilter] = useState<ModelStatusFilter>('all');
+  const [groupFilter, setGroupFilter] = useState<ModelGroupFilter>('all');
   const [keyword, setKeyword] = useState('');
   const [manualModalOpen, setManualModalOpen] = useState(false);
   const [updatingModelKeys, setUpdatingModelKeys] = useState<Set<string>>(() => new Set());
@@ -495,12 +497,15 @@ export default function Models() {
       if (statusFilter === 'enabled' && model.enabled === false) return false;
       if (statusFilter === 'disabled' && model.enabled !== false) return false;
       if (statusFilter === 'manual' && model.manual !== true) return false;
+      if (groupFilter === 'go' && !model.id.startsWith('opencode-go/')) return false;
+      if (groupFilter === 'zen' && !model.id.startsWith('opencode/')) return false;
+      if (groupFilter === 'free' && !model.id.endsWith('-free')) return false;
       if (!query) return true;
       return model.id.toLowerCase().includes(query)
         || model.accountRef.toLowerCase().includes(query)
         || getAccountLabel(accountByRef.get(model.accountRef) || { provider: model.provider, displayName: '', email: '', accountRef: model.accountRef }).toLowerCase().includes(query);
     }).sort(compareAccountModelRows);
-  }, [accountByRef, accountFilter, managedSource, providerFilter, queryKeyword, statusFilter]);
+  }, [accountByRef, accountFilter, managedSource, providerFilter, queryKeyword, statusFilter, groupFilter]);
 
   const globalModelRows = useMemo<GlobalModelRow[]>(() => {
     const rowsById = new Map<string, GlobalModelRow>();
@@ -617,6 +622,11 @@ export default function Models() {
   const metricSource = accountScoped
     ? managedSource.filter((model) => model.accountRef === scopedAccountRef)
     : managedSource;
+
+  const isOpenCodeScoped = (accountScoped && scopedProvider === 'opencode') || (!accountScoped && providerFilter === 'opencode');
+  const openCodeGoCount = metricSource.filter((m) => m.id.startsWith('opencode-go/')).length;
+  const openCodeZenCount = metricSource.filter((m) => m.id.startsWith('opencode/')).length;
+  const openCodeFreeCount = metricSource.filter((m) => m.id.endsWith('-free')).length;
   const visibleUnionCount = accountScoped
     ? metricSource.filter((model) => model.enabled !== false).length
     : globalModelRows.filter(isGlobalModelVisible).length;
@@ -1025,6 +1035,18 @@ export default function Models() {
                   setKeyword(value);
                 }}
               />
+              {isOpenCodeScoped ? (
+                <Segmented
+                  value={groupFilter}
+                  onChange={(value) => setGroupFilter(value as ModelGroupFilter)}
+                  options={[
+                    { label: `全部分组 (${metricSource.length})`, value: 'all' },
+                    { label: `Go 订阅 (${openCodeGoCount})`, value: 'go' },
+                    { label: `Zen 按量 (${openCodeZenCount})`, value: 'zen' },
+                    ...(openCodeFreeCount > 0 ? [{ label: `Free 免费 (${openCodeFreeCount})`, value: 'free' }] : [])
+                  ]}
+                />
+              ) : null}
               <Segmented
                 value={statusFilter}
                 onChange={(value) => setStatusFilter(value as ModelStatusFilter)}

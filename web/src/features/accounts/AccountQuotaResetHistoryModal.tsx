@@ -45,6 +45,12 @@ function formatTime(timestampMs: number): string {
   return `${Y}-${M}-${D} ${h}:${m}`;
 }
 
+function formatPct(val: number | null | undefined): string {
+  if (val === null || val === undefined || !Number.isFinite(Number(val))) return '未知';
+  const rounded = Math.round(Number(val) * 100) / 100;
+  return `${rounded}%`;
+}
+
 function formatDuration(ms: number): string {
   if (!ms || ms <= 0) return '';
   const totalMinutes = Math.round(ms / 60000);
@@ -144,11 +150,11 @@ export default function AccountQuotaResetHistoryModal({
                       <div>
                         <Text strong>用量变化：</Text>
                         <Text type="secondary">
-                          {event.previousRemainingPct !== null ? `${event.previousRemainingPct}%` : '未知'}
+                          {formatPct(event.previousRemainingPct)}
                         </Text>
                         <Text strong style={{ margin: '0 6px', color: '#52c41a' }}>➔</Text>
                         <Text strong style={{ color: '#52c41a' }}>
-                          {event.currentRemainingPct !== null ? `${event.currentRemainingPct}%` : '100%'}
+                          {formatPct(event.currentRemainingPct)}
                         </Text>
                       </div>
                       {isUpgrade ? (

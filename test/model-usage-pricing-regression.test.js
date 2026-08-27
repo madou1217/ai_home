@@ -1273,16 +1273,16 @@ test('bundled models.dev exposes current GPT-5.6 Sol and Gemini 3.5 Flash prices
 
   assert.deepEqual(pricing['openai/gpt-5.6-sol'], {
     model: 'openai/gpt-5.6-sol',
-    inputCostPerToken: 0.000005,
-    outputCostPerToken: 0.00003,
-    cacheReadInputTokenCost: 0.0000005,
-    cacheCreationInputTokenCost: 0.00000625,
+    inputCostPerToken: 0.000004,
+    outputCostPerToken: 0.00002,
+    cacheReadInputTokenCost: 4.0000000000000003e-7,
+    cacheCreationInputTokenCost: 0.000005,
     contextCostTiers: [{
       size: 272000,
-      inputCostPerToken: 0.00001,
-      outputCostPerToken: 0.000045,
-      cacheReadInputTokenCost: 0.000001,
-      cacheCreationInputTokenCost: 0.0000125
+      inputCostPerToken: 0.000008,
+      outputCostPerToken: 0.00003,
+      cacheReadInputTokenCost: 8.000000000000001e-7,
+      cacheCreationInputTokenCost: 0.00001
     }]
   });
   assert.deepEqual(pricing['google/gemini-3.5-flash'], {

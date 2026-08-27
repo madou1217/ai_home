@@ -5,6 +5,7 @@ import { sessionsAPI } from '@/services/api';
 import type { Session } from '@/types';
 import DirectoryPickerDialog from './DirectoryPickerDialog';
 import OpenProjectDialog from './OpenProjectDialog';
+import { useServerDirectoryPicker } from './use-server-directory-picker';
 import type { PersistedChatSelection } from './runtime-types';
 
 interface ProjectDialogDependencies {
@@ -82,60 +83,12 @@ function useProjectDirectoryPicker(
   setProjectName: Dispatch<SetStateAction<string>>,
   setProjectPath: Dispatch<SetStateAction<string>>,
 ) {
-  const [visible, setVisible] = useState(false);
-  const [currentPath, setCurrentPath] = useState('');
-  const [parentPath, setParentPath] = useState('');
-  const [directories, setDirectories] = useState<Array<{ name: string; path: string }>>([]);
-  const [loading, setLoading] = useState(false);
-  const [selectedPath, setSelectedPath] = useState('');
-  const load = useCallback(async (subDirectory: string): Promise<void> => {
-    setLoading(true);
-    try {
-      const result = await sessionsAPI.browseProjectDirectory(subDirectory);
-      if (!result.ok) {
-        message.error(result.message || '加载目录失败');
-        return;
-      }
-      setCurrentPath(result.currentDir);
-      setParentPath(result.parentDir);
-      setDirectories(result.directories || []);
-      setSelectedPath(result.currentDir);
-    } catch (error: any) {
-      message.error(`无法获取服务端目录列表: ${error.message || '未知错误'}`);
-      setVisible(false);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-  const open = useCallback((): void => {
-    setSelectedPath('');
-    setCurrentPath('');
-    setDirectories([]);
-    setVisible(true);
-    void load('');
-  }, [load]);
-  const confirm = useCallback((): void => {
-    if (!selectedPath) {
-      message.warning('请选择一个目录');
-      return;
-    }
-    setProjectPath(selectedPath);
-    const pathParts = selectedPath.split(/[\\/]/).filter(Boolean);
+  // 目录浏览状态机复用共享 hook；这里只保留打开项目特有的回填逻辑
+  // （确认路径时顺带推导默认项目名）。
+  return useServerDirectoryPicker(useCallback((path: string): void => {
+    setProjectPath(path);
+    const pathParts = path.split(/[\\/]/).filter(Boolean);
     const defaultName = pathParts[pathParts.length - 1] || '';
     if (defaultName && !projectName.trim()) setProjectName(defaultName);
-    setVisible(false);
-  }, [projectName, selectedPath, setProjectName, setProjectPath]);
-  return {
-    visible,
-    currentPath,
-    parentPath,
-    directories,
-    loading,
-    selectedPath,
-    open,
-    close: () => setVisible(false),
-    confirm,
-    load,
-    select: setSelectedPath,
-  };
+  }, [projectName, setProjectName, setProjectPath]));
 }

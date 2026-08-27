@@ -1596,6 +1596,7 @@ export interface ClientTerminalItem {
 export interface ClientTerminalsResponse {
   ok: boolean;
   platform: ClientPlatform;
+  homeDir?: string;
   terminals: ClientTerminalItem[];
 }
 

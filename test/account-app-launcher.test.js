@@ -950,6 +950,105 @@ test('cli kind 在 Linux 没有任何终端时返回 terminal_not_found', () => 
   assert.equal(fakeSpawn.calls.length, 0);
 });
 
+// createFakeFsWithDirectories 在内存 fs 上补充目录判定，模拟项目目录存在性校验。
+function createFakeFsWithDirectories(directoryPaths = []) {
+  const directories = new Set(directoryPaths);
+  const fs = createFakeFs([...directories]);
+  fs.statSync = (candidate) => ({
+    isDirectory: () => directories.has(String(candidate))
+  });
+  return fs;
+}
+
+test('cli kind 指定存在的项目目录时在命令前拼接 cd（posix 单引号包裹）', () => {
+  const { launcher, fakeSpawn } = createLauncher({
+    path: nodePath.posix,
+    processObj: { platform: 'darwin', execPath: '/usr/local/bin/node', env: {} },
+    env: { HOME: '/Users/x', PATH: '' },
+    fs: createFakeFsWithDirectories(['/Users/x/projects/demo app']),
+    resolveAccount: () => ({ accountRef: ACCOUNT_REF, provider: 'codex', cliAccountId: '3' })
+  });
+  const result = launcher.launchAccountApp({
+    provider: 'codex',
+    accountRef: ACCOUNT_REF,
+    kind: 'cli',
+    workdir: '/Users/x/projects/demo app'
+  });
+  assert.equal(result.ok, true);
+  const script = fakeSpawn.calls[0].args.join(' ');
+  const cdIndex = script.indexOf("cd '/Users/x/projects/demo app' && ");
+  assert.ok(cdIndex >= 0, `命令应以 cd 前缀切换项目目录：${script}`);
+  assert.ok(cdIndex < script.indexOf('AIH_ACCOUNT_APP'), 'cd 必须先于进程标记与启动命令');
+});
+
+test('cli kind 在 Windows 指定项目目录时以 cd /d 前缀启动', () => {
+  const { launcher, interactiveLaunches } = createLauncher({
+    fs: createFakeFsWithDirectories(['C:\\projects\\demo']),
+    resolveAccount: () => ({ accountRef: ACCOUNT_REF, provider: 'codex', cliAccountId: '3' })
+  });
+  const result = launcher.launchAccountApp({
+    provider: 'codex',
+    accountRef: ACCOUNT_REF,
+    kind: 'cli',
+    workdir: 'C:\\projects\\demo'
+  });
+  assert.equal(result.ok, true);
+  assert.equal(interactiveLaunches.length, 1);
+  assert.ok(
+    interactiveLaunches[0].command.startsWith('cd /d "C:\\projects\\demo" && '),
+    `Windows 命令应以 cd /d 前缀切换项目目录：${interactiveLaunches[0].command}`
+  );
+});
+
+test('cli kind 对不存在的项目目录返回 workdir_not_found 且不启动终端', () => {
+  const { launcher, fakeSpawn, interactiveLaunches } = createLauncher({
+    resolveAccount: () => ({ accountRef: ACCOUNT_REF, provider: 'codex', cliAccountId: '3' })
+  });
+  const result = launcher.launchAccountApp({
+    provider: 'codex',
+    accountRef: ACCOUNT_REF,
+    kind: 'cli',
+    workdir: 'C:\\not-existing-dir'
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'workdir_not_found');
+  assert.equal(result.workdir, 'C:\\not-existing-dir');
+  assert.equal(fakeSpawn.calls.length, 0);
+  assert.equal(interactiveLaunches.length, 0);
+});
+
+test('cli kind 支持 ~ 前缀按宿主 home 展开项目目录', () => {
+  const { launcher, fakeSpawn } = createLauncher({
+    path: nodePath.posix,
+    processObj: { platform: 'darwin', execPath: '/usr/local/bin/node', env: {} },
+    env: { HOME: '/Users/x', PATH: '' },
+    fs: createFakeFsWithDirectories(['/Users/x/demo']),
+    resolveAccount: () => ({ accountRef: ACCOUNT_REF, provider: 'codex', cliAccountId: '3' })
+  });
+  const result = launcher.launchAccountApp({
+    provider: 'codex',
+    accountRef: ACCOUNT_REF,
+    kind: 'cli',
+    workdir: '~/demo'
+  });
+  assert.equal(result.ok, true);
+  const script = fakeSpawn.calls[0].args.join(' ');
+  assert.ok(script.includes("cd '/Users/x/demo' && "), `~ 应展开为宿主 home：${script}`);
+});
+
+test('cli kind 缺省项目目录时保持原命令不拼接 cd', () => {
+  const { launcher, fakeSpawn } = createLauncher({
+    path: nodePath.posix,
+    processObj: { platform: 'darwin', execPath: '/usr/local/bin/node', env: {} },
+    env: { HOME: '/Users/x', PATH: '' },
+    resolveAccount: () => ({ accountRef: ACCOUNT_REF, provider: 'codex', cliAccountId: '3' })
+  });
+  const result = launcher.launchAccountApp({ provider: 'codex', accountRef: ACCOUNT_REF, kind: 'cli' });
+  assert.equal(result.ok, true);
+  const script = fakeSpawn.calls[0].args.join(' ');
+  assert.ok(!script.includes('cd '), `缺省不应注入 cd 前缀：${script}`);
+});
+
 test('ZCode 没有 CLI/TUI 入口', () => {
   const { launcher } = createLauncher({
     resolveAccount: () => ({ accountRef: ACCOUNT_REF, provider: 'zcode', cliAccountId: '3' })

@@ -115,6 +115,8 @@ import {
   useModelCatalog
 } from '@/features/accounts/useModelCatalog';
 import { CliPickerModal } from '@/features/accounts/CliPickerModal';
+import DirectoryPickerDialog from '@/features/legacy-chat/DirectoryPickerDialog';
+import { useServerDirectoryPicker } from '@/features/legacy-chat/use-server-directory-picker';
 import { KimiDesktopLoginModal } from '@/features/accounts/KimiDesktopLoginModal';
 import { CodexResetCreditsModal } from '@/features/accounts/CodexResetCreditsModal';
 import { AccountEgressModal } from '@/features/accounts/ZcodeEgressModal';
@@ -169,6 +171,7 @@ interface AccountAppInstallPrompt {
   record: Account;
   kind: AccountAppInstallKind;
   terminalId?: string;
+  workdir?: string;
   message: string;
 }
 
@@ -236,6 +239,29 @@ function readStoredActiveProviderTab(): AccountProviderFilter {
 function persistActiveProviderTab(provider: AccountProviderFilter): void {
   if (typeof window === 'undefined') return;
   try { window.localStorage.setItem(ACCOUNTS_ACTIVE_PROVIDER_STORAGE_KEY, provider); } catch (_error) {}
+}
+
+const CLI_WORKDIR_HISTORY_STORAGE_KEY = 'accounts-cli-workdir-history:v1';
+const CLI_WORKDIR_HISTORY_LIMIT = 10;
+
+function readCliWorkdirHistory(): string[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const saved = window.localStorage.getItem(CLI_WORKDIR_HISTORY_STORAGE_KEY);
+    const parsed = saved ? JSON.parse(saved) : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((item) => String(item || '').trim()).filter(Boolean).slice(0, CLI_WORKDIR_HISTORY_LIMIT);
+  } catch (_error) {
+    return [];
+  }
+}
+
+function persistCliWorkdirHistory(history: string[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (history.length) window.localStorage.setItem(CLI_WORKDIR_HISTORY_STORAGE_KEY, JSON.stringify(history));
+    else window.localStorage.removeItem(CLI_WORKDIR_HISTORY_STORAGE_KEY);
+  } catch (_error) {}
 }
 
 export default function Accounts() {
@@ -652,6 +678,13 @@ export default function Accounts() {
   const [cliTerminals, setCliTerminals] = useState<ClientTerminalItem[]>([]);
   const [selectedCliTerminalId, setSelectedCliTerminalId] = useState('system-default');
   const [cliTerminalsLoading, setCliTerminalsLoading] = useState(false);
+  const [cliHomeDir, setCliHomeDir] = useState('');
+  const [cliWorkdir, setCliWorkdir] = useState('');
+  const [cliWorkdirHistory, setCliWorkdirHistory] = useState<string[]>(readCliWorkdirHistory);
+  // 复用「会话-打开项目」的服务端目录浏览器（双击进入、单击选定、确认回填）。
+  const cliDirectoryPicker = useServerDirectoryPicker(
+    React.useCallback((path: string) => setCliWorkdir(path), [])
+  );
   const updateCodexResetAvailableCount = React.useCallback((accountRef: string, availableCount: number) => {
     setAccounts((current) => current.map((item) => {
       if (item.provider !== 'codex' || getAccountRef(item) !== accountRef) return item;
@@ -1158,9 +1191,9 @@ export default function Accounts() {
     }
   };
 
-  const handleOpenApp = async (record: Account, kind: 'desktop' | 'cli', terminalId?: string) => {
+  const handleOpenApp = async (record: Account, kind: 'desktop' | 'cli', terminalId?: string, workdir?: string): Promise<boolean> => {
     try {
-      const result = await accountsAPI.openApp(record.provider, record.accountRef, kind, 'open', terminalId);
+      const result = await accountsAPI.openApp(record.provider, record.accountRef, kind, 'open', terminalId, workdir);
       if (result.egressWarning) {
         message.warning(`账号出口未生效：${result.egressWarning}`);
       }
@@ -1180,10 +1213,11 @@ export default function Accounts() {
             }
           }
         });
-        return;
+        return false;
       }
       message.success(kind === 'desktop' ? '已打开 Desktop 应用' : '已打开 CLI 终端');
       loadAppEntries({ refresh: true });
+      return true;
     } catch (error: any) {
       const code = String(error?.response?.data?.error || '').trim();
       if (code === 'install_required') {
@@ -1194,23 +1228,24 @@ export default function Accounts() {
             okText: '打开 Toolkit',
             onOk: () => navigate('/toolkit')
           });
-          return;
+          return false;
         }
         setAccountAppInstallPrompt({
           record,
           kind,
           terminalId,
+          workdir,
           message: error?.response?.data?.message || '当前主机尚未安装目标客户端。'
         });
-        return;
+        return false;
       }
       if (code === 'account_unconfigured') {
         message.warning('账号尚未配置，完成授权或配置密钥后才能打开');
-        return;
+        return false;
       }
       if (code === 'account_auth_invalid') {
         message.warning('账号认证已失效，请重新登录后再打开');
-        return;
+        return false;
       }
       if (kind === 'desktop' && record.provider === 'kimi'
         && (code === 'kimi_desktop_session_required' || code === 'kimi_desktop_session_seed_failed')) {
@@ -1218,7 +1253,7 @@ export default function Accounts() {
         if (code === 'kimi_desktop_session_seed_failed') {
           message.warning(error?.response?.data?.message || 'Kimi Desktop 登录态需要重新托管');
         }
-        return;
+        return false;
       }
       if (code === 'agy_desktop_restart_required') {
         Modal.confirm({
@@ -1237,17 +1272,18 @@ export default function Accounts() {
             }
           }
         });
-        return;
+        return false;
       }
       if (code === 'agy_desktop_keychain_conflict') {
         message.warning('检测到其他 Antigravity Desktop 实例，请先关闭其他实例后再打开此账号');
-        return;
+        return false;
       }
       if (code === 'agy_desktop_auth_unavailable') {
         message.warning('当前账号没有可用的 Antigravity OAuth 凭据，请先完成授权后再打开 Desktop');
-        return;
+        return false;
       }
       message.error(error?.response?.data?.message || (kind === 'desktop' ? '打开 Desktop 应用失败' : '打开 CLI 终端失败'));
+      return false;
     }
   };
 
@@ -1294,6 +1330,9 @@ export default function Accounts() {
       }
       setCliTerminals(available);
       setSelectedCliTerminalId(available.find((terminal) => terminal.default)?.id || available[0].id);
+      const homeDir = String(response.homeDir || '').trim();
+      setCliHomeDir(homeDir);
+      setCliWorkdir(homeDir);
       setCliPickerAccount(record);
     } catch (error: any) {
       message.error(error?.response?.data?.message || '读取可用终端失败');
@@ -1319,7 +1358,22 @@ export default function Accounts() {
       clearTimeout(existing);
       delete cliClickTimers.current[accountRef];
     }
-    void handleOpenApp(record, 'cli', 'system-default');
+    void handleOpenApp(record, 'cli', 'system-default', cliHomeDir || undefined);
+  };
+
+  // 仅记录用户显式选择的非默认目录；默认 home 由选择器内置提供，不进历史。
+  const rememberCliWorkdir = (workdir: string) => {
+    const normalized = workdir.trim();
+    if (!normalized || normalized === cliHomeDir) return;
+    const next = [normalized, ...cliWorkdirHistory.filter((item) => item !== normalized)]
+      .slice(0, CLI_WORKDIR_HISTORY_LIMIT);
+    setCliWorkdirHistory(next);
+    persistCliWorkdirHistory(next);
+  };
+
+  const clearCliWorkdirHistory = () => {
+    setCliWorkdirHistory([]);
+    persistCliWorkdirHistory([]);
   };
 
   // 按 Provider 分组统计
@@ -2321,7 +2375,7 @@ export default function Accounts() {
           const result = accountAppInstallResult;
           if (!result) return;
           setAccountAppInstallResult(null);
-          void handleOpenApp(result.prompt.record, result.prompt.kind, result.prompt.terminalId);
+          void handleOpenApp(result.prompt.record, result.prompt.kind, result.prompt.terminalId, result.prompt.workdir);
         }}
         onRetry={() => {
           const result = accountAppInstallResult;
@@ -2336,12 +2390,31 @@ export default function Accounts() {
         terminals={cliTerminals}
         selectedTerminalId={selectedCliTerminalId}
         loading={cliTerminalsLoading}
+        workdir={cliWorkdir}
+        workdirHistory={cliWorkdirHistory}
         onTerminalChange={setSelectedCliTerminalId}
+        onWorkdirChange={setCliWorkdir}
+        onBrowseWorkdir={cliDirectoryPicker.open}
+        onClearWorkdirHistory={clearCliWorkdirHistory}
         onCancel={() => setCliPickerAccount(null)}
-        onOpen={(account, terminalId) => {
+        onOpen={(account, terminalId, workdir) => {
           setCliPickerAccount(null);
-          void handleOpenApp(account, 'cli', terminalId);
+          void handleOpenApp(account, 'cli', terminalId, workdir || undefined).then((opened) => {
+            if (opened) rememberCliWorkdir(workdir);
+          });
         }}
+      />
+      <DirectoryPickerDialog
+        open={cliDirectoryPicker.visible}
+        currentPath={cliDirectoryPicker.currentPath}
+        parentPath={cliDirectoryPicker.parentPath}
+        directories={cliDirectoryPicker.directories}
+        loading={cliDirectoryPicker.loading}
+        selectedPath={cliDirectoryPicker.selectedPath}
+        onCancel={cliDirectoryPicker.close}
+        onConfirm={cliDirectoryPicker.confirm}
+        onNavigate={cliDirectoryPicker.load}
+        onSelect={cliDirectoryPicker.select}
       />
       <KimiDesktopLoginModal
         open={Boolean(kimiDesktopLoginRequest)}

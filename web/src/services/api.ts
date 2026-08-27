@@ -451,11 +451,12 @@ export const accountsAPI = {
     accountRef: string,
     kind: 'desktop' | 'cli',
     action: 'open' | 'close' = 'open',
-    terminalId?: string
+    terminalId?: string,
+    workdir?: string
   ): Promise<AccountAppLaunchResponse> => {
     const response = await api.post<AccountAppLaunchResponse>(
       `/webui/accounts/${provider}/${accountRef}/open-app`,
-      { kind, action, ...(terminalId ? { terminalId } : {}) }
+      { kind, action, ...(terminalId ? { terminalId } : {}), ...(workdir ? { workdir } : {}) }
     );
     return response.data;
   },

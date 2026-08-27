@@ -73,8 +73,19 @@ export function formatModelProbeErrorLabel(error: string) {
   return '探测失败';
 }
 
-export function getModelProbeTagLabel(probe: ReturnType<typeof getAccountModelProbe>, modelRefreshing: boolean) {
-  if (probe.models.length > 0) return `模型 ${probe.models.length}`;
+export function getModelProbeTagLabel(probe: ReturnType<typeof getAccountModelProbe>, modelRefreshing: boolean, provider?: string) {
+  if (probe.models.length > 0) {
+    if (provider === 'opencode') {
+      const goCount = probe.models.filter((m: string) => String(m).startsWith('opencode-go/')).length;
+      const zenCount = probe.models.filter((m: string) => String(m).startsWith('opencode/')).length;
+      if (goCount > 0 && zenCount > 0) {
+        return `Go ${goCount} · Zen ${zenCount}`;
+      }
+      if (goCount > 0) return `Go ${goCount}`;
+      if (zenCount > 0) return `Zen ${zenCount}`;
+    }
+    return `模型 ${probe.models.length}`;
+  }
   if (probe.error) return formatModelProbeErrorLabel(probe.error);
   if (modelRefreshing) return '探测中';
   if (probe.probed) return '未发现模型';

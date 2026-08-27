@@ -691,6 +691,9 @@ export default function Models() {
             </Tooltip>
           </div>
           <div className="models-model-row-tags">
+            {model.id.startsWith('opencode-go/') ? <Tag color="green">Go 订阅</Tag> : null}
+            {model.id.startsWith('opencode/') ? <Tag color="blue">Zen 按量</Tag> : null}
+            {model.id.endsWith('-free') ? <Tag>Free 免费</Tag> : null}
             {model.manual ? <Tag color="processing">手动</Tag> : <Tag>探测</Tag>}
             {model.defaultModel ? <Tag color="success">默认</Tag> : null}
             {!enabled ? <Tag>停用</Tag> : null}

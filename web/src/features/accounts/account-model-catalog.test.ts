@@ -160,3 +160,13 @@ test('getModelProbeTagColor follows label precedence', () => {
   assert.equal(getModelProbeTagColor({ probed: false, models: [], error: '' }, true), 'processing');
   assert.equal(getModelProbeTagColor({ probed: true, models: [], error: '' }, false), 'default');
 });
+test('getModelProbeTagLabel formats OpenCode Go vs Zen breakdown', () => {
+  const probe = {
+    probed: true,
+    models: ['opencode-go/deepseek-v4-pro', 'opencode-go/glm-5.3', 'opencode/claude-sonnet-5'],
+    error: ''
+  };
+  assert.equal(getModelProbeTagLabel(probe, false, 'opencode'), 'Go 2 · Zen 1');
+  assert.equal(getModelProbeTagLabel({ probed: true, models: ['opencode-go/glm-5.3'], error: '' }, false, 'opencode'), 'Go 1');
+  assert.equal(getModelProbeTagLabel({ probed: true, models: ['opencode/claude-sonnet-5'], error: '' }, false, 'opencode'), 'Zen 1');
+});

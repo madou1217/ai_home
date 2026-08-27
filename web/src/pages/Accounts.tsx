@@ -1734,7 +1734,7 @@ export default function Accounts() {
         const requiresReauth = requiresAccountReauth(record);
         const probe = getAccountModelProbe(record, modelCatalog);
         const modelRefreshing = Boolean(refreshingModelAccountRefs[getModelRefreshAccountRef(record)]);
-        const tagLabel = getModelProbeTagLabel(probe, modelRefreshing);
+        const tagLabel = getModelProbeTagLabel(probe, modelRefreshing, record.provider);
         return (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} className="accounts-model-probe">
             <span
@@ -1929,7 +1929,7 @@ export default function Accounts() {
           >
             <Badge
               status={getModelProbeTagColor(probe, modelRefreshing) as any}
-              text={getModelProbeTagLabel(probe, modelRefreshing)}
+              text={getModelProbeTagLabel(probe, modelRefreshing, record.provider)}
             />
           </span>
         </div>

@@ -77,12 +77,15 @@ export function getModelProbeTagLabel(probe: ReturnType<typeof getAccountModelPr
   if (probe.models.length > 0) {
     if (provider === 'opencode') {
       const goCount = probe.models.filter((m: string) => String(m).startsWith('opencode-go/')).length;
-      const zenCount = probe.models.filter((m: string) => String(m).startsWith('opencode/')).length;
-      if (goCount > 0 && zenCount > 0) {
-        return `Go ${goCount} · Zen ${zenCount}`;
-      }
-      if (goCount > 0) return `Go ${goCount}`;
-      if (zenCount > 0) return `Zen ${zenCount}`;
+      const zenPaidCount = probe.models.filter((m: string) => String(m).startsWith('opencode/') && !String(m).endsWith('-free')).length;
+      const freeCount = probe.models.filter((m: string) => String(m).endsWith('-free')).length;
+
+      const parts: string[] = [];
+      if (goCount > 0) parts.push(`Go ${goCount}`);
+      if (zenPaidCount > 0) parts.push(`Zen ${zenPaidCount}`);
+      if (freeCount > 0) parts.push(`Free ${freeCount}`);
+
+      return parts.join(' · ') || `模型 ${probe.models.length}`;
     }
     return `模型 ${probe.models.length}`;
   }

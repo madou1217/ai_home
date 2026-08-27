@@ -259,3 +259,79 @@ test('quota probe scheduler triggers auto probe for accounts near reset time', a
   assert.equal(probedAccounts[0].accountRef, 'acct_scheduler_test');
   assert.equal(probedAccounts[0].forceRefresh, true);
 });
+
+test('quota reset detector strictly rejects consumption (e.g. 100% -> 42%) and no-op 100% -> 100% as reset events', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-quota-strict-test-'));
+  const aiHomeDir = path.join(root, '.ai_home');
+
+  const { accountRef } = registerAccountIdentity(fs, aiHomeDir, {
+    provider: 'codex',
+    cliAccountId: '1',
+    identitySeed: 'oauth:codex:strict@example.com'
+  });
+
+  const now = 1787500000000;
+  const cycleResetAt = now + 5 * 3600 * 1000;
+
+  // 1. Initial 100%
+  writeAccountUsageSnapshot(fs, aiHomeDir, accountRef, {
+    schemaVersion: 1,
+    kind: 'codex_oauth_status',
+    capturedAt: now,
+    entries: [{ bucket: 'primary', remainingPct: 100.0, resetAtMs: cycleResetAt }]
+  });
+
+  // 2. Consumption: drops from 100% to 42% (even if resetAtMs changed/advanced). MUST NOT BE A RESET!
+  writeAccountUsageSnapshot(fs, aiHomeDir, accountRef, {
+    schemaVersion: 1,
+    kind: 'codex_oauth_status',
+    capturedAt: now + 3600 * 1000,
+    entries: [{ bucket: 'primary', remainingPct: 42.0, resetAtMs: cycleResetAt + 3600 * 1000 }]
+  });
+
+  let events = listAccountQuotaResetEvents(fs, aiHomeDir, accountRef);
+  assert.equal(events.length, 0, 'Consumption from 100% to 42% must NOT create a reset event');
+
+  // 3. Further consumption: 42% to 30%
+  writeAccountUsageSnapshot(fs, aiHomeDir, accountRef, {
+    schemaVersion: 1,
+    kind: 'codex_oauth_status',
+    capturedAt: now + 2 * 3600 * 1000,
+    entries: [{ bucket: 'primary', remainingPct: 30.0, resetAtMs: cycleResetAt + 3600 * 1000 }]
+  });
+  events = listAccountQuotaResetEvents(fs, aiHomeDir, accountRef);
+  assert.equal(events.length, 0, 'Further drop must NOT create a reset event');
+
+  // 4. Recovery / Reset: rises from 30% to 99% or 100% (even 1% consumed like 99% -> 100%)
+  writeAccountUsageSnapshot(fs, aiHomeDir, accountRef, {
+    schemaVersion: 1,
+    kind: 'codex_oauth_status',
+    capturedAt: now + 3 * 3600 * 1000,
+    entries: [{ bucket: 'primary', remainingPct: 100.0, resetAtMs: cycleResetAt + 3600 * 1000 }]
+  });
+
+  events = listAccountQuotaResetEvents(fs, aiHomeDir, accountRef);
+  assert.equal(events.length, 1, 'Upward jump from 30% to 100% MUST create a reset event');
+  assert.equal(events[0].previousRemainingPct, 30.0);
+  assert.equal(events[0].currentRemainingPct, 100.0);
+
+  // 5. Minor consumption (100% -> 99%) followed by recovery (99% -> 100%)
+  writeAccountUsageSnapshot(fs, aiHomeDir, accountRef, {
+    schemaVersion: 1,
+    kind: 'codex_oauth_status',
+    capturedAt: now + 4 * 3600 * 1000,
+    entries: [{ bucket: 'primary', remainingPct: 99.0, resetAtMs: cycleResetAt + 3600 * 1000 }]
+  });
+  writeAccountUsageSnapshot(fs, aiHomeDir, accountRef, {
+    schemaVersion: 1,
+    kind: 'codex_oauth_status',
+    capturedAt: now + 5 * 3600 * 1000,
+    entries: [{ bucket: 'primary', remainingPct: 100.0, resetAtMs: cycleResetAt + 3600 * 1000 }]
+  });
+  events = listAccountQuotaResetEvents(fs, aiHomeDir, accountRef);
+  assert.equal(events.length, 2, 'Recovery from 99% to 100% MUST also be recorded as a reset event');
+  assert.equal(events[0].previousRemainingPct, 99.0);
+  assert.equal(events[0].currentRemainingPct, 100.0);
+
+  fs.rmSync(root, { recursive: true, force: true });
+});

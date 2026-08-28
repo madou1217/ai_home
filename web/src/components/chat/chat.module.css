@@ -3996,3 +3996,92 @@
   font-size: 12.5px;
   line-height: 1.6;
 }
+
+/* =============================================================================
+ * dsh 风格 MessageIconActions 悬浮操作栏
+ * ========================================================================== */
+.messageIconActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: var(--color-surface, #ffffff);
+  border: 1px solid var(--color-border-subtle, rgba(0, 0, 0, 0.08));
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+  opacity: 0;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  transform: translateY(2px);
+}
+
+.messageWrapper:hover .messageIconActions,
+.messageMetaRow:hover .messageIconActions,
+.messageIconActionsVisible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.messageActionIconBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  color: var(--color-muted, #8c8c8c);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.messageActionIconBtn:hover {
+  background: var(--color-surface-hover, #f0f0f0);
+  color: var(--color-heading, #1f1f1f);
+}
+
+/* =============================================================================
+ * dsh 风格 StatsLine 会话粘性度量条
+ * ========================================================================== */
+.statsLineContainer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  margin-bottom: 6px;
+  font-size: 11px;
+  color: var(--color-muted, #8c8c8c);
+  font-family: var(--font-mono, monospace);
+  background: var(--color-surface-muted, rgba(0, 0, 0, 0.02));
+  border-radius: 6px;
+  border: 1px dashed var(--color-border-subtle, rgba(0, 0, 0, 0.06));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: none;
+}
+
+.statsLineIcon {
+  font-size: 11px;
+  color: var(--color-warning, #faad14);
+}
+
+.statsLineText {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.statsLinePart {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.statsLineDivider {
+  color: var(--color-faint, #d9d9d9);
+}

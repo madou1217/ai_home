@@ -14,6 +14,7 @@ import { useDictation } from './composer/useDictation';
 import dictationStyles from './composer/dictation.module.css';
 import { providerAccentStyle } from './provider-registry';
 import TaskDock from './TaskDock';
+import StatsLine from './StatsLine';
 import { findLatestActiveChecklist } from './message-structure';
 import PlanChoiceDock from './PlanChoiceDock';
 import TerminalDock, { type TerminalRunState } from './TerminalDock';
@@ -727,6 +728,7 @@ const MessageArea = ({
 
       {/* ChatGPT 风格输入区域 */}
       <div className={`${styles.inputArea} ${mobile ? styles.inputAreaMobile : ''}`}>
+        <StatsLine messages={messages} />
         <div className={styles.composerShell}>
           {hasComposerDock ? (
             <div className={styles.composerDockStack}>

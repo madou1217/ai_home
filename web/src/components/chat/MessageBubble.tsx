@@ -686,7 +686,7 @@ const MessageBubble = ({ message, provider, session, mobile = false, isFollowup 
         );
       }
       case 'reasoning':
-        return <ThinkingBlock value={block.value} mobile={mobile} components={mdComponents} />;
+        return <ThinkingBlock value={block.value} mobile={mobile} components={mdComponents} running={variant === 'pending' || Boolean(message.pending)} />;
       case 'checklist':
         return <PlanBlock checklist={block.checklist} result={block.checklist.result} mobile={mobile} />;
       case 'plan_text':

@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { CheckOutlined, MobileOutlined } from '@ant-design/icons';
+import { MobileOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import copyIcon from '@/assets/icons/copy.svg';
 import type { ChatMessage } from '@/types';
+import MessageIconActions from './MessageIconActions';
 import {
   formatDurationLabel,
   formatTtftLabel,
@@ -18,31 +18,14 @@ interface Props {
   metrics?: ChatMessage['metrics'];
   copyText: string;
   actionsVisible?: boolean;
+  onRetry?: () => void;
+  onFork?: () => void;
 }
 
 function formatMessageTime(timestamp?: ChatMessage['timestamp']): string {
   if (timestamp == null || timestamp === '') return '';
   const date = dayjs(timestamp);
   return date.isValid() ? date.format('HH:mm') : '';
-}
-
-function CopyMessageButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-  const handleCopy = (event: React.MouseEvent<HTMLButtonElement>): void => {
-    event.stopPropagation();
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    });
-  };
-
-  return (
-    <button className={styles.actionBtn} onClick={handleCopy} title="复制">
-      {copied
-        ? <CheckOutlined style={{ color: '#52c41a' }} />
-        : <img src={copyIcon} alt="copy" style={{ width: 14, height: 14 }} />}
-    </button>
-  );
 }
 
 export default function MessageMetadata({
@@ -53,6 +36,8 @@ export default function MessageMetadata({
   metrics,
   copyText,
   actionsVisible = false,
+  onRetry,
+  onFork,
 }: Props) {
   const timeLabel = formatMessageTime(timestamp);
   const modelLabel = String(model || '').trim();
@@ -105,7 +90,13 @@ export default function MessageMetadata({
         ) : null}
       </div>
       <div className={`${styles.messageMetaActions} ${actionsVisible ? styles.messageMetaActionsVisible : ''}`}>
-        <CopyMessageButton text={copyText} />
+        <MessageIconActions
+          text={copyText}
+          role={role}
+          onRetry={onRetry}
+          onFork={onFork}
+          className={actionsVisible ? styles.messageIconActionsVisible : ''}
+        />
       </div>
     </div>
   );

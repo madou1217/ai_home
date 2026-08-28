@@ -1,6 +1,7 @@
 function isRenderablePendingBlock(block) {
   if (!block || typeof block !== 'object') return false;
-  if (block.type === 'thinking') return false;
+  // 思考块在 pending 期间同样允许渲染（实时展开/展示 ThinkingBlock 思考折叠卡片）
+  if (block.type === 'thinking') return Boolean(String(block.value || '').trim());
   if (block.type === 'tag') return true;
   if (block.type === 'tool_use') return true;
   if (block.type === 'tool_group') return Array.isArray(block.items) && block.items.length > 0;

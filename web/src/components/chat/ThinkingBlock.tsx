@@ -12,12 +12,27 @@ interface Props {
 
 function ThinkingBlock({ value, mobile = false, components }: Props) {
   const preview = useMemo(() => {
-    const lastLine = String(value || '').split('\n').filter((line) => line.trim()).pop() || '';
-    return lastLine.length > 72 ? `${lastLine.slice(0, 72)}...` : lastLine;
+    const raw = String(value || '');
+    if (!raw.trim()) return '正在思考...';
+    const lines = raw
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean);
+    const lastLine = lines[lines.length - 1] || '';
+    if (!lastLine) return '';
+    // 往前推着显示最新思考动态：显示最新产生的那段文本
+    return lastLine.length > 70 ? `...${lastLine.slice(-65)}` : lastLine;
   }, [value]);
 
   return (
-    <EventBlock tone="thinking" icon={<BulbOutlined />} title="思考" preview={preview} dense={mobile} aria-label="思考过程">
+    <EventBlock
+      tone="thinking"
+      icon={<BulbOutlined />}
+      title="思考"
+      preview={preview}
+      dense={mobile}
+      aria-label="思考过程"
+    >
       <div className={`${evt.prose} ${evt.scroll}`}>
         <MessageMarkdown value={value} components={components} forceMarkdown />
       </div>

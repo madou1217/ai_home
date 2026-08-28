@@ -1,6 +1,7 @@
 import { Children, isValidElement, memo, type ReactElement, type ReactNode } from 'react';
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import HtmlCodeBlock from './HtmlCodeBlock';
 import { parseMarkdownCarouselSlides } from './file-preview-utils';
 import { shouldRenderMarkdown } from './markdown-detection';
 import styles from './chat.module.css';
@@ -33,6 +34,27 @@ function resolveCarouselSlides(children: ReactNode) {
   }>;
   const language = String(codeNode.props.className || '').match(/(?:^|\s)language-([^\s]+)/)?.[1] || '';
   return parseMarkdownCarouselSlides(language, String(codeNode.props.children || ''));
+}
+
+function isHtmlOrSvgBlock(children: ReactNode) {
+  const nodes = Children.toArray(children);
+  if (nodes.length !== 1 || !isValidElement(nodes[0])) return null;
+  const codeNode = nodes[0] as ReactElement<{
+    className?: string;
+    children?: ReactNode;
+  }>;
+  const language = String(codeNode.props.className || '').match(/(?:^|\s)language-([^\s]+)/)?.[1] || '';
+  const langLower = language.toLowerCase();
+  const rawCode = String(codeNode.props.children || '').trim();
+
+  // 判定是否是 HTML / SVG 网页片段代码块
+  const isHtmlLang = langLower === 'html' || langLower === 'svg' || langLower === 'htm';
+  const hasHtmlTags = /<(!doctype|html|svg|head|body|div|script|style)/i.test(rawCode);
+
+  if ((isHtmlLang && rawCode.length > 20) || (hasHtmlTags && (rawCode.includes('</html>') || rawCode.includes('</svg>') || rawCode.includes('</div>')))) {
+    return { code: String(codeNode.props.children || ''), language: langLower || 'html' };
+  }
+  return null;
 }
 
 function MarkdownCarousel({ slides, components }: { slides: string[]; components?: any }) {
@@ -85,6 +107,12 @@ function MessageMarkdown({
           if (slides.length > 0) {
             return <MarkdownCarousel slides={slides} components={components} />;
           }
+
+          const htmlBlock = isHtmlOrSvgBlock(children);
+          if (htmlBlock) {
+            return <HtmlCodeBlock code={htmlBlock.code} language={htmlBlock.language} />;
+          }
+
           const ExternalPre = components && components.pre;
           return ExternalPre
             ? <ExternalPre {...props}>{children}</ExternalPre>

@@ -3834,3 +3834,60 @@
   letter-spacing: -0.01em;
 }
 .interruptNote :global(.anticon) { font-size: 13px; }
+
+/* ===== 模式切换器 (Chat / Work) ===== */
+.modeSelector {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  background: var(--color-surface-raised, rgba(0, 0, 0, 0.04));
+  border-radius: 8px;
+  margin: 8px 12px 4px;
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+}
+
+.modeSelectorMobile {
+  margin: 6px 10px 4px;
+}
+
+.modeTab {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-secondary, #64748b);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+}
+
+.modeTab:hover {
+  color: var(--color-text-primary, #0f172a);
+}
+
+.modeTabActive {
+  color: var(--color-text-primary, #0f172a);
+  background: var(--color-bg, #ffffff);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+  font-weight: 600;
+}
+
+.modeIcon {
+  font-size: 14px;
+}
+
+/* 连续 Assistant 消息组：第一条显示头像，后续紧跟的消息隐藏头像并缩减间距 */
+.messageRowAssistantFollowup > .avatarAi {
+  display: none !important;
+}
+
+.messageRowAssistantFollowup {
+  margin-top: 4px !important;
+}

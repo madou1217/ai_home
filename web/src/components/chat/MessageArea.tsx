@@ -496,8 +496,11 @@ const MessageArea = ({
   }, [activeProvider, externalPending, externalPendingStatusText, loading, loadingStatusText, messages]);
 
   const renderedMessageNodes = useMemo(() => (
-    displayMessages.map((msg, i) => (
+    displayMessages.map((msg, i) => {
+      const isFollowup = msg.role === 'assistant' && i > 0 && displayMessages[i - 1].role === 'assistant';
+      return (
       <MessageBubble
+        isFollowup={isFollowup}
         // key 必须稳定：不能把 pending 编进去，否则流式回复从 pending→done 时
         // key 变化会强制卸载重挂整个气泡，造成"闪屏"。消息位置(i)在流式期间不变，
         // 内容变化由 message prop 触发正常 re-render，无需用 key 强制刷新。
@@ -507,7 +510,8 @@ const MessageArea = ({
         session={session}
         mobile={mobile}
       />
-    ))
+      );
+    })
   ), [displayMessages, mobile, sessionProvider]);
 
   const activeChecklist = useMemo(

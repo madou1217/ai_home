@@ -1,14 +1,15 @@
 import type { ChatMessageMetrics } from '@/types';
 
 /**
- * 格式化持续总耗时（如：17秒 / 1分25秒）
+ * 格式化持续总耗时（如：6.3秒 / 17秒 / 1分25秒）
+ * 10秒以内保留 1 位小数，与 TTFT 精度对齐，避免四舍五入造成的「用时 6秒 首 token 6.2秒」视觉矛盾
  */
 export function formatDurationLabel(ms?: number): string {
   if (ms == null || Number.isNaN(ms) || ms < 0) return '';
   const seconds = ms / 1000;
-  if (seconds < 1) {
-    const decimal = Math.round(seconds * 10) / 10;
-    return `${decimal}秒`;
+  if (seconds < 10) {
+    const formatted = (Math.round(seconds * 10) / 10).toFixed(1).replace(/\.0$/, '');
+    return `${formatted}秒`;
   }
   const totalSeconds = Math.round(seconds);
   if (totalSeconds < 60) {
@@ -20,13 +21,13 @@ export function formatDurationLabel(ms?: number): string {
 }
 
 /**
- * 格式化首 Token / 首字耗时（如：1.4秒 / 14秒）
+ * 格式化首 Token / 首字耗时（如：1.4秒 / 6.2秒 / 14秒）
  */
 export function formatTtftLabel(ms?: number): string {
   if (ms == null || Number.isNaN(ms) || ms < 0) return '';
   const seconds = ms / 1000;
   if (seconds < 10) {
-    const formatted = Math.round(seconds * 10) / 10;
+    const formatted = (Math.round(seconds * 10) / 10).toFixed(1).replace(/\.0$/, '');
     return `${formatted}秒`;
   }
   return `${Math.round(seconds)}秒`;
@@ -80,10 +81,15 @@ export function calculateMessageMetrics(params: {
   const { startTime, firstTokenTime, completedTime = Date.now(), text = '' } = params;
   if (!startTime || startTime <= 0) return undefined;
 
-  const durationMs = Math.max(0, completedTime - startTime);
-  const ttftMs = firstTokenTime && firstTokenTime >= startTime
+  let durationMs = Math.max(0, completedTime - startTime);
+  let ttftMs = firstTokenTime && firstTokenTime >= startTime
     ? Math.max(0, firstTokenTime - startTime)
     : undefined;
+
+  // 严格守卫：首 token 耗时不可能大于总耗时（消除时钟/时间戳微小抖动）
+  if (ttftMs != null && ttftMs > durationMs) {
+    durationMs = ttftMs;
+  }
 
   const tokens = params.outputTokens != null && params.outputTokens > 0
     ? params.outputTokens
@@ -91,11 +97,11 @@ export function calculateMessageMetrics(params: {
 
   let tokensPerSec: number | undefined;
   if (tokens != null && tokens > 0) {
-    // 优先采用解码时间 (duration - ttft) 来算速率，兜底采用总耗时
-    const decodeMs = ttftMs != null && durationMs > ttftMs
+    // 优先采用解码时间 (duration - ttft) 来算速率，若解码时间极短（如单次返回），采用总耗时
+    const decodeMs = (ttftMs != null && durationMs > ttftMs && (durationMs - ttftMs) >= 500)
       ? durationMs - ttftMs
       : durationMs;
-    const decodeSeconds = Math.max(0.2, decodeMs / 1000);
+    const decodeSeconds = Math.max(0.5, decodeMs / 1000);
     tokensPerSec = Math.round(tokens / decodeSeconds);
   }
 

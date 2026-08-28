@@ -42,7 +42,7 @@ export function humanizeChatError(error: unknown, fallback: string): string {
   const response = asPayload((errorRecord as { response?: unknown }).response);
   const data = asPayload((response as { data?: unknown }).data);
   const backendMessage = text(data.message);
-  if (backendMessage && backendMessage !== data.error) return backendMessage;
+  if (backendMessage && backendMessage !== data.error) return backendMessage.replace(/^(?:(?:请求失败|Error)[：:]\s*)+/i, '');
 
   const mapped = knownMessage(data.error);
   if (mapped) return mapped;

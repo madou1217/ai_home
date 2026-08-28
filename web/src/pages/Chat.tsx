@@ -4,6 +4,7 @@ import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import 'dayjs/locale/zh-cn';
 import { ProjectList } from '@/components/chat';
+import type { WorkspaceMode } from '@/components/chat/ModeSelector';
 import ChatEmptyState from '@/components/chat/ChatEmptyState';
 import { isSessionRunning } from '@/components/chat/project-runtime-state.js';
 import type { AggregatedProject, Session } from '@/types';
@@ -35,9 +36,25 @@ import {
 dayjs.extend(relativeTime);
 dayjs.locale('zh-cn');
 
+const STORAGE_KEY_CHAT_MODE = 'aih_chat_workspace_mode';
+
 export default function Chat() {
   const screens = Grid.useBreakpoint();
   const mobile = !screens.md;
+  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>(() => {
+    if (typeof window !== 'undefined') {
+      return (window.localStorage.getItem(STORAGE_KEY_CHAT_MODE) as WorkspaceMode) || 'chat';
+    }
+    return 'chat';
+  });
+
+  const handleModeChange = useCallback((newMode: WorkspaceMode) => {
+    setWorkspaceMode(newMode);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(STORAGE_KEY_CHAT_MODE, newMode);
+    }
+  }, []);
+
   const initialSelectionRef = useRef<PersistedChatSelection>(readPersistedSelection());
   const projectCatalog = useProjectCatalog(initialSelectionRef.current);
   const canonicalDirectory = useCanonicalSessionDirectory(
@@ -84,7 +101,7 @@ export default function Chat() {
   }, [refreshSessionDirectory]);
 
   useMobileImmersiveMode(mobile, mobileShowChat);
-  usePersistedChatSelection(projectCatalog.selectedProject, projectCatalog.selectedSession);
+  usePersistedChatSelection(projectCatalog.selectedProject, projectCatalog.selectedSession, workspaceMode === 'chat');
   useEffect(() => {
     if (!mobile) return;
     if (!projectCatalog.selectedProject && !projectCatalog.selectedSession) {
@@ -113,13 +130,9 @@ export default function Chat() {
     }
     if (mobile) setMobileShowChat(true);
   }, [cancelCanonicalRestore, mobile, projectCatalog]);
+
   const handleCreateSession = useCallback((): void => {
-    const project = projectCatalog.selectedProject;
     const account = accountCatalog.selectedAccount || accountCatalog.accounts[0] || null;
-    if (!project) {
-      message.warning('请先选择一个项目');
-      return;
-    }
     cancelCanonicalRestore();
     if (!account) {
       if (accountCatalog.loadFailed) {
@@ -129,6 +142,29 @@ export default function Chat() {
       }
       return;
     }
+
+    if (workspaceMode === 'chat') {
+      // 纯聊天模式：不需要 projectPath
+      projectCatalog.setSelectedSession({
+        id: `draft-${Date.now()}`,
+        title: '新对话',
+        updatedAt: Date.now(),
+        provider: account.provider,
+        draft: true,
+        mode: 'chat',
+      });
+      accountCatalog.setSelectedAccount(account);
+      if (mobile) setMobileShowChat(true);
+      return;
+    }
+
+    // Work 模式：需要选择工作区项目
+    const project = projectCatalog.selectedProject;
+    if (!project) {
+      message.warning('请先选择一个项目');
+      return;
+    }
+
     projectCatalog.setSelectedSession({
       id: `draft-${Date.now()}`,
       title: '新会话',
@@ -136,10 +172,12 @@ export default function Chat() {
       provider: account.provider,
       projectPath: project.path,
       draft: true,
+      mode: 'work',
     });
     accountCatalog.setSelectedAccount(account);
     if (mobile) setMobileShowChat(true);
-  }, [accountCatalog, cancelCanonicalRestore, mobile, projectCatalog]);
+  }, [accountCatalog, cancelCanonicalRestore, mobile, projectCatalog, workspaceMode]);
+
   const handleProjectRemoved = useCallback((project: AggregatedProject): void => {
     cancelCanonicalRestore();
     if (projectCatalog.selectedProject?.path === project.path) {
@@ -157,7 +195,10 @@ export default function Chat() {
   const selectedSessionRunning = projectCatalog.selectedSession
     ? isSessionRunning(projectCatalog.selectedSession, runningSessionKeys)
     : false;
-  const projectLabel = projectCatalog.selectedProject?.name || '项目会话';
+  const projectLabel = projectCatalog.selectedSession?.mode === 'chat'
+    ? 'AI 纯聊天'
+    : (projectCatalog.selectedProject?.name || '项目会话');
+
   const projectList = (
     <ProjectList
       mobile={mobile}
@@ -168,6 +209,8 @@ export default function Chat() {
       selectedSession={projectCatalog.selectedSession}
       selectedProject={projectCatalog.selectedProject}
       expandedProjects={projectCatalog.expandedProjects}
+      mode={workspaceMode}
+      onModeChange={handleModeChange}
       onRefresh={refreshProjectList}
       onToggleProject={projectCatalog.toggleProject}
       onSelectProject={handleSelectProject}
@@ -178,6 +221,7 @@ export default function Chat() {
       remoteSessionsPanel={null}
     />
   );
+
   const runtimeContent = (
     <ChatRuntimeBoundary
       session={projectCatalog.selectedSession}
@@ -231,6 +275,7 @@ export default function Chat() {
       )}
       empty={() => (
         <ChatEmptyState
+          mode={workspaceMode}
           projectPath={projectCatalog.selectedProject?.path}
           mobile={mobile}
           onCreateSession={handleCreateSession}
@@ -239,7 +284,11 @@ export default function Chat() {
       )}
     />
   );
-  const chatContent = (
+
+  // 在纯聊天模式下，直接展示对话面板，无需 ProjectWorkbench 工作区标签页
+  const chatContent = workspaceMode === 'chat' ? (
+    runtimeContent
+  ) : (
     <ProjectWorkbench
       projectPath={projectCatalog.selectedProject?.path}
       mobile={mobile}

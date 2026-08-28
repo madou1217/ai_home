@@ -975,6 +975,16 @@ export const serverProfilesAPI = {
 // 会话管理 API
 export const sessionsAPI = {
   // 获取所有聚合项目
+    // 获取纯聊天会话列表
+  getChatSessions: async (): Promise<Session[]> => {
+    const response = await api.get<{ ok: boolean; sessions: Session[] }>('/webui/chat-sessions');
+    return response.data.sessions;
+  },
+
+  deleteChatSession: async (sessionId: string): Promise<boolean> => {
+    const response = await api.delete<{ ok: boolean; deleted: boolean }>(`/webui/chat-sessions/${encodeURIComponent(sessionId)}`);
+    return Boolean(response.data.deleted);
+  },
   getAllProjects: async (): Promise<AggregatedProject[]> => {
     const response = await api.get<{ ok: boolean; projects: AggregatedProject[] }>('/webui/projects');
     return response.data.projects;

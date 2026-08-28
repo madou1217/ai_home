@@ -73,3 +73,22 @@ test('legacy composer submission snapshots normalized content and attachments', 
   input.images.push('image-b');
   assert.deepEqual(result.imageList, ['image-a']);
 });
+
+test('legacy composer allows chat mode session without projectPath', async () => {
+  const { resolveLegacyComposerSubmission } = await loadPolicy();
+  const input = fixture({
+    session: { id: 'chat-session-1', provider: 'claude', projectPath: '', mode: 'chat' },
+  });
+  const result = resolveLegacyComposerSubmission(input);
+
+  assert.deepEqual(result, {
+    ok: true,
+    account: input.account,
+    session: input.session,
+    model: 'claude-sonnet',
+    content: 'hello',
+    imageList: ['image-a'],
+    projectPath: '',
+    mode: 'chat',
+  });
+});

@@ -541,9 +541,9 @@ const PendingStatusLine = ({ text }: { text: string }) => {
   );
 };
 
-const MessageBubble = ({ message, provider, session, mobile = false }: Props) => {
+const MessageBubble = ({ message, provider, session, mobile = false, isFollowup = false }: Props) => {
   const isUser = message.role === 'user';
-  const showAssistantAvatar = !mobile;
+  const showAssistantAvatar = !mobile && !isFollowup;
   const [metaVisible, setMetaVisible] = useState(false);
   const parsedAttachmentBlock = useMemo(() => parseAttachedImageBlock(message.content), [message.content]);
   const inlineImages = useMemo(() => normalizeRenderableImages(message.images || []), [message.images]);
@@ -887,7 +887,7 @@ const MessageBubble = ({ message, provider, session, mobile = false }: Props) =>
 
   if (isErrorMessage(message.content)) {
     return (
-      <div className={`${styles.messageRow} ${styles.messageRowAssistant}`}>
+      <div className={`${styles.messageRow} ${styles.messageRowAssistant} ${isFollowup ? styles.messageRowAssistantFollowup : ''}`}>
         {showAssistantAvatar ? (
           <Avatar size={32} className={styles.avatarAi} style={{ background: '#fff2f0', border: '1px solid #ffccc7' }}>
             <WarningOutlined style={{ color: '#cf1322', fontSize: 16 }} />
@@ -913,7 +913,7 @@ const MessageBubble = ({ message, provider, session, mobile = false }: Props) =>
     const hasLiveDetail = hasRenderablePendingBlocks(blocks);
 
     return (
-      <div className={`${styles.messageRow} ${styles.messageRowAssistant}`}>
+      <div className={`${styles.messageRow} ${styles.messageRowAssistant} ${isFollowup ? styles.messageRowAssistantFollowup : ''}`}>
         {showAssistantAvatar ? (
           <Avatar size={32} className={styles.avatarAi}>
             <ProviderIcon provider={provider} size={18} />
@@ -951,7 +951,7 @@ const MessageBubble = ({ message, provider, session, mobile = false }: Props) =>
   }
 
   return (
-    <div className={`${styles.messageRow} ${styles.messageRowAssistant}`}>
+    <div className={`${styles.messageRow} ${styles.messageRowAssistant} ${isFollowup ? styles.messageRowAssistantFollowup : ''}`}>
       {showAssistantAvatar ? (
         <Avatar size={32} className={styles.avatarAi}>
           <ProviderIcon provider={provider} size={18} />

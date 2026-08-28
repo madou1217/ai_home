@@ -16,7 +16,8 @@ export function resolveLegacyComposerSubmission(input = {}) {
   }
 
   const projectPath = String(input.projectPath || session.projectPath || '').trim();
-  if (!projectPath) return { ok: false, reason: 'project_path_required' };
+  const isPureChat = session.mode === 'chat' || (session.draft && input.mode === 'chat') || input.mode === 'chat';
+  if (!projectPath && !isPureChat) return { ok: false, reason: 'project_path_required' };
 
   return {
     ok: true,
@@ -25,6 +26,7 @@ export function resolveLegacyComposerSubmission(input = {}) {
     model: String(input.model || '').trim(),
     content,
     imageList: Array.isArray(input.images) ? input.images.slice() : [],
-    projectPath,
+    projectPath: projectPath || '',
+    ...(isPureChat ? { mode: 'chat' } : (input.mode ? { mode: input.mode } : {})),
   };
 }

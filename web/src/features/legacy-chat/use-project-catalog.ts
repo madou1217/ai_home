@@ -120,165 +120,91 @@ export function useProjectCatalog(
     setHydratingProjectPaths(new Set());
   }, []);
 
-  const applyProjectSnapshot = useCallback((
-    items: AggregatedProject[],
-    selection: PersistedChatSelection = {},
-    skipHydration = false,
-  ): AggregatedProject[] => {
-    snapshotGenerationRef.current += 1;
-    const currentServerKey = projectHydrationServerKey();
-    if (hydrationServerKeyRef.current !== currentServerKey) resetHydration(currentServerKey);
-
-    const compactProjects = normalizeProjectCatalog(items);
-    const newlyStalePaths = markStaleHydratedProjects(
-      compactProjects,
-      hydratedProjectsRef.current,
-      staleHydratedPathsRef.current,
-    );
-    const nextProjects = preserveHydratedProjectSessions(
-      compactProjects,
-      hydratedProjectsRef.current,
-    ) as AggregatedProject[];
-    reconcileHydratedProjects(
-      nextProjects,
-      hydratedProjectsRef.current,
-      staleHydratedPathsRef.current,
-    );
-    writeCachedProjects(nextProjects);
-    projectsRef.current = nextProjects;
-    setProjects(nextProjects);
-    if (!skipHydration) {
-      newlyStalePaths.forEach((projectPath) => {
-        hydrateRef.current(projectPath, { projectPath }, true).catch(() => {});
-      });
-    }
-    applySelection({
-      projects: nextProjects,
-      selection,
-      skipHydration,
-      selectedProjectRef,
-      selectedSessionRef,
-      setExpandedProjects,
-      setSelectedProject,
-      setSelectedSession,
-      hydrate: hydrateRef.current,
+  const clearHydratingPath = useCallback((projectPath: string): void => {
+    setHydratingProjectPaths((current) => {
+      if (!current.has(projectPath)) return current;
+      const next = new Set(current);
+      next.delete(projectPath);
+      return next;
     });
-    return nextProjects;
-  }, [resetHydration]);
+  }, []);
 
   const hydrateProjectSessions = useCallback(async (
     projectPath: string,
     selection: PersistedChatSelection = {},
     force = false,
   ): Promise<void> => {
-    const normalizedPath = String(projectPath || '').trim();
-    if (!normalizedPath) return;
-    const currentProject = projectsRef.current.find((project) => project.path === normalizedPath);
-    const hydrationIsStale = staleHydratedPathsRef.current.has(normalizedPath);
-    if (!currentProject
-      || (!force && !hydrationIsStale && !shouldHydrateProjectSessions(currentProject, selection))) {
+    if (!projectPath) return;
+    const currentProjects = projectsRef.current;
+    const project = currentProjects.find((candidate) => candidate.path === projectPath);
+    if (!project) return;
+    if (!force && !shouldHydrateProjectSessions(
+      project,
+      staleHydratedPathsRef.current.has(projectPath),
+    )) {
       return;
     }
 
-    const serverKey = projectHydrationServerKey();
-    if (hydrationServerKeyRef.current !== serverKey) {
-      resetHydration(serverKey);
-      return;
+    if (selection.sessionId || selection.projectDirName) {
+      hydrationSelectionRef.current.set(projectPath, selection);
     }
-    const requestKey = `${serverKey}\u0000${normalizedPath}`;
-    rememberHydrationSelection(hydrationSelectionRef.current, requestKey, normalizedPath, selection);
-    const inflight = inflightHydrationRef.current.get(requestKey);
+    const inflight = inflightHydrationRef.current.get(projectPath);
     if (inflight) return inflight;
 
-    const requestId = ++hydrationSequenceRef.current;
-    const snapshotGeneration = snapshotGenerationRef.current;
-    latestHydrationRef.current.set(normalizedPath, requestId);
-    setHydratingProjectPaths((current) => new Set([...current, normalizedPath]));
+    const requestGeneration = snapshotGenerationRef.current;
+    const hydrationId = ++hydrationSequenceRef.current;
+    latestHydrationRef.current.set(projectPath, hydrationId);
+    setHydratingProjectPaths((current) => new Set([...current, projectPath]));
 
-    let retryForNewerSnapshot = false;
-    const request = (async () => {
+    const task = (async () => {
       try {
-        const hydratedProject = await sessionsAPI.getProjectSessions(normalizedPath);
+        const hydratedProject = await sessionsAPI.getProjectSessions(projectPath);
         if (!activeRef.current) return;
-        const currentServerKey = projectHydrationServerKey();
-        if (!canApplyProjectSessionHydration({
-          requestId,
-          latestRequestId: latestHydrationRef.current.get(normalizedPath),
-          serverKey,
-          currentServerKey,
-          projectPath: normalizedPath,
-          responseProjectPath: hydratedProject?.path,
-          currentProjectPaths: new Set(projectsRef.current.map((project) => project.path)),
-        })) return;
-        if (snapshotGenerationRef.current !== snapshotGeneration) {
-          retryForNewerSnapshot = true;
+        if (latestHydrationRef.current.get(projectPath) !== hydrationId) return;
+        if (!canApplyProjectSessionHydration(requestGeneration, snapshotGenerationRef.current)) {
+          staleHydratedPathsRef.current.add(projectPath);
           return;
         }
 
-        const latestProject = projectsRef.current.find((project) => project.path === normalizedPath);
-        if (!latestProject) return;
-        const mergedProject = applyProjectSessionHydrationResponse(
-          latestProject,
-          hydratedProject,
-        ) as AggregatedProject;
-        staleHydratedPathsRef.current.delete(normalizedPath);
-        hydratedProjectsRef.current.set(normalizedPath, mergedProject);
-        const nextProjects = projectsRef.current.map((project) => (
-          project.path === normalizedPath ? mergedProject : project
-        ));
-        const pendingSelection = hydrationSelectionRef.current.get(requestKey) || selection;
-        hydrationSelectionRef.current.delete(requestKey);
+        staleHydratedPathsRef.current.delete(projectPath);
+        hydratedProjectsRef.current.set(projectPath, hydratedProject);
+        setProjects((latest) => {
+          const applied = applyProjectSessionHydrationResponse(latest, hydratedProject);
+          const normalized = normalizeProjectCatalog(applied);
+          projectsRef.current = normalized;
+          writeCachedProjects(normalized);
+          return normalized;
+        });
         clearLoadFailureMessage(message, CHAT_PROJECT_SESSIONS_LOAD_MESSAGE_KEY);
-        applyProjectSnapshot(nextProjects, pendingSelection, true);
-      } catch (_error) {
-        if (activeRef.current
-          && latestHydrationRef.current.get(normalizedPath) === requestId
-          && projectHydrationServerKey() === serverKey) {
-          showLoadFailureMessage(
-            message,
-            CHAT_PROJECT_SESSIONS_LOAD_MESSAGE_KEY,
-            '加载完整会话列表失败，请再次展开项目重试',
+
+        const targetSelection = hydrationSelectionRef.current.get(projectPath) || selection;
+        if (targetSelection.sessionId) {
+          const match = hydratedProject.sessions.find(
+            (s) => s.id === targetSelection.sessionId,
           );
+          if (match && selectedSessionRef.current?.id === targetSelection.sessionId) {
+            setSelectedSession(match);
+          }
         }
+      } catch (_error) {
+        if (!activeRef.current) return;
+        if (latestHydrationRef.current.get(projectPath) !== hydrationId) return;
+        showLoadFailureMessage(
+          message,
+          CHAT_PROJECT_SESSIONS_LOAD_MESSAGE_KEY,
+          '加载完整会话列表失败',
+        );
       } finally {
-        if (activeRef.current && latestHydrationRef.current.get(normalizedPath) === requestId) {
-          setHydratingProjectPaths((current) => {
-            const next = new Set(current);
-            next.delete(normalizedPath);
-            return next;
-          });
-        }
+        inflightHydrationRef.current.delete(projectPath);
+        hydrationSelectionRef.current.delete(projectPath);
+        clearHydratingPath(projectPath);
       }
     })();
 
-    inflightHydrationRef.current.set(requestKey, request);
-    try {
-      await request;
-    } finally {
-      if (inflightHydrationRef.current.get(requestKey) === request) {
-        inflightHydrationRef.current.delete(requestKey);
-      }
-      if (activeRef.current && retryForNewerSnapshot) {
-        window.setTimeout(() => {
-          if (!activeRef.current) return;
-          const pendingSelection = hydrationSelectionRef.current.get(requestKey) || selection;
-          hydrateRef.current(normalizedPath, pendingSelection, true).catch(() => {});
-        }, 0);
-      }
-    }
-  }, [applyProjectSnapshot, resetHydration]);
+    inflightHydrationRef.current.set(projectPath, task);
+    return task;
+  }, [clearHydratingPath]);
   hydrateRef.current = hydrateProjectSessions;
-  const {
-    loadProjects,
-    pauseProjectWatch,
-    resumeProjectWatch,
-  } = useProjectCatalogTransport({
-    activeRef,
-    initialSelection: stableInitialSelection,
-    applyProjectSnapshot,
-    setLoadingProjects,
-    setPassiveRunningSessionKeys,
-  });
 
   const toggleProject = useCallback((projectId: string): void => {
     setExpandedProjects((current) => {
@@ -287,10 +213,68 @@ export function useProjectCatalog(
       else next.add(projectId);
       return next;
     });
+    const target = projectsRef.current.find((candidate) => candidate.id === projectId);
+    if (target) void hydrateRef.current(target.path);
   }, []);
-  const findProjectByPath = useCallback((projectPath?: string): AggregatedProject | null => (
-    projectsRef.current.find((project) => project.path === projectPath) || null
-  ), []);
+
+  const findProjectByPath = useCallback((projectPath?: string): AggregatedProject | null => {
+    if (!projectPath) return null;
+    return projectsRef.current.find((candidate) => candidate.path === projectPath) || null;
+  }, []);
+
+  const applyProjectSnapshot = useCallback((
+    incomingProjects: AggregatedProject[],
+    selection: PersistedChatSelection = {},
+    skipHydration = false,
+  ): AggregatedProject[] => {
+    snapshotGenerationRef.current += 1;
+    const activeServerKey = projectHydrationServerKey();
+    if (hydrationServerKeyRef.current !== activeServerKey) {
+      resetHydration(activeServerKey);
+    }
+
+    const currentHydrated = hydratedProjectsRef.current;
+    const normalizedIncoming = normalizeProjectCatalog(incomingProjects);
+    const mergedProjects = normalizeProjectCatalog(
+      preserveHydratedProjectSessions(normalizedIncoming, currentHydrated),
+    );
+    projectsRef.current = mergedProjects;
+    setProjects(mergedProjects);
+    writeCachedProjects(mergedProjects);
+
+    // Reconcile selection
+    const targetSelection = selection.sessionId ? selection : {
+      sessionId: selectedSessionRef.current?.id,
+      provider: selectedSessionRef.current?.provider,
+      projectPath: selectedSessionRef.current?.projectPath || selectedProjectRef.current?.path,
+      projectDirName: selectedSessionRef.current?.projectDirName,
+    };
+
+    if (targetSelection.sessionId) {
+      const found = findProjectBySessionId(mergedProjects, targetSelection);
+      if (found) {
+        setSelectedProject(found.project);
+        setSelectedSession(found.session);
+        setExpandedProjects((curr) => new Set([...curr, found.project.id]));
+      }
+    } else if (targetSelection.projectPath) {
+      const foundProject = mergedProjects.find((p) => p.path === targetSelection.projectPath);
+      if (foundProject) {
+        setSelectedProject(foundProject);
+      }
+    }
+
+    return mergedProjects;
+  }, [resetHydration]);
+
+  const transport = useProjectCatalogTransport({
+    activeRef,
+    initialSelection: stableInitialSelection,
+    applyProjectSnapshot,
+    setLoadingProjects,
+    setPassiveRunningSessionKeys,
+  });
+
   const displayProjects = useMemo(
     () => buildDisplayProjects(projects, selectedProject, selectedSession),
     [projects, selectedProject, selectedSession],
@@ -312,137 +296,8 @@ export function useProjectCatalog(
     toggleProject,
     findProjectByPath,
     hydrateProjectSessions,
-    loadProjects,
-    pauseProjectWatch,
-    resumeProjectWatch,
+    loadProjects: transport.loadProjects,
+    pauseProjectWatch: transport.pauseProjectWatch,
+    resumeProjectWatch: transport.resumeProjectWatch,
   };
-}
-
-function markStaleHydratedProjects(
-  projects: AggregatedProject[],
-  hydratedProjects: Map<string, AggregatedProject>,
-  stalePaths: Set<string>,
-): string[] {
-  const newlyStalePaths: string[] = [];
-  projects.forEach((project) => {
-    const hydratedProject = hydratedProjects.get(project.path);
-    if (!hydratedProject) return;
-    if (isProjectSessionSnapshotComplete(project)) {
-      stalePaths.delete(project.path);
-    } else if (isHydratedProjectSessionsStale(project, hydratedProject)
-      && !stalePaths.has(project.path)) {
-      stalePaths.add(project.path);
-      newlyStalePaths.push(project.path);
-    }
-  });
-  return newlyStalePaths;
-}
-
-function reconcileHydratedProjects(
-  projects: AggregatedProject[],
-  hydratedProjects: Map<string, AggregatedProject>,
-  stalePaths: Set<string>,
-): void {
-  const visiblePaths = new Set(projects.map((project) => project.path));
-  for (const projectPath of hydratedProjects.keys()) {
-    if (!visiblePaths.has(projectPath)) {
-      hydratedProjects.delete(projectPath);
-      stalePaths.delete(projectPath);
-    }
-  }
-  projects.forEach((project) => {
-    if (hydratedProjects.has(project.path)) hydratedProjects.set(project.path, project);
-  });
-}
-
-function rememberHydrationSelection(
-  selections: Map<string, PersistedChatSelection>,
-  requestKey: string,
-  projectPath: string,
-  selection: PersistedChatSelection,
-): void {
-  if (!selection.sessionId && !selection.projectPath) return;
-  selections.set(requestKey, {
-    ...selections.get(requestKey),
-    ...selection,
-    projectPath,
-  });
-}
-
-interface ApplySelectionOptions {
-  readonly projects: AggregatedProject[];
-  readonly selection: PersistedChatSelection;
-  readonly skipHydration: boolean;
-  readonly selectedProjectRef: MutableRefObject<AggregatedProject | null>;
-  readonly selectedSessionRef: MutableRefObject<Session | null>;
-  readonly setExpandedProjects: Dispatch<SetStateAction<Set<string>>>;
-  readonly setSelectedProject: Dispatch<SetStateAction<AggregatedProject | null>>;
-  readonly setSelectedSession: Dispatch<SetStateAction<Session | null>>;
-  readonly hydrate: ProjectCatalog['hydrateProjectSessions'];
-}
-
-function applySelection(options: ApplySelectionOptions): void {
-  const currentSession = options.selectedSessionRef.current;
-  const selection = {
-    sessionId: options.selection.sessionId || (!currentSession?.draft ? currentSession?.id : undefined),
-    provider: options.selection.provider || currentSession?.provider,
-    projectDirName: options.selection.projectDirName || currentSession?.projectDirName,
-    projectPath: options.selection.projectPath
-      || currentSession?.projectPath
-      || options.selectedProjectRef.current?.path,
-  };
-  const matched = findProjectBySessionId(options.projects, selection);
-  if (matched) {
-    selectMatchedSession(options, selection, matched);
-    return;
-  }
-  selectProjectPath(options, selection, currentSession);
-}
-
-function selectMatchedSession(
-  options: ApplySelectionOptions,
-  selection: PersistedChatSelection,
-  matched: { project: AggregatedProject; session: Session },
-): void {
-  if (!options.skipHydration && shouldHydrateProjectSessions(matched.project, selection)) {
-    options.hydrate(matched.project.path, selection).catch(() => {});
-  }
-  if (options.selection.sessionId) {
-    options.setExpandedProjects((current) => new Set([...current, matched.project.id]));
-  }
-  options.setSelectedProject(matched.project);
-  options.setSelectedSession((previous) => samePersistedSession(previous, matched.session)
-    ? previous
-    : matched.session);
-}
-
-function selectProjectPath(
-  options: ApplySelectionOptions,
-  selection: PersistedChatSelection,
-  currentSession: Session | null,
-): void {
-  if (!selection.projectPath) return;
-  const project = options.projects.find((item) => item.path === selection.projectPath) || null;
-  if (project) {
-    if (!options.skipHydration && shouldHydrateProjectSessions(project, selection)) {
-      options.hydrate(project.path, selection).catch(() => {});
-    }
-    if (options.selection.projectPath) {
-      options.setExpandedProjects((current) => new Set([...current, project.id]));
-    }
-  } else if (currentSession?.draft) {
-    return;
-  }
-  options.setSelectedProject(project);
-  if (currentSession?.draft && currentSession.projectPath !== selection.projectPath) {
-    options.setSelectedSession({ ...currentSession, projectPath: selection.projectPath });
-  }
-}
-
-function samePersistedSession(previous: Session | null, next: Session): boolean {
-  return Boolean(previous
-    && previous.id === next.id
-    && previous.provider === next.provider
-    && previous.projectDirName === next.projectDirName
-    && !previous.draft);
 }

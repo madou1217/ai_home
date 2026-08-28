@@ -89,13 +89,14 @@ export function useLegacyMessageRunner({
     content,
     imageList,
   }: LegacyRunMessageInput): Promise<void> => {
-    const requestProjectPath = requestSession.projectPath || selectedProjectPath;
+    const isPureChat = requestSession.mode === 'chat' || (!requestSession.projectPath && !selectedProjectPath);
+    const requestProjectPath = requestSession.projectPath || selectedProjectPath || '';
     const resolvedProjectDirName = resolveSessionProjectDirName(
       account.provider,
       requestProjectPath,
       requestSession.projectDirName,
     );
-    if (!requestProjectPath) throw new Error('当前会话缺少项目路径');
+    if (!requestProjectPath && !isPureChat) throw new Error('当前会话缺少项目路径');
 
     const requestRunKey = runs.find(requestSession) || getSessionRunKey(requestSession);
     const controller = new AbortController();
@@ -114,7 +115,7 @@ export function useLegacyMessageRunner({
     const baseMessages = history.readSessionMessages(requestSession)
       || (isSameVisibleSession(selectedSessionRef.current, requestSession) ? history.messages : []);
     let latestRunMessages = buildInitialRunMessages(baseMessages, content, imageList, { model });
-    const useNativeSession = usesNativeSession(account);
+    const useNativeSession = !isPureChat && usesNativeSession(account);
     const requestMessages = useNativeSession
       ? [{ role: 'user' as const, content: content.trim() }]
       : buildStatelessRequestMessages(latestRunMessages);
@@ -181,8 +182,9 @@ export function useLegacyMessageRunner({
           id: nextSessionId,
           draft: false,
           provider: account.provider,
-          projectPath: requestProjectPath,
           projectDirName: resolvedProjectDirName,
+          mode: isPureChat ? 'chat' : 'work',
+          projectPath: isPureChat ? '' : requestProjectPath,
         };
         persistRunMessages(resolvedSession);
         if (model) rememberSessionModel(resolvedSession, model);
@@ -192,12 +194,14 @@ export function useLegacyMessageRunner({
           && isSameVisibleSession(selectedSessionRef.current, requestSession),
         );
         if (stillOnDraft) onSessionChange(resolvedSession);
-        refreshProjects(stillOnDraft ? {
-          sessionId: nextSessionId,
-          projectPath: requestProjectPath,
-          provider: account.provider,
-          projectDirName: resolvedProjectDirName,
-        } : { projectPath: requestProjectPath }).catch(() => {});
+        if (!isPureChat) {
+          refreshProjects(stillOnDraft ? {
+            sessionId: nextSessionId,
+            projectPath: requestProjectPath,
+            provider: account.provider,
+            projectDirName: resolvedProjectDirName,
+          } : { projectPath: requestProjectPath }).catch(() => {});
+        }
       };
 
       const handleStreamEvent = (event: ChatStreamEvent): void => {
@@ -331,10 +335,11 @@ export function useLegacyMessageRunner({
         createSession: Boolean(requestSession.draft),
         sessionId: requestSession.draft ? undefined : requestSession.id,
         projectDirName: requestSession.draft ? undefined : requestSession.projectDirName,
-        projectPath: requestProjectPath,
+        projectPath: requestProjectPath || undefined,
         model: model || undefined,
         images: imageList,
         approvalMode: approvalModeRef.current,
+        mode: isPureChat ? 'chat' : 'work',
         stream: true,
       }, { signal: controller.signal, onEvent: handleStreamEvent });
 
@@ -343,17 +348,17 @@ export function useLegacyMessageRunner({
           selectedSessionRef.current?.draft
           && isSameVisibleSession(selectedSessionRef.current, requestSession),
         );
-        if (createdSessionId) {
+        if (createdSessionId && !isPureChat) {
           await refreshProjects({
             sessionId: stillOnDraft ? createdSessionId : undefined,
             projectPath: requestProjectPath,
             provider: account.provider,
             projectDirName: resolvedProjectDirName,
           });
-        } else if (usedNativeSession) {
+        } else if (usedNativeSession && !isPureChat) {
           await refreshProjects({ projectPath: requestProjectPath });
         }
-      } else if (usedNativeSession) {
+      } else if (usedNativeSession && !isPureChat) {
         await history.reloadSessionHistory(resolvedSession);
       }
     } catch (error) {

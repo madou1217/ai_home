@@ -14,15 +14,27 @@ export function useMobileImmersiveMode(mobile: boolean, showChat: boolean): void
 export function usePersistedChatSelection(
   project: AggregatedProject | null,
   session: Session | null,
+  isChatMode: boolean = false,
 ): void {
   useEffect(() => {
+    // 纯聊天模式 (Chat 模式)：完全不持久化任何 projectPath 或 projectDirName，避免本地路径污染 URL
+    if (isChatMode || session?.mode === 'chat') {
+      writePersistedSelection({
+        projectPath: undefined,
+        sessionId: session?.draft ? undefined : session?.id,
+        provider: session?.draft ? undefined : session?.provider,
+        projectDirName: undefined,
+      });
+      return;
+    }
+
     writePersistedSelection({
       projectPath: project?.path,
       sessionId: session?.draft ? undefined : session?.id,
       provider: session?.draft ? undefined : session?.provider,
       projectDirName: session?.draft ? undefined : session?.projectDirName,
     });
-  }, [project?.path, session?.draft, session?.id, session?.projectDirName, session?.provider]);
+  }, [isChatMode, project?.path, session?.draft, session?.id, session?.mode, session?.projectDirName, session?.provider]);
 }
 
 export function useMobileChatNavigation(

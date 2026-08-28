@@ -2955,6 +2955,14 @@
       "text"
     ]
   },
+  "tencent/hy4-preview": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ]
+  },
   "thinkingmachines/inkling": {
     "input": [
       "text",

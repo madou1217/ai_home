@@ -973,6 +973,15 @@
       "text"
     ]
   },
+  "deepreinforce/ornith-1.5-35b-a3b": {
+    "input": [
+      "text",
+      "image"
+    ],
+    "output": [
+      "text"
+    ]
+  },
   "deepseek/deepseek-chat": {
     "input": [
       "text"
@@ -1586,6 +1595,14 @@
     ]
   },
   "ibm/granite-4-h-small": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "inclusionai/ling-3.0-flash-fin": {
     "input": [
       "text"
     ],

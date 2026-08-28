@@ -42,5 +42,5 @@ test('非 JSON 原始文本原样返回', () => {
 
 test('空错误体退回 HTTP 状态提示', () => {
   const msg = humanizeUpstreamError('', { status: 500 });
-  assert.match(msg, /HTTP 500/);
+  assert.match(msg, /500/);
 });

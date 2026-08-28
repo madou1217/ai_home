@@ -16,11 +16,11 @@ async function loadPendingMessagePresentation() {
   return import(modulePath);
 }
 
-test('pending message presentation ignores pure thinking blocks so the pending shell stays compact', async () => {
+test('pending message presentation ignores empty thinking blocks so the pending shell stays compact', async () => {
   const { getRenderablePendingBlocks, hasRenderablePendingBlocks } = await loadPendingMessagePresentation();
 
   const blocks = [
-    { type: 'thinking', value: '先分析一下约束' }
+    { type: 'thinking', value: '   ' }
   ];
 
   assert.deepEqual(getRenderablePendingBlocks(blocks), []);
@@ -37,6 +37,7 @@ test('pending message presentation preserves tool and text blocks for live detai
   ];
 
   assert.deepEqual(getRenderablePendingBlocks(blocks), [
+    { type: 'thinking', value: '先分析一下约束' },
     { type: 'tool_use', name: 'Read', body: '/tmp/foo.ts' },
     { type: 'text', value: '正在检查实现' }
   ]);

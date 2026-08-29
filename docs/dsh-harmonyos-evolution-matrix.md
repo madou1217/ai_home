@@ -31,6 +31,7 @@
 | | 8.3 | **浮动 Composer 与胶囊控制器** | HOS 6 Capsule Dock | ✅ **已完成** | `composer-controls.module.css` | 32px 胶囊控制器，悬浮上浮与 focus-within 柔和光晕 |
 | | 8.4 | **气泡弥散光影与灵动渐变** | HOS 6 Bubble Glow | ✅ **已完成** | `chat.module.css` | User 流光蓝渐变 + 弥散投影；Assistant 亚克力通透微光 |
 | | 8.5 | **悬浮空态卡片**（`ChatEmptyState`） | HOS 6 Card Aesthetic | ✅ **已完成** | `ChatEmptyState.tsx` | 56px 悬浮发光 Icon 徽章 + 鸿蒙流光大圆角操作胶囊 |
+| | 8.6 | **Composer 拖拽悬停毛玻璃遮罩**（多模态一键拖放附加） | HOS 6 Drag Interaction | ✅ **已完成** | `MessageArea.tsx`<br>`chat.module.css` | 拖拽进入动态高光光晕 + 亚克力 Drop 遮罩 + 自动 base64 附加 |
 
 ---
 
@@ -39,7 +40,7 @@
 - [x] **TODO-1 (输入体验深化)**：已将 `@` 文件引用浮层深度打通 `/v0/webui/fs/tree` 接口，支持工作区全层级文件与目录的实时联想搜索与无缝插入。
 - [x] **TODO-2 (上下文压力计)**：已在输入框右侧成功集成 dsh 标准的 `ContextMeter` 环形压力计（实时监控 Token 窗口占用并在 80% 高水位给出 `/compact` 压缩引导）。
 - [ ] **TODO-3 (虚拟滚动优化)**：会话消息超过 200 条时长对话的虚拟列表（Virtual List）接入，保持百万级长文本极致流畅；
-- [ ] **TODO-4 (拖拽多模态增强)**：支持直接向悬浮 Composer 拖拽多个代码文件/文档，生成轻量卡片预览与一键附加。
+- [x] **TODO-4 (拖拽多模态增强)**：已在悬浮 Composer 接入拖拽进入高亮感知、毛玻璃 Drop 遮罩以及多图片/附件一键拖放附加解析。
 
 ---
 

@@ -4557,3 +4557,31 @@
 .contextCompactBtn:hover {
   background: rgba(217, 119, 6, 0.15);
 }
+
+/* =============================================================================
+ * HarmonyOS 6 拖拽进入 Composer 高亮与附件卡片
+ * ========================================================================== */
+.composerShellDragging {
+  border-color: rgba(37, 99, 235, 0.6) !important;
+  box-shadow: 0 16px 48px -4px rgba(37, 99, 235, 0.22), 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
+  background: var(--hos-glass-bg-card, rgba(255, 255, 255, 0.95)) !important;
+}
+
+.composerDropOverlay {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--hos-radius-xl, 24px);
+  background: rgba(37, 99, 235, 0.04);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 2px dashed rgba(37, 99, 235, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #2563eb;
+  font-weight: 600;
+  font-size: 14px;
+  pointer-events: none;
+  z-index: 50;
+  animation: harmonyFadeIn 0.15s ease-out;
+}

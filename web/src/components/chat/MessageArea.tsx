@@ -208,6 +208,7 @@ const MessageArea = ({
   const [slashCommands, setSlashCommands] = useState<NativeSlashCommand[]>([]);
   const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
   const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const [shellTerminalOpen, setShellTerminalOpen] = useState(false);
   const dictation = useDictation();
   const startDictation = useCallback(() => {
@@ -216,6 +217,37 @@ const MessageArea = ({
   const activeProvider = session
     ? (session.draft ? (selectedAccount?.provider || session.provider) : session.provider)
     : '';
+
+  // 拖拽多模态图片/文件进入 Composer
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isDragging) setIsDragging(true);
+  }, [isDragging]);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    const files = e.dataTransfer?.files;
+    if (!files || files.length === 0) return;
+    for (const file of Array.from(files)) {
+      if (file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const base64 = reader.result as string;
+          onImagesChange?.([...images, base64]);
+        };
+        reader.readAsDataURL(file);
+      }
+    }
+  }, [images, onImagesChange]);
 
   // 处理粘贴图片
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
@@ -747,7 +779,18 @@ const MessageArea = ({
       {/* ChatGPT 风格输入区域 */}
       <div className={`${styles.inputArea} ${mobile ? styles.inputAreaMobile : ''}`}>
         <StatsLine messages={messages} />
-        <div className={styles.composerShell}>
+        <div
+          className={`${styles.composerShell} ${isDragging ? styles.composerShellDragging : ''}`}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          style={{ position: 'relative' }}
+        >
+          {isDragging ? (
+            <div className={styles.composerDropOverlay}>
+              <span>拖放图片至此处附加</span>
+            </div>
+          ) : null}
           {hasComposerDock ? (
             <div className={styles.composerDockStack}>
             {activeChecklist ? <TaskDock checklist={activeChecklist} className={styles.composerDockCard} /> : null}

@@ -23,7 +23,7 @@
 | **富媒体与代码块** | 5.1 | **标准代码块**（`CodeBlock` 语言横幅 + 复制） | dsh `CodeBlock` | ✅ **已完成** | `CodeBlock.tsx`<br>`MessageMarkdown.tsx` | 统一语言 Banner，代码内部横向滚动，外部无溢出 |
 | | 5.2 | **HTML / SVG 实时沙箱预览**（预览/代码双 Tab + 手机/PC 弹窗） | AI Home 富交互增强 | ✅ **已完成** | `HtmlCodeBlock.tsx` | 独立 iframe 沙箱隔离渲染，所见即所得 |
 | **输入触发器与联想** | 6.1 | **浮层式命令菜单**（`SlashCommandMenu`） | dsh `MenuView` | ✅ **已完成** | `SlashCommandMenu.tsx` | Combobox 无失焦设计，支持全键盘高亮与 Tab 补全 |
-| | 6.2 | **文件实体引用浮层**（`FileReferencePopover`） | dsh `ui-reference` | ✅ **已完成** | `FileReferencePopover.tsx` | 支持 `@` 触发工作区文件与文件夹智能联想 |
+| | 6.2 | **文件实体引用浮层**（`FileReferencePopover` 深度对接 `/fs/tree`） | dsh `ui-reference` | ✅ **已完成** | `FileReferencePopover.tsx` | 支持 `@` 触发实时工程文件树深度检索、过滤与一键插入 |
 | **模型调度与容灾** | 7.1 | **历史消息模型最高优先级继承** | 状态真相统一规则 | ✅ **已完成** | `MessageArea.tsx` | 刷新后严格继承历史真实成功模型，杜绝回退默认 |
 | | 7.2 | **OpenAI Responses 跨账号清洗与重试** | Gateway Failover Policy | ✅ **已完成** | `codex-adapter.js`<br>`upstream-failure-policy.js` | 自动清洗历史 `rs_` ID 与加密块，OAuth 失败自动转 API Key |
 | **HarmonyOS 6 视觉** | 8.1 | **通透亚克力毛玻璃材质**（`--hos-blur-card` & Glass Tokens） | HOS 6 Acrylic Glass | ✅ **已完成** | `design-tokens.css`<br>`chat.module.css` | 多层高斯模糊 + 饱和度 190% + 内高光微描边 |
@@ -36,7 +36,7 @@
 
 ## 📋 二、待办与深化演进清单 (TODO List)
 
-- [ ] **TODO-1 (输入体验深化)**：将 `@` 文件引用浮层深度接入当前工作区实时后端文件树搜索接口（`/v0/webui/project/files`），实现多层级动态联想；
+- [x] **TODO-1 (输入体验深化)**：已将 `@` 文件引用浮层深度打通 `/v0/webui/fs/tree` 接口，支持工作区全层级文件与目录的实时联想搜索与无缝插入。
 - [x] **TODO-2 (上下文压力计)**：已在输入框右侧成功集成 dsh 标准的 `ContextMeter` 环形压力计（实时监控 Token 窗口占用并在 80% 高水位给出 `/compact` 压缩引导）。
 - [ ] **TODO-3 (虚拟滚动优化)**：会话消息超过 200 条时长对话的虚拟列表（Virtual List）接入，保持百万级长文本极致流畅；
 - [ ] **TODO-4 (拖拽多模态增强)**：支持直接向悬浮 Composer 拖拽多个代码文件/文档，生成轻量卡片预览与一键附加。

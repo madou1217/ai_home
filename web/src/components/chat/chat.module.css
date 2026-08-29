@@ -5151,3 +5151,47 @@
   background: #ef4444;
   transform: scale(1.1);
 }
+
+/* =============================================================================
+ * HarmonyOS 6 风格 Markdown 引用、表格与排版微曲率升级
+ * ========================================================================== */
+.messageMarkdown blockquote {
+  margin: 12px 0;
+  padding: 8px 14px;
+  border-left: 3.5px solid var(--color-primary, #3b82f6);
+  border-radius: var(--hos-radius-xs, 8px);
+  background: var(--hos-glass-bg-subtle, rgba(0, 0, 0, 0.02));
+  color: var(--color-text, #374151);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.messageMarkdown table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  margin: 14px 0;
+  font-size: 12px;
+  border-radius: var(--hos-radius-sm, 12px);
+  overflow: hidden;
+  border: 0.8px solid var(--color-border-subtle, rgba(0, 0, 0, 0.08));
+  background: var(--hos-glass-bg-card, rgba(255, 255, 255, 0.85));
+}
+
+.messageMarkdown th {
+  background: rgba(0, 0, 0, 0.03);
+  padding: 9px 12px;
+  font-weight: 600;
+  color: var(--color-heading, #1f1f1f);
+  border-bottom: 1px solid var(--color-border-subtle, rgba(0, 0, 0, 0.08));
+}
+
+.messageMarkdown td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border-subtle, rgba(0, 0, 0, 0.05));
+  color: var(--color-text, #4b5563);
+}
+
+.messageMarkdown tr:last-child td {
+  border-bottom: none;
+}

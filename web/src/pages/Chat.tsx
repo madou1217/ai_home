@@ -191,6 +191,32 @@ export default function Chat() {
     if (mobile) setMobileShowChat(true);
   }, [accountCatalog, cancelCanonicalRestore, mobile, projectCatalog, workspaceMode]);
 
+  const handleForkSession = useCallback(async (messageIndex: number) => {
+    if (!projectCatalog.selectedSession) return;
+    try {
+      const current = projectCatalog.selectedSession;
+      const originalMessages = (await sessionsAPI.getSessionMessages(current.provider, current.id)) || [];
+      const branchMessages = originalMessages.slice(0, messageIndex + 1);
+      
+      const newSessionId = `chat-branch-${Date.now()}`;
+      const forkedSession = {
+        id: newSessionId,
+        title: `${current.title || '会话'} (分支)`,
+        provider: current.provider,
+        model: selectedModel || current.model,
+        mode: workspaceMode,
+        projectPath: current.projectPath,
+        updatedAt: Date.now(),
+        messages: branchMessages,
+      };
+
+      projectCatalog.setSelectedSession(forkedSession as any);
+      message.success('已从此消息成功派生新分支会话！');
+    } catch {
+      message.error('分支派生失败');
+    }
+  }, [projectCatalog, selectedModel, workspaceMode]);
+
   const handleProjectRemoved = useCallback((project: AggregatedProject): void => {
     cancelCanonicalRestore();
     if (projectCatalog.selectedProject?.path === project.path) {
@@ -284,6 +310,7 @@ export default function Chat() {
             selectAccountForProvider: accountCatalog.selectAccountForProvider,
           }}
           onRunningSessionKeysChange={handleLegacyRunningSessionKeysChange}
+          onForkSession={handleForkSession}
         />
       )}
       empty={() => (

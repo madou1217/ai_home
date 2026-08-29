@@ -605,7 +605,7 @@ const MessageArea = ({
     if (!nextModel && isValid(accountDefaultModel)) nextModel = accountDefaultModel;
     if (!nextModel) nextModel = accountModelIds[0] || '';
     if (selectedModel !== nextModel) onModelChange(nextModel);
-  }, [accountDefaultModel, accountModelIds, onModelChange, selectedModel, session, sessionModelKey, serverSessionModel]);
+  }, [accountDefaultModel, accountModelIds, messages, onModelChange, selectedModel, session, sessionModelKey, serverSessionModel]);
 
   // 用户显式切换模型：标记本会话已手选 + 记入内存（draft 时 key 为空自动跳过），即时反映到解析。
   const handleModelPick = useCallback((model: string) => {

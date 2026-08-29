@@ -1,0 +1,50 @@
+'use strict';
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+
+const {
+  buildApiProxyMessages,
+  __private: privateExports
+} = require('../lib/server/webui-chat-routes-opencode-proxy');
+
+test('buildApiProxyMessages auto-compacts oversized message history for small context models', () => {
+  // Create a long conversation with large message contents
+  const longText = 'A'.repeat(50000); // ~16.6k tokens each
+  const messages = [
+    { role: 'user', content: 'First message: ' + longText },
+    { role: 'assistant', content: 'First response: ' + longText },
+    { role: 'user', content: 'Second message: ' + longText },
+    { role: 'assistant', content: 'Second response: ' + longText },
+    { role: 'user', content: 'Latest prompt: Draw Doraemon with bamboo-copter' }
+  ];
+
+  // gemini-3.1-flash-image has a 65536 token limit
+  const compacted = buildApiProxyMessages(messages, [], {
+    model: 'gemini-3.1-flash-image',
+    provider: 'agy'
+  });
+
+  assert.ok(compacted.length < messages.length, 'Should have compacted messages');
+  assert.ok(compacted.length >= 1, 'Should retain at least the latest user message');
+  const lastMsg = compacted[compacted.length - 1];
+  assert.equal(lastMsg.role, 'user');
+  assert.equal(lastMsg.content, 'Latest prompt: Draw Doraemon with bamboo-copter');
+});
+
+test('buildApiProxyMessages leaves normal size conversations untouched', () => {
+  const messages = [
+    { role: 'user', content: 'Hello' },
+    { role: 'assistant', content: 'Hi there! How can I help?' },
+    { role: 'user', content: 'Draw a cat' }
+  ];
+
+  const result = buildApiProxyMessages(messages, [], {
+    model: 'gemini-3.1-flash-image',
+    provider: 'agy'
+  });
+
+  assert.equal(result.length, 3);
+  assert.equal(result[0].content, 'Hello');
+  assert.equal(result[2].content, 'Draw a cat');
+});

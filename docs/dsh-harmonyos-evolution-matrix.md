@@ -82,3 +82,4 @@
 | | 1.20 | **VirtualConversationList 超长对话虚拟列表渲染** (视口裁剪+60fps) | dsh `ConversationTimeline` | 📱 + 💻 | ✅ **已完成** | `VirtualConversationList.tsx`<br>`MessageArea.tsx` |
 
 | | 1.21 | **PWA 极速离线与静态资源缓存 ServiceWorker** (`sw.js`) | HOS 6 PWA Standard | 📱 + 💻 | ✅ **已完成** | `web/public/sw.js`<br>`web/src/app.tsx` |
+| | 1.22 | **AudioWaveformPlayer 灵动胶囊声学波形播放器** (动态律动+毛玻璃) | HOS 6 Acoustic Spec | 📱 + 💻 | ✅ **已完成** | `AudioWaveformPlayer.tsx`<br>`chat.module.css` |

@@ -372,3 +372,48 @@
   --app-ease: var(--ease-standard);
   --app-visual-viewport-height: var(--visual-viewport-height);
 }
+
+/* =============================================================================
+ * 9. HARMONYOS 6 视觉设计语言规范 (HarmonyOS Design System)
+ * -----------------------------------------------------------------------------
+ * 1. 材质：超轻透通透毛玻璃 (Acrylic & Ultra-Thin Glass)
+ * 2. 曲率：超级连续圆角 / 微曲率几何 (Super Ellipse / Squircle)
+ * 3. 光影：自然环境弥散柔光与多层高光微描边 (Ambient Glow & Inner Highlight)
+ * 4. 交互：弹性物理阻尼动效与呼吸律动 (Spring Dynamics & Pulsing Glow)
+ * ========================================================================== */
+:root {
+  /* HarmonyOS 6 连续曲率微曲率半径 */
+  --hos-radius-xs: 8px;
+  --hos-radius-sm: 12px;
+  --hos-radius-md: 16px;
+  --hos-radius-lg: 20px;
+  --hos-radius-xl: 24px;
+  --hos-radius-2xl: 32px;
+  --hos-radius-pill: 9999px;
+
+  /* HarmonyOS 6 亚克力/毛玻璃高斯模糊材质 */
+  --hos-blur-subtle: blur(12px) saturate(180%);
+  --hos-blur-card: blur(20px) saturate(190%);
+  --hos-blur-floating: blur(32px) saturate(200%);
+
+  /* HarmonyOS 6 通透多层背景色 */
+  --hos-glass-bg-subtle: rgba(255, 255, 255, 0.65);
+  --hos-glass-bg-card: rgba(255, 255, 255, 0.78);
+  --hos-glass-bg-floating: rgba(255, 255, 255, 0.88);
+  --hos-glass-bg-dark: rgba(20, 24, 33, 0.82);
+
+  /* HarmonyOS 6 双层光影微描边 (Inner Highlight + Outer Hairline) */
+  --hos-glass-border: 1px solid rgba(255, 255, 255, 0.6);
+  --hos-glass-border-subtle: 1px solid rgba(0, 0, 0, 0.05);
+  --hos-glass-border-dark: 1px solid rgba(255, 255, 255, 0.08);
+
+  /* HarmonyOS 6 弥散环境投影与高光 */
+  --hos-shadow-card: 0 4px 20px -2px rgba(0, 0, 0, 0.04), 0 2px 6px -1px rgba(0, 0, 0, 0.02);
+  --hos-shadow-floating: 0 12px 36px -4px rgba(0, 0, 0, 0.08), 0 4px 12px -2px rgba(0, 0, 0, 0.04);
+  --hos-shadow-glow-blue: 0 8px 24px -4px rgba(59, 110, 245, 0.25);
+  --hos-shadow-glow-purple: 0 8px 24px -4px rgba(139, 92, 246, 0.25);
+
+  /* HarmonyOS 6 弹性物理曲线 */
+  --hos-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --hos-ease-smooth: cubic-bezier(0.2, 0.8, 0.2, 1);
+}

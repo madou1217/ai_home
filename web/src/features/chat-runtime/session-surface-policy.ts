@@ -33,7 +33,7 @@ export function usesCanonicalSessionRuntime(
   session: Session | null,
   account?: ChatAccount | null,
 ): boolean {
-  if (!session) return false;
+  if (!session || session.mode === 'chat' || !session.projectPath) return false;
   const descriptor = chatRuntimeProviders.resolve(session.provider);
   if (!descriptor) return false;
   return account === undefined || Boolean(account && descriptor.acceptsAccount(account));

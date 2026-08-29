@@ -582,10 +582,24 @@ const MessageArea = ({
     const isValid = (id: string) => Boolean(id) && accountModelIds.includes(id);
     const userPicked = Boolean(sessionPickIdentity) && pickedSessionKeyRef.current === sessionPickIdentity;
     if (userPicked && isValid(selectedModel)) return; // 用户在本会话手选过且仍有效 → 保留
-    let nextModel = '';
+        let nextModel = '';
     if (session && !session.draft) {
       const remembered = recallSessionModel(session);
       if (isValid(remembered)) nextModel = remembered;
+
+      // 1. 优先从历史消息列表中提取最后一条成功消息的模型（最高优先级真相）
+      if (!nextModel && Array.isArray(messages)) {
+        for (let i = messages.length - 1; i >= 0; i--) {
+          const m = messages[i];
+          const candidate = String(m?.model || '').trim();
+          if (candidate && isValid(candidate)) {
+            nextModel = candidate;
+            break;
+          }
+        }
+      }
+
+      // 2. 其次读服务端持久化记录的会话模型
       if (!nextModel && isValid(serverSessionModel)) nextModel = serverSessionModel;
     }
     if (!nextModel && isValid(accountDefaultModel)) nextModel = accountDefaultModel;

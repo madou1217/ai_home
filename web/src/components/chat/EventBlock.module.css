@@ -317,6 +317,41 @@
 }
 .inlineAction:disabled { opacity: 0.55; cursor: default; }
 
+/* =============================================================================
+ * HarmonyOS 6 思考与运行中微光扫描呼吸动效 (Shimmering Light Stream)
+ * ========================================================================== */
+.root[data-tone='thinking'] .header {
+  position: relative;
+  overflow: hidden;
+}
+
+.root[data-tone='thinking'][data-open='false'] .header::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(139, 92, 246, 0.08) 50%,
+    transparent 100%
+  );
+  animation: thinkingShimmer 2.4s infinite ease-in-out;
+  pointer-events: none;
+}
+
+@keyframes thinkingShimmer {
+  0% {
+    left: -60%;
+  }
+  100% {
+    left: 160%;
+  }
+}
+
+
 .metaText {
   font-family: var(--font-mono);
   font-size: var(--text-xs);

@@ -90,3 +90,4 @@
 | | 1.27 | **useMobileOverscrollFeedback 移动端触顶触底触觉阻尼** (微振动反馈) | HOS 6 Touch Dynamics | 📱 | ✅ **已完成** | `use-mobile-overscroll-feedback.ts`<br>`MessageArea.tsx` |
 | | 1.28 | **Playwright 全站双端自动化集成测试套件** (0 错误 + 0 溢出守护) | E2E Testing Standard | 📱 + 💻 | ✅ **已完成** | `test/webui-e2e-suite.test.js` |
 | | 1.29 | **HarmonyOS 6 无障碍外发光微焦点轮廓** (`:focus-visible` 动态光晕) | HOS 6 Accessibility Spec | 📱 + 💻 | ✅ **已完成** | `design-tokens.css` |
+| | 1.30 | **ThinkingBlock 思考态微光扫描与呼吸动效** (`thinkingShimmer`) | HOS 6 Glow Dynamics | 📱 + 💻 | ✅ **已完成** | `EventBlock.module.css`<br>`ThinkingBlock.tsx` |

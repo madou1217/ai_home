@@ -15,6 +15,7 @@ import dictationStyles from './composer/dictation.module.css';
 import { providerAccentStyle } from './provider-registry';
 import TaskDock from './TaskDock';
 import StatsLine from './StatsLine';
+import SlashCommandMenu from './SlashCommandMenu';
 import { findLatestActiveChecklist } from './message-structure';
 import PlanChoiceDock from './PlanChoiceDock';
 import TerminalDock, { type TerminalRunState } from './TerminalDock';
@@ -510,6 +511,8 @@ const MessageArea = ({
         provider={sessionProvider}
         session={session}
         mobile={mobile}
+        onRetry={msg.role === 'assistant' ? () => handleSend(displayMessages[i - 1]?.content || '') : undefined}
+        onFork={() => onForkSession?.(i)}
       />
       );
     })
@@ -884,47 +887,13 @@ const MessageArea = ({
               )}
             </div>
           )}
-          {slashMatches.length > 0 && (
-            <div style={{ padding: '0 12px 8px' }}>
-              <div style={{ marginBottom: 6, fontSize: helperMutedFontSize, color: '#6b7280' }}>
-                ↑↓ 切换命令 · Tab 补全 · Enter 选择 · Esc 退出
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {slashMatches.map((item, index) => {
-                  const active = index === selectedSlashIndex;
-                  return (
-                    <button
-                      key={item.command}
-                      type="button"
-                      onMouseEnter={() => setSelectedSlashIndex(index)}
-                      onClick={() => applySlashCommand(item)}
-                      title={item.description}
-                      style={{
-                        border: active ? '1px solid #91caff' : '1px solid #d9e8ff',
-                        background: active ? '#e6f4ff' : '#f5f9ff',
-                        color: '#2468d6',
-                        borderRadius: 12,
-                        fontSize: helperFontSize,
-                        lineHeight: '18px',
-                        padding: '8px 10px',
-                        cursor: 'pointer',
-                        textAlign: 'left'
-                      }}
-                    >
-                      <div style={{ fontWeight: 600 }}>
-                        {item.command}
-                        {item.argumentHint ? ` ${item.argumentHint}` : ''}
-                      </div>
-                      <div style={{ marginTop: 2, color: '#5b6b88' }}>
-                        {item.description}
-                        {item.aliases.length > 0 ? ` · 别名：${item.aliases.join(', ')}` : ''}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+          <SlashCommandMenu
+            commands={slashMatches}
+            selectedIndex={selectedSlashIndex}
+            onSelect={applySlashCommand}
+            onHoverIndex={setSelectedSlashIndex}
+            visible={Boolean(slashToken && slashMatches.length > 0)}
+          />
           {embeddedSlashMatch && (
             <div style={{ padding: '0 12px 8px', fontSize: helperFontSize, color: '#c25100' }}>
               检测到命令 {embeddedSlashMatch.command}。Slash 命令必须单独发送，不能和普通文本混在同一条消息里。

@@ -50,6 +50,9 @@ interface Props {
   provider: Provider;
   session?: Pick<Session, 'projectPath' | 'projectDirName'> | null;
   mobile?: boolean;
+  isFollowup?: boolean;
+  onRetry?: () => void;
+  onFork?: () => void;
 }
 
 function detectReadLabelFromCommand(command: string) {
@@ -541,7 +544,7 @@ const PendingStatusLine = ({ text }: { text: string }) => {
   );
 };
 
-const MessageBubble = ({ message, provider, session, mobile = false, isFollowup = false }: Props) => {
+const MessageBubble = ({ message, provider, session, mobile = false, isFollowup = false, onRetry, onFork }: Props) => {
   const isUser = message.role === 'user';
   const showAssistantAvatar = !mobile && !isFollowup;
   const [metaVisible, setMetaVisible] = useState(false);
@@ -969,6 +972,8 @@ const MessageBubble = ({ message, provider, session, mobile = false, isFollowup 
           metrics={message.metrics}
           copyText={messageText || message.content}
           actionsVisible={metaVisible}
+          onRetry={onRetry}
+          onFork={onFork}
         />
       </div>
       <FileDrawer

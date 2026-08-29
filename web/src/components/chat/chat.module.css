@@ -4757,3 +4757,195 @@
   font-size: 13px;
   color: var(--color-muted, #94a3b8);
 }
+
+/* =============================================================================
+ * dsh + HarmonyOS 6 风格 SessionDiffModal (会话版本对比)
+ * ========================================================================== */
+.diffModalTitle {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-right: 28px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.diffModalTitleText {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-heading, #1f1f1f);
+}
+
+.diffModalControls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.diffModalBody {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.diffTurnTabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.diffTurnTab {
+  padding: 4px 12px;
+  border-radius: var(--hos-radius-pill, 9999px);
+  border: 1px solid var(--color-border-subtle, rgba(0, 0, 0, 0.08));
+  background: var(--hos-glass-bg-card, rgba(255, 255, 255, 0.75));
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  color: var(--color-text, #4b5563);
+}
+
+.diffTurnTab:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.diffTurnTabActive {
+  background: var(--color-primary, #3b82f6);
+  color: #fff;
+  border-color: var(--color-primary, #3b82f6);
+}
+
+.diffBannerHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: var(--hos-radius-card-sm, 12px);
+  background: rgba(0, 0, 0, 0.02);
+  border: 1px solid var(--color-border-subtle, rgba(0, 0, 0, 0.06));
+  font-size: 12px;
+}
+
+.diffBranchLabelLeft,
+.diffBranchLabelRight {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+}
+
+.diffCopyBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border-subtle, rgba(0, 0, 0, 0.1));
+  background: transparent;
+  cursor: pointer;
+  margin-left: 6px;
+  transition: all 0.15s ease;
+}
+
+.diffCopyBtn:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.diffContainer {
+  max-height: 480px;
+  overflow-y: auto;
+  border-radius: var(--hos-radius-card-sm, 12px);
+  border: 1px solid var(--color-border-subtle, rgba(0, 0, 0, 0.08));
+  background: #fafafa;
+}
+
+.diffSplitView {
+  display: flex;
+  min-height: 300px;
+}
+
+.diffSplitCol {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow-x: auto;
+}
+
+.diffSplitDivider {
+  width: 1px;
+  background: var(--color-border-subtle, rgba(0, 0, 0, 0.08));
+}
+
+.diffColHeader {
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-muted, #8c8c8c);
+  background: rgba(0, 0, 0, 0.03);
+  border-bottom: 1px solid var(--color-border-subtle, rgba(0, 0, 0, 0.06));
+}
+
+.diffCodeArea {
+  margin: 0;
+  padding: 12px;
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.diffUnifiedView {
+  display: flex;
+  flex-direction: column;
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.diffLine {
+  display: flex;
+  align-items: flex-start;
+  padding: 2px 8px;
+}
+
+.diffLineNoLeft,
+.diffLineNoRight {
+  width: 32px;
+  text-align: right;
+  padding-right: 8px;
+  color: #bfbfbf;
+  user-select: none;
+  font-size: 11px;
+}
+
+.diffLineMarker {
+  width: 16px;
+  text-align: center;
+  font-weight: 600;
+  user-select: none;
+}
+
+.diffLineContent {
+  flex: 1;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.diffLineAdded {
+  background: rgba(16, 185, 129, 0.1);
+  color: #065f46;
+}
+
+.diffLineRemoved {
+  background: rgba(239, 68, 68, 0.1);
+  color: #991b1b;
+}
+
+.diffLineSame {
+  color: var(--color-text, #374151);
+}

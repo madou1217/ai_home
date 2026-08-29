@@ -77,3 +77,6 @@
   - 手机端：视口 `< 768px` 严格禁止任何横向水平滚动条，核心交互单手拇指热区可达；
   - PC 端：宽屏自适应最大宽度与三栏弹性分栏，毛玻璃与微曲率阴影符合 HarmonyOS 6 规范；
 - **全量自动化验证**：全量单元与集成测试套件保持 100% 通过（50/50 pass）。
+
+| | 1.19 | **SessionDiffModal 会话分支版本差异对比** (Split/Unified 并排) | dsh `BranchDiff` | 📱 + 💻 | ✅ **已完成** | `SessionDiffModal.tsx`<br>`chat.module.css` |
+| | 1.20 | **VirtualConversationList 超长对话虚拟列表渲染** (视口裁剪+60fps) | dsh `ConversationTimeline` | 📱 + 💻 | ✅ **已完成** | `VirtualConversationList.tsx`<br>`MessageArea.tsx` |

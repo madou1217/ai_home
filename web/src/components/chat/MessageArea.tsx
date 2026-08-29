@@ -4,6 +4,7 @@ import { ArrowDownOutlined, PlusOutlined, CloseOutlined, InfoCircleOutlined, Cod
 import type { ChatMessage, Account, ChatAccount, Session, NativeSlashCommand, QueuedChatMessage, Provider, InteractivePrompt, ModelMetadata } from '@/types';
 import { chatAPI, modelsAPI, sessionsAPI, resolveActiveServer } from '@/services/api';
 import MessageBubble from './MessageBubble';
+import VirtualConversationList from './VirtualConversationList';
 import ProviderIcon from './ProviderIcon';
 import ComposerAccountMenu from './composer/ComposerAccountMenu';
 import ComposerApprovalMenu from './composer/ComposerApprovalMenu';
@@ -764,7 +765,18 @@ const MessageArea = ({
                 </button>
               </div>
             )}
-            {renderedMessageNodes}
+            {displayMessages.length > 40 ? (
+              <VirtualConversationList
+                messages={displayMessages}
+                session={session}
+                sessionProvider={sessionProvider}
+                mobile={mobile}
+                onRetry={(prompt) => handleSend(prompt)}
+                onForkSession={onForkSession}
+              />
+            ) : (
+              renderedMessageNodes
+            )}
             {pendingTail.visible ? (
               <div className={styles.pendingTailRow}>
                 <PendingTailStatusLine text={pendingTail.statusText || '正在思考中'} />

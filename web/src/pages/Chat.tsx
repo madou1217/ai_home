@@ -4,6 +4,7 @@ import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import 'dayjs/locale/zh-cn';
 import { ProjectList } from '@/components/chat';
+import GlobalCommandPalette from '@/components/chat/GlobalCommandPalette';
 import type { WorkspaceMode } from '@/components/chat/ModeSelector';
 import ChatEmptyState from '@/components/chat/ChatEmptyState';
 import { isSessionRunning } from '@/components/chat/project-runtime-state.js';

@@ -1,7 +1,7 @@
 import { useRef, useEffect, useLayoutEffect, useState, useCallback, useMemo } from 'react';
 import { Select, Empty, Button, Drawer, Tooltip } from 'antd';
 import { ArrowDownOutlined, PlusOutlined, CloseOutlined, InfoCircleOutlined, CodeOutlined } from '@ant-design/icons';
-import type { ChatMessage, Account, ChatAccount, Session, NativeSlashCommand, QueuedChatMessage, Provider, InteractivePrompt } from '@/types';
+import type { ChatMessage, Account, ChatAccount, Session, NativeSlashCommand, QueuedChatMessage, Provider, InteractivePrompt, ModelMetadata } from '@/types';
 import { chatAPI, modelsAPI, sessionsAPI, resolveActiveServer } from '@/services/api';
 import MessageBubble from './MessageBubble';
 import ProviderIcon from './ProviderIcon';
@@ -292,17 +292,18 @@ const MessageArea = ({
   };
 
   const selectedAccountRef = String(selectedAccount?.accountRef || '').trim();
-  const activeModelMeta = accountModelState.metadata && effectiveSelectedModel
-    ? accountModelState.metadata[effectiveSelectedModel]
-    : undefined;
-  const dynamicMaxTokens = activeModelMeta?.limits?.context
-    || (effectiveSelectedModel.toLowerCase().includes('flash-image') ? 65536 : 128000);
   const aihServerSelected = isAihServerAccount(selectedAccount);
   const aihServerProvider = aihServerSelected ? String(selectedAccount?.provider || '') : '';
   const selectedTargetKey = aihServerSelected
     ? getGatewaySelectionScope(aihServerProvider as Provider)
     : selectedAccountRef;
   const accountModelIds = accountModelState.targetKey === selectedTargetKey ? accountModelState.ids : [];
+  const effectiveSelectedModel = resolveEffectiveSelectedModel(selectedModel, accountModelIds);
+  const activeModelMeta = accountModelState.metadata && effectiveSelectedModel
+    ? accountModelState.metadata[effectiveSelectedModel]
+    : undefined;
+  const dynamicMaxTokens = activeModelMeta?.limits?.context
+    || (effectiveSelectedModel.toLowerCase().includes('flash-image') ? 65536 : 128000);
 
   // 加载当前账号启用模型：会话框只能使用账号投影，不能回退到 provider 聚合列表。
   // 缓存优先 + 后台异步刷新：切账号时若有缓存立即显示（不清空、不闪"无可用模型"），
@@ -508,8 +509,6 @@ const MessageArea = ({
   const modelsLoading = accountModelState.targetKey === selectedTargetKey && accountModelState.loading;
   // 加载中且暂无模型 → "加载中…"；确实空 → "无可用模型"。避免刷新窗口误显示"无可用模型"。
   const emptyModelHint = modelsLoading && models.length === 0 ? '加载中…' : '无可用模型';
-  // 生效模型必须属于当前账号目录：切账号后残留的旧账号模型不能被当成"已选中"展示/发送。
-  const effectiveSelectedModel = resolveEffectiveSelectedModel(selectedModel, accountModelIds);
   const hasAccountModel = Boolean(effectiveSelectedModel);
   const canSend = !isTerminated && hasAccountModel && trimmedInput.length > 0
     && !embeddedSlashMatch;

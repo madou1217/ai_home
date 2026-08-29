@@ -80,3 +80,5 @@
 
 | | 1.19 | **SessionDiffModal 会话分支版本差异对比** (Split/Unified 并排) | dsh `BranchDiff` | 📱 + 💻 | ✅ **已完成** | `SessionDiffModal.tsx`<br>`chat.module.css` |
 | | 1.20 | **VirtualConversationList 超长对话虚拟列表渲染** (视口裁剪+60fps) | dsh `ConversationTimeline` | 📱 + 💻 | ✅ **已完成** | `VirtualConversationList.tsx`<br>`MessageArea.tsx` |
+
+| | 1.21 | **PWA 极速离线与静态资源缓存 ServiceWorker** (`sw.js`) | HOS 6 PWA Standard | 📱 + 💻 | ✅ **已完成** | `web/public/sw.js`<br>`web/src/app.tsx` |

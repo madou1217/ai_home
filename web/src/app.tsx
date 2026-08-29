@@ -84,6 +84,11 @@ export async function getInitialState(): Promise<{
       );
     }
   }
+  if (typeof window !== 'undefined' && 'serviceWorker' in navigator && process.env.NODE_ENV === 'production') {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/ui/sw.js').catch(() => {});
+    });
+  }
   return {
     settings: {
       layout: "side",

@@ -16,6 +16,7 @@ import { providerAccentStyle } from './provider-registry';
 import TaskDock from './TaskDock';
 import StatsLine from './StatsLine';
 import SlashCommandMenu from './SlashCommandMenu';
+import ContextMeter from './ContextMeter';
 import { findLatestActiveChecklist } from './message-structure';
 import PlanChoiceDock from './PlanChoiceDock';
 import TerminalDock, { type TerminalRunState } from './TerminalDock';
@@ -1015,6 +1016,10 @@ const MessageArea = ({
                   ) : null}
                 </>
               )}
+              <ContextMeter
+                messages={messages}
+                onCompactSuggest={() => onInputChange('/compact')}
+              />
               {/* 发送/停止：固定位置的切换按钮，loading 时变为停止 */}
               <button
                 type="button"

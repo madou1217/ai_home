@@ -4464,3 +4464,96 @@
   background: rgba(0, 0, 0, 0.04);
   font-size: 12px;
 }
+
+/* =============================================================================
+ * dsh + HarmonyOS 6 风格 ContextMeter 上下文压力计
+ * ========================================================================== */
+.contextMeterTrigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  border-radius: var(--hos-radius-pill, 9999px);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.contextMeterTrigger:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.contextMeterPopover {
+  width: 220px;
+  padding: 4px;
+}
+
+.contextMeterHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-heading, #1f1f1f);
+  margin-bottom: 8px;
+}
+
+.contextMeterPercent {
+  font-family: var(--font-mono, monospace);
+  color: var(--color-primary, #3b82f6);
+}
+
+.contextMeterBarBg {
+  height: 6px;
+  border-radius: var(--hos-radius-pill, 9999px);
+  background: rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.contextMeterBarFill {
+  height: 100%;
+  border-radius: var(--hos-radius-pill, 9999px);
+  transition: width 0.3s ease;
+}
+
+.contextMeterNumbers {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  font-family: var(--font-mono, monospace);
+  color: var(--color-muted, #8c8c8c);
+}
+
+.contextMeterWarning {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--color-border-subtle, rgba(0, 0, 0, 0.08));
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 11px;
+  color: #d97706;
+}
+
+.contextCompactBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(217, 119, 6, 0.3);
+  background: rgba(217, 119, 6, 0.08);
+  color: #b45309;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.contextCompactBtn:hover {
+  background: rgba(217, 119, 6, 0.15);
+}

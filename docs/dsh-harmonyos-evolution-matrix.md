@@ -17,6 +17,7 @@
 | | 2.3 | **会话完成思考过程常驻折叠保存**（防止被正文冲掉） | AI Home 核心守护 | ✅ **已完成** | `assistant-live-state.js` | 修复 `finalizeAssistantMessage`，保留思考与正文 |
 | **会话度量与统计** | 3.1 | **会话粘性度量条**（`StatsLine`） | dsh `StatsLine` | ✅ **已完成** | `StatsLine.tsx` | 聚合轮次、总耗时、平均 TTFT、平均速率与 Token 计数 |
 | | 3.2 | **度量精度与单调守卫**（保留 1 位小数，`duration >= ttft`） | dsh Metrics Spec | ✅ **已完成** | `message-metrics-format.ts` | 解决由于精度和取整不一致导致的显示逻辑矛盾 |
+| | 3.3 | **环形上下文压力计**（`ContextMeter` 环形表盘 + 80% 高水位预警） | dsh `ContextMeter` | ✅ **已完成** | `ContextMeter.tsx`<br>`MessageArea.tsx` | 实时监控 Token 占用，支持一键触发 `/compact` 压缩 |
 | **消息快捷操作** | 4.1 | **消息悬浮动作栏**（`MessageIconActions`） | dsh `MessageIconActions` | ✅ **已完成** | `MessageIconActions.tsx` | 悬浮浮现一键复制、重新生成（Retry）与 Fork 分支 |
 | | 4.2 | **层级回调打通**（`MessageArea` -> `MessageBubble` -> Actions） | React Callback Chain | ✅ **已完成** | `MessageArea.tsx` | 完整透传 `onRetry` 与 `onFork` 逻辑 |
 | **富媒体与代码块** | 5.1 | **标准代码块**（`CodeBlock` 语言横幅 + 复制） | dsh `CodeBlock` | ✅ **已完成** | `CodeBlock.tsx`<br>`MessageMarkdown.tsx` | 统一语言 Banner，代码内部横向滚动，外部无溢出 |
@@ -36,7 +37,7 @@
 ## 📋 二、待办与深化演进清单 (TODO List)
 
 - [ ] **TODO-1 (输入体验深化)**：将 `@` 文件引用浮层深度接入当前工作区实时后端文件树搜索接口（`/v0/webui/project/files`），实现多层级动态联想；
-- [ ] **TODO-2 (上下文压力计)**：在输入框右下角引入 dsh 的 `ContextMeter` 环形上下文压力计（监控 128k/200k/1M 窗口百分比并在 80% 水位时给出 `/compact` 智能提示）；
+- [x] **TODO-2 (上下文压力计)**：已在输入框右侧成功集成 dsh 标准的 `ContextMeter` 环形压力计（实时监控 Token 窗口占用并在 80% 高水位给出 `/compact` 压缩引导）。
 - [ ] **TODO-3 (虚拟滚动优化)**：会话消息超过 200 条时长对话的虚拟列表（Virtual List）接入，保持百万级长文本极致流畅；
 - [ ] **TODO-4 (拖拽多模态增强)**：支持直接向悬浮 Composer 拖拽多个代码文件/文档，生成轻量卡片预览与一键附加。
 

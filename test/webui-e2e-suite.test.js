@@ -1,0 +1,14 @@
+'use strict';
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { execSync } = require('child_process');
+
+test('Playwright full-site e2e suite verifies PC and Mobile views without errors or overflow', () => {
+  const result = execSync(
+    'NODE_PATH="/Users/model/.npm/_npx/86170c4cd1c5da32/node_modules" node -e \'\nconst { chromium } = require("playwright");\nconst { execSync } = require("child_process");\n\nconst configOutput = execSync("aih server config show --show-secrets", { encoding: "utf8" });\nconst mgmtKeyMatch = configOutput.match(/management_key:\\s*([^\\s]+)/) || configOutput.match(/Management Key:\\s*([^\\s]+)/) || configOutput.match(/managementKey["\\s:]+([^\\s",]+)/);\nconst mgmtKey = mgmtKeyMatch ? mgmtKeyMatch[1] : "";\n\n(async () => {\n  const browser = await chromium.launch({\n    executablePath: "/Users/model/Library/Caches/ms-playwright/chromium_headless_shell-1229/chrome-headless-shell-mac-arm64/chrome-headless-shell",\n    headless: true\n  });\n  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });\n\n  const errors = [];\n  page.on("pageerror", err => errors.push("PAGE_ERROR: " + err.message));\n  page.on("console", msg => {\n    if (msg.type() === "error") errors.push("CONSOLE_ERROR: " + msg.text());\n  });\n\n  await page.goto("http://127.0.0.1:9527/ui/chat", { waitUntil: "domcontentloaded" });\n  await page.waitForTimeout(500);\n\n  const keyInput = page.locator("input[type=\\"password\\"], input[placeholder*=\\"Management\\"], input[placeholder*=\\"密钥\\"]").first();\n  if (await keyInput.isVisible()) {\n    await keyInput.fill(mgmtKey);\n    const submitBtn = page.locator("button:has-text(\\"连接\\"), button:has-text(\\"Connect\\")").first();\n    await submitBtn.click();\n    await page.waitForTimeout(1500);\n  }\n\n  // Test main routes\n  const routes = ["/ui/chat", "/ui/accounts", "/ui/models", "/ui/model-usage", "/ui/dashboard"];\n  for (const route of routes) {\n    await page.goto("http://127.0.0.1:9527" + route, { waitUntil: "domcontentloaded" });\n    await page.waitForTimeout(500);\n    \n    // Check mobile overflow\n    await page.setViewportSize({ width: 390, height: 844 });\n    await page.waitForTimeout(300);\n    const scrollW = await page.evaluate(() => document.documentElement.scrollWidth);\n    const clientW = await page.evaluate(() => document.documentElement.clientWidth);\n    if (scrollW > clientW) {\n      errors.push(`OVERFLOW on ${route}: scrollWidth ${scrollW} > clientWidth ${clientW}`);\n    }\n    await page.setViewportSize({ width: 1440, height: 900 });\n  }\n\n  await browser.close();\n  if (errors.length > 0) {\n    console.error(JSON.stringify(errors));\n    process.exit(1);\n  }\n  console.log("ALL_ROUTES_PASSED");\n})();\n\'',
+    { encoding: 'utf8' }
+  );
+
+  assert.ok(result.includes('ALL_ROUTES_PASSED'), 'All routes should pass Playwright verification');
+});

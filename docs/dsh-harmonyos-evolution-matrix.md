@@ -88,3 +88,4 @@
 | | 1.25 | **ConnectionPulseBadge 实时长连接心跳水滴指示环** (声光呼吸动力学) | HOS 6 Pulse Droplet | 📱 + 💻 | ✅ **已完成** | `ConnectionPulseBadge.tsx`<br>`StatsLine.tsx` |
 | | 1.26 | **VideoPlayerCard 视频多模态画中画卡片** (超级曲率+毛玻璃控制) | HOS 6 Media Card | 📱 + 💻 | ✅ **已完成** | `VideoPlayerCard.tsx`<br>`chat.module.css` |
 | | 1.27 | **useMobileOverscrollFeedback 移动端触顶触底触觉阻尼** (微振动反馈) | HOS 6 Touch Dynamics | 📱 | ✅ **已完成** | `use-mobile-overscroll-feedback.ts`<br>`MessageArea.tsx` |
+| | 1.28 | **Playwright 全站双端自动化集成测试套件** (0 错误 + 0 溢出守护) | E2E Testing Standard | 📱 + 💻 | ✅ **已完成** | `test/webui-e2e-suite.test.js` |

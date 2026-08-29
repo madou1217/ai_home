@@ -5,31 +5,45 @@
   align-items: center;
   gap: 6px;
   min-width: 0;
-  height: 30px;
-  padding: 0 9px;
-  border: 0;
-  border-radius: 9px;
-  color: #303030;
-  background: transparent;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  border-radius: var(--hos-radius-pill, 9999px);
+  color: var(--color-text, #334155);
+  background: var(--hos-glass-bg-subtle, rgba(255, 255, 255, 0.7));
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   font: inherit;
   font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.02);
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .controlButton:hover,
 .approvalButton:hover,
-.modelSummary:hover { background: #f2f2f2; }
+.modelSummary:hover {
+  background: rgba(255, 255, 255, 0.95);
+  border-color: rgba(37, 99, 235, 0.2);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.05);
+}
 
 .controlButton:focus-visible,
 .approvalButton:focus-visible,
 .modelSummary:focus-visible {
-  outline: 2px solid #8ab4f8;
+  outline: 2px solid #3b82f6;
   outline-offset: 1px;
 }
 
 .controlButton:disabled,
 .approvalButton:disabled,
-.modelSummary:disabled { cursor: default; opacity: 0.48; }
+.modelSummary:disabled {
+  cursor: default;
+  opacity: 0.48;
+  transform: none;
+}
 
 .controlValue {
   max-width: 168px;
@@ -39,30 +53,49 @@
 }
 
 .controlButton small {
-  padding: 1px 5px;
-  border-radius: 5px;
-  color: #6f6f6f;
-  background: #ededed;
+  padding: 1px 6px;
+  border-radius: var(--hos-radius-pill, 9999px);
+  color: #64748b;
+  background: rgba(0, 0, 0, 0.04);
   font-size: 10px;
   line-height: 16px;
+  font-weight: 600;
 }
 
-.approvalButton { color: #e23b19; }
+.approvalButton {
+  color: #ea580c;
+  background: rgba(234, 88, 12, 0.06);
+  border-color: rgba(234, 88, 12, 0.15);
+}
+
+.approvalButton:hover {
+  background: rgba(234, 88, 12, 0.12);
+  border-color: rgba(234, 88, 12, 0.3);
+}
 
 .modelSummary {
   justify-content: flex-end;
-  padding-inline: 12px 8px;
-  background: #f4f4f4;
+  padding-inline: 12px 10px;
+  background: var(--hos-glass-bg-subtle, rgba(255, 255, 255, 0.75));
+  border: 1px solid rgba(0, 0, 0, 0.06);
 }
 
-.modelSummary small { color: #8a8a8a; font-size: 13px; }
+.modelSummary small {
+  color: #64748b;
+  font-size: 12px;
+}
+
 .modelIcon {
   width: 16px;
   height: 16px;
   flex: 0 0 16px;
-  color: #6f6f6f;
+  color: #3b82f6;
 }
-.chevron { color: #929292; font-size: 10px; }
+
+.chevron {
+  color: #94a3b8;
+  font-size: 10px;
+}
 
 .optionRow,
 .menuHeading,
@@ -74,41 +107,88 @@
   min-width: 210px;
 }
 
-.optionMain { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.optionMain small { color: #8a8a8a; font-size: 11px; }
-
-.menuHeading > span:first-child { color: #242424; }
-.menuHeading > span:nth-child(2) { margin-left: auto; color: #929292; }
-.menuHeading > :last-child { color: #929292; font-size: 10px; }
-
-.approvalOption { align-items: flex-start; min-width: 330px; }
-.approvalOption > span:first-child { display: grid; gap: 2px; }
-.approvalOption strong { color: #242424; font-weight: 500; }
-.approvalOption small { color: #8a8a8a; font-size: 12px; }
-.retryOption { color: #9a5d00; }
-
-@media (max-width: 768px) {
-  .controlValue { max-width: 112px; }
-  .approvalButton span:nth-child(2) { display: none; }
-  .modelSummary { max-width: 48vw; }
-  .modelSummary > span:first-of-type { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.optionMain {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
-/* composer 容器(.inputToolbar,见 chat.module.css)本身变窄时——不依赖视口宽度，
-   而是响应侧栏/终端面板挤压聊天列后的真实可用宽度——把带文字的按钮收成纯图标。 */
+.optionMain small {
+  color: #8a8a8a;
+  font-size: 11px;
+}
+
+.menuHeading > span:first-child {
+  color: #242424;
+}
+
+.menuHeading > span:nth-child(2) {
+  margin-left: auto;
+  color: #929292;
+}
+
+.menuHeading > :last-child {
+  color: #929292;
+  font-size: 10px;
+}
+
+.approvalOption {
+  align-items: flex-start;
+  min-width: 330px;
+}
+
+.approvalOption > span:first-child {
+  display: grid;
+  gap: 2px;
+}
+
+.approvalOption strong {
+  color: #242424;
+  font-weight: 500;
+}
+
+.approvalOption small {
+  color: #8a8a8a;
+  font-size: 12px;
+}
+
+.retryOption {
+  color: #9a5d00;
+}
+
+@media (max-width: 768px) {
+  .controlValue {
+    max-width: 112px;
+  }
+  .approvalButton span:nth-child(2) {
+    display: none;
+  }
+  .modelSummary {
+    max-width: 48vw;
+  }
+  .modelSummary > span:first-of-type {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
 @container (max-width: 620px) {
   .controlValue,
   .controlButton small,
   .approvalLabel,
   .modelLabel,
   .modelEffort,
-  .chevron { display: none; }
+  .chevron {
+    display: none;
+  }
 
   .controlButton,
   .approvalButton,
   .modelSummary {
-    width: 30px;
-    flex: 0 0 30px;
+    width: 32px;
+    flex: 0 0 32px;
     padding: 0;
     justify-content: center;
   }

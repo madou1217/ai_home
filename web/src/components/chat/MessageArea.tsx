@@ -20,6 +20,7 @@ import SlashCommandMenu from './SlashCommandMenu';
 import ContextMeter from './ContextMeter';
 import ComposerAttachmentGallery from './ComposerAttachmentGallery';
 import { findLatestActiveChecklist } from './message-structure';
+import { useMobileOverscrollFeedback } from '@/components/mobile/use-mobile-overscroll-feedback';
 import PlanChoiceDock from './PlanChoiceDock';
 import TerminalDock, { type TerminalRunState } from './TerminalDock';
 import ShellTerminalPanel from './ShellTerminalPanel';
@@ -214,6 +215,7 @@ const MessageArea = ({
   const [isDragging, setIsDragging] = useState(false);
   const [shellTerminalOpen, setShellTerminalOpen] = useState(false);
   const dictation = useDictation();
+  useMobileOverscrollFeedback(scrollContainerRef);
   const startDictation = useCallback(() => {
     dictation.start(input, onInputChange);
   }, [dictation, input, onInputChange]);

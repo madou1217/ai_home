@@ -12,21 +12,23 @@ interface Props {
 
 export default function ModeSelector({ mode, onChange, mobile = false }: Props) {
   return (
-    <div className={`${styles.modeSelector} ${mobile ? styles.modeSelectorMobile : ''}`}>
+    <div className={`${styles.modeSelectorContainer} ${mobile ? styles.modeSelectorMobile : ''}`}>
       <button
         type="button"
-        className={`${styles.modeTab} ${mode === 'chat' ? styles.modeTabActive : ''}`}
+        className={`${styles.modeOptionBtn} ${mode === 'chat' ? styles.modeOptionBtnActive : ''}`}
         onClick={() => onChange('chat')}
+        aria-label="纯聊天模式"
       >
-        <MessageOutlined className={styles.modeIcon} />
+        <MessageOutlined />
         <span>Chat</span>
       </button>
       <button
         type="button"
-        className={`${styles.modeTab} ${mode === 'work' ? styles.modeTabActive : ''}`}
+        className={`${styles.modeOptionBtn} ${mode === 'work' ? styles.modeOptionBtnActive : ''}`}
         onClick={() => onChange('work')}
+        aria-label="工作区项目模式"
       >
-        <CodeOutlined className={styles.modeIcon} />
+        <CodeOutlined />
         <span>Work</span>
       </button>
     </div>

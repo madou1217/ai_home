@@ -4342,3 +4342,49 @@
   border: 1px solid rgba(255, 255, 255, 0.8) !important;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08) !important;
 }
+
+/* =============================================================================
+ * HarmonyOS 6 气泡与卡片通透光影与精致质感升级
+ * ========================================================================== */
+
+/* 用户消息气泡：鸿蒙 6 灵动流光蓝渐变与高光描边 */
+.bubbleUser {
+  border-radius: 20px 20px 4px 20px !important;
+  background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 50%, #3b82f6 100%) !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.25) !important;
+  box-shadow: 0 4px 16px -2px rgba(37, 99, 235, 0.32), 0 1px 3px rgba(0, 0, 0, 0.05) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+}
+
+/* Assistant 消息气泡：鸿蒙 6 通透亚克力材质与微曲率柔光 */
+.bubbleAssistant {
+  border-radius: 20px 20px 20px 4px !important;
+  background: var(--hos-glass-bg-card, rgba(255, 255, 255, 0.82)) !important;
+  backdrop-filter: var(--hos-blur-card, blur(20px)) saturate(190%) !important;
+  -webkit-backdrop-filter: var(--hos-blur-card, blur(20px)) saturate(190%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.9) !important;
+  box-shadow: var(--hos-shadow-card, 0 4px 20px -2px rgba(0, 0, 0, 0.04)) !important;
+  padding: 14px 18px !important;
+}
+
+/* 左侧会话项：鸿蒙 6 胶囊卡片交互 */
+.sessionItem {
+  border-radius: 14px !important;
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+}
+
+.sessionItem:hover {
+  background: rgba(255, 255, 255, 0.75) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03) !important;
+}
+
+.sessionItemActive {
+  background: rgba(255, 255, 255, 0.95) !important;
+  border: 1px solid rgba(37, 99, 235, 0.25) !important;
+  box-shadow: 0 4px 16px rgba(37, 99, 235, 0.08) !important;
+}

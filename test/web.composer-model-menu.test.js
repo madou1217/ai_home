@@ -29,7 +29,7 @@ test('narrow desktop composer collapses account, approval, and model controls to
   assert.match(runtimeCss, /\.composerToolbar\s*\{[^}]*container-type:\s*inline-size;/su);
   assert.match(controlsCss, /@container\s*\(max-width:\s*620px\)/u);
   assert.match(controlsCss, /\.controlValue,\s*\.controlButton small,\s*\.approvalLabel,\s*\.modelLabel,\s*\.modelEffort,\s*\.chevron\s*\{\s*display:\s*none;/su);
-  assert.match(controlsCss, /\.controlButton,\s*\.approvalButton,\s*\.modelSummary\s*\{[^}]*width:\s*30px;[^}]*flex:\s*0 0 30px;/su);
+  assert.match(controlsCss, /\.controlButton,\s*\.approvalButton,\s*\.modelSummary\s*\{[^}]*width:\s*32px;[^}]*flex:\s*0 0 32px;/su);
 });
 
 test('composer brain icon has the same fixed size as toolbar icons', () => {

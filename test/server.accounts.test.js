@@ -14,6 +14,7 @@ const {
   loadKimiServerAccounts,
   loadOpenCodeServerAccounts,
   loadServerRuntimeAccounts,
+  loadZcodeServerAccounts,
   readTrustedUsageSnapshot
 } = require('../lib/server/accounts');
 const { registerAccountIdentity } = require('../lib/account/account-registration');
@@ -517,6 +518,53 @@ test('AGY trusted model quota remains model-scoped', (t) => {
   assert.equal(accounts[0].codeAssistQuotaMinRemainingPct, 0);
   assert.equal(accounts[0].codeAssistProject, 'projects/persisted-runtime-project');
   assert.equal(snapshot.capturedAt, capturedAt);
+});
+
+test('zcode OAuth accounts prefer live profile credentials over a stale DB snapshot', (t) => {
+  const fixture = createFixture(t);
+  const accountRef = fixture.register('zcode', '1', {
+    nativeAuth: {
+      credentials: {
+        'oauth:zai:access_token': 'db-access-stale',
+        zcodejwttoken: 'db-jwt-stale',
+        'oauth:zai:user_info': JSON.stringify({ email: 'zcode@example.com' })
+      }
+    }
+  });
+  // 桌面端运行期刷新后的沙箱活凭据（mtime 比 DB 快照新）。
+  const liveDir = path.join(fixture.aiHomeDir, 'run', 'auth-projections', 'zcode', accountRef, '.zcode', 'v2');
+  fs.mkdirSync(liveDir, { recursive: true });
+  const liveFile = path.join(liveDir, 'credentials.json');
+  fs.writeFileSync(liveFile, JSON.stringify({
+    'oauth:zai:access_token': 'live-access-fresh',
+    zcodejwttoken: 'live-jwt-fresh',
+    'oauth:zai:user_info': JSON.stringify({ email: 'zcode@example.com' })
+  }));
+  const future = new Date(Date.now() + 60_000);
+  fs.utimesSync(liveFile, future, future);
+
+  const accounts = loadZcodeServerAccounts(fixture.deps());
+
+  assert.equal(accounts.length, 1);
+  assert.equal(accounts[0].zcodeJwtToken, 'live-jwt-fresh', '模型目录探测必须拿到活 JWT 而不是过期 DB 快照');
+  assert.equal(accounts[0].accessToken, 'live-access-fresh');
+});
+
+test('zcode OAuth accounts fall back to the DB snapshot when no live profile exists', (t) => {
+  const fixture = createFixture(t);
+  fixture.register('zcode', '2', {
+    nativeAuth: {
+      credentials: {
+        'oauth:zai:access_token': 'db-access-token',
+        zcodejwttoken: 'db-jwt-token'
+      }
+    }
+  });
+
+  const accounts = loadZcodeServerAccounts(fixture.deps());
+
+  assert.equal(accounts.length, 1);
+  assert.equal(accounts[0].zcodeJwtToken, 'db-jwt-token');
 });
 
 test('OpenCode discovery uses DB native auth as its only identity source', (t) => {

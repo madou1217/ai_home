@@ -17,6 +17,10 @@ const {
 } = require('../lib/server/account-app-launcher');
 const { registerAccountIdentity } = require('../lib/account/account-registration');
 const { upsertAccountRef } = require('../lib/server/account-ref-store');
+const {
+  readAccountNativeAuth,
+  writeAccountNativeAuth
+} = require('../lib/server/account-credential-store');
 const { readDesktopSession, writeDesktopSession } = require('../lib/server/kimi-desktop-session');
 const { ZCODE_CREDENTIAL_SECRET_ENV } = require('../lib/account/zcode-credential');
 const {
@@ -1911,4 +1915,63 @@ test('kimi desktop seed 抛异常且 profile 无既有登录态时阻止打开�
   assert.equal(result.ok, false);
   assert.equal(result.error, 'kimi_desktop_session_seed_failed');
   assert.equal(fakeSpawn.calls.length, 0);
+});
+
+test('zcode desktop close 把沙箱里刷新过的活凭据捕获回 DB', (t) => {
+  // 桌面端运行期刷新 token 只写沙箱 credentials.json，不回写 DB；close 时
+  // captureProviderAuth 必须把活凭据合并回 DB 快照，否则服务端探测继续用旧 JWT。
+  const aiHomeDir = nodeFs.mkdtempSync(nodePath.join(nodeOs.tmpdir(), 'aih-zcode-close-'));
+  t.after(() => nodeFs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  const accountRef = upsertAccountRef(nodeFs, aiHomeDir, {
+    provider: 'zcode',
+    cliAccountId: '3',
+    identitySeed: 'test:zcode:close-capture'
+  });
+  writeAccountNativeAuth(nodeFs, aiHomeDir, accountRef, {
+    credentials: { zcodejwttoken: 'db-jwt-stale' }
+  });
+  const profileDir = nodePath.join(aiHomeDir, 'run', 'auth-projections', 'zcode', accountRef);
+  const liveCredentialsPath = nodePath.join(profileDir, '.zcode', 'v2', 'credentials.json');
+  nodeFs.mkdirSync(nodePath.dirname(liveCredentialsPath), { recursive: true });
+  nodeFs.writeFileSync(liveCredentialsPath, JSON.stringify({
+    'oauth:active_provider': 'zai',
+    'oauth:zai:access_token': 'live-access-fresh',
+    'oauth:zai:refresh_token': 'live-refresh-fresh',
+    zcodejwttoken: 'live-jwt-fresh'
+  }));
+
+  const launcher = createAccountAppLauncher({
+    fs: nodeFs,
+    path: nodePath,
+    spawn: createFakeSpawn().spawnImpl,
+    processObj: { platform: 'win32', execPath: 'C:\\node\\node.exe', env: {} },
+    env: {},
+    aiHomeDir,
+    repoRoot: 'C:\\repo',
+    execFileSync: function execFileSync() { throw new Error('exec disabled in tests'); },
+    stopGraceMs: 0,
+    resolveAccount: () => ({ accountRef, provider: 'zcode', cliAccountId: '3' }),
+    getProfileDir: () => profileDir,
+    readAccountEnv: () => ({})
+  });
+
+  // execFileSync 不可用 → 无运行中进程 → not_running 路径同样触发捕获。
+  const result = launcher.launchAccountApp({ provider: 'zcode', accountRef, kind: 'desktop', action: 'close' });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 'not_running');
+  const stored = readAccountNativeAuth(nodeFs, aiHomeDir, accountRef);
+  assert.equal(stored.credentials.zcodejwttoken, 'live-jwt-fresh', 'close 必须把活 JWT 捕获回 DB');
+  assert.equal(stored.credentials['oauth:zai:refresh_token'], 'live-refresh-fresh');
+});
+
+test('zcode desktop close 的凭据捕获失败不影响关闭结果', () => {
+  // 捕获路径整体 try/catch：账号不在 DB（captureProviderAuth 内部解析失败）时
+  // close 仍正常返回。
+  const { launcher } = createLauncher({
+    resolveAccount: () => ({ accountRef: ACCOUNT_REF, provider: 'zcode', cliAccountId: '3' })
+  });
+  const result = launcher.launchAccountApp({ provider: 'zcode', accountRef: ACCOUNT_REF, kind: 'desktop', action: 'close' });
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 'not_running');
 });

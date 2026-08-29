@@ -165,6 +165,47 @@ test('kimi OAuth identity uses stable user_id across rotating tokens and devices
   assert.equal(first.degraded, false);
 });
 
+test('zcode OAuth identity uses user_info email across rotating tokens when user_id is absent', () => {
+  const first = identity.resolveNativeAuthIdentitySeed('zcode', { credentials: {
+    'oauth:active_provider': 'zai',
+    'oauth:zai:access_token': 'zai-access-a',
+    'zcodejwttoken': 'zcode-jwt-a',
+    'oauth:zai:user_info': JSON.stringify({ email: 'Zcode.User@example.com', name: 'Zcode User' })
+  } });
+  const second = identity.resolveNativeAuthIdentitySeed('zcode', { credentials: {
+    'oauth:active_provider': 'zai',
+    'oauth:zai:access_token': 'zai-access-b',
+    'zcodejwttoken': 'zcode-jwt-b',
+    'oauth:zai:user_info': JSON.stringify({ email: 'zcode.user@example.com', name: 'Zcode User' })
+  } });
+  const differentUser = identity.resolveNativeAuthIdentitySeed('zcode', { credentials: {
+    'oauth:zai:access_token': 'zai-access-c',
+    'zcodejwttoken': 'zcode-jwt-c',
+    'oauth:zai:user_info': JSON.stringify({ email: 'other@example.com' })
+  } });
+
+  assert.equal(first.identitySeed, second.identitySeed, '同 email 两次登录（不同 token）必须得到同一种子');
+  assert.equal(first.identitySeed, `oauth:zcode:user:${identity.hashApiKeySecret('zcode.user@example.com')}`);
+  assert.notEqual(first.identitySeed, differentUser.identitySeed);
+  assert.equal(first.identitySeed.includes('zcode.user@example.com'), false);
+  assert.equal(first.degraded, false);
+});
+
+test('zcode OAuth identity prefers user_id over email and keeps the legacy precedence', () => {
+  const withUserId = identity.resolveNativeAuthIdentitySeed('zcode', { credentials: {
+    'zcodejwttoken': 'zcode-jwt-a',
+    'oauth:zai:user_info': JSON.stringify({ user_id: 'zcode-user-1', email: 'zcode@example.com' })
+  } });
+  const withUserIdCamel = identity.resolveNativeAuthIdentitySeed('zcode', { credentials: {
+    'zcodejwttoken': 'zcode-jwt-b',
+    'oauth:zai:user_info': JSON.stringify({ userId: 'zcode-user-1', email: 'other@example.com' })
+  } });
+
+  assert.equal(withUserId.identitySeed, `oauth:zcode:user:${identity.hashApiKeySecret('zcode-user-1')}`);
+  assert.equal(withUserId.identitySeed, withUserIdCamel.identitySeed);
+  assert.equal(withUserId.degraded, false);
+});
+
 test('api-key identity uses a key hash to distinguish accounts at one endpoint', () => {
   const secret = 'sk-super-secret-123456';
   const raw = buildApiKeyIdentity('codex', { config: {

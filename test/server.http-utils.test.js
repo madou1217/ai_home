@@ -302,6 +302,32 @@ test('fetchModelsForAccount falls back to paas probe when zcode balance probe fa
   assert.deepEqual(models, ['glm-4.5']);
 });
 
+test('fetchModelsForAccount rejects with zcode_jwt_missing_relogin instead of paas-probing without zcodeJwtToken', async (t) => {
+  const seenUrls = [];
+  t.mock.method(global, 'fetch', async (url) => {
+    seenUrls.push(String(url || ''));
+    return { ok: false, status: 401, text: async () => 'unauthorized' };
+  });
+
+  const error = await fetchModelsForAccount({}, {
+    provider: 'zcode',
+    accountRef: 'acct_test',
+    accessToken: 'expired-zai-token',
+    apiKeyMode: false,
+    authType: 'oauth',
+    openaiBaseUrl: 'https://zcode.z.ai/api/v1/zcode-plan/anthropic'
+  }, 500).then(
+    () => null,
+    (err) => err
+  );
+
+  assert.ok(error, '缺少 zcodeJwtToken 时必须抛出定向错误而不是回退 paas 探测');
+  assert.equal(error.code, 'zcode_jwt_missing_relogin');
+  assert.match(error.message, /zcode_jwt_missing_relogin/);
+  assert.equal(error.reloginRequired, true);
+  assert.deepEqual(seenUrls, [], '不得发起任何网络请求（balance 与 paas 都不会成功）');
+});
+
 test('fetchModelsForAccount skips balance probe for zcode api-key accounts', async (t) => {
   const seenUrls = [];
   t.mock.method(global, 'fetch', async (url) => {

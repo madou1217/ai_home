@@ -683,6 +683,84 @@ test('Kimi reauth prefers another existing account with the new native identity'
   });
 });
 
+function writeZcodeProjection(runtimeDir, credentials) {
+  const credentialsPath = path.join(runtimeDir, '.zcode', 'v2', 'credentials.json');
+  fs.mkdirSync(path.dirname(credentialsPath), { recursive: true });
+  fs.writeFileSync(credentialsPath, JSON.stringify(credentials), 'utf8');
+}
+
+test('ZCode re-login with the same upstream user refreshes the existing account', (t) => {
+  const fixture = createProjectionFixture(t);
+  const firstRuntime = path.join(fixture.aiHomeDir, 'run', 'login', 'zcode', 'first');
+  const secondRuntime = path.join(fixture.aiHomeDir, 'run', 'login', 'zcode', 'second');
+  const firstCredentials = {
+    'oauth:active_provider': 'zai',
+    'oauth:zai:access_token': 'zai-access-first',
+    zcodejwttoken: 'zcode-jwt-first',
+    'oauth:zai:user_info': JSON.stringify({ email: 'zcode-user@example.com', name: 'Zcode User' })
+  };
+  const secondCredentials = {
+    'oauth:active_provider': 'zai',
+    'oauth:zai:access_token': 'zai-access-second',
+    zcodejwttoken: 'zcode-jwt-second',
+    'oauth:zai:user_info': JSON.stringify({ email: 'zcode-user@example.com', name: 'Zcode User' })
+  };
+  writeZcodeProjection(firstRuntime, firstCredentials);
+  writeZcodeProjection(secondRuntime, secondCredentials);
+
+  const first = registerProviderAuthProjection(fs, firstRuntime, 'zcode', {
+    aiHomeDir: fixture.aiHomeDir,
+    cliAccountId: '30'
+  });
+  const second = registerProviderAuthProjection(fs, secondRuntime, 'zcode', {
+    aiHomeDir: fixture.aiHomeDir
+  });
+
+  assert.equal(first.registered, true);
+  assert.equal(second.registered, true);
+  assert.equal(second.reason, 'existing_account', '同一上游用户重复登录必须刷新既有账号而不是分叉新账号');
+  assert.equal(second.accountRef, first.accountRef);
+  assert.deepEqual(readAccountNativeAuth(fs, fixture.aiHomeDir, first.accountRef), {
+    credentials: secondCredentials
+  });
+});
+
+test('ZCode reauth does not overwrite a requested account with another native user', (t) => {
+  const fixture = createProjectionFixture(t);
+  const targetRuntime = path.join(fixture.aiHomeDir, 'run', 'login', 'zcode', 'target');
+  const replacementRuntime = path.join(fixture.aiHomeDir, 'run', 'login', 'zcode', 'replacement');
+  const targetCredentials = {
+    'oauth:zai:access_token': 'zai-access-target',
+    zcodejwttoken: 'zcode-jwt-target',
+    'oauth:zai:user_info': JSON.stringify({ email: 'target@example.com' })
+  };
+  const replacementCredentials = {
+    'oauth:zai:access_token': 'zai-access-replacement',
+    zcodejwttoken: 'zcode-jwt-replacement',
+    'oauth:zai:user_info': JSON.stringify({ email: 'replacement@example.com' })
+  };
+  writeZcodeProjection(targetRuntime, targetCredentials);
+  writeZcodeProjection(replacementRuntime, replacementCredentials);
+
+  const target = registerProviderAuthProjection(fs, targetRuntime, 'zcode', {
+    aiHomeDir: fixture.aiHomeDir,
+    cliAccountId: '31'
+  });
+  const replacement = registerProviderAuthProjection(fs, replacementRuntime, 'zcode', {
+    aiHomeDir: fixture.aiHomeDir,
+    accountRef: target.accountRef
+  });
+
+  assert.equal(replacement.registered, true);
+  assert.notEqual(replacement.accountRef, target.accountRef);
+  assert.deepEqual(readAccountNativeAuth(fs, fixture.aiHomeDir, target.accountRef), {
+    credentials: targetCredentials
+  });
+  assert.deepEqual(readAccountNativeAuth(fs, fixture.aiHomeDir, replacement.accountRef), {
+    credentials: replacementCredentials
+  });
+});
+
 test('Kiro login extracts OAuth metadata from SQLite and registers the account', (t) => {
   const { DatabaseSync } = require('node:sqlite');
   const fixture = createProjectionFixture(t);

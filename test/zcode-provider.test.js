@@ -264,7 +264,7 @@ test('loadZcodeServerAccounts keeps OAuth accounts in pool as relay_disabled (no
   assert.equal(account.accessToken, 'oauth-token');
   assert.equal(account.zcodeJwtToken, 'jwt-token');
   assert.equal(account.openaiBaseUrl, 'https://zcode.z.ai/api/v1/zcode-plan/anthropic');
-  assert.equal(account.schedulableStatus, 'schedulable');
+  assert.equal(account.schedulableStatus, 'relay_disabled');
   assert.equal(account.displayName, 'ZCode OAuth');
 });
 
@@ -290,7 +290,7 @@ test('loadZcodeServerAccounts uses zai user_info email as OAuth display identity
   assert.equal(accounts.length, 1);
   assert.equal(accounts[0].email, '18997991630@phone.local');
   assert.equal(accounts[0].displayName, '18997991630@phone.local');
-  assert.equal(accounts[0].schedulableStatus, 'schedulable');
+  assert.equal(accounts[0].schedulableStatus, 'relay_disabled');
 });
 
 test('loadZcodeServerAccounts keeps jwtToken-only OAuth accounts as relay_disabled', (t) => {
@@ -312,7 +312,7 @@ test('loadZcodeServerAccounts keeps jwtToken-only OAuth accounts as relay_disabl
   assert.equal(accounts.length, 1, 'jwtToken-only accounts can probe plan models via billing/balance');
   assert.equal(accounts[0].accessToken, '');
   assert.equal(accounts[0].zcodeJwtToken, 'jwt-token');
-  assert.equal(accounts[0].schedulableStatus, 'schedulable');
+  assert.equal(accounts[0].schedulableStatus, 'relay_disabled');
 });
 
 // --- Launch strategy ---

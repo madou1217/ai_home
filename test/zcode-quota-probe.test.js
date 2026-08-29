@@ -513,3 +513,145 @@ test('zcode quota probe accepts numeric 200 and string code success shapes', asy
     fs.rmSync(aiHomeDir, { recursive: true, force: true });
   }
 });
+
+// --- live-preference + safe sync-back（桌面端运行期刷新 token 不回写 DB 的修复） ---
+
+function writeLiveCredentials(aiHomeDir, accountRef, credentials, mtimeMs) {
+  const credentialsPath = path.join(
+    aiHomeDir, 'run', 'auth-projections', 'zcode', accountRef, '.zcode', 'v2', 'credentials.json'
+  );
+  fs.mkdirSync(path.dirname(credentialsPath), { recursive: true });
+  fs.writeFileSync(credentialsPath, JSON.stringify(credentials));
+  if (Number.isFinite(mtimeMs)) {
+    const at = new Date(mtimeMs);
+    fs.utimesSync(credentialsPath, at, at);
+  }
+  return credentialsPath;
+}
+
+function createRecordingProbe(aiHomeDir, calls) {
+  return createZcodeQuotaProbe({
+    fs,
+    aiHomeDir,
+    readAccountCredentialRecord: require('../lib/server/account-credential-store').readAccountCredentialRecord,
+    fetchWithTimeout: async (url, init) => {
+      calls.push({ url, init });
+      return makeOkResponse(makeBalancePayload());
+    }
+  });
+}
+
+test('zcode quota probe prefers a live profile credential newer than the DB snapshot', async () => {
+  const { aiHomeDir, accountRef } = setupZcodeAccount({
+    credentials: {
+      'oauth:zai:access_token': 'db-access-stale',
+      zcodejwttoken: 'db-jwt-stale'
+    }
+  });
+  writeLiveCredentials(aiHomeDir, accountRef, {
+    'oauth:active_provider': 'zai',
+    'oauth:zai:access_token': 'live-access-fresh',
+    zcodejwttoken: 'live-jwt-fresh',
+    'oauth:zai:user_info': JSON.stringify({ email: 'zcode@example.com' })
+  }, Date.now() + 60_000);
+  const calls = [];
+  const probe = createRecordingProbe(aiHomeDir, calls);
+  try {
+    const result = await probe.probe(accountRef, 5000);
+    assert.ok(result.snapshot, 'expected snapshot');
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].init.headers.Authorization, 'Bearer live-jwt-fresh', '活文件比 DB 新时必须用活 token');
+  } finally {
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+  }
+});
+
+test('zcode quota probe falls back to the DB snapshot when the live file is corrupt or undecryptable', async () => {
+  for (const liveContent of [
+    '{corrupt json',
+    JSON.stringify({ zcodejwttoken: 'enc:v1:invalid.invalid.invalid' })
+  ]) {
+    const { aiHomeDir, accountRef } = setupZcodeAccount({
+      credentials: { zcodejwttoken: 'db-jwt-token' }
+    });
+    const credentialsPath = path.join(
+      aiHomeDir, 'run', 'auth-projections', 'zcode', accountRef, '.zcode', 'v2', 'credentials.json'
+    );
+    fs.mkdirSync(path.dirname(credentialsPath), { recursive: true });
+    fs.writeFileSync(credentialsPath, liveContent);
+    fs.utimesSync(credentialsPath, new Date(Date.now() + 60_000), new Date(Date.now() + 60_000));
+    const calls = [];
+    const probe = createRecordingProbe(aiHomeDir, calls);
+    try {
+      const result = await probe.probe(accountRef, 5000);
+      assert.ok(result.snapshot, `expected snapshot despite live content: ${liveContent.slice(0, 24)}`);
+      assert.equal(calls[0].init.headers.Authorization, 'Bearer db-jwt-token', '活文件不可用时必须回退 DB');
+    } finally {
+      fs.rmSync(aiHomeDir, { recursive: true, force: true });
+    }
+  }
+});
+
+test('zcode quota probe keeps the DB snapshot when it is not older than the live file', async () => {
+  const { aiHomeDir, accountRef } = setupZcodeAccount({
+    credentials: { zcodejwttoken: 'db-jwt-relogin' }
+  });
+  // 重新 login 导入后的场景：DB 快照比沙箱残留文件新，DB 优先。
+  writeLiveCredentials(aiHomeDir, accountRef, {
+    zcodejwttoken: 'live-jwt-ancient'
+  }, Date.now() - 86_400_000);
+  const calls = [];
+  const probe = createRecordingProbe(aiHomeDir, calls);
+  try {
+    const result = await probe.probe(accountRef, 5000);
+    assert.ok(result.snapshot, 'expected snapshot');
+    assert.equal(calls[0].init.headers.Authorization, 'Bearer db-jwt-relogin');
+  } finally {
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+  }
+});
+
+test('zcode quota probe syncs live credentials back to the DB after a successful probe', async () => {
+  const { readAccountCredentialRecord } = require('../lib/server/account-credential-store');
+  const { aiHomeDir, accountRef } = setupZcodeAccount({
+    credentials: {
+      'oauth:zai:access_token': 'db-access-stale',
+      zcodejwttoken: 'db-jwt-stale'
+    }
+  });
+  const liveCredentials = {
+    'oauth:active_provider': 'zai',
+    'oauth:zai:access_token': 'live-access-fresh',
+    'oauth:zai:refresh_token': 'live-refresh-fresh',
+    zcodejwttoken: 'live-jwt-fresh'
+  };
+  writeLiveCredentials(aiHomeDir, accountRef, liveCredentials, Date.now() + 60_000);
+  const calls = [];
+  const probe = createRecordingProbe(aiHomeDir, calls);
+  try {
+    const result = await probe.probe(accountRef, 5000);
+    assert.ok(result.snapshot, 'expected snapshot');
+    const record = readAccountCredentialRecord(fs, aiHomeDir, accountRef);
+    assert.deepEqual(record.nativeAuth.credentials, liveCredentials, '成功探测后 DB 必须被活凭据治愈');
+    assert.equal(calls[0].init.headers.Authorization, 'Bearer live-jwt-fresh');
+  } finally {
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+  }
+});
+
+test('zcode quota probe does not write the DB back when the DB snapshot was used', async () => {
+  const { readAccountCredentialRecord } = require('../lib/server/account-credential-store');
+  const dbCredentials = { zcodejwttoken: 'db-jwt-token' };
+  const { aiHomeDir, accountRef } = setupZcodeAccount({ credentials: dbCredentials });
+  const calls = [];
+  const probe = createRecordingProbe(aiHomeDir, calls);
+  try {
+    const before = readAccountCredentialRecord(fs, aiHomeDir, accountRef);
+    const result = await probe.probe(accountRef, 5000);
+    assert.ok(result.snapshot, 'expected snapshot');
+    const after = readAccountCredentialRecord(fs, aiHomeDir, accountRef);
+    assert.equal(after.nativeAuthUpdatedAt, before.nativeAuthUpdatedAt, 'DB 来源探测不得回写 DB');
+  } finally {
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+  }
+});

@@ -10,7 +10,10 @@ import {
   LoadingOutlined,
   MessageOutlined,
   DeleteOutlined,
+  PushpinOutlined,
+  PushpinFilled,
 } from '@ant-design/icons';
+import { getPinnedSessionIds, togglePinnedSessionId } from './pin-session-state';
 import type { AggregatedProject, Session } from '@/types';
 import { sessionsAPI } from '@/services/api';
 import ProviderIcon from './ProviderIcon';
@@ -96,6 +99,13 @@ const ProjectList = ({
   // 纯聊天 (Chat 模式) 会话列表状态
   const [chatSessions, setChatSessions] = useState<Session[]>([]);
   const [loadingChatSessions, setLoadingChatSessions] = useState(false);
+  const [pinnedSessionIds, setPinnedSessionIds] = useState<Set<string>>(() => getPinnedSessionIds());
+
+  const handleTogglePin = (sessionId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const next = togglePinnedSessionId(sessionId);
+    setPinnedSessionIds(next);
+  };
 
   const fetchChatSessions = useCallback(async () => {
     if (mode !== 'chat') return;
@@ -345,7 +355,15 @@ const ProjectList = ({
               </Empty>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {chatSessions.map((session) => (
+                {[...chatSessions]
+                  .sort((a, b) => {
+                    const aPinned = pinnedSessionIds.has(a.id);
+                    const bPinned = pinnedSessionIds.has(b.id);
+                    if (aPinned && !bPinned) return -1;
+                    if (!aPinned && bPinned) return 1;
+                    return (b.updatedAt || 0) - (a.updatedAt || 0);
+                  })
+                  .map((session) => (
                   <div
                     key={session.id}
                     className={`${styles.sessionItem} ${
@@ -359,6 +377,18 @@ const ProjectList = ({
                         <ProviderIcon provider={session.provider} size={14} />
                       </span>
                       <span className={styles.sessionTitle}>{session.title || '新对话'}</span>
+                      <button
+                        className={styles.archiveBtn}
+                        onClick={(e) => handleTogglePin(session.id, e)}
+                        title={pinnedSessionIds.has(session.id) ? '取消置顶' : '置顶会话'}
+                        style={{ opacity: pinnedSessionIds.has(session.id) ? 1 : undefined }}
+                      >
+                        {pinnedSessionIds.has(session.id) ? (
+                          <PushpinFilled style={{ color: '#f59e0b' }} />
+                        ) : (
+                          <PushpinOutlined />
+                        )}
+                      </button>
                       <Popconfirm
                         title="删除该对话？"
                         onConfirm={(e) => {

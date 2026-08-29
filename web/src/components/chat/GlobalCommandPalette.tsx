@@ -9,6 +9,7 @@ import {
   SettingOutlined,
   ClearOutlined,
   RocketOutlined,
+  BgColorsOutlined,
 } from '@ant-design/icons';
 import styles from './chat.module.css';
 
@@ -92,6 +93,24 @@ export const GlobalCommandPalette = memo(function GlobalCommandPalette({
       icon: <RocketOutlined />,
       action: () => { history.push('/chat'); onClose(); },
       shortcut: 'Cmd+N',
+    },
+    {
+      id: 'act-toggle-theme',
+      title: '切换深浅色主题 (Theme Toggle)',
+      category: '快捷操作',
+      icon: <BgColorsOutlined />,
+      action: () => {
+        const isDark = document.body.classList.contains('dark') || document.documentElement.dataset.theme === 'dark';
+        if (isDark) {
+          document.body.classList.remove('dark');
+          delete document.documentElement.dataset.theme;
+        } else {
+          document.body.classList.add('dark');
+          document.documentElement.dataset.theme = 'dark';
+        }
+        onClose();
+      },
+      shortcut: 'Cmd+T',
     },
     {
       id: 'act-clear',

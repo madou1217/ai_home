@@ -1177,9 +1177,9 @@ test('fetchGeminiCodeAssistChatCompletion opts image models into IMAGE modality 
     800
   );
 
-  // request side: IMAGE modality on, thinking stripped
+  // request side: IMAGE modality on, thinking preserved
   assert.deepEqual(generateBody.request.generationConfig.responseModalities, ['TEXT', 'IMAGE']);
-  assert.equal('thinkingConfig' in generateBody.request.generationConfig, false);
+  assert.equal(typeof generateBody.request.generationConfig.thinkingConfig, 'object');
   // response side: inlineData -> markdown data URL image
   assert.equal(result.choices[0].message.content, '![生成的图片](data:image/jpeg;base64,QUJD)');
   assert.equal(result.choices[0].finish_reason, 'stop');

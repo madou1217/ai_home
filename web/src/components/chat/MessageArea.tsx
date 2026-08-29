@@ -186,6 +186,7 @@ interface Props {
   onImagesChange?: (images: string[]) => void;
   // 当前项目路径：底部终端新开时直接进入该目录（而非 home）。
   terminalCwd?: string;
+  onForkSession?: (messageIndex: number) => void;
 }
 
 const MessageArea = ({
@@ -194,7 +195,7 @@ const MessageArea = ({
   input, loading, loadingStatusText, queuedMessages = [], externalPending = false, externalPendingStatusText, interactivePrompt = null, hasMoreHistory, images = [], onLoadMore, onInputChange,
   onSend, onStop, onEditQueuedMessage, onRemoveQueuedMessage, onSendQueuedMessageNow, onSteerQueuedMessage, approvalMode = 'bypass', onApprovalModeChange, onSelectPlanChoice,
   terminalRun = null, onRegisterTerminalWriter, onTerminalInput, onTerminalResize, onCloseTerminal,
-  onAccountChange, onModelChange, onImagesChange, terminalCwd
+  onAccountChange, onModelChange, onImagesChange, terminalCwd, onForkSession
 }: Props) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);

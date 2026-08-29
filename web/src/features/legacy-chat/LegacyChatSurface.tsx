@@ -35,6 +35,7 @@ interface LegacyChatSurfaceProps {
   >;
   readonly queueActions: LegacyQueueActions;
   readonly onSelectPlanChoice: (choice: string, prompt: InteractivePrompt) => Promise<void>;
+  readonly onForkSession?: (messageIndex: number) => void;
 }
 
 interface LegacySurfaceRuntime {
@@ -61,6 +62,7 @@ export function LegacyChatSurface({
   composer,
   queueActions,
   onSelectPlanChoice,
+  onForkSession,
 }: LegacyChatSurfaceProps) {
   const { history, queue, runs, terminal } = runtime;
   const terminated = selection.session.status === 'stopped'
@@ -119,6 +121,7 @@ export function LegacyChatSurface({
       onModelChange={selection.changeModel}
       onImagesChange={composer.changeImages}
       terminalCwd={selection.session.projectPath}
+      onForkSession={onForkSession}
     />
   );
 }

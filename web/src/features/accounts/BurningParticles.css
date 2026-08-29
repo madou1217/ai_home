@@ -121,3 +121,15 @@
     opacity: 0;
   }
 }
+
+/* =============================================================================
+ * HarmonyOS 6 风格 燃烧火花与粒子流光增强
+ * ========================================================================== */
+.burning-particles::before {
+  box-shadow: 0 0 12px var(--core-color), 0 0 4px #fff !important;
+}
+
+.burning-particle {
+  border-radius: var(--hos-radius-pill, 9999px) !important;
+  filter: drop-shadow(0 0 4px var(--pc)) drop-shadow(0 0 8px rgba(255, 214, 102, 0.4)) !important;
+}

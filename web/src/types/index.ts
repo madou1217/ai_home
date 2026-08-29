@@ -307,6 +307,7 @@ export interface WebUiModelsResponse {
   errorsByAccountRef: Record<string, string>;
   /** provider -> modelId -> 上游 displayName(id 与显示名可能完全错位) */
   labels?: Record<string, Record<string, string>>;
+  metadata?: Record<string, ModelMetadata>;
 }
 
 export interface OpenAIModelItem {

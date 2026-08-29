@@ -203,7 +203,7 @@ const MessageArea = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingVisualTsRef = useRef<number>(Date.now());
   const [showScrollBottom, setShowScrollBottom] = useState(false);
-  const [accountModelState, setAccountModelState] = useState<{ targetKey: string; ids: string[]; defaultModel: string; loading: boolean }>(() => {
+  const [accountModelState, setAccountModelState] = useState<{ targetKey: string; ids: string[]; defaultModel: string; loading: boolean; metadata?: Record<string, ModelMetadata> }>(() => {
     return { targetKey: '', ids: [], defaultModel: '', loading: false };
   });
   const [slashCommands, setSlashCommands] = useState<NativeSlashCommand[]>([]);
@@ -292,6 +292,11 @@ const MessageArea = ({
   };
 
   const selectedAccountRef = String(selectedAccount?.accountRef || '').trim();
+  const activeModelMeta = accountModelState.metadata && effectiveSelectedModel
+    ? accountModelState.metadata[effectiveSelectedModel]
+    : undefined;
+  const dynamicMaxTokens = activeModelMeta?.limits?.context
+    || (effectiveSelectedModel.toLowerCase().includes('flash-image') ? 65536 : 128000);
   const aihServerSelected = isAihServerAccount(selectedAccount);
   const aihServerProvider = aihServerSelected ? String(selectedAccount?.provider || '') : '';
   const selectedTargetKey = aihServerSelected
@@ -328,10 +333,11 @@ const MessageArea = ({
     modelsAPI.listCatalog(aihServerSelected ? {} : { accountRef: selectedAccountRef })
       .then((catalog) => {
         const next = aihServerSelected
-          ? { ids: listAihServerModels(catalog, aihServerProvider), defaultModel: '' }
+          ? { ids: listAihServerModels(catalog, aihServerProvider), defaultModel: '', metadata: catalog.metadata }
           : {
               ids: listAccountEnabledModels(catalog, selectedAccountRef),
-              defaultModel: getAccountDefaultModel(catalog, selectedAccountRef)
+              defaultModel: getAccountDefaultModel(catalog, selectedAccountRef),
+              metadata: catalog.metadata
             };
         // 空结果(账号真无模型 or 探测失败)不覆盖已有非空缓存,避免从"有模型"倒退成"无可用模型"。
         const prior = accountModelCatalogCache.get(selectedTargetKey);
@@ -1062,6 +1068,7 @@ const MessageArea = ({
               )}
               <ContextMeter
                 messages={messages}
+                maxTokens={dynamicMaxTokens}
                 onCompactSuggest={() => onInputChange('/compact')}
               />
               {/* 发送/停止：固定位置的切换按钮，loading 时变为停止 */}

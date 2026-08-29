@@ -5410,3 +5410,123 @@
   border-radius: var(--hos-radius-pill, 9999px);
   transition: width 0.1s linear;
 }
+
+/* =============================================================================
+ * HarmonyOS 6 风格 ShareCardModal (分享长图卡片)
+ * ========================================================================== */
+.shareModalTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-heading, #1f1f1f);
+}
+
+.shareModalBody {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.harmonyShareCard {
+  width: 100%;
+  max-width: 460px;
+  border-radius: var(--hos-radius-xl, 24px);
+  background: var(--hos-glass-bg-card, rgba(255, 255, 255, 0.88));
+  backdrop-filter: var(--hos-blur-card, blur(20px) saturate(190%));
+  -webkit-backdrop-filter: var(--hos-blur-card, blur(20px) saturate(190%));
+  border: 0.8px solid var(--color-border-subtle, rgba(0, 0, 0, 0.08));
+  box-shadow: var(--hos-shadow-floating, 0 12px 36px rgba(0, 0, 0, 0.08));
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.shareCardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.shareCardAuthor {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.shareCardAvatar {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--hos-radius-pill, 9999px);
+  background: var(--color-primary, #3b82f6);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+}
+
+.shareCardMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.shareCardAuthorName {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-heading, #1f1f1f);
+}
+
+.shareCardTime {
+  font-size: 11px;
+  font-family: var(--font-mono, monospace);
+  color: var(--color-muted, #8c8c8c);
+}
+
+.shareCardContent {
+  padding: 12px 14px;
+  background: rgba(0, 0, 0, 0.02);
+  border-radius: var(--hos-radius-md, 16px);
+  border: 0.8px solid var(--color-border-subtle, rgba(0, 0, 0, 0.04));
+}
+
+.shareCardText {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--color-text, #374151);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.shareCardFooter {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  padding-top: 8px;
+  border-top: 1px dashed var(--color-border-subtle, rgba(0, 0, 0, 0.06));
+}
+
+.shareCardBrand {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--color-muted, #8c8c8c);
+}
+
+.shareCardLogo {
+  font-size: 12px;
+}
+
+.shareModalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  width: 100%;
+}

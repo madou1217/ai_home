@@ -93,6 +93,8 @@ export default function MessageMetadata({
         <MessageIconActions
           text={copyText}
           role={role}
+          model={model}
+          timestamp={timestamp}
           onRetry={onRetry}
           onFork={onFork}
           className={actionsVisible ? styles.messageIconActionsVisible : ''}

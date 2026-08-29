@@ -26,11 +26,11 @@ test('isImageGenerationModel matches gemini image-generation models only', () =>
   assert.equal(isImageGenerationModel(null), false);
 });
 
-test('applyImageGenerationGenerationConfig opts into IMAGE modality and drops thinking', () => {
+test('applyImageGenerationGenerationConfig opts into IMAGE modality and preserves thinking', () => {
   const cfg = { temperature: 1, thinkingConfig: { includeThoughts: true, thinkingBudget: -1 } };
   const out = applyImageGenerationGenerationConfig(cfg, 'gemini-3.1-flash-image');
   assert.deepEqual(out.responseModalities, ['TEXT', 'IMAGE']);
-  assert.equal('thinkingConfig' in out, false);
+  assert.deepEqual(out.thinkingConfig, { includeThoughts: true, thinkingBudget: -1 });
   assert.equal(out.temperature, 1);
 });
 

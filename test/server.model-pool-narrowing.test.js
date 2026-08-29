@@ -241,3 +241,18 @@ test('全池目录都已知且都不含该模型时排空——由调用方给�
   assert.deepEqual(result.pool, []);
   assert.deepEqual(result.excludedAccountRefs, [OAUTH_A, OLLAMA]);
 });
+
+test('原生生图模型不会因常规文本目录缺失而被误排除', () => {
+  const AGY_REF = 'acct_03f68577e90ee8c1f577';
+  const result = excludeAccountsWithoutModel({
+    pool: [account(AGY_REF)],
+    provider: 'agy',
+    model: 'gemini-3.1-flash-image',
+    accountCatalogs: new Map([
+      [AGY_REF, new Set(['gemini-2.5-pro', 'gemini-2.5-flash'])]
+    ]),
+    getAccountRef
+  });
+  assert.deepEqual(result.pool.map((item) => item.accountRef), [AGY_REF]);
+  assert.deepEqual(result.excludedAccountRefs, []);
+});

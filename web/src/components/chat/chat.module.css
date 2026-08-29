@@ -4609,3 +4609,25 @@
   transform: translateY(-1px) !important;
   box-shadow: var(--hos-shadow-card, 0 4px 16px rgba(0, 0, 0, 0.04)) !important;
 }
+
+/* =============================================================================
+ * HarmonyOS 6 风格 QueueDock 排队消息卡片质感
+ * ========================================================================== */
+.queueDock {
+  border-radius: var(--hos-radius-md, 16px) !important;
+  background: var(--hos-glass-bg-card, rgba(255, 255, 255, 0.85)) !important;
+  backdrop-filter: var(--hos-blur-subtle, blur(16px)) saturate(180%) !important;
+  -webkit-backdrop-filter: var(--hos-blur-subtle, blur(16px)) saturate(180%) !important;
+  border: 1px solid rgba(37, 99, 235, 0.2) !important;
+  box-shadow: 0 4px 16px rgba(37, 99, 235, 0.08) !important;
+  padding: 10px 14px !important;
+}
+
+.queueItem {
+  border-radius: 10px !important;
+  transition: all 0.15s ease !important;
+}
+
+.queueItem:hover {
+  background: rgba(37, 99, 235, 0.05) !important;
+}

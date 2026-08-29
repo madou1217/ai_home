@@ -63,6 +63,8 @@ test('model capability index builds provider and account reverse lookup from rea
   const index = buildModelCapabilityIndex(state, { provider: 'auto' });
 
   assert.deepEqual(listProviderModelIds(index, 'agy'), [
+    'gemini-2.5-flash-image',
+    'gemini-3.1-flash-image',
     'gemini-3.1-pro-preview',
     'gpt-oss-120b-medium'
   ]);

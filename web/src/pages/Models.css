@@ -390,3 +390,23 @@
 .model-tag-pill {
   border-radius: var(--hos-radius-pill, 9999px) !important;
 }
+
+/* =============================================================================
+ * HarmonyOS 6 模型别名与多维度关系拓扑卡片
+ * ========================================================================== */
+.alias-topology-card,
+.model-alias-card {
+  border-radius: var(--hos-radius-md, 16px) !important;
+  background: var(--hos-glass-bg-card, rgba(255, 255, 255, 0.85)) !important;
+  backdrop-filter: var(--hos-blur-card, blur(20px)) saturate(190%) !important;
+  -webkit-backdrop-filter: var(--hos-blur-card, blur(20px)) saturate(190%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.9) !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.03) !important;
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+}
+
+.alias-topology-card:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: var(--hos-shadow-floating, 0 12px 36px -4px rgba(0, 0, 0, 0.08)) !important;
+  border-color: rgba(37, 99, 235, 0.3) !important;
+}

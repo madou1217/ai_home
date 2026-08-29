@@ -37,21 +37,34 @@ export function usePersistedChatSelection(
   }, [isChatMode, project?.path, session?.draft, session?.id, session?.mode, session?.projectDirName, session?.provider]);
 }
 
+export function triggerHapticFeedback(pattern: number | number[] = 12): void {
+  if (typeof window !== 'undefined' && 'navigator' in window && typeof navigator.vibrate === 'function') {
+    try {
+      navigator.vibrate(pattern);
+    } catch (_error) {}
+  }
+}
+
 export function useMobileChatNavigation(
   setShowChat: Dispatch<SetStateAction<boolean>>,
 ) {
   const edgeSwipeRef = useRef({ x: 0, y: 0, active: false });
-  const back = useCallback((): void => setShowChat(false), [setShowChat]);
+  const back = useCallback((): void => {
+    triggerHapticFeedback(15);
+    setShowChat(false);
+  }, [setShowChat]);
+
   const touchStart = useCallback((event: TouchEvent<HTMLElement>): void => {
     const touch = event.touches[0];
     if (touch) {
       edgeSwipeRef.current = {
         x: touch.clientX,
         y: touch.clientY,
-        active: touch.clientX <= 28,
+        active: touch.clientX <= 36, // 鸿蒙 6 标准侧滑返回手势感应边缘
       };
     }
   }, []);
+
   const touchEnd = useCallback((event: TouchEvent<HTMLElement>): void => {
     const origin = edgeSwipeRef.current;
     const touch = event.changedTouches[0];
@@ -59,8 +72,12 @@ export function useMobileChatNavigation(
     edgeSwipeRef.current.active = false;
     const dx = touch.clientX - origin.x;
     const dy = touch.clientY - origin.y;
-    if (dx > 64 && Math.abs(dx) > Math.abs(dy) * 1.6) back();
+    // 鸿蒙 6 跟手判定：横向滑动距离超过 50px 且倾角合理即触发返回
+    if (dx > 50 && Math.abs(dx) > Math.abs(dy) * 1.4) {
+      back();
+    }
   }, [back]);
+
   return { back, touchStart, touchEnd };
 }
 

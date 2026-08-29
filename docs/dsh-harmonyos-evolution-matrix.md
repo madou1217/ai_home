@@ -94,3 +94,4 @@
 | | 1.31 | **ShareCardModal 会话分享长图卡片生成** (超级圆角+毛玻璃) | HOS 6 Share Card | 📱 + 💻 | ✅ **已完成** | `ShareCardModal.tsx`<br>`MessageIconActions.tsx` |
 | | 1.32 | **ImageGallery 多模态图片画廊质感升级** (毛玻璃圆角+微缩放弹性) | HOS 6 Gallery Lightbox | 📱 + 💻 | ✅ **已完成** | `chat.module.css`<br>`MessageImages.tsx` |
 | | 1.33 | **GlobalCommandPalette 深浅主题快捷切换** (`Cmd+T` 随心流光切换) | HOS 6 Theme Hub | 💻 | ✅ **已完成** | `GlobalCommandPalette.tsx` |
+| | 1.34 | **QueueDock 排队消息悬浮栈 HarmonyOS 6 毛玻璃质感** (微曲率圆角) | HOS 6 Glass Dock | 📱 + 💻 | ✅ **已完成** | `chat.module.css`<br>`MessageArea.tsx` |

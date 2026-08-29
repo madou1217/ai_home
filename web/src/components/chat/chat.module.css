@@ -2227,11 +2227,13 @@
 }
 
 .queueDock {
-  padding: 10px 12px;
-  border: 1px solid var(--chat-panel-border);
-  border-radius: var(--chat-panel-radius);
-  background: var(--chat-panel-bg);
-  box-shadow: var(--chat-panel-shadow);
+  padding: 12px 14px;
+  border: 0.8px solid var(--color-border-subtle, rgba(0, 0, 0, 0.08));
+  border-radius: var(--hos-radius-md, 16px);
+  background: var(--hos-glass-bg-card, rgba(255, 255, 255, 0.85));
+  backdrop-filter: var(--hos-blur-card, blur(20px) saturate(190%));
+  -webkit-backdrop-filter: var(--hos-blur-card, blur(20px) saturate(190%));
+  box-shadow: var(--hos-shadow-card, 0 4px 16px rgba(0, 0, 0, 0.04));
 }
 
 .queueDockHeader {

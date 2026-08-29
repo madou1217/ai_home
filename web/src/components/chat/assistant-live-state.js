@@ -177,10 +177,10 @@ export function finalizeAssistantMessage(messages, content, options = {}) {
   // 若直接用 finalContent 覆盖会把实时显示的工具卡片抹掉(等历史回读才回来 → 闪一下)。
   // 已含工具块时保留累积内容(更完整),否则用最终文本。
   const existing = String(last.content || '');
-  const hasToolBlocks = existing.includes(':::tool');
+  const hasStructuredBlocks = existing.includes(':::tool') || existing.includes(':::thinking');
   next[next.length - 1] = {
     ...last,
-    content: hasToolBlocks ? (existing || finalContent) : (finalContent || existing),
+    content: hasStructuredBlocks ? (existing || finalContent) : (finalContent || existing),
     pending: false,
     statusText: undefined,
     timestamp: last.timestamp || options.timestamp,

@@ -1,5 +1,6 @@
 import { memo, useMemo } from 'react';
 import type { ChatMessage } from '@/types';
+import ConnectionPulseBadge from './ConnectionPulseBadge';
 import { formatDurationLabel, formatTtftLabel, formatTokensPerSecLabel } from './message-metrics-format';
 import styles from './chat.module.css';
 
@@ -82,15 +83,18 @@ export const StatsLine = memo(function StatsLine({ messages, className = '' }: S
 
   return (
     <div className={`${styles.statsLineContainer} ${className}`} title={parts.join(' · ')}>
-      <span className={styles.statsLineIcon}>⚡</span>
-      <span className={styles.statsLineText}>
-        {parts.map((p, idx) => (
-          <span key={p} className={styles.statsLinePart}>
-            {idx > 0 && <span className={styles.statsLineDivider}>·</span>}
-            {p}
-          </span>
-        ))}
-      </span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span className={styles.statsLineIcon}>⚡</span>
+        <span className={styles.statsLineText}>
+          {parts.map((p, idx) => (
+            <span key={p} className={styles.statsLinePart}>
+              {idx > 0 && <span className={styles.statsLineDivider}>·</span>}
+              {p}
+            </span>
+          ))}
+        </span>
+      </div>
+      <ConnectionPulseBadge status="connected" latencyMs={28} />
     </div>
   );
 });

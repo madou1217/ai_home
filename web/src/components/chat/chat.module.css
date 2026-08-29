@@ -4209,3 +4209,61 @@
   color: var(--color-faint, #bfbfbf);
   margin-left: 4px;
 }
+
+/* =============================================================================
+ * dsh 风格 CodeBlock 代码块组件
+ * ========================================================================== */
+.codeBlockWrapper {
+  position: relative;
+  margin: 12px 0;
+  border-radius: 8px;
+  background: var(--color-surface-sunken, #1e1e1e);
+  border: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.1));
+  overflow: hidden;
+}
+
+.codeBlockHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.codeBlockLanguage {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-muted, #a0a0a0);
+  text-transform: lowercase;
+}
+
+.codeBlockCopyBtn {
+  display: inline-flex;
+  align-items: center;
+  background: transparent;
+  border: none;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--color-muted, #a0a0a0);
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.codeBlockCopyBtn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+.codeBlockContent {
+  margin: 0 !important;
+  padding: 12px 16px !important;
+  overflow-x: auto;
+  font-family: var(--font-mono, monospace);
+  font-size: 13px !important;
+  line-height: 1.6 !important;
+  color: #e6e6e6;
+  background: transparent !important;
+}

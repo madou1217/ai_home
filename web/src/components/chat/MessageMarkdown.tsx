@@ -2,6 +2,7 @@ import { Children, isValidElement, memo, type ReactElement, type ReactNode } fro
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import HtmlCodeBlock from './HtmlCodeBlock';
+import CodeBlock from './CodeBlock';
 import { parseMarkdownCarouselSlides } from './file-preview-utils';
 import { shouldRenderMarkdown } from './markdown-detection';
 import styles from './chat.module.css';
@@ -114,9 +115,20 @@ function MessageMarkdown({
           }
 
           const ExternalPre = components && components.pre;
-          return ExternalPre
-            ? <ExternalPre {...props}>{children}</ExternalPre>
-            : <pre {...props}>{children}</pre>;
+          if (ExternalPre) {
+            return <ExternalPre {...props}>{children}</ExternalPre>;
+          }
+
+          // 解析语言与代码内容并走统一 CodeBlock
+          const nodes = Children.toArray(children);
+          if (nodes.length === 1 && isValidElement(nodes[0])) {
+            const codeNode = nodes[0] as ReactElement<{ className?: string; children?: ReactNode }>;
+            const language = String(codeNode.props.className || '').match(/(?:^|\s)language-([^\s]+)/)?.[1] || '';
+            const rawCode = String(codeNode.props.children || '');
+            return <CodeBlock code={rawCode} language={language} />;
+          }
+
+          return <pre {...props}>{children}</pre>;
         }
       };
 

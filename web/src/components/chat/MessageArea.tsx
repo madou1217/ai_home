@@ -18,6 +18,7 @@ import TaskDock from './TaskDock';
 import StatsLine from './StatsLine';
 import SlashCommandMenu from './SlashCommandMenu';
 import ContextMeter from './ContextMeter';
+import ComposerAttachmentGallery from './ComposerAttachmentGallery';
 import { findLatestActiveChecklist } from './message-structure';
 import PlanChoiceDock from './PlanChoiceDock';
 import TerminalDock, { type TerminalRunState } from './TerminalDock';
@@ -916,19 +917,8 @@ const MessageArea = ({
             </div>
           ) : (
             <div className={`${styles.inputBox} ${mobile ? styles.inputBoxMobile : ''}`}>
-            {/* 图片预览 */}
-            {images.length > 0 && (
-              <div className={styles.imagePreviewRow}>
-                {images.map((img, idx) => (
-                  <div key={idx} className={styles.imagePreviewItem}>
-                    <img src={img} alt="" className={styles.imagePreviewImg} />
-                    <button className={styles.imageRemoveBtn} onClick={() => removeImage(idx)}>
-                      <CloseOutlined style={{ fontSize: 10 }} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
+            {/* 多模态附件画廊 */}
+            <ComposerAttachmentGallery images={images} onRemove={removeImage} />
             <textarea
               ref={textareaRef}
               className={styles.inputTextarea}

@@ -83,3 +83,4 @@
 
 | | 1.21 | **PWA 极速离线与静态资源缓存 ServiceWorker** (`sw.js`) | HOS 6 PWA Standard | 📱 + 💻 | ✅ **已完成** | `web/public/sw.js`<br>`web/src/app.tsx` |
 | | 1.22 | **AudioWaveformPlayer 灵动胶囊声学波形播放器** (动态律动+毛玻璃) | HOS 6 Acoustic Spec | 📱 + 💻 | ✅ **已完成** | `AudioWaveformPlayer.tsx`<br>`chat.module.css` |
+| | 1.23 | **ComposerAttachmentGallery 多模态卡片胶囊画廊** (微曲率+一键移除) | HOS 6 Gallery Capsule | 📱 + 💻 | ✅ **已完成** | `ComposerAttachmentGallery.tsx`<br>`MessageArea.tsx` |

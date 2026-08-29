@@ -356,3 +356,38 @@
   box-shadow: var(--hos-shadow-floating, 0 12px 36px -4px rgba(0, 0, 0, 0.08)) !important;
   border-color: rgba(37, 99, 235, 0.3) !important;
 }
+
+/* =============================================================================
+ * HarmonyOS 6 WebRTC 延迟水滴环与微光动效
+ * ========================================================================== */
+.webrtc-latency-droplet {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: var(--hos-radius-pill, 9999px);
+  background: var(--hos-glass-bg-subtle, rgba(255, 255, 255, 0.7));
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  color: var(--color-muted, #64748b);
+}
+
+.latency-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--hos-radius-pill, 9999px);
+  background: #10b981;
+  box-shadow: 0 0 8px #10b981;
+  animation: hosLivePulse 1.4s ease-in-out infinite;
+}
+
+.latency-dot-warning {
+  background: #f59e0b;
+  box-shadow: 0 0 8px #f59e0b;
+}
+
+.latency-dot-danger {
+  background: #ef4444;
+  box-shadow: 0 0 8px #ef4444;
+}

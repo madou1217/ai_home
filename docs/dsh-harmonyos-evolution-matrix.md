@@ -86,3 +86,4 @@
 | | 1.23 | **ComposerAttachmentGallery 多模态卡片胶囊画廊** (微曲率+一键移除) | HOS 6 Gallery Capsule | 📱 + 💻 | ✅ **已完成** | `ComposerAttachmentGallery.tsx`<br>`MessageArea.tsx` |
 | | 1.24 | **Markdown 表格与引用块 HarmonyOS 6 质感增强** (圆角毛玻璃+边框) | HOS 6 Typography Spec | 📱 + 💻 | ✅ **已完成** | `chat.module.css` |
 | | 1.25 | **ConnectionPulseBadge 实时长连接心跳水滴指示环** (声光呼吸动力学) | HOS 6 Pulse Droplet | 📱 + 💻 | ✅ **已完成** | `ConnectionPulseBadge.tsx`<br>`StatsLine.tsx` |
+| | 1.26 | **VideoPlayerCard 视频多模态画中画卡片** (超级曲率+毛玻璃控制) | HOS 6 Media Card | 📱 + 💻 | ✅ **已完成** | `VideoPlayerCard.tsx`<br>`chat.module.css` |

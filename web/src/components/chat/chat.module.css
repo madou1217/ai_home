@@ -5281,3 +5281,132 @@
     opacity: 0;
   }
 }
+
+/* =============================================================================
+ * HarmonyOS 6 风格 VideoPlayerCard 视频多模态画中画卡片
+ * ========================================================================== */
+.videoPlayerCard {
+  display: flex;
+  flex-direction: column;
+  max-width: 480px;
+  width: 100%;
+  border-radius: var(--hos-radius-lg, 20px);
+  background: var(--hos-glass-bg-card, rgba(255, 255, 255, 0.85));
+  backdrop-filter: var(--hos-blur-card, blur(20px) saturate(190%));
+  -webkit-backdrop-filter: var(--hos-blur-card, blur(20px) saturate(190%));
+  border: 0.8px solid var(--color-border-subtle, rgba(0, 0, 0, 0.08));
+  box-shadow: var(--hos-shadow-card, 0 4px 20px rgba(0, 0, 0, 0.04));
+  overflow: hidden;
+  margin: 8px 0;
+}
+
+.videoHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  background: rgba(0, 0, 0, 0.02);
+  border-bottom: 1px solid var(--color-border-subtle, rgba(0, 0, 0, 0.05));
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-heading, #1f1f1f);
+}
+
+.videoTitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.videoCanvasWrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.videoElement {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.videoPlayOverlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.videoBigPlayBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: none;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--color-primary, #3b82f6);
+  border-radius: var(--hos-radius-pill, 9999px);
+  font-size: 32px;
+  cursor: pointer;
+  transition: transform 0.15s var(--hos-ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1));
+}
+
+.videoBigPlayBtn:hover {
+  transform: scale(1.1);
+}
+
+.videoControlBar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  background: var(--hos-glass-bg-subtle, rgba(255, 255, 255, 0.7));
+}
+
+.videoControlBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-heading, #1f1f1f);
+  font-size: 16px;
+  cursor: pointer;
+  border-radius: var(--hos-radius-pill, 9999px);
+  transition: all 0.15s ease;
+}
+
+.videoControlBtn:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.videoTrack {
+  flex: 1;
+  height: 4px;
+  background: rgba(0, 0, 0, 0.08);
+  border-radius: var(--hos-radius-pill, 9999px);
+  overflow: hidden;
+  position: relative;
+}
+
+.videoTrackFill {
+  height: 100%;
+  background: var(--color-primary, #3b82f6);
+  border-radius: var(--hos-radius-pill, 9999px);
+  transition: width 0.1s linear;
+}

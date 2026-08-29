@@ -5539,3 +5539,90 @@
   gap: 10px;
   width: 100%;
 }
+
+/* =============================================================================
+ * HarmonyOS 6 风格 InSessionSearchBar 会话内检索悬浮胶囊
+ * ========================================================================== */
+.inSessionSearchCapsule {
+  position: absolute;
+  top: 16px;
+  right: 24px;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: var(--hos-radius-pill, 9999px);
+  background: var(--hos-glass-bg-floating, rgba(255, 255, 255, 0.9));
+  backdrop-filter: var(--hos-blur-floating, blur(28px) saturate(200%));
+  -webkit-backdrop-filter: var(--hos-blur-floating, blur(28px) saturate(200%));
+  border: 0.8px solid var(--color-border-subtle, rgba(0, 0, 0, 0.08));
+  box-shadow: var(--hos-shadow-floating, 0 8px 24px rgba(0, 0, 0, 0.08));
+  animation: searchSlideIn 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes searchSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.inSessionSearchIcon {
+  color: var(--color-muted, #8c8c8c);
+  font-size: 14px;
+}
+
+.inSessionSearchInput {
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 13px;
+  width: 220px;
+  color: var(--color-heading, #1f1f1f);
+}
+
+.inSessionSearchCount {
+  font-size: 11px;
+  font-family: var(--font-mono, monospace);
+  color: var(--color-muted, #8c8c8c);
+  min-width: 42px;
+  text-align: right;
+}
+
+.inSessionSearchButtons {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-left: 1px solid var(--color-border-subtle, rgba(0, 0, 0, 0.06));
+  padding-left: 6px;
+}
+
+.inSessionSearchBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  border-radius: var(--hos-radius-pill, 9999px);
+  color: var(--color-heading, #1f1f1f);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.inSessionSearchBtn:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.inSessionSearchBtn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}

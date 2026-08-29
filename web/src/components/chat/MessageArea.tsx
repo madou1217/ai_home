@@ -19,6 +19,7 @@ import StatsLine from './StatsLine';
 import SlashCommandMenu from './SlashCommandMenu';
 import ContextMeter from './ContextMeter';
 import ComposerAttachmentGallery from './ComposerAttachmentGallery';
+import InSessionSearchBar from './InSessionSearchBar';
 import { findLatestActiveChecklist } from './message-structure';
 import { useMobileOverscrollFeedback } from '@/components/mobile/use-mobile-overscroll-feedback';
 import PlanChoiceDock from './PlanChoiceDock';
@@ -214,6 +215,7 @@ const MessageArea = ({
   const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [shellTerminalOpen, setShellTerminalOpen] = useState(false);
+  const [inSessionSearchOpen, setInSessionSearchOpen] = useState(false);
   const dictation = useDictation();
   useMobileOverscrollFeedback(scrollContainerRef);
   const startDictation = useCallback(() => {
@@ -736,6 +738,20 @@ const MessageArea = ({
 
   return (
     <>
+      {/* 会话内关键词检索胶囊 */}
+      <InSessionSearchBar
+        open={inSessionSearchOpen}
+        onClose={() => setInSessionSearchOpen(false)}
+        messages={displayMessages}
+        onScrollToMessage={(idx) => {
+          const container = scrollContainerRef.current;
+          if (!container) return;
+          const target = container.querySelector(`[data-chat-anchor-key*="${idx}"]`) as HTMLElement;
+          if (target) {
+            target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }}
+      />
       {/* 消息列表 */}
       <div
         className={`${styles.messageArea} ${mobile ? styles.messageAreaMobile : ''}`}

@@ -847,7 +847,7 @@ const MessageBubble = ({ message, provider, session, mobile = false, isFollowup 
 
   if (isUser) {
     return (
-      <div className={`${styles.messageRow} ${styles.messageRowUser}`}>
+      <div className={`${styles.messageRow} ${styles.messageRowUser}`} data-chat-anchor-key={`user-${message.timestamp || ""}`}>
         <div className={`${styles.messageWrapper} ${styles.messageWrapperUser}`} onClick={handleMessageTap}>
           <div className={`${styles.bubbleUser} ${hasStructuredUserBlocks ? styles.bubbleUserStructured : ''}`}>
             <ImageGallery images={galleryImages} />
@@ -890,7 +890,7 @@ const MessageBubble = ({ message, provider, session, mobile = false, isFollowup 
 
   if (isErrorMessage(message.content)) {
     return (
-      <div className={`${styles.messageRow} ${styles.messageRowAssistant} ${isFollowup ? styles.messageRowAssistantFollowup : ''}`}>
+      <div className={`${styles.messageRow} ${styles.messageRowAssistant} ${isFollowup ? styles.messageRowAssistantFollowup : ''}`} data-chat-anchor-key={`assistant-${message.timestamp || ""}`}>
         {showAssistantAvatar ? (
           <Avatar size={32} className={styles.avatarAi} style={{ background: '#fff2f0', border: '1px solid #ffccc7' }}>
             <WarningOutlined style={{ color: '#cf1322', fontSize: 16 }} />
@@ -916,7 +916,7 @@ const MessageBubble = ({ message, provider, session, mobile = false, isFollowup 
     const hasLiveDetail = hasRenderablePendingBlocks(blocks);
 
     return (
-      <div className={`${styles.messageRow} ${styles.messageRowAssistant} ${isFollowup ? styles.messageRowAssistantFollowup : ''}`}>
+      <div className={`${styles.messageRow} ${styles.messageRowAssistant} ${isFollowup ? styles.messageRowAssistantFollowup : ''}`} data-chat-anchor-key={`assistant-${message.timestamp || ""}`}>
         {showAssistantAvatar ? (
           <Avatar size={32} className={styles.avatarAi}>
             <ProviderIcon provider={provider} size={18} />
@@ -954,7 +954,7 @@ const MessageBubble = ({ message, provider, session, mobile = false, isFollowup 
   }
 
   return (
-    <div className={`${styles.messageRow} ${styles.messageRowAssistant} ${isFollowup ? styles.messageRowAssistantFollowup : ''}`}>
+    <div className={`${styles.messageRow} ${styles.messageRowAssistant} ${isFollowup ? styles.messageRowAssistantFollowup : ''}`} data-chat-anchor-key={`assistant-${message.timestamp || ""}`}>
       {showAssistantAvatar ? (
         <Avatar size={32} className={styles.avatarAi}>
           <ProviderIcon provider={provider} size={18} />

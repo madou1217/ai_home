@@ -444,3 +444,23 @@ body.dark {
   --hos-glass-border-subtle: 1px solid rgba(255, 255, 255, 0.06);
   --hos-shadow-card: 0 8px 24px -2px rgba(0, 0, 0, 0.32);
 }
+
+/* =============================================================================
+ * 11. HARMONYOS 6 无障碍外发光微焦点轮廓 (Accessibility Focus Rings)
+ * ========================================================================== */
+:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2.5px rgba(59, 130, 246, 0.45), 0 0 12px rgba(59, 130, 246, 0.25) !important;
+  border-radius: inherit;
+  transition: box-shadow 0.12s var(--hos-ease-smooth, cubic-bezier(0.2, 0.8, 0.2, 1));
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[role="button"]:focus-visible,
+[tabindex="0"]:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2.5px rgba(59, 130, 246, 0.45), 0 0 12px rgba(59, 130, 246, 0.25) !important;
+}

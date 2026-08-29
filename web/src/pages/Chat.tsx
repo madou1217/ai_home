@@ -39,6 +39,19 @@ dayjs.locale('zh-cn');
 const STORAGE_KEY_CHAT_MODE = 'aih_chat_workspace_mode';
 
 export default function Chat() {
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setCommandPaletteOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   const screens = Grid.useBreakpoint();
   const mobile = !screens.md;
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>(() => {
@@ -298,7 +311,13 @@ export default function Chat() {
   const navigation = useMobileChatNavigation(setMobileShowChat);
 
   return (
-    <ChatWorkspaceLayout
+    <>
+      <GlobalCommandPalette
+        open={commandPaletteOpen}
+        onClose={() => setCommandPaletteOpen(false)}
+        onSelectModel={setSelectedModel}
+      />
+      <ChatWorkspaceLayout
       mobile={mobile}
       mobileShowChat={mobileShowChat}
       selectedSession={projectCatalog.selectedSession}
@@ -312,5 +331,6 @@ export default function Chat() {
       onTouchStart={navigation.touchStart}
       onTouchEnd={navigation.touchEnd}
     />
+    </>
   );
 }

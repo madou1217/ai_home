@@ -1,3 +1,4 @@
+import SettingsGroupCard, { SettingsItem } from '@/components/settings/SettingsGroupCard';
 import { useState, useEffect, useRef } from 'react';
 import type { ComponentProps, ReactNode } from 'react';
 import './Settings.css';
@@ -579,19 +580,20 @@ const Settings = ({ section }: SettingsProps) => {
         </div>
       </ProCard>
 
-      <ProCard className="settings-panel" bordered bodyStyle={{ padding: 18 }}>
-        <div className="settings-panel-head">
-          <div>
-            <h2>开发工具与应用管理</h2>
-            <p>已整合至全新「开发工具 (Toolkit)」页面，统一管理 AI CLI、环境、镜像源与代理。</p>
-          </div>
-        </div>
-        <div style={{ marginTop: 12 }}>
-          <Button type="primary" onClick={() => window.location.href = buildAppHref('/toolkit')}>
-            进入开发工具箱 (Toolkit)
-          </Button>
-        </div>
-      </ProCard>
+      <SettingsGroupCard
+        title="开发工具与应用管理"
+        description="已整合至全新「开发工具 (Toolkit)」页面，统一管理 AI CLI、环境、镜像源与代理。"
+      >
+        <SettingsItem
+          title="开发工具箱 (Toolkit)"
+          subtitle="统一管理 AI CLI、Node 环境、镜像源与代理"
+          action={
+            <Button type="primary" onClick={() => window.location.href = buildAppHref('/toolkit')}>
+              进入工具箱
+            </Button>
+          }
+        />
+      </SettingsGroupCard>
 
       <ProCard className="settings-panel" bordered bodyStyle={{ padding: 18 }}>
         <div className="settings-panel-head">

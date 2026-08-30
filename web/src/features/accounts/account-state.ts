@@ -119,6 +119,7 @@ export function getUsageSnapshotRemainingPct(record: Pick<Account, 'provider' | 
     (record.provider === 'codex' && snapshot.kind === 'codex_oauth_status')
     || (record.provider === 'claude' && snapshot.kind === 'claude_oauth_usage')
     || (record.provider === 'kimi' && snapshot.kind === 'kimi_oauth_usage')
+    || (record.provider === 'zcode' && snapshot.kind === 'zcode_plan_balance')
   ) {
     values = (snapshot.entries || [])
       .map((entry) => Number(entry.remainingPct))

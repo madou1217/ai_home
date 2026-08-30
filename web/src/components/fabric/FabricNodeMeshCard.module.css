@@ -1,0 +1,208 @@
+.meshCard {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 160px;
+  padding: 18px 20px;
+  border-radius: var(--hos-radius-xl, 24px);
+  background: var(--hos-glass-bg-card, rgba(255, 255, 255, 0.85));
+  backdrop-filter: var(--hos-blur-card, blur(20px)) saturate(190%);
+  -webkit-backdrop-filter: var(--hos-blur-card, blur(20px)) saturate(190%);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  box-shadow: var(--hos-shadow-card, 0 4px 20px -2px rgba(0, 0, 0, 0.04));
+  transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.22s ease, border-color 0.22s ease;
+}
+
+[data-theme='dark'] .meshCard {
+  background: rgba(30, 41, 59, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.meshCard:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--hos-shadow-floating, 0 12px 36px -4px rgba(0, 0, 0, 0.08));
+  border-color: rgba(10, 89, 247, 0.3);
+}
+
+.cardBusy {
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+.cardOffline {
+  opacity: 0.58;
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.avatarWrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nodeIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: rgba(10, 89, 247, 0.08);
+  color: #0a59f7;
+  font-size: 20px;
+}
+
+[data-theme='dark'] .nodeIcon {
+  background: rgba(10, 89, 247, 0.15);
+}
+
+.radarPulse {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.pulseOnline {
+  background: #10b981;
+  box-shadow: 0 0 0 2px #ffffff, 0 0 8px rgba(16, 185, 129, 0.6);
+}
+
+.pulseBusy {
+  background: #f59e0b;
+  box-shadow: 0 0 0 2px #ffffff, 0 0 8px rgba(245, 158, 11, 0.6);
+}
+
+.pulseOffline {
+  background: #94a3b8;
+}
+
+.titleInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.nameLine {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nodeName {
+  font-size: 15px;
+  font-weight: 700;
+  color: #1e293b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-theme='dark'] .nodeName {
+  color: #f8fafc;
+}
+
+.roleTag {
+  margin: 0;
+  border-radius: 9999px;
+  border: none;
+  font-size: 10px;
+  font-weight: 600;
+  background: rgba(0, 0, 0, 0.04);
+  color: #64748b;
+}
+
+[data-theme='dark'] .roleTag {
+  background: rgba(255, 255, 255, 0.06);
+  color: #cbd5e1;
+}
+
+.nodeHost {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  color: #64748b;
+}
+
+.cardBody {
+  display: flex;
+  flex-direction: column;
+  margin: 8px 0 14px;
+}
+
+.metricsRow {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.02);
+}
+
+[data-theme='dark'] .metricsRow {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.metricItem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.metricLabel {
+  font-size: 10px;
+  font-weight: 600;
+  color: #94a3b8;
+}
+
+.metricValue {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+[data-theme='dark'] .metricValue {
+  color: #f8fafc;
+}
+
+.cardFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid rgba(0, 0, 0, 0.04);
+  padding-top: 10px;
+}
+
+[data-theme='dark'] .cardFooter {
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.sessionState {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.sessionCount {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #64748b;
+}
+
+.statusLabel {
+  color: #94a3b8;
+}
+
+.actionBtn {
+  border-radius: var(--hos-radius-pill, 9999px) !important;
+  font-weight: 600 !important;
+}

@@ -1,3 +1,4 @@
+import AccountCardGrid from '@/components/account/AccountCardGrid';
 import './Accounts.css';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { StatisticCard } from '@ant-design/pro-components';
@@ -2253,6 +2254,29 @@ export default function Accounts() {
           </div>
         ) : (
           <SectionCard title="账号列表">
+          <div style={{ marginBottom: 16 }}>
+            <AccountCardGrid
+              accounts={filteredAccounts as any}
+              provider={activeProvider}
+              loading={loading}
+              onEdit={(acc) => {
+                const target = accounts.find(a => a.accountRef === acc.accountRef);
+                if (target) handleOpenEdit(target);
+              }}
+              onDelete={(acc) => {
+                const target = accounts.find(a => a.accountRef === acc.accountRef);
+                if (target) handleDelete(target);
+              }}
+              onOpenApp={(acc) => {
+                const target = accounts.find(a => a.accountRef === acc.accountRef);
+                if (target) handleOpenDesktop(target);
+              }}
+              onOpenCli={(acc) => {
+                const target = accounts.find(a => a.accountRef === acc.accountRef);
+                if (target) handleOpenPty(target);
+              }}
+            />
+          </div>
           <ListTable
             headerTitle={
               <Space size={12}>

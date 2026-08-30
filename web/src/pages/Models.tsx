@@ -1,3 +1,4 @@
+import ModelCapsuleCard from '@/components/models/ModelCapsuleCard';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './Models.css';
 import { Alert, Form, Input, Modal, Segmented, Select, Space, Switch, Tag, Tooltip, Typography, message, Grid } from 'antd';
@@ -685,6 +686,21 @@ export default function Models() {
     const defaultControlTip = model.defaultModel
       ? '当前账号默认模型；切换其他模型即可替换'
       : (enabled ? '设为此账号默认模型' : '启用模型后可设为默认');
+    return (
+      <div key={rowKey} style={{ marginBottom: 12 }}>
+        <ModelCapsuleCard
+          modelId={model.id}
+          displayName={displayLabel}
+          provider={model.provider || model.owned_by || 'ai'}
+          accountRef={model.accountRef}
+          enabled={enabled}
+          isDefault={Boolean(model.defaultModel)}
+          onToggleEnabled={(checked) => updateModelEnabled(model, checked)}
+          onSetDefault={!model.defaultModel && enabled ? () => updateModelDefault(model, true) : undefined}
+          onCopyId={() => copyModelId(model.id)}
+        />
+      </div>
+    );
     return (
       <div className={`models-model-row ${enabled ? '' : 'models-model-row--disabled'}`.trim()} key={rowKey}>
         <div className="models-model-row-main">

@@ -25,8 +25,7 @@ body {
   text-rendering: geometricPrecision;
 }
 
-/* 桌面端才锁 body 滚动（app-shell 内部滚动）。移动端保留原生 body 滚动，
- * 否则 100vh + overflow:hidden 会把内容裁在地址栏后面、长页面无法滚动。 */
+/* 桌面端锁 body 滚动，内部容器弹性滚动 */
 @media (min-width: 768px) {
   body {
     overflow: hidden;
@@ -45,86 +44,32 @@ button {
 }
 
 ::selection {
-  background: color-mix(in srgb, var(--c-brand-600) 22%, transparent);
+  background: color-mix(in srgb, #0a59f7 22%, transparent);
   color: var(--app-heading);
 }
 
-/* ===== Umi ProLayout 全局微调 ===== */
-/* 让 ProLayout 的内容区撑满视口高度 */
-#root {
-  height: 100vh;
-}
+/* ===== HarmonyOS 6 全局 Ant Design 组件超级曲率与通透材质重塑 ===== */
 
-/* App-shell 内部滚动只在桌面端启用：内容区固定为视口高度、超出在内容区内部滚动。
- * 移动端（<768px）走原生 body 滚动，避免 100vh 把内容裁在地址栏后/长页无法滚。
- * 此前 has-sider 用 min-height:100% 但无上限 → 撑高溢出；且移动端无 has-sider 结构。 */
-@media (min-width: 768px) {
-  .ant-pro-layout {
-    height: 100vh !important;
-    overflow: hidden !important;
-  }
-
-  .ant-pro-layout > .ant-layout-has-sider {
-    height: 100% !important;
-    min-height: 0 !important;
-    overflow: hidden !important;
-  }
-
-  .ant-pro-layout-container {
-    height: 100% !important;
-    min-height: 0 !important;
-  }
-
-  .ant-pro-layout-content.ant-pro-layout-content {
-    flex: 1 1 0 !important;
-    min-height: 0 !important;
-    overflow-y: auto !important;
-  }
-}
-
-/* 移除 ProLayout 默认的页面容器上边距，使页面更紧凑 */
-.ant-page-header {
-  padding-block: 12px;
-}
-
-/* 全局 ProTable 分页美化 */
-.ant-pagination {
-  margin-top: 16px !important;
-}
-
-.ant-pagination .ant-pagination-item {
-  border-radius: 6px;
-}
-
-.ant-pagination .ant-pagination-item-active {
-  font-weight: 600;
-}
-
-/* 全局 ProCard 间距规范 */
-.ant-pro-card {
-  border-radius: 12px;
-}
-
-/* 全局 Modal 圆角与毛玻璃 (HarmonyOS 6 Squircle & Acrylic Glass) */
+/* 1. 弹窗 (Modal) 浮岛规范 */
 .ant-modal-content {
   border-radius: var(--hos-radius-xl, 24px) !important;
   background: var(--hos-glass-bg-floating, rgba(255, 255, 255, 0.92)) !important;
   backdrop-filter: var(--hos-blur-floating, blur(32px) saturate(200%)) !important;
   -webkit-backdrop-filter: var(--hos-blur-floating, blur(32px) saturate(200%)) !important;
-  border: 0.8px solid var(--color-border-subtle, rgba(0, 0, 0, 0.08)) !important;
-  box-shadow: var(--hos-shadow-floating, 0 12px 36px rgba(0, 0, 0, 0.08)) !important;
+  border: 0.8px solid var(--color-border-subtle, rgba(255, 255, 255, 0.8)) !important;
+  box-shadow: var(--hos-shadow-floating, 0 16px 40px -4px rgba(0, 0, 0, 0.08)) !important;
 }
 
-/* 全局 Drawer 圆角与毛玻璃 */
+/* 2. 抽屉 (Drawer) 浮岛规范 */
 .ant-drawer-content {
   border-radius: var(--hos-radius-xl, 24px) 0 0 var(--hos-radius-xl, 24px) !important;
   background: var(--hos-glass-bg-floating, rgba(255, 255, 255, 0.92)) !important;
   backdrop-filter: var(--hos-blur-floating, blur(32px) saturate(200%)) !important;
   -webkit-backdrop-filter: var(--hos-blur-floating, blur(32px) saturate(200%)) !important;
-  border-left: 0.8px solid var(--color-border-subtle, rgba(0, 0, 0, 0.08)) !important;
+  border-left: 0.8px solid var(--color-border-subtle, rgba(255, 255, 255, 0.8)) !important;
 }
 
-/* 全局 Dropdown / Select 下拉浮层毛玻璃与超级圆角 */
+/* 3. 浮层菜单 (Dropdown / Select Dropdown / Popover) */
 .ant-select-dropdown,
 .ant-dropdown-menu,
 .ant-popover-inner {
@@ -132,74 +77,100 @@ button {
   background: var(--hos-glass-bg-floating, rgba(255, 255, 255, 0.92)) !important;
   backdrop-filter: var(--hos-blur-floating, blur(32px) saturate(200%)) !important;
   -webkit-backdrop-filter: var(--hos-blur-floating, blur(32px) saturate(200%)) !important;
-  border: 0.8px solid var(--color-border-subtle, rgba(0, 0, 0, 0.08)) !important;
-  box-shadow: var(--hos-shadow-floating, 0 8px 24px rgba(0, 0, 0, 0.08)) !important;
-  padding: 6px !important;
+  border: 0.8px solid var(--color-border-subtle, rgba(255, 255, 255, 0.8)) !important;
+  box-shadow: var(--hos-shadow-floating, 0 12px 32px -4px rgba(0, 0, 0, 0.08)) !important;
+  padding: 8px !important;
 }
 
-/* 全局 Select 控件超级圆角 */
-.ant-select-selector {
-  border-radius: var(--hos-radius-sm, 12px) !important;
-  border: 0.8px solid var(--color-border, #e2e8f0) !important;
-  transition: all 0.15s var(--hos-ease-smooth, cubic-bezier(0.2, 0.8, 0.2, 1)) !important;
-}
-
-/* 全局 Input 控件超级圆角 */
+/* 4. 输入框 (Input) 鸿蒙微光规范 */
 .ant-input,
 .ant-input-affix-wrapper {
-  border-radius: var(--hos-radius-sm, 12px) !important;
-  border: 0.8px solid var(--color-border, #e2e8f0) !important;
-  transition: all 0.15s var(--hos-ease-smooth, cubic-bezier(0.2, 0.8, 0.2, 1)) !important;
+  border-radius: var(--hos-radius-sm, 14px) !important;
+  border: 1px solid rgba(0, 0, 0, 0.08) !important;
+  background: rgba(255, 255, 255, 0.8) !important;
+  transition: all 0.18s var(--hos-ease-smooth, cubic-bezier(0.2, 0.8, 0.2, 1)) !important;
 }
 
-/* 全局 Button 控件超级圆角 */
+.ant-input:focus,
+.ant-input-affix-wrapper:focus,
+.ant-input-affix-wrapper-focused {
+  background: #ffffff !important;
+  border-color: #0a59f7 !important;
+  box-shadow: 0 0 0 3px rgba(10, 89, 247, 0.18) !important;
+}
+
+/* 5. 选择器 (Select) 鸿蒙微光规范 */
+.ant-select-selector {
+  border-radius: var(--hos-radius-sm, 14px) !important;
+  border: 1px solid rgba(0, 0, 0, 0.08) !important;
+  background: rgba(255, 255, 255, 0.8) !important;
+  transition: all 0.18s var(--hos-ease-smooth, cubic-bezier(0.2, 0.8, 0.2, 1)) !important;
+}
+
+.ant-select-focused .ant-select-selector {
+  background: #ffffff !important;
+  border-color: #0a59f7 !important;
+  box-shadow: 0 0 0 3px rgba(10, 89, 247, 0.18) !important;
+}
+
+/* 6. 按钮 (Button) 物理阻尼与胶囊规范 */
 .ant-btn {
-  border-radius: var(--hos-radius-sm, 12px) !important;
-  transition: transform 0.12s var(--hos-ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)), box-shadow 0.12s ease !important;
+  border-radius: var(--hos-radius-pill, 9999px) !important;
+  font-weight: 600 !important;
+  transition: transform 0.14s var(--hos-ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)), box-shadow 0.14s ease, background-color 0.14s ease !important;
+}
+
+.ant-btn-primary {
+  background: linear-gradient(135deg, #0a59f7 0%, #2563eb 100%) !important;
+  border: none !important;
+  box-shadow: 0 4px 14px rgba(10, 89, 247, 0.25) !important;
+}
+
+.ant-btn-primary:hover {
+  box-shadow: 0 6px 20px rgba(10, 89, 247, 0.35) !important;
+  transform: translateY(-1px) !important;
 }
 
 .ant-btn:active {
   transform: scale(0.96) !important;
 }
 
-/* 全局反馈采用紧凑行内状态：保留 Ant Design Alert 的语义与图标，不使用大面积提示容器。 */
-.ant-alert {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin-block: 4px;
-  padding: 4px 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
+/* 7. 分段控制器 (Segmented) 鸿蒙滑动胶囊 */
+.ant-segmented {
+  border-radius: var(--hos-radius-pill, 9999px) !important;
+  background: rgba(0, 0, 0, 0.04) !important;
+  padding: 4px !important;
 }
 
-.ant-alert.ant-alert-with-description {
-  padding: 4px 0;
+.ant-segmented-item {
+  border-radius: var(--hos-radius-pill, 9999px) !important;
+  font-weight: 600 !important;
+  transition: all 0.2s var(--hos-ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) !important;
 }
 
-.ant-alert .ant-alert-icon {
-  flex: 0 0 auto;
-  margin-inline-end: 0;
-  margin-top: 2px;
+.ant-segmented-item-selected {
+  background: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06) !important;
+  color: #0a59f7 !important;
 }
 
-.ant-alert-content {
-  min-width: 0;
+/* 8. 表格 (Table) 鸿蒙无界流光规范 */
+.ant-table-wrapper .ant-table {
+  background: transparent !important;
 }
 
-.ant-alert-message {
-  color: var(--color-heading, var(--app-heading));
-  font-weight: 600;
+.ant-table-wrapper .ant-table-thead > tr > th {
+  background: rgba(241, 245, 249, 0.5) !important;
+  backdrop-filter: blur(12px) !important;
+  color: #475569 !important;
+  font-weight: 700 !important;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05) !important;
 }
 
-.ant-alert-description {
-  margin-top: 2px;
-  color: var(--color-muted-strong, var(--app-text-secondary));
+.ant-table-wrapper .ant-table-tbody > tr > td {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.03) !important;
 }
 
-.ant-alert-action {
-  margin-inline-start: auto;
+.ant-table-wrapper .ant-table-tbody > tr:hover > td {
+  background: rgba(10, 89, 247, 0.03) !important;
 }
-
-/* 移动端底部 TabBar 已迁至 MobileTabBar 组件 + styles/mobile-shell.css（承接跨页导航）。 */

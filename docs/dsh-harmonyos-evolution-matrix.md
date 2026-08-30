@@ -66,7 +66,8 @@
 | | 2.12 | **图像工坊 (Studio) 鸿蒙画廊卡片** | HOS 6 Gallery Card | 📱 + 💻 | ✅ **已完成** | `image-studio.module.css` |
 | | 2.14 | **全站全局 Modal/Drawer/Dropdown/Select/Input/Button 原子组件统一鸿蒙化** | HOS 6 Global Components | 📱 + 💻 | ✅ **已完成** | `web/src/styles/App.css` |
 | | 2.15 | **全站统一页面容器与通用卡片鸿蒙化** (`unified.css` 亚克力分层) | HOS 6 Unified Card | 📱 + 💻 | ✅ **已完成** | `web/src/styles/unified.css` |
-| | 2.16 | **模型别名拓扑卡片 (ModelAliases)** | HOS 6 Topology Card | 📱 + 💻 | ✅ **已完成** | `Models.css`<br>`ModelAliases.tsx` |
+| | 2.16 | **通用数据展示容器与卡片质感升级** (`data-display.css` 亚克力 Squircle) | HOS 6 Data Card | 📱 + 💻 | ✅ **已完成** | `web/src/components/ui/data-display.css` |
+| | 2.17 | **模型别名拓扑卡片 (ModelAliases)** | HOS 6 Topology Card | 📱 + 💻 | ✅ **已完成** | `Models.css`<br>`ModelAliases.tsx` |
 
 ---
 

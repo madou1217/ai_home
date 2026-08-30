@@ -786,18 +786,7 @@ const MessageArea = ({
                 </button>
               </div>
             )}
-            {displayMessages.length > 40 ? (
-              <VirtualConversationList
-                messages={displayMessages}
-                session={session}
-                sessionProvider={sessionProvider}
-                mobile={mobile}
-                onRetry={(prompt) => handleSend(prompt)}
-                onForkSession={onForkSession}
-              />
-            ) : (
-              renderedMessageNodes
-            )}
+            {renderedMessageNodes}
             {pendingTail.visible ? (
               <div className={styles.pendingTailRow}>
                 <PendingTailStatusLine text={pendingTail.statusText || '正在思考中'} />

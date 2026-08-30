@@ -5,36 +5,52 @@
   align-items: center;
   gap: 6px;
   min-width: 0;
-  height: 32px;
-  padding: 0 12px;
-  border: 1px solid rgba(0, 0, 0, 0.05);
+  height: 34px;
+  padding: 0 14px;
+  border: 0.8px solid rgba(255, 255, 255, 0.8);
   border-radius: var(--hos-radius-pill, 9999px);
-  color: var(--color-text, #334155);
-  background: var(--hos-glass-bg-subtle, rgba(255, 255, 255, 0.7));
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  color: var(--color-text, #1e293b);
+  background: var(--hos-glass-bg-subtle, rgba(255, 255, 255, 0.75));
+  backdrop-filter: blur(20px) saturate(190%);
+  -webkit-backdrop-filter: blur(20px) saturate(190%);
   font: inherit;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.02);
-  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+  transition: transform 0.14s var(--hos-ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)), box-shadow 0.14s ease, background-color 0.14s ease;
+}
+
+[data-theme='dark'] .controlButton,
+[data-theme='dark'] .approvalButton,
+[data-theme='dark'] .modelSummary {
+  background: rgba(30, 41, 59, 0.75);
+  border: 0.8px solid rgba(255, 255, 255, 0.1);
+  color: #f8fafc;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
 .controlButton:hover,
 .approvalButton:hover,
 .modelSummary:hover {
   background: rgba(255, 255, 255, 0.95);
-  border-color: rgba(37, 99, 235, 0.2);
+  border-color: rgba(10, 89, 247, 0.3);
   transform: translateY(-1px);
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 4px 14px rgba(10, 89, 247, 0.15);
+}
+
+[data-theme='dark'] .controlButton:hover,
+[data-theme='dark'] .approvalButton:hover,
+[data-theme='dark'] .modelSummary:hover {
+  background: rgba(51, 65, 85, 0.9);
+  border-color: rgba(10, 89, 247, 0.4);
 }
 
 .controlButton:focus-visible,
 .approvalButton:focus-visible,
 .modelSummary:focus-visible {
-  outline: 2px solid #3b82f6;
-  outline-offset: 1px;
+  outline: none;
+  box-shadow: 0 0 0 2.5px rgba(10, 89, 247, 0.45), 0 0 12px rgba(10, 89, 247, 0.25) !important;
 }
 
 .controlButton:disabled,
@@ -59,37 +75,45 @@
   background: rgba(0, 0, 0, 0.04);
   font-size: 10px;
   line-height: 16px;
-  font-weight: 600;
+  font-weight: 700;
+}
+
+[data-theme='dark'] .controlButton small {
+  color: #94a3b8;
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .approvalButton {
   color: #ea580c;
-  background: rgba(234, 88, 12, 0.06);
-  border-color: rgba(234, 88, 12, 0.15);
+  background: rgba(234, 88, 12, 0.08);
+  border-color: rgba(234, 88, 12, 0.2);
 }
 
 .approvalButton:hover {
-  background: rgba(234, 88, 12, 0.12);
-  border-color: rgba(234, 88, 12, 0.3);
+  background: rgba(234, 88, 12, 0.15);
+  border-color: rgba(234, 88, 12, 0.35);
 }
 
 .modelSummary {
   justify-content: flex-end;
-  padding-inline: 12px 10px;
-  background: var(--hos-glass-bg-subtle, rgba(255, 255, 255, 0.75));
-  border: 1px solid rgba(0, 0, 0, 0.06);
+  padding-inline: 14px 12px;
 }
 
 .modelSummary small {
   color: #64748b;
   font-size: 12px;
+  font-weight: 600;
+}
+
+[data-theme='dark'] .modelSummary small {
+  color: #94a3b8;
 }
 
 .modelIcon {
   width: 16px;
   height: 16px;
   flex: 0 0 16px;
-  color: #3b82f6;
+  color: #0a59f7;
 }
 
 .chevron {
@@ -115,21 +139,27 @@
 }
 
 .optionMain small {
-  color: #8a8a8a;
+  color: #94a3b8;
   font-size: 11px;
 }
 
 .menuHeading > span:first-child {
-  color: #242424;
+  color: #1e293b;
+  font-weight: 700;
+}
+
+[data-theme='dark'] .menuHeading > span:first-child {
+  color: #f8fafc;
 }
 
 .menuHeading > span:nth-child(2) {
   margin-left: auto;
-  color: #929292;
+  color: #64748b;
+  font-size: 11px;
 }
 
 .menuHeading > :last-child {
-  color: #929292;
+  color: #94a3b8;
   font-size: 10px;
 }
 
@@ -144,17 +174,25 @@
 }
 
 .approvalOption strong {
-  color: #242424;
-  font-weight: 500;
+  color: #1e293b;
+  font-weight: 600;
+}
+
+[data-theme='dark'] .approvalOption strong {
+  color: #f8fafc;
 }
 
 .approvalOption small {
-  color: #8a8a8a;
+  color: #64748b;
   font-size: 12px;
 }
 
+[data-theme='dark'] .approvalOption small {
+  color: #94a3b8;
+}
+
 .retryOption {
-  color: #9a5d00;
+  color: #d97706;
 }
 
 @media (max-width: 768px) {
@@ -187,8 +225,8 @@
   .controlButton,
   .approvalButton,
   .modelSummary {
-    width: 32px;
-    flex: 0 0 32px;
+    width: 34px;
+    flex: 0 0 34px;
     padding: 0;
     justify-content: center;
   }

@@ -104,3 +104,12 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* 防止 segmented 在移动端不换行导致撑破 390px 视口 */
+@media (max-width: 768px) {
+  .data-toolbar-filters .ant-segmented,
+  .ant-segmented {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+}

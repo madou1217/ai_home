@@ -20,6 +20,7 @@ import SlashCommandMenu from './SlashCommandMenu';
 import ContextMeter from './ContextMeter';
 import ComposerAttachmentGallery from './ComposerAttachmentGallery';
 import InSessionSearchBar from './InSessionSearchBar';
+import PromptPresetsCapsule from './PromptPresetsCapsule';
 import { findLatestActiveChecklist } from './message-structure';
 import { useMobileOverscrollFeedback } from '@/components/mobile/use-mobile-overscroll-feedback';
 import PlanChoiceDock from './PlanChoiceDock';
@@ -1085,6 +1086,7 @@ const MessageArea = ({
                   ) : null}
                 </>
               )}
+              <PromptPresetsCapsule onSelect={(tpl) => onInputChange(tpl)} mobile={mobile} />
               <ContextMeter
                 messages={messages}
                 maxTokens={dynamicMaxTokens}

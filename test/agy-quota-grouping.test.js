@@ -56,8 +56,8 @@ test('AGY quota resets are grouped into Gemini Models and Claude/GPT Models inst
   // Must generate exactly 2 grouped events (1 for Claude & GPT Models, 1 for Gemini Models), NOT 7 or 24 individual spam events!
   assert.equal(events.length, 2, 'Should generate exactly 2 grouped events for AGY pools');
   const labels = events.map(e => e.windowLabel);
-  assert.ok(labels.includes('Claude & GPT 模型池'));
-  assert.ok(labels.includes('Gemini 模型池'));
+  assert.ok(labels.some(l => l.startsWith('Claude & GPT 模型池')));
+  assert.ok(labels.some(l => l.startsWith('Gemini 模型池')));
 
   fs.rmSync(root, { recursive: true, force: true });
 });

@@ -1,42 +1,64 @@
-/* Umi 全局样式入口（约定文件，自动注入）。
- *
- * 背景：项目从 Vite 迁移到 UmiJS（commit 687f44a）后，原 Vite main.tsx 里的全局
- * 样式入口丢失，导致 design-tokens / 品牌字体 / body 布局 / ProLayout 高度等全局
- * 地基从未加载——所有 var(--color-*) 解析为空、整页错误滚动。此文件恢复加载。
- *
- * design-tokens.css 与 App.css 的其余全局规则都从 App.css 串联引入（单一来源）。 */
+/* =============================================================================
+ * HarmonyOS 6 (ArkUI) 全局沉浸式光影底座与空间层次规范
+ * ========================================================================== */
+
+@import './styles/design-tokens.css';
+@import './styles/unified.css';
 @import './styles/App.css';
-@import './styles/mobile-shell.css';
 
-/* 复制图标按钮：全站统一的小号无边框图标。
- * 默认隐藏（opacity:0，不占位变化、不抖动），悬停所在行或键盘聚焦时才显示。 */
-.copy-icon-btn.ant-btn {
-  width: 22px;
-  height: 22px;
-  min-width: 22px;
+:root {
+  --hos-primary-blue: #0a59f7;
+  --hos-primary-aura: radial-gradient(circle at 50% -20%, rgba(10, 89, 247, 0.12) 0%, rgba(10, 89, 247, 0.02) 60%, transparent 100%);
+  --hos-dark-aura: radial-gradient(circle at 50% -20%, rgba(30, 58, 138, 0.25) 0%, rgba(15, 23, 42, 0.05) 70%, transparent 100%);
+}
+
+html, body {
+  margin: 0;
   padding: 0;
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: #bfbfbf;
-  opacity: 0;
-  transition: opacity 0.15s ease, color 0.15s ease;
-}
-.copy-icon-btn.ant-btn:hover {
-  color: var(--app-link, #1677ff);
-}
-.account-email-row:hover .copy-icon-btn,
-.models-model-row:hover .copy-icon-btn,
-.models-global-row:hover .copy-icon-btn,
-.usage-session-cell:hover .copy-icon-btn,
-.copy-icon-btn:focus-visible {
-  opacity: 1;
+  width: 100%;
+  height: 100%;
+  font-family: var(--font-body, 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #f8fafc;
+  background-image: var(--hos-custom-aura, var(--hos-primary-aura));
+  background-attachment: fixed;
+  color: #1e293b;
 }
 
-/* 全局开关统一尺寸：所有常规 Switch（启用/停用、默认、开放/本机…）共享同一最小宽度，
- * 不再因文案长度不同而宽窄不一（文案统一控制在 2 字内即可稳定落位）。
- * size="small" 的开关是刻意的紧凑场景，排除在外。 */
-.ant-switch:not(.ant-switch-sm) {
-  min-width: 56px;
+[data-theme='dark'] body,
+body.dark {
+  background-color: #0b0f19;
+  background-image: var(--hos-custom-aura, var(--hos-dark-aura));
+  color: #f8fafc;
+}
+
+/* 消除 Ant Design ProLayout 原生死白与方角边框 */
+.ant-pro-basicLayout {
+  background: transparent !important;
+}
+
+.ant-pro-sider {
+  background: var(--hos-glass-bg-subtle, rgba(255, 255, 255, 0.72)) !important;
+  backdrop-filter: blur(24px) saturate(190%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(190%) !important;
+  border-inline-end: 1px solid rgba(255, 255, 255, 0.8) !important;
+}
+
+[data-theme='dark'] .ant-pro-sider {
+  background: rgba(15, 23, 42, 0.75) !important;
+  border-inline-end: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+/* 顶部与主工作区背景通透化 */
+.ant-pro-global-header {
+  background: var(--hos-glass-bg-subtle, rgba(255, 255, 255, 0.65)) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.8) !important;
+}
+
+[data-theme='dark'] .ant-pro-global-header {
+  background: rgba(15, 23, 42, 0.65) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
 }

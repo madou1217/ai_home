@@ -17,31 +17,67 @@ export default defineConfig({
   define: {
     "process.env.AIH_GO_ACCOUNTS_PREVIEW": JSON.stringify(process.env.AIH_GO_ACCOUNTS_PREVIEW || ""),
   },
-  // antd 主题集中在框架 ConfigProvider（少写自定义 CSS）：颜色/表格视觉走 token，
-  // 替代 unified.css 里对 .ant-table 的 !important 覆盖。
+  // 全面融入 HarmonyOS 6 (ArkUI) 设计系统规范：深空/通透亚克力、超级曲率与流光强调色
   antd: {
     theme: {
       token: {
-        colorPrimary: "#171717",
-        colorInfo: "#2563eb",
-        borderRadius: 8,
-        borderRadiusLG: 12,
-        colorBorderSecondary: "#e2e8f0",
+        colorPrimary: "#0a59f7",
+        colorInfo: "#0a59f7",
+        colorSuccess: "#10b981",
+        colorWarning: "#f59e0b",
+        colorError: "#ef4444",
+        borderRadius: 12,
+        borderRadiusLG: 20,
+        borderRadiusSM: 8,
+        borderRadiusXS: 6,
+        colorBorderSecondary: "rgba(0, 0, 0, 0.06)",
+        fontFamily: "'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif",
       },
       components: {
         Table: {
-          headerBg: "#f1f5f9",
-          headerColor: "#171717",
+          headerBg: "rgba(241, 245, 249, 0.65)",
+          headerColor: "#1e293b",
           headerSplitColor: "transparent",
-          rowHoverBg: "rgba(37, 99, 235, 0.05)",
+          rowHoverBg: "rgba(10, 89, 247, 0.04)",
+          borderRadius: 16,
         },
         Card: {
-          // ProCard 圆角/边框走 token，扁平阴影靠 unified.css 单条非 !important 规则补
-          borderRadiusLG: 12,
+          borderRadiusLG: 20,
+          colorBgContainer: "rgba(255, 255, 255, 0.85)",
+          colorBorderSecondary: "rgba(255, 255, 255, 0.9)",
         },
-        // 分页器用 antd 默认（活动项=黑描边，由全局 colorPrimary #171717 驱动）。
-        // 不再用 itemActiveBg 深填充 + colorPrimary 白字——后者会被 antd 派生为
-        // hover/跳页器文字白色，导致白底白字。框架默认更稳。
+        Button: {
+          borderRadius: 9999,
+          borderRadiusLG: 9999,
+          borderRadiusSM: 9999,
+          controlHeight: 36,
+          controlHeightLG: 42,
+          controlHeightSM: 28,
+        },
+        Select: {
+          borderRadius: 14,
+          borderRadiusLG: 18,
+          borderRadiusSM: 10,
+        },
+        Input: {
+          borderRadius: 14,
+          borderRadiusLG: 18,
+          borderRadiusSM: 10,
+        },
+        Modal: {
+          borderRadiusLG: 24,
+          contentBg: "rgba(255, 255, 255, 0.92)",
+          headerBg: "transparent",
+        },
+        Drawer: {
+          colorBgElevated: "rgba(255, 255, 255, 0.92)",
+        },
+        Segmented: {
+          borderRadius: 9999,
+          borderRadiusSM: 9999,
+          trackBg: "rgba(0, 0, 0, 0.04)",
+          itemSelectedBg: "#ffffff",
+        },
       },
     },
   },

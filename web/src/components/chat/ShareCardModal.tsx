@@ -39,6 +39,57 @@ export const ShareCardModal = memo(function ShareCardModal({
     ? dayjs(timestamp).format('YYYY-MM-DD HH:mm')
     : dayjs().format('YYYY-MM-DD HH:mm');
 
+  const handleDownloadImage = () => {
+    if (!content) return;
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const width = 640;
+    const height = 480;
+    canvas.width = width * 2;
+    canvas.height = height * 2;
+    ctx.scale(2, 2);
+
+    const grad = ctx.createLinearGradient(0, 0, width, height);
+    grad.addColorStop(0, '#f0f5ff');
+    grad.addColorStop(0.5, '#ffffff');
+    grad.addColorStop(1, '#e6f4ff');
+    ctx.fillStyle = grad;
+    if (ctx.roundRect) {
+      ctx.roundRect(0, 0, width, height, 20);
+    } else {
+      ctx.rect(0, 0, width, height);
+    }
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(10, 89, 247, 0.15)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    ctx.fillStyle = '#1e293b';
+    ctx.font = 'bold 16px sans-serif';
+    ctx.fillText(role === 'assistant' ? (model || 'AI Assistant') : 'User', 24, 40);
+
+    ctx.fillStyle = '#64748b';
+    ctx.font = '12px sans-serif';
+    ctx.fillText(formattedTime, 24, 62);
+
+    ctx.fillStyle = '#334155';
+    ctx.font = '14px sans-serif';
+    ctx.fillText(content.slice(0, 180) + (content.length > 180 ? '...' : ''), 24, 100);
+
+    ctx.fillStyle = '#0a59f7';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.fillText('⚡ AI Home Console · HarmonyOS 6.1', 24, height - 24);
+
+    const dataUrl = canvas.toDataURL('image/png');
+    const a = document.createElement('a');
+    a.href = dataUrl;
+    a.download = `aih-share-${Date.now()}.png`;
+    a.click();
+    antdMessage.success('已导出分享卡片 PNG', 1.2);
+  };
+
   const handleCopyText = () => {
     if (!content) return;
     navigator.clipboard.writeText(content).then(() => {
@@ -103,6 +154,9 @@ export const ShareCardModal = memo(function ShareCardModal({
             className={styles.shareActionBtn}
           >
             {copied ? '已复制' : '复制文本'}
+          </Button>
+          <Button icon={<DownloadOutlined />} onClick={handleDownloadImage} className={styles.shareActionBtn}>
+            保存图片
           </Button>
           <Button onClick={onClose} className={styles.shareActionBtn}>
             完成

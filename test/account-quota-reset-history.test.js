@@ -429,5 +429,65 @@ test('quota reset detector strictly ignores login/auth methods like "oauth" or "
   let events = listAccountQuotaResetEvents(fs, aiHomeDir, accountRef);
   assert.equal(events.length, 0, 'Switching from fallback "oauth" to detected "pro" with unchanged quota MUST NOT trigger fake plan upgrade reset');
 
+  // 3. True upgrade: quota replenished from 80.36% to 100% on Pro -> Ultra upgrade
+  writeAccountUsageSnapshot(fs, aiHomeDir, accountRef, {
+    schemaVersion: 2,
+    kind: 'agy_code_assist_quota',
+    capturedAt: now + 120000,
+    account: { planType: 'ultra', subscriptionTier: 'Google AI Ultra', email: 'test@example.com' },
+    models: [
+      {
+        model: 'gemini-3.5-flash',
+        remainingPct: 100.0,
+        resetIn: '5h',
+        resetAtMs: now + 120000 + 5 * 3600000
+      }
+    ]
+  });
+
+  events = listAccountQuotaResetEvents(fs, aiHomeDir, accountRef);
+  assert.equal(events.length, 1, 'Pro -> Ultra upgrade with full quota replenishment must record 1 plan_upgrade event');
+  assert.equal(events[0].classification, 'plan_upgrade');
+  assert.equal(events[0].previousPlanType, 'pro');
+  assert.equal(events[0].currentPlanType, 'ultra');
+  assert.equal(events[0].previousRemainingPct, 80.36);
+  assert.equal(events[0].currentRemainingPct, 100.0);
+
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('quota reset detector delegates observation and tier ranking to provider-specific strategies', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-quota-strategy-test-'));
+  const aiHomeDir = path.join(root, '.ai_home');
+
+  const { accountRef } = registerAccountIdentity(fs, aiHomeDir, {
+    provider: 'claude',
+    cliAccountId: '1',
+    identitySeed: 'oauth:claude:tier@example.com'
+  });
+
+  const now = 1787500000000;
+  // Claude Free -> Pro
+  writeAccountUsageSnapshot(fs, aiHomeDir, accountRef, {
+    schemaVersion: 1,
+    kind: 'claude_oauth_usage',
+    capturedAt: now,
+    account: { planType: 'free', email: 'tier@example.com' },
+    entries: [{ bucket: 'five_hour', remainingPct: 15.0, resetAtMs: now + 5 * 3600000 }]
+  });
+  writeAccountUsageSnapshot(fs, aiHomeDir, accountRef, {
+    schemaVersion: 1,
+    kind: 'claude_oauth_usage',
+    capturedAt: now + 10000,
+    account: { planType: 'pro', email: 'tier@example.com' },
+    entries: [{ bucket: 'five_hour', remainingPct: 100.0, resetAtMs: now + 5 * 3600000 }]
+  });
+
+  const events = listAccountQuotaResetEvents(fs, aiHomeDir, accountRef);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].classification, 'plan_upgrade');
+  assert.equal(events[0].previousPlanType, 'free');
+  assert.equal(events[0].currentPlanType, 'pro');
+
   fs.rmSync(root, { recursive: true, force: true });
 });

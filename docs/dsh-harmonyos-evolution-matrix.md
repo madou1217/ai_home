@@ -65,7 +65,8 @@
 | | 2.11 | **移动端鸿蒙 6 侧滑手势与触觉反馈** (36px 边缘手势+振动) | HOS 6 Phone Gestures | 📱 | ✅ **已完成** | `chat-page-hooks.ts` |
 | | 2.12 | **图像工坊 (Studio) 鸿蒙画廊卡片** | HOS 6 Gallery Card | 📱 + 💻 | ✅ **已完成** | `image-studio.module.css` |
 | | 2.14 | **全站全局 Modal/Drawer/Dropdown/Select/Input/Button 原子组件统一鸿蒙化** | HOS 6 Global Components | 📱 + 💻 | ✅ **已完成** | `web/src/styles/App.css` |
-| | 2.15 | **模型别名拓扑卡片 (ModelAliases)** | HOS 6 Topology Card | 📱 + 💻 | ✅ **已完成** | `Models.css`<br>`ModelAliases.tsx` |
+| | 2.15 | **全站统一页面容器与通用卡片鸿蒙化** (`unified.css` 亚克力分层) | HOS 6 Unified Card | 📱 + 💻 | ✅ **已完成** | `web/src/styles/unified.css` |
+| | 2.16 | **模型别名拓扑卡片 (ModelAliases)** | HOS 6 Topology Card | 📱 + 💻 | ✅ **已完成** | `Models.css`<br>`ModelAliases.tsx` |
 
 ---
 

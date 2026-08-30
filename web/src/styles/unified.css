@@ -1,7 +1,7 @@
 :root {
   --unified-page-padding: 32px;
   --unified-card-padding: 24px;
-  --unified-card-border-radius: 12px;
+  --unified-card-border-radius: var(--hos-radius-lg, 20px);
   --unified-pagination-margin: 16px;
   --unified-section-gap: 20px;
 }
@@ -46,7 +46,12 @@
 /* 2. 统一卡片：圆角/边框走 antd 主题 token（borderRadiusLG + colorBorderSecondary），
  *    仅扁平阴影留一条非 !important 规则（antd Card 无阴影 token）。 */
 .ant-pro-card.unified-section-card {
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.03), 0 1px 2px rgba(15, 23, 42, 0.04);
+  border-radius: var(--hos-radius-lg, 20px) !important;
+  background: var(--hos-glass-bg-card, rgba(255, 255, 255, 0.85)) !important;
+  backdrop-filter: var(--hos-blur-card, blur(20px)) saturate(190%) !important;
+  -webkit-backdrop-filter: var(--hos-blur-card, blur(20px)) saturate(190%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.9) !important;
+  box-shadow: var(--hos-shadow-card, 0 4px 20px -2px rgba(0, 0, 0, 0.04)) !important;
 }
 
 .ant-pro-card.unified-section-card .ant-pro-card-body {

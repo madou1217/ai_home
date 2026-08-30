@@ -50,7 +50,8 @@
 | | 1.33 | **InSessionSearchBar 会话内悬浮关键词检索胶囊** (Cmd+F 细粒度定位) | dsh `InSessionSearch` | 📱 + 💻 | ✅ **已完成** | `InSessionSearchBar.tsx`<br>`MessageArea.tsx` |
 | | 1.34 | **PinnedSessions 会话置顶与固定状态管理** (多端持久化) | HOS 6 Pin State | 📱 + 💻 | ✅ **已完成** | `pin-session-state.ts`<br>`ProjectList.tsx` |
 | | 1.35 | **PromptPresetsCapsule 灵感指令预设流光胶囊** (分类模版+一键注入) | HOS 6 Inspiration Capsule | 📱 + 💻 | ✅ **已完成** | `PromptPresetsCapsule.tsx`<br>`MessageArea.tsx` |
-| | 1.36 | **上下文超限自动安全压缩引擎** | dsh Compaction Engine | 服务端 | ✅ **已完成** | `webui-chat-routes-opencode-proxy.js` |
+| | 1.36 | **KeyboardShortcutsModal 快捷键指南与效率卡片** (`Cmd+/` 灵动键帽) | HOS 6 Shortcuts Card | 💻 | ✅ **已完成** | `KeyboardShortcutsModal.tsx`<br>`Chat.tsx` |
+| | 1.37 | **上下文超限自动安全压缩引擎** | dsh Compaction Engine | 服务端 | ✅ **已完成** | `webui-chat-routes-opencode-proxy.js` |
 | **全站全页面视觉** | 2.1 | **HarmonyOS 6 全局 Design Tokens 地基** (深浅色自适应) | HOS 6 Token Spec | 全局 | ✅ **已完成** | `design-tokens.css` |
 | | 2.2 | **账号页 (Accounts) 亚克力卡片与进度环** | HOS 6 Card Grid | 📱 + 💻 | ✅ **已完成** | `Accounts.css` |
 | | 2.3 | **BurningParticles 粒子流光白热动效** | HOS 6 Particle Light | 📱 + 💻 | ✅ **已完成** | `BurningParticles.css` |

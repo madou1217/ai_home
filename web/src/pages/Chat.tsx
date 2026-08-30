@@ -5,6 +5,7 @@ import relativeTime from 'dayjs/plugin/relativeTime';
 import 'dayjs/locale/zh-cn';
 import { ProjectList } from '@/components/chat';
 import GlobalCommandPalette from '@/components/chat/GlobalCommandPalette';
+import KeyboardShortcutsModal from '@/components/chat/KeyboardShortcutsModal';
 import type { WorkspaceMode } from '@/components/chat/ModeSelector';
 import ChatEmptyState from '@/components/chat/ChatEmptyState';
 import { isSessionRunning } from '@/components/chat/project-runtime-state.js';
@@ -41,12 +42,16 @@ const STORAGE_KEY_CHAT_MODE = 'aih_chat_workspace_mode';
 
 export default function Chat() {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [shortcutsModalOpen, setShortcutsModalOpen] = useState(false);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         setCommandPaletteOpen((prev) => !prev);
+      } else if ((e.metaKey || e.ctrlKey) && e.key === '/') {
+        e.preventDefault();
+        setShortcutsModalOpen((prev) => !prev);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -344,6 +349,10 @@ export default function Chat() {
         open={commandPaletteOpen}
         onClose={() => setCommandPaletteOpen(false)}
         onSelectModel={setSelectedModel}
+      />
+      <KeyboardShortcutsModal
+        open={shortcutsModalOpen}
+        onClose={() => setShortcutsModalOpen(false)}
       />
       <ChatWorkspaceLayout
       mobile={mobile}

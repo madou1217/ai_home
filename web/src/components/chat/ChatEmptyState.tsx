@@ -25,6 +25,30 @@ export default function ChatEmptyState({
             <RocketOutlined />
           </div>
           <h2 className={styles.emptyTitleHarmony}>AI Home 纯聊天模式</h2>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center', margin: '16px 0 20px', maxWidth: 440 }}>
+            {['💡 构思全栈系统架构', '⚡ 优化高并发流式渲染', '🎨 设计鸿蒙亚克力质感组件', '🔍 审查代码逻辑缺陷'].map((prompt) => (
+              <button
+                key={prompt}
+                type="button"
+                onClick={onCreateSession}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: 'var(--hos-radius-pill, 9999px)',
+                  border: '0.8px solid rgba(10, 89, 247, 0.2)',
+                  background: 'rgba(255, 255, 255, 0.7)',
+                  backdropFilter: 'blur(12px)',
+                  color: '#1e293b',
+                  fontSize: 12,
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  transition: 'all 0.14s ease',
+                  boxShadow: '0 2px 6px rgba(0, 0, 0, 0.02)'
+                }}
+              >
+                {prompt}
+              </button>
+            ))}
+          </div>
           <p className={styles.emptyDescHarmony}>
             直接面向集中 API 网关，毫秒级即时连接。<br />
             无需绑定工作目录，专注于思考与创作。

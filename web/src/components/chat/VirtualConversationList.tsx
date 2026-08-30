@@ -1,5 +1,5 @@
-import { memo, useMemo, useRef, useState, useEffect, useCallback } from 'react';
-import type { ChatMessage, Session, Provider } from '@/types';
+import { memo, useMemo, useRef, useState, useEffect } from 'react';
+import type { ChatMessage, Session } from '@/types';
 import MessageBubble from './MessageBubble';
 
 export interface VirtualConversationListProps {
@@ -15,7 +15,7 @@ export interface VirtualConversationListProps {
 
 /**
  * 吸收 dsh (DeepSeek-Harness) ConversationTimeline 视口裁剪算法
- * 在 200+ 轮超长对话下动态挂载视口内 DOM 节点，保障 60fps 丝滑渲染
+ * 在 200+ 轮超长对话下动态挂载视口内 DOM 节点，结合父容器滚动监听与高度测量，保障 60fps 丝滑渲染
  */
 export const VirtualConversationList = memo(function VirtualConversationList({
   messages,
@@ -32,10 +32,19 @@ export const VirtualConversationList = memo(function VirtualConversationList({
   const [containerHeight, setContainerHeight] = useState(800);
   const itemHeightsRef = useRef<Map<number, number>>(new Map());
 
-  // 监听容器高度自适应
+  // 监听父滚动容器的滚动事件与尺寸自适应
   useEffect(() => {
     const el = containerRef.current?.parentElement;
     if (!el) return;
+
+    const onScroll = () => {
+      setScrollTop(el.scrollTop);
+    };
+
+    setScrollTop(el.scrollTop);
+    setContainerHeight(el.clientHeight || 800);
+
+    el.addEventListener('scroll', onScroll, { passive: true });
 
     const ro = new ResizeObserver((entries) => {
       for (const entry of entries) {
@@ -45,12 +54,11 @@ export const VirtualConversationList = memo(function VirtualConversationList({
       }
     });
     ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
 
-  // 滚动监听
-  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-    setScrollTop(e.currentTarget.scrollTop);
+    return () => {
+      el.removeEventListener('scroll', onScroll);
+      ro.disconnect();
+    };
   }, []);
 
   // 计算视口可见范围

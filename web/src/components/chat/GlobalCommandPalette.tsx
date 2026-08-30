@@ -17,6 +17,7 @@ interface Props {
   open: boolean;
   onClose: () => void;
   onSelectModel?: (model: string) => void;
+  onClearContext?: () => void;
 }
 
 interface CommandItem {
@@ -32,6 +33,7 @@ export const GlobalCommandPalette = memo(function GlobalCommandPalette({
   open,
   onClose,
   onSelectModel,
+  onClearContext,
 }: Props) {
   const [search, setSearch] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -41,73 +43,65 @@ export const GlobalCommandPalette = memo(function GlobalCommandPalette({
     if (open) {
       setSearch('');
       setSelectedIndex(0);
-      window.setTimeout(() => inputRef.current?.focus(), 50);
+      setTimeout(() => inputRef.current?.focus(), 50);
     }
   }, [open]);
 
   const commands: CommandItem[] = useMemo(() => [
     {
       id: 'nav-chat',
-      title: '前往 Chat 会话工作台',
+      title: '前往 AI 会话 (Chat)',
       category: '导航',
       icon: <MessageOutlined />,
-      action: () => { history.push('/chat'); onClose(); },
-      shortcut: 'G C',
+      action: () => { history.push('/ui/chat'); onClose(); },
+      shortcut: '1',
     },
     {
       id: 'nav-accounts',
-      title: '前往 Accounts 账号池',
+      title: '前往 账号管理 (Accounts)',
       category: '导航',
-      icon: <ControlOutlined />,
-      action: () => { history.push('/accounts'); onClose(); },
-      shortcut: 'G A',
+      icon: <AppstoreOutlined />,
+      action: () => { history.push('/ui/accounts'); onClose(); },
+      shortcut: '2',
     },
     {
       id: 'nav-models',
-      title: '前往 Models 模型清单与别名',
+      title: '前往 模型目录 (Models)',
       category: '导航',
-      icon: <AppstoreOutlined />,
-      action: () => { history.push('/models'); onClose(); },
-      shortcut: 'G M',
+      icon: <ControlOutlined />,
+      action: () => { history.push('/ui/models'); onClose(); },
+      shortcut: '3',
     },
     {
       id: 'nav-usage',
-      title: '前往 ModelUsage 用量仪表盘',
+      title: '前往 用量监控 (Usage)',
       category: '导航',
       icon: <LineChartOutlined />,
-      action: () => { history.push('/model-usage'); onClose(); },
-      shortcut: 'G U',
+      action: () => { history.push('/ui/usage'); onClose(); },
+      shortcut: '4',
     },
     {
       id: 'nav-settings',
-      title: '前往 Settings 系统设置',
+      title: '前往 系统设置 (Settings)',
       category: '导航',
       icon: <SettingOutlined />,
-      action: () => { history.push('/settings'); onClose(); },
-      shortcut: 'G S',
+      action: () => { history.push('/ui/settings'); onClose(); },
+      shortcut: '5',
     },
     {
-      id: 'act-new-chat',
-      title: '发起新对话 (Chat 纯聊天)',
-      category: '快捷操作',
-      icon: <RocketOutlined />,
-      action: () => { history.push('/chat'); onClose(); },
-      shortcut: 'Cmd+N',
-    },
-    {
-      id: 'act-toggle-theme',
-      title: '切换深浅色主题 (Theme Toggle)',
+      id: 'act-theme',
+      title: '切换流光主题 (深色 / 浅色)',
       category: '快捷操作',
       icon: <BgColorsOutlined />,
       action: () => {
-        const isDark = document.body.classList.contains('dark') || document.documentElement.dataset.theme === 'dark';
-        if (isDark) {
-          document.body.classList.remove('dark');
-          delete document.documentElement.dataset.theme;
-        } else {
-          document.body.classList.add('dark');
-          document.documentElement.dataset.theme = 'dark';
-        }
+        const root = document.documentElement;
+        const isDark = root.getAttribute('data-theme') === 'dark';
+        root.setAttribute('data-theme', isDark ? 'light' : 'dark');
+        try {
+          import('@/services/cross-tab-session-sync').then((m) =>
+            m.crossTabSync.broadcast('THEME_CHANGED', { theme: isDark ? 'light' : 'dark' })
+          );
+        } catch {}
         onClose();
       },
       shortcut: 'Cmd+T',
@@ -117,9 +111,14 @@ export const GlobalCommandPalette = memo(function GlobalCommandPalette({
       title: '清空会话上下文 (/clear)',
       category: '快捷操作',
       icon: <ClearOutlined />,
-      action: () => { onClose(); },
+      action: () => {
+        if (onClearContext) {
+          onClearContext();
+        }
+        onClose();
+      },
     },
-  ], [onClose]);
+  ], [onClearContext, onClose]);
 
   const filtered = useMemo(() => {
     if (!search.trim()) return commands;
@@ -130,75 +129,74 @@ export const GlobalCommandPalette = memo(function GlobalCommandPalette({
   }, [commands, search]);
 
   useEffect(() => {
-    setSelectedIndex(0);
-  }, [search]);
-
-  // 全局键盘事件监听
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      onClose();
-      return;
-    }
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      setSelectedIndex((idx) => (filtered.length ? (idx + 1) % filtered.length : 0));
-      return;
-    }
-    if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setSelectedIndex((idx) => (filtered.length ? (idx - 1 + filtered.length) % filtered.length : 0));
-      return;
-    }
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      const item = filtered[selectedIndex];
-      if (item) item.action();
-    }
-  };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!open) return;
+      if (e.key === 'Escape') {
+        onClose();
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSelectedIndex((prev) => (prev + 1) % (filtered.length || 1));
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSelectedIndex((prev) => (prev - 1 + (filtered.length || 1)) % (filtered.length || 1));
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (filtered[selectedIndex]) {
+          filtered[selectedIndex].action();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [filtered, onClose, open, selectedIndex]);
 
   if (!open) return null;
 
   return (
     <div className={styles.commandPaletteOverlay} onClick={onClose}>
       <div className={styles.commandPaletteCard} onClick={(e) => e.stopPropagation()}>
-        <div className={styles.commandPaletteInputWrap}>
+        <div className={styles.commandPaletteInputWrapper}>
           <SearchOutlined className={styles.commandPaletteSearchIcon} />
           <input
             ref={inputRef}
             className={styles.commandPaletteInput}
+            placeholder="搜索全局页面、执行指令或切换模型..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="搜索指令、快速跳转页面或执行快捷操作 (↑↓ 导航 · Enter 确认 · Esc 退出)"
-            aria-label="全局指令搜索"
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setSelectedIndex(0);
+            }}
           />
           <kbd className={styles.commandPaletteKbd}>ESC</kbd>
         </div>
 
-        <div className={styles.commandPaletteList} role="listbox">
+        <div className={styles.commandPaletteList}>
           {filtered.length === 0 ? (
-            <div className={styles.commandPaletteEmpty}>未找到匹配的指令或操作</div>
+            <div className={styles.commandPaletteEmpty}>无匹配的全局指令</div>
           ) : (
-            filtered.map((item, index) => {
-              const active = index === selectedIndex;
+            filtered.map((item, idx) => {
+              const isSelected = idx === selectedIndex;
               return (
                 <div
                   key={item.id}
-                  role="option"
-                  aria-selected={active}
-                  className={`${styles.commandPaletteItem} ${active ? styles.commandPaletteItemActive : ''}`}
-                  onMouseEnter={() => setSelectedIndex(index)}
-                  onClick={item.action}
+                  className={`${styles.commandPaletteItem} ${isSelected ? styles.commandPaletteItemSelected : ''}`}
+                  onMouseEnter={() => setSelectedIndex(idx)}
+                  onClick={() => item.action()}
                 >
-                  <span className={styles.commandItemIcon}>{item.icon}</span>
-                  <span className={styles.commandItemTitle}>{item.title}</span>
-                  <span className={styles.commandItemCategory}>{item.category}</span>
-                  {item.shortcut ? <kbd className={styles.commandItemShortcut}>{item.shortcut}</kbd> : null}
+                  <span className={styles.commandPaletteItemIcon}>{item.icon}</span>
+                  <span className={styles.commandPaletteItemTitle}>{item.title}</span>
+                  <span className={styles.commandPaletteItemCategory}>{item.category}</span>
+                  {item.shortcut && <kbd className={styles.commandPaletteItemKbd}>{item.shortcut}</kbd>}
                 </div>
               );
             })
           )}
+        </div>
+
+        <div className={styles.commandPaletteFooter}>
+          <span>↑↓ 导航</span>
+          <span>↵ 确认执行</span>
+          <span>ESC 退出</span>
         </div>
       </div>
     </div>

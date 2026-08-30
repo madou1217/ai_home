@@ -3,10 +3,12 @@
   display: grid;
   grid-template-columns: 1.18fr repeat(5, minmax(0, 1fr));
   margin-bottom: 16px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface);
-  box-shadow: var(--elevation-1);
+  border-radius: var(--hos-radius-xl, 24px) !important;
+  background: var(--hos-glass-bg-card, rgba(255, 255, 255, 0.85)) !important;
+  backdrop-filter: var(--hos-blur-card, blur(20px)) saturate(190%) !important;
+  -webkit-backdrop-filter: var(--hos-blur-card, blur(20px)) saturate(190%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.9) !important;
+  box-shadow: var(--hos-shadow-card, 0 4px 20px -2px rgba(0, 0, 0, 0.04)) !important;
   overflow: hidden;
 }
 

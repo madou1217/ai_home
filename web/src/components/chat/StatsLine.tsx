@@ -1,7 +1,8 @@
-import { memo, useMemo } from 'react';
+import { memo, useMemo, useState, useEffect } from 'react';
 import type { ChatMessage } from '@/types';
 import ConnectionPulseBadge from './ConnectionPulseBadge';
 import { formatDurationLabel, formatTtftLabel, formatTokensPerSecLabel } from './message-metrics-format';
+import { realLatencyTracker } from '@/services/real-latency-tracker';
 import styles from './chat.module.css';
 
 interface StatsLineProps {
@@ -17,6 +18,14 @@ export function formatTokensCompact(n: number): string {
 }
 
 export const StatsLine = memo(function StatsLine({ messages, className = '' }: StatsLineProps) {
+  const [realLatency, setRealLatency] = useState<number | null>(() => realLatencyTracker.getLatency());
+
+  useEffect(() => {
+    return realLatencyTracker.subscribe((lat) => {
+      setRealLatency(lat);
+    });
+  }, []);
+
   const stats = useMemo(() => {
     let turns = 0;
     let assistantCount = 0;
@@ -81,6 +90,8 @@ export const StatsLine = memo(function StatsLine({ messages, className = '' }: S
     parts.push(`输出 ${formatTokensCompact(stats.totalOutputTokens)} tok`);
   }
 
+  const connectionStatus = realLatency !== null ? 'connected' : 'reconnecting';
+
   return (
     <div className={`${styles.statsLineContainer} ${className}`} title={parts.join(' · ')}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -94,7 +105,10 @@ export const StatsLine = memo(function StatsLine({ messages, className = '' }: S
           ))}
         </span>
       </div>
-      <ConnectionPulseBadge status="connected" latencyMs={28} />
+      <ConnectionPulseBadge
+        status={connectionStatus}
+        latencyMs={realLatency || undefined}
+      />
     </div>
   );
 });

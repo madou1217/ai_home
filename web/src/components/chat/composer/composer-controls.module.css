@@ -225,8 +225,8 @@
   .controlButton,
   .approvalButton,
   .modelSummary {
-    width: 34px;
-    flex: 0 0 34px;
+    width: 32px;
+    flex: 0 0 32px;
     padding: 0;
     justify-content: center;
   }

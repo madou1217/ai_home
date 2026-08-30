@@ -5,6 +5,7 @@
 @import './styles/design-tokens.css';
 @import './styles/unified.css';
 @import './styles/App.css';
+@import './styles/mobile-shell.css';
 
 :root {
   --hos-primary-blue: #0a59f7;

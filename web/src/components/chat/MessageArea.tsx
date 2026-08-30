@@ -657,6 +657,7 @@ const MessageArea = ({
   const handleModelPick = useCallback((model: string) => {
     pickedSessionKeyRef.current = sessionPickIdentity;
     onModelChange(model);
+    try { import("@/services/cross-tab-session-sync").then(m => m.crossTabSync.broadcast("MODEL_CHANGED", { model })); } catch {}
     rememberSessionModel(session, model); // 非草稿才真正记忆(draft key 为空自动跳过)
   }, [onModelChange, session, sessionPickIdentity]);
 

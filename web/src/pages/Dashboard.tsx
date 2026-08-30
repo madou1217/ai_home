@@ -1,3 +1,4 @@
+import ServiceWidgetGrid from '@/components/dashboard/ServiceWidgetGrid';
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { Alert, Grid, message, Tag, Tooltip } from 'antd';
 import {
@@ -423,6 +424,37 @@ export default function Dashboard() {
         </Button>
       ]}
     >
+      <div style={{ marginBottom: 16 }}>
+        <ServiceWidgetGrid
+          widgets={[
+            {
+              title: "服务健康度",
+              value: `${healthPct}%`,
+              subtitle: `可用账号 ${activeAccounts} / 总数 ${totalAccounts}`,
+              status: overallHealth === 'critical' ? 'error' : overallHealth === 'degraded' ? 'warning' : 'healthy',
+              trend: health.label,
+            },
+            {
+              title: "总请求吞吐",
+              value: (metrics?.totalRequests || 0).toLocaleString(),
+              subtitle: `成功率 ${formatPercent(metrics?.successRate)}`,
+              status: 'healthy',
+            },
+            {
+              title: "并发排队中",
+              value: totalQueueRunning,
+              subtitle: "实时活跃 Session 队列",
+              status: totalQueueRunning > 10 ? 'warning' : 'healthy',
+            },
+            {
+              title: "运行时间",
+              value: formatUptime(displayedUptimeSec),
+              subtitle: `后端 ${status?.backend || 'Node'}`,
+              status: 'healthy',
+            },
+          ]}
+        />
+      </div>
       {/* ── Hero:系统健康一眼概览 ── */}
       <div className={`dash-hero dash-hero--${overallHealth}`}>
         <div className="dash-hero-head">

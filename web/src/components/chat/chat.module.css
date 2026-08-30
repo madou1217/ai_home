@@ -5965,3 +5965,29 @@
   border-color: #0a59f7;
   transform: translateY(-1px);
 }
+
+/* =============================================================================
+ * HarmonyOS 6.1 流式打字机流光光标 (Streaming Shimmering Cursor)
+ * ========================================================================== */
+.streamingCursor {
+  display: inline-block;
+  width: 7px;
+  height: 15px;
+  margin-left: 4px;
+  border-radius: var(--hos-radius-pill, 9999px);
+  background: linear-gradient(180deg, #0a59f7 0%, #3b82f6 100%);
+  box-shadow: 0 0 8px rgba(10, 89, 247, 0.5);
+  vertical-align: middle;
+  animation: streamingCursorBlink 0.9s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes streamingCursorBlink {
+  0%, 100% {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+  50% {
+    opacity: 0.2;
+    transform: scaleY(0.75);
+  }
+}

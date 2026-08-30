@@ -1,10 +1,11 @@
 import { memo } from 'react';
-import { Tag, Button } from 'antd';
+import { Tag, Button, Tooltip } from 'antd';
 import {
   BranchesOutlined,
   ForkOutlined,
   CheckCircleFilled,
   ClockCircleOutlined,
+  DiffOutlined,
 } from '@ant-design/icons';
 import styles from './chat.module.css';
 
@@ -21,6 +22,7 @@ export interface SessionBranchGraphProps {
   activeBranchId: string;
   onSelectBranch: (id: string) => void;
   onForkCurrent?: () => void;
+  onCompareBranch?: (sourceId: string, targetId: string) => void;
 }
 
 /**
@@ -31,6 +33,7 @@ export const SessionBranchGraph = memo(function SessionBranchGraph({
   activeBranchId,
   onSelectBranch,
   onForkCurrent,
+  onCompareBranch,
 }: SessionBranchGraphProps) {
   if (!branches || branches.length === 0) return null;
 
@@ -78,6 +81,19 @@ export const SessionBranchGraph = memo(function SessionBranchGraph({
                     <Tag color="processing" className={styles.branchTag}>
                       当前
                     </Tag>
+                  ) : onCompareBranch ? (
+                    <Tooltip title="与当前分支进行 Diff 对比">
+                      <button
+                        type="button"
+                        className={styles.branchDiffQuickBtn}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onCompareBranch(activeBranchId, b.id);
+                        }}
+                      >
+                        <DiffOutlined /> Diff
+                      </button>
+                    </Tooltip>
                   ) : null}
                 </div>
                 <div className={styles.branchNodeMeta}>

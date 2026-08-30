@@ -382,3 +382,52 @@ test('quota reset detector recognizes plan upgrade (e.g. Free -> Plus) and sets 
 
   fs.rmSync(root, { recursive: true, force: true });
 });
+
+test('quota reset detector strictly ignores login/auth methods like "oauth" or "api-key" as plan types', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-quota-oauth-test-'));
+  const aiHomeDir = path.join(root, '.ai_home');
+
+  const { accountRef } = registerAccountIdentity(fs, aiHomeDir, {
+    provider: 'agy',
+    cliAccountId: '1',
+    identitySeed: 'oauth:agy:test@example.com'
+  });
+
+  const now = 1787500000000;
+  // 1. Initial snapshot with planType 'oauth' (fallback string) and 80.36% remaining
+  writeAccountUsageSnapshot(fs, aiHomeDir, accountRef, {
+    schemaVersion: 2,
+    kind: 'agy_code_assist_quota',
+    capturedAt: now,
+    account: { planType: 'oauth', email: 'test@example.com' },
+    models: [
+      {
+        model: 'gemini-3.5-flash',
+        remainingPct: 80.36,
+        resetIn: '5h',
+        resetAtMs: now + 5 * 3600000
+      }
+    ]
+  });
+
+  // 2. Snapshot later where upstream returns subscriptionTier 'Google AI Pro' -> planType 'pro', but quota is still 80.36% (no reset happened)
+  writeAccountUsageSnapshot(fs, aiHomeDir, accountRef, {
+    schemaVersion: 2,
+    kind: 'agy_code_assist_quota',
+    capturedAt: now + 60000,
+    account: { planType: 'pro', subscriptionTier: 'Google AI Pro', email: 'test@example.com' },
+    models: [
+      {
+        model: 'gemini-3.5-flash',
+        remainingPct: 80.36,
+        resetIn: '5h',
+        resetAtMs: now + 5 * 3600000
+      }
+    ]
+  });
+
+  let events = listAccountQuotaResetEvents(fs, aiHomeDir, accountRef);
+  assert.equal(events.length, 0, 'Switching from fallback "oauth" to detected "pro" with unchanged quota MUST NOT trigger fake plan upgrade reset');
+
+  fs.rmSync(root, { recursive: true, force: true });
+});

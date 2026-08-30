@@ -160,7 +160,7 @@ export default function AccountQuotaResetHistoryModal({
                       {isUpgrade ? (
                         <div style={{ marginTop: 3 }}>
                           <Text type="secondary" style={{ fontSize: 12 }}>
-                            ✨ 账号权益升级生效：{event.previousPlanType ? event.previousPlanType.toUpperCase() : 'FREE'} ➔ {event.currentPlanType ? event.currentPlanType.toUpperCase() : 'NEW PLAN'} (额度窗口重置回满)
+                            ✨ 账号套餐升级生效：{event.previousPlanType ? event.previousPlanType.toUpperCase() : 'FREE'} ➔ {event.currentPlanType ? event.currentPlanType.toUpperCase() : 'PRO'} (额度窗口重置回满)
                           </Text>
                         </div>
                       ) : null}

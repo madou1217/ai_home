@@ -227,6 +227,22 @@ function isProvider(value: string): value is Provider {
   return PROVIDERS.includes(value as Provider);
 }
 
+const ACCOUNTS_VIEW_MODE_STORAGE_KEY = 'accounts-view-mode:v1';
+
+function readStoredAccountsViewMode(): 'card' | 'list' {
+  if (typeof window === 'undefined') return 'card';
+  try {
+    const saved = window.localStorage.getItem(ACCOUNTS_VIEW_MODE_STORAGE_KEY);
+    if (saved === 'card' || saved === 'list') return saved;
+  } catch (_error) {}
+  return 'card';
+}
+
+function persistAccountsViewMode(mode: 'card' | 'list'): void {
+  if (typeof window === 'undefined') return;
+  try { window.localStorage.setItem(ACCOUNTS_VIEW_MODE_STORAGE_KEY, mode); } catch (_error) {}
+}
+
 const ACCOUNTS_ACTIVE_PROVIDER_STORAGE_KEY = 'accounts-active-provider-tab:v1';
 
 function readStoredActiveProviderTab(): AccountProviderFilter {
@@ -269,7 +285,7 @@ function persistCliWorkdirHistory(history: string[]): void {
 }
 
 export default function Accounts() {
-  const [viewMode, setViewMode] = useState<'card' | 'list'>('card');
+  const [viewMode, setViewMode] = useState<'card' | 'list'>(readStoredAccountsViewMode);
   const screens = Grid.useBreakpoint();
   const isMobile = !screens.md;
   const location = useLocation();
@@ -2262,7 +2278,7 @@ export default function Accounts() {
             extra={
               <Segmented
                 value={viewMode}
-                onChange={(val) => setViewMode(val as 'card' | 'list')}
+                onChange={(val) => { const next = val as 'card' | 'list'; setViewMode(next); persistAccountsViewMode(next); }}
                 options={[
                   { value: 'card', icon: <AppstoreOutlined />, label: '卡片' },
                   { value: 'list', icon: <UnorderedListOutlined />, label: '列表' },

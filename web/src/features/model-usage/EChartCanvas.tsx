@@ -45,17 +45,18 @@ function readCssVariable(element: HTMLElement, name: string, fallback: string) {
 }
 
 function readPalette(element: HTMLElement): UsageChartPalette {
+  const isDark = document.body.classList.contains('dark') || document.documentElement.getAttribute('data-theme') === 'dark';
   return {
-    heading: readCssVariable(element, '--color-heading', '#172033'),
-    text: readCssVariable(element, '--color-text', '#334155'),
-    muted: readCssVariable(element, '--color-muted', '#718096'),
-    border: readCssVariable(element, '--color-border', '#d9e1ea'),
-    brand: readCssVariable(element, '--color-brand', '#2563eb'),
-    teal: readCssVariable(element, '--c-teal-500', '#0f9f8f'),
-    amber: readCssVariable(element, '--color-warning', '#d97706'),
-    blue: readCssVariable(element, '--color-info', '#0284c7'),
-    violet: readCssVariable(element, '--c-violet-500', '#7c3aed'),
-    danger: readCssVariable(element, '--color-danger', '#dc2626')
+    heading: readCssVariable(element, '--color-heading', isDark ? '#f8fafc' : '#0f172a'),
+    text: readCssVariable(element, '--color-text', isDark ? '#e2e8f0' : '#334155'),
+    muted: readCssVariable(element, '--color-muted', isDark ? '#94a3b8' : '#64748b'),
+    border: readCssVariable(element, '--color-border', isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.08)'),
+    brand: readCssVariable(element, '--color-brand', '#0a59f7'),
+    teal: readCssVariable(element, '--c-teal-500', '#10b981'),
+    amber: readCssVariable(element, '--color-warning', '#f59e0b'),
+    blue: readCssVariable(element, '--color-info', '#3b82f6'),
+    violet: readCssVariable(element, '--c-violet-500', '#8b5cf6'),
+    danger: readCssVariable(element, '--color-danger', '#ef4444')
   };
 }
 

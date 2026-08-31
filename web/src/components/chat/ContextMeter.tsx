@@ -2,6 +2,7 @@ import { memo, useMemo, useState } from 'react';
 import { Tooltip, Popover } from 'antd';
 import { DashboardOutlined, CompressOutlined } from '@ant-design/icons';
 import type { ChatMessage } from '@/types';
+import { computeContextStats, DEFAULT_CONTEXT_MAX_TOKENS } from './context-meter-stats';
 import styles from './chat.module.css';
 
 interface Props {
@@ -15,41 +16,19 @@ const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
 export const ContextMeter = memo(function ContextMeter({
   messages,
-  maxTokens = 128000,
+  maxTokens = DEFAULT_CONTEXT_MAX_TOKENS,
   onCompactSuggest,
 }: Props) {
   const [open, setOpen] = useState(false);
 
-  const stats = useMemo(() => {
-    let totalOutput = 0;
-    let totalInput = 0;
-    for (const msg of messages) {
-      if (msg.metrics?.outputTokens) totalOutput += msg.metrics.outputTokens;
-      if (msg.metrics?.inputTokens) totalInput += msg.metrics.inputTokens;
-    }
-    // 估算当前对话累积 token：未带精确 metrics 时按字符粗算 (~1.5 字符/token)
-    let approxTotal = totalOutput + totalInput;
-    if (approxTotal === 0 && messages.length > 0) {
-      const charCount = messages.reduce((acc, m) => acc + String(m.content || '').length, 0);
-      approxTotal = Math.round(charCount / 1.5);
-    }
-
-    const percent = Math.min(100, Math.round((approxTotal / maxTokens) * 100));
-    const isWarning = percent >= 80;
-    return {
-      usedTokens: approxTotal,
-      contextWindow: maxTokens,
-      percent,
-      isWarning,
-    };
-  }, [maxTokens, messages]);
+  const stats = useMemo(() => computeContextStats(messages, maxTokens), [maxTokens, messages]);
 
   if (stats.usedTokens <= 0) return null;
 
-  const strokeColor = stats.isWarning
-    ? '#f59e0b'
-    : stats.percent > 90
+  const strokeColor = stats.isCritical
     ? '#ef4444'
+    : stats.isWarning
+    ? '#f59e0b'
     : 'var(--color-primary, #3b82f6)';
 
   const content = (

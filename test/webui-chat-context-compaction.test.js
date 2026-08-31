@@ -48,3 +48,22 @@ test('buildApiProxyMessages leaves normal size conversations untouched', () => {
   assert.equal(result[0].content, 'Hello');
   assert.equal(result[2].content, 'Draw a cat');
 });
+
+test('buildApiProxyMessages compacts at the 60% high-water mark', () => {
+  // gemini-3.1-flash-image: context 65536 → 60% 高水位 ≈ 39321 tokens。
+  // 两条 60k 字符消息 ≈ 40012 tokens(~61%),旧 75% 阈值(49152)不会压缩,60% 必须压缩。
+  const bigText = 'B'.repeat(60000);
+  const messages = [
+    { role: 'user', content: bigText },
+    { role: 'assistant', content: bigText },
+    { role: 'user', content: 'latest question' }
+  ];
+
+  const compacted = buildApiProxyMessages(messages, [], {
+    model: 'gemini-3.1-flash-image',
+    provider: 'agy'
+  });
+
+  assert.ok(compacted.length < messages.length, '超过 60% 高水位必须自动压缩');
+  assert.equal(compacted[compacted.length - 1].content, 'latest question');
+});

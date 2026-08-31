@@ -3845,51 +3845,8 @@
 .interruptNote :global(.anticon) { font-size: 13px; }
 
 /* ===== 模式切换器 (Chat / Work) ===== */
-.modeSelector {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px;
-  background: var(--color-surface-raised, rgba(0, 0, 0, 0.04));
-  border-radius: 8px;
-  margin: 8px 12px 4px;
-  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
-}
-
 .modeSelectorMobile {
   margin: 6px 10px 4px;
-}
-
-.modeTab {
-  flex: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 6px 12px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--color-text-secondary, #64748b);
-  background: transparent;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.15s ease-in-out;
-}
-
-.modeTab:hover {
-  color: var(--color-text-primary, #0f172a);
-}
-
-.modeTabActive {
-  color: var(--color-text-primary, #0f172a);
-  background: var(--color-bg, #ffffff);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
-  font-weight: 600;
-}
-
-.modeIcon {
-  font-size: 14px;
 }
 
 /* 连续 Assistant 消息组：第一条显示头像，后续紧跟的消息隐藏头像并缩减间距 */
@@ -4298,11 +4255,13 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 14px;
+  /* 设计规范:选择器项高 32px(对齐图标胶囊原子),字号走 token */
+  height: 32px;
+  padding: 0 16px;
   border-radius: var(--hos-radius-pill);
   border: none;
-  font-size: 13px;
-  font-weight: 500;
+  font-size: var(--hos-text-body-sm, 13px);
+  font-weight: 600;
   color: var(--color-muted, #64748b);
   background: transparent;
   cursor: pointer;
@@ -6018,8 +5977,9 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  /* 设计规范:图标胶囊按钮 32px */
+  width: 32px;
+  height: 32px;
   padding: 0;
   border-radius: var(--hos-radius-pill, 9999px);
   border: 0.8px solid rgba(0, 0, 0, 0.06);
@@ -6051,39 +6011,3 @@
   border-color: rgba(10, 89, 247, 0.4);
 }
 
-/* 胶囊模式切换器 (ModeSelector) 华为鸿蒙 6.1 精致比例规范 */
-.modeSelectorContainer {
-  display: inline-flex;
-  align-items: center;
-  padding: 2.5px;
-  border-radius: var(--hos-radius-pill, 9999px);
-  background: rgba(0, 0, 0, 0.04);
-  border: 0.8px solid rgba(0, 0, 0, 0.04);
-}
-
-[data-theme='dark'] .modeSelectorContainer {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.06);
-}
-
-.modeOptionBtn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 24px;
-  padding: 0 10px;
-  border-radius: var(--hos-radius-pill, 9999px);
-  border: none;
-  font-size: 12px;
-  font-weight: 600;
-  color: #64748b;
-  background: transparent;
-  cursor: pointer;
-  transition: all 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-.modeOptionBtnActive {
-  color: #ffffff !important;
-  background: linear-gradient(135deg, #0a59f7 0%, #2563eb 100%) !important;
-  box-shadow: 0 2px 8px rgba(10, 89, 247, 0.3) !important;
-}

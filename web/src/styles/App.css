@@ -25,9 +25,10 @@ body {
   text-rendering: geometricPrecision;
 }
 
-/* 桌面端锁 body 滚动，内部容器弹性滚动 */
+/* 桌面端由 ProLayout 容器接管滚动 */
 @media (min-width: 768px) {
-  body {
+  #root {
+    height: 100%;
     overflow: hidden;
   }
 }

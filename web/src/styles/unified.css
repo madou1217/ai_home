@@ -209,16 +209,43 @@
   font-size: 13px !important;
 }
 
-/* ProLayout 滚动容器保障：确保桌面端与移动端页面内容正常自适应垂直滚动 */
-.ant-pro-basicLayout-content {
+
+/* =============================================================================
+ * ProLayout 全局视口与自适应滚动容器规范
+ * ========================================================================== */
+.ant-design-pro.ant-pro-layout,
+.ant-design-pro.ant-pro-layout .ant-layout {
+  height: 100vh !important;
+  min-height: 100vh !important;
+  overflow: hidden !important;
+}
+
+.ant-pro-layout-container {
+  height: 100vh !important;
+  display: flex !important;
+  flex-direction: column !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+
+.ant-pro-layout-content {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
   overflow-y: auto !important;
-  max-height: calc(100vh - 56px);
+  overflow-x: hidden !important;
   -webkit-overflow-scrolling: touch;
 }
 
-@media (max-width: 767px) {
-  .ant-pro-basicLayout-content {
-    max-height: none !important;
-    overflow-y: visible !important;
-  }
+/* AI 会话等 fullBleed 页面撑满整个 main content 视口 */
+.ant-pro-layout-content:has(.unified-page-scaffold--fullbleed) {
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
 }
+
+.unified-page-scaffold--fullbleed {
+  height: 100% !important;
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+}
+

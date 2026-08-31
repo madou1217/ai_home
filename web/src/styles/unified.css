@@ -208,3 +208,17 @@
   color: var(--color-text-secondary, #64748b) !important;
   font-size: 13px !important;
 }
+
+/* ProLayout 滚动容器保障：确保桌面端与移动端页面内容正常自适应垂直滚动 */
+.ant-pro-basicLayout-content {
+  overflow-y: auto !important;
+  max-height: calc(100vh - 56px);
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 767px) {
+  .ant-pro-basicLayout-content {
+    max-height: none !important;
+    overflow-y: visible !important;
+  }
+}

@@ -9,6 +9,7 @@ import ListTable from '@/components/ui/ListTable';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Space,
+  Segmented,
   Tag,
   Badge,
   Modal,
@@ -30,6 +31,8 @@ import MobileStatGrid from '@/components/mobile/MobileStatGrid';
 import MobilePills from '@/components/mobile/MobilePills';
 import {
   PlusOutlined,
+  AppstoreOutlined,
+  UnorderedListOutlined,
   DeleteOutlined,
   CheckCircleOutlined,
   CopyOutlined,
@@ -266,6 +269,7 @@ function persistCliWorkdirHistory(history: string[]): void {
 }
 
 export default function Accounts() {
+  const [viewMode, setViewMode] = useState<'card' | 'list'>('card');
   const screens = Grid.useBreakpoint();
   const isMobile = !screens.md;
   const location = useLocation();
@@ -2253,31 +2257,45 @@ export default function Accounts() {
             </Drawer>
           </div>
         ) : (
-          <SectionCard title="账号列表">
-          <div style={{ marginBottom: 16 }}>
-            <AccountCardGrid
-              accounts={filteredAccounts as any}
-              provider={activeProvider}
-              loading={loading}
-              onEdit={(acc) => {
-                const target = accounts.find(a => a.accountRef === acc.accountRef);
-                if (target) handleOpenEdit(target);
-              }}
-              onDelete={(acc) => {
-                const target = accounts.find(a => a.accountRef === acc.accountRef);
-                if (target) handleDelete(target);
-              }}
-              onOpenApp={(acc) => {
-                const target = accounts.find(a => a.accountRef === acc.accountRef);
-                if (target) handleOpenDesktop(target);
-              }}
-              onOpenCli={(acc) => {
-                const target = accounts.find(a => a.accountRef === acc.accountRef);
-                if (target) handleOpenPty(target);
-              }}
-            />
-          </div>
-          <ListTable
+          <SectionCard
+            title="账号列表"
+            extra={
+              <Segmented
+                value={viewMode}
+                onChange={(val) => setViewMode(val as 'card' | 'list')}
+                options={[
+                  { value: 'card', icon: <AppstoreOutlined />, label: '卡片' },
+                  { value: 'list', icon: <UnorderedListOutlined />, label: '列表' },
+                ]}
+              />
+            }
+          >
+          {viewMode === 'card' ? (
+            <div style={{ marginBottom: 16 }}>
+              <AccountCardGrid
+                accounts={filteredAccounts as any}
+                provider={activeProvider}
+                loading={loading}
+                onEdit={(acc) => {
+                  const target = accounts.find(a => a.accountRef === acc.accountRef);
+                  if (target) handleOpenEdit(target);
+                }}
+                onDelete={(acc) => {
+                  const target = accounts.find(a => a.accountRef === acc.accountRef);
+                  if (target) handleDelete(target);
+                }}
+                onOpenApp={(acc) => {
+                  const target = accounts.find(a => a.accountRef === acc.accountRef);
+                  if (target) handleOpenDesktop(target);
+                }}
+                onOpenCli={(acc) => {
+                  const target = accounts.find(a => a.accountRef === acc.accountRef);
+                  if (target) handleOpenPty(target);
+                }}
+              />
+            </div>
+          ) : (
+            <ListTable
             headerTitle={
               <Space size={12}>
                 <Badge status="success" text={`可用 ${providerStats[activeProvider].healthy}`} />
@@ -2339,8 +2357,9 @@ export default function Accounts() {
             }}
             scroll={{ x: 1200 }}
           />
-          </SectionCard>
-        )}
+          )}
+        </SectionCard>
+      )}
 
       <EditAccountModal
         open={editModalVisible}

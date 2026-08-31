@@ -35,3 +35,8 @@ export declare function writePersistedSelection(
     } | null;
   }
 ): PersistedChatSelection;
+
+export declare function matchPersistedChatSession<T extends { id?: string; provider?: string }>(
+  sessions: readonly T[],
+  selection: PersistedChatSelection
+): T | null;

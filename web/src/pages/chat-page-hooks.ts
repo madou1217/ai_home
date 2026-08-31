@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { Dispatch, SetStateAction, TouchEvent } from 'react';
 import type { AggregatedProject, Session } from '@/types';
-import { writePersistedSelection } from './chat-selection-state.js';
+import { sessionsAPI } from '@/services/api';
+import { matchPersistedChatSession, writePersistedSelection } from './chat-selection-state.js';
+import type { PersistedChatSelection } from '@/features/legacy-chat/runtime-types';
 
 export function useMobileImmersiveMode(mobile: boolean, showChat: boolean): void {
   useEffect(() => {
@@ -35,6 +37,33 @@ export function usePersistedChatSelection(
       projectDirName: session?.draft ? undefined : session?.projectDirName,
     });
   }, [isChatMode, project?.path, session?.draft, session?.id, session?.mode, session?.projectDirName, session?.provider]);
+}
+
+// 纯聊天(chat 模式)会话的刷新恢复：它们没有 projectPath，不进 canonical/project
+// 目录，canonical 恢复链路找不到它们。这里在挂载时按持久化身份从
+// /webui/chat-sessions 列表直接找回一次，找到即选中。
+export function useChatSessionRestore(input: {
+  initialSelection: PersistedChatSelection;
+  selectedSession: Session | null;
+  setSelectedSession: Dispatch<SetStateAction<Session | null>>;
+}): void {
+  const { initialSelection, selectedSession, setSelectedSession } = input;
+  const attemptedRef = useRef(false);
+  useEffect(() => {
+    if (attemptedRef.current) return;
+    attemptedRef.current = true;
+    if (selectedSession) return;
+    if (!initialSelection.sessionId || initialSelection.projectPath) return;
+    let cancelled = false;
+    sessionsAPI.getChatSessions()
+      .then((list) => {
+        if (cancelled) return;
+        const match = matchPersistedChatSession(list, initialSelection);
+        if (match) setSelectedSession({ ...match, mode: 'chat' });
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [initialSelection, selectedSession, setSelectedSession]);
 }
 
 export function triggerHapticFeedback(pattern: number | number[] = 12): void {

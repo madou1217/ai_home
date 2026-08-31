@@ -89,3 +89,16 @@ export function writePersistedSelection(selection, options = {}) {
 export {
   CHAT_SELECTION_STORAGE_KEY
 };
+
+// 按持久化选择匹配会话:id 必配,provider 提供时必须一致。
+// 用于纯聊天(chat 模式)会话的刷新恢复——它们没有 projectPath,
+// 不进 canonical/project 目录,只能从 chat-sessions 列表按身份找回。
+export function matchPersistedChatSession(sessions, selection) {
+  const id = String(selection && selection.sessionId || '').trim();
+  if (!id) return null;
+  const provider = String(selection && selection.provider || '').trim();
+  const list = Array.isArray(sessions) ? sessions : [];
+  return list.find((session) => session
+    && session.id === id
+    && (!provider || session.provider === provider)) || null;
+}

@@ -30,6 +30,7 @@ import {
 } from './chat-selection-state.js';
 import {
   mergeRunningSessionKeys,
+  useChatSessionRestore,
   useMobileChatNavigation,
   useMobileImmersiveMode,
   usePersistedChatSelection,
@@ -121,6 +122,12 @@ export default function Chat() {
 
   useMobileImmersiveMode(mobile, mobileShowChat);
   usePersistedChatSelection(projectCatalog.selectedProject, projectCatalog.selectedSession, workspaceMode === 'chat');
+  // chat 模式会话(无 projectPath)不在 canonical/project 目录里,需单独从 chat-sessions 恢复
+  useChatSessionRestore({
+    initialSelection: initialSelectionRef.current,
+    selectedSession: projectCatalog.selectedSession,
+    setSelectedSession: projectCatalog.setSelectedSession,
+  });
   useEffect(() => {
     if (!mobile) return;
     if (!projectCatalog.selectedProject && !projectCatalog.selectedSession) {

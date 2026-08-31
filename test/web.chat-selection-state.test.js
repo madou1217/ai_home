@@ -123,3 +123,24 @@ test('writePersistedSelection clears local storage when selection becomes empty'
 
   assert.equal(removedKey, 'web-chat-selection-v1');
 });
+
+test('matchPersistedChatSession matches by id and provider without projectPath', async () => {
+  const { matchPersistedChatSession } = await loadChatSelectionState();
+
+  const sessions = [
+    { id: 'chat-1', provider: 'kimi' },
+    { id: 'chat-2', provider: 'codex' },
+    { id: 'chat-1', provider: 'codex' }
+  ];
+
+  // chat 模式会话无 projectPath,必须仍能按 id + provider 找回
+  const found = matchPersistedChatSession(sessions, { sessionId: 'chat-1', provider: 'codex' });
+  assert.equal(found.provider, 'codex');
+
+  const kimi = matchPersistedChatSession(sessions, { sessionId: 'chat-1', provider: 'kimi' });
+  assert.equal(kimi.provider, 'kimi');
+
+  assert.equal(matchPersistedChatSession(sessions, { sessionId: 'missing' }), null);
+  assert.equal(matchPersistedChatSession(sessions, {}), null);
+  assert.equal(matchPersistedChatSession(null, { sessionId: 'chat-1' }), null);
+});

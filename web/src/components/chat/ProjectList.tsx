@@ -308,30 +308,35 @@ const ProjectList = ({
 
   return (
     <div className={styles.sidebar}>
-      {/* 顶部模式切换器 (Chat vs Work) */}
-      {onModeChange && (
-        <ModeSelector mode={mode} onChange={onModeChange} mobile={false} />
-      )}
+      {/* 统一 HarmonyOS 6 风格侧边栏沉浸顶栏 */}
+      <div className={styles.sidebarUnifiedHeader}>
+        {onModeChange && (
+          <ModeSelector mode={mode} onChange={onModeChange} mobile={false} />
+        )}
+        <div className={styles.sidebarHeaderActions}>
+          <button
+            type="button"
+            className={styles.sidebarActionBtn}
+            onClick={mode === 'chat' ? onCreateSession : onOpenProject}
+            title={mode === 'chat' ? '发起新对话' : '打开项目目录'}
+            aria-label={mode === 'chat' ? '新建会话' : '打开项目'}
+          >
+            {mode === 'chat' ? <PlusOutlined /> : <FolderOpenOutlined />}
+          </button>
+          <button
+            type="button"
+            className={styles.sidebarActionBtn}
+            onClick={mode === 'chat' ? fetchChatSessions : onRefresh}
+            title="刷新列表"
+            aria-label="刷新列表"
+          >
+            <ReloadOutlined spin={mode === 'chat' ? loadingChatSessions : loading} />
+          </button>
+        </div>
+      </div>
 
       {mode === 'chat' ? (
         <>
-          <div className={styles.refreshBar}>
-            <Button
-              type="text"
-              icon={<PlusOutlined />}
-              onClick={onCreateSession}
-              className={styles.refreshBtn}
-              title="发起新对话"
-            />
-            <Button
-              type="text"
-              icon={<ReloadOutlined />}
-              onClick={fetchChatSessions}
-              loading={loadingChatSessions}
-              className={styles.refreshBtn}
-              title="刷新对话列表"
-            />
-          </div>
 
           <div className={styles.sidebarContent} style={{ padding: '4px 8px' }}>
             {loadingChatSessions && chatSessions.length === 0 ? (

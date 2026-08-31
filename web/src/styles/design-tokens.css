@@ -50,11 +50,11 @@
   --c-neutral-950:#020617;
 
   /* Brand (near-black, mono-ink) */
-  --c-brand-soft:  #f1f5f9;
-  --c-brand-500:   #262626;
-  --c-brand-600:   #171717;
-  --c-brand-700:   #0a0a0a;
-  --c-brand-900:   #000000;
+  --c-brand-soft:  rgba(10, 89, 247, 0.08);
+  --c-brand-500:   #2563eb;
+  --c-brand-600:   #0a59f7;
+  --c-brand-700:   #1d4ed8;
+  --c-brand-900:   #093bb0;
 
   /* Status hues */
   --c-info-500:    #3b82f6;

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { MessageOutlined, CodeOutlined } from '@ant-design/icons';
 import styles from './chat.module.css';
 
@@ -10,7 +10,7 @@ interface Props {
   mobile?: boolean;
 }
 
-export default function ModeSelector({ mode, onChange, mobile = false }: Props) {
+export const ModeSelector = memo(function ModeSelector({ mode, onChange, mobile = false }: Props) {
   return (
     <div className={`${styles.modeSelectorContainer} ${mobile ? styles.modeSelectorMobile : ''}`}>
       <button
@@ -33,4 +33,6 @@ export default function ModeSelector({ mode, onChange, mobile = false }: Props) 
       </button>
     </div>
   );
-}
+});
+
+export default ModeSelector;

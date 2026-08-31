@@ -5991,3 +5991,99 @@
     transform: scaleY(0.75);
   }
 }
+
+
+/* =============================================================================
+ * HarmonyOS 6.1 侧边栏统一顶栏规范 (Unified Sider Header)
+ * ========================================================================== */
+.sidebarUnifiedHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 0.8px solid var(--color-border-subtle, rgba(0, 0, 0, 0.05));
+  background: var(--hos-glass-bg-subtle, rgba(255, 255, 255, 0.65));
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.sidebarHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sidebarActionBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: var(--hos-radius-pill, 9999px);
+  border: 0.8px solid rgba(0, 0, 0, 0.06);
+  background: rgba(255, 255, 255, 0.8);
+  color: var(--color-text-secondary, #475569);
+  font-size: 13px;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.02);
+  transition: all 0.16s var(--hos-ease-smooth, cubic-bezier(0.2, 0.8, 0.2, 1));
+}
+
+[data-theme='dark'] .sidebarActionBtn {
+  background: rgba(30, 41, 59, 0.75);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #94a3b8;
+}
+
+.sidebarActionBtn:hover {
+  background: #ffffff;
+  color: #0a59f7;
+  border-color: rgba(10, 89, 247, 0.3);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(10, 89, 247, 0.15);
+}
+
+[data-theme='dark'] .sidebarActionBtn:hover {
+  background: rgba(51, 65, 85, 0.9);
+  color: #3b82f6;
+  border-color: rgba(10, 89, 247, 0.4);
+}
+
+/* 胶囊模式切换器 (ModeSelector) 华为鸿蒙 6.1 精致比例规范 */
+.modeSelectorContainer {
+  display: inline-flex;
+  align-items: center;
+  padding: 2.5px;
+  border-radius: var(--hos-radius-pill, 9999px);
+  background: rgba(0, 0, 0, 0.04);
+  border: 0.8px solid rgba(0, 0, 0, 0.04);
+}
+
+[data-theme='dark'] .modeSelectorContainer {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+.modeOptionBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: var(--hos-radius-pill, 9999px);
+  border: none;
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.modeOptionBtnActive {
+  color: #ffffff !important;
+  background: linear-gradient(135deg, #0a59f7 0%, #2563eb 100%) !important;
+  box-shadow: 0 2px 8px rgba(10, 89, 247, 0.3) !important;
+}

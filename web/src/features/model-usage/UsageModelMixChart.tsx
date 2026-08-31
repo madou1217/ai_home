@@ -65,8 +65,8 @@ export default function UsageModelMixChart({ models, onSelectModel }: UsageModel
       data: data.map((item) => ({
         value: item.value,
         itemStyle: {
-          color: item.isOther ? palette.border : metric === 'cost' ? palette.teal : palette.brand,
-          borderRadius: [0, 4, 4, 0]
+          color: item.isOther ? 'rgba(148, 163, 184, 0.3)' : metric === 'cost' ? '#10b981' : '#0a59f7',
+          borderRadius: [0, 8, 8, 0]
         }
       })),
       barMaxWidth: 18

@@ -57,16 +57,23 @@
 }
 
 .usage-kpi-item--primary {
-  background: var(--color-heading);
+  background: linear-gradient(135deg, rgba(10, 89, 247, 0.08) 0%, rgba(37, 99, 235, 0.03) 100%) !important;
+  border-inline-end: 1px solid rgba(10, 89, 247, 0.15) !important;
 }
 
-.usage-kpi-item--primary > span,
-.usage-kpi-item--primary > small {
-  color: color-mix(in srgb, var(--color-on-brand) 68%, transparent);
+.usage-kpi-item--primary > span {
+  color: #0a59f7 !important;
+  font-weight: 700;
 }
 
 .usage-kpi-item--primary > strong {
-  color: var(--color-on-brand);
+  color: #0a59f7 !important;
+  font-weight: 800;
+  text-shadow: 0 2px 10px rgba(10, 89, 247, 0.18);
+}
+
+.usage-kpi-item--primary > small {
+  color: #64748b !important;
 }
 
 .usage-kpi-item--cost > strong {
@@ -199,8 +206,8 @@
 }
 
 .usage-chart-shell--mix {
-  border-inline-start: 1px solid var(--color-border);
-  background: var(--color-surface-raised);
+  border-inline-start: 1px solid var(--color-border-subtle, rgba(0, 0, 0, 0.06));
+  background: rgba(248, 250, 252, 0.5);
 }
 
 .usage-chart-heading {

@@ -93,13 +93,13 @@
   .ant-page-header-heading {
     flex-wrap: nowrap !important;
     align-items: flex-start !important;
-    gap: 12px;
+    gap: var(--hos-space-3, 12px);
   }
   .ant-page-header-heading-left {
     flex: 1 1 auto !important;
     min-width: 0;
     flex-wrap: wrap;
-    row-gap: 2px;
+    row-gap: var(--hos-space-0-5, 2px);
     margin: 0;
   }
   .ant-page-header-heading-title {
@@ -116,7 +116,7 @@
     align-self: flex-start;
   }
   /* 操作区内的图标按钮组保持一致间距 */
-  .ant-page-header-heading-extra .m-header-actions { gap: 8px; }
+  .ant-page-header-heading-extra .m-header-actions { gap: var(--hos-space-2, 8px); }
 }
 
 /* ---- 底部 TabBar 本体 ---- */
@@ -139,11 +139,11 @@
     grid-auto-columns: 1fr;
     align-items: stretch;
     height: var(--mobile-tabbar-safe);
-    padding: 7px 10px env(safe-area-inset-bottom);
-    background: color-mix(in srgb, #ffffff 86%, transparent);
+    padding: var(--hos-space-2, 7px) var(--hos-space-2-5, 10px) env(safe-area-inset-bottom); /* 归级:原 7px */
+    background: color-mix(in srgb, var(--hos-white, #ffffff) 86%, transparent);
     -webkit-backdrop-filter: saturate(180%) blur(22px);
     backdrop-filter: saturate(180%) blur(22px);
-    border-top: 1px solid var(--m-line, #ececf4);
+    border-top: 1px solid var(--m-line, var(--hos-ink-100, #ececf4));
     font-family: var(--m-font);
     transition: transform var(--motion-slow, 0.32s) var(--ease-emphasized, cubic-bezier(0.2, 0, 0, 1));
     will-change: transform;
@@ -154,12 +154,12 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 3px;
+    gap: var(--hos-space-1, 3px); /* 归级:原 3px */
     border: none;
     background: transparent;
     cursor: pointer;
-    color: var(--m-ink-3, #8b8ba3);
-    font-size: 11px;
+    color: var(--m-ink-3, var(--hos-gray-400, #8b8ba3));
+    font-size: var(--hos-text-caption, 11px); /* 归级:原 11px */
     font-weight: 600;
     letter-spacing: -0.01em;
     -webkit-tap-highlight-color: transparent;
@@ -168,17 +168,17 @@
   }
 
   .mobile-tabbar-item .anticon {
-    font-size: 23px;
+    font-size: var(--hos-text-h1, 23px); /* 归级:原 23px */
     line-height: 1;
     transition: transform .18s var(--ease-emphasized, cubic-bezier(0.2, 0, 0, 1));
   }
   .mobile-tabbar-item:active .anticon { transform: scale(0.9); }
 
   /* 选中态:赤陶色 + 图标上方一条短赤陶指示条,干净不遮挡图标 */
-  .mobile-tabbar-item-active { color: var(--m-acc, #d97757); }
+  .mobile-tabbar-item-active { color: var(--m-acc, var(--hos-orange-500, #d97757)); }
   .mobile-tabbar-item-active .anticon {
-    color: var(--m-acc, #d97757);
-    filter: drop-shadow(0 2px 6px color-mix(in srgb, var(--m-acc, #d97757) 40%, transparent));
+    color: var(--m-acc, var(--hos-orange-500, #d97757));
+    filter: drop-shadow(0 2px 6px color-mix(in srgb, var(--m-acc, var(--hos-orange-500, #d97757)) 40%, transparent));
   }
 }
 
@@ -188,33 +188,33 @@
  * ==========================================================================*/
 @media (max-width: 767.98px) {
   .ant-btn {
-    border-radius: 12px;
+    border-radius: var(--hos-radius-sm, 12px);
     font-family: var(--m-font);
     font-weight: 600;
   }
   .ant-btn-primary:not(:disabled) {
-    background: var(--m-acc, #d97757) !important;
+    background: var(--m-acc, var(--hos-orange-500, #d97757)) !important;
     border-color: transparent !important;
-    box-shadow: 0 3px 10px color-mix(in srgb, var(--m-acc, #d97757) 32%, transparent) !important;
+    box-shadow: 0 3px 10px color-mix(in srgb, var(--m-acc, var(--hos-orange-500, #d97757)) 32%, transparent) !important;
   }
   .ant-btn-primary:not(:disabled):hover,
   .ant-btn-primary:not(:disabled):active,
   .ant-btn-primary:not(:disabled):focus {
-    background: color-mix(in srgb, var(--m-acc, #d97757) 88%, #000) !important;
+    background: color-mix(in srgb, var(--m-acc, var(--hos-orange-500, #d97757)) 88%, #000) !important;
     border-color: transparent !important;
   }
   .ant-btn-default:not(:disabled) {
     border-color: var(--m-line-2, #e2e2ee) !important;
-    color: var(--m-ink, #1b1b2b);
+    color: var(--m-ink, var(--hos-surface-dark-900, #1b1b2b));
     box-shadow: var(--m-sh-xs);
   }
   .ant-btn-default:not(:disabled):hover {
-    color: var(--m-acc, #d97757) !important;
-    border-color: color-mix(in srgb, var(--m-acc, #d97757) 45%, var(--m-line-2, #e2e2ee)) !important;
+    color: var(--m-acc, var(--hos-orange-500, #d97757)) !important;
+    border-color: color-mix(in srgb, var(--m-acc, var(--hos-orange-500, #d97757)) 45%, var(--m-line-2, #e2e2ee)) !important;
   }
   /* 开关选中态:赤陶,与强调色一致 */
-  .ant-switch.ant-switch-checked { background: var(--m-acc, #d97757) !important; }
+  .ant-switch.ant-switch-checked { background: var(--m-acc, var(--hos-orange-500, #d97757)) !important; }
   .ant-switch.ant-switch-checked:hover:not(.ant-switch-disabled) {
-    background: color-mix(in srgb, var(--m-acc, #d97757) 88%, #000) !important;
+    background: color-mix(in srgb, var(--m-acc, var(--hos-orange-500, #d97757)) 88%, #000) !important;
   }
 }

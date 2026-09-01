@@ -1,14 +1,14 @@
 .codex-reset-credits {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--hos-space-2-5, 10px);
 }
 
 .codex-reset-credits-modal .ant-modal-footer {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--hos-space-2, 8px);
 }
 
 .codex-reset-credits-modal .ant-modal-footer > .ant-btn,
@@ -24,13 +24,13 @@
 
 .codex-reset-credits__status {
   display: block;
-  font-size: 12px;
+  font-size: var(--hos-text-caption, 12px);
 }
 
 .codex-reset-credits__table-wrap {
   overflow: hidden;
   border: 1px solid #e8e8e8;
-  border-radius: 8px;
+  border-radius: var(--hos-radius-xs, 8px);
 }
 
 .codex-reset-credits__table {
@@ -41,7 +41,7 @@
 
 .codex-reset-credits__table th,
 .codex-reset-credits__table td {
-  padding: 10px 14px;
+  padding: var(--hos-space-2-5, 10px) var(--hos-space-3-5, 14px);
   border-bottom: 1px solid #f0f0f0;
   text-align: left;
 }
@@ -55,13 +55,13 @@
 .codex-reset-credits__table th {
   background: #fafafa;
   color: #595959;
-  font-size: 12px;
+  font-size: var(--hos-text-caption, 12px);
   font-weight: 600;
 }
 
 .codex-reset-credits__table td {
   color: #262626;
-  font-size: 13px;
+  font-size: var(--hos-text-body-sm, 13px);
 }
 
 .codex-reset-credits__table tbody tr:last-child td {
@@ -69,7 +69,7 @@
 }
 
 .codex-reset-credits__empty {
-  padding: 20px 12px !important;
+  padding: var(--hos-space-5, 20px) var(--hos-space-3, 12px) !important;
 }
 
 @media (max-width: 640px) {
@@ -86,6 +86,6 @@
 
   .codex-reset-credits__table th,
   .codex-reset-credits__table td {
-    padding: 9px 10px;
+    padding: var(--hos-space-2-5, 9px) var(--hos-space-2-5, 10px); /* 归级:原 9px */
   }
 }

@@ -3,7 +3,7 @@
   flex-direction: column;
   justify-content: space-between;
   min-height: 160px;
-  padding: 18px 20px;
+  padding: var(--hos-space-5, 18px) var(--hos-space-5, 20px); /* 归级:原 18px */
   border-radius: var(--hos-radius-lg, 20px);
   background: var(--hos-glass-bg-card, rgba(255, 255, 255, 0.85));
   backdrop-filter: var(--hos-blur-card, blur(20px)) saturate(190%);
@@ -27,8 +27,8 @@
 .cardTop {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 10px;
+  gap: var(--hos-space-3, 12px);
+  margin-bottom: var(--hos-space-2-5, 10px);
 }
 
 .iconWrapper {
@@ -37,7 +37,7 @@
   justify-content: center;
   width: 44px;
   height: 44px;
-  border-radius: 12px;
+  border-radius: var(--hos-radius-sm, 12px);
   background: rgba(10, 89, 247, 0.08);
   flex: 0 0 44px;
 }
@@ -45,7 +45,7 @@
 .titleInfo {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: var(--hos-space-1, 3px); /* 归级:原 3px */
   min-width: 0;
   flex: 1;
 }
@@ -53,50 +53,50 @@
 .nameLine {
   display: flex;
   align-items: baseline;
-  gap: 6px;
+  gap: var(--hos-space-1-5, 6px);
   min-width: 0;
 }
 
 .appName {
-  font-size: 15px;
+  font-size: var(--hos-text-h3, 15px);
   font-weight: 700;
-  color: #1e293b;
+  color: var(--hos-ink-700, #1e293b);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 [data-theme='dark'] .appName {
-  color: #f8fafc;
+  color: var(--hos-ink-50, #f8fafc);
 }
 
 .appVersion {
-  font-size: 11px;
-  color: #94a3b8;
+  font-size: var(--hos-text-caption, 11px); /* 归级:原 11px */
+  color: var(--hos-ink-400, #94a3b8);
   font-family: var(--font-mono, monospace);
 }
 
 .categoryTag {
   margin: 0;
   width: fit-content;
-  border-radius: 9999px;
+  border-radius: var(--hos-radius-pill, 9999px);
   border: none;
-  font-size: 10px;
+  font-size: var(--hos-text-micro, 10px);
   font-weight: 600;
   background: rgba(0, 0, 0, 0.04);
-  color: #64748b;
+  color: var(--hos-ink-500, #64748b);
 }
 
 [data-theme='dark'] .categoryTag {
   background: rgba(255, 255, 255, 0.06);
-  color: #cbd5e1;
+  color: var(--hos-ink-300, #cbd5e1);
 }
 
 .description {
-  font-size: 12px;
-  color: #64748b;
+  font-size: var(--hos-text-caption, 12px);
+  color: var(--hos-ink-500, #64748b);
   line-height: 1.5;
-  margin: 0 0 14px;
+  margin: 0 0 var(--hos-space-3-5, 14px);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -104,7 +104,7 @@
 }
 
 [data-theme='dark'] .description {
-  color: #94a3b8;
+  color: var(--hos-ink-400, #94a3b8);
 }
 
 .cardBottom {
@@ -112,7 +112,7 @@
   align-items: center;
   justify-content: space-between;
   border-top: 1px solid rgba(0, 0, 0, 0.04);
-  padding-top: 10px;
+  padding-top: var(--hos-space-2-5, 10px);
 }
 
 [data-theme='dark'] .cardBottom {
@@ -120,19 +120,19 @@
 }
 
 .installState {
-  font-size: 12px;
+  font-size: var(--hos-text-caption, 12px);
   font-weight: 600;
 }
 
 .installedBadge {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--hos-space-1, 4px);
   color: #059669;
 }
 
 .uninstalledBadge {
-  color: #94a3b8;
+  color: var(--hos-ink-400, #94a3b8);
 }
 
 .actions {

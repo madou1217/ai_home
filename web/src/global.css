@@ -22,7 +22,11 @@ html, body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background-color: #f8fafc;
-  background-image: var(--hos-custom-aura, var(--hos-primary-aura));
+  /* 动态壁纸：aura 光晕叠在壁纸图上层；未设置壁纸时回退为单层 aura（none 层无视觉影响）。 */
+  background-image: var(--hos-custom-aura, var(--hos-primary-aura)), var(--hos-custom-wallpaper, none);
+  background-size: auto, cover;
+  background-position: center top, center;
+  background-repeat: no-repeat;
   background-attachment: fixed;
   color: #1e293b;
 }
@@ -30,7 +34,10 @@ html, body {
 [data-theme='dark'] body,
 body.dark {
   background-color: #0b0f19;
-  background-image: var(--hos-custom-aura, var(--hos-dark-aura));
+  background-image: var(--hos-custom-aura, var(--hos-dark-aura)), var(--hos-custom-wallpaper, none);
+  background-size: auto, cover;
+  background-position: center top, center;
+  background-repeat: no-repeat;
   color: #f8fafc;
 }
 

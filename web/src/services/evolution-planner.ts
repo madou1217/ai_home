@@ -1,6 +1,15 @@
 /**
  * AI Home 自动进化与迭代规划引擎 (Self-Evolving Planner)
  * 吸收 dsh 2.0 自动发现、质量自检与双模型 (Codex / Claude) Review 契约
+ *
+ * 数据源标注（2026-08-31，F12/P1 落地）：
+ * 本模块的 discoverEvolutionTasks() 是历史静态种子数据，无自动进化逻辑，
+ * 且当前 web/src 内无任何消费方。真实的「自动发现盲区 + 下一轮规划」已由
+ * scripts/evolution-scan.js 实现（扫描 docs/dsh-harmonyos-evolution-matrix.md 与
+ * docs/session-b2ce4810-gap-tracker.md 的状态标记，❌/⚠️/❓ 优先排序并附出处行号），
+ * review 门禁（需求原文+实现证据+验收问题清单 → aih codex/claude）同属该脚本
+ * `review` 子命令。后续若前端需要展示规划，应消费 evolution-scan 的真实扫描结果，
+ * 不得再以此静态数组为准。
  */
 export interface EvolutionTask {
   id: string;

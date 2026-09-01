@@ -41,6 +41,8 @@ export interface LegacyComposerActions {
   readonly replaceDraft: (content: string, images: string[]) => void;
   readonly suppressNextAbortToast: () => void;
   readonly send: () => Promise<void>;
+  // 重试等场景：绕过输入框直接发送指定内容（不清空当前草稿）
+  readonly sendPrompt: (content: string) => Promise<void>;
   readonly stop: () => void;
 }
 
@@ -128,37 +130,53 @@ export function useLegacyComposerActions({
     runSessionMessage,
   ]);
 
-  const send = useCallback(async (): Promise<void> => {
+  const submitContent = useCallback(async (
+    content: string,
+    contentImages: string[],
+    beforeRun?: () => void,
+  ): Promise<boolean> => {
     const submission = resolveLegacyComposerSubmission({
       account: selection.account,
-      content: input,
-      images,
+      content,
+      images: contentImages,
       model: selection.model,
       projectPath: selection.project?.path,
       session: selection.session,
     });
     if (!submission.ok) {
-      if (submission.reason === 'empty_content') return void message.warning('请输入消息');
-      if (submission.reason === 'account_required') return void message.warning('请先选择一个账号');
-      if (submission.reason === 'provider_mismatch') {
-        return void message.error(
+      if (submission.reason === 'empty_content') message.warning('请输入消息');
+      else if (submission.reason === 'account_required') message.warning('请先选择一个账号');
+      else if (submission.reason === 'provider_mismatch') {
+        message.error(
           `当前会话来自 ${providerNames[submission.expectedProvider]}，请选择对应的账号`,
         );
+      } else {
+        message.error('当前会话缺少项目路径');
       }
-      return void message.error('当前会话缺少项目路径');
+      return false;
     }
-    setInput('');
-    setImages([]);
+    beforeRun?.();
     await runMessage(submission);
+    return true;
   }, [
-    images,
-    input,
     runMessage,
     selection.account,
     selection.model,
     selection.project?.path,
     selection.session,
   ]);
+
+  const send = useCallback(async (): Promise<void> => {
+    // 先清草稿再跑：保持与原始实现一致的时序（输入框立即清空，不等 run 结束）
+    await submitContent(input, images, () => {
+      setInput('');
+      setImages([]);
+    });
+  }, [images, input, submitContent]);
+
+  const sendPrompt = useCallback(async (content: string): Promise<void> => {
+    await submitContent(content, []);
+  }, [submitContent]);
 
   const stop = useCallback((): void => {
     const session = selection.sessionRef.current;
@@ -192,6 +210,7 @@ export function useLegacyComposerActions({
     replaceDraft,
     suppressNextAbortToast,
     send,
+    sendPrompt,
     stop,
   };
 }

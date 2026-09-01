@@ -24,25 +24,25 @@
 .accounts-import-paste {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--hos-space-3, 12px);
 }
 .accounts-import-template {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--hos-space-2, 8px);
 }
 .accounts-import-template > div {
-  font-size: 12px;
+  font-size: var(--hos-text-caption, 12px);
   font-weight: 600;
   color: var(--app-muted);
 }
 .accounts-import-template pre {
-  padding: 12px;
+  padding: var(--hos-space-3, 12px);
   border: 1px solid var(--app-border);
-  border-radius: 8px;
+  border-radius: var(--hos-radius-xs, 8px);
   background: var(--app-surface-muted);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--hos-text-caption, 12px);
   line-height: 1.6;
   overflow-x: auto;
   white-space: pre-wrap;
@@ -51,22 +51,22 @@
 .accounts-import-running {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--hos-space-2, 8px);
   min-height: 32px;
-  margin-bottom: 16px;
+  margin-bottom: var(--hos-space-4, 16px);
   color: var(--app-text);
-  font-size: 13px;
+  font-size: var(--hos-text-body-sm, 13px);
 }
 .accounts-import-running > span:last-child {
   color: var(--app-muted);
 }
 /* 导出弹窗 */
 .accounts-export-popover .ant-popover-inner {
-  padding: 4px;
-  border-radius: 10px;
+  padding: var(--hos-space-1, 4px);
+  border-radius: var(--hos-radius-xs, 10px); /* 归级:原 10px */
 }
 .accounts-remote-control-plane-list .ant-list-item {
-  padding: 8px 0;
+  padding: var(--hos-space-2, 8px) 0;
 }
 .accounts-remote-control-plane-account-main .ant-typography {
   max-width: 260px;
@@ -86,9 +86,9 @@
   margin: 0;
 }
 .account-app-install-copy__hint {
-  margin-top: 10px !important;
+  margin-top: var(--hos-space-2-5, 10px) !important;
   color: var(--app-muted);
-  font-size: 12px;
+  font-size: var(--hos-text-caption, 12px);
   line-height: 1.6;
 }
 
@@ -99,7 +99,7 @@
   flex-direction: column;
 }
 .accounts-mobile-tabs .ant-tabs-nav {
-  margin-bottom: 8px;
+  margin-bottom: var(--hos-space-2, 8px);
 }
 .accounts-mobile-tabs .ant-tabs-nav::before {
   border-bottom: none;
@@ -107,30 +107,30 @@
 .accounts-mobile-filterbar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
+  gap: var(--hos-space-2, 8px);
+  margin-bottom: var(--hos-space-3, 12px);
 }
 /* 卡片内额度快照：占满卡片宽度、不横向溢出 */
 .account-mobile-usage {
-  margin-top: 12px;
+  margin-top: var(--hos-space-3, 12px);
   min-width: 0;
 }
 .account-mobile-usage > div {
   min-width: 0 !important;
 }
 .account-mobile-token-usage {
-  margin-top: 14px;
-  padding-top: 12px;
+  margin-top: var(--hos-space-3-5, 14px);
+  padding-top: var(--hos-space-3, 12px);
   border-top: 1px solid var(--m-line);
 }
 .account-mobile-token-usage-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 8px;
+  gap: var(--hos-space-2, 8px);
+  margin-bottom: var(--hos-space-2, 8px);
   color: var(--m-ink-3);
-  font-size: 12px;
+  font-size: var(--hos-text-caption, 12px);
   font-weight: 600;
 }
 .account-mobile-token-usage .token-usage-cell {

@@ -19,7 +19,6 @@ type ProjectWatch = ReturnType<typeof sessionsAPI.watchProjects>;
 type ApplyProjectSnapshot = (
   projects: AggregatedProject[],
   selection?: PersistedChatSelection,
-  skipHydration?: boolean,
 ) => AggregatedProject[];
 
 interface ProjectCatalogTransportOptions {

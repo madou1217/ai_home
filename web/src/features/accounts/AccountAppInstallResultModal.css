@@ -1,45 +1,45 @@
 .account-app-install-result {
   display: grid;
-  gap: 14px;
+  gap: var(--hos-space-3-5, 14px);
 }
 
 .account-app-install-result__status {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: start;
-  gap: 10px;
-  padding: 12px;
+  gap: var(--hos-space-2-5, 10px);
+  padding: var(--hos-space-3, 12px);
   border: 1px solid var(--color-border);
-  border-radius: 12px;
+  border-radius: var(--hos-radius-sm, 12px);
   background: var(--color-surface-raised);
 }
 
 .account-app-install-result.is-success .account-app-install-result__status {
-  border-color: color-mix(in srgb, var(--color-success, #16a34a) 34%, var(--color-border));
-  background: color-mix(in srgb, var(--color-success, #16a34a) 5%, var(--color-surface-raised));
+  border-color: color-mix(in srgb, var(--color-success, var(--hos-green-600, #16a34a)) 34%, var(--color-border));
+  background: color-mix(in srgb, var(--color-success, var(--hos-green-600, #16a34a)) 5%, var(--color-surface-raised));
 }
 
 .account-app-install-result.is-error .account-app-install-result__status {
-  border-color: color-mix(in srgb, var(--color-danger, #dc2626) 38%, var(--color-border));
-  background: color-mix(in srgb, var(--color-danger, #dc2626) 5%, var(--color-surface-raised));
+  border-color: color-mix(in srgb, var(--color-danger, var(--hos-red-600, #dc2626)) 38%, var(--color-border));
+  background: color-mix(in srgb, var(--color-danger, var(--hos-red-600, #dc2626)) 5%, var(--color-surface-raised));
 }
 
 .account-app-install-result__status > .anticon {
-  margin-top: 2px;
-  font-size: 20px;
+  margin-top: var(--hos-space-0-5, 2px);
+  font-size: var(--hos-text-h2, 20px); /* 归级:原 20px */
 }
 
 .account-app-install-result.is-success .account-app-install-result__status > .anticon {
-  color: var(--color-success, #16a34a);
+  color: var(--color-success, var(--hos-green-600, #16a34a));
 }
 
 .account-app-install-result.is-error .account-app-install-result__status > .anticon {
-  color: var(--color-danger, #dc2626);
+  color: var(--color-danger, var(--hos-red-600, #dc2626));
 }
 
 .account-app-install-result__status div {
   display: grid;
-  gap: 3px;
+  gap: var(--hos-space-1, 3px); /* 归级:原 3px */
 }
 
 .account-app-install-result__status strong {
@@ -53,14 +53,14 @@
 
 .account-app-install-result__metadata {
   display: grid;
-  gap: 7px;
+  gap: var(--hos-space-2, 7px); /* 归级:原 7px */
   margin: 0;
 }
 
 .account-app-install-result__metadata > div {
   display: grid;
   grid-template-columns: 72px minmax(0, 1fr);
-  gap: 10px;
+  gap: var(--hos-space-2-5, 10px);
 }
 
 .account-app-install-result__metadata dt {
@@ -76,19 +76,19 @@
 
 .account-app-install-result__reasons {
   display: grid;
-  gap: 6px;
+  gap: var(--hos-space-1-5, 6px);
 }
 
 .account-app-install-result__reasons > strong {
-  color: var(--color-danger, #dc2626);
-  font-size: 12px;
+  color: var(--color-danger, var(--hos-red-600, #dc2626));
+  font-size: var(--hos-text-caption, 12px);
 }
 
 .account-app-install-result__reasons ul {
   display: grid;
-  gap: 5px;
+  gap: var(--hos-space-1-5, 5px); /* 归级:原 5px */
   margin: 0;
-  padding-left: 20px;
+  padding-left: var(--hos-space-5, 20px);
 }
 
 .account-app-install-result__reasons li {

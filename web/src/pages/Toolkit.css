@@ -132,7 +132,7 @@
 }
 
 .toolkit-secondary-nav-index {
-  padding-top: 2px;
+  padding-top: var(--hos-space-0-5, 2px);
   color: var(--color-faint);
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
@@ -291,7 +291,7 @@
 
 .toolkit-status-track-index {
   flex: 0 0 auto;
-  padding-top: 2px;
+  padding-top: var(--hos-space-0-5, 2px);
   color: var(--track-color);
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
@@ -937,7 +937,7 @@
   min-width: 0;
   flex-direction: column;
   align-items: flex-end;
-  gap: 2px;
+  gap: var(--hos-space-0-5, 2px);
 }
 
 .toolkit-sync-detail {
@@ -957,15 +957,15 @@
 
 .toolkit-inline-error {
   display: flex;
-  gap: 8px;
+  gap: var(--hos-space-2, 8px);
   align-items: baseline;
-  margin: 12px 0;
-  padding: 8px 10px;
+  margin: var(--hos-space-3, 12px) 0;
+  padding: var(--hos-space-2, 8px) var(--hos-space-2-5, 10px);
   color: var(--color-danger, #b42318);
   background: color-mix(in srgb, var(--color-danger, #b42318) 8%, transparent);
   border: 1px solid color-mix(in srgb, var(--color-danger, #b42318) 28%, transparent);
-  border-radius: 8px;
-  font-size: 13px;
+  border-radius: var(--hos-radius-xs, 8px);
+  font-size: var(--hos-text-body-sm, 13px);
 }
 
 .toolkit-inline-note {
@@ -1096,7 +1096,7 @@
   margin-left: -3px;
   overflow: hidden;
   border: 2px solid var(--color-surface);
-  border-radius: 50%;
+  border-radius: var(--hos-radius-pill, 50%);
   background: var(--color-surface);
 }
 
@@ -1294,7 +1294,7 @@
   overflow: hidden;
   border: 1px solid var(--color-border);
   border-radius: 0 0 var(--radius-md) var(--radius-md);
-  background: #fff;
+  background: var(--hos-white, #fff);
 }
 
 .toolkit-code-editor-loading {
@@ -1313,15 +1313,15 @@
 .toolkit-config-note {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: var(--hos-space-2, 8px);
   margin-bottom: var(--space-4);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--hos-text-caption, 12px);
   line-height: 1.6;
 }
 
 .toolkit-config-note > .anticon {
-  margin-top: 3px;
+  margin-top: var(--hos-space-0-5, 3px); /* 归级:原 3px */
   color: var(--warning-color, #d48806);
 }
 

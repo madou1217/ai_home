@@ -3,9 +3,9 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 14px;
+  gap: var(--hos-space-3-5, 14px);
   height: 100%;
-  padding: 24px;
+  padding: var(--hos-space-6, 24px);
   color: var(--color-text-secondary);
 }
 

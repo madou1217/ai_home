@@ -1,19 +1,19 @@
 .ssh-card-list {
   --ssh-font: var(--m-font, 'Plus Jakarta Sans', -apple-system, sans-serif);
-  --ssh-acc: var(--m-acc, #d97757);
+  --ssh-acc: var(--m-acc, var(--hos-orange-500, #d97757));
   --ssh-run: var(--m-run, #13a65a);
-  --ssh-ink: var(--m-ink, #1b1b2b);
-  --ssh-ink-2: var(--m-ink-2, #5a5a72);
-  --ssh-ink-3: var(--m-ink-3, #8b8ba3);
-  --ssh-line: var(--m-line, #ececf4);
-  --ssh-surface: var(--m-surface, #fff);
+  --ssh-ink: var(--m-ink, var(--hos-surface-dark-900, #1b1b2b));
+  --ssh-ink-2: var(--m-ink-2, var(--hos-gray-600, #5a5a72));
+  --ssh-ink-3: var(--m-ink-3, var(--hos-gray-400, #8b8ba3));
+  --ssh-line: var(--m-line, var(--hos-ink-100, #ececf4));
+  --ssh-surface: var(--m-surface, var(--hos-white, #fff));
   --ssh-radius: 16px;
   --ssh-sh: 0 1px 3px rgba(27, 27, 43, .06), 0 1px 2px rgba(27, 27, 43, .04);
 
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--hos-space-3, 12px);
   font-family: var(--ssh-font);
 }
 
@@ -21,7 +21,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 48px 0;
+  padding: var(--hos-space-12, 48px) 0;
 }
 
 .ssh-list-card.ant-card {
@@ -32,7 +32,7 @@
   box-shadow: var(--ssh-sh);
 }
 .ssh-list-card.ant-card > .ant-card-body {
-  padding: 16px 18px;
+  padding: var(--hos-space-4, 16px) var(--hos-space-5, 18px); /* 归级:原 18px */
 }
 
 .ssh-list-card-head {
@@ -41,21 +41,21 @@
   flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 10px;
+  gap: var(--hos-space-2-5, 10px);
 }
 .ssh-list-card-title {
   display: flex;
   min-width: 0;
   flex: 1 1 200px;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--hos-space-1, 4px);
 }
 .ssh-list-card-name {
   display: inline-block;
   max-width: min(320px, 60vw);
   overflow: hidden;
   color: var(--ssh-ink);
-  font-size: 15px;
+  font-size: var(--hos-text-h3, 15px);
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -67,7 +67,7 @@
   overflow: hidden;
   color: var(--ssh-ink-2);
   font-family: var(--m-mono, 'JetBrains Mono', 'Menlo', monospace);
-  font-size: 12px;
+  font-size: var(--hos-text-caption, 12px);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -77,25 +77,25 @@
   overflow: hidden;
   color: var(--ssh-ink-2);
   font-family: var(--m-mono, 'JetBrains Mono', 'Menlo', monospace);
-  font-size: 12px;
+  font-size: var(--hos-text-caption, 12px);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .ssh-list-card-meta {
-  margin-top: 8px;
+  margin-top: var(--hos-space-2, 8px);
   color: var(--ssh-ink-3);
   font-family: var(--m-mono, 'JetBrains Mono', 'Menlo', monospace);
-  font-size: 12px;
+  font-size: var(--hos-text-caption, 12px);
 }
 
 .ssh-auth-pill {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
-  padding: 2px 9px;
-  border-radius: 999px;
-  font-size: 11px;
+  padding: var(--hos-space-0-5, 2px) var(--hos-space-2-5, 9px); /* 归级:原 9px */
+  border-radius: var(--hos-radius-pill, 999px);
+  font-size: var(--hos-text-caption, 11px); /* 归级:原 11px */
   font-weight: 700;
   line-height: 18px;
   white-space: nowrap;
@@ -109,23 +109,23 @@
   color: #0891b2;
 }
 .ssh-auth-pill--key {
-  background: color-mix(in srgb, #2563eb 14%, white);
-  color: #2563eb;
+  background: color-mix(in srgb, var(--hos-blue-600, #2563eb) 14%, white);
+  color: var(--hos-blue-600, #2563eb);
 }
 .ssh-auth-pill--password {
-  background: color-mix(in srgb, #d97706 14%, white);
-  color: #d97706;
+  background: color-mix(in srgb, var(--hos-orange-600, #d97706) 14%, white);
+  color: var(--hos-orange-600, #d97706);
 }
 
 .ssh-connection-pill {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
-  padding: 2px 9px;
-  border-radius: 999px;
+  padding: var(--hos-space-0-5, 2px) var(--hos-space-2-5, 9px); /* 归级:原 9px */
+  border-radius: var(--hos-radius-pill, 999px);
   background: color-mix(in srgb, var(--ssh-acc) 16%, white);
   color: var(--ssh-acc);
-  font-size: 11px;
+  font-size: var(--hos-text-caption, 11px); /* 归级:原 11px */
   font-weight: 700;
   line-height: 18px;
   white-space: nowrap;
@@ -139,9 +139,9 @@
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
-  gap: 6px 12px;
-  margin-top: 12px;
-  padding-top: 10px;
+  gap: var(--hos-space-1-5, 6px) var(--hos-space-3, 12px);
+  margin-top: var(--hos-space-3, 12px);
+  padding-top: var(--hos-space-2-5, 10px);
   border-top: 1px solid var(--ssh-line);
 }
 .ssh-list-card-footer--end {

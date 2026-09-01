@@ -11,14 +11,14 @@
 
 .pageContainer :global(.ant-pro-page-container-children-content) {
   margin: 0;
-  padding: var(--space-6);
+  padding: var(--hos-space-3, 12px);
 }
 
 .initialLoading {
   display: grid;
   min-height: 520px;
   place-content: center;
-  gap: var(--space-8);
+  gap: var(--hos-space-4, 16px);
   color: var(--color-text-secondary);
   text-align: center;
 }
@@ -27,7 +27,7 @@
   min-height: calc(100vh - 92px);
   overflow: hidden;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-xl);
+  border-radius: var(--hos-radius-md, 16px);
   background:
     linear-gradient(var(--studio-grid-line) 1px, transparent 1px),
     linear-gradient(90deg, var(--studio-grid-line) 1px, transparent 1px),
@@ -41,8 +41,8 @@
   min-height: 74px;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-10);
-  padding: var(--space-8) var(--space-10);
+  gap: var(--hos-space-5, 20px);
+  padding: var(--hos-space-4, 16px) var(--hos-space-5, 20px);
   border-bottom: 1px solid var(--color-border);
   background: color-mix(in srgb, var(--color-surface) 94%, transparent);
   backdrop-filter: blur(16px);
@@ -67,7 +67,7 @@
 
 .workspaceIdentity {
   min-width: 0;
-  gap: var(--space-6);
+  gap: var(--hos-space-3, 12px);
 }
 
 .workspaceMark {
@@ -76,7 +76,7 @@
   height: 48px;
   flex: 0 0 48px;
   place-content: center;
-  border-radius: var(--radius-md);
+  border-radius: var(--hos-radius-sm, 10px); /* 归级:原 10px */
   background: var(--studio-graphite);
   color: var(--studio-accent);
   font-family: var(--font-mono);
@@ -87,7 +87,7 @@
 
 .workspaceIdentity h1 {
   max-width: min(46vw, 720px);
-  margin: var(--space-1) 0 0;
+  margin: var(--hos-space-0-5, 2px) 0 0;
   overflow: hidden;
   color: var(--color-text-heading);
   font-family: var(--font-display);
@@ -110,11 +110,11 @@
 .workspaceActions {
   flex: 0 0 auto;
   justify-content: flex-end;
-  gap: var(--space-4);
+  gap: var(--hos-space-2, 8px);
 }
 
 .workspaceReadout {
-  margin-right: var(--space-2);
+  margin-right: var(--hos-space-1, 4px);
   color: var(--color-text-tertiary);
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
@@ -122,7 +122,7 @@
 }
 
 .workspace :global(.ant-btn) {
-  border-radius: var(--radius-sm);
+  border-radius: var(--hos-radius-xs, 8px);
   box-shadow: none;
 }
 
@@ -144,8 +144,8 @@
   height: calc(100vh - 166px);
   min-height: 610px;
   grid-template-columns: 246px minmax(420px, 1fr) 356px;
-  gap: var(--space-6);
-  padding: var(--space-6);
+  gap: var(--hos-space-3, 12px);
+  padding: var(--hos-space-3, 12px);
 }
 
 .workspaceGrid > * {
@@ -160,7 +160,7 @@
   display: grid;
   min-height: 0;
   grid-template-rows: minmax(0, 1fr) 210px;
-  gap: var(--space-6);
+  gap: var(--hos-space-3, 12px);
 }
 
 /* Session film rail */
@@ -169,7 +169,7 @@
   min-height: 0;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--c-neutral-700) 82%, transparent);
-  border-radius: var(--radius-lg);
+  border-radius: var(--hos-radius-sm, 12px);
   background: var(--studio-graphite-soft);
   color: var(--c-neutral-100);
 }
@@ -193,7 +193,7 @@
 .railHeader {
   min-height: 68px;
   justify-content: space-between;
-  padding: var(--space-10) var(--space-6) var(--space-5);
+  padding: var(--hos-space-5, 20px) var(--hos-space-3, 12px) var(--hos-space-2-5, 10px);
   border-bottom: 1px solid color-mix(in srgb, var(--c-neutral-700) 72%, transparent);
 }
 
@@ -202,7 +202,7 @@
 .revisionStripHeader strong,
 .canvasHeader strong {
   display: block;
-  margin-top: var(--space-1);
+  margin-top: var(--hos-space-0-5, 2px);
   font-family: var(--font-display);
   font-size: var(--text-base);
 }
@@ -224,7 +224,7 @@
   height: 30px;
   place-content: center;
   border: 1px solid var(--c-neutral-700);
-  border-radius: var(--radius-sm);
+  border-radius: var(--hos-radius-xs, 8px);
   color: var(--studio-accent);
   transition: border-color var(--motion-fast), background var(--motion-fast);
 }
@@ -238,7 +238,7 @@
 
 .sessionList {
   height: calc(100% - 68px);
-  padding: var(--space-5) var(--space-4) var(--space-10);
+  padding: var(--hos-space-2-5, 10px) var(--hos-space-2, 8px) var(--hos-space-5, 20px);
   overflow: auto;
   scrollbar-width: thin;
 }
@@ -248,10 +248,10 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) 28px;
   align-items: stretch;
-  margin-bottom: var(--space-4);
+  margin-bottom: var(--hos-space-2, 8px);
   overflow: hidden;
   border: 1px solid var(--c-neutral-800);
-  border-radius: var(--radius-md);
+  border-radius: var(--hos-radius-sm, 10px); /* 归级:原 10px */
   background: color-mix(in srgb, var(--c-neutral-900) 88%, var(--c-neutral-800));
   transition: border-color var(--motion-fast), background var(--motion-fast), transform var(--motion-fast);
 }
@@ -270,9 +270,9 @@
   display: grid;
   min-width: 0;
   grid-template-columns: 58px minmax(0, 1fr);
-  gap: var(--space-4);
+  gap: var(--hos-space-2, 8px);
   align-items: center;
-  padding: var(--space-4);
+  padding: var(--hos-space-2, 8px);
   border: 0;
   background: transparent;
   color: inherit;
@@ -293,7 +293,7 @@
   overflow: hidden;
   place-content: center;
   border: 1px solid var(--c-neutral-700);
-  border-radius: var(--radius-xs);
+  border-radius: var(--hos-radius-xs, 6px); /* 归级:原 6px */
   background: var(--c-neutral-950);
   color: var(--c-neutral-600);
   font-family: var(--font-mono);
@@ -327,16 +327,16 @@
 }
 
 .sessionMeta {
-  margin-top: var(--space-2);
+  margin-top: var(--hos-space-1, 4px);
   color: var(--c-neutral-400);
   font-size: var(--text-2xs);
 }
 
 .sessionModel {
-  margin-top: var(--space-2);
+  margin-top: var(--hos-space-1, 4px);
   color: var(--studio-accent);
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: var(--hos-text-micro, 9px); /* 归级:原 9px */
 }
 
 .sessionWindowButton {
@@ -359,7 +359,7 @@
   grid-template-rows: auto minmax(0, 1fr) auto auto;
   overflow: hidden;
   border: 1px solid var(--c-neutral-800);
-  border-radius: var(--radius-lg);
+  border-radius: var(--hos-radius-sm, 12px);
   background: var(--studio-graphite);
   color: var(--c-neutral-100);
   box-shadow: var(--elevation-3);
@@ -368,8 +368,8 @@
 .canvasHeader {
   min-height: 58px;
   justify-content: space-between;
-  gap: var(--space-6);
-  padding: var(--space-5) var(--space-6);
+  gap: var(--hos-space-3, 12px);
+  padding: var(--hos-space-2-5, 10px) var(--hos-space-3, 12px);
   border-bottom: 1px solid var(--c-neutral-800);
 }
 
@@ -378,16 +378,16 @@
 .canvasHeaderMeta {
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: var(--space-3);
+  gap: var(--hos-space-1-5, 6px);
 }
 
 .canvasHeaderMeta span {
-  padding: var(--space-2) var(--space-4);
+  padding: var(--hos-space-1, 4px) var(--hos-space-2, 8px);
   border: 1px solid var(--c-neutral-800);
-  border-radius: var(--radius-pill);
+  border-radius: var(--hos-radius-pill, 999px);
   color: var(--c-neutral-400);
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: var(--hos-text-micro, 9px); /* 归级:原 9px */
   letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
 }
@@ -398,7 +398,7 @@
   min-height: 0;
   overflow: hidden;
   place-content: center;
-  padding: var(--space-6);
+  padding: var(--hos-space-3, 12px);
   background:
     linear-gradient(color-mix(in srgb, var(--c-neutral-700) 18%, transparent) 1px, transparent 1px),
     linear-gradient(90deg, color-mix(in srgb, var(--c-neutral-700) 18%, transparent) 1px, transparent 1px),
@@ -413,12 +413,12 @@
   left: 50%;
   display: flex;
   align-items: center;
-  gap: var(--space-4);
+  gap: var(--hos-space-2, 8px);
   max-width: calc(100% - 32px);
-  padding: var(--space-3) var(--space-5);
+  padding: var(--hos-space-1-5, 6px) var(--hos-space-2-5, 10px);
   transform: translateX(-50%);
   border: 1px solid color-mix(in srgb, var(--studio-accent) 58%, var(--c-neutral-700));
-  border-radius: var(--radius-pill);
+  border-radius: var(--hos-radius-pill, 999px);
   background: color-mix(in srgb, var(--studio-graphite-soft) 90%, transparent);
   color: var(--studio-accent);
   font-size: var(--text-xs);
@@ -429,7 +429,7 @@
   display: grid;
   width: min(430px, 90%);
   justify-items: center;
-  gap: var(--space-5);
+  gap: var(--hos-space-2-5, 10px);
   color: var(--c-neutral-400);
   text-align: center;
 }
@@ -440,7 +440,7 @@
   height: 64px;
   place-content: center;
   border: 1px solid var(--c-neutral-700);
-  border-radius: 50%;
+  border-radius: var(--hos-radius-pill, 50%);
   color: var(--studio-accent);
   font-size: var(--text-2xl);
 }
@@ -475,7 +475,7 @@
   display: block;
   max-width: 100%;
   max-height: 100%;
-  border-radius: var(--radius-xs);
+  border-radius: var(--hos-radius-xs, 6px); /* 归级:原 6px */
   object-fit: contain;
   box-shadow: 0 18px 64px rgba(0, 0, 0, 0.44);
 }
@@ -483,9 +483,9 @@
 .canvasFooter {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--space-8);
+  gap: var(--hos-space-4, 16px);
   align-items: center;
-  padding: var(--space-5) var(--space-6);
+  padding: var(--hos-space-2-5, 10px) var(--hos-space-3, 12px);
   border-top: 1px solid var(--c-neutral-800);
   background: var(--studio-graphite-soft);
 }
@@ -493,7 +493,7 @@
 .canvasPromptStack {
   display: grid;
   min-width: 0;
-  gap: var(--space-4);
+  gap: var(--hos-space-2, 8px);
 }
 
 .canvasPrompt {
@@ -503,13 +503,13 @@
 .canvasPrompt > span {
   color: var(--c-neutral-600);
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: var(--hos-text-micro, 9px); /* 归级:原 9px */
   letter-spacing: var(--tracking-caps);
 }
 
 .canvasPrompt p {
   display: -webkit-box;
-  margin: var(--space-2) 0 0;
+  margin: var(--hos-space-1, 4px) 0 0;
   overflow: hidden;
   color: var(--c-neutral-300);
   font-size: var(--text-xs);
@@ -519,7 +519,7 @@
 }
 
 .canvasActions {
-  gap: var(--space-3);
+  gap: var(--hos-space-1-5, 6px);
 }
 
 .canvasPanel :global(.ant-btn-default) {
@@ -536,8 +536,8 @@
 
 .outputPicker {
   display: flex;
-  gap: var(--space-3);
-  padding: var(--space-4) var(--space-6) var(--space-5);
+  gap: var(--hos-space-1-5, 6px);
+  padding: var(--hos-space-2, 8px) var(--hos-space-3, 12px) var(--hos-space-2-5, 10px);
   overflow-x: auto;
   border-top: 1px solid var(--c-neutral-800);
 }
@@ -549,7 +549,7 @@
   flex: 0 0 70px;
   overflow: hidden;
   border: 1px solid var(--c-neutral-700);
-  border-radius: var(--radius-xs);
+  border-radius: var(--hos-radius-xs, 6px); /* 归级:原 6px */
   background: var(--c-neutral-900);
   color: var(--c-neutral-500);
   cursor: pointer;
@@ -565,12 +565,12 @@
   position: absolute;
   right: var(--space-2);
   bottom: var(--space-2);
-  padding: 1px 3px;
-  border-radius: 3px;
+  padding: var(--hos-space-0-5, 1px) var(--hos-space-1, 3px); /* 归级:原 1px、3px */
+  border-radius: var(--hos-radius-xs, 3px); /* 归级:原 3px */
   background: rgba(0, 0, 0, 0.7);
   color: var(--c-neutral-100);
   font-family: var(--font-mono);
-  font-size: 8px;
+  font-size: var(--hos-text-micro, 8px); /* 归级:原 8px */
 }
 
 .outputPickerSelected {
@@ -583,14 +583,14 @@
   min-height: 0;
   overflow: hidden;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--hos-radius-sm, 12px);
   background: var(--color-surface);
 }
 
 .revisionStripHeader {
   min-height: 54px;
   justify-content: space-between;
-  padding: var(--space-4) var(--space-6);
+  padding: var(--hos-space-2, 8px) var(--hos-space-3, 12px);
   border-bottom: 1px solid var(--color-border);
 }
 
@@ -603,8 +603,8 @@
 .revisionScroller {
   display: flex;
   height: calc(100% - 54px);
-  gap: var(--space-4);
-  padding: var(--space-4) var(--space-5);
+  gap: var(--hos-space-2, 8px);
+  padding: var(--hos-space-2, 8px) var(--hos-space-2-5, 10px);
   overflow-x: auto;
 }
 
@@ -623,11 +623,11 @@
   width: 224px;
   min-width: 224px;
   grid-template-columns: 76px minmax(0, 1fr);
-  gap: var(--space-4);
-  padding: var(--space-4);
+  gap: var(--hos-space-2, 8px);
+  padding: var(--hos-space-2, 8px);
   overflow: hidden;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--hos-radius-sm, 10px); /* 归级:原 10px */
   background: var(--color-surface-raised);
   color: var(--color-text);
   text-align: left;
@@ -650,12 +650,12 @@
   z-index: 2;
   top: var(--space-2);
   left: var(--space-2);
-  padding: 1px var(--space-2);
-  border-radius: 3px;
+  padding: var(--hos-space-0-5, 1px) var(--hos-space-1, 4px); /* 归级:原 1px */
+  border-radius: var(--hos-radius-xs, 3px); /* 归级:原 3px */
   background: var(--studio-graphite);
   color: var(--studio-accent);
   font-family: var(--font-mono);
-  font-size: 8px;
+  font-size: var(--hos-text-micro, 8px); /* 归级:原 8px */
 }
 
 .revisionThumb {
@@ -664,7 +664,7 @@
   height: 92px;
   overflow: hidden;
   place-content: center;
-  border-radius: var(--radius-xs);
+  border-radius: var(--hos-radius-xs, 6px); /* 归级:原 6px */
   background: var(--studio-graphite);
   color: var(--c-neutral-600);
 }
@@ -680,14 +680,14 @@
   min-width: 0;
   flex-direction: column;
   justify-content: center;
-  gap: var(--space-3);
+  gap: var(--hos-space-1-5, 6px);
 }
 
 .revisionMode,
 .revisionStatus {
-  gap: var(--space-2);
+  gap: var(--hos-space-1, 4px);
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: var(--hos-text-micro, 9px); /* 归级:原 9px */
   letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
 }
@@ -712,7 +712,7 @@
   min-height: 0;
   overflow-y: auto;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--hos-radius-sm, 12px);
   background: var(--studio-paper);
   box-shadow: var(--elevation-2);
   scrollbar-width: thin;
@@ -724,7 +724,7 @@
   top: 0;
   min-height: 62px;
   justify-content: space-between;
-  padding: var(--space-5) var(--space-6);
+  padding: var(--hos-space-2-5, 10px) var(--hos-space-3, 12px);
   border-bottom: 1px solid var(--color-border);
   background: color-mix(in srgb, var(--studio-paper) 94%, transparent);
   backdrop-filter: blur(14px);
@@ -733,18 +733,18 @@
 .composerCounter {
   color: var(--color-text-tertiary);
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: var(--hos-text-micro, 9px); /* 归级:原 9px */
 }
 
 .controlSection {
-  padding: var(--space-6);
+  padding: var(--hos-space-3, 12px);
   border-bottom: 1px solid color-mix(in srgb, var(--color-border) 74%, transparent);
 }
 
 .fieldLabel,
 .parameterGrid label > span {
   display: block;
-  margin-bottom: var(--space-3);
+  margin-bottom: var(--hos-space-1-5, 6px);
   color: var(--color-text-secondary);
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
@@ -761,16 +761,16 @@
 .composerPanel :global(.ant-input),
 .composerPanel :global(.ant-input-affix-wrapper),
 .composerPanel :global(.ant-segmented) {
-  border-radius: var(--radius-sm) !important;
+  border-radius: var(--hos-radius-xs, 8px) !important;
 }
 
 .modelReadout {
   min-width: 0;
   justify-content: space-between;
-  gap: var(--space-3);
-  margin-top: var(--space-3);
+  gap: var(--hos-space-1-5, 6px);
+  margin-top: var(--hos-space-1-5, 6px);
   color: var(--color-text-tertiary);
-  font-size: 9px;
+  font-size: var(--hos-text-micro, 9px); /* 归级:原 9px */
 }
 
 .modelReadout code {
@@ -784,17 +784,17 @@
 
 .capabilityRow {
   flex-wrap: wrap;
-  gap: var(--space-2);
-  margin-top: var(--space-4);
+  gap: var(--hos-space-1, 4px);
+  margin-top: var(--hos-space-2, 8px);
 }
 
 .capabilityRow span {
-  padding: 2px var(--space-3);
+  padding: var(--hos-space-0-5, 2px) var(--hos-space-1-5, 6px);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-pill);
+  border-radius: var(--hos-radius-pill, 999px);
   color: var(--color-text-disabled);
   font-family: var(--font-mono);
-  font-size: 8px;
+  font-size: var(--hos-text-micro, 8px); /* 归级:原 8px */
 }
 
 .capabilityRow span[data-active='true'] {
@@ -805,19 +805,19 @@
 
 .assetInputs {
   display: grid;
-  gap: var(--space-4);
+  gap: var(--hos-space-2, 8px);
 }
 
 .sourceStack,
 .sourceList {
   display: grid;
-  gap: var(--space-3);
+  gap: var(--hos-space-1-5, 6px);
 }
 
 .sourceLimit {
   color: var(--color-text-tertiary);
   font-family: var(--font-mono);
-  font-size: 8px;
+  font-size: var(--hos-text-micro, 8px); /* 归级:原 8px */
   letter-spacing: var(--tracking-wide);
 }
 
@@ -830,7 +830,7 @@
 .maskUnavailable {
   min-height: 90px;
   border: 1px dashed var(--color-border-strong);
-  border-radius: var(--radius-md);
+  border-radius: var(--hos-radius-sm, 10px); /* 归级:原 10px */
   background: color-mix(in srgb, var(--color-surface) 72%, transparent);
 }
 
@@ -838,7 +838,7 @@
   display: grid;
   place-content: center;
   justify-items: center;
-  gap: var(--space-2);
+  gap: var(--hos-space-1, 4px);
   color: var(--color-text-secondary);
   cursor: pointer;
   transition: border-color var(--motion-fast), background var(--motion-fast);
@@ -871,7 +871,7 @@
 
 .assetDropLabel small {
   color: var(--color-text-tertiary);
-  font-size: 9px;
+  font-size: var(--hos-text-micro, 9px); /* 归级:原 9px */
 }
 
 .assetPreview {
@@ -879,15 +879,15 @@
   display: grid;
   grid-template-columns: 74px minmax(0, 1fr) 28px;
   align-items: center;
-  gap: var(--space-4);
-  padding: var(--space-3);
+  gap: var(--hos-space-2, 8px);
+  padding: var(--hos-space-1-5, 6px);
   border-style: solid;
 }
 
 .assetPreview img {
   width: 74px;
   height: 66px;
-  border-radius: var(--radius-xs);
+  border-radius: var(--hos-radius-xs, 6px); /* 归级:原 6px */
   object-fit: cover;
   background: var(--studio-graphite);
 }
@@ -897,7 +897,7 @@
   width: 74px;
   height: 66px;
   place-content: center;
-  border-radius: var(--radius-xs);
+  border-radius: var(--hos-radius-xs, 6px); /* 归级:原 6px */
   background: var(--studio-graphite);
   color: var(--studio-accent);
   font-size: var(--text-xl);
@@ -928,8 +928,8 @@
   min-height: 68px;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  gap: var(--space-4);
-  padding: var(--space-4);
+  gap: var(--hos-space-2, 8px);
+  padding: var(--hos-space-2, 8px);
   border-style: solid;
   color: var(--color-text-tertiary);
   font-size: var(--text-2xs);
@@ -937,12 +937,12 @@
 }
 
 .maskUnavailable span {
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-xs);
+  padding: var(--hos-space-1, 4px) var(--hos-space-1-5, 6px);
+  border-radius: var(--hos-radius-xs, 6px); /* 归级:原 6px */
   background: var(--studio-graphite);
   color: var(--studio-accent);
   font-family: var(--font-mono);
-  font-size: 8px;
+  font-size: var(--hos-text-micro, 8px); /* 归级:原 8px */
 }
 
 .promptSection {
@@ -952,22 +952,22 @@
 .fieldLabelRow {
   align-items: flex-start;
   justify-content: space-between;
-  gap: var(--space-4);
+  gap: var(--hos-space-2, 8px);
 }
 
 .presetRow {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: var(--space-2);
+  gap: var(--hos-space-1, 4px);
 }
 
 .presetRow button {
-  padding: 2px var(--space-3);
+  padding: var(--hos-space-0-5, 2px) var(--hos-space-1-5, 6px);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-pill);
+  border-radius: var(--hos-radius-pill, 999px);
   color: var(--color-text-tertiary);
-  font-size: 9px;
+  font-size: var(--hos-text-micro, 9px); /* 归级:原 9px */
 }
 
 .presetRow button:hover,
@@ -986,8 +986,8 @@
 .parameterGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
-  gap: var(--space-4);
-  padding: var(--space-6);
+  gap: var(--hos-space-2, 8px);
+  padding: var(--hos-space-3, 12px);
   border-bottom: 1px solid color-mix(in srgb, var(--color-border) 74%, transparent);
 }
 
@@ -998,8 +998,8 @@
 
 .composerSubmit {
   display: grid;
-  gap: var(--space-4);
-  padding: var(--space-6);
+  gap: var(--hos-space-2, 8px);
+  padding: var(--hos-space-3, 12px);
 }
 
 .composerSubmit > span {
@@ -1047,8 +1047,8 @@
   .sessionList {
     display: flex;
     height: auto;
-    gap: var(--space-4);
-    padding-bottom: var(--space-8);
+    gap: var(--hos-space-2, 8px);
+    padding-bottom: var(--hos-space-4, 16px);
     overflow-x: auto;
   }
 
@@ -1065,17 +1065,17 @@
 
 @media (max-width: 780px) {
   .pageContainer :global(.ant-pro-page-container-children-content) {
-    padding: var(--space-3);
+    padding: var(--hos-space-1-5, 6px);
   }
 
   .workspace {
-    border-radius: var(--radius-md);
+    border-radius: var(--hos-radius-sm, 10px); /* 归级:原 10px */
   }
 
   .workspaceHeader {
     align-items: flex-start;
     flex-direction: column;
-    padding: var(--space-6);
+    padding: var(--hos-space-3, 12px);
   }
 
   .workspaceIdentity h1 {
@@ -1091,7 +1091,7 @@
   .workspaceGrid {
     display: flex;
     flex-direction: column;
-    padding: var(--space-4);
+    padding: var(--hos-space-2, 8px);
   }
 
   .sessionRail { order: 1; }
@@ -1103,7 +1103,7 @@
   }
 
   .canvasFooter {
-    padding: var(--space-5);
+    padding: var(--hos-space-2-5, 10px);
   }
 
   .canvasActions {

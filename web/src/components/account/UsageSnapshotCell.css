@@ -2,7 +2,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) 44px;
   align-items: center;
-  gap: 8px;
+  gap: var(--hos-space-2, 8px);
   min-width: 0;
 }
 
@@ -30,7 +30,7 @@
 .usage-progress-value {
   min-width: 44px;
   color: #475569;
-  font-size: 12px;
+  font-size: var(--hos-text-caption, 12px);
   font-variant-numeric: tabular-nums;
   line-height: 1;
   text-align: right;
@@ -41,9 +41,9 @@
   display: inline-flex;
   align-items: center;
   min-height: 30px;
-  gap: 7px;
-  color: #64748b;
-  font-size: 12px;
+  gap: var(--hos-space-2, 7px); /* 归级:原 7px */
+  color: var(--hos-ink-500, #64748b);
+  font-size: var(--hos-text-caption, 12px);
   line-height: 1.4;
   white-space: nowrap;
 }
@@ -52,15 +52,15 @@
   width: 6px;
   height: 6px;
   flex: 0 0 6px;
-  border: 1px solid color-mix(in srgb, #1677ff 62%, #fff);
-  border-radius: 50%;
-  background: color-mix(in srgb, #1677ff 22%, #fff);
+  border: 1px solid color-mix(in srgb, #1677ff 62%, var(--hos-white, #fff));
+  border-radius: var(--hos-radius-pill, 50%);
+  background: color-mix(in srgb, #1677ff 22%, var(--hos-white, #fff));
   box-shadow: 0 0 0 2px color-mix(in srgb, #1677ff 8%, transparent);
 }
 
 @media (max-width: 767px) {
   .usage-progress-line {
     grid-template-columns: minmax(0, 1fr) 44px;
-    gap: 6px;
+    gap: var(--hos-space-1-5, 6px);
   }
 }

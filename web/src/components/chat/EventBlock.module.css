@@ -405,7 +405,7 @@
   flex: none;
   width: 8px;
   height: 8px;
-  margin-top: 6px;
+  margin-top: var(--hos-space-1-5, 6px);
   border-radius: var(--radius-pill);
   background: var(--task-color);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--task-color) 18%, transparent);

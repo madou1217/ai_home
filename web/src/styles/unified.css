@@ -1,9 +1,9 @@
 :root {
-  --unified-page-padding: 32px;
-  --unified-card-padding: 24px;
+  --unified-page-padding: var(--hos-space-8, 32px);
+  --unified-card-padding: var(--hos-space-6, 24px);
   --unified-card-border-radius: var(--hos-radius-lg, 20px);
-  --unified-pagination-margin: 16px;
-  --unified-section-gap: 20px;
+  --unified-pagination-margin: var(--hos-space-4, 16px);
+  --unified-section-gap: var(--hos-space-5, 20px);
 }
 
 /* 1. 统一页面布局：PageScaffold 标准模式采用 wrapper + content 兄弟结构，
@@ -11,7 +11,7 @@
 .unified-page-wrapper {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: var(--hos-space-5, 18px); /* 归级:原 18px */
   padding: 0 var(--unified-page-padding) var(--unified-page-padding);
 }
 
@@ -27,8 +27,8 @@
 
 @media (max-width: 767px) {
   .unified-page-wrapper {
-    padding: 0 16px 16px;
-    gap: 12px;
+    padding: 0 var(--hos-space-4, 16px) var(--hos-space-4, 16px);
+    gap: var(--hos-space-3, 12px);
   }
 }
 
@@ -39,7 +39,7 @@
 
 @media (max-width: 767px) {
   .ant-pro-grid-content {
-    padding: 0 16px 16px !important;
+    padding: 0 var(--hos-space-4, 16px) var(--hos-space-4, 16px) !important;
   }
 }
 
@@ -80,7 +80,7 @@
 
 /* 贴边表格的分页区补回内距，避免贴卡片边缘 */
 .ant-pro-card.unified-section-card .unified-list-table .ant-table-wrapper .ant-pagination {
-  padding: 12px 16px 16px 16px !important;
+  padding: var(--hos-space-3, 12px) var(--hos-space-4, 16px) var(--hos-space-4, 16px) var(--hos-space-4, 16px) !important;
 }
 
 /* 卡内 Descriptions：外框由卡片承担，仅保留内部分隔线，避免和卡片描边叠加。 */
@@ -95,9 +95,9 @@
 
 /* 3. 统一 ProTable 表格与大厂行 hover 高亮 */
 .unified-list-table {
-  border: 1px solid var(--color-border, #e2e8f0);
-  border-radius: 12px;
-  background: #fff;
+  border: 1px solid var(--color-border, var(--hos-ink-200, #e2e8f0));
+  border-radius: var(--hos-radius-sm, 12px);
+  background: var(--hos-white, #fff);
   overflow: hidden;
 }
 
@@ -112,26 +112,26 @@
 .unified-list-table-skeleton {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  border: 1px solid var(--color-border, #e2e8f0);
-  border-radius: 12px;
-  background: #fff;
-  padding: 14px 16px 18px;
+  gap: var(--hos-space-3-5, 14px);
+  border: 1px solid var(--color-border, var(--hos-ink-200, #e2e8f0));
+  border-radius: var(--hos-radius-sm, 12px);
+  background: var(--hos-white, #fff);
+  padding: var(--hos-space-3-5, 14px) var(--hos-space-4, 16px) var(--hos-space-5, 18px); /* 归级:原 18px */
 }
 .unified-list-table-skeleton-head,
 .unified-list-table-skeleton-row {
   display: grid;
-  gap: 16px;
+  gap: var(--hos-space-4, 16px);
   align-items: center;
 }
 .unified-list-table-skeleton-head {
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--color-border, #e2e8f0);
+  padding-bottom: var(--hos-space-3, 12px);
+  border-bottom: 1px solid var(--color-border, var(--hos-ink-200, #e2e8f0));
 }
 .unified-list-table-skeleton-headcell {
   overflow: hidden;
-  color: var(--color-muted, #94a3b8);
-  font-size: 13px;
+  color: var(--color-muted, var(--hos-ink-400, #94a3b8));
+  font-size: var(--hos-text-body-sm, 13px);
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -205,8 +205,8 @@
 /* 5. 统一空态样式 */
 .unified-empty,
 .ant-table-placeholder .ant-empty-description {
-  color: var(--color-text-secondary, #64748b) !important;
-  font-size: 13px !important;
+  color: var(--color-text-secondary, var(--hos-ink-500, #64748b)) !important;
+  font-size: var(--hos-text-body-sm, 13px) !important;
 }
 
 

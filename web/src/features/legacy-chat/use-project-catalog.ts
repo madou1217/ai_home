@@ -21,7 +21,6 @@ import {
 import {
   applyProjectSessionHydrationResponse,
   canApplyProjectSessionHydration,
-  isHydratedProjectSessionsStale,
   isProjectSessionSnapshotComplete,
   preserveHydratedProjectSessions,
   shouldHydrateProjectSessions,
@@ -225,7 +224,6 @@ export function useProjectCatalog(
   const applyProjectSnapshot = useCallback((
     incomingProjects: AggregatedProject[],
     selection: PersistedChatSelection = {},
-    skipHydration = false,
   ): AggregatedProject[] => {
     snapshotGenerationRef.current += 1;
     const activeServerKey = projectHydrationServerKey();

@@ -1,7 +1,7 @@
 .app-action-confirm-content {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--hos-space-2-5, 10px);
 }
 
 .app-action-confirm-content > p {
@@ -17,14 +17,14 @@
 
 .app-action-confirm-content__metadata {
   display: grid;
-  gap: 6px;
+  gap: var(--hos-space-1-5, 6px);
   margin: 0;
 }
 
 .app-action-confirm-content__metadata > div {
   display: grid;
   grid-template-columns: 88px minmax(0, 1fr);
-  gap: 10px;
+  gap: var(--hos-space-2-5, 10px);
 }
 
 .app-action-confirm-content__metadata dt {
@@ -40,7 +40,7 @@
 
 .app-action-confirm-content__plans {
   display: grid;
-  gap: 10px;
+  gap: var(--hos-space-2-5, 10px);
 }
 
 .app-action-confirm-content__plans section {
@@ -49,22 +49,22 @@
 
 .app-action-confirm-content__plans strong {
   display: block;
-  margin-bottom: 5px;
+  margin-bottom: var(--hos-space-1-5, 5px); /* 归级:原 5px */
   color: var(--color-heading);
-  font-size: 12px;
+  font-size: var(--hos-text-caption, 12px);
 }
 
 .app-action-confirm-content__plans pre {
   max-height: 240px;
   margin: 0;
-  padding: 12px;
+  padding: var(--hos-space-3, 12px);
   overflow: auto;
   border: 1px solid var(--color-border);
-  border-radius: 10px;
+  border-radius: var(--hos-radius-sm, 10px); /* 归级:原 10px */
   background: color-mix(in srgb, var(--color-surface-raised) 78%, #000 22%);
   color: var(--color-body);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--hos-text-caption, 11px); /* 归级:原 11px */
   line-height: 1.6;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -72,5 +72,5 @@
 
 .app-action-confirm-content__empty {
   color: var(--color-muted);
-  font-size: 12px;
+  font-size: var(--hos-text-caption, 12px);
 }

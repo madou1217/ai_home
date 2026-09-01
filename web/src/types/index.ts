@@ -1375,6 +1375,7 @@ export interface ManagementRestartResponse {
 export interface ChatMessageMetrics {
   durationMs?: number;
   ttftMs?: number;
+  inputTokens?: number;
   outputTokens?: number;
   tokensPerSec?: number;
 }

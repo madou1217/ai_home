@@ -6,13 +6,13 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 14px;
-  padding: 8px 12px;
-  margin-bottom: 16px;
+  gap: var(--hos-space-2, 8px) var(--hos-space-3-5, 14px);
+  padding: var(--hos-space-2, 8px) var(--hos-space-3, 12px);
+  margin-bottom: var(--hos-space-4, 16px);
   border: 1px solid var(--app-border);
   border-radius: var(--app-radius-sm);
   background: var(--app-surface);
-  font-size: 13px;
+  font-size: var(--hos-text-body-sm, 13px);
 }
 .fabric-topline__label {
   color: var(--app-muted);
@@ -20,18 +20,18 @@
 
 .fabric-mono {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--hos-text-caption, 12px);
 }
 .fabric-muted {
   color: var(--app-muted);
-  font-size: 12px;
+  font-size: var(--hos-text-caption, 12px);
 }
 
 /* 工作台栅格：左列表 + 右详情 */
 .fabric-workbench {
   display: grid;
   grid-template-columns: minmax(220px, 300px) 1fr;
-  gap: 16px;
+  gap: var(--hos-space-4, 16px);
   align-items: start;
 }
 
@@ -39,25 +39,25 @@
 .fabric-node-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--hos-space-1-5, 6px);
   border: 1px solid var(--app-border);
   border-radius: var(--app-radius-sm);
   background: var(--app-surface);
-  padding: 8px;
+  padding: var(--hos-space-2, 8px);
   min-height: 160px;
 }
 .fabric-node-list__loading,
 .fabric-node-list__empty {
   margin: auto;
-  padding: 24px 8px;
+  padding: var(--hos-space-6, 24px) var(--hos-space-2, 8px);
 }
 .fabric-node-item {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--hos-space-2-5, 10px);
   width: 100%;
   text-align: left;
-  padding: 10px 12px;
+  padding: var(--hos-space-2-5, 10px) var(--hos-space-3, 12px);
   border: 1px solid transparent;
   border-radius: var(--app-radius-sm);
   background: transparent;
@@ -84,7 +84,7 @@
   text-overflow: ellipsis;
 }
 .fabric-node-item__sub {
-  font-size: 12px;
+  font-size: var(--hos-text-caption, 12px);
   color: var(--app-muted);
 }
 
@@ -93,7 +93,7 @@
   flex: none;
   width: 8px;
   height: 8px;
-  border-radius: 50%;
+  border-radius: var(--hos-radius-pill, 50%);
   background: var(--app-muted);
 }
 .fabric-dot--online {
@@ -111,8 +111,8 @@
 .fabric-liveness {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
+  gap: var(--hos-space-1-5, 6px);
+  font-size: var(--hos-text-caption, 12px);
   white-space: nowrap;
 }
 .fabric-liveness--online { color: var(--app-success, #16a34a); }
@@ -126,7 +126,7 @@
   border-radius: var(--app-radius-sm);
   background: var(--app-surface);
   min-height: 320px;
-  padding: 20px;
+  padding: var(--hos-space-5, 20px);
 }
 .fabric-node-panel__placeholder {
   display: flex;
@@ -138,32 +138,32 @@
 .fabric-detail {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: var(--hos-space-4, 18px); /* 归级:原 18px */
 }
 .fabric-detail__identity {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--hos-space-3, 12px);
 }
 .fabric-detail__name {
-  font-size: 18px;
+  font-size: var(--hos-text-h2, 18px);
   font-weight: 700;
   color: var(--app-heading);
 }
 .fabric-detail__sub {
-  margin-top: 2px;
-  font-size: 13px;
+  margin-top: var(--hos-space-0-5, 2px);
+  font-size: var(--hos-text-body-sm, 13px);
   color: var(--app-muted);
 }
 
 .fabric-detail-block {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--hos-space-2, 8px);
 }
 .fabric-detail-block__label {
-  font-size: 12px;
+  font-size: var(--hos-text-caption, 12px);
   font-weight: 600;
   color: var(--app-muted-strong);
 }
@@ -172,15 +172,15 @@
 .fabric-caps {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--hos-space-2, 8px);
 }
 .fabric-cap {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 3px 10px;
-  border-radius: 999px;
-  font-size: 13px;
+  gap: var(--hos-space-1, 4px);
+  padding: var(--hos-space-0-5, 3px) var(--hos-space-2-5, 10px); /* 归级:原 3px */
+  border-radius: var(--hos-radius-pill, 999px);
+  font-size: var(--hos-text-body-sm, 13px);
   border: 1px solid var(--app-border);
   cursor: default;
 }
@@ -198,15 +198,15 @@
 .fabric-provider-gaps {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-top: 10px;
+  gap: var(--hos-space-1-5, 6px);
+  margin-top: var(--hos-space-2-5, 10px);
 }
 .fabric-provider-gap {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 6px;
-  font-size: 13px;
+  gap: var(--hos-space-1-5, 6px);
+  font-size: var(--hos-text-body-sm, 13px);
 }
 .fabric-provider-gap__name {
   font-weight: 600;
@@ -216,41 +216,41 @@
 }
 .fabric-provider-gap__detail {
   color: var(--app-muted);
-  font-size: 12px;
+  font-size: var(--hos-text-caption, 12px);
 }
 
 /* 连接质量 */
 .fabric-conn {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--hos-space-1-5, 6px);
 }
 .fabric-conn__line {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 12px;
+  gap: var(--hos-space-2, 8px) var(--hos-space-3, 12px);
 }
 .fabric-conn__error {
   color: var(--app-danger);
-  font-size: 12px;
+  font-size: var(--hos-text-caption, 12px);
 }
 .fabric-conn__warn {
   color: var(--app-warning);
-  font-size: 12px;
+  font-size: var(--hos-text-caption, 12px);
 }
 .fabric-conn__relay {
-  margin-top: 8px;
-  font-size: 12px;
+  margin-top: var(--hos-space-2, 8px);
+  font-size: var(--hos-text-caption, 12px);
   color: var(--app-muted);
 }
 
 .fabric-detail__more {
   border-top: 1px solid var(--app-border);
-  padding-top: 4px;
+  padding-top: var(--hos-space-1, 4px);
 }
 .fabric-detail__seen {
-  font-size: 12px;
+  font-size: var(--hos-text-caption, 12px);
   color: var(--app-muted);
 }
 
@@ -264,20 +264,20 @@
     overflow-y: auto;
   }
   .fabric-node-panel {
-    padding: 16px;
+    padding: var(--hos-space-4, 16px);
   }
 }
 
 /* ── 节点内嵌会话面板 ─────────────────────────────── */
 .fabric-session {
-  margin-top: 12px;
-  padding: 12px;
+  margin-top: var(--hos-space-3, 12px);
+  padding: var(--hos-space-3, 12px);
   border: 1px solid var(--app-border);
   border-radius: var(--app-radius-sm);
   background: var(--app-surface-muted);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--hos-space-2, 8px);
 }
 .fabric-session__bar {
   display: flex;
@@ -292,21 +292,21 @@
   min-height: 96px;
   max-height: 320px;
   overflow-y: auto;
-  padding: 8px;
+  padding: var(--hos-space-2, 8px);
   border: 1px solid var(--app-border);
   border-radius: var(--app-radius-sm);
   background: var(--app-surface);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--hos-space-2, 8px);
 }
 .fabric-msg {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--hos-space-0-5, 2px);
 }
 .fabric-msg__who {
-  font-size: 12px;
+  font-size: var(--hos-text-caption, 12px);
   color: var(--app-muted-strong);
 }
 .fabric-msg__text {
@@ -319,12 +319,12 @@
   font-weight: 500;
 }
 .fabric-session__status {
-  font-size: 12px;
+  font-size: var(--hos-text-caption, 12px);
   color: var(--app-muted);
 }
 .fabric-session__input {
   display: flex;
-  gap: 8px;
+  gap: var(--hos-space-2, 8px);
   align-items: flex-end;
 }
 .fabric-session__input .ant-input,
@@ -363,13 +363,13 @@
 .webrtc-latency-droplet {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 3px 10px;
+  gap: var(--hos-space-1-5, 6px);
+  padding: var(--hos-space-0-5, 3px) var(--hos-space-2-5, 10px); /* 归级:原 3px */
   border-radius: var(--hos-radius-pill, 9999px);
   background: var(--hos-glass-bg-subtle, rgba(255, 255, 255, 0.7));
   border: 1px solid rgba(0, 0, 0, 0.05);
   font-family: var(--font-mono, monospace);
-  font-size: 11px;
+  font-size: var(--hos-text-caption, 11px); /* 归级:原 11px */
   color: var(--color-muted, #64748b);
 }
 
@@ -377,17 +377,17 @@
   width: 7px;
   height: 7px;
   border-radius: var(--hos-radius-pill, 9999px);
-  background: #10b981;
-  box-shadow: 0 0 8px #10b981;
+  background: var(--hos-green-500, #10b981);
+  box-shadow: 0 0 8px var(--hos-green-500, #10b981);
   animation: hosLivePulse 1.4s ease-in-out infinite;
 }
 
 .latency-dot-warning {
-  background: #f59e0b;
-  box-shadow: 0 0 8px #f59e0b;
+  background: var(--hos-amber-500, #f59e0b);
+  box-shadow: 0 0 8px var(--hos-amber-500, #f59e0b);
 }
 
 .latency-dot-danger {
-  background: #ef4444;
-  box-shadow: 0 0 8px #ef4444;
+  background: var(--hos-red-500, #ef4444);
+  box-shadow: 0 0 8px var(--hos-red-500, #ef4444);
 }

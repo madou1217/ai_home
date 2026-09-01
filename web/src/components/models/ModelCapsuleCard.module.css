@@ -2,7 +2,7 @@
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: 16px 18px;
+  padding: var(--hos-space-4, 16px) var(--hos-space-5, 18px); /* 归级:原 18px */
   border-radius: var(--hos-radius-lg, 20px);
   background: var(--hos-glass-bg-card, rgba(255, 255, 255, 0.85));
   backdrop-filter: var(--hos-blur-card, blur(20px)) saturate(190%);
@@ -31,14 +31,14 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 12px;
+  gap: var(--hos-space-2-5, 10px);
+  margin-bottom: var(--hos-space-3, 12px);
 }
 
 .titleArea {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--hos-space-1, 4px);
   min-width: 0;
   flex: 1;
 }
@@ -46,22 +46,22 @@
 .idLine {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--hos-space-1-5, 6px);
   min-width: 0;
 }
 
 .modelName {
   font-family: var(--font-mono, ui-monospace, Menlo, monospace);
-  font-size: 14px;
+  font-size: var(--hos-text-body, 14px);
   font-weight: 700;
-  color: #1e293b;
+  color: var(--hos-ink-700, #1e293b);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 [data-theme='dark'] .modelName {
-  color: #f8fafc;
+  color: var(--hos-ink-50, #f8fafc);
 }
 
 .copyBtn {
@@ -70,10 +70,10 @@
   justify-content: center;
   width: 22px;
   height: 22px;
-  border-radius: 6px;
+  border-radius: var(--hos-radius-xs, 6px); /* 归级:原 6px */
   border: none;
   background: transparent;
-  color: #94a3b8;
+  color: var(--hos-ink-400, #94a3b8);
   cursor: pointer;
   opacity: 0.6;
   transition: opacity 0.15s, background-color 0.15s;
@@ -85,14 +85,14 @@
 }
 
 .providerBadge {
-  font-size: 10px;
+  font-size: var(--hos-text-micro, 10px);
   font-weight: 700;
-  color: #64748b;
+  color: var(--hos-ink-500, #64748b);
   letter-spacing: 0.02em;
 }
 
 .defaultStar {
-  color: #cbd5e1;
+  color: var(--hos-ink-300, #cbd5e1);
 }
 
 .defaultStarActive {
@@ -102,31 +102,31 @@
 .cardBody {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-bottom: 12px;
+  gap: var(--hos-space-2, 8px);
+  margin-bottom: var(--hos-space-3, 12px);
 }
 
 .capsuleTags {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--hos-space-1-5, 6px);
 }
 
 .metricCapsule {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
+  gap: var(--hos-space-1, 4px);
+  padding: var(--hos-space-0-5, 2px) var(--hos-space-2, 8px);
   border-radius: var(--hos-radius-pill, 9999px);
   background: rgba(0, 0, 0, 0.03);
-  font-size: 11px;
+  font-size: var(--hos-text-caption, 11px); /* 归级:原 11px */
   font-weight: 600;
   color: #475569;
 }
 
 [data-theme='dark'] .metricCapsule {
   background: rgba(255, 255, 255, 0.05);
-  color: #cbd5e1;
+  color: var(--hos-ink-300, #cbd5e1);
 }
 
 .cardFooter {
@@ -134,24 +134,24 @@
   align-items: center;
   justify-content: space-between;
   border-top: 1px solid rgba(0, 0, 0, 0.04);
-  padding-top: 10px;
+  padding-top: var(--hos-space-2-5, 10px);
 }
 
 .statusState {
-  font-size: 12px;
+  font-size: var(--hos-text-caption, 12px);
   font-weight: 600;
 }
 
 .statusOnline {
-  color: #10b981;
+  color: var(--hos-green-500, #10b981);
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--hos-space-1, 4px);
 }
 
 .statusOffline {
-  color: #94a3b8;
+  color: var(--hos-ink-400, #94a3b8);
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--hos-space-1, 4px);
 }

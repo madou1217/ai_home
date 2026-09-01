@@ -75,3 +75,14 @@ class CrossTabSyncCoordinator {
 }
 
 export const crossTabSync = new CrossTabSyncCoordinator();
+
+// THEME_CHANGED 接收端：把其他 Tab（广播方见 GlobalCommandPalette）的主题切换应用到本页。
+// 只应用、不回播；配合 sourceTabId 过滤与 BroadcastChannel 不回送发送者的语义，保证无回环。
+if (typeof document !== 'undefined') {
+  crossTabSync.subscribe('THEME_CHANGED', (event) => {
+    const theme = event?.payload?.theme;
+    if (theme === 'dark' || theme === 'light') {
+      document.documentElement.setAttribute('data-theme', theme);
+    }
+  });
+}

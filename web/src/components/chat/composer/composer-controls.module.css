@@ -3,18 +3,18 @@
 .modelSummary {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--hos-space-1-5, 6px);
   min-width: 0;
   height: 34px;
-  padding: 0 14px;
+  padding: 0 var(--hos-space-3-5, 14px);
   border: 0.8px solid rgba(255, 255, 255, 0.8);
   border-radius: var(--hos-radius-pill, 9999px);
-  color: var(--color-text, #1e293b);
+  color: var(--color-text, var(--hos-ink-700, #1e293b));
   background: var(--hos-glass-bg-subtle, rgba(255, 255, 255, 0.75));
   backdrop-filter: blur(20px) saturate(190%);
   -webkit-backdrop-filter: blur(20px) saturate(190%);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--hos-text-body-sm, 13px);
   font-weight: 600;
   cursor: pointer;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
@@ -26,7 +26,7 @@
 [data-theme='dark'] .modelSummary {
   background: rgba(30, 41, 59, 0.75);
   border: 0.8px solid rgba(255, 255, 255, 0.1);
-  color: #f8fafc;
+  color: var(--hos-ink-50, #f8fafc);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
@@ -69,17 +69,17 @@
 }
 
 .controlButton small {
-  padding: 1px 6px;
+  padding: var(--hos-space-0-5, 1px) var(--hos-space-1-5, 6px); /* 归级:原 1px */
   border-radius: var(--hos-radius-pill, 9999px);
-  color: #64748b;
+  color: var(--hos-ink-500, #64748b);
   background: rgba(0, 0, 0, 0.04);
-  font-size: 10px;
+  font-size: var(--hos-text-micro, 10px);
   line-height: 16px;
   font-weight: 700;
 }
 
 [data-theme='dark'] .controlButton small {
-  color: #94a3b8;
+  color: var(--hos-ink-400, #94a3b8);
   background: rgba(255, 255, 255, 0.08);
 }
 
@@ -96,29 +96,29 @@
 
 .modelSummary {
   justify-content: flex-end;
-  padding-inline: 14px 12px;
+  padding-inline: var(--hos-space-3-5, 14px) var(--hos-space-3, 12px);
 }
 
 .modelSummary small {
-  color: #64748b;
-  font-size: 12px;
+  color: var(--hos-ink-500, #64748b);
+  font-size: var(--hos-text-caption, 12px);
   font-weight: 600;
 }
 
 [data-theme='dark'] .modelSummary small {
-  color: #94a3b8;
+  color: var(--hos-ink-400, #94a3b8);
 }
 
 .modelIcon {
   width: 16px;
   height: 16px;
   flex: 0 0 16px;
-  color: #0a59f7;
+  color: var(--hos-blue-700, #0a59f7);
 }
 
 .chevron {
-  color: #94a3b8;
-  font-size: 10px;
+  color: var(--hos-ink-400, #94a3b8);
+  font-size: var(--hos-text-micro, 10px);
 }
 
 .optionRow,
@@ -127,40 +127,40 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 18px;
+  gap: var(--hos-space-5, 18px); /* 归级:原 18px */
   min-width: 210px;
 }
 
 .optionMain {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--hos-space-2, 8px);
   min-width: 0;
 }
 
 .optionMain small {
-  color: #94a3b8;
-  font-size: 11px;
+  color: var(--hos-ink-400, #94a3b8);
+  font-size: var(--hos-text-caption, 11px); /* 归级:原 11px */
 }
 
 .menuHeading > span:first-child {
-  color: #1e293b;
+  color: var(--hos-ink-700, #1e293b);
   font-weight: 700;
 }
 
 [data-theme='dark'] .menuHeading > span:first-child {
-  color: #f8fafc;
+  color: var(--hos-ink-50, #f8fafc);
 }
 
 .menuHeading > span:nth-child(2) {
   margin-left: auto;
-  color: #64748b;
-  font-size: 11px;
+  color: var(--hos-ink-500, #64748b);
+  font-size: var(--hos-text-caption, 11px); /* 归级:原 11px */
 }
 
 .menuHeading > :last-child {
-  color: #94a3b8;
-  font-size: 10px;
+  color: var(--hos-ink-400, #94a3b8);
+  font-size: var(--hos-text-micro, 10px);
 }
 
 .approvalOption {
@@ -170,29 +170,29 @@
 
 .approvalOption > span:first-child {
   display: grid;
-  gap: 2px;
+  gap: var(--hos-space-0-5, 2px);
 }
 
 .approvalOption strong {
-  color: #1e293b;
+  color: var(--hos-ink-700, #1e293b);
   font-weight: 600;
 }
 
 [data-theme='dark'] .approvalOption strong {
-  color: #f8fafc;
+  color: var(--hos-ink-50, #f8fafc);
 }
 
 .approvalOption small {
-  color: #64748b;
-  font-size: 12px;
+  color: var(--hos-ink-500, #64748b);
+  font-size: var(--hos-text-caption, 12px);
 }
 
 [data-theme='dark'] .approvalOption small {
-  color: #94a3b8;
+  color: var(--hos-ink-400, #94a3b8);
 }
 
 .retryOption {
-  color: #d97706;
+  color: var(--hos-orange-600, #d97706);
 }
 
 @media (max-width: 768px) {

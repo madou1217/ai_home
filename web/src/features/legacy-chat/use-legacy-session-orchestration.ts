@@ -3,6 +3,7 @@ import { useCallback, useRef } from 'react';
 import { getSessionRunKey } from '@/components/chat/active-run-state.js';
 import { supportsToolBoundaryQueue } from '@/components/chat/provider-capabilities.js';
 import { formatRetryStatusText } from '@/components/chat/provider-pending-policy.js';
+import { getThinkingStatusText } from '@/components/chat/provider-pending-policy.js';
 import type { RetryStatus } from '@/components/chat/provider-pending-policy.js';
 import { chatAPI } from '@/services/api';
 import type { InteractivePrompt, Session } from '@/types';
@@ -219,6 +220,18 @@ export function useLegacySessionOrchestration({
   });
   runSessionMessageRef.current = runSessionMessage;
 
+  // api-proxy 纯聊天 detached 恢复：把 /chat/runs 带回的已累积内容快照先渲染成
+  // pending 助手气泡；后端完成后 watch 收到 turn-completed → 重载全量历史覆盖它。
+  const appendRecoveredContent = useCallback((targetSession: Session, content: string): void => {
+    history.appendVisibleMessage({
+      role: 'assistant',
+      content,
+      pending: true,
+      statusText: getThinkingStatusText(targetSession.provider),
+      timestamp: Date.now(),
+    });
+  }, [history.appendVisibleMessage]);
+
   useDetachedRunRecovery({
     session: selection.session,
     sessionRef: selection.sessionRef,
@@ -226,6 +239,7 @@ export function useLegacySessionOrchestration({
     findRun,
     setRunPrompt,
     markWatchPending: history.markWatchPending,
+    appendRecoveredContent,
   });
 
   return { detachedRunRef, runs, queue, history, terminal, runSessionMessage };

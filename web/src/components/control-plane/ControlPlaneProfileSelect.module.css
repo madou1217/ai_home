@@ -2,7 +2,7 @@
   display: inline-flex;
   min-width: 0;
   align-items: center;
-  gap: 4px;
+  gap: var(--hos-space-1, 4px);
 }
 
 .compact {
@@ -13,7 +13,7 @@
   width: 7px;
   height: 7px;
   flex: 0 0 7px;
-  border-radius: 999px;
+  border-radius: var(--hos-radius-pill, 999px);
   background: var(--app-border-strong);
 }
 
@@ -32,14 +32,14 @@
   flex: 1 1 auto;
   min-width: 0;
   align-items: center;
-  gap: 7px;
+  gap: var(--hos-space-2, 7px); /* 归级:原 7px */
   height: 30px;
-  padding: 0 8px;
+  padding: 0 var(--hos-space-2, 8px);
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--hos-radius-xs, 8px);
   background: transparent;
   color: var(--app-heading);
-  font-size: 12px;
+  font-size: var(--hos-text-caption, 12px);
   font-weight: 700;
   line-height: 1;
   text-decoration: none;
@@ -67,7 +67,7 @@
 .serverIcon {
   flex: 0 0 auto;
   color: var(--app-muted-strong);
-  font-size: 14px;
+  font-size: var(--hos-text-body, 14px);
 }
 
 .serverName {
@@ -82,7 +82,7 @@
 .caret {
   flex: 0 0 auto;
   color: var(--app-muted);
-  font-size: 10px;
+  font-size: var(--hos-text-micro, 10px);
 }
 
 /* 配置入口：纯齿轮图标，替代原来的"配置"文字。 */
@@ -93,9 +93,9 @@
   justify-content: center;
   width: 30px;
   height: 30px;
-  border-radius: 8px;
+  border-radius: var(--hos-radius-xs, 8px);
   color: var(--app-muted);
-  font-size: 15px;
+  font-size: var(--hos-text-h3, 15px);
   text-decoration: none;
   transition: background 0.16s ease, color 0.16s ease;
 }

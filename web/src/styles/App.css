@@ -45,7 +45,7 @@ button {
 }
 
 ::selection {
-  background: color-mix(in srgb, #0a59f7 22%, transparent);
+  background: color-mix(in srgb, var(--hos-blue-700, #0a59f7) 22%, transparent);
   color: var(--app-heading);
 }
 
@@ -80,7 +80,7 @@ button {
   -webkit-backdrop-filter: var(--hos-blur-floating, blur(32px) saturate(200%)) !important;
   border: 0.8px solid var(--color-border-subtle, rgba(255, 255, 255, 0.8)) !important;
   box-shadow: var(--hos-shadow-floating, 0 12px 32px -4px rgba(0, 0, 0, 0.08)) !important;
-  padding: 8px !important;
+  padding: var(--hos-space-2, 8px) !important;
 }
 
 /* 4. 输入框 (Input) 鸿蒙微光规范 */
@@ -95,8 +95,8 @@ button {
 .ant-input:focus,
 .ant-input-affix-wrapper:focus,
 .ant-input-affix-wrapper-focused {
-  background: #ffffff !important;
-  border-color: #0a59f7 !important;
+  background: var(--hos-white, #ffffff) !important;
+  border-color: var(--hos-blue-700, #0a59f7) !important;
   box-shadow: 0 0 0 3px rgba(10, 89, 247, 0.18) !important;
 }
 
@@ -109,8 +109,8 @@ button {
 }
 
 .ant-select-focused .ant-select-selector {
-  background: #ffffff !important;
-  border-color: #0a59f7 !important;
+  background: var(--hos-white, #ffffff) !important;
+  border-color: var(--hos-blue-700, #0a59f7) !important;
   box-shadow: 0 0 0 3px rgba(10, 89, 247, 0.18) !important;
 }
 
@@ -122,7 +122,7 @@ button {
 }
 
 .ant-btn-primary {
-  background: linear-gradient(135deg, #0a59f7 0%, #2563eb 100%) !important;
+  background: linear-gradient(135deg, var(--hos-blue-700, #0a59f7) 0%, var(--hos-blue-600, #2563eb) 100%) !important;
   border: none !important;
   box-shadow: 0 4px 14px rgba(10, 89, 247, 0.25) !important;
 }
@@ -140,7 +140,7 @@ button {
 .ant-segmented {
   border-radius: var(--hos-radius-pill, 9999px) !important;
   background: rgba(0, 0, 0, 0.04) !important;
-  padding: 4px !important;
+  padding: var(--hos-space-1, 4px) !important;
 }
 
 .ant-segmented-item {
@@ -150,9 +150,9 @@ button {
 }
 
 .ant-segmented-item-selected {
-  background: #ffffff !important;
+  background: var(--hos-white, #ffffff) !important;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06) !important;
-  color: #0a59f7 !important;
+  color: var(--hos-blue-700, #0a59f7) !important;
 }
 
 /* 8. 表格 (Table) 鸿蒙无界流光规范 */

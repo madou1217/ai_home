@@ -17,7 +17,7 @@
   margin-inline: auto;
   flex-direction: column;
   justify-content: center;
-  gap: 1px;
+  gap: var(--hos-space-0-5, 1px); /* 归级:原 1px */
   color: var(--color-text);
   line-height: 1;
   vertical-align: middle;
@@ -140,7 +140,7 @@
 .token-usage-tooltip {
   display: grid;
   min-width: 292px;
-  gap: 4px;
+  gap: var(--hos-space-1, 4px);
 }
 
 .token-usage-tooltip-overlay {
@@ -151,14 +151,14 @@
   display: grid;
   grid-template-columns: minmax(140px, 1fr) 58px 72px;
   align-items: center;
-  gap: 10px;
+  gap: var(--hos-space-2-5, 10px);
   white-space: nowrap;
   font-family: var(--font-mono);
   font-size: var(--text-xs);
 }
 
 .token-usage-tooltip-header {
-  padding-bottom: 3px;
+  padding-bottom: var(--hos-space-1, 3px); /* 归级:原 3px */
   border-bottom: 1px solid rgb(255 255 255 / 18%);
   color: rgb(255 255 255 / 62%);
   font-family: var(--font-sans);
@@ -180,7 +180,7 @@
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 7px;
+  gap: var(--hos-space-2, 7px); /* 归级:原 7px */
 }
 
 .token-usage-tooltip-model > span:last-child {
@@ -192,7 +192,7 @@
   width: 7px;
   height: 7px;
   flex: 0 0 7px;
-  border-radius: 50%;
+  border-radius: var(--hos-radius-pill, 50%);
 }
 
 .token-usage-chart-hit-targets {
@@ -280,7 +280,7 @@
   left: calc(var(--token-usage-ghost-index) * var(--token-usage-slot) + 1px);
   display: grid;
   width: var(--token-usage-slot);
-  gap: 1px;
+  gap: var(--hos-space-0-5, 1px); /* 归级:原 1px */
   text-align: center;
   pointer-events: none;
   animation: token-usage-text-snap var(--token-usage-motion) var(--token-usage-ease-snap) forwards;

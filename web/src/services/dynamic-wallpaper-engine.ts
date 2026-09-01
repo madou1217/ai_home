@@ -39,6 +39,7 @@ export class DynamicWallpaperEngine {
       const root = document.documentElement;
       root.style.removeProperty('--hos-custom-wallpaper');
       root.style.removeProperty('--hos-custom-aura');
+      root.style.removeProperty('--hos-custom-accent');
     } catch {}
   }
 

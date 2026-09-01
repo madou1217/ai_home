@@ -20,6 +20,79 @@ export interface CanonicalSessionDirectoryResult {
   readonly sessions: readonly Session[];
 }
 
+export type CanonicalSessionDirectoryRequestStatus = 'loading' | 'ready' | 'failed';
+
+/**
+ * 目录请求状态机：result 始终保留最近一次成功数据，
+ * key 变化 / 刷新 / 失败期间不清空，仅以 status + stale 表达。
+ */
+export interface CanonicalSessionDirectoryRequestState {
+  readonly key: string;
+  readonly result: CanonicalSessionDirectoryResult;
+  readonly status: CanonicalSessionDirectoryRequestStatus;
+  /** true 表示当前展示的 result 来自其他 key（后台刷新中的旧数据）。 */
+  readonly stale: boolean;
+  /** true 表示当前展示的 result 来自离线缓存回退（服务端不可达时的磁盘数据）。 */
+  readonly offlineCached: boolean;
+}
+
+export type CanonicalSessionDirectoryRequestAction =
+  | { readonly type: 'begin'; readonly key: string }
+  | { readonly type: 'succeed'; readonly key: string; readonly result: CanonicalSessionDirectoryResult }
+  | { readonly type: 'fail'; readonly key: string }
+  | { readonly type: 'restore'; readonly key: string; readonly result: CanonicalSessionDirectoryResult }
+  | { readonly type: 'pending'; readonly key: string }
+  | { readonly type: 'empty' };
+
+export const EMPTY_CANONICAL_SESSION_DIRECTORY: CanonicalSessionDirectoryResult = Object.freeze({
+  sessions: Object.freeze([]),
+});
+
+export function createCanonicalSessionDirectoryRequestState(
+  pending: boolean,
+): CanonicalSessionDirectoryRequestState {
+  return {
+    key: '',
+    result: EMPTY_CANONICAL_SESSION_DIRECTORY,
+    status: pending ? 'loading' : 'ready',
+    stale: false,
+    offlineCached: false,
+  };
+}
+
+/** 仅当保留了其他 key 的旧数据时才标记 stale。 */
+function retainingStaleData(
+  state: CanonicalSessionDirectoryRequestState,
+  key: string,
+): boolean {
+  return state.stale || (state.result.sessions.length > 0 && state.key !== key);
+}
+
+export function reduceCanonicalSessionDirectoryRequest(
+  state: CanonicalSessionDirectoryRequestState,
+  action: CanonicalSessionDirectoryRequestAction,
+): CanonicalSessionDirectoryRequestState {
+  switch (action.type) {
+    case 'begin':
+      // 后台刷新：保留上一份结果；key 变化期间旧数据标 stale，不清空列表。
+      return { ...state, status: 'loading', stale: retainingStaleData(state, action.key) };
+    case 'succeed':
+      return { key: action.key, result: action.result, status: 'ready', stale: false, offlineCached: false };
+    case 'fail':
+      // 失败保留旧数据，仅置 failed 状态，交由 UI 展示重试入口。
+      return { ...state, status: 'failed', stale: retainingStaleData(state, action.key) };
+    case 'restore':
+      // 离线回退：无内存旧数据时载入磁盘缓存，保持 failed 语义并标注来源。
+      return { key: action.key, result: action.result, status: 'failed', stale: false, offlineCached: true };
+    case 'pending':
+      // 项目目录尚未加载完成：视为加载中并保留旧数据，不当作"确实无项目"。
+      return { ...state, status: 'loading', stale: retainingStaleData(state, action.key) };
+    case 'empty':
+      // 目录已就绪但确实没有可查询的项目：回到空目录。
+      return createCanonicalSessionDirectoryRequestState(false);
+  }
+}
+
 export function combineCanonicalSessionDirectoryResults(
   results: readonly CanonicalSessionDirectoryResult[],
 ): CanonicalSessionDirectoryResult {

@@ -14,7 +14,7 @@
   top: 50%;
   width: 12px;
   height: 12px;
-  border-radius: 50%;
+  border-radius: var(--hos-radius-pill, 50%);
   transform: translate(-50%, -50%);
   background: radial-gradient(
     circle,
@@ -36,9 +36,9 @@
   height: 4px;
   border-radius: 45% 55% 50% 48%;
   transform: translate(-50%, -50%) rotate(18deg);
-  background: #fff;
+  background: var(--hos-white, #fff);
   box-shadow:
-    0 0 2px #fff,
+    0 0 2px var(--hos-white, #fff),
     0 0 5px color-mix(in srgb, var(--core-color) 58%, #ffd666),
     0 0 9px var(--core-color);
   animation: burning-core-jolt var(--jolt-duration, 0.18s) steps(2, end) var(--jolt-delay, 0s) infinite alternate;
@@ -51,7 +51,7 @@
   top: 50%;
   width: var(--pw);
   height: var(--ph);
-  border-radius: 999px;
+  border-radius: var(--hos-radius-pill, 999px);
   transform-origin: left center;
   background: linear-gradient(
     90deg,
@@ -67,8 +67,8 @@
 }
 
 .burning-particle--ember {
-  border-radius: 50%;
-  background: radial-gradient(circle, #fff 0 18%, var(--pc) 48%, transparent 78%);
+  border-radius: var(--hos-radius-pill, 50%);
+  background: radial-gradient(circle, var(--hos-white, #fff) 0 18%, var(--pc) 48%, transparent 78%);
 }
 
 @keyframes burning-spark-burst {
@@ -126,7 +126,7 @@
  * HarmonyOS 6 风格 燃烧火花与粒子流光增强
  * ========================================================================== */
 .burning-particles::before {
-  box-shadow: 0 0 12px var(--core-color), 0 0 4px #fff !important;
+  box-shadow: 0 0 12px var(--core-color), 0 0 4px var(--hos-white, #fff) !important;
 }
 
 .burning-particle {

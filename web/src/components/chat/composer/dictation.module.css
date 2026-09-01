@@ -10,10 +10,10 @@
 .recordingBar {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--hos-space-2-5, 10px);
   flex: 1 1 auto;
   min-width: 0;
-  padding-left: 4px;
+  padding-left: var(--hos-space-1, 4px);
 }
 
 .recordingPulseLine {
@@ -33,7 +33,7 @@
 .recordingTimer {
   flex: 0 0 auto;
   font-variant-numeric: tabular-nums;
-  font-size: 13px;
+  font-size: var(--hos-text-body-sm, 13px);
   color: #6f6f6f;
 }
 
@@ -48,7 +48,7 @@
   display: block;
   width: 11px;
   height: 11px;
-  border-radius: 3px;
+  border-radius: var(--hos-radius-xs, 3px); /* 归级:原 3px */
   background: currentColor;
 }
 
@@ -58,10 +58,10 @@
 .recordingCapsuleHarmony {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--hos-space-3, 12px);
   flex: 1 1 auto;
   min-width: 0;
-  padding: 4px 14px 4px 10px;
+  padding: var(--hos-space-1, 4px) var(--hos-space-3-5, 14px) var(--hos-space-1, 4px) var(--hos-space-2-5, 10px);
   border-radius: var(--hos-radius-pill, 9999px);
   background: var(--hos-glass-bg-card, rgba(255, 255, 255, 0.9));
   backdrop-filter: var(--hos-blur-subtle, blur(16px)) saturate(180%);
@@ -75,8 +75,8 @@
   width: 8px;
   height: 8px;
   border-radius: var(--hos-radius-pill, 9999px);
-  background: #ef4444;
-  box-shadow: 0 0 10px #ef4444;
+  background: var(--hos-red-500, #ef4444);
+  box-shadow: 0 0 10px var(--hos-red-500, #ef4444);
   animation: hosLivePulse 1.2s ease-in-out infinite;
   flex: 0 0 8px;
 }
@@ -89,7 +89,7 @@
 .recordingWaveformHarmony {
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: var(--hos-space-1, 3px); /* 归级:原 3px */
   height: 18px;
   flex: 1 1 auto;
 }
@@ -98,8 +98,8 @@
   flex: 1;
   max-width: 3px;
   height: 6px;
-  border-radius: 2px;
-  background: linear-gradient(180deg, #ef4444 0%, #f87171 100%);
+  border-radius: var(--hos-radius-xs, 2px); /* 归级:原 2px */
+  background: linear-gradient(180deg, var(--hos-red-500, #ef4444) 0%, #f87171 100%);
   animation: hosWaveBounce 1s ease-in-out infinite;
 }
 
@@ -117,9 +117,9 @@
 
 .recordingTimerHarmony {
   font-family: var(--font-mono, monospace);
-  font-size: 13px;
+  font-size: var(--hos-text-body-sm, 13px);
   font-weight: 600;
-  color: #dc2626;
+  color: var(--hos-red-600, #dc2626);
   font-variant-numeric: tabular-nums;
   flex: 0 0 auto;
 }
@@ -133,20 +133,20 @@
   border-radius: var(--hos-radius-pill, 9999px);
   background: rgba(239, 68, 68, 0.15);
   border: 1px solid rgba(239, 68, 68, 0.3);
-  color: #dc2626;
+  color: var(--hos-red-600, #dc2626);
   cursor: pointer;
   transition: all 0.15s ease;
   flex: 0 0 26px;
 }
 
 .stopDictationBtnHarmony:hover {
-  background: #ef4444;
-  color: #ffffff;
+  background: var(--hos-red-500, #ef4444);
+  color: var(--hos-white, #ffffff);
 }
 
 .stopGlyphHarmony {
   width: 9px;
   height: 9px;
-  border-radius: 2px;
+  border-radius: var(--hos-radius-xs, 2px); /* 归级:原 2px */
   background: currentColor;
 }

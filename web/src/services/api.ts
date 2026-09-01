@@ -1514,13 +1514,14 @@ export const chatAPI = {
     return response.data;
   },
 
-  // 列出某会话仍在服务端跑的 native run（detached：刷新/断连后 run 未死）。
+  // 列出某会话仍在服务端跑的 run（detached：刷新/断连后 run 未死）。
   // 页面打开会话时据此恢复"运行中"状态与待回答的交互 prompt。
+  // mode 区分 'native-session'（默认）与 'api-proxy'；api-proxy run 携带 contentSnapshot（已累积内容快照）。
   listActiveRuns: async (
     sessionId: string,
     provider?: string,
     projectDirName?: string
-  ): Promise<Array<{ runId: string; provider: string; accountRef: string; sessionId: string; startedAt: number; interactionMode: string; activePrompt: InteractivePrompt | null }>> => {
+  ): Promise<Array<{ runId: string; provider: string; accountRef: string; sessionId: string; startedAt: number; interactionMode: string; activePrompt: InteractivePrompt | null; mode?: string; contentSnapshot?: string }>> => {
     if (!sessionId) return [];
     try {
       const params: Record<string, string> = { sessionId };

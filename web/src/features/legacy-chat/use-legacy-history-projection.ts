@@ -9,8 +9,13 @@ import {
 import { message } from 'antd';
 import {
   isSessionRequestCancelled,
+  resolveActiveServer,
   sessionsAPI,
 } from '@/services/api';
+import {
+  readCachedSessionMessages,
+  writeCachedSessionMessages,
+} from '@/services/session-offline-cache';
 import {
   CHAT_SESSION_HISTORY_LOAD_MESSAGE_KEY,
   clearLoadFailureMessage,
@@ -53,6 +58,16 @@ const INITIAL_MESSAGE_COUNT = 30;
 const LOAD_MORE_MESSAGE_COUNT = 20;
 const SESSION_RELOAD_DELAY_MS = 180;
 const REASONING_SNAPSHOT_DELAY_MS = 420;
+
+/** 离线缓存按服务端实例隔离，与 chat-cache.ts 的作用域约定一致。 */
+function offlineCacheScope(): string {
+  try {
+    const server = resolveActiveServer();
+    return `${server.serverId || 'local'}:${server.isRemote ? 'remote' : 'same-origin'}`;
+  } catch {
+    return 'local';
+  }
+}
 
 interface LegacyHistoryProjectionOptions {
   readonly enabled: boolean;
@@ -277,6 +292,8 @@ export function useLegacyHistoryProjection({
     historyState.writeWindow(session, nextWindow);
     historyState.writeMessages(session, history);
     historyState.writeCursor(session, nextWindow.cursor);
+    // 加载成功即写入离线缓存（按 sessionId），供服务端不可达时只读回退。
+    writeCachedSessionMessages(offlineCacheScope(), session, history);
     if (isSameLegacySession(selectedSessionRef.current, session)) {
       const latest = history[history.length - 1];
       const previousLatest = previousHistory[previousHistory.length - 1];
@@ -437,11 +454,25 @@ export function useLegacyHistoryProjection({
         if (!disposed) onHistoryHydrated(session);
       } catch (error) {
         if (!disposed && !isSessionRequestCancelled(error)) {
-          showLoadFailureMessage(
-            message,
-            CHAT_SESSION_HISTORY_LOAD_MESSAGE_KEY,
-            '加载会话历史失败',
-          );
+          // 离线回退：内存没有该会话的旧数据时，读磁盘缓存只读展示并标注来源。
+          const offlineMessages = historyState.readMessages(session)?.length
+            ? []
+            : readCachedSessionMessages(offlineCacheScope(), session);
+          if (offlineMessages.length > 0) {
+            historyState.writeMessages(session, offlineMessages);
+            applySessionHistory(offlineMessages);
+            showLoadFailureMessage(
+              message,
+              CHAT_SESSION_HISTORY_LOAD_MESSAGE_KEY,
+              '服务端不可达，正在展示离线缓存的会话历史',
+            );
+          } else {
+            showLoadFailureMessage(
+              message,
+              CHAT_SESSION_HISTORY_LOAD_MESSAGE_KEY,
+              '加载会话历史失败',
+            );
+          }
         }
       }
     };

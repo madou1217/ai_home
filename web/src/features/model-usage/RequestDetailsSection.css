@@ -2,19 +2,19 @@
   display: flex;
   min-width: 220px;
   flex-wrap: wrap;
-  gap: 4px 12px;
+  gap: var(--hos-space-1, 4px) var(--hos-space-3, 12px);
 }
 
 .request-detail-token-part {
   display: inline-flex;
   align-items: baseline;
-  gap: 4px;
+  gap: var(--hos-space-1, 4px);
   white-space: nowrap;
 }
 
 .request-detail-token-part > span {
   color: var(--app-text-secondary);
-  font-size: 12px;
+  font-size: var(--hos-text-caption, 12px);
 }
 
 .request-detail-token-part > strong {
@@ -24,7 +24,7 @@
 
 .request-detail-mono {
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: var(--hos-text-body-sm, 13px);
 }
 
 .request-detail-cost {
@@ -37,7 +37,7 @@
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--hos-space-0-5, 2px);
 }
 
 .request-detail-error-message {
@@ -47,7 +47,7 @@
 
 .request-detail-load-error {
   display: block;
-  margin-bottom: 8px;
+  margin-bottom: var(--hos-space-2, 8px);
 }
 
 @media (max-width: 767.98px) {

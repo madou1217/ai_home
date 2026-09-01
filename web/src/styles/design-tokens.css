@@ -403,6 +403,48 @@
   --hos-radius-2xl: 32px;
   --hos-radius-pill: 9999px;
 
+  /* HarmonyOS 6 间距阶梯(4pt 基准,含半档) */
+  --hos-space-0-5: 2px;
+  --hos-space-1: 4px;
+  --hos-space-1-5: 6px;
+  --hos-space-2: 8px;
+  --hos-space-2-5: 10px;
+  --hos-space-3: 12px;
+  --hos-space-3-5: 14px;
+  --hos-space-4: 16px;
+  --hos-space-5: 20px;
+  --hos-space-6: 24px;
+  --hos-space-7: 28px;
+  --hos-space-8: 32px;
+  --hos-space-10: 40px;
+  --hos-space-12: 48px;
+
+  /* HarmonyOS 6 色板(常量色;语义/主题色见下文 glass/dark 覆写) */
+  --hos-white: #ffffff;
+  --hos-ink-50: #f8fafc;
+  --hos-ink-100: #ececf4;
+  --hos-ink-200: #e2e8f0;
+  --hos-ink-300: #cbd5e1;
+  --hos-ink-400: #94a3b8;
+  --hos-ink-500: #64748b;
+  --hos-ink-700: #1e293b;
+  --hos-ink-900: #0f172a;
+  --hos-surface-dark-800: #1f1f1f;
+  --hos-surface-dark-900: #1b1b2b;
+  --hos-blue-700: #0a59f7;
+  --hos-blue-600: #2563eb;
+  --hos-blue-500: #3b82f6;
+  --hos-orange-500: #d97757;
+  --hos-orange-600: #d97706;
+  --hos-red-600: #dc2626;
+  --hos-red-500: #ef4444;
+  --hos-green-600: #16a34a;
+  --hos-green-500: #10b981;
+  --hos-amber-500: #f59e0b;
+  --hos-gray-600: #5a5a72;
+  --hos-gray-500: #8c8c8c;
+  --hos-gray-400: #8b8ba3;
+
   /* HarmonyOS 6 亚克力/毛玻璃高斯模糊材质 */
   --hos-blur-subtle: blur(12px) saturate(180%);
   --hos-blur-card: blur(20px) saturate(190%);

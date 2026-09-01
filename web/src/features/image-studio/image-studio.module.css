@@ -1078,8 +1078,17 @@
     padding: var(--hos-space-3, 12px);
   }
 
+  .workspaceIdentity {
+    align-self: stretch;
+  }
+
+  /* 内层容器允许收缩，长标题才能在可用宽度内椭圆截断 */
+  .workspaceIdentity > div {
+    min-width: 0;
+  }
+
   .workspaceIdentity h1 {
-    max-width: calc(100vw - 112px);
+    max-width: 100%;
   }
 
   .workspaceActions {

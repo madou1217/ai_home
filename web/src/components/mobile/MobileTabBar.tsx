@@ -3,9 +3,12 @@ import {
   TeamOutlined,
   BarChartOutlined,
   SettingOutlined,
+  AppstoreOutlined,
 } from '@ant-design/icons';
 import { history, useLocation } from '@umijs/max';
+import { useState } from 'react';
 import type { ReactNode } from 'react';
+import MobileMoreSheet, { isMoreEntryPath } from './MobileMoreSheet';
 
 /**
  * 移动端底部 TabBar —— 跨页主导航（对齐 design.reuse-antd-pro.md 第 2 章：
@@ -60,26 +63,42 @@ const TABS: TabItem[] = [
 export default function MobileTabBar() {
   const location = useLocation();
   const pathname = location.pathname || '';
+  const [moreOpen, setMoreOpen] = useState(false);
+  // 当前页落在「更多」面板覆盖的集合内时，高亮第 5 个 tab 而非静默失去导航态。
+  const moreActive = isMoreEntryPath(pathname);
 
   return (
-    <nav className="mobile-tabbar" aria-label="主导航">
-      {TABS.map((tab) => {
-        const active = tab.match(pathname);
-        return (
-          <button
-            key={tab.key}
-            type="button"
-            className={`mobile-tabbar-item${active ? ' mobile-tabbar-item-active' : ''}`}
-            aria-current={active ? 'page' : undefined}
-            onClick={() => {
-              if (!active) history.push(tab.path);
-            }}
-          >
-            {tab.icon}
-            <span>{tab.label}</span>
-          </button>
-        );
-      })}
-    </nav>
+    <>
+      <nav className="mobile-tabbar" aria-label="主导航">
+        {TABS.map((tab) => {
+          const active = tab.match(pathname);
+          return (
+            <button
+              key={tab.key}
+              type="button"
+              className={`mobile-tabbar-item${active ? ' mobile-tabbar-item-active' : ''}`}
+              aria-current={active ? 'page' : undefined}
+              onClick={() => {
+                if (!active) history.push(tab.path);
+              }}
+            >
+              {tab.icon}
+              <span>{tab.label}</span>
+            </button>
+          );
+        })}
+        <button
+          type="button"
+          className={`mobile-tabbar-item${moreActive ? ' mobile-tabbar-item-active' : ''}`}
+          aria-haspopup="dialog"
+          aria-expanded={moreOpen}
+          onClick={() => setMoreOpen(true)}
+        >
+          <AppstoreOutlined />
+          <span>更多</span>
+        </button>
+      </nav>
+      <MobileMoreSheet open={moreOpen} onClose={() => setMoreOpen(false)} />
+    </>
   );
 }

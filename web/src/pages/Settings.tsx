@@ -1050,14 +1050,15 @@ const Settings = ({ section }: SettingsProps) => {
     >
       {isMobile ? (
         (() => {
-          const items = sectionItems.filter((item) => item.key === 'basic' || item.key === 'aliases');
-          const active = items.find((it) => it.key === settingsTab) || items[0];
+          // 移动端放开全部 section（基础/别名/Server/SSH）：顶栏隐藏后移动端只能经
+          // MobilePills 到达这些区，Server/SSH 卡片本身已做移动适配，直接全量渲染。
+          const active = sectionItems.find((it) => it.key === settingsTab) || sectionItems[0];
           return (
             <>
               <MobilePills
-                items={items.map((it) => ({ key: it.key, label: it.label }))}
+                items={sectionItems.map((it) => ({ key: it.key, label: it.label }))}
                 activeKey={active?.key || 'basic'}
-                onChange={setSettingsTab}
+                onChange={(key) => setSettingsTab(key as SettingsSectionKey)}
               />
               {active?.children}
             </>

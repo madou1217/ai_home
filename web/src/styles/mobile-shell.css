@@ -61,7 +61,7 @@
    *    Chat 是 fullBleed 全高布局、且对话态会隐藏 TabBar，自己管理安全区/留白，不走这里。 */
   .unified-page-wrapper {
     /* 统一到会话页设计语言的浅底,让白色卡片浮起来 */
-    background: var(--m-bg, #f1f1f7);
+    background: var(--hos-mobile-bg, #f1f1f7);
     padding-top: env(safe-area-inset-top);
     /* !important:unified.css 移动端用简写 padding:0 16px 16px 会把 bottom 重置成 16px,
        导致最后一张卡片被固定 TabBar 遮住。这里强制底部留出 TabBar 安全高度。 */
@@ -143,8 +143,8 @@
     background: color-mix(in srgb, var(--hos-white, #ffffff) 86%, transparent);
     -webkit-backdrop-filter: saturate(180%) blur(22px);
     backdrop-filter: saturate(180%) blur(22px);
-    border-top: 1px solid var(--m-line, var(--hos-ink-100, #ececf4));
-    font-family: var(--m-font);
+    border-top: 1px solid var(--hos-ink-100, #ececf4);
+    font-family: var(--hos-mobile-font, 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif);
     transition: transform var(--motion-slow, 0.32s) var(--ease-emphasized, cubic-bezier(0.2, 0, 0, 1));
     will-change: transform;
   }
@@ -158,7 +158,7 @@
     border: none;
     background: transparent;
     cursor: pointer;
-    color: var(--m-ink-3, var(--hos-gray-400, #8b8ba3));
+    color: var(--hos-gray-400, #8b8ba3);
     font-size: var(--hos-text-caption, 11px); /* 归级:原 11px */
     font-weight: 600;
     letter-spacing: -0.01em;
@@ -175,10 +175,93 @@
   .mobile-tabbar-item:active .anticon { transform: scale(0.9); }
 
   /* 选中态:赤陶色 + 图标上方一条短赤陶指示条,干净不遮挡图标 */
-  .mobile-tabbar-item-active { color: var(--m-acc, var(--hos-orange-500, #d97757)); }
+  .mobile-tabbar-item-active { color: var(--hos-orange-500, #d97757); }
   .mobile-tabbar-item-active .anticon {
-    color: var(--m-acc, var(--hos-orange-500, #d97757));
-    filter: drop-shadow(0 2px 6px color-mix(in srgb, var(--m-acc, var(--hos-orange-500, #d97757)) 40%, transparent));
+    color: var(--hos-orange-500, #d97757);
+    filter: drop-shadow(0 2px 6px color-mix(in srgb, var(--hos-orange-500, #d97757) 40%, transparent));
+  }
+}
+
+/* ============================================================================
+ * 「更多」动作面板(MobileMoreSheet):TabBar 第 5 个 tab 弹出的底部 Sheet,
+ * 列低频页面入口。整边框圆角行 + 图标 + 文字,不用左竖条/大块提示块。
+ * ==========================================================================*/
+@media (max-width: 767.98px) {
+  .mobile-more-sheet .ant-drawer-content {
+    border-radius: var(--hos-radius-2xl, 20px) var(--hos-radius-2xl, 20px) 0 0;
+    background: var(--hos-mobile-bg, #f1f1f7);
+    font-family: var(--hos-mobile-font, 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif);
+  }
+  .mobile-more-sheet .ant-drawer-header {
+    border-bottom: none;
+    padding: var(--hos-space-4, 16px) var(--hos-space-4, 16px) var(--hos-space-2, 8px);
+  }
+  .mobile-more-sheet .ant-drawer-title {
+    font-size: var(--hos-text-h3, 16px);
+    font-weight: 700;
+    color: var(--hos-surface-dark-900, #1b1b2b);
+  }
+  .mobile-more-sheet .ant-drawer-body {
+    padding: 0 var(--hos-space-4, 16px) calc(var(--hos-space-4, 16px) + env(safe-area-inset-bottom));
+  }
+
+  .mobile-more-entries {
+    display: flex;
+    flex-direction: column;
+    gap: var(--hos-space-2, 8px);
+  }
+  .mobile-more-entry {
+    display: flex;
+    align-items: center;
+    gap: var(--hos-space-3, 12px);
+    width: 100%;
+    padding: var(--hos-space-3, 12px);
+    border: 1px solid var(--hos-ink-100, #ececf4);
+    border-radius: var(--hos-radius-lg, 16px);
+    background: var(--hos-white, #ffffff);
+    box-shadow: var(--hos-mobile-shadow-xs, 0 1px 2px rgba(27, 27, 43, .05));
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    text-align: start;
+  }
+  .mobile-more-entry:active {
+    background: var(--hos-ink-50, #f6f6fb);
+  }
+  .mobile-more-entry-icon {
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    border-radius: var(--hos-radius-sm, 12px);
+    background: var(--hos-ink-50, #f6f6fb);
+    color: var(--hos-ink-700, #4a4a68);
+    font-size: 18px;
+  }
+  .mobile-more-entry-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: var(--hos-text-body, 14px);
+    font-weight: 600;
+    color: var(--hos-surface-dark-900, #1b1b2b);
+  }
+  .mobile-more-entry-arrow {
+    flex: 0 0 auto;
+    color: var(--hos-gray-400, #8b8ba3);
+    font-size: 12px;
+  }
+
+  /* 当前页入口:赤陶强调,与 TabBar 选中态同一语言 */
+  .mobile-more-entry-active {
+    border-color: color-mix(in srgb, var(--hos-orange-500, #d97757) 45%, var(--hos-ink-100, #ececf4));
+    background: color-mix(in srgb, var(--hos-orange-500, #d97757) 8%, var(--hos-white, #ffffff));
+  }
+  .mobile-more-entry-active .mobile-more-entry-icon {
+    background: color-mix(in srgb, var(--hos-orange-500, #d97757) 14%, var(--hos-white, #ffffff));
+    color: var(--hos-orange-500, #d97757);
+  }
+  .mobile-more-entry-active .mobile-more-entry-label {
+    color: var(--hos-orange-600, #c05a3a);
   }
 }
 
@@ -189,32 +272,32 @@
 @media (max-width: 767.98px) {
   .ant-btn {
     border-radius: var(--hos-radius-sm, 12px);
-    font-family: var(--m-font);
+    font-family: var(--hos-mobile-font, 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif);
     font-weight: 600;
   }
   .ant-btn-primary:not(:disabled) {
-    background: var(--m-acc, var(--hos-orange-500, #d97757)) !important;
+    background: var(--hos-orange-500, #d97757) !important;
     border-color: transparent !important;
-    box-shadow: 0 3px 10px color-mix(in srgb, var(--m-acc, var(--hos-orange-500, #d97757)) 32%, transparent) !important;
+    box-shadow: 0 3px 10px color-mix(in srgb, var(--hos-orange-500, #d97757) 32%, transparent) !important;
   }
   .ant-btn-primary:not(:disabled):hover,
   .ant-btn-primary:not(:disabled):active,
   .ant-btn-primary:not(:disabled):focus {
-    background: color-mix(in srgb, var(--m-acc, var(--hos-orange-500, #d97757)) 88%, #000) !important;
+    background: color-mix(in srgb, var(--hos-orange-500, #d97757) 88%, #000) !important;
     border-color: transparent !important;
   }
   .ant-btn-default:not(:disabled) {
-    border-color: var(--m-line-2, #e2e2ee) !important;
-    color: var(--m-ink, var(--hos-surface-dark-900, #1b1b2b));
-    box-shadow: var(--m-sh-xs);
+    border-color: var(--hos-mobile-line-2, #e2e2ee) !important;
+    color: var(--hos-surface-dark-900, #1b1b2b);
+    box-shadow: var(--hos-mobile-shadow-xs, 0 1px 2px rgba(27, 27, 43, .05));
   }
   .ant-btn-default:not(:disabled):hover {
-    color: var(--m-acc, var(--hos-orange-500, #d97757)) !important;
-    border-color: color-mix(in srgb, var(--m-acc, var(--hos-orange-500, #d97757)) 45%, var(--m-line-2, #e2e2ee)) !important;
+    color: var(--hos-orange-500, #d97757) !important;
+    border-color: color-mix(in srgb, var(--hos-orange-500, #d97757) 45%, var(--hos-mobile-line-2, #e2e2ee)) !important;
   }
   /* 开关选中态:赤陶,与强调色一致 */
-  .ant-switch.ant-switch-checked { background: var(--m-acc, var(--hos-orange-500, #d97757)) !important; }
+  .ant-switch.ant-switch-checked { background: var(--hos-orange-500, #d97757) !important; }
   .ant-switch.ant-switch-checked:hover:not(.ant-switch-disabled) {
-    background: color-mix(in srgb, var(--m-acc, var(--hos-orange-500, #d97757)) 88%, #000) !important;
+    background: color-mix(in srgb, var(--hos-orange-500, #d97757) 88%, #000) !important;
   }
 }

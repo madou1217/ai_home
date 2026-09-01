@@ -118,7 +118,7 @@ test('deleteSelfRelayAccounts fails closed when provider resources are unresolve
   }
 });
 
-test('buildAihServerProfileEnv maps server config to Codex and Claude client environment variables', () => {
+test('buildAihServerProfileEnv maps server config to Codex, Claude and Kimi client environment variables', () => {
   assert.deepEqual(buildAihServerProfileEnv('codex', {}), {
     OPENAI_API_KEY: 'dummy',
     OPENAI_BASE_URL: 'http://127.0.0.1:9527/v1'
@@ -142,7 +142,16 @@ test('buildAihServerProfileEnv maps server config to Codex and Claude client env
     ANTHROPIC_BASE_URL: 'http://127.0.0.1:8317'
   });
 
-  for (const unsupportedProvider of ['grok', 'kimi', 'kiro']) {
+  assert.deepEqual(buildAihServerProfileEnv('kimi', {
+    host: '127.0.0.1',
+    port: 8317,
+    apiKey: ''
+  }), {
+    KIMI_API_KEY: 'dummy',
+    KIMI_BASE_URL: 'http://127.0.0.1:8317/v1'
+  });
+
+  for (const unsupportedProvider of ['grok', 'kiro']) {
     assert.equal(supportsAihServerProfile(unsupportedProvider), false);
     assert.equal(buildAihServerProfileEnv(unsupportedProvider, {}), null);
   }

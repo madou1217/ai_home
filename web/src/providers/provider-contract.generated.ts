@@ -293,7 +293,8 @@ export const PROVIDER_DEFINITIONS = [
       "api_key_account",
       "model_catalog",
       "quota_usage",
-      "usage_scan"
+      "usage_scan",
+      "gateway_profile"
     ],
     "authOptions": [
       {

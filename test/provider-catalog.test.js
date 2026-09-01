@@ -48,7 +48,7 @@ test('ProviderCatalog exposes provider capabilities centrally', () => {
   );
   assert.deepEqual(
     listProvidersByCapability('gatewayProfile'),
-    ['codex', 'claude', 'opencode']
+    ['codex', 'claude', 'opencode', 'kimi']
   );
   assert.deepEqual(
     listProvidersByCapability('accountSessionStore'),

@@ -494,6 +494,16 @@
       "text"
     ]
   },
+  "anthropic/claude-fable-5-1": {
+    "input": [
+      "text",
+      "image",
+      "pdf"
+    ],
+    "output": [
+      "text"
+    ]
+  },
   "anthropic/claude-haiku-4-5": {
     "input": [
       "text",

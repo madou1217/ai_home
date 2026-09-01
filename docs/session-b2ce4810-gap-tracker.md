@@ -70,7 +70,7 @@
 | F9 | OpenAI Responses 优先 WS mode | ✅ | `server.js:1647` 起;实测握手通过 |
 | F10 | OAuth 报错自动定向回退 API Key 账号 | ⚠️ | 通用换号在(`upstream-failure-policy.js:647-662`);**无 auth-type 定向回退策略** |
 | F11 | chat 集成 harness 2(dsh 2.0) | ⚠️ | 12 项吸收清单落地 10 项,见 F20 |
-| F12 | AI 自动发现并规划 + 双模型 review + loop 自动进化 | ❌ | `evolution-planner.ts` 为静态数据结构,无自动进化逻辑 |
+| F12 | AI 自动发现并规划 + 双模型 review + loop 自动进化 | ➖ 剔除 | **非 aih 产品需求**:该会话 /loop 自动执行纪律,2026-09-01 用户裁决剔除(见第十节) |
 | F13 | 上下文动态换算 + 60% 自动压缩 | ✅🔧 | 本次修复,见第一节 #3 |
 | F14 | MessageIconActions:复制代码/重新生成/分流新对话 | ✅ | `MessageIconActions.tsx:35-121`;代码复制由 `CodeBlock.tsx:41-54` 承担 |
 | F15 | StatsLine 度量条(总耗时/首字/速度/Token) | ✅ | `StatsLine.tsx:29-91`,常驻输入区上方;非滚动 sticky 形态 |
@@ -124,8 +124,8 @@
 
 | # | 需求 | 状态 | 备注 |
 |---|------|------|------|
-| P1 | 每轮产出必须 aih codex/claude 带需求+结果双 review | ❌ | 原会话 loop 后期未执行;需门禁化 |
-| P2 | 自维护进度追踪文件(功能矩阵+TODO) | ✅ | `docs/dsh-harmonyos-evolution-matrix.md` + 本文档 |
+| P1 | 每轮产出必须 aih codex/claude 带需求+结果双 review | ➖ 剔除 | **非 aih 产品需求**:loop 验收门禁,2026-09-01 用户裁决剔除(见第十节) |
+| P2 | 自维护进度追踪文件(功能矩阵+TODO) | ➖ 剔除 | **非 aih 产品需求**:该会话工作方式要求;产物已存在(`docs/dsh-harmonyos-evolution-matrix.md` + 本文档) |
 | P3 | loop 15min→8min | ➖ | loop 已停,不适用 |
 | P4 | 汇报必含【已完成】/【待交付 TODO】 | ➖ | loop 纪律,随 loop 停止 |
 | P5 | 所有 UI/功能改动必须 Playwright 双端实测(PC 1440×900/移动 390×844,0 报错 0 溢出) | ⚠️ | 本次修复均做了 PC 端实测;移动端 390×844 未系统执行 |
@@ -263,3 +263,50 @@
 1. F25/F26 两个数据层立项(多模态附件通道、分支会话持久化)——架构级,建议单独排期
 2. chat.module.css 153KB 已达大文件预警线——拆分建议列入下轮 loop(evolution-scan 已自动捕获)
 3. 色板外精确色值约 100 处待设计裁决是否扩板;3 个 bun flaky 测试(zcode-egress×2、message-metrics-format×1)
+
+## 十、需求归类修正(2026-09-01,用户裁决)
+
+### 10.1 裁决内容
+
+用户明确:F12、P1、P2 及 loop 相关条目(P3/P4/P8)是原 claude 会话给**自己**定的自动执行纪律,**不是 aih 产品需求**,从产品需求矩阵剔除,不再跟踪、不补课。由此:
+
+- 6.1 表 F12、6.4 表 P1/P2 状态已就地改为「➖ 剔除」;P3/P4/P8 原已 ➖,同属剔除范围。
+- 第七节 7.1 中 F12/P1 的 ✅ 补救记录(`evolution-scan.js` 扫描器/review 子命令)保留为工具史实,但**不再构成产品需求的闭环义务**;该脚本是否入库、是否扩展均为可选工具决策,与本矩阵无关。
+- P5(Playwright 双端实测)、P6(组件化纪律)、P7(像素级 review)不属于 loop 专属,作为长期工程纪律保留,且已部分固化进 AGENTS.md。
+
+### 10.2 修正后的真实遗留(aih 产品口径)
+
+1. F25/F26 待立项:多模态附件消息通道、分支会话持久化(架构级,单独排期)。
+2. chat.module.css 153KB 大文件预警拆分。
+3. 设计裁决待拍板:色板外精确色值约 100 处是否扩板;D3 归级漂移 2 处(ModeSelector padding 3→2px、气泡尾角 4→8px)是否回调。
+4. 3 个 bun flaky 测试(zcode-egress×2、message-metrics-format×1,时钟敏感)。
+5. F2/D1/D2/D4/D5:朝 dsh/HOS 6.1 的无边界长期演进,可量化内核均已落地,持续迭代。
+
+## 十一、Wave 6-7 持续演进记录(2026-09-01,kimi 会话主导,4+4 路并行)
+
+> 针对 10.2 遗留清单的并行演进。两波均按文件归属切分原子任务、零交集并行;每路自带 build+eslint+单测+Playwright 门禁。
+
+### 11.1 Wave 6(4 路)
+
+| 任务 | 结果 | 证据 |
+|------|------|------|
+| chat.module.css 153KB 拆分(10.2#2) | ✅ | 拆为 10 个域 module(session-list/message-area/composer/message-bubble/file-preview/session-branch/session-diff/share-card/chat-overlays/mobile-layout),postcss 多重集比对 878 条规则拆分前后完全一致;Playwright 双端 computed style 0 差异 |
+| 3 个 bun "flaky" 测试(10.2#4) | ✅ | **根因更正:非时钟敏感,是断言漂移**——`44857a69` 把 10s 内时长改为 1 位小数、`96fe4f4e` 把出口文案泛化去 ZCode,旧断言未跟进;精确对齐源码契约后 3 连跑全绿 |
+| 旧 token 别名迁移(--app-*/--m-*/--radius-*) | ✅(主体) | 396 处 var() 迁到 --hos-* 带原值兜底;design-tokens.css 补语义桥接保持深色主题自适应;三页×双端 computed style 0 diff |
+| D4 双端覆盖全页面审计 | ✅(审计交付) | 12 页逐页取证(截图存 output/playwright/d4-audit/);缺口分级:G1 移动端导航断层(P0)、G2 Settings 移动态裁剪(P1)、G3 studio 标题溢出(P2)、G4 fabric 统计区窄屏错位(P3);附带发现 gate 刷新竞态 bug |
+
+### 11.2 Wave 7(4 路)
+
+| 任务 | 结果 | 证据 |
+|------|------|------|
+| token 迁移收尾 | ✅ | chat 10 module 内 72 处 + 6 个 tsx 内联 16 处迁移;确认零消费方后删除 --app-*/--radius-*/--m-* 全部旧定义块;全仓 grep 双零;web/DESIGN.md 同步 |
+| G1+G2 移动端导航/设置裁剪 | ✅ | MobileTabBar 第 5 个「更多」tab + MobileMoreSheet(5 低频入口,语义图标+--hos-* token);Settings 移动态放开全部 4 section;390×844 实测 5 入口全可达、0 溢出;契约守卫测试 2 项 |
+| G3+G4 + 死代码清单 | ✅ | studio 标题改容器相对约束(390px 椭圆截断);fabric 统计区窄屏纵向堆叠;死代码确认:FabricNodes/FabricRemoteNodes/FabricWebrtcDiagnostics/pages-Studio 四个无路由无引用(只列未删,待用户裁决) |
+| gate 刷新竞态(审计附带发现) | ✅ | 根因:gate 把运行期健康快照(degraded/offline 陈旧落盘)当 setup 完整性硬判。修复:判定维度分离(ready‖configured),native profile store 加初始化屏障;33/33 + 178/178 测试;Playwright 连续刷新 10/10 不再踢回 /server-setup |
+
+### 11.3 修正后剩余遗留
+
+1. F25/F26 待立项(多模态附件通道、分支会话持久化)——架构级,单独排期。
+2. 设计裁决 2 项:色板外 ~100 处色值是否扩板;D3 归级漂移 2 处是否回调。
+3. 死代码 4 个文件删除待用户裁决(G 任务已给清单与证据)。
+4. F2/D1/D2/D4/D5 长期演进:D4 主要缺口(G1/G2/G3/G4)已清零,剩余为持续迭代。

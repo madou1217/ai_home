@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import { CloseOutlined, ReloadOutlined, CodeOutlined, PlusOutlined } from '@ant-design/icons';
 import { terminalAPI } from '@/services/api';
+import { createTerminalRefitter, fitActiveTerminal } from './terminal-refit';
 import styles from './chat.module.css';
 
 interface ShellTerminalPanelProps {
@@ -253,6 +254,26 @@ function ShellTerminalPanel({ visible, onClose, cwd }: ShellTerminalPanelProps) 
     return () => cancelAnimationFrame(raf);
   }, [activeId, height, tabs.length]);
 
+  // 三栏分隔条拖拽/窗口缩放只改容器宽度，上面的 effect 感知不到 → 换行宽度滞后。
+  // 用 ResizeObserver 监听面板容器，rAF 合并后 fit 当前激活 tab。
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const activeIdRef = useRef(activeId);
+  activeIdRef.current = activeId;
+  useEffect(() => {
+    if (!visible) return;
+    const el = panelRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const refitter = createTerminalRefitter(() => {
+      fitActiveTerminal(instancesRef.current, activeIdRef.current);
+    });
+    const observer = new ResizeObserver(() => refitter.notifyResize());
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      refitter.dispose();
+    };
+  }, [visible]);
+
   const closeTab = useCallback((id: string) => {
     const inst = instancesRef.current.get(id);
     if (inst) {
@@ -343,7 +364,7 @@ function ShellTerminalPanel({ visible, onClose, cwd }: ShellTerminalPanelProps) 
     : panelStatus;
 
   return (
-    <div className={styles.shellTerminalPanel} style={{ height }}>
+    <div ref={panelRef} className={styles.shellTerminalPanel} style={{ height }}>
       <div className={styles.shellTerminalResizer} onMouseDown={onDragStart} title="拖拽调整高度" />
       <div className={styles.shellTerminalHeader}>
         <div className={styles.shellTerminalTabs}>

@@ -13,7 +13,8 @@ import {
   PushpinOutlined,
   PushpinFilled,
 } from '@ant-design/icons';
-import { getPinnedSessionIds, togglePinnedSessionId } from './pin-session-state';
+import { getPinnedSessionIds, setPinnedSessionId, togglePinnedSessionId } from './pin-session-state';
+import { crossTabSync } from '@/services/cross-tab-session-sync';
 import type { AggregatedProject, Session } from '@/types';
 import { sessionsAPI } from '@/services/api';
 import ProviderIcon from './ProviderIcon';
@@ -105,7 +106,18 @@ const ProjectList = ({
     e.stopPropagation();
     const next = togglePinnedSessionId(sessionId);
     setPinnedSessionIds(next);
+    // 跨 Tab 同步：置顶变更广播给其他 Tab；接收端只应用不再回播，天然无回环。
+    crossTabSync.broadcast('SESSION_PINNED', { sessionId, pinned: next.has(sessionId) });
   };
+
+  // 订阅其他 Tab 的置顶变更：幂等写入 localStorage 并刷新 UI（此处不广播，避免回环风暴）。
+  useEffect(() => {
+    return crossTabSync.subscribe('SESSION_PINNED', (event) => {
+      const sessionId = String(event?.payload?.sessionId || '');
+      if (!sessionId) return;
+      setPinnedSessionIds(setPinnedSessionId(sessionId, Boolean(event.payload.pinned)));
+    });
+  }, []);
 
   const fetchChatSessions = useCallback(async () => {
     if (mode !== 'chat') return;

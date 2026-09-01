@@ -1,6 +1,7 @@
 import { memo, useMemo, useRef, useState, useEffect } from 'react';
 import type { ChatMessage, Session } from '@/types';
 import MessageBubble from './MessageBubble';
+import { createRafScrollSync } from './raf-scroll-sync';
 
 export interface VirtualConversationListProps {
   messages: ChatMessage[];
@@ -37,14 +38,15 @@ export const VirtualConversationList = memo(function VirtualConversationList({
     const el = containerRef.current?.parentElement;
     if (!el) return;
 
-    const onScroll = () => {
-      setScrollTop(el.scrollTop);
-    };
+    const scrollSync = createRafScrollSync(
+      () => el.scrollTop,
+      (value) => setScrollTop(value),
+    );
 
     setScrollTop(el.scrollTop);
     setContainerHeight(el.clientHeight || 800);
 
-    el.addEventListener('scroll', onScroll, { passive: true });
+    el.addEventListener('scroll', scrollSync.notifyScroll, { passive: true });
 
     const ro = new ResizeObserver((entries) => {
       for (const entry of entries) {
@@ -56,7 +58,8 @@ export const VirtualConversationList = memo(function VirtualConversationList({
     ro.observe(el);
 
     return () => {
-      el.removeEventListener('scroll', onScroll);
+      el.removeEventListener('scroll', scrollSync.notifyScroll);
+      scrollSync.dispose();
       ro.disconnect();
     };
   }, []);

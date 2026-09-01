@@ -31,7 +31,7 @@ interface LegacyChatSurfaceProps {
   readonly runtime: LegacySurfaceRuntime;
   readonly composer: Pick<
     LegacyComposerActions,
-    'changeImages' | 'changeInput' | 'images' | 'input' | 'send' | 'stop'
+    'changeImages' | 'changeInput' | 'images' | 'input' | 'send' | 'sendPrompt' | 'stop'
   >;
   readonly queueActions: LegacyQueueActions;
   readonly onSelectPlanChoice: (choice: string, prompt: InteractivePrompt) => Promise<void>;
@@ -122,6 +122,7 @@ export function LegacyChatSurface({
       onImagesChange={composer.changeImages}
       terminalCwd={selection.session.projectPath}
       onForkSession={onForkSession}
+      onRetry={composer.sendPrompt}
     />
   );
 }

@@ -1,11 +1,9 @@
 import { memo } from 'react';
 import { Button, Space, Tag, Tooltip } from 'antd';
 import {
-  PictureOutlined,
   DownloadOutlined,
   EyeOutlined,
   ShareAltOutlined,
-  ThunderboltFilled,
   DeleteOutlined,
 } from '@ant-design/icons';
 import styles from './HarmonyStudioGalleryCard.module.css';
@@ -53,7 +51,7 @@ export const HarmonyStudioGalleryCard = memo(function HarmonyStudioGalleryCard({
             className={styles.previewBtn}
             onClick={(e) => {
               e.stopPropagation();
-              onPreview && onPreview();
+              onPreview?.();
             }}
           />
         </div>

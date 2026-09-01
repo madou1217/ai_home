@@ -1,11 +1,7 @@
 import { memo } from 'react';
-import { Badge, Button, Dropdown, Space, Tag, Tooltip } from 'antd';
+import { Button, Dropdown, Space, Tag, Tooltip } from 'antd';
 import {
   MoreOutlined,
-  CheckCircleFilled,
-  ExclamationCircleFilled,
-  CloseCircleFilled,
-  ThunderboltFilled,
   DesktopOutlined,
   CodeOutlined,
   DeleteOutlined,
@@ -51,7 +47,6 @@ export const AccountCardGrid = memo(function AccountCardGrid({
       {accounts.map((acc) => {
         const isHealthy = acc.quotaStatus === 'healthy' || acc.schedulableStatus === 'schedulable';
         const isWarning = acc.quotaStatus === 'warning' || acc.schedulableStatus === 'cooldown';
-        const isError = !isHealthy && !isWarning;
 
         const statusText = isHealthy ? '正常就绪' : isWarning ? '冷却中' : '不可用';
         const remainingPct = typeof acc.remainingPct === 'number' ? Math.round(acc.remainingPct) : null;

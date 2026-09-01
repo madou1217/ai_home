@@ -8,7 +8,6 @@ import {
   ControlOutlined,
   SettingOutlined,
   ClearOutlined,
-  RocketOutlined,
   BgColorsOutlined,
 } from '@ant-design/icons';
 import styles from './chat.module.css';
@@ -32,7 +31,6 @@ interface CommandItem {
 export const GlobalCommandPalette = memo(function GlobalCommandPalette({
   open,
   onClose,
-  onSelectModel,
   onClearContext,
 }: Props) {
   const [search, setSearch] = useState('');

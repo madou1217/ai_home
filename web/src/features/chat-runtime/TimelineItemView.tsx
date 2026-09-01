@@ -50,7 +50,11 @@ function TimelineItemView({ item, provider, projectPath, onOpenFile, mobile = fa
     );
   }
   if (item.kind === 'reasoning') {
-    return <ThinkingBlock value={item.content || item.detail.summary || ''} mobile={mobile} />;
+    // 进行态（pending/running）视为流式思考中：显示最新行、右滚跟随并带上“思考中”徽标
+    const running = item.status === 'pending' || item.status === 'running';
+    return (
+      <ThinkingBlock value={item.content || item.detail.summary || ''} mobile={mobile} running={running} />
+    );
   }
 
   const presentation = eventPresentation(item);

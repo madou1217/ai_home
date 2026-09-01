@@ -1,114 +1,54 @@
-import { memo, useMemo, useEffect, useState } from 'react';
+import { memo } from 'react';
 import { FileOutlined, FolderOutlined, LoadingOutlined } from '@ant-design/icons';
-import { fsAPI } from '@/services/api';
+import type { FileReferenceCandidate } from './use-file-reference-candidates';
 import styles from './chat.module.css';
 
-export interface FileReferenceCandidate {
-  name: string;
-  path: string;
-  type: 'file' | 'folder';
-  description?: string;
-}
+export type { FileReferenceCandidate } from './use-file-reference-candidates';
 
 interface Props {
-  query: string;
-  projectPath?: string;
+  candidates: FileReferenceCandidate[];
+  loading: boolean;
+  fetchError: string | null;
+  hasProject: boolean;
   selectedIndex: number;
   onSelect: (item: FileReferenceCandidate) => void;
   onHoverIndex: (index: number) => void;
   visible: boolean;
 }
 
+/**
+ * @ 文件引用下拉（受控渲染层）：候选数据由 useFileReferenceCandidates 提供，
+ * 父组件持有 selectedIndex 以支持键盘 ↑↓ / Tab / Enter 导航。
+ */
 export const FileReferencePopover = memo(function FileReferencePopover({
-  query,
-  projectPath,
+  candidates,
+  loading,
+  fetchError,
+  hasProject,
   selectedIndex,
   onSelect,
   onHoverIndex,
   visible,
 }: Props) {
-  const [remoteCandidates, setRemoteCandidates] = useState<FileReferenceCandidate[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [fetchError, setFetchError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!visible || !projectPath) {
-      setRemoteCandidates([]);
-      setFetchError(null);
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    setFetchError(null);
-
-    // 异步拉取当前工作区项目的文件目录树，支持 @ 动态深度搜索
-    fsAPI.getTree(projectPath)
-      .then((res: any) => {
-        if (cancelled) return;
-        const list: FileReferenceCandidate[] = [];
-        const traverse = (node: any, currentPath = '') => {
-          if (!node) return;
-          const name = node.name || node.title || '';
-          const relPath = currentPath ? `${currentPath}/${name}` : name;
-          const isDir = Boolean(node.isDir || node.children);
-          if (name && !name.startsWith('.') && name !== 'node_modules' && name !== 'dist' && name !== '.git') {
-            list.push({
-              name,
-              path: relPath,
-              type: isDir ? 'folder' : 'file',
-            });
-          }
-          if (Array.isArray(node.children)) {
-            node.children.forEach((c: any) => traverse(c, relPath));
-          }
-        };
-
-        if (Array.isArray(res?.data?.children || res?.children)) {
-          (res.data?.children || res.children).forEach((c: any) => traverse(c));
-        } else if (Array.isArray(res?.data || res)) {
-          (res.data || res).forEach((c: any) => traverse(c));
-        }
-        setRemoteCandidates(list);
-      })
-      .catch((err: any) => {
-        if (!cancelled) {
-          setFetchError(err?.message || '加载项目文件树失败');
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-
-    return () => { cancelled = true; };
-  }, [projectPath, visible]);
-
-  const filtered = useMemo(() => {
-    if (!query) return remoteCandidates.slice(0, 12);
-    const q = query.toLowerCase();
-    return remoteCandidates
-      .filter((c) => c.name.toLowerCase().includes(q) || c.path.toLowerCase().includes(q))
-      .slice(0, 12);
-  }, [query, remoteCandidates]);
-
   if (!visible) return null;
 
   return (
     <div className={styles.slashDropdownMenu} role="listbox" aria-label="File references">
       <div className={styles.slashDropdownHeader}>
         <span>
-          文件引用 @ {loading ? <LoadingOutlined style={{ marginLeft: 4 }} /> : `(${filtered.length})`}
+          文件引用 @ {loading ? <LoadingOutlined style={{ marginLeft: 4 }} /> : `(${candidates.length})`}
         </span>
         <span className={styles.slashDropdownHint}>
           {fetchError ? <span style={{ color: '#ef4444' }}>{fetchError}</span> : '↑↓ 切换 · Tab / Enter 选择'}
         </span>
       </div>
       <div className={styles.slashDropdownViewport}>
-        {filtered.length === 0 && !loading ? (
+        {candidates.length === 0 && !loading ? (
           <div style={{ padding: '12px 14px', fontSize: 12, color: '#94a3b8' }}>
-            {projectPath ? (fetchError ? '无法读取项目目录' : '未找到匹配的工程文件') : '纯聊模式不支持 @ 文件引用'}
+            {hasProject ? (fetchError ? '无法读取项目目录' : '未找到匹配的工程文件') : '纯聊模式不支持 @ 文件引用'}
           </div>
         ) : (
-          filtered.map((item, index) => {
+          candidates.map((item, index) => {
             const active = index === selectedIndex;
             return (
               <button
@@ -121,7 +61,7 @@ export const FileReferencePopover = memo(function FileReferencePopover({
                 onMouseEnter={() => onHoverIndex(index)}
                 onMouseDown={(e) => {
                   e.preventDefault();
-                  onSelect(item as FileReferenceCandidate);
+                  onSelect(item);
                 }}
               >
                 <div className={styles.slashItemIcon}>

@@ -1,8 +1,8 @@
 import ModelCapsuleCard from '@/components/models/ModelCapsuleCard';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './Models.css';
-import { Alert, Form, Input, Modal, Segmented, Select, Space, Switch, Tag, Tooltip, Typography, message, Grid } from 'antd';
-import { ApiOutlined, ArrowLeftOutlined, CopyOutlined, DeleteOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
+import { Alert, Form, Input, Segmented, Select, Space, Switch, Tag, Tooltip, Typography, message, Grid } from 'antd';
+import { ApiOutlined, ArrowLeftOutlined, CopyOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { modelsAPI } from '@/services/api';
 import type {
@@ -205,7 +205,6 @@ export default function Models() {
   const [groupFilter, setGroupFilter] = useState<ModelGroupFilter>('all');
   const [keyword, setKeyword] = useState('');
   const [manualModalOpen, setManualModalOpen] = useState(false);
-  const [updatingModelKeys, setUpdatingModelKeys] = useState<Set<string>>(() => new Set());
   const [manualForm] = Form.useForm();
   const manualProvider = Form.useWatch('provider', manualForm) as Provider | undefined;
   const [queryKeyword, setQueryKeyword] = useState('');
@@ -411,8 +410,6 @@ export default function Models() {
   }, [accountByRef, loadModels, manualForm]);
 
   const updateModelEnabled = useCallback(async (model: ManagedOpenAIModelItem, enabled: boolean) => {
-    const rowKey = getModelRowKey(model);
-    setUpdatingModelKeys((current) => new Set(current).add(rowKey));
     try {
       await modelsAPI.updateModel({
         id: model.id,
@@ -424,12 +421,6 @@ export default function Models() {
       await loadModels({ quiet: true });
     } catch (error: any) {
       message.error(error?.response?.data?.message || error?.message || '更新模型状态失败');
-    } finally {
-      setUpdatingModelKeys((current) => {
-        const next = new Set(current);
-        next.delete(rowKey);
-        return next;
-      });
     }
   }, [loadModels]);
 
@@ -442,8 +433,6 @@ export default function Models() {
       message.warning('请先启用模型');
       return;
     }
-    const rowKey = getModelRowKey(model);
-    setUpdatingModelKeys((current) => new Set(current).add(rowKey));
     try {
       await modelsAPI.updateModel({
         id: model.id,
@@ -456,38 +445,7 @@ export default function Models() {
       await loadModels({ quiet: true });
     } catch (error: any) {
       message.error(error?.response?.data?.message || error?.message || '设置默认模型失败');
-    } finally {
-      setUpdatingModelKeys((current) => {
-        const next = new Set(current);
-        next.delete(rowKey);
-        return next;
-      });
     }
-  }, [loadModels]);
-
-  const deleteManualModel = useCallback((model: ManagedOpenAIModelItem) => {
-    const account = accountByRef.get(model.accountRef);
-    const label = account ? getAccountLabel(account) : model.accountRef;
-    Modal.confirm({
-      title: '删除手动模型',
-      content: `${label && !label.startsWith('acct_') ? label : 'API Key'} · ${model.id}`,
-      okText: '删除',
-      okButtonProps: { danger: true },
-      cancelText: '取消',
-      onOk: async () => {
-        try {
-          await modelsAPI.deleteModel({
-            id: model.id,
-            accountRef: model.accountRef,
-            provider: model.provider
-          });
-          message.success('模型已删除');
-          await loadModels({ quiet: true });
-        } catch (error: any) {
-          message.error(error?.response?.data?.message || error?.message || '删除模型失败');
-        }
-      }
-    });
   }, [loadModels]);
 
   const accountModelRows = useMemo(() => {
@@ -683,9 +641,6 @@ export default function Models() {
     const enabled = model.enabled !== false;
     const rowKey = getModelRowKey(model);
     const displayLabel = getModelDisplayLabel(model.provider, model.id);
-    const defaultControlTip = model.defaultModel
-      ? '当前账号默认模型；切换其他模型即可替换'
-      : (enabled ? '设为此账号默认模型' : '启用模型后可设为默认');
     return (
       <div key={rowKey} style={{ marginBottom: 12 }}>
         <ModelCapsuleCard
@@ -699,112 +654,6 @@ export default function Models() {
           onSetDefault={!model.defaultModel && enabled ? () => updateModelDefault(model, true) : undefined}
           onCopyId={() => copyModelId(model.id)}
         />
-      </div>
-    );
-    return (
-      <div className={`models-model-row ${enabled ? '' : 'models-model-row--disabled'}`.trim()} key={rowKey}>
-        <div className="models-model-row-main">
-          <div className="models-model-title-line">
-            <h3 title={model.id}>{displayLabel || model.id}</h3>
-            <Tooltip title="复制模型 ID">
-              <Button
-                className="copy-icon-btn"
-                type="text"
-                size="small"
-                icon={<CopyOutlined />}
-                onClick={() => copyModelId(model.id)}
-              />
-            </Tooltip>
-          </div>
-          <div className="models-model-row-tags">
-            {model.id.startsWith('opencode-go/') ? <Tag color="green">Go 订阅</Tag> : null}
-            {model.id.startsWith('opencode/') ? <Tag color="blue">Zen 按量</Tag> : null}
-            {model.id.endsWith('-free') ? <Tag>Free 免费</Tag> : null}
-            {model.manual ? <Tag color="processing">手动</Tag> : <Tag>探测</Tag>}
-            {model.defaultModel ? <Tag color="success">默认</Tag> : null}
-            {!enabled ? <Tag>停用</Tag> : null}
-          </div>
-          <p>{displayLabel ? `${model.id} · ` : ''}{model.object} · {model.owned_by || 'aih'}{model.description ? ` · ${model.description}` : ''}</p>
-        </div>
-        {isMobile ? (
-          /* 移动端:iOS 式带标签整行开关(标签在左、开关在右),不再把文字塞进胶囊、
-             也不再让两个开关一左一右飘着。 */
-          <div className="models-model-row-controls">
-            <div className="models-toggle-row">
-              <span className="models-toggle-label">启用此模型</span>
-              <Switch
-                checked={enabled}
-                loading={updatingModelKeys.has(rowKey)}
-                aria-label={`${enabled ? '停用' : '启用'} ${model.accountRef} ${model.id}`}
-                onChange={(checked) => updateModelEnabled(model, checked)}
-              />
-            </div>
-            <div className="models-toggle-row">
-              <span className={`models-toggle-label ${model.defaultModel ? 'models-toggle-label--active' : ''}`.trim()}>
-                设为账号默认
-              </span>
-              <Switch
-                checked={model.defaultModel === true}
-                disabled={!enabled || updatingModelKeys.has(rowKey)}
-                loading={updatingModelKeys.has(rowKey)}
-                aria-label={`默认模型 ${model.accountRef} ${model.id}`}
-                onChange={(checked) => updateModelDefault(model, checked)}
-              />
-            </div>
-            {model.manual ? (
-              <div className="models-toggle-row">
-                <span className="models-toggle-label">手动补充模型</span>
-                <Button
-                  danger
-                  appVariant="icon"
-                  icon={<DeleteOutlined />}
-                  aria-label="删除手动模型"
-                  onClick={() => deleteManualModel(model)}
-                />
-              </div>
-            ) : null}
-          </div>
-        ) : (
-          <>
-            <div className="models-model-row-state">
-              <Switch
-                className="models-model-switch"
-                checked={enabled}
-                loading={updatingModelKeys.has(rowKey)}
-                checkedChildren="启用"
-                unCheckedChildren="停用"
-                aria-label={`${enabled ? '停用' : '启用'} ${model.accountRef} ${model.id}`}
-                onChange={(checked) => updateModelEnabled(model, checked)}
-              />
-            </div>
-            <div className="models-model-row-actions">
-              <Tooltip title={defaultControlTip}>
-                <div className={`models-model-default-control ${model.defaultModel ? 'models-model-default-control--active' : ''}`.trim()}>
-                  <Switch
-                    className="models-model-switch models-model-default-switch"
-                    checked={model.defaultModel === true}
-                    disabled={!enabled || updatingModelKeys.has(rowKey)}
-                    loading={updatingModelKeys.has(rowKey)}
-                    checkedChildren="默认"
-                    unCheckedChildren="默认"
-                    aria-label={`默认模型 ${model.accountRef} ${model.id}`}
-                    onChange={(checked) => updateModelDefault(model, checked)}
-                  />
-                </div>
-              </Tooltip>
-              {model.manual ? (
-                <Tooltip title="删除手动模型">
-                  <Button
-                    danger
-                    appVariant="icon"
-                    icon={<DeleteOutlined />}
-                    onClick={() => deleteManualModel(model)}
-                  />
-                </Tooltip>
-              ) : null}
-            </div>
-          </>
-        )}
       </div>
     );
   };

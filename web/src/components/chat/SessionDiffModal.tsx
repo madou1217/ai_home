@@ -2,7 +2,6 @@ import { memo, useMemo, useState } from 'react';
 import { Modal, Radio, Tag, Empty } from 'antd';
 import {
   DiffOutlined,
-  SwapOutlined,
   CopyOutlined,
   CheckOutlined,
 } from '@ant-design/icons';

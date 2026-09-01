@@ -1,6 +1,6 @@
 import { memo } from 'react';
-import { Modal, Tag } from 'antd';
-import { QuestionCircleOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { Modal } from 'antd';
+import { ThunderboltOutlined } from '@ant-design/icons';
 import styles from './chat.module.css';
 
 export interface ShortcutEntry {

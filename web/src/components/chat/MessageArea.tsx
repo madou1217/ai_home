@@ -1,10 +1,9 @@
 import { useRef, useEffect, useLayoutEffect, useState, useCallback, useMemo } from 'react';
 import { Select, Empty, Button, Drawer, Tooltip } from 'antd';
-import { ArrowDownOutlined, PlusOutlined, CloseOutlined, InfoCircleOutlined, CodeOutlined } from '@ant-design/icons';
+import { ArrowDownOutlined, PlusOutlined, InfoCircleOutlined, CodeOutlined } from '@ant-design/icons';
 import type { ChatMessage, Account, ChatAccount, Session, NativeSlashCommand, QueuedChatMessage, Provider, InteractivePrompt, ModelMetadata } from '@/types';
 import { chatAPI, modelsAPI, sessionsAPI, resolveActiveServer } from '@/services/api';
 import MessageBubble from './MessageBubble';
-import VirtualConversationList from './VirtualConversationList';
 import ProviderIcon from './ProviderIcon';
 import ComposerAccountMenu from './composer/ComposerAccountMenu';
 import ComposerApprovalMenu from './composer/ComposerApprovalMenu';
@@ -17,6 +16,8 @@ import { providerAccentStyle } from './provider-registry';
 import TaskDock from './TaskDock';
 import StatsLine from './StatsLine';
 import SlashCommandMenu from './SlashCommandMenu';
+import FileReferencePopover, { type FileReferenceCandidate } from './FileReferencePopover';
+import { useFileReferenceCandidates } from './use-file-reference-candidates';
 import ContextMeter from './ContextMeter';
 import ComposerAttachmentGallery from './ComposerAttachmentGallery';
 import InSessionSearchBar from './InSessionSearchBar';
@@ -192,6 +193,8 @@ interface Props {
   // 当前项目路径：底部终端新开时直接进入该目录（而非 home）。
   terminalCwd?: string;
   onForkSession?: (messageIndex: number) => void;
+  // 重新生成：用上一轮 user 消息内容直接重发(不改当前草稿)
+  onRetry?: (prompt: string) => void;
 }
 
 const MessageArea = ({
@@ -200,7 +203,7 @@ const MessageArea = ({
   input, loading, loadingStatusText, queuedMessages = [], externalPending = false, externalPendingStatusText, interactivePrompt = null, hasMoreHistory, images = [], onLoadMore, onInputChange,
   onSend, onStop, onEditQueuedMessage, onRemoveQueuedMessage, onSendQueuedMessageNow, onSteerQueuedMessage, approvalMode = 'bypass', onApprovalModeChange, onSelectPlanChoice,
   terminalRun = null, onRegisterTerminalWriter, onTerminalInput, onTerminalResize, onCloseTerminal,
-  onAccountChange, onModelChange, onImagesChange, terminalCwd, onForkSession
+  onAccountChange, onModelChange, onImagesChange, terminalCwd, onForkSession, onRetry
 }: Props) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -510,6 +513,52 @@ const MessageArea = ({
         return tokens.includes(item.command) || item.aliases.some((alias) => tokens.includes(alias));
       }) || null
     : null;
+
+  // @ 文件引用：光标前最近的 `@query` token（行首或空白后的 @ 片段）触发文件树下拉。
+  // 与 slash 命令互斥：slashToken 存在时不弹文件引用（slash 命令必须单独发送，不混普通文本）。
+  const [selectedFileRefIndex, setSelectedFileRefIndex] = useState(0);
+  const [fileRefDismissed, setFileRefDismissed] = useState(false);
+  const pendingFileRefCaretRef = useRef<number | null>(null);
+  const fileRefMatch = useMemo(() => {
+    if (slashToken) return null;
+    const el = textareaRef.current;
+    const caret = el && typeof el.selectionStart === 'number' ? el.selectionStart : input.length;
+    const before = input.slice(0, caret);
+    const match = before.match(/(?:^|\s)@([^\s@]{0,80})$/);
+    if (!match) return null;
+    return { query: match[1], start: caret - match[1].length - 1, end: caret };
+  }, [input, slashToken]);
+  const fileRefMenuOpen = Boolean(fileRefMatch) && !fileRefDismissed;
+  const fileRefs = useFileReferenceCandidates(
+    session?.projectPath,
+    fileRefMatch?.query || '',
+    fileRefMenuOpen,
+  );
+  // 输入继续变化时解除 Esc 屏蔽；query 变化时回到第一个候选。
+  useEffect(() => { setFileRefDismissed(false); }, [input]);
+  useEffect(() => { setSelectedFileRefIndex(0); }, [fileRefMatch?.query]);
+  useEffect(() => {
+    setSelectedFileRefIndex((current) => Math.min(current, Math.max(0, fileRefs.candidates.length - 1)));
+  }, [fileRefs.candidates.length]);
+
+  const applyFileReference = useCallback((item: FileReferenceCandidate | null) => {
+    if (!item || !fileRefMatch) return;
+    const inserted = `@${item.path} `;
+    pendingFileRefCaretRef.current = fileRefMatch.start + inserted.length;
+    onInputChange(`${input.slice(0, fileRefMatch.start)}${inserted}${input.slice(fileRefMatch.end)}`);
+  }, [fileRefMatch, input, onInputChange]);
+
+  // 选中插入后把光标恢复到插入片段末尾（受控 value 变更会把光标甩到末尾）。
+  useLayoutEffect(() => {
+    if (pendingFileRefCaretRef.current === null) return;
+    const pos = pendingFileRefCaretRef.current;
+    pendingFileRefCaretRef.current = null;
+    const el = textareaRef.current;
+    if (el) {
+      el.focus();
+      el.setSelectionRange(pos, pos);
+    }
+  }, [input]);
   const isTerminated = isTerminatedProp || session?.status === 'stopped' || session?.status === 'archived';
   const accountDefaultModel = accountModelState.targetKey === selectedTargetKey ? accountModelState.defaultModel : '';
   const models = accountModelIds.map(m => ({ label: m, value: m }));
@@ -557,12 +606,12 @@ const MessageArea = ({
         provider={sessionProvider}
         session={session}
         mobile={mobile}
-        onRetry={msg.role === 'assistant' ? () => handleSend(displayMessages[i - 1]?.content || '') : undefined}
+        onRetry={msg.role === 'assistant' && onRetry ? () => onRetry(displayMessages[i - 1]?.content || '') : undefined}
         onFork={() => onForkSession?.(i)}
       />
       );
     })
-  ), [displayMessages, mobile, sessionProvider]);
+  ), [displayMessages, mobile, sessionProvider, session, onRetry, onForkSession]);
 
   const activeChecklist = useMemo(
     () => findLatestActiveChecklist(displayMessages),
@@ -594,7 +643,6 @@ const MessageArea = ({
   const showTerminalDock = Boolean(terminalRun && terminalRun.runId);
   const hasComposerDock = Boolean(activeChecklist) || showPlanChoiceDock || showTerminalDock || queuedMessages.length > 0;
   const helperFontSize = mobile ? 13 : 12;
-  const helperMutedFontSize = mobile ? 12 : 11;
 
   // 会话模型默认值的唯一解析处（切会话按会话键重算，不靠"模型失效"触发，避免与父组件竞争）：
   //   · 新会话(draft) / 无记录 → 账号默认模型
@@ -676,6 +724,28 @@ const MessageArea = ({
   }, [slashMatches.length]);
 
   const handleComposerKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // @ 文件引用菜单打开时优先接管导航键（与 slash 命令互斥，见 fileRefMatch）。
+    if (fileRefMenuOpen) {
+      const count = fileRefs.candidates.length;
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setFileRefDismissed(true);
+        return;
+      }
+      if (count > 0 && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+        e.preventDefault();
+        setSelectedFileRefIndex((current) => (
+          e.key === 'ArrowDown' ? (current + 1) % count : (current - 1 + count) % count
+        ));
+        return;
+      }
+      if (count > 0 && (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey))) {
+        e.preventDefault();
+        applyFileReference(fileRefs.candidates[selectedFileRefIndex] || fileRefs.candidates[0] || null);
+        return;
+      }
+    }
+
     if (slashToken) {
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -719,12 +789,16 @@ const MessageArea = ({
 
     handleKeyDown(e);
   }, [
+    applyFileReference,
     applySlashCommand,
     embeddedSlashMatch,
+    fileRefMenuOpen,
+    fileRefs.candidates,
     handleKeyDown,
     hasUnsupportedSlashCommand,
     matchedSlashCommand,
     onInputChange,
+    selectedFileRefIndex,
     selectedSlashIndex,
     slashMatches,
     slashToken
@@ -968,6 +1042,16 @@ const MessageArea = ({
             onSelect={applySlashCommand}
             onHoverIndex={setSelectedSlashIndex}
             visible={Boolean(slashToken && slashMatches.length > 0)}
+          />
+          <FileReferencePopover
+            candidates={fileRefs.candidates}
+            loading={fileRefs.loading}
+            fetchError={fileRefs.fetchError}
+            hasProject={Boolean(session?.projectPath)}
+            selectedIndex={selectedFileRefIndex}
+            onSelect={applyFileReference}
+            onHoverIndex={setSelectedFileRefIndex}
+            visible={fileRefMenuOpen}
           />
           {embeddedSlashMatch && (
             <div style={{ padding: '0 12px 8px', fontSize: helperFontSize, color: '#c25100' }}>

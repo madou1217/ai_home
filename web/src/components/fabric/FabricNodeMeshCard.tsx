@@ -1,11 +1,8 @@
-import { memo, type ReactNode } from 'react';
-import { Button, Space, Tag, Tooltip } from 'antd';
+import { memo } from 'react';
+import { Button, Space, Tag } from 'antd';
 import {
   CloudServerOutlined,
   WifiOutlined,
-  CheckCircleFilled,
-  SyncOutlined,
-  CloseCircleFilled,
   ThunderboltFilled,
   SettingOutlined,
 } from '@ant-design/icons';

@@ -1,14 +1,4 @@
 import { memo, type ReactNode } from 'react';
-import { Space, Tooltip } from 'antd';
-import {
-  ThunderboltFilled,
-  CheckCircleFilled,
-  ExclamationCircleFilled,
-  CloseCircleFilled,
-  CloudServerOutlined,
-  AppstoreOutlined,
-  LineChartOutlined,
-} from '@ant-design/icons';
 import styles from './ServiceWidgetGrid.module.css';
 
 export interface ServiceWidgetProps {

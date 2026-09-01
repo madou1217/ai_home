@@ -1,4 +1,4 @@
-import { Fragment, memo, useEffect, useRef } from 'react';
+import { memo, useEffect, useRef } from 'react';
 import { CodeOutlined } from '@ant-design/icons';
 import type { NativeSlashCommand } from '@/types';
 import styles from './chat.module.css';

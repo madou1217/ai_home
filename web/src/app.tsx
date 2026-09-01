@@ -2,6 +2,7 @@ import type { Settings as LayoutSettings } from "@ant-design/pro-components";
 import { history } from "@umijs/max";
 import { Alert } from "antd";
 import ControlPlaneProfileSelect from "@/components/control-plane/ControlPlaneProfileSelect";
+import AppErrorBoundary from "@/components/ui/AppErrorBoundary";
 import MobileTabBar from "@/components/mobile/MobileTabBar";
 import AppInstallTaskQueue from "@/components/task-queue/AppInstallTaskQueue";
 import {
@@ -27,6 +28,7 @@ import { resolveAppRoutePathname } from "@/services/app-navigation";
 import { isNativeDesktopRuntime } from "@/services/native-server-profile-repository";
 import { startNativeRelayDiscovery } from "@/services/server-routes/native-relay-discovery";
 import { startNativeLanRouteRefresh } from "@/services/server-routes/native-lan-route-refresh";
+import { DynamicWallpaperEngine } from "@/services/dynamic-wallpaper-engine";
 import logo from "../../assets/brand/ai-home-app-icon.png";
 
 // Go 账号 Preview 使用独立的管理端口，不依赖正式 Node Server profile。
@@ -89,6 +91,9 @@ export async function getInitialState(): Promise<{
       navigator.serviceWorker.register('/ui/sw.js').catch(() => {});
     });
   }
+  // 启动时恢复用户保存的动态壁纸（含色彩萃取的强调色光晕），无保存记录时静默跳过。
+  const savedWallpaper = DynamicWallpaperEngine.getSavedWallpaper();
+  if (savedWallpaper) DynamicWallpaperEngine.applyWallpaper(savedWallpaper);
   return {
     settings: {
       layout: "side",
@@ -154,7 +159,10 @@ export const layout = ({ initialState }: any) => {
               style={{ margin: "12px 16px 0" }}
             />
           )}
-          {canRenderWorkspace ? children : null}
+          {/* 页面级渲染兜底：单页 render 抛错不再整树卸载成白屏 */}
+          <AppErrorBoundary>
+            {canRenderWorkspace ? children : null}
+          </AppErrorBoundary>
           {canRenderDataPlane && <AppInstallTaskQueue />}
           {canRenderDataPlane && <MobileTabBar />}
         </>

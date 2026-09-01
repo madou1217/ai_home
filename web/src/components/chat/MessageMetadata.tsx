@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { MobileOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { ChatMessage } from '@/types';

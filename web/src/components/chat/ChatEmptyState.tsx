@@ -13,7 +13,6 @@ interface Props {
 export default function ChatEmptyState({
   mode = 'work',
   projectPath,
-  mobile = false,
   onCreateSession,
   onOpenProject,
 }: Props) {

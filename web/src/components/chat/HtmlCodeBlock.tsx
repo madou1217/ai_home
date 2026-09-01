@@ -11,7 +11,7 @@ interface Props {
   language?: string;
 }
 
-export default function HtmlCodeBlock({ code, language = 'html' }: Props) {
+export default function HtmlCodeBlock({ code }: Props) {
   const [viewMode, setViewMode] = useState<'code' | 'preview'>('preview');
   const [copied, setCopied] = useState(false);
 

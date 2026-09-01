@@ -20,6 +20,7 @@ import {
 import ChatRuntimeBoundary from '@/features/chat-runtime/ChatRuntimeBoundary';
 import ChatWorkspaceLayout from '@/features/legacy-chat/ChatWorkspaceLayout';
 import ProjectWorkbench from '@/features/project-workbench/ProjectWorkbench';
+import { resolveWorkbenchSessions } from '@/features/project-workbench/workbench-sessions';
 import LegacyChatRuntime from '@/features/legacy-chat/LegacyChatRuntime';
 import { useChatAccountCatalog } from '@/features/legacy-chat/use-chat-account-catalog';
 import { useProjectDialogs } from '@/features/legacy-chat/use-project-dialogs';
@@ -28,6 +29,7 @@ import type { PersistedChatSelection } from '@/features/legacy-chat/runtime-type
 import {
   readPersistedSelection,
 } from './chat-selection-state.js';
+import { shouldMobileDeepLinkEnterChat } from './chat-mobile-deeplink';
 import {
   mergeRunningSessionKeys,
   useChatSessionRestore,
@@ -84,6 +86,8 @@ export default function Chat() {
       projectPath: initialSelectionRef.current.projectPath,
       nativeSessionId: initialSelectionRef.current.sessionId,
     }),
+    undefined,
+    { catalogLoading: projectCatalog.loadingProjects },
   );
   const accountCatalog = useChatAccountCatalog(projectCatalog.selectedSession?.provider);
   const [selectedModel, setSelectedModel] = useState('');
@@ -134,6 +138,16 @@ export default function Chat() {
       setMobileShowChat(false);
     }
   }, [mobile, projectCatalog.projects.length, projectCatalog.selectedProject, projectCatalog.selectedSession]);
+
+  // 移动端深链直达：URL/持久化恢复的会话不经过 handleSelectSession，
+  // mobileShowChat 停在 false 会一直停在列表屏，恢复命中后补一次进详情屏。
+  const mobileDeepLinkRef = useRef(false);
+  useEffect(() => {
+    if (!mobile || mobileDeepLinkRef.current) return;
+    if (!shouldMobileDeepLinkEnterChat(initialSelectionRef.current, projectCatalog.selectedSession)) return;
+    mobileDeepLinkRef.current = true;
+    setMobileShowChat(true);
+  }, [mobile, projectCatalog.selectedSession]);
 
   const handleLegacyRunningSessionKeysChange = useCallback((keys: Set<string>): void => {
     setLegacyRunningSessionKeys(keys);
@@ -252,26 +266,70 @@ export default function Chat() {
     : (projectCatalog.selectedProject?.name || '项目会话');
 
   const projectList = (
-    <ProjectList
-      mobile={mobile}
-      projects={canonicalDirectory.projects}
-      loading={projectCatalog.loadingProjects}
-      hydratingProjectPaths={projectCatalog.hydratingProjectPaths}
-      runningSessionKeys={runningSessionKeys}
-      selectedSession={projectCatalog.selectedSession}
-      selectedProject={projectCatalog.selectedProject}
-      expandedProjects={projectCatalog.expandedProjects}
-      mode={workspaceMode}
-      onModeChange={handleModeChange}
-      onRefresh={refreshProjectList}
-      onToggleProject={projectCatalog.toggleProject}
-      onSelectProject={handleSelectProject}
-      onSelectSession={handleSelectSession}
-      onOpenProject={dialogs.openProject}
-      onCreateSession={handleCreateSession}
-      onProjectRemoved={handleProjectRemoved}
-      remoteSessionsPanel={null}
-    />
+    <div style={{ position: 'relative', height: '100%', minHeight: 0 }}>
+      <ProjectList
+        mobile={mobile}
+        projects={canonicalDirectory.projects}
+        loading={projectCatalog.loadingProjects}
+        hydratingProjectPaths={projectCatalog.hydratingProjectPaths}
+        runningSessionKeys={runningSessionKeys}
+        selectedSession={projectCatalog.selectedSession}
+        selectedProject={projectCatalog.selectedProject}
+        expandedProjects={projectCatalog.expandedProjects}
+        mode={workspaceMode}
+        onModeChange={handleModeChange}
+        onRefresh={refreshProjectList}
+        onToggleProject={projectCatalog.toggleProject}
+        onSelectProject={handleSelectProject}
+        onSelectSession={handleSelectSession}
+        onOpenProject={dialogs.openProject}
+        onCreateSession={handleCreateSession}
+        onProjectRemoved={handleProjectRemoved}
+        remoteSessionsPanel={null}
+      />
+      {canonicalDirectory.status === 'failed' ? (
+        <div
+          role="alert"
+          style={{
+            position: 'absolute',
+            left: 12,
+            right: 12,
+            bottom: 12,
+            zIndex: 2,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 8,
+            padding: '6px 12px',
+            borderRadius: 'var(--hos-radius-lg, 14px)',
+            background: 'var(--hos-glass-bg-subtle, rgba(255, 255, 255, 0.85))',
+            boxShadow: 'var(--hos-shadow-floating, 0 12px 36px -4px rgba(0, 0, 0, 0.08))',
+            fontSize: 12,
+            color: 'var(--color-text-secondary, #6b7280)',
+          }}
+        >
+          <span>
+            {canonicalDirectory.offlineCached
+              ? '服务端不可达，展示离线缓存的会话列表'
+              : '会话目录同步失败，展示的是最近一次结果'}
+          </span>
+          <button
+            type="button"
+            onClick={refreshProjectList}
+            style={{
+              border: 'none',
+              background: 'transparent',
+              padding: 0,
+              cursor: 'pointer',
+              fontSize: 12,
+              color: 'var(--hos-primary-blue, #0a59f7)',
+            }}
+          >
+            重试
+          </button>
+        </div>
+      ) : null}
+    </div>
   );
 
   const runtimeContent = (
@@ -346,6 +404,13 @@ export default function Chat() {
       projectPath={projectCatalog.selectedProject?.path}
       mobile={mobile}
       chat={runtimeContent}
+      sessions={resolveWorkbenchSessions(
+        canonicalDirectory.projects,
+        projectCatalog.selectedProject?.path,
+      )}
+      selectedSession={projectCatalog.selectedSession}
+      runningSessionKeys={runningSessionKeys}
+      onSelectSession={handleSelectSession}
     />
   );
   const navigation = useMobileChatNavigation(setMobileShowChat);

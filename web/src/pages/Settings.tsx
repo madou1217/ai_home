@@ -57,6 +57,7 @@ import {
   buildServerRouteRows
 } from '@/services/server-route-presentation';
 import { buildAppHref } from '@/services/app-navigation';
+import { DynamicWallpaperEngine } from '@/services/dynamic-wallpaper-engine';
 
 type NumericAddonInputProps = ComponentProps<typeof InputNumber> & {
   addonAfter: React.ReactNode;
@@ -188,6 +189,39 @@ const Settings = ({ section }: SettingsProps) => {
   const [restarting, setRestarting] = useState(false);
   const [restartEvent, setRestartEvent] = useState<ManagementRestartEvent | null>(null);
   const restartFallbackTimerRef = useRef<number | null>(null);
+  // 动态壁纸：localStorage 持久化 + 启动恢复（见 app.tsx），此处仅作设置入口。
+  const [hasCustomWallpaper, setHasCustomWallpaper] = useState(() => Boolean(DynamicWallpaperEngine.getSavedWallpaper()));
+  const wallpaperFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleWallpaperFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      message.warning('请选择图片文件');
+      return;
+    }
+    // dataUrl 持久化在 localStorage，限制原图体积避免撑爆配额。
+    if (file.size > 2 * 1024 * 1024) {
+      message.warning('图片不能超过 2MB');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = String(reader.result || '');
+      if (!dataUrl) return;
+      DynamicWallpaperEngine.saveWallpaper(dataUrl);
+      setHasCustomWallpaper(true);
+      message.success('动态壁纸已应用');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleWallpaperClear = () => {
+    DynamicWallpaperEngine.clearWallpaper();
+    setHasCustomWallpaper(false);
+    message.success('已恢复默认背景');
+  };
 
   const syncControlPlaneProfiles = (profiles: ControlPlaneProfile[], preferredProfileId = '') => {
     const resolution = preferredProfileId
@@ -592,6 +626,40 @@ const Settings = ({ section }: SettingsProps) => {
               进入工具箱
             </Button>
           }
+        />
+      </SettingsGroupCard>
+
+      <SettingsGroupCard
+        title="外观个性化"
+        description="自定义动态壁纸，自动从图片萃取强调色并生成全局光晕背景。"
+      >
+        <SettingsItem
+          title="自定义动态壁纸"
+          subtitle={hasCustomWallpaper ? '已应用自定义壁纸（≤2MB 图片）' : '选择一张图片作为全局背景'}
+          action={
+            <Button onClick={() => wallpaperFileInputRef.current?.click()}>
+              选择图片
+            </Button>
+          }
+        />
+        {hasCustomWallpaper && (
+          <SettingsItem
+            title="恢复默认背景"
+            subtitle="清除自定义壁纸与萃取的强调色"
+            danger
+            action={
+              <Button danger onClick={handleWallpaperClear}>
+                恢复默认
+              </Button>
+            }
+          />
+        )}
+        <input
+          ref={wallpaperFileInputRef}
+          type="file"
+          accept="image/*"
+          style={{ display: 'none' }}
+          onChange={handleWallpaperFileChange}
         />
       </SettingsGroupCard>
 

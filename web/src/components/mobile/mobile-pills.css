@@ -25,10 +25,10 @@
 
 .mpill {
   flex: none;
-  border: 1px solid var(--m-line, var(--hos-ink-100, #ececf4));
-  background: var(--m-surface, var(--hos-white, #fff));
-  color: var(--m-ink-2, var(--hos-gray-600, #5a5a72));
-  font-family: var(--m-font);
+  border: 1px solid var(--hos-ink-100, #ececf4);
+  background: var(--hos-white, #ffffff);
+  color: var(--hos-gray-600, #5a5a72);
+  font-family: var(--hos-mobile-font, 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif);
   font-size: var(--hos-text-body, 14px);
   font-weight: 600;
   line-height: 1;
@@ -37,14 +37,14 @@
   cursor: pointer;
   white-space: nowrap;
   min-height: 38px;
-  box-shadow: var(--m-sh-xs);
+  box-shadow: var(--hos-mobile-shadow-xs, 0 1px 2px rgba(27, 27, 43, .05));
   transition: background .15s, color .15s, border-color .15s;
 }
 .mpill.active {
-  background: var(--m-acc, var(--hos-orange-500, #d97757));
+  background: var(--hos-orange-500, #d97757);
   border-color: transparent;
   color: var(--hos-white, #fff);
-  box-shadow: 0 3px 9px color-mix(in srgb, var(--m-acc, var(--hos-orange-500, #d97757)) 38%, transparent);
+  box-shadow: 0 3px 9px color-mix(in srgb, var(--hos-orange-500, #d97757) 38%, transparent);
 }
 
 .mpills-trailing { flex: none; }

@@ -7,7 +7,7 @@ import {
   formatTtftLabel,
   formatTokensPerSecLabel,
 } from './message-metrics-format';
-import styles from './chat.module.css';
+import styles from './message-bubble.module.css';
 
 interface Props {
   role: ChatMessage['role'];

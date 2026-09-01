@@ -1,14 +1,14 @@
 .cp-server-list {
-  --cp-font: var(--m-font, 'Plus Jakarta Sans', -apple-system, sans-serif);
-  --cp-acc: var(--m-acc, var(--hos-orange-500, #d97757));
-  --cp-run: var(--m-run, #13a65a);
+  --cp-font: var(--hos-mobile-font, 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif);
+  --cp-acc: var(--hos-orange-500, #d97757);
+  --cp-run: var(--hos-mobile-run, #13a65a);
   --cp-warn: var(--hos-orange-600, #d97706);
   --cp-crit: var(--hos-red-600, #dc2626);
-  --cp-ink: var(--m-ink, var(--hos-surface-dark-900, #1b1b2b));
-  --cp-ink-2: var(--m-ink-2, var(--hos-gray-600, #5a5a72));
-  --cp-ink-3: var(--m-ink-3, var(--hos-gray-400, #8b8ba3));
-  --cp-line: var(--m-line, var(--hos-ink-100, #ececf4));
-  --cp-surface: var(--m-surface, var(--hos-white, #fff));
+  --cp-ink: var(--hos-surface-dark-900, #1b1b2b);
+  --cp-ink-2: var(--hos-gray-600, #5a5a72);
+  --cp-ink-3: var(--hos-gray-400, #8b8ba3);
+  --cp-line: var(--hos-ink-100, #ececf4);
+  --cp-surface: var(--hos-white, #ffffff);
   --cp-radius: 16px;
   --cp-sh: 0 1px 3px rgba(27, 27, 43, .06), 0 1px 2px rgba(27, 27, 43, .04);
 
@@ -200,4 +200,11 @@
 .cp-footer-pending {
   color: var(--cp-ink-3);
   font-weight: 500;
+}
+
+/* control-planes 统计区（服务器/可调度账号/会话）：窄屏纵向堆叠，避免三列挤压折行错位 */
+@media (max-width: 767px) {
+  .settings-control-plane-shell .ant-pro-statistic-card.ant-pro-card-contain-card > .ant-pro-card-body {
+    flex-direction: column;
+  }
 }

@@ -1,0 +1,179 @@
+/* 拆分自 chat.module.css（纯搬运，样式值零变化）。域: mobile-layout */
+
+/* ============================================================================
+ * 移动端导航栈（iOS 风格：列表页 ⇄ 对话页 push/pop，取代抽屉）
+ * ========================================================================== */
+.mobileStack {
+  position: relative;
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--color-bg);
+}
+
+.mobileScreen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--color-bg);
+  transition: transform var(--motion-slow) var(--ease-emphasized);
+  will-change: transform;
+}
+
+/* 列表页：被对话页覆盖时轻微视差后退 */
+.mobileScreenBehind {
+  transform: translateX(-22%);
+}
+
+/* 对话页：默认停在右侧屏外，激活时滑入 */
+.mobileScreenChat {
+  transform: translateX(100%);
+  box-shadow: -8px 0 28px color-mix(in srgb, var(--c-neutral-900) 14%, transparent);
+  z-index: var(--z-raised);
+}
+
+.mobileScreenActive {
+  transform: translateX(0);
+}
+
+.mobileScreenBody {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 列表屏（导航栈根视图）：底部为 MobileTabBar 让位，最后一条会话不被遮住。
+ * 对话屏（.mobileScreenChat）进入沉浸态、TabBar 已隐藏，不需要此留白。 */
+.mobileScreen:not(.mobileScreenChat) .mobileScreenBody {
+  padding-bottom: var(--mobile-tabbar-safe, 52px);
+}
+
+/* 顶部导航条（毛玻璃 + 安全区）——移动端要"大大方方":增高到 56px、横向留白加大、
+ * 毛玻璃底色更实(82%→90%)避免深色主题透出黑底、模糊稍重。ProLayout 顶栏高度已回收,
+ * 顶部有充足垂直空间,不再压缩。 */
+.mobileNav {
+  position: relative;
+  z-index: var(--z-sticky);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 56px;
+  padding: calc(env(safe-area-inset-top) + var(--space-3)) var(--space-6) var(--space-3);
+  background: color-mix(in srgb, var(--color-bg-elevated) 90%, transparent);
+  -webkit-backdrop-filter: saturate(180%) blur(22px);
+  backdrop-filter: saturate(180%) blur(22px);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.mobileNavSide {
+  flex: none;
+  min-width: 76px;
+  display: flex;
+  align-items: center;
+}
+
+.mobileNavSide:last-child {
+  justify-content: flex-end;
+}
+
+.mobileNavTitleLarge {
+  flex: 1;
+  font-family: var(--font-display);
+  /* iOS large-title:恢复 2xl/extrabold,列表根视图标题要大气醒目 */
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-extrabold);
+  letter-spacing: var(--tracking-tight);
+  color: var(--color-heading);
+}
+
+.mobileNavCenter {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+}
+
+.mobileNavTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  color: var(--color-heading);
+}
+
+.mobileNavBadge {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--hos-radius-10, 10px);
+  background: var(--provider-accent-soft, var(--color-surface-muted));
+}
+
+.mobileNavBadge img,
+.mobileNavBadge [data-provider-icon-fallback] {
+  position: relative;
+  z-index: 1;
+  border-radius: var(--hos-radius-xs, 4px); /* 归级:原 4px */
+}
+
+.mobileNavBadgeRunning::after {
+  content: '';
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 6px;
+  height: 6px;
+  border: 2px solid var(--color-surface);
+  border-radius: var(--hos-radius-pill, 50%);
+  background: var(--provider-accent, var(--color-success));
+  box-shadow: 0 0 0 1px var(--provider-accent-soft, var(--color-success-soft));
+}
+
+.mobileBack {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--hos-space-0-5, 1px); /* 归级:原 1px */
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--provider-accent, var(--color-info));
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+  padding: var(--space-2) var(--space-3) var(--space-2) 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobileBack:active { opacity: 0.45; }
+
+.mobileBack svg { font-size: var(--text-xl); }
+
+.mobileNavAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: var(--hos-radius-pill, 999px);
+  background: transparent;
+  cursor: pointer;
+  color: var(--color-heading);
+  font-size: var(--text-lg);
+  -webkit-tap-highlight-color: transparent;
+  transition: background var(--motion-fast) var(--ease-standard);
+}
+
+.mobileNavAction:active { background: var(--color-surface-muted); }

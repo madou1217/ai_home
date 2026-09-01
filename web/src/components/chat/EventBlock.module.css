@@ -133,7 +133,7 @@
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-1) var(--space-4);
-  border-radius: var(--radius-pill);
+  border-radius: var(--hos-radius-pill, 999px);
   background: var(--bd-soft);
   color: var(--bd);
   font-size: var(--text-2xs);
@@ -154,7 +154,7 @@
 .badgeDot {
   width: 6px;
   height: 6px;
-  border-radius: var(--radius-pill);
+  border-radius: var(--hos-radius-pill, 999px);
   background: currentColor;
 }
 
@@ -242,7 +242,7 @@
   padding: var(--space-2) var(--space-4);
   margin-left: calc(var(--space-4) * -1);
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--hos-radius-xs, 8px);
   background: transparent;
   color: var(--provider-accent, var(--color-info));
   font-size: var(--text-base);
@@ -289,7 +289,7 @@
   display: inline-flex;
   align-items: center;
   padding: var(--space-2) var(--space-5);
-  border-radius: var(--radius-sm);
+  border-radius: var(--hos-radius-xs, 8px);
   background: var(--evt-soft);
   color: var(--color-heading);
   font-size: var(--text-base);
@@ -303,7 +303,7 @@
   gap: var(--space-3);
   padding: var(--space-2) var(--space-5);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--hos-radius-xs, 8px);
   background: var(--color-surface);
   color: var(--color-muted-strong);
   font-size: var(--text-sm);
@@ -362,7 +362,7 @@
 .progressTrack {
   position: relative;
   height: 4px;
-  border-radius: var(--radius-pill);
+  border-radius: var(--hos-radius-pill, 999px);
   background: var(--color-surface-sunken);
   overflow: hidden;
   margin: var(--space-1) 0 var(--space-6);
@@ -372,7 +372,7 @@
   left: 0;
   top: 0;
   bottom: 0;
-  border-radius: var(--radius-pill);
+  border-radius: var(--hos-radius-pill, 999px);
   background: var(--evt);
   transition: width var(--motion-slow) var(--ease-standard);
 }
@@ -406,7 +406,7 @@
   width: 8px;
   height: 8px;
   margin-top: var(--hos-space-1-5, 6px);
-  border-radius: var(--radius-pill);
+  border-radius: var(--hos-radius-pill, 999px);
   background: var(--task-color);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--task-color) 18%, transparent);
 }
@@ -480,7 +480,7 @@
   display: inline-flex;
   align-items: center;
   padding: var(--space-1) var(--space-4);
-  border-radius: var(--radius-sm);
+  border-radius: var(--hos-radius-xs, 8px);
   background: var(--evt-soft);
   color: var(--evt);
   font-size: var(--text-2xs);
@@ -491,7 +491,7 @@
 .options { display: flex; flex-direction: column; gap: var(--space-4); }
 .option {
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--hos-radius-10, 10px);
   padding: var(--space-5) var(--space-6);
   background: var(--color-surface);
   transition: border-color var(--motion-fast) var(--ease-standard),

@@ -5,7 +5,7 @@ import '@xterm/xterm/css/xterm.css';
 import { CloseOutlined, ReloadOutlined, CodeOutlined, PlusOutlined } from '@ant-design/icons';
 import { terminalAPI } from '@/services/api';
 import { createTerminalRefitter, fitActiveTerminal } from './terminal-refit';
-import styles from './chat.module.css';
+import styles from './composer/composer.module.css';
 
 interface ShellTerminalPanelProps {
   visible: boolean;

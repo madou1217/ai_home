@@ -17,8 +17,8 @@ body,
 }
 
 body {
-  background: var(--app-bg);
-  color: var(--app-text);
+  background: var(--hos-bg, #f8fafc);
+  color: var(--hos-text, #1e293b);
   font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -46,7 +46,7 @@ button {
 
 ::selection {
   background: color-mix(in srgb, var(--hos-blue-700, #0a59f7) 22%, transparent);
-  color: var(--app-heading);
+  color: var(--hos-heading, #0f172a);
 }
 
 /* ===== HarmonyOS 6 全局 Ant Design 组件超级曲率与通透材质重塑 ===== */

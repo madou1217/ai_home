@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { StructuredChecklist } from './message-structure';
 import { countChecklistProgress, getChecklistState, getChecklistStateLabel, getTaskStatusLabel } from './message-structure';
-import styles from './chat.module.css';
+import styles from './message-bubble.module.css';
 
 interface Props {
   checklist: StructuredChecklist;

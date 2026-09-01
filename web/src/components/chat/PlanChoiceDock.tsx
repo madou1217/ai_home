@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import styles from './chat.module.css';
+import styles from './composer/composer.module.css';
 import type { InteractivePrompt, InteractivePromptOption } from '@/types';
 
 export type PlanChoiceDockOption = InteractivePromptOption;

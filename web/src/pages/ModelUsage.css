@@ -274,7 +274,7 @@
   grid-template-columns: 1.15fr repeat(6, minmax(0, 1fr));
   margin-bottom: var(--hos-space-4, 18px); /* 归级:原 18px */
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--hos-radius-sm, 12px);
   background: var(--color-surface-raised);
   overflow: hidden;
 }
@@ -324,7 +324,7 @@
   width: 30px;
   height: 30px;
   flex: 0 0 auto;
-  border-radius: var(--radius-sm);
+  border-radius: var(--hos-radius-xs, 8px);
   background: var(--color-surface-muted);
   place-items: center;
 }
@@ -363,7 +363,7 @@
   width: 32px;
   height: 32px;
   flex: 0 0 auto;
-  border-radius: var(--radius-sm);
+  border-radius: var(--hos-radius-xs, 8px);
   color: var(--color-muted);
   place-items: center;
 }

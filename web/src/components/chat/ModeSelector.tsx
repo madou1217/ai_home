@@ -1,6 +1,6 @@
 import React, { memo } from 'react';
 import { MessageOutlined, CodeOutlined } from '@ant-design/icons';
-import styles from './chat.module.css';
+import styles from './composer/composer.module.css';
 
 export type WorkspaceMode = 'chat' | 'work';
 

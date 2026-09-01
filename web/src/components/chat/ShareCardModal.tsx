@@ -9,7 +9,7 @@ import {
   UserOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import styles from './chat.module.css';
+import styles from './share-card.module.css';
 
 export interface ShareCardModalProps {
   open: boolean;

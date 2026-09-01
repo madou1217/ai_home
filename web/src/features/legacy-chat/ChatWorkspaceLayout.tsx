@@ -5,7 +5,7 @@ import PageScaffold from '@/components/ui/PageScaffold';
 import MobileBackButton from '@/components/mobile/MobileBackButton';
 import ProviderIcon from '@/components/chat/ProviderIcon';
 import { providerAccentStyle } from '@/components/chat/provider-registry';
-import styles from '@/components/chat/chat.module.css';
+import styles from '@/components/chat/mobile-layout.module.css';
 import type { Session } from '@/types';
 
 type ChatWorkspaceLayoutProps = {

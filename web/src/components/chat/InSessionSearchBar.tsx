@@ -6,7 +6,7 @@ import {
   CloseOutlined,
 } from '@ant-design/icons';
 import type { ChatMessage } from '@/types';
-import styles from './chat.module.css';
+import styles from './composer/composer.module.css';
 
 export interface InSessionSearchBarProps {
   open: boolean;

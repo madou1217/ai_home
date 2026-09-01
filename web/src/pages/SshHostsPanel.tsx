@@ -334,11 +334,11 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
   const renderDiagnosticDrawerContent = () => {
     if (!activeDiagnosticConn) return null;
     const state = testStates[activeDiagnosticConn.id];
-    if (!state) return <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--app-muted)' }}>等待测试连接...</div>;
+    if (!state) return <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--hos-muted, #64748b)' }}>等待测试连接...</div>;
     if (state.loading) return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', flexDirection: 'column', gap: 12 }}>
-        <LoadingOutlined style={{ fontSize: 24, color: 'var(--app-primary)' }} />
-        <span style={{ color: 'var(--app-muted)', fontSize: 13 }}>正在连接远程主机并执行依赖诊断，请稍后...</span>
+        <LoadingOutlined style={{ fontSize: 24, color: 'var(--hos-blue-700, #0a59f7)' }} />
+        <span style={{ color: 'var(--hos-muted, #64748b)', fontSize: 13 }}>正在连接远程主机并执行依赖诊断，请稍后...</span>
       </div>
     );
 
@@ -374,9 +374,9 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
         )}
 
         {result.status === 'reachable' && (
-          <div style={{ background: 'var(--app-surface-muted)', padding: '16px', borderRadius: '8px', border: '1px solid var(--app-border)' }}>
+          <div style={{ background: 'var(--hos-surface-muted, #f1f5f9)', padding: '16px', borderRadius: '8px', border: '1px solid var(--hos-border, #e2e8f0)' }}>
             <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 12, color: 'var(--app-muted)', marginBottom: 4 }}>系统平台 / 架构</div>
+              <div style={{ fontSize: 12, color: 'var(--hos-muted, #64748b)', marginBottom: 4 }}>系统平台 / 架构</div>
               <Space size={6}>
                 <Tag color="blue">{result.platform || '未知'}</Tag>
                 <Tag color="cyan">{result.arch || '未知'}</Tag>
@@ -384,7 +384,7 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
             </div>
 
             <div>
-              <div style={{ fontSize: 12, color: 'var(--app-muted)', marginBottom: 8 }}>依赖项检测</div>
+              <div style={{ fontSize: 12, color: 'var(--hos-muted, #64748b)', marginBottom: 8 }}>依赖项检测</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span>Node.js</span>
@@ -406,9 +406,9 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
             </div>
 
             {result.recommendation && (
-              <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--app-border)' }}>
-                <div style={{ fontSize: 12, color: 'var(--app-muted)', marginBottom: 4 }}>诊断建议</div>
-                <p style={{ margin: 0, fontSize: 13, color: 'var(--app-text)', lineHeight: 1.5 }}>{result.recommendation}</p>
+              <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--hos-border, #e2e8f0)' }}>
+                <div style={{ fontSize: 12, color: 'var(--hos-muted, #64748b)', marginBottom: 4 }}>诊断建议</div>
+                <p style={{ margin: 0, fontSize: 13, color: 'var(--hos-text, #1e293b)', lineHeight: 1.5 }}>{result.recommendation}</p>
               </div>
             )}
           </div>

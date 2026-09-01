@@ -42,8 +42,12 @@ import {
   type PathScopedImageFallbackMap,
   type PathScopedImageFallbackTarget
 } from './image-reference-utils';
-import styles from './chat.module.css';
+import bubbleStyles from './message-bubble.module.css';
+import filePreviewStyles from './file-preview.module.css';
 import { isExternalHttpUrl, openExternalUrl } from '@/services/open-external-url';
+
+// toolBody/toolGroupItemInteractive 与 fileTypeIcon 共选择器，归入 file-preview 域；类名无交集，合并后引用行为不变
+const styles = { ...bubbleStyles, ...filePreviewStyles };
 
 interface Props {
   message: ChatMessage;

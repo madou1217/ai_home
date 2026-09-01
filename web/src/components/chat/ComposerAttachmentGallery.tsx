@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { CloseOutlined, FileTextOutlined } from '@ant-design/icons';
-import styles from './chat.module.css';
+import styles from './composer/composer.module.css';
 
 export interface ComposerAttachmentGalleryProps {
   images: string[];

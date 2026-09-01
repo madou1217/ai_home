@@ -746,7 +746,7 @@ export default function ModelUsage() {
         <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">Output</span><span className="mobile-card-meta-value">{formatTokens(row.outputTokens)}</span></div>
         <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">Cache</span><span className="mobile-card-meta-value">{formatTokens(getCacheTokens(row))}</span></div>
         <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">缓存率</span><span className="mobile-card-meta-value">{formatCacheRate(row.cacheHitRate)}</span></div>
-        <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">成本</span><span className="mobile-card-meta-value" style={{ color: 'var(--m-run, #13a65a)' }}>{formatCost(row.costUsd)}</span></div>
+        <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">成本</span><span className="mobile-card-meta-value" style={{ color: 'var(--hos-mobile-run, #13a65a)' }}>{formatCost(row.costUsd)}</span></div>
       </div>
     </div>
   );

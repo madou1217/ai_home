@@ -1,6 +1,6 @@
 import { MessageOutlined, FolderOpenOutlined, PlusOutlined, RocketOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
-import styles from './chat.module.css';
+import styles from './message-area.module.css';
 
 interface Props {
   readonly mode?: 'chat' | 'work';

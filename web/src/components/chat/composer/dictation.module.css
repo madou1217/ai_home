@@ -1,5 +1,5 @@
 .micIdleBtn {
-  composes: inputToolbarBtn from '../chat.module.css';
+  composes: inputToolbarBtn from './composer.module.css';
 }
 
 /* 录音态下让 .inputToolbarRight 撑满剩余空间，脉冲线才能填满 "+" 和计时器之间的空隙 */
@@ -38,7 +38,7 @@
 }
 
 .stopDictationBtn {
-  composes: inputToolbarBtn from '../chat.module.css';
+  composes: inputToolbarBtn from './composer.module.css';
   flex: 0 0 auto;
   background: #ececec;
   border-color: #d9d9d9;

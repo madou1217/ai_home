@@ -8,7 +8,7 @@ import {
 } from '@ant-design/icons';
 import { Tooltip, message as antdMessage } from 'antd';
 import ShareCardModal from './ShareCardModal';
-import styles from './chat.module.css';
+import styles from './message-bubble.module.css';
 
 export interface MessageIconActionsProps {
   text: string;

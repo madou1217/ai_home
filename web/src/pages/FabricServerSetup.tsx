@@ -368,7 +368,7 @@ export default function FabricServerSetup() {
           loading={false}
         />
         {hasReadyServer && (
-          <div style={{ marginTop: 24, paddingTop: 16, borderTop: '1px solid var(--app-border)', display: 'flex', gap: 16 }}>
+          <div style={{ marginTop: 24, paddingTop: 16, borderTop: '1px solid var(--hos-border, #e2e8f0)', display: 'flex', gap: 16 }}>
             <Button type="link" onClick={() => navigate('/fabric/servers')} style={{ padding: 0 }}>
               打开高级 Server 设置
             </Button>

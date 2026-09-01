@@ -1,7 +1,7 @@
 import { memo } from 'react';
 import { FileOutlined, FolderOutlined, LoadingOutlined } from '@ant-design/icons';
 import type { FileReferenceCandidate } from './use-file-reference-candidates';
-import styles from './chat.module.css';
+import styles from './composer/composer.module.css';
 
 export type { FileReferenceCandidate } from './use-file-reference-candidates';
 

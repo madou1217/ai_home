@@ -6,7 +6,7 @@ import {
   CheckOutlined,
 } from '@ant-design/icons';
 import type { ChatMessage } from '@/types';
-import styles from './chat.module.css';
+import styles from './session-diff.module.css';
 
 export interface SessionDiffModalProps {
   open: boolean;

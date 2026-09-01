@@ -3,7 +3,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import { DownOutlined, RightOutlined, CloseOutlined } from '@ant-design/icons';
-import styles from './chat.module.css';
+import styles from './composer/composer.module.css';
 
 export interface TerminalRunState {
   runId: string;

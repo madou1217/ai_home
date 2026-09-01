@@ -11,7 +11,7 @@ import type { Provider } from '@/types';
 import FileDrawer, { type FileDrawerTab } from '@/components/chat/FileDrawer';
 import { basenameLike, getFileTabKey } from '@/components/chat/file-reference-utils';
 import { formatStreamFailureText } from '@/components/chat/provider-pending-policy.js';
-import chatStyles from '@/components/chat/chat.module.css';
+import chatStyles from '@/components/chat/message-area.module.css';
 import type { CommittedTimelineObserver } from './browser-first-text-paint-probe';
 import { sessionConnectionPresentation } from './session-connection-presentation';
 import TimelineItemView from './TimelineItemView';

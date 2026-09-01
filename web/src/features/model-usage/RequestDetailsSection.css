@@ -13,12 +13,12 @@
 }
 
 .request-detail-token-part > span {
-  color: var(--app-text-secondary);
+  color: var(--hos-text-secondary, inherit);
   font-size: var(--hos-text-caption, 12px);
 }
 
 .request-detail-token-part > strong {
-  color: var(--app-heading);
+  color: var(--hos-heading, #0f172a);
   font-variant-numeric: tabular-nums;
 }
 

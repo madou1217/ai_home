@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import FileTypeIcon from './FileTypeIcon';
 import { basenameLike } from './file-reference-utils';
-import styles from './chat.module.css';
+import styles from './file-preview.module.css';
 
 interface Props {
   path: string;

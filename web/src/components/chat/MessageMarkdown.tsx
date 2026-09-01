@@ -5,7 +5,7 @@ import HtmlCodeBlock from './HtmlCodeBlock';
 import CodeBlock from './CodeBlock';
 import { parseMarkdownCarouselSlides } from './file-preview-utils';
 import { shouldRenderMarkdown } from './markdown-detection';
-import styles from './chat.module.css';
+import styles from './message-bubble.module.css';
 
 // react-markdown 默认只放行 http(s)/mailto 等协议，会把 data: URL 的 src 剥成空，
 // 导致图像生成模型(如 gemini-3.1-flash-image)透出的内联 base64 图片渲染成裂图。

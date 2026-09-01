@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { EyeOutlined, CodeOutlined, DesktopOutlined, MobileOutlined } from '@ant-design/icons';
 import { normalizeHtmlPreviewDocument } from './file-preview-utils';
 import { openHtmlPreviewWindow } from './html-preview-window';
-import styles from './chat.module.css';
+import styles from './message-bubble.module.css';
 
 const HTML_PREVIEW_SANDBOX = 'allow-scripts allow-forms allow-modals allow-popups allow-downloads';
 

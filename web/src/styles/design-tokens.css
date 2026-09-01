@@ -138,16 +138,8 @@
   --space-32: 64px;
 
   /* ---------------------------------------------------------------------------
-   * 4. PRIMITIVES — Radius / Elevation / Motion
+   * 4. PRIMITIVES — Elevation / Motion
    * ------------------------------------------------------------------------ */
-  --radius-xs: 6px;
-  --radius-sm: 8px;
-  --radius-md: 10px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
-  --radius-2xl: 20px;
-  --radius-pill: 999px;
-
   --elevation-1: 0 1px 2px rgba(15, 23, 42, 0.06);
   --elevation-2: 0 2px 8px rgba(15, 23, 42, 0.08);
   --elevation-3: 0 8px 24px rgba(15, 23, 42, 0.10);
@@ -249,8 +241,8 @@
    * 8. DOMAIN — Event semantics
    * 事件块（工具/思考/计划/目标/记忆/通知/确认）统一的语义色与几何。
    * ------------------------------------------------------------------------ */
-  --event-radius: var(--radius-lg);
-  --event-radius-sm: var(--radius-sm);
+  --event-radius: var(--hos-radius-sm, 12px);
+  --event-radius-sm: var(--hos-radius-xs, 8px);
   --event-border: var(--color-border);
   --event-bg: var(--color-surface);
   --event-bg-muted: var(--color-surface-muted);
@@ -339,52 +331,6 @@
   }
 }
 
-/* ===========================================================================
- * LEGACY ALIASES — 旧 --app-* 变量映射到新系统（渐进迁移，勿在新代码使用）
- * ========================================================================= */
-:root {
-  --app-bg: var(--color-bg);
-  --app-bg-elevated: var(--color-bg-elevated);
-  --app-sidebar: var(--color-surface);
-  --app-sidebar-raised: var(--color-surface-raised);
-  --app-surface: var(--color-surface);
-  --app-surface-raised: var(--color-surface-raised);
-  --app-surface-muted: var(--color-surface-muted);
-  --app-surface-soft: var(--color-surface-soft);
-  --app-border: var(--color-border);
-  --app-border-strong: var(--color-border-strong);
-  --app-text: var(--color-text);
-  --app-heading: var(--color-heading);
-  --app-muted: var(--color-muted);
-  --app-muted-strong: var(--color-muted-strong);
-  --app-primary: var(--color-brand);
-  --app-primary-strong: var(--color-brand-strong);
-  --app-primary-soft: var(--color-brand-soft);
-  --app-accent: var(--color-brand);
-  --app-accent-strong: var(--color-brand-strong);
-  --app-accent-soft: var(--c-brand-soft);
-  --app-info: var(--color-info);
-  --app-info-soft: var(--color-info-soft);
-  --app-warning: var(--color-warning);
-  --app-warning-soft: var(--color-warning-soft);
-  --app-danger: var(--color-danger);
-  --app-danger-soft: var(--color-danger-soft);
-  --app-shadow: var(--elevation-4);
-  --app-shadow-soft: var(--elevation-3);
-  --app-focus: var(--ring-focus);
-  --app-radius: var(--radius-xl);
-  --app-radius-sm: var(--radius-lg);
-  --app-topbar-height: var(--layout-topbar-h);
-  --app-mobile-topbar-height: var(--layout-topbar-h-mobile);
-  --app-mobile-nav-height: var(--layout-mobilenav-h);
-  --app-page-max: var(--layout-page-max);
-  --app-motion-fast: var(--motion-fast);
-  --app-motion: var(--motion-base);
-  --app-motion-slow: var(--motion-slow);
-  --app-ease: var(--ease-standard);
-  --app-visual-viewport-height: var(--visual-viewport-height);
-}
-
 /* =============================================================================
  * 9. HARMONYOS 6 视觉设计语言规范 (HarmonyOS Design System)
  * -----------------------------------------------------------------------------
@@ -395,7 +341,9 @@
  * ========================================================================== */
 :root {
   /* HarmonyOS 6 连续曲率微曲率半径 */
+  --hos-radius-2xs: 6px;  /* 补档:6px 微圆角档 */
   --hos-radius-xs: 8px;
+  --hos-radius-10: 10px;  /* 补档:10px 档,px 直标避免与 4pt 空间刻度混淆 */
   --hos-radius-sm: 12px;
   --hos-radius-md: 16px;
   --hos-radius-lg: 20px;
@@ -470,6 +418,38 @@
   /* HarmonyOS 6 弹性物理曲线 */
   --hos-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --hos-ease-smooth: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  /* 移动端会话页设计语言(mobile-cards.css 旧全局 token 的原位迁移,值不变)。
+   * 已有等价物直接复用上方刻度:white、surface-dark-900、gray-600、gray-400、
+   * ink-100、orange-500。 */
+  --hos-mobile-font: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
+  --hos-mobile-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --hos-mobile-bg: #f1f1f7;
+  --hos-mobile-surface-2: #fafaff;
+  --hos-mobile-ink-4: #b6b6c8;
+  --hos-mobile-line-2: #e2e2ee;
+  --hos-mobile-run: #13a65a;
+  --hos-mobile-radius: 18px;
+  --hos-mobile-shadow-xs: 0 1px 2px rgba(27, 27, 43, .05);
+  --hos-mobile-shadow-sm: 0 1px 3px rgba(27, 27, 43, .06), 0 1px 2px rgba(27, 27, 43, .04);
+
+  /* 在线状态点(沉淀自历史用点的兜底值) */
+  --hos-status-online: #22c55e;
+  --hos-status-online-soft: rgba(34, 197, 94, 0.08);
+
+  /* 语义桥接:链接到语义层以随深色主题自适应 */
+  --hos-bg: var(--color-bg);
+  --hos-surface: var(--color-surface);
+  --hos-surface-raised: var(--color-surface-raised);
+  --hos-surface-muted: var(--color-surface-muted);
+  --hos-border: var(--color-border);
+  --hos-border-strong: var(--color-border-strong);
+  --hos-text: var(--color-text);
+  --hos-heading: var(--color-heading);
+  --hos-muted: var(--color-muted);
+  --hos-muted-strong: var(--color-muted-strong);
+  --hos-primary-soft: var(--color-brand-soft);
+  --hos-shadow-soft: var(--elevation-3);
 }
 
 /* =============================================================================

@@ -1,7 +1,7 @@
 import { memo } from 'react';
 import { Modal } from 'antd';
 import { ThunderboltOutlined } from '@ant-design/icons';
-import styles from './chat.module.css';
+import styles from './chat-overlays.module.css';
 
 export interface ShortcutEntry {
   key: string;

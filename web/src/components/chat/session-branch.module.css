@@ -1,0 +1,171 @@
+/* 拆分自 chat.module.css（纯搬运，样式值零变化）。域: session-branch */
+
+/* =============================================================================
+ * HarmonyOS 6.1 会话分支可视化管理样式 (Session Branch Graph)
+ * ========================================================================== */
+.branchGraphContainer {
+  padding: var(--hos-space-4, 16px);
+  background: var(--hos-glass-bg-card, rgba(255, 255, 255, 0.85));
+  backdrop-filter: blur(20px) saturate(190%);
+  -webkit-backdrop-filter: blur(20px) saturate(190%);
+  border-radius: var(--hos-radius-lg, 20px);
+  border: 0.8px solid var(--color-border-subtle, rgba(255, 255, 255, 0.8));
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.03);
+  margin-bottom: var(--hos-space-4, 16px);
+}
+
+[data-theme='dark'] .branchGraphContainer {
+  background: rgba(30, 41, 59, 0.75);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.branchGraphHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--hos-space-3, 12px);
+}
+
+.branchGraphTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--hos-space-2, 8px);
+  font-size: var(--hos-text-body, 14px);
+  font-weight: 700;
+  color: var(--color-text-heading, #0f172a);
+}
+
+[data-theme='dark'] .branchGraphTitle {
+  color: var(--hos-ink-50, #f8fafc);
+}
+
+.forkBtn {
+  border-radius: var(--hos-radius-pill, 9999px) !important;
+  font-size: var(--hos-text-caption, 12px);
+}
+
+.branchNodesList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hos-space-2, 8px);
+}
+
+.branchNodeItem {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--hos-space-3, 12px);
+  padding: var(--hos-space-2-5, 10px) var(--hos-space-3-5, 14px);
+  border-radius: var(--hos-radius-md, 16px);
+  background: rgba(255, 255, 255, 0.5);
+  border: 0.8px solid transparent;
+  cursor: pointer;
+  transition: all 0.18s var(--hos-ease-smooth, cubic-bezier(0.2, 0.8, 0.2, 1));
+}
+
+[data-theme='dark'] .branchNodeItem {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.branchNodeItem:hover {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(10, 89, 247, 0.2);
+  transform: translateX(2px);
+}
+
+[data-theme='dark'] .branchNodeItem:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.branchNodeActive {
+  background: rgba(10, 89, 247, 0.08) !important;
+  border-color: rgba(10, 89, 247, 0.3) !important;
+}
+
+.branchIndicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  padding-top: var(--hos-space-0-5, 2px);
+}
+
+.branchActiveIcon {
+  color: var(--hos-blue-700, #0a59f7);
+  font-size: var(--hos-text-body, 14px);
+}
+
+.branchDot {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--hos-radius-pill, 50%);
+  background: var(--hos-ink-300, #cbd5e1);
+}
+
+.branchLine {
+  width: 2px;
+  height: 24px;
+  background: var(--hos-ink-200, #e2e8f0);
+  margin-top: var(--hos-space-1, 4px);
+}
+
+.branchNodeInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.branchNodeHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--hos-space-2, 8px);
+}
+
+.branchNodeTitle {
+  font-size: var(--hos-text-body-sm, 13px);
+  font-weight: 600;
+  color: var(--color-text, #1e293b);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-theme='dark'] .branchNodeTitle {
+  color: var(--hos-ink-50, #f8fafc);
+}
+
+.branchTag {
+  border-radius: var(--hos-radius-pill, 9999px) !important;
+  font-size: var(--hos-text-micro, 10px);
+  line-height: 16px;
+  padding: 0 var(--hos-space-1-5, 6px);
+}
+
+.branchNodeMeta {
+  display: flex;
+  align-items: center;
+  gap: var(--hos-space-3, 12px);
+  font-size: var(--hos-text-caption, 11px); /* 归级:原 11px */
+  color: var(--hos-ink-500, #64748b);
+  margin-top: var(--hos-space-0-5, 2px);
+}
+
+.branchDiffQuickBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--hos-space-1, 4px);
+  padding: var(--hos-space-0-5, 1px) var(--hos-space-2, 8px); /* 归级:原 1px */
+  border-radius: var(--hos-radius-pill, 9999px);
+  border: 0.8px solid rgba(10, 89, 247, 0.3);
+  background: rgba(10, 89, 247, 0.06);
+  color: var(--hos-blue-700, #0a59f7);
+  font-size: var(--hos-text-caption, 11px); /* 归级:原 11px */
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.14s ease;
+}
+
+.branchDiffQuickBtn:hover {
+  background: rgba(10, 89, 247, 0.15);
+  border-color: var(--hos-blue-700, #0a59f7);
+  transform: translateY(-1px);
+}

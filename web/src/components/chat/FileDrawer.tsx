@@ -10,7 +10,7 @@ import FilePreviewPane from './FilePreviewPane';
 import FileTypeIcon from './FileTypeIcon';
 import { getFileTabKey } from './file-reference-utils';
 import { buildFileMediaUrl, getFilePreviewKind } from './file-preview-utils';
-import styles from './chat.module.css';
+import styles from './file-preview.module.css';
 
 export interface FileDrawerTab {
   path: string;

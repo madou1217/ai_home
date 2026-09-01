@@ -2,7 +2,7 @@ import { InboxOutlined } from '@ant-design/icons';
 import { Popconfirm } from 'antd';
 import type { Session } from '@/types';
 import type { ArchiveActionState } from './session-lifecycle-policy.js';
-import styles from './chat.module.css';
+import styles from './session-list.module.css';
 
 interface Props {
   action: ArchiveActionState;

@@ -207,7 +207,7 @@
   height: 100%;
   padding: 0;
   border: 0;
-  border-radius: var(--radius-xs);
+  border-radius: var(--hos-radius-2xs, 6px);
   background: transparent;
   cursor: help;
   font: inherit;

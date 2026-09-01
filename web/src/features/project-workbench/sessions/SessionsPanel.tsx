@@ -8,7 +8,7 @@ import {
   isSessionRunning,
 } from '@/components/chat/project-runtime-state.js';
 import type { Session } from '@/types';
-import chatStyles from '@/components/chat/chat.module.css';
+import chatStyles from '@/components/chat/session-list.module.css';
 import styles from '../project-workbench.module.css';
 
 interface Props {
@@ -19,7 +19,7 @@ interface Props {
 }
 
 // 左栏 Sessions 页签：当前项目会话的只读列表，点击切换中栏会话。
-// 行样式复用会话侧边栏（chat.module.css 的 sessionItem 系列），不重造。
+// 行样式复用会话侧边栏（session-list.module.css 的 sessionItem 系列），不重造。
 export default function SessionsPanel({ sessions, selectedSession, runningSessionKeys, onSelectSession }: Props) {
   if (sessions.length === 0) {
     return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无会话" />;

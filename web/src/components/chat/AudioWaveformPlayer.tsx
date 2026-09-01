@@ -1,6 +1,6 @@
 import { memo, useState, useRef, useEffect, useCallback } from 'react';
 import { PlayCircleFilled, PauseCircleFilled, SoundOutlined } from '@ant-design/icons';
-import styles from './chat.module.css';
+import styles from './message-bubble.module.css';
 
 export interface AudioWaveformPlayerProps {
   src: string;

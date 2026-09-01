@@ -1,7 +1,7 @@
 import { memo } from 'react';
 import { Tooltip } from 'antd';
 import { WifiOutlined } from '@ant-design/icons';
-import styles from './chat.module.css';
+import styles from './composer/composer.module.css';
 
 export interface ConnectionPulseBadgeProps {
   status: 'connected' | 'reconnecting' | 'disconnected';

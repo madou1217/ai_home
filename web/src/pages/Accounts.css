@@ -34,13 +34,13 @@
 .accounts-import-template > div {
   font-size: var(--hos-text-caption, 12px);
   font-weight: 600;
-  color: var(--app-muted);
+  color: var(--hos-muted, #64748b);
 }
 .accounts-import-template pre {
   padding: var(--hos-space-3, 12px);
-  border: 1px solid var(--app-border);
+  border: 1px solid var(--hos-border, #e2e8f0);
   border-radius: var(--hos-radius-xs, 8px);
-  background: var(--app-surface-muted);
+  background: var(--hos-surface-muted, #f1f5f9);
   font-family: var(--font-mono);
   font-size: var(--hos-text-caption, 12px);
   line-height: 1.6;
@@ -54,11 +54,11 @@
   gap: var(--hos-space-2, 8px);
   min-height: 32px;
   margin-bottom: var(--hos-space-4, 16px);
-  color: var(--app-text);
+  color: var(--hos-text, #1e293b);
   font-size: var(--hos-text-body-sm, 13px);
 }
 .accounts-import-running > span:last-child {
-  color: var(--app-muted);
+  color: var(--hos-muted, #64748b);
 }
 /* 导出弹窗 */
 .accounts-export-popover .ant-popover-inner {
@@ -74,7 +74,7 @@
 
 /* 未安装客户端仍保留可点击入口：用低对比度表达缺失状态，不使用 disabled 阻断 Toolkit 安装引导。 */
 .account-client-entry-button--uninstalled {
-  color: var(--app-muted) !important;
+  color: var(--hos-muted, #64748b) !important;
   opacity: 0.58;
 }
 .account-client-entry-button--uninstalled:hover,
@@ -87,7 +87,7 @@
 }
 .account-app-install-copy__hint {
   margin-top: var(--hos-space-2-5, 10px) !important;
-  color: var(--app-muted);
+  color: var(--hos-muted, #64748b);
   font-size: var(--hos-text-caption, 12px);
   line-height: 1.6;
 }
@@ -121,7 +121,7 @@
 .account-mobile-token-usage {
   margin-top: var(--hos-space-3-5, 14px);
   padding-top: var(--hos-space-3, 12px);
-  border-top: 1px solid var(--m-line);
+  border-top: 1px solid var(--hos-ink-100, #ececf4);
 }
 .account-mobile-token-usage-head {
   display: flex;
@@ -129,7 +129,7 @@
   justify-content: space-between;
   gap: var(--hos-space-2, 8px);
   margin-bottom: var(--hos-space-2, 8px);
-  color: var(--m-ink-3);
+  color: var(--hos-gray-400, #8b8ba3);
   font-size: var(--hos-text-caption, 12px);
   font-weight: 600;
 }

@@ -8,7 +8,7 @@ import {
   ThunderboltOutlined,
   TranslationOutlined,
 } from '@ant-design/icons';
-import styles from './chat.module.css';
+import styles from './composer/composer.module.css';
 
 export interface PromptPresetItem {
   id: string;

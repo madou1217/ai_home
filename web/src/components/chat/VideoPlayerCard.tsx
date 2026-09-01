@@ -6,7 +6,7 @@ import {
   FullscreenExitOutlined,
   VideoCameraOutlined,
 } from '@ant-design/icons';
-import styles from './chat.module.css';
+import styles from './message-bubble.module.css';
 
 export interface VideoPlayerCardProps {
   src: string;

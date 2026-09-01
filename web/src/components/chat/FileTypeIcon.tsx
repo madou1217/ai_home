@@ -9,7 +9,7 @@
 import { memo, useMemo } from 'react';
 import { basenameLike } from './file-reference-utils';
 import { getFileExtension } from './file-preview-utils';
-import styles from './chat.module.css';
+import styles from './file-preview.module.css';
 
 type FileTypeIconSize = 'small' | 'medium' | 'large';
 

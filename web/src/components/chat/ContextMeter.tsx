@@ -3,7 +3,7 @@ import { Tooltip, Popover } from 'antd';
 import { DashboardOutlined, CompressOutlined } from '@ant-design/icons';
 import type { ChatMessage } from '@/types';
 import { computeContextStats, DEFAULT_CONTEXT_MAX_TOKENS } from './context-meter-stats';
-import styles from './chat.module.css';
+import styles from './composer/composer.module.css';
 
 interface Props {
   messages: ChatMessage[];

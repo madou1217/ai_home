@@ -1,7 +1,7 @@
 import { memo, useState, useCallback, useMemo } from 'react';
 import { CopyOutlined, CheckOutlined } from '@ant-design/icons';
 import { message } from 'antd';
-import styles from './chat.module.css';
+import styles from './message-bubble.module.css';
 
 interface Props {
   code: string;

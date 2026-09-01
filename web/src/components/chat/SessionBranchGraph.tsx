@@ -7,7 +7,7 @@ import {
   ClockCircleOutlined,
   DiffOutlined,
 } from '@ant-design/icons';
-import styles from './chat.module.css';
+import styles from './session-branch.module.css';
 
 export interface BranchNode {
   id: string;

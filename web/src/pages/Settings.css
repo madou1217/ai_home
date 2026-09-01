@@ -6,7 +6,7 @@
 /* .settings-panel 已改用框架 ProCard（border/radius/bg 走 ProCard + 主题 token）；
  * 仅保留扁平阴影（antd Card 无阴影 token）。 */
 .ant-pro-card.settings-panel {
-  box-shadow: var(--app-shadow-soft);
+  box-shadow: var(--hos-shadow-soft, 0 8px 24px rgba(15, 23, 42, 0.10));
 }
 .settings-tabs.ant-tabs {
   min-width: 0;
@@ -15,7 +15,7 @@
   margin-bottom: var(--hos-space-3-5, 14px);
 }
 .settings-tabs > .ant-tabs-nav::before {
-  border-color: var(--app-border);
+  border-color: var(--hos-border, #e2e8f0);
 }
 .settings-tabs .ant-tabs-tab {
   padding: var(--hos-space-2-5, 10px) 0;
@@ -37,14 +37,14 @@
 }
 .settings-panel-head h2 {
   margin: 0;
-  color: var(--app-heading);
+  color: var(--hos-heading, #0f172a);
   font-size: var(--hos-text-h2, 17px); /* 归级:原 17px */
   font-weight: 900;
   line-height: 1.2;
 }
 .settings-panel-head p {
   margin: var(--hos-space-1, 5px) 0 0; /* 归级:原 5px */
-  color: var(--app-muted);
+  color: var(--hos-muted, #64748b);
   font-size: var(--hos-text-caption, 12px);
   line-height: 1.55;
 }
@@ -66,8 +66,8 @@
   grid-template-columns: minmax(0, 1fr) auto;
   gap: var(--hos-space-2-5, 10px);
   align-items: center;
-  border: 1px solid var(--app-border);
-  border-radius: var(--app-radius);
+  border: 1px solid var(--hos-border, #e2e8f0);
+  border-radius: var(--hos-radius-md, 16px);
   padding: var(--hos-space-2-5, 10px);
 }
 .settings-control-plane-actions {
@@ -90,7 +90,7 @@
 }
 .settings-control-plane-scope-copy {
   margin: 0;
-  color: var(--app-muted);
+  color: var(--hos-muted, #64748b);
   font-size: var(--hos-text-body-sm, 13px);
   line-height: 1.6;
 }
@@ -100,8 +100,8 @@
   grid-template-columns: minmax(0, 1fr) auto;
   gap: var(--hos-space-3, 12px);
   align-items: center;
-  border: 1px solid var(--app-border);
-  border-radius: var(--app-radius);
+  border: 1px solid var(--hos-border, #e2e8f0);
+  border-radius: var(--hos-radius-md, 16px);
   background: color-mix(in srgb, var(--c-neutral-50) 66%, transparent);
   padding: var(--hos-space-3, 12px);
 }
@@ -112,14 +112,14 @@
   gap: var(--hos-space-0-5, 3px); /* 归级:原 3px */
 }
 .settings-control-plane-current-main span {
-  color: var(--app-muted);
+  color: var(--hos-muted, #64748b);
   font-size: var(--hos-text-caption, 12px);
   font-weight: 850;
 }
 .settings-control-plane-current-main strong {
   min-width: 0;
   overflow: hidden;
-  color: var(--app-heading);
+  color: var(--hos-heading, #0f172a);
   font-size: var(--hos-text-h2, 18px);
   font-weight: 900;
   line-height: 1.25;
@@ -129,7 +129,7 @@
 .settings-control-plane-current-main em {
   min-width: 0;
   overflow: hidden;
-  color: var(--app-muted);
+  color: var(--hos-muted, #64748b);
   font-size: var(--hos-text-caption, 12px);
   font-style: normal;
   text-overflow: ellipsis;
@@ -156,13 +156,13 @@
   gap: var(--hos-space-0-5, 3px); /* 归级:原 3px */
 }
 .settings-public-entry-mode strong {
-  color: var(--app-heading);
+  color: var(--hos-heading, #0f172a);
   font-size: var(--hos-text-body, 14px);
   font-weight: 900;
 }
 .settings-public-entry-mode p {
   margin: 0 0 var(--hos-space-2-5, 10px);
-  color: var(--app-muted);
+  color: var(--hos-muted, #64748b);
   font-size: var(--hos-text-caption, 12px);
   line-height: 1.5;
 }
@@ -180,7 +180,7 @@
   gap: var(--hos-space-1-5, 6px);
 }
 .settings-public-entry-field > span {
-  color: var(--app-heading);
+  color: var(--hos-heading, #0f172a);
   font-size: var(--hos-text-caption, 12px);
   font-weight: 850;
 }
@@ -208,7 +208,7 @@
   grid-template-columns: minmax(0, 1fr) auto;
   gap: var(--hos-space-1, 4px) var(--hos-space-3, 12px);
   align-items: center;
-  border-top: 1px solid var(--app-border);
+  border-top: 1px solid var(--hos-border, #e2e8f0);
   padding-top: var(--hos-space-2, 8px);
 }
 .settings-public-entry-status-main {
@@ -218,12 +218,12 @@
   gap: var(--hos-space-0-5, 2px);
 }
 .settings-public-entry-status-main strong {
-  color: var(--app-heading);
+  color: var(--hos-heading, #0f172a);
   font-size: var(--hos-text-body-sm, 13px);
 }
 .settings-public-entry-status-main span,
 .settings-public-entry-status-meta span {
-  color: var(--app-muted);
+  color: var(--hos-muted, #64748b);
   font-size: var(--hos-text-caption, 11px); /* 归级:原 11px */
 }
 .settings-public-entry-status-main span {
@@ -279,8 +279,8 @@
   min-width: 0;
   flex-direction: column;
   gap: var(--hos-space-2, 8px);
-  border: 1px solid var(--app-border);
-  border-radius: var(--app-radius);
+  border: 1px solid var(--hos-border, #e2e8f0);
+  border-radius: var(--hos-radius-md, 16px);
   background: color-mix(in srgb, var(--c-neutral-50) 72%, transparent);
   padding: var(--hos-space-2-5, 10px);
 }
@@ -291,13 +291,13 @@
   gap: var(--hos-space-2-5, 10px);
 }
 .settings-join-command-head strong {
-  color: var(--app-heading);
+  color: var(--hos-heading, #0f172a);
   font-size: var(--hos-text-body-sm, 13px);
 }
 .settings-join-command pre {
   overflow-x: auto;
   margin: 0;
-  border-radius: calc(var(--app-radius) - 2px);
+  border-radius: calc(var(--hos-radius-md, 16px) - 2px);
   background: var(--c-neutral-950);
   color: var(--c-neutral-0);
   padding: var(--hos-space-2-5, 10px);
@@ -316,9 +316,9 @@
   display: grid;
   min-height: 176px;
   place-items: center;
-  border: 1px solid var(--app-border);
-  border-radius: calc(var(--app-radius) - 2px);
-  background: var(--app-surface);
+  border: 1px solid var(--hos-border, #e2e8f0);
+  border-radius: calc(var(--hos-radius-md, 16px) - 2px);
+  background: var(--hos-surface, #ffffff);
 }
 .settings-join-detail {
   display: flex;
@@ -328,10 +328,10 @@
 }
 .settings-join-code {
   overflow-wrap: anywhere;
-  border: 1px dashed var(--app-border);
-  border-radius: calc(var(--app-radius) - 2px);
-  background: var(--app-surface);
-  color: var(--app-heading);
+  border: 1px dashed var(--hos-border, #e2e8f0);
+  border-radius: calc(var(--hos-radius-md, 16px) - 2px);
+  background: var(--hos-surface, #ffffff);
+  color: var(--hos-heading, #0f172a);
   padding: var(--hos-space-2, 8px) var(--hos-space-2-5, 10px);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: var(--hos-text-caption, 12px);
@@ -354,9 +354,9 @@
   min-width: 0;
   flex-direction: column;
   gap: var(--hos-space-1, 5px); /* 归级:原 5px */
-  border: 1px solid var(--app-border);
-  border-radius: calc(var(--app-radius) - 2px);
-  background: var(--app-surface);
+  border: 1px solid var(--hos-border, #e2e8f0);
+  border-radius: calc(var(--hos-radius-md, 16px) - 2px);
+  background: var(--hos-surface, #ffffff);
   padding: var(--hos-space-2, 8px) var(--hos-space-2-5, 10px);
 }
 .settings-bootstrap-readiness-head {
@@ -369,13 +369,13 @@
 .settings-bootstrap-readiness-head strong {
   min-width: 0;
   overflow: hidden;
-  color: var(--app-heading);
+  color: var(--hos-heading, #0f172a);
   font-size: var(--hos-text-caption, 12px);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .settings-bootstrap-readiness-item span {
-  color: var(--app-muted);
+  color: var(--hos-muted, #64748b);
   font-size: var(--hos-text-caption, 12px);
   line-height: 1.4;
   overflow-wrap: anywhere;
@@ -402,7 +402,7 @@
 .settings-bootstrap-plan-step-head strong {
   min-width: 0;
   overflow: hidden;
-  color: var(--app-heading);
+  color: var(--hos-heading, #0f172a);
   font-size: var(--hos-text-body-sm, 13px);
   overflow-wrap: anywhere;
   white-space: normal;
@@ -412,13 +412,13 @@
   min-width: 0;
   flex-direction: column;
   gap: var(--hos-space-1, 5px); /* 归级:原 5px */
-  border: 1px solid var(--app-border);
-  border-radius: calc(var(--app-radius) - 2px);
-  background: var(--app-surface);
+  border: 1px solid var(--hos-border, #e2e8f0);
+  border-radius: calc(var(--hos-radius-md, 16px) - 2px);
+  background: var(--hos-surface, #ffffff);
   padding: var(--hos-space-2, 8px) var(--hos-space-2-5, 10px);
 }
 .settings-bootstrap-guidance span {
-  color: var(--app-muted);
+  color: var(--hos-muted, #64748b);
   font-size: var(--hos-text-caption, 12px);
   line-height: 1.45;
 }
@@ -437,7 +437,7 @@
   min-width: 0;
   flex-direction: column;
   gap: var(--hos-space-2, 8px);
-  border-top: 1px solid var(--app-border);
+  border-top: 1px solid var(--hos-border, #e2e8f0);
   padding: var(--hos-space-2-5, 10px) 0 0;
 }
 .settings-probe-result:first-child {
@@ -449,8 +449,8 @@
   min-width: 0;
   flex-direction: column;
   gap: var(--hos-space-2-5, 10px);
-  border: 1px solid var(--app-border);
-  border-radius: var(--app-radius);
+  border: 1px solid var(--hos-border, #e2e8f0);
+  border-radius: var(--hos-radius-md, 16px);
   background: color-mix(in srgb, var(--c-neutral-50) 72%, transparent);
   padding: var(--hos-space-2-5, 10px);
 }
@@ -459,13 +459,13 @@
   min-width: 0;
   flex-direction: column;
   gap: var(--hos-space-2-5, 10px);
-  border: 1px solid color-mix(in srgb, var(--c-success-500) 28%, var(--app-border));
-  border-radius: var(--app-radius);
-  background: color-mix(in srgb, var(--c-success-50) 58%, var(--app-surface));
+  border: 1px solid color-mix(in srgb, var(--c-success-500) 28%, var(--hos-border, #e2e8f0));
+  border-radius: var(--hos-radius-md, 16px);
+  background: color-mix(in srgb, var(--c-success-50) 58%, var(--hos-surface, #ffffff));
   padding: var(--hos-space-2-5, 10px);
 }
 .settings-probe-execution-plan > strong {
-  color: var(--app-heading);
+  color: var(--hos-heading, #0f172a);
   font-size: var(--hos-text-body-sm, 13px);
 }
 .settings-probe-execution-list {
@@ -480,7 +480,7 @@
   grid-template-columns: minmax(0, 1fr) auto;
   gap: var(--hos-space-1-5, 6px) var(--hos-space-2-5, 10px);
   align-items: start;
-  border-top: 1px solid var(--app-border);
+  border-top: 1px solid var(--hos-border, #e2e8f0);
   padding-top: var(--hos-space-2, 8px);
 }
 .settings-probe-execution-step:first-child {
@@ -501,8 +501,8 @@
   align-items: center;
   justify-content: center;
   border-radius: var(--hos-radius-pill, 999px);
-  background: var(--app-heading);
-  color: var(--app-surface);
+  background: var(--hos-heading, #0f172a);
+  color: var(--hos-surface, #ffffff);
   font-size: var(--hos-text-caption, 11px); /* 归级:原 11px */
   font-weight: 800;
   line-height: 1;
@@ -520,11 +520,11 @@
   white-space: normal;
 }
 .settings-probe-execution-copy strong {
-  color: var(--app-heading);
+  color: var(--hos-heading, #0f172a);
   font-size: var(--hos-text-body-sm, 13px);
 }
 .settings-probe-execution-copy span {
-  color: var(--app-muted);
+  color: var(--hos-muted, #64748b);
   font-size: var(--hos-text-caption, 12px);
 }
 .settings-probe-execution-meta {
@@ -552,7 +552,7 @@
 }
 .settings-manual-command-item span {
   max-width: 280px;
-  color: var(--app-muted);
+  color: var(--hos-muted, #64748b);
   font-size: var(--hos-text-caption, 11px); /* 归级:原 11px */
   line-height: 1.35;
   overflow-wrap: anywhere;
@@ -561,7 +561,7 @@
 .settings-probe-execution-step p {
   grid-column: 1 / -1;
   margin: 0;
-  color: var(--app-muted);
+  color: var(--hos-muted, #64748b);
   font-size: var(--hos-text-caption, 12px);
   line-height: 1.45;
 }
@@ -570,7 +570,7 @@
   max-height: 120px;
   margin: 0;
   overflow: auto;
-  border: 1px solid var(--app-border);
+  border: 1px solid var(--hos-border, #e2e8f0);
   border-radius: var(--hos-radius-xs, 6px); /* 归级:原 6px */
   background: var(--c-neutral-950);
   color: var(--c-neutral-50);
@@ -581,7 +581,7 @@
   word-break: break-word;
 }
 .settings-probe-execution-log--error {
-  border-color: color-mix(in srgb, var(--c-danger-500) 42%, var(--app-border));
+  border-color: color-mix(in srgb, var(--c-danger-500) 42%, var(--hos-border, #e2e8f0));
 }
 .settings-probe-result-head {
   display: flex;
@@ -593,7 +593,7 @@
 .settings-probe-result-head strong {
   min-width: 0;
   overflow: hidden;
-  color: var(--app-heading);
+  color: var(--hos-heading, #0f172a);
   font-size: var(--hos-text-body-sm, 13px);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -603,13 +603,13 @@
   min-width: 0;
   flex-wrap: wrap;
   gap: var(--hos-space-1-5, 6px) var(--hos-space-2-5, 10px);
-  color: var(--app-muted);
+  color: var(--hos-muted, #64748b);
   font-size: var(--hos-text-caption, 12px);
   line-height: 1.45;
 }
 .settings-probe-note {
   margin: 0;
-  color: var(--app-muted);
+  color: var(--hos-muted, #64748b);
   font-size: var(--hos-text-caption, 12px);
   line-height: 1.45;
 }
@@ -637,15 +637,15 @@
 }
 .settings-derived-cell {
   min-width: 0;
-  border: 1px solid var(--app-border);
-  border-radius: var(--app-radius);
+  border: 1px solid var(--hos-border, #e2e8f0);
+  border-radius: var(--hos-radius-md, 16px);
   background: color-mix(in srgb, var(--c-neutral-50) 64%, transparent);
   padding: var(--hos-space-2, 8px) var(--hos-space-2-5, 10px);
 }
 .settings-derived-cell span {
   display: block;
   margin-bottom: var(--hos-space-1, 4px);
-  color: var(--app-muted);
+  color: var(--hos-muted, #64748b);
   font-size: var(--hos-text-caption, 12px);
   font-weight: 800;
 }
@@ -653,7 +653,7 @@
   display: block;
   min-width: 0;
   overflow: hidden;
-  color: var(--app-heading);
+  color: var(--hos-heading, #0f172a);
   font-size: var(--hos-text-caption, 12px);
   overflow-wrap: anywhere;
   text-overflow: ellipsis;
@@ -679,20 +679,20 @@
   min-width: 0;
   flex-direction: column;
   gap: var(--hos-space-0-5, 2px);
-  color: var(--app-muted);
+  color: var(--hos-muted, #64748b);
   font-size: var(--hos-text-caption, 12px);
   line-height: 1.45;
 }
 .settings-advanced-fields {
   margin: -2px 0 var(--hos-space-4, 18px); /* 归级:原 18px */
-  border: 1px dashed var(--app-border);
-  border-radius: var(--app-radius);
+  border: 1px dashed var(--hos-border, #e2e8f0);
+  border-radius: var(--hos-radius-md, 16px);
   padding: 0 var(--hos-space-2-5, 10px) var(--hos-space-2-5, 10px);
 }
 .settings-advanced-fields summary {
   cursor: pointer;
   padding: var(--hos-space-2-5, 10px) 0;
-  color: var(--app-heading);
+  color: var(--hos-heading, #0f172a);
   font-size: var(--hos-text-body-sm, 13px);
   font-weight: 850;
 }
@@ -703,12 +703,12 @@
   margin-bottom: var(--hos-space-4, 18px); /* 归级:原 18px */
 }
 .settings-panel .ant-form-item-label > label {
-  color: var(--app-heading);
+  color: var(--hos-heading, #0f172a);
   font-weight: 850;
 }
 .settings-panel .ant-form-item-explain,
 .settings-panel .ant-form-item-extra {
-  color: var(--app-muted);
+  color: var(--hos-muted, #64748b);
   font-size: var(--hos-text-caption, 12px);
   line-height: 1.5;
 }
@@ -716,8 +716,8 @@
 .settings-panel .ant-input-affix-wrapper,
 .settings-panel .ant-input-number,
 .settings-panel .ant-select-selector {
-  border-color: var(--app-border);
-  border-radius: var(--app-radius);
+  border-color: var(--hos-border, #e2e8f0);
+  border-radius: var(--hos-radius-md, 16px);
 }
 .settings-panel .ant-table-wrapper {
   min-width: 0;
@@ -839,8 +839,8 @@
   width: 100% !important;
   height: 40px !important;
   padding: 0 var(--hos-space-3-5, 14px) !important;
-  border-radius: var(--app-radius, 8px) !important;
-  border: 1px solid var(--app-border, #e2e8f0) !important;
+  border-radius: var(--hos-radius-md, 16px) !important;
+  border: 1px solid var(--hos-border, #e2e8f0) !important;
   background: var(--color-surface-sunken, #f8fafc) !important;
   font-size: var(--hos-text-body, 14px) !important;
   align-items: center !important;
@@ -865,23 +865,23 @@
  * ==========================================================================*/
 @media (max-width: 767.98px) {
   .ant-pro-card.settings-panel {
-    background: var(--m-surface, #fff);
-    border: 1px solid var(--m-line, #ececf4);
-    border-radius: var(--m-radius, 18px);
-    box-shadow: var(--m-sh-xs);
-    font-family: var(--m-font);
+    background: var(--hos-white, #ffffff);
+    border: 1px solid var(--hos-ink-100, #ececf4);
+    border-radius: var(--hos-mobile-radius, 18px);
+    box-shadow: var(--hos-mobile-shadow-xs, 0 1px 2px rgba(27, 27, 43, .05));
+    font-family: var(--hos-mobile-font, 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif);
     margin-bottom: var(--hos-space-3-5, 14px);
   }
   .ant-pro-card.settings-panel > .ant-pro-card-body { padding: var(--hos-space-1-5, 6px) var(--hos-space-4, 16px) var(--hos-space-3-5, 14px) !important; }
   .settings-panel .settings-panel-head { padding: var(--hos-space-3, 12px) 0 var(--hos-space-1-5, 6px); }
-  .settings-panel .settings-panel-head h2 { font-size: var(--hos-text-h2, 17px); /* 归级:原 17px */ font-weight: 800; color: var(--m-ink, #1b1b2b); margin: 0; }
-  .settings-panel .settings-panel-head p { font-size: var(--hos-text-body-sm, 12.5px); /* 归级:原 12.5px */ color: var(--m-ink-3, #8b8ba3); margin: var(--hos-space-0-5, 3px) 0 0; /* 归级:原 3px */ }
+  .settings-panel .settings-panel-head h2 { font-size: var(--hos-text-h2, 17px); /* 归级:原 17px */ font-weight: 800; color: var(--hos-surface-dark-900, #1b1b2b); margin: 0; }
+  .settings-panel .settings-panel-head p { font-size: var(--hos-text-body-sm, 12.5px); /* 归级:原 12.5px */ color: var(--hos-gray-400, #8b8ba3); margin: var(--hos-space-0-5, 3px) 0 0; /* 归级:原 3px */ }
 
   /* 表单项 → 原生设置行 */
   .settings-panel form .ant-form-item {
     margin: 0;
     padding: var(--hos-space-3-5, 14px) 0;
-    border-top: 1px solid var(--m-line, #ececf4);
+    border-top: 1px solid var(--hos-ink-100, #ececf4);
   }
   .settings-panel form .ant-form-item:first-of-type { border-top: none; }
   .settings-grid { grid-template-columns: 1fr !important; width: 100%; }
@@ -900,10 +900,10 @@
   }
   .settings-panel form .ant-form-item-label > label {
     height: auto;
-    font-family: var(--m-font);
+    font-family: var(--hos-mobile-font, 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif);
     font-size: var(--hos-text-h3, 15px);
     font-weight: 600;
-    color: var(--m-ink, #1b1b2b);
+    color: var(--hos-surface-dark-900, #1b1b2b);
   }
   .settings-panel form .ant-form-item-label > label::after { display: none; }
   .settings-panel form .ant-form-item-control {

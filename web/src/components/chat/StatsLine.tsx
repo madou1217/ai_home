@@ -4,7 +4,7 @@ import ConnectionPulseBadge from './ConnectionPulseBadge';
 import { formatDurationLabel, formatTtftLabel, formatTokensPerSecLabel } from './message-metrics-format';
 import { aggregateSessionStats } from './stats-line-aggregation';
 import { realLatencyTracker } from '@/services/real-latency-tracker';
-import styles from './chat.module.css';
+import styles from './composer/composer.module.css';
 
 interface StatsLineProps {
   messages: ChatMessage[];

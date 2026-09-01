@@ -40,7 +40,7 @@ import {
 import folderIcon from '@/assets/icons/folder.svg';
 import expandIcon from '@/assets/icons/expand.svg';
 import dayjs from 'dayjs';
-import styles from './chat.module.css';
+import styles from './session-list.module.css';
 
 interface Props {
   mobile?: boolean;

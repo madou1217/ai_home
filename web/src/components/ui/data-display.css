@@ -28,7 +28,7 @@
 
 .surface-card-copy h2 {
   margin: 0;
-  color: var(--app-heading);
+  color: var(--hos-heading, #0f172a);
   font-size: var(--hos-text-h2, 17px); /* 归级:原 17px */
   font-weight: 800;
   line-height: 1.2;
@@ -36,7 +36,7 @@
 
 .surface-card-copy p {
   margin: var(--hos-space-1-5, 5px) 0 0; /* 归级:原 5px */
-  color: var(--app-muted);
+  color: var(--hos-muted, #64748b);
   font-size: var(--hos-text-caption, 12px);
   line-height: 1.55;
 }

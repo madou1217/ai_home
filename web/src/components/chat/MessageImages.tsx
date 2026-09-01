@@ -4,7 +4,7 @@ import { useAuthorizedMediaUrl } from '@/hooks/useAuthorizedMediaUrl';
 import { splitImageReferenceText, type ImageReferenceSegment, type ImageReferenceSource } from './image-reference-utils';
 import MessageMarkdown from './MessageMarkdown';
 import { shouldRenderMarkdown } from './markdown-detection';
-import styles from './chat.module.css';
+import styles from './message-bubble.module.css';
 
 interface ImageGalleryProps {
   images: string[];

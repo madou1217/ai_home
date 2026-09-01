@@ -51,7 +51,12 @@ import {
 import sendIcon from '@/assets/icons/send.svg';
 import disabledSendIcon from '@/assets/icons/disabled-send.svg';
 import stopIcon from '@/assets/icons/stop.svg';
-import styles from './chat.module.css';
+import areaStyles from './message-area.module.css';
+import composerStyles from './composer/composer.module.css';
+import filePreviewStyles from './file-preview.module.css';
+
+// chat.module.css 拆分后按域合并；各类名在三个模块间无交集，引用行为不变
+const styles = { ...areaStyles, ...composerStyles, ...filePreviewStyles };
 
 const PendingTailStatusLine = ({ text }: { text: string }) => {
   const chars = Array.from(text || '');

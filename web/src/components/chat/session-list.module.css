@@ -1,0 +1,966 @@
+/* 拆分自 chat.module.css（纯搬运，样式值零变化）。域: session-list */
+
+/* ===== 项目列表侧边栏 ===== */
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.sidebarContent {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+  scrollbar-width: none;
+}
+
+/* 首次无缓存加载时的骨架屏：模拟项目行（方形图标 + 名称），与列表节奏一致避免空白 */
+.sidebarSkeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hos-space-3-5, 14px);
+  padding: var(--hos-space-3, 12px) var(--hos-space-3, 12px) var(--hos-space-1, 4px);
+}
+
+.sidebarSkeletonRow {
+  display: flex;
+  align-items: center;
+  gap: var(--hos-space-2-5, 10px);
+}
+
+.sidebarSkeletonRow :global(.ant-skeleton-input) {
+  min-width: 0;
+  height: 16px;
+}
+
+.sidebarContent::-webkit-scrollbar {
+  display: none;
+}
+
+.refreshBar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--hos-space-1-5, 6px);
+  padding: var(--hos-space-2-5, 10px) var(--hos-space-3, 12px) var(--hos-space-2, 8px);
+  border-bottom: 1px solid var(--hos-border, #e2e8f0);
+  background: var(--hos-surface-raised, #fbfcfd);
+}
+
+.refreshBarMobile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--hos-space-3-5, 14px);
+  padding: var(--hos-space-3, 12px) var(--hos-space-4, 18px) var(--hos-space-2-5, 10px); /* 归级:原 18px */
+  background: linear-gradient(180deg, var(--c-neutral-0) 0%, var(--c-neutral-25) 100%);
+}
+
+.refreshBtn {
+  width: 32px !important;
+  height: 32px !important;
+  min-width: 32px !important;
+  min-height: 32px !important;
+  padding: 0 !important;
+  border: 1px solid var(--hos-border, #e2e8f0) !important;
+  background: var(--hos-surface, #ffffff) !important;
+  color: var(--hos-muted-strong, #475569) !important;
+  font-size: var(--hos-text-body-sm, 13px) !important;
+  border-radius: var(--hos-radius-xs, 6px) !important; /* 归级:原 6px */
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  box-shadow: none !important;
+}
+
+.refreshBtn:hover {
+  border-color: var(--hos-border-strong, #cbd5e1) !important;
+  background: var(--hos-primary-soft, rgba(10, 89, 247, 0.08)) !important;
+  color: var(--hos-heading, #0f172a) !important;
+}
+
+.refreshBtnMobile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.remoteSessionsPanel {
+  flex-shrink: 0;
+  margin: var(--hos-space-2, 8px) var(--hos-space-2-5, 10px) var(--hos-space-2-5, 10px);
+  padding: var(--hos-space-2-5, 10px);
+  border: 1px solid var(--hos-border, #e2e8f0);
+  border-radius: var(--hos-radius-xs, 8px);
+  background: var(--hos-surface, #ffffff);
+  box-shadow: var(--elevation-1);
+}
+
+.remoteSessionsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--hos-space-2-5, 10px);
+  min-width: 0;
+}
+
+.remoteSessionsActions {
+  display: flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--hos-space-1-5, 6px);
+}
+
+.remoteSessionsProfileSelect {
+  max-width: 158px;
+}
+
+.remoteSessionsProfileSelectControl {
+  width: 100%;
+}
+
+.remoteSessionsTitleBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hos-space-0-5, 2px);
+  min-width: 0;
+}
+
+.remoteSessionsEyebrow {
+  color: var(--hos-muted, #64748b);
+  font-size: var(--hos-text-micro, 10px);
+  font-weight: 700;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.remoteSessionsTitle {
+  color: var(--hos-heading, #0f172a);
+  font-size: var(--hos-text-body-sm, 13px);
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.remoteSessionsRefresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  padding: 0;
+  border: 1px solid var(--hos-border, #e2e8f0);
+  border-radius: var(--hos-radius-xs, 6px); /* 归级:原 6px */
+  background: var(--color-surface-raised);
+  color: var(--hos-muted-strong, #475569);
+  cursor: pointer;
+}
+
+.remoteSessionsRefresh:hover:not(:disabled) {
+  border-color: var(--hos-border-strong, #cbd5e1);
+  background: var(--hos-primary-soft, rgba(10, 89, 247, 0.08));
+  color: var(--hos-heading, #0f172a);
+}
+
+.remoteSessionsRefresh:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.remoteNodeSelector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hos-space-1, 5px); /* 归级:原 5px */
+  margin-top: var(--hos-space-2, 8px);
+  min-width: 0;
+}
+
+.remoteNodeOption {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--hos-space-1-5, 6px);
+  max-width: 100%;
+  min-height: 24px;
+  padding: var(--hos-space-0-5, 3px) var(--hos-space-2, 8px); /* 归级:原 3px */
+  border: 1px solid var(--hos-border, #e2e8f0);
+  border-radius: var(--hos-radius-xs, 6px); /* 归级:原 6px */
+  background: var(--color-surface-raised);
+  color: var(--hos-muted-strong, #475569);
+  font-size: var(--hos-text-caption, 11px); /* 归级:原 11px */
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.remoteNodeName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.remoteNodeStatus {
+  flex: 0 0 auto;
+  font-size: var(--hos-text-micro, 10px);
+}
+
+.remoteNodeStatusOnline {
+  color: var(--c-success-600);
+}
+
+.remoteNodeStatusOffline {
+  color: var(--c-danger-600);
+}
+
+.remoteNodeStatusUnknown {
+  color: var(--hos-muted, #64748b);
+}
+
+.remoteNodeOption:hover,
+.remoteNodeOptionActive {
+  border-color: var(--hos-border-strong, #cbd5e1);
+  background: var(--hos-primary-soft, rgba(10, 89, 247, 0.08));
+  color: var(--hos-heading, #0f172a);
+}
+
+.remoteSessionsStats,
+.remoteSessionsSummaryRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hos-space-1-5, 6px);
+  min-width: 0;
+}
+
+.remoteSessionsStats {
+  margin-top: var(--hos-space-2, 8px);
+}
+
+.remoteSessionsStats span,
+.remoteSessionsSummaryRow span {
+  max-width: 100%;
+  padding: var(--hos-space-0-5, 2px) var(--hos-space-1-5, 6px);
+  border-radius: var(--hos-radius-xs, 6px); /* 归级:原 6px */
+  background: var(--color-surface-muted);
+  color: var(--hos-muted-strong, #475569);
+  font-size: var(--hos-text-caption, 11px); /* 归级:原 11px */
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.remoteSessionsSummaryRows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hos-space-1, 5px); /* 归级:原 5px */
+  margin-top: var(--hos-space-1-5, 7px); /* 归级:原 7px */
+  min-width: 0;
+}
+
+.remoteSessionsNotice,
+.remoteSessionsWarning {
+  margin-top: var(--hos-space-2, 8px);
+  padding: var(--hos-space-1-5, 7px) var(--hos-space-2, 8px); /* 归级:原 7px */
+  border-radius: var(--hos-radius-xs, 6px); /* 归级:原 6px */
+  font-size: var(--hos-text-caption, 12px);
+  line-height: 1.45;
+}
+
+.remoteSessionsNotice {
+  background: var(--color-surface-muted);
+  color: var(--hos-muted-strong, #475569);
+}
+
+.remoteSessionsWarning {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+}
+
+.remoteSessionList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hos-space-1, 4px);
+  margin-top: var(--hos-space-2, 8px);
+  min-width: 0;
+}
+
+.remoteSessionItem {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--hos-space-1-5, 7px); /* 归级:原 7px */
+  width: 100%;
+  min-width: 0;
+  min-height: 34px;
+  padding: var(--hos-space-1-5, 6px);
+  border: 0;
+  border-radius: var(--hos-radius-xs, 6px); /* 归级:原 6px */
+  background: var(--color-surface-sunken);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.remoteSessionItem:hover,
+.remoteSessionItemActive {
+  background: var(--hos-primary-soft, rgba(10, 89, 247, 0.08));
+}
+
+.remoteSessionProvider {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  line-height: 0;
+}
+
+.remoteSessionProvider img,
+.remoteSessionProvider [data-provider-icon-fallback] {
+  position: relative;
+  z-index: 1;
+  border-radius: var(--hos-radius-xs, 4px); /* 归级:原 4px */
+}
+
+.remoteSessionProviderRunning::after {
+  content: '';
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 5px;
+  height: 5px;
+  border: 2px solid var(--color-surface);
+  border-radius: var(--hos-radius-pill, 50%);
+  background: var(--provider-accent, var(--color-success));
+  box-shadow: 0 0 0 1px var(--provider-accent-soft, var(--color-success-soft));
+}
+
+.remoteSessionMain {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hos-space-0-5, 2px);
+  min-width: 0;
+}
+
+.remoteSessionTitle,
+.remoteSessionMeta {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.remoteSessionTitle {
+  color: var(--hos-heading, #0f172a);
+  font-size: var(--hos-text-caption, 12px);
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.remoteSessionMeta {
+  color: var(--hos-muted, #64748b);
+  font-size: var(--hos-text-micro, 10px);
+  line-height: 1.2;
+}
+
+.remoteSessionStatus,
+.remoteSessionTime {
+  white-space: nowrap;
+  font-size: var(--hos-text-micro, 10px);
+  line-height: 1;
+}
+
+.remoteSessionStatus {
+  padding: var(--hos-space-0-5, 3px) var(--hos-space-1, 5px); /* 归级:原 3px、5px */
+  border-radius: var(--hos-radius-pill, 999px);
+  background: var(--color-surface-muted);
+  color: var(--hos-muted-strong, #475569);
+}
+
+.remoteSessionStatusRunning {
+  background: var(--color-success-soft);
+  color: var(--color-success);
+}
+
+.remoteSessionTime {
+  color: var(--hos-muted, #64748b);
+}
+
+.remoteSessionStream {
+  margin-top: var(--hos-space-2-5, 10px);
+  padding-top: var(--hos-space-2, 9px); /* 归级:原 9px */
+  border-top: 1px solid var(--hos-border, #e2e8f0);
+  min-width: 0;
+}
+
+.remoteSessionStreamHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--hos-space-2-5, 10px);
+  min-width: 0;
+}
+
+.remoteSessionStreamTitleBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hos-space-0-5, 2px);
+  min-width: 0;
+}
+
+.remoteSessionStreamEyebrow {
+  color: var(--hos-muted, #64748b);
+  font-size: var(--hos-text-micro, 10px);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.remoteSessionStreamTitle {
+  color: var(--hos-heading, #0f172a);
+  font-size: var(--hos-text-caption, 12px);
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.remoteSessionStreamClose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
+  padding: 0;
+  border: 1px solid var(--hos-border, #e2e8f0);
+  border-radius: var(--hos-radius-xs, 6px); /* 归级:原 6px */
+  background: var(--color-surface-raised);
+  color: var(--hos-muted-strong, #475569);
+  cursor: pointer;
+}
+
+.remoteSessionStreamClose:hover {
+  border-color: var(--hos-border-strong, #cbd5e1);
+  background: var(--hos-primary-soft, rgba(10, 89, 247, 0.08));
+  color: var(--hos-heading, #0f172a);
+}
+
+.remoteSessionStreamEvents {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hos-space-1-5, 6px);
+  max-height: 180px;
+  margin-top: var(--hos-space-2, 8px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-width: 0;
+}
+
+.remoteSessionStreamEvent {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: var(--hos-space-1-5, 7px); /* 归级:原 7px */
+  align-items: start;
+  min-width: 0;
+}
+
+.remoteSessionStreamRole {
+  padding-top: var(--hos-space-0-5, 2px);
+  color: var(--hos-muted, #64748b);
+  font-size: var(--hos-text-micro, 10px);
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.remoteSessionStreamEvent p {
+  margin: 0;
+  color: var(--hos-text, #1e293b);
+  font-size: var(--hos-text-caption, 11px); /* 归级:原 11px */
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.remoteSessionStreamEventUser p {
+  color: var(--hos-heading, #0f172a);
+}
+
+.remoteSessionInputForm {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--hos-space-1-5, 6px);
+  align-items: end;
+  margin-top: var(--hos-space-2, 8px);
+  min-width: 0;
+}
+
+.remoteSessionInput {
+  min-width: 0;
+}
+
+.remoteSessionInput :global(textarea) {
+  font-size: var(--hos-text-caption, 12px);
+  line-height: 1.45;
+}
+
+.projectItem {
+  position: relative;
+  min-height: 34px;
+  padding: var(--hos-space-1-5, 7px) var(--hos-space-8, 36px) var(--hos-space-1-5, 7px) var(--hos-space-3, 12px); /* 归级:原 7px、36px */
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: var(--hos-space-2, 8px);
+  transition: background 0.2s ease, color 0.2s ease;
+  user-select: none;
+}
+
+.projectItem:hover {
+  background: var(--color-surface-sunken);
+}
+
+.projectItemActive {
+  background: var(--color-surface-muted);
+}
+
+.projectIcon {
+  width: 13px;
+  height: 13px;
+  transition: transform 0.2s ease;
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+.projectName {
+  font-size: var(--hos-text-body-sm, 13px);
+  color: var(--hos-heading, #0f172a);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.projectName strong {
+  font-weight: 800;
+}
+
+.projectProviders {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--hos-space-1, 4px);
+  flex-shrink: 0;
+}
+
+.projectProviderBadge {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--hos-radius-pill, 50%);
+  line-height: 0;
+}
+
+.projectProviderBadge img,
+.sessionProviderSlot img,
+.projectProviderBadge [data-provider-icon-fallback],
+.sessionProviderSlot [data-provider-icon-fallback] {
+  position: relative;
+  z-index: 1;
+  border-radius: var(--hos-radius-xs, 4px); /* 归级:原 4px */
+}
+
+.projectProviderRunning {
+  background: var(--provider-accent-soft, var(--color-info-soft));
+}
+
+.sessionList {
+  padding: var(--hos-space-0-5, 2px) var(--hos-space-2, 8px) var(--hos-space-1, 4px) var(--hos-space-6, 26px); /* 归级:原 26px */
+}
+
+.sessionItem {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 28px;
+  padding: var(--hos-space-1, 4px) var(--hos-space-8, 34px) var(--hos-space-1, 4px) var(--hos-space-2, 8px); /* 归级:原 34px */
+  cursor: pointer;
+  margin-bottom: var(--hos-space-0-5, 1px); /* 归级:原 1px */
+  border-radius: var(--hos-radius-xs, 6px); /* 归级:原 6px */
+  transition: background 0.15s ease;
+}
+
+.sessionItem:hover {
+  background: var(--color-surface-muted);
+}
+
+.sessionItemActive {
+  /* 仅用背景高亮区分活跃会话，不用竖条（全局禁止黑边/竖条） */
+  background: var(--color-info-soft) !important;
+}
+
+.sessionItemActive .sessionTitle {
+  color: var(--color-heading);
+  font-weight: var(--weight-semibold);
+}
+
+.sessionItemRunning {
+  background: linear-gradient(90deg, var(--color-info-soft) 0%, color-mix(in srgb, var(--c-neutral-0) 0%, transparent) 72%);
+}
+
+.sessionHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--hos-space-1-5, 6px);
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.sessionProviderSlot {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 14px;
+  line-height: 0;
+}
+
+.projectProviderRunning::after,
+.sessionProviderSlotRunning::after {
+  content: '';
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 5px;
+  height: 5px;
+  border: 2px solid var(--color-surface);
+  border-radius: var(--hos-radius-pill, 50%);
+  background: var(--provider-accent, var(--color-success));
+  box-shadow: 0 0 0 1px var(--provider-accent-soft, var(--color-success-soft));
+}
+
+.sessionTitle {
+  display: flex;
+  align-items: center;
+  font-size: var(--hos-text-caption, 12px);
+  line-height: 1.25;
+  color: var(--hos-muted-strong, #475569);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.sessionTime {
+  padding-left: var(--hos-space-2, 8px);
+  color: var(--hos-muted, #64748b);
+  font-size: var(--hos-text-micro, 10px);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* 归档按钮 */
+.archiveBtn {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: transparent;
+  border: none;
+  border-radius: var(--hos-radius-xs, 5px); /* 归级:原 5px */
+  cursor: pointer;
+  color: var(--c-neutral-400);
+  font-size: var(--hos-text-caption, 12px);
+  padding: 0;
+  flex-shrink: 0;
+  transform: translateY(-50%);
+}
+
+.archiveBtn:hover {
+  color: var(--c-danger-500);
+}
+
+.archiveBtn:disabled {
+  color: var(--c-neutral-300);
+  cursor: not-allowed;
+}
+
+.archiveBtn:disabled:hover {
+  color: var(--c-neutral-300);
+}
+
+.projectItem:hover .archiveBtn {
+  display: inline-flex;
+}
+
+.sessionItem:hover .archiveBtn {
+  display: inline-flex;
+}
+
+.sessionMore {
+  padding: var(--hos-space-1, 4px) var(--hos-space-3, 12px);
+  font-size: var(--hos-text-caption, 11px); /* 归级:原 11px */
+  color: var(--c-neutral-500);
+  text-align: center;
+}
+
+.mobileConfirmModal :global(.ant-modal) {
+  max-width: min(360px, calc(100vw - 32px));
+}
+
+.mobileConfirmDescription {
+  color: var(--c-neutral-600);
+  font-size: var(--hos-text-body, 14px);
+  line-height: 1.6;
+}
+
+@media (max-width: 768px) {.refreshBar {
+    padding: var(--hos-space-2, 8px) var(--hos-space-3, 12px) 0 0;
+    gap: var(--hos-space-2, 8px);
+    background: var(--c-neutral-0);
+  }/* 单行头部：标题（左）+ 操作按钮（右）合成一行 iOS 式头部，替代「大标题独占一行 +
+   * 工具栏独占一行」的两行结构。粘顶 + 毛玻璃 + 顶部安全区，滚动时头部固定。 */.refreshBarMobile {
+    position: sticky;
+    top: 0;
+    z-index: var(--z-sticky, 100);
+    justify-content: space-between;
+    gap: var(--hos-space-2, 8px);
+    padding: calc(env(safe-area-inset-top) + 10px) var(--hos-space-4, 16px) var(--hos-space-2-5, 10px);
+    background: color-mix(in srgb, var(--color-bg-elevated, #fff) 82%, transparent);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    backdrop-filter: saturate(180%) blur(20px);
+    border-bottom: 1px solid var(--color-border-subtle);
+  }.refreshBarTitle {
+    flex: 1;
+    min-width: 0;
+    font-family: var(--font-display);
+    /* 列表根视图大标题:对齐 .mobileNavTitleLarge 的 2xl/extrabold,大大方方 */
+    font-size: var(--text-2xl);
+    font-weight: var(--weight-extrabold);
+    letter-spacing: var(--tracking-tight);
+    color: var(--color-heading);
+  }.refreshBtn {
+    width: 34px !important;
+    height: 34px !important;
+    min-width: 34px !important;
+    font-size: var(--hos-text-h3, 15px) !important;
+    border-radius: var(--hos-radius-xs, 9px) !important; /* 归级:原 9px */
+  }.refreshBtnMobile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}/* 项目行:移动端卡片化(对齐 memory webui-mobile-shell「手机专属布局」铁律,
+     不再用 PC 贴边小行)。圆角卡 + 边框 + 横向 margin 形成卡片列,呼吸感更强。 */.projectItem {
+    margin: 0 var(--hos-space-3, 12px);
+    padding: var(--hos-space-3-5, 14px) var(--hos-space-12, 48px) var(--hos-space-3-5, 14px) var(--hos-space-4, 16px);
+    gap: var(--hos-space-2-5, 10px);
+    min-height: 52px;
+    border-radius: var(--hos-radius-sm, 12px);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border-subtle);
+    /* 卡片之间留 8px 间距 */
+    margin-bottom: var(--hos-space-2, 8px);
+    transition: background var(--motion-fast) var(--ease-emphasized), transform var(--motion-fast) var(--ease-emphasized), border-color var(--motion-fast) var(--ease-standard);
+    -webkit-tap-highlight-color: transparent;
+  }.projectItem:active {
+    background: var(--color-surface-muted);
+    border-color: var(--color-border);
+    transform: scale(0.985);
+  }.projectItemActive {
+    background: var(--color-info-soft);
+    border-color: color-mix(in srgb, var(--color-info) 32%, transparent);
+  }/* 列表容器左右留白,卡片不贴屏幕边 */.sidebarContent {
+    padding: var(--hos-space-2-5, 10px) var(--hos-space-1, 4px) var(--hos-space-4, 16px);
+  }.projectName {
+    font-size: var(--hos-text-h3, 16px); /* 归级:原 16px */
+    line-height: 1.4;
+  }.mobileConfirmModal :global(.ant-modal) {
+    width: calc(100vw - 32px) !important;
+    max-width: calc(100vw - 32px);
+    margin: 0 auto;
+  }.mobileConfirmModal :global(.ant-modal-content) {
+    border-radius: var(--hos-radius-md, 16px);
+    overflow: hidden;
+  }.mobileConfirmModal :global(.ant-modal-header) {
+    padding: var(--hos-space-4, 18px) var(--hos-space-4, 18px) var(--hos-space-2, 8px); /* 归级:原 18px */
+  }.mobileConfirmModal :global(.ant-modal-title) {
+    font-size: var(--hos-text-h2, 18px);
+    line-height: 1.4;
+  }.mobileConfirmModal :global(.ant-modal-body) {
+    padding: 0 var(--hos-space-4, 18px) var(--hos-space-2, 8px); /* 归级:原 18px */
+  }.mobileConfirmModal :global(.ant-modal-footer) {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--hos-space-2-5, 10px);
+    padding: var(--hos-space-3, 12px) var(--hos-space-4, 18px) 0; /* 归级:原 18px */
+  }.mobileConfirmModal :global(.ant-modal-footer .ant-btn) {
+    min-width: 72px;
+    height: 36px;
+    border-radius: var(--hos-radius-xs, 10px); /* 归级:原 10px */
+    font-size: var(--hos-text-body, 14px);
+  }/* 归档按钮：原本是实心灰方块（视觉重、像占位）。移动端无 hover，改为轻量描边、
+   * 透明底、静默色，只在需要时才显眼——让列表主体（项目名 + provider 图标）更突出。 */.archiveBtn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    right: 8px;
+    background-color: transparent;
+    color: var(--color-muted);
+    border-radius: var(--hos-radius-xs, 8px);
+    opacity: 0.55;
+  }.archiveBtn:active {
+    background-color: var(--color-surface-sunken);
+    opacity: 1;
+  }/* 会话子列表:缩进改用 margin 居中,子项也是轻量卡片(浅底+圆角),与项目卡视觉分层。 */.sessionList {
+    padding: var(--hos-space-1, 4px) var(--hos-space-3, 12px) var(--hos-space-1, 4px);
+    display: flex;
+    flex-direction: column;
+    gap: var(--hos-space-1-5, 6px);
+  }.sessionItem {
+    padding: var(--hos-space-3, 12px) var(--hos-space-10, 44px) var(--hos-space-3, 12px) var(--hos-space-3-5, 14px); /* 归级:原 44px */
+    margin-bottom: 0;
+    min-height: 46px;
+    border-radius: var(--hos-radius-10, 10px);
+    background: var(--color-surface-sunken);
+    border: 1px solid transparent;
+    transition: background var(--motion-fast) var(--ease-emphasized), transform var(--motion-fast) var(--ease-emphasized), border-color var(--motion-fast) var(--ease-standard);
+    -webkit-tap-highlight-color: transparent;
+  }.sessionItem:active {
+    background: var(--color-surface-muted);
+    transform: scale(0.985);
+  }.sessionTitle {
+    font-size: var(--hos-text-h3, 15px);
+    line-height: 1.4;
+  }.sessionTime {
+    font-size: var(--hos-text-caption, 12px);
+    color: var(--hos-muted, #64748b);
+    margin-right: var(--hos-space-1, 4px);
+  }
+}
+
+/* 左侧会话项：鸿蒙 6 胶囊卡片交互 */
+.sessionItem {
+  border-radius: var(--hos-radius-sm, 14px) !important; /* 归级:原 14px */
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+}
+
+.sessionItem:hover {
+  background: rgba(255, 255, 255, 0.75) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03) !important;
+}
+
+.sessionItemActive {
+  background: rgba(255, 255, 255, 0.95) !important;
+  border: 1px solid rgba(37, 99, 235, 0.25) !important;
+  box-shadow: 0 4px 16px rgba(37, 99, 235, 0.08) !important;
+}
+
+/* =============================================================================
+ * HarmonyOS 6 侧边栏与工作区卡片深度质感
+ * ========================================================================== */
+.projectListContainer {
+  background: var(--hos-glass-bg-subtle, rgba(255, 255, 255, 0.75)) !important;
+  backdrop-filter: var(--hos-blur-card, blur(20px)) saturate(180%) !important;
+  -webkit-backdrop-filter: var(--hos-blur-card, blur(20px)) saturate(180%) !important;
+  border-right: 1px solid rgba(0, 0, 0, 0.06) !important;
+}
+
+.projectCard {
+  border-radius: var(--hos-radius-md, 16px) !important;
+  background: rgba(255, 255, 255, 0.65) !important;
+  border: 1px solid rgba(255, 255, 255, 0.8) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02) !important;
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+}
+
+.projectCard:hover {
+  background: rgba(255, 255, 255, 0.9) !important;
+  transform: translateY(-1px) !important;
+  box-shadow: var(--hos-shadow-card, 0 4px 16px rgba(0, 0, 0, 0.04)) !important;
+}
+
+/* =============================================================================
+ * HarmonyOS 6.1 侧边栏统一顶栏规范 (Unified Sider Header)
+ * ========================================================================== */
+.sidebarUnifiedHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--hos-space-2, 8px);
+  padding: var(--hos-space-2-5, 10px) var(--hos-space-3, 12px);
+  border-bottom: 0.8px solid var(--color-border-subtle, rgba(0, 0, 0, 0.05));
+  background: var(--hos-glass-bg-subtle, rgba(255, 255, 255, 0.65));
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.sidebarHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: var(--hos-space-1-5, 6px);
+}
+
+.sidebarActionBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* 设计规范:图标胶囊按钮 32px */
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: var(--hos-radius-pill, 9999px);
+  border: 0.8px solid rgba(0, 0, 0, 0.06);
+  background: rgba(255, 255, 255, 0.8);
+  color: var(--color-text-secondary, #475569);
+  font-size: var(--hos-text-body-sm, 13px);
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.02);
+  transition: all 0.16s var(--hos-ease-smooth, cubic-bezier(0.2, 0.8, 0.2, 1));
+}
+
+[data-theme='dark'] .sidebarActionBtn {
+  background: rgba(30, 41, 59, 0.75);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: var(--hos-ink-400, #94a3b8);
+}
+
+.sidebarActionBtn:hover {
+  background: var(--hos-white, #ffffff);
+  color: var(--hos-blue-700, #0a59f7);
+  border-color: rgba(10, 89, 247, 0.3);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(10, 89, 247, 0.15);
+}
+
+[data-theme='dark'] .sidebarActionBtn:hover {
+  background: rgba(51, 65, 85, 0.9);
+  color: var(--hos-blue-500, #3b82f6);
+  border-color: rgba(10, 89, 247, 0.4);
+}

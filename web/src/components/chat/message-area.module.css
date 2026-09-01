@@ -1,0 +1,463 @@
+/* 拆分自 chat.module.css（纯搬运，样式值零变化）。域: message-area */
+
+.messageArea {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--c-neutral-400) 14%, transparent) transparent;
+}
+
+.messageArea::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+.messageArea::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.messageArea::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: var(--hos-radius-pill, 999px);
+  background: color-mix(in srgb, var(--c-neutral-400) 12%, transparent);
+  background-clip: content-box;
+}
+
+.messageArea:hover::-webkit-scrollbar-thumb,
+.messageArea::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--c-neutral-500) 50%, transparent);
+  background-clip: content-box;
+}
+
+.messageArea {
+  scrollbar-color: transparent transparent;
+}
+
+.messageArea:hover {
+  scrollbar-color: color-mix(in srgb, var(--c-neutral-400) 18%, transparent) transparent;
+}
+
+.messageArea::-webkit-scrollbar-thumb {
+  background: transparent;
+}
+
+.messageArea:hover::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--c-neutral-400) 18%, transparent);
+  background-clip: content-box;
+}
+
+.pendingTailRow {
+  max-width: var(--chat-content-width);
+  margin: var(--hos-space-0-5, 2px) 0 var(--hos-space-2, 8px) var(--chat-assistant-gutter);
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+}
+
+.pendingTailStatus {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  color: var(--c-neutral-400);
+  font-size: var(--hos-text-body-sm, 13px);
+  line-height: 1.45;
+  letter-spacing: 0;
+}
+
+.pendingTailChar {
+  display: inline-block;
+  color: var(--c-neutral-300);
+  animation: pendingTextSweep 1.35s ease-in-out infinite;
+}
+
+@keyframes pendingTextSweep {
+  0%, 100% {
+    color: var(--c-neutral-400);
+    opacity: 0.72;
+  }
+  45% {
+    color: var(--c-info-600);
+    opacity: 1;
+  }
+  70% {
+    color: var(--c-info-500);
+    opacity: 0.94;
+  }
+}
+
+/* 会话阅读区采用“安静技术文档”规范：固定内容宽度、轻 panel、无 provider 专属气泡色。 */
+.messageArea,
+.messageSurface {
+  --chat-content-width: 840px;
+  --chat-avatar-size: 32px;
+  --chat-avatar-gap: 12px;
+  --chat-assistant-gutter: calc(var(--chat-avatar-size) + var(--chat-avatar-gap));
+  --chat-thread-width: calc(var(--chat-content-width) + var(--chat-assistant-gutter));
+  /* 对齐设计 token（唯一来源 design-tokens.css），保证聊天面与 EventBlock 一致 */
+  --chat-text: var(--color-text);
+  --chat-muted: var(--color-muted);
+  --chat-muted-soft: var(--color-faint);
+  --chat-panel-bg: var(--color-surface);
+  --chat-panel-muted-bg: var(--color-surface-muted);
+  --chat-panel-border: var(--color-border);
+  --chat-panel-radius: var(--event-radius);
+  --chat-panel-padding: var(--space-7) var(--space-8);
+  --chat-panel-shadow: var(--elevation-1);
+  --chat-message-font-size: var(--hos-text-h3, 15px);
+  --chat-message-line-height: 1.72;
+  --chat-meta-font-size: var(--text-sm);
+}
+
+.messageAreaMobile,
+.messageSurfaceMobile {
+  --chat-content-width: 100%;
+  --chat-assistant-gutter: 0px;
+  --chat-thread-width: 100%;
+  --chat-message-font-size: var(--hos-text-h3, 16px); /* 归级:原 16px */
+  --chat-message-line-height: 1.76;
+}
+
+/* ===== 消息区域 ===== */
+.messageArea {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--hos-space-7, 28px) var(--hos-space-6, 24px) var(--hos-space-6, 24px);
+  background: var(--c-neutral-50);
+  min-height: 0;
+  position: relative;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: auto;
+  touch-action: auto;
+}
+
+.messageAreaMobile {
+  padding: var(--hos-space-3-5, 14px) var(--hos-space-3, 12px) var(--hos-space-2, 8px);
+}
+
+.messageThread {
+  max-width: var(--chat-thread-width);
+  margin: 0 auto;
+}
+
+/* 回到底部 */
+.scrollBottomBtn {
+  position: sticky;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-pill, 999px);
+  box-shadow: var(--elevation-2);
+  cursor: pointer;
+  color: var(--color-muted-strong);
+  z-index: var(--z-raised);
+  margin: 0 auto;
+  transition: border-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard),
+    transform var(--motion-fast) var(--ease-standard);
+}
+
+.scrollBottomBtn:hover {
+  border-color: var(--provider-accent, var(--color-brand));
+  color: var(--provider-accent, var(--color-brand));
+  transform: translateX(-50%) translateY(-1px);
+}
+
+.queueDock {
+  padding: var(--hos-space-3, 12px) var(--hos-space-3-5, 14px);
+  border: 0.8px solid var(--color-border-subtle, rgba(0, 0, 0, 0.08));
+  border-radius: var(--hos-radius-md, 16px);
+  background: var(--hos-glass-bg-card, rgba(255, 255, 255, 0.85));
+  backdrop-filter: var(--hos-blur-card, blur(20px) saturate(190%));
+  -webkit-backdrop-filter: var(--hos-blur-card, blur(20px) saturate(190%));
+  box-shadow: var(--hos-shadow-card, 0 4px 16px rgba(0, 0, 0, 0.04));
+}
+
+.queueDockHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--hos-space-3, 12px);
+  padding: var(--hos-space-0-5, 2px) var(--hos-space-0-5, 2px) var(--hos-space-2-5, 10px);
+}
+
+.queueDockTitle {
+  color: var(--c-neutral-500);
+  font-size: var(--hos-text-body-sm, 13px);
+  font-weight: 600;
+}
+
+.queueDockHint {
+  color: var(--c-neutral-400);
+  font-size: var(--hos-text-caption, 12px);
+  line-height: 1.4;
+  text-align: right;
+}
+
+.queueItem {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas:
+    "grip content"
+    "grip actions";
+  align-items: flex-start;
+  gap: var(--hos-space-1-5, 6px) var(--hos-space-2-5, 10px);
+  padding: var(--hos-space-2-5, 10px) 0;
+}
+
+.queueItem + .queueItem {
+  border-top: 1px solid var(--c-neutral-100);
+}
+
+.queueGrip {
+  grid-area: grip;
+  color: var(--c-neutral-300);
+  font-size: var(--hos-text-caption, 12px);
+  letter-spacing: -1px;
+  user-select: none;
+  padding-top: var(--hos-space-1, 4px);
+}
+
+.queueContent {
+  grid-area: content;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.queuePreview {
+  display: block;
+  color: var(--c-neutral-600);
+  font-size: var(--hos-text-body, 14px);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.queueActions {
+  grid-area: actions;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--hos-space-2-5, 10px);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.queueActionHintWrap {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--hos-space-1, 4px);
+}
+
+.queueActionHint {
+  color: var(--c-neutral-400);
+  font-size: var(--hos-text-caption, 12px);
+}
+
+.queueInfoBtn {
+  width: 18px;
+  height: 18px;
+  border: none;
+  background: transparent;
+  color: var(--c-neutral-300);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: help;
+  padding: 0;
+}
+
+.queueInfoBtn:hover {
+  color: var(--c-neutral-500);
+}
+
+.queueActionBtn {
+  border: none;
+  background: transparent;
+  color: var(--c-neutral-500);
+  font-size: var(--hos-text-caption, 12px);
+  cursor: pointer;
+  padding: 0;
+}
+
+.queueActionBtn:hover {
+  color: var(--hos-heading, #0f172a);
+}
+
+/* 旧 stopBtn 保留以防其他引用 */
+.emptyCenter {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.welcomeState {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: var(--hos-space-6, 24px);
+}
+
+.welcomeTitle {
+  font-size: var(--hos-text-display, 40px); /* 归级:原 40px */
+  line-height: 1.2;
+  font-weight: 700;
+  color: var(--hos-heading, #0f172a);
+  letter-spacing: -0.03em;
+}
+
+.welcomeHint {
+  margin-top: var(--hos-space-3-5, 14px);
+  max-width: 420px;
+  font-size: var(--hos-text-body, 14px);
+  line-height: 1.7;
+  color: var(--c-neutral-500);
+}
+
+@media (max-width: 768px) {.pendingTailStatus {
+    font-size: var(--hos-text-body, 14px);
+  }.queueDockHint,
+.queueActionHint,
+.queueActionBtn {
+    font-size: var(--hos-text-body-sm, 13px);
+  }.queueDockTitle {
+    font-size: var(--hos-text-body, 14px);
+  }.messageAreaMobile {
+    background: var(--color-bg);
+    /* 横向留白加大到 16px,气泡不贴屏幕边;行间距更松 */
+    padding: var(--hos-space-4, 18px) var(--hos-space-4, 16px) var(--hos-space-3, 12px); /* 归级:原 18px */
+  }.pendingTailRow {
+    margin-left: var(--hos-space-2, 8px);
+    margin-bottom: var(--hos-space-2-5, 10px);
+  }.messageThread {
+    max-width: none;
+  }.queueDock {
+    padding: var(--hos-space-2, 8px) var(--hos-space-2-5, 10px);
+    border-radius: var(--chat-panel-radius);
+  }.queueDockHeader {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: var(--hos-space-1, 4px);
+  }.queueActions {
+    justify-content: flex-start;
+  }.welcomeTitle {
+    font-size: var(--hos-text-display, 28px); /* 归级:原 28px */
+  }.welcomeHint {
+    font-size: var(--hos-text-h3, 15px);
+    line-height: 1.75;
+    max-width: 320px;
+  }.welcomeState {
+    justify-content: flex-end;
+    padding: var(--hos-space-6, 24px) var(--hos-space-5, 20px) 10vh;
+  }
+}
+
+/* =============================================================================
+ * HarmonyOS 6 风格 EmptyState 空状态卡片
+ * ========================================================================== */
+.emptyContainerHarmony {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--hos-space-8, 32px);
+  background: var(--color-bg, #f8fafc);
+}
+
+.emptyCardHarmony {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  max-width: 460px;
+  padding: var(--hos-space-10, 40px) var(--hos-space-8, 32px);
+  border-radius: var(--hos-radius-xl, 24px);
+  background: var(--hos-glass-bg-card, rgba(255, 255, 255, 0.85));
+  backdrop-filter: var(--hos-blur-floating, blur(28px)) saturate(190%);
+  -webkit-backdrop-filter: var(--hos-blur-floating, blur(28px)) saturate(190%);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  box-shadow: var(--hos-shadow-floating, 0 12px 36px -4px rgba(0, 0, 0, 0.08));
+  animation: harmonyFadeIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes harmonyFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.emptyIconBadgeHarmony {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--hos-radius-lg, 20px);
+  background: rgba(37, 99, 235, 0.12);
+  color: var(--hos-blue-600, #2563eb);
+  font-size: var(--hos-text-display, 26px); /* 归级:原 26px */
+  margin-bottom: var(--hos-space-5, 20px);
+  box-shadow: 0 4px 16px rgba(37, 99, 235, 0.15);
+}
+
+.emptyTitleHarmony {
+  font-size: var(--hos-text-h2, 20px); /* 归级:原 20px */
+  font-weight: 700;
+  color: var(--color-heading, #0f172a);
+  margin: 0 0 var(--hos-space-2-5, 10px) 0;
+  letter-spacing: -0.02em;
+}
+
+.emptyDescHarmony {
+  font-size: var(--hos-text-body, 14px);
+  line-height: 1.6;
+  color: var(--color-muted, #64748b);
+  margin: 0 0 var(--hos-space-6, 24px) 0;
+}
+
+.emptyDescHarmony code {
+  font-family: var(--font-mono, monospace);
+  padding: var(--hos-space-0-5, 2px) var(--hos-space-1-5, 6px);
+  border-radius: var(--hos-radius-xs, 6px); /* 归级:原 6px */
+  background: rgba(0, 0, 0, 0.04);
+  font-size: var(--hos-text-caption, 12px);
+}
+
+/* =============================================================================
+ * HarmonyOS 6 风格 QueueDock 排队消息卡片质感
+ * ========================================================================== */
+.queueDock {
+  border-radius: var(--hos-radius-md, 16px) !important;
+  background: var(--hos-glass-bg-card, rgba(255, 255, 255, 0.85)) !important;
+  backdrop-filter: var(--hos-blur-subtle, blur(16px)) saturate(180%) !important;
+  -webkit-backdrop-filter: var(--hos-blur-subtle, blur(16px)) saturate(180%) !important;
+  border: 1px solid rgba(37, 99, 235, 0.2) !important;
+  box-shadow: 0 4px 16px rgba(37, 99, 235, 0.08) !important;
+  padding: var(--hos-space-2-5, 10px) var(--hos-space-3-5, 14px) !important;
+}
+
+.queueItem {
+  border-radius: var(--hos-radius-xs, 10px) !important; /* 归级:原 10px */
+  transition: all 0.15s ease !important;
+}
+
+.queueItem:hover {
+  background: rgba(37, 99, 235, 0.05) !important;
+}

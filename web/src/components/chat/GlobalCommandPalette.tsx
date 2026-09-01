@@ -10,7 +10,7 @@ import {
   ClearOutlined,
   BgColorsOutlined,
 } from '@ant-design/icons';
-import styles from './chat.module.css';
+import styles from './chat-overlays.module.css';
 
 interface Props {
   open: boolean;

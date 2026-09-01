@@ -26,7 +26,11 @@ import {
   openHtmlPreviewWindow,
   type HtmlPreviewDevice
 } from './html-preview-window';
-import styles from './chat.module.css';
+import filePreviewStyles from './file-preview.module.css';
+import bubbleStyles from './message-bubble.module.css';
+
+// filePreviewInlineImage 与 markdownCarouselSlide 共选择器，归入 message-bubble 域；类名无交集，合并后引用行为不变
+const styles = { ...filePreviewStyles, ...bubbleStyles };
 
 interface Props {
   path: string;

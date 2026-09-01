@@ -96,7 +96,7 @@ Primitive  →  Semantic  →  Domain
 antd 全局主题在 `App.tsx` 的 `ConfigProvider` 统一配置，值与 design-tokens 对齐，**禁止在单个组件覆盖**：
 
 - **按钮颜色**：`colorPrimary = #171717`（品牌墨色）。主按钮=墨底白字、默认按钮=描边、危险=`colorError`。扁平化（`primaryShadow/defaultShadow = none`），按钮文字 `fontWeight 600`。
-- **圆角标准**：输入框/按钮 `10`（--radius-md）、小元素 `8`、卡片/弹窗 `14~16`。**不再用过圆的 16 做按钮**。
+- **圆角标准**：输入框/按钮 `10`（--hos-radius-10）、小元素 `8`（--hos-radius-xs）、卡片/弹窗 `14~16`（--hos-radius-sm/md）。**不再用过圆的 16 做按钮**。
 - **控件高度**：`controlHeight = 36`，按钮/输入/选择统一，保证横向排列基线对齐。
 - 状态色 `colorSuccess/Warning/Error/Info` 与 design-tokens 完全一致。
 
@@ -109,7 +109,7 @@ antd 全局主题在 `App.tsx` 的 `ConfigProvider` 统一配置，值与 design
 
 ## 5. 圆角 / 阴影 / 动效
 
-- 圆角：`--radius-xs 6` · `sm 8` · `md 10` · `lg 12` · `xl 16` · `2xl 20` · `pill`
+- 圆角（hos 体系）：`--hos-radius-2xs 6` · `xs 8` · `10 10` · `sm 12` · `md 16` · `lg 20` · `xl 24` · `2xl 32` · `pill`
 - 阴影：`--elevation-1…4`（层级递进）、`--ring-focus` / `--ring-focus-info`（聚焦环）
 - 动效时长：`--motion-instant 80` · `fast 120` · `base 180` · `slow 280` · `slower 420`
 - 缓动：`--ease-standard`（默认）· `--ease-emphasized` · `--ease-in-out`

@@ -14,7 +14,7 @@
   height: 7px;
   flex: 0 0 7px;
   border-radius: var(--hos-radius-pill, 999px);
-  background: var(--app-border-strong);
+  background: var(--hos-border-strong, #cbd5e1);
 }
 
 .statusReady {
@@ -38,7 +38,7 @@
   border: 1px solid transparent;
   border-radius: var(--hos-radius-xs, 8px);
   background: transparent;
-  color: var(--app-heading);
+  color: var(--hos-heading, #0f172a);
   font-size: var(--hos-text-caption, 12px);
   font-weight: 700;
   line-height: 1;
@@ -49,15 +49,15 @@
 
 .trigger:hover:not(:disabled),
 .addLink:hover {
-  border-color: var(--app-border);
+  border-color: var(--hos-border, #e2e8f0);
   background: var(--color-surface-raised);
 }
 
 .trigger:focus-visible,
 .addLink:focus-visible {
   outline: none;
-  border-color: var(--app-primary);
-  box-shadow: 0 0 0 2px var(--app-primary-soft);
+  border-color: var(--hos-blue-700, #0a59f7);
+  box-shadow: 0 0 0 2px var(--hos-primary-soft, rgba(10, 89, 247, 0.08));
 }
 
 .trigger:disabled {
@@ -66,7 +66,7 @@
 
 .serverIcon {
   flex: 0 0 auto;
-  color: var(--app-muted-strong);
+  color: var(--hos-muted-strong, #475569);
   font-size: var(--hos-text-body, 14px);
 }
 
@@ -81,7 +81,7 @@
 
 .caret {
   flex: 0 0 auto;
-  color: var(--app-muted);
+  color: var(--hos-muted, #64748b);
   font-size: var(--hos-text-micro, 10px);
 }
 
@@ -94,7 +94,7 @@
   width: 30px;
   height: 30px;
   border-radius: var(--hos-radius-xs, 8px);
-  color: var(--app-muted);
+  color: var(--hos-muted, #64748b);
   font-size: var(--hos-text-h3, 15px);
   text-decoration: none;
   transition: background 0.16s ease, color 0.16s ease;
@@ -102,5 +102,5 @@
 
 .gear:hover {
   background: var(--color-surface-raised);
-  color: var(--app-primary);
+  color: var(--hos-blue-700, #0a59f7);
 }

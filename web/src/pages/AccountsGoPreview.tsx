@@ -2941,7 +2941,7 @@ export default function Accounts() {
                         wordBreak: 'break-word',
                         fontSize: 12,
                         lineHeight: 1.5,
-                        background: 'var(--app-surface-muted)',
+                        background: 'var(--hos-surface-muted, #f1f5f9)',
                         borderRadius: 6
                       }}
                     >

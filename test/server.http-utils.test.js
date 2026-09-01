@@ -270,7 +270,7 @@ test('fetchModelsForAccount 在账号选定后使用账号绑定出口探测模�
   });
 });
 
-test('fetchModelsForAccount falls back to paas probe when zcode balance probe fails', async (t) => {
+test('fetchModelsForAccount rejects with zcode_jwt_missing_relogin when the zcode balance probe rejects a dead jwt', async (t) => {
   const seenUrls = [];
   t.mock.method(global, 'fetch', async (url) => {
     const text = String(url || '');
@@ -285,21 +285,27 @@ test('fetchModelsForAccount falls back to paas probe when zcode balance probe fa
     };
   });
 
-  const models = await fetchModelsForAccount({}, {
+  const error = await fetchModelsForAccount({}, {
     provider: 'zcode',
     accountRef: 'acct_test',
     accessToken: 'zai-token-fresh',
     zcodeJwtToken: 'zcode-jwt-dead',
     apiKeyMode: false,
     authType: 'oauth',
-    // 新账号形态：openaiBaseUrl 是推理端点（…/zcode-plan/anthropic）。回退探测必须
-    // 用分支内部的 paas 常量而不是 fall through 到通用探测拼这个 base 的 /models。
+    // 新账号形态：openaiBaseUrl 是推理端点（…/zcode-plan/anthropic）。JWT 失效时
+    // 不得回退 paas 探测（回退凭据必然已过期），也不得 fall through 到通用探测拼
+    // 这个 base 的 /models。
     openaiBaseUrl: 'https://zcode.z.ai/api/v1/zcode-plan/anthropic'
-  }, 500);
+  }, 500).then(
+    () => null,
+    (err) => err
+  );
 
-  assert.equal(seenUrls[0], 'https://zcode.z.ai/api/v1/zcode-plan/billing/balance');
-  assert.equal(seenUrls[1], 'https://api.z.ai/api/coding/paas/v4/models');
-  assert.deepEqual(models, ['glm-4.5']);
+  assert.ok(error, 'balance 探测 401（JWT 已失效）时必须抛出定向错误而不是回退 paas 探测');
+  assert.equal(error.code, 'zcode_jwt_missing_relogin');
+  assert.equal(error.reloginRequired, true);
+  assert.deepEqual(seenUrls, ['https://zcode.z.ai/api/v1/zcode-plan/billing/balance'],
+    '只发起 balance 探测：paas 回退凭据（accessToken）必然已过期，不得再探测');
 });
 
 test('fetchModelsForAccount rejects with zcode_jwt_missing_relogin instead of paas-probing without zcodeJwtToken', async (t) => {

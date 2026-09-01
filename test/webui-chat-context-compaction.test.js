@@ -49,6 +49,54 @@ test('buildApiProxyMessages leaves normal size conversations untouched', () => {
   assert.equal(result[2].content, 'Draw a cat');
 });
 
+test('buildApiProxyMessages 合并相邻且 content 完全相同的连续 user 消息', () => {
+  const messages = [
+    { role: 'user', content: '举杯邀明月' },
+    { role: 'user', content: '举杯邀明月' },
+    { role: 'assistant', content: '对影成三人' }
+  ];
+
+  const result = buildApiProxyMessages(messages, [], {
+    model: 'gpt-5',
+    provider: 'codex'
+  });
+
+  assert.deepEqual(result, [
+    { role: 'user', content: '举杯邀明月' },
+    { role: 'assistant', content: '对影成三人' }
+  ]);
+});
+
+test('buildApiProxyMessages 保留被 assistant 隔开的有意重复 user 消息', () => {
+  const messages = [
+    { role: 'user', content: '再来一遍' },
+    { role: 'assistant', content: '好的' },
+    { role: 'user', content: '再来一遍' }
+  ];
+
+  const result = buildApiProxyMessages(messages, [], {
+    model: 'gpt-5',
+    provider: 'codex'
+  });
+
+  assert.equal(result.length, 3);
+  assert.equal(result[2].content, '再来一遍');
+});
+
+test('buildApiProxyMessages 保留相邻但 content 不同的连续 user 消息', () => {
+  const messages = [
+    { role: 'user', content: '举杯邀明月' },
+    { role: 'user', content: '对影成三人' }
+  ];
+
+  const result = buildApiProxyMessages(messages, [], {
+    model: 'gpt-5',
+    provider: 'codex'
+  });
+
+  assert.equal(result.length, 2);
+});
+
 test('buildApiProxyMessages compacts at the 60% high-water mark', () => {
   // gemini-3.1-flash-image: context 65536 → 60% 高水位 ≈ 39321 tokens。
   // 两条 60k 字符消息 ≈ 40012 tokens(~61%),旧 75% 阈值(49152)不会压缩,60% 必须压缩。

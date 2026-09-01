@@ -116,6 +116,7 @@ test('client profile gate protects the workspace until the active Server is auth
 
   assert.deepEqual(gate.resolveFabricProfileGateState([offline], 'cp-offline'), {
     ready: false,
+    configured: false,
     active: {
       profile: offline,
       profileId: 'cp-offline',
@@ -138,17 +139,22 @@ test('client profile gate protects the workspace until the active Server is auth
     '/fabric/nodes',
     '/fabric/webrtc-diagnostics'
   ].forEach((pathname) => {
-    assert.equal(gate.shouldRedirectToFabricServerSetup({ ready: false }, pathname, ''), true, pathname);
+    assert.equal(
+      gate.shouldRedirectToFabricServerSetup({ ready: false, configured: false }, pathname, ''),
+      true,
+      pathname
+    );
   });
-  assert.equal(gate.shouldRedirectToFabricServerSetup({ ready: false }, '/server-setup', ''), false);
-  assert.equal(gate.shouldRedirectToFabricServerSetup({ ready: false }, '/server-setup', '?gate=1'), false);
-  assert.equal(gate.shouldRedirectToFabricServerSetup({ ready: false }, '/future-workspace-route', ''), true);
-  assert.equal(gate.shouldRedirectToFabricServerSetup({ ready: true }, '/future-workspace-route', ''), false);
-  assert.equal(gate.canRenderFabricWorkspace({ ready: false }, '/accounts', ''), false);
-  assert.equal(gate.canRenderFabricWorkspace({ ready: false }, '/server-setup', ''), true);
-  assert.equal(gate.canRenderFabricWorkspace({ ready: true }, '/accounts', ''), true);
+  assert.equal(gate.shouldRedirectToFabricServerSetup({ ready: false, configured: false }, '/server-setup', ''), false);
+  assert.equal(gate.shouldRedirectToFabricServerSetup({ ready: false, configured: false }, '/server-setup', '?gate=1'), false);
+  assert.equal(gate.shouldRedirectToFabricServerSetup({ ready: false, configured: false }, '/future-workspace-route', ''), true);
+  assert.equal(gate.shouldRedirectToFabricServerSetup({ ready: true, configured: true }, '/future-workspace-route', ''), false);
+  assert.equal(gate.canRenderFabricWorkspace({ ready: false, configured: false }, '/accounts', ''), false);
+  assert.equal(gate.canRenderFabricWorkspace({ ready: false, configured: false }, '/server-setup', ''), true);
+  assert.equal(gate.canRenderFabricWorkspace({ ready: true, configured: true }, '/accounts', ''), true);
   assert.deepEqual(gate.resolveFabricProfileGateState([offline, ready], 'cp-ready'), {
     ready: true,
+    configured: true,
     active: {
       profile: ready,
       profileId: 'cp-ready',
@@ -158,11 +164,40 @@ test('client profile gate protects the workspace until the active Server is auth
   });
 });
 
+test('client profile gate does not kick configured clients on a stale persisted health state', () => {
+  const gate = loadFabricProfileGateModule();
+  // 回归：上一轮会话的异步刷新把 state 落盘成 degraded/offline 后，
+  // 全量刷新时 gate 不得在重校验前把已配置 Key 的客户端踢回 /server-setup。
+  const staleDegraded = createProfile('cp-stale', {
+    state: 'degraded',
+    managementKey: 'management-key',
+    lastError: 'http_503'
+  });
+  const staleOffline = createProfile('cp-stale-offline', {
+    state: 'offline',
+    managementKey: 'management-key'
+  });
+
+  for (const stale of [staleDegraded, staleOffline]) {
+    const state = gate.resolveFabricProfileGateState([stale], stale.id);
+    assert.equal(state.ready, false, stale.id);
+    assert.equal(state.configured, true, stale.id);
+    assert.equal(gate.shouldRedirectToFabricServerSetup(state, '/chat', ''), false, stale.id);
+    assert.equal(gate.canRenderFabricWorkspace(state, '/accounts', ''), true, stale.id);
+  }
+
+  // 未配置 Key 的 profile 仍然是真正的 setup 未完成，必须继续拦到 /server-setup。
+  const keyless = createProfile('cp-keyless', { state: 'offline' });
+  const keylessState = gate.resolveFabricProfileGateState([keyless], 'cp-keyless');
+  assert.equal(keylessState.configured, false);
+  assert.equal(gate.shouldRedirectToFabricServerSetup(keylessState, '/chat', ''), true);
+});
+
 test('app applies the profile gate to browser and native clients before mounting workspace pages', () => {
   const source = fs.readFileSync(path.join(__dirname, '../web/src/app.tsx'), 'utf8');
   assert.match(source, /function enforceServerProfileGate\(\)/u);
   assert.doesNotMatch(source, /function enforceNativeServerProfileGate/u);
-  assert.match(source, /menuDataRender:[\s\S]*resolveCurrentServerProfileGate\(\)\.ready/u);
+  assert.match(source, /menuDataRender:[\s\S]*resolveCurrentServerProfileGate\(\)\.configured/u);
   assert.match(source, /canRenderWorkspace\s*\?\s*children\s*:\s*null/u);
   assert.match(source, /const canRenderDataPlane = isGoAccountsPreview \|\| profileGate\.ready/u);
   assert.match(source, /canRenderDataPlane && <AppInstallTaskQueue \/>/u);

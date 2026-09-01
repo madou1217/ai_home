@@ -87,6 +87,16 @@ const STORAGE_KEY = 'aih:control-plane-profiles:v1';
 export const CONTROL_PLANE_PROFILES_CHANGED_EVENT = 'aih:control-plane-profiles-changed';
 const SHARED_PROFILE_API_PATH = '/v0/webui/control-plane/profiles';
 
+// native 运行时下 profile 的权威来源是原生仓/Keychain，经异步 IPC 加载。
+// 加载完成前本地簿处于「未初始化」状态，禁止把「当前 Server 不在簿内」
+// 抢先落盘成 keyless 的 offline 自动 profile（冷启动竞态根因）。
+// 浏览器运行时的 localStorage 是同步的，天然不存在该窗口。
+let nativeProfileStoreInitialized = false;
+
+function isProfileStoreInitializationPending() {
+  return isNativeDesktopRuntime() && !nativeProfileStoreInitialized;
+}
+
 // 共享 profile 同步是裸 fetch，必须显式携带当前 Server 的 Management Key。
 function sharedProfileAuthHeaders(): Record<string, string> {
   const managementKey = resolveWebUiManagementKey();
@@ -421,6 +431,7 @@ export function listControlPlaneProfiles(): ControlPlaneProfile[] {
 }
 
 export function ensureCurrentControlPlaneProfile(): ControlPlaneProfile | null {
+  if (isProfileStoreInitializationPending()) return null;
   const endpoint = getCurrentWebUiControlPlaneEndpoint();
   if (!endpoint) return null;
   const profiles = readProfiles();
@@ -709,22 +720,28 @@ export async function initializeNativeControlPlaneProfiles() {
       activeProfileId: ''
     };
   }
-  const native = await listNativeServerProfiles();
-  const profiles = native.profiles
-    .map(mapNativeServerProfile)
-    .filter((profile): profile is ControlPlaneProfile => Boolean(profile));
-  writeProfiles(profiles);
-  const activeProfileId = native.activeProfileId
-    || profiles.find(isReadyProfileCandidate)?.id
-    || profiles[0]?.id
-    || '';
-  if (activeProfileId && activeProfileId !== native.activeProfileId) {
-    await setActiveNativeServerProfile(activeProfileId);
+  try {
+    const native = await listNativeServerProfiles();
+    const profiles = native.profiles
+      .map(mapNativeServerProfile)
+      .filter((profile): profile is ControlPlaneProfile => Boolean(profile));
+    writeProfiles(profiles);
+    const activeProfileId = native.activeProfileId
+      || profiles.find(isReadyProfileCandidate)?.id
+      || profiles[0]?.id
+      || '';
+    if (activeProfileId && activeProfileId !== native.activeProfileId) {
+      await setActiveNativeServerProfile(activeProfileId);
+    }
+    return {
+      profiles,
+      activeProfileId
+    };
+  } finally {
+    // 无论成败都标记初始化已结束：失败时本地簿维持原样，
+    // 之后的读取不再被视为「加载中」，恢复正常的自动补登记行为。
+    nativeProfileStoreInitialized = true;
   }
-  return {
-    profiles,
-    activeProfileId
-  };
 }
 
 export async function saveControlPlaneProfileSecure(

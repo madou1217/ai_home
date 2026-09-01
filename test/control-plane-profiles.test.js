@@ -111,6 +111,38 @@ test('control plane profiles auto-seed current WebUI origin as local profile', (
   delete global.window;
 });
 
+test('control plane profiles do not persist an offline auto profile before native store initialization settles', async () => {
+  const storage = createStorage();
+  const ipcCalls = [];
+  global.window = {
+    localStorage: storage,
+    location: { origin: 'http://127.0.0.1:9527' },
+    crypto: require('node:crypto').webcrypto,
+    __TAURI_IPC__: (message) => {
+      ipcCalls.push(message.cmd);
+      // 模拟原生仓（Keychain）异步返回空列表
+      setTimeout(() => {
+        const callback = global.window[`_${message.callback}`];
+        if (typeof callback === 'function') callback({ profiles: [], activeProfileId: '' });
+      }, 0);
+    }
+  };
+  const profiles = loadControlPlaneProfilesModule();
+
+  // 初始化未完成：读取不得落盘 keyless 的 offline 自动 profile（冷启动竞态回归）。
+  assert.deepEqual(profiles.listControlPlaneProfiles(), []);
+  assert.equal(storage.getItem('aih:control-plane-profiles:v1'), null);
+
+  // 初始化结束后：恢复正常的自动补登记行为。
+  await profiles.initializeNativeControlPlaneProfiles();
+  const saved = profiles.listControlPlaneProfiles();
+  assert.equal(saved.length, 1);
+  assert.equal(saved[0].name, '当前 Server');
+  assert.equal(saved[0].state, 'offline');
+  assert.ok(ipcCalls.includes('desktop_profile_list'));
+  delete global.window;
+});
+
 test('control plane shared profile sync does not probe a protected endpoint before a local key exists', async () => {
   const requests = [];
   global.window = {

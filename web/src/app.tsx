@@ -122,7 +122,9 @@ export const layout = ({ initialState }: any) => {
     title: "AI Home",
     onPageChange: enforceServerProfileGate,
     menuDataRender: (menuData: any[]) => (
-      isGoAccountsPreview || resolveCurrentServerProfileGate().ready ? menuData : []
+      // 与 workspace gate 同一判定：菜单只依赖 setup 完整性（configured），
+      // 不随运行期健康快照（ready）抖动而隐藏。
+      isGoAccountsPreview || resolveCurrentServerProfileGate().configured ? menuData : []
     ),
     menuFooterRender: () => isGoAccountsPreview ? null : (
       <div style={{ padding: "8px 12px" }}>

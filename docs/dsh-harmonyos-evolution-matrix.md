@@ -11,6 +11,23 @@
 
 ---
 
+## ⚠️ 零、Loop 纪律条款（2026-08-31 起强制执行，F12/P1 落地）
+
+> 依据 `docs/session-b2ce4810-gap-tracker.md` 三、流程类审计：原会话 loop 后期 review 完全未执行、规划退化为复读。以下两条为强制门禁，不得跳过。
+
+1. **每轮 loop 必须先跑盲区扫描（F12 自动进化）**：
+   `node scripts/evolution-scan.js`（默认扫描本文档与 gap-tracker 的状态标记 ✅🔧⚠️❌❓➖ 及 `- [x]/- [ ]`），
+   产出「下一轮该做什么」清单（❌ 未实现 > ⚠️ 部分完成 > ❓ 状态不确定，附出处文件:行号）。
+   本轮工作项必须取自该清单，禁止凭空规划或复读历史报告。
+2. **每次产出必须过双模型 review 门禁（P1）**：
+   `node scripts/evolution-scan.js review --requirement "<需求原文>" --result "<实现结果摘要>" --evidence "<测试/实测证据>" --files <改动文件> --provider both --execute`，
+   review prompt 强制携带需求原文 + 实现证据 + 验收问题清单；codex 与 claude 均给出 PASS 方可标记完成，任一 FAIL 必须返工。
+   默认 `--dry-run` 只打印命令不消耗 token；`--execute` 才真正调用 `aih codex exec` / `aih claude -p`。
+3. **状态更新纪律**：条目完成后须先更新本文档与 gap-tracker 的状态标记（附证据），再进入下一轮扫描——扫描器以这两份文档为唯一事实源。
+4. **大文件哨兵与拆分纪律（防回弹）**：`node scripts/evolution-scan.js` 内置大文件哨兵，loop 每轮先跑扫描检查 `lib/`、`application/`、`core/`、`web/src` 下的源码文件（.js/.ts/.tsx/.css）——单文件超 **150KB 列预警**、超 **200KB 列超标必须拆分**，均列入 nextActions（优先级等同 ⚠️），loop 每次发现一个处理一个。provider 各自的业务必须按 provider 分文件处理，禁止向单一文件无限堆积。
+
+---
+
 ## 📊 一、全站功能与设计落地矩阵 (Feature & Design Matrix)
 
 | 页面 / 模块 | 序号 | 核心功能 / 设计特性 | 对标原型来源 | 端侧适配 | 状态 | 关键实现文件 / 模块 |

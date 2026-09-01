@@ -16,7 +16,7 @@ describe('message-metrics-format', () => {
 
     it('formats seconds under 1 minute', () => {
       assert.equal(formatDurationLabel(17000), '17秒');
-      assert.equal(formatDurationLabel(1200), '1秒');
+      assert.equal(formatDurationLabel(1200), '1.2秒');
     });
 
     it('formats minutes and seconds for longer runs', () => {

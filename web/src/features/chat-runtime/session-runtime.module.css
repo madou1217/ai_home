@@ -8,46 +8,46 @@
 
 .workspaceHeader {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--hos-space-4, 16px);
   min-width: 0;
-  min-height: 54px;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--hos-space-0-5, 2px);
   padding: var(--hos-space-2, 8px) var(--hos-space-5, 20px);
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface-raised);
 }
 
-.workspaceIdentity,
-.runtimeMeta {
+.workspaceHeaderMain {
   display: flex;
-  align-items: center;
-  gap: var(--hos-space-2-5, 10px);
-}
-
-.workspaceIdentity {
   min-width: 0;
-  flex: 1;
-  overflow: hidden;
+  align-items: center;
+  gap: var(--hos-space-3, 12px);
 }
 
 .workspaceTitle {
   min-width: 0;
-  flex: 1;
   overflow: hidden;
-  font-size: var(--hos-text-h3, 15px);
+  font-size: var(--hos-text-h2, 18px);
+  font-weight: 600;
+  line-height: 1.4;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.workspaceIdentity > span,
-.runtimeMeta { flex: 0 0 auto; }
-.workspaceHeader span { color: var(--color-text-secondary); font-size: var(--hos-text-caption, 12px); }
+.workspaceStateBadge { flex: 0 0 auto; }
+.workspaceStateBadge :global(.ant-badge-status-text) {
+  color: var(--color-text-secondary);
+  font-size: var(--hos-text-caption, 12px);
+}
 
-.runtimeMeta span {
-  padding: var(--hos-space-0-5, 2px) var(--hos-space-2, 7px); /* 归级:原 7px */
-  border-radius: var(--hos-radius-pill, 999px);
-  background: var(--color-surface-subtle, #f5f5f5);
+.workspaceHeaderMeta {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-secondary);
+  font-size: var(--hos-text-caption, 12px);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .timeline {
@@ -404,8 +404,7 @@
 .slashSuggestions button:hover { background: #f3f4f6; }
 
 @media (max-width: 768px) {
-  .workspaceHeader { min-height: 46px; padding: var(--hos-space-1-5, 6px) var(--hos-space-3, 12px); }
-  .runtimeMeta { display: none; }
+  .workspaceHeader { padding: var(--hos-space-1-5, 6px) var(--hos-space-3, 12px); }
   .timeline { padding: var(--hos-space-3-5, 14px) var(--hos-space-3, 12px); }
   .workspaceDock { padding: var(--hos-space-2, 7px) var(--hos-space-2, 8px) var(--hos-space-2, 8px); /* 归级:原 7px */ }
   .composer { border-radius: var(--hos-radius-md, 17px); /* 归级:原 17px */ }

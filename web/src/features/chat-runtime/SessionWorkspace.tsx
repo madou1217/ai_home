@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { Badge } from 'antd';
 import { useSessionSelector } from '@/chat-runtime';
 import type {
   SessionProjection,
@@ -158,17 +159,19 @@ function WorkspaceHeader({
   projection: ReturnType<typeof selectWorkspaceProjection>;
 }) {
   const connection = sessionConnectionPresentation(projection.connectionState);
+  // 副行 caption：连接状态 · CLI 版本 · seq N，整行 hover 可见全量。
+  const meta = `${connection.label} · ${projection.version || '默认运行时'} · seq ${projection.throughSeq}`;
   return (
     <header className={styles.workspaceHeader}>
-      <div className={styles.workspaceIdentity}>
+      <div className={styles.workspaceHeaderMain}>
         <strong className={styles.workspaceTitle} title={title}>{title}</strong>
-        <span>{STATE_LABELS[projection.state]}</span>
-        <span>{connection.label}</span>
+        <Badge
+          status={STATE_BADGE[projection.state]}
+          text={STATE_LABELS[projection.state]}
+          className={styles.workspaceStateBadge}
+        />
       </div>
-      <div className={styles.runtimeMeta}>
-        <span>{projection.version || '默认运行时'}</span>
-        <span>seq {projection.throughSeq}</span>
-      </div>
+      <div className={styles.workspaceHeaderMeta} title={meta}>{meta}</div>
     </header>
   );
 }
@@ -210,4 +213,10 @@ function currentPlanRuntimePort(
 const STATE_LABELS: Readonly<Record<SessionState, string>> = {
   idle: '就绪', starting: '正在启动', running: '运行中', waiting_input: '等待输入',
   interrupting: '正在停止', completing: '正在收尾', recovering: '正在恢复', closed: '已关闭',
+};
+
+// 会话状态 → Badge 小指示灯语义色（antd Badge status，禁大色块状态 Tag）。
+const STATE_BADGE: Readonly<Record<SessionState, 'default' | 'processing' | 'warning'>> = {
+  idle: 'default', starting: 'processing', running: 'processing', waiting_input: 'warning',
+  interrupting: 'warning', completing: 'processing', recovering: 'warning', closed: 'default',
 };

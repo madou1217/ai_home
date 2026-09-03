@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Spin, Tree, Empty } from 'antd';
 import type { TreeDataNode } from 'antd';
-import { FileOutlined, FolderOutlined, FolderOpenOutlined, ReloadOutlined } from '@ant-design/icons';
+import { FolderOutlined, FolderOpenOutlined, LeftOutlined, ReloadOutlined } from '@ant-design/icons';
 import FilePreviewPane from '@/components/chat/FilePreviewPane';
+import FileTypeIcon from '@/components/chat/FileTypeIcon';
 import { buildFileMediaUrl, getFilePreviewKind } from '@/components/chat/file-preview-utils';
 import { fsAPI, parseFileRequestError } from '@/services/api';
 import type { FileRequestError, FileTreeEntry } from '@/services/api';
@@ -12,6 +13,8 @@ import styles from '../project-workbench.module.css';
 interface Props {
   projectPath: string;
   mobile?: boolean;
+  // 三栏宿主把「刷新」动作上移到栏工具行：注册回调后即隐藏面板内标题栏，避免双重标题。
+  registerRefresh?: (refresh: () => void) => void;
 }
 
 interface FilePreviewState {
@@ -27,11 +30,13 @@ function entryToTreeNode(entry: FileTreeEntry, parentPath: string): TreeDataNode
     key,
     title: entry.name,
     isLeaf: entry.type === 'file',
-    icon: entry.type === 'directory' ? <FolderOutlined /> : <FileOutlined />,
+    // 文件按类型出 FileTypeIcon（与 chat 文件预览一致）；目录不留节点级图标，
+    // 交给 Tree 级 icon 函数按展开态切换（rc-tree 规则：节点 icon 优先于 Tree icon）。
+    icon: entry.type === 'directory' ? undefined : <FileTypeIcon filePath={entry.name} size="small" />,
   };
 }
 
-export default function FilesPanel({ projectPath, mobile }: Props) {
+export default function FilesPanel({ projectPath, mobile, registerRefresh }: Props) {
   const [treeData, setTreeData] = useState<TreeDataNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [preview, setPreview] = useState<FilePreviewState | null>(null);
@@ -53,6 +58,11 @@ export default function FilesPanel({ projectPath, mobile }: Props) {
   }, [loadDir]);
 
   useEffect(() => { void loadRoot(); }, [loadRoot]);
+
+  // 向栏工具行注册刷新动作（仅三栏宿主传入）。
+  useEffect(() => {
+    registerRefresh?.(() => { void loadRoot(); });
+  }, [registerRefresh, loadRoot]);
 
   const onLoadData = useCallback(async (node: TreeDataNode) => {
     if (node.children?.length) return;
@@ -106,22 +116,26 @@ export default function FilesPanel({ projectPath, mobile }: Props) {
   return (
     <div className={styles.filesPanel}>
       <div className={styles.filesTree}>
-        <div className={styles.filesTreeHeader}>
-          <strong>文件</strong>
-          <Button type="text" size="small" icon={<ReloadOutlined />} onClick={loadRoot} />
-        </div>
+        {/* 标签页/移动端宿主没有栏工具行，保留面板内标题栏作为刷新入口。 */}
+        {!registerRefresh ? (
+          <div className={styles.filesTreeHeader}>
+            <strong>文件</strong>
+            <Button type="text" size="small" icon={<ReloadOutlined />} onClick={loadRoot} />
+          </div>
+        ) : null}
         {loading ? (
           <div className={styles.filesCentered}><Spin size="small" /></div>
         ) : treeData.length === 0 ? (
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="空项目" />
         ) : (
+          // icon 函数仅目录会走（文件节点自带 FileTypeIcon，节点级 icon 优先），按展开态切换文件夹图标。
           <Tree.DirectoryTree
             treeData={treeData}
             loadData={onLoadData}
             selectedKeys={selectedKeys}
             onSelect={onSelect}
             icon={(props: { expanded?: boolean; isLeaf?: boolean }) =>
-              props.isLeaf ? <FileOutlined /> : props.expanded ? <FolderOpenOutlined /> : <FolderOutlined />
+              props.expanded ? <FolderOpenOutlined /> : <FolderOutlined />
             }
             showLine={false}
             blockNode
@@ -129,19 +143,27 @@ export default function FilesPanel({ projectPath, mobile }: Props) {
           />
         )}
       </div>
-      <div className={styles.filesPreview}>
-        {preview ? (
+      {/* 预览全栏覆盖在树之上（树保持挂载，展开态不丢），返回即回树。 */}
+      {preview ? (
+        <div className={styles.filesPreviewOverlay}>
+          <div className={styles.filesPreviewBar}>
+            <Button type="text" size="small" icon={<LeftOutlined />} onClick={() => setPreview(null)}>
+              返回文件树
+            </Button>
+            <span className={styles.filesPreviewName} title={preview.path}>
+              {preview.path.split('/').pop()}
+            </span>
+          </div>
           <FilePreviewPane
             path={preview.path}
             content={preview.content}
+            mediaUrl={getFilePreviewKind(preview.path) === 'image' ? buildFileMediaUrl(preview.path, projectPath) : undefined}
             loading={preview.loading}
             error={preview.error}
             projectPath={projectPath}
           />
-        ) : (
-          <Empty description="选择文件以预览" />
-        )}
-      </div>
+        </div>
+      ) : null}
     </div>
   );
 }

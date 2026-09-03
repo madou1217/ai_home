@@ -1,20 +1,21 @@
-import type { ColumnWidths } from './workbench-layout';
-import { restoreColumnWidths, serializeColumnWidths } from './workbench-layout';
+import type { ColumnLayout } from './workbench-layout';
+import { restoreColumnLayout, serializeColumnLayout } from './workbench-layout';
 
-// 栏宽是用户级偏好而非项目级状态，与按项目存储的标签页（workbench-persistence）分开存放。
+// 栏布局（宽度 + 折叠态）是用户级偏好而非项目级状态，与按项目存储的标签页
+// （workbench-persistence）分开存放。
 const STORAGE_KEY = 'aih:workbench:column-layout';
 
-export function saveColumnWidths(widths: ColumnWidths): void {
+export function saveColumnLayout(layout: ColumnLayout): void {
   try {
-    window.localStorage.setItem(STORAGE_KEY, serializeColumnWidths(widths));
+    window.localStorage.setItem(STORAGE_KEY, serializeColumnLayout(layout));
   } catch { /* quota exceeded or private mode */ }
 }
 
-export function loadColumnWidths(): ColumnWidths {
+export function loadColumnLayout(): ColumnLayout {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    return restoreColumnWidths(raw ? JSON.parse(raw) : null);
+    return restoreColumnLayout(raw ? JSON.parse(raw) : null);
   } catch {
-    return restoreColumnWidths(null);
+    return restoreColumnLayout(null);
   }
 }

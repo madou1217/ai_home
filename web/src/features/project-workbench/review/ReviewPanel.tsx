@@ -1,14 +1,21 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Empty, Spin, Tag } from 'antd';
-import { BranchesOutlined, ReloadOutlined, FileOutlined } from '@ant-design/icons';
+import { BranchesOutlined, ReloadOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
+import FileTypeIcon from '@/components/chat/FileTypeIcon';
 import { gitReviewAPI } from '@/services/api';
 import type { GitChangedFile, GitSummary } from '@/services/api';
 import styles from '../project-workbench.module.css';
 
-interface Props { projectPath: string; mobile?: boolean; }
+interface Props {
+  projectPath: string;
+  mobile?: boolean;
+  // 三栏栏工具行集成：刷新动作与分支 chip 上移到栏头，传入后即隐藏面板内标题栏。
+  registerRefresh?: (refresh: () => void) => void;
+  onSummaryChange?: (summary: GitSummary | null) => void;
+}
 
-export default function ReviewPanel({ projectPath, mobile }: Props) {
+export default function ReviewPanel({ projectPath, mobile, registerRefresh, onSummaryChange }: Props) {
   const [summary, setSummary] = useState<GitSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -26,6 +33,12 @@ export default function ReviewPanel({ projectPath, mobile }: Props) {
   }, [projectPath]);
 
   useEffect(() => { void refresh(); }, [refresh]);
+
+  // 向栏工具行暴露刷新动作与分支信息（仅三栏宿主传入）。
+  useEffect(() => {
+    registerRefresh?.(() => { void refresh(); });
+  }, [registerRefresh, refresh]);
+  useEffect(() => { onSummaryChange?.(summary); }, [onSummaryChange, summary]);
 
   const groups = useMemo(() => {
     const files = summary?.files || [];
@@ -52,7 +65,8 @@ export default function ReviewPanel({ projectPath, mobile }: Props) {
   }, [projectPath]);
 
   const diffView = (
-    <section className={styles.diffPane}>
+    // 未选中文件时是空态：用常规表面色，避免整 pane 黑底吞掉 Empty 语义。
+    <section className={`${styles.diffPane} ${selected ? '' : styles.diffPaneEmpty}`}>
       {!selected ? <Empty description="选择变更文件查看 Diff" /> : diffLoading ? <Spin /> : (
         <>
           <div className={styles.diffHeader}>
@@ -70,10 +84,13 @@ export default function ReviewPanel({ projectPath, mobile }: Props) {
   return (
     <div className={styles.reviewPanel}>
       <aside className={styles.reviewSidebar}>
-        <div className={styles.reviewHeader}>
-          <div className={styles.reviewBranch}><BranchesOutlined /><strong>{summary?.branch || 'Git'}</strong></div>
-          <Button type="text" size="small" icon={<ReloadOutlined />} onClick={refresh} />
-        </div>
+        {/* 标签页/移动端宿主没有栏工具行，保留面板内标题栏；三栏宿主下由栏头 chip 表达分支。 */}
+        {!onSummaryChange ? (
+          <div className={styles.reviewHeader}>
+            <div className={styles.reviewBranch}><BranchesOutlined /><strong>{summary?.branch || 'Git'}</strong></div>
+            <Button type="text" size="small" icon={<ReloadOutlined />} onClick={refresh} />
+          </div>
+        ) : null}
         {summary?.upstream ? (
           <div className={styles.reviewUpstream}>{summary.upstream} · ↑{summary.ahead} ↓{summary.behind}</div>
         ) : null}
@@ -91,7 +108,7 @@ export default function ReviewPanel({ projectPath, mobile }: Props) {
                   className={`${styles.reviewFile} ${selected?.file.path === file.path && selected.staged === group.staged ? styles.reviewFileActive : ''}`}
                   onClick={() => { void selectFile(file, group.staged); }}
                 >
-                  <FileOutlined />
+                  <FileTypeIcon filePath={file.path} size="small" />
                   <span title={file.path}>{file.path}</span>
                   <Tag bordered={false}>{file.status.trim() || '?'}</Tag>
                 </button>

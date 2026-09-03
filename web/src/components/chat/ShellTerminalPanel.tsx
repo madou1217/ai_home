@@ -12,6 +12,8 @@ interface ShellTerminalPanelProps {
   onClose: () => void;
   // 当前项目路径：新开/重连终端时作为 shell 的 cwd，直接进入项目目录（而非 home）。
   cwd?: string;
+  // 三栏嵌入模式：隐藏自带标题/状态文案与调高把手（栏工具行已表达面板语义，栏内充满即可）。
+  compactChrome?: boolean;
 }
 
 type TabStatus = 'connecting' | 'ready' | 'closed' | 'error';
@@ -87,7 +89,7 @@ function newTerm(): Terminal {
 // VSCode 风格底部终端「面板」：多 tab、可拖拽调高、底部停靠。
 // 每个 tab = 独立 PTY + 独立 xterm；整个面板复用一条 mux SSE 承载全部 tab 输出（帧带 termId），
 // 规避浏览器每域 ~6 连接上限（此前多 tab / 慢开会永远卡「连接中」的根因）。
-function ShellTerminalPanel({ visible, onClose, cwd }: ShellTerminalPanelProps) {
+function ShellTerminalPanel({ visible, onClose, cwd, compactChrome = false }: ShellTerminalPanelProps) {
   const muxIdRef = useRef<string>('');
   // 用 ref 持有最新 cwd：切项目后新开/重连的终端应进入新项目目录，避免闭包捕获旧值。
   const cwdRef = useRef<string | undefined>(cwd);
@@ -364,15 +366,25 @@ function ShellTerminalPanel({ visible, onClose, cwd }: ShellTerminalPanelProps) 
     : panelStatus;
 
   return (
-    <div ref={panelRef} className={styles.shellTerminalPanel} style={{ height }}>
-      <div className={styles.shellTerminalResizer} onMouseDown={onDragStart} title="拖拽调整高度" />
+    <div
+      ref={panelRef}
+      className={styles.shellTerminalPanel}
+      style={{ height }}
+      data-compact={compactChrome ? 'true' : undefined}
+    >
+      {/* 嵌入栏内时高度由栏布局接管（100%），隐藏底部停靠场景的调高把手。 */}
+      {compactChrome ? null : (
+        <div className={styles.shellTerminalResizer} onMouseDown={onDragStart} title="拖拽调整高度" />
+      )}
       <div className={styles.shellTerminalHeader}>
         <div className={styles.shellTerminalTabs}>
-          <div className={styles.shellTerminalTitle}>
-            <CodeOutlined />
-            <span>终端</span>
-            <span className={styles.shellTerminalStatus}>{statusLabel(badgeStatus)}</span>
-          </div>
+          {compactChrome ? null : (
+            <div className={styles.shellTerminalTitle}>
+              <CodeOutlined />
+              <span>终端</span>
+              <span className={styles.shellTerminalStatus}>{statusLabel(badgeStatus)}</span>
+            </div>
+          )}
           {tabs.map((t) => (
             <div
               key={t.id}

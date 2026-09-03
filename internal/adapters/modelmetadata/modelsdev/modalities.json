@@ -418,6 +418,17 @@
       "text"
     ]
   },
+  "alibaba/qwen3.8-max-0902": {
+    "input": [
+      "text",
+      "image",
+      "video",
+      "pdf"
+    ],
+    "output": [
+      "text"
+    ]
+  },
   "alibaba/qwen3.8-max-preview": {
     "input": [
       "text",
@@ -1749,6 +1760,18 @@
       "text"
     ]
   },
+  "meta/muse-spark-1.3": {
+    "input": [
+      "text",
+      "image",
+      "video",
+      "pdf",
+      "audio"
+    ],
+    "output": [
+      "text"
+    ]
+  },
   "microsoft/mai-code-1-flash": {
     "input": [
       "text"
@@ -2806,6 +2829,14 @@
   "openai/whisper-large-v3-turbo": {
     "input": [
       "audio"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "openbmb/minicpm5-1b": {
+    "input": [
+      "text"
     ],
     "output": [
       "text"

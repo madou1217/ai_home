@@ -47,8 +47,8 @@
 
 ## 五、剩余工作(按建议优先级)
 
-1. **设计规范系统性落地**:全站硬编码 `font-size`/按钮尺寸迁移到 `--hos-text-*` token,逐页 Playwright 截图验收(工作量大,建议按页面分批)
-2. **Work 三栏同屏布局**:立项决策(是否把标签页工作台改为可调整三栏)
+1. ~~**设计规范系统性落地**:59 个文件已引用 `--hos-*` token,硬编码 `font-size` 仅剩 7 处~~ ✅ 字号迁移已收口(2026-09-02):2 处样式值迁入 token(mobile-shell.css),3 处为 `inherit` 非硬编码,2 处为有意保留的功能例外(iOS 输入防缩放 `max(16px,1em)`、ModelUsage KPI 响应式 clamp);剩余:圆角/间距/色系硬编码迁移 + 逐页 Playwright 截图验收
+2. ~~**Work 三栏同屏布局**:立项决策(是否把标签页工作台改为可调整三栏)~~ ✅ 已完成:三栏同屏布局已在 `2ea82cfa` 落地,2026-09-02 完成响应式降级治理(三档阈值 1040/900,窄屏 overlay 展开)
 3. **loop review/自动进化纪律**:若重启 /loop,需把"每轮双模型 review + 真实交付增量"做成强制门禁,防止报告复读
 
 ## 六、全量需求矩阵(2026-08-31 重提取)
@@ -75,12 +75,12 @@
 | F14 | MessageIconActions:复制代码/重新生成/分流新对话 | ✅ | `MessageIconActions.tsx:35-121`;代码复制由 `CodeBlock.tsx:41-54` 承担 |
 | F15 | StatsLine 度量条(总耗时/首字/速度/Token) | ✅ | `StatsLine.tsx:29-91`,常驻输入区上方;非滚动 sticky 形态 |
 | F16 | ThinkingBlock 吸收 ReasoningRow(节流+右滚) | ⚠️ | legacy 链路完整(`ThinkingBlock.tsx:31-44`);**canonical `TimelineItemView.tsx:52-53` 未传 `running`,流式期不生效** |
-| F17 | Work 三栏同屏(目录树+Git+Sessions \| Agent 轨迹 \| PTY+Diff) | ❌ | 当前为互斥标签页(`workbench-types.ts:1-6`);架构级差距 |
+| F17 | Work 三栏同屏(目录树+Git+Sessions \| Agent 轨迹 \| PTY+Diff) | ✅ | 2ea82cfa 落地三栏;2026-09-02 响应式降级治理(阈值 1040/900,overlay 展开) |
 | F18 | Chat 顶栏极简(胶囊切换器+模型选择+新建对话) | ✅🔧 | 本次修复 ModeSelector 32px/13px |
 | F19 | 主区域居中最大宽 840px | ⚠️ | 居中自适应有;实际 `--chat-content-width: 800px`(`chat.module.css:1600`),与 840 不符 |
 | F20 | dsh 2.0 十二项:首字渲染✅、右滚打字机✅、微光扫描✅、ContextMeter 环形✅、悬浮操作栏✅、长图分享✅、分支 Diff✅、会话内搜索✅、置顶✅、灵感胶囊✅、快捷键✅、**跨 Tab 同步⚠️** | ⚠️ | `cross-tab-session-sync.ts` 有广播方(2 处)**但全仓无 subscribe 调用方,有发无收,链路未闭环** |
-| F21 | 200+ 轮虚拟列表 60fps / 500 条聚合 <5ms 基准 | ⚠️ | 虚拟列表在(`VirtualConversationList.tsx:20-60`);滚动回调未 rAF 节流;**无性能基准测试** |
-| F22 | 分支版本对比 Diff + 离线 PWA | ⚠️ | Diff ✅(`SessionDiffModal.tsx:64`);PWA 仅静态资源(`web/public/sw.js`),**会话数据无离线缓存** |
+| F21 | 200+ 轮虚拟列表 60fps / 500 条聚合 <5ms 基准 | ❌ | 虚拟列表已删除(2026-09-02 死代码收口);当前平铺渲染,需求待重新立项 |
+| F22 | 分支版本对比 Diff + 离线 PWA | ⚠️ | Diff 组件从未接线,已删除(2026-09-02);会话离线缓存已由 bb08089d session-offline-cache 补齐 |
 
 ### 6.2 缺陷类(24 条)
 
@@ -154,7 +154,7 @@
 | B12/F16 canonical running | ⚠️ | ✅ | `TimelineItemView.tsx:52-57` 按 status 推导 running 传入 ThinkingBlock |
 | F19 840px | ⚠️ | ✅ | `chat.module.css:1600` `--chat-content-width: 840px`,13 处引用核查协调 |
 | F15 StatsLine 粘性 | ⚠️ | ✅ | `.statsLineContainer` sticky + hos 毛玻璃 token 分层 |
-| F21 虚拟列表 | ⚠️ | ✅(节流) | `raf-scroll-sync.ts` rAF 合并(100 次 scroll=1 次 setState,测试 4 项过);**遗留:500 条聚合 <5ms 基准测试未做** |
+| F21 虚拟列表 | ⚠️ | ❌ 已回退 | `raf-scroll-sync.ts` 曾随组件删除(2026-09-02 死代码收口);500 条聚合 <5ms 基准已由 stats-line-aggregation.test.ts 另行覆盖 |
 | F20 跨 Tab 同步 | ⚠️ | ✅ | SESSION_PINNED 广播+订阅闭环(`ProjectList.tsx:105-121`)、THEME_CHANGED 接收端;`cross-tab-session-sync.test.ts` 5 项过。注明:MODEL_CHANGED 刻意保持 Tab 本地(既有设计) |
 | B15 store:false 404 预防 | ⚠️ | ✅ | `codex-adapter.js:362-378,396-409` 出站剥离 previous_response_id + unpersisted item ids;3 项测试过 |
 | F8 加密思考链 | ⚠️ | ✅(策略最优) | 携带加密内容时硬优先粘性账号(`codex-adapter.js:420-429,1268-1286` + `account-selector.js:140-151`),必须换号才剥离;5 项测试过。注:上游不支持解密注入,此为可达最优 |
@@ -310,3 +310,10 @@
 2. 设计裁决 2 项:色板外 ~100 处色值是否扩板;D3 归级漂移 2 处是否回调。
 3. 死代码 4 个文件删除待用户裁决(G 任务已给清单与证据)。
 4. F2/D1/D2/D4/D5 长期演进:D4 主要缺口(G1/G2/G3/G4)已清零,剩余为持续迭代。
+
+### 11.4 补充:集成门禁终验与复核差异(2026-09-02)
+
+- 全量集成门禁:`node --test` 6320 tests / **6313 pass / 0 fail** / 7 skipped(既有);`bun test web/src` **435 pass / 0 fail**(原 3 个失败清零);`npm run build` 各波次均过。
+- gate 竞态复核差异:`65321db9` 主修复成立,但 merge 过滤器残留窗口被复核捕获——多端点共享 store 场景下,他端点 ready 时会整条剔除本地带 key 的 configured profile(`control-plane-profiles.ts:265` 已补 `|| hasConfiguredManagementKey` + 回归测试)。11.2 表中「刷新丢 key」的另一观察另证实主要为 playwright-cli `open` 快照回滚伪象。
+- 新安全观察项:Server 端共享 control-plane store 的 profile 记录含明文 managementKey(`persistSharedControlPlaneProfile` 整条 POST),既有行为,建议专项安全评审。
+- 工具坑:playwright-cli `open` 会回滚 localStorage 快照,刷新类验证一律用 `goto`/`reload`。

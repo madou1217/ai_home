@@ -5,11 +5,12 @@
  * 都应引用这里的 token，禁止在组件里写魔法数字与硬编码颜色。
  *
  * 分层：
- *   1. Primitive  原始刻度（--c-*, --space-*, --text-*, --radius-* ...）
+ *   1. Primitive  原始刻度（--c-*, --space-*, --text-*, --hos-radius-* ...）
  *   2. Semantic   语义别名（--color-bg / --color-text / --color-danger ...）
  *   3. Domain     领域语义（provider 强调色、事件语义色）
  *
- * 旧的 --app-* / --chat-* 变量在文件末尾统一映射到本系统，保证渐进迁移不破坏。
+ * 旧别名（--app-* / --m-* / 原始 --radius-* 刻度）已全量迁移到 --hos-* 等价物
+ * 并删除定义；新代码直接引用 --hos-* / 语义层 token。
  * 详见 web/DESIGN.md。
  * ========================================================================== */
 

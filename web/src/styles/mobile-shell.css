@@ -236,7 +236,7 @@
     border-radius: var(--hos-radius-sm, 12px);
     background: var(--hos-ink-50, #f6f6fb);
     color: var(--hos-ink-700, #4a4a68);
-    font-size: 18px;
+    font-size: var(--hos-text-h2, 18px);
   }
   .mobile-more-entry-label {
     flex: 1 1 auto;
@@ -248,7 +248,7 @@
   .mobile-more-entry-arrow {
     flex: 0 0 auto;
     color: var(--hos-gray-400, #8b8ba3);
-    font-size: 12px;
+    font-size: var(--hos-text-caption, 12px);
   }
 
   /* 当前页入口:赤陶强调,与 TabBar 选中态同一语言 */

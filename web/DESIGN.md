@@ -13,12 +13,12 @@
 Primitive  →  Semantic  →  Domain
 原始刻度       语义别名      领域语义（provider / event）
 --c-* --space-*  --color-*    --provider-*  --event-*
---text-* ...     --radius-*
+--text-* ...     --hos-radius-*
 ```
 
 - **新代码只用 Semantic / Domain 层**（`--color-text`、`--space-4`、`--provider-accent` 等）。
 - Primitive 层（`--c-neutral-500`…）只在 token 文件内部组装语义，组件不直接引用。
-- 旧的 `--app-*` 仅作兼容别名，**不要在新代码里使用**，迁移时替换成对应 `--color-*`。
+- 旧别名（`--app-*` / `--m-*` / 原始 `--radius-*` 刻度）已全量迁移到 `--hos-*` 等价物并删除定义，**不要在新代码里使用**。
 
 ---
 

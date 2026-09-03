@@ -15,8 +15,9 @@ import {
 import { useNavigate } from 'react-router-dom';
 import Button from '@/components/ui/AppButton';
 import PageScaffold from '@/components/ui/PageScaffold';
-import { managementAPI } from '@/services/api';
-import type { ManagementAccount, ManagementMetrics, ManagementStatus, Provider } from '@/types';
+import { accountsAPI, managementAPI } from '@/services/api';
+import type { Account, ManagementAccount, ManagementMetrics, ManagementStatus, Provider } from '@/types';
+import { countHealthyAccounts } from '@/features/accounts/account-state';
 import ProviderIcon, { providerIds, providerNames } from '@/components/chat/ProviderIcon';
 import RuntimeStatusTag from '@/components/runtime/RuntimeStatusTag';
 import { formatAccountIssueReason } from '@/utils/account-reasons';
@@ -25,6 +26,9 @@ import '@/components/mobile/mobile-cards.css';
 import './Dashboard.css';
 
 const PROVIDERS: Provider[] = providerIds;
+
+// 账号口径数据（/v0/webui/accounts）的刷新节流：跟随管理快照节奏，但不至于每帧都打一次接口。
+const WEBUI_ACCOUNTS_MIN_INTERVAL_MS = 15000;
 
 const formatPercent = (value?: number) => `${(Number(value || 0) * 100).toFixed(1)}%`;
 
@@ -126,6 +130,10 @@ export default function Dashboard() {
   const [status, setStatus] = useState<ManagementStatus | null>(null);
   const [metrics, setMetrics] = useState<ManagementMetrics | null>(null);
   const [accounts, setAccounts] = useState<ManagementAccount[]>([]);
+  // 账号健康口径与账号页一致：全部持久化账号（/v0/webui/accounts）+ getAccountDisplayState。
+  const [webuiAccounts, setWebuiAccounts] = useState<Account[]>([]);
+  const [webuiAccountsLoaded, setWebuiAccountsLoaded] = useState(false);
+  const webuiAccountsFetchedAtRef = useRef(0);
   const [loading, setLoading] = useState(false);
   const [cooldownClearing, setCooldownClearing] = useState(false);
   const [liveState, setLiveState] = useState<'connecting' | 'live' | 'degraded'>('connecting');
@@ -139,6 +147,19 @@ export default function Dashboard() {
     window.clearTimeout(refreshFallbackTimerRef.current);
     refreshFallbackTimerRef.current = null;
   }
+
+  const refreshWebuiAccounts = useCallback(async (options: { force?: boolean } = {}) => {
+    const now = Date.now();
+    if (!options.force && now - webuiAccountsFetchedAtRef.current < WEBUI_ACCOUNTS_MIN_INTERVAL_MS) return;
+    webuiAccountsFetchedAtRef.current = now;
+    try {
+      const result = await accountsAPI.list();
+      setWebuiAccounts(Array.isArray(result.accounts) ? result.accounts : []);
+      setWebuiAccountsLoaded(true);
+    } catch (_error) {
+      // 静默失败：保留上一次账号口径，等待下一轮刷新。
+    }
+  }, []);
 
   function applyDashboardSnapshot(
     nextStatus: ManagementStatus,
@@ -154,6 +175,7 @@ export default function Dashboard() {
     setLiveState('live');
     setLoading(false);
     clearRefreshFallbackTimer();
+    void refreshWebuiAccounts();
   }
 
   const loadDashboard = useCallback(async (options: { showLoading?: boolean; quietError?: boolean } = {}) => {
@@ -175,6 +197,7 @@ export default function Dashboard() {
       setAccounts(nextAccounts.accounts || []);
       setStatusReceivedAt(receivedAt);
       setLiveState('degraded');
+      void refreshWebuiAccounts({ force: true });
     } catch (error: any) {
       if (!quietError) {
         message.error(error?.response?.data?.message || error?.message || '加载管理面板失败');
@@ -184,10 +207,11 @@ export default function Dashboard() {
         setLoading(false);
       }
     }
-  }, []);
+  }, [refreshWebuiAccounts]);
 
   useEffect(() => {
     setLoading(true);
+    void refreshWebuiAccounts({ force: true });
     const initialFallbackTimer = window.setTimeout(() => {
       if (snapshotReceivedAtRef.current > 0) return;
       setLiveState('degraded');
@@ -214,7 +238,7 @@ export default function Dashboard() {
       clearRefreshFallbackTimer();
       watcher.close();
     };
-  }, [loadDashboard]);
+  }, [loadDashboard, refreshWebuiAccounts]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -269,6 +293,7 @@ export default function Dashboard() {
     const previousSnapshotAt = snapshotReceivedAtRef.current;
     setLoading(true);
     clearRefreshFallbackTimer();
+    void refreshWebuiAccounts({ force: true });
 
     if (liveState === 'live' || liveState === 'connecting') {
       try {
@@ -316,7 +341,7 @@ export default function Dashboard() {
       }));
   }, [metrics]);
 
-  const degradedCount = Math.max(0, Number(status?.totalAccounts || 0) - Number(status?.activeAccounts || 0));
+  const accountHealth = useMemo(() => countHealthyAccounts(webuiAccounts), [webuiAccounts]);
   const recentErrors = metrics?.lastErrors || [];
   const accountByRef = useMemo(() => {
     return new Map(
@@ -330,15 +355,16 @@ export default function Dashboard() {
 
   const routeTotalMax = Math.max(routeRows[0]?.count || 0, 1);
 
-  // ── 健康计算(信息架构以「系统是否健康」为核心) ──
-  const totalAccounts = Number(status?.totalAccounts || 0);
-  const activeAccounts = Number(status?.activeAccounts || 0);
-  const healthPct = totalAccounts > 0 ? Math.round((activeAccounts / totalAccounts) * 100) : 0;
-  const overallHealth = !status
+  // ── 健康计算(口径与账号页一致:分母为全部持久化账号,分子为 display-state=healthy) ──
+  const totalAccounts = accountHealth.total;
+  const healthyAccounts = accountHealth.healthy;
+  const degradedCount = Math.max(0, totalAccounts - healthyAccounts);
+  const healthPct = totalAccounts > 0 ? Math.round((healthyAccounts / totalAccounts) * 100) : 0;
+  const overallHealth = !status || !webuiAccountsLoaded
     ? 'loading'
-    : degradedCount === 0
+    : totalAccounts > 0 && degradedCount === 0
       ? 'healthy'
-      : (activeAccounts === 0 ? 'critical' : 'degraded');
+      : (healthyAccounts === 0 ? 'critical' : 'degraded');
   const healthMeta: Record<string, { label: string; dot: string }> = {
     loading: { label: '连接中…', dot: 'idle' },
     healthy: { label: '运行正常', dot: 'ok' },
@@ -346,6 +372,17 @@ export default function Dashboard() {
     critical: { label: '无健康账号', dot: 'crit' }
   };
   const health = healthMeta[overallHealth];
+  // 成功率徽标阈值:无请求不评健康色;>=95% 健康,>=80% 告警,<80% 异常。
+  const totalRequestsCount = Number(metrics?.totalRequests || 0);
+  const successRateValue = Number(metrics?.successRate || 0);
+  const successRateStatus: 'healthy' | 'warning' | 'error' | 'neutral' =
+    totalRequestsCount === 0
+      ? 'neutral'
+      : successRateValue >= 0.95
+        ? 'healthy'
+        : successRateValue >= 0.8
+          ? 'warning'
+          : 'error';
   const totalQueueRunning = PROVIDERS.reduce((sum, p) => sum + normalizeQueueCount(status?.queue?.[p]?.running), 0);
   const formatUptime = (sec?: number | null) => {
     if (typeof sec !== 'number' || !Number.isFinite(sec)) return '-';
@@ -430,15 +467,15 @@ export default function Dashboard() {
             {
               title: "服务健康度",
               value: `${healthPct}%`,
-              subtitle: `可用账号 ${activeAccounts} / 总数 ${totalAccounts}`,
+              subtitle: `可用账号 ${healthyAccounts} / 总数 ${totalAccounts}`,
               status: overallHealth === 'critical' ? 'error' : overallHealth === 'degraded' ? 'warning' : 'healthy',
               trend: health.label,
             },
             {
               title: "总请求吞吐",
-              value: (metrics?.totalRequests || 0).toLocaleString(),
-              subtitle: `成功率 ${formatPercent(metrics?.successRate)}`,
-              status: 'healthy',
+              value: totalRequestsCount.toLocaleString(),
+              subtitle: totalRequestsCount > 0 ? `成功率 ${formatPercent(metrics?.successRate)}` : '暂无请求',
+              status: successRateStatus,
             },
             {
               title: "并发排队中",
@@ -473,7 +510,7 @@ export default function Dashboard() {
             <div className="dash-hero-health">
               <div className="dash-hero-health-row">
                 <span>健康账号</span>
-                <span><b>{activeAccounts}</b> / {totalAccounts}</span>
+                <span><b>{healthyAccounts}</b> / {totalAccounts}</span>
               </div>
               <div className="dash-bar">
                 <span className={`dash-bar-fill${healthPct < 100 ? ' warn' : ''}`} style={{ width: `${healthPct}%` }} />

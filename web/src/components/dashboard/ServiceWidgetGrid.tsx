@@ -6,7 +6,7 @@ export interface ServiceWidgetProps {
   value: string | number;
   subtitle?: string;
   icon?: ReactNode;
-  status?: 'healthy' | 'warning' | 'error';
+  status?: 'healthy' | 'warning' | 'error' | 'neutral';
   span?: 1 | 2;
   trend?: string;
   onClick?: () => void;
@@ -31,6 +31,8 @@ export const ServiceWidget = memo(function ServiceWidget({
       ? styles.statusHealthy
       : status === 'warning'
       ? styles.statusWarning
+      : status === 'neutral'
+      ? styles.statusNeutral
       : styles.statusError;
 
   return (
@@ -51,7 +53,7 @@ export const ServiceWidget = memo(function ServiceWidget({
       <div className={styles.widgetFooter}>
         <div className={`${styles.statusDotWrapper} ${statusClass}`}>
           <span className={styles.statusDot} />
-          <span>{status === 'healthy' ? '运行正常' : status === 'warning' ? '存在告警' : '不可用'}</span>
+          <span>{status === 'healthy' ? '运行正常' : status === 'warning' ? '存在告警' : status === 'neutral' ? '暂无数据' : '不可用'}</span>
         </div>
         {trend && <span className={styles.trendText}>{trend}</span>}
       </div>

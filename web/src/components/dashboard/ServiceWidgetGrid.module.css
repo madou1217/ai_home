@@ -147,6 +147,13 @@
   box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.25);
 }
 
+.statusNeutral {
+  color: var(--hos-ink-500, #64748b);
+}
+.statusNeutral .statusDot {
+  background: var(--hos-ink-400, #94a3b8);
+}
+
 .trendText {
   font-size: var(--hos-text-caption, 11px); /* 归级:原 11px */
   color: var(--hos-ink-400, #94a3b8);

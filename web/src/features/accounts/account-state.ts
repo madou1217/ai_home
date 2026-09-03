@@ -195,6 +195,16 @@ export function getAccountDisplayState(record: Pick<Account,
   return 'healthy';
 }
 
+// 仪表盘与账号页共用的「正常可用 N/M」聚合口径：分母为全部持久化账号，
+// 分子为 getAccountDisplayState 判定为 healthy 的账号数。两处都必须走这里，禁止各自内联统计。
+export function countHealthyAccounts(records: Array<Parameters<typeof getAccountDisplayState>[0]>) {
+  let healthy = 0;
+  records.forEach((record) => {
+    if (getAccountDisplayState(record) === 'healthy') healthy++;
+  });
+  return { total: records.length, healthy };
+}
+
 // 账号记录合并 —— 从 Accounts.tsx 抽取的快照/增量合并逻辑。
 // mergeAccountRecord 合并单条记录；mergeAccounts/mergeSingleAccount 合并列表。
 

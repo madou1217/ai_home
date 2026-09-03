@@ -7,6 +7,7 @@ import {
   canEditAccountConfig,
   canReauthAccount,
   canRefreshUsageAccount,
+  countHealthyAccounts,
   formatQuotaReason,
   formatSchedulableReason,
   getAccountDisplayState,
@@ -448,4 +449,27 @@ test('mergeSingleAccount appends when the account is unknown', () => {
   assert.equal(merged.length, 2);
   assert.equal(merged[1].accountRef, 'acct_new');
   assert.equal(current.length, 1);
+});
+
+test('countHealthyAccounts counts only healthy accounts over the full persisted list', () => {
+  const accounts = [
+    makeAccount({ accountRef: 'acct_ok', remainingPct: 80 }),
+    makeAccount({ accountRef: 'acct_exhausted', remainingPct: 0 }),
+    makeAccount({ accountRef: 'acct_disabled', status: 'down', remainingPct: 50 }),
+    makeAccount({ accountRef: 'acct_blocked', runtimeStatus: 'auth_invalid', remainingPct: 50 }),
+    makeAccount({ accountRef: 'acct_policy', schedulableStatus: 'blocked_by_policy', remainingPct: 50 })
+  ];
+  assert.deepEqual(countHealthyAccounts(accounts), { total: 5, healthy: 1 });
+});
+
+test('countHealthyAccounts matches getAccountDisplayState semantics for api-key accounts', () => {
+  const accounts = [
+    makeAccount({ accountRef: 'acct_key', apiKeyMode: true, remainingPct: null }),
+    makeAccount({ accountRef: 'acct_key_down', apiKeyMode: true, status: 'down' })
+  ];
+  assert.deepEqual(countHealthyAccounts(accounts), { total: 2, healthy: 1 });
+});
+
+test('countHealthyAccounts handles an empty list', () => {
+  assert.deepEqual(countHealthyAccounts([]), { total: 0, healthy: 0 });
 });

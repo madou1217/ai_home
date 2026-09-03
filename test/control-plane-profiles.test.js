@@ -301,6 +301,69 @@ test('control plane profiles bootstrap ready profiles from shared local server s
   delete global.window;
 });
 
+test('control plane shared profile sync keeps a configured current-endpoint profile that is not ready', async () => {
+  // 回归：共享 store 里有另一台 ready 的 Server 时，本地当前端点的 profile
+  // 即使带着冷启动遗留的 offline/degraded 快照也不能被剔除——否则 Management Key
+  // 被剥掉，gate 会把已配置客户端误踢回 /server-setup。
+  const eventTarget = new EventTarget();
+  const storage = createStorage();
+  const remoteReady = {
+    id: 'cp-remote',
+    name: 'Remote Server',
+    endpoint: 'http://10.0.0.2:9527',
+    connectionMode: 'direct',
+    broker: null,
+    state: 'ready',
+    managementKey: 'remote-management-key',
+    nodes: [],
+    nodeCount: 0,
+    accountCount: 0,
+    activeAccountCount: 0,
+    schedulableAccountCount: 0,
+    sessionCount: 0,
+    lastNodeSyncAt: 0,
+    lastStatusSyncAt: 0,
+    lastAccountsSyncAt: 0,
+    lastSessionsSyncAt: 0,
+    descriptor: null,
+    lastCheckedAt: 0,
+    lastError: '',
+    createdAt: 1,
+    updatedAt: 2
+  };
+  storage.setItem('aih:control-plane-profiles:v1', JSON.stringify([{
+    id: 'cp-local',
+    stableServerId: 'server-local',
+    name: 'AIH Server',
+    endpoint: 'http://127.0.0.1:9527',
+    state: 'offline',
+    managementKey: 'local-management-key',
+    managementKeyConfigured: true,
+    createdAt: 1,
+    updatedAt: 1
+  }]));
+  global.window = Object.assign(eventTarget, {
+    localStorage: storage,
+    location: { origin: 'http://127.0.0.1:9527' },
+    fetch: async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true, activeProfileId: 'cp-local', profiles: [remoteReady] })
+    })
+  });
+  const profiles = loadControlPlaneProfilesModule();
+
+  await profiles.syncSharedControlPlaneProfiles();
+  const listed = profiles.listControlPlaneProfiles();
+
+  const local = listed.find((profile) => profile.id === 'cp-local');
+  assert.ok(local, 'configured current-endpoint profile must survive shared sync');
+  assert.equal(local.managementKey, 'local-management-key');
+  assert.equal(local.managementKeyConfigured, true);
+  assert.ok(listed.some((profile) => profile.id === 'cp-remote'));
+  delete global.window;
+});
+
 test('control plane profiles do not auto-seed current origin when a ready server exists', () => {
   const eventTarget = new EventTarget();
   global.window = Object.assign(eventTarget, {

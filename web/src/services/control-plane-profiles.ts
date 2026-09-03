@@ -262,7 +262,10 @@ function mergeControlPlaneProfiles(
     .filter((profile) => {
       if (!hasReadyProfile || !currentEndpoint) return true;
       if (profile.endpoint !== currentEndpoint) return true;
-      return isReadyProfileCandidate(profile);
+      // 只剔除 keyless 的「当前 Server」占位 profile；带 Management Key 的已配置
+      // profile 即使处于 offline/degraded（冷启动遗留快照）也必须保留——否则
+      // 共享同步会剥掉本地 Key，gate 把已配置客户端误踢回 /server-setup。
+      return isReadyProfileCandidate(profile) || hasConfiguredManagementKey(profile);
     })
     .sort((left, right) => right.updatedAt - left.updatedAt || left.name.localeCompare(right.name));
 }

@@ -39,11 +39,11 @@
 | | 1.5 | **会话结束思考过程常驻折叠保存** | 状态守护契约 | 📱 + 💻 | ✅ **已完成** | `assistant-live-state.js` |
 | | 1.6 | **StatsLine 全会话粘性度量条** (轮次/TTFT/速率/Token) | dsh `StatsLine` | 📱 + 💻 | ✅ **已完成** | `StatsLine.tsx` |
 | | 1.7 | **ConnectionPulseBadge 实时长连接心跳水滴指示环** | HOS 6 Pulse Droplet | 📱 + 💻 | ✅ **已完成** | `ConnectionPulseBadge.tsx`<br>`StatsLine.tsx` |
-| | 1.8 | **ContextMeter 环形上下文压力计** (动态上限+80% 水位引导) | dsh `ContextMeter` | 📱 + 💻 | ✅ **已完成** | `ContextMeter.tsx`<br>`MessageArea.tsx` |
+| | 1.8 | **ContextMeter 环形上下文压力计** (动态上限+60% warning/90% critical 水位引导) | dsh `ContextMeter` | 📱 + 💻 | ✅ **已完成** | `ContextMeter.tsx`<br>`MessageArea.tsx` |
 | | 1.9 | **MessageIconActions 悬浮操作栏** (复制/Retry/Fork/Share) | dsh `MessageIconActions` | 📱 + 💻 | ✅ **已完成** | `MessageIconActions.tsx` |
 | | 1.10 | **ShareCardModal 会话分享长图卡片生成** (超级圆角+毛玻璃) | HOS 6 Share Card | 📱 + 💻 | ✅ **已完成** | `ShareCardModal.tsx`<br>`MessageIconActions.tsx` |
-| | 1.11 | **SessionDiffModal 会话分支版本差异对比** (Split/Unified 并排) | dsh `BranchDiff` | 📱 + 💻 | ✅ **已完成** | `SessionDiffModal.tsx`<br>`chat.module.css` |
-| | 1.12 | **VirtualConversationList 超长对话虚拟列表渲染** (视口裁剪+60fps) | dsh `ConversationTimeline` | 📱 + 💻 | ✅ **已完成** | `VirtualConversationList.tsx`<br>`MessageArea.tsx` |
+| | 1.11 | **SessionDiffModal 会话分支版本差异对比** (Split/Unified 并排) | dsh `BranchDiff` | 📱 + 💻 | ❌ **未接线** | 组件已删除（死代码收口，2026-09-02），功能未接线 |
+| | 1.12 | **VirtualConversationList 超长对话虚拟列表渲染** (视口裁剪+60fps) | dsh `ConversationTimeline` | 📱 + 💻 | ❌ **未接线** | 已在 `bb08089d` 从 MessageArea 摘除，2026-09-02 删除死代码；当前为平铺渲染 |
 | | 1.13 | **ComposerAttachmentGallery 多模态卡片胶囊画廊** (微曲率+一键移除) | HOS 6 Gallery Capsule | 📱 + 💻 | ✅ **已完成** | `ComposerAttachmentGallery.tsx`<br>`MessageArea.tsx` |
 | | 1.14 | **ImageGallery 多模态图片画廊质感升级** (毛玻璃圆角+微缩放弹性) | HOS 6 Gallery Lightbox | 📱 + 💻 | ✅ **已完成** | `chat.module.css`<br>`MessageImages.tsx` |
 | | 1.15 | **AudioWaveformPlayer 灵动胶囊声学波形播放器** (动态律动+毛玻璃) | HOS 6 Acoustic Spec | 📱 + 💻 | ✅ **已完成** | `AudioWaveformPlayer.tsx`<br>`chat.module.css` |
@@ -101,8 +101,8 @@
 
 ### 🚀 阶段 B：dsh 生产级进阶能力与极限性能
 - [x] **TODO-B1 (全局 Command Palette / 快捷中枢)**：已完成 `Cmd+K` / `Ctrl+K` 调起全局搜索中枢与 `Cmd+T` 随心主题切换；
-- [x] **TODO-B2 (200+ 轮超长对话虚拟滚动 Virtual List)**：已完成 dsh `ConversationTimeline` 视口裁剪算法与 DOM 动态回收；
-- [x] **TODO-B3 (会话分支树与时间旅行 Session Forking)**：已完成从任意消息派生子会话与 `SessionDiffModal` 并排比对；
+- [ ] **TODO-B2 (200+ 轮超长对话虚拟滚动 Virtual List)**：❌ 已回退——VirtualConversationList 在 bb08089d 从 MessageArea 摘除、2026-09-02 死代码删除；当前为平铺渲染，长会话性能需求待重新立项；
+- [ ] **TODO-B3 (会话分支树与时间旅行 Session Forking)**：⚠️ 部分完成——从任意消息派生子会话（Fork）可用；`SessionDiffModal` 并排比对从未接线，组件已于 2026-09-02 死代码删除；
 - [x] **TODO-B4 (全场景多模态音视频交互)**：已完成多模态附件画廊、音频波形播放器与视频画中画播放卡片。
 
 ---

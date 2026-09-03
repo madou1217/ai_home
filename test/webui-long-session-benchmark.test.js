@@ -28,7 +28,7 @@ test('dsh 2.0 long-session memory & performance benchmark (200+ turns simulation
   // 1. 验证消息总量
   assert.equal(messages.length, 500);
 
-  // 2. 模拟 VirtualConversationList 视口裁剪算法
+  // 2. 模拟虚拟列表视口裁剪算法（原 VirtualConversationList 算法,组件已删除,此处保留独立基准）
   const scrollTop = 12000;
   const containerHeight = 800;
   const overscan = 5;

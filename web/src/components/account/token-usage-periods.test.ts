@@ -115,6 +115,35 @@ test('hides every leading empty window at once', () => {
   assert.deepEqual(metrics[0].absorbed.map((period) => period.key), ['total']);
 });
 
+test('hides an idle window in the middle when its neighbours still carry usage', () => {
+  // 跨月交替时本月还没跑过，但本周与累计都有量：中间的"月 0"同样不占位，
+  // 它的说明挂到右边第一个留下的格子上。
+  const metrics = buildTokenUsageMetrics(usageOf({
+    day: 0,
+    week: 1_530_000,
+    month: 0,
+    total: 636_000_000
+  }));
+
+  assert.deepEqual(metrics.map((metric) => metric.key), ['week', 'total']);
+  assert.deepEqual(metrics[0].idle.map((period) => period.key), ['day']);
+  assert.deepEqual(metrics[1].idle.map((period) => period.key), ['month']);
+});
+
+test('hides trailing idle windows against the last window that carries usage', () => {
+  // 宽窗口反而为 0（异常数据）时没有右邻可挂，说明挂到左边最后一格。
+  const metrics = buildTokenUsageMetrics(usageOf({
+    day: 5,
+    week: 5,
+    month: 0,
+    total: 0
+  }));
+
+  assert.deepEqual(metrics.map((metric) => metric.key), ['day']);
+  assert.deepEqual(metrics[0].absorbed.map((period) => period.key), ['week']);
+  assert.deepEqual(metrics[0].idle.map((period) => period.key), ['month', 'total']);
+});
+
 test('an account with no usage at all collapses to one zero bar', () => {
   const metrics = buildTokenUsageMetrics(usageOf({}));
 

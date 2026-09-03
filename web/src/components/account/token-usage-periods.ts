@@ -84,28 +84,40 @@ export function collapseTokenUsageMetrics(metrics: TokenUsageMetric[]): TokenUsa
 }
 
 /**
- * 开头的空窗口不占位：今天还没跑过时，"日 0"只是一根贴地的柱子，
- * 真正有信息的是它右边那几格。所以只要还有别的窗口有量，就把开头的 0 藏掉，
- * 让最窄的"确实有量"的窗口顶到最前面。全都是 0 时保留一格，否则整格没有东西可看。
+ * 空窗口不占位：数值为 0 的格子只是一根贴地的柱子，真正有信息的是它旁边那几格。
+ * 所以只要还有别的窗口有量，就把 0 藏掉——不限于开头，跨月/跨周交替时中间那格
+ * （例如"本月"还没跑过，但本周和累计都有量）同样是该藏的空窗口。
+ * 被藏掉的窗口记到右边第一个留下的格子上（末尾的 0 没有右邻，记到左边最后一格），
+ * Tooltip 里说明"无用量"。数值未知（null）不藏：那是"没统计到"，不是"没有用量"。
+ * 全都是 0 时保留一格，否则整格没有东西可看。
  */
-export function dropIdleLeadingMetrics(metrics: TokenUsageMetric[]): TokenUsageMetric[] {
+export function dropIdleMetrics(metrics: TokenUsageMetric[]): TokenUsageMetric[] {
   if (metrics.length <= 1) return metrics;
   if (!metrics.some((metric) => (metric.value || 0) > 0)) return metrics;
 
-  const kept = [...metrics];
-  const idle: TokenUsagePeriod[] = [];
-  while (kept.length > 1 && kept[0].value === 0) {
-    const dropped = kept.shift() as TokenUsageMetric;
-    idle.push({ key: dropped.key, label: dropped.label, hint: dropped.hint }, ...dropped.absorbed);
+  const kept: TokenUsageMetric[] = [];
+  let pendingIdle: TokenUsagePeriod[] = [];
+  metrics.forEach((metric) => {
+    if (metric.value === 0) {
+      pendingIdle = [
+        ...pendingIdle,
+        { key: metric.key, label: metric.label, hint: metric.hint },
+        ...metric.absorbed
+      ];
+      return;
+    }
+    kept.push({ ...metric, absorbed: [...metric.absorbed], idle: [...pendingIdle, ...metric.idle] });
+    pendingIdle = [];
+  });
+  if (pendingIdle.length > 0) {
+    const last = kept[kept.length - 1];
+    kept[kept.length - 1] = { ...last, idle: [...last.idle, ...pendingIdle] };
   }
-  if (idle.length === 0) return metrics;
-
-  kept[0] = { ...kept[0], idle: [...idle, ...kept[0].idle] };
   return kept;
 }
 
 export function buildTokenUsageMetrics(usage: AccountTokenUsage): TokenUsageMetric[] {
-  return dropIdleLeadingMetrics(collapseTokenUsageMetrics(TOKEN_USAGE_PERIODS.map((period) => ({
+  return dropIdleMetrics(collapseTokenUsageMetrics(TOKEN_USAGE_PERIODS.map((period) => ({
     ...period,
     value: toTokenValue(usage[period.key]),
     absorbed: [],

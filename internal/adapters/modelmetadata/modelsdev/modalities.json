@@ -2674,6 +2674,26 @@
       "text"
     ]
   },
+  "openai/gpt-6-astra": {
+    "input": [
+      "text",
+      "image",
+      "pdf"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "openai/gpt-6-astra-fast": {
+    "input": [
+      "text",
+      "image",
+      "pdf"
+    ],
+    "output": [
+      "text"
+    ]
+  },
   "openai/gpt-image-1": {
     "input": [
       "text",

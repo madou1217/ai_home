@@ -335,7 +335,7 @@ node --test test/go-route-ownership-manifest.test.js
 | SRV-016 | Server profile 列表/选择/删除 | `ls/use/remove`、Web | secret 不回显；切换 active profile 改变 Web/desktop 请求目标 | 稳定 | `control-plane-profiles`、`active-control-plane` |
 | SRV-017 | LAN/mDNS Server 发现 | Settings/Tauri | 搜索 `_ai-home._tcp`，发现 route 不自动获得凭据 | 受限 | `src-tauri/src/server_discovery.rs` |
 | SRV-018 | LAN profile 授权与 route refresh | Tauri | Management Key proof 后提交可信 route；支持刷新与健康排序 | 受限 | `commands.rs`、`server_route_runtime.rs` |
-| SRV-019 | Source stale 检测/自动重启辅助 | status/background | source fingerprint 变化标为 stale，提示或后台重启 | 内部/受限 | `source-fingerprint.js`、`source-auto-restart.js` |
+| SRV-019 | Source stale 检测/自动重启辅助 | status/background | source fingerprint 变化标为 stale；默认由用户显式重启，仅 `AIH_SERVER_SOURCE_AUTO_RESTART=1` 允许开发自动重启；CLI 复用 ready 服务 | 内部/受限 | `source-fingerprint.js`、`source-auto-restart.js` |
 | SRV-020 | 自更新检查 | `aih update --check` | 检查 npm/source install 更新，不改代码 | 稳定 | `lib/cli/services/update/self-update.js` |
 | SRV-021 | Dry-run/强制更新 | `aih update --dry-run\|--force` | npm 安装可自动更新；source-linked 安装只给安全的手工提示 | 稳定/受限 | `self-update.js` |
 | SRV-022 | Management status/metrics/accounts | `/v0/management/*`、Web proxy | 状态、指标、账号、模型和 usage 只读视图 | 稳定 | `management-router.js` |

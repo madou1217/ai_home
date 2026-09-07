@@ -3050,7 +3050,7 @@ test('runtime keeps reboot-restored Codex resume native with gateway credentials
   assert.deepEqual(rawModeCalls, [true, false]);
 });
 
-test('runtime restarts stale local aih server before injecting codex remote proxy', () => {
+test('runtime restarts stale local aih server only with source auto restart opt-in', () => {
   const logs = [];
   const originalLog = console.log;
   console.log = (...args) => logs.push(args.join(' '));
@@ -3078,7 +3078,8 @@ test('runtime restarts stale local aih server before injecting codex remote prox
   };
   try {
     const { runtime, proc, spawns, rawModeCalls, aiHomeDir, resolveHarnessAccountRef } = createRuntimeHarness({
-      AIH_CODEX_ENABLE_REMOTE_PROXY: '1'
+      AIH_CODEX_ENABLE_REMOTE_PROXY: '1',
+      AIH_SERVER_SOURCE_AUTO_RESTART: '1'
     }, {
       serverDaemon,
       readServerConfig: () => ({
@@ -3112,6 +3113,26 @@ test('runtime restarts stale local aih server before injecting codex remote prox
     assert.deepEqual(rawModeCalls, [true, false]);
   } finally {
     console.log = originalLog;
+  }
+});
+
+test('runtime reuses a ready stale gateway without restarting other clients by default', () => {
+  for (const env of [{}, { AIH_SERVER_SOURCE_AUTO_RESTART: '1', AIH_SERVER_DISABLE_SOURCE_AUTO_RESTART: '1' }]) {
+    let restartCalls = 0;
+    const { runtime, proc, spawns, aiHomeDir, resolveHarnessAccountRef } = createRuntimeHarness(env, {
+      serverDaemon: {
+        status: () => ({ running: true, ready: true, stale: true, staleReason: 'source_changed' }),
+        restart() { restartCalls += 1; return Promise.resolve({ ready: true }); }
+      },
+      readServerConfig: () => ({ host: '127.0.0.1', port: 9527, apiKey: 'secret-key' })
+    });
+    writeDefaultAccountRef(fsBase, aiHomeDir, 'codex', resolveHarnessAccountRef('codex', '10086'));
+    runtime.runCliPtyTracked('codex', '10086', ['resume', 'thread-id'], false);
+    assert.equal(restartCalls, 0);
+    assert.equal(spawns.length, 1);
+    assert.ok(spawns[0].args.includes('ws://127.0.0.1:9527'));
+    assert.equal(spawns[0].options.env.AIH_CODEX_REMOTE_AUTH_TOKEN, 'secret-key');
+    assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
   }
 });
 

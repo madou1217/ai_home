@@ -8,7 +8,6 @@ const WebSocket = require('ws');
 const {
   AGGREGATE_THREAD_LIST_MAX_ITEMS,
   STATE_THREAD_LIST_CURSOR_PREFIX,
-  buildFastResumeHydrationRequest,
   buildTurnStartHydrationRequest,
   buildTurnLiveThreadHydrationRequest,
   buildCodexAppServerSessionEvent,
@@ -966,7 +965,7 @@ test('buildFastThreadReadResponse does not expose untracked incomplete turns as 
   assert.equal(tracked.result.thread.turns[0].status, 'inProgress');
 });
 
-test('buildFastThreadReadResponse uses the explicit Codex state home', () => {
+test('buildFastThreadReadResponse keeps runtime config separate from the explicit state home', () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-fast-read-host-config-'));
   const rolloutPath = path.join(tmpDir, 'rollout.jsonl');
   fs.writeFileSync(
@@ -999,9 +998,9 @@ test('buildFastThreadReadResponse uses the explicit Codex state home', () => {
   }
 
   const response = buildFastThreadReadResponse({
-    id: 'resume-1',
-    method: 'thread/resume',
-    params: { threadId: 'thread-1' }
+    id: 'read-1',
+    method: 'thread/read',
+    params: { threadId: 'thread-1', includeTurns: true }
   }, {
     fs: {
       existsSync: () => true,
@@ -1026,9 +1025,7 @@ test('buildFastThreadReadResponse uses the explicit Codex state home', () => {
     fastReadMinBytes: 1
   });
 
-  assert.equal(response.result.thread.modelProvider, 'aih_10014');
-  assert.equal(response.result.modelProvider, 'aih_10014');
-  assert.equal(response.result.model, 'gpt-5.5');
+  assert.equal(response.result.thread.modelProvider, 'aih');
 });
 
 test('patchThreadConfigResponse rewrites stale thread and resume model metadata', () => {
@@ -1409,6 +1406,31 @@ test('reconcileSelectedThreadConfig resolves stale model even when provider alre
   assert.equal(result.currentModel, 'gpt-5.5');
 });
 
+test('resume uses the child runtime provider while reading history from the shared state home', () => {
+  class FakeDatabase {
+    constructor(dbPath) { assert.equal(dbPath, '/tmp/state/state_5.sqlite'); }
+    exec() {}
+    prepare() { return { get: () => ({ model_provider: 'openai', model: 'old-model' }) }; }
+    close() {}
+  }
+  const result = reconcileSelectedThreadConfig({
+    method: 'thread/resume', params: { threadId: 'thread-1' }
+  }, {
+    fs: {
+      existsSync: () => true,
+      readFileSync: (file) => file === '/tmp/runtime/config.toml'
+        ? 'model_provider = "aih_server"\nmodel = "runtime-model"\n'
+        : 'model_provider = "openai"\nmodel = "host-model"\n',
+      readdirSync: () => ['state_5.sqlite']
+    },
+    processObj: { env: { CODEX_HOME: '/tmp/runtime', CODEX_SQLITE_HOME: '/tmp/state' } },
+    DatabaseSync: FakeDatabase
+  });
+  assert.equal(result.currentProvider, 'aih_server');
+  assert.equal(result.currentModel, 'runtime-model');
+  assert.equal(result.stateDbPath, '/tmp/state/state_5.sqlite');
+});
+
 test('rewriteThreadResumeRuntimeConfig injects current provider and model for stale sessions', () => {
   const out = rewriteThreadResumeRuntimeConfig({
     id: 'resume-1',
@@ -1425,26 +1447,6 @@ test('rewriteThreadResumeRuntimeConfig injects current provider and model for st
   assert.equal(out.params.model, 'gpt-5.5');
 });
 
-test('buildFastResumeHydrationRequest registers a large resumed thread without turns', () => {
-  const out = buildFastResumeHydrationRequest({
-    id: 'resume-1',
-    method: 'thread/resume',
-    params: {
-      threadId: 'thread-1'
-    }
-  }, {
-    currentProvider: 'aih_10',
-    currentModel: 'gpt-5.5'
-  }, 7);
-
-  assert.equal(out.id, 'aih-hydrate-thread-resume:resume-1:7');
-  assert.equal(out.method, 'thread/resume');
-  assert.equal(out.params.threadId, 'thread-1');
-  assert.equal(out.params.excludeTurns, true);
-  assert.equal(Object.prototype.hasOwnProperty.call(out.params, 'path'), false);
-  assert.equal(out.params.modelProvider, 'aih_10');
-  assert.equal(out.params.model, 'gpt-5.5');
-});
 
 test('buildTurnStartHydrationRequest resumes a missing live thread before retrying a turn', () => {
   const out = buildTurnStartHydrationRequest({
@@ -2484,6 +2486,57 @@ test('buildCodexAppServerSpawnEnv keeps original env when no desktop account aut
   assert.equal(fs.existsSync(path.join(tmpHome, '.ai_home', 'run', 'codex-desktop', defaultRef, 'auth.json')), false);
 });
 
+test('buildCodexAppServerSpawnEnv never inherits a stale provider URL when the default account was removed', (t) => {
+  const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-codex-app-stale-provider-'));
+  const hostCodexHome = path.join(tmpHome, '.codex');
+  fs.mkdirSync(hostCodexHome, { recursive: true });
+  t.after(() => fs.rmSync(tmpHome, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(hostCodexHome, 'config.toml'), [
+    'model_provider = "old_hub"',
+    'model = "gpt-5.5"',
+    '',
+    '[model_providers.old_hub]',
+    'base_url = "https://hub.linux.do/v1"',
+    'bearer_token = "removed-key"'
+  ].join('\n'), 'utf8');
+  const desktopAccountRef = registerCodexAccount(tmpHome, {
+    cliAccountId: '10009',
+    email: 'desktop@example.com',
+    auth: {
+      tokens: {
+        access_token: createJwt({
+          exp: Math.floor(Date.now() / 1000) + 3600,
+          'https://api.openai.com/profile': { email: 'desktop@example.com' },
+          'https://api.openai.com/auth': {
+            chatgpt_plan_type: 'plus',
+            chatgpt_account_id: 'acc_desktop',
+            chatgpt_account_user_id: 'user_acc_desktop'
+          }
+        }),
+        refresh_token: 'refresh-desktop'
+      }
+    }
+  });
+
+  const result = buildCodexAppServerSpawnEnv(fs, {
+    enabled: true,
+    desktopAccountRef
+  }, {
+    processObj: {
+      platform: 'darwin',
+      env: { HOME: tmpHome, CODEX_HOME: hostCodexHome }
+    }
+  });
+
+  assert.ok(result.runtime);
+  assert.equal(result.runtime.executionAccountRef, '');
+  const runtimeConfig = fs.readFileSync(path.join(result.env.CODEX_HOME, 'config.toml'), 'utf8');
+  assert.match(runtimeConfig, /^model_provider = "aih_server"$/m);
+  assert.match(runtimeConfig, /^base_url = "http:\/\/127\.0\.0\.1:9527\/v1"$/m);
+  assert.doesNotMatch(runtimeConfig, /hub\.linux\.do/);
+  assert.doesNotMatch(runtimeConfig, /X-Account-Ref/);
+});
+
 test('stdio proxy patches tracked getAuthStatus from the selected DB account', (t) => {
   const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-stdio-auth-status-'));
   const codexHome = path.join(tmpHome, '.codex');
@@ -3361,8 +3414,9 @@ test('stdio proxy lists shared sessions beyond unfiltered exec rows', () => {
   assert.deepEqual(stderr.writes, []);
 });
 
-test('stdio proxy fast resume hydrates upstream without temporary rollout files', () => {
+test('stdio proxy waits for real resume cursors and forwards errors for large rollouts', (t) => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-fast-resume-'));
+  t.after(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
   const rolloutPath = path.join(tmpDir, 'rollout-2026-05-09T00-00-00-thread-1.jsonl');
   fs.writeFileSync(rolloutPath, [
     JSON.stringify({ timestamp: '2026-05-09T00:00:00.000Z', type: 'session_meta', payload: { id: 'thread-1', timestamp: '2026-05-09T00:00:00.000Z', cwd: '/tmp/project' } }),
@@ -3464,75 +3518,37 @@ test('stdio proxy fast resume hydrates upstream without temporary rollout files'
     }
   });
 
-  stdin.emit('data', Buffer.from('{"id":"resume-1","method":"thread/resume","params":{"threadId":"thread-1"}}\n'));
-
+  const request = {
+    id: 'resume-1', method: 'thread/resume',
+    params: { threadId: 'thread-1', excludeTurns: true, initialTurnsPage: { limit: 5 } }
+  };
+  stdin.emit('data', Buffer.from(JSON.stringify(request) + '\n'));
   assert.equal(upstreamStdinWrites.length, 1);
-  const hydrationRequest = JSON.parse(upstreamStdinWrites[0]);
-  assert.equal(hydrationRequest.id, 'aih-hydrate-thread-resume:resume-1:1');
-  assert.equal(hydrationRequest.method, 'thread/resume');
-  assert.equal(hydrationRequest.params.threadId, 'thread-1');
-  assert.equal(hydrationRequest.params.excludeTurns, true);
-  assert.equal(hydrationRequest.params.modelProvider, 'aih_10');
-  assert.equal(hydrationRequest.params.model, 'gpt-5.5');
+  const forwarded = JSON.parse(upstreamStdinWrites[0]);
+  assert.equal(forwarded.id, request.id);
+  assert.deepEqual(forwarded.params, { ...request.params, modelProvider: 'aih_10', model: 'gpt-5.5' });
+  assert.equal(stdout.writes.length, 0, 'resume must not report success before upstream');
+  const result = {
+    thread: { id: 'thread-1', turns: [], historyMode: 'paginated' },
+    modelProvider: 'aih_10', model: 'gpt-5.5',
+    itemsBackwardsCursor: 'opaque-items', turnsBackwardsCursor: 'opaque-turns',
+    initialTurnsPage: { data: [], nextCursor: 'next-page', backwardsCursor: 'back-page' }
+  };
+  upstreamStdout.emit('data', Buffer.from(JSON.stringify({ id: request.id, result }) + '\n'));
+  assert.equal(stdout.writes.length, 1);
+  const response = JSON.parse(stdout.writes[0]);
+  assert.equal(response.result.itemsBackwardsCursor, result.itemsBackwardsCursor);
+  assert.equal(response.result.turnsBackwardsCursor, result.turnsBackwardsCursor);
+  assert.deepEqual(response.result.initialTurnsPage, result.initialTurnsPage);
+  assert.deepEqual(response.result.threadIds, ['thread-1']);
+  stdin.emit('data', Buffer.from(JSON.stringify({ ...request, id: 'resume-2' }) + '\n'));
+  assert.equal(stdout.writes.length, 1);
+  const failure = { id: 'resume-2', error: { code: -32000, message: 'thread already has an active writer' } };
+  upstreamStdout.emit('data', Buffer.from(JSON.stringify(failure) + '\n'));
+  assert.deepEqual(JSON.parse(stdout.writes.at(-1)), failure);
   assert.equal(fs.statSync(rolloutPath).size, originalRolloutBytes);
-  assert.equal(Object.prototype.hasOwnProperty.call(hydrationRequest.params, 'path'), false);
-  assert.equal(fs.readdirSync(tmpDir).some((entryName) => entryName.includes('.aih-slim-')), false);
-  assert.equal(stdout.writes.length, 1);
-  const payload = JSON.parse(stdout.writes[0]);
-  assert.equal(payload.id, 'resume-1');
-  assert.equal(payload.result.modelProvider, 'aih_10');
-  assert.equal(payload.result.model, 'gpt-5.5');
-  assert.deepEqual(payload.result.threadIds, ['thread-1']);
-  assert.equal(payload.result.thread.status.type, 'idle');
-  assert.equal(payload.result.thread.turns.length, 1);
-  upstreamStdout.emit('data', Buffer.from(JSON.stringify({
-    method: 'thread/started',
-    params: {
-      thread: { id: 'thread-1', status: { type: 'idle' } }
-    }
-  }) + '\n'));
-  upstreamStdout.emit('data', Buffer.from(JSON.stringify({
-    method: 'thread/status/changed',
-    params: {
-      threadId: 'thread-1',
-      status: { type: 'active', activeFlags: [] }
-    }
-  }) + '\n'));
-  upstreamStdout.emit('data', Buffer.from(JSON.stringify({
-    method: 'thread/tokenUsage/updated',
-    params: {
-      threadId: 'thread-1',
-      turnId: 'old-turn',
-      tokenUsage: {}
-    }
-  }) + '\n'));
-  assert.equal(stdout.writes.length, 1);
-  stdin.emit('data', Buffer.from('{"id":"turn-1","method":"turn/start","params":{"threadId":"thread-1","input":[]}}\n'));
-  assert.equal(upstreamStdinWrites.length, 1);
-  stdin.emit('data', Buffer.from('{"id":"steer-1","method":"turn/steer","params":{"threadId":"thread-1","expectedTurnId":"active-turn-1","input":[{"type":"text","text":"more"}]}}\n'));
-  assert.equal(upstreamStdinWrites.length, 1);
-  upstreamStdout.emit('data', Buffer.from(JSON.stringify({
-    id: hydrationRequest.id,
-    result: {
-      thread: { id: 'thread-1', turns: [] },
-      modelProvider: 'aih_10',
-      model: 'gpt-5.5'
-    }
-  }) + '\n'));
-  assert.equal(stdout.writes.length, 1);
-  assert.equal(upstreamStdinWrites.length, 3);
-  const queuedTurn = JSON.parse(upstreamStdinWrites[1]);
-  assert.equal(queuedTurn.id, 'turn-1');
-  assert.equal(queuedTurn.method, 'turn/start');
-  assert.equal(queuedTurn.params.threadId, 'thread-1');
-  const queuedSteer = JSON.parse(upstreamStdinWrites[2]);
-  assert.equal(queuedSteer.id, 'steer-1');
-  assert.equal(queuedSteer.method, 'turn/steer');
-  assert.equal(queuedSteer.params.threadId, 'thread-1');
-  assert.equal(queuedSteer.params.expectedTurnId, 'active-turn-1');
-  assert.equal(queuedSteer.params.input[0].text, 'more');
-  assert.deepEqual(stderr.writes, []);
 });
+
 
 test('stdio proxy hydrates persisted thread before retrying turn/start when live state is missing', () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-turn-hydrate-'));
@@ -4027,7 +4043,7 @@ test('stdio proxy emits queued codex session notifications only for live threads
   assert.deepEqual(exitCodes, [0]);
 });
 
-test('stdio proxy treats fast-resumed threads as live for queued session notifications', async (t) => {
+test('stdio proxy treats upstream-resumed threads as live for queued session notifications', async (t) => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-codex-fast-resume-notify-'));
   t.after(() => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -4124,6 +4140,10 @@ test('stdio proxy treats fast-resumed threads as live for queued session notific
   });
 
   stdin.emit('data', Buffer.from('{"id":"resume-1","method":"thread/resume","params":{"threadId":"thread-1"}}\n'));
+  assert.equal(stdout.writes.length, 0);
+  upstreamStdout.emit('data', Buffer.from(JSON.stringify({
+    id: 'resume-1', result: { thread: { id: 'thread-1', turns: [] }, itemsBackwardsCursor: null, turnsBackwardsCursor: null }
+  }) + '\n'));
   await waitForCondition(() => stdout.writes.some((line) => JSON.parse(line).id === 'resume-1'));
   appendCodexSessionNotification(fs, queueFile, {
     provider: 'codex',

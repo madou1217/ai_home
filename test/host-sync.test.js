@@ -301,9 +301,32 @@ test('syncGlobalConfigToHost writes the canonical codex API-key provider block f
   assert.match(hostConfig, new RegExp(`^model_provider = "${providerKey}"$`, 'm'));
   assert.match(hostConfig, new RegExp(`^\\[model_providers\\.${providerKey}\\]$`, 'm'));
   assert.match(hostConfig, new RegExp(`^base_url = "${AIH_CODEX_PROVIDER_BASE_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"$`, 'm'));
-  assert.match(hostConfig, /^bearer_token = "dummy"$/m);
+  assert.match(hostConfig, /'--gateway'/);
+  assert.match(hostConfig, /model_providers\.aih_server\.auth/);
   assert.match(hostConfig, /^hooks = true$/m);
   assert.doesNotMatch(hostConfig, /aih_10/);
+});
+
+test('host API-key sync pairs native and managed endpoints and removes them on OAuth switch', (t) => {
+  const fixture = createFixture(t);
+  const custom = registerCodexAccount(fixture, '31', {
+    env: { OPENAI_API_KEY: 'custom-test-key', OPENAI_BASE_URL: 'https://custom.example/v1' }
+  });
+  const oauth = registerCodexAccount(fixture, '32', {
+    auth: { auth_mode: 'chatgpt', tokens: { access_token: 'oauth-test' } }
+  });
+  const sync = createCodexSyncer(fixture);
+  assert.equal(sync('codex', custom).ok, true);
+  const configPath = path.join(fixture.hostCodexDir, 'config.toml');
+  const config = fs.readFileSync(configPath, 'utf8');
+  assert.match(config, /^openai_base_url = "http:\/\/127.0.0.1:9527\/v1"$/m);
+  assert.match(config, /^base_url = "http:\/\/127.0.0.1:9527\/v1"$/m);
+  assert.ok(config.includes(custom));
+  assert.doesNotMatch(config, /custom-test-key/);
+  sync('codex', custom);
+  assert.equal(fs.readFileSync(configPath, 'utf8'), config);
+  assert.equal(sync('codex', oauth).ok, true);
+  assert.doesNotMatch(fs.readFileSync(configPath, 'utf8'), /openai_base_url|custom\.example/);
 });
 
 test('syncGlobalConfigToHost switches host config to oauth mode when DB has no API key', (t) => {
@@ -319,6 +342,35 @@ test('syncGlobalConfigToHost switches host config to oauth mode when DB has no A
   assert.match(hostConfig, /^preferred_auth_method = "oauth"$/m);
   assert.match(hostConfig, /^model_provider = "openai"$/m);
   assert.doesNotMatch(hostConfig, /^\[model_providers\.aih_20\]$/m);
+});
+
+test('syncGlobalConfigToHost removes stale AIH auth command when switching to OAuth', (t) => {
+  const fixture = createFixture(t);
+  const accountRef = registerCodexAccount(fixture, '21', {
+    auth: { tokens: { access_token: 'oauth-access-token' } }
+  });
+  fs.writeFileSync(path.join(fixture.hostCodexDir, 'config.toml'), [
+    'preferred_auth_method = "apikey"',
+    'model_provider = "aih_server"',
+    '',
+    '[model_providers.aih_server]',
+    'name = "AIH Server"',
+    'base_url = "http://127.0.0.1:9527/v1"',
+    '',
+    '[model_providers.aih_server.auth]',
+    "command = '/usr/bin/node'",
+    "args = ['/tmp/aih-codex-provider-auth.js']",
+    ''
+  ].join('\n'), 'utf8');
+
+  const result = createCodexSyncer(fixture)('codex', accountRef);
+
+  assert.equal(result.ok, true);
+  const hostConfig = fs.readFileSync(path.join(fixture.hostCodexDir, 'config.toml'), 'utf8');
+  assert.match(hostConfig, /^preferred_auth_method = "oauth"$/m);
+  assert.match(hostConfig, /^model_provider = "openai"$/m);
+  assert.doesNotMatch(hostConfig, /^\[model_providers\.aih_server\]/m);
+  assert.doesNotMatch(hostConfig, /aih-codex-provider-auth/);
 });
 
 test('syncGlobalConfigToHost keeps legacy codex hook flag for older codex versions', (t) => {
@@ -355,7 +407,7 @@ test('syncGlobalConfigToHost replaces the single provider block without encoding
   assert.equal(syncGlobalConfigToHost('codex', secondRef).ok, true);
   assert.deepEqual(
     JSON.parse(fs.readFileSync(path.join(fixture.hostCodexDir, 'auth.json'), 'utf8')),
-    { OPENAI_API_KEY: 'second-auth' }
+    { OPENAI_API_KEY: 'dummy', auth_mode: 'apikey', tokens: null, last_refresh: null }
   );
 
   const hostConfig = fs.readFileSync(path.join(fixture.hostCodexDir, 'config.toml'), 'utf8');
@@ -363,7 +415,7 @@ test('syncGlobalConfigToHost replaces the single provider block without encoding
   const providerHeaders = hostConfig.match(new RegExp(`^\\[model_providers\\.${providerKey}\\]$`, 'gm')) || [];
   assert.equal(providerHeaders.length, 1);
   assert.match(hostConfig, new RegExp(`^model_provider = "${providerKey}"$`, 'm'));
-  assert.match(hostConfig, /^base_url = "https:\/\/b\.example\.com\/v1"$/m);
+  assert.match(hostConfig, /^base_url = "http:\/\/127.0.0.1:9527\/v1"$/m);
   // codex 0.149：auth 命令表与 env_key 互斥；受管块走 auth 表（脚本三级取 key）
   assert.doesNotMatch(hostConfig, /env_key/);
   assert.match(hostConfig, /model_providers\.aih_server\.auth\]/);
@@ -371,7 +423,7 @@ test('syncGlobalConfigToHost replaces the single provider block without encoding
   assert.match(hostConfig, /refresh_interval_ms = 300000/);
   assert.doesNotMatch(hostConfig, /dummy-(10|11)/);
   assert.equal(hostConfig.includes(firstRef), false);
-  assert.equal(hostConfig.includes(secondRef), false);
+  assert.equal(hostConfig.includes(secondRef), true);
   assert.doesNotMatch(hostConfig, /aih_(10|11)/);
 });
 

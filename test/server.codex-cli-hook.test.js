@@ -205,6 +205,143 @@ test('codex cli hook activates only the resolved default binary', () => {
   assert.equal(Object.hasOwn(state, 'targets'), false);
 });
 
+test('codex cli hook refuses to wrap an alias that points at another AIH wrapper', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-codex-cli-hook-alias-'));
+  const aiHomeDir = path.join(root, '.ai_home');
+  const aliasPath = path.join(root, 'bin', 'codex');
+  const managedPath = path.join(root, 'project', 'codex.js');
+  fs.mkdirSync(path.dirname(aliasPath), { recursive: true });
+  fs.mkdirSync(path.dirname(managedPath), { recursive: true });
+  fs.mkdirSync(aiHomeDir, { recursive: true });
+  fs.writeFileSync(aliasPath, [
+    '#!/bin/sh',
+    '# aih-codex-cli-hook-alias',
+    `exec '${managedPath}' "$@"`,
+    ''
+  ].join('\n'), { mode: 0o755 });
+  const managedWrapper = buildWrapperScript({
+    nodeExecPath: '/usr/local/bin/node',
+    helperScriptPath: '/tmp/codex-proxy.js',
+    upstreamBinaryPath: `${managedPath}.aih-original`,
+    stateFilePath: getStateFilePath(aiHomeDir)
+  });
+  fs.writeFileSync(managedPath, managedWrapper, { mode: 0o755 });
+
+  const service = createCodexCliHookService({
+    fs,
+    path,
+    processObj: { platform: 'darwin' },
+    aiHomeDir,
+    nodeExecPath: '/usr/local/bin/node',
+    helperScriptPath: '/tmp/codex-proxy.js',
+    resolveCliPath: () => aliasPath
+  });
+
+  const result = service.ensureInstalled();
+
+  assert.equal(result.ok, true);
+  assert.equal(result.enabled, false);
+  assert.equal(result.reason, 'codex_cli_not_found');
+  assert.equal(fs.readFileSync(managedPath, 'utf8'), managedWrapper);
+  assert.equal(fs.existsSync(`${aliasPath}.aih-original`), false);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('codex cli hook recovers a clean optional platform binary when PATH is fully wrapped', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-codex-cli-hook-recovery-'));
+  const aiHomeDir = path.join(root, '.ai_home');
+  const binDir = path.join(root, 'bin');
+  const aliasPath = path.join(binDir, 'codex');
+  const wrapperPath = path.join(root, 'node_modules', '.bin', 'codex');
+  const cleanPath = path.join(root, 'node_modules', '@openai', 'codex-darwin-arm64', 'vendor', 'aarch64-apple-darwin', 'bin', 'codex');
+  fs.mkdirSync(path.dirname(aliasPath), { recursive: true });
+  fs.mkdirSync(path.dirname(wrapperPath), { recursive: true });
+  fs.mkdirSync(path.dirname(cleanPath), { recursive: true });
+  fs.mkdirSync(aiHomeDir, { recursive: true });
+  fs.writeFileSync(aliasPath, ['#!/bin/sh', '# aih-codex-cli-hook-alias', `exec '${wrapperPath}' "$@"`, ''].join('\n'), { mode: 0o755 });
+  fs.writeFileSync(wrapperPath, buildWrapperScript({
+    nodeExecPath: '/usr/local/bin/node',
+    helperScriptPath: '/tmp/codex-proxy.js',
+    upstreamBinaryPath: `${wrapperPath}.aih-original`,
+    stateFilePath: getStateFilePath(aiHomeDir)
+  }), { mode: 0o755 });
+  fs.writeFileSync(cleanPath, '#!/bin/sh\necho clean\n', { mode: 0o755 });
+
+  const service = createCodexCliHookService({
+    fs,
+    path,
+    processObj: { platform: 'darwin', arch: 'arm64', env: { PATH: `${binDir}:${path.join(root, 'node_modules', '.bin')}` } },
+    aiHomeDir,
+    nodeExecPath: '/usr/local/bin/node',
+    helperScriptPath: '/tmp/codex-proxy.js',
+    resolveCliPath: () => aliasPath
+  });
+
+  const result = service.ensureInstalled();
+  assert.equal(result.ok, true);
+  assert.equal(result.enabled, true);
+  assert.equal(result.targetBinaryPath, fs.realpathSync(cleanPath));
+  assert.equal(fs.readFileSync(`${cleanPath}.aih-original`, 'utf8'), '#!/bin/sh\necho clean\n');
+  assert.match(fs.readFileSync(aliasPath, 'utf8'), new RegExp(cleanPath.replace(/[.*+?^${}()|[\\]\\]/g, '\\\\$&')));
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('codex cli hook prefers standalone current over stale package aliases and follows upgrades', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-codex-standalone-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const standalone = path.join(root, '.codex', 'packages', 'standalone');
+  const current = path.join(standalone, 'current');
+  const entry = path.join(root, '.local', 'bin', 'codex');
+  const stale = path.join(root, 'node_modules', '.bin', 'codex');
+  const script = '#!/bin/sh\necho official\n';
+  for (const version of ['v1', 'v2']) {
+    const dir = path.join(standalone, 'releases', version, 'bin');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'codex'), script, { mode: 0o755 });
+    fs.writeFileSync(path.join(dir, 'codex-code-mode-host'), version);
+  }
+  fs.mkdirSync(path.dirname(entry), { recursive: true });
+  fs.mkdirSync(path.dirname(stale), { recursive: true });
+  fs.symlinkSync(path.join(standalone, 'releases', 'v1'), current);
+  fs.writeFileSync(entry, `#!/bin/sh\n# aih-codex-cli-hook-alias\nexec '${stale}' "$@"\n`);
+  fs.writeFileSync(stale, `#!/bin/sh\n# aih-codex-cli-hook-alias\nexec '${entry}' "$@"\n`);
+  const service = createCodexCliHookService({
+    fs, path, aiHomeDir: path.join(root, '.ai_home'),
+    processObj: { platform: 'darwin', arch: 'arm64', env: { HOME: root, PATH: path.dirname(entry) } },
+    resolveCliPath: () => stale
+  });
+  for (const version of ['v1', 'v2']) {
+    if (version === 'v2') {
+      fs.unlinkSync(current);
+      fs.symlinkSync(path.join(standalone, 'releases', version), current);
+    }
+    const result = service.ensureInstalled();
+    assert.equal(result.ok, true);
+    assert.equal(result.targetBinaryPath, path.join(current, 'bin', 'codex'));
+    assert.equal(fs.readFileSync(result.upstreamBinaryPath, 'utf8'), script);
+    assert.equal(fs.readFileSync(path.join(current, 'bin', 'codex-code-mode-host'), 'utf8'), version);
+    assert.ok(fs.readFileSync(entry, 'utf8').includes(path.join(current, 'bin', 'codex')));
+    assert.equal(service.ensureInstalled().repaired, false);
+    assert.equal(fs.existsSync(`${result.upstreamBinaryPath}.aih-original`), false);
+  }
+});
+
+test('codex cli hook rejects an alias cycle without snapshotting it or touching host installs', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-codex-alias-cycle-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const target = path.join(root, 'codex');
+  const alias = `#!/bin/sh\n# aih-codex-cli-hook-alias\nexec '${target}' "$@"\n`;
+  fs.writeFileSync(target, alias, { mode: 0o755 });
+  const service = createCodexCliHookService({
+    fs, path, aiHomeDir: path.join(root, '.ai_home'),
+    processObj: { platform: 'darwin', arch: 'arm64', env: { HOME: root } },
+    resolveCliPath: () => target
+  });
+  assert.equal(service.ensureInstalled().enabled, false);
+  assert.equal(fs.readFileSync(target, 'utf8'), alias);
+  assert.equal(fs.existsSync(`${target}.aih-original`), false);
+});
+
 test('codex cli hook uses only the resolved default Windows shim', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-codex-cli-hook-win-'));
   const aiHomeDir = path.join(root, '.ai_home');
@@ -361,6 +498,52 @@ test('codex cli hook keeps the resolved pnpm shim independent of later PATH entr
   assert.equal(result.enabled, true);
   assert.equal(selectedUpstream, pnpmShimFromBinDir);
   assert.equal(fs.readFileSync(firstUpstreamPath, 'utf8'), pnpmShimFromBinDir);
+});
+
+test('codex cli hook repairs stale managed PATH shims to the current installation', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-codex-cli-hook-alias-'));
+  const aiHomeDir = path.join(root, '.ai_home');
+  const currentDir = path.join(root, 'current');
+  const staleDir = path.join(root, 'pnpm');
+  const currentPath = path.join(currentDir, 'codex');
+  const stalePath = path.join(staleDir, 'codex');
+  fs.mkdirSync(currentDir, { recursive: true });
+  fs.mkdirSync(staleDir, { recursive: true });
+  fs.mkdirSync(aiHomeDir, { recursive: true });
+  fs.writeFileSync(currentPath, '#!/bin/sh\necho current\n', 'utf8');
+  fs.chmodSync(currentPath, 0o755);
+
+  const staleUpstream = `${stalePath}.aih-original`;
+  fs.writeFileSync(stalePath, buildWrapperScript({
+    nodeExecPath: '/usr/local/bin/node',
+    helperScriptPath: '/tmp/codex-proxy.js',
+    upstreamBinaryPath: staleUpstream,
+    stateFilePath: getStateFilePath(aiHomeDir)
+  }), 'utf8');
+  fs.writeFileSync(staleUpstream, '#!/bin/sh\nexec \'/missing/pnpm/bin/codex\' "$@"\n', 'utf8');
+  fs.chmodSync(stalePath, 0o755);
+  fs.chmodSync(staleUpstream, 0o755);
+
+  const service = createCodexCliHookService({
+    fs,
+    path,
+    processObj: { platform: 'darwin', env: { PATH: `${currentDir}:${staleDir}` } },
+    aiHomeDir,
+    nodeExecPath: '/usr/local/bin/node',
+    helperScriptPath: '/tmp/codex-proxy.js',
+    resolveCliPath: () => currentPath
+  });
+
+  const result = service.ensureInstalled();
+  const repaired = fs.readFileSync(stalePath, 'utf8');
+  assert.equal(result.ok, true);
+  assert.equal(result.repaired, true);
+  assert.deepEqual(result.repairedAliases, [stalePath]);
+  assert.match(repaired, /aih-codex-cli-hook-alias/);
+  assert.match(repaired, new RegExp(currentPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  const healthy = service.ensureInstalled();
+  assert.equal(healthy.repaired, false);
+  assert.deepEqual(healthy.repairedAliases, []);
 });
 
 test('codex cli hook rejects polluted upstream backup when no clean recovery exists', () => {

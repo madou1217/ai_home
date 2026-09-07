@@ -120,6 +120,26 @@ test('canonical directory rejects non-string native identities at the projection
   assert.deepEqual(directory, { sessions: [] });
 });
 
+test('canonical directory bounds concurrent project queries', async () => {
+  let active = 0;
+  let peak = 0;
+  const queries = Array.from({ length: 20 }, (_, index) => ({
+    provider: 'codex' as const,
+    projectPath: `/workspace/repo-${index}`,
+  }));
+  const directory = await loadCanonicalSessionDirectory(queries, {
+    listSessions: async () => {
+      active += 1;
+      peak = Math.max(peak, active);
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      active -= 1;
+      return [];
+    },
+  });
+  assert.equal(peak, 6);
+  assert.deepEqual(directory, { sessions: [] });
+});
+
 function project(id: string, path: string, sessions: Session[]): AggregatedProject {
   return { id, name: id, path, providers: ['codex'], sessions };
 }

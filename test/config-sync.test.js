@@ -11,6 +11,7 @@ const {
   hoistModelProviderSections,
   mergeSharedProjectSections,
   mergeConfigs,
+  syncCodexBuiltinApiBaseUrl,
   scopeAccountOnlyConfig
 } = require('../lib/cli/services/pty/codex-config-sync');
 const {
@@ -18,6 +19,28 @@ const {
   getCodexHooksFeatureFlagState,
   resolveCodexHooksFeatureFlag
 } = require('../lib/cli/config/codex-feature-flags');
+
+test('native openai sessions use the selected custom endpoint in API-key sandboxes', () => {
+  const initial = 'model_provider = "openai"\n[features]\nhooks = false\n';
+  const options = { isApiKeyMode: true, openaiBaseUrl: 'https://custom.example/v1', openaiApiKey: 'test-secret' };
+  const config = mergeConfigs(initial, {}, options);
+  assert.match(config.split('[features]')[0], /^openai_base_url = "https:\/\/custom.example\/v1"$/m);
+  assert.equal(mergeConfigs(config, {}, options), config);
+  const switched = mergeConfigs(config, {}, { ...options, openaiBaseUrl: 'https://second.example/v1' });
+  assert.match(switched, /^openai_base_url = "https:\/\/second.example\/v1"$/m);
+  assert.doesNotMatch(switched, /custom\.example/);
+  const oauth = mergeConfigs(switched, {}, { isApiKeyMode: false });
+  assert.doesNotMatch(oauth, /openai_base_url|AI Home managed API endpoint/);
+  assert.match(oauth, /^model_provider = "openai"$/m);
+});
+
+test('native endpoint cleanup preserves an unrelated user override and nested tables', () => {
+  const config = 'openai_base_url = "https://user.example/v1"\n[profiles.local]\nopenai_base_url = "https://profile.example/v1"\n';
+  assert.equal(syncCodexBuiltinApiBaseUrl(config), config);
+  const managed = syncCodexBuiltinApiBaseUrl(config, 'https://selected.example/v1');
+  assert.equal((managed.match(/AI Home managed API endpoint/g) || []).length, 1);
+  assert.ok(managed.includes('[profiles.local]\nopenai_base_url = "https://profile.example/v1"'));
+});
 
 test('resolveCodexHooksFeatureFlag switches flag name by codex version', () => {
   assert.equal(resolveCodexHooksFeatureFlag({ codexVersion: '0.113.0' }).flagName, 'codex_hooks');
@@ -281,6 +304,64 @@ test('mergeConfigs replaces aih provider section without leaving duplicate keys 
   assert.match(merged, new RegExp(`^base_url = "http:\/\/127\.0\.0\.1:8317\/v1"$`, 'm'));
   assert.match(merged, /^env_key = "OPENAI_API_KEY"$/m);
   assert.doesNotMatch(merged, /dummy|yesboss-madoudou/);
+});
+
+test('mergeConfigs removes stale aih provider and auth sections for OAuth mode', () => {
+  const providerKey = getAihProviderKey();
+  const hostConfig = [
+    'preferred_auth_method = "apikey"',
+    `model_provider = "${providerKey}"`,
+    '',
+    `[model_providers.${providerKey}]`,
+    'name = "AIH Server"',
+    'base_url = "https://upstream.example.com/v1"',
+    '',
+    `[model_providers.${providerKey}.auth]`,
+    "command = '/usr/bin/node'",
+    "args = ['/tmp/aih-codex-provider-auth.js']",
+    '',
+    '[features]',
+    'hooks = true'
+  ].join('\n');
+
+  const merged = mergeConfigs(hostConfig, {
+    preferred_auth_method: null,
+    model_provider: null,
+    providers: [],
+    model_providers: []
+  }, { isApiKeyMode: false });
+
+  assert.match(merged, /^preferred_auth_method = "oauth"$/m);
+  assert.match(merged, /^model_provider = "openai"$/m);
+  assert.doesNotMatch(merged, new RegExp(`^\\[model_providers\\.${providerKey}(?:\\.auth)?\\]$`, 'm'));
+  assert.doesNotMatch(merged, /aih-codex-provider-auth/);
+  assert.match(merged, /^hooks = true$/m);
+});
+
+test('mergeConfigs replaces host auth commands with sandbox env authentication', () => {
+  const hostConfig = [
+    'model_provider = "aih_server"',
+    '[model_providers.aih_server]',
+    'name = "AIH Server"',
+    'base_url = "https://previous.example/v1"',
+    'wire_api = "responses"',
+    '[model_providers.aih_server.auth]',
+    'command = "/usr/bin/node"',
+    'args = ["/tmp/old-auth.js"]',
+    '[features]',
+    'hooks = true'
+  ].join('\n');
+  const options = {
+    isApiKeyMode: true,
+    openaiBaseUrl: 'https://selected.example/v1',
+    openaiApiKey: 'test-selected-key'
+  };
+  const merged = mergeConfigs(hostConfig, '', options);
+  assert.match(merged, /^env_key = "OPENAI_API_KEY"$/m);
+  assert.match(merged, /^base_url = "https:\/\/selected.example\/v1"$/m);
+  assert.doesNotMatch(merged, /\[model_providers\.aih_server\.auth\]|old-auth|previous\.example/);
+  assert.match(merged, /^hooks = true$/m);
+  assert.equal(mergeConfigs(merged, '', options), merged);
 });
 
 test('mergeConfigs routes the CLI server alias through the canonical gateway provider key', () => {

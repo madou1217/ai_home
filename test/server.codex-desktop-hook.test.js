@@ -4,12 +4,47 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { writeJsonValue } = require('../lib/server/app-state-store');
 const {
   HOOK_STATE_VERSION,
   WRAPPER_MARKER,
   buildWrapperScript,
   createCodexDesktopHookService
 } = require('../lib/server/codex-desktop-hook');
+
+test('a projected HOME matching AIH_HOST_HOME cannot select the real system App bundle', () => {
+  const probed = [];
+  const service = createCodexDesktopHookService({
+    fs: { existsSync(p) { probed.push(p); return p.startsWith('/Applications/'); } },
+    aiHomeDir: '/tmp/isolated/.ai_home', hostHomeDir: '/tmp/isolated',
+    processObj: { platform: 'darwin', env: { HOME: '/tmp/isolated', AIH_HOST_HOME: '/tmp/isolated' } },
+    userInfo: () => ({ homedir: '/Users/real-user' })
+  });
+  assert.equal(service.resolvePaths().reason, 'codex_app_not_found');
+  assert.equal(probed.some(p => p.startsWith('/Applications/')), false);
+});
+
+test('cached system App paths cannot bypass a projected host home', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-desktop-cached-scope-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const aiHomeDir = path.join(root, '.ai_home');
+  writeJsonValue(fs, aiHomeDir, 'desktop-client-paths', {
+    codex: { macos: { bundlePath: '/Applications/ChatGPT.app' } }
+  });
+  const probed = [];
+  const service = createCodexDesktopHookService({
+    fs: { ...fs, existsSync(filePath) {
+      probed.push(filePath);
+      return filePath.startsWith('/Applications/') || fs.existsSync(filePath);
+    } },
+    aiHomeDir,
+    hostHomeDir: root,
+    processObj: { platform: 'darwin', env: { HOME: root, AIH_HOST_HOME: root } },
+    userInfo: () => ({ homedir: '/Users/real-user' })
+  });
+  assert.equal(service.resolvePaths().reason, 'codex_app_not_found');
+  assert.equal(probed.some(filePath => filePath.startsWith('/Applications/')), false);
+});
 
 test('buildWrapperScript renders stable codex desktop wrapper', () => {
   const script = buildWrapperScript({
@@ -177,6 +212,25 @@ test('codex desktop hook discovers the merged ChatGPT app by its bundled codex r
   assert.equal(result.targetBinaryPath, targetBinaryPath);
   assert.equal(fs.readFileSync(targetBinaryPath, 'utf8').includes(WRAPPER_MARKER), true);
   assert.equal(fs.readFileSync(`${targetBinaryPath}.aih-original`, 'utf8').includes('merged-chatgpt-runtime'), true);
+});
+
+test('codex desktop hook refuses global bundle discovery without an explicit host home', () => {
+  const service = createCodexDesktopHookService({
+    fs,
+    path,
+    processObj: { pid: 514, platform: 'darwin', kill() {} },
+    aiHomeDir: path.join(os.tmpdir(), 'aih-isolated-home'),
+    helperScriptPath: '/tmp/codex-proxy.js'
+  });
+
+  const paths = service.resolvePaths();
+  const result = service.ensureInstalled();
+
+  assert.equal(paths.bundlePath, '');
+  assert.equal(paths.reason, 'host_home_required');
+  assert.equal(result.ok, true);
+  assert.equal(result.enabled, false);
+  assert.equal(result.reason, 'host_home_required');
 });
 
 test('codex desktop hook ignores a ChatGPT bundle without the codex runtime', () => {

@@ -106,6 +106,26 @@ test('deleteAccountsForCli removes requested accounts and reports missing ids', 
   assert.deepEqual(deletedStates, [account1Ref, account3Ref]);
 });
 
+test('deleteAccountByRef invalidates resident Codex app-servers before removing credentials', (t) => {
+  const root = mkTmpDir();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const accountRef = registerAccount(root, 'codex', '1');
+  const invalidated = [];
+  const service = createService(root, [], {
+    ensureSessionStoreLinks: () => ({ migrated: 0, linked: 0 }),
+    invalidateCodexAppServerEndpoint: (options) => invalidated.push(options)
+  });
+
+  const result = service.deleteAccountByRef('codex', accountRef);
+
+  assert.equal(result.deleted, true);
+  assert.equal(invalidated.length, 1);
+  assert.equal(invalidated[0].aiHomeDir, root);
+  assert.equal(invalidated[0].accountRef, accountRef);
+  assert.equal(typeof invalidated[0].spawnSyncImpl, 'function');
+  assert.equal(resolveAccountRef(fs, root, accountRef), null);
+});
+
 test('deleteAllAccountsForCli deletes DB-registered provider accounts', (t) => {
   const root = mkTmpDir();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

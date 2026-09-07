@@ -2,7 +2,9 @@
 'use strict';
 
 // codex model_providers.<id>.auth 命令表的取 key 入口：向 stdout 输出恰好一个
-// bearer token，供 codex 按需调用（refresh_interval_ms 控制缓存）。取值优先级：
+// bearer token，供 codex 按需调用（refresh_interval_ms 控制缓存）。
+// --gateway --ai-home <dir>：只从指定 AIH 配置读取网关 key，忽略继承环境。
+// 旧配置不带参数时保留兼容取值顺序：
 // 1) 环境变量 OPENAI_API_KEY 已注入（网关 client key / 调用方显式指定）→ 直通；
 // 2) AIH_PROVIDER_ACCOUNT_REF（aih 启动链注入的选中账号）→ 该账号的 key；
 // 3) aih 默认 codex 账号 → 其 key（裸跑 codex 的闭环来源）。
@@ -14,6 +16,7 @@ const path = require('node:path');
 const { resolveHostHomeDir } = require('../lib/runtime/host-home');
 const { readAccountCredentialRecord } = require('../lib/server/account-credential-store');
 const { readDefaultAccountRef } = require('../lib/account/default-account-store');
+const { readCodexGatewayConnection } = require('../lib/server/codex-gateway-connection');
 
 function fail(message) {
   process.stderr.write(`[aih-codex-provider-auth] ${message}\n`);
@@ -21,6 +24,15 @@ function fail(message) {
 }
 
 const envKey = String(process.env.OPENAI_API_KEY || '').trim();
+// 受管宿主 provider 明确绑定网关：不能让 App 继承的上游/旧网关 key 覆盖配置。
+// ai-home 路径由生成器显式传入，投影 HOME 不参与重新定位。
+if (process.argv.includes('--gateway')) {
+  const index = process.argv.indexOf('--ai-home');
+  const configuredHome = index >= 0 ? String(process.argv[index + 1] || '').trim() : '';
+  if (!configuredHome) fail('gateway authentication requires --ai-home');
+  process.stdout.write(readCodexGatewayConnection(fs, configuredHome).apiKey);
+  return;
+}
 function auditLog(tier, detail) {
   try {
     const logDir = path.join(aiHomeDirForLog(), 'run', 'logs');

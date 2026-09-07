@@ -89,6 +89,31 @@ test('v1 router returns false for non-v1 path', async () => {
   assert.equal(handled, false);
 });
 
+test('v1 router rejects a pinned account removed from the durable state index', async () => {
+  const res = createResCapture();
+  const handled = await handleV1Request({
+    req: { headers: { 'x-account-ref': V1_CODEX_REF_1 } },
+    res,
+    method: 'POST',
+    pathname: '/v1/responses',
+    options: {},
+    state: { accounts: { codex: [{ accountRef: V1_CODEX_REF_1, provider: 'codex' }] } },
+    requiredClientKey: '',
+    cooldownMs: 1000,
+    deps: {
+      writeJson: (target, code, payload) => {
+        target.statusCode = code;
+        target.end(JSON.stringify(payload));
+      },
+      parseAuthorizationBearer: () => '',
+      accountStateIndex: { getAccountState: () => null }
+    }
+  });
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 404);
+  assert.match(res.body, /unknown_account_ref/);
+});
+
 test('v1 router reserves enough JSON body space for an edit image plus mask', () => {
   assert.equal(IMAGE_REQUEST_BODY_BYTES, 16 * 1024 * 1024);
   assert.equal(resolveRequestBodyLimit('/v1/images/edits', 10 * 1024 * 1024), IMAGE_REQUEST_BODY_BYTES);
@@ -5761,7 +5786,9 @@ test('v1 router streams Gemini streamGenerateContent to AGY Claude through neste
 test('v1 router passes accountActivity through codex chat completions deps for activity tracking', async () => {
   const res = createResCapture();
   const accountActivity = { begin: () => {}, end: () => {} };
+  const accountStateIndex = { getAccountState: () => ({ status: 'up' }) };
   let seenAccountActivity = null;
+  let seenAccountStateIndex = null;
   let seenRequest = null;
 
   const handled = await handleV1Request({
@@ -5783,6 +5810,7 @@ test('v1 router passes accountActivity through codex chat completions deps for a
       handleCodexModels: async () => {},
       handleCodexChatCompletions: async (ctx) => {
         seenAccountActivity = ctx.deps.accountActivity;
+        seenAccountStateIndex = ctx.deps.accountStateIndex;
         seenRequest = ctx.requestJson;
         ctx.res.statusCode = 200;
         ctx.res.end(JSON.stringify({
@@ -5807,12 +5835,14 @@ test('v1 router passes accountActivity through codex chat completions deps for a
       fetchModelsForAccount: async () => [],
       FALLBACK_MODELS: [],
       fetchWithTimeout: async () => ({}),
-      accountActivity
+      accountActivity,
+      accountStateIndex
     }
   });
 
   assert.equal(handled, true);
   assert.equal(seenAccountActivity, accountActivity);
+  assert.equal(seenAccountStateIndex, accountStateIndex);
   assert.equal(seenRequest.input, 'hi');
 });
 

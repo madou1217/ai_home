@@ -106,7 +106,9 @@ test('Codex app-server receives the default API key only through its environment
   });
 
   assert.deepEqual(spawned.args, ['app-server', '--listen', 'stdio://']);
-  assert.equal(spawned.options.env.OPENAI_API_KEY, apiKey);
+  assert.equal(spawned.options.env.OPENAI_API_KEY, 'dummy');
+  assert.equal(spawned.options.env.OPENAI_BASE_URL, 'http://127.0.0.1:9527/v1');
+  assert.equal(spawned.options.env.AIH_CODEX_GATEWAY_ACCOUNT_REF, accountRef);
   assert.equal(JSON.stringify(spawned.args).includes(apiKey), false);
 });
 

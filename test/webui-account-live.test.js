@@ -583,6 +583,18 @@ test('accounts canonical signature includes DB-backed role changes', (t) => {
   assert.match(after, new RegExp(`roles:codex:${accountRef}`));
 });
 
+test('accounts canonical poller can be stopped when all watchers disconnect', () => {
+  const liveState = {
+    canonicalPoller: setInterval(() => {}, 60_000),
+    watchers: new Set(),
+    webSocketWatchers: new Set()
+  };
+
+  __private.stopCanonicalAccountsPoller(liveState);
+
+  assert.equal(liveState.canonicalPoller, null);
+});
+
 test('accounts canonical signature includes Kimi Desktop effective region changes', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-account-live-region-signature-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

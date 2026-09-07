@@ -16,6 +16,19 @@ const {
   buildShellPlan
 } = require('../lib/server/app-installers/official-install');
 
+test('Codex 安装和更新首选官方脚本，保留完整独立安装包', () => {
+  const codex = getAppInstaller('codex');
+  for (const platform of ['darwin', 'linux', 'win32']) {
+    const options = { platform, kind: 'cli' };
+    const install = codex.resolveCliInstallPlans(options);
+    const update = codex.resolveLifecyclePlans('update', options);
+    const suffix = platform === 'win32' ? 'ps1' : 'sh';
+    assert.ok(install[0].args.join(' ').includes(`https://chatgpt.com/codex/install.${suffix}`));
+    assert.deepEqual(update[0], install[0]);
+    assert.equal(install.at(-1).id, 'npm_global');
+  }
+});
+
 test('后台 shell 安装计划不读取用户登录配置', (t) => {
   const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-shell-plan-'));
   t.after(() => fs.rmSync(homeDir, { recursive: true, force: true }));

@@ -52,6 +52,13 @@ test('codex provider args leave native OAuth config untouched', () => {
   assert.deepEqual(buildCodexProviderArgs({}), []);
 });
 
+test('codex key-only launch preserves the endpoint supplied by managed config', () => {
+  const args = buildCodexProviderArgs({ OPENAI_API_KEY: 'test-key' });
+  assert.ok(args.includes('model_provider=aih_server'));
+  assert.equal(args.some((arg) => arg.includes('.base_url=')), false);
+  assert.equal(args.some((arg) => arg.includes('api.openai.com')), false);
+});
+
 test('codex provider args recognize valid split and long-form model-provider overrides', () => {
   assert.equal(hasCodexModelProviderArg(['-c', 'model_provider=custom']), true);
   assert.equal(hasCodexModelProviderArg(['--config', 'model_provider=custom']), true);

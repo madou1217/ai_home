@@ -107,15 +107,19 @@ func (dialer *Dialer) Connect(
 	for name, values := range authHeader {
 		header[name] = append([]string(nil), values...)
 	}
-	connection, response, err := websocket.Dial(
-		ctx,
-		endpoint,
-		&websocket.DialOptions{
-			HTTPClient:      dialer.client,
-			HTTPHeader:      header,
-			CompressionMode: websocket.CompressionContextTakeover,
-		},
-	)
+	options := &websocket.DialOptions{
+		HTTPClient:      dialer.client,
+		HTTPHeader:      header,
+		CompressionMode: websocket.CompressionContextTakeover,
+	}
+	connection, response, err := websocket.Dial(ctx, endpoint, options)
+	// 仅握手路由缺失时尝试同源别名一次；复用原 ctx 的剩余预算和账号认证。
+	// Host 缓存的首帧尚未发往上游；401/403/超时和业务错误不重试。
+	if err != nil && response != nil &&
+		response.StatusCode == http.StatusNotFound && ctx.Err() == nil {
+		parsed.Path += "/ws"
+		connection, response, err = websocket.Dial(ctx, parsed.String(), options)
+	}
 	if err != nil {
 		return nil, response, err
 	}

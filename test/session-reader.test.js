@@ -5,6 +5,7 @@ const path = require('node:path');
 const fs = require('fs-extra');
 
 const sessionReader = require('../lib/sessions/session-reader');
+const codexSessionReader = require('../lib/sessions/session-reader-codex');
 
 test('readSessionMessages reads codex session messages without full file utf8 read', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-session-reader-'));
@@ -1053,6 +1054,78 @@ test('readAllProjectsFromHost falls back to rollout title for fully blank codex 
   } finally {
     if (originalRealHome === undefined) delete process.env.REAL_HOME;
     else process.env.REAL_HOME = originalRealHome;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('readCodexSessionTitle bounds rollout reads when the title is beyond the prefix', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-session-reader-codex-title-read-cap-'));
+  const sessionFile = path.join(root, 'rollout.jsonl');
+  const originalReadSync = fs.readSync;
+  let bytesRead = 0;
+
+  try {
+    const filler = JSON.stringify({
+      timestamp: '2026-05-15T17:10:35.000Z',
+      type: 'event_msg',
+      payload: { type: 'turn_context', value: 'x'.repeat(4096) }
+    }) + '\n';
+    fs.writeFileSync(
+      sessionFile,
+      filler.repeat(300) + JSON.stringify({
+        timestamp: '2026-05-15T17:10:36.000Z',
+        type: 'event_msg',
+        payload: { type: 'user_message', message: '标题位于读取上限之后' }
+      }) + '\n',
+      'utf8'
+    );
+
+    fs.readSync = function countedReadSync(...args) {
+      const result = originalReadSync.apply(this, args);
+      bytesRead += result;
+      return result;
+    };
+
+    assert.equal(codexSessionReader.readCodexSessionTitle(sessionFile), '');
+    assert.ok(bytesRead <= 1024 * 1024, `rollout title scan read ${bytesRead} bytes`);
+  } finally {
+    fs.readSync = originalReadSync;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('readCodexSessionTitle stops after finding an early title in a large rollout', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-session-reader-codex-title-stop-'));
+  const sessionFile = path.join(root, 'rollout.jsonl');
+  const originalReadSync = fs.readSync;
+  let bytesRead = 0;
+
+  try {
+    const filler = JSON.stringify({
+      timestamp: '2026-05-15T17:10:35.000Z',
+      type: 'event_msg',
+      payload: { type: 'turn_context', value: 'x'.repeat(4096) }
+    }) + '\n';
+    fs.writeFileSync(
+      sessionFile,
+      JSON.stringify({
+        timestamp: '2026-05-15T17:10:34.000Z',
+        type: 'event_msg',
+        payload: { type: 'user_message', message: '首个用户消息标题' }
+      }) + '\n' + filler.repeat(300),
+      'utf8'
+    );
+
+    fs.readSync = function countedReadSync(...args) {
+      const result = originalReadSync.apply(this, args);
+      bytesRead += result;
+      return result;
+    };
+
+    assert.equal(codexSessionReader.readCodexSessionTitle(sessionFile), '首个用户消息标题');
+    assert.ok(bytesRead < 1024 * 1024, `rollout title scan read ${bytesRead} bytes`);
+  } finally {
+    fs.readSync = originalReadSync;
     fs.rmSync(root, { recursive: true, force: true });
   }
 });

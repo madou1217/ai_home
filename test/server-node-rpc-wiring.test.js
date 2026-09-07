@@ -13,6 +13,7 @@ const { upsertRemoteTransport } = require('../lib/server/remote/transport-regist
 const { runFabricTransportEcho } = require('../lib/cli/services/fabric/transport-echo');
 const { writeAccountNativeAuth } = require('../lib/server/account-credential-store');
 const { upsertAccountRef } = require('../lib/server/account-ref-store');
+const { createAccountStateIndex } = require('../lib/account/state-index');
 
 const SERVER_MANAGEMENT_KEY = 'management-secret';
 
@@ -1019,6 +1020,14 @@ test('server node-rpc starts native session through injectable runtime service',
     cliAccountId: '3',
     identitySeed: 'oauth:claude:server-node-rpc@example.com'
   });
+  const accountStateIndex = createAccountStateIndex({ fs, aiHomeDir });
+  try {
+    accountStateIndex.upsertAccountState(accountRef, 'claude', {
+      status: 'up', configured: true, remainingPct: 100
+    });
+  } finally {
+    accountStateIndex.close();
+  }
   writeAccountNativeAuth(fs, aiHomeDir, accountRef, {
     credentials: {
       claudeAiOauth: {

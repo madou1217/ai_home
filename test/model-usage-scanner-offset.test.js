@@ -30,6 +30,38 @@ function withTempFile(t, content) {
   return filePath;
 }
 
+test('budgeted JSONL scans finish oversized UTF-8 records and advance without duplicates', (t) => {
+  const rows = [JSON.stringify({ text: `中${'文'.repeat(SCAN_CHUNK_BYTES)}` }), '{"usage":42}'];
+  const content = `${rows.join('\n')}\n`;
+  const filePath = withTempFile(t, content);
+  const observed = [];
+  let offset = 0;
+  for (let tick = 0; offset < Buffer.byteLength(content) && tick < 5; tick += 1) {
+    const result = scannerPrivate.readJsonlFromOffset(fs, filePath, offset, (line) => {
+      observed.push(JSON.parse(line));
+    }, 64);
+    assert.ok(result.offset > offset);
+    offset = result.offset;
+  }
+  assert.equal(offset, Buffer.byteLength(content));
+  assert.deepEqual(observed, rows.map((row) => JSON.parse(row)));
+});
+
+test('a JSONL record ending exactly at the byte budget is consumed once', (t) => {
+  const content = '{"usage":42}';
+  const filePath = withTempFile(t, content);
+  const observed = [];
+  const result = scannerPrivate.readJsonlFromOffset(fs, filePath, 0, (line) => {
+    observed.push(JSON.parse(line));
+  }, Buffer.byteLength(content));
+  assert.equal(result.offset, Buffer.byteLength(content));
+  const next = scannerPrivate.readJsonlFromOffset(fs, filePath, result.offset, (line) => {
+    observed.push(JSON.parse(line));
+  }, Buffer.byteLength(content));
+  assert.equal(next.offset, result.offset);
+  assert.deepEqual(observed, [{ usage: 42 }]);
+});
+
 function createForkFixture(t) {
   const childSessionId = '019f698a-a7b0-7041-b4a2-41cfb5f0de48';
   const parentSessionId = '019f522d-bc5c-75d2-a42c-cbf33a7b706a';
@@ -341,7 +373,8 @@ test('explicit Codex fork reindex replaces drifted file rows with correct byte-o
       path,
       store,
       filePath: fixture.filePath,
-      reindexCodexForkHistory: true
+      reindexCodexForkHistory: true,
+      maxBytes: 64
     });
 
     const expectedUsageKey = scannerPrivate.buildFileEventKey(

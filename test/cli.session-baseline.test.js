@@ -32,7 +32,12 @@ function runCli(args, hostHomeDir) {
     env: {
       ...process.env,
       AIH_HOST_HOME: hostHomeDir,
-      HOME: hostHomeDir
+      HOME: hostHomeDir,
+      CODEX_HOME: path.join(hostHomeDir, '.codex'),
+      AIH_HOME: path.join(hostHomeDir, '.ai_home'),
+      AIH_HOME_DIR: path.join(hostHomeDir, '.ai_home'),
+      OPENAI_API_KEY: '',
+      OPENAI_BASE_URL: ''
     },
     encoding: 'utf8'
   });
@@ -161,7 +166,7 @@ test('`aih codex set-default` writes canonical API-key provider config', (t) => 
   assert.match(hostConfig, new RegExp(`^model_provider = "${providerKey}"$`, 'm'));
   assert.match(hostConfig, new RegExp(`^\\[model_providers\\.${providerKey}\\]$`, 'm'));
   assert.match(hostConfig, new RegExp(`^base_url = "${AIH_CODEX_PROVIDER_BASE_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"$`, 'm'));
-  assert.match(hostConfig, /^bearer_token = "dummy"$/m);
+  assert.match(hostConfig, /'--gateway'/);
 });
 
 test('switching API-key defaults updates one canonical provider block', (t) => {
@@ -185,7 +190,7 @@ test('switching API-key defaults updates one canonical provider block', (t) => {
   const hostConfig = fs.readFileSync(path.join(homeDir, '.codex', 'config.toml'), 'utf8');
   const providerKey = getAihProviderKey();
   assert.equal((hostConfig.match(new RegExp(`^\\[model_providers\\.${providerKey}\\]$`, 'gm')) || []).length, 1);
-  assert.match(hostConfig, /^base_url = "https:\/\/b\.example\.com\/v1"$/m);
+  assert.match(hostConfig, /^base_url = "http:\/\/127.0.0.1:9527\/v1"$/m);
   assert.match(hostConfig, new RegExp(`^\\[model_providers\\.${providerKey}\\.auth\\]$`, 'm'));
   assert.match(hostConfig, /aih-codex-provider-auth\.js/);
   assert.doesNotMatch(hostConfig, /^env_key\s*=/m);

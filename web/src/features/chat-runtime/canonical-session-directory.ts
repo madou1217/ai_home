@@ -161,13 +161,32 @@ export async function loadCanonicalSessionDirectory(
   queries: readonly CanonicalSessionDirectoryQuery[],
   api: Pick<ChatRuntimeApi, 'listSessions'>,
 ): Promise<CanonicalSessionDirectoryResult> {
-  const responses = await Promise.all(queries.map(async (query) => {
+  const responses = await mapWithConcurrency(queries, async (query) => {
     const sessions = await api.listSessions(query);
     return sessions.flatMap((session) => projectRuntimeSession(session, query));
-  }));
+  }, 6);
   return combineCanonicalSessionDirectoryResults(
     responses.flat().map((session) => ({ sessions: [session] })),
   );
+}
+
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  worker: (item: T, index: number) => Promise<R>,
+  limit: number,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const runWorker = async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await worker(items[index], index);
+    }
+  };
+  const workerCount = Math.min(Math.max(1, Number(limit) || 1), items.length);
+  await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
+  return results;
 }
 
 export function mergeCanonicalSessionDirectory(

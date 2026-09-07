@@ -125,8 +125,12 @@ function useDirectoryRequest(
   cacheScope?: string,
 ) {
   const enabled = Boolean(key && queries.length > 0);
+  // Loading state only controls the empty-directory placeholder. Once a
+  // concrete query set exists, changes to the project catalog's loading flag
+  // must not recreate `refresh` and issue the same directory requests again.
+  const waitingForCatalog = !enabled && catalogPending;
   const [state, setState] = useState<CanonicalSessionDirectoryRequestState>(() => (
-    createCanonicalSessionDirectoryRequestState(enabled || catalogPending)
+    createCanonicalSessionDirectoryRequestState(enabled || waitingForCatalog)
   ));
   const mountedRef = useRef(false);
   const requestSequenceRef = useRef(0);
@@ -137,7 +141,7 @@ function useDirectoryRequest(
       if (mountedRef.current) {
         setState((current) => reduceCanonicalSessionDirectoryRequest(
           current,
-          catalogPending ? { type: 'pending', key } : { type: 'empty' },
+          waitingForCatalog ? { type: 'pending', key } : { type: 'empty' },
         ));
       }
       return;
@@ -168,7 +172,7 @@ function useDirectoryRequest(
         );
       });
     }
-  }, [api, cacheScope, catalogPending, enabled, key, queries]);
+  }, [api, cacheScope, enabled, key, queries, waitingForCatalog]);
 
   useEffect(() => {
     mountedRef.current = true;

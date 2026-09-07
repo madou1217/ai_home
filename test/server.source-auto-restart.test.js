@@ -8,6 +8,7 @@ const path = require('node:path');
 const {
   BACKGROUND_RESTART_ENV,
   startServerSourceAutoRestart,
+  shouldEnableSourceAutoRestart,
   extractServeArgsFromArgv,
   stripSensitiveServeArgs
 } = require('../lib/server/source-auto-restart');
@@ -26,6 +27,39 @@ function makeSourceCheckout(root) {
   fs.writeFileSync(path.join(repoDir, 'lib', 'server', 'v1-router.js'), "'use strict';\n", 'utf8');
   return { repoDir, entryFilePath };
 }
+
+test('source auto restart requires explicit opt-in and the disable flag takes precedence', () => {
+  for (const env of [{}, { AIH_SERVER_SOURCE_AUTO_RESTART: '0' },
+    { AIH_SERVER_SOURCE_AUTO_RESTART: 'true' },
+    { AIH_SERVER_SOURCE_AUTO_RESTART: '1', AIH_SERVER_DISABLE_SOURCE_AUTO_RESTART: '1' }]) {
+    assert.equal(shouldEnableSourceAutoRestart({ env }), false);
+  }
+  assert.equal(shouldEnableSourceAutoRestart({ env: { AIH_SERVER_SOURCE_AUTO_RESTART: '1' } }), true);
+});
+
+test('default source change stays observable without restarting an active gateway', (t) => {
+  const root = makeTempDir();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const aiHomeDir = path.join(root, '.ai_home');
+  const source = makeSourceCheckout(root);
+  let spawns = 0;
+  const controller = startServerSourceAutoRestart({}, {
+    fs, path, aiHomeDir, entryFilePath: source.entryFilePath,
+    processObj: { pid: 12345, env: {} },
+    spawn() { spawns += 1; }
+  });
+  t.after(() => controller.stop());
+  assert.equal(controller.enabled, false);
+  fs.appendFileSync(path.join(source.repoDir, 'lib/server/v1-router.js'), '// source edit\n');
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    assert.deepEqual(controller.checkOnce(), {
+      stale: true, reason: 'source_changed', restart: { requested: false, reason: 'disabled' }
+    });
+  }
+  assert.equal(spawns, 0);
+  const recorded = JSON.parse(fs.readFileSync(path.join(aiHomeDir, 'run/server.source-fingerprint.json')));
+  assert.equal(recorded.sourceFingerprint, controller.startupFingerprint);
+});
 
 test('extractServeArgsFromArgv preserves original server serve flags', () => {
   assert.deepEqual(
@@ -71,7 +105,7 @@ test('source auto restart records fingerprint and restarts on source change', (t
     processObj: {
       pid: 12345,
       execPath: '/usr/local/bin/node',
-      env: { AIH_SERVER_SOURCE_AUTO_RESTART: '0' },
+      env: { AIH_SERVER_SOURCE_AUTO_RESTART: '1' },
       argv: [
         '/usr/local/bin/node',
         source.entryFilePath,
@@ -141,7 +175,7 @@ test('source auto restart preserves proxy and model probe options when replaying
     processObj: {
       pid: 12345,
       execPath: '/usr/local/bin/node',
-      env: { AIH_SERVER_SOURCE_AUTO_RESTART: '0' },
+      env: { AIH_SERVER_SOURCE_AUTO_RESTART: '1' },
       argv: [
         '/usr/local/bin/node',
         source.entryFilePath,

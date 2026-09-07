@@ -127,6 +127,7 @@ test('native session CLI resolution falls back to app node_modules bin', (t) => 
 
   const launch = resolveNativeCliLaunch('codex', {
     appRoot: root,
+    hostHomeDir: root,
     env: {
       PATH: '',
       AIH_CODEX_RESOLVE_LATEST: '0'
@@ -1026,7 +1027,7 @@ test('buildProviderEnv keeps codex sqlite state shared with host home', (t) => {
   assert.equal(env.GEMINI_CLI_TRUST_WORKSPACE, undefined);
 });
 
-test('buildProviderEnv loads API-key credentials only from the accountRef DB record', (t) => {
+test('buildProviderEnv routes API-key accounts through the gateway with an explicit account pin', (t) => {
   const hostHome = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-native-codex-api-key-'));
   t.after(() => fs.rmSync(hostHome, { recursive: true, force: true }));
   const aiHomeDir = path.join(hostHome, '.ai_home');
@@ -1047,8 +1048,9 @@ test('buildProviderEnv loads API-key credentials only from the accountRef DB rec
     OPENAI_BASE_URL: 'https://host.example.com/v1'
   }, { aiHomeDir, accountRef });
 
-  assert.equal(env.OPENAI_API_KEY, 'db-key');
-  assert.equal(env.OPENAI_BASE_URL, 'https://account.example.com/v1');
+  assert.equal(env.OPENAI_API_KEY, 'dummy');
+  assert.equal(env.OPENAI_BASE_URL, 'http://127.0.0.1:9527/v1');
+  assert.equal(env.AIH_CODEX_GATEWAY_ACCOUNT_REF, accountRef);
   assert.equal(env.CODEX_HOME, path.join(hostHome, '.codex'));
   assert.equal(fs.existsSync(runtimeDir), false);
 });
@@ -1073,8 +1075,9 @@ test('buildProviderEnv marks codex native runs as AIH-managed so the CLI hook pa
 
   const env = buildProviderEnv('codex', runtimeDir, { HOME: hostHome }, { aiHomeDir, accountRef });
 
-  assert.equal(env.OPENAI_API_KEY, 'relay-key');
-  assert.equal(env.OPENAI_BASE_URL, 'https://relay.example.com/v1');
+  assert.equal(env.OPENAI_API_KEY, 'dummy');
+  assert.equal(env.OPENAI_BASE_URL, 'http://127.0.0.1:9527/v1');
+  assert.equal(env.AIH_CODEX_GATEWAY_ACCOUNT_REF, accountRef);
   assert.equal(env[CODEX_MANAGED_LAUNCH_ENV], '1');
 });
 

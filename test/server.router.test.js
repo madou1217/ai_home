@@ -316,6 +316,7 @@ test('chooseServerAccount applies persisted runtime state before selecting an ac
     getAccountState(ref) {
       if (ref === accountRef('1')) {
         return {
+          status: 'up',
           runtimeState: {
             cooldownUntil: now + 60_000,
             authInvalidUntil: now + 60_000,
@@ -324,7 +325,7 @@ test('chooseServerAccount applies persisted runtime state before selecting an ac
           }
         };
       }
-      return null;
+      return { status: 'up', runtimeState: null };
     }
   };
 
@@ -354,6 +355,7 @@ test('chooseServerAccount lets cleared persisted runtime state recover stale in-
     getAccountState(ref) {
       if (ref === accountRef('3')) {
         return {
+          status: 'up',
           runtimeState: null
         };
       }

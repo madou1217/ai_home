@@ -375,6 +375,8 @@ aih server restart
 aih server stop
 ```
 
+源码变更会在 `aih server status` 中显示为 `stale`，默认不会中断正在进行的请求；准备应用新代码时显式执行 `aih server restart`。CLI 启动同样复用已经 ready 的服务。仅开发环境需要自动重载时设置 `AIH_SERVER_SOURCE_AUTO_RESTART=1`，该模式可能中断 HTTP/WebSocket 会话；`AIH_SERVER_DISABLE_SOURCE_AUTO_RESTART=1` 始终优先禁止自动重启。
+
 `aih daemon` 是同一组后台服务命令的别名：
 
 ```bash

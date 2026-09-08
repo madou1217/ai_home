@@ -20,6 +20,8 @@ import FileReferencePopover, { type FileReferenceCandidate } from './FileReferen
 import { useFileReferenceCandidates } from './use-file-reference-candidates';
 import ContextMeter from './ContextMeter';
 import ComposerAttachmentGallery from './ComposerAttachmentGallery';
+import { CHAT_ATTACHMENT_ACCEPT, type ChatDocumentAttachment } from './attachment-files';
+import { useChatFileInput } from './use-chat-file-input';
 import InSessionSearchBar from './InSessionSearchBar';
 import PromptPresetsCapsule from './PromptPresetsCapsule';
 import { findLatestActiveChecklist } from './message-structure';
@@ -174,6 +176,8 @@ interface Props {
   interactivePrompt?: InteractivePrompt | null;
   hasMoreHistory?: boolean;
   images?: string[]; // base64 图片列表
+  documents?: ChatDocumentAttachment[];
+  onDocumentsChange?: (documents: ChatDocumentAttachment[]) => void;
   onLoadMore?: () => void;
   onInputChange: (val: string) => void;
   onSend: () => void;
@@ -205,7 +209,7 @@ interface Props {
 const MessageArea = ({
   mobile = false,
   session, isTerminated: isTerminatedProp, messages, accounts, selectedAccount, selectedModel,
-  input, loading, loadingStatusText, queuedMessages = [], externalPending = false, externalPendingStatusText, interactivePrompt = null, hasMoreHistory, images = [], onLoadMore, onInputChange,
+  input, loading, loadingStatusText, queuedMessages = [], externalPending = false, externalPendingStatusText, interactivePrompt = null, hasMoreHistory, images = [], documents = [], onDocumentsChange, onLoadMore, onInputChange,
   onSend, onStop, onEditQueuedMessage, onRemoveQueuedMessage, onSendQueuedMessageNow, onSteerQueuedMessage, approvalMode = 'bypass', onApprovalModeChange, onSelectPlanChoice,
   terminalRun = null, onRegisterTerminalWriter, onTerminalInput, onTerminalResize, onCloseTerminal,
   onAccountChange, onModelChange, onImagesChange, terminalCwd, onForkSession, onRetry
@@ -226,6 +230,7 @@ const MessageArea = ({
   const [shellTerminalOpen, setShellTerminalOpen] = useState(false);
   const [inSessionSearchOpen, setInSessionSearchOpen] = useState(false);
   const dictation = useDictation();
+  const addFiles = useChatFileInput({ images, documents, onImagesChange, onDocumentsChange });
   useMobileOverscrollFeedback(scrollContainerRef);
   const startDictation = useCallback(() => {
     dictation.start(input, onInputChange);
@@ -253,52 +258,22 @@ const MessageArea = ({
     setIsDragging(false);
     const files = e.dataTransfer?.files;
     if (!files || files.length === 0) return;
-    for (const file of Array.from(files)) {
-      if (file.type.startsWith('image/')) {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const base64 = reader.result as string;
-          onImagesChange?.([...images, base64]);
-        };
-        reader.readAsDataURL(file);
-      }
-    }
-  }, [images, onImagesChange]);
+    void addFiles(Array.from(files));
+  }, [addFiles]);
 
   // 处理粘贴图片
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
-    const items = e.clipboardData?.items;
-    if (!items) return;
-    for (const item of Array.from(items)) {
-      if (item.type.startsWith('image/')) {
-        e.preventDefault();
-        const file = item.getAsFile();
-        if (!file) continue;
-        const reader = new FileReader();
-        reader.onload = () => {
-          const base64 = reader.result as string;
-          onImagesChange?.([...images, base64]);
-        };
-        reader.readAsDataURL(file);
-        break;
-      }
-    }
-  }, [images, onImagesChange]);
+    const files = Array.from(e.clipboardData?.files || []);
+    if (!files.length) return;
+    e.preventDefault();
+    void addFiles(files);
+  }, [addFiles]);
 
   // 处理文件选择
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
-    for (const file of Array.from(files)) {
-      if (file.type.startsWith('image/')) {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const base64 = reader.result as string;
-          onImagesChange?.([...images, base64]);
-        };
-        reader.readAsDataURL(file);
-      }
-    }
+    void addFiles(Array.from(files));
     e.target.value = ''; // reset
   };
 
@@ -571,7 +546,7 @@ const MessageArea = ({
   // 加载中且暂无模型 → "加载中…"；确实空 → "无可用模型"。避免刷新窗口误显示"无可用模型"。
   const emptyModelHint = modelsLoading && models.length === 0 ? '加载中…' : '无可用模型';
   const hasAccountModel = Boolean(effectiveSelectedModel);
-  const canSend = !isTerminated && hasAccountModel && trimmedInput.length > 0
+  const canSend = !isTerminated && hasAccountModel && (trimmedInput.length > 0 || images.length > 0 || documents.length > 0)
     && !embeddedSlashMatch;
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -846,7 +821,7 @@ const MessageArea = ({
             <div className={styles.welcomeState}>
               <div className={styles.welcomeTitle}>你今天想聊些什么？</div>
               <div className={styles.welcomeHint}>
-                选择项目后直接开始对话，图片和系统输入法语音输入都可以使用。
+                可以附加图片、Markdown、文本和代码文件，也可以使用系统输入法语音输入。
               </div>
             </div>
           ) : (
@@ -895,7 +870,7 @@ const MessageArea = ({
         >
           {isDragging ? (
             <div className={styles.composerDropOverlay}>
-              <span>拖放图片至此处附加</span>
+              <span>拖放文件至此处附加</span>
             </div>
           ) : null}
           {hasComposerDock ? (
@@ -1006,7 +981,8 @@ const MessageArea = ({
           ) : (
             <div className={`${styles.inputBox} ${mobile ? styles.inputBoxMobile : ''}`}>
             {/* 多模态附件画廊 */}
-            <ComposerAttachmentGallery images={images} onRemove={removeImage} />
+            <ComposerAttachmentGallery images={images} onRemove={removeImage}
+              documents={documents} onRemoveDocument={(index) => onDocumentsChange?.(documents.filter((_, i) => i !== index))} />
             <textarea
               ref={textareaRef}
               className={styles.inputTextarea}
@@ -1067,7 +1043,7 @@ const MessageArea = ({
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
+            accept={CHAT_ATTACHMENT_ACCEPT}
             multiple
             style={{ display: 'none' }}
             onChange={handleFileSelect}
@@ -1077,7 +1053,8 @@ const MessageArea = ({
             <div className={styles.inputToolbarLeft}>
               <button
                 className={styles.inputToolbarBtn}
-                title="上传图片"
+                title="上传文件"
+                aria-label="上传文件"
                 onClick={() => fileInputRef.current?.click()}
               >
                 <PlusOutlined style={{ fontSize: 16 }} />

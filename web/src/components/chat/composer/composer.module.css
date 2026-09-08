@@ -696,6 +696,11 @@
  * dsh 风格 StatsLine 会话粘性度量条
  * ========================================================================== */
 .statsLineContainer {
+  width: 100%;
+  max-width: var(--chat-content-width);
+  min-width: 0;
+  box-sizing: border-box;
+  margin-inline: auto;
   display: flex;
   align-items: center;
   gap: var(--hos-space-1-5, 6px);
@@ -723,6 +728,7 @@
 }
 
 .statsLineText {
+  min-width: 0;
   display: inline-flex;
   align-items: center;
   gap: var(--hos-space-1-5, 6px);
@@ -731,6 +737,7 @@
 }
 
 .statsLinePart {
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   gap: var(--hos-space-1-5, 6px);
@@ -904,6 +911,31 @@
 }
 
 /* 鸿蒙 6 浮动 Composer 输入卡片质感 */
+.attachmentDocumentCard {
+  width: 180px !important;
+  max-width: 60vw;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+}
+
+.attachmentDocumentName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.statsLineSummary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+}
+
 .composerShell {
   border-radius: var(--hos-radius-xl, 24px) !important;
   background: var(--hos-glass-bg-card, rgba(255, 255, 255, 0.85)) !important;

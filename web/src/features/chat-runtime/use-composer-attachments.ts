@@ -2,12 +2,9 @@ import { useCallback, useRef, useState } from 'react';
 import { message as toast } from 'antd';
 import type { ChatRuntimeAttachmentUpload } from '@/chat-runtime';
 
-export const MAX_COMPOSER_ATTACHMENTS = 8;
-const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
-const MAX_TOTAL_IMAGE_BYTES = 20 * 1024 * 1024;
-const SUPPORTED_IMAGE_MIME_TYPES = new Set([
-  'image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif',
-]);
+import { CHAT_ATTACHMENT_LIMITS, readChatAttachment } from '@/components/chat/attachment-files';
+
+export const MAX_COMPOSER_ATTACHMENTS = CHAT_ATTACHMENT_LIMITS.maxFiles;
 
 export interface PendingComposerAttachment extends ChatRuntimeAttachmentUpload {
   readonly key: string;
@@ -26,29 +23,32 @@ export function useComposerAttachments(): ComposerAttachmentsController {
   const itemsRef = useRef(items);
   itemsRef.current = items;
 
-  const addFiles = useCallback(async (files: readonly File[]): Promise<void> => {
-    const accepted = files.filter(isSupportedImage);
-    if (accepted.length !== files.length) {
-      toast.warning('仅支持 10 MB 以内的 PNG、JPEG、WebP 或 GIF 图片');
-    }
-    const available = Math.max(0, MAX_COMPOSER_ATTACHMENTS - itemsRef.current.length);
-    if (accepted.length > available) toast.warning(`每次最多上传 ${MAX_COMPOSER_ATTACHMENTS} 张图片`);
-    const selected = withinTotalSize(
-      accepted.slice(0, available),
-      itemsRef.current.reduce((total, item) => total + item.size, 0),
-    );
-    if (selected.length !== Math.min(accepted.length, available)) {
-      toast.warning('待发送图片总大小不能超过 20 MB');
-    }
-    if (selected.length === 0) return;
-    try {
-      const additions = await Promise.all(selected.map(readPendingAttachment));
-      const next = [...itemsRef.current, ...additions];
+  const pending = useRef(Promise.resolve());
+  const generation = useRef(0);
+  const addFiles = useCallback((files: readonly File[]): Promise<void> => {
+    const batchGeneration = generation.current;
+    pending.current = pending.current.then(async () => {
+      const results = await Promise.allSettled(files.map(readPendingAttachment));
+      if (batchGeneration !== generation.current) return;
+      const next = [...itemsRef.current];
+      let bytes = next.reduce((total, item) => total + item.size, 0);
+      for (const result of results) {
+        if (result.status === 'rejected') {
+          toast.warning(String(result.reason?.message || '附件读取失败'));
+          continue;
+        }
+        if (next.length >= MAX_COMPOSER_ATTACHMENTS
+            || bytes + result.value.size > CHAT_ATTACHMENT_LIMITS.maxTotalBytes) {
+          toast.warning('每次最多附加 8 个文件，总大小不超过 20 MB');
+          break;
+        }
+        bytes += result.value.size;
+        next.push(result.value);
+      }
       itemsRef.current = next;
       setItems(next);
-    } catch (_error) {
-      toast.error('图片读取失败');
-    }
+    }).catch(() => { toast.error('附件读取失败'); });
+    return pending.current;
   }, []);
 
   const remove = useCallback((key: string): void => {
@@ -57,46 +57,16 @@ export function useComposerAttachments(): ComposerAttachmentsController {
     setItems(next);
   }, []);
   const clear = useCallback((): void => {
+    generation.current += 1;
     itemsRef.current = [];
     setItems([]);
   }, []);
   return { items, addFiles, remove, clear };
 }
 
-function isSupportedImage(file: File): boolean {
-  return SUPPORTED_IMAGE_MIME_TYPES.has(file.type)
-    && file.size > 0
-    && file.size <= MAX_IMAGE_BYTES;
-}
-
 async function readPendingAttachment(file: File): Promise<PendingComposerAttachment> {
-  return {
-    key: createAttachmentKey(file),
-    name: file.name || 'image',
-    mimeType: file.type,
-    size: file.size,
-    dataUrl: await readDataUrl(file),
-  };
-}
-
-function withinTotalSize(files: readonly File[], currentBytes: number): readonly File[] {
-  let remaining = Math.max(0, MAX_TOTAL_IMAGE_BYTES - currentBytes);
-  return files.filter((file) => {
-    if (file.size > remaining) return false;
-    remaining -= file.size;
-    return true;
-  });
-}
-
-function readDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => typeof reader.result === 'string'
-      ? resolve(reader.result)
-      : reject(new Error('composer_attachment_read_failed'));
-    reader.onerror = () => reject(reader.error || new Error('composer_attachment_read_failed'));
-    reader.readAsDataURL(file);
-  });
+  const attachment = await readChatAttachment(file);
+  return { key: createAttachmentKey(file), ...attachment };
 }
 
 function createAttachmentKey(file: File): string {

@@ -1,0 +1,8 @@
+{
+  "maxFiles": 8,
+  "maxImageBytes": 10485760,
+  "maxDocumentBytes": 1048576,
+  "maxTotalBytes": 20971520,
+  "imageTypes": ["image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif"],
+  "textExtensions": ["md", "markdown", "mdx", "txt", "text", "log", "csv", "tsv", "json", "jsonl", "yaml", "yml", "toml", "xml", "html", "htm", "css", "scss", "less", "js", "jsx", "ts", "tsx", "mjs", "cjs", "py", "rb", "go", "rs", "java", "kt", "swift", "c", "h", "cpp", "hpp", "cs", "php", "sh", "bash", "zsh", "ps1", "sql", "r", "vue", "svelte", "ini", "cfg", "conf", "properties", "tex", "rst", "diff", "patch"]
+}

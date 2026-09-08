@@ -1,6 +1,8 @@
 export function resolveLegacyComposerSubmission(input = {}) {
   const content = String(input.content || '').trim();
-  if (!content) return { ok: false, reason: 'empty_content' };
+  const documents = Array.isArray(input.documents) ? input.documents.slice() : [];
+  const imageList = Array.isArray(input.images) ? input.images.slice() : [];
+  if (!content && !documents.length && !imageList.length) return { ok: false, reason: 'empty_content' };
 
   const account = input.account || null;
   if (!account) return { ok: false, reason: 'account_required' };
@@ -24,8 +26,9 @@ export function resolveLegacyComposerSubmission(input = {}) {
     account,
     session,
     model: String(input.model || '').trim(),
-    content,
-    imageList: Array.isArray(input.images) ? input.images.slice() : [],
+    content: content || '请阅读并分析附件。',
+    imageList,
+    ...(documents.length ? { documents } : {}),
     projectPath: projectPath || '',
     ...(isPureChat ? { mode: 'chat' } : (input.mode ? { mode: input.mode } : {})),
   };

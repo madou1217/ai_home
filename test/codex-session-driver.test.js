@@ -145,16 +145,16 @@ test('Codex plan mode uses the native catalog default without a WebUI model over
   await turn;
 });
 
-test('Codex driver sends uploaded images as native localImage inputs', async () => {
+test('Codex driver sends images as localImage and documents as readable file references', async () => {
   const fixture = createFixture();
   const turn = fixture.entry.driver.startTurn({
     ...turnContext({ content: '' }),
-    imagePaths: ['/tmp/shot.png', '/tmp/diagram.jpg']
+    imagePaths: ['/tmp/shot.png', '/tmp/diagram.jpg', '/tmp/requirements.md']
   });
   await nextTask();
 
   assert.deepEqual(fixture.client.params('turn/start').input, [
-    { type: 'text', text: '' },
+    { type: 'text', text: 'Attached document files:\n- /tmp/requirements.md\nRead these local document files when answering.' },
     { type: 'localImage', path: '/tmp/shot.png' },
     { type: 'localImage', path: '/tmp/diagram.jpg' }
   ]);

@@ -2,6 +2,7 @@ import { getSessionRunKey } from '@/components/chat/active-run-state.js';
 import { isAihServerAccount } from '@/components/chat/aih-server-account';
 import { resolveQueuedMode } from '@/components/chat/queue-state.js';
 import type { ChatAccount, InteractivePrompt, Session } from '@/types';
+import type { ChatDocumentAttachment } from '@/components/chat/attachment-files';
 import type {
   DetachedRunBinding,
   LegacyRunMessageInput,
@@ -43,11 +44,13 @@ export function createQueuedMessage(
   model: string,
   content: string,
   images: string[],
+  documents: ChatDocumentAttachment[] = [],
 ): QueuedSessionMessage {
   return {
     id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
     content,
     images,
+    ...(documents.length ? { documents } : {}),
     createdAt: Date.now(),
     provider: account.provider,
     ...(isAihServerAccount(account)
@@ -69,5 +72,6 @@ export function toRunInput(
     model: queued.model,
     content: queued.content,
     imageList: Array.isArray(queued.images) ? queued.images : [],
+    ...(queued.documents?.length ? { documents: queued.documents } : {}),
   };
 }

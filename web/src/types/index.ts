@@ -2017,6 +2017,7 @@ export interface QueuedChatMessage {
   id: string;
   content: string;
   images?: string[];
+  documents?: import('../components/chat/attachment-files').ChatDocumentAttachment[];
   createdAt: number;
   mode?: 'after_turn' | 'after_tool_call';
 }
@@ -2059,6 +2060,7 @@ export type ChatRequest = {
   projectDirName?: string;
   projectPath?: string;
   images?: string[];
+  documents?: import('../components/chat/attachment-files').ChatDocumentAttachment[];
   // 会话级审批模式(P3):bypass(默认)/confirm(权限请求转 webUI 审批)/plan(计划模式+确认)。
   approvalMode?: 'bypass' | 'confirm' | 'plan';
 } & (

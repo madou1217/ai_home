@@ -50,7 +50,7 @@ export const StatsLine = memo(function StatsLine({ messages, className = '' }: S
 
   return (
     <div className={`${styles.statsLineContainer} ${className}`} title={parts.join(' · ')}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <div className={styles.statsLineSummary}>
         <span className={styles.statsLineIcon}>⚡</span>
         <span className={styles.statsLineText}>
           {parts.map((p, idx) => (

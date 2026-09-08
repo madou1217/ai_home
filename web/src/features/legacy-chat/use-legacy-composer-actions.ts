@@ -12,6 +12,7 @@ import {
 import { humanizeChatError } from './chat-error-policy';
 import { resolveLegacyComposerSubmission } from './legacy-composer-submission-policy.js';
 import type { LegacySessionRuntime } from './use-legacy-session-orchestration';
+import type { ChatDocumentAttachment } from '@/components/chat/attachment-files';
 
 interface LegacyComposerActionOptions {
   readonly selection: Pick<
@@ -36,9 +37,11 @@ interface LegacyComposerRuntime {
 export interface LegacyComposerActions {
   readonly input: string;
   readonly images: string[];
+  readonly documents: ChatDocumentAttachment[];
+  readonly changeDocuments: (documents: ChatDocumentAttachment[]) => void;
   readonly changeInput: (value: string) => void;
   readonly changeImages: (images: string[]) => void;
-  readonly replaceDraft: (content: string, images: string[]) => void;
+  readonly replaceDraft: (content: string, images: string[], documents?: ChatDocumentAttachment[]) => void;
   readonly suppressNextAbortToast: () => void;
   readonly send: () => Promise<void>;
   // 重试等场景：绕过输入框直接发送指定内容（不清空当前草稿）
@@ -53,6 +56,7 @@ export function useLegacyComposerActions({
 }: LegacyComposerActionOptions): LegacyComposerActions {
   const [input, setInput] = useState('');
   const [images, setImages] = useState<string[]>([]);
+  const [documents, setDocuments] = useState<ChatDocumentAttachment[]>([]);
   const suppressAbortToastRef = useRef(false);
   const { detachedRunRef, history, queue, runSessionMessage, runs } = runtime;
   const findRun = runs.find;
@@ -66,9 +70,10 @@ export function useLegacyComposerActions({
     if (selection.session.draft) setInput('');
   }, [selection.session.draft, selection.session.id]);
 
-  const replaceDraft = useCallback((content: string, nextImages: string[]): void => {
+  const replaceDraft = useCallback((content: string, nextImages: string[], nextDocuments: ChatDocumentAttachment[] = []): void => {
     setInput(content);
     setImages(nextImages);
+    setDocuments(nextDocuments);
   }, []);
   const suppressNextAbortToast = useCallback((): void => {
     suppressAbortToastRef.current = true;
@@ -78,7 +83,7 @@ export function useLegacyComposerActions({
     typeof resolveLegacyComposerSubmission
   > & { ok: true }): Promise<void> => {
     const {
-      account, content, imageList, model, projectPath, session,
+      account, content, imageList, documents: contentDocuments, model, projectPath, session,
     } = submission;
     const currentRunKey = findRun(session);
     const queueKey = resolveQueueTargetKey(
@@ -92,6 +97,7 @@ export function useLegacyComposerActions({
         model,
         content,
         imageList,
+        contentDocuments,
       ));
       message.info('已入队,本轮结束后自动发送');
       return;
@@ -103,6 +109,7 @@ export function useLegacyComposerActions({
         model: model || undefined,
         content,
         imageList,
+        documents: contentDocuments,
       });
     } catch (error: unknown) {
       const aborted = isAbortError(error);
@@ -134,11 +141,13 @@ export function useLegacyComposerActions({
     content: string,
     contentImages: string[],
     beforeRun?: () => void,
+    contentDocuments: ChatDocumentAttachment[] = [],
   ): Promise<boolean> => {
     const submission = resolveLegacyComposerSubmission({
       account: selection.account,
       content,
       images: contentImages,
+      documents: contentDocuments,
       model: selection.model,
       projectPath: selection.project?.path,
       session: selection.session,
@@ -171,8 +180,9 @@ export function useLegacyComposerActions({
     await submitContent(input, images, () => {
       setInput('');
       setImages([]);
-    });
-  }, [images, input, submitContent]);
+      setDocuments([]);
+    }, documents);
+  }, [images, documents, input, submitContent]);
 
   const sendPrompt = useCallback(async (content: string): Promise<void> => {
     await submitContent(content, []);
@@ -205,6 +215,8 @@ export function useLegacyComposerActions({
   return {
     input,
     images,
+    documents,
+    changeDocuments: setDocuments,
     changeInput: setInput,
     changeImages: setImages,
     replaceDraft,

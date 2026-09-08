@@ -73,7 +73,7 @@ test('attachment service rejects unsupported payloads before filesystem writes',
 
   assert.throws(() => service.upload('session-1', {
     attachments: [{
-      name: 'notes.txt', mimeType: 'text/plain', dataUrl: 'data:text/plain;base64,YQ=='
+      name: 'archive.zip', mimeType: 'application/zip', dataUrl: 'data:application/zip;base64,YQ=='
     }]
   }), (error) => error.code === 'chat_attachment_mime_unsupported');
   assert.equal(persisted, false);

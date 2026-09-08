@@ -4,6 +4,7 @@ import type { Account, Session } from '@/types';
 import { chatAPI } from '@/services/api';
 import { resolveQueuedAccount } from './account-selection-policy';
 import { humanizeChatError } from './chat-error-policy';
+import { appendDocumentText } from '@/components/chat/attachment-files';
 import {
   resolveDetachedRunId,
   toRunInput,
@@ -68,6 +69,7 @@ export function useLegacyQueueActions({
     replaceDraft(
       queued.content,
       Array.isArray(queued.images) ? queued.images : [],
+      queued.documents,
     );
     removeMessage(selectedKey, messageId);
   }, [removeMessage, replaceDraft, selectedKey, selectedMessages]);
@@ -129,10 +131,11 @@ export function useLegacyQueueActions({
     }
     removeMessage(selectedKey, messageId);
     try {
-      await chatAPI.steerRun(runId, queued.content);
+      const content = appendDocumentText(queued.content, queued.documents);
+      await chatAPI.steerRun(runId, content);
       appendVisibleMessage({
         role: 'user',
-        content: queued.content,
+        content,
         timestamp: Date.now(),
       });
       message.success('已插话,将在当前动作后处理');

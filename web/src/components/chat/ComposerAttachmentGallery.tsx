@@ -1,10 +1,13 @@
 import { memo } from 'react';
 import { CloseOutlined, FileTextOutlined } from '@ant-design/icons';
 import styles from './composer/composer.module.css';
+import type { ChatDocumentAttachment } from './attachment-files';
 
 export interface ComposerAttachmentGalleryProps {
   images: string[];
   onRemove: (index: number) => void;
+  documents?: readonly ChatDocumentAttachment[];
+  onRemoveDocument?: (index: number) => void;
 }
 
 /**
@@ -14,11 +17,23 @@ export interface ComposerAttachmentGalleryProps {
 export const ComposerAttachmentGallery = memo(function ComposerAttachmentGallery({
   images,
   onRemove,
+  documents = [],
+  onRemoveDocument,
 }: ComposerAttachmentGalleryProps) {
-  if (!images || images.length === 0) return null;
+  if (images.length === 0 && documents.length === 0) return null;
 
   return (
-    <div className={styles.attachmentGalleryRow}>
+    <div className={styles.attachmentGalleryRow} aria-label="待发送附件">
+      {documents.map((document, index) => (
+        <div key={`${document.name}-${index}`} className={`${styles.attachmentGalleryCard} ${styles.attachmentDocumentCard}`} title={document.name}>
+          <FileTextOutlined className={styles.attachmentDocIcon} />
+          <span className={styles.attachmentDocumentName}>{document.name}</span>
+          <button type="button" className={styles.attachmentRemoveBadge}
+            onClick={() => onRemoveDocument?.(index)} aria-label={`移除 ${document.name}`}>
+            <CloseOutlined style={{ fontSize: 9 }} />
+          </button>
+        </div>
+      ))}
       {images.map((img, idx) => (
         <div key={idx} className={styles.attachmentGalleryCard}>
           <div className={styles.attachmentThumbWrap}>

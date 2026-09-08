@@ -4,6 +4,7 @@ import type {
   QueuedChatMessage,
   Session,
 } from '@/types';
+import type { ChatDocumentAttachment } from '@/components/chat/attachment-files';
 
 export type PersistedChatSelection = {
   projectPath?: string;
@@ -36,6 +37,7 @@ export interface LegacyRunMessageInput {
   readonly model?: string;
   readonly content: string;
   readonly imageList: string[];
+  readonly documents?: ChatDocumentAttachment[];
 }
 
 export type QueuedSessionMessage = QueuedChatMessage & {

@@ -33,7 +33,7 @@ function fixture(overrides = {}) {
 test('legacy composer validates every rejection before accepting draft cleanup', async () => {
   const { resolveLegacyComposerSubmission } = await loadPolicy();
 
-  assert.deepEqual(resolveLegacyComposerSubmission(fixture({ content: ' ' })), {
+  assert.deepEqual(resolveLegacyComposerSubmission(fixture({ content: ' ', images: [] })), {
     ok: false,
     reason: 'empty_content',
   });

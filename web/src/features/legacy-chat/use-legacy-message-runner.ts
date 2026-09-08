@@ -43,6 +43,7 @@ import {
   usesNativeSession,
 } from './legacy-run-message-policy';
 import { humanizeChatError } from './chat-error-policy';
+import { appendDocumentText } from '@/components/chat/attachment-files';
 import { useAssistantCompletionNotification } from './use-assistant-completion-notification';
 import { useCliInstallConfirmationDialogs } from './use-cli-install-confirmation-dialogs';
 
@@ -88,6 +89,7 @@ export function useLegacyMessageRunner({
     model,
     content,
     imageList,
+    documents = [],
   }: LegacyRunMessageInput): Promise<void> => {
     const isPureChat = requestSession.mode === 'chat' || (!requestSession.projectPath && !selectedProjectPath);
     const requestProjectPath = requestSession.projectPath || selectedProjectPath || '';
@@ -114,11 +116,11 @@ export function useLegacyMessageRunner({
     controller.signal.addEventListener('abort', dismissCliInstallConfirmations, { once: true });
     const baseMessages = history.readSessionMessages(requestSession)
       || (isSameVisibleSession(selectedSessionRef.current, requestSession) ? history.messages : []);
-    let latestRunMessages = buildInitialRunMessages(baseMessages, content, imageList, { model });
+    let latestRunMessages = buildInitialRunMessages(baseMessages, appendDocumentText(content, documents), imageList, { model });
     const useNativeSession = !isPureChat && usesNativeSession(account);
     const requestMessages = useNativeSession
       ? [{ role: 'user' as const, content: content.trim() }]
-      : buildStatelessRequestMessages(latestRunMessages);
+      : buildStatelessRequestMessages(buildInitialRunMessages(baseMessages, content, imageList, { model }));
 
     const syncVisibleMessages = (): void => {
       const currentSession = selectedSessionRef.current;
@@ -338,6 +340,7 @@ export function useLegacyMessageRunner({
         projectPath: requestProjectPath || undefined,
         model: model || undefined,
         images: imageList,
+        documents,
         approvalMode: approvalModeRef.current,
         mode: isPureChat ? 'chat' : 'work',
         stream: true,

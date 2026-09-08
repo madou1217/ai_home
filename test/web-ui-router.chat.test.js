@@ -1722,6 +1722,7 @@ test('web ui chat persists pasted images and appends file paths into native prom
       images: [
         'data:image/png;base64,' + Buffer.from('fake-image').toString('base64')
       ],
+      documents: [{ name: '需求.md', mimeType: 'text/markdown', text: '# 需求\n保留文档正文' }],
       messages: [{ role: 'user', content: '分析一下图片内容' }]
     };
 
@@ -1750,6 +1751,8 @@ test('web ui chat persists pasted images and appends file paths into native prom
     );
     assert.equal(seenPrompt.includes('.ai_home'), false);
     assert.match(seenPrompt, /分析一下图片内容/);
+    const documentPath = seenPrompt.split('\n').find((line) => line.endsWith('-需求.md')).slice(2);
+    assert.equal(fse.readFileSync(documentPath, 'utf8'), '# 需求\n保留文档正文');
   } finally {
     nativeSessionChat.spawnNativeSessionStream = originalSpawn;
     try { fse.removeSync(credEnvPath); } catch (_error) { /* best-effort */ }

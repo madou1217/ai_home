@@ -9,6 +9,7 @@ import ComposerToolbar from './ComposerToolbar';
 import ComposerAttachmentPreview from './ComposerAttachmentPreview';
 import { useComposerController } from './use-composer-controller';
 import styles from './session-runtime.module.css';
+import { CHAT_ATTACHMENT_ACCEPT } from '@/components/chat/attachment-files';
 
 export interface ComposerProps {
   readonly store: SessionProjectionStore;
@@ -32,15 +33,18 @@ export default function Composer(props: ComposerProps) {
   const selectImages = useCallback(() => fileInputRef.current?.click(), []);
   const handlePaste = useCallback((event: ClipboardEvent<HTMLTextAreaElement>): void => {
     if (!controller.canAttach) return;
-    const files = Array.from(event.clipboardData?.files || []).filter((file) => (
-      file.type.startsWith('image/')
-    ));
+    const files = Array.from(event.clipboardData?.files || []);
     if (files.length === 0) return;
     event.preventDefault();
     void controller.addAttachments(files);
   }, [controller]);
   return (
-    <section className={styles.composer} aria-label="消息输入">
+    <section className={styles.composer} aria-label="消息输入"
+      onDragOver={(event) => { if (controller.canAttach) event.preventDefault(); }}
+      onDrop={(event) => {
+        event.preventDefault();
+        if (controller.canAttach) void controller.addAttachments(Array.from(event.dataTransfer.files));
+      }}>
       {controller.slashMatches.length > 0 ? (
         <div className={styles.slashSuggestions}>
           {controller.slashMatches.map((command) => (
@@ -65,7 +69,7 @@ export default function Composer(props: ComposerProps) {
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/*"
+        accept={CHAT_ATTACHMENT_ACCEPT}
         multiple
         hidden
         onChange={(event) => {

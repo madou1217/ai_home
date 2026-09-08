@@ -27,8 +27,8 @@ export default function ComposerToolbar({ props, controller, onSelectImages }: P
         <button
           type="button"
           className={styles.composerToolButton}
-          title={controller.canAttach ? '上传图片' : '当前投递方式不支持图片'}
-          aria-label="上传图片"
+          title={controller.canAttach ? '上传文件' : '当前投递方式不支持附件'}
+          aria-label="上传文件"
           disabled={!controller.canAttach}
           onClick={onSelectImages}
         >

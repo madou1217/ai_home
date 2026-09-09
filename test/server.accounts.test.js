@@ -415,7 +415,8 @@ test('Claude accounts preserve DB credential type semantics', (t) => {
         claudeAiOauth: {
           accessToken: 'claude-oauth-token',
           refreshToken: 'claude-refresh-token',
-          expiresAt: 4102444800000
+          expiresAt: 4102444800000,
+          refreshTokenExpiresAt: 4102441200000
         }
       }
     },
@@ -436,8 +437,10 @@ test('Claude accounts preserve DB credential type semantics', (t) => {
   assert.equal(oauthAccount.accessToken, 'claude-oauth-token');
   assert.equal(oauthAccount.refreshToken, 'claude-refresh-token');
   assert.equal(oauthAccount.tokenExpiresAt, 4102444800000);
+  assert.equal(oauthAccount.refreshTokenExpiresAt, 4102441200000);
   assert.equal(apiKeyAccount.refreshToken, '');
   assert.equal(apiKeyAccount.tokenExpiresAt, null);
+  assert.equal(apiKeyAccount.refreshTokenExpiresAt, null);
 });
 
 test('Claude API-key accounts pointing at the current relay are excluded', (t) => {

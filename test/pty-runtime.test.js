@@ -349,6 +349,30 @@ function createRuntimeHarness(env = {}, overrides = {}) {
   };
 }
 
+for (const provider of ['claude', 'codex', 'gemini']) {
+  test(`${provider} runtime frames fragmented terminal input without changing provider key or mouse semantics`, () => {
+    const { runtime, proc, ptyWrites } = createRuntimeHarness({
+      AIH_RUNTIME_SHOW_USAGE: '0', AIH_CODEX_AUTH_PREFLIGHT: '0'
+    });
+    runtime.runCliPtyTracked(provider, '9', [], false);
+    try {
+      for (const sequence of ['\x1b[?62c', '\x1b[<64;67;30M', '\x1b[13;2u', '\x1b[A']) {
+        ptyWrites.length = 0;
+        proc.stdin.emit('data', Buffer.from(sequence.slice(0, 2)));
+        assert.deepEqual(ptyWrites, []);
+        proc.stdin.emit('data', Buffer.from(sequence.slice(2)));
+        assert.deepEqual(ptyWrites, [Buffer.from(sequence)]);
+      }
+      ptyWrites.length = 0;
+      const pasted = Buffer.from('\x1b[200~中文 <64;67;30M ?62c\x1b[201~');
+      proc.stdin.emit('data', pasted);
+      assert.deepEqual(ptyWrites, [pasted]);
+    } finally {
+      assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
+    }
+  });
+}
+
 function captureRuntimeIntervals() {
   const realSetInterval = global.setInterval;
   const realClearInterval = global.clearInterval;

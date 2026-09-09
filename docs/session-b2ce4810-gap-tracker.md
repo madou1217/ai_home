@@ -397,10 +397,54 @@ markdown 表格卡片在深色下仍为浅底(`chat.module.css`)。
 
 | 现象 | 位置 | 性质 |
 |---|---|---|
-| antd 输入框/次级按钮在深色下仍是白底深字 | 全站表单(设置页最明显) | 全局 antd 覆写层(`styles/App.css`)未主题化,非 primitive 问题 |
 | 图像工坊 CONTROL DESK 的能力标签在深色下近乎不可读 | `--studio-paper` 纸面板 | 纸面板跟随主题但其上标签色未跟随,需设计决策 |
 | 移动端空态文案深色下近乎不可读 | `components/mobile/*` | 同 12.4 |
 | markdown 表格卡片深色下仍为浅底(**仅 PC**;移动端走 message-bubble 已随本轮修复) | `chat.module.css`(153KB,未纳入本轮) | 同 12.4 |
 
 > D3/D5/B24 维持 ⚠️:一个文件不构成全站结论,且矩阵里的 ✅ 多为自评,按 §二 #7 的教训必须逐页截图验收后才可升级。
+
+## 十三、antd 主题层收口(2026-09-09)
+
+### 13.1 真因:不是覆写层不够,是 antd 根本没有深色主题
+
+§12.6 把"深色下白底深字的输入框"记为「App.css 覆写层未主题化」,实测证明只对了一半。
+`/ui/settings` 实测 computed style,深浅两主题**完全相同**:
+
+| 元素 | 浅色 = 深色 |
+|---|---|
+| `.ant-input` | bg `rgba(255,255,255,0.8)`、border `rgba(0,0,0,0.08)` |
+| `.ant-btn-default` | bg `#ffffff`、color `rgba(0,0,0,0.88)`、border `#d9d9d9` |
+| `.ant-tabs-tab` / `.ant-input-number-input` | color `rgba(0,0,0,0.88)` |
+
+根因是 antd 只有**构建期一套浅色 token**(`config/config.ts`),全仓无 `darkAlgorithm`。
+CSS 覆写只能改到显式点名的选择器,够不到 antd 派生的按钮描边、次级文字、下拉项、Tooltip——**覆写层本身不可能修好这件事**。
+
+### 13.2 三处品牌色真相冲突
+
+| 出处 | 值 | 影响 |
+|---|---|---|
+| `config/config.ts` antd token | `#0a59f7` | 深色下作前景偏暗 |
+| `app.tsx` ProLayout settings | `#171717` | **优先级最高**(ProLayout 会再包一层 ConfigProvider),深色下激活 Tab 近黑压深底 |
+| `design-tokens.css` `--color-brand` | `#0a59f7` | 自绘组件用 |
+
+已收敛为单一来源 `src/theme/antd-theme.ts`(浅 `#0a59f7` / 深 `#3b82f6`),删除 ProLayout 的 `colorPrimary`。
+**浅色可见变化**:激活 Tab 由近黑变为与主按钮同一支蓝,与设计规范的「鸿蒙流光蓝」一致。
+
+### 13.3 落地
+
+- 新增 `services/theme-mode.ts`(只读 + 订阅 `data-theme`,不写入,避免第二个写入方)、
+  `hooks/use-theme-mode.ts`(useSyncExternalStore)、`theme/antd-theme.ts`(深浅两套颜色 token)、
+  `components/theme/AntdThemeProvider.tsx`(darkAlgorithm),经 `app.tsx` 的 `rootContainer` 包在最外层。
+- `config/config.ts` 只留与主题无关的结构型 token(圆角/字体/控件高度)。
+- `App.css` 覆写层改为只负责材质(曲率/毛玻璃/阴影/动效),配色一律走语义 token——
+  带 `!important` 的浅色字面值会压过 antd 深色 token,已在文件头写明禁令。
+- `--tint-*/--ink-*/--bd-*` 补深色档(半透明色相底 + 浅色前景);此前 Alert 是浅底 + antd 深色白字,不可读。
+- 测试:`services/theme-mode.test.ts` 5 项(取值判定、无 MutationObserver 退化、同值不通知、取消订阅、深浅键集一致)。
+
+### 13.4 验收
+
+- `bun test src` **448 pass / 0 fail**;`npm run build` 通过;改动文件 eslint 0 错误。
+- 实测每个组件深浅取值均已不同,例:`.ant-btn-default` `#ffffff`/`rgb(30,41,59)`,描边 `#e2e8f0`/`rgba(255,255,255,0.12)`。
+- chat / settings / models / accounts / dashboard × 1440×900 与 390×844 × 深浅双主题截图:0 console 错误、0 横向溢出。
+- 提交 `48622ed2`(主题层)、`c4b69c50`(覆写层与状态色)。
 

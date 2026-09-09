@@ -455,6 +455,45 @@
       "text"
     ]
   },
+  "amazon/nova-2-lite": {
+    "input": [
+      "text",
+      "image",
+      "video",
+      "pdf"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "amazon/nova-lite": {
+    "input": [
+      "text",
+      "image",
+      "video"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "amazon/nova-micro": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "amazon/nova-pro": {
+    "input": [
+      "text",
+      "image",
+      "video"
+    ],
+    "output": [
+      "text"
+    ]
+  },
   "anthropic/claude-3-5-haiku-20241022": {
     "input": [
       "text",
@@ -1661,6 +1700,14 @@
       "text"
     ]
   },
+  "meta/llama-3.1-70b-instruct": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ]
+  },
   "meta/llama-3.1-8b-instruct": {
     "input": [
       "text"
@@ -2042,6 +2089,15 @@
     ]
   },
   "mistral/pixtral-12b": {
+    "input": [
+      "text",
+      "image"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "mistral/pixtral-large-2502": {
     "input": [
       "text",
       "image"
@@ -3092,6 +3148,22 @@
     ]
   },
   "upstage/solar-pro4": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "writer/palmyra-x4": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "writer/palmyra-x5": {
     "input": [
       "text"
     ],

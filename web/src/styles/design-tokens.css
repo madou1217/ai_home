@@ -478,10 +478,15 @@ body.dark {
   --color-text: #f8fafc;
   --color-heading: #ffffff;
   --color-muted: #94a3b8;
-  /* 深色下对比方向反转：muted-strong 比 muted 更亮，faint 比 muted 更暗。 */
+  /* 深色下整条前景阶梯必须向"更亮"走：底色是 #0f172a，把 faint/disabled 调暗
+   * 等于压向背景、对比度反而更差。实测(WCAG 对比度, on #0f172a / on #1e293b)：
+   *   muted-strong #cbd5e1 = 12.02 / 9.85
+   *   muted        #94a3b8 =  6.96 / 5.71
+   *   faint        #8a97ab =  6.03 / 4.94   ← 正文级前景，两种面上都过 4.5
+   *   disabled     #6b7a8f =  4.09 / 3.35   ← 禁用/装饰态，WCAG 豁免，仍保持最弱一档 */
   --color-muted-strong: #cbd5e1;
-  --color-faint: #64748b;
-  --color-disabled: #475569;
+  --color-faint: #8a97ab;
+  --color-disabled: #6b7a8f;
 
   --color-overlay-subtle: rgba(255, 255, 255, 0.04);
   --color-overlay: rgba(255, 255, 255, 0.09);

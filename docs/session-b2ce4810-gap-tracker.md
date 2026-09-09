@@ -47,7 +47,7 @@
 
 ## 五、剩余工作(按建议优先级)
 
-1. ~~**设计规范系统性落地**:59 个文件已引用 `--hos-*` token,硬编码 `font-size` 仅剩 7 处~~ ✅ 字号迁移已收口(2026-09-02):2 处样式值迁入 token(mobile-shell.css),3 处为 `inherit` 非硬编码,2 处为有意保留的功能例外(iOS 输入防缩放 `max(16px,1em)`、ModelUsage KPI 响应式 clamp);剩余:圆角/间距/色系硬编码迁移 + 逐页 Playwright 截图验收
+1. ~~**设计规范系统性落地**~~ 字号迁移已收口(2026-09-02);圆角/间距经 2026-09-09 实测亦已收口,色系迁移进行中(见 §十二):2 处样式值迁入 token(mobile-shell.css),3 处为 `inherit` 非硬编码,2 处为有意保留的功能例外(iOS 输入防缩放 `max(16px,1em)`、ModelUsage KPI 响应式 clamp);剩余:圆角/间距/色系硬编码迁移 + 逐页 Playwright 截图验收
 2. ~~**Work 三栏同屏布局**:立项决策(是否把标签页工作台改为可调整三栏)~~ ✅ 已完成:三栏同屏布局已在 `2ea82cfa` 落地,2026-09-02 完成响应式降级治理(三档阈值 1040/900,窄屏 overlay 展开)
 3. **loop review/自动进化纪律**:若重启 /loop,需把"每轮双模型 review + 真实交付增量"做成强制门禁,防止报告复读
 
@@ -317,3 +317,58 @@
 - gate 竞态复核差异:`65321db9` 主修复成立,但 merge 过滤器残留窗口被复核捕获——多端点共享 store 场景下,他端点 ready 时会整条剔除本地带 key 的 configured profile(`control-plane-profiles.ts:265` 已补 `|| hasConfiguredManagementKey` + 回归测试)。11.2 表中「刷新丢 key」的另一观察另证实主要为 playwright-cli `open` 快照回滚伪象。
 - 新安全观察项:Server 端共享 control-plane store 的 profile 记录含明文 managementKey(`persistSharedControlPlaneProfile` 整条 POST),既有行为,建议专项安全评审。
 - 工具坑:playwright-cli `open` 会回滚 localStorage 快照,刷新类验证一律用 `goto`/`reload`。
+
+## 十二、Wave 8 色系迁移(2026-09-09)
+
+### 12.1 D3 遗留三项的实测重定级
+
+§7.1 记录 D3 遗留为「圆角/间距/色系硬编码迁移未做」。本轮逐项实测复核:
+
+| 遗留项 | 实测 | 结论 |
+|---|---|---|
+| 圆角硬编码 | `web/src` 全量 `border-radius:` 非 var 命中 11 处 | ✅ 已收口:全部为 `border-radius: 0` 重置(6)、有机形状 `45% 55% 50% 48%`(1)、`.umi*` 生成物(2)、局部自定义属性(2) |
+| 间距硬编码 | `gap/padding/margin` 裸 px 命中 9 处 | ✅ 已收口:局部自定义属性 `--chat-avatar-gap`(2)、`.umi*` 生成物(4)、composer 内部 3 处 |
+| 色系硬编码 | 见 12.2 | ⚠️ 进行中 |
+
+### 12.2 缺陷类别修正:真正的深色断裂来自 primitive 直引,不是裸色值
+
+初次统计「1282 处色值」把 `var(--token, #fallback)` 的兜底也算入,失真。剥离兜底后裸色值 398 处 / 43 文件;
+而**实测证明主要破绽是组件直接引用 primitive 层**(`--c-neutral-*` / `--hos-white`)——DESIGN.md 明令禁止,
+且 primitive 不随主题翻转。
+
+实测证据(`/ui/chat` 真实渲染,computed style):composer 在 `data-theme=dark` 下
+`.inputBox` background = `rgb(255,255,255)`、`.inputArea` = `rgb(248,250,252)`,
+而 `.inputTextarea` color 正常翻转为白 —— **深色模式下白底白字,输入内容不可见**。
+
+### 12.3 本轮交付(composer 作为样板)
+
+- `design-tokens.css`:语义层新增 `--color-overlay` / `--color-overlay-subtle`(深浅反向的悬浮与轨道底);
+  深色层补齐此前缺失的 `--color-muted-strong` / `--color-faint` 覆盖。
+- `composer.module.css`:按角色(surface/border/text/muted/faint)把 primitive 映射到语义别名,
+  裸 `rgba(0,0,0,0.0x)` 迁到叠加 token。因语义层就是这些 primitive 的别名,**光模式逐值等价**;
+  2 处刻意归级(`#dedede`→`#e2e8f0`、玻璃描边 alpha 0.8→0.6)。终端 dock 的深色字面值标注为刻意例外。
+- 验收:`npm run build` + 刷新 9527/ui 实测;computed style 深色下
+  `rgb(255,255,255)`→`rgb(30,41,59)`、`rgb(248,250,252)`→`rgb(15,23,42)`、描边→`rgba(255,255,255,0.12)`,光模式无变化;
+  1440×900 与 390×844 双端双主题截图,0 console 错误、0 横向溢出。提交 `172adc2a`。
+
+### 12.4 剩余面(可量化,配方已验证)
+
+组件 CSS 直引 primitive 仍有 **240 处 / 11 文件**(composer 余 8 处均在 color-mix 阴影内):
+
+| 处数 | 文件 |
+|---|---|
+| 69 | `components/chat/file-preview.module.css` |
+| 58 | `features/image-studio/image-studio.module.css` |
+| 35 | `components/chat/message-bubble.module.css` |
+| 21 | `components/chat/message-area.module.css` |
+| 18 | `pages/Settings.css` |
+| 12 | `pages/Toolkit.css` |
+| 11 | `components/chat/session-list.module.css` |
+| 6 | `pages/Models.css` |
+| 2 | `mobile-layout.module.css` / `EventBlock.module.css` |
+
+已观察到但未修的同类深色缺陷:移动端空态文案 `暂无对话,点击上方发起新对话` 在深色下近乎不可读(`components/mobile/*`);
+markdown 表格卡片在深色下仍为浅底(`chat.module.css`)。
+
+> D3/D5/B24 维持 ⚠️:一个文件不构成全站结论,且矩阵里的 ✅ 多为自评,按 §二 #7 的教训必须逐页截图验收后才可升级。
+

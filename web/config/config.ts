@@ -17,12 +17,12 @@ export default defineConfig({
   define: {
     "process.env.AIH_GO_ACCOUNTS_PREVIEW": JSON.stringify(process.env.AIH_GO_ACCOUNTS_PREVIEW || ""),
   },
-  // 全面融入 HarmonyOS 6 (ArkUI) 设计系统规范：深空/通透亚克力、超级曲率与流光强调色
+  // 全面融入 HarmonyOS 6 (ArkUI) 设计系统规范：深空/通透亚克力、超级曲率与流光强调色。
+  // 这里只放与主题无关的结构型 token（圆角、字体、控件高度）与两主题通用的品牌色；
+  // 会随深浅翻转的颜色在 src/theme/antd-theme.ts，由 AntdThemeProvider 运行时注入。
   antd: {
     theme: {
       token: {
-        colorPrimary: "#0a59f7",
-        colorInfo: "#0a59f7",
         colorSuccess: "#10b981",
         colorWarning: "#f59e0b",
         colorError: "#ef4444",
@@ -30,21 +30,16 @@ export default defineConfig({
         borderRadiusLG: 20,
         borderRadiusSM: 8,
         borderRadiusXS: 6,
-        colorBorderSecondary: "rgba(0, 0, 0, 0.06)",
         fontFamily: "'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif",
       },
       components: {
         Table: {
-          headerBg: "rgba(241, 245, 249, 0.65)",
-          headerColor: "#1e293b",
           headerSplitColor: "transparent",
           rowHoverBg: "rgba(10, 89, 247, 0.04)",
           borderRadius: 16,
         },
         Card: {
           borderRadiusLG: 20,
-          colorBgContainer: "rgba(255, 255, 255, 0.85)",
-          colorBorderSecondary: "rgba(255, 255, 255, 0.9)",
         },
         Button: {
           borderRadius: 9999,
@@ -66,17 +61,11 @@ export default defineConfig({
         },
         Modal: {
           borderRadiusLG: 24,
-          contentBg: "rgba(255, 255, 255, 0.92)",
           headerBg: "transparent",
-        },
-        Drawer: {
-          colorBgElevated: "rgba(255, 255, 255, 0.92)",
         },
         Segmented: {
           borderRadius: 9999,
           borderRadiusSM: 9999,
-          trackBg: "rgba(0, 0, 0, 0.04)",
-          itemSelectedBg: "#ffffff",
         },
       },
     },

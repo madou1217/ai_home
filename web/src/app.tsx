@@ -1,8 +1,10 @@
 import type { Settings as LayoutSettings } from "@ant-design/pro-components";
+import type { ReactNode } from "react";
 import { history } from "@umijs/max";
 import { Alert } from "antd";
 import ControlPlaneProfileSelect from "@/components/control-plane/ControlPlaneProfileSelect";
 import AppErrorBoundary from "@/components/ui/AppErrorBoundary";
+import AntdThemeProvider from "@/components/theme/AntdThemeProvider";
 import MobileTabBar from "@/components/mobile/MobileTabBar";
 import AppInstallTaskQueue from "@/components/task-queue/AppInstallTaskQueue";
 import {
@@ -98,13 +100,21 @@ export async function getInitialState(): Promise<{
     settings: {
       layout: "side",
       navTheme: "light",
-      colorPrimary: "#171717",
+      // 不在这里定义强调色：ProLayout 会用它再包一层 ConfigProvider，
+      // 盖掉 AntdThemeProvider 的主题化取值（深色下激活 Tab 会变成近黑压深底）。
+      // 强调色的唯一来源是 src/theme/antd-theme.ts。
       contentWidth: "Fluid",
       fixedHeader: true,
       fixSiderbar: true,
     },
     desktopInitializationError,
   };
+}
+
+// antd 的 token 体系必须整体跟随 data-theme，否则深色模式下按钮描边、次级文字、
+// 下拉项等仍取构建期的浅色值。包在最外层，让所有路由与 Layout 共用同一主题上下文。
+export function rootContainer(container: ReactNode) {
+  return <AntdThemeProvider>{container}</AntdThemeProvider>;
 }
 
 export const layout = ({ initialState }: any) => {

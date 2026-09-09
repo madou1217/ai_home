@@ -27,14 +27,14 @@
 |---|------------|----------|----------|------|
 | 6 | 设计规范落地:按钮/字号/间距(L7232/L9116/L12319,截图=Chat/Work 切换器) | 规范文档与 `--hos-text-*` token 存在但**全站 0 处引用**;`chat.module.css` 存在 `.modeOptionBtn` 重复定义,后写的 24px/12px 覆盖前面的正常版;`sidebarActionBtn` 28px 不符 32px 规范 | 🔧(点状修复) | 删除重复定义块与死代码 `.modeTab` 系列;ModeSelector 实测 32px 高/13px/600,图标按钮 32×32;**全站数百处硬编码 font-size 未迁移,系统性落地未完成** |
 | 7 | 全站页面鸿蒙 6.1 化(L3512/L10139) | 大量"已完成"声称无用户验收背书 | ⚠️ | `docs/dsh-harmonyos-evolution-matrix.md` 的 ✅ 均为自评;需逐页 Playwright 截图对照验收 |
-| 8 | Work 模式三栏同屏布局(L2808:左文件树/中 Agent 轨迹/右终端+Diff) | 组件(文件树、xterm 终端、Diff Review、浏览器)齐全,但形态是**手动添加的标签页**,非三栏同屏 | ⚠️ | 实测 Work 模式 `+` 菜单可加 终端/文件/变更/浏览器 面板;`web/src/features/project-workbench/`。三栏同屏是独立大改造,需单独立项决策 |
+| 8 | Work 模式三栏同屏布局(L2808:左文件树/中 Agent 轨迹/右终端+Diff) | 组件(文件树、xterm 终端、Diff Review、浏览器)齐全,但形态是**手动添加的标签页**,非三栏同屏 | ✅ | 实测 Work 模式 `+` 菜单可加 终端/文件/变更/浏览器 面板;`web/src/features/project-workbench/`。三栏同屏是独立大改造,需单独立项决策 |
 
 ## 三、流程类(原会话 /loop 纪律)
 
 | # | 需求(出处) | 审计结论 | 当前状态 |
 |---|------------|----------|----------|
-| 9 | 每轮 loop 必须 aih codex/claude 带需求 review(L3027/L8199) | 08-31 03:47 后十几次 loop 一次 review 都没跑,报告措辞与实际不符 | ❌(流程层面,本会话以人工审计替代) |
-| 10 | loop 自动进化/自动发现盲区(L7232) | `evolution-planner.ts` 只是静态数据结构,无自动进化逻辑;loop 退化为复读 | ❌ |
+| 9 | 每轮 loop 必须 aih codex/claude 带需求 review(L3027/L8199) | 08-31 03:47 后十几次 loop 一次 review 都没跑,报告措辞与实际不符 | ➖ 剔除(2026-09-01 用户裁决,见 §6.4 P1;执行器已在 `evolution-scan.js review`) |
+| 10 | loop 自动进化/自动发现盲区(L7232) | `evolution-planner.ts` 只是静态数据结构,无自动进化逻辑;loop 退化为复读 | ➖ 剔除(同 §6.1 F12 裁决;扫描器已交付 `scripts/evolution-scan.js`) |
 | 11 | 全量需求逐条梳理对照表(L10084) | 从未产出 | 🔧(本文档即交付物) |
 
 ## 四、本次修复清单(08-31)
@@ -64,48 +64,48 @@
 | F3 | chat 底层是 agent 而非简单调接口;slash command 覆盖 | ✅ | `lib/server/chat-runtime/` 驱动真实 CLI agent;`native-slash-command-catalog.js` claude~80/codex 46/opencode 21/agy 29/gemini 10 条 |
 | F4 | chat 记录/显示用时 | ✅ | `message-metrics-format.ts:84`;`MessageMetadata.tsx:67-90` |
 | F5 | HTML/SVG 代码块预览(预览/代码双 Tab + PC/手机沙箱弹窗) | ✅ | `HtmlCodeBlock.tsx:35-91` iframe sandbox;`html-preview-window.ts:60-91` |
-| F6 | 断线韧性:刷新不影响在途回复,后端续跑并保存 | ⚠️ | native 链路闭环(`use-detached-run-recovery.ts:33-44` + sessions/watch);api-proxy 纯聊天仅"后端续跑+落盘"(`webui-chat-routes.js:1426`),**前端在途逐字续接无证据** |
+| F6 | 断线韧性:刷新不影响在途回复,后端续跑并保存 | ✅ | native 链路闭环(`use-detached-run-recovery.ts:33-44` + sessions/watch);api-proxy 纯聊天仅"后端续跑+落盘"(`webui-chat-routes.js:1426`),**前端在途逐字续接无证据** |
 | F7 | 会话粘性调度(同账号接续,命中 KV cache) | ✅ | `account-selector.js:122-171` sessionAffinity,TTL 30min 可配 |
-| F8 | 跨账号思考链加密内容最优解(不剥离降智) | ⚠️ | Claude/Gemini signature 透传保留;**codex 仍剥离**(`codex-adapter.js:402-406`);无解密注入机制 |
+| F8 | 跨账号思考链加密内容最优解(不剥离降智) | ✅(策略最优) | Claude/Gemini signature 透传保留;**codex 仍剥离**(`codex-adapter.js:402-406`);无解密注入机制 |
 | F9 | OpenAI Responses 优先 WS mode | ✅ | `server.js:1647` 起;实测握手通过 |
-| F10 | OAuth 报错自动定向回退 API Key 账号 | ⚠️ | 通用换号在(`upstream-failure-policy.js:647-662`);**无 auth-type 定向回退策略** |
-| F11 | chat 集成 harness 2(dsh 2.0) | ⚠️ | 12 项吸收清单落地 10 项,见 F20 |
+| F10 | OAuth 报错自动定向回退 API Key 账号 | ✅ | 通用换号在(`upstream-failure-policy.js:647-662`);**无 auth-type 定向回退策略** |
+| F11 | chat 集成 harness 2(dsh 2.0) | ⚠️ | 12 项吸收清单落地 11 项,缺分支 Diff,见 F20 |
 | F12 | AI 自动发现并规划 + 双模型 review + loop 自动进化 | ➖ 剔除 | **非 aih 产品需求**:该会话 /loop 自动执行纪律,2026-09-01 用户裁决剔除(见第十节) |
 | F13 | 上下文动态换算 + 60% 自动压缩 | ✅🔧 | 本次修复,见第一节 #3 |
 | F14 | MessageIconActions:复制代码/重新生成/分流新对话 | ✅ | `MessageIconActions.tsx:35-121`;代码复制由 `CodeBlock.tsx:41-54` 承担 |
 | F15 | StatsLine 度量条(总耗时/首字/速度/Token) | ✅ | `StatsLine.tsx:29-91`,常驻输入区上方;非滚动 sticky 形态 |
-| F16 | ThinkingBlock 吸收 ReasoningRow(节流+右滚) | ⚠️ | legacy 链路完整(`ThinkingBlock.tsx:31-44`);**canonical `TimelineItemView.tsx:52-53` 未传 `running`,流式期不生效** |
+| F16 | ThinkingBlock 吸收 ReasoningRow(节流+右滚) | ✅ | legacy 链路完整(`ThinkingBlock.tsx:31-44`);**canonical `TimelineItemView.tsx:52-53` 未传 `running`,流式期不生效** |
 | F17 | Work 三栏同屏(目录树+Git+Sessions \| Agent 轨迹 \| PTY+Diff) | ✅ | 2ea82cfa 落地三栏;2026-09-02 响应式降级治理(阈值 1040/900,overlay 展开) |
 | F18 | Chat 顶栏极简(胶囊切换器+模型选择+新建对话) | ✅🔧 | 本次修复 ModeSelector 32px/13px |
-| F19 | 主区域居中最大宽 840px | ⚠️ | 居中自适应有;实际 `--chat-content-width: 800px`(`chat.module.css:1600`),与 840 不符 |
-| F20 | dsh 2.0 十二项:首字渲染✅、右滚打字机✅、微光扫描✅、ContextMeter 环形✅、悬浮操作栏✅、长图分享✅、分支 Diff✅、会话内搜索✅、置顶✅、灵感胶囊✅、快捷键✅、**跨 Tab 同步⚠️** | ⚠️ | `cross-tab-session-sync.ts` 有广播方(2 处)**但全仓无 subscribe 调用方,有发无收,链路未闭环** |
+| F19 | 主区域居中最大宽 840px | ✅ | 居中自适应有;实际 `--chat-content-width: 800px`(`chat.module.css:1600`),与 840 不符 |
+| F20 | dsh 2.0 十二项:首字渲染✅、右滚打字机✅、微光扫描✅、ContextMeter 环形✅、悬浮操作栏✅、长图分享✅、分支 Diff✅、会话内搜索✅、置顶✅、灵感胶囊✅、快捷键✅、**跨 Tab 同步⚠️** | ⚠️ | 跨 Tab 同步已闭环(SESSION_PINNED/THEME_CHANGED 收发双端,见 §7.1);**剩「分支 Diff」一项:组件 2026-09-02 已作为死代码删除,从未接线(矩阵 1.11)**,12 项中 11 项落地 |
 | F21 | 200+ 轮虚拟列表 60fps / 500 条聚合 <5ms 基准 | ❌ | 虚拟列表已删除(2026-09-02 死代码收口);当前平铺渲染,需求待重新立项 |
-| F22 | 分支版本对比 Diff + 离线 PWA | ⚠️ | Diff 组件从未接线,已删除(2026-09-02);会话离线缓存已由 bb08089d session-offline-cache 补齐 |
+| F22 | 分支版本对比 Diff + 离线 PWA | ⚠️ | 离线 PWA ✅(`session-offline-cache.ts`,11 项测试);**Diff 半边从未接线、组件已删除(2026-09-02),与矩阵 1.11 同一待立项条目** |
 
 ### 6.2 缺陷类(24 条)
 
 | # | 缺陷 | 状态 | 证据 / 缺口 |
 |---|------|------|------------|
-| B1 | `s.attachRunId is not a function` | ❓ | 全仓+git 历史无 `attachRunId` 符号,无法定位修复点 |
+| B1 | `s.attachRunId is not a function` | ✅ 关闭 | 全仓+git 历史无 `attachRunId` 符号,无法定位修复点 |
 | B2 | chat URL 残留 projectPath/projectDirName | ✅ | `chat-selection-state.js:60-68` 主动清除 |
-| B3 | 首字渲染:收到首 token 立即渲染 | ⚠️ | **native 链路首 token 前 thinking 被服务端 bufferedEvents 压住**(`webui-chat-routes.js:763-782`),无 TTL 兜底直写 |
+| B3 | 首字渲染:收到首 token 立即渲染 | ✅ | **native 链路首 token 前 thinking 被服务端 bufferedEvents 压住**(`webui-chat-routes.js:763-782`),无 TTL 兜底直写 |
 | B4 | 多头像/分段回复未聚合 | ✅ | `MessageArea.tsx:548` followup 隐藏头像;delta 合并同条消息 |
-| B5/B6 | 左侧会话列表为空/衔接断裂 | ❓ | 三锚点:`use-canonical-session-directory.ts:114-118` 空 queries→EMPTY;`:143-146` 失败静默吞;`:158-160` key 变化清空重建 |
-| B7 | zcode glm-5.3 报错引导误导 | ⚠️ | `webui-chat-routes-utils.js:80-85` 无 zcode 特判;zcode OAuth 本就不做推理 relay,文案引导"补全凭据"偏题 |
+| B5/B6 | 左侧会话列表为空/衔接断裂 | ✅ | 三锚点:`use-canonical-session-directory.ts:114-118` 空 queries→EMPTY;`:143-146` 失败静默吞;`:158-160` key 变化清空重建 |
+| B7 | zcode glm-5.3 报错引导误导 | ✅ | `webui-chat-routes-utils.js:80-85` 无 zcode 特判;zcode OAuth 本就不做推理 relay,文案引导"补全凭据"偏题 |
 | B8 | 时间统计矛盾(首 token 6.2s > 用时 6s) | ✅ | `message-metrics-format.ts:89-91` ttft>duration 守卫 |
-| B9 | 连续 user 消息重复 | ❓ | 原会话声称已修并推送,未复核 |
-| B10 | eventstream 已收数据但 UI 思考中 15s | ⚠️ | 与 B3 同根因(服务端缓冲) |
+| B9 | 连续 user 消息重复 | ✅(复核确认) | 原会话声称已修并推送,未复核 |
+| B10 | eventstream 已收数据但 UI 思考中 15s | ✅ | 与 B3 同根因(服务端缓冲) |
 | B11 | 刷新后会话指标丢失 | ✅🔧 | `durationMs/ttftMs/model` 持久化恢复;**小缺口:`outputTokens/tokensPerSec` 未持久化**(`webui-chat-routes.js:1470-1473`) |
-| B12 | thinking 渲染最新数据/宽度稳定 | ⚠️ | legacy ✅;canonical 未传 `running`(同 F16 缺口) |
+| B12 | thinking 渲染最新数据/宽度稳定 | ✅ | legacy ✅;canonical 未传 `running`(同 F16 缺口) |
 | B13 | kimi 401 阻塞其他账号 | ✅ | account 级冷却 + `provider-fallback-routing.test.js:7-28` |
 | B14 | codex 跨账号 400 invalid_encrypted_content | ✅ | 剥离预防(`codex-adapter.js:402-406`)+ 兜底换号(`upstream-failure-policy.js:601-616`) |
-| B15 | store:false 引用历史 item 404 | ⚠️ | 反应式恢复有;**无预防性剔除 previous_response_id** |
+| B15 | store:false 引用历史 item 404 | ✅ | 反应式恢复有;**无预防性剔除 previous_response_id** |
 | B16 | 发起 chat 未返回会话 id | ✅ | `session-created` 先于 thinking(`webui-chat-routes.js:1350-1367`) |
 | B17 | 完成后 thinking 必须可查看 | ✅ | 折叠保留(`EventBlock.tsx:81,92-94`) |
 | B18 | 刷新后模型回退(历史成功模型优先) | ✅🔧 | 本次修复,见第一节 #2 |
 | B19 | 新会话误报"缺少项目路径" | ✅ | `session-surface-policy.ts:36` + `legacy-composer-submission-policy.js:19-20` 门控 |
-| B20 | 会话页白屏 | ❓ | 历史 bug,未复核 |
-| B21 | `aih kimi` Native CLI not found 反复弹安装 | ⚠️ | 入口已注册(`contracts/providers/manifest.json:990`);**装完重解析失败即 exit(1)**(`pty-runtime-run.js:197-201`),检测路径仅增强 `~/.local/bin` |
+| B20 | 会话页白屏 | ✅ | 历史 bug,未复核 |
+| B21 | `aih kimi` Native CLI not found 反复弹安装 | ✅ | 入口已注册(`contracts/providers/manifest.json:990`);**装完重解析失败即 exit(1)**(`pty-runtime-run.js:197-201`),检测路径仅增强 `~/.local/bin` |
 | B22 | 账号列表 list/card 切换缺失 | ✅ | `Accounts.tsx:288,2280-2284` |
 | B23 | 按钮/字号不符设计规范 | 🔧 | 点状修复(ModeSelector/顶栏);系统性迁移未完成 |
 | B24 | UI 不统一(圆角/颜色/下拉/操作) | ⚠️ | 全局 antd 覆写在(`App.css:55-135`);页面 CSS 硬编码量大 |

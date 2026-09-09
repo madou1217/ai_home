@@ -80,8 +80,8 @@ test('buildEnvPatch keeps advisor for a self-relay (loopback gateway) account', 
   assert.equal(patch.set.CLAUDE_CODE_DISABLE_ADVISOR_TOOL, undefined);
 });
 
-test('buildEnvPatch unsets USER on normal launch and not on login', () => {
-  assert.deepEqual(claudeStrategy.buildEnvPatch(buildCtx({})).unset, ['USER']);
+test('buildEnvPatch preserves USER for both in-session and dedicated login', () => {
+  assert.deepEqual(claudeStrategy.buildEnvPatch(buildCtx({})).unset, []);
   const loginPatch = claudeStrategy.buildEnvPatch({ ...buildCtx({}), isLogin: true });
   assert.deepEqual(loginPatch.unset, []);
 });

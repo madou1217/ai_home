@@ -190,6 +190,103 @@ test('embedded local server returns an idempotent lifecycle handle without ownin
   assert.equal(fs.existsSync(path.join(aiHomeDir, 'run', 'server.pid')), false);
 });
 
+for (const pinned of [true, false]) {
+  test(`Claude HTTP ${pinned ? 'pinned' : 'pool'} request adopts an in-session login before availability filtering`, async (t) => {
+    const { registerAccountIdentity } = require('../lib/account/account-registration');
+    const { readAccountNativeAuth, writeAccountNativeAuth } = require('../lib/server/account-credential-store');
+    const { createAccountStateIndex } = require('../lib/account/state-index');
+    const { createAccountStateService } = require('../lib/account/state-service');
+    const { buildAuthInvalidRuntimeState } = require('../lib/account/runtime-state-builders');
+    const { loadServerRuntimeAccounts } = require('../lib/server/accounts');
+    const { applyReloadState } = require('../lib/server/management');
+    const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-server-claude-relogin-'));
+    const processObj = createProcessCapture();
+    const lifecycle = { relayClosed: 0, webrtcClosed: 0, fabricClosed: 0, mdnsStopped: 0,
+      outboundStopped: 0, frpStopped: 0, logTimers: new Set(), logTimersCleared: 0 };
+    const uuid = '11111111-1111-4111-8111-111111111111';
+    const { accountRef } = registerAccountIdentity(fs, aiHomeDir, {
+      provider: 'claude', cliAccountId: '9', identitySeed: `oauth:claude:uuid:${uuid}`
+    });
+    writeAccountNativeAuth(fs, aiHomeDir, accountRef, { credentials: { claudeAiOauth: {
+      accessToken: 'old-access', refreshToken: 'old-refresh', expiresAt: Date.now() + 7200_000,
+      account: { uuid, emailAddress: 'login@example.com' }
+    } } });
+    const index = createAccountStateIndex({ fs, aiHomeDir });
+    createAccountStateService({ accountStateIndex: index }).recordRuntimeFailure(accountRef, 'claude',
+      buildAuthInvalidRuntimeState('auth_invalid_reauth_required'),
+      { configured: true, authMode: 'oauth', status: 'up' });
+    index.close();
+    const port = await getFreePort();
+    let handle;
+    const upstreamTokens = [];
+    const upstream = http.createServer((req, res) => {
+      req.resume();
+      if (req.url !== '/v1/messages') { res.writeHead(404); res.end('{}'); return; }
+      upstreamTokens.push(req.headers.authorization);
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({
+        id: 'test-message', type: 'message', role: 'assistant', model: 'claude-opus-5',
+        content: [{ type: 'text', text: 'recovered' }], stop_reason: 'end_turn',
+        usage: { input_tokens: 1, output_tokens: 1 }
+      }));
+    });
+    await new Promise((resolve) => upstream.listen(0, '127.0.0.1', resolve));
+    t.after(async () => {
+      if (handle) await handle.stop('test-cleanup');
+      await new Promise((resolve) => upstream.close(resolve));
+      fs.rmSync(aiHomeDir, { recursive: true, force: true });
+    });
+    handle = await startLocalServer(createServeOptions(port, {
+      manageProcessLifecycle: false, provider: 'claude', backend: 'passthrough',
+      clientKey: 'test-client-key', noProxy: true, upstreamTimeoutMs: 5000,
+      claudeBaseUrl: `http://127.0.0.1:${upstream.address().port}`
+    }), createServerDeps(aiHomeDir, processObj, lifecycle, {
+      loadServerRuntimeAccounts,
+      applyReloadState,
+      checkStatus: () => ({ configured: true, accountName: 'login@example.com' })
+    }));
+    const request = (key = 'test-client-key') => fetch(`http://127.0.0.1:${port}/v1/messages`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': key,
+        ...(pinned ? { 'x-account-ref': accountRef } : {}) },
+      body: JSON.stringify({ model: 'claude-opus-5', max_tokens: 8, messages: [{ role: 'user', content: 'continue' }] }),
+      signal: AbortSignal.timeout(5000)
+    });
+    const before = await request();
+    assert.equal(before.status, 401);
+    assert.equal((await before.json()).error, 'auth_invalid_reauth_required');
+    assert.deepEqual(upstreamTokens, []);
+    fs.ensureDirSync(path.join(aiHomeDir, '.claude'));
+    fs.writeJsonSync(path.join(aiHomeDir, '.claude', '.claude.json'), {
+      oauthAccount: { accountUuid: uuid, emailAddress: 'login@example.com' }
+    });
+    fs.writeJsonSync(path.join(aiHomeDir, '.claude', '.credentials.json'), { claudeAiOauth: {
+      accessToken: 'new-login-access', refreshToken: 'new-login-refresh', expiresAt: Date.now() + 7200_000
+    } });
+    const unauthorized = await request('wrong-key');
+    assert.equal(unauthorized.status, 401);
+    assert.equal((await unauthorized.json()).error, 'unauthorized_client');
+    assert.equal(readAccountNativeAuth(fs, aiHomeDir, accountRef).credentials.claudeAiOauth.accessToken, 'old-access');
+    if (pinned) {
+      const lifecycleIndex = createAccountStateIndex({ fs, aiHomeDir });
+      try {
+        lifecycleIndex.setStatus(accountRef, 'down');
+        const disabled = await request();
+        assert.equal(disabled.status, 404);
+        assert.equal((await disabled.json()).error, 'unknown_account_ref');
+        assert.equal(readAccountNativeAuth(fs, aiHomeDir, accountRef).credentials.claudeAiOauth.accessToken, 'old-access');
+        lifecycleIndex.setStatus(accountRef, 'up');
+      } finally {
+        lifecycleIndex.close();
+      }
+    }
+    const after = await request();
+    const body = await after.json();
+    assert.equal(after.status, 200, JSON.stringify(body));
+    assert.equal(body.content[0].text, 'recovered');
+    assert.deepEqual(upstreamTokens, ['Bearer new-login-access']);
+  });
+}
+
 test('server 启动异步恢复持久化的 ZCode 出口 runtime', async (t) => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-server-zcode-egress-restore-'));
   const processObj = createProcessCapture();

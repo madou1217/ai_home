@@ -102,7 +102,7 @@ test('claude: normal launches always use the host CLAUDE_CONFIG_DIR', () => {
   const { set, unset } = claudeStrategy.buildEnvPatch(baseCtx('claude', { hostHomeDir: '/home/u' }));
   assert.deepEqual(set, { CLAUDE_CONFIG_DIR: path.join('/home/u', '.claude') });
   assert.ok(!('HOME' in set) && !('CLAUDE_CODE_OAUTH_TOKEN' in set));
-  assert.deepEqual(unset, ['USER']);
+  assert.deepEqual(unset, []);
 });
 
 test('claude: login keeps USER for native OAuth keychain writes', () => {
@@ -129,7 +129,7 @@ test('claude: api credential accounts keep shared session config dir', () => {
     CLAUDE_CONFIG_DIR: path.join('/home/u', '.claude'),
     CLAUDE_CODE_DISABLE_ADVISOR_TOOL: '1'
   });
-  assert.deepEqual(unset, ['USER']);
+  assert.deepEqual(unset, []);
 });
 
 test('claude: auth-token accounts keep shared session config dir', () => {

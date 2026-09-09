@@ -3458,7 +3458,7 @@ test('runtime relays native Claude OAuth by accountRef while keeping host sessio
   const accountRef = resolveHarnessAccountRef('claude', '4');
   assert.equal(spawns.length, 1);
   assert.deepEqual(spawns[0].args, ['auth', 'status', '--json']);
-  assert.equal(Object.prototype.hasOwnProperty.call(spawns[0].options.env, 'USER'), false);
+  assert.equal(spawns[0].options.env.USER, 'model');
   assert.equal(spawns[0].options.env.CLAUDE_CONFIG_DIR, path.join(hostHomeDir, '.claude'));
   assert.equal(spawns[0].options.env.ANTHROPIC_API_KEY, 'dummy');
   assert.equal(spawns[0].options.env.ANTHROPIC_BASE_URL, 'http://127.0.0.1:9527');

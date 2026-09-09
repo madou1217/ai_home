@@ -386,6 +386,13 @@ markdown 表格卡片在深色下仍为浅底(`chat.module.css`)。
 - 验收:`npm run build` + 刷新 9527/ui;chat / settings / models / studio 四页 × 1440×900 与 390×844 × 深浅双主题截图,
   0 console 错误、0 横向溢出。深色下会话列表标题由近乎不可读的灰变为可读,浅色无变化。
 
+### 12.5.1 自查捕获的回归:深色前景阶梯方向错了
+
+首版 `--color-faint`/`--color-disabled` 的深色值按"faint 比 muted 更暗"设定,但深色底(#0f172a)上"更暗"=压向背景。
+实测 WCAG 对比度:faint 3.75:1、disabled 2.36:1,**比迁移前(primitive 不翻转的 6.96 / 12.02)更差**——
+等于用同一类缺陷替换了原缺陷。已改为 faint `#8a97ab`(6.03 / 4.94)、disabled `#6b7a8f`(4.09 / 3.35,禁用态 WCAG 豁免),
+阶梯在两个主题下均单调,比值写入 token 文件注释避免下次凭感觉取值(`d0a2f2f0`)。
+
 ### 12.6 本轮新观察到、尚未修的深色缺陷
 
 | 现象 | 位置 | 性质 |
@@ -393,7 +400,7 @@ markdown 表格卡片在深色下仍为浅底(`chat.module.css`)。
 | antd 输入框/次级按钮在深色下仍是白底深字 | 全站表单(设置页最明显) | 全局 antd 覆写层(`styles/App.css`)未主题化,非 primitive 问题 |
 | 图像工坊 CONTROL DESK 的能力标签在深色下近乎不可读 | `--studio-paper` 纸面板 | 纸面板跟随主题但其上标签色未跟随,需设计决策 |
 | 移动端空态文案深色下近乎不可读 | `components/mobile/*` | 同 12.4 |
-| markdown 表格卡片深色下仍为浅底 | `chat.module.css` | 同 12.4 |
+| markdown 表格卡片深色下仍为浅底(**仅 PC**;移动端走 message-bubble 已随本轮修复) | `chat.module.css`(153KB,未纳入本轮) | 同 12.4 |
 
 > D3/D5/B24 维持 ⚠️:一个文件不构成全站结论,且矩阵里的 ✅ 多为自评,按 §二 #7 的教训必须逐页截图验收后才可升级。
 

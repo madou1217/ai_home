@@ -112,7 +112,7 @@
   margin-right: var(--hos-space-1, 4px);
   border: 0 !important;
   border-radius: var(--hos-radius-xs, 10px) !important; /* 归级:原 10px */
-  background: var(--c-neutral-0) !important;
+  background: var(--color-surface) !important;
   color: var(--hos-muted-strong, #475569) !important;
   box-shadow: none !important;
 }
@@ -146,7 +146,7 @@
   background: var(--hos-surface, #ffffff);
 }
 .models-model-row--disabled {
-  background: color-mix(in srgb, var(--hos-surface, #ffffff) 86%, var(--c-neutral-100) 14%);
+  background: color-mix(in srgb, var(--hos-surface, #ffffff) 86%, var(--color-surface-muted) 14%);
 }
 .models-model-row-main {
   min-width: 0;
@@ -225,7 +225,7 @@
   background: var(--hos-surface-raised, #fbfcfd);
 }
 .models-global-row--disabled {
-  background: color-mix(in srgb, var(--hos-surface-raised, #fbfcfd) 88%, var(--c-neutral-100) 12%);
+  background: color-mix(in srgb, var(--hos-surface-raised, #fbfcfd) 88%, var(--color-surface-muted) 12%);
 }
 .models-global-main {
   min-width: 0;

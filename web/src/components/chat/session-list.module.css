@@ -62,7 +62,7 @@
   justify-content: center;
   gap: var(--hos-space-3-5, 14px);
   padding: var(--hos-space-3, 12px) var(--hos-space-4, 18px) var(--hos-space-2-5, 10px); /* 归级:原 18px */
-  background: linear-gradient(180deg, var(--c-neutral-0) 0%, var(--c-neutral-25) 100%);
+  background: linear-gradient(180deg, var(--color-surface) 0%, var(--color-surface-raised) 100%);
 }
 
 .refreshBtn {
@@ -621,7 +621,7 @@
 }
 
 .sessionItemRunning {
-  background: linear-gradient(90deg, var(--color-info-soft) 0%, color-mix(in srgb, var(--c-neutral-0) 0%, transparent) 72%);
+  background: linear-gradient(90deg, var(--color-info-soft) 0%, color-mix(in srgb, var(--color-surface) 0%, transparent) 72%);
 }
 
 .sessionHeader {
@@ -691,7 +691,7 @@
   border: none;
   border-radius: var(--hos-radius-xs, 5px); /* 归级:原 5px */
   cursor: pointer;
-  color: var(--c-neutral-400);
+  color: var(--color-faint);
   font-size: var(--hos-text-caption, 12px);
   padding: 0;
   flex-shrink: 0;
@@ -703,12 +703,12 @@
 }
 
 .archiveBtn:disabled {
-  color: var(--c-neutral-300);
+  color: var(--color-disabled);
   cursor: not-allowed;
 }
 
 .archiveBtn:disabled:hover {
-  color: var(--c-neutral-300);
+  color: var(--color-disabled);
 }
 
 .projectItem:hover .archiveBtn {
@@ -722,7 +722,7 @@
 .sessionMore {
   padding: var(--hos-space-1, 4px) var(--hos-space-3, 12px);
   font-size: var(--hos-text-caption, 11px); /* 归级:原 11px */
-  color: var(--c-neutral-500);
+  color: var(--color-muted);
   text-align: center;
 }
 
@@ -731,7 +731,7 @@
 }
 
 .mobileConfirmDescription {
-  color: var(--c-neutral-600);
+  color: var(--color-muted-strong);
   font-size: var(--hos-text-body, 14px);
   line-height: 1.6;
 }
@@ -739,7 +739,7 @@
 @media (max-width: 768px) {.refreshBar {
     padding: var(--hos-space-2, 8px) var(--hos-space-3, 12px) 0 0;
     gap: var(--hos-space-2, 8px);
-    background: var(--c-neutral-0);
+    background: var(--color-surface);
   }/* 单行头部：标题（左）+ 操作按钮（右）合成一行 iOS 式头部，替代「大标题独占一行 +
    * 工具栏独占一行」的两行结构。粘顶 + 毛玻璃 + 顶部安全区，滚动时头部固定。 */.refreshBarMobile {
     position: sticky;

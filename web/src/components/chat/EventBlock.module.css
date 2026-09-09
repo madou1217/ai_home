@@ -226,7 +226,7 @@
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
   scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--c-neutral-400) 18%, transparent) transparent;
+  scrollbar-color: color-mix(in srgb, var(--color-faint) 18%, transparent) transparent;
 }
 
 .list {

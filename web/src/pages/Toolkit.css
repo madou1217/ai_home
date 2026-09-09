@@ -591,6 +591,7 @@
   overflow: hidden;
   border: 1px solid var(--color-border-strong);
   border-radius: var(--hos-radius-xs, 8px);
+  /* 终端/日志控制台：两个主题下都是深色面，深色字面值为有意例外，不迁移。 */
   background: var(--c-neutral-950);
 }
 

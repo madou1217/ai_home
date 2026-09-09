@@ -194,6 +194,8 @@
   --color-muted: var(--c-neutral-500);
   --color-muted-strong: var(--c-neutral-600);
   --color-faint: var(--c-neutral-400);
+  /* 禁用态与最淡前景（禁用按钮、拖拽握柄、打字尾字符）：比 faint 更弱一档。 */
+  --color-disabled: var(--c-neutral-300);
   --color-on-brand: var(--c-neutral-0);
 
   --color-brand: var(--c-brand-600);
@@ -479,6 +481,7 @@ body.dark {
   /* 深色下对比方向反转：muted-strong 比 muted 更亮，faint 比 muted 更暗。 */
   --color-muted-strong: #cbd5e1;
   --color-faint: #64748b;
+  --color-disabled: #475569;
 
   --color-overlay-subtle: rgba(255, 255, 255, 0.04);
   --color-overlay: rgba(255, 255, 255, 0.09);

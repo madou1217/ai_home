@@ -640,7 +640,7 @@
     /* 顶部留白加大,与消息区拉开间距;左右 16px,底部安全区不变 */
     padding: var(--hos-space-3-5, 14px) var(--hos-space-4, 16px) calc(14px + env(safe-area-inset-bottom));
   }.inputBoxMobile {
-    border: 1px solid color-mix(in srgb, var(--c-neutral-300) 80%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-border-strong) 80%, transparent);
     border-radius: var(--hos-radius-lg, 22px); /* 归级:原 22px */
     box-shadow:
       0 16px 40px color-mix(in srgb, var(--c-neutral-900) 8%, transparent),

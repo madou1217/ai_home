@@ -102,7 +102,7 @@
   align-items: center;
   border: 1px solid var(--hos-border, #e2e8f0);
   border-radius: var(--hos-radius-md, 16px);
-  background: color-mix(in srgb, var(--c-neutral-50) 66%, transparent);
+  background: color-mix(in srgb, var(--color-surface-soft) 66%, transparent);
   padding: var(--hos-space-3, 12px);
 }
 .settings-control-plane-current-main {
@@ -281,7 +281,7 @@
   gap: var(--hos-space-2, 8px);
   border: 1px solid var(--hos-border, #e2e8f0);
   border-radius: var(--hos-radius-md, 16px);
-  background: color-mix(in srgb, var(--c-neutral-50) 72%, transparent);
+  background: color-mix(in srgb, var(--color-surface-soft) 72%, transparent);
   padding: var(--hos-space-2-5, 10px);
 }
 .settings-join-command-head {
@@ -299,7 +299,7 @@
   margin: 0;
   border-radius: calc(var(--hos-radius-md, 16px) - 2px);
   background: var(--c-neutral-950);
-  color: var(--c-neutral-0);
+  color: var(--color-on-brand);
   padding: var(--hos-space-2-5, 10px);
   font-size: var(--hos-text-caption, 12px);
   line-height: 1.5;
@@ -451,7 +451,7 @@
   gap: var(--hos-space-2-5, 10px);
   border: 1px solid var(--hos-border, #e2e8f0);
   border-radius: var(--hos-radius-md, 16px);
-  background: color-mix(in srgb, var(--c-neutral-50) 72%, transparent);
+  background: color-mix(in srgb, var(--color-surface-soft) 72%, transparent);
   padding: var(--hos-space-2-5, 10px);
 }
 .settings-probe-apply-plan {
@@ -639,7 +639,7 @@
   min-width: 0;
   border: 1px solid var(--hos-border, #e2e8f0);
   border-radius: var(--hos-radius-md, 16px);
-  background: color-mix(in srgb, var(--c-neutral-50) 64%, transparent);
+  background: color-mix(in srgb, var(--color-surface-soft) 64%, transparent);
   padding: var(--hos-space-2, 8px) var(--hos-space-2-5, 10px);
 }
 .settings-derived-cell span {
@@ -812,12 +812,12 @@
 
 }/* ===== Settings Server management v3 ===== */
 .settings-panel {
-  border-color: color-mix(in srgb, var(--c-neutral-200) 96%, transparent);
-  background: color-mix(in srgb, var(--c-neutral-0) 96%, transparent);
+  border-color: color-mix(in srgb, var(--color-border) 96%, transparent);
+  background: color-mix(in srgb, var(--color-surface) 96%, transparent);
   box-shadow: 0 12px 28px color-mix(in srgb, var(--c-neutral-900) 6%, transparent);
 }
 .settings-panel {
-  border-color: var(--c-neutral-200);
+  border-color: var(--color-border);
 }
 .settings-panel-head h2 {
   font-size: var(--hos-text-h2, 20px); /* 归级:原 20px */

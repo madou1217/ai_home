@@ -1,3 +1,8 @@
+/* 图像工坊是刻意的「石墨暗房」整页设计：SESSION FILM 胶片栏与 MASTER VIEW 画布
+ * 在浅色主题下同样是深色面（--studio-graphite / --c-neutral-700~950），
+ * 其上的浅色文字（--c-neutral-100~600）与之配对。这些 primitive 是有意例外，
+ * 不迁移到会随主题翻转的语义 token——翻转会让浅色主题下出现深字压深面。
+ * 右侧 CONTROL DESK 用 --studio-paper 跟随主题，是本文件里唯一的主题响应区。 */
 .pageContainer {
   --studio-accent: var(--c-warning-500);
   --studio-accent-strong: var(--c-warning-600);
@@ -136,7 +141,7 @@
 .workspace :global(.ant-btn-primary:not(:disabled):hover) {
   border-color: var(--studio-accent-strong);
   background: var(--studio-accent-strong);
-  color: var(--c-neutral-0);
+  color: var(--color-on-brand);
 }
 
 .workspaceGrid {

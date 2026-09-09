@@ -5,7 +5,7 @@
 .shellOutputCode,
 .thinkingBody {
   scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--c-neutral-400) 14%, transparent) transparent;
+  scrollbar-color: color-mix(in srgb, var(--color-faint) 14%, transparent) transparent;
 }
 
 .bubbleAssistant::-webkit-scrollbar,
@@ -29,7 +29,7 @@
 .thinkingBody::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
   border-radius: var(--hos-radius-pill, 999px);
-  background: color-mix(in srgb, var(--c-neutral-400) 12%, transparent);
+  background: color-mix(in srgb, var(--color-faint) 12%, transparent);
   background-clip: content-box;
 }
 
@@ -37,7 +37,7 @@
 .toolGroupItemResult pre::-webkit-scrollbar-thumb:hover,
 .shellOutputCode::-webkit-scrollbar-thumb:hover,
 .thinkingBody::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--c-neutral-500) 50%, transparent);
+  background: color-mix(in srgb, var(--color-muted) 50%, transparent);
   background-clip: content-box;
 }
 
@@ -157,17 +157,17 @@
   width: 44px;
   height: 44px;
   padding: var(--hos-space-0-5, 2px);
-  border: 1px solid color-mix(in srgb, var(--c-neutral-400) 18%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-faint) 18%, transparent);
   border-radius: var(--hos-radius-xs, 7px); /* 归级:原 7px */
-  background: color-mix(in srgb, var(--c-neutral-0) 62%, transparent);
+  background: color-mix(in srgb, var(--color-surface) 62%, transparent);
   color: var(--hos-text, #1e293b);
   vertical-align: middle;
   transition: border-color 0.15s ease, background-color 0.15s ease;
 }
 
 .imageReferenceCard:hover {
-  border-color: color-mix(in srgb, var(--c-neutral-600) 28%, transparent);
-  background: color-mix(in srgb, var(--c-neutral-0) 90%, transparent);
+  border-color: color-mix(in srgb, var(--color-muted-strong) 28%, transparent);
+  background: color-mix(in srgb, var(--color-surface) 90%, transparent);
 }
 
 .imageReferenceCardMedia {
@@ -175,7 +175,7 @@
   height: auto;
   padding: var(--hos-space-1-5, 7px); /* 归级:原 7px */
   border-radius: var(--chat-panel-radius);
-  background: var(--c-neutral-0);
+  background: var(--color-surface);
   box-shadow: 0 8px 22px color-mix(in srgb, var(--c-neutral-900) 8%, transparent);
 }
 
@@ -211,7 +211,7 @@
   padding: var(--hos-space-0-5, 2px) var(--hos-space-2, 8px);
   border: 1px dashed var(--hos-border-strong, #cbd5e1);
   border-radius: var(--hos-radius-xs, 8px);
-  background: color-mix(in srgb, var(--c-neutral-0) 72%, transparent);
+  background: color-mix(in srgb, var(--color-surface) 72%, transparent);
   color: var(--hos-muted-strong, #475569);
   font-size: var(--hos-text-caption, 12px);
   line-height: 1.4;
@@ -302,7 +302,7 @@
 
 .pendingInlineChar {
   display: inline-block;
-  color: var(--c-neutral-400);
+  color: var(--color-faint);
   animation: pendingTextSweep 1.35s ease-in-out infinite;
 }
 
@@ -320,7 +320,7 @@
 
 @keyframes pendingTextSweep {
   0%, 100% {
-    color: var(--c-neutral-400);
+    color: var(--color-faint);
     opacity: 0.72;
   }
   45% {
@@ -424,7 +424,7 @@
   -webkit-overflow-scrolling: touch;
   touch-action: pan-x pan-y;
   scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--c-neutral-400) 25%, transparent) transparent;
+  scrollbar-color: color-mix(in srgb, var(--color-faint) 25%, transparent) transparent;
 }
 
 .messageMarkdown code {
@@ -470,14 +470,14 @@
 
 .messageMarkdown th {
   background: var(--chat-panel-muted-bg);
-  color: var(--c-neutral-700);
+  color: var(--color-muted-strong);
 }
 
 .messageMarkdown a,
 .messageMarkdownInline a {
-  color: var(--c-neutral-700);
+  color: var(--color-muted-strong);
   text-decoration: underline;
-  text-decoration-color: color-mix(in srgb, var(--c-neutral-700) 18%, transparent);
+  text-decoration-color: color-mix(in srgb, var(--color-muted-strong) 18%, transparent);
   text-underline-offset: 3px;
   transition: color 0.15s ease, text-decoration-color 0.15s ease;
 }
@@ -486,8 +486,8 @@
 .messageMarkdown a:focus-visible,
 .messageMarkdownInline a:hover,
 .messageMarkdownInline a:focus-visible {
-  color: var(--c-neutral-900);
-  text-decoration-color: color-mix(in srgb, var(--c-neutral-900) 42%, transparent);
+  color: var(--color-heading);
+  text-decoration-color: color-mix(in srgb, var(--color-heading) 42%, transparent);
 }
 
 /* Tool 块样式 */
@@ -498,7 +498,7 @@
 
 .toolGroupItem {
   padding: var(--hos-space-1, 4px) var(--hos-space-0-5, 2px);
-  border-top: 1px solid color-mix(in srgb, var(--c-neutral-200) 64%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 64%, transparent);
   border-radius: 0;
 }
 
@@ -508,7 +508,7 @@
 
 .toolGroupItemLabel {
   min-width: 0;
-  color: var(--c-neutral-500);
+  color: var(--color-muted);
   font-size: var(--hos-text-body-sm, 13px);
   line-height: 1.7;
   overflow: hidden;
@@ -678,7 +678,7 @@
   justify-content: center;
   cursor: pointer;
   font-size: var(--hos-text-caption, 11px); /* 归级:原 11px */
-  color: var(--c-neutral-500);
+  color: var(--color-muted);
   transition: all 0.15s;
   padding: 0;
 }
@@ -709,7 +709,7 @@
 }
 
 .taskDockSummaryText {
-  color: var(--c-neutral-500);
+  color: var(--color-muted);
   font-size: var(--hos-text-body-sm, 13px);
   line-height: 1.5;
 }
@@ -742,7 +742,7 @@
 }
 
 .taskDockChevron {
-  color: var(--c-neutral-400);
+  color: var(--color-faint);
   font-size: var(--hos-text-body, 14px);
   line-height: 1;
 }
@@ -754,7 +754,7 @@
 
 .taskDockExplanation {
   margin-bottom: var(--hos-space-2-5, 10px);
-  color: var(--c-neutral-500);
+  color: var(--color-muted);
   font-size: var(--hos-text-body-sm, 13px);
   line-height: 1.6;
   white-space: pre-wrap;
@@ -774,20 +774,20 @@
 }
 
 .taskDockItemMarker {
-  color: var(--c-neutral-400);
+  color: var(--color-faint);
   font-size: var(--hos-text-body-sm, 13px);
   line-height: 1.6;
   flex: 0 0 auto;
 }
 
 .taskDockItemText {
-  color: var(--c-neutral-700);
+  color: var(--color-muted-strong);
   font-size: var(--hos-text-body, 14px);
   line-height: 1.6;
 }
 
 .taskDockItemCompleted {
-  color: var(--c-neutral-300);
+  color: var(--color-disabled);
   text-decoration: line-through;
 }
 
@@ -804,7 +804,7 @@
 }
 
 .taskDockItemMuted {
-  color: var(--c-neutral-400);
+  color: var(--color-faint);
 }
 
 @media (max-width: 768px) {.messageWrapper,

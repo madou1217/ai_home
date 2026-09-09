@@ -3,6 +3,21 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
+test('registry selects only the declared API-key dialect, never inferring it from a hostname', () => {
+  const registry = createImageGenerationStrategyRegistry({
+    codex: fakeStrategy('codex'),
+    passthrough: fakeStrategy('passthrough'),
+    'llm-api': fakeStrategy('llm-api')
+  });
+  const account = { authType: 'api-key', openaiBaseUrl: 'https://example.com/v1' };
+  assert.equal(registry.resolve('codex', account).provider, 'passthrough');
+  assert.equal(registry.resolve('codex', { ...account, upstreamImageApi: 'llm-api' }).provider, 'llm-api');
+  assert.equal(registry.resolve('codex', { upstreamImageApi: 'llm-api' }).provider, 'codex');
+  for (const upstreamImageApi of ['unknown', 'codex', 'constructor', '__proto__']) {
+    assert.equal(registry.resolve('codex', { ...account, upstreamImageApi }), null);
+  }
+});
+
 const {
   createImageGenerationStrategyRegistry
 } = require('../lib/server/image-generation-strategy-registry');

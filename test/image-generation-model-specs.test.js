@@ -51,6 +51,10 @@ test('native capability specs expose provider-specific controls', () => {
   });
   assert.equal(getNativeImageCapabilities('agy', 'gemini-3.1-flash-image').maxInputImages, 14);
   assert.equal(getNativeImageCapabilities('agy', 'gemini-2.5-flash-image').maxInputImages, 1);
+  for (const provider of ['agy', 'gemini']) {
+    assert.equal(getNativeImageCapabilities(provider, 'gemini-3.1-flash-image').size, true);
+    assert.equal(getNativeImageCapabilities(provider, 'gemini-2.5-flash-image').size, false);
+  }
   assert.equal(getNativeImageCapabilities('grok', 'grok-imagine-image-2.0').maxInputImages, 3);
   assert.equal(getNativeImageCapabilities('grok', 'grok-imagine-image-quality').maxInputImages, 1);
   assert.equal(getNativeImageCapabilities('grok', 'grok-imagine-image').maxInputImages, 1);

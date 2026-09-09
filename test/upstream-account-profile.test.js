@@ -3,6 +3,20 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
+test('image API profile round-trips independently of chat wire API and preserves unknown dialects', () => {
+  const { resolveAccountImageApi } = require('../lib/server/upstream-account-profile');
+  for (const imageApi of ['llm-api', 'openai', 'future-api']) {
+    const env = buildUpstreamProfileEnv({ imageApi: ` ${imageApi.toUpperCase()} `, wireApi: 'chat' });
+    assert.equal(env.AIH_IMAGE_API, imageApi);
+    const profile = resolveUpstreamProfileFromEnv(env);
+    assert.equal(profile.upstreamImageApi, imageApi);
+    assert.equal(profile.upstreamWireApi, 'chat');
+    assert.deepEqual(buildUpstreamProfileEnv(profile), env);
+    assert.equal(resolveAccountImageApi(profile), imageApi);
+  }
+  assert.equal(resolveAccountImageApi({}), 'openai');
+});
+
 const {
   HEADER_OVERRIDES_ENV_KEY,
   WIRE_API_CHAT,

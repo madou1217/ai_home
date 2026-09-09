@@ -1645,6 +1645,38 @@ test('Gemini Code Assist credit decision respects unsupported models, low balanc
   );
 });
 
+test('native Gemini image responses decode gzip even without content-encoding', async (t) => {
+  const imageData = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  const payload = {
+    response: {
+      candidates: [{ finishReason: 'STOP', content: { parts: [
+        { inlineData: { mimeType: 'image/png', data: imageData } }
+      ] } }],
+      usageMetadata: { promptTokenCount: 5, candidatesTokenCount: 10, totalTokenCount: 15 }
+    }
+  };
+  t.mock.method(global, 'fetch', async (url) => {
+    if (String(url).includes(':loadCodeAssist')) {
+      return Response.json({ cloudaicompanionProject: 'projects/image-test' });
+    }
+    if (String(url).includes(':generateContent')) {
+      return new Response(zlib.gzipSync(JSON.stringify(payload)), { status: 200 });
+    }
+    throw new Error(`unexpected_url_${url}`);
+  });
+  const result = await fetchGeminiCodeAssistGenerateContent(
+    { agyBaseUrl: 'https://daily-cloudcode-pa.googleapis.com/v1internal' },
+    { provider: 'agy', authType: 'oauth-personal', accessToken: 'test-token' },
+    {
+      model: 'gemini-3.1-flash-image',
+      contents: [{ role: 'user', parts: [{ text: 'a blue circle' }] }],
+      generationConfig: { responseModalities: ['TEXT', 'IMAGE'] }
+    }
+  );
+  assert.deepEqual(result.response, payload.response);
+  assert.equal(result.modelVersion, 'gemini-3.1-flash-image');
+});
+
 test('fetchGeminiCodeAssistGenerateContent repairs native Gemini tool history generically', async (t) => {
   let generateBody = null;
   const diagnostics = [];

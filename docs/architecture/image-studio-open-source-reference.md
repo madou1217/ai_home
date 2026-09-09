@@ -88,6 +88,21 @@ Codex 图片策略不再经过 `/responses` 的 `image_generation` tool 请求�
 
 因此 AIH 的 Codex 原生模型目录只列 `gpt-image-2`，最多 5 张参考图，支持多输出、size、quality、background；不宣称支持 mask、output format、compression 或 moderation。api-key passthrough 账号仍可暴露其上游真实支持的其他图片模型。
 
+2026-09-09 原生 OAuth 实测发现，`chatgpt.com/backend-api/codex/images/generations` 会返回 HTTP 200 的 Brotli 压缩 JSON，但没有 `content-type` / `content-encoding`。公共 `image-generation-response.js` 必须保留二进制字节，再通过 `response-body.js` 解码，不能先转 UTF-8；网络字节和解压后 JSON 均受 `imageGenMaxResponseBytes` 限制。原生接口的 `data[].b64_json` 合同不变，该修复与 `llm-api` 的协议适配相互独立。
+
+### 6.1 API-key 账号的图片协议策略
+
+图片协议是账号上游的属性，与聊天用 `OPENAI_WIRE_API` 独立。账号凭证 env 的 `AIH_IMAGE_API` 未配置或为 `openai` 时使用标准 OpenAI 透传；显式 `llm-api` 选择独立适配器，未知值拒绝路由。策略不通过域名推测，也不改变 OAuth 账号路径。
+
+`llm-api` 契约核对来源：本机 `llm_api` 仓库 commit `61efadd99ea8036b6a9090d37b200cb2263edc46`，`sdk/api/handlers/openai/openai_images_handlers.go` 的 `buildImageGenerationRequest`、`buildImageEditRequest`、`normalizeCodexImageGenerationResponse`。其专用图片模型为 `gpt-image-2`，聊天 `/models` 不保证包含该模型，所以图片目录从显式账号协议补充能力，仅计入声明该协议的账号。
+
+- 客户端保持标准 `/v1/images/generations`、`/v1/images/edits`；JSON 和 multipart 编辑输入均进入同一规范请求，再由策略输出 JSON `images[].image_url` 与可选 `mask`。
+- 适配器补充非空 `purpose`、对象 `metadata`、默认 `output_format: png`；`size` 转成整数 `width` / `height`，每边 64–4096，未指定或 `auto` 使用 1024×1024。该范围是上游请求契约，返回像素尺寸仍取决于上游实际生成结果。
+- 上游根级 `b64_json` 转为规范图片结果，再由公共 renderer 返回 OpenAI `data[]` 或 AIH 图片 URL。公共传输层复用账号凭证、代理、错误诊断、响应大小限制，等待时间至少十分钟。
+- 支持单图输出、最多 16 张编辑参考图、PNG mask 和 png/jpeg/webp 输出格式。显式多输出、质量、背景、压缩和审核控制会在上游请求前拒绝，不静默丢弃。
+
+实现边界：`image-generation-api-profiles.js` 是策略/模型/能力声明源，`image-generation-strategy-registry.js` 按账号选择，`image-generation-llm-api.js` 只转换协议，`image-generation-api-transport.js` 只处理公共传输。
+
 ## 7. 当前实现映射
 
 | AIH 模块 | 职责 | 参考来源 |

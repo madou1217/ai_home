@@ -5,6 +5,38 @@ const assert = require('node:assert/strict');
 
 const { listImageStudioModels } = require('../lib/server/image-studio-model-catalog');
 
+test('explicit llm-api catalog is account-scoped even when chat models omit gpt-image-2', () => {
+  const base = { provider: 'codex', apiKeyMode: true, apiKey: 'key', availableModels: ['gpt-5.5'] };
+  const models = listImageStudioModels({ accounts: { codex: [
+    { ...base, accountRef: 'acct_image', upstreamImageApi: 'llm-api' },
+    { ...base, accountRef: 'acct_chat' },
+    { ...base, accountRef: 'acct_unknown', upstreamImageApi: 'future', availableModels: ['gpt-image-2'] }
+  ] } });
+  assert.equal(models.length, 1);
+  assert.equal(models[0].id, 'gpt-image-2');
+  assert.equal(models[0].accountCount, 1);
+  assert.equal(models[0].availableAccountCount, 1);
+  assert.equal(models[0].source, 'configured');
+  assert.equal(models[0].capabilities.edit, true);
+  assert.equal(models[0].capabilities.mask, true);
+  assert.equal(models[0].capabilities.multiple, false);
+  assert.equal(models[0].capabilities.quality, false);
+  assert.equal(models[0].capabilities.maxInputImages, 16);
+  assert.deepEqual(models[0].qualityOptions, []);
+});
+
+test('llm-api discovery cannot add unsupported models or widen its declared controls', () => {
+  const models = listImageStudioModels({ accounts: { codex: [{
+    provider: 'codex', accountRef: 'acct_image', apiKey: 'key', apiKeyMode: true,
+    upstreamImageApi: 'llm-api', availableModels: ['gpt-image-2', 'gpt-image-1']
+  }] } });
+  assert.equal(models.length, 1);
+  assert.equal(models[0].source, 'configured+discovered');
+  assert.equal(models[0].accountCount, 1);
+  assert.equal(models[0].capabilities.quality, false);
+  assert.equal(models[0].capabilities.multiple, false);
+});
+
 function oauthAccount(provider, accountRef, extra = {}) {
   return {
     provider,

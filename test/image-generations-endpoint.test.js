@@ -20,6 +20,68 @@ const { getImageBlob } = require('../lib/server/image-blob-store');
 
 const PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 
+test('llm-api facade normalizes generation and JSON/multipart edits to OpenAI data[]', async () => {
+  const { parseImageMultipartRequest } = require('../lib/server/image-generation-multipart');
+  for (const mode of ['generation', 'json-edit', 'multipart-edit']) {
+    const account = { provider: 'codex', accountRef: 'acct_image', apiKeyMode: true, apiKey: 'key',
+      upstreamImageApi: 'llm-api', openaiBaseUrl: 'https://example.com/v1' };
+    let requestJson = { model: 'gpt-image-2', prompt: 'a circle', size: '1024x1024' };
+    if (mode === 'json-edit') requestJson.images = [{ image_url: `data:image/png;base64,${PNG_BASE64}` }];
+    if (mode === 'multipart-edit') {
+      const form = new FormData();
+      Object.entries(requestJson).forEach(([key, value]) => form.append(key, value));
+      form.append('image', new Blob([Buffer.from(PNG_BASE64, 'base64')], { type: 'image/png' }), 'image.png');
+      const encoded = new Response(form);
+      requestJson = await parseImageMultipartRequest(Buffer.from(await encoded.arrayBuffer()), encoded.headers.get('content-type'));
+    }
+    let fetchCount = 0;
+    const ctx = makeCtx({
+      pathname: mode === 'generation' ? '/v1/images/generations' : '/v1/images/edits',
+      state: { accounts: { codex: [account] }, metrics: { totalSuccess: 0, totalFailures: 0 } },
+      requestJson,
+      deps: {
+        chooseServerAccount: (pool) => pool[0],
+        resolveGatewayProvider: () => ({ provider: 'codex' }),
+        fetchWithTimeout: async (url, init) => {
+          fetchCount += 1;
+          assert.equal(url.endsWith(mode === 'generation' ? '/generations' : '/edits'), true);
+          assert.equal(init.headers['content-type'], 'application/json');
+          const body = JSON.parse(init.body);
+          assert.equal(body.width, 1024);
+          assert.equal(body.size, undefined);
+          if (mode !== 'generation') assert.deepEqual(body.images, [{ image_url: `data:image/png;base64,${PNG_BASE64}` }]);
+          return { ok: true, status: 200, text: async () => JSON.stringify({ status: 'succeeded', b64_json: PNG_BASE64, mime_type: 'image/png' }) };
+        }
+      }
+    });
+    await handleImageGenerations(ctx);
+    assert.equal(ctx.res.statusCode, 200, ctx.res.body);
+    assert.equal(JSON.parse(ctx.res.body).data[0].b64_json, PNG_BASE64);
+    assert.equal(fetchCount, 1);
+  }
+});
+
+test('llm-api facade rejects unsupported controls before fetching and keeps unknown dialects closed', async () => {
+  for (const [extra, fields, code] of [
+    [{}, { quality: 'high' }, 'unsupported_image_quality'],
+    [{}, { n: 2 }, 'unsupported_image_count'],
+    [{}, { model: 'gpt-image-1' }, 'unsupported_model_for_images'],
+    [{ upstreamImageApi: 'unknown' }, {}, 'unsupported_image_provider']
+  ]) {
+    let calls = 0;
+    const account = { provider: 'codex', accountRef: 'acct_image', apiKeyMode: true, apiKey: 'key', upstreamImageApi: 'llm-api', ...extra };
+    const ctx = makeCtx({
+      state: { accounts: { codex: [account] }, metrics: { totalSuccess: 0, totalFailures: 0 } },
+      requestJson: { model: 'gpt-image-2', prompt: 'a circle', ...fields },
+      deps: { chooseServerAccount: (pool) => pool[0], resolveGatewayProvider: () => ({ provider: 'codex' }), fetchWithTimeout: async () => { calls += 1; } }
+    });
+    await handleImageGenerations(ctx);
+    assert.equal(ctx.res.statusCode, 400, ctx.res.body);
+    assert.equal(JSON.parse(ctx.res.body).error.code, code);
+    assert.equal(calls, 0);
+  }
+});
+
 function makeRes() {
   return {
     statusCode: 0,
@@ -286,6 +348,62 @@ test('handleImageGenerations renders a successful b64_json response and records 
   assert.equal(ctx.calls.usage[0].model, 'gemini-3.1-flash-image');
   assert.equal(ctx.calls.usage[0].sourceKind, 'server_image_generation');
   assert.equal(ctx.calls.usage[0].usageFormat, 'gemini');
+});
+
+test('Open Design generation and JSON edit requests preserve image aspect ratios through Gemini', async (t) => {
+  const sizes = [
+    ['1024x1024', '1:1'],
+    ['1792x1024', '16:9'],
+    ['1024x1792', '9:16'],
+    ['1408x1056', '4:3'],
+    ['1056x1408', '3:4'],
+    ['1536x1024', '3:2'],
+    ['1024x1536', '2:3']
+  ];
+  for (const mode of ['generations', 'edits']) {
+    for (const [size, aspectRatio] of sizes) {
+      await t.test(`${mode} ${size}`, async () => {
+        let captured;
+        const ctx = makeCtx({
+          pathname: `/v1/images/${mode}`,
+          routeKey: `images/${mode}`,
+          requestJson: {
+            model: 'gemini-3.1-flash-image', prompt: 'a blue circle', n: 1, size,
+            ...(mode === 'edits' ? {
+              images: [{ image_url: `data:image/png;base64,${PNG_BASE64}` }],
+              response_format: 'b64_json'
+            } : {})
+          },
+          deps: {
+            fetchGeminiCodeAssistGenerateContent: async (_options, _account, request) => {
+              captured = request;
+              return { candidates: [{ content: { parts: [{ inlineData: { mimeType: 'image/png', data: PNG_BASE64 } }] } }] };
+            }
+          }
+        });
+        await handleImageGenerations(ctx);
+        assert.equal(ctx.res.statusCode, 200, ctx.res.body);
+        assert.deepEqual(captured.generationConfig.imageConfig, { aspectRatio, imageSize: '1K' });
+        assert.deepEqual(captured.contents[0].parts, [
+          { text: 'a blue circle' },
+          ...(mode === 'edits' ? [{ inlineData: { mimeType: 'image/png', data: PNG_BASE64 } }] : [])
+        ]);
+        assert.equal(JSON.parse(ctx.res.body).data[0].b64_json, PNG_BASE64);
+      });
+    }
+  }
+});
+
+test('unsupported Gemini image sizes fail without an upstream request', async () => {
+  let requests = 0;
+  const ctx = makeCtx({
+    requestJson: { model: 'gemini-3.1-flash-image', prompt: 'a circle', size: '123x456' },
+    deps: { fetchGeminiCodeAssistGenerateContent: async () => { requests += 1; } }
+  });
+  await handleImageGenerations(ctx);
+  assert.equal(ctx.res.statusCode, 400);
+  assert.equal(JSON.parse(ctx.res.body).error.code, 'unsupported_image_size');
+  assert.equal(requests, 0);
 });
 
 test('图片请求在选定账号后使用该账号的出口选项', async () => {

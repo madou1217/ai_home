@@ -502,6 +502,7 @@ test('configureApiKeyAccount persists a relay upstream profile for codex account
       apiKey: 'sk-relay-123456',
       baseUrl: 'https://relay.example.com/api/v1',
       wireApi: 'chat/completions',
+      imageApi: 'llm-api',
       headerOverrides: { 'X-Client-Type': 'relay-cli' }
     }
   });
@@ -509,6 +510,7 @@ test('configureApiKeyAccount persists a relay upstream profile for codex account
   const envJson = readAccountCredentials(fs, root, result.accountRef);
 
   assert.equal(envJson.OPENAI_WIRE_API, 'chat');
+  assert.equal(envJson.AIH_IMAGE_API, 'llm-api');
   assert.deepEqual(JSON.parse(envJson.AIH_UPSTREAM_HEADERS), { 'x-client-type': 'relay-cli' });
 });
 
@@ -2685,4 +2687,3 @@ test('startOauthJob resolves qodercn through ensureNativeCli success path', asyn
   const launchBlob = `${launch.command} ${(launch.args || []).join(' ')}`;
   assert.match(launchBlob, /qoderclicn\.exe/i);
 });
-

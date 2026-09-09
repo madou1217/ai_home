@@ -12,9 +12,26 @@ const {
   }
 } = require('../lib/server/image-generation-codex');
 const { ImageGenerationError } = require('../lib/server/image-generation-strategy');
+const { brotliCompressSync } = require('node:zlib');
 
 const PNG_DATA_URL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 const PNG_BASE64 = PNG_DATA_URL.split(',')[1];
+
+test('codex native generation and edit decode real headerless Brotli image envelopes', async () => {
+  const payload = { data: [{ b64_json: PNG_BASE64 }], usage: { total_tokens: 11 } };
+  const strategy = createCodexImageGenerationStrategy({
+    fetchWithTimeout: async () => new Response(brotliCompressSync(Buffer.from(JSON.stringify(payload))))
+  });
+  for (const mode of ['generation', 'edit']) {
+    const result = await strategy.generate({
+      mode, model: 'gpt-image-2', prompt: 'a circle', quality: 'low',
+      images: [{ mimeType: 'image/png', data: PNG_BASE64 }],
+      account: codexAccount(), options: codexOptions()
+    });
+    assert.deepEqual(result.images, [{ b64_json: PNG_BASE64 }]);
+    assert.equal(result.usageInput.usage.total_tokens, 11);
+  }
+});
 
 function okResponse(json) {
   return {

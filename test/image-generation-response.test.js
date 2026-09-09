@@ -5,6 +5,41 @@ const assert = require('node:assert/strict');
 
 const { readImageGenerationResponseText } = require('../lib/server/image-generation-response');
 const { ImageGenerationError } = require('../lib/server/image-generation-strategy');
+const zlib = require('node:zlib');
+
+test('image response reader decodes headerless Brotli/gzip for every byte transport', async () => {
+  const json = JSON.stringify({ data: [{ b64_json: 'image-payload' }], usage: { total_tokens: 10 } });
+  for (const compress of [zlib.brotliCompressSync, zlib.gzipSync]) {
+    const bytes = compress(Buffer.from(json));
+    const factories = [
+      () => new Response(bytes),
+      () => ({ arrayBuffer: async () => bytes }),
+      () => ({ body: (async function* () { yield bytes.subarray(0, 5); yield bytes.subarray(5); })() })
+    ];
+    for (const factory of factories) {
+      assert.equal(await readImageGenerationResponseText(factory()), json);
+    }
+  }
+});
+
+test('image response reader bounds decompressed payloads, including headerless compressed bodies', async () => {
+  const json = JSON.stringify({ data: [{ b64_json: 'A'.repeat(20000) }] });
+  for (const [encoding, compress] of [['br', zlib.brotliCompressSync], ['gzip', zlib.gzipSync]]) {
+    const bytes = compress(Buffer.from(json));
+    assert.ok(bytes.length < 1024);
+    for (const headers of [{}, { 'content-encoding': encoding }]) {
+      await assert.rejects(
+        readImageGenerationResponseText(new Response(bytes, { headers }), { imageGenMaxResponseBytes: 1024 }),
+        { code: 'upstream_response_too_large', statusCode: 502 }
+      );
+    }
+  }
+});
+
+test('image response reader accepts already decoded JSON with a stale compression header', async () => {
+  const json = JSON.stringify({ data: [{ b64_json: 'already-decoded' }] });
+  assert.equal(await readImageGenerationResponseText(new Response(json, { headers: { 'content-encoding': 'br' } })), json);
+});
 
 function responseWithReader(reader) {
   return {

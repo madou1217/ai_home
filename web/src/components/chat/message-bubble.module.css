@@ -453,26 +453,6 @@
   color: var(--chat-muted);
 }
 
-.messageMarkdown table {
-  width: 100%;
-  border-collapse: collapse;
-  margin: var(--hos-space-3, 12px) 0;
-  font-size: var(--hos-text-body-sm, 13px);
-}
-
-.messageMarkdown th,
-.messageMarkdown td {
-  border: 1px solid var(--chat-panel-border);
-  padding: var(--hos-space-2, 8px) var(--hos-space-2-5, 10px);
-  text-align: left;
-  vertical-align: top;
-}
-
-.messageMarkdown th {
-  background: var(--chat-panel-muted-bg);
-  color: var(--color-muted-strong);
-}
-
 .messageMarkdown a,
 .messageMarkdownInline a {
   color: var(--color-muted-strong);
@@ -1318,7 +1298,7 @@
 }
 
 .messageMarkdown th {
-  background: rgba(0, 0, 0, 0.03);
+  background: var(--color-overlay-subtle);
   padding: var(--hos-space-2, 9px) var(--hos-space-3, 12px); /* 归级:原 9px */
   font-weight: 600;
   color: var(--color-heading, #1f1f1f);

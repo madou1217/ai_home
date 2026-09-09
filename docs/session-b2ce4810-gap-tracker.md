@@ -399,7 +399,6 @@ markdown 表格卡片在深色下仍为浅底(`chat.module.css`)。
 |---|---|---|
 | 图像工坊 CONTROL DESK 的能力标签在深色下近乎不可读 | `--studio-paper` 纸面板 | 纸面板跟随主题但其上标签色未跟随,需设计决策 |
 | 移动端空态文案深色下近乎不可读 | `components/mobile/*` | 同 12.4 |
-| markdown 表格卡片深色下仍为浅底(**仅 PC**;移动端走 message-bubble 已随本轮修复) | `chat.module.css`(153KB,未纳入本轮) | 同 12.4 |
 
 > D3/D5/B24 维持 ⚠️:一个文件不构成全站结论,且矩阵里的 ✅ 多为自评,按 §二 #7 的教训必须逐页截图验收后才可升级。
 
@@ -440,6 +439,17 @@ CSS 覆写只能改到显式点名的选择器,够不到 antd 派生的按钮描
   带 `!important` 的浅色字面值会压过 antd 深色 token,已在文件头写明禁令。
 - `--tint-*/--ink-*/--bd-*` 补深色档(半透明色相底 + 浅色前景);此前 Alert 是浅底 + antd 深色白字,不可读。
 - 测试:`services/theme-mode.test.ts` 5 项(取值判定、无 MutationObserver 退化、同值不通知、取消订阅、深浅键集一致)。
+
+### 13.5 §12.6「markdown 表格浅底」条目撤回(误判)
+
+该条两处都写错了:①`chat.module.css` 早已在 `92eac59e` 域拆分中删除,不存在;
+②实测父文档 `document.querySelector('table')` 返回空——截图里那张"表格"是**模型生成的 HTML 在沙箱 iframe 内**,
+是会话内容而非本项目 chrome,本就不应被主题化。条目撤回。
+
+排查中另外捞到两处真问题并已修:
+- `message-bubble.module.css` `.messageMarkdown th` 的 `rgba(0, 0, 0, 0.03)` —— Wave 8 codemod 的叠加档覆盖了
+  0.02/0.04/0.05/0.06 却漏了 0.03,已改 `--color-overlay-subtle`;
+- 同文件存在**两段 `.messageMarkdown table`/`th` 重复定义**,靠前一段被完全覆盖,属死代码,已删。
 
 ### 13.4 验收
 

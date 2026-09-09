@@ -446,5 +446,10 @@ CSS 覆写只能改到显式点名的选择器,够不到 antd 派生的按钮描
 - `bun test src` **448 pass / 0 fail**;`npm run build` 通过;改动文件 eslint 0 错误。
 - 实测每个组件深浅取值均已不同,例:`.ant-btn-default` `#ffffff`/`rgb(30,41,59)`,描边 `#e2e8f0`/`rgba(255,255,255,0.12)`。
 - chat / settings / models / accounts / dashboard × 1440×900 与 390×844 × 深浅双主题截图:0 console 错误、0 横向溢出。
+- **运行时切换实测**(此前只验了初始解析,没验 MutationObserver → useSyncExternalStore → ConfigProvider 重渲染这条真实路径):
+  同一会话内 浅→深→浅 连续切换,`.ant-btn-default` `#fff`→`rgb(30,41,59)`→`#fff`、`.ant-input`、`.ant-pro-sider`
+  `rgba(255,255,255,.65)`→`rgba(15,23,42,.75)`、`.ant-menu-item-selected` 全部双向复原,无需刷新。
+- 附带结论:`app.tsx` 的 `navTheme: "light"` 对配色是失效声明——侧栏与选中项实际由本项目 CSS 控制并跟随主题。
+  名不副实但无害,未改动。
 - 提交 `48622ed2`(主题层)、`c4b69c50`(覆写层与状态色)。
 

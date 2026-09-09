@@ -491,6 +491,21 @@ body.dark {
   --color-overlay-subtle: rgba(255, 255, 255, 0.04);
   --color-overlay: rgba(255, 255, 255, 0.09);
 
+  /* 状态弱底与其前景：浅色版是不透明浅底 + 深色文字，深色下必须换成
+   * 半透明色相底 + 浅色文字，否则是深色页面上的一块浅底白字。 */
+  --tint-info: rgba(59, 130, 246, 0.16);
+  --ink-info: #93c5fd;
+  --tint-success: rgba(16, 185, 129, 0.16);
+  --ink-success: #6ee7b7;
+  --bd-success: rgba(16, 185, 129, 0.35);
+  --tint-warning: rgba(245, 158, 11, 0.16);
+  --ink-warning: #fcd34d;
+  --tint-danger: rgba(239, 68, 68, 0.16);
+  --ink-danger: #fca5a5;
+  --bd-danger: rgba(239, 68, 68, 0.35);
+  --tint-neutral: rgba(255, 255, 255, 0.06);
+  --ink-neutral: #94a3b8;
+
   --hos-glass-bg-subtle: rgba(30, 41, 59, 0.65);
   --hos-glass-bg-card: rgba(30, 41, 59, 0.78);
   --hos-glass-bg-floating: rgba(30, 41, 59, 0.88);

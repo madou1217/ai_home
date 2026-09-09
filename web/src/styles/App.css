@@ -49,7 +49,10 @@ button {
   color: var(--hos-heading, #0f172a);
 }
 
-/* ===== HarmonyOS 6 全局 Ant Design 组件超级曲率与通透材质重塑 ===== */
+/* ===== HarmonyOS 6 全局 Ant Design 组件超级曲率与通透材质重塑 =====
+ * 本层只负责材质（曲率、毛玻璃、阴影、动效）与少量表面/描边的主题化取值，
+ * 一律引用语义 token；配色由 AntdThemeProvider 的 darkAlgorithm 承担。
+ * 这里禁止再写浅色字面值——带 !important 的字面值会压过 antd 的深色 token。 */
 
 /* 1. 弹窗 (Modal) 浮岛规范 */
 .ant-modal-content {
@@ -57,7 +60,7 @@ button {
   background: var(--hos-glass-bg-floating, rgba(255, 255, 255, 0.92)) !important;
   backdrop-filter: var(--hos-blur-floating, blur(32px) saturate(200%)) !important;
   -webkit-backdrop-filter: var(--hos-blur-floating, blur(32px) saturate(200%)) !important;
-  border: 0.8px solid var(--color-border-subtle, rgba(255, 255, 255, 0.8)) !important;
+  border: 0.8px solid var(--color-border-subtle) !important;
   box-shadow: var(--hos-shadow-floating, 0 16px 40px -4px rgba(0, 0, 0, 0.08)) !important;
 }
 
@@ -67,7 +70,7 @@ button {
   background: var(--hos-glass-bg-floating, rgba(255, 255, 255, 0.92)) !important;
   backdrop-filter: var(--hos-blur-floating, blur(32px) saturate(200%)) !important;
   -webkit-backdrop-filter: var(--hos-blur-floating, blur(32px) saturate(200%)) !important;
-  border-left: 0.8px solid var(--color-border-subtle, rgba(255, 255, 255, 0.8)) !important;
+  border-left: 0.8px solid var(--color-border-subtle) !important;
 }
 
 /* 3. 浮层菜单 (Dropdown / Select Dropdown / Popover) */
@@ -78,7 +81,7 @@ button {
   background: var(--hos-glass-bg-floating, rgba(255, 255, 255, 0.92)) !important;
   backdrop-filter: var(--hos-blur-floating, blur(32px) saturate(200%)) !important;
   -webkit-backdrop-filter: var(--hos-blur-floating, blur(32px) saturate(200%)) !important;
-  border: 0.8px solid var(--color-border-subtle, rgba(255, 255, 255, 0.8)) !important;
+  border: 0.8px solid var(--color-border-subtle) !important;
   box-shadow: var(--hos-shadow-floating, 0 12px 32px -4px rgba(0, 0, 0, 0.08)) !important;
   padding: var(--hos-space-2, 8px) !important;
 }
@@ -87,15 +90,15 @@ button {
 .ant-input,
 .ant-input-affix-wrapper {
   border-radius: var(--hos-radius-sm, 14px) !important;
-  border: 1px solid rgba(0, 0, 0, 0.08) !important;
-  background: rgba(255, 255, 255, 0.8) !important;
+  border: 1px solid var(--color-border) !important;
+  background: var(--hos-glass-bg-subtle) !important;
   transition: all 0.18s var(--hos-ease-smooth, cubic-bezier(0.2, 0.8, 0.2, 1)) !important;
 }
 
 .ant-input:focus,
 .ant-input-affix-wrapper:focus,
 .ant-input-affix-wrapper-focused {
-  background: var(--hos-white, #ffffff) !important;
+  background: var(--color-surface) !important;
   border-color: var(--hos-blue-700, #0a59f7) !important;
   box-shadow: 0 0 0 3px rgba(10, 89, 247, 0.18) !important;
 }
@@ -103,13 +106,13 @@ button {
 /* 5. 选择器 (Select) 鸿蒙微光规范 */
 .ant-select-selector {
   border-radius: var(--hos-radius-sm, 14px) !important;
-  border: 1px solid rgba(0, 0, 0, 0.08) !important;
-  background: rgba(255, 255, 255, 0.8) !important;
+  border: 1px solid var(--color-border) !important;
+  background: var(--hos-glass-bg-subtle) !important;
   transition: all 0.18s var(--hos-ease-smooth, cubic-bezier(0.2, 0.8, 0.2, 1)) !important;
 }
 
 .ant-select-focused .ant-select-selector {
-  background: var(--hos-white, #ffffff) !important;
+  background: var(--color-surface) !important;
   border-color: var(--hos-blue-700, #0a59f7) !important;
   box-shadow: 0 0 0 3px rgba(10, 89, 247, 0.18) !important;
 }
@@ -139,7 +142,7 @@ button {
 /* 7. 分段控制器 (Segmented) 鸿蒙滑动胶囊 */
 .ant-segmented {
   border-radius: var(--hos-radius-pill, 9999px) !important;
-  background: rgba(0, 0, 0, 0.04) !important;
+  background: var(--color-overlay) !important;
   padding: var(--hos-space-1, 4px) !important;
 }
 
@@ -150,7 +153,7 @@ button {
 }
 
 .ant-segmented-item-selected {
-  background: var(--hos-white, #ffffff) !important;
+  background: var(--color-surface) !important;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06) !important;
   color: var(--hos-blue-700, #0a59f7) !important;
 }
@@ -161,15 +164,15 @@ button {
 }
 
 .ant-table-wrapper .ant-table-thead > tr > th {
-  background: rgba(241, 245, 249, 0.5) !important;
+  background: var(--hos-glass-bg-subtle) !important;
   backdrop-filter: blur(12px) !important;
-  color: #475569 !important;
+  color: var(--color-muted-strong) !important;
   font-weight: 700 !important;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.05) !important;
+  border-bottom: 1px solid var(--color-border-subtle) !important;
 }
 
 .ant-table-wrapper .ant-table-tbody > tr > td {
-  border-bottom: 1px solid rgba(0, 0, 0, 0.03) !important;
+  border-bottom: 1px solid var(--color-overlay-subtle) !important;
 }
 
 .ant-table-wrapper .ant-table-tbody > tr:hover > td {

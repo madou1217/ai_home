@@ -370,5 +370,30 @@
 已观察到但未修的同类深色缺陷:移动端空态文案 `暂无对话,点击上方发起新对话` 在深色下近乎不可读(`components/mobile/*`);
 markdown 表格卡片在深色下仍为浅底(`chat.module.css`)。
 
+### 12.5 Wave 8 第二轮:剩余 240 处收口(2026-09-09)
+
+- **落地 124 处 / 8 文件**(`17d07c78`):file-preview 57、message-bubble 27、message-area 19、Settings 8、
+  session-list 8、Models 3、EventBlock 1、composer 1。映射按「属性类别 × 色阶位置」:
+  `color:`→文本档、`background:`→表面档、`border*:`→描边档;语义层本就是这些 primitive 的别名,**光模式逐值等价**。
+- **新增 `--color-disabled`**:禁用按钮/拖拽握柄/打字尾字符此前只能取 `--c-neutral-300`(faint 之下无档),
+  浅色 `#cbd5e1`(等值)、深色 `#475569`。
+- **两个文件按刻意深色 chrome 保留并写入注释**:`image-studio.module.css`(石墨暗房:胶片栏与画布在浅色主题下同样是深色面,
+  57 处)、`pages/Toolkit.css`(终端/日志控制台,12 处)。翻转它们会在浅色主题下造成深字压深面。
+  studio 唯一与主题无关的一处(品牌按钮白字)已改 `--color-on-brand`。
+- **剩余 116 处的构成**:57 studio chrome + 12 console chrome + 2 Settings 深色代码块及其配对浅色文字 1 处 +
+  7 处 `box-shadow` color-mix + 1 处阴影内高光 + 35 处状态/品牌色(danger/info/success/brand/accent,两主题通用)。
+  **即:除两个 chrome 文件外,"会随主题翻转的中性面/文字/描边"这一类已全部收口。**
+- 验收:`npm run build` + 刷新 9527/ui;chat / settings / models / studio 四页 × 1440×900 与 390×844 × 深浅双主题截图,
+  0 console 错误、0 横向溢出。深色下会话列表标题由近乎不可读的灰变为可读,浅色无变化。
+
+### 12.6 本轮新观察到、尚未修的深色缺陷
+
+| 现象 | 位置 | 性质 |
+|---|---|---|
+| antd 输入框/次级按钮在深色下仍是白底深字 | 全站表单(设置页最明显) | 全局 antd 覆写层(`styles/App.css`)未主题化,非 primitive 问题 |
+| 图像工坊 CONTROL DESK 的能力标签在深色下近乎不可读 | `--studio-paper` 纸面板 | 纸面板跟随主题但其上标签色未跟随,需设计决策 |
+| 移动端空态文案深色下近乎不可读 | `components/mobile/*` | 同 12.4 |
+| markdown 表格卡片深色下仍为浅底 | `chat.module.css` | 同 12.4 |
+
 > D3/D5/B24 维持 ⚠️:一个文件不构成全站结论,且矩阵里的 ✅ 多为自评,按 §二 #7 的教训必须逐页截图验收后才可升级。
 

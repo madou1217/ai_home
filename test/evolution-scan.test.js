@@ -90,6 +90,47 @@ test('parseTrackingDocument 解析表格行：状态、标题、出处行号', (
   assert.equal(missing.status, 'missing');
 });
 
+const SAMPLE_STATUS_CHANGE = [
+  '# 样例状态变更表',
+  '',
+  '## 七、状态变更表',
+  '',
+  '| 条目 | 原状态 | 新状态 | 证据 |',
+  '|------|--------|--------|------|',
+  '| F17 三栏同屏 | ❌ | ✅ | `WorkbenchColumns.tsx`;16 项测试过 |',
+  '| F21 虚拟列表 | ⚠️ | ❌ 已回退 | 组件已删除 |',
+  '| D3 字阶落实 | ⚠️ | ⚠️(大幅推进) | 455 处迁移;圆角/间距/色系未做 |',
+  ''
+].join('\n');
+
+test('parseTrackingDocument 状态变更表取最右状态列（原状态不得覆盖新状态）', () => {
+  const { items } = parseTrackingDocument(SAMPLE_STATUS_CHANGE, 'docs/sample-change.md');
+  assert.equal(items.length, 3);
+
+  // 已交付项：原状态 ❌ 必须让位于新状态 ✅，否则扫描器会把已完成功能重新排进下一轮。
+  const shipped = items[0];
+  assert.equal(shipped.status, 'done');
+  assert.equal(shipped.title, 'F17 三栏同屏');
+
+  // 回退项方向相反：原状态 ⚠️、新状态 ❌，同样以最右列为准。
+  assert.equal(items[1].status, 'missing');
+  assert.equal(items[2].status, 'partial');
+});
+
+test('parseTrackingDocument 审计表在「审计结论 | 当前状态」中取当前状态', () => {
+  const doc = [
+    '## 一、审计',
+    '',
+    '| # | 需求(出处) | 审计结论 | 当前状态 | 证据 |',
+    '|---|---|---|---|---|',
+    '| 1 | 列表无法滚动(L11987) | ❌ 根容器未滚动 | ✅ | Playwright 实测 |',
+    ''
+  ].join('\n');
+  const { items } = parseTrackingDocument(doc, 'docs/sample-audit.md');
+  assert.equal(items.length, 1);
+  assert.equal(items[0].status, 'done');
+});
+
 test('parseTrackingDocument 解析复选框 TODO 行', () => {
   const { items } = parseTrackingDocument(SAMPLE_MATRIX, 'docs/sample-matrix.md');
   const doneTodo = items.find((item) => item.id === 'TODO-A1');

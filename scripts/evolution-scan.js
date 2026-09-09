@@ -210,22 +210,27 @@ function parseTrackingDocument(markdown, source) {
     if (!tableHeader) {
       const nextLine = lines[index + 1] || '';
       if (/^\s*\|/.test(nextLine) && isSeparatorRow(splitTableRow(nextLine))) {
-        const titleCol = cells.findIndex((cell) => /需求|功能|特性|缺陷/.test(cell));
-        const statusCol = cells.findIndex((cell) => /状态|结论/.test(cell));
+        const titleCol = cells.findIndex((cell) => /需求|功能|特性|缺陷|条目/.test(cell));
+        // 状态列取最右一个：状态变更表是「原状态 | 新状态」两列，
+        // 审计表是「审计结论 | 当前状态」，当前状态永远在右侧，取首个会读到历史状态。
+        const statusCol = cells.reduce(
+          (found, cell, columnIndex) => (/状态|结论/.test(cell) ? columnIndex : found),
+          -1
+        );
         tableHeader = { titleCol, statusCol };
       }
       return;
     }
 
-    // 数据行：状态列取标记；状态列没有标记时回退为整行首个含标记的单元格。
+    // 数据行：状态列取标记；状态列没有标记时回退为整行最右一个含标记的单元格
+    // （同一「最右即当前」规则，避免回退到历史状态列）。
     let markerEntry = null;
     if (tableHeader.statusCol >= 0 && cells[tableHeader.statusCol] !== undefined) {
       markerEntry = findMarker(cells[tableHeader.statusCol]);
     }
     if (!markerEntry) {
-      for (const cell of cells) {
-        markerEntry = findMarker(cell);
-        if (markerEntry) break;
+      for (let cursor = cells.length - 1; cursor >= 0 && !markerEntry; cursor -= 1) {
+        markerEntry = findMarker(cells[cursor]);
       }
     }
     if (!markerEntry) return; // 无状态标记的行（如「本次修复清单」表）不纳入追踪

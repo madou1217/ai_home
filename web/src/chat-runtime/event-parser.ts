@@ -117,6 +117,9 @@ function validateDomainPayload(
       ...(payload.retryable === undefined ? {} : {
         retryable: booleanValue(payload.retryable, 'chat_runtime_failed_turn_retryable_invalid'),
       }),
+      ...(payload.outcomeUnknown === undefined ? {} : {
+        outcomeUnknown: booleanValue(payload.outcomeUnknown, 'chat_runtime_failed_turn_outcome_invalid'),
+      }),
     };
   }
   if (type.startsWith('turn.') || type === 'run.adopted') {

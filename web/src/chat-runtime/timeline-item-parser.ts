@@ -26,7 +26,7 @@ import {
 import type { TimelineItem, TimelineItemStatus } from './types';
 
 const ITEM_STATUSES = new Set<TimelineItemStatus>([
-  'pending', 'running', 'waiting_input', 'completed', 'failed', 'cancelled',
+  'pending', 'running', 'waiting_input', 'completed', 'failed', 'cancelled', 'unknown',
 ]);
 const DETAIL_PARSERS: Readonly<Record<TimelineItem['kind'], (value: unknown) => unknown>> = {
   message: parseMessageDetail,

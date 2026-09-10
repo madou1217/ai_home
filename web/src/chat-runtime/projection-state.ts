@@ -135,6 +135,7 @@ export class ProjectionState {
         turnId: event.turnId, failedAt: event.at,
         error: event.payload.error || { code: 'chat_turn_failed', message: '本轮执行失败' },
         retryable: event.payload.retryable === true,
+        ...(event.payload.outcomeUnknown === true ? { outcomeUnknown: true } : {}),
       };
     } else if (['turn.queued', 'turn.started', 'turn.completed', 'turn.interrupted', 'run.lost'].includes(event.type)) {
       this.failedTurn = undefined;
@@ -158,6 +159,11 @@ export class ProjectionState {
     if (event.type === 'run.lost') {
       if (this.state !== 'closed') this.state = 'idle';
       this.activeTurn = undefined;
+      if (event.turnId) this.failedTurn = {
+        turnId: event.turnId, failedAt: event.at, retryable: false, outcomeUnknown: true,
+        error: { code: String(event.payload.error.code || 'chat_run_lost'),
+          message: typeof event.payload.error.message === 'string' ? event.payload.error.message : undefined },
+      };
       return true;
     }
     return false;

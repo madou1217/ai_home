@@ -18,5 +18,8 @@ export function parseFailedTurn(value: unknown): FailedTurn {
     failedAt: nonNegativeInteger(source.failedAt, 'chat_runtime_failed_turn_at_invalid'),
     error: parseTurnError(source.error),
     retryable: booleanValue(source.retryable, 'chat_runtime_failed_turn_retryable_invalid'),
+    ...(source.outcomeUnknown === undefined ? {} : {
+      outcomeUnknown: booleanValue(source.outcomeUnknown, 'chat_runtime_failed_turn_outcome_invalid'),
+    }),
   };
 }

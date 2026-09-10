@@ -105,6 +105,9 @@ function TimelineItemView({
             ))}
           </div>
         ) : null}
+        {item.status === 'unknown' ? <div className={styles.runtimeNotice} role="status">
+          执行结果未收到，无法确认是否完成。请先核对实际结果，再决定是否重试。
+        </div> : null}
         {eventBody(item)}
       </EventBlock>
     </>
@@ -163,11 +166,11 @@ function CodeDetail({ primary, secondary }: { primary: string; secondary?: strin
 function statusPresentation(item: TimelineItem): EventStatus {
   const labels = {
     pending: '等待', running: '运行中', waiting_input: '等待输入', completed: '完成',
-    failed: '失败', cancelled: '已取消',
+    failed: '失败', cancelled: '已取消', unknown: '结果未知',
   } as const;
   const tones = {
     pending: 'neutral', running: 'running', waiting_input: 'attention', completed: 'success',
-    failed: 'failed', cancelled: 'cancelled',
+    failed: 'failed', cancelled: 'cancelled', unknown: 'attention',
   } as const;
   return { label: labels[item.status], tone: tones[item.status], dot: item.status === 'running' };
 }

@@ -51,7 +51,7 @@
 | Chat role | 持久化校验、执行前读取并注入 | 会话设置，下一轮生效 | reload、原生 resume、分支继承和 Kimi 回答通过 | 本批已验 |
 | 上下文量与手动/自动压缩 | 当前用量持久投影；native 单一自动循环 | 紧凑指标、压缩入口、50–90% 阈值 | 自动阈值、失败、reload；Kimi 手动压缩后续聊通过 | 本批已验，覆盖边界见下 |
 | 命令队列、停止与故障恢复 | 正常结束与停止/失败分开；持久暂停、run 边界校验、停止意图恢复 | 运行中发送入口、队列暂停状态 | 服务级、原生和真实 Kimi 停止/恢复已验；见队列专题 | 本批已补齐已发现缺口，持续审计 |
-| 工具输出、工具配对、审批、并行提交顺序 | Work 模式已有部分 | 已有部分 | 需要逐能力协议审计 | 后续专题 |
+| 工具输出、工具配对、审批、并行提交顺序 | 已补终态收敛和未知结果保护；配对/顺序仍需审计 | 未确认结果显示“结果未知” | 进程退出、历史导入及隔离组件已验；见恢复专题 | 分专题推进 |
 | 扩展点、preset、技能、预算和调度 | 现有 provider registry | 非本批 UI 目标 | 比较 Pi/DSH 接缝，按具体需求接入 | 后续专题 |
 
 本批先完成前三项缺口的后端→前端→native→真实页面闭环，再修正旧矩阵证据。长期专题保留明确边界，不把“全面研究”解释为复制所有插件或添加未要求的 Graph/Diff 产品。
@@ -135,3 +135,29 @@
 最终验证（本专题）：全量 `node --test --test-concurrency=1 test/*.test.js` 为 6531 tests、6518 pass、13 skip、0 fail（`/tmp/aih-queue-full-final.log`）；相关 Web 测试 186 pass（`bun test web/src/chat-runtime web/src/features/chat-runtime`）；5 个改动 Web 文件的 ESLint 通过；Node 22 下 `cd web && npm run build` 通过，日志为 `/tmp/aih-queue-{web,eslint,build}-final.log`。首次全量只失败在旧事件序列断言缺少新增的 `session.policy.changed`；补齐该断言后全量通过，没有屏蔽用例。
 
 设计模式：`automatic-queue-boundary-strategy/session-queue-lifecycle` → Strategy + Command → 将调度意图和 Actor 内并发校验分开 → 旧边界与停止回归；`store/recovery-repository` → 事务与状态机 → 暂停、停止意图和队列归属持久一致 → 重启/FIFO测试；`composer-policy/QueueDock` → 持久状态投影 → 页面反映服务端真实暂停而非本地推测 → Kimi 刷新验收。SOLID 保持调度、存储、执行与渲染边界；DRY 复用 policy/命令日志；KISS/YAGNI 不增加单独队列引擎或后台重试循环。
+
+## 恢复专题：工具结果未知与终态收敛（2026-09-10）
+
+源码依据：固定 DSH `aa8262ec` 的 `packages/core/session/src/repair.ts` 使用 Map 按 callId 配对，区分 `TOOL_NOT_STARTED` 与 `TOOL_OUTCOME_UNKNOWN`，只为没有结果的尾部调用生成收尾记录；`packages/core/agent/src/consumed-work.ts` 从持久 inbox/turn 事件判断输入是否真正被消费。AIH 吸收其“未确认结果不能当成成功”的原则，保留自己的命令日志、事件库和执行 Adapter。
+
+实际复现：旧 `RecoveryRepository.fail` 清除了 activeTurn，但未关闭工具 timeline；普通停止/失败的 `TurnMetricsRepository` 仅收尾消息和思考。`thread/read` 导入终态回合时，显式 `inProgress` 工具也仍显示 running。新增故障注入测试在修改前 7 fail、1 pass，证明这些缺口。
+
+本次实现：
+
+- `timeline-settlement.js` 统一收尾策略：已有 completed/failed/cancelled 结果保持原样，仍在运行的 tool/shell/file_change/subagent/command/terminal 标为 unknown，保留参数、部分输出和原始事件，不伪造 exitCode 或 tool result。规则同时用于本地回合终态和原生终态历史。
+- 收尾、回答 metrics、暂停队列与 run.lost 在同一 SQLite 事务内提交；run.lost 时也保留耗时/首字时间，压缩状态不再无限 running。即使执行器报告回合 completed，只要存在未知工具结果，待发消息仍暂停。
+- 重复恢复不重复追加工具收尾；过时的 running/unknown 历史不能覆盖已记录结果，也不能让 unknown 重新转圈。之后取得明确完成/失败/取消结果时，才解除该工具的未知状态。
+- failedTurn 的 unknown 标记从持久日志进入 snapshot/SSE；未确认的回合不提供一键重试，服务端也拒绝该重试命令。普通无未知工具的失败仍按原规则可重试；用户核对后仍可显式发送新消息。
+- 前端复用 EventBlock 的紧凑状态、折叠详情和 TurnFeedback 行内文案，显示“结果未知”，不增加大块告警和粗左侧装饰条。
+
+持久化边界：`app-state-store.js` 当前为 WAL + synchronous NORMAL，事务保证本地原子性；已验证应用进程退出后的记录保留，**未验证断电耐久性**。Codex 的 item/started 通知是事后观察，不是 AIH 控制的“先落 intent、再执行”屏障。没有通知或没有结果均不能证明外部操作未执行，因此本次不声称外部副作用 exactly-once、不将 unknown 伪装成 TOOL_NOT_STARTED，也不向模型注入合成工具结果。执行器自身的恢复语义、独立原生进程被杀的工具结果窗口和 Work 历史配对仍是后续专题。
+
+验证：
+
+- `test/chat-runtime-tool-recovery.test.js` 9 pass：四类回合终态、明确结果保护、历史乱序、事务回滚/幂等、压缩收尾；真实子进程分别在记录调用后、写入 marker 后、结果落盘后直接退出且不关闭数据库，再由服务恢复。marker 最多写一次，startTurn 没有重发，snapshot/分页/重新打开数据库状态一致。
+- Node 全量串行 6540 tests、6527 pass、13 skip、0 fail；原生 Harness 本地模型五条路径 5 pass，不等同所有真实上游的工具故障验收。日志 `/tmp/aih-tool-full-final.log`、`/tmp/aih-tool-native-final.log`。
+- Web 相关测试 188 pass；8 个改动文件 ESLint 通过；Node 22 下完整 `cd web && npm run build` 通过。日志 `/tmp/aih-tool-{web,eslint,build}-final.log`。
+- 浏览器 9527 真实 Kimi 会话刷新后实时连接恢复，账号菜单具有 ChatGPT/Codex、Kimi、Claude 等分组；三个回答的计时保持 28906/3183、3800/3018、10254/7369 ms，context 2821/996147、stale=false。snapshot API 为 HTTP 200，服务 ready，账号数不变。
+- 新增 unknown 组件使用真实进程退出测试快照在 5192 隔离预览，实际浏览器确认折叠/展开、结果未知标签、行内说明及没有重试按钮。该证据是组件视觉验收，未冒充用户会话中的真实上游故障；未修改用户会话/注入登录态。临时预览和测试数据不提交。
+
+设计模式：`timeline-settlement` → 状态机/投影 → 将终态规则集中供实时和历史路径复用 → 四类终态、乱序历史测试；`store/recovery-repository` → Repository + transaction → 状态、metrics、队列与终态同时提交 → 进程退出/回滚/幂等测试；`TimelineItemView/projection-state` → 持久事件投影 → SSE 与刷新呈现一致结果 → Web 测试与隔离页面验收。SOLID 保留持久化、策略、Adapter、UI 边界；DRY 共用终态策略和 turn timeline 查询；KISS/YAGNI 不添加第二套存储、执行器或自动重试机制。采用 self-review，按本会话既有授权提交推送，排除两个其他会话的 streaming 改动。

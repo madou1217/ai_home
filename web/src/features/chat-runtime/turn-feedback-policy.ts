@@ -1,6 +1,7 @@
 import type { FailedTurn, SessionProjection } from '@/chat-runtime';
 
 export function turnFailureMessage(failure: FailedTurn): string {
+  if (failure.outcomeUnknown) return '本轮结果未确认，待发消息已暂停；如涉及文件或外部操作，请先核对实际结果。';
   const diagnostic = `${failure.error.code} ${failure.error.message || ''}`;
   if (/auth_invalid|invalid_grant|invalid_authentication|reauth_required/i.test(diagnostic)) {
     return '此账号的登录凭据已失效，请重新登录后重试。';

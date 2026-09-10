@@ -49,7 +49,7 @@ export type TimelineItemKind =
   | 'attachment' | 'artifact' | 'notice' | 'error';
 
 export type TimelineItemStatus = 'pending' | 'running' | 'waiting_input'
-  | 'completed' | 'failed' | 'cancelled';
+  | 'completed' | 'failed' | 'cancelled' | 'unknown';
 
 export type TimelineDeltaChannel =
   | 'summary' | 'content' | 'plan' | 'output' | 'diff' | 'progress';
@@ -102,6 +102,7 @@ export interface FailedTurn {
   readonly failedAt: number;
   readonly error: { readonly code: string; readonly message?: string };
   readonly retryable: boolean;
+  readonly outcomeUnknown?: boolean;
 }
 
 export interface SessionQueueEntry {
@@ -217,7 +218,7 @@ interface EventPayloadByType {
   'turn.interrupt.requested': StateProjectionPayload;
   'turn.interrupted': StateProjectionPayload;
   'turn.completed': StateProjectionPayload;
-  'turn.failed': StateProjectionPayload & { error?: FailedTurn['error']; retryable?: boolean };
+  'turn.failed': StateProjectionPayload & { error?: FailedTurn['error']; retryable?: boolean; outcomeUnknown?: boolean };
   'queue.item.added': { entry: SessionQueueEntry };
   'queue.item.updated': { entry: SessionQueueEntry };
   'queue.item.moved': { queueId: string; beforeQueueId?: string };

@@ -58,7 +58,9 @@ for (const credentialKind of ['codex', 'codex-api-key', 'claude', 'agy']) test(`
     const log = fs.openSync(logPath, 'a');
     try {
       return spawn(executable, ['app-server', '--listen', `ws://127.0.0.1:${port}`], {
-        cwd: root, env: runtimeEnv, stdio: ['ignore', log, log]
+        // Bypass host CLI hooks so this test owns the native process it stops.
+        cwd: root, env: { ...runtimeEnv, AIH_CODEX_APP_SERVER_PASSTHROUGH: '1' },
+        stdio: ['ignore', log, log]
       });
     } finally {
       fs.closeSync(log);
@@ -154,8 +156,9 @@ for (const credentialKind of ['codex', 'codex-api-key', 'claude', 'agy']) test(`
 
 async function stopHarness(child) {
   if (child.exitCode !== null || child.signalCode !== null) return;
-  await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('Native Harness did not exit')), 5000);
+  await new Promise((resolve) => {
+    // Bound teardown of this test-owned process before removing its home.
+    const timer = setTimeout(() => child.kill('SIGKILL'), 5000);
     child.once('exit', () => { clearTimeout(timer); resolve(); });
     child.kill();
   });

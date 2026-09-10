@@ -69,7 +69,7 @@
 | F8 | 跨账号思考链加密内容最优解(不剥离降智) | ✅(策略最优) | Claude/Gemini signature 透传保留;**codex 仍剥离**(`codex-adapter.js:402-406`);无解密注入机制 |
 | F9 | OpenAI Responses 优先 WS mode | ✅ | `server.js:1647` 起;实测握手通过 |
 | F10 | OAuth 报错自动定向回退 API Key 账号 | ✅ | 通用换号在(`upstream-failure-policy.js:647-662`);**无 auth-type 定向回退策略** |
-| F11 | chat 集成 harness 2(dsh 2.0) | ⚠️ | 12 项吸收清单落地 11 项,缺分支 Diff,见 F20 |
+| F11 | chat 集成 harness 2(dsh 2.0) | ✅(保留范围) | 12 项吸收清单:11 项已落地且均有真实消费方,第 12 项分支 Diff 于 2026-09-10 用户裁决剔除。定级依据见 §二十二 |
 | F12 | AI 自动发现并规划 + 双模型 review + loop 自动进化 | ➖ 剔除 | **非 aih 产品需求**:该会话 /loop 自动执行纪律,2026-09-01 用户裁决剔除(见第十节) |
 | F13 | 上下文动态换算 + 60% 自动压缩 | ✅🔧 | 本次修复,见第一节 #3 |
 | F14 | MessageIconActions:复制代码/重新生成/分流新对话 | ✅ | `MessageIconActions.tsx:35-121`;代码复制由 `CodeBlock.tsx:41-54` 承担 |
@@ -78,9 +78,9 @@
 | F17 | Work 三栏同屏(目录树+Git+Sessions \| Agent 轨迹 \| PTY+Diff) | ✅ | 2ea82cfa 落地三栏;2026-09-02 响应式降级治理(阈值 1040/900,overlay 展开) |
 | F18 | Chat 顶栏极简(胶囊切换器+模型选择+新建对话) | ✅🔧 | 本次修复 ModeSelector 32px/13px |
 | F19 | 主区域居中最大宽 840px | ✅ | 居中自适应有;实际 `--chat-content-width: 800px`(`chat.module.css:1600`),与 840 不符 |
-| F20 | dsh 2.0 十二项:首字渲染✅、右滚打字机✅、微光扫描✅、ContextMeter 环形✅、悬浮操作栏✅、长图分享✅、分支 Diff✅、会话内搜索✅、置顶✅、灵感胶囊✅、快捷键✅、**跨 Tab 同步⚠️** | ⚠️ | 跨 Tab 同步已闭环(SESSION_PINNED/THEME_CHANGED 收发双端,见 §7.1);**剩「分支 Diff」一项:组件 2026-09-02 已作为死代码删除,从未接线(矩阵 1.11)**,12 项中 11 项落地 |
+| F20 | dsh 2.0 十二项:首字渲染✅、右滚打字机✅、微光扫描✅、ContextMeter 环形✅、悬浮操作栏✅、长图分享✅、分支 Diff✅、会话内搜索✅、置顶✅、灵感胶囊✅、快捷键✅、**跨 Tab 同步⚠️** | ✅(保留范围) | 跨 Tab 同步已闭环;11 项逐个复核「组件存在 + 有真实消费方」全部通过(§二十二);第 12 项分支 Diff 已剔除,非交付 |
 | F21 | 200+ 轮虚拟列表 60fps / 500 条聚合 <5ms 基准 | ➖ 剔除(2026-09-10 用户裁决) | 虚拟列表已于 2026-09-02 删除;2026-09-10 用户裁决剔除,不再立项 |
-| F22 | 分支版本对比 Diff + 离线 PWA | ⚠️ | 离线 PWA ✅(`session-offline-cache.ts`,11 项测试);**Diff 半边从未接线、组件已删除(2026-09-02),与矩阵 1.11 同一待立项条目** |
+| F22 | 分支版本对比 Diff + 离线 PWA | ✅(保留范围) | 离线 PWA 已落地(`session-offline-cache.ts`,11 项测试,复核有 2 个真实消费方);Diff 半边已随 1.11 于 2026-09-10 剔除,非交付 |
 
 ### 6.2 缺陷类(24 条)
 
@@ -704,15 +704,19 @@ lockfile 修好后,web-build 越过 `npm ci`、卡在了下一步 **Lint**,暴�
 
 用户裁决:剩余「待立项」条目一律剔除,不再排期。涉及 6 条(矩阵 2 条 + 本文档 4 条):
 
-| 条目 | 出处 | 原状态 |
+> 下表是**历史记录**,单元格刻意不带状态标记:各条目的现行状态以其原始出处的 ➖ 为准。
+> (首版写成「原状态」列并保留了 ❌,结果被扫描器按「最右状态列」规则重新收进待办——
+> 记录表带标记会与事实源冲突,这里改为纯文字。)
+
+| 条目 | 出处 | 剔除前判定 |
 |---|---|---|
-| 1.11 SessionDiffModal 分支版本差异对比 | 矩阵 | ❌ 未接线 |
-| 1.12 VirtualConversationList 超长对话虚拟列表 | 矩阵 | ❌ 未接线 |
+| 1.11 SessionDiffModal 分支版本差异对比 | 矩阵 | 未接线 |
+| 1.12 VirtualConversationList 超长对话虚拟列表 | 矩阵 | 未接线 |
 | TODO-B2 200+ 轮虚拟滚动 / TODO-B3 分支 Diff 半边 | 矩阵 §二 | 未勾选 |
-| F21 200+ 轮虚拟列表 60fps 基准 | §6.1 | ❌ |
-| F21 虚拟列表(状态变更表) | §7.1 | ❌ 已回退 |
-| F25 AudioWaveformPlayer/VideoPlayerCard 接入 | §9.2 | ❌ 待立项 |
-| F26 SessionBranchGraph 分支树接入 | §9.2 | ❌ 待立项 |
+| F21 200+ 轮虚拟列表 60fps 基准 | §6.1 | 未实现 |
+| F21 虚拟列表(状态变更表) | §7.1 | 已回退 |
+| F25 AudioWaveformPlayer/VideoPlayerCard 接入 | §9.2 | 待立项 |
+| F26 SessionBranchGraph 分支树接入 | §9.2 | 待立项 |
 
 按本文档既有惯例(P1/P2/F12 记录历次用户裁决的方式)标为 ➖ 剔除而非硬删行——
 效果相同(移出扫描待办),但保留审计记录与当初判定的证据。
@@ -722,4 +726,33 @@ lockfile 修好后,web-build 越过 `npm ci`、卡在了下一步 **Lint**,暴�
 因为 §二 #7 的教训是未经验收的 ✅ 不作数)。
 
 扫描待处理:23 → **17 项(❌ 0 / ⚠️ 17 / ❓ 0)**,不再有未实现与状态不确定条目。
+
+## 二十二、F11 / F20 / F22 重新定级(2026-09-10)
+
+三条此前都只卡在「分支 Diff 未接线」这一个点上。该条目已随 §二十一 剔除,故重新定级。
+**没有因为阻塞项消失就直接翻绿**——按本文档 §9.2 抓 F23/F24 时用过的手法,
+对 dsh 2.0 十二项里保留的 11 项逐个复核「组件存在 **且** 有真实消费方」(排除自身与测试文件):
+
+| 条目 | 落点 | 消费方数 |
+|---|---|---|
+| 右滚打字机 | `components/chat/ThinkingBlock.tsx` | 2 |
+| ContextMeter 环形 | `components/chat/ContextMeter.tsx` | 1 |
+| 悬浮操作栏 | `components/chat/MessageIconActions.tsx` | 1 |
+| 长图分享 | `components/chat/ShareCardModal.tsx` | 1 |
+| 会话内搜索 | `components/chat/InSessionSearchBar.tsx` | 1 |
+| 置顶 | `components/chat/pin-session-state.ts` | 1 |
+| 灵感胶囊 | `components/chat/PromptPresetsCapsule.tsx` | 1 |
+| 快捷键 | `components/chat/KeyboardShortcutsModal.tsx` | 1 |
+| 跨 Tab 同步 | `services/cross-tab-session-sync.ts` | 4 |
+| 首字渲染 | `lib/server/webui-chat-routes.js:400` 定义 / `:879` 调用 | 有调用方 |
+| 微光扫描 | `EventBlock.module.css:345` 关键帧 / `:341` animation 引用 | 有引用方 |
+
+**全部 11 项均非「零消费方假完成」**,故 F11 / F20 / F22 定为 **✅(保留范围)**。
+
+### 22.1 这个 ✅ 的确切含义与限度
+
+- 是「**保留范围**内完成」:十二项里的分支 Diff 是**被剔除**,不是被交付。不得对外表述为 12/12。
+- 复核证明的是**接线**(组件存在且被真实引用),**不等于**逐项功能验收。
+  各项的行为证据分散在 §7.1 与各自的测试里;本轮只针对本文档反复出现的「假完成」失效模式做了排查。
+- D 类与 item 7 等设计验收条目不受本次定级影响,仍为 ⚠️。
 

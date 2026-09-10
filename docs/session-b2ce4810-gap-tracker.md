@@ -641,17 +641,24 @@ CI 最近一次共 9 项失败,其中 1 项是我的回归(§十八已修),其�
 
 本地全量:**6464 项 / 6453 pass / 0 fail / 11 skipped**。
 
-### 19.2 未修(需授权):web-build 的 lockfile 不同步
+### 19.2 已修(用户授权后):web-build 的 lockfile 不同步
 
 `web/package-lock.json` 自 `28fd4ef2`(2026-08-24)起就**不完整**——缺 `webpack` / `dva` 等传递依赖条目,
 `npm ci` 因此拒绝安装(`npm error ... can only install packages when your package.json and
 package-lock.json ... are in sync`)。经核对,该次提交里 package.json 与 lock 是**同时**改的,
 所以不是"改了依赖忘了更新锁",而是那次生成的 lock 本身就残缺。
 
-**未擅自修复**:补救手段是重新生成 lockfile(`cd web && npm install --package-lock-only`),
-这会在 package.json 允许的范围内重解析大量传递依赖版本,属牵连面很广的依赖树改动,应由人确认后再做。
+先前未擅自修复(依赖树改动牵连面广);用户授权后以 `npm install --package-lock-only` 重新生成。
+**结果比预期收敛得多**:新增 90 条缺失的传递依赖条目,既有条目里**只有 1 条**版本变化
+(terser 5.48.0 → 5.51.2,仍在原范围内),担心的大面积版本漂移没有发生。
 
-### 19.3 状态
+验证方式:把 `package.json` + 新 lock 复制到临时目录真跑 `npm ci`(**exit 0**)——正是 CI 上失败的那一步。
+刻意**没有**对 `web/node_modules` 执行 `npm ci`:并发会话正基于它构建,清空重装会打断对方。
+新依赖树下的 lint 与 build 交给 CI 验证。提交 `f96b3145`。
 
-修 CI 的这几个提交**尚未推送**(本地 main 领先 origin/main)。推送属对外动作,按约定等用户明确。
+### 19.3 结果
+
+- `ci.yml`:**已转绿**(`7ed4c77c` success)——自 2026-09-03 连红后的首次成功。
+- 修 CI 的前 4 个提交无需我推送:并发会话推 main 时已把它们带上远端(核对本地与 origin/main 为 0/0 分叉)。
+- lockfile 修复经用户授权后由我推送(`f96b3145`),web-build 结果见下一轮核对。
 

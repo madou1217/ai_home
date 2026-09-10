@@ -19,6 +19,7 @@ import {
   parseTimelineItem,
 } from './snapshot-parser';
 import { parseCapabilitySnapshot } from './capability-parser';
+import { parseTurnError } from './failed-turn-parser';
 import { CHAT_RUNTIME_EVENT_SCHEMA } from './types';
 import type {
   ChatRuntimeEvent,
@@ -107,6 +108,15 @@ function validateDomainPayload(
   type: ChatRuntimeEventType,
   payload: Record<string, unknown>,
 ): Record<string, unknown> {
+  if (type === 'turn.failed') {
+    return {
+      ...validateStateProjectionPayload(payload),
+      ...(payload.error === undefined ? {} : { error: parseTurnError(payload.error) }),
+      ...(payload.retryable === undefined ? {} : {
+        retryable: booleanValue(payload.retryable, 'chat_runtime_failed_turn_retryable_invalid'),
+      }),
+    };
+  }
   if (type.startsWith('turn.') || type === 'run.adopted') {
     return validateStateProjectionPayload(payload);
   }

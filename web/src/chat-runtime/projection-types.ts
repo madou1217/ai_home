@@ -1,5 +1,6 @@
 import type {
   ActiveTurn,
+  FailedTurn,
   CapabilitySnapshot,
   PendingInteraction,
   RuntimeBinding,
@@ -37,6 +38,7 @@ export interface SessionProjection {
   readonly runtimeBinding?: RuntimeBinding;
   readonly capabilitySnapshot?: CapabilitySnapshot;
   readonly activeTurn?: ActiveTurn;
+  readonly failedTurn?: FailedTurn;
   readonly policy: Readonly<Record<string, unknown>>;
   readonly queue: readonly SessionQueueEntry[];
   readonly interactions: readonly PendingInteraction[];

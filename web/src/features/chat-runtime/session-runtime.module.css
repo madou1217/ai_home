@@ -77,6 +77,16 @@
   z-index: 2;
 }
 
+.turnFeedback {
+  padding: 4px 0;
+  color: var(--color-text-secondary);
+  font-size: var(--hos-text-caption, 12px);
+}
+
+.turnFeedbackRow { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.turnFailureDetail { margin-top: 4px; overflow-wrap: anywhere; }
+.turnFailureDetail summary { cursor: pointer; }
+
 .planSteps { margin: 0; padding-left: var(--hos-space-5, 22px); /* 归级:原 22px */ }
 .planSteps li + li { margin-top: var(--hos-space-1-5, 6px); }
 .planSteps li[data-status='completed'] { color: var(--color-text-secondary); text-decoration: line-through; }

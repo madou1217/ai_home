@@ -57,7 +57,7 @@ implements RuntimeCommandObserver, CommittedTimelineObserver {
   }
 
   onCommandDispatch(notice: RuntimeCommandNotice): void {
-    if (this.disposed || notice.type !== 'turn.submit') return;
+    if (this.disposed || !['turn.submit', 'turn.retry'].includes(notice.type)) return;
     this.cancelPending();
     const identity = markIdentity(this.sessionId, notice.commandId);
     const pending: PendingPaintSample = {

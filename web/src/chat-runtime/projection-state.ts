@@ -8,6 +8,7 @@ import {
 import type { ProjectionGap, SessionProjection, StreamFailure } from './projection-types';
 import type {
   ActiveTurn,
+  FailedTurn,
   CapabilitySnapshot,
   ChatRuntimeEvent,
   PendingInteraction,
@@ -23,6 +24,7 @@ export class ProjectionState {
   private runtimeBinding?: RuntimeBinding;
   private capabilitySnapshot?: CapabilitySnapshot;
   private activeTurn?: ActiveTurn;
+  private failedTurn?: FailedTurn;
   private streamFailure?: StreamFailure;
   private policy: Readonly<Record<string, unknown>> = {};
   private queue: readonly SessionQueueEntry[] = [];
@@ -42,6 +44,7 @@ export class ProjectionState {
     this.runtimeBinding = snapshot.runtimeBinding;
     this.capabilitySnapshot = snapshot.capabilitySnapshot;
     this.activeTurn = snapshot.activeTurn;
+    this.failedTurn = snapshot.failedTurn;
     this.streamFailure = undefined;
     this.policy = snapshot.policy;
     this.queue = activeQueue(snapshot.queue);
@@ -98,6 +101,7 @@ export class ProjectionState {
       runtimeBinding: this.runtimeBinding,
       capabilitySnapshot: this.capabilitySnapshot,
       activeTurn: this.activeTurn,
+      failedTurn: this.failedTurn,
       policy: this.policy,
       queue: this.queue,
       interactions: this.interactions,
@@ -120,6 +124,15 @@ export class ProjectionState {
   }
 
   private applyTurnOrRunEvent(event: ChatRuntimeEvent): boolean {
+    if (event.type === 'turn.failed' && event.turnId) {
+      this.failedTurn = {
+        turnId: event.turnId, failedAt: event.at,
+        error: event.payload.error || { code: 'chat_turn_failed', message: '本轮执行失败' },
+        retryable: event.payload.retryable === true,
+      };
+    } else if (['turn.queued', 'turn.started', 'turn.completed', 'turn.interrupted', 'run.lost'].includes(event.type)) {
+      this.failedTurn = undefined;
+    }
     if (event.type.startsWith('turn.') || event.type === 'run.adopted') {
       const payload = event.payload as { state: SessionState; activeTurn?: ActiveTurn | null };
       this.state = payload.state;
@@ -236,6 +249,7 @@ function recoveryActiveTurn(
       ? { clientUserMessageId: matching.clientUserMessageId }
       : {}),
     ...(nativeTurnId ? { nativeTurnId } : {}),
+    ...(matching?.startedAt === undefined ? {} : { startedAt: matching.startedAt }),
     state,
   };
 }

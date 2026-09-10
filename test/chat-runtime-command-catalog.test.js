@@ -24,6 +24,7 @@ test('capability catalog advertises only commands implemented for the bound runt
 
   assert.deepEqual(commands, [
     { id: 'turn.submit', type: 'turn.submit' },
+    { id: 'turn.retry', type: 'turn.retry' },
     { id: 'turn.interrupt', type: 'turn.interrupt' },
     {
       id: 'turn.intervene:steer_current',
@@ -51,7 +52,7 @@ test('capability catalog fails closed when optional capabilities are absent', as
     capabilitySnapshot: {}
   });
 
-  assert.deepEqual(commands, [{ id: 'turn.submit', type: 'turn.submit' }]);
+  assert.deepEqual(commands, [{ id: 'turn.submit', type: 'turn.submit' }, { id: 'turn.retry', type: 'turn.retry' }]);
 });
 
 test('capability catalog trims and deduplicates provider command descriptors', async () => {
@@ -64,6 +65,7 @@ test('capability catalog trims and deduplicates provider command descriptors', a
 
   assert.deepEqual(commands, [
     { id: 'turn.submit', type: 'turn.submit' },
+    { id: 'turn.retry', type: 'turn.retry' },
     {
       id: 'turn.intervene:steer_current',
       type: 'turn.intervene',

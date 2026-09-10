@@ -189,20 +189,36 @@ for (const credentialKind of ['codex', 'codex-api-key', 'claude', 'agy']) test(`
   console.log(JSON.stringify({ provider, credentialKind, nativeThreadId: nativeId, modelRequests: requests.length,
     threadStarts: 1, imports: 1, compactions: 1, restored: true, nativeProcessRestarted: true }));
   if (credentialKind === 'claude') {
+    let retrySourceTurnId;
     for (const mode of ['http', 'stream']) {
       failureMode = mode;
       const before = requests.length;
       await service.dispatchCommand(session.sessionId, {
-        commandId: `failed-${mode}`, type: 'turn.submit', payload: { content: 'Exercise bounded retries' }
+        commandId: `failed-${mode}`, type: retrySourceTurnId ? 'turn.retry' : 'turn.submit',
+        payload: retrySourceTurnId ? { sourceTurnId: retrySourceTurnId } : { content: 'Exercise bounded retries' }
       });
       await service.waitForActorIdle(session.sessionId);
       assert.equal(service.getSnapshot(session.sessionId).state, 'idle');
       const failures = service.readEvents(session.sessionId).events.filter((event) => event.type === 'turn.failed');
       assert.equal(failures.length, mode === 'http' ? 1 : 2);
+      retrySourceTurnId = service.getSnapshot(session.sessionId).failedTurn.turnId;
       const attempts = requests.length - before;
       assert.ok(attempts > 0 && attempts <= 4, `${mode} failure made ${attempts} requests`);
       console.log(JSON.stringify({ provider, failureMode, modelRequests: attempts, settled: true }));
     }
+    failureMode = '';
+    service.close();
+    clients.forEach((client) => client.destroy());
+    service = makeService();
+    await service.openChatSession({ provider, executionAccountRef: 'acct_probe', chatSessionId: session.sessionId });
+    assert.equal(service.getSnapshot(session.sessionId).failedTurn.turnId, retrySourceTurnId);
+    await service.dispatchCommand(session.sessionId, {
+      commandId: 'retry-after-reload', type: 'turn.retry', payload: { sourceTurnId: retrySourceTurnId }
+    });
+    await service.waitForActorIdle(session.sessionId);
+    assert.equal(service.getSnapshot(session.sessionId).failedTurn, undefined);
+    assert.match(JSON.stringify(requests.at(-1).body.input), /Exercise bounded retries/);
+    console.log(JSON.stringify({ provider, retryAfterReload: true, nativeThreadId: nativeId }));
   }
 });
 

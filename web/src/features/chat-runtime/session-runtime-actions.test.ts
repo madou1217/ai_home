@@ -52,6 +52,23 @@ test('slash execution strips the UI prefix', async () => {
   });
 });
 
+test('retry reuses its command identity after a lost acknowledgement and a page reload', async () => {
+  const commands: SessionCommandInput[] = [];
+  const dispatcher = { dispatch: async (command: SessionCommandInput) => {
+    commands.push(command);
+    if (commands.length === 1) throw new Error('acknowledgement lost');
+  } };
+  const actions = new SessionRuntimeActions(dispatcher);
+  await assert.rejects(actions.retry('turn-one'), /acknowledgement lost/);
+  await actions.retry('turn-one');
+  await new SessionRuntimeActions(dispatcher).retry('turn-one');
+  assert.deepEqual(commands[1], commands[0]);
+  assert.deepEqual(commands[2], commands[0]);
+  assert.deepEqual(commands[0].payload, { sourceTurnId: 'turn-one' });
+  await actions.retry('turn-two');
+  assert.notEqual(commands[3].commandId, commands[0].commandId);
+});
+
 test('runtime actions notify the observer without exposing command payloads', async () => {
   const notifications: Array<{ phase: string; commandId: string; type: string }> = [];
   const actions = new SessionRuntimeActions({

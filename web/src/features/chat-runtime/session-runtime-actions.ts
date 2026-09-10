@@ -43,6 +43,12 @@ export class SessionRuntimeActions {
     });
   }
 
+  retry(sourceTurnId: string): Promise<unknown> {
+    const id = requiredContent(sourceTurnId);
+    // A lost acknowledgement or page reload must reuse the same operation.
+    return this.send('turn.retry', { sourceTurnId: id }, `turn-retry:${id}`);
+  }
+
   deliver(content: string, delivery: ComposerDelivery): Promise<unknown> {
     if (delivery === 'turn') return this.submit({ content });
     if (delivery === 'steer_current') {
@@ -103,8 +109,9 @@ export class SessionRuntimeActions {
   private send<N extends SessionCommandInput['type']>(
     type: N,
     payload: Extract<SessionCommandInput, { type: N }>['payload'],
+    commandId = this.idFactory(),
   ): Promise<unknown> {
-    const input = { commandId: this.idFactory(), type, payload } as SessionCommandInput;
+    const input = { commandId, type, payload } as SessionCommandInput;
     const notice: RuntimeCommandNotice = { commandId: input.commandId, type: input.type };
     notifyObserver(() => this.observer.onCommandDispatch(notice));
     try {

@@ -13,6 +13,7 @@ import {
 import { parsePendingInteraction } from './interaction-parser';
 import { parseRuntimeBinding } from './runtime-binding-parser';
 import { parseTimelineItem } from './timeline-item-parser';
+import { parseFailedTurn } from './failed-turn-parser';
 import type {
   ActiveTurn,
   SessionQueueEntry,
@@ -85,6 +86,7 @@ function addOptionalSnapshotFields(
     ...(source.activeTurn === undefined ? {} : {
       activeTurn: parseActiveTurn(source.activeTurn),
     }),
+    ...(source.failedTurn === undefined ? {} : { failedTurn: parseFailedTurn(source.failedTurn) }),
   };
 }
 
@@ -93,6 +95,9 @@ export function parseActiveTurn(value: unknown): ActiveTurn {
   return {
     turnId: text(source.turnId, 'chat_runtime_active_turn_id_invalid'),
     state: sessionState(source.state),
+    ...(source.startedAt === undefined ? {} : {
+      startedAt: nonNegativeInteger(source.startedAt, 'chat_runtime_active_turn_started_at_invalid'),
+    }),
     ...optionalTextField(source, 'runId', 'chat_runtime_active_run_id_invalid'),
     ...optionalTextField(
       source,

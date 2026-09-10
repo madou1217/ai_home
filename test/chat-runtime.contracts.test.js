@@ -34,7 +34,7 @@ test('chat runtime exposes the canonical v1 contract vocabulary', () => {
   ]);
   assert.deepEqual(SNAPSHOT_FIELDS, [
     'sessionId', 'state', 'throughSeq', 'runtimeBinding',
-    'capabilitySnapshot', 'activeTurn', 'policy', 'queue', 'interactions', 'timeline',
+    'capabilitySnapshot', 'activeTurn', 'failedTurn', 'policy', 'queue', 'interactions', 'timeline',
     'timelineHasMore', 'timelineNextBefore'
   ]);
 });

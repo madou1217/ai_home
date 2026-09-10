@@ -169,6 +169,23 @@ function snapshot(overrides: Partial<SessionSnapshot> = {}): SessionSnapshot {
   };
 }
 
+test('failure metadata survives a snapshot reset and clears when the next turn starts', () => {
+  const store = new SessionProjectionStore('session-1', immediateFrames);
+  store.reset(snapshot());
+  store.apply(event(1, 'turn.failed', {
+    state: 'idle', error: { code: 'codex_turn_failed', message: 'request failed' }, retryable: true,
+  }, { turnId: 'failed-one' }));
+  const failure = store.getSnapshot().failedTurn;
+  assert.deepEqual(failure, { turnId: 'failed-one', failedAt: 1,
+    error: { code: 'codex_turn_failed', message: 'request failed' }, retryable: true });
+  store.reset(snapshot({ failedTurn: failure, throughSeq: 1 }));
+  assert.deepEqual(store.getSnapshot().failedTurn, failure);
+  store.apply(event(2, 'turn.queued', { state: 'starting',
+    activeTurn: { turnId: 'retry-one', state: 'starting', startedAt: 2000 } }, { turnId: 'retry-one' }));
+  assert.equal(store.getSnapshot().failedTurn, undefined);
+  assert.equal(store.getSnapshot().activeTurn?.startedAt, 2000);
+});
+
 function lastItem(store: SessionProjectionStore) {
   const items = store.getSnapshot().items;
   return items[items.length - 1];

@@ -91,7 +91,15 @@ export interface ActiveTurn {
   readonly runId?: string;
   readonly clientUserMessageId?: string;
   readonly nativeTurnId?: string;
+  readonly startedAt?: number;
   readonly state: SessionState;
+}
+
+export interface FailedTurn {
+  readonly turnId: string;
+  readonly failedAt: number;
+  readonly error: { readonly code: string; readonly message?: string };
+  readonly retryable: boolean;
 }
 
 export interface SessionQueueEntry {
@@ -136,6 +144,7 @@ export interface SessionSnapshot {
   readonly runtimeBinding?: RuntimeBinding;
   readonly capabilitySnapshot?: CapabilitySnapshot;
   readonly activeTurn?: ActiveTurn;
+  readonly failedTurn?: FailedTurn;
   readonly policy: Readonly<Record<string, unknown>>;
   readonly queue: readonly SessionQueueEntry[];
   readonly interactions: readonly PendingInteraction[];
@@ -145,13 +154,14 @@ export interface SessionSnapshot {
 }
 
 export type ChatRuntimeCommandName =
-  | 'runtime.prewarm' | 'turn.submit' | 'turn.intervene' | 'turn.interrupt'
+  | 'runtime.prewarm' | 'turn.submit' | 'turn.retry' | 'turn.intervene' | 'turn.interrupt'
   | 'queue.add' | 'queue.edit' | 'queue.remove' | 'queue.move' | 'queue.dispatch'
   | 'interaction.answer' | 'approval.decide' | 'slash.execute' | 'session.policy.set';
 
 interface CommandPayloadByName {
   'runtime.prewarm': Record<string, never>;
   'turn.submit': TurnSubmitPayload;
+  'turn.retry': { sourceTurnId: string };
   'turn.intervene': { content: string; mode: 'steer_current' | 'after_tool_boundary' | 'after_turn_same_run' | 'replace_current' };
   'turn.interrupt': { reason?: string };
   'queue.add': { content: string; policy: 'after_tool_boundary' | 'after_turn' };
@@ -202,7 +212,7 @@ interface EventPayloadByType {
   'turn.interrupt.requested': StateProjectionPayload;
   'turn.interrupted': StateProjectionPayload;
   'turn.completed': StateProjectionPayload;
-  'turn.failed': StateProjectionPayload;
+  'turn.failed': StateProjectionPayload & { error?: FailedTurn['error']; retryable?: boolean };
   'queue.item.added': { entry: SessionQueueEntry };
   'queue.item.updated': { entry: SessionQueueEntry };
   'queue.item.moved': { queueId: string; beforeQueueId?: string };

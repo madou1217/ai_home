@@ -67,3 +67,14 @@ test('truncated Kimi thinking and text never become a successful Responses compl
     assert.equal(events.at(-1).response.error.code, 'stream_incomplete');
   }
 });
+
+test('Kimi token exhaustion preserves partial output and fails instead of claiming completion', () => {
+  const raw = frame({ content: '<html>unfinished' }) + frame({}, 'length');
+  const stream = createSseTransformStream('openai_chat', 'openai_responses');
+  stream.write(raw);
+  for (const events of [parse(stream.end()), parse(convertSseViaCanonical('openai_chat', 'openai_responses', raw))]) {
+    assert.equal(events.some((event) => event.type === 'response.completed'), false);
+    assert.equal(events.at(-1).response.error.code, 'max_output_tokens');
+    assert.equal(events.find(event => event.type === 'response.output_text.delta').delta, '<html>unfinished');
+  }
+});

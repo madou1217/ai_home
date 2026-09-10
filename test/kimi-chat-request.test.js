@@ -17,8 +17,14 @@ test('explicit native Kimi settings win and requests without aliases remain byte
     thinking: { type: 'enabled', effort: 'max', keep: 'all' }, max_completion_tokens: 12345 }), {
     thinking: { type: 'enabled', effort: 'max', keep: 'all' }, max_completion_tokens: 12345
   });
-  for (const text of ['{ "model": "k3", "stream": true }', 'invalid']) {
+  for (const text of ['{ "model": "unknown-model", "stream": true }', 'invalid']) {
     const buffer = Buffer.from(text);
     assert.equal(adaptKimiChatRequestBuffer(buffer), buffer);
   }
+});
+
+test('missing Kimi output budget uses the pinned model limit, while explicit budgets win', () => {
+  assert.equal(adapt({ model: 'k3', stream: true }).max_completion_tokens, 131072);
+  assert.equal(adapt({ model: 'k3', max_completion_tokens: 12 }).max_completion_tokens, 12);
+  assert.equal(adapt({ model: 'k3', max_tokens: 13 }).max_completion_tokens, 13);
 });

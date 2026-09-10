@@ -40,7 +40,7 @@ for (const credentialKind of ['codex', 'codex-api-key', 'claude', 'agy', 'kimi']
       res.end('event: response.created\ndata: {"type":"response.created","response":{"id":"resp_interrupted","status":"in_progress","output":[]}}\n\n');
       return;
     }
-    if (failureMode === 'kimi-truncated') {
+    if (failureMode === 'kimi-truncated' || failureMode === 'kimi-length') {
       const { createSseTransformStream } = require('../lib/server/protocol-stream-pipeline');
       res.writeHead(200, { 'content-type': 'text/event-stream' });
       const stream = createSseTransformStream('openai_chat', 'openai_responses', {
@@ -48,6 +48,8 @@ for (const credentialKind of ['codex', 'codex-api-key', 'claude', 'agy', 'kimi']
       });
       stream.write(`data: ${JSON.stringify({ id: 'truncated', model: 'k3',
         choices: [{ index: 0, delta: { content: '<html>unfinished' } }] })}\n\n`);
+      if (failureMode === 'kimi-length') stream.write(`data: ${JSON.stringify({ id: 'truncated', model: 'k3',
+        choices: [{ index: 0, delta: {}, finish_reason: 'length' }] })}\n\n`);
       stream.end();
       res.end();
       return;
@@ -234,16 +236,18 @@ for (const credentialKind of ['codex', 'codex-api-key', 'claude', 'agy', 'kimi']
   console.log(JSON.stringify({ provider, credentialKind, nativeThreadId: nativeId, modelRequests: requests.length,
     threadStarts: 1, imports: 1, compactions: 1, restored: true, nativeProcessRestarted: true }));
   if (credentialKind === 'kimi') {
-    failureMode = 'kimi-truncated';
-    await service.dispatchCommand(session.sessionId, {
-      commandId: 'truncated-canvas', type: 'turn.submit', payload: { content: 'Generate complete HTML' }
-    });
-    await service.waitForActorIdle(session.sessionId);
-    const snapshot = service.getSnapshot(session.sessionId);
-    assert.equal(snapshot.state, 'idle');
-    assert.ok(snapshot.failedTurn, 'truncated upstream must fail the native turn');
-    assert.match(snapshot.failedTurn.error.message, /ended before completion/);
-    assert.ok(snapshot.timeline.some((item) => item.content?.includes('<html>unfinished')));
+    for (const mode of ['kimi-truncated', 'kimi-length']) {
+      failureMode = mode;
+      await service.dispatchCommand(session.sessionId, {
+        commandId: mode, type: 'turn.submit', payload: { content: 'Generate complete HTML' }
+      });
+      await service.waitForActorIdle(session.sessionId);
+      const snapshot = service.getSnapshot(session.sessionId);
+      assert.equal(snapshot.state, 'idle');
+      assert.ok(snapshot.failedTurn, 'truncated upstream must fail the native turn');
+      assert.match(snapshot.failedTurn.error.message, /before completion/);
+      assert.ok(snapshot.timeline.some((item) => item.content?.includes('<html>unfinished')));
+    }
   }
   if (credentialKind === 'claude') {
     let retrySourceTurnId;

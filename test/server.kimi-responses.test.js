@@ -12,7 +12,7 @@ const SECOND_REF = 'acct_22222222222222222222';
 
 // Exercise the real Responses router, adapters, account selection and Kimi
 // passthrough; only the upstream I/O and credential refresh are test doubles.
-async function requestKimi({ stream = false, accountRef = SECOND_REF, status = 200 } = {}) {
+async function requestKimi({ stream = false, accountRef = SECOND_REF, status = 200, outputBudget = 64 } = {}) {
   const requests = [];
   const refreshedAccounts = [];
   const accounts = [FIRST_REF, SECOND_REF].map((ref) => ({
@@ -23,7 +23,7 @@ async function requestKimi({ stream = false, accountRef = SECOND_REF, status = 2
   }));
   const res = createMemoryResponse();
   const input = { model: 'k3', input: [{ role: 'user', content: [{ type: 'input_text', text: 'hello' }] }],
-    max_output_tokens: 64, stream, reasoning: { effort: 'max' },
+    ...(outputBudget ? { max_output_tokens: outputBudget } : {}), stream, reasoning: { effort: 'max' },
     tools: [{ type: 'function', name: 'lookup', description: 'Look up a value',
       parameters: { type: 'object', properties: { key: { type: 'string' } }, required: ['key'] } }] };
   const handled = await handleV1Request({
@@ -116,4 +116,10 @@ test('Kimi Responses rejects a missing pinned account without borrowing another 
   const { res, requests } = await requestKimi({ accountRef: 'acct_33333333333333333333' });
   assert.equal(res.statusCode, 404, res.body);
   assert.deepEqual(requests, []);
+});
+
+test('Kimi Responses without a client budget forwards the pinned K3 output limit', async () => {
+  const { requests } = await requestKimi({ stream: true, outputBudget: null });
+  assert.equal(requests[0].body.max_completion_tokens, 131072);
+  assert.deepEqual(requests[0].body.thinking, { type: 'enabled', effort: 'max' });
 });

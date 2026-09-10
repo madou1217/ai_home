@@ -78,7 +78,7 @@
 | F17 | Work 三栏同屏(目录树+Git+Sessions \| Agent 轨迹 \| PTY+Diff) | ✅ | 2ea82cfa 落地三栏;2026-09-02 响应式降级治理(阈值 1040/900,overlay 展开) |
 | F18 | Chat 顶栏极简(胶囊切换器+模型选择+新建对话) | ✅🔧 | 本次修复 ModeSelector 32px/13px |
 | F19 | 主区域居中最大宽 840px | ✅ | 居中自适应有;实际 `--chat-content-width: 800px`(`chat.module.css:1600`),与 840 不符 |
-| F20 | dsh 2.0 交互与能力吸收清单（分支 Diff 已剔除） | ⚠️ 按链路分别验收 | §二十七完成保留链路的行为级验收(Playwright 实测):Cmd+F/灵感胶囊原系假接线已修复并实测通过;悬浮操作栏/长图分享/ContextMeter/微光扫描/置顶实测通过;跨 Tab 同步被 B30 阻塞待复验;手册三个浏览器保留键谎言已移除 |
+| F20 | dsh 2.0 交互与能力吸收清单（分支 Diff 已剔除） | ✅ 行为级已验(§二十七/§二十八) | 保留 11 链路全部 Playwright 行为实测通过:Cmd+K/手册/Cmd+F(本次补真)/灵感胶囊(本次移植 native)/悬浮操作栏/长图分享/ContextMeter/微光扫描/置顶/跨 Tab 同步(B30 修复后复验通过)/首字渲染(实测流式上屏无 UI 停滞,温路径首字 2.7s)。边界:移动端无键盘,检索胶囊暂无触摸入口;后续吸收专题在 chat-harness-absorption.md 单列,不属本条目 |
 | F21 | 200+ 轮虚拟列表 60fps / 500 条聚合 <5ms 基准 | ➖ 剔除(2026-09-10 用户裁决) | 虚拟列表已于 2026-09-02 删除;2026-09-10 用户裁决剔除,不再立项 |
 | F22 | 分支版本对比 Diff + 离线 PWA | ✅(保留范围) | 离线 PWA 已落地(`session-offline-cache.ts`,11 项测试,复核有 2 个真实消费方);Diff 半边已随 1.11 于 2026-09-10 剔除,非交付 |
 
@@ -245,7 +245,7 @@
 | P10 | Web Lint 清零(原"56 项"承诺,L8350) | 助手 TODO | ✅ | `npx eslint src` 41 errors → **0 errors 0 warnings**(30 死 import/3 死 props/5 死变量/1 可选链/1 不可达块 106 行) |
 | P11 | 大文件哨兵/provider 拆分纪律(L9730) | user 原话 | ✅ | `evolution-scan.js` 新增 150KB 预警/200KB 超标哨兵(实测已捕获 chat.module.css 153KB 预警);纪律条款入矩阵文档第 4 条;4 项新测试;当前服务端最大文件 80KB 无超标 |
 | P12 | review 执行器约束:aih codex 不指定账号(L8211) | user 原话 | ✅ | `evolution-scan.js review` 子命令默认即此形态 |
-| B30 | 回访 Tab(已存 key 直接开 /ui/chat)纯聊天会话列表为空 | 2026-09-11 F20 行为验收实测 | ❌ 未修(属并发 chat-runtime 会话活跃区) | Playwright 双 Tab 实测:首 Tab(登录跳转二次挂载)31 行;第二 Tab 40s 仍 0 行。net 证据:回访流程只发出 6 条 `provider+projectPath` 目录查询(响应全空),从未发出 provider-only 查询(curl 实证 `/v0/webui/chat/sessions?provider=kimi` 不带 projectPath 才返回纯聊天会话)。阻塞 F20 跨 Tab 同步的行为验收 |
+| B30 | 回访 Tab(已存 key 直接开 /ui/chat)纯聊天会话列表为空 | 2026-09-11 F20 行为验收实测 | ✅ 已修(§二十八) | 根因:每 Tab 各自持有 3 条 watch SSE,HTTP/1.1 单源 6 连接被两个 Tab 占满,普通 API 排队至超时(chat-sessions ERR_ABORTED)。修复:`shared-watch.ts` Web Locks 跨 Tab 选主,全浏览器仅 leader 持流,事件经 BroadcastChannel 中继;实测第二 Tab 列表 0→31 行,跨 Tab 置顶同步行为级通过 |
 
 ### 9.3 顺带修复的 HEAD 既有 bug
 
@@ -970,3 +970,41 @@ item 7(全站页面鸿蒙 6.1 化)、D2(HOS 必须 6.1)、D4(手机/PC 两套 UI
   `chat-global-shortcuts.test.ts` 5 项);eslint 改动文件 0 警告;`npm run build` exit 0;
   行为探针 PASS 10 / GAP 1(仅跨 Tab,阻塞于 B30)。
 - node 全量未跑:改动纯 web/src + scripts,已 grep 确认 test/ 无对这些文件的断言。
+
+## 二十八、B30 根因修复与 F20 收尾(2026-09-11)
+
+### 28.1 B30 根因:HTTP/1.1 连接池被 watch SSE 占满
+
+实测链:回访 Tab 的 `/v0/webui/chat-sessions` 请求发出后**永不回包**(30s 超时 ERR_ABORTED,
+catch 静默吞 → 列表恒空);同刻 `lsof` 显示该 chrome 对 9527 的 ESTABLISHED 恰好 **6 条**
+(HTTP/1.1 单源上限)——3 条 watch SSE × 2 个 Tab 全占。首个 Tab 只是抢在第二 Tab 开流前
+完成了列表请求,所以"只有第二 Tab 空"。
+
+### 28.2 修复:watch 流跨 Tab 单持有者(`web/src/services/shared-watch.ts`)
+
+- Web Locks(`aih-webui-watch-holder-v1`)选主:全浏览器只有 leader Tab 持有真实 SSE;
+  leader 关页/崩溃锁自动释放,等待中的 follower 自动继位并重连。
+- 事件经 BroadcastChannel(`aih-webui-watch-relay-v1`)中继给 follower,消费代码零改动。
+- 同 path 引用计数复用(accounts/watch 原被 api.ts 与 legacy-chat-account-catalog 各开一条,
+  现 leader 侧只开一条);close 归零即释放真实连接。
+- 不支持 Web Locks/BroadcastChannel 的环境退化为每 Tab 自持(与改造前一致)。
+- 四处调用点(api.ts ×3 + legacy-chat-account-catalog)全部切换到 `openSharedWebUiEventSource`。
+
+### 28.3 复验(真实双 Tab)
+
+| 指标 | 修前 | 修后 |
+|---|---|---|
+| 回访 Tab 纯聊天列表 | 40s 仍 0 行,请求超时 | **31 行正常加载** |
+| 跨 Tab 置顶同步 | 无法验收(列表为空) | page1 置顶 → page2 同步高亮 ✅ |
+| F20 行为探针 | PASS 10 / GAP 1 | **全部通过,0 GAP** |
+
+### 28.4 F20 末项:首字渲染行为证据
+
+真实会话(k3)连发两轮「仅回复两个字:正常」:流式上屏无 UI 停滞;
+温路径首字 2.7s(界面 StatsLine 自证),冷路径(含原生运行时接续)首字 10.8s。
+两轮 assistant 均正确回答「正常」。
+
+### 28.5 验证证据
+
+- 新增 `shared-watch.test.ts` 3 项(单 holder、继位补开、引用计数释放 + 无锁退化)过;
+  `bun test src/services/` 55 项全过;eslint 改动文件 0 警告;`npm run build` exit 0。

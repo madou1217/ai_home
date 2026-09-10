@@ -21,6 +21,7 @@ import ThinkingBlock from '@/components/chat/ThinkingBlock';
 import type { TimelineItem } from '@/chat-runtime';
 import type { Provider } from '@/types';
 import { collectTimelineFileReferences } from './timeline-file-references';
+import { reasoningText } from './timeline-presentation';
 import styles from './session-runtime.module.css';
 
 interface Props {
@@ -29,9 +30,12 @@ interface Props {
   readonly projectPath: string;
   readonly onOpenFile: (filePath: string) => void;
   readonly mobile?: boolean;
+  readonly reasoningRunning?: boolean;
 }
 
-function TimelineItemView({ item, provider, projectPath, onOpenFile, mobile = false }: Props) {
+function TimelineItemView({
+  item, provider, projectPath, onOpenFile, mobile = false, reasoningRunning = false,
+}: Props) {
   const filePaths = useMemo(() => collectTimelineFileReferences(item), [item]);
   if (item.kind === 'message') {
     return (
@@ -50,10 +54,19 @@ function TimelineItemView({ item, provider, projectPath, onOpenFile, mobile = fa
     );
   }
   if (item.kind === 'reasoning') {
-    // 进行态（pending/running）视为流式思考中：显示最新行、右滚跟随并带上“思考中”徽标
-    const running = item.status === 'pending' || item.status === 'running';
+    const value = reasoningText(item);
+    if (!value.trim()) {
+      const label = reasoningRunning ? '正在思考…'
+        : item.status === 'failed' ? '思考失败'
+          : item.status === 'cancelled' ? '思考已取消' : '';
+      return label ? (
+        <div className={styles.runtimeNotice} role="status" aria-live="polite" data-danger={item.status === 'failed'}>
+          {label}
+        </div>
+      ) : null;
+    }
     return (
-      <ThinkingBlock value={item.content || item.detail.summary || ''} mobile={mobile} running={running} />
+      <ThinkingBlock value={value} mobile={mobile} running={reasoningRunning} />
     );
   }
 

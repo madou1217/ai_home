@@ -14,6 +14,7 @@ import { formatStreamFailureText } from '@/components/chat/provider-pending-poli
 import chatStyles from '@/components/chat/message-area.module.css';
 import type { CommittedTimelineObserver } from './browser-first-text-paint-probe';
 import { sessionConnectionPresentation } from './session-connection-presentation';
+import { selectTimelinePresentation } from './timeline-presentation';
 import TimelineItemView from './TimelineItemView';
 import styles from './session-runtime.module.css';
 
@@ -35,6 +36,7 @@ export default function ConversationTimeline({
   mobile = false,
 }: Props) {
   const items = useSessionSelector(controller.store, selectItems);
+  const presentation = useSessionSelector(controller.store, selectTimelinePresentation);
   const hasMore = useSessionSelector(controller.store, selectHasMore);
   const streamFailure = useSessionSelector(controller.store, selectStreamFailure);
   const gap = useSessionSelector(controller.store, selectGap);
@@ -70,7 +72,7 @@ export default function ConversationTimeline({
           danger={!streamFailure.retryable}
         />
       ) : null}
-      {items.length === 0 ? (
+      {presentation.items.length === 0 ? (
         <Empty
           className={styles.emptyTimeline}
           image={Empty.PRESENTED_IMAGE_SIMPLE}
@@ -78,7 +80,7 @@ export default function ConversationTimeline({
             ? '发送消息开始对话，上下文会随会话保留'
             : '开始一次原生会话，计划、工具和审批会实时出现在这里'}</span>}
         />
-      ) : items.map((item) => (
+      ) : presentation.items.map((item) => (
         workspaceMode === 'chat' && item.kind === 'notice'
           && ['contextCompaction', 'context_compacted'].includes(item.detail.code || '')
           ? <RuntimeNotice key={item.id} text={item.status === 'completed'
@@ -86,6 +88,7 @@ export default function ConversationTimeline({
           : <TimelineItemView
           key={item.id}
           item={item}
+          reasoningRunning={item.id === presentation.runningReasoningId}
           provider={provider}
           projectPath={projectPath}
           onOpenFile={preview.openFile}

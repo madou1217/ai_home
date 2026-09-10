@@ -20,12 +20,14 @@ for (const credentialKind of ['codex', 'codex-api-key', 'claude', 'agy']) test(`
   const gatewayModel = provider === 'agy' ? 'gemini-2.5-flash' : 'claude-sonnet-4-5';
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-chat-harness-native-'));
   const requests = [];
+  let releaseReasoning;
+  const reasoningGate = new Promise((resolve) => { releaseReasoning = resolve; });
   const gateway = http.createServer(async (req, res) => {
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
     const body = JSON.parse(Buffer.concat(chunks).toString());
     requests.push({ url: req.url, body, accountRef: req.headers['x-account-ref'] });
-    respond(res, requests.length);
+    await respond(res, requests.length, reasoningGate);
   });
   await listen(gateway);
   const placeholder = http.createServer();
@@ -70,6 +72,7 @@ for (const credentialKind of ['codex', 'codex-api-key', 'claude', 'agy']) test(`
   let service;
   const clients = [];
   t.after(async () => {
+    releaseReasoning();
     if (service) service.close();
     clients.forEach((client) => client.destroy());
     await stopHarness(child);
@@ -117,7 +120,29 @@ for (const credentialKind of ['codex', 'codex-api-key', 'claude', 'agy']) test(`
     assert.equal(catalog.defaultModel, gatewayModel);
     assert.equal(catalog.models[0].defaultEffort, '');
   }
-  await submit(service, session.sessionId, 'turn-1', 'What is the marker?');
+  await service.dispatchCommand(session.sessionId, {
+    commandId: 'turn-1', type: 'turn.submit', payload: { content: 'What is the marker?' }
+  });
+  await waitFor(() => service.getSnapshot(session.sessionId).timeline.some((item) => (
+    item.id === 'rs_probe_active' && item.status === 'running'
+  )));
+  const history = await clients.at(-1).request('thread/read', {
+    threadId: service.getSnapshot(session.sessionId).runtimeBinding.nativeSessionId,
+    includeTurns: true
+  });
+  const activeHistory = history.thread.turns.at(-1);
+  assert.equal(activeHistory.status, 'inProgress');
+  assert.ok(activeHistory.items.some((item) => item.id === 'rs_probe_done'));
+  assert.equal(activeHistory.items.some((item) => item.id === 'rs_probe_active'), false);
+  const { projectCodexSessionHistory } = require('../lib/server/chat-runtime/codex-session-history');
+  const imported = projectCodexSessionHistory(history, { threadId: history.thread.id });
+  service.store.importTimeline(session.sessionId, imported.events);
+  const during = service.getSnapshot(session.sessionId);
+  assert.equal(during.state, 'running');
+  assert.equal(during.timeline.find((item) => item.id === 'rs_probe_done').status, 'completed');
+  assert.equal(during.timeline.find((item) => item.id === 'rs_probe_active').status, 'running');
+  releaseReasoning();
+  await idle(service, session.sessionId);
   await submit(service, session.sessionId, 'turn-2', 'Repeat the marker');
   assert.match(JSON.stringify(requests[0].body.input), /cobalt-42/);
   assert.match(JSON.stringify(requests[1].body.input), /What is the marker/);
@@ -188,19 +213,31 @@ async function waitFor(predicate) {
   throw new Error('Native Harness did not become ready');
 }
 
-function respond(res, count) {
+async function respond(res, count, reasoningGate) {
   const id = `resp_probe_${count}`;
   const text = `cobalt-42 response ${count}`;
   const item = { id: `msg_probe_${count}`, type: 'message', role: 'assistant', status: 'completed',
     content: [{ type: 'output_text', text, annotations: [] }] };
+  const reasoningItems = count === 1 ? ['rs_probe_done', 'rs_probe_active'].map((itemId) => ({
+    id: itemId, type: 'reasoning', summary: []
+  })) : [];
   const response = { id, object: 'response', created_at: Math.floor(Date.now() / 1000),
-    status: 'completed', output: [item], usage: { input_tokens: 100, output_tokens: 10, total_tokens: 110 } };
+    status: 'completed', output: [...reasoningItems, item],
+    usage: { input_tokens: 100, output_tokens: 10, total_tokens: 110 } };
   res.writeHead(200, { 'content-type': 'text/event-stream' });
   const send = (type, value) => res.write(`event: ${type}\ndata: ${JSON.stringify({ type, ...value })}\n\n`);
   send('response.created', { response: { ...response, status: 'in_progress', output: [] } });
-  send('response.output_item.added', { output_index: 0, item: { ...item, status: 'in_progress', content: [] } });
-  send('response.output_text.delta', { item_id: item.id, output_index: 0, content_index: 0, delta: text });
-  send('response.output_item.done', { output_index: 0, item });
+  if (count === 1) {
+    send('response.output_item.added', { output_index: 0, item: reasoningItems[0] });
+    send('response.output_item.done', { output_index: 0, item: reasoningItems[0] });
+    send('response.output_item.added', { output_index: 1, item: reasoningItems[1] });
+    await reasoningGate;
+    send('response.output_item.done', { output_index: 1, item: reasoningItems[1] });
+  }
+  const outputIndex = reasoningItems.length;
+  send('response.output_item.added', { output_index: outputIndex, item: { ...item, status: 'in_progress', content: [] } });
+  send('response.output_text.delta', { item_id: item.id, output_index: outputIndex, content_index: 0, delta: text });
+  send('response.output_item.done', { output_index: outputIndex, item });
   send('response.completed', { response });
   res.end();
 }

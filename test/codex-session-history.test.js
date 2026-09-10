@@ -95,6 +95,28 @@ test('Codex history projector fails closed on a foreign or malformed thread', ()
   );
 });
 
+test('history in an active turn keeps persisted reasoning completed and explicit tools active', () => {
+  const response = historyResponse();
+  const turn = response.thread.turns[0];
+  turn.status = 'inProgress';
+  turn.completedAt = null;
+  turn.items = [
+    turn.items[0],
+    ...Array.from({ length: 9 }, (_, index) => ({
+      id: `reason-${index}`, type: 'reasoning', summary: [], content: []
+    })),
+    { ...turn.items[2], status: 'inProgress' }
+  ];
+
+  const result = projectCodexSessionHistory(response, { threadId: 'thread-1' });
+
+  assert.ok(result.events.slice(0, 10).every((event) => (
+    event.type === 'timeline.item.completed' && event.payload.item.status === 'completed'
+  )));
+  assert.equal(result.events.at(-1).payload.item.status, 'running');
+  assert.equal(result.events.at(-1).type, 'timeline.item.started');
+});
+
 test('Codex history projector preserves a native proposed plan as a plan item', () => {
   const result = projectCodexSessionHistory({
     thread: {

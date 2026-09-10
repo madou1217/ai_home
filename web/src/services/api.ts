@@ -8,6 +8,7 @@ import { getCurrentControlPlaneProfileId } from './control-plane-selection';
 import { buildAppHref } from './app-navigation';
 import { collectAllSessionHistoryMessages } from './session-history-window.js';
 import { SessionRequestCoordinator } from './session-request-coordinator.js';
+import { openSharedWebUiEventSource } from './shared-watch';
 import {
   guardedWebUiEventSource,
   resolveActiveServer,
@@ -351,7 +352,7 @@ export const accountsAPI = {
     onTokenConsumed?: (event: TokenConsumedEvent) => void;
     onError?: () => void;
   }) => {
-    const eventSource = guardedWebUiEventSource('/v0/webui/accounts/watch');
+    const eventSource = openSharedWebUiEventSource('/v0/webui/accounts/watch');
     eventSource.onmessage = (event) => {
       try {
         dispatchAccountsWatchPayload(JSON.parse(String(event.data || '{}')), handlers);
@@ -643,7 +644,7 @@ export async function listActiveWebUiTasks(): Promise<WebUiTask[]> {
 }
 
 export function watchWebUiTasks(): EventSource {
-  return guardedWebUiEventSource('/v0/webui/tasks/watch');
+  return openSharedWebUiEventSource('/v0/webui/tasks/watch');
 }
 
 // SSE 是主通道，短轮询只作为断线期间的恢复手段；安装进程始终在服务端
@@ -1004,7 +1005,7 @@ export const sessionsAPI = {
     onConnected?: () => void;
     onError?: () => void;
   }) => {
-    const eventSource = guardedWebUiEventSource('/v0/webui/projects/watch');
+    const eventSource = openSharedWebUiEventSource('/v0/webui/projects/watch');
     eventSource.onopen = () => {
       handlers.onConnected?.();
     };

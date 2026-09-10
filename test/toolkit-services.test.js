@@ -124,7 +124,9 @@ test('网络接入工具使用与应用一致的完整生命周期契约', () =>
 
 test('app-manager listManagedApps returns structured apps list', async () => {
   assert.equal(Object.hasOwn(APP_CATEGORIES, 'agents'), false);
-  const result = await listManagedApps();
+  // 目录按平台裁剪(claude-desktop 只在 macOS 列出)。注入平台而不是跟随宿主，
+  // 否则同一份断言在开发机(darwin)过、在 CI(linux)必挂——CI 因此长期无信号。
+  const result = await listManagedApps({ processObj: { platform: 'darwin', env: process.env } });
   assert.equal(result.ok, true);
   assert.ok(result.total > 0);
   assert.ok(Array.isArray(result.apps));

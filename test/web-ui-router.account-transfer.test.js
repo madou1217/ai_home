@@ -257,7 +257,11 @@ async function readCompletedImportBody(importRes, deps) {
   assert.equal(accepted.ok, true);
   assert.ok(accepted.jobId);
 
-  for (let attempt = 0; attempt < 100; attempt += 1) {
+  // 按墙钟设截止而不是数轮次：原先是 100 轮 × 5ms ≈ 0.5 秒，
+  // 在 CI 这类较慢的机器上，涉及解压与落盘的导入任务必然超时——
+  // 这 6 个用例因此在 CI 长期红、在开发机却是绿的。断言不变，只给足时间。
+  const deadline = Date.now() + 20_000;
+  while (Date.now() < deadline) {
     const jobRes = createResCapture();
     await handleWebUIRequest({
       method: 'GET',
@@ -284,9 +288,9 @@ async function readCompletedImportBody(importRes, deps) {
     if (job.status === 'failed') {
       throw new Error(job.error || 'import job failed');
     }
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await new Promise((resolve) => setTimeout(resolve, 10));
   }
-  throw new Error('import job did not finish');
+  throw new Error('import job did not finish within 20s');
 }
 
 async function waitForImportJobSseStatus(res, jobId, status) {

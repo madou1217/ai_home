@@ -1,9 +1,10 @@
 import type { ReactNode, TouchEventHandler } from 'react';
 import { Layout } from 'antd';
-import { PlusOutlined } from '@ant-design/icons';
+import { PlusOutlined, SearchOutlined } from '@ant-design/icons';
 import PageScaffold from '@/components/ui/PageScaffold';
 import MobileBackButton from '@/components/mobile/MobileBackButton';
 import ProviderIcon from '@/components/chat/ProviderIcon';
+import { IN_SESSION_SEARCH_OPEN_EVENT } from '@/components/chat/chat-global-shortcuts';
 import { providerAccentStyle } from '@/components/chat/provider-registry';
 import styles from '@/components/chat/mobile-layout.module.css';
 import type { Session } from '@/types';
@@ -50,6 +51,15 @@ function MobileWorkspace(props: ChatWorkspaceLayoutProps) {
             <span className={styles.mobileNavTitle}>{session?.title || props.projectLabel}</span>
           </div>
           <div className={styles.mobileNavSide}>
+            {/* 移动端没有键盘,检索胶囊需要一个触摸入口;事件由当前挂载的 surface 监听 */}
+            <button
+              type="button"
+              className={styles.mobileNavAction}
+              aria-label="会话内搜索"
+              onClick={() => window.dispatchEvent(new Event(IN_SESSION_SEARCH_OPEN_EVENT))}
+            >
+              <SearchOutlined />
+            </button>
             <button type="button" className={styles.mobileNavAction} aria-label="新建会话" onClick={props.onCreateSession}>
               <PlusOutlined />
             </button>

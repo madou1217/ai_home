@@ -1360,6 +1360,20 @@
   cursor: not-allowed;
 }
 
+/* 移动端(390px):固定 220px 输入框会溢出,胶囊改为通栏、输入框弹性收缩 */
+@media (max-width: 768px) {
+  .inSessionSearchCapsule {
+    left: 12px;
+    right: 12px;
+    top: 8px;
+  }
+  .inSessionSearchInput {
+    width: 100%;
+    flex: 1;
+    min-width: 0;
+  }
+}
+
 /* =============================================================================
  * HarmonyOS 6 风格 PromptPresetsCapsule 灵感指令预设
  * ========================================================================== */

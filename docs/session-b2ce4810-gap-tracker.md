@@ -79,7 +79,7 @@
 | F18 | Chat 顶栏极简(胶囊切换器+模型选择+新建对话) | ✅🔧 | 本次修复 ModeSelector 32px/13px |
 | F19 | 主区域居中最大宽 840px | ✅ | 居中自适应有;实际 `--chat-content-width: 800px`(`chat.module.css:1600`),与 840 不符 |
 | F20 | dsh 2.0 十二项:首字渲染✅、右滚打字机✅、微光扫描✅、ContextMeter 环形✅、悬浮操作栏✅、长图分享✅、分支 Diff✅、会话内搜索✅、置顶✅、灵感胶囊✅、快捷键✅、**跨 Tab 同步⚠️** | ⚠️ | 跨 Tab 同步已闭环(SESSION_PINNED/THEME_CHANGED 收发双端,见 §7.1);**剩「分支 Diff」一项:组件 2026-09-02 已作为死代码删除,从未接线(矩阵 1.11)**,12 项中 11 项落地 |
-| F21 | 200+ 轮虚拟列表 60fps / 500 条聚合 <5ms 基准 | ❌ | 虚拟列表已删除(2026-09-02 死代码收口);当前平铺渲染,需求待重新立项 |
+| F21 | 200+ 轮虚拟列表 60fps / 500 条聚合 <5ms 基准 | ➖ 剔除(2026-09-10 用户裁决) | 虚拟列表已于 2026-09-02 删除;2026-09-10 用户裁决剔除,不再立项 |
 | F22 | 分支版本对比 Diff + 离线 PWA | ⚠️ | 离线 PWA ✅(`session-offline-cache.ts`,11 项测试);**Diff 半边从未接线、组件已删除(2026-09-02),与矩阵 1.11 同一待立项条目** |
 
 ### 6.2 缺陷类(24 条)
@@ -154,7 +154,7 @@
 | B12/F16 canonical running | ⚠️ | ✅ | `TimelineItemView.tsx:52-57` 按 status 推导 running 传入 ThinkingBlock |
 | F19 840px | ⚠️ | ✅ | `chat.module.css:1600` `--chat-content-width: 840px`,13 处引用核查协调 |
 | F15 StatsLine 粘性 | ⚠️ | ✅ | `.statsLineContainer` sticky + hos 毛玻璃 token 分层 |
-| F21 虚拟列表 | ⚠️ | ❌ 已回退 | `raf-scroll-sync.ts` 曾随组件删除(2026-09-02 死代码收口);500 条聚合 <5ms 基准已由 stats-line-aggregation.test.ts 另行覆盖 |
+| F21 虚拟列表 | ⚠️ | ➖ 剔除(2026-09-10 用户裁决) | 组件与 `raf-scroll-sync.ts` 已于 2026-09-02 删除;500 条聚合基准由 stats-line-aggregation.test.ts 另行覆盖;2026-09-10 用户裁决剔除 |
 | F20 跨 Tab 同步 | ⚠️ | ✅ | SESSION_PINNED 广播+订阅闭环(`ProjectList.tsx:105-121`)、THEME_CHANGED 接收端;`cross-tab-session-sync.test.ts` 5 项过。注明:MODEL_CHANGED 刻意保持 Tab 本地(既有设计) |
 | B15 store:false 404 预防 | ⚠️ | ✅ | `codex-adapter.js:362-378,396-409` 出站剥离 previous_response_id + unpersisted item ids;3 项测试过 |
 | F8 加密思考链 | ⚠️ | ✅(策略最优) | 携带加密内容时硬优先粘性账号(`codex-adapter.js:420-429,1268-1286` + `account-selector.js:140-151`),必须换号才剥离;5 项测试过。注:上游不支持解密注入,此为可达最优 |
@@ -240,8 +240,8 @@
 | B29 | ModelUsage 配色(Image#29 L12363) | — | ✅(当时已修) | 死黑→鸿蒙流光蓝;后续 `61931fde` 又增强暗色 ECharts |
 | F23 | `@` 文件引用接真实文件树(L3880/L3969) | 助手 TODO | ✅(本次补接) | **原为零消费方假完成**且组件内 fsAPI 方法名/响应形态两处错误;本次新增 `use-file-reference-candidates.ts` + MessageArea `@query` 检测/键盘导航/挂载;4 项测试 |
 | F24 | 动态壁纸色彩萃取引擎(L8399/L8546) | 助手 TODO | ✅(本次补接) | **原为零消费方假完成**;本次 Settings 增"外观个性化"卡片 + app.tsx 启动恢复 + global.css 壁纸图层;2 项测试 |
-| F25 | AudioWaveformPlayer/VideoPlayerCard 接入(L4223/L5269) | 助手 TODO | ❌ 待立项 | 组件完整但消息模型无音频/视频附件载体,接入需先立"多模态附件消息通道"数据层 |
-| F26 | SessionBranchGraph 分支树接入(L10689/L12041) | 助手 TODO | ❌ 待立项 | 组件完整但 fork 不持久化、无分支数据源,需先立"分支会话持久化"数据层 |
+| F25 | AudioWaveformPlayer/VideoPlayerCard 接入(L4223/L5269) | 助手 TODO | ➖ 剔除(2026-09-10 用户裁决) | 需先立"多模态附件消息通道"数据层;2026-09-10 用户裁决剔除,不再立项 |
+| F26 | SessionBranchGraph 分支树接入(L10689/L12041) | 助手 TODO | ➖ 剔除(2026-09-10 用户裁决) | 需先立"分支会话持久化"数据层;2026-09-10 用户裁决剔除,不再立项 |
 | P10 | Web Lint 清零(原"56 项"承诺,L8350) | 助手 TODO | ✅ | `npx eslint src` 41 errors → **0 errors 0 warnings**(30 死 import/3 死 props/5 死变量/1 可选链/1 不可达块 106 行) |
 | P11 | 大文件哨兵/provider 拆分纪律(L9730) | user 原话 | ✅ | `evolution-scan.js` 新增 150KB 预警/200KB 超标哨兵(实测已捕获 chat.module.css 153KB 预警);纪律条款入矩阵文档第 4 条;4 项新测试;当前服务端最大文件 80KB 无超标 |
 | P12 | review 执行器约束:aih codex 不指定账号(L8211) | user 原话 | ✅ | `evolution-scan.js review` 子命令默认即此形态 |
@@ -699,4 +699,27 @@ lockfile 修好后,web-build 越过 `npm ci`、卡在了下一步 **Lint**,暴�
 
 **这条线的方法论收获**:修 CI 时每修好一层,下一层才会暴露(lockfile 修好后才看得见 lint 坏了)。
 所以"修完一个就宣布好了"是不成立的,必须一路推到真的绿。
+
+## 二十一、待立项条目全部剔除(2026-09-10 用户裁决)
+
+用户裁决:剩余「待立项」条目一律剔除,不再排期。涉及 6 条(矩阵 2 条 + 本文档 4 条):
+
+| 条目 | 出处 | 原状态 |
+|---|---|---|
+| 1.11 SessionDiffModal 分支版本差异对比 | 矩阵 | ❌ 未接线 |
+| 1.12 VirtualConversationList 超长对话虚拟列表 | 矩阵 | ❌ 未接线 |
+| TODO-B2 200+ 轮虚拟滚动 / TODO-B3 分支 Diff 半边 | 矩阵 §二 | 未勾选 |
+| F21 200+ 轮虚拟列表 60fps 基准 | §6.1 | ❌ |
+| F21 虚拟列表(状态变更表) | §7.1 | ❌ 已回退 |
+| F25 AudioWaveformPlayer/VideoPlayerCard 接入 | §9.2 | ❌ 待立项 |
+| F26 SessionBranchGraph 分支树接入 | §9.2 | ❌ 待立项 |
+
+按本文档既有惯例(P1/P2/F12 记录历次用户裁决的方式)标为 ➖ 剔除而非硬删行——
+效果相同(移出扫描待办),但保留审计记录与当初判定的证据。
+
+**连带影响**:F11/F20/F22 三条 ⚠️ 此前都卡在「分支 Diff 未接线」这一个点上,
+其余部分均已落地。它们的阻塞项既已剔除,应在下一轮据此重新定级(本轮不擅自升级,
+因为 §二 #7 的教训是未经验收的 ✅ 不作数)。
+
+扫描待处理:23 → **17 项(❌ 0 / ⚠️ 17 / ❓ 0)**,不再有未实现与状态不确定条目。
 

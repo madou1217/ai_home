@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { ReloadOutlined, StopOutlined } from '@ant-design/icons';
+import { ReloadOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import { useSessionSelector, type SessionProjection, type SessionProjectionStore } from '@/chat-runtime';
-import { resolveComposerPolicy } from './composer-policy';
 import { sessionConnectionPresentation } from './session-connection-presentation';
 import type { SessionRuntimeActions } from './session-runtime-actions';
 import { turnFailureMessage, turnProgressText } from './turn-feedback-policy';
@@ -21,8 +20,6 @@ export default function TurnFeedback({ store, actions }: {
   const ticking = Boolean(progress);
   const failure = projection.failedTurn;
   const connected = sessionConnectionPresentation(projection.connectionState).interactive;
-  const canInterrupt = resolveComposerPolicy(projection.state, projection.capabilitySnapshot).canInterrupt
-    && projection.state !== 'interrupting';
   useEffect(() => {
     if (!ticking) return;
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
@@ -48,10 +45,6 @@ export default function TurnFeedback({ store, actions }: {
     <div className={styles.turnFeedback} data-turn-id={failure?.turnId || projection.activeTurn?.turnId}>
       <div className={styles.turnFeedbackRow}>
         <span role="status" aria-live={progress ? 'off' : 'polite'}>{progress || (failure && turnFailureMessage(failure))}</span>
-        {progress && canInterrupt ? <Button size="small" icon={<StopOutlined />}
-          loading={busy} disabled={!connected} onClick={() => void execute(() => actions.interrupt())}>
-          停止
-        </Button> : null}
         {failure?.retryable && projection.state === 'idle' ? <Button size="small" icon={<ReloadOutlined />}
           loading={busy} disabled={!connected} title="使用本轮原消息、附件和模型参数重新发送"
           onClick={() => void execute(() => actions.retry(failure.turnId))}>

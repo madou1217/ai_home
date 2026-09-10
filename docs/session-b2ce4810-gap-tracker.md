@@ -582,3 +582,21 @@ dist 被清掉后服务端直接返回一行文本,既无 console 报错、也�
 
 §一 #5 由 ❓ 转 ✅;B13 的证据指针一并更正。
 
+## 十七、B24「下拉/操作」一致性核查(2026-09-10)
+
+B24 的四个面里,圆角(§12.1 实测收口)、颜色(§12.5 token 迁移)已处理,本轮查剩下两面。
+
+- **操作菜单(⋮)**:5 个使用方(`ControlPlaneServerList` / `AccountCardGrid` / `ManagedAppAccountActions` /
+  `AccountsGoPreview` / `Accounts`)**全部走 antd `Dropdown`,已一致**,无需处理。
+- **下拉**:52 个文件用 antd `Select`;自造 listbox 只有 `FileReferencePopover` 与 `SlashCommandMenu`,
+  是矩阵 1.22/1.23 有意为之的命令面板/引用面板,不计入不一致。
+- **唯一例外(待归属方裁决,未改动)**:`features/chat-runtime/ComposerToolbar.tsx:106` 的投递方式控件
+  (发送/立即插话/工具完成后/本轮结束后)用的是**原生 `<select>`**。
+
+  未擅自改为 antd `Select` 的三个理由:
+  ① **可能是有意**——原生 select 在手机上调起系统滚轮选择器,对紧凑工具栏是常见的刻意选择,代码无注释说明;
+  ② 该文件属并发会话正在迭代的 Codex Harness / queue-steer 功能面(`e54fa10e` 刚落地),改动易冲突;
+  ③ 转换会改变渲染形态,需要单独的双端验证,而当前构建会打包进对方未完成改动,验证不可靠。
+
+  建议由该功能归属方决定:保持原生(并补一行注释说明是为移动端原生选择器)或统一到 antd `Select`。
+

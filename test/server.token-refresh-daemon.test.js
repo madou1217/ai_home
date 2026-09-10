@@ -31,6 +31,51 @@ function createJwt(payload) {
   return `header.${Buffer.from(JSON.stringify(payload)).toString('base64url')}.signature`;
 }
 
+it('Kimi adopts a fresh CLI projection during invalid-grant suppression and resumes keepalive', async (t) => {
+  const fixture = createAccountFixture(t, 'aih-kimi-suppression-recovery-');
+  const credentials = { user_id: 'kimi-suppression-user', access_token: 'expired-access',
+    refresh_token: 'revoked-refresh', expires_at: Math.floor(Date.now() / 1000) - 120 };
+  const accountRef = fixture.register('kimi', '1', { credentials });
+  const account = { accountRef, provider: 'kimi', authType: 'oauth',
+    accessToken: credentials.access_token, refreshToken: credentials.refresh_token,
+    authInvalidUntil: Date.now() + 3600000 };
+  const requests = [];
+  const recovered = [];
+  let startupFinished;
+  const startup = new Promise((resolve) => { startupFinished = resolve; });
+  const daemon = createTokenRefreshDaemon({ accounts: { kimi: [account] } }, {}, {
+    fs, aiHomeDir: fixture.aiHomeDir,
+    fetchWithTimeout: async (_url, init) => {
+      const grant = new URLSearchParams(init.body).get('refresh_token');
+      requests.push(grant);
+      return grant === 'revoked-refresh'
+        ? { status: 401, json: async () => ({ error: 'invalid_grant' }) }
+        : { status: 200, json: async () => ({ access_token: 'renewed-access',
+          refresh_token: 'renewed-refresh', expires_in: 900 }) };
+    },
+    accountStateService: { clearRuntimeBlock: async (ref) => { recovered.push(ref); return true; } },
+    logInfo: (message) => { if (message.includes('completed')) startupFinished(); },
+    logWarn: () => {}, logError: () => {}
+  });
+  t.after(() => daemon.stop());
+  await startup;
+  await daemon.forceRefresh();
+  assert.deepEqual(requests, ['revoked-refresh']);
+
+  const projectionFile = path.join(fixture.aiHomeDir, 'run', 'auth-projections', 'kimi', accountRef,
+    '.kimi-code', 'credentials', 'kimi-code.json');
+  fs.mkdirSync(path.dirname(projectionFile), { recursive: true });
+  fs.writeFileSync(projectionFile, JSON.stringify({ ...credentials,
+    refresh_token: 'fresh-cli-refresh', expires_at: credentials.expires_at + 60 }));
+  await daemon.forceRefresh();
+  assert.deepEqual(requests, ['revoked-refresh', 'fresh-cli-refresh']);
+  assert.equal(account.accessToken, 'renewed-access');
+  assert.equal(account.refreshToken, 'renewed-refresh');
+  assert.equal(account.authInvalidUntil, 0);
+  assert.deepEqual(recovered, [accountRef]);
+  assert.equal(JSON.parse(fs.readFileSync(projectionFile, 'utf8')).refresh_token, 'renewed-refresh');
+});
+
 describe('createTokenRefreshDaemon', () => {
   it('should create daemon with stats', () => {
     const state = {

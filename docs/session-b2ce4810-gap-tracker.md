@@ -662,3 +662,25 @@ package-lock.json ... are in sync`)。经核对,该次提交里 package.json 与
 - 修 CI 的前 4 个提交无需我推送:并发会话推 main 时已把它们带上远端(核对本地与 origin/main 为 0/0 分叉)。
 - lockfile 修复经用户授权后由我推送(`f96b3145`),web-build 结果见下一轮核对。
 
+## 二十、web-build 门禁的两层修复(2026-09-10)
+
+lockfile 修好后,web-build 越过 `npm ci`、卡在了下一步 **Lint**,暴露出**第二层**问题:
+`npm run lint` 本身早就是坏的——本地同样复现 40 个 `no-undef`(`self`/`caches`/`fetch`/`URL`/`console`/`process`)。
+我此前一直只跑 `npx eslint src/<具体文件>`,从没跑过 `npm run lint`,所以没看见。
+
+**真因在 flat config 的作用域**:`js.configs.recommended` 作用于**所有文件**(开着 `no-undef`、不带任何环境全局),
+而声明 globals 并关掉 `no-undef` 的那个块只匹配 `**/*.{ts,tsx}`。
+`package.json` 里的 `--ext ts,tsx` **拦不住**——那是 eslintrc 时代的旗标,flat config 下被忽略。
+于是 `public/sw.js`(Service Worker)与 `web/scripts/*.cjs`(Node 脚本)被当成"运行在无名环境里"来检查。
+
+修法是给它们各自声明真实运行环境,而不是加 ignore 把它们排除出检查(那等于放弃这两处的静态检查)。
+随之暴露出 `e2e-chat-metrics.cjs` 里两处真实死代码(未使用的 `fs` 引入、未使用的 catch 绑定),一并删除。
+本地 `npm run lint` 与 `npm run build` 均 exit 0。提交 `d9b6c187`。
+
+### 20.1 值得单独记一笔
+
+`AGENTS.md:42-45` 把 web-build.yml 描述为「**能抓到本地 node 测试看不见的**缺失引入/未定义引用/TS 编译错误的 CI 门禁」。
+实际上这道门禁自 2026-09-01 起从未通过(先卡 `npm ci`,修好后卡 lint),
+也就是说**文档承诺的这道保护事实上一直不存在**。这与 §十九 的结论同源:
+写在文档里的门禁不等于生效的门禁,得看它最近一次真的绿过没有。
+

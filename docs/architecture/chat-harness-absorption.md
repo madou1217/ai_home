@@ -190,3 +190,26 @@
 设计模式：`codex-session-history-sync/codex-turn-recovery` → Adapter + 持久投影 → 先补回执行器的已记录事实再收尾 → 三条 native 场景和持久化 gate 测试；`timeline-detail-contract` / Web parser → 边界适配 → 无损保留原生标识且兼容历史记录 → 原生 processId、DTO与完整 build。SOLID 将原生恢复、转换和存储分别留在已有模块；DRY 复用 history projector/sink；KISS/YAGNI 未新建执行引擎或第二套历史库。
 
 后续边界仍开放：底层 WebSocket 自动重连（不重开 AIH service）需要单独验证漏通知后的补齐；Work 工具并行配对与压缩切口、各真实 Provider 的能力矩阵仍未整体完成。本专题证明三个具体 native 场景，不外推所有版本/所有工具/所有平台。
+
+## 自动重连专题：先恢复历史，再接收实时事件（2026-09-10）
+
+固定 Codex `968835997714baaff199cfed5f89a2c65d8ca77d` 的 `codex-rs/app-server/src/thread_state.rs:59–60` 明确说明 `SendThreadResumeResponse` 原子地返回历史并订阅后续更新；`request_processors/thread_processor.rs:4517–4550` 将恢复请求交给同一个 thread listener 排序。结合固定 DSH `repair.ts` 的已有结果优先原则，AIH 必须在这一快照落库后才消费后续实时事件。发行版验证仍为 codex-cli 0.154.0-alpha.3，与源码 pin 分开记录。
+
+故障复现保持 AIH service 和原生执行器存活，只终止测试客户端的 WebSocket。原生工具先写 marker，再由 gate 放行；独立只读连接确认 native turn 已 completed 后，才允许 AIH 自动重连。旧实现忽略 `thread/resume` 响应，而且 Driver 设置 `excludeTurns:true`，导致 AIH 一直 running、缺失答案；新测试在旧实现超时失败，日志 `/tmp/aih-reconnect-before.log`。
+
+本次改动：
+
+- transport 新增可等待的 `onReconnectResume` 恢复钩子，与旧 `onReconnectRecovered` 观察通知分开；关键历史写入失败传给原 binding，其他会话继续恢复，不能吞掉异常后报恢复成功。
+- Driver 请求完整恢复历史，复用 `CodexTurnRecovery.restoreSnapshot` 的精确 native turn 锚点和既有 history projector/sink。补齐工具结果与回答后才结束回合；仍在运行的回合保留相同身份，继续处理原工具结果。
+- 一个客户端同一时间只运行一个重连流程；按 binding 暂存恢复期间的通知/服务端请求，历史导入完成后顺序交付。再次断线丢弃旧连接缓冲，再从新快照恢复；替换/解绑的旧回合不能把缓冲事件交给新 binding。
+- 普通 RPC 等待重连完成后发送，停止仍携带原 threadId/turnId，不重新执行工具。关闭中的异步拨号不能复活已销毁 client；旧 socket 的迟到消息不能污染新连接。
+
+验证：相关 Node 测试 61 pass（`/tmp/aih-reconnect-focused-final.log`），覆盖持久化 gate、连续断线、binding 替换、导入错误隔离、精确锚点及旧观察者兼容。真实 native 联合测试 11 pass（`/tmp/aih-reconnect-native-final.log`）：新增自动重连补全离线答案、运行中重连后接收唯一结果、重连期间停止原工具并保留队列。三个场景 marker 均只有一行；正常结束模型请求两次，停止时一次；全部在临时 HOME/项目和本地模型执行，不访问真实上游或用户凭据。
+
+真实 9527 Kimi 页面复查确认账号菜单 Provider 分组与图标、每轮用时/首字/TPS、会话汇总和上下文占用仍保留；本次没有修改 Web 源码。页面验证用于检查既有功能呈现，故障恢复的证据来自上述真实原生执行器，不冒充在用户会话中断线。
+
+最终全量串行回归 `node --test --test-concurrency=1 test/*.test.js`：6557 tests、6538 pass、19 skip、0 fail（`/tmp/aih-reconnect-full-final.log`）。其中 opt-in 原生场景在独立的 11 pass 联合执行中验证。真实 snapshot API HTTP 200、idle，上下文 2821/996147，三轮计时 28906/3183、3800/3018、10254/7369 ms 保持；ready=true、账号数不变。暂存范围 7 个文件，diff check 与 gitleaks 通过。
+
+设计模式：`codex-app-server-json-rpc-client` → 状态机 + 顺序缓冲 → 单次重连、先快照后增量、按 binding 隔离 → transport gate/连续断线/替换测试；`codex-turn-recovery/codex-session-driver` → Adapter + 持久投影 → 重启与自动重连共用精确恢复边界 → Driver 与三条新增 native 测试。SOLID 分离 transport 排序和会话事实；DRY 复用历史恢复；KISS/YAGNI 没有新增执行器、数据库或自动重放工具。按现有授权采用 self-review 后 scoped commit/push，排除其他会话的两个 streaming 文件。
+
+仍待继续：`turn/start` 已被原生接收但 RPC 回执丢失的启动窗口、交互审批重放矩阵、Work 并行工具配对/压缩切口及各真实 Provider 能力矩阵。本专题不声称这些边界均已完成，也不声称外部副作用 exactly-once。

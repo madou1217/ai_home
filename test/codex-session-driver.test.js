@@ -20,6 +20,53 @@ function interactionId(requestId) {
   });
 }
 
+test('Codex automatic reconnect imports the exact turn before settlement and ignores stale recovery', async () => {
+  const gate = deferred();
+  const histories = [];
+  const fixture = createFixture({ historySink: async (history) => {
+    histories.push(history);
+    await gate.promise;
+  } });
+  const turn = fixture.entry.driver.startTurn(turnContext());
+  let settled = false;
+  turn.then(() => { settled = true; });
+  await nextTask();
+  const binding = fixture.client.bindings.get(NATIVE_THREAD_ID);
+  assert.equal(binding.resumeParams.excludeTurns, false);
+  const response = { thread: { id: NATIVE_THREAD_ID, turns: [
+    { id: 'other-turn', status: 'completed', items: [] },
+    { id: 'native-turn-1', status: 'completed', items: [{ id: 'answer', type: 'agentMessage', text: 'recovered' }] }
+  ] } };
+  const recovered = binding.onReconnectResume(response);
+  await nextTask();
+  assert.equal(histories[0].events[0].turnId, 'turn-1');
+  assert.equal(settled, false);
+  gate.resolve();
+  await recovered;
+  assert.equal((await turn).status, 'completed');
+  await binding.onReconnectResume(response);
+  assert.equal(histories.length, 1);
+  assert.equal(fixture.client.calls.filter((call) => call.method === 'turn/start').length, 1);
+});
+
+test('Codex automatic reconnect rejects a missing anchor and propagates history persistence failure', async () => {
+  const failure = new Error('persist history failed');
+  let imports = 0;
+  const fixture = createFixture({ historySink: async () => { imports += 1; throw failure; } });
+  const turn = fixture.entry.driver.startTurn(turnContext());
+  const rejection = assert.rejects(turn, (error) => error === failure);
+  await nextTask();
+  const binding = fixture.client.bindings.get(NATIVE_THREAD_ID);
+  await assert.rejects(binding.onReconnectResume({ thread: { id: NATIVE_THREAD_ID,
+    turns: [{ id: 'foreign-turn', status: 'completed', items: [] }] } }), /recovery_anchor_missing/);
+  assert.equal(imports, 0);
+  await assert.rejects(binding.onReconnectResume({ thread: { id: NATIVE_THREAD_ID,
+    turns: [{ id: 'native-turn-1', status: 'completed', items: [] }] } }), (error) => error === failure);
+  binding.onDisconnected(failure);
+  await rejection;
+  assert.equal(imports, 1);
+});
+
 test('Codex driver reuses resident client and persists mapped native events', async () => {
   const fixture = createFixture({ approvalMode: 'plan' });
   const turn = fixture.entry.driver.startTurn(turnContext({
@@ -713,6 +760,7 @@ function createFixture(overrides = {}) {
     session, runtime,
     clientFactory: () => client,
     getSessionPolicy: overrides.getSessionPolicy,
+    historySink: overrides.historySink,
     eventSink: async (event) => events.push(event),
     transientEventSink: async (event) => transientEvents.push(event),
     onNativeSessionBound: (threadId) => bound.push(threadId),
@@ -733,7 +781,7 @@ function createFakeClient(decisionOrder, overrides) {
   const calls = [];
   const bindings = new Map();
   return {
-    calls, responses: [], responseAttempts: [], errors: [], connected: 0,
+    calls, bindings, responses: [], responseAttempts: [], errors: [], connected: 0,
     async ensureConnected() { this.connected += 1; return {}; },
     getVerifiedAccountIdentity() {
       return { verified: true, kind: 'oauth', assurance: 'identity' };

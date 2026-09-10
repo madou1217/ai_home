@@ -10,6 +10,113 @@ const test = require('node:test');
 const { createChatRuntimeComposition } = require('../lib/server/chat-runtime-composition');
 const { createAppServerClient } = require('../lib/server/codex-app-server-json-rpc-client');
 
+test('automatic WebSocket reconnect imports offline completion without restarting AIH or the tool', {
+  skip: !process.env.AIH_TEST_CODEX_EXECUTABLE, timeout: 40000
+}, async (t) => {
+  const f = await nativeFixture(t);
+  let offline = false;
+  let reconnect;
+  const gate = new Promise((resolve) => { reconnect = resolve; });
+  t.after(() => reconnect());
+  const service = f.open({ beforeConnect: () => offline ? gate : undefined });
+  const session = await service.createSession({ provider: 'codex', executionAccountRef: 'tool-probe',
+    projectPath: f.root, policy: { approvalMode: 'bypass' } });
+  await service.dispatchCommand(session.sessionId, { commandId: 'execute-marker', type: 'turn.submit',
+    payload: { content: 'Run the local tool probe once.' } });
+  await waitFor(() => fs.existsSync(path.join(f.root, 'marker')));
+  await waitFor(() => service.getSnapshot(session.sessionId).timeline.some((i) => i.kind === 'shell'));
+  const before = service.getSnapshot(session.sessionId);
+  offline = true;
+  f.sockets[0].terminate();
+  await new Promise((resolve) => f.sockets[0].once('close', resolve));
+  fs.writeFileSync(path.join(f.root, 'release'), 'continue');
+  const inspection = f.client();
+  await waitFor(async () => {
+    const response = await inspection.request('thread/read', {
+      threadId: before.runtimeBinding.nativeSessionId, includeTurns: true
+    });
+    return response.thread.turns.at(-1)?.status === 'completed';
+  });
+  reconnect();
+  await waitFor(() => service.getSnapshot(session.sessionId).state === 'idle');
+  const recovered = service.getSnapshot(session.sessionId);
+  assert.equal(recovered.timeline.filter((i) => i.kind === 'shell').length, 1);
+  assert.equal(recovered.timeline.find((i) => i.kind === 'shell').status, 'completed');
+  const answer = recovered.timeline.find((i) => i.content === 'TOOL_PROBE_DONE');
+  assert.equal(answer.turnId, before.activeTurn.turnId);
+  assert.equal(answer.detail.metrics.ttftMs, undefined);
+  assert.equal(fs.readFileSync(path.join(f.root, 'marker'), 'utf8'), 'executed\n');
+  assert.equal(f.requests.length, 2);
+});
+
+test('stop during WebSocket reconnection cancels the original running tool and preserves queued input', {
+  skip: !process.env.AIH_TEST_CODEX_EXECUTABLE, timeout: 40000
+}, async (t) => {
+  const f = await nativeFixture(t);
+  let offline = false;
+  let reconnect;
+  const gate = new Promise((resolve) => { reconnect = resolve; });
+  t.after(() => reconnect());
+  const service = f.open({ beforeConnect: () => offline ? gate : undefined });
+  const session = await service.createSession({ provider: 'codex', executionAccountRef: 'tool-probe',
+    projectPath: f.root, policy: { approvalMode: 'bypass' } });
+  await service.dispatchCommand(session.sessionId, { commandId: 'execute-marker', type: 'turn.submit',
+    payload: { content: 'Run the local tool probe once.' } });
+  await waitFor(() => fs.existsSync(path.join(f.root, 'marker')));
+  await waitFor(() => service.getSnapshot(session.sessionId).timeline.some((i) => i.kind === 'shell'));
+  const before = service.getSnapshot(session.sessionId);
+  offline = true;
+  f.sockets[0].terminate();
+  await new Promise((resolve) => f.sockets[0].once('close', resolve));
+  const queued = await service.dispatchCommand(session.sessionId, { commandId: 'pending-followup', type: 'queue.add',
+    payload: { content: 'Keep this input after cancellation.', policy: 'after_turn' } });
+  const stopRequest = service.dispatchCommand(session.sessionId, { commandId: 'stop-tool', type: 'turn.interrupt', payload: {} });
+  await waitFor(() => service.getSnapshot(session.sessionId).activeTurn?.interruptRequested);
+  reconnect();
+  await stopRequest;
+  await waitFor(() => service.getSnapshot(session.sessionId).state === 'idle');
+  const stopped = service.getSnapshot(session.sessionId);
+  assert.equal(stopped.policy.queueControl.paused, true);
+  assert.equal(service.store.queue.get(queued.result.queueId).status, 'queued');
+  assert.equal(stopped.timeline.filter((i) => i.kind === 'shell').length, 1);
+  assert.notEqual(stopped.timeline.find((i) => i.kind === 'shell').status, 'running');
+  assert.equal(fs.readFileSync(path.join(f.root, 'marker'), 'utf8'), 'executed\n');
+  assert.equal(f.requests.length, 1);
+  const inspection = f.client();
+  const history = await inspection.request('thread/read', {
+    threadId: before.runtimeBinding.nativeSessionId, includeTurns: true
+  });
+  assert.equal(history.thread.turns.at(-1).id, before.activeTurn.nativeTurnId);
+  assert.equal(history.thread.turns.at(-1).status, 'interrupted');
+});
+
+test('automatic reconnect keeps a running tool bound until its single result arrives', {
+  skip: !process.env.AIH_TEST_CODEX_EXECUTABLE, timeout: 40000
+}, async (t) => {
+  const f = await nativeFixture(t);
+  const service = f.open();
+  const session = await service.createSession({ provider: 'codex', executionAccountRef: 'tool-probe',
+    projectPath: f.root, policy: { approvalMode: 'bypass' } });
+  await service.dispatchCommand(session.sessionId, { commandId: 'execute-marker', type: 'turn.submit',
+    payload: { content: 'Run the local tool probe once.' } });
+  await waitFor(() => fs.existsSync(path.join(f.root, 'marker')));
+  await waitFor(() => service.getSnapshot(session.sessionId).timeline.some((i) => i.kind === 'shell'));
+  const before = service.getSnapshot(session.sessionId);
+  f.sockets[0].terminate();
+  await waitFor(() => f.resumes.length === 1);
+  const resumed = service.getSnapshot(session.sessionId);
+  assert.equal(resumed.activeTurn.nativeTurnId, before.activeTurn.nativeTurnId);
+  assert.equal(resumed.state, 'running');
+  fs.writeFileSync(path.join(f.root, 'release'), 'continue');
+  await waitFor(() => service.getSnapshot(session.sessionId).state === 'idle');
+  const completed = service.getSnapshot(session.sessionId);
+  assert.equal(completed.timeline.filter((i) => i.kind === 'shell').length, 1);
+  assert.equal(completed.timeline.find((i) => i.kind === 'shell').status, 'completed');
+  assert.equal(completed.timeline.filter((i) => i.content === 'TOOL_PROBE_DONE').length, 1);
+  assert.equal(fs.readFileSync(path.join(f.root, 'marker'), 'utf8'), 'executed\n');
+  assert.equal(f.requests.length, 2);
+});
+
 // Actual native tool execution against a deterministic loopback model. All files,
 // HOME and credentials belong to this test; opt-in matches the Chat native suite.
 test('native recovery imports tool results and the answer completed while AIH was offline', {
@@ -113,6 +220,8 @@ async function nativeFixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-native-tool-recovery-'));
   const requests = [];
   const clients = [];
+  const sockets = [];
+  const resumes = [];
   const services = [];
   const gateway = http.createServer(async (req, res) => {
     const chunks = [];
@@ -173,16 +282,26 @@ async function nativeFixture(t) {
     try { return (await fetch(`http://127.0.0.1:${port}/readyz`)).ok; } catch { return false; }
   });
   const client = (options = {}) => {
-    const instance = createAppServerClient({ ...options, resolveEndpoint: () => `ws://127.0.0.1:${port}` });
+    const instance = createAppServerClient({ ...options,
+      wsImpl: class extends require('ws') {
+        constructor(endpoint) { super(endpoint); sockets.push(this); }
+      },
+      resolveEndpoint: async () => {
+        if (options.beforeConnect) await options.beforeConnect();
+        return `ws://127.0.0.1:${port}`;
+      } });
     const bind = instance.bindTurn.bind(instance);
     instance.bindTurn = (id, handlers) => bind(id, { ...handlers, onNotification(message) {
       fs.appendFileSync(path.join(root, 'notifications.jsonl'), `${JSON.stringify(message)}\n`);
       handlers.onNotification(message);
+    }, async onReconnectResume(response) {
+      await handlers.onReconnectResume(response);
+      resumes.push(response);
     } });
     clients.push(instance);
     return instance;
   };
-  return { root, requests, client, disconnect: () => clients.forEach((c) => c.destroy()),
+  return { root, requests, client, sockets, resumes, disconnect: () => clients.forEach((c) => c.destroy()),
     async restartNative() {
       await stop(child, 'SIGKILL');
       child = start();
@@ -190,7 +309,7 @@ async function nativeFixture(t) {
         try { return (await fetch(`http://127.0.0.1:${port}/readyz`)).ok; } catch { return false; }
       });
     },
-    open() {
+    open(clientOverrides = {}) {
       const service = createChatRuntimeComposition({ aiHomeDir: root, hostHomeDir: root,
         getProfileDir: () => root, env,
         runtimeResolver: { resolve: () => ({ provider: 'codex', runtimeScope: 'tool-probe',
@@ -200,7 +319,7 @@ async function nativeFixture(t) {
           return { verified: true, kind: 'api-key', assurance: 'execution-credential',
             runtimeHomeHash: require('node:crypto').createHash('sha256').update(codexHome).digest('hex'),
             executionAccountHash: require('node:crypto').createHash('sha256').update('tool-probe').digest('hex') };
-        }, codexClientFactory: client });
+        }, codexClientFactory: (options) => client({ ...options, ...clientOverrides }) });
       services.push(service);
       return service;
     } };

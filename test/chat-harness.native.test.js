@@ -20,6 +20,7 @@ for (const credentialKind of ['codex', 'codex-api-key', 'claude', 'agy']) test(`
   const gatewayModel = provider === 'agy' ? 'gemini-2.5-flash' : 'claude-sonnet-4-5';
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-chat-harness-native-'));
   const requests = [];
+  let failureMode = '';
   let releaseReasoning;
   const reasoningGate = new Promise((resolve) => { releaseReasoning = resolve; });
   const gateway = http.createServer(async (req, res) => {
@@ -27,6 +28,16 @@ for (const credentialKind of ['codex', 'codex-api-key', 'claude', 'agy']) test(`
     for await (const chunk of req) chunks.push(chunk);
     const body = JSON.parse(Buffer.concat(chunks).toString());
     requests.push({ url: req.url, body, accountRef: req.headers['x-account-ref'] });
+    if (failureMode === 'http') {
+      res.writeHead(500, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: { message: 'local gateway probe failure', type: 'server_error' } }));
+      return;
+    }
+    if (failureMode === 'stream') {
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      res.end('event: response.created\ndata: {"type":"response.created","response":{"id":"resp_interrupted","status":"in_progress","output":[]}}\n\n');
+      return;
+    }
     await respond(res, requests.length, reasoningGate);
   });
   await listen(gateway);
@@ -177,6 +188,22 @@ for (const credentialKind of ['codex', 'codex-api-key', 'claude', 'agy']) test(`
     && request.body.model === gatewayModel));
   console.log(JSON.stringify({ provider, credentialKind, nativeThreadId: nativeId, modelRequests: requests.length,
     threadStarts: 1, imports: 1, compactions: 1, restored: true, nativeProcessRestarted: true }));
+  if (credentialKind === 'claude') {
+    for (const mode of ['http', 'stream']) {
+      failureMode = mode;
+      const before = requests.length;
+      await service.dispatchCommand(session.sessionId, {
+        commandId: `failed-${mode}`, type: 'turn.submit', payload: { content: 'Exercise bounded retries' }
+      });
+      await service.waitForActorIdle(session.sessionId);
+      assert.equal(service.getSnapshot(session.sessionId).state, 'idle');
+      const failures = service.readEvents(session.sessionId).events.filter((event) => event.type === 'turn.failed');
+      assert.equal(failures.length, mode === 'http' ? 1 : 2);
+      const attempts = requests.length - before;
+      assert.ok(attempts > 0 && attempts <= 4, `${mode} failure made ${attempts} requests`);
+      console.log(JSON.stringify({ provider, failureMode, modelRequests: attempts, settled: true }));
+    }
+  }
 });
 
 async function stopHarness(child) {

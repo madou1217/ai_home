@@ -603,6 +603,20 @@ test('Codex recovery captures replayed pending requests before exposing the acti
   assert.equal((await recovered.done).status, 'completed');
 });
 
+test('Codex recovery reissues a persisted stop against the same native turn without starting inference', async () => {
+  const fixture = createFixture({ nativeSessionId: NATIVE_THREAD_ID });
+  const context = recoveryContext();
+  context.activeTurn.interruptRequested = true;
+  const recovered = await fixture.entry.driver.recoverTurn(context);
+  assert.deepEqual(fixture.client.params('turn/interrupt'), {
+    threadId: NATIVE_THREAD_ID, turnId: 'native-turn-recovered'
+  });
+  assert.equal(fixture.client.methods().includes('turn/start'), false);
+  fixture.client.notify('turn/completed', { threadId: NATIVE_THREAD_ID,
+    turn: { id: 'native-turn-recovered', status: 'interrupted' } });
+  assert.equal((await recovered.done).status, 'interrupted');
+});
+
 test('Codex recovery fails closed when a persisted pending request is not replayed', async () => {
   const fixture = createFixture({
     nativeSessionId: NATIVE_THREAD_ID,

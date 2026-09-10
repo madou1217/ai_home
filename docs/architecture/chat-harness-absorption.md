@@ -50,7 +50,7 @@
 | 精确消息分支、重新生成 | immutable seed + lineage 事务、幂等命令、独立原生 thread | 消息按钮、返回父会话 | 精确 prefix、附件归属、重启重放和 Kimi 页面通过 | 本批已验 |
 | Chat role | 持久化校验、执行前读取并注入 | 会话设置，下一轮生效 | reload、原生 resume、分支继承和 Kimi 回答通过 | 本批已验 |
 | 上下文量与手动/自动压缩 | 当前用量持久投影；native 单一自动循环 | 紧凑指标、压缩入口、50–90% 阈值 | 自动阈值、失败、reload；Kimi 手动压缩后续聊通过 | 本批已验，覆盖边界见下 |
-| 命令队列、停止与故障恢复 | 已有 actor/queue/recovery | 已接入 | 现有单测；后续持续对照 DSH | 已有，持续审计 |
+| 命令队列、停止与故障恢复 | 正常结束与停止/失败分开；持久暂停、run 边界校验、停止意图恢复 | 运行中发送入口、队列暂停状态 | 服务级、原生和真实 Kimi 停止/恢复已验；见队列专题 | 本批已补齐已发现缺口，持续审计 |
 | 工具输出、工具配对、审批、并行提交顺序 | Work 模式已有部分 | 已有部分 | 需要逐能力协议审计 | 后续专题 |
 | 扩展点、preset、技能、预算和调度 | 现有 provider registry | 非本批 UI 目标 | 比较 Pi/DSH 接缝，按具体需求接入 | 后续专题 |
 
@@ -104,3 +104,34 @@
 - `codex-session-driver.js` / `chat-context-state.js` → Adapter + 持久投影 → 执行器和 AIH 会话域分离，reload 不复活压缩前用量 → 5 条原生路径与真实 Kimi 验收。
 - SOLID：历史转换、事务、投影、执行各自负责单一边界；KISS/YAGNI：不引入第二个 agent loop 或插件框架；DRY：提交/压缩共用 settings，角色与窗口以持久 policy/模型目录为来源。
 - 本批使用 self-review，未启动子 agent；按已有提交推送授权进行范围受控交付，另外两个会话的 Codex streaming 改动排除。
+
+## 队列专题：停止、压缩与补充输入（2026-09-10）
+
+参考本页固定 Pi `agent-loop.ts:167–198,255–266` 与 DSH `packages/api/session-controller/src/commands.ts:493–510`。Pi 分开运行中 steering 和结束后 follow-up，并在耗时准备后再次检查输入；DSH 的取消明确 `keepInbox:true`，取消当前任务而保留未消费消息。AIH 复用自己的持久队列，不引入第二个 inbox。
+
+发现并修复的具体差距：
+
+1. Actor 的停止单测通过，但服务层把 `turn.interrupted/turn.failed` 当成自动执行下一条的边界。新增完整服务链测试在旧实现上复现停止后启动次数从 1 变 2；现在只由正常完成继续，停止/失败/丢失运行均持久暂停待办。
+2. 结束后调度检查已完成，才收到浏览器排队请求时，旧实现没有第二个触发点。现在正常完成和延迟到达的消息共用原 run 的幂等 dispatch，保证不丢消息、不一轮双发。没有运行过的新空会话队列仍由显式执行开始。
+3. 调度回调迟到时，可能把旧工具/回合边界的输入送进新一轮。协调器与 Actor 内分别核对 run 身份；停止/恢复阶段不接受旧边界插话。
+4. 重启恢复原先重置 `interruptRequested:false`。现在停止意图持久化，恢复同一个 native turn 后只重发取消请求，不发新的模型任务；原生直接报告 interrupted 也会暂停队列。
+5. 运行中工具栏原先只有停止图标，输入提交依赖回车。现在有待发文本时同时提供纯图标发送；Chat 默认“本轮结束后”，压缩/启动/停止/恢复时只允许排队，Chat 不展示没有工具执行的“工具完成后”。输入法正在选字时回车不提交。
+
+| 状态/动作 | 下一步行为 | 持久与恢复规则 |
+| --- | --- | --- |
+| 正常回答结束 | 按 FIFO 自动执行一条 after-turn 消息 | 同 run 的重复边界不重复启动 |
+| 正常结束后迟到的入队请求 | 若仍是该边界且无新运行，继续队列 | 旧边界不得越过新运行 |
+| 停止、原生取消、回答失败 | 留住待发消息并暂停 | 刷新/重启保留暂停和队列顺序 |
+| 用户点击“现在执行”或发送新消息 | 明确恢复执行；成功后继续 FIFO | 事务内恢复队列状态 |
+| 压缩中排队 | 等待压缩成功后执行 | 压缩失败则暂停；对原已暂停队列手动压缩不擅自恢复 |
+| 停止请求尚未完成时重启 | 恢复同一原生身份，重发取消 | 不重新生成，不消费待办 |
+
+真实 Kimi 验收会话为 `session-cb15fa41-b7e1-4980-a2c0-702200d1f832`：长回答运行中点击发送加入待办，点击停止后约 29 秒的部分回答保留；刷新后仍显示“已暂停，待发消息已保留”；点击“现在执行”才得到 `QUEUE_RESUMED_OK`，用时 3800ms、首字 3018ms。已检查实际截图，队列状态为紧凑行内说明，停止保持纯图标。
+
+压缩中的真实页面仅提供“本轮结束后”，输入后出现发送图标；点击发送时压缩已结束，命令日志确认走普通 `turn.submit`，随后得到 `COMPACT_QUEUE_OK`，用时 10254ms、首字 7369ms。snapshot 为 idle、队列为空、上下文 2821/996147、stale=false。该页面验证证明压缩期间可保留输入、结束后可发送；严格“入队发生在压缩结束之前”的边界由本地 native 的确定性 gate 证明，不依赖手动点击速度。
+
+测试证据：`test/chat-runtime-automatic-queue.test.js` 覆盖停止/原生取消/失败、迟到输入、旧边界、压缩、顺序；`test/chat-runtime-recovery.test.js` 覆盖停止中重启和持久暂停；`test/codex-session-driver.test.js` 验证恢复只取消原 turn；`test/chat-harness.native.test.js` 5 条路径通过，其中 Kimi 本地原生模型验证暂停后不发请求、重开服务后显式恢复，以及压缩后自动消费待发消息。该原生证据不等同所有上游实测。
+
+最终验证（本专题）：全量 `node --test --test-concurrency=1 test/*.test.js` 为 6531 tests、6518 pass、13 skip、0 fail（`/tmp/aih-queue-full-final.log`）；相关 Web 测试 186 pass（`bun test web/src/chat-runtime web/src/features/chat-runtime`）；5 个改动 Web 文件的 ESLint 通过；Node 22 下 `cd web && npm run build` 通过，日志为 `/tmp/aih-queue-{web,eslint,build}-final.log`。首次全量只失败在旧事件序列断言缺少新增的 `session.policy.changed`；补齐该断言后全量通过，没有屏蔽用例。
+
+设计模式：`automatic-queue-boundary-strategy/session-queue-lifecycle` → Strategy + Command → 将调度意图和 Actor 内并发校验分开 → 旧边界与停止回归；`store/recovery-repository` → 事务与状态机 → 暂停、停止意图和队列归属持久一致 → 重启/FIFO测试；`composer-policy/QueueDock` → 持久状态投影 → 页面反映服务端真实暂停而非本地推测 → Kimi 刷新验收。SOLID 保持调度、存储、执行与渲染边界；DRY 复用 policy/命令日志；KISS/YAGNI 不增加单独队列引擎或后台重试循环。

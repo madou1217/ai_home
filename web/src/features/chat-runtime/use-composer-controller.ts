@@ -39,7 +39,7 @@ export function useComposerController(props: ComposerProps): ComposerController 
   const view = useComposerViewState(props);
   const commands = useComposerCommands(props, view);
   const handleKeyDown = useCallback((event: KeyboardEvent<HTMLTextAreaElement>): void => {
-    if (event.key !== 'Enter' || event.shiftKey) return;
+    if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing || event.keyCode === 229) return;
     event.preventDefault();
     void commands.send();
   }, [commands]);
@@ -49,11 +49,11 @@ export function useComposerController(props: ComposerProps): ComposerController 
 function useComposerViewState(props: ComposerProps) {
   const projection = useSessionSelector(props.store, selectComposerProjection);
   const policy = useMemo(
-    () => resolveComposerPolicy(projection.state, projection.capabilities),
-    [projection],
+    () => resolveComposerPolicy(projection.state, projection.capabilities, projection.compacting, props.workspaceMode !== 'chat'),
+    [projection, props.workspaceMode],
   );
   const [input, setInput] = useState('');
-  const [requestedDelivery, setDelivery] = useState<ComposerDelivery>('turn');
+  const [requestedDelivery, setDelivery] = useState<ComposerDelivery>(props.workspaceMode === 'chat' ? 'after_turn' : 'turn');
   const [effortChoice, setEffortChoice] = useState<{ sessionId: string; value: string }>();
   const reasoningEffort = effortChoice?.sessionId === projection.sessionId
     ? effortChoice.value : projection.reasoningEffort;
@@ -145,10 +145,12 @@ async function dispatchComposerInput(props: ComposerProps, view: ComposerViewSta
 }
 
 function selectComposerProjection(projection: SessionProjection) {
+  const context = projection.policy.contextState as { compaction?: { status?: string } } | undefined;
   return {
     sessionId: projection.sessionId,
     state: projection.state,
     capabilities: projection.capabilitySnapshot,
+    compacting: context?.compaction?.status === 'running',
     reasoningEffort: typeof projection.policy.reasoningEffort === 'string'
       ? projection.policy.reasoningEffort : '',
   };

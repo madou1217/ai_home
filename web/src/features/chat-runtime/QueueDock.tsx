@@ -21,10 +21,14 @@ interface Props {
 export default function QueueDock({ store, actions }: Props) {
   const queue = useSessionSelector(store, selectQueue);
   const state = useSessionSelector(store, selectState);
+  const paused = useSessionSelector(store, (projection) =>
+    (projection.policy.queueControl as { paused?: boolean } | undefined)?.paused === true);
   if (queue.length === 0) return null;
   return (
     <section className={styles.queueDock} aria-label="消息队列">
-      <header><strong>接下来</strong><span>{queue.length} 条</span></header>
+      <header><strong>接下来</strong><span>{queue.length} 条</span>
+        {paused ? <span role="status">已暂停，待发消息已保留</span> : null}
+      </header>
       {queue.map((entry, index) => {
         const policy = queueRowPolicy(queue, index, state);
         return <QueueRow

@@ -67,13 +67,13 @@ test('live tool completion steers one queued item through an idempotent actor co
     service.store.queue.get(subagentQueued.queueId).status === 'completed'
   ));
   assert.deepEqual(interventions, [
-    { mode: 'steer_current', content: 'focus on tests' },
-    { mode: 'steer_current', content: 'review the result' }
+    { mode: 'steer_current', content: 'focus on tests', expectedRunId: started.result.runId },
+    { mode: 'steer_current', content: 'review the result', expectedRunId: started.result.runId }
   ]);
   assert.deepEqual(internalCommands(service, 'turn.intervene').map(commandShape), [{
-    payload: { content: 'focus on tests', mode: 'steer_current' }, status: 'completed'
+    payload: { content: 'focus on tests', mode: 'steer_current', expectedRunId: started.result.runId }, status: 'completed'
   }, {
-    payload: { content: 'review the result', mode: 'steer_current' }, status: 'completed'
+    payload: { content: 'review the result', mode: 'steer_current', expectedRunId: started.result.runId }, status: 'completed'
   }]);
 
   runs[0].resolve({ text: 'done' });
@@ -147,9 +147,8 @@ test('turn terminals wait for actor idle and drain after-turn items one by one',
   ]);
   assert.equal(service.store.queue.get(tool.queueId).status, 'queued');
   assert.equal(service.store.queue.get(afterTurn.queueId).status, 'running');
-  assert.deepEqual(internalCommands(service, 'queue.dispatch').map(commandShape), [{
-    payload: { policy: 'after_turn' }, status: 'completed'
-  }]);
+  assert.equal(internalCommands(service, 'queue.dispatch')[0].status, 'completed');
+  assert.equal(internalCommands(service, 'queue.dispatch')[0].payload.policy, 'after_turn');
 
   runs[1].resolve({ text: 'next done' });
   await waitFor(() => starts.length === 3);
@@ -165,6 +164,92 @@ test('turn terminals wait for actor idle and drain after-turn items one by one',
   assert.equal(service.store.queue.get(finalTurn.queueId).status, 'completed');
 });
 
+for (const outcome of ['stop', 'native-stop', 'failure']) test(`${outcome} pauses automatic draining without deleting queued input`, async (t) => {
+  const { service, runs, starts } = createFixture(t);
+  const session = await createSession(service);
+  await submitTurn(service, session.sessionId, 'current');
+  const queued = enqueue(service, session.sessionId, 'preserve me', 'after_turn');
+  if (outcome === 'stop') await service.dispatchCommand(session.sessionId, {
+    commandId: 'stop-current', type: 'turn.interrupt', payload: { reason: 'user_stop' }
+  });
+  if (outcome === 'native-stop') runs[0].resolve({ status: 'interrupted' });
+  else runs[0].reject(new Error(outcome));
+  await service.waitForActorIdle(session.sessionId);
+  await nextTasks();
+  assert.equal(starts.length, 1);
+  assert.equal(service.store.queue.get(queued.queueId).status, 'queued');
+  assert.equal(service.getSnapshot(session.sessionId).policy.queueControl.paused, true);
+  // A delayed browser request arriving after stop also stays pending.
+  const delayed = enqueue(service, session.sessionId, 'arrived after stop', 'after_turn');
+  await nextTasks();
+  assert.equal(starts.length, 1);
+  await service.dispatchCommand(session.sessionId, {
+    commandId: 'resume-explicitly', type: 'queue.dispatch', payload: { queueId: queued.queueId }
+  });
+  assert.equal(starts[1].command.payload.content, 'preserve me');
+  runs[1].resolve({});
+  await waitFor(() => starts.length === 3);
+  assert.equal(service.store.queue.get(delayed.queueId).status, 'running');
+  runs[2].resolve({});
+  await service.waitForActorIdle(session.sessionId);
+});
+
+test('a follow-up arriving after completion starts once without another terminal event', async (t) => {
+  const { service, runs, starts } = createFixture(t);
+  const session = await createSession(service);
+  await submitTurn(service, session.sessionId, 'current');
+  runs[0].resolve({});
+  await service.waitForActorIdle(session.sessionId);
+  await nextTasks();
+  const command = { commandId: 'late-followup', type: 'queue.add',
+    payload: { content: 'late input', policy: 'after_turn' } };
+  await service.dispatchCommand(session.sessionId, command);
+  await service.dispatchCommand(session.sessionId, command);
+  await waitFor(() => starts.length === 2);
+  assert.equal(starts[1].command.payload.content, 'late input');
+  assert.equal(service.store.listQueue(session.sessionId).length, 1);
+  runs[1].resolve({});
+  await service.waitForActorIdle(session.sessionId);
+});
+
+test('an obsolete automatic dispatch cannot consume work after a newer turn or stop', async (t) => {
+  const { service, runs, starts } = createFixture(t);
+  const session = await createSession(service);
+  const first = await submitTurn(service, session.sessionId, 'first');
+  runs[0].resolve({});
+  await service.waitForActorIdle(session.sessionId);
+  await submitTurn(service, session.sessionId, 'newer');
+  const queued = enqueue(service, session.sessionId, 'pending', 'after_turn');
+  await service.dispatchCommand(session.sessionId, { commandId: 'stop-newer', type: 'turn.interrupt', payload: {} });
+  runs[1].resolve({});
+  await service.waitForActorIdle(session.sessionId);
+  await service.dispatchCommand(session.sessionId, { commandId: 'old-auto', type: 'queue.dispatch',
+    payload: { policy: 'after_turn', afterRunId: first.result.runId } });
+  assert.equal(starts.length, 2);
+  assert.equal(service.store.queue.get(queued.queueId).status, 'queued');
+});
+
+test('successful compaction releases a waiting follow-up; failed compaction preserves it', async (t) => {
+  const { service, runs, starts } = createFixture(t);
+  const session = await createSession(service);
+  await service.dispatchCommand(session.sessionId, { commandId: 'compact-success', type: 'slash.execute',
+    payload: { name: 'compact' } });
+  enqueue(service, session.sessionId, 'after compact', 'after_turn');
+  runs[0].resolve({});
+  await waitFor(() => starts.length === 2);
+  assert.equal(starts[1].command.payload.content, 'after compact');
+  runs[1].resolve({});
+  await service.waitForActorIdle(session.sessionId);
+  await service.dispatchCommand(session.sessionId, { commandId: 'compact-fail', type: 'slash.execute',
+    payload: { name: 'compact' } });
+  const pending = enqueue(service, session.sessionId, 'after failed compact', 'after_turn');
+  runs[2].reject(new Error('compaction failed'));
+  await service.waitForActorIdle(session.sessionId);
+  await nextTasks();
+  assert.equal(starts.length, 3);
+  assert.equal(service.store.queue.get(pending.queueId).status, 'queued');
+});
+
 function createFixture(t, options = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-auto-queue-'));
   let nextId = 0;
@@ -176,7 +261,9 @@ function createFixture(t, options = {}) {
       starts.push(context);
       runs.push(run);
       return run.promise;
-    }
+    },
+    compactThread(context) { return this.startTurn(context); },
+    async interruptTurn() {}
   };
   const service = createChatRuntimeService({
     storeOptions: {

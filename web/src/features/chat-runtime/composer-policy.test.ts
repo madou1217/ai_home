@@ -46,3 +46,14 @@ test('account switching is locked for the complete active turn lifecycle', () =>
   assert.equal(canSwitchComposerAccount(resolveComposerPolicy('waiting_input', capabilities)), false);
   assert.equal(canSwitchComposerAccount(resolveComposerPolicy('recovering', capabilities)), false);
 });
+
+test('starting, stopping, recovery and compaction accept queued follow-ups without advertising live steer', () => {
+  for (const state of ['starting', 'interrupting', 'recovering', 'completing'] as const) {
+    assert.deepEqual(resolveComposerPolicy(state, capabilities).deliveries, ['after_turn']);
+  }
+  assert.deepEqual(resolveComposerPolicy('running', capabilities, true).deliveries, ['after_turn']);
+  assert.deepEqual(resolveComposerPolicy('running', capabilities, false).deliveries,
+    ['steer_current', 'after_tool_boundary', 'after_turn']);
+  assert.deepEqual(resolveComposerPolicy('running', capabilities, false, false).deliveries,
+    ['steer_current', 'after_turn']);
+});

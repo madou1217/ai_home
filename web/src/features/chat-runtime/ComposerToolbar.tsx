@@ -87,17 +87,18 @@ export default function ComposerToolbar({ props, controller, onSelectImages }: P
           >
             <StopOutlined />
           </button>
-        ) : (
+        ) : null}
+        {!controller.policy.canInterrupt || controller.canSend ? (
           <button
             type="button"
             className={styles.sendButton}
-            aria-label="发送消息"
+            aria-label={controller.policy.turnActive ? '发送补充消息' : '发送消息'}
             disabled={!controller.canSend || controller.busy}
             onClick={() => void controller.send()}
           >
             <SendOutlined />
           </button>
-        )}
+        ) : null}
       </div>
     </div>
   );

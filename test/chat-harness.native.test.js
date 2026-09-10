@@ -22,6 +22,7 @@ for (const credentialKind of ['codex', 'codex-api-key', 'claude', 'agy', 'kimi']
   const requests = [];
   let failureMode = '';
   let pressureResponsePending = false;
+  let responseGate;
   let releaseReasoning;
   const reasoningGate = new Promise((resolve) => { releaseReasoning = resolve; });
   let releaseKimiThinking;
@@ -73,7 +74,9 @@ for (const credentialKind of ['codex', 'codex-api-key', 'claude', 'agy', 'kimi']
     } else {
       const highUsage = pressureResponsePending;
       pressureResponsePending = false;
-      await respond(res, requests.length, reasoningGate, highUsage);
+      const gate = responseGate;
+      responseGate = undefined;
+      await respond(res, requests.length, reasoningGate, highUsage, gate);
     }
   });
   await listen(gateway);
@@ -288,6 +291,44 @@ for (const credentialKind of ['codex', 'codex-api-key', 'claude', 'agy', 'kimi']
       'automatic compaction must come from the native loop, without an AIH manual request');
     assert.equal(service.getSnapshot(fork.sessionId).policy.contextState.compaction.status, 'completed');
     console.log(JSON.stringify({ provider, automaticCompaction: true }));
+    const queueSession = await service.openChatSession({ provider, executionAccountRef: 'acct_probe' });
+    let releaseResponse;
+    responseGate = new Promise((resolve) => { releaseResponse = resolve; });
+    t.after(() => releaseResponse?.());
+    const queueStart = requests.length;
+    await service.dispatchCommand(queueSession.sessionId, { commandId: 'queue-long-turn', type: 'turn.submit',
+      payload: { content: 'Wait while I queue follow-up input', model: gatewayModel } });
+    await waitFor(() => requests.length > queueStart && service.getSnapshot(queueSession.sessionId).activeTurn?.nativeTurnId);
+    const queued = await service.dispatchCommand(queueSession.sessionId, { commandId: 'queue-native-pending', type: 'queue.add',
+      payload: { content: 'NATIVE_QUEUE_MARKER', policy: 'after_turn' } });
+    await service.dispatchCommand(queueSession.sessionId, { commandId: 'queue-native-stop', type: 'turn.interrupt', payload: {} });
+    await service.waitForActorIdle(queueSession.sessionId);
+    releaseResponse();
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    assert.equal(requests.length, queueStart + 1, 'stop must not launch the waiting follow-up');
+    assert.equal(service.store.queue.get(queued.result.queueId).status, 'queued');
+    assert.equal(service.getSnapshot(queueSession.sessionId).policy.queueControl.paused, true);
+    service.close();
+    clients.forEach((client) => client.destroy());
+    service = makeService();
+    await service.openChatSession({ provider, executionAccountRef: 'acct_probe', chatSessionId: queueSession.sessionId });
+    assert.equal(service.getSnapshot(queueSession.sessionId).policy.queueControl.paused, true);
+    await service.dispatchCommand(queueSession.sessionId, { commandId: 'queue-native-resume', type: 'queue.dispatch',
+      payload: { queueId: queued.result.queueId } });
+    await service.waitForActorIdle(queueSession.sessionId);
+    assert.match(JSON.stringify(requests.at(-1).body.input), /NATIVE_QUEUE_MARKER/);
+    assert.equal(service.store.queue.get(queued.result.queueId).status, 'completed');
+    responseGate = new Promise((resolve) => { releaseResponse = resolve; });
+    const beforeCompaction = requests.length;
+    await service.dispatchCommand(queueSession.sessionId, { commandId: 'queue-during-compact', type: 'slash.execute', payload: { name: 'compact' } });
+    await waitFor(() => requests.length > beforeCompaction);
+    const afterCompact = await service.dispatchCommand(queueSession.sessionId, { commandId: 'queue-compact-followup', type: 'queue.add',
+      payload: { content: 'AFTER_COMPACT_QUEUE_MARKER', policy: 'after_turn' } });
+    releaseResponse();
+    await waitFor(() => service.store.queue.get(afterCompact.result.queueId).status === 'completed');
+    assert.match(JSON.stringify(requests.at(-1).body.input), /AFTER_COMPACT_QUEUE_MARKER/);
+    console.log(JSON.stringify({ provider, queueStopPreservesInput: true, queuePauseSurvivesReload: true,
+      explicitResume: true, followupAfterCompaction: true }));
     failureMode = 'http';
     await service.dispatchCommand(fork.sessionId, { commandId: 'compact-failure', type: 'slash.execute', payload: { name: 'compact' } });
     await service.waitForActorIdle(fork.sessionId);
@@ -374,7 +415,7 @@ async function waitFor(predicate) {
   throw new Error('Native Harness did not become ready');
 }
 
-async function respond(res, count, reasoningGate, highUsage = false) {
+async function respond(res, count, reasoningGate, highUsage = false, responseGate) {
   const id = `resp_probe_${count}`;
   const text = `cobalt-42 response ${count}`;
   const item = { id: `msg_probe_${count}`, type: 'message', role: 'assistant', status: 'completed',
@@ -388,6 +429,7 @@ async function respond(res, count, reasoningGate, highUsage = false) {
   res.writeHead(200, { 'content-type': 'text/event-stream' });
   const send = (type, value) => res.write(`event: ${type}\ndata: ${JSON.stringify({ type, ...value })}\n\n`);
   send('response.created', { response: { ...response, status: 'in_progress', output: [] } });
+  if (responseGate) await responseGate;
   if (count === 1) {
     send('response.output_item.added', { output_index: 0, item: reasoningItems[0] });
     send('response.output_item.done', { output_index: 0, item: reasoningItems[0] });

@@ -132,6 +132,43 @@ test('service restart reattaches one active run and preserves pending interactio
   assert.equal(service.store.interactions.get('approval-1').state, 'expired');
 });
 
+test('restart preserves stop intent and queue order until an explicit resume', async (t) => {
+  const fixture = createFixture(t);
+  const seed = fixture.openStore();
+  const { session } = seedActiveRun(seed);
+  const first = seed.enqueue(session.sessionId, { commandId: 'pending-first', policy: 'after_turn', payload: { content: 'first' } });
+  const second = seed.enqueue(session.sessionId, { commandId: 'pending-second', policy: 'after_turn', payload: { content: 'second' } });
+  seed.setSessionState(session.sessionId, 'interrupting', {
+    ...seed.getSession(session.sessionId).activeTurn, state: 'interrupting', interruptRequested: true
+  });
+  seed.close();
+  const run = deferred();
+  const started = [];
+  let recovered;
+  const service = fixture.openService({
+    startTurn: async (context) => { started.push(context.command.payload.content); return {}; },
+    recoverTurn(context) { recovered = context; return { done: run.promise }; }
+  });
+  await service.waitForRecovery();
+  assert.equal(recovered.activeTurn.interruptRequested, true);
+  assert.equal(service.getSnapshot(session.sessionId).state, 'interrupting');
+  run.resolve({});
+  await service.waitForActorIdle(session.sessionId);
+  assert.equal(service.getSnapshot(session.sessionId).policy.queueControl.paused, true);
+  assert.ok(eventTypes(service, session.sessionId).includes('turn.interrupted'));
+  const pending = service.store.listQueue(session.sessionId).filter((item) => item.status === 'queued');
+  assert.deepEqual(pending.map((item) => item.queueId), [first.queueId, second.queueId]);
+  service.close();
+  const reopened = fixture.openService({ startTurn: async (context) => { started.push(context.command.payload.content); return {}; } });
+  await reopened.waitForRecovery();
+  assert.equal(reopened.getSnapshot(session.sessionId).policy.queueControl.paused, true);
+  assert.deepEqual(started, []);
+  await reopened.dispatchCommand(session.sessionId, { commandId: 'resume-pending', type: 'queue.dispatch', payload: {} });
+  await waitForState(reopened, session.sessionId, 'idle');
+  for (let n = 0; n < 20 && started.length < 2; n += 1) await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(started, ['first', 'second']);
+});
+
 test('restart converges orphaned leases, running work, interactions and accepted commands', async (t) => {
   const fixture = createFixture(t);
   const seed = fixture.openStore();

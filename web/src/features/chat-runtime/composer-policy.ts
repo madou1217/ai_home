@@ -15,13 +15,16 @@ export interface ComposerPolicy {
 export function resolveComposerPolicy(
   state: SessionState,
   capabilities?: CapabilitySnapshot,
+  compacting = false,
+  allowToolBoundary = true,
 ): ComposerPolicy {
   const turnActive = ACTIVE_STATES.has(state);
   const deliveries: ComposerDelivery[] = turnActive ? [] : ['turn'];
-  if (turnActive && supports(capabilities, 'turn.steer.current')) {
+  const canSteer = (state === 'running' || state === 'waiting_input') && !compacting;
+  if (canSteer && supports(capabilities, 'turn.steer.current')) {
     deliveries.push('steer_current');
   }
-  if (turnActive && supports(capabilities, 'turn.steer.tool_boundary')) {
+  if (canSteer && allowToolBoundary && supports(capabilities, 'turn.steer.tool_boundary')) {
     deliveries.push('after_tool_boundary');
   }
   if (turnActive && supports(capabilities, 'turn.queue')) deliveries.push('after_turn');

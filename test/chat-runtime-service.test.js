@@ -507,6 +507,7 @@ test('service queue dispatch publishes one running and terminal lifecycle', asyn
     'turn.queued',
     'queue.item.updated',
     'turn.started',
+    'session.policy.changed',
     'queue.item.updated',
     'turn.completed'
   ]);

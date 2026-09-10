@@ -5,6 +5,7 @@ import { StatisticCard } from '@ant-design/pro-components';
 import Button from '@/components/ui/AppButton';
 import PageScaffold from '@/components/ui/PageScaffold';
 import SectionCard from '@/components/ui/SectionCard';
+import DataToolbar from '@/components/ui/DataToolbar';
 import ListTable from '@/components/ui/ListTable';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
@@ -24,6 +25,7 @@ import {
   Grid,
   Empty,
   Spin,
+  Tabs,
   Drawer
 } from 'antd';
 import type { MenuProps } from 'antd';
@@ -2287,6 +2289,45 @@ export default function Accounts() {
               />
             }
           >
+          {/* 筛选与刷新此前只挂在列表模式的表格 toolbar 里,切到卡片模式就整条消失
+            * (provider 标签、状态筛选、刷新按钮全没了)。提到这里由两种模式共用,
+            * 用的是 DataToolbar——它的设计意图本就是「表格/卡片列表复用同一布局」。 */}
+          {/* 标签独占一行(Tabs 是块级全宽组件,塞进 flex 会把筛选器挤到下一行),
+            * 筛选与刷新同一行左右分立——保持原有的视觉层次。 */}
+          <Tabs
+            activeKey={activeProvider}
+            onChange={(key) => setActiveProvider(key as any)}
+            items={tabItems.map((tab) => ({ key: tab.key, label: tab.label }))}
+          />
+          <DataToolbar
+            className="accounts-toolbar"
+            filters={(
+              <>
+                <Select
+                  value={filterStatus}
+                  onChange={setFilterStatus}
+                  style={{ width: 156 }}
+                  options={[
+                    { label: '全部状态', value: 'all' },
+                    { label: '正常可用', value: 'healthy' },
+                    { label: '需要重新登录', value: 'reauth_required' },
+                    { label: '运行阻塞', value: 'runtime_blocked' },
+                    { label: '额度待确认', value: 'usage_attention' },
+                    { label: '已停池', value: 'policy_blocked' },
+                    { label: '已耗尽', value: 'exhausted' },
+                    { label: '已关闭', value: 'disabled' },
+                    { label: '未配置', value: 'unconfigured' }
+                  ]}
+                  suffixIcon={<FilterOutlined />}
+                />
+              </>
+            )}
+            actions={(
+              <Button icon={<SyncOutlined />} onClick={handleReload} loading={refreshing}>
+                刷新
+              </Button>
+            )}
+          />
           {viewMode === 'card' ? (
             <div style={{ marginBottom: 16 }}>
               <AccountCardGrid
@@ -2335,43 +2376,7 @@ export default function Accounts() {
               'data-account-ref': getAccountRef(record)
             } as React.HTMLAttributes<HTMLElement>)}
             loading={loading}
-            toolbar={{
-              menu: {
-                type: 'tab',
-                activeKey: activeProvider,
-                items: tabItems.map(tab => ({ key: tab.key, label: tab.label })),
-                onChange: (key) => setActiveProvider(key as any)
-              },
-              actions: [
-                <Select
-                  key="status-filter"
-                  value={filterStatus}
-                  onChange={setFilterStatus}
-                  style={{ width: 156 }}
-                  options={[
-                    { label: '全部状态', value: 'all' },
-                    { label: '正常可用', value: 'healthy' },
-                    { label: '需要重新登录', value: 'reauth_required' },
-                    { label: '运行阻塞', value: 'runtime_blocked' },
-                    { label: '额度待确认', value: 'usage_attention' },
-                    { label: '已停池', value: 'policy_blocked' },
-                    { label: '已耗尽', value: 'exhausted' },
-                    { label: '已关闭', value: 'disabled' },
-                    { label: '未配置', value: 'unconfigured' }
-                  ]}
-                  suffixIcon={<FilterOutlined />}
-                />,
-                <Button
-                  key="reload"
-                  icon={<SyncOutlined />}
-                  onClick={handleReload}
-                  loading={refreshing}
-                >
-                  刷新
-                </Button>
-              ],
-              settings: []
-            }}
+            toolbar={false}
             scroll={{ x: 1200 }}
           />
           )}

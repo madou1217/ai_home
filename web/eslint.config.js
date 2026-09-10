@@ -9,6 +9,30 @@ export default [
     ignores: ['dist/**', 'node_modules/**', 'src/.umi*/**']
   },
   js.configs.recommended,
+  // package.json 的 `--ext ts,tsx` 在 flat config 下不生效，所以 .js/.cjs 同样会被
+  // js.configs.recommended 检查，而那份配置不带任何环境全局 —— Service Worker 与
+  // Node 脚本因此整片报 no-undef。给它们各自声明真实运行环境，而不是排除出检查。
+  {
+    files: ['public/sw.js'],
+    languageOptions: {
+      globals: {
+        self: 'readonly',
+        caches: 'readonly',
+        fetch: 'readonly',
+        URL: 'readonly'
+      }
+    }
+  },
+  {
+    files: ['scripts/**/*.{js,cjs,mjs}'],
+    languageOptions: {
+      globals: {
+        console: 'readonly',
+        process: 'readonly',
+        window: 'readonly'
+      }
+    }
+  },
   {
     files: ['**/*.{ts,tsx}'],
     languageOptions: {

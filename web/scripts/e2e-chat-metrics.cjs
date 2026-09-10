@@ -1,7 +1,6 @@
 const { chromium } = require('/Users/model/.npm/_npx/86170c4cd1c5da32/node_modules/playwright');
 const { DatabaseSync } = require('node:sqlite');
 const path = require('path');
-const fs = require('fs');
 
 async function runE2E() {
   console.log('=== Step 1: 读取本地 Server 配置 ===');
@@ -84,7 +83,7 @@ async function runE2E() {
   let composer = null;
   try {
     composer = await page.waitForSelector('textarea:not([disabled])', { timeout: 8000 });
-  } catch (_e) {
+  } catch {
     console.log('未在 8s 内找到激活的输入框，尝试直接抓取现有会话消息...');
   }
   if (composer) {

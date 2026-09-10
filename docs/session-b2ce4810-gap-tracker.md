@@ -246,6 +246,7 @@
 | P11 | 大文件哨兵/provider 拆分纪律(L9730) | user 原话 | ✅ | `evolution-scan.js` 新增 150KB 预警/200KB 超标哨兵(实测已捕获 chat.module.css 153KB 预警);纪律条款入矩阵文档第 4 条;4 项新测试;当前服务端最大文件 80KB 无超标 |
 | P12 | review 执行器约束:aih codex 不指定账号(L8211) | user 原话 | ✅ | `evolution-scan.js review` 子命令默认即此形态 |
 | B30 | 回访 Tab(已存 key 直接开 /ui/chat)纯聊天会话列表为空 | 2026-09-11 F20 行为验收实测 | ✅ 已修(§二十八) | 根因:每 Tab 各自持有 3 条 watch SSE,HTTP/1.1 单源 6 连接被两个 Tab 占满,普通 API 排队至超时(chat-sessions ERR_ABORTED)。修复:`shared-watch.ts` Web Locks 跨 Tab 选主,全浏览器仅 leader 持流,事件经 BroadcastChannel 中继;实测第二 Tab 列表 0→31 行,跨 Tab 置顶同步行为级通过 |
+| B31 | 钉选账号停用/删除后请求硬死(403/404/503),明明有健康账号也不服务 | 2026-09-11 用户报障(codex 会话 pinned 死 acct_6576…) | ✅ 已修 | 三处钉选执行点(v1-router、codex-adapter 池过滤、WS relay)统一为「钉选=亲和偏好」:死钉+有可调度备选→摘钉回落常池(经持久化生命周期同步,死账号凭据不出站);无备选才报精确错误。真实网关实测:死钉 /v1/models 403→200、/v1/responses 真实推理 200(回答 OK)、WS 握手 503→101;test/server.pinned-account-fallback.test.js 2 项 + codex-responses-websocket 14 项过 |
 
 ### 9.3 顺带修复的 HEAD 既有 bug
 

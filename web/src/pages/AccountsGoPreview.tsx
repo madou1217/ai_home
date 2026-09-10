@@ -31,6 +31,7 @@ import {
   Drawer
 } from 'antd';
 import type { MenuProps } from 'antd';
+import '@/components/mobile/mobile-icon-button.css';
 import MobileStatGrid from '@/components/mobile/MobileStatGrid';
 import MobilePills from '@/components/mobile/MobilePills';
 import {

@@ -1,5 +1,6 @@
 import ModelCapsuleCard from '@/components/models/ModelCapsuleCard';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import '@/components/mobile/mobile-icon-button.css';
 import './Models.css';
 import { Alert, Form, Input, Segmented, Select, Space, Switch, Tag, Tooltip, Typography, message, Grid } from 'antd';
 import { ApiOutlined, ArrowLeftOutlined, CopyOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
@@ -623,16 +624,30 @@ export default function Models() {
     return label && label !== id ? label : '';
   };
 
-  const renderManualModelButton = () => (
+  // 手机端头部只放得下图标按钮：这里若沿用带文案的 Button，会和相邻图标按钮
+  // 一起把刷新按钮挤出 390px 视口（父容器裁剪，横向溢出门禁看不见）。
+  const renderManualModelButton = (iconOnly = false) => (
     <Tooltip title={canCreateManualModel ? '' : manualModelUnavailableReason}>
       <span>
-        <Button
-          disabled={!canCreateManualModel}
-          icon={<PlusOutlined />}
-          onClick={openManualModal}
-        >
-          添加模型
-        </Button>
+        {iconOnly ? (
+          <button
+            type="button"
+            className="m-icon-btn"
+            aria-label="添加模型"
+            disabled={!canCreateManualModel}
+            onClick={openManualModal}
+          >
+            <PlusOutlined />
+          </button>
+        ) : (
+          <Button
+            disabled={!canCreateManualModel}
+            icon={<PlusOutlined />}
+            onClick={openManualModal}
+          >
+            添加模型
+          </Button>
+        )}
       </span>
     </Tooltip>
   );
@@ -708,7 +723,7 @@ export default function Models() {
           {accountScoped ? (
             <MobileBackButton className="m-icon-btn" title="返回账号" onClick={() => navigate('/accounts')} />
           ) : null}
-          {renderManualModelButton()}
+          {renderManualModelButton(true)}
           <button
             className="m-icon-btn primary"
             aria-label="刷新模型"

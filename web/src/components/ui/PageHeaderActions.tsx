@@ -1,4 +1,5 @@
 import { Button, Grid, Space } from 'antd';
+import '../mobile/mobile-icon-button.css';
 import type { ReactNode } from 'react';
 
 /**

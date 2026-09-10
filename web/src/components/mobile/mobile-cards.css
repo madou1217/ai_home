@@ -9,6 +9,10 @@
  * min-width:0 + 文本省略,保证窄屏不撑破。
  * ==========================================================================*/
 
+/* 图标按钮原语已独立成文件（共享组件 PageHeaderActions 直接引它）；
+ * 这里保留 @import，既有引入 mobile-cards.css 的页面行为不变。 */
+@import './mobile-icon-button.css';
+
 /* ── 入场动画 ──────────────────────────────────────────────────────────────
  * 卡片/指标块首次挂载时淡入 + 轻微上移,避免整屏"猛地一下"全部弹出。
  * 关键:列表项都用稳定 key(id/path),data tick 时 React 复用 DOM 不重挂,
@@ -38,33 +42,6 @@
   .mobile-card { animation: none !important; }
 }
 
-/* 原生移动图标按钮(刷新等)——赤陶描边、够大的触控目标 */
-.m-icon-btn {
-  flex: none;
-  width: 38px;
-  height: 38px;
-  border-radius: var(--hos-radius-sm, 12px);
-  border: 1px solid var(--hos-ink-100, #ececf4);
-  background: var(--hos-white, #ffffff);
-  color: var(--hos-gray-600, #5a5a72);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--hos-text-h2, 16px); /* 归级:原 16px */
-  cursor: pointer;
-  box-shadow: var(--hos-mobile-shadow-xs, 0 1px 2px rgba(27, 27, 43, .05));
-  transition: background .15s;
-}
-.m-icon-btn:active { background: var(--hos-mobile-surface-2, #fafaff); }
-.m-icon-btn:disabled { opacity: .5; }
-.m-icon-btn.primary {
-  background: var(--hos-orange-500, #d97757);
-  border-color: transparent;
-  color: var(--hos-white, #fff);
-  box-shadow: 0 3px 9px color-mix(in srgb, var(--hos-orange-500, #d97757) 38%, transparent);
-}
-/* 页头右侧原生操作:一排紧凑图标按钮(主操作赤陶 + 次操作描边) */
-.m-header-actions { display: inline-flex; align-items: center; gap: var(--hos-space-2, 8px); }
 
 /* 卡片右上「更多」:小号幽灵按钮,点开原生底部操作表 */
 .m-card-more {

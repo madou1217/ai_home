@@ -1,0 +1,35 @@
+/* 移动端头部操作原语：图标按钮与其排布容器。
+ *
+ * 这两个类原本住在 mobile-cards.css 里，而那份样式表是各页按需 import 的——
+ * 没引它的页面（如 Models）用了 .m-icon-btn 只会得到浏览器默认方框。
+ * 共享组件 PageHeaderActions 依赖它们，故独立成文件由组件自带，
+ * mobile-cards.css 以 @import 保留原有引入方的行为。 */
+
+/* 原生移动图标按钮(刷新等)——赤陶描边、够大的触控目标 */
+.m-icon-btn {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--hos-radius-sm, 12px);
+  border: 1px solid var(--hos-ink-100, #ececf4);
+  background: var(--hos-white, #ffffff);
+  color: var(--hos-gray-600, #5a5a72);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--hos-text-h2, 16px); /* 归级:原 16px */
+  cursor: pointer;
+  box-shadow: var(--hos-mobile-shadow-xs, 0 1px 2px rgba(27, 27, 43, .05));
+  transition: background .15s;
+}
+.m-icon-btn:active { background: var(--hos-mobile-surface-2, #fafaff); }
+.m-icon-btn:disabled { opacity: .5; }
+.m-icon-btn.primary {
+  background: var(--hos-orange-500, #d97757);
+  border-color: transparent;
+  color: var(--hos-white, #fff);
+  box-shadow: 0 3px 9px color-mix(in srgb, var(--hos-orange-500, #d97757) 38%, transparent);
+}
+
+/* 页头右侧原生操作:一排紧凑图标按钮(主操作赤陶 + 次操作描边) */
+.m-header-actions { display: inline-flex; align-items: center; gap: var(--hos-space-2, 8px); }

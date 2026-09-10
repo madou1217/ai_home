@@ -116,7 +116,7 @@ test('GET /webui/chat/runs 返回 api-proxy run 的 mode 与 contentSnapshot', a
   assert.equal(apiRun.activePrompt, null);
 });
 
-test('api-proxy 流式 run 上游中断时注销并发布 turn-failed', async (t) => {
+test('Work 生图代理 run 上游中断时注销并发布 turn-failed', async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-chat-api-proxy-fail-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
@@ -171,9 +171,10 @@ test('api-proxy 流式 run 上游中断时注销并发布 turn-failed', async (t
     readRequestBody: async () => Buffer.from(JSON.stringify({
       provider: 'agy',
       accountRef,
-      model: 'some-chat-model',
+      model: 'gemini-3.1-flash-image',
       sessionId: 'chat-run-fail-1',
-      mode: 'chat',
+      mode: 'work',
+      projectPath: root,
       prompt: '你好',
       stream: true,
       messages: [{ role: 'user', content: '你好' }]
@@ -195,7 +196,7 @@ test('api-proxy 流式 run 上游中断时注销并发布 turn-failed', async (t
   assert.ok(eventTypes.includes('session:turn-failed'));
 });
 
-test('api-proxy 流式 run 注册/快照/完成注销/turn 事件闭环', async (t) => {
+test('Work 生图代理 run 注册/快照/完成注销/turn 事件闭环', async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-chat-api-proxy-run-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
@@ -257,9 +258,10 @@ test('api-proxy 流式 run 注册/快照/完成注销/turn 事件闭环', async 
     readRequestBody: async () => Buffer.from(JSON.stringify({
       provider: 'agy',
       accountRef,
-      model: 'some-chat-model',
+      model: 'gemini-3.1-flash-image',
       sessionId: 'chat-run-recovery-1',
-      mode: 'chat',
+      mode: 'work',
+      projectPath: root,
       prompt: '你好',
       stream: true,
       messages: [{ role: 'user', content: '你好' }]

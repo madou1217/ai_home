@@ -10,6 +10,7 @@ import type { WorkspaceMode } from '@/components/chat/ModeSelector';
 import ChatEmptyState from '@/components/chat/ChatEmptyState';
 import { isSessionRunning } from '@/components/chat/project-runtime-state.js';
 import type { AggregatedProject, Session } from '@/types';
+import { sessionsAPI } from '@/services/api';
 import {
   CanonicalChatRuntime,
   resolveCanonicalSessionDirectoryFocus,
@@ -89,7 +90,10 @@ export default function Chat() {
     undefined,
     { catalogLoading: projectCatalog.loadingProjects },
   );
-  const accountCatalog = useChatAccountCatalog(projectCatalog.selectedSession?.provider);
+  const accountCatalog = useChatAccountCatalog(
+    projectCatalog.selectedSession?.provider,
+    projectCatalog.selectedSession?.mode === 'chat' ? projectCatalog.selectedSession.accountRef : undefined,
+  );
   const [selectedModel, setSelectedModel] = useState('');
   const [legacyRunningSessionKeys, setLegacyRunningSessionKeys] = useState<Set<string>>(new Set());
   const [mobileShowChat, setMobileShowChat] = useState(false);
@@ -339,7 +343,7 @@ export default function Chat() {
       canonical={(session) => (
         <CanonicalChatRuntime
           session={session}
-          projectPath={projectCatalog.selectedProject?.path}
+          projectPath={session.mode === 'chat' ? undefined : projectCatalog.selectedProject?.path}
           account={accountCatalog.selectedAccount}
           accounts={accountCatalog.accounts}
           title={session.title || projectLabel}
@@ -347,7 +351,16 @@ export default function Chat() {
           selectedModel={selectedModel}
           approvalMode={approvalMode.mode}
           approvalModeReady={approvalMode.ready}
-          onAccountChange={accountCatalog.setSelectedAccount}
+          onAccountChange={(account) => {
+            accountCatalog.setSelectedAccount(account);
+            if (session.mode === 'chat' && session.draft) {
+              projectCatalog.setSelectedSession({
+                id: `draft-${Date.now()}`, title: '新对话', updatedAt: Date.now(),
+                provider: account.provider, draft: true, mode: 'chat',
+              });
+              setSelectedModel('');
+            }
+          }}
           onModelChange={setSelectedModel}
           onApprovalModeChange={approvalMode.change}
           onSessionChange={projectCatalog.setSelectedSession}

@@ -2508,6 +2508,8 @@ export interface SlashCommandsResponse {
 
 export interface Session {
   id: string;
+  mode?: 'chat' | 'work';
+  runtimeSessionId?: string;
   title: string;
   updatedAt: number;
   provider: Provider;

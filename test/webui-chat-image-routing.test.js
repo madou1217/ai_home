@@ -35,7 +35,7 @@ function createMockResponse() {
   return res;
 }
 
-test('webui chat routes image generation model to api-proxy instead of native CLI', async (t) => {
+test('Work routes image generation models to api-proxy while pure Chat requires Harness', async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-chat-image-route-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
@@ -86,13 +86,13 @@ test('webui chat routes image generation model to api-proxy instead of native CL
   const port = mockServer.address().port;
   t.after(() => mockServer.close());
 
-  const reqBody = JSON.stringify({
+  const payload = {
     provider: 'agy',
     accountRef,
     model: 'gemini-3.1-flash-image',
     messages: [{ role: 'user', content: '画一只可爱的猫咪' }],
     stream: false
-  });
+  };
 
   const req = {
     method: 'POST',
@@ -116,7 +116,7 @@ test('webui chat routes image generation model to api-proxy instead of native CL
       port,
       clientKey: 'test-key'
     },
-    readRequestBody: async () => Buffer.from(reqBody, 'utf8'),
+    readRequestBody: async () => Buffer.from(JSON.stringify(payload), 'utf8'),
     writeJson(resObj, statusCode, payload) {
       resObj.statusCode = statusCode;
       resObj.body = JSON.stringify(payload);
@@ -125,6 +125,13 @@ test('webui chat routes image generation model to api-proxy instead of native CL
     createChatEventMeta: (startedAt) => ({ at: Date.now(), startedAt })
   };
 
+  await handleChatRequest(ctx);
+  assert.equal(res.statusCode, 409);
+  assert.equal(JSON.parse(res.body).error, 'chat_harness_required');
+  assert.equal(capturedProxyRequest, null);
+
+  ctx.readRequestBody = async () => Buffer.from(JSON.stringify({ ...payload, projectPath: root }), 'utf8');
+  ctx.res = createMockResponse();
   const handled = await handleChatRequest(ctx);
   assert.equal(handled, true);
   assert.ok(capturedProxyRequest, 'Request should be proxied to /v1/chat/completions');
@@ -132,7 +139,7 @@ test('webui chat routes image generation model to api-proxy instead of native CL
   assert.equal(capturedHeaders['x-provider'], 'agy');
   assert.equal(capturedHeaders['x-account-ref'], accountRef);
 
-  const responseJson = JSON.parse(res.body);
+  const responseJson = JSON.parse(ctx.res.body);
   assert.equal(responseJson.ok, true);
   assert.equal(responseJson.content.includes('data:image/png;base64'), true);
   assert.equal(responseJson.model, 'gemini-3.1-flash-image');

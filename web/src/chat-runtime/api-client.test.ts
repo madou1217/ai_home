@@ -186,6 +186,44 @@ test('api client posts typed commands and reads command, composer, and artifact 
   assert.equal(requests[3].port, 'blob');
 });
 
+test('composer catalogs accept gateway models without a reasoning-effort control', async () => {
+  const catalog = {
+    models: [
+      { id: 'claude-opus-4-6-thinking', supportedEfforts: [], defaultEffort: '' },
+      { id: 'claude-sonnet-4-6', supportedEfforts: ['low', 'medium', 'high'], defaultEffort: 'medium' },
+    ],
+    defaultModel: 'claude-opus-4-6-thinking',
+  };
+  const client = new ChatRuntimeApiClient(createTransport([
+    jsonResponse({ ok: true, catalog }),
+  ]).transport);
+
+  const parsed = await client.getComposerCatalog('session-agy');
+
+  assert.equal(parsed.models.length, 2);
+  assert.equal(parsed.defaultModel, 'claude-opus-4-6-thinking');
+  assert.equal(parsed.models[0].defaultEffort, '');
+  assert.equal(parsed.models[1].defaultEffort, 'medium');
+});
+
+test('composer catalogs still reject missing defaults and unsupported reasoning efforts', async () => {
+  for (const settings of [
+    { supportedEfforts: [], defaultEffort: undefined },
+    { supportedEfforts: [], defaultEffort: null },
+    { supportedEfforts: [], defaultEffort: ' ' },
+    { supportedEfforts: ['medium'], defaultEffort: '' },
+    { supportedEfforts: ['medium'], defaultEffort: 'high' },
+  ]) {
+    const client = new ChatRuntimeApiClient(createTransport([
+      jsonResponse({ ok: true, catalog: {
+        models: [{ id: 'model', ...settings }], defaultModel: 'model',
+      } }),
+    ]).transport);
+    await assert.rejects(client.getComposerCatalog('session-1'),
+      /chat_runtime_composer_model_default_effort_invalid/);
+  }
+});
+
 test('api client uploads session-scoped image attachments', async () => {
   const { requests, transport } = createTransport([
     jsonResponse({

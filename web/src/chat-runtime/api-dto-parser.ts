@@ -104,10 +104,9 @@ export function parseComposerCatalog(value: unknown): ComposerCatalog {
       entry.supportedEfforts,
       'chat_runtime_composer_model_efforts_invalid',
     );
-    const defaultEffort = text(
-      entry.defaultEffort,
-      'chat_runtime_composer_model_default_effort_invalid',
-    );
+    const defaultEffort = entry.defaultEffort === '' && supportedEfforts.length === 0
+      ? ''
+      : text(entry.defaultEffort, 'chat_runtime_composer_model_default_effort_invalid');
     if (supportedEfforts.length > 0 && !supportedEfforts.includes(defaultEffort)) {
       protocolFailure('chat_runtime_composer_model_default_effort_invalid');
     }

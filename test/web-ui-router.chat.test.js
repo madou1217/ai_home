@@ -15,7 +15,6 @@ const { getPublicAccountRef } = require('../lib/account/public-account-ref');
 const { registerAccountIdentity } = require('../lib/account/account-registration');
 const { writeAccountCredentials } = require('../lib/server/account-credential-store');
 const { addOpenedProject } = require('../lib/server/webui-project-store');
-const { readChatSession } = require('../lib/server/webui-chat-store');
 const {
   createCliInstallConfirmationRegistry
 } = require('../lib/server/cli-install-confirmation-registry');
@@ -3150,94 +3149,35 @@ test('web ui chat routes agy access-token accounts through api proxy stream', as
   }
 });
 
-test('web ui gateway chat persists and reuses the selected execution account', async () => {
-  const originalFetchWithTimeout = httpUtils.fetchWithTimeout;
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-chat-affinity-'));
-  const sessionId = 'chat-affinity-1';
-  const seenHeaders = [];
-  try {
-    registerChatAccount(root, 'codexOne', { OPENAI_API_KEY: 'codex-key' });
-    httpUtils.fetchWithTimeout = async (_url, init) => {
-      seenHeaders.push(init && init.headers);
-      return {
-        ok: true,
-        status: 200,
-        headers: new Headers({ 'x-aih-server-account-ref': ACCOUNT_REFS.codexOne }),
-        body: new ReadableStream({
-          start(controller) {
-            controller.enqueue(Buffer.from(
-              'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\n' +
-              'data: [DONE]\n\n'
-            ));
-            controller.close();
-          }
-        })
-      };
-    };
-
-    const run = async (payload, state = {}, accountStateIndex) => {
-      const req = new EventEmitter();
-      req.headers = {};
-      const res = createStreamResCapture();
-      const handled = await handleWebUIRequest({
-        method: 'POST',
-        pathname: '/v0/webui/chat',
-        url: new URL('http://localhost/v0/webui/chat'),
-        req,
-        res,
-        options: { port: 8317 },
-        state,
-        deps: {
-          ...createBaseDeps({ aiHomeDir: root, hostHomeDir: root }),
-          accountStateIndex,
-          fs: require('fs-extra'),
-          readRequestBody: async () => Buffer.from(JSON.stringify(payload), 'utf8')
-        }
-      });
-      await waitForStreamEnd(res);
-      req.emit('close');
-      assert.equal(handled, true);
-    };
-
-    await run({
-      provider: 'codex', gateway: true, mode: 'chat', createSession: true, sessionId, stream: true,
-      prompt: 'first', messages: [{ role: 'user', content: 'first' }]
+for (const target of [
+  { mode: 'chat', projectPath: '/Users/model' },
+  { mode: 'chat', gateway: true },
+  {}
+]) {
+  test(`legacy Chat requires Harness before account lookup or upstream access: ${JSON.stringify(target)}`, async () => {
+    const req = new EventEmitter();
+    const res = createStreamResCapture();
+    const handled = await handleWebUIRequest({
+      method: 'POST', pathname: '/v0/webui/chat',
+      url: new URL('http://localhost/v0/webui/chat'), req, res,
+      options: {}, state: {},
+      deps: {
+        ...createBaseDeps(),
+        readRequestBody: async () => Buffer.from(JSON.stringify({
+          provider: 'codex', accountRef: 'not-a-configured-account', ...target,
+          stream: true, messages: [{ role: 'user', content: 'hello' }],
+          documents: [{ invalid: true }]
+        })),
+        syncGlobalConfigToHost() { assert.fail('legacy Chat must not synchronize credentials'); }
+      }
     });
-    const saved = readChatSession(sessionId, root);
-    assert.equal(saved.accountRef, ACCOUNT_REFS.codexOne);
-
-    await run({
-      provider: 'codex', gateway: true, mode: 'chat', sessionId, stream: true,
-      prompt: 'second', messages: [{ role: 'user', content: 'second' }]
-    });
-    assert.equal(seenHeaders.length, 2);
-    assert.equal(seenHeaders[0]['X-Account-Ref'], undefined);
-    assert.equal(seenHeaders[1]['X-Account-Ref'], ACCOUNT_REFS.codexOne);
-
-    await run({
-      provider: 'codex', gateway: true, mode: 'chat', sessionId, stream: true,
-      prompt: 'third', messages: [{ role: 'user', content: 'third' }]
-    }, {
-      accounts: { codex: [{ accountRef: ACCOUNT_REFS.codexOne, schedulableStatus: 'down' }] }
-    });
-    assert.equal(seenHeaders[2]['X-Account-Ref'], undefined);
-
-    for (const persisted of [{ status: 'down' }, null]) {
-      await run({
-        provider: 'codex', gateway: true, mode: 'chat', sessionId, stream: true,
-        prompt: 'continued', messages: [{ role: 'user', content: 'continued' }]
-      }, {
-        accounts: { codex: [{ accountRef: ACCOUNT_REFS.codexOne, schedulableStatus: 'schedulable' }] }
-      }, {
-        getAccountState: () => persisted
-      });
-      assert.equal(seenHeaders.at(-1)['X-Account-Ref'], undefined);
-    }
-  } finally {
-    httpUtils.fetchWithTimeout = originalFetchWithTimeout;
-    fs.rmSync(root, { recursive: true, force: true });
-  }
-});
+    assert.equal(handled, true);
+    assert.equal(res.statusCode, 409);
+    const response = JSON.parse(res.body);
+    assert.equal(response.error, 'chat_harness_required');
+    assert.equal(response.endpoint, '/v0/webui/chat/sessions');
+  });
+}
 
 test('web ui chat streams OpenCode through the native headless runner', async () => {
   const originalSpawn = nativeSessionChat.spawnNativeSessionStream;
@@ -3447,154 +3387,6 @@ test('web ui chat routes oauth agy createSession through native antigravity sess
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
-
-test('web ui Codex Chat forwards live gateway deltas before the upstream completes', async (t) => {
-  const http = require('node:http');
-  const { handleCodexChatCompletions } = require('../lib/server/codex-adapter');
-  const servers = [];
-  const listen = async (handler) => {
-    const server = http.createServer(handler);
-    servers.push(server);
-    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-    return `http://127.0.0.1:${server.address().port}`;
-  };
-  t.after(async () => {
-    for (const server of servers) {
-      server.closeAllConnections();
-      await new Promise((resolve) => server.close(resolve));
-    }
-  });
-  let finishUpstream;
-  const upstream = await listen((_req, res) => {
-    res.writeHead(200, { 'content-type': 'text/event-stream' });
-    res.write('data: {"type":"response.created","response":{"id":"resp_live","model":"gpt-6-astra"}}\n\n');
-    res.write('data: {"type":"response.output_text.delta","delta":"即时内容"}\n\n');
-    finishUpstream = () => res.end('data: {"type":"response.completed","response":{"usage":{"input_tokens":1,"output_tokens":1}}}\n\n');
-  });
-  const gateway = await listen((req, res) => {
-    handleCodexChatCompletions({
-      options: { codexBaseUrl: upstream, upstreamTimeoutMs: 2000, maxAttempts: 1 },
-      state: {
-        accounts: { codex: [{ accountRef: ACCOUNT_REFS.codexOne, accessToken: 'local-test', apiKeyMode: true, openaiBaseUrl: upstream }] },
-        cursors: { codex: 0 }, metrics: { totalSuccess: 0, totalFailures: 0, totalTimeouts: 0 }
-      },
-      req, res, requestJson: { model: 'gpt-6-astra', stream: true, messages: [{ role: 'user', content: 'local test' }] },
-      routeKey: 'POST /v1/chat/completions', requestStartedAt: Date.now(), cooldownMs: 1000, requestMeta: {},
-      deps: {
-        fetchWithTimeout: fetch,
-        chooseServerAccount: (pool) => pool[0],
-        writeJson: (r, status, payload) => { r.statusCode = status; r.end(JSON.stringify(payload)); },
-        pushMetricError: () => {}, markProxyAccountFailure: () => {}, markProxyAccountSuccess: () => {}, appendProxyRequestLog: () => {}
-      }
-    }).catch((error) => res.destroy(error));
-  });
-  const originalFetch = httpUtils.fetchWithTimeout;
-  httpUtils.fetchWithTimeout = (_url, init) => fetch(gateway, init);
-  t.after(() => { httpUtils.fetchWithTimeout = originalFetch; });
-  const req = new EventEmitter();
-  req.headers = {};
-  const res = createStreamResCapture();
-  let onDelta;
-  const receivedDelta = new Promise((resolve) => { onDelta = resolve; });
-  const originalWrite = res.write.bind(res);
-  res.write = (chunk) => {
-    const result = originalWrite(chunk);
-    if (String(chunk).includes('"type":"delta"')) onDelta();
-    return result;
-  };
-  const handling = handleWebUIRequest({
-    method: 'POST', pathname: '/v0/webui/chat', url: new URL('http://localhost/v0/webui/chat'), req, res,
-    options: { port: 8317, clientKey: 'dummy' }, state: {},
-    deps: {
-      ...createBaseDeps({ aiHomeDir: sharedAiHomeDir }), fs: require('fs-extra'),
-      readRequestBody: async () => Buffer.from(JSON.stringify({ provider: 'codex', accountRef: ACCOUNT_REFS.codexOne,
-        model: 'gpt-6-astra', mode: 'chat', stream: true, messages: [{ role: 'user', content: 'local test' }] }))
-    }
-  });
-  let timer;
-  try {
-    await Promise.race([receivedDelta, new Promise((_, reject) => {
-      timer = setTimeout(() => reject(new Error('WebUI buffered the upstream delta')), 1500);
-    })]);
-    assert.match(res.body, /即时内容/);
-    assert.equal(res.writableEnded, false);
-    assert.doesNotMatch(res.body, /"type":"done"/);
-  } finally {
-    clearTimeout(timer);
-    if (finishUpstream) finishUpstream();
-    await handling;
-  }
-  assert.match(res.body, /"type":"done"/);
-});
-
-for (const streamFails of [false, true]) {
-test(`web ui chat streams codex reasoning and ${streamFails ? 'preserves in-stream failure' : 'completes the answer'}`, async () => {
-  const originalFetchWithTimeout = httpUtils.fetchWithTimeout;
-  httpUtils.fetchWithTimeout = async () => ({
-    ok: true,
-    status: 200,
-    body: new ReadableStream({
-      start(controller) {
-        controller.enqueue(Buffer.from(
-          'data: {"choices":[{"delta":{"reasoning_content":"先分析问题"}}]}\n\n' +
-          'data: {"choices":[{"delta":{"content":"给出答案"}}]}\n\n' +
-          (streamFails
-            ? 'data: {"error":{"message":"local upstream interrupted","code":"upstream_failed"}}\n\n'
-            : 'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n')
-        ));
-        controller.close();
-      }
-    }),
-    headers: new Headers()
-  });
-
-  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-chat-thinking-'));
-  try {
-    registerChatAccount(aiHomeDir, 'codexOne', {
-      OPENAI_API_KEY: 'sk-test-thinking'
-    });
-    const req = new EventEmitter();
-    req.headers = {};
-
-    const res = createStreamResCapture();
-    const handled = await handleWebUIRequest({
-      method: 'POST',
-      pathname: '/v0/webui/chat',
-      url: new URL('http://localhost/v0/webui/chat'),
-      req,
-      res,
-      options: { port: 8317, clientKey: 'dummy' },
-      state: {},
-      deps: {
-        ...createBaseDeps({ aiHomeDir }),
-        fs: require('fs-extra'),
-        readRequestBody: async () => Buffer.from(JSON.stringify({
-          provider: 'codex',
-          accountRef: ACCOUNT_REFS.codexOne,
-          model: 'gpt-5.4',
-          stream: true,
-          messages: [{ role: 'user', content: '你好' }]
-        }), 'utf8')
-      }
-    });
-
-    assert.equal(handled, true);
-    assert.match(res.body, /"type":"thinking","thinking":"先分析问题"/);
-    assert.match(res.body, /"type":"delta","delta":"给出答案"/);
-    if (streamFails) {
-      assert.match(res.body, /"type":"error"/);
-      assert.match(res.body, /local upstream interrupted/);
-      assert.doesNotMatch(res.body, /"type":"done"/);
-    } else {
-      assert.match(res.body, /"type":"done"/);
-    }
-    req.emit('close');
-  } finally {
-    httpUtils.fetchWithTimeout = originalFetchWithTimeout;
-    fs.rmSync(aiHomeDir, { recursive: true, force: true });
-  }
-});
-}
 
 test('web ui chat routes grok session prompt through headless stream mode', async () => {
   const originalSpawn = nativeSessionChat.spawnNativeSessionStream;

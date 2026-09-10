@@ -8,7 +8,8 @@ export interface SessionRuntimeTarget {
   readonly executionAccountRef: string;
   readonly projectPath: string;
   readonly nativeSessionId?: string;
-  readonly policy: Readonly<{ approvalMode: ApprovalMode }>;
+  readonly chatSessionId?: string;
+  readonly policy: Readonly<{ approvalMode: ApprovalMode; workspaceMode?: 'chat' }>;
 }
 
 export type SessionRuntimeTargetResolution =
@@ -33,7 +34,9 @@ export function usesCanonicalSessionRuntime(
   session: Session | null,
   account?: ChatAccount | null,
 ): boolean {
-  if (!session || session.mode === 'chat' || !session.projectPath) return false;
+  if (!session) return false;
+  if (session.mode === 'chat') return true;
+  if (!session.projectPath) return false;
   const descriptor = chatRuntimeProviders.resolve(session.provider);
   if (!descriptor) return false;
   return account === undefined || Boolean(account && descriptor.acceptsAccount(account));
@@ -42,6 +45,7 @@ export function usesCanonicalSessionRuntime(
 export function resolveSessionRuntimeTarget(
   input: ResolveTargetInput,
 ): SessionRuntimeTargetResolution {
+  if (input.session.mode === 'chat') return resolveChatTarget(input);
   const projectPath = String(input.projectPath || input.session.projectPath || '').trim();
   const descriptor = chatRuntimeProviders.resolve(input.session.provider);
   if (!descriptor) return blocked('runtime_provider_unsupported');
@@ -66,9 +70,33 @@ export function runtimeAccountsForSession(
   session: Session,
   accounts: readonly Account[],
 ): readonly Account[] {
+  if (session.mode === 'chat') {
+    return accounts.filter((account) => session.draft || !session.accountRef || account.accountRef === session.accountRef);
+  }
   const descriptor = chatRuntimeProviders.resolve(session.provider);
   if (!descriptor) return [];
   return accounts.filter((account) => descriptor.acceptsAccount(account));
+}
+
+function resolveChatTarget(input: ResolveTargetInput): SessionRuntimeTargetResolution {
+  const account = input.account;
+  const accountRef = input.session.accountRef || account?.accountRef;
+  if (!accountRef) return blocked('account_required');
+  if (account && (account.provider !== input.session.provider
+    || (input.session.accountRef && input.session.accountRef !== account.accountRef))) {
+    return blocked('provider_mismatch');
+  }
+  return {
+    status: 'ready',
+    target: {
+      provider: input.session.provider,
+      executionAccountRef: accountRef,
+      projectPath: '',
+      ...(input.session.runtimeSessionId || !input.session.draft
+        ? { chatSessionId: input.session.runtimeSessionId || input.session.id } : {}),
+      policy: { workspaceMode: 'chat', approvalMode: 'confirm' },
+    },
+  };
 }
 
 function blocked(reason: RuntimeTargetBlockReason): SessionRuntimeTargetResolution {

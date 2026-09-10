@@ -34,7 +34,7 @@ export default function ComposerToolbar({ props, controller, onSelectImages }: P
         >
           <PlusOutlined />
         </button>
-        <button
+        {props.workspaceMode !== 'chat' ? <button
           type="button"
           className={styles.composerToolButton}
           title={props.terminalOpen ? '关闭项目终端' : '打开项目终端'}
@@ -43,7 +43,7 @@ export default function ComposerToolbar({ props, controller, onSelectImages }: P
           onClick={props.onToggleTerminal}
         >
           <CodeOutlined />
-        </button>
+        </button> : null}
         <ComposerAccountMenu
           value={props.accountRef}
           disabled={!canSwitchComposerAccount(controller.policy)}
@@ -57,10 +57,10 @@ export default function ComposerToolbar({ props, controller, onSelectImages }: P
             if (account) props.onAccountChange(account);
           }}
         />
-        <ComposerApprovalMenu
+        {props.workspaceMode !== 'chat' ? <ComposerApprovalMenu
           value={props.approvalMode}
           onChange={(mode) => void controller.changeApprovalMode(mode)}
-        />
+        /> : null}
         {controller.policy.turnActive && controller.policy.deliveries.length > 0 ? (
           <DeliveryControl controller={controller} />
         ) : null}

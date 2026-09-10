@@ -23,6 +23,7 @@ const VALID_DETAILS: ReadonlyArray<readonly [TimelineItemKind, object]> = [
   ['attachment', { name: 'input.png', mimeType: 'image/png', url: '/artifact/input' }],
   ['artifact', { artifactId: 'artifact-1', name: 'result.txt', mimeType: 'text/plain', size: 2 }],
   ['notice', { level: 'warning' }],
+  ['notice', { level: 'info', code: 'contextCompaction' }],
   ['error', { code: 'failed', retryable: true }],
 ];
 

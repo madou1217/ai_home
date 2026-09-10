@@ -38,6 +38,6 @@ export interface TimelineDetailByKind {
   command: { commandId: string; command: string };
   attachment: { name: string; mimeType: string; url?: string };
   artifact: { artifactId: string; name: string; mimeType: string; size?: number };
-  notice: { level: 'info' | 'warning' | 'success' };
+  notice: { level: 'info' | 'warning' | 'success'; code?: string };
   error: { code: string; retryable?: boolean };
 }

@@ -22,6 +22,7 @@ interface Props {
   readonly firstTextPaintProbe: CommittedTimelineObserver;
   readonly provider: Provider;
   readonly projectPath: string;
+  readonly workspaceMode?: string;
   readonly mobile?: boolean;
 }
 
@@ -30,6 +31,7 @@ export default function ConversationTimeline({
   firstTextPaintProbe,
   provider,
   projectPath,
+  workspaceMode,
   mobile = false,
 }: Props) {
   const items = useSessionSelector(controller.store, selectItems);
@@ -72,10 +74,16 @@ export default function ConversationTimeline({
         <Empty
           className={styles.emptyTimeline}
           image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description={<span>开始一次原生会话，计划、工具和审批会实时出现在这里</span>}
+          description={<span>{workspaceMode === 'chat'
+            ? '发送消息开始对话，上下文会随会话保留'
+            : '开始一次原生会话，计划、工具和审批会实时出现在这里'}</span>}
         />
       ) : items.map((item) => (
-        <TimelineItemView
+        workspaceMode === 'chat' && item.kind === 'notice'
+          && ['contextCompaction', 'context_compacted'].includes(item.detail.code || '')
+          ? <RuntimeNotice key={item.id} text={item.status === 'completed'
+            ? '上下文已压缩' : '正在压缩上下文…'} />
+          : <TimelineItemView
           key={item.id}
           item={item}
           provider={provider}

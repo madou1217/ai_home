@@ -62,18 +62,13 @@
 .emptyTimeline { margin-top: min(22vh, 180px); }
 
 .runtimeNotice {
-  padding: var(--hos-space-2, 8px) var(--hos-space-3, 12px);
-  border: 1px solid #f4d28b;
-  border-radius: var(--hos-radius-sm, 10px); /* 归级:原 10px */
-  color: #8a5a00;
-  background: #fff9e8;
+  padding: var(--hos-space-1, 4px) 0;
+  color: var(--color-text-secondary);
   font-size: var(--hos-text-caption, 12px);
 }
 
 .runtimeNotice[data-danger='true'] {
-  border-color: #ffb8b8;
   color: #a61d24;
-  background: #fff1f0;
 }
 
 .runtimeNotice[data-sticky='true'] {

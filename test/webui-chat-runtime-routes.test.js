@@ -58,6 +58,20 @@ test('chat runtime route ignores unrelated paths', async () => {
   assert.equal(await handleWebUiChatRuntimeRequest(ctx), false);
 });
 
+test('Chat opens its stable Harness identity rather than resolving a legacy id as a native thread', async () => {
+  let input;
+  const service = { async openChatSession(value) { input = value; return { sessionId: 'runtime-chat-1' }; } };
+  const ctx = createContext('POST', '/v0/webui/chat/sessions', { service, body: {
+    provider: 'claude', executionAccountRef: 'acct_one', chatSessionId: 'chat-legacy',
+    projectPath: '', policy: { workspaceMode: 'chat', approvalMode: 'confirm' }
+  } });
+  await handleWebUiChatRuntimeRequest(ctx);
+  assert.equal(ctx.writes[0].statusCode, 201);
+  assert.equal(input.chatSessionId, 'chat-legacy');
+  assert.equal(input.projectPath, '');
+  assert.equal(input.executionAccountRef, 'acct_one');
+});
+
 test('chat runtime route creates and lists stable sessions', async () => {
   const calls = [];
   const service = {

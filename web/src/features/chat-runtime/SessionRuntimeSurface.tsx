@@ -1,4 +1,4 @@
-import { Alert, Spin } from 'antd';
+import { Spin } from 'antd';
 import Button from '@/components/ui/AppButton';
 import type { ChatRuntimeSession } from '@/chat-runtime';
 import type { Account } from '@/types';
@@ -96,7 +96,8 @@ interface RuntimeStateProps {
 function RuntimeState(props: RuntimeStateProps) {
   return (
     <div className={styles.runtimeState}>
-      <Alert type="warning" showIcon message={props.title} description={props.description} />
+      <strong role="status">{props.title}</strong>
+      <span>{props.description}</span>
       {props.retry ? <Button type="primary" onClick={props.retry}>重试 AIH Chat Runtime</Button> : null}
       <span>运行时未就绪，发送已禁用。</span>
     </div>

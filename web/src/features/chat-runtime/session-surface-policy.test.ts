@@ -79,3 +79,22 @@ test('saved sessions use the currently selected credential without credential bi
     approvalMode: 'confirm',
   }).status, 'ready');
 });
+
+test('every Chat account uses Harness and never inherits the Work directory or native identity', () => {
+  for (const provider of ['codex', 'claude', 'gemini'] as const) {
+    const chat: Session = { ...savedSession, provider, mode: 'chat', projectPath: undefined,
+      id: 'chat-old', accountRef: account.accountRef };
+    const selected = { ...account, provider, apiKeyMode: true };
+    assert.equal(usesCanonicalSessionRuntime(chat, selected), true);
+    assert.equal(usesCanonicalSessionRuntime(chat, null), true);
+    assert.equal(resolveSessionRuntimeTarget({ session: chat, account: null, approvalMode: 'confirm' }).status, 'ready');
+    const result = resolveSessionRuntimeTarget({ session: chat, account: selected,
+      projectPath: '/previous-work-project', approvalMode: 'bypass' });
+    assert.deepEqual(result, { status: 'ready', target: {
+      provider, executionAccountRef: account.accountRef, projectPath: '', chatSessionId: 'chat-old',
+      policy: { workspaceMode: 'chat', approvalMode: 'confirm' },
+    } });
+    assert.equal(resolveSessionRuntimeTarget({ session: chat,
+      account: { ...selected, accountRef: 'another-account' }, approvalMode: 'confirm' }).status, 'blocked');
+  }
+});

@@ -24,6 +24,7 @@ export interface ChatRuntimeSession {
 }
 
 export interface CreateSessionInput {
+  readonly chatSessionId?: string;
   readonly provider: string;
   readonly executionAccountRef: string;
   readonly projectPath?: string;

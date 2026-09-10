@@ -17,6 +17,10 @@ export function adoptDraftNativeSession(
   now: number = Date.now(),
 ): Session | null {
   const nativeId = normalizedText(nativeSessionId);
+  if (context.session.mode === 'chat') {
+    return context.session.draft && context.session.runtimeSessionId && nativeId
+      ? { ...context.session, draft: false, updatedAt: now } : null;
+  }
   if (!context.session.draft || !nativeId) return null;
   return {
     ...context.session,
@@ -53,6 +57,18 @@ export function resolveNativeSessionAdoption(
   fallbackProjectPath?: string,
 ): ResolvedSessionAdoption | null {
   if (resolved.provider !== current.provider) return null;
+  if (current.mode === 'chat') {
+    return {
+      nativeSessionId: resolved.sessionId,
+      session: current.runtimeSessionId === resolved.sessionId ? null : {
+        ...current, id: resolved.sessionId, runtimeSessionId: resolved.sessionId,
+        accountRef: resolved.executionAccountRef, draft: !resolved.runtimeBinding.nativeSessionId,
+        projectPath: undefined, projectDirName: undefined,
+        title: String(resolved.policy.title || current.title),
+        updatedAt: resolved.updatedAt,
+      },
+    };
+  }
   const nativeSessionId = resolveBoundNativeSessionId(current, resolved.runtimeBinding);
   if (!nativeSessionId) return null;
   const unchanged = current.id === nativeSessionId && current.draft === false;

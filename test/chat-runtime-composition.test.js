@@ -619,6 +619,7 @@ function createFixture(t, options = {}) {
   const service = createChatRuntimeComposition({
     fs,
     aiHomeDir,
+    hostHomeDir: aiHomeDir,
     env,
     spawn,
     spawnSync,
@@ -648,6 +649,52 @@ function createFixture(t, options = {}) {
     spawnSync
   };
 }
+
+test('Chat imports legacy history once, resumes the native thread and keeps account ownership', async (t) => {
+  const fixture = createFixture(t);
+  const { saveChatSession, readChatSession } = require('../lib/server/webui-chat-store');
+  const legacy = {
+    id: 'chat-legacy-1', title: 'Remember the marker', provider: 'codex', accountRef: 'account-1',
+    messages: [{ role: 'user', content: 'Remember cobalt-42' }, { role: 'assistant', content: 'Remembered' }]
+  };
+  saveChatSession(legacy, fixture.aiHomeDir);
+  const input = { provider: 'codex', executionAccountRef: 'account-1', chatSessionId: legacy.id };
+  const [session, duplicate] = await Promise.all([
+    fixture.service.openChatSession(input), fixture.service.openChatSession(input)
+  ]);
+  assert.equal(session.sessionId, duplicate.sessionId);
+  assert.equal(session.projectPath, '');
+  assert.equal(fixture.clientOptions.runtimeScope, 'chat-account-1');
+  assert.equal(fixture.clientOptions.runtimeNamespace, 'chat');
+  assert.deepEqual(fixture.service.getSnapshot(session.sessionId).timeline.map((item) => item.content),
+    ['Remember cobalt-42', 'Remembered']);
+  await assert.rejects(fixture.service.openChatSession({ ...input, executionAccountRef: 'account-2' }),
+    /chat_session_account_mismatch/);
+  await assert.rejects(fixture.service.openChatSession({ ...input, chatSessionId: session.sessionId,
+    executionAccountRef: 'account-2' }), /chat_session_account_mismatch/);
+
+  for (let index = 0; index < 2; index += 1) {
+    await fixture.service.dispatchCommand(session.sessionId, {
+      commandId: `chat-turn-${index}`, type: 'turn.submit', payload: { content: `Next message ${index}` }
+    });
+    await waitFor(() => fixture.service.getSnapshot(session.sessionId).activeTurn?.nativeTurnId);
+    const start = fixture.client.params('thread/start');
+    assert.equal(start.cwd.startsWith(path.join(fixture.aiHomeDir, 'run', 'chat-workspaces')), true);
+    assert.equal(start.sandbox, 'read-only');
+    assert.equal(fixture.client.params('turn/start').input[0].text, `Next message ${index}`);
+    fixture.client.notify('turn/completed', { threadId: 'native-thread-1',
+      turn: { id: 'native-turn-1', status: 'completed' } });
+    await fixture.service.waitForActorIdle(session.sessionId);
+  }
+  assert.equal(fixture.client.calls.filter((call) => call.method === 'thread/start').length, 1);
+  assert.equal(fixture.client.calls.filter((call) => call.method === 'thread/inject_items').length, 1);
+  assert.equal(fixture.client.calls.filter((call) => call.method === 'thread/resume').length, 1);
+  assert.deepEqual(readChatSession(legacy.id, fixture.aiHomeDir), legacy);
+  const restored = await fixture.service.openChatSession({ ...input, chatSessionId: session.sessionId });
+  assert.equal(restored.runtimeBinding.nativeSessionId, 'native-thread-1');
+  await assert.rejects(fixture.service.resolveSession({ provider: 'codex', executionAccountRef: 'account-2',
+    nativeSessionId: 'native-thread-1', projectPath: '/work' }), /chat_session_requires_chat_identity/);
+});
 
 function successfulVersionProcess(version) {
   const child = new EventEmitter();

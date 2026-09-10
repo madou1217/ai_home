@@ -59,7 +59,9 @@ export function useSessionRuntime(
     void openSessionRuntime(
       activeResolution.target,
       browserApi,
-      (session) => onSessionResolvedRef.current?.(session),
+      (session) => {
+        if (!disposed) onSessionResolvedRef.current?.(session);
+      },
     ).then(
       (opened) => {
         controller = opened;

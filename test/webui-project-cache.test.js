@@ -84,6 +84,32 @@ test('projects snapshot can rebuild from persisted host index without rescanning
   }
 });
 
+test('Chat Harness workspaces stay hidden in fresh and persisted project snapshots', async () => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-chat-project-cache-'));
+  const visible = path.join(aiHomeDir, 'demo');
+  const internal = path.join(aiHomeDir, 'run', 'chat-workspaces', 'session-hash');
+  fs.mkdirSync(visible, { recursive: true });
+  fs.mkdirSync(internal, { recursive: true });
+  const originalRead = sessionReader.readAllProjectsFromHost;
+  const internalProject = { id: 'chat', name: 'chat', path: internal, provider: 'codex', sessions: [] };
+  try {
+    sessionReader.readAllProjectsFromHost = () => [
+      internalProject, { id: 'demo', name: 'demo', path: visible, provider: 'codex', sessions: [] }
+    ];
+    const ctx = createContext(aiHomeDir);
+    await refreshProjectsSnapshot(ctx, { forceRefresh: true });
+    assert.deepEqual((await getProjectsSnapshot(ctx)).projects.map((project) => project.path), [visible]);
+    const persisted = readJsonValue(fs, aiHomeDir, PROJECTS_SNAPSHOT_CACHE_KEY);
+    persisted.projects.push({ ...internalProject, providers: ['codex'] });
+    writeJsonValue(fs, aiHomeDir, PROJECTS_SNAPSHOT_CACHE_KEY, persisted);
+    const restored = await getProjectsSnapshot(createContext(aiHomeDir));
+    assert.deepEqual(restored.projects.map((project) => project.path), [visible]);
+  } finally {
+    sessionReader.readAllProjectsFromHost = originalRead;
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+  }
+});
+
 test('projects snapshot aggregates account-scoped Qoder sessions', async () => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-qoder-project-cache-'));
   const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-qoder-project-'));

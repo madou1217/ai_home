@@ -29,6 +29,7 @@ export interface ChatAccountCatalog {
 
 export function useChatAccountCatalog(
   preferredProvider?: Provider,
+  preferredAccountRef?: string,
 ): ChatAccountCatalog {
   const [accounts, setAccounts] = useState<Account[]>(readInitialAccounts);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -72,6 +73,7 @@ export function useChatAccountCatalog(
     selectedAccount,
     accounts,
     preferredProvider,
+    preferredAccountRef,
   );
 
   return {

@@ -43,6 +43,10 @@ export function useNativeSessionAdoption(options: NativeSessionAdoptionOptions) 
     );
   }, []);
   const refresh = useCallback((session: Session): void => {
+    if (session.mode === 'chat') {
+      window.dispatchEvent(new Event('aih:chat-sessions-changed'));
+      return;
+    }
     void options.onProjectsRefresh({
       sessionId: session.id,
       provider: session.provider,
@@ -94,7 +98,7 @@ export function useNativeSessionAdoption(options: NativeSessionAdoptionOptions) 
       options.projectPath,
     );
     if (!adoption) return;
-    if (options.session.draft) expectNativeSession(adoption.nativeSessionId);
+    if (options.session.draft || options.session.mode === 'chat') expectNativeSession(adoption.nativeSessionId);
     if (!adoption.session) return;
     options.onSessionChange(adoption.session);
     refresh(adoption.session);

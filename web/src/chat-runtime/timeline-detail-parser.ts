@@ -114,7 +114,7 @@ export function parseArtifactDetail(value: unknown): TimelineDetailByKind['artif
 
 export function parseNoticeDetail(value: unknown): TimelineDetailByKind['notice'] {
   const source = detail(value);
-  return { level: choice(source.level, NOTICE_LEVELS, 'level') };
+  return { level: choice(source.level, NOTICE_LEVELS, 'level'), ...optionalText(source, 'code') };
 }
 
 export function parseErrorDetail(value: unknown): TimelineDetailByKind['error'] {

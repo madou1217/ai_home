@@ -23,8 +23,8 @@ export function usePersistedChatSelection(
     if (isChatMode || session?.mode === 'chat') {
       writePersistedSelection({
         projectPath: undefined,
-        sessionId: session?.draft ? undefined : session?.id,
-        provider: session?.draft ? undefined : session?.provider,
+        sessionId: session?.runtimeSessionId || (session?.draft ? undefined : session?.id),
+        provider: session?.runtimeSessionId || !session?.draft ? session?.provider : undefined,
         projectDirName: undefined,
       });
       return;

@@ -49,7 +49,7 @@ export default function ChatEmptyState({
             ))}
           </div>
           <p className={styles.emptyDescHarmony}>
-            直接面向集中 API 网关，毫秒级即时连接。<br />
+            保留对话上下文，随时继续之前的话题。<br />
             无需绑定工作目录，专注于思考与创作。
           </p>
           <Button

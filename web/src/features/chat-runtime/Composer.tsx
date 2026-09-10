@@ -12,6 +12,7 @@ import styles from './session-runtime.module.css';
 import { CHAT_ATTACHMENT_ACCEPT } from '@/components/chat/attachment-files';
 
 export interface ComposerProps {
+  readonly workspaceMode?: 'chat' | 'work';
   readonly store: SessionProjectionStore;
   readonly actions: SessionRuntimeActions;
   readonly accounts: readonly Account[];
@@ -61,7 +62,8 @@ export default function Composer(props: ComposerProps) {
       <Input.TextArea
         value={controller.input}
         autoSize={{ minRows: 2, maxRows: 8 }}
-        placeholder={controller.policy.turnActive ? '插话，或加入本轮后的队列…' : '向 AIH Chat Runtime 发送消息…'}
+        placeholder={controller.policy.turnActive ? '插话，或加入本轮后的队列…'
+          : props.workspaceMode === 'chat' ? '发送消息…' : '向 AIH Chat Runtime 发送消息…'}
         onChange={(event) => controller.setInput(event.target.value)}
         onKeyDown={(event) => controller.handleKeyDown(event)}
         onPaste={handlePaste}

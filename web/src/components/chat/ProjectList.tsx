@@ -137,6 +137,11 @@ const ProjectList = ({
       void fetchChatSessions();
     }
   }, [fetchChatSessions, mode]);
+  useEffect(() => {
+    const refresh = () => { void fetchChatSessions(); };
+    window.addEventListener('aih:chat-sessions-changed', refresh);
+    return () => window.removeEventListener('aih:chat-sessions-changed', refresh);
+  }, [fetchChatSessions]);
 
   const handleRemoveProject = async (project: AggregatedProject) => {
     try {

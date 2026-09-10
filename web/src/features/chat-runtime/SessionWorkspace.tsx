@@ -68,6 +68,11 @@ export default function SessionWorkspace(props: Props) {
     [props.controller],
   );
   useEffect(() => () => freshPlanWorkflow.dispose(), [freshPlanWorkflow]);
+  useEffect(() => {
+    if (props.runtimeTarget.policy.workspaceMode === 'chat' && projection.state === 'idle') {
+      window.dispatchEvent(new Event('aih:chat-sessions-changed'));
+    }
+  }, [projection.state, props.runtimeTarget.policy.workspaceMode]);
   const implementCurrent = useCallback(async (sourceTurnId: string): Promise<void> => {
     await currentPlanWorkflow.execute(sourceTurnId);
     props.onApprovalModeChange('confirm');
@@ -86,12 +91,14 @@ export default function SessionWorkspace(props: Props) {
 
   return (
     <main className={styles.workspace}>
-      <WorkspaceHeader title={props.title} projection={projection} />
+      <WorkspaceHeader title={projection.title || props.title} projection={projection}
+        chat={props.runtimeTarget.policy.workspaceMode === 'chat'} />
       <ConversationTimeline
         controller={props.controller}
         firstTextPaintProbe={firstTextPaintProbe}
         provider={props.runtimeTarget.provider as Provider}
         projectPath={props.runtimeTarget.projectPath}
+        workspaceMode={props.runtimeTarget.policy.workspaceMode}
         mobile={props.mobile}
       />
       <div className={styles.workspaceDock}>
@@ -100,15 +107,16 @@ export default function SessionWorkspace(props: Props) {
           disabled={!connection.interactive}
           data-disabled={!connection.interactive}
         >
-          <PlanImplementationPrompt
+          {props.runtimeTarget.policy.workspaceMode !== 'chat' ? <PlanImplementationPrompt
             store={props.controller.store}
             actions={actions}
             onImplementCurrent={implementCurrent}
             onImplementFresh={implementFresh}
-          />
+          /> : null}
           <InteractionDock store={props.controller.store} actions={actions} />
           <QueueDock store={props.controller.store} actions={actions} />
           <Composer
+            workspaceMode={props.runtimeTarget.policy.workspaceMode}
             store={props.controller.store}
             actions={actions}
             accounts={props.accounts}
@@ -154,13 +162,16 @@ function useNativeSessionReporter(
 function WorkspaceHeader({
   title,
   projection,
+  chat,
 }: {
   title: string;
   projection: ReturnType<typeof selectWorkspaceProjection>;
+  chat: boolean;
 }) {
   const connection = sessionConnectionPresentation(projection.connectionState);
   // 副行 caption：连接状态 · CLI 版本 · seq N，整行 hover 可见全量。
-  const meta = `${connection.label} · ${projection.version || '默认运行时'} · seq ${projection.throughSeq}`;
+  const meta = chat ? connection.label
+    : `${connection.label} · ${projection.version || '默认运行时'} · seq ${projection.throughSeq}`;
   return (
     <header className={styles.workspaceHeader}>
       <div className={styles.workspaceHeaderMain}>
@@ -184,6 +195,7 @@ function selectWorkspaceProjection(projection: SessionProjection) {
     nativeSessionId: projection.runtimeBinding?.nativeSessionId,
     version: projection.runtimeBinding?.version,
     approvalMode: canonicalApprovalMode(projection.policy.approvalMode),
+    title: typeof projection.policy.title === 'string' ? projection.policy.title : undefined,
   };
 }
 

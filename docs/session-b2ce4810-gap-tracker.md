@@ -78,7 +78,7 @@
 | F17 | Work 三栏同屏(目录树+Git+Sessions \| Agent 轨迹 \| PTY+Diff) | ✅ | 2ea82cfa 落地三栏;2026-09-02 响应式降级治理(阈值 1040/900,overlay 展开) |
 | F18 | Chat 顶栏极简(胶囊切换器+模型选择+新建对话) | ✅🔧 | 本次修复 ModeSelector 32px/13px |
 | F19 | 主区域居中最大宽 840px | ✅ | 居中自适应有;实际 `--chat-content-width: 800px`(`chat.module.css:1600`),与 840 不符 |
-| F20 | dsh 2.0 交互与能力吸收清单（分支 Diff 已剔除） | ⚠️ 按链路分别验收 | §二十二只证明接线，不作为全部能力完成依据；本批重新生成/分支/上下文与计时已验，其他交互仍保留各自证据边界，禁止推断所有模式均已验 |
+| F20 | dsh 2.0 交互与能力吸收清单（分支 Diff 已剔除） | ⚠️ 按链路分别验收 | §二十七完成保留链路的行为级验收(Playwright 实测):Cmd+F/灵感胶囊原系假接线已修复并实测通过;悬浮操作栏/长图分享/ContextMeter/微光扫描/置顶实测通过;跨 Tab 同步被 B30 阻塞待复验;手册三个浏览器保留键谎言已移除 |
 | F21 | 200+ 轮虚拟列表 60fps / 500 条聚合 <5ms 基准 | ➖ 剔除(2026-09-10 用户裁决) | 虚拟列表已于 2026-09-02 删除;2026-09-10 用户裁决剔除,不再立项 |
 | F22 | 分支版本对比 Diff + 离线 PWA | ✅(保留范围) | 离线 PWA 已落地(`session-offline-cache.ts`,11 项测试,复核有 2 个真实消费方);Diff 半边已随 1.11 于 2026-09-10 剔除,非交付 |
 
@@ -245,6 +245,7 @@
 | P10 | Web Lint 清零(原"56 项"承诺,L8350) | 助手 TODO | ✅ | `npx eslint src` 41 errors → **0 errors 0 warnings**(30 死 import/3 死 props/5 死变量/1 可选链/1 不可达块 106 行) |
 | P11 | 大文件哨兵/provider 拆分纪律(L9730) | user 原话 | ✅ | `evolution-scan.js` 新增 150KB 预警/200KB 超标哨兵(实测已捕获 chat.module.css 153KB 预警);纪律条款入矩阵文档第 4 条;4 项新测试;当前服务端最大文件 80KB 无超标 |
 | P12 | review 执行器约束:aih codex 不指定账号(L8211) | user 原话 | ✅ | `evolution-scan.js review` 子命令默认即此形态 |
+| B30 | 回访 Tab(已存 key 直接开 /ui/chat)纯聊天会话列表为空 | 2026-09-11 F20 行为验收实测 | ❌ 未修(属并发 chat-runtime 会话活跃区) | Playwright 双 Tab 实测:首 Tab(登录跳转二次挂载)31 行;第二 Tab 40s 仍 0 行。net 证据:回访流程只发出 6 条 `provider+projectPath` 目录查询(响应全空),从未发出 provider-only 查询(curl 实证 `/v0/webui/chat/sessions?provider=kimi` 不带 projectPath 才返回纯聊天会话)。阻塞 F20 跨 Tab 同步的行为验收 |
 
 ### 9.3 顺带修复的 HEAD 既有 bug
 
@@ -925,3 +926,47 @@ item 7(全站页面鸿蒙 6.1 化)、D2(HOS 必须 6.1)、D4(手机/PC 两套 UI
 
 审计脚本已入仓 `scripts/hos-spec-audit.js`(此前在 `/tmp`,一次性)。
 下次改动后重跑即可对照,不必再靠一次性的人工判断——这正是 §二 #7 缺的那一环。
+
+## 二十七、F20 行为级验收(2026-09-11,Playwright 真实驱动 /ui/chat)
+
+### 27.1 方法与 §22 的区别
+
+§22 复核的是「组件存在且有真实消费方」(接线);本轮验收的是「用户在真实页面按得出来」
+(行为)。正是这个口径差异抓到了三个假完成——它们组件在、消费方在、测试在,唯独用户够不着。
+
+### 27.2 逐链路结果(修前 → 修后)
+
+| 链路 | 修前行为实测 | 处置 | 修后实测 |
+|---|---|---|---|
+| Cmd+K 命令面板 | ✅ 打开 | — | ✅ |
+| Cmd+/ 快捷键手册 | ✅ 打开 | 同步修内容(见 27.3) | ✅ |
+| Cmd+F 会话内搜索 | ❌ 组件渲染但**零触发入口**,永远 closed | 新建 `chat-global-shortcuts.ts` 单一事实源;Chat.tsx 派发事件;**双 surface 各接监听**:legacy MessageArea(胶囊本就在)、native ConversationTimeline(**本次移植**:由 timeline items 派生可搜消息,按 `data-chat-anchor-key` 序对齐定位滚动) | ✅ 胶囊打开(native) |
+| 灵感胶囊 | ❌ **native composer 从未吸收**(仅 legacy MessageArea 有) | 移植进 `ComposerToolbar.tsx`,`controller.setInput` 注入 | ✅ 点卡片注入 72 字符 |
+| 悬浮操作栏 | ✅ hover 出现 | — | ✅ |
+| 长图分享 | ✅ 弹窗打开 | — | ✅ |
+| ContextMeter 环形 | ✅ 有消息会话中可见(native 经 SessionMetrics 接入) | — | ✅ |
+| 微光扫描 | ✅ 折叠思考块 header::after `thinkingShimmer` | — | ✅ |
+| 置顶 | ✅ localStorage `aih_pinned_sessions` 写入 | — | ✅ |
+| 跨 Tab 同步 | ❌ **无法验收**:被 B30(回访 Tab 列表为空)阻塞 | 登记 B30,属并发 chat-runtime 会话活跃区,不修 | ⏳ 待 B30 修复后复验 |
+
+### 27.3 快捷键手册诚实化(同时修掉三种「广告即谎言」)
+
+- **Cmd+T(主题)/Cmd+N(新对话)是浏览器保留键**,页面既收不到也不能 preventDefault,
+  这类键**永远不可能在 Web 页里实现**——手册与命令面板的 `Cmd+T` 标签、导航项 `1`-`5`
+  数字标签(面板只监听 Esc/方向键/Enter)一并移除。主题切换走 Cmd+K 面板,新对话走「+」。
+- Cmd+F 保留在手册——现在它是真的了。
+- 纪律写进 `chat-global-shortcuts.ts` 头注:手册广告的每个键必须在那里有实现。
+
+### 27.4 §26.3 未闭合的 /chat mobile 0px 按钮:复现并关闭
+
+该幽灵只在「移动端 + 已选中会话」态出现(此前探针都停在空态,故复现不出)。
+真身:`mobileBack`(导航返回钮)与 EventBlock 行头(`.header`,`closest('[data-tone]')`)——
+两者 `background:transparent;border:none`,**无可见边界,圆角不参与渲染**,非规范偏差。
+排除口径已补进 `scripts/hos-spec-audit.js` 注释与过滤链。此项关闭。
+
+### 27.5 验证证据
+
+- `bun test src/features/chat-runtime/ src/components/chat/` 158 项全过(含新增
+  `chat-global-shortcuts.test.ts` 5 项);eslint 改动文件 0 警告;`npm run build` exit 0;
+  行为探针 PASS 10 / GAP 1(仅跨 Tab,阻塞于 B30)。
+- node 全量未跑:改动纯 web/src + scripts,已 grep 确认 test/ 无对这些文件的断言。

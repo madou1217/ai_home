@@ -45,7 +45,7 @@ export default function TurnFeedback({ store, actions }: {
   };
   if (!progress && !failure) return null;
   return (
-    <div className={styles.turnFeedback}>
+    <div className={styles.turnFeedback} data-turn-id={failure?.turnId || projection.activeTurn?.turnId}>
       <div className={styles.turnFeedbackRow}>
         <span role="status" aria-live={progress ? 'off' : 'polite'}>{progress || (failure && turnFailureMessage(failure))}</span>
         {progress && canInterrupt ? <Button size="small" icon={<StopOutlined />}

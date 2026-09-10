@@ -14,7 +14,6 @@ import ConversationTimeline from './ConversationTimeline';
 import InteractionDock from './InteractionDock';
 import PlanImplementationPrompt from './PlanImplementationPrompt';
 import QueueDock from './QueueDock';
-import TurnFeedback from './TurnFeedback';
 import { BrowserFreshPlanRuntimePort } from './browser-fresh-plan-runtime-port';
 import { BrowserFirstTextPaintProbe } from './browser-first-text-paint-probe';
 import {
@@ -96,6 +95,7 @@ export default function SessionWorkspace(props: Props) {
         chat={props.runtimeTarget.policy.workspaceMode === 'chat'} />
       <ConversationTimeline
         controller={props.controller}
+        actions={actions}
         firstTextPaintProbe={firstTextPaintProbe}
         provider={props.runtimeTarget.provider as Provider}
         projectPath={props.runtimeTarget.projectPath}
@@ -103,7 +103,6 @@ export default function SessionWorkspace(props: Props) {
         mobile={props.mobile}
       />
       <div className={styles.workspaceDock}>
-        <TurnFeedback store={props.controller.store} actions={actions} />
         <fieldset
           className={styles.workspaceDockControls}
           disabled={!connection.interactive}

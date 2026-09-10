@@ -52,6 +52,86 @@ function readProjectionCredentials(aiHomeDir, accountRef) {
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
 }
 
+for (const status of [401, 200]) test(`adopts the same-account rotation winner after OAuth ${status}`, async (t) => {
+  const fixture = createKimiFixture(t, expiredCredentials());
+  const other = registerAccountIdentity(fs, fixture.aiHomeDir, {
+    provider: 'kimi', cliAccountId: '2', identitySeed: 'oauth:kimi:refresh-user-2'
+  });
+  const otherAuth = { credentials: expiredCredentials('rt_other') };
+  writeAccountNativeAuth(fs, fixture.aiHomeDir, other.accountRef, otherAuth);
+  const winner = { ...expiredCredentials('rt_winner'), access_token: 'at_winner',
+    expires_at: Math.floor(Date.now() / 1000) + 900 };
+  const accounts = [0, 1].map(() => ({ provider: 'kimi', accountRef: fixture.accountRef }));
+  let requests = 0;
+  const deps = { fs, aiHomeDir: fixture.aiHomeDir, fetchWithTimeout: async () => {
+    requests += 1;
+    writeAccountNativeAuth(fs, fixture.aiHomeDir, fixture.accountRef, { credentials: winner });
+    await new Promise((resolve) => setImmediate(resolve));
+    return { status, json: async () => status === 401 ? { error: 'invalid_grant' }
+      : { access_token: 'at_stale_response', refresh_token: 'rt_stale_response', expires_in: 900 } };
+  } };
+  const results = await Promise.all(accounts.map((account) => refreshKimiAccessToken(account, { force: true }, deps)));
+  assert.equal(requests, 1);
+  for (let index = 0; index < results.length; index += 1) {
+    assert.equal(results[index].reason, 'credentials_adopted');
+    assert.equal(results[index].refreshed, true);
+    assert.equal(accounts[index].accessToken, 'at_winner');
+    assert.equal(accounts[index].refreshToken, 'rt_winner');
+  }
+  assert.deepEqual(readAccountNativeAuth(fs, fixture.aiHomeDir, fixture.accountRef).credentials, winner);
+  assert.deepEqual(readAccountNativeAuth(fs, fixture.aiHomeDir, other.accountRef), otherAuth);
+});
+
+test('reconciles a CLI rotation made during an OAuth rejection, without retrying the consumed grant', async (t) => {
+  const fixture = createKimiFixture(t, { ...expiredCredentials(), user_id: 'user-1' });
+  const root = path.join(fixture.aiHomeDir, 'run', 'auth-projections', 'kimi', fixture.accountRef,
+    '.kimi-code', 'credentials');
+  const account = { provider: 'kimi', accountRef: fixture.accountRef };
+  let requests = 0;
+  const result = await refreshKimiAccessToken(account, { force: true }, {
+    fs, aiHomeDir: fixture.aiHomeDir, fetchWithTimeout: async () => {
+      requests += 1;
+      fs.mkdirSync(root, { recursive: true });
+      fs.writeFileSync(path.join(root, 'kimi-code.json'), JSON.stringify({
+        ...expiredCredentials('rt_cli_winner'), user_id: 'user-1', access_token: 'at_cli_winner',
+        expires_at: Math.floor(Date.now() / 1000) + 900
+      }));
+      return { status: 401, json: async () => ({ error: 'invalid_grant' }) };
+    }
+  });
+  assert.equal(requests, 1);
+  assert.equal(result.reason, 'credentials_adopted');
+  assert.equal(account.accessToken, 'at_cli_winner');
+});
+
+test('permanently revoked grants fail without claiming recovery or borrowing another login', async (t) => {
+  const fixture = createKimiFixture(t, expiredCredentials());
+  let requests = 0;
+  const account = { provider: 'kimi', accountRef: fixture.accountRef };
+  const deps = { fs, aiHomeDir: fixture.aiHomeDir, fetchWithTimeout: async () => {
+    requests += 1;
+    return { status: 401, json: async () => ({ error: 'invalid_grant' }) };
+  } };
+  const result = await refreshKimiAccessToken(account, {}, deps);
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'refresh_unauthorized');
+  assert.equal((await refreshKimiAccessToken(account, {}, deps)).reason, 'throttled');
+  assert.equal(requests, 1);
+});
+
+test('a fresh generation loaded from DB reports recovery so daemon clears stale auth blocks', async (t) => {
+  const fixture = createKimiFixture(t, { ...expiredCredentials('rt_fresh'), access_token: 'at_fresh',
+    expires_at: Math.floor(Date.now() / 1000) + 3600 });
+  const account = { provider: 'kimi', accountRef: fixture.accountRef,
+    accessToken: 'at_old', refreshToken: 'rt_old', authInvalidUntil: Date.now() + 60000 };
+  const result = await refreshKimiAccessToken(account, {}, {
+    fs, aiHomeDir: fixture.aiHomeDir, fetchWithTimeout: async () => assert.fail('fresh grant needs no OAuth request')
+  });
+  assert.equal(result.refreshed, true);
+  assert.equal(result.reason, 'credentials_adopted');
+  assert.equal(account.accessToken, 'at_fresh');
+});
+
 test('refreshKimiAccessToken persists rotated refresh_token to DB and writes back projection file', async (t) => {
   const fixture = createKimiFixture(t, expiredCredentials('rt_old'));
   const account = { provider: 'kimi', accountRef: fixture.accountRef };

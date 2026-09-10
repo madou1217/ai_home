@@ -54,7 +54,12 @@ function useComposerViewState(props: ComposerProps) {
   );
   const [input, setInput] = useState('');
   const [requestedDelivery, setDelivery] = useState<ComposerDelivery>('turn');
-  const [reasoningEffort, setReasoningEffort] = useState('');
+  const [effortChoice, setEffortChoice] = useState<{ sessionId: string; value: string }>();
+  const reasoningEffort = effortChoice?.sessionId === projection.sessionId
+    ? effortChoice.value : projection.reasoningEffort;
+  const setReasoningEffort = useCallback((value: string): void => {
+    setEffortChoice({ sessionId: projection.sessionId, value });
+  }, [projection.sessionId]);
   const [busy, setBusy] = useState(false);
   const attachments = useComposerAttachments();
   const delivery = policy.deliveries.includes(requestedDelivery)
@@ -70,16 +75,13 @@ function useComposerViewState(props: ComposerProps) {
     if (selection.model && selection.model !== props.selectedModel) {
       props.onModelChange(selection.model);
     }
-    if (selection.effort && selection.effort !== reasoningEffort) {
-      setReasoningEffort(selection.effort);
-    }
   }, [props.onModelChange, props.selectedModel, reasoningEffort, selection]);
   const selectModel = useCallback((model: string): void => {
-    const next = resolveComposerModelSelection(props.catalog, model, '');
+    const next = resolveComposerModelSelection(props.catalog, model, reasoningEffort);
     if (!next.model) return;
     props.onModelChange(next.model);
     setReasoningEffort(next.effort);
-  }, [props.catalog, props.onModelChange]);
+  }, [props.catalog, props.onModelChange, reasoningEffort, setReasoningEffort]);
   const canAttach = delivery === 'turn' && !policy.turnActive && !busy && !pendingSlash;
   const canSend = Boolean(selection.model)
     && !(pendingSlash && attachments.items.length > 0)
@@ -143,7 +145,13 @@ async function dispatchComposerInput(props: ComposerProps, view: ComposerViewSta
 }
 
 function selectComposerProjection(projection: SessionProjection) {
-  return { state: projection.state, capabilities: projection.capabilitySnapshot };
+  return {
+    sessionId: projection.sessionId,
+    state: projection.state,
+    capabilities: projection.capabilitySnapshot,
+    reasoningEffort: typeof projection.policy.reasoningEffort === 'string'
+      ? projection.policy.reasoningEffort : '',
+  };
 }
 
 function slashSuggestions(input: string, commands: readonly string[]): readonly string[] {

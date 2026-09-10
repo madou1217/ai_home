@@ -22,10 +22,15 @@ export function selectTimelinePresentation(projection: SessionProjection): {
   // Keep the canonical events intact. Empty reasoning is activity, not history.
   return {
     runningReasoningId,
-    items: projection.items.filter((item) => item.kind !== 'reasoning'
-      || reasoningText(item).trim()
-      || item.id === runningReasoningId
-      || item.status === 'failed'
-      || item.status === 'cancelled'),
+    items: projection.items.filter((item) => {
+      // The latest failure is rendered once, with its retry action below the response.
+      if (projection.failedTurn && item.kind === 'error'
+        && item.turnId === projection.failedTurn.turnId) return false;
+      return item.kind !== 'reasoning'
+        || reasoningText(item).trim()
+        || item.id === runningReasoningId
+        || item.status === 'failed'
+        || item.status === 'cancelled';
+    }),
   };
 }

@@ -48,11 +48,13 @@ test('retry survives store reload and restores exact prompt, attachments, model 
     filePath: '/test-owned/document.txt', name: 'document.txt', mimeType: 'text/plain'
   }])[0];
   const payload = { content: 'Read the original document', attachmentIds: [attachment.attachmentId],
-    model: 'k3', reasoningEffort: 'high' };
+    model: 'k3', reasoningEffort: 'max' };
   const sourceTurnId = await failTurn(f, payload);
   assert.equal(f.snapshot().failedTurn.retryable, true);
   assert.equal(JSON.stringify(f.snapshot().failedTurn).includes(payload.content), false);
   f.reopen();
+  assert.equal(f.snapshot().policy.reasoningEffort, 'max');
+  assert.equal(f.snapshot().policy.model, 'k3');
   assert.equal(f.snapshot().failedTurn.turnId, sourceTurnId);
   const retry = await f.dispatch('retry-1', 'turn.retry', { sourceTurnId });
   await f.actor.waitForIdle();
@@ -64,6 +66,22 @@ test('retry survives store reload and restores exact prompt, attachments, model 
   assert.equal(duplicate.duplicate, true);
   assert.equal(calls.length, 2);
   assert.equal(f.store.listEvents(f.session.sessionId).filter((event) => event.type === 'turn.failed').length, 1);
+});
+
+test('rejected and duplicate submissions cannot overwrite the saved model effort', async (t) => {
+  let finish;
+  const f = fixture(t, () => new Promise((resolve) => { finish = resolve; }));
+  const payload = { content: 'long reasoning', model: 'k3', reasoningEffort: 'max' };
+  await f.dispatch('accepted', 'turn.submit', payload);
+  await assert.rejects(f.dispatch('busy', 'turn.submit', {
+    content: 'overlap', model: 'other-model', reasoningEffort: 'low'
+  }), /chat_turn_already_active/);
+  assert.equal(f.snapshot().policy.reasoningEffort, 'max');
+  finish();
+  await f.actor.waitForIdle();
+  await f.dispatch('change', 'session.policy.set', { key: 'reasoningEffort', value: 'high' });
+  await f.dispatch('accepted', 'turn.submit', payload);
+  assert.equal(f.snapshot().policy.reasoningEffort, 'high');
 });
 
 test('concurrent retry commands start one turn and reject attempts from another session', async (t) => {

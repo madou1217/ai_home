@@ -77,6 +77,33 @@ it('Kimi adopts a fresh CLI projection during invalid-grant suppression and resu
 });
 
 describe('createTokenRefreshDaemon', () => {
+  it('clears Kimi auth blocks after adopting a fresh same-account generation without another OAuth request', async (t) => {
+    const fixture = createAccountFixture(t, 'aih-kimi-fresh-adoption-');
+    const accountRef = fixture.register('kimi', '1', { credentials: {
+      access_token: 'fresh-access', refresh_token: 'fresh-refresh',
+      expires_at: Math.floor(Date.now() / 1000) + 7200
+    } });
+    const account = { accountRef, provider: 'kimi', authType: 'oauth',
+      accessToken: 'rejected-access', refreshToken: 'rejected-refresh',
+      authInvalidUntil: Date.now() + 3600000, lastError: 'auth_invalid_reauth_required' };
+    let finish;
+    const complete = new Promise((resolve) => { finish = resolve; });
+    const clears = [];
+    const daemon = createTokenRefreshDaemon({ accounts: { kimi: [account] } }, {}, {
+      fs, aiHomeDir: fixture.aiHomeDir,
+      fetchWithTimeout: async () => assert.fail('a fresh adopted generation does not need to rotate again'),
+      accountStateService: { clearRuntimeBlock(ref, provider) { clears.push({ ref, provider }); return true; } },
+      logInfo: (message) => { if (message.includes('completed')) finish(); },
+      logWarn() {}, logError() {}
+    });
+    t.after(() => daemon.stop());
+    await complete;
+    assert.deepEqual(clears, [{ ref: accountRef, provider: 'kimi' }]);
+    assert.equal(account.accessToken, 'fresh-access');
+    assert.equal(account.authInvalidUntil, 0);
+    assert.equal(account.lastError, '');
+  });
+
   it('should create daemon with stats', () => {
     const state = {
       accounts: {

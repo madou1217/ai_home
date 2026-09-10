@@ -16,10 +16,13 @@ import type { CommittedTimelineObserver } from './browser-first-text-paint-probe
 import { sessionConnectionPresentation } from './session-connection-presentation';
 import { selectTimelinePresentation } from './timeline-presentation';
 import TimelineItemView from './TimelineItemView';
+import TurnFeedback from './TurnFeedback';
+import type { SessionRuntimeActions } from './session-runtime-actions';
 import styles from './session-runtime.module.css';
 
 interface Props {
   readonly controller: SessionRuntimeController;
+  readonly actions: SessionRuntimeActions;
   readonly firstTextPaintProbe: CommittedTimelineObserver;
   readonly provider: Provider;
   readonly projectPath: string;
@@ -29,6 +32,7 @@ interface Props {
 
 export default function ConversationTimeline({
   controller,
+  actions,
   firstTextPaintProbe,
   provider,
   projectPath,
@@ -95,6 +99,7 @@ export default function ConversationTimeline({
           mobile={mobile}
         />
       ))}
+      <TurnFeedback store={controller.store} actions={actions} />
       </div>
       <FileDrawer
         open={preview.open}

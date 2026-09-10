@@ -714,8 +714,8 @@ test('refreshKimiAccessToken reloads a valid persisted token into a stale runtim
     });
 
     assert.equal(result.ok, true);
-    assert.equal(result.refreshed, false);
-    assert.equal(result.reason, 'not_due');
+    assert.equal(result.refreshed, true);
+    assert.equal(result.reason, 'credentials_adopted');
     assert.equal(fetchCalls, 0);
     assert.equal(runtimeAccount.accessToken, 'persisted-fresh-token');
     assert.equal(runtimeAccount.refreshToken, 'persisted-refresh-token');
@@ -847,14 +847,14 @@ test('refreshKimiAccessToken does not overwrite credentials replaced while refre
     const result = await refreshPromise;
     const persisted = readAccountNativeAuth(fs, aiHomeDir, accountRef);
 
-    assert.equal(result.ok, false);
-    assert.equal(result.refreshed, false);
-    assert.equal(result.reason, 'stale_credentials');
+    assert.equal(result.ok, true);
+    assert.equal(result.refreshed, true);
+    assert.equal(result.reason, 'credentials_adopted');
     assert.equal(persisted.deviceId, 'new-device');
     assert.equal(persisted.credentials.access_token, 'new-login-access');
     assert.equal(persisted.credentials.refresh_token, 'new-login-refresh');
-    assert.equal(runtimeAccount.accessToken, 'old-login-access');
-    assert.equal(runtimeAccount.refreshToken, 'old-login-refresh');
+    assert.equal(runtimeAccount.accessToken, 'new-login-access');
+    assert.equal(runtimeAccount.refreshToken, 'new-login-refresh');
     assert.deepEqual(hookEvents, []);
   } finally {
     releaseRefresh();

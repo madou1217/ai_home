@@ -23,7 +23,7 @@ async function requestKimi({ stream = false, accountRef = SECOND_REF, status = 2
   }));
   const res = createMemoryResponse();
   const input = { model: 'k3', input: [{ role: 'user', content: [{ type: 'input_text', text: 'hello' }] }],
-    max_output_tokens: 64, stream,
+    max_output_tokens: 64, stream, reasoning: { effort: 'max' },
     tools: [{ type: 'function', name: 'lookup', description: 'Look up a value',
       parameters: { type: 'object', properties: { key: { type: 'string' } }, required: ['key'] } }] };
   const handled = await handleV1Request({
@@ -84,7 +84,10 @@ for (const stream of [false, true]) {
     assert.equal(request.authorization, `Bearer probe-${SECOND_REF}`);
     assert.equal(request.body.model, 'k3');
     assert.equal(request.body.stream, stream);
-    assert.equal(request.body.max_tokens, 64);
+    assert.equal(request.body.max_completion_tokens, 64);
+    assert.deepEqual(request.body.thinking, { type: 'enabled', effort: 'max' });
+    assert.equal(Object.hasOwn(request.body, 'max_tokens'), false);
+    assert.equal(Object.hasOwn(request.body, 'reasoning_effort'), false);
     assert.deepEqual(request.body.messages, [{ role: 'user', content: 'hello' }]);
     assert.equal(request.body.tools[0].function.name, 'lookup');
     if (stream) {

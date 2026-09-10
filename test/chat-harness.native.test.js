@@ -12,17 +12,19 @@ const { createAppServerClient } = require('../lib/server/codex-app-server-json-r
 
 // Explicit opt-in: runs the installed Harness against a local deterministic model,
 // with an empty HOME and no real provider credentials or upstream requests.
-for (const credentialKind of ['codex', 'codex-api-key', 'claude', 'agy']) test(`real Codex Harness owns ${credentialKind} history, resume, compaction and reload`, {
+for (const credentialKind of ['codex', 'codex-api-key', 'claude', 'agy', 'kimi']) test(`real Codex Harness owns ${credentialKind} history, resume, compaction and reload`, {
   skip: !process.env.AIH_TEST_CODEX_EXECUTABLE, timeout: 60000
 }, async (t) => {
   const provider = credentialKind === 'codex-api-key' ? 'codex' : credentialKind;
   const useGateway = credentialKind !== 'codex';
-  const gatewayModel = provider === 'agy' ? 'gemini-2.5-flash' : 'claude-sonnet-4-5';
+  const gatewayModel = provider === 'kimi' ? 'k3' : provider === 'agy' ? 'gemini-2.5-flash' : 'claude-sonnet-4-5';
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-chat-harness-native-'));
   const requests = [];
   let failureMode = '';
   let releaseReasoning;
   const reasoningGate = new Promise((resolve) => { releaseReasoning = resolve; });
+  let releaseKimiThinking;
+  const kimiThinkingGate = new Promise((resolve) => { releaseKimiThinking = resolve; });
   const gateway = http.createServer(async (req, res) => {
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
@@ -38,7 +40,34 @@ for (const credentialKind of ['codex', 'codex-api-key', 'claude', 'agy']) test(`
       res.end('event: response.created\ndata: {"type":"response.created","response":{"id":"resp_interrupted","status":"in_progress","output":[]}}\n\n');
       return;
     }
-    await respond(res, requests.length, reasoningGate);
+    if (failureMode === 'kimi-truncated') {
+      const { createSseTransformStream } = require('../lib/server/protocol-stream-pipeline');
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      const stream = createSseTransformStream('openai_chat', 'openai_responses', {
+        onChunk: (chunk) => res.write(chunk)
+      });
+      stream.write(`data: ${JSON.stringify({ id: 'truncated', model: 'k3',
+        choices: [{ index: 0, delta: { content: '<html>unfinished' } }] })}\n\n`);
+      stream.end();
+      res.end();
+      return;
+    }
+    if (provider === 'kimi' && requests.length === 2) {
+      const { createSseTransformStream } = require('../lib/server/protocol-stream-pipeline');
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      const stream = createSseTransformStream('openai_chat', 'openai_responses', {
+        onChunk: (chunk) => res.write(chunk)
+      });
+      const send = (delta, finish_reason = null) => stream.write(`data: ${JSON.stringify({
+        id: 'kimi_reasoning_probe', model: gatewayModel, choices: [{ index: 0, delta, finish_reason }]
+      })}\n\n`);
+      send({ reasoning_content: 'Kimi thinking visible before answer' });
+      await kimiThinkingGate;
+      send({ content: 'cobalt-42 response 2' });
+      send({}, 'stop');
+      stream.end();
+      res.end();
+    } else await respond(res, requests.length, reasoningGate);
   });
   await listen(gateway);
   const placeholder = http.createServer();
@@ -54,7 +83,7 @@ for (const credentialKind of ['codex', 'codex-api-key', 'claude', 'agy']) test(`
       { provider, executionAccountRef: 'acct_probe' },
       { aiHomeDir: root, env: baseEnv, chatGateway, readAccountCredentialRecord: readCredential }
     );
-  const runtimeEnv = gatewayOptions ? gatewayOptions.buildProviderEnvImpl() : {
+  const runtimeEnv = gatewayOptions ? await gatewayOptions.buildProviderEnvImpl() : {
     ...baseEnv, CODEX_HOME: path.join(root, '.codex'), CODEX_SQLITE_HOME: path.join(root, '.codex')
   };
   const codexHome = runtimeEnv.CODEX_HOME;
@@ -84,6 +113,7 @@ for (const credentialKind of ['codex', 'codex-api-key', 'claude', 'agy']) test(`
   const clients = [];
   t.after(async () => {
     releaseReasoning();
+    releaseKimiThinking();
     if (service) service.close();
     clients.forEach((client) => client.destroy());
     await stopHarness(child);
@@ -154,7 +184,18 @@ for (const credentialKind of ['codex', 'codex-api-key', 'claude', 'agy']) test(`
   assert.equal(during.timeline.find((item) => item.id === 'rs_probe_active').status, 'running');
   releaseReasoning();
   await idle(service, session.sessionId);
-  await submit(service, session.sessionId, 'turn-2', 'Repeat the marker');
+  if (provider === 'kimi') {
+    await service.dispatchCommand(session.sessionId, {
+      commandId: 'turn-2', type: 'turn.submit',
+      payload: { content: 'Repeat the marker', model: gatewayModel, reasoningEffort: 'max' }
+    });
+    await waitFor(() => service.getSnapshot(session.sessionId).timeline.some((item) =>
+      item.kind === 'reasoning' && item.content?.includes('Kimi thinking visible before answer')));
+    assert.equal(service.getSnapshot(session.sessionId).state, 'running');
+    releaseKimiThinking();
+    await idle(service, session.sessionId);
+    assert.equal(service.getSnapshot(session.sessionId).policy.reasoningEffort, 'max');
+  } else await submit(service, session.sessionId, 'turn-2', 'Repeat the marker');
   assert.match(JSON.stringify(requests[0].body.input), /cobalt-42/);
   assert.match(JSON.stringify(requests[1].body.input), /What is the marker/);
   const compact = await service.dispatchCommand(session.sessionId, {
@@ -186,8 +227,24 @@ for (const credentialKind of ['codex', 'codex-api-key', 'claude', 'agy']) test(`
   assert.ok(rpc.filter((call) => call.method === 'thread/resume').length >= 3);
   if (useGateway) assert.ok(requests.every((request) => request.accountRef === 'acct_probe'
     && request.body.model === gatewayModel));
+  if (useGateway) {
+    assert.doesNotMatch(fs.readFileSync(path.join(root, 'notifications.jsonl'), 'utf8'),
+      /Model metadata for .* not found/);
+  }
   console.log(JSON.stringify({ provider, credentialKind, nativeThreadId: nativeId, modelRequests: requests.length,
     threadStarts: 1, imports: 1, compactions: 1, restored: true, nativeProcessRestarted: true }));
+  if (credentialKind === 'kimi') {
+    failureMode = 'kimi-truncated';
+    await service.dispatchCommand(session.sessionId, {
+      commandId: 'truncated-canvas', type: 'turn.submit', payload: { content: 'Generate complete HTML' }
+    });
+    await service.waitForActorIdle(session.sessionId);
+    const snapshot = service.getSnapshot(session.sessionId);
+    assert.equal(snapshot.state, 'idle');
+    assert.ok(snapshot.failedTurn, 'truncated upstream must fail the native turn');
+    assert.match(snapshot.failedTurn.error.message, /ended before completion/);
+    assert.ok(snapshot.timeline.some((item) => item.content?.includes('<html>unfinished')));
+  }
   if (credentialKind === 'claude') {
     let retrySourceTurnId;
     for (const mode of ['http', 'stream']) {

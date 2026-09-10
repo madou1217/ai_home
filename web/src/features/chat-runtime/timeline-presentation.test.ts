@@ -79,6 +79,20 @@ test('whitespace content falls back to the public summary without manufacturing 
   assert.deepEqual(selectTimelinePresentation(projection([item])).items, [item]);
 });
 
+test('latest failed turn has one inline failure with retry while older errors remain in history', () => {
+  const oldError: TimelineItem = { id: 'old-error', turnId: 'old-turn', kind: 'error',
+    status: 'failed', content: 'old failure', createdAt: 1, detail: { code: 'old' } };
+  const error: TimelineItem = { ...oldError, id: 'new-error', turnId: 'failed-turn' };
+  const answer = { ...message('partial-answer', 'assistant'), turnId: 'failed-turn' };
+  const result = selectTimelinePresentation({
+    ...projection([oldError, answer, error]), state: 'idle', activeTurn: undefined,
+    failedTurn: { turnId: 'failed-turn', retryable: true, error: { code: 'timeout', message: 'idle timeout' } },
+  });
+  assert.deepEqual(result.items.map(({ id }) => id), ['old-error', 'partial-answer']);
+  const unanchored = { ...oldError, turnId: undefined };
+  assert.deepEqual(selectTimelinePresentation(projection([unanchored])).items, [unanchored]);
+});
+
 function reasoning(id: string, status: TimelineItem['status'], content = ''): Extract<TimelineItem, { kind: 'reasoning' }> {
   return { id, kind: 'reasoning', status, content, createdAt: 1, detail: { segments: [] } };
 }

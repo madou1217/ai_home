@@ -11,6 +11,29 @@ const {
 } = require('../lib/server/protocol-fallback-bridge');
 const { handleUpstreamPassthrough } = require('../lib/server/upstream-endpoints');
 
+test('streaming protocol wrapper cancels an idle upstream when its real downstream closes', async () => {
+  const { EventEmitter } = require('node:events');
+  const { createDownstreamAbortContext, pipeReadableBodyToResponse } = require('../lib/server/upstream-stream-forwarder');
+  const target = Object.assign(new EventEmitter(), createResCapture(), { write() { return true; } });
+  const wrapper = __private.createStreamingProtocolResponse(target, {
+    sourceProtocol: 'openai_chat', targetProtocol: 'openai_responses'
+  });
+  const opening = createDownstreamAbortContext({}, wrapper);
+  let cancelled = 0;
+  const body = new ReadableStream({ cancel() { cancelled += 1; } });
+  const running = pipeReadableBodyToResponse(body, wrapper);
+  target.destroyed = true;
+  target.emit('close');
+  assert.equal(opening.signal.aborted, true);
+  assert.equal((await running).downstreamDisconnected, true);
+  assert.equal(cancelled, 1);
+  assert.equal(wrapper.destroyed, true);
+  assert.equal(wrapper.write('ignored'), false);
+  opening.dispose();
+  assert.equal(target.listenerCount('close'), 0);
+  assert.equal(target.listenerCount('error'), 0);
+});
+
 function createResCapture() {
   return {
     statusCode: 0,

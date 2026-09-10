@@ -152,12 +152,15 @@ test('app-server lifecycle: cleans legacy tmux, binds new Herdr, and persists ba
   });
 
   const calls = [];
-  const spawnSyncImpl = (command, args) => {
+  const spawnSyncImpl = (command, args, spawnOptions) => {
     calls.push([command, args]);
     if (command === 'tmux' && args[0] === '-V') return { status: 0 };
     if (command === 'tmux' && args.includes('kill-server')) return { status: 0 };
     if (command === 'herdr' && args[0] === '--version') return { status: 0 };
-    if (command === 'herdr' && args[0] === 'spawn') return { status: 0 };
+    if (command === 'herdr' && args[0] === 'spawn') {
+      assert.equal(spawnOptions.env.HOME, aiHomeDir, 'await asynchronous account environment before spawn');
+      return { status: 0 };
+    }
     return { status: 1 };
   };
   let readyChecks = 0;
@@ -167,7 +170,7 @@ test('app-server lifecycle: cleans legacy tmux, binds new Herdr, and persists ba
     env: {},
     getProfileDir: () => aiHomeDir,
     runtimeExecutablePath: '/usr/bin/codex',
-    buildProviderEnvImpl: () => ({ HOME: aiHomeDir }),
+    buildProviderEnvImpl: async () => ({ HOME: aiHomeDir }),
     pickFreePortImpl: async () => 43123,
     checkReadyzImpl: async () => {
       readyChecks += 1;

@@ -110,7 +110,9 @@ for (const aliasOnly of [false, true]) {
   });
 }
 
-for (const scenario of [{ name: 'unknown pinned account', ref: 'missing', expected: 503 },
+// 「未知钉选」不再是失败场景:钉选是亲和偏好,钉的账号不在可调度池时回落全池
+// (与 v1-router HTTP 路径同契约),所以只有全池皆空/上游失败才进失败表。
+for (const scenario of [
   { name: 'both paths 404', reject: true, expected: 502, attempts: 2 },
   ...[401, 403, 429, 500, 302].map(status => ({ name: `upstream ${status}`, status, expected: 502 })),
   { name: 'stalled handshake', stall: true, expected: 502 },
@@ -129,6 +131,23 @@ for (const scenario of [{ name: 'unknown pinned account', ref: 'missing', expect
     assert.equal(f.requests.length, scenario.ref ? 0 : (scenario.attempts || 1));
   });
 }
+
+test('Responses WS falls back to the pool when the pinned account is not schedulable', async t => {
+  const f = await fixture(t, {});
+  const client = new WebSocket(f.gatewayUrl, { headers: { 'x-account-ref': 'missing' } });
+  t.after(() => client.terminate());
+  await once(client, 'open');
+  const received = once(client, 'message');
+  client.send('{"type":"response.create"}');
+  const [data] = await received;
+  assert.equal(data.toString(), '{"type":"response.create"}');
+  const closed = once(client, 'close');
+  [...f.wss.clients][0].close(1000, 'finished');
+  await closed;
+  // 回落选中池内健康账号(first),而不是被死钉截杀成 503
+  assert.deepEqual(f.activity, ['begin:first', 'end:first']);
+  assert.equal(f.requests.length, 1);
+});
 
 test('Responses WS alias keeps multi-turn and tool frames on one connection without replay', async t => {
   const f = await fixture(t, { aliasOnly: true });

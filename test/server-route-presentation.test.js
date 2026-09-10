@@ -268,7 +268,9 @@ test('Server management UI wires native LAN discovery and stable logical server 
   assert.match(connectionSource, /authorizeLanProfile\(existing\.id,\s*managementKey\)/u);
   assert.match(source, /refreshNativeLanRoutes\(authorizedProfileIds\)/u);
   assert.match(connectionSource, /endpoint\s*!==\s*existing\.endpoint/u);
-  assert.match(source, /isNativeDesktopRuntime\(\)\s*&&[\s\S]*发现局域网 Server/u);
+  // 门控可以写成 `isNativeDesktopRuntime() && <Button>` 或三元展开进动作描述数组，
+  // 断言的是「入口被该判定门控」这件事，不绑定具体运算符。
+  assert.match(source, /isNativeDesktopRuntime\(\)\s*[&?][\s\S]*发现局域网 Server/u);
   assert.match(source, /<ControlPlaneServerList[\s\S]*rows=\{serverRouteRows\}/u);
   assert.match(source, /onAuthorize=\{openDiscoveredServerAuthorization\}/u);
   assert.match(serverListSource, /key=\{row\.stableServerId\}/u);

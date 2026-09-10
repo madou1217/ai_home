@@ -2,6 +2,16 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { parseChatRuntimeEvent } from './event-parser';
+import { parseShellDetail } from './timeline-detail-parser';
+
+test('shell process IDs accept native opaque strings and legacy numeric records', () => {
+  for (const processId of ['3071', 'pty-worker-a', 3071]) {
+    assert.equal(parseShellDetail({ command: 'pwd', processId }).processId, processId);
+  }
+  for (const processId of ['', -1, {}, true]) {
+    assert.throws(() => parseShellDetail({ command: 'pwd', processId }));
+  }
+});
 
 test('event parser accepts the canonical schema and matching sequence', () => {
   const parsed = parseChatRuntimeEvent(JSON.stringify(event()), 'session-1');

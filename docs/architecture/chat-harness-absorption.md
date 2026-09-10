@@ -161,3 +161,32 @@
 - 新增 unknown 组件使用真实进程退出测试快照在 5192 隔离预览，实际浏览器确认折叠/展开、结果未知标签、行内说明及没有重试按钮。该证据是组件视觉验收，未冒充用户会话中的真实上游故障；未修改用户会话/注入登录态。临时预览和测试数据不提交。
 
 设计模式：`timeline-settlement` → 状态机/投影 → 将终态规则集中供实时和历史路径复用 → 四类终态、乱序历史测试；`store/recovery-repository` → Repository + transaction → 状态、metrics、队列与终态同时提交 → 进程退出/回滚/幂等测试；`TimelineItemView/projection-state` → 持久事件投影 → SSE 与刷新呈现一致结果 → Web 测试与隔离页面验收。SOLID 保留持久化、策略、Adapter、UI 边界；DRY 共用终态策略和 turn timeline 查询；KISS/YAGNI 不添加第二套存储、执行器或自动重试机制。采用 self-review，按本会话既有授权提交推送，排除两个其他会话的 streaming 改动。
+
+## 原生执行器专题：真实工具与离线历史恢复（2026-09-10）
+
+继续使用上述固定源码：Codex `96883599` 的 `codex-rs/app-server-protocol/schema/typescript/v2/ThreadItem.ts:49–53` 明确 commandExecution.processId 为 `string | null`；`core/tests/suite/tool_parallelism.rs` 通过本地 SSE 模型驱动真实工具，`app-server/tests/suite/v2/thread_resume.rs` 验证原生 thread 恢复。DSH `repair.ts` 的已记录结果优先原则指导 AIH 恢复顺序。实际安装执行器单独记录为 **codex-cli 0.154.0-alpha.3**，不将该发行版与固定源码 SHA 混为一谈。
+
+本轮真实 native 测试发现两个旧单元测试没有覆盖的缺口：
+
+1. 实际命令已写入 marker，但 `item/started.commandExecution.processId` 为字符串 `3071`，AIH 后端只允许非负整数，抛出 `timeline_detail_invalid` 导致回合失败。后端与 Web 契约现在无损接收 opaque string，继续兼容旧数字记录；null 仍由已有适配器省略。没有将标识符强转为数字或丢弃字段。
+2. AIH 离线期间，resident app-server 已完成工具和答案；恢复只提取 `thread/resume` 的 status，未导入同一响应中的历史。结果是工具被误置 unknown，最终答案缺失。现在先校验精确 native turn，再将返回历史事务导入，最后开放恢复结果。新答案获得对应 AIH turnId，补齐回答用时；没有观察到的首字时间保持缺省。历史 eventId 不因 turnId 映射改变，其他 native turn 不会被错误绑定。
+
+验证使用独立临时 HOME/项目、无真实凭据、本地确定性模型。模型从实际 tools/additional_tools 读取协议：本机 alpha 执行器提供 `functions.exec`，内部真实运行 `exec_command`。命令先写 marker，再等待 release 文件；只在这些测试拥有的目录写入，退出时释放等待并清理测试进程。三条原生场景：
+
+| 场景 | 故障/恢复动作 | 结果证据 |
+| --- | --- | --- |
+| AIH 离线，native 完成 | 关闭 AIH service/client；释放工具；观察 native thread 已 completed；重开 AIH | marker 仅一行；模型共两次请求；工具 completed + exitCode=0；最终 TOOL_PROBE_DONE 补回，有用时、无伪造首字 |
+| native 执行器中途退出 | 写 marker 后 SIGKILL 测试拥有的 app-server；同 HOME 重启并恢复 | marker 仅一行；模型仅一次请求；工具 unknown，无伪造 exitCode；队列暂停，没有重放 |
+| 重连时工具仍运行 | 保持 release gate，重开 AIH；核对原 nativeTurnId，再释放工具 | 恢复 running；后续同一工具只出现一次 completed；marker 仅一行，模型共两次请求 |
+
+`test/chat-harness-tools.native.test.js` 三条真实工具场景全部通过，与既有五条 Chat native 路径合计 8 pass（`/tmp/aih-native-recovery-native-final.log`）。原生工具 fixture 的身份验证绑定临时 codexHome 与测试账号 hash，不复用用户凭据；旧测试模型硬编码和身份断言失败均先修正，只有之后真实复现的错误用于产品结论。
+
+领域验证包括历史导入完成前不开放恢复成功、导入失败取消绑定、拒绝 foreign thread、只映射 exact turn、稳定 eventId、字符串/数字/null processId。相关 Node 86 pass；Web 189 pass、3 个改动文件 ESLint、Node 22 完整 build 通过，日志 `/tmp/aih-native-recovery-{focused,web-final,eslint-final,build-final}.log`。
+
+全量串行回归为 6547 tests、6532 pass、15 skip、0 fail（`/tmp/aih-native-recovery-full-final.log`，运行时包含新增两条 opt-in 场景）；随后补充的“仍在运行时重连”场景通过 8 条 native 联合验证，并单独验证无 opt-in 时三条新 native 用例全部 skip，不触发真实工具。最后未改变产品运行时代码。
+
+真实浏览器使用以上两份原生执行后的 recovered.json 做隔离组件验收：已完成工具和 TOOL_PROBE_DONE 可见，回答用时 0.3秒；被杀工具显示“结果未知”，展开保留命令与核对说明，无持续转圈、大块告警或粗左色条。此证据是实际组件读取原生结果，未冒充真实上游模型验收，也没有把测试快照写进用户会话。
+
+设计模式：`codex-session-history-sync/codex-turn-recovery` → Adapter + 持久投影 → 先补回执行器的已记录事实再收尾 → 三条 native 场景和持久化 gate 测试；`timeline-detail-contract` / Web parser → 边界适配 → 无损保留原生标识且兼容历史记录 → 原生 processId、DTO与完整 build。SOLID 将原生恢复、转换和存储分别留在已有模块；DRY 复用 history projector/sink；KISS/YAGNI 未新建执行引擎或第二套历史库。
+
+后续边界仍开放：底层 WebSocket 自动重连（不重开 AIH service）需要单独验证漏通知后的补齐；Work 工具并行配对与压缩切口、各真实 Provider 的能力矩阵仍未整体完成。本专题证明三个具体 native 场景，不外推所有版本/所有工具/所有平台。

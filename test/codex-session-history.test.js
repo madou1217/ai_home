@@ -82,6 +82,20 @@ test('Codex history projector keeps native turn identity private while preservin
   assert.equal(first.events[3].payload.item.detail.model, 'gpt-5.3-codex');
 });
 
+test('recovery maps only the exact native turn and keeps import IDs stable', () => {
+  const response = historyResponse();
+  response.thread.turns.push({ id: 'other-native-turn', status: 'completed', startedAt: 3, completedAt: 4,
+    items: [{ id: 'other-answer', type: 'agentMessage', text: 'other answer' }] });
+  const normal = projectCodexSessionHistory(response, { threadId: 'thread-1' });
+  const anchored = projectCodexSessionHistory(response, { threadId: 'thread-1',
+    recoveryAnchor: { nativeTurnId: 'turn-1', turnId: 'aih-turn' } });
+  assert.deepEqual(anchored.events.map((event) => event.eventId), normal.events.map((event) => event.eventId));
+  assert.ok(anchored.events.slice(0, 4).every((event) => event.turnId === 'aih-turn'
+    && event.payload.item.turnId === 'aih-turn'));
+  assert.equal(anchored.events.at(-1).turnId, undefined);
+  assert.equal(anchored.events.at(-1).payload.item.turnId, undefined);
+});
+
 test('Codex history projector fails closed on a foreign or malformed thread', () => {
   assert.throws(
     () => projectCodexSessionHistory(historyResponse(), { threadId: 'thread-other' }),

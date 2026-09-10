@@ -32,6 +32,17 @@ function message(method, params, id) {
   return value;
 }
 
+test('native shell process identifiers survive canonical validation without terminating the turn', () => {
+  for (const processId of ['3071', 'pty-worker-a', 3071, null]) {
+    const mapped = mapCodexAppServerMessage(message('item/started', { threadId: 'thread-1', turnId: 'turn-1',
+      item: { id: 'shell', type: 'commandExecution', command: 'pwd', status: 'inProgress', processId,
+        aggregatedOutput: null, exitCode: null } }));
+    const event = normalizeEvent({ ...mapped, eventId: 'event-shell', sessionId: SESSION_ID,
+      seq: 1, at: 1, source: { provider: 'codex', runtimeId: 'probe' } });
+    assert.equal(event.payload.item.detail.processId, processId ?? undefined);
+  }
+});
+
 test('maps every terminal Codex turn status to the canonical lifecycle', () => {
   const cases = [
     ['completed', 'turn.completed'],

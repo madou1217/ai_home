@@ -47,7 +47,8 @@ export function parseShellDetail(value: unknown): TimelineDetailByKind['shell'] 
     command: required(source, 'command'),
     ...optionalText(source, 'cwd'), ...optionalText(source, 'callId'),
     ...optionalString(source, 'output'), ...optionalInteger(source, 'exitCode'),
-    ...optionalNonNegativeInteger(source, 'processId'), ...optionalArray(source, 'actions'),
+    ...(typeof source.processId === 'string' ? optionalText(source, 'processId')
+      : optionalNonNegativeInteger(source, 'processId')), ...optionalArray(source, 'actions'),
   };
 }
 

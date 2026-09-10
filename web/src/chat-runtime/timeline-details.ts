@@ -28,7 +28,7 @@ export interface TimelineDetailByKind {
   };
   shell: {
     command: string; cwd?: string; callId?: string; output?: string;
-    exitCode?: number; processId?: number; actions?: readonly unknown[];
+    exitCode?: number; processId?: string | number; actions?: readonly unknown[];
   };
   diff: { paths?: readonly string[]; patch?: string };
   file_change: { callId?: string; changes: readonly unknown[]; diff?: string };

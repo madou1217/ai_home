@@ -7,6 +7,21 @@ const {
   CodexSessionHistorySync
 } = require('../lib/server/chat-runtime/codex-session-history-sync');
 
+test('recovery imports the returned thread directly and rejects a foreign thread before persistence', async () => {
+  const histories = [];
+  const sync = new CodexSessionHistorySync({
+    getThreadId: () => 'thread-1', historySink: async (history) => histories.push(history),
+    client: { request() { throw new Error('recovery must not reread a moving snapshot'); } }
+  });
+  const response = { thread: { id: 'thread-1', turns: [{ id: 'native-turn', status: 'completed',
+    startedAt: 1, completedAt: 2, items: [{ id: 'answer', type: 'agentMessage', text: 'offline answer' }] }] } };
+  await sync.importRecovered(response, { nativeTurnId: 'native-turn', turnId: 'aih-turn' });
+  assert.equal(histories[0].events[0].payload.item.turnId, 'aih-turn');
+  assert.throws(() => sync.importRecovered({ thread: { ...response.thread, id: 'foreign' } }),
+    /codex_history_thread_mismatch/);
+  assert.equal(histories.length, 1);
+});
+
 test('history sync reads and imports the currently bound native thread', async () => {
   const calls = [];
   const history = {

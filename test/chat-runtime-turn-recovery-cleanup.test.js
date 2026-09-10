@@ -87,6 +87,47 @@ function recoveryContext() {
   };
 }
 
+test('recovery waits for history persistence before returning a completed native turn', async () => {
+  let active;
+  let release;
+  let imported;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const response = { thread: { turns: [{ id: 'native-turn-1', status: 'completed', items: [] }] } };
+  const recovery = new CodexTurnRecovery({
+    bridge: replayBridge(), client: { request: async () => response }, sessionId: 'session-1',
+    getActive: () => active, setActive: (next) => { active = next; },
+    getThreadId: () => 'native-thread-1', getApprovalMode: () => 'confirm',
+    bind() {}, cleanup() { active = null; },
+    async importRecoveredHistory(history, anchor) { imported = { history, anchor }; await gate; }
+  });
+  let exposed = false;
+  const pending = recovery.recover(recoveryContext()).then((value) => { exposed = true; return value; });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(exposed, false);
+  assert.deepEqual(imported, { history: response, anchor: { nativeTurnId: 'native-turn-1', turnId: 'turn-1' } });
+  release();
+  assert.equal((await (await pending).done).status, 'completed');
+});
+
+test('history persistence failure abandons recovery without exposing success or starting another turn', async () => {
+  let active;
+  const methods = [];
+  const failure = new Error('history transaction failed');
+  const recovery = new CodexTurnRecovery({ bridge: replayBridge(), sessionId: 'session-1',
+    client: { request: async (method) => {
+      methods.push(method);
+      return { thread: { turns: [{ id: 'native-turn-1', status: 'completed', items: [] }] } };
+    } },
+    getActive: () => active, setActive: (next) => { active = next; },
+    getThreadId: () => 'native-thread-1', getApprovalMode: () => 'confirm',
+    bind() {}, cleanup() { active = null; },
+    importRecoveredHistory() { throw failure; }
+  });
+  await assert.rejects(recovery.recover(recoveryContext()), (error) => error === failure);
+  assert.deepEqual(methods, ['thread/resume', 'turn/interrupt']);
+  assert.equal(active, null);
+});
+
 test('Codex recovery matches only an exact native turn anchor', () => {
   const response = {
     thread: {

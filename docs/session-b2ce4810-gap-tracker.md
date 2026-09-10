@@ -495,3 +495,48 @@ CSS 覆写只能改到显式点名的选择器,够不到 antd 派生的按钮描
 已执行 C。A / B 需用户明确后再动;B 单独执行会让产品比现状更差(重新引入已修的深色缺陷),
 除非与 A 一并执行。
 
+## 十五、P5 双端实测扫荡(2026-09-10)
+
+P5/P7/§二 #7 一直记为「⚠️ 未系统执行」。本轮对**全部 16 条路由 × 1440×900 / 390×844** 做了一次扫荡,
+并逐页看图(不只看门禁)。
+
+### 15.1 门禁曾经假绿——已加固
+
+首轮扫描报「32 次检查 0 项有问题」,但实测截图显示**每一页都是 `Web UI not built` 提示页**:
+dist 被清掉后服务端直接返回一行文本,既无 console 报错、也无横向溢出、文字长度还超过空白阈值,
+三道判据同时失灵。已给扫描器补两条显式断言:`NOT_BUILT`(命中提示文案)与 `APP_NOT_MOUNTED`(无 React 根节点)。
+
+教训与 §二 #7 同源:**门禁绿只说明没触发已知判据,不等于页面渲染正确**;必须看图。
+
+### 15.2 修掉的真实缺陷:手机端头部按钮挤掉标题
+
+390px 下带文案的头部按钮会把标题压成省略号,实测三处:
+
+| 页面 | 修前 | 组件 |
+|---|---|---|
+| `/fabric/servers` | 标题 `Server …`、副标题 `使用 Server …` | `Settings.tsx` control-planes 分区 |
+| `/fabric/ssh-hosts` | 标题 `SSH 开…`、副标题 `管理 SSH …` | `SshHostsPanel.tsx` |
+| `/server-setup` | 标题 `选择或…`、副标题 `使用 Serv…` | `FabricServerSetup.tsx` |
+
+账号页早已用「图标按钮 + `.m-header-actions`」解决过,但那段 JSX 写死在页面里无法复用。
+新增 `components/ui/PageHeaderActions.tsx`:描述式 API,桌面端文字按钮、手机端纯图标,复用既有样式类;
+纯判定 `selectVisibleActions` 抽出可测,3 项测试过。
+附带修正:SSH 面板两个动作原本同用 `PlusOutlined`,收成图标后无法区分,改为 `LinkOutlined` / `FolderAddOutlined`(桌面端也更表意)。
+提交 `c30a5769`、`f6fe5c7d`。
+
+### 15.3 核查后判定为非缺陷
+
+- **开发工具页 Tab 条右侧的"空格"**:是 `Toolkit.css:30` 刻意的 24px 网格线渐变,
+  与本页 CONTROL SURFACE / APPLICATION INVENTORY 蓝图字体、01/02/03 编号是同一套视觉语言,未改动。
+
+### 15.4 结论与限制
+
+- 加固后的门禁:16 路由 × 双端 = **32 次检查 0 项有问题**;已逐页看图的页面:
+  chat、accounts、models、settings、dashboard、usage、toolkit、install-guide、studio、
+  fabric/servers、fabric/ssh-hosts、server-setup。
+- **限制一**:中途一轮曾报 7 项有问题,但明细被命令里的 `tail` 截断丢失,无法归因;
+  在稳定 dist 上重跑为 0。该 7 项未查明,不能当作已排除。
+- **限制二**:验证期间有**并发会话**在同一仓库大量修改 `lib/server/chat-runtime/` 与 `web/src/features/chat-runtime/`
+  (37 改 + 5 新),本轮 `npm run build` 会把其未完成改动一并打包,故扫描结果不能完全归因于本轮改动。
+- 因此 P5/P7/§二 #7 **仍维持 ⚠️**:一次扫荡不构成持续验收,且上述两项限制未消除。
+

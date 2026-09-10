@@ -40,6 +40,7 @@ import type {
 } from '@/types';
 import Button from '@/components/ui/AppButton';
 import PageScaffold from '@/components/ui/PageScaffold';
+import PageHeaderActions from '@/components/ui/PageHeaderActions';
 import ModelAliases from './ModelAliases';
 import SshHostsPanel from './SshHostsPanel';
 import ControlPlaneProfileSelect from '@/components/control-plane/ControlPlaneProfileSelect';
@@ -829,32 +830,32 @@ const Settings = ({ section }: SettingsProps) => {
   );
 
   const controlPlanesActions = (
-    <Space size={8} wrap>
-      {isNativeDesktopRuntime() && (
-        <Button
-          icon={<RadarChartOutlined />}
-          loading={discoveringLanServers}
-          onClick={handleDiscoverLanServers}
-        >
-          发现局域网 Server
-        </Button>
-      )}
-      <Button
-        icon={<ReloadOutlined />}
-        disabled={refreshableControlPlaneCount === 0}
-        loading={refreshingControlPlanes}
-        onClick={handleRefreshAllControlPlanes}
-      >
-        同步全部
-      </Button>
-      <Button
-        type="primary"
-        icon={<PlusOutlined />}
-        onClick={openAddControlPlaneModal}
-      >
-        添加 Server
-      </Button>
-    </Space>
+    <PageHeaderActions
+      actions={[
+        ...(isNativeDesktopRuntime() ? [{
+          key: 'discover',
+          label: '发现局域网 Server',
+          icon: <RadarChartOutlined />,
+          loading: discoveringLanServers,
+          onClick: handleDiscoverLanServers,
+        }] : []),
+        {
+          key: 'refresh-all',
+          label: '同步全部',
+          icon: <ReloadOutlined />,
+          disabled: refreshableControlPlaneCount === 0,
+          loading: refreshingControlPlanes,
+          onClick: handleRefreshAllControlPlanes,
+        },
+        {
+          key: 'add',
+          label: '添加 Server',
+          icon: <PlusOutlined />,
+          primary: true,
+          onClick: openAddControlPlaneModal,
+        },
+      ]}
+    />
   );
 
   const controlPlanesContent = (

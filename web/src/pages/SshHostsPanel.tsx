@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Form, Input, Modal, Tag, Alert, Space, Select, Breadcrumb, message, Radio, Tabs, Drawer } from 'antd';
+import PageHeaderActions from '@/components/ui/PageHeaderActions';
 import { ModalForm } from '@ant-design/pro-components';
 import Button from '@/components/ui/AppButton';
 import { SshConnectionCardList, SshWorkspaceCardList } from '@/components/settings/SshHostCardLists';
 import type { SshConnection, SshWorkspace } from '@/components/settings/SshHostCardLists';
-import { PlusOutlined, LoadingOutlined, FolderOpenOutlined, RightOutlined } from '@ant-design/icons';
+import { LoadingOutlined, FolderOpenOutlined, FolderAddOutlined, LinkOutlined, RightOutlined } from '@ant-design/icons';
 import { sshHostsAPI } from '@/services/api';
 import type { SshHostTestResult } from '@/types';
 
@@ -47,22 +48,24 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
   useEffect(() => {
     if (setActions) {
       setActions(
-        <Space size={8} wrap>
-          <Button
-            icon={<PlusOutlined />}
-            onClick={() => showConnModal()}
-          >
-            添加连接
-          </Button>
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={() => showWsModal()}
-            disabled={connections.length === 0}
-          >
-            创建工作空间
-          </Button>
-        </Space>
+        <PageHeaderActions
+          actions={[
+            {
+              key: 'add-conn',
+              label: '添加连接',
+              icon: <LinkOutlined />,
+              onClick: () => showConnModal(),
+            },
+            {
+              key: 'add-ws',
+              label: '创建工作空间',
+              icon: <FolderAddOutlined />,
+              primary: true,
+              disabled: connections.length === 0,
+              onClick: () => showWsModal(),
+            },
+          ]}
+        />
       );
     }
   }, [setActions, connections.length]);

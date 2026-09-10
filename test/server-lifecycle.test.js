@@ -271,9 +271,17 @@ for (const pinned of [true, false]) {
       try {
         lifecycleIndex.setStatus(accountRef, 'down');
         const disabled = await request();
-        assert.equal(disabled.status, 404);
-        assert.equal((await disabled.json()).error, 'unknown_account_ref');
+        // 账号存在、只是不可调度:必须说清是这个,而不是「引用不存在」——
+        // 后者会让人以为是自己传错了 ref,从而查错方向。
+        assert.equal(disabled.status, 403);
+        const disabledBody = await disabled.json();
+        assert.equal(disabledBody.error, 'pinned_account_unavailable');
+        assert.equal(disabledBody.accountRef, accountRef);
+        assert.ok(disabledBody.reason, '必须带出不可调度的原因');
+        assert.ok(disabledBody.hint, '必须给出可执行的下一步');
+        // 仍然守住原有的安全性质:陈旧凭据不得外发。
         assert.equal(readAccountNativeAuth(fs, aiHomeDir, accountRef).credentials.claudeAiOauth.accessToken, 'old-access');
+        assert.deepEqual(upstreamTokens, []);
         lifecycleIndex.setStatus(accountRef, 'up');
       } finally {
         lifecycleIndex.close();

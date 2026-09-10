@@ -91,14 +91,17 @@
   --font-body: 'Manrope', 'HarmonyOS Sans SC', 'Noto Sans SC', 'PingFang SC', sans-serif;
   --font-mono: 'JetBrains Mono', 'SFMono-Regular', 'Cascadia Mono', monospace;
 
-  --text-2xs: 10px;
-  --text-xs:  11px;
-  --text-sm:  12px;
-  --text-base:13px;
-  --text-md:  14px;
-  --text-lg:  16px;
-  --text-xl:  18px;
-  --text-2xl: 22px;
+  /* 旧字阶保留为别名,逐档指向 HarmonyOS 八级字阶(32/24/18/15/14/13/12/10)。
+   * 此前它是一套独立取值(11/16/22 等不在阶内),与 --hos-text-* 并存,
+   * 组件里 137 处引用因此产生字阶外字号。就近归级,不在阶内的档位向邻近档合并。 */
+  --text-2xs: var(--hos-text-micro);   /* 10px */
+  --text-xs:  var(--hos-text-caption); /* 归级:原 11px → 12px */
+  --text-sm:  var(--hos-text-caption); /* 12px */
+  --text-base:var(--hos-text-body-sm); /* 13px */
+  --text-md:  var(--hos-text-body);    /* 14px */
+  --text-lg:  var(--hos-text-h3);      /* 归级:原 16px → 15px */
+  --text-xl:  var(--hos-text-h2);      /* 18px */
+  --text-2xl: var(--hos-text-h1);      /* 归级:原 22px → 24px */
   --text-3xl: 28px;
   --text-4xl: 34px;
 
@@ -326,14 +329,15 @@
  * ========================================================================= */
 @media (max-width: 768px) {
   :root {
-    --text-2xs: 11px;
-    --text-xs:  12px;
-    --text-sm:  13px;
-    --text-base:15px;
-    --text-md:  16px;
-    --text-lg:  17px;
-    --text-xl:  20px;
-    --text-2xl: 24px;
+    /* 手机端整体上提一档以保可读性(原设计意图),但每一档仍必须落在八级字阶内。 */
+    --text-2xs: var(--hos-text-caption); /* 归级:原 11px → 12px */
+    --text-xs:  var(--hos-text-caption); /* 12px */
+    --text-sm:  var(--hos-text-body-sm); /* 13px */
+    --text-base:var(--hos-text-h3);      /* 15px */
+    --text-md:  var(--hos-text-h3);      /* 归级:原 16px → 15px */
+    --text-lg:  var(--hos-text-h2);      /* 归级:原 17px → 18px */
+    --text-xl:  var(--hos-text-h2);      /* 归级:原 20px → 18px */
+    --text-2xl: var(--hos-text-h1);      /* 24px */
     --text-3xl: 30px;
     --text-4xl: 34px;
   }
@@ -353,6 +357,7 @@
   --hos-radius-xs: 8px;
   --hos-radius-10: 10px;  /* 补档:10px 档,px 直标避免与 4pt 空间刻度混淆 */
   --hos-radius-sm: 12px;
+  --hos-radius-14: 14px; /* 补档:规范「超级曲率」14px(选择器/输入框),原刻度缺此档 */
   --hos-radius-md: 16px;
   --hos-radius-lg: 20px;
   --hos-radius-xl: 24px;
@@ -408,8 +413,8 @@
 
   /* HarmonyOS 6 通透多层背景色 */
   --hos-glass-bg-subtle: rgba(255, 255, 255, 0.65);
-  --hos-glass-bg-card: rgba(255, 255, 255, 0.78);
-  --hos-glass-bg-floating: rgba(255, 255, 255, 0.88);
+  --hos-glass-bg-card: rgba(255, 255, 255, 0.82);
+  --hos-glass-bg-floating: rgba(255, 255, 255, 0.92);
   --hos-glass-bg-dark: rgba(20, 24, 33, 0.82);
 
   /* HarmonyOS 6 双层光影微描边 (Inner Highlight + Outer Hairline) */
@@ -507,8 +512,9 @@ body.dark {
   --ink-neutral: #94a3b8;
 
   --hos-glass-bg-subtle: rgba(30, 41, 59, 0.65);
-  --hos-glass-bg-card: rgba(30, 41, 59, 0.78);
-  --hos-glass-bg-floating: rgba(30, 41, 59, 0.88);
+  --hos-glass-bg-card: rgba(30, 41, 59, 0.80);
+  /* 规范深色悬浮层用更深的 slate-900 底,与卡片层拉开层次 */
+  --hos-glass-bg-floating: rgba(15, 23, 42, 0.92);
   --hos-glass-border: 1px solid rgba(255, 255, 255, 0.12);
   --hos-glass-border-subtle: 1px solid rgba(255, 255, 255, 0.06);
   --hos-shadow-card: 0 8px 24px -2px rgba(0, 0, 0, 0.32);

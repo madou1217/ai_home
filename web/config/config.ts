@@ -45,7 +45,7 @@ export default defineConfig({
           borderRadius: 9999,
           borderRadiusLG: 9999,
           borderRadiusSM: 9999,
-          controlHeight: 36,
+          controlHeight: 38,
           controlHeightLG: 42,
           controlHeightSM: 28,
         },

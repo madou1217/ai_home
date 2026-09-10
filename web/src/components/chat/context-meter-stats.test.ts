@@ -26,6 +26,11 @@ describe('estimateContextTokens', () => {
 });
 
 describe('computeContextStats', () => {
+  test('实测上下文覆盖历史累计并保留零值', () => {
+    const messages = [{ metrics: { inputTokens: 90000 } }] as unknown as ChatMessage[];
+    expect(computeContextStats(messages, 100000, 20000).percent).toBe(20);
+    expect(computeContextStats(messages, 100000, 0).usedTokens).toBe(0);
+  });
   const buildMessages = (tokens: number): ChatMessage[] =>
     [{ metrics: { inputTokens: tokens } }] as unknown as ChatMessage[];
 

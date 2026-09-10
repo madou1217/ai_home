@@ -22,6 +22,7 @@ import type { TimelineItem } from '@/chat-runtime';
 import type { Provider } from '@/types';
 import { collectTimelineFileReferences } from './timeline-file-references';
 import { reasoningText } from './timeline-presentation';
+import { formatDurationLabel, formatTtftLabel } from '@/components/chat/message-metrics-format';
 import styles from './session-runtime.module.css';
 
 interface Props {
@@ -31,10 +32,11 @@ interface Props {
   readonly onOpenFile: (filePath: string) => void;
   readonly mobile?: boolean;
   readonly reasoningRunning?: boolean;
+  readonly progress?: ReactNode;
 }
 
 function TimelineItemView({
-  item, provider, projectPath, onOpenFile, mobile = false, reasoningRunning = false,
+  item, provider, projectPath, onOpenFile, mobile = false, reasoningRunning = false, progress,
 }: Props) {
   const filePaths = useMemo(() => collectTimelineFileReferences(item), [item]);
   if (item.kind === 'message') {
@@ -50,6 +52,7 @@ function TimelineItemView({
         provider={provider}
         session={{ projectPath }}
         mobile={mobile}
+        progress={progress}
       />
     );
   }
@@ -59,14 +62,18 @@ function TimelineItemView({
       const label = reasoningRunning ? '正在思考…'
         : item.status === 'failed' ? '思考失败'
           : item.status === 'cancelled' ? '思考已取消' : '';
-      return label ? (
+      return label || progress ? (
         <div className={styles.runtimeNotice} role="status" aria-live="polite" data-danger={item.status === 'failed'}>
-          {label}
+          {progress || label}
         </div>
       ) : null;
     }
     return (
-      <ThinkingBlock value={value} mobile={mobile} running={reasoningRunning} />
+      <ThinkingBlock value={value} mobile={mobile} running={reasoningRunning}
+        meta={progress || (item.detail.metrics ? [
+          `用时 ${formatDurationLabel(item.detail.metrics.durationMs)}`,
+          item.detail.metrics.ttftMs === undefined ? '' : `首字 ${formatTtftLabel(item.detail.metrics.ttftMs)}`,
+        ].filter(Boolean).join(' · ') : undefined)} />
     );
   }
 

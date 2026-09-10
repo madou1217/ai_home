@@ -1093,12 +1093,14 @@ const MessageArea = ({
                       .filter(supportsAihServer)
                       .map((provider) => ({
                         id: getGatewaySelectionScope(provider),
-                        label: `${provider.toUpperCase()} · ${AIH_SERVER_ACCOUNT_LABEL}`,
+                        provider,
+                        label: AIH_SERVER_ACCOUNT_LABEL,
                         badge: 'gateway',
                       })),
                     ...filteredAccounts.map((account) => ({
                       id: account.accountRef,
-                      label: `${account.provider.toUpperCase()} · ${formatChatAccountLabel(account)}`,
+                      provider: account.provider,
+                      label: formatChatAccountLabel(account),
                       badge: account.apiKeyMode ? 'key' : 'OAuth',
                     })),
                   ]}

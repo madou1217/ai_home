@@ -1,5 +1,6 @@
 import { MobileOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import type { ReactNode } from 'react';
 import type { ChatMessage } from '@/types';
 import MessageIconActions from './MessageIconActions';
 import {
@@ -19,6 +20,7 @@ interface Props {
   actionsVisible?: boolean;
   onRetry?: () => void;
   onFork?: () => void;
+  progress?: ReactNode;
 }
 
 function formatMessageTime(timestamp?: ChatMessage['timestamp']): string {
@@ -37,13 +39,14 @@ export default function MessageMetadata({
   actionsVisible = false,
   onRetry,
   onFork,
+  progress,
 }: Props) {
   const timeLabel = formatMessageTime(timestamp);
   const modelLabel = String(model || '').trim();
   const isCodexMobile = source === 'codex-mobile';
-  const durationLabel = formatDurationLabel(metrics?.durationMs);
-  const ttftLabel = formatTtftLabel(metrics?.ttftMs);
-  const tpsLabel = formatTokensPerSecLabel(metrics?.tokensPerSec);
+  const durationLabel = progress ? '' : formatDurationLabel(metrics?.durationMs);
+  const ttftLabel = progress ? '' : formatTtftLabel(metrics?.ttftMs);
+  const tpsLabel = progress ? '' : formatTokensPerSecLabel(metrics?.tokensPerSec);
 
   const alignmentClass = role === 'user'
     ? styles.messageMetaRowUser
@@ -74,8 +77,8 @@ export default function MessageMetadata({
         {role === 'assistant' && ttftLabel ? (
           <>
             <span aria-hidden="true">·</span>
-            <span className={styles.messageMetricItem} title={metrics?.ttftMs ? `首 token 耗时 ${metrics.ttftMs}ms` : undefined}>
-              首 token {ttftLabel}
+            <span className={styles.messageMetricItem} title={metrics?.ttftMs === undefined ? undefined : `首个思考或正文输出耗时 ${metrics.ttftMs}ms`}>
+              首字 {ttftLabel}
             </span>
           </>
         ) : null}
@@ -87,6 +90,7 @@ export default function MessageMetadata({
             </span>
           </>
         ) : null}
+        {progress ? <span className={styles.messageMetricItem}>{progress}</span> : null}
       </div>
       <div className={`${styles.messageMetaActions} ${actionsVisible ? styles.messageMetaActionsVisible : ''}`}>
         <MessageIconActions

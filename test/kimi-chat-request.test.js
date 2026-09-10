@@ -7,7 +7,8 @@ const adapt = (value) => JSON.parse(adaptKimiChatRequestBuffer(Buffer.from(JSON.
 
 test('generic OpenAI reasoning and output budget become native Kimi parameters', () => {
   assert.deepEqual(adapt({ model: 'k3', reasoning_effort: 'max', max_tokens: 131072, stream: true }), {
-    model: 'k3', thinking: { type: 'enabled', effort: 'max' }, max_completion_tokens: 131072, stream: true
+    model: 'k3', thinking: { type: 'enabled', effort: 'max' }, max_completion_tokens: 131072, stream: true,
+    stream_options: { include_usage: true }
   });
   assert.deepEqual(adapt({ reasoning_effort: 'none' }), { thinking: { type: 'disabled' } });
 });
@@ -17,10 +18,17 @@ test('explicit native Kimi settings win and requests without aliases remain byte
     thinking: { type: 'enabled', effort: 'max', keep: 'all' }, max_completion_tokens: 12345 }), {
     thinking: { type: 'enabled', effort: 'max', keep: 'all' }, max_completion_tokens: 12345
   });
-  for (const text of ['{ "model": "unknown-model", "stream": true }', 'invalid']) {
+  for (const text of ['{ "model": "unknown-model", "stream": false }', 'invalid']) {
     const buffer = Buffer.from(text);
     assert.equal(adaptKimiChatRequestBuffer(buffer), buffer);
   }
+});
+
+test('Kimi streams request real usage while preserving explicit stream options', () => {
+  assert.deepEqual(adapt({ stream: true }).stream_options, { include_usage: true });
+  assert.deepEqual(adapt({ stream: true, stream_options: { include_usage: false } }).stream_options,
+    { include_usage: false });
+  assert.equal(adapt({ stream: false }).stream_options, undefined);
 });
 
 test('missing Kimi output budget uses the pinned model limit, while explicit budgets win', () => {

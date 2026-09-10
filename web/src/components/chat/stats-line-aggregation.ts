@@ -24,6 +24,8 @@ export function aggregateSessionStats(messages: ChatMessage[]): SessionStats {
   let ttftCount = 0;
   let totalOutputTokens = 0;
   let totalInputTokens = 0;
+  let measuredOutputTokens = 0;
+  let measuredOutputDurationMs = 0;
 
   for (const msg of messages) {
     if (msg.role === 'user') {
@@ -43,12 +45,17 @@ export function aggregateSessionStats(messages: ChatMessage[]): SessionStats {
       if (msg.metrics?.inputTokens) {
         totalInputTokens += msg.metrics.inputTokens;
       }
+      const decodeMs = (msg.metrics?.durationMs || 0) - (msg.metrics?.ttftMs || 0);
+      if (msg.metrics?.outputTokens && decodeMs > 0) {
+        measuredOutputTokens += msg.metrics.outputTokens;
+        measuredOutputDurationMs += decodeMs;
+      }
     }
   }
 
   const avgDuration = assistantCount > 0 && totalDurationMs > 0 ? totalDurationMs / assistantCount : 0;
   const avgTtft = ttftCount > 0 ? totalTtftMs / ttftCount : 0;
-  const avgTps = totalDurationMs > 0 && totalOutputTokens > 0 ? totalOutputTokens / (totalDurationMs / 1000) : 0;
+  const avgTps = measuredOutputDurationMs > 0 ? measuredOutputTokens / (measuredOutputDurationMs / 1000) : 0;
 
   return {
     turns,

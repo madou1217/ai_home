@@ -7,6 +7,7 @@ import type { ApprovalMode } from './session-surface-policy';
 import type { SessionRuntimeActions } from './session-runtime-actions';
 import ComposerToolbar from './ComposerToolbar';
 import ComposerAttachmentPreview from './ComposerAttachmentPreview';
+import SessionMetrics from './SessionMetrics';
 import { useComposerController } from './use-composer-controller';
 import styles from './session-runtime.module.css';
 import { CHAT_ATTACHMENT_ACCEPT } from '@/components/chat/attachment-files';
@@ -59,6 +60,7 @@ export default function Composer(props: ComposerProps) {
         attachments={controller.attachments}
         onRemove={controller.removeAttachment}
       />
+      <SessionMetrics store={props.store} onCompact={() => controller.setInput('/compact')} />
       <Input.TextArea
         value={controller.input}
         autoSize={{ minRows: 2, maxRows: 8 }}

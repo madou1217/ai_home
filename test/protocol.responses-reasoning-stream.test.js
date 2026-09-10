@@ -10,6 +10,24 @@ const frame = (delta, finish_reason = null) => `data: ${JSON.stringify({
 const parse = (text) => text.split('\n').filter((line) => line.startsWith('data: '))
   .map((line) => JSON.parse(line.slice(6)));
 
+test('separate usage after finish_reason reaches Responses exactly once before DONE', () => {
+  const chunks = [];
+  const stream = createSseTransformStream('openai_chat', 'openai_responses', { onChunk: (chunk) => chunks.push(chunk) });
+  stream.write(frame({ content: 'answer' }) + frame({}, 'stop'));
+  assert.equal(parse(chunks.join('')).some((event) => event.type === 'response.completed'), false);
+  stream.write(`data: ${JSON.stringify({ choices: [], usage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 } })}\n\n`);
+  stream.write('data: [DONE]\n\n');
+  stream.end();
+  const completed = parse(chunks.join('')).filter((event) => event.type === 'response.completed');
+  assert.equal(completed.length, 1);
+  assert.deepEqual(completed[0].response.usage, { input_tokens: 100, output_tokens: 20, total_tokens: 120 });
+  const raw = frame({ content: 'answer' }) + frame({}, 'stop')
+    + `data: ${JSON.stringify({ choices: [], usage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 } })}\n\n`;
+  const { parseOpenAIChatSseToCanonicalEvents } = require('../lib/server/protocol-canonical');
+  assert.deepEqual(parseOpenAIChatSseToCanonicalEvents(raw).at(-1).usage,
+    { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 });
+});
+
 test('Kimi thinking reaches Responses before text or completion, with stable distinct output indexes', () => {
   const chunks = [];
   const transform = createSseTransformStream('openai_chat', 'openai_responses', {

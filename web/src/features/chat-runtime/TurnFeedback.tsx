@@ -4,7 +4,7 @@ import Button from '@/components/ui/AppButton';
 import { useSessionSelector, type SessionProjection, type SessionProjectionStore } from '@/chat-runtime';
 import { sessionConnectionPresentation } from './session-connection-presentation';
 import type { SessionRuntimeActions } from './session-runtime-actions';
-import { turnFailureMessage, turnProgressText } from './turn-feedback-policy';
+import { turnFailureMessage } from './turn-feedback-policy';
 import styles from './session-runtime.module.css';
 
 export default function TurnFeedback({ store, actions }: {
@@ -12,19 +12,11 @@ export default function TurnFeedback({ store, actions }: {
   readonly actions: SessionRuntimeActions;
 }) {
   const projection = useSessionSelector(store, selectProjection);
-  const [now, setNow] = useState(Date.now);
   const [busy, setBusy] = useState(false);
   const [operationError, setOperationError] = useState('');
   const inFlight = useRef(false);
-  const progress = turnProgressText(projection, now);
-  const ticking = Boolean(progress);
   const failure = projection.failedTurn;
   const connected = sessionConnectionPresentation(projection.connectionState).interactive;
-  useEffect(() => {
-    if (!ticking) return;
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, [ticking]);
   useEffect(() => setOperationError(''), [failure?.turnId, projection.activeTurn?.turnId]);
 
   const execute = async (operation: () => Promise<unknown>): Promise<void> => {
@@ -40,11 +32,11 @@ export default function TurnFeedback({ store, actions }: {
       setBusy(false);
     }
   };
-  if (!progress && !failure) return null;
+  if (!failure) return null;
   return (
     <div className={styles.turnFeedback} data-turn-id={failure?.turnId || projection.activeTurn?.turnId}>
       <div className={styles.turnFeedbackRow}>
-        <span role="status" aria-live={progress ? 'off' : 'polite'}>{progress || (failure && turnFailureMessage(failure))}</span>
+        <span role="status" aria-live="polite">{turnFailureMessage(failure)}</span>
         {failure?.retryable && projection.state === 'idle' ? <Button size="small" icon={<ReloadOutlined />}
           loading={busy} disabled={!connected} title="使用本轮原消息、附件和模型参数重新发送"
           onClick={() => void execute(() => actions.retry(failure.turnId))}>

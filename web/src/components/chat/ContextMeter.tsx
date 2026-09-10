@@ -8,6 +8,7 @@ import styles from './composer/composer.module.css';
 interface Props {
   messages: ChatMessage[];
   maxTokens?: number; // 默认 128k / 200k
+  usedTokens?: number;
   onCompactSuggest?: () => void;
 }
 
@@ -17,11 +18,13 @@ const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 export const ContextMeter = memo(function ContextMeter({
   messages,
   maxTokens = DEFAULT_CONTEXT_MAX_TOKENS,
+  usedTokens,
   onCompactSuggest,
 }: Props) {
   const [open, setOpen] = useState(false);
 
-  const stats = useMemo(() => computeContextStats(messages, maxTokens), [maxTokens, messages]);
+  const stats = useMemo(() => computeContextStats(messages, maxTokens, usedTokens), [maxTokens, messages, usedTokens]);
+  const approximate = usedTokens === undefined ? '~' : '';
 
   if (stats.usedTokens <= 0) return null;
 
@@ -49,7 +52,7 @@ export const ContextMeter = memo(function ContextMeter({
         />
       </div>
       <div className={styles.contextMeterNumbers}>
-        <span>已用 ~{stats.usedTokens > 1000 ? `${(stats.usedTokens / 1000).toFixed(1)}k` : stats.usedTokens} tok</span>
+        <span>已用 {approximate}{stats.usedTokens > 1000 ? `${(stats.usedTokens / 1000).toFixed(1)}k` : stats.usedTokens} tok</span>
         <span>总量 {stats.contextWindow > 1000 ? `${Math.round(stats.contextWindow / 1000)}k` : stats.contextWindow} tok</span>
       </div>
       {stats.isWarning ? (
@@ -81,7 +84,7 @@ export const ContextMeter = memo(function ContextMeter({
       placement="topRight"
       overlayClassName={styles.contextMeterOverlay}
     >
-      <Tooltip title={`上下文占用 ~${stats.percent}%`} placement="top" mouseEnterDelay={0.3}>
+      <Tooltip title={`上下文占用 ${approximate}${stats.percent}%`} placement="top" mouseEnterDelay={0.3}>
         <button
           type="button"
           className={styles.contextMeterTrigger}

@@ -49,8 +49,10 @@ export default function ComposerToolbar({ props, controller, onSelectImages }: P
           disabled={!canSwitchComposerAccount(controller.policy)}
           options={props.accounts.map((account) => ({
             id: account.accountRef,
+            provider: account.provider,
             label: getAccountIdentityLabel(account) || account.displayName || account.accountRef,
-            badge: account.apiKeyMode ? 'key' : 'OAuth',
+            badge: `${account.apiKeyMode ? 'key' : 'OAuth'}${props.workspaceMode === 'chat'
+              && account.accountRef !== props.accountRef ? ' · 新对话' : ''}`,
           }))}
           onChange={(accountRef) => {
             const account = props.accounts.find((candidate) => candidate.accountRef === accountRef);

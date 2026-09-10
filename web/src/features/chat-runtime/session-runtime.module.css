@@ -84,6 +84,13 @@
 }
 
 .turnFeedbackRow { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.turnProgressPlaceholder {
+  max-width: 820px;
+  margin: 0 auto;
+  color: var(--color-text-secondary);
+  font-size: var(--hos-text-caption, 12px);
+}
+.turnProgressPlaceholder:empty { display: none; }
 .turnFailureDetail { margin-top: 4px; overflow-wrap: anywhere; }
 .turnFailureDetail summary { cursor: pointer; }
 

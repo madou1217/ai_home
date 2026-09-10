@@ -32,8 +32,9 @@ export function estimateContextTokens(messages: ChatMessage[]): number {
 export function computeContextStats(
   messages: ChatMessage[],
   maxTokens: number = DEFAULT_CONTEXT_MAX_TOKENS,
+  measuredTokens?: number,
 ): ContextStats {
-  const usedTokens = estimateContextTokens(messages);
+  const usedTokens = measuredTokens ?? estimateContextTokens(messages);
   const percent = Math.min(100, Math.round((usedTokens / maxTokens) * 100));
   return {
     usedTokens,

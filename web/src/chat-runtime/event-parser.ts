@@ -20,6 +20,7 @@ import {
 } from './snapshot-parser';
 import { parseCapabilitySnapshot } from './capability-parser';
 import { parseTurnError } from './failed-turn-parser';
+import { parseMessageMetrics } from './message-metrics-parser';
 import { CHAT_RUNTIME_EVENT_SCHEMA } from './types';
 import type {
   ChatRuntimeEvent,
@@ -31,7 +32,7 @@ import type {
 const EVENT_TYPES = new Set<ChatRuntimeEventType>([
   'session.created', 'session.runtime.bound', 'session.runtime.rebound',
   'session.policy.changed', 'session.closed', 'session.snapshot.reset',
-  'turn.queued', 'turn.started', 'turn.phase.changed', 'turn.interrupt.requested',
+  'turn.queued', 'turn.started', 'turn.phase.changed', 'turn.interrupt.requested', 'turn.metrics.updated',
   'turn.interrupted', 'turn.completed', 'turn.failed',
   'queue.item.added', 'queue.item.updated', 'queue.item.moved',
   'queue.item.removed', 'queue.item.dispatched',
@@ -108,6 +109,7 @@ function validateDomainPayload(
   type: ChatRuntimeEventType,
   payload: Record<string, unknown>,
 ): Record<string, unknown> {
+  if (type === 'turn.metrics.updated') return { metrics: parseMessageMetrics(payload.metrics) };
   if (type === 'turn.failed') {
     return {
       ...validateStateProjectionPayload(payload),

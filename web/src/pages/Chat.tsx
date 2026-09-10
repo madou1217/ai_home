@@ -352,8 +352,9 @@ export default function Chat() {
           approvalMode={approvalMode.mode}
           approvalModeReady={approvalMode.ready}
           onAccountChange={(account) => {
+            if (session.mode === 'chat' && session.accountRef === account.accountRef) return;
             accountCatalog.setSelectedAccount(account);
-            if (session.mode === 'chat' && session.draft) {
+            if (session.mode === 'chat') {
               projectCatalog.setSelectedSession({
                 id: `draft-${Date.now()}`, title: '新对话', updatedAt: Date.now(),
                 provider: account.provider, draft: true, mode: 'chat',

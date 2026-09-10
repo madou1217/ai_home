@@ -6,6 +6,7 @@ import {
   text,
 } from './dto-guards';
 import type { TimelineDetailByKind } from './timeline-details';
+import { parseMessageMetrics } from './message-metrics-parser';
 
 const ROLES = new Set(['user', 'assistant', 'system'] as const);
 const STREAMS = new Set(['stdin', 'stdout', 'stderr'] as const);
@@ -18,12 +19,14 @@ export function parseMessageDetail(value: unknown): TimelineDetailByKind['messag
     role: choice(source.role, ROLES, 'role'),
     ...optionalText(source, 'phase'),
     ...optionalText(source, 'model'),
+    ...(source.metrics === undefined ? {} : { metrics: parseMessageMetrics(source.metrics) }),
   };
 }
 
 export function parseReasoningDetail(value: unknown): TimelineDetailByKind['reasoning'] {
   const source = detail(value);
-  return { ...optionalString(source, 'summary'), ...optionalStrings(source, 'segments') };
+  return { ...optionalString(source, 'summary'), ...optionalStrings(source, 'segments'),
+    ...(source.metrics === undefined ? {} : { metrics: parseMessageMetrics(source.metrics) }) };
 }
 
 export { parsePlanDetail } from './plan-detail-parser';

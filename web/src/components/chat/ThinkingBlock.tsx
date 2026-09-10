@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef } from 'react';
+import { memo, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { BulbOutlined } from '@ant-design/icons';
 import MessageMarkdown from './MessageMarkdown';
 import EventBlock from './EventBlock';
@@ -10,6 +10,7 @@ interface Props {
   mobile?: boolean;
   components?: any;
   running?: boolean;
+  meta?: ReactNode;
 }
 
 function firstLine(text: string): string {
@@ -23,7 +24,7 @@ function latestLine(text: string): string {
   return newline === -1 ? visible : visible.slice(newline + 1);
 }
 
-function ThinkingBlock({ value, mobile = false, components, running = false }: Props) {
+function ThinkingBlock({ value, mobile = false, components, running = false, meta }: Props) {
   const summaryRef = useRef<HTMLSpanElement>(null);
   const raw = String(value || '');
 
@@ -67,7 +68,8 @@ function ThinkingBlock({ value, mobile = false, components, running = false }: P
       title="思考"
       preview={previewNode}
       dense={mobile}
-      status={running ? { label: '思考中', tone: 'running', dot: true } : undefined}
+      meta={meta}
+      status={running && !meta ? { label: '思考中', tone: 'running', dot: true } : undefined}
       aria-label="思考过程"
     >
       <div className={`${evt.prose} ${evt.scroll}`}>

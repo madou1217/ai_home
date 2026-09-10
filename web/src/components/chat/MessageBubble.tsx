@@ -57,6 +57,7 @@ interface Props {
   isFollowup?: boolean;
   onRetry?: () => void;
   onFork?: () => void;
+  progress?: ReactNode;
 }
 
 function detectReadLabelFromCommand(command: string) {
@@ -548,7 +549,7 @@ const PendingStatusLine = ({ text }: { text: string }) => {
   );
 };
 
-const MessageBubble = ({ message, provider, session, mobile = false, isFollowup = false, onRetry, onFork }: Props) => {
+const MessageBubble = ({ message, provider, session, mobile = false, isFollowup = false, onRetry, onFork, progress }: Props) => {
   const isUser = message.role === 'user';
   const showAssistantAvatar = !mobile && !isFollowup;
   const [metaVisible, setMetaVisible] = useState(false);
@@ -974,6 +975,7 @@ const MessageBubble = ({ message, provider, session, mobile = false, isFollowup 
           timestamp={message.timestamp}
           model={message.model}
           metrics={message.metrics}
+          progress={progress}
           copyText={messageText || message.content}
           actionsVisible={metaVisible}
           onRetry={onRetry}

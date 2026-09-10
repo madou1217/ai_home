@@ -10,11 +10,14 @@ export interface TimelineMessageMetrics {
   ttftMs?: number;
   outputTokens?: number;
   tokensPerSec?: number;
+  inputTokens?: number;
+  contextTokens?: number;
+  contextWindow?: number;
 }
 
 export interface TimelineDetailByKind {
   message: { role: 'user' | 'assistant' | 'system'; phase?: string; model?: string; metrics?: TimelineMessageMetrics };
-  reasoning: { summary?: string; segments?: readonly string[] };
+  reasoning: { summary?: string; segments?: readonly string[]; metrics?: TimelineMessageMetrics };
   plan: {
     state?: 'draft' | 'proposed' | 'accepted' | 'rejected';
     steps?: readonly PlanStep[];

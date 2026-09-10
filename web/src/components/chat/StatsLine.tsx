@@ -1,4 +1,4 @@
-import { memo, useMemo, useState, useEffect } from 'react';
+import { memo, useMemo, useState, useEffect, type ReactNode } from 'react';
 import type { ChatMessage } from '@/types';
 import ConnectionPulseBadge from './ConnectionPulseBadge';
 import { formatDurationLabel, formatTtftLabel, formatTokensPerSecLabel } from './message-metrics-format';
@@ -9,6 +9,10 @@ import styles from './composer/composer.module.css';
 interface StatsLineProps {
   messages: ChatMessage[];
   className?: string;
+  showConnection?: boolean;
+  partial?: boolean;
+  embedded?: boolean;
+  trailing?: ReactNode;
 }
 
 export function formatTokensCompact(n: number): string {
@@ -18,7 +22,7 @@ export function formatTokensCompact(n: number): string {
   return `${(n / 1000000).toFixed(1)}m`;
 }
 
-export const StatsLine = memo(function StatsLine({ messages, className = '' }: StatsLineProps) {
+export const StatsLine = memo(function StatsLine({ messages, className = '', showConnection = true, partial = false, embedded = false, trailing }: StatsLineProps) {
   const [realLatency, setRealLatency] = useState<number | null>(() => realLatencyTracker.getLatency());
 
   useEffect(() => {
@@ -29,9 +33,10 @@ export const StatsLine = memo(function StatsLine({ messages, className = '' }: S
 
   const stats = useMemo(() => aggregateSessionStats(messages), [messages]);
 
-  if (!stats.hasData) return null;
+  if (!stats.hasData && !trailing) return null;
 
   const parts: string[] = [];
+  if (partial) parts.push('已加载记录');
   parts.push(`${stats.turns} 轮对话`);
   if (stats.totalDurationMs > 0) {
     parts.push(`总用时 ${formatDurationLabel(stats.totalDurationMs)}`);
@@ -49,8 +54,8 @@ export const StatsLine = memo(function StatsLine({ messages, className = '' }: S
   const connectionStatus = realLatency !== null ? 'connected' : 'reconnecting';
 
   return (
-    <div className={`${styles.statsLineContainer} ${className}`} title={parts.join(' · ')}>
-      <div className={styles.statsLineSummary}>
+    <div className={`${embedded ? styles.statsLineEmbedded : styles.statsLineContainer} ${className}`} title={parts.join(' · ')}>
+      {stats.hasData ? <div className={styles.statsLineSummary}>
         <span className={styles.statsLineIcon}>⚡</span>
         <span className={styles.statsLineText}>
           {parts.map((p, idx) => (
@@ -60,11 +65,12 @@ export const StatsLine = memo(function StatsLine({ messages, className = '' }: S
             </span>
           ))}
         </span>
-      </div>
-      <ConnectionPulseBadge
+      </div> : null}
+      {trailing}
+      {showConnection ? <ConnectionPulseBadge
         status={connectionStatus}
         latencyMs={realLatency || undefined}
-      />
+      /> : null}
     </div>
   );
 });

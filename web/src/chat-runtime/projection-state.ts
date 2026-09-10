@@ -124,6 +124,12 @@ export class ProjectionState {
   }
 
   private applyTurnOrRunEvent(event: ChatRuntimeEvent): boolean {
+    if (event.type === 'turn.metrics.updated') {
+      if (this.activeTurn?.turnId === event.turnId) {
+        this.activeTurn = { ...this.activeTurn, metrics: { ...this.activeTurn.metrics, ...event.payload.metrics } };
+      }
+      return true;
+    }
     if (event.type === 'turn.failed' && event.turnId) {
       this.failedTurn = {
         turnId: event.turnId, failedAt: event.at,

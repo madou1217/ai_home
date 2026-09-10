@@ -9,6 +9,7 @@ export function reasoningText(item: ReasoningItem): string {
 export function selectTimelinePresentation(projection: SessionProjection): {
   items: readonly TimelineItem[];
   runningReasoningId?: string;
+  progressItemId?: string;
 } {
   const latest = projection.items.at(-1);
   const runningReasoningId = projection.state === 'running'
@@ -20,9 +21,7 @@ export function selectTimelinePresentation(projection: SessionProjection): {
     ? latest.id : undefined;
 
   // Keep the canonical events intact. Empty reasoning is activity, not history.
-  return {
-    runningReasoningId,
-    items: projection.items.filter((item) => {
+  const items = projection.items.filter((item) => {
       // The latest failure is rendered once, with its retry action below the response.
       if (projection.failedTurn && item.kind === 'error'
         && item.turnId === projection.failedTurn.turnId) return false;
@@ -31,6 +30,13 @@ export function selectTimelinePresentation(projection: SessionProjection): {
         || item.id === runningReasoningId
         || item.status === 'failed'
         || item.status === 'cancelled';
-    }),
+    });
+  return {
+    runningReasoningId,
+    progressItemId: projection.activeTurn && projection.state !== 'idle'
+      ? items.findLast((item) => item.turnId === projection.activeTurn?.turnId
+        && (item.kind === 'reasoning' || item.kind === 'message' && item.detail.role === 'assistant'))?.id
+      : undefined,
+    items,
   };
 }

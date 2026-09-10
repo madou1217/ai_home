@@ -33,6 +33,15 @@ describe('aggregateSessionStats', () => {
     assert.equal(aggregateSessionStats([]).hasData, false);
   });
 
+  it('缺少用量的历史不稀释实测输出速度，首字等待不计入生成速度', () => {
+    const stats = aggregateSessionStats([
+      { role: 'assistant', content: 'old', metrics: { durationMs: 50000, ttftMs: 20000 } },
+      { role: 'assistant', content: 'new', metrics: { durationMs: 6000, ttftMs: 1000, outputTokens: 100 } },
+    ]);
+    assert.equal(stats.avgTps, 20);
+    assert.equal(stats.totalDurationMs, 56000);
+  });
+
   // F21 性能基准:500 条消息聚合耗时 < 5ms(dsh 2.0 吸收清单验收线)
   it('基准:500 条消息聚合 < 5ms', () => {
     const messages = buildMessages(250); // 250 轮 = 500 条

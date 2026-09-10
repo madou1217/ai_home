@@ -18,7 +18,7 @@ export function turnProgressText(projection: SessionProjection, now: number): st
   const label = projection.state === 'interrupting' ? '正在停止'
     : projection.state === 'recovering' ? '正在恢复连接'
       : projection.state === 'completing' ? '正在收尾'
-        : hasOutput ? '正在处理' : '等待模型响应';
+        : hasOutput ? '生成中' : '等待响应';
   const seconds = turn?.startedAt === undefined ? null : Math.max(0, Math.floor((now - turn.startedAt) / 1000));
   return seconds === null ? `${label}…` : `${label} · 已用时 ${seconds} 秒`;
 }

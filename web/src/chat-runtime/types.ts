@@ -1,4 +1,4 @@
-import type { TimelineDetailByKind } from './timeline-details';
+import type { TimelineDetailByKind, TimelineMessageMetrics } from './timeline-details';
 import type { CapabilitySnapshot } from './capability-types';
 import type { ApprovalDecisionPayload, InteractionAnswerPayload, TurnSubmitPayload } from './command-payload-types';
 export type {
@@ -92,6 +92,8 @@ export interface ActiveTurn {
   readonly clientUserMessageId?: string;
   readonly nativeTurnId?: string;
   readonly startedAt?: number;
+  readonly firstTokenAt?: number;
+  readonly metrics?: TimelineMessageMetrics;
   readonly state: SessionState;
 }
 
@@ -209,6 +211,7 @@ interface EventPayloadByType {
   'turn.queued': StateProjectionPayload;
   'turn.started': StateProjectionPayload;
   'turn.phase.changed': StateProjectionPayload;
+  'turn.metrics.updated': { metrics: TimelineMessageMetrics };
   'turn.interrupt.requested': StateProjectionPayload;
   'turn.interrupted': StateProjectionPayload;
   'turn.completed': StateProjectionPayload;

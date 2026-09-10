@@ -14,6 +14,7 @@ import { parsePendingInteraction } from './interaction-parser';
 import { parseRuntimeBinding } from './runtime-binding-parser';
 import { parseTimelineItem } from './timeline-item-parser';
 import { parseFailedTurn } from './failed-turn-parser';
+import { parseMessageMetrics } from './message-metrics-parser';
 import type {
   ActiveTurn,
   SessionQueueEntry,
@@ -98,6 +99,10 @@ export function parseActiveTurn(value: unknown): ActiveTurn {
     ...(source.startedAt === undefined ? {} : {
       startedAt: nonNegativeInteger(source.startedAt, 'chat_runtime_active_turn_started_at_invalid'),
     }),
+    ...(source.firstTokenAt === undefined ? {} : {
+      firstTokenAt: nonNegativeInteger(source.firstTokenAt, 'chat_runtime_active_turn_first_token_at_invalid'),
+    }),
+    ...(source.metrics === undefined ? {} : { metrics: parseMessageMetrics(source.metrics) }),
     ...optionalTextField(source, 'runId', 'chat_runtime_active_run_id_invalid'),
     ...optionalTextField(
       source,

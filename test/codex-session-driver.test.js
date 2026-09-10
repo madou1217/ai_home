@@ -100,6 +100,21 @@ test('Codex terminal settlement waits for the native turn anchor to persist', as
   assert.equal((await turn).status, 'completed');
 });
 
+test('token usage only belongs to the anchored native turn', async () => {
+  const fixture = createFixture();
+  const turn = fixture.entry.driver.startTurn(turnContext());
+  await nextTask();
+  for (const turnId of ['previous-turn', 'native-turn-1']) fixture.client.notify('thread/tokenUsage/updated', {
+    threadId: NATIVE_THREAD_ID, turnId,
+    tokenUsage: { last: { inputTokens: 10, outputTokens: 5 }, total: { inputTokens: 20, outputTokens: 10 } }
+  });
+  fixture.client.notify('turn/completed', { threadId: NATIVE_THREAD_ID, turn: { id: 'native-turn-1', status: 'completed' } });
+  await turn;
+  assert.equal(fixture.events.length, 1);
+  assert.equal(fixture.events[0].type, 'turn.metrics.updated');
+  assert.equal(fixture.events[0].turnId, 'turn-1');
+});
+
 test('Codex native turn anchor persistence failure fails the turn', async () => {
   const persistence = deferred();
   const fixture = createFixture({

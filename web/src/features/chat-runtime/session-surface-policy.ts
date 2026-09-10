@@ -71,7 +71,7 @@ export function runtimeAccountsForSession(
   accounts: readonly Account[],
 ): readonly Account[] {
   if (session.mode === 'chat') {
-    return accounts.filter((account) => session.draft || !session.accountRef || account.accountRef === session.accountRef);
+    return accounts;
   }
   const descriptor = chatRuntimeProviders.resolve(session.provider);
   if (!descriptor) return [];

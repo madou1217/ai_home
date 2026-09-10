@@ -186,6 +186,10 @@ for (const credentialKind of ['codex', 'codex-api-key', 'claude', 'agy', 'kimi']
   assert.equal(during.timeline.find((item) => item.id === 'rs_probe_active').status, 'running');
   releaseReasoning();
   await idle(service, session.sessionId);
+  const measuredAnswer = service.getSnapshot(session.sessionId).timeline.find((item) => item.id === 'msg_probe_1');
+  assert.equal(measuredAnswer.detail.metrics.inputTokens, 100);
+  assert.equal(measuredAnswer.detail.metrics.outputTokens, 10);
+  assert.ok(measuredAnswer.detail.metrics.durationMs >= measuredAnswer.detail.metrics.ttftMs);
   if (provider === 'kimi') {
     await service.dispatchCommand(session.sessionId, {
       commandId: 'turn-2', type: 'turn.submit',
@@ -221,6 +225,8 @@ for (const credentialKind of ['codex', 'codex-api-key', 'claude', 'agy', 'kimi']
   service = makeService();
   const restored = await service.openChatSession({ provider, executionAccountRef: 'acct_probe', chatSessionId: session.sessionId });
   assert.equal(restored.runtimeBinding.nativeSessionId, nativeId);
+  assert.deepEqual(service.getSnapshot(session.sessionId).timeline.find((item) => item.id === 'msg_probe_1').detail.metrics,
+    measuredAnswer.detail.metrics);
   await submit(service, session.sessionId, 'turn-3', 'Continue after reload');
   assert.match(JSON.stringify(requests.at(-1).body.input), /cobalt-42/);
   assert.equal(rpc.filter((call) => call.method === 'thread/start').length, 1);

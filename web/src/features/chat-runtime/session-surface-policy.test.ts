@@ -98,3 +98,17 @@ test('every Chat account uses Harness and never inherits the Work directory or n
       account: { ...selected, accountRef: 'another-account' }, approvalMode: 'confirm' }).status, 'blocked');
   }
 });
+
+test('saved Chat keeps providers visible while rejecting a different account on its bound runtime', () => {
+  const chat: Session = { ...savedSession, mode: 'chat', accountRef: account.accountRef };
+  const kimi = { ...account, provider: 'kimi' as const, accountRef: 'kimi-account' };
+  assert.deepEqual(runtimeAccountsForSession(chat, [account, kimi]), [account, kimi]);
+  assert.equal(resolveSessionRuntimeTarget({ session: chat, account: kimi, approvalMode: 'confirm' }).status, 'blocked');
+  const fresh = { ...chat, id: 'draft-new', accountRef: undefined, draft: true, provider: kimi.provider };
+  const result = resolveSessionRuntimeTarget({ session: fresh, account: kimi, approvalMode: 'confirm' });
+  assert.equal(result.status, 'ready');
+  if (result.status === 'ready') {
+    assert.equal(result.target.executionAccountRef, kimi.accountRef);
+    assert.equal(result.target.chatSessionId, undefined);
+  }
+});

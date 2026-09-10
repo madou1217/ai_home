@@ -17,6 +17,7 @@ import { sessionConnectionPresentation } from './session-connection-presentation
 import { selectTimelinePresentation } from './timeline-presentation';
 import TimelineItemView from './TimelineItemView';
 import TurnFeedback from './TurnFeedback';
+import TurnProgress from './TurnProgress';
 import type { SessionRuntimeActions } from './session-runtime-actions';
 import styles from './session-runtime.module.css';
 
@@ -97,8 +98,12 @@ export default function ConversationTimeline({
           projectPath={projectPath}
           onOpenFile={preview.openFile}
           mobile={mobile}
+          progress={item.id === presentation.progressItemId ? <TurnProgress store={controller.store} /> : undefined}
         />
       ))}
+      {!presentation.progressItemId ? <div className={styles.turnProgressPlaceholder}>
+        <TurnProgress store={controller.store} />
+      </div> : null}
       <TurnFeedback store={controller.store} actions={actions} />
       </div>
       <FileDrawer

@@ -550,8 +550,15 @@ dist 被清掉后服务端直接返回一行文本,既无 console 报错、也�
   已逐页看图的页面:12 个不同页面全覆盖
   (chat、accounts、models、settings、dashboard、usage、toolkit、install-guide、studio、
   fabric/servers、fabric/ssh-hosts、server-setup)。
-- **限制一**:中途一轮曾报 7 项有问题,但明细被命令里的 `tail` 截断丢失,无法归因;
-  在稳定 dist 上重跑为 0。该 7 项未查明,不能当作已排除。
+- **限制一(部分缓解)**:中途一轮曾报 7 项有问题,但明细被命令里的 `tail` 截断丢失,无法归因;
+  其后在稳定 dist 上连续 6 轮重跑均为 0。**该 7 项仍未查明**,只能说复现不了,不能当作已排除。
+  已给扫描器补 `tmp/p5/report.json` 逐项落盘(2026-09-10),此后失败明细不会再因 stdout 截断而丢失。
+- **限制三(未解决)**:参数化路由 `/accounts/:provider/:accountRef/models` **仍未覆盖**。
+  三种发现方式均告失败,如实记录以免后人重走:
+  ① 抓 `a[href]`——该路由由卡片「⋮」菜单里的 `navigate()` 触发,DOM 里没有对应 href;
+  ② 点击卡片 `⋮` 再点菜单项——泛选择器会命中页头导出 Popover,改用 `.m-card-more, [class*="moreBtn"]` 后仍未成;
+  ③ 页面上下文内 `fetch('/v0/webui/accounts')`——未返回可用的 provider/accountRef 组合。
+  该路由复用 `./Models` 组件,增量风险主要在 `accountScoped` 分支(返回按钮与指标口径),优先级不高但确未验。
 - **限制二**:验证期间有**并发会话**在同一仓库大量修改 `lib/server/chat-runtime/` 与 `web/src/features/chat-runtime/`
   (37 改 + 5 新),本轮 `npm run build` 会把其未完成改动一并打包,故扫描结果不能完全归因于本轮改动。
 - 因此 P5/P7/§二 #7 **仍维持 ⚠️**:一次扫荡不构成持续验收,且上述两项限制未消除。

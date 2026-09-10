@@ -616,3 +616,42 @@ B24 的四个面里,圆角(§12.1 实测收口)、颜色(§12.5 token 迁移)已
 四道都过了,却整整 4 个提交没发现回归——因为**全仓有 32 个 node 测试文件在断言 `web/src` 的源码文本**,
 而这四道里没有一道会跑 node 测试。改 web 源码必须连带跑 node 测试,不能只跑 web 侧工具链。
 
+## 十九、CI 长期全红与信号恢复(2026-09-10)
+
+§十八 记的教训是「我的本地回路漏了 node 测试」。顺着查 CI 时发现更根本的问题:
+**CI 本身早就不携带信号了**。
+
+| 工作流 | 状态 | 最早可查的红 |
+|---|---|---|
+| `ci.yml`(跑 `npm test`) | 连续失败 | 2026-09-03(往前 10 次全红/取消) |
+| `web-build.yml`(web lint+build) | 连续失败 | 2026-09-01(往前 12 次全红) |
+
+也就是说:我的回归确实被 CI 抓到了(`not ok 3704`),但**没人会去看一个红了一周多的 CI**。
+先前把这条记成「我的本地回路缺口」只对了一半。
+
+### 19.1 已修:8 项「只能在开发机通过」的测试(`0810c205`)
+
+CI 最近一次共 9 项失败,其中 1 项是我的回归(§十八已修),其余 8 项都不是缺陷,而是宿主依赖:
+
+| 用例 | 真因 | 修法 |
+|---|---|---|
+| `app-manager listManagedApps` | 应用目录按平台裁剪,`claude-desktop` 只在 macOS 列出(实测 darwin 23 个含它 / linux 20 个不含);测试无条件断言它存在 | 注入 `processObj.platform='darwin'`,断言与宿主解耦,**覆盖不减** |
+| web ui account import ×6 | 轮询预算 100 轮 × 5ms ≈ **0.5 秒**,而任务要解压 + 落盘;CI 机器较慢必超时 | 改为 20s 墙钟截止,断言一字未改 |
+| Playwright 全站 e2e | 写死了 npx 缓存路径、chromium 绝对路径、以及 `127.0.0.1:9527` 上要有活网关——在 CI 与任何他人机器上都不可能通过 | 缺前置条件时 `t.skip` 并说明具体缺哪项;本机前置齐备时照常真跑 |
+
+本地全量:**6464 项 / 6453 pass / 0 fail / 11 skipped**。
+
+### 19.2 未修(需授权):web-build 的 lockfile 不同步
+
+`web/package-lock.json` 自 `28fd4ef2`(2026-08-24)起就**不完整**——缺 `webpack` / `dva` 等传递依赖条目,
+`npm ci` 因此拒绝安装(`npm error ... can only install packages when your package.json and
+package-lock.json ... are in sync`)。经核对,该次提交里 package.json 与 lock 是**同时**改的,
+所以不是"改了依赖忘了更新锁",而是那次生成的 lock 本身就残缺。
+
+**未擅自修复**:补救手段是重新生成 lockfile(`cd web && npm install --package-lock-only`),
+这会在 package.json 允许的范围内重解析大量传递依赖版本,属牵连面很广的依赖树改动,应由人确认后再做。
+
+### 19.3 状态
+
+修 CI 的这几个提交**尚未推送**(本地 main 领先 origin/main)。推送属对外动作,按约定等用户明确。
+

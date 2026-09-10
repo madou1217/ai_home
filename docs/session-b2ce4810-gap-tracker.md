@@ -19,7 +19,7 @@
 | 2 | 刷新后 chat 会话丢失 / 模型回退(L2120/L3643) | **chat 模式会话(无 projectPath)不进 canonical/project 目录,刷新后恢复链路必然失败**;且挂载时 `usePersistedChatSelection` 以空选择擦除 URL 与 localStorage | 🔧 | 新增 `useChatSessionRestore`(`web/src/pages/chat-page-hooks.ts:41`)+ `matchPersistedChatSession`(`web/src/pages/chat-selection-state.js:93`);实测带 `?sessionId` 刷新与裸 `/ui/chat` 刷新均恢复会话、模型(k3-256k)与消息;测试 `test/web.chat-selection-state.test.js` 5 项通过 |
 | 3 | 上下文动态换算 + 60% 自动压缩(L4797) | 动态换算早已存在(服务端 `resolveModelContextLimit` 按模型元数据 + UI `dynamicMaxTokens`),但阈值是 75%/80%,与要求的 60% 不符 | 🔧 | 服务端高水位 0.75→0.60(`lib/server/webui-chat-routes-opencode-proxy.js:169`),UI ContextMeter 80%→60% 并抽出 `context-meter-stats.ts` 单一事实源;`test/webui-chat-context-compaction.test.js` 新增 60% 边界用例,3 项通过;bun 测试 6 项通过 |
 | 4 | OpenAI Responses 优先 WS mode(L2515) | **原审计误判**:WS relay 早已实现(`lib/server/server.js:1647` 起,`/v1/responses` Upgrade → `wss://<upstream>/responses`,先连上游再升级客户端) | ✅ | 实测 `ws://127.0.0.1:9527/v1/responses` 握手成功(意味着选号+上游 wss 连接全链路通过);codex ≥0.144 默认 WS 优先、失败自动回退 HTTP,受管配置无需改动 |
-| 5 | kimi 401 阻塞其他账号(L2280) | 第一次压缩摘要标记已闭环 | ❓ | 未重新实测 |
+| 5 | kimi 401 阻塞其他账号(L2280) | 行为本身正确(401 策略 `scope: 'account'`),但此前无测试守住该主张 | ✅ | 2026-09-10 补 `test/kimi-auth-failure-isolation.test.js` 3 项:401 只冷却该账号、同池另一 kimi 账号仍被选中;两个都 401 才整体不可用且不误伤其他 provider;认证硬冷却不被 `allowModelCooled` 拉回轮转。相关套件 68 项全过 |
 
 ## 二、设计规范类(用户验收持续失败的重灾区)
 
@@ -97,7 +97,7 @@
 | B10 | eventstream 已收数据但 UI 思考中 15s | ✅ | 与 B3 同根因(服务端缓冲) |
 | B11 | 刷新后会话指标丢失 | ✅🔧 | `durationMs/ttftMs/model` 持久化恢复;**小缺口:`outputTokens/tokensPerSec` 未持久化**(`webui-chat-routes.js:1470-1473`) |
 | B12 | thinking 渲染最新数据/宽度稳定 | ✅ | legacy ✅;canonical 未传 `running`(同 F16 缺口) |
-| B13 | kimi 401 阻塞其他账号 | ✅ | account 级冷却 + `provider-fallback-routing.test.js:7-28` |
+| B13 | kimi 401 阻塞其他账号 | ✅ | account 级冷却;**原引用的 `provider-fallback-routing.test.js:7-28` 并不覆盖本主张**(fixture 只有一个 kimi 账号,验的是跨 provider 回退),真正的证据是 `test/kimi-auth-failure-isolation.test.js`,见 §一 #5 |
 | B14 | codex 跨账号 400 invalid_encrypted_content | ✅ | 剥离预防(`codex-adapter.js:402-406`)+ 兜底换号(`upstream-failure-policy.js:601-616`) |
 | B15 | store:false 引用历史 item 404 | ✅ | 反应式恢复有;**无预防性剔除 previous_response_id** |
 | B16 | 发起 chat 未返回会话 id | ✅ | `session-created` 先于 thinking(`webui-chat-routes.js:1350-1367`) |
@@ -539,4 +539,23 @@ dist 被清掉后服务端直接返回一行文本,既无 console 报错、也�
 - **限制二**:验证期间有**并发会话**在同一仓库大量修改 `lib/server/chat-runtime/` 与 `web/src/features/chat-runtime/`
   (37 改 + 5 新),本轮 `npm run build` 会把其未完成改动一并打包,故扫描结果不能完全归因于本轮改动。
 - 因此 P5/P7/§二 #7 **仍维持 ⚠️**:一次扫荡不构成持续验收,且上述两项限制未消除。
+
+## 十六、§一 #5 kimi 401 结案(2026-09-10)
+
+❓ 的成因不是行为可疑,而是**证据与主张不符**:B13 引用 `provider-fallback-routing.test.js:7-28` 作为闭环依据,
+但那个用例的 fixture 里只有一个 kimi 账号,断言的是「kimi 不可用时 `resolveRequestProvider` 回退到 agy」——
+跨 provider 回退,不是「同为 kimi 的另一个账号是否仍可调度」。原始投诉问的是后者。
+
+实测结论:行为本身正确。`upstream-failure-policy.js:647` 对 401/403 给出
+`kind: 'auth_invalid'` + `scope: 'account'` + `shouldRetryAnotherAccount: true`,
+是账号级而非 provider 级。新增 `test/kimi-auth-failure-isolation.test.js` 3 项守住:
+
+1. 一个 kimi 账号 401 后进入账号级冷却,同池另一 kimi 账号 `cooldownUntil` 为 0 且被 `chooseServerAccount` 选中;
+2. 两个 kimi 账号都 401 才返回 null,同时另一 provider(agy)的池子不受影响;
+3. `allowModelCooled`(为 429 类模型级软冷却兜底)不得把认证失效账号拉回轮转——否则会拿已知无效的凭据反复打上游。
+
+测试直接调用 `classifyUpstreamFailure` 取线上策略参数,不自编冷却值,避免测试与线上漂移。
+相关套件(account-model-cooldown / upstream-failure-policy ×2 / provider-fallback-routing / 本文件)68 项全过。
+
+§一 #5 由 ❓ 转 ✅;B13 的证据指针一并更正。
 

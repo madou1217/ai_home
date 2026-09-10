@@ -23,6 +23,7 @@ import ComposerAttachmentGallery from './ComposerAttachmentGallery';
 import { CHAT_ATTACHMENT_ACCEPT, type ChatDocumentAttachment } from './attachment-files';
 import { useChatFileInput } from './use-chat-file-input';
 import InSessionSearchBar from './InSessionSearchBar';
+import { IN_SESSION_SEARCH_OPEN_EVENT } from './chat-global-shortcuts';
 import PromptPresetsCapsule from './PromptPresetsCapsule';
 import { findLatestActiveChecklist } from './message-structure';
 import { useMobileOverscrollFeedback } from '@/components/mobile/use-mobile-overscroll-feedback';
@@ -229,6 +230,12 @@ const MessageArea = ({
   const [isDragging, setIsDragging] = useState(false);
   const [shellTerminalOpen, setShellTerminalOpen] = useState(false);
   const [inSessionSearchOpen, setInSessionSearchOpen] = useState(false);
+  // Cmd/Ctrl+F 唤起检索胶囊:事件源在 Chat.tsx(chat-global-shortcuts 是全局快捷键单一事实源)
+  useEffect(() => {
+    const openSearch = () => setInSessionSearchOpen(true);
+    window.addEventListener(IN_SESSION_SEARCH_OPEN_EVENT, openSearch);
+    return () => window.removeEventListener(IN_SESSION_SEARCH_OPEN_EVENT, openSearch);
+  }, []);
   const dictation = useDictation();
   const addFiles = useChatFileInput({ images, documents, onImagesChange, onDocumentsChange });
   useMobileOverscrollFeedback(scrollContainerRef);

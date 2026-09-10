@@ -52,7 +52,6 @@ export const GlobalCommandPalette = memo(function GlobalCommandPalette({
       category: '导航',
       icon: <MessageOutlined />,
       action: () => { history.push('/ui/chat'); onClose(); },
-      shortcut: '1',
     },
     {
       id: 'nav-accounts',
@@ -60,7 +59,6 @@ export const GlobalCommandPalette = memo(function GlobalCommandPalette({
       category: '导航',
       icon: <AppstoreOutlined />,
       action: () => { history.push('/ui/accounts'); onClose(); },
-      shortcut: '2',
     },
     {
       id: 'nav-models',
@@ -68,7 +66,6 @@ export const GlobalCommandPalette = memo(function GlobalCommandPalette({
       category: '导航',
       icon: <ControlOutlined />,
       action: () => { history.push('/ui/models'); onClose(); },
-      shortcut: '3',
     },
     {
       id: 'nav-usage',
@@ -76,7 +73,6 @@ export const GlobalCommandPalette = memo(function GlobalCommandPalette({
       category: '导航',
       icon: <LineChartOutlined />,
       action: () => { history.push('/ui/usage'); onClose(); },
-      shortcut: '4',
     },
     {
       id: 'nav-settings',
@@ -84,7 +80,6 @@ export const GlobalCommandPalette = memo(function GlobalCommandPalette({
       category: '导航',
       icon: <SettingOutlined />,
       action: () => { history.push('/ui/settings'); onClose(); },
-      shortcut: '5',
     },
     {
       id: 'act-theme',
@@ -102,7 +97,6 @@ export const GlobalCommandPalette = memo(function GlobalCommandPalette({
         } catch {}
         onClose();
       },
-      shortcut: 'Cmd+T',
     },
     {
       id: 'act-clear',

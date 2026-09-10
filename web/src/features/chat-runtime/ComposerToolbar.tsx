@@ -7,6 +7,7 @@ import {
 import ComposerAccountMenu from '@/components/chat/composer/ComposerAccountMenu';
 import ComposerApprovalMenu from '@/components/chat/composer/ComposerApprovalMenu';
 import ComposerModelMenu from '@/components/chat/composer/ComposerModelMenu';
+import PromptPresetsCapsule from '@/components/chat/PromptPresetsCapsule';
 import { getAccountIdentityLabel } from '@/utils/account-labels';
 import type { ComposerDelivery } from './session-runtime-actions';
 import type { ComposerProps } from './Composer';
@@ -68,6 +69,7 @@ export default function ComposerToolbar({ props, controller, onSelectImages }: P
         ) : null}
       </div>
       <div className={styles.composerActions}>
+        <PromptPresetsCapsule onSelect={(template) => controller.setInput(template)} />
         <ComposerModelMenu
           models={props.catalog.models}
           model={controller.model}

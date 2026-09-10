@@ -9,11 +9,12 @@ export interface ShortcutEntry {
   category: '导航与中枢' | '会话交互' | '编辑器快捷键';
 }
 
+// 纪律:这里的每一行都必须在 chat-global-shortcuts.ts 有对应实现。
+// Cmd+T(新标签)/Cmd+N(新窗口)是浏览器保留键,页面不可拦截,已从手册移除——
+// 主题切换走 Cmd+K 命令面板,新对话走会话列表「+」。
 const SHORTCUTS: ShortcutEntry[] = [
   { key: 'Cmd + K', description: '调起全局命令中枢 (Command Palette)', category: '导航与中枢' },
-  { key: 'Cmd + T', description: '实时切换深色 / 浅色通透主题', category: '导航与中枢' },
   { key: 'Cmd + F', description: '调起会话内悬浮关键词检索胶囊', category: '会话交互' },
-  { key: 'Cmd + N', description: '发起全新纯聊天对话', category: '会话交互' },
   { key: 'Cmd + /', description: '查看快捷键与交互指南', category: '导航与中枢' },
   { key: '/', description: '触发 Slash 快捷指令浮层菜单', category: '编辑器快捷键' },
   { key: '@', description: '触发工作区工程文件树动态引用', category: '编辑器快捷键' },

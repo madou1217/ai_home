@@ -6,6 +6,10 @@ import 'dayjs/locale/zh-cn';
 import { ProjectList } from '@/components/chat';
 import GlobalCommandPalette from '@/components/chat/GlobalCommandPalette';
 import KeyboardShortcutsModal from '@/components/chat/KeyboardShortcutsModal';
+import {
+  IN_SESSION_SEARCH_OPEN_EVENT,
+  resolveChatGlobalShortcut,
+} from '@/components/chat/chat-global-shortcuts';
 import type { WorkspaceMode } from '@/components/chat/ModeSelector';
 import ChatEmptyState from '@/components/chat/ChatEmptyState';
 import { isSessionRunning } from '@/components/chat/project-runtime-state.js';
@@ -50,12 +54,18 @@ export default function Chat() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      const shortcut = resolveChatGlobalShortcut(e);
+      if (shortcut === 'command-palette') {
         e.preventDefault();
         setCommandPaletteOpen((prev) => !prev);
-      } else if ((e.metaKey || e.ctrlKey) && e.key === '/') {
+      } else if (shortcut === 'shortcuts-help') {
         e.preventDefault();
         setShortcutsModalOpen((prev) => !prev);
+      } else if (shortcut === 'in-session-search') {
+        e.preventDefault();
+        // 由当前挂载的 surface 监听并打开各自的检索胶囊
+        // (legacy=MessageArea,native=ConversationTimeline)
+        window.dispatchEvent(new Event(IN_SESSION_SEARCH_OPEN_EVENT));
       }
     };
     window.addEventListener('keydown', handleKeyDown);

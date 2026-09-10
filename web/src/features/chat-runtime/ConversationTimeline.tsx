@@ -10,6 +10,9 @@ import { useSessionSelector } from '@/chat-runtime';
 import type { Provider, Session } from '@/types';
 import { MessageOperation } from './message-operation';
 import FileDrawer, { type FileDrawerTab } from '@/components/chat/FileDrawer';
+import InSessionSearchBar from '@/components/chat/InSessionSearchBar';
+import { IN_SESSION_SEARCH_OPEN_EVENT } from '@/components/chat/chat-global-shortcuts';
+import type { ChatMessage } from '@/types';
 import { basenameLike, getFileTabKey } from '@/components/chat/file-reference-utils';
 import { formatStreamFailureText } from '@/components/chat/provider-pending-policy.js';
 import chatStyles from '@/components/chat/message-area.module.css';
@@ -55,6 +58,25 @@ export default function ConversationTimeline({
   const idle = useSessionSelector(controller.store, (projection) => projection.state === 'idle');
   const operation = useMemo(() => new MessageOperation(actions, controller.sessionId), [actions, controller.sessionId]);
   const [branching, setBranching] = useState(false);
+  // 会话内检索(Cmd/Ctrl+F,事件源在 Chat.tsx;快捷键事实源见 chat-global-shortcuts)。
+  // 消息序与 DOM 中 [data-chat-anchor-key] 行序一致:每条 message item 恰好渲染一行。
+  const [searchOpen, setSearchOpen] = useState(false);
+  useEffect(() => {
+    const openSearch = () => setSearchOpen(true);
+    window.addEventListener(IN_SESSION_SEARCH_OPEN_EVENT, openSearch);
+    return () => window.removeEventListener(IN_SESSION_SEARCH_OPEN_EVENT, openSearch);
+  }, []);
+  const searchMessages = useMemo<ChatMessage[]>(
+    () => presentation.items
+      .filter((item) => item.kind === 'message')
+      .map((item) => ({ role: item.detail.role, content: item.content || '' } as ChatMessage)),
+    [presentation.items],
+  );
+  const scrollToSearchedMessage = useCallback((index: number) => {
+    const container = viewport.containerRef.current;
+    const target = container?.querySelectorAll('[data-chat-anchor-key]')?.[index];
+    if (target instanceof HTMLElement) target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [viewport.containerRef]);
   const operate = async (kind: 'fork' | 'regenerate', itemId: string) => {
     if (branching) return;
     setBranching(true);
@@ -73,6 +95,12 @@ export default function ConversationTimeline({
 
   return (
     <>
+      <InSessionSearchBar
+        open={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        messages={searchMessages}
+        onScrollToMessage={scrollToSearchedMessage}
+      />
       <div
         ref={viewport.containerRef}
         className={`${styles.timeline} ${chatStyles.messageSurface} ${mobile ? chatStyles.messageSurfaceMobile : ''}`}

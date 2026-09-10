@@ -33,10 +33,12 @@ interface Props {
   readonly mobile?: boolean;
   readonly reasoningRunning?: boolean;
   readonly progress?: ReactNode;
+  readonly onRetry?: () => void;
+  readonly onFork?: () => void;
 }
 
 function TimelineItemView({
-  item, provider, projectPath, onOpenFile, mobile = false, reasoningRunning = false, progress,
+  item, provider, projectPath, onOpenFile, mobile = false, reasoningRunning = false, progress, onRetry, onFork,
 }: Props) {
   const filePaths = useMemo(() => collectTimelineFileReferences(item), [item]);
   if (item.kind === 'message') {
@@ -53,6 +55,8 @@ function TimelineItemView({
         session={{ projectPath }}
         mobile={mobile}
         progress={progress}
+        onRetry={onRetry}
+        onFork={onFork}
       />
     );
   }

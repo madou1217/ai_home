@@ -49,6 +49,14 @@ export class SessionRuntimeActions {
     return this.send('turn.retry', { sourceTurnId: id }, `turn-retry:${id}`);
   }
 
+  fork(sourceItemId: string, commandId?: string): Promise<unknown> {
+    return this.send('session.fork', { sourceItemId: requiredContent(sourceItemId) }, commandId);
+  }
+
+  regenerate(sourceItemId: string, commandId?: string): Promise<unknown> {
+    return this.send('turn.regenerate', { sourceItemId: requiredContent(sourceItemId) }, commandId);
+  }
+
   deliver(content: string, delivery: ComposerDelivery): Promise<unknown> {
     if (delivery === 'turn') return this.submit({ content });
     if (delivery === 'steer_current') {

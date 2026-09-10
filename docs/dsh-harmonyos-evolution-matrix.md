@@ -38,6 +38,8 @@
 
 ## 📊 一、全站功能与设计落地矩阵 (Feature & Design Matrix)
 
+2026-09-10 后端链路复核：本表历史上以组件消费关系判断完成，不能代表 canonical Chat 能力完成。1.9、1.29、1.37 已按 [Chat Harness 吸收计划及证据](architecture/chat-harness-absorption.md) 补齐本批后端、页面、持久化和真实 Kimi 验收；其他 provider 的真实上游与 Work 工具历史不在本批完成范围，下列最新状态优先于后文历史结案记录。
+
 | 页面 / 模块 | 序号 | 核心功能 / 设计特性 | 对标原型来源 | 端侧适配 | 状态 | 关键实现文件 / 模块 |
 | :--- | :---: | :--- | :--- | :---: | :---: | :--- |
 | **会话与分支体系** | 1.1 | **Chat 纯聊 / Work 工作区双模式彻底分流** | dsh / Codex UI | 📱 + 💻 | ✅ **已完成** | `webui-chat-store.js`<br>`Chat.tsx` |
@@ -48,7 +50,7 @@
 | | 1.6 | **StatsLine 全会话粘性度量条** (轮次/TTFT/速率/Token) | dsh `StatsLine` | 📱 + 💻 | ✅ **已完成** | `StatsLine.tsx` |
 | | 1.7 | **ConnectionPulseBadge 实时长连接心跳水滴指示环** | HOS 6 Pulse Droplet | 📱 + 💻 | ✅ **已完成** | `ConnectionPulseBadge.tsx`<br>`StatsLine.tsx` |
 | | 1.8 | **ContextMeter 环形上下文压力计** (动态上限+60% warning/90% critical 水位引导) | dsh `ContextMeter` | 📱 + 💻 | ✅ **已完成** | `ContextMeter.tsx`<br>`MessageArea.tsx` |
-| | 1.9 | **MessageIconActions 悬浮操作栏** (复制/Retry/Fork/Share) | dsh `MessageIconActions` | 📱 + 💻 | ✅ **已完成** | `MessageIconActions.tsx` |
+| | 1.9 | **MessageIconActions 悬浮操作栏** (复制/Retry/Fork/Share) | dsh `MessageIconActions` | 📱 + 💻 | ✅ **Chat 重新生成/分支本批已验** | `session-branch-repository.js`、`message-operation.ts`；[覆盖边界及证据](architecture/chat-harness-absorption.md) |
 | | 1.10 | **ShareCardModal 会话分享长图卡片生成** (超级圆角+毛玻璃) | HOS 6 Share Card | 📱 + 💻 | ✅ **已完成** | `ShareCardModal.tsx`<br>`MessageIconActions.tsx` |
 | | 1.11 | **SessionDiffModal 会话分支版本差异对比** (Split/Unified 并排) | dsh `BranchDiff` | 📱 + 💻 | ➖ 剔除(2026-09-10 用户裁决) | 组件已删除（死代码收口，2026-09-02）；2026-09-10 用户裁决剔除，不再立项 |
 | | 1.12 | **VirtualConversationList 超长对话虚拟列表渲染** (视口裁剪+60fps) | dsh `ConversationTimeline` | 📱 + 💻 | ➖ 剔除(2026-09-10 用户裁决) | 已在 `bb08089d` 摘除并于 2026-09-02 删除死代码；2026-09-10 用户裁决剔除，长会话性能需求不再立项 |
@@ -68,7 +70,7 @@
 | | 1.26 | **历史真实模型最高优先级继承** (杜绝刷新回退默认) | 状态真相统一规则 | 📱 + 💻 | ✅ **已完成** | `MessageArea.tsx` |
 | | 1.27 | **GlobalCommandPalette 全局指令中枢** (`Cmd+K` / `Ctrl+K`) | HOS PC Command Hub | 💻 | ✅ **已完成** | `GlobalCommandPalette.tsx`<br>`Chat.tsx` |
 | | 1.28 | **GlobalCommandPalette 深浅主题快捷切换** (`Cmd+T` 随心流光切换) | HOS 6 Theme Hub | 💻 | ✅ **已完成** | `GlobalCommandPalette.tsx` |
-| | 1.29 | **Session Forking 会话分支派生完整链路** | dsh `MessageBranch` | 📱 + 💻 | ✅ **已完成** | `Chat.tsx`<br>`MessageArea.tsx` |
+| | 1.29 | **Session Forking 会话分支派生完整链路** | dsh `MessageBranch` / Pi | 📱 + 💻 | ✅ **Chat 精确前缀、重启、Kimi 已验** | `chat-history-prefix.js`、`session-branch-repository.js`；Work 工具历史另立协议专题 |
 | | 1.30 | **PWA 极速离线与静态资源缓存 ServiceWorker** (`sw.js`) | HOS 6 PWA Standard | 📱 + 💻 | ✅ **已完成** | `web/public/sw.js`<br>`web/src/app.tsx` |
 | | 1.31 | **Playwright 全站双端自动化集成测试套件** (0 错误 + 0 溢出守护) | E2E Testing Standard | 📱 + 💻 | ✅ **已完成** | `test/webui-e2e-suite.test.js` |
 | | 1.32 | **HarmonyOS 6 无障碍外发光微焦点轮廓** (`:focus-visible` 动态光晕) | HOS 6 Accessibility Spec | 📱 + 💻 | ✅ **已完成** | `design-tokens.css` |
@@ -76,7 +78,7 @@
 | | 1.34 | **PinnedSessions 会话置顶与固定状态管理** (多端持久化) | HOS 6 Pin State | 📱 + 💻 | ✅ **已完成** | `pin-session-state.ts`<br>`ProjectList.tsx` |
 | | 1.35 | **PromptPresetsCapsule 灵感指令预设流光胶囊** (分类模版+一键注入) | HOS 6 Inspiration Capsule | 📱 + 💻 | ✅ **已完成** | `PromptPresetsCapsule.tsx`<br>`MessageArea.tsx` |
 | | 1.36 | **KeyboardShortcutsModal 快捷键指南与效率卡片** (`Cmd+/` 灵动键帽) | HOS 6 Shortcuts Card | 💻 | ✅ **已完成** | `KeyboardShortcutsModal.tsx`<br>`Chat.tsx` |
-| | 1.37 | **上下文超限自动安全压缩引擎** | dsh Compaction Engine | 服务端 | ✅ **已完成** | `webui-chat-routes-opencode-proxy.js` |
+| | 1.37 | **上下文超限自动安全压缩引擎** | dsh / Pi / Codex | 服务端 | ✅ **本地 native 自动触发/失败、Kimi 手动压缩后续聊已验** | `chat-context-state.js`、`chat-harness-policy.js`；并非所有真实上游自动压缩验收 |
 | **全站全页面视觉** | 2.1 | **HarmonyOS 6 全局 Design Tokens 地基** (深浅色自适应) | HOS 6 Token Spec | 全局 | ✅ **已完成** | `design-tokens.css` |
 | | 2.2 | **账号页 (Accounts) 亚克力卡片与进度环** | HOS 6 Card Grid | 📱 + 💻 | ✅ **已完成** | `Accounts.css` |
 | | 2.3 | **BurningParticles 粒子流光白热动效** | HOS 6 Particle Light | 📱 + 💻 | ✅ **已完成** | `BurningParticles.css` |

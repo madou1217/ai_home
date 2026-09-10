@@ -69,16 +69,16 @@
 | F8 | 跨账号思考链加密内容最优解(不剥离降智) | ✅(策略最优) | Claude/Gemini signature 透传保留;**codex 仍剥离**(`codex-adapter.js:402-406`);无解密注入机制 |
 | F9 | OpenAI Responses 优先 WS mode | ✅ | `server.js:1647` 起;实测握手通过 |
 | F10 | OAuth 报错自动定向回退 API Key 账号 | ✅ | 通用换号在(`upstream-failure-policy.js:647-662`);**无 auth-type 定向回退策略** |
-| F11 | chat 集成 harness 2(dsh 2.0) | ✅(保留范围) | 12 项吸收清单:11 项已落地且均有真实消费方,第 12 项分支 Diff 于 2026-09-10 用户裁决剔除。定级依据见 §二十二 |
+| F11 | chat 集成 harness 2(dsh 2.0) | ➖ 持续吸收，本批已验 | 不能用 11 个组件的消费关系代表后端完成；本批消息操作、role、context/compact 闭环见 [源码与验收](architecture/chat-harness-absorption.md)，后续队列/工具/扩展点按专题推进 |
 | F12 | AI 自动发现并规划 + 双模型 review + loop 自动进化 | ➖ 剔除 | **非 aih 产品需求**:该会话 /loop 自动执行纪律,2026-09-01 用户裁决剔除(见第十节) |
-| F13 | 上下文动态换算 + 60% 自动压缩 | ✅🔧 | 本次修复,见第一节 #3 |
-| F14 | MessageIconActions:复制代码/重新生成/分流新对话 | ✅ | `MessageIconActions.tsx:35-121`;代码复制由 `CodeBlock.tsx:41-54` 承担 |
+| F13 | 上下文动态换算 + 自动压缩 | ✅ 本批范围 | canonical Chat 使用真实模型窗口，默认 80%、可设 50–90%；60% 为旧 ContextMeter 提示阈值。自动触发和失败有 native 测试，Kimi 手动压缩后续聊已验；首轮未知窗口限制见 [证据](architecture/chat-harness-absorption.md) |
+| F14 | MessageIconActions:复制代码/重新生成/分流新对话 | ✅ Chat 本批已验 | 精确消息前缀、独立重新生成版本、附件归属、命令幂等、重启与真实 Kimi 页面，见 [Harness 证据](architecture/chat-harness-absorption.md) |
 | F15 | StatsLine 度量条(总耗时/首字/速度/Token) | ✅ | `StatsLine.tsx:29-91`,常驻输入区上方;非滚动 sticky 形态 |
 | F16 | ThinkingBlock 吸收 ReasoningRow(节流+右滚) | ✅ | legacy 链路完整(`ThinkingBlock.tsx:31-44`);**canonical `TimelineItemView.tsx:52-53` 未传 `running`,流式期不生效** |
 | F17 | Work 三栏同屏(目录树+Git+Sessions \| Agent 轨迹 \| PTY+Diff) | ✅ | 2ea82cfa 落地三栏;2026-09-02 响应式降级治理(阈值 1040/900,overlay 展开) |
 | F18 | Chat 顶栏极简(胶囊切换器+模型选择+新建对话) | ✅🔧 | 本次修复 ModeSelector 32px/13px |
 | F19 | 主区域居中最大宽 840px | ✅ | 居中自适应有;实际 `--chat-content-width: 800px`(`chat.module.css:1600`),与 840 不符 |
-| F20 | dsh 2.0 十二项:首字渲染✅、右滚打字机✅、微光扫描✅、ContextMeter 环形✅、悬浮操作栏✅、长图分享✅、分支 Diff✅、会话内搜索✅、置顶✅、灵感胶囊✅、快捷键✅、**跨 Tab 同步⚠️** | ✅(保留范围) | 跨 Tab 同步已闭环;11 项逐个复核「组件存在 + 有真实消费方」全部通过(§二十二);第 12 项分支 Diff 已剔除,非交付 |
+| F20 | dsh 2.0 交互与能力吸收清单（分支 Diff 已剔除） | ⚠️ 按链路分别验收 | §二十二只证明接线，不作为全部能力完成依据；本批重新生成/分支/上下文与计时已验，其他交互仍保留各自证据边界，禁止推断所有模式均已验 |
 | F21 | 200+ 轮虚拟列表 60fps / 500 条聚合 <5ms 基准 | ➖ 剔除(2026-09-10 用户裁决) | 虚拟列表已于 2026-09-02 删除;2026-09-10 用户裁决剔除,不再立项 |
 | F22 | 分支版本对比 Diff + 离线 PWA | ✅(保留范围) | 离线 PWA 已落地(`session-offline-cache.ts`,11 项测试,复核有 2 个真实消费方);Diff 半边已随 1.11 于 2026-09-10 剔除,非交付 |
 
@@ -747,7 +747,7 @@ lockfile 修好后,web-build 越过 `npm ci`、卡在了下一步 **Lint**,暴�
 | 首字渲染 | `lib/server/webui-chat-routes.js:400` 定义 / `:879` 调用 | 有调用方 |
 | 微光扫描 | `EventBlock.module.css:345` 关键帧 / `:341` animation 引用 | 有引用方 |
 
-**全部 11 项均非「零消费方假完成」**,故 F11 / F20 / F22 定为 **✅(保留范围)**。
+历史结论曾据此把 F11 / F20 / F22 定为 **✅(保留范围)**。2026-09-10 后端复核纠正：消费关系仅证明接线，不能支持 F11/F20 的全面完成；最新状态以前文矩阵及 [Harness 本批验收](architecture/chat-harness-absorption.md) 为准。F22 保留原 PWA/剔除 Diff 的边界。
 
 ### 22.1 这个 ✅ 的确切含义与限度
 
@@ -925,4 +925,3 @@ item 7(全站页面鸿蒙 6.1 化)、D2(HOS 必须 6.1)、D4(手机/PC 两套 UI
 
 审计脚本已入仓 `scripts/hos-spec-audit.js`(此前在 `/tmp`,一次性)。
 下次改动后重跑即可对照,不必再靠一次性的人工判断——这正是 §二 #7 缺的那一环。
-

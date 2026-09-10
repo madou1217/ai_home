@@ -21,6 +21,7 @@ for (const credentialKind of ['codex', 'codex-api-key', 'claude', 'agy', 'kimi']
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-chat-harness-native-'));
   const requests = [];
   let failureMode = '';
+  let pressureResponsePending = false;
   let releaseReasoning;
   const reasoningGate = new Promise((resolve) => { releaseReasoning = resolve; });
   let releaseKimiThinking;
@@ -69,7 +70,11 @@ for (const credentialKind of ['codex', 'codex-api-key', 'claude', 'agy', 'kimi']
       send({}, 'stop');
       stream.end();
       res.end();
-    } else await respond(res, requests.length, reasoningGate);
+    } else {
+      const highUsage = pressureResponsePending;
+      pressureResponsePending = false;
+      await respond(res, requests.length, reasoningGate, highUsage);
+    }
   });
   await listen(gateway);
   const placeholder = http.createServer();
@@ -204,6 +209,26 @@ for (const credentialKind of ['codex', 'codex-api-key', 'claude', 'agy', 'kimi']
   } else await submit(service, session.sessionId, 'turn-2', 'Repeat the marker');
   assert.match(JSON.stringify(requests[0].body.input), /cobalt-42/);
   assert.match(JSON.stringify(requests[1].body.input), /What is the marker/);
+  await service.dispatchCommand(session.sessionId, { commandId: 'role-teacher', type: 'session.policy.set',
+    payload: { key: 'systemPrompt', value: 'Role marker: TEACHER_COBALT. Explain concisely.' } });
+  const sourceAnswer = service.getSnapshot(session.sessionId).timeline.find((item) => item.id === 'msg_probe_1');
+  const forkCommand = { commandId: 'native-fork', type: 'session.fork', payload: { sourceItemId: sourceAnswer.id } };
+  const fork = (await service.dispatchCommand(session.sessionId, forkCommand)).result.session;
+  const forkBefore = service.getSnapshot(fork.sessionId).timeline;
+  await submit(service, fork.sessionId, 'fork-continue', 'Continue this exact branch');
+  const forkRequest = requests.at(-1).body;
+  assert.match(JSON.stringify(forkRequest), /TEACHER_COBALT/);
+  assert.match(JSON.stringify(forkRequest.input), /cobalt-42 response 1/);
+  assert.doesNotMatch(JSON.stringify(forkRequest.input), /Repeat the marker/);
+  assert.notEqual(service.getSnapshot(fork.sessionId).runtimeBinding.nativeSessionId,
+    service.getSnapshot(session.sessionId).runtimeBinding.nativeSessionId);
+  const regen = (await service.dispatchCommand(session.sessionId, { commandId: 'native-regenerate',
+    type: 'turn.regenerate', payload: { sourceItemId: sourceAnswer.id } })).result.session;
+  await idle(service, regen.sessionId);
+  const regenerationRequest = requests.at(-1).body;
+  assert.match(JSON.stringify(regenerationRequest.input), /What is the marker/);
+  assert.doesNotMatch(JSON.stringify(regenerationRequest.input), /cobalt-42 response 1|Repeat the marker/);
+  assert.equal((await service.dispatchCommand(session.sessionId, forkCommand)).result.session.sessionId, fork.sessionId);
   const compact = await service.dispatchCommand(session.sessionId, {
     commandId: 'compact-1', type: 'slash.execute', payload: { name: 'compact' }
   });
@@ -228,9 +253,19 @@ for (const credentialKind of ['codex', 'codex-api-key', 'claude', 'agy', 'kimi']
   assert.deepEqual(service.getSnapshot(session.sessionId).timeline.find((item) => item.id === 'msg_probe_1').detail.metrics,
     measuredAnswer.detail.metrics);
   await submit(service, session.sessionId, 'turn-3', 'Continue after reload');
+  assert.match(JSON.stringify(requests.at(-1).body), /TEACHER_COBALT/,
+    'role changes must apply on resume, not only when creating a thread');
+  await submit(service, fork.sessionId, 'fork-reload', 'Continue branch after reload');
+  assert.match(JSON.stringify(requests.at(-1).body.input), /Continue this exact branch/);
+  assert.doesNotMatch(JSON.stringify(requests.at(-1).body.input), /Repeat the marker/);
+  const forkAfter = service.getSnapshot(fork.sessionId).timeline;
+  for (const item of forkBefore.filter((entry) => entry.kind === 'message')) {
+    assert.equal(forkAfter.filter((entry) => entry.content === item.content).length, 1,
+      `seed message must not duplicate after native reload: ${item.id}`);
+  }
   assert.match(JSON.stringify(requests.at(-1).body.input), /cobalt-42/);
-  assert.equal(rpc.filter((call) => call.method === 'thread/start').length, 1);
-  assert.equal(rpc.filter((call) => call.method === 'thread/inject_items').length, 1);
+  assert.equal(rpc.filter((call) => call.method === 'thread/start').length, 3);
+  assert.equal(rpc.filter((call) => call.method === 'thread/inject_items').length, 3);
   assert.equal(rpc.filter((call) => call.method === 'thread/compact/start').length, 1);
   assert.ok(rpc.filter((call) => call.method === 'thread/resume').length >= 3);
   if (useGateway) assert.ok(requests.every((request) => request.accountRef === 'acct_probe'
@@ -240,8 +275,24 @@ for (const credentialKind of ['codex', 'codex-api-key', 'claude', 'agy', 'kimi']
       /Model metadata for .* not found/);
   }
   console.log(JSON.stringify({ provider, credentialKind, nativeThreadId: nativeId, modelRequests: requests.length,
-    threadStarts: 1, imports: 1, compactions: 1, restored: true, nativeProcessRestarted: true }));
+    threadStarts: 3, imports: 3, compactions: 1, restored: true, nativeProcessRestarted: true,
+    exactFork: true, regenerate: true, roleInherited: true }));
   if (credentialKind === 'kimi') {
+    const noticesBefore = service.getSnapshot(fork.sessionId).timeline.filter((item) => item.detail?.code === 'contextCompaction').length;
+    const manualBefore = rpc.filter((call) => call.method === 'thread/compact/start').length;
+    pressureResponsePending = true;
+    await submit(service, fork.sessionId, 'automatic-pressure', 'Exercise automatic context pressure');
+    await submit(service, fork.sessionId, 'automatic-pressure-next', 'Continue after context pressure');
+    assert.ok(service.getSnapshot(fork.sessionId).timeline.filter((item) => item.detail?.code === 'contextCompaction').length > noticesBefore);
+    assert.equal(rpc.filter((call) => call.method === 'thread/compact/start').length, manualBefore,
+      'automatic compaction must come from the native loop, without an AIH manual request');
+    assert.equal(service.getSnapshot(fork.sessionId).policy.contextState.compaction.status, 'completed');
+    console.log(JSON.stringify({ provider, automaticCompaction: true }));
+    failureMode = 'http';
+    await service.dispatchCommand(fork.sessionId, { commandId: 'compact-failure', type: 'slash.execute', payload: { name: 'compact' } });
+    await service.waitForActorIdle(fork.sessionId);
+    assert.equal(service.getSnapshot(fork.sessionId).policy.contextState.compaction.status, 'failed');
+    failureMode = '';
     for (const mode of ['kimi-truncated', 'kimi-length']) {
       failureMode = mode;
       await service.dispatchCommand(session.sessionId, {
@@ -323,7 +374,7 @@ async function waitFor(predicate) {
   throw new Error('Native Harness did not become ready');
 }
 
-async function respond(res, count, reasoningGate) {
+async function respond(res, count, reasoningGate, highUsage = false) {
   const id = `resp_probe_${count}`;
   const text = `cobalt-42 response ${count}`;
   const item = { id: `msg_probe_${count}`, type: 'message', role: 'assistant', status: 'completed',
@@ -333,7 +384,7 @@ async function respond(res, count, reasoningGate) {
   })) : [];
   const response = { id, object: 'response', created_at: Math.floor(Date.now() / 1000),
     status: 'completed', output: [...reasoningItems, item],
-    usage: { input_tokens: 100, output_tokens: 10, total_tokens: 110 } };
+    usage: { input_tokens: highUsage ? 850000 : 100, output_tokens: 10, total_tokens: highUsage ? 850010 : 110 } };
   res.writeHead(200, { 'content-type': 'text/event-stream' });
   const send = (type, value) => res.write(`event: ${type}\ndata: ${JSON.stringify({ type, ...value })}\n\n`);
   send('response.created', { response: { ...response, status: 'in_progress', output: [] } });

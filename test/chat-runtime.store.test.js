@@ -61,6 +61,7 @@ test('chat runtime creates its canonical tables in the shared app-state database
     'chat_runtime_attachments',
     'chat_runtime_commands',
     'chat_runtime_events',
+    'chat_runtime_history_seeds',
     'chat_runtime_interactions',
     'chat_runtime_queue',
     'chat_runtime_sessions'

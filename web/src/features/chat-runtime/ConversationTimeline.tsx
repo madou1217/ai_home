@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Empty, message as toast } from 'antd';
 import Button from '@/components/ui/AppButton';
 import type {
@@ -7,7 +7,8 @@ import type {
   TimelineItem,
 } from '@/chat-runtime';
 import { useSessionSelector } from '@/chat-runtime';
-import type { Provider } from '@/types';
+import type { Provider, Session } from '@/types';
+import { MessageOperation } from './message-operation';
 import FileDrawer, { type FileDrawerTab } from '@/components/chat/FileDrawer';
 import { basenameLike, getFileTabKey } from '@/components/chat/file-reference-utils';
 import { formatStreamFailureText } from '@/components/chat/provider-pending-policy.js';
@@ -29,6 +30,7 @@ interface Props {
   readonly projectPath: string;
   readonly workspaceMode?: string;
   readonly mobile?: boolean;
+  readonly onBranchSession?: (session: Session) => void;
 }
 
 export default function ConversationTimeline({
@@ -39,6 +41,7 @@ export default function ConversationTimeline({
   projectPath,
   workspaceMode,
   mobile = false,
+  onBranchSession,
 }: Props) {
   const items = useSessionSelector(controller.store, selectItems);
   const presentation = useSessionSelector(controller.store, selectTimelinePresentation);
@@ -49,6 +52,21 @@ export default function ConversationTimeline({
   const connection = sessionConnectionPresentation(connectionState);
   const viewport = useTimelineViewport(controller, items);
   const preview = useTimelineFilePreview(projectPath);
+  const idle = useSessionSelector(controller.store, (projection) => projection.state === 'idle');
+  const operation = useMemo(() => new MessageOperation(actions, controller.sessionId), [actions, controller.sessionId]);
+  const [branching, setBranching] = useState(false);
+  const operate = async (kind: 'fork' | 'regenerate', itemId: string) => {
+    if (branching) return;
+    setBranching(true);
+    try {
+      const session = await operation.execute(kind, itemId);
+      window.dispatchEvent(new Event('aih:chat-sessions-changed'));
+      onBranchSession?.(session);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '消息操作失败，请重试');
+    } finally { setBranching(false); }
+  };
+  const messageActions = workspaceMode === 'chat' && idle && connection.interactive && !branching && onBranchSession;
   useLayoutEffect(() => {
     firstTextPaintProbe.observeCommittedTimeline(items);
   }, [firstTextPaintProbe, items]);
@@ -99,6 +117,10 @@ export default function ConversationTimeline({
           onOpenFile={preview.openFile}
           mobile={mobile}
           progress={item.id === presentation.progressItemId ? <TurnProgress store={controller.store} /> : undefined}
+          onFork={messageActions && item.kind === 'message' && item.status === 'completed'
+            ? () => void operate('fork', item.id) : undefined}
+          onRetry={messageActions && item.kind === 'message' && item.detail.role === 'assistant' && item.status === 'completed'
+            ? () => void operate('regenerate', item.id) : undefined}
         />
       ))}
       {!presentation.progressItemId ? <div className={styles.turnProgressPlaceholder}>

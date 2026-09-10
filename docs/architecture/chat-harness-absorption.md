@@ -1,0 +1,106 @@
+# AIH Chat Harness：源码依据、决策和交付清单
+
+更新：2026-09-10。状态按后端、页面、持久化和真实验收分别判定，组件存在不能代表能力完成。
+
+## 固定参考来源
+
+| 项目 | 本次读取的源码提交 | 关键源码与吸收点 |
+| --- | --- | --- |
+| DeepSeek Harness | `aa8262ec091698bae9a6b04773a6b5b06ad4aef2` | `packages/core/session/src/index.ts` 的 `SessionStore.fork`：不可变 seed、父会话、边界校验；`packages/api/session-controller/src/commands.ts`：从消息锚点定位已完成回合；`packages/compaction/compaction/src/checkpoint.ts`：压缩事务和检查点来源关联 |
+| Pi | `4bd3f48df0b14c82e8df2640645e94f82f125f44` | `packages/coding-agent/src/core/session-manager.ts` 的 `branch/createBranchedSession`：保留原路径、独立持久分支；`agent-session.ts` 的 `_checkCompaction`：模型窗口、压缩后的旧 usage 隔离、溢出最多恢复一次；会话级 system prompt |
+| Codex | `968835997714baaff199cfed5f89a2c65d8ca77d` | `codex-rs/app-server-protocol/src/protocol/v2/thread.rs`：fork 按回合、rollback、原始 Responses items 注入；执行器负责流、原生历史和压缩 |
+
+参考仓库位于相邻 clawdcodex 的 `reference/repos/`。只更新远端引用并用 `git show <commit>:<path>` 读取，没有覆盖其工作区。上述为源码版本，不声明等同于 npm 分发或本机运行版本；本机协议另以 native 测试验证。
+
+## ADR：AIH 掌握会话语义，执行器可以替换
+
+选择：继续使用现有 SessionActor、命令日志、canonical timeline、账号路由，新增消息分支和会话指令的领域能力。当前 Codex app-server 是执行适配器，不是 AIH 的账号域或完整 harness。
+
+| 方案 | 收益 | 代价与决定 |
+| --- | --- | --- |
+| AIH 领域层 + 现有 Codex 适配器 | 复用已接通的流、停止、恢复、网关账号隔离、原生压缩 | 仍依赖本机 Codex；Responses 兼容性必须逐 provider 验收。本次采用 |
+| 切换 Pi 内核 | 轻量 agent loop、明确的模型和会话扩展点 | 重接 native identity、事件和恢复；不能仅为替换名称迁移。保留为后续适配器候选 |
+| 整体嵌入 DeepSeek Harness | 完整事件、插件和 compaction 体系 | Cordis 和其会话持久化会引入第二套领域真相。吸收机制，不整体替换 |
+| 全部自己重写推理循环 | 完整控制 | 需重做协议、流、上下文、停止和恢复，当前无必要 |
+
+重新评估条件：Codex 协议限制无法满足精确历史、模型兼容持续失效，或引入 Pi 的端到端维护成本已低于适配成本。不得宣传所有 provider 已具备同等能力；同一 Chat 命令契约与每个 provider 的真实推理能力是两回事。
+
+## 消息操作语义
+
+- 分支：服务端从完整持久 timeline 定位所选消息，复制截至该消息的精确前缀到独立会话；保留父会话、消息锚点、原账号、模型和角色。源会话不变。
+- 重新生成：从目标 assistant 对应的 user 输入之前建立独立版本，再提交原输入；原回答可回看。不是把旧回答送回模型后追加“再回答一次”。页面切到新版本并提供父会话入口。
+- 源正在运行时拒绝消息操作；未知锚点、缺失附件、无法无损转译的历史明确失败，不能默默丢上下文。
+- 使用服务端持久内容，不信任浏览器提供的消息/账号/附件路径。命令 ID 保证请求重放不重复创建或执行。
+- Chat 禁用工作区工具；分支历史转换器保留消息角色和图片/文档输入，不把工具执行伪装为普通文本。Work 模式的工具分支需要单独的无损协议契约。
+- 与 DSH 的整回合取整不同：用户要求“截至消息”，AIH 不把同回合中锚点之后的消息带进分支。与 Pi 的原树移动指针不同：用户要求独立会话。
+
+## 上下文和角色
+
+- Chat 默认通用助手，可选会话级角色/指令；保存后下一轮生效并被分支继承。工作区安全策略继续由 harness 控制。
+- 区分累计 token、单轮 token 和当前模型上下文；使用模型目录的真实窗口。压缩后不沿用压缩前 usage。
+- 手动压缩始终可发现；前后端共享实际 compact 命令，展示进行中、成功和失败。
+- 自动压缩复用执行器的模型窗口阈值和压缩能力，AIH 暴露策略及观测；不叠加第二个无界自动重试循环。
+
+## 交付矩阵和执行顺序
+
+| 能力 | 后端 | 页面 | 持久化/验证 | 状态 |
+| --- | --- | --- | --- | --- |
+| Provider 分组与图标 | 账号固定绑定 | 已接通 | `ed504dfd`，真实 Kimi 验收 | 已交付 |
+| 单轮运行时间、首字时间、TPS | 后端测量 | 跟随回答 | reload 与停止验收，`ed504dfd` | 已交付 |
+| 精确消息分支、重新生成 | immutable seed + lineage 事务、幂等命令、独立原生 thread | 消息按钮、返回父会话 | 精确 prefix、附件归属、重启重放和 Kimi 页面通过 | 本批已验 |
+| Chat role | 持久化校验、执行前读取并注入 | 会话设置，下一轮生效 | reload、原生 resume、分支继承和 Kimi 回答通过 | 本批已验 |
+| 上下文量与手动/自动压缩 | 当前用量持久投影；native 单一自动循环 | 紧凑指标、压缩入口、50–90% 阈值 | 自动阈值、失败、reload；Kimi 手动压缩后续聊通过 | 本批已验，覆盖边界见下 |
+| 命令队列、停止与故障恢复 | 已有 actor/queue/recovery | 已接入 | 现有单测；后续持续对照 DSH | 已有，持续审计 |
+| 工具输出、工具配对、审批、并行提交顺序 | Work 模式已有部分 | 已有部分 | 需要逐能力协议审计 | 后续专题 |
+| 扩展点、preset、技能、预算和调度 | 现有 provider registry | 非本批 UI 目标 | 比较 Pi/DSH 接缝，按具体需求接入 | 后续专题 |
+
+本批先完成前三项缺口的后端→前端→native→真实页面闭环，再修正旧矩阵证据。长期专题保留明确边界，不把“全面研究”解释为复制所有插件或添加未要求的 Graph/Diff 产品。
+
+## 验证要求
+
+领域测试检查精确前缀、原会话不变、历史超过首屏、幂等、附件所有权和源忙碌拒绝；native 测试以空 HOME 和本地确定性模型检查实际模型输入、独立 thread、角色及压缩。Web 完整 build、限改动 ESLint、相关测试；真实 Kimi 页面验证操作、刷新、继续聊天和错误反馈。最终记录证据后才更新完成状态。
+
+## 本批验收记录（2026-09-10）
+
+- Node 全量串行：`node --test --test-concurrency=1 test/*.test.js`，6520 tests，6507 pass、13 skip、0 fail。先前并发全量有一项 native API-key route 的 6000ms timeout，串行通过；此后仅补充领域边界测试，未修改运行时代码。
+- 消息领域：`node --test test/chat-runtime-branch.test.js`，9 pass，包括用户消息锚点不带入同回合答案、两账号附件隔离、事务失败无残留、重复命令与重启、role 运行中禁止修改。
+- 原生执行器：`AIH_TEST_CODEX_EXECUTABLE=/Users/model/.codex/packages/standalone/current/bin/codex node --test test/chat-harness.native.test.js`，5 pass；覆盖 Codex OAuth 形态、Codex API Key、Claude、AGY、Kimi 的接线路径。使用空 HOME 和本地确定性模型，**不是五个真实上游的验收**。
+- 自动压缩：Kimi 本地原生测试把用量置为 850000，低于 996147 窗口但高于 80% 阈值；下一轮触发 native 压缩，AIH 没有另发手动 compact RPC。另验证压缩失败可见、状态可恢复。恢复专项 13 pass。
+- Web 相关测试：217 pass、0 fail；限改动 ESLint 通过；Node 22 下 `cd web && npm run build` 全量编译通过。日志分别为 `/tmp/aih-harness-web-final.log`、`/tmp/aih-harness-eslint-final.log`、`/tmp/aih-harness-build-delivery.log`。
+- 真实 Kimi：从候鸟科普验收会话第一条回答分支，只保留该轮；设置“科普编辑”角色后下一轮按角色回答；重新生成产生独立版本；手动压缩、刷新、继续问上文均通过。原用户 Canvas 会话没有被用于本批操作。
+- 页面复核：账号菜单按 Provider 分组并显示图标；每条回答保留用时、首字时间与 TPS；设置/压缩为紧凑图标；没有大块 Alert 和粗左侧状态条。
+- 最新后端重启后复核：`/readyz` 为 ready，账号数与重启前一致；三个验收 snapshot 均 HTTP 200、idle、消息 ID 无重复，角色/lineage/metrics 保留。压缩后续聊的当前占用为 3077/996147，`stale:false`；浏览器刷新后实时连接正常。
+
+真实会话身份（均为本机验收数据）：
+
+| 对象 | sessionId | 已观察结果 |
+| --- | --- | --- |
+| 验收来源 | `session-6b185607-6172-4707-a9cb-7e81bceb2e00` | 原历史完整保留 |
+| 消息分支 | `session-7a54d3c5d068e77a081d41ce8bfd1a7580d9cb1862d1198db409bcec6812aa79` | 不含源后续三轮；角色回答用时 9305ms、首字 5329ms |
+| 重新生成版本 | `session-96c18b7775e2f3a8f84a0325340f6b506a9102398cabb601e5bce17b452193a0` | 独立 thread；新回答用时 6051ms、首字 2668ms；压缩后续聊用时 7372ms、首字 2674ms |
+
+只读复核入口：`GET http://127.0.0.1:9527/v0/webui/chat/sessions/<sessionId>/snapshot`，管理凭据仅内存使用，不写入日志。响应 `{ok:true,snapshot}` 包含 `policy.lineage`、`policy.systemPrompt`、`policy.contextState` 和消息 metrics。验收快照保存在本机 `/tmp/aih-harness-browser-evidence.json`，不提交对话全文和凭据。
+
+边界：当前累计统计按已加载 timeline 汇总并标明 partial；当前上下文来自持久投影。压缩完成到新 usage 到达之间显示“上下文已压缩”，不伪造占用。Codex OAuth 首轮若无已知模型窗口，采用 native 默认阈值；获得窗口后再应用设置。Work/tool 历史不能无损重建时明确拒绝。尚未逐个验证所有 provider 的真实上游。
+
+## 后续吸收专题：先验证差距，再实现
+
+以下使用本页固定 SHA；顺序按风险和依赖排列，不作为本批已完成能力。
+
+| 顺序 / 专题 | 固定源码依据 | AIH 当前落点与差距 | 实施与验收 |
+| --- | --- | --- | --- |
+| 1. 队列与运行中补充输入 | Pi `packages/agent/src/agent-loop.ts:167–198,255–266`：区分 steering 和 follow-up；耗时 prepare/compaction 后补取输入，避免一轮双取 | `automatic-queue-boundary-strategy.js` 已区分工具/回合边界；需验证压缩、停止、断线与入队竞态 | 先建立状态表；按 command ID 证明输入恰好消费一次；覆盖压缩中输入、连续停止/续跑、重启后队列顺序，再决定是否补实现 |
+| 2. 持久化与副作用恢复 | DSH `packages/session/session-persistence/src/handle.ts:46–109`：连续前缀、append 可见性、flush 耐久性分开；Pi loop 的执行与结果收集分开 | `recovery-repository.js` 已对未知执行结果关闭自动重放；本批分支事务只保证会话/seed/附件一起提交，不能等同外部副作用 exactly-once | 在 intent 记录、实际执行、结果落盘三个位置注入进程退出；证明未知副作用不自动重做，页面能区分可重试与需要核对；先审计现有 storage barrier，不另造存储 |
+| 3. 工具配对、压缩切口与分支 | DSH `packages/compaction/compaction/src/tool-pairing.ts`、`packages/compaction/compaction-basic/src/region.ts`、`checkpoint.ts`：不能拆 call/result，保留首条 system 和 checkpoint 来源；Pi `agent-loop.ts:547–555`：并发执行后按原序提交结果 | Chat 禁用工具；Work 已展示工具，但本批 history seed 明确不承担工具重建 | 定义 canonical callId/result 配对契约；覆盖乱序结束、失败、取消、孤立结果和多模态；验证压缩与分支不会丢审批/结果后，才开放 Work 分支 |
+| 4. 扩展点与错误隔离 | DSH `packages/core/agent/src/dispatch.ts:65,120–147`：通知监听器失败隔离，serial 可等待，waterfall 可变换；Pi `agent-loop.ts` 的 `beforeToolCall/afterToolCall/prepareNextTurn` | AIH 有显式 factory、driver registry、命令 handler；尚无统一的上述扩展契约 | 先列出现有真实扩展需求；只加入所需窄接口，验证观察者异常不终止模型回合、策略钩子可明确拒绝、卸载可清理；不为对齐名字引入 Cordis |
+| 5. Provider 能力与第二执行适配器 | Codex `protocol/v2/thread.rs` 的回合级 fork 与 raw items；Pi 可替换模型/loop；DSH 会话持久域独立 | `chat-harness-gateway.js` 固定账号，`capability-command-catalog.js` 暴露能力；统一命令不代表模型等价 | 逐 provider 记录模型窗口、reasoning、图片、停止、压缩、恢复的真实结果；某项协议限制持续存在时再接 Pi adapter，用同一契约套件比较，不同时维护两个 session 真相源 |
+
+完成标准按“固定源码 → AIH 差距 → 最小实现 → 持久化/错误边界 → 原生协议 → 真实页面”逐项闭环。Graph/Diff 与用户剔除的虚拟列表不借本计划重新立项。
+
+## 设计边界与自审
+
+- `session-branch-repository.js` → Repository + transaction → 子会话、seed、lineage 和附件归属原子提交 → 精确前缀、两账号隔离、失败回滚与重启测试。
+- `session-actor.js` / `message-operation.ts` → Command + 幂等键 → 网络应答丢失或重启后复用同一操作身份 → 后端重复命令/恢复与前端丢应答测试。
+- `codex-session-driver.js` / `chat-context-state.js` → Adapter + 持久投影 → 执行器和 AIH 会话域分离，reload 不复活压缩前用量 → 5 条原生路径与真实 Kimi 验收。
+- SOLID：历史转换、事务、投影、执行各自负责单一边界；KISS/YAGNI：不引入第二个 agent loop 或插件框架；DRY：提交/压缩共用 settings，角色与窗口以持久 policy/模型目录为来源。
+- 本批使用 self-review，未启动子 agent；按已有提交推送授权进行范围受控交付，另外两个会话的 Codex streaming 改动排除。

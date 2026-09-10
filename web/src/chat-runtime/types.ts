@@ -156,7 +156,7 @@ export interface SessionSnapshot {
 }
 
 export type ChatRuntimeCommandName =
-  | 'runtime.prewarm' | 'turn.submit' | 'turn.retry' | 'turn.intervene' | 'turn.interrupt'
+  | 'runtime.prewarm' | 'turn.submit' | 'turn.retry' | 'turn.regenerate' | 'session.fork' | 'turn.intervene' | 'turn.interrupt'
   | 'queue.add' | 'queue.edit' | 'queue.remove' | 'queue.move' | 'queue.dispatch'
   | 'interaction.answer' | 'approval.decide' | 'slash.execute' | 'session.policy.set';
 
@@ -164,6 +164,8 @@ interface CommandPayloadByName {
   'runtime.prewarm': Record<string, never>;
   'turn.submit': TurnSubmitPayload;
   'turn.retry': { sourceTurnId: string };
+  'turn.regenerate': { sourceItemId: string };
+  'session.fork': { sourceItemId: string };
   'turn.intervene': { content: string; mode: 'steer_current' | 'after_tool_boundary' | 'after_turn_same_run' | 'replace_current' };
   'turn.interrupt': { reason?: string };
   'queue.add': { content: string; policy: 'after_tool_boundary' | 'after_turn' };

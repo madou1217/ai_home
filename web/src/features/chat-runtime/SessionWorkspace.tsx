@@ -6,7 +6,7 @@ import type {
   SessionRuntimeController,
   SessionState,
 } from '@/chat-runtime';
-import type { Account } from '@/types';
+import type { Account, Session } from '@/types';
 import type { Provider } from '@/types';
 import { useWorkbench } from '@/features/project-workbench/WorkbenchContext';
 import Composer from './Composer';
@@ -41,6 +41,7 @@ interface Props {
   readonly onApprovalModeChange: (mode: ApprovalMode) => void;
   readonly onFreshNativeSessionBound: (nativeSessionId: string) => void;
   readonly onNativeSessionBound?: (nativeSessionId: string) => void;
+  readonly onBranchSession?: (session: Session) => void;
 }
 
 export default function SessionWorkspace(props: Props) {
@@ -93,6 +94,10 @@ export default function SessionWorkspace(props: Props) {
     <main className={styles.workspace}>
       <WorkspaceHeader title={projection.title || props.title} projection={projection}
         chat={props.runtimeTarget.policy.workspaceMode === 'chat'} />
+      {projection.parentSessionId ? <a className={styles.branchParent}
+        href={`/ui/chat?sessionId=${encodeURIComponent(projection.parentSessionId)}&provider=${encodeURIComponent(props.runtimeTarget.provider)}`}>
+        {projection.regenerated ? '重新生成的回答 · 返回原会话' : '分支会话 · 返回原会话'}
+      </a> : null}
       <ConversationTimeline
         controller={props.controller}
         actions={actions}
@@ -101,6 +106,7 @@ export default function SessionWorkspace(props: Props) {
         projectPath={props.runtimeTarget.projectPath}
         workspaceMode={props.runtimeTarget.policy.workspaceMode}
         mobile={props.mobile}
+        onBranchSession={props.onBranchSession}
       />
       <div className={styles.workspaceDock}>
         <fieldset
@@ -189,6 +195,7 @@ function WorkspaceHeader({
 }
 
 function selectWorkspaceProjection(projection: SessionProjection) {
+  const lineage = projection.policy.lineage as { parentSessionId?: string; operation?: string } | undefined;
   return {
     state: projection.state,
     connectionState: projection.connectionState,
@@ -197,6 +204,8 @@ function selectWorkspaceProjection(projection: SessionProjection) {
     version: projection.runtimeBinding?.version,
     approvalMode: canonicalApprovalMode(projection.policy.approvalMode),
     title: typeof projection.policy.title === 'string' ? projection.policy.title : undefined,
+    parentSessionId: lineage?.parentSessionId,
+    regenerated: lineage?.operation === 'turn.regenerate',
   };
 }
 

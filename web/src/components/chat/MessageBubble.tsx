@@ -878,6 +878,7 @@ const MessageBubble = ({ message, provider, session, mobile = false, isFollowup 
             source={message.source}
             copyText={messageText || message.content}
             actionsVisible={metaVisible}
+            onFork={onFork}
           />
         </div>
         {hasStructuredUserBlocks ? (

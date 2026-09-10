@@ -1,7 +1,7 @@
 import { Spin } from 'antd';
 import Button from '@/components/ui/AppButton';
 import type { ChatRuntimeSession } from '@/chat-runtime';
-import type { Account } from '@/types';
+import type { Account, Session } from '@/types';
 import SessionWorkspace from './SessionWorkspace';
 import type {
   ApprovalMode,
@@ -26,6 +26,7 @@ interface Props {
   readonly onNativeSessionBound?: (nativeSessionId: string) => void;
   readonly onFreshNativeSessionBound: (nativeSessionId: string) => void;
   readonly onSessionResolved?: (session: ChatRuntimeSession) => void;
+  readonly onBranchSession?: (session: Session) => void;
 }
 
 export default function SessionRuntimeSurface(props: Props) {
@@ -53,6 +54,7 @@ export default function SessionRuntimeSurface(props: Props) {
         onApprovalModeChange={props.onApprovalModeChange}
         onNativeSessionBound={props.onNativeSessionBound}
         onFreshNativeSessionBound={props.onFreshNativeSessionBound}
+        onBranchSession={props.onBranchSession}
       />
     );
   }

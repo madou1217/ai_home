@@ -19,9 +19,20 @@ export default function SessionMetrics({ store, onCompact }: {
       || item.kind === 'notice' && ['contextCompaction', 'context_compacted'].includes(item.detail.code || ''));
   const lastMetrics = latestContext?.kind === 'notice' ? undefined : latestContext?.detail;
   const metrics = { ...(lastMetrics && 'metrics' in lastMetrics ? lastMetrics.metrics : {}), ...projection.activeTurn?.metrics };
-  const contextMeter = metrics.contextWindow && metrics.contextTokens !== undefined ? <ContextMeter
-      messages={[]} maxTokens={metrics.contextWindow} usedTokens={metrics.contextTokens}
-      onCompactSuggest={projection.state === 'idle' ? onCompact : undefined} /> : null;
+  const context = projection.policy.contextState as { usedTokens?: number; contextWindow?: number; stale?: boolean;
+    compaction?: { status: string } } | undefined;
+  const window = context?.contextWindow || metrics.contextWindow;
+  const used = context ? context.usedTokens : metrics.contextTokens;
+  const status = context?.compaction?.status;
+  const contextMeter = <>
+    {status === 'running' ? <span role="status">正在压缩…</span>
+      : status === 'failed' ? <span role="status">压缩失败，可重试</span>
+        : status === 'cancelled' ? <span role="status">压缩已停止</span>
+          : context?.stale ? <span title="下一轮收到用量后更新占用">上下文已压缩</span> : null}
+    {!context?.stale && window && used !== undefined ? <ContextMeter
+      messages={[]} maxTokens={window} usedTokens={used}
+      onCompactSuggest={projection.state === 'idle' ? onCompact : undefined} /> : null}
+  </>;
   return <StatsLine messages={messages} showConnection={false} partial={projection.timelineHasMore}
     embedded trailing={contextMeter} />;
 }

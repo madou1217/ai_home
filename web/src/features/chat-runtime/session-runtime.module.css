@@ -425,3 +425,9 @@
   .queueRow { grid-template-columns: auto minmax(0, 1fr); }
   .queueActions { grid-column: 2; flex-wrap: wrap; }
 }
+.chatSessionMetrics { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.chatSessionMetrics > :first-child { flex: 1; min-width: 0; }
+.chatSessionActions { display: inline-flex; gap: 2px; margin-left: auto; }
+.chatSettingsFields { display: flex; flex-direction: column; gap: 10px; }
+.chatSettingsHint { color: var(--color-text-secondary, #888); font-size: 12px; }
+.branchParent { font-size: 12px; margin: 0 20px 8px; color: var(--color-text-secondary, #888); }

@@ -53,6 +53,7 @@ export default function CanonicalChatRuntime(props: Props) {
       onNativeSessionBound={adoption.onNativeSessionBound}
       onFreshNativeSessionBound={adoption.onFreshNativeSessionBound}
       onSessionResolved={adoption.onSessionResolved}
+      onBranchSession={props.onSessionChange}
     />
   );
 }

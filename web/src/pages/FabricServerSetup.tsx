@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Form, Input, Modal, Space, Tag, Typography, message } from 'antd';
+import PageHeaderActions from '@/components/ui/PageHeaderActions';
 import { StatisticCard } from '@ant-design/pro-components';
 import {
   CheckCircleOutlined,
@@ -327,19 +328,24 @@ export default function FabricServerSetup() {
           : '授权或切换 Server'}
       subTitle="使用 Server 网关地址和 Management Key 连接 AIH Server"
       extra={
-        <Space size={8} wrap>
-          <Button icon={<PlusOutlined />} onClick={openAddServer}>
-            添加 Server
-          </Button>
-          <Button
-            type="primary"
-            icon={<LoginOutlined />}
-            disabled={!activeProfile || !isControlPlaneProfileReady(activeProfile)}
-            onClick={() => navigate('/')}
-          >
-            进入工作台
-          </Button>
-        </Space>
+        <PageHeaderActions
+          actions={[
+            {
+              key: 'add-server',
+              label: '添加 Server',
+              icon: <PlusOutlined />,
+              onClick: openAddServer,
+            },
+            {
+              key: 'enter',
+              label: '进入工作台',
+              icon: <LoginOutlined />,
+              primary: true,
+              disabled: !activeProfile || !isControlPlaneProfileReady(activeProfile),
+              onClick: () => navigate('/'),
+            },
+          ]}
+        />
       }
     >
       <StatisticCard.Group direction="row" style={{ marginBottom: 16 }}>

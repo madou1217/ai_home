@@ -529,11 +529,27 @@ dist 被清掉后服务端直接返回一行文本,既无 console 报错、也�
 - **开发工具页 Tab 条右侧的"空格"**:是 `Toolkit.css:30` 刻意的 24px 网格线渐变,
   与本页 CONTROL SURFACE / APPLICATION INVENTORY 蓝图字体、01/02/03 编号是同一套视觉语言,未改动。
 
+### 15.3.1 第二轮看图又捞到两处(2026-09-10)
+
+- **`/server-setup` 头部同病**:首轮漏掉,标题 `选择或…`、副标题 `使用 Serv…`。已套用 `PageHeaderActions`(`f6fe5c7d`)。
+- **Models 页头部按钮无样式且被裁**(`03936c5b`):两个成因——
+  ① 手机端分支复用了带文案的「添加模型」按钮,与相邻图标按钮并排后把刷新按钮挤出 390px 视口;
+  ② `.m-icon-btn` / `.m-header-actions` 原本住在 `mobile-cards.css`,而那是**各页按需 import** 的样式表,
+  Models 从未引入,类名解析为空 → 渲染成浏览器默认方框。**此坑先于本轮存在**,且父容器裁剪使横向溢出门禁看不见。
+  修法:两个原语独立成 `components/mobile/mobile-icon-button.css`,共享组件 `PageHeaderActions` 直接引入以自足;
+  `mobile-cards.css` 以 `@import` 保留既有引入方行为;`Accounts` / `AccountsGoPreview` 改为显式引入,
+  不再依赖"页面上恰好有别的组件把卡片样式带进来"这种偶然耦合。
+  `MobileBackButton` 按其文档保持不自带样式(外壳类由调用方传入)。
+
 ### 15.4 结论与限制
 
-- 加固后的门禁:16 路由 × 双端 = **32 次检查 0 项有问题**;已逐页看图的页面:
-  chat、accounts、models、settings、dashboard、usage、toolkit、install-guide、studio、
-  fabric/servers、fabric/ssh-hosts、server-setup。
+- 加固后的门禁:16 路由 × 双端 = **32 次检查 0 项有问题**。
+  **覆盖面更正**:这 16 条里有 4 条是重定向到 `/fabric/servers`(`control-planes` / `remote-nodes` / `nodes` /
+  `webrtc-diagnostics`),故 32 次检查实际只覆盖 **12 个不同页面**,不是 16 个。
+  另有参数化路由 `/accounts/:provider/:accountRef/models`(账号维度的 Models 渲染)**未纳入本轮**。
+  已逐页看图的页面:12 个不同页面全覆盖
+  (chat、accounts、models、settings、dashboard、usage、toolkit、install-guide、studio、
+  fabric/servers、fabric/ssh-hosts、server-setup)。
 - **限制一**:中途一轮曾报 7 项有问题,但明细被命令里的 `tail` 截断丢失,无法归因;
   在稳定 dist 上重跑为 0。该 7 项未查明,不能当作已排除。
 - **限制二**:验证期间有**并发会话**在同一仓库大量修改 `lib/server/chat-runtime/` 与 `web/src/features/chat-runtime/`

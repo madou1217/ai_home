@@ -61,10 +61,14 @@ const mgmtKey = (cfg.match(/management_key:\s*([^\s]+)/i) || [])[1] || "";
         });
         // 只查「操作按钮」。开关(ant-switch,胶囊 100px)与底部 TabBar 格子(通栏平铺、无圆角)
         // 都是 <button>，但规范的按钮条款不适用于它们——先前把它们报成圆角异常是口径错误。
+        // 2026-09-11 再补两类(/chat mobile 选中会话后才出现,此前一直无法复现的「幽灵 0px」正是它们):
+        //   mobileBack——移动端导航返回钮,background/border 全无,圆角不可见;
+        //   EventBlock 行头(closest('[data-tone]'))——通栏透明可点行,同样无可见边界。
         const btns = Array.from(document.querySelectorAll('button')).filter(vis).filter((b) => {
           const c = (b.className || '').toString();
-          return !/ant-switch|mobile-tabbar-item|ant-tabs-tab|ant-segmented-item|ant-typography-(expand|copy)|ant-input-clear-icon|sessionSelect|sessionWindowButton|ant-tabs-nav-more/.test(c)
-            && b.getAttribute('role') !== 'switch';
+          return !/ant-switch|mobile-tabbar-item|ant-tabs-tab|ant-segmented-item|ant-typography-(expand|copy)|ant-input-clear-icon|sessionSelect|sessionWindowButton|ant-tabs-nav-more|mobileBack/.test(c)
+            && b.getAttribute('role') !== 'switch'
+            && !b.closest('[data-tone]');
         }).map((b) => {
           const cs = getComputedStyle(b);
           return { h: Math.round(b.getBoundingClientRect().height), r: cs.borderRadius.split(' ')[0] };

@@ -1,8 +1,11 @@
 {
   "maxFiles": 8,
   "maxImageBytes": 10485760,
-  "maxDocumentBytes": 1048576,
-  "maxTotalBytes": 20971520,
+  "maxDocumentBytes": 16777216,
+  "maxVideoBytes": 104857600,
+  "maxTotalBytes": 134217728,
   "imageTypes": ["image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif"],
+  "videoTypes": ["video/mp4", "video/x-m4v", "video/quicktime", "video/webm"],
+  "videoExtensionTypes": { "mp4": "video/mp4", "m4v": "video/x-m4v", "mov": "video/quicktime", "webm": "video/webm" },
   "textExtensions": ["md", "markdown", "mdx", "txt", "text", "log", "csv", "tsv", "json", "jsonl", "yaml", "yml", "toml", "xml", "html", "htm", "css", "scss", "less", "js", "jsx", "ts", "tsx", "mjs", "cjs", "py", "rb", "go", "rs", "java", "kt", "swift", "c", "h", "cpp", "hpp", "cs", "php", "sh", "bash", "zsh", "ps1", "sql", "r", "vue", "svelte", "ini", "cfg", "conf", "properties", "tex", "rst", "diff", "patch"]
 }

@@ -187,3 +187,44 @@ test('models.dev provider inference maps kimi to coding and moonshotai catalogs'
   assert.deepEqual(inferModelsDevProviderIds('', 'k3-256k'), ['kimi-for-coding']);
   assert.deepEqual(inferModelsDevProviderIds('', 'gpt-5'), []);
 });
+
+test('models.dev metadata resolves capability-suffix variants to their base model', () => {
+  const fixture = writeCatalogFixture({
+    models: {
+      'anthropic/claude-opus-4-6': {
+        id: 'anthropic/claude-opus-4-6',
+        name: 'Claude Opus 4.6',
+        modalities: { input: ['text', 'image', 'pdf'], output: ['text'] }
+      },
+      'moonshotai/kimi-k2-thinking': {
+        id: 'moonshotai/kimi-k2-thinking',
+        name: 'Kimi K2 Thinking',
+        modalities: { input: ['text'], output: ['text'] }
+      },
+      'moonshotai/kimi-k2': {
+        id: 'moonshotai/kimi-k2',
+        name: 'Kimi K2',
+        modalities: { input: ['text', 'image'], output: ['text'] }
+      }
+    },
+    providers: {
+      anthropic: { id: 'anthropic', models: {} }
+    }
+  });
+
+  try {
+    const metadata = buildModelMetadataMap([
+      { id: 'claude-opus-4-6-thinking', provider: 'agy' },
+      { id: 'kimi-k2-thinking', provider: 'kimi' }
+    ], { fs, modelsDevCatalogPath: fixture.filePath });
+
+    // 后缀变体裁到基座模型并继承其模态（图片附件/视频帧因此可用）
+    assert.equal(metadata['claude-opus-4-6-thinking'].baseModel, 'anthropic/claude-opus-4-6');
+    assert.deepEqual(metadata['claude-opus-4-6-thinking'].modalities.input, ['text', 'image', 'pdf']);
+    // 目录里真实存在的 -thinking 本体必须优先于裁后缀结果
+    assert.equal(metadata['kimi-k2-thinking'].baseModel, 'moonshotai/kimi-k2-thinking');
+    assert.deepEqual(metadata['kimi-k2-thinking'].modalities.input, ['text']);
+  } finally {
+    fs.rmSync(fixture.root, { recursive: true, force: true });
+  }
+});

@@ -828,7 +828,7 @@ const MessageArea = ({
             <div className={styles.welcomeState}>
               <div className={styles.welcomeTitle}>你今天想聊些什么？</div>
               <div className={styles.welcomeHint}>
-                可以附加图片、Markdown、文本和代码文件，也可以使用系统输入法语音输入。
+                可以附加图片、视频、Markdown、文本和代码文件，也可以使用系统输入法语音输入。
               </div>
             </div>
           ) : (

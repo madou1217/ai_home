@@ -34,7 +34,7 @@ test('pure chat forwards document content once as text alongside real images', (
   assert.deepEqual(messages, [{ role: 'user', content: '请读附件' }]);
 });
 
-test('runtime uploads store Markdown as a document with canonical metadata', (t) => {
+test('runtime uploads store Markdown as a document with canonical metadata', async (t) => {
   const hostHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-runtime-documents-'));
   t.after(() => fs.rmSync(hostHomeDir, { recursive: true, force: true }));
   const service = new ChatRuntimeAttachmentService({
@@ -44,7 +44,7 @@ test('runtime uploads store Markdown as a document with canonical metadata', (t)
       createAttachments: (_sessionId, attachments) => attachments
     }
   });
-  const [attachment] = service.upload('s1', { attachments: [{
+  const [attachment] = await service.upload('s1', { attachments: [{
     name: 'empty.md', mimeType: 'text/markdown', dataUrl: 'data:text/markdown;base64,'
   }] });
   assert.equal(attachment.mimeType, 'text/markdown');
@@ -52,8 +52,15 @@ test('runtime uploads store Markdown as a document with canonical metadata', (t)
 });
 
 test('document validation rejects oversized, binary and malformed uploads before persistence', () => {
-  assert.throws(() => normalizeChatDocuments([{ name: 'x.md', text: 'x'.repeat(1048577) }]), /1 MB/);
+  assert.throws(() => normalizeChatDocuments([{ name: 'x.md', text: 'x'.repeat(16777217) }]), /16 MB/);
   assert.throws(() => normalizeChatDocuments([{ name: 'x.md', text: 'abc\0def' }]), /二进制/);
   assert.throws(() => normalizeChatDocuments([{ name: 'x.zip', mimeType: 'application/zip', text: 'zip' }]), /文本/);
   assert.throws(() => documentFromUpload({ name: 'x.md', mimeType: 'text/plain', dataUrl: 'data:text/plain;base64,/w==' }), /UTF-8/);
+});
+
+test('documents above the old 1 MB ceiling are accepted without losing content', () => {
+  const text = `a${'中'.repeat(400000)}`; // ~1.2 MB of UTF-8 text
+  const [document] = normalizeChatDocuments([{ name: 'big.html', mimeType: 'text/html', text }]);
+  assert.equal(document.text, text);
+  assert.equal(document.mimeType, 'text/plain');
 });

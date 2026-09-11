@@ -8,6 +8,7 @@ const test = require('node:test');
 const { createChatRuntimeService } = require('../lib/server/chat-runtime-service');
 const { contextPatch } = require('../lib/server/chat-runtime/chat-context-state');
 const { chatThreadParams } = require('../lib/server/chat-runtime/chat-harness-policy');
+const { videoFramesDir } = require('../lib/server/chat-video-attachments');
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-history-prefix-'));
@@ -150,6 +151,45 @@ test('attachment inputs are copied with child ownership and branch-of-branch ret
   const second = (await f.service.dispatchCommand(first.sessionId, { commandId: 'doc-fork-again', type: 'session.fork',
     payload: { sourceItemId: f.service.getSnapshot(first.sessionId).timeline.at(-1).id } })).result.session;
   assert.match(JSON.stringify(f.service.store.readHistorySeed(second.sessionId).responseItems), /document-marker/);
+});
+
+test('video key frames survive branch history rebuilding and remain session-owned', async (t) => {
+  const f = fixture(t);
+  const parent = await source(f, 1);
+  const video = path.join(f.root, 'clip.mp4');
+  const framesDir = videoFramesDir(video);
+  const frame = path.join(framesDir, 'frame-01.jpg');
+  fs.writeFileSync(video, 'video-marker');
+  fs.mkdirSync(framesDir, { recursive: true });
+  fs.writeFileSync(frame, 'frame-marker');
+  fs.writeFileSync(path.join(framesDir, 'metadata.json'), JSON.stringify({
+    durationSeconds: 4,
+    ready: true,
+    frames: ['frame-01.jpg']
+  }));
+  const [attachment] = f.service.store.createAttachments(parent.sessionId, [{
+    filePath: video,
+    name: 'clip.mp4',
+    mimeType: 'video/mp4'
+  }]);
+  f.service.store.context.db.prepare('UPDATE chat_runtime_commands SET payload_json = ? WHERE command_id = ?')
+    .run(JSON.stringify({ content: 'analyze video', attachmentIds: [attachment.attachmentId] }), 'input-0');
+
+  const child = (await f.service.dispatchCommand(parent.sessionId, {
+    commandId: 'video-fork',
+    type: 'session.fork',
+    payload: { sourceItemId: 'assistant-0' }
+  })).result.session;
+  const seed = f.service.store.readHistorySeed(child.sessionId);
+  const userMessage = seed.responseItems.find((item) => item.role === 'user');
+  assert.match(userMessage.content[0].text, /Attached video files:/);
+  assert.match(userMessage.content[0].text, /clip\.mp4 \(4s\)/);
+  assert.equal(userMessage.content[1].type, 'input_image');
+  assert.equal(userMessage.content[1].image_url,
+    `data:image/jpeg;base64,${Buffer.from('frame-marker').toString('base64')}`);
+  const ownedIds = Object.values(seed.messageSubmissions)[0].attachmentIds;
+  assert.notEqual(ownedIds[0], attachment.attachmentId);
+  assert.deepEqual(f.service.store.resolveAttachmentPaths(child.sessionId, ownedIds), [video]);
 });
 
 test('system prompt is durable and inherited; invalid thresholds and mid-turn updates fail', async (t) => {

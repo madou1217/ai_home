@@ -37,7 +37,9 @@ export const ComposerAttachmentGallery = memo(function ComposerAttachmentGallery
       {images.map((img, idx) => (
         <div key={idx} className={styles.attachmentGalleryCard}>
           <div className={styles.attachmentThumbWrap}>
-            {img.startsWith('data:image/') || img.startsWith('http') ? (
+            {img.startsWith('data:video/') ? (
+              <video src={img} muted preload="metadata" aria-label="视频附件" className={styles.attachmentThumbImg} />
+            ) : img.startsWith('data:image/') || img.startsWith('http') ? (
               <img src={img} alt="附件预览" className={styles.attachmentThumbImg} />
             ) : (
               <FileTextOutlined className={styles.attachmentDocIcon} />

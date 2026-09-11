@@ -5,6 +5,7 @@ import type { ChatRuntimeAttachmentUpload } from '@/chat-runtime';
 import { CHAT_ATTACHMENT_LIMITS, readChatAttachment } from '@/components/chat/attachment-files';
 
 export const MAX_COMPOSER_ATTACHMENTS = CHAT_ATTACHMENT_LIMITS.maxFiles;
+export const COMPOSER_ATTACHMENT_LIMIT_MESSAGE = `每次最多附加 ${CHAT_ATTACHMENT_LIMITS.maxFiles} 个文件，总大小不超过 ${Math.round(CHAT_ATTACHMENT_LIMITS.maxTotalBytes / 1048576)} MB`;
 
 export interface PendingComposerAttachment extends ChatRuntimeAttachmentUpload {
   readonly key: string;
@@ -39,7 +40,7 @@ export function useComposerAttachments(): ComposerAttachmentsController {
         }
         if (next.length >= MAX_COMPOSER_ATTACHMENTS
             || bytes + result.value.size > CHAT_ATTACHMENT_LIMITS.maxTotalBytes) {
-          toast.warning('每次最多附加 8 个文件，总大小不超过 20 MB');
+          toast.warning(COMPOSER_ATTACHMENT_LIMIT_MESSAGE);
           break;
         }
         bytes += result.value.size;

@@ -60,7 +60,7 @@ test('Kimi native metadata preserves its context, reasoning and supported input 
   assert.equal(model.shell_type, 'disabled');
   const { clientOptions } = require('../lib/server/chat-runtime/codex-session-driver-support');
   assert.equal(clientOptions(options, { executionAccountRef: 'acct_kimi' }, { fingerprint: 'native-v1' })
-    .runtimeFingerprint, 'native-v1:chat-model-metadata-stream-v3');
+    .runtimeFingerprint, 'native-v1:chat-model-metadata-stream-v4');
 });
 
 test('empty account catalogs fail explicitly instead of using another account or provider model', async () => {

@@ -334,6 +334,14 @@
   object-fit: cover;
 }
 
+.composerAttachment video {
+  width: 100%;
+  height: 100%;
+  border-radius: var(--hos-radius-sm, 10px); /* 归级:与 img 缩略图一致 */
+  object-fit: cover;
+  background: #000;
+}
+
 .composerAttachment button {
   position: absolute;
   top: -6px;

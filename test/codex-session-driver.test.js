@@ -805,7 +805,10 @@ function createFixture(overrides = {}) {
     sessionId: 'session-1', provider: 'codex', executionAccountRef: 'account-1',
     projectPath: '/repo',
     runtimeBinding: overrides.nativeSessionId ? { nativeSessionId: overrides.nativeSessionId } : {},
-    policy: { approvalMode: overrides.approvalMode || 'confirm' }
+    policy: {
+      approvalMode: overrides.approvalMode || 'confirm',
+      ...(overrides.workspaceMode ? { workspaceMode: overrides.workspaceMode } : {})
+    }
   };
   const runtime = {
     provider: 'codex', runtimeScope: 'codex:account-1', generation: 1,
@@ -963,3 +966,66 @@ function deferred() {
   });
   return { promise, reject, resolve };
 }
+
+test('chat mode oversized documents inject into history instead of tripping the turn input cap', async (t) => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-oversize-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const docPath = path.join(dir, 'big.html');
+  fs.writeFileSync(docPath, '内容'.repeat(600000)); // 120 万字符，超过 turn/start 的 1,048,576 上限
+
+  const fixture = createFixture({ workspaceMode: 'chat' });
+  const turn = fixture.entry.driver.startTurn({
+    ...turnContext({ content: '总结附件' }),
+    imagePaths: [docPath]
+  });
+  await nextTask();
+
+  const injected = fixture.client.params('thread/inject_items');
+  assert.ok(injected, 'expected thread/inject_items before turn/start');
+  const joined = injected.items.map((item) => item.content[0].text).join('');
+  assert.ok(joined.includes('big.html'));
+  assert.ok(joined.includes('内容'.repeat(100)), '文档全文必须完整注入（分段不丢字节）');
+  assert.ok(injected.items.length >= 2, '超过分段阈值时应拆成多条注入');
+
+  const startParams = fixture.client.params('turn/start');
+  assert.equal(startParams.input.length, 1);
+  assert.ok(startParams.input[0].text.length < 10000, 'turn 输入应只含指路语');
+  assert.match(startParams.input[0].text, /总结附件/);
+  assert.match(startParams.input[0].text, /注入上方对话历史/);
+
+  fixture.client.notify('turn/completed', {
+    threadId: NATIVE_THREAD_ID,
+    turn: { id: 'native-turn-1', status: 'completed' }
+  });
+  await turn;
+});
+
+test('chat mode documents within the transport budget stay inline without injection', async (t) => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-inline-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const docPath = path.join(dir, 'notes.md');
+  fs.writeFileSync(docPath, '# 小文档\n正文');
+
+  const fixture = createFixture({ workspaceMode: 'chat' });
+  const turn = fixture.entry.driver.startTurn({
+    ...turnContext({ content: '看看' }),
+    imagePaths: [docPath]
+  });
+  await nextTask();
+
+  assert.equal(fixture.client.params('thread/inject_items'), undefined);
+  const startParams = fixture.client.params('turn/start');
+  assert.match(startParams.input[0].text, /# 小文档\n正文/);
+
+  fixture.client.notify('turn/completed', {
+    threadId: NATIVE_THREAD_ID,
+    turn: { id: 'native-turn-1', status: 'completed' }
+  });
+  await turn;
+});

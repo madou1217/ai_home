@@ -123,6 +123,30 @@ test('codex streams split UTF-8, CRLF, reasoning and tool arguments without dupl
   assert.equal(chunks.at(-1).usage.total_tokens, 5);
 });
 
+test('codex forwards headerless reasoning before the upstream response completes', async (t) => {
+  let finish;
+  let ended = false;
+  const upstream = await listen(t, (_req, res) => {
+    res.writeHead(200);
+    res.write(frame({ type: 'response.created', response: { id: 'resp_headerless' } }));
+    res.write(frame({ type: 'response.reasoning_summary_text.delta', delta: '先分析动画结构' }));
+    finish = () => { ended = true; res.end(completed()); };
+  });
+  const app = await gateway(t, upstream);
+  try {
+    const response = await fetch(app.url, { signal: AbortSignal.timeout(1500) });
+    const reader = response.body.getReader();
+    await readUntil(reader, '先分析动画结构');
+    assert.equal(app.requests[0].headers['accept-encoding'], 'identity');
+    assert.equal(ended, false, 'reasoning must arrive while upstream is still open');
+    finish();
+    await readUntil(reader, '[DONE]');
+    assert.equal(app.state.metrics.totalSuccess, 1);
+  } finally {
+    if (finish && !ended) finish();
+  }
+});
+
 test('codex retries a capacity error before any response has been exposed', async (t) => {
   let calls = 0;
   const upstream = await listen(t, (_req, res) => {

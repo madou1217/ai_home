@@ -232,6 +232,11 @@ test('protocol fallback bridge resolves gateway runners by fallback protocol', (
   assert.equal(__private.resolveFallbackRequestProtocol('anthropic_messages', 'agy'), 'gemini_generate_content');
   assert.deepEqual(__private.resolveProviderFallbackRequestProtocol('anthropic_messages', 'codex'), 'openai_responses');
   assert.deepEqual(__private.resolveProviderFallbackRequestProtocol('anthropic_messages', 'gemini'), 'gemini_generate_content');
+  // grok 的 Build(CLI/OAuth) 与 API Key 边界都走 api.x.ai/v1 REST(OpenAI 兼容)。
+  // 缺这条映射时它会落到通用回落表的首位 anthropic_messages,而 grok 在该协议下
+  // 没有任何 provider 路由,桥接直接 500——B32 就是这么来的。
+  assert.deepEqual(__private.resolveProviderFallbackRequestProtocol('anthropic_messages', 'grok'), 'openai_chat');
+  assert.deepEqual(__private.resolveProviderFallbackRequestProtocol('openai_responses', 'grok'), 'openai_chat');
   assert.deepEqual(__private.resolveProviderFallbackRequestProtocol('anthropic_messages', 'unknown'), '');
 });
 

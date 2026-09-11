@@ -37,18 +37,18 @@ export const StatsLine = memo(function StatsLine({ messages, className = '', sho
 
   const parts: string[] = [];
   if (partial) parts.push('已加载记录');
-  parts.push(`${stats.turns} 轮对话`);
+  parts.push(embedded ? `${stats.turns}轮` : `${stats.turns} 轮对话`);
   if (stats.totalDurationMs > 0) {
-    parts.push(`总用时 ${formatDurationLabel(stats.totalDurationMs)}`);
+    parts.push(`${embedded ? '总计' : '总用时 '}${formatDurationLabel(stats.totalDurationMs)}`);
   }
   if (stats.avgTtft > 0) {
-    parts.push(`平均首字 ${formatTtftLabel(stats.avgTtft)}`);
+    parts.push(`${embedded ? '首字 ' : '平均首字 '}${formatTtftLabel(stats.avgTtft)}`);
   }
   if (stats.avgTps > 0) {
-    parts.push(`平均 ${formatTokensPerSecLabel(stats.avgTps)}`);
+    parts.push(`${embedded ? '' : '平均 '}${formatTokensPerSecLabel(stats.avgTps)}`);
   }
   if (stats.totalOutputTokens > 0) {
-    parts.push(`输出 ${formatTokensCompact(stats.totalOutputTokens)} tok`);
+    parts.push(`${embedded ? '' : '输出 '}${formatTokensCompact(stats.totalOutputTokens)} tok`);
   }
 
   const connectionStatus = realLatency !== null ? 'connected' : 'reconnecting';
@@ -56,7 +56,7 @@ export const StatsLine = memo(function StatsLine({ messages, className = '', sho
   return (
     <div className={`${embedded ? styles.statsLineEmbedded : styles.statsLineContainer} ${className}`} title={parts.join(' · ')}>
       {stats.hasData ? <div className={styles.statsLineSummary}>
-        <span className={styles.statsLineIcon}>⚡</span>
+        {!embedded ? <span className={styles.statsLineIcon}>⚡</span> : null}
         <span className={styles.statsLineText}>
           {parts.map((p, idx) => (
             <span key={p} className={styles.statsLinePart}>

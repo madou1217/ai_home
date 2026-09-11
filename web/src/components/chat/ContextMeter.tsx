@@ -10,6 +10,10 @@ interface Props {
   maxTokens?: number; // 默认 128k / 200k
   usedTokens?: number;
   onCompactSuggest?: () => void;
+  showLabel?: boolean;
+  unknown?: boolean;
+  stale?: boolean;
+  compacting?: boolean;
 }
 
 const RADIUS = 6;
@@ -20,13 +24,17 @@ export const ContextMeter = memo(function ContextMeter({
   maxTokens = DEFAULT_CONTEXT_MAX_TOKENS,
   usedTokens,
   onCompactSuggest,
+  showLabel = false,
+  unknown = false,
+  stale = false,
+  compacting = false,
 }: Props) {
   const [open, setOpen] = useState(false);
 
   const stats = useMemo(() => computeContextStats(messages, maxTokens, usedTokens), [maxTokens, messages, usedTokens]);
   const approximate = usedTokens === undefined ? '~' : '';
 
-  if (stats.usedTokens <= 0) return null;
+  if (stats.usedTokens <= 0 && !unknown && !stale && !compacting && !onCompactSuggest) return null;
 
   const strokeColor = stats.isCritical
     ? '#ef4444'
@@ -40,9 +48,9 @@ export const ContextMeter = memo(function ContextMeter({
         <span className={styles.contextMeterTitle}>
           <DashboardOutlined /> 上下文占用
         </span>
-        <span className={styles.contextMeterPercent}>{stats.percent}%</span>
+        <span className={styles.contextMeterPercent}>{compacting ? '…' : stale || unknown ? '—' : `${stats.percent}%`}</span>
       </div>
-      <div className={styles.contextMeterBarBg}>
+      {!unknown && !stale ? <div className={styles.contextMeterBarBg}>
         <div
           className={styles.contextMeterBarFill}
           style={{
@@ -50,26 +58,26 @@ export const ContextMeter = memo(function ContextMeter({
             background: strokeColor,
           }}
         />
-      </div>
-      <div className={styles.contextMeterNumbers}>
+      </div> : null}
+      {compacting ? <div className={styles.contextMeterNumbers}>正在压缩当前上下文…</div>
+        : stale ? <div className={styles.contextMeterNumbers}>上下文已压缩，下一轮收到用量后更新占用</div>
+        : unknown ? <div className={styles.contextMeterNumbers}>运行时尚未返回上下文用量</div> : <div className={styles.contextMeterNumbers}>
         <span>已用 {approximate}{stats.usedTokens > 1000 ? `${(stats.usedTokens / 1000).toFixed(1)}k` : stats.usedTokens} tok</span>
         <span>总量 {stats.contextWindow > 1000 ? `${Math.round(stats.contextWindow / 1000)}k` : stats.contextWindow} tok</span>
-      </div>
-      {stats.isWarning ? (
-        <div className={styles.contextMeterWarning}>
-          <span>⚠️ 占用已达 {stats.percent}% 高水位</span>
-          {onCompactSuggest ? (
-            <button
-              type="button"
-              className={styles.contextCompactBtn}
-              onClick={() => {
-                setOpen(false);
-                onCompactSuggest();
-              }}
-            >
-              <CompressOutlined /> 立即压缩 /compact
-            </button>
-          ) : null}
+      </div>}
+      {onCompactSuggest ? (
+        <div className={styles.contextMeterWarning} data-warning={stats.isWarning || undefined}>
+          {stats.isWarning ? <span>占用已达 {stats.percent}% 高水位</span> : null}
+          <button
+            type="button"
+            className={styles.contextCompactBtn}
+            onClick={() => {
+              setOpen(false);
+              onCompactSuggest();
+            }}
+          >
+            <CompressOutlined /> 压缩当前上下文
+          </button>
         </div>
       ) : null}
     </div>
@@ -84,13 +92,20 @@ export const ContextMeter = memo(function ContextMeter({
       placement="topRight"
       overlayClassName={styles.contextMeterOverlay}
     >
-      <Tooltip title={`上下文占用 ${approximate}${stats.percent}%`} placement="top" mouseEnterDelay={0.3}>
+      <Tooltip open={open ? false : undefined}
+        title={compacting ? '正在压缩上下文' : stale ? '上下文已压缩，用量待更新'
+        : unknown ? '上下文用量待统计' : `上下文占用 ${approximate}${stats.percent}%`}
+        placement="top" mouseEnterDelay={0.3}>
         <button
           type="button"
           className={styles.contextMeterTrigger}
-          aria-label={`上下文占用 ${stats.percent}%`}
+          aria-label={compacting ? '正在压缩上下文' : stale ? '上下文已压缩，用量待更新'
+            : unknown ? '上下文用量待统计' : `上下文占用 ${stats.percent}%`}
+          data-labeled={showLabel || undefined}
         >
-          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+          {compacting || stale || unknown ? (
+            <CompressOutlined aria-hidden="true" />
+          ) : <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
             <circle
               cx="8"
               cy="8"
@@ -110,7 +125,9 @@ export const ContextMeter = memo(function ContextMeter({
               strokeLinecap="round"
               transform="rotate(-90 8 8)"
             />
-          </svg>
+          </svg>}
+          {showLabel ? <span>{compacting ? '正在压缩' : stale ? '上下文已压缩'
+            : unknown ? '上下文待统计' : `上下文 ${approximate}${stats.percent}%`}</span> : null}
         </button>
       </Tooltip>
     </Popover>

@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Input, Modal, Select, Tooltip, message } from 'antd';
-import { CompressOutlined, SettingOutlined } from '@ant-design/icons';
-import Button from '@/components/ui/AppButton';
+import { SettingOutlined } from '@ant-design/icons';
 import { useSessionSelector, type SessionProjectionStore } from '@/chat-runtime';
 import type { SessionRuntimeActions } from './session-runtime-actions';
 import styles from './session-runtime.module.css';
@@ -30,21 +29,14 @@ export default function ChatSessionSettings({ store, actions }: {
     } catch (error) { message.error(error instanceof Error ? error.message : '保存失败'); }
     finally { setSaving(false); }
   };
-  const compact = async () => {
-    try { await actions.executeSlash('compact'); }
-    catch (error) { message.error(error instanceof Error ? error.message : '压缩失败'); }
-  };
   return <>
-    <span className={styles.chatSessionActions}>
-      <Tooltip title="压缩上下文">
-        <Button type="text" size="small" icon={<CompressOutlined />} aria-label="压缩上下文"
-          disabled={!idle || !projection.items.length} onClick={() => void compact()} />
-      </Tooltip>
-      <Tooltip title={projection.policy.systemPrompt ? '会话设置 · 已设定角色' : '会话设置'}>
-        <Button type="text" size="small" icon={<SettingOutlined />} aria-label="会话设置"
-          onClick={() => setOpen(true)} />
-      </Tooltip>
-    </span>
+    <Tooltip title={projection.policy.systemPrompt ? '会话设置 · 已设定角色' : '会话设置'}>
+      <button type="button" className={styles.composerToolButton} aria-label="会话设置"
+        data-active={Boolean(projection.policy.systemPrompt) || undefined}
+        onClick={() => setOpen(true)}>
+        <SettingOutlined />
+      </button>
+    </Tooltip>
     <Modal title="会话设置" open={open} onCancel={() => setOpen(false)} onOk={() => void save()}
       okText="保存" cancelText="取消" confirmLoading={saving} okButtonProps={{ disabled: !idle }}>
       <div className={styles.chatSettingsFields}>

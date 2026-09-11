@@ -12,6 +12,7 @@ interface Props {
   readonly loading?: boolean;
   readonly error?: string;
   readonly disabled?: boolean;
+  readonly grouped?: boolean;
   readonly onModelChange: (model: string) => void;
   readonly onEffortChange: (effort: string) => void;
   readonly onRetry?: () => void;
@@ -58,6 +59,7 @@ export default function ComposerModelMenu(props: Props) {
       <button
         type="button"
         className={styles.modelSummary}
+        data-grouped={props.grouped || undefined}
         aria-label="选择模型与推理强度"
         title={current?.label || '选择模型'}
       >

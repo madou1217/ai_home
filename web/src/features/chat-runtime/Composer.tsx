@@ -1,5 +1,5 @@
 import { useCallback, useRef, type ClipboardEvent } from 'react';
-import { Input } from 'antd';
+import { Input, message } from 'antd';
 import type { Account } from '@/types';
 import type { SessionProjectionStore, SessionRuntimeController } from '@/chat-runtime';
 import type { RuntimeComposerCatalogState } from './use-runtime-composer-catalog';
@@ -34,6 +34,11 @@ export default function Composer(props: ComposerProps) {
   const controller = useComposerController(props);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const selectImages = useCallback(() => fileInputRef.current?.click(), []);
+  const compactContext = useCallback((): void => {
+    void props.actions.executeSlash('compact').catch((error) => {
+      message.error(error instanceof Error ? error.message : '压缩失败');
+    });
+  }, [props.actions]);
   const handlePaste = useCallback((event: ClipboardEvent<HTMLTextAreaElement>): void => {
     if (!controller.canAttach) return;
     const files = Array.from(event.clipboardData?.files || []);
@@ -42,7 +47,16 @@ export default function Composer(props: ComposerProps) {
     void controller.addAttachments(files);
   }, [controller]);
   return (
-    <section className={styles.composer} aria-label="消息输入"
+    <div className={styles.composerStack}>
+      {props.workspaceMode === 'chat' ? (
+        <div className={styles.chatSessionBar} aria-label="会话状态">
+          <div className={styles.chatSessionSummary}>
+            <SessionMetrics store={props.store} onCompact={compactContext} />
+          </div>
+          <ChatSessionSettings store={props.store} actions={props.actions} />
+        </div>
+      ) : null}
+      <section className={styles.composer} aria-label="消息输入"
       onDragOver={(event) => { if (controller.canAttach) event.preventDefault(); }}
       onDrop={(event) => {
         event.preventDefault();
@@ -61,10 +75,6 @@ export default function Composer(props: ComposerProps) {
         attachments={controller.attachments}
         onRemove={controller.removeAttachment}
       />
-      <div className={styles.chatSessionMetrics}>
-        <SessionMetrics store={props.store} onCompact={() => controller.setInput('/compact')} />
-        {props.workspaceMode === 'chat' ? <ChatSessionSettings store={props.store} actions={props.actions} /> : null}
-      </div>
       <Input.TextArea
         value={controller.input}
         autoSize={{ minRows: 2, maxRows: 8 }}
@@ -85,11 +95,12 @@ export default function Composer(props: ComposerProps) {
           event.target.value = '';
         }}
       />
-      <ComposerToolbar
-        props={props}
-        controller={controller}
-        onSelectImages={selectImages}
-      />
-    </section>
+        <ComposerToolbar
+          props={props}
+          controller={controller}
+          onSelectImages={selectImages}
+        />
+      </section>
+    </div>
   );
 }

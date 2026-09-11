@@ -24,14 +24,16 @@ export default function SessionMetrics({ store, onCompact }: {
   const window = context?.contextWindow || metrics.contextWindow;
   const used = context ? context.usedTokens : metrics.contextTokens;
   const status = context?.compaction?.status;
+  const contextStale = Boolean(context?.stale);
+  const compacting = status === 'running';
   const contextMeter = <>
-    {status === 'running' ? <span role="status">正在压缩…</span>
-      : status === 'failed' ? <span role="status">压缩失败，可重试</span>
+    {status === 'failed' ? <span role="status">压缩失败，可重试</span>
         : status === 'cancelled' ? <span role="status">压缩已停止</span>
-          : context?.stale ? <span title="下一轮收到用量后更新占用">上下文已压缩</span> : null}
-    {!context?.stale && window && used !== undefined ? <ContextMeter
+          : null}
+    {projection.items.length > 0 ? <ContextMeter
       messages={[]} maxTokens={window} usedTokens={used}
-      onCompactSuggest={projection.state === 'idle' ? onCompact : undefined} /> : null}
+      stale={contextStale} compacting={compacting} unknown={!window || used === undefined}
+      showLabel onCompactSuggest={projection.state === 'idle' && !compacting ? onCompact : undefined} /> : null}
   </>;
   return <StatsLine messages={messages} showConnection={false} partial={projection.timelineHasMore}
     embedded trailing={contextMeter} />;

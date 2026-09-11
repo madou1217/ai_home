@@ -1,5 +1,5 @@
 import { memo, useState } from 'react';
-import { Popover, Tooltip, Tag } from 'antd';
+import { Popover, Tooltip } from 'antd';
 import {
   BulbOutlined,
   CodeOutlined,
@@ -59,6 +59,7 @@ const PRESETS: PromptPresetItem[] = [
 export interface PromptPresetsCapsuleProps {
   onSelect: (template: string) => void;
   mobile?: boolean;
+  compact?: boolean;
 }
 
 /**
@@ -68,6 +69,7 @@ export interface PromptPresetsCapsuleProps {
 export const PromptPresetsCapsule = memo(function PromptPresetsCapsule({
   onSelect,
   mobile = false,
+  compact = false,
 }: PromptPresetsCapsuleProps) {
   const [open, setOpen] = useState(false);
 
@@ -77,15 +79,13 @@ export const PromptPresetsCapsule = memo(function PromptPresetsCapsule({
         <span className={styles.promptPresetTitle}>
           <BulbOutlined /> 灵感预设与指令模版
         </span>
-        <Tag color="processing" className={styles.promptPresetTag}>
-          HarmonyOS 6
-        </Tag>
       </div>
 
       <div className={styles.promptPresetGrid}>
         {PRESETS.map((p) => (
-          <div
+          <button
             key={p.id}
+            type="button"
             className={styles.promptPresetCard}
             onClick={() => {
               setOpen(false);
@@ -97,7 +97,7 @@ export const PromptPresetsCapsule = memo(function PromptPresetsCapsule({
               <div className={styles.promptPresetCardTitle}>{p.title}</div>
               <div className={styles.promptPresetCardCategory}>{p.category}</div>
             </div>
-          </div>
+          </button>
         ))}
       </div>
     </div>
@@ -119,7 +119,7 @@ export const PromptPresetsCapsule = memo(function PromptPresetsCapsule({
           aria-label="灵感指令预设"
         >
           <BulbOutlined />
-          {!mobile ? <span style={{ fontSize: 11, marginLeft: 3 }}>灵感</span> : null}
+          {!mobile && !compact ? <span>灵感</span> : null}
         </button>
       </Tooltip>
     </Popover>

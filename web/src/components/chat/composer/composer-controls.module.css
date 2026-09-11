@@ -5,45 +5,40 @@
   align-items: center;
   gap: var(--hos-space-1-5, 6px);
   min-width: 0;
-  height: 34px;
-  padding: 0 var(--hos-space-3-5, 14px);
-  border: 0.8px solid rgba(255, 255, 255, 0.8);
-  border-radius: var(--hos-radius-pill, 9999px);
+  height: 32px;
+  padding: 0 var(--hos-space-2-5, 10px);
+  border: 1px solid transparent;
+  border-radius: var(--hos-radius-xs, 8px);
   color: var(--color-text, var(--hos-ink-700, #1e293b));
-  background: var(--hos-glass-bg-subtle, rgba(255, 255, 255, 0.75));
-  backdrop-filter: blur(20px) saturate(190%);
-  -webkit-backdrop-filter: blur(20px) saturate(190%);
+  background: transparent;
   font: inherit;
   font-size: var(--hos-text-body-sm, 13px);
   font-weight: 600;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
-  transition: transform 0.14s var(--hos-ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)), box-shadow 0.14s ease, background-color 0.14s ease;
+  transition: background-color 0.14s ease, color 0.14s ease;
 }
 
 [data-theme='dark'] .controlButton,
 [data-theme='dark'] .approvalButton,
 [data-theme='dark'] .modelSummary {
-  background: rgba(30, 41, 59, 0.75);
-  border: 0.8px solid rgba(255, 255, 255, 0.1);
+  background: transparent;
+  border-color: transparent;
   color: var(--hos-ink-50, #f8fafc);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  box-shadow: none;
 }
 
 .controlButton:hover,
 .approvalButton:hover,
 .modelSummary:hover {
-  background: rgba(255, 255, 255, 0.95);
-  border-color: rgba(10, 89, 247, 0.3);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 14px rgba(10, 89, 247, 0.15);
+  background: var(--color-overlay, rgba(15, 23, 42, 0.06));
+  border-color: transparent;
 }
 
 [data-theme='dark'] .controlButton:hover,
 [data-theme='dark'] .approvalButton:hover,
 [data-theme='dark'] .modelSummary:hover {
-  background: rgba(51, 65, 85, 0.9);
-  border-color: rgba(10, 89, 247, 0.4);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: transparent;
 }
 
 .controlButton:focus-visible,
@@ -68,11 +63,24 @@
   white-space: nowrap;
 }
 
+.controlProviderLabel {
+  color: var(--color-text-secondary, #64748b);
+  font-size: var(--hos-text-caption, 11px);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.controlProviderLabel::after {
+  margin-left: var(--hos-space-1-5, 6px);
+  color: var(--color-border, #d9d9d9);
+  content: '·';
+}
+
 .controlButton small {
-  padding: var(--hos-space-0-5, 1px) var(--hos-space-1-5, 6px); /* 归级:原 1px */
-  border-radius: var(--hos-radius-pill, 9999px);
+  padding: 0;
+  border-radius: 0;
   color: var(--hos-ink-500, #64748b);
-  background: rgba(0, 0, 0, 0.04);
+  background: transparent;
   font-size: var(--hos-text-micro, 10px);
   line-height: 16px;
   font-weight: 700;
@@ -97,6 +105,14 @@
 .modelSummary {
   justify-content: flex-end;
   padding-inline: var(--hos-space-3-5, 14px) var(--hos-space-3, 12px);
+}
+
+.controlButton[data-grouped='true'] {
+  border-radius: var(--hos-radius-xs, 8px) 4px 4px var(--hos-radius-xs, 8px);
+}
+
+.modelSummary[data-grouped='true'] {
+  border-radius: 4px var(--hos-radius-xs, 8px) var(--hos-radius-xs, 8px) 4px;
 }
 
 .modelSummary small {
@@ -195,6 +211,101 @@
   color: var(--hos-orange-600, #d97706);
 }
 
+.accountMenuOverlay :global(.ant-popover-inner) {
+  padding: 0;
+  overflow: hidden;
+}
+
+.accountMenuPanel {
+  width: min(390px, calc(100vw - 32px));
+  color: var(--color-text, #1e293b);
+}
+
+.accountMenuHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
+}
+
+.accountMenuHeader strong { font-size: 14px; }
+.accountMenuHeader span {
+  color: var(--color-text-secondary, #64748b);
+  font-size: 11px;
+}
+
+.accountGroupList {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding: 8px;
+  max-height: min(440px, 65vh);
+  overflow-y: auto;
+}
+
+.accountGroup {
+  display: grid;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 10px;
+}
+
+.accountOptionButton {
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.accountGroupHeading {
+  position: sticky;
+  top: -4px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 4px 8px;
+  color: var(--color-text, #1e293b);
+  background: var(--color-surface-raised, #ffffff);
+}
+.accountGroupHeading strong {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.accountGroupHeading span {
+  margin-left: auto;
+  color: var(--color-text-secondary, #64748b);
+  font-size: 11px;
+}
+.accountOptionList { display: grid; align-content: start; gap: 2px; }
+.accountOptionButton {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 16px;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  text-align: left;
+}
+.accountOptionButton:hover { background: var(--color-overlay, rgba(15, 23, 42, 0.05)); }
+.accountOptionButton[aria-selected='true'] { background: color-mix(in srgb, var(--color-primary) 8%, transparent); }
+.accountOptionButton:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--color-primary) 48%, transparent);
+}
+.accountOptionIdentity { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.accountOptionButton small { color: var(--color-text-secondary, #64748b); font-size: 11px; }
+.accountOptionCheck { visibility: hidden; color: var(--color-primary, #2563eb); }
+.accountOptionButton[aria-selected='true'] .accountOptionCheck { visibility: visible; }
+
 @media (max-width: 768px) {
   .controlValue {
     max-width: 112px;
@@ -213,21 +324,51 @@
 }
 
 @container (max-width: 620px) {
-  .controlValue,
   .controlButton small,
   .approvalLabel,
-  .modelLabel,
   .modelEffort,
   .chevron {
     display: none;
   }
 
-  .controlButton,
   .approvalButton,
-  .modelSummary {
+  .modelSummary:not([data-grouped='true']) {
     width: 32px;
     flex: 0 0 32px;
     padding: 0;
     justify-content: center;
   }
+
+  .controlButton[data-grouped='true'] {
+    flex: 1 1 auto;
+    padding-inline: 8px;
+  }
+
+  .controlButton[data-grouped='true'] .controlProviderLabel { display: inline; }
+  .controlButton[data-grouped='true'] .controlValue {
+    display: inline;
+    max-width: min(112px, 30vw);
+  }
+
+  .modelSummary[data-grouped='true'] {
+    flex: 0 1 auto;
+    padding-inline: 8px;
+  }
+}
+
+@container (max-width: 420px) {
+  .controlButton[data-grouped='true'] .controlValue {
+    max-width: min(82px, 22vw);
+  }
+  .modelSummary[data-grouped='true'] {
+    max-width: 58px;
+  }
+  .modelSummary[data-grouped='true'] .modelIcon {
+    display: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .accountMenuPanel { width: min(358px, calc(100vw - 24px)); }
+  .accountGroupList { max-height: min(420px, 58vh); }
 }

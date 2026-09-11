@@ -24,7 +24,7 @@ interface Props {
 export default function ComposerToolbar({ props, controller, onSelectImages }: Props) {
   return (
     <div className={styles.composerToolbar}>
-      <div className={styles.composerControls}>
+      <div className={styles.composerTools}>
         <button
           type="button"
           className={styles.composerToolButton}
@@ -45,15 +45,19 @@ export default function ComposerToolbar({ props, controller, onSelectImages }: P
         >
           <CodeOutlined />
         </button> : null}
+        <PromptPresetsCapsule compact onSelect={(template) => controller.setInput(template)} />
+      </div>
+      <div className={styles.composerTarget} aria-label="运行目标">
         <ComposerAccountMenu
           value={props.accountRef}
           disabled={!canSwitchComposerAccount(controller.policy)}
+          grouped={props.workspaceMode === 'chat'}
+          selectionHint={props.workspaceMode === 'chat' ? '切换后新建会话' : undefined}
           options={props.accounts.map((account) => ({
             id: account.accountRef,
             provider: account.provider,
             label: getAccountIdentityLabel(account) || account.displayName || account.accountRef,
-            badge: `${account.apiKeyMode ? 'key' : 'OAuth'}${props.workspaceMode === 'chat'
-              && account.accountRef !== props.accountRef ? ' · 新对话' : ''}`,
+            badge: account.apiKeyMode ? 'API Key' : 'OAuth',
           }))}
           onChange={(accountRef) => {
             const account = props.accounts.find((candidate) => candidate.accountRef === accountRef);
@@ -64,13 +68,8 @@ export default function ComposerToolbar({ props, controller, onSelectImages }: P
           value={props.approvalMode}
           onChange={(mode) => void controller.changeApprovalMode(mode)}
         /> : null}
-        {controller.policy.turnActive && controller.policy.deliveries.length > 0 ? (
-          <DeliveryControl controller={controller} />
-        ) : null}
-      </div>
-      <div className={styles.composerActions}>
-        <PromptPresetsCapsule onSelect={(template) => controller.setInput(template)} />
         <ComposerModelMenu
+          grouped={props.workspaceMode === 'chat'}
           models={props.catalog.models}
           model={controller.model}
           effort={controller.reasoningEffort}
@@ -80,6 +79,11 @@ export default function ComposerToolbar({ props, controller, onSelectImages }: P
           onModelChange={controller.selectModel}
           onEffortChange={controller.setReasoningEffort}
         />
+      </div>
+      <div className={styles.composerActions}>
+        {controller.policy.turnActive && controller.policy.deliveries.length > 0 ? (
+          <DeliveryControl controller={controller} />
+        ) : null}
         {controller.policy.canInterrupt ? (
           <button
             type="button"

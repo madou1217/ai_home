@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Badge } from 'antd';
 import { useSessionSelector } from '@/chat-runtime';
 import type {
@@ -25,6 +25,7 @@ import { sessionConnectionPresentation } from './session-connection-presentation
 import { SessionRuntimeActions } from './session-runtime-actions';
 import type { ApprovalMode, SessionRuntimeTarget } from './session-surface-policy';
 import { useRuntimeComposerCatalog } from './use-runtime-composer-catalog';
+import { workspaceStatusLabel } from './workspace-status-presentation';
 import styles from './session-runtime.module.css';
 
 interface Props {
@@ -92,7 +93,7 @@ export default function SessionWorkspace(props: Props) {
 
   return (
     <main className={styles.workspace}>
-      <WorkspaceHeader title={projection.title || props.title} projection={projection}
+      <WorkspaceHeader title={projection.title || props.title} projection={projection} mobile={props.mobile}
         chat={props.runtimeTarget.policy.workspaceMode === 'chat'} />
       {projection.parentSessionId ? <a className={styles.branchParent}
         href={`/ui/chat?sessionId=${encodeURIComponent(projection.parentSessionId)}&provider=${encodeURIComponent(props.runtimeTarget.provider)}`}>
@@ -170,26 +171,34 @@ function WorkspaceHeader({
   title,
   projection,
   chat,
+  mobile,
 }: {
   title: string;
   projection: ReturnType<typeof selectWorkspaceProjection>;
   chat: boolean;
+  mobile?: boolean;
 }) {
   const connection = sessionConnectionPresentation(projection.connectionState);
-  // 副行 caption：连接状态 · CLI 版本 · seq N，整行 hover 可见全量。
-  const meta = chat ? connection.label
-    : `${connection.label} · ${projection.version || '默认运行时'} · seq ${projection.throughSeq}`;
+  const now = useSecondClock(projection.activeTurnStartedAt);
+  const stateLabel = workspaceStatusLabel(
+    projection.state,
+    projection.connectionState,
+    projection.activeTurnStartedAt,
+    now,
+  );
+  const meta = `${connection.label} · ${projection.version || '默认运行时'} · seq ${projection.throughSeq}`;
+  if (mobile && chat && projection.state === 'idle' && connection.interactive) return null;
   return (
     <header className={styles.workspaceHeader}>
       <div className={styles.workspaceHeaderMain}>
-        <strong className={styles.workspaceTitle} title={title}>{title}</strong>
+        {!mobile ? <strong className={styles.workspaceTitle} title={title}>{title}</strong> : null}
         <Badge
-          status={STATE_BADGE[projection.state]}
-          text={STATE_LABELS[projection.state]}
+          status={connection.interactive ? STATE_BADGE[projection.state] : CONNECTION_BADGE[projection.connectionState]}
+          text={stateLabel}
           className={styles.workspaceStateBadge}
         />
       </div>
-      <div className={styles.workspaceHeaderMeta} title={meta}>{meta}</div>
+      {!chat ? <div className={styles.workspaceHeaderMeta} title={meta}>{meta}</div> : null}
     </header>
   );
 }
@@ -201,6 +210,7 @@ function selectWorkspaceProjection(projection: SessionProjection) {
     connectionState: projection.connectionState,
     throughSeq: projection.throughSeq,
     nativeSessionId: projection.runtimeBinding?.nativeSessionId,
+    activeTurnStartedAt: projection.activeTurn?.startedAt,
     version: projection.runtimeBinding?.version,
     approvalMode: canonicalApprovalMode(projection.policy.approvalMode),
     title: typeof projection.policy.title === 'string' ? projection.policy.title : undefined,
@@ -232,13 +242,23 @@ function currentPlanRuntimePort(
   };
 }
 
-const STATE_LABELS: Readonly<Record<SessionState, string>> = {
-  idle: '就绪', starting: '正在启动', running: '运行中', waiting_input: '等待输入',
-  interrupting: '正在停止', completing: '正在收尾', recovering: '正在恢复', closed: '已关闭',
-};
-
 // 会话状态 → Badge 小指示灯语义色（antd Badge status，禁大色块状态 Tag）。
 const STATE_BADGE: Readonly<Record<SessionState, 'default' | 'processing' | 'warning'>> = {
   idle: 'default', starting: 'processing', running: 'processing', waiting_input: 'warning',
   interrupting: 'warning', completing: 'processing', recovering: 'warning', closed: 'default',
 };
+
+const CONNECTION_BADGE = {
+  connecting: 'processing', connected: 'default', reconnecting: 'warning', resyncing: 'warning',
+} as const;
+
+function useSecondClock(startedAt: number | undefined): number {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    if (startedAt === undefined) return;
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [startedAt]);
+  return now;
+}

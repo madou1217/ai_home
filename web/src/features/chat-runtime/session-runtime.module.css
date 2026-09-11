@@ -1,6 +1,6 @@
 .workspace {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  display: flex;
+  flex-direction: column;
   height: 100%;
   min-height: 0;
   background: var(--color-bg);
@@ -12,7 +12,7 @@
   flex-direction: column;
   justify-content: center;
   gap: var(--hos-space-0-5, 2px);
-  padding: var(--hos-space-2, 8px) var(--hos-space-5, 20px);
+  padding: var(--hos-space-2-5, 10px) var(--hos-space-5, 20px);
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface-raised);
 }
@@ -21,6 +21,7 @@
   display: flex;
   min-width: 0;
   align-items: center;
+  justify-content: space-between;
   gap: var(--hos-space-3, 12px);
 }
 
@@ -51,6 +52,7 @@
 }
 
 .timeline {
+  flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
   padding: var(--hos-space-6, 22px) max(18px, calc((100% - 820px) / 2)); /* 归级:原 22px */
@@ -117,10 +119,32 @@
 .fileReferences { display: flex; flex-wrap: wrap; gap: var(--hos-space-1-5, 6px); margin-bottom: var(--hos-space-2, 8px); }
 
 .workspaceDock {
+  flex: 0 0 auto;
   display: grid;
   gap: var(--hos-space-2, 8px);
   padding: var(--hos-space-2-5, 10px) max(18px, calc((100% - 920px) / 2)) var(--hos-space-6, 24px);
   background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--color-bg) 94%, var(--hos-white, white)) 30%);
+}
+
+.composerStack {
+  display: grid;
+  gap: var(--hos-space-1-5, 6px);
+  min-width: 0;
+}
+
+.chatSessionBar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--hos-space-1, 4px);
+  min-height: 28px;
+  padding: 0 var(--hos-space-1-5, 6px);
+  color: var(--color-text-secondary);
+}
+
+.chatSessionSummary {
+  flex: 1;
+  min-width: 0;
 }
 
 .workspaceDockControls {
@@ -332,12 +356,32 @@
 .composerToolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--hos-space-2-5, 10px);
+  gap: var(--hos-space-2, 8px);
   container-type: inline-size;
 }
-.composerControls,
-.composerActions { display: flex; align-items: center; gap: var(--hos-space-1-5, 5px); /* 归级:原 5px */ min-width: 0; }
+.composerTools,
+.composerTarget,
+.composerActions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--hos-space-1, 4px);
+}
+.composerTarget {
+  flex: 0 1 auto;
+  max-width: 100%;
+  padding: 2px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-sm, 10px);
+  background: color-mix(in srgb, var(--color-bg) 78%, transparent);
+  overflow: hidden;
+}
+.composerActions {
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  margin-left: auto;
+}
+.composerTools { flex: 0 0 auto; }
 
 .deliverySelect {
   height: 30px;
@@ -367,8 +411,15 @@
 }
 
 .composerToolButton:hover,
-.composerToolButton[aria-pressed='true'] { color: #242424; background: #ededed; }
+.composerToolButton[aria-pressed='true'],
+.composerToolButton[data-active='true'] { color: #242424; background: #ededed; }
 .composerToolButton:disabled { color: #c5c5c5; background: transparent; cursor: default; }
+.composerToolButton:focus-visible,
+.sendButton:focus-visible,
+.stopButton:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--color-primary) 42%, transparent);
+}
 
 .sendButton,
 .stopButton {
@@ -416,18 +467,31 @@
 .slashSuggestions button:hover { background: #f3f4f6; }
 
 @media (max-width: 768px) {
-  .workspaceHeader { padding: var(--hos-space-1-5, 6px) var(--hos-space-3, 12px); }
+  .workspaceHeader { padding: var(--hos-space-1, 4px) var(--hos-space-3, 12px); }
+  .workspaceHeaderMain { justify-content: flex-end; }
   .timeline { padding: var(--hos-space-3-5, 14px) var(--hos-space-3, 12px); }
   .workspaceDock { padding: var(--hos-space-2, 7px) var(--hos-space-2, 8px) var(--hos-space-2, 8px); /* 归级:原 7px */ }
   .composer { border-radius: var(--hos-radius-md, 17px); /* 归级:原 17px */ }
-  .composerToolbar { align-items: flex-end; }
-  .composerControls { max-width: calc(100% - 150px); overflow: hidden; }
+  .composerToolbar { align-items: center; }
   .queueRow { grid-template-columns: auto minmax(0, 1fr); }
   .queueActions { grid-column: 2; flex-wrap: wrap; }
 }
-.chatSessionMetrics { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.chatSessionMetrics > :first-child { flex: 1; min-width: 0; }
-.chatSessionActions { display: inline-flex; gap: 2px; margin-left: auto; }
 .chatSettingsFields { display: flex; flex-direction: column; gap: 10px; }
 .chatSettingsHint { color: var(--color-text-secondary, #888); font-size: 12px; }
 .branchParent { font-size: 12px; margin: 0 20px 8px; color: var(--color-text-secondary, #888); }
+
+@container (max-width: 620px) {
+  .composerTarget {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+}
+
+@container (max-width: 420px) {
+  .composerTarget {
+    flex: 1 1 0;
+    width: auto;
+    box-sizing: border-box;
+  }
+  .chatSessionBar { padding-inline: 2px; }
+}

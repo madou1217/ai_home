@@ -5,7 +5,6 @@ import { StatisticCard } from '@ant-design/pro-components';
 import Button from '@/components/ui/AppButton';
 import PageScaffold from '@/components/ui/PageScaffold';
 import SectionCard from '@/components/ui/SectionCard';
-import DataToolbar from '@/components/ui/DataToolbar';
 import ListTable from '@/components/ui/ListTable';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
@@ -144,6 +143,8 @@ import {
 import {
   getAccountPrimaryLabel,
   getAccountSecondaryLabel,
+  getKimiPlanSubscription,
+  formatPlanValidUntil,
   getPlanTagColor,
   getPlanTagLabel,
   renderAccountDisplayBadge,
@@ -1582,6 +1583,7 @@ export default function Accounts() {
         const cliEntryClassName = cliInstalled
           ? undefined
           : 'account-client-entry-button--uninstalled';
+        const kimiPlanSubscription = getKimiPlanSubscription(record);
 
         return (
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
@@ -1618,6 +1620,13 @@ export default function Accounts() {
               <Tag color={getPlanTagColor(record)} style={{ fontSize: 11, lineHeight: '18px', padding: '0 4px', margin: 0 }}>
                 {getPlanTagLabel(record)}
               </Tag>
+              {kimiPlanSubscription && formatPlanValidUntil(kimiPlanSubscription.validUntilMs) ? (
+                <Tooltip title={kimiPlanSubscription.status === 'canceled' ? '已取消续费，到期后不再自动续订' : '订阅生效中，到期自动续订'}>
+                  <span style={{ fontSize: 11, color: kimiPlanSubscription.status === 'canceled' ? '#d48806' : '#8c8c8c', whiteSpace: 'nowrap' }}>
+                    有效期至 {formatPlanValidUntil(kimiPlanSubscription.validUntilMs)}
+                  </span>
+                </Tooltip>
+              ) : null}
               {renderAccountRegionTag(record)}
               {/* 操作按钮必须保持语义化图标（DesktopOutlined / CodeOutlined），禁止替换为 ProviderIcon，避免与行首厂商主图标混淆 */}
               {appEntries && desktopSupported ? (
@@ -1907,6 +1916,7 @@ export default function Accounts() {
     const enabled = isAccountEnabled(record);
     const requiresReauth = requiresAccountReauth(record);
     const probe = getAccountModelProbe(record, modelCatalog);
+    const kimiPlanSubscription = getKimiPlanSubscription(record);
     const modelRefreshing = Boolean(refreshingModelAccountRefs[getModelRefreshAccountRef(record)]);
     const lastUsed = formatTimeCell(record.lastUsedAt);
     return (
@@ -1945,6 +1955,12 @@ export default function Accounts() {
         <div className="account-mobile-meta">
           <span className="account-mobile-status">{renderAccountDisplayBadge(record)}</span>
           {renderAccountRegionTag(record)}
+          {kimiPlanSubscription ? (
+            <span style={{ fontSize: 11, color: '#8c8c8c', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {(kimiPlanSubscription.name || getPlanTagLabel(record))}
+              {formatPlanValidUntil(kimiPlanSubscription.validUntilMs) ? ` · 有效期至 ${formatPlanValidUntil(kimiPlanSubscription.validUntilMs)}` : ''}
+            </span>
+          ) : null}
           <span
             className={requiresReauth ? undefined : 'account-mobile-probe'}
             role={requiresReauth ? undefined : 'button'}
@@ -2278,31 +2294,10 @@ export default function Accounts() {
         ) : (
           <SectionCard
             title="账号列表"
+            // 面板级操作(怎么显示 / 刷新)归标题行右侧;筛选维度(provider / 状态)
+            // 归下一行——按语义分组,而不是把控件散在三行里。
             extra={
-              <Segmented
-                value={viewMode}
-                onChange={(val) => { const next = val as 'card' | 'list'; setViewMode(next); persistAccountsViewMode(next); }}
-                options={[
-                  { value: 'card', icon: <AppstoreOutlined />, label: '卡片' },
-                  { value: 'list', icon: <UnorderedListOutlined />, label: '列表' },
-                ]}
-              />
-            }
-          >
-          {/* 筛选与刷新此前只挂在列表模式的表格 toolbar 里,切到卡片模式就整条消失
-            * (provider 标签、状态筛选、刷新按钮全没了)。提到这里由两种模式共用,
-            * 用的是 DataToolbar——它的设计意图本就是「表格/卡片列表复用同一布局」。 */}
-          {/* 标签独占一行(Tabs 是块级全宽组件,塞进 flex 会把筛选器挤到下一行),
-            * 筛选与刷新同一行左右分立——保持原有的视觉层次。 */}
-          <Tabs
-            activeKey={activeProvider}
-            onChange={(key) => setActiveProvider(key as any)}
-            items={tabItems.map((tab) => ({ key: tab.key, label: tab.label }))}
-          />
-          <DataToolbar
-            className="accounts-toolbar"
-            filters={(
-              <>
+              <Space size={8}>
                 <Select
                   value={filterStatus}
                   onChange={setFilterStatus}
@@ -2320,13 +2315,31 @@ export default function Accounts() {
                   ]}
                   suffixIcon={<FilterOutlined />}
                 />
-              </>
-            )}
-            actions={(
-              <Button icon={<SyncOutlined />} onClick={handleReload} loading={refreshing}>
-                刷新
-              </Button>
-            )}
+                <Segmented
+                  value={viewMode}
+                  onChange={(val) => { const next = val as 'card' | 'list'; setViewMode(next); persistAccountsViewMode(next); }}
+                  options={[
+                    { value: 'card', icon: <AppstoreOutlined />, label: '卡片' },
+                    { value: 'list', icon: <UnorderedListOutlined />, label: '列表' },
+                  ]}
+                />
+                <Button icon={<SyncOutlined />} onClick={handleReload} loading={refreshing}>
+                  刷新
+                </Button>
+              </Space>
+            }
+          >
+          {/* 这三个控件此前都挂在列表模式的表格 toolbar 里,切到卡片模式整条消失。
+            * 提出来两种模式共用,并按语义分两行:上一行是面板级操作(视图切换/刷新),
+            * 控件统一聚在标题行成一组(状态筛选 / 视图切换 / 刷新),这一行整宽只做
+            * provider 导航。曾把筛选器放进 Tabs 的 extra,省下一行却把 9 个 provider
+            * 标签挤到截断("Grok"只剩"G"、溢出 ⋯ 贴着筛选器)——标签是主导航,
+            * 不该为次级控件让路。 */}
+          <Tabs
+            className="accounts-provider-tabs"
+            activeKey={activeProvider}
+            onChange={(key) => setActiveProvider(key as any)}
+            items={tabItems.map((tab) => ({ key: tab.key, label: tab.label }))}
           />
           {viewMode === 'card' ? (
             <div style={{ marginBottom: 16 }}>

@@ -7,6 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const {
+  appServerEnvSignature,
   appServerSocketName,
   appServerStatePath,
   ensureCodexAppServerEndpoint,
@@ -175,8 +176,11 @@ test('app-server lifecycle: cleans legacy tmux, binds new Herdr, and persists ba
     pickFreePortImpl: async () => 43123,
     checkReadyzImpl: async () => {
       readyChecks += 1;
-      if (readyChecks === 1) return false;
-      assert.equal(readAppServerState(aiHomeDir, 'gateway').multiplexer, 'herdr');
+      // 状态驱动就绪（不再按调用次数）：复用探测与 spawn 后首轮 readyz 都会进来，
+      // 只有 herdr 后端身份随新端口落盘后才就绪——这正是本用例要守的语义。
+      const state = readAppServerState(aiHomeDir, 'gateway');
+      if (!state || Number(state.port) !== 43123) return false;
+      assert.equal(state.multiplexer, 'herdr', 'backend persisted before readiness');
       return true;
     },
     spawnSyncImpl
@@ -339,4 +343,55 @@ test('app-server launch env always carries the gateway client key even when the 
   assert.ok(spawnEnv, 'pane spawn env expected');
   assert.equal(spawnEnv.OPENAI_API_KEY, 'client-key-1234');
   assert.ok(String(spawnEnv.OPENAI_BASE_URL || '').includes('127.0.0.1'));
+});
+
+test('app-server reuse requires a matching env signature, stale-key panes are rebuilt', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-codex-app-envsig-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  writeServerConfig({ apiKey: 'client-key-1234' }, { fs, aiHomeDir });
+
+  const { readCodexGatewayConnection } = require('../lib/server/codex-gateway-connection');
+  const envSignature = appServerEnvSignature(readCodexGatewayConnection(fs, aiHomeDir, '').env);
+
+  const calls = [];
+  const spawnSyncImpl = (command, args) => {
+    calls.push([command, args]);
+    if (args[0] === '-V') return { status: 0 };
+    if (args.includes('new-session') || args.includes('kill-server')) return { status: 0 };
+    if (args.includes('has-session')) return { status: 1 };
+    return { status: 1 };
+  };
+  const baseOptions = {
+    gateway: true,
+    aiHomeDir,
+    env: {},
+    getProfileDir: () => aiHomeDir,
+    runtimeExecutablePath: '/usr/bin/codex',
+    buildProviderEnvImpl: async () => ({}),
+    pickFreePortImpl: async () => 43127,
+    checkReadyzImpl: async () => true,
+    spawnSyncImpl
+  };
+
+  // 旧时代（修复前）的 state：没有 envSignature，端口 readyz 正常 —— 也必须重建。
+  writeAppServerState(aiHomeDir, 'gateway', {
+    gateway: true,
+    runtimeScope: 'gateway',
+    multiplexer: 'tmux',
+    port: 43126,
+    socket: appServerSocketName('gateway'),
+    startedAt: 1
+  });
+
+  const rebuilt = await ensureCodexAppServerEndpoint(baseOptions);
+  assert.deepEqual(rebuilt, { port: 43127, reused: false });
+  assert.ok(calls.some(([, args]) => args.includes('kill-server')), 'stale socket cleaned up');
+  assert.ok(calls.some(([, args]) => args.includes('new-session')), 'fresh pane spawned');
+  assert.equal(readAppServerState(aiHomeDir, 'gateway').envSignature, envSignature);
+
+  // 签名匹配的常驻 pane 才允许复用。
+  calls.length = 0;
+  const reused = await ensureCodexAppServerEndpoint(baseOptions);
+  assert.deepEqual(reused, { port: 43127, reused: true });
+  assert.equal(calls.some(([, args]) => args.includes('new-session')), false);
 });

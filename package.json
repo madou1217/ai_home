@@ -9,8 +9,8 @@
     "test:web-account-catalog": "node --experimental-strip-types --test web/src/services/legacy-chat-account-catalog.test.ts",
     "providers:generate": "go generate ./core/providers",
     "providers:check": "go run ./cmd/provider-manifest --check",
-    "models:sync": "node scripts/sync-models-dev.js",
-    "models:check": "node scripts/sync-models-dev.js --check",
+    "models:generate": "node scripts/gen-models-dev-modalities.js",
+    "models:check": "node scripts/gen-models-dev-modalities.js --check",
     "gateway:routes": "node scripts/collect-gateway-routes.js",
     "gateway:shadow": "node scripts/gateway-shadow-compare.js",
     "go-cli:preview": "node scripts/go-accounts-preview.js cli",
@@ -43,6 +43,7 @@
   "dependencies": {
     "@lydell/node-pty": "^1.2.0-beta.12",
     "@openai/codex": "^0.142.3",
+    "@opencode-ai/models": "0.0.71",
     "7zip-bin": "^5.2.0",
     "cli-spinners": "^3.4.0",
     "commander": "^14.0.3",

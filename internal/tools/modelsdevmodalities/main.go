@@ -1,4 +1,5 @@
-// Command modelsdevmodalities 从固定的 models.dev API catalog 快照生成 Go 模态索引。
+// Command modelsdevmodalities 从带来源声明的 models.dev catalog 文档生成 Go 模态索引。
+// 输入文档由 scripts/gen-models-dev-modalities.js 依据 @opencode-ai/models SDK 快照临时产出。
 package main
 
 import (

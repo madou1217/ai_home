@@ -603,7 +603,7 @@ Canonical chat HTTP 面包括：`/v0/webui/chat/sessions`、session resolve/snap
 | OPS-015 | Provider hook sender | provider 官方 hook 调用的低依赖 sender | 内部 | `scripts/aih-provider-session-hook-sender.js` |
 | OPS-016 | Test runner cleanup | 全量 test 分片/清理与 focused Node test | 开发 | `scripts/run-tests.js`、`test/test-runner-cleanup.test.js` |
 | OPS-017 | Postinstall | 修复权限/hooks/本地可执行项 | 内部 | `scripts/postinstall.js` |
-| OPS-018 | models.dev 异步同步 | GitHub Actions 每两小时后台读取官方 `catalog.json` API；有变化时更新带内容哈希的固定 catalog 与 Go 模态索引，验证成功后直接提交主分支。Server 启动和推理请求始终读取最后一次已验证的本地快照，不等待 models.dev 或 GitHub | 运维/稳定 | `.github/workflows/models-dev-sync.yml`、`scripts/sync-models-dev.js` |
+| OPS-018 | models.dev SDK 快照 | 模型元数据（modalities、上下文窗口、定价）来自 `@opencode-ai/models` npm 依赖内置的离线快照，package.json 钉精确版本；升级依赖后 `npm run models:generate` 重新派生 Go 模态索引，`npm run models:check` 离线校验一致。运行时完全离线，不存在抓取上游的定时任务 | 运维/稳定 | `scripts/gen-models-dev-modalities.js`、`internal/tools/modelsdevmodalities` |
 
 ## 13. 兼容、废弃与未公开能力清单
 

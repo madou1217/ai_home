@@ -43,18 +43,17 @@ Fuller layer map:
   deps and run `npm run lint` + `npm run build` for the WebUI. This is the CI
   gate that catches missing imports/undefined references and other TS compile
   errors that local Node tests cannot see.
-- `npm run models:sync`: fetch `https://models.dev/catalog.json`, validate its schema,
-  pin its content hash in `data/models-dev/catalog.json`, then regenerate the Go
-  `modalities.json` index. Model metadata (modalities, context window, pricing) comes
-  from this fixed API snapshot. The command refuses to overwrite dirty generated
-  outputs and never commits; both generated files remain reviewable repository changes.
-- `npm run models:check`: offline-verify the fixed catalog source/hash/schema and that
-  the generated Go index matches it. It never contacts upstream, so unrelated CI and
-  runtime work do not fail while the asynchronous updater waits for its next run.
-- `.github/workflows/models-dev-sync.yml`: every two hours, asynchronously refresh the
-  fixed API catalog and generated Go index, verify both, and commit only those two files
-  to `main` when they changed. Runtime startup and inference requests always use the
-  last verified local snapshot and never wait for models.dev or GitHub.
+- Model metadata (modalities, context window, pricing) comes from the offline snapshot
+  bundled in the `@opencode-ai/models` npm dependency, pinned to an exact version in
+  `package.json` (lockfiles are untracked in this repo), so runtime startup and
+  inference requests are fully offline and never wait for models.dev. There is no
+  vendored catalog and no sync workflow.
+- `npm run models:generate`: after bumping `@opencode-ai/models`, re-derive the Go
+  `modalities.json` index from the installed SDK snapshot. Local-only codegen; the
+  command never touches the network and never commits.
+- `npm run models:check`: offline-verify the committed Go index matches the installed
+  SDK snapshot. CI runs it after `npm install` (the check reads the SDK from
+  `node_modules`).
 - `npm run gateway:routes`: read-only scan of both gateways' HTTP paths and their
   data-plane diff. Backs `docs/architecture/go-node-parity-matrix.md`; `--json`
   for CI. Note it collects path literals, so router scope guards (`/v1/`,

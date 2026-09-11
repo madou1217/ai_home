@@ -11,8 +11,7 @@ const {
 const { openModelUsageStore } = require('../lib/usage/model-usage-store');
 const { stableHash } = require('../lib/usage/model-usage-stable-hash');
 const {
-  buildModelsDevPricingRecords,
-  DEFAULT_MODELS_DEV_CATALOG_PATH
+  buildModelsDevPricingRecords
 } = require('../lib/server/models-dev-metadata');
 
 function createModelUsageService(options) {
@@ -1265,9 +1264,9 @@ test('canonical attribution zeroes only unpriced cross-provider execution costs'
   }
 });
 
-test('bundled models.dev exposes current GPT-5.6 Sol and Gemini 3.5 Flash prices', () => {
+test('bundled models.dev SDK snapshot exposes current GPT-5.6 Sol and Gemini 3.5 Flash prices', () => {
   const pricing = Object.fromEntries(
-    buildModelsDevPricingRecords({ modelsDevCatalogPath: DEFAULT_MODELS_DEV_CATALOG_PATH })
+    buildModelsDevPricingRecords()
       .map((record) => [record.model, record])
   );
 

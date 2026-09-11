@@ -2016,15 +2016,6 @@
       "text"
     ]
   },
-  "mistral/devstral-small-2": {
-    "input": [
-      "text",
-      "image"
-    ],
-    "output": [
-      "text"
-    ]
-  },
   "mistral/devstral-small-2507": {
     "input": [
       "text"
@@ -2042,23 +2033,6 @@
     ]
   },
   "mistral/magistral-small-2506": {
-    "input": [
-      "text"
-    ],
-    "output": [
-      "text"
-    ]
-  },
-  "mistral/ministral-14b": {
-    "input": [
-      "text",
-      "image"
-    ],
-    "output": [
-      "text"
-    ]
-  },
-  "mistral/ministral-3b": {
     "input": [
       "text"
     ],

@@ -131,7 +131,7 @@ test('models.dev metadata returns an empty map when the fixed catalog is missing
   assert.deepEqual(metadata, {});
 });
 
-test('models.dev metadata fails closed when a wrapped catalog hash is invalid', () => {
+test('models.dev metadata rejects legacy wrapped snapshot documents', () => {
   const fixture = writeCatalogFixture({
     schemaVersion: 1,
     source: {

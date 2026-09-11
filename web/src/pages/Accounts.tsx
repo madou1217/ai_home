@@ -1594,6 +1594,13 @@ export default function Accounts() {
             <div className="account-email-row" style={{ display: 'flex', alignItems: 'center', gap: 8, height: 24 }}>
               <div style={{ fontWeight: 600, minWidth: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {getAccountPrimaryLabel(record)}
+                {kimiPlanSubscription && formatPlanValidUntil(kimiPlanSubscription.validUntilMs) ? (
+                  <Tooltip title={`套餐有效期至 ${formatPlanValidUntil(kimiPlanSubscription.validUntilMs)}${kimiPlanSubscription.status === 'canceled' ? ' · 已取消续费，到期后不再自动续订' : ' · 订阅生效中，到期自动续订'}`}>
+                    <span style={{ fontWeight: 400, fontSize: 12, color: kimiPlanSubscription.status === 'canceled' ? '#d48806' : '#8c8c8c', marginLeft: 6 }}>
+                      {formatPlanValidUntil(kimiPlanSubscription.validUntilMs)}
+                    </span>
+                  </Tooltip>
+                ) : null}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
                 {renderAccountRoleIcons(record)}
@@ -1620,13 +1627,6 @@ export default function Accounts() {
               <Tag color={getPlanTagColor(record)} style={{ fontSize: 11, lineHeight: '18px', padding: '0 4px', margin: 0 }}>
                 {getPlanTagLabel(record)}
               </Tag>
-              {kimiPlanSubscription && formatPlanValidUntil(kimiPlanSubscription.validUntilMs) ? (
-                <Tooltip title={kimiPlanSubscription.status === 'canceled' ? '已取消续费，到期后不再自动续订' : '订阅生效中，到期自动续订'}>
-                  <span style={{ fontSize: 11, color: kimiPlanSubscription.status === 'canceled' ? '#d48806' : '#8c8c8c', whiteSpace: 'nowrap' }}>
-                    有效期至 {formatPlanValidUntil(kimiPlanSubscription.validUntilMs)}
-                  </span>
-                </Tooltip>
-              ) : null}
               {renderAccountRegionTag(record)}
               {/* 操作按钮必须保持语义化图标（DesktopOutlined / CodeOutlined），禁止替换为 ProviderIcon，避免与行首厂商主图标混淆 */}
               {appEntries && desktopSupported ? (
@@ -1958,7 +1958,7 @@ export default function Accounts() {
           {kimiPlanSubscription ? (
             <span style={{ fontSize: 11, color: '#8c8c8c', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {(kimiPlanSubscription.name || getPlanTagLabel(record))}
-              {formatPlanValidUntil(kimiPlanSubscription.validUntilMs) ? ` · 有效期至 ${formatPlanValidUntil(kimiPlanSubscription.validUntilMs)}` : ''}
+              {formatPlanValidUntil(kimiPlanSubscription.validUntilMs) ? ` · ${formatPlanValidUntil(kimiPlanSubscription.validUntilMs)}` : ''}
             </span>
           ) : null}
           <span

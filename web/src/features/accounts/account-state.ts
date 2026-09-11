@@ -122,6 +122,9 @@ export function getUsageSnapshotRemainingPct(record: Pick<Account, 'provider' | 
     || (record.provider === 'zcode' && snapshot.kind === 'zcode_plan_balance')
   ) {
     values = (snapshot.entries || [])
+      // category='gift'（kimi 赠送额度）是旁路信息，不能拖低账号级 min 剩余，
+      // 否则 Gift 用尽会把健康账号误显示成「已耗尽」；与服务端 lib/account/usage-remaining.js 口径一致。
+      .filter((entry) => entry.category !== 'gift')
       .map((entry) => Number(entry.remainingPct))
       .filter((value) => Number.isFinite(value));
   } else if (

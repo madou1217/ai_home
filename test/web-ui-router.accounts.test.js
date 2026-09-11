@@ -3123,3 +3123,121 @@ test('kimi desktop-session poll 在 PENDING 时不写托管 session', async (t) 
   const record = readAccountCredentialRecord(fs, fixture.aiHomeDir, accountRef);
   assert.equal(record.nativeAuth.desktopSession, undefined);
 });
+
+
+// kimi 套餐配额路由（plan-stats）：桌面端托管 Web session 驱动的官方 Membership RPC。
+function makePlanStatsJwt(expSeconds) {
+  const payload = Buffer.from(JSON.stringify({ exp: expSeconds })).toString('base64url');
+  return `h.${payload}.s`;
+}
+
+const PLAN_STATS_RPC_PAYLOAD = {
+  ratelimitCode5h: { ratio: 0.3498, enabled: true, resetTime: '2026-09-11T06:24:30Z' },
+  ratelimitCode7d: { ratio: 0.268, enabled: true, resetTime: '2026-09-13T15:24:30Z' },
+  subscriptionBalance: {
+    type: 'SUBSCRIPTION',
+    amountUsedRatio: 0.7813,
+    kimiCodeUsedRatio: 0.3964,
+    expireTime: '2026-09-16T00:00:00Z'
+  },
+  giftBalances: [
+    { type: 'GIFT', amountUsedRatio: 1, expireTime: '2026-12-31T15:59:59Z', displayName: 'Invite to Earn Credit' }
+  ]
+};
+
+const PLAN_SUBSCRIPTION_RPC_PAYLOAD = {
+  subscription: {
+    goods: { title: 'Allegretto', membershipLevel: 'LEVEL_INTERMEDIATE' },
+    currentEndTime: '2026-09-16T00:00:00Z',
+    nextBillingTime: '2026-09-15T15:24:30Z',
+    status: 'SUBSCRIPTION_STATUS_CANCEL',
+    active: true
+  }
+};
+
+async function requestKimiPlanStats(fixture, options = {}) {
+  const res = createResCapture();
+  const provider = options.provider || 'kimi';
+  const query = options.refresh ? '?refresh=1' : '';
+  const pathname = `/v0/webui/accounts/${provider}/${options.accountRef}/plan-stats`;
+  const handled = await handleWebUIRequest({
+    method: 'GET',
+    pathname,
+    url: new URL(`http://localhost${pathname}${query}`),
+    req: { headers: {} },
+    res,
+    options: options.serverOptions || {},
+    state: options.state || {
+      accounts: { agy: [], claude: [], codex: [], gemini: [], opencode: [], kimi: [] }
+    },
+    deps: createBaseDeps(fixture, options.deps)
+  });
+  return { handled, res, body: JSON.parse(res.body) };
+}
+
+function seedKimiDesktopSession(fixture, accountRef) {
+  const { writeDesktopSession } = require('../lib/server/kimi-desktop-session');
+  const written = writeDesktopSession(fs, fixture.aiHomeDir, accountRef, {
+    accessToken: makePlanStatsJwt(Math.floor(Date.now() / 1000) + 900),
+    refreshToken: 'web-refresh-seed',
+    userId: 'u-plan'
+  });
+  assert.equal(written, true);
+}
+
+test('kimi plan-stats 返回套餐配额（月度总量/限时窗口/Gift/套餐信息）', async (t) => {
+  const fixture = createAccountFixture(t);
+  const accountRef = fixture.register('kimi', '9301');
+  seedKimiDesktopSession(fixture, accountRef);
+  const rpcCalls = [];
+  const { res, body } = await requestKimiPlanStats(fixture, {
+    accountRef,
+    deps: {
+      fetchImpl: async (url) => {
+        rpcCalls.push(url);
+        if (url.includes('GetSubscriptionStats')) return { status: 200, json: async () => PLAN_STATS_RPC_PAYLOAD };
+        return { status: 200, json: async () => PLAN_SUBSCRIPTION_RPC_PAYLOAD };
+      }
+    }
+  });
+  assert.equal(res.statusCode, 200);
+  assert.equal(body.ok, true);
+  assert.equal(body.stats.plan.name, 'Allegretto');
+  assert.equal(body.stats.plan.status, 'canceled');
+  assert.equal(body.stats.total.usedRatio, 0.7813);
+  assert.equal(body.stats.total.codeUsedRatio, 0.3964);
+  assert.equal(body.stats.rateLimits.code5h.usedRatio, 0.3498);
+  assert.equal(body.stats.gifts[0].name, 'Invite to Earn Credit');
+  assert.equal(rpcCalls.length, 2);
+  assert.match(rpcCalls[0], /\/apiv2\/kimi\.gateway\.membership\.v2\.MembershipService\/GetSubscriptionStats$/);
+});
+
+test('kimi plan-stats 对未托管桌面 session 的账号返回 400 desktop_session_missing', async (t) => {
+  const fixture = createAccountFixture(t);
+  const accountRef = fixture.register('kimi', '9302');
+  const { res, body } = await requestKimiPlanStats(fixture, {
+    accountRef,
+    deps: { fetchImpl: async () => ({ status: 200, json: async () => ({}) }) }
+  });
+  assert.equal(res.statusCode, 400);
+  assert.equal(body.error, 'desktop_session_missing');
+});
+
+test('kimi plan-stats 对未知账号返回 404，对非 kimi provider 返回 400', async (t) => {
+  const fixture = createAccountFixture(t);
+  const missing = await requestKimiPlanStats(fixture, {
+    accountRef: 'acct_ffffffffffffffffffff',
+    deps: { fetchImpl: async () => ({ status: 200, json: async () => ({}) }) }
+  });
+  assert.equal(missing.res.statusCode, 404);
+  assert.equal(missing.body.error, 'account_not_found');
+
+  const codexRef = fixture.register('codex', '9303', { apiKeyMode: true });
+  const wrong = await requestKimiPlanStats(fixture, {
+    provider: 'codex',
+    accountRef: codexRef,
+    deps: { fetchImpl: async () => ({ status: 200, json: async () => ({}) }) }
+  });
+  assert.equal(wrong.res.statusCode, 400);
+  assert.equal(wrong.body.error, 'unsupported_provider');
+});

@@ -1284,3 +1284,140 @@ test('kimi probe keeps the quota snapshot when /me fails (best-effort identity)'
     fs.rmSync(aiHomeDir, { recursive: true, force: true });
   }
 });
+
+
+test('mergeDesktopPlanStatsIntoSnapshot 并入月度总量、Gift 与套餐信息', () => {
+  const snapshot = probePrivate.parseKimiUsagePayload({
+    usage: { used: 200, limit: 1000, resetTime: '2030-01-01T00:00:00Z' }
+  }, Date.now(), { planName: 'Explorer', planLevel: 1 });
+  const before = snapshot.entries.length;
+  probePrivate.mergeDesktopPlanStatsIntoSnapshot(snapshot, {
+    total: { usedRatio: 0.7813, codeUsedRatio: 0.3964, resetAtMs: Date.parse('2030-01-16T00:00:00Z') },
+    gifts: [{ name: 'Invite to Earn Credit', usedRatio: 1, expireAtMs: Date.parse('2030-12-31T00:00:00Z') }],
+    plan: { name: 'Allegretto', status: 'canceled', validUntilMs: Date.parse('2030-01-15T00:00:00Z'), resetAtMs: Date.parse('2030-01-16T00:00:00Z') }
+  }, Date.now());
+  assert.equal(snapshot.entries.length, before + 2);
+  const monthly = snapshot.entries.find((entry) => entry.bucket === 'monthly');
+  assert.equal(monthly.window, 'month');
+  assert.equal(monthly.windowMinutes, 43200);
+  assert.equal(monthly.remainingPct, 21.9);
+  assert.equal(monthly.resetAtMs, Date.parse('2030-01-16T00:00:00Z'));
+  const gift = snapshot.entries.find((entry) => entry.category === 'gift');
+  assert.equal(gift.bucket, 'Invite to Earn Credit');
+  assert.equal(gift.remainingPct, 0);
+  // 订阅品牌档覆盖 /me 的会员等级名，并落 planSubscription 供账号列展示
+  assert.equal(snapshot.account.planName, 'Allegretto');
+  assert.equal(snapshot.account.planSubscription.status, 'canceled');
+  assert.equal(snapshot.account.planSubscription.validUntilMs, Date.parse('2030-01-15T00:00:00Z'));
+});
+
+test('usage-remaining 对 kimi 快照排除 gift 条目但保留 monthly', () => {
+  const snapshot = {
+    kind: USAGE_SNAPSHOT_KINDS.kimi,
+    entries: [
+      { bucket: 'monthly', remainingPct: 21.9 },
+      { bucket: 'Invite to Earn Credit', remainingPct: 0, category: 'gift' },
+      { bucket: '5h_burst', remainingPct: 87 }
+    ]
+  };
+  assert.deepEqual(getUsageRemainingPctValues(snapshot), [21.9, 87]);
+  assert.equal(getMinRemainingPctFromUsageSnapshot(snapshot), 21.9);
+});
+
+function setupKimiAccountWithDesktopSession(t) {
+  const { aiHomeDir, accountRef } = setupKimiAccount({
+    credentials: {
+      access_token: 'still-valid-token',
+      refresh_token: 'rt',
+      expires_at: Math.floor(Date.now() / 1000) + 3600
+    }
+  });
+  writeAccountNativeAuth(fs, aiHomeDir, accountRef, {
+    credentials: {
+      access_token: 'still-valid-token',
+      refresh_token: 'rt',
+      expires_at: Math.floor(Date.now() / 1000) + 3600
+    },
+    desktopSession: { accessToken: 'web-a', refreshToken: 'web-r', userId: 'u-1' }
+  });
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  return { aiHomeDir, accountRef };
+}
+
+test('kimi quota probe 在托管 desktopSession 时并入套餐配额条目', async (t) => {
+  const { aiHomeDir, accountRef } = setupKimiAccountWithDesktopSession(t);
+  let planStatsCalls = 0;
+  const probe = createKimiQuotaProbe({
+    fs,
+    aiHomeDir,
+    readAccountCredentialRecord: require('../lib/server/account-credential-store').readAccountCredentialRecord,
+    fetchWithTimeout: async () => makeOkResponse({
+      usage: { used: 21, limit: 100, resetTime: '2030-01-01T00:00:00Z' }
+    }),
+    fetchPlanStats: async () => {
+      planStatsCalls += 1;
+      return {
+        ok: true,
+        stats: {
+          total: { usedRatio: 0.8, codeUsedRatio: 0.4, resetAtMs: Date.parse('2030-01-16T00:00:00Z') },
+          gifts: [{ name: 'Invite to Earn Credit', usedRatio: 1, expireAtMs: Date.parse('2030-12-31T00:00:00Z') }],
+          plan: { name: 'Allegretto', status: 'active', validUntilMs: Date.parse('2030-01-15T00:00:00Z'), resetAtMs: 0 }
+        }
+      };
+    }
+  });
+  const result = await probe.probe(accountRef, 5000);
+  assert.ok(result.snapshot, 'expected snapshot');
+  assert.equal(planStatsCalls, 1);
+  const monthly = result.snapshot.entries.find((entry) => entry.bucket === 'monthly');
+  assert.equal(monthly.remainingPct, 20);
+  assert.equal(result.snapshot.entries.some((entry) => entry.category === 'gift'), true);
+  assert.equal(result.snapshot.account.planName, 'Allegretto');
+  assert.equal(result.snapshot.account.planSubscription.name, 'Allegretto');
+});
+
+test('kimi quota probe 在套餐统计失败时保留主快照', async (t) => {
+  const { aiHomeDir, accountRef } = setupKimiAccountWithDesktopSession(t);
+  const probe = createKimiQuotaProbe({
+    fs,
+    aiHomeDir,
+    readAccountCredentialRecord: require('../lib/server/account-credential-store').readAccountCredentialRecord,
+    fetchWithTimeout: async () => makeOkResponse({
+      usage: { used: 21, limit: 100, resetTime: '2030-01-01T00:00:00Z' }
+    }),
+    fetchPlanStats: async () => {
+      throw new Error('desktop rpc down');
+    }
+  });
+  const result = await probe.probe(accountRef, 5000);
+  assert.ok(result.snapshot, 'expected snapshot even when plan stats fail');
+  assert.equal(result.snapshot.entries.some((entry) => entry.bucket === 'monthly'), false);
+  assert.equal(result.snapshot.entries[0].remainingPct, 79);
+});
+
+test('kimi quota probe 在无 desktopSession 时不调用套餐统计', async (t) => {
+  const { aiHomeDir, accountRef } = setupKimiAccount({
+    credentials: {
+      access_token: 'still-valid-token',
+      refresh_token: 'rt',
+      expires_at: Math.floor(Date.now() / 1000) + 3600
+    }
+  });
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  let planStatsCalls = 0;
+  const probe = createKimiQuotaProbe({
+    fs,
+    aiHomeDir,
+    readAccountCredentialRecord: require('../lib/server/account-credential-store').readAccountCredentialRecord,
+    fetchWithTimeout: async () => makeOkResponse({
+      usage: { used: 21, limit: 100, resetTime: '2030-01-01T00:00:00Z' }
+    }),
+    fetchPlanStats: async () => {
+      planStatsCalls += 1;
+      return { ok: false, error: 'should_not_be_called' };
+    }
+  });
+  const result = await probe.probe(accountRef, 5000);
+  assert.ok(result.snapshot);
+  assert.equal(planStatsCalls, 0);
+});

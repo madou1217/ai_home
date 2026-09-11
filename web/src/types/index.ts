@@ -11,6 +11,8 @@ export interface CodexUsageEntry {
   remainingPct: number | null;
   resetIn: string;
   resetAtMs: number;
+  // kimi 桌面端套餐统计并入的旁路条目标记（'gift' = 赠送额度，不计入账号级 min 剩余）。
+  category?: string;
   // zcode_plan_balance 携带的绝对额度（unitType 为 'token' 时即 token 数）；
   // 其余 provider 的 entries 不带这些字段。
   totalUnits?: number | null;
@@ -85,6 +87,13 @@ export type AccountUsageSnapshot =
         phone: string;
         planType: string;
         planName?: string; // 订阅页品牌档：Andante/Moderato/Allegretto/Allegro
+        // 桌面端托管 session 读取的订阅套餐（名称/续费状态/有效期/配额重置日）
+        planSubscription?: {
+          name: string;
+          status: string;
+          validUntilMs: number;
+          resetAtMs: number;
+        } | null;
       } | null;
       entries: CodexUsageEntry[];
     }

@@ -332,6 +332,8 @@ function getUsageSnapshotRemainingPct(record: Pick<Account, 'provider' | 'usageS
     || (record.provider === 'kimi' && snapshot.kind === 'kimi_oauth_usage')
   ) {
     values = (snapshot.entries || [])
+      // 与 account-state.ts 口径一致：kimi 的 gift 条目不参与账号级 min 剩余。
+      .filter((entry) => entry.category !== 'gift')
       .map((entry) => Number(entry.remainingPct))
       .filter((value) => Number.isFinite(value));
   } else if (

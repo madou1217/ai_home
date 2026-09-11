@@ -277,3 +277,21 @@ export function getPlanTagColor(record: Pick<Account, 'apiKeyMode' | 'planType' 
   if (record.planType === 'business') return 'gold';
   return 'default';
 }
+
+// kimi 桌面端托管 session 读取到的订阅套餐信息（挂在用量快照 account 上）。
+export function getKimiPlanSubscription(record: Pick<Account, 'provider' | 'usageSnapshot'>) {
+  if (record.provider !== 'kimi') return null;
+  const snapshot = record.usageSnapshot;
+  if (!snapshot || snapshot.kind !== 'kimi_oauth_usage' || !snapshot.account) return null;
+  const subscription = snapshot.account.planSubscription;
+  if (!subscription || (!subscription.name && !(subscription.validUntilMs > 0))) return null;
+  return subscription;
+}
+
+export function formatPlanValidUntil(validUntilMs: number | null | undefined) {
+  const value = Number(validUntilMs);
+  if (!Number.isFinite(value) || value <= 0) return '';
+  const date = new Date(value);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}

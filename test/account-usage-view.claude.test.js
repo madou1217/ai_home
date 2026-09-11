@@ -79,7 +79,8 @@ test('normalizeAccountUsageSnapshot keeps kimi_oauth_usage entries for the WebUI
     planName: 'Allegretto',
     displayName: '登月者2115',
     userId: '',
-    phone: '+86 186****2115'
+    phone: '+86 186****2115',
+    planSubscription: null
   });
   assert.deepEqual(normalized.entries[0], {
     bucket: 'weekly',
@@ -90,4 +91,32 @@ test('normalizeAccountUsageSnapshot keeps kimi_oauth_usage entries for the WebUI
     resetAtMs: 111
   });
   assert.equal(normalized.entries[1].remainingPct, 58);
+});
+
+test('normalizeAccountUsageSnapshot 透传 kimi 套餐订阅信息与 gift 条目标记', () => {
+  const normalized = normalizeAccountUsageSnapshot({
+    kind: 'kimi_oauth_usage',
+    capturedAt: 1700000000000,
+    source: 'kimi_oauth_usages_api',
+    account: {
+      planType: 'intermediate',
+      planName: 'Allegretto',
+      displayName: '登月者1630',
+      phone: '+86 189****1630',
+      planSubscription: { name: 'Allegretto', status: 'canceled', validUntilMs: 1789485870808, resetAtMs: 1789516800000 }
+    },
+    entries: [
+      { bucket: 'monthly', windowMinutes: 43200, window: 'month', remainingPct: 19.9, resetIn: '4d', resetAtMs: 333 },
+      { bucket: 'Invite to Earn Credit', windowMinutes: 0, window: 'gift', remainingPct: 0, resetIn: '', resetAtMs: 444, category: 'gift' }
+    ]
+  });
+  assert.deepEqual(normalized.account.planSubscription, {
+    name: 'Allegretto',
+    status: 'canceled',
+    validUntilMs: 1789485870808,
+    resetAtMs: 1789516800000
+  });
+  assert.equal(normalized.entries[0].bucket, 'monthly');
+  assert.equal(normalized.entries[0].category, undefined);
+  assert.equal(normalized.entries[1].category, 'gift');
 });

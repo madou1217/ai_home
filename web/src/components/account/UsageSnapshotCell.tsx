@@ -50,6 +50,31 @@ function orderCodexEntries(entries: CodexUsageEntry[]) {
   });
 }
 
+// kimi 条目顺序：月度订阅总量（bucket=monthly）置顶，短窗按时长升序居中，
+// 赠送额度（category=gift）垫底。默认展示前 2 条 = 月度 + 最近窗口。
+function orderKimiEntries(entries: CodexUsageEntry[]) {
+  const rankOf = (entry: CodexUsageEntry) => {
+    if (entry.bucket === 'monthly') return 0;
+    if (entry.category === 'gift') return 3;
+    const windowValue = Number(entry.windowMinutes);
+    return Number.isFinite(windowValue) && windowValue > 0 ? 1 : 2;
+  };
+  return [...entries].sort((a, b) => {
+    const aRank = rankOf(a);
+    const bRank = rankOf(b);
+    if (aRank !== bRank) return aRank - bRank;
+    const aWindow = Number(a.windowMinutes) || 0;
+    const bWindow = Number(b.windowMinutes) || 0;
+    if (aWindow !== bWindow) return aWindow - bWindow;
+    return String(a.window || '').localeCompare(String(b.window || ''));
+  });
+}
+
+function formatKimiEntryLabel(entry: CodexUsageEntry) {
+  if (entry.category === 'gift') return entry.bucket || 'Gift';
+  return formatWindowDuration(entry.windowMinutes, entry.window) || entry.bucket || 'usage';
+}
+
 function orderGeminiModels(models: GeminiUsageModel[]) {
   return [...models].sort((a, b) => {
     const aRemaining = a.remainingPct == null ? 101 : a.remainingPct;
@@ -337,7 +362,8 @@ export default function UsageSnapshotCell({
     || (record.provider === 'claude' && snapshot?.kind === 'claude_oauth_usage')
     || (record.provider === 'kimi' && snapshot?.kind === 'kimi_oauth_usage')
   ) {
-    const entries = orderCodexEntries(
+    const isKimiSnapshot = record.provider === 'kimi' && snapshot?.kind === 'kimi_oauth_usage';
+    const entries = (isKimiSnapshot ? orderKimiEntries : orderCodexEntries)(
       // The upstream snapshot is the source of truth: any window with a
       // numeric remaining value is renderable, including provider-specific
       // windows such as Codex Free's 30-day quota.
@@ -358,7 +384,9 @@ export default function UsageSnapshotCell({
           {visibleEntries.map((entry, index) => (
             <UsageMetaLine
               key={`${entry.window}-${index}`}
-              label={formatWindowDuration(entry.windowMinutes, entry.window) || entry.bucket || 'usage'}
+              label={record.provider === 'kimi'
+                ? formatKimiEntryLabel(entry)
+                : (formatWindowDuration(entry.windowMinutes, entry.window) || entry.bucket || 'usage')}
               value={entry.remainingPct}
               resetIn={entry.resetIn}
               resetAtMs={entry.resetAtMs}

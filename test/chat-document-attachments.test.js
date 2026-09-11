@@ -6,6 +6,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { normalizeChatDocuments, persistChatDocuments, documentFromUpload } = require('../lib/server/chat-document-attachments');
+const { normalizeChatUpload } = require('../lib/server/chat-attachment-validation');
+const { buildApiProxyAttachmentImages } = require('../lib/server/chat-attachment-api-proxy');
 const { buildApiProxyMessages } = require('../lib/server/webui-chat-routes-opencode-proxy');
 const { ChatRuntimeAttachmentService } = require('../lib/server/chat-runtime/attachment-service');
 const { resolveProviderAttachmentRoot } = require('../lib/runtime/provider-storage-policy');
@@ -32,6 +34,28 @@ test('pure chat forwards document content once as text alongside real images', (
   assert.match(result[0].content[0].text, /方案.md/);
   assert.equal(result[0].content[1].type, 'image_url');
   assert.deepEqual(messages, [{ role: 'user', content: '请读附件' }]);
+});
+
+test('api proxy sends extracted video frames through image_url without forwarding video data', () => {
+  const image = 'data:image/png;base64,YQ==';
+  const video = 'data:video/mp4;base64,Yg==';
+  const frame = `data:image/jpeg;base64,${Buffer.from('frame').toString('base64')}`;
+  const proxyImages = buildApiProxyAttachmentImages([
+    { attachment: { kind: 'image', dataUrl: image } },
+    { attachment: { kind: 'video', dataUrl: video }, prepared: { frames: ['/tmp/frame.jpg'] } }
+  ], {
+    readFileSync() { return Buffer.from('frame'); }
+  });
+  const result = buildApiProxyMessages([{ role: 'user', content: '分析视频' }], proxyImages, {
+    documents: [],
+    prompt: '分析视频'
+  });
+  assert.deepEqual(proxyImages, [image, frame]);
+  assert.equal(result[0].content[0].type, 'text');
+  assert.equal(result[0].content[1].type, 'image_url');
+  assert.equal(result[0].content[1].image_url.url, image);
+  assert.equal(result[0].content[2].image_url.url, frame);
+  assert.doesNotMatch(JSON.stringify(result), /data:video\//);
 });
 
 test('runtime uploads store Markdown as a document with canonical metadata', async (t) => {
@@ -63,4 +87,28 @@ test('documents above the old 1 MB ceiling are accepted without losing content',
   const [document] = normalizeChatDocuments([{ name: 'big.html', mimeType: 'text/html', text }]);
   assert.equal(document.text, text);
   assert.equal(document.mimeType, 'text/plain');
+});
+
+test('oversized base64 is rejected before character validation or Buffer decoding', () => {
+  const limits = require('../contracts/chat-attachments.json');
+  const originalMaxTotalBytes = limits.maxTotalBytes;
+  limits.maxTotalBytes = 6;
+  const oversized = '!'.repeat(Math.ceil(limits.maxTotalBytes / 3) * 4 + 4);
+  const originalFrom = Buffer.from;
+  let decoded = false;
+  Buffer.from = function patchedFrom(value, encoding) {
+    if (value === oversized && encoding === 'base64') decoded = true;
+    return originalFrom.apply(this, arguments);
+  };
+  try {
+    assert.throws(() => normalizeChatUpload({
+      name: 'oversized.mp4',
+      mimeType: 'video/mp4',
+      dataUrl: `data:video/mp4;base64,${oversized}`
+    }), (error) => error && error.code === 'chat_attachment_total_size_exceeded');
+  } finally {
+    Buffer.from = originalFrom;
+    limits.maxTotalBytes = originalMaxTotalBytes;
+  }
+  assert.equal(decoded, false);
 });

@@ -19,7 +19,9 @@ chat/work 输入框把图片以外的附件一律按"文本文件 1 MB"拒绝（
 3. 发送时关键帧并入既有图片通道（codex `localImage` / legacy `imagePaths`），提示词附加视频块：原始文件路径 + 元数据 + 帧说明。模型由此"看到"视频内容；work 模式提示模型可用 ffmpeg 自行抽更多帧或音轨，chat 模式（无工具）则只陈述帧已随附。
 4. ffmpeg 缺失或抽帧失败时优雅降级：视频路径仍注入提示词，帧为空并如实说明。ffmpeg 定位顺序：`AIH_FFMPEG`/`AIH_FFPROBE` 环境变量 → 常见绝对路径（/opt/homebrew、/usr/local、/usr/bin，覆盖 launchd 极简 PATH）→ PATH 查找。
 
-legacy 面（非 codex 的 work 会话）没有独立视频车道：视频随 base64 图片车道上行，服务端按 dataUrl MIME 分流后走同一持久化+抽帧管线，帧并入 `persistedImagePaths`。
+legacy 面（非 codex 的 work 会话）没有独立视频车道：视频随 base64 图片车道上行，服务端按 dataUrl MIME 分流后走同一持久化+抽帧管线。Native Work 得到原视频路径与关键帧；API proxy 只得到原始图片和抽取后的 JPEG 帧，原始 `data:video/*` 字节不会伪装成 `image_url` 上送。
+
+附件批次采用“先完整校验、再物化、失败统一清理”的事务边界。base64 在分配 `Buffer` 前先按编码长度拒绝超过 128 MB 总预算的单项；图片、文档、视频与帧目录使用临时文件/目录原子发布。账号校验、Slash 校验、CLI readiness、native 同步/异步失败、API proxy 建链/流失败时均清理本轮物化文件；SSE 客户端已断开时，后台 native run 的失败结算仍执行清理。
 
 ## 限额（contracts/chat-attachments.json，前后端唯一事实来源）
 
@@ -55,9 +57,10 @@ legacy 面（非 codex 的 work 会话）没有独立视频车道：视频随 ba
 
 ## 验证（2026-09-11）
 
-- 全量 `npm test`：6610 项，通过 6587、失败 0、跳过 23（含本轮新增的视频/注入/后缀解析回归用例）。
+- 全量 `npm test`：6621 项，通过 6598、失败 0、跳过 23（含本轮新增的视频/注入/后缀解析及回滚回归用例）。
 - `cd web && npm run build`（Umi 全量 TS 编译）成功；改动文件 ESLint 零告警；`bun test` 相关用例通过。
 - 真实文件冒烟：`/Users/model/Downloads/test.html`（1,508,814 字节）通过文档校验且内容逐字节一致；`/Users/model/Downloads/large.mp4`（450 KB，3s/840x568）真实 ffmpeg 抽出 3 张关键帧，帧图像经目检清晰有效。
+- 本机 9527 服务重启加载当前仓库后，Playwright 在指定 Kimi 会话同时选择上述 HTML 与 MP4：两张附件卡均保留、视频缩略图可见、移除按钮独立，未发送上游请求；新标签页控制台 0 error / 0 warning。截图：`output/playwright/kimi-chat-html-mp4-attachments-2026-09-12.png`（运行证据，不提交）。
 - 探针证据（scripts/probe-inject-items-limit.js 对存活 harness 直发 JSON-RPC）：turn/start 输入 >1,048,576 字符报 `codex_app_server_rpc_error`；thread/inject_items 单条 1.5M 字符与 3×500K 均 ACCEPTED；thread/read 的 turns 不含注入条目（不产生重复气泡）。
 
 ## 设计审查
@@ -68,7 +71,8 @@ legacy 面（非 codex 的 work 会话）没有独立视频车道：视频随 ba
 | lib/server/chat-video-attachments.js | 适配器 + 策略 | 把"视频"适配成 harness 已有的图片通道；抽帧依赖（ffmpeg）可注入、可降级 | 假 execFileAsync 的成功/失败两路单测、真实 ffmpeg 冒烟 |
 | chat-harness-policy.js `sessionAttachmentTurnInput` | 组合根 | live turn（codex-session-driver）与历史重建（chat-history-prefix）共用同一附件分流，避免两处漂移 | 双模式单测、driver/branch 既有套件 |
 | attachment-service.js | 模板方法（prepareVideo 可注入） | 上传期完成持久化+抽帧，测试可替换耗时外部进程 | chat-runtime-attachments 视频用例 |
-| webui-chat-routes.js（legacy） | 数据 conversion 复用 | 视频复用 base64 车道，服务端 MIME 分流，前端零新车道 | web-ui-router.chat 套件 |
+| chat-attachment-persistence.js / webui-chat-routes.js（legacy） | 工作单元 + 适配器 | 一个物化批次共享回滚边界；视频转换成 native 路径/帧或 API proxy JPEG data URL | 混合批次、readiness、detached 失败与 API proxy 回归测试 |
+| chat-attachment-api-proxy.js | Adapter | 把物化附件统一投影为 API proxy 可理解的图片列表，并排除原始视频字节 | 原始图片 + 视频帧顺序及无 `data:video/*` 断言 |
 | models-dev-metadata.js `inferBaseModelIds` | 链式回退（精确 → 逐段裁尾） | provider 后缀变体继承基座模型模态，精确 id 永远优先 | models-dev-metadata 后缀变体用例 |
 | chat-harness-model-metadata.js | 放行策略（未知 fail-open、已知从严） | 未知模型不拦用户显式附件；目录明确 text-only 的保持 text-only | chat-harness-model-metadata 三态用例 |
 | chat-harness-policy.js 注入三件套 + driver 幂等 | 适配器（传输上限绕行） | turn/start 1M 字符硬上限改走 inject_items 历史通道，分段无损、不产生 UI 重复气泡 | driver 超大文档用例 + 探针实测 |

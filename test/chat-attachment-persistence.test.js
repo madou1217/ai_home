@@ -99,3 +99,21 @@ test('legacy mixed attachments roll back documents, images, videos and frame art
 
   assertDirectoryHasNoEntries(path.join(hostHomeDir, '.codex', 'attachments'));
 });
+
+test('materialized videos expose the original path to prompt assembly', async (t) => {
+  const hostHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-legacy-video-context-'));
+  t.after(() => fs.rmSync(hostHomeDir, { recursive: true, force: true }));
+  const [video] = await materializeChatAttachments(normalizeLegacyChatAttachments({
+    images: ['data:video/mp4;base64,YQ==']
+  }), {
+    fs,
+    provider: 'codex',
+    hostHomeDir,
+    async prepareVideo(filePath) {
+      return { filePath, frames: [], metadata: { durationSeconds: 1 }, framesReady: false };
+    }
+  });
+
+  assert.equal(video.prepared.path, video.filePath);
+  assert.equal(video.prepared.filePath, video.filePath);
+});

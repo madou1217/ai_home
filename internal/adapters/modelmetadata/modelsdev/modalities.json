@@ -470,7 +470,8 @@
     "input": [
       "text",
       "image",
-      "video"
+      "video",
+      "pdf"
     ],
     "output": [
       "text"
@@ -484,11 +485,23 @@
       "text"
     ]
   },
+  "amazon/nova-premier": {
+    "input": [
+      "text",
+      "image",
+      "video",
+      "pdf"
+    ],
+    "output": [
+      "text"
+    ]
+  },
   "amazon/nova-pro": {
     "input": [
       "text",
       "image",
-      "video"
+      "video",
+      "pdf"
     ],
     "output": [
       "text"
@@ -1133,6 +1146,14 @@
       "text"
     ]
   },
+  "deepseek/deepseek-v4-flash-0423": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ]
+  },
   "deepseek/deepseek-v4-flash-0731": {
     "input": [
       "text"
@@ -1586,6 +1607,33 @@
       "image",
       "video",
       "audio"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "google/gemma-3-12b-it": {
+    "input": [
+      "text",
+      "image"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "google/gemma-3-27b-it": {
+    "input": [
+      "text",
+      "image"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "google/gemma-3-4b-it": {
+    "input": [
+      "text",
+      "image"
     ],
     "output": [
       "text"
@@ -2804,6 +2852,14 @@
     ]
   },
   "openai/gpt-oss-safeguard-120b": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ]
+  },
+  "openai/gpt-oss-safeguard-20b": {
     "input": [
       "text"
     ],

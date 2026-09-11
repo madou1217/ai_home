@@ -258,3 +258,48 @@ test('app-server readiness preserves the bounded timeout for a live process', as
       && error.message.includes('2ms')
   );
 });
+
+test('app-server lifecycle on win32: writes launcher .cmd and spawns cmd.exe pane without sh', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-codex-app-win32-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+
+  const calls = [];
+  const spawnSyncImpl = (command, args) => {
+    calls.push([command, args]);
+    if (command === 'psmux' && args[0] === '-V') return { status: 0 };
+    if (command === 'psmux' && args.includes('new-session')) return { status: 0 };
+    if (command === 'psmux' && args.includes('has-session')) return { status: 0 };
+    return { status: 1 };
+  };
+
+  const result = await ensureCodexAppServerEndpoint({
+    gateway: true,
+    aiHomeDir,
+    env: {},
+    platform: 'win32',
+    getProfileDir: () => aiHomeDir,
+    runtimeExecutablePath: 'C:\\Users\\u\\codex.exe',
+    buildProviderEnvImpl: async () => ({ HOME: aiHomeDir }),
+    pickFreePortImpl: async () => 43124,
+    checkReadyzImpl: async () => true,
+    spawnSyncImpl
+  });
+
+  assert.deepEqual(result, { port: 43124, reused: false });
+  const spawnCall = calls.find(([command, args]) => command === 'psmux' && args.includes('new-session'));
+  assert.ok(spawnCall, 'psmux new-session spawn expected');
+  const paneArgv = spawnCall[1].slice(spawnCall[1].indexOf('--') + 1);
+  assert.deepEqual(paneArgv.slice(0, 3), ['cmd.exe', '/d', '/c']);
+  assert.equal(paneArgv.includes('sh'), false);
+
+  const launcherPath = paneArgv[3];
+  assert.ok(launcherPath.endsWith('.run.cmd'));
+  assert.equal(launcherPath.includes(' '), false);
+  const content = fs.readFileSync(launcherPath, 'utf8');
+  assert.match(content, /^@echo off\r\n/);
+  assert.match(content, /codex\.exe/);
+  assert.match(content, /"app-server"/);
+  assert.match(content, /"--listen" "ws:\/\/127\.0\.0\.1:43124"/);
+  assert.match(content, />> ".*\.log" 2>&1\r\n$/);
+  assert.equal(content.includes('exec '), false);
+});

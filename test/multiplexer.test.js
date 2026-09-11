@@ -312,6 +312,31 @@ test('HerdrDriver: headless run lifecycle (spawn, has, kill, send)', () => {
   assert.deepEqual(spawnCalls[3].args, ['kill', '--session', 'test-socket-run']);
 });
 
+test('HerdrDriver: commandArgv bypasses the sh shell wrapper for Windows panes', () => {
+  const driver = new HerdrDriver();
+  const spawnCalls = [];
+  const mockSpawn = (cmd, args) => {
+    spawnCalls.push({ cmd, args });
+    return { status: 0 };
+  };
+
+  const spawned = driver.spawnHeadlessRun({
+    socket: 'test-socket',
+    commandArgv: ['cmd.exe', '/d', '/c', 'C:\\aih\\x.run.cmd'],
+    spawnSync: mockSpawn
+  });
+
+  assert.equal(spawned.ok, true);
+  assert.deepEqual(spawnCalls[0].args, [
+    'spawn', '--detached', '--session', 'test-socket-run', '--',
+    'cmd.exe', '/d', '/c', 'C:\\aih\\x.run.cmd'
+  ]);
+
+  const invalid = driver.spawnHeadlessRun({ socket: 'test-socket', spawnSync: mockSpawn });
+  assert.equal(invalid.ok, false);
+  assert.equal(invalid.error, 'herdr_run_invalid_options');
+});
+
 test('TmuxDriver: headless lifecycle uses the canonical command and spawnSync options', () => {
   const driver = new TmuxDriver();
   const calls = [];
@@ -358,6 +383,34 @@ test('TmuxDriver: headless lifecycle uses the canonical command and spawnSync op
     '/opt/tmux/bin/tmux',
     ['-L', 'tmux-socket', 'kill-server']
   ]);
+});
+
+test('TmuxDriver: commandArgv bypasses the sh shell wrapper for Windows panes', () => {
+  const driver = new TmuxDriver();
+  const calls = [];
+  const mockSpawn = (command, args) => {
+    calls.push([command, args]);
+    return { status: 0 };
+  };
+
+  const spawned = driver.spawnHeadlessRun({
+    command: 'psmux',
+    spawnSync: mockSpawn,
+    useSystemdScope: false,
+    socket: 'aih-codexapp-acct',
+    commandArgv: ['cmd.exe', '/d', '/c', 'C:\\Users\\u\\.ai_home\\run\\x.run.cmd']
+  });
+
+  assert.equal(spawned.ok, true);
+  assert.deepEqual(calls[0], [
+    'psmux',
+    ['-L', 'aih-codexapp-acct', 'new-session', '-d', '-s', 'run', '--',
+      'cmd.exe', '/d', '/c', 'C:\\Users\\u\\.ai_home\\run\\x.run.cmd']
+  ]);
+
+  const invalid = driver.spawnHeadlessRun({ socket: 'aih-x', spawnSync: mockSpawn, useSystemdScope: false });
+  assert.equal(invalid.ok, false);
+  assert.equal(invalid.error, 'tmux_run_invalid_options');
 });
 
 test('TmuxDriver: injected systemd probes are scoped to their binding dependency', () => {

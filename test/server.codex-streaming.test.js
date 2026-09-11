@@ -21,7 +21,7 @@ async function listen(t, handler) {
   return `http://127.0.0.1:${server.address().port}`;
 }
 
-async function gateway(t, upstream, { native = false, stream = true, timeoutMs = 2000 } = {}) {
+async function gateway(t, upstream, { native = false, stream = true, timeoutMs = 2000, maxAttempts = 1 } = {}) {
   const usages = [];
   const failures = [];
   const requests = [];
@@ -32,7 +32,7 @@ async function gateway(t, upstream, { native = false, stream = true, timeoutMs =
   };
   const url = await listen(t, (req, res) => {
     handleCodexChatCompletions({
-      options: { codexBaseUrl: upstream, upstreamTimeoutMs: timeoutMs, maxAttempts: 1, failureThreshold: 1, logRequests: true },
+      options: { codexBaseUrl: upstream, upstreamTimeoutMs: timeoutMs, maxAttempts, failureThreshold: 1, logRequests: true },
       state, req, res,
       requestJson: { model: 'gpt-6-astra', stream, messages: [{ role: 'user', content: 'local test' }] },
       routeKey: native ? 'POST /v1/responses' : 'POST /v1/chat/completions',
@@ -161,6 +161,62 @@ test('codex retries a capacity error before any response has been exposed', asyn
   assert.match(await response.text(), /recovered/);
   assert.equal(calls, 2);
   assert.equal(app.state.metrics.totalSuccess, 1);
+});
+
+test('codex recovers transparently when the socket dies before any frame is exposed', async (t) => {
+  let calls = 0;
+  const upstream = await listen(t, (_req, res) => {
+    calls += 1;
+    if (calls === 1) {
+      // Pre-exposure transport cut: undici rejects, the attempt loop retries.
+      res.socket.destroy();
+      return;
+    }
+    res.writeHead(200, { 'content-type': 'text/event-stream' });
+    res.end(frame({ type: 'response.output_text.delta', delta: 'healed' }) + completed());
+  });
+  const app = await gateway(t, upstream, { maxAttempts: 3 });
+  const response = await fetch(app.url, { signal: AbortSignal.timeout(2000) });
+  assert.match(await response.text(), /healed/);
+  assert.equal(calls, 2);
+  assert.equal(app.state.metrics.totalSuccess, 1);
+});
+
+test('codex reports a mid-stream socket cut with effective proxy context and never replays', async (t) => {
+  let calls = 0;
+  const upstream = await listen(t, (_req, res) => {
+    calls += 1;
+    res.writeHead(200, { 'content-type': 'text/event-stream' });
+    res.write(frame({ type: 'response.created', response: { id: 'resp_cut' } }));
+    res.write(frame({ type: 'response.reasoning_summary_text.delta', delta: '推理到一半' }));
+    setTimeout(() => res.socket.destroy(), 50);
+  });
+  const app = await gateway(t, upstream, { native: true, maxAttempts: 3 });
+  const response = await fetch(app.url, { signal: AbortSignal.timeout(3000) });
+  const reader = response.body.getReader();
+  const exposed = await readUntil(reader, '推理到一半');
+  const decoder = new TextDecoder();
+  let tail = '';
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    tail += decoder.decode(value, { stream: true });
+  }
+  // Frames were exposed, so a replay would duplicate output: exactly one
+  // upstream attempt is allowed, and the terminal error event must carry the
+  // mid-stream hint plus the effective egress instead of env var names.
+  assert.equal(calls, 1);
+  const errorFrame = tail.split('\n').find((line) => line.startsWith('data: ') && line.includes('"error"'));
+  assert.ok(errorFrame, tail);
+  const terminal = JSON.parse(errorFrame.slice(6));
+  assert.equal(terminal.type, 'error');
+  assert.match(terminal.error.message, /dropped mid-stream/);
+  assert.match(terminal.error.message, /not retried/);
+  assert.match(terminal.error.message, /proxy=(none \(direct\)|https?:\/\/)/);
+  assert.match(terminal.error.message, /codex_upstream=http:\/\/127\.0\.0\.1:/);
+  assert.ok((exposed + tail).includes('推理到一半'));
+  assert.equal(app.state.metrics.totalFailures, 1);
+  assert.equal(app.state.metrics.totalSuccess, 0);
 });
 
 for (const failure of ['sse', 'eof', 'idle']) {

@@ -395,3 +395,63 @@ test('app-server reuse requires a matching env signature, stale-key panes are re
   assert.deepEqual(reused, { port: 43127, reused: true });
   assert.equal(calls.some(([, args]) => args.includes('new-session')), false);
 });
+
+test('app-server readiness on win32 ignores pane liveness and waits for readyz', async () => {
+  let checks = 0;
+  await waitForAppServerReady(9527, 'aih-codexapp-test', {
+    platform: 'win32',
+    checkReadyz: async () => {
+      checks += 1;
+      return checks >= 2;
+    },
+    // psmux 丢 pane 会话但进程仍存活：liveness 恒 false 也不能误判 process_exited。
+    hasRunSession: () => false,
+    delay: async () => {}
+  });
+  assert.ok(checks >= 2);
+});
+
+test('app-server win32 rebuild kills the stale port owner that psmux cannot reap', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-codex-app-portkill-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  writeServerConfig({ apiKey: 'client-key-1234' }, { fs, aiHomeDir });
+  writeAppServerState(aiHomeDir, 'gateway', {
+    gateway: true,
+    runtimeScope: 'gateway',
+    multiplexer: 'tmux',
+    port: 43126,
+    socket: appServerSocketName('gateway'),
+    startedAt: 1
+  });
+
+  const calls = [];
+  const spawnSyncImpl = (command, args) => {
+    calls.push([command, args]);
+    if (command === 'psmux' && args[0] === '-V') return { status: 0 };
+    if (command === 'psmux' && args.includes('new-session')) return { status: 0 };
+    if (command === 'psmux' && args.includes('kill-server')) return { status: 0 };
+    if (command === 'netstat') {
+      return { status: 0, stdout: '  TCP    127.0.0.1:43126    0.0.0.0:0    LISTENING    4242\r\n' };
+    }
+    if (command === 'taskkill') return { status: 0 };
+    return { status: 1 };
+  };
+
+  const result = await ensureCodexAppServerEndpoint({
+    gateway: true,
+    aiHomeDir,
+    env: {},
+    platform: 'win32',
+    getProfileDir: () => aiHomeDir,
+    runtimeExecutablePath: 'C:\\Users\\u\\codex.exe',
+    buildProviderEnvImpl: async () => ({ HOME: aiHomeDir }),
+    pickFreePortImpl: async () => 43127,
+    checkReadyzImpl: async () => true,
+    spawnSyncImpl
+  });
+
+  assert.deepEqual(result, { port: 43127, reused: false });
+  const taskkill = calls.find(([command]) => command === 'taskkill');
+  assert.ok(taskkill, 'stale port owner must be taskkilled on win32 rebuild');
+  assert.deepEqual(taskkill[1], ['/PID', '4242', '/T', '/F']);
+});

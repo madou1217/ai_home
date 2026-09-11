@@ -209,6 +209,43 @@ test('restart converges orphaned leases, running work, interactions and accepted
   assert.equal(service.store.getCommand('orphan-command').status, 'failed');
 });
 
+// 吸收专题 2 要求在「意图记录 / 实际执行 / 结果落盘」三处分别注入进程退出。
+// 上一条用例已覆盖前两处:leased(只记意图)重启后回到 queued 可安全重试,
+// running(已执行、结果未知)重启后置 failed 且 driver 零重放。
+// 这里补第三处:结果已落盘之后崩溃——已完成的工作既不得丢失,也不得被重做。
+test('结果落盘后重启:已结算的条目既不丢失也不重做', async (t) => {
+  const fixture = createFixture(t);
+  const seed = fixture.openStore();
+  const session = createSession(seed, { runtimeBinding: { runtimeId: 'codex:account-1' } });
+
+  const settled = seed.enqueue(session.sessionId, {
+    commandId: 'settled-command', policy: 'after_turn', payload: { content: 'already done' }
+  });
+  seed.leaseQueueItem(session.sessionId, { queueId: settled.queueId, leaseId: 'lease-settled' });
+  seed.markQueueRunning(settled.queueId, 'lease-settled');
+  // 结果已落盘:副作用已经发生且被记录,重启不得再执行一次。
+  seed.settleQueueItem(settled.queueId, 'lease-settled', 'completed', { ok: true });
+  const before = seed.queue.get(settled.queueId);
+  seed.setSessionState(session.sessionId, 'running', null);
+  seed.close();
+
+  let driverCalls = 0;
+  const service = fixture.openService({
+    startTurn: async () => { driverCalls += 1; return {}; },
+    recoverTurn() { driverCalls += 1; }
+  });
+  await service.waitForRecovery();
+
+  const after = service.store.queue.get(settled.queueId);
+  assert.equal(after.status, before.status, '已结算条目的状态不得被恢复流程改写');
+  assert.notEqual(after.status, 'queued', '已完成的工作不得被放回待办重跑');
+  assert.equal(driverCalls, 0, '恢复不得重放已落盘的副作用');
+  // 会话态不在本条的断言范围内:该 seed 是「标记为 running 但已无在途工作」的人造状态,
+  // 实测恢复后仍为 running。是否该收敛成 idle 属会话态设计,不是本条要证明的
+  // 「已落盘副作用不重做」——不把自己的预期当成不变量。
+  assert.equal(typeof service.getSnapshot(session.sessionId).state, 'string');
+});
+
 test('failed provider reattach fails closed and makes the session usable for a new turn', async (t) => {
   const fixture = createFixture(t);
   const seed = fixture.openStore();

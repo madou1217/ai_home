@@ -10,6 +10,95 @@ const test = require('node:test');
 const { createChatRuntimeComposition } = require('../lib/server/chat-runtime-composition');
 const { createAppServerClient } = require('../lib/server/codex-app-server-json-rpc-client');
 
+for (const mode of ['running', 'completed', 'stop']) test(`lost turn/start receipt recovers the accepted native turn (${mode})`, {
+  skip: !process.env.AIH_TEST_CODEX_EXECUTABLE, timeout: 40000
+}, async (t) => {
+  const f = await nativeFixture(t);
+  let offline = false;
+  let reconnect;
+  const gate = new Promise((resolve) => { reconnect = resolve; });
+  t.after(() => reconnect());
+  const service = f.open({ loseStartReceipt: true, beforeConnect: () => offline ? gate : undefined });
+  const session = await service.createSession({ provider: 'codex', executionAccountRef: 'tool-probe',
+    projectPath: f.root, policy: { approvalMode: 'bypass' } });
+  await service.dispatchCommand(session.sessionId, { commandId: 'execute-marker', type: 'turn.submit',
+    payload: { content: 'Run the local tool probe once.' } });
+  await waitFor(() => fs.existsSync(path.join(f.root, 'marker')));
+  const before = service.getSnapshot(session.sessionId);
+  assert.equal(before.activeTurn.nativeTurnId, undefined);
+  assert.equal(before.timeline.some((i) => i.kind === 'shell'), false);
+  offline = true;
+  f.sockets[0].terminate();
+  await new Promise((resolve) => f.sockets[0].once('close', resolve));
+  const inspection = f.client();
+  if (mode === 'completed') {
+    fs.writeFileSync(path.join(f.root, 'release'), 'continue');
+    await waitFor(async () => {
+      const response = await inspection.request('thread/read', {
+        threadId: before.runtimeBinding.nativeSessionId, includeTurns: true
+      });
+      return response.thread.turns.at(-1)?.status === 'completed';
+    });
+  }
+  const stopping = mode === 'stop'
+    ? service.dispatchCommand(session.sessionId, { commandId: 'stop-without-receipt', type: 'turn.interrupt', payload: {} })
+    : null;
+  if (stopping) await waitFor(() => service.getSnapshot(session.sessionId).activeTurn?.interruptRequested);
+  reconnect();
+  await waitFor(() => f.resumes.length === 1);
+  if (mode === 'running') {
+    const attached = service.getSnapshot(session.sessionId);
+    assert.equal(attached.activeTurn.runId, before.activeTurn.runId);
+    assert.ok(attached.activeTurn.nativeTurnId, 'recovered native anchor must be persisted');
+    assert.equal(attached.timeline.find((i) => i.kind === 'shell').status, 'running');
+    fs.writeFileSync(path.join(f.root, 'release'), 'continue');
+  }
+  if (stopping) await stopping;
+  await waitFor(() => service.getSnapshot(session.sessionId).state === 'idle');
+  const completed = service.getSnapshot(session.sessionId);
+  assert.equal(completed.failedTurn, undefined);
+  if (mode === 'stop') {
+    assert.equal(completed.policy.queueControl.paused, true);
+    assert.notEqual(completed.timeline.find((i) => i.kind === 'shell').status, 'running');
+    const response = await inspection.request('thread/read', {
+      threadId: before.runtimeBinding.nativeSessionId, includeTurns: true
+    });
+    assert.equal(response.thread.turns.at(-1)?.status, 'interrupted');
+  } else {
+    assert.equal(completed.timeline.find((i) => i.kind === 'shell').status, 'completed');
+    assert.equal(completed.timeline.find((i) => i.content === 'TOOL_PROBE_DONE').turnId, before.activeTurn.turnId);
+  }
+  assert.equal(fs.readFileSync(path.join(f.root, 'marker'), 'utf8'), 'executed\n');
+  assert.equal(f.requests.length, mode === 'stop' ? 1 : 2);
+});
+
+test('unconfirmed turn/start with no native anchor remains non-retryable after reload', {
+  skip: !process.env.AIH_TEST_CODEX_EXECUTABLE, timeout: 40000
+}, async (t) => {
+  const f = await nativeFixture(t);
+  let service = f.open({ dropStartRequest: true });
+  const session = await service.createSession({ provider: 'codex', executionAccountRef: 'tool-probe',
+    projectPath: f.root, policy: { approvalMode: 'bypass' } });
+  const submitted = await service.dispatchCommand(session.sessionId, { commandId: 'uncertain', type: 'turn.submit',
+    payload: { content: 'Run the local tool probe once.' } });
+  // Empty native threads may reject resume. The existing transport policy makes
+  // eight attempts (18 seconds of backoff) before declaring recovery exhausted.
+  await waitFor(() => service.getSnapshot(session.sessionId).state === 'idle', 30000);
+  const failure = service.getSnapshot(session.sessionId).failedTurn;
+  assert.equal(failure.outcomeUnknown, true);
+  assert.equal(failure.retryable, false);
+  assert.equal(failure.error.code, 'codex_turn_start_outcome_unknown');
+  service.close();
+  f.disconnect();
+  service = f.open();
+  await service.waitForRecovery();
+  assert.deepEqual(service.getSnapshot(session.sessionId).failedTurn, failure);
+  await assert.rejects(service.dispatchCommand(session.sessionId, { commandId: 'retry-unknown', type: 'turn.retry',
+    payload: { sourceTurnId: submitted.result.turnId } }), /chat_retry_not_available/);
+  assert.equal(f.requests.length, 0);
+  assert.equal(fs.existsSync(path.join(f.root, 'marker')), false);
+});
+
 test('automatic WebSocket reconnect imports offline completion without restarting AIH or the tool', {
   skip: !process.env.AIH_TEST_CODEX_EXECUTABLE, timeout: 40000
 }, async (t) => {
@@ -285,6 +374,17 @@ async function nativeFixture(t) {
     const instance = createAppServerClient({ ...options,
       wsImpl: class extends require('ws') {
         constructor(endpoint) { super(endpoint); sockets.push(this); }
+        send(data, ...args) {
+          if (JSON.parse(String(data)).method === 'turn/start') {
+            if (options.dropStartRequest) { this.terminate(); return; }
+            if (options.loseStartReceipt) this.loseReceipt = true;
+          }
+          return super.send(data, ...args);
+        }
+        emit(event, ...args) {
+          if (event === 'message' && this.loseReceipt) return true;
+          return super.emit(event, ...args);
+        }
       },
       resolveEndpoint: async () => {
         if (options.beforeConnect) await options.beforeConnect();
@@ -347,8 +447,8 @@ function respond(res, output) {
   res.end();
 }
 
-async function waitFor(predicate) {
-  const deadline = Date.now() + 15000;
+async function waitFor(predicate, timeoutMs = 15000) {
+  const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (await predicate()) return;
     await new Promise((resolve) => setTimeout(resolve, 30));

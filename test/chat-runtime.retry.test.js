@@ -38,6 +38,22 @@ async function failTurn(f, payload = { content: 'original prompt' }) {
   return response.result.turnId;
 }
 
+test('uncertain submission without a tool notification stays non-retryable through reload', async (t) => {
+  const f = fixture(t, async () => {
+    throw Object.assign(new Error('receipt lost'), { code: 'codex_turn_start_outcome_unknown', outcomeUnknown: true });
+  });
+  const sourceTurnId = await failTurn(f);
+  assert.equal(f.snapshot().failedTurn.outcomeUnknown, true);
+  assert.equal(f.snapshot().failedTurn.retryable, false);
+  assert.equal(f.snapshot().policy.queueControl.paused, true);
+  const event = f.store.listEvents(f.session.sessionId).find((e) => e.type === 'turn.failed');
+  assert.equal(event.payload.outcomeUnknown, true);
+  assert.equal(event.payload.retryable, false);
+  f.reopen();
+  assert.equal(f.snapshot().failedTurn.outcomeUnknown, true);
+  await assert.rejects(f.dispatch('unsafe-retry', 'turn.retry', { sourceTurnId }), /chat_retry_not_available/);
+});
+
 test('retry survives store reload and restores exact prompt, attachments, model and effort', async (t) => {
   const calls = [];
   const f = fixture(t, async (context) => {

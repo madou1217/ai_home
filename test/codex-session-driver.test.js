@@ -20,6 +20,61 @@ function interactionId(requestId) {
   });
 }
 
+test('lost start receipt restores and persists the client message anchor before completing', async () => {
+  const recoveryGate = deferred();
+  const anchorGate = deferred();
+  const fixture = createFixture({
+    turnStartError: Object.assign(new Error('receipt lost'), { code: 'codex_app_server_disconnected' }),
+    waitForReconnect: () => recoveryGate.promise,
+    persistNativeTurnAnchor: () => anchorGate.promise
+  });
+  const turn = fixture.entry.driver.startTurn(turnContext());
+  let settled = false;
+  turn.then(() => { settled = true; });
+  await nextTask();
+  const binding = fixture.client.bindings.get(NATIVE_THREAD_ID);
+  const recovery = binding.onReconnectResume({ thread: { id: NATIVE_THREAD_ID, turns: [{
+    id: 'recovered-native', status: 'completed',
+    items: [{ id: 'input', type: 'userMessage', clientId: 'run-1', content: [] }]
+  }] } });
+  await nextTask();
+  assert.equal(settled, false);
+  assert.deepEqual(fixture.nativeTurnAnchors, [{
+    clientUserMessageId: 'run-1', nativeTurnId: 'recovered-native', runId: 'run-1'
+  }]);
+  anchorGate.resolve();
+  await recovery;
+  recoveryGate.resolve(true);
+  assert.equal((await turn).status, 'completed');
+  assert.equal(fixture.client.calls.filter((call) => call.method === 'turn/start').length, 1);
+});
+
+test('missing submission anchor fails as unknown without borrowing the latest native turn', async () => {
+  const recoveryGate = deferred();
+  const fixture = createFixture({
+    turnStartError: Object.assign(new Error('receipt lost'), { code: 'codex_app_server_disconnected' }),
+    waitForReconnect: () => recoveryGate.promise
+  });
+  const turn = fixture.entry.driver.startTurn(turnContext());
+  const rejected = assert.rejects(turn, (error) => error.outcomeUnknown === true
+    && error.code === 'codex_turn_start_outcome_unknown');
+  await nextTask();
+  const binding = fixture.client.bindings.get(NATIVE_THREAD_ID);
+  let failure;
+  try {
+    await binding.onReconnectResume({ thread: { id: NATIVE_THREAD_ID, turns: [{
+      id: 'other-native', status: 'inProgress',
+      items: [{ id: 'input', type: 'userMessage', clientId: 'another-run', content: [] }]
+    }] } });
+  } catch (error) { failure = error; }
+  assert.equal(failure.code, 'codex_native_turn_recovery_anchor_missing');
+  binding.onDisconnected(failure);
+  recoveryGate.resolve(true);
+  await rejected;
+  assert.equal(fixture.nativeTurnAnchors.length, 0);
+  assert.equal(fixture.client.calls.filter((call) => call.method === 'turn/start').length, 1);
+});
+
 test('Codex automatic reconnect imports the exact turn before settlement and ignores stale recovery', async () => {
   const gate = deferred();
   const histories = [];
@@ -783,6 +838,7 @@ function createFakeClient(decisionOrder, overrides) {
   return {
     calls, bindings, responses: [], responseAttempts: [], errors: [], connected: 0,
     async ensureConnected() { this.connected += 1; return {}; },
+    ...(overrides.waitForReconnect ? { waitForReconnect: overrides.waitForReconnect } : {}),
     getVerifiedAccountIdentity() {
       return { verified: true, kind: 'oauth', assurance: 'identity' };
     },
@@ -799,7 +855,10 @@ function createFakeClient(decisionOrder, overrides) {
         thread: { id: NATIVE_THREAD_ID },
         ...(overrides.omitThreadModel ? {} : { model: overrides.threadModel || 'gpt-5.3-codex' })
       };
-      if (method === 'turn/start') return { turn: { id: 'native-turn-1', status: 'inProgress' } };
+      if (method === 'turn/start') {
+        if (overrides.turnStartError) throw overrides.turnStartError;
+        return { turn: { id: 'native-turn-1', status: 'inProgress' } };
+      }
       if (method === 'thread/resume') {
         if (overrides.replayOnResume) {
           setImmediate(() => this.requestFromServer(

@@ -213,3 +213,11 @@
 设计模式：`codex-app-server-json-rpc-client` → 状态机 + 顺序缓冲 → 单次重连、先快照后增量、按 binding 隔离 → transport gate/连续断线/替换测试；`codex-turn-recovery/codex-session-driver` → Adapter + 持久投影 → 重启与自动重连共用精确恢复边界 → Driver 与三条新增 native 测试。SOLID 分离 transport 排序和会话事实；DRY 复用历史恢复；KISS/YAGNI 没有新增执行器、数据库或自动重放工具。按现有授权采用 self-review 后 scoped commit/push，排除其他会话的两个 streaming 文件。
 
 仍待继续：`turn/start` 已被原生接收但 RPC 回执丢失的启动窗口、交互审批重放矩阵、Work 并行工具配对/压缩切口及各真实 Provider 能力矩阵。本专题不声称这些边界均已完成，也不声称外部副作用 exactly-once。
+
+## 启动回执丢失：按持久输入锚点找回原回合（2026-09-11）
+
+固定 Codex `968835997714baaff199cfed5f89a2c65d8ca77d` 的 v2 app-server 协议允许客户端在 user message item 上携带 `clientUserMessageId`；AIH 将自己的持久 `runId` 写入该字段。结合固定 DSH `aa8262ec091698bae9a6b04773a6b5b06ad4aef2` 的 consumed-work 原则，`turn/start` 的连接中断不能直接解释为“输入未消费”：请求可能已经被 native 执行器接受并执行，只是 RPC 回执没有返回。
+
+因此提交协调器只对明确 RPC 拒绝立即失败；遇到 `codex_app_server_disconnected` 时等待 transport 的同一轮自动恢复，绝不再次发送输入。恢复通过 `clientUserMessageId == runId` 在 `thread/resume` 的 durable history 中查找精确 native turn，先导入历史并持久化 `nativeTurnId`，再继续运行、完成或取消。不会借用“最新一轮”：找不到或出现多个匹配时，本轮以 `codex_turn_start_outcome_unknown` 收尾，`outcomeUnknown=true`、`retryable=false`，停止意图也不能把未确认执行伪装成已成功取消。
+
+验证覆盖三类已接收场景：原回合仍运行、离线期间已完成、断线后用户点击停止；marker 均只写一次，`turn/start` 只发送一次。另覆盖找不到锚点时刷新后仍保留结果未确认并拒绝一键重试。该边界避免 AIH 主动制造重复副作用，但不宣称外部系统 exactly-once；用户仍需在结果未知时核对实际文件或外部状态。

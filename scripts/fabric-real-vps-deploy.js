@@ -273,10 +273,11 @@ function sha256Files(filePaths) {
 }
 
 function getLocalDependencyCacheKey(cwd = process.cwd()) {
+  // package-lock.json 不入库，仅在本机 npm install 后存在；缺失时按 package.json 单文件取键。
   return sha256Files([
     path.join(cwd, 'package.json'),
     path.join(cwd, 'package-lock.json')
-  ]).slice(0, 16);
+  ].filter((filePath) => fs.existsSync(filePath))).slice(0, 16);
 }
 
 function getRemoteDependencyCacheDir(options, cacheKey) {

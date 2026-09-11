@@ -86,5 +86,9 @@ prototypes/
 # Local code-index tool database (per-machine, never shared).
 /.codegraph/
 
-# Web 依赖锁定走 npm（web/package-lock.json + CI npm ci），忽略误用 pnpm 生成的锁文件。
+# 依赖锁文件不入库：各平台客户端本地 npm install 时重新生成，避免跨机器解析差异造成冲突。
+# CI 对应使用 npm install（无锁文件可 ci）。误用 pnpm 生成的锁文件同样忽略。
+package-lock.json
+web/package-lock.json
+pnpm-lock.yaml
 web/pnpm-lock.yaml

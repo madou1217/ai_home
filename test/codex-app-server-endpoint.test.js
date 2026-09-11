@@ -15,6 +15,7 @@ const {
   writeAppServerState,
   waitForAppServerReady
 } = require('../lib/server/codex-app-server-endpoint');
+const { writeServerConfig } = require('../lib/server/server-config-store');
 
 test('app-server auth invalidation stops only the matching account runtime', (t) => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-codex-app-invalidate-'));
@@ -302,4 +303,40 @@ test('app-server lifecycle on win32: writes launcher .cmd and spawns cmd.exe pan
   assert.match(content, /"--listen" "ws:\/\/127\.0\.0\.1:43124"/);
   assert.match(content, />> ".*\.log" 2>&1\r\n$/);
   assert.equal(content.includes('exec '), false);
+});
+
+test('app-server launch env always carries the gateway client key even when the account has none', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-codex-app-env-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  writeServerConfig({ apiKey: 'client-key-1234' }, { fs, aiHomeDir });
+
+  let spawnEnv = null;
+  const spawnSyncImpl = (command, args, spawnOptions) => {
+    if (args[0] === '-V') return { status: 0 };
+    if (args.includes('new-session')) {
+      spawnEnv = (spawnOptions && spawnOptions.env) || null;
+      return { status: 0 };
+    }
+    if (args.includes('has-session') || args.includes('kill-server')) return { status: 0 };
+    return { status: 1 };
+  };
+
+  const result = await ensureCodexAppServerEndpoint({
+    gateway: true,
+    aiHomeDir,
+    env: {},
+    getProfileDir: () => aiHomeDir,
+    runtimeExecutablePath: '/usr/bin/codex',
+    // 账号凭证不含 OPENAI_API_KEY（qodercn 等 OAuth 形态）：旧逻辑 relay 不生效，
+    // pane 拿不到 key，网关 401。修复后必须无条件回落到网关 client key。
+    buildProviderEnvImpl: async () => ({ HOME: aiHomeDir }),
+    pickFreePortImpl: async () => 43125,
+    checkReadyzImpl: async () => true,
+    spawnSyncImpl
+  });
+
+  assert.deepEqual(result, { port: 43125, reused: false });
+  assert.ok(spawnEnv, 'pane spawn env expected');
+  assert.equal(spawnEnv.OPENAI_API_KEY, 'client-key-1234');
+  assert.ok(String(spawnEnv.OPENAI_BASE_URL || '').includes('127.0.0.1'));
 });

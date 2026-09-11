@@ -128,7 +128,7 @@
 
 .composerStack {
   display: grid;
-  gap: var(--hos-space-1-5, 6px);
+  gap: var(--hos-space-2, 8px);
   min-width: 0;
 }
 
@@ -281,7 +281,7 @@
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
-  padding: var(--hos-space-2-5, 10px) var(--hos-space-3, 12px) var(--hos-space-2-5, 9px); /* 归级:原 9px */
+  padding: var(--hos-space-2-5, 10px) var(--hos-space-3, 12px) var(--hos-space-3, 12px);
   border-radius: var(--hos-radius-lg, 19px); /* 归级:原 19px */
   border-color: #dedede;
   box-shadow:
@@ -298,7 +298,7 @@
 
 .composer :global(.ant-input) {
   min-height: 58px;
-  padding: var(--hos-space-1-5, 5px) var(--hos-space-1, 4px) var(--hos-space-2-5, 10px); /* 归级:原 5px */
+  padding: var(--hos-space-1-5, 5px) var(--hos-space-1-5, 6px) var(--hos-space-2-5, 10px); /* 归级:原 5px */
   border: 0;
   color: #282828;
   background: transparent;
@@ -357,6 +357,7 @@
   display: flex;
   align-items: center;
   gap: var(--hos-space-2, 8px);
+  margin-top: var(--hos-space-2, 8px);
   container-type: inline-size;
 }
 .composerTools,
@@ -370,7 +371,8 @@
 .composerTarget {
   flex: 0 1 auto;
   max-width: 100%;
-  padding: 2px;
+  padding: 3px;
+  gap: var(--hos-space-1-5, 6px);
   border: 1px solid var(--color-border);
   border-radius: var(--hos-radius-sm, 10px);
   background: color-mix(in srgb, var(--color-bg) 78%, transparent);

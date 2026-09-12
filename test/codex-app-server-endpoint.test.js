@@ -315,10 +315,12 @@ test('app-server launch env always carries the gateway client key even when the 
   writeServerConfig({ apiKey: 'client-key-1234' }, { fs, aiHomeDir });
 
   let spawnEnv = null;
+  let spawnArgs = null;
   const spawnSyncImpl = (command, args, spawnOptions) => {
     if (args[0] === '-V') return { status: 0 };
     if (args.includes('new-session')) {
       spawnEnv = (spawnOptions && spawnOptions.env) || null;
+      spawnArgs = args;
       return { status: 0 };
     }
     if (args.includes('has-session') || args.includes('kill-server')) return { status: 0 };
@@ -343,6 +345,94 @@ test('app-server launch env always carries the gateway client key even when the 
   assert.ok(spawnEnv, 'pane spawn env expected');
   assert.equal(spawnEnv.OPENAI_API_KEY, 'client-key-1234');
   assert.ok(String(spawnEnv.OPENAI_BASE_URL || '').includes('127.0.0.1'));
+  // POSIX 靠 fresh server 进程 env 继承投递，不走 -e（老 tmux <3.2 不认识 -e）。
+  assert.equal(spawnArgs.includes('-e'), false);
+});
+
+// Windows 实机事故（2026-09-12）：psmux broker server 复用启动时的环境，spawn env 被
+// 静默忽略，用户全局 OPENAI_API_KEY 顶掉网关 client key → /v1/responses 401。
+// win32 必须用 new-session -e 显式投递鉴权/身份变量，且签名带投递世代强制旧 pane 重建。
+test('app-server on win32 delivers gateway auth via new-session -e and versions the env signature', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-codex-app-paneenv-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  writeServerConfig({ apiKey: 'client-key-1234' }, { fs, aiHomeDir });
+
+  let spawnArgs = null;
+  const spawnSyncImpl = (command, args) => {
+    if (args[0] === '-V') return { status: 0 };
+    if (args.includes('new-session')) {
+      spawnArgs = args;
+      return { status: 0 };
+    }
+    if (args.includes('has-session') || args.includes('kill-server')) return { status: 0 };
+    return { status: 1 };
+  };
+
+  const result = await ensureCodexAppServerEndpoint({
+    gateway: true,
+    aiHomeDir,
+    env: {},
+    platform: 'win32',
+    getProfileDir: () => aiHomeDir,
+    runtimeExecutablePath: 'C:\\Users\\u\\codex.exe',
+    buildProviderEnvImpl: async () => ({ HOME: aiHomeDir, CODEX_HOME: 'C:\\harness\\.codex' }),
+    pickFreePortImpl: async () => 43129,
+    checkReadyzImpl: async () => true,
+    spawnSyncImpl
+  });
+
+  assert.deepEqual(result, { port: 43129, reused: false });
+  assert.ok(spawnArgs, 'psmux new-session spawn expected');
+  const paneEnv = new Map();
+  for (let i = 0; i < spawnArgs.length - 1; i += 1) {
+    if (spawnArgs[i] === '-e') {
+      const [key, ...rest] = String(spawnArgs[i + 1]).split('=');
+      paneEnv.set(key, rest.join('='));
+    }
+  }
+  assert.equal(paneEnv.get('OPENAI_API_KEY'), 'client-key-1234');
+  assert.ok(String(paneEnv.get('OPENAI_BASE_URL') || '').includes('127.0.0.1'));
+  assert.equal(paneEnv.get('CODEX_HOME'), 'C:\\harness\\.codex');
+  assert.equal(paneEnv.get('HOME'), aiHomeDir);
+  // gateway 目标不带 passthrough 标记。
+  assert.equal(paneEnv.has('AIH_CODEX_APP_SERVER_PASSTHROUGH'), false);
+  assert.ok(String(readAppServerState(aiHomeDir, 'gateway').envSignature).endsWith('-paneenv1'));
+
+  // 签名（含世代后缀）匹配 + readyz 正常 → 复用，不重开 pane。
+  spawnArgs = null;
+  const reused = await ensureCodexAppServerEndpoint({
+    gateway: true,
+    aiHomeDir,
+    env: {},
+    platform: 'win32',
+    getProfileDir: () => aiHomeDir,
+    runtimeExecutablePath: 'C:\\Users\\u\\codex.exe',
+    buildProviderEnvImpl: async () => ({ HOME: aiHomeDir }),
+    pickFreePortImpl: async () => 43129,
+    checkReadyzImpl: async () => true,
+    spawnSyncImpl
+  });
+  assert.deepEqual(reused, { port: 43129, reused: true });
+  assert.equal(spawnArgs, null, 'matching generation signature must reuse the resident pane');
+
+  // 旧世代（无 -e 投递）的 state：签名无后缀 → 强制重建。
+  const state = readAppServerState(aiHomeDir, 'gateway');
+  writeAppServerState(aiHomeDir, 'gateway', { ...state, envSignature: state.envSignature.replace(/-paneenv1$/, '') });
+  spawnArgs = null;
+  const rebuilt = await ensureCodexAppServerEndpoint({
+    gateway: true,
+    aiHomeDir,
+    env: {},
+    platform: 'win32',
+    getProfileDir: () => aiHomeDir,
+    runtimeExecutablePath: 'C:\\Users\\u\\codex.exe',
+    buildProviderEnvImpl: async () => ({ HOME: aiHomeDir }),
+    pickFreePortImpl: async () => 43130,
+    checkReadyzImpl: async () => true,
+    spawnSyncImpl
+  });
+  assert.deepEqual(rebuilt, { port: 43130, reused: false });
+  assert.ok(spawnArgs, 'legacy pane without -e delivery must be rebuilt');
 });
 
 test('app-server reuse requires a matching env signature, stale-key panes are rebuilt', async (t) => {

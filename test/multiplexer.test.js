@@ -413,6 +413,41 @@ test('TmuxDriver: commandArgv bypasses the sh shell wrapper for Windows panes', 
   assert.equal(invalid.error, 'tmux_run_invalid_options');
 });
 
+test('TmuxDriver: paneEnv is delivered via new-session -e so reused servers cannot shadow it', () => {
+  const driver = new TmuxDriver();
+  const calls = [];
+  const mockSpawn = (command, args) => {
+    calls.push([command, args]);
+    return { status: 0 };
+  };
+
+  const spawned = driver.spawnHeadlessRun({
+    command: 'psmux',
+    spawnSync: mockSpawn,
+    useSystemdScope: false,
+    socket: 'aih-codexchat-acct',
+    commandArgv: ['cmd.exe', '/d', '/c', 'C:\\Users\\u\\.ai_home\\run\\x.run.cmd'],
+    paneEnv: {
+      OPENAI_API_KEY: 'client-key-1234',
+      OPENAI_BASE_URL: 'http://127.0.0.1:9527/v1',
+      SPACED_VALUE: 'C:\\Users\\u\\space dir\\x',
+      EMPTY_VALUE: '',
+      'BAD-KEY': 'nope'
+    }
+  });
+
+  assert.equal(spawned.ok, true);
+  assert.deepEqual(calls[0], [
+    'psmux',
+    ['-L', 'aih-codexchat-acct', 'new-session', '-d',
+      '-e', 'OPENAI_API_KEY=client-key-1234',
+      '-e', 'OPENAI_BASE_URL=http://127.0.0.1:9527/v1',
+      '-e', 'SPACED_VALUE=C:\\Users\\u\\space dir\\x',
+      '-s', 'run', '--',
+      'cmd.exe', '/d', '/c', 'C:\\Users\\u\\.ai_home\\run\\x.run.cmd']
+  ]);
+});
+
 test('TmuxDriver: injected systemd probes are scoped to their binding dependency', () => {
   const driver = new TmuxDriver();
   const options = {

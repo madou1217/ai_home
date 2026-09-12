@@ -69,6 +69,66 @@ test('command approvals expose ordered opaque choices while exact native decisio
   }]);
 });
 
+test('compaction waiter accepts the deprecated completion notification', async () => {
+  const bridge = eventBridge();
+  const completed = bridge.waitForCompaction(THREAD_ID);
+  bridge.forwardNotification({
+    jsonrpc: '2.0',
+    method: 'thread/compacted',
+    params: { threadId: THREAD_ID, turnId: 'compact-turn-1' }
+  }, {});
+  await completed;
+  assert.equal(bridge.compactionWaiters.size, 0);
+});
+
+test('compaction waiter holds after item completion until its native turn completes', async () => {
+  const bridge = eventBridge();
+  const completion = bridge.waitForCompaction(THREAD_ID);
+  bridge.forwardNotification(notification('turn/started', {
+    threadId: THREAD_ID,
+    turn: { id: 'compact-turn-1', status: 'inProgress' }
+  }), {});
+  bridge.forwardNotification(notification('item/started', {
+    threadId: THREAD_ID,
+    turnId: 'foreign-turn',
+    item: { id: 'foreign-item', type: 'contextCompaction', status: 'inProgress' }
+  }), {});
+  assert.equal(bridge.compactionWaiters.size, 1);
+  bridge.forwardNotification(notification('item/started', {
+    threadId: THREAD_ID,
+    turnId: 'compact-turn-1',
+    item: { id: 'compact-item-1', type: 'contextCompaction', status: 'inProgress' }
+  }), {});
+  bridge.forwardNotification(notification('item/completed', {
+    threadId: THREAD_ID,
+    turnId: 'compact-turn-1',
+    item: { id: 'compact-item-1', type: 'contextCompaction', status: 'completed' }
+  }), {});
+  const settledBeforeTerminal = await Promise.race([
+    completion.then(() => true), delay(5).then(() => false)
+  ]);
+  assert.equal(settledBeforeTerminal, false);
+  assert.equal(bridge.compactionWaiters.size, 1);
+  bridge.forwardNotification(notification('turn/completed', {
+    threadId: THREAD_ID,
+    turn: { id: 'compact-turn-1', status: 'completed' }
+  }), {});
+  await completion;
+  assert.equal(bridge.compactionWaiters.size, 0);
+});
+
+test('compaction waiter rejects on cancellation and timeout without leaking a rejection', async () => {
+  const cancelled = eventBridge();
+  const cancellation = cancelled.waitForCompaction(THREAD_ID);
+  cancelled.cancelCompactionWaiters(new Error('disposed'));
+  await assert.rejects(cancellation, /disposed/);
+
+  const timed = eventBridge({ compactionTimeoutMs: 5 });
+  const timeout = timed.waitForCompaction(THREAD_ID);
+  await assert.rejects(timeout, (error) => error.code === 'codex_compaction_timeout');
+  assert.equal(timed.compactionWaiters.size, 0);
+});
+
 test('file and permissions approvals advertise their complete provider-owned choices', () => {
   const file = mappedInteraction(request(42, 'item/fileChange/requestApproval', {
     threadId: THREAD_ID,
@@ -320,14 +380,23 @@ test('replay compares durable canonical interactions and rebuilds only the priva
   assert.equal(bridge.events.length, 0);
 });
 
-function eventBridge() {
+function eventBridge(options = {}) {
   const events = [];
   const bridge = new CodexSessionEventBridge({
     sessionId: SESSION_ID,
-    eventSink: async (event) => events.push(event)
+    eventSink: async (event) => events.push(event),
+    ...options
   });
   bridge.events = events;
   return bridge;
+}
+
+function notification(method, params) {
+  return { jsonrpc: '2.0', method, params };
+}
+
+function delay(timeoutMs) {
+  return new Promise((resolve) => setTimeout(resolve, timeoutMs));
 }
 
 function responseClient() {

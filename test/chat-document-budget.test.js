@@ -11,7 +11,7 @@ const test = require('node:test');
 const {
   applyDocumentTokenBudget, estimateTextTokens, resolveBudgetTokens
 } = require('../lib/server/chat-runtime/chat-document-budget');
-const { budgetedTurnInput, composeTurnPrompt } = require('../lib/server/chat-runtime/chat-harness-policy');
+const { budgetedTurnInput, budgetHistoryItems, composeTurnPrompt } = require('../lib/server/chat-runtime/chat-harness-policy');
 const { formatChatDocumentBlock } = require('../lib/server/chat-document-attachments');
 
 const GEMINI_WINDOW = 1048576;
@@ -91,6 +91,29 @@ test('policy 入口:未超预算返回 null,超预算重建 prompt 且分量顺�
 test('policy 入口:没有文档块时不介入', () => {
   assert.equal(budgetedTurnInput({ parts: { content: 'x', documentBlocks: [], videoBlock: '' } }, GEMINI_WINDOW), null);
   assert.equal(budgetedTurnInput({ parts: undefined }, GEMINI_WINDOW), null);
+});
+
+test('历史 seed 超预算时保留连续尾部,不注入孤立 assistant', () => {
+  const items = [
+    { role: 'user', content: [{ type: 'input_text', text: '旧'.repeat(5000) }] },
+    { role: 'assistant', content: [{ type: 'output_text', text: '答复' }] },
+    { role: 'user', content: [{ type: 'input_text', text: '最新' }] }
+  ];
+  const result = budgetHistoryItems(items, 1000);
+  assert.equal(result.truncated, true);
+  assert.deepEqual(result.items, [items[2]]);
+  assert.ok(result.appliedTokens <= result.budgetTokens);
+});
+
+test('历史 seed 遇到过大消息时停止回溯,不跨 gap 保留孤立 assistant', () => {
+  const items = [
+    { role: 'user', content: [{ type: 'input_text', text: '较早但可用' }] },
+    { role: 'user', content: [{ type: 'input_text', text: '过大'.repeat(5000) }] },
+    { role: 'assistant', content: [{ type: 'output_text', text: '最新可用' }] }
+  ];
+  const result = budgetHistoryItems(items, 100);
+  assert.deepEqual(result.items, []);
+  assert.equal(result.truncated, true);
 });
 
 test('截断保住信封:块仍以（附件结束）收尾,字符数只描述正文', () => {

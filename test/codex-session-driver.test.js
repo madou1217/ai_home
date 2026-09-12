@@ -903,6 +903,29 @@ function createFakeClient(decisionOrder, overrides) {
         if (overrides.turnStartError) throw overrides.turnStartError;
         return { turn: { id: 'native-turn-1', status: 'inProgress' } };
       }
+      if (method === 'thread/compact/start' && overrides.emitCompactionEvents !== false) {
+        const compactTurnId = 'native-compaction-1';
+        setImmediate(() => {
+          const binding = this._binding;
+          if (!binding) return;
+          binding.onNotification({ method: 'turn/started', params: {
+            threadId: NATIVE_THREAD_ID,
+            turn: { id: compactTurnId, status: 'inProgress' }
+          }});
+          binding.onNotification({ method: 'item/started', params: {
+            threadId: NATIVE_THREAD_ID, turnId: compactTurnId,
+            item: { id: 'compaction-item-1', type: 'contextCompaction', status: 'inProgress' }
+          }});
+          binding.onNotification({ method: 'item/completed', params: {
+            threadId: NATIVE_THREAD_ID, turnId: compactTurnId,
+            item: { id: 'compaction-item-1', type: 'contextCompaction', status: 'completed' }
+          }});
+          binding.onNotification({ method: 'turn/completed', params: {
+            threadId: NATIVE_THREAD_ID,
+            turn: { id: compactTurnId, status: 'completed' }
+          }});
+        });
+      }
       if (method === 'thread/resume') {
         if (overrides.replayOnResume) {
           setImmediate(() => this.requestFromServer(
@@ -924,8 +947,11 @@ function createFakeClient(decisionOrder, overrides) {
       }
       return {};
     },
-    bindTurn(threadId, binding) { bindings.set(threadId, binding); },
-    unbindTurn(threadId) { this.unbindCalls.push(threadId); bindings.delete(threadId); },
+    bindTurn(threadId, binding) { bindings.set(threadId, binding); this._binding = binding; },
+    unbindTurn(threadId) {
+      this.unbindCalls.push(threadId); bindings.delete(threadId);
+      this._binding = null;
+    },
     respond(id, result) {
       decisionOrder.push(`native:${id}`);
       this.responseAttempts.push({ id, result });

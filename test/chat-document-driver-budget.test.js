@@ -20,10 +20,34 @@ function fakeClient(calls) {
     async request(method, params) {
       calls.push({ method, params });
       if (method === 'thread/resume') return { thread: { id: THREAD } };
+      if (method === 'thread/compact/start') {
+        setImmediate(() => {
+          const binding = this._binding;
+          if (!binding) return;
+          binding.onNotification({ method: 'turn/started', params: {
+            threadId: THREAD, turn: { id: 'native-compaction-1', status: 'inProgress' }
+          }});
+          binding.onNotification({ method: 'item/started', params: {
+            threadId: THREAD, turnId: 'native-compaction-1',
+            item: { id: 'compaction-item-1', type: 'contextCompaction', status: 'inProgress' }
+          }});
+          binding.onNotification({ method: 'item/completed', params: {
+            threadId: THREAD, turnId: 'native-compaction-1',
+            item: { id: 'compaction-item-1', type: 'contextCompaction', status: 'completed' }
+          }});
+          calls.push({ method: 'native/compaction-completed' });
+          binding.onNotification({ method: 'turn/completed', params: {
+            threadId: THREAD, turn: { id: 'native-compaction-1', status: 'completed' }
+          }});
+        });
+        return {};
+      }
       if (method === 'turn/start') return { turn: { id: 'native-turn-1' } };
       return {};
     },
-    bindTurn() {}, unbindTurn() {}, waitForReconnect() { return new Promise(() => {}); }
+    bindTurn(_threadId, binding) { this._binding = binding; },
+    unbindTurn() { this._binding = null; },
+    waitForReconnect() { return new Promise(() => {}); }
   };
 }
 
@@ -55,7 +79,7 @@ function chatDriver(calls, projectPath) {
   });
 }
 
-async function submittedText(t, fileName, fileText) {
+async function submittedText(t, fileName, fileText, includeCalls = false) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-driver-budget-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const file = path.join(dir, fileName);
@@ -74,7 +98,8 @@ async function submittedText(t, fileName, fileText) {
   const started = calls.find((call) => call.method === 'turn/start');
   assert.ok(started, `turn/start 未发出; 调用:[${calls.map((c) => c.method).join(',')}]`
     + ` 拒因:${rejection && (rejection.code || rejection.message)}`);
-  return started.params.input.map((part) => part.text || '').join('');
+  const text = started.params.input.map((part) => part.text || '').join('');
+  return includeCalls ? { text, calls } : text;
 }
 
 test('提交给 harness 的 turn/start 已剥离内嵌 base64', async (t) => {
@@ -87,10 +112,27 @@ test('提交给 harness 的 turn/start 已剥离内嵌 base64', async (t) => {
   assert.match(text, /^这个页面什么风格？/, '用户正文仍在最前');
 });
 
+test('已有 native 历史时即使当前附件很小也先 compact,避免继承旧超窗附件', async (t) => {
+  const result = await submittedText(t, 'v24.html', '<!doctype html><p>短附件</p>', true);
+  const compactIndex = result.calls.findIndex((call) => call.method === 'thread/compact/start');
+  const compactCompletedIndex = result.calls.findIndex((call) => call.method === 'native/compaction-completed');
+  const turnIndex = result.calls.findIndex((call) => call.method === 'turn/start');
+  assert.ok(compactIndex >= 0, '已有历史的文档 turn 必须先请求原生 compact');
+  assert.ok(compactCompletedIndex > compactIndex && compactCompletedIndex < turnIndex,
+    '必须等待 compact 完成后再提交当前附件');
+  assert.match(result.text, /短附件/);
+});
+
 test('超预算的纯文本附件在提交前被裁剪:证明预算在 resolveSettings 之后生效', async (t) => {
   // 不含 base64,剥离对它无效——只有 token 预算能救。预算取自 resolveSettings
   // 写入的 model_context_window,所以这条断言同时锁住了两步的先后顺序。
-  const text = await submittedText(t, 'spec.md', '规格说明书正文。'.repeat(100000));
+  const result = await submittedText(t, 'spec.md', '规格说明书正文。'.repeat(100000), true);
+  const text = result.text;
+  const compactIndex = result.calls.findIndex((call) => call.method === 'thread/compact/start');
+  const compactCompletedIndex = result.calls.findIndex((call) => call.method === 'native/compaction-completed');
+  const turnIndex = result.calls.findIndex((call) => call.method === 'turn/start');
+  assert.ok(compactIndex >= 0 && compactCompletedIndex > compactIndex && compactCompletedIndex < turnIndex,
+    '已有 native thread 的超大附件 turn 必须等待原生 compact 完成');
 
   assert.match(text, /其余 \d+ 字符未装载/, '超预算必须在提交前被裁剪并披露');
   assert.ok(text.endsWith('（附件结束）'), '裁剪后仍须是闭合的附件块');

@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 
 const { parseProviderRetryHintMs } = require('../lib/server/retry-hints');
 const { classifyUpstreamFailure } = require('../lib/server/upstream-failure-policy');
+const { writeCodeAssistFailure } = require('../lib/server/upstream-endpoints-code-assist-helpers');
 
 test('retry hints parses Retry-After seconds header', () => {
   const ms = parseProviderRetryHintMs({
@@ -552,6 +553,86 @@ test('普通 400 参数错误仍然直接回客户端，不换账号空跑', () 
   assert.equal(policy.kind, 'invalid_request');
   assert.equal(policy.shouldPassthroughToClient, true);
   assert.equal(policy.shouldRetryAnotherAccount, false);
+});
+
+test('AGY/Gemini 超出上下文时返回 Codex 可识别的 context_length_exceeded 策略', () => {
+  const policy = classifyUpstreamFailure({
+    provider: 'agy',
+    statusCode: 400,
+    detail: 'HTTP 400 The input token count exceeds the maximum number of tokens allowed 1048576.',
+    defaultCooldownMs: 60000
+  });
+  assert.equal(policy.kind, 'context_length_exceeded');
+  assert.equal(policy.clientStatusCode, 400);
+  assert.equal(policy.failureReason, 'context_length_exceeded');
+  assert.equal(policy.shouldPassthroughToClient, true);
+  assert.equal(policy.shouldRetryAnotherAccount, false);
+  assert.equal(policy.shouldMarkFailure, false);
+  assert.equal(policy.scope, 'none');
+});
+
+test('无 HTTP 状态的 prompt is too long 也归类为上下文超限', () => {
+  const policy = classifyUpstreamFailure({
+    provider: 'gemini',
+    error: new Error('prompt is too long for this model')
+  });
+  assert.equal(policy.kind, 'context_length_exceeded');
+  assert.equal(policy.clientStatusCode, 400);
+});
+
+test('结构化 context_length_exceeded 错误不依赖 message 文案', () => {
+  const policy = classifyUpstreamFailure({
+    provider: 'agy',
+    statusCode: 400,
+    body: {
+      error: {
+        type: 'invalid_request_error',
+        code: 'context_length_exceeded',
+        message: 'request rejected'
+      }
+    }
+  });
+  assert.equal(policy.kind, 'context_length_exceeded');
+  assert.equal(policy.failureReason, 'context_length_exceeded');
+});
+
+test('Code Assist 超窗响应使用 Codex 可识别的 OpenAI 错误信封', () => {
+  let captured = null;
+  const res = {};
+  const writeJson = (_res, statusCode, payload) => { captured = { statusCode, payload }; };
+  writeCodeAssistFailure(
+    writeJson,
+    res,
+    400,
+    'HTTP 400 The input token count exceeds the maximum number of tokens allowed 1048576.',
+    { kind: 'context_length_exceeded' }
+  );
+  assert.equal(captured.statusCode, 400);
+  assert.deepEqual(captured.payload, {
+    error: {
+      message: 'HTTP 400 The input token count exceeds the maximum number of tokens allowed 1048576.',
+      type: 'invalid_request_error',
+      param: null,
+      code: 'context_length_exceeded'
+    }
+  });
+});
+
+test('Anthropic Code Assist 超窗响应保持 Anthropic 错误协议', () => {
+  let captured = null;
+  const writeJson = (_res, statusCode, payload) => { captured = { statusCode, payload }; };
+  writeCodeAssistFailure(writeJson, {}, 400, 'prompt is too long', {
+    kind: 'context_length_exceeded'
+  }, 'anthropic');
+  assert.equal(captured.statusCode, 400);
+  assert.deepEqual(captured.payload, {
+    type: 'error',
+    error: {
+      type: 'invalid_request_error',
+      message: 'prompt is too long',
+      code: 'context_length_exceeded'
+    }
+  });
 });
 
 // zcode（智谱/Z.ai）用 HTTP 200 + {"code":1005,...} 表达配额拒绝，

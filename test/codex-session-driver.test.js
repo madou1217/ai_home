@@ -216,6 +216,44 @@ test('context window failure rebuilds the native thread and retries the turn onc
   assert.equal((await turn).status, 'completed');
 });
 
+test('context overflow recovery tolerates paginated app-server thread/read incompatibility', async () => {
+  const fixture = createFixture({
+    nativeSessionId: NATIVE_THREAD_ID,
+    unsupportedThreadRead: true,
+    rebuiltThreadId: '019f-rebuilt-thread'
+  });
+  const turn = fixture.entry.driver.startTurn(turnContext());
+  await nextTask();
+  fixture.client.notify('turn/started', {
+    threadId: NATIVE_THREAD_ID,
+    turn: { id: 'native-turn-1', status: 'inProgress' }
+  });
+  fixture.client.notify('turn/completed', {
+    threadId: NATIVE_THREAD_ID,
+    turn: {
+      id: 'native-turn-1',
+      status: 'failed',
+      error: { code: 'context_length_exceeded', message: 'prompt too large' }
+    }
+  });
+  for (let index = 0; index < 20 && fixture.client.methods().filter((method) => method === 'turn/start').length < 2; index += 1) {
+    await nextTask();
+  }
+  assert.deepEqual(fixture.client.methods().slice(-3), [
+    'thread/read', 'thread/start', 'turn/start'
+  ]);
+  assert.equal(fixture.client.params('turn/start').threadId, '019f-rebuilt-thread');
+  fixture.client.notify('turn/started', {
+    threadId: '019f-rebuilt-thread',
+    turn: { id: 'native-turn-2', status: 'inProgress' }
+  });
+  fixture.client.notify('turn/completed', {
+    threadId: '019f-rebuilt-thread',
+    turn: { id: 'native-turn-2', status: 'completed' }
+  });
+  assert.equal((await turn).status, 'completed');
+});
+
 test('Codex terminal settlement waits for the native turn anchor to persist', async () => {
   const persistence = deferred();
   const fixture = createFixture({
@@ -928,12 +966,19 @@ function createFakeClient(decisionOrder, overrides) {
         };
       }
       if (method === 'thread/start') return {
-        thread: { id: NATIVE_THREAD_ID },
+        thread: { id: overrides.rebuiltThreadId || NATIVE_THREAD_ID },
         ...(overrides.omitThreadModel ? {} : { model: overrides.threadModel || 'gpt-5.3-codex' })
       };
+      if (method === 'thread/read' && overrides.unsupportedThreadRead) {
+        const error = new Error('list_turns is not supported yet');
+        error.code = 'codex_app_server_rpc_error';
+        throw error;
+      }
       if (method === 'turn/start') {
         if (overrides.turnStartError) throw overrides.turnStartError;
-        return { turn: { id: 'native-turn-1', status: 'inProgress' } };
+        const turnStarts = calls.filter((call) => call.method === 'turn/start').length;
+        return { turn: { id: overrides.rebuiltThreadId && turnStarts > 1
+          ? 'native-turn-2' : 'native-turn-1', status: 'inProgress' } };
       }
       if (method === 'thread/compact/start' && overrides.emitCompactionEvents !== false) {
         const compactTurnId = 'native-compaction-1';

@@ -1,6 +1,6 @@
 # Provider 能力矩阵（实测）
 
-> 测量时间：2026-09-12 · 测量者：本机网关 `127.0.0.1:9527` 真账号真上游
+> 测量时间：2026-09-12（B33 同日复核，见 §3.1）· 测量者：本机网关 `127.0.0.1:9527` 真账号真上游
 > 用途：`chat-harness-absorption.md` §后续吸收专题 第 5 项要求「逐 provider 记录模型窗口、reasoning、图片、
 > 停止、压缩、恢复的**真实结果**」，并明确「某项协议限制持续存在时再接 Pi adapter」。本文是该前置数据，
 > **只测不改**，不构成对任何实现的改动。
@@ -63,19 +63,36 @@ codex 的额度是在本轮测试过程中耗尽的（当日早些时候同一�
 元数据侧两家 `capabilities.reasoning` 均为 `true`(字段在 `capabilities` 下,
 不是条目顶层——本文初版的探测脚本读错路径,恒为 false,故初版未给出 reasoning 结论)。
 
-### B33:agy 经 `/v1/chat/completions` 收不到图片输入
+### B33:agy 经 `/v1/chat/completions` 收不到图片输入 —— 范围已收窄到 `/v1` 这条协议路径
 
-复现:上述同一请求,1×1 与 48×48 两种图都答"没收到图"(`NO` / `NOIMAGE`),claude 同请求同图答 `Blue`。
-**已排除**"适配器缺失":`protocol-canonical.js:80` 把 openai `image_url` 转为 canonical image part、
-`:288` 把 canonical image 转为 gemini `inlineData`,两个方向都在。
-**未查明**:agy 的请求实际走哪条路径、在哪一步丢掉图片部件。按本文档纪律,症状与排除项如实记录,
-不把未证实的猜测写成根因。
+初始复现:上述同一请求,1×1 与 48×48 两种图都答"没收到图"(`NO` / `NOIMAGE`),claude 同请求同图答 `Blue`。
+
+**2026-09-12 复核(测试图:64×64 四象限,左上红/右上绿/右下黄/左下蓝,顺序报色几乎不可能靠猜命中):**
+
+| 路径 | 模型 | 结果 |
+|---|---|---|
+| **chat harness**(WebUI 实际走的路) | `gemini-3.8-flash-high` | 答「红、绿、黄、蓝」**4/4** ✅ |
+| **chat harness** | `gemini-2.5-flash-thinking`(B33 原模型) | 答「红色、绿色、黄色、蓝色」**4/4** ✅ |
+| `/v1/chat/completions` | — | **未复测**:该端点只认 gateway client key(`v1-router.js:692`),
+本次无法取得该凭据,不以推断代替实测 |
+
+由此:
+
+- **不是模型特异**:B33 当初失败的那个模型在 harness 路径上答全对。
+- **不影响 WebUI/harness 用户路径**:两个模型、真实账号、真实上游,图片都到达了模型。
+- **请求构建层已排除(进程内逐字节验证)**:`normalizeOpenAIContentParts` → canonical →
+  `canonicalPartsToGeminiParts` → `addGeminiContent`(含 `removeEmptyGeminiTextParts` 与
+  `orderGeminiPartsForRole` 两个包装)全链保留 `inlineData`,mime 正确、base64 与原图完全一致;
+  纯图片(无文字)轮次同样保留。
+- **仍未查明**:`/v1/chat/completions` 端到端是否还丢图。若还丢,按上一条,问题不在请求构建,
+  而在该路由选用的协议变体或上游包裹层(参见 agy 响应包在 `{response:{…}}` 的既有结论)。
+  取得 client key 后一条请求即可判定。
 
 ## 4. 尚未取得实测的项
 
 | 项 | 为何未测 |
 |---|---|
-| reasoning / 图片输入 | **已补测,见 §3.1** |
+| reasoning / 图片输入 | **已补测,见 §3.1**;图片输入 2026-09-12 已在 harness 路径复核通过 |
 | 压缩 / 恢复 | 属 harness 会话级行为，需经 chat-runtime 会话通道而非 `/v1/*` 直调；且该子系统正在并发开发中 |
 | 其余 5 家的会话级行为 | 账号不可达（见 §2），无法取得真实值 |
 

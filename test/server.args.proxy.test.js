@@ -129,14 +129,14 @@ test('parseServerServeArgs does not terminate the Codex App server by default', 
   });
 });
 
-test('parseServerServeArgs keeps model usage background scan opt-in', () => {
+test('parseServerServeArgs enables model usage background scan by default', () => {
   withEnv({
     AIH_SERVER_MODEL_USAGE_SCAN: undefined,
     AIH_SERVER_MODEL_USAGE_SCAN_START_DELAY_MS: undefined,
     AIH_SERVER_MODEL_USAGE_SCAN_INTERVAL_MS: undefined
   }, () => {
     const parsed = parseServerServeArgs([]);
-    assert.equal(parsed.modelUsageScan, false);
+    assert.equal(parsed.modelUsageScan, true);
     assert.equal(parsed.modelUsageScanStartDelayMs, 5000);
     assert.equal(parsed.modelUsageScanIntervalMs, 600000);
   });

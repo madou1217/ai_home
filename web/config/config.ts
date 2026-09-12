@@ -95,6 +95,13 @@ export default defineConfig({
   // 会把它改写成 ESM，随后又按 CommonJS 解析，因此桌面开发态只关闭 Fast Refresh。
   fastRefresh: !isDesktopBuild,
   esbuildMinifyIIFE: true,
+  // 依赖产物(monaco worker、各 async chunk)带 ES2018 的对象 rest 解构,而 umi 给
+  // esbuild 压缩阶段注入的目标基线含 es2015,esbuild 明确「无法把解构降级到该目标」,
+  // 于 @umijs/max 4.7 + esbuild 0.28 下整批 chunk 压缩失败(实测 57 个)。
+  // 只抬高**压缩**目标,不动下面的 targets —— 转译仍按浏览器矩阵走。
+  // 注:这些第三方 chunk 的新语法本来就未被成功降级(esbuild 报的正是降不了),
+  // 因此本改动不会让实际的旧 Safari 兼容性比现状更差;真要保证需转译 node_modules。
+  jsMinifierOptions: { target: 'es2020' },
   // xterm 6 的 ESM 产物（lib/xterm.mjs）在 webpack scope-hoisting 下会把内部
   // 循环 class 继承的基类重排为 null，运行时抛 "Super constructor null"。
   // 强制解析到自包含的 CJS UMD 产物（对 concatenation 不透明），规避该 bug。

@@ -3,6 +3,9 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 
+const {
+  CodexToolOrderCoordinator
+} = require('../lib/server/chat-runtime/codex-tool-order-coordinator');
 const { CodexTurnRecovery } = require('../lib/server/chat-runtime/codex-turn-recovery');
 const {
   recoveredTurnSnapshot
@@ -194,7 +197,14 @@ function replayBridge() {
   return {
     cancelExpectedReplays() {},
     expectReplays() {},
-    waitForExpectedReplays: async () => {}
+    waitForExpectedReplays: async () => {},
+    // 驱动在每轮开始/清理时向 bridge 取用工具顺序协调器。这里用真实实现而不是
+    // 空壳:空壳会让顺序语义在恢复路径上失去断言能力。
+    createToolOrder() { return new CodexToolOrderCoordinator(); },
+    flushToolOrder(toolOrder) {
+      if (!toolOrder) return Promise.resolve();
+      return Promise.all([toolOrder.flush(() => {}), ...toolOrder.pending()]);
+    }
   };
 }
 

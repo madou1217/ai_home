@@ -338,7 +338,10 @@ function timelineItem(itemId, kind) {
   };
   return {
     id: itemId, kind, status: 'completed', createdAt: 1, updatedAt: 2,
-    detail: details[kind]
+    // 真实 provider 事件每次工具调用都带 callId,配对契约
+    // (tool-history-integrity)据此保证 callId 与 item 一一对应,
+    // 无 callId 的新工具项会被 chat_tool_history_call_id_required 拒绝。
+    detail: { callId: `call-${itemId}`, ...details[kind] }
   };
 }
 

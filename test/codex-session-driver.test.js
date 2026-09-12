@@ -184,6 +184,38 @@ test('Codex driver reuses resident client and persists mapped native events', as
   assert.deepEqual(fixture.bound, [NATIVE_THREAD_ID]);
 });
 
+test('context window failure rebuilds the native thread and retries the turn once', async () => {
+  const fixture = createFixture({ nativeSessionId: NATIVE_THREAD_ID });
+  const turn = fixture.entry.driver.startTurn(turnContext());
+  await nextTask();
+  fixture.client.notify('turn/started', {
+    threadId: NATIVE_THREAD_ID,
+    turn: { id: 'native-turn-1', status: 'inProgress' }
+  });
+  fixture.client.notify('turn/completed', {
+    threadId: NATIVE_THREAD_ID,
+    turn: {
+      id: 'native-turn-1',
+      status: 'failed',
+      error: { code: 'context_length_exceeded', message: 'prompt too large' }
+    }
+  });
+  for (let index = 0; index < 20 && fixture.client.methods().filter((method) => method === 'turn/start').length < 2; index += 1) {
+    await nextTask();
+  }
+  assert.equal(fixture.client.methods().filter((method) => method === 'thread/start').length, 1);
+  assert.equal(fixture.client.methods().filter((method) => method === 'turn/start').length, 2);
+  fixture.client.notify('turn/started', {
+    threadId: NATIVE_THREAD_ID,
+    turn: { id: 'native-turn-1', status: 'inProgress' }
+  });
+  fixture.client.notify('turn/completed', {
+    threadId: NATIVE_THREAD_ID,
+    turn: { id: 'native-turn-1', status: 'completed' }
+  });
+  assert.equal((await turn).status, 'completed');
+});
+
 test('Codex terminal settlement waits for the native turn anchor to persist', async () => {
   const persistence = deferred();
   const fixture = createFixture({

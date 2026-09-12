@@ -12,6 +12,7 @@ const {
   applyDocumentTokenBudget, estimateTextTokens, resolveBudgetTokens
 } = require('../lib/server/chat-runtime/chat-document-budget');
 const { budgetedTurnInput, composeTurnPrompt } = require('../lib/server/chat-runtime/chat-harness-policy');
+const { formatChatDocumentBlock } = require('../lib/server/chat-document-attachments');
 
 const GEMINI_WINDOW = 1048576;
 
@@ -90,4 +91,40 @@ test('policy 入口:未超预算返回 null,超预算重建 prompt 且分量顺�
 test('policy 入口:没有文档块时不介入', () => {
   assert.equal(budgetedTurnInput({ parts: { content: 'x', documentBlocks: [], videoBlock: '' } }, GEMINI_WINDOW), null);
   assert.equal(budgetedTurnInput({ parts: undefined }, GEMINI_WINDOW), null);
+});
+
+test('截断保住信封:块仍以（附件结束）收尾,字符数只描述正文', () => {
+  // 回归:曾按整块长度切分,既掐掉结尾标记(模型收到未闭合的附件块),
+  // 又把标题行算进"已装载字符数"。
+  const block = formatChatDocumentBlock('x.html', '测'.repeat(800000));
+  const result = applyDocumentTokenBudget({
+    content: '', documentBlocks: [block], videoBlock: '', contextWindow: GEMINI_WINDOW
+  });
+  const out = result.documentBlocks[0];
+
+  assert.ok(out.endsWith('（附件结束）'), '截断不得掐掉结尾标记');
+  assert.ok(out.startsWith('附件 "x.html"：\n'), '标题行必须完整');
+  const matched = /已装载前 (\d+) 字符，其余 (\d+) 字符未装载/.exec(out);
+  assert.ok(matched, '必须给出装载/未装载字符数');
+  const body = out.slice('附件 "x.html"：\n'.length, -'\n（附件结束）'.length);
+  assert.equal(Number(matched[1]) + Number(matched[2]), 800000,
+    '两数之和必须等于正文长度,不得把信封算作附件内容');
+  assert.ok(body.startsWith('测'), '正文从头保留');
+});
+
+test('剥离披露语在截断后仍在:两条披露不冲突', () => {
+  // 剥离披露语紧跟标题行,因此只截正文时它必然存活——模型不会既被告知
+  // "结构逐字保留"又看不到自己被截断了。
+  const block = formatChatDocumentBlock('page.html',
+    `<img src="data:image/webp;base64,${'A'.repeat(9000)}">${'测'.repeat(800000)}`);
+  const result = applyDocumentTokenBudget({
+    content: '', documentBlocks: [block], videoBlock: '', contextWindow: GEMINI_WINDOW
+  });
+  const out = result.documentBlocks[0];
+
+  assert.match(out, /含 1 处内嵌 base64 资源/, '剥离事实必须存活');
+  assert.match(out, /其余 \d+ 字符未装载/, '截断事实必须同时在场');
+  assert.ok(out.endsWith('（附件结束）'));
+  assert.ok(!out.includes('A'.repeat(500)), 'base64 载荷不得残留');
+  assert.ok(result.appliedTokens <= result.budgetTokens);
 });

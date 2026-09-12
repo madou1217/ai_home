@@ -51,12 +51,31 @@ codex 的额度是在本轮测试过程中耗尽的（当日早些时候同一�
 
 两家均在中断后 **≤3ms** 结束，无挂起、无未捕获异常。
 
+## 3.1 reasoning 回传与图片输入(2026-09-12 补测)
+
+两项都在可达的两家上实测,请求走 `/v1/chat/completions`:
+
+| provider | 模型 | reasoning 回传 | 图片输入(48×48 纯蓝 PNG,data URI) |
+|---|---|---|---|
+| claude | `claude-opus-5` | **未回传**(带 `reasoning_effort:'low'` 仍为 0 字符;推理过程混在正文里) | **通过**——答 `Blue` |
+| agy | `gemini-2.5-flash-thinking` | **回传**(1903–2722 字符独立 reasoning 内容) | **未通过**——答 `NOIMAGE` |
+
+元数据侧两家 `capabilities.reasoning` 均为 `true`(字段在 `capabilities` 下,
+不是条目顶层——本文初版的探测脚本读错路径,恒为 false,故初版未给出 reasoning 结论)。
+
+### B33:agy 经 `/v1/chat/completions` 收不到图片输入
+
+复现:上述同一请求,1×1 与 48×48 两种图都答"没收到图"(`NO` / `NOIMAGE`),claude 同请求同图答 `Blue`。
+**已排除**"适配器缺失":`protocol-canonical.js:80` 把 openai `image_url` 转为 canonical image part、
+`:288` 把 canonical image 转为 gemini `inlineData`,两个方向都在。
+**未查明**:agy 的请求实际走哪条路径、在哪一步丢掉图片部件。按本文档纪律,症状与排除项如实记录,
+不把未证实的猜测写成根因。
+
 ## 4. 尚未取得实测的项
 
 | 项 | 为何未测 |
 |---|---|
-| reasoning 内容回传 | 代表模型此次未返回 `reasoning_content`；需选用明确开启 reasoning 的模型再测 |
-| 图片输入 | 元数据已列出模态支持，但未发真实多模态请求验证端到端 |
+| reasoning / 图片输入 | **已补测,见 §3.1** |
 | 压缩 / 恢复 | 属 harness 会话级行为，需经 chat-runtime 会话通道而非 `/v1/*` 直调；且该子系统正在并发开发中 |
 | 其余 5 家的会话级行为 | 账号不可达（见 §2），无法取得真实值 |
 

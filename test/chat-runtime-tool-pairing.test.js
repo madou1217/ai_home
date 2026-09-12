@@ -14,20 +14,42 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 
-// 本文件断言的错误码由 tool-history-integrity.js 产生。该模块随 harness 工具链
-// 分批落地,尚未到位时整体跳过而不是让套件红着——缺前置条件时如实 skip,
-// 模块落地后无需改动本文件即自动生效。
-let openChatRuntimeStore = null;
-let missingReason = '';
-try {
-  require.resolve('../lib/server/chat-runtime/tool-history-integrity');
-  ({ openChatRuntimeStore } = require('../lib/server/chat-runtime/store'));
-} catch (error) {
-  missingReason = `tool-history-integrity 尚未落地:${String(error.message).slice(0, 60)}`;
+// store 在 try 之外 require:store 或其依赖 require 期失败必须响,不能被下面的
+// 探测伪装成「契约尚未接线」。
+const { openChatRuntimeStore } = require('../lib/server/chat-runtime/store');
+
+// 本文件断言的是**契约已生效**,不是**模块文件存在**。二者不等价:执行点在
+// event-repository / timeline-import-repository,模块单独落地而接线未到时,
+// 查文件存在的守卫会解除跳过、断言却无从触发,红在别人的提交上。
+// 因此改为行为探测——真发一条无 callId 的工具项,看契约是否拒绝它。
+let contractState = null;
+function contractStatus() {
+  if (contractState) return contractState;
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-tool-pairing-probe-'));
+  const store = openChatRuntimeStore({ aiHomeDir: root, clock: () => 5000 });
+  try {
+    seed(store); // seed 失败就让它抛:store 本身坏了不该被记成「未接线」
+    let thrown = null;
+    try { emit(store, 'timeline.item.started', tool('probe-orphan', '')); }
+    catch (error) { thrown = error; }
+    contractState = thrown && thrown.code === 'chat_tool_history_call_id_required'
+      ? { live: true, reason: '' }
+      : {
+        live: false,
+        reason: thrown
+          ? `配对契约尚未接线:拒绝码为 ${thrown.code || thrown.message}`
+          : '配对契约尚未接线:无 callId 的工具项未被拒绝'
+      };
+  } finally {
+    store.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+  return contractState;
 }
 
 const pairingTest = (name, fn) => test(name, (t) => {
-  if (!openChatRuntimeStore) { t.skip(missingReason); return undefined; }
+  const status = contractStatus();
+  if (!status.live) { t.skip(status.reason); return undefined; }
   return fn(t);
 });
 
@@ -44,6 +66,10 @@ function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-tool-pairing-'));
   const store = openChatRuntimeStore({ aiHomeDir: root, clock: () => 5000 });
   t.after(() => { store.close(); fs.rmSync(root, { recursive: true, force: true }); });
+  return seed(store);
+}
+
+function seed(store) {
   store.createSession({
     sessionId: 'probe', provider: 'codex', executionAccountRef: 'probe-account',
     runtimeBinding: { nativeSessionId: 'probe-thread' }

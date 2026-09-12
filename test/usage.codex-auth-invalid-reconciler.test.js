@@ -333,6 +333,35 @@ test('codex auth invalid reconciler retains account when refresh reports termina
   assertRetained(ctx, root, accountRef, 'refresh_http_400');
 });
 
+test('codex auth invalid reconciler keeps a still-valid access token when refresh is rejected', async (t) => {
+  const root = mkTmpDir();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const { accountRef, runtimeDir } = registerCodexAccount(root, '41', {
+    access_token: makeJwt({
+      exp: Math.floor(Date.now() / 1000) + 3600,
+      'https://api.openai.com/profile': { email: 'upgrade@example.com' }
+    }),
+    refresh_token: 'rt_upgrade',
+    account_id: 'acc_upgrade'
+  });
+  const ctx = makeService(root, {
+    refreshCodexAccessToken: async () => ({
+      ok: false,
+      refreshed: false,
+      reason: 'refresh_http_401'
+    })
+  });
+
+  ctx.service.enqueueAuthInvalidReauthRequired('codex', accountRef, 'auth_invalid_reauth_required');
+  await ctx.runScheduled();
+
+  assert.equal(fs.existsSync(runtimeDir), true);
+  assert.deepEqual(ctx.retainedRuntime, []);
+  assert.deepEqual(ctx.statusUpdates, []);
+  assert.equal(ctx.clearedRuntime.length, 1);
+  assert.equal(ctx.clearedRuntime[0].options.evidence, 'access_token_still_valid');
+});
+
 test('codex auth invalid reconciler keeps account when refresh failure is not session invalid', async (t) => {
   const root = mkTmpDir();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

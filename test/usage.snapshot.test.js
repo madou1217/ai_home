@@ -62,12 +62,27 @@ function writeAgyNativeAuth(aiHomeDir, accountRef, options = {}) {
   });
 }
 
-test('codex usage snapshot falls back to account/read payload when rateLimits are unavailable', () => {
+test('codex usage snapshot uses the live account plan over stale local metadata when rateLimits are unavailable', () => {
   const root = mkTmpDir();
   try {
     const { aiHomeDir, getProfileDir, getToolConfigDir } = createUsagePaths(root);
     const accountRef = registerUsageAccount(aiHomeDir, 'codex', '1', {
-      nativeAuth: { auth: { tokens: { access_token: 'codex-access-token' } } }
+      nativeAuth: {
+        auth: {
+          tokens: {
+            access_token: makeJwt({
+              'https://api.openai.com/auth': {
+                chatgpt_plan_type: 'plus',
+                chatgpt_account_id: 'acc_upgrade'
+              },
+              'https://api.openai.com/profile': {
+                email: 'meadeodeo@gmail.com'
+              }
+            }),
+            account_id: 'acc_upgrade'
+          }
+        }
+      }
     });
 
     const cacheService = createUsageCacheService({
@@ -85,8 +100,9 @@ test('codex usage snapshot falls back to account/read payload when rateLimits ar
     const payload = {
       ok: true,
       account: {
-        email: 'user@example.com',
-        planType: 'free'
+        email: 'stale-upstream@example.com',
+        planType: 'pro',
+        upstreamAccountId: 'stale-account'
       },
       fallback: 'account_read'
     };
@@ -124,10 +140,11 @@ test('codex usage snapshot falls back to account/read payload when rateLimits ar
     assert.equal(snapshot.entries[0].bucket, 'account');
     assert.equal(snapshot.entries[0].remainingPct, null);
     assert.equal(snapshot.fallbackSource, 'account_read');
-    assert.equal(snapshot.account.planType, 'free');
-    assert.equal(snapshot.account.email, 'user@example.com');
-    assert.match(snapshot.entries[0].window, /plan:free/);
-    assert.match(snapshot.entries[0].window, /user@example\.com/);
+    assert.equal(snapshot.account.planType, 'pro');
+    assert.equal(snapshot.account.email, 'meadeodeo@gmail.com');
+    assert.equal(snapshot.account.upstreamAccountId, 'acc_upgrade');
+    assert.match(snapshot.entries[0].window, /plan:pro/);
+    assert.match(snapshot.entries[0].window, /meadeodeo@gmail\.com/);
 
     const cached = cacheService.readUsageCache('codex', accountRef);
     assert.ok(cached);
@@ -1327,6 +1344,81 @@ test('codex usage snapshot async uses direct HTTP rate-limits by default', async
       cacheService.readUsageCache('codex', accountRef).rateLimitResetCredits,
       { availableCount: 4 }
     );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('codex usage snapshot adopts the live plan after a Plus to Pro upgrade', async () => {
+  const root = mkTmpDir();
+  try {
+    const { aiHomeDir, getProfileDir, getToolConfigDir } = createUsagePaths(root);
+    const accountRef = registerUsageAccount(aiHomeDir, 'codex', '12', {
+      nativeAuth: {
+        auth: {
+          tokens: {
+            access_token: makeJwt({
+              client_id: 'app_test',
+              'https://api.openai.com/auth': {
+                chatgpt_plan_type: 'plus',
+                chatgpt_account_id: 'acc_upgrade'
+              },
+              'https://api.openai.com/profile': {
+                email: 'meadeodeo@gmail.com'
+              }
+            }),
+            account_id: 'acc_upgrade'
+          }
+        }
+      }
+    });
+
+    const usageSnapshotService = createUsageSnapshotService({
+      fs,
+      path,
+      aiHomeDir,
+      fetchImpl: async () => ({
+        ok: true,
+        text: async () => JSON.stringify({
+          account: {
+            email: 'meadeodeo@gmail.com',
+            account_id: 'acc_upgrade',
+            plan_type: 'pro'
+          },
+          rate_limit: {
+            primary_window: {
+              used_percent: 10,
+              limit_window_seconds: 18_000,
+              reset_after_seconds: 3600
+            }
+          }
+        })
+      }),
+      processObj: {
+        execPath: process.execPath,
+        cwd: () => root,
+        env: {},
+        platform: process.platform
+      },
+      resolveCliPath: () => '/usr/bin/codex',
+      usageSnapshotSchemaVersion: 2,
+      usageRefreshStaleMs: 5 * 60 * 1000,
+      usageSourceGemini: 'gemini_refresh_user_quota',
+      usageSourceCodex: 'codex_app_server',
+      usageSourceClaudeOauth: 'claude_oauth_usage_api',
+      usageSourceClaudeAuthToken: 'claude_auth_token_usage_api',
+      getProfileDir,
+      getToolConfigDir,
+      writeUsageCache: () => {},
+      readUsageCache: () => null
+    });
+
+    const snapshot = await usageSnapshotService.ensureUsageSnapshotAsync('codex', accountRef, null);
+
+    assert.ok(snapshot);
+    assert.equal(snapshot.account.planType, 'pro');
+    assert.equal(snapshot.account.email, 'meadeodeo@gmail.com');
+    assert.equal(usageSnapshotService.getLastUsageProbeError('codex', accountRef), '');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

@@ -131,7 +131,10 @@ test('Codex driver reuses resident client and persists mapped native events', as
 
   assert.deepEqual(fixture.client.methods(), ['model/list', 'thread/start', 'turn/start']);
   assert.deepEqual(fixture.client.params('thread/start'), {
-    approvalPolicy: 'untrusted', sandbox: 'workspace-write', cwd: '/repo'
+    approvalPolicy: 'untrusted',
+    sandbox: 'workspace-write',
+    cwd: '/repo',
+    experimentalRawEvents: true
   });
   assert.equal(
     fixture.client.params('turn/start').collaborationMode.mode,
@@ -200,6 +203,44 @@ test('Codex terminal settlement waits for the native turn anchor to persist', as
   assert.equal(settled, false);
   persistence.resolve();
   assert.equal((await turn).status, 'completed');
+});
+
+test('Codex cleanup keeps the native binding until tool history flush completes', async () => {
+  const flush = deferred();
+  const fixture = createFixture();
+  fixture.entry.driver.bridge.flushToolOrder = () => flush.promise;
+  const turn = fixture.entry.driver.startTurn(turnContext());
+  await nextTask();
+
+  fixture.client.notify('turn/completed', {
+    threadId: NATIVE_THREAD_ID,
+    turn: { id: 'native-turn-1', status: 'completed' }
+  });
+  await nextTask();
+
+  assert.deepEqual(fixture.client.unbindCalls, []);
+  assert.equal(fixture.entry.driver.active !== null, true);
+
+  flush.resolve();
+  assert.deepEqual(await turn, { status: 'completed' });
+  assert.deepEqual(fixture.client.unbindCalls, [NATIVE_THREAD_ID]);
+  assert.equal(fixture.entry.driver.active, null);
+});
+
+test('Codex cleanup releases the native binding when tool history flush fails', async () => {
+  const flushFailure = new Error('tool history flush failed');
+  const fixture = createFixture();
+  fixture.entry.driver.bridge.flushToolOrder = () => Promise.reject(flushFailure);
+  const turn = fixture.entry.driver.startTurn(turnContext());
+  await nextTask();
+
+  fixture.client.notify('turn/completed', {
+    threadId: NATIVE_THREAD_ID,
+    turn: { id: 'native-turn-1', status: 'completed' }
+  });
+  await assert.rejects(turn, (error) => error === flushFailure);
+  assert.deepEqual(fixture.client.unbindCalls, [NATIVE_THREAD_ID]);
+  assert.equal(fixture.entry.driver.active, null);
 });
 
 test('token usage only belongs to the anchored native turn', async () => {
@@ -839,7 +880,7 @@ function createFakeClient(decisionOrder, overrides) {
   const calls = [];
   const bindings = new Map();
   return {
-    calls, bindings, responses: [], responseAttempts: [], errors: [], connected: 0,
+    calls, bindings, unbindCalls: [], responses: [], responseAttempts: [], errors: [], connected: 0,
     async ensureConnected() { this.connected += 1; return {}; },
     ...(overrides.waitForReconnect ? { waitForReconnect: overrides.waitForReconnect } : {}),
     getVerifiedAccountIdentity() {
@@ -884,7 +925,7 @@ function createFakeClient(decisionOrder, overrides) {
       return {};
     },
     bindTurn(threadId, binding) { bindings.set(threadId, binding); },
-    unbindTurn(threadId) { bindings.delete(threadId); },
+    unbindTurn(threadId) { this.unbindCalls.push(threadId); bindings.delete(threadId); },
     respond(id, result) {
       decisionOrder.push(`native:${id}`);
       this.responseAttempts.push({ id, result });

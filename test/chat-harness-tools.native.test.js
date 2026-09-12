@@ -305,7 +305,36 @@ test('reattaching a still-running native tool preserves its identity and consume
   assert.equal(f.requests.length, 2);
 });
 
-async function nativeFixture(t) {
+test('native parallel tools finish out of order but return calls and outputs in model order', {
+  skip: !process.env.AIH_TEST_CODEX_EXECUTABLE, timeout: 40000
+}, async (t) => {
+  const f = await nativeFixture(t, { parallelTools: true });
+  const service = f.open();
+  const session = await service.createSession({ provider: 'codex', executionAccountRef: 'tool-probe',
+    projectPath: f.root, policy: { approvalMode: 'bypass' } });
+  await service.dispatchCommand(session.sessionId, { commandId: 'parallel-tools', type: 'turn.submit',
+    payload: { content: 'Run both independent probes.', model: 'gpt-5.5' } });
+  await waitFor(() => fs.existsSync(path.join(f.root, 'parallel-b-finished')));
+  assert.equal(fs.existsSync(path.join(f.root, 'parallel-a-finished')), false,
+    'the second tool must finish while the first tool is still blocked');
+  fs.writeFileSync(path.join(f.root, 'release'), 'continue');
+  await waitFor(() => service.getSnapshot(session.sessionId).state === 'idle');
+
+  assert.equal(f.requests.length, 2);
+  assert.equal(f.requests[0].parallel_tool_calls, true);
+  assert.deepEqual(toolHistoryOrder(f.requests[1].input), [
+    'call:parallel-a',
+    'call:parallel-b',
+    'output:parallel-a',
+    'output:parallel-b'
+  ]);
+  const shellItems = service.getSnapshot(session.sessionId).timeline.filter((item) => item.kind === 'shell');
+  assert.equal(shellItems.length, 2);
+  assert.match(shellItems[0].detail.output, /A_OUTPUT/);
+  assert.match(shellItems[1].detail.output, /B_OUTPUT/);
+});
+
+async function nativeFixture(t, options = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-native-tool-recovery-'));
   const requests = [];
   const clients = [];
@@ -321,6 +350,15 @@ async function nativeFixture(t) {
     if (requests.length === 1) {
       const available = body.tools || body.input.filter((item) => item.type === 'additional_tools').flatMap((item) => item.tools);
       const names = available.map((tool) => tool.name);
+      if (options.parallelTools) {
+        const first = "printf 'started\\n' > parallel-a-started; while [ ! -f release ]; do sleep 0.05; done; printf A_OUTPUT; printf 'done\\n' > parallel-a-finished";
+        const second = "printf B_OUTPUT; printf 'done\\n' > parallel-b-finished";
+        respond(res, [
+          commandToolCall(names, 'fc-parallel-a', 'parallel-a', first),
+          commandToolCall(names, 'fc-parallel-b', 'parallel-b', second)
+        ]);
+        return;
+      }
       const cmd = "printf 'executed\\n' >> marker; while [ ! -f release ]; do sleep 0.05; done; printf TOOL_OUTPUT";
       const name = names.includes('exec_command') ? 'exec_command' : names.includes('shell_command') ? 'shell_command' : 'shell';
       const args = name === 'exec_command' ? { cmd, yield_time_ms: 10000, max_output_tokens: 200 }
@@ -332,7 +370,7 @@ async function nativeFixture(t) {
           input: `text(await tools.exec_command(${JSON.stringify({ cmd, yield_time_ms: 10000, max_output_tokens: 200 })}));` }
         : { type: 'function_call', id: 'fc-probe', call_id: 'probe-tool', name, arguments: JSON.stringify(args) }]);
     } else respond(res, [{ type: 'message', id: 'msg-final', role: 'assistant', status: 'completed',
-      content: [{ type: 'output_text', text: 'TOOL_PROBE_DONE', annotations: [] }] }]);
+      content: [{ type: 'output_text', text: options.parallelTools ? 'PARALLEL_TOOLS_DONE' : 'TOOL_PROBE_DONE', annotations: [] }] }]);
   });
   await new Promise((resolve) => gateway.listen(0, '127.0.0.1', resolve));
   const portProbe = http.createServer();
@@ -423,6 +461,28 @@ async function nativeFixture(t) {
       services.push(service);
       return service;
     } };
+}
+
+function commandToolCall(names, id, callId, command) {
+  const name = names.includes('exec_command') ? 'exec_command'
+    : names.includes('shell_command') ? 'shell_command'
+      : 'shell';
+  const args = name === 'exec_command' ? { cmd: command, yield_time_ms: 10000, max_output_tokens: 200 }
+    : name === 'shell_command' ? { command, timeout_ms: 10000 }
+      : { command: ['/bin/sh', '-c', command], timeout_ms: 10000 };
+  return { type: 'function_call', id, call_id: callId, name, arguments: JSON.stringify(args) };
+}
+
+function toolHistoryOrder(input) {
+  return input.flatMap((item) => {
+    if (['function_call', 'custom_tool_call'].includes(item.type)) {
+      return [`call:${item.call_id}`];
+    }
+    if (['function_call_output', 'custom_tool_call_output'].includes(item.type)) {
+      return [`output:${item.call_id}`];
+    }
+    return [];
+  }).filter((entry) => entry.includes('parallel-'));
 }
 
 async function stop(child, signal = 'SIGTERM') {

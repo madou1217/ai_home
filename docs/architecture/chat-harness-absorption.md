@@ -51,7 +51,7 @@
 | Chat role | 持久化校验、执行前读取并注入 | 会话设置，下一轮生效 | reload、原生 resume、分支继承和 Kimi 回答通过 | 本批已验 |
 | 上下文量与手动/自动压缩 | 当前用量持久投影；native 单一自动循环 | 紧凑指标、压缩入口、50–90% 阈值 | 自动阈值、失败、reload；Kimi 手动压缩后续聊通过 | 本批已验，覆盖边界见下 |
 | 命令队列、停止与故障恢复 | 正常结束与停止/失败分开；持久暂停、run 边界校验、停止意图恢复 | 运行中发送入口、队列暂停状态 | 服务级、原生和真实 Kimi 停止/恢复已验；见队列专题 | 本批已补齐已发现缺口，持续审计 |
-| 工具输出、工具配对、审批、并行提交顺序 | 已补终态收敛和未知结果保护；配对/顺序仍需审计 | 未确认结果显示“结果未知” | 进程退出、历史导入及隔离组件已验；见恢复专题 | 分专题推进 |
+| 工具输出、工具配对、审批、并行提交顺序 | 已补终态收敛、未知结果保护、callId 配对和模型顺序提交 | 未确认结果显示“结果未知” | 进程退出、历史导入、乱序完成和原生并行工具已验；见工具配对专题 | 本批已验，Work 压缩/分支边界保留 |
 | 扩展点、preset、技能、预算和调度 | 现有 provider registry | 非本批 UI 目标 | 比较 Pi/DSH 接缝，按具体需求接入 | 后续专题 |
 
 本批先完成前三项缺口的后端→前端→native→真实页面闭环，再修正旧矩阵证据。长期专题保留明确边界，不把“全面研究”解释为复制所有插件或添加未要求的 Graph/Diff 产品。
@@ -91,7 +91,7 @@
 | --- | --- | --- | --- |
 | 1. 队列与运行中补充输入 | Pi `packages/agent/src/agent-loop.ts:167–198,255–266`：区分 steering 和 follow-up；耗时 prepare/compaction 后补取输入，避免一轮双取 | `automatic-queue-boundary-strategy.js` 已区分工具/回合边界；需验证压缩、停止、断线与入队竞态 | 先建立状态表；按 command ID 证明输入恰好消费一次；覆盖压缩中输入、连续停止/续跑、重启后队列顺序，再决定是否补实现。**验证已完成(2026-09-12)**:既有用例已覆盖「完成后迟到输入重放仍只入队一条」;本次补 `test/chat-runtime-queue-exactly-once.test.js` 3 项,走客户端真实路径 `dispatchCommand({type:'queue.add'})`,覆盖此前空白的三个窗口——压缩期间重放、连续停止之间重放、重启后重放且队列顺序逐条一致。**三项全过,exactly-once 成立,无需补实现**;幂等由 `command-repository.js:15` 的事务内 commandId 去重保证 |
 | 2. 持久化与副作用恢复 | DSH `packages/session/session-persistence/src/handle.ts:46–109`：连续前缀、append 可见性、flush 耐久性分开；Pi loop 的执行与结果收集分开 | `recovery-repository.js` 已对未知执行结果关闭自动重放；本批分支事务只保证会话/seed/附件一起提交，不能等同外部副作用 exactly-once | 在 intent 记录、实际执行、结果落盘三个位置注入进程退出；证明未知副作用不自动重做，页面能区分可重试与需要核对；先审计现有 storage barrier，不另造存储。**验证已完成(2026-09-12)**:三个注入点已全部有证据。前两点由既有用例「restart converges orphaned leases…」覆盖——**意图已记录未执行**(leased)重启后回到 `queued` 可安全重试,**已执行结果未知**(running)重启后置 `failed`,且 `driverCalls === 0`;可重试与需核对因此在状态上天然可分。本次补第三点 `test/chat-runtime-recovery.test.js`「结果落盘后重启」:已 `completed` 的条目状态不被恢复流程改写、不回落待办、driver 零重放。**未知副作用不自动重做成立,无需补实现**。附带观察(未断言):该人造 seed 下会话态重启后仍为 `running`,是否该收敛属会话态设计,不在本条范围 |
-| 3. 工具配对、压缩切口与分支 | DSH `packages/compaction/compaction/src/tool-pairing.ts`、`packages/compaction/compaction-basic/src/region.ts`、`checkpoint.ts`：不能拆 call/result，保留首条 system 和 checkpoint 来源；Pi `agent-loop.ts:547–555`：并发执行后按原序提交结果 | Chat 禁用工具；Work 已展示工具，但本批 history seed 明确不承担工具重建 | 定义 canonical callId/result 配对契约；覆盖乱序结束、失败、取消、孤立结果和多模态；验证压缩与分支不会丢审批/结果后，才开放 Work 分支。**配对契约已本地验证(2026-09-12),但测试暂不入库**:按 `tool-history-integrity.js:58 claimOwnership` 写了 5 项覆盖乱序完成(并发工具反序结束,结果各归其位)、同一 callId 被二次认领(显式 409 冲突,不留半条记录)、item 中途改挂 callId(拒绝)、无 callId 的工具项(拒绝,不入时间线)、取消时未知结果保持 `unknown` 且已确定结果不被改写——**本地 5/5 全过**。**未提交原因**:`tool-history-integrity.js` 与 `codex-tool-order-coordinator.js` 目前是并发会话的**未跟踪新文件**,HEAD 上不存在;此时提交测试会让 CI 立刻变红。待这两个模块落地后再入库。**仍未覆盖**:多模态工具结果、压缩与分支是否丢审批/结果——后者是开放 Work 分支的前置条件 |
+| 3. 工具配对、压缩切口与分支 | DSH `packages/compaction/compaction/src/tool-pairing.ts`、`packages/compaction/compaction-basic/src/region.ts`、`checkpoint.ts`：不能拆 call/result，保留首条 system 和 checkpoint 来源；Pi `agent-loop.ts:547–555`：并发执行后按原序提交结果 | Chat 禁用工具；Work 已展示工具，实时和历史均使用 canonical callId 契约 | 已完成 callId ↔ canonical itemId 归属、乱序结束和模型顺序提交；压缩/分支仍须证明不会丢审批、结果和多模态内容后才开放 Work 分支 |
 | 4. 扩展点与错误隔离 | DSH `packages/core/agent/src/dispatch.ts:65,120–147`：通知监听器失败隔离，serial 可等待，waterfall 可变换；Pi `agent-loop.ts` 的 `beforeToolCall/afterToolCall/prepareNextTurn` | AIH 有显式 factory、driver registry、命令 handler；尚无统一的上述扩展契约 | 先列出现有真实扩展需求；只加入所需窄接口，验证观察者异常不终止模型回合、策略钩子可明确拒绝、卸载可清理；不为对齐名字引入 Cordis |
 | 5. Provider 能力与第二执行适配器 | Codex `protocol/v2/thread.rs` 的回合级 fork 与 raw items；Pi 可替换模型/loop；DSH 会话持久域独立 | `chat-harness-gateway.js` 固定账号，`capability-command-catalog.js` 暴露能力；统一命令不代表模型等价 | 逐 provider 记录模型窗口、reasoning、图片、停止、压缩、恢复的真实结果；某项协议限制持续存在时再接 Pi adapter，用同一契约套件比较，不同时维护两个 session 真相源。**前置实测已完成(2026-09-12)**:见 `docs/architecture/provider-capability-matrix.md`——7 家静态窗口/模态全部命中真实元数据;实时可达仅 2/7(claude、agy 200),其余五家分别为额度耗尽/模型冷却/计费封锁/鉴权失败/上游限流,**均为账号侧状态,非网关缺陷**;停止语义在可达两家实测中断后 ≤3ms 结束、无挂起。reasoning 回传、图片输入、压缩/恢复仍空白,原因已在该文 §4 列明 |
 
@@ -189,7 +189,21 @@
 
 设计模式：`codex-session-history-sync/codex-turn-recovery` → Adapter + 持久投影 → 先补回执行器的已记录事实再收尾 → 三条 native 场景和持久化 gate 测试；`timeline-detail-contract` / Web parser → 边界适配 → 无损保留原生标识且兼容历史记录 → 原生 processId、DTO与完整 build。SOLID 将原生恢复、转换和存储分别留在已有模块；DRY 复用 history projector/sink；KISS/YAGNI 未新建执行引擎或第二套历史库。
 
-后续边界仍开放：底层 WebSocket 自动重连（不重开 AIH service）需要单独验证漏通知后的补齐；Work 工具并行配对与压缩切口、各真实 Provider 的能力矩阵仍未整体完成。本专题证明三个具体 native 场景，不外推所有版本/所有工具/所有平台。
+后续边界仍开放：底层 WebSocket 自动重连（不重开 AIH service）需要单独验证漏通知后的补齐；Work 压缩切口、分支无损重建和各真实 Provider 的能力矩阵仍未整体完成。本专题证明三个具体 native 场景，不外推所有版本/所有工具/所有平台。
+
+## 工具配对与模型顺序提交专题（2026-09-12）
+
+本专题已完成并纳入当前实现。Codex 的 raw Responses item 只作为内部排序证据，不直接写入公共事件库；`CodexToolOrderCoordinator` 先按模型产生的 raw call 顺序建立槽位，再把实际并行执行中乱序到达的 typed lifecycle 延迟到对应槽位可释放时写入。因此工具可以并行执行，历史仍保持模型顺序。raw output 到达时会释放没有 typed lifecycle 的调用槽位；terminal、cancel 和 cleanup 会 flush 尚未观察到的槽位，并等待真实事件 sink 的持久化 Promise 完成。
+
+实时追加和历史导入共用 `tool-history-integrity` 的归属约束：每个已识别的工具 call 必须有明确 `callId`，同一 `callId` 只能拥有一个 canonical `itemId`，同一 item 不能中途改挂另一个 call。缺少协议身份或身份存在歧义时直接透传/标记未知，不按到达顺序猜配，也不伪造 callId；旧历史中没有 callId 的 item 只允许按兼容规则收尾。这样可以同时保护实时流、批量历史导入、进程退出和恢复路径。
+
+这里吸收的是三个独立事实，而不是把不同 harness 的实现混成一个循环：DeepSeek Harness 的 repair/compaction 逻辑坚持“已记录的明确结果优先”，只有没有结果的尾部调用才进入未知收尾；Pi 将工具执行并发化与结果按模型顺序提交分成两个机制，执行完成顺序不决定持久化顺序；AIH 在 Codex Adapter 中复用这两个边界，但保留自己的事件库、命令日志和会话域。
+
+验证覆盖 Codex raw call A/B、typed B→A、同一工具后续 update、raw output 跳过空槽、terminal/cancel/cleanup flush、实时追加与批量历史导入的 callId 冲突，以及本地确定性模型驱动的真实并行工具。相关入口为 `test/codex-tool-order-coordinator.test.js`、`test/chat-runtime.timeline-import.test.js`、`test/chat-harness-tools.native.test.js` 和 `test/codex-session-driver.test.js`。
+
+固定源码与本机发行版继续分开记录：Codex 源码 pin 为 `968835997714baaff199cfed5f89a2c65d8ca77d`，DeepSeek Harness 为 `aa8262ec091698bae9a6b04773a6b5b06ad4aef2`，Pi 为 `4bd3f48df0b14c82e8df2640645e94f82f125f44`；本机实际执行器为 `codex-cli 0.154.0-alpha.3`。源码提交用于解释协议和设计依据，发行版只用于本机 native 验证，不能互相替代或推出所有版本均有相同行为。
+
+Codex raw/history 仍有明确边界：raw item 不是完整的 Work 历史；`thread/resume` 只能在精确 native turn 锚点和可转译 item 上恢复已记录结果；不支持的 Work 工具变体、审批事件、多模态结构、压缩切口或分支前缀无法无损重建时，必须保留未知状态或明确拒绝。工具配对完成不等于压缩和分支已经具备完整 Work 语义，也不等于所有 provider 的工具、模型窗口、reasoning、停止和恢复能力等价。
 
 ## 自动重连专题：先恢复历史，再接收实时事件（2026-09-10）
 
@@ -212,7 +226,7 @@
 
 设计模式：`codex-app-server-json-rpc-client` → 状态机 + 顺序缓冲 → 单次重连、先快照后增量、按 binding 隔离 → transport gate/连续断线/替换测试；`codex-turn-recovery/codex-session-driver` → Adapter + 持久投影 → 重启与自动重连共用精确恢复边界 → Driver 与三条新增 native 测试。SOLID 分离 transport 排序和会话事实；DRY 复用历史恢复；KISS/YAGNI 没有新增执行器、数据库或自动重放工具。按现有授权采用 self-review 后 scoped commit/push，排除其他会话的两个 streaming 文件。
 
-仍待继续：`turn/start` 已被原生接收但 RPC 回执丢失的启动窗口、交互审批重放矩阵、Work 并行工具配对/压缩切口及各真实 Provider 能力矩阵。本专题不声称这些边界均已完成，也不声称外部副作用 exactly-once。
+仍待继续：`turn/start` 已被原生接收但 RPC 回执丢失的启动窗口、交互审批重放矩阵、Work 压缩切口与分支无损重建及各真实 Provider 能力矩阵。本专题不声称这些边界均已完成，也不声称外部副作用 exactly-once。
 
 ## 启动回执丢失：按持久输入锚点找回原回合（2026-09-11）
 

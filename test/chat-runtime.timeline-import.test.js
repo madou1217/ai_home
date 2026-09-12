@@ -48,6 +48,132 @@ test('timeline import rolls the complete batch back when one event is invalid', 
   assert.deepEqual(store.getSnapshot(sessionId).timeline, []);
 });
 
+test('failed import validation does not poison the transaction-scoped tool guard', (t) => {
+  const { store, imports, sessionId } = createFixture(t);
+  const invalid = toolEvent('tool-invalid', 'tool-item-invalid', 'call-reusable', 'completed');
+  invalid.type = 'unknown.event';
+
+  assert.throws(
+    () => imports.import(sessionId, [invalid]),
+    (error) => error.code === 'unknown_chat_event_type'
+  );
+  imports.import(sessionId, [
+    toolEvent('tool-valid', 'tool-item-valid', 'call-reusable', 'completed')
+  ]);
+
+  assert.equal(store.getSnapshot(sessionId).timeline.at(-1).id, 'tool-item-valid');
+});
+
+test('tool history keeps one canonical item owner per call id and rolls conflicts back', (t) => {
+  const { store, imports, sessionId } = createFixture(t);
+  const first = toolEvent('tool-start', 'tool-item-1', 'call-1', 'running');
+  const completed = toolEvent('tool-done', 'tool-item-1', 'call-1', 'completed');
+
+  imports.import(sessionId, [first]);
+  imports.import(sessionId, [completed]);
+  const before = store.getSnapshot(sessionId);
+  assert.equal(before.timeline.length, 1);
+  assert.equal(before.timeline[0].status, 'completed');
+
+  assert.throws(() => imports.import(sessionId, [
+    toolEvent('tool-call-2', 'tool-item-2', 'call-2', 'completed'),
+    toolEvent('tool-call-conflict', 'tool-item-3', 'call-1', 'completed')
+  ]), (error) => error.code === 'chat_tool_history_call_id_conflict');
+
+  assert.deepEqual(store.getSnapshot(sessionId), before);
+});
+
+test('tool history keeps one call id per canonical item and rolls mutations back', (t) => {
+  const { store, imports, sessionId } = createFixture(t);
+  imports.import(sessionId, [toolEvent('tool-start', 'tool-item-1', 'call-1', 'running')]);
+  const before = store.getSnapshot(sessionId);
+
+  assert.throws(
+    () => imports.import(sessionId, [
+      toolEvent('tool-mutated-call', 'tool-item-1', 'call-2', 'completed')
+    ]),
+    (error) => error.code === 'chat_tool_history_item_call_id_conflict'
+  );
+
+  assert.deepEqual(store.getSnapshot(sessionId), before);
+});
+
+test('live event appends enforce the same tool history ownership contract', (t) => {
+  const { store, sessionId } = createFixture(t);
+  store.appendEvent(sessionId, toolEvent('ignored', 'tool-item-1', 'call-1', 'running'));
+
+  assert.throws(
+    () => store.appendEvent(sessionId, toolEvent('ignored', 'tool-item-2', 'call-1', 'completed')),
+    (error) => error.code === 'chat_tool_history_call_id_conflict'
+  );
+  assert.equal(store.getSnapshot(sessionId).timeline.length, 1);
+});
+
+test('tool history preserves model item order when completion updates arrive out of order', (t) => {
+  const { store, imports, sessionId } = createFixture(t);
+  imports.import(sessionId, [
+    toolEvent('first-start', 'first-tool', 'first-call', 'running'),
+    toolEvent('second-start', 'second-tool', 'second-call', 'running')
+  ]);
+  imports.import(sessionId, [
+    toolEvent('second-done', 'second-tool', 'second-call', 'completed'),
+    toolEvent('first-done', 'first-tool', 'first-call', 'completed')
+  ]);
+
+  assert.deepEqual(store.getSnapshot(sessionId).timeline.map((item) => [
+    item.id, item.detail.callId, item.status
+  ]), [
+    ['first-tool', 'first-call', 'completed'],
+    ['second-tool', 'second-call', 'completed']
+  ]);
+});
+
+test('imported model tool history requires an explicit call id', (t) => {
+  const { imports, sessionId } = createFixture(t);
+  const missing = toolEvent('tool-missing-call', 'tool-item', '', 'completed');
+  delete missing.payload.item.detail.callId;
+
+  assert.throws(
+    () => imports.import(sessionId, [missing]),
+    (error) => error.code === 'chat_tool_history_call_id_required'
+  );
+});
+
+test('live model tool history also requires an explicit call id', (t) => {
+  const { store, sessionId } = createFixture(t);
+  const missing = toolEvent('ignored', 'tool-item', '', 'completed');
+  delete missing.payload.item.detail.callId;
+
+  assert.throws(
+    () => store.appendEvent(sessionId, missing),
+    (error) => error.code === 'chat_tool_history_call_id_required'
+  );
+});
+
+test('legacy persisted tool items may settle without inventing a call id', (t) => {
+  const { store, imports, sessionId } = createFixture(t);
+  const legacy = toolEvent('legacy-start', 'legacy-tool', '', 'running');
+  delete legacy.payload.item.detail.callId;
+  store.context.db.prepare(`
+    INSERT INTO chat_runtime_events (
+      event_id, session_id, seq, schema, type, at, turn_id, run_id,
+      item_id, source_json, payload_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    legacy.eventId, sessionId, 2, 'aih.chat.event.v1', legacy.type, legacy.at,
+    null, null, legacy.itemId, JSON.stringify(legacy.source), JSON.stringify(legacy.payload)
+  );
+  store.context.db.prepare(`
+    UPDATE chat_runtime_sessions SET last_event_seq = 2 WHERE session_id = ?
+  `).run(sessionId);
+  const completed = toolEvent('legacy-done', 'legacy-tool', '', 'completed');
+  delete completed.payload.item.detail.callId;
+
+  imports.import(sessionId, [completed]);
+
+  assert.equal(store.getSnapshot(sessionId).timeline.find((item) => item.id === 'legacy-tool').status, 'completed');
+});
+
 test('timeline import rejects a stable event id already owned by another session', (t) => {
   const { store, imports, sessionId } = createFixture(t);
   const other = store.createSession({
@@ -229,6 +355,26 @@ function event(eventId, itemId, content) {
         status: 'completed',
         detail: { role: 'assistant' },
         content
+      }
+    }
+  };
+}
+
+function toolEvent(eventId, itemId, callId, status) {
+  return {
+    eventId,
+    type: status === 'running' ? 'timeline.item.started' : 'timeline.item.completed',
+    at: 1,
+    itemId,
+    source: { provider: 'codex', runtimeId: 'codex:account-1' },
+    payload: {
+      item: {
+        id: itemId,
+        kind: 'tool',
+        createdAt: 1,
+        ...(status === 'running' ? {} : { updatedAt: 2 }),
+        status,
+        detail: { callId, name: 'probe', ...(status === 'completed' ? { result: 'ok' } : {}) }
       }
     }
   };

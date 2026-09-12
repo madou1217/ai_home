@@ -448,6 +448,7 @@ test('projects native hook lifecycle notifications as one canonical tool item', 
   assert.equal(completed.payload.item.status, 'completed');
   assert.equal(completed.payload.item.content, 'Hook completed');
   assert.deepEqual(completed.payload.item.detail, {
+    callId: 'hook-run-1',
     name: 'Hook: userPromptSubmit',
     input: {
       executionMode: 'parallel',

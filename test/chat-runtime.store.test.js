@@ -59,10 +59,14 @@ test('chat runtime creates its canonical tables in the shared app-state database
 
   assert.deepEqual(names, [
     'chat_runtime_attachments',
+    'chat_runtime_branch_operations',
     'chat_runtime_commands',
     'chat_runtime_events',
     'chat_runtime_history_seeds',
     'chat_runtime_interactions',
+    'chat_runtime_native_history_coverage',
+    'chat_runtime_native_response_items',
+    'chat_runtime_native_thread_items',
     'chat_runtime_queue',
     'chat_runtime_sessions'
   ]);
@@ -184,6 +188,29 @@ test('native turn anchors persist through the store port without changing AIH ru
     nativeTurnId: 'native-turn-1',
     state: 'running'
   });
+});
+
+test('context overflow replaces only the exact bound thread/run/turn and clears its anchor atomically', (t) => {
+  const { store } = createFixture(t);
+  const session = createSession(store);
+  store.updateRuntimeBinding(session.sessionId, { nativeSessionId: 'old-thread' });
+  store.setSessionState(session.sessionId, 'running', { runId: 'run', turnId: 'aih-turn',
+    nativeTurnId: 'old-turn', clientUserMessageId: 'run' });
+  const replacement = { threadId: 'old-thread', runId: 'run', nativeTurnId: 'old-turn' };
+  for (const patch of [{ threadId: 'foreign' }, { runId: 'stale' }, { nativeTurnId: 'other-turn' }]) {
+    assert.throws(() => store.updateRuntimeBinding(session.sessionId, { nativeSessionId: 'new-thread' },
+      { ...replacement, ...patch }), /chat_native_thread_replacement_stale/);
+    assert.equal(store.getSession(session.sessionId).runtimeBinding.nativeSessionId, 'old-thread');
+    assert.equal(store.getSession(session.sessionId).activeTurn.nativeTurnId, 'old-turn');
+  }
+  const replaced = store.updateRuntimeBinding(session.sessionId, { nativeSessionId: 'new-thread' }, replacement);
+  assert.equal(replaced.activeTurn.nativeTurnId, undefined);
+  assert.equal(replaced.activeTurn.runId, 'run');
+  assert.equal(replaced.activeTurn.turnId, 'aih-turn');
+  assert.equal(store.updateActiveTurnAnchor(session.sessionId, { runId: 'run', clientUserMessageId: 'run',
+    nativeTurnId: 'new-turn' }).activeTurn.nativeTurnId, 'new-turn');
+  assert.throws(() => store.updateRuntimeBinding(session.sessionId, { nativeSessionId: 'third-thread' }, replacement),
+    /chat_native_thread_replacement_stale/);
 });
 
 test('native session resolution creates once and adopts the stable AIH session thereafter', (t) => {

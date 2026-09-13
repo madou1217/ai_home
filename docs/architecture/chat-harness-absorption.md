@@ -1,6 +1,6 @@
 # AIH Chat Harness：源码依据、决策和交付清单
 
-更新：2026-09-10。状态按后端、页面、持久化和真实验收分别判定，组件存在不能代表能力完成。
+更新：2026-09-13。状态按后端、页面、持久化和真实验收分别判定，组件存在不能代表能力完成。
 
 ## 固定参考来源
 
@@ -52,9 +52,33 @@
 | 上下文量与手动/自动压缩 | 当前用量持久投影；native 单一自动循环 | 紧凑指标、压缩入口、50–90% 阈值 | 自动阈值、失败、reload；Kimi 手动压缩后续聊通过 | 本批已验，覆盖边界见下 |
 | 命令队列、停止与故障恢复 | 正常结束与停止/失败分开；持久暂停、run 边界校验、停止意图恢复 | 运行中发送入口、队列暂停状态 | 服务级、原生和真实 Kimi 停止/恢复已验；见队列专题 | 本批已补齐已发现缺口，持续审计 |
 | 工具输出、工具配对、审批、并行提交顺序 | 已补终态收敛、未知结果保护、callId 配对和模型顺序提交 | 未确认结果显示“结果未知” | 进程退出、历史导入、乱序完成和原生并行工具已验；见工具配对专题 | 本批已验，Work 压缩/分支边界保留 |
-| 扩展点、preset、技能、预算和调度 | 现有 provider registry | 非本批 UI 目标 | 比较 Pi/DSH 接缝，按具体需求接入 | 后续专题 |
+| 扩展点、preset、技能、预算和调度 | `ChatRuntimeExtensionPipeline` 接入 SessionActor | 非本批 UI 目标 | waterfall/serial/observer、准备失败幂等和事件钩子顺序已验；工具执行前阻断仍未具备 | 工作区已实现并验；preset/技能产品能力未引入 |
 
 本批先完成前三项缺口的后端→前端→native→真实页面闭环，再修正旧矩阵证据。长期专题保留明确边界，不把“全面研究”解释为复制所有插件或添加未要求的 Graph/Diff 产品。
+
+### 扩展点契约（2026-09-13）
+
+已把 Pi/DeepSeek Harness 的三类接缝吸收到 provider-neutral 的
+`ChatRuntimeExtensionPipeline`，入口位于 `SessionActor` 的共同命令边界，所有 provider
+复用同一套语义：
+
+- `prepareNextTurn(command, context)` 是可等待的 waterfall。每个扩展可以返回新的命令，AIH
+  会校验 `commandId`、`sessionId`、命令类型不变，并重新执行 payload 校验。扩展接收副本，
+  不能通过原地修改逃过身份比较。准备失败保存原始命令为 `failed`，相同 ID 不重跑准备。
+- `beforeCommand(command, context)` 是可等待的 serial 阶段。策略、预算或调度检查可以明确
+  拒绝本次执行；拒绝会沿既有命令状态机落为 `failed`，不会进入 provider。
+- `beforeToolCall(event, context)` / `afterToolCall(event, context)` 当前围绕**工具事件持久化**，
+  只接收 canonical `tool`、`shell`、`file_change` 项。前者在开始事件写入前，后者在完成事件
+  写入后；两者在同一写入链内等待，raw output 释放的排队事件也经过该链。它们不是 Pi 的
+  原生执行前拦截器：收到 Codex `item/started` 时工具可能已执行，不能据此承诺阻断副作用。
+- `observe(event, context)` 是 best-effort listener。同步异常和异步 rejection 都通过可注入的
+  `extensionObserverErrorSink` 观察，不会终止模型回合；扩展可 `unregister` 清理自身。
+
+该契约只负责扩展生命周期，不替换 `SessionActor`、SQLite 命令日志、canonical timeline 或
+provider driver。当前没有为对齐命名引入 Cordis、第二个 inbox 或第二套 agent loop。测试覆盖
+注册顺序、waterfall 变换、串行等待、观察者异常隔离、卸载、身份篡改拒绝和准备阶段失败后的
+命令状态；Codex 工具事件还覆盖 `beforeToolCall`/`afterToolCall` 的持久化前后边界和策略拒绝。
+默认未传扩展时行为保持不变。最新验证与仍开放的限制见下方 2026-09-13 集成验收。
 
 ## 验证要求
 
@@ -82,6 +106,196 @@
 只读复核入口：`GET http://127.0.0.1:9527/v0/webui/chat/sessions/<sessionId>/snapshot`，管理凭据仅内存使用，不写入日志。响应 `{ok:true,snapshot}` 包含 `policy.lineage`、`policy.systemPrompt`、`policy.contextState` 和消息 metrics。验收快照保存在本机 `/tmp/aih-harness-browser-evidence.json`，不提交对话全文和凭据。
 
 边界：当前累计统计按已加载 timeline 汇总并标明 partial；当前上下文来自持久投影。压缩完成到新 usage 到达之间显示“上下文已压缩”，不伪造占用。Codex OAuth 首轮若无已知模型窗口，采用 native 默认阈值；获得窗口后再应用设置。Work/tool 历史不能无损重建时明确拒绝。尚未逐个验证所有 provider 的真实上游。
+
+### Work 历史可逆性与 1M 上下文边界（2026-09-13）
+
+- `history-reversibility.js` 将“可显示”和“可无损重建”分开判定。已完成且输入形状受支持的
+  user/assistant 消息可以重建。reasoning 必须有匹配的私有原始 Responses 项；缺少该证据的旧历史，
+  以及 notice/error，返回 `native_item_shape_not_persisted`。工具卡即使已有 `callId` 和文本结果，也因 canonical
+  投影未保存原始 Responses `type/namespace/media` 形状而明确返回 `raw_call_shape_not_persisted`。shell、
+  file change、审批和 unknown 结果不会被伪装成普通文本。
+- `budgetHistoryItems` 以历史单元裁剪。`function_call` 与对应 `function_call_output` 是不可拆分单元，孤立
+  call/result 会被丢弃，且仍保留连续消息尾部；这吸收了 DeepSeek Harness 的 tool-pairing invariant。
+- 1M 输入继续由两道独立闸门保护：`turn/start` 的字符传输上限，以及按真实 `model_context_window` 计算的
+  token 预算。窗口未知时不猜测；传输超限可分段注入，token 超预算会裁剪附件并披露。
+  裁剪不是无损压缩；尚未完成真实 1M 多轮、反复压缩、断线恢复和分支的完整验收。
+
+### Codex 分页历史与恢复 hydration（2026-09-13）
+
+- `codex-history-pages` 负责分页，`codex-session-history` 负责投影。先校验绑定的 thread，再读取
+  `thread/turns/list` 的 `data` 与 `itemsView:full`。固定源码明确区分 turn/item 游标，item 游标绝不
+  传给 turns 接口；含摘要或 initialTurnsPage 时从完整 turn 流起点补齐，不能只取旧页保留近期摘要。
+- 纯 full 近期 turns 可通过 turn backwards cursor 读取较旧记录，包括锚点。分页记录优先，但原生
+  resume 中尚未写入分页存储的运行中工具仍需合并保留；临时 user item 通过 clientId 与持久 ID 对齐。
+  缺页、缺身份、重复 turn、摘要伪装 full、游标循环和页数超限明确失败。空页带 next cursor 继续读取。
+- 恢复先补齐历史，再定位精确回合、持久导入，最后报告恢复成功。清除已消费的分页标志，导入不再读
+  第二份变化中的快照。WebSocket 重连提供仅限同 thread 历史读取的临时端口，避免普通 RPC 等待重连、
+  重连又等待 RPC 的死锁；端口不能发 turn/start，回调结束即失效。分页中再次断线仍走重连重试。
+- snake_case 为容错单测覆盖；不宣称是独立发行版协议。上述实现不把 typed ThreadItem 转成 raw
+  ResponseItem，也没有补齐 Work 工具、审批、多模态和所有压缩切口的可逆历史。
+
+### 原始 reasoning 的私有持久化（2026-09-13）
+
+- 真实 native 回归发现：一律拒绝 reasoning 会让五条 Chat 分支场景全部失败。现从
+  `rawResponseItem/completed` 保存真实 Responses reasoning，保留 `encrypted_content`、结构化
+  summary/content 和 metadata；绝不从 typed summary 猜造加密内容。
+- `NativeResponseItemRepository` 使用既有 SQLite 下的私有表，按 session/item 归属，校验 native
+  thread 与绑定一致。同 ID 同内容幂等，冲突拒绝。原始内容不进入公开 timeline、snapshot、SSE。
+- 分支将所选前缀的 reasoning 一起放入 seed，并在子会话事务内复制私有证据，允许重启后再次分支。
+  没有收到 raw 通知的旧历史、离线遗漏的原始项仍不能无损重建；完整 Work 分支继续未开放。
+- 本机 codex-cli 0.154.0-alpha.3 + 临时 HOME + 本地确定性模型已经验证：分支下一请求保留原始
+  encrypted_content，公开 snapshot 不包含该字段内容；五条 Chat 路径均通过。它不是五个真实上游验收。
+
+### 2026-09-13 集成验收
+
+本轮先复现分页/恢复 10 项失败、准备边界 3 项失败及异步钩子乱序，再进行修复。真实 native 验收
+另发现并修复重连自等待死锁和 full resume 的未落盘工具丢失。
+
+- 最终全量：`node --test --test-concurrency=1 test/*.test.js`，6746 tests、6721 pass、25 skip、0 fail，
+  `/tmp/aih-harness-continuity-full-final.log`。首次全量失败包含旧夹具缺少 thread id、表清单未更新及一次
+  账号并发注册 SQLite 锁冲突；夹具/清单修正，账号注册独立复测 11 pass，最终全量无失败。
+- 真实原生执行器：`AIH_TEST_CODEX_EXECUTABLE=/Users/model/.codex/packages/standalone/current/bin/codex
+  node --test test/chat-harness.native.test.js test/chat-harness-tools.native.test.js`，17 pass、0 skip、0 fail，
+  `/tmp/aih-harness-continuity-native-final.log`；执行器版本 0.154.0-alpha.3。本地模型、临时 HOME、无真实凭据。
+- 上下文/存储专项 71 pass，`/tmp/aih-context-store-final.log`；WebSocket 专项 6 pass，
+  `/tmp/aih-history-transport-final.log`；本批 36 个改动/新增 JS 文件语法检查和 `git diff --check` 通过。
+- 本批没有改动 web 源码，没有重启/部署 9527；只读 `/readyz` 为 ready。未将 native 本地模型测试写成
+  真实 provider 或浏览器验收，未提交推送当前工作区。
+
+上下文溢出继续暴露三个问题：旧转换器只接受 raw `message`，把 native `userMessage/agentMessage`
+全部丢掉；替换 native thread 后持久 activeTurn 仍锚定旧 turn；已注入的分支 seed 不一定出现在
+typed turn 列表中。现在 `codex-history-seed` 共用分页读取，按明确形状转换消息、图片和有私有证据的
+reasoning，合并 AIH 原始分支 seed 并按 item ID 去重；替换 thread 在事务中核对旧 thread/run/turn
+后清除旧锚点，才提交重试。仍然最多自动重试一次。没有原始证据的工具、reasoning、压缩项和未知
+多模态结构明确失败，不再用空历史掩盖缺失。未知模型窗口不伪造 1M 默认值。
+
+本地确定性模型在 AGY 接线路径主动返回一次 context_length_exceeded，真实 Codex 创建新 thread
+重试；断言新请求包含原分支回答及相同 encrypted_content，不含分支切口之后的源消息，并在重启后
+继续验证 seed 不重复。此证据验证溢出恢复的协议与状态流程，不等同于真实上游 1M 容量压力验收。
+
+当前仍开放的集成项（不能用全量测试通过代替验收）：
+
+| 项目 | 当前证据与缺口 | 下一步证明 |
+| --- | --- | --- |
+| Work 完整历史与分支 | 带 ID 的 raw、完整性覆盖、精确切口规划、持久 fork/inject 检查点及原生回执找回已实现；AIH 分支命令与 UI 尚未接入 | 接通命令和子会话事务；补用户消息映射、审批及压缩切口、active goal 边界 |
+| 扩展执行前控制 | 命令前检查有效；工具钩子目前在通知/持久化层 | 执行器提供真正可等待的执行前入口，native marker 证明拒绝后没有执行 |
+| 1M 持续会话 | 窗口预算、原生压缩、溢出一次恢复已覆盖；没有真实 1M 多轮压力结果 | 多次压缩、断线重连、分支后任务事实保持，区分裁剪与摘要损失 |
+| 各 Provider 与第二 adapter | 共用命令及 Codex adapter；真实上游能力未逐项闭合 | reasoning/图片/停止/压缩/恢复逐 provider 的真实矩阵，决定 Pi adapter 是否必要 |
+
+这些条目是后续工作，当前批次仍在工作区，不能表述为已经部署到 9527 或全部 Harness 集成完成。
+
+设计边界：`codex-history-pages` → Adapter + Map/Set → 协议补全和投影分离、身份去重 → 分页回归；
+`codex-app-server-json-rpc-client` → scoped port → 重连内读取不解除普通命令屏障 → WebSocket 故障注入；
+`native-response-item-repository` → Repository + transaction → 私有原始证据与分支同事务 → 两账号/重启/二次分支；
+`SessionActor` / bridge → Command + 串行管线 → 失败命令幂等、异步钩子不乱序 → 扩展专项。
+`codex-history-seed` / `session-repository` → Adapter + compare-and-swap transaction → 历史重建与精确
+换绑分开，防止旧回调改写新运行 → 原生溢出、旧 run/turn 拒绝与分支 seed 去重测试。
+SOLID 保留领域、协议、持久化和执行边界；DRY 共用恢复入口；KISS/YAGNI 不引入第二个会话库或执行循环。
+
+### Work 分支原始证据与精确切口（2026-09-13，继续集成中）
+
+固定 Codex `968835997714baaff199cfed5f89a2c65d8ca77d` 的
+`codex-rs/app-server-protocol/src/protocol/v2/thread.rs:508` 表明原生 fork 只有
+`lastTurnId`（包含整回合）和 `beforeTurnId`（排除整回合），没有消息级切口。
+不能直接把 AIH 的“截至这条消息”映射成包含该回合的最后一项。
+
+本机 `codex-cli 0.154.0-alpha.3` 的新增原生测试已证明：
+
+- legacy 和 paginated 两种历史模式均可按回合创建独立 fork；`forkedFromId` 指向源，源 rollout
+  字节不变；创建 fork 不触发模型请求。设置 `deferGoalContinuation:true`，不让 fork 自动启动 goal。
+  当前 fixture 未创建 active goal；active goal 的实际等待语义仍需专门原生测试。
+- 关闭服务并重启 Codex 后，两个 fork 继续时，模型输入保留源回合的真实 call/result 和相同加密
+  reasoning，排除源后续消息。marker 只写一次，未重放旧工具。
+- **legacy typed 历史实际漏掉 exec 工具并重写 message ID**，但下一次模型请求的 raw 历史仍有
+  call/result。因此 typed “最后一条消息”不等于安全整回合切口；不得根据文本猜配身份。
+- 回合中途消息使用 `beforeTurnId + thread/inject_items(raw prefix)`：保留切点前的工具结果、
+  图片及 `commentary` phase，排除同回合后续工具和最终回答，源 timeline 不变，旧工具不重放。
+  该路径已由 `codex-history-fork-plan` 规划模块驱动原生探针，尚未接到产品分支命令。
+
+执行中的真实落点：
+
+- `native-response-item-repository` 扩展原 reasoning 私有表，保存带 ID 的全部 raw 通知，包括
+  消息、工具调用/结果、结构化媒体及未知类型；保存不等于允许注入。新增 native turn 和顺序字段，
+  旧表升级保留旧 reasoning，但不伪造缺失的回合顺序。按 session/thread/turn 读取，跨账号拒绝。
+- `chat_runtime_native_history_coverage` 在同一 SQLite 记录 `recording/complete/incomplete`。
+  正常起止通知可标完整；缺 ID、记录失败和恢复/重连将该回合标不完整，后来的完成通知不能洗掉 gap。
+  raw 和 coverage 均不进入公开 timeline/snapshot/SSE。
+- `codex-session-event-bridge` 同一写入链保存 raw，再释放依赖它的排队工具事件；不能因保存 raw
+  提前 return，绕过 tool order coordinator。工具 hooks 仍是事件持久化钩子，不能阻断原生副作用。
+- `codex-history-fork-plan` 用 Map/Set 校验身份和 call/result，要求精确 raw 锚点及完整采集。
+  只有 typed 与 raw 均以该 assistant 消息结束才用整回合 fork；其它已支持切口从该回合之前 fork
+  并注入原始前缀。不完整调用、未知类型、重复/冲突 ID 明确失败。用户 typed/raw ID 的持久映射仍缺失。
+- 新增图片探针复现 Codex `features.omit_app_server_notification_media=true` 时，模型收到图片、
+  raw 通知却不含图片。固定源码 `notification_media.rs` 和 `features/src/lib.rs:1480` 解释此行为。
+  `codex-native-history-policy` 为 AIH 的 start/resume/recovery/overflow replacement 显式设 false，
+  不修改宿主配置。原生重放同一测试后，私有记录及 child 下一请求均保留相同图片字节与 detail。
+
+尚未完成：Work 分支服务端编排、原生 fork/inject 与 AIH 事务间的幂等恢复、用户消息映射、审批与
+压缩切口专项、Web 操作入口及真实页面。以上探针不是 Work 产品能力已交付的声明。
+
+#### fork/inject 丢回执与持久检查点（2026-09-13，后续增量）
+
+上段的 fork/inject 幂等恢复现已有独立实现及原生联合证据，尚未进入公开分支 handler：
+
+- `branch-operation-repository` 将操作计划和 `prepared → fork_pending → forked →
+  inject_pending → ready` 保存在同一个 AIH SQLite 数据库；无注入项的整回合分支从 forked
+  直接到 ready。命令、账号、源 thread、精确消息切口与计划不可被重试覆盖，阶段更新执行事务校验。
+  raw 计划和回执不会进入公共 timeline、snapshot 或 SSE。
+- `native-branch-operation` 在 RPC 之前保存 pending；重启见到 pending 只找原生证据，绝不重放
+  创建或注入。无回执、部分写入和冲突保持未确认状态。这里只证明应用进程退出恢复；不是断电
+  耐久性、任意外部工具 exactly-once 或 Work 产品交付声明。
+- `codex-branch-operation-port` 将通用操作映射为 `thread/fork`、`thread/resume` 和
+  `thread/inject_items`；fork 带命令与会话派生的 SHA-256 threadSource，resume 仅针对已确认
+  子身份，核对返回 thread ID 并拒绝 active 子 thread。媒体通知保持完整，fork 传
+  `deferGoalContinuation:true`；active goal 在恢复/续聊时的实际行为仍需专项验证。
+- 本机 `0.154.0-alpha.3` 的 legacy `thread/read` 不返回已保存的 threadSource；两种模式的
+  `thread/list`（包括 `useStateDbOnly:true`）都可能遗漏尚未收到新用户输入的 fork。
+  `codex-fork-receipt` 因此只读已验证 runtime home 的 rollout `session_meta`，按完整操作标记
+  与 `forked_from_id` 找回；不按标题、文本或 cwd 猜身份，也不 resume 候选线程。
+  限定 sessions/archived_sessions 路径和年月日层次，拒绝符号链接、重复原生身份、损坏或超过
+  1 MiB 的元数据头；不把整份历史读入内存。该本地适配能力不代表远程文件不可达的执行器也支持。
+- 注入回执按原始 item ID、完整内容和连续原序比对目标 rollout；重复、改写、插入后出现新的
+  模型输入/压缩/回滚均不能当作本次注入的完成证据。缺失不表示请求从未执行，部分写入不允许
+  直接重试。逐行核对只返回 complete/incomplete/absent 或错误，不公开原始内容。
+- 原生全回合 fork 覆盖 legacy/paginated × 正常回执/丢回执/丢回执后 SIGKILL 重启，共 6 场景。
+  中途 assistant 消息分支覆盖注入正常/丢回执/AIH SQLite 重开加 Codex SIGKILL 重启，共 3 场景；
+  后三项直接执行持久操作编排与 Codex 适配器。图片字节与 detail、工具 call/result、commentary
+  消息均保留，后续源工具和最终答案排除，工具 marker 不重跑，源快照保持不变。
+
+仍需把 ready 操作与子会话、lineage、timeline 和附件的事务提交连接起来，并处理公开命令重放、
+嵌套分支、用户消息原生 ID 映射及 Work UI。不可将这个检查点模块单独视作完整 Work 分支。
+
+模式：`branch-operation-repository` → Repository + 状态机 → 复用 AIH 唯一数据库持久化跨 RPC
+检查点 → 重启、重复命令、账号/计划冲突测试；`native-branch-operation` → Ports and Adapters
+编排 → 隔离 provider 协议与阶段推进 → 故障注入和真实原生联合测试；`codex-fork-receipt` →
+只读 Adapter → 弥合 legacy API 元数据缺失 → 两账号、链接拒绝、部分写入及两种历史模式测试。
+SOLID 将文件读取、状态与 RPC 分开；DRY 共用回执验证；KISS/YAGNI 没有引入第二会话库或通用任务引擎。
+
+本增量验证：定向 66 pass（`/tmp/aih-branch-operations-targeted-final.log`）；原生 Harness
+联合 26 pass、0 skip（`/tmp/aih-branch-operations-native-final.log`）；全量串行
+`node --test --test-concurrency=1 test/*.test.js` 为 6793 tests、6759 pass、34 skip、0 fail，
+227.6 秒（`/tmp/aih-branch-operations-full.log`）。全量与 26 项原生结果早于最后新增的同 ID
+双路径歧义保护；该保护在上述 66 项定向用例及 9 项分支原生场景中重新验证
+（`/tmp/aih-branch-receipt-guard-native.log`）。47 个新增/修改 JS 的 `node --check`
+及 `git diff --check` 通过。本轮未修改 Web 源码、未部署/重启 9527、未提交推送。
+本批只使用临时 HOME 和本地模型；未重启/部署 9527、未提交推送。
+
+最终验证：
+
+- 全量 `node --test --test-concurrency=1 test/*.test.js`：6760 tests，6732 pass、28 skip、0 fail，
+  `/tmp/aih-work-evidence-delivery-full.log`。本轮先发现恢复夹具未提供 bridge 的访问错误并修正；之后
+  发现断线测试只等待服务端 close，未等待客户端收到 EOF 就释放 gate 的竞态，修正为双端 close 屏障。
+- 原生 `AIH_TEST_CODEX_EXECUTABLE=/Users/model/.codex/packages/standalone/current/bin/codex node --test
+  test/chat-harness.native.test.js test/chat-harness-tools.native.test.js`：20 pass、0 skip、0 fail，
+  `/tmp/aih-work-evidence-delivery-native.log`。其中新增三个 Work fork 探针包括图片原始通知完整性。
+- 恢复/原始记录/切口/driver 专项 54 pass，`/tmp/aih-work-evidence-targeted-final.log`；断线传输专项
+  6 pass，`/tmp/aih-work-reconnect-final.log`；40 个改动/新增 JS 的 `node --check` 和 `git diff --check` 通过。
+- 本轮没有 web 源码变更，没有执行 Web build 或浏览器产品验收；没有把这些原生探针写成上游 Provider 验收。
+
+设计边界：私有 Repository + transaction 保持原始证据与公开投影分离；coverage 状态机拒绝
+把恢复后的部分记录当完整；纯 fork planner 把边界判定与 RPC/会话事务分开；native history policy
+集中协议参数。对应隔离/重启/迁移/故障注入单测以及真实 native marker、图片输入断言。
+SOLID 保留协议、领域及持久化边界；DRY 复用分页与媒体策略；KISS/YAGNI 没有新增第二个会话库或 agent loop。
 
 ## 后续吸收专题：先验证差距，再实现
 

@@ -220,6 +220,8 @@ test('context state invalidates pre-compaction usage and records compaction fail
   const event = { type: 'timeline.item.started', turnId: 't1', at: 10,
     payload: { item: { kind: 'notice', id: 'c1', status: 'running', detail: { code: 'contextCompaction' } } } };
   const running = contextPatch({ policy }, event);
+  assert.equal(running.compaction.beforeUsedTokens, 1000);
+  assert.equal(running.compaction.beforeContextWindow, 2000);
   const failed = contextPatch({ policy: { ...policy, contextState: running } }, { type: 'turn.failed', turnId: 't1', at: 20 });
   assert.equal(failed.compaction.status, 'failed');
   const done = contextPatch({ policy: { ...policy, contextState: running } }, { ...event,
@@ -229,4 +231,67 @@ test('context state invalidates pre-compaction usage and records compaction fail
     payload: { metrics: { contextTokens: 250, contextWindow: 2000 } } });
   assert.equal(fresh.usedTokens, 250);
   assert.equal(fresh.stale, false);
+  assert.equal(fresh.compaction.afterUsedTokens, 250);
+  assert.equal(fresh.compaction.usageResetAt, 30);
+});
+
+test('work history reversibility is explicit and never treats a canonical tool card as native history', () => {
+  const { assessHistoryItem, assessHistoryPrefix } = require('../lib/server/chat-runtime/history-reversibility');
+  assert.deepEqual(assessHistoryItem({ kind: 'message', status: 'completed', detail: { role: 'user' } }), {
+    reversible: true, reason: ''
+  });
+  assert.deepEqual(assessHistoryPrefix([{ kind: 'tool', id: 'tool-1', status: 'completed', detail: {
+    callId: 'call-1', name: 'exec', result: 'ok'
+  } }]), {
+    reversible: false, kind: 'tool', reason: 'raw_call_shape_not_persisted', itemId: 'tool-1'
+  });
+  assert.deepEqual(assessHistoryItem({ kind: 'tool', status: 'running', detail: {
+    callId: 'call-1', name: 'exec'
+  } }), { reversible: false, kind: 'tool', reason: 'tool_result_unknown' });
+  assert.deepEqual(assessHistoryItem({ kind: 'reasoning', id: 'r1', status: 'completed' }), {
+    reversible: false, kind: 'reasoning', reason: 'native_item_shape_not_persisted'
+  });
+});
+
+test('private raw reasoning survives restart and nested branches without entering public history', async (t) => {
+  const f = fixture(t);
+  const parent = await source(f, 0);
+  f.service.store.updateRuntimeBinding(parent.sessionId, { nativeSessionId: 'native-parent' });
+  const raw = { type: 'reasoning', id: 'reasoning-raw',
+    summary: [{ type: 'summary_text', text: 'visible summary' }],
+    content: [{ type: 'reasoning_text', text: 'raw content' }],
+    encrypted_content: 'opaque-private-evidence',
+    internal_chat_message_metadata_passthrough: { turn_id: 'native-turn' } };
+  const evidence = { threadId: 'native-parent', item: raw };
+  f.service.store.recordNativeResponseItem(parent.sessionId, evidence);
+  f.service.store.recordNativeResponseItem(parent.sessionId, structuredClone(evidence));
+  assert.throws(() => f.service.store.recordNativeResponseItem(parent.sessionId,
+    { ...evidence, item: { ...raw, encrypted_content: 'changed' } }), /chat_native_history_item_conflict/);
+  assert.throws(() => f.service.store.recordNativeResponseItem(parent.sessionId,
+    { ...evidence, threadId: 'foreign' }), /chat_native_history_thread_mismatch/);
+  for (const item of [
+    { id: 'input', kind: 'message', content: 'question', detail: { role: 'user' } },
+    { id: raw.id, kind: 'reasoning', content: 'visible summary', detail: {} },
+    { id: 'answer', kind: 'message', content: 'answer', detail: { role: 'assistant' } }
+  ]) f.service.store.importTimeline(parent.sessionId, [{ eventId: `${item.id}-event`,
+    type: 'timeline.item.completed', at: Date.now(), source: { provider: 'kimi', runtimeId: 'test' },
+    payload: { item: { ...item, status: 'completed', createdAt: Date.now() } } }]);
+  const other = await f.service.openChatSession({ provider: 'kimi', executionAccountRef: 'account-b' });
+  f.service.store.updateRuntimeBinding(other.sessionId, { nativeSessionId: 'native-other' });
+  assert.throws(() => f.service.store.recordNativeResponseItem(other.sessionId, evidence), /chat_native_history_thread_mismatch/);
+  f.restart();
+  const child = (await f.service.dispatchCommand(parent.sessionId, { commandId: 'raw-fork', type: 'session.fork',
+    payload: { sourceItemId: 'answer' } })).result.session;
+  const childRaw = f.service.store.readHistorySeed(child.sessionId).responseItems.find((item) => item.type === 'reasoning');
+  assert.deepEqual(childRaw, { ...raw, id: childRaw.id });
+  assert.notEqual(childRaw.id, raw.id);
+  assert.doesNotMatch(JSON.stringify(f.service.getSnapshot(child.sessionId)), /opaque-private-evidence|raw content/);
+  const answer = f.service.getSnapshot(child.sessionId).timeline.find((item) => item.content === 'answer');
+  f.restart();
+  const grandchild = (await f.service.dispatchCommand(child.sessionId, { commandId: 'raw-grandchild', type: 'session.fork',
+    payload: { sourceItemId: answer.id } })).result.session;
+  const nested = f.service.store.readHistorySeed(grandchild.sessionId).responseItems.find((item) => item.type === 'reasoning');
+  assert.deepEqual(nested, { ...raw, id: nested.id });
+  assert.doesNotMatch(JSON.stringify(f.service.readTimeline(grandchild.sessionId)), /opaque-private-evidence|raw content/);
+  assert.equal(f.service.getSnapshot(parent.sessionId).timeline.length, 3);
 });

@@ -98,3 +98,8 @@ web/pnpm-lock.yaml
 # cmd.exe 或 .bat 上下文，无此问题）。这类文件一律是外部工具在仓库目录下误留，
 # 永远不是正当内容——忽略掉，免得污染 git status 或被误提交。
 nul
+
+# Windows 盘符路径。测试用 'C:\harness\.codex' 之类字面量模拟 win32 的 CODEX_HOME，
+# 在 POSIX 上 path.join 不解析反斜杠，一旦某条代码路径真去写这个"目录"，就会在仓库
+# 根下创建一个名字里带反斜杠的真实目录。同 nul 一样，永远不是正当内容。
+C:\\*

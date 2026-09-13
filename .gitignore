@@ -92,3 +92,9 @@ package-lock.json
 web/package-lock.json
 pnpm-lock.yaml
 web/pnpm-lock.yaml
+
+# Windows 保留设备名。PowerShell 的空设备是 $null，`2>nul` 不会丢弃输出而是
+# 创建一个名为 nul 的真实文件（cmd/批处理里 >nul 才是丢弃，仓库内的用法都在
+# cmd.exe 或 .bat 上下文，无此问题）。这类文件一律是外部工具在仓库目录下误留，
+# 永远不是正当内容——忽略掉，免得污染 git status 或被误提交。
+nul

@@ -693,7 +693,14 @@ test('resident client validates account identity before any thread request', asy
   assert.equal(verified.identityHash, 'a'.repeat(64));
   assert.equal(verified.runtimeHomeHash, 'b'.repeat(64));
   assert.equal(JSON.stringify(verified).includes('must-not-leave-validator'), false);
+  assert.deepStrictEqual(client.getVerifiedRuntimeHome(), {
+    codexHome: '/profiles/codex/account/.codex', runtimeHomeHash: 'b'.repeat(64)
+  });
+  const exposedHome = client.getVerifiedRuntimeHome();
+  exposedHome.codexHome = 'foreign';
+  assert.equal(client.getVerifiedRuntimeHome().codexHome, '/profiles/codex/account/.codex');
   client.destroy();
+  assert.equal(client.getVerifiedRuntimeHome(), null);
   await new Promise((resolve) => wss.close(resolve));
 });
 

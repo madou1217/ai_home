@@ -95,7 +95,7 @@ test('recovery waits for history persistence before returning a completed native
   let release;
   let imported;
   const gate = new Promise((resolve) => { release = resolve; });
-  const response = { thread: { turns: [{ id: 'native-turn-1', status: 'completed', items: [] }] } };
+  const response = { thread: { id: 'native-thread-1', turns: [{ id: 'native-turn-1', status: 'completed', items: [] }] } };
   const recovery = new CodexTurnRecovery({
     bridge: replayBridge(), client: { request: async () => response }, sessionId: 'session-1',
     getActive: () => active, setActive: (next) => { active = next; },
@@ -119,7 +119,7 @@ test('history persistence failure abandons recovery without exposing success or 
   const recovery = new CodexTurnRecovery({ bridge: replayBridge(), sessionId: 'session-1',
     client: { request: async (method) => {
       methods.push(method);
-      return { thread: { turns: [{ id: 'native-turn-1', status: 'completed', items: [] }] } };
+      return { thread: { id: 'native-thread-1', turns: [{ id: 'native-turn-1', status: 'completed', items: [] }] } };
     } },
     getActive: () => active, setActive: (next) => { active = next; },
     getThreadId: () => 'native-thread-1', getApprovalMode: () => 'confirm',
@@ -211,7 +211,8 @@ function replayBridge() {
 function resumedThread() {
   return {
     thread: {
-      turns: [{ id: 'native-turn-1', status: 'inProgress' }]
+      id: 'native-thread-1',
+      turns: [{ id: 'native-turn-1', status: 'inProgress', items: [] }]
     }
   };
 }

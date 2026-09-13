@@ -134,7 +134,8 @@ test('Codex driver reuses resident client and persists mapped native events', as
     approvalPolicy: 'untrusted',
     sandbox: 'workspace-write',
     cwd: '/repo',
-    experimentalRawEvents: true
+    experimentalRawEvents: true,
+    config: { 'features.omit_app_server_notification_media': false }
   });
   assert.equal(
     fixture.client.params('turn/start').collaborationMode.mode,
@@ -216,10 +217,14 @@ test('context window failure rebuilds the native thread and retries the turn onc
   assert.equal((await turn).status, 'completed');
 });
 
-test('context overflow recovery tolerates paginated app-server thread/read incompatibility', async () => {
+test('context overflow recovery hydrates paginated history and injects prior messages before retry', async () => {
   const fixture = createFixture({
     nativeSessionId: NATIVE_THREAD_ID,
     unsupportedThreadRead: true,
+    historyTurns: [{ id: 'prior-turn', status: 'completed', items: [
+      { id: 'prior-user', type: 'userMessage', content: [{ type: 'text', text: 'Remember COBALT' }] },
+      { id: 'prior-answer', type: 'agentMessage', text: 'COBALT remembered' }
+    ] }],
     rebuiltThreadId: '019f-rebuilt-thread'
   });
   const turn = fixture.entry.driver.startTurn(turnContext());
@@ -239,9 +244,11 @@ test('context overflow recovery tolerates paginated app-server thread/read incom
   for (let index = 0; index < 20 && fixture.client.methods().filter((method) => method === 'turn/start').length < 2; index += 1) {
     await nextTask();
   }
-  assert.deepEqual(fixture.client.methods().slice(-3), [
-    'thread/read', 'thread/start', 'turn/start'
+  assert.deepEqual(fixture.client.methods().slice(-5), [
+    'thread/read', 'thread/turns/list', 'thread/start', 'thread/inject_items', 'turn/start'
   ]);
+  assert.deepEqual(fixture.client.params('thread/inject_items').items.map((item) => item.role), ['user', 'assistant']);
+  assert.match(JSON.stringify(fixture.client.params('thread/inject_items')), /Remember COBALT/);
   assert.equal(fixture.client.params('turn/start').threadId, '019f-rebuilt-thread');
   fixture.client.notify('turn/started', {
     threadId: '019f-rebuilt-thread',
@@ -597,7 +604,8 @@ test('Codex driver explicitly exits sticky Plan mode at the next idle turn bound
     threadId: NATIVE_THREAD_ID,
     approvalPolicy: 'untrusted',
     sandbox: 'workspace-write',
-    excludeTurns: true
+    excludeTurns: true,
+    config: { 'features.omit_app_server_notification_media': false }
   });
   assert.equal(fixture.client.params('turn/start').collaborationMode.mode, 'plan');
   assert.equal(fixture.client.params('turn/start').approvalPolicy, 'untrusted');
@@ -974,6 +982,8 @@ function createFakeClient(decisionOrder, overrides) {
         error.code = 'codex_app_server_rpc_error';
         throw error;
       }
+      if (method === 'thread/read') return { thread: { id: NATIVE_THREAD_ID, turns: overrides.historyTurns || [] } };
+      if (method === 'thread/turns/list') return { data: overrides.historyTurns || [], nextCursor: null };
       if (method === 'turn/start') {
         if (overrides.turnStartError) throw overrides.turnStartError;
         const turnStarts = calls.filter((call) => call.method === 'turn/start').length;

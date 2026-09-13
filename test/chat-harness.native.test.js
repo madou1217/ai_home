@@ -32,6 +32,13 @@ for (const credentialKind of ['codex', 'codex-api-key', 'claude', 'agy', 'kimi']
     for await (const chunk of req) chunks.push(chunk);
     const body = JSON.parse(Buffer.concat(chunks).toString());
     requests.push({ url: req.url, body, accountRef: req.headers['x-account-ref'] });
+    if (failureMode === 'context-once') {
+      failureMode = '';
+      res.writeHead(400, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: { message: 'context length exceeded: local deterministic probe',
+        type: 'invalid_request_error', code: 'context_length_exceeded' } }));
+      return;
+    }
     if (failureMode === 'http') {
       res.writeHead(500, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ error: { message: 'local gateway probe failure', type: 'server_error' } }));
@@ -222,9 +229,25 @@ for (const credentialKind of ['codex', 'codex-api-key', 'claude', 'agy', 'kimi']
   const forkRequest = requests.at(-1).body;
   assert.match(JSON.stringify(forkRequest), /TEACHER_COBALT/);
   assert.match(JSON.stringify(forkRequest.input), /cobalt-42 response 1/);
+  assert.ok(forkRequest.input.some((item) => item.type === 'reasoning'
+    && item.encrypted_content === 'cHJvYmUtcmVhc29uaW5n'));
+  assert.doesNotMatch(JSON.stringify(service.getSnapshot(fork.sessionId)), /cHJvYmUtcmVhc29uaW5n/);
   assert.doesNotMatch(JSON.stringify(forkRequest.input), /Repeat the marker/);
   assert.notEqual(service.getSnapshot(fork.sessionId).runtimeBinding.nativeSessionId,
     service.getSnapshot(session.sessionId).runtimeBinding.nativeSessionId);
+  if (provider === 'agy') {
+    const originalNativeThread = service.getSnapshot(fork.sessionId).runtimeBinding.nativeSessionId;
+    failureMode = 'context-once';
+    await submit(service, fork.sessionId, 'overflow-continuity', 'Continue after one context overflow');
+    const retried = service.getSnapshot(fork.sessionId);
+    assert.equal(retried.failedTurn, undefined);
+    assert.notEqual(retried.runtimeBinding.nativeSessionId, originalNativeThread);
+    const retriedInput = requests.at(-1).body.input;
+    assert.match(JSON.stringify(retriedInput), /cobalt-42 response 1/);
+    assert.ok(retriedInput.some((item) => item.type === 'reasoning'
+      && item.encrypted_content === 'cHJvYmUtcmVhc29uaW5n'));
+    assert.doesNotMatch(JSON.stringify(retriedInput), /Repeat the marker/);
+  }
   const regen = (await service.dispatchCommand(session.sessionId, { commandId: 'native-regenerate',
     type: 'turn.regenerate', payload: { sourceItemId: sourceAnswer.id } })).result.session;
   await idle(service, regen.sessionId);
@@ -267,8 +290,8 @@ for (const credentialKind of ['codex', 'codex-api-key', 'claude', 'agy', 'kimi']
       `seed message must not duplicate after native reload: ${item.id}`);
   }
   assert.match(JSON.stringify(requests.at(-1).body.input), /cobalt-42/);
-  assert.equal(rpc.filter((call) => call.method === 'thread/start').length, 3);
-  assert.equal(rpc.filter((call) => call.method === 'thread/inject_items').length, 3);
+  assert.equal(rpc.filter((call) => call.method === 'thread/start').length, provider === 'agy' ? 4 : 3);
+  assert.equal(rpc.filter((call) => call.method === 'thread/inject_items').length, provider === 'agy' ? 4 : 3);
   assert.equal(rpc.filter((call) => call.method === 'thread/compact/start').length, 1);
   assert.ok(rpc.filter((call) => call.method === 'thread/resume').length >= 3);
   if (useGateway) assert.ok(requests.every((request) => request.accountRef === 'acct_probe'
@@ -421,7 +444,7 @@ async function respond(res, count, reasoningGate, highUsage = false, responseGat
   const item = { id: `msg_probe_${count}`, type: 'message', role: 'assistant', status: 'completed',
     content: [{ type: 'output_text', text, annotations: [] }] };
   const reasoningItems = count === 1 ? ['rs_probe_done', 'rs_probe_active'].map((itemId) => ({
-    id: itemId, type: 'reasoning', summary: []
+    id: itemId, type: 'reasoning', summary: [], encrypted_content: 'cHJvYmUtcmVhc29uaW5n'
   })) : [];
   const response = { id, object: 'response', created_at: Math.floor(Date.now() / 1000),
     status: 'completed', output: [...reasoningItems, item],

@@ -116,6 +116,67 @@ test('历史 seed 遇到过大消息时停止回溯,不跨 gap 保留孤立 assi
   assert.equal(result.truncated, true);
 });
 
+test('历史 seed 裁剪不拆分 tool call/result 配对', () => {
+  const items = [
+    { type: 'function_call', call_id: 'call-old', name: 'exec', arguments: '{}' },
+    { type: 'function_call_output', call_id: 'call-old', output: 'old result' },
+    { type: 'function_call', call_id: 'call-new', name: 'exec', arguments: '{}' },
+    { type: 'function_call_output', call_id: 'call-new', output: 'new result' },
+    { role: 'user', content: [{ type: 'input_text', text: '继续' }] }
+  ];
+  const result = budgetHistoryItems(items, 30);
+  const ids = result.items.map((item) => item.call_id).filter(Boolean);
+  assert.equal(ids.filter((id) => id === 'call-new').length % 2, 0);
+  assert.equal(ids.includes('call-old'), false);
+  assert.deepEqual(result.items.at(-1), items.at(-1));
+});
+
+test('历史 seed 丢弃缺少 call_id 的工具调用与孤立结果', () => {
+  const items = [
+    { type: 'function_call', name: 'exec', arguments: '{}' },
+    { type: 'function_call_output', output: 'orphan' },
+    { role: 'user', content: [{ type: 'input_text', text: '继续' }] }
+  ];
+  const result = budgetHistoryItems(items, 1000);
+  assert.deepEqual(result.items, [items[2]]);
+});
+
+test('历史 seed 按 call_id 配对,不因并行结果乱序而错配', () => {
+  const items = [
+    { role: 'user', content: [{ type: 'input_text', text: '执行工具' }] },
+    { type: 'function_call', call_id: 'call-a', name: 'a', arguments: '{}' },
+    { type: 'function_call', call_id: 'call-b', name: 'b', arguments: '{}' },
+    { type: 'function_call_output', call_id: 'call-b', output: 'result-b' },
+    { type: 'function_call_output', call_id: 'call-a', output: 'result-a' },
+    { role: 'user', content: [{ type: 'input_text', text: '继续' }] }
+  ];
+  const result = budgetHistoryItems(items, 1000);
+  assert.deepEqual(result.items, items);
+});
+
+test('历史 seed 保留 call 与 result 之间的普通消息,避免切出不可重建区间', () => {
+  const items = [
+    { role: 'user', content: [{ type: 'input_text', text: '执行工具' }] },
+    { type: 'function_call', call_id: 'call-a', name: 'a', arguments: '{}' },
+    { role: 'assistant', content: [{ type: 'output_text', text: '工具处理中' }] },
+    { type: 'function_call_output', call_id: 'call-a', output: '完成' },
+    { role: 'user', content: [{ type: 'input_text', text: '继续' }] }
+  ];
+  const result = budgetHistoryItems(items, 1000);
+  assert.deepEqual(result.items, items);
+});
+
+test('历史 seed 遇到重复 call_id 时整体丢弃冲突调用与结果', () => {
+  const items = [
+    { type: 'function_call', call_id: 'duplicate', name: 'a', arguments: '{}' },
+    { type: 'function_call', call_id: 'duplicate', name: 'b', arguments: '{}' },
+    { type: 'function_call_output', call_id: 'duplicate', output: '不确定' },
+    { role: 'user', content: [{ type: 'input_text', text: '继续' }] }
+  ];
+  const result = budgetHistoryItems(items, 1000);
+  assert.deepEqual(result.items, [items[3]]);
+});
+
 test('截断保住信封:块仍以（附件结束）收尾,字符数只描述正文', () => {
   // 回归:曾按整块长度切分,既掐掉结尾标记(模型收到未闭合的附件块),
   // 又把标题行算进"已装载字符数"。

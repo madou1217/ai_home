@@ -141,6 +141,20 @@ test('runQoderCliTurn rejects non-zero exit without content', async () => {
   );
 });
 
+test('runQoderCliTurn suppresses CLI synthetic error placeholders from deltas', async () => {
+  const deps = makeDeps([
+    '{"type":"system","subtype":"init","session_id":"s-3"}',
+    '{"type":"assistant","message":{"role":"assistant","model":"<synthetic>","content":[{"type":"text","text":"{\\"pricingUrl\\":\\"https://qoder.com.cn/pricing?client=qoder\\"}"}]}}',
+    '{"type":"result","subtype":"error_during_execution","is_error":true,"errors":["{\\"pricingUrl\\":\\"https://qoder.com.cn/pricing?client=qoder\\"}"],"error_code":118}'
+  ]);
+  const deltas = [];
+  await assert.rejects(
+    __private.runQoderCliTurn({}, ACCOUNT, { messages: [{ role: 'user', content: 'hi' }] }, 1000, deps, (delta) => deltas.push(delta)),
+    (error) => error.code === 'qoder_cli_upstream_error' && /套餐\/额度不足/.test(error.message)
+  );
+  assert.deepEqual(deltas, [], 'synthetic quota-wall placeholder must not leak into assistant deltas');
+});
+
 test('fetchQoderCliChatCompletion returns an OpenAI chat completion payload', async () => {
   const deps = makeDeps(OK_LINES);
   const payload = await fetchQoderCliChatCompletion({}, ACCOUNT, { model: 'Qwen3.8-Max', messages: [{ role: 'user', content: 'hi' }] }, 1000, deps);

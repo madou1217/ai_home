@@ -38,8 +38,8 @@ test('codex shim → standalone/current 链条能解析到 standalone_release', 
 
   assert.equal(result.channel, CHANNELS.STANDALONE_RELEASE);
   assert.equal(result.pinnable, true);
-  // 旧 release 目录还在本地，回滚不需要重新下载。
-  assert.equal(result.offlineRollback, true);
+  // 旧 release 目录还在本地，回滚可跳过整包下载（但 resolve_release 仍要联网）。
+  assert.equal(result.rollbackReusesLocalRelease, true);
   assert.ok(result.evidence.includes('resolved_through_link'));
 });
 
@@ -57,7 +57,7 @@ test('npm 全局安装判定为 npm_global 且可钉版本但不可离线回滚'
 
   assert.equal(result.channel, CHANNELS.NPM_GLOBAL);
   assert.equal(result.pinnable, true);
-  assert.equal(result.offlineRollback, false);
+  assert.equal(result.rollbackReusesLocalRelease, false);
 });
 
 test('provider 自带更新器的布局判定为 vendor_selfupdate 且不可钉版本', (t) => {

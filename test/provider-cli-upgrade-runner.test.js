@@ -237,3 +237,48 @@ test('检查失败不改状态、不计熔断', async () => {
   assert.equal(result.reason, 'check_failed');
   assert.deepEqual(calls.plans, []);
 });
+
+// 官方安装脚本会把 <BIN_DIR>/codex 覆盖成符号链接,而那正是 aih 的 CLI hook 垫片位置。
+// 「版本升上去了但 aih 接管没了」是无声的半吊子状态,比升级失败更糟,必须回滚。
+test('升级后 hook 装不回去 → 按验证失败处理并回滚', async () => {
+  const { deps, calls } = makeDeps({
+    detectChannel: async () => ({
+      channel: CHANNELS.STANDALONE_RELEASE,
+      pinnable: true,
+      ownerPath: '/opt/codex/releases/0.153.4/bin/codex',
+      resolvedPath: '/home/u/.local/bin/codex'
+    }),
+    runPlans: async (plans, context) => {
+      calls.plans.push({ phase: context.phase, version: context.version, postInstall: plans[0].postInstall });
+      return { ok: true };
+    },
+    reinstallCodexCliHook: async () => ({ ok: false, error: 'permission denied' })
+  });
+  const { ledger, result } = await runTwice(emptyLedger(), deps);
+
+  // 升级 plan 带着善后标记，且升级后确实走了回滚。
+  assert.deepEqual(calls.plans[0].postInstall, ['reinstall_codex_cli_hook']);
+  assert.equal(calls.plans.length, 2);
+  assert.equal(calls.plans[1].phase, 'rollback');
+  // 回滚同样要补 hook，补不回来就是 broken。
+  assert.equal(result.state, STATES.BROKEN);
+  assert.equal(result.reason, 'rollback_post_install_failed');
+  assert.equal(readProviderRecord(ledger, 'codex').enabled, false);
+});
+
+test('hook 能装回去时升级正常通过', async () => {
+  let hookCalls = 0;
+  const { deps } = makeDeps({
+    detectChannel: async () => ({
+      channel: CHANNELS.STANDALONE_RELEASE,
+      pinnable: true,
+      ownerPath: '/opt/codex/releases/0.153.4/bin/codex',
+      resolvedPath: '/home/u/.local/bin/codex'
+    }),
+    reinstallCodexCliHook: async () => { hookCalls += 1; return { ok: true }; }
+  });
+  const { result } = await runTwice(emptyLedger(), deps);
+
+  assert.equal(result.reason, 'verified_pass');
+  assert.equal(hookCalls, 1);
+});

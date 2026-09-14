@@ -1437,6 +1437,64 @@ export interface ManagedAppsResponse {
   apps: ManagedAppItem[];
 }
 
+// provider CLI 自动升级（只读状态面）。字段与 ~/.ai_home/run/provider-cli-upgrade.json
+// 的账本记录一一对应，服务端只做裁剪不做改写。
+export interface ProviderCliUpgradeRecord {
+  provider: string;
+  state?: string;
+  channel?: string;
+  enabled?: boolean;
+  disabledReason?: string;
+  installedVersion?: string;
+  latestVersion?: string;
+  targetVersion?: string;
+  knownGoodVersion?: string;
+  knownGoodRollbackable?: boolean;
+  baselineHealthy?: boolean | null;
+  updateAvailable?: boolean;
+  blockedVersions?: string[];
+  shadowedNpmInstall?: boolean;
+  resolvedPath?: string;
+  lastCheckAt?: number;
+  lastCheckError?: string;
+  lastApplyAt?: number;
+  lastApplyError?: string;
+  lastDeferReason?: string;
+  consecutiveFailures?: number;
+  consecutiveDefers?: number;
+  consecutiveQuiescentTicks?: number;
+  soakUnknownCount?: number;
+  lastTickState?: string;
+  lastTickReason?: string;
+  history?: Array<Record<string, unknown>>;
+}
+
+export interface ProviderCliUpgradeSchedulerState {
+  running?: boolean;
+  cycling?: boolean;
+  enabled?: boolean;
+  applyEnabled?: boolean;
+  intervalMs?: number;
+  startDelayMs?: number;
+  tickCount?: number;
+  providers?: string[];
+  lastError?: string;
+  lastResult?: {
+    at?: number;
+    reason?: string;
+    applyEnabled?: boolean;
+    providers?: Record<string, { state?: string; reason?: string }>;
+  } | null;
+}
+
+export interface ProviderCliUpgradeStatusResponse {
+  ok: boolean;
+  // 调度器只存在于 startLocalServer 起来的进程里，缺席时为 null（账本那半边仍然有效）。
+  scheduler: ProviderCliUpgradeSchedulerState | null;
+  global: { enabled: boolean; disabledReason: string };
+  providers: ProviderCliUpgradeRecord[];
+}
+
 export interface ManagedAppUpdateResponse {
   ok: boolean;
   appId: string;

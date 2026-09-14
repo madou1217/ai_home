@@ -17,6 +17,7 @@ import ManagedToolsPanel from '@/components/toolkit/ManagedToolsPanel';
 import MirrorManagerPanel from '@/components/toolkit/MirrorManagerPanel';
 import ProxyDiagnosticsPanel from '@/components/toolkit/ProxyDiagnosticsPanel';
 import ProxyPoolPanel from '@/components/toolkit/proxy-pool/ProxyPoolPanel';
+import ProviderCliUpgradePanel from '@/components/toolkit/ProviderCliUpgradePanel';
 import './Toolkit.css';
 
 type ToolkitSection = 'integration' | 'runtime' | 'network';
@@ -41,6 +42,12 @@ const SECTION_ITEMS: Record<ToolkitSection, ToolkitSecondaryItem[]> = {
       label: '终端管理',
       description: '安装、更新与卸载',
       icon: <ToolOutlined />
+    },
+    {
+      id: 'cli-upgrade',
+      label: 'CLI 自动升级',
+      description: '版本状态与回滚记录',
+      icon: <CloudSyncOutlined />
     },
     {
       id: 'session-runtimes',
@@ -101,6 +108,8 @@ function renderPanel(panelId: string) {
   switch (panelId) {
     case 'apps':
       return <AppManagerPanel />;
+    case 'cli-upgrade':
+      return <ProviderCliUpgradePanel />;
     case 'session-runtimes':
       return <ManagedToolsPanel category="session-runtimes" />;
     case 'terminals':

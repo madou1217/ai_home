@@ -93,6 +93,7 @@ import type {
   ToolkitToolConfigResponse,
   ManagedAppsResponse,
   ManagedAppUpdateResponse,
+  ProviderCliUpgradeStatusResponse,
   AccountAppLaunchResponse,
   AccountEgressBindingInput,
   AccountEgressResponse,
@@ -1912,6 +1913,11 @@ export const sshHostsAPI = {
 };
 
 export const toolkitAPI = {
+  // 只读：这条接口不触发任何检查或安装，纯粹回放账本与调度器状态。
+  getProviderCliUpgradeStatus: async (): Promise<ProviderCliUpgradeStatusResponse> => {
+    const response = await api.get<ProviderCliUpgradeStatusResponse>('/webui/provider-cli-upgrade');
+    return response.data;
+  },
   listApps: async (): Promise<ManagedAppsResponse> => {
     const response = await api.get<ManagedAppsResponse>('/webui/toolkit/apps');
     return response.data;

@@ -266,6 +266,37 @@ test('升级后 hook 装不回去 → 按验证失败处理并回滚', async () 
   assert.equal(readProviderRecord(ledger, 'codex').enabled, false);
 });
 
+// 阶段一：只检查、不改动。闸门照常观测并记账（这正是阶段一要采集的数据），但绝不装任何东西，
+// 且 consecutiveQuiescentTicks 必须归零——否则打开 apply 的那一刻会拿着攒了几天的计数立刻开装。
+test('applyEnabled=false 时只检查不动手,且静默计数不累积', async () => {
+  const { deps, calls } = makeDeps({
+    checkQuiescence: async () => ({ busy: false, evidence: ['app_server:none'] })
+  });
+  const { ledger, result } = await runTwice(emptyLedger(), deps, { applyEnabled: false });
+
+  assert.equal(result.state, STATES.HEALTHY);
+  assert.equal(result.reason, 'apply_disabled');
+  assert.equal(result.targetVersion, '0.154.0');
+  assert.deepEqual(result.evidence, ['app_server:none']);
+  assert.deepEqual(calls.plans, []);
+
+  const record = readProviderRecord(ledger, 'codex');
+  assert.equal(record.latestVersion, '0.154.0');
+  assert.equal(record.installedVersion, '0.153.4');
+  assert.equal(record.consecutiveQuiescentTicks, 0);
+  assert.equal(record.lastDeferReason, 'apply_disabled');
+});
+
+test('applyEnabled=false 时忙闲照实记录', async () => {
+  const { deps } = makeDeps({ checkQuiescence: async () => ({ busy: true, evidence: ['pty:aih-codex-1'] }) });
+  const { ledger, result } = await runProviderUpgradeCycle('codex', emptyLedger(), deps, { applyEnabled: false })
+    .then((r) => ({ ledger: r.ledger, result: r }));
+
+  assert.equal(result.reason, 'apply_disabled');
+  assert.equal(result.busy, true);
+  assert.equal(readProviderRecord(ledger, 'codex').lastDeferReason, 'busy');
+});
+
 test('hook 能装回去时升级正常通过', async () => {
   let hookCalls = 0;
   const { deps } = makeDeps({

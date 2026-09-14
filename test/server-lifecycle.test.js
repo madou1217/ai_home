@@ -129,6 +129,7 @@ function createServeOptions(port, extra = {}) {
     codexClientVersion: '0.0.0-test',
     managementKey: 'management-key-that-is-long-enough',
     modelUsageScan: false,
+    providerCliAutoUpgrade: false,
     logRequests: false,
     ...extra
   };

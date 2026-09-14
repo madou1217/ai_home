@@ -41,16 +41,18 @@ function ledgerStore(initial = { schemaVersion: 1, global: { enabled: true }, pr
   };
 }
 
-test('默认配置：检查开、应用关、6 小时一轮', () => {
+test('默认配置：检查开、应用开、6 小时一轮', () => {
   assert.deepEqual(normalizeProviderCliUpgradeConfig({}), {
     enabled: true,
-    applyEnabled: false,
+    applyEnabled: true,
     startDelayMs: 5 * 60 * 1000,
     intervalMs: 6 * 60 * 60 * 1000
   });
 
   // 间隔低于 30 分钟一律回落默认值：一轮要 spawn 真二进制，不给调成秒级。
   assert.equal(normalizeProviderCliUpgradeConfig({ intervalMs: 1000 }).intervalMs, 6 * 60 * 60 * 1000);
+  // 退回只检查的路径必须钉死：默认翻开之后，这条才是唯一能关掉「动用户环境」的开关。
+  assert.equal(normalizeProviderCliUpgradeConfig({ applyEnabled: false }).applyEnabled, false);
   assert.equal(normalizeProviderCliUpgradeConfig({ applyEnabled: true }).applyEnabled, true);
 });
 
@@ -191,7 +193,7 @@ test('没有依赖或没有候选 provider 时安静跳过', async () => {
   assert.deepEqual(await disabled.runNow(), { ok: false, skipped: true, reason: 'disabled' });
 });
 
-// 阶段一的语义：applyEnabled 必须原样传给 runner，否则「只检查不改动」形同虚设。
+// applyEnabled 必须原样传给 runner，否则「只检查不改动」这条退路形同虚设。
 test('applyEnabled 透传给 runner', async () => {
   const seen = [];
   const make = (applyEnabled) => createProviderCliUpgradeScheduler({

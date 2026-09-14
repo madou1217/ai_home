@@ -128,6 +128,7 @@ test('钉住的账号停用后,请求回落到同 provider 的健康账号,且�
     codexClientVersion: '0.0.0-test',
     managementKey: 'management-key-that-is-long-enough',
     modelUsageScan: false,
+    providerCliAutoUpgrade: false,
     logRequests: false,
     manageProcessLifecycle: false,
     clientKey: 'test-client-key',

@@ -140,6 +140,7 @@ test('running Server starts and stops the FRP desired-state reconcile loop', asy
     codexClientVersion: '0.0.0-test',
     managementKey: 'management-key-that-is-long-enough',
     modelUsageScan: false,
+    providerCliAutoUpgrade: false,
     logRequests: false,
     frpReconcileIntervalMs: 45_000
   }, createServerDeps(aiHomeDir, processObj, { closeAll() {} }, {
@@ -179,6 +180,7 @@ test('running Server rotates Management Key without loopback bypass or restart',
     codexClientVersion: '0.0.0-test',
     managementKey: oldKey,
     modelUsageScan: false,
+    providerCliAutoUpgrade: false,
     logRequests: false
   }, createServerDeps(aiHomeDir, processObj, relaySessionRegistry));
 
@@ -236,6 +238,7 @@ test('running Server protects loopback WebUI data with the Management Key', asyn
     codexClientVersion: '0.0.0-test',
     managementKey: SERVER_MANAGEMENT_KEY,
     modelUsageScan: false,
+    providerCliAutoUpgrade: false,
     logRequests: false
   }, createServerDeps(aiHomeDir, processObj, relaySessionRegistry, {
     getProjectsSnapshot: async () => ({ projects: [] })
@@ -300,6 +303,7 @@ test('running Server injects the Codex reset-credit service into the WebUI route
     codexClientVersion: '0.0.0-test',
     managementKey,
     modelUsageScan: false,
+    providerCliAutoUpgrade: false,
     logRequests: false
   }, createServerDeps(aiHomeDir, processObj, { closeAll() {} }, {
     codexResetCreditService: {
@@ -360,6 +364,7 @@ test('server WebUI resolves SSH identity files from the configured SSH home', as
     codexClientVersion: '0.0.0-test',
     managementKey: SERVER_MANAGEMENT_KEY,
     modelUsageScan: false,
+    providerCliAutoUpgrade: false,
     logRequests: false
   }, createServerDeps(aiHomeDir, processObj, relaySessionRegistry, { sshHomeDir }));
 
@@ -406,6 +411,7 @@ test('server fabric descriptor advertises Management Key and removed client cred
     codexClientVersion: '0.0.0-test',
     managementKey: SERVER_MANAGEMENT_KEY,
     modelUsageScan: false,
+    providerCliAutoUpgrade: false,
     logRequests: false
   }, createServerDeps(aiHomeDir, processObj, relaySessionRegistry, {
     startServerMdnsDiscovery: async (input) => {
@@ -487,6 +493,7 @@ test('running Server exposes authenticated relay and FRP configuration APIs end 
     codexClientVersion: '0.0.0-test',
     managementKey: SERVER_MANAGEMENT_KEY,
     modelUsageScan: false,
+    providerCliAutoUpgrade: false,
     logRequests: false
   }, createServerDeps(aiHomeDir, processObj, relaySessionRegistry, {
     startServerMdnsDiscovery: async () => ({
@@ -586,6 +593,7 @@ test('server fabric transport echo endpoint runs on the existing server listener
     codexClientVersion: '0.0.0-test',
     managementKey: SERVER_MANAGEMENT_KEY,
     modelUsageScan: false,
+    providerCliAutoUpgrade: false,
     logRequests: false
   }, createServerDeps(aiHomeDir, processObj, relaySessionRegistry));
 
@@ -638,6 +646,7 @@ test('server fabric webrtc signaling endpoint exchanges lab messages', async (t)
     codexClientVersion: '0.0.0-test',
     managementKey: SERVER_MANAGEMENT_KEY,
     modelUsageScan: false,
+    providerCliAutoUpgrade: false,
     logRequests: false
   }, createServerDeps(aiHomeDir, processObj, relaySessionRegistry));
 
@@ -716,6 +725,7 @@ test('server fabric registry uses Management Key and mirrors node-rpc views', as
     codexClientVersion: '0.0.0-test',
     managementKey: SERVER_MANAGEMENT_KEY,
     modelUsageScan: false,
+    providerCliAutoUpgrade: false,
     logRequests: false
   }, createServerDeps(aiHomeDir, processObj, relaySessionRegistry));
 
@@ -844,6 +854,7 @@ test('server fabric transport readiness route reports relay fallback and promoti
     codexClientVersion: '0.0.0-test',
     managementKey: SERVER_MANAGEMENT_KEY,
     modelUsageScan: false,
+    providerCliAutoUpgrade: false,
     logRequests: false
   }, createServerDeps(aiHomeDir, processObj, relaySessionRegistry));
 
@@ -947,6 +958,7 @@ test('server node-rpc device nodes uses shared relay registry for mobile status'
     codexClientVersion: '0.0.0-test',
     managementKey: SERVER_MANAGEMENT_KEY,
     modelUsageScan: false,
+    providerCliAutoUpgrade: false,
     logRequests: false
   }, createServerDeps(aiHomeDir, processObj, relaySessionRegistry));
 
@@ -994,6 +1006,7 @@ test('server node-rpc device node sessions wires relay management dependency', a
     codexClientVersion: '0.0.0-test',
     managementKey: SERVER_MANAGEMENT_KEY,
     modelUsageScan: false,
+    providerCliAutoUpgrade: false,
     logRequests: false
   }, createServerDeps(aiHomeDir, processObj, relaySessionRegistry));
 
@@ -1051,6 +1064,7 @@ test('server node-rpc starts native session through injectable runtime service',
     codexClientVersion: '0.0.0-test',
     managementKey: 'node-secret',
     modelUsageScan: false,
+    providerCliAutoUpgrade: false,
     logRequests: false
   }, createServerDeps(aiHomeDir, processObj, relaySessionRegistry, {
     loadServerRuntimeAccounts: () => ({
@@ -1222,6 +1236,7 @@ test('server node-rpc device node session start and run controls forward through
     codexClientVersion: '0.0.0-test',
     managementKey: SERVER_MANAGEMENT_KEY,
     modelUsageScan: false,
+    providerCliAutoUpgrade: false,
     logRequests: false
   }, createServerDeps(aiHomeDir, processObj, relaySessionRegistry, {
     requestRemoteManagement: async (input) => {
@@ -1421,6 +1436,7 @@ test('server node-rpc device node session start forwards remote failure reason',
     codexClientVersion: '0.0.0-test',
     managementKey: SERVER_MANAGEMENT_KEY,
     modelUsageScan: false,
+    providerCliAutoUpgrade: false,
     logRequests: false
   }, createServerDeps(aiHomeDir, processObj, relaySessionRegistry, {
     requestRemoteManagement: async () => ({
@@ -1494,6 +1510,7 @@ test('server node-rpc device sessions uses injected project snapshot loader', as
     codexClientVersion: '0.0.0-test',
     managementKey: SERVER_MANAGEMENT_KEY,
     modelUsageScan: false,
+    providerCliAutoUpgrade: false,
     logRequests: false
   }, createServerDeps(aiHomeDir, processObj, relaySessionRegistry, { getProjectsSnapshot }));
 

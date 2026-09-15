@@ -59,6 +59,10 @@ type Dependencies struct {
 	UpstreamAttemptLimit int
 	// PoolRetries 是生产必需的 AGY 请求级有界第二轮策略。
 	PoolRetries *inferencegateway.RequestPoolRetryPolicy
+	// RequestRewriter 在派发前按已解析的 Provider 改写 Canonical 请求。
+	//
+	// 生产注入的是 vision guard：目标模型看不见图片时把图片换成可借视文本。
+	RequestRewriter inferencegateway.RequestRewriter
 }
 
 // Components 保存 Canonical Executor 与其共享的账号征召器。
@@ -138,6 +142,7 @@ func NewComponents(dependencies Dependencies) (*Components, error) {
 			ModelRefreshes:         dependencies.ModelRefreshes,
 			UpstreamAttemptLimit:   dependencies.UpstreamAttemptLimit,
 			PoolRetries:            dependencies.PoolRetries,
+			RequestRewriter:        dependencies.RequestRewriter,
 		},
 	)
 	if err != nil {

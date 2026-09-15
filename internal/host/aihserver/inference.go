@@ -57,6 +57,8 @@ type inferenceCompositionDependencies struct {
 	decodeErrors         func(error)
 	upstreamDecodeErrors func(error)
 	clock                func() time.Time
+	// requestRewriter 在派发前按 Provider 改写请求（vision guard）。
+	requestRewriter inferencegateway.RequestRewriter
 }
 
 // newInferenceComposition 装配模型快照、共享刷新调度器、Canonical Runtime 和 HTTP。
@@ -143,9 +145,10 @@ func newInferenceComposition(
 			claudeAdapter,
 			agyAdapter,
 		},
-		ModelRefreshes: dependencies.modelRefreshes,
-		Clock:          dependencies.clock,
-		PoolRetries:    poolRetries,
+		ModelRefreshes:  dependencies.modelRefreshes,
+		Clock:           dependencies.clock,
+		PoolRetries:     poolRetries,
+		RequestRewriter: dependencies.requestRewriter,
 	})
 	if err != nil {
 		return nil, err

@@ -17,6 +17,7 @@ import (
 	"github.com/madou1217/ai_home/application/claudegateway"
 	"github.com/madou1217/ai_home/application/clauderelay"
 	"github.com/madou1217/ai_home/application/codexwebsocket"
+	"github.com/madou1217/ai_home/application/visionguard"
 	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/agyoauth"
@@ -476,6 +477,20 @@ func newHandlers(
 	if relayHTTPClient != nil {
 		relayClient = relayHTTPClient
 	}
+	// 模态索引与图片仓必须在推理组合之前创建：vision guard 同时需要两者，
+	// 而它要在推理运行时装配时就注入。这里只创建一次，后续 modelsapi 与图片入口复用。
+	modelModalities, err := modelsdev.New()
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建 models.dev 模态索引失败: %w", err)
+	}
+	imageBlobs := imageblob.NewStore(0)
+	visionGuard, err := visionguard.New(visionguard.Dependencies{
+		Modalities: modelModalities,
+		Blobs:      images.BlobStoreAdapter{Store: imageBlobs},
+	})
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建 vision guard 失败: %w", err)
+	}
 	inference, err := newInferenceComposition(
 		ctx,
 		inferenceCompositionDependencies{
@@ -494,6 +509,7 @@ func newHandlers(
 			decodeErrors:         decodeErrors,
 			upstreamDecodeErrors: upstreamDecodeErrors,
 			clock:                time.Now,
+			requestRewriter:      visionGuard,
 		},
 	)
 	if err != nil {
@@ -628,14 +644,6 @@ func newHandlers(
 			err,
 		)
 	}
-	modelModalities, err := modelsdev.New()
-	if err != nil {
-		_ = inference.Close()
-		return serverHandlers{}, nil, fmt.Errorf(
-			"创建 models.dev 模态索引失败: %w",
-			err,
-		)
-	}
 	modelsHandler, err := modelsapi.NewHandler(modelsapi.Dependencies{
 		Models:     inference.models,
 		Modalities: modelModalities,
@@ -645,8 +653,6 @@ func newHandlers(
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf("创建本地模型目录 Handler 失败: %w", err)
 	}
-	// 进程内图片仓由 blob 取回路由与（后续的）图片生成端点共用，因此在这里创建一份。
-	imageBlobs := imageblob.NewStore(0)
 	blobsHandler, err := blobsapi.NewHandler(blobsapi.Dependencies{
 		Blobs:      imageBlobs,
 		Authorizer: clientAuthorizer,

@@ -73,6 +73,20 @@ type Dependencies struct {
 	UpstreamAttemptLimit int
 	// PoolRetries 只允许在 AGY 整池无提示模糊失败且零输出时执行一次第二轮。
 	PoolRetries *RequestPoolRetryPolicy
+	// RequestRewriter 在派发前按已解析的 Provider 改写请求。
+	//
+	// 目前唯一的实现是 vision guard：目标模型看不见图片时把图片换成可借视文本。
+	// 它必须是幂等且纯函数的；为 nil 时不做任何改写。
+	RequestRewriter RequestRewriter
+}
+
+// RequestRewriter 在派发前按目标 Provider 改写 Canonical 请求。
+//
+// 实现必须满足两条合同：
+//   - 未命中时**原样返回**入参请求，不得顺手做其它变换；
+//   - 对同一 (请求, Provider) 幂等，因为它会在路由候选之间被重复调用。
+type RequestRewriter interface {
+	Rewrite(request inference.Request, providerID inference.ProviderID) inference.Request
 }
 
 // Coordinator 组合路由、账号征召、上游执行和状态提交。
@@ -86,6 +100,7 @@ type Coordinator struct {
 	clock                func() time.Time
 	upstreamAttemptLimit int
 	poolRetries          *RequestPoolRetryPolicy
+	requestRewriter      RequestRewriter
 	routeCursor          atomic.Uint64
 	routeSourceCursor    atomic.Uint64
 }
@@ -445,6 +460,20 @@ func (coordinator *Coordinator) executeRoute(
 	)
 }
 
+// rewriteForRoute 在派发前应用按 Provider 生效的请求改写。
+//
+// 它按路由而非按请求生效：同一个模型在不同 Provider 下的模态可能不同，因此判定必须
+// 带上已解析的 Provider。未配置改写器时原样返回。
+func (coordinator *Coordinator) rewriteForRoute(
+	request inference.Request,
+	route Route,
+) inference.Request {
+	if coordinator == nil || coordinator.requestRewriter == nil {
+		return request
+	}
+	return coordinator.requestRewriter.Rewrite(request, route.ProviderID())
+}
+
 // executeRouteRound 在一个固定候选快照中扫描一次不同账号。
 func (coordinator *Coordinator) executeRouteRound(
 	ctx context.Context,
@@ -454,6 +483,7 @@ func (coordinator *Coordinator) executeRouteRound(
 	emit EventSink,
 	accountFailures *requestAccountFailureRecorder,
 ) (routeExecution, error) {
+	request = coordinator.rewriteForRoute(request, route)
 	var pendingFailure *attemptStream
 	onlyDeferred := true
 	attempted := 0

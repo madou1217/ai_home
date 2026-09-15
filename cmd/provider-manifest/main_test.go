@@ -15,8 +15,14 @@ func TestBuildLegacyCatalogPreservesPresentationShape(t *testing.T) {
 	if got, want := len(legacy.Providers), len(manifest.Providers); got != want {
 		t.Fatalf("旧版 Provider 数量错误: got=%d want=%d", got, want)
 	}
-	if legacy.Providers[0] != manifest.Providers[0].Presentation {
+	if legacy.Providers[0].Presentation != manifest.Providers[0].Presentation {
 		t.Fatal("旧版 Provider 展示字段没有从规范合同派生")
+	}
+	// 旧格式也必须带上族/站点，否则读它的消费方看不出国内国际是一家的。
+	for index, provider := range legacy.Providers {
+		if provider.Family != manifest.Providers[index].Family || provider.Site != manifest.Providers[index].Site {
+			t.Fatalf("旧版投影丢失 family/site: %s", provider.ID)
+		}
 	}
 	if len(legacy.DeprecatedGatewayProviders) != 1 || legacy.DeprecatedGatewayProviders[0] != "gemini" {
 		t.Fatalf("旧版废弃清单错误: %v", legacy.DeprecatedGatewayProviders)
@@ -32,6 +38,8 @@ func TestRenderClientTypeScriptUsesGeneratedContract(t *testing.T) {
 	for _, expected := range [][]byte{
 		[]byte("请编辑 `core/providers/builtins.go`"),
 		[]byte("export type ProviderId"),
+		[]byte("export type ProviderSite"),
+		[]byte("readonly family: ProviderFamily;"),
 		[]byte("export const PROVIDER_AUTH_OPTIONS"),
 	} {
 		if !bytes.Contains(output, expected) {

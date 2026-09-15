@@ -8,7 +8,9 @@
       "terminalIconAsset": "assets/provider-icons/codex.png",
       "accentVar": "var(--provider-codex)",
       "softVar": "var(--provider-codex-soft)",
-      "tagColor": "green"
+      "tagColor": "green",
+      "family": "codex",
+      "site": "global"
     },
     {
       "id": "gemini",
@@ -18,7 +20,9 @@
       "terminalIconAsset": "assets/provider-icons/gemini.png",
       "accentVar": "var(--provider-gemini)",
       "softVar": "var(--provider-gemini-soft)",
-      "tagColor": "blue"
+      "tagColor": "blue",
+      "family": "gemini",
+      "site": "global"
     },
     {
       "id": "claude",
@@ -28,7 +32,9 @@
       "terminalIconAsset": "assets/provider-icons/claude.png",
       "accentVar": "var(--provider-claude)",
       "softVar": "var(--provider-claude-soft)",
-      "tagColor": "orange"
+      "tagColor": "orange",
+      "family": "claude",
+      "site": "global"
     },
     {
       "id": "agy",
@@ -38,7 +44,9 @@
       "terminalIconAsset": "assets/provider-icons/agy.png",
       "accentVar": "var(--provider-agy)",
       "softVar": "var(--provider-agy-soft)",
-      "tagColor": "purple"
+      "tagColor": "purple",
+      "family": "agy",
+      "site": "global"
     },
     {
       "id": "opencode",
@@ -48,7 +56,9 @@
       "terminalIconAsset": "assets/provider-icons/opencode.png",
       "accentVar": "var(--provider-opencode)",
       "softVar": "var(--provider-opencode-soft)",
-      "tagColor": "default"
+      "tagColor": "default",
+      "family": "opencode",
+      "site": "global"
     },
     {
       "id": "grok",
@@ -58,7 +68,9 @@
       "terminalIconAsset": "assets/provider-icons/grok.png",
       "accentVar": "var(--provider-grok)",
       "softVar": "var(--provider-grok-soft)",
-      "tagColor": "cyan"
+      "tagColor": "cyan",
+      "family": "grok",
+      "site": "global"
     },
     {
       "id": "qoder",
@@ -68,7 +80,9 @@
       "terminalIconAsset": "assets/provider-icons/qoder.png",
       "accentVar": "var(--provider-qoder)",
       "softVar": "var(--provider-qoder-soft)",
-      "tagColor": "blue"
+      "tagColor": "blue",
+      "family": "qoder",
+      "site": "global"
     },
     {
       "id": "qodercn",
@@ -78,7 +92,9 @@
       "terminalIconAsset": "assets/provider-icons/qodercn.png",
       "accentVar": "var(--provider-qodercn)",
       "softVar": "var(--provider-qodercn-soft)",
-      "tagColor": "purple"
+      "tagColor": "purple",
+      "family": "qoder",
+      "site": "cn"
     },
     {
       "id": "kimi",
@@ -88,7 +104,9 @@
       "terminalIconAsset": "assets/provider-icons/kimi.png",
       "accentVar": "var(--provider-kimi)",
       "softVar": "var(--provider-kimi-soft)",
-      "tagColor": "geekblue"
+      "tagColor": "geekblue",
+      "family": "kimi",
+      "site": "global"
     },
     {
       "id": "kiro",
@@ -98,7 +116,9 @@
       "terminalIconAsset": "assets/provider-icons/kiro.png",
       "accentVar": "var(--provider-kiro)",
       "softVar": "var(--provider-kiro-soft)",
-      "tagColor": "volcano"
+      "tagColor": "volcano",
+      "family": "kiro",
+      "site": "global"
     },
     {
       "id": "zcode",
@@ -108,7 +128,9 @@
       "terminalIconAsset": "assets/provider-icons/zcode.png",
       "accentVar": "var(--provider-zcode)",
       "softVar": "var(--provider-zcode-soft)",
-      "tagColor": "geekblue"
+      "tagColor": "geekblue",
+      "family": "zcode",
+      "site": "global"
     },
     {
       "id": "codebuddy",
@@ -118,7 +140,9 @@
       "terminalIconAsset": "assets/provider-icons/codebuddy.png",
       "accentVar": "var(--provider-codebuddy)",
       "softVar": "var(--provider-codebuddy-soft)",
-      "tagColor": "blue"
+      "tagColor": "blue",
+      "family": "codebuddy",
+      "site": "global"
     },
     {
       "id": "codebuddycn",
@@ -128,7 +152,9 @@
       "terminalIconAsset": "assets/provider-icons/codebuddycn.png",
       "accentVar": "var(--provider-codebuddycn)",
       "softVar": "var(--provider-codebuddycn-soft)",
-      "tagColor": "purple"
+      "tagColor": "purple",
+      "family": "codebuddy",
+      "site": "cn"
     },
     {
       "id": "workbuddy",
@@ -138,7 +164,21 @@
       "terminalIconAsset": "assets/provider-icons/workbuddy.png",
       "accentVar": "var(--provider-workbuddy)",
       "softVar": "var(--provider-workbuddy-soft)",
-      "tagColor": "blue"
+      "tagColor": "blue",
+      "family": "workbuddy",
+      "site": "global"
+    },
+    {
+      "id": "workbuddycn",
+      "label": "WorkBuddy CN",
+      "short": "WBCN",
+      "terminalIcon": "◍",
+      "terminalIconAsset": "assets/provider-icons/workbuddycn.png",
+      "accentVar": "var(--provider-workbuddycn)",
+      "softVar": "var(--provider-workbuddycn-soft)",
+      "tagColor": "purple",
+      "family": "workbuddy",
+      "site": "cn"
     }
   ],
   "fallback": {

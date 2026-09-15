@@ -6,8 +6,8 @@
  * 64x64 RGBA PNG，输出到 `assets/provider-icons/<provider>.png`。
  *
  * 该路径由 Provider 合同声明（`core/providers/builtins.go` 的 presentation
- * terminalIconAsset），供终端 profile 图标使用。三个 CodeBuddy 家族 Provider
- * （codebuddy / codebuddycn / workbuddy）共用本脚本，几何各自独立。
+ * terminalIconAsset），供终端 profile 图标使用。CodeBuddy 家族的四个 Provider
+ * （codebuddy / codebuddycn / workbuddy / workbuddycn）共用本脚本，几何各自独立。
  *
  * 为什么手写栅格化：仓库内没有 SVG 栅格化依赖（无 sharp / rsvg / cairo），
  * 而这些图形都是纯解析几何（圆角方 + 同心菱形 / 四角星 / 圆环），解析式判定
@@ -69,7 +69,8 @@ function insideAstroid(dx, dy, a) {
  * 形状选择与 `presentation(... terminalIcon ...)` 的文本记号对应：
  *   - codebuddy "❖"：菱形外环 + 品牌色内核
  *   - codebuddycn "✦"：四角星，内嵌同色内核
- *   - workbuddy "◉"：粗圆环 + 实心圆心
+ *   - workbuddy "◉"：粗圆环 + 实心圆心（国际站）
+ *   - workbuddycn "◍"：双同心圆环，中心留空（国内站，与 ◉ 一眼可分）
  */
 const PROVIDER_ICONS = Object.freeze({
   codebuddy: {
@@ -95,6 +96,16 @@ const PROVIDER_ICONS = Object.freeze({
       const dist = Math.hypot(dx, dy);
       if (dist <= 118) return [...this.accent, 255];
       if (dist > 236 && dist <= 372) return [0xff, 0xff, 0xff, 255];
+      return [...BG, 255];
+    }
+  },
+  workbuddycn: {
+    // 国内站沿用家族绿之外的站点紫，与 codebuddycn 的站点色一致。
+    accent: [0x7a, 0x3f, 0xf2],
+    sample(dx, dy) {
+      const dist = Math.hypot(dx, dy);
+      if (dist > 280 && dist <= 400) return [0xff, 0xff, 0xff, 255];
+      if (dist > 102 && dist <= 198) return [...this.accent, 255];
       return [...BG, 255];
     }
   }

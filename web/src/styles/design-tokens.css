@@ -83,6 +83,9 @@
   --c-kiro:    #ff9900;  /* AWS orange */
   --c-zcode:   #3b6ef5;  /* Z.ai blue */
   --c-codebuddy: #0052d9; /* Tencent CodeBuddy blue */
+  --c-codebuddycn: #7a3ff2; /* Tencent CodeBuddy CN violet */
+  --c-workbuddy: #12b76a;   /* WorkBuddy (workbuddy.ai) green */
+  --c-workbuddycn: #7a3ff2; /* WorkBuddy CN (workbuddy.cn) violet */
 
   /* ---------------------------------------------------------------------------
    * 2. PRIMITIVES — Typography
@@ -250,6 +253,8 @@
   --provider-codebuddycn-soft: rgba(122, 63, 242, 0.12);
   --provider-workbuddy: var(--c-workbuddy);
   --provider-workbuddy-soft: rgba(18, 183, 106, 0.12);
+  --provider-workbuddycn: var(--c-workbuddycn);
+  --provider-workbuddycn-soft: rgba(122, 63, 242, 0.12);
 
   /* 当前会话的强调色：组件层用 data-provider 覆盖（见 DESIGN.md） */
   --provider-accent: var(--c-brand-600);

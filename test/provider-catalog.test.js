@@ -27,7 +27,8 @@ test('ProviderCatalog exposes provider capabilities centrally', () => {
   assert.equal(providerSupports('qoder', 'apiKeyAccount'), false);
   assert.deepEqual(
     listProvidersByCapability('apiKeyAccount'),
-    ['codex', 'gemini', 'claude', 'opencode', 'grok', 'kimi', 'zcode', 'codebuddy', 'codebuddycn', 'workbuddy']
+    ['codex', 'gemini', 'claude', 'opencode', 'grok', 'kimi', 'zcode',
+      'codebuddy', 'codebuddycn', 'workbuddy', 'workbuddycn']
   );
   assert.deepEqual(listProvidersByCapability('unknownCapability'), []);
   assert.deepEqual(

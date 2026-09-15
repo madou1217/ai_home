@@ -1,6 +1,10 @@
 import { Alert, Form, Input, Modal, Radio, Select, Space, Tag, Typography } from 'antd';
-import ProviderIcon, { providerIds, providerNames } from '@/components/chat/ProviderIcon';
-import { PROVIDER_AUTH_OPTIONS } from '@/providers/catalog';
+import ProviderIcon from '@/components/chat/ProviderIcon';
+import {
+  PROVIDER_AUTH_OPTIONS,
+  getProviderSiteLabel,
+  providerFamilies,
+} from '@/providers/catalog';
 import type { AccountAuthMode, Provider } from '@/types';
 
 const { Text } = Typography;
@@ -47,15 +51,32 @@ export function AddAccountModal({
           label="供应商"
           rules={[{ required: true, message: '请选择供应商' }]}
         >
+          {/* 多站点产品（qoder / codebuddy / workbuddy）合并成一个分组，站点是组内
+              的二级选项——因为国内站与国际站账号体系不互通，必须由用户显式选站点；
+              表单值始终是真实 Provider ID，提交链路不因合并而改变。 */}
           <Select placeholder="选择供应商" size="large">
-            {providerIds.map((provider) => (
-              <Select.Option key={provider} value={provider}>
+            {providerFamilies.map((group) => (group.multiSite ? (
+              <Select.OptGroup key={group.family} label={group.label}>
+                {group.providers.map((entry) => (
+                  <Select.Option key={entry.id} value={entry.id}>
+                    <Space align="center">
+                      <ProviderIcon provider={entry.id} size={18} />
+                      <span>{group.label}</span>
+                      <Tag bordered={false} style={{ marginInlineEnd: 0 }}>
+                        {getProviderSiteLabel(entry.site)}
+                      </Tag>
+                    </Space>
+                  </Select.Option>
+                ))}
+              </Select.OptGroup>
+            ) : (
+              <Select.Option key={group.providers[0].id} value={group.providers[0].id}>
                 <Space align="center">
-                  <ProviderIcon provider={provider} size={18} />
-                  <span>{providerNames[provider]}</span>
+                  <ProviderIcon provider={group.providers[0].id} size={18} />
+                  <span>{group.label}</span>
                 </Space>
               </Select.Option>
-            ))}
+            )))}
           </Select>
         </Form.Item>
 

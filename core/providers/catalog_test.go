@@ -8,8 +8,57 @@ func TestBuiltinManifestIsValid(t *testing.T) {
 	if err := ValidateManifest(manifest); err != nil {
 		t.Fatalf("内置 Provider 合同无效: %v", err)
 	}
-	if got, want := len(manifest.Providers), 14; got != want {
+	if got, want := len(manifest.Providers), 15; got != want {
 		t.Fatalf("Provider 数量错误: got=%d want=%d", got, want)
+	}
+}
+
+func TestBuiltinManifestDeclaresSitesAndFamilies(t *testing.T) {
+	// 单站 Provider 由 withDefaultSite 补齐 (Family=ID, Site=global)；
+	// 双站点产品线的两个 Provider 必须共享同一个 family、站点不同。
+	manifest := BuiltinManifest()
+	byID := make(map[string]Definition, len(manifest.Providers))
+	for _, definition := range manifest.Providers {
+		byID[definition.ID] = definition
+	}
+
+	for _, id := range []string{"codex", "gemini", "claude", "agy", "opencode", "grok", "kimi", "kiro", "zcode"} {
+		definition, ok := byID[id]
+		if !ok {
+			t.Fatalf("缺少 Provider %s", id)
+		}
+		if definition.Family != id || definition.Site != SiteGlobal {
+			t.Fatalf("单站 Provider %s 应默认 (family=%s, site=global)，实际 (%s, %s)",
+				id, id, definition.Family, definition.Site)
+		}
+	}
+
+	for family, members := range map[string][2]string{
+		"qoder":     {"qoder", "qodercn"},
+		"codebuddy": {"codebuddy", "codebuddycn"},
+		"workbuddy": {"workbuddy", "workbuddycn"},
+	} {
+		global, cn := byID[members[0]], byID[members[1]]
+		if global.Family != family || cn.Family != family {
+			t.Fatalf("产品族 %s 的两个 Provider 必须共享 family，实际 (%s, %s)",
+				family, global.Family, cn.Family)
+		}
+		if global.Site != SiteGlobal || cn.Site != SiteCN {
+			t.Fatalf("产品族 %s 必须无后缀=国际站、cn 后缀=国内站，实际 (%s, %s)",
+				family, global.Site, cn.Site)
+		}
+	}
+}
+
+func TestValidateManifestRejectsDuplicateFamilySite(t *testing.T) {
+	// 同一产品在同一站点只能有一个 Provider，否则 Client 按族聚合会出现重复入口。
+	manifest := BuiltinManifest()
+	duplicate := manifest.Providers[0]
+	duplicate.ID = "codex-copy"
+	duplicate.Presentation.ID = "codex-copy"
+	manifest.Providers = append(manifest.Providers, duplicate)
+	if err := ValidateManifest(manifest); err == nil {
+		t.Fatal("重复的 family+site 组合应被拒绝")
 	}
 }
 

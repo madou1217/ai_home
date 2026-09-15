@@ -74,7 +74,13 @@ import type {
   Provider,
 } from '@/types';
 import { providerIds, providerNames } from '@/components/chat/ProviderIcon';
-import { PROVIDER_AUTH_OPTIONS, PROVIDER_CATALOG } from '@/providers/catalog';
+import {
+  PROVIDER_AUTH_OPTIONS,
+  PROVIDER_CATALOG,
+  getFamilyLabel,
+  getProviderFamily,
+  providerFamilies,
+} from '@/providers/catalog';
 import TokenUsageCell from '@/components/account/TokenUsageCell';
 import UsageProgressEffects from '@/features/accounts/UsageProgressEffects';
 import AccountQuotaResetHistoryModal from '@/features/accounts/AccountQuotaResetHistoryModal';
@@ -157,6 +163,10 @@ import { startAccountAppEntryPolling } from '@/features/accounts/app-entry-polle
 
 // Provider 顺序和认证方式都来自 Go 核心生成的 Client 合同。
 const PROVIDERS: readonly Provider[] = providerIds;
+// Provider tab 的轴是**产品族**：国内站与国际站账号体系不互通，但用户视角只有一个
+// 产品，因此列表按族聚合，站点降为卡片/行上的标记（见 getProviderMenuLabel）。
+const PROVIDER_FAMILY_GROUPS = providerFamilies;
+const FAMILY_KEYS: readonly string[] = PROVIDER_FAMILY_GROUPS.map((group) => group.family);
 const AUTH_JOB_FALLBACK_POLL_MS = 5000;
 const ACCOUNT_REFRESH_FALLBACK_CLEAR_MS = 70_000;
 
@@ -171,7 +181,7 @@ type AccountFilterValue =
   | 'disabled'
   | 'unconfigured';
 
-type AccountProviderFilter = 'all' | Provider;
+type AccountProviderFilter = 'all' | string;
 
 type AccountAppInstallKind = 'desktop' | 'cli';
 
@@ -221,14 +231,27 @@ function createProviderStats(): ProviderStats {
   const stats = {
     all: createProviderStatsBucket()
   } as ProviderStats;
-  PROVIDERS.forEach((provider) => {
-    stats[provider] = createProviderStatsBucket();
+  FAMILY_KEYS.forEach((family) => {
+    stats[family] = createProviderStatsBucket();
   });
   return stats;
 }
 
-function isProvider(value: string): value is Provider {
+// tab/filter 的合法取值是产品族（含未知历史的 Provider id：它自成一族，仍可筛）。
+function isProviderFilter(value: string): boolean {
+  const key = String(value || '').trim().toLowerCase();
+  return key === 'all' || FAMILY_KEYS.includes(key);
+}
+
+// URL query 里的 provider 是**真实 Provider ID**（含站点后缀），与 tab 的族轴不同。
+function isProviderId(value: string): value is Provider {
   return PROVIDERS.includes(value as Provider);
+}
+
+// 族 tab 上展示的图标与活动转轴，用族内代表（国际站成员）即可。
+function familyRepresentative(family: string): Provider {
+  const group = PROVIDER_FAMILY_GROUPS.find((entry) => entry.family === family);
+  return ((group?.providers[0]?.id) || family) as Provider;
 }
 
 const ACCOUNTS_VIEW_MODE_STORAGE_KEY = 'accounts-view-mode:v1';
@@ -253,7 +276,7 @@ function readStoredActiveProviderTab(): AccountProviderFilter {
   if (typeof window === 'undefined') return 'all';
   try {
     const saved = window.localStorage.getItem(ACCOUNTS_ACTIVE_PROVIDER_STORAGE_KEY);
-    if (saved === 'all' || isProvider(saved || '')) return saved as AccountProviderFilter;
+    if (saved === 'all' || isProviderFilter(saved || '')) return saved as AccountProviderFilter;
   } catch (_error) {
     // localStorage 不可用（隐私模式等）时静默回退到默认 tab。
   }
@@ -371,7 +394,7 @@ export default function Accounts() {
     const params = new URLSearchParams(location.search);
     const provider = String(params.get('provider') || '').trim();
     const accountRef = String(params.get('accountRef') || '').trim();
-    if (!isProvider(provider) || !accountRef) return null;
+    if (!isProviderId(provider) || !accountRef) return null;
     return {
       provider,
       accountRef
@@ -1021,8 +1044,13 @@ export default function Accounts() {
 
   const handleOpenAddAccountModal = React.useCallback(() => {
     setEditingAccount(null);
-    // 弹窗内 provider 下拉默认跟随当前选中的 tab，仍可在弹窗里手动切换。
-    form.setFieldsValue({ provider: isProvider(activeProvider) ? activeProvider : undefined });
+    // 弹窗内 provider 下拉默认跟随当前选中的 tab（族 → 其国际站成员），
+    // 仍可在弹窗里切到组内的另一个站点。
+    form.setFieldsValue({
+      provider: isProviderFilter(activeProvider) && activeProvider !== 'all'
+        ? familyRepresentative(activeProvider)
+        : undefined
+    });
     setModalVisible(true);
   }, [activeProvider, form]);
 
@@ -1401,13 +1429,12 @@ export default function Accounts() {
     persistCliWorkdirHistory([]);
   };
 
-  // 按 Provider 分组统计
+  // 按产品族分组统计（族内所有站点账号合并计数）
   const providerStats = useMemo<ProviderStats>(() => {
     const stats = createProviderStats();
 
     accounts.forEach(account => {
-      const provider = account.provider;
-      const providerBucket = stats[provider];
+      const providerBucket = stats[getProviderFamily(account.provider)];
       if (!providerBucket) return;
       const state = getAccountDisplayState(account);
       stats.all.total++;
@@ -1447,9 +1474,9 @@ export default function Accounts() {
   const filteredAccounts = useMemo(() => {
     let filtered = accounts;
 
-    // 按 provider 过滤
+    // 按产品族过滤：族内国内站/国际站账号一起显示，各自带站点标记。
     if (activeProvider !== 'all') {
-      filtered = filtered.filter(a => a.provider === activeProvider);
+      filtered = filtered.filter(a => getProviderFamily(a.provider) === activeProvider);
     }
 
     // 按状态过滤
@@ -2005,15 +2032,16 @@ export default function Accounts() {
     );
   };
 
-  // provider tab 聚合账号活动，复用行首图标组件，保证转轴与速率语义完全一致。
+  // 族 tab 聚合账号活动，复用行首图标组件，保证转轴与速率语义完全一致。
+  // 族内多个站点（国内站/国际站）的流量相加，tab 上看到的是整个产品的活跃度。
   const providerActivity: Record<string, ManagementAccountActivity> = {};
   accounts.forEach((account) => {
     const activity = getAccountActivity(account);
     if (!activity) return;
-    const provider = String(account.provider).toLowerCase();
-    const current = providerActivity[provider];
-    providerActivity[provider] = {
-      provider,
+    const family = getProviderFamily(account.provider);
+    const current = providerActivity[family];
+    providerActivity[family] = {
+      provider: familyRepresentative(family),
       accountRef: '*',
       inFlight: (current?.inFlight || 0) + Math.max(0, Number(activity.inFlight) || 0),
       rate: (current?.rate || 0) + Math.max(0, Number(activity.rate) || 0),
@@ -2027,19 +2055,22 @@ export default function Accounts() {
       key: 'all',
       label: <span style={{ padding: '0 8px' }}>全部 ({providerStats.all.total})</span>
     },
-    ...PROVIDERS.map((provider) => ({
-      key: provider,
-      label: (
-        <span style={{ padding: '0 8px', display: 'flex', alignItems: 'center', gap: 4 }}>
-          <AccountActivityIcon
-            provider={provider}
-            activity={providerActivity[provider] || null}
-            size={14}
-          />
-          {providerNames[provider]} ({providerStats[provider].total})
-        </span>
-      )
-    }))
+    ...PROVIDER_FAMILY_GROUPS.map((group) => {
+      const representative = familyRepresentative(group.family);
+      return {
+        key: group.family,
+        label: (
+          <span style={{ padding: '0 8px', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <AccountActivityIcon
+              provider={representative}
+              activity={providerActivity[group.family] || null}
+              size={14}
+            />
+            {group.label} ({providerStats[group.family]?.total || 0})
+          </span>
+        )
+      };
+    })
   ];
   const exportMenuItems: MenuProps['items'] = EXPORT_ACTIONS.map((action) => ({
     key: action.format,
@@ -2220,7 +2251,7 @@ export default function Accounts() {
                 <FilterOutlined />
                 <span>筛选</span>
                 <span className="m-filter-summary">
-                  {(activeProvider === 'all' ? '全部' : providerNames[activeProvider as Provider]) || activeProvider}
+                  {(activeProvider === 'all' ? '全部' : getFamilyLabel(activeProvider)) || activeProvider}
                   {filterStatus !== 'all' ? ' · 已筛状态' : ''}
                 </span>
               </button>

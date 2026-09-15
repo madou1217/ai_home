@@ -67,6 +67,9 @@ type RangeMode = 'hour' | 'today' | '7d' | 'month' | 'custom';
 
 const REQUEST_DETAIL_LIMIT = 80;
 
+// Segmented 无法分组，所以这里逐个 Provider 平铺，靠 providerNames 的站点后缀
+// （"WorkBuddy · 国际站" / "WorkBuddy · 国内站"）区分同族站点。用量是按真实
+// Provider 结算的，筛选轴不能收敛到产品族。
 const PROVIDER_OPTIONS: Array<{ label: string; value: ProviderFilter }> = [
   { label: '全部', value: '' },
   ...providerIds.map((provider) => ({ label: providerNames[provider], value: provider }))

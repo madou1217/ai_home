@@ -48,6 +48,56 @@ test('desktop menu contract keeps future non-Gemini providers data-driven', () =
   assert.equal(snapshot.providers[0].accounts[0].usageLabel, '用量未知');
 });
 
+test('desktop menu keeps single-site providers free of site markers', () => {
+  const snapshot = buildDesktopMenuSnapshot([account('codex', 17)]);
+
+  assert.equal(snapshot.providers[0].family, 'codex');
+  assert.equal(snapshot.providers[0].familyLabel, 'ChatGPT');
+  assert.equal(snapshot.providers[0].site, 'global');
+  assert.equal(snapshot.providers[0].siteLabel, '');
+  assert.equal(snapshot.providers[0].multiSite, false);
+});
+
+test('desktop menu marks dual-site families without merging provider identity', () => {
+  const snapshot = buildDesktopMenuSnapshot([
+    account('qoder', 18),
+    account('qodercn', 19, { isDefault: true })
+  ]);
+
+  // 每个站点仍是独立条目（切换目标必须真实），只是带上了族/站点元数据。
+  assert.deepEqual(snapshot.providers.map((provider) => provider.id), ['qoder', 'qodercn']);
+  assert.deepEqual(snapshot.providers.map((provider) => provider.family), ['qoder', 'qoder']);
+  assert.deepEqual(snapshot.providers.map((provider) => provider.familyLabel), ['Qoder', 'Qoder']);
+  assert.deepEqual(snapshot.providers.map((provider) => provider.site), ['global', 'cn']);
+  assert.deepEqual(snapshot.providers.map((provider) => provider.siteLabel), ['国际站', '国内站']);
+  assert.deepEqual(snapshot.providers.map((provider) => provider.multiSite), [true, true]);
+  assert.equal(snapshot.providers[1].accounts[0].isDefault, true);
+});
+
+test('desktop menu groups both WorkBuddy sites under one family', () => {
+  const snapshot = buildDesktopMenuSnapshot([
+    account('workbuddy', 20),
+    account('workbuddycn', 21)
+  ]);
+
+  assert.deepEqual(
+    snapshot.providers.map((provider) => [provider.id, provider.family, provider.siteLabel]),
+    [
+      ['workbuddy', 'workbuddy', '国际站'],
+      ['workbuddycn', 'workbuddy', '国内站']
+    ]
+  );
+});
+
+test('desktop menu leaves an unregistered provider as its own single-site family', () => {
+  const snapshot = buildDesktopMenuSnapshot([account('future-provider', 22)]);
+
+  assert.equal(snapshot.providers[0].family, 'future-provider');
+  assert.equal(snapshot.providers[0].familyLabel, '');
+  assert.equal(snapshot.providers[0].siteLabel, '');
+  assert.equal(snapshot.providers[0].multiSite, false);
+});
+
 test('desktop menu account exposes only safe display state needed by native menus', () => {
   const snapshot = buildDesktopMenuSnapshot([
     account('codex', 5, {

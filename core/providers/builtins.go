@@ -10,22 +10,25 @@ func BuiltinManifest() Manifest {
 	return Manifest{
 		SchemaVersion: SchemaVersion,
 		GeneratedFrom: "core/providers/builtins.go",
-		Providers: []Definition{
+		Providers: withDefaultSite([]Definition{
 			builtinCodex(),
 			builtinGemini(),
 			builtinClaude(),
 			builtinAntigravity(),
 			builtinOpenCode(),
 			builtinGrok(),
-			builtinQoder(),
-			builtinQoderCN(),
+			// 国内/国际双站点的产品线显式标注产品族；单站 Provider 由
+			// withDefaultSite 补成 (Family=ID, Site=global)，不重复声明。
+			family(builtinQoder(), "qoder", SiteGlobal),
+			family(builtinQoderCN(), "qoder", SiteCN),
 			builtinKimi(),
 			builtinKiro(),
 			builtinZcode(),
-			builtinCodebuddy(),
-			builtinCodebuddyCN(),
-			builtinWorkbuddy(),
-		},
+			family(builtinCodebuddy(), "codebuddy", SiteGlobal),
+			family(builtinCodebuddyCN(), "codebuddy", SiteCN),
+			family(builtinWorkbuddy(), "workbuddy", SiteGlobal),
+			family(builtinWorkbuddyCN(), "workbuddy", SiteCN),
+		}),
 		Fallback: Presentation{
 			ID:                "codex",
 			Label:             "AI",
@@ -678,44 +681,41 @@ func builtinCodebuddyCN() Definition {
 	}
 }
 
-// builtinWorkbuddy 定义 WorkBuddy 桌面端（国内站 workbuddy.cn）。
+// builtinWorkbuddy 定义 WorkBuddy **国际站**（workbuddy.ai）桌面端。
 //
-// 与 CodeBuddy 的关系（2026-09-14 核实）：
-//   - 同账号体系、同运行时。WorkBuddy.app 的 app.asar 里同时读取
-//     WORKBUDDY_CONFIG_DIR 与 CODEBUDDY_CONFIG_DIR，并内嵌 CodeBuddy Code
-//     runtime（CODEBUDDY_CONFIG_DIR 出现 63 次）；实测进程 env 为
-//     CODEBUDDY_INTERNET_ENVIRONMENT=internal、CODEBUDDY_HOST=workbuddy-desktop。
-//   - 但是**独立的产品，不是 CodeBuddy CN 的第二个构建**：Homebrew 官方 cask
-//     分别为 `workbuddy-cn`（WorkBuddy.app，workbuddy.cn）与 `workbuddy-ai`
-//     （WorkBuddy AI.app，workbuddy.ai），说明 WorkBuddy 自己就有一组
-//     国内/海外双站点，与 CodeBuddy 的双站点是平行的两条产品线。
-//   - 因此它不能作为 codebuddycn 的"第二个桌面客户端"：DesktopClient 每个
-//     Provider 只有一份（macos/windows/linux），且 bundle id 与数据根都不同。
-//     把它做成自己的 Provider，其桌面端就与 kimi 的 Kimi.app 完全同构——
-//     "同一账号、凭据不通用、各自独立登录"。
+// 与 CodeBuddy / Qoder 的关系（2026-09-15 实测纠正）：
+//   - WorkBuddy 自己就是一条双站点产品线，与 CodeBuddy 的双站点是**平行的两条**，
+//     不是 CodeBuddy 的第二个构建。官方 Homebrew cask 分别维护
+//     `workbuddy-cn`（WorkBuddy.app，workbuddy.cn，com.tencent.workbuddy.mac）
+//     与 `workbuddy-ai`（WorkBuddy AI.app，workbuddy.ai，com.workbuddy.workbuddy-ai）。
+//   - 两个构建共用同一套 CodeBuddy Code 运行时，`CODEBUDDY_HOST` 字面量都是
+//     `workbuddy-desktop`，但**登录态文件不同名**：国内站写
+//     `workbuddy-desktop.info`，国际站写 `workbuddy-desktop-ai.info`
+//     （实测两文件并存于 CodeBuddyExtension 的 auth 目录，realm 分别是
+//     www.workbuddy.cn 与 www.workbuddy.ai，uid 也不同）。
+//   - 因此国内/国际必须拆成两个 Provider：账号体系不互通，投影根也必须分开。
+//     本 Provider 是国际站；国内站见 builtinWorkbuddyCN()。
 //
-// 本轮只覆盖国内站（本机实际安装的 WorkBuddy.app 就是 workbuddy-cn）。WorkBuddy AI
-// （workbuddy.ai）没有实机安装证据，按"未验证不声明"留作后续迭代。
+// 只声明桌面端：WorkBuddy 不对外分发独立 CLI——它把 CodeBuddy Code runtime
+// 内嵌在 App 内（app.asar 里读取 CODEBUDDY_CONFIG_DIR），所以不声明可安装 CLI。
 func builtinWorkbuddy() Definition {
 	reloadsHostAuth := false
 	return Definition{
 		ID:           "workbuddy",
 		Presentation: presentation("workbuddy", "WorkBuddy", "WB", "◉", "blue"),
 		Gateway:      GatewayActive,
-		// 桌面优先：WorkBuddy 不对独立分发 CLI（它把 CodeBuddy Code runtime
-		// 内嵌在 App 内），所以不声明可安装的 CLI 客户端。
 		Clients:      clientSupport(false, true),
 		Capabilities: []Capability{CapabilityAPIKeyAccount},
 		AuthOptions: []AuthOption{
 			authOption(
 				AuthModeOAuthBrowser,
 				"WorkBuddy 登录",
-				"使用 WorkBuddy 原生浏览器登录流程（国内站 workbuddy.cn 账号体系）。",
+				"使用 WorkBuddy 原生浏览器登录流程（国际站 workbuddy.ai 账号体系）。",
 			),
 			authOption(
 				AuthModeAPIKey,
 				"WorkBuddy 密钥",
-				"绑定 CODEBUDDY_API_KEY / CODEBUDDY_BASE_URL，并固定 CODEBUDDY_INTERNET_ENVIRONMENT=internal。",
+				"绑定 CODEBUDDY_API_KEY / CODEBUDDY_BASE_URL（国际站不要固定 CODEBUDDY_INTERNET_ENVIRONMENT）。",
 			),
 		},
 		SessionSync: SessionSync{Mode: SessionSyncUnavailable, Events: []string{}},
@@ -723,7 +723,9 @@ func builtinWorkbuddy() Definition {
 		// 且 globalDir 是账号投影根。这里如实声明 WorkBuddy 自己的数据根。
 		CLI: &CLIConfig{
 			Order:      14,
-			GlobalDir:  ".workbuddy",
+			// 国际站的数据根是 `.workbuddy-ai`（官方 cask workbuddy-ai 的 zap 清单
+			// 与 ~/.workbuddy-ai 实机目录一致），与国内站的 `.workbuddy` 不同名。
+			GlobalDir:  ".workbuddy-ai",
 			ConfigFile: "settings.json",
 			LoginArgs:  []string{},
 			// 没有独立 CLI 分发，因此不声明 BinaryName / Package：
@@ -742,6 +744,70 @@ func builtinWorkbuddy() Definition {
 				// 把它指向账号隔离目录 = 每个账号一份独立登录态（独立扫码）。
 				UserDataEnvKey: "WORKBUDDY_USER_DATA_DIR",
 				MacOS: &DesktopPlatform{
+					ClientName:   "WorkBuddy AI",
+					ExecNames:    []string{"Electron"},
+					BundleID:     "com.workbuddy.workbuddy-ai",
+					PathIncludes: []string{"/WorkBuddy AI.app/Contents/MacOS/"},
+					InstallPaths: []string{
+						"/Applications/WorkBuddy AI.app",
+						"{hostHomeDir}/Applications/WorkBuddy AI.app",
+					},
+				},
+			},
+		},
+	}
+}
+
+// builtinWorkbuddyCN 定义 WorkBuddy **国内站**（workbuddy.cn）桌面端。
+//
+// 与 codebuddycn 的关系：两者是**不同产品、不同 App**，但共用同一账号体系与
+// 同一份主站登录态文件（`workbuddy-desktop.info`）——WorkBuddy.app 与它内嵌的
+// CodeBuddy Code CLI 读写的就是这一份。所以国内侧的"CLI 与 App 同一账号"不需要
+// 任何开关：两个 Provider 声明同一个 auth artifact 即可。
+//
+// 与 builtinWorkbuddy() 的差别只在站点：国际站用 `workbuddy-desktop-ai.info`
+// 与 `.workbuddy-ai`，国内站用 `workbuddy-desktop.info` 与 `.workbuddy`，
+// 投影根分开，避免同一台机器上两个站点的账号看到同一个目录。
+func builtinWorkbuddyCN() Definition {
+	reloadsHostAuth := false
+	return Definition{
+		ID:           "workbuddycn",
+		Presentation: presentation("workbuddycn", "WorkBuddy CN", "WBCN", "◍", "purple"),
+		Gateway:      GatewayActive,
+		Clients:      clientSupport(false, true),
+		Capabilities: []Capability{CapabilityAPIKeyAccount},
+		AuthOptions: []AuthOption{
+			authOption(
+				AuthModeOAuthBrowser,
+				"WorkBuddy CN 登录",
+				"使用 WorkBuddy 原生浏览器登录流程（国内站 workbuddy.cn 账号体系）。",
+			),
+			authOption(
+				AuthModeAPIKey,
+				"WorkBuddy CN 密钥",
+				"绑定 CODEBUDDY_API_KEY / CODEBUDDY_BASE_URL，并固定 CODEBUDDY_INTERNET_ENVIRONMENT=internal。",
+			),
+		},
+		SessionSync: SessionSync{Mode: SessionSyncUnavailable, Events: []string{}},
+		CLI: &CLIConfig{
+			Order:      15,
+			// 国内站的数据根是 `.workbuddy`（官方 cask workbuddy-cn 的 zap 清单
+			// 与 ~/.workbuddy 实机目录一致）。
+			GlobalDir:  ".workbuddy",
+			ConfigFile: "settings.json",
+			LoginArgs:  []string{},
+			// EnvKeys 与 builtinWorkbuddy() 一致：同一套内嵌 runtime 读同一组键，
+			// 区别只在国内站账号把 INTERNET_ENVIRONMENT 固定成 internal。
+			EnvKeys: []string{
+				"WORKBUDDY_CONFIG_DIR",
+				"WORKBUDDY_USER_DATA_DIR",
+				"CODEBUDDY_CONFIG_DIR",
+				"CODEBUDDY_INTERNET_ENVIRONMENT",
+			},
+			DesktopClient: &DesktopClient{
+				ReloadsHostAuth: &reloadsHostAuth,
+				UserDataEnvKey:  "WORKBUDDY_USER_DATA_DIR",
+				MacOS: &DesktopPlatform{
 					ClientName:   "WorkBuddy",
 					ExecNames:    []string{"Electron"},
 					BundleID:     "com.tencent.workbuddy.mac",
@@ -754,6 +820,33 @@ func builtinWorkbuddy() Definition {
 			},
 		},
 	}
+}
+
+// family 标注一个 Provider 所属的产品族与站点。
+//
+// 只有真正存在国内/国际双站点的产品线才需要显式调用（qoder / codebuddy /
+// workbuddy）。站点不同 = 账号体系不互通 = 必须是两个 Provider，因此这里不改
+// 身份，只补一层"它们属于同一个产品"的展示归属。
+func family(definition Definition, family string, site Site) Definition {
+	definition.Family = family
+	definition.Site = site
+	return definition
+}
+
+// withDefaultSite 为未显式标注的 Provider 补齐产品族与站点。
+//
+// 单站产品的 Family 就是它自己的 ID，Site 默认国际站——绝大多数 Provider 都是
+// 单站，逐个写 family(x, x, SiteGlobal) 只会制造噪音和漂移风险。
+func withDefaultSite(definitions []Definition) []Definition {
+	for index := range definitions {
+		if definitions[index].Family == "" {
+			definitions[index].Family = definitions[index].ID
+		}
+		if definitions[index].Site == "" {
+			definitions[index].Site = SiteGlobal
+		}
+	}
+	return definitions
 }
 
 // clientSupport 是面向产品的客户端形态构造器；安装器和 Toolkit 只读取该合同。

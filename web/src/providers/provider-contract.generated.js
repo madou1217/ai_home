@@ -6,6 +6,8 @@
 export const PROVIDER_DEFINITIONS = [
   {
     "id": "codex",
+    "family": "codex",
+    "site": "global",
     "label": "ChatGPT",
     "short": "GPT",
     "terminalIcon": "◎",
@@ -47,6 +49,8 @@ export const PROVIDER_DEFINITIONS = [
   },
   {
     "id": "gemini",
+    "family": "gemini",
+    "site": "global",
     "label": "Gemini",
     "short": "GM",
     "terminalIcon": "✦",
@@ -88,6 +92,8 @@ export const PROVIDER_DEFINITIONS = [
   },
   {
     "id": "claude",
+    "family": "claude",
+    "site": "global",
     "label": "Claude",
     "short": "CL",
     "terminalIcon": "◇",
@@ -129,6 +135,8 @@ export const PROVIDER_DEFINITIONS = [
   },
   {
     "id": "agy",
+    "family": "agy",
+    "site": "global",
     "label": "Antigravity",
     "short": "AGY",
     "terminalIcon": "▲",
@@ -158,6 +166,8 @@ export const PROVIDER_DEFINITIONS = [
   },
   {
     "id": "opencode",
+    "family": "opencode",
+    "site": "global",
     "label": "OpenCode",
     "short": "OC",
     "terminalIcon": "⌘",
@@ -188,6 +198,8 @@ export const PROVIDER_DEFINITIONS = [
   },
   {
     "id": "grok",
+    "family": "grok",
+    "site": "global",
     "label": "Grok",
     "short": "GK",
     "terminalIcon": "⚡",
@@ -220,6 +232,8 @@ export const PROVIDER_DEFINITIONS = [
   },
   {
     "id": "qoder",
+    "family": "qoder",
+    "site": "global",
     "label": "Qoder",
     "short": "QD",
     "terminalIcon": "◆",
@@ -251,6 +265,8 @@ export const PROVIDER_DEFINITIONS = [
   },
   {
     "id": "qodercn",
+    "family": "qoder",
+    "site": "cn",
     "label": "Qoder CN",
     "short": "QCN",
     "terminalIcon": "◇",
@@ -282,6 +298,8 @@ export const PROVIDER_DEFINITIONS = [
   },
   {
     "id": "kimi",
+    "family": "kimi",
+    "site": "global",
     "label": "Kimi",
     "short": "KM",
     "terminalIcon": "☾",
@@ -315,6 +333,8 @@ export const PROVIDER_DEFINITIONS = [
   },
   {
     "id": "kiro",
+    "family": "kiro",
+    "site": "global",
     "label": "Kiro",
     "short": "KR",
     "terminalIcon": "⬡",
@@ -341,6 +361,8 @@ export const PROVIDER_DEFINITIONS = [
   },
   {
     "id": "zcode",
+    "family": "zcode",
+    "site": "global",
     "label": "ZCode",
     "short": "ZC",
     "terminalIcon": "◈",
@@ -374,6 +396,8 @@ export const PROVIDER_DEFINITIONS = [
   },
   {
     "id": "codebuddy",
+    "family": "codebuddy",
+    "site": "global",
     "label": "CodeBuddy",
     "short": "CB",
     "terminalIcon": "❖",
@@ -403,6 +427,8 @@ export const PROVIDER_DEFINITIONS = [
   },
   {
     "id": "codebuddycn",
+    "family": "codebuddy",
+    "site": "cn",
     "label": "CodeBuddy CN",
     "short": "CBCN",
     "terminalIcon": "✦",
@@ -432,6 +458,8 @@ export const PROVIDER_DEFINITIONS = [
   },
   {
     "id": "workbuddy",
+    "family": "workbuddy",
+    "site": "global",
     "label": "WorkBuddy",
     "short": "WB",
     "terminalIcon": "◉",
@@ -446,11 +474,42 @@ export const PROVIDER_DEFINITIONS = [
       {
         "value": "oauth-browser",
         "label": "WorkBuddy 登录",
-        "description": "使用 WorkBuddy 原生浏览器登录流程（国内站 workbuddy.cn 账号体系）。"
+        "description": "使用 WorkBuddy 原生浏览器登录流程（国际站 workbuddy.ai 账号体系）。"
       },
       {
         "value": "api-key",
         "label": "WorkBuddy 密钥",
+        "description": "绑定 CODEBUDDY_API_KEY / CODEBUDDY_BASE_URL（国际站不要固定 CODEBUDDY_INTERNET_ENVIRONMENT）。"
+      }
+    ],
+    "clients": {
+      "cli": false,
+      "desktop": true
+    }
+  },
+  {
+    "id": "workbuddycn",
+    "family": "workbuddy",
+    "site": "cn",
+    "label": "WorkBuddy CN",
+    "short": "WBCN",
+    "terminalIcon": "◍",
+    "terminalIconAsset": "assets/provider-icons/workbuddycn.png",
+    "accentVar": "var(--provider-workbuddycn)",
+    "softVar": "var(--provider-workbuddycn-soft)",
+    "tagColor": "purple",
+    "capabilities": [
+      "api_key_account"
+    ],
+    "authOptions": [
+      {
+        "value": "oauth-browser",
+        "label": "WorkBuddy CN 登录",
+        "description": "使用 WorkBuddy 原生浏览器登录流程（国内站 workbuddy.cn 账号体系）。"
+      },
+      {
+        "value": "api-key",
+        "label": "WorkBuddy CN 密钥",
         "description": "绑定 CODEBUDDY_API_KEY / CODEBUDDY_BASE_URL，并固定 CODEBUDDY_INTERNET_ENVIRONMENT=internal。"
       }
     ],
@@ -466,6 +525,8 @@ export const PROVIDER_IDS = Object.freeze(PROVIDER_DEFINITIONS.map((definition) 
 export const PROVIDER_CATALOG = Object.freeze(Object.fromEntries(
   PROVIDER_DEFINITIONS.map((definition) => [definition.id, {
     id: definition.id,
+    family: definition.family,
+    site: definition.site,
     label: definition.label,
     short: definition.short,
     terminalIcon: definition.terminalIcon,
@@ -491,6 +552,8 @@ export const PROVIDER_FALLBACK = {
   "accentVar": "var(--color-brand)",
   "softVar": "var(--color-brand-soft)",
   "tagColor": "blue",
+  "family": "codex",
+  "site": "global",
   "capabilities": [],
   "clients": {
     "cli": false,

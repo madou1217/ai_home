@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { CheckOutlined, DownOutlined, UserOutlined } from '@ant-design/icons';
 import { Popover } from 'antd';
 import ProviderIcon from '../ProviderIcon';
-import { getProviderLabel } from '@/providers/catalog';
+import { getProviderFamily, getProviderMenuLabel } from '@/providers/catalog';
 import {
   buildComposerAccountGroups,
   type ComposerAccountOption,
@@ -23,6 +23,7 @@ interface Props {
 export default function ComposerAccountMenu(props: Props) {
   const current = props.options.find((option) => option.id === props.value);
   const groups = useMemo(() => buildComposerAccountGroups(props.options), [props.options]);
+  const currentFamily = current?.provider ? getProviderFamily(current.provider) : '';
   const [open, setOpen] = useState(false);
   const currentGroupRef = useRef<HTMLElement>(null);
   const selectedOptionRef = useRef<HTMLButtonElement>(null);
@@ -40,13 +41,13 @@ export default function ComposerAccountMenu(props: Props) {
         <strong>选择运行账号</strong>
         {props.selectionHint ? <span>{props.selectionHint}</span> : null}
       </header>
-      <div className={styles.accountGroupList} role="listbox" aria-label="按 Provider 分组的运行账号">
+      <div className={styles.accountGroupList} role="listbox" aria-label="按产品分组的运行账号">
         {groups.map((group) => {
-          const headingId = `composer-account-group-${group.provider || 'other'}`;
+          const headingId = `composer-account-group-${group.family || 'other'}`;
           return (
             <section
-              key={group.provider || 'other'}
-              ref={group.provider === current?.provider ? currentGroupRef : undefined}
+              key={group.family || 'other'}
+              ref={group.family === currentFamily ? currentGroupRef : undefined}
               className={styles.accountGroup}
               role="group"
               aria-labelledby={headingId}
@@ -55,6 +56,7 @@ export default function ComposerAccountMenu(props: Props) {
                 id={headingId}
                 className={styles.accountGroupHeading}
                 data-account-provider={group.provider}
+                data-account-family={group.family}
               >
                 {group.provider ? <ProviderIcon provider={group.provider} size={18} /> : <UserOutlined />}
                 <strong>{group.label}</strong>
@@ -75,6 +77,8 @@ export default function ComposerAccountMenu(props: Props) {
                     }}
                   >
                     <span className={styles.accountOptionIdentity} title={option.label}>{option.label}</span>
+                    {/* 族内合并后，同一产品的国内站/国际站账号必须能分辨。 */}
+                    {option.siteLabel ? <small data-account-site={option.provider}>{option.siteLabel}</small> : null}
                     {option.badge ? <small>{option.badge}</small> : null}
                     <CheckOutlined className={styles.accountOptionCheck} />
                   </button>
@@ -108,7 +112,7 @@ export default function ComposerAccountMenu(props: Props) {
         {current?.provider ? <ProviderIcon provider={current.provider} size={16} /> : <UserOutlined />}
         {props.grouped && current?.provider ? (
           <span className={styles.controlProviderLabel}>
-            {current.provider === 'codex' ? 'Codex' : getProviderLabel(current.provider)}
+            {current.provider === 'codex' ? 'Codex' : getProviderMenuLabel(current.provider)}
           </span>
         ) : null}
         <span className={styles.controlValue}>{current?.label || '选择账号'}</span>

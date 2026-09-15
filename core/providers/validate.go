@@ -22,6 +22,9 @@ func ValidateManifest(manifest Manifest) error {
 	}
 
 	seen := make(map[string]struct{}, len(manifest.Providers))
+	// 产品族 + 站点唯一：同一个产品在同一个站点上只能有一个 Provider，
+	// 否则 Client 的"按族聚合"会折叠出重复入口，账号归属也变得不可判定。
+	seenSite := make(map[string]string, len(manifest.Providers))
 	for index, definition := range manifest.Providers {
 		if err := validateDefinition(definition); err != nil {
 			return fmt.Errorf("provider[%d] %q 无效: %w", index, definition.ID, err)
@@ -30,6 +33,14 @@ func ValidateManifest(manifest Manifest) error {
 			return fmt.Errorf("provider id 重复: %s", definition.ID)
 		}
 		seen[definition.ID] = struct{}{}
+
+		key := definition.Family + "/" + string(definition.Site)
+		if owner, exists := seenSite[key]; exists {
+			return fmt.Errorf(
+				"产品族 %s 的站点 %s 已被 %s 占用，不能重复声明为 %s",
+				definition.Family, definition.Site, owner, definition.ID)
+		}
+		seenSite[key] = definition.ID
 	}
 
 	if _, exists := seen[manifest.Fallback.ID]; !exists {
@@ -42,6 +53,12 @@ func ValidateManifest(manifest Manifest) error {
 func validateDefinition(definition Definition) error {
 	if !providerIDPattern.MatchString(definition.ID) {
 		return errors.New("id 只能使用小写字母、数字和连字符")
+	}
+	if !providerIDPattern.MatchString(definition.Family) {
+		return errors.New("family 只能使用小写字母、数字和连字符")
+	}
+	if definition.Site != SiteGlobal && definition.Site != SiteCN {
+		return fmt.Errorf("未知站点: %s", definition.Site)
 	}
 	if definition.Presentation.ID != definition.ID {
 		return errors.New("presentation.id 必须与 provider id 一致")

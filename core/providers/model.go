@@ -4,7 +4,25 @@
 package providers
 
 // SchemaVersion 是 Provider 跨语言合同的当前版本。
-const SchemaVersion = 1
+//
+// 2: Definition 新增 family/site，Client 投影同步暴露，用于把国内站/国际站
+// 聚合回同一个产品入口（此前菜单里只能并排显示两个条目）。
+const SchemaVersion = 2
+
+// Site 是 Provider 归属的产品站点。
+//
+// 同一产品族的国内站与国际站账号体系不互通（各自发凭据、同一自然人两边是
+// 不同账号），所以它们必须是两个独立 Provider——身份轴、accountRef、存储策略
+// 都按 Provider 分派。Site 只用于把两者聚合回同一个产品入口与同一份展示，
+// 不参与任何账号身份判定。
+type Site string
+
+const (
+	// SiteGlobal 是国际站（qoder 全球站 / codebuddy.ai / workbuddy.ai）。
+	SiteGlobal Site = "global"
+	// SiteCN 是国内站（qoder 国内站 / copilot.tencent.com / workbuddy.cn）。
+	SiteCN Site = "cn"
+)
 
 // GatewayState 描述 Provider 在自动网关路由中的生命周期状态。
 type GatewayState string
@@ -79,7 +97,15 @@ type Manifest struct {
 
 // Definition 是一个 Provider 的完整声明，不包含账号密钥和可变运行态。
 type Definition struct {
-	ID             string            `json:"id"`
+	ID string `json:"id"`
+	// Family 是产品族标识，同一产品族的国内站/国际站共享同一个值。
+	// 单站产品的 Family 等于 ID，由 BuiltinManifest 统一补齐，无需逐个声明。
+	Family string `json:"family"`
+	// Site 是该 Provider 归属的站点；未显式声明时为 SiteGlobal。
+	//
+	// 消费方（Client 菜单 / 账号页）按 family 聚合、按 site 排序与标注，
+	// 但账号始终挂在具体 Provider 上——聚合只影响展示，不影响身份。
+	Site           Site              `json:"site"`
 	Presentation   Presentation      `json:"presentation"`
 	Gateway        GatewayState      `json:"gateway"`
 	Capabilities   []Capability      `json:"capabilities"`

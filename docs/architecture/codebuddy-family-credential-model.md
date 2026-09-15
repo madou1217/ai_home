@@ -1,8 +1,8 @@
 # CodeBuddy 家族：账号/凭据模型实测（逆向校验）
 
-> 结论先行：**账号共享（同一 uid），凭据不互通（按站点签发，且落盘位置/保护方式各不相同）；但 CN 侧的凭据文件是明文 JSON 放在固定共享路径上，CLI 与 IDE/App 本来就读同一个文件。**
+> 结论先行：**账号共享（同一 uid），凭据不互通（按站点签发，且落盘位置/保护方式各不相同）；但 CN 侧的凭据文件是明文 JSON 放在固定共享路径上，CLI 与 IDE/App 本来就读同一个文件。** 国际站一侧有两个产品（CodeBuddy / WorkBuddy），它们共享 uid 但 realm 实例不同，因此仍是两份文件、两枚不能互换的 token。
 >
-> 本文是"反向校验"记录：对一台**已同时登录 CodeBuddy CN 与 WorkBuddy** 的 macOS 机器勘察，验证 `aih` 侧 provider 建模与隔离策略是否成立，并给出 CLI 安装闭环 / 凭据共用的可行方案；历史启动探针的令牌刷新副作用见 §4.0。
+> 本文是"反向校验"记录：对一台**已同时登录 CodeBuddy CN、WorkBuddy 与 WorkBuddy AI（国际站）** 的 macOS 机器勘察，验证 `aih` 侧 provider 建模与隔离策略是否成立，并给出 CLI 安装闭环 / 凭据共用的可行方案；历史启动探针的令牌刷新副作用见 §4.0。
 
 ## 0. 勘察范围与方法
 
@@ -10,7 +10,7 @@
 
 | 证据类型 | 具体位置 |
 | --- | --- |
-| 应用安装 | `/Applications/{CodeBuddy,CodeBuddy CN,WorkBuddy}.app` |
+| 应用安装 | `/Applications/{CodeBuddy,CodeBuddy CN,WorkBuddy,WorkBuddy AI}.app` |
 | Electron userData | `~/Library/Application Support/{CodeBuddy CN,WorkBuddy}/` |
 | VS Code 派生 IDE 状态 | `~/Library/Application Support/CodeBuddy CN/User/globalStorage/state.vscdb` |
 | **共享凭据目录** | `~/Library/Application Support/CodeBuddyExtension/Data/Public/auth/*.info` |
@@ -132,6 +132,8 @@ CN IDE 的 `state.vscdb` 里有 `secret://{"extensionId":"tencent-cloud.coding-c
 | CN 账号 ↔ 国际站账号 | ❌ | 不同 `sub`、不同 `iss`（两个 Keycloak realm） |
 | WorkBuddy ↔ CodeBuddy CN | ✅ 同账号 | 同 uid（`<cn-user-id>`） |
 | `workbuddy-desktop.info` ↔ `Tencent-Cloud.coding-copilot.info` | ❌ | 不同 uid + 不同签发域，token 互换必然 401 |
+| `Tencent-Cloud.coding-copilot.info` ↔ `workbuddy-desktop-ai.info` | ❌ | **同 uid**（国际站两个产品同一自然人），但 realm 实例不同（`codebuddy.ai` vs `workbuddy.ai`），token 仍不能互换 |
+| `workbuddy-desktop.info` ↔ `workbuddy-desktop-ai.info` | ❌ | 国内站与国际站，不同 uid + 不同 realm；文件名也不同，互不覆盖 |
 | 同一文件的 token 被第三方进程读取 | ⚠️ 可以 | 明文 JSON、`0600`、同用户可读，且**无需钥匙串** |
 | WorkBuddy 连接器库 ↔ 其他账号目录 | ❌ | 按 uid 分目录 + `userIdCheck` |
 
@@ -311,8 +313,8 @@ headless bundle 中的 `CODEBUDDY_SIDECAR_CREDENTIAL_BOOTSTRAP_SOCKET` 协议：
 - [x] 修正 `lib/runtime/provider-storage-policy.js`：为三个 Provider 声明真实的
       `authArtifacts` 路径（`Library/Application Support/CodeBuddyExtension/Data/Public/auth/<authentication.id>.info`），
       并说明该路径**不受 `CODEBUDDY_CONFIG_DIR` 约束**。见 §10 / §11。
-      文件名按发行版区分：`codebuddycn` / `workbuddy` → `workbuddy-desktop.info`，
-      `codebuddy` → `Tencent-Cloud.coding-copilot.info`。
+      文件名按 Provider 区分：`codebuddycn` / `workbuddycn` → `workbuddy-desktop.info`，
+      `codebuddy` → `Tencent-Cloud.coding-copilot.info`，`workbuddy` → `workbuddy-desktop-ai.info`。
 - [ ] 启动策略注入每账号唯一的 `ACC_PRODUCT_CONFIG_V3.authentication.id`，实现凭据文件名级隔离。
       本轮**不做**：国内侧已由 HOME 隔离 + HOME 相对投影天然实现"一账号一份"，且注入会让沙箱
       不再与 App 共用登录态，与产品目标冲突（详见 §11.3）。
@@ -414,21 +416,31 @@ const CODEBUDDY_CN_SHARED_AUTH_PATH = [...CODEBUDDY_EXTENSION_AUTH_DIR, 'workbud
 | --- | --- | --- |
 | 独立分发 | `@tencent-ai/codebuddy-code@2.151.0`（npm tarball） | `Tencent-Cloud.coding-copilot` |
 | 独立分发（国内站） | `https://copilot.tencent.com/cli/install.sh` → COS `codebuddy-code_Darwin_arm64.tar.gz` @2.151.0，单文件二进制 | `Tencent-Cloud.coding-copilot`（**不带站点差异**） |
-| WorkBuddy 内嵌 | `/Applications/WorkBuddy.app/…/cli/product.json` | `workbuddy-desktop` |
+| WorkBuddy 国内站内嵌 | `/Applications/WorkBuddy.app/…/cli/product.json` | `workbuddy-desktop` |
+| WorkBuddy AI 国际站内嵌 | `/Applications/WorkBuddy AI.app/…/cli/product.json` | `workbuddy-desktop-ai` |
 
 - 国内站 `install.sh` 从 myqcloud COS 取的与 npm 是**同一份 runtime**；其内嵌
   `authentication` 块只有 `Tencent-Cloud.coding-copilot` 一个（在 120MB 编译产物里
   逐字节定位确认，`internalDomain` 覆盖 `copilot.tencent.com` / `www.codebuddy.cn` /
   `www.workbuddy.cn`）。`product.internal.json` / `product.ioa.json` **没有**
   `authentication` 键，因此不会覆盖它。
-- 两个 `.info` 文件的实际归属（只取非敏感字段 + JWT `iss`）：
+- 三个 `.info` 文件的实际归属（只取非敏感字段 + JWT `iss`）：
 
-| 文件 | `iss` | 归属站点 | 账号 uid |
-| --- | --- | --- | --- |
-| `Tencent-Cloud.coding-copilot.info` | `https://www.codebuddy.ai/auth/realms/copilot` | 国际站 | `409f887f-…0475` |
-| `workbuddy-desktop.info` | `https://www.workbuddy.cn/auth/realms/copilot` | 国内站 | `e3f89e5f-…a1e0` |
+| 文件 | 写入方（host id） | `iss` | 归属站点 | 账号 uid |
+| --- | --- | --- | --- | --- |
+| `Tencent-Cloud.coding-copilot.info` | `Tencent-Cloud.coding-copilot` | `https://www.codebuddy.ai/auth/realms/copilot` | 国际站 CodeBuddy | `409f887f-…0475` |
+| `workbuddy-desktop-ai.info` | `workbuddy-desktop-ai` | `https://www.workbuddy.ai/auth/realms/copilot` | 国际站 WorkBuddy | `409f887f-…0475` |
+| `workbuddy-desktop.info` | `workbuddy-desktop` | `https://www.workbuddy.cn/auth/realms/copilot` | 国内站 | `e3f89e5f-…a1e0` |
 
-两个文件的 uid / 邮箱 / 昵称都不同——再次印证国内与国际是两套账号体系。
+**读法**（这份文档最容易搞错的一处）：
+
+- 国内站那份的 uid 与国际站两份**不同** → 国内与国际确实是两套账号体系。
+- 国际站两份**共享同一个 uid**（`409f887f-…`），但 **realm 实例不同**
+  （`www.codebuddy.ai` vs `www.workbuddy.ai`）、文件名也不同 → 同一自然人在国际站
+  CodeBuddy 与 WorkBuddy 是同一个账号，token 却仍不能互换。
+- **真正的站点判别依据是 token 的 `iss`（realm），不是文件名**：文件名只说明
+  "哪个发行版写的"，而 `Tencent-Cloud.coding-copilot` 这个 host id 国内站独立分发件
+  也会用（见 §11.2 第 1 条），所以那份文件**站点不可归因**。
 
 ### 11.2 结论与落地
 
@@ -439,17 +451,93 @@ const CODEBUDDY_CN_SHARED_AUTH_PATH = [...CODEBUDDY_EXTENSION_AUTH_DIR, 'workbud
    依据：国际站 CLI（独立分发件）与 `CodeBuddy.app` IDE 的 `authentication.id` 就是它，
    且本机该文件的 realm 正是 `www.codebuddy.ai`。原来的
    `~/.codebuddy/.credentials.json` 是**两个发行版都不写的文件**（实测），等于从未生效。
-3. **`codebuddycn` / `workbuddy` 仍只声明 `workbuddy-desktop.info`**，并**刻意不声明**
-   那份站点不可归因的文件：把国际站 token 静默导进国内站账号，比"判不出宿主来源、
-   让账号在沙箱里自己登录"更糟。单测把这条边界钉住
-   （`the two CodeBuddy sites never share a credential file`）。
-4. 三个 Provider 的 `hostAuthRoot` 统一为 `[]`（凭据都相对宿主 HOME）。
+3. **`workbuddy`（国际站）声明 `workbuddy-desktop-ai.info`，`workbuddycn`（国内站）声明
+   `workbuddy-desktop.info`**。两个站点文件名不同（`-ai` 后缀），所以天然不会互相覆盖；
+   各自的 `nativeRoot` 也不同（`.workbuddy-ai` vs `.workbuddy`）。
+4. **两个国内站 Provider（`codebuddycn` / `workbuddycn`）仍只声明 `workbuddy-desktop.info`**，
+   并**刻意不声明**那份站点不可归因的文件：把国际站 token 静默导进国内站账号，比
+   "判不出宿主来源、让账号在沙箱里自己登录"更糟。单测把这条边界钉住
+   （`no two sites in the family share a credential file`）。
+5. 四个 Provider 的 `hostAuthRoot` 统一为 `[]`（凭据都相对宿主 HOME）。
 
 ### 11.3 已知限制（未做，留作后续）
 
-- 若用户**只**装了独立分发件（没有 WorkBuddy.app），国内站 CLI 会写
-  `Tencent-Cloud.coding-copilot.info`，而 aih 的 `codebuddycn` 不认那个文件 → 该账号
-  在沙箱内登录后不会被捕获注册。取舍理由见 §11.2 第 3 条。
+- 若用户**只**装了独立分发件（没有 WorkBuddy.app / WorkBuddy AI.app），国内站 CLI 会写
+  `Tencent-Cloud.coding-copilot.info`，而 aih 的 `codebuddycn` / `workbuddycn` 不认那个
+  文件 → 该账号在沙箱内登录后不会被捕获注册。取舍理由见 §11.2 第 4 条。
 - 彻底解决需要按 realm 校验 token 站点（或按 §5.2 给每账号注入唯一
   `ACC_PRODUCT_CONFIG_*` 的 `authentication.id`）。后者会让沙箱不再与 App 共用登录态，
   与本次的产品目标冲突，故不采用。
+
+## 12. 国内/国际站点在产品族上的合并（2026-09-15 实现）
+
+### 12.1 为什么不能"合并成一个 Provider"
+
+§11 的实测决定了这条边界：国内站与国际站**账号体系不互通**（两份凭据、不同 uid、
+不同 realm），同一个自然人两边是两个账号。因此：
+
+- **身份轴必须留在具体 Provider 上**：`accountRef`、默认账号、存储投影、切换目标
+  全部按真实 Provider 分派，绝不能因为"菜单合并了"就混在一起。
+- 但**展示轴应该按产品收敛**：用户视角里 Qoder / CodeBuddy / WorkBuddy 各是**一个**
+  产品，菜单里出现两个平级入口（`Qoder` 与 `Qodercn`）是错的。
+
+结论：在合同里加**产品族（family）**与**站点（site）**两个字段，一处声明、四处投影，
+所有列表只做**展示聚合**，不碰身份。
+
+### 12.2 合同变更
+
+SchemaVersion `1` → `2`（`core/providers/model.go`）：
+
+- 新增 `family: string`、`site: 'global' | 'cn'`；单站产品由 `withDefaultSite()`
+  自动补 `family == id`、`site == 'global'`，双站产品显式调用 `family(...)`。
+- 新增 `workbuddycn`（国内站），`workbuddy` **回归纯国际站**
+  （`WorkBuddy AI.app` / `com.workbuddy.workbuddy-ai` / `~/.workbuddy-ai`）。
+- 校验层拒绝重复的 `(family, site)`，防止"一个产品的同一站点出现两次"。
+- 这次**没有**重命名既有 Provider：`workbuddy` / `codebuddy` / `qoder` 名字不变，
+  只把语义钉成"无后缀 = 国际站"，因此**存量账号零迁移风险**。
+
+站点归属（共 15 个 Provider）：
+
+| family | 国际站 | 国内站 |
+| --- | --- | --- |
+| `qoder` | `qoder` | `qodercn` |
+| `codebuddy` | `codebuddy` | `codebuddycn` |
+| `workbuddy` | `workbuddy` | `workbuddycn` |
+| 其余（codex / gemini / claude / agy / opencode / grok / kimi / kiro / zcode） | 自身 | — |
+
+### 12.3 展示聚合的落点
+
+| 位置 | 文件 | 做法 |
+| --- | --- | --- |
+| 账号页 tab / 统计 | `web/src/pages/Accounts.tsx` | tab 轴从 Provider 换成**产品族**，站点降为行内标记 |
+| 添加账号下拉 | `web/src/features/accounts/AddAccountModal.tsx` | 多站点产品用 `Select.OptGroup`，站点是组内二级选项 |
+| 模型页 Provider 下拉 | `web/src/pages/Models.tsx` | 复用 `buildProviderSelectOptions()` |
+| 聊天账号菜单 | `web/src/components/chat/composer/` | `buildComposerAccountGroups` 按族分组，账号行带站点 |
+| 终端文本名 / 各处列表 | `web/src/providers/catalog.ts` | `providerNames` 取 `getProviderMenuLabel()`（多站点带"· 国际站"/"· 国内站"） |
+| 桌面托盘 | `lib/server/desktop-menu-model.js` + `src-tauri/src/tray.rs` | 按族合并子菜单，站点作为行内前缀 |
+
+刻意**不**合并的两处（有注释说明）：
+
+- `Segmented` 控件（Models 的 Provider 筛选、ModelUsage 的 Provider 筛选）没有分组
+  能力，保持"每个 Provider 一个 chip"，靠站点后缀区分——筛选轴必须留在真实 Provider
+  上，因为同族两个站点的模型清单、用量结算都不同。
+
+### 12.4 托盘协议：附加字段，版本不动
+
+托盘快照仍是 `version: 1`。新增的 `family` / `familyLabel` / `site` / `siteLabel` /
+`multiSite` 是**纯附加字段**：
+
+- 新托盘按 `family` 合并同族条目，行内加站点前缀，子菜单标题用族名。
+- **旧托盘忽略这些字段**，看到的就是今天的行为（同族两个子菜单、按 Provider 切换，
+  结果仍然正确）；`family` 缺省时 Rust 侧回退为 Provider 自身 id。
+
+这样避免了"改了协议就让旧托盘弹版本不兼容"的静默降级。
+
+### 12.5 验证
+
+- `npm run providers:generate` / `providers:check`：通过（4 份投影一致）。
+- `go test ./core/providers ./cmd/provider-manifest`：通过（含 `(family, site)` 唯一性）。
+- `cargo test --bin ai-home tray::`：8 pass（含"同族两站点合并成一个入口且切换目标
+  仍是各自 Provider"、"旧 Server 无 family 时行为不变"）。
+- `node --test test/desktop-menu-model.test.js`：13 pass。
+- web `npm run build`（含 tsc）+ ESLint：通过。

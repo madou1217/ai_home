@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
@@ -32,6 +33,18 @@ struct DesktopMenuSnapshot {
 struct DesktopMenuProvider {
     id: String,
     label: String,
+    /// 产品族标识；缺省（旧 Server）时按 provider 自身处理，等价于单站点产品。
+    #[serde(default)]
+    family: String,
+    /// 产品族展示名（如 "Qoder"）；仅多站点产品用于子菜单标题。
+    #[serde(default)]
+    family_label: String,
+    /// 站点展示名（"国际站"/"国内站"）；单站点产品为空。
+    #[serde(default)]
+    site_label: String,
+    /// 是否为国内/国际双站点产品。
+    #[serde(default)]
+    multi_site: bool,
     #[serde(default)]
     accounts: Vec<DesktopMenuAccount>,
 }
@@ -196,6 +209,109 @@ fn visible_providers(snapshot: &DesktopMenuSnapshot) -> Vec<&DesktopMenuProvider
         .collect()
 }
 
+/// 产品族内的一个成员 Provider 及其可切换账号。
+struct MenuFamilyMember<'a> {
+    provider: &'a DesktopMenuProvider,
+    accounts: Vec<&'a DesktopMenuAccount>,
+}
+
+/// 一个产品族的托盘子菜单：国内站与国际站共享一个入口，站点降为行内标记。
+///
+/// 注意成员仍然是**真实 Provider**——切换目标用成员自己的 id，
+/// 合并只发生在展示层，账号身份不会被混。
+struct MenuFamily<'a> {
+    label: String,
+    multi_site: bool,
+    members: Vec<MenuFamilyMember<'a>>,
+}
+
+impl<'a> MenuFamily<'a> {
+    fn default_account(&self) -> Option<(&'a DesktopMenuProvider, &'a DesktopMenuAccount)> {
+        self.members.iter().find_map(|member| {
+            member
+                .accounts
+                .iter()
+                .find(|account| account.is_default)
+                .map(|account| (member.provider, *account))
+        })
+    }
+
+    fn submenu_label(&self) -> String {
+        let mut parts = vec![self.label.clone()];
+        if let Some((provider, account)) = self.default_account() {
+            if self.multi_site {
+                let site_label = safe_label(&provider.site_label, "");
+                if !site_label.is_empty() {
+                    parts.push(site_label);
+                }
+            }
+            parts.push(safe_label(&account.label, "默认账号"));
+            parts.push(safe_label(&account.usage_label, "用量未知"));
+        }
+        parts.join(" · ")
+    }
+}
+
+/// 把快照里的 Provider 按产品族收进同一入口，保持 Provider 的首次出现顺序。
+fn group_by_family<'a>(providers: &[&'a DesktopMenuProvider]) -> Vec<MenuFamily<'a>> {
+    let mut order: Vec<String> = Vec::new();
+    // family -> (标签, 是否多站点, 成员)
+    let mut buckets: HashMap<String, (String, bool, Vec<MenuFamilyMember<'a>>)> = HashMap::new();
+
+    for provider in providers {
+        let Some(provider_id) = normalize_provider(&provider.id) else {
+            continue;
+        };
+        let accounts = provider
+            .accounts
+            .iter()
+            .filter(|account| normalize_account_ref(&account.account_ref).is_some())
+            .collect::<Vec<_>>();
+        if accounts.is_empty() {
+            continue;
+        }
+        let family_key = match normalize_provider(&provider.family) {
+            Some(family) => family,
+            None => provider_id.clone(),
+        };
+        let member_label = safe_label(&provider.label, &provider_id);
+        // 多站点产品用族名（"Qoder"）而不是站点名（"Qoder CN"）；单站点保持原样。
+        let family_label = if provider.multi_site {
+            let explicit = safe_label(&provider.family_label, "");
+            if explicit.is_empty() {
+                member_label
+            } else {
+                explicit
+            }
+        } else {
+            member_label
+        };
+
+        let entry = buckets.entry(family_key.clone()).or_insert_with(|| {
+            order.push(family_key.clone());
+            (family_label.clone(), provider.multi_site, Vec::new())
+        });
+        entry.1 = entry.1 || provider.multi_site;
+        if entry.0.is_empty() {
+            entry.0 = family_label;
+        }
+        entry.2.push(MenuFamilyMember {
+            provider,
+            accounts,
+        });
+    }
+
+    order
+        .into_iter()
+        .filter_map(|family| buckets.remove(&family))
+        .map(|(label, multi_site, members)| MenuFamily {
+            label,
+            multi_site,
+            members,
+        })
+        .collect()
+}
+
 fn build_snapshot_menu(
     server_name: &str,
     profile_id: &str,
@@ -224,53 +340,41 @@ fn build_snapshot_menu(
         return build_menu_shell(content);
     }
 
-    for provider in providers {
-        let Some(provider_id) = normalize_provider(&provider.id) else {
-            continue;
-        };
-        let accounts = provider
-            .accounts
-            .iter()
-            .filter(|account| normalize_account_ref(&account.account_ref).is_some())
-            .collect::<Vec<_>>();
-        if accounts.is_empty() {
-            continue;
-        }
-        let provider_label = safe_label(&provider.label, &provider_id);
-        let submenu_label = accounts
-            .iter()
-            .find(|account| account.is_default)
-            .map(|account| {
-                format!(
-                    "{} · {} · {}",
-                    provider_label,
-                    safe_label(&account.label, "默认账号"),
-                    safe_label(&account.usage_label, "用量未知")
-                )
-            })
-            .unwrap_or(provider_label);
+    for family in group_by_family(&providers) {
         let mut submenu = SystemTrayMenu::new();
-        for account in accounts {
-            let Some(item_id) =
-                switch_item_id(revision, profile_id, &provider_id, &account.account_ref)
-            else {
+        for member in &family.members {
+            let Some(provider_id) = normalize_provider(&member.provider.id) else {
                 continue;
             };
-            let item_label = format!(
-                "{} · {}",
-                safe_label(&account.label, "未命名账号"),
-                safe_label(&account.usage_label, "用量未知")
-            );
-            let mut item = CustomMenuItem::new(item_id, item_label);
-            if !account.switchable {
-                item = item.disabled();
+            // 多站点产品：行内加站点标记，否则同一个产品下两行账号看起来一模一样。
+            let site_prefix = if family.multi_site {
+                safe_label(&member.provider.site_label, "")
+            } else {
+                String::new()
+            };
+            for account in &member.accounts {
+                let Some(item_id) =
+                    switch_item_id(revision, profile_id, &provider_id, &account.account_ref)
+                else {
+                    continue;
+                };
+                let mut parts: Vec<String> = Vec::new();
+                if !site_prefix.is_empty() {
+                    parts.push(site_prefix.clone());
+                }
+                parts.push(safe_label(&account.label, "未命名账号"));
+                parts.push(safe_label(&account.usage_label, "用量未知"));
+                let mut item = CustomMenuItem::new(item_id, parts.join(" · "));
+                if !account.switchable {
+                    item = item.disabled();
+                }
+                if account.is_default {
+                    item = item.selected();
+                }
+                submenu = submenu.add_item(item);
             }
-            if account.is_default {
-                item = item.selected();
-            }
-            submenu = submenu.add_item(item);
         }
-        content = content.add_submenu(SystemTraySubmenu::new(submenu_label, submenu));
+        content = content.add_submenu(SystemTraySubmenu::new(family.submenu_label(), submenu));
     }
 
     build_menu_shell(content)
@@ -524,6 +628,34 @@ mod tests {
         }
     }
 
+    /// 造一个单站点 Provider 条目（族 == 自身，无站点标记）。
+    fn provider(id: &str, label: &str, accounts: Vec<DesktopMenuAccount>) -> DesktopMenuProvider {
+        DesktopMenuProvider {
+            id: id.to_string(),
+            label: label.to_string(),
+            accounts,
+            ..Default::default()
+        }
+    }
+
+    /// 造一个多站点 Provider 条目，与同族成员共享 family。
+    fn site_provider(
+        id: &str,
+        label: &str,
+        site_label: &str,
+        accounts: Vec<DesktopMenuAccount>,
+    ) -> DesktopMenuProvider {
+        DesktopMenuProvider {
+            id: id.to_string(),
+            label: label.to_string(),
+            family: "qoder".to_string(),
+            family_label: "Qoder".to_string(),
+            site_label: site_label.to_string(),
+            multi_site: true,
+            accounts,
+        }
+    }
+
     #[test]
     fn close_to_tray_is_enabled_only_where_a_reliable_tray_host_is_expected() {
         assert_eq!(
@@ -558,21 +690,9 @@ mod tests {
         let snapshot = DesktopMenuSnapshot {
             version: 1,
             providers: vec![
-                DesktopMenuProvider {
-                    id: "gemini".to_string(),
-                    label: "Gemini".to_string(),
-                    accounts: vec![account("acct_0123456789abcdef0123", true)],
-                },
-                DesktopMenuProvider {
-                    id: "claude".to_string(),
-                    label: "Claude".to_string(),
-                    accounts: Vec::new(),
-                },
-                DesktopMenuProvider {
-                    id: "codex".to_string(),
-                    label: "Codex".to_string(),
-                    accounts: vec![account("acct_abcdef0123456789abcd", true)],
-                },
+                provider("gemini", "Gemini", vec![account("acct_0123456789abcdef0123", true)]),
+                provider("claude", "Claude", Vec::new()),
+                provider("codex", "Codex", vec![account("acct_abcdef0123456789abcd", true)]),
             ],
         };
 
@@ -589,11 +709,11 @@ mod tests {
     fn snapshot_menu_builds_one_account_switch_submenu_for_one_visible_provider() {
         let snapshot = DesktopMenuSnapshot {
             version: 1,
-            providers: vec![DesktopMenuProvider {
-                id: "codex".to_string(),
-                label: "Codex".to_string(),
-                accounts: vec![account("acct_abcdef0123456789abcd", true)],
-            }],
+            providers: vec![provider(
+                "codex",
+                "Codex",
+                vec![account("acct_abcdef0123456789abcd", true)],
+            )],
         };
         let menu = build_snapshot_menu("Local", "server-local", &snapshot, 9, None);
         let debug_menu = format!("{menu:?}");
@@ -604,16 +724,211 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_menu_merges_both_sites_of_one_family_into_a_single_entry() {
+        let snapshot = DesktopMenuSnapshot {
+            version: 1,
+            providers: vec![
+                site_provider(
+                    "qoder",
+                    "Qoder",
+                    "国际站",
+                    vec![account("acct_abcdef0123456789abcd", true)],
+                ),
+                site_provider(
+                    "qodercn",
+                    "Qoder CN",
+                    "国内站",
+                    vec![account("acct_0123456789abcdef0123", false)],
+                ),
+            ],
+        };
+        let menu = build_snapshot_menu("Local", "server-local", &snapshot, 11, None);
+        let compact_debug = format!("{menu:#?}")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        // 同族只出现一个"Qoder"入口，站点名不再当作产品名。
+        assert_eq!(compact_debug.matches("Qoder").count(), 1, "{compact_debug}");
+        assert!(!compact_debug.contains("Qoder CN"), "{compact_debug}");
+        // 默认账号的站点进入标题，两个站点都在行内标记。
+        assert!(
+            compact_debug.contains("Qoder · 国际站 · Primary · 剩余 80%"),
+            "{compact_debug}"
+        );
+        assert!(
+            compact_debug.contains("国内站 · Primary · 剩余 80%"),
+            "{compact_debug}"
+        );
+        // 切换目标仍是各自真实的 Provider，不会被族名覆盖。
+        assert!(
+            compact_debug.contains("desktop-menu:switch:11:server-local:qodercn:acct_0123456789abcdef0123"),
+            "{compact_debug}"
+        );
+    }
+
+    #[test]
+    fn snapshot_menu_keeps_a_single_site_family_free_of_site_noise() {
+        let snapshot = DesktopMenuSnapshot {
+            version: 1,
+            providers: vec![provider(
+                "codex",
+                "Codex",
+                vec![account("acct_abcdef0123456789abcd", true)],
+            )],
+        };
+        let menu = build_snapshot_menu("Local", "server-local", &snapshot, 12, None);
+        let compact_debug = format!("{menu:#?}")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        assert!(
+            compact_debug.contains("Codex · Primary · 剩余 80%"),
+            "{compact_debug}"
+        );
+        assert!(!compact_debug.contains("国际站"), "{compact_debug}");
+    }
+
+    #[test]
+    fn snapshot_menu_treats_a_legacy_provider_without_family_as_its_own_entry() {
+        // 旧 Server 不发送 family 字段：每个 Provider 独立入口，行为与今天一致。
+        let snapshot = DesktopMenuSnapshot {
+            version: 1,
+            providers: vec![
+                provider(
+                    "qoder",
+                    "Qoder",
+                    vec![account("acct_abcdef0123456789abcd", true)],
+                ),
+                provider(
+                    "qodercn",
+                    "Qodercn",
+                    vec![account("acct_0123456789abcdef0123", false)],
+                ),
+            ],
+        };
+        let menu = build_snapshot_menu("Local", "server-local", &snapshot, 13, None);
+        let compact_debug = format!("{menu:#?}")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        // 没有 family 字段时不合并：两个入口各自独立，站点标记不出现。
+        assert!(
+            compact_debug.contains("title: \"Qoder · Primary · 剩余 80%\""),
+            "{compact_debug}"
+        );
+        assert!(
+            compact_debug.contains("title: \"Qodercn\""),
+            "{compact_debug}"
+        );
+        assert!(!compact_debug.contains("国内站"), "{compact_debug}");
+    }
+
+    #[test]
+    fn snapshot_decodes_a_dual_site_family_payload_from_the_server() {
+        // 这条锁的是**线格式**：Server 送来的多余字段（如 site）必须被忽略，
+        // 新字段必须能解码，否则托盘菜单会在运行期才炸。
+        let payload = serde_json::json!({
+            "version": 1,
+            "providers": [
+                {
+                    "id": "qoder",
+                    "label": "Qoder",
+                    "family": "qoder",
+                    "familyLabel": "Qoder",
+                    "site": "global",
+                    "siteLabel": "国际站",
+                    "multiSite": true,
+                    "accounts": [{
+                        "accountRef": "acct_abcdef0123456789abcd",
+                        "label": "a",
+                        "usageLabel": "剩余 10%",
+                        "isDefault": true,
+                        "switchable": true,
+                        "status": "up"
+                    }]
+                },
+                {
+                    "id": "qodercn",
+                    "label": "Qodercn",
+                    "family": "qoder",
+                    "familyLabel": "Qoder",
+                    "site": "cn",
+                    "siteLabel": "国内站",
+                    "multiSite": true,
+                    "accounts": [{
+                        "accountRef": "acct_0123456789abcdef0123",
+                        "label": "b",
+                        "usageLabel": "剩余 20%",
+                        "isDefault": false,
+                        "switchable": true,
+                        "status": "up"
+                    }]
+                }
+            ]
+        });
+        let snapshot: DesktopMenuSnapshot =
+            serde_json::from_value(payload).expect("双站点快照必须可解码");
+
+        let menu = build_snapshot_menu("Local", "server-local", &snapshot, 21, None);
+        let compact_debug = format!("{menu:#?}")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        assert!(
+            compact_debug.contains("title: \"Qoder · 国际站 · a · 剩余 10%\""),
+            "{compact_debug}"
+        );
+        assert!(compact_debug.contains("国内站 · b · 剩余 20%"), "{compact_debug}");
+        assert!(
+            compact_debug.contains("desktop-menu:switch:21:server-local:qodercn:acct_0123456789abcdef0123"),
+            "{compact_debug}"
+        );
+    }
+
+    #[test]
+    fn snapshot_decodes_a_legacy_payload_without_family_fields() {
+        // 旧 Server 的快照没有 family/site 字段：必须回退成"各自独立入口"。
+        let payload = serde_json::json!({
+            "version": 1,
+            "providers": [{
+                "id": "codex",
+                "label": "Codex",
+                "accounts": [{
+                    "accountRef": "acct_abcdef0123456789abcd",
+                    "label": "Primary",
+                    "usageLabel": "剩余 80%",
+                    "isDefault": true,
+                    "switchable": true
+                }]
+            }]
+        });
+        let snapshot: DesktopMenuSnapshot =
+            serde_json::from_value(payload).expect("旧快照必须可解码");
+
+        let menu = build_snapshot_menu("Local", "server-local", &snapshot, 22, None);
+        let compact_debug = format!("{menu:#?}")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        assert!(
+            compact_debug.contains("title: \"Codex · Primary · 剩余 80%\""),
+            "{compact_debug}"
+        );
+        assert!(!compact_debug.contains("国际站"), "{compact_debug}");
+    }
+
+    #[test]
     fn snapshot_menu_disables_an_account_marked_unswitchable_by_the_server() {
         let mut blocked_account = account("acct_abcdef0123456789abcd", false);
         blocked_account.switchable = false;
         let snapshot = DesktopMenuSnapshot {
             version: 1,
-            providers: vec![DesktopMenuProvider {
-                id: "codex".to_string(),
-                label: "Codex".to_string(),
-                accounts: vec![blocked_account],
-            }],
+            providers: vec![provider("codex", "Codex", vec![blocked_account])],
         };
 
         let menu = build_snapshot_menu("Local", "server-local", &snapshot, 10, None);

@@ -29,6 +29,10 @@ type clientSupport struct {
 // clientDefinition 是只暴露给 TypeScript Client 的最小 Provider 投影。
 type clientDefinition struct {
 	ID                string                 `json:"id"`
+	// Family/Site 让浏览器按产品族聚合国内站/国际站，而不必在 UI 层硬编码
+	// 任何 provider 名单。聚合只影响展示，账号仍挂在具体 provider 上。
+	Family            string                 `json:"family"`
+	Site              providers.Site         `json:"site"`
 	Label             string                 `json:"label"`
 	Short             string                 `json:"short"`
 	TerminalIcon      string                 `json:"terminalIcon"`
@@ -41,11 +45,21 @@ type clientDefinition struct {
 	Clients           clientSupport          `json:"clients"`
 }
 
+// legacyProvider 在旧版扁平展示投影里补上 family/site。
+//
+// 旧格式此前只序列化 Presentation；不补这两个字段，任何仍读
+// lib/provider-catalog-data.json 的消费方都会退回"国内国际看不出是一家的"。
+type legacyProvider struct {
+	providers.Presentation
+	Family string         `json:"family"`
+	Site   providers.Site `json:"site"`
+}
+
 // legacyCatalog 保持旧 Node 数据文件的扁平字段形状，迁移期由同一 Go 定义生成。
 type legacyCatalog struct {
-	Providers                  []providers.Presentation `json:"providers"`
-	Fallback                   providers.Presentation   `json:"fallback"`
-	DeprecatedGatewayProviders []string                 `json:"deprecatedGatewayProviders"`
+	Providers                  []legacyProvider       `json:"providers"`
+	Fallback                   providers.Presentation `json:"fallback"`
+	DeprecatedGatewayProviders []string               `json:"deprecatedGatewayProviders"`
 }
 
 func main() {
@@ -106,6 +120,8 @@ func buildClientDefinitions(manifest providers.Manifest) []clientDefinition {
 		presentation := definition.Presentation
 		definitions = append(definitions, clientDefinition{
 			ID:                definition.ID,
+			Family:            definition.Family,
+			Site:              definition.Site,
 			Label:             presentation.Label,
 			Short:             presentation.Short,
 			TerminalIcon:      presentation.TerminalIcon,
@@ -127,11 +143,15 @@ func buildClientDefinitions(manifest providers.Manifest) []clientDefinition {
 // buildLegacyCatalog 从完整合同派生旧版扁平展示目录，不引入第二份人工定义。
 func buildLegacyCatalog(manifest providers.Manifest) legacyCatalog {
 	legacy := legacyCatalog{
-		Providers: make([]providers.Presentation, 0, len(manifest.Providers)),
+		Providers: make([]legacyProvider, 0, len(manifest.Providers)),
 		Fallback:  manifest.Fallback,
 	}
 	for _, definition := range manifest.Providers {
-		legacy.Providers = append(legacy.Providers, definition.Presentation)
+		legacy.Providers = append(legacy.Providers, legacyProvider{
+			Presentation: definition.Presentation,
+			Family:       definition.Family,
+			Site:         definition.Site,
+		})
 		if definition.Gateway == providers.GatewayDeprecated {
 			legacy.DeprecatedGatewayProviders = append(legacy.DeprecatedGatewayProviders, definition.ID)
 		}
@@ -161,10 +181,15 @@ func renderClientTypeScript(manifest providers.Manifest) ([]byte, error) {
 	// Fallback 没有 CLI 定义，clients 固定为全 false，保持 ProviderCatalogEntry 形状一致。
 	fallbackJSON, err := renderJSON(struct {
 		providers.Presentation
+		Family       string                 `json:"family"`
+		Site         providers.Site         `json:"site"`
 		Capabilities []providers.Capability `json:"capabilities"`
 		Clients      clientSupport          `json:"clients"`
 	}{
 		Presentation: manifest.Fallback,
+		// 回退条目的族与站点跟随 fallback.id（当前是 codex），保持形状一致。
+		Family:       manifest.Fallback.ID,
+		Site:         providers.SiteGlobal,
 		Capabilities: []providers.Capability{},
 		Clients:      clientSupport{CLI: false, Desktop: false},
 	})
@@ -182,6 +207,10 @@ func renderClientTypeScript(manifest providers.Manifest) ([]byte, error) {
 	output.WriteString(" as const;\n\n")
 	output.WriteString("/** Provider 的稳定字符串身份。 */\n")
 	output.WriteString("export type ProviderId = (typeof PROVIDER_DEFINITIONS)[number]['id'];\n\n")
+	output.WriteString("/** Provider 归属的产品站点。 */\n")
+	output.WriteString("export type ProviderSite = (typeof PROVIDER_DEFINITIONS)[number]['site'];\n\n")
+	output.WriteString("/** 产品族标识：同一产品族的国内站/国际站共享它。 */\n")
+	output.WriteString("export type ProviderFamily = (typeof PROVIDER_DEFINITIONS)[number]['family'];\n\n")
 	output.WriteString("/** Client 支持的账号认证方式。 */\n")
 	output.WriteString("export type ProviderAuthMode = (typeof PROVIDER_DEFINITIONS)[number]['authOptions'][number]['value'];\n\n")
 	output.WriteString("/** Client 展示的一条账号认证选项。 */\n")
@@ -195,6 +224,8 @@ func renderClientTypeScript(manifest providers.Manifest) ([]byte, error) {
 	output.WriteString("/** Client 使用的 Provider 展示元数据。 */\n")
 	output.WriteString("export interface ProviderCatalogEntry {\n")
 	output.WriteString("  readonly id: ProviderId;\n")
+	output.WriteString("  readonly family: ProviderFamily;\n")
+	output.WriteString("  readonly site: ProviderSite;\n")
 	output.WriteString("  readonly label: string;\n")
 	output.WriteString("  readonly short: string;\n")
 	output.WriteString("  readonly terminalIcon: string;\n")
@@ -210,8 +241,10 @@ func renderClientTypeScript(manifest providers.Manifest) ([]byte, error) {
 	output.WriteString("/** 由同一生成源构建的 Provider 展示目录。 */\n")
 	output.WriteString("export const PROVIDER_CATALOG = Object.freeze(Object.fromEntries(\n")
 	output.WriteString("  PROVIDER_DEFINITIONS.map((definition) => [definition.id, {\n")
-	output.WriteString("    id: definition.id,\n")
-	output.WriteString("    label: definition.label,\n")
+  output.WriteString("    id: definition.id,\n")
+  output.WriteString("    family: definition.family,\n")
+  output.WriteString("    site: definition.site,\n")
+  output.WriteString("    label: definition.label,\n")
 	output.WriteString("    short: definition.short,\n")
 	output.WriteString("    terminalIcon: definition.terminalIcon,\n")
 	output.WriteString("    terminalIconAsset: definition.terminalIconAsset,\n")
@@ -242,10 +275,15 @@ func renderClientJavaScript(manifest providers.Manifest) ([]byte, error) {
 	}
 	fallbackJSON, err := renderJSON(struct {
 		providers.Presentation
+		Family       string                 `json:"family"`
+		Site         providers.Site         `json:"site"`
 		Capabilities []providers.Capability `json:"capabilities"`
 		Clients      clientSupport          `json:"clients"`
 	}{
 		Presentation: manifest.Fallback,
+		// 回退条目的族与站点跟随 fallback.id（当前是 codex），保持形状一致。
+		Family:       manifest.Fallback.ID,
+		Site:         providers.SiteGlobal,
 		Capabilities: []providers.Capability{},
 		Clients:      clientSupport{CLI: false, Desktop: false},
 	})
@@ -264,8 +302,10 @@ func renderClientJavaScript(manifest providers.Manifest) ([]byte, error) {
 	output.WriteString("export const PROVIDER_IDS = Object.freeze(PROVIDER_DEFINITIONS.map((definition) => definition.id));\n\n")
 	output.WriteString("export const PROVIDER_CATALOG = Object.freeze(Object.fromEntries(\n")
 	output.WriteString("  PROVIDER_DEFINITIONS.map((definition) => [definition.id, {\n")
-	output.WriteString("    id: definition.id,\n")
-	output.WriteString("    label: definition.label,\n")
+  output.WriteString("    id: definition.id,\n")
+  output.WriteString("    family: definition.family,\n")
+  output.WriteString("    site: definition.site,\n")
+  output.WriteString("    label: definition.label,\n")
 	output.WriteString("    short: definition.short,\n")
 	output.WriteString("    terminalIcon: definition.terminalIcon,\n")
 	output.WriteString("    terminalIconAsset: definition.terminalIconAsset,\n")

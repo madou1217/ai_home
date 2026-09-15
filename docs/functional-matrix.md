@@ -48,6 +48,12 @@
 
 “模型目录”表示当前 catalog 能力成员；“额度”表示原生额度快照能力；“会话同步”按真实实现区分 hook、轮询和不可用。
 
+合同里另有一条**产品族 / 站点**轴：`family` + `site`（`global` | `cn`）。国内站与国际站
+账号体系不互通，因此始终是两个独立 Provider（身份、凭据、默认账号各归各的），但**展示层
+按产品族收敛**——账号页 tab、添加账号/模型下拉、聊天账号菜单与桌面托盘都只给一个产品入口，
+站点降为二级标记。无后缀 = 国际站。详见
+`docs/architecture/codebuddy-family-credential-model.md` §12。
+
 | Provider | 用户认证入口 | API Key/Token | 模型目录 | 原生额度 | 会话读取/同步 | 网关状态 | 关键限制 |
 |---|---|---|---|---|---|---|---|
 | Codex / ChatGPT (`codex`) | Browser OAuth、device auth | `OPENAI_API_KEY`、`OPENAI_BASE_URL` | 支持 | 支持 | 官方 hook；Codex event 可增量读取 | 默认主链 | Codex App 账号只允许 ChatGPT OAuth；临时凭据投影与共享 session/config 分离 |
@@ -60,6 +66,10 @@
 | Qoder CN (`qodercn`) | Browser login | `QODER_PERSONAL_ACCESS_TOKEN` | 支持 | 不支持统一额度快照 | 文件轮询 | 默认网关候选 | 独立 `qoderclicn`、认证端点与 host home；不能与 Global 混用 |
 | Kimi (`kimi`) | Kimi Code OAuth/device flow | `MOONSHOT_API_KEY`、`KIMI_BASE_URL` | 当前不在通用 model-catalog capability 成员中 | 不支持统一额度快照 | 不可用 | 默认网关候选 | 支持 Moonshot CN/Global API Key；当前网页无法同步原生会话 |
 | Kiro (`kiro`) | AWS Builder ID device flow | 内部保留 `KIRO_API_KEY` 环境入口 | 支持 | 不支持统一额度快照 | SQLite 会话读取 + 文件轮询 | 默认网关候选 | 原生登录可经 Google/GitHub/AWS Builder ID；session store 位于 Kiro SQLite |
+| CodeBuddy Global (`codebuddy`) | 原生浏览器登录（选国际站） | `CODEBUDDY_API_KEY`、`CODEBUDDY_BASE_URL`、`CODEBUDDY_AUTH_TOKEN` | 当前不在通用 model-catalog capability 成员中 | 不支持统一额度快照 | 不可用 | 默认网关候选 | 与 `codebuddycn` 同族（`family=codebuddy`、`site=global`）但账号体系不互通；凭据 `Tencent-Cloud.coding-copilot.info`（**站点不可归因**，只能按 token realm 判站） |
+| CodeBuddy CN (`codebuddycn`) | 原生浏览器登录（选国内站 copilot.tencent.com） | `CODEBUDDY_API_KEY`、`CODEBUDDY_BASE_URL`、`CODEBUDDY_AUTH_TOKEN` | 当前不在通用 model-catalog capability 成员中 | 不支持统一额度快照 | 不可用 | 默认网关候选 | 与 `codebuddy` 同族不互通；凭据 `workbuddy-desktop.info`（与 `workbuddycn` 同一文件）；零安装复用 WorkBuddy.app 内嵌 CLI |
+| WorkBuddy Global (`workbuddy`) | 原生浏览器登录（国际站 workbuddy.ai） | `CODEBUDDY_API_KEY`、`CODEBUDDY_BASE_URL` | 当前不在通用 model-catalog capability 成员中 | 不支持统一额度快照 | 不可用 | 默认网关候选 | 仅桌面端（复用 WorkBuddy AI.app 内嵌的 CodeBuddy Code runtime）；凭据 `workbuddy-desktop-ai.info`；数据根 `~/.workbuddy-ai` |
+| WorkBuddy CN (`workbuddycn`) | 原生浏览器登录（国内站 workbuddy.cn） | `CODEBUDDY_API_KEY`、`CODEBUDDY_BASE_URL` | 当前不在通用 model-catalog capability 成员中 | 不支持统一额度快照 | 不可用 | 默认网关候选 | 仅桌面端（复用 WorkBuddy.app 内嵌的 CodeBuddy Code runtime）；凭据 `workbuddy-desktop.info`；数据根 `~/.workbuddy`；与 `codebuddycn` 同一国内账号 |
 
 证据：`lib/provider-catalog-data.json`、`lib/provider-catalog.js`、`lib/cli/services/ai-cli/provider-registry.js`、`lib/provider-native-capability-registry.js`、`lib/server/provider-session-hook-config.js`、`lib/sessions/session-reader.js`、`web/src/pages/Accounts.tsx`。
 
@@ -522,7 +532,7 @@ Canonical chat HTTP 面包括：`/v0/webui/chat/sessions`、session resolve/snap
 | DESK-013 | Relay route trust | 将验证通过的 route 纳入可信请求候选 | 实验/高级 | `desktop_relay_route_trust` |
 | DESK-014 | Management Key rotate | 原生安全替换 Keyring secret 并刷新 profile/tray | 受限 | `desktop_management_key_rotate` |
 | DESK-015 | 系统托盘 | 打开、刷新、退出；macOS/Windows 关闭窗口隐藏到托盘 | 受限 | `tray.rs`、`main.rs` |
-| DESK-016 | 托盘账号切换 | 显示 Codex/Claude 等允许 provider 的账号、default 与 usage，点击设默认 | 受限 | `tray.rs`、`desktop-menu-model.js` |
+| DESK-016 | 托盘账号切换 | 显示 Codex/Claude 等允许 provider 的账号、default 与 usage，点击设默认；同族国内/国际站合并为一个入口，账号行带站点标记 | 受限 | `tray.rs`、`desktop-menu-model.js` |
 | DESK-017 | 托盘刷新 | 启动立即加载并约 20 秒刷新；profile 变化主动刷新 | 受限 | `tray.rs` |
 | DESK-018 | 多平台打包/smoke/evidence | 构建 Web/Tauri、安装包、packaged smoke、manifest 和 release evidence | 开发/发布 | `scripts/desktop/`、`docs/release/` |
 

@@ -1,9 +1,11 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "generatedFrom": "core/providers/builtins.go",
   "providers": [
     {
       "id": "codex",
+      "family": "codex",
+      "site": "global",
       "presentation": {
         "id": "codex",
         "label": "ChatGPT",
@@ -158,6 +160,8 @@
     },
     {
       "id": "gemini",
+      "family": "gemini",
+      "site": "global",
       "presentation": {
         "id": "gemini",
         "label": "Gemini",
@@ -281,6 +285,8 @@
     },
     {
       "id": "claude",
+      "family": "claude",
+      "site": "global",
       "presentation": {
         "id": "claude",
         "label": "Claude",
@@ -445,6 +451,8 @@
     },
     {
       "id": "agy",
+      "family": "agy",
+      "site": "global",
       "presentation": {
         "id": "agy",
         "label": "Antigravity",
@@ -590,6 +598,8 @@
     },
     {
       "id": "opencode",
+      "family": "opencode",
+      "site": "global",
       "presentation": {
         "id": "opencode",
         "label": "OpenCode",
@@ -680,6 +690,8 @@
     },
     {
       "id": "grok",
+      "family": "grok",
+      "site": "global",
       "presentation": {
         "id": "grok",
         "label": "Grok",
@@ -802,6 +814,8 @@
     },
     {
       "id": "qoder",
+      "family": "qoder",
+      "site": "global",
       "presentation": {
         "id": "qoder",
         "label": "Qoder",
@@ -894,6 +908,8 @@
     },
     {
       "id": "qodercn",
+      "family": "qoder",
+      "site": "cn",
       "presentation": {
         "id": "qodercn",
         "label": "Qoder CN",
@@ -988,6 +1004,8 @@
     },
     {
       "id": "kimi",
+      "family": "kimi",
+      "site": "global",
       "presentation": {
         "id": "kimi",
         "label": "Kimi",
@@ -1108,6 +1126,8 @@
     },
     {
       "id": "kiro",
+      "family": "kiro",
+      "site": "global",
       "presentation": {
         "id": "kiro",
         "label": "Kiro",
@@ -1233,6 +1253,8 @@
     },
     {
       "id": "zcode",
+      "family": "zcode",
+      "site": "global",
       "presentation": {
         "id": "zcode",
         "label": "ZCode",
@@ -1318,6 +1340,8 @@
     },
     {
       "id": "codebuddy",
+      "family": "codebuddy",
+      "site": "global",
       "presentation": {
         "id": "codebuddy",
         "label": "CodeBuddy",
@@ -1394,6 +1418,8 @@
     },
     {
       "id": "codebuddycn",
+      "family": "codebuddy",
+      "site": "cn",
       "presentation": {
         "id": "codebuddycn",
         "label": "CodeBuddy CN",
@@ -1471,6 +1497,8 @@
     },
     {
       "id": "workbuddy",
+      "family": "workbuddy",
+      "site": "global",
       "presentation": {
         "id": "workbuddy",
         "label": "WorkBuddy",
@@ -1489,12 +1517,12 @@
         {
           "value": "oauth-browser",
           "label": "WorkBuddy 登录",
-          "description": "使用 WorkBuddy 原生浏览器登录流程（国内站 workbuddy.cn 账号体系）。"
+          "description": "使用 WorkBuddy 原生浏览器登录流程（国际站 workbuddy.ai 账号体系）。"
         },
         {
           "value": "api-key",
           "label": "WorkBuddy 密钥",
-          "description": "绑定 CODEBUDDY_API_KEY / CODEBUDDY_BASE_URL，并固定 CODEBUDDY_INTERNET_ENVIRONMENT=internal。"
+          "description": "绑定 CODEBUDDY_API_KEY / CODEBUDDY_BASE_URL（国际站不要固定 CODEBUDDY_INTERNET_ENVIRONMENT）。"
         }
       ],
       "sessionSync": {
@@ -1507,6 +1535,76 @@
       },
       "cli": {
         "order": 14,
+        "globalDir": ".workbuddy-ai",
+        "configFile": "settings.json",
+        "loginArgs": [],
+        "pkg": "",
+        "envKeys": [
+          "WORKBUDDY_CONFIG_DIR",
+          "WORKBUDDY_USER_DATA_DIR",
+          "CODEBUDDY_CONFIG_DIR",
+          "CODEBUDDY_INTERNET_ENVIRONMENT"
+        ],
+        "desktopClient": {
+          "reloadsHostAuth": false,
+          "userDataEnvKey": "WORKBUDDY_USER_DATA_DIR",
+          "macos": {
+            "clientName": "WorkBuddy AI",
+            "execNames": [
+              "Electron"
+            ],
+            "pathIncludes": [
+              "/WorkBuddy AI.app/Contents/MacOS/"
+            ],
+            "bundleId": "com.workbuddy.workbuddy-ai",
+            "installPaths": [
+              "/Applications/WorkBuddy AI.app",
+              "{hostHomeDir}/Applications/WorkBuddy AI.app"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "workbuddycn",
+      "family": "workbuddy",
+      "site": "cn",
+      "presentation": {
+        "id": "workbuddycn",
+        "label": "WorkBuddy CN",
+        "short": "WBCN",
+        "terminalIcon": "◍",
+        "terminalIconAsset": "assets/provider-icons/workbuddycn.png",
+        "accentVar": "var(--provider-workbuddycn)",
+        "softVar": "var(--provider-workbuddycn-soft)",
+        "tagColor": "purple"
+      },
+      "gateway": "active",
+      "capabilities": [
+        "api_key_account"
+      ],
+      "authOptions": [
+        {
+          "value": "oauth-browser",
+          "label": "WorkBuddy CN 登录",
+          "description": "使用 WorkBuddy 原生浏览器登录流程（国内站 workbuddy.cn 账号体系）。"
+        },
+        {
+          "value": "api-key",
+          "label": "WorkBuddy CN 密钥",
+          "description": "绑定 CODEBUDDY_API_KEY / CODEBUDDY_BASE_URL，并固定 CODEBUDDY_INTERNET_ENVIRONMENT=internal。"
+        }
+      ],
+      "sessionSync": {
+        "mode": "unavailable",
+        "events": []
+      },
+      "clients": {
+        "cli": false,
+        "desktop": true
+      },
+      "cli": {
+        "order": 15,
         "globalDir": ".workbuddy",
         "configFile": "settings.json",
         "loginArgs": [],

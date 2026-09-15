@@ -600,6 +600,22 @@ export default function Models() {
       label: getAccountLabel(account),
       value: account.accountRef
     }));
+  // Provider 下拉按产品族分组：多站点产品（qoder / codebuddy / workbuddy）只出现一个
+  // 分组，站点是组内二级选项；value 仍是真实 Provider ID，提交链路不变。
+  const manualProviderOptions = buildProviderSelectOptions().map((option) => (
+    'options' in option
+      ? {
+        ...option,
+        options: option.options.map((child) => ({
+          ...child,
+          disabled: !accountOptions.some((account) => account.provider === child.value)
+        }))
+      }
+      : {
+        ...option,
+        disabled: !accountOptions.some((account) => account.provider === option.value)
+      }
+  ));
   const canCreateManualModel = accountScoped
     ? Boolean(scopedAccount)
     : accountOptions.length > 0;
@@ -870,6 +886,9 @@ export default function Models() {
             <>
               {!accountScoped ? (
                 <>
+                  {/* Segmented 没有分组能力，所以这里保持"每个 Provider 一个 chip"，
+                      靠 providerNames 的站点后缀（"Qoder · 国内站"）区分同族站点——
+                      同族站点模型清单不同，筛选轴必须留在真实 Provider 上。 */}
                   <Segmented
                     value={providerFilter}
                     onChange={(value) => {
@@ -986,11 +1005,7 @@ export default function Models() {
           >
             <Select
               disabled={accountScoped}
-              options={PROVIDERS.map((provider) => ({
-                label: providerNames[provider],
-                value: provider,
-                disabled: !accountOptions.some((account) => account.provider === provider)
-              }))}
+              options={manualProviderOptions}
             />
           </Form.Item>
           <Form.Item

@@ -17,6 +17,10 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
+// CodeBuddy 家族的四个 Provider：两个站点 × 两条产品线。
+// 国内/国际各是一套不互通的账号，所以永远是四个 Provider，不是两个。
+const FAMILY_PROVIDERS = Object.freeze(['codebuddy', 'codebuddycn', 'workbuddy', 'workbuddycn']);
+
 // --- 1. Provider 目录（生成的合同投影） ---
 const {
   isKnownProvider,
@@ -243,25 +247,52 @@ test('codebuddy captures the international CLI shared credential file', () => {
   assert.equal(artifacts[0].format, 'json');
 });
 
-test('the two CodeBuddy sites never share a credential file', () => {
-  // 两个发行版的 authentication.id 不同 → 两个不同的 .info（2026-09-15 实测）。
-  const intl = getProviderAuthArtifacts('codebuddy')[0].path;
-  const cn = getProviderAuthArtifacts('codebuddycn')[0].path;
+test('no two sites in the family share a credential file', () => {
+  // 2026-09-15 实测：auth 目录下**三份**文件并存，四个 Provider 各声明自己那支
+  // 客户端真正读的一份。任何两份被声明成同一个文件，都会把两个站点的账号合并。
   const fileName = (segments) => segments[segments.length - 1];
+  const declared = Object.fromEntries(
+    FAMILY_PROVIDERS.map((provider) => [provider, fileName(getProviderAuthArtifacts(provider)[0].path)])
+  );
 
-  assert.notDeepEqual(cn, intl);
+  assert.deepEqual(declared, {
+    codebuddy: 'Tencent-Cloud.coding-copilot.info',
+    codebuddycn: 'workbuddy-desktop.info',
+    workbuddy: 'workbuddy-desktop-ai.info',
+    workbuddycn: 'workbuddy-desktop.info'
+  });
+
   // 除文件名外同目录：都必须是 HOME 下 CodeBuddyExtension 的 auth 目录。
-  assert.deepEqual(cn.slice(0, -1), CODEBUDDY_EXTENSION_AUTH_DIR);
-  assert.deepEqual(intl.slice(0, -1), CODEBUDDY_EXTENSION_AUTH_DIR);
-  assert.equal(fileName(cn), 'workbuddy-desktop.info');
-  assert.equal(fileName(intl), 'Tencent-Cloud.coding-copilot.info');
-
-  // 国内站**刻意不声明**国际站那份站点不可归因的文件，避免把国际站 token
-  // 静默导进国内站账号。
-  for (const provider of ['codebuddycn', 'workbuddy']) {
-    const declared = getProviderAuthArtifacts(provider).map((artifact) => fileName(artifact.path));
-    assert.equal(declared.includes(fileName(intl)), false, provider);
+  for (const provider of FAMILY_PROVIDERS) {
+    const segments = getProviderAuthArtifacts(provider)[0].path;
+    assert.deepEqual(segments.slice(0, -1), CODEBUDDY_EXTENSION_AUTH_DIR, provider);
   }
+
+  // 国际站两支各用各的文件；国内站两支共用同一个（CLI 与 App 同一账号）。
+  assert.notEqual(declared.codebuddy, declared.workbuddy);
+  assert.equal(declared.codebuddycn, declared.workbuddycn);
+
+  // 国内站刻意**不声明**国际站那份站点不可归因的文件，避免把国际站 token
+  // 静默导进国内站账号。
+  for (const provider of ['codebuddycn', 'workbuddycn']) {
+    const names = getProviderAuthArtifacts(provider).map((artifact) => fileName(artifact.path));
+    assert.equal(names.includes(declared.codebuddy), false, provider);
+  }
+});
+
+test('the two WorkBuddy sites resolve to different credential files and data roots', () => {
+  // WorkBuddy 自己就是一条双站点产品线：国际站与本机并存的两份 .info 一一对应，
+  // 数据根也各自独立（官方 cask zap 清单 + 实机目录：~/.workbuddy-ai 与 ~/.workbuddy）。
+  const fileName = (provider) => getProviderAuthArtifacts(provider)[0].path.slice(-1)[0];
+  assert.equal(fileName('workbuddy'), 'workbuddy-desktop-ai.info');
+  assert.equal(fileName('workbuddycn'), 'workbuddy-desktop.info');
+
+  assert.deepEqual(getProviderStoragePolicy('workbuddy').nativeRoot, ['.workbuddy-ai']);
+  assert.deepEqual(getProviderStoragePolicy('workbuddycn').nativeRoot, ['.workbuddy']);
+  assert.notDeepEqual(
+    getProviderStoragePolicy('workbuddy').projectionRoots,
+    getProviderStoragePolicy('workbuddycn').projectionRoots
+  );
 });
 
 // --- 5. CLI 启动隔离（env 形态） ---
@@ -535,11 +566,11 @@ test('codebuddycn storage policy cannot collide with the international root', ()
   assert.deepEqual(artifacts[0].path, CODEBUDDY_CN_SHARED_AUTH_PATH);
 });
 
-test('codebuddycn and workbuddy share one domestic credential file and nothing else', () => {
-  // 国内站 CLI 与 WorkBuddy 桌面端读写同一份主站登录态：两个 Provider 声明同一个
-  // auth artifact 就是"同一个账号"，不需要任何开关或复制逻辑。
+test('codebuddycn and workbuddycn share one domestic credential file and nothing else', () => {
+  // 国内站 CLI 与国内站 WorkBuddy 桌面端读写同一份主站登录态：两个 Provider 声明
+  // 同一个 auth artifact 就是"同一个账号"，不需要任何开关或复制逻辑。
   const cnArtifacts = getProviderAuthArtifacts('codebuddycn');
-  const wbArtifacts = getProviderAuthArtifacts('workbuddy');
+  const wbArtifacts = getProviderAuthArtifacts('workbuddycn');
   assert.deepEqual(wbArtifacts, cnArtifacts);
 
   // 共享面必须最小：只有一个凭据文件，配置/会话/插件仍各自投影。
@@ -547,12 +578,12 @@ test('codebuddycn and workbuddy share one domestic credential file and nothing e
   assert.equal(cnArtifacts[0].field, 'credentials');
   assert.equal(cnArtifacts[0].format, 'json');
   // 实测路径：~/Library/Application Support/CodeBuddyExtension/Data/Public/auth/
-  // workbuddy-desktop.info（product.json 的 authentication.id = workbuddy-desktop）。
+  // workbuddy-desktop.info（国内站 App 与它内嵌 CLI 的 CODEBUDDY_HOST 同名）。
   assert.deepEqual(cnArtifacts[0].path, [
     'Library', 'Application Support', 'CodeBuddyExtension', 'Data', 'Public', 'auth',
     'workbuddy-desktop.info'
   ]);
-  for (const provider of ['codebuddy', 'codebuddycn', 'workbuddy']) {
+  for (const provider of FAMILY_PROVIDERS) {
     assert.deepEqual(getProviderSharedEntries(provider), [], provider);
     assert.equal(
       getProviderStoragePolicy(provider).hostAuthRoot.length,
@@ -562,11 +593,12 @@ test('codebuddycn and workbuddy share one domestic credential file and nothing e
   }
 });
 
-// 三个 Provider 的共享凭据文件：国内站两支 CLI 共用一个，国际站一支单独一个。
+// 四个 Provider 的共享凭据文件：国内站两支共用一个，国际站两支各用一个。
 const SHARED_AUTH_FILE_BY_PROVIDER = Object.freeze({
   codebuddy: 'Tencent-Cloud.coding-copilot.info',
   codebuddycn: 'workbuddy-desktop.info',
-  workbuddy: 'workbuddy-desktop.info'
+  workbuddy: 'workbuddy-desktop-ai.info',
+  workbuddycn: 'workbuddy-desktop.info'
 });
 
 test('the shared credential projects into the sandbox HOME and back to the host', (t) => {
@@ -638,7 +670,9 @@ test('codebuddycn resolves the CLI bundled inside WorkBuddy.app without installi
 });
 
 test('the bundled CLI entry stays tied to the declared WorkBuddy.app install paths', () => {
-  const { desktopClient } = getProviderCLIConfig('workbuddy');
+  // 内嵌 CLI 来自**国内站**的 WorkBuddy.app，所以搜索根必须对齐 workbuddycn 的
+  // 安装路径声明，而不是国际站 workbuddy 的 WorkBuddy AI.app。
+  const { desktopClient } = getProviderCLIConfig('workbuddycn');
   const installer = getAppInstaller('codebuddycn');
   const paths = installer.collectCliPathEntries({ platform: 'darwin', hostHomeDir: '/Users/host' });
   const bundledSubpath = ['Contents', 'Resources', 'app.asar.unpacked', 'cli', 'bin'].join('/');
@@ -686,52 +720,84 @@ test('an explicit account site overrides the codebuddycn default', () => {
   assert.equal(patch.set.CODEBUDDY_COPILOT_INTERNET_ENVIRONMENT, 'ioa');
 });
 
-test('workbuddy is desktop-only and owns its own user-data isolation key', () => {
+test('the two WorkBuddy providers are desktop-only and each owns a distinct app', () => {
+  // 国际站：WorkBuddy AI.app / com.workbuddy.workbuddy-ai / cask workbuddy-ai。
   assert.ok(PROVIDER_IDS.includes('workbuddy'));
   assert.deepEqual(getProviderClientSupport('workbuddy'), { cli: false, desktop: true });
-
-  const { desktopClient } = getProviderCLIConfig('workbuddy');
-  assert.equal(desktopClient.macos.clientName, 'WorkBuddy');
-  assert.equal(desktopClient.macos.bundleId, 'com.tencent.workbuddy.mac');
-  assert.deepEqual(desktopClient.macos.execNames, ['Electron']);
+  const intl = getProviderCLIConfig('workbuddy').desktopClient;
+  assert.equal(intl.macos.clientName, 'WorkBuddy AI');
+  assert.equal(intl.macos.bundleId, 'com.workbuddy.workbuddy-ai');
+  assert.deepEqual(intl.macos.execNames, ['Electron']);
   // 实测进程 env 里真实存在的键；把它指向账号隔离目录 = 每个账号独立登录态。
-  assert.equal(desktopClient.userDataEnvKey, 'WORKBUDDY_USER_DATA_DIR');
-  assert.equal(desktopClient.reloadsHostAuth, false);
+  assert.equal(intl.userDataEnvKey, 'WORKBUDDY_USER_DATA_DIR');
+  assert.equal(intl.reloadsHostAuth, false);
+  assert.ok(intl.macos.installPaths.includes('/Applications/WorkBuddy AI.app'));
 
-  const installer = getAppInstaller('workbuddy');
-  assert.ok(installer, 'workbuddy installer should be discovered');
-  const plans = installer.resolveDesktopInstallPlans({ platform: 'darwin', hostHomeDir: '/h' });
-  assert.equal(plans.length, 1);
-  assert.deepEqual(plans[0].args, ['install', '--cask', 'workbuddy-cn']);
-  // 国内站的 App 是 WorkBuddy.app；workbuddy-ai 装的是另一个 App，不可互换。
-  assert.ok(desktopClient.macos.installPaths.includes('/Applications/WorkBuddy.app'));
-  // 不声明 CLI：WorkBuddy 不对独立分发 CLI（把 CodeBuddy runtime 内嵌在 App 内）。
-  assert.equal(typeof installer.listCliBinaryNames, 'undefined');
+  // 国内站：WorkBuddy.app / com.tencent.workbuddy.mac / cask workbuddy-cn。
+  assert.ok(PROVIDER_IDS.includes('workbuddycn'));
+  assert.deepEqual(getProviderClientSupport('workbuddycn'), { cli: false, desktop: true });
+  const cn = getProviderCLIConfig('workbuddycn').desktopClient;
+  assert.equal(cn.macos.clientName, 'WorkBuddy');
+  assert.equal(cn.macos.bundleId, 'com.tencent.workbuddy.mac');
+  assert.deepEqual(cn.macos.execNames, ['Electron']);
+  assert.equal(cn.userDataEnvKey, 'WORKBUDDY_USER_DATA_DIR');
+  assert.equal(cn.reloadsHostAuth, false);
+  assert.ok(cn.macos.installPaths.includes('/Applications/WorkBuddy.app'));
+
+  // 两个 App 的 bundle id 与安装路径都必须不同，否则会出现"装着国际站却算成国内站"。
+  assert.notEqual(intl.macos.bundleId, cn.macos.bundleId);
+  assert.equal(intl.macos.installPaths.includes('/Applications/WorkBuddy.app'), false);
+
+  for (const [provider, cask] of [
+    ['workbuddy', 'workbuddy-ai'],
+    ['workbuddycn', 'workbuddy-cn']
+  ]) {
+    const installer = getAppInstaller(provider);
+    assert.ok(installer, `${provider} installer should be discovered`);
+    const plans = installer.resolveDesktopInstallPlans({ platform: 'darwin', hostHomeDir: '/h' });
+    assert.equal(plans.length, 1, provider);
+    assert.deepEqual(plans[0].args, ['install', '--cask', cask], provider);
+    // 卸载同样走同一个 cask，避免"装国际站、卸国内站"。
+    const lifecycle = installer.resolveDesktopLifecyclePlans({ platform: 'darwin', hostHomeDir: '/h' });
+    assert.equal(lifecycle.length, 1, provider);
+    assert.deepEqual(lifecycle[0].args, ['uninstall', '--cask', cask], provider);
+    // 不声明 CLI：WorkBuddy 不对独立分发 CLI（把 CodeBuddy runtime 内嵌在 App 内）。
+    assert.equal(typeof installer.listCliBinaryNames, 'undefined', provider);
+  }
 });
 
-test('workbuddy storage policy keeps its own config root but shares the domestic login', () => {
-  const policy = getProviderStoragePolicy('workbuddy');
-  assert.ok(policy, 'workbuddy policy should exist');
-  // 配置根仍是 ~/.workbuddy（Electron userData 由 WORKBUDDY_USER_DATA_DIR 隔离）。
-  assert.deepEqual(policy.nativeRoot, ['.workbuddy']);
+test('workbuddy storage policies keep separate roots and separate login files', () => {
+  const intl = getProviderStoragePolicy('workbuddy');
+  const cn = getProviderStoragePolicy('workbuddycn');
+  assert.ok(intl && cn, 'both WorkBuddy policies should exist');
+
+  // 官方 cask 的 zap 清单与实机目录：国际站 ~/.workbuddy-ai，国内站 ~/.workbuddy。
+  assert.deepEqual(intl.nativeRoot, ['.workbuddy-ai']);
+  assert.deepEqual(cn.nativeRoot, ['.workbuddy']);
   // hostAuthRoot 为空：共享凭据相对宿主 HOME，不属于本 Provider 的配置根。
-  assert.deepEqual(policy.hostAuthRoot, []);
-  // 只共享主站登录凭据；~/.workbuddy/credentials/ 是连接器令牌，不参与共享。
-  assert.deepEqual(getProviderAuthArtifacts('workbuddy'), getProviderAuthArtifacts('codebuddycn'));
-  const privatePaths = getProviderPrivateArtifacts('workbuddy').map((artifact) => artifact.path.join('/'));
-  assert.ok(privatePaths.includes('electron-user-data'));
-  assert.ok(privatePaths.includes('Library/Keychains'));
+  assert.deepEqual(intl.hostAuthRoot, []);
+  assert.deepEqual(cn.hostAuthRoot, []);
+
+  // 登录态必须是两份不同的文件；国内站那份与 codebuddycn 共用。
+  assert.deepEqual(getProviderAuthArtifacts('workbuddycn'), getProviderAuthArtifacts('codebuddycn'));
+  assert.notDeepEqual(getProviderAuthArtifacts('workbuddy'), getProviderAuthArtifacts('workbuddycn'));
+
+  for (const provider of ['workbuddy', 'workbuddycn']) {
+    const privatePaths = getProviderPrivateArtifacts(provider).map((artifact) => artifact.path.join('/'));
+    assert.ok(privatePaths.includes('electron-user-data'), provider);
+    assert.ok(privatePaths.includes('Library/Keychains'), provider);
+  }
 });
 
-test('all three family providers keep the default desktop isolation strategy', () => {
-  for (const provider of ['codebuddy', 'codebuddycn', 'workbuddy']) {
+test('all four family providers keep the default desktop isolation strategy', () => {
+  for (const provider of FAMILY_PROVIDERS) {
     assert.equal(getDesktopLaunchStrategy(provider).name, 'default', provider);
   }
 });
 
 test('every declared terminal icon asset exists on disk with a matching brand icon', () => {
   const repoRoot = path.join(__dirname, '..');
-  for (const provider of ['codebuddy', 'codebuddycn', 'workbuddy']) {
+  for (const provider of FAMILY_PROVIDERS) {
     const meta = getProviderMeta(provider);
     const assetPath = path.join(repoRoot, meta.terminalIconAsset);
     assert.ok(fs.existsSync(assetPath), `${provider}: missing ${meta.terminalIconAsset}`);
@@ -740,7 +806,7 @@ test('every declared terminal icon asset exists on disk with a matching brand ic
     assert.ok(fs.existsSync(svgPath), `${provider}: missing web icon ${svgPath}`);
   }
   const generator = fs.readFileSync(path.join(repoRoot, 'scripts', 'gen-provider-icons.js'), 'utf8');
-  for (const provider of ['codebuddy', 'codebuddycn', 'workbuddy']) {
+  for (const provider of FAMILY_PROVIDERS) {
     assert.ok(generator.includes(`${provider}:`), `generator must cover ${provider}`);
   }
 });

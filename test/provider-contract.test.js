@@ -22,7 +22,7 @@ function omitOrder(cli) {
 test('Node Provider 兼容层完整消费规范合同', () => {
   const definitions = listProviderDefinitions();
 
-  assert.equal(manifest.schemaVersion, 1);
+  assert.equal(manifest.schemaVersion, 2);
   assert.equal(manifest.generatedFrom, 'core/providers/builtins.go');
   assert.deepEqual(PROVIDER_IDS, manifest.providers.map((provider) => provider.id));
   assert.deepEqual(PROVIDER_CONTRACT.providers, definitions);
@@ -30,9 +30,14 @@ test('Node Provider 兼容层完整消费规范合同', () => {
 });
 
 test('旧版展示目录由规范合同派生且保持扁平结构', () => {
+  // 旧格式 = 展示字段 + family/site（后两者用于"国内国际是一家的"聚合）。
   assert.deepEqual(
     legacyCatalog.providers,
-    manifest.providers.map((provider) => provider.presentation)
+    manifest.providers.map((provider) => ({
+      ...provider.presentation,
+      family: provider.family,
+      site: provider.site
+    }))
   );
   assert.deepEqual(legacyCatalog.fallback, manifest.fallback);
   assert.deepEqual(

@@ -142,27 +142,76 @@ func TestGuardLeavesVisionModelsAlone(t *testing.T) {
 	}
 }
 
-// TestGuardFailsOpenForUnknownModels 验证索引查不到时不动用户内容。
+// TestGuardStripsUnlistedNonVisionModels 验证未收录且不属视觉家族的模型按纯文本处理。
 //
-// 这是整条守卫最关键的安全边界：Go 的离线索引只覆盖 codex/claude，若把「查不到」
-// 当成「看不见图片」，所有未收录模型的图片都会被无差别剥离。
-func TestGuardFailsOpenForUnknownModels(t *testing.T) {
+// 这与 Node 的 buildFallbackModalities 同构：两种误判代价不对等——错剥一张图，
+// 模型仍能按文本借视；错放一张图，上游整条 400 拒绝，模型连回合都拿不到。
+func TestGuardStripsUnlistedNonVisionModels(t *testing.T) {
 	t.Parallel()
 
 	guard, store := newGuard(t, map[string][]string{
 		"codex/gpt-5-codex": {"text"},
 	})
-	request := imageRequest(t, "some-unlisted-model", base64Source(t, "png-bytes"))
-	rewritten, result := guard.Apply(request, "codex")
+	request := imageRequest(t, "glm-5.2", base64Source(t, "png-bytes"))
+	rewritten, result := guard.Apply(request, "opencode")
 
-	if result.Changed || result.Count != 0 {
-		t.Fatalf("unknown model must not be rewritten: %#v", result)
+	if !result.Changed || result.Count != 1 {
+		t.Fatalf("unlisted non-vision model should be rewritten: %#v", result)
 	}
-	if !rewritten.HasImageContents() {
-		t.Fatal("unknown model must keep its images")
+	if rewritten.HasImageContents() {
+		t.Fatal("image should have been stripped")
+	}
+	if store.Len() != 1 {
+		t.Fatalf("blob store len = %d, want 1", store.Len())
+	}
+}
+
+// TestGuardKeepsUnlistedVisionFamilies 验证未收录但属视觉家族的模型不被剥离。
+//
+// 这是折中的另一半：索引只覆盖部分 Provider，家族兜底保证 claude/gemini/gpt-4o 等
+// 常见视觉模型即使没被收录也不会被无谓剥掉图片。
+func TestGuardKeepsUnlistedVisionFamilies(t *testing.T) {
+	t.Parallel()
+
+	guard, store := newGuard(t, map[string][]string{})
+	for _, model := range []string{
+		"claude-opus-5",
+		"gemini-3.5-flash",
+		"gpt-4o-mini",
+		"gpt-4.1-nano",
+		// 版本分隔符归一化：点号版本与横线版本命中同一条家族规则。
+		"gpt-4-1-mini",
+		"gpt-5.2-codex",
+		"o3-mini",
+	} {
+		request := imageRequest(t, model, base64Source(t, "png-bytes"))
+		rewritten, result := guard.Apply(request, "opencode")
+		if result.Changed {
+			t.Fatalf("vision family %q must not be rewritten: %#v", model, result)
+		}
+		if !rewritten.HasImageContents() {
+			t.Fatalf("vision family %q must keep its images", model)
+		}
 	}
 	if store.Len() != 0 {
 		t.Fatalf("blob store len = %d, want 0", store.Len())
+	}
+}
+
+// TestGuardIndexWinsOverFamilyFallback 验证索引命中时以索引为准。
+//
+// 家族兜底只是「查不到时」的保守默认；索引明确说某模型是纯文本（哪怕名字像视觉家族），
+// 就必须按纯文本处理。
+func TestGuardIndexWinsOverFamilyFallback(t *testing.T) {
+	t.Parallel()
+
+	guard, _ := newGuard(t, map[string][]string{
+		"codex/gpt-5-codex": {"text"},
+	})
+	request := imageRequest(t, "gpt-5-codex", base64Source(t, "png-bytes"))
+	rewritten, result := guard.Apply(request, "codex")
+	if !result.Changed || rewritten.HasImageContents() {
+		t.Fatalf("index must win over the family fallback: %#v", result)
 	}
 }
 
@@ -257,19 +306,20 @@ func TestGuardReportsUnrecoverableSource(t *testing.T) {
 func TestGuardScopesLookupByProvider(t *testing.T) {
 	t.Parallel()
 
+	// 用视觉家族名，才能把「索引命中」与「家族兜底」两条路径区分开：
+	// claude 下索引明确说是纯文本 → 剥离；codex 下未登记 → 家族兜底保留。
 	guard, _ := newGuard(t, map[string][]string{
-		// 只有 claude 下这个模型是纯文本；codex 下未登记。
-		"claude/shared-model": {"text"},
+		"claude/claude-shared": {"text"},
 	})
-	request := imageRequest(t, "shared-model", base64Source(t, "png-bytes"))
+	request := imageRequest(t, "claude-shared", base64Source(t, "png-bytes"))
 
 	_, claudeResult := guard.Apply(request, "claude")
 	if !claudeResult.Changed {
-		t.Fatalf("claude result = %#v, want changed", claudeResult)
+		t.Fatalf("claude result = %#v, want changed (index says text-only)", claudeResult)
 	}
 	_, codexResult := guard.Apply(request, "codex")
 	if codexResult.Changed {
-		t.Fatalf("codex result = %#v, want unchanged (not registered)", codexResult)
+		t.Fatalf("codex result = %#v, want unchanged (unregistered, vision family)", codexResult)
 	}
 }
 

@@ -11,11 +11,72 @@ package visionguard
 import (
 	"encoding/base64"
 	"errors"
+	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/madou1217/ai_home/application/modelmetadata"
 	"github.com/madou1217/ai_home/core/inference"
 )
+
+// visionFamilyPatterns 是「未收录模型」的保守家族兜底，与 Node 的
+// VISION_INPUT_MODEL_PATTERNS 逐条一致。
+//
+// 它只在离线索引查不到该 (Provider, 模型) 时生效。表格刻意保持小而明确：
+// 新增模型应当补 models.dev 数据，而不是继续放宽正则。
+var visionFamilyPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`^claude-`),
+	regexp.MustCompile(`^gemini-`),
+	regexp.MustCompile(`^gpt-(4o|4[.-]1|5)`),
+	regexp.MustCompile(`^o[13](?:$|[.-])`),
+}
+
+// normalizeVersionSeparators 把「数字.数字」里的点换成横线，使 `gpt-4.1-mini` 与
+// `gpt-4-1-mini` 命中同一条家族规则（与 Node 的 normalizeModelVersionSeparators 一致）。
+//
+// 手写扫描而不是正则：Go 的 RE2 不支持 Node 版本里用到的 `(?=...)` 前瞻。
+func normalizeVersionSeparators(modelID string) string {
+	runes := []rune(modelID)
+	changed := false
+	for index := 1; index < len(runes)-1; index++ {
+		if runes[index] != '.' {
+			continue
+		}
+		if unicode.IsDigit(runes[index-1]) && unicode.IsDigit(runes[index+1]) {
+			runes[index] = '-'
+			changed = true
+		}
+	}
+	if !changed {
+		return modelID
+	}
+	return string(runes)
+}
+
+// lookupKeys 返回用于家族匹配的模型 ID 变体：原样与版本分隔符归一化后的形态。
+func lookupKeys(modelID string) []string {
+	trimmed := strings.TrimSpace(modelID)
+	if trimmed == "" {
+		return nil
+	}
+	normalized := normalizeVersionSeparators(trimmed)
+	if normalized == trimmed {
+		return []string{trimmed}
+	}
+	return []string{trimmed, normalized}
+}
+
+// matchesVisionFamily 判断模型名是否属于已知的「能看见图片」家族。
+func matchesVisionFamily(modelID string) bool {
+	for _, key := range lookupKeys(modelID) {
+		for _, pattern := range visionFamilyPatterns {
+			if pattern.MatchString(key) {
+				return true
+			}
+		}
+	}
+	return false
+}
 
 // ErrInvalidDependencies 表示守卫缺少模态读取或 blob 写入端口。
 var ErrInvalidDependencies = errors.New("vision guard 依赖无效")
@@ -66,12 +127,16 @@ type Result struct {
 //
 // 判定顺序刻意先做廉价短路，再做模态查询：
 //  1. 请求里没有图片 → 原样返回，连模态查询都不做；
-//  2. 模态索引里查不到该 (Provider, 模型) → **失败开放**，不替换。
-//     这一步是关键的安全边界：Go 的离线索引只覆盖 codex/claude，若把「查不到」
-//     当成「看不见图片」，所有未收录模型（grok、opencode、kimi 等）的图片都会被
-//     无差别剥离——那比不做守卫更糟。Node 侧同样对未知模型失败开放。
-//  3. 索引明确说该模型能看见图片 → 原样返回。
-//  4. 索引明确说是纯文本模型 → 逐张替换。
+//  2. 索引命中且模型能看见图片 → 原样返回；
+//  3. 索引未命中，但模型名属于已知的视觉家族（claude- / gemini- / gpt-4o|4.1|5 /
+//     o1|o3）→ 认定能看见图片，原样返回。这一步保护「索引没收录但确实能看图」的模型，
+//     避免把它们的图片无谓剥离；
+//  4. 其余情况（索引明确说是纯文本，或未命中且不属视觉家族）→ 逐张替换。
+//
+// 第 4 步对未知模型采取「按纯文本处理」而不是放行，与 Node 的
+// buildFallbackModalities 同构。理由是两种误判的代价不对等：错剥一张图，模型仍能按
+// 文本指示借视，请求成功；错放一张图，上游整条 400 拒绝，模型连一个回合都拿不到，
+// 连借视的机会都没有。
 func (guard *Guard) Apply(
 	request inference.Request,
 	providerID inference.ProviderID,
@@ -84,11 +149,12 @@ func (guard *Guard) Apply(
 		return request, result
 	}
 	modalities, found := guard.modalities.LookupModalities(string(providerID), request.Model())
-	if !found {
-		// 失败开放：没有权威证据说明模型看不见图片时，绝不动用户内容。
-		return request, result
-	}
-	if supportsVision(modalities) {
+	if found {
+		if supportsVision(modalities) {
+			return request, result
+		}
+	} else if matchesVisionFamily(request.Model()) {
+		// 索引没收录，但模型名落在已知视觉家族里：宁可保留图片。
 		return request, result
 	}
 	replaced, changed := request.ReplaceImageContents(func(image inference.ImageContent) string {

@@ -19,10 +19,26 @@ var (
 	embeddedSnapshot []byte
 )
 
-// providerSourceIDs 把当前 Go 重构范围内的 Provider 映射到 models.dev 基础模型命名空间。
+// providerSourceIDs 把 AIH Provider 映射到 models.dev 基础模型命名空间。
+//
+// 只登记「该 Provider 的模型 ID 就是厂商模型 ID」的情形，因此映射是单值的。
+// 聚合类 Provider（opencode、qoder/qodercn、codebuddy 家族、kiro）的模型 ID 来自
+// 多个厂商，映射到任何单一命名空间都会查错，因此刻意不登记——它们由消费方
+// （例如 vision guard 的家族兜底）处理，而不是在这里猜一个命名空间。
+//
+// 快照本身包含全部命名空间（见 modalities.json），因此新增映射不需要重新生成快照。
 var providerSourceIDs = map[string]string{
 	"codex":  "openai",
 	"claude": "anthropic",
+	"gemini": "google",
+	// Antigravity 承载的就是 Gemini 模型。
+	"agy": "google",
+	// Grok CLI 的模型 ID 即 xAI 的模型 ID。
+	"grok": "xai",
+	// Kimi Code 的模型 ID 即 Moonshot 的模型 ID。
+	"kimi": "moonshotai",
+	// ZCode 背后是 z.ai / BigModel（zhipu）。
+	"zcode": "zhipuai",
 }
 
 // snapshotRecord 是生成快照的 JSON 传输形状。

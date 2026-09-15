@@ -352,6 +352,47 @@ Go 原先有两个键，都不等于规范键：
 认证定义，因此这一项需要先就认证模型（env 变量命名与 header 传递方式）达成一致，本轮
 不单方面改。
 
+## 数据面路由补齐（2026-09-15 起，用户授权解除本阶段冻结）
+
+原「本阶段不做的事情」冻结了 7 条 Go 缺失数据面路由；用户已明确授权补齐，本节记录进度。
+复核命令：`node scripts/collect-gateway-routes.js --json`。
+
+| 缺失路由 | 状态 |
+| --- | --- |
+| `GET /v1/models/{id}` | ✅ 已补（`3da26cf0`） |
+| `/v1/images/generations`、`/v1/images/edits` | ⬜ 待做（需新建图像子系统） |
+| `GET /v1/blobs/{id}` | ⬜ 待做（需 blob 仓 + vision guard） |
+| `POST /v1{beta?}/models/{model}:generateContent`、`:streamGenerateContent` | ⬜ 待做（需新建 Gemini 客户端协议 adapter） |
+
+当前采集结果：`node_endpoint=14`、`go_endpoint=18`、`missing_in_go=6`。
+
+### 补齐时必须同时改采集器
+
+`GET /v1/models/{id}` 暴露了两个采集器缺陷，后续每补一条都要先确认它能不能被采集到：
+
+1. **Go 常量只认字符串字面量。** `collectGoRoutes` 通过 `parseGoStringConstants` 解析 Go 常量，
+   其正则只匹配 `Ident = "字面量"`。写成 `PathPrefix = Path + "/"` 的拼接常量解析不到，
+   挂载会被静默跳过，能力在矩阵里继续显示为缺失。`PathPrefix` 因此改为字面量，并用
+   `TestPathPrefixMatchesPath` 守住它与 `Path` 的一致性。
+2. **`routeIdentity` 把 match 维度算进身份。** Go 的 `http.ServeMux` 只能按前缀或精确路径挂载，
+   参数化路径只能写成前缀子树；而 Node 侧是 regex。前缀形态永远匹配不上 regex 条目，
+   因此新增 `GO_PREFIX_MOUNT_AS_REGEX`，把已确认的路径显式改记为 regex 端点，
+   并在挂载循环里跳过其前缀形态，保证一条能力只产生一条记录。
+
+### 剩余 5 条的真实成本
+
+不是补胶水，而是两个新子系统：
+
+- **图像子系统**（覆盖 3 条：images/generations、images/edits、blobs）：Node 侧由
+  `image-generations-endpoint.js`、`image-generation-multipart.js`、
+  `image-generation-strategy.js`、`image-generation-request.js`、`image-blob-store.js`
+  和 `vision-image-guard.js` 共同承担；Go 当前完全没有图像代码。
+- **Gemini 客户端协议**（覆盖 2 条）：Node 在 `protocol-registry.js` 注册 gemini family；
+  Go 的 `internal/adapters/clientprotocol/` 只有 openairesponses、openaichatcompletions、
+  anthropicmessages 三个 adapter。
+
+两者都需要按模块分批实现并各自带测试，不能合并成一次改动。
+
 ## 维护
 
 路径清单会随开发漂移。重新采集：

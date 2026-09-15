@@ -798,6 +798,13 @@ data.SubscriptionPackageCode, data.IsPaidUser, data.IsProtectedPriceUser, data.P
 家族**没有 token 刷新链路**（与 zcode/kimi 不同）：`accessToken` 由桌面端/CLI 自己维护，
 过期的正确处置是重新登录，所以探测**不做**任何续期尝试，`401/403` 一律如实上报。
 
+**消费链路（快照产出之后谁在读）**：`lib/server/webui-account-live.js` 与
+`lib/server/management.js` 都按账号自己的 `provider` 调
+`readTrustedUsageSnapshot(deps, provider, accountRef)`——家族四支就是靠这个入口拿到
+`codebuddy_credit_balance` 的，两条路径都**没有** provider 白名单，所以无需额外登记。
+（`accounts.js` 内部的 `loadCodex/Agy/Kimi/ZcodeServerAccounts` 走的是各自硬编码的
+cliName，家族没有对应 loader，因此不经过它们。）
+
 ### 14.5 验证
 
 - `node --test test/codebuddy-quota-probe.test.js`：21 pass。覆盖：端点/路径解析（确认无 `/v2`）、
@@ -805,12 +812,15 @@ data.SubscriptionPackageCode, data.IsPaidUser, data.IsProtectedPriceUser, data.P
   时取 `null` 而非 100%、共享凭据读取、e2e（stub fetch，断言 endpoint 与三个头）、api-key 账号
   空操作、缺凭据报错、非家族 Provider 拒绝、国内站 WAF 403、200 但业务错误、egress/代理透传、
   传输失败、trusted 校验存活。
+- `node --test test/server.accounts.test.js`：**server 侧闸门**（`readTrustedUsageSnapshot`）——
+  四支各自都被放行、**明细包用尽时账号级仍是 16.67%**、家族 cliName 配别人的 kind/source 被拒、
+  非家族 cliName 读同一份合法快照返回 `null`（校验按 cliName 分派，不靠"形状对了"放行）。
 - `node --test test/codebuddy-provider.test.js` + `test/provider-catalog.test.js`：声明
   `quota_usage`，`listProvidersByCapability('quotaUsage')` 含家族四员。
-- **实机**：用本机真实 `.info` 凭据跑一次探测，三支可得账户级剩余率——
+- **实机（穿到 server 闸门）**：用本机真实 `.info` 凭据跑真实端点，再把快照落盘后经
+  `readTrustedUsageSnapshot` 读回，三支的账户级剩余率**前后一致**——
   `workbuddy` 16.67%（100/600 credits）、`codebuddy` 16.67%（100/600）、`workbuddycn` 约 68%
-  （≈1408/2056，随真实用量浮动），均产出 trusted 快照（聚合 `credits` + `activity`/
-  `proTrialMon`/`freeMon` 明细）。**聚合值没有被用尽的明细包拖低**：`proTrialMon` 为
-  `0/500`，而账户级仍是 `100/600 = 16.67%`，正是 §14.3 的语义。国际站两支
+  （≈1400/2056，随真实用量浮动），快照 `schemaVersion=2`。**聚合值没有被用尽的明细包拖低**：
+  `proTrialMon` 为 `0/500`，而账户级仍是 `100/600 = 16.67%`，正是 §14.3 的语义。国际站两支
   （`workbuddy` / `codebuddy`）在同一账号下读到**完全一致的余额**，再次印证 §13.1 的
   "同地区两个产品跑同一套 runtime、共用一份账户级用量"。

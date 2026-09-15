@@ -26,6 +26,7 @@ const {
   writeAccountNativeAuth
 } = require('../lib/server/account-credential-store');
 const { setUsageConfig } = require('../lib/usage/config-store');
+const { getMinRemainingPctFromUsageSnapshot } = require('../lib/account/usage-remaining');
 
 function makeJwt(payload) {
   const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
@@ -85,6 +86,20 @@ function agyUsage(capturedAt, models, account = {}) {
     capturedAt,
     account,
     models
+  };
+}
+
+// CodeBuddy 家族的快照形状：一条**无 category** 的账户级聚合（权威，参与账号级计算）
+// + 若干 `category:'detail'` 每包明细（仅展示）。见
+// lib/cli/services/usage/codebuddy-quota-probe.js。
+function codebuddyUsage(capturedAt, entries, account = {}) {
+  return {
+    schemaVersion: 2,
+    kind: 'codebuddy_credit_balance',
+    source: 'codebuddy_billing_resource_summary_api',
+    capturedAt,
+    account,
+    entries
   };
 }
 
@@ -521,6 +536,88 @@ test('AGY trusted model quota remains model-scoped', (t) => {
   assert.equal(accounts[0].codeAssistQuotaMinRemainingPct, 0);
   assert.equal(accounts[0].codeAssistProject, 'projects/persisted-runtime-project');
   assert.equal(snapshot.capturedAt, capturedAt);
+});
+
+// CodeBuddy 家族四支共用一份快照形状与一个 kind/source，但**四个 provider 各自都要能被
+// trusted 校验放行**——漏掉任一支，那个 provider 的账号页就会静默没有额度。
+test('CodeBuddy family trusted usage is read for every family provider', (t) => {
+  const fixture = createFixture(t);
+  const capturedAt = Date.now();
+  const entries = [
+    // 账户级聚合：无 category，参与账号级计算。
+    {
+      bucket: 'credits',
+      windowMinutes: 0,
+      window: '',
+      remainingPct: 16.67,
+      totalUnits: 600,
+      usedUnits: 500,
+      remainingUnits: 100,
+      unitType: 'credits',
+      resetIn: '',
+      resetAtMs: 0
+    },
+    // 每包明细：category='detail'，已用尽的试用包不得拖低账户级剩余率。
+    {
+      bucket: 'proTrialMon',
+      category: 'detail',
+      windowMinutes: 0,
+      window: '',
+      remainingPct: 0,
+      totalUnits: 500,
+      usedUnits: 500,
+      remainingUnits: 0,
+      unitType: 'credits',
+      resetIn: '',
+      resetAtMs: 0
+    }
+  ];
+  const providers = ['codebuddy', 'codebuddycn', 'workbuddy', 'workbuddycn'];
+
+  providers.forEach((provider, index) => {
+    const accountRef = fixture.register(provider, String(index + 1), {
+      usage: codebuddyUsage(capturedAt, entries)
+    });
+    const snapshot = readTrustedUsageSnapshot(fixture.deps(), provider, accountRef);
+
+    assert.ok(snapshot, provider + ' 的家族额度快照必须被 trusted 校验放行');
+    assert.equal(snapshot.capturedAt, capturedAt);
+    assert.equal(snapshot.kind, 'codebuddy_credit_balance');
+    assert.equal(snapshot.source, 'codebuddy_billing_resource_summary_api');
+    // 明细包用尽（0/500）不能把账号级判成 0%。
+    assert.equal(getMinRemainingPctFromUsageSnapshot(snapshot), 16.67);
+  });
+});
+
+test('CodeBuddy family trusted usage rejects a snapshot from another provider family', (t) => {
+  const fixture = createFixture(t);
+  // 家族 cliName + 别人的 kind/source：必须拒绝，否则会把别的产品的额度显示成 CodeBuddy 的。
+  const accountRef = fixture.register('codebuddycn', '9', {
+    usage: {
+      schemaVersion: 2,
+      kind: 'zcode_plan_balance',
+      source: 'zcode_plan_billing_balance_api',
+      capturedAt: Date.now(),
+      entries: [{ bucket: 'plan', windowMinutes: 0, window: '', remainingPct: 42 }]
+    }
+  });
+
+  assert.equal(readTrustedUsageSnapshot(fixture.deps(), 'codebuddycn', accountRef), null);
+});
+
+test('a non-family provider never sees a CodeBuddy snapshot', (t) => {
+  const fixture = createFixture(t);
+  const accountRef = fixture.register('codebuddy', '10', {
+    usage: codebuddyUsage(Date.now(), [
+      { bucket: 'credits', windowMinutes: 0, window: '', remainingPct: 50, totalUnits: 10, remainingUnits: 5, unitType: 'credits' }
+    ])
+  });
+
+  // 快照本身是合法的，但换成非家族 cliName 读取时必须落空——校验按 cliName 分派，
+  // 不能靠"形状对上了"就放行。
+  assert.ok(readTrustedUsageSnapshot(fixture.deps(), 'codebuddy', accountRef));
+  assert.equal(readTrustedUsageSnapshot(fixture.deps(), 'kimi', accountRef), null);
+  assert.equal(readTrustedUsageSnapshot(fixture.deps(), 'zcode', accountRef), null);
 });
 
 test('zcode OAuth accounts prefer live profile credentials over a stale DB snapshot', (t) => {

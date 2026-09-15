@@ -1,0 +1,74 @@
+name: one-off preserve and clean divergent branches
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/one-off-archive-divergent-branches-20260915.yml]
+permissions:
+  contents: write
+jobs:
+  archive:
+    if: contains(github.event.head_commit.message, '[aih-archive-20260915]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+      - name: Preserve each audited commit before lease-guarded deletion
+        shell: python
+        run: |
+          import pathlib, subprocess, json, os
+          branches = {
+            'automation/models-dev-sync': '53f7c298ce0169a8931f9aeac35b1029d5cf54c1',
+            'codex/account-egress-all-providers': '1de190ece2624ee9b1973678ca544f4b298fae39',
+            'codex/live-toolkit-egress-integration-20260824': '8919a7bf57a518a08a12846b8dad99d9ce6efe87',
+            'codex/request-details-delivery-20260824': 'e16a5431fe886a6d44a89c5ccccb900772460f56',
+            'codex/toolkit-lifecycle-delivery-20260824': '25f44bbf682e07a7032153bcc90214ea2059198a'
+          }
+          def git(*args):
+              return subprocess.run(['git', *args], check=True, text=True, capture_output=True).stdout.strip()
+          records = []
+          for branch, expected in branches.items():
+              ref = 'refs/heads/' + branch
+              actual = git('ls-remote', '--refs', 'origin', ref)
+              if not actual or actual.split()[0] != expected:
+                  raise RuntimeError('Branch changed; preserving it: ' + branch)
+              tag = 'archive/20260915/' + branch
+              tagref = 'refs/tags/' + tag
+              existing = git('ls-remote', '--refs', 'origin', tagref)
+              if existing and existing.split()[0] != expected:
+                  raise RuntimeError('Archive tag conflict: ' + tag)
+              if not existing:
+                  git('push', 'origin', expected + ':' + tagref)
+              verified = git('ls-remote', '--refs', 'origin', tagref)
+              if verified.split()[0] != expected:
+                  raise RuntimeError('Archive verification failed: ' + tag)
+              # Only the audited branch tip can be deleted. Concurrent work wins.
+              git('push', '--force-with-lease=' + ref + ':' + expected, 'origin', ':' + ref)
+              if git('ls-remote', '--refs', 'origin', ref):
+                  raise RuntimeError('Branch deletion was not confirmed: ' + branch)
+              records.append({'branch': branch, 'commit': expected, 'archive': tag, 'status': 'archived_not_code_merged'})
+          report = pathlib.Path('docs/maintenance/branch-consolidation-20260915.md')
+          report.parent.mkdir(parents=True, exist_ok=True)
+          text = '# Branch consolidation — 2026-09-15\n\n'
+          text += 'The user requested merging and keeping only main. PR #1 was merged after CI passed. Two already-integrated temporary branches were deleted. The five historical branches below contained unique commits and merge conflicts; several included obsolete removal of current proxy-pool/mihomo features. Their code was **not** silently merged or discarded. Each exact tip was preserved as a verified remote tag before deleting its branch with an expected-tip lease. Current native credential synchronization work is merged separately after full regression.\n\n'
+          text += '| Former branch | Preserved commit | Recoverable tag |\n|---|---|---|\n'
+          for row in records:
+              text += '| `' + row['branch'] + '` | `' + row['commit'] + '` | `' + row['archive'] + '` |\n'
+          text += '\nRestore one branch explicitly when its remaining changes are selected for reconciliation:\n\n```sh\ngit fetch origin --tags\ngit switch -c restored-branch <archive-tag>\n```\n\nThis record does not claim that all historical feature code is present in main. No force-push to main, credential data, private runtime files, or repository-visibility changes were involved.\n'
+          report.write_text(text)
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as out:
+              out.write(text)
+          print(json.dumps(records, indent=2))
+      - name: Remove one-off main workflows and record preserved history
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm --ignore-unmatch .github/workflows/one-off-branch-cleanup-20260915.yml .github/workflows/one-off-source-snapshot-20260915.yml .github/workflows/one-off-branch-history-20260915.yml .github/workflows/one-off-archive-divergent-branches-20260915.yml
+          git add docs/maintenance/branch-consolidation-20260915.md
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'chore: archive conflicting legacy branches without losing their history'
+          git push origin HEAD:refs/heads/main

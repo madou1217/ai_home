@@ -148,14 +148,19 @@ Node 给每个模型对象内联一个 `aih_modalities`（`lib/server/models.js:
 
 查证后有两点让「Go 照抄」不成立：
 
-- **今天没有任何消费者。** 全仓（`lib/`、`web/src/`、skills）唯一引用它的是
-  `lib/server/models.js` 自己和它的测试。`docs/aih-skills-roadmap.md` 里两个尚未
-  实现的 skill 计划依赖它。
+- **这个字段在 Node 内部确实被消费（2026-09-15 更正）。** 早先本节写「今天没有任何消费者」，
+  这是错的：`lib/server/v1-router.js:202` 的 `filterModelsByCapability` 会读取每个模型项的
+  `aih_modalities`，用 `input.includes('image')` / `output.includes('image')` 实现
+  `?capability=vision|image_out` 过滤，取不到才回退到按模型名匹配；`test/server.v1-router.test.js`
+  也直接断言该字段。所以它不是死字段，**不能以「没人用」为理由从 Node 删掉**。
+  外部消费者仍然只有 `docs/aih-skills-roadmap.md` 里两个尚未实现的 skill 计划。
 - **Node 自己承认这有兼容风险。** 同文件注释写明：除 `aih_modalities` 外其余自定义
   字段都被剥掉，因为 Claude Code 这类严格客户端可能拒绝带未知字段的模型对象。
 
-也就是说 Node 为一个还没人用的字段，在「所有客户端都会调用」的最热路径上长期
-担着 schema 风险。这是本仓的设计选择，不是 provider 契约，没有理由继承。
+结论不变但理由要改：Node 是在「所有客户端都会调用」的最热路径上，为了一个**只有内部过滤
+在用**的字段长期担着 schema 风险。这是本仓的设计选择，不是 provider 契约。Go 侧因此**默认
+不带该字段、改由 opt-in 暴露**；但 Go 若日后要实现 `?capability=` 过滤，必须自己持有等价能力
+数据，不能假设可以依赖响应体里的自定义字段。
 
 **Go 侧已实现：`/v1/models` 默认严格标准形状，模态经显式 opt-in 暴露。**
 
@@ -427,6 +432,27 @@ Go 原先有两个键，都不等于规范键：
   **每一次成功的 codex / agy 图片生成都会被当成失败**。三个策略现在都用新变量接收该错误。
 - Provider 解析：请求显式声明优先；否则按本地可路由模型目录反查，多个候选时拒绝而不是
   任意选一个。
+
+## Go 新特性 → Node 的核对结果（2026-09-15）
+
+用户要求「Go 新增的特性同步到 Node」。逐条核对后的结论是：**真正只存在于 Go、且值得同步的
+只有一处，而且它需要 ADR；其余几条 Go 侧看起来更「新」的设计，Node 其实已经有等价实现，
+或差异不足以支撑改动。** 记录如下，避免以后重复核对。
+
+| 项 | Go | Node | 结论 |
+| --- | --- | --- | --- |
+| Codex OAuth 身份向量 | `oauth:codex:<user_id>` | `oauth:codex:<email>` | **真实分歧，需 ADR**（见下） |
+| Gateway provider 认证 | `env_key=AIH_GATEWAY_CLIENT_KEY` + `env_http_headers={X-Account-Ref=…}` | 命令行字面 `http_headers.X-Account-Ref=acct_…` | 差异存在但收益边际：accountRef 是非秘密哈希，改 Node 的 PTY 启动链风险大于收益，暂不改 |
+| 刷新被拒后的抑制 | `suppressesRefresh`（按 AccountRef + credential.updated_at 精确匹配） | `lib/server/kimi-token-refresh.js` 的 `reason:'suppressed'`、`lib/server/token-refresh-result.js` 的 `invalid_grant` 分类、`codex-auth-invalid-reconciler.js` 的 `refresh_rejected_access_token_still_valid` | **Node 已有等价能力**，不是缺口 |
+| `deactivated_workspace` | 按错误码映射为 `FailureWorkspaceDeactivated` → 账号级阻断 | 已有：`upstream-failure-policy.js:286` + `:720`，但**门控不同**——Node 要求 `statusCode === 402` 且 detail 命中，Go 只看错误码 | 两边都处理了，但门控不一致；改任何一边都需要上游真实响应证据，本轮只登记不改 |
+| `aih_modalities` | 默认不返回，`?include=modalities` 才暴露 | 每个模型项内联 | Node 内部过滤在用（已更正本文早先的错误说法），不是死字段 |
+
+### 唯一需要决策的项：Codex OAuth 身份向量
+
+两端 `acct_` 派生算法逐字节一致（`acct_` + `sha256("unique:" + identitySeed)` 前 20 位十六进制），
+差异只在种子。把 Node 也切到 `user_id` 才能让两端种子一致，但那会**改写既有生产 `accountRef`**，
+按 `product-direction-node-go-2026-08-15.md` §8.1 属于「必须另写 ADR 和显式 rekey、不能静默改变
+既有 accountRef」的变更。因此在拿到显式授权前不动 Node，Go 侧的 workspace 排除已独立完成。
 
 ## 维护
 

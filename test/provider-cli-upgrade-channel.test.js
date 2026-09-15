@@ -343,3 +343,75 @@ test('Windows: 垫片目标不存在时不跟随', () => {
   assert.equal(result.channel, CHANNELS.UNKNOWN);
   assert.equal(result.ownerPath, `${NVM_REAL}\\kimi.cmd`);
 });
+
+// aih 的 codex hook 在 Windows 上是 cmd 批处理，把真二进制写在 `set "UPSTREAM=…"` 里，
+// 而它包住的又恰好是 npm 垫片 —— 于是 codex 要走两跳才能看到 node_modules。
+// 真机上这条链断在第一跳：引号里带着 `UPSTREAM=` 前缀，按引号取路径一个都不存在。
+function aihCmdHook(upstream) {
+  return [
+    '@echo off',
+    'REM aih-codex-cli-hook',
+    'setlocal',
+    `set "UPSTREAM=${upstream}"`,
+    // NODE_BIN / HELPER 都是真实存在的文件，是「按顺序取第一个存在的引号串」的陷阱。
+    'set "NODE_BIN=d:\\nvm4w\\nodejs\\node.exe"',
+    'set "HELPER=C:\\Users\\madou\\projects\\feature\\ai_home\\lib\\server\\codex-app-server-stdio-proxy.js"',
+    '"%NODE_BIN%" "%HELPER%" --run-cli-default --upstream "%UPSTREAM%" -- %*'
+  ].join('\r\n');
+}
+
+test('Windows: codex 经 aih hook → npm 垫片两跳后判定为 npm_global', () => {
+  const upstream = `${NVM_REAL}\\codex.aih-original.cmd`;
+  const target = `${NVM_REAL}\\node_modules\\@openai\\codex\\bin\\codex.js`;
+  const result = detectCliChannel({
+    path: path.win32,
+    fs: winFs({
+      links: { [NVM_LINK]: NVM_REAL },
+      files: {
+        [`${NVM_REAL}\\codex.cmd`]: aihCmdHook(upstream),
+        [upstream]: npmCmdShim('node_modules\\@openai\\codex\\bin\\codex.js'),
+        [target]: '#!/usr/bin/env node\n',
+        [`${NVM_REAL}\\node.exe`]: 'MZ',
+        ['C:\\Users\\madou\\projects\\feature\\ai_home\\lib\\server\\codex-app-server-stdio-proxy.js']: ''
+      },
+      dirs: [`${NVM_REAL}\\node_modules`, `${NVM_REAL}\\node_modules\\@openai\\codex`]
+    }),
+    resolvedPath: `${NVM_LINK}\\codex.cmd`,
+    npmGlobalRoot: `${NVM_LINK}\\node_modules`,
+    npmPackageDir: `${NVM_LINK}\\node_modules\\@openai\\codex`
+  });
+
+  assert.equal(result.channel, CHANNELS.NPM_GLOBAL);
+  assert.equal(result.pinnable, true);
+  assert.equal(result.ownerPath, target);
+  assert.deepEqual(result.evidence, [
+    'resolved_through_link',
+    'resolved_through_aih_shim',
+    'resolved_through_npm_cmd_shim',
+    'under_npm_global_root'
+  ]);
+  assert.equal(result.shadowedNpmInstall, false);
+});
+
+// 取 UPSTREAM 必须按变量名，不能按「第一个存在的引号串」：后者会把 hook 自己用的
+// node.exe 当成 codex 本体，于是渠道判定对着 node 的安装位置做决策。
+test('Windows: hook 的 UPSTREAM 不存在时也不会漂到 node.exe 上', () => {
+  const result = detectCliChannel({
+    path: path.win32,
+    fs: winFs({
+      links: { [NVM_LINK]: NVM_REAL },
+      files: {
+        [`${NVM_REAL}\\codex.cmd`]: aihCmdHook(`${NVM_REAL}\\codex.aih-original.cmd`),
+        [`${NVM_REAL}\\node.exe`]: 'MZ',
+        ['C:\\Users\\madou\\projects\\feature\\ai_home\\lib\\server\\codex-app-server-stdio-proxy.js']: ''
+      },
+      dirs: [`${NVM_REAL}\\node_modules`]
+    }),
+    resolvedPath: `${NVM_LINK}\\codex.cmd`,
+    npmGlobalRoot: `${NVM_LINK}\\node_modules`
+  });
+
+  assert.equal(result.ownerPath, `${NVM_REAL}\\codex.cmd`);
+  assert.equal(result.channel, CHANNELS.UNKNOWN);
+  assert.ok(!result.evidence.includes('resolved_through_aih_shim'));
+});

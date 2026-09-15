@@ -8,7 +8,7 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
@@ -43,20 +43,22 @@ jobs:
         run: npm install
       - name: All related configuration and credential regressions
         run: node --test test/codex-host-provider-lifecycle.test.js test/host-sync.test.js test/config-sync.test.js test/server.token-refresh-daemon.test.js test/codex-gateway-connection.test.js test/codex-native-credential-integration.test.js test/codex-native-credential-sync.test.js test/codex-native-credential-pool.test.js
-      - name: Compare full tests with an unchanged main snapshot
+      - name: Reproduce baseline failures and compare the full patched suite
         shell: bash
         run: |
           set -euo pipefail
           baseline=e9b5b5bf6f6b40f55b6591ed1c942f58cba9a0a7
           git worktree add --detach "$RUNNER_TEMP/aih-baseline" "$baseline"
           ln -s "$GITHUB_WORKSPACE/node_modules" "$RUNNER_TEMP/aih-baseline/node_modules"
+          ln -s "$GITHUB_WORKSPACE/web/node_modules" "$RUNNER_TEMP/aih-baseline/web/node_modules"
+          test -f "$RUNNER_TEMP/aih-baseline/web/node_modules/typescript/package.json"
           set +e
-          (cd "$RUNNER_TEMP/aih-baseline" && npm test) > "$RUNNER_TEMP/host-baseline.log" 2>&1
+          (cd "$RUNNER_TEMP/aih-baseline" && node --test test/codebuddy-provider.test.js test/go-route-ownership-manifest.test.js) > "$RUNNER_TEMP/host-baseline.log" 2>&1
           baseline_status=$?
           npm test > "$RUNNER_TEMP/host-patched.log" 2>&1
           patched_status=$?
           set -e
-          printf 'baseline=%s\npatched=%s\n' "$baseline_status" "$patched_status"
+          printf 'baseline-targeted=%s\npatched-full=%s\n' "$baseline_status" "$patched_status"
           python - <<'PY'
           import pathlib, os, re, json
           reports = {}
@@ -73,8 +75,8 @@ jobs:
               print(name + ' summary:\n' + '\n'.join(lines[-18:]))
           (pathlib.Path(os.environ['RUNNER_TEMP']) / 'host-test-comparison.json').write_text(json.dumps(reports, indent=2))
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as out:
-              out.write('## Full test baseline comparison\n```json\n' + json.dumps(reports, indent=2) + '\n```\n')
-          assert sorted(reports['baseline']) == sorted(reports['patched']), 'New full-suite failure detected; publication blocked'
+              out.write('## Baseline targeted reproduction vs full patched suite\n```json\n' + json.dumps(reports, indent=2) + '\n```\n')
+          assert sorted(reports['baseline']) == sorted(reports['patched']), 'Additional full-suite failure detected; publication blocked'
           PY
       - uses: actions/upload-artifact@v4
         if: always()
@@ -94,5 +96,5 @@ jobs:
           git add lib/account/codex-host-provider.js test/codex-native-credential-integration.test.js
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'fix(codex): preserve header serialization and update OAuth retention integration contract' -m 'Keep native credential import and preservation assertions; replace only the obsolete assertion that OAuth deletes the historical provider registration. Preserve canonical double-quoted account header output. Related real-file/SQLite/daemon tests pass. Full-suite failures match the unchanged main baseline; no unrelated tests skipped or weakened. See workflow comparison artifact for actual results, not a claim of full-suite success.'
+          git commit -m 'fix(codex): preserve header serialization and update OAuth retention integration contract' -m 'Retain all native credential assertions, replace only the obsolete OAuth-provider-deletion expectation. Related real-file/SQLite/daemon tests pass. Full patched suite retains three failures separately reproduced in unchanged main tests: WorkBuddy install plan and two Go route-manifest contracts. No unrelated assertions skipped or weakened. This is not full-suite success; see the workflow artifact for actual baseline and patched results.'
           git push origin HEAD:refs/heads/fix/codex-host-provider-retention-20260915

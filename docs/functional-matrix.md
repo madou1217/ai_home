@@ -250,18 +250,18 @@ Go 重构路径实时核对的外部合同基准为 sub2api
 | 编号 | HTTP 入口 | 功能 | 状态 | 主要证据 |
 |---|---|---|---|---|
 | GW-001 | `GET /v1/models` | 聚合启用账号模型、能力过滤、cache/SWR；不暴露通配 alias。正式入口由 Node 持有，Go 仅为私有 Preview | 稳定/迁移中 | `lib/server/v1-router.js`、`internal/transport/http/modelsapi` |
-| GW-002 | `GET /v1/models/:id` | 查询单模型可见性/描述；当前由 Node 提供，Go 路由基线尚无对应入口 | 稳定/迁移中 | `getModelIdFromModelsPath`、`scripts/collect-gateway-routes.js` |
+| GW-002 | `GET /v1/models/:id` | 查询单模型可见性/描述；Go 已实现等价入口（任何非空 id 都回显，不校验本地目录），正式 ownership 仍是 Node | 稳定/迁移中 | `getModelIdFromModelsPath`、`internal/transport/http/modelsapi/handler.go`、`contracts/route-ownership/manifest.json` |
 | GW-003 | `POST /v1/chat/completions` | OpenAI Chat Completions，支持 stream/tool/usage/reasoning 适配；Go 私有路径已对 Codex 与 Claude 真实账号完成流/非流验收，正式 ownership 仍是 Node | 稳定/迁移中 | `internal/transport/http/openaichatcompletionsapi`、`internal/adapters/clientprotocol/openaichatcompletions`、`contracts/route-ownership/manifest.json` |
 | GW-004 | `POST /v1/responses` | OpenAI Responses，支持 stream、tool、reasoning 与 canonical bridge；Go 私有路径已对 Codex 与 Claude 真实账号完成验收，正式 ownership 仍是 Node | 稳定/迁移中 | `internal/transport/http/openairesponsesapi`、`internal/adapters/clientprotocol/openairesponses`、`contracts/route-ownership/manifest.json` |
 | GW-004-WS | `GET /v1/responses` + WebSocket Upgrade | Go 私有 Gateway 支持原生 Codex Responses-over-WebSocket：首帧按真实模型公平征召账号，单连接固定 `(accountRef, model)`，文本帧双向原样转发，支持同连接 `previous_response_id` 双轮、`generate:false` 预热、permessage-deflate、16 MiB 消息上限、终态/cooldown 旁路观察和 Server.Close 清理；正式 ownership 仍是 Node | 已实现（私有真实验收） | `application/codexwebsocket`、`internal/adapters/codex/responseswebsocket`、`internal/transport/http/codexresponsesws`、`contracts/route-ownership/manifest.json` |
 | GW-005 | `POST /v1/messages` | Anthropic Messages，按 provider 能力选择 Native Relay 或 Canonical；Go 私有路径已对 Claude 原生文本/工具/签名回放与 Codex 跨协议文本/工具/thinking 完成流/非流真实验收，正式 ownership 仍是 Node | 稳定/迁移中 | `internal/transport/http/{anthropicmessagesapi,claudenativerelay}`、`internal/adapters/clientprotocol/anthropicmessages`、`contracts/route-ownership/manifest.json` |
-| GW-006 | `POST /v1/messages/count_tokens` | 本地 token count 响应，不发起上游推理；当前由 Node 提供，Go 路由基线尚无对应入口 | 稳定/迁移中 | `detectClientProtocol`、`createAnthropicTokenCountResponse`、`scripts/collect-gateway-routes.js` |
-| GW-007 | `/v1{beta?}/models/*:generateContent` | Gemini generateContent；Node 同时接受 `/v1` 与 `/v1beta`，Go 路由基线尚无对应入口 | 稳定/受限/迁移中 | `protocol-gemini-*`、`v1-router.js`、`scripts/collect-gateway-routes.js` |
-| GW-008 | `/v1{beta?}/models/*:streamGenerateContent` | Gemini streaming generateContent；Node 同时接受 `/v1` 与 `/v1beta`，Go 路由基线尚无对应入口 | 稳定/受限/迁移中 | `protocol-gemini-*`、`scripts/collect-gateway-routes.js` |
+| GW-006 | `POST /v1/messages/count_tokens` | 本地 token count 响应，不发起上游推理；Go 已实现等价估算（规则与 Node 逐条同构，带 `-count=1` 期望值对照），正式 ownership 仍是 Node | 稳定/迁移中 | `detectClientProtocol`、`createAnthropicTokenCountResponse`、`internal/adapters/clientprotocol/anthropicmessages/token_count.go`、`contracts/route-ownership/manifest.json` |
+| GW-007 | `/v1{beta?}/models/*:generateContent` | Gemini generateContent；Node 同时接受 `/v1` 与 `/v1beta`，Go 已实现同一路径形态与 Gemini 客户端协议，正式 ownership 仍是 Node | 稳定/受限/迁移中 | `protocol-gemini-*`、`internal/adapters/clientprotocol/gemini`、`internal/transport/http/geminiapi`、`contracts/route-ownership/manifest.json` |
+| GW-008 | `/v1{beta?}/models/*:streamGenerateContent` | Gemini streaming generateContent；Node 同时接受 `/v1` 与 `/v1beta`，Go 已实现同一路径形态与 data-only SSE 渲染，正式 ownership 仍是 Node | 稳定/受限/迁移中 | `protocol-gemini-*`、`internal/adapters/clientprotocol/gemini/response.go`、`contracts/route-ownership/manifest.json` |
 | GW-009 | `GET /v1/props` | Codex-compatible properties/model metadata；Go 有私有对应路由，正式入口仍由 Node 持有 | 兼容/迁移中 | `v1-router.js`、`internal/transport/http/clientpropsapi` |
-| GW-010 | `GET /v1/blobs/:id` | 读取暂存的图像 blob；依赖 vision guard/blob store，Go 路由基线尚无对应入口 | 受限/迁移中 | `lib/server/image-blob-store.js`、`vision-image-guard.js`、`scripts/collect-gateway-routes.js` |
-| GW-010A | `POST /v1/images/generations` | OpenAI image generation；当前由 Node 提供，Go 路由基线尚无对应入口 | 受限/迁移中 | `lib/server/image-generations-endpoint.js`、`image-generation-strategy-registry.js`、`scripts/collect-gateway-routes.js` |
-| GW-010B | `POST /v1/images/edits` | OpenAI image edit；当前由 Node 提供，Go 路由基线尚无对应入口 | 受限/迁移中 | `lib/server/image-generations-endpoint.js`、`image-generation-request.js`、`scripts/collect-gateway-routes.js` |
+| GW-010 | `GET /v1/blobs/:id` | 读取暂存的图像 blob；Go 已实现内容寻址 LRU blob 仓与 GET 路由，但**尚无 vision guard 的剥离/入仓链路**，blob 目前只由 `response_format=url` 的图片响应写入 | 受限/迁移中 | `lib/server/image-blob-store.js`、`vision-image-guard.js`、`internal/adapters/imageblob`、`internal/transport/http/blobsapi`、`contracts/route-ownership/manifest.json` |
+| GW-010A | `POST /v1/images/generations` | OpenAI image generation；Go 已实现等价入口与 codex / agy / passthrough / unsupported 四个策略，正式 ownership 仍是 Node | 受限/迁移中 | `lib/server/image-generations-endpoint.js`、`internal/adapters/images`、`internal/transport/http/imagesapi`、`contracts/route-ownership/manifest.json` |
+| GW-010B | `POST /v1/images/edits` | OpenAI image edit；Go 已实现 JSON 与 multipart 双入口（归一到同一请求体）与上游 multipart 转发，正式 ownership 仍是 Node | 受限/迁移中 | `lib/server/image-generations-endpoint.js`、`image-generation-request.js`、`internal/transport/http/imagesapi/multipart.go`、`contracts/route-ownership/manifest.json` |
 | GW-011 | `/v0/codex/app-server` | Codex app-server WebSocket/stdio 代理与 canonical 消息适配 | 受限 | `codex-app-server-*` |
 | GW-012 | `GET /healthz` | 进程健康 | 稳定 | `lib/server/server.js` |
 | GW-013 | `GET /readyz` | 账号池或 Fabric gateway 可服务状态 | 稳定 | `lib/server/server.js` |
@@ -303,25 +303,32 @@ Go 重构路径实时核对的外部合同基准为 sub2api
 
 ### 6.3 Go Refactor .1 路由与 ownership 基线
 
-2026-08-19 使用只读源码采集器重新核对 Node/Go 路由。采集结果不是运行时探针，也不代表
+2026-09-15 使用只读源码采集器重新核对 Node/Go 路由。采集结果不是运行时探针，也不代表
 Go 已获得正式入口；生产 `127.0.0.1:9527` 仍由 Node 持有，Go 只允许通过隔离的
 `127.0.0.1:19527` Server 和 `127.0.0.1:19528` Web Preview 验证。正式 `aih` CLI、默认
 WebUI 和 Provider 迁移均不在本阶段范围内。
 
 | 项目 | Node | Go | 口径 |
 |---|---:|---:|---|
-| 路由记录 | 299 | 19 | 同一路径的不同方法/传输/协议证据分别计数 |
-| endpoint 记录 | 292 | 18 | 真实处理入口 |
-| guard 记录 | 7 | 0 | 作用域/派发判断，不是 endpoint |
+| 路由记录 | 333 | 26 | 同一路径的不同方法/传输/协议证据分别计数 |
+| endpoint 记录 | 324 | 25 | 真实处理入口 |
+| guard 记录 | 9 | 0 | 作用域/派发判断，不是 endpoint |
 | fallback 记录 | 0 | 1 | Go `/` 未命中兜底 |
-| endpoint 路径模式 | 220 | 17 | 去重后的标准化路径表示 |
-| HTTP endpoint 路径模式 | 215 | 17 | 仅 HTTP 传输 |
+| endpoint 路径模式 | 246 | 24 | 去重后的标准化路径表示 |
+| HTTP endpoint 路径模式 | 241 | 24 | 仅 HTTP 传输 |
 | WebSocket endpoint 路径模式 | 7 | 1 | 仅 WebSocket 传输 |
 
-当前 Go 可比较的 Node HTTP endpoint 记录为 14 条；明确缺口为 Gemini
-`generateContent`/`streamGenerateContent`、`/v1/blobs/{id}`、image
-`generations`/`edits`、`/v1/messages/count_tokens` 和 `/v1/models/{id}`。这些缺口以及
-生产 ownership、迁移状态、证据文件由
+> 上表为 2026-09-15 采集结果。早先记录的 Node 299 / Go 19 是 2026-08-19 的基线，仅作历史对照。
+
+**Go 可比较的 Node HTTP endpoint 记录为 14 条，现已全部实现，`missing_in_go=0`。**
+2026-08-19 曾列出的 7 条缺口（Gemini `generateContent`/`streamGenerateContent`、
+`/v1/blobs/{id}`、image `generations`/`edits`、`/v1/messages/count_tokens`、
+`/v1/models/{id}`）已全部补齐。
+
+**已实现不等于已切流**：这 7 条的 `production_owner` 仍为 `node`、`migration_state` 仍为
+`node_owned`、`cutover_blocking` 仍为 `true`，切流必须走
+`node_owned -> write_frozen -> migrated_and_verified -> go_owned` 状态机并显式确认。
+生产 ownership、迁移状态与证据文件由
 [`contracts/route-ownership/manifest.json`](../contracts/route-ownership/manifest.json)
 冻结；`/v1/`、`/v1beta/` 仅是 Node scope guard，不计为 endpoint。
 

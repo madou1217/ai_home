@@ -250,16 +250,21 @@ headless bundle 中的 `CODEBUDDY_SIDECAR_CREDENTIAL_BOOTSTRAP_SOCKET` 协议：
 - 桌面侧 `ExecNames: ["Electron"]` **必要**：三个 `.app` 的 `Contents/MacOS/` 只有 `Electron`。
 - `reloadsHostAuth:false`（声明式独立登录）**合理**：CLI/IDE 无稳定注入点来自动完成 OAuth。
 
-### 5.2 需要修正的部分（重要）
+### 5.2 需要修正的部分（已修正，见 §10 / §11）
 
-**`codebuddycn` 的存储策略把凭据隔离寄托在 `~/.codebuddy-cn` 上 —— 但凭据不在那里。**
+原来的问题是：`codebuddycn` 的存储策略把凭据隔离寄托在 `~/.codebuddy-cn` 上，**但凭据不在那里**。
 真实凭据路径是平台固定的 `…/CodeBuddyExtension/Data/Public/auth/<authentication.id>.info`，
-**不随 `CODEBUDDY_CONFIG_DIR` 变化**（§4 第 2 条已实测）。后果：
+**不随 `CODEBUDDY_CONFIG_DIR` 变化**（§4 第 2 条已实测）。
 
-- `codebuddy` / `codebuddycn` / `workbuddy` 三个 provider 的账号**会落在同一个 `.info` 文件上互相覆盖**；
-- 若两个 aih 账号都指向国内站，实际只有一份有效登录态。
+修正后的结论（§10 / §11）：该目录确实是唯一真凭据入口，但"两个 aih 账号互相覆盖"这个推论**不成立**——
+账号沙箱里 `HOME` 被改写到 `<runtimeDir>`，把这份 `.info` 声明成 HOME 相对的 auth artifact 后，
+每个沙箱各持一份自己的副本，隔离由 HOME 隔离自动成立。真正需要显式决策的只有**宿主侧**那一份。
 
-**可行的隔离杠杆**（CLI 原生支持，无需改 CLI）：
+§5.2 当时的最后一句话（"`codebuddy` / `codebuddycn` / `workbuddy` 三个 provider 的账号会落在同一个
+`.info` 文件上"）也只对了一半：三个 Provider 实际只对应**两个**文件，且文件名由**发行版**决定
+（§11 实测），不是由站点决定。
+
+**当时设想的隔离杠杆**（供参考，本轮未采用"每账号唯一 `authentication.id`"路线）：
 
 | 目标 | 手段 |
 | --- | --- |
@@ -303,10 +308,15 @@ headless bundle 中的 `CODEBUDDY_SIDECAR_CREDENTIAL_BOOTSTRAP_SOCKET` 协议：
 
 ## 8. 待办
 
-- [ ] 修正 `lib/runtime/provider-storage-policy.js`：为 `codebuddy` / `codebuddycn` / `workbuddy` 声明真实的
-      `authArtifacts` 路径（`…/CodeBuddyExtension/Data/Public/auth/<id>.info`），并说明该路径**不受 `CODEBUDDY_CONFIG_DIR` 约束**。
+- [x] 修正 `lib/runtime/provider-storage-policy.js`：为三个 Provider 声明真实的
+      `authArtifacts` 路径（`Library/Application Support/CodeBuddyExtension/Data/Public/auth/<authentication.id>.info`），
+      并说明该路径**不受 `CODEBUDDY_CONFIG_DIR` 约束**。见 §10 / §11。
+      文件名按发行版区分：`codebuddycn` / `workbuddy` → `workbuddy-desktop.info`，
+      `codebuddy` → `Tencent-Cloud.coding-copilot.info`。
 - [ ] 启动策略注入每账号唯一的 `ACC_PRODUCT_CONFIG_V3.authentication.id`，实现凭据文件名级隔离。
-- [ ] 安装器增加"优先探测 App 内嵌 CLI"分支（复用版本一致性），npm 安装作为回退。
+      本轮**不做**：国内侧已由 HOME 隔离 + HOME 相对投影天然实现"一账号一份"，且注入会让沙箱
+      不再与 App 共用登录态，与产品目标冲突（详见 §11.3）。
+- [x] 安装器增加"优先探测 App 内嵌 CLI"分支（复用版本一致性），npm 安装作为回退。见 §10。
 - [ ] 若要做真正意义的凭据共用，评估集成入口：`codebuddy --serve`（REST/ACP over SSE）优先于自实现 bootstrap。
 
 
@@ -321,3 +331,125 @@ headless bundle 中的 `CODEBUDDY_SIDECAR_CREDENTIAL_BOOTSTRAP_SOCKET` 协议：
   旧代码中 `.credentials.json` 只作为已有投影形状保留，不能作为内嵌 CLI 的共享 OAuth 支持证据。
 - UID、email 和组织 accountId 不再混为同类身份；仅冲突的用户标识才拒绝，保留 provider 种子隔离。
 - 文档中的手机号、邮箱、uin、昵称和身份值均已替换为占位符；不提交原始凭据或运行时安装缓存。
+
+## 10. 国内侧闭环（2026-09-15 实现）
+
+约束来自产品决策：**`codebuddycn` 与 `workbuddy` 是同一个国内账号**，
+闭环要自动完成、共享面最小、**不要任何开关或备份逻辑**。
+
+### 10.1 两个缺口与两条最小改动
+
+| 缺口 | 手段 | 落点 |
+| --- | --- | --- |
+| 机器上没装国内站 CLI | 复用 `WorkBuddy.app` 内嵌 CLI（零安装） | `lib/server/app-installers/codebuddy-bundle-cli.js` + `codebuddycn.js` 的 `collectCliPathEntries` |
+| CLI 在沙箱里"未登录" | 把共享 `.info` 声明为两个 Provider 的 auth artifact | `lib/runtime/provider-storage-policy.js` 的 `CODEBUDDY_CN_SHARED_AUTH_PATH` |
+
+不含开关、不含备份、不含新字段：两条改动都复用既有机制
+（`collectPathEntries` 的"先探测后安装"、`authArtifacts` 的投影/捕获/回填）。
+
+### 10.2 安装闭环
+
+`collectCliPathEntries('codebuddycn')` 的第一项现在是
+
+```
+/Applications/WorkBuddy.app/Contents/Resources/app.asar.unpacked/cli/bin
+<hostHome>/Applications/WorkBuddy.app/Contents/Resources/app.asar.unpacked/cli/bin
+```
+
+`resolveProviderCliPath()` 在**安装之前**就会命中它（实测：
+`resolveProviderCliPath('codebuddycn')` → `…/cli/bin/codebuddy`，v2.137.1），
+官方脚本 / npm 计划保持为回退，没有任何交互提示。
+内嵌 CLI 的 bin 目录只有 macOS 路径：WorkBuddy 没有可验证的 Windows / Linux 分发源。
+
+搜索根由合同声明的 `workbuddy.desktopClient.macos.installPaths` 派生，
+有单测锁住两者不漂移（`the bundled CLI entry stays tied to the declared WorkBuddy.app install paths`）。
+
+**更新通道（刻意的取舍）**：内嵌件排在独立安装落点**之前**，所以桌面端存在时
+`WorkBuddy.app` 就是国内站 CLI 的更新源（内嵌 CLI 版本与 App 严格一致）。
+真正的理由见 §11：两个发行版的 `authentication.id` 不同，读的是**不同的凭据文件**；
+让独立分发件抢先，国内站账号就会落到国际站那支 CLI 的凭据文件上，闭环静默失效。
+显式跑官方安装器仍可用（落到 `~/.local/bin`），只是不会抢在内嵌件前面。
+
+### 10.3 凭据闭环：一个文件，两个 Provider
+
+```js
+// provider-storage-policy.js
+const CODEBUDDY_EXTENSION_AUTH_DIR = [
+  'Library', 'Application Support', 'CodeBuddyExtension', 'Data', 'Public', 'auth'
+];
+const CODEBUDDY_CN_SHARED_AUTH_PATH = [...CODEBUDDY_EXTENSION_AUTH_DIR, 'workbuddy-desktop.info'];
+// codebuddycn.authArtifacts = workbuddy.authArtifacts = [{ field:'credentials', path: <上>, format:'json' }]
+// codebuddycn.hostAuthRoot = workbuddy.hostAuthRoot = []
+```
+
+- 路径已与本机内嵌 CLI bundle 的 `/Applications/WorkBuddy.app/.../cli/dist/codebuddy-headless.js`
+  交叉验证：bundle 里写死的正是 `~/Library/Application Support/CodeBuddyExtension/Data/Public/auth/`。
+- CLI 用 `os.homedir()` 定位它，所以声明为 **HOME 相对**路径（这也是 `hostAuthRoot: []` 的原因：
+  它不属于任何 Provider 配置根）。
+- **共享面只有这一个文件**：`sharedEntries` 仍为空，配置 / 会话 / 插件 / Keychain 照旧各自投影。
+
+由此得到的行为：
+
+| 场景 | 结果 |
+| --- | --- |
+| 沙箱内 CLI 是否已登录 | 是——`materializeProviderAuth` 把 `.info` 写进 `<runtimeDir>/Library/…`，正好是内嵌 CLI 读的位置 |
+| 两个 aih 国内站账号会不会互相覆盖 | 不会——HOME 被隔离到各自 `<runtimeDir>`，各持一份副本（§5.2 的担心只在"不隔离 HOME"时成立） |
+| 宿主那一份 | 只在用户显式同步默认账号时被写（`syncGlobalConfigToHost`），因为 `hostAuthRoot: []`，目标就是真实文件本身 |
+
+### 10.4 回归校验
+
+- `test/codebuddy-provider.test.js`：47 pass。覆盖共享凭据同一性、三 Provider 的
+  沙箱投影 + 宿主回填段、登录沙箱 artifact 路径、内嵌 CLI 搜索根、
+  搜索根与合同 `installPaths` 一致、两站点凭据文件不共用。
+- `npm test`：7027 tests / 6986 pass / 0 fail / 41 skipped。
+- `npm run providers:check`：通过（本轮未改 Go 合同，无 codegen 变更）。
+
+## 11. 决定性实测：两个发行版 → 两个凭据文件（2026-09-15）
+
+§5.2/§10 都只是"共享同一个文件"的推断。本轮把两个发行版都拆开核对，结论如下。
+
+### 11.1 取证
+
+| 发行版 | 来源 | `product.json` 的 `authentication.id` |
+| --- | --- | --- |
+| 独立分发 | `@tencent-ai/codebuddy-code@2.151.0`（npm tarball） | `Tencent-Cloud.coding-copilot` |
+| 独立分发（国内站） | `https://copilot.tencent.com/cli/install.sh` → COS `codebuddy-code_Darwin_arm64.tar.gz` @2.151.0，单文件二进制 | `Tencent-Cloud.coding-copilot`（**不带站点差异**） |
+| WorkBuddy 内嵌 | `/Applications/WorkBuddy.app/…/cli/product.json` | `workbuddy-desktop` |
+
+- 国内站 `install.sh` 从 myqcloud COS 取的与 npm 是**同一份 runtime**；其内嵌
+  `authentication` 块只有 `Tencent-Cloud.coding-copilot` 一个（在 120MB 编译产物里
+  逐字节定位确认，`internalDomain` 覆盖 `copilot.tencent.com` / `www.codebuddy.cn` /
+  `www.workbuddy.cn`）。`product.internal.json` / `product.ioa.json` **没有**
+  `authentication` 键，因此不会覆盖它。
+- 两个 `.info` 文件的实际归属（只取非敏感字段 + JWT `iss`）：
+
+| 文件 | `iss` | 归属站点 | 账号 uid |
+| --- | --- | --- | --- |
+| `Tencent-Cloud.coding-copilot.info` | `https://www.codebuddy.ai/auth/realms/copilot` | 国际站 | `409f887f-…0475` |
+| `workbuddy-desktop.info` | `https://www.workbuddy.cn/auth/realms/copilot` | 国内站 | `e3f89e5f-…a1e0` |
+
+两个文件的 uid / 邮箱 / 昵称都不同——再次印证国内与国际是两套账号体系。
+
+### 11.2 结论与落地
+
+1. **`authentication.id` 是"发行版"属性，不是"站点"属性**。所以
+   `Tencent-Cloud.coding-copilot.info` 是**站点不可归因**的：国内站独立分发件也会写它。
+   站点只能从 token 的 realm 判断。
+2. **`codebuddy`（国际站）改为声明 `Tencent-Cloud.coding-copilot.info`**。
+   依据：国际站 CLI（独立分发件）与 `CodeBuddy.app` IDE 的 `authentication.id` 就是它，
+   且本机该文件的 realm 正是 `www.codebuddy.ai`。原来的
+   `~/.codebuddy/.credentials.json` 是**两个发行版都不写的文件**（实测），等于从未生效。
+3. **`codebuddycn` / `workbuddy` 仍只声明 `workbuddy-desktop.info`**，并**刻意不声明**
+   那份站点不可归因的文件：把国际站 token 静默导进国内站账号，比"判不出宿主来源、
+   让账号在沙箱里自己登录"更糟。单测把这条边界钉住
+   （`the two CodeBuddy sites never share a credential file`）。
+4. 三个 Provider 的 `hostAuthRoot` 统一为 `[]`（凭据都相对宿主 HOME）。
+
+### 11.3 已知限制（未做，留作后续）
+
+- 若用户**只**装了独立分发件（没有 WorkBuddy.app），国内站 CLI 会写
+  `Tencent-Cloud.coding-copilot.info`，而 aih 的 `codebuddycn` 不认那个文件 → 该账号
+  在沙箱内登录后不会被捕获注册。取舍理由见 §11.2 第 3 条。
+- 彻底解决需要按 realm 校验 token 站点（或按 §5.2 给每账号注入唯一
+  `ACC_PRODUCT_CONFIG_*` 的 `authentication.id`）。后者会让沙箱不再与 App 共用登录态，
+  与本次的产品目标冲突，故不采用。

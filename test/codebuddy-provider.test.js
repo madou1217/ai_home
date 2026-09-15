@@ -192,20 +192,29 @@ test('codebuddy account with CODEBUDDY_API_KEY is detected as api-key type', (t)
 
 // --- 4. 存储策略 ---
 const {
+  CODEBUDDY_CN_SHARED_AUTH_PATH,
+  CODEBUDDY_EXTENSION_AUTH_DIR,
   getProviderStoragePolicy,
   getProviderAuthArtifacts,
+  getProviderHostAuthRoot,
   getProviderPrivateArtifacts,
   getProviderPrivateEntryNames,
   getProviderSharedEntries
 } = require('../lib/runtime/provider-storage-policy');
+const {
+  materializeProviderAuth,
+  readProviderAuthProjection
+} = require('../lib/account/native-auth-projection');
+const { resolveAccountRuntimeDir } = require('../lib/runtime/aih-storage-layout');
+const { getOauthArtifactPath } = require('../lib/server/web-account-auth-oauth-tokens');
 
 test('codebuddy storage policy roots at .codebuddy and isolates account-private state', () => {
   const policy = getProviderStoragePolicy('codebuddy');
   assert.ok(policy, 'codebuddy policy should exist');
   assert.deepEqual(policy.nativeRoot, ['.codebuddy']);
-  assert.deepEqual(policy.hostAuthRoot, ['.codebuddy']);
+  // 共享凭据相对宿主 HOME，不属于本 Provider 的配置根。
+  assert.deepEqual(policy.hostAuthRoot, []);
 
-  // 本轮不与宿主共享任何目录：CLI 完全读 configDir，共享需要额外的链接器。
   assert.deepEqual(getProviderSharedEntries('codebuddy'), []);
 
   // 私有条目名只覆盖 nativeRoot 内部的第一层（与 codex 同口径）。
@@ -220,12 +229,39 @@ test('codebuddy storage policy roots at .codebuddy and isolates account-private 
   assert.ok(privatePaths.includes('Library/Keychains'), 'keychains must stay account-private');
 });
 
-test('codebuddy captures the native credential file as the auth artifact', () => {
+test('codebuddy captures the international CLI shared credential file', () => {
   const artifacts = getProviderAuthArtifacts('codebuddy');
   assert.equal(artifacts.length, 1);
   assert.equal(artifacts[0].field, 'credentials');
-  assert.deepEqual(artifacts[0].path, ['.codebuddy', '.credentials.json']);
+  // 实测（2.151.0）：国际站 CLI 与 CodeBuddy.app 的 authentication.id 都是
+  // `Tencent-Cloud.coding-copilot`，所以不能再假设 ~/.codebuddy/.credentials.json
+  //（两支 CLI 都不写那个文件）。
+  assert.deepEqual(artifacts[0].path, [
+    'Library', 'Application Support', 'CodeBuddyExtension', 'Data', 'Public', 'auth',
+    'Tencent-Cloud.coding-copilot.info'
+  ]);
   assert.equal(artifacts[0].format, 'json');
+});
+
+test('the two CodeBuddy sites never share a credential file', () => {
+  // 两个发行版的 authentication.id 不同 → 两个不同的 .info（2026-09-15 实测）。
+  const intl = getProviderAuthArtifacts('codebuddy')[0].path;
+  const cn = getProviderAuthArtifacts('codebuddycn')[0].path;
+  const fileName = (segments) => segments[segments.length - 1];
+
+  assert.notDeepEqual(cn, intl);
+  // 除文件名外同目录：都必须是 HOME 下 CodeBuddyExtension 的 auth 目录。
+  assert.deepEqual(cn.slice(0, -1), CODEBUDDY_EXTENSION_AUTH_DIR);
+  assert.deepEqual(intl.slice(0, -1), CODEBUDDY_EXTENSION_AUTH_DIR);
+  assert.equal(fileName(cn), 'workbuddy-desktop.info');
+  assert.equal(fileName(intl), 'Tencent-Cloud.coding-copilot.info');
+
+  // 国内站**刻意不声明**国际站那份站点不可归因的文件，避免把国际站 token
+  // 静默导进国内站账号。
+  for (const provider of ['codebuddycn', 'workbuddy']) {
+    const declared = getProviderAuthArtifacts(provider).map((artifact) => fileName(artifact.path));
+    assert.equal(declared.includes(fileName(intl)), false, provider);
+  }
 });
 
 // --- 5. CLI 启动隔离（env 形态） ---
@@ -491,12 +527,127 @@ test('codebuddycn storage policy cannot collide with the international root', ()
   const cn = getProviderStoragePolicy('codebuddycn');
   assert.ok(cn, 'codebuddycn policy should exist');
   assert.deepEqual(cn.nativeRoot, ['.codebuddy-cn']);
-  // hostAuthRoot 刻意不共用 ~/.codebuddy：那个目录无法归因到具体站点。
-  assert.deepEqual(cn.hostAuthRoot, ['.codebuddy-cn']);
   assert.notDeepEqual(cn.nativeRoot, getProviderStoragePolicy('codebuddy').nativeRoot);
+  // hostAuthRoot 为空：共享凭据相对宿主 HOME，不属于任何 Provider 配置根。
+  assert.deepEqual(cn.hostAuthRoot, []);
   const artifacts = getProviderAuthArtifacts('codebuddycn');
   assert.equal(artifacts.length, 1);
-  assert.deepEqual(artifacts[0].path, ['.codebuddy-cn', '.credentials.json']);
+  assert.deepEqual(artifacts[0].path, CODEBUDDY_CN_SHARED_AUTH_PATH);
+});
+
+test('codebuddycn and workbuddy share one domestic credential file and nothing else', () => {
+  // 国内站 CLI 与 WorkBuddy 桌面端读写同一份主站登录态：两个 Provider 声明同一个
+  // auth artifact 就是"同一个账号"，不需要任何开关或复制逻辑。
+  const cnArtifacts = getProviderAuthArtifacts('codebuddycn');
+  const wbArtifacts = getProviderAuthArtifacts('workbuddy');
+  assert.deepEqual(wbArtifacts, cnArtifacts);
+
+  // 共享面必须最小：只有一个凭据文件，配置/会话/插件仍各自投影。
+  assert.equal(cnArtifacts.length, 1);
+  assert.equal(cnArtifacts[0].field, 'credentials');
+  assert.equal(cnArtifacts[0].format, 'json');
+  // 实测路径：~/Library/Application Support/CodeBuddyExtension/Data/Public/auth/
+  // workbuddy-desktop.info（product.json 的 authentication.id = workbuddy-desktop）。
+  assert.deepEqual(cnArtifacts[0].path, [
+    'Library', 'Application Support', 'CodeBuddyExtension', 'Data', 'Public', 'auth',
+    'workbuddy-desktop.info'
+  ]);
+  for (const provider of ['codebuddy', 'codebuddycn', 'workbuddy']) {
+    assert.deepEqual(getProviderSharedEntries(provider), [], provider);
+    assert.equal(
+      getProviderStoragePolicy(provider).hostAuthRoot.length,
+      0,
+      `${provider}: hostAuthRoot must stay HOME-relative`
+    );
+  }
+});
+
+// 三个 Provider 的共享凭据文件：国内站两支 CLI 共用一个，国际站一支单独一个。
+const SHARED_AUTH_FILE_BY_PROVIDER = Object.freeze({
+  codebuddy: 'Tencent-Cloud.coding-copilot.info',
+  codebuddycn: 'workbuddy-desktop.info',
+  workbuddy: 'workbuddy-desktop.info'
+});
+
+test('the shared credential projects into the sandbox HOME and back to the host', (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-codebuddy-shared-auth-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  const payload = {
+    account: { uid: 'shared-user-42' },
+    auth: { accessToken: 'access-token', refreshToken: 'refresh-token' }
+  };
+
+  for (const [provider, expectedFile] of Object.entries(SHARED_AUTH_FILE_BY_PROVIDER)) {
+    const accountRef = upsertAccountRef(fs, aiHomeDir, {
+      provider,
+      cliAccountId: '1',
+      identitySeed: `oauth:${provider}:shared-user-42@example.com`
+    });
+    writeAccountNativeAuth(fs, aiHomeDir, accountRef, { credentials: payload });
+
+    const runtimeDir = resolveAccountRuntimeDir(aiHomeDir, provider, accountRef);
+    assert.ok(runtimeDir, `${provider}: runtime dir must resolve`);
+
+    const materialized = materializeProviderAuth(fs, runtimeDir, provider, { aiHomeDir, accountRef });
+    assert.equal(materialized.materialized, 1, `${provider}: ${JSON.stringify(materialized)}`);
+
+    // CLI 用 os.homedir() 定位凭据：沙箱里必须是同样的 HOME 相对路径。
+    const relativePath = [...CODEBUDDY_EXTENSION_AUTH_DIR, expectedFile];
+    const artifactPath = path.join(runtimeDir, ...relativePath);
+    assert.ok(fs.existsSync(artifactPath), `${provider}: missing ${artifactPath}`);
+    const projected = readProviderAuthProjection(fs, runtimeDir, provider, {});
+    assert.deepEqual(projected.credentials, payload);
+
+    // 宿主侧同步目标逐段等于声明的 HOME 相对路径（hostAuthRoot 为空）。
+    assert.deepEqual(getProviderHostAuthRoot(provider), []);
+    assert.deepEqual(getProviderAuthArtifacts(provider)[0].path, relativePath);
+  }
+});
+
+test('every shared credential resolves from the login sandbox runtime dir', () => {
+  for (const [provider, expectedFile] of Object.entries(SHARED_AUTH_FILE_BY_PROVIDER)) {
+    const runtimeDir = path.join(path.sep, 'aih', 'run', 'login', provider, 'session-1');
+    const expected = path.join(runtimeDir, ...CODEBUDDY_EXTENSION_AUTH_DIR, expectedFile);
+    assert.equal(getOauthArtifactPath({ provider, runtimeDir }), expected, provider);
+    // 没有 runtimeDir 时不猜路径。
+    assert.equal(getOauthArtifactPath({ provider, runtimeDir: '' }), '', provider);
+  }
+});
+
+test('codebuddycn resolves the CLI bundled inside WorkBuddy.app without installing', () => {
+  const installer = getAppInstaller('codebuddycn');
+  const paths = installer.collectCliPathEntries({ platform: 'darwin', hostHomeDir: '/Users/host' });
+  const bundledSubpath = ['Contents', 'Resources', 'app.asar.unpacked', 'cli', 'bin'].join('/');
+  assert.equal(paths[0], `/Applications/WorkBuddy.app/${bundledSubpath}`);
+  assert.ok(
+    paths.includes(`/Users/host/Applications/WorkBuddy.app/${bundledSubpath}`),
+    paths.join(',')
+  );
+  // 内嵌 CLI 优先于独立安装落点，解析阶段即可命中 → 不触发任何安装计划。
+  assert.ok(paths.indexOf(`/Applications/WorkBuddy.app/${bundledSubpath}`) < paths.indexOf('/Users/host/.local/bin'));
+
+  // 只声明 macOS：WorkBuddy 没有可验证的 Windows/Linux 分发源。
+  for (const platform of ['win32', 'linux']) {
+    const entries = installer.collectCliPathEntries({ platform, hostHomeDir: '/Users/host' });
+    assert.equal(
+      entries.some((entry) => entry.includes('WorkBuddy.app')),
+      false,
+      `${platform}: must not invent a bundle path`
+    );
+  }
+});
+
+test('the bundled CLI entry stays tied to the declared WorkBuddy.app install paths', () => {
+  const { desktopClient } = getProviderCLIConfig('workbuddy');
+  const installer = getAppInstaller('codebuddycn');
+  const paths = installer.collectCliPathEntries({ platform: 'darwin', hostHomeDir: '/Users/host' });
+  const bundledSubpath = ['Contents', 'Resources', 'app.asar.unpacked', 'cli', 'bin'].join('/');
+
+  // 内嵌 CLI 的搜索根必须来自合同声明的 App 安装路径，避免两处事实漂移。
+  for (const token of desktopClient.macos.installPaths) {
+    const bundlePath = String(token).replace('{hostHomeDir}', '/Users/host');
+    assert.ok(paths.includes(`${bundlePath}/${bundledSubpath}`), `${token} -> ${bundledSubpath}`);
+  }
 });
 
 test('codebuddycn launch strategy isolates to .codebuddy-cn and pins both site keys', () => {
@@ -558,13 +709,15 @@ test('workbuddy is desktop-only and owns its own user-data isolation key', () =>
   assert.equal(typeof installer.listCliBinaryNames, 'undefined');
 });
 
-test('workbuddy storage policy does not claim a credential file that does not exist', () => {
+test('workbuddy storage policy keeps its own config root but shares the domestic login', () => {
   const policy = getProviderStoragePolicy('workbuddy');
   assert.ok(policy, 'workbuddy policy should exist');
+  // 配置根仍是 ~/.workbuddy（Electron userData 由 WORKBUDDY_USER_DATA_DIR 隔离）。
   assert.deepEqual(policy.nativeRoot, ['.workbuddy']);
-  assert.deepEqual(policy.hostAuthRoot, ['.workbuddy']);
-  // 登录态在 Electron userData + Keychain 内，没有可移植凭据文件。
-  assert.deepEqual(getProviderAuthArtifacts('workbuddy'), []);
+  // hostAuthRoot 为空：共享凭据相对宿主 HOME，不属于本 Provider 的配置根。
+  assert.deepEqual(policy.hostAuthRoot, []);
+  // 只共享主站登录凭据；~/.workbuddy/credentials/ 是连接器令牌，不参与共享。
+  assert.deepEqual(getProviderAuthArtifacts('workbuddy'), getProviderAuthArtifacts('codebuddycn'));
   const privatePaths = getProviderPrivateArtifacts('workbuddy').map((artifact) => artifact.path.join('/'));
   assert.ok(privatePaths.includes('electron-user-data'));
   assert.ok(privatePaths.includes('Library/Keychains'));
@@ -595,7 +748,8 @@ test('every declared terminal icon asset exists on disk with a matching brand ic
 // --- 共享 fixture ---
 const { registerAccountIdentity } = require('../lib/account/account-registration');
 const { createAccountStateIndex } = require('../lib/account/state-index');
-const { writeAccountCredentials } = require('../lib/server/account-credential-store');
+const { writeAccountCredentials, writeAccountNativeAuth } = require('../lib/server/account-credential-store');
+const { upsertAccountRef } = require('../lib/server/account-ref-store');
 
 function createCodebuddyFixture(t) {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-codebuddy-test-'));

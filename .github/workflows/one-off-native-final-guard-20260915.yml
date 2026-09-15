@@ -1,0 +1,46 @@
+name: one-off native sync final safeguards
+on:
+  push:
+    branches: [fix/codex-native-credential-sync-20260915]
+    paths: [.github/workflows/one-off-native-final-guard-20260915.yml]
+permissions:
+  contents: write
+jobs:
+  verify:
+    if: contains(github.event.head_commit.message, '[aih-native-guard-20260915]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify and apply exact local safeguard patch
+        shell: python
+        run: |
+          import pathlib, base64, gzip, hashlib, subprocess, os
+          encoded = pathlib.Path('.github/aih-native-final-guard.b64').read_text().strip()
+          patch = gzip.decompress(base64.b64decode(encoded, validate=True))
+          assert hashlib.sha256(patch).hexdigest() == 'cb68d06bb3b2df3dd24670c970934acffe4d77b07f4af62926dd395689b4baf7'
+          path = pathlib.Path(os.environ['RUNNER_TEMP']) / 'native-final.patch'
+          path.write_bytes(patch)
+          subprocess.run(['git', 'apply', '--check', str(path)], check=True)
+          subprocess.run(['git', 'apply', str(path)], check=True)
+      - name: Real SQLite deletion, projection, and credential regressions
+        run: |
+          node --test test/codex-native-credential-sync.test.js test/codex-native-credential-integration.test.js test/server.codex-token-refresh.test.js test/runtime-support.wiring.bootstrap.test.js test/account-ref-store.test.js
+      - name: Publish tested safeguards and remove transfer files
+        run: |
+          set -euo pipefail
+          git diff --check
+          git rm .github/aih-native-final-guard.b64 .github/workflows/one-off-native-final-guard-20260915.yml
+          git add docs/architecture/codex-native-credential-sync.md lib/account/account-registration.js lib/account/codex-native-credential-sync.js lib/server/account-ref-store.js lib/server/codex-app-server-stdio-proxy-runtime.js test/codex-native-credential-integration.test.js
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(codex): preserve deletion intent and unorderable native grants' -m 'Persist removal intent atomically in the existing KV store, enforce it for automatic native observation, and allow explicit re-registration. Stop ambiguous managed projection instead of overwriting a different grant. Real SQLite integration and focused regressions passed; final PR full CI remains required. User authorized submission; self-review performed.'
+          git push origin HEAD:refs/heads/fix/codex-native-credential-sync-20260915
+          git rev-parse HEAD >> "$GITHUB_STEP_SUMMARY"

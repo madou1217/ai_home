@@ -82,17 +82,24 @@ const GO_METHODS_BY_MOUNT = Object.freeze({
   '/v1/management/account-auth-jobs/': ['GET', 'DELETE', 'POST'],
 });
 
-// Go 用前缀挂载实现、但在 Node 侧是参数化 regex 的路径。
+// Go 用前缀挂载实现、但需要改记的路径。
 //
-// Go 的 http.ServeMux 只能按前缀或精确路径挂载，单模型查询因此写成
-// `mux.Handle(modelsapi.PathPrefix, …)`（即 `/v1/models/` 子树）。Node 的同一能力是
-// `^/v1/models/([^/]+)$`。routeIdentity 把 match 维度算进身份，若照前缀登记，
-// 这条能力会永远显示为「Go 缺失」。这里显式改记为 regex，并在挂载循环里跳过前缀形态，
-// 保证一条能力只产生一条记录。
-const GO_PREFIX_MOUNT_AS_REGEX = Object.freeze({
+// Go 的 http.ServeMux 只能按前缀或精确路径挂载，参数化路径因此写成 `Path + "/"` 子树。
+// 采集器只在 Node 侧（scanNodeFile）套用 normalizePrefixPath，Go 侧保留原始字面量路径，
+// 于是同一个能力在两端会得到不同的 path，routeIdentity 对不上，能力永远显示为「Go 缺失」。
+// 这里逐条显式改记，保证一条能力只产生一条记录、且与 Node 的身份一致。
+const GO_PREFIX_MOUNT_OVERRIDES = Object.freeze({
+  // Node 侧是 regex（lib/server/v1-router.js: `^/v1/models/([^/]+)$`）。
   '/v1/models/': {
     path: '/v1/models/{id}',
-    pattern: '^/v1/models/([^/]+)$'
+    pattern: '^/v1/models/([^/]+)$',
+    match: 'regex'
+  },
+  // Node 侧是 prefix，normalizePrefixPath 把 `/v1/blobs` 映射为 `/v1/blobs/{id}`。
+  '/v1/blobs/': {
+    path: '/v1/blobs/{id}',
+    pattern: '/v1/blobs/*',
+    match: 'prefix'
   }
 });
 
@@ -710,7 +717,7 @@ function collectGoRoutes() {
     if (!base) continue;
     const suffix = match[3] ? '/' : '';
     const path = `${base}${suffix}`;
-    const asRegex = GO_PREFIX_MOUNT_AS_REGEX[path];
+    const asRegex = GO_PREFIX_MOUNT_OVERRIDES[path];
     if (asRegex) {
       addGoRoute(routes, {
         file,
@@ -718,7 +725,7 @@ function collectGoRoutes() {
         index: match.index,
         path: asRegex.path,
         pattern: asRegex.pattern,
-        match: 'regex',
+        match: asRegex.match,
         expression: match[0],
         kind: 'endpoint',
       });

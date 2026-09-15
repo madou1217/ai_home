@@ -7,6 +7,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/accountauthapi"
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/anthropicmessagesapi"
+	"github.com/madou1217/ai_home/internal/transport/http/blobsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/clauderelayleaseapi"
 	"github.com/madou1217/ai_home/internal/transport/http/clientpropsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/codexresponsesws"
@@ -65,6 +66,11 @@ func newRouter(handlers serverHandlers) http.Handler {
 	mux.Handle(accountsapi.DefaultsPath+"/", handlers.accounts)
 	mux.Handle(modelsapi.Path, handlers.models)
 	mux.Handle(modelsapi.PathPrefix, handlers.models)
+	// /v1/blobs/{id}：取回被剥离出请求的图片字节，与其它 /v1 路由共用客户端密钥闸门。
+	//
+	// 挂载写成 `Path + "/"` 而不是直接引用 PathPrefix：路由采集器只把 `Ident.Ident + "/"`
+	// 这种形态识别为前缀挂载，否则会记成 exact，与 Node 的 prefix 身份对不上。
+	mux.Handle(blobsapi.Path+"/", handlers.blobs)
 	mux.Handle(clientpropsapi.Path, clientpropsapi.NewHandler())
 	mux.Handle(accountauthapi.CollectionPath, handlers.accountAuth)
 	mux.Handle(accountauthapi.CollectionPath+"/", handlers.accountAuth)

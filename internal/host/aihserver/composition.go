@@ -35,10 +35,12 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/claude/transportpolicy"
 	codexresponses "github.com/madou1217/ai_home/internal/adapters/codex/responses"
 	"github.com/madou1217/ai_home/internal/adapters/codex/responseswebsocket"
+	"github.com/madou1217/ai_home/internal/adapters/imageblob"
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 	"github.com/madou1217/ai_home/internal/host/inferenceruntime"
 	"github.com/madou1217/ai_home/internal/transport/http/accountauthapi"
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
+	"github.com/madou1217/ai_home/internal/transport/http/blobsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/claudenativerelay"
 	"github.com/madou1217/ai_home/internal/transport/http/clauderelayleaseapi"
 	"github.com/madou1217/ai_home/internal/transport/http/clientauth"
@@ -57,6 +59,7 @@ type serverHandlers struct {
 	accounts          http.Handler
 	accountAuth       http.Handler
 	models            http.Handler
+	blobs             http.Handler
 	inference         http.Handler
 	codexResponsesWS  http.Handler
 	claudeRelayLeases http.Handler
@@ -636,6 +639,16 @@ func newHandlers(
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf("创建本地模型目录 Handler 失败: %w", err)
 	}
+	// 进程内图片仓由 blob 取回路由与（后续的）图片生成端点共用，因此在这里创建一份。
+	imageBlobs := imageblob.NewStore(0)
+	blobsHandler, err := blobsapi.NewHandler(blobsapi.Dependencies{
+		Blobs:      imageBlobs,
+		Authorizer: clientAuthorizer,
+	})
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建图片 blob Handler 失败: %w", err)
+	}
 	initialModelRecovery, err := accountapp.NewInitialModelRefreshRecovery(
 		catalog,
 		store,
@@ -660,6 +673,7 @@ func newHandlers(
 			accounts:          accountsHandler,
 			accountAuth:       accountAuthHandler,
 			models:            modelsHandler,
+			blobs:             blobsHandler,
 			inference:         inference.handler,
 			codexResponsesWS:  webSocketHandler,
 			claudeRelayLeases: relayLeaseHandler,

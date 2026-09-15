@@ -1,0 +1,69 @@
+name: one-off verified native credential patch
+on:
+  push:
+    branches: [fix/codex-native-credential-sync-20260915]
+    paths: [.github/workflows/one-off-apply-native-sync-20260915.yml]
+permissions:
+  contents: write
+jobs:
+  apply-test-publish:
+    if: contains(github.event.head_commit.message, '[aih-apply-native-20260915]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Verify exact source patch before applying
+        shell: python
+        run: |
+          import base64, gzip, hashlib, os, pathlib, subprocess
+          root = pathlib.Path('.github/aih-native-sync-transfer')
+          encoded = ''.join((root / f'{n:02}.b64').read_text().strip() for n in [1, 2, 3])
+          # Repair one identified transcription loss; both full checksums below
+          # must still match the locally tested source, otherwise fail closed.
+          lost = '24uzul2Uqmu'
+          if lost in encoded:
+              assert encoded.count(lost) == 1
+              encoded = encoded.replace(lost, '24uzkdf/i5PvXp6Wul2Uqmu')
+          data = base64.b64decode(encoded, validate=True)
+          assert hashlib.sha256(data).hexdigest() == '8e59e5b0af7ac807e1f937493b3ab463e5934f10871a5fb24de37da348f40642', 'transfer checksum mismatch'
+          patch = gzip.decompress(data)
+          assert len(patch) == 78843
+          assert hashlib.sha256(patch).hexdigest() == 'ad4b8c4748369d79cc9097ad921d10356bded5782b2d28cd82438ae88324f89e'
+          file = pathlib.Path(os.environ['RUNNER_TEMP']) / 'aih-native.patch'
+          file.write_bytes(patch)
+          subprocess.run(['git', 'apply', '--check', str(file)], check=True)
+          subprocess.run(['git', 'apply', str(file)], check=True)
+          print('Verified and applied source patch: ad4b8c4748369d79cc9097ad921d10356bded5782b2d28cd82438ae88324f89e')
+      - name: Install repository dependencies
+        run: npm install
+      - name: Check models snapshot
+        run: npm run models:check
+      - name: Native credential and existing lifecycle regressions
+        run: |
+          node --test test/codex-native-credential-sync.test.js test/codex-native-credential-integration.test.js test/codex-native-credential-pool.test.js test/host-sync.test.js test/server.codex-token-refresh.test.js test/server.token-refresh-daemon.test.js test/runtime-support.wiring.bootstrap.test.js
+      - name: Full repository tests
+        run: npm test
+      - name: Publish verified code and remove temporary transfer workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          git rm .github/aih-native-sync-transfer/01.b64 .github/aih-native-sync-transfer/02.b64 .github/aih-native-sync-transfer/03.b64 .github/workflows/one-off-apply-native-sync-20260915.yml
+          git add docs/architecture/codex-native-credential-sync.md lib/account/codex-credential-freshness.js lib/account/codex-native-credential-sync.js lib/account/host-sync.js lib/account/state-service.js lib/cli/bootstrap/runtime-support-wiring.js lib/server/account-credential-store-insert.js lib/server/accounts.js lib/server/codex-app-server-stdio-proxy-runtime.js lib/server/codex-token-refresh.js lib/server/token-refresh-daemon.js test/codex-native-credential-integration.test.js test/codex-native-credential-pool.test.js test/codex-native-credential-sync.test.js
+          git add -u .github/workflows/one-off-branch-cleanup-20260915.yml .github/workflows/one-off-source-snapshot-20260915.yml
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(codex): reconcile newer native App credentials without stale overwrite' -m 'Observe independent native file logins, resolve their canonical AIH identity, compare credential generation timestamps and publish via CAS. Preserve explicit API/OAuth defaults and independent native login choices. Reject late refresh writes and clear only stale auth rejection. Native file integration and full npm tests passed in this workflow; physical App/keychain and current official protocol validation remain outside this change. User authorized implementation and submission; self-review performed.'
+          git push origin HEAD:refs/heads/fix/codex-native-credential-sync-20260915
+          git rev-parse HEAD >> "$GITHUB_STEP_SUMMARY"

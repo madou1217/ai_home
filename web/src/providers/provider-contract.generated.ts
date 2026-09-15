@@ -406,7 +406,8 @@ export const PROVIDER_DEFINITIONS = [
     "softVar": "var(--provider-codebuddy-soft)",
     "tagColor": "blue",
     "capabilities": [
-      "api_key_account"
+      "api_key_account",
+      "session_history"
     ],
     "authOptions": [
       {
@@ -437,7 +438,8 @@ export const PROVIDER_DEFINITIONS = [
     "softVar": "var(--provider-codebuddycn-soft)",
     "tagColor": "purple",
     "capabilities": [
-      "api_key_account"
+      "api_key_account",
+      "session_history"
     ],
     "authOptions": [
       {
@@ -468,7 +470,8 @@ export const PROVIDER_DEFINITIONS = [
     "softVar": "var(--provider-workbuddy-soft)",
     "tagColor": "blue",
     "capabilities": [
-      "api_key_account"
+      "api_key_account",
+      "session_history"
     ],
     "authOptions": [
       {
@@ -499,7 +502,8 @@ export const PROVIDER_DEFINITIONS = [
     "softVar": "var(--provider-workbuddycn-soft)",
     "tagColor": "purple",
     "capabilities": [
-      "api_key_account"
+      "api_key_account",
+      "session_history"
     ],
     "authOptions": [
       {

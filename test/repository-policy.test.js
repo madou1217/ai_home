@@ -97,12 +97,14 @@ function isAhrTaskFile(relativePath) {
   return relativePath.startsWith('.ahr/');
 }
 
-// .workbuddy/ is the agent tooling's own working state (memory notes, automations,
-// skills) and is gitignored via `*.md`. It is not repository documentation, so the
-// root-markdown allowlist does not apply — same rationale as .ahr/ above. Without
-// this exemption every agent session that writes a memory note turns this test red.
+// .workbuddy/ and .workbuddy-ai/ are the agent tooling's own working state (memory
+// notes, automations, skills) and are gitignored via `*.md`. They are not repository
+// documentation, so the root-markdown allowlist does not apply — same rationale as
+// .ahr/ above. Without this exemption every agent session that writes a memory note
+// turns this test red. The two names are the domestic/global site data roots of the
+// same product (see docs/architecture/codebuddy-family-credential-model.md §13).
 function isWorkBuddyAgentData(relativePath) {
-  return relativePath.startsWith('.workbuddy/');
+  return relativePath.startsWith('.workbuddy/') || relativePath.startsWith('.workbuddy-ai/');
 }
 
 test('repository policy keeps only root AGENTS and README markdown files (docs/ excepted)', () => {

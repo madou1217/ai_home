@@ -541,3 +541,139 @@ SchemaVersion `1` → `2`（`core/providers/model.go`）：
   仍是各自 Provider"、"旧 Server 无 family 时行为不变"）。
 - `node --test test/desktop-menu-model.test.js`：13 pass。
 - web `npm run build`（含 tsc）+ ESLint：通过。
+
+## 13. 会话打通：同地区 work/code 共用一份历史（2026-09-15 实现）
+
+§12 解决的是"菜单上按产品族合并"，本节的诉求不同，是**数据面**的：
+
+1. 同一地区的 WorkBuddy 与 CodeBuddy **共用一份会话历史**；
+2. **切换选中账号不改变可见历史**；
+3. 这些会话能**进入 aih 的会话目录并可续聊**（复用既有目录 + relay）。
+
+### 13.1 根因：同地区两个产品跑的是同一套 runtime
+
+§1 已经证实 WorkBuddy.app / WorkBuddy AI.app 内嵌的就是 CodeBuddy Code，落盘形态与
+Claude Code 同构：
+
+```
+<configDir>/projects/<sanitized-cwd>/<sessionId>.jsonl
+<configDir>/projects/<sanitized-cwd>/<sessionId>.meta.json      # 旁挂元数据
+<configDir>/projects/<sanitized-cwd>/<sessionId>.file-rollback.ndjson
+```
+
+因此"打通"不是把两份数据合并，而是**承认它们本来就是一份**：只要把同一地区的数据根
+一起读即可。站点目录口径：
+
+| 站点 | 合并的数据根 | 说明 |
+| --- | --- | --- |
+| 国内站 `cn` | `.workbuddy` + `.codebuddy-cn` | WorkBuddy.app 与 CodeBuddy CN |
+| 国际站 `global` | `.workbuddy-ai` + `.codebuddy` | WorkBuddy AI.app 与 CodeBuddy |
+
+四个 Provider 的读取顺序（只影响优先级，不影响结果集）：
+
+```js
+const CODEBUDDY_SESSION_ROOTS_BY_PROVIDER = Object.freeze({
+  codebuddy:    Object.freeze(['.codebuddy', '.workbuddy-ai']),
+  workbuddy:    Object.freeze(['.workbuddy-ai', '.codebuddy']),
+  codebuddycn:  Object.freeze(['.codebuddy-cn', '.workbuddy']),
+  workbuddycn:  Object.freeze(['.workbuddy', '.codebuddy-cn'])
+});
+```
+
+于是**从哪个 Provider 进入都一样**：`codebuddycn` 与 `workbuddycn` 读到的是同一批
+会话，`codebuddy` 与 `workbuddy` 也是——这正是"打通"的可观测定义。
+
+### 13.2 新增适配器：`lib/sessions/session-reader-codebuddy.js`
+
+| 导出 | 职责 |
+| --- | --- |
+| `readCodebuddyProjects(provider, options)` | 合并本地区全部数据根的项目/会话，同一 `projectDirName` 下按 sessionId 合并（取 mtime 更新的那条） |
+| `readCodebuddySessionMessages(provider, sessionId, projectDirName, options)` | 把 ACP/CodeBuddy JSONL 渲染成 aih 统一的 `{role, content, timestamp, model?}` |
+| `resolveCodebuddySessionPath(provider, sessionId, projectDirName, options)` | 按地区根逐个探测会话文件；**跨 Provider 也能定位**（会话由 work 产生、从 code 入口续聊） |
+| `resolveCodebuddyProjectsRoots` / `resolveCodebuddyConfigDirNames` | 目录口径（唯一真值来源） |
+| `stripCodebuddySystemReminder` | 剥掉每轮注入的 `<system-reminder data-role="user-context">` 前导块 |
+
+ACP/CodeBuddy 私有记录形态与 Claude 的 `{type:'user'|'assistant', message}` **不同**，
+映射关系：
+
+| 原生 `type` | 字段 | 渲染成 |
+| --- | --- | --- |
+| `message` (role=user) | `content=[{type:'input_text',text}]` | user 气泡（先剥 system-reminder） |
+| `message` (role=assistant) | `content=[{type:'output_text',text}]` | 合并进当前 assistant 气泡 |
+| `ai-title` | `aiTitle` / `sessionId` / `cwd` | 会话标题真值（缺失时退回首条用户消息 → 项目目录名） |
+| `reasoning` | `rawContent=[{type:'reasoning_text',text}]`、`providerData.model` | `:::thinking … :::` |
+| `function_call` | `name` / `arguments` / `callId` | `:::tool{name="…"} … :::` |
+| `function_call_result` | `callId` / `status` / `output` | `:::tool-result … :::`（按 callId 归位，截断到 32k） |
+| `file-history-snapshot` | `cwd` | 项目路径兜底 |
+
+`timestamp` 是**毫秒**（Claude 是 ISO 字符串），统一转成 ISO 输出。
+`.meta.json` / `.file-rollback.ndjson` 是旁挂元数据，**不**当会话消息读。
+
+### 13.3 合同变更：新增能力 + polling
+
+| Provider | `capabilities` 变化 | `sessionSync` 变化 |
+| --- | --- | --- |
+| `codebuddy` | `+ session_history` | `unavailable → polling` |
+| `codebuddycn` | `+ session_history` | `unavailable → polling` |
+| `workbuddy` | `+ session_history` | `unavailable → polling` |
+| `workbuddycn` | `+ session_history` | `unavailable → polling` |
+
+四个都**刻意不声明 `account_session_store`**：会话读的是宿主**地区**目录而不是账号
+沙箱，声明它会和"切账号不影响历史"的诉求直接矛盾。事件清单保持为空（无官方 hook），
+不会产生空轮询。
+
+`session_history` 是能力驱动的：`SESSION_FILE_CAPABLE_PROVIDERS`、
+`DEFAULT_HOST_PROJECT_PROVIDERS`、`CACHEABLE_SESSION_MESSAGE_PROVIDERS` 均由其派生
+（后者另行显式加入家族四员，因为单 JSONL 文件的 size/mtime 就是有效新鲜度键）。
+
+### 13.4 切换账号不影响历史：`projects` 成为共享条目
+
+```js
+// lib/runtime/provider-storage-policy.js —— 家族四员
+sharedEntries: Object.freeze(['projects'])
+```
+
+`projects` 属于**产品而非账号**。声明成共享条目后（`lib/cli/services/session-store.js`
+的 `SESSION_STORE_ALLOWLIST` 同步登记），每个账号投影里的 `projects` 都链接到宿主
+那一份，于是"换个账号选中，看到的会话列表完全一致"。注意 `settings.json` /
+`.mcp.json` / `sessions` 仍是账号私有——共享面保持最小。
+
+### 13.5 可续聊：relay 只给自带 CLI 的两个站点
+
+| Provider | 是否可被 aih 启动/续聊 | 原因 |
+| --- | --- | --- |
+| `codebuddy` / `codebuddycn` | ✅ | 有真实 CLI（`@tencent-ai/codebuddy-code`，随 WorkBuddy.app 分发） |
+| `workbuddy` / `workbuddycn` | ❌（仅可读、可列目录） | desktop-only，没有可安装的独立 CLI |
+
+`OFFICIAL_NATIVE_SESSION_PROVIDERS` 因此只加 `codebuddy` / `codebuddycn`。命令构造
+与 qoder 同构（`lib/server/native-session-chat-command.js`）：
+
+- 续聊 headless：`--print --output-format stream-json --resume <sessionId> <prompt>`
+- 续聊交互：`--resume <sessionId> [prompt]`
+- 新建：`--print --output-format stream-json --session-id <uuid> <prompt>`
+
+桌面端两个 Provider 仍可**列进会话目录**（`session_history`），只是不声明可自行启动，
+避免"声称支持却起不来"。
+
+### 13.6 展示层去重
+
+请求同一地区的两个 Provider（如 `[codebuddycn, workbuddycn]`）会各读到同一份地区
+存储，直接拼接会让每个会话出现两次。`lib/server/webui-project-cache.js` 的
+`buildProjectsSnapshot` 现在按**会话 id** 在项目内去重，胜出的是先到的那个
+（`codebuddy` → `codebuddycn` → `workbuddy` → `workbuddycn`），即该地区里**自带 CLI**
+的那个 Provider——"看得见"与"续得上"同时成立。
+
+### 13.7 验证
+
+- `node --test test/session-reader-codebuddy.test.js`：8 pass。覆盖：国内站两数据根
+  合并、国际站不串味、同地区两入口结果相同、切账号结果不变、跨 Provider 定位会话文件、
+  ACP→消息形态（thinking / tool / system-reminder 剥离）、标题回退、快照去重。
+- `node --test test/codebuddy-provider.test.js`：48 pass（含共享条目 `['projects']`）。
+- 实机烟测：`~/.workbuddy`（32 项目 / 34 会话）与 `~/.workbuddy-ai`（2 / 3）经适配器
+  读出后，cn 侧两 Provider 结果一致、global 侧同理。
+
+### 13.8 已知限制（未做）
+
+- 额度/用量探测（`quota_usage` / `usage_scan`）尚未接入：本期目标是**会话**打通。
+  同地区 work/code 共用一份用量的实测结论待补（见 §8 待办）。
+- WorkBuddy 桌面端的"新建会话"仍需在桌面端发起；aih 只负责读取与（codebuddy 侧）续聊。

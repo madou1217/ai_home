@@ -503,10 +503,16 @@ func builtinZcode() Definition {
 // "声称支持但无实现"的链路）：
 //   - model_catalog：统一模型目录探测链路未接入（无上游端点/协议适配）。
 //   - quota_usage / usage_scan：额度探测与本地用量扫描未接入。
-//   - session_history / account_session_store：会话历史读取未接入。
+//   - account_session_store：见 session_history 的说明——会话读的是宿主地区目录，
+//     不是账号隔离沙箱，所以不能声明这个能力。
 //   - session_runtime / fabric_runtime / gateway_profile：Fabric runtime 与内置
 //     网关 profile 路由未接入。
 //     上述每一项都应作为独立的后续迭代，而不是在这里提前声明。
+//
+// session_history **已接入**（2026-09-15）：适配器在
+// lib/sessions/session-reader-codebuddy.js，站点合并口径见该文件头部注释——
+// 同一站点的 WorkBuddy 与 CodeBuddy 跑同一套 runtime、共用一份会话存储，
+// 读取时把两个数据根合并成一份地区历史。
 //
 // 站点边界：本 Provider 代表**国际站**（codebuddy.ai）。国内站是独立 Provider
 // `codebuddycn`，原因见 builtinCodebuddyCN 的说明。
@@ -521,7 +527,10 @@ func builtinCodebuddy() Definition {
 		Presentation: presentation("codebuddy", "CodeBuddy", "CB", "❖", "blue"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
-		Capabilities: []Capability{CapabilityAPIKeyAccount},
+		// session_history：会话读取适配器已落地
+		// （lib/sessions/session-reader-codebuddy.js）。**刻意不声明 account_session_store**：
+		// 会话读的是宿主地区目录而不是账号沙箱（见 SessionSync 的说明）。
+		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilitySessionHistory},
 		AuthOptions: []AuthOption{
 			authOption(
 				AuthModeOAuthBrowser,
@@ -534,9 +543,10 @@ func builtinCodebuddy() Definition {
 				"绑定 CODEBUDDY_API_KEY / CODEBUDDY_BASE_URL（非交互模式固定使用该密钥）。",
 			),
 		},
-		// 会话同步未接入：CLI 有 projects/<project>/<sessionId>/*.jsonl 落盘，
-		// 但 AIH 侧还没有适配器，因此不声明 hook/polling，避免产生空轮询。
-		SessionSync: SessionSync{Mode: SessionSyncUnavailable, Events: []string{}},
+		// 会话同步：CLI 把会话落在 `<configDir>/projects/<project>/<sessionId>.jsonl`
+		// （ACP/CodeBuddy 私有 JSONL 形态），AIH 已有读取适配器，因此声明 polling。
+		// 无官方 hook，事件清单为空，不会产生空轮询。
+		SessionSync: SessionSync{Mode: SessionSyncPolling, Events: []string{}},
 		CLI: &CLIConfig{
 			Order:      12,
 			GlobalDir:  ".codebuddy",
@@ -625,7 +635,8 @@ func builtinCodebuddyCN() Definition {
 		Presentation: presentation("codebuddycn", "CodeBuddy CN", "CBCN", "✦", "purple"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
-		Capabilities: []Capability{CapabilityAPIKeyAccount},
+		// 与 codebuddy 同口径：会话历史已接入，账号隔离存储不声明（读的是宿主地区目录）。
+		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilitySessionHistory},
 		AuthOptions: []AuthOption{
 			authOption(
 				AuthModeOAuthBrowser,
@@ -638,7 +649,10 @@ func builtinCodebuddyCN() Definition {
 				"绑定 CODEBUDDY_API_KEY / CODEBUDDY_BASE_URL，并固定 CODEBUDDY_INTERNET_ENVIRONMENT=internal。",
 			),
 		},
-		SessionSync: SessionSync{Mode: SessionSyncUnavailable, Events: []string{}},
+		// 与 codebuddy 共用同一个二进制与同一套会话落盘形态，因此同为 polling。
+		// 国内站的历史归属见 workbuddycn 的说明：codebuddycn 与 WorkBuddy.app 共用
+		// 一份地区会话（~/.codebuddy-cn 与 ~/.workbuddy 合并读取）。
+		SessionSync: SessionSync{Mode: SessionSyncPolling, Events: []string{}},
 		CLI: &CLIConfig{
 			Order:      13,
 			GlobalDir:  ".codebuddy-cn",
@@ -705,7 +719,10 @@ func builtinWorkbuddy() Definition {
 		Presentation: presentation("workbuddy", "WorkBuddy", "WB", "◉", "blue"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(false, true),
-		Capabilities: []Capability{CapabilityAPIKeyAccount},
+		// 会话历史已接入：WorkBuddy AI.app 与 codebuddy 跑同一套 CodeBuddy Code runtime，
+		// 写的是同一份地区会话存储，读取时两个数据根合并成一个项目列表。
+		// 客户端能力仍是 desktop-only（没有可安装的独立 CLI），因此可读历史、不可自行启动。
+		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilitySessionHistory},
 		AuthOptions: []AuthOption{
 			authOption(
 				AuthModeOAuthBrowser,
@@ -718,7 +735,10 @@ func builtinWorkbuddy() Definition {
 				"绑定 CODEBUDDY_API_KEY / CODEBUDDY_BASE_URL（国际站不要固定 CODEBUDDY_INTERNET_ENVIRONMENT）。",
 			),
 		},
-		SessionSync: SessionSync{Mode: SessionSyncUnavailable, Events: []string{}},
+		// 会话同步：WorkBuddy AI.app 内嵌的就是 CodeBuddy Code runtime，会话落在
+		// `~/.workbuddy-ai/projects`，与 codebuddy 的 `~/.codebuddy/projects` 合并成
+		// 一份国际站历史。桌面端没有独立 CLI，所以这里只声明"可读"的 polling。
+		SessionSync: SessionSync{Mode: SessionSyncPolling, Events: []string{}},
 		// Clients.CLI=false 时仍然需要 CLIConfig：DesktopClient 挂在它下面，
 		// 且 globalDir 是账号投影根。这里如实声明 WorkBuddy 自己的数据根。
 		CLI: &CLIConfig{
@@ -775,7 +795,8 @@ func builtinWorkbuddyCN() Definition {
 		Presentation: presentation("workbuddycn", "WorkBuddy CN", "WBCN", "◍", "purple"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(false, true),
-		Capabilities: []Capability{CapabilityAPIKeyAccount},
+		// 与 workbuddy 同口径：国内站 WorkBuddy.app 与 codebuddycn 共用同一份地区会话存储。
+		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilitySessionHistory},
 		AuthOptions: []AuthOption{
 			authOption(
 				AuthModeOAuthBrowser,
@@ -788,7 +809,11 @@ func builtinWorkbuddyCN() Definition {
 				"绑定 CODEBUDDY_API_KEY / CODEBUDDY_BASE_URL，并固定 CODEBUDDY_INTERNET_ENVIRONMENT=internal。",
 			),
 		},
-		SessionSync: SessionSync{Mode: SessionSyncUnavailable, Events: []string{}},
+		// 会话同步：国内站 WorkBuddy.app 与 codebuddycn 共用同一份地区会话
+		// （~/.workbuddy/projects 与 ~/.codebuddy-cn/projects 合并读取），因此也声明 polling。
+		// 两个 Provider 都会读到同一批会话；展示层按会话 id 去重，只保留一份
+		// （见 lib/server/webui-project-cache.js 的 buildProjectsSnapshot）。
+		SessionSync: SessionSync{Mode: SessionSyncPolling, Events: []string{}},
 		CLI: &CLIConfig{
 			Order:      15,
 			// 国内站的数据根是 `.workbuddy`（官方 cask workbuddy-cn 的 zap 清单

@@ -7,8 +7,11 @@
  * 每条边界都对齐本仓库既有的 per-provider 约定。这里只断言"声明的事实"，不
  * 复述实现细节，避免测试变成实现的第二份副本。
  *
- * 范围边界（刻意不覆盖）：网关路由、用量探测、会话历史、原生聊天均未接入
- * CodeBuddy，因此没有任何相关断言——一旦将来接入，应先补实现再补这里的断言。
+ * 范围边界：会话历史**已接入**（session_history + polling；适配器在
+ * lib/sessions/session-reader-codebuddy.js，其行为断言在
+ * test/session-reader-codebuddy.test.js），codebuddy/codebuddycn 同时具备原生续聊能力。
+ * 仍未接入的是网关路由与用量探测，因此这里没有相关断言——一旦将来接入，应先补实现
+ * 再补这里的断言。
  */
 
 const test = require('node:test');
@@ -63,15 +66,19 @@ test('codebuddy auth options cover browser login and API key', () => {
 
 // 能力面是刻意收敛的：只有已实现适配器的能力才允许声明。声明未实现的能力会让
 // WebUI/gateway 认为该 provider 支持对应功能，进而产生空轮询或 404。
-test('codebuddy declares only api_key_account (no unimplemented capabilities)', () => {
+test('codebuddy declares api_key_account and session_history only', () => {
   assert.equal(providerSupports('codebuddy', 'api_key_account'), true);
+  // 会话读取适配器已落地，因此允许声明 session_history。
+  assert.equal(providerSupports('codebuddy', 'session_history'), true);
+  // account_session_store 刻意保持不声明：会话读的是宿主地区目录而不是账号沙箱，
+  // 声明它会把列表判成"按账号隔离"，而"切换账号不变历史"正是本轮要保证的行为。
+  assert.equal(providerSupports('codebuddy', 'account_session_store'), false);
   for (const capability of [
     'model_catalog',
     'quota_usage',
     'session_runtime',
     'fabric_runtime',
     'gateway_profile',
-    'session_history',
     'usage_scan'
   ]) {
     assert.equal(
@@ -219,7 +226,8 @@ test('codebuddy storage policy roots at .codebuddy and isolates account-private 
   // 共享凭据相对宿主 HOME，不属于本 Provider 的配置根。
   assert.deepEqual(policy.hostAuthRoot, []);
 
-  assert.deepEqual(getProviderSharedEntries('codebuddy'), []);
+  // 会话按地区打通：projects 是宿主地区目录，投影进账号沙箱后仍指向同一份历史。
+  assert.deepEqual(getProviderSharedEntries('codebuddy'), ['projects']);
 
   // 私有条目名只覆盖 nativeRoot 内部的第一层（与 codex 同口径）。
   const privateNames = getProviderPrivateEntryNames('codebuddy');
@@ -573,7 +581,8 @@ test('codebuddycn and workbuddycn share one domestic credential file and nothing
   const wbArtifacts = getProviderAuthArtifacts('workbuddycn');
   assert.deepEqual(wbArtifacts, cnArtifacts);
 
-  // 共享面必须最小：只有一个凭据文件，配置/会话/插件仍各自投影。
+  // 共享面必须最小：一个凭据文件 + 一份地区级会话目录（projects）。
+  // 配置/插件/私有状态仍各自投影，切账号不会互相污染。
   assert.equal(cnArtifacts.length, 1);
   assert.equal(cnArtifacts[0].field, 'credentials');
   assert.equal(cnArtifacts[0].format, 'json');
@@ -584,7 +593,8 @@ test('codebuddycn and workbuddycn share one domestic credential file and nothing
     'workbuddy-desktop.info'
   ]);
   for (const provider of FAMILY_PROVIDERS) {
-    assert.deepEqual(getProviderSharedEntries(provider), [], provider);
+    // 共享凭据（上面已断言）+ projects（地区级会话目录，实现 work/code 打通）。
+    assert.deepEqual(getProviderSharedEntries(provider), ['projects'], provider);
     assert.equal(
       getProviderStoragePolicy(provider).hostAuthRoot.length,
       0,
